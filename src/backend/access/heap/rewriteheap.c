@@ -117,6 +117,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/custodian.h"
+#include "postmaster/interrupt.h"
 #include "replication/logical.h"
 #include "replication/slot.h"
 #include "storage/bufmgr.h"
@@ -1312,6 +1313,14 @@ RemoveOldLogicalRewriteMappings(void)
 		uint32		hi,
 					lo;
 		PGFileType	de_type;
+
+		/*
+		 * This task is not essential enough to delay shutdown, so bail out if
+		 * there's a pending shutdown request.  We'll try again the next time
+		 * the server is running.
+		 */
+		if (ShutdownRequestPending)
+			break;
 
 		if (strcmp(mapping_de->d_name, ".") == 0 ||
 			strcmp(mapping_de->d_name, "..") == 0)

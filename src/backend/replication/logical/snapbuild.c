@@ -126,6 +126,7 @@
 #include "common/file_utils.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "postmaster/interrupt.h"
 #include "replication/logical.h"
 #include "replication/reorderbuffer.h"
 #include "replication/snapbuild.h"
@@ -2071,6 +2072,14 @@ RemoveOldSerializedSnapshots(void)
 		uint32		lo;
 		XLogRecPtr	lsn;
 		PGFileType	de_type;
+
+		/*
+		 * This task is not essential enough to delay shutdown, so bail out if
+		 * there's a pending shutdown request.  We'll try again the next time
+		 * the server is running.
+		 */
+		if (ShutdownRequestPending)
+			break;
 
 		if (strcmp(snap_de->d_name, ".") == 0 ||
 			strcmp(snap_de->d_name, "..") == 0)

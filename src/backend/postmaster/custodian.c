@@ -226,6 +226,14 @@ DoCustodianTasks(void)
 	{
 		CustodianTaskFunction func = (LookupCustodianFunctions(task))->task_func;
 
+		/*
+		 * Custodian tasks are not essential enough to delay shutdown, so bail
+		 * out if there's a pending shutdown request.  Tasks should be
+		 * requested again and retried the next time the server is running.
+		 */
+		if (ShutdownRequestPending)
+			break;
+
 		PG_TRY();
 		{
 			(*func) ();
