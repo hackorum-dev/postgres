@@ -4085,6 +4085,22 @@ pg_class_aclmask(Oid table_oid, Oid roleid,
 }
 
 /*
+ * Actions that built-in roles can perform unconditionally
+ */
+typedef struct RoleAcl
+{
+	Oid			role;
+	AclMode		mode;
+} RoleAcl;
+
+static const RoleAcl builtin_role_acls[] = {
+	{ROLE_PG_READ_ALL_DATA, ACL_SELECT},
+	{ROLE_PG_WRITE_ALL_DATA, ACL_INSERT | ACL_UPDATE | ACL_DELETE},
+	{ROLE_PG_VACUUM_ALL_TABLES, ACL_VACUUM},
+	{ROLE_PG_ANALYZE_ALL_TABLES, ACL_ANALYZE},
+};
+
+/*
  * Routine for examining a user's privileges for a table
  *
  * Does the bulk of the work for pg_class_aclmask(), and allows other
@@ -4182,45 +4198,17 @@ pg_class_aclmask_ext(Oid table_oid, Oid roleid, AclMode mask,
 	ReleaseSysCache(tuple);
 
 	/*
-	 * Check if ACL_SELECT is being checked and, if so, and not set already as
-	 * part of the result, then check if the user is a member of the
-	 * pg_read_all_data role, which allows read access to all relations.
+	 * For each built-in role, check if its permissions are being checked and,
+	 * if so, and not set already as part of the result, then check if the
+	 * user is a member of the role, and allow the action if so.
 	 */
-	if (mask & ACL_SELECT && !(result & ACL_SELECT) &&
-		has_privs_of_role(roleid, ROLE_PG_READ_ALL_DATA))
-		result |= ACL_SELECT;
-
-	/*
-	 * Check if ACL_INSERT, ACL_UPDATE, or ACL_DELETE is being checked and, if
-	 * so, and not set already as part of the result, then check if the user
-	 * is a member of the pg_write_all_data role, which allows
-	 * INSERT/UPDATE/DELETE access to all relations (except system catalogs,
-	 * which requires superuser, see above).
-	 */
-	if (mask & (ACL_INSERT | ACL_UPDATE | ACL_DELETE) &&
-		!(result & (ACL_INSERT | ACL_UPDATE | ACL_DELETE)) &&
-		has_privs_of_role(roleid, ROLE_PG_WRITE_ALL_DATA))
-		result |= (mask & (ACL_INSERT | ACL_UPDATE | ACL_DELETE));
-
-	/*
-	 * Check if ACL_VACUUM is being checked and, if so, and not already set as
-	 * part of the result, then check if the user is a member of the
-	 * pg_vacuum_all_tables role, which allows VACUUM on all relations.
-	 */
-	if (mask & ACL_VACUUM &&
-		!(result & ACL_VACUUM) &&
-		has_privs_of_role(roleid, ROLE_PG_VACUUM_ALL_TABLES))
-		result |= ACL_VACUUM;
-
-	/*
-	 * Check if ACL_ANALYZE is being checked and, if so, and not already set as
-	 * part of the result, then check if the user is a member of the
-	 * pg_analyze_all_tables role, which allows ANALYZE on all relations.
-	 */
-	if (mask & ACL_ANALYZE &&
-		!(result & ACL_ANALYZE) &&
-		has_privs_of_role(roleid, ROLE_PG_ANALYZE_ALL_TABLES))
-		result |= ACL_ANALYZE;
+	for (int i = 0; i < lengthof(builtin_role_acls); i++)
+	{
+		const RoleAcl *const builtin = &builtin_role_acls[i];
+		if (mask & builtin->mode && !(result & builtin->mode) &&
+			has_privs_of_role(roleid, builtin->role))
+			result |= (mask & builtin->mode);
+	}
 
 	return result;
 }

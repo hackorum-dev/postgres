@@ -2340,6 +2340,7 @@ RewriteState
 RmgrData
 RmgrDescData
 RmgrId
+RoleAcl
 RoleNameItem
 RoleSpec
 RoleSpecType
