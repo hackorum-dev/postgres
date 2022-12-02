@@ -202,6 +202,7 @@ AcquireRewriteLocks(Query *parsetree,
 				 * While we have the relation open, update the RTE's relkind,
 				 * just in case it changed since this rule was made.
 				 */
+				Assert(rte->relkind == rel->rd_rel->relkind);
 				rte->relkind = rel->rd_rel->relkind;
 
 				relation_close(rel, NoLock);
@@ -3575,6 +3576,7 @@ rewriteTargetView(Query *parsetree, Relation view)
 	 * While we have the relation open, update the RTE's relkind, just in case
 	 * it changed since this view was made (cf. AcquireRewriteLocks).
 	 */
+	Assert(base_rte->relkind == base_rel->rd_rel->relkind);
 	base_rte->relkind = base_rel->rd_rel->relkind;
 
 	/*
