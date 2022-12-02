@@ -248,6 +248,13 @@ elif host_system == 'freebsd'
 elif host_system == 'linux'
   sema_kind = 'unnamed_posix'
   cppflags += '-D_GNU_SOURCE'
+  # Align the loadable segments to 2MB boundaries to support remapping to
+  # huge pages.
+  ldflags += cc.get_supported_link_arguments([
+    '-Wl,-zmax-page-size=0x200000',
+    '-Wl,-zcommon-page-size=0x200000',
+    '-Wl,-zseparate-loadable-segments'
+  ])
 
 elif host_system == 'netbsd'
   # We must resolve all dynamic linking in the core server at program start.
