@@ -706,9 +706,43 @@ LINE 2:     AS 'SELECT $2;';
 CREATE FUNCTION test1 (int) RETURNS int LANGUAGE SQL
     AS 'a', 'b';
 ERROR:  only one AS item needed for language "sql"
+-- Test common expr in projection optimization
+CREATE TYPE proj_type AS (a int, b int, c text);
+CREATE OR REPLACE FUNCTION proj_type_func1(input text) RETURNS proj_type AS $$
+BEGIN
+    RAISE NOTICE 'proj_type_func called';
+    RETURN ROW(1, 2, input);
+END
+$$ IMMUTABLE LANGUAGE PLPGSQL;
+CREATE OR REPLACE FUNCTION proj_type_func2(input text) RETURNS proj_type AS $$
+BEGIN
+    RAISE NOTICE 'proj_type_func called';
+    RETURN ROW(1, 2, input);
+END
+$$ VOLATILE LANGUAGE PLPGSQL;
+CREATE TEMP TABLE stage_table(a text);
+INSERT INTO stage_table VALUES('aaaa');
+-- Immutable function only called once
+SELECT (proj_type_func1(a)).* FROM stage_table;
+NOTICE:  proj_type_func called
+ a | b |  c   
+---+---+------
+ 1 | 2 | aaaa
+(1 row)
+
+-- Volatile function called 3 times
+SELECT (proj_type_func2(a)).* FROM stage_table;
+NOTICE:  proj_type_func called
+NOTICE:  proj_type_func called
+NOTICE:  proj_type_func called
+ a | b |  c   
+---+---+------
+ 1 | 2 | aaaa
+(1 row)
+
 -- Cleanup
 DROP SCHEMA temp_func_test CASCADE;
-NOTICE:  drop cascades to 30 other objects
+NOTICE:  drop cascades to 33 other objects
 DETAIL:  drop cascades to function functest_a_1(text,date)
 drop cascades to function functest_a_2(text[])
 drop cascades to function functest_a_3()
@@ -739,5 +773,8 @@ drop cascades to function voidtest3(integer)
 drop cascades to function voidtest4(integer)
 drop cascades to function voidtest5(integer)
 drop cascades to function double_append(anyarray,anyelement)
+drop cascades to type proj_type
+drop cascades to function proj_type_func1(text)
+drop cascades to function proj_type_func2(text)
 DROP USER regress_unpriv_user;
 RESET search_path;

@@ -415,6 +415,29 @@ CREATE FUNCTION test1 (int) RETURNS int LANGUAGE SQL
 CREATE FUNCTION test1 (int) RETURNS int LANGUAGE SQL
     AS 'a', 'b';
 
+-- Test common expr in projection optimization
+CREATE TYPE proj_type AS (a int, b int, c text);
+CREATE OR REPLACE FUNCTION proj_type_func1(input text) RETURNS proj_type AS $$
+BEGIN
+    RAISE NOTICE 'proj_type_func called';
+    RETURN ROW(1, 2, input);
+END
+$$ IMMUTABLE LANGUAGE PLPGSQL;
+CREATE OR REPLACE FUNCTION proj_type_func2(input text) RETURNS proj_type AS $$
+BEGIN
+    RAISE NOTICE 'proj_type_func called';
+    RETURN ROW(1, 2, input);
+END
+$$ VOLATILE LANGUAGE PLPGSQL;
+
+CREATE TEMP TABLE stage_table(a text);
+INSERT INTO stage_table VALUES('aaaa');
+
+-- Immutable function only called once
+SELECT (proj_type_func1(a)).* FROM stage_table;
+-- Volatile function called 3 times
+SELECT (proj_type_func2(a)).* FROM stage_table;
+
 -- Cleanup
 DROP SCHEMA temp_func_test CASCADE;
 DROP USER regress_unpriv_user;

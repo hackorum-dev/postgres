@@ -332,6 +332,160 @@ ExecInitExprList(List *nodes, PlanState *parent)
 }
 
 /*
+ * Special optimization for FieldSelect.
+ *
+ * When a star(*) expands into multiple fields, there's an
+ * oppurtunity to group fields with common expression to
+ * prevent the expression from being evaluated multiple
+ * times. This partially addresses the problem stated in
+ * ExpandRowReference().
+ *
+ * For example:
+ * CREATE TABLE tbl(c1 int, c2 int, c3 int...);
+ * CREATE TABLE src(v text);
+ * CREATE FUNCTION func(input text) RETURNS t;
+ * INSERT INTO tbl SELECT (func(v)).* FROM src;
+ *
+ * This will be expanded into the following SQL:
+ * INSERT INTO tbl SELECT func(v).c1, func(v).c2... FROM src
+ *
+ * In this form, func will be evaluated for every column in
+ * tbl. If func is IMMUTABLE this is a huge waste. We want
+ * to evaluate func once and then extract all the columns
+ * at the same time.
+ *
+ * When doing projection, we first collect all FieldSelect
+ * nodes and group them by arg(func(v) in the example). Then
+ * evaluate arg once and assign all needed fields.
+ * EEOP_FIELD_MULTI_SELECT_ASSIGN is introduced to do this.
+ */
+typedef struct ExpressionGroup {
+	Expr *expr;
+	List *fields;
+} ExpressionGroup;
+
+/*
+ * Check whether an expression is safe to group. Currently
+ * only allow immutable functions. We may later expand this
+ * to all types of expressions and then we need a walker.
+ */
+static bool
+ExpressionSafeToGroup(Expr *expr)
+{
+	FuncExpr *func;
+	if (!IsA(expr, FuncExpr))
+		return false;
+
+	func = (FuncExpr *)expr;
+	if (func_volatile(func->funcid) == PROVOLATILE_IMMUTABLE)
+		return true;
+	return false;
+}
+
+static void
+ExecBuildProjectionFieldSelects(List *fieldSelects, ExprState  *state)
+{
+	ExpressionGroup *groups;
+	ExprEvalStep scratch = {0};
+	ListCell *lc;
+	int n = list_length(fieldSelects);
+	if (n == 0)
+		return;
+
+	/*
+	 * At most n groups if all expressions are different from
+	 * each other.
+	 */
+	groups = palloc0(sizeof(ExpressionGroup) * n);
+
+	/*
+	 * In the above example, FieldSelect->arg is "func".
+	 * We group all FieldSelects by their arg. Each group
+	 * belongs to the same "func" and thus the expression
+	 * can be evaluated only once.
+	 *
+	 * This is a naive group by. If we have lots of fields
+	 * and groups this can be slow.
+	 */
+	foreach(lc, fieldSelects)
+	{
+		TargetEntry *tle = lfirst_node(TargetEntry, lc);
+		FieldSelect *fs = (FieldSelect*)tle->expr;
+		for (int i = 0;;i++)
+		{
+			if (groups[i].fields == NIL)
+			{
+				/* New group. */
+				groups[i].expr = fs->arg;
+				groups[i].fields = list_make1(tle);
+				break;
+			}
+			else
+			{
+				/* Existing group, check if this expr belongs to it. */
+				if (equal(fs->arg, groups[i].expr))
+				{
+					groups[i].fields = lappend(groups[i].fields, tle);
+					break;
+				}
+			}
+		}
+	}
+
+	/*
+	 * For each group, generate op to evaluate the expression first
+	 * and the generate EEOP_FIELD_MULTI_SELECT_ASSIGN to extract
+	 * all fields at once.
+	 */
+	for (int i = 0; i < n && groups[i].expr; i++)
+	{
+		int nfield = list_length(groups[i].fields);
+
+		/* How to extract the field from Tuple produced by the expr. */
+		FieldSelect *fields = palloc(sizeof(FieldSelect) * nfield);
+
+		/* Whether the field is readonly. */
+		bool *ro = palloc(sizeof(bool) * nfield);
+
+		/* Which result column should the field be assign to? */
+		int *resultnum = palloc(sizeof(int) * nfield);
+
+		/* There might be jun fields, keep track of real fields. */
+		int realFields = 0;
+
+		/* Evaluate the expression first. */
+		ExecInitExprRec(groups[i].expr, state,
+				&state->resvalue, &state->resnull);
+
+		foreach(lc, groups[i].fields)
+		{
+			TargetEntry *tle = lfirst_node(TargetEntry, lc);
+			FieldSelect *fs = (FieldSelect*)tle->expr;
+
+			/*
+			 * Column might be referenced multiple times in upper nodes, so
+			 * force value to R/O - but only if it could be an expanded datum.
+			 */
+			if (get_typlen(exprType((Node *) tle->expr)) == -1)
+				ro[realFields] = true;
+			else
+				ro[realFields] = false;
+
+			memcpy(fields + realFields, fs, sizeof(FieldSelect));
+			resultnum[realFields] = tle->resno - 1;
+			realFields++;
+		}
+
+		scratch.opcode = EEOP_FIELD_MULTI_SELECT_ASSIGN;
+		scratch.d.field_multi_select_assign.nfields = realFields;
+		scratch.d.field_multi_select_assign.fields = fields;
+		scratch.d.field_multi_select_assign.ro = ro;
+		scratch.d.field_multi_select_assign.resultnum = resultnum;
+		ExprEvalPushStep(state, &scratch);
+	}
+}
+
+/*
  *		ExecBuildProjectionInfo
  *
  * Build a ProjectionInfo node for evaluating the given tlist in the given
@@ -361,6 +515,8 @@ ExecBuildProjectionInfo(List *targetList,
 	ExprState  *state;
 	ExprEvalStep scratch = {0};
 	ListCell   *lc;
+	/* Keep track of FieldSelect nodes so we can group them. */
+	List *fieldSelects = NIL;
 
 	projInfo->pi_exprContext = econtext;
 	/* We embed ExprState into ProjectionInfo instead of doing extra palloc */
@@ -447,6 +603,20 @@ ExecBuildProjectionInfo(List *targetList,
 		else
 		{
 			/*
+			 * FieldSelect can be optimized if multiple fields comes from
+			 * the same non-trivial expression. Just save it for now.
+			 */
+			if (IsA(tle->expr, FieldSelect))
+			{
+				FieldSelect *fs = (FieldSelect *)(tle->expr);
+				if (ExpressionSafeToGroup(fs->arg))
+				{
+					fieldSelects = lappend(fieldSelects, tle);
+					continue;
+				}
+			}
+
+			/*
 			 * Otherwise, compile the column expression normally.
 			 *
 			 * We can't tell the expression to evaluate directly into the
@@ -469,6 +639,8 @@ ExecBuildProjectionInfo(List *targetList,
 			ExprEvalPushStep(state, &scratch);
 		}
 	}
+
+	ExecBuildProjectionFieldSelects(fieldSelects, state);
 
 	scratch.opcode = EEOP_DONE;
 	ExprEvalPushStep(state, &scratch);

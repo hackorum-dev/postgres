@@ -190,6 +190,7 @@ typedef enum ExprEvalOp
 
 	/* evaluate FieldSelect expression */
 	EEOP_FIELDSELECT,
+	EEOP_FIELD_MULTI_SELECT_ASSIGN,
 
 	/*
 	 * Deform tuple before evaluating new values for individual fields in a
@@ -494,6 +495,15 @@ typedef struct ExprEvalStep
 			ExprEvalRowtypeCache rowcache;
 		}			fieldselect;
 
+		/* for EEOP_FIELD_MULTI_SELECT_ASSIGN */
+		struct
+		{
+			int 		nfields;
+			FieldSelect *fields;
+			int		   *resultnum;
+			bool	   *ro;
+		}			field_multi_select_assign;
+
 		/* for EEOP_FIELDSTORE_DEFORM / FIELDSTORE_FORM */
 		struct
 		{
@@ -747,6 +757,8 @@ extern void ExecEvalRow(ExprState *state, ExprEvalStep *op);
 extern void ExecEvalMinMax(ExprState *state, ExprEvalStep *op);
 extern void ExecEvalFieldSelect(ExprState *state, ExprEvalStep *op,
 								ExprContext *econtext);
+extern void ExecEvalFieldMultiSelectAssign(ExprState *state, ExprEvalStep *op,
+										   ExprContext *econtext);
 extern void ExecEvalFieldStoreDeForm(ExprState *state, ExprEvalStep *op,
 									 ExprContext *econtext);
 extern void ExecEvalFieldStoreForm(ExprState *state, ExprEvalStep *op,
