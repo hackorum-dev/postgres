@@ -17614,7 +17614,7 @@ $.* ? (@ like_regex "^\\d+$")
         <indexterm>
          <primary>nextval</primary>
         </indexterm>
-        <function>nextval</function> ( <type>regclass</type> )
+        <function>nextval</function> ( <parameter>sequence_name</parameter> <type>regclass</type> )
         <returnvalue>bigint</returnvalue>
        </para>
        <para>
@@ -17627,7 +17627,7 @@ $.* ? (@ like_regex "^\\d+$")
         values beginning with 1.  Other behaviors can be obtained by using
         appropriate parameters in the <xref linkend="sql-createsequence"/>
         command.
-      </para>
+       </para>
        <para>
         This function requires <literal>USAGE</literal>
         or <literal>UPDATE</literal> privilege on the sequence.
@@ -17639,7 +17639,7 @@ $.* ? (@ like_regex "^\\d+$")
         <indexterm>
          <primary>setval</primary>
         </indexterm>
-        <function>setval</function> ( <type>regclass</type>, <type>bigint</type> <optional>, <type>boolean</type> </optional> )
+        <function>setval</function> ( <parameter>sequence_name</parameter> <type>regclass</type>, <parameter>new_current_value</parameter> <type>bigint</type> <optional>, <parameter>is_called</parameter> <type>boolean</type> </optional> )
         <returnvalue>bigint</returnvalue>
        </para>
        <para>
@@ -17661,11 +17661,11 @@ $.* ? (@ like_regex "^\\d+$")
         Furthermore, the value reported by <function>currval</function> is not
         changed in this case.  For example,
 <programlisting>
-SELECT setval('myseq', 42);           <lineannotation>Next <function>nextval</function> will return 43</lineannotation>
-SELECT setval('myseq', 42, true);     <lineannotation>Same as above</lineannotation>
-SELECT setval('myseq', 42, false);    <lineannotation>Next <function>nextval</function> will return 42</lineannotation>
+SELECT setval('myseq', 42);           <lineannotation>-- The next <function>nextval</function>('myseq') will return 43</lineannotation>
+SELECT setval('myseq', 42, true);     <lineannotation>-- Same as above</lineannotation>
+SELECT setval('myseq', 42, false);    <lineannotation>-- The next <function>nextval</function>('myseq') will return 42</lineannotation>
 </programlisting>
-        The result returned by <function>setval</function> is just the value of its
+        The result returned by <function>setval</function> is the value of its
         second argument.
        </para>
        <para>
@@ -17679,7 +17679,7 @@ SELECT setval('myseq', 42, false);    <lineannotation>Next <function>nextval</fu
         <indexterm>
          <primary>currval</primary>
         </indexterm>
-        <function>currval</function> ( <type>regclass</type> )
+        <function>currval</function> ( <parameter>sequence_name</parameter> <type>regclass</type> )
         <returnvalue>bigint</returnvalue>
        </para>
        <para>
@@ -17711,9 +17711,8 @@ SELECT setval('myseq', 42, false);    <lineannotation>Next <function>nextval</fu
         identical to <function>currval</function>, except that instead
         of taking the sequence name as an argument it refers to whichever
         sequence <function>nextval</function> was most recently applied to
-        in the current session. It is an error to call
-        <function>lastval</function> if <function>nextval</function>
-        has not yet been called in the current session.
+        in the current session. (An error is reported if <function>nextval</function> has
+        never been called in this session.)
        </para>
        <para>
         This function requires <literal>USAGE</literal>
@@ -17723,6 +17722,11 @@ SELECT setval('myseq', 42, false);    <lineannotation>Next <function>nextval</fu
      </tbody>
     </tgroup>
    </table>
+
+  <para>
+   You can see sequence manipulation functions being used in the
+   <xref linkend="sql-createsequence-examples"/>.
+  </para>
 
   <caution>
    <para>
