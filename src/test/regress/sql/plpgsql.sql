@@ -2619,6 +2619,27 @@ declare f1 int; begin return 1; end $$ language plpgsql;
 select shadowtest(1);
 
 -- runtime extra checks
+set plpgsql.extra_warnings to 'no_data_found';
+
+do $$
+declare x int;
+begin
+  select 1 into x where 0 = 1;
+end;
+$$;
+
+set plpgsql.extra_errors to 'no_data_found';
+
+do $$
+declare x int;
+begin
+  select 1 into x where 0 = 1;
+end;
+$$;
+
+reset plpgsql.extra_errors;
+reset plpgsql.extra_warnings;
+
 set plpgsql.extra_warnings to 'too_many_rows';
 
 do $$
