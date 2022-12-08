@@ -4245,7 +4245,13 @@ exec_stmt_execsql(PLpgSQL_execstate *estate,
 	long		tcount;
 	int			rc;
 	PLpgSQL_expr *expr = stmt->sqlstmt;
+	int			no_data_found_level = 0;
 	int			too_many_rows_level = 0;
+
+	if (plpgsql_extra_errors & PLPGSQL_XCHECK_NODATAFOUND)
+		no_data_found_level = ERROR;
+	else if (plpgsql_extra_warnings & PLPGSQL_XCHECK_NODATAFOUND)
+		no_data_found_level = WARNING;
 
 	if (plpgsql_extra_errors & PLPGSQL_XCHECK_TOOMANYROWS)
 		too_many_rows_level = ERROR;
@@ -4473,16 +4479,19 @@ exec_stmt_execsql(PLpgSQL_execstate *estate,
 		 */
 		if (n == 0)
 		{
-			if (stmt->strict)
+			if (stmt->strict || no_data_found_level)
 			{
 				char	   *errdetail;
+				int			errlevel;
 
 				if (estate->func->print_strict_params)
 					errdetail = format_expr_params(estate, expr);
 				else
 					errdetail = NULL;
 
-				ereport(ERROR,
+				errlevel = stmt->strict ? ERROR : no_data_found_level;
+
+				ereport(errlevel,
 						(errcode(ERRCODE_NO_DATA_FOUND),
 						 errmsg("query returned no rows"),
 						 errdetail ? errdetail_internal("parameters: %s", errdetail) : 0));
