@@ -1634,6 +1634,7 @@ SELECT string_agg(a ORDER BY a, ',') FROM table;  -- incorrect
    <note>
     <para>
      The ability to specify both <literal>DISTINCT</literal> and <literal>ORDER BY</literal>
+     at the same time
      in an aggregate function is a <productname>PostgreSQL</productname> extension.
     </para>
    </note>
