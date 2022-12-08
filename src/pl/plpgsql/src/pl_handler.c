@@ -93,6 +93,8 @@ plpgsql_extra_checks_check_hook(char **newvalue, void **extra, GucSource source)
 
 			if (pg_strcasecmp(tok, "shadowed_variables") == 0)
 				extrachecks |= PLPGSQL_XCHECK_SHADOWVAR;
+			else if (pg_strcasecmp(tok, "no_data_found") == 0)
+				extrachecks |= PLPGSQL_XCHECK_NODATAFOUND;
 			else if (pg_strcasecmp(tok, "too_many_rows") == 0)
 				extrachecks |= PLPGSQL_XCHECK_TOOMANYROWS;
 			else if (pg_strcasecmp(tok, "strict_multi_assignment") == 0)
