@@ -3088,6 +3088,25 @@ select shadowtest(1);
 (1 row)
 
 -- runtime extra checks
+set plpgsql.extra_warnings to 'no_data_found';
+do $$
+declare x int;
+begin
+  select 1 into x where 0 = 1;
+end;
+$$;
+WARNING:  query returned no rows
+set plpgsql.extra_errors to 'no_data_found';
+do $$
+declare x int;
+begin
+  select 1 into x where 0 = 1;
+end;
+$$;
+ERROR:  query returned no rows
+CONTEXT:  PL/pgSQL function inline_code_block line 4 at SQL statement
+reset plpgsql.extra_errors;
+reset plpgsql.extra_warnings;
 set plpgsql.extra_warnings to 'too_many_rows';
 do $$
 declare x int;
