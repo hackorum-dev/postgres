@@ -840,9 +840,6 @@ MultiXactIdCreateFromMembers(int nmembers, MultiXactMember *members)
 	/* Now enter the information into the OFFSETs and MEMBERs logs */
 	RecordNewMultiXact(multi, offset, nmembers, members);
 
-	/* Done with critical section */
-	END_CRIT_SECTION();
-
 	/* Store the new MultiXactId in the local cache, too */
 	mXactCachePut(multi, nmembers, members);
 
@@ -888,6 +885,9 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 	*offptr = offset;
 
 	MultiXactOffsetCtl->shared->page_dirty[slotno] = true;
+
+	/* Done with critical section */
+	END_CRIT_SECTION();
 
 	/* Exchange our lock */
 	LWLockRelease(MultiXactOffsetSLRULock);
