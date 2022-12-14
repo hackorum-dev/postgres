@@ -45,6 +45,7 @@ extern void StartupCLOG(void);
 extern void TrimCLOG(void);
 extern void ExtendCLOG(TransactionId newestXact);
 extern void TruncateCLOG(TransactionId oldestXact, Oid oldestxid_datoid);
+extern bool VerifyClogLocatorInHashTable(void);
 
 /* XLOG stuff */
 #define CLOG_ZEROPAGE		0x00

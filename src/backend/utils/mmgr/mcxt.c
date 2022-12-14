@@ -1023,9 +1023,7 @@ MemoryContextAlloc(MemoryContext context, Size size)
 	void	   *ret;
 
 	Assert(MemoryContextIsValid(context));
-	// XXX horrible hack: while pinning clog buffers during commit, resowner
-	// stuff allocates!
-	//AssertNotInCriticalSection(context);
+	AssertNotInCriticalSection(context);
 
 	if (!AllocSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
@@ -1238,7 +1236,7 @@ palloc(Size size)
 	 * CLOG buffers during commit, in a critical section (md.c allocates
 	 * memory to build paths...); FIXME!
 	 */
-	//AssertNotInCriticalSection(context);
+	AssertNotInCriticalSection(context);
 
 	if (!AllocSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);

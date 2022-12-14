@@ -896,6 +896,19 @@ WriteTruncateXlogRec(int pageno, TransactionId oldestXact, Oid oldestXactDb)
 	XLogFlush(recptr);
 }
 
+
+/*
+ * verify that the clog relfilelocator
+ * has an entry in the storage manager hash table
+ */
+bool VerifyClogLocatorInHashTable(void)
+{
+
+       RelFileLocator rlocator = NrelRelFileLocator(NREL_CLOG_REL_ID);
+       return !((smgropen(rlocator, InvalidBackendId) == NULL));
+}
+
+
 /*
  * CLOG resource manager's routines
  */

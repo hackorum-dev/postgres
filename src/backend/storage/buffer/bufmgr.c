@@ -647,9 +647,8 @@ ReadRecentBuffer(RelFileLocator rlocator, ForkNumber forkNum, BlockNumber blockN
 	BufferTag	tag;
 	uint32		buf_state;
 	bool		have_private_ref;
-
+	
 	Assert(BufferIsValid(recent_buffer));
-
 	ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
 	ReservePrivateRefCountEntry();
 	InitBufferTag(&tag, &rlocator, forkNum, blockNum);
