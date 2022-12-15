@@ -470,7 +470,6 @@ static char *format_preparedparamsdata(PLpgSQL_execstate *estate,
 static PLpgSQL_variable *make_callstmt_target(PLpgSQL_execstate *estate,
 											  PLpgSQL_expr *expr);
 
-
 /* ----------
  * plpgsql_exec_function	Called by the call handler for
  *				function execution.
@@ -1671,6 +1670,7 @@ exec_toplevel_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 	/* Let the plugin know that we are about to execute this statement */
 	if (*plpgsql_plugin_ptr && (*plpgsql_plugin_ptr)->stmt_beg)
 		((*plpgsql_plugin_ptr)->stmt_beg) (estate, (PLpgSQL_stmt *) block);
+	elog(NOTICE, "stmt_beg toplevel_block");
 
 	CHECK_FOR_INTERRUPTS();
 
@@ -1679,6 +1679,7 @@ exec_toplevel_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 	/* Let the plugin know that we have finished executing this statement */
 	if (*plpgsql_plugin_ptr && (*plpgsql_plugin_ptr)->stmt_end)
 		((*plpgsql_plugin_ptr)->stmt_end) (estate, (PLpgSQL_stmt *) block);
+	elog(NOTICE, "stmt_end toplevel_block");
 
 	estate->err_stmt = NULL;
 
@@ -2050,6 +2051,7 @@ exec_stmts(PLpgSQL_execstate *estate, List *stmts)
 		/* Let the plugin know that we are about to execute this statement */
 		if (*plpgsql_plugin_ptr && (*plpgsql_plugin_ptr)->stmt_beg)
 			((*plpgsql_plugin_ptr)->stmt_beg) (estate, stmt);
+		elog(NOTICE, "stmt_beg stmt %s", plpgsql_stmt_typename(stmt));
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -2173,6 +2175,7 @@ exec_stmts(PLpgSQL_execstate *estate, List *stmts)
 		/* Let the plugin know that we have finished executing this statement */
 		if (*plpgsql_plugin_ptr && (*plpgsql_plugin_ptr)->stmt_end)
 			((*plpgsql_plugin_ptr)->stmt_end) (estate, stmt);
+		elog(NOTICE, "stmt_end stmt %s", plpgsql_stmt_typename(stmt));
 
 		if (rc != PLPGSQL_RC_OK)
 		{
