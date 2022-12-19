@@ -1,0 +1,251 @@
+Parsed test spec with 3 sessions
+control connection conninfo 'host=localhost port=7651'
+ps1 conninfo 'host=localhost port=7651'
+ps2 conninfo 'host=localhost port=7651'
+sub conninfo 'host=localhost port=7652'
+	WARNING: session sub is not using same connection as the controller
+
+starting permutation: ps1_begin ps1_ins ps1_commit ps1_sel ps2_sel sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps1_commit: COMMIT;
+step ps1_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+(1 row)
+
+step ps2_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+(1 row)
+
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+(1 row)
+
+
+starting permutation: ps2_begin ps2_ins ps2_commit ps1_sel ps2_sel sub_sleep sub_sel
+step ps2_begin: BEGIN;
+step ps2_ins: INSERT INTO tbl VALUES (222);
+step ps2_commit: COMMIT;
+step ps1_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+222
+(1 row)
+
+step ps2_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+222
+(1 row)
+
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+222
+(1 row)
+
+
+starting permutation: ps1_begin ps1_ins ps1_rollback ps1_sel sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps1_rollback: ROLLBACK;
+step ps1_sel: SELECT * FROM tbl ORDER BY id;
+id
+--
+(0 rows)
+
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+id
+--
+(0 rows)
+
+
+starting permutation: ps1_begin ps1_ins ps2_begin ps2_ins ps1_rollback ps2_commit sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps2_begin: BEGIN;
+step ps2_ins: INSERT INTO tbl VALUES (222);
+step ps1_rollback: ROLLBACK;
+step ps2_commit: COMMIT;
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+222
+(1 row)
+
+
+starting permutation: ps1_begin ps1_ins ps2_begin ps2_ins ps1_commit ps2_rollback sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps2_begin: BEGIN;
+step ps2_ins: INSERT INTO tbl VALUES (222);
+step ps1_commit: COMMIT;
+step ps2_rollback: ROLLBACK;
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+(1 row)
+
+
+starting permutation: ps1_begin ps1_ins ps2_begin ps2_ins ps2_commit ps1_commit sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps2_begin: BEGIN;
+step ps2_ins: INSERT INTO tbl VALUES (222);
+step ps2_commit: COMMIT;
+step ps1_commit: COMMIT;
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+222
+(2 rows)
+
+
+starting permutation: ps1_begin ps1_ins ps2_begin ps2_ins ps1_commit ps2_commit sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps2_begin: BEGIN;
+step ps2_ins: INSERT INTO tbl VALUES (222);
+step ps1_commit: COMMIT;
+step ps2_commit: COMMIT;
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+222
+(2 rows)
+
+
+starting permutation: ps1_begin ps2_begin ps1_ins ps2_ins ps2_commit ps1_commit sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps2_begin: BEGIN;
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps2_ins: INSERT INTO tbl VALUES (222);
+step ps2_commit: COMMIT;
+step ps1_commit: COMMIT;
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+222
+(2 rows)
+
+
+starting permutation: ps1_begin ps2_begin ps1_ins ps2_ins ps1_commit ps2_commit sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps2_begin: BEGIN;
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps2_ins: INSERT INTO tbl VALUES (222);
+step ps1_commit: COMMIT;
+step ps2_commit: COMMIT;
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+222
+(2 rows)
+
+
+starting permutation: ps1_begin ps2_begin ps2_ins ps1_ins ps2_commit ps1_commit sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps2_begin: BEGIN;
+step ps2_ins: INSERT INTO tbl VALUES (222);
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps2_commit: COMMIT;
+step ps1_commit: COMMIT;
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+222
+(2 rows)
+
+
+starting permutation: ps1_begin ps2_begin ps2_ins ps1_ins ps1_commit ps2_commit sub_sleep sub_sel
+step ps1_begin: BEGIN;
+step ps2_begin: BEGIN;
+step ps2_ins: INSERT INTO tbl VALUES (222);
+step ps1_ins: INSERT INTO tbl VALUES (111);
+step ps1_commit: COMMIT;
+step ps2_commit: COMMIT;
+step sub_sleep: SELECT pg_sleep(3);
+pg_sleep
+--------
+        
+(1 row)
+
+step sub_sel: SELECT * FROM tbl ORDER BY id;
+ id
+---
+111
+222
+(2 rows)
+
