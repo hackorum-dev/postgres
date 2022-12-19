@@ -71,6 +71,7 @@ self			[,()*]
 %}
 
  /* Keywords (must appear before the {identifier} rule!) */
+conninfo		{ return CONNINFO; }
 notices			{ return NOTICES; }
 permutation		{ return PERMUTATION; }
 session			{ return SESSION; }
