@@ -119,6 +119,8 @@ main(int argc, char **argv)
 	 * as the conninfo string; otherwise default to setting dbname=postgres
 	 * and using environment variables or defaults for all other connection
 	 * parameters.
+	 *
+	 * Note, this will be overridden by any session specific 'conninfo'.
 	 */
 	if (argc > optind)
 		conninfo = argv[optind];
@@ -153,15 +155,47 @@ main(int argc, char **argv)
 	for (i = 0; i < nconns; i++)
 	{
 		const char *sessionname;
+		const char *sessionconninfo;
 
 		if (i == 0)
+		{
 			sessionname = "control connection";
+			sessionconninfo = NULL;
+			if (testspec->controllerconninfo)
+				conninfo = testspec->controllerconninfo;
+		}
 		else
+		{
 			sessionname = testspec->sessions[i - 1]->name;
+			sessionconninfo = testspec->sessions[i - 1]->conninfo;
+		}
 
 		conns[i].sessionname = sessionname;
 
-		conns[i].conn = PQconnectdb(conninfo);
+		/*
+		 * If this spec session has specified a conninfo to use then that
+		 * overrides any other conninfo (e.g. passed as an argument or
+		 * the controller's conninfo)
+		 *
+		 * Note - the necessary instance to connect to is assumed to exist
+		 * already manually setup by the user.
+		 */
+		if (sessionconninfo)
+		{
+			fprintf(stderr, "%s conninfo '%s'\n", sessionname, sessionconninfo);
+
+			if (strcmp(sessionconninfo, conninfo) != 0)
+				fprintf(stderr, "\tWARNING: session %s is not using same connection as the controller\n", sessionname);
+
+			conns[i].conn = PQconnectdb(sessionconninfo);
+		}
+		else
+		{
+			if (testspec->controllerconninfo)
+				fprintf(stderr, "%s conninfo '%s'\n", sessionname, conninfo);
+
+			conns[i].conn = PQconnectdb(conninfo);
+		}
 		if (PQstatus(conns[i].conn) != CONNECTION_OK)
 		{
 			fprintf(stderr, "Connection %d failed: %s",

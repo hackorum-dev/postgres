@@ -43,7 +43,7 @@ TestSpec		parseresult;			/* result of parsing is left here */
 }
 
 %type <ptr_list> setup_list
-%type <str>  opt_setup opt_teardown
+%type <str>  opt_conninfo opt_setup opt_teardown
 %type <str> setup
 %type <ptr_list> step_list session_list permutation_list opt_permutation_list
 %type <ptr_list> permutation_step_list blocker_list
@@ -55,23 +55,25 @@ TestSpec		parseresult;			/* result of parsing is left here */
 
 %token <str> sqlblock identifier
 %token <integer> INTEGER
-%token NOTICES PERMUTATION SESSION SETUP STEP TEARDOWN TEST
+%token NOTICES PERMUTATION SESSION CONNINFO SETUP STEP TEARDOWN TEST
 
 %%
 
 TestSpec:
+			opt_conninfo
 			setup_list
 			opt_teardown
 			session_list
 			opt_permutation_list
 			{
-				parseresult.setupsqls = (char **) $1.elements;
-				parseresult.nsetupsqls = $1.nelements;
-				parseresult.teardownsql = $2;
-				parseresult.sessions = (Session **) $3.elements;
-				parseresult.nsessions = $3.nelements;
-				parseresult.permutations = (Permutation **) $4.elements;
-				parseresult.npermutations = $4.nelements;
+				parseresult.controllerconninfo = $1;
+				parseresult.setupsqls = (char **) $2.elements;
+				parseresult.nsetupsqls = $2.nelements;
+				parseresult.teardownsql = $3;
+				parseresult.sessions = (Session **) $4.elements;
+				parseresult.nsessions = $4.nelements;
+				parseresult.permutations = (Permutation **) $5.elements;
+				parseresult.npermutations = $5.nelements;
 			}
 		;
 
@@ -88,6 +90,11 @@ setup_list:
 				$$.elements[$1.nelements] = $2;
 				$$.nelements = $1.nelements + 1;
 			}
+		;
+
+opt_conninfo:
+			/* EMPTY */				{ $$ = NULL; }
+			| CONNINFO identifier	{ $$ = $2; }
 		;
 
 opt_setup:
@@ -121,14 +128,15 @@ session_list:
 		;
 
 session:
-			SESSION identifier opt_setup step_list opt_teardown
+			SESSION identifier opt_conninfo opt_setup step_list opt_teardown
 			{
 				$$ = pg_malloc_object(Session);
 				$$->name = $2;
-				$$->setupsql = $3;
-				$$->steps = (Step **) $4.elements;
-				$$->nsteps = $4.nelements;
-				$$->teardownsql = $5;
+				$$->conninfo = $3;
+				$$->setupsql = $4;
+				$$->steps = (Step **) $5.elements;
+				$$->nsteps = $5.nelements;
+				$$->teardownsql = $6;
 			}
 		;
 
