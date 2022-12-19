@@ -63,6 +63,7 @@ parseCommandLine(int argc, char *argv[])
 	int			option;			/* Command line option */
 	int			optindex = 0;	/* used by getopt_long */
 	int			os_user_effective_id;
+	int			opt_num_transfer_mode = 0;
 
 	user_opts.do_sync = true;
 	user_opts.transfer_mode = TRANSFER_MODE_COPY;
@@ -131,6 +132,7 @@ parseCommandLine(int argc, char *argv[])
 
 			case 'k':
 				user_opts.transfer_mode = TRANSFER_MODE_LINK;
+				opt_num_transfer_mode++;
 				break;
 
 			case 'N':
@@ -193,10 +195,12 @@ parseCommandLine(int argc, char *argv[])
 
 			case 1:
 				user_opts.transfer_mode = TRANSFER_MODE_CLONE;
+				opt_num_transfer_mode++;
 				break;
 
 			case 2:
 				user_opts.transfer_mode = TRANSFER_MODE_COPY;
+				opt_num_transfer_mode++;
 				break;
 
 			default:
@@ -208,6 +212,9 @@ parseCommandLine(int argc, char *argv[])
 
 	if (optind < argc)
 		pg_fatal("too many command-line arguments (first is \"%s\")", argv[optind]);
+
+	if (opt_num_transfer_mode > 1)
+		pg_fatal("Only one transfer mode can be specified.");
 
 	if (log_opts.verbose)
 		pg_log(PG_REPORT, "Running in verbose mode");
