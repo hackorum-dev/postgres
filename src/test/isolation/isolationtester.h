@@ -24,6 +24,7 @@ typedef struct Step Step;
 typedef struct
 {
 	char	   *name;
+	char 	   *conninfo;
 	char	   *setupsql;
 	char	   *teardownsql;
 	Step	  **steps;
@@ -74,6 +75,7 @@ typedef struct
 
 typedef struct
 {
+	char	   *controllerconninfo;
 	char	  **setupsqls;
 	int			nsetupsqls;
 	char	   *teardownsql;
