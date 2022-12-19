@@ -43,15 +43,12 @@ get_tablespace_paths(void)
 	PGresult   *res;
 	int			tblnum;
 	int			i_spclocation;
-	char		query[QUERY_ALLOC];
 
-	snprintf(query, sizeof(query),
+	res = executeQueryOrDie(conn,
 			 "SELECT pg_catalog.pg_tablespace_location(oid) AS spclocation "
 			 "FROM	pg_catalog.pg_tablespace "
 			 "WHERE	spcname != 'pg_default' AND "
 			 "		spcname != 'pg_global'");
-
-	res = executeQueryOrDie(conn, "%s", query);
 
 	if ((os_info.num_old_tablespaces = PQntuples(res)) != 0)
 		os_info.old_tablespaces =
