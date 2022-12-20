@@ -431,8 +431,8 @@ pg_SASL_init(PGconn *conn, int payloadlen)
 	/*
 	 * Parse the list of SASL authentication mechanisms in the
 	 * AuthenticationSASL message, and select the best mechanism that we
-	 * support.  SCRAM-SHA-256-PLUS and SCRAM-SHA-256 are the only ones
-	 * supported at the moment, listed by order of decreasing importance.
+	 * support.  SCRAM-SHA-256[-PLUS] and SCRAM-SHA-512[-PLUS] are the only
+	 * ones supported at the moment, listed by order of decreasing importance.
 	 */
 	selected_mechanism = NULL;
 	for (;;)
@@ -451,17 +451,19 @@ pg_SASL_init(PGconn *conn, int payloadlen)
 			break;
 
 		/*
-		 * Select the mechanism to use.  Pick SCRAM-SHA-256-PLUS over anything
-		 * else if a channel binding type is set and if the client supports it
-		 * (and did not set channel_binding=disable). Pick SCRAM-SHA-256 if
-		 * nothing else has already been picked.  If we add more mechanisms, a
-		 * more refined priority mechanism might become necessary.
+		 * Select the mechanism to use.  Pick SCRAM-SHA-{256,512}-PLUS over
+		 * anything else if a channel binding type is set and if the client
+		 * supports it (and did not set channel_binding=disable). Pick
+		 * SCRAM-SHA-{256,512} if nothing else has already been picked.  If
+		 * we add more mechanisms, a more refined priority mechanism might
+		 * become necessary.
 		 */
-		if (strcmp(mechanism_buf.data, SCRAM_SHA_256_PLUS_NAME) == 0)
+		if (strcmp(mechanism_buf.data, SCRAM_SHA_512_PLUS_NAME) == 0 ||
+			strcmp(mechanism_buf.data, SCRAM_SHA_256_PLUS_NAME) == 0)
 		{
 			if (conn->ssl_in_use)
 			{
-				/* The server has offered SCRAM-SHA-256-PLUS. */
+				/* The server has offered SCRAM-SHA-{256,512}-PLUS. */
 
 #ifdef HAVE_PGTLS_GET_PEER_CERTIFICATE_HASH
 				/*
@@ -470,7 +472,10 @@ pg_SASL_init(PGconn *conn, int payloadlen)
 				 */
 				if (conn->channel_binding[0] != 'd')	/* disable */
 				{
-					selected_mechanism = SCRAM_SHA_256_PLUS_NAME;
+					if (strcmp(mechanism_buf.data, SCRAM_SHA_512_PLUS_NAME) == 0)
+						selected_mechanism = SCRAM_SHA_512_PLUS_NAME;
+					else
+						selected_mechanism = SCRAM_SHA_256_PLUS_NAME;
 					conn->sasl = &pg_scram_mech;
 				}
 #else
@@ -478,7 +483,7 @@ pg_SASL_init(PGconn *conn, int payloadlen)
 				 * The client does not support channel binding.  If it is
 				 * required, complain immediately instead of the error below
 				 * which would be confusing as the server is publishing
-				 * SCRAM-SHA-256-PLUS.
+				 * SCRAM-SHA-{256,512}-PLUS.
 				 */
 				if (conn->channel_binding[0] == 'r')	/* require */
 				{
@@ -490,17 +495,24 @@ pg_SASL_init(PGconn *conn, int payloadlen)
 			else
 			{
 				/*
-				 * The server offered SCRAM-SHA-256-PLUS, but the connection
-				 * is not SSL-encrypted. That's not sane. Perhaps SSL was
-				 * stripped by a proxy? There's no point in continuing,
+				 * The server offered SCRAM-SHA-{256,512}-PLUS, but the
+				 * connection is not SSL-encrypted. That's not sane. Perhaps
+				 * SSL was stripped by a proxy? There's no point in continuing,
 				 * because the server will reject the connection anyway if we
 				 * try authenticate without channel binding even though both
 				 * the client and server supported it. The SCRAM exchange
 				 * checks for that, to prevent downgrade attacks.
 				 */
-				libpq_append_conn_error(conn, "server offered SCRAM-SHA-256-PLUS authentication over a non-SSL connection");
+				libpq_append_conn_error(conn, "server offered %s authentication over a non-SSL connection",
+										mechanism_buf.data);
 				goto error;
 			}
+		}
+		else if (strcmp(mechanism_buf.data, SCRAM_SHA_512_NAME) == 0 &&
+				 !selected_mechanism)
+		{
+			selected_mechanism = SCRAM_SHA_512_NAME;
+			conn->sasl = &pg_scram_mech;
 		}
 		else if (strcmp(mechanism_buf.data, SCRAM_SHA_256_NAME) == 0 &&
 				 !selected_mechanism)
@@ -517,7 +529,8 @@ pg_SASL_init(PGconn *conn, int payloadlen)
 	}
 
 	if (conn->channel_binding[0] == 'r' &&	/* require */
-		strcmp(selected_mechanism, SCRAM_SHA_256_PLUS_NAME) != 0)
+		strcmp(selected_mechanism, SCRAM_SHA_256_PLUS_NAME) != 0 &&
+		strcmp(selected_mechanism, SCRAM_SHA_512_PLUS_NAME) != 0)
 	{
 		libpq_append_conn_error(conn, "channel binding is required, but server did not offer an authentication method that supports channel binding");
 		goto error;
@@ -1249,11 +1262,14 @@ PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user,
 	/*
 	 * Ok, now we know what algorithm to use
 	 */
-	if (strcmp(algorithm, "scram-sha-256") == 0)
+	if (strcmp(algorithm, "scram-sha-256") == 0 ||
+		strcmp(algorithm, "scram-sha-512") == 0)
 	{
 		const char *errstr = NULL;
+		pg_cryptohash_type hash_type =
+			(strcmp(algorithm, "scram-sha-512") == 0) ? PG_SHA512 : PG_SHA256;
 
-		crypt_pwd = pg_fe_scram_build_secret(passwd, &errstr);
+		crypt_pwd = pg_fe_scram_build_secret(passwd, hash_type, &errstr);
 		if (!crypt_pwd)
 			libpq_append_conn_error(conn, "could not encrypt password: %s", errstr);
 	}

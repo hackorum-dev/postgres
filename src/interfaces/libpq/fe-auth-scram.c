@@ -110,8 +110,17 @@ scram_init(PGconn *conn,
 	memset(state, 0, sizeof(fe_scram_state));
 	state->conn = conn;
 	state->state = FE_SCRAM_INIT;
-	state->key_length = SCRAM_SHA_256_KEY_LEN;
-	state->hash_type = PG_SHA256;
+	if (strcmp(sasl_mechanism, SCRAM_SHA_512_NAME) == 0 ||
+		strcmp(sasl_mechanism, SCRAM_SHA_512_PLUS_NAME) == 0)
+	{
+		state->key_length = SCRAM_SHA_512_KEY_LEN;
+		state->hash_type = PG_SHA512;
+	}
+	else
+	{
+		state->key_length = SCRAM_SHA_256_KEY_LEN;
+		state->hash_type = PG_SHA256;
+	}
 
 	state->sasl_mechanism = strdup(sasl_mechanism);
 	if (!state->sasl_mechanism)
@@ -165,7 +174,8 @@ scram_channel_bound(void *opaq)
 		return false;
 
 	/* channel binding mechanism not used */
-	if (strcmp(state->sasl_mechanism, SCRAM_SHA_256_PLUS_NAME) != 0)
+	if (strcmp(state->sasl_mechanism, SCRAM_SHA_256_PLUS_NAME) != 0 &&
+		strcmp(state->sasl_mechanism, SCRAM_SHA_512_PLUS_NAME) != 0)
 		return false;
 
 	/* all clear! */
@@ -894,7 +904,8 @@ verify_server_signature(fe_scram_state *state, bool *match,
  * error details.
  */
 char *
-pg_fe_scram_build_secret(const char *password, const char **errstr)
+pg_fe_scram_build_secret(const char *password, pg_cryptohash_type hash_type,
+						 const char **errstr)
 {
 	char	   *prep_password;
 	pg_saslprep_rc rc;
@@ -924,7 +935,10 @@ pg_fe_scram_build_secret(const char *password, const char **errstr)
 		return NULL;
 	}
 
-	result = scram_build_secret(PG_SHA256, SCRAM_SHA_256_KEY_LEN, saltbuf,
+	result = scram_build_secret(hash_type,
+								(hash_type == PG_SHA512) ?
+								SCRAM_SHA_512_KEY_LEN : SCRAM_SHA_256_KEY_LEN,
+								saltbuf,
 								SCRAM_DEFAULT_SALT_LEN,
 								SCRAM_DEFAULT_ITERATIONS, password,
 								errstr);

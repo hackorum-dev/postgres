@@ -28,7 +28,8 @@ typedef enum PasswordType
 {
 	PASSWORD_TYPE_PLAINTEXT = 0,
 	PASSWORD_TYPE_MD5,
-	PASSWORD_TYPE_SCRAM_SHA_256
+	PASSWORD_TYPE_SCRAM_SHA_256,
+	PASSWORD_TYPE_SCRAM_SHA_512
 } PasswordType;
 
 extern PasswordType get_password_type(const char *shadow_pass);

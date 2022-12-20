@@ -66,10 +66,13 @@ $node->init;
 $node->append_conf('postgresql.conf', "log_connections = on\n");
 $node->start;
 
-# Create 3 roles with different password methods for each one. The same
+# Create 4 roles with different password methods for each one. The same
 # password is used for all of them.
 $node->safe_psql('postgres',
 	"SET password_encryption='scram-sha-256'; CREATE ROLE scram_role LOGIN PASSWORD 'pass';"
+);
+$node->safe_psql('postgres',
+	"SET password_encryption='scram-sha-512'; CREATE ROLE scram_role_512 LOGIN PASSWORD 'pass';"
 );
 $node->safe_psql('postgres',
 	"SET password_encryption='md5'; CREATE ROLE md5_role LOGIN PASSWORD 'pass';"
@@ -134,6 +137,8 @@ test_conn(
 	log_like => [
 		qr/connection authenticated: identity="scram_role" method=scram-sha-256/
 	]);
+test_conn($node, 'user=scram_role_512', 'scram-sha-256', 2,
+	log_unlike => [qr/connection authenticated:/]);
 test_conn($node, 'user=md5_role', 'scram-sha-256', 2,
 	log_unlike => [qr/connection authenticated:/]);
 
@@ -142,6 +147,20 @@ $ENV{"PGPASSWORD"} = 'badpass';
 test_conn($node, 'user=scram_role', 'scram-sha-256', 2,
 	log_unlike => [qr/connection authenticated:/]);
 $ENV{"PGPASSWORD"} = 'pass';
+
+# For "scram-sha-512" method, user "scram_role_512" should be able to connect.
+reset_pg_hba($node, 'all', 'all', 'scram-sha-512');
+test_conn(
+	$node,
+	'user=scram_role_512',
+	'scram-sha-512',
+	0,
+	log_like => [
+		qr/connection authenticated: identity="scram_role_512" method=scram-sha-512/
+	]);
+test_conn($node, 'user=scram_role_256', 'scram-sha-256', 2,
+	log_unlike => [qr/connection authenticated:/]);
+
 
 # For "md5" method, all users should be able to connect (SCRAM
 # authentication will be performed for the user with a SCRAM secret.)

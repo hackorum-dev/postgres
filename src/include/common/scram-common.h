@@ -19,15 +19,18 @@
 /* Name of SCRAM mechanisms per IANA */
 #define SCRAM_SHA_256_NAME "SCRAM-SHA-256"
 #define SCRAM_SHA_256_PLUS_NAME "SCRAM-SHA-256-PLUS"	/* with channel binding */
+#define SCRAM_SHA_512_NAME "SCRAM-SHA-512"
+#define SCRAM_SHA_512_PLUS_NAME "SCRAM-SHA-512-PLUS"	/* with channel binding */
 
 /* Length of SCRAM keys (client and server) */
 #define SCRAM_SHA_256_KEY_LEN				PG_SHA256_DIGEST_LENGTH
+#define SCRAM_SHA_512_KEY_LEN				PG_SHA512_DIGEST_LENGTH
 
 /*
  * Size of buffers used internally by SCRAM routines, that should be the
  * maximum of SCRAM_SHA_*_KEY_LEN among the hash methods supported.
  */
-#define SCRAM_MAX_KEY_LEN					SCRAM_SHA_256_KEY_LEN
+#define SCRAM_MAX_KEY_LEN					SCRAM_SHA_512_KEY_LEN
 
 /*
  * Size of random nonce generated in the authentication exchange.  This

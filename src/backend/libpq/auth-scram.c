@@ -181,7 +181,9 @@ static char *build_server_first_message(scram_state *state);
 static char *build_server_final_message(scram_state *state);
 static bool verify_client_proof(scram_state *state);
 static bool verify_final_nonce(scram_state *state);
-static void mock_scram_secret(const char *username, pg_cryptohash_type *hash_type,
+static void mock_scram_secret(const char *username,
+							  pg_cryptohash_type mock_hash,
+							  pg_cryptohash_type *hash_type,
 							  int *iterations, int *key_length, char **salt,
 							  uint8 *stored_key, uint8 *server_key);
 static bool is_scram_printable(char *p);
@@ -210,12 +212,28 @@ scram_get_mechanisms(Port *port, StringInfo buf)
 #ifdef HAVE_BE_TLS_GET_CERTIFICATE_HASH
 	if (port->ssl_in_use)
 	{
-		appendStringInfoString(buf, SCRAM_SHA_256_PLUS_NAME);
-		appendStringInfoChar(buf, '\0');
+		if (port->hba->auth_method == uaSCRAM512)
+		{
+			appendStringInfoString(buf, SCRAM_SHA_512_PLUS_NAME);
+			appendStringInfoChar(buf, '\0');
+		}
+		else
+		{
+			appendStringInfoString(buf, SCRAM_SHA_256_PLUS_NAME);
+			appendStringInfoChar(buf, '\0');
+		}
 	}
 #endif
-	appendStringInfoString(buf, SCRAM_SHA_256_NAME);
-	appendStringInfoChar(buf, '\0');
+	if (port->hba->auth_method == uaSCRAM512)
+	{
+		appendStringInfoString(buf, SCRAM_SHA_512_NAME);
+		appendStringInfoChar(buf, '\0');
+	}
+	else
+	{
+		appendStringInfoString(buf, SCRAM_SHA_256_NAME);
+		appendStringInfoChar(buf, '\0');
+	}
 }
 
 /*
@@ -238,10 +256,13 @@ scram_init(Port *port, const char *selected_mech, const char *shadow_pass)
 {
 	scram_state *state;
 	bool		got_secret;
+	pg_cryptohash_type mock_hash;
 
 	state = (scram_state *) palloc0(sizeof(scram_state));
 	state->port = port;
 	state->state = SCRAM_AUTH_INIT;
+
+	mock_hash = PG_SHA256;
 
 	/*
 	 * Parse the selected mechanism.
@@ -253,16 +274,41 @@ scram_init(Port *port, const char *selected_mech, const char *shadow_pass)
 	 * selecting any other SASL mechanism we don't support.
 	 */
 #ifdef HAVE_BE_TLS_GET_CERTIFICATE_HASH
-	if (strcmp(selected_mech, SCRAM_SHA_256_PLUS_NAME) == 0 && port->ssl_in_use)
+	if ((strcmp(selected_mech, SCRAM_SHA_256_PLUS_NAME) == 0 ||
+		 strcmp(selected_mech, SCRAM_SHA_512_PLUS_NAME) == 0) &&
+		port->ssl_in_use)
 		state->channel_binding_in_use = true;
 	else
 #endif
-	if (strcmp(selected_mech, SCRAM_SHA_256_NAME) == 0)
+	if (strcmp(selected_mech, SCRAM_SHA_256_NAME) == 0 ||
+		strcmp(selected_mech, SCRAM_SHA_512_NAME) == 0)
 		state->channel_binding_in_use = false;
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_PROTOCOL_VIOLATION),
 				 errmsg("client selected an invalid SASL authentication mechanism")));
+
+	/*
+	 * If the HBA entry does not match with the selected mechanism, the
+	 * authentication should fail, so go through the mock process in this
+	 * case.
+	 */
+	if (port->hba->auth_method == uaSCRAM256 &&
+		strcmp(selected_mech, SCRAM_SHA_256_PLUS_NAME) != 0 &&
+		strcmp(selected_mech, SCRAM_SHA_256_NAME) != 0)
+	{
+		/* the client has selected one of the SHA-512 mechanisms */
+		shadow_pass = NULL;
+		mock_hash = PG_SHA512;
+	}
+	if (port->hba->auth_method == uaSCRAM512 &&
+		strcmp(selected_mech, SCRAM_SHA_512_PLUS_NAME) != 0 &&
+		strcmp(selected_mech, SCRAM_SHA_512_NAME) != 0)
+	{
+		/* the client has selected one of the SHA-256 mechanisms */
+		shadow_pass = NULL;
+		mock_hash = PG_SHA256;
+	}
 
 	/*
 	 * Parse the stored secret.
@@ -271,15 +317,37 @@ scram_init(Port *port, const char *selected_mech, const char *shadow_pass)
 	{
 		int			password_type = get_password_type(shadow_pass);
 
-		if (password_type == PASSWORD_TYPE_SCRAM_SHA_256)
+		if (password_type == PASSWORD_TYPE_SCRAM_SHA_256 ||
+			password_type == PASSWORD_TYPE_SCRAM_SHA_512)
 		{
-			if (parse_scram_secret(shadow_pass, &state->iterations,
-								   &state->hash_type, &state->key_length,
-								   &state->salt,
-								   state->StoredKey,
-								   state->ServerKey))
-				got_secret = true;
-			else
+			got_secret = parse_scram_secret(shadow_pass,
+											&state->iterations,
+											&state->hash_type,
+											&state->key_length,
+											&state->salt,
+											state->StoredKey,
+											state->ServerKey);
+
+			/*
+			 * At this point, we already know that the HBA entry maps
+			 * with a matching mechanism.  If the password type does not
+			 * not match any of that, do a mock processing using the
+			 * hash selected by the client's mechanism.
+			 */
+			if (port->hba->auth_method == uaSCRAM256 &&
+				password_type != PASSWORD_TYPE_SCRAM_SHA_256)
+			{
+				mock_hash = PG_SHA256;
+				got_secret = false;
+			}
+			else if (port->hba->auth_method == uaSCRAM512 &&
+					 password_type != PASSWORD_TYPE_SCRAM_SHA_512)
+			{
+				mock_hash = PG_SHA512;
+				got_secret = false;
+			}
+
+			if (!got_secret)
 			{
 				/*
 				 * The password looked like a SCRAM secret, but could not be
@@ -288,7 +356,6 @@ scram_init(Port *port, const char *selected_mech, const char *shadow_pass)
 				ereport(LOG,
 						(errmsg("invalid SCRAM secret for user \"%s\"",
 								state->port->user_name)));
-				got_secret = false;
 			}
 		}
 		else
@@ -309,6 +376,7 @@ scram_init(Port *port, const char *selected_mech, const char *shadow_pass)
 		 * considered normal, since the caller requested it, so don't set log
 		 * detail.
 		 */
+		mock_hash = PG_SHA256;
 		got_secret = false;
 	}
 
@@ -320,7 +388,8 @@ scram_init(Port *port, const char *selected_mech, const char *shadow_pass)
 	 */
 	if (!got_secret)
 	{
-		mock_scram_secret(state->port->user_name, &state->hash_type,
+		mock_scram_secret(state->port->user_name, mock_hash,
+						  &state->hash_type,
 						  &state->iterations, &state->key_length,
 						  &state->salt,
 						  state->StoredKey, state->ServerKey);
@@ -471,7 +540,7 @@ scram_exchange(void *opaq, const char *input, int inputlen,
  * The result is palloc'd, so caller is responsible for freeing it.
  */
 char *
-pg_be_scram_build_secret(const char *password)
+pg_be_scram_build_secret(const char *password, pg_cryptohash_type hash_type)
 {
 	char	   *prep_password;
 	pg_saslprep_rc rc;
@@ -494,7 +563,9 @@ pg_be_scram_build_secret(const char *password)
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("could not generate random salt")));
 
-	result = scram_build_secret(PG_SHA256, SCRAM_SHA_256_KEY_LEN,
+	result = scram_build_secret(hash_type,
+								(hash_type == PG_SHA512) ?
+								SCRAM_SHA_512_KEY_LEN : SCRAM_SHA_256_KEY_LEN,
 								saltbuf, SCRAM_DEFAULT_SALT_LEN,
 								SCRAM_DEFAULT_ITERATIONS, password,
 								&errstr);
@@ -622,10 +693,18 @@ parse_scram_secret(const char *secret, int *iterations,
 		goto invalid_secret;
 
 	/* Parse the fields */
-	if (strcmp(scheme_str, "SCRAM-SHA-256") != 0)
+	if (strcmp(scheme_str, "SCRAM-SHA-256") == 0)
+	{
+		*hash_type = PG_SHA256;
+		*key_length = SCRAM_SHA_256_KEY_LEN;
+	}
+	else if (strcmp(scheme_str, "SCRAM-SHA-512") == 0)
+	{
+		*hash_type = PG_SHA512;
+		*key_length = SCRAM_SHA_512_KEY_LEN;
+	}
+	else
 		goto invalid_secret;
-	*hash_type = PG_SHA256;
-	*key_length = SCRAM_SHA_256_KEY_LEN;
 
 	errno = 0;
 	*iterations = strtol(iterations_str, &p, 10);
@@ -675,14 +754,16 @@ invalid_secret:
  *
  * In a normal authentication, these are extracted from the secret
  * stored in the server.  This function generates values that look
- * realistic, for when there is no stored secret, using SCRAM-SHA-256.
+ * realistic, for when there is no stored secret, using the hash method
+ * specified by mock_hash.
  *
  * Like in parse_scram_secret(), for 'stored_key' and 'server_key', the
  * caller must pass pre-allocated buffers of size SCRAM_MAX_KEY_LEN, and
  * the buffer for the salt is palloc'd by this function.
  */
 static void
-mock_scram_secret(const char *username, pg_cryptohash_type *hash_type,
+mock_scram_secret(const char *username, pg_cryptohash_type mock_hash,
+				  pg_cryptohash_type *hash_type,
 				  int *iterations, int *key_length, char **salt,
 				  uint8 *stored_key, uint8 *server_key)
 {
@@ -691,8 +772,16 @@ mock_scram_secret(const char *username, pg_cryptohash_type *hash_type,
 	int			encoded_len;
 
 	/* Enforce the use of SHA-256, which would be realistic enough */
-	*hash_type = PG_SHA256;
-	*key_length = SCRAM_SHA_256_KEY_LEN;
+	if (mock_hash == PG_SHA256)
+	{
+		*hash_type = PG_SHA256;
+		*key_length = SCRAM_SHA_256_KEY_LEN;
+	}
+	else
+	{
+		*hash_type = PG_SHA512;
+		*key_length = SCRAM_SHA_512_KEY_LEN;
+	}
 
 	/*
 	 * Generate deterministic salt.
@@ -1477,7 +1566,7 @@ scram_mock_salt(const char *username, pg_cryptohash_type hash_type,
 	 * This may be worth refreshing if support for more hash methods is\
 	 * added.
 	 */
-	Assert(hash_type == PG_SHA256);
+	Assert(hash_type == PG_SHA256 || hash_type == PG_SHA512);
 
 	ctx = pg_cryptohash_create(hash_type);
 	if (pg_cryptohash_init(ctx) < 0 ||

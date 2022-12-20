@@ -203,6 +203,7 @@ scram_build_secret(pg_cryptohash_type hash_type, int key_length,
 	uint8		salted_password[SCRAM_MAX_KEY_LEN];
 	uint8		stored_key[SCRAM_MAX_KEY_LEN];
 	uint8		server_key[SCRAM_MAX_KEY_LEN];
+	char	   *header;
 	char	   *result;
 	char	   *p;
 	int			maxlen;
@@ -212,7 +213,8 @@ scram_build_secret(pg_cryptohash_type hash_type, int key_length,
 	int			encoded_result;
 
 	/* Only this hash method is supported currently */
-	Assert(hash_type == PG_SHA256);
+	Assert(hash_type == PG_SHA256 ||
+		   hash_type == PG_SHA512);
 
 	if (iterations <= 0)
 		iterations = SCRAM_DEFAULT_ITERATIONS;
@@ -246,7 +248,12 @@ scram_build_secret(pg_cryptohash_type hash_type, int key_length,
 	encoded_stored_len = pg_b64_enc_len(key_length);
 	encoded_server_len = pg_b64_enc_len(key_length);
 
-	maxlen = strlen("SCRAM-SHA-256") + 1
+	if (hash_type == PG_SHA256)
+		header = "SCRAM-SHA-256";
+	else
+		header = "SCRAM-SHA-512";
+
+	maxlen = strlen(header) + 1
 		+ 10 + 1				/* iteration count */
 		+ encoded_salt_len + 1	/* Base64-encoded salt */
 		+ encoded_stored_len + 1	/* Base64-encoded StoredKey */
@@ -263,7 +270,7 @@ scram_build_secret(pg_cryptohash_type hash_type, int key_length,
 	result = palloc(maxlen);
 #endif
 
-	p = result + sprintf(result, "SCRAM-SHA-256$%d:", iterations);
+	p = result + sprintf(result, "%s$%d:", header, iterations);
 
 	/* salt */
 	encoded_result = pg_b64_encode(salt, saltlen, p, encoded_salt_len);

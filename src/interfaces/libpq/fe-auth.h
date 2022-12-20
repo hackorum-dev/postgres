@@ -17,6 +17,7 @@
 #include "libpq-fe.h"
 #include "libpq-int.h"
 
+#include "common/cryptohash.h"
 
 /* Prototypes for functions in fe-auth.c */
 extern int	pg_fe_sendauth(AuthRequest areq, int payloadlen, PGconn *conn);
@@ -26,6 +27,7 @@ extern char *pg_fe_getauthname(PQExpBuffer errorMessage);
 /* Mechanisms in fe-auth-scram.c */
 extern const pg_fe_sasl_mech pg_scram_mech;
 extern char *pg_fe_scram_build_secret(const char *password,
+									  pg_cryptohash_type hash_type,
 									  const char **errstr);
 
 #endif							/* FE_AUTH_H */

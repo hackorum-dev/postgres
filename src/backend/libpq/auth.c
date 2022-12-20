@@ -276,7 +276,8 @@ auth_failed(Port *port, int status, const char *logdetail)
 			break;
 		case uaPassword:
 		case uaMD5:
-		case uaSCRAM:
+		case uaSCRAM256:
+		case uaSCRAM512:
 			errstr = gettext_noop("password authentication failed for user \"%s\"");
 			/* We use it to indicate if a .pgpass password failed. */
 			errcode_return = ERRCODE_INVALID_PASSWORD;
@@ -585,7 +586,8 @@ ClientAuthentication(Port *port)
 			break;
 
 		case uaMD5:
-		case uaSCRAM:
+		case uaSCRAM256:
+		case uaSCRAM512:
 			status = CheckPWChallengeAuth(port, &logdetail);
 			break;
 
@@ -806,7 +808,8 @@ CheckPWChallengeAuth(Port *port, const char **logdetail)
 	char	   *shadow_pass;
 	PasswordType pwtype;
 
-	Assert(port->hba->auth_method == uaSCRAM ||
+	Assert(port->hba->auth_method == uaSCRAM256 ||
+		   port->hba->auth_method == uaSCRAM512 ||
 		   port->hba->auth_method == uaMD5);
 
 	/* First look up the user's password. */
@@ -828,9 +831,9 @@ CheckPWChallengeAuth(Port *port, const char **logdetail)
 
 	/*
 	 * If 'md5' authentication is allowed, decide whether to perform 'md5' or
-	 * 'scram-sha-256' authentication based on the type of password the user
-	 * has.  If it's an MD5 hash, we must do MD5 authentication, and if it's a
-	 * SCRAM secret, we must do SCRAM authentication.
+	 * 'scram-sha-{256,512}' authentication based on the type of password the
+	 * user has.  If it's an MD5 hash, we must do MD5 authentication, and if
+	 * it's a SCRAM secret, we must do SCRAM authentication.
 	 *
 	 * If MD5 authentication is not allowed, always use SCRAM.  If the user
 	 * had an MD5 password, CheckSASLAuth() with the SCRAM mechanism will
