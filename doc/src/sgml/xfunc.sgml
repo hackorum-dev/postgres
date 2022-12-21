@@ -3063,6 +3063,35 @@ TypeFuncClass get_call_result_type(FunctionCallInfo fcinfo,
      cannot accept type record</quote>.)
     </para>
 
+    <para>
+     Another way to setup <structname>TupleDesc</structname> is to use the
+     following functions:
+<programlisting>
+TupleDesc CreateTemplateTupleDesc(int natts);
+void TupleDescInitEntry(TupleDesc desc,
+                        AttrNumber attributeNumber,
+                        const char *attributeName,
+                        Oid oidtypeid,
+                        int32 typmod,
+                        int attdim);
+TupleDesc BlessTupleDesc(TupleDesc tupdesc);
+</programlisting>
+    For example:
+<programlisting>
+    /*
+     * Construct a tuple descriptor for the result row.  The number of output
+     * columns, column names and types must match the function's pg_proc entry
+     * or function's definition.
+     */
+    tupdesc = CreateTemplateTupleDesc(4);
+    TupleDescInitEntry(tupdesc, (AttrNumber) 1, "foo", INT4OID, -1, 0);
+    TupleDescInitEntry(tupdesc, (AttrNumber) 2, "bar", BOOLOID, -1, 0);
+    TupleDescInitEntry(tupdesc, (AttrNumber) 3, "baz", TEXTOID, -1, 0);
+    TupleDescInitEntry(tupdesc, (AttrNumber) 4, "qux", TIMESTAMPTZOID, -1, 0);
+    tupdesc = BlessTupleDesc(tupdesc);
+</programlisting>
+    </para>
+
     <tip>
      <para>
       <function>get_call_result_type</function> can resolve the actual type of a
@@ -3072,6 +3101,21 @@ TypeFuncClass get_call_result_type(FunctionCallInfo fcinfo,
       returning polymorphic scalars.
      </para>
     </tip>
+
+    <note>
+     <para>
+        <function>get_call_result_type</function> is relatively expensive
+        as it has to look up system catalogs and do other things to setup
+        <structname>TupleDesc</structname>. While it is recommended
+        in most of the cases, remember to consider setting up
+        <structname>TupleDesc</structname> with
+        <function>CreateTemplateTupleDesc</function>,
+        <function>TupleDescInitEntry</function> and
+        <function>BlessTupleDesc</function> as shown above, if the function
+        returns set or the function is possible used repeatedly
+        (monitoring purposes, for instance).
+     </para>
+    </note>
 
     <note>
      <para>
