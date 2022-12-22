@@ -209,8 +209,6 @@ index_beginscan(Relation heapRelation,
 {
 	IndexScanDesc scan;
 
-	Assert(snapshot != InvalidSnapshot);
-
 	scan = index_beginscan_internal(indexRelation, nkeys, norderbys, snapshot, NULL, false);
 
 	/*
@@ -239,8 +237,6 @@ index_beginscan_bitmap(Relation indexRelation,
 {
 	IndexScanDesc scan;
 
-	Assert(snapshot != InvalidSnapshot);
-
 	scan = index_beginscan_internal(indexRelation, nkeys, 0, snapshot, NULL, false);
 
 	/*
@@ -264,6 +260,8 @@ index_beginscan_internal(Relation indexRelation,
 
 	RELATION_CHECKS;
 	CHECK_REL_PROCEDURE(ambeginscan);
+
+	Assert(snapshot != InvalidSnapshot);
 
 	if (!(indexRelation->rd_indam->ampredlocks))
 		PredicateLockRelation(indexRelation, snapshot);
@@ -406,8 +404,6 @@ Size
 index_parallelscan_estimate(Relation indexRelation, Snapshot snapshot)
 {
 	Size		nbytes;
-
-	Assert(snapshot != InvalidSnapshot);
 
 	RELATION_CHECKS;
 
