@@ -1007,6 +1007,17 @@ struct config_bool ConfigureNamesBool[] =
 		true,
 		NULL, NULL, NULL
 	},
+	
+	{
+		{"show_optimizer_log", PGC_USERSET, QUERY_TUNING_OTHER,
+			gettext_noop("Shows debugging logs from optimizer"),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&show_optimizer_log,
+		false,
+		NULL, NULL, NULL
+	},
 	{
 		/* Not for general use --- used by SET SESSION AUTHORIZATION */
 		{"is_superuser", PGC_INTERNAL, UNGROUPED,

@@ -28,9 +28,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/supportnodes.h"
-#ifdef OPTIMIZER_DEBUG
 #include "nodes/print.h"
-#endif
 #include "optimizer/appendinfo.h"
 #include "optimizer/clauses.h"
 #include "optimizer/cost.h"
@@ -65,6 +63,7 @@ bool		enable_geqo = false;	/* just in case GUC doesn't set it */
 int			geqo_threshold;
 int			min_parallel_table_scan_size;
 int			min_parallel_index_scan_size;
+bool		show_optimizer_log = false;
 
 /* Hook for plugins to get control in set_rel_pathlist() */
 set_rel_pathlist_hook_type set_rel_pathlist_hook = NULL;
@@ -564,9 +563,12 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	/* Now find the cheapest of the paths for this rel */
 	set_cheapest(rel);
 
-#ifdef OPTIMIZER_DEBUG
-	debug_print_rel(root, rel);
-#endif
+	if (show_optimizer_log)
+	{
+		debug_print_rel(root, rel);
+	}
+	
+
 }
 
 /*
@@ -3435,9 +3437,10 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 			/* Find and save the cheapest paths for this rel */
 			set_cheapest(rel);
 
-#ifdef OPTIMIZER_DEBUG
-			debug_print_rel(root, rel);
-#endif
+			if (show_optimizer_log)
+			{
+				debug_print_rel(root, rel);
+			}
 		}
 	}
 
@@ -4288,9 +4291,10 @@ generate_partitionwise_join_paths(PlannerInfo *root, RelOptInfo *rel)
 		if (IS_DUMMY_REL(child_rel))
 			continue;
 
-#ifdef OPTIMIZER_DEBUG
-		debug_print_rel(root, child_rel);
-#endif
+		if (show_optimizer_log)
+		{
+			debug_print_rel(root, child_rel);
+		}
 
 		live_children = lappend(live_children, child_rel);
 	}
@@ -4312,10 +4316,9 @@ generate_partitionwise_join_paths(PlannerInfo *root, RelOptInfo *rel)
  *			DEBUG SUPPORT
  *****************************************************************************/
 
-#ifdef OPTIMIZER_DEBUG
 
 static void
-print_relids(PlannerInfo *root, Relids relids)
+print_relids(PlannerInfo *root, Relids relids, StringInfoData *str)
 {
 	int			x;
 	bool		first = true;
@@ -4324,18 +4327,18 @@ print_relids(PlannerInfo *root, Relids relids)
 	while ((x = bms_next_member(relids, x)) >= 0)
 	{
 		if (!first)
-			printf(" ");
+			appendStringInfo(str, " ");
 		if (x < root->simple_rel_array_size &&
 			root->simple_rte_array[x])
-			printf("%s", root->simple_rte_array[x]->eref->aliasname);
+			appendStringInfo(str, "%s", root->simple_rte_array[x]->eref->aliasname);
 		else
-			printf("%d", x);
+			appendStringInfo(str, "%d", x);
 		first = false;
 	}
 }
 
 static void
-print_restrictclauses(PlannerInfo *root, List *clauses)
+print_restrictclauses(PlannerInfo *root, List *clauses, StringInfoData *str)
 {
 	ListCell   *l;
 
@@ -4343,14 +4346,14 @@ print_restrictclauses(PlannerInfo *root, List *clauses)
 	{
 		RestrictInfo *c = lfirst(l);
 
-		print_expr((Node *) c->clause, root->parse->rtable);
+		format_expr((Node *) c->clause, root->parse->rtable, str);
 		if (lnext(clauses, l))
-			printf(", ");
+			appendStringInfoString(str, ", ");
 	}
 }
 
 static void
-print_path(PlannerInfo *root, Path *path, int indent)
+print_path(PlannerInfo *root, Path *path, int indent, StringInfoData *str)
 {
 	const char *ptype;
 	bool		join = false;
@@ -4522,29 +4525,29 @@ print_path(PlannerInfo *root, Path *path, int indent)
 	}
 
 	for (i = 0; i < indent; i++)
-		printf("\t");
-	printf("%s", ptype);
+		appendStringInfoString(str, "\t");
+	appendStringInfoString(str, ptype);
 
 	if (path->parent)
 	{
-		printf("(");
-		print_relids(root, path->parent->relids);
-		printf(")");
+		appendStringInfoString(str, "(");
+		print_relids(root, path->parent->relids, str);
+		appendStringInfoString(str, ")");
 	}
 	if (path->param_info)
 	{
-		printf(" required_outer (");
-		print_relids(root, path->param_info->ppi_req_outer);
-		printf(")");
+		appendStringInfoString(str, " required_outer (");
+		print_relids(root, path->param_info->ppi_req_outer, str);
+		appendStringInfoString(str, ")");
 	}
-	printf(" rows=%.0f cost=%.2f..%.2f\n",
+	appendStringInfo(str, " rows=%.0f cost=%.2f..%.2f\n",
 		   path->rows, path->startup_cost, path->total_cost);
 
 	if (path->pathkeys)
 	{
 		for (i = 0; i < indent; i++)
-			printf("\t");
-		printf("  pathkeys: ");
+			appendStringInfoString(str, "\t");
+		appendStringInfoString(str, "  pathkeys: ");
 		print_pathkeys(path->pathkeys, root->parse->rtable);
 	}
 
@@ -4553,75 +4556,86 @@ print_path(PlannerInfo *root, Path *path, int indent)
 		JoinPath   *jp = (JoinPath *) path;
 
 		for (i = 0; i < indent; i++)
-			printf("\t");
-		printf("  clauses: ");
-		print_restrictclauses(root, jp->joinrestrictinfo);
-		printf("\n");
+			appendStringInfoString(str, "\t");
+		appendStringInfoString(str, "  clauses: ");
+		print_restrictclauses(root, jp->joinrestrictinfo, str);
+		appendStringInfoString(str, "\n");
 
 		if (IsA(path, MergePath))
 		{
 			MergePath  *mp = (MergePath *) path;
 
 			for (i = 0; i < indent; i++)
-				printf("\t");
-			printf("  sortouter=%d sortinner=%d materializeinner=%d\n",
+				appendStringInfoString(str, "\t");
+			appendStringInfo(str, "  sortouter=%d sortinner=%d materializeinner=%d\n",
 				   ((mp->outersortkeys) ? 1 : 0),
 				   ((mp->innersortkeys) ? 1 : 0),
 				   ((mp->materialize_inner) ? 1 : 0));
 		}
 
-		print_path(root, jp->outerjoinpath, indent + 1);
-		print_path(root, jp->innerjoinpath, indent + 1);
+		print_path(root, jp->outerjoinpath, indent + 1, str);
+		print_path(root, jp->innerjoinpath, indent + 1, str);
 	}
 
 	if (subpath)
-		print_path(root, subpath, indent + 1);
+		print_path(root, subpath, indent + 1, str);
+
 }
 
 void
 debug_print_rel(PlannerInfo *root, RelOptInfo *rel)
 {
 	ListCell   *l;
+	StringInfoData str;
+	initStringInfo(&str);
 
-	printf("RELOPTINFO (");
-	print_relids(root, rel->relids);
-	printf("): rows=%.0f width=%d\n", rel->rows, rel->reltarget->width);
+	appendStringInfo(&str, "RELOPTINFO (");
+	print_relids(root, rel->relids, &str);
+	appendStringInfo(&str, "): rows=%.0f width=%d\n", rel->rows, rel->reltarget->width);
 
 	if (rel->baserestrictinfo)
 	{
-		printf("\tbaserestrictinfo: ");
-		print_restrictclauses(root, rel->baserestrictinfo);
-		printf("\n");
+		appendStringInfo(&str, "\tbaserestrictinfo: ");
+		print_restrictclauses(root, rel->baserestrictinfo, &str);
+		appendStringInfo(&str, "\n");
 	}
 
 	if (rel->joininfo)
 	{
-		printf("\tjoininfo: ");
-		print_restrictclauses(root, rel->joininfo);
-		printf("\n");
+		appendStringInfo(&str, "\tjoininfo: ");
+		print_restrictclauses(root, rel->joininfo, &str);
+		appendStringInfo(&str, "\n");
 	}
 
-	printf("\tpath list:\n");
+	appendStringInfo(&str, "\tpath list:\n");
 	foreach(l, rel->pathlist)
-		print_path(root, lfirst(l), 1);
+		print_path(root, lfirst(l), 1, &str);
 	if (rel->cheapest_parameterized_paths)
 	{
-		printf("\n\tcheapest parameterized paths:\n");
+		appendStringInfo(&str, "\n\tcheapest parameterized paths:\n");
 		foreach(l, rel->cheapest_parameterized_paths)
-			print_path(root, lfirst(l), 1);
+			print_path(root, lfirst(l), 1, &str);
 	}
 	if (rel->cheapest_startup_path)
 	{
-		printf("\n\tcheapest startup path:\n");
-		print_path(root, rel->cheapest_startup_path, 1);
+		appendStringInfo(&str, "\n\tcheapest startup path:\n");
+		print_path(root, rel->cheapest_startup_path, 1, &str);
 	}
 	if (rel->cheapest_total_path)
 	{
-		printf("\n\tcheapest total path:\n");
-		print_path(root, rel->cheapest_total_path, 1);
+		appendStringInfo(&str, "\n\tcheapest total path:\n");
+		print_path(root, rel->cheapest_total_path, 1, &str);
 	}
-	printf("\n");
-	fflush(stdout);
+
+	/* remove trailing newline */
+	if (str.data[str.len - 1] == '\n')
+		str.data[--str.len] = '\0';
+
+	ereport(LOG,
+		   (errmsg_internal("Optimizer statistics"),
+			errdetail_internal("%s", str.data)));
+
+	pfree(str.data);
 }
 
-#endif							/* OPTIMIZER_DEBUG */
+						/* OPTIMIZER_DEBUG */

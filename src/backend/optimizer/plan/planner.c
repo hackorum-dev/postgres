@@ -38,9 +38,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
-#ifdef OPTIMIZER_DEBUG
 #include "nodes/print.h"
-#endif
 #include "nodes/supportnodes.h"
 #include "optimizer/appendinfo.h"
 #include "optimizer/clauses.h"
@@ -1143,10 +1141,11 @@ preprocess_expression(PlannerInfo *root, Node *expr, int kind)
 	{
 		expr = (Node *) canonicalize_qual((Expr *) expr, false);
 
-#ifdef OPTIMIZER_DEBUG
-		printf("After canonicalize_qual()\n");
-		pprint(expr);
-#endif
+		if (show_optimizer_log)
+		{
+			elog_node_display(LOG, "Result after canonicalize_qual", expr, true);
+		}
+
 	}
 
 	/*
