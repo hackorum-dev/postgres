@@ -255,7 +255,11 @@ extern bool XLogCheckpointNeeded(XLogSegNo new_segno);
 extern void SwitchIntoArchiveRecovery(XLogRecPtr EndRecPtr, TimeLineID replayTLI);
 extern void ReachedEndOfBackup(XLogRecPtr EndRecPtr, TimeLineID tli);
 extern void SetInstallXLogFileSegmentActive(void);
+
+#ifdef USE_ASSERT_CHECKING
 extern bool IsInstallXLogFileSegmentActive(void);
+#endif
+
 extern void XLogShutdownWalRcv(void);
 
 /*

@@ -8904,6 +8904,7 @@ SetInstallXLogFileSegmentActive(void)
 	LWLockRelease(ControlFileLock);
 }
 
+#ifdef USE_ASSERT_CHECKING
 bool
 IsInstallXLogFileSegmentActive(void)
 {
@@ -8915,6 +8916,7 @@ IsInstallXLogFileSegmentActive(void)
 
 	return result;
 }
+#endif
 
 /*
  * Update the WalWriterSleeping flag.
