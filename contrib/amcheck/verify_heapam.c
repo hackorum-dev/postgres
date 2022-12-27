@@ -2118,7 +2118,11 @@ get_xid_status(TransactionId xid, HeapCheckContext *ctx,
 
 	/* Quick check for special xids */
 	if (!TransactionIdIsValid(xid))
+	{
+		if (status != NULL)
+			*status = XID_COMMITTED;
 		return XID_INVALID;
+	}
 	else if (xid == BootstrapTransactionId || xid == FrozenTransactionId)
 	{
 		if (status != NULL)
