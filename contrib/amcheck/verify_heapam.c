@@ -212,7 +212,7 @@ static XidBoundsViolation check_mxid_in_range(MultiXactId mxid,
 											  HeapCheckContext *ctx);
 static XidBoundsViolation check_mxid_valid_in_rel(MultiXactId mxid,
 												  HeapCheckContext *ctx);
-static XidBoundsViolation get_xid_status(TransactionId xid,
+static inline XidBoundsViolation get_xid_status(TransactionId xid,
 										 HeapCheckContext *ctx,
 										 XidCommitStatus *status);
 
@@ -2114,7 +2114,7 @@ check_mxid_valid_in_rel(MultiXactId mxid, HeapCheckContext *ctx)
  * appears to be valid in this relation, the status argument will be set with
  * the commit status of the transaction ID.
  */
-static XidBoundsViolation
+static inline XidBoundsViolation
 get_xid_status(TransactionId xid, HeapCheckContext *ctx,
 			   XidCommitStatus *status)
 {
