@@ -584,6 +584,7 @@ handleCopyIn(PGconn *conn, FILE *copystream, bool isbinary, PGresult **res)
 		bool		copydone = false;
 		int			buflen;
 		bool		at_line_begin = true;
+		char	   *err;
 
 		/*
 		 * In text mode, we have to read the input one line at a time, so that
@@ -673,6 +674,12 @@ handleCopyIn(PGconn *conn, FILE *copystream, bool isbinary, PGresult **res)
 				if (conn && PQputCopyData(conn, buf, buflen) <= 0)
 				{
 					OK = false;
+					break;
+				}
+				err = PQerrorMessage(conn);
+				if (err && *err)
+				{
+					/* We got error from server backend. Stop processing. */
 					break;
 				}
 
