@@ -160,6 +160,19 @@ pqParseInput3(PGconn *conn)
 			if (pqGetErrorNotice3(conn, false))
 				return;
 		}
+		else if (conn->asyncStatus == PGASYNC_COPY_IN)
+		{
+			/*
+			 * Process and save error message during COPY. Client can check
+			 * this error via PQerrorMessage.
+			 */
+			if (id == 'E')
+			{
+				if (pqGetErrorNotice3(conn, true))
+					return;
+				break;
+			}
+		}
 		else if (conn->asyncStatus != PGASYNC_BUSY)
 		{
 			/* If not IDLE state, just wait ... */
