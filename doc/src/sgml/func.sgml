@@ -11209,7 +11209,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <returnvalue>boolean</returnvalue>
        </para>
        <para>
-        Do these objects overlap?  (One point in common makes this true.)
+        Do these objects overlap?  (One point in common does not count as overlap.)
         Available for <type>box</type>, <type>polygon</type>,
         <type>circle</type>.
        </para>

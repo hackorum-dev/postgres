@@ -570,10 +570,10 @@ box_overlap(PG_FUNCTION_ARGS)
 static bool
 box_ov(BOX *box1, BOX *box2)
 {
-	return (FPle(box1->low.x, box2->high.x) &&
-			FPle(box2->low.x, box1->high.x) &&
-			FPle(box1->low.y, box2->high.y) &&
-			FPle(box2->low.y, box1->high.y));
+	return (FPlt(box1->low.x, box2->high.x) &&
+			FPlt(box2->low.x, box1->high.x) &&
+			FPlt(box1->low.y, box2->high.y) &&
+			FPlt(box2->low.y, box1->high.y));
 }
 
 /*		box_left		-		is box1 strictly left of box2?
@@ -4765,7 +4765,7 @@ circle_overlap(PG_FUNCTION_ARGS)
 	CIRCLE	   *circle1 = PG_GETARG_CIRCLE_P(0);
 	CIRCLE	   *circle2 = PG_GETARG_CIRCLE_P(1);
 
-	PG_RETURN_BOOL(FPle(point_dt(&circle1->center, &circle2->center),
+	PG_RETURN_BOOL(FPlt(point_dt(&circle1->center, &circle2->center),
 						float8_pl(circle1->radius, circle2->radius)));
 }
 
