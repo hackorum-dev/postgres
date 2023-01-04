@@ -967,33 +967,12 @@ build_join_rel(PlannerInfo *root,
 		build_joinrel_partition_info(joinrel, outer_rel, inner_rel,
 									 restrictlist, sjinfo->jointype);
 
+	/*
+	 * Set estimates of the joinrel's size.
+	 */
 	if (!grouped)
-	{
-		/*
-		 * Set estimates of the joinrel's size.
-		 */
 		set_joinrel_size_estimates(root, joinrel, outer_rel, inner_rel,
 								   sjinfo, restrictlist);
-
-		/*
-		 * Set the consider_parallel flag if this joinrel could potentially be
-		 * scanned within a parallel worker.  If this flag is false for either
-		 * inner_rel or outer_rel, then it must be false for the joinrel also.
-		 * Even if both are true, there might be parallel-restricted
-		 * expressions in the targetlist or quals.
-		 *
-		 * Note that if there are more than two rels in this relation, they
-		 * could be divided between inner_rel and outer_rel in any arbitrary
-		 * way.  We assume this doesn't matter, because we should hit all the
-		 * same baserels and joinclauses while building up to this joinrel no
-		 * matter which we take; therefore, we should make the same decision
-		 * here however we get here.
-		 */
-		if (inner_rel->consider_parallel && outer_rel->consider_parallel &&
-			is_parallel_safe(root, (Node *) restrictlist) &&
-			is_parallel_safe(root, (Node *) joinrel->reltarget->exprs))
-			joinrel->consider_parallel = true;
-	}
 	else
 	{
 		/*
@@ -1008,6 +987,25 @@ build_join_rel(PlannerInfo *root,
 		joinrel->rows = estimate_num_groups(root, agg_info->group_exprs,
 											agg_info->input_rows, NULL, NULL);
 	}
+
+	/*
+	 * Set the consider_parallel flag if this joinrel could potentially be
+	 * scanned within a parallel worker.  If this flag is false for either
+	 * inner_rel or outer_rel, then it must be false for the joinrel also.
+	 * Even if both are true, there might be parallel-restricted expressions
+	 * in the targetlist or quals.
+	 *
+	 * Note that if there are more than two rels in this relation, they could
+	 * be divided between inner_rel and outer_rel in any arbitrary way.  We
+	 * assume this doesn't matter, because we should hit all the same baserels
+	 * and joinclauses while building up to this joinrel no matter which we
+	 * take; therefore, we should make the same decision here however we get
+	 * here.
+	 */
+	if (inner_rel->consider_parallel && outer_rel->consider_parallel &&
+		is_parallel_safe(root, (Node *) restrictlist) &&
+		is_parallel_safe(root, (Node *) joinrel->reltarget->exprs))
+		joinrel->consider_parallel = true;
 
 	/* Add the joinrel to the PlannerInfo. */
 	if (!grouped)

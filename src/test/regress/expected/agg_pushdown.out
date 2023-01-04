@@ -214,3 +214,159 @@ c2.parent = p.i WHERE c1.j = c2.k GROUP BY p.i;
          ->  Index Only Scan using agg_pushdown_parent_pkey on agg_pushdown_parent p
 (13 rows)
 
+-- Most of the tests above with parallel query processing enforced.
+SET min_parallel_index_scan_size = 0;
+SET min_parallel_table_scan_size = 0;
+SET parallel_setup_cost = 0;
+SET parallel_tuple_cost = 0;
+-- Partially aggregate a single relation.
+--
+-- Nestloop join.
+SET enable_nestloop TO on;
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO off;
+EXPLAIN (COSTS off)
+SELECT p.x, avg(c1.v) FROM agg_pushdown_parent AS p JOIN agg_pushdown_child1
+AS c1 ON c1.parent = p.i GROUP BY p.i;
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate
+   Group Key: p.i
+   ->  Gather Merge
+         Workers Planned: 1
+         ->  Nested Loop
+               ->  Partial GroupAggregate
+                     Group Key: c1.parent
+                     ->  Parallel Index Scan using agg_pushdown_child1_parent_idx on agg_pushdown_child1 c1
+               ->  Index Scan using agg_pushdown_parent_pkey on agg_pushdown_parent p
+                     Index Cond: (i = c1.parent)
+(10 rows)
+
+-- Hash join.
+SET enable_nestloop TO off;
+SET enable_hashjoin TO on;
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v) FROM agg_pushdown_parent AS p JOIN agg_pushdown_child1
+AS c1 ON c1.parent = p.i GROUP BY p.i;
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate
+   Group Key: p.i
+   ->  Sort
+         Sort Key: p.i
+         ->  Gather
+               Workers Planned: 1
+               ->  Parallel Hash Join
+                     Hash Cond: (c1.parent = p.i)
+                     ->  Partial GroupAggregate
+                           Group Key: c1.parent
+                           ->  Parallel Index Scan using agg_pushdown_child1_parent_idx on agg_pushdown_child1 c1
+                     ->  Parallel Hash
+                           ->  Parallel Index Only Scan using agg_pushdown_parent_pkey on agg_pushdown_parent p
+(13 rows)
+
+-- Merge join.
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO on;
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v) FROM agg_pushdown_parent AS p JOIN agg_pushdown_child1
+AS c1 ON c1.parent = p.i GROUP BY p.i;
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate
+   Group Key: p.i
+   ->  Gather Merge
+         Workers Planned: 1
+         ->  Merge Join
+               Merge Cond: (c1.parent = p.i)
+               ->  Partial GroupAggregate
+                     Group Key: c1.parent
+                     ->  Parallel Index Scan using agg_pushdown_child1_parent_idx on agg_pushdown_child1 c1
+               ->  Index Only Scan using agg_pushdown_parent_pkey on agg_pushdown_parent p
+(10 rows)
+
+SET enable_nestloop TO on;
+SET enable_hashjoin TO on;
+-- Perform nestloop join between agg_pushdown_child1 and agg_pushdown_child2
+-- and aggregate the result.
+SET enable_nestloop TO on;
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO off;
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v + c2.v) FROM agg_pushdown_parent AS p JOIN
+agg_pushdown_child1 AS c1 ON c1.parent = p.i JOIN agg_pushdown_child2 AS c2 ON
+c2.parent = p.i WHERE c1.j = c2.k GROUP BY p.i;
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate
+   Group Key: p.i
+   ->  Gather Merge
+         Workers Planned: 2
+         ->  Sort
+               Sort Key: p.i
+               ->  Nested Loop
+                     ->  Partial HashAggregate
+                           Group Key: c1.parent
+                           ->  Nested Loop
+                                 ->  Parallel Index Scan using agg_pushdown_child1_pkey on agg_pushdown_child1 c1
+                                 ->  Index Scan using agg_pushdown_child2_pkey on agg_pushdown_child2 c2
+                                       Index Cond: ((k = c1.j) AND (parent = c1.parent))
+                     ->  Index Only Scan using agg_pushdown_parent_pkey on agg_pushdown_parent p
+                           Index Cond: (i = c1.parent)
+(15 rows)
+
+-- The same for hash join.
+SET enable_nestloop TO off;
+SET enable_hashjoin TO on;
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v + c2.v) FROM agg_pushdown_parent AS p JOIN
+agg_pushdown_child1 AS c1 ON c1.parent = p.i JOIN agg_pushdown_child2 AS c2 ON
+c2.parent = p.i WHERE c1.j = c2.k GROUP BY p.i;
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate
+   Group Key: p.i
+   ->  Gather Merge
+         Workers Planned: 1
+         ->  Sort
+               Sort Key: p.i
+               ->  Parallel Hash Join
+                     Hash Cond: (c1.parent = p.i)
+                     ->  Partial HashAggregate
+                           Group Key: c1.parent
+                           ->  Parallel Hash Join
+                                 Hash Cond: ((c1.parent = c2.parent) AND (c1.j = c2.k))
+                                 ->  Parallel Index Scan using agg_pushdown_child1_parent_idx on agg_pushdown_child1 c1
+                                 ->  Parallel Hash
+                                       ->  Parallel Index Scan using agg_pushdown_child2_pkey on agg_pushdown_child2 c2
+                     ->  Parallel Hash
+                           ->  Parallel Index Only Scan using agg_pushdown_parent_pkey on agg_pushdown_parent p
+(17 rows)
+
+-- The same for merge join.
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO on;
+SET enable_seqscan TO off;
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v + c2.v) FROM agg_pushdown_parent AS p JOIN
+agg_pushdown_child1 AS c1 ON c1.parent = p.i JOIN agg_pushdown_child2 AS c2 ON
+c2.parent = p.i WHERE c1.j = c2.k GROUP BY p.i;
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate
+   Group Key: p.i
+   ->  Gather Merge
+         Workers Planned: 2
+         ->  Merge Join
+               Merge Cond: (c1.parent = p.i)
+               ->  Sort
+                     Sort Key: c1.parent
+                     ->  Partial HashAggregate
+                           Group Key: c1.parent
+                           ->  Merge Join
+                                 Merge Cond: ((c1.j = c2.k) AND (c1.parent = c2.parent))
+                                 ->  Parallel Index Scan using agg_pushdown_child1_pkey on agg_pushdown_child1 c1
+                                 ->  Index Scan using agg_pushdown_child2_pkey on agg_pushdown_child2 c2
+               ->  Index Only Scan using agg_pushdown_parent_pkey on agg_pushdown_parent p
+(15 rows)
+

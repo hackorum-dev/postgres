@@ -113,3 +113,68 @@ EXPLAIN (COSTS off)
 SELECT p.i, avg(c1.v + c2.v) FROM agg_pushdown_parent AS p JOIN
 agg_pushdown_child1 AS c1 ON c1.parent = p.i JOIN agg_pushdown_child2 AS c2 ON
 c2.parent = p.i WHERE c1.j = c2.k GROUP BY p.i;
+
+-- Most of the tests above with parallel query processing enforced.
+SET min_parallel_index_scan_size = 0;
+SET min_parallel_table_scan_size = 0;
+SET parallel_setup_cost = 0;
+SET parallel_tuple_cost = 0;
+
+-- Partially aggregate a single relation.
+--
+-- Nestloop join.
+SET enable_nestloop TO on;
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO off;
+EXPLAIN (COSTS off)
+SELECT p.x, avg(c1.v) FROM agg_pushdown_parent AS p JOIN agg_pushdown_child1
+AS c1 ON c1.parent = p.i GROUP BY p.i;
+
+-- Hash join.
+SET enable_nestloop TO off;
+SET enable_hashjoin TO on;
+
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v) FROM agg_pushdown_parent AS p JOIN agg_pushdown_child1
+AS c1 ON c1.parent = p.i GROUP BY p.i;
+
+-- Merge join.
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO on;
+
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v) FROM agg_pushdown_parent AS p JOIN agg_pushdown_child1
+AS c1 ON c1.parent = p.i GROUP BY p.i;
+
+SET enable_nestloop TO on;
+SET enable_hashjoin TO on;
+
+-- Perform nestloop join between agg_pushdown_child1 and agg_pushdown_child2
+-- and aggregate the result.
+SET enable_nestloop TO on;
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO off;
+
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v + c2.v) FROM agg_pushdown_parent AS p JOIN
+agg_pushdown_child1 AS c1 ON c1.parent = p.i JOIN agg_pushdown_child2 AS c2 ON
+c2.parent = p.i WHERE c1.j = c2.k GROUP BY p.i;
+
+-- The same for hash join.
+SET enable_nestloop TO off;
+SET enable_hashjoin TO on;
+
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v + c2.v) FROM agg_pushdown_parent AS p JOIN
+agg_pushdown_child1 AS c1 ON c1.parent = p.i JOIN agg_pushdown_child2 AS c2 ON
+c2.parent = p.i WHERE c1.j = c2.k GROUP BY p.i;
+
+-- The same for merge join.
+SET enable_hashjoin TO off;
+SET enable_mergejoin TO on;
+SET enable_seqscan TO off;
+
+EXPLAIN (COSTS off)
+SELECT p.i, avg(c1.v + c2.v) FROM agg_pushdown_parent AS p JOIN
+agg_pushdown_child1 AS c1 ON c1.parent = p.i JOIN agg_pushdown_child2 AS c2 ON
+c2.parent = p.i WHERE c1.j = c2.k GROUP BY p.i;

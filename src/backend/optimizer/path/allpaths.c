@@ -130,7 +130,7 @@ static void set_worktable_pathlist(PlannerInfo *root, RelOptInfo *rel,
 								   RangeTblEntry *rte);
 static void add_grouped_path(PlannerInfo *root, RelOptInfo *rel,
 							 Path *subpath, AggStrategy aggstrategy,
-							 RelAggInfo *agg_info);
+							 RelAggInfo *agg_info, bool partial);
 static RelOptInfo *make_rel_from_joinlist(PlannerInfo *root, List *joinlist);
 static bool subquery_is_pushdown_safe(Query *subquery, Query *topquery,
 									  pushdown_safety_info *safetyInfo);
@@ -3337,6 +3337,7 @@ generate_grouping_paths(PlannerInfo *root, RelOptInfo *rel_grouped,
 						RelOptInfo *rel_plain, RelAggInfo *agg_info)
 {
 	ListCell   *lc;
+	Path	   *path;
 
 	if (IS_DUMMY_REL(rel_plain))
 	{
@@ -3346,7 +3347,7 @@ generate_grouping_paths(PlannerInfo *root, RelOptInfo *rel_grouped,
 
 	foreach(lc, rel_plain->pathlist)
 	{
-		Path	   *path = (Path *) lfirst(lc);
+		path = (Path *) lfirst(lc);
 
 		/*
 		 * Since the path originates from the non-grouped relation which is
@@ -3360,7 +3361,8 @@ generate_grouping_paths(PlannerInfo *root, RelOptInfo *rel_grouped,
 		 * add_grouped_path() will check whether the path has suitable
 		 * pathkeys.
 		 */
-		add_grouped_path(root, rel_grouped, path, AGG_SORTED, agg_info);
+		add_grouped_path(root, rel_grouped, path, AGG_SORTED, agg_info,
+						 false);
 
 		/*
 		 * Repeated creation of hash table (for new parameter values) should
@@ -3368,12 +3370,38 @@ generate_grouping_paths(PlannerInfo *root, RelOptInfo *rel_grouped,
 		 * efficiency.
 		 */
 		if (path->param_info == NULL)
-			add_grouped_path(root, rel_grouped, path, AGG_HASHED, agg_info);
+			add_grouped_path(root, rel_grouped, path, AGG_HASHED, agg_info,
+							 false);
 	}
 
 	/* Could not generate any grouped paths? */
 	if (rel_grouped->pathlist == NIL)
+	{
 		mark_dummy_rel(rel_grouped);
+		return;
+	}
+
+	/*
+	 * Almost the same for partial paths.
+	 *
+	 * The difference is that parameterized paths are never created, see
+	 * add_partial_path() for explanation.
+	 */
+	foreach(lc, rel_plain->partial_pathlist)
+	{
+		path = (Path *) lfirst(lc);
+
+		if (path->param_info != NULL)
+			continue;
+
+		path = (Path *) create_projection_path(root, rel_grouped, path,
+											   agg_info->agg_input);
+
+		add_grouped_path(root, rel_grouped, path, AGG_SORTED, agg_info,
+						 true);
+		add_grouped_path(root, rel_grouped, path, AGG_HASHED, agg_info,
+						 true);
+	}
 }
 
 /*
@@ -3381,7 +3409,8 @@ generate_grouping_paths(PlannerInfo *root, RelOptInfo *rel_grouped,
  */
 static void
 add_grouped_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
-				 AggStrategy aggstrategy, RelAggInfo *agg_info)
+				 AggStrategy aggstrategy, RelAggInfo *agg_info,
+				 bool partial)
 {
 	Path	   *agg_path;
 
@@ -3404,7 +3433,10 @@ add_grouped_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		return;
 
 	/* Add the grouped path to the list of grouped base paths. */
-	add_path(rel, (Path *) agg_path);
+	if (!partial)
+		add_path(rel, (Path *) agg_path);
+	else
+		add_partial_path(rel, (Path *) agg_path);
 }
 
 /*
