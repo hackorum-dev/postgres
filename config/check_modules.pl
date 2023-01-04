@@ -11,7 +11,7 @@ use strict;
 use warnings FATAL => 'all';
 use Config;
 
-use IPC::Run 0.79;
+use IPC::Run3 0.04;
 
 # Test::More and Time::HiRes are supposed to be part of core Perl,
 # but some distros omit them in a minimal installation.
@@ -19,7 +19,7 @@ use Test::More 0.98;
 use Time::HiRes 1.52;
 
 # While here, we might as well report exactly what versions we found.
-diag("IPC::Run::VERSION: $IPC::Run::VERSION");
+diag("IPC::Run3::VERSION: $IPC::Run3::VERSION");
 diag("Test::More::VERSION: $Test::More::VERSION");
 diag("Time::HiRes::VERSION: $Time::HiRes::VERSION");
 
