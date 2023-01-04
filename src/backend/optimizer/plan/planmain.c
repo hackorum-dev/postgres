@@ -65,8 +65,7 @@ query_planner(PlannerInfo *root,
 	 * NOTE: append_rel_list was set up by subquery_planner, so do not touch
 	 * here.
 	 */
-	root->join_rel_list = NIL;
-	root->join_rel_hash = NULL;
+	root->join_rel_list = makeNode(RelInfoList);
 	root->join_rel_level = NULL;
 	root->join_cur_level = 0;
 	root->canon_pathkeys = NIL;
