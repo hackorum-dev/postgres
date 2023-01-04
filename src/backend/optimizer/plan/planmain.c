@@ -66,6 +66,7 @@ query_planner(PlannerInfo *root,
 	 * here.
 	 */
 	root->join_rel_list = makeNode(RelInfoList);
+	root->agg_info_list = makeNode(RelInfoList);
 	root->join_rel_level = NULL;
 	root->join_cur_level = 0;
 	root->canon_pathkeys = NIL;
@@ -76,6 +77,7 @@ query_planner(PlannerInfo *root,
 	root->placeholder_list = NIL;
 	root->placeholder_array = NULL;
 	root->placeholder_array_size = 0;
+	root->grouped_var_list = NIL;
 	root->fkey_list = NIL;
 	root->initial_rels = NIL;
 
@@ -253,6 +255,16 @@ query_planner(PlannerInfo *root,
 	 * restriction OR clauses from.
 	 */
 	extract_restriction_or_clauses(root);
+
+	/*
+	 * If the query result can be grouped, check if any grouping can be
+	 * performed below the top-level join. If so, setup
+	 * root->grouped_var_list.
+	 *
+	 * The base relations should be fully initialized now, so that we have
+	 * enough info to decide whether grouping is possible.
+	 */
+	setup_aggregate_pushdown(root);
 
 	/*
 	 * Now expand appendrels by adding "otherrels" for their children.  We
