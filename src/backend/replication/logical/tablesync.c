@@ -817,13 +817,15 @@ fetch_remote_table_info(char *nspname, char *relname,
 		resetStringInfo(&cmd);
 		appendStringInfo(&cmd,
 						 "SELECT DISTINCT"
-						 "  (CASE WHEN (array_length(gpt.attrs, 1) = c.relnatts)"
+						 "  (CASE WHEN (array_length(gpt.attrs, 1) = "
+						 "   (SELECT count(*) FROM pg_attribute a"
+						 "    WHERE a.attrelid = %u AND a.attnum > 0 AND NOT a.attisdropped))"
 						 "   THEN NULL ELSE gpt.attrs END)"
 						 "  FROM pg_publication p,"
-						 "  LATERAL pg_get_publication_tables(p.pubname) gpt,"
-						 "  pg_class c"
-						 " WHERE gpt.relid = %u AND c.oid = gpt.relid"
+						 "  LATERAL pg_get_publication_tables(p.pubname) gpt"
+						 " WHERE gpt.relid = %u"
 						 "   AND p.pubname IN ( %s )",
+						 lrel->remoteid,
 						 lrel->remoteid,
 						 pub_names.data);
 

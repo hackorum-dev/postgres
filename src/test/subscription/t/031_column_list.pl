@@ -1184,6 +1184,40 @@ $result = $node_publisher->safe_psql(
 is( $result, qq(t
 t), 'check the number of columns in the old tuple');
 
+# TEST: With a table included in multiple publications with same column lists,
+# it works fine. Dropped columns are not considered.
+$node_publisher->safe_psql(
+	'postgres', qq(
+	CREATE TABLE test_mix_4 (a int PRIMARY KEY, b int, c int);
+	ALTER TABLE test_mix_4 DROP COLUMN c;
+	CREATE PUBLICATION pub_mix_7 FOR TABLE test_mix_4 (a, b);
+	CREATE PUBLICATION pub_mix_8 FOR TABLE test_mix_4;
+));
+
+$node_subscriber->safe_psql(
+	'postgres', qq(
+	DROP SUBSCRIPTION sub1;
+	CREATE TABLE test_mix_4 (a int PRIMARY KEY, b int, c int);
+));
+
+$node_subscriber->safe_psql(
+	'postgres', qq(
+	CREATE SUBSCRIPTION sub1 CONNECTION '$publisher_connstr' PUBLICATION pub_mix_7, pub_mix_8;
+));
+
+$node_subscriber->wait_for_subscription_sync;
+
+$node_publisher->safe_psql(
+	'postgres', qq(
+	INSERT INTO test_mix_4 VALUES (1, 2);
+));
+
+$node_publisher->wait_for_catchup('sub1');
+
+# test_mix_4: only (a,b) is replicated
+$result =
+  $node_subscriber->safe_psql('postgres', "SELECT * FROM test_mix_4");
+is( $result, qq(1|2|), 'insert on test_mix_4 is replicated after dropping column c');
 
 # TEST: With a table included in multiple publications with different column
 # lists, we should catch the error when creating the subscription.
