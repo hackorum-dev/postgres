@@ -47,7 +47,7 @@ PostgreSQL documentation
    <literal>CREATEROLE</literal> privilege.
    Being a superuser implies the ability to bypass all access permission
    checks within the database, so superuser access should not be granted
-   lightly. <literal>CREATEROLE</literal> also conveys
+   lightly. <literal>CREATEROLE</literal> also confers
    <link linkend='role-creation'>very extensive privileges</link>.
   </para>
 
