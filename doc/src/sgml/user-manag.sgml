@@ -207,10 +207,10 @@ CREATE USER <replaceable>name</replaceable>;
         <literal>SECURITY LABEL</literal> commands.
        </para>
        <para>
-        However, <literal>CREATEROLE</literal> does not convey the ability to
-        create <literal>SUPERUSER</literal> roles, nor does it convey any
+        However, <literal>CREATEROLE</literal> does not confer the ability to
+        create <literal>SUPERUSER</literal> roles, nor does it confer any
         power over <literal>SUPERUSER</literal> roles that already exist.
-        Furthermore, <literal>CREATEROLE</literal> does not convey the power
+        Furthermore, <literal>CREATEROLE</literal> does not confer the power
         to create <literal>REPLICATION</literal> users, nor the ability to
         grant or revoke the <literal>REPLICATION</literal> privilege, nor the
         ability to modify the role properties of such users.  However, it does
