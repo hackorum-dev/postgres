@@ -293,11 +293,6 @@ static bool backupEndRequired = false;
  */
 bool		reachedConsistency = false;
 
-/* Buffers dedicated to consistency checks of size BLCKSZ */
-static char *replay_image_masked = NULL;
-static char *primary_image_masked = NULL;
-
-
 /*
  * Shared-memory state for WAL recovery.
  */
@@ -579,16 +574,6 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 
 	/* Create a WAL prefetcher. */
 	xlogprefetcher = XLogPrefetcherAllocate(xlogreader);
-
-	/*
-	 * Allocate two page buffers dedicated to WAL consistency checks.  We do
-	 * it this way, rather than just making static arrays, for two reasons:
-	 * (1) no need to waste the storage in most instantiations of the backend;
-	 * (2) a static char array isn't guaranteed to have any particular
-	 * alignment, whereas palloc() will provide MAXALIGN'd storage.
-	 */
-	replay_image_masked = (char *) palloc(BLCKSZ);
-	primary_image_masked = (char *) palloc(BLCKSZ);
 
 	if (read_backup_label(&CheckPointLoc, &CheckPointTLI, &backupEndRequired,
 						  &backupFromStandby))
@@ -2343,6 +2328,8 @@ verifyBackupPageConsistency(XLogReaderState *record)
 	ForkNumber	forknum;
 	BlockNumber blkno;
 	int			block_id;
+	PGAlignedBlock	primary_image_masked;
+	PGAlignedBlock	replay_image_masked;
 
 	/* Records with no backup blocks have no need for consistency checks. */
 	if (!XLogRecHasAnyBlockRefs(record))
@@ -2394,7 +2381,7 @@ verifyBackupPageConsistency(XLogReaderState *record)
 		 * Take a copy of the local page where WAL has been applied to have a
 		 * comparison base before masking it...
 		 */
-		memcpy(replay_image_masked, page, BLCKSZ);
+		memcpy(replay_image_masked.data, page, BLCKSZ);
 
 		/* No need for this page anymore now that a copy is in. */
 		UnlockReleaseBuffer(buf);
@@ -2404,7 +2391,7 @@ verifyBackupPageConsistency(XLogReaderState *record)
 		 * expect contents to match.  This can happen if recovery is
 		 * restarted.
 		 */
-		if (PageGetLSN(replay_image_masked) > record->EndRecPtr)
+		if (PageGetLSN(replay_image_masked.data) > record->EndRecPtr)
 			continue;
 
 		/*
@@ -2413,7 +2400,7 @@ verifyBackupPageConsistency(XLogReaderState *record)
 		 * page here, a local buffer is fine to hold its contents and a mask
 		 * can be directly applied on it.
 		 */
-		if (!RestoreBlockImage(record, block_id, primary_image_masked))
+		if (!RestoreBlockImage(record, block_id, primary_image_masked.data))
 			ereport(ERROR,
 					(errcode(ERRCODE_INTERNAL_ERROR),
 					 errmsg_internal("%s", record->errormsg_buf)));
@@ -2424,12 +2411,13 @@ verifyBackupPageConsistency(XLogReaderState *record)
 		 */
 		if (rmgr.rm_mask != NULL)
 		{
-			rmgr.rm_mask(replay_image_masked, blkno);
-			rmgr.rm_mask(primary_image_masked, blkno);
+			rmgr.rm_mask(replay_image_masked.data, blkno);
+			rmgr.rm_mask(primary_image_masked.data, blkno);
 		}
 
 		/* Time to compare the primary and replay images. */
-		if (memcmp(replay_image_masked, primary_image_masked, BLCKSZ) != 0)
+		if (memcmp(replay_image_masked.data, primary_image_masked.data,
+				   BLCKSZ) != 0)
 		{
 			elog(FATAL,
 				 "inconsistent page found, rel %u/%u/%u, forknum %u, blkno %u",
