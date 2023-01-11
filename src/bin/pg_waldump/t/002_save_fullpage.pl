@@ -10,6 +10,19 @@ use PostgreSQL::Test::Utils;
 use Test::More;
 
 my ($blocksize, $walfile_name);
+my $node = PostgreSQL::Test::Cluster->new('main');
+my $pgdata = $node->data_dir;
+
+# Returns the filesystem path for the named relation.
+sub relation_filepath
+{
+    my ($relname) = @_;
+
+    my $rel    = $node->safe_psql('postgres',
+        qq(SELECT pg_relation_filepath('$relname')));
+    die "path not found for relation $relname" unless defined $rel;
+    return "$pgdata/$rel";
+}
 
 # Function to extract the LSN from the given block structure
 sub get_block_lsn
@@ -29,7 +42,6 @@ sub get_block_lsn
 	return ($lsn_hi, $lsn_lo);
 }
 
-my $node = PostgreSQL::Test::Cluster->new('main');
 $node->init;
 $node->append_conf(
 	'postgresql.conf', q{
@@ -45,7 +57,8 @@ $node->safe_psql(
 CREATE TABLE test_table AS SELECT generate_series(1,100) a;
 -- Force FPWs on the next writes.
 CHECKPOINT;
-UPDATE test_table SET a = a + 1;
+UPDATE test_table SET a = a + 1 where a = 1;
+CHECKPOINT;
 ");
 
 ($walfile_name, $blocksize) = split '\|' => $node->safe_psql('postgres',
@@ -111,5 +124,63 @@ for my $fullpath (glob "$tmp_folder/raw/*")
 }
 
 ok($file_count > 0, 'verify that at least one block has been saved');
+
+# Check that the pg_waldump saves FPI file.
+my @fpi_files = glob "$tmp_folder/raw/*_main";
+is(scalar(@fpi_files), 1, 'one FPI file was created');
+
+# Now extract the block from the relation file and compare with the FPI
+my $relpath = relation_filepath('test_table');
+my $blk;
+my $blkfpi;
+
+my $frel;
+my $blkfrel;
+my $blkfpifh;
+my $blkfpinolsn;
+
+open($frel, '+<', $relpath)
+  or BAIL_OUT("open failed: $!");
+
+open($blkfrel, '+>', "$tmp_folder/test_table.blk0")
+  or BAIL_OUT("open failed: $!");
+
+open($blkfpifh, '+<', $fpi_files[0])
+  or BAIL_OUT("open failed: $!");
+
+open($blkfpinolsn, '+>', "$tmp_folder/fpinolsn")
+  or BAIL_OUT("open failed: $!");
+
+binmode $frel;
+binmode $blkfrel;
+binmode $blkfpifh;
+binmode $blkfpinolsn;
+
+# Extract the binary data without the LSN from the relation's block
+sysseek($frel, 8, 0); #bypass the LSN
+sysread($frel, $blk, 8184) or die "sysread failed: $!";
+syswrite($blkfrel, $blk) or die "syswrite failed: $!";
+
+# Extract the binary data without the LSN from the FPI
+sysseek($blkfpifh, 8, 0); #bypass the LSN
+sysread($blkfpifh, $blkfpi, 8184) or die "sysread failed: $!";
+syswrite($blkfpinolsn, $blkfpi) or die "syswrite failed: $!";
+
+close($frel)
+  or BAIL_OUT("close failed: $!");
+
+close($blkfrel)
+  or BAIL_OUT("close failed: $!");
+
+close($blkfpifh)
+  or BAIL_OUT("close failed: $!");
+
+close($blkfpinolsn)
+  or BAIL_OUT("close failed: $!");
+
+# Compare the blocks (LSN excluded)
+command_ok(
+    [ 'diff', $tmp_folder . '/fpinolsn', $tmp_folder . '/test_table.blk0' ],
+    'compare both pages');
 
 done_testing();
