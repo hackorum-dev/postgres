@@ -85,6 +85,7 @@ static BTVacuumPosting btreevacuumposting(BTVacState *vstate,
 										  OffsetNumber updatedoffset,
 										  int *nremaining);
 
+#include "nbtree_spec.c"
 
 /*
  * Btree handler function: return IndexAmRoutine with access method parameters
@@ -163,33 +164,6 @@ btbuildempty(Relation index)
 	smgr_bulk_write(bulkstate, BTREE_METAPAGE, metabuf, true);
 
 	smgr_bulk_finish(bulkstate);
-}
-
-/*
- *	btinsert() -- insert an index tuple into a btree.
- *
- *		Descend the tree recursively, find the appropriate location for our
- *		new tuple, and put it there.
- */
-bool
-btinsert(Relation rel, Datum *values, bool *isnull,
-		 ItemPointer ht_ctid, Relation heapRel,
-		 IndexUniqueCheck checkUnique,
-		 bool indexUnchanged,
-		 IndexInfo *indexInfo)
-{
-	bool		result;
-	IndexTuple	itup;
-
-	/* generate an index tuple */
-	itup = index_form_tuple(RelationGetDescr(rel), values, isnull);
-	itup->t_tid = *ht_ctid;
-
-	result = _bt_doinsert(rel, itup, checkUnique, indexUnchanged, heapRel);
-
-	pfree(itup);
-
-	return result;
 }
 
 /*
