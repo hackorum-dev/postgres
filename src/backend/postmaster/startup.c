@@ -157,6 +157,11 @@ ProcessStartupProcInterrupts(void)
 	static uint32 postmaster_poll_count = 0;
 #endif
 
+#ifdef WIN32
+	if (UNBLOCKED_SIGNAL_QUEUE())
+		pgwin32_dispatch_queued_signals();
+#endif
+
 	/*
 	 * Process any requests or signals received recently.
 	 */

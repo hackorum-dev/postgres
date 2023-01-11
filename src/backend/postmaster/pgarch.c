@@ -863,6 +863,11 @@ pgarch_die(int code, Datum arg)
 static void
 ProcessPgArchInterrupts(void)
 {
+#ifdef WIN32
+	if (UNBLOCKED_SIGNAL_QUEUE())
+		pgwin32_dispatch_queued_signals();
+#endif
+
 	if (ProcSignalBarrierPending)
 		ProcessProcSignalBarrier();
 
