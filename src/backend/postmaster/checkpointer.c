@@ -664,6 +664,11 @@ CheckpointerMain(const void *startup_data, size_t startup_data_len)
 static void
 ProcessCheckpointerInterrupts(void)
 {
+#ifdef WIN32
+	if (UNBLOCKED_SIGNAL_QUEUE())
+		pgwin32_dispatch_queued_signals();
+#endif
+
 	if (ProcSignalBarrierPending)
 		ProcessProcSignalBarrier();
 
