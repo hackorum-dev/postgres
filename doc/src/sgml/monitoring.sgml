@@ -290,6 +290,11 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
    linkend="predefined-roles"/>) can see all the information about all sessions.
   </para>
 
+ </sect2>
+
+ <sect2 id="monitoring-stats-views-all">
+  <title>Statistics Views</title>
+
   <table id="monitoring-stats-dynamic-views-table">
    <title>Dynamic Statistics Views</title>
 
@@ -681,10 +686,14 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
    into the kernel's handling of I/O.
   </para>
 
- </sect2>
+ <refentry id="monitoring-pg-stat-activity-view">
+  <refnamediv>
+   <refname><structname>pg_stat_activity</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
 
- <sect2 id="monitoring-pg-stat-activity-view">
-  <title><structname>pg_stat_activity</structname></title>
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_activity</primary>
@@ -2343,10 +2352,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
 </programlisting>
    </para>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-replication-view">
-  <title><structname>pg_stat_replication</structname></title>
+ <refentry id="monitoring-pg-stat-replication-view">
+  <refnamediv>
+   <refname><structname>pg_stat_replication</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_replication</primary>
@@ -2680,10 +2695,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </para>
   </note>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-replication-slots-view">
-  <title><structname>pg_stat_replication_slots</structname></title>
+ <refentry id="monitoring-pg-stat-replication-slots-view">
+  <refnamediv>
+   <refname><structname>pg_stat_replication_slots</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_replication_slots</primary>
@@ -2829,10 +2850,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-wal-receiver-view">
-  <title><structname>pg_stat_wal_receiver</structname></title>
+ <refentry id="monitoring-pg-stat-wal-receiver-view">
+  <refnamediv>
+   <refname><structname>pg_stat_wal_receiver</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_wal_receiver</primary>
@@ -3009,10 +3036,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-recovery-prefetch">
-  <title><structname>pg_stat_recovery_prefetch</structname></title>
+ <refentry id="monitoring-pg-stat-recovery-prefetch">
+  <refnamediv>
+   <refname><structname>pg_stat_recovery_prefetch</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_recovery_prefetch</primary>
@@ -3155,10 +3188,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-subscription">
-  <title><structname>pg_stat_subscription</structname></title>
+ <refentry id="monitoring-pg-stat-subscription">
+  <refnamediv>
+   <refname><structname>pg_stat_subscription</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_subscription</primary>
@@ -3266,10 +3305,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-subscription-stats">
-  <title><structname>pg_stat_subscription_stats</structname></title>
+ <refentry id="monitoring-pg-stat-subscription-stats">
+  <refnamediv>
+   <refname><structname>pg_stat_subscription_stats</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_subscription_stats</primary>
@@ -3344,10 +3389,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-ssl-view">
-  <title><structname>pg_stat_ssl</structname></title>
+ <refentry id="monitoring-pg-stat-ssl-view">
+  <refnamediv>
+   <refname><structname>pg_stat_ssl</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_ssl</primary>
@@ -3465,10 +3516,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-gssapi-view">
-  <title><structname>pg_stat_gssapi</structname></title>
+ <refentry id="monitoring-pg-stat-gssapi-view">
+  <refnamediv>
+   <refname><structname>pg_stat_gssapi</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_gssapi</primary>
@@ -3540,10 +3597,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-archiver-view">
-  <title><structname>pg_stat_archiver</structname></title>
+ <refentry id="monitoring-pg-stat-archiver-view">
+  <refnamediv>
+   <refname><structname>pg_stat_archiver</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_archiver</primary>
@@ -3644,10 +3707,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
     archived.
   </para>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-bgwriter-view">
-  <title><structname>pg_stat_bgwriter</structname></title>
+ <refentry id="monitoring-pg-stat-bgwriter-view">
+  <refnamediv>
+   <refname><structname>pg_stat_bgwriter</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_bgwriter</primary>
@@ -3781,10 +3850,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-wal-view">
-   <title><structname>pg_stat_wal</structname></title>
+ <refentry id="monitoring-pg-stat-wal-view">
+  <refnamediv>
+   <refname><structname>pg_stat_wal</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_wal</primary>
@@ -3915,10 +3990,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
-</sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-database-view">
-  <title><structname>pg_stat_database</structname></title>
+ <refentry id="monitoring-pg-stat-database-view">
+  <refnamediv>
+   <refname><structname>pg_stat_database</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_database</primary>
@@ -4240,10 +4321,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-database-conflicts-view">
-  <title><structname>pg_stat_database_conflicts</structname></title>
+ <refentry id="monitoring-pg-stat-database-conflicts-view">
+  <refnamediv>
+   <refname><structname>pg_stat_database_conflicts</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_database_conflicts</primary>
@@ -4343,10 +4430,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-all-tables-view">
-  <title><structname>pg_stat_all_tables</structname></title>
+ <refentry id="monitoring-pg-stat-all-tables-view">
+  <refnamediv>
+   <refname><structname>pg_stat_all_tables</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_all_tables</primary>
@@ -4614,10 +4707,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-all-indexes-view">
-  <title><structname>pg_stat_all_indexes</structname></title>
+ <refentry id="monitoring-pg-stat-all-indexes-view">
+  <refnamediv>
+   <refname><structname>pg_stat_all_indexes</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_all_indexes</primary>
@@ -4763,10 +4862,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </para>
   </note>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-statio-all-tables-view">
-  <title><structname>pg_statio_all_tables</structname></title>
+ <refentry id="monitoring-pg-statio-all-tables-view">
+  <refnamediv>
+   <refname><structname>pg_statio_all_tables</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_statio_all_tables</primary>
@@ -4899,10 +5004,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-statio-all-indexes-view">
-  <title><structname>pg_statio_all_indexes</structname></title>
+ <refentry id="monitoring-pg-statio-all-indexes-view">
+  <refnamediv>
+   <refname><structname>pg_statio_all_indexes</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_statio_all_indexes</primary>
@@ -4999,10 +5110,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-statio-all-sequences-view">
-  <title><structname>pg_statio_all_sequences</structname></title>
+ <refentry id="monitoring-pg-statio-all-sequences-view">
+  <refnamediv>
+   <refname><structname>pg_statio_all_sequences</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_statio_all_sequences</primary>
@@ -5077,10 +5194,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-user-functions-view">
-  <title><structname>pg_stat_user_functions</structname></title>
+ <refentry id="monitoring-pg-stat-user-functions-view">
+  <refnamediv>
+   <refname><structname>pg_stat_user_functions</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>pg_stat_user_functions</primary>
@@ -5167,10 +5290,16 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    </tgroup>
   </table>
 
- </sect2>
+ </refsect1></refentry>
 
- <sect2 id="monitoring-pg-stat-slru-view">
-  <title><structname>pg_stat_slru</structname></title>
+ <refentry id="monitoring-pg-stat-slru-view">
+  <refnamediv>
+   <refname><structname>pg_stat_slru</structname></refname>
+   <refpurpose>View</refpurpose>
+  </refnamediv>
+
+  <refsect1>
+  <title>Description</title>
 
   <indexterm>
    <primary>SLRU</primary>
@@ -5288,6 +5417,8 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
     </tbody>
    </tgroup>
   </table>
+
+ </refsect1></refentry>
 
  </sect2>
 
