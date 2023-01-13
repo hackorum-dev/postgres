@@ -1160,9 +1160,7 @@ pg_get_publication_tables(PG_FUNCTION_ARGS)
 			int			nattnums = 0;
 			int16	   *attnums;
 			TupleDesc	desc = RelationGetDescr(rel);
-			int			i;
-
-			attnums = (int16 *) palloc(desc->natts * sizeof(int16));
+			int			i, j;
 
 			for (i = 0; i < desc->natts; i++)
 			{
@@ -1171,11 +1169,23 @@ pg_get_publication_tables(PG_FUNCTION_ARGS)
 				if (att->attisdropped || att->attgenerated)
 					continue;
 
-				attnums[nattnums++] = att->attnum;
+				nattnums++;
 			}
 
 			if (nattnums > 0)
 			{
+				attnums = (int16 *) palloc(nattnums * sizeof(int16));
+
+				for (i = 0, j = 0; i < desc->natts; i++)
+				{
+					Form_pg_attribute att = TupleDescAttr(desc, i);
+
+					if (att->attisdropped || att->attgenerated)
+						continue;
+
+					attnums[j++] = att->attnum;
+				}
+
 				values[1] = PointerGetDatum(buildint2vector(attnums, nattnums));
 				nulls[1] = false;
 			}
