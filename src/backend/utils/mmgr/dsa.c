@@ -62,7 +62,7 @@
 
 /*
  * The size of the initial DSM segment that backs a dsa_area created by
- * dsa_create.  After creating some number of segments of this size we'll
+ * dsa_create_in_place.  After creating some number of segments of this size we'll
  * double this size, and so on.  Larger segments may be created if necessary
  * to satisfy large requests.
  */
@@ -420,48 +420,6 @@ static void check_for_freed_segments(dsa_area *area);
 static void check_for_freed_segments_locked(dsa_area *area);
 
 /*
- * Create a new shared area in a new DSM segment.  Further DSM segments will
- * be allocated as required to extend the available space.
- *
- * We can't allocate a LWLock tranche_id within this function, because tranche
- * IDs are a scarce resource; there are only 64k available, using low numbers
- * when possible matters, and we have no provision for recycling them.  So,
- * we require the caller to provide one.
- */
-dsa_area *
-dsa_create(int tranche_id)
-{
-	dsm_segment *segment;
-	dsa_area   *area;
-
-	/*
-	 * Create the DSM segment that will hold the shared control object and the
-	 * first segment of usable space.
-	 */
-	segment = dsm_create(DSA_INITIAL_SEGMENT_SIZE, 0);
-
-	/*
-	 * All segments backing this area are pinned, so that DSA can explicitly
-	 * control their lifetime (otherwise a newly created segment belonging to
-	 * this area might be freed when the only backend that happens to have it
-	 * mapped in ends, corrupting the area).
-	 */
-	dsm_pin_segment(segment);
-
-	/* Create a new DSA area with the control object in this segment. */
-	area = create_internal(dsm_segment_address(segment),
-						   DSA_INITIAL_SEGMENT_SIZE,
-						   tranche_id,
-						   dsm_segment_handle(segment), segment);
-
-	/* Clean up when the control segment detaches. */
-	on_dsm_detach(segment, &dsa_on_dsm_detach_release_in_place,
-				  PointerGetDatum(dsm_segment_address(segment)));
-
-	return area;
-}
-
-/*
  * Create a new shared area in an existing shared memory space, which may be
  * either DSM or Postmaster-initialized memory.  DSM segments will be
  * allocated as required to extend the available space, though that can be
@@ -475,7 +433,10 @@ dsa_create(int tranche_id)
  * segment so that a detach hook can be registered with the containing DSM
  * segment.
  *
- * See dsa_create() for a note about the tranche arguments.
+ * We can't allocate a LWLock tranche_id within this function, because tranche
+ * IDs are a scarce resource; there are only 64k available, using low numbers
+ * when possible matters, and we have no provision for recycling them.  So,
+ * we require the caller to provide one.
  */
 dsa_area *
 dsa_create_in_place(void *place, size_t size,
@@ -493,48 +454,6 @@ dsa_create_in_place(void *place, size_t size,
 	if (segment != NULL)
 		on_dsm_detach(segment, &dsa_on_dsm_detach_release_in_place,
 					  PointerGetDatum(place));
-
-	return area;
-}
-
-/*
- * Obtain a handle that can be passed to other processes so that they can
- * attach to the given area.  Cannot be called for areas created with
- * dsa_create_in_place.
- */
-dsa_handle
-dsa_get_handle(dsa_area *area)
-{
-	Assert(area->control->handle != DSM_HANDLE_INVALID);
-	return area->control->handle;
-}
-
-/*
- * Attach to an area given a handle generated (possibly in another process) by
- * dsa_get_handle.  The area must have been created with dsa_create (not
- * dsa_create_in_place).
- */
-dsa_area *
-dsa_attach(dsa_handle handle)
-{
-	dsm_segment *segment;
-	dsa_area   *area;
-
-	/*
-	 * An area handle is really a DSM segment handle for the first segment, so
-	 * we go ahead and attach to that.
-	 */
-	segment = dsm_attach(handle);
-	if (segment == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("could not attach to dynamic shared area")));
-
-	area = attach_internal(dsm_segment_address(segment), segment, handle);
-
-	/* Clean up when the control segment detaches. */
-	on_dsm_detach(segment, &dsa_on_dsm_detach_release_in_place,
-				  PointerGetDatum(dsm_segment_address(segment)));
 
 	return area;
 }
@@ -577,8 +496,7 @@ dsa_attach_in_place(void *place, dsm_segment *segment)
  *
  * This callback is automatically registered for the DSM segment containing
  * the control object of in-place areas when a segment is provided to
- * dsa_create_in_place or dsa_attach_in_place, and also for all areas created
- * with dsa_create.
+ * dsa_create_in_place or dsa_attach_in_place.
  */
 void
 dsa_on_dsm_detach_release_in_place(dsm_segment *segment, Datum place)
@@ -605,9 +523,6 @@ dsa_on_shmem_exit_release_in_place(int code, Datum place)
  * dsa_attach_in_place.  It is preferable to use one of the 'dsa_on_XXX'
  * callbacks so that this is managed automatically, because failure to release
  * an area created in-place leaks its segments permanently.
- *
- * This is also called automatically for areas produced by dsa_create or
- * dsa_attach as an implementation detail.
  */
 void
 dsa_release_in_place(void *place)
@@ -988,26 +903,6 @@ dsa_pin(dsa_area *area)
 }
 
 /*
- * Undo the effects of dsa_pin, so that the given area can be freed when no
- * backends are attached to it.  May be called only if dsa_pin has been
- * called.
- */
-void
-dsa_unpin(dsa_area *area)
-{
-	LWLockAcquire(DSA_AREA_LOCK(area), LW_EXCLUSIVE);
-	Assert(area->control->refcnt > 1);
-	if (!area->control->pinned)
-	{
-		LWLockRelease(DSA_AREA_LOCK(area));
-		elog(ERROR, "dsa_area not pinned");
-	}
-	area->control->pinned = false;
-	--area->control->refcnt;
-	LWLockRelease(DSA_AREA_LOCK(area));
-}
-
-/*
  * Set the total size limit for this area.  This limit is checked whenever new
  * segments need to be allocated from the operating system.  If the new size
  * limit is already exceeded, this has no immediate effect.
@@ -1022,155 +917,6 @@ dsa_set_size_limit(dsa_area *area, size_t limit)
 	LWLockAcquire(DSA_AREA_LOCK(area), LW_EXCLUSIVE);
 	area->control->max_total_segment_size = limit;
 	LWLockRelease(DSA_AREA_LOCK(area));
-}
-
-/*
- * Aggressively free all spare memory in the hope of returning DSM segments to
- * the operating system.
- */
-void
-dsa_trim(dsa_area *area)
-{
-	int			size_class;
-
-	/*
-	 * Trim in reverse pool order so we get to the spans-of-spans last, just
-	 * in case any become entirely free while processing all the other pools.
-	 */
-	for (size_class = DSA_NUM_SIZE_CLASSES - 1; size_class >= 0; --size_class)
-	{
-		dsa_area_pool *pool = &area->control->pools[size_class];
-		dsa_pointer span_pointer;
-
-		if (size_class == DSA_SCLASS_SPAN_LARGE)
-		{
-			/* Large object frees give back segments aggressively already. */
-			continue;
-		}
-
-		/*
-		 * Search fullness class 1 only.  That is where we expect to find an
-		 * entirely empty superblock (entirely empty superblocks in other
-		 * fullness classes are returned to the free page map by dsa_free).
-		 */
-		LWLockAcquire(DSA_SCLASS_LOCK(area, size_class), LW_EXCLUSIVE);
-		span_pointer = pool->spans[1];
-		while (DsaPointerIsValid(span_pointer))
-		{
-			dsa_area_span *span = dsa_get_address(area, span_pointer);
-			dsa_pointer next = span->nextspan;
-
-			if (span->nallocatable == span->nmax)
-				destroy_superblock(area, span_pointer);
-
-			span_pointer = next;
-		}
-		LWLockRelease(DSA_SCLASS_LOCK(area, size_class));
-	}
-}
-
-/*
- * Print out debugging information about the internal state of the shared
- * memory area.
- */
-void
-dsa_dump(dsa_area *area)
-{
-	size_t		i,
-				j;
-
-	/*
-	 * Note: This gives an inconsistent snapshot as it acquires and releases
-	 * individual locks as it goes...
-	 */
-
-	LWLockAcquire(DSA_AREA_LOCK(area), LW_EXCLUSIVE);
-	check_for_freed_segments_locked(area);
-	fprintf(stderr, "dsa_area handle %x:\n", area->control->handle);
-	fprintf(stderr, "  max_total_segment_size: %zu\n",
-			area->control->max_total_segment_size);
-	fprintf(stderr, "  total_segment_size: %zu\n",
-			area->control->total_segment_size);
-	fprintf(stderr, "  refcnt: %d\n", area->control->refcnt);
-	fprintf(stderr, "  pinned: %c\n", area->control->pinned ? 't' : 'f');
-	fprintf(stderr, "  segment bins:\n");
-	for (i = 0; i < DSA_NUM_SEGMENT_BINS; ++i)
-	{
-		if (area->control->segment_bins[i] != DSA_SEGMENT_INDEX_NONE)
-		{
-			dsa_segment_index segment_index;
-
-			fprintf(stderr,
-					"    segment bin %zu (at least %d contiguous pages free):\n",
-					i, 1 << (i - 1));
-			segment_index = area->control->segment_bins[i];
-			while (segment_index != DSA_SEGMENT_INDEX_NONE)
-			{
-				dsa_segment_map *segment_map;
-
-				segment_map =
-					get_segment_by_index(area, segment_index);
-
-				fprintf(stderr,
-						"      segment index %zu, usable_pages = %zu, "
-						"contiguous_pages = %zu, mapped at %p\n",
-						segment_index,
-						segment_map->header->usable_pages,
-						fpm_largest(segment_map->fpm),
-						segment_map->mapped_address);
-				segment_index = segment_map->header->next;
-			}
-		}
-	}
-	LWLockRelease(DSA_AREA_LOCK(area));
-
-	fprintf(stderr, "  pools:\n");
-	for (i = 0; i < DSA_NUM_SIZE_CLASSES; ++i)
-	{
-		bool		found = false;
-
-		LWLockAcquire(DSA_SCLASS_LOCK(area, i), LW_EXCLUSIVE);
-		for (j = 0; j < DSA_FULLNESS_CLASSES; ++j)
-			if (DsaPointerIsValid(area->control->pools[i].spans[j]))
-				found = true;
-		if (found)
-		{
-			if (i == DSA_SCLASS_BLOCK_OF_SPANS)
-				fprintf(stderr, "    pool for blocks of span objects:\n");
-			else if (i == DSA_SCLASS_SPAN_LARGE)
-				fprintf(stderr, "    pool for large object spans:\n");
-			else
-				fprintf(stderr,
-						"    pool for size class %zu (object size %hu bytes):\n",
-						i, dsa_size_classes[i]);
-			for (j = 0; j < DSA_FULLNESS_CLASSES; ++j)
-			{
-				if (!DsaPointerIsValid(area->control->pools[i].spans[j]))
-					fprintf(stderr, "      fullness class %zu is empty\n", j);
-				else
-				{
-					dsa_pointer span_pointer = area->control->pools[i].spans[j];
-
-					fprintf(stderr, "      fullness class %zu:\n", j);
-					while (DsaPointerIsValid(span_pointer))
-					{
-						dsa_area_span *span;
-
-						span = dsa_get_address(area, span_pointer);
-						fprintf(stderr,
-								"        span descriptor at "
-								DSA_POINTER_FORMAT ", superblock at "
-								DSA_POINTER_FORMAT
-								", pages = %zu, objects free = %hu/%hu\n",
-								span_pointer, span->start, span->npages,
-								span->nallocatable, span->nmax);
-						span_pointer = span->nextspan;
-					}
-				}
-			}
-		}
-		LWLockRelease(DSA_SCLASS_LOCK(area, i));
-	}
 }
 
 /*
@@ -1197,7 +943,7 @@ dsa_minimum_size(void)
 }
 
 /*
- * Workhorse function for dsa_create and dsa_create_in_place.
+ * Workhorse function for  dsa_create_in_place.
  */
 static dsa_area *
 create_internal(void *place, size_t size,
@@ -1297,7 +1043,7 @@ create_internal(void *place, size_t size,
 }
 
 /*
- * Workhorse function for dsa_attach and dsa_attach_in_place.
+ * Workhorse function for dsa_attach_in_place.
  */
 static dsa_area *
 attach_internal(void *place, dsm_segment *segment, dsa_handle handle)
