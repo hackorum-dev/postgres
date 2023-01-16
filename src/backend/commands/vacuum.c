@@ -1016,7 +1016,9 @@ expand_vacuum_rel(VacuumRelation *vrel, MemoryContext vac_context,
 
 			foreach(part_lc, part_oids)
 			{
-				Oid			part_oid = lfirst_oid(part_lc);
+				Oid				part_oid = lfirst_oid(part_lc);
+				HeapTuple		part_tuple;
+				Form_pg_class	part_classForm;
 
 				if (part_oid == relid)
 					continue;	/* ignore original table */
@@ -1026,11 +1028,26 @@ expand_vacuum_rel(VacuumRelation *vrel, MemoryContext vac_context,
 				 * complain about failure to open one of these relations
 				 * later.
 				 */
-				oldcontext = MemoryContextSwitchTo(vac_context);
-				vacrels = lappend(vacrels, makeVacuumRelation(NULL,
-															  part_oid,
-															  vrel->va_cols));
-				MemoryContextSwitchTo(oldcontext);
+
+				/*
+				 * Check partition relations for vacuum permit. Do not add
+				 * them to the list if vacuum is not permitted.
+				 */
+				part_tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(part_oid));
+				if (HeapTupleIsValid(part_tuple))
+				{
+					part_classForm = (Form_pg_class) GETSTRUCT(part_tuple);
+
+					if (vacuum_is_permitted_for_relation(part_oid, part_classForm, options))
+					{
+						oldcontext = MemoryContextSwitchTo(vac_context);
+						vacrels = lappend(vacrels, makeVacuumRelation(NULL,
+																	  part_oid,
+																	  vrel->va_cols));
+						MemoryContextSwitchTo(oldcontext);
+					}
+				}
+				ReleaseSysCache(part_tuple);
 			}
 		}
 
