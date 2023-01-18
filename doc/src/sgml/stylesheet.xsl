@@ -67,7 +67,7 @@ Customization of header
             <tr>
               <td width="10%" align="{$direction.align.start}">
                 <xsl:if test="count($prev)>0">
-                  <a accesskey="p">
+                  <a accesskey="p" id="nav-prev">
                     <xsl:attribute name="href">
                       <xsl:call-template name="href.target">
                         <xsl:with-param name="object" select="$prev"/>
@@ -86,7 +86,7 @@ Customization of header
               <td width="10%" align="{$direction.align.start}">
                 <xsl:choose>
                   <xsl:when test="count($up)&gt;0">
-                    <a accesskey="u">
+                    <a accesskey="u" id="nav-up">
                       <xsl:attribute name="href">
                         <xsl:call-template name="href.target">
                           <xsl:with-param name="object" select="$up"/>
@@ -115,7 +115,7 @@ Customization of header
               <td width="10%" align="{$direction.align.end}">
                 <xsl:choose>
                   <xsl:when test="$home != . or $nav.context = 'toc'">
-                    <a accesskey="h">
+                    <a accesskey="h" id="nav-home">
                       <xsl:attribute name="href">
                         <xsl:call-template name="href.target">
                           <xsl:with-param name="object" select="$home"/>
@@ -138,7 +138,7 @@ Customization of header
               <td width="10%" align="{$direction.align.end}">
                 <xsl:text>&#160;</xsl:text>
                 <xsl:if test="count($next)>0">
-                  <a accesskey="n">
+                  <a accesskey="n" id="nav-next">
                     <xsl:attribute name="href">
                       <xsl:call-template name="href.target">
                         <xsl:with-param name="object" select="$next"/>
