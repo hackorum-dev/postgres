@@ -339,6 +339,12 @@
     </xsl:if>
 
     <xsl:call-template name="user.head.content"/>
+
+    <script>document.addEventListener("keydown", function(event) { event.preventDefault();
+      if (event.key == "ArrowLeft") { document.getElementById('nav-prev').click(); }
+      else if (event.key == "ArrowRight") { document.getElementById('nav-next').click(); }
+      else if (event.key == "ArrowUp") { document.getElementById('nav-up').click(); } });
+    </script>
   </head>
 </xsl:template>
 
