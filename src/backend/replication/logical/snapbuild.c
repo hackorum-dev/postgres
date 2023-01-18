@@ -405,6 +405,15 @@ SnapBuildCurrentState(SnapBuild *builder)
 }
 
 /*
+ * Txn Id at which next phase of snapshot building will happen
+ */
+TransactionId
+SnapBuildNextPhaseAt(SnapBuild *builder)
+{
+	return builder->next_phase_at;
+}
+
+/*
  * Return the LSN at which the two-phase decoding was first enabled.
  */
 XLogRecPtr
@@ -486,8 +495,6 @@ SnapBuildBuildSnapshot(SnapBuild *builder)
 {
 	Snapshot	snapshot;
 	Size		ssize;
-
-	Assert(builder->state >= SNAPBUILD_FULL_SNAPSHOT);
 
 	ssize = sizeof(SnapshotData)
 		+ sizeof(TransactionId) * builder->committed.xcnt
@@ -763,20 +770,15 @@ SnapBuildResetExportedSnapshotState(void)
 bool
 SnapBuildProcessChange(SnapBuild *builder, TransactionId xid, XLogRecPtr lsn)
 {
-	/*
-	 * We can't handle data in transactions if we haven't built a snapshot
-	 * yet, so don't store them.
-	 */
-	if (builder->state < SNAPBUILD_FULL_SNAPSHOT)
-		return false;
 
 	/*
-	 * No point in keeping track of changes in transactions that we don't have
-	 * enough information about to decode. This means that they started before
-	 * we got into the SNAPBUILD_FULL_SNAPSHOT state.
+	 * If the snapshot building is not yet started or we have a txn for which
+	 * we do not have enough info, there is no point in decoding changes yet,
+	 * so bail out.
 	 */
-	if (builder->state < SNAPBUILD_CONSISTENT &&
-		TransactionIdPrecedes(xid, builder->next_phase_at))
+	if (builder->state == SNAPBUILD_START ||
+		(builder->state == SNAPBUILD_BUILDING_SNAPSHOT &&
+		 TransactionIdPrecedes(xid, builder->next_phase_at)))
 		return false;
 
 	/*
@@ -1143,13 +1145,6 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 	if (needs_snapshot)
 	{
 		/*
-		 * If we haven't built a complete snapshot yet there's no need to hand
-		 * it out, it wouldn't (and couldn't) be used anyway.
-		 */
-		if (builder->state < SNAPBUILD_FULL_SNAPSHOT)
-			return;
-
-		/*
 		 * Decrease the snapshot builder's refcount of the old snapshot, note
 		 * that it still will be used if it has been handed out to the
 		 * reorderbuffer earlier.
@@ -1331,15 +1326,16 @@ SnapBuildFindSnapshot(SnapBuild *builder, XLogRecPtr lsn, xl_running_xacts *runn
 	 * c) First incrementally build a snapshot for catalog tuples
 	 *	  (BUILDING_SNAPSHOT), that requires all, already in-progress,
 	 *	  transactions to finish.  Every transaction starting after that
-	 *	  (FULL_SNAPSHOT state), has enough information to be decoded.  But
+	 *	  (BUILDING_SNAPSHOT), has enough information to be decoded.  But
 	 *	  for older running transactions no viable snapshot exists yet, so
-	 *	  CONSISTENT will only be reached once all of those have finished.
+	 *	  CONSISTENT will only be reached once all of those (started before
+	 *	  BUILDING_SNAPSHOT) have finished.
 	 * ---
 	 */
 
 	/*
-	 * xl_running_xacts record is older than what we can use, we might not have
-	 * all necessary catalog rows anymore.
+	 * xl_running_xacts record is older than what we can use, we might not
+	 * have all necessary catalog rows anymore.
 	 */
 	if (TransactionIdIsNormal(builder->initial_xmin_horizon) &&
 		NormalTransactionIdPrecedes(running->oldestRunningXid,
@@ -1438,38 +1434,14 @@ SnapBuildFindSnapshot(SnapBuild *builder, XLogRecPtr lsn, xl_running_xacts *runn
 	}
 
 	/*
-	 * c) transition from BUILDING_SNAPSHOT to FULL_SNAPSHOT.
+	 * c) transition from BUILDING_SNAPSHOT to SNAPBUILD_CONSISTENT.
 	 *
 	 * In BUILDING_SNAPSHOT state, and this xl_running_xacts' oldestRunningXid
-	 * is >= than nextXid from when we switched to BUILDING_SNAPSHOT.  This
-	 * means all transactions starting afterwards have enough information to
-	 * be decoded.  Switch to FULL_SNAPSHOT.
+	 * is >= than nextXid from when we switched to SNAPBUILD_CONSISTENT.  This
+	 * means all transactions that are currently in progress have enough
+	 * information to be decoded.  Switch to SNAPBUILD_CONSISTENT.
 	 */
 	else if (builder->state == SNAPBUILD_BUILDING_SNAPSHOT &&
-			 TransactionIdPrecedesOrEquals(builder->next_phase_at,
-										   running->oldestRunningXid))
-	{
-		builder->state = SNAPBUILD_FULL_SNAPSHOT;
-		builder->next_phase_at = running->nextXid;
-
-		ereport(LOG,
-				(errmsg("logical decoding found initial consistent point at %X/%X",
-						LSN_FORMAT_ARGS(lsn)),
-				 errdetail("Waiting for transactions (approximately %d) older than %u to end.",
-						   running->xcnt, running->nextXid)));
-
-		SnapBuildWaitSnapshot(running, running->nextXid);
-	}
-
-	/*
-	 * c) transition from FULL_SNAPSHOT to CONSISTENT.
-	 *
-	 * In FULL_SNAPSHOT state, and this xl_running_xacts' oldestRunningXid is
-	 * >= than nextXid from when we switched to FULL_SNAPSHOT.  This means all
-	 * transactions that are currently in progress have a catalog snapshot,
-	 * and all their changes have been collected.  Switch to CONSISTENT.
-	 */
-	else if (builder->state == SNAPBUILD_FULL_SNAPSHOT &&
 			 TransactionIdPrecedesOrEquals(builder->next_phase_at,
 										   running->oldestRunningXid))
 	{
@@ -1479,7 +1451,10 @@ SnapBuildFindSnapshot(SnapBuild *builder, XLogRecPtr lsn, xl_running_xacts *runn
 		ereport(LOG,
 				(errmsg("logical decoding found consistent point at %X/%X",
 						LSN_FORMAT_ARGS(lsn)),
-				 errdetail("There are no old transactions anymore.")));
+				 errdetail("Waiting for transactions (approximately %d) older than %u to end.",
+						   running->xcnt, running->nextXid)));
+
+		SnapBuildWaitSnapshot(running, running->nextXid);
 	}
 
 	/*

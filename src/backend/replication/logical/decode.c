@@ -179,13 +179,6 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	XLogReaderState *r = buf->record;
 	uint8		info = XLogRecGetInfo(r) & XLOG_XACT_OPMASK;
 
-	/*
-	 * If the snapshot isn't yet fully built, we cannot decode anything, so
-	 * bail out.
-	 */
-	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
-		return;
-
 	switch (info)
 	{
 		case XLOG_XACT_COMMIT:
@@ -203,6 +196,16 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 					xid = XLogRecGetXid(r);
 				else
 					xid = parsed.twophase_xid;
+
+				/*
+				 * If the snapshot building is not yet started or we have a
+				 * txn for which we do not have enough info, there is no point
+				 * in decoding changes yet, so bail out.
+				 */
+				if (SnapBuildCurrentState(builder) == SNAPBUILD_START ||
+					(SnapBuildCurrentState(builder) == SNAPBUILD_BUILDING_SNAPSHOT &&
+					 TransactionIdPrecedes(xid, SnapBuildNextPhaseAt(builder))))
+					return;
 
 				/*
 				 * We would like to process the transaction in a two-phase
@@ -233,6 +236,16 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 					xid = parsed.twophase_xid;
 
 				/*
+				 * If the snapshot building is not yet started or we have a
+				 * txn for which we do not have enough info, there is no point
+				 * in decoding changes yet, so bail out.
+				 */
+				if (SnapBuildCurrentState(builder) == SNAPBUILD_START ||
+					(SnapBuildCurrentState(builder) == SNAPBUILD_BUILDING_SNAPSHOT &&
+					 TransactionIdPrecedes(xid, SnapBuildNextPhaseAt(builder))))
+					return;
+
+				/*
 				 * We would like to process the transaction in a two-phase
 				 * manner iff output plugin supports two-phase commits and
 				 * doesn't filter the transaction at prepare time.
@@ -259,6 +272,16 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 				xid = XLogRecGetXid(r);
 				invals = (xl_xact_invals *) XLogRecGetData(r);
+
+				/*
+				 * If the snapshot building is not yet started or we have a
+				 * txn for which we do not have enough info, there is no point
+				 * in decoding changes yet, so bail out.
+				 */
+				if (SnapBuildCurrentState(builder) == SNAPBUILD_START ||
+					(SnapBuildCurrentState(builder) == SNAPBUILD_BUILDING_SNAPSHOT &&
+					 TransactionIdPrecedes(xid, SnapBuildNextPhaseAt(builder))))
+					return;
 
 				/*
 				 * Execute the invalidations for xid-less transactions,
@@ -290,6 +313,16 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				xlrec = (xl_xact_prepare *) XLogRecGetData(r);
 				ParsePrepareRecord(XLogRecGetInfo(buf->record),
 								   xlrec, &parsed);
+
+				/*
+				 * If the snapshot building is not yet started or we have a
+				 * txn for which we do not have enough info, there is no point
+				 * in decoding changes yet, so bail out.
+				 */
+				if (SnapBuildCurrentState(builder) == SNAPBUILD_START ||
+					(SnapBuildCurrentState(builder) == SNAPBUILD_BUILDING_SNAPSHOT &&
+					 TransactionIdPrecedes(parsed.twophase_xid, SnapBuildNextPhaseAt(builder))))
+					return;
 
 				/*
 				 * We would like to process the transaction in a two-phase
@@ -384,11 +417,19 @@ heap2_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	ReorderBufferProcessXid(ctx->reorder, xid, buf->origptr);
 
 	/*
-	 * If we don't have snapshot or we are just fast-forwarding, there is no
-	 * point in decoding changes.
+	 * if we are just fast-forwarding, there is no point in decoding changes.
 	 */
-	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT ||
-		ctx->fast_forward)
+	if (ctx->fast_forward)
+		return;
+
+	/*
+	 * If the snapshot building is not yet started or we have a txn for which
+	 * we do not have enough info, there is no point in decoding changes yet,
+	 * so bail out.
+	 */
+	if (SnapBuildCurrentState(builder) == SNAPBUILD_START ||
+		(SnapBuildCurrentState(builder) == SNAPBUILD_BUILDING_SNAPSHOT &&
+		 TransactionIdPrecedes(xid, SnapBuildNextPhaseAt(builder))))
 		return;
 
 	switch (info)
@@ -444,11 +485,20 @@ heap_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	ReorderBufferProcessXid(ctx->reorder, xid, buf->origptr);
 
 	/*
-	 * If we don't have snapshot or we are just fast-forwarding, there is no
-	 * point in decoding data changes.
+	 * If we are just fast-forwarding, there is no point in decoding data
+	 * changes.
 	 */
-	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT ||
-		ctx->fast_forward)
+	if (ctx->fast_forward)
+		return;
+
+	/*
+	 * If the snapshot building is not yet started or we have a txn for which
+	 * we do not have enough info, there is no point in decoding changes yet,
+	 * so bail out.
+	 */
+	if (SnapBuildCurrentState(builder) == SNAPBUILD_START ||
+		(SnapBuildCurrentState(builder) == SNAPBUILD_BUILDING_SNAPSHOT &&
+		 TransactionIdPrecedes(xid, SnapBuildNextPhaseAt(builder))))
 		return;
 
 	switch (info)
@@ -573,11 +623,19 @@ logicalmsg_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(r), buf->origptr);
 
 	/*
-	 * If we don't have snapshot or we are just fast-forwarding, there is no
-	 * point in decoding messages.
+	 * If we are just fast-forwarding, there is no point in decoding messages.
 	 */
-	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT ||
-		ctx->fast_forward)
+	if (ctx->fast_forward)
+		return;
+
+	/*
+	 * If the snapshot building is not yet started or we have a txn for which
+	 * we do not have enough info, there is no point in decoding changes yet,
+	 * so bail out.
+	 */
+	if (SnapBuildCurrentState(builder) == SNAPBUILD_START ||
+		(SnapBuildCurrentState(builder) == SNAPBUILD_BUILDING_SNAPSHOT &&
+		 TransactionIdPrecedes(xid, SnapBuildNextPhaseAt(builder))))
 		return;
 
 	message = (xl_logical_message *) XLogRecGetData(r);
