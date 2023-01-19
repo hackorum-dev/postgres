@@ -253,6 +253,10 @@ extern List *truncate_useless_pathkeys(PlannerInfo *root,
 									   RelOptInfo *rel,
 									   List *pathkeys);
 extern bool has_useful_pathkeys(PlannerInfo *root, RelOptInfo *rel);
+bool pathkeys_count_contained_in_unordered(List *keys1,
+										   List *keys2,
+									       List **reorderedkeys,
+										   int *n_common);
 extern List *append_pathkeys(List *target, List *source);
 extern PathKey *make_canonical_pathkey(PlannerInfo *root,
 									   EquivalenceClass *eclass, Oid opfamily,

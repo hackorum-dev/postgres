@@ -2014,3 +2014,52 @@ has_useful_pathkeys(PlannerInfo *root, RelOptInfo *rel)
 		return true;			/* might be able to use them for ordering */
 	return false;				/* definitely useless */
 }
+
+/*
+ * pathkeys_count_contained_in_unordered
+ *		reorders keys1 to match keys2
+ * Populates *reorderedkeys so it contains all of the keys in keys1, but
+ * put the matching ones in the same order as they are in keys2.  If keys
+ * in keys1 which do not match keys2 are appended in the end.
+ * n_common denotes number of matched keys.
+ */
+bool
+pathkeys_count_contained_in_unordered(List *keys1, List *keys2,
+									  List **reorderedkeys, int *n_common)
+{
+	ListCell*	lc1;
+	ListCell*	lc2;
+	int			n = 0;
+	List*		unmatched_keys = NIL;
+
+	foreach(lc1, keys1)
+	{
+		bool matched = false;
+		PathKey    *pathkey1 = (PathKey *) lfirst(lc1);
+		foreach(lc2, keys2)
+		{
+			PathKey    *pathkey2 = (PathKey *) lfirst(lc2);
+			if (pathkey1 == pathkey2)
+			{
+				*reorderedkeys = lappend(*reorderedkeys, pathkey2);
+				n++;
+				matched = true;
+				break;
+			}
+
+		}
+		/*
+		 * If no match is found, collect path key for appending it later
+		 */
+		if (!matched)
+			unmatched_keys = lappend(unmatched_keys, pathkey1);
+	}
+
+	Assert(n == list_length(*reorderedkeys));
+
+	*reorderedkeys = list_concat_unique(*reorderedkeys, unmatched_keys);
+	Assert(list_length(*reorderedkeys) == list_length(keys1));
+	*n_common = n;
+
+	return *n_common == list_length(keys1);
+}

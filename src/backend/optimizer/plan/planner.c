@@ -4936,10 +4936,28 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 			Path	   *sorted_path;
 			bool		is_sorted;
 			int			presorted_keys;
+			List*		reordered_keys = NIL;
 
-			is_sorted = pathkeys_count_contained_in(needed_pathkeys,
+			/*
+			 * Attempt to optimize non distinct-on queries
+			 * if sorted keys are present but not in required order.
+			 * We can modify needed_path keys as per as input path key
+			 * ordering and reuse input sort.
+			 */
+			if (!parse->hasDistinctOn)
+			{
+				is_sorted = pathkeys_count_contained_in_unordered(needed_pathkeys,
+													input_path->pathkeys,
+													&reordered_keys,
+													&presorted_keys);
+				needed_pathkeys = reordered_keys;
+			}
+			else
+			{
+				is_sorted = pathkeys_count_contained_in(needed_pathkeys,
 													input_path->pathkeys,
 													&presorted_keys);
+			}
 
 			if (is_sorted)
 				sorted_path = input_path;
