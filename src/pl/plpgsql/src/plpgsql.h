@@ -660,6 +660,14 @@ typedef struct PLpgSQL_stmt_while
 	List	   *body;			/* List of statements */
 } PLpgSQL_stmt_while;
 
+typedef struct PLpgSQL_fori_in_item
+{
+	PLpgSQL_expr *lower;
+	PLpgSQL_expr *upper;
+	PLpgSQL_expr *step;			/* NULL means default (ie, BY 1) */
+	int			reverse;
+}PLpgSQL_fori_in_item;
+
 /*
  * FOR statement with integer loopvar
  */
@@ -670,10 +678,7 @@ typedef struct PLpgSQL_stmt_fori
 	unsigned int stmtid;
 	char	   *label;
 	PLpgSQL_var *var;
-	PLpgSQL_expr *lower;
-	PLpgSQL_expr *upper;
-	PLpgSQL_expr *step;			/* NULL means default (ie, BY 1) */
-	int			reverse;
+	List	   *inlist;			/* List of in conditions */
 	List	   *body;			/* List of statements */
 } PLpgSQL_stmt_fori;
 

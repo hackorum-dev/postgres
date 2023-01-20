@@ -546,9 +546,6 @@ free_while(PLpgSQL_stmt_while *stmt)
 static void
 free_fori(PLpgSQL_stmt_fori *stmt)
 {
-	free_expr(stmt->lower);
-	free_expr(stmt->upper);
-	free_expr(stmt->step);
 	free_stmts(stmt->body);
 }
 
@@ -1076,26 +1073,33 @@ dump_while(PLpgSQL_stmt_while *stmt)
 static void
 dump_fori(PLpgSQL_stmt_fori *stmt)
 {
-	dump_ind();
-	printf("FORI %s %s\n", stmt->var->refname, (stmt->reverse) ? "REVERSE" : "NORMAL");
+	ListCell   *lc;
 
-	dump_indent += 2;
 	dump_ind();
-	printf("    lower = ");
-	dump_expr(stmt->lower);
-	printf("\n");
-	dump_ind();
-	printf("    upper = ");
-	dump_expr(stmt->upper);
-	printf("\n");
-	if (stmt->step)
+	printf("FORI %s\n", stmt->var->refname);
+	foreach(lc, stmt->inlist)
 	{
+		PLpgSQL_fori_in_item *in_item = (PLpgSQL_fori_in_item *) lfirst(lc);
+
+		dump_indent += 2;
 		dump_ind();
-		printf("    step = ");
-		dump_expr(stmt->step);
+		printf("    %s", (in_item->reverse) ? "REVERSE" : "NORMAL");
+
+		printf(" lower = ");
+		dump_expr(in_item->lower);
+		printf(" ,");
+		printf(" upper = ");
+		dump_expr(in_item->upper);
+
+		if (in_item->step)
+		{
+			printf(" , ");
+			printf("step = ");
+			dump_expr(in_item->step);
+		}
 		printf("\n");
+		dump_indent -= 2;
 	}
-	dump_indent -= 2;
 
 	dump_stmts(stmt->body);
 

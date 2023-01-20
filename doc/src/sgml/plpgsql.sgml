@@ -2518,7 +2518,7 @@ END LOOP;
 
 <synopsis>
 <optional> &lt;&lt;<replaceable>label</replaceable>&gt;&gt; </optional>
-FOR <replaceable>name</replaceable> IN <optional> REVERSE </optional> <replaceable>expression</replaceable> .. <replaceable>expression</replaceable> <optional> BY <replaceable>expression</replaceable> </optional> LOOP
+FOR <replaceable>name</replaceable> IN <replaceable>condition_iterator</replaceable> <optional>, <replaceable>condition_iterator</replaceable> <optional> ... </optional></optional> LOOP
     <replaceable>statements</replaceable>
 END LOOP <optional> <replaceable>label</replaceable> </optional>;
 </synopsis>
@@ -2529,6 +2529,15 @@ END LOOP <optional> <replaceable>label</replaceable> </optional>;
         <replaceable>name</replaceable> is automatically defined as type
         <type>integer</type> and exists only inside the loop (any existing
         definition of the variable name is ignored within the loop).
+        </para>
+
+<synopsis>
+condition_iterator:
+<optional> REVERSE </optional> <replaceable>expression</replaceable> .. <replaceable>expression</replaceable> <optional> BY <replaceable>expression</replaceable> </optional>
+</synopsis>
+
+       <para>
+        Multiple iteration controls may be chained together by separating them with commas. The composition of each condition_iterator is as follows:
         The two expressions giving
         the lower and upper bound of the range are evaluated once when entering
         the loop. If the <literal>BY</literal> clause isn't specified the iteration
@@ -2551,6 +2560,10 @@ END LOOP;
 
 FOR i IN REVERSE 10..1 BY 2 LOOP
     -- i will take on the values 10,8,6,4,2 within the loop
+END LOOP;
+
+FOR I IN 1..10 BY 3, REVERSE I+10..I+1 BY 3 LOOP
+    -- i will take on the values 1,4,7,10,20,17,14,11 within the loop
 END LOOP;
 </programlisting>
        </para>
