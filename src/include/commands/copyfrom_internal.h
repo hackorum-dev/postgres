@@ -66,6 +66,7 @@ typedef struct CopyFromStateData
 	EolType		eol_type;		/* EOL type of input */
 	int			file_encoding;	/* file or remote side's character encoding */
 	bool		need_transcoding;	/* file encoding diff from server? */
+	bool		report_progress;	/* do we need to report progress? */
 	Oid			conversion_proc;	/* encoding conversion function */
 
 	/* parameters from the COPY command */

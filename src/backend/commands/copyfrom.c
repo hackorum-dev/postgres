@@ -382,8 +382,9 @@ CopyMultiInsertBufferFlush(CopyMultiInsertInfo *miinfo,
 
 			/* Update the row counter and progress of the COPY command */
 			*processed += inserted;
-			pgstat_progress_update_param(PROGRESS_COPY_TUPLES_PROCESSED,
-										 *processed);
+			if (cstate->report_progress)
+				pgstat_progress_update_param(PROGRESS_COPY_TUPLES_PROCESSED,
+											 *processed);
 		}
 
 		for (i = 0; i < nused; i++)
@@ -461,8 +462,9 @@ CopyMultiInsertBufferFlush(CopyMultiInsertInfo *miinfo,
 
 		/* Update the row counter and progress of the COPY command */
 		*processed += nused;
-		pgstat_progress_update_param(PROGRESS_COPY_TUPLES_PROCESSED,
-									 *processed);
+		if (cstate->report_progress)
+			pgstat_progress_update_param(PROGRESS_COPY_TUPLES_PROCESSED,
+										 *processed);
 
 		/* reset cur_lineno and line_buf_valid to what they were */
 		cstate->line_buf_valid = line_buf_valid;
@@ -1016,8 +1018,10 @@ CopyFrom(CopyFromState cstate)
 				 * Report that this tuple was filtered out by the WHERE
 				 * clause.
 				 */
-				pgstat_progress_update_param(PROGRESS_COPY_TUPLES_EXCLUDED,
-											 ++excluded);
+				++excluded;
+				if (cstate->report_progress)
+					pgstat_progress_update_param(PROGRESS_COPY_TUPLES_EXCLUDED,
+												 excluded);
 				continue;
 			}
 		}
@@ -1271,8 +1275,10 @@ CopyFrom(CopyFromState cstate)
 			 * for counting tuples inserted by an INSERT command.  Update
 			 * progress of the COPY command as well.
 			 */
-			pgstat_progress_update_param(PROGRESS_COPY_TUPLES_PROCESSED,
-										 ++processed);
+			++processed;
+			if (cstate->report_progress)
+				pgstat_progress_update_param(PROGRESS_COPY_TUPLES_PROCESSED,
+											 processed);
 		}
 	}
 
@@ -1383,6 +1389,8 @@ BeginCopyFrom(ParseState *pstate,
 
 	/* Extract options from the statement node tree */
 	ProcessCopyOptions(pstate, &cstate->opts, true /* is_from */ , options);
+
+	cstate->report_progress = pstate != NULL;
 
 	/* Process the target relation */
 	cstate->rel = rel;
@@ -1610,8 +1618,9 @@ BeginCopyFrom(ParseState *pstate,
 
 
 	/* initialize progress */
-	pgstat_progress_start_command(PROGRESS_COMMAND_COPY,
-								  cstate->rel ? RelationGetRelid(cstate->rel) : InvalidOid);
+	if (cstate->report_progress)
+		pgstat_progress_start_command(PROGRESS_COMMAND_COPY,
+									  cstate->rel ? RelationGetRelid(cstate->rel) : InvalidOid);
 	cstate->bytes_processed = 0;
 
 	/* We keep those variables in cstate. */
@@ -1687,7 +1696,8 @@ BeginCopyFrom(ParseState *pstate,
 		}
 	}
 
-	pgstat_progress_update_multi_param(3, progress_cols, progress_vals);
+	if (cstate->report_progress)
+		pgstat_progress_update_multi_param(3, progress_cols, progress_vals);
 
 	if (cstate->opts.binary)
 	{
@@ -1729,7 +1739,8 @@ EndCopyFrom(CopyFromState cstate)
 							cstate->filename)));
 	}
 
-	pgstat_progress_end_command();
+	if (cstate->report_progress)
+		pgstat_progress_end_command();
 
 	MemoryContextDelete(cstate->copycontext);
 	pfree(cstate);
