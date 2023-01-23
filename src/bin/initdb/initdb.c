@@ -82,6 +82,13 @@
 /* Ideally this would be in a .h file, but it hardly seems worth the trouble */
 extern const char *select_default_timezone(const char *share_path);
 
+/* simple list of strings */
+typedef struct _stringlist
+{
+	char	   *str;
+	struct _stringlist *next;
+} _stringlist;
+
 static const char *const auth_methods_host[] = {
 	"trust", "reject", "scram-sha-256", "md5", "password", "ident", "radius",
 #ifdef ENABLE_GSS
@@ -142,6 +149,8 @@ static char *pwfilename = NULL;
 static char *superuser_password = NULL;
 static const char *authmethodhost = NULL;
 static const char *authmethodlocal = NULL;
+static _stringlist *extra_guc_names = NULL;
+static _stringlist *extra_guc_values = NULL;
 static bool debug = false;
 static bool noclean = false;
 static bool noinstructions = false;
@@ -253,6 +262,7 @@ static void check_input(char *path);
 static void write_version_file(const char *extrapath);
 static void set_null_conf(void);
 static void test_config_settings(void);
+static bool test_specific_config_settings(int test_conns, int test_buffs);
 static void setup_config(void);
 static void bootstrap_template1(void);
 static void setup_auth(FILE *cmdfd);
@@ -357,6 +367,27 @@ escape_quotes_bki(const char *src)
 
 	free(data);
 	return result;
+}
+
+/*
+ * Add an item at the end of a stringlist.
+ */
+static void
+add_stringlist_item(_stringlist **listhead, const char *str)
+{
+	_stringlist *newentry = pg_malloc(sizeof(_stringlist));
+	_stringlist *oldentry;
+
+	newentry->str = pg_strdup(str);
+	newentry->next = NULL;
+	if (*listhead == NULL)
+		*listhead = newentry;
+	else
+	{
+		for (oldentry = *listhead; oldentry->next; oldentry = oldentry->next)
+			 /* skip */ ;
+		oldentry->next = newentry;
+	}
 }
 
 /*
@@ -873,11 +904,9 @@ test_config_settings(void)
 		400, 300, 200, 100, 50
 	};
 
-	char		cmd[MAXPGPATH];
 	const int	connslen = sizeof(trial_conns) / sizeof(int);
 	const int	bufslen = sizeof(trial_bufs) / sizeof(int);
 	int			i,
-				status,
 				test_conns,
 				test_buffs,
 				ok_buffers = 0;
@@ -903,19 +932,7 @@ test_config_settings(void)
 		test_conns = trial_conns[i];
 		test_buffs = MIN_BUFS_FOR_CONNS(test_conns);
 
-		snprintf(cmd, sizeof(cmd),
-				 "\"%s\" --check %s %s "
-				 "-c max_connections=%d "
-				 "-c shared_buffers=%d "
-				 "-c dynamic_shared_memory_type=%s "
-				 "< \"%s\" > \"%s\" 2>&1",
-				 backend_exec, boot_options, extra_options,
-				 test_conns, test_buffs,
-				 dynamic_shared_memory_type,
-				 DEVNULL, DEVNULL);
-		fflush(NULL);
-		status = system(cmd);
-		if (status == 0)
+		if (test_specific_config_settings(test_conns, test_buffs))
 		{
 			ok_buffers = test_buffs;
 			break;
@@ -940,19 +957,7 @@ test_config_settings(void)
 			break;
 		}
 
-		snprintf(cmd, sizeof(cmd),
-				 "\"%s\" --check %s %s "
-				 "-c max_connections=%d "
-				 "-c shared_buffers=%d "
-				 "-c dynamic_shared_memory_type=%s "
-				 "< \"%s\" > \"%s\" 2>&1",
-				 backend_exec, boot_options, extra_options,
-				 n_connections, test_buffs,
-				 dynamic_shared_memory_type,
-				 DEVNULL, DEVNULL);
-		fflush(NULL);
-		status = system(cmd);
-		if (status == 0)
+		if (test_specific_config_settings(n_connections, test_buffs))
 			break;
 	}
 	n_buffers = test_buffs;
@@ -966,6 +971,48 @@ test_config_settings(void)
 	fflush(stdout);
 	default_timezone = select_default_timezone(share_path);
 	printf("%s\n", default_timezone ? default_timezone : "GMT");
+}
+
+/*
+ * Test a specific combination of configuration settings.
+ */
+static bool
+test_specific_config_settings(int test_conns, int test_buffs)
+{
+	PQExpBuffer cmd = createPQExpBuffer();
+	int			status;
+	_stringlist *gnames,
+			   *gvalues;
+
+	/* Set up the test postmaster invocation */
+	printfPQExpBuffer(cmd,
+					  "\"%s\" --check %s %s "
+					  "-c max_connections=%d "
+					  "-c shared_buffers=%d "
+					  "-c dynamic_shared_memory_type=%s",
+					  backend_exec, boot_options, extra_options,
+					  test_conns, test_buffs,
+					  dynamic_shared_memory_type);
+
+	/* Add any user-given setting overrides */
+	for (gnames = extra_guc_names, gvalues = extra_guc_values;
+		 gnames != NULL;		/* assume lists have the same length */
+		 gnames = gnames->next, gvalues = gvalues->next)
+	{
+		appendPQExpBuffer(cmd, " -c %s=", gnames->str);
+		appendShellString(cmd, gvalues->str);
+	}
+
+	appendPQExpBuffer(cmd,
+					  " < \"%s\" > \"%s\" 2>&1",
+					  DEVNULL, DEVNULL);
+
+	fflush(NULL);
+	status = system(cmd->data);
+
+	destroyPQExpBuffer(cmd);
+
+	return (status == 0);
 }
 
 /*
@@ -994,7 +1041,10 @@ setup_config(void)
 	char	  **conflines;
 	char		repltok[MAXPGPATH];
 	char		path[MAXPGPATH];
-	char	   *autoconflines[3];
+	char	  **autoconflines;
+	int			numautoconflines;
+	_stringlist *gnames,
+			   *gvalues;
 
 	fputs(_("creating configuration files ... "), stdout);
 	fflush(stdout);
@@ -1152,15 +1202,32 @@ setup_config(void)
 	if (chmod(path, pg_file_create_mode) != 0)
 		pg_fatal("could not change permissions of \"%s\": %m", path);
 
+	free(conflines);
+
+
 	/*
-	 * create the automatic configuration file to store the configuration
-	 * parameters set by ALTER SYSTEM command. The parameters present in this
-	 * file will override the value of parameters that exists before parse of
-	 * this file.
+	 * Create the automatic configuration file that stores the configuration
+	 * parameters set by the ALTER SYSTEM command.  We also place any
+	 * parameter values set with initdb's -c option into this file.
 	 */
+	numautoconflines = 2;		/* fixed header lines */
+	for (gnames = extra_guc_names; gnames != NULL; gnames = gnames->next)
+		numautoconflines++;
+	autoconflines = (char **) pg_malloc((numautoconflines + 1) * sizeof(char *));
+
 	autoconflines[0] = pg_strdup("# Do not edit this file manually!\n");
 	autoconflines[1] = pg_strdup("# It will be overwritten by the ALTER SYSTEM command.\n");
-	autoconflines[2] = NULL;
+	numautoconflines = 2;
+	for (gnames = extra_guc_names, gvalues = extra_guc_values;
+		 gnames != NULL;		/* assume lists have the same length */
+		 gnames = gnames->next, gvalues = gvalues->next)
+	{
+		autoconflines[numautoconflines++] =
+			psprintf("%s = '%s'\n",
+					 gnames->str,
+					 escape_quotes(gvalues->str));
+	}
+	autoconflines[numautoconflines] = NULL;
 
 	sprintf(path, "%s/postgresql.auto.conf", pg_data);
 
@@ -1168,7 +1235,7 @@ setup_config(void)
 	if (chmod(path, pg_file_create_mode) != 0)
 		pg_fatal("could not change permissions of \"%s\": %m", path);
 
-	free(conflines);
+	free(autoconflines);
 
 
 	/* pg_hba.conf */
@@ -2103,6 +2170,7 @@ usage(const char *progname)
 	printf(_("  -A, --auth=METHOD         default authentication method for local connections\n"));
 	printf(_("      --auth-host=METHOD    default authentication method for local TCP/IP connections\n"));
 	printf(_("      --auth-local=METHOD   default authentication method for local-socket connections\n"));
+	printf(_("  -c NAME=VALUE             override default setting for server parameter\n"));
 	printf(_(" [-D, --pgdata=]DATADIR     location for this database cluster\n"));
 	printf(_("  -E, --encoding=ENCODING   set default encoding for new databases\n"));
 	printf(_("  -g, --allow-group-access  allow group read/execute on data directory\n"));
@@ -2808,7 +2876,8 @@ main(int argc, char *argv[])
 
 	/* process command-line options */
 
-	while ((c = getopt_long(argc, argv, "A:dD:E:gkL:nNsST:U:WX:", long_options, &option_index)) != -1)
+	while ((c = getopt_long(argc, argv, "A:c:dD:E:gkL:nNsST:U:WX:",
+							long_options, &option_index)) != -1)
 	{
 		switch (c)
 		{
@@ -2830,6 +2899,24 @@ main(int argc, char *argv[])
 				break;
 			case 11:
 				authmethodhost = pg_strdup(optarg);
+				break;
+			case 'c':
+				{
+					char	   *buf = pg_strdup(optarg);
+					char	   *equals = strchr(buf, '=');
+
+					if (!equals)
+					{
+						pg_log_error("-c %s requires a value", buf);
+						pg_log_error_hint("Try \"%s --help\" for more information.",
+										  progname);
+						exit(1);
+					}
+					*equals++ = '\0';	/* terminate variable name */
+					add_stringlist_item(&extra_guc_names, buf);
+					add_stringlist_item(&extra_guc_values, equals);
+					pfree(buf);
+				}
 				break;
 			case 'D':
 				pg_data = pg_strdup(optarg);
