@@ -5650,7 +5650,8 @@ XactLogCommitRecord(TimestampTz commit_time,
 	xl_xact_invals xl_invals;
 	xl_xact_twophase xl_twophase;
 	xl_xact_origin xl_origin;
-	uint8		info;
+	uint8		info = 0;
+	uint8		rmgr_info;
 
 	Assert(CritSectionCount > 0);
 
@@ -5658,9 +5659,9 @@ XactLogCommitRecord(TimestampTz commit_time,
 
 	/* decide between a plain and 2pc commit */
 	if (!TransactionIdIsValid(twophase_xid))
-		info = XLOG_XACT_COMMIT;
+		rmgr_info = XLOG_XACT_COMMIT;
 	else
-		info = XLOG_XACT_COMMIT_PREPARED;
+		rmgr_info = XLOG_XACT_COMMIT_PREPARED;
 
 	/* First figure out and collect all the information needed */
 
@@ -5736,7 +5737,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	}
 
 	if (xl_xinfo.xinfo != 0)
-		info |= XLOG_XACT_HAS_INFO;
+		rmgr_info |= XLOG_XACT_HAS_INFO;
 
 	/* Then include all the collected data into the commit record. */
 
@@ -5794,7 +5795,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	/* we allow filtering by xacts */
 	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-	return XLogInsert(RM_XACT_ID, info);
+	return XLogInsertExtended(RM_XACT_ID, info, rmgr_info);
 }
 
 /*
@@ -5820,7 +5821,8 @@ XactLogAbortRecord(TimestampTz abort_time,
 	xl_xact_dbinfo xl_dbinfo;
 	xl_xact_origin xl_origin;
 
-	uint8		info;
+	uint8		info = 0;
+	uint8		rmgr_info;
 
 	Assert(CritSectionCount > 0);
 
@@ -5828,9 +5830,9 @@ XactLogAbortRecord(TimestampTz abort_time,
 
 	/* decide between a plain and 2pc abort */
 	if (!TransactionIdIsValid(twophase_xid))
-		info = XLOG_XACT_ABORT;
+		rmgr_info = XLOG_XACT_ABORT;
 	else
-		info = XLOG_XACT_ABORT_PREPARED;
+		rmgr_info = XLOG_XACT_ABORT_PREPARED;
 
 
 	/* First figure out and collect all the information needed */
@@ -5889,7 +5891,7 @@ XactLogAbortRecord(TimestampTz abort_time,
 	}
 
 	if (xl_xinfo.xinfo != 0)
-		info |= XLOG_XACT_HAS_INFO;
+		rmgr_info |= XLOG_XACT_HAS_INFO;
 
 	/* Then include all the collected data into the abort record. */
 
@@ -5940,7 +5942,7 @@ XactLogAbortRecord(TimestampTz abort_time,
 	/* Include the replication origin */
 	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-	return XLogInsert(RM_XACT_ID, info);
+	return XLogInsertExtended(RM_XACT_ID, info, rmgr_info);
 }
 
 /*
