@@ -1443,6 +1443,7 @@ LockViewRecurse_context
 LockWaitPolicy
 LockingClause
 LogOpts
+LogRepWorkerWakeupReason
 LogStmtLevel
 LogicalDecodeBeginCB
 LogicalDecodeBeginPrepareCB
