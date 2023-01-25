@@ -199,6 +199,8 @@ extern uint64 assign_record_type_identifier(Oid type_id, int32 typmod);
 
 extern int	compare_values_of_enum(TypeCacheEntry *tcache, Oid arg1, Oid arg2);
 
+extern float4 extract_enum_sort_order(uint32 enum_oid);
+
 extern size_t SharedRecordTypmodRegistryEstimate(void);
 
 extern void SharedRecordTypmodRegistryInit(SharedRecordTypmodRegistry *,

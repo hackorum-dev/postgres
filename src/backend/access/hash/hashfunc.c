@@ -32,6 +32,7 @@
 #include "utils/builtins.h"
 #include "utils/float.h"
 #include "utils/pg_locale.h"
+#include "utils/typcache.h"
 #include "varatt.h"
 
 /*
@@ -129,13 +130,33 @@ hashoidextended(PG_FUNCTION_ARGS)
 Datum
 hashenum(PG_FUNCTION_ARGS)
 {
-	return hash_uint32((uint32) PG_GETARG_OID(0));
+	/*extract the oid of the enum we're hashing*/
+	uint32 enum_oid = (uint32) PG_GETARG_OID(0);
+	float4 enum_sort_order = extract_enum_sort_order(enum_oid);
+
+	/*
+	 * Maintain consistent approach with hashfloat4 by casting the float4 enum
+	 * sort order to a float8, and hashing that.
+	 */
+	float8 key8 = enum_sort_order;
+	return hash_any((unsigned char *) &key8, sizeof(key8));
 }
 
 Datum
 hashenumextended(PG_FUNCTION_ARGS)
 {
-	return hash_uint32_extended((uint32) PG_GETARG_OID(0), PG_GETARG_INT64(1));
+	/*extract the oid of the enum we're hashing*/
+	uint32 enum_oid = (uint32) PG_GETARG_OID(0);
+	uint64 seed = PG_GETARG_INT64(1);
+	float4 enum_sort_order = extract_enum_sort_order(enum_oid);
+
+	/*
+	 * Maintain consistent approach with hashfloat4extended by casting the float4 enum
+	 * sort order to a float8, and hashing that with seed value.
+	 */
+	float8 key8 = enum_sort_order;
+
+	return hash_any_extended((unsigned char *) &key8, sizeof(key8), seed);
 }
 
 Datum
