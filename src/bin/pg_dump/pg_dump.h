@@ -180,6 +180,7 @@ typedef struct _extensionInfo
 	DumpableObject dobj;
 	char	   *namespace;		/* schema containing extension's objects */
 	bool		relocatable;
+	bool		dump_version;
 	char	   *extversion;
 	char	   *extconfig;		/* info about configuration tables */
 	char	   *extcondition;

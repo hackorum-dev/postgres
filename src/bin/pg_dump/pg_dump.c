@@ -5209,11 +5209,21 @@ getExtensions(Archive *fout, int *numExtensions)
 	int			i_extversion;
 	int			i_extconfig;
 	int			i_extcondition;
+	int			i_dump_version;
 
 	query = createPQExpBuffer();
 
 	appendPQExpBufferStr(query, "SELECT x.tableoid, x.oid, "
-						 "x.extname, n.nspname, x.extrelocatable, x.extversion, x.extconfig, x.extcondition "
+						 "x.extname, n.nspname, x.extrelocatable, x.extversion, x.extconfig, x.extcondition, ");
+
+	if (fout->remoteVersion >= 160000)
+		appendPQExpBufferStr(query,
+							 "pg_catalog.pg_extension_version_is_dumpable(x.extname) AS dump_version ");
+	else
+		appendPQExpBufferStr(query,
+							 "false AS dump_version ");
+
+	appendPQExpBufferStr(query,
 						 "FROM pg_extension x "
 						 "JOIN pg_namespace n ON n.oid = x.extnamespace");
 
@@ -5231,6 +5241,7 @@ getExtensions(Archive *fout, int *numExtensions)
 	i_extversion = PQfnumber(res, "extversion");
 	i_extconfig = PQfnumber(res, "extconfig");
 	i_extcondition = PQfnumber(res, "extcondition");
+	i_dump_version = PQfnumber(res, "dump_version");
 
 	for (i = 0; i < ntups; i++)
 	{
@@ -5244,6 +5255,7 @@ getExtensions(Archive *fout, int *numExtensions)
 		extinfo[i].extversion = pg_strdup(PQgetvalue(res, i, i_extversion));
 		extinfo[i].extconfig = pg_strdup(PQgetvalue(res, i, i_extconfig));
 		extinfo[i].extcondition = pg_strdup(PQgetvalue(res, i, i_extcondition));
+		extinfo[i].dump_version = *(PQgetvalue(res, i, i_dump_version)) == 't';
 
 		/* Decide whether we want to dump it */
 		selectDumpableExtension(&(extinfo[i]), dopt);
@@ -10172,15 +10184,22 @@ dumpExtension(Archive *fout, const ExtensionInfo *extinfo)
 		/*
 		 * In a regular dump, we simply create the extension, intentionally
 		 * not specifying a version, so that the destination installation's
-		 * default version is used.
+		 * default version is used. Extensions may opt into having their version
+		 * dumped explicitly using their control file.
 		 *
 		 * Use of IF NOT EXISTS here is unlike our behavior for other object
 		 * types; but there are various scenarios in which it's convenient to
 		 * manually create the desired extension before restoring, so we
 		 * prefer to allow it to exist already.
 		 */
-		appendPQExpBuffer(q, "CREATE EXTENSION IF NOT EXISTS %s WITH SCHEMA %s;\n",
+		appendPQExpBuffer(q, "CREATE EXTENSION IF NOT EXISTS %s WITH SCHEMA %s",
 						  qextname, fmtId(extinfo->namespace));
+		if (extinfo->dump_version)
+		{
+			appendPQExpBufferStr(q, " VERSION ");
+			appendStringLiteralAH(q, extinfo->extversion, fout);
+		}
+		appendPQExpBufferStr(q, ";\n");
 	}
 	else
 	{

@@ -10211,6 +10211,10 @@
   proname => 'pg_extension_config_dump', provolatile => 'v', proparallel => 'u',
   prorettype => 'void', proargtypes => 'regclass text',
   prosrc => 'pg_extension_config_dump' },
+{ oid => '9043', descr => 'should pg_dump emit this extension\'s version?',
+  proname => 'pg_extension_version_is_dumpable', provolatile => 's',
+  prorettype => 'bool', proargtypes => 'name',
+  prosrc => 'pg_extension_version_is_dumpable' },
 
 # SQL-spec window functions
 { oid => '3100', descr => 'row number within partition',

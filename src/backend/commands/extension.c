@@ -88,6 +88,7 @@ typedef struct ExtensionControlFile
 	bool		relocatable;	/* is ALTER EXTENSION SET SCHEMA supported? */
 	bool		superuser;		/* must be superuser to install? */
 	bool		trusted;		/* allow becoming superuser on the fly? */
+	bool		dump_version;	/* record the VERSION during pg_dump? */
 	int			encoding;		/* encoding of the script file, or -1 */
 	List	   *requires;		/* names of prerequisite extensions */
 } ExtensionControlFile;
@@ -582,6 +583,14 @@ parse_extension_control_file(ExtensionControlFile *control,
 						 errmsg("parameter \"%s\" requires a Boolean value",
 								item->name)));
 		}
+		else if (strcmp(item->name, "dump_version") == 0)
+		{
+			if (!parse_bool(item->value, &control->dump_version))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("parameter \"%s\" requires a Boolean value",
+								item->name)));
+		}
 		else if (strcmp(item->name, "encoding") == 0)
 		{
 			control->encoding = pg_valid_server_encoding(item->value);
@@ -639,6 +648,7 @@ read_extension_control_file(const char *extname)
 	control->relocatable = false;
 	control->superuser = true;
 	control->trusted = false;
+	control->dump_version = false;
 	control->encoding = -1;
 
 	/*
@@ -2530,6 +2540,25 @@ pg_extension_config_dump(PG_FUNCTION_ARGS)
 	table_close(extRel, RowExclusiveLock);
 
 	PG_RETURN_VOID();
+}
+
+/*
+ * This function reports whether an extension's version should be written
+ * explicitly by pg_dump.
+ */
+Datum
+pg_extension_version_is_dumpable(PG_FUNCTION_ARGS)
+{
+	Name		extname = PG_GETARG_NAME(0);
+	ExtensionControlFile *control;
+
+	/* Check extension name validity before any filesystem access */
+	check_valid_extension_name(NameStr(*extname));
+
+	/* Read the extension's control file */
+	control = read_extension_control_file(NameStr(*extname));
+
+	PG_RETURN_BOOL(control->dump_version);
 }
 
 /*
