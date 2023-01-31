@@ -72,12 +72,10 @@ int			WalWriterDelay = 200;
 int			WalWriterFlushAfter = DEFAULT_WAL_WRITER_FLUSH_AFTER;
 
 /*
- * Number of do-nothing loops before lengthening the delay time, and the
- * multiplier to apply to WalWriterDelay when we do decide to hibernate.
+ * Number of do-nothing loops before lengthening the delay time.
  * (Perhaps these need to be configurable?)
  */
 #define LOOPS_UNTIL_HIBERNATE		50
-#define HIBERNATE_FACTOR			25
 
 /*
  * Main entry point for walwriter process
@@ -212,6 +210,7 @@ WalWriterMain(const void *startup_data, size_t startup_data_len)
 	for (;;)
 	{
 		long		cur_timeout;
+		int			wakeEvents;
 
 		/*
 		 * Advertise whether we might hibernate in this cycle.  We do this
@@ -248,16 +247,23 @@ WalWriterMain(const void *startup_data, size_t startup_data_len)
 
 		/*
 		 * Sleep until we are signaled or WalWriterDelay has elapsed.  If we
-		 * haven't done anything useful for quite some time, lengthen the
-		 * sleep time so as to reduce the server's idle power consumption.
+		 * haven't done anything useful for quite some time, sleep until an
+		 * event occurs so as to reduce the server's idle power consumption.
 		 */
 		if (left_till_hibernate > 0)
+		{
 			cur_timeout = WalWriterDelay;	/* in ms */
+			wakeEvents = WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH;
+		}
 		else
-			cur_timeout = WalWriterDelay * HIBERNATE_FACTOR;
+		{
+			Assert(hibernating == true);
+			cur_timeout = -1L;
+			wakeEvents = WL_LATCH_SET | WL_EXIT_ON_PM_DEATH;
+		}
 
 		(void) WaitLatch(MyLatch,
-						 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+						 wakeEvents,
 						 cur_timeout,
 						 WAIT_EVENT_WAL_WRITER_MAIN);
 	}
