@@ -1045,16 +1045,32 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					 * expected to occur here, it seems safer to special-case
 					 * it here and keep the assertions that ROWID_VARs
 					 * shouldn't be seen by fix_scan_expr.
+					 *
+					 * The tlist of a childless Result could contain PHVs with
+					 * non-empty phnullingrels, in case it's a dummy plan
+					 * generated for empty join relation.  Special-case it here
+					 * by setting phnullingrels to NULL and keep the assertion
+					 * about phnullingrels being NULL in fix_scan_expr.
 					 */
 					foreach(l, splan->plan.targetlist)
 					{
 						TargetEntry *tle = (TargetEntry *) lfirst(l);
-						Var		   *var = (Var *) tle->expr;
 
-						if (var && IsA(var, Var) && var->varno == ROWID_VAR)
-							tle->expr = (Expr *) makeNullConst(var->vartype,
-															   var->vartypmod,
-															   var->varcollid);
+						if (tle->expr && IsA(tle->expr, Var))
+						{
+							Var		   *var = (Var *) tle->expr;
+
+							if (var->varno == ROWID_VAR)
+								tle->expr = (Expr *) makeNullConst(var->vartype,
+																   var->vartypmod,
+																   var->varcollid);
+						}
+						else if (tle->expr && IsA(tle->expr, PlaceHolderVar))
+						{
+							PlaceHolderVar *phv = (PlaceHolderVar *) tle->expr;
+
+							phv->phnullingrels = NULL;
+						}
 					}
 
 					splan->plan.targetlist =
@@ -2205,7 +2221,7 @@ fix_scan_expr_mutator(Node *node, fix_scan_expr_context *context)
 		/* At scan level, we should always just evaluate the contained expr */
 		PlaceHolderVar *phv = (PlaceHolderVar *) node;
 
-		/* XXX can we assert something about phnullingrels? */
+		Assert(phv->phnullingrels == NULL);
 		return fix_scan_expr_mutator((Node *) phv->phexpr, context);
 	}
 	if (IsA(node, AlternativeSubPlan))
