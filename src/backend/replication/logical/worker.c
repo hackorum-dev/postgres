@@ -510,7 +510,8 @@ should_apply_changes_for_rel(LogicalRepRelMapEntry *rel)
 	}
 	else
 		return (rel->state == SUBREL_STATE_READY ||
-				(rel->state == SUBREL_STATE_SYNCDONE &&
+				((rel->state == SUBREL_STATE_PRE_SYNCDONE ||
+				 rel->state == SUBREL_STATE_SYNCDONE) &&
 				 rel->statelsn <= remote_final_lsn));
 }
 

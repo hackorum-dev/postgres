@@ -62,8 +62,10 @@ DECLARE_UNIQUE_INDEX_PKEY(pg_subscription_rel_srrelid_srsubid_index, 6117, Subsc
 									 * NULL) */
 #define SUBREL_STATE_FINISHEDCOPY 'f'	/* tablesync copy phase is completed
 										 * (sublsn NULL) */
-#define SUBREL_STATE_SYNCDONE	's' /* synchronization finished in front of
-									 * apply (sublsn set) */
+#define SUBREL_STATE_PRE_SYNCDONE	'p' /* synchronization finished in front of
+										 * apply (sublsn set), but the final
+										 * cleanup has not yet been performed */
+#define SUBREL_STATE_SYNCDONE	's' /* synchronization complete */
 #define SUBREL_STATE_READY		'r' /* ready (sublsn set) */
 
 /* These are never stored in the catalog, we only use them for IPC. */

@@ -274,6 +274,82 @@ invalidate_syncing_table_states(Datum arg, int cacheid, uint32 hashvalue)
 }
 
 /*
+ * Update the state of the table to SUBREL_STATE_SYNCDONE and cleanup the
+ * tablesync slot and drop the tablesync's origin tracking.
+ */
+static void
+finish_synchronization(bool restart_after_crash)
+{
+	char		syncslotname[NAMEDATALEN] = {0};
+	char		originname[NAMEDATALEN] = {0};
+
+	StartTransactionCommand();
+
+	SpinLockAcquire(&MyLogicalRepWorker->relmutex);
+	Assert(MyLogicalRepWorker->relstate == SUBREL_STATE_PRE_SYNCDONE);
+	MyLogicalRepWorker->relstate = SUBREL_STATE_SYNCDONE;
+	SpinLockRelease(&MyLogicalRepWorker->relmutex);
+
+	UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
+							   MyLogicalRepWorker->relid,
+							   MyLogicalRepWorker->relstate,
+							   MyLogicalRepWorker->relstate_lsn);
+
+	ReplicationOriginNameForLogicalRep(MyLogicalRepWorker->subid,
+									   MyLogicalRepWorker->relid,
+									   originname,
+									   sizeof(originname));
+
+	/*
+	 * Resetting the origin session removes the ownership of the slot. This is
+	 * needed to allow the origin to be dropped. But note that if the tablesync
+	 * worker restarts after crash. we don't need to reset the origin because
+	 * it has not been setup yet.
+	 */
+	if (!restart_after_crash)
+	{
+		replorigin_session_reset();
+		replorigin_session_origin = InvalidRepOriginId;
+		replorigin_session_origin_lsn = InvalidXLogRecPtr;
+		replorigin_session_origin_timestamp = 0;
+	}
+
+	/*
+	 * We expect that origin must be present. The concurrent operations
+	 * that remove origin like a refresh for the subscription take an
+	 * access exclusive lock on pg_subscription which prevent the previous
+	 * operation to update the rel state to SUBREL_STATE_SYNCDONE to
+	 * succeed.
+	 */
+	replorigin_drop_by_name(originname, false, false);
+
+	/*
+	 * Cleanup the tablesync slot.
+	 *
+	 * This has to be done after updating the state because otherwise if
+	 * there is an error while doing the database operations we won't be
+	 * able to rollback dropped slot.
+	 */
+	ReplicationSlotNameForTablesync(MyLogicalRepWorker->subid,
+									MyLogicalRepWorker->relid,
+									syncslotname,
+									sizeof(syncslotname));
+
+	/*
+	 * Normally, It is important to give an error if we are unable to drop the
+	 * slot, otherwise, it won't be dropped till the corresponding subscription
+	 * is dropped. So passing missing_ok = false. But if the tablesync worker
+	 * restarts after crash, the slot may have been dropped, so we allow
+	 * missing_ok = true for the drop.
+	 */
+	ReplicationSlotDropAtPubNode(LogRepWorkerWalRcvConn, syncslotname,
+								 restart_after_crash);
+
+	finish_sync_worker();
+}
+
+
+/*
  * Handle table synchronization cooperation from the synchronization
  * worker.
  *
@@ -284,18 +360,15 @@ invalidate_syncing_table_states(Datum arg, int cacheid, uint32 hashvalue)
 static void
 process_syncing_tables_for_sync(XLogRecPtr current_lsn)
 {
+	TimeLineID	tli;
+
 	SpinLockAcquire(&MyLogicalRepWorker->relmutex);
 
 	if (MyLogicalRepWorker->relstate == SUBREL_STATE_CATCHUP &&
 		current_lsn >= MyLogicalRepWorker->relstate_lsn)
 	{
-		TimeLineID	tli;
-		char		syncslotname[NAMEDATALEN] = {0};
-		char		originname[NAMEDATALEN] = {0};
-
-		MyLogicalRepWorker->relstate = SUBREL_STATE_SYNCDONE;
+		MyLogicalRepWorker->relstate = SUBREL_STATE_PRE_SYNCDONE;
 		MyLogicalRepWorker->relstate_lsn = current_lsn;
-
 		SpinLockRelease(&MyLogicalRepWorker->relmutex);
 
 		/*
@@ -304,10 +377,18 @@ process_syncing_tables_for_sync(XLogRecPtr current_lsn)
 		if (!IsTransactionState())
 			StartTransactionCommand();
 
+		/*
+		 * Set the state to PRE_SYNCDONE so that if the an error occurs before
+		 * setting the state to SYNCDONE the restarted tablesync worker can
+		 * exit via the fast path without starting streaming again.
+		 */
 		UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
 								   MyLogicalRepWorker->relid,
 								   MyLogicalRepWorker->relstate,
 								   MyLogicalRepWorker->relstate_lsn);
+
+		CommitTransactionCommand();
+		pgstat_report_stat(false);
 
 		/*
 		 * End streaming so that LogRepWorkerWalRcvConn can be used to drop
@@ -315,69 +396,7 @@ process_syncing_tables_for_sync(XLogRecPtr current_lsn)
 		 */
 		walrcv_endstreaming(LogRepWorkerWalRcvConn, &tli);
 
-		/*
-		 * Cleanup the tablesync slot.
-		 *
-		 * This has to be done after updating the state because otherwise if
-		 * there is an error while doing the database operations we won't be
-		 * able to rollback dropped slot.
-		 */
-		ReplicationSlotNameForTablesync(MyLogicalRepWorker->subid,
-										MyLogicalRepWorker->relid,
-										syncslotname,
-										sizeof(syncslotname));
-
-		/*
-		 * It is important to give an error if we are unable to drop the slot,
-		 * otherwise, it won't be dropped till the corresponding subscription
-		 * is dropped. So passing missing_ok = false.
-		 */
-		ReplicationSlotDropAtPubNode(LogRepWorkerWalRcvConn, syncslotname, false);
-
-		CommitTransactionCommand();
-		pgstat_report_stat(false);
-
-		/*
-		 * Start a new transaction to clean up the tablesync origin tracking.
-		 * This transaction will be ended within the finish_sync_worker().
-		 * Now, even, if we fail to remove this here, the apply worker will
-		 * ensure to clean it up afterward.
-		 *
-		 * We need to do this after the table state is set to SYNCDONE.
-		 * Otherwise, if an error occurs while performing the database
-		 * operation, the worker will be restarted and the in-memory state of
-		 * replication progress (remote_lsn) won't be rolled-back which would
-		 * have been cleared before restart. So, the restarted worker will use
-		 * invalid replication progress state resulting in replay of
-		 * transactions that have already been applied.
-		 */
-		StartTransactionCommand();
-
-		ReplicationOriginNameForLogicalRep(MyLogicalRepWorker->subid,
-										   MyLogicalRepWorker->relid,
-										   originname,
-										   sizeof(originname));
-
-		/*
-		 * Resetting the origin session removes the ownership of the slot.
-		 * This is needed to allow the origin to be dropped.
-		 */
-		replorigin_session_reset();
-		replorigin_session_origin = InvalidRepOriginId;
-		replorigin_session_origin_lsn = InvalidXLogRecPtr;
-		replorigin_session_origin_timestamp = 0;
-
-		/*
-		 * Drop the tablesync's origin tracking if exists.
-		 *
-		 * There is a chance that the user is concurrently performing refresh
-		 * for the subscription where we remove the table state and its origin
-		 * or the apply worker would have removed this origin. So passing
-		 * missing_ok = true.
-		 */
-		replorigin_drop_by_name(originname, true, false);
-
-		finish_sync_worker();
+		finish_synchronization(false);
 	}
 	else
 		SpinLockRelease(&MyLogicalRepWorker->relmutex);
@@ -463,8 +482,6 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 			 */
 			if (current_lsn >= rstate->lsn)
 			{
-				char		originname[NAMEDATALEN];
-
 				rstate->state = SUBREL_STATE_READY;
 				rstate->lsn = current_lsn;
 				if (!started_tx)
@@ -473,26 +490,7 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 					started_tx = true;
 				}
 
-				/*
-				 * Remove the tablesync origin tracking if exists.
-				 *
-				 * There is a chance that the user is concurrently performing
-				 * refresh for the subscription where we remove the table
-				 * state and its origin or the tablesync worker would have
-				 * already removed this origin. We can't rely on tablesync
-				 * worker to remove the origin tracking as if there is any
-				 * error while dropping we won't restart it to drop the
-				 * origin. So passing missing_ok = true.
-				 */
-				ReplicationOriginNameForLogicalRep(MyLogicalRepWorker->subid,
-												   rstate->relid,
-												   originname,
-												   sizeof(originname));
-				replorigin_drop_by_name(originname, true, false);
-
-				/*
-				 * Update the state to READY only after the origin cleanup.
-				 */
+				/* Update the state to READY. */
 				UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
 										   rstate->relid, rstate->state,
 										   rstate->lsn);
@@ -1283,7 +1281,8 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 
 	Assert(MyLogicalRepWorker->relstate == SUBREL_STATE_INIT ||
 		   MyLogicalRepWorker->relstate == SUBREL_STATE_DATASYNC ||
-		   MyLogicalRepWorker->relstate == SUBREL_STATE_FINISHEDCOPY);
+		   MyLogicalRepWorker->relstate == SUBREL_STATE_FINISHEDCOPY ||
+		   MyLogicalRepWorker->relstate == SUBREL_STATE_PRE_SYNCDONE);
 
 	/* Assign the origin tracking record name. */
 	ReplicationOriginNameForLogicalRep(MySubscription->oid,
@@ -1326,6 +1325,16 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 		CommitTransactionCommand();
 
 		goto copy_table_done;
+	}
+	else if (MyLogicalRepWorker->relstate == SUBREL_STATE_PRE_SYNCDONE)
+	{
+		/*
+		 * The table synchronization has finished in front of apply (sublsn
+		 * set), but the tablesync worker then crashed before setting the state
+		 * to SYNCDONE. So, we only need to perform the final cleanup, set the
+		 * state to SYNCDONE, then exit.
+		 */
+		finish_synchronization(true);
 	}
 
 	SpinLockAcquire(&MyLogicalRepWorker->relmutex);
