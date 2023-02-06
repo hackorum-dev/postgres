@@ -88,6 +88,7 @@ typedef struct
 	bool		cache_blob;		/* Does buf2 contain strxfrm() blob, etc? */
 	bool		collate_c;
 	Oid			typid;			/* Actual datatype (text/bpchar/bytea/name) */
+	bool		estimating;		/* true if estimating cardinality */
 	hyperLogLogState abbr_card; /* Abbreviated key cardinality state */
 	hyperLogLogState full_card; /* Full key cardinality state */
 	double		prop_card;		/* Required cardinality proportion */
@@ -2174,6 +2175,7 @@ varstr_sortsupport(SortSupport ssup, Oid typid, Oid collid)
 		if (abbreviate)
 		{
 			sss->prop_card = 0.20;
+			sss->estimating = true;
 			initHyperLogLog(&sss->abbr_card, 10);
 			initHyperLogLog(&sss->full_card, 10);
 			ssup->abbrev_full_comparator = ssup->comparator;
@@ -2479,7 +2481,6 @@ varstr_abbrev_convert(Datum original, SortSupport ssup)
 	Datum		res;
 	char	   *pres;
 	int			len;
-	uint32		hash;
 
 	pres = (char *) &res;
 	/* memset(), so any non-overwritten bytes are NUL */
@@ -2656,29 +2657,32 @@ varstr_abbrev_convert(Datum original, SortSupport ssup)
 	 * in order to compensate for cases where differences are past
 	 * PG_CACHE_LINE_SIZE bytes, so as to limit the overhead of hashing.
 	 */
-	hash = DatumGetUInt32(hash_any((unsigned char *) authoritative_data,
-								   Min(len, PG_CACHE_LINE_SIZE)));
+	if (sss->estimating)
+	{
+		uint32		hash;
+#if SIZEOF_DATUM == 8
+		uint32		lohalf,
+					hihalf;
+#endif
 
-	if (len > PG_CACHE_LINE_SIZE)
-		hash ^= DatumGetUInt32(hash_uint32((uint32) len));
+		hash = DatumGetUInt32(hash_any((unsigned char *) authoritative_data,
+									   Min(len, PG_CACHE_LINE_SIZE)));
 
-	addHyperLogLog(&sss->full_card, hash);
+		if (len > PG_CACHE_LINE_SIZE)
+			hash ^= DatumGetUInt32(hash_uint32((uint32) len));
+
+		addHyperLogLog(&sss->full_card, hash);
 
 	/* Hash abbreviated key */
 #if SIZEOF_DATUM == 8
-	{
-		uint32		lohalf,
-					hihalf;
-
 		lohalf = (uint32) res;
 		hihalf = (uint32) (res >> 32);
 		hash = DatumGetUInt32(hash_uint32(lohalf ^ hihalf));
-	}
 #else							/* SIZEOF_DATUM != 8 */
-	hash = DatumGetUInt32(hash_uint32((uint32) res));
+		hash = DatumGetUInt32(hash_uint32((uint32) res));
 #endif
-
-	addHyperLogLog(&sss->abbr_card, hash);
+		addHyperLogLog(&sss->abbr_card, hash);
+	}
 
 	/* Cache result, perhaps saving an expensive strxfrm() call next time */
 	sss->cache_blob = true;
@@ -2715,8 +2719,7 @@ varstr_abbrev_abort(int memtupcount, SortSupport ssup)
 
 	Assert(ssup->abbreviate);
 
-	/* Have a little patience */
-	if (memtupcount < 100)
+	if (memtupcount < 100 || !sss->estimating)
 		return false;
 
 	abbrev_distinct = estimateHyperLogLog(&sss->abbr_card);
@@ -2751,6 +2754,24 @@ varstr_abbrev_abort(int memtupcount, SortSupport ssup)
 #endif
 
 	/*
+	 * If we have >10k distinct abbreviated values, then even if we were
+	 * sorting many billion rows we'd likely still break even, and the penalty
+	 * of undoing that many rows of abbrevs would probably not be worth it.
+	 * Stop even counting at that point.
+	 */
+	if (abbrev_distinct > 10000.0)
+	{
+#ifdef TRACE_SORT
+		if (trace_sort)
+			elog(LOG, "varstr_abbrev: estimation ends at %d "
+				 "(abbrev_distinct: %f, key_distinct: %f, prop_card: %f)",
+				 memtupcount, abbrev_distinct, key_distinct, sss->prop_card);
+#endif
+		sss->estimating = false;
+		return false;
+	}
+
+	/*
 	 * If the number of distinct abbreviated keys approximately matches the
 	 * number of distinct authoritative original keys, that's reason enough to
 	 * proceed.  We can win even with a very low cardinality set if most
@@ -2779,11 +2800,9 @@ varstr_abbrev_abort(int memtupcount, SortSupport ssup)
 		 * rate is chosen to be a little less aggressive than halving -- which
 		 * (since we're called at points at which memtupcount has doubled)
 		 * would never see the cost model actually abort past the first call
-		 * following a decay.  This decay rate is mostly a precaution against
-		 * a sudden, violent swing in how well abbreviated cardinality tracks
-		 * full key cardinality.  The decay also serves to prevent a marginal
-		 * case from being aborted too late, when too much has already been
-		 * invested in string transformation.
+		 * following a decay.  This decay rate is a precaution against a
+		 * sudden, violent swing in how well abbreviated cardinality tracks
+		 * full key cardinality.
 		 *
 		 * It's possible for sets of several million distinct strings with
 		 * mere tens of thousands of distinct abbreviated keys to still
