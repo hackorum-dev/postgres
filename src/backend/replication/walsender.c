@@ -250,8 +250,11 @@ static long WalSndComputeSleeptime(TimestampTz now);
 static void WalSndWait(uint32 socket_events, long timeout, uint32 wait_event);
 static void WalSndPrepareWrite(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid, bool last_write);
 static void WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid, bool last_write);
-static void WalSndUpdateProgressAndKeepalive(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
-											 bool skipped_xact);
+static void WalSndUpdateProgressAndKeepalive(LogicalDecodingContext *ctx,
+											 XLogRecPtr lsn,
+											 TransactionId xid,
+											 bool did_write,
+											 bool finished_xact);
 static XLogRecPtr WalSndWaitForWal(XLogRecPtr loc);
 static void LagTrackerWrite(XLogRecPtr lsn, TimestampTz local_flush_time);
 static TimeOffset LagTrackerRead(int head, XLogRecPtr lsn, TimestampTz now);
@@ -1462,16 +1465,17 @@ WalSndSendPending(void)
  *
  * Write the current position to the lag tracker (see XLogSendPhysical).
  *
- * When skipping empty transactions, send a keepalive message if necessary.
+ * When a transaction is skipped or the data is not sent to subscriber for a
+ * long time, send a keepalive message if necessary.
  */
 static void
-WalSndUpdateProgressAndKeepalive(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
-								 bool skipped_xact)
+WalSndUpdateProgressAndKeepalive(LogicalDecodingContext *ctx, XLogRecPtr lsn,
+								 TransactionId xid, bool did_write,
+								 bool finished_xact)
 {
 	static TimestampTz sendTime = 0;
 	TimestampTz now = GetCurrentTimestamp();
 	bool		pending_writes = false;
-	bool		end_xact = ctx->end_xact;
 
 	/*
 	 * Track lag no more than once per WALSND_LOGICAL_LAG_TRACK_INTERVAL_MS to
@@ -1482,8 +1486,9 @@ WalSndUpdateProgressAndKeepalive(LogicalDecodingContext *ctx, XLogRecPtr lsn, Tr
 	 * transaction LSN.
 	 */
 #define WALSND_LOGICAL_LAG_TRACK_INTERVAL_MS	1000
-	if (end_xact && TimestampDifferenceExceeds(sendTime, now,
-											   WALSND_LOGICAL_LAG_TRACK_INTERVAL_MS))
+	if (finished_xact &&
+		TimestampDifferenceExceeds(sendTime, now,
+								   WALSND_LOGICAL_LAG_TRACK_INTERVAL_MS))
 	{
 		LagTrackerWrite(lsn, now);
 		sendTime = now;
@@ -1497,7 +1502,7 @@ WalSndUpdateProgressAndKeepalive(LogicalDecodingContext *ctx, XLogRecPtr lsn, Tr
 	 * the worst case we will just send an extra keepalive message when it is
 	 * really not required.
 	 */
-	if (skipped_xact &&
+	if (finished_xact && !did_write &&
 		((volatile WalSndCtlData *) WalSndCtl)->sync_standbys_defined)
 	{
 		WalSndKeepalive(false, lsn);
@@ -1513,12 +1518,12 @@ WalSndUpdateProgressAndKeepalive(LogicalDecodingContext *ctx, XLogRecPtr lsn, Tr
 
 	/*
 	 * Process pending writes if any or try to send a keepalive if required.
-	 * We don't need to try sending keep alive messages at the transaction end
+	 * We don't need to try sending keepalive messages at the transaction end
 	 * as that will be done at a later point in time. This is required only
 	 * for large transactions where we don't send any changes to the
 	 * downstream and the receiver can timeout due to that.
 	 */
-	if (pending_writes || (!end_xact && wal_sender_timeout > 0 &&
+	if (pending_writes || (!finished_xact && wal_sender_timeout > 0 &&
 						   now >= TimestampTzPlusMilliseconds(last_reply_timestamp,
 															  wal_sender_timeout / 2)))
 		WalSndSendPending();

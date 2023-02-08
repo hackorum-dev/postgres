@@ -27,7 +27,8 @@ typedef LogicalOutputPluginWriterWrite LogicalOutputPluginWriterPrepareWrite;
 typedef void (*LogicalOutputPluginWriterUpdateProgressAndKeepalive) (struct LogicalDecodingContext *lr,
 																	 XLogRecPtr Ptr,
 																	 TransactionId xid,
-																	 bool skipped_xact
+																	 bool did_write,
+																	 bool finished_xact
 );
 
 typedef struct LogicalDecodingContext
@@ -105,10 +106,9 @@ typedef struct LogicalDecodingContext
 	 */
 	bool		accept_writes;
 	bool		prepared_write;
+	bool		did_write;
 	XLogRecPtr	write_location;
 	TransactionId write_xid;
-	/* Are we processing the end LSN of a transaction? */
-	bool		end_xact;
 } LogicalDecodingContext;
 
 
@@ -144,5 +144,9 @@ extern bool filter_prepare_cb_wrapper(LogicalDecodingContext *ctx,
 extern bool filter_by_origin_cb_wrapper(LogicalDecodingContext *ctx, RepOriginId origin_id);
 extern void ResetLogicalStreamingState(void);
 extern void UpdateDecodingStats(LogicalDecodingContext *ctx);
+extern void UpdateDecodingProgressAndKeepalive(LogicalDecodingContext *ctx,
+											   TransactionId xid,
+											   XLogRecPtr lsn,
+											   bool finished_xact);
 
 #endif
