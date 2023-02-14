@@ -1214,23 +1214,6 @@ build-postgresql:
        </listitem>
       </varlistentry>
 
-     </variablelist>
-
-   </sect3>
-
-   <sect3 id="configure-options-anti-features">
-    <title>Anti-Features</title>
-
-    <para>
-     The options described in this section allow disabling
-     certain <productname>PostgreSQL</productname> features that are built
-     by default, but which might need to be turned off if the required
-     software or system features are not available.  Using these options is
-     not recommended unless really necessary.
-    </para>
-
-     <variablelist>
-
       <varlistentry id="configure-option-without-readline">
        <term><option>--without-readline</option></term>
        <listitem>
@@ -1266,34 +1249,6 @@ build-postgresql:
          This disables
          support for compressed archives in <application>pg_dump</application>
          and <application>pg_restore</application>.
-        </para>
-       </listitem>
-      </varlistentry>
-
-      <varlistentry id="configure-option-disable-spinlocks">
-       <term><option>--disable-spinlocks</option></term>
-       <listitem>
-        <para>
-         Allow the build to succeed even if <productname>PostgreSQL</productname>
-         has no CPU spinlock support for the platform.  The lack of
-         spinlock support will result in very poor performance; therefore,
-         this option should only be used if the build aborts and
-         informs you that the platform lacks spinlock support. If this
-         option is required to build <productname>PostgreSQL</productname> on
-         your platform, please report the problem to the
-         <productname>PostgreSQL</productname> developers.
-        </para>
-       </listitem>
-      </varlistentry>
-
-      <varlistentry id="configure-option-disable-atomics">
-       <term><option>--disable-atomics</option></term>
-       <listitem>
-        <para>
-         Disable use of CPU atomic operations.  This option does nothing on
-         platforms that lack such operations.  On platforms that do have
-         them, this will result in poor performance.  This option is only
-         useful for debugging or making performance comparisons.
         </para>
        </listitem>
       </varlistentry>
@@ -1698,6 +1653,34 @@ build-postgresql:
          option wins.
 
          This option is only for developers, to test segment related code.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry id="configure-option-disable-spinlocks">
+       <term><option>--disable-spinlocks</option></term>
+       <listitem>
+        <para>
+         Allow the build to succeed even if <productname>PostgreSQL</productname>
+         has no CPU spinlock support for the platform.  The lack of
+         spinlock support will result in very poor performance; therefore,
+         this option should only be used if the build aborts and
+         informs you that the platform lacks spinlock support. If this
+         option is required to build <productname>PostgreSQL</productname> on
+         your platform, please report the problem to the
+         <productname>PostgreSQL</productname> developers.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry id="configure-option-disable-atomics">
+       <term><option>--disable-atomics</option></term>
+       <listitem>
+        <para>
+         Disable use of CPU atomic operations.  This option does nothing on
+         platforms that lack such operations.  On platforms that do have
+         them, this will result in poor performance.  This option is only
+         useful for debugging or making performance comparisons.
         </para>
        </listitem>
       </varlistentry>
@@ -2657,13 +2640,6 @@ ninja install
        </para>
       </listitem>
      </varlistentry>
-    </variablelist>
-   </sect3>
-
-   <sect3 id="meson-options-anti-features">
-    <title>Anti-Features</title>
-
-    <variablelist>
      <varlistentry id="configure-readline-meson">
       <term><option>-Dreadline={ auto | enabled | disabled }</option></term>
       <listitem>
@@ -2700,36 +2676,6 @@ ninja install
         It defaults to auto and enables
         support for compressed archives in <application>pg_dump</application>,
         <application>pg_restore</application> and <application>pg_basebackup</application> and is recommended.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="configure-spinlocks-meson">
-      <term><option>-Dspinlocks={ true | false }</option></term>
-      <listitem>
-       <para>
-        This option is set to true by default; setting it to false will
-        allow the build to succeed even if <productname>PostgreSQL</productname>
-        has no CPU spinlock support for the platform.  The lack of
-        spinlock support will result in very poor performance; therefore,
-        this option should only be changed if the build aborts and
-        informs you that the platform lacks spinlock support. If setting this
-        option to false is required to build <productname>PostgreSQL</productname> on
-        your platform, please report the problem to the
-        <productname>PostgreSQL</productname> developers.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="configure-atomics-meson">
-      <term><option>-Datomics={ true | false }</option></term>
-      <listitem>
-       <para>
-        This option is set to true by default; setting it to false will
-        disable use of CPU atomic operations.  The option does nothing on
-        platforms that lack such operations.  On platforms that do have
-        them, disabling atomics will result in poor performance.  Changing
-        this option is only useful for debugging or making performance comparisons.
        </para>
       </listitem>
      </varlistentry>
@@ -3175,8 +3121,36 @@ ninja install
         </para>
        </listitem>
       </varlistentry>
+      <varlistentry id="configure-spinlocks-meson">
+       <term><option>-Dspinlocks={ true | false }</option></term>
+       <listitem>
+        <para>
+         This option is set to true by default; setting it to false will
+         allow the build to succeed even if <productname>PostgreSQL</productname>
+         has no CPU spinlock support for the platform.  The lack of
+         spinlock support will result in very poor performance; therefore,
+         this option should only be changed if the build aborts and
+         informs you that the platform lacks spinlock support. If setting this
+         option to false is required to build <productname>PostgreSQL</productname> on
+         your platform, please report the problem to the
+         <productname>PostgreSQL</productname> developers.
+        </para>
+       </listitem>
+      </varlistentry>
 
-    </variablelist>
+      <varlistentry id="configure-atomics-meson">
+       <term><option>-Datomics={ true | false }</option></term>
+       <listitem>
+        <para>
+         This option is set to true by default; setting it to false will
+         disable use of CPU atomic operations.  The option does nothing on
+         platforms that lack such operations.  On platforms that do have
+         them, disabling atomics will result in poor performance.  Changing
+         this option is only useful for debugging or making performance comparisons.
+        </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
    </sect3>
   </sect2>
  </sect1>
