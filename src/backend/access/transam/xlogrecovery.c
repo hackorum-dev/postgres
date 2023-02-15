@@ -1587,6 +1587,7 @@ PerformWalRecovery(void)
 	XLogRecord *record;
 	bool		reachedRecoveryTarget = false;
 	TimeLineID	replayTLI;
+	uint32	pgstat_report_wal_frequency = 0;
 
 	/*
 	 * Initialize shared variables for tracking progress of WAL replay, as if
@@ -1744,6 +1745,16 @@ PerformWalRecovery(void)
 			 * Apply the record
 			 */
 			ApplyWalRecord(xlogreader, record, &replayTLI);
+
+			/*
+			 * Report pending statistics to the cumulative stats system once
+			 * every PGSTAT_REPORT_FREQUENCY times to not hinder performance.
+			 */
+			if (pgstat_report_wal_frequency++ == PGSTAT_REPORT_FREQUENCY)
+			{
+				pgstat_report_wal(false);
+				pgstat_report_wal_frequency = 0;
+			}
 
 			/* Exit loop if we reached inclusive recovery target */
 			if (recoveryStopsAfter(xlogreader))
@@ -3201,6 +3212,7 @@ XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 	uint32		targetPageOff;
 	XLogSegNo	targetSegNo PG_USED_FOR_ASSERTS_ONLY;
 	int			r;
+	instr_time	start;
 
 	XLByteToSeg(targetPagePtr, targetSegNo, wal_segment_size);
 	targetPageOff = XLogSegmentOffset(targetPagePtr, wal_segment_size);
@@ -3293,6 +3305,12 @@ retry:
 	/* Read the requested page */
 	readOff = targetPageOff;
 
+	/* Measure I/O timing to read WAL data */
+	if (track_wal_io_timing)
+		INSTR_TIME_SET_CURRENT(start);
+	else
+		INSTR_TIME_SET_ZERO(start);
+
 	pgstat_report_wait_start(WAIT_EVENT_WAL_READ);
 	r = pg_pread(readFile, readBuf, XLOG_BLCKSZ, (off_t) readOff);
 	if (r != XLOG_BLCKSZ)
@@ -3320,6 +3338,22 @@ retry:
 		goto next_record_is_invalid;
 	}
 	pgstat_report_wait_end();
+
+	/*
+	 * Increment the I/O time to read WAL data, the number of times and number
+	 * of bytes WAL data was read from disk.
+	 */
+	if (track_wal_io_timing)
+	{
+		instr_time	duration;
+
+		INSTR_TIME_SET_CURRENT(duration);
+		INSTR_TIME_SUBTRACT(duration, start);
+		PendingWalStats.wal_read_time += INSTR_TIME_GET_MICROSEC(duration);
+	}
+
+	PendingWalStats.wal_read++;
+	PendingWalStats.wal_read_bytes += XLOG_BLCKSZ;
 
 	Assert(targetSegNo == readSegNo);
 	Assert(targetPageOff == readOff);

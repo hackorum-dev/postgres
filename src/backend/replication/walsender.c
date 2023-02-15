@@ -318,6 +318,9 @@ WalSndErrorCleanup(void)
 	ConditionVariableCancelSleep();
 	pgstat_report_wait_end();
 
+	/* Report pending statistics to the cumulative stats system */
+	pgstat_report_wal(true);
+
 	if (xlogreader != NULL && xlogreader->seg.ws_file >= 0)
 		wal_segment_close(xlogreader);
 
@@ -383,6 +386,9 @@ WalSndShutdown(void)
 	 */
 	if (whereToSendOutput == DestRemote)
 		whereToSendOutput = DestNone;
+
+	/* Report pending statistics to the cumulative stats system */
+	pgstat_report_wal(true);
 
 	proc_exit(0);
 	abort();					/* keep the compiler quiet */
@@ -2561,6 +2567,9 @@ WalSndLoop(WalSndSendDataCallback send_data)
 			/* Sleep until something happens or we time out */
 			WalSndWait(wakeEvents, sleeptime, WAIT_EVENT_WAL_SENDER_MAIN);
 		}
+
+		/* Report pending statistics to the cumulative stats system */
+		pgstat_report_wal(false);
 	}
 }
 
@@ -3117,6 +3126,9 @@ WalSndDone(WalSndSendDataCallback send_data)
 	 */
 	replicatedPtr = XLogRecPtrIsInvalid(MyWalSnd->flush) ?
 		MyWalSnd->write : MyWalSnd->flush;
+
+	/* Report pending statistics to the cumulative stats system */
+	pgstat_report_wal(true);
 
 	if (WalSndCaughtUp && sentPtr == replicatedPtr &&
 		!pq_is_send_pending())

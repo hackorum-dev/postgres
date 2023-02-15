@@ -442,9 +442,18 @@ typedef struct PgStat_WalStats
 	PgStat_Counter wal_sync;
 	PgStat_Counter wal_write_time;
 	PgStat_Counter wal_sync_time;
+	uint64		wal_read_bytes;
+	PgStat_Counter wal_read;
+	PgStat_Counter wal_read_time;
 	TimestampTz stat_reset_timestamp;
 } PgStat_WalStats;
 
+
+/*
+ * When stats captured in resource-intensive/tight loops, report pending stats
+ * once every PGSTAT_REPORT_FREQUENCY times.
+ */
+#define PGSTAT_REPORT_FREQUENCY		1024
 
 /*
  * Functions in pgstat.c

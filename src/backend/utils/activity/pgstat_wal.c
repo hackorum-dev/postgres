@@ -107,6 +107,9 @@ pgstat_flush_wal(bool nowait)
 	WALSTAT_ACC(wal_sync);
 	WALSTAT_ACC(wal_write_time);
 	WALSTAT_ACC(wal_sync_time);
+	WALSTAT_ACC(wal_read_bytes);
+	WALSTAT_ACC(wal_read);
+	WALSTAT_ACC(wal_read_time);
 #undef WALSTAT_ACC
 
 	LWLockRelease(&stats_shmem->lock);
@@ -147,7 +150,8 @@ pgstat_have_pending_wal(void)
 {
 	return pgWalUsage.wal_records != prevWalUsage.wal_records ||
 		PendingWalStats.wal_write != 0 ||
-		PendingWalStats.wal_sync != 0;
+		PendingWalStats.wal_sync != 0 ||
+		PendingWalStats.wal_read != 0;
 }
 
 void

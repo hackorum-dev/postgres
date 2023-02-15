@@ -180,6 +180,11 @@ XLogReaderFree(XLogReaderState *state)
 		pfree(state->readRecordBuf);
 	pfree(state->readBuf);
 	pfree(state);
+
+#ifndef FRONTEND
+	/* Report pending statistics to the cumulative stats system */
+	pgstat_report_wal(true);
+#endif
 }
 
 /*
@@ -1506,6 +1511,9 @@ WALRead(XLogReaderState *state,
 		uint32		startoff;
 		int			segbytes;
 		int			readbytes;
+#ifndef FRONTEND
+		instr_time	start;
+#endif
 
 		startoff = XLogSegmentOffset(recptr, state->segcxt.ws_segsize);
 
@@ -1541,6 +1549,12 @@ WALRead(XLogReaderState *state,
 			segbytes = nbytes;
 
 #ifndef FRONTEND
+		/* Measure I/O timing to read WAL data */
+		if (track_wal_io_timing)
+			INSTR_TIME_SET_CURRENT(start);
+		else
+			INSTR_TIME_SET_ZERO(start);
+
 		pgstat_report_wait_start(WAIT_EVENT_WAL_READ);
 #endif
 
@@ -1550,6 +1564,21 @@ WALRead(XLogReaderState *state,
 
 #ifndef FRONTEND
 		pgstat_report_wait_end();
+
+		/*
+		 * Increment the I/O time to read WAL data and the number of times WAL
+		 * data was read from disk.
+		 */
+		if (track_wal_io_timing)
+		{
+			instr_time	duration;
+
+			INSTR_TIME_SET_CURRENT(duration);
+			INSTR_TIME_SUBTRACT(duration, start);
+			PendingWalStats.wal_read_time += INSTR_TIME_GET_MICROSEC(duration);
+		}
+
+		PendingWalStats.wal_read++;
 #endif
 
 		if (readbytes <= 0)
@@ -1568,6 +1597,9 @@ WALRead(XLogReaderState *state,
 		p += readbytes;
 	}
 
+#ifndef FRONTEND
+	PendingWalStats.wal_read_bytes += count;
+#endif
 	return true;
 }
 
