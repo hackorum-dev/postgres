@@ -8028,7 +8028,7 @@ int64_to_numericvar(int64 val, NumericVar *var)
 	int			ndigits;
 
 	/* int64 can require at most 19 decimal digits; add one for safety */
-	alloc_var(var, 20 / DEC_DIGITS);
+	alloc_var(var, (20 + DEC_DIGITS - 1) / DEC_DIGITS);
 	if (val < 0)
 	{
 		var->sign = NUMERIC_NEG;
@@ -8219,7 +8219,7 @@ int128_to_numericvar(int128 val, NumericVar *var)
 	int			ndigits;
 
 	/* int128 can require at most 39 decimal digits; add one for safety */
-	alloc_var(var, 40 / DEC_DIGITS);
+	alloc_var(var, (40 + DEC_DIGITS - 1) / DEC_DIGITS);
 	if (val < 0)
 	{
 		var->sign = NUMERIC_NEG;
