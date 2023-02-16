@@ -703,7 +703,7 @@ PostmasterMain(int argc, char *argv[])
 				break;
 
 			case 'C':
-				output_config_variable = strdup(optarg);
+				output_config_variable = pstrdup(optarg);
 				break;
 
 			case 'c':
@@ -734,7 +734,7 @@ PostmasterMain(int argc, char *argv[])
 				}
 
 			case 'D':
-				userDoption = strdup(optarg);
+				userDoption = pstrdup(optarg);
 				break;
 
 			case 'd':
@@ -2527,12 +2527,23 @@ ConnCreate(int serverFd)
 {
 	Port	   *port;
 
-	if (!(port = (Port *) calloc(1, sizeof(Port))))
+	/*
+	 * We allocate the port memory in TopMemoryContext since the port
+	 * information will be saved for the duration of the backend (as
+	 * MyProcPort).
+	 *
+	 * Once the backend has started, we need to free the memory, or we will
+	 * exhaust the memory over time.
+	 */
+	port = MemoryContextAllocExtended(TopMemoryContext,
+									  sizeof(Port),
+									  MCXT_ALLOC_ZERO | MCXT_ALLOC_NO_OOM);
+	if (port == NULL)
 	{
 		ereport(LOG,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("out of memory")));
-		ExitPostmaster(1);
+		return NULL;
 	}
 
 	if (StreamConnection(serverFd, port) != STATUS_OK)
@@ -2556,7 +2567,7 @@ ConnCreate(int serverFd)
 static void
 ConnFree(Port *port)
 {
-	free(port);
+	pfree(port);
 }
 
 
@@ -4339,9 +4350,16 @@ BackendInitialize(Port *port)
 	/*
 	 * Save remote_host and remote_port in port structure (after this, they
 	 * will appear in log_line_prefix data for log messages).
+	 *
+	 * We allocate the port structure in TopMemoryContext since it will remain
+	 * for the duration of the backend (in MyProcPort). It is not necessary to
+	 * check the returned value since MemoryContextStrdup() will error out if
+	 * it cannot allocate memory. This is fine since we are running in the
+	 * backend and it will just report the error to the connected client and
+	 * shut down the backend.
 	 */
-	port->remote_host = strdup(remote_host);
-	port->remote_port = strdup(remote_port);
+	port->remote_host = MemoryContextStrdup(TopMemoryContext, remote_host);
+	port->remote_port = MemoryContextStrdup(TopMemoryContext, remote_port);
 
 	/* And now we can issue the Log_connections message, if wanted */
 	if (Log_connections)
@@ -4372,7 +4390,7 @@ BackendInitialize(Port *port)
 		ret == 0 &&
 		strspn(remote_host, "0123456789.") < strlen(remote_host) &&
 		strspn(remote_host, "0123456789ABCDEFabcdef:") < strlen(remote_host))
-		port->remote_hostname = strdup(remote_host);
+		port->remote_hostname = MemoryContextStrdup(TopMemoryContext, remote_host);
 
 	/*
 	 * Ready to begin client interaction.  We will give up and _exit(1) after
