@@ -216,7 +216,7 @@ WAIT_EVENT_REPLICATION_SLOT_READ	ReplicationSlotRead	"Waiting for a read from a 
 WAIT_EVENT_REPLICATION_SLOT_RESTORE_SYNC	ReplicationSlotRestoreSync	"Waiting for a replication slot control file to reach durable storage while restoring it to memory."
 WAIT_EVENT_REPLICATION_SLOT_SYNC	ReplicationSlotSync	"Waiting for a replication slot control file to reach durable storage."
 WAIT_EVENT_REPLICATION_SLOT_WRITE	ReplicationSlotWrite	"Waiting for a write to a replication slot control file."
-WAIT_EVENT_SLRU_FLUSH_SYNC	SLRUFlushSync	"Waiting for SLRU data to reach durable storage during a checkpoint or database shutdown."
+WAIT_EVENT_SLRU_FLUSH_SYNC	SLRUFlush	"Initiating writeback of SLRU data."
 WAIT_EVENT_SLRU_READ	SLRURead	"Waiting for a read of an SLRU page."
 WAIT_EVENT_SLRU_SYNC	SLRUSync	"Waiting for SLRU data to reach durable storage following a page write."
 WAIT_EVENT_SLRU_WRITE	SLRUWrite	"Waiting for a write of an SLRU page."

@@ -15,6 +15,7 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
+#include "access/slru.h"
 #include "access/xlog.h"
 #include "access/xlogprefetcher.h"
 #include "catalog/pg_authid.h"
@@ -1535,7 +1536,7 @@ pg_stat_get_slru(PG_FUNCTION_ARGS)
 	/* request SLRU stats from the cumulative stats system */
 	stats = pgstat_fetch_slru();
 
-	for (i = 0;; i++)
+	for (i = 0; i < SLRU_NUM_RELS; i++)
 	{
 		/* for each row */
 		Datum		values[PG_STAT_GET_SLRU_COLS] = {0};
@@ -1543,10 +1544,7 @@ pg_stat_get_slru(PG_FUNCTION_ARGS)
 		PgStat_SLRUStats stat;
 		const char *name;
 
-		name = pgstat_get_slru_name(i);
-
-		if (!name)
-			break;
+		name = SlruName(i);
 
 		stat = stats[i];
 
