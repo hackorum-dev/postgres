@@ -1325,6 +1325,11 @@ DropRole(DropRoleStmt *stmt)
 		 * Remove settings for this role.
 		 */
 		DropSetting(InvalidOid, roleid);
+
+		/*
+		* Remove pg_init_privs enries for that role
+		*/
+		DeleteInitPrivsRefs(roleid);
 	}
 
 	/*
