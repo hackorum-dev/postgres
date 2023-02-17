@@ -292,4 +292,6 @@ extern bool object_ownercheck(Oid classid, Oid objectid, Oid roleid);
 extern bool has_createrole_privilege(Oid roleid);
 extern bool has_bypassrls_privilege(Oid roleid);
 
+extern Acl * allocacl(int n);
+
 #endif							/* ACL_H */

@@ -3067,3 +3067,93 @@ DeleteInitPrivs(const ObjectAddress *object)
 
 	table_close(relation, RowExclusiveLock);
 }
+
+
+
+#define ARRNELEMS(x)  ArrayGetNItems( ARR_NDIM(x), ARR_DIMS(x))
+
+/*
+ * modify pg_init_prevs ACL for extension objects on role delete
+ */
+void
+DeleteInitPrivsRefs(Oid roleoid)
+{
+	Relation	relation;
+	ScanKeyData key[1];
+	SysScanDesc scan;
+	HeapTuple	oldtuple;
+	HeapTuple 	newtuple;
+	Datum initprivs;
+	AclItem * acls;
+	Acl *iniprivsacl;
+	Acl *new_acl;
+	bool initprvis_isnull;
+	bool found;
+	int dim;
+	int new_acl_sz;
+
+	Datum		values[Natts_pg_init_privs] = {0};
+	bool		nulls[Natts_pg_init_privs] = {0};
+	bool		replaces[Natts_pg_init_privs] = {0};
+
+
+	relation = table_open(InitPrivsRelationId, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_pg_init_privs_privtype,
+				BTEqualStrategyNumber, F_CHAREQ,
+				INITPRIVS_EXTENSION);
+
+	scan = systable_beginscan(relation, InitPrivsObjIndexId, false,
+							  NULL, 1, key);
+
+	while (HeapTupleIsValid(oldtuple = systable_getnext(scan))) {
+		initprivs = heap_getattr(oldtuple, Anum_pg_init_privs_initprivs, relation->rd_att, &initprvis_isnull);
+
+		if (initprvis_isnull) {
+			continue;
+		}
+
+		iniprivsacl = DatumGetAclP(initprivs);
+		found = false;
+
+		acls = (AclItem *) ARR_DATA_PTR(iniprivsacl);
+		dim = ARRNELEMS(iniprivsacl);
+		new_acl_sz = 0;
+		
+		for (int i = 0; i < dim; ++ i) {
+			if (acls[i].ai_grantee == roleoid || acls[i].ai_grantor == roleoid) {
+				found = true;
+				continue;
+			}
+			new_acl_sz++;
+		}
+
+		if (!found) {
+			continue;
+		}
+
+		new_acl = allocacl(new_acl_sz);
+
+		new_acl_sz = 0;
+
+		for (int i = 0; i < dim; ++ i) {
+			if (acls[i].ai_grantee == roleoid || acls[i].ai_grantor == roleoid) {
+				continue;
+			}
+			((AclItem *) ARR_DATA_PTR(new_acl))[new_acl_sz++] = acls[i];
+		}
+
+		replaces[Anum_pg_init_privs_initprivs - 1] = true;
+		values[Anum_pg_init_privs_initprivs - 1] = PointerGetDatum(new_acl);
+
+		newtuple = heap_modify_tuple(oldtuple, RelationGetDescr(relation),
+									 values, nulls, replaces);
+
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
+	}
+
+	systable_endscan(scan);
+
+	table_close(relation, RowExclusiveLock);
+}
