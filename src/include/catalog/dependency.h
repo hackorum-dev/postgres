@@ -240,4 +240,6 @@ extern void shdepDropOwned(List *roleids, DropBehavior behavior);
 
 extern void shdepReassignOwned(List *roleids, Oid newrole);
 
+extern void DeleteInitPrivsRefs(Oid roleoid);
+
 #endif							/* DEPENDENCY_H */
