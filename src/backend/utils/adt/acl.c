@@ -93,7 +93,6 @@ uint32		cached_db_hash;
 
 static const char *getid(const char *s, char *n, Node *escontext);
 static void putid(char *p, const char *s);
-static Acl *allocacl(int n);
 static void check_acl(const Acl *acl);
 static const char *aclparse(const char *s, AclItem *aip, Node *escontext);
 static bool aclitem_match(const AclItem *a1, const AclItem *a2);
@@ -436,7 +435,7 @@ aclparse(const char *s, AclItem *aip, Node *escontext)
  * RETURNS:
  *		the new Acl
  */
-static Acl *
+Acl *
 allocacl(int n)
 {
 	Acl		   *new_acl;
