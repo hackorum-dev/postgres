@@ -427,6 +427,8 @@ AllocSetContextCreateInternal(MemoryContext parent,
 			((MemoryContext) set)->mem_allocated =
 				set->keeper->endptr - ((char *) set);
 
+			elog(DEBUG1, "AllocSetContextCreateInternal: recycling context for %s", ((MemoryContext) set)->name);
+
 			return (MemoryContext) set;
 		}
 	}
@@ -521,6 +523,8 @@ AllocSetContextCreateInternal(MemoryContext parent,
 						name);
 
 	((MemoryContext) set)->mem_allocated = firstBlockSize;
+
+	elog(DEBUG1, "AllocSetContextCreateInternal: allocating new context for %s (%zu bytes)", ((MemoryContext)set)->name, firstBlockSize);
 
 	return (MemoryContext) set;
 }
@@ -733,6 +737,8 @@ AllocSetAlloc(MemoryContext context, Size size)
 		if (block == NULL)
 			return NULL;
 
+		elog(DEBUG1, "AllocSetAlloc: malloc(%zu) dedicated block: %s", blksize, context->name);
+
 		context->mem_allocated += blksize;
 
 		block->aset = set;
@@ -942,6 +948,8 @@ AllocSetAlloc(MemoryContext context, Size size)
 
 		if (block == NULL)
 			return NULL;
+
+		elog(DEBUG1, "AllocSetAlloc: malloc(%zu) new block: %s", blksize, context->name);
 
 		context->mem_allocated += blksize;
 
