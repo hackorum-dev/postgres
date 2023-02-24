@@ -98,7 +98,7 @@ ERROR:  must have admin option on role "regress_role_normal"
 ALTER ROLE regress_role_normal RENAME TO regress_role_abnormal;
 ERROR:  permission denied to rename role
 ALTER ROLE regress_role_normal NOINHERIT NOLOGIN CONNECTION LIMIT 7;
-ERROR:  permission denied
+ERROR:  permission denied to alter role
 -- ok, regress_tenant can create objects within the database
 SET SESSION AUTHORIZATION regress_tenant;
 CREATE TABLE tenant_table (i integer);

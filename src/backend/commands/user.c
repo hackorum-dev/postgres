@@ -761,7 +761,7 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 			dvalidUntil || disreplication || dbypassRLS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied")));
+					 errmsg("permission denied to alter role")));
 
 		/* an unprivileged user can change their own password */
 		if (dpassword && roleid != currentUserId)
@@ -1008,7 +1008,7 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 				&& roleid != GetUserId())
 				ereport(ERROR,
 						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-						 errmsg("permission denied")));
+						 errmsg("permission denied to alter role")));
 		}
 
 		ReleaseSysCache(roletuple);
