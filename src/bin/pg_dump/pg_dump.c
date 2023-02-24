@@ -11641,6 +11641,7 @@ dumpFunc(Archive *fout, const FuncInfo *finfo)
 	char	   *prorows;
 	char	   *prosupport;
 	char	   *proparallel;
+	int			prodynres;
 	char	   *lanname;
 	char	  **configitems = NULL;
 	int			nconfigitems = 0;
@@ -11708,10 +11709,17 @@ dumpFunc(Archive *fout, const FuncInfo *finfo)
 
 		if (fout->remoteVersion >= 140000)
 			appendPQExpBufferStr(query,
-								 "pg_get_function_sqlbody(p.oid) AS prosqlbody\n");
+								 "pg_get_function_sqlbody(p.oid) AS prosqlbody,\n");
 		else
 			appendPQExpBufferStr(query,
-								 "NULL AS prosqlbody\n");
+								 "NULL AS prosqlbody,\n");
+
+		if (fout->remoteVersion >= 160000)
+			appendPQExpBufferStr(query,
+								 "prodynres\n");
+		else
+			appendPQExpBufferStr(query,
+								 "0 AS prodynres\n");
 
 		appendPQExpBufferStr(query,
 							 "FROM pg_catalog.pg_proc p, pg_catalog.pg_language l\n"
@@ -11756,6 +11764,7 @@ dumpFunc(Archive *fout, const FuncInfo *finfo)
 	prorows = PQgetvalue(res, 0, PQfnumber(res, "prorows"));
 	prosupport = PQgetvalue(res, 0, PQfnumber(res, "prosupport"));
 	proparallel = PQgetvalue(res, 0, PQfnumber(res, "proparallel"));
+	prodynres = atoi(PQgetvalue(res, 0, PQfnumber(res, "prodynres")));
 	lanname = PQgetvalue(res, 0, PQfnumber(res, "lanname"));
 
 	/*
@@ -11873,6 +11882,9 @@ dumpFunc(Archive *fout, const FuncInfo *finfo)
 
 	if (proisstrict[0] == 't')
 		appendPQExpBufferStr(q, " STRICT");
+
+	if (prodynres > 0)
+		appendPQExpBuffer(q, " DYNAMIC RESULT SETS %d", prodynres);
 
 	if (prosecdef[0] == 't')
 		appendPQExpBufferStr(q, " SECURITY DEFINER");
