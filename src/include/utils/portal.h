@@ -170,6 +170,8 @@ typedef struct PortalData
 	TupleDesc	tupDesc;		/* descriptor for result tuples */
 	/* and these are the format codes to use for the columns: */
 	int16	   *formats;		/* a format code for each column */
+	/* Format code for dynamic result sets */
+	int16		dynamic_format;
 
 	/*
 	 * Outermost ActiveSnapshot for execution of the portal's queries.  For

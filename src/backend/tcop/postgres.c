@@ -2086,6 +2086,7 @@ exec_execute_message(const char *portal_name, long max_rows)
 	const char *sourceText;
 	const char *prepStmtName;
 	ParamListInfo portalParams;
+	ListCell   *lc;
 	bool		save_log_statement_stats = log_statement_stats;
 	bool		is_xact_command;
 	bool		execute_is_fetch;
@@ -2226,10 +2227,33 @@ exec_execute_message(const char *portal_name, long max_rows)
 						  receiver,
 						  &qc);
 
-	if (GetReturnableCursors())
-		ereport(ERROR,
-				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				errmsg("dynamic result sets are not yet supported in extended query protocol"));
+	/*
+	 * Run portals for dynamic result sets.
+	 */
+	foreach (lc, GetReturnableCursors())
+	{
+		Portal dyn_portal = lfirst(lc);
+
+		if (dest == DestRemoteExecute)
+			SetRemoteDestReceiverParams(receiver, dyn_portal);
+
+		PortalSetResultFormat(dyn_portal, 1, &portal->dynamic_format);
+
+		SendRowDescriptionMessage(&row_description_buf,
+								  dyn_portal->tupDesc,
+								  FetchPortalTargetList(dyn_portal),
+								  dyn_portal->formats);
+
+		PortalRun(dyn_portal,
+				  FETCH_ALL,
+				  true,
+				  true,
+				  receiver,
+				  receiver,
+				  NULL);
+
+		PortalDrop(dyn_portal, false);
+	}
 
 	receiver->rDestroy(receiver);
 

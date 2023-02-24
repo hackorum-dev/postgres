@@ -25,7 +25,14 @@ CALL pdrstest1();
 (2 rows)
 
 CALL pdrstest1() \bind \g
-ERROR:  dynamic result sets are not yet supported in extended query protocol
+ a 
+---
+ 1
+ 2
+ 3
+(3 rows)
+
+server sent data ("D" message) without prior row description ("T" message)
 -- return too many result sets from a procedure
 CREATE PROCEDURE pdrstest2()
 LANGUAGE SQL
@@ -51,7 +58,14 @@ WARNING:  attempt to return too many result sets
 
 CALL pdrstest2() \bind \g
 WARNING:  attempt to return too many result sets
-ERROR:  dynamic result sets are not yet supported in extended query protocol
+ a 
+---
+ 1
+ 2
+ 3
+(3 rows)
+
+server sent data ("D" message) without prior row description ("T" message)
 -- nested calls
 CREATE PROCEDURE pdrstest3()
 LANGUAGE SQL
@@ -68,7 +82,11 @@ CALL pdrstest3();
 (1 row)
 
 CALL pdrstest3() \bind \g
-ERROR:  dynamic result sets are not yet supported in extended query protocol
+ a 
+---
+ 1
+(1 row)
+
 -- both out parameter and result sets
 CREATE PROCEDURE pdrstest4(INOUT a text)
 LANGUAGE SQL
@@ -91,7 +109,12 @@ CALL pdrstest4('x');
 (3 rows)
 
 CALL pdrstest4($1) \bind 'y' \g
-ERROR:  dynamic result sets are not yet supported in extended query protocol
+ a  
+----
+ yy
+(1 row)
+
+server sent data ("D" message) without prior row description ("T" message)
 -- test the nested error handling
 CREATE TABLE drs_test_dummy (a int);
 CREATE PROCEDURE pdrstest5a()
