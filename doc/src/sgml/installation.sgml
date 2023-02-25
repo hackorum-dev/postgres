@@ -1967,19 +1967,39 @@ build-postgresql:
 
   <para>
 <synopsis>
-meson setup build --prefix=/usr/local/pgsql
+# create working directory
+mkdir postgres
+cd postgres
+
+# fetch source code
+git clone https://git.postgresql.org/git/postgresql.git src
+
+# setup and enter build directory (done only first time)
+## Unix based platforms
+meson setup build src --prefix=$PWD/install
+
+## Windows
+meson setup build src --prefix=%cd%/install
+
 cd build
+
+# Compile source
 ninja
-su
+
+# Install to the prefix directory specified above
 ninja install
-adduser postgres
-mkdir -p /usr/local/pgsql/data
-chown postgres /usr/local/pgsql/data
-su - postgres
-/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data
-/usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data -l logfile start
-/usr/local/pgsql/bin/createdb test
-/usr/local/pgsql/bin/psql test
+
+# Run all tests (optional, takes time)
+meson test
+
+# Initialize a new database
+../install/bin/initdb -D ../data
+
+# Start database
+../install/bin/pg_ctl -D ../data/ -l logfile start
+
+# Connect to the database
+../install/bin/psql -d postgres
 </synopsis>
    The long version is the rest of this
    <phrase>section</phrase>.
