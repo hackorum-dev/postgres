@@ -54,11 +54,7 @@
 int
 fls(int mask)
 {
-	int			bit;
-
 	if (mask == 0)
 		return (0);
-	for (bit = 1; mask != 1; bit++)
-		mask = (unsigned int) mask >> 1;
-	return (bit);
+	return (sizeof(int) << 3) - __builtin_clz(mask);
 }
