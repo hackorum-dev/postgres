@@ -936,7 +936,8 @@ AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch,
 	if (latch)
 	{
 		if (latch->owner_pid != MyProcPid)
-			elog(ERROR, "cannot wait on a latch owned by another process");
+			elog(ERROR, "cannot wait on a latch owned by another process (%d,%d)",
+				 latch->owner_pid, MyProcPid);
 		if (set->latch)
 			elog(ERROR, "cannot wait on more than one latch");
 		if ((events & WL_LATCH_SET) != WL_LATCH_SET)
@@ -1046,7 +1047,8 @@ ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *latch)
 	if (events == WL_LATCH_SET)
 	{
 		if (latch && latch->owner_pid != MyProcPid)
-			elog(ERROR, "cannot wait on a latch owned by another process");
+			elog(ERROR, "cannot wait on a latch owned by another process (%d,%d)",
+				 latch->owner_pid, MyProcPid);
 		set->latch = latch;
 
 		/*
