@@ -659,7 +659,7 @@ FreeDecodingContext(LogicalDecodingContext *ctx)
  * Prepare a write using the context's output routine.
  */
 void
-OutputPluginPrepareWrite(struct LogicalDecodingContext *ctx, bool last_write)
+OutputPluginPrepareWrite(LogicalDecodingContext *ctx, bool last_write)
 {
 	if (!ctx->accept_writes)
 		elog(ERROR, "writes are only accepted in commit, begin and change callbacks");
@@ -672,7 +672,7 @@ OutputPluginPrepareWrite(struct LogicalDecodingContext *ctx, bool last_write)
  * Perform a write using the context's output routine.
  */
 void
-OutputPluginWrite(struct LogicalDecodingContext *ctx, bool last_write)
+OutputPluginWrite(LogicalDecodingContext *ctx, bool last_write)
 {
 	if (!ctx->prepared_write)
 		elog(ERROR, "OutputPluginPrepareWrite needs to be called before OutputPluginWrite");
@@ -685,7 +685,7 @@ OutputPluginWrite(struct LogicalDecodingContext *ctx, bool last_write)
  * Update progress tracking (if supported).
  */
 void
-OutputPluginUpdateProgress(struct LogicalDecodingContext *ctx,
+OutputPluginUpdateProgress(LogicalDecodingContext *ctx,
 						   bool skipped_xact)
 {
 	if (!ctx->update_progress)

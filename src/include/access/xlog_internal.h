@@ -325,7 +325,7 @@ typedef enum
 	RECOVERY_TARGET_ACTION_SHUTDOWN
 }			RecoveryTargetAction;
 
-struct LogicalDecodingContext;
+typedef struct LogicalDecodingContext LogicalDecodingContext;
 struct XLogRecordBuffer;
 
 /*
@@ -354,7 +354,7 @@ typedef struct RmgrData
 	void		(*rm_startup) (void);
 	void		(*rm_cleanup) (void);
 	void		(*rm_mask) (char *pagedata, BlockNumber blkno);
-	void		(*rm_decode) (struct LogicalDecodingContext *ctx,
+	void		(*rm_decode) (LogicalDecodingContext *ctx,
 							  struct XLogRecordBuffer *buf);
 } RmgrData;
 

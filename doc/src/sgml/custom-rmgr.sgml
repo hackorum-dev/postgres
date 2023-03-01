@@ -52,7 +52,7 @@ typedef struct RmgrData
     void        (*rm_startup) (void);
     void        (*rm_cleanup) (void);
     void        (*rm_mask) (char *pagedata, BlockNumber blkno);
-    void        (*rm_decode) (struct LogicalDecodingContext *ctx,
+    void        (*rm_decode) (LogicalDecodingContext *ctx,
                               struct XLogRecordBuffer *buf);
 } RmgrData;
 </programlisting>

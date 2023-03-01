@@ -597,7 +597,7 @@ CREATE TABLE another_catalog_table(data text) WITH (user_catalog_table = true);
       a replication slot is created or asked to stream changes, independent
       of the number of changes that are ready to be put out.
 <programlisting>
-typedef void (*LogicalDecodeStartupCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStartupCB) (LogicalDecodingContext *ctx,
                                         OutputPluginOptions *options,
                                         bool is_init);
 </programlisting>
@@ -639,7 +639,7 @@ typedef struct OutputPluginOptions
       be used to deallocate resources private to the output plugin. The slot
       isn't necessarily being dropped, streaming is just being stopped.
 <programlisting>
-typedef void (*LogicalDecodeShutdownCB) (struct LogicalDecodingContext *ctx);
+typedef void (*LogicalDecodeShutdownCB) (LogicalDecodingContext *ctx);
 </programlisting>
      </para>
     </sect3>
@@ -652,7 +652,7 @@ typedef void (*LogicalDecodeShutdownCB) (struct LogicalDecodingContext *ctx);
       start of a committed transaction has been decoded. Aborted transactions
       and their contents never get decoded.
 <programlisting>
-typedef void (*LogicalDecodeBeginCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeBeginCB) (LogicalDecodingContext *ctx,
                                       ReorderBufferTXN *txn);
 </programlisting>
       The <parameter>txn</parameter> parameter contains meta information about
@@ -671,7 +671,7 @@ typedef void (*LogicalDecodeBeginCB) (struct LogicalDecodingContext *ctx,
       rows will have been called before this, if there have been any modified
       rows.
 <programlisting>
-typedef void (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeCommitCB) (LogicalDecodingContext *ctx,
                                        ReorderBufferTXN *txn,
                                        XLogRecPtr commit_lsn);
 </programlisting>
@@ -695,7 +695,7 @@ typedef void (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
       this very same transaction. In that case, the logical decoding of this
       aborted transaction is stopped gracefully.
 <programlisting>
-typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeChangeCB) (LogicalDecodingContext *ctx,
                                        ReorderBufferTXN *txn,
                                        Relation relation,
                                        ReorderBufferChange *change);
@@ -726,7 +726,7 @@ typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
       The optional <function>truncate_cb</function> callback is called for a
       <command>TRUNCATE</command> command.
 <programlisting>
-typedef void (*LogicalDecodeTruncateCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeTruncateCB) (LogicalDecodingContext *ctx,
                                          ReorderBufferTXN *txn,
                                          int nrelations,
                                          Relation relations[],
@@ -750,7 +750,7 @@ typedef void (*LogicalDecodeTruncateCB) (struct LogicalDecodingContext *ctx,
        from <parameter>origin_id</parameter> is of interest to the
        output plugin.
 <programlisting>
-typedef bool (*LogicalDecodeFilterByOriginCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeFilterByOriginCB) (LogicalDecodingContext *ctx,
                                                RepOriginId origin_id);
 </programlisting>
       The <parameter>ctx</parameter> parameter has the same contents
@@ -777,7 +777,7 @@ typedef bool (*LogicalDecodeFilterByOriginCB) (struct LogicalDecodingContext *ct
       The optional <function>message_cb</function> callback is called whenever
       a logical decoding message has been decoded.
 <programlisting>
-typedef void (*LogicalDecodeMessageCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeMessageCB) (LogicalDecodingContext *ctx,
                                         ReorderBufferTXN *txn,
                                         XLogRecPtr message_lsn,
                                         bool transactional,
@@ -824,7 +824,7 @@ typedef void (*LogicalDecodeMessageCB) (struct LogicalDecodingContext *ctx,
        defined, <literal>false</literal> is assumed (i.e. no filtering, all
        transactions using two-phase commit are decoded in two phases as well).
 <programlisting>
-typedef bool (*LogicalDecodeFilterPrepareCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeFilterPrepareCB) (LogicalDecodingContext *ctx,
                                               TransactionId xid,
                                               const char *gid);
 </programlisting>
@@ -855,7 +855,7 @@ typedef bool (*LogicalDecodeFilterPrepareCB) (struct LogicalDecodingContext *ctx
       in which case it can either error out or skip the remaining changes of
       the transaction.
 <programlisting>
-typedef void (*LogicalDecodeBeginPrepareCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeBeginPrepareCB) (LogicalDecodingContext *ctx,
                                              ReorderBufferTXN *txn);
 </programlisting>
      </para>
@@ -872,7 +872,7 @@ typedef void (*LogicalDecodeBeginPrepareCB) (struct LogicalDecodingContext *ctx,
       rows. The <parameter>gid</parameter> field, which is part of the
       <parameter>txn</parameter> parameter, can be used in this callback.
 <programlisting>
-typedef void (*LogicalDecodePrepareCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodePrepareCB) (LogicalDecodingContext *ctx,
                                         ReorderBufferTXN *txn,
                                         XLogRecPtr prepare_lsn);
 </programlisting>
@@ -888,7 +888,7 @@ typedef void (*LogicalDecodePrepareCB) (struct LogicalDecodingContext *ctx,
       The <parameter>gid</parameter> field, which is part of the
       <parameter>txn</parameter> parameter, can be used in this callback.
 <programlisting>
-typedef void (*LogicalDecodeCommitPreparedCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeCommitPreparedCB) (LogicalDecodingContext *ctx,
                                                ReorderBufferTXN *txn,
                                                XLogRecPtr commit_lsn);
 </programlisting>
@@ -910,7 +910,7 @@ typedef void (*LogicalDecodeCommitPreparedCB) (struct LogicalDecodingContext *ct
       <parameter>gid</parameter> alone is not sufficient because the downstream
       node can have a prepared transaction with same identifier.
 <programlisting>
-typedef void (*LogicalDecodeRollbackPreparedCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeRollbackPreparedCB) (LogicalDecodingContext *ctx,
                                                  ReorderBufferTXN *txn,
                                                  XLogRecPtr prepare_end_lsn,
                                                  TimestampTz prepare_time);
@@ -924,7 +924,7 @@ typedef void (*LogicalDecodeRollbackPreparedCB) (struct LogicalDecodingContext *
       The required <function>stream_start_cb</function> callback is called when
       opening a block of streamed changes from an in-progress transaction.
 <programlisting>
-typedef void (*LogicalDecodeStreamStartCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamStartCB) (LogicalDecodingContext *ctx,
                                             ReorderBufferTXN *txn);
 </programlisting>
      </para>
@@ -936,7 +936,7 @@ typedef void (*LogicalDecodeStreamStartCB) (struct LogicalDecodingContext *ctx,
       The required <function>stream_stop_cb</function> callback is called when
       closing a block of streamed changes from an in-progress transaction.
 <programlisting>
-typedef void (*LogicalDecodeStreamStopCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamStopCB) (LogicalDecodingContext *ctx,
                                            ReorderBufferTXN *txn);
 </programlisting>
      </para>
@@ -948,7 +948,7 @@ typedef void (*LogicalDecodeStreamStopCB) (struct LogicalDecodingContext *ctx,
       The required <function>stream_abort_cb</function> callback is called to
       abort a previously streamed transaction.
 <programlisting>
-typedef void (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamAbortCB) (LogicalDecodingContext *ctx,
                                             ReorderBufferTXN *txn,
                                             XLogRecPtr abort_lsn);
 </programlisting>
@@ -963,7 +963,7 @@ typedef void (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
       callback is required when the output plugin supports both the streaming
       of large in-progress transactions and two-phase commits.
       <programlisting>
-typedef void (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamPrepareCB) (LogicalDecodingContext *ctx,
                                               ReorderBufferTXN *txn,
                                               XLogRecPtr prepare_lsn);
 </programlisting>
@@ -976,7 +976,7 @@ typedef void (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx
       The required <function>stream_commit_cb</function> callback is called to
       commit a previously streamed transaction.
 <programlisting>
-typedef void (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamCommitCB) (LogicalDecodingContext *ctx,
                                              ReorderBufferTXN *txn,
                                              XLogRecPtr commit_lsn);
 </programlisting>
@@ -992,7 +992,7 @@ typedef void (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
       The actual changes are not displayed as the transaction can abort at a later
       point in time and we don't decode changes for aborted transactions.
 <programlisting>
-typedef void (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamChangeCB) (LogicalDecodingContext *ctx,
                                              ReorderBufferTXN *txn,
                                              Relation relation,
                                              ReorderBufferChange *change);
@@ -1010,7 +1010,7 @@ typedef void (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
       can abort at a later point in time and we don't decode changes for aborted
       transactions.
 <programlisting>
-typedef void (*LogicalDecodeStreamMessageCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamMessageCB) (LogicalDecodingContext *ctx,
                                               ReorderBufferTXN *txn,
                                               XLogRecPtr message_lsn,
                                               bool transactional,
@@ -1029,7 +1029,7 @@ typedef void (*LogicalDecodeStreamMessageCB) (struct LogicalDecodingContext *ctx
       (demarcated by <function>stream_start_cb</function> and
       <function>stream_stop_cb</function> calls).
 <programlisting>
-typedef void (*LogicalDecodeStreamTruncateCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamTruncateCB) (LogicalDecodingContext *ctx,
                                                ReorderBufferTXN *txn,
                                                int nrelations,
                                                Relation relations[],

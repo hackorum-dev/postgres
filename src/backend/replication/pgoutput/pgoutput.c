@@ -66,14 +66,14 @@ static void pgoutput_rollback_prepared_txn(LogicalDecodingContext *ctx,
 										   ReorderBufferTXN *txn,
 										   XLogRecPtr prepare_end_lsn,
 										   TimestampTz prepare_time);
-static void pgoutput_stream_start(struct LogicalDecodingContext *ctx,
+static void pgoutput_stream_start(LogicalDecodingContext *ctx,
 								  ReorderBufferTXN *txn);
-static void pgoutput_stream_stop(struct LogicalDecodingContext *ctx,
+static void pgoutput_stream_stop(LogicalDecodingContext *ctx,
 								 ReorderBufferTXN *txn);
-static void pgoutput_stream_abort(struct LogicalDecodingContext *ctx,
+static void pgoutput_stream_abort(LogicalDecodingContext *ctx,
 								  ReorderBufferTXN *txn,
 								  XLogRecPtr abort_lsn);
-static void pgoutput_stream_commit(struct LogicalDecodingContext *ctx,
+static void pgoutput_stream_commit(LogicalDecodingContext *ctx,
 								   ReorderBufferTXN *txn,
 								   XLogRecPtr commit_lsn);
 static void pgoutput_stream_prepare_txn(LogicalDecodingContext *ctx,
@@ -1809,7 +1809,7 @@ publication_invalidation_cb(Datum arg, int cacheid, uint32 hashvalue)
  * START STREAM callback
  */
 static void
-pgoutput_stream_start(struct LogicalDecodingContext *ctx,
+pgoutput_stream_start(LogicalDecodingContext *ctx,
 					  ReorderBufferTXN *txn)
 {
 	bool		send_replication_origin = txn->origin_id != InvalidRepOriginId;
@@ -1840,7 +1840,7 @@ pgoutput_stream_start(struct LogicalDecodingContext *ctx,
  * STOP STREAM callback
  */
 static void
-pgoutput_stream_stop(struct LogicalDecodingContext *ctx,
+pgoutput_stream_stop(LogicalDecodingContext *ctx,
 					 ReorderBufferTXN *txn)
 {
 	/* we should be streaming a trasanction */
@@ -1859,7 +1859,7 @@ pgoutput_stream_stop(struct LogicalDecodingContext *ctx,
  * it's subtransactions, if it's a toplevel transaction).
  */
 static void
-pgoutput_stream_abort(struct LogicalDecodingContext *ctx,
+pgoutput_stream_abort(LogicalDecodingContext *ctx,
 					  ReorderBufferTXN *txn,
 					  XLogRecPtr abort_lsn)
 {
@@ -1892,7 +1892,7 @@ pgoutput_stream_abort(struct LogicalDecodingContext *ctx,
  * it's subtransactions).
  */
 static void
-pgoutput_stream_commit(struct LogicalDecodingContext *ctx,
+pgoutput_stream_commit(LogicalDecodingContext *ctx,
 					   ReorderBufferTXN *txn,
 					   XLogRecPtr commit_lsn)
 {

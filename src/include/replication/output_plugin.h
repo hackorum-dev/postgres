@@ -11,7 +11,7 @@
 
 #include "replication/reorderbuffer.h"
 
-struct LogicalDecodingContext;
+typedef struct LogicalDecodingContext LogicalDecodingContext;
 struct OutputPluginCallbacks;
 
 typedef enum OutputPluginOutputType
@@ -44,7 +44,7 @@ extern PGDLLEXPORT void _PG_output_plugin_init(struct OutputPluginCallbacks *cb)
  * "is_init" will be set to "true" if the decoding slot just got defined. When
  * the same slot is used from there one, it will be "false".
  */
-typedef void (*LogicalDecodeStartupCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStartupCB) (LogicalDecodingContext *ctx,
 										OutputPluginOptions *options,
 										bool is_init);
 
@@ -52,13 +52,13 @@ typedef void (*LogicalDecodeStartupCB) (struct LogicalDecodingContext *ctx,
  * Callback called for every (explicit or implicit) BEGIN of a successful
  * transaction.
  */
-typedef void (*LogicalDecodeBeginCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeBeginCB) (LogicalDecodingContext *ctx,
 									  ReorderBufferTXN *txn);
 
 /*
  * Callback for every individual change in a successful transaction.
  */
-typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeChangeCB) (LogicalDecodingContext *ctx,
 									   ReorderBufferTXN *txn,
 									   Relation relation,
 									   ReorderBufferChange *change);
@@ -66,7 +66,7 @@ typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
 /*
  * Callback for every TRUNCATE in a successful transaction.
  */
-typedef void (*LogicalDecodeTruncateCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeTruncateCB) (LogicalDecodingContext *ctx,
 										 ReorderBufferTXN *txn,
 										 int nrelations,
 										 Relation relations[],
@@ -75,14 +75,14 @@ typedef void (*LogicalDecodeTruncateCB) (struct LogicalDecodingContext *ctx,
 /*
  * Called for every (explicit or implicit) COMMIT of a successful transaction.
  */
-typedef void (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeCommitCB) (LogicalDecodingContext *ctx,
 									   ReorderBufferTXN *txn,
 									   XLogRecPtr commit_lsn);
 
 /*
  * Called for the generic logical decoding messages.
  */
-typedef void (*LogicalDecodeMessageCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeMessageCB) (LogicalDecodingContext *ctx,
 										ReorderBufferTXN *txn,
 										XLogRecPtr message_lsn,
 										bool transactional,
@@ -93,13 +93,13 @@ typedef void (*LogicalDecodeMessageCB) (struct LogicalDecodingContext *ctx,
 /*
  * Filter changes by origin.
  */
-typedef bool (*LogicalDecodeFilterByOriginCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeFilterByOriginCB) (LogicalDecodingContext *ctx,
 											   RepOriginId origin_id);
 
 /*
  * Called to shutdown an output plugin.
  */
-typedef void (*LogicalDecodeShutdownCB) (struct LogicalDecodingContext *ctx);
+typedef void (*LogicalDecodeShutdownCB) (LogicalDecodingContext *ctx);
 
 /*
  * Called before decoding of PREPARE record to decide whether this
@@ -107,35 +107,35 @@ typedef void (*LogicalDecodeShutdownCB) (struct LogicalDecodingContext *ctx);
  * commit_prepared/rollback_prepared callbacks or wait till COMMIT PREPARED
  * and sent as usual transaction.
  */
-typedef bool (*LogicalDecodeFilterPrepareCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeFilterPrepareCB) (LogicalDecodingContext *ctx,
 											  TransactionId xid,
 											  const char *gid);
 
 /*
  * Callback called for every BEGIN of a prepared trnsaction.
  */
-typedef void (*LogicalDecodeBeginPrepareCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeBeginPrepareCB) (LogicalDecodingContext *ctx,
 											 ReorderBufferTXN *txn);
 
 /*
  * Called for PREPARE record unless it was filtered by filter_prepare()
  * callback.
  */
-typedef void (*LogicalDecodePrepareCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodePrepareCB) (LogicalDecodingContext *ctx,
 										ReorderBufferTXN *txn,
 										XLogRecPtr prepare_lsn);
 
 /*
  * Called for COMMIT PREPARED.
  */
-typedef void (*LogicalDecodeCommitPreparedCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeCommitPreparedCB) (LogicalDecodingContext *ctx,
 											   ReorderBufferTXN *txn,
 											   XLogRecPtr commit_lsn);
 
 /*
  * Called for ROLLBACK PREPARED.
  */
-typedef void (*LogicalDecodeRollbackPreparedCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeRollbackPreparedCB) (LogicalDecodingContext *ctx,
 												 ReorderBufferTXN *txn,
 												 XLogRecPtr prepare_end_lsn,
 												 TimestampTz prepare_time);
@@ -146,7 +146,7 @@ typedef void (*LogicalDecodeRollbackPreparedCB) (struct LogicalDecodingContext *
  * transaction (may be called repeatedly, if it's streamed in multiple
  * chunks).
  */
-typedef void (*LogicalDecodeStreamStartCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamStartCB) (LogicalDecodingContext *ctx,
 											ReorderBufferTXN *txn);
 
 /*
@@ -154,14 +154,14 @@ typedef void (*LogicalDecodeStreamStartCB) (struct LogicalDecodingContext *ctx,
  * transaction to a remote node (may be called repeatedly, if it's streamed
  * in multiple chunks).
  */
-typedef void (*LogicalDecodeStreamStopCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamStopCB) (LogicalDecodingContext *ctx,
 										   ReorderBufferTXN *txn);
 
 /*
  * Called to discard changes streamed to remote node from in-progress
  * transaction.
  */
-typedef void (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamAbortCB) (LogicalDecodingContext *ctx,
 											ReorderBufferTXN *txn,
 											XLogRecPtr abort_lsn);
 
@@ -169,7 +169,7 @@ typedef void (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
  * Called to prepare changes streamed to remote node from in-progress
  * transaction. This is called as part of a two-phase commit.
  */
-typedef void (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamPrepareCB) (LogicalDecodingContext *ctx,
 											  ReorderBufferTXN *txn,
 											  XLogRecPtr prepare_lsn);
 
@@ -177,14 +177,14 @@ typedef void (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx
  * Called to apply changes streamed to remote node from in-progress
  * transaction.
  */
-typedef void (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamCommitCB) (LogicalDecodingContext *ctx,
 											 ReorderBufferTXN *txn,
 											 XLogRecPtr commit_lsn);
 
 /*
  * Callback for streaming individual changes from in-progress transactions.
  */
-typedef void (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamChangeCB) (LogicalDecodingContext *ctx,
 											 ReorderBufferTXN *txn,
 											 Relation relation,
 											 ReorderBufferChange *change);
@@ -193,7 +193,7 @@ typedef void (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
  * Callback for streaming generic logical decoding messages from in-progress
  * transactions.
  */
-typedef void (*LogicalDecodeStreamMessageCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamMessageCB) (LogicalDecodingContext *ctx,
 											  ReorderBufferTXN *txn,
 											  XLogRecPtr message_lsn,
 											  bool transactional,
@@ -204,7 +204,7 @@ typedef void (*LogicalDecodeStreamMessageCB) (struct LogicalDecodingContext *ctx
 /*
  * Callback for streaming truncates from in-progress transactions.
  */
-typedef void (*LogicalDecodeStreamTruncateCB) (struct LogicalDecodingContext *ctx,
+typedef void (*LogicalDecodeStreamTruncateCB) (LogicalDecodingContext *ctx,
 											   ReorderBufferTXN *txn,
 											   int nrelations,
 											   Relation relations[],
@@ -243,8 +243,8 @@ typedef struct OutputPluginCallbacks
 } OutputPluginCallbacks;
 
 /* Functions in replication/logical/logical.c */
-extern void OutputPluginPrepareWrite(struct LogicalDecodingContext *ctx, bool last_write);
-extern void OutputPluginWrite(struct LogicalDecodingContext *ctx, bool last_write);
-extern void OutputPluginUpdateProgress(struct LogicalDecodingContext *ctx, bool skipped_xact);
+extern void OutputPluginPrepareWrite(LogicalDecodingContext *ctx, bool last_write);
+extern void OutputPluginWrite(LogicalDecodingContext *ctx, bool last_write);
+extern void OutputPluginUpdateProgress(LogicalDecodingContext *ctx, bool skipped_xact);
 
 #endif							/* OUTPUT_PLUGIN_H */

@@ -14,9 +14,9 @@
 #include "replication/output_plugin.h"
 #include "replication/slot.h"
 
-struct LogicalDecodingContext;
+typedef struct LogicalDecodingContext LogicalDecodingContext;
 
-typedef void (*LogicalOutputPluginWriterWrite) (struct LogicalDecodingContext *lr,
+typedef void (*LogicalOutputPluginWriterWrite) (LogicalDecodingContext *lr,
 												XLogRecPtr Ptr,
 												TransactionId xid,
 												bool last_write
@@ -24,13 +24,13 @@ typedef void (*LogicalOutputPluginWriterWrite) (struct LogicalDecodingContext *l
 
 typedef LogicalOutputPluginWriterWrite LogicalOutputPluginWriterPrepareWrite;
 
-typedef void (*LogicalOutputPluginWriterUpdateProgress) (struct LogicalDecodingContext *lr,
+typedef void (*LogicalOutputPluginWriterUpdateProgress) (LogicalDecodingContext *lr,
 														 XLogRecPtr Ptr,
 														 TransactionId xid,
 														 bool skipped_xact
 );
 
-typedef struct LogicalDecodingContext
+struct LogicalDecodingContext
 {
 	/* memory context this is all allocated in */
 	MemoryContext context;
@@ -109,7 +109,7 @@ typedef struct LogicalDecodingContext
 	TransactionId write_xid;
 	/* Are we processing the end LSN of a transaction? */
 	bool		end_xact;
-} LogicalDecodingContext;
+};
 
 
 extern void CheckLogicalDecodingRequirements(void);
