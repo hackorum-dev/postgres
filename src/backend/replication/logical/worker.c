@@ -2090,7 +2090,7 @@ apply_spooled_messages(FileSet *stream_fileset, TransactionId xid,
 
 		/* do we have a correct length? */
 		if (len <= 0)
-			elog(ERROR, "incorrect length %d in streaming transaction's changes file \"%s\"",
+			elog(ERROR, "invalid length %d in streaming transaction's changes file \"%s\"",
 				 len, path);
 
 		/* make sure we have sufficiently large buffer */

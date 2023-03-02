@@ -505,7 +505,7 @@ test_rb_tree(PG_FUNCTION_ARGS)
 	int			size = PG_GETARG_INT32(0);
 
 	if (size <= 0 || size > MaxAllocSize / sizeof(int))
-		elog(ERROR, "invalid size for test_rb_tree: %d", size);
+		elog(ERROR, "size for test_rb_tree out of valid range: %d", size);
 	testleftright(size);
 	testrightleft(size);
 	testfind(size);

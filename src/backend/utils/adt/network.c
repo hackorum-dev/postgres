@@ -222,8 +222,10 @@ network_recv(StringInfo buf, bool is_cidr)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
 		/* translator: %s is inet or cidr */
-				 errmsg("invalid length in external \"%s\" value",
-						is_cidr ? "cidr" : "inet")));
+				 errmsg("incorrect length in external \"%s\" value",
+						is_cidr ? "cidr" : "inet"),
+				 errdetail("Expected %d, got %d.",
+						   ip_addrsize(addr), nb)));
 
 	addrptr = (char *) ip_addr(addr);
 	for (i = 0; i < nb; i++)

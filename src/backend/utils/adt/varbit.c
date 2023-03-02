@@ -344,7 +344,8 @@ bit_recv(PG_FUNCTION_ARGS)
 	if (bitlen < 0 || bitlen > VARBITMAXLEN)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
-				 errmsg("invalid length in external bit string")));
+				 errmsg("length in external bit string (%d) out of valid range (%d..%d)",
+						bitlen, 0, VARBITMAXLEN)));
 
 	/*
 	 * Sometimes atttypmod is not supplied. If it is supplied we need to make
@@ -649,7 +650,8 @@ varbit_recv(PG_FUNCTION_ARGS)
 	if (bitlen < 0 || bitlen > VARBITMAXLEN)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
-				 errmsg("invalid length in external bit string")));
+				 errmsg("length in external bit string (%d) out of valid range (%d..%d)",
+						bitlen, 0, VARBITMAXLEN)));
 
 	/*
 	 * Sometimes atttypmod is not supplied. If it is supplied we need to make

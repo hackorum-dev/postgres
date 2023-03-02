@@ -1993,7 +1993,9 @@ ProcessStartupPacket(Port *port, bool ssl_done, bool gss_done)
 	{
 		ereport(COMMERROR,
 				(errcode(ERRCODE_PROTOCOL_VIOLATION),
-				 errmsg("invalid length of startup packet")));
+				 errmsg("invalid length of startup packet"),
+				 errdetail("Expected %d..%d, got %d.",
+						   (int32) sizeof(ProtocolVersion), MAX_STARTUP_PACKET_LENGTH, len)));
 		return STATUS_ERROR;
 	}
 
@@ -2026,7 +2028,9 @@ ProcessStartupPacket(Port *port, bool ssl_done, bool gss_done)
 		{
 			ereport(COMMERROR,
 					(errcode(ERRCODE_PROTOCOL_VIOLATION),
-					 errmsg("invalid length of startup packet")));
+					 errmsg("incorrect length of cancel request packet"),
+					 errdetail("Expected %zu, got %d.",
+							   sizeof(CancelRequestPacket), len)));
 			return STATUS_ERROR;
 		}
 		processCancelRequest(port, buf);

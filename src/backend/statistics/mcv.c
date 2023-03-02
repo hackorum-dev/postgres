@@ -1064,18 +1064,13 @@ statext_mcv_deserialize(bytea *data)
 		elog(ERROR, "invalid MCV type %u (expected %u)",
 			 mcvlist->type, STATS_MCV_TYPE_BASIC);
 
-	if (mcvlist->ndimensions == 0)
-		elog(ERROR, "invalid zero-length dimension array in MCVList");
-	else if ((mcvlist->ndimensions > STATS_MAX_DIMENSIONS) ||
-			 (mcvlist->ndimensions < 0))
-		elog(ERROR, "invalid length (%d) dimension array in MCVList",
-			 mcvlist->ndimensions);
+	if (mcvlist->ndimensions < 1 ||	mcvlist->ndimensions > STATS_MAX_DIMENSIONS)
+		elog(ERROR, "length of dimension array in MCVList (%d) out of valid range (%d..%d)",
+			 mcvlist->ndimensions, 1, STATS_MAX_DIMENSIONS);
 
-	if (mcvlist->nitems == 0)
-		elog(ERROR, "invalid zero-length item array in MCVList");
-	else if (mcvlist->nitems > STATS_MCVLIST_MAX_ITEMS)
-		elog(ERROR, "invalid length (%u) item array in MCVList",
-			 mcvlist->nitems);
+	if (mcvlist->nitems < 1 || mcvlist->nitems > STATS_MCVLIST_MAX_ITEMS)
+		elog(ERROR, "length of item array in MCVList (%u) out of valid range (%d..%d)",
+			 mcvlist->nitems, 1, STATS_MCVLIST_MAX_ITEMS);
 
 	nitems = mcvlist->nitems;
 	ndims = mcvlist->ndimensions;

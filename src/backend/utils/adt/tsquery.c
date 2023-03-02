@@ -1242,7 +1242,7 @@ tsqueryrecv(PG_FUNCTION_ARGS)
 
 	size = pq_getmsgint(buf, sizeof(uint32));
 	if (size > (MaxAllocSize / sizeof(QueryItem)))
-		elog(ERROR, "invalid size of tsquery");
+		elog(ERROR, "size of tsquery (%u) out of valid range", size);
 
 	/* Allocate space to temporarily hold operand strings */
 	operands = palloc(size * sizeof(char *));

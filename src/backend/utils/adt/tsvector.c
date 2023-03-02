@@ -462,7 +462,7 @@ tsvectorrecv(PG_FUNCTION_ARGS)
 
 	nentries = pq_getmsgint(buf, sizeof(int32));
 	if (nentries < 0 || nentries > (MaxAllocSize / sizeof(WordEntry)))
-		elog(ERROR, "invalid size of tsvector");
+		elog(ERROR, "size of tsvector (%d) out of valid range", nentries);
 
 	hdrlen = DATAHDRSIZE + sizeof(WordEntry) * nentries;
 

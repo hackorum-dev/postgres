@@ -3984,7 +3984,10 @@ ReadCheckpointRecord(XLogPrefetcher *xlogprefetcher, XLogRecPtr RecPtr,
 	if (record->xl_tot_len != SizeOfXLogRecord + SizeOfXLogRecordDataHeaderShort + sizeof(CheckPoint))
 	{
 		ereport(LOG,
-				(errmsg("invalid length of checkpoint record")));
+				(errmsg("incorrect length of checkpoint record"),
+				 errdetail("Expected %zu, got %u.",
+						   SizeOfXLogRecord + SizeOfXLogRecordDataHeaderShort + sizeof(CheckPoint),
+						   record->xl_tot_len)));
 		return NULL;
 	}
 	return record;

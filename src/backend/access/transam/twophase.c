@@ -1319,10 +1319,8 @@ ReadTwoPhaseFile(TransactionId xid, bool missing_ok)
 		stat.st_size > MaxAllocSize)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg_plural("incorrect size of file \"%s\": %lld byte",
-							   "incorrect size of file \"%s\": %lld bytes",
-							   (long long int) stat.st_size, path,
-							   (long long int) stat.st_size)));
+				 errmsg("size of file \"%s\" (%lld) out of valid range",
+						path, (long long int) stat.st_size)));
 
 	crc_offset = stat.st_size - sizeof(pg_crc32c);
 	if (crc_offset != MAXALIGN(crc_offset))
@@ -1367,8 +1365,8 @@ ReadTwoPhaseFile(TransactionId xid, bool missing_ok)
 	if (hdr->total_len != stat.st_size)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("invalid size stored in file \"%s\"",
-						path)));
+				 errmsg("incorrect size stored in file \"%s\"", path),
+				 errdetail("Expected %lld, got %u.", (long long int) stat.st_size, hdr->total_len)));
 
 	INIT_CRC32C(calc_crc);
 	COMP_CRC32C(calc_crc, buf, crc_offset);

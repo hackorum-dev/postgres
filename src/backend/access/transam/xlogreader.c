@@ -1942,7 +1942,7 @@ DecodeXLogRecord(XLogReaderState *state,
 
 shortdata_err:
 	report_invalid_record(state,
-						  "record with invalid length at %X/%X",
+						  "record with incorrect length at %X/%X",
 						  LSN_FORMAT_ARGS(state->ReadRecPtr));
 err:
 	*errormsg = state->errormsg_buf;
