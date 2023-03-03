@@ -132,4 +132,45 @@ foreach my $param (@lines_with_tabs)
 	print("found tab in line $param in postgresql.conf.sample\n");
 }
 
+# check if GUC parser accepts some unquoted values accepted by strtod()
+my $conffile = $node->data_dir . "/postgresql.conf";
+my $conf = slurp_file($conffile);
+## without units
+my $lines =
+  join("\n", map {"checkpoint_completion_target = $_"}
+	   ('0.1', '1.', '.1', '1e-1', '.1e0', '1.e-01'));
+## with units
+$lines .= "\n" .
+  join("\n", map {"work_mem = ${_}MB"}
+	   ('0.3', '1.', '.3', '+3e-1', '-.3e0', '1.e01'));
+$node->append_conf('postgresql.conf', $lines);
+
+$node->reload();
+## has the last value been read?
+ok ($node->poll_query_until('postgres',
+			"SELECT setting::int = 10240 FROM pg_settings WHERE name = 'work_mem'"),
+	'all variations of real number parameter values passed');
+
+# check if parser correctly rejects some invalid patterns
+my $n = 0;
+foreach my $val ('.', '.e3')
+{
+	$n++ if (test_one_value($node, $val, $conf));
+}
+ok($n == 2, "parser succesfully rejected invalid values");
+
 done_testing();
+
+sub test_one_value
+{
+  my ($node, $value, $base_conf) = @_;
+
+  open(my $fh, '>', $conffile) || die "failed to open $conffile";
+  print $fh $conf . "\nwork_mem=$value\n";
+  close($fh);
+
+  my $logstart = -s $node->logfile;
+  $node->reload();
+  return $node->wait_for_log('syntax error in file ".*postgresql.conf"',
+							 $logstart);
+}
