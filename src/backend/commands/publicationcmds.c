@@ -766,10 +766,22 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 	puboid = GetSysCacheOid1(PUBLICATIONNAME, Anum_pg_publication_oid,
 							 CStringGetDatum(stmt->pubname));
 	if (OidIsValid(puboid))
-		ereport(ERROR,
-				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("publication \"%s\" already exists",
-						stmt->pubname)));
+	{
+		if (stmt->if_not_exists)
+		{
+			ereport(NOTICE,
+					errcode(ERRCODE_DUPLICATE_OBJECT),
+					errmsg("publication \"%s\" already exists, skipping",
+						   stmt->pubname));
+			table_close(rel, RowExclusiveLock);
+			return InvalidObjectAddress;
+		}
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					errmsg("publication \"%s\" already exists",
+						   stmt->pubname)));
+	}
 
 	/* Form a tuple. */
 	memset(values, 0, sizeof(values));

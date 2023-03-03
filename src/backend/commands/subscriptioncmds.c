@@ -593,10 +593,20 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 							MyDatabaseId, CStringGetDatum(stmt->subname));
 	if (OidIsValid(subid))
 	{
-		ereport(ERROR,
-				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("subscription \"%s\" already exists",
-						stmt->subname)));
+		if (stmt->if_not_exists)
+		{
+			ereport(NOTICE,
+					errcode(ERRCODE_DUPLICATE_OBJECT),
+					errmsg("subscription \"%s\" already exists, skipping",
+						   stmt->subname));
+			table_close(rel, RowExclusiveLock);
+			return InvalidObjectAddress;
+		}
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					errmsg("subscription \"%s\" already exists",
+							stmt->subname)));
 	}
 
 	if (!IsSet(opts.specified_opts, SUBOPT_SLOT_NAME) &&

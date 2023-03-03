@@ -10371,6 +10371,16 @@ CreatePublicationStmt:
 
 					n->pubname = $3;
 					n->options = $4;
+					n->if_not_exists = false;
+					$$ = (Node *) n;
+				}
+			| CREATE PUBLICATION IF_P NOT EXISTS name opt_definition
+				{
+					CreatePublicationStmt *n = makeNode(CreatePublicationStmt);
+
+					n->pubname = $6;
+					n->options = $7;
+					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
 			| CREATE PUBLICATION name FOR ALL TABLES opt_definition
@@ -10380,6 +10390,17 @@ CreatePublicationStmt:
 					n->pubname = $3;
 					n->options = $7;
 					n->for_all_tables = true;
+					n->if_not_exists = false;
+					$$ = (Node *) n;
+				}
+			| CREATE PUBLICATION IF_P NOT EXISTS name FOR ALL TABLES opt_definition
+				{
+					CreatePublicationStmt *n = makeNode(CreatePublicationStmt);
+
+					n->pubname = $6;
+					n->options = $10;
+					n->for_all_tables = true;
+					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
 			| CREATE PUBLICATION name FOR pub_obj_list opt_definition
@@ -10389,6 +10410,18 @@ CreatePublicationStmt:
 					n->pubname = $3;
 					n->options = $6;
 					n->pubobjects = (List *) $5;
+					n->if_not_exists = false;
+					preprocess_pubobj_list(n->pubobjects, yyscanner);
+					$$ = (Node *) n;
+				}
+			| CREATE PUBLICATION IF_P NOT EXISTS name FOR pub_obj_list opt_definition
+				{
+					CreatePublicationStmt *n = makeNode(CreatePublicationStmt);
+
+					n->pubname = $6;
+					n->options = $9;
+					n->pubobjects = (List *) $8;
+					n->if_not_exists = true;
 					preprocess_pubobj_list(n->pubobjects, yyscanner);
 					$$ = (Node *) n;
 				}
@@ -10564,6 +10597,18 @@ CreateSubscriptionStmt:
 					n->conninfo = $5;
 					n->publication = $7;
 					n->options = $8;
+					n->if_not_exists = false;
+					$$ = (Node *) n;
+				}
+			| CREATE SUBSCRIPTION IF_P NOT EXISTS name CONNECTION Sconst PUBLICATION name_list opt_definition
+				{
+					CreateSubscriptionStmt *n =
+						makeNode(CreateSubscriptionStmt);
+					n->subname = $6;
+					n->conninfo = $8;
+					n->publication = $10;
+					n->options = $11;
+					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
 		;

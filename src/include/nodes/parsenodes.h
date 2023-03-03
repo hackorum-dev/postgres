@@ -3875,6 +3875,7 @@ typedef struct CreatePublicationStmt
 	List	   *options;		/* List of DefElem nodes */
 	List	   *pubobjects;		/* Optional list of publication objects */
 	bool		for_all_tables; /* Special publication for all tables in db */
+	bool		if_not_exists;  /* Just do nothing if it already exists? */
 } CreatePublicationStmt;
 
 typedef enum AlterPublicationAction
@@ -3909,6 +3910,7 @@ typedef struct CreateSubscriptionStmt
 	char	   *conninfo;		/* Connection string to publisher */
 	List	   *publication;	/* One or more publication to subscribe to */
 	List	   *options;		/* List of DefElem nodes */
+	bool		if_not_exists;  /* Just do nothing if it already exists? */
 } CreateSubscriptionStmt;
 
 typedef enum AlterSubscriptionType

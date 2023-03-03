@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceable>
+CREATE SUBSCRIPTION [ IF NOT EXISTS ] <replaceable class="parameter">subscription_name</replaceable>
     CONNECTION '<replaceable class="parameter">conninfo</replaceable>'
     PUBLICATION <replaceable class="parameter">publication_name</replaceable> [, ...]
     [ WITH ( <replaceable class="parameter">subscription_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] ) ]
@@ -61,6 +61,18 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
   <title>Parameters</title>
 
   <variablelist>
+   <varlistentry>
+    <term><literal>IF NOT EXISTS</literal></term>
+    <listitem>
+     <para>
+      Do not throw an error if a subscription with the same name already
+      exists. A notice is issued in this case.  Note that there is no guarantee
+      that the existing subscription is anything like the one that would have
+      been created.
+     </para>
+    </listitem>
+   </varlistentry>
+
    <varlistentry>
     <term><replaceable class="parameter">subscription_name</replaceable></term>
     <listitem>

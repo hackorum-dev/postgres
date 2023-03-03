@@ -10,6 +10,7 @@ SET SESSION AUTHORIZATION 'regress_publication_user';
 SET client_min_messages = 'ERROR';
 CREATE PUBLICATION testpub_default;
 RESET client_min_messages;
+CREATE PUBLICATION IF NOT EXISTS testpub_default;
 
 COMMENT ON PUBLICATION testpub_default IS 'test publication';
 SELECT obj_description(p.oid, 'pg_publication') FROM pg_publication p;

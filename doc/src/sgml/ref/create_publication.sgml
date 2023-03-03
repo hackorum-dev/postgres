@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-CREATE PUBLICATION <replaceable class="parameter">name</replaceable>
+CREATE PUBLICATION [ IF NOT EXISTS ] <replaceable class="parameter">name</replaceable>
     [ FOR ALL TABLES
       | FOR <replaceable class="parameter">publication_object</replaceable> [, ... ] ]
     [ WITH ( <replaceable class="parameter">publication_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] ) ]
@@ -54,6 +54,18 @@ CREATE PUBLICATION <replaceable class="parameter">name</replaceable>
   <title>Parameters</title>
 
   <variablelist>
+   <varlistentry>
+    <term><literal>IF NOT EXISTS</literal></term>
+    <listitem>
+     <para>
+      Do not throw an error if a publication with the same name already exists.
+      A notice is issued in this case.  Note that there is no guarantee that
+      the existing publication is anything like the one that would have been
+      created.
+     </para>
+    </listitem>
+   </varlistentry>
+
    <varlistentry>
     <term><replaceable class="parameter">name</replaceable></term>
     <listitem>
