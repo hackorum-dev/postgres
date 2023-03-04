@@ -4295,6 +4295,16 @@ XLogFileRead(XLogSegNo segno, TimeLineID tli,
  * Open a logfile segment for reading (during recovery).
  *
  * This version searches for the segment with any TLI listed in expectedTLEs.
+ *
+ * When source == XLOG_FROM_ANY, this function first searches for the segment
+ * with a TLI in archive first, if not found, it searches in pg_wal. This way,
+ * if there is a WAL segment with same passed-in segno but different TLI
+ * present in both the archive and pg_wal, it prefers the one with higher TLI.
+ * The reason for this is that if for example we try to do archive recovery to
+ * timeline 2, which branched off timeline 1, but the WAL for timeline 2 is not
+ * archived yet, we would replay past the timeline switch point on timeline 1
+ * using the archived WAL segment, before even looking timeline 2's WAL
+ * segments in pg_wal.
  */
 static int
 XLogFileReadAnyTLI(XLogSegNo segno, XLogSource source)
