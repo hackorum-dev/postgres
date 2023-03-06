@@ -2,7 +2,7 @@
 # Copyright (c) 2021-2026, PostgreSQL Global Development Group
 
 #
-# Test pg_rewind when the target's pg_wal directory is a symlink.
+# Test pg_rewind when the target's log directory is a symlink.
 #
 use strict;
 use warnings FATAL => 'all';
@@ -27,11 +27,12 @@ sub run_test
 	RewindTest::setup_cluster($test_mode);
 
 	my $test_primary_datadir = $node_primary->data_dir;
+	mkdir("$test_primary_datadir/log") or die;
 
 	# turn pg_wal into a symlink
-	print("moving $test_primary_datadir/pg_wal to $primary_xlogdir\n");
-	move("$test_primary_datadir/pg_wal", $primary_xlogdir) or die;
-	dir_symlink($primary_xlogdir, "$test_primary_datadir/pg_wal") or die;
+	print("moving $test_primary_datadir/log to $primary_xlogdir\n");
+	move("$test_primary_datadir/log", $primary_xlogdir) or die;
+	dir_symlink($primary_xlogdir, "$test_primary_datadir/log") or die;
 
 	RewindTest::start_primary();
 
@@ -42,6 +43,16 @@ sub run_test
 	primary_psql("CHECKPOINT");
 
 	RewindTest::create_standby($test_mode);
+
+	my $test_standby_datadir = $node_standby->data_dir;
+	mkdir("$test_standby_datadir/log") or die;
+
+	my $standby_xlogdir =
+		"${PostgreSQL::Test::Utils::tmp_check}/xlog_standby";
+	print("moving $test_standby_datadir/log to $standby_xlogdir\n");
+	move("$test_standby_datadir/log", $standby_xlogdir) or die;
+	dir_symlink($standby_xlogdir, "$test_standby_datadir/log") or die;
+
 
 	# Insert additional data on primary that will be replicated to standby
 	primary_psql("INSERT INTO tbl1 values ('in primary, before promotion')");
