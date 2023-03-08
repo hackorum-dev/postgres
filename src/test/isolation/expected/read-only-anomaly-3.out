@@ -1,6 +1,6 @@
-Parsed test spec with 3 sessions
+Parsed test spec with 4 sessions
 
-starting permutation: s2rx s2ry s1ry s1wy s1c s3r s2wx s2c s3c
+starting permutation: s2rx s2ry s1ry s1wy s1c s3r s2wx s2c s3c s4c
 step s2rx: SELECT balance FROM bank_account WHERE id = 'X';
 balance
 -------
@@ -31,4 +31,31 @@ X |    -11
 Y |     20
 (2 rows)
 
+step s3c: COMMIT;
+step s4c: COMMIT;
+
+starting permutation: s2ry s1wy s1c s2wx s4to s4wx s4c s3r s2c s3c
+step s2ry: SELECT balance FROM bank_account WHERE id = 'Y';
+balance
+-------
+      0
+(1 row)
+
+step s1wy: UPDATE bank_account SET balance = 20 WHERE id = 'Y';
+step s1c: COMMIT;
+step s2wx: UPDATE bank_account SET balance = -11 WHERE id = 'X';
+step s4to: SET lock_timeout = '10ms'
+step s4wx: UPDATE bank_account SET balance = -11 WHERE id = 'X'; <waiting ...>
+step s4wx: <... completed>
+ERROR:  canceling statement due to lock timeout
+step s4c: COMMIT;
+step s3r: SELECT id, balance FROM bank_account WHERE id IN ('X', 'Y') ORDER BY id;
+id|balance
+--+-------
+X |      0
+Y |     20
+(2 rows)
+
+step s2c: COMMIT;
+ERROR:  could not serialize access due to read/write dependencies among transactions
 step s3c: COMMIT;
