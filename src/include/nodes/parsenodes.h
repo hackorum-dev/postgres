@@ -3227,12 +3227,14 @@ typedef struct InlineCodeBlock
  */
 typedef struct CallStmt
 {
+	pg_node_attr(custom_query_jumble)
+
 	NodeTag		type;
 	FuncCall   *funccall;		/* from the parser */
 	/* transformed call, with only input args */
-	FuncExpr   *funcexpr pg_node_attr(query_jumble_ignore);
+	FuncExpr   *funcexpr;
 	/* transformed output-argument expressions */
-	List	   *outargs pg_node_attr(query_jumble_ignore);
+	List	   *outargs;
 } CallStmt;
 
 typedef struct CallContext

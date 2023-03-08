@@ -131,6 +131,12 @@ DECLARE
 BEGIN
   SELECT (i + i)::int INTO r;
 END; $$ LANGUAGE plpgsql;
+CREATE OR REPLACE PROCEDURE sum_out(IN i int, IN j int, OUT k int, OUT l int) AS $$
+DECLARE
+  r int;
+BEGIN
+  SELECT (i + i)::int INTO r;
+END; $$ LANGUAGE plpgsql;
 CREATE OR REPLACE PROCEDURE sum_two(i int, j int) AS $$
 DECLARE
   r int;
@@ -142,6 +148,9 @@ CALL sum_one(3);
 CALL sum_one(199);
 CALL sum_two(1,1);
 CALL sum_two(1,2);
+CALL sum_out(1,1,1,1);
+CALL sum_out(2,2,1,1);
+CALL sum_out(2,3,4,5);
 SELECT calls, rows, query FROM pg_stat_statements ORDER BY query COLLATE "C";
 
 -- COPY

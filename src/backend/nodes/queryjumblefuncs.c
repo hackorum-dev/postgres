@@ -52,6 +52,7 @@ static void _jumbleNode(JumbleState *jstate, Node *node);
 static void _jumbleA_Const(JumbleState *jstate, Node *node);
 static void _jumbleList(JumbleState *jstate, Node *node);
 static void _jumbleRangeTblEntry(JumbleState *jstate, Node *node);
+static void _jumbleCallStmt(JumbleState *jstate, Node *node);
 
 /*
  * Given a possibly multi-statement source string, confine our attention to the
@@ -394,4 +395,15 @@ _jumbleRangeTblEntry(JumbleState *jstate, Node *node)
 			elog(ERROR, "unrecognized RTE kind: %d", (int) expr->rtekind);
 			break;
 	}
+}
+
+static void
+_jumbleCallStmt(JumbleState *jstate, Node *node)
+{
+	CallStmt *expr = (CallStmt *) node;
+	FuncExpr *func = expr->funcexpr;
+
+	JUMBLE_FIELD_SINGLE(func->funcid);
+	_jumbleNode(jstate, (Node *) func->args);
+	_jumbleNode(jstate, (Node *) expr->outargs);
 }
