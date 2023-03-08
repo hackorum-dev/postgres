@@ -36,4 +36,11 @@ setup		{ BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE; }
 step s3r	{ SELECT id, balance FROM bank_account WHERE id IN ('X', 'Y') ORDER BY id; }
 step s3c	{ COMMIT; }
 
-permutation s2rx s2ry s1ry s1wy s1c s3r s2wx s2c s3c
+session s4
+setup		{ BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE; }
+step s4to	{ SET lock_timeout = '10ms' }
+step s4wx	{ UPDATE bank_account SET balance = -11 WHERE id = 'X'; }
+step s4c	{ COMMIT; }
+
+permutation s2rx s2ry s1ry s1wy s1c s3r s2wx s2c s3c s4c
+permutation s2ry s1wy s1c s2wx s4to s4wx s4c s3r s2c s3c
