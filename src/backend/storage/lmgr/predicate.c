@@ -489,6 +489,13 @@ static void ReleasePredicateLocksLocal(void);
 /*
  * Does this relation participate in predicate locking? Temporary and system
  * relations are exempt.
+ *
+ * Note that GetSerializableTransactionSnapshotInt() relies on the latter
+ * exemption when considering separate databases to be fully partitioned from
+ * each other for the purposes of the safe snapshot optimization.  If SSI is
+ * ever applied to system catalogs, and in particular shared catalogs,
+ * databases would not no longer be sufficiently isolated and that would need
+ * to be reconsdered.
  */
 static inline bool
 PredicateLockingNeededForRelation(Relation relation)
@@ -1213,6 +1220,7 @@ InitPredicateLocks(void)
 		PredXact->OldCommittedSxact->flags = SXACT_FLAG_COMMITTED;
 		PredXact->OldCommittedSxact->pid = 0;
 		PredXact->OldCommittedSxact->pgprocno = INVALID_PGPROCNO;
+		PredXact->OldCommittedSxact->database = InvalidOid;
 	}
 	/* This never changes, so let's keep a local copy. */
 	OldCommittedSxact = PredXact->OldCommittedSxact;
@@ -1795,6 +1803,7 @@ GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 	sxact->xmin = snapshot->xmin;
 	sxact->pid = MyProcPid;
 	sxact->pgprocno = MyProc->pgprocno;
+	sxact->database = MyDatabaseId;
 	dlist_init(&sxact->predicateLocks);
 	dlist_node_init(&sxact->finishedLink);
 	sxact->flags = 0;
@@ -1814,7 +1823,17 @@ GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 		{
 			othersxact = dlist_container(SERIALIZABLEXACT, xactLink, iter.cur);
 
-			if (!SxactIsCommitted(othersxact)
+			/*
+			 * We can't possibly have an unsafe conflict with a transaction in
+			 * another database.  The only possible overlap is on shared
+			 * catalogs, but we don't support SSI for shared catalogs.  The
+			 * invalid database case covers 2PC, because we don't yet record
+			 * database OIDs in the 2PC information.  We also filter out doomed
+			 * transactions as they can't possibly commit.
+			 */
+			if ((othersxact->database == InvalidOid ||
+				 othersxact->database == MyDatabaseId)
+				&& !SxactIsCommitted(othersxact)
 				&& !SxactIsDoomed(othersxact)
 				&& !SxactIsReadOnly(othersxact))
 			{
@@ -1824,9 +1843,9 @@ GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 
 		/*
 		 * If we didn't find any possibly unsafe conflicts because every
-		 * uncommitted writable transaction turned out to be doomed, then we
-		 * can "opt out" immediately.  See comments above the earlier check
-		 * for PredXact->WritableSxactCount == 0.
+		 * uncommitted writable transaction turned out to be doomed or in
+		 * another database, then we can "opt out" immediately.  See comments
+		 * above the earlier check for PredXact->WritableSxactCount == 0.
 		 */
 		if (dlist_is_empty(&sxact->possibleUnsafeConflicts))
 		{
@@ -4875,6 +4894,7 @@ predicatelock_twophase_recover(TransactionId xid, uint16 info,
 		sxact->vxid.localTransactionId = (LocalTransactionId) xid;
 		sxact->pid = 0;
 		sxact->pgprocno = INVALID_PGPROCNO;
+		sxact->database = InvalidOid;
 
 		/* a prepared xact hasn't committed yet */
 		sxact->prepareSeqNo = RecoverySerCommitSeqNo;
