@@ -1497,7 +1497,6 @@ WalSndUpdateProgress(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId 
 	 * really not required.
 	 */
 	if (skipped_xact &&
-		SyncRepRequested() &&
 		((volatile WalSndCtlData *) WalSndCtl)->sync_standbys_defined)
 	{
 		WalSndKeepalive(false, lsn);
