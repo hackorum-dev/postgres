@@ -242,7 +242,7 @@ static void ProcessStandbyMessage(void);
 static void ProcessStandbyReplyMessage(void);
 static void ProcessStandbyHSFeedbackMessage(void);
 static void ProcessRepliesIfAny(void);
-static void ProcessPendingWrites(void);
+static void WalSndSendPending(void);
 static void WalSndKeepalive(bool requestReply, XLogRecPtr writePtr);
 static void WalSndKeepaliveIfNecessary(void);
 static void WalSndCheckTimeOut(void);
@@ -1403,7 +1403,7 @@ WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
 	}
 
 	/* If we have pending write here, go to slow path */
-	ProcessPendingWrites();
+	WalSndSendPending();
 }
 
 /*
@@ -1411,7 +1411,7 @@ WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
  * side and check timeouts during that.
  */
 static void
-ProcessPendingWrites(void)
+WalSndSendPending(void)
 {
 	for (;;)
 	{
@@ -1521,7 +1521,7 @@ WalSndUpdateProgress(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId 
 	if (pending_writes || (!end_xact && wal_sender_timeout > 0 &&
 						   now >= TimestampTzPlusMilliseconds(last_reply_timestamp,
 															  wal_sender_timeout / 2)))
-		ProcessPendingWrites();
+		WalSndSendPending();
 }
 
 /*
