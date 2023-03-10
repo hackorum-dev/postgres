@@ -3850,7 +3850,11 @@ lmerge_matched:
 					 */
 					was_matched = relaction->mas_action->matchKind == MERGE_WHEN_MATCHED;
 					resultRelationDesc = resultRelInfo->ri_RelationDesc;
-					lockmode = ExecUpdateLockMode(estate, resultRelInfo);
+
+					if (commandType == CMD_UPDATE)
+						lockmode = updateCxt.lockmode;
+					else
+						lockmode = RowExclusiveLock;
 
 					if (was_matched)
 						inputslot = EvalPlanQualSlot(epqstate, resultRelationDesc,
