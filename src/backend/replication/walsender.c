@@ -1394,8 +1394,9 @@ WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
 		WalSndShutdown();
 
 	/* Try taking fast path unless we get too close to walsender timeout. */
-	if (now < TimestampTzPlusMilliseconds(last_reply_timestamp,
-										  wal_sender_timeout / 2) &&
+	if ((wal_sender_timeout <= 0 ||
+		 now < TimestampTzPlusMilliseconds(last_reply_timestamp,
+										  wal_sender_timeout / 2)) &&
 		!pq_is_send_pending())
 	{
 		return;
@@ -1517,7 +1518,7 @@ WalSndUpdateProgress(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId 
 	 * for large transactions where we don't send any changes to the
 	 * downstream and the receiver can timeout due to that.
 	 */
-	if (pending_writes || (!end_xact &&
+	if (pending_writes || (!end_xact && wal_sender_timeout > 0 &&
 						   now >= TimestampTzPlusMilliseconds(last_reply_timestamp,
 															  wal_sender_timeout / 2)))
 		ProcessPendingWrites();
