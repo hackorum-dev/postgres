@@ -930,14 +930,16 @@ prepare_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	ctx->did_write = false;
 
 	/*
-	 * If the plugin supports two-phase commits then prepare callback is
-	 * mandatory
+	 * If the plugin supports two-phase commits then prepare and other related
+	 * callbacks are mandatory
 	 */
-	if (ctx->callbacks.prepare_cb == NULL)
+	if (ctx->callbacks.prepare_cb == NULL ||
+		ctx->callbacks.commit_prepared_cb == NULL ||
+		ctx->callbacks.rollback_prepared_cb == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("logical replication at prepare time requires a %s callback",
-						"prepare_cb")));
+				 errmsg("logical replication at prepare time requires %s callbacks",
+						"prepare_cb, commit_prepared_cb and rollback_prepared_cb")));
 
 	/* do the actual work: call callback */
 	ctx->callbacks.prepare_cb(ctx, txn, prepare_lsn);
@@ -976,16 +978,6 @@ commit_prepared_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	ctx->write_location = txn->end_lsn; /* points to the end of the record */
 	ctx->did_write = false;
 
-	/*
-	 * If the plugin support two-phase commits then commit prepared callback
-	 * is mandatory
-	 */
-	if (ctx->callbacks.commit_prepared_cb == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("logical replication at prepare time requires a %s callback",
-						"commit_prepared_cb")));
-
 	/* do the actual work: call callback */
 	ctx->callbacks.commit_prepared_cb(ctx, txn, commit_lsn);
 
@@ -1023,16 +1015,6 @@ rollback_prepared_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	ctx->write_xid = txn->xid;
 	ctx->write_location = txn->end_lsn; /* points to the end of the record */
 	ctx->did_write = false;
-
-	/*
-	 * If the plugin support two-phase commits then rollback prepared callback
-	 * is mandatory
-	 */
-	if (ctx->callbacks.rollback_prepared_cb == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("logical replication at prepare time requires a %s callback",
-						"rollback_prepared_cb")));
 
 	/* do the actual work: call callback */
 	ctx->callbacks.rollback_prepared_cb(ctx, txn, prepare_end_lsn,
@@ -1411,12 +1393,17 @@ stream_prepare_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	ctx->write_location = txn->end_lsn;
 	ctx->did_write = false;
 
-	/* in streaming mode with two-phase commits, stream_prepare_cb is required */
-	if (ctx->callbacks.stream_prepare_cb == NULL)
+	/*
+	 * in streaming mode with two-phase commits, stream_prepare_cb and other
+	 * related callbacks are required
+	 */
+	if (ctx->callbacks.stream_prepare_cb == NULL ||
+		ctx->callbacks.commit_prepared_cb == NULL ||
+		ctx->callbacks.rollback_prepared_cb == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("logical streaming at prepare time requires a %s callback",
-						"stream_prepare_cb")));
+				 errmsg("logical streaming at prepare time requires %s callbacks",
+						"stream_prepare_cb, commit_prepared_cb and rollback_prepared_cb")));
 
 	ctx->callbacks.stream_prepare_cb(ctx, txn, prepare_lsn);
 
