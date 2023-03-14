@@ -267,3 +267,28 @@ select * from pg_input_error_info('{ "a":  "\ud83d\ude04\ud83d\udc36" }', 'jsonb
          |        |      | 
 (1 row)
 
+-- additional tests for bug in null/surrogates error reporting
+SELECT jsonb E'\n"\\u0000"' as null_is_not_supported;
+ERROR:  unsupported Unicode escape sequence
+LINE 1: SELECT jsonb E'\n"\\u0000"' as null_is_not_supported;
+                     ^
+DETAIL:  \u0000 cannot be converted to text.
+CONTEXT:  JSON data, line 2: "\u0000...
+SELECT jsonb E'\n"\\ud83dX"' as orphan_high_surrogate;
+ERROR:  invalid input syntax for type json
+LINE 1: SELECT jsonb E'\n"\\ud83dX"' as orphan_high_surrogate;
+                     ^
+DETAIL:  Unicode low surrogate must follow a high surrogate.
+CONTEXT:  JSON data, line 2: "\ud83dX...
+SELECT jsonb E'\n"\\ud83d\u00a9"' as orphan_high_surrogate;
+ERROR:  invalid input syntax for type json
+LINE 1: SELECT jsonb E'\n"\\ud83d\u00a9"' as orphan_high_surrogate;
+                     ^
+DETAIL:  Unicode low surrogate must follow a high surrogate.
+CONTEXT:  JSON data, line 2: "\ud83d©...
+SELECT jsonb E'\n"\\ud83d\\ud83d"' as two_high_surrogates_in_a_row;
+ERROR:  invalid input syntax for type json
+LINE 1: SELECT jsonb E'\n"\\ud83d\\ud83d"' as two_high_surrogates_in...
+                     ^
+DETAIL:  Unicode high surrogate must not follow a high surrogate.
+CONTEXT:  JSON data, line 2: "\ud83d\ud83d...

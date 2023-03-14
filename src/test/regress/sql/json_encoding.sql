@@ -80,3 +80,10 @@ SELECT jsonb '{ "a":  "null \\u0000 escape" }' ->> 'a' as not_an_escape;
 -- soft error for input-time failure
 
 select * from pg_input_error_info('{ "a":  "\ud83d\ude04\ud83d\udc36" }', 'jsonb');
+
+
+-- additional tests for bug in null/surrogates error reporting
+SELECT jsonb E'\n"\\u0000"' as null_is_not_supported;
+SELECT jsonb E'\n"\\ud83dX"' as orphan_high_surrogate;
+SELECT jsonb E'\n"\\ud83d\u00a9"' as orphan_high_surrogate;
+SELECT jsonb E'\n"\\ud83d\\ud83d"' as two_high_surrogates_in_a_row;

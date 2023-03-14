@@ -44,8 +44,7 @@ typedef enum					/* contexts of JSON parser */
 } JsonParseContext;
 
 static inline JsonParseErrorType json_lex_string(JsonLexContext *lex);
-static inline JsonParseErrorType json_lex_number(JsonLexContext *lex, char *s,
-												 bool *num_err, int *total_len);
+static inline JsonParseErrorType json_lex_number(JsonLexContext *lex, char *s);
 static inline JsonParseErrorType parse_scalar(JsonLexContext *lex, JsonSemAction *sem);
 static JsonParseErrorType parse_object_field(JsonLexContext *lex, JsonSemAction *sem);
 static JsonParseErrorType parse_object(JsonLexContext *lex, JsonSemAction *sem);
@@ -104,8 +103,6 @@ lex_expect(JsonParseContext ctx, JsonLexContext *lex, JsonTokenType token)
 bool
 IsValidJsonNumber(const char *str, int len)
 {
-	bool		numeric_error;
-	int			total_len;
 	JsonLexContext dummy_lex;
 
 	if (len <= 0)
@@ -128,9 +125,8 @@ IsValidJsonNumber(const char *str, int len)
 		dummy_lex.input_length = len;
 	}
 
-	json_lex_number(&dummy_lex, dummy_lex.input, &numeric_error, &total_len);
-
-	return (!numeric_error) && (total_len == dummy_lex.input_length);
+	return json_lex_number(&dummy_lex, dummy_lex.input) == JSON_SUCCESS &&
+		dummy_lex.token_terminator == dummy_lex.input + dummy_lex.input_length;
 }
 
 /*
@@ -545,6 +541,37 @@ parse_array(JsonLexContext *lex, JsonSemAction *sem)
 	return JSON_SUCCESS;
 }
 
+/* Convenience inline functions for success/error exits from lexer */
+static inline JsonParseErrorType
+json_lex_success(JsonLexContext *lex, char *token_terminator,
+				 JsonTokenType token_type)
+{
+	lex->prev_token_terminator = lex->token_terminator;
+	lex->token_terminator = token_terminator;
+	lex->token_type = token_type;
+
+	return JSON_SUCCESS;
+}
+
+static inline JsonParseErrorType
+json_lex_fail_at_char_start(JsonLexContext *lex, char *s,
+							JsonParseErrorType code)
+{
+	lex->token_terminator = s;
+
+	return code;
+}
+
+static inline JsonParseErrorType
+json_lex_fail_at_char_end(JsonLexContext *lex, char *s,
+						  JsonParseErrorType code)
+{
+	lex->token_terminator =
+		s + pg_encoding_mblen_bounded(lex->input_encoding, s);
+
+	return code;
+}
+
 /*
  * Lex one token from the input stream.
  */
@@ -553,7 +580,6 @@ json_lex(JsonLexContext *lex)
 {
 	char	   *s;
 	char	   *const end = lex->input + lex->input_length;
-	JsonParseErrorType result;
 
 	/* Skip leading whitespace. */
 	s = lex->token_terminator;
@@ -571,9 +597,7 @@ json_lex(JsonLexContext *lex)
 	if (s >= end)
 	{
 		lex->token_start = NULL;
-		lex->prev_token_terminator = lex->token_terminator;
-		lex->token_terminator = s;
-		lex->token_type = JSON_TOKEN_END;
+		return json_lex_success(lex, s, JSON_TOKEN_END);
 	}
 	else
 	{
@@ -581,49 +605,31 @@ json_lex(JsonLexContext *lex)
 		{
 				/* Single-character token, some kind of punctuation mark. */
 			case '{':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_OBJECT_START;
-				break;
+				return json_lex_success(lex, s + 1, JSON_TOKEN_OBJECT_START);
+
 			case '}':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_OBJECT_END;
-				break;
+				return json_lex_success(lex, s + 1, JSON_TOKEN_OBJECT_END);
+
 			case '[':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_ARRAY_START;
-				break;
+				return json_lex_success(lex, s + 1, JSON_TOKEN_ARRAY_START);
+
 			case ']':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_ARRAY_END;
-				break;
+				return json_lex_success(lex, s + 1, JSON_TOKEN_ARRAY_END);
+
 			case ',':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_COMMA;
-				break;
+				return json_lex_success(lex, s + 1, JSON_TOKEN_COMMA);
+
 			case ':':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_COLON;
-				break;
+				return json_lex_success(lex, s + 1, JSON_TOKEN_COLON);
+
 			case '"':
 				/* string */
-				result = json_lex_string(lex);
-				if (result != JSON_SUCCESS)
-					return result;
-				lex->token_type = JSON_TOKEN_STRING;
-				break;
+				return json_lex_string(lex);
+
 			case '-':
 				/* Negative number. */
-				result = json_lex_number(lex, s + 1, NULL, NULL);
-				if (result != JSON_SUCCESS)
-					return result;
-				lex->token_type = JSON_TOKEN_NUMBER;
-				break;
+				return json_lex_number(lex, s + 1);
+
 			case '0':
 			case '1':
 			case '2':
@@ -635,11 +641,8 @@ json_lex(JsonLexContext *lex)
 			case '8':
 			case '9':
 				/* Positive number. */
-				result = json_lex_number(lex, s, NULL, NULL);
-				if (result != JSON_SUCCESS)
-					return result;
-				lex->token_type = JSON_TOKEN_NUMBER;
-				break;
+				return json_lex_number(lex, s);
+
 			default:
 				{
 					char	   *p;
@@ -662,37 +665,27 @@ json_lex(JsonLexContext *lex)
 					 * that one character.
 					 */
 					if (p == s)
-					{
-						lex->prev_token_terminator = lex->token_terminator;
-						lex->token_terminator = s + 1;
-						return JSON_INVALID_TOKEN;
-					}
+						return json_lex_fail_at_char_start(lex, s + 1, JSON_INVALID_TOKEN);
 
 					/*
 					 * We've got a real alphanumeric token here.  If it
 					 * happens to be true, false, or null, all is well.  If
 					 * not, error out.
 					 */
-					lex->prev_token_terminator = lex->token_terminator;
-					lex->token_terminator = p;
 					if (p - s == 4)
 					{
 						if (memcmp(s, "true", 4) == 0)
-							lex->token_type = JSON_TOKEN_TRUE;
+							return json_lex_success(lex, p, JSON_TOKEN_TRUE);
 						else if (memcmp(s, "null", 4) == 0)
-							lex->token_type = JSON_TOKEN_NULL;
-						else
-							return JSON_INVALID_TOKEN;
+							return json_lex_success(lex, p, JSON_TOKEN_NULL);
 					}
 					else if (p - s == 5 && memcmp(s, "false", 5) == 0)
-						lex->token_type = JSON_TOKEN_FALSE;
-					else
-						return JSON_INVALID_TOKEN;
+						return json_lex_success(lex, p, JSON_TOKEN_FALSE);
+
+					return json_lex_fail_at_char_start(lex, p, JSON_INVALID_TOKEN);
 				}
 		}						/* end of switch */
 	}
-
-	return JSON_SUCCESS;
 }
 
 /*
@@ -713,19 +706,6 @@ json_lex_string(JsonLexContext *lex)
 	char	   *const end = lex->input + lex->input_length;
 	int			hi_surrogate = -1;
 
-	/* Convenience macros for error exits */
-#define FAIL_AT_CHAR_START(code) \
-	do { \
-		lex->token_terminator = s; \
-		return code; \
-	} while (0)
-#define FAIL_AT_CHAR_END(code) \
-	do { \
-		lex->token_terminator = \
-			s + pg_encoding_mblen_bounded(lex->input_encoding, s); \
-		return code; \
-	} while (0)
-
 	if (lex->strval != NULL)
 		resetStringInfo(lex->strval);
 
@@ -736,7 +716,7 @@ json_lex_string(JsonLexContext *lex)
 		s++;
 		/* Premature end of the string. */
 		if (s >= end)
-			FAIL_AT_CHAR_START(JSON_INVALID_TOKEN);
+			return json_lex_fail_at_char_start(lex, s, JSON_INVALID_TOKEN);
 		else if (*s == '"')
 			break;
 		else if (*s == '\\')
@@ -744,7 +724,7 @@ json_lex_string(JsonLexContext *lex)
 			/* OK, we have an escape character. */
 			s++;
 			if (s >= end)
-				FAIL_AT_CHAR_START(JSON_INVALID_TOKEN);
+				return json_lex_fail_at_char_start(lex, s, JSON_INVALID_TOKEN);
 			else if (*s == 'u')
 			{
 				int			i;
@@ -754,7 +734,7 @@ json_lex_string(JsonLexContext *lex)
 				{
 					s++;
 					if (s >= end)
-						FAIL_AT_CHAR_START(JSON_INVALID_TOKEN);
+						return json_lex_fail_at_char_start(lex, s, JSON_INVALID_TOKEN);
 					else if (*s >= '0' && *s <= '9')
 						ch = (ch * 16) + (*s - '0');
 					else if (*s >= 'a' && *s <= 'f')
@@ -762,7 +742,7 @@ json_lex_string(JsonLexContext *lex)
 					else if (*s >= 'A' && *s <= 'F')
 						ch = (ch * 16) + (*s - 'A') + 10;
 					else
-						FAIL_AT_CHAR_END(JSON_UNICODE_ESCAPE_FORMAT);
+						return json_lex_fail_at_char_end(lex, s, JSON_UNICODE_ESCAPE_FORMAT);
 				}
 				if (lex->strval != NULL)
 				{
@@ -772,20 +752,20 @@ json_lex_string(JsonLexContext *lex)
 					if (is_utf16_surrogate_first(ch))
 					{
 						if (hi_surrogate != -1)
-							FAIL_AT_CHAR_END(JSON_UNICODE_HIGH_SURROGATE);
+							return json_lex_fail_at_char_end(lex, s, JSON_UNICODE_HIGH_SURROGATE);
 						hi_surrogate = ch;
 						continue;
 					}
 					else if (is_utf16_surrogate_second(ch))
 					{
 						if (hi_surrogate == -1)
-							FAIL_AT_CHAR_END(JSON_UNICODE_LOW_SURROGATE);
+							return json_lex_fail_at_char_end(lex, s, JSON_UNICODE_LOW_SURROGATE);
 						ch = surrogate_pair_to_codepoint(hi_surrogate, ch);
 						hi_surrogate = -1;
 					}
 
 					if (hi_surrogate != -1)
-						FAIL_AT_CHAR_END(JSON_UNICODE_LOW_SURROGATE);
+						return json_lex_fail_at_char_end(lex, s, JSON_UNICODE_LOW_SURROGATE);
 
 					/*
 					 * Reject invalid cases.  We can't have a value above
@@ -795,7 +775,7 @@ json_lex_string(JsonLexContext *lex)
 					if (ch == 0)
 					{
 						/* We can't allow this, since our TEXT type doesn't */
-						FAIL_AT_CHAR_END(JSON_UNICODE_CODE_POINT_ZERO);
+						return json_lex_fail_at_char_end(lex, s, JSON_UNICODE_CODE_POINT_ZERO);
 					}
 
 					/*
@@ -809,7 +789,7 @@ json_lex_string(JsonLexContext *lex)
 						char		cbuf[MAX_UNICODE_EQUIVALENT_STRING + 1];
 
 						if (!pg_unicode_to_server_noerror(ch, (unsigned char *) cbuf))
-							FAIL_AT_CHAR_END(JSON_UNICODE_UNTRANSLATABLE);
+							return json_lex_fail_at_char_end(lex, s, JSON_UNICODE_UNTRANSLATABLE);
 						appendStringInfoString(lex->strval, cbuf);
 					}
 #else
@@ -829,14 +809,14 @@ json_lex_string(JsonLexContext *lex)
 						appendStringInfoChar(lex->strval, (char) ch);
 					}
 					else
-						FAIL_AT_CHAR_END(JSON_UNICODE_HIGH_ESCAPE);
+						return json_lex_fail_at_char_end(lex, s, JSON_UNICODE_HIGH_ESCAPE);
 #endif							/* FRONTEND */
 				}
 			}
 			else if (lex->strval != NULL)
 			{
 				if (hi_surrogate != -1)
-					FAIL_AT_CHAR_END(JSON_UNICODE_LOW_SURROGATE);
+					return json_lex_fail_at_char_end(lex, s, JSON_UNICODE_LOW_SURROGATE);
 
 				switch (*s)
 				{
@@ -868,7 +848,7 @@ json_lex_string(JsonLexContext *lex)
 						 * is reported, not the whole string.
 						 */
 						lex->token_start = s;
-						FAIL_AT_CHAR_END(JSON_ESCAPING_INVALID);
+						return json_lex_fail_at_char_end(lex, s, JSON_ESCAPING_INVALID);
 				}
 			}
 			else if (strchr("\"\\/bfnrt", *s) == NULL)
@@ -881,7 +861,7 @@ json_lex_string(JsonLexContext *lex)
 				 * shown it's not a performance win.
 				 */
 				lex->token_start = s;
-				FAIL_AT_CHAR_END(JSON_ESCAPING_INVALID);
+				return json_lex_fail_at_char_end(lex, s, JSON_ESCAPING_INVALID);
 			}
 		}
 		else
@@ -889,7 +869,7 @@ json_lex_string(JsonLexContext *lex)
 			char	   *p = s;
 
 			if (hi_surrogate != -1)
-				FAIL_AT_CHAR_END(JSON_UNICODE_LOW_SURROGATE);
+				return json_lex_fail_at_char_end(lex, s, JSON_UNICODE_LOW_SURROGATE);
 
 			/*
 			 * Skip to the first byte that requires special handling, so we
@@ -912,8 +892,7 @@ json_lex_string(JsonLexContext *lex)
 					 * Since *p isn't printable, exclude it from the context
 					 * string
 					 */
-					lex->token_terminator = p;
-					return JSON_ESCAPING_REQUIRED;
+					return json_lex_fail_at_char_start(lex, p, JSON_ESCAPING_REQUIRED);
 				}
 			}
 
@@ -929,18 +908,10 @@ json_lex_string(JsonLexContext *lex)
 	}
 
 	if (hi_surrogate != -1)
-	{
-		lex->token_terminator = s + 1;
-		return JSON_UNICODE_LOW_SURROGATE;
-	}
+		return json_lex_fail_at_char_start(lex, s + 1, JSON_UNICODE_LOW_SURROGATE);
 
 	/* Hooray, we found the end of the string! */
-	lex->prev_token_terminator = lex->token_terminator;
-	lex->token_terminator = s + 1;
-	return JSON_SUCCESS;
-
-#undef FAIL_AT_CHAR_START
-#undef FAIL_AT_CHAR_END
+	return json_lex_success(lex, s + 1, JSON_TOKEN_STRING);
 }
 
 /*
@@ -966,74 +937,58 @@ json_lex_string(JsonLexContext *lex)
  * The 's' argument to this function points to the ostensible beginning
  * of part 2 - i.e. the character after any optional minus sign, or the
  * first character of the string if there is none.
- *
- * If num_err is not NULL, we return an error flag to *num_err rather than
- * raising an error for a badly-formed number.  Also, if total_len is not NULL
- * the distance from lex->input to the token end+1 is returned to *total_len.
  */
 static inline JsonParseErrorType
-json_lex_number(JsonLexContext *lex, char *s,
-				bool *num_err, int *total_len)
+json_lex_number(JsonLexContext *lex, char *s)
 {
 	bool		error = false;
-	int			len = s - lex->input;
+	char	   *input_end = lex->input + lex->input_length;
 
 	/* Part (1): leading sign indicator. */
 	/* Caller already did this for us; so do nothing. */
 
 	/* Part (2): parse main digit string. */
-	if (len < lex->input_length && *s == '0')
-	{
+	if (s < input_end && *s == '0')
 		s++;
-		len++;
-	}
-	else if (len < lex->input_length && *s >= '1' && *s <= '9')
+	else if (s < input_end && *s >= '1' && *s <= '9')
 	{
 		do
 		{
 			s++;
-			len++;
-		} while (len < lex->input_length && *s >= '0' && *s <= '9');
+		} while (s < input_end && *s >= '0' && *s <= '9');
 	}
 	else
 		error = true;
 
 	/* Part (3): parse optional decimal portion. */
-	if (len < lex->input_length && *s == '.')
+	if (s < input_end && *s == '.')
 	{
 		s++;
-		len++;
-		if (len == lex->input_length || *s < '0' || *s > '9')
+		if (s == input_end || *s < '0' || *s > '9')
 			error = true;
 		else
 		{
 			do
 			{
 				s++;
-				len++;
-			} while (len < lex->input_length && *s >= '0' && *s <= '9');
+			} while (s < input_end && *s >= '0' && *s <= '9');
 		}
 	}
 
 	/* Part (4): parse optional exponent. */
-	if (len < lex->input_length && (*s == 'e' || *s == 'E'))
+	if (s < input_end && (*s == 'e' || *s == 'E'))
 	{
 		s++;
-		len++;
-		if (len < lex->input_length && (*s == '+' || *s == '-'))
-		{
+		if (s < input_end && (*s == '+' || *s == '-'))
 			s++;
-			len++;
-		}
-		if (len == lex->input_length || *s < '0' || *s > '9')
+		if (s == input_end || *s < '0' || *s > '9')
 			error = true;
 		else
 		{
 			do
 			{
 				s++;
-				len++;
-			} while (len < lex->input_length && *s >= '0' && *s <= '9');
+			} while (s < input_end && *s >= '0' && *s <= '9');
 		}
 	}
 
@@ -1042,28 +997,15 @@ json_lex_number(JsonLexContext *lex, char *s,
 	 * here should be considered part of the token for error-reporting
 	 * purposes.
 	 */
-	for (; len < lex->input_length && JSON_ALPHANUMERIC_CHAR(*s); s++, len++)
+	for (; s < input_end && JSON_ALPHANUMERIC_CHAR(*s); s++)
 		error = true;
 
-	if (total_len != NULL)
-		*total_len = len;
+	/* handle error if any */
+	if (error)
+		return json_lex_fail_at_char_start(lex, s, JSON_INVALID_TOKEN);
 
-	if (num_err != NULL)
-	{
-		/* let the caller handle any error */
-		*num_err = error;
-	}
-	else
-	{
-		/* return token endpoint */
-		lex->prev_token_terminator = lex->token_terminator;
-		lex->token_terminator = s;
-		/* handle error if any */
-		if (error)
-			return JSON_INVALID_TOKEN;
-	}
-
-	return JSON_SUCCESS;
+	/* return token endpoint 's' */
+	return json_lex_success(lex, s, JSON_TOKEN_NUMBER);
 }
 
 /*
