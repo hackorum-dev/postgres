@@ -2936,7 +2936,6 @@ Oid
 LookupExplicitNamespace(const char *nspname, bool missing_ok)
 {
 	Oid			namespaceId;
-	AclResult	aclresult;
 
 	/* check for pg_temp alias */
 	if (strcmp(nspname, "pg_temp") == 0)
@@ -2955,10 +2954,20 @@ LookupExplicitNamespace(const char *nspname, bool missing_ok)
 	if (missing_ok && !OidIsValid(namespaceId))
 		return InvalidOid;
 
-	aclresult = object_aclcheck(NamespaceRelationId, namespaceId, GetUserId(), ACL_USAGE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, OBJECT_SCHEMA,
-					   nspname);
+	/*
+	 * If the publication security is active, bypass the standard security
+	 * checks.
+	 */
+	if (!publication_security)
+	{
+		AclResult	aclresult;
+
+		aclresult = object_aclcheck(NamespaceRelationId, namespaceId, GetUserId(),
+									ACL_USAGE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, OBJECT_SCHEMA,
+						   nspname);
+	}
 	/* Schema search hook for this lookup */
 	InvokeNamespaceSearchHook(namespaceId, true);
 
@@ -3835,10 +3844,16 @@ recomputeNamespacePath(void)
 				rname = NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname);
 				namespaceId = get_namespace_oid(rname, true);
 				ReleaseSysCache(tuple);
+
+				/*
+				 * If the publication security is active, bypass the standard
+				 * security checks.
+				 */
 				if (OidIsValid(namespaceId) &&
 					!list_member_oid(oidlist, namespaceId) &&
-					object_aclcheck(NamespaceRelationId, namespaceId, roleid,
-										  ACL_USAGE) == ACLCHECK_OK &&
+					(publication_security ||
+					 object_aclcheck(NamespaceRelationId, namespaceId, roleid,
+									 ACL_USAGE) == ACLCHECK_OK) &&
 					InvokeNamespaceSearchHook(namespaceId, false))
 					oidlist = lappend_oid(oidlist, namespaceId);
 			}
@@ -3865,8 +3880,9 @@ recomputeNamespacePath(void)
 			namespaceId = get_namespace_oid(curname, true);
 			if (OidIsValid(namespaceId) &&
 				!list_member_oid(oidlist, namespaceId) &&
-				object_aclcheck(NamespaceRelationId, namespaceId, roleid,
-									  ACL_USAGE) == ACLCHECK_OK &&
+				(publication_security ||
+				 object_aclcheck(NamespaceRelationId, namespaceId, roleid,
+								 ACL_USAGE) == ACLCHECK_OK) &&
 				InvokeNamespaceSearchHook(namespaceId, false))
 				oidlist = lappend_oid(oidlist, namespaceId);
 		}

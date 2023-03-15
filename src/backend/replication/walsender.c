@@ -126,6 +126,12 @@ int			wal_sender_timeout = 60 * 1000; /* maximum time to send one WAL
 bool		log_replication_commands = false;
 
 /*
+ * Should USAGE privilege on publications be checked? Defaults to false so
+ * that server upgrade does not break existing logical replication.
+ */
+bool		publication_security = false;
+
+/*
  * State for WalSndWakeupRequest
  */
 bool		wake_wal_senders = false;

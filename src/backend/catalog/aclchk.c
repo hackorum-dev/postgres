@@ -253,6 +253,9 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 		case OBJECT_FUNCTION:
 			whole_mask = ACL_ALL_RIGHTS_FUNCTION;
 			break;
+		case OBJECT_PUBLICATION:
+			whole_mask = ACL_ALL_RIGHTS_PUBLICATION;
+			break;
 		case OBJECT_LANGUAGE:
 			whole_mask = ACL_ALL_RIGHTS_LANGUAGE;
 			break;
@@ -485,6 +488,10 @@ ExecuteGrantStmt(GrantStmt *stmt)
 			all_privileges = ACL_ALL_RIGHTS_FUNCTION;
 			errormsg = gettext_noop("invalid privilege type %s for function");
 			break;
+		case OBJECT_PUBLICATION:
+			all_privileges = ACL_ALL_RIGHTS_PUBLICATION;
+			errormsg = gettext_noop("invalid privilege type %s for publication");
+			break;
 		case OBJECT_LANGUAGE:
 			all_privileges = ACL_ALL_RIGHTS_LANGUAGE;
 			errormsg = gettext_noop("invalid privilege type %s for language");
@@ -621,6 +628,9 @@ ExecGrantStmt_oids(InternalGrant *istmt)
 		case OBJECT_LARGEOBJECT:
 			ExecGrant_Largeobject(istmt);
 			break;
+		case OBJECT_PUBLICATION:
+			ExecGrant_common(istmt, PublicationRelationId, ACL_ALL_RIGHTS_PUBLICATION, NULL);
+			break;
 		case OBJECT_SCHEMA:
 			ExecGrant_common(istmt, NamespaceRelationId, ACL_ALL_RIGHTS_SCHEMA, NULL);
 			break;
@@ -729,6 +739,16 @@ objectNamesToOids(ObjectType objtype, List *objnames, bool is_grant)
 									lobjOid)));
 
 				objects = lappend_oid(objects, lobjOid);
+			}
+			break;
+		case OBJECT_PUBLICATION:
+			foreach(cell, objnames)
+			{
+				char	   *nspname = strVal(lfirst(cell));
+				Oid			oid;
+
+				oid = get_publication_oid(nspname, false);
+				objects = lappend_oid(objects, oid);
 			}
 			break;
 		case OBJECT_SCHEMA:
@@ -3023,6 +3043,8 @@ pg_aclmask(ObjectType objtype, Oid object_oid, AttrNumber attnum, Oid roleid,
 			return object_aclmask(DatabaseRelationId, object_oid, roleid, mask, how);
 		case OBJECT_FUNCTION:
 			return object_aclmask(ProcedureRelationId, object_oid, roleid, mask, how);
+		case OBJECT_PUBLICATION:
+			return object_aclmask(PublicationRelationId, object_oid, roleid, mask, how);
 		case OBJECT_LANGUAGE:
 			return object_aclmask(LanguageRelationId, object_oid, roleid, mask, how);
 		case OBJECT_LARGEOBJECT:

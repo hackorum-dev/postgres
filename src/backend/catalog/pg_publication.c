@@ -1069,9 +1069,11 @@ GetPublicationRelationMapping(Oid pubid, Oid relid,
 		*qual_isnull = true;
 	}
 }
+
 /*
  * Pick those publications from a list which should actually be used to
- * publish given relation and return them.
+ * publish given relation, check their USAGE privilege is needed and return
+ * them.
  *
  * If publish_as_relid_p is passed, the relation whose tuple descriptor should
  * be used to publish the data is stored in *publish_as_relid_p.
@@ -1163,6 +1165,22 @@ GetEffectiveRelationPublications(Oid relid, List *publications,
 				list_member_oid(schemaPubids, pub->oid) ||
 				ancestor_published)
 				publish = true;
+		}
+
+		/*
+		 * Check privileges before we use any information of the
+		 * publication.
+		 */
+		if (publication_security && publish)
+		{
+			Oid			roleid = GetUserId();
+			AclResult	aclresult;
+
+			aclresult = object_aclcheck(PublicationRelationId, pub->oid,
+										roleid, ACL_USAGE);
+			if (aclresult != ACLCHECK_OK)
+				aclcheck_error(aclresult, OBJECT_PUBLICATION,
+							   get_publication_name(pub->oid, false));
 		}
 
 		/*

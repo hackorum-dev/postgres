@@ -4958,6 +4958,34 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
      </variablelist>
     </sect2>
 
+    <sect2 id="runtime-config-replication-publisher">
+     <title>Publishers</title>
+
+     <para>
+      These settings control the behavior of a logical replication publisher.
+      Their values on the subscriber are irrelevant.
+     </para>
+
+     <variablelist>
+
+     <varlistentry id="guc-publication-security" xreflabel="publication_security">
+      <term><varname>publication_security</varname> (<type>boolean</type>)
+       <indexterm>
+        <primary><varname>publication_security</varname> configuration parameter</primary>
+        <secondary>in a publisher</secondary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies whether the publisher should check the publication
+        privileges before it sends data to the subscriber.  See
+        <xref linkend="logical-replication-security"/> for more details.
+       </para>
+      </listitem>
+     </varlistentry>
+     </variablelist>
+    </sect2>
+
     <sect2 id="runtime-config-replication-subscriber">
      <title>Subscribers</title>
 

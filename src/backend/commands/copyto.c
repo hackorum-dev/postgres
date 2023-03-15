@@ -34,13 +34,18 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "optimizer/optimizer.h"
+#include "parser/parsetree.h"
+#include "parser/parse_relation.h"
 #include "pgstat.h"
 #include "rewrite/rewriteHandler.h"
+#include "rewrite/rewriteManip.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
+#include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/partcache.h"
+#include "utils/acl.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
@@ -132,6 +137,10 @@ static void CopySendEndOfRow(CopyToState cstate);
 static void CopySendInt32(CopyToState cstate, int32 val);
 static void CopySendInt16(CopyToState cstate, int16 val);
 
+static void AddPublicationFiltersToQuery(CopyToState cstate, Query *query,
+										 List *publication_names);
+static Node *GetPublicationFilters(Relation rel, List *publications,
+								   int varno);
 
 /*
  * Send copy start/stop messages for frontend copies.  These have changed
@@ -439,6 +448,7 @@ CreateCopyToQuery(const CopyStmt *stmt, Relation rel, int stmt_location,
  * 'data_dest_cb': Callback that processes the output data
  * 'attnamelist': List of char *, columns to include. NIL selects all cols.
  * 'options': List of DefElem. See copy_opt_item in gram.y for selections.
+ * 'publication_names': PUBLICATION_NAMES option (also contained in 'options')
  *
  * Returns a CopyToState, to be passed to DoCopyTo() and related functions.
  */
@@ -451,7 +461,8 @@ BeginCopyTo(ParseState *pstate,
 			bool is_program,
 			copy_data_dest_cb data_dest_cb,
 			List *attnamelist,
-			List *options)
+			List *options,
+			List *publication_names)
 {
 	CopyToState cstate;
 	bool		pipe = (filename == NULL && data_dest_cb == NULL);
@@ -605,6 +616,12 @@ BeginCopyTo(ParseState *pstate,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("COPY query must have a RETURNING clause")));
 		}
+
+		/*
+		 * If the subscriber passed the publication names, use them.
+		 */
+		if (publication_names)
+			AddPublicationFiltersToQuery(cstate, query, publication_names);
 
 		/* plan the query */
 		plan = pg_plan_query(query, pstate->p_sourcetext,
@@ -1375,4 +1392,203 @@ CreateCopyDestReceiver(void)
 	self->processed = 0;
 
 	return (DestReceiver *) self;
+}
+
+/*
+ * For each table in the query add the row filters of the related publication
+ * to the WHERE clause. While doing so, check if the current user has the
+ * USAGE privilege on the publications.
+ */
+static void
+AddPublicationFiltersToQuery(CopyToState cstate, Query *query,
+							 List *publication_names)
+{
+	List	*publications = NIL;
+	Index rtindex;
+	FromExpr   *from_expr;
+	ListCell	*lc;
+
+	Assert(publication_names);
+
+	/* Convert the list of names to a list of OIDs. */
+	foreach(lc, publication_names)
+	{
+		char	*pubname = strVal(lfirst(lc));
+		Oid		pubid;
+		Publication	*pub;
+
+		pubid = get_publication_oid(pubname, true);
+		if (pubid == InvalidOid)
+		{
+			ereport(WARNING,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("publication \"%s\" does not exist", pubname)));
+			continue;
+		}
+
+		pub = GetPublication(pubid);
+
+		publications = lappend(publications, pub);
+	}
+
+	if (publications == NIL)
+		ereport(ERROR, errmsg("no valid publication received"));
+
+	/*
+	 * If the query references at least one table, construct or adjust the
+	 * WHERE clause according to the publications.
+	 */
+	from_expr = query->jointree;
+
+	rtindex = 1;
+	foreach(lc, query->rtable)
+	{
+		RangeTblEntry *rte;
+		Relation	qrel;
+		List	*pubs_matched;
+		Node	*quals;
+
+		rte = lfirst_node(RangeTblEntry, lc);
+
+		/*
+		 * NoLock because the relation should already be locked due to the
+		 * prior rewriting.
+		 */
+		qrel = relation_open(rte->relid, NoLock);
+
+		/*
+		 * Clear ACL_SELECT on each RTE entry if the ACL_USAGE permission on
+		 * publications should control the access, see below.
+		 */
+		if (publication_security)
+		{
+			RTEPermissionInfo *perminfo;
+
+			perminfo = getRTEPermissionInfo(query->rteperminfos, rte);
+			perminfo->requiredPerms &= ~ACL_SELECT;
+		}
+
+		/*
+		 * Retrieve the publications relevant to this relation, and if needed,
+		 * check if the current user has the USAGE privilege on them.
+		 */
+		pubs_matched = GetEffectiveRelationPublications(RelationGetRelid(qrel),
+														publications, NULL, NULL);
+		if (pubs_matched == NIL)
+			ereport(ERROR,
+					(errmsg("no publication for relation \"%s\"",
+							get_rel_name(RelationGetRelid(qrel)))));
+
+		/* Range table implies there should be a FROM list. */
+		Assert(from_expr && from_expr->fromlist);
+
+		/*
+		 * Use the publication filters to construct the (additional) filter
+		 * expression for this relation.
+		 */
+		quals = GetPublicationFilters(qrel, pubs_matched, rtindex);
+		if (quals)
+		{
+			if (from_expr->quals == NULL)
+			{
+				/* Assign a new WHERE clause to the query. */
+				from_expr->quals = quals;
+			}
+			else
+			{
+				List	*new_quals;
+
+				/*
+				 * AND the filter for this relation to the existing WHERE
+				 * clause.
+				 */
+				new_quals = list_make2(quals, from_expr->quals);
+				from_expr->quals = (Node *) make_andclause(new_quals);
+			}
+		}
+
+		list_free(pubs_matched);
+		relation_close(qrel, NoLock);
+		rtindex++;
+	}
+}
+
+/*
+ * Construct WHERE clause for a relation according to the given list of
+ * publications.
+ *
+ * Return NULL if at least one of the publications has no filter.
+ */
+static Node *
+GetPublicationFilters(Relation rel, List *publications, int varno)
+{
+	Oid		relid = RelationGetRelid(rel);
+	List	   *filters = NIL;
+	Node	   *result = NULL;
+	ListCell   *lc;
+	bool		isvarlena;
+	FmgrInfo	fmgrinfo;
+	Oid			outfunc;
+
+	Assert(publications);
+
+	/* Make sure we're ready call the output function for the node values. */
+	getTypeOutputInfo(PG_NODE_TREEOID, &outfunc, &isvarlena);
+	Assert(isvarlena);
+	fmgr_info(outfunc, &fmgrinfo);
+
+	/* Retrieve the publication filters. */
+	foreach(lc, publications)
+	{
+		Publication		*pub = (Publication *) lfirst(lc);
+		Datum	attrs, qual;
+		bool	attrs_isnull, qual_isnull;
+		char	   *nodeStr;
+		Node	   *node;
+
+		/* Get the filter expression. */
+		GetPublicationRelationMapping(pub->oid, relid, &attrs, &attrs_isnull,
+									  &qual, &qual_isnull);
+
+		/*
+		 * A single publication w/o expression means that the whole table
+		 * should be published.
+		 */
+		if (qual_isnull)
+		{
+			if (filters)
+			{
+				list_free_deep(filters);
+				filters = NIL;
+			}
+
+			break;
+		}
+
+		/* Get the filter expression and add it to the list. */
+		nodeStr = OutputFunctionCall(&fmgrinfo, qual);
+		node = stringToNode(nodeStr);
+		pfree(nodeStr);
+
+		/*
+		 * Adjust varno so that the expression references the correct
+		 * range table entry.
+		 */
+		ChangeVarNodes(node, 1, varno, 0);
+
+		/*
+		 * XXX Is it worth checking for duplicate expressions in the list?
+		 */
+		filters = lappend(filters, node);
+	}
+
+	if (filters)
+	{
+		if (list_length(filters) > 1)
+			result = (Node *) make_orclause(filters);
+		else
+			result = (Node *) linitial(filters);
+	}
+
+	return result;
 }

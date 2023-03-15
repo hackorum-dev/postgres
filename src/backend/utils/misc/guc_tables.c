@@ -686,6 +686,8 @@ const char *const config_group_names[] =
 	gettext_noop("Replication / Primary Server"),
 	/* REPLICATION_STANDBY */
 	gettext_noop("Replication / Standby Servers"),
+	/* REPLICATION_PUBLISHERS */
+	gettext_noop("Replication / Publishers"),
 	/* REPLICATION_SUBSCRIBERS */
 	gettext_noop("Replication / Subscribers"),
 	/* QUERY_TUNING_METHOD */
@@ -1969,6 +1971,16 @@ struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Sets whether a WAL receiver should create a temporary replication slot if no permanent slot is configured."),
 		},
 		&wal_receiver_create_temp_slot,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"publication_security", PGC_SUSET, REPLICATION_PUBLISHERS,
+			gettext_noop("Enable publication security."),
+			gettext_noop("When enabled, the USAGE privilege is needed to access publications.")
+		},
+		&publication_security,
 		false,
 		NULL, NULL, NULL
 	},

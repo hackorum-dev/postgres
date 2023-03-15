@@ -82,6 +82,11 @@ GRANT { { SET | ALTER SYSTEM } [, ... ] | ALL [ PRIVILEGES ] }
     TO <replaceable class="parameter">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
     [ GRANTED BY <replaceable class="parameter">role_specification</replaceable> ]
 
+GRANT { USAGE [, ... ] | ALL [ PRIVILEGES ] }
+    ON PUBLICATION <replaceable class="parameter">publication_name</replaceable> [, ...]
+    TO <replaceable class="parameter">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
+    [ GRANTED BY <replaceable class="parameter">role_specification</replaceable> ]
+
 GRANT { { CREATE | USAGE } [, ...] | ALL [ PRIVILEGES ] }
     ON SCHEMA <replaceable>schema_name</replaceable> [, ...]
     TO <replaceable class="parameter">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
@@ -513,8 +518,8 @@ GRANT admins TO joe;
    </para>
 
    <para>
-    Privileges on databases, tablespaces, schemas, languages, and
-    configuration parameters are
+    Privileges on databases, tablespaces, schemas, languages, configuration
+    parameters and publications are
     <productname>PostgreSQL</productname> extensions.
    </para>
  </refsect1>

@@ -44,6 +44,7 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
     FORCE_NULL ( <replaceable class="parameter">column_name</replaceable> [, ...] )
     ENCODING '<replaceable class="parameter">encoding_name</replaceable>'
     DEFAULT '<replaceable class="parameter">default_string</replaceable>'
+    PUBLICATION_NAMES ( <replaceable class="parameter">publication_name</replaceable> [, ...] )
 </synopsis>
  </refsynopsisdiv>
 
@@ -378,6 +379,41 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
       will be used.
       This option is allowed only in <command>COPY FROM</command>, and only when
       not using <literal>binary</literal> format.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">publication_name</replaceable></term>
+    <listitem>
+     <para>
+      The name of an
+      existing <link linkend="logical-replication-publication">publication</link>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>PUBLICATION_NAMES</literal></term>
+    <listitem>
+     <para>
+      Specifies a list of publications. Only rows that match the
+      <link linkend="logical-replication-row-filter">row filter</link> of at
+      least one the publications are copied. If at least one publication in
+      the list has no row filter, the whole table contents will be copied.
+     </para>
+     <para>
+      If
+      the <link linkend="guc-publication-security">publication_security</link>
+      configuration parameter is <literal>on</literal>, the list is required.
+      and the user needs to have the <literal>USAGE</literal> privilege on all
+      the publications in the list which are actually used to retrieve the
+      data from given table.
+     </para>
+     <para>
+      This option is allowed only in <command>COPY TO</command>. Currently,
+      only the users with the <literal>REPLICATION</literal> privilege can use
+      this option.
      </para>
     </listitem>
    </varlistentry>

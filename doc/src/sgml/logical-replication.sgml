@@ -898,26 +898,26 @@ CREATE PUBLICATION
     <command>psql</command> can be used to show the row filter expressions (if
     defined) for each publication.
 <programlisting>
-test_pub=# \dRp+
+  test_pub=# \dRp+
                                Publication p1
-  Owner   | All tables | Inserts | Updates | Deletes | Truncates | Via root
-----------+------------+---------+---------+---------+-----------+----------
- postgres | f          | t       | t       | t       | t         | f
+  Owner   | All tables | Inserts | Updates | Deletes | Truncates | Via root | Access privileges
+----------+------------+---------+---------+---------+-----------+------------------------------
+ postgres | f          | t       | t       | t       | t         | f        |
 Tables:
     "public.t1" WHERE ((a > 5) AND (c = 'NSW'::text))
 
                                Publication p2
-  Owner   | All tables | Inserts | Updates | Deletes | Truncates | Via root
-----------+------------+---------+---------+---------+-----------+----------
- postgres | f          | t       | t       | t       | t         | f
+  Owner   | All tables | Inserts | Updates | Deletes | Truncates | Via root | Access privileges
+----------+------------+---------+---------+---------+-----------+------------------------------
+ postgres | f          | t       | t       | t       | t         | f        |
 Tables:
     "public.t1"
     "public.t2" WHERE (e = 99)
 
                                Publication p3
-  Owner   | All tables | Inserts | Updates | Deletes | Truncates | Via root
-----------+------------+---------+---------+---------+-----------+----------
- postgres | f          | t       | t       | t       | t         | f
+  Owner   | All tables | Inserts | Updates | Deletes | Truncates | Via root | Access privileges
+----------+------------+---------+---------+---------+-----------+------------------------------
+ postgres | f          | t       | t       | t       | t         | f        |
 Tables:
     "public.t2" WHERE (d = 10)
     "public.t3" WHERE (g = 10)
@@ -1259,10 +1259,11 @@ test_sub=# SELECT * FROM child ORDER BY a;
 
   <para>
    The choice of columns can be based on behavioral or performance reasons.
-   However, do not rely on this feature for security: a malicious subscriber
-   is able to obtain data from columns that are not specifically
-   published.  If security is a consideration, protections can be applied
-   at the publisher side.
+   However, if you want to use this feature for security, please consider
+   using the privileges on publication, as explained in
+   <xref linkend="logical-replication-security"/>. Otherwise a malicious
+   subscriber may be able to use other publications to obtain data from
+   columns that are not specifically published via your publication.
   </para>
 
   <para>
@@ -1360,9 +1361,9 @@ CREATE PUBLICATION
 <programlisting>
 test_pub=# \dRp+
                                Publication p1
-  Owner   | All tables | Inserts | Updates | Deletes | Truncates | Via root
-----------+------------+---------+---------+---------+-----------+----------
- postgres | f          | t       | t       | t       | t         | f
+  Owner   | All tables | Inserts | Updates | Deletes | Truncates | Via root | Access privileges
+----------+------------+---------+---------+---------+-----------+------------------------------
+ postgres | f          | t       | t       | t       | t         | f        |
 Tables:
     "public.t1" (id, a, b, d)
 </programlisting></para>
@@ -1725,12 +1726,6 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
   </para>
 
   <para>
-   In order to be able to copy the initial table data, the role used for the
-   replication connection must have the <literal>SELECT</literal> privilege on
-   a published table (or be a superuser).
-  </para>
-
-  <para>
    To create a publication, the user must have the <literal>CREATE</literal>
    privilege in the database.
   </para>
@@ -1743,15 +1738,24 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
   </para>
 
   <para>
-   There are currently no privileges on publications.  Any subscription (that
-   is able to connect) can access any publication.  Thus, if you intend to
-   hide some information from particular subscribers, such as by using row
-   filters or column lists, or by not adding the whole table to the
-   publication, be aware that other publications in the same database could
-   expose the same information.  Publication privileges might be added to
-   <productname>PostgreSQL</productname> in the future to allow for
-   finer-grained access control.
+   To replicate data, the role used for the replication connection must have
+   the <literal>USAGE</literal> privilege on the publication. In such a case,
+   the subscription role needs neither the <literal>SELECT</literal>
+   privileges on the replicated tables nor the <literal>USAGE</literal>
+   privilege on the containing schemas.
   </para>
+
+  <note>
+   <para>
+    The <literal>USAGE</literal> privilege on publication is only checked if
+    the <link linkend="guc-publication-security"><varname>publication_security</varname></link>
+    configuration parameter is set. The default is <literal>off</literal>. It
+    should only be set to <literal>on</literal> if all the subscribers are
+    on <productname>PostgreSQL</productname> server version 16 or later. The
+    older versions do not send the publication names for the initial table
+    synchronization, so they would fail to receive the data.
+   </para>
+  </note>
 
   <para>
    To create a subscription, the user must be a superuser.
@@ -1810,6 +1814,12 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
    <para>
     Logical replication walsender is also affected by
     <link linkend="guc-wal-sender-timeout"><varname>wal_sender_timeout</varname></link>.
+   </para>
+
+   <para>
+    <link linkend="guc-publication-security"><varname>publication_security</varname></link>
+    must be set to <literal>on</literal> if the publisher is supposed to check
+    the publication privileges.
    </para>
 
   </sect2>

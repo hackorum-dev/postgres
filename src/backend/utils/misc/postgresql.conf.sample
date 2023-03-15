@@ -353,6 +353,12 @@
 					# retrieve WAL after a failed attempt
 #recovery_min_apply_delay = 0		# minimum delay for applying changes during recovery
 
+# - Publishers -
+
+# These settings are ignored on a subscriber.
+
+#publication_security = off		# should publication privileges be checked?
+
 # - Subscribers -
 
 # These settings are ignored on a publisher.

@@ -268,3 +268,39 @@ a	c	b
 
 SELECT * FROM header_copytest ORDER BY a;
 drop table header_copytest;
+
+-- Filtering by publication
+
+-- Suppress the warning about insufficient wal_level when creating
+-- publications.
+set client_min_messages to error;
+
+create role regress_copy_repl_user login replication;
+create table published_copytest (i int);
+insert into published_copytest(i) select x from generate_series(1, 10) g(x);
+create publication pub1 for table published_copytest where (i >= 7);
+
+set publication_security to on;
+
+-- Test both table name and query forms of the COPY command.
+set role regress_copy_repl_user;
+copy published_copytest to stdout (publication_names (pub1));
+copy (select i from published_copytest) to stdout (publication_names (pub1));
+reset role;
+
+-- Publish some more data.
+create publication pub2 for table published_copytest where (i <= 2);
+set role regress_copy_repl_user;
+copy published_copytest to stdout (publication_names (pub1, pub2));
+reset role;
+
+-- If any publication has no filter, the other filters are ignored.
+create publication pub3 for table published_copytest;
+set role regress_copy_repl_user;
+copy published_copytest to stdout (publication_names (pub1, pub2, pub3));
+reset role;
+
+reset publication_security;
+reset client_min_messages;
+drop role regress_copy_repl_user;
+drop publication pub1, pub2, pub3;

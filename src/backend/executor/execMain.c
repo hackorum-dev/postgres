@@ -613,7 +613,9 @@ ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
 	Oid			relOid = perminfo->relid;
 
 	requiredPerms = perminfo->requiredPerms;
-	Assert(requiredPerms != 0);
+
+	if (requiredPerms == 0)
+		return true;
 
 	/*
 	 * userid to check as: current user unless we have a setuid indication.

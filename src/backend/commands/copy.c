@@ -41,6 +41,8 @@
 #include "utils/rel.h"
 #include "utils/rls.h"
 
+static bool isReplicationUser(void);
+
 /*
  *	 DoCopy executes the SQL COPY statement
  *
@@ -71,6 +73,7 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 	Oid			relid;
 	RawStmt    *query = NULL;
 	Node	   *whereClause = NULL;
+	List		*publication_names = NIL;
 
 	/*
 	 * Disallow COPY to/from file or program except to users with the
@@ -105,14 +108,23 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 		}
 	}
 
+	/*
+	 * It seems more useful to tell the user immediately that something is
+	 * wrong about the use of the PUBLICATION_NAMES option than to complain
+	 * about missing SELECT privilege below: whoever is authorized to use this
+	 * option shouldn't need the SELECT privilege at all. Therefore check the
+	 * PUBLICATION_NAMES option earlier than the other options.  XXX Shouldn't
+	 * we check all the options here anyway?
+	 */
+	publication_names = ProcessCopyToPublicationOptions(pstate,
+														stmt->options,
+														stmt->is_from);
+
 	if (stmt->relation)
 	{
 		LOCKMODE	lockmode = is_from ? RowExclusiveLock : AccessShareLock;
 		ParseNamespaceItem *nsitem;
 		RTEPermissionInfo *perminfo;
-		TupleDesc	tupDesc;
-		List	   *attnums;
-		ListCell   *cur;
 
 		Assert(!stmt->query);
 
@@ -126,6 +138,14 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 
 		perminfo = nsitem->p_perminfo;
 		perminfo->requiredPerms = (is_from ? ACL_INSERT : ACL_SELECT);
+
+		/*
+		 * The access by a replication user is controlled by the publication
+		 * privileges, ACL_SELECT is not required. The actual checks of the
+		 * publication privileges will take place later.
+		 */
+		if (!is_from && publication_security)
+			perminfo->requiredPerms &= ~ACL_SELECT;
 
 		if (stmt->whereClause)
 		{
@@ -147,19 +167,31 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 			whereClause = (Node *) make_ands_implicit((Expr *) whereClause);
 		}
 
-		tupDesc = RelationGetDescr(rel);
-		attnums = CopyGetAttnums(tupDesc, rel, stmt->attlist);
-		foreach(cur, attnums)
+		/*
+		 * If publication row filters need to be applied, the query form of
+		 * COPY TO is used, so the permissions will be checked by the
+		 * executor. Otherwise check the permissions now.
+		 */
+		if (publication_names == NIL)
 		{
-			int			attno;
-			Bitmapset **bms;
+			TupleDesc	tupDesc;
+			List	   *attnums;
+			ListCell   *cur;
 
-			attno = lfirst_int(cur) - FirstLowInvalidHeapAttributeNumber;
-			bms = is_from ? &perminfo->insertedCols : &perminfo->selectedCols;
+			tupDesc = RelationGetDescr(rel);
+			attnums = CopyGetAttnums(tupDesc, rel, stmt->attlist);
+			foreach(cur, attnums)
+			{
+				int			attno;
+				Bitmapset **bms;
 
-			*bms = bms_add_member(*bms, attno);
+				attno = lfirst_int(cur) - FirstLowInvalidHeapAttributeNumber;
+				bms = is_from ? &perminfo->insertedCols : &perminfo->selectedCols;
+
+				*bms = bms_add_member(*bms, attno);
+			}
+			ExecCheckPermissions(pstate->p_rtable, list_make1(perminfo), true);
 		}
-		ExecCheckPermissions(pstate->p_rtable, list_make1(perminfo), true);
 
 		/*
 		 * Permission check for row security policies.
@@ -184,6 +216,7 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 						 errhint("Use INSERT statements instead.")));
 
 			query = CreateCopyToQuery(stmt, rel, stmt_location, stmt_len);
+
 			/*
 			 * Close the relation for now, but keep the lock on it to prevent
 			 * changes between now and when we start the query-based COPY.
@@ -232,10 +265,24 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 	else
 	{
 		CopyToState cstate;
+		Relation	rel_loc = rel;
 
-		cstate = BeginCopyTo(pstate, rel, query, relid,
+		/*
+		 * If publication row filters need to be applied, use the "COPY query
+		 * TO ..."  form of the command.
+		 */
+		if (rel && publication_names)
+		{
+			query = CreateCopyToQuery(stmt, rel, stmt_location, stmt_len);
+
+			/* BeginCopyTo() should only receive the query.  */
+			rel_loc = NULL;
+		}
+
+		cstate = BeginCopyTo(pstate, rel_loc, query, relid,
 							 stmt->filename, stmt->is_program,
-							 NULL, stmt->attlist, stmt->options);
+							 NULL, stmt->attlist, stmt->options,
+							 publication_names);
 		*processed = DoCopyTo(cstate);	/* copy from database to file */
 		EndCopyTo(cstate);
 	}
@@ -482,6 +529,13 @@ ProcessCopyOptions(ParseState *pstate,
 								defel->defname),
 						 parser_errposition(pstate, defel->location)));
 		}
+		else if (strcmp(defel->defname, "publication_names") == 0)
+		{
+			/*
+			 * ProcessCopyToPublicationOptions() should have been checked this
+			 * already.
+			 */
+		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
@@ -680,6 +734,78 @@ ProcessCopyOptions(ParseState *pstate,
 }
 
 /*
+ * Check the PUBLICATION_NAMES option of the "COPY TO" command.
+ *
+ * This option is checked separate from others.
+ */
+List *
+ProcessCopyToPublicationOptions(ParseState *pstate, List *options,
+								bool is_from)
+{
+	ListCell   *option;
+	bool	found = false;
+	List	*result = NIL;
+
+	/* Extract options from the statement node tree */
+	foreach(option, options)
+	{
+		DefElem    *defel = lfirst_node(DefElem, option);
+
+		if (strcmp(defel->defname, "publication_names") == 0)
+		{
+			if (is_from)
+				ereport(ERROR,
+						errmsg("PUBLICATION_NAMES option only available using COPY TO"));
+
+			if (result)
+				errorConflictingDefElem(defel, pstate);
+			found = true;
+			if (defel->arg == NULL || IsA(defel->arg, List))
+				result = castNode(List, defel->arg);
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("argument to option \"%s\" must be a list of publication names",
+								defel->defname),
+						 parser_errposition(pstate, defel->location)));
+		}
+	}
+
+	/*
+	 * If the publication security is enabled, subscriber must send the list
+	 * of publication in order to tell which subset of the data it is
+	 * authorized to receive.
+	 *
+	 * publication_security does not affect sessions of non-replication users.
+	 */
+	if (!found && publication_security && isReplicationUser())
+	{
+		/*
+		 * This probably means that an old version of subscriber tries to get
+		 * data from a secured publisher.
+		 */
+		ereport(ERROR,
+				(errmsg("publication security requires the PUBLICATION_NAMES option")));
+	}
+
+	/*
+	 * The option does only make sense in the context of (logical)
+	 * replication. We could allow it for non-replication users too, but then
+	 * we'd have to require it publication_security is on like above and thus
+	 * break existing client code.
+	 */
+	if (found && !isReplicationUser())
+		ereport(ERROR,
+				(errmsg("PUBLICATION_NAMES may only be used by roles with the REPLICATION privilege")));
+
+	if (found && result == NIL)
+		ereport(ERROR,
+				(errmsg("the value of the PUBLICATION_NAMES option must not be empty")));
+
+	return result;
+}
+
+/*
  * CopyGetAttnums - build an integer list of attnums to be copied
  *
  * The input attnamelist is either the user-specified column list,
@@ -768,4 +894,18 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 	}
 
 	return attnums;
+}
+
+/*
+ * Check whether the current session can use the USAGE privilege on
+ * publications instead of the SELECT privileges on tables.
+ *
+ * Superuser makes the test pass too so that subscriptions which connect to
+ * the publisher as superuser work fine.
+ */
+static bool
+isReplicationUser(void)
+{
+	return has_rolreplication(GetUserId()) || superuser();
+
 }

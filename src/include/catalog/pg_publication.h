@@ -54,6 +54,12 @@ CATALOG(pg_publication,6104,PublicationRelationId)
 
 	/* true if partition changes are published using root schema */
 	bool		pubviaroot;
+
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	/* NOTE: These fields are not present in a relcache entry's rd_rel field. */
+	/* access permissions */
+	aclitem		pubacl[1] BKI_DEFAULT(_null_);
+#endif
 } FormData_pg_publication;
 
 /* ----------------
@@ -62,6 +68,8 @@ CATALOG(pg_publication,6104,PublicationRelationId)
  * ----------------
  */
 typedef FormData_pg_publication *Form_pg_publication;
+
+DECLARE_TOAST(pg_publication, 9801, 9802);
 
 DECLARE_UNIQUE_INDEX_PKEY(pg_publication_oid_index, 6110, PublicationObjectIndexId, on pg_publication using btree(oid oid_ops));
 DECLARE_UNIQUE_INDEX(pg_publication_pubname_index, 6111, PublicationNameIndexId, on pg_publication using btree(pubname name_ops));
@@ -135,6 +143,8 @@ typedef enum PublicationPartOpt
 	PUBLICATION_PART_LEAF,
 	PUBLICATION_PART_ALL,
 } PublicationPartOpt;
+
+extern PGDLLIMPORT bool publication_security;
 
 extern List *GetPublicationRelations(Oid pubid, PublicationPartOpt pub_partopt);
 extern List *GetAllTablesPublications(void);
