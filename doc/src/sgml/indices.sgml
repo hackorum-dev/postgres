@@ -672,8 +672,9 @@ CREATE UNIQUE INDEX <replaceable>name</replaceable> ON <replaceable>table</repla
   <para>
    When an index is declared unique, multiple table rows with equal
    indexed values are not allowed.  Null values are not considered
-   equal.  A multicolumn unique index will only reject cases where all
-   indexed columns are equal in multiple rows.
+   equal, unless the index is created with the <literal>NULLS NOT
+   DISTINCT</literal> clause.  A multicolumn unique index will only
+   reject cases where all indexed columns are equal in multiple rows.
   </para>
 
   <para>
