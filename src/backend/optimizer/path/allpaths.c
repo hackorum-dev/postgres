@@ -2761,12 +2761,6 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
 			Node	   *clause = (Node *) rinfo->clause;
 
-			if (rinfo->pseudoconstant)
-			{
-				upperrestrictlist = lappend(upperrestrictlist, rinfo);
-				continue;
-			}
-
 			switch (qual_is_pushdown_safe(subquery, rti, rinfo, &safetyInfo))
 			{
 				case PUSHDOWN_SAFE:
@@ -4425,24 +4419,26 @@ targetIsInAllPartitionLists(TargetEntry *tle, Query *query)
  *
  * Conditions checked here:
  *
- * 1. rinfo's clause must not contain any SubPlans (mainly because it's
+ * 1. rinfo must not be a pseudoconstant, because... XXX fill in reason.
+ *
+ * 2. rinfo's clause must not contain any SubPlans (mainly because it's
  * unclear that it will work correctly: SubLinks will already have been
  * transformed into SubPlans in the qual, but not in the subquery).  Note that
  * SubLinks that transform to initplans are safe, and will be accepted here
  * because what we'll see in the qual is just a Param referencing the initplan
  * output.
  *
- * 2. If unsafeVolatile is set, rinfo's clause must not contain any volatile
+ * 3. If unsafeVolatile is set, rinfo's clause must not contain any volatile
  * functions.
  *
- * 3. If unsafeLeaky is set, rinfo's clause must not contain any leaky
+ * 4. If unsafeLeaky is set, rinfo's clause must not contain any leaky
  * functions that are passed Var nodes, and therefore might reveal values from
  * the subquery as side effects.
  *
- * 4. rinfo's clause must not refer to the whole-row output of the subquery
+ * 5. rinfo's clause must not refer to the whole-row output of the subquery
  * (since there is no easy way to name that within the subquery itself).
  *
- * 5. rinfo's clause must not refer to any subquery output columns that were
+ * 6. rinfo's clause must not refer to any subquery output columns that were
  * found to be unsafe to reference by subquery_is_pushdown_safe().
  *
  * 6. If the subquery has a grouping layer (DISTINCT, DISTINCT ON, window
@@ -4464,16 +4460,20 @@ qual_is_pushdown_safe(Query *subquery, Index rti, RestrictInfo *rinfo,
 	List	   *vars;
 	ListCell   *vl;
 
-	/* Refuse subselects (point 1) */
+	/* Refuse pseudoconstant (point 1) */
+	if (rinfo->pseudoconstant)
+		return PUSHDOWN_UNSAFE;
+
+	/* Refuse subselects (point 2) */
 	if (contain_subplans(qual))
 		return PUSHDOWN_UNSAFE;
 
-	/* Refuse volatile quals if we found they'd be unsafe (point 2) */
+	/* Refuse volatile quals if we found they'd be unsafe (point 3) */
 	if (safetyInfo->unsafeVolatile &&
 		contain_volatile_functions((Node *) rinfo))
 		return PUSHDOWN_UNSAFE;
 
-	/* Refuse leaky quals if told to (point 3) */
+	/* Refuse leaky quals if told to (point 4) */
 	if (safetyInfo->unsafeLeaky &&
 		contain_leaked_vars(qual))
 		return PUSHDOWN_UNSAFE;
@@ -4522,14 +4522,14 @@ qual_is_pushdown_safe(Query *subquery, Index rti, RestrictInfo *rinfo,
 		/* Subqueries have no system columns */
 		Assert(var->varattno >= 0);
 
-		/* Check point 4 */
+		/* Check point 5 */
 		if (var->varattno == 0)
 		{
 			safe = PUSHDOWN_UNSAFE;
 			break;
 		}
 
-		/* Check point 5 */
+		/* Check point 6 */
 		if (safetyInfo->unsafeFlags[var->varattno] != 0)
 		{
 			if (safetyInfo->unsafeFlags[var->varattno] &
