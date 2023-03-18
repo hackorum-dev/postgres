@@ -1544,7 +1544,7 @@ heap_create_with_catalog(const char *relname,
 	 * ok, the relation has been cataloged, so close our relations and return
 	 * the OID of the newly created relation.
 	 */
-	table_close(new_rel_desc, NoLock);	/* do not unlock till end of xact */
+	RelationClose(new_rel_desc);
 	table_close(pg_class_desc, RowExclusiveLock);
 
 	return relid;
