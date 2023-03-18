@@ -111,6 +111,9 @@ static int	autoprewarm_interval = 300; /* dump interval */
 void
 _PG_init(void)
 {
+	if (!process_shared_preload_libraries_in_progress)
+		return;
+
 	DefineCustomIntVariable("pg_prewarm.autoprewarm_interval",
 							"Sets the interval between dumps of shared buffers",
 							"If set to zero, time-based dumping is disabled.",
@@ -122,9 +125,6 @@ _PG_init(void)
 							NULL,
 							NULL,
 							NULL);
-
-	if (!process_shared_preload_libraries_in_progress)
-		return;
 
 	/* can't define PGC_POSTMASTER variable after startup */
 	DefineCustomBoolVariable("pg_prewarm.autoprewarm",
