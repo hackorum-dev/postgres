@@ -942,14 +942,6 @@ pg_fe_sendauth(AuthRequest areq, int payloadlen, PGconn *conn)
 		case AUTH_REQ_OK:
 			break;
 
-		case AUTH_REQ_KRB4:
-			libpq_append_conn_error(conn, "Kerberos 4 authentication not supported");
-			return STATUS_ERROR;
-
-		case AUTH_REQ_KRB5:
-			libpq_append_conn_error(conn, "Kerberos 5 authentication not supported");
-			return STATUS_ERROR;
-
 #if defined(ENABLE_GSS) || defined(ENABLE_SSPI)
 		case AUTH_REQ_GSS:
 #if !defined(ENABLE_SSPI)

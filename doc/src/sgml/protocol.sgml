@@ -272,20 +272,6 @@
      </varlistentry>
 
      <varlistentry>
-      <term>AuthenticationKerberosV5</term>
-      <listitem>
-       <para>
-        The frontend must now take part in a Kerberos V5
-        authentication dialog (not described here, part of the
-        Kerberos specification) with the server.  If this is
-        successful, the server responds with an AuthenticationOk,
-        otherwise it responds with an ErrorResponse. This is no
-        longer supported.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry>
       <term>AuthenticationCleartextPassword</term>
       <listitem>
        <para>
@@ -3311,41 +3297,6 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          Specifies that the authentication was successful.
-        </para>
-       </listitem>
-      </varlistentry>
-     </variablelist>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry id="protocol-message-formats-AuthenticationKerberosV5">
-    <term>AuthenticationKerberosV5 (B)</term>
-    <listitem>
-
-     <variablelist>
-      <varlistentry>
-       <term>Byte1('R')</term>
-       <listitem>
-        <para>
-         Identifies the message as an authentication request.
-        </para>
-       </listitem>
-      </varlistentry>
-
-      <varlistentry>
-       <term>Int32(8)</term>
-       <listitem>
-        <para>
-         Length of message contents in bytes, including self.
-        </para>
-       </listitem>
-      </varlistentry>
-
-      <varlistentry>
-       <term>Int32(2)</term>
-       <listitem>
-        <para>
-         Specifies that Kerberos V5 authentication is required.
         </para>
        </listitem>
       </varlistentry>
