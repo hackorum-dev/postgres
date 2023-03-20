@@ -20,6 +20,10 @@
 
 #include <float.h>
 
+#ifdef USE_OPENBLAS
+#include "cblas.h"
+#endif
+
 #include "catalog/pg_type.h"
 #include "common/int.h"
 #include "common/pg_prng.h"
@@ -95,10 +99,14 @@ euclidean_norm_internal(int n, const float8 *a)
 {
 	float8		en = 0.0;
 
+#ifdef USE_OPENBLAS
+	en = cblas_dnrm2(n, a, 1);
+#else
 	for (int i = 0; i < n; i++)
 		en = float8_pl(en, float8_mul(a[i], a[i]));
 
 	en = float8_sqrt(en);
+#endif
 
 	return en;
 }
@@ -160,8 +168,12 @@ dot_product(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("vectors must have the same number of elements")));
 
+#ifdef USE_OPENBLAS
+	dp = cblas_ddot(an, ad, 1, bd, 1);
+#else
 	for (int i = 0; i < an; i++)
 		dp = float8_pl(dp, float8_mul(ad[i], bd[i]));
+#endif
 
 	PG_RETURN_FLOAT8(dp);
 }
