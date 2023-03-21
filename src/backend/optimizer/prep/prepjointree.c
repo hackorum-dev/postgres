@@ -503,7 +503,9 @@ pull_up_sublinks_qual_recurse(PlannerInfo *root, Node *node,
 				/*
 				 * Now recursively process the pulled-up quals.  Any inserted
 				 * joins can get stacked onto either j->larg or j->rarg,
-				 * depending on which rels they reference.
+				 * depending on which rels they reference. We shouldn't get
+				 * stacked into the JoinExpr since the we want to scan all the
+				 * rows in j->rarg to matches the j->quals.
 				 */
 				j->quals = pull_up_sublinks_qual_recurse(root,
 														 j->quals,

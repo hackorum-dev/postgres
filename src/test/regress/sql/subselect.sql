@@ -968,3 +968,25 @@ select * from (with x as (select 2 as y) select * from x) ss;
 explain (verbose, costs off)
 with x as (select * from subselect_tbl)
 select * from x for update;
+
+
+CREATE TEMP TABLE tt1 (a int, b int, c int) ON COMMIT DELETE ROWS;
+CREATE TEMP TABLE tt2 (a int, b int, c int) ON COMMIT DELETE ROWS;
+CREATE TEMP TABLE tt3 (a int, b int, c int) ON COMMIT DELETE ROWS;
+
+BEGIN;
+insert into tt1 select 1, 1, 2;
+insert into tt2 select 1, 2, 1; 
+insert into tt2 select 1, 1, 2;
+insert into tt3 select 1, 1, 2;
+
+-- the exist clause about tt3 should not be pull-up as a semi join since
+-- it references to both tt1 and tt2.
+select * from tt1
+where exists (select 1 from tt2
+	where exists (select 1 from tt3
+	    where tt1.c = tt2.c
+	    and tt2.b = tt3.b)
+and tt1.a = tt2.a);
+COMMIT;
+  
