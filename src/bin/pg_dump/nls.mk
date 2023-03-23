@@ -7,6 +7,7 @@ GETTEXT_FILES    = $(FRONTEND_COMMON_GETTEXT_FILES) \
                    pg_backup_null.c \
                    pg_backup_tar.c \
                    pg_backup_directory.c \
+                   pg_backup_structured.c \
                    dumputils.c \
                    compress_io.c \
                    pg_dump.c \

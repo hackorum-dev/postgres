@@ -358,6 +358,24 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+         <term><literal>s</literal></term>
+         <term><literal>structured</literal></term>
+         <listitem>
+          <para>
+           Output a <command>structured</command>-format. This format is a
+           plain-text SQL dump split up into multiple files. Each of these files
+           contains only one database object. The resulting small files stored
+           in a directory path based on the dumped object.
+           To restore this format, feed the plaintext restore-dump.sql file
+           to <xref linkend="app-psql"/>
+          </para>
+         </listitem>
+        </varlistentry>
+       </variablelist></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>-j <replaceable class="parameter">njobs</replaceable></option></term>
       <term><option>--jobs=<replaceable class="parameter">njobs</replaceable></option></term>
       <listitem>

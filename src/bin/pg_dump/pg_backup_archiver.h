@@ -443,6 +443,7 @@ extern void InitArchiveFmt_Custom(ArchiveHandle *AH);
 extern void InitArchiveFmt_Null(ArchiveHandle *AH);
 extern void InitArchiveFmt_Directory(ArchiveHandle *AH);
 extern void InitArchiveFmt_Tar(ArchiveHandle *AH);
+extern void InitArchiveFmt_Structured(ArchiveHandle *AH);
 
 extern bool isValidTarHeader(char *header);
 

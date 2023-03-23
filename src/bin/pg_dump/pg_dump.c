@@ -717,7 +717,7 @@ main(int argc, char **argv)
 	archiveFormat = parseArchiveFormat(format, &archiveMode);
 
 	/* archiveFormat specific setup */
-	if (archiveFormat == archNull)
+	if (archiveFormat == archNull || archiveFormat == archStructured)
 		plainText = 1;
 
 	/*
@@ -1058,8 +1058,8 @@ help(const char *progname)
 
 	printf(_("\nGeneral options:\n"));
 	printf(_("  -f, --file=FILENAME          output file or directory name\n"));
-	printf(_("  -F, --format=c|d|t|p         output file format (custom, directory, tar,\n"
-			 "                               plain text (default))\n"));
+	printf(_("  -F, --format=c|d|t|s|p       output file format (custom, directory, tar, \n"
+			 "                               structured, plain text (default))\n"));
 	printf(_("  -j, --jobs=NUM               use this many parallel jobs to dump\n"));
 	printf(_("  -v, --verbose                verbose mode\n"));
 	printf(_("  -V, --version                output version information, then exit\n"));
@@ -1363,6 +1363,10 @@ parseArchiveFormat(const char *format, ArchiveMode *mode)
 		archiveFormat = archTar;
 	else if (pg_strcasecmp(format, "tar") == 0)
 		archiveFormat = archTar;
+	else if (pg_strcasecmp(format, "s") == 0)
+		archiveFormat = archStructured;
+	else if (pg_strcasecmp(format, "structured") == 0)
+		archiveFormat = archStructured;
 	else
 		pg_fatal("invalid output format \"%s\" specified", format);
 	return archiveFormat;

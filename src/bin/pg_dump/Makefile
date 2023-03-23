@@ -37,6 +37,7 @@ OBJS = \
 	pg_backup_directory.o \
 	pg_backup_null.o \
 	pg_backup_tar.o \
+	pg_backup_structured.o \
 	pg_backup_utils.o
 
 all: pg_dump pg_restore pg_dumpall

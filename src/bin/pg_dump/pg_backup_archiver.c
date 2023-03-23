@@ -464,7 +464,8 @@ RestoreArchive(Archive *AHX)
 	 * Setup the output file if necessary.
 	 */
 	sav = SaveOutput(AH);
-	if (ropt->filename || ropt->compression_spec.algorithm != PG_COMPRESSION_NONE)
+	if ((ropt->filename && AH->format != archStructured) ||
+		ropt->compression_spec.algorithm != PG_COMPRESSION_NONE)
 		SetOutput(AH, ropt->filename, ropt->compression_spec);
 
 	ahprintf(AH, "--\n-- PostgreSQL database dump\n--\n\n");
@@ -731,6 +732,9 @@ RestoreArchive(Archive *AHX)
 		}
 	}
 
+	/* all TocEntries processed, no currentTE */
+	AH->currentTE = NULL;
+
 	if (ropt->single_txn)
 	{
 		if (AH->connection)
@@ -749,7 +753,8 @@ RestoreArchive(Archive *AHX)
 	 */
 	AH->stage = STAGE_FINALIZING;
 
-	if (ropt->filename || ropt->compression_spec.algorithm != PG_COMPRESSION_NONE)
+	if ((ropt->filename && AH->format != archStructured) ||
+		ropt->compression_spec.algorithm != PG_COMPRESSION_NONE)
 		RestoreOutput(AH, sav);
 
 	if (ropt->useDB)
@@ -2337,6 +2342,10 @@ _allocAH(const char *FileSpec, const ArchiveFormat fmt,
 
 		case archTar:
 			InitArchiveFmt_Tar(AH);
+			break;
+
+		case archStructured:
+			InitArchiveFmt_Structured(AH);
 			break;
 
 		default:
