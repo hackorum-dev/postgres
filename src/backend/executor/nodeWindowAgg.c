@@ -2787,7 +2787,7 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 		inputTypes[i++] = exprType((Node *) lfirst(lc));
 	}
 
-	aggTuple = SearchSysCache1(AGGFNOID, ObjectIdGetDatum(wfunc->winfnoid));
+	aggTuple = SearchSysCache(AGGFNOID, ObjectIdGetDatum(wfunc->winfnoid));
 	if (!HeapTupleIsValid(aggTuple))
 		elog(ERROR, "cache lookup failed for aggregate %u",
 			 wfunc->winfnoid);
@@ -2855,8 +2855,8 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 		HeapTuple	procTuple;
 		Oid			aggOwner;
 
-		procTuple = SearchSysCache1(PROCOID,
-									ObjectIdGetDatum(wfunc->winfnoid));
+		procTuple = SearchSysCache(PROCOID,
+								   ObjectIdGetDatum(wfunc->winfnoid));
 		if (!HeapTupleIsValid(procTuple))
 			elog(ERROR, "cache lookup failed for function %u",
 				 wfunc->winfnoid);

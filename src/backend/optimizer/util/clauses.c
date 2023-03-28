@@ -2443,7 +2443,7 @@ eval_const_expressions_mutator(Node *node,
 				 * list.  That takes care of inserting default arguments and
 				 * expanding named-argument notation.
 				 */
-				func_tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
+				func_tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(funcid));
 				if (!HeapTupleIsValid(func_tuple))
 					elog(ERROR, "cache lookup failed for function %u", funcid);
 
@@ -3959,7 +3959,7 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 	 * strategies; so if !allow_non_const, simplify_function can only return a
 	 * Const or NULL.  Argument-list rewriting happens anyway, though.
 	 */
-	func_tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
+	func_tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(funcid));
 	if (!HeapTupleIsValid(func_tuple))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 	func_form = (Form_pg_proc) GETSTRUCT(func_tuple);
@@ -5021,7 +5021,7 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 	/*
 	 * OK, let's take a look at the function's pg_proc entry.
 	 */
-	func_tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(func_oid));
+	func_tuple = SearchSysCache(PROCOID, ObjectIdGetDatum(func_oid));
 	if (!HeapTupleIsValid(func_tuple))
 		elog(ERROR, "cache lookup failed for function %u", func_oid);
 	funcform = (Form_pg_proc) GETSTRUCT(func_tuple);

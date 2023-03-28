@@ -291,7 +291,7 @@ ResetSequence(Oid seq_relid)
 	init_sequence(seq_relid, &elm, &seq_rel);
 	(void) read_seq_tuple(seq_rel, &buf, &seqdatatuple);
 
-	pgstuple = SearchSysCache1(SEQRELID, ObjectIdGetDatum(seq_relid));
+	pgstuple = SearchSysCache(SEQRELID, ObjectIdGetDatum(seq_relid));
 	if (!HeapTupleIsValid(pgstuple))
 		elog(ERROR, "cache lookup failed for sequence %u", seq_relid);
 	pgsform = (Form_pg_sequence) GETSTRUCT(pgstuple);
@@ -480,8 +480,8 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 	init_sequence(relid, &elm, &seqrel);
 
 	rel = table_open(SequenceRelationId, RowExclusiveLock);
-	seqtuple = SearchSysCacheCopy1(SEQRELID,
-								   ObjectIdGetDatum(relid));
+	seqtuple = SearchSysCacheCopy(SEQRELID,
+								  ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(seqtuple))
 		elog(ERROR, "cache lookup failed for sequence %u",
 			 relid);
@@ -580,7 +580,7 @@ DeleteSequenceTuple(Oid relid)
 
 	rel = table_open(SequenceRelationId, RowExclusiveLock);
 
-	tuple = SearchSysCache1(SEQRELID, ObjectIdGetDatum(relid));
+	tuple = SearchSysCache(SEQRELID, ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for sequence %u", relid);
 
@@ -681,7 +681,7 @@ nextval_internal(Oid relid, bool check_permissions)
 		return elm->last;
 	}
 
-	pgstuple = SearchSysCache1(SEQRELID, ObjectIdGetDatum(relid));
+	pgstuple = SearchSysCache(SEQRELID, ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(pgstuple))
 		elog(ERROR, "cache lookup failed for sequence %u", relid);
 	pgsform = (Form_pg_sequence) GETSTRUCT(pgstuple);
@@ -911,7 +911,7 @@ lastval(PG_FUNCTION_ARGS)
 				 errmsg("lastval is not yet defined in this session")));
 
 	/* Someone may have dropped the sequence since the last nextval() */
-	if (!SearchSysCacheExists1(RELOID, ObjectIdGetDatum(last_used_seq->relid)))
+	if (!SearchSysCacheExists(RELOID, ObjectIdGetDatum(last_used_seq->relid)))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("lastval is not yet defined in this session")));
@@ -969,7 +969,7 @@ do_setval(Oid relid, int64 next, bool iscalled)
 				 errmsg("permission denied for sequence %s",
 						RelationGetRelationName(seqrel))));
 
-	pgstuple = SearchSysCache1(SEQRELID, ObjectIdGetDatum(relid));
+	pgstuple = SearchSysCache(SEQRELID, ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(pgstuple))
 		elog(ERROR, "cache lookup failed for sequence %u", relid);
 	pgsform = (Form_pg_sequence) GETSTRUCT(pgstuple);
@@ -1719,7 +1719,7 @@ sequence_options(Oid relid)
 	Form_pg_sequence pgsform;
 	List	   *options = NIL;
 
-	pgstuple = SearchSysCache1(SEQRELID, relid);
+	pgstuple = SearchSysCache(SEQRELID, relid);
 	if (!HeapTupleIsValid(pgstuple))
 		elog(ERROR, "cache lookup failed for sequence %u", relid);
 	pgsform = (Form_pg_sequence) GETSTRUCT(pgstuple);
@@ -1767,7 +1767,7 @@ pg_sequence_parameters(PG_FUNCTION_ARGS)
 
 	memset(isnull, 0, sizeof(isnull));
 
-	pgstuple = SearchSysCache1(SEQRELID, relid);
+	pgstuple = SearchSysCache(SEQRELID, relid);
 	if (!HeapTupleIsValid(pgstuple))
 		elog(ERROR, "cache lookup failed for sequence %u", relid);
 	pgsform = (Form_pg_sequence) GETSTRUCT(pgstuple);
