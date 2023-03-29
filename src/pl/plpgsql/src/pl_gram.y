@@ -200,7 +200,7 @@ static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
 %type <ival>	foreach_slice
 %type <stmt>	for_control
 
-%type <str>		any_identifier opt_block_label opt_loop_label opt_label
+%type <str>		any_identifier opt_block_label opt_into_table opt_loop_label opt_label
 %type <str>		option_value
 
 %type <list>	proc_sect stmt_elsifs stmt_else
@@ -2098,7 +2098,17 @@ stmt_dynexecute : K_EXECUTE
 				;
 
 
-stmt_open		: K_OPEN cursor_variable
+opt_into_table	:
+					{
+						$$ = NULL;
+					}
+				| K_INTO K_TABLE any_identifier
+					{
+						$$ = $3;
+					}
+				;
+
+stmt_open		: K_OPEN cursor_variable opt_into_table
 					{
 						PLpgSQL_stmt_open *new;
 						int			tok;
@@ -2109,6 +2119,7 @@ stmt_open		: K_OPEN cursor_variable
 						new->stmtid = ++plpgsql_curr_compile->nstatements;
 						new->curvar = $2->dno;
 						new->cursor_options = CURSOR_OPT_FAST_PLAN;
+						new->tablename = $3;
 
 						if ($2->cursor_explicit_expr == NULL)
 						{
