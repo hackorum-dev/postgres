@@ -193,6 +193,7 @@ extern void SPI_cursor_close(Portal portal);
 extern int	SPI_register_relation(EphemeralNamedRelation enr);
 extern int	SPI_unregister_relation(const char *name);
 extern int	SPI_register_trigger_data(TriggerData *tdata);
+extern int	SPI_register_portal(Portal portal, char *name);
 
 extern void SPI_start_transaction(void);
 extern void SPI_commit(void);
