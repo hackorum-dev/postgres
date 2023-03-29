@@ -795,6 +795,7 @@ typedef struct PLpgSQL_stmt_open
 	PLpgSQL_expr *query;
 	PLpgSQL_expr *dynquery;
 	List	   *params;			/* USING expressions */
+	char *tablename;
 } PLpgSQL_stmt_open;
 
 /*
