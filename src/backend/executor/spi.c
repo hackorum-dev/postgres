@@ -20,6 +20,7 @@
 #include "access/xact.h"
 #include "catalog/heap.h"
 #include "catalog/pg_type.h"
+#include "commands/portalcmds.h"
 #include "commands/trigger.h"
 #include "executor/executor.h"
 #include "executor/spi_priv.h"
@@ -3403,6 +3404,33 @@ SPI_register_trigger_data(TriggerData *tdata)
 		if (rc != SPI_OK_REL_REGISTER)
 			return rc;
 	}
+
+	return SPI_OK_TD_REGISTER;
+}
+
+int
+SPI_register_portal(Portal portal, char *name)
+{
+	int			rc;
+	EphemeralNamedRelation enr;
+
+	if (portal == NULL || name == NULL)
+		return SPI_ERROR_ARGUMENT;
+
+	PortalCreateHoldStore(portal);
+	PersistHoldablePortal(portal);
+
+	enr = palloc(sizeof(EphemeralNamedRelationData));
+
+	enr->md.name = name;
+	enr->md.reliddesc = InvalidOid;
+	enr->md.tupdesc = portal->tupDesc;
+	enr->md.enrtype = ENR_NAMED_TUPLESTORE;
+	enr->md.enrtuples = tuplestore_tuple_count(portal->holdStore);
+	enr->reldata = portal->holdStore;
+	rc = SPI_register_relation(enr);
+	if (rc != SPI_OK_REL_REGISTER)
+			return rc;
 
 	return SPI_OK_TD_REGISTER;
 }
