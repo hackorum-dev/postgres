@@ -1,0 +1,127 @@
+---
+# This Gitlab-CI pipeline offers basic validation that a commit did not
+# introduce easily detectable regressions. Builds run primairly on a new Fedora,
+# which has all the latest upstream build dependencies and thus is the primary
+# testing target, as eventually everything in Fedora becomes the next CentOS and
+# Red Hat releases.
+#
+# In addition test building on CentOS 7 and 8 to ensure that the code base
+# remains reasonably backwards compatible.
+
+stages:
+  - build
+  - test
+
+default:
+  # Base image for builds and tests unless otherwise defined
+  image: fedora:latest
+  # Extend build jobs to have longer timeout as the default GitLab
+  # timeout (1h) is often not enough
+  timeout: 3h
+
+variables:
+  MTEST_ARGS: "--print-errorlogs --no-rebuild -C build"
+  CCACHE_DIR: $CI_PROJECT_DIR/ccache_dir
+
+.build-postgres: &build-postgres-def
+    # Build instructions adapted from: https://www.postgresql.org/docs/current/installation.html
+    - ./configure | tee -a build-$CI_JOB_NAME-$CI_COMMIT_REF_SLUG.log
+    - make -j 2 | tee -a build-$CI_JOB_NAME-$CI_COMMIT_REF_SLUG.log
+    - make install | tee -a build-$CI_JOB_NAME-$CI_COMMIT_REF_SLUG.log
+    # docker permissions make the following testing difficult
+    # - make check | tee -a build-$CI_JOB_NAME-$CI_COMMIT_REF_SLUG.log
+    # - adduser postgres
+    # - mkdir -p /usr/local/pgsql/data
+    # - chown postgres /usr/local/pgsql/data
+    # - su - postgres
+    # - /usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data
+    # - /usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data -l logfile start
+    # - /usr/local/pgsql/bin/createdb test
+    # - /usr/local/pgsql/bin/psql test
+
+fedora:
+  stage: build
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_SUBMODULE_STRATEGY: normal
+  script:
+    # Install dependencies
+    - yum install -y yum-utils perl
+    - yum-builddep -y postgresql
+    - *build-postgres-def
+  artifacts:
+    when: always  # Must be able to see logs
+    paths:
+      - build-$CI_JOB_NAME-$CI_COMMIT_REF_SLUG.log
+
+# From https://github.com/postgres/postgres/blob/master/.cirrus.yml
+.create-user: &create-user-def
+    - useradd -m postgres
+    - chown -R postgres:postgres .
+    - mkdir -p ${CCACHE_DIR}
+    - chown -R postgres:postgres ${CCACHE_DIR}
+    - echo '* - memlock 134217728' > /etc/security/limits.d/postgres.conf
+    - su postgres -c "ulimit -l -H && ulimit -l -S"
+    # Can't change container's kernel.core_pattern. Postgres user can't write
+    # to / normally. Change that.
+    - chown root:postgres /
+    - chmod g+rwx /
+
+# Similar to https://github.com/postgres/postgres/blob/master/.cirrus.yml
+fedora meson:
+  stage: build
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_SUBMODULE_STRATEGY: normal
+  script:
+    # Meson system only exists on master branch currently
+    - if [ ! -f meson.build ]; then exit 0; fi
+    # Install dependencies
+    - yum install -y yum-utils perl perl-IPC-Run meson ninja-build
+    - yum-builddep -y postgresql
+    # Create postgres user
+    - *create-user-def
+    # Configure
+    - su postgres -c 'meson setup --buildtype=debug --auto-features=disabled -Dtap_tests=enabled build'
+    # Build
+    - su postgres -c 'ninja -C build -j 2'
+    # Minimal test
+    - su postgres -c 'meson test $MTEST_ARGS --num-processes 2 tmp_install cube/regress pg_ctl/001_start_stop'
+    # Run all tests
+    - su postgres -c 'meson test $MTEST_ARGS --num-processes 2'
+  artifacts:
+    when: always  # Must be able to see logs
+    paths:
+      - build/meson-logs/testlog.txt
+
+centos_stream_8:
+  stage: build
+  image: quay.io/centos/centos:stream8
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_SUBMODULE_STRATEGY: normal
+  script:
+    # Install dependencies
+    - yum install -y yum-utils perl readline-devel gcc zlib-devel flex bison libicu-devel
+    - yum-builddep -y postgresql || true # Some packages could not be found.
+    - *build-postgres-def
+  artifacts:
+    when: always  # Must be able to see logs
+    paths:
+      - build-$CI_JOB_NAME-$CI_COMMIT_REF_SLUG.log
+
+amazonlinux_2:
+  stage: build
+  image: amazonlinux:2
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_SUBMODULE_STRATEGY: normal
+  script:
+    # Install dependencies
+    - yum install -y yum-utils gcc make libicu-devel
+    - yum-builddep -y postgresql || true # Some packages could not be found.
+    - *build-postgres-def
+  artifacts:
+    when: always  # Must be able to see logs
+    paths:
+      - build-$CI_JOB_NAME-$CI_COMMIT_REF_SLUG.log
