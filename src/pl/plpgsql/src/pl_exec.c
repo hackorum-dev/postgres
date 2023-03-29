@@ -4895,6 +4895,9 @@ exec_stmt_open(PLpgSQL_execstate *estate, PLpgSQL_stmt_open *stmt)
 		elog(ERROR, "could not open cursor: %s",
 			 SPI_result_code_string(SPI_result));
 
+	if (stmt->tablename)
+		SPI_register_portal(portal, stmt->tablename);
+
 	/*
 	 * If cursor variable was NULL, store the generated portal name in it,
 	 * after verifying it's okay to assign to.
