@@ -513,6 +513,40 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 
 	Assert(plannedstmt->commandType != CMD_UTILITY);
 
+	/*
+	 * If option XXX is specified, skip executor setup and just print the cost
+	 * estimates from the top-level plan node.
+	 */
+	if (1)
+	{
+		Plan	   *plan = plannedstmt->planTree;
+
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			appendStringInfo(es->str, "Plan  (cost=%.2f..%.2f rows=%.0f width=%d)",
+							 plan->startup_cost, plan->total_cost,
+							 plan->plan_rows, plan->plan_width);
+		}
+		else
+		{
+			ExplainOpenGroup("Query", NULL, true, es);
+			ExplainOpenGroup("Plan", "Plan", true, es);
+
+			ExplainPropertyFloat("Startup Cost", NULL, plan->startup_cost,
+								 2, es);
+			ExplainPropertyFloat("Total Cost", NULL, plan->total_cost,
+								 2, es);
+			ExplainPropertyFloat("Plan Rows", NULL, plan->plan_rows,
+								 0, es);
+			ExplainPropertyInteger("Plan Width", NULL, plan->plan_width,
+								   es);
+
+			ExplainCloseGroup("Plan", "Plan", true, es);
+			ExplainCloseGroup("Query", NULL, true, es);
+		}
+		return;
+	}
+
 	if (es->analyze && es->timing)
 		instrument_option |= INSTRUMENT_TIMER;
 	else if (es->analyze)
