@@ -11298,7 +11298,7 @@ transformColumnNameList(Oid relId, List *colList,
 					 errmsg("column \"%s\" referenced in foreign key constraint does not exist",
 							attname)));
 		attform = (Form_pg_attribute) GETSTRUCT(atttuple);
-		if (attform->attnum < 0)
+		if (attform->attnum <= 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("system columns cannot be used in foreign keys")));
