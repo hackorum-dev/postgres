@@ -1640,16 +1640,8 @@ UPDATE accounts SET balance = balance - 100.00 WHERE acctnum = 22222;
      In certain cases using advisory locking methods, especially in queries
      involving explicit ordering and <literal>LIMIT</literal> clauses, care must be
      taken to control the locks acquired because of the order in which SQL
-     expressions are evaluated.  For example:
-<screen>
-SELECT pg_advisory_lock(id) FROM foo WHERE id = 12345; -- ok
-SELECT pg_advisory_lock(id) FROM foo WHERE id &gt; 12345 LIMIT 100; -- danger!
-SELECT pg_advisory_lock(q.id) FROM
-(
-  SELECT id FROM foo WHERE id &gt; 12345 LIMIT 100
-) q; -- ok
-</screen>
-     In the above queries, the second form is dangerous because the
+     expressions are evaluated.  For example,
+     this query is dangerous because the
      <literal>LIMIT</literal> is not guaranteed to be applied before the locking
      function is executed.  This might cause some locks to be acquired
      that the application was not expecting, and hence would fail to release
@@ -1657,6 +1649,17 @@ SELECT pg_advisory_lock(q.id) FROM
      From the point of view of the application, such locks
      would be dangling, although still viewable in
      <structname>pg_locks</structname>.
+<screen>
+SELECT pg_advisory_lock(id) FROM foo WHERE id &gt; 12345 LIMIT 100; -- danger!
+</screen>
+     The below forms are safe:
+<screen>
+SELECT pg_advisory_lock(id) FROM foo WHERE id = 12345; -- ok
+SELECT pg_advisory_lock(q.id) FROM
+(
+  SELECT id FROM foo WHERE id &gt; 12345 LIMIT 100
+) q; -- ok
+</screen>
     </para>
 
     <para>
