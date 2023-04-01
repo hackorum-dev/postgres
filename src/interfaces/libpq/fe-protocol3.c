@@ -2486,6 +2486,8 @@ build_startup_packet(const PGconn *conn, char *packet,
 
 	if (conn->pguser && conn->pguser[0])
 		ADD_STARTUP_OPTION("user", conn->pguser);
+	if (conn->pghost && conn->pghost[0])
+		ADD_STARTUP_OPTION("host", conn->pghost);
 	if (conn->dbName && conn->dbName[0])
 		ADD_STARTUP_OPTION("database", conn->dbName);
 	if (conn->replication && conn->replication[0])
