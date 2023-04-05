@@ -223,8 +223,8 @@ GetStandbyLimitTime(void)
 	}
 }
 
-#define STANDBY_INITIAL_WAIT_US  1000
-static int	standbyWait_us = STANDBY_INITIAL_WAIT_US;
+#define STANDBY_INITIAL_WAIT_MS  1
+static int	standbyWait_ms = STANDBY_INITIAL_WAIT_MS;
 
 /*
  * Standby wait logic for ResolveRecoveryConflictWithVirtualXIDs.
@@ -236,8 +236,6 @@ WaitExceedsMaxStandbyDelay(uint32 wait_event_info)
 {
 	TimestampTz ltime;
 
-	CHECK_FOR_INTERRUPTS();
-
 	/* Are we past the limit time? */
 	ltime = GetStandbyLimitTime();
 	if (ltime && GetCurrentTimestamp() >= ltime)
@@ -246,17 +244,24 @@ WaitExceedsMaxStandbyDelay(uint32 wait_event_info)
 	/*
 	 * Sleep a bit (this is essential to avoid busy-waiting).
 	 */
-	pgstat_report_wait_start(wait_event_info);
-	pg_usleep(standbyWait_us);
-	pgstat_report_wait_end();
+	if (WaitLatch(MyLatch,
+				  WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+				  standbyWait_ms,
+				  wait_event_info) & WL_LATCH_SET)
+	{
+		ResetLatch(MyLatch);
+		CHECK_FOR_INTERRUPTS();
+	}
 
 	/*
 	 * Progressively increase the sleep times, but not to more than 1s, since
-	 * pg_usleep isn't interruptible on some platforms.
+	 * we don't yet have a way to wake up when the virtual xid we're waiting
+	 * for has gone.  ResolveRecoveryConflictWithVirtualXIDs() will keep
+	 * polling, but at least we will process interrupts that set our latch.
 	 */
-	standbyWait_us *= 2;
-	if (standbyWait_us > 1000000)
-		standbyWait_us = 1000000;
+	standbyWait_ms *= 2;
+	if (standbyWait_ms > 1000)
+		standbyWait_ms = 1000;
 
 	return false;
 }
@@ -378,7 +383,7 @@ ResolveRecoveryConflictWithVirtualXIDs(VirtualTransactionId *waitlist,
 	while (VirtualTransactionIdIsValid(*waitlist))
 	{
 		/* reset standbyWait_us for each xact we wait for */
-		standbyWait_us = STANDBY_INITIAL_WAIT_US;
+		standbyWait_ms = STANDBY_INITIAL_WAIT_MS;
 
 		/* wait until the virtual xid is gone */
 		while (!VirtualXactLock(*waitlist, false))
