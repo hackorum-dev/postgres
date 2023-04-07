@@ -1638,14 +1638,13 @@ update_progress_txn_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
  * Set the required catalog xmin horizon for historic snapshots in the current
  * replication slot.
  *
- * Note that in the most cases, we won't be able to immediately use the xmin
+ * Note that we won't be able to immediately use the xmin
  * to increase the xmin horizon: we need to wait till the client has confirmed
  * receiving current_lsn with LogicalConfirmReceivedLocation().
  */
 void
 LogicalIncreaseXminForSlot(XLogRecPtr current_lsn, TransactionId xmin)
 {
-	bool		updated_xmin = false;
 	ReplicationSlot *slot;
 	bool		got_new_xmin = false;
 
@@ -1672,9 +1671,6 @@ LogicalIncreaseXminForSlot(XLogRecPtr current_lsn, TransactionId xmin)
 	{
 		slot->candidate_catalog_xmin = xmin;
 		slot->candidate_xmin_lsn = current_lsn;
-
-		/* our candidate can directly be used */
-		updated_xmin = true;
 	}
 
 	/*
@@ -1697,10 +1693,6 @@ LogicalIncreaseXminForSlot(XLogRecPtr current_lsn, TransactionId xmin)
 	if (got_new_xmin)
 		elog(DEBUG1, "got new catalog xmin %u at %X/%X", xmin,
 			 LSN_FORMAT_ARGS(current_lsn));
-
-	/* candidate already valid with the current flush position, apply */
-	if (updated_xmin)
-		LogicalConfirmReceivedLocation(slot->data.confirmed_flush);
 }
 
 /*
@@ -1713,7 +1705,6 @@ LogicalIncreaseXminForSlot(XLogRecPtr current_lsn, TransactionId xmin)
 void
 LogicalIncreaseRestartDecodingForSlot(XLogRecPtr current_lsn, XLogRecPtr restart_lsn)
 {
-	bool		updated_lsn = false;
 	ReplicationSlot *slot;
 
 	slot = MyReplicationSlot;
@@ -1737,9 +1728,6 @@ LogicalIncreaseRestartDecodingForSlot(XLogRecPtr current_lsn, XLogRecPtr restart
 	{
 		slot->candidate_restart_valid = current_lsn;
 		slot->candidate_restart_lsn = restart_lsn;
-
-		/* our candidate can directly be used */
-		updated_lsn = true;
 	}
 
 	/*
@@ -1775,10 +1763,6 @@ LogicalIncreaseRestartDecodingForSlot(XLogRecPtr current_lsn, XLogRecPtr restart
 			 LSN_FORMAT_ARGS(candidate_restart_valid),
 			 LSN_FORMAT_ARGS(confirmed_flush));
 	}
-
-	/* candidates are already valid with the current flush position, apply */
-	if (updated_lsn)
-		LogicalConfirmReceivedLocation(slot->data.confirmed_flush);
 }
 
 /*
