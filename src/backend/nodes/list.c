@@ -19,6 +19,7 @@
 
 #include "nodes/pg_list.h"
 #include "port/pg_bitutils.h"
+#include "port/pg_lfind.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
 
@@ -680,10 +681,14 @@ list_member(const List *list, const void *datum)
 bool
 list_member_ptr(const List *list, const void *datum)
 {
+#ifdef USE_NO_SIMD
 	const ListCell *cell;
+#endif
 
 	Assert(IsPointerList(list));
 	check_list_invariants(list);
+
+#ifdef USE_NO_SIMD
 
 	foreach(cell, list)
 	{
@@ -692,6 +697,18 @@ list_member_ptr(const List *list, const void *datum)
 	}
 
 	return false;
+
+#else
+
+	Assert(sizeof(ListCell) == 8);
+	Assert(sizeof(void *) == 8);
+
+	if (list == NIL)
+		return false;
+
+	return pg_lfind64((uint64) datum, (uint64 *) list->elements, list->length);
+
+#endif
 }
 
 /*
@@ -875,11 +892,29 @@ list_delete_ptr(List *list, void *datum)
 	Assert(IsPointerList(list));
 	check_list_invariants(list);
 
+#ifdef USE_NO_SIMD
+
 	foreach(cell, list)
 	{
 		if (lfirst(cell) == datum)
 			return list_delete_cell(list, cell);
 	}
+
+#else
+
+	Assert(sizeof(ListCell) == 8);
+	Assert(sizeof(void *) == 8);
+
+	if (list == NIL)
+		return NIL;
+
+	cell = (ListCell *) pg_lfind64_idx((uint64) datum,
+									   (uint64 *) list->elements,
+									   list->length);
+	if (cell != NULL)
+		return list_delete_cell(list, cell);
+
+#endif
 
 	/* Didn't find a match: return the list unmodified */
 	return list;
