@@ -26,9 +26,14 @@ documentation.  See standalone-profile.xsl for details.
 
  <para>
   If you are building <productname>PostgreSQL</productname> for Microsoft
-  Windows, read this chapter if you intend to build with MinGW or Cygwin;
-  but if you intend to build with Microsoft's <productname>Visual
-  C++</productname>, see <xref linkend="install-windows"/> instead.
+  Windows, read <xref linkend="install-make"/> if you intend to build
+  with make and autoconf (using MinGW or Cygwin build environments); read
+  <xref linkend="install-meson"/> if you intend to build with
+  <productname>meson</productname> (using Microsoft <productname>Visual
+  C++</productname>, MinGW or Cygwin build environments); if you intend to
+  build with Microsoft's <productname>Visual C++</productname> using the
+  <emphasis>deprecated</emphasis> perl scripts, see <xref
+  linkend="install-windows"/> instead.
  </para>
 
  <sect1 id="install-requirements">

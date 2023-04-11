@@ -8,6 +8,14 @@
   <secondary>on Windows</secondary>
  </indexterm>
 
+ <warning>
+  <para>
+   Building with this infrastructure is <emphasis>deprecated</emphasis>. It
+   will be removed in <productname>PostgreSQL</productname> 17. Consider
+   building with <link linkend="install-meson">meson</link> instead.
+  </para>
+ </warning>
+
  <para>
   It is recommended that most users download the binary distribution for
   Windows, available as a graphical installer package
@@ -61,6 +69,14 @@
  <sect1 id="install-windows-full">
   <title>Building with <productname>Visual C++</productname> or the
   <productname>Microsoft Windows SDK</productname></title>
+
+ <warning>
+  <para>
+   Building with this infrastructure is <emphasis>deprecated</emphasis>. It
+   will be removed in <productname>PostgreSQL</productname> 17. Consider
+   building with <link linkend="install-meson">meson</link> instead.
+  </para>
+ </warning>
 
  <para>
   PostgreSQL can be built using the Visual C++ compiler suite from Microsoft.
