@@ -253,35 +253,23 @@ ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel)
 			params.truncate = get_vacoptval_from_boolean(opt);
 		else if (strcmp(opt->defname, "parallel") == 0)
 		{
-			if (opt->arg == NULL)
-			{
+			int			nworkers = defGetInt32(opt);
+
+			if (nworkers < 0 || nworkers > MAX_PARALLEL_WORKER_LIMIT)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("parallel option requires a value between 0 and %d",
+						 errmsg("PARALLEL option requires a value between 0 and %d",
 								MAX_PARALLEL_WORKER_LIMIT),
 						 parser_errposition(pstate, opt->location)));
-			}
+
+			/*
+			 * Disable parallel vacuum, if user has specified parallel degree
+			 * as zero.
+			 */
+			if (nworkers == 0)
+				params.nworkers = -1;
 			else
-			{
-				int			nworkers;
-
-				nworkers = defGetInt32(opt);
-				if (nworkers < 0 || nworkers > MAX_PARALLEL_WORKER_LIMIT)
-					ereport(ERROR,
-							(errcode(ERRCODE_SYNTAX_ERROR),
-							 errmsg("parallel workers for vacuum must be between 0 and %d",
-									MAX_PARALLEL_WORKER_LIMIT),
-							 parser_errposition(pstate, opt->location)));
-
-				/*
-				 * Disable parallel vacuum, if user has specified parallel
-				 * degree as zero.
-				 */
-				if (nworkers == 0)
-					params.nworkers = -1;
-				else
-					params.nworkers = nworkers;
-			}
+				params.nworkers = nworkers;
 		}
 		else if (strcmp(opt->defname, "skip_database_stats") == 0)
 			skip_database_stats = defGetBoolean(opt);

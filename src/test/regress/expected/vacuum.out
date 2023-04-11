@@ -110,16 +110,14 @@ VACUUM (PARALLEL 2) pvactst;
 UPDATE pvactst SET i = i WHERE i < 1000;
 VACUUM (PARALLEL 0) pvactst; -- disable parallel vacuum
 VACUUM (PARALLEL -1) pvactst; -- error
-ERROR:  parallel workers for vacuum must be between 0 and 1024
+ERROR:  PARALLEL option requires a value between 0 and 1024
 LINE 1: VACUUM (PARALLEL -1) pvactst;
                 ^
 VACUUM (PARALLEL 2, INDEX_CLEANUP FALSE) pvactst;
 VACUUM (PARALLEL 2, FULL TRUE) pvactst; -- error, cannot use both PARALLEL and FULL
 ERROR:  VACUUM FULL cannot be performed in parallel
 VACUUM (PARALLEL) pvactst; -- error, cannot use PARALLEL option without parallel degree
-ERROR:  parallel option requires a value between 0 and 1024
-LINE 1: VACUUM (PARALLEL) pvactst;
-                ^
+ERROR:  parallel requires an integer value
 -- Test different combinations of parallel and full options for temporary tables
 CREATE TEMPORARY TABLE tmp (a int PRIMARY KEY);
 CREATE INDEX tmp_idx1 ON tmp (a);
