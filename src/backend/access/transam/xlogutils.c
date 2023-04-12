@@ -28,7 +28,7 @@
 #include "storage/smgr.h"
 #include "utils/hsearch.h"
 #include "utils/rel.h"
-
+#include "utils/ps_status.h"
 
 /* GUC variable */
 bool		ignore_invalid_pages = false;
@@ -982,6 +982,10 @@ read_local_xlog_page_guts(XLogReaderState *state, XLogRecPtr targetPagePtr,
 				break;
 			}
 
+			char		activitymsg[128];
+			snprintf(activitymsg, sizeof(activitymsg), "waiting for xlog to be available");
+			set_ps_display(activitymsg);
+
 			CHECK_FOR_INTERRUPTS();
 			pg_usleep(1000L);
 		}
@@ -1011,6 +1015,8 @@ read_local_xlog_page_guts(XLogReaderState *state, XLogRecPtr targetPagePtr,
 			break;
 		}
 	}
+
+	set_ps_display("");
 
 	if (targetPagePtr + XLOG_BLCKSZ <= read_upto)
 	{
