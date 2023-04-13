@@ -4013,7 +4013,7 @@ include_dir 'conf.d'
         heavy load, a failing <varname>archive_command</varname> or <varname>archive_library</varname>, or a high
         <varname>wal_keep_size</varname> setting.
         If this value is specified without units, it is taken as megabytes.
-        The default is 1 GB.
+        The default value is configured to maximum of 64 times the <varname>wal_segment_size</varname> or 1 GB.
         Increasing this parameter can increase the amount of time needed for
         crash recovery.
         This parameter can only be set in the <filename>postgresql.conf</filename>
@@ -4036,7 +4036,7 @@ include_dir 'conf.d'
         handle spikes in WAL usage, for example when running large batch
         jobs.
         If this value is specified without units, it is taken as megabytes.
-        The default is 80 MB.
+        The default value is configured to maximum of 5 times the <varname>wal_segment_size</varname> or 80 MB.
         This parameter can only be set in the <filename>postgresql.conf</filename>
         file or on the server command line.
        </para>
