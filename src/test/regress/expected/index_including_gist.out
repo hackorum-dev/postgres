@@ -2,25 +2,25 @@
  * 1.1. test CREATE INDEX with buffered build
  */
 -- Regular index with included columns
-CREATE TABLE tbl_gist (c1 int, c2 int, c3 int, c4 box);
--- size is chosen to exceed page size and trigger actual truncation
-INSERT INTO tbl_gist SELECT x, 2*x, 3*x, box(point(x,x+1),point(2*x,2*x+1)) FROM generate_series(1,8000) AS x;
-CREATE INDEX tbl_gist_idx ON tbl_gist using gist (c4) INCLUDE (c1,c2,c3);
+CREATE TABLE tbl_gist (c1 int, c2 int, c3 text, c4 box);
+-- size is chosen to trigger buffer emptying (bug #16329).
+INSERT INTO tbl_gist SELECT x, 2*x, repeat('x', 100), box(point(x,x+1),point(2*x,2*x+1)) FROM generate_series(1,8000) AS x;
+CREATE INDEX tbl_gist_idx ON tbl_gist using gist (c4) INCLUDE (c1,c2,c3) WITH (buffering = on);
 SELECT pg_get_indexdef(i.indexrelid)
 FROM pg_index i JOIN pg_class c ON i.indexrelid = c.oid
 WHERE i.indrelid = 'tbl_gist'::regclass ORDER BY c.relname;
-                                  pg_get_indexdef                                  
------------------------------------------------------------------------------------
- CREATE INDEX tbl_gist_idx ON public.tbl_gist USING gist (c4) INCLUDE (c1, c2, c3)
+                                             pg_get_indexdef                                             
+---------------------------------------------------------------------------------------------------------
+ CREATE INDEX tbl_gist_idx ON public.tbl_gist USING gist (c4) INCLUDE (c1, c2, c3) WITH (buffering='on')
 (1 row)
 
 SELECT * FROM tbl_gist where c4 <@ box(point(1,1),point(10,10));
- c1 | c2 | c3 |     c4      
-----+----+----+-------------
-  1 |  2 |  3 | (2,3),(1,2)
-  2 |  4 |  6 | (4,5),(2,3)
-  3 |  6 |  9 | (6,7),(3,4)
-  4 |  8 | 12 | (8,9),(4,5)
+ c1 | c2 |                                                  c3                                                  |     c4      
+----+----+------------------------------------------------------------------------------------------------------+-------------
+  1 |  2 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | (2,3),(1,2)
+  2 |  4 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | (4,5),(2,3)
+  3 |  6 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | (6,7),(3,4)
+  4 |  8 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | (8,9),(4,5)
 (4 rows)
 
 SET enable_bitmapscan TO off;
