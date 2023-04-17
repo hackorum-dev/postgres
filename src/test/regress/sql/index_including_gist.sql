@@ -3,10 +3,10 @@
  */
 
 -- Regular index with included columns
-CREATE TABLE tbl_gist (c1 int, c2 int, c3 int, c4 box);
--- size is chosen to exceed page size and trigger actual truncation
-INSERT INTO tbl_gist SELECT x, 2*x, 3*x, box(point(x,x+1),point(2*x,2*x+1)) FROM generate_series(1,8000) AS x;
-CREATE INDEX tbl_gist_idx ON tbl_gist using gist (c4) INCLUDE (c1,c2,c3);
+CREATE TABLE tbl_gist (c1 int, c2 int, c3 text, c4 box);
+-- size is chosen to trigger buffer emptying (bug #16329).
+INSERT INTO tbl_gist SELECT x, 2*x, repeat('x', 100), box(point(x,x+1),point(2*x,2*x+1)) FROM generate_series(1,8000) AS x;
+CREATE INDEX tbl_gist_idx ON tbl_gist using gist (c4) INCLUDE (c1,c2,c3) WITH (buffering = on);
 SELECT pg_get_indexdef(i.indexrelid)
 FROM pg_index i JOIN pg_class c ON i.indexrelid = c.oid
 WHERE i.indrelid = 'tbl_gist'::regclass ORDER BY c.relname;
