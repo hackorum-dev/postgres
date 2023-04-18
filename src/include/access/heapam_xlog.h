@@ -56,8 +56,7 @@
 #define XLOG_HEAP2_FREEZE_PAGE	0x30
 #define XLOG_HEAP2_VISIBLE		0x40
 #define XLOG_HEAP2_MULTI_INSERT 0x50
-#define XLOG_HEAP2_LOCK_UPDATED 0x60
-#define XLOG_HEAP2_NEW_CID		0x70
+#define XLOG_HEAP2_NEW_CID		0x60
 
 /*
  * xl_heap_insert/xl_heap_multi_insert flag values, 8 bits are available.
@@ -273,8 +272,9 @@ typedef struct xl_heap_vacuum
 #define XLHL_XMAX_KEYSHR_LOCK	0x08
 #define XLHL_KEYS_UPDATED		0x10
 
-/* flag bits for xl_heap_lock / xl_heap_lock_updated's flag field */
-#define XLH_LOCK_ALL_FROZEN_CLEARED		0x01
+/* flag bits for xl_heap_lock's flag field */
+#define XLH_LOCK_FROZEN_CLEARED		0x01
+#define XLH_LOCK_UPDATED			0x02
 
 /* This is what we need to know about lock */
 typedef struct xl_heap_lock
@@ -286,17 +286,6 @@ typedef struct xl_heap_lock
 } xl_heap_lock;
 
 #define SizeOfHeapLock	(offsetof(xl_heap_lock, flags) + sizeof(uint8))
-
-/* This is what we need to know about locking an updated version of a row */
-typedef struct xl_heap_lock_updated
-{
-	TransactionId xmax;
-	OffsetNumber offnum;
-	uint8		infobits_set;
-	uint8		flags;
-} xl_heap_lock_updated;
-
-#define SizeOfHeapLockUpdated	(offsetof(xl_heap_lock_updated, flags) + sizeof(uint8))
 
 /* This is what we need to know about confirmation of speculative insertion */
 typedef struct xl_heap_confirm

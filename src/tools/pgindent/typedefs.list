@@ -3868,7 +3868,6 @@ xl_heap_header
 xl_heap_inplace
 xl_heap_insert
 xl_heap_lock
-xl_heap_lock_updated
 xl_heap_multi_insert
 xl_heap_new_cid
 xl_heap_prune

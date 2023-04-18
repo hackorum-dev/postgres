@@ -2460,8 +2460,8 @@ simple_heap_insert(Relation relation, HeapTuple tup)
 
 /*
  * Given infomask/infomask2, compute the bits that must be saved in the
- * "infobits" field of xl_heap_delete, xl_heap_update, xl_heap_lock,
- * xl_heap_lock_updated WAL records.
+ * "infobits" field of xl_heap_delete, xl_heap_update, and xl_heap_lock WAL
+ * records.
  *
  * See fix_infomask_from_infobits.
  */
@@ -3570,8 +3570,7 @@ l2:
 			xlrec.xmax = xmax_lock_old_tuple;
 			xlrec.infobits_set = compute_infobits(oldtup.t_data->t_infomask,
 												  oldtup.t_data->t_infomask2);
-			xlrec.flags =
-				cleared_all_frozen ? XLH_LOCK_ALL_FROZEN_CLEARED : 0;
+			xlrec.flags = cleared_all_frozen ? XLH_LOCK_FROZEN_CLEARED : 0;
 			XLogRegisterData((char *) &xlrec, SizeOfHeapLock);
 			recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_LOCK);
 			PageSetLSN(page, recptr);
@@ -4780,7 +4779,7 @@ failed:
 		xlrec.xmax = xid;
 		xlrec.infobits_set = compute_infobits(new_infomask,
 											  tuple->t_data->t_infomask2);
-		xlrec.flags = cleared_all_frozen ? XLH_LOCK_ALL_FROZEN_CLEARED : 0;
+		xlrec.flags = cleared_all_frozen ? XLH_LOCK_FROZEN_CLEARED : 0;
 		XLogRegisterData((char *) &xlrec, SizeOfHeapLock);
 
 		/* we don't decode row locks atm, so no need to log the origin */
@@ -5521,7 +5520,7 @@ l4:
 		/* XLOG stuff */
 		if (RelationNeedsWAL(rel))
 		{
-			xl_heap_lock_updated xlrec;
+			xl_heap_lock xlrec;
 			XLogRecPtr	recptr;
 			Page		page = BufferGetPage(buf);
 
@@ -5531,12 +5530,13 @@ l4:
 			xlrec.offnum = ItemPointerGetOffsetNumber(&mytup.t_self);
 			xlrec.xmax = new_xmax;
 			xlrec.infobits_set = compute_infobits(new_infomask, new_infomask2);
-			xlrec.flags =
-				cleared_all_frozen ? XLH_LOCK_ALL_FROZEN_CLEARED : 0;
+			xlrec.flags = XLH_LOCK_UPDATED;
+			if (cleared_all_frozen)
+				xlrec.flags |= XLH_LOCK_FROZEN_CLEARED;
 
-			XLogRegisterData((char *) &xlrec, SizeOfHeapLockUpdated);
+			XLogRegisterData((char *) &xlrec, SizeOfHeapLock);
 
-			recptr = XLogInsert(RM_HEAP2_ID, XLOG_HEAP2_LOCK_UPDATED);
+			recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_LOCK);
 
 			PageSetLSN(page, recptr);
 		}
@@ -9801,7 +9801,7 @@ heap_xlog_lock(XLogReaderState *record)
 	 * The visibility map may need to be fixed even if the heap page is
 	 * already up-to-date.
 	 */
-	if (xlrec->flags & XLH_LOCK_ALL_FROZEN_CLEARED)
+	if (xlrec->flags & XLH_LOCK_FROZEN_CLEARED)
 	{
 		RelFileLocator rlocator;
 		Buffer		vmbuffer = InvalidBuffer;
@@ -9840,7 +9840,8 @@ heap_xlog_lock(XLogReaderState *record)
 		 * Clear relevant update flags, but only if the modified infomask says
 		 * there's no update.
 		 */
-		if (HEAP_XMAX_IS_LOCKED_ONLY(htup->t_infomask))
+		if (HEAP_XMAX_IS_LOCKED_ONLY(htup->t_infomask) &&
+			(xlrec->flags & XLH_LOCK_UPDATED) == 0)
 		{
 			HeapTupleHeaderClearHotUpdated(htup);
 			/* Make sure there is no forward chain link in t_ctid */
@@ -9850,66 +9851,6 @@ heap_xlog_lock(XLogReaderState *record)
 		}
 		HeapTupleHeaderSetXmax(htup, xlrec->xmax);
 		HeapTupleHeaderSetCmax(htup, FirstCommandId, false);
-		PageSetLSN(page, lsn);
-		MarkBufferDirty(buffer);
-	}
-	if (BufferIsValid(buffer))
-		UnlockReleaseBuffer(buffer);
-}
-
-static void
-heap_xlog_lock_updated(XLogReaderState *record)
-{
-	XLogRecPtr	lsn = record->EndRecPtr;
-	xl_heap_lock_updated *xlrec;
-	Buffer		buffer;
-	Page		page;
-	OffsetNumber offnum;
-	ItemId		lp = NULL;
-	HeapTupleHeader htup;
-
-	xlrec = (xl_heap_lock_updated *) XLogRecGetData(record);
-
-	/*
-	 * The visibility map may need to be fixed even if the heap page is
-	 * already up-to-date.
-	 */
-	if (xlrec->flags & XLH_LOCK_ALL_FROZEN_CLEARED)
-	{
-		RelFileLocator rlocator;
-		Buffer		vmbuffer = InvalidBuffer;
-		BlockNumber block;
-		Relation	reln;
-
-		XLogRecGetBlockTag(record, 0, &rlocator, NULL, &block);
-		reln = CreateFakeRelcacheEntry(rlocator);
-
-		visibilitymap_pin(reln, block, &vmbuffer);
-		visibilitymap_clear(reln, block, vmbuffer, VISIBILITYMAP_ALL_FROZEN);
-
-		ReleaseBuffer(vmbuffer);
-		FreeFakeRelcacheEntry(reln);
-	}
-
-	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
-	{
-		page = BufferGetPage(buffer);
-
-		offnum = xlrec->offnum;
-		if (PageGetMaxOffsetNumber(page) >= offnum)
-			lp = PageGetItemId(page, offnum);
-
-		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "invalid lp");
-
-		htup = (HeapTupleHeader) PageGetItem(page, lp);
-
-		htup->t_infomask &= ~(HEAP_XMAX_BITS | HEAP_MOVED);
-		htup->t_infomask2 &= ~HEAP_KEYS_UPDATED;
-		fix_infomask_from_infobits(xlrec->infobits_set, &htup->t_infomask,
-								   &htup->t_infomask2);
-		HeapTupleHeaderSetXmax(htup, xlrec->xmax);
-
 		PageSetLSN(page, lsn);
 		MarkBufferDirty(buffer);
 	}
@@ -10025,9 +9966,6 @@ heap2_redo(XLogReaderState *record)
 			break;
 		case XLOG_HEAP2_MULTI_INSERT:
 			heap_xlog_multi_insert(record);
-			break;
-		case XLOG_HEAP2_LOCK_UPDATED:
-			heap_xlog_lock_updated(record);
 			break;
 		case XLOG_HEAP2_NEW_CID:
 

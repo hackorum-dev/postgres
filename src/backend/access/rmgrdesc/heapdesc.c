@@ -277,15 +277,6 @@ heap2_desc(StringInfo buf, XLogReaderState *record)
 					   xlrec->ntuples, &offset_elem_desc, NULL);
 		}
 	}
-	else if (info == XLOG_HEAP2_LOCK_UPDATED)
-	{
-		xl_heap_lock_updated *xlrec = (xl_heap_lock_updated *) rec;
-
-		appendStringInfo(buf, "xmax: %u, off: %u, ",
-						 xlrec->xmax, xlrec->offnum);
-		infobits_desc(buf, xlrec->infobits_set, "infobits");
-		appendStringInfo(buf, ", flags: 0x%02X", xlrec->flags);
-	}
 	else if (info == XLOG_HEAP2_NEW_CID)
 	{
 		xl_heap_new_cid *xlrec = (xl_heap_new_cid *) rec;
@@ -370,9 +361,6 @@ heap2_identify(uint8 info)
 			break;
 		case XLOG_HEAP2_MULTI_INSERT | XLOG_HEAP_INIT_PAGE:
 			id = "MULTI_INSERT+INIT";
-			break;
-		case XLOG_HEAP2_LOCK_UPDATED:
-			id = "LOCK_UPDATED";
 			break;
 		case XLOG_HEAP2_NEW_CID:
 			id = "NEW_CID";
