@@ -32,18 +32,18 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
 
 <phrase>where <replaceable class="parameter">option</replaceable> can be one of:</phrase>
 
-    FORMAT <replaceable class="parameter">format_name</replaceable>
-    FREEZE [ <replaceable class="parameter">boolean</replaceable> ]
+    DEFAULT '<replaceable class="parameter">default_string</replaceable>'
     DELIMITER '<replaceable class="parameter">delimiter_character</replaceable>'
-    NULL '<replaceable class="parameter">null_string</replaceable>'
-    HEADER [ <replaceable class="parameter">boolean</replaceable> | MATCH ]
-    QUOTE '<replaceable class="parameter">quote_character</replaceable>'
+    ENCODING '<replaceable class="parameter">encoding_name</replaceable>'
     ESCAPE '<replaceable class="parameter">escape_character</replaceable>'
-    FORCE_QUOTE { ( <replaceable class="parameter">column_name</replaceable> [, ...] ) | * }
     FORCE_NOT_NULL ( <replaceable class="parameter">column_name</replaceable> [, ...] )
     FORCE_NULL ( <replaceable class="parameter">column_name</replaceable> [, ...] )
-    ENCODING '<replaceable class="parameter">encoding_name</replaceable>'
-    DEFAULT '<replaceable class="parameter">default_string</replaceable>'
+    FORCE_QUOTE { ( <replaceable class="parameter">column_name</replaceable> [, ...] ) | * }
+    FORMAT <replaceable class="parameter">format_name</replaceable>
+    FREEZE [ <replaceable class="parameter">boolean</replaceable> ]
+    HEADER [ <replaceable class="parameter">boolean</replaceable> | MATCH ]
+    NULL '<replaceable class="parameter">null_string</replaceable>'
+    QUOTE '<replaceable class="parameter">quote_character</replaceable>'
 </synopsis>
  </refsynopsisdiv>
 
@@ -96,105 +96,95 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
 
   <variablelist>
    <varlistentry>
-    <term><replaceable class="parameter">table_name</replaceable></term>
+    <term><literal>DEFAULT</literal></term>
     <listitem>
      <para>
-      The name (optionally schema-qualified) of an existing table.
+      Specifies the string that represents a default value. Each time the string
+      is found in the input file, the default value of the corresponding column
+      will be used.
+      This option is allowed only in <command>COPY FROM</command>, and only when
+      not using <literal>binary</literal> format.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><replaceable class="parameter">column_name</replaceable></term>
-     <listitem>
+    <term><literal>DELIMITER</literal></term>
+    <listitem>
      <para>
-      An optional list of columns to be copied.  If no column list is
-      specified, all columns of the table except generated columns will be
-      copied.
+      Specifies the character that separates columns within each row
+      (line) of the file.  The default is a tab character in text format,
+      a comma in <literal>CSV</literal> format.
+      This must be a single one-byte character.
+      This option is not allowed when using <literal>binary</literal> format.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><replaceable class="parameter">query</replaceable></term>
+    <term><literal>ENCODING</literal></term>
     <listitem>
      <para>
-      A <link linkend="sql-select"><command>SELECT</command></link>,
-      <link linkend="sql-values"><command>VALUES</command></link>,
-      <link linkend="sql-insert"><command>INSERT</command></link>,
-      <link linkend="sql-update"><command>UPDATE</command></link>, or
-      <link linkend="sql-delete"><command>DELETE</command></link> command whose results are to be
-      copied.  Note that parentheses are required around the query.
-     </para>
-     <para>
-      For <command>INSERT</command>, <command>UPDATE</command> and
-      <command>DELETE</command> queries a RETURNING clause must be provided,
-      and the target relation must not have a conditional rule, nor
-      an <literal>ALSO</literal> rule, nor an <literal>INSTEAD</literal> rule
-      that expands to multiple statements.
+      Specifies that the file is encoded in the <replaceable
+      class="parameter">encoding_name</replaceable>.  If this option is
+      omitted, the current client encoding is used. See the Notes below
+      for more details.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><replaceable class="parameter">filename</replaceable></term>
+    <term><literal>ESCAPE</literal></term>
     <listitem>
      <para>
-      The path name of the input or output file.  An input file name can be
-      an absolute or relative path, but an output file name must be an absolute
-      path.  Windows users might need to use an <literal>E''</literal> string and
-      double any backslashes used in the path name.
+      Specifies the character that should appear before a
+      data character that matches the <literal>QUOTE</literal> value.
+      The default is the same as the <literal>QUOTE</literal> value (so that
+      the quoting character is doubled if it appears in the data).
+      This must be a single one-byte character.
+      This option is allowed only when using <literal>CSV</literal> format.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><literal>PROGRAM</literal></term>
+    <term><literal>FORCE_NOT_NULL</literal></term>
     <listitem>
      <para>
-      A command to execute. In <command>COPY FROM</command>, the input is
-      read from standard output of the command, and in <command>COPY TO</command>,
-      the output is written to the standard input of the command.
-     </para>
-     <para>
-      Note that the command is invoked by the shell, so if you need to pass
-      any arguments that come from an untrusted source, you
-      must be careful to strip or escape any special characters that might
-      have a special meaning for the shell. For security reasons, it is best
-      to use a fixed command string, or at least avoid including any user input
-      in it.
+      Do not match the specified columns' values against the null string.
+      In the default case where the null string is empty, this means that
+      empty values will be read as zero-length strings rather than nulls,
+      even when they are not quoted.
+      This option is allowed only in <command>COPY FROM</command>, and only when
+      using <literal>CSV</literal> format.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><literal>STDIN</literal></term>
+    <term><literal>FORCE_NULL</literal></term>
     <listitem>
      <para>
-      Specifies that input comes from the client application.
+      Match the specified columns' values against the null string, even
+      if it has been quoted, and if a match is found set the value to
+      <literal>NULL</literal>. In the default case where the null string is empty,
+      this converts a quoted empty string into NULL.
+      This option is allowed only in <command>COPY FROM</command>, and only when
+      using <literal>CSV</literal> format.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><literal>STDOUT</literal></term>
+    <term><literal>FORCE_QUOTE</literal></term>
     <listitem>
      <para>
-      Specifies that output goes to the client application.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><replaceable class="parameter">boolean</replaceable></term>
-    <listitem>
-     <para>
-      Specifies whether the selected option should be turned on or off.
-      You can write <literal>TRUE</literal>, <literal>ON</literal>, or
-      <literal>1</literal> to enable the option, and <literal>FALSE</literal>,
-      <literal>OFF</literal>, or <literal>0</literal> to disable it.  The
-      <replaceable class="parameter">boolean</replaceable> value can also
-      be omitted, in which case <literal>TRUE</literal> is assumed.
+      Forces quoting to be
+      used for all non-<literal>NULL</literal> values in each specified column.
+      <literal>NULL</literal> output is never quoted. If <literal>*</literal> is specified,
+      non-<literal>NULL</literal> values will be quoted in all columns.
+      This option is allowed only in <command>COPY TO</command>, and only when
+      using <literal>CSV</literal> format.
      </para>
     </listitem>
    </varlistentry>
@@ -235,14 +225,19 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
    </varlistentry>
 
    <varlistentry>
-    <term><literal>DELIMITER</literal></term>
+    <term><literal>HEADER</literal></term>
     <listitem>
      <para>
-      Specifies the character that separates columns within each row
-      (line) of the file.  The default is a tab character in text format,
-      a comma in <literal>CSV</literal> format.
-      This must be a single one-byte character.
+      Specifies that the file contains a header line with the names of each
+      column in the file.  On output, the first line contains the column
+      names from the table.  On input, the first line is discarded when this
+      option is set to <literal>true</literal> (or equivalent Boolean value).
+      If this option is set to <literal>MATCH</literal>, the number and names
+      of the columns in the header line must match the actual column names of
+      the table, in order;  otherwise an error is raised.
       This option is not allowed when using <literal>binary</literal> format.
+      The <literal>MATCH</literal> option is only valid for <command>COPY
+      FROM</command> commands.
      </para>
     </listitem>
    </varlistentry>
@@ -272,19 +267,20 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
    </varlistentry>
 
    <varlistentry>
-    <term><literal>HEADER</literal></term>
+    <term><literal>PROGRAM</literal></term>
     <listitem>
      <para>
-      Specifies that the file contains a header line with the names of each
-      column in the file.  On output, the first line contains the column
-      names from the table.  On input, the first line is discarded when this
-      option is set to <literal>true</literal> (or equivalent Boolean value).
-      If this option is set to <literal>MATCH</literal>, the number and names
-      of the columns in the header line must match the actual column names of
-      the table, in order;  otherwise an error is raised.
-      This option is not allowed when using <literal>binary</literal> format.
-      The <literal>MATCH</literal> option is only valid for <command>COPY
-      FROM</command> commands.
+      A command to execute. In <command>COPY FROM</command>, the input is
+      read from standard output of the command, and in <command>COPY TO</command>,
+      the output is written to the standard input of the command.
+     </para>
+     <para>
+      Note that the command is invoked by the shell, so if you need to pass
+      any arguments that come from an untrusted source, you
+      must be careful to strip or escape any special characters that might
+      have a special meaning for the shell. For security reasons, it is best
+      to use a fixed command string, or at least avoid including any user input
+      in it.
      </para>
     </listitem>
    </varlistentry>
@@ -302,82 +298,19 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
    </varlistentry>
 
    <varlistentry>
-    <term><literal>ESCAPE</literal></term>
+    <term><literal>STDIN</literal></term>
     <listitem>
      <para>
-      Specifies the character that should appear before a
-      data character that matches the <literal>QUOTE</literal> value.
-      The default is the same as the <literal>QUOTE</literal> value (so that
-      the quoting character is doubled if it appears in the data).
-      This must be a single one-byte character.
-      This option is allowed only when using <literal>CSV</literal> format.
+      Specifies that input comes from the client application.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><literal>FORCE_QUOTE</literal></term>
+    <term><literal>STDOUT</literal></term>
     <listitem>
      <para>
-      Forces quoting to be
-      used for all non-<literal>NULL</literal> values in each specified column.
-      <literal>NULL</literal> output is never quoted. If <literal>*</literal> is specified,
-      non-<literal>NULL</literal> values will be quoted in all columns.
-      This option is allowed only in <command>COPY TO</command>, and only when
-      using <literal>CSV</literal> format.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>FORCE_NOT_NULL</literal></term>
-    <listitem>
-     <para>
-      Do not match the specified columns' values against the null string.
-      In the default case where the null string is empty, this means that
-      empty values will be read as zero-length strings rather than nulls,
-      even when they are not quoted.
-      This option is allowed only in <command>COPY FROM</command>, and only when
-      using <literal>CSV</literal> format.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>FORCE_NULL</literal></term>
-    <listitem>
-     <para>
-      Match the specified columns' values against the null string, even
-      if it has been quoted, and if a match is found set the value to
-      <literal>NULL</literal>. In the default case where the null string is empty,
-      this converts a quoted empty string into NULL.
-      This option is allowed only in <command>COPY FROM</command>, and only when
-      using <literal>CSV</literal> format.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>ENCODING</literal></term>
-    <listitem>
-     <para>
-      Specifies that the file is encoded in the <replaceable
-      class="parameter">encoding_name</replaceable>.  If this option is
-      omitted, the current client encoding is used. See the Notes below
-      for more details.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>DEFAULT</literal></term>
-    <listitem>
-     <para>
-      Specifies the string that represents a default value. Each time the string
-      is found in the input file, the default value of the corresponding column
-      will be used.
-      This option is allowed only in <command>COPY FROM</command>, and only when
-      not using <literal>binary</literal> format.
+      Specifies that output goes to the client application.
      </para>
     </listitem>
    </varlistentry>
@@ -405,6 +338,73 @@ WHERE <replaceable class="parameter">condition</replaceable>
     contains calls to <literal>VOLATILE</literal> functions).
    </para>
 
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">boolean</replaceable></term>
+    <listitem>
+     <para>
+      Specifies whether the selected option should be turned on or off.
+      You can write <literal>TRUE</literal>, <literal>ON</literal>, or
+      <literal>1</literal> to enable the option, and <literal>FALSE</literal>,
+      <literal>OFF</literal>, or <literal>0</literal> to disable it.  The
+      <replaceable class="parameter">boolean</replaceable> value can also
+      be omitted, in which case <literal>TRUE</literal> is assumed.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">column_name</replaceable></term>
+     <listitem>
+     <para>
+      An optional list of columns to be copied.  If no column list is
+      specified, all columns of the table except generated columns will be
+      copied.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">filename</replaceable></term>
+    <listitem>
+     <para>
+      The path name of the input or output file.  An input file name can be
+      an absolute or relative path, but an output file name must be an absolute
+      path.  Windows users might need to use an <literal>E''</literal> string and
+      double any backslashes used in the path name.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">query</replaceable></term>
+    <listitem>
+     <para>
+      A <link linkend="sql-select"><command>SELECT</command></link>,
+      <link linkend="sql-values"><command>VALUES</command></link>,
+      <link linkend="sql-insert"><command>INSERT</command></link>,
+      <link linkend="sql-update"><command>UPDATE</command></link>, or
+      <link linkend="sql-delete"><command>DELETE</command></link> command whose results are to be
+      copied.  Note that parentheses are required around the query.
+     </para>
+     <para>
+      For <command>INSERT</command>, <command>UPDATE</command> and
+      <command>DELETE</command> queries a RETURNING clause must be provided,
+      and the target relation must not have a conditional rule, nor
+      an <literal>ALSO</literal> rule, nor an <literal>INSTEAD</literal> rule
+      that expands to multiple statements.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">table_name</replaceable></term>
+    <listitem>
+     <para>
+      The name (optionally schema-qualified) of an existing table.
+     </para>
     </listitem>
    </varlistentry>
 

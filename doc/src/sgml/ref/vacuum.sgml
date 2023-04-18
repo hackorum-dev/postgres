@@ -26,20 +26,20 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
 
 <phrase>where <replaceable class="parameter">option</replaceable> can be one of:</phrase>
 
-    FULL [ <replaceable class="parameter">boolean</replaceable> ]
-    FREEZE [ <replaceable class="parameter">boolean</replaceable> ]
-    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
     ANALYZE [ <replaceable class="parameter">boolean</replaceable> ]
+    BUFFER_USAGE_LIMIT [ <replaceable class="parameter">size</replaceable> ]
     DISABLE_PAGE_SKIPPING [ <replaceable class="parameter">boolean</replaceable> ]
-    SKIP_LOCKED [ <replaceable class="parameter">boolean</replaceable> ]
+    FREEZE [ <replaceable class="parameter">boolean</replaceable> ]
+    FULL [ <replaceable class="parameter">boolean</replaceable> ]
     INDEX_CLEANUP { AUTO | ON | OFF }
+    ONLY_DATABASE_STATS [ <replaceable class="parameter">boolean</replaceable> ]
+    PARALLEL <replaceable class="parameter">integer</replaceable>
     PROCESS_MAIN [ <replaceable class="parameter">boolean</replaceable> ]
     PROCESS_TOAST [ <replaceable class="parameter">boolean</replaceable> ]
-    TRUNCATE [ <replaceable class="parameter">boolean</replaceable> ]
-    PARALLEL <replaceable class="parameter">integer</replaceable>
     SKIP_DATABASE_STATS [ <replaceable class="parameter">boolean</replaceable> ]
-    ONLY_DATABASE_STATS [ <replaceable class="parameter">boolean</replaceable> ]
-    BUFFER_USAGE_LIMIT [ <replaceable class="parameter">size</replaceable> ]
+    SKIP_LOCKED [ <replaceable class="parameter">boolean</replaceable> ]
+    TRUNCATE [ <replaceable class="parameter">boolean</replaceable> ]
+    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
 
 <phrase>and <replaceable class="parameter">table_and_columns</replaceable> is:</phrase>
 
@@ -106,50 +106,35 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
 
   <variablelist>
    <varlistentry>
-    <term><literal>FULL</literal></term>
-    <listitem>
-     <para>
-      Selects <quote>full</quote> vacuum, which can reclaim more
-      space, but takes much longer and exclusively locks the table.
-      This method also requires extra disk space, since it writes a
-      new copy of the table and doesn't release the old copy until
-      the operation is complete.  Usually this should only be used when a
-      significant amount of space needs to be reclaimed from within the table.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>FREEZE</literal></term>
-    <listitem>
-     <para>
-      Selects aggressive <quote>freezing</quote> of tuples.
-      Specifying <literal>FREEZE</literal> is equivalent to performing
-      <command>VACUUM</command> with the
-      <xref linkend="guc-vacuum-freeze-min-age"/> and
-      <xref linkend="guc-vacuum-freeze-table-age"/> parameters
-      set to zero.  Aggressive freezing is always performed when the
-      table is rewritten, so this option is redundant when <literal>FULL</literal>
-      is specified.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>VERBOSE</literal></term>
-    <listitem>
-     <para>
-      Prints a detailed vacuum activity report for each table.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
     <term><literal>ANALYZE</literal></term>
     <listitem>
      <para>
       Updates statistics used by the planner to determine the most
       efficient way to execute a query.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>BUFFER_USAGE_LIMIT</literal></term>
+    <listitem>
+     <para>
+      Specifies the
+      <glossterm linkend="glossary-buffer-access-strategy">Buffer Access Strategy</glossterm>
+      ring buffer size for <command>VACUUM</command>.  This size is used to
+      calculate the number of shared buffers which will be reused as part of
+      this strategy.  <literal>0</literal> disables use of a
+      <literal>Buffer Access Strategy</literal>.  If <option>ANALYZE</option>
+      is also specified, the <option>BUFFER_USAGE_LIMIT</option> value is used
+      for both the vacuum and analyze stages.  This option can't be used with
+      the <option>FULL</option> option except if <option>ANALYZE</option> is
+      also specified.  When this option is not specified,
+      <command>VACUUM</command> uses the value from
+      <xref linkend="guc-vacuum-buffer-usage-limit"/>.  Higher settings can
+      allow <command>VACUUM</command> to run more quickly, but having too
+      large a setting may cause too many other useful pages to be evicted from
+      shared buffers.  The minimum value is <literal>128 kB</literal> and the
+      maximum value is <literal>16 GB</literal>.
      </para>
     </listitem>
    </varlistentry>
@@ -174,21 +159,31 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
    </varlistentry>
 
    <varlistentry>
-    <term><literal>SKIP_LOCKED</literal></term>
+    <term><literal>FREEZE</literal></term>
     <listitem>
      <para>
-      Specifies that <command>VACUUM</command> should not wait for any
-      conflicting locks to be released when beginning work on a relation:
-      if a relation cannot be locked immediately without waiting, the relation
-      is skipped.  Note that even with this option,
-      <command>VACUUM</command> may still block when opening the relation's
-      indexes.  Additionally, <command>VACUUM ANALYZE</command> may still
-      block when acquiring sample rows from partitions, table inheritance
-      children, and some types of foreign tables.  Also, while
-      <command>VACUUM</command> ordinarily processes all partitions of
-      specified partitioned tables, this option will cause
-      <command>VACUUM</command> to skip all partitions if there is a
-      conflicting lock on the partitioned table.
+      Selects aggressive <quote>freezing</quote> of tuples.
+      Specifying <literal>FREEZE</literal> is equivalent to performing
+      <command>VACUUM</command> with the
+      <xref linkend="guc-vacuum-freeze-min-age"/> and
+      <xref linkend="guc-vacuum-freeze-table-age"/> parameters
+      set to zero.  Aggressive freezing is always performed when the
+      table is rewritten, so this option is redundant when <literal>FULL</literal>
+      is specified.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FULL</literal></term>
+    <listitem>
+     <para>
+      Selects <quote>full</quote> vacuum, which can reclaim more
+      space, but takes much longer and exclusively locks the table.
+      This method also requires extra disk space, since it writes a
+      new copy of the table and doesn't release the old copy until
+      the operation is complete.  Usually this should only be used when a
+      significant amount of space needs to be reclaimed from within the table.
      </para>
     </listitem>
    </varlistentry>
@@ -241,45 +236,15 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
    </varlistentry>
 
    <varlistentry>
-    <term><literal>PROCESS_MAIN</literal></term>
+    <term><literal>ONLY_DATABASE_STATS</literal></term>
     <listitem>
      <para>
-      Specifies that <command>VACUUM</command> should attempt to process the
-      main relation. This is usually the desired behavior and is the default.
-      Setting this option to false may be useful when it is only necessary to
-      vacuum a relation's corresponding <literal>TOAST</literal> table.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>PROCESS_TOAST</literal></term>
-    <listitem>
-     <para>
-      Specifies that <command>VACUUM</command> should attempt to process the
-      corresponding <literal>TOAST</literal> table for each relation, if one
-      exists. This is usually the desired behavior and is the default.
-      Setting this option to false may be useful when it is only necessary to
-      vacuum the main relation. This option is required when the
-      <literal>FULL</literal> option is used.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>TRUNCATE</literal></term>
-    <listitem>
-     <para>
-      Specifies that <command>VACUUM</command> should attempt to
-      truncate off any empty pages at the end of the table and allow
-      the disk space for the truncated pages to be returned to
-      the operating system. This is normally the desired behavior
-      and is the default unless the <literal>vacuum_truncate</literal>
-      option has been set to false for the table to be vacuumed.
-      Setting this option to false may be useful to avoid
-      <literal>ACCESS EXCLUSIVE</literal> lock on the table that
-      the truncation requires. This option is ignored if the
-      <literal>FULL</literal> option is used.
+      Specifies that <command>VACUUM</command> should do nothing except
+      update the database-wide statistics about oldest unfrozen XIDs.
+      When this option is specified,
+      the <replaceable class="parameter">table_and_columns</replaceable>
+      list must be empty, and no other option may be enabled
+      except <literal>VERBOSE</literal>.
      </para>
     </listitem>
    </varlistentry>
@@ -312,6 +277,32 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
    </varlistentry>
 
    <varlistentry>
+    <term><literal>PROCESS_MAIN</literal></term>
+    <listitem>
+     <para>
+      Specifies that <command>VACUUM</command> should attempt to process the
+      main relation. This is usually the desired behavior and is the default.
+      Setting this option to false may be useful when it is only necessary to
+      vacuum a relation's corresponding <literal>TOAST</literal> table.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>PROCESS_TOAST</literal></term>
+    <listitem>
+     <para>
+      Specifies that <command>VACUUM</command> should attempt to process the
+      corresponding <literal>TOAST</literal> table for each relation, if one
+      exists. This is usually the desired behavior and is the default.
+      Setting this option to false may be useful when it is only necessary to
+      vacuum the main relation. This option is required when the
+      <literal>FULL</literal> option is used.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
     <term><literal>SKIP_DATABASE_STATS</literal></term>
     <listitem>
      <para>
@@ -333,39 +324,48 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
    </varlistentry>
 
    <varlistentry>
-    <term><literal>ONLY_DATABASE_STATS</literal></term>
+    <term><literal>SKIP_LOCKED</literal></term>
     <listitem>
      <para>
-      Specifies that <command>VACUUM</command> should do nothing except
-      update the database-wide statistics about oldest unfrozen XIDs.
-      When this option is specified,
-      the <replaceable class="parameter">table_and_columns</replaceable>
-      list must be empty, and no other option may be enabled
-      except <literal>VERBOSE</literal>.
+      Specifies that <command>VACUUM</command> should not wait for any
+      conflicting locks to be released when beginning work on a relation:
+      if a relation cannot be locked immediately without waiting, the relation
+      is skipped.  Note that even with this option,
+      <command>VACUUM</command> may still block when opening the relation's
+      indexes.  Additionally, <command>VACUUM ANALYZE</command> may still
+      block when acquiring sample rows from partitions, table inheritance
+      children, and some types of foreign tables.  Also, while
+      <command>VACUUM</command> ordinarily processes all partitions of
+      specified partitioned tables, this option will cause
+      <command>VACUUM</command> to skip all partitions if there is a
+      conflicting lock on the partitioned table.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><literal>BUFFER_USAGE_LIMIT</literal></term>
+    <term><literal>TRUNCATE</literal></term>
     <listitem>
      <para>
-      Specifies the
-      <glossterm linkend="glossary-buffer-access-strategy">Buffer Access Strategy</glossterm>
-      ring buffer size for <command>VACUUM</command>.  This size is used to
-      calculate the number of shared buffers which will be reused as part of
-      this strategy.  <literal>0</literal> disables use of a
-      <literal>Buffer Access Strategy</literal>.  If <option>ANALYZE</option>
-      is also specified, the <option>BUFFER_USAGE_LIMIT</option> value is used
-      for both the vacuum and analyze stages.  This option can't be used with
-      the <option>FULL</option> option except if <option>ANALYZE</option> is
-      also specified.  When this option is not specified,
-      <command>VACUUM</command> uses the value from
-      <xref linkend="guc-vacuum-buffer-usage-limit"/>.  Higher settings can
-      allow <command>VACUUM</command> to run more quickly, but having too
-      large a setting may cause too many other useful pages to be evicted from
-      shared buffers.  The minimum value is <literal>128 kB</literal> and the
-      maximum value is <literal>16 GB</literal>.
+      Specifies that <command>VACUUM</command> should attempt to
+      truncate off any empty pages at the end of the table and allow
+      the disk space for the truncated pages to be returned to
+      the operating system. This is normally the desired behavior
+      and is the default unless the <literal>vacuum_truncate</literal>
+      option has been set to false for the table to be vacuumed.
+      Setting this option to false may be useful to avoid
+      <literal>ACCESS EXCLUSIVE</literal> lock on the table that
+      the truncation requires. This option is ignored if the
+      <literal>FULL</literal> option is used.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VERBOSE</literal></term>
+    <listitem>
+     <para>
+      Prints a detailed vacuum activity report for each table.
      </para>
     </listitem>
    </varlistentry>
@@ -380,6 +380,17 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
       <literal>OFF</literal>, or <literal>0</literal> to disable it.  The
       <replaceable class="parameter">boolean</replaceable> value can also
       be omitted, in which case <literal>TRUE</literal> is assumed.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">column_name</replaceable></term>
+    <listitem>
+     <para>
+      The name of a specific column to analyze. Defaults to all columns.
+      If a column list is specified, <literal>ANALYZE</literal> must also be
+      specified.
      </para>
     </listitem>
    </varlistentry>
@@ -413,17 +424,6 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
       The name (optionally schema-qualified) of a specific table or
       materialized view to vacuum.  If the specified table is a partitioned
       table, all of its leaf partitions are vacuumed.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><replaceable class="parameter">column_name</replaceable></term>
-    <listitem>
-     <para>
-      The name of a specific column to analyze. Defaults to all columns.
-      If a column list is specified, <literal>ANALYZE</literal> must also be
-      specified.
      </para>
     </listitem>
    </varlistentry>

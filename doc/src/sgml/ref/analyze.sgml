@@ -26,9 +26,9 @@ ANALYZE [ VERBOSE ] [ <replaceable class="parameter">table_and_columns</replacea
 
 <phrase>where <replaceable class="parameter">option</replaceable> can be one of:</phrase>
 
-    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
-    SKIP_LOCKED [ <replaceable class="parameter">boolean</replaceable> ]
     BUFFER_USAGE_LIMIT [ <replaceable class="parameter">size</replaceable> ]
+    SKIP_LOCKED [ <replaceable class="parameter">boolean</replaceable> ]
+    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
 
 <phrase>and <replaceable class="parameter">table_and_columns</replaceable> is:</phrase>
 
@@ -70,10 +70,21 @@ ANALYZE [ VERBOSE ] [ <replaceable class="parameter">table_and_columns</replacea
 
   <variablelist>
    <varlistentry>
-    <term><literal>VERBOSE</literal></term>
+    <term><literal>BUFFER_USAGE_LIMIT</literal></term>
     <listitem>
      <para>
-      Enables display of progress messages.
+      Specifies the
+      <glossterm linkend="glossary-buffer-access-strategy">Buffer Access Strategy</glossterm>
+      ring buffer size for <command>ANALYZE</command>.  This size is used to
+      calculate the number of shared buffers which will be reused as part of
+      this strategy.  <literal>0</literal> disables use of a
+      <literal>Buffer Access Strategy</literal>.   When this option is not
+      specified, <command>ANALYZE</command> uses the value from
+      <xref linkend="guc-vacuum-buffer-usage-limit"/>.  Higher settings can
+      allow <command>ANALYZE</command> to run more quickly, but having too
+      large a setting may cause too many other useful pages to be evicted from
+      shared buffers.  The minimum value is <literal>128 kB</literal> and the
+      maximum value is <literal>16 GB</literal>.
      </para>
     </listitem>
    </varlistentry>
@@ -97,21 +108,10 @@ ANALYZE [ VERBOSE ] [ <replaceable class="parameter">table_and_columns</replacea
    </varlistentry>
 
    <varlistentry>
-    <term><literal>BUFFER_USAGE_LIMIT</literal></term>
+    <term><literal>VERBOSE</literal></term>
     <listitem>
      <para>
-      Specifies the
-      <glossterm linkend="glossary-buffer-access-strategy">Buffer Access Strategy</glossterm>
-      ring buffer size for <command>ANALYZE</command>.  This size is used to
-      calculate the number of shared buffers which will be reused as part of
-      this strategy.  <literal>0</literal> disables use of a
-      <literal>Buffer Access Strategy</literal>.   When this option is not
-      specified, <command>ANALYZE</command> uses the value from
-      <xref linkend="guc-vacuum-buffer-usage-limit"/>.  Higher settings can
-      allow <command>ANALYZE</command> to run more quickly, but having too
-      large a setting may cause too many other useful pages to be evicted from
-      shared buffers.  The minimum value is <literal>128 kB</literal> and the
-      maximum value is <literal>16 GB</literal>.
+      Enables display of progress messages.
      </para>
     </listitem>
    </varlistentry>
@@ -126,6 +126,15 @@ ANALYZE [ VERBOSE ] [ <replaceable class="parameter">table_and_columns</replacea
       <literal>OFF</literal>, or <literal>0</literal> to disable it.  The
       <replaceable class="parameter">boolean</replaceable> value can also
       be omitted, in which case <literal>TRUE</literal> is assumed.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">column_name</replaceable></term>
+    <listitem>
+     <para>
+      The name of a specific column to analyze. Defaults to all columns.
      </para>
     </listitem>
    </varlistentry>
@@ -153,15 +162,6 @@ ANALYZE [ VERBOSE ] [ <replaceable class="parameter">table_and_columns</replacea
       foreign tables).  If the specified table is a partitioned table, both the
       inheritance statistics of the partitioned table as a whole and
       statistics of the individual partitions are updated.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><replaceable class="parameter">column_name</replaceable></term>
-    <listitem>
-     <para>
-      The name of a specific column to analyze. Defaults to all columns.
      </para>
     </listitem>
    </varlistentry>
