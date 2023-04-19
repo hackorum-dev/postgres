@@ -515,6 +515,37 @@ $node_publisher->poll_query_until('postgres',
   or die
   "Timed out while waiting for apply to restart after renaming SUBSCRIPTION";
 
+# Test time-delayed logical replication
+#
+# If the subscription sets min_apply_delay parameter, the logical replication
+# worker will delay the transaction apply for min_apply_delay milliseconds. We
+# verify this by looking at the time difference between a) when tuples are
+# inserted on the publisher, and b) when those changes are replicated on the
+# subscriber. Even on slow machines, this strategy will give predictable behavior.
+
+# Set min_apply_delay parameter to 3 seconds
+my $delay = 3;
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION tap_sub_renamed SET (min_apply_delay = '${delay}s')");
+
+# Before doing the insertion, get the current timestamp that will be
+# used as a comparison base.
+my $publisher_insert_time = time();
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab_ins VALUES (generate_series(1101, 1120))");
+
+$node_subscriber->poll_query_until('postgres',
+	"SELECT count(*) = 1 FROM tab_ins WHERE a = 1120;"
+  )
+  or die
+  "failed to replicate changes";
+
+# This test is successful if and only if the LSN has been applied with at least
+# the configured apply delay.
+ok( time() - $publisher_insert_time >= $delay,
+	"subscriber applies WAL only after replication delay for non-streaming transaction"
+);
+
 # check all the cleanup
 $node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION tap_sub_renamed");
 

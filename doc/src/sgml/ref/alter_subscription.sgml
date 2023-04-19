@@ -225,8 +225,9 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
       <link linkend="sql-createsubscription-with-streaming"><literal>streaming</literal></link>,
       <link linkend="sql-createsubscription-with-disable-on-error"><literal>disable_on_error</literal></link>,
       <link linkend="sql-createsubscription-with-password-required"><literal>password_required</literal></link>,
-      <link linkend="sql-createsubscription-with-run-as-owner"><literal>run_as_owner</literal></link>, and
-      <link linkend="sql-createsubscription-with-origin"><literal>origin</literal></link>.
+      <link linkend="sql-createsubscription-with-run-as-owner"><literal>run_as_owner</literal></link>,
+      <link linkend="sql-createsubscription-with-origin"><literal>origin</literal></link>, and
+      <link linkend="sql-createsubscription-with-min-apply-delay"><literal>min_apply_delay</literal></link>.
       Only a superuser can set <literal>password_required = false</literal>.
      </para>
     </listitem>
@@ -263,8 +264,11 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
           Specifies the finish LSN of the remote transaction whose changes
           are to be skipped by the logical replication worker.  The finish LSN
           is the LSN at which the transaction is either committed or prepared.
-          Skipping individual subtransactions is not supported.  Setting
-          <literal>NONE</literal> resets the LSN.
+          Note that if the time-delayed logical replication is enabled, the LSN
+          corresponding to prepared cannot be specified. In that case the LSN
+          corresponding to either of commit or commit prepared must be
+          specified. Skipping individual subtransactions is not supported.
+          Setting <literal>NONE</literal> resets the LSN.
          </para>
         </listitem>
        </varlistentry>

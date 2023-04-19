@@ -286,11 +286,13 @@ parse_output_parameters(List *options, PGOutputData *data)
 	bool		streaming_given = false;
 	bool		two_phase_option_given = false;
 	bool		origin_option_given = false;
+	bool		require_schema_option_given = false;
 
 	data->binary = false;
 	data->streaming = LOGICALREP_STREAM_OFF;
 	data->messages = false;
 	data->two_phase = false;
+	data->require_schema = false;
 
 	foreach(lc, options)
 	{
@@ -396,6 +398,16 @@ parse_output_parameters(List *options, PGOutputData *data)
 				ereport(ERROR,
 						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						errmsg("unrecognized origin value: \"%s\"", data->origin));
+		}
+		else if (strcmp(defel->defname, "require_schema") == 0)
+		{
+			if (require_schema_option_given)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			require_schema_option_given = true;
+
+			data->require_schema = defGetBoolean(defel);
 		}
 		else
 			elog(ERROR, "unrecognized pgoutput option: %s", defel->defname);
@@ -677,7 +689,8 @@ pgoutput_rollback_prepared_txn(LogicalDecodingContext *ctx,
 static void
 maybe_send_schema(LogicalDecodingContext *ctx,
 				  ReorderBufferChange *change,
-				  Relation relation, RelationSyncEntry *relentry)
+				  Relation relation, RelationSyncEntry *relentry,
+				  PGOutputData *data)
 {
 	bool		schema_sent;
 	TransactionId xid = InvalidTransactionId;
@@ -717,7 +730,7 @@ maybe_send_schema(LogicalDecodingContext *ctx,
 		schema_sent = relentry->schema_sent;
 
 	/* Nothing to do if we already sent the schema. */
-	if (schema_sent)
+	if (!data->require_schema && schema_sent)
 		return;
 
 	/*
@@ -1520,7 +1533,7 @@ pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	 * Schema should be sent using the original relation because it also sends
 	 * the ancestor's relation.
 	 */
-	maybe_send_schema(ctx, change, relation, relentry);
+	maybe_send_schema(ctx, change, relation, relentry, data);
 
 	OutputPluginPrepareWrite(ctx, true);
 
@@ -1605,7 +1618,7 @@ pgoutput_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		if (txndata && !txndata->sent_begin_txn)
 			pgoutput_send_begin(ctx, txn);
 
-		maybe_send_schema(ctx, change, relation, relentry);
+		maybe_send_schema(ctx, change, relation, relentry, data);
 	}
 
 	if (nrelids > 0)

@@ -257,6 +257,13 @@
    option of <command>CREATE SUBSCRIPTION</command> for details.
   </para>
 
+  <para>
+   A subscription can delay the application of changes by specifying the
+   <link linkend="sql-createsubscription-with-min-apply-delay"><literal>min_apply_delay</literal></link>
+   subscription parameter. See <xref linkend="sql-createsubscription"/> for
+   details.
+  </para>
+
   <sect2 id="logical-replication-subscription-slot">
    <title>Replication Slot Management</title>
 

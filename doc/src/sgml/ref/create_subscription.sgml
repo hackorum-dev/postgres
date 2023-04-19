@@ -399,7 +399,56 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
          </para>
         </listitem>
        </varlistentry>
-      </variablelist></para>
+
+       <varlistentry id="sql-createsubscription-with-min-apply-delay">
+        <term><literal>min_apply_delay</literal> (<type>integer</type>)</term>
+        <listitem>
+         <para>
+          By default, the subscriber applies changes as soon as possible. This
+          parameter allows the user to delay the application of changes by a
+          given time period. This is done by writing all the changes into a
+          file once and apply contents after spending time. If the value is
+          specified without units, it is taken as milliseconds. The default
+          is zero (no delay). See <xref linkend="config-setting-names-values"/>
+          for details on the available valid time units.
+         </para>
+         <para>
+          Any delay becomes effective only after all initial table
+          synchronization has finished and occurs before each transaction starts
+          to get applied on the subscriber. The delay is calculated as the
+          difference between the WAL timestamp as written on the publisher and
+          the current time on the subscriber. Any overhead of time spent in
+          logical decoding and in transferring the transaction may reduce the
+          actual wait time. Even if the overhead already exceeds the requested
+          <literal>min_apply_delay</literal> value, all the changes are written
+          into file and applied immediately. If the system clocks on publisher
+          and subscriber are not synchronized, this may lead to apply changes
+          earlier than expected, but this is not a major issue because this
+          parameter is typically much larger than the time deviations between
+          servers.
+         </para>
+         <para>
+          This parameter can be used with the <literal>two_phase</literal>
+          parameter. However, when the delay is enabled and a prepared
+          transaction is sent from the publisher, the transaction is not
+          prepared on the subscriber node and is instead written into an
+          intermediate file. Once the <command>COMMIT PREPARED</command> is
+          received and more time than the <literal>min_apply_delay</literal>
+          has elapsed, the file will be loaded and applied.
+         </para>
+         <warning>
+           <para>
+            Delaying the replication means there is a much longer time between
+            making a change on the publisher, and that change being committed
+            on the subscriber. This can impact the performance of synchronous
+            replication. See <xref linkend="guc-synchronous-commit"/>
+            parameter.
+           </para>
+         </warning>
+        </listitem>
+       </varlistentry>
+      </variablelist>
+     </para>
 
     </listitem>
    </varlistentry>
@@ -470,6 +519,11 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
   <para>
    Subscriptions having several publications in which the same table has been
    published with different column lists are not supported.
+  </para>
+
+  <para>
+   A non-zero <literal>min_apply_delay</literal> parameter is not allowed when
+   streaming in parallel mode.
   </para>
 
   <para>

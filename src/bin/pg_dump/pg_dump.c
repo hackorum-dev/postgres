@@ -4610,6 +4610,7 @@ getSubscriptions(Archive *fout)
 	int			i_subpublications;
 	int			i_subbinary;
 	int			i_subpasswordrequired;
+	int			i_subminapplydelay;
 	int			i,
 				ntups;
 
@@ -4664,11 +4665,13 @@ getSubscriptions(Archive *fout)
 	if (fout->remoteVersion >= 160000)
 		appendPQExpBufferStr(query,
 							 " s.suborigin,\n"
-							 " s.subpasswordrequired\n");
+							 " s.subpasswordrequired,\n"
+							 " s.subminapplydelay\n");
 	else
 		appendPQExpBuffer(query,
 						  " '%s' AS suborigin,\n"
-						  " 't' AS subpasswordrequired\n",
+						  " 't' AS subpasswordrequired,\n"
+						  " 0 AS subminapplydelay\n",
 						  LOGICALREP_ORIGIN_ANY);
 
 	appendPQExpBufferStr(query,
@@ -4698,6 +4701,7 @@ getSubscriptions(Archive *fout)
 	i_subdisableonerr = PQfnumber(res, "subdisableonerr");
 	i_suborigin = PQfnumber(res, "suborigin");
 	i_subpasswordrequired = PQfnumber(res, "subpasswordrequired");
+	i_subminapplydelay = PQfnumber(res, "subminapplydelay");
 
 	subinfo = pg_malloc(ntups * sizeof(SubscriptionInfo));
 
@@ -4730,6 +4734,8 @@ getSubscriptions(Archive *fout)
 		subinfo[i].suborigin = pg_strdup(PQgetvalue(res, i, i_suborigin));
 		subinfo[i].subpasswordrequired =
 			pg_strdup(PQgetvalue(res, i, i_subpasswordrequired));
+		subinfo[i].subminapplydelay =
+			atoi(PQgetvalue(res, i, i_subminapplydelay));
 
 		/* Decide whether we want to dump it */
 		selectDumpableObject(&(subinfo[i].dobj), fout);
@@ -4813,6 +4819,9 @@ dumpSubscription(Archive *fout, const SubscriptionInfo *subinfo)
 
 	if (strcmp(subinfo->subpasswordrequired, "t") != 0)
 		appendPQExpBuffer(query, ", password_required = false");
+
+	if (subinfo->subminapplydelay > 0)
+		appendPQExpBuffer(query, ", min_apply_delay = '%d ms'", subinfo->subminapplydelay);
 
 	appendPQExpBufferStr(query, ");\n");
 

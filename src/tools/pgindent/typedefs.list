@@ -2337,6 +2337,7 @@ ReplaceVarsFromTargetList_context
 ReplaceVarsNoMatchOption
 ReplicaIdentityStmt
 ReplicationKind
+ReplicationMessageOnDisk
 ReplicationSlot
 ReplicationSlotCtlData
 ReplicationSlotInvalidationCause

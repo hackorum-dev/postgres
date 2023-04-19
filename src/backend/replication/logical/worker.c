@@ -153,6 +153,7 @@
 #include "catalog/pg_subscription.h"
 #include "catalog/pg_subscription_rel.h"
 #include "catalog/pg_tablespace.h"
+#include "common/file_utils.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
 #include "commands/trigger.h"
@@ -168,6 +169,7 @@
 #include "optimizer/optimizer.h"
 #include "parser/parse_relation.h"
 #include "pgstat.h"
+#include "port/pg_crc32c.h"
 #include "postmaster/bgworker.h"
 #include "postmaster/interrupt.h"
 #include "postmaster/postmaster.h"
@@ -370,6 +372,86 @@ typedef struct ApplySubXactData
 
 static ApplySubXactData subxact_data = {0, 0, InvalidTransactionId, NULL};
 
+/* XXX macros for time-delayed logical replicaiton */
+
+/* DELAYED_DIR stores files that contains changes of delayed transactions. */
+#define DELAYED_DIR	"pg_logical/delayed_txns"
+
+/*
+ * The filename consists of the following, dash separated, components:
+ * 1) subscription oid
+ * 2) xid of delayed transaction on publisher
+ * 3) status of the delaying transaction
+ * 4) upper 32bit of the commit_lsn
+ * 5) lower 32bit of the commit_lsn
+ * 6) upper 32bit of the end_lsn
+ * 7) lower 32bit of the end_lsn
+ * 8) committime
+ */
+#define DELAYED_FORMAT "delayed-%x-%x-%c-%X-%X-%X-%X-" INT64_FORMAT
+#define DELAYED_TXN_COMMITTED 'c'
+#define DELAYED_TXN_PREPARED 'p'
+#define DELAYED_TXN_UNKNOWN 'u'
+
+#define DELAY_MAGIC		((uint32) 0xEE816C) /* format identifier */
+
+
+/* List entry to map xid and commit time */
+typedef struct DelayedTxnListEntry
+{
+	TransactionId xid;
+	LogicalRepCommitData commit_data;
+}			DelayedTxnListEntry;
+
+/*
+ * Replication message on-disk data structure
+ */
+typedef struct ReplicationMessageOnDisk
+{
+	/* Data not covered by checksum */
+	uint32		magic;
+	pg_crc32c	checksum;
+
+	/* Data covered by checksum */
+	int			length;			/* length of actual message, action is not
+								 * included */
+	char		action;
+
+	/* Actual message follows, it is also covered by checksum */
+} ReplicationMessageOnDisk;
+
+/* Size of the part not covered by the checksum */
+#define ReplicationMessageOnDiskNotChecksummedSize \
+	offsetof(ReplicationMessageOnDisk, length)
+/* Size of the part covered by the checksum */
+#define ReplicationMessageOnDiskChecksummedSize \
+	sizeof(ReplicationMessageOnDisk) - ReplicationMessageOnDiskNotChecksummedSize
+
+/*
+ * An entry is appended when the we receives commit message and time-delayed
+ * logical replication is requested. The entry will be deleted after contents
+ * are applied.
+ */
+static List *DelayedTxnList = NIL;
+
+/* fields valid only when time-delayed logical replication is requested */
+static bool in_delayed_transaction = false;
+
+static TransactionId delayed_xid = InvalidTransactionId;
+
+/*
+ * Store flushed lsn for time-delayed logical replication. This is used when
+ * we send a feedback message to the publisher.
+ */
+static XLogRecPtr last_flushed = InvalidXLogRecPtr;
+
+/*
+ * FIXME: global file descriptor may be not sufficient. There is a possibility
+ * that non-streaming transactions are come concurrently. At that time
+ * create_delay_file() for the second transaction will be failed...
+ */
+static int	delayed_fd = -1;
+
 static inline void subxact_filename(char *path, Oid subid, TransactionId xid);
 static inline void changes_filename(char *path, Oid subid, TransactionId xid);
 
@@ -431,6 +513,599 @@ static inline void reset_apply_error_context_info(void);
 
 static TransApplyAction get_transaction_apply_action(TransactionId xid,
 													 ParallelApplyWorkerInfo **winfo);
+
+static void begin_replication_step(void);
+static void end_replication_step(void);
+
+/* Functions for time-delayed logical replicaiton */
+static void cache_commit_data(LogicalRepCommitData *commit_data, TransactionId xid);
+static void flush_delayed_changes(LogicalRepCommitData *commit_data);
+static void delay_file_name(char *path, Oid subid, TransactionId xid,
+							char status, XLogRecPtr commit_lsn,
+							XLogRecPtr end_lsn, TimestampTz committime);
+static bool is_given_transaction_delayed(Oid subid, TransactionId xid);
+static void create_delay_file(TransactionId xid);
+static bool handle_delayed_transaction(char action, StringInfo s);
+
+/*
+ * Cache commit_data into the list
+ */
+static void
+cache_commit_data(LogicalRepCommitData *commit_data, TransactionId xid)
+{
+	MemoryContext old;
+	DelayedTxnListEntry *entry;
+
+	old = MemoryContextSwitchTo(ApplyContext);
+
+	entry = palloc0(sizeof(DelayedTxnListEntry));
+
+	/* Contruct an entry and append it */
+	entry->xid = xid;
+	memcpy(&entry->commit_data, commit_data, sizeof(LogicalRepCommitData));
+	DelayedTxnList = lappend(DelayedTxnList, entry);
+
+	MemoryContextSwitchTo(old);
+
+	elog(DEBUG1, "transaction %u is cached", xid);
+
+}
+
+/*
+ * Flush given changes, rename and close the file. This will be called at the
+ * end of the transaction.
+ */
+static void
+flush_delayed_changes(LogicalRepCommitData *commit_data)
+{
+	char		old_path[MAXPGPATH];
+	char		new_path[MAXPGPATH];
+
+	Assert(delayed_fd > 0);
+	Assert(TransactionIdIsValid(delayed_xid));
+
+	/* Cache given commit_data into the list */
+	cache_commit_data(commit_data, delayed_xid);
+
+	/*
+	 * Close file. No need to flush here because it will be done in
+	 * durable_rename().
+	 */
+	CloseTransientFile(delayed_fd);
+
+	/* Construct old/new filename */
+	delay_file_name(old_path, MyLogicalRepWorker->subid, delayed_xid,
+					DELAYED_TXN_UNKNOWN, InvalidXLogRecPtr, InvalidXLogRecPtr,
+					0);
+	delay_file_name(new_path, MyLogicalRepWorker->subid, delayed_xid,
+					DELAYED_TXN_COMMITTED, commit_data->commit_lsn,
+					commit_data->end_lsn, commit_data->committime);
+
+	/* And do actual rename */
+	if (durable_rename(old_path, new_path, PANIC))
+		abort();
+
+	/* Store flushed lsn */
+	last_flushed = commit_data->end_lsn;
+
+	/* Cleanup */
+	delayed_fd = -1;
+	delayed_xid = InvalidTransactionId;
+	in_delayed_transaction = false;
+}
+
+/*
+ * Get formal filename from needed information
+ */
+static void
+delay_file_name(char *path, Oid subid, TransactionId xid, char status,
+				XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+				TimestampTz committime)
+{
+	snprintf(path, MAXPGPATH, DELAYED_DIR "/" DELAYED_FORMAT, subid, xid,
+			 status, LSN_FORMAT_ARGS(commit_lsn), LSN_FORMAT_ARGS(end_lsn),
+			 committime);
+}
+
+/*
+ * Check whether the given transaction is delayed. This is done by checking the
+ * delay file.
+ */
+static bool
+is_given_transaction_delayed(Oid subid, TransactionId xid)
+{
+	struct stat st;
+	char		path[MAXPGPATH];
+
+	delay_file_name(path, subid, xid, DELAYED_TXN_PREPARED, InvalidXLogRecPtr,
+					InvalidXLogRecPtr, 0);
+
+	return stat(path, &st) == 0;
+}
+
+/*
+ * Apply the delayed transaction. In the function a delayed file is opened and
+ * read. Apply worker applies written changes.
+ */
+static void
+apply_delayed_transaction(TransactionId xid, LogicalRepCommitData *commit_data)
+{
+	StringInfoData s2;
+	int			nchanges;
+	char		path[MAXPGPATH];
+	char	   *buffer = NULL;
+	MemoryContext oldcxt;
+	ResourceOwner oldowner;
+
+	/* Make sure we have an open transaction */
+	begin_replication_step();
+
+	/*
+	 * Allocate file handle and memory required to process all the messages in
+	 * TopTransactionContext to avoid them getting reset after each message is
+	 * processed.
+	 */
+	oldcxt = MemoryContextSwitchTo(TopTransactionContext);
+
+	/* Open the spool file for the committed transaction */
+	delay_file_name(path, MyLogicalRepWorker->subid, xid,
+					DELAYED_TXN_COMMITTED, commit_data->commit_lsn,
+					commit_data->end_lsn, commit_data->committime);
+	elog(DEBUG1, "replaying changes from file \"%s\"", path);
+
+	/*
+	 * Make sure the file is owned by the toplevel transaction so that the
+	 * file will not be accidentally closed when aborting a subtransaction.
+	 */
+	oldowner = CurrentResourceOwner;
+	CurrentResourceOwner = TopTransactionResourceOwner;
+
+	/* Open the specified file */
+	delayed_fd = OpenTransientFile(path, O_RDONLY | PG_BINARY);
+
+	Assert(delayed_fd > 0);
+
+	CurrentResourceOwner = oldowner;
+
+	buffer = palloc(BLCKSZ);
+	initStringInfo(&s2);
+
+	MemoryContextSwitchTo(oldcxt);
+
+	set_apply_error_context_xact(xid, commit_data->commit_lsn);
+
+	remote_final_lsn = commit_data->end_lsn;
+
+	maybe_start_skipping_changes(commit_data->commit_lsn);
+
+	/*
+	 * Make sure the handle apply_dispatch methods are aware we're in a remote
+	 * transaction.
+	 */
+	in_remote_transaction = true;
+	pgstat_report_activity(STATE_RUNNING, NULL);
+
+	end_replication_step();
+
+	/*
+	 * Read the entries one by one and pass them through the same logic as in
+	 * apply_dispatch.
+	 */
+	nchanges = 0;
+	while (true)
+	{
+		ReplicationMessageOnDisk ondisk;
+
+		CHECK_FOR_INTERRUPTS();
+
+		/* read the on-disk record */
+		if (!read(delayed_fd, &ondisk, sizeof(ondisk)))
+			break;
+
+		/* verify magic */
+		if (ondisk.magic != DELAY_MAGIC)
+			ereport(PANIC,
+					errcode(ERRCODE_DATA_CORRUPTED),
+					errmsg("delayed file \"%s\" has wrong magic number: %u instead of %u",
+						   path, ondisk.magic, DELAY_MAGIC));
+
+		buffer = repalloc(buffer, ondisk.length);
+		read(delayed_fd, buffer, ondisk.length);
+
+		/* Verify the if required */
+#ifdef	USE_ASSERT_CHECKING
+		{
+			pg_crc32c	checksum;
+
+			INIT_CRC32C(checksum);
+			COMP_CRC32C(checksum,
+						(char *) &ondisk + ReplicationMessageOnDiskNotChecksummedSize,
+						ReplicationMessageOnDiskChecksummedSize);
+			COMP_CRC32C(checksum, buffer, ondisk.length);
+			FIN_CRC32C(checksum);
+
+			if (!EQ_CRC32C(checksum, ondisk.checksum))
+				ereport(PANIC,
+						(errmsg("checksum mismatch for delayed transaction file \"%s\": is %u, should be %u",
+								path, checksum, ondisk.checksum)));
+		}
+#endif
+
+		/* copy the buffer to the stringinfo and call apply_dispatch */
+		resetStringInfo(&s2);
+		appendStringInfoChar(&s2, ondisk.action);
+		appendBinaryStringInfo(&s2, buffer, ondisk.length);
+
+		apply_dispatch(&s2);
+
+		MemoryContextReset(ApplyMessageContext);
+
+		MemoryContextSwitchTo(oldcxt);
+
+		nchanges++;
+
+		if (nchanges % 1000 == 0)
+			elog(DEBUG1, "replayed %d changes from file \"%s\"",
+				 nchanges, path);
+	}
+
+	CloseTransientFile(delayed_fd);
+	delayed_fd = -1;
+
+	apply_handle_commit_internal(commit_data);
+
+	durable_unlink(path, LOG);
+
+	elog(DEBUG1, "replayed %d (all) changes from file \"%s\"",
+		 nchanges, path);
+
+	return;
+}
+
+/*
+ * Create a file that will be written changes.
+ */
+static void
+create_delay_file(TransactionId xid)
+{
+	char		path[MAXPGPATH];
+	int			fd;
+
+	Assert(TransactionIdIsValid(xid));
+	Assert(delayed_fd < 0);
+
+	/*
+	 * Construct filename. Other information like commit_lsn will be filled
+	 * when it will be committed.
+	 */
+	delay_file_name(path, MyLogicalRepWorker->subid, xid, DELAYED_TXN_UNKNOWN,
+					InvalidXLogRecPtr, InvalidXLogRecPtr, 0);
+
+	elog(DEBUG1, "creating a file \"%s\" for time-delayed logical replication",
+		 path);
+
+	fd = OpenTransientFile(path, O_WRONLY | O_CREAT | O_EXCL | O_APPEND | PG_BINARY);
+
+	if (fd < 0)
+		ereport(ERROR,
+				errcode_for_file_access(),
+				errmsg("could not create file \"%s\": %m",
+					   path));
+
+	delayed_fd = fd;
+}
+
+/*
+ * Create a directory that holds delayed files
+ */
+static void
+initialize_delay_directory(void)
+{
+	char		path[MAXPGPATH];
+
+	snprintf(path, MAXPGPATH, DELAYED_DIR);
+	if (MakePGDirectory(path) < 0 && errno != EEXIST)
+		ereport(ERROR,
+				errcode_for_file_access(),
+				errmsg("could not create directory \"%s\": %m",
+					   path));
+
+	START_CRIT_SECTION();
+	fsync_fname(path, true);
+	END_CRIT_SECTION();
+}
+
+/*
+ * Transform information from commit_prepared style to commit style.
+ */
+static void
+ConstructCommitFromCommitPrepared(LogicalRepCommitData *commit,
+								  LogicalRepCommitPreparedTxnData *prepare_data)
+{
+	commit->commit_lsn = prepare_data->commit_lsn;
+	commit->committime = prepare_data->commit_time;
+	commit->end_lsn = prepare_data->end_lsn;
+}
+
+/*
+ * Restore the delayed transaction from given information.
+ *
+ * This return false only when the status is unknown, which measn that the
+ * worker was shutted down before receiving the COMMIT/PREPARE/COMMIT PREPARED
+ * message. In this case we must receive whole the messages and write them into
+ * file again.
+ */
+static bool
+RestoreDelayedTxn(char status, XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+				  TimestampTz committime, TransactionId xid)
+
+{
+	switch (status)
+	{
+		case DELAYED_TXN_UNKNOWN:
+			return false;
+
+		case DELAYED_TXN_COMMITTED:
+			{
+				LogicalRepCommitData commit_data = {
+					.commit_lsn = commit_lsn,
+					.committime = committime,
+					.end_lsn = end_lsn,
+				};
+
+				cache_commit_data(&commit_data, xid);
+				break;
+			}
+
+		case DELAYED_TXN_PREPARED:
+			/* Do nothing */
+			break;
+
+		default:
+			Assert(false);
+			return false;		/* Keep compiler quiet */
+	}
+
+	/* Update last_flushed to avoid to recevie same transaction again */
+	last_flushed = end_lsn;
+
+	return true;
+}
+
+/*
+ * list_sort() comparator for sorting DelayedTxnList in commitime order.
+ */
+static int
+file_sort_by_committime(const ListCell *a_p, const ListCell *b_p)
+{
+	DelayedTxnListEntry *a = (DelayedTxnListEntry *) lfirst(a_p);
+	DelayedTxnListEntry *b = (DelayedTxnListEntry *) lfirst(b_p);
+
+	if (a->commit_data.committime < b->commit_data.committime)
+		return -1;
+	else if (a->commit_data.committime > b->commit_data.committime)
+		return 1;
+	return 0;
+}
+
+
+/*
+ * Restore all the delayed transactions to memory.
+ */
+static void
+RestoreDelayedTxns(void)
+{
+	DIR		   *delayed_dir;
+	struct dirent *delayed_de;
+
+	/* Read all the file step-by-step */
+	delayed_dir = AllocateDir(DELAYED_DIR);
+	while ((delayed_de = ReadDir(delayed_dir, DELAYED_DIR)) != NULL)
+	{
+		Oid			subid = InvalidOid;
+		TransactionId xid = InvalidTransactionId;
+		char		status = 0;
+		XLogRecPtr	commit_lsn = InvalidXLogRecPtr,
+					end_lsn = InvalidXLogRecPtr;
+		TimestampTz committime = 0;
+		uint32		commit_hi = 0,
+					commit_lo = 0,
+					end_hi = 0,
+					end_lo = 0;
+
+		if (strcmp(delayed_de->d_name, ".") == 0 ||
+			strcmp(delayed_de->d_name, "..") == 0)
+			continue;
+
+		/* Ignore files that aren't ours */
+		if (strncmp(delayed_de->d_name, "delayed-", 8) != 0)
+			continue;
+
+		/* Parse filename */
+		if (sscanf(delayed_de->d_name, DELAYED_FORMAT, &subid, &xid, &status, &commit_hi,
+				   &commit_lo, &end_hi, &end_lo, &committime) != 8)
+			elog(ERROR, "could not parse filename \"%s\"", delayed_de->d_name);
+
+		/* Skip if the file has been generated by other subscriptions */
+		if (MyLogicalRepWorker->subid != subid)
+			continue;
+
+		elog(DEBUG1, "start to restore from %s", delayed_de->d_name);
+
+		commit_lsn = ((uint64) commit_hi) << 32 | commit_lo;
+		end_lsn = ((uint64) end_hi) << 32 | end_lo;
+
+		/*
+		 * Do actual restore here. If the server was shutted down while
+		 * receiving transactions, the status is UNKNOWN and
+		 * RestoreDelayedTxn() returns false. At that time we must remove the
+		 * file once and receive changes again.
+		 */
+		if (!RestoreDelayedTxn(status, commit_lsn, end_lsn, committime, xid))
+		{
+			char		path[MAXPGPATH];
+
+			snprintf(path, MAXPGPATH, DELAYED_DIR "/%s", delayed_de->d_name);
+			durable_unlink(path, LOG);
+		}
+	}
+	FreeDir(delayed_dir);
+
+	list_sort(DelayedTxnList, file_sort_by_committime);
+}
+
+/*
+ * Restore delayed transactions, or initialize the directory
+ */
+static void
+InitializeDelayedTxn(void)
+{
+	struct stat st;
+	char		path[MAXPGPATH];
+
+	snprintf(path, MAXPGPATH, DELAYED_DIR);
+
+	/*
+	 * If the given directory does not exist, create one. Otherwise start to
+	 * restore.
+	 */
+	if (stat(path, &st) != 0)
+	{
+		initialize_delay_directory();
+		return;
+	}
+
+	RestoreDelayedTxns();
+}
+
+/*
+ * Write a given message to a file. This is called for every message.
+ * This returns true only when changes are written into file.
+ *
+ * The format of the serialized changes is same as the streamed one. This
+ * has a length (not including the length), action code (identifying the
+ * message type) and message contents (without the subxact TransactionId
+ * value).
+ */
+static bool
+handle_delayed_transaction(char action, StringInfo s)
+{
+	ReplicationMessageOnDisk ondisk;
+	pg_crc32c	checksum = 0;
+
+	/* Return if we are not in delay */
+	if (!in_delayed_transaction)
+		return false;
+
+	Assert(delayed_fd > 0);
+	Assert(TransactionIdIsValid(delayed_xid));
+
+	ondisk.magic = DELAY_MAGIC;
+	ondisk.length = (s->len - s->cursor);
+	ondisk.action = action;
+
+	/* Calculate CRC if required */
+#ifdef	USE_ASSERT_CHECKING
+	INIT_CRC32C(checksum);
+	COMP_CRC32C(checksum,
+				(char *) &ondisk + ReplicationMessageOnDiskNotChecksummedSize,
+				ReplicationMessageOnDiskChecksummedSize);
+	COMP_CRC32C(checksum, &s->data[s->cursor], ondisk.length);
+	FIN_CRC32C(checksum);
+#endif
+
+	ondisk.checksum = checksum;
+
+	/* Write header part */
+	if (write(delayed_fd, &ondisk, sizeof(ondisk)) != sizeof(ondisk))
+	{
+		int			save_errno = errno;
+		char		path[MAXPGPATH];
+
+		CloseTransientFile(delayed_fd);
+		delay_file_name(path, MyLogicalRepWorker->subid, delayed_xid,
+						DELAYED_TXN_UNKNOWN, InvalidXLogRecPtr,
+						InvalidXLogRecPtr, 0);
+
+		/* if write didn't set errno, assume problem is no disk space */
+		errno = save_errno ? save_errno : ENOSPC;
+		ereport(ERROR,
+				errcode_for_file_access(),
+				errmsg("could not write to file \"%s\": %m",
+					   path));
+		return false;			/* Keep compiler quiet */
+	}
+
+	/* Write actual message */
+	if (write(delayed_fd, &s->data[s->cursor], ondisk.length) != ondisk.length)
+	{
+		int			save_errno = errno;
+		char		path[MAXPGPATH];
+
+		CloseTransientFile(delayed_fd);
+		delay_file_name(path, MyLogicalRepWorker->subid, delayed_xid,
+						DELAYED_TXN_UNKNOWN, InvalidXLogRecPtr,
+						InvalidXLogRecPtr, 0);
+
+		/* if write didn't set errno, assume problem is no disk space */
+		errno = save_errno ? save_errno : ENOSPC;
+		ereport(ERROR,
+				errcode_for_file_access(),
+				errmsg("could not write to file \"%s\": %m",
+					   path));
+		return false;			/* Keep compiler quiet */
+	}
+
+	return true;
+}
+
+/*
+ * Check the delayed transactions and apply if we elapsed sufficient time
+ */
+static void
+check_delayed_transaction(void)
+{
+	TimestampTz now;
+	ListCell   *lc;
+	int			n = 0;
+
+	if (in_streamed_transaction)
+		return;
+
+	now = GetCurrentTimestamp();
+
+	/* Read cache on-by-one */
+	foreach(lc, DelayedTxnList)
+	{
+		DelayedTxnListEntry *entry = (DelayedTxnListEntry *) lfirst(lc);
+		LogicalRepCommitData *commit_data = &entry->commit_data;
+		TimestampTz delayUntil;
+		long		diffms;
+
+		delayUntil = TimestampTzPlusMilliseconds(commit_data->committime,
+												 MySubscription->minapplydelay);
+
+		diffms = TimestampDifferenceMilliseconds(now, delayUntil);
+
+		/*
+		 * The cache is aligned the commit ordering, so we do not have to
+		 * check latter entries if we find transactions that should not be
+		 * applied.
+		 */
+		if (diffms > 0)
+			break;
+
+		elog(DEBUG1, "started to apply transaction %u", entry->xid);
+
+		apply_delayed_transaction(entry->xid, commit_data);
+
+		delayed_xid = InvalidTransactionId;
+		in_delayed_transaction = false;
+		n++;
+	}
+	/* Discards applied entries */
+	DelayedTxnList = list_delete_first_n(DelayedTxnList, n);
+}
 
 /*
  * Return the name of the logical replication worker.
@@ -1019,13 +1694,28 @@ apply_handle_begin(StringInfo s)
 	logicalrep_read_begin(s, &begin_data);
 	set_apply_error_context_xact(begin_data.xid, begin_data.final_lsn);
 
-	remote_final_lsn = begin_data.final_lsn;
+	/*
+	 * Prepare to write changes into file if time-delayed replication is
+	 * requested.
+	 */
+	if (MySubscription->minapplydelay && AllTablesyncsReady())
+	{
+		in_delayed_transaction = true;
 
-	maybe_start_skipping_changes(begin_data.final_lsn);
+		create_delay_file(begin_data.xid);
 
-	in_remote_transaction = true;
+		delayed_xid = begin_data.xid;
+	}
+	else
+	{
+		remote_final_lsn = begin_data.final_lsn;
 
-	pgstat_report_activity(STATE_RUNNING, NULL);
+		maybe_start_skipping_changes(begin_data.final_lsn);
+
+		in_remote_transaction = true;
+
+		pgstat_report_activity(STATE_RUNNING, NULL);
+	}
 }
 
 /*
@@ -1038,19 +1728,40 @@ apply_handle_commit(StringInfo s)
 {
 	LogicalRepCommitData commit_data;
 
+	/* Save the message before it is consumed. */
+	StringInfoData original_msg = *s;
+
+	/*
+	 * If we are applying the delayed transaction, skip here. Actual COMMIT
+	 * will be done in apply_delayed_transaction()
+	 */
+	if (delayed_fd > 0 && !in_delayed_transaction)
+		return;
+
 	logicalrep_read_commit(s, &commit_data);
 
-	if (commit_data.commit_lsn != remote_final_lsn)
-		ereport(ERROR,
-				(errcode(ERRCODE_PROTOCOL_VIOLATION),
-				 errmsg_internal("incorrect commit LSN %X/%X in commit message (expected %X/%X)",
-								 LSN_FORMAT_ARGS(commit_data.commit_lsn),
-								 LSN_FORMAT_ARGS(remote_final_lsn))));
+	/* If we are applying, skip here. */
 
-	apply_handle_commit_internal(&commit_data);
+	if (in_delayed_transaction)
+	{
+		/* Write a commit message into file and flush all of messages */
+		handle_delayed_transaction(LOGICAL_REP_MSG_COMMIT, &original_msg);
+		flush_delayed_changes(&commit_data);
+	}
+	else
+	{
+		if (commit_data.commit_lsn != remote_final_lsn)
+			ereport(ERROR,
+					(errcode(ERRCODE_PROTOCOL_VIOLATION),
+					errmsg_internal("incorrect commit LSN %X/%X in commit message (expected %X/%X)",
+									LSN_FORMAT_ARGS(commit_data.commit_lsn),
+									LSN_FORMAT_ARGS(remote_final_lsn))));
 
-	/* Process any tables that are being synchronized in parallel. */
-	process_syncing_tables(commit_data.end_lsn);
+		apply_handle_commit_internal(&commit_data);
+
+		/* Process any tables that are being synchronized in parallel. */
+		process_syncing_tables(commit_data.end_lsn);
+	}
 
 	pgstat_report_activity(STATE_IDLE, NULL);
 	reset_apply_error_context_info();
@@ -1076,13 +1787,28 @@ apply_handle_begin_prepare(StringInfo s)
 	logicalrep_read_begin_prepare(s, &begin_data);
 	set_apply_error_context_xact(begin_data.xid, begin_data.prepare_lsn);
 
-	remote_final_lsn = begin_data.prepare_lsn;
+	/*
+	 * Prepare to write changes into file if time-delayed replication is
+	 * requested.
+	 */
+	if (MySubscription->minapplydelay && AllTablesyncsReady())
+	{
+		in_delayed_transaction = true;
 
-	maybe_start_skipping_changes(begin_data.prepare_lsn);
+		create_delay_file(begin_data.xid);
 
-	in_remote_transaction = true;
+		delayed_xid = begin_data.xid;
+	}
+	else
+	{
+		remote_final_lsn = begin_data.prepare_lsn;
 
-	pgstat_report_activity(STATE_RUNNING, NULL);
+		maybe_start_skipping_changes(begin_data.prepare_lsn);
+
+		in_remote_transaction = true;
+
+		pgstat_report_activity(STATE_RUNNING, NULL);
+	}
 }
 
 /*
@@ -1124,57 +1850,102 @@ apply_handle_prepare_internal(LogicalRepPreparedTxnData *prepare_data)
 
 /*
  * Handle PREPARE message.
+ *
+ * When time-delayed logical replication is requested, we just write a message
+ * into file and return. This means that no transaction is prepared on
+ * subscriber. This can avoid that the apply worker acquires locks for a long
+ * time due to the long min_apply_time.
+ *
+ * Even if the transaction is applied from delayed file, the transaction is not
+ * prepared. We just skip PREPARE message.
  */
 static void
 apply_handle_prepare(StringInfo s)
 {
 	LogicalRepPreparedTxnData prepare_data;
 
-	logicalrep_read_prepare(s, &prepare_data);
-
-	if (prepare_data.prepare_lsn != remote_final_lsn)
-		ereport(ERROR,
-				(errcode(ERRCODE_PROTOCOL_VIOLATION),
-				 errmsg_internal("incorrect prepare LSN %X/%X in prepare message (expected %X/%X)",
-								 LSN_FORMAT_ARGS(prepare_data.prepare_lsn),
-								 LSN_FORMAT_ARGS(remote_final_lsn))));
-
 	/*
-	 * Unlike commit, here, we always prepare the transaction even though no
-	 * change has happened in this transaction or all changes are skipped. It
-	 * is done this way because at commit prepared time, we won't know whether
-	 * we have skipped preparing a transaction because of those reasons.
-	 *
-	 * XXX, We can optimize such that at commit prepared time, we first check
-	 * whether we have prepared the transaction or not but that doesn't seem
-	 * worthwhile because such cases shouldn't be common.
+	 * If we are writing changes into delayed file, construct a modified
+	 * message and write it. This is needed for avoiding to write gid into
+	 * file. More detail, see atop ReadPreparedCommonRecord().
 	 */
-	begin_replication_step();
+	if (in_delayed_transaction)
+	{
+		char		old_path[MAXPGPATH];
+		char		new_path[MAXPGPATH];
 
-	apply_handle_prepare_internal(&prepare_data);
+		/* Cleanup */
+		CloseTransientFile(delayed_fd);
 
-	end_replication_step();
-	CommitTransactionCommand();
-	pgstat_report_stat(false);
+		/*
+		 * Construct old/new filename.
+		 *
+		 * Note that commit_lsn, end_lsn, and committime are not filled here.
+		 * This is because when COMMIT PREPARED is come, we do no have a good
+		 * way to indicate the related transaction file if they are filled.
+		 */
+		delay_file_name(old_path, MyLogicalRepWorker->subid, delayed_xid,
+						DELAYED_TXN_UNKNOWN, InvalidXLogRecPtr, InvalidXLogRecPtr, 0);
 
-	store_flush_position(prepare_data.end_lsn, XactLastCommitEnd);
+		delay_file_name(new_path, MyLogicalRepWorker->subid, delayed_xid,
+						DELAYED_TXN_PREPARED, InvalidXLogRecPtr, InvalidXLogRecPtr, 0);
 
-	in_remote_transaction = false;
+		/* And do actual rename */
+		if (durable_rename(old_path, new_path, PANIC))
+			abort();
 
-	/* Process any tables that are being synchronized in parallel. */
-	process_syncing_tables(prepare_data.end_lsn);
+		/* Store flushed lsn */
+		last_flushed = prepare_data.end_lsn;
 
-	/*
-	 * Since we have already prepared the transaction, in a case where the
-	 * server crashes before clearing the subskiplsn, it will be left but the
-	 * transaction won't be resent. But that's okay because it's a rare case
-	 * and the subskiplsn will be cleared when finishing the next transaction.
-	 */
-	stop_skipping_changes();
-	clear_subscription_skip_lsn(prepare_data.prepare_lsn);
+		delayed_fd = -1;
+		delayed_xid = InvalidTransactionId;
+		in_delayed_transaction = false;
+	}
+	else
+	{
+		logicalrep_read_prepare(s, &prepare_data);
 
-	pgstat_report_activity(STATE_IDLE, NULL);
-	reset_apply_error_context_info();
+		if (prepare_data.prepare_lsn != remote_final_lsn)
+			ereport(ERROR,
+					(errcode(ERRCODE_PROTOCOL_VIOLATION),
+					errmsg_internal("incorrect prepare LSN %X/%X in prepare message (expected %X/%X)",
+									LSN_FORMAT_ARGS(prepare_data.prepare_lsn),
+									LSN_FORMAT_ARGS(remote_final_lsn))));
+
+		/*
+		* Unlike commit, here, we always prepare the transaction even though no
+		* change has happened in this transaction or all changes are skipped. It
+		* is done this way because at commit prepared time, we won't know whether
+		* we have skipped preparing a transaction because of those reasons.
+		*
+		* XXX, We can optimize such that at commit prepared time, we first check
+		* whether we have prepared the transaction or not but that doesn't seem
+		* worthwhile because such cases shouldn't be common.
+		*/
+		begin_replication_step();
+
+		apply_handle_prepare_internal(&prepare_data);
+
+		end_replication_step();
+		CommitTransactionCommand();
+		pgstat_report_stat(false);
+
+		store_flush_position(prepare_data.end_lsn, XactLastCommitEnd);
+
+		in_remote_transaction = false;
+
+		/* Process any tables that are being synchronized in parallel. */
+		process_syncing_tables(prepare_data.end_lsn);
+
+		/*
+		* Since we have already prepared the transaction, in a case where the
+		* server crashes before clearing the subskiplsn, it will be left but the
+		* transaction won't be resent. But that's okay because it's a rare case
+		* and the subskiplsn will be cleared when finishing the next transaction.
+		*/
+		stop_skipping_changes();
+		clear_subscription_skip_lsn(prepare_data.prepare_lsn);
+	}
 }
 
 /*
@@ -1192,38 +1963,95 @@ apply_handle_commit_prepared(StringInfo s)
 	LogicalRepCommitPreparedTxnData prepare_data;
 	char		gid[GIDSIZE];
 
+	if (delayed_fd > 0 && !in_delayed_transaction)
+		return;
+
 	logicalrep_read_commit_prepared(s, &prepare_data);
-	set_apply_error_context_xact(prepare_data.xid, prepare_data.commit_lsn);
-
-	/* Compute GID for two_phase transactions. */
-	TwoPhaseTransactionGid(MySubscription->oid, prepare_data.xid,
-						   gid, sizeof(gid));
-
-	/* There is no transaction when COMMIT PREPARED is called */
-	begin_replication_step();
 
 	/*
-	 * Update origin state so we can restart streaming from correct position
-	 * in case of crash.
+	 * Check whether delayed file exists or not. If we have a file and we have
+	 * not opened yet, it means that time-delayed logical replication has been
+	 * requested. At that time we write the modified message.
+	 * Otherwise, the transaction will be committed normally.
 	 */
-	replorigin_session_origin_lsn = prepare_data.end_lsn;
-	replorigin_session_origin_timestamp = prepare_data.commit_time;
+	if (delayed_fd < 0 &&
+		is_given_transaction_delayed(MyLogicalRepWorker->subid, prepare_data.xid))
+	{
+		char		old_path[MAXPGPATH];
+		char		new_path[MAXPGPATH];
+		LogicalRepCommitData commit_data = {0};
 
-	FinishPreparedTransaction(gid, true);
-	end_replication_step();
-	CommitTransactionCommand();
-	pgstat_report_stat(false);
+		/*
+		 * Open the delayed transaction file.
+		 *
+		 * Apart from RestoreDelayedTxns(), we don't want to read whole the
+		 * directory to find the related file. That's why we use Invalid LSN
+		 * and committime to indicate it.
+		 */
+		delay_file_name(old_path, MyLogicalRepWorker->subid, prepare_data.xid,
+						DELAYED_TXN_PREPARED, InvalidXLogRecPtr,
+						InvalidXLogRecPtr, 0);
 
-	store_flush_position(prepare_data.end_lsn, XactLastCommitEnd);
-	in_remote_transaction = false;
+		delayed_fd = OpenTransientFile(old_path, O_WRONLY | O_APPEND | PG_BINARY);
+		if (delayed_fd < 0)
+			ereport(ERROR,
+					errcode_for_file_access(),
+					errmsg("could not open file \"%s\": %m",
+						   old_path));
 
-	/* Process any tables that are being synchronized in parallel. */
-	process_syncing_tables(prepare_data.end_lsn);
+		delay_file_name(new_path, MyLogicalRepWorker->subid,
+						prepare_data.xid, DELAYED_TXN_COMMITTED,
+						prepare_data.commit_lsn, prepare_data.end_lsn,
+						prepare_data.commit_time);
 
-	clear_subscription_skip_lsn(prepare_data.end_lsn);
+		CloseTransientFile(delayed_fd);
 
-	pgstat_report_activity(STATE_IDLE, NULL);
-	reset_apply_error_context_info();
+		if (durable_rename(old_path, new_path, PANIC))
+			abort();
+
+		/* Store flushed lsn */
+		last_flushed = prepare_data.end_lsn;
+
+		delayed_fd = -1;
+		delayed_xid = InvalidTransactionId;
+		in_delayed_transaction = false;
+
+		ConstructCommitFromCommitPrepared(&commit_data, &prepare_data);
+
+		/* Cache the commited transaction */
+		cache_commit_data(&commit_data, prepare_data.xid);
+	}
+	else
+	{
+		set_apply_error_context_xact(prepare_data.xid, prepare_data.commit_lsn);
+
+		/* Compute GID for two_phase transactions. */
+		TwoPhaseTransactionGid(MySubscription->oid, prepare_data.xid,
+							gid, sizeof(gid));
+
+		/* There is no transaction when COMMIT PREPARED is called */
+		begin_replication_step();
+
+		/*
+		* Update origin state so we can restart streaming from correct position
+		* in case of crash.
+		*/
+		replorigin_session_origin_lsn = prepare_data.end_lsn;
+		replorigin_session_origin_timestamp = prepare_data.commit_time;
+
+		FinishPreparedTransaction(gid, true);
+		end_replication_step();
+		CommitTransactionCommand();
+		pgstat_report_stat(false);
+
+		store_flush_position(prepare_data.end_lsn, XactLastCommitEnd);
+		in_remote_transaction = false;
+
+		/* Process any tables that are being synchronized in parallel. */
+		process_syncing_tables(prepare_data.end_lsn);
+
+		clear_subscription_skip_lsn(prepare_data.end_lsn);
+	}
 }
 
 /*
@@ -1242,6 +2070,25 @@ apply_handle_rollback_prepared(StringInfo s)
 	char		gid[GIDSIZE];
 
 	logicalrep_read_rollback_prepared(s, &rollback_data);
+
+	/*
+	 * If the delayed file exists, just remove it. The delayed transaction
+	 * have never prepared, so it's OK not to call
+	 * FinishPreparedTransaction().
+	 */
+	if (is_given_transaction_delayed(MyLogicalRepWorker->subid, rollback_data.xid))
+	{
+		char		path[MAXPGPATH];
+
+		delay_file_name(path, MyLogicalRepWorker->subid, rollback_data.xid,
+						DELAYED_TXN_PREPARED, InvalidXLogRecPtr,
+						InvalidXLogRecPtr, 0);
+
+		durable_unlink(path, LOG);
+		clear_subscription_skip_lsn(rollback_data.rollback_end_lsn);
+		return;
+	}
+
 	set_apply_error_context_xact(rollback_data.xid, rollback_data.rollback_end_lsn);
 
 	/* Compute GID for two_phase transactions. */
@@ -1317,16 +2164,65 @@ apply_handle_stream_prepare(StringInfo s)
 	switch (apply_action)
 	{
 		case TRANS_LEADER_APPLY:
+			/*
+			 * If time-delayed is requested, start to write changes to
+			 * permanent file instead of temporary one.
+			 */
+			if (MySubscription->minapplydelay)
+			{
+				in_delayed_transaction = true;
+
+				create_delay_file(prepare_data.xid);
+
+				delayed_xid = prepare_data.xid;
+			}
 
 			/*
 			 * The transaction has been serialized to file, so replay all the
-			 * spooled operations.
+			 * spooled operations. Note that if time-delayed replication is
+			 * requested, changes are written into permanent file here.
 			 */
 			apply_spooled_messages(MyLogicalRepWorker->stream_fileset,
 								   prepare_data.xid, prepare_data.prepare_lsn);
 
-			/* Mark the transaction as prepared. */
-			apply_handle_prepare_internal(&prepare_data);
+
+			/*
+			 * If time-delayed replication is requested, construct a modified
+			 * message and write it. This is needed for avoiding to write gid
+			 * into file. More detail, see atop ReadPreparedCommonRecord().
+			 */
+			if (MySubscription->minapplydelay)
+			{
+				char		old_path[MAXPGPATH];
+				char		new_path[MAXPGPATH];
+
+				CloseTransientFile(delayed_fd);
+
+				delay_file_name(old_path, MyLogicalRepWorker->subid,
+								prepare_data.xid, DELAYED_TXN_UNKNOWN,
+								InvalidXLogRecPtr, InvalidXLogRecPtr, 0);
+
+				delay_file_name(new_path, MyLogicalRepWorker->subid,
+								prepare_data.xid, DELAYED_TXN_PREPARED,
+								InvalidXLogRecPtr, InvalidXLogRecPtr, 0);
+
+				if (durable_rename(old_path, new_path, PANIC))
+					abort();
+
+				/* Store flushed lsn */
+				last_flushed = prepare_data.end_lsn;
+
+				CloseTransientFile(delayed_fd);
+
+				delayed_fd = -1;
+				delayed_xid = InvalidTransactionId;
+				in_delayed_transaction = false;
+			}
+			else
+			{
+				/* Mark the transaction as prepared. */
+				apply_handle_prepare_internal(&prepare_data);
+			}
 
 			CommitTransactionCommand();
 
@@ -1405,8 +2301,11 @@ apply_handle_stream_prepare(StringInfo s)
 
 	pgstat_report_stat(false);
 
-	/* Process any tables that are being synchronized in parallel. */
-	process_syncing_tables(prepare_data.end_lsn);
+	if (list_length(DelayedTxnList) == 0)
+	{
+		/* Process any tables that are being synchronized in parallel. */
+		process_syncing_tables(prepare_data.end_lsn);
+	}
 
 	/*
 	 * Similar to prepare case, the subskiplsn could be left in a case of
@@ -2176,18 +3075,41 @@ apply_handle_stream_commit(StringInfo s)
 		case TRANS_LEADER_APPLY:
 
 			/*
+			 * If time-delayed is requested, start to write changes to
+			 * permanent file instead of temporary one.
+			 */
+			if (MySubscription->minapplydelay)
+			{
+				in_delayed_transaction = true;
+
+				create_delay_file(xid);
+
+				delayed_xid = xid;
+			}
+
+			/*
 			 * The transaction has been serialized to file, so replay all the
-			 * spooled operations.
+			 * spooled operations. Note that if time-delayed replication is
+			 * requested, changes are written into permanent file here.
 			 */
 			apply_spooled_messages(MyLogicalRepWorker->stream_fileset, xid,
 								   commit_data.commit_lsn);
 
-			apply_handle_commit_internal(&commit_data);
+
+			/* Flush changes if time-delayed is requested */
+			if (MySubscription->minapplydelay)
+			{
+				handle_delayed_transaction(LOGICAL_REP_MSG_COMMIT, &original_msg);
+				flush_delayed_changes(&commit_data);
+			}
+			else
+				apply_handle_commit_internal(&commit_data);
 
 			/* Unlink the files with serialized changes and subxact info. */
 			stream_cleanup_files(MyLogicalRepWorker->subid, xid);
 
 			elog(DEBUG1, "finished processing the STREAM COMMIT command");
+
 			break;
 
 		case TRANS_LEADER_SEND_TO_PARALLEL:
@@ -2249,8 +3171,11 @@ apply_handle_stream_commit(StringInfo s)
 			break;
 	}
 
-	/* Process any tables that are being synchronized in parallel. */
-	process_syncing_tables(commit_data.end_lsn);
+	if (list_length(DelayedTxnList) == 0)
+	{
+		/* Process any tables that are being synchronized in parallel. */
+		process_syncing_tables(commit_data.end_lsn);
+	}
 
 	pgstat_report_activity(STATE_IDLE, NULL);
 
@@ -2325,7 +3250,8 @@ apply_handle_relation(StringInfo s)
 {
 	LogicalRepRelation *rel;
 
-	if (handle_streamed_transaction(LOGICAL_REP_MSG_RELATION, s))
+	if (handle_streamed_transaction(LOGICAL_REP_MSG_RELATION, s) ||
+		handle_delayed_transaction(LOGICAL_REP_MSG_RELATION, s))
 		return;
 
 	rel = logicalrep_read_rel(s);
@@ -2348,7 +3274,8 @@ apply_handle_type(StringInfo s)
 {
 	LogicalRepTyp typ;
 
-	if (handle_streamed_transaction(LOGICAL_REP_MSG_TYPE, s))
+	if (handle_streamed_transaction(LOGICAL_REP_MSG_TYPE, s) ||
+		handle_delayed_transaction(LOGICAL_REP_MSG_TYPE, s))
 		return;
 
 	logicalrep_read_typ(s, &typ);
@@ -2408,7 +3335,8 @@ apply_handle_insert(StringInfo s)
 	 * streamed transactions.
 	 */
 	if (is_skipping_changes() ||
-		handle_streamed_transaction(LOGICAL_REP_MSG_INSERT, s))
+		handle_streamed_transaction(LOGICAL_REP_MSG_INSERT, s) ||
+		handle_delayed_transaction(LOGICAL_REP_MSG_INSERT, s))
 		return;
 
 	begin_replication_step();
@@ -2560,7 +3488,8 @@ apply_handle_update(StringInfo s)
 	 * streamed transactions.
 	 */
 	if (is_skipping_changes() ||
-		handle_streamed_transaction(LOGICAL_REP_MSG_UPDATE, s))
+		handle_streamed_transaction(LOGICAL_REP_MSG_UPDATE, s) ||
+		handle_delayed_transaction(LOGICAL_REP_MSG_UPDATE, s))
 		return;
 
 	begin_replication_step();
@@ -2741,7 +3670,8 @@ apply_handle_delete(StringInfo s)
 	 * streamed transactions.
 	 */
 	if (is_skipping_changes() ||
-		handle_streamed_transaction(LOGICAL_REP_MSG_DELETE, s))
+		handle_streamed_transaction(LOGICAL_REP_MSG_DELETE, s) ||
+		handle_delayed_transaction(LOGICAL_REP_MSG_DELETE, s))
 		return;
 
 	begin_replication_step();
@@ -3169,7 +4099,8 @@ apply_handle_truncate(StringInfo s)
 	 * streamed transactions.
 	 */
 	if (is_skipping_changes() ||
-		handle_streamed_transaction(LOGICAL_REP_MSG_TRUNCATE, s))
+		handle_streamed_transaction(LOGICAL_REP_MSG_TRUNCATE, s) ||
+		handle_delayed_transaction(LOGICAL_REP_MSG_TRUNCATE, s))
 		return;
 
 	begin_replication_step();
@@ -3431,10 +4362,13 @@ get_flush_position(XLogRecPtr *write, XLogRecPtr *flush,
 			pos = dlist_tail_element(FlushPosition, node,
 									 &lsn_mapping);
 			*write = pos->remote_end;
-			*have_pending_txes = true;
-			return;
+			break;
 		}
 	}
+
+	/* If change are written into file, report the LSN instead */
+	if (last_flushed > *flush)
+		*flush = last_flushed;
 
 	*have_pending_txes = !dlist_is_empty(&lsn_mapping);
 }
@@ -3632,8 +4566,12 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 			maybe_reread_subscription();
 
 			/* Process any table synchronization changes. */
-			process_syncing_tables(last_received);
+			if (list_length(DelayedTxnList) == 0)
+				process_syncing_tables(last_received);
 		}
+
+		/* Check delayed transactions and apply them */
+		check_delayed_transaction();
 
 		/* Cleanup the memory. */
 		MemoryContextResetAndDeleteChildren(ApplyMessageContext);
@@ -3776,8 +4714,14 @@ send_feedback(XLogRecPtr recvpos, bool force, bool requestReply)
 	/*
 	 * No outstanding transactions to flush, we can report the latest received
 	 * position. This is important for synchronous replication.
+	 *
+	 * If the logical replication subscription has unprocessed changes then do
+	 * not inform the publisher that the received latest LSN is already
+	 * applied and flushed, otherwise, the publisher will make a wrong
+	 * assumption about the logical replication progress. Instead, just send a
+	 * feedback message to avoid a replication timeout during the delay.
 	 */
-	if (!have_pending_txes)
+	if (!have_pending_txes && (list_length(DelayedTxnList) == 0))
 		flushpos = writepos = recvpos;
 
 	if (writepos < last_writepos)
@@ -3937,7 +4881,8 @@ maybe_reread_subscription(void)
 		newsub->passwordrequired != MySubscription->passwordrequired ||
 		strcmp(newsub->origin, MySubscription->origin) != 0 ||
 		newsub->owner != MySubscription->owner ||
-		!equal(newsub->publications, MySubscription->publications))
+		!equal(newsub->publications, MySubscription->publications) ||
+		(newsub->minapplydelay == 0) != (MySubscription->minapplydelay == 0))
 	{
 		if (am_parallel_apply_worker())
 			ereport(LOG,
@@ -4582,6 +5527,9 @@ ApplyWorkerMain(Datum main_arg)
 					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 					 errmsg("subscription has no replication slot set")));
 
+		/* Check delayed files or initialize directory */
+		InitializeDelayedTxn();
+
 		/* Setup replication origin tracking. */
 		StartTransactionCommand();
 		ReplicationOriginNameForLogicalRep(MySubscription->oid, InvalidOid,
@@ -4592,6 +5540,14 @@ ApplyWorkerMain(Datum main_arg)
 		replorigin_session_setup(originid, 0);
 		replorigin_session_origin = originid;
 		origin_startpos = replorigin_session_get_progress(false);
+
+		/*
+		 * If last_flushed exceeds origin_startpos, it means that some
+		 * transactions are delaying. They have already been written into
+		 * pernament file, so no need to recevie them again.
+		 */
+		if (origin_startpos < last_flushed)
+			origin_startpos = last_flushed;
 
 		/* Is the use of a password mandatory? */
 		must_use_password = MySubscription->passwordrequired &&
@@ -4664,9 +5620,15 @@ ApplyWorkerMain(Datum main_arg)
 
 	options.proto.logical.twophase = false;
 	options.proto.logical.origin = pstrdup(MySubscription->origin);
+	options.proto.logical.require_schema = false;
+
 
 	if (!am_tablesync_worker())
 	{
+		if (server_version >= 160000)
+			options.proto.logical.require_schema =
+				MySubscription->minapplydelay > 0;
+
 		/*
 		 * Even when the two_phase mode is requested by the user, it remains
 		 * as the tri-state PENDING until all tablesyncs have reached READY
