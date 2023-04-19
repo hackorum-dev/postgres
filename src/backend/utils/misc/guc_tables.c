@@ -2695,7 +2695,7 @@ struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_MB
 		},
 		&wal_keep_size_mb,
-		0, 0, MAX_KILOBYTES,
+		0, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 
@@ -2707,7 +2707,7 @@ struct config_int ConfigureNamesInt[] =
 		},
 		&min_wal_size_mb,
 		DEFAULT_MIN_WAL_SEGS * (DEFAULT_XLOG_SEG_SIZE / (1024 * 1024)),
-		2, MAX_KILOBYTES,
+		2, INT_MAX,
 		NULL, NULL, NULL
 	},
 
@@ -2719,7 +2719,7 @@ struct config_int ConfigureNamesInt[] =
 		},
 		&max_wal_size_mb,
 		DEFAULT_MAX_WAL_SEGS * (DEFAULT_XLOG_SEG_SIZE / (1024 * 1024)),
-		2, MAX_KILOBYTES,
+		2, INT_MAX,
 		NULL, assign_max_wal_size, NULL
 	},
 
@@ -2834,7 +2834,7 @@ struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_MB
 		},
 		&max_slot_wal_keep_size_mb,
-		-1, -1, MAX_KILOBYTES,
+		-1, -1, INT_MAX,
 		NULL, NULL, NULL
 	},
 
