@@ -620,9 +620,8 @@ PostgreSQL documentation
         option <option>-C</option> is also used.
        </para>
        <para>
-        If this option is not specified and the server supports temporary
-        replication slots (version 10 and later), then a temporary replication
-        slot is automatically used for WAL streaming.
+        If this option is not specified, then a temporary replication slot is
+        automatically used for WAL streaming.
        </para>
       </listitem>
      </varlistentry>
