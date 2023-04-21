@@ -248,19 +248,10 @@ in sync when changing the above synopsis!
         option.  If no password is specified, the password will be set
         to null and password authentication will always fail for that
         user.  A null password can optionally be written explicitly as
-        <literal>PASSWORD NULL</literal>.
+        <literal>PASSWORD NULL</literal>. Specifying an empty string will
+        also set the password to null.
        </para>
-       <note>
-         <para>
-           Specifying an empty string will also set the password to null,
-           but that was not the case before <productname>PostgreSQL</productname>
-           version 10. In earlier versions, an empty string could be used,
-           or not, depending on the authentication method and the exact
-           version, and libpq would refuse to use it in any case.
-           To avoid the ambiguity, specifying an empty string should be
-           avoided.
-         </para>
-       </note>
+
        <para>
         The password is always stored encrypted in the system catalogs. The
         <literal>ENCRYPTED</literal> keyword has no effect, but is accepted for
