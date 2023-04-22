@@ -231,9 +231,11 @@ PostgreSQL documentation
        <para>
         Only execute the vacuum or analyze commands on tables with a multixact
         ID age of at least <replaceable class="parameter">mxid_age</replaceable>.
-        This setting is useful for prioritizing tables to process to prevent
-        multixact ID wraparound (see
-        <xref linkend="vacuum-for-multixact-wraparound"/>).
+        This setting is useful for prioritizing tables to advance
+        <structname>pg_class</structname>.<structfield>relfrozenxid</structfield>
+        for via an aggressive <command>VACUUM</command>
+        (see <xref linkend="vacuum-aggressive"/> and
+        <xref linkend="monitoring-table-age"/>).
        </para>
        <para>
         For the purposes of this option, the multixact ID age of a relation is
@@ -252,9 +254,12 @@ PostgreSQL documentation
        <para>
         Only execute the vacuum or analyze commands on tables with a
         transaction ID age of at least
-        <replaceable class="parameter">xid_age</replaceable>.  This setting
-        is useful for prioritizing tables to process to prevent transaction
-        ID wraparound (see <xref linkend="vacuum-for-wraparound"/>).
+        <replaceable class="parameter">xid_age</replaceable>.  This
+        setting is useful for prioritizing tables to advance
+        <structname>pg_class</structname>.<structfield>relminmxid</structfield>
+        for via an aggressive <command>VACUUM</command>
+        (see <xref linkend="vacuum-aggressive"/> and
+        <xref linkend="monitoring-table-age"/>).
        </para>
        <para>
         For the purposes of this option, the transaction ID age of a relation

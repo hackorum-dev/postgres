@@ -126,13 +126,13 @@ PREPARE TRANSACTION <replaceable class="parameter">transaction_id</replaceable>
    <para>
     It is unwise to leave transactions in the prepared state for a long time.
     This will interfere with the ability of <command>VACUUM</command> to reclaim
-    storage, and in extreme cases could cause the database to shut down
-    to prevent transaction ID wraparound (see <xref
-    linkend="vacuum-for-wraparound"/>).  Keep in mind also that the transaction
-    continues to hold whatever locks it held.  The intended usage of the
-    feature is that a prepared transaction will normally be committed or
-    rolled back as soon as an external transaction manager has verified that
-    other databases are also prepared to commit.
+    storage, and in extreme cases could cause the database to refuse to
+    allocate new transaction IDs (see <xref linkend="vacuum-xid-exhaustion"/>).
+    Keep in mind also that the transaction continues to hold whatever locks it
+    held.  The intended usage of the feature is that a prepared transaction
+    will normally be committed or rolled back as soon as an external
+    transaction manager has verified that other databases are also prepared to
+    commit.
    </para>
 
    <para>

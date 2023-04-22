@@ -664,7 +664,8 @@ This information can also be used
 by <link linkend="indexes-index-only-scans"><firstterm>index-only
 scans</firstterm></link> to answer queries using only the index tuple.
 The second bit, if set, means that all tuples on the page have been frozen.
-That means that even an anti-wraparound vacuum need not revisit the page.
+That means that even an aggressive vacuum (see <xref linkend="vacuum-aggressive"/>)
+need not revisit the page.
 </para>
 
 <para>

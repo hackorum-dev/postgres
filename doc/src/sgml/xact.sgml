@@ -180,7 +180,7 @@
    rows and can be inspected using the <xref linkend="pgrowlocks"/>
    extension.  Row-level read locks might also require the assignment
    of multixact IDs (<literal>mxid</literal>;  see <xref
-   linkend="vacuum-for-multixact-wraparound"/>).
+   linkend="vacuum-freezing-xid-space"/>).
   </para>
  </sect1>
 

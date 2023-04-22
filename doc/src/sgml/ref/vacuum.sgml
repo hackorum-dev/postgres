@@ -123,7 +123,9 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
     <term><literal>FREEZE</literal></term>
     <listitem>
      <para>
-      Selects aggressive <quote>freezing</quote> of tuples.
+      Makes <quote>freezing</quote> <emphasis>maximally</emphasis>
+      aggressive, and forces <command>VACUUM</command> to use its
+      <link linkend="vacuum-aggressive">aggressive strategy</link>.
       Specifying <literal>FREEZE</literal> is equivalent to performing
       <command>VACUUM</command> with the
       <xref linkend="guc-vacuum-freeze-min-age"/> and
@@ -218,11 +220,11 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
       <emphasis>always</emphasis> skip index vacuuming, even when
       there are many dead tuples in the table.  This may be useful
       when it is necessary to make <command>VACUUM</command> run as
-      quickly as possible to avoid imminent transaction ID wraparound
-      (see <xref linkend="vacuum-for-wraparound"/>).  However, the
-      wraparound failsafe mechanism controlled by <xref
+      quickly as possible to avoid imminent transaction ID exhaustion
+      (see <xref linkend="vacuum-xid-exhaustion"/>).  However, the failsafe
+      mechanism controlled by <xref
        linkend="guc-vacuum-failsafe-age"/>  will generally trigger
-      automatically to avoid transaction ID wraparound failure, and
+      automatically to avoid transaction ID exhaustion failure, and
       should be preferred.  If index cleanup is not performed
       regularly, performance may suffer, because as the table is
       modified indexes will accumulate dead tuples and the table
@@ -232,7 +234,7 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
      <para>
       This option has no effect for tables that have no index and is
       ignored if the <literal>FULL</literal> option is used.  It also
-      has no effect on the transaction ID wraparound failsafe
+      has no effect on the transaction ID exhaustion failsafe
       mechanism.  When triggered it will skip index vacuuming, even
       when <literal>INDEX_CLEANUP</literal> is set to
       <literal>ON</literal>.

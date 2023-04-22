@@ -1032,9 +1032,11 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
      <row>
       <entry><literal>BufferPin</literal></entry>
       <entry>The server process is waiting for exclusive access to
-       a data buffer.  Buffer pin waits can be protracted if
-       another process holds an open cursor that last read data from the
-       buffer in question. See <xref linkend="wait-event-bufferpin-table"/>.
+       a data buffer.  Buffer pin waits by aggressive
+       <command>VACUUM</command> (see <xref linkend="vacuum-aggressive"/>) can
+       be protracted if another process holds an for details on how to open
+       cursor that last read data from the buffer in question.
+       See <xref linkend="wait-event-bufferpin-table"/>.
       </entry>
      </row>
      <row>
@@ -6244,6 +6246,78 @@ FROM pg_stat_get_backend_idset() AS backendid;
    </table>
 
  </sect2>
+ </sect1>
+
+ <sect1 id="monitoring-table-age">
+  <title>Monitoring table age</title>
+
+  <para>
+   It is crucial that autovacuum is able to run <command>VACUUM</command> (or
+   that every table is manually vacuumed) at somewhat regular intervals.  Even
+   completely static tables need to participate in management of the
+   transaction ID space by <command>VACUUM</command>, as explained in <xref
+    linkend="vacuum-freezing-xid-space"/>.
+  </para>
+
+  <para>
+   This section provides details about how to monitor for this.  You might
+   want to use a third party monitoring and alterting tool for this.  Many
+   have off-the-shelf queries similar to the reference query shown here.
+  </para>
+
+  <caution>
+   <para>
+    Temporary tables are not maintained by autovacuum (see <xref
+     linkend="autovacuum-limitations"/>), but nevertheless have the same
+    requirements for freezing and <structfield>relfrozenxid</structfield>
+    advancement as permanent tables.
+   </para>
+   <para>
+    This means application code that <quote>leaks</quote> temporary tables can
+    threaten the availability of the system; eventually, the system will enter
+    a mode that makes it temporarily unable to allocate new transaction IDs
+    (see <xref linkend="vacuum-xid-exhaustion"/>), since autovacuum's usual
+    strategies for preventing that from happening cannot be used.
+   </para>
+  </caution>
+
+  <para>
+   A convenient way to examine information about
+   <structfield>relfrozenxid</structfield> and
+   <structfield>relminmxid</structfield> is to execute queries such as:
+
+<programlisting>
+SELECT c.oid::regclass as table_name,
+greatest(age(c.relfrozenxid),
+         age(t.relfrozenxid)) as xid_age,
+mxid_age(c.relminmxid)
+FROM pg_class c
+LEFT JOIN pg_class t ON c.reltoastrelid = t.oid
+WHERE c.relkind IN ('r', 'm');
+
+SELECT datname,
+age(datfrozenxid) as xid_age,
+mxid_age(datminmxid)
+FROM pg_database;
+</programlisting>
+
+   The <function>age</function> function returns the number of transactions
+   from <structfield>relfrozenxid</structfield> to the next unallocated
+   transaction ID.  The <function>mxid_age</function> function returns the
+   number of Multixact IDs from <structfield>relminmxid</structfield> to the
+   next unallocated Multixact ID.
+  </para>
+
+  <para>
+   The system should always have significant XID allocation slack capacity.
+   Ideally, the greatest
+   <literal>age(relfrozenxid)</literal>/<literal>age(datfrozenxid)</literal>
+   in the system will never be more than a fraction of the 2.1 billion XID
+   hard limit described in <xref linkend="vacuum-aggressive"/>.  The default
+   <varname>vacuum_freeze_table_age</varname> setting of 200 million
+   transactions implies that the system should never use significantly more
+   than about 10% of that hard limit.
+  </para>
  </sect1>
 
  <sect1 id="monitoring-locks">
