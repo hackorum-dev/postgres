@@ -32,11 +32,12 @@
   </para>
 
   <para>
-   The other main category of maintenance task is periodic <quote>vacuuming</quote>
-   of the database.  This activity is discussed in
-   <xref linkend="routine-vacuuming"/>.  Closely related to this is updating
-   the statistics that will be used by the query planner, as discussed in
-   <xref linkend="vacuum-for-statistics"/>.
+   The other main category of maintenance task is periodic
+   <quote><link linkend="routine-vacuuming">vacuuming</link></quote> of
+   the database by autovacuum.  Configuring autovacuum scheduling is
+   discussed in <xref linkend="autovacuum"/>.  Autovacuum also updates
+   the statistics that will be used by the query planner, as discussed
+   in <xref linkend="vacuum-for-statistics"/>.
   </para>
 
   <para>
@@ -243,7 +244,7 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
  </sect1>
 
  <sect1 id="routine-vacuuming">
-  <title>Routine Vacuuming</title>
+  <title>Autovacuum Maintenance Tasks</title>
 
   <indexterm zone="routine-vacuuming">
    <primary>vacuum</primary>
@@ -251,24 +252,18 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
 
   <para>
    <productname>PostgreSQL</productname> databases require periodic
-   maintenance known as <firstterm>vacuuming</firstterm>.  For many installations, it
-   is sufficient to let vacuuming be performed by the <firstterm>autovacuum
-   daemon</firstterm>, which is described in <xref linkend="autovacuum"/>.  You might
-   need to adjust the autovacuuming parameters described there to obtain best
-   results for your situation.  Some database administrators will want to
-   supplement or replace the daemon's activities with manually-managed
-   <command>VACUUM</command> commands, which typically are executed according to a
-   schedule by <application>cron</application> or <application>Task
-   Scheduler</application> scripts.  To set up manually-managed vacuuming properly,
-   it is essential to understand the issues discussed in the next few
-   subsections.  Administrators who rely on autovacuuming may still wish
-   to skim this material to help them understand and adjust autovacuuming.
+   maintenance known as <firstterm>vacuuming</firstterm>, and require
+   periodic updates to the statistics used by the
+   <productname>PostgreSQL</productname> query planner.  The <link
+    linkend="sql-vacuum"><command>VACUUM</command></link> and <link
+    linkend="sql-analyze"><command>ANALYZE</command></link> commands
+   perform these maintenance tasks.  The <firstterm>autovacuum
+    daemon</firstterm> automatically schedules maintenance tasks based on
+   workload requirements.
   </para>
-
   <para>
-   <productname>PostgreSQL</productname>'s
-   <link linkend="sql-vacuum"><command>VACUUM</command></link> command has to
-   process each table on a regular basis for several reasons:
+   The autovacuum daemon has to process each table regularly for several
+   reasons:
 
    <orderedlist>
     <listitem>
@@ -294,35 +289,74 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
     </listitem>
    </orderedlist>
 
-   Each of these reasons dictates performing <command>VACUUM</command> operations
-   of varying frequency and scope, as explained in the following subsections.
+   The first four maintenance tasks are handled by running
+   <command>VACUUM</command> from within an autovacuum worker process. The
+   fifth and final task (maintenance of planner statistics) is handled by
+   running <command>ANALYZE</command> from within an autovacuum worker
+   process.
+  </para>
+  <para>
+   Generally speaking, database administrators new to tuning autovacuum should
+   start by considering the need to adjust autovacuum's scheduling.
+   Autovacuum scheduling is controlled via threshold settings.  These settings
+   determine when autovacuum should launch a worker to run
+   <command>VACUUM</command> and/or <command>ANALYZE</command>; see the
+   previous section, <xref linkend="autovacuum"/>.  This section provides
+   additional information about the design and goals of autovacuum,
+   <command>VACUUM</command>, and <command>ANALYZE</command>.  The intended
+   audience is database administrators that wish to perform more advanced
+   autovacuum tuning, with any of the following goals in mind:
+  </para>
+  <itemizedlist>
+   <listitem>
+    <para>
+     Tuning <command>VACUUM</command> to improve query response times.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Making sure that <command>VACUUM</command>'s management of the
+     transaction ID address space is functioning optimally.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Tuning <command>VACUUM</command> for performance stability.
+    </para>
+   </listitem>
+  </itemizedlist>
+  <para>
+   With larger installations, tuning autovacuum usually won't be a once-off
+   task; it is best to approach tuning as an iterative, applied process.
+  </para>
+  <para>
+   Autovacuum might create a lot of I/O traffic at times, which can cause poor
+   performance for other active sessions.  There are configuration parameters
+   you can adjust to reduce the impact on system response time. See the
+   autovacuum-specific cost delay settings described in
+   <xref linkend="runtime-config-autovacuum"/>, and additional cost delay
+   settings described in <xref linkend="runtime-config-resource-vacuum-cost"/>.
+  </para>
+  <para>
+   Database administrators might also find it useful to supplement the
+   daemon's activities with manually-managed <command>VACUUM</command>
+   commands.  Scripting tools like <application>cron</application> and
+   <application>Task Manager</application> can help with this.  It can be
+   useful to perform off-hours <command>VACUUM</command> commands during
+   periods when the application experiences less demand (e.g., on weekends, or
+   in the middle of the night).  This section applies equally to
+   manually-issued <command>VACUUM</command> and <command>ANALYZE</command>
+   operations, except where otherwise noted.
   </para>
 
-  <para>
-   There are two variants of <command>VACUUM</command>: standard <command>VACUUM</command>
-   and <command>VACUUM FULL</command>.  <command>VACUUM FULL</command> can reclaim more
-   disk space but runs much more slowly.  Also,
-   the standard form of <command>VACUUM</command> can run in parallel with production
-   database operations.  (Commands such as <command>SELECT</command>,
-   <command>INSERT</command>, <command>UPDATE</command>, and
-   <command>DELETE</command> will continue to function normally, though you
-   will not be able to modify the definition of a table with commands such as
-   <command>ALTER TABLE</command> while it is being vacuumed.)
-   <command>VACUUM FULL</command> requires an
-   <literal>ACCESS EXCLUSIVE</literal> lock on the table it is
-   working on, and therefore cannot be done in parallel with other use
-   of the table.  Generally, therefore,
-   administrators should strive to use standard <command>VACUUM</command> and
-   avoid <command>VACUUM FULL</command>.
-  </para>
-
-  <para>
-   <command>VACUUM</command> creates a substantial amount of I/O
-   traffic, which can cause poor performance for other active sessions.
-   There are configuration parameters that can be adjusted to reduce the
-   performance impact of background vacuuming &mdash; see
-   <xref linkend="runtime-config-resource-vacuum-cost"/>.
-  </para>
+  <tip>
+   <para>
+    You can monitor <command>VACUUM</command> progress (whether run by
+    autovacuum or manually) via the
+    <structname>pg_stat_progress_vacuum</structname> view.  See
+    <xref linkend="vacuum-progress-reporting"/>.
+   </para>
+  </tip>
 
   <sect2 id="vacuum-for-space-recovery">
    <title>Recovering Disk Space</title>
