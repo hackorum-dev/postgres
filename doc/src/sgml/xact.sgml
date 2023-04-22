@@ -22,6 +22,8 @@
    single-statement transactions.
   </para>
 
+  <sect2 id="virtual-xids">
+   <title>Virtual Transaction IDs</title>
   <para>
    Every transaction is identified by a unique
    <literal>VirtualTransactionId</literal> (also called
@@ -46,10 +48,13 @@
    started, particularly if the transaction started with statements that
    only performed database reads.
   </para>
+  </sect2>
 
+  <sect2 id="permanent-xids">
+   <title>Permanent Transaction IDs</title>
   <para>
    The internal transaction ID type <type>xid</type> is 32 bits wide
-   and <link linkend="vacuum-for-wraparound">wraps around</link> every
+   and wraps around every
    4 billion transactions. A 32-bit epoch is incremented during each
    wraparound. There is also a 64-bit type <type>xid8</type> which
    includes this epoch and therefore does not wrap around during the
@@ -69,6 +74,80 @@
    linkend="guc-track-commit-timestamp"/> is enabled.
   </para>
 
+   <sect3 id="interpreting-xid-stamps">
+    <title><type>TransactionId</type> comparison rules</title>
+    <para>
+     The system often needs to compare <structfield>t_xmin</structfield>
+     and <structfield>t_xmax</structfield> fields for MVCC snapshot
+     visibility checks.
+    </para>
+
+    <para>
+     We use a truncated 32-bit representation of transaction IDs, rather than
+     using the full 64-bit representation.  The 2.1 billion XIDs
+     <quote>distance</quote> invariant must be preserved because transaction
+     IDs stored in heap row headers use a truncated 32-bit representation
+     (rather than the full 64-bit representation).  Since all unfrozen
+     transaction IDs from heap tuple headers <emphasis>must</emphasis> be from
+     the same transaction ID epoch (or from a space in the 64-bit
+     representation that spans two adjoining transaction ID epochs), there
+     isn't any need to store a separate epoch field in each tuple header.
+     This scheme has the advantage of requiring much less space than a design
+     that stores an XID epoch alongside each XID stored in each heap tuple
+     header.  It has the disadvantage of constraining the system's ability to
+     allocate new XIDs (in the worst case scenario where transaction ID
+     exhaustion occurs).
+    </para>
+
+    <para>
+     <command>VACUUM</command> will mark tuple headers
+     <emphasis>frozen</emphasis>, indicating that all eligible rows on the
+     page were inserted by a transaction that committed sufficiently far in
+     the past that the effects of the inserting transaction are certain to be
+     visible to all current and future transactions.  Normal XIDs are compared
+     using modulo-2<superscript>32</superscript> arithmetic. This means that
+     for every normal XID, there are two billion XIDs that are
+     <quote>older</quote> and two billion that are <quote>newer</quote>;
+     another way to say it is that the normal XID space is circular with no
+     endpoint.  Therefore, once a row version has been created with a
+     particular normal XID, the row version will appear to be <quote>in the
+      past</quote> for the next two billion transactions, no matter which
+     normal XID we are talking about. If the row version still exists after
+     more than two billion transactions, it will suddenly appear to be in the
+     future. To prevent this, <productname>PostgreSQL</productname> reserves a
+     special XID, <literal>FrozenTransactionId</literal>, which does not
+     follow the normal XID comparison rules and is always considered older
+     than every normal XID.  Frozen row versions are treated as if the
+     inserting XID were <literal>FrozenTransactionId</literal>, so that they
+     will appear to be <quote>in the past</quote> to all normal transactions
+     regardless of wraparound issues, and so such row versions will be valid
+     until deleted, no matter how long that is.
+    </para>
+
+    <note>
+     <para>
+      In <productname>PostgreSQL</productname> versions before 9.4, freezing was
+      implemented by actually replacing a row's insertion XID
+      with <literal>FrozenTransactionId</literal>, which was visible in the
+      row's <structname>xmin</structname> system column.  Newer versions just set a flag
+      bit, preserving the row's original <structname>xmin</structname> for possible
+      forensic use.  However, rows with <structname>xmin</structname> equal
+      to <literal>FrozenTransactionId</literal> (2) may still be found
+      in databases <application>pg_upgrade</application>'d from pre-9.4 versions.
+     </para>
+     <para>
+      Also, system catalogs may contain rows with <structname>xmin</structname> equal
+      to <literal>BootstrapTransactionId</literal> (1), indicating that they were
+      inserted during the first phase of <application>initdb</application>.
+      Like <literal>FrozenTransactionId</literal>, this special XID is treated as
+      older than every normal XID.
+     </para>
+    </note>
+   </sect3>
+  </sect2>
+
+  <sect2 id="global-transaction-ids">
+   <title>Global Transaction Identifiers</title>
   <para>
    In addition to <literal>vxid</literal> and <type>xid</type>,
    prepared transactions are also assigned Global Transaction
@@ -77,6 +156,7 @@
    prepared transactions.  The mapping of GID to xid is shown in <link
    linkend="view-pg-prepared-xacts"><structname>pg_prepared_xacts</structname></link>.
   </para>
+  </sect2>
  </sect1>
 
  <sect1 id="xact-locking">

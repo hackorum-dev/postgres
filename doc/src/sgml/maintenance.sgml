@@ -446,74 +446,24 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
     <secondary>wraparound</secondary>
    </indexterm>
 
-    <indexterm>
-     <primary>wraparound</primary>
-     <secondary>of transaction IDs</secondary>
-    </indexterm>
+   <indexterm>
+    <primary>wraparound</primary>
+    <secondary>of transaction IDs</secondary>
+   </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname>'s
-    <link linkend="mvcc-intro">MVCC</link> transaction semantics
-    depend on being able to compare transaction ID (<acronym>XID</acronym>)
-    numbers: a row version with an insertion XID greater than the current
-    transaction's XID is <quote>in the future</quote> and should not be visible
-    to the current transaction.  But since transaction IDs have limited size
-    (32 bits) a cluster that runs for a long time (more
-    than 4 billion transactions) would suffer <firstterm>transaction ID
-    wraparound</firstterm>: the XID counter wraps around to zero, and all of a sudden
-    transactions that were in the past appear to be in the future &mdash; which
-    means their output become invisible.  In short, catastrophic data loss.
-    (Actually the data is still there, but that's cold comfort if you cannot
-    get at it.)  To avoid this, it is necessary to vacuum every table
-    in every database at least once every two billion transactions.
+    <productname>PostgreSQL</productname>'s <link
+     linkend="mvcc-intro">MVCC</link> transaction semantics depend on
+    being able to compare <glossterm linkend="glossary-xid">transaction
+     ID numbers (<acronym>XID</acronym>)</glossterm> to determine
+    whether or not the row is visible to each query's MVCC snapshot
+    (see <xref linkend="interpreting-xid-stamps"/>).  But since
+    on-disk storage of transaction IDs in heap pages uses a truncated
+    32-bit representation to save space (rather than the full 64-bit
+    representation), it is necessary to vacuum every table in every
+    database <emphasis>at least</emphasis> once every two billion
+    transactions (though far more frequent vacuuming is typical).
    </para>
-
-   <para>
-    The reason that periodic vacuuming solves the problem is that
-    <command>VACUUM</command> will mark rows as <emphasis>frozen</emphasis>, indicating that
-    they were inserted by a transaction that committed sufficiently far in
-    the past that the effects of the inserting transaction are certain to be
-    visible to all current and future transactions.
-    Normal XIDs are
-    compared using modulo-2<superscript>32</superscript> arithmetic. This means
-    that for every normal XID, there are two billion XIDs that are
-    <quote>older</quote> and two billion that are <quote>newer</quote>; another
-    way to say it is that the normal XID space is circular with no
-    endpoint. Therefore, once a row version has been created with a particular
-    normal XID, the row version will appear to be <quote>in the past</quote> for
-    the next two billion transactions, no matter which normal XID we are
-    talking about. If the row version still exists after more than two billion
-    transactions, it will suddenly appear to be in the future. To
-    prevent this, <productname>PostgreSQL</productname> reserves a special XID,
-    <literal>FrozenTransactionId</literal>, which does not follow the normal XID
-    comparison rules and is always considered older
-    than every normal XID.
-    Frozen row versions are treated as if the inserting XID were
-    <literal>FrozenTransactionId</literal>, so that they will appear to be
-    <quote>in the past</quote> to all normal transactions regardless of wraparound
-    issues, and so such row versions will be valid until deleted, no matter
-    how long that is.
-   </para>
-
-   <note>
-    <para>
-     In <productname>PostgreSQL</productname> versions before 9.4, freezing was
-     implemented by actually replacing a row's insertion XID
-     with <literal>FrozenTransactionId</literal>, which was visible in the
-     row's <structname>xmin</structname> system column.  Newer versions just set a flag
-     bit, preserving the row's original <structname>xmin</structname> for possible
-     forensic use.  However, rows with <structname>xmin</structname> equal
-     to <literal>FrozenTransactionId</literal> (2) may still be found
-     in databases <application>pg_upgrade</application>'d from pre-9.4 versions.
-    </para>
-    <para>
-     Also, system catalogs may contain rows with <structname>xmin</structname> equal
-     to <literal>BootstrapTransactionId</literal> (1), indicating that they were
-     inserted during the first phase of <application>initdb</application>.
-     Like <literal>FrozenTransactionId</literal>, this special XID is treated as
-     older than every normal XID.
-    </para>
-   </note>
 
    <para>
     <xref linkend="guc-vacuum-freeze-min-age"/>
