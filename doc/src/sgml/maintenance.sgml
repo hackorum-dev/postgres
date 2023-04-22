@@ -265,68 +265,64 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
    to skim this material to help them understand and adjust autovacuuming.
   </para>
 
-  <sect2 id="vacuum-basics">
-   <title>Vacuuming Basics</title>
+  <para>
+   <productname>PostgreSQL</productname>'s
+   <link linkend="sql-vacuum"><command>VACUUM</command></link> command has to
+   process each table on a regular basis for several reasons:
 
-   <para>
-    <productname>PostgreSQL</productname>'s
-    <link linkend="sql-vacuum"><command>VACUUM</command></link> command has to
-    process each table on a regular basis for several reasons:
+   <orderedlist>
+    <listitem>
+     <simpara>To recover or reuse disk space occupied by updated or deleted
+     rows.</simpara>
+    </listitem>
 
-    <orderedlist>
-     <listitem>
-      <simpara>To recover or reuse disk space occupied by updated or deleted
-      rows.</simpara>
-     </listitem>
+    <listitem>
+     <simpara>To protect against loss of very old data due to
+     <firstterm>transaction ID wraparound</firstterm> or
+     <firstterm>multixact ID wraparound</firstterm>.</simpara>
+    </listitem>
 
-     <listitem>
-      <simpara>To protect against loss of very old data due to
-      <firstterm>transaction ID wraparound</firstterm> or
-      <firstterm>multixact ID wraparound</firstterm>.</simpara>
-     </listitem>
+    <listitem>
+     <simpara>To update the visibility map, which speeds
+     up <link linkend="indexes-index-only-scans">index-only
+     scans</link>.</simpara>
+    </listitem>
 
-     <listitem>
-      <simpara>To update the visibility map, which speeds
-      up <link linkend="indexes-index-only-scans">index-only
-      scans</link>.</simpara>
-     </listitem>
+    <listitem>
+     <simpara>To update data statistics used by the
+     <productname>PostgreSQL</productname> query planner.</simpara>
+    </listitem>
+   </orderedlist>
 
-     <listitem>
-      <simpara>To update data statistics used by the
-      <productname>PostgreSQL</productname> query planner.</simpara>
-     </listitem>
-    </orderedlist>
+   Each of these reasons dictates performing <command>VACUUM</command> operations
+   of varying frequency and scope, as explained in the following subsections.
+  </para>
 
-    Each of these reasons dictates performing <command>VACUUM</command> operations
-    of varying frequency and scope, as explained in the following subsections.
-   </para>
+  <para>
+   There are two variants of <command>VACUUM</command>: standard <command>VACUUM</command>
+   and <command>VACUUM FULL</command>.  <command>VACUUM FULL</command> can reclaim more
+   disk space but runs much more slowly.  Also,
+   the standard form of <command>VACUUM</command> can run in parallel with production
+   database operations.  (Commands such as <command>SELECT</command>,
+   <command>INSERT</command>, <command>UPDATE</command>, and
+   <command>DELETE</command> will continue to function normally, though you
+   will not be able to modify the definition of a table with commands such as
+   <command>ALTER TABLE</command> while it is being vacuumed.)
+   <command>VACUUM FULL</command> requires an
+   <literal>ACCESS EXCLUSIVE</literal> lock on the table it is
+   working on, and therefore cannot be done in parallel with other use
+   of the table.  Generally, therefore,
+   administrators should strive to use standard <command>VACUUM</command> and
+   avoid <command>VACUUM FULL</command>.
+  </para>
 
-   <para>
-    There are two variants of <command>VACUUM</command>: standard <command>VACUUM</command>
-    and <command>VACUUM FULL</command>.  <command>VACUUM FULL</command> can reclaim more
-    disk space but runs much more slowly.  Also,
-    the standard form of <command>VACUUM</command> can run in parallel with production
-    database operations.  (Commands such as <command>SELECT</command>,
-    <command>INSERT</command>, <command>UPDATE</command>, and
-    <command>DELETE</command> will continue to function normally, though you
-    will not be able to modify the definition of a table with commands such as
-    <command>ALTER TABLE</command> while it is being vacuumed.)
-    <command>VACUUM FULL</command> requires an
-    <literal>ACCESS EXCLUSIVE</literal> lock on the table it is
-    working on, and therefore cannot be done in parallel with other use
-    of the table.  Generally, therefore,
-    administrators should strive to use standard <command>VACUUM</command> and
-    avoid <command>VACUUM FULL</command>.
-   </para>
-
-   <para>
-    <command>VACUUM</command> creates a substantial amount of I/O
-    traffic, which can cause poor performance for other active sessions.
-    There are configuration parameters that can be adjusted to reduce the
-    performance impact of background vacuuming &mdash; see
-    <xref linkend="runtime-config-resource-vacuum-cost"/>.
-   </para>
-  </sect2>
+  <para>
+   <command>VACUUM</command> creates a substantial amount of I/O
+   traffic, which can cause poor performance for other active sessions.
+   There are configuration parameters that can be adjusted to reduce the
+   performance impact of background vacuuming &mdash; see
+   <xref linkend="runtime-config-resource-vacuum-cost"/>.
+  </para>
 
   <sect2 id="vacuum-for-space-recovery">
    <title>Recovering Disk Space</title>
