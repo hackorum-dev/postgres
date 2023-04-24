@@ -2774,8 +2774,25 @@ sub wait_for_subscription_sync
 	print "Waiting for all subscriptions in \"$name\" to synchronize data\n";
 	my $query =
 	    qq[SELECT count(1) = 0 FROM pg_subscription_rel WHERE srsubstate NOT IN ('r', 's');];
-	$self->poll_query_until($dbname, $query)
-	  or croak "timed out waiting for subscriber to synchronize data";
+	if (!$self->poll_query_until($dbname, $query))
+	{
+		my $result = $self->safe_psql(
+			$dbname, qq(
+			SELECT
+				PS.subname,
+				N.nspname,
+				C.relname,
+				PSR.srrelid,
+				PSR.srsubstate
+			FROM pg_subscription_rel AS PSR
+				JOIN pg_subscription PS ON (PS.oid = PSR.srsubid)
+				JOIN pg_class C ON (C.oid = PSR.srrelid)
+				JOIN pg_namespace N ON (N.oid = C.relnamespace);
+		));
+		print "### Subscription rel state\n";
+		print "$result\n";
+		croak "timed out waiting for subscriber to synchronize data";
+	}
 
 	# Then, wait for the replication to catchup if required.
 	if (defined($publisher))
