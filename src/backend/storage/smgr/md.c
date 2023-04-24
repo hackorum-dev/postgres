@@ -285,11 +285,12 @@ mdcreate(SMgrRelation reln, ForkNumber forknum, bool isRedo)
  * Furthermore, it is important to remove the files from disk immediately,
  * because we may be about to reuse the same relfilenumber.
  *
- * All the above applies only to the relation's main fork; other forks can
- * just be removed immediately, since they are not needed to prevent the
- * relfilenumber from being recycled.  Also, we do not carefully
- * track whether other forks have been created or not, but just attempt to
- * unlink them unconditionally; so we should never complain about ENOENT.
+ * All the above applies only to the relation's main and init forks; other forks
+ * can just be removed immediately, since they are not needed to prevent the
+ * relfilenumber from being recycled.  Init fork should be kept as it is used
+ * on startup.  Also, we do not carefully track whether other forks have been
+ * created or not, but just attempt to unlink them unconditionally; so we should
+ * never complain about ENOENT.
  *
  * If isRedo is true, it's unsurprising for the relation to be already gone.
  * Also, we should remove the file immediately instead of queuing a request
@@ -352,8 +353,8 @@ mdunlinkfork(RelFileLocatorBackend rlocator, ForkNumber forknum, bool isRedo)
 	 * Truncate and then unlink the first segment, or just register a request
 	 * to unlink it later, as described in the comments for mdunlink().
 	 */
-	if (isRedo || IsBinaryUpgrade || forknum != MAIN_FORKNUM ||
-		RelFileLocatorBackendIsTemp(rlocator))
+	if ((forknum != MAIN_FORKNUM && forknum != INIT_FORKNUM) || isRedo ||
+		IsBinaryUpgrade || RelFileLocatorBackendIsTemp(rlocator))
 	{
 		if (!RelFileLocatorBackendIsTemp(rlocator))
 		{
@@ -1594,7 +1595,7 @@ mdunlinkfiletag(const FileTag *ftag, char *path)
 	char	   *p;
 
 	/* Compute the path. */
-	p = relpathperm(ftag->rlocator, MAIN_FORKNUM);
+	p = relpathperm(ftag->rlocator, ftag->forknum);
 	strlcpy(path, p, MAXPGPATH);
 	pfree(p);
 
