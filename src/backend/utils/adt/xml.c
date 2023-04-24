@@ -771,7 +771,25 @@ xmltotext_with_options(xmltype *data, XmlOptionType xmloption_arg, bool indent)
 						"could not close xmlSaveCtxtPtr");
 		}
 
-		result = (text *) xmlBuffer_to_xmltype(buf);
+		/*
+		* This is necessary to remove the trailing newline created
+		* by xmlSaveDoc - it only affects DOCUMENT xml strings.
+		* The fragments of CONTENT strings are stored into the
+		* xmlBufferPtr using xmlSaveTree, which does not add a
+		* trailing newline.
+		*/
+		if(xmloption_arg != XMLOPTION_DOCUMENT)
+			result = (text *) xmlBuffer_to_xmltype(buf);
+		else
+		{
+			int	len = xmlBufferLength(buf);
+			const char *xmloutput = (const char *) xmlBufferContent(buf);
+
+			while (len > 0 && xmloutput[len - 1] == '\n')
+				len--;
+
+			result = cstring_to_text_with_len(xmloutput, len);
+		}
 	}
 	PG_CATCH();
 	{
