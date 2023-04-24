@@ -100,6 +100,8 @@
     autovacuum workers' activity.
    </para>
 
+  <sect2 id="autovacuum-scheduling">
+   <title>Autovacuum Scheduling</title>
    <para>
     If several large tables all become eligible for vacuuming in a short
     amount of time, all autovacuum workers might become occupied with
@@ -112,6 +114,8 @@
     <xref linkend="guc-superuser-reserved-connections"/> limits.
    </para>
 
+  <sect3 id="autovacuum-vacuum-thresholds">
+   <title>Configurable thresholds for vacuuming</title>
    <para>
     Tables whose <structfield>relfrozenxid</structfield> value is more than
     <xref linkend="guc-autovacuum-freeze-max-age"/> transactions old are always
@@ -159,7 +163,10 @@ vacuum insert threshold = vacuum base insert threshold + vacuum insert scale fac
     <structfield>relfrozenxid</structfield>; otherwise, only pages that have been modified
     since the last vacuum are scanned.
    </para>
+ </sect3>
 
+  <sect3 id="autovacuum-analyze-thresholds">
+   <title>Configurable thresholds for <command>ANALYZE</command></title>
    <para>
     For analyze, a similar condition is used: the threshold, defined as:
 <programlisting>
@@ -168,20 +175,6 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
     is compared to the total number of tuples inserted, updated, or deleted
     since the last <command>ANALYZE</command>.
    </para>
-
-   <para>
-    Partitioned tables are not processed by autovacuum.  Statistics
-    should be collected by running a manual <command>ANALYZE</command> when it is
-    first populated, and again whenever the distribution of data in its
-    partitions changes significantly.
-   </para>
-
-   <para>
-    Temporary tables cannot be accessed by autovacuum.  Therefore,
-    appropriate vacuum and analyze operations should be performed via
-    session SQL commands.
-   </para>
-
    <para>
     The default thresholds and scale factors are taken from
     <filename>postgresql.conf</filename>, but it is possible to override them
@@ -192,7 +185,11 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
     used. See <xref linkend="runtime-config-autovacuum"/> for more details on
     the global settings.
    </para>
+  </sect3>
+  </sect2>
 
+  <sect2 id="autovacuum-cost-delays">
+   <title>Autovacuum Cost-based Delays</title>
    <para>
     When multiple workers are running, the autovacuum cost delay parameters
     (see <xref linkend="runtime-config-resource-vacuum-cost"/>) are
@@ -203,7 +200,10 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
     <literal>autovacuum_vacuum_cost_limit</literal> storage parameters have been set
     are not considered in the balancing algorithm.
    </para>
+  </sect2>
 
+  <sect2 id="autovacuum-lock-conflicts">
+   <title>Autovacuum and Lock Conflicts</title>
    <para>
     Autovacuum workers generally don't block other commands.  If a process
     attempts to acquire a lock that conflicts with the
@@ -223,6 +223,23 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
      effectively prevent autovacuums from ever completing.
     </para>
    </warning>
+  </sect2>
+
+  <sect2 id="autovacuum-limitations">
+   <title>Limitations</title>
+   <para>
+    Partitioned tables are not processed by autovacuum.  Statistics
+    should be collected by running a manual <command>ANALYZE</command> when it is
+    first populated, and again whenever the distribution of data in its
+    partitions changes significantly.
+   </para>
+
+   <para>
+    Temporary tables cannot be accessed by autovacuum.  Therefore,
+    appropriate vacuum and analyze operations should be performed via
+    session SQL commands.
+   </para>
+  </sect2>
   </sect1>
 
  <sect1 id="routine-vacuuming">
