@@ -272,6 +272,7 @@ void
 invalidate_syncing_table_states(Datum arg, int cacheid, uint32 hashvalue)
 {
 	table_states_valid = false;
+	elog(DEBUG1, "invalidating syncing table states");
 }
 
 /*
@@ -1549,6 +1550,8 @@ FetchTableStates(bool *started_tx)
 			rstate = palloc(sizeof(SubscriptionRelState));
 			memcpy(rstate, lfirst(lc), sizeof(SubscriptionRelState));
 			table_states_not_ready = lappend(table_states_not_ready, rstate);
+			elog(DEBUG1, "not ready subscription table %u, state: %c",
+				 rstate->relid, rstate->state);
 		}
 		MemoryContextSwitchTo(oldctx);
 

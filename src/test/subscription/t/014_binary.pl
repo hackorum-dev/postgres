@@ -257,6 +257,10 @@ $node_publisher->safe_psql(
 # Check the subscriber log from now on.
 $offset = -s $node_subscriber->logfile;
 
+# Adjust log_min_messages, this helps when the test fails.
+$node_subscriber->append_conf('postgresql.conf', "log_min_messages = debug1");
+$node_subscriber->reload;
+
 $node_subscriber->safe_psql(
 	'postgres', qq(
     CREATE TABLE public.test_mismatching_types (
@@ -282,6 +286,10 @@ $node_publisher->wait_for_log(
 	qr/LOG: ( [A-Z0-9]+:)? statement: COPY (.+)? TO STDOUT\n/, $offset);
 
 $node_subscriber->wait_for_subscription_sync($node_publisher, 'tsub');
+
+# Reset the log_min_messages to default.
+$node_subscriber->append_conf('postgresql.conf', "log_min_messages = warning");
+$node_subscriber->reload;
 
 # Check the synced data on the subscriber
 $result = $node_subscriber->safe_psql('postgres',

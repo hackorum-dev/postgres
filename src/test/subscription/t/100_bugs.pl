@@ -151,6 +151,11 @@ $node_twoways->safe_psql(
 	INSERT INTO t2 SELECT * FROM generate_series(1, $rows);
 	});
 $node_twoways->safe_psql('d1', 'ALTER PUBLICATION testpub ADD TABLE t2');
+
+# Adjust log_min_messages, this helps when the test fails.
+$node_twoways->append_conf('postgresql.conf', "log_min_messages = debug1");
+$node_twoways->reload;
+
 $node_twoways->safe_psql('d2',
 	'ALTER SUBSCRIPTION testsub REFRESH PUBLICATION');
 
@@ -158,6 +163,10 @@ $node_twoways->safe_psql('d2',
 # when tablesync workers might still be running. So in addition to that,
 # verify that tables are synced.
 $node_twoways->wait_for_subscription_sync($node_twoways, 'testsub', 'd2');
+
+# Reset the log_min_messages to default.
+$node_twoways->append_conf('postgresql.conf', "log_min_messages = warning");
+$node_twoways->reload;
 
 is($node_twoways->safe_psql('d2', "SELECT count(f) FROM t"),
 	$rows * 2, "2x$rows rows in t");
