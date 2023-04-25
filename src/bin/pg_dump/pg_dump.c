@@ -924,6 +924,21 @@ main(int argc, char **argv)
 	}
 
 	/*
+	 * Custom and directory formats are compressed by default with gzip when
+	 * available, not the others.  If gzip is not available, no compression
+	 * is done by default.
+	 */
+	if ((archiveFormat == archCustom || archiveFormat == archDirectory) &&
+		!user_compression_defined)
+	{
+#ifdef HAVE_LIBZ
+		compression_algorithm_str = "gzip";
+#else
+		compression_algorithm_str = "none";
+#endif
+	}
+
+	/*
 	 * Compression options
 	 */
 	if (!parse_compress_algorithm(compression_algorithm_str,
