@@ -453,16 +453,16 @@ heapgetpage(TableScanDesc sscan, BlockNumber block)
 
 	for (lineoff = FirstOffsetNumber; lineoff <= lines; lineoff++)
 	{
-		ItemId		lpp = PageGetItemId(page, lineoff);
+		ItemId		lp = PageGetItemId(page, lineoff);
 		HeapTupleData loctup;
 		bool		valid;
 
-		if (!ItemIdIsNormal(lpp))
+		if (!ItemIdIsNormal(lp))
 			continue;
 
 		loctup.t_tableOid = RelationGetRelid(scan->rs_base.rs_rd);
-		loctup.t_data = (HeapTupleHeader) PageGetItem(page, lpp);
-		loctup.t_len = ItemIdGetLength(lpp);
+		loctup.t_data = (HeapTupleHeader) PageGetItem(page, lp);
+		loctup.t_len = ItemIdGetLength(lp);
 		ItemPointerSet(&(loctup.t_self), block, lineoff);
 
 		if (all_visible)
@@ -775,13 +775,13 @@ continue_page:
 		for (; linesleft > 0; linesleft--, lineoff += dir)
 		{
 			bool		visible;
-			ItemId		lpp = PageGetItemId(page, lineoff);
+			ItemId		lp = PageGetItemId(page, lineoff);
 
-			if (!ItemIdIsNormal(lpp))
+			if (!ItemIdIsNormal(lp))
 				continue;
 
-			tuple->t_data = (HeapTupleHeader) PageGetItem(page, lpp);
-			tuple->t_len = ItemIdGetLength(lpp);
+			tuple->t_data = (HeapTupleHeader) PageGetItem(page, lp);
+			tuple->t_len = ItemIdGetLength(lp);
 			ItemPointerSet(&(tuple->t_self), block, lineoff);
 
 			visible = HeapTupleSatisfiesVisibility(tuple,
@@ -893,15 +893,15 @@ continue_page:
 
 		for (; linesleft > 0; linesleft--, lineindex += dir)
 		{
-			ItemId		lpp;
+			ItemId		lp;
 			OffsetNumber lineoff;
 
 			lineoff = scan->rs_vistuples[lineindex];
-			lpp = PageGetItemId(page, lineoff);
-			Assert(ItemIdIsNormal(lpp));
+			lp = PageGetItemId(page, lineoff);
+			Assert(ItemIdIsNormal(lp));
 
-			tuple->t_data = (HeapTupleHeader) PageGetItem(page, lpp);
-			tuple->t_len = ItemIdGetLength(lpp);
+			tuple->t_data = (HeapTupleHeader) PageGetItem(page, lp);
+			tuple->t_len = ItemIdGetLength(lp);
 			ItemPointerSet(&(tuple->t_self), block, lineoff);
 
 			/* skip any tuples that don't match the scan key */
