@@ -13410,10 +13410,19 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 			querytree_list = list_concat(querytree_list, afterStmts);
 		}
 		else if (IsA(stmt, CreateStatsStmt))
+		{
+			CreateStatsStmt *ss = (CreateStatsStmt *) stmt;
+			RangeTblEntry *rte;
+
+			rte = makeNode(RangeTblEntry);
+			rte->rtekind = RTE_RELATION;
+			rte->relid = oldRelId;
+			rte->rellockmode = ShareUpdateExclusiveLock;
+			ss->rtable = list_make1(rte);
+
 			querytree_list = lappend(querytree_list,
-									 transformStatsStmt(oldRelId,
-														(CreateStatsStmt *) stmt,
-														cmd));
+									 transformStatsStmt(ss, cmd));
+		}
 		else
 			querytree_list = lappend(querytree_list, stmt);
 	}

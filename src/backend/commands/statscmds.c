@@ -30,7 +30,9 @@
 #include "commands/defrem.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
+#include "nodes/print.h"
 #include "optimizer/optimizer.h"
+#include "parser/parse_utilcmd.h"
 #include "statistics/statistics.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -98,56 +100,45 @@ CreateStatistics(CreateStatsStmt *stmt)
 	Assert(IsA(stmt, CreateStatsStmt));
 
 	/*
-	 * Examine the FROM clause.  Currently, we only allow it to be a single
-	 * simple table, but later we'll probably allow multiple tables and JOIN
-	 * syntax.  The grammar is already prepared for that, so we have to check
-	 * here that what we got is what we can support.
+	 * If the range table hasn't been constructed yet, do that now. Normally
+	 * it's best for this to happen earlier, perhaps by calling
+	 * transformStatsStmt(), so that the name lookup happens at the earliest
+	 * possible stage and isn't repeated (with the attendant danger of getting
+	 * a different result). But in the case of CREATE TABLE LIKE there's no
+	 * earlier point at which we can do this, so it happens here.
 	 */
-	if (list_length(stmt->relations) != 1)
+	if (stmt->rtable == NIL)
+		stmt->rtable = transformStatsFromClause(stmt->from_clause);
+	Assert(list_length(stmt->rtable) == list_length(stmt->from_clause));
+
+	/*
+	 * Double-check that the range table is of a form we can support.
+	 *
+	 * Currently, we only allow it to be a single simple table, but later
+	 * we'll probably allow multiple tables and JOIN syntax. Even though the
+	 * grammar is already prepared for that, we expect such cases to be
+	 * rejected by transformStatsStmt; to be safe, double-check it here.
+	 */
+	if (list_length(stmt->rtable) != 1)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("only a single relation is allowed in CREATE STATISTICS")));
 
-	foreach(cell, stmt->relations)
+	/*
+	 * We want to use the relation OID from stmt->rtable rather than again
+	 * looking it up based on stmt->from_clause, to avoid race conditions.
+	 */
+	foreach(cell, stmt->rtable)
 	{
-		Node	   *rln = (Node *) lfirst(cell);
-
-		if (!IsA(rln, RangeVar))
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("only a single relation is allowed in CREATE STATISTICS")));
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(cell);
 
 		/*
-		 * CREATE STATISTICS will influence future execution plans but does
-		 * not interfere with currently executing plans.  So it should be
-		 * enough to take only ShareUpdateExclusiveLock on relation,
-		 * conflicting with ANALYZE and other DDL that sets statistical
-		 * information, but not with normal queries.
+		 * See comments in transformStatsStmt() for why this lock level has
+		 * been chosen. We expect the relation to already be locked at this
+		 * point, but take the lock here anyway just in case there's some code
+		 * path where that is not so.
 		 */
-		rel = relation_openrv((RangeVar *) rln, ShareUpdateExclusiveLock);
-
-		/* Restrict to allowed relation types */
-		if (rel->rd_rel->relkind != RELKIND_RELATION &&
-			rel->rd_rel->relkind != RELKIND_MATVIEW &&
-			rel->rd_rel->relkind != RELKIND_FOREIGN_TABLE &&
-			rel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot define statistics for relation \"%s\"",
-							RelationGetRelationName(rel)),
-					 errdetail_relkind_not_supported(rel->rd_rel->relkind)));
-
-		/* You must own the relation to create stats on it */
-		if (!object_ownercheck(RelationRelationId, RelationGetRelid(rel), stxowner))
-			aclcheck_error(ACLCHECK_NOT_OWNER, get_relkind_objtype(rel->rd_rel->relkind),
-						   RelationGetRelationName(rel));
-
-		/* Creating statistics on system catalogs is not allowed */
-		if (!allowSystemTableMods && IsSystemRelation(rel))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied: \"%s\" is a system catalog",
-							RelationGetRelationName(rel))));
+		rel = relation_open(rte->relid, ShareUpdateExclusiveLock);
 	}
 
 	Assert(rel);

@@ -4503,7 +4503,7 @@ CreateStatsStmt:
 					n->defnames = $3;
 					n->stat_types = $4;
 					n->exprs = $6;
-					n->relations = $8;
+					n->from_clause = $8;
 					n->stxcomment = NULL;
 					n->if_not_exists = false;
 					$$ = (Node *) n;
@@ -4516,7 +4516,7 @@ CreateStatsStmt:
 					n->defnames = $6;
 					n->stat_types = $7;
 					n->exprs = $9;
-					n->relations = $11;
+					n->from_clause = $11;
 					n->stxcomment = NULL;
 					n->if_not_exists = true;
 					$$ = (Node *) n;

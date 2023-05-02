@@ -3220,7 +3220,8 @@ typedef struct CreateStatsStmt
 	List	   *defnames;		/* qualified name (list of String) */
 	List	   *stat_types;		/* stat types (list of String) */
 	List	   *exprs;			/* expressions to build statistics on */
-	List	   *relations;		/* rels to build stats on (list of RangeVar) */
+	List	   *from_clause;	/* FROM clause */
+	List	   *rtable;			/* list of range table entries */
 	char	   *stxcomment;		/* comment to apply to stats, or NULL */
 	bool		transformed;	/* true when transformStatsStmt is finished */
 	bool		if_not_exists;	/* do nothing if stats name already exists */
