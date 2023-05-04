@@ -10781,8 +10781,7 @@ RuleActionStmtOrEmpty:
 			|	/*EMPTY*/							{ $$ = NULL; }
 		;
 
-event:		SELECT									{ $$ = CMD_SELECT; }
-			| UPDATE								{ $$ = CMD_UPDATE; }
+event:		UPDATE									{ $$ = CMD_UPDATE; }
 			| DELETE_P								{ $$ = CMD_DELETE; }
 			| INSERT								{ $$ = CMD_INSERT; }
 		 ;

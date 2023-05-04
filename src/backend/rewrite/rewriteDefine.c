@@ -305,118 +305,15 @@ DefineQueryRewrite(const char *rulename,
 					 errhint("Use triggers instead.")));
 	}
 
+	/*
+	 * From PostgreSQL 16, ON SELECT rules can only be created internally
+	 * when executing CREATE VIEW / CREATE MATERIALIZED VIEW, so there's
+	 * no need to check for correct usage here.
+	 */
 	if (event_type == CMD_SELECT)
 	{
-		/*
-		 * Rules ON SELECT are restricted to view definitions
-		 *
-		 * So this had better be a view, ...
-		 */
-		if (event_relation->rd_rel->relkind != RELKIND_VIEW &&
-			event_relation->rd_rel->relkind != RELKIND_MATVIEW)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("relation \"%s\" cannot have ON SELECT rules",
-							RelationGetRelationName(event_relation)),
-					 errdetail_relkind_not_supported(event_relation->rd_rel->relkind)));
-
-		/*
-		 * ... there cannot be INSTEAD NOTHING, ...
-		 */
-		if (action == NIL)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("INSTEAD NOTHING rules on SELECT are not implemented"),
-					 errhint("Use views instead.")));
-
-		/*
-		 * ... there cannot be multiple actions, ...
-		 */
-		if (list_length(action) > 1)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("multiple actions for rules on SELECT are not implemented")));
-
-		/*
-		 * ... the one action must be a SELECT, ...
-		 */
-		query = linitial_node(Query, action);
-		if (!is_instead ||
-			query->commandType != CMD_SELECT)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("rules on SELECT must have action INSTEAD SELECT")));
-
-		/*
-		 * ... it cannot contain data-modifying WITH ...
-		 */
-		if (query->hasModifyingCTE)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("rules on SELECT must not contain data-modifying statements in WITH")));
-
-		/*
-		 * ... there can be no rule qual, ...
-		 */
-		if (event_qual != NULL)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("event qualifications are not implemented for rules on SELECT")));
-
-		/*
-		 * ... the targetlist of the SELECT action must exactly match the
-		 * event relation, ...
-		 */
-		checkRuleResultList(query->targetList,
-							RelationGetDescr(event_relation),
-							true,
-							event_relation->rd_rel->relkind !=
-							RELKIND_MATVIEW);
-
-		/*
-		 * ... there must not be another ON SELECT rule already ...
-		 */
-		if (!replace && event_relation->rd_rules != NULL)
-		{
-			int			i;
-
-			for (i = 0; i < event_relation->rd_rules->numLocks; i++)
-			{
-				RewriteRule *rule;
-
-				rule = event_relation->rd_rules->rules[i];
-				if (rule->event == CMD_SELECT)
-					ereport(ERROR,
-							(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-							 errmsg("\"%s\" is already a view",
-									RelationGetRelationName(event_relation))));
-			}
-		}
-
-		/*
-		 * ... and finally the rule must be named _RETURN.
-		 */
-		if (strcmp(rulename, ViewSelectRuleName) != 0)
-		{
-			/*
-			 * In versions before 7.3, the expected name was _RETviewname. For
-			 * backwards compatibility with old pg_dump output, accept that
-			 * and silently change it to _RETURN.  Since this is just a quick
-			 * backwards-compatibility hack, limit the number of characters
-			 * checked to a few less than NAMEDATALEN; this saves having to
-			 * worry about where a multibyte character might have gotten
-			 * truncated.
-			 */
-			if (strncmp(rulename, "_RET", 4) != 0 ||
-				strncmp(rulename + 4, RelationGetRelationName(event_relation),
-						NAMEDATALEN - 4 - 4) != 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-						 errmsg("view rule for \"%s\" must be named \"%s\"",
-								RelationGetRelationName(event_relation),
-								ViewSelectRuleName)));
-			rulename = pstrdup(ViewSelectRuleName);
-		}
+		Assert(event_relation->rd_rel->relkind == RELKIND_VIEW
+			   || event_relation->rd_rel->relkind == RELKIND_MATVIEW);
 	}
 	else
 	{

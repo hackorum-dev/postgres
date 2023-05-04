@@ -27,7 +27,7 @@ CREATE [ OR REPLACE ] RULE <replaceable class="parameter">name</replaceable> AS 
 
 <phrase>where <replaceable class="parameter">event</replaceable> can be one of:</phrase>
 
-    SELECT | INSERT | UPDATE | DELETE
+    INSERT | UPDATE | DELETE
 </synopsis>
  </refsynopsisdiv>
 
@@ -56,18 +56,6 @@ CREATE [ OR REPLACE ] RULE <replaceable class="parameter">name</replaceable> AS 
    If you actually want an operation that fires independently for each
    physical row, you probably want to use a trigger, not a rule.
    More information about the rules system is in <xref linkend="rules"/>.
-  </para>
-
-  <para>
-   Presently, <literal>ON SELECT</literal> rules must be unconditional
-   <literal>INSTEAD</literal> rules and must have actions that consist
-   of a single <command>SELECT</command> command.  Thus, an
-   <literal>ON SELECT</literal> rule effectively turns the table into
-   a view, whose visible contents are the rows returned by the rule's
-   <command>SELECT</command> command rather than whatever had been
-   stored in the table (if anything).  It is considered better style
-   to write a <command>CREATE VIEW</command> command than to create a
-   real table and define an <literal>ON SELECT</literal> rule for it.
   </para>
 
   <para>
@@ -134,12 +122,11 @@ CREATE [ OR REPLACE ] RULE <replaceable class="parameter">name</replaceable> AS 
     <term><replaceable class="parameter">event</replaceable></term>
     <listitem>
      <para>
-      The event is one of <literal>SELECT</literal>,
-      <literal>INSERT</literal>, <literal>UPDATE</literal>, or
-      <literal>DELETE</literal>.  Note that an
-      <command>INSERT</command> containing an <literal>ON
-      CONFLICT</literal> clause cannot be used on tables that have
-      either <literal>INSERT</literal> or <literal>UPDATE</literal>
+      The event is one of <literal>INSERT</literal>,
+      <literal>UPDATE</literal>, or <literal>DELETE</literal>.
+      Note that an <command>INSERT</command> containing an
+      <literal>ON CONFLICT</literal> clause cannot be used on tables
+      that have either <literal>INSERT</literal> or <literal>UPDATE</literal>
       rules.  Consider using an updatable view instead.
      </para>
     </listitem>
@@ -246,22 +233,22 @@ CREATE [ OR REPLACE ] RULE <replaceable class="parameter">name</replaceable> AS 
    It is very important to take care to avoid circular rules.  For
    example, though each of the following two rule definitions are
    accepted by <productname>PostgreSQL</productname>, the
-   <command>SELECT</command> command would cause
+   <command>INSERT</command> command would cause
    <productname>PostgreSQL</productname> to report an error because
    of recursive expansion of a rule:
 
 <programlisting>
-CREATE RULE "_RETURN" AS
-    ON SELECT TO t1
-    DO INSTEAD
-        SELECT * FROM t2;
+CREATE RULE t1_insert AS
+  ON INSERT TO t1
+  DO INSTEAD
+    INSERT INTO t2 VALUES (NEW.id);
 
-CREATE RULE "_RETURN" AS
-    ON SELECT TO t2
-    DO INSTEAD
-        SELECT * FROM t1;
+CREATE RULE t2_insert AS
+  ON INSERT TO t2
+  DO INSTEAD
+    INSERT INTO t1 VALUES (NEW.id);
 
-SELECT * FROM t1;
+INSERT INTO t1 VALUES(1);
 </programlisting>
   </para>
 

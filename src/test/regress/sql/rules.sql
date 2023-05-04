@@ -885,23 +885,12 @@ drop view rules_fooview;
 
 --
 -- We used to allow converting a table to a view by creating a "_RETURN"
--- rule for it, but no more.
+-- rule for it, but the "ON SELECT" syntax has been removed.
 --
 
 create table rules_fooview (x int, y text);
 create rule "_RETURN" as on select to rules_fooview do instead
   select 1 as x, 'aaa'::text as y;
-drop table rules_fooview;
-
--- likewise, converting a partitioned table or partition to view is not allowed
-create table rules_fooview (x int, y text) partition by list (x);
-create rule "_RETURN" as on select to rules_fooview do instead
-  select 1 as x, 'aaa'::text as y;
-
-create table rules_fooview_part partition of rules_fooview for values in (1);
-create rule "_RETURN" as on select to rules_fooview_part do instead
-  select 1 as x, 'aaa'::text as y;
-
 drop table rules_fooview;
 
 --
