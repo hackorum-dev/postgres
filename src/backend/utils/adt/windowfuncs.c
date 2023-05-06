@@ -707,14 +707,15 @@ window_nth_value(PG_FUNCTION_ARGS)
 
 	WinCheckAndInitializeNullTreatment(winobj, true, fcinfo);
 	nth = DatumGetInt32(WinGetFuncArgCurrent(winobj, 1, &isnull));
-	if (isnull)
-		PG_RETURN_NULL();
-	const_offset = get_fn_expr_arg_stable(fcinfo->flinfo, 1);
-
 	if (nth <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_ARGUMENT_FOR_NTH_VALUE),
 				 errmsg("argument of nth_value must be greater than zero")));
+
+	if (isnull)
+		PG_RETURN_NULL();
+
+	const_offset = get_fn_expr_arg_stable(fcinfo->flinfo, 1);
 
 	result = WinGetFuncArgInFrame(winobj, 0,
 								  nth - 1, WINDOW_SEEK_HEAD, const_offset,
