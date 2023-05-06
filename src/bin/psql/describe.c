@@ -3632,7 +3632,7 @@ describeRoles(const char *pattern, bool verbose, bool showSystem)
 					  "SELECT r.rolname, r.rolsuper, r.rolinherit,\n"
 					  "  r.rolcreaterole, r.rolcreatedb, r.rolcanlogin,\n"
 					  "  r.rolconnlimit, r.rolvaliduntil,\n"
-					  "  ARRAY(SELECT b.rolname\n"
+					  "  ARRAY(SELECT DISTINCT b.rolname\n"
 					  "        FROM pg_catalog.pg_auth_members m\n"
 					  "        JOIN pg_catalog.pg_roles b ON (m.roleid = b.oid)\n"
 					  "        WHERE m.member = r.oid) as memberof");
