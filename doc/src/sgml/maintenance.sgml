@@ -59,46 +59,46 @@
    pleasant and productive experience with the system.
   </para>
 
-  <sect1 id="autovacuum">
-   <title>The Autovacuum Daemon</title>
+ <sect1 id="autovacuum">
+  <title>The Autovacuum Daemon</title>
 
-   <indexterm>
-    <primary>autovacuum</primary>
-    <secondary>general information</secondary>
-   </indexterm>
-   <para>
-    <productname>PostgreSQL</productname> has an optional but highly
-    recommended feature called <firstterm>autovacuum</firstterm>,
-    whose purpose is to automate the execution of
-    <command>VACUUM</command> and <command>ANALYZE</command> commands.
-    When enabled, autovacuum checks for
-    tables that have had a large number of inserted, updated or deleted
-    tuples.  These checks use the statistics collection facility;
-    therefore, autovacuum cannot be used unless <xref
+  <indexterm>
+   <primary>autovacuum</primary>
+   <secondary>general information</secondary>
+  </indexterm>
+  <para>
+   <productname>PostgreSQL</productname> has an optional but highly
+   recommended feature called <firstterm>autovacuum</firstterm>,
+   whose purpose is to automate the execution of
+   <command>VACUUM</command> and <command>ANALYZE</command> commands.
+   When enabled, autovacuum checks for
+   tables that have had a large number of inserted, updated or deleted
+   tuples.  These checks use the statistics collection facility;
+   therefore, autovacuum cannot be used unless <xref
     linkend="guc-track-counts"/> is set to <literal>true</literal>.
-    In the default configuration, autovacuuming is enabled and the related
-    configuration parameters are appropriately set.
-   </para>
+   In the default configuration, autovacuuming is enabled and the related
+   configuration parameters are appropriately set.
+  </para>
 
-   <para>
-    The <quote>autovacuum daemon</quote> actually consists of multiple processes.
-    There is a persistent daemon process, called the
-    <firstterm>autovacuum launcher</firstterm>, which is in charge of starting
-    <firstterm>autovacuum worker</firstterm> processes for all databases. The
-    launcher will distribute the work across time, attempting to start one
-    worker within each database every <xref linkend="guc-autovacuum-naptime"/>
-    seconds.  (Therefore, if the installation has <replaceable>N</replaceable> databases,
-    a new worker will be launched every
-    <varname>autovacuum_naptime</varname>/<replaceable>N</replaceable> seconds.)
-    A maximum of <xref linkend="guc-autovacuum-max-workers"/> worker processes
-    are allowed to run at the same time. If there are more than
-    <varname>autovacuum_max_workers</varname> databases to be processed,
-    the next database will be processed as soon as the first worker finishes.
-    Each worker process will check each table within its database and
-    execute <command>VACUUM</command> and/or <command>ANALYZE</command> as needed.
-    <xref linkend="guc-log-autovacuum-min-duration"/> can be set to monitor
-    autovacuum workers' activity.
-   </para>
+  <para>
+   The <quote>autovacuum daemon</quote> actually consists of multiple processes.
+   There is a persistent daemon process, called the
+   <firstterm>autovacuum launcher</firstterm>, which is in charge of starting
+   <firstterm>autovacuum worker</firstterm> processes for all databases. The
+   launcher will distribute the work across time, attempting to start one
+   worker within each database every <xref linkend="guc-autovacuum-naptime"/>
+   seconds.  (Therefore, if the installation has <replaceable>N</replaceable> databases,
+   a new worker will be launched every
+   <varname>autovacuum_naptime</varname>/<replaceable>N</replaceable> seconds.)
+   A maximum of <xref linkend="guc-autovacuum-max-workers"/> worker processes
+   are allowed to run at the same time. If there are more than
+   <varname>autovacuum_max_workers</varname> databases to be processed,
+   the next database will be processed as soon as the first worker finishes.
+   Each worker process will check each table within its database and
+   execute <command>VACUUM</command> and/or <command>ANALYZE</command> as needed.
+   <xref linkend="guc-log-autovacuum-min-duration"/> can be set to monitor
+   autovacuum workers' activity.
+  </para>
 
   <sect2 id="autovacuum-scheduling">
    <title>Autovacuum Scheduling</title>
@@ -114,78 +114,78 @@
     <xref linkend="guc-superuser-reserved-connections"/> limits.
    </para>
 
-  <sect3 id="autovacuum-vacuum-thresholds">
-   <title>Configurable thresholds for vacuuming</title>
-   <para>
-    Tables whose <structfield>relfrozenxid</structfield> value is more than
-    <xref linkend="guc-autovacuum-freeze-max-age"/> transactions old are always
-    vacuumed (this also applies to those tables whose freeze max age has
-    been modified via storage parameters; see below).  Otherwise, if the
-    number of tuples obsoleted since the last
-    <command>VACUUM</command> exceeds the <quote>vacuum threshold</quote>, the
-    table is vacuumed.  The vacuum threshold is defined as:
+   <sect3 id="autovacuum-vacuum-thresholds">
+    <title>Configurable thresholds for vacuuming</title>
+    <para>
+     Tables whose <structfield>relfrozenxid</structfield> value is more than
+     <xref linkend="guc-autovacuum-freeze-max-age"/> transactions old are always
+     vacuumed (this also applies to those tables whose freeze max age has
+     been modified via storage parameters; see below).  Otherwise, if the
+     number of tuples obsoleted since the last
+     <command>VACUUM</command> exceeds the <quote>vacuum threshold</quote>, the
+     table is vacuumed.  The vacuum threshold is defined as:
 <programlisting>
 vacuum threshold = vacuum base threshold + vacuum scale factor * number of tuples
 </programlisting>
-    where the vacuum base threshold is
-    <xref linkend="guc-autovacuum-vacuum-threshold"/>,
-    the vacuum scale factor is
-    <xref linkend="guc-autovacuum-vacuum-scale-factor"/>,
-    and the number of tuples is
-    <structname>pg_class</structname>.<structfield>reltuples</structfield>.
-   </para>
+     where the vacuum base threshold is
+     <xref linkend="guc-autovacuum-vacuum-threshold"/>,
+     the vacuum scale factor is
+     <xref linkend="guc-autovacuum-vacuum-scale-factor"/>,
+     and the number of tuples is
+     <structname>pg_class</structname>.<structfield>reltuples</structfield>.
+    </para>
 
-   <para>
-    The table is also vacuumed if the number of tuples inserted since the last
-    vacuum has exceeded the defined insert threshold, which is defined as:
+    <para>
+     The table is also vacuumed if the number of tuples inserted since the last
+     vacuum has exceeded the defined insert threshold, which is defined as:
 <programlisting>
 vacuum insert threshold = vacuum base insert threshold + vacuum insert scale factor * number of tuples
 </programlisting>
-    where the vacuum insert base threshold is
-    <xref linkend="guc-autovacuum-vacuum-insert-threshold"/>,
-    and vacuum insert scale factor is
-    <xref linkend="guc-autovacuum-vacuum-insert-scale-factor"/>.
-    Such vacuums may allow portions of the table to be marked as
-    <firstterm>all visible</firstterm> and also allow tuples to be frozen, which
-    can reduce the work required in subsequent vacuums.
-    For tables which receive <command>INSERT</command> operations but no or
-    almost no <command>UPDATE</command>/<command>DELETE</command> operations,
-    it may be beneficial to lower the table's
-    <xref linkend="reloption-autovacuum-freeze-min-age"/> as this may allow
-    tuples to be frozen by earlier vacuums.  The number of obsolete tuples and
-    the number of inserted tuples are obtained from the cumulative statistics system;
-    it is a semi-accurate count updated by each <command>UPDATE</command>,
-    <command>DELETE</command> and <command>INSERT</command> operation.  (It is
-    only semi-accurate because some information might be lost under heavy
-    load.)  If the <structfield>relfrozenxid</structfield> value of the table
-    is more than <varname>vacuum_freeze_table_age</varname> transactions old,
-    an aggressive vacuum is performed to freeze old tuples and advance
-    <structfield>relfrozenxid</structfield>; otherwise, only pages that have been modified
-    since the last vacuum are scanned.
-   </para>
- </sect3>
+     where the vacuum insert base threshold is
+     <xref linkend="guc-autovacuum-vacuum-insert-threshold"/>,
+     and vacuum insert scale factor is
+     <xref linkend="guc-autovacuum-vacuum-insert-scale-factor"/>.
+     Such vacuums may allow portions of the table to be marked as
+     <firstterm>all visible</firstterm> and also allow tuples to be frozen, which
+     can reduce the work required in subsequent vacuums.
+     For tables which receive <command>INSERT</command> operations but no or
+     almost no <command>UPDATE</command>/<command>DELETE</command> operations,
+     it may be beneficial to lower the table's
+     <xref linkend="reloption-autovacuum-freeze-min-age"/> as this may allow
+     tuples to be frozen by earlier vacuums.  The number of obsolete tuples and
+     the number of inserted tuples are obtained from the cumulative statistics system;
+     it is a semi-accurate count updated by each <command>UPDATE</command>,
+     <command>DELETE</command> and <command>INSERT</command> operation.  (It is
+     only semi-accurate because some information might be lost under heavy
+     load.)  If the <structfield>relfrozenxid</structfield> value of the table
+     is more than <varname>vacuum_freeze_table_age</varname> transactions old,
+     an aggressive vacuum is performed to freeze old tuples and advance
+     <structfield>relfrozenxid</structfield>; otherwise, only pages that have been modified
+     since the last vacuum are scanned.
+    </para>
+   </sect3>
 
-  <sect3 id="autovacuum-analyze-thresholds">
-   <title>Configurable thresholds for <command>ANALYZE</command></title>
-   <para>
-    For analyze, a similar condition is used: the threshold, defined as:
+   <sect3 id="autovacuum-analyze-thresholds">
+    <title>Configurable thresholds for <command>ANALYZE</command></title>
+    <para>
+     For analyze, a similar condition is used: the threshold, defined as:
 <programlisting>
 analyze threshold = analyze base threshold + analyze scale factor * number of tuples
 </programlisting>
-    is compared to the total number of tuples inserted, updated, or deleted
-    since the last <command>ANALYZE</command>.
-   </para>
-   <para>
-    The default thresholds and scale factors are taken from
-    <filename>postgresql.conf</filename>, but it is possible to override them
-    (and many other autovacuum control parameters) on a per-table basis; see
-    <xref linkend="sql-createtable-storage-parameters"/> for more information.
-    If a setting has been changed via a table's storage parameters, that value
-    is used when processing that table; otherwise the global settings are
-    used. See <xref linkend="runtime-config-autovacuum"/> for more details on
-    the global settings.
-   </para>
-  </sect3>
+     is compared to the total number of tuples inserted, updated, or deleted
+     since the last <command>ANALYZE</command>.
+    </para>
+    <para>
+     The default thresholds and scale factors are taken from
+     <filename>postgresql.conf</filename>, but it is possible to override them
+     (and many other autovacuum control parameters) on a per-table basis; see
+     <xref linkend="sql-createtable-storage-parameters"/> for more information.
+     If a setting has been changed via a table's storage parameters, that value
+     is used when processing that table; otherwise the global settings are
+     used. See <xref linkend="runtime-config-autovacuum"/> for more details on
+     the global settings.
+    </para>
+   </sect3>
   </sect2>
 
   <sect2 id="autovacuum-cost-delays">
@@ -240,7 +240,7 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
     session SQL commands.
    </para>
   </sect2>
-  </sect1>
+ </sect1>
 
  <sect1 id="routine-vacuuming">
   <title>Routine Vacuuming</title>
