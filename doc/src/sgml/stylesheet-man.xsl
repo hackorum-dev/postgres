@@ -42,6 +42,13 @@
 </xsl:template>
 
 
+<!-- Remove paragraphs from table textblocks since mandoc doesn't support
+     macros in tables.
+-->
+<xsl:template match="row/entry/para">
+  <xsl:apply-templates/>
+</xsl:template>
+
 <!-- Make superscripts visible in man pages (default is no decoration) -->
 <xsl:template match="superscript">
   <xsl:text>^</xsl:text>
