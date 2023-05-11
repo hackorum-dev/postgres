@@ -2285,7 +2285,7 @@ struct config_int ConfigureNamesInt[] =
 			NULL
 		},
 		&PostPortNumber,
-		DEF_PGPORT, 1, 65535,
+		DEF_PGPORT, 0, 65535,
 		NULL, NULL, NULL
 	},
 
