@@ -145,9 +145,13 @@ perform_spin_delay(SpinDelayStatus *status)
 		 * We might want to report something more granular at some point, but
 		 * this is better than nothing.
 		 */
+#if !defined(S_LOCK_TEST)
 		pgstat_report_wait_start(WAIT_EVENT_SPIN_DELAY);
+#endif
 		pg_usleep(status->cur_delay);
+#if !defined(S_LOCK_TEST)
 		pgstat_report_wait_end();
+#endif
 
 #if defined(S_LOCK_TEST)
 		fprintf(stdout, "*");
