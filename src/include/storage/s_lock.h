@@ -596,6 +596,45 @@ tas(volatile slock_t *lock)
 #endif	 /* __hppa || __hppa__ */
 
 
+#if defined(__loongarch__) && defined(__linux__)	/* loongarch64 */
+
+#define HAS_TEST_AND_SET
+
+typedef unsigned int slock_t;
+
+#define TAS(lock) tas(lock)
+
+static __inline__ int
+tas(volatile slock_t *lock)
+{
+	/*
+	 * The following implementation is based on the implementation of cmpxchg
+	 * in linux kernel source code tree.
+	 * See: arch/loongarch/include/asm/cmpxchg.h in linux for more details.
+	 */
+	register slock_t _res = 1;
+
+	__asm__ __volatile__ (        \
+	" amswap_db.w %1, %z2, %0 \n" \
+	: "+ZB" (*lock), "=&r" (_res) \
+	: "Jr" (_res)                 \
+	: "memory");
+
+	return (int) _res;
+}
+
+#define SPIN_DELAY() spin_delay()
+
+static __inline__ void
+spin_delay(void)
+{
+	__asm__ __volatile__(
+	" nop \n");
+}
+
+#endif /* __loongarch__ */
+
+
 /*
  * If we have no platform-specific knowledge, but we found that the compiler
  * provides __sync_lock_test_and_set(), use that.  Prefer the int-width
