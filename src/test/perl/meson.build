@@ -12,4 +12,5 @@ install_data(
   'PostgreSQL/Test/RecursiveCopy.pm',
   'PostgreSQL/Test/Cluster.pm',
   'PostgreSQL/Test/BackgroundPsql.pm',
+  'PostgreSQL/Test/AdjustUpgrade.pm',
   install_dir: dir_pgxs / 'src/test/perl/PostgreSQL/Test')
