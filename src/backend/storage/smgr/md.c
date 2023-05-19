@@ -449,11 +449,11 @@ mdunlinkfork(RelFileLocatorBackend rlocator, ForkNumber forknum, bool isRedo)
 /*
  * mdextend() -- Add a block to the specified relation.
  *
- * The semantics are nearly the same as mdwrite(): write at the
- * specified position.  However, this is to be used for the case of
- * extending a relation (i.e., blocknum is at or beyond the current
- * EOF).  Note that we assume writing a block beyond current EOF
- * causes intervening file space to become filled with zeroes.
+ * This is to be used for the case of extending a relation (i.e., blocknum is
+ * at or beyond the current EOF).  Note that writing a block beyond current
+ * EOF must cause the intervening file space to become filled with zeroes.
+ * The POSIX file system APIs do that automatically, so we don't need to do
+ * anything about that.
  */
 void
 mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
@@ -516,9 +516,6 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 
 /*
  * mdzeroextend() -- Add new zeroed out blocks to the specified relation.
- *
- * Similar to mdextend(), except the relation can be extended by multiple
- * blocks at once and the added blocks will be filled with zeroes.
  */
 void
 mdzeroextend(SMgrRelation reln, ForkNumber forknum,
@@ -800,10 +797,6 @@ mdread(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 
 /*
  * mdwrite() -- Write the supplied block at the appropriate location.
- *
- * This is to be used only for updating already-existing blocks of a
- * relation (ie, those before the current EOF).  To extend a relation,
- * use mdextend().
  */
 void
 mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,

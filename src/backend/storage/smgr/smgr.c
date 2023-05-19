@@ -30,7 +30,9 @@
 
 /*
  * This struct of function pointers defines the API between smgr.c and
- * any individual storage manager module.  Note that smgr subfunctions are
+ * any individual storage manager module.
+ *
+ * Note that smgr subfunctions are
  * generally expected to report problems via elog(ERROR).  An exception is
  * that smgr_unlink should use elog(WARNING), rather than erroring out,
  * because we normally unlink relations during post-commit/abort cleanup,
@@ -104,8 +106,7 @@ static void smgrshutdown(int code, Datum arg);
 
 
 /*
- * smgrinit(), smgrshutdown() -- Initialize or shut down storage
- *								 managers.
+ * smgrinit() -- Initialize storage managers.
  *
  * Note: smgrinit is called during backend startup (normal or standalone
  * case), *not* during postmaster start.  Therefore, any resources created
@@ -143,6 +144,8 @@ smgrshutdown(int code, Datum arg)
 
 /*
  * smgropen() -- Return an SMgrRelation object, creating it if need be.
+ *
+ * "backend" is for temporary tables, otherwise InvalidBackendId.
  *
  * This does not attempt to actually open the underlying file.
  */
@@ -368,6 +371,9 @@ smgrcloserellocator(RelFileLocatorBackend rlocator)
  * Given an already-created (but presumably unused) SMgrRelation,
  * cause the underlying disk file or other storage for the fork
  * to be created.
+ *
+ * isRedo is true during recovery.  In that case, the underlying storage may
+ * already exist.
  */
 void
 smgrcreate(SMgrRelation reln, ForkNumber forknum, bool isRedo)
@@ -490,8 +496,8 @@ smgrdounlinkall(SMgrRelation *rels, int nrels, bool isRedo)
  * The semantics are nearly the same as smgrwrite(): write at the
  * specified position.  However, this is to be used for the case of
  * extending a relation (i.e., blocknum is at or beyond the current
- * EOF).  Note that we assume writing a block beyond current EOF
- * causes intervening file space to become filled with zeroes.
+ * EOF).  Writing a block beyond current EOF must cause the
+ * intervening file space to become filled with zeroes.
  */
 void
 smgrextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
@@ -514,9 +520,11 @@ smgrextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 /*
  * smgrzeroextend() -- Add new zeroed out blocks to a file.
  *
- * Similar to smgrextend(), except the relation can be extended by
- * multiple blocks at once and the added blocks will be filled with
- * zeroes.
+ * Extend the relation by the given number of blocks, which will be filled
+ * with zeroes.  This is similar to smgrextend() but only extends and does not
+ * write a buffer of data.
+ *
+ * FIXME: why both blocknum and nblocks
  */
 void
 smgrzeroextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
