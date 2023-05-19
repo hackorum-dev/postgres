@@ -3409,6 +3409,10 @@ copy_opt_item:
 				{
 					$$ = makeDefElem("delimiter", (Node *) makeString($3), @1);
 				}
+			| DELIMITER NONE
+				{
+					$$ = makeDefElem("delimiter", (Node *) makeString("\0"), @1);
+				}
 			| NULL_P opt_as Sconst
 				{
 					$$ = makeDefElem("null", (Node *) makeString($3), @1);
@@ -3424,6 +3428,10 @@ copy_opt_item:
 			| QUOTE opt_as Sconst
 				{
 					$$ = makeDefElem("quote", (Node *) makeString($3), @1);
+				}
+			| QUOTE NONE
+				{
+					$$ = makeDefElem("quote", (Node *) makeString("\0"), @1);
 				}
 			| ESCAPE opt_as Sconst
 				{

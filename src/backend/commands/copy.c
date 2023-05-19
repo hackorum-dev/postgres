@@ -611,7 +611,7 @@ ProcessCopyOptions(ParseState *pstate,
 	}
 
 	/* Only single-byte delimiter strings are supported. */
-	if (strlen(opts_out->delim) != 1)
+	if (strlen(opts_out->delim) > 1)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("COPY delimiter must be a single one-byte character")));
@@ -669,12 +669,15 @@ ProcessCopyOptions(ParseState *pstate,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("COPY quote available only in CSV mode")));
 
-	if (opts_out->csv_mode && strlen(opts_out->quote) != 1)
+	if (opts_out->csv_mode && strlen(opts_out->quote) > 1)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("COPY quote must be a single one-byte character")));
 
-	if (opts_out->csv_mode && opts_out->delim[0] == opts_out->quote[0])
+	if (opts_out->csv_mode &&
+		opts_out->delim[0] == opts_out->quote[0] &&
+		opts_out->delim[0] != '\0' &&
+		opts_out->quote[0] != '\0')
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("COPY delimiter and quote must be different")));
@@ -685,7 +688,7 @@ ProcessCopyOptions(ParseState *pstate,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("COPY escape available only in CSV mode")));
 
-	if (opts_out->csv_mode && strlen(opts_out->escape) != 1)
+	if (opts_out->csv_mode && strlen(opts_out->escape) > 1)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("COPY escape must be a single one-byte character")));
@@ -722,14 +725,16 @@ ProcessCopyOptions(ParseState *pstate,
 				 errmsg("COPY force null only available using COPY FROM")));
 
 	/* Don't allow the delimiter to appear in the null string. */
-	if (strchr(opts_out->null_print, opts_out->delim[0]) != NULL)
+	if (strchr(opts_out->null_print, opts_out->delim[0]) != NULL &&
+		opts_out->delim[0] != '\0')
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("COPY delimiter must not appear in the NULL specification")));
 
 	/* Don't allow the CSV quote char to appear in the null string. */
 	if (opts_out->csv_mode &&
-		strchr(opts_out->null_print, opts_out->quote[0]) != NULL)
+		strchr(opts_out->null_print, opts_out->quote[0]) != NULL &&
+		opts_out->quote[0] != '\0')
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("CSV quote character must not appear in the NULL specification")));
