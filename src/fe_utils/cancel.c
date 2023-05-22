@@ -180,7 +180,7 @@ ResetCancelConn(void)
  * is set.
  */
 static void
-handle_sigint(SIGNAL_ARGS)
+handle_signal(SIGNAL_ARGS)
 {
 	char		errbuf[256];
 
@@ -207,7 +207,7 @@ handle_sigint(SIGNAL_ARGS)
 /*
  * setup_cancel_handler
  *
- * Register query cancellation callback for SIGINT.
+ * Register query cancellation callback for SIGINT and SIGTERM.
  */
 void
 setup_cancel_handler(void (*query_cancel_callback) (void))
@@ -216,7 +216,8 @@ setup_cancel_handler(void (*query_cancel_callback) (void))
 	cancel_sent_msg = _("Cancel request sent\n");
 	cancel_not_sent_msg = _("Could not send cancel request: ");
 
-	pqsignal(SIGINT, handle_sigint);
+	pqsignal(SIGINT, handle_signal);
+	pqsignal(SIGTERM, handle_signal);
 }
 
 #else							/* WIN32 */
