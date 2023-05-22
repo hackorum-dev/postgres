@@ -57,7 +57,6 @@
 #include "fe_utils/option_utils.h"
 #include "fe_utils/version.h"
 #include "getopt_long.h"
-#include "pg_getopt.h"
 #include "storage/large_object.h"
 
 static ControlFileData ControlFile; /* pg_control values */
