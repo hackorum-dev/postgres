@@ -4089,6 +4089,9 @@ ReorderBufferCheckMemoryLimit(ReorderBuffer *rb)
 		}
 		else
 		{
+			elog(LOG, "tmp test, before serialization, rb->size is %zu", rb->size);
+			MemoryContextStats(rb->context);
+
 			/*
 			 * Pick the largest transaction (or subtransaction) and evict it
 			 * from memory by serializing it to disk.
@@ -4105,6 +4108,9 @@ ReorderBufferCheckMemoryLimit(ReorderBuffer *rb)
 				continue;
 
 			ReorderBufferSerializeTXN(rb, txn);
+
+			elog(LOG, "tmp test, after serialization, rb->size is %zu", rb->size);
+			MemoryContextStats(rb->context);
 		}
 
 		/*
