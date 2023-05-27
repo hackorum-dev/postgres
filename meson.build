@@ -3005,7 +3005,19 @@ run_target('install-test-files',
   depends: testprep_targets,
 )
 
+indent_base = [perl, files('src/tools/pgindent/pgindent'),
+    '--indent', pg_bsd_indent.full_path(),
+    '--sourcetree=@SOURCE_ROOT@']
 
+run_target('indent-head',
+  command: indent_base + ['--commit=HEAD'],
+  depends: pg_bsd_indent
+)
+
+run_target('indent-tree',
+  command: indent_base + ['.'],
+  depends: pg_bsd_indent
+)
 
 ###############################################################
 # Test prep
