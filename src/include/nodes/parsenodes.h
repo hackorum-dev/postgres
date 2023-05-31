@@ -1207,6 +1207,8 @@ typedef struct RangeTblEntry
 	Index		perminfoindex pg_node_attr(query_jumble_ignore);
 	/* sampling info, or NULL */
 	struct TableSampleClause *tablesample;
+	/* incrementally maintainable materialized view? */
+	bool		relisivm;
 
 	/*
 	 * Fields valid for a subquery RTE (else NULL):
