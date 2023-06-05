@@ -1141,6 +1141,8 @@ ImportForeignSchema_function
 ImportQual
 InProgressEnt
 IncludeWal
+IncludeSequenceDefaults
+IncludeIdentities
 InclusionOpaque
 IncrementVarSublevelsUp_context
 IncrementalSort

@@ -275,5 +275,6 @@ extern void removeExtObjInitPriv(Oid objoid, Oid classoid);
 extern bool object_ownercheck(Oid classid, Oid objectid, Oid roleid);
 extern bool has_createrole_privilege(Oid roleid);
 extern bool has_bypassrls_privilege(Oid roleid);
+extern const char *convert_aclright_to_string(int aclright);
 
 #endif							/* ACL_H */

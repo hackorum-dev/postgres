@@ -1702,7 +1702,7 @@ convert_any_priv_string(text *priv_type_text,
 }
 
 
-static const char *
+const char *
 convert_aclright_to_string(int aclright)
 {
 	switch (aclright)
