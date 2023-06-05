@@ -1269,10 +1269,12 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
        <colspec colname="col1" colwidth="1*"/>
        <colspec colname="col2" colwidth="2*"/>
        <colspec colname="col3" colwidth="2*"/>
-       <colspec colname="col4" colwidth="5*"/>
+       <colspec colname="col4" colwidth="2*"/>
+       <colspec colname="col5" colwidth="5*"/>
        <thead>
         <row>
          <entry>Key</entry>
+         <entry>Alias</entry>
          <entry>Values</entry>
          <entry>Default</entry>
          <entry>Description</entry>
@@ -1281,6 +1283,7 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
        <tbody>
         <row>
          <entry><literal>co</literal></entry>
+         <entry></entry>
          <entry><literal>emoji</literal>, <literal>phonebk</literal>, <literal>standard</literal>, <replaceable>...</replaceable></entry>
          <entry><literal>standard</literal></entry>
          <entry>
@@ -1289,9 +1292,11 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
         </row>
         <row>
          <entry><literal>ka</literal></entry>
+         <entry><literal>colAlternate</literal></entry>
          <entry><literal>noignore</literal>, <literal>shifted</literal></entry>
          <entry><literal>noignore</literal></entry>
          <entry>
+          Collation parameter key for alternate handling.
           If set to <literal>shifted</literal>, causes some characters
           (e.g. punctuation or space) to be ignored in comparison. Key
           <literal>ks</literal> must be set to <literal>level3</literal> or
@@ -1301,20 +1306,24 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
         </row>
         <row>
          <entry><literal>kb</literal></entry>
+         <entry><literal>colBackwards</literal></entry>
          <entry><literal>true</literal>, <literal>false</literal></entry>
          <entry><literal>false</literal></entry>
          <entry>
-          Backwards comparison for the level 2 differences. For example,
+          Collation parameter key for
+          backwards comparison of the level 2 differences. For example,
           locale <literal>und-u-kb</literal> sorts <literal>'àe'</literal>
           before <literal>'aé'</literal>.
          </entry>
         </row>
         <row>
          <entry><literal>kc</literal></entry>
+         <entry><literal>colCaseLevel</literal></entry>
          <entry><literal>true</literal>, <literal>false</literal></entry>
          <entry><literal>false</literal></entry>
          <entry>
           <para>
+           Collation parameter key for case level.
            Separates case into a "level 2.5" that falls between accents and
            other level 3 features.
           </para>
@@ -1327,12 +1336,14 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
         </row>
         <row>
          <entry><literal>kf</literal></entry>
+         <entry><literal>colCaseFirst</literal></entry>
          <entry>
           <literal>upper</literal>, <literal>lower</literal>,
           <literal>false</literal>
          </entry>
          <entry><literal>false</literal></entry>
          <entry>
+          Collation parameter key for ordering by case.
           If set to <literal>upper</literal>, upper case sorts before lower
           case. If set to <literal>lower</literal>, lower case sorts before
           upper case. If set to <literal>false</literal>, the sort depends on
@@ -1341,9 +1352,11 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
         </row>
         <row>
          <entry><literal>kn</literal></entry>
+         <entry><literal>colNumeric</literal></entry>
          <entry><literal>true</literal>, <literal>false</literal></entry>
          <entry><literal>false</literal></entry>
          <entry>
+          Collation parameter key for numeric handling.
           If set to <literal>true</literal>, numbers within a string are
           treated as a single numeric value rather than a sequence of
           digits. For example, <literal>'id-45'</literal> sorts before
@@ -1352,11 +1365,13 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
         </row>
         <row>
          <entry><literal>kk</literal></entry>
+         <entry><literal>colNormalization</literal></entry>
          <entry><literal>true</literal>, <literal>false</literal></entry>
          <entry><literal>false</literal></entry>
          <entry>
           <para>
-           Enable full normalization; may affect performance. Basic
+           Collation parameter key for
+           full normalization; may affect performance. Basic
            normalization is performed even when set to
            <literal>false</literal>. Locales for languages that require full
            normalization typically enable it by default.
@@ -1375,6 +1390,7 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
         </row>
         <row>
          <entry><literal>kr</literal></entry>
+         <entry><literal>colReorder</literal></entry>
          <entry>
           <literal>space</literal>, <literal>punct</literal>,
           <literal>symbol</literal>, <literal>currency</literal>,
@@ -1383,6 +1399,7 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
          <entry></entry>
          <entry>
           <para>
+           Collation reorder codes.
            Set to one or more of the valid values, or any BCP 47
            <replaceable>script-id</replaceable>, e.g. <literal>latn</literal>
            ("Latin") or <literal>grek</literal> ("Greek"). Multiple values are
@@ -1400,9 +1417,11 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
         </row>
         <row>
          <entry><literal>ks</literal></entry>
+         <entry><literal>colStrength</literal></entry>
          <entry><literal>level1</literal>, <literal>level2</literal>, <literal>level3</literal>, <literal>level4</literal>, <literal>identic</literal></entry>
          <entry><literal>level3</literal></entry>
          <entry>
+          Collation parameter key for collation strength.
           Sensitivity (or "strength") when determining equality, with
           <literal>level1</literal> the least sensitive to differences and
           <literal>identic</literal> the most sensitive to differences. See
@@ -1411,13 +1430,16 @@ SELECT 'x-y' = 'x_y' COLLATE level4; -- false
         </row>
         <row>
          <entry><literal>kv</literal></entry>
+         <entry><literal>maxVariable</literal></entry>
          <entry>
           <literal>space</literal>, <literal>punct</literal>,
           <literal>symbol</literal>, <literal>currency</literal>
          </entry>
          <entry><literal>punct</literal></entry>
          <entry>
-          Classes of characters ignored during comparison at level 3. Setting
+          Collation parameter key for maxVariable, the last reordering group
+          to be affected by ka-shifted. This determines
+          classes of characters ignored during comparison at level 3. Setting
           to a later value includes earlier values;
           e.g. <literal>symbol</literal> also includes
           <literal>punct</literal> and <literal>space</literal> in the
