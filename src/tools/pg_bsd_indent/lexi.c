@@ -212,6 +212,26 @@ is_func_definition(char *tp)
     return false;
 }
 
+static size_t
+strspn_n(const char *s1, const char *s2)
+{
+	const char *p = s1, *spanp;
+	char c, sc;
+	/*
+	 * Skip any characters in s2, excluding the terminating \0 and \n.
+	 */
+cont:
+	c = *p++;
+	for (spanp = s2; (sc = *spanp++) != 0;)
+		if (sc == c)
+			goto cont;
+		else if (sc == '\n')
+			break;
+	return (p - 1 - s1);
+}
+
+#define strspn(s1, s2) strspn_n(s1, s2)
+
 int
 lexi(struct parser_state *state)
 {
