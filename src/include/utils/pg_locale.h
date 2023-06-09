@@ -80,6 +80,9 @@ struct pg_locale_struct
 	{
 #ifdef HAVE_LOCALE_T
 		locale_t	lt;
+#ifdef WIN32
+		LCID		lcid;
+#endif
 #endif
 #ifdef USE_ICU
 		struct

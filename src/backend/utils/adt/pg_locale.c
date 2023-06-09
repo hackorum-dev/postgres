@@ -1534,6 +1534,20 @@ pg_newlocale_from_collation(Oid collid)
 								NULL);
 #else
 				loc = _create_locale(LC_ALL, collcollate);
+				if (GetDatabaseEncoding() == PG_UTF8)
+				{
+					wchar_t		wcollcollate[LOCALE_NAME_MAX_LENGTH];
+					LCID 		lcid;
+
+					MultiByteToWideChar(CP_ACP, 0, collcollate, -1, wcollcollate,
+										LOCALE_NAME_MAX_LENGTH);
+					lcid = LocaleNameToLCID(wcollcollate, 0);
+					if (lcid == 0)
+						ereport(ERROR,
+								(errmsg("could not convert locale name to LCID: error code %lu",
+										GetLastError())));
+					result.info.lcid = lcid;
+				}
 #endif
 				if (!loc)
 					report_newlocale_failure(collcollate);
@@ -1565,7 +1579,10 @@ pg_newlocale_from_collation(Oid collid)
 #endif
 			}
 
-			result.info.lt = loc;
+#ifdef WIN32
+			if (!result.info.lcid)
+#endif
+				result.info.lt = loc;
 #else							/* not HAVE_LOCALE_T */
 			/* platform that doesn't support locale_t */
 			ereport(ERROR,
@@ -1729,23 +1746,84 @@ get_collation_actual_version(char collprovider, const char *collcollate)
 }
 
 /*
- * pg_strncoll_libc_win32_utf8
+ * pg_strncoll_sort_key
  *
  * Win32 does not have UTF-8. Convert UTF8 arguments to wide characters and
- * invoke wcscoll() or wcscoll_l().
+ * produce a normalized sort key based on the locale. Returns a palloced
+ * string.
+ */
+#ifdef WIN32
+static char *
+pg_strncoll_sort_key(const char *arg, size_t len, pg_locale_t locale,
+					 int *sortlen)
+{
+	char       *ap;
+	int         alen = len * 2 + 2;
+	int         result;
+
+	ap = palloc(alen);
+
+	/* API does not work for zero-length input */
+	if (len == 0)
+		result = 0;
+	else
+	{
+		result = MultiByteToWideChar(CP_UTF8, 0, arg, len,
+									 (LPWSTR) ap, alen / 2);
+		if (!result)
+			ereport(ERROR,
+					(errmsg("could not convert string to UTF-16: error code %lu",
+							GetLastError())));
+	}
+	((LPWSTR) ap)[result] = 0;
+
+	errno = 0;
+#ifdef HAVE_LOCALE_T
+	if (locale)
+	{
+		int         mapsize;
+		char       *map;
+
+		mapsize = LCMapStringW(locale->info.lcid, LCMAP_SORTKEY, (LPWSTR) ap, -1, NULL, 0);
+		if (mapsize == 0)
+			ereport(ERROR,
+					(errmsg("could not produce a normalized sort key: error code %lu",
+							GetLastError())));
+
+		map = palloc(mapsize);
+
+		result = LCMapStringW(locale->info.lcid, LCMAP_SORTKEY, (LPWSTR) ap, -1,
+							  (LPWSTR) map, mapsize);
+		if (result == 0)
+			ereport(ERROR,
+					(errmsg("could not produce a normalized sort key: error code %lu",
+							GetLastError())));
+
+		pfree(ap);
+		ap = map;
+	}
+#endif
+
+	*sortlen = result;
+	return ap;
+}
+#endif							/* WIN32 */
+
+/*
+ * pg_strncoll_libc_win32_utf8
+ *
+ * For Win32 UTF-8 string comparison we will use LCMapStringW() or
+ * CompareStringOrdinal().
  */
 #ifdef WIN32
 static int
 pg_strncoll_libc_win32_utf8(const char *arg1, size_t len1, const char *arg2,
 							size_t len2, pg_locale_t locale)
 {
-	char		sbuf[TEXTBUFLEN];
-	char	   *buf = sbuf;
 	char	   *a1p,
 			   *a2p;
-	int			a1len = len1 * 2 + 2;
-	int			a2len = len2 * 2 + 2;
-	int			r;
+	int			a1plen = 0,
+				a2plen = 0;
 	int			result;
 
 	Assert(!locale || locale->provider == COLLPROVIDER_LIBC);
@@ -1754,52 +1832,24 @@ pg_strncoll_libc_win32_utf8(const char *arg1, size_t len1, const char *arg2,
 	Assert(false);
 #endif
 
-	if (a1len + a2len > TEXTBUFLEN)
-		buf = palloc(a1len + a2len);
+	a1p = pg_strncoll_sort_key(arg1, len1, locale, &a1plen);
+	a2p = pg_strncoll_sort_key(arg2, len2, locale, &a2plen);
 
-	a1p = buf;
-	a2p = buf + a1len;
-
-	/* API does not work for zero-length input */
-	if (len1 == 0)
-		r = 0;
-	else
-	{
-		r = MultiByteToWideChar(CP_UTF8, 0, arg1, len1,
-								(LPWSTR) a1p, a1len / 2);
-		if (!r)
-			ereport(ERROR,
-					(errmsg("could not convert string to UTF-16: error code %lu",
-							GetLastError())));
-	}
-	((LPWSTR) a1p)[r] = 0;
-
-	if (len2 == 0)
-		r = 0;
-	else
-	{
-		r = MultiByteToWideChar(CP_UTF8, 0, arg2, len2,
-								(LPWSTR) a2p, a2len / 2);
-		if (!r)
-			ereport(ERROR,
-					(errmsg("could not convert string to UTF-16: error code %lu",
-							GetLastError())));
-	}
-	((LPWSTR) a2p)[r] = 0;
-
-	errno = 0;
 #ifdef HAVE_LOCALE_T
 	if (locale)
-		result = wcscoll_l((LPWSTR) a1p, (LPWSTR) a2p, locale->info.lt);
+		result = memcmp((LPWSTR) a1p, (LPWSTR) a2p, (a1plen < a2plen) ?
+							a1plen : a2plen);
 	else
 #endif
-		result = wcscoll((LPWSTR) a1p, (LPWSTR) a2p);
-	if (result == 2147483647)	/* _NLSCMPERROR; missing from mingw headers */
-		ereport(ERROR,
+	{
+		result = CompareStringOrdinal((LPWSTR) a1p, -1, (LPWSTR) a2p, -1, FALSE) - 2;
+		if (result == -2)
+			ereport(ERROR,
 				(errmsg("could not compare Unicode strings: %m")));
+	}
 
-	if (buf != sbuf)
-		pfree(buf);
+	pfree(a1p);
+	pfree(a2p);
 
 	return result;
 }
