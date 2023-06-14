@@ -2470,19 +2470,29 @@ cost_append(AppendPath *apath, PlannerInfo *root)
 			 * Apply parallel divisor to subpaths.  Scale the number of rows
 			 * for each partial subpath based on the ratio of the parallel
 			 * divisor originally used for the subpath to the one we adopted.
-			 * Also add the cost of partial paths to the total cost, but
-			 * ignore non-partial paths for now.
+			 * Also add the scaled cost of partial paths to the total cost,
+			 * but ignore non-partial paths for now.
 			 */
 			if (i < apath->first_partial_path)
 				apath->path.rows += subpath->rows / parallel_divisor;
 			else
 			{
 				double		subpath_parallel_divisor;
+				double		scale_factor;
+				Cost		run_cost;
 
 				subpath_parallel_divisor = get_parallel_divisor(subpath);
-				apath->path.rows += subpath->rows * (subpath_parallel_divisor /
-													 parallel_divisor);
-				apath->path.total_cost += subpath->total_cost;
+				scale_factor = subpath_parallel_divisor / parallel_divisor;
+				apath->path.rows += subpath->rows * scale_factor;
+				/*
+				 * XXX run_cost includes both CPU cost, which is divided among
+				 * workers, and disk cost, which is not. Unfortunately we
+				 * don't have enough information to separate the two, so scale
+				 * the whole run_cost.
+				 */
+				run_cost = subpath->total_cost - subpath->startup_cost;
+				apath->path.total_cost += subpath->startup_cost +
+					run_cost * scale_factor;;
 			}
 
 			apath->path.disabled_nodes += subpath->disabled_nodes;
