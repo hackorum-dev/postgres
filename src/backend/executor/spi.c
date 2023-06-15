@@ -1587,6 +1587,7 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 	Portal		portal;
 	SPICallbackArg spicallbackarg;
 	ErrorContextCallback spierrcontext;
+	CommandId 	this_command = InvalidCommandId;
 
 	/*
 	 * Check that the plan is something the Portal code will special-case as
@@ -1733,6 +1734,7 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 	if (read_only)
 	{
 		ListCell   *lc;
+		this_command = GetCurrentCommandId(false);
 
 		foreach(lc, stmt_list)
 		{
@@ -1780,6 +1782,14 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 
 	/* Pop the SPI stack */
 	_SPI_end_call(true);
+
+	if (read_only && this_command != GetCurrentCommandId(false))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						/* translator: %s is a SQL statement name */
+						errmsg("Damn1! Update were done in a non-volatile function")));
+	}
 
 	/* Return the created portal */
 	return portal;
@@ -2411,6 +2421,7 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 	ErrorContextCallback spierrcontext;
 	CachedPlan *cplan = NULL;
 	ListCell   *lc1;
+	CommandId   this_command = InvalidCommandId;
 
 	/*
 	 * We allow nonatomic behavior only if options->allow_nonatomic is set
@@ -2494,6 +2505,11 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("empty query does not return tuples")));
+
+	if (options->read_only)
+	{
+		this_command = GetCurrentCommandId(false);
+	}
 
 	foreach(lc1, plan->plancache_list)
 	{
@@ -2807,6 +2823,14 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 		 */
 		if (!options->read_only)
 			CommandCounterIncrement();
+	}
+
+	if (options->read_only && this_command != GetCurrentCommandId(false))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						/* translator: %s is a SQL statement name */
+						errmsg("Damn2! Update were done in a non-volatile function")));
 	}
 
 fail:
