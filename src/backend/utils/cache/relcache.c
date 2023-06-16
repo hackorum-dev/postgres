@@ -585,8 +585,10 @@ RelationBuildTupleDesc(Relation relation)
 
 		attnum = attp->attnum;
 		if (attnum <= 0 || attnum > RelationGetNumberOfAttributes(relation))
-			elog(ERROR, "invalid attribute number %d for relation \"%s\"",
-				 attp->attnum, RelationGetRelationName(relation));
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg_internal("invalid attribute number %d for relation \"%s\"",
+									 attp->attnum, RelationGetRelationName(relation))));
 
 		memcpy(TupleDescAttr(relation->rd_att, attnum - 1),
 			   attp,
@@ -667,8 +669,10 @@ RelationBuildTupleDesc(Relation relation)
 	table_close(pg_attribute_desc, AccessShareLock);
 
 	if (need != 0)
-		elog(ERROR, "pg_attribute catalog is missing %d attribute(s) for relation OID %u",
-			 need, RelationGetRelid(relation));
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg_internal("pg_attribute catalog is missing %d attribute(s) for relation OID %u",
+								 need, RelationGetRelid(relation))));
 
 	/*
 	 * Set up constraint/default info
@@ -1191,8 +1195,10 @@ retry:
 			}
 			break;
 		default:
-			elog(ERROR, "invalid relpersistence: %c",
-				 relation->rd_rel->relpersistence);
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg_internal("invalid relpersistence: %c",
+									 relation->rd_rel->relpersistence)));
 			break;
 	}
 
@@ -1374,8 +1380,10 @@ RelationInitPhysicalAddr(Relation relation)
 										RelationGetRelid(relation) != ClassOidIndexId,
 										true);
 			if (!HeapTupleIsValid(phys_tuple))
-				elog(ERROR, "could not find pg_class entry for %u",
-					 RelationGetRelid(relation));
+				ereport(ERROR,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg_internal("could not find pg_class entry for %u",
+										 RelationGetRelid(relation))));
 			physrel = (Form_pg_class) GETSTRUCT(phys_tuple);
 
 			relation->rd_rel->reltablespace = physrel->reltablespace;
@@ -1392,8 +1400,10 @@ RelationInitPhysicalAddr(Relation relation)
 			RelationMapOidToFilenumber(relation->rd_id,
 									   relation->rd_rel->relisshared);
 		if (!RelFileNumberIsValid(relation->rd_locator.relNumber))
-			elog(ERROR, "could not find relation mapping for relation \"%s\", OID %u",
-				 RelationGetRelationName(relation), relation->rd_id);
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg_internal("could not find relation mapping for relation \"%s\", OID %u",
+									 RelationGetRelationName(relation), relation->rd_id)));
 	}
 
 	/*
@@ -1620,7 +1630,9 @@ IndexSupportInitialize(oidvector *indclass,
 		OpClassCacheEnt *opcentry;
 
 		if (!OidIsValid(indclass->values[attIndex]))
-			elog(ERROR, "bogus pg_index tuple");
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg_internal("bogus pg_index tuple")));
 
 		/* look up the info for this opclass, using a cache */
 		opcentry = LookupOpclassInfo(indclass->values[attIndex],
