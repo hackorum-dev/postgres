@@ -2163,6 +2163,8 @@ endforeach
 
 
 decl_checks = [
+  ['EPOLLHUP', 'sys/epoll.h'],
+  ['EPOLLRDHUP', 'sys/epoll.h'],
   ['F_FULLFSYNC', 'fcntl.h'],
   ['fdatasync', 'unistd.h'],
   ['posix_fadvise', 'fcntl.h'],

@@ -1044,10 +1044,12 @@ include_dir 'conf.d'
        </para>
        <para>
         If the value is specified without units, it is taken as milliseconds.
-        The default value is <literal>0</literal>, which disables connection
-        checks.  Without connection checks, the server will detect the loss of
-        the connection only at the next interaction with the socket, when it
-        waits for, receives or sends data.
+        The default value is <literal>0</literal> on systems not previously
+        mentioned, such as Windows, which disables connection checks, and a
+        default value of <literal>10000</literal>, otherwise.  Without
+        connection checks, the server will detect the loss of the connection
+        only at the next interaction with the socket, when it waits for,
+        receives or sends data.
        </para>
        <para>
         For the kernel itself to detect lost TCP connections reliably and within

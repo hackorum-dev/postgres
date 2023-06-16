@@ -3478,7 +3478,12 @@ struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_MS
 		},
 		&client_connection_check_interval,
-		0, 0, INT_MAX,
+#if defined(HAVE_DECL_EPOLLHUP) || defined(HAVE_DECL_EPOLLRDHUP)
+		10000,
+#else
+		0,
+#endif
+		0, INT_MAX,
 		check_client_connection_check_interval, NULL, NULL
 	},
 
