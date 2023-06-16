@@ -2606,7 +2606,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 			{
 				/* Reached end of duplicates of this value */
 				ndistinct++;
-				if (dups_cnt > 1)
+				if (dups_cnt > 1 || samplerows <= num_mcv)
 				{
 					nmultiple++;
 					if (track_cnt < num_mcv ||
