@@ -4000,10 +4000,10 @@ ReadCheckpointRecord(XLogPrefetcher *xlogprefetcher, XLogRecPtr RecPtr,
 				(errmsg("invalid xl_rmgrinfo in checkpoint record")));
 		return NULL;
 	}
-	if (record->xl_tot_len != SizeOfXLogRecord + SizeOfXLogRecordDataHeaderShort + sizeof(CheckPoint))
+	if (record->xl_payload_len != SizeOfXLogRecordDataHeaderShort + sizeof(CheckPoint))
 	{
 		ereport(LOG,
-				(errmsg("invalid length of checkpoint record")));
+				(errmsg("invalid payload length of checkpoint record")));
 		return NULL;
 	}
 	return record;

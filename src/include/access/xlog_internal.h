@@ -26,7 +26,15 @@
 #include "pgtime.h"
 #include "storage/block.h"
 #include "storage/relfilelocator.h"
+#include "transam.h"
 
+/*
+ * WAL records (and other XLogPage page-level content) are aligned to 8 bytes.
+ *
+ * Note that the contents of the records is not aligned (!)
+ */
+#define ALIGNOF_XLP_CONTENT 8
+#define XLP_ALIGN(LEN) TYPEALIGN64(ALIGNOF_XLP_CONTENT, LEN)
 
 /*
  * Each page of XLOG file has a header like this:
@@ -49,7 +57,7 @@ typedef struct XLogPageHeaderData
 	uint32		xlp_rem_len;	/* total len of remaining data for record */
 } XLogPageHeaderData;
 
-#define SizeOfXLogShortPHD	MAXALIGN(sizeof(XLogPageHeaderData))
+#define SizeOfXLogShortPHD	XLP_ALIGN(sizeof(XLogPageHeaderData))
 
 typedef XLogPageHeaderData *XLogPageHeader;
 
@@ -66,7 +74,7 @@ typedef struct XLogLongPageHeaderData
 	uint32		xlp_xlog_blcksz;	/* just as a cross-check */
 } XLogLongPageHeaderData;
 
-#define SizeOfXLogLongPHD	MAXALIGN(sizeof(XLogLongPageHeaderData))
+#define SizeOfXLogLongPHD	XLP_ALIGN(sizeof(XLogLongPageHeaderData))
 
 typedef XLogLongPageHeaderData *XLogLongPageHeader;
 
@@ -392,7 +400,7 @@ static inline int XLogWriteLength(uint32 length, XLogSizeClass sizeClass,
 		case caseSC: \
 			if ((caseSC) <= maxSizeClass) \
 			{ \
-				field_type typedLength = length; \
+				field_type typedLength = (field_type) length; \
 				memcpy(output, &typedLength, sizeof(field_type)); \
 				written = sizeof(field_type); \
 			} \
@@ -405,6 +413,9 @@ static inline int XLogWriteLength(uint32 length, XLogSizeClass sizeClass,
 		WRITE_OP(XLS_UINT8, uint8);
 		WRITE_OP(XLS_UINT16, uint16);
 		WRITE_OP(XLS_UINT32, uint32);
+		default:
+			Assert(false);
+			pg_unreachable();
 	}
 
 #undef WRITE_OP
@@ -451,10 +462,93 @@ static inline int XLogReadLength(uint32 *length, XLogSizeClass sizeClass,
 		READ_OP(XLS_UINT8, uint8);
 		READ_OP(XLS_UINT16, uint16);
 		READ_OP(XLS_UINT32, uint32);
+		default:
+			Assert(false);
+			pg_unreachable();
 	}
 
 #undef READ_OP
 	return readSize;
+}
+
+
+inline static uint8 XLRHdrGetRmgrInfo(XLogRecHdr record)
+{
+	XLogSizeClass recSizeClass;
+	int			offset;
+
+	if (!(record->xl_info & XLR_HAS_RMGRINFO))
+		return 0;
+
+	recSizeClass = XLR_SIZECLASS(record->xl_info);
+	/* xl_rmgrinfo is located immediately behind the xl_payload_len field */
+	offset = XLogSizeClassToByteLength(recSizeClass);
+
+	return (uint8) record->xl_hdrdata[offset];
+}
+
+
+/* Works on any partial record */
+inline static Size XLogRecordTotalLength(XLogRecHdr record)
+{
+	uint8		xl_info = record->xl_info;
+	XLogSizeClass sizeClass;
+	uint32		length = 0;
+	sizeClass = XLR_SIZECLASS(xl_info);
+
+	XLogReadLength(&length, sizeClass, XLS_UINT32,
+				   &record->xl_hdrdata[0], 6);
+
+	return (Size) length + XLogRecordHdrLen(xl_info);
+}
+
+inline static void XLogReadRecHdrInto(XLogRecHdr recdata, Size length,
+									  XLogRecord *record)
+{
+	Size offset		= 0;
+	Size hdr_size PG_USED_FOR_ASSERTS_ONLY = 0;
+	XLogSizeClass sizeClass;
+
+	Assert(length >= XLogRecordMinHdrSize);
+
+	record->xl_info = recdata->xl_info;
+
+	hdr_size = XLogRecordHdrLen(record->xl_info);
+	Assert(length >= hdr_size);
+
+	record->xl_rmid = recdata->xl_rmid;
+
+	sizeClass = XLR_SIZECLASS(record->xl_info);
+	offset += XLogReadLength(&record->xl_payload_len, sizeClass,
+							 XLS_UINT32, &recdata->xl_hdrdata[offset], length - offset);
+
+	if (record->xl_info & XLR_HAS_RMGRINFO)
+	{
+		record->xl_rmgrinfo = recdata->xl_hdrdata[offset];
+		offset += sizeof(uint8);
+	}
+	else
+	{
+		record->xl_rmgrinfo = 0;
+	}
+
+	if (record->xl_info & XLR_HAS_XID)
+	{
+		memcpy(&record->xl_xid, &recdata->xl_hdrdata[offset], sizeof(TransactionId));
+		offset += sizeof(TransactionId);
+	}
+	else
+	{
+		record->xl_xid = InvalidTransactionId;
+	}
+
+	memcpy(&record->xl_prev, &recdata->xl_hdrdata[offset], sizeof(XLogRecPtr));
+	offset += sizeof(XLogRecPtr);
+
+	memcpy(&record->xl_crc, &recdata->xl_hdrdata[offset], sizeof(pg_crc32c));
+	offset += sizeof(pg_crc32c);
+
+	Assert(hdr_size - 2 == offset);
 }
 
 /*
