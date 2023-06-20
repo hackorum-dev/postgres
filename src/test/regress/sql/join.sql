@@ -2781,10 +2781,17 @@ left join j2 on j1.id1 = j2.id1 where j1.id2 = 1;
 
 create unique index j1_id2_idx on j1(id2) where id2 is not null;
 
--- ensure we don't use a partial unique index as unique proofs
+-- ensure we don't use partial unique indexes that were marked predOK as
+-- unique proofs for unique joins.
 explain (verbose, costs off)
 select * from j1
 inner join j2 on j1.id2 = j2.id2;
+
+-- we can use the unique index if it's marked as predOKBase
+explain (verbose, costs off)
+select * from j1
+inner join j2 on j1.id2 = j2.id2
+where j1.id2 is not null;
 
 drop index j1_id2_idx;
 

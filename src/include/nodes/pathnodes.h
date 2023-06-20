@@ -1159,8 +1159,10 @@ struct IndexOptInfo
 	 */
 	List	   *indrestrictinfo;
 
-	/* true if index predicate matches query */
+	/* true if index predicate matches query (including join quals) */
 	bool		predOK;
+	/* true if index predicate matches rel's baserestrictinfo */
+	bool		predOKBase;
 	/* true if a unique index */
 	bool		unique;
 	/* is uniqueness enforced immediately? */

@@ -3294,7 +3294,8 @@ match_clause_to_ordering_op(IndexOptInfo *index,
 void
 check_index_predicates(PlannerInfo *root, RelOptInfo *rel)
 {
-	List	   *clauselist;
+	List	   *basequals;
+	List	   *allquals;
 	bool		have_partial;
 	bool		is_target_rel;
 	Relids		otherrels;
@@ -3320,6 +3321,8 @@ check_index_predicates(PlannerInfo *root, RelOptInfo *rel)
 	if (!have_partial)
 		return;
 
+	basequals = rel->baserestrictinfo;
+
 	/*
 	 * Construct a list of clauses that we can assume true for the purpose of
 	 * proving the index(es) usable.  Restriction clauses for the rel are
@@ -3327,7 +3330,7 @@ check_index_predicates(PlannerInfo *root, RelOptInfo *rel)
 	 * rel.  Also, we can consider any EC-derivable join clauses (which must
 	 * be "movable to" this rel, by definition).
 	 */
-	clauselist = list_copy(rel->baserestrictinfo);
+	allquals = list_copy(rel->baserestrictinfo);
 
 	/* Scan the rel's join clauses */
 	foreach(lc, rel->joininfo)
@@ -3338,7 +3341,7 @@ check_index_predicates(PlannerInfo *root, RelOptInfo *rel)
 		if (!join_clause_is_movable_to(rinfo, rel))
 			continue;
 
-		clauselist = lappend(clauselist, rinfo);
+		allquals = lappend(allquals, rinfo);
 	}
 
 	/*
@@ -3357,8 +3360,8 @@ check_index_predicates(PlannerInfo *root, RelOptInfo *rel)
 	otherrels = bms_del_members(otherrels, rel->nulling_relids);
 
 	if (!bms_is_empty(otherrels))
-		clauselist =
-			list_concat(clauselist,
+		allquals =
+			list_concat(allquals,
 						generate_join_implied_equalities(root,
 														 bms_union(rel->relids,
 																   otherrels),
@@ -3396,8 +3399,16 @@ check_index_predicates(PlannerInfo *root, RelOptInfo *rel)
 		if (index->indpred == NIL)
 			continue;			/* ignore non-partial indexes here */
 
+		if (!index->predOKBase)
+			index->predOKBase = predicate_implied_by(index->indpred,
+													 basequals, false);
+
+		/* if the index satisfies the basequals, don't check allquals */
+		if (index->predOKBase)
+			index->predOK = true;
+
 		if (!index->predOK)		/* don't repeat work if already proven OK */
-			index->predOK = predicate_implied_by(index->indpred, clauselist,
+			index->predOK = predicate_implied_by(index->indpred, allquals,
 												 false);
 
 		/* If rel is an update target, leave indrestrictinfo as set above */
@@ -3549,13 +3560,11 @@ relation_has_unique_index_for(PlannerInfo *root, RelOptInfo *rel,
 
 		/*
 		 * If the index is not unique, or not immediately enforced, or if it's
-		 * a partial index, it's useless here.  We're unable to make use of
-		 * predOK partial unique indexes due to the fact that
-		 * check_index_predicates() also makes use of join predicates to
-		 * determine if the partial index is usable. Here we need proofs that
-		 * hold true before any joins are evaluated.
+		 * a partial index that doesn't match the rel's baserestrictinfo, it's
+		 * useless here.
 		 */
-		if (!ind->unique || !ind->immediate || ind->indpred != NIL)
+		if (!ind->unique || !ind->immediate ||
+			(ind->indpred != NIL && !ind->predOKBase))
 			continue;
 
 		/*
