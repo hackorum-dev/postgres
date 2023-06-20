@@ -31,7 +31,7 @@ static void pgstat_reset_slru_counter_internal(int index, TimestampTz ts);
  * SLRU counters are reported within critical sections so we use static memory
  * in order to avoid memory allocation.
  */
-static PgStat_SLRUStats pending_SLRUStats[SLRU_NUM_RELS];
+static PgStat_SLRUStats pending_SLRUStats[NREL_NUM_RELS + 1];
 bool		have_slrustats = false;
 
 
@@ -115,7 +115,7 @@ pgstat_fetch_slru(void)
 const char *
 pgstat_get_slru_name(int slru_idx)
 {
-	return SlruName(slru_idx);
+	return NrelName(slru_idx);
 }
 
 /*
@@ -124,7 +124,7 @@ pgstat_get_slru_name(int slru_idx)
 int
 pgstat_get_slru_index(const char *name)
 {
-	return SlruRelIdByName(name);
+	return NrelRelIdByName(name);
 }
 
 /*
@@ -150,7 +150,7 @@ pgstat_slru_flush(bool nowait)
 	else if (!LWLockConditionalAcquire(&stats_shmem->lock, LW_EXCLUSIVE))
 		return true;
 
-	for (i = 0; i < SLRU_NUM_RELS; i++)
+	for (i = 0; i < NREL_NUM_RELS + 1; i++)
 	{
 		PgStat_SLRUStats *sharedent = &stats_shmem->stats[i];
 		PgStat_SLRUStats *pendingent = &pending_SLRUStats[i];
@@ -179,7 +179,7 @@ pgstat_slru_flush(bool nowait)
 void
 pgstat_slru_reset_all_cb(TimestampTz ts)
 {
-	for (int i = 0; i < SLRU_NUM_RELS; i++)
+	for (int i = 0; i < NREL_NUM_RELS + 1; i++)
 		pgstat_reset_slru_counter_internal(i, ts);
 }
 
@@ -210,7 +210,7 @@ get_slru_entry(int slru_idx)
 	 */
 	Assert(IsUnderPostmaster || !IsPostmasterEnvironment);
 
-	Assert((slru_idx >= 0) && (slru_idx < SLRU_NUM_RELS));
+	Assert((slru_idx >= 0) && (slru_idx < NREL_NUM_RELS + 1));
 
 	have_slrustats = true;
 

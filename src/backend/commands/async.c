@@ -131,6 +131,7 @@
 #include <signal.h>
 
 #include "access/parallel.h"
+#include "access/nrel.h"
 #include "access/slru.h"
 #include "access/transam.h"
 #include "access/xact.h"
@@ -312,7 +313,7 @@ static AsyncQueueControl *asyncQueueControl;
 /*
  * Use segments 0000 through FFFF.  Each contains SLRU_PAGES_PER_SEGMENT pages
  * which gives us the pages from 0 to SLRU_PAGES_PER_SEGMENT * 0x10000 - 1.
- * We could use as many segments as SlruScanDirectory() allows, but this gives
+ * We could use as many segments as NrelScanDirectory() allows, but this gives
  * us so much space already that it doesn't seem worth the trouble.
  *
  * The most data we can have in the queue at a time is QUEUE_MAX_PAGE/2
@@ -563,8 +564,8 @@ AsyncShmemInit(void)
 		/*
 		 * During start or reboot, clean out the pg_notify directory.
 		 */
-		(void) SlruScanDirectory(SLRU_NOTIFY_REL_ID, asyncQueuePagePrecedes,
-								 SlruScanDirCbDeleteAll, NULL);
+		(void) NrelScanDirectory(NREL_NOTIFY_REL_ID, asyncQueuePagePrecedes,
+								 NrelScanDirCbDeleteAll, NULL);
 	}
 }
 
@@ -1423,11 +1424,12 @@ asyncQueueAddEntries(ListCell *nextNotify)
 	pageno = QUEUE_POS_PAGE(queue_head);
 	if (QUEUE_POS_IS_ZERO(queue_head))
 	{
-		buffer = ZeroSlruBuffer(SLRU_NOTIFY_REL_ID, pageno);
+		buffer = ZeroNrelBuffer(NREL_NOTIFY_REL_ID, pageno);
 	}
 	else
 	{
-		buffer = ReadSlruBuffer(SLRU_NOTIFY_REL_ID, pageno);
+		buffer = ReadNrelBuffer(NREL_NOTIFY_REL_ID, pageno);
+
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 	}
 
@@ -1474,12 +1476,12 @@ asyncQueueAddEntries(ListCell *nextNotify)
 			 * Page is full, so we're done here, but first fill the next page
 			 * with zeroes.  The reason to do this is to ensure that slru.c's
 			 * idea of the head page is always the same as ours, which avoids
-			 * boundary problems in SimpleLruTruncate.  The test in
+			 * boundary problems in NonRelTruncate.  The test in
 			 * asyncQueueIsFull() ensured that there is room to create this
 			 * page without overrunning the queue.
 			 */
 			UnlockReleaseBuffer(buffer);
-			buffer = ZeroSlruBuffer(SLRU_NOTIFY_REL_ID,
+			buffer = ZeroNrelBuffer(NREL_NOTIFY_REL_ID,
 									QUEUE_POS_PAGE(queue_head));
 			MarkBufferDirty(buffer);
 
@@ -1981,7 +1983,8 @@ asyncQueueReadAllNotifications(void)
 			 * transmitting them to our frontend.  Copy only the part of the
 			 * page we will actually inspect.
 			 */
-			buffer = ReadSlruBuffer(SLRU_NOTIFY_REL_ID, curpage);
+			buffer = ReadNrelBuffer(NREL_NOTIFY_REL_ID, curpage);
+
 			if (curpage == QUEUE_POS_PAGE(head))
 			{
 				/* we only want to read as far as head */
@@ -2148,7 +2151,7 @@ asyncQueueAdvanceTail(void)
 	int			newtailpage;
 	int			boundary;
 
-	/* Restrict task to one backend per cluster; see SimpleLruTruncate(). */
+	/* Restrict task to one backend per cluster; see NonRelTruncate(). */
 	LWLockAcquire(NotifyQueueTailLock, LW_EXCLUSIVE);
 
 	/*
@@ -2165,7 +2168,7 @@ asyncQueueAdvanceTail(void)
 	 * there are pages we can truncate but haven't yet finished doing so.
 	 *
 	 * For concurrency's sake, we don't want to hold NotifyQueueLock while
-	 * performing SimpleLruTruncate.  This is OK because no backend will try
+	 * performing NonRelTruncate.  This is OK because no backend will try
 	 * to access the pages we are in the midst of truncating.
 	 */
 	LWLockAcquire(NotifyQueueLock, LW_EXCLUSIVE);
@@ -2191,10 +2194,10 @@ asyncQueueAdvanceTail(void)
 	if (asyncQueuePagePrecedes(oldtailpage, boundary))
 	{
 		/*
-		 * SimpleLruTruncate() will ask for NotifySLRULock but will also
+		 * NonRelTruncate() will ask for NotifySLRULock but will also
 		 * release the lock again.
 		 */
-		SimpleLruTruncate(SLRU_NOTIFY_REL_ID, asyncQueuePagePrecedes, newtailpage);
+		NonRelTruncate(NREL_NOTIFY_REL_ID, asyncQueuePagePrecedes, newtailpage);
 
 		/*
 		 * Update QUEUE_STOP_PAGE.  This changes asyncQueueIsFull()'s verdict

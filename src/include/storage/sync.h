@@ -35,7 +35,8 @@ typedef enum SyncRequestType
 typedef enum SyncRequestHandler
 {
 	SYNC_HANDLER_MD = 0,
-	SYNC_HANDLER_SLRU
+	SYNC_HANDLER_NREL,
+	SYNC_HANDLER_NONE
 } SyncRequestHandler;
 
 /*

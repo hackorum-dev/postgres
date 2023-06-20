@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <sys/file.h>
 
+#include "access/nrel.h"
 #include "access/slru.h"
 #include "access/xlog.h"
 #include "access/xlogutils.h"
@@ -103,8 +104,8 @@ static const SyncOps syncsw[] = {
 		.sync_filetagmatches = mdfiletagmatches
 	},
 	/* SLRU */
-	[SYNC_HANDLER_SLRU] = {
-		.sync_syncfiletag = slrusyncfiletag
+	[SYNC_HANDLER_NREL] = {
+		.sync_syncfiletag = nrelsyncfiletag
 	}
 };
 

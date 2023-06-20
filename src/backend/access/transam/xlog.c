@@ -7037,7 +7037,7 @@ CheckPointGuts(XLogRecPtr checkPointRedo, int flags)
 	CheckPointLogicalRewriteHeap();
 	CheckPointReplicationOrigin();
 	CheckPointPredicate();
-	CheckPointSLRU();
+	CheckPointNREL();
 
 	/* Write out all dirty data in the buffer pool */
 	TRACE_POSTGRESQL_BUFFER_CHECKPOINT_START(flags);

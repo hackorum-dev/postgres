@@ -69,6 +69,7 @@
 #include "postgres.h"
 
 #include "access/multixact.h"
+#include "access/nrel.h"
 #include "access/slru.h"
 #include "access/transam.h"
 #include "access/twophase.h"
@@ -873,7 +874,8 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 	if (offset_buf_ptr)
 		offset_buf = *offset_buf_ptr;
 	else 
-		offset_buf = ReadSlruBuffer(SLRU_MULTIXACT_OFFSET_ID, pageno);
+		offset_buf = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
+
 
 	LockBuffer(offset_buf, BUFFER_LOCK_EXCLUSIVE);
 						
@@ -917,7 +919,8 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 			if (member_bufs)
 				buffer = member_bufs[pageno - min_pageno];
 			else
-				buffer = ReadSlruBuffer(SLRU_MULTIXACT_MEMBER_ID, pageno);
+				buffer = ReadNrelBuffer(NREL_MULTIXACT_MEMBER_REL_ID, pageno);
+
 
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 			prev_pageno = pageno;
@@ -1363,7 +1366,8 @@ retry:
 	pageno = MultiXactIdToOffsetPage(multi);
 	entryno = MultiXactIdToOffsetEntry(multi);
 
-	buffer = ReadSlruBuffer(SLRU_MULTIXACT_OFFSET_REL_ID, pageno);
+	buffer = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
+
 	LockBuffer(buffer, BUFFER_LOCK_SHARE);
 	offptr = (MultiXactOffset *) BufferGetPage(buffer);
 	offptr += entryno;
@@ -1398,7 +1402,8 @@ retry:
 		if (pageno != prev_pageno)
 		{
 			UnlockReleaseBuffer(buffer);
-			buffer = ReadSlruBuffer(SLRU_MULTIXACT_OFFSET_REL_ID, pageno);
+			buffer = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
+
 			LockBuffer(buffer, BUFFER_LOCK_SHARE);
 		}
 
@@ -1439,7 +1444,8 @@ retry:
 		{
 			if (BufferIsValid(buffer))
 				UnlockReleaseBuffer(buffer);
-			buffer = ReadSlruBuffer(SLRU_MULTIXACT_MEMBER_REL_ID, pageno);
+			buffer = ReadNrelBuffer(NREL_MULTIXACT_MEMBER_REL_ID, pageno);
+
 			LockBuffer(buffer, BUFFER_LOCK_SHARE);
 			prev_pageno = pageno;
 		}
@@ -1921,7 +1927,8 @@ ZeroMultiXactOffsetPage(int pageno, bool writeXlog)
 {
 	Buffer		buffer;
 
-	buffer = ZeroSlruBuffer(SLRU_MULTIXACT_OFFSET_REL_ID, pageno);
+	buffer = ZeroNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
+
 	MarkBufferDirty(buffer);
 
 	if (writeXlog)
@@ -1938,7 +1945,8 @@ ZeroMultiXactMemberPage(int pageno, bool writeXlog)
 {
 	Buffer		buffer;
 
-	buffer = ZeroSlruBuffer(SLRU_MULTIXACT_MEMBER_REL_ID, pageno);
+	buffer = ZeroNrelBuffer(NREL_MULTIXACT_MEMBER_REL_ID, pageno);
+
 	MarkBufferDirty(buffer);
 
 	if (writeXlog)
@@ -1969,7 +1977,7 @@ MaybeExtendOffsetSlru(void)
 
 	pageno = MultiXactIdToOffsetPage(MultiXactState->nextMXact);
 
-	if (!SimpleLruDoesPhysicalPageExist(SLRU_MULTIXACT_OFFSET_REL_ID, pageno))
+	if (!NonRelDoesPhysicalPageExist(NREL_MULTIXACT_OFFSET_REL_ID, pageno))
 	{
 		Buffer			buffer;
 
@@ -2030,7 +2038,8 @@ TrimMultiXact(void)
 		MultiXactOffset *offptr;
 		Buffer		buffer;
 
-		buffer = ReadSlruBuffer(SLRU_MULTIXACT_OFFSET_REL_ID, pageno);
+		buffer = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
+
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 		offptr = (MultiXactOffset *) BufferGetPage(buffer);
 		offptr += entryno;
@@ -2055,7 +2064,8 @@ TrimMultiXact(void)
 		Buffer		buffer;
 
 		memberoff = MXOffsetToMemberOffset(offset);
-		buffer = ReadSlruBuffer(SLRU_MULTIXACT_MEMBER_REL_ID, pageno);
+		buffer = ReadNrelBuffer(NREL_MULTIXACT_MEMBER_REL_ID, pageno);
+
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 		xidptr = (TransactionId *) (BufferGetPage(buffer) + memberoff);
 
@@ -2352,7 +2362,7 @@ ExtendMultiXactOffset(MultiXactId multi, Buffer * buffer)
 		multi != FirstMultiXactId)
 	{
 		/* make a read buffer call to enlarge the resource owner */
-		*buffer = ReadSlruBuffer(SLRU_MULTIXACT_OFFSET_ID, pageno);
+		*buffer = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
 		return;
 	} else
 	{
@@ -2408,7 +2418,8 @@ ExtendMultiXactMember(MultiXactOffset offset, int nmembers, Buffer ** buffers)
 		} else
 		{
 			/* do a read buffer call to allocate space beforehand */
-			buf = ReadSlruBuffer(SLRU_MULTIXACT_MEMBER_ID, pageno);
+			buf = ReadNrelBuffer(NREL_MULTIXACT_MEMBER_REL_ID, pageno);
+
 		}
 
 		if (buffers)
@@ -2689,7 +2700,7 @@ find_multixact_start(MultiXactId multi, MultiXactOffset *result)
 	int			entryno;
 	MultiXactOffset *offptr;
 	Buffer		buffer;
-	RelFileLocator rlocator = SlruRelFileLocator(SLRU_MULTIXACT_OFFSET_REL_ID);
+	RelFileLocator rlocator = NrelRelFileLocator(NREL_MULTIXACT_OFFSET_REL_ID);
 
 	Assert(MultiXactState->finishedStartup);
 
@@ -2701,10 +2712,11 @@ find_multixact_start(MultiXactId multi, MultiXactOffset *result)
 	 * commit 068cfadf9).
 	 */
 	if (!BufferProbe(rlocator, MAIN_FORKNUM, pageno) &&
-		!SimpleLruDoesPhysicalPageExist(SLRU_MULTIXACT_OFFSET_REL_ID, pageno))
+		!NonRelDoesPhysicalPageExist(NREL_MULTIXACT_OFFSET_REL_ID, pageno))
 		return false;
 
-	buffer = ReadSlruBuffer(SLRU_MULTIXACT_OFFSET_REL_ID, pageno);
+	buffer = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
+
 	LockBuffer(buffer, BUFFER_LOCK_SHARE);
 	offptr = (MultiXactOffset *) BufferGetPage(buffer);
 	offptr += entryno;
@@ -2812,7 +2824,7 @@ typedef struct mxtruncinfo
  *		This callback determines the earliest existing page number.
  */
 static bool
-SlruScanDirCbFindEarliest(Oid rel_id, SlruPagePrecedesFunction PagePrecedes,
+NrelScanDirCbFindEarliest(Oid rel_id, NrelPagePrecedesFunction PagePrecedes,
 						  char *filename, int segpage, void *data)
 {
 	mxtruncinfo *trunc = (mxtruncinfo *) data;
@@ -2831,7 +2843,7 @@ SlruScanDirCbFindEarliest(Oid rel_id, SlruPagePrecedesFunction PagePrecedes,
  * Delete members segments [oldest, newOldest)
  *
  * The members SLRU can, in contrast to the offsets one, be filled to almost
- * the full range at once. This means SimpleLruTruncate() can't trivially be
+ * the full range at once. This means NonRelTruncate() can't trivially be
  * used - instead the to-be-deleted range is computed using the offsets
  * SLRU. C.f. TruncateMultiXact().
  */
@@ -2850,7 +2862,7 @@ PerformMembersTruncation(MultiXactOffset oldestOffset, MultiXactOffset newOldest
 	while (segment != endsegment)
 	{
 		elog(DEBUG2, "truncating multixact members segment %x", segment);
-		SlruDeleteSegment(SLRU_MULTIXACT_MEMBER_REL_ID, segment);
+		NrelDeleteSegment(NREL_MULTIXACT_MEMBER_REL_ID, segment);
 
 		/* move to next segment, handling wraparound correctly */
 		if (segment == maxsegment)
@@ -2870,10 +2882,10 @@ PerformOffsetsTruncation(MultiXactId oldestMulti, MultiXactId newOldestMulti)
 	 * We step back one multixact to avoid passing a cutoff page that hasn't
 	 * been created yet in the rare case that oldestMulti would be the first
 	 * item on a page and oldestMulti == nextMulti.  In that case, if we
-	 * didn't subtract one, we'd trigger SimpleLruTruncate's wraparound
+	 * didn't subtract one, we'd trigger NonRelTruncate's wraparound
 	 * detection.
 	 */
-	SimpleLruTruncate(SLRU_MULTIXACT_OFFSET_REL_ID,
+	NonRelTruncate(NREL_MULTIXACT_OFFSET_REL_ID,
 					  MultiXactOffsetPagePrecedes,
 					  MultiXactIdToOffsetPage(PreviousMultiXactId(newOldestMulti)));
 }
@@ -2937,7 +2949,7 @@ TruncateMultiXact(MultiXactId newOldestMulti, Oid newOldestMultiDB)
 	 * the earliest offsets page number that we can read without error.
 	 *
 	 * When nextMXact is less than one segment away from multiWrapLimit,
-	 * SlruScanDirCbFindEarliest can find some early segment other than the
+	 * NrelScanDirCbFindEarliest can find some early segment other than the
 	 * actual earliest.  (MultiXactOffsetPagePrecedes(EARLIEST, LATEST)
 	 * returns false, because not all pairs of entries have the same answer.)
 	 * That can also arise when an earlier truncation attempt failed unlink()
@@ -2948,9 +2960,9 @@ TruncateMultiXact(MultiXactId newOldestMulti, Oid newOldestMultiDB)
 	 * been truncated away, and we crashed before updating oldestMulti.
 	 */
 	trunc.earliestExistingPage = -1;
-	SlruScanDirectory(SLRU_MULTIXACT_OFFSET_REL_ID,
+	NrelScanDirectory(NREL_MULTIXACT_OFFSET_REL_ID,
 					  MultiXactOffsetPagePrecedes,
-					  SlruScanDirCbFindEarliest, &trunc);
+					  NrelScanDirCbFindEarliest, &trunc);
 	earliest = trunc.earliestExistingPage * MULTIXACT_OFFSETS_PER_PAGE;
 	if (earliest < FirstMultiXactId)
 		earliest = FirstMultiXactId;

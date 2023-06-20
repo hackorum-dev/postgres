@@ -73,8 +73,8 @@ typedef struct SMgrRelationData
 	 * for slru.c; we'll just cache one File for now.
 	 * XXX Unionize with md stuff somehow so we don't waste space
 	 */
-	int			slru_file_segment;
-	File		slru_file;
+	int			nrel_file_segment;
+	File		nrel_file;
 
 	/* if unowned, list link in list of all unowned SMgrRelations */
 	dlist_node	node;

@@ -193,6 +193,7 @@
 #include "postgres.h"
 
 #include "access/parallel.h"
+#include "access/nrel.h"
 #include "access/slru.h"
 #include "access/subtrans.h"
 #include "access/transam.h"
@@ -798,7 +799,7 @@ SerialInit(void)
 #ifdef USE_ASSERT_CHECKING
 	SerialPagePrecedesLogicallyUnitTests();
 #endif
-	SlruPagePrecedesUnitTests(SerialPagePrecedesLogically, SERIAL_ENTRIESPERPAGE);
+	NrelPagePrecedesUnitTests(SerialPagePrecedesLogically, SERIAL_ENTRIESPERPAGE);
 
 	/*
 	 * Create or attach to the SerialControl structure.
@@ -875,16 +876,18 @@ SerialAdd(TransactionId xid, SerCommitSeqNo minConflictCommitSeqNo)
 		/* Initialize intervening pages. */
 		while (firstZeroPage != targetPage)
 		{
-			buffer = ZeroSlruBuffer(SLRU_SERIAL_REL_ID, firstZeroPage);
+			buffer = ZeroNrelBuffer(NREL_SERIAL_REL_ID, firstZeroPage);
+
 			MarkBufferDirty(buffer);
 			UnlockReleaseBuffer(buffer);
 			firstZeroPage = SerialNextPage(firstZeroPage);
 		}
-		buffer = ZeroSlruBuffer(SLRU_SERIAL_REL_ID, targetPage);
+		buffer = ZeroNrelBuffer(NREL_SERIAL_REL_ID, targetPage);
 	}
 	else
 	{
-		buffer = ReadSlruBuffer(SLRU_SERIAL_REL_ID, targetPage);
+		buffer = ReadNrelBuffer(NREL_SERIAL_REL_ID, targetPage);
+
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 	}
 
@@ -928,7 +931,8 @@ SerialGetMinConflictCommitSeqNo(TransactionId xid)
 	 * The following function must be called without holding SerialSLRULock,
 	 * but will return with that lock held, which must then be released.
 	 */
-	buffer = ReadSlruBuffer(SLRU_SERIAL_REL_ID, SerialPage(xid));
+	buffer = ReadNrelBuffer(NREL_SERIAL_REL_ID, SerialPage(xid));
+
 	val = SerialValue(buffer, xid);
 	ReleaseBuffer(buffer);
 	LWLockRelease(SerialSLRULock);
@@ -1049,7 +1053,7 @@ CheckPointPredicate(void)
 	LWLockRelease(SerialSLRULock);
 
 	/* Truncate away pages that are no longer required */
-	SimpleLruTruncate(SLRU_SERIAL_REL_ID, SerialPagePrecedesLogically, tailPage);
+	NonRelTruncate(NREL_SERIAL_REL_ID, SerialPagePrecedesLogically, tailPage);
 }
 
 /*------------------------------------------------------------------------*/

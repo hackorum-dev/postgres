@@ -17,6 +17,7 @@
  */
 #include "postgres.h"
 
+#include "access/nrel.h"
 #include "access/slru.h"
 #include "access/xlogutils.h"
 #include "lib/ilist.h"
@@ -27,6 +28,7 @@
 #include "storage/smgr.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
+#include "miscadmin.h"
 
 
 /*
@@ -88,13 +90,13 @@ static const f_smgr smgrsw[] = {
 		.smgr_truncate = mdtruncate,
 		.smgr_immedsync = mdimmedsync,
 	},
-	/* "SLRU" storage */
+	/* "NREL" storage */
 	{
-		.smgr_open = slruopen,
-		.smgr_close = slruclose,
-		.smgr_read = slruread,
-		.smgr_write = slruwrite,
-		.smgr_writeback = slruwriteback,
+		.smgr_open = nrelopen,
+		.smgr_close = nrelclose,
+		.smgr_read = nrelread,
+		.smgr_write = nrelwrite,
+		.smgr_writeback = nrelwriteback,
 	}
 };
 
@@ -177,9 +179,11 @@ smgropen(RelFileLocator rlocator, BackendId backend)
 	/* Look up or create an entry */
 	brlocator.locator = rlocator;
 	brlocator.backend = backend;
+	
 	reln = (SMgrRelation) hash_search(SMgrRelationHash,
-									  &brlocator,
-									  HASH_ENTER, &found);
+								  &brlocator,
+								  HASH_ENTER, &found);
+
 
 	/* Initialize it if not present before */
 	if (!found)
@@ -191,7 +195,7 @@ smgropen(RelFileLocator rlocator, BackendId backend)
 			reln->smgr_cached_nblocks[i] = InvalidBlockNumber;
 
 		/* XXX find some elegant way to do this, or something better */
-		if (rlocator.dbOid == SLRU_DB_ID)
+		if (rlocator.dbOid == NREL_DB_ID)
 			reln->smgr_which = 1;	/* slru.c */
 		else
 			reln->smgr_which = 0;	/* md.c */

@@ -29,6 +29,7 @@
 #include "postgres.h"
 
 #include "access/slru.h"
+#include "access/nrel.h"
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "pg_trace.h"
@@ -74,7 +75,8 @@ SubTransSetParent(TransactionId xid, TransactionId parent)
 	Assert(TransactionIdIsValid(parent));
 	Assert(TransactionIdFollows(xid, parent));
 
-	buffer = ReadSlruBuffer(SLRU_SUBTRANS_REL_ID, pageno);
+	buffer = ReadNrelBuffer(NREL_SUBTRANS_REL_ID, pageno);
+
 	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 	ptr = (TransactionId *) BufferGetPage(buffer);
 	ptr += entryno;
@@ -113,7 +115,8 @@ SubTransGetParent(TransactionId xid)
 	if (!TransactionIdIsNormal(xid))
 		return InvalidTransactionId;
 
-	buffer = ReadSlruBuffer(SLRU_SUBTRANS_REL_ID, pageno);
+	buffer = ReadNrelBuffer(NREL_SUBTRANS_REL_ID, pageno);
+
 
 	ptr = (TransactionId *) BufferGetPage(buffer);
 	ptr += entryno;
@@ -183,7 +186,7 @@ BootStrapSUBTRANS(void)
 {
 	Buffer		buffer;
 
-	SlruPagePrecedesUnitTests(SubTransPagePrecedes, SUBTRANS_XACTS_PER_PAGE);
+	NrelPagePrecedesUnitTests(SubTransPagePrecedes, SUBTRANS_XACTS_PER_PAGE);
 
 	/* Create and zero the first page of the subtrans log */
 	buffer = ZeroSUBTRANSPage(0);
@@ -206,7 +209,8 @@ ZeroSUBTRANSPage(int pageno)
 {
 	Buffer		buffer;
 
-	buffer = ZeroSlruBuffer(SLRU_SUBTRANS_REL_ID, pageno);
+	buffer = ZeroNrelBuffer(NREL_SUBTRANS_REL_ID, pageno);
+
 	MarkBufferDirty(buffer);
 
 	return buffer;
@@ -289,16 +293,16 @@ TruncateSUBTRANS(TransactionId oldestXact)
 
 	/*
 	 * The cutoff point is the start of the segment containing oldestXact. We
-	 * pass the *page* containing oldestXact to SimpleLruTruncate.  We step
+	 * pass the *page* containing oldestXact to NonRelTruncate.  We step
 	 * back one transaction to avoid passing a cutoff page that hasn't been
 	 * created yet in the rare case that oldestXact would be the first item on
 	 * a page and oldestXact == next XID.  In that case, if we didn't subtract
-	 * one, we'd trigger SimpleLruTruncate's wraparound detection.
+	 * one, we'd trigger NonRelTruncate's wraparound detection.
 	 */
 	TransactionIdRetreat(oldestXact);
 	cutoffPage = TransactionIdToPage(oldestXact);
 
-	SimpleLruTruncate(SLRU_SUBTRANS_REL_ID, SubTransPagePrecedes, cutoffPage);
+	NonRelTruncate(NREL_SUBTRANS_REL_ID, SubTransPagePrecedes, cutoffPage);
 }
 
 

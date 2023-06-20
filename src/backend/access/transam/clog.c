@@ -34,6 +34,7 @@
 
 #include "access/clog.h"
 #include "access/slru.h"
+#include "access/nrel.h"
 #include "access/transam.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
@@ -44,6 +45,7 @@
 #include "storage/bufmgr.h"
 #include "storage/buf_internals.h"
 #include "storage/proc.h"
+#include "storage/smgr.h"
 #include "storage/sync.h"
 
 /*
@@ -350,7 +352,7 @@ TransactionIdSetPageStatusInternal(TransactionId xid, int nsubxids,
 	 * write-busy, since we don't care if the update reaches disk sooner than
 	 * we think.
 	 */
-	buffer = ReadSlruBuffer(SLRU_CLOG_REL_ID, pageno);
+	buffer = ReadNrelBuffer(NREL_CLOG_REL_ID, pageno);
 	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
 	/*
@@ -641,7 +643,7 @@ TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 	XidStatus	status;
 	Buffer		buffer;
 
-	buffer = ReadSlruBuffer(SLRU_CLOG_REL_ID, pageno);
+	buffer = ReadNrelBuffer(NREL_CLOG_REL_ID, pageno);
 	byteptr = BufferGetPage(buffer) + byteno;
 
 	status = (*byteptr >> bshift) & CLOG_XACT_BITMASK;
@@ -687,7 +689,8 @@ ZeroCLOGPage(int pageno, bool writeXlog)
 {
 	Buffer		buffer;
 
-	buffer = ZeroSlruBuffer(SLRU_CLOG_REL_ID, pageno);
+	buffer = ZeroNrelBuffer(NREL_CLOG_REL_ID, pageno);
+
 	MarkBufferDirty(buffer);
 
 	if (writeXlog)
@@ -733,7 +736,8 @@ TrimCLOG(void)
 		char	   *byteptr;
 		Buffer		buffer;
 
-		buffer = ReadSlruBuffer(SLRU_CLOG_REL_ID, pageno);
+		buffer = ReadNrelBuffer(NREL_CLOG_REL_ID, pageno);
+
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 		byteptr = BufferGetPage(buffer) + byteno;
 
@@ -798,13 +802,13 @@ TruncateCLOG(TransactionId oldestXact, Oid oldestxid_datoid)
 
 	/*
 	 * The cutoff point is the start of the segment containing oldestXact. We
-	 * pass the *page* containing oldestXact to SimpleLruTruncate.
+	 * pass the *page* containing oldestXact to NonRelTruncate.
 	 */
 	cutoffPage = TransactionIdToPage(oldestXact);
 
 	/* Check to see if there's any files that could be removed */
-	if (!SlruScanDirectory(SLRU_CLOG_REL_ID, CLOGPagePrecedes,
-						   SlruScanDirCbReportPresence, &cutoffPage))
+	if (!NrelScanDirectory(NREL_CLOG_REL_ID, CLOGPagePrecedes,
+						   NrelScanDirCbReportPresence, &cutoffPage))
 		return;					/* nothing to remove */
 
 	/*
@@ -825,8 +829,9 @@ TruncateCLOG(TransactionId oldestXact, Oid oldestxid_datoid)
 	WriteTruncateXlogRec(cutoffPage, oldestXact, oldestxid_datoid);
 
 	/* Now we can remove the old CLOG segment(s) */
-	SimpleLruTruncate(SLRU_CLOG_REL_ID, CLOGPagePrecedes, cutoffPage);
+	NonRelTruncate(NREL_CLOG_REL_ID, CLOGPagePrecedes, cutoffPage);
 }
+
 
 
 /*
@@ -939,7 +944,7 @@ clog_redo(XLogReaderState *record)
 
 		AdvanceOldestClogXid(xlrec.oldestXact);
 
-		SimpleLruTruncate(SLRU_CLOG_REL_ID, CLOGPagePrecedes, xlrec.pageno);
+		NonRelTruncate(NREL_CLOG_REL_ID, CLOGPagePrecedes, xlrec.pageno);
 	}
 	else
 		elog(PANIC, "clog_redo: unknown op code %u", info);

@@ -14,6 +14,7 @@
 #define PGSTAT_INTERNAL_H
 
 
+#include "access/nrel.h"
 #include "access/slru.h"
 #include "common/hashfn.h"
 #include "lib/dshash.h"
@@ -323,7 +324,7 @@ typedef struct PgStatShared_SLRU
 {
 	/* lock protects ->stats */
 	LWLock		lock;
-	PgStat_SLRUStats stats[SLRU_NUM_RELS];
+	PgStat_SLRUStats stats[NREL_NUM_RELS];
 } PgStatShared_SLRU;
 
 typedef struct PgStatShared_Wal
@@ -435,7 +436,7 @@ typedef struct PgStat_Snapshot
 
 	PgStat_IO	io;
 
-	PgStat_SLRUStats slru[SLRU_NUM_RELS];
+	PgStat_SLRUStats slru[NREL_NUM_RELS];
 
 	PgStat_WalStats wal;
 

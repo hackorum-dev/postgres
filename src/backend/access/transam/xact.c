@@ -1394,22 +1394,21 @@ RecordTransactionCommit(void)
 		Assert((MyProc->delayChkptFlags & DELAY_CHKPT_START) == 0);
 		
 		/*
-	 	 * After moving the commit log to the buffer cache, we may need to
+		 * After moving the commit log to the buffer cache, we may need to
 		 * create a hashtable entry in the storage manager hash table for the
-		 * commit log which will require allocating memory. We want to do this
+		 * commit log which will require allocating memory. We want to do this 
 		 * before we start the critical section.
 		 */
 		Assert(VerifyClogLocatorInHashTable());
 
 
 		/*
-		* Similar to above - we may need to allocate memory for a new buffer pin
-		* for ReadBuffer while getting a clog page, so ensure we have enough memory
-		* before starting critical section.
-		*/
+		 * Similar to above - we may need to allocate memory for a new buffer pin
+		 * for ReadBuffer while getting a clog page, so ensure we have enough memory
+		 * before starting critical section.
+		 */
 		ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
-
-		
+						
 		START_CRIT_SECTION();
 		MyProc->delayChkptFlags |= DELAY_CHKPT_START;
 

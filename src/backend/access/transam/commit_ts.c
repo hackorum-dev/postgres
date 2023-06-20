@@ -23,6 +23,7 @@
 
 #include "access/commit_ts.h"
 #include "access/htup_details.h"
+#include "access/nrel.h"
 #include "access/slru.h"
 #include "access/transam.h"
 #include "access/xloginsert.h"
@@ -51,7 +52,7 @@
 /*
  * We need 8+2 bytes per xact.  Note that enlarging this struct might mean
  * the largest possible file name is more than 5 chars long; see
- * SlruScanDirectory.
+ * NrelScanDirectory.
  */
 typedef struct CommitTimestampEntry
 {
@@ -212,7 +213,8 @@ SetXidCommitTsInPage(TransactionId xid, int nsubxids,
 	int			i;
 	Buffer		buffer;
 
-	buffer = ReadSlruBuffer(SLRU_COMMITTS_REL_ID, pageno);
+	buffer = ReadNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
+
 	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
 	TransactionIdSetCommitTs(xid, ts, nodeid, buffer);
@@ -314,7 +316,8 @@ TransactionIdGetCommitTsData(TransactionId xid, TimestampTz *ts,
 		return false;
 	}
 
-	buffer = ReadSlruBuffer(SLRU_COMMITTS_REL_ID, pageno);
+	buffer = ReadNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
+
 	LockBuffer(buffer, BUFFER_LOCK_SHARE);
 
 	memcpy(&entry,
@@ -495,7 +498,7 @@ CommitTsShmemInit(void)
 {
 	bool		found;
 
-	SlruPagePrecedesUnitTests(CommitTsPagePrecedes, COMMIT_TS_XACTS_PER_PAGE);
+	NrelPagePrecedesUnitTests(CommitTsPagePrecedes, COMMIT_TS_XACTS_PER_PAGE);
 
 	commitTsShared = ShmemInitStruct("CommitTs shared",
 									 sizeof(CommitTimestampShared),
@@ -544,7 +547,8 @@ ZeroCommitTsPage(int pageno, bool writeXlog)
 {
 	Buffer		buffer;
 
-	buffer = ZeroSlruBuffer(SLRU_COMMITTS_REL_ID, pageno);
+	buffer = ZeroNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
+
 	MarkBufferDirty(buffer);
 
 	if (writeXlog)
@@ -670,11 +674,12 @@ ActivateCommitTs(void)
 	LWLockRelease(CommitTsLock);
 
 	/* Create the current segment file, if necessary */
-	if (!SimpleLruDoesPhysicalPageExist(SLRU_COMMITTS_REL_ID, pageno))
+	if (!NonRelDoesPhysicalPageExist(NREL_COMMITTS_REL_ID, pageno))
 	{
 		Buffer		buffer;
 
-		buffer = ZeroSlruBuffer(SLRU_COMMITTS_REL_ID, pageno);
+		buffer = ZeroNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
+
 		MarkBufferDirty(buffer);
 		FlushOneBuffer(buffer);
 		UnlockReleaseBuffer(buffer);
@@ -726,9 +731,9 @@ DeactivateCommitTs(void)
 	 * be overwritten anyway when we wrap around, but it seems better to be
 	 * tidy.)
 	 */
-	(void) SlruScanDirectory(SLRU_COMMITTS_REL_ID,
+	(void) NrelScanDirectory(NREL_COMMITTS_REL_ID,
 							 CommitTsPagePrecedes,
-							 SlruScanDirCbDeleteAll, NULL);
+							 NrelScanDirCbDeleteAll, NULL);
 }
 
 /*
@@ -783,14 +788,14 @@ TruncateCommitTs(TransactionId oldestXact)
 
 	/*
 	 * The cutoff point is the start of the segment containing oldestXact. We
-	 * pass the *page* containing oldestXact to SimpleLruTruncate.
+	 * pass the *page* containing oldestXact to NonRelTruncate.
 	 */
 	cutoffPage = TransactionIdToCTsPage(oldestXact);
 
 	/* Check to see if there's any files that could be removed */
-	if (!SlruScanDirectory(SLRU_COMMITTS_REL_ID,
+	if (!NrelScanDirectory(NREL_COMMITTS_REL_ID,
 						   CommitTsPagePrecedes,
-						   SlruScanDirCbReportPresence,
+						   NrelScanDirCbReportPresence,
 						   &cutoffPage))
 		return;					/* nothing to remove */
 
@@ -798,7 +803,7 @@ TruncateCommitTs(TransactionId oldestXact)
 	WriteTruncateXlogRec(cutoffPage, oldestXact);
 
 	/* Now we can remove the old CommitTs segment(s) */
-	SimpleLruTruncate(SLRU_COMMITTS_REL_ID, CommitTsPagePrecedes, cutoffPage);
+	NonRelTruncate(NREL_COMMITTS_REL_ID, CommitTsPagePrecedes, cutoffPage);
 }
 
 /*
@@ -926,7 +931,8 @@ commit_ts_redo(XLogReaderState *record)
 
 		memcpy(&pageno, XLogRecGetData(record), sizeof(int));
 
-		buffer = ZeroSlruBuffer(SLRU_COMMITTS_REL_ID, pageno);
+		buffer = ZeroNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
+
 		MarkBufferDirty(buffer);
 		FlushOneBuffer(buffer);
 		UnlockReleaseBuffer(buffer);
@@ -937,7 +943,7 @@ commit_ts_redo(XLogReaderState *record)
 
 		AdvanceOldestCommitTsXid(trunc->oldestXid);
 
-		SimpleLruTruncate(SLRU_COMMITTS_REL_ID, CommitTsPagePrecedes, trunc->pageno);
+		NonRelTruncate(NREL_COMMITTS_REL_ID, CommitTsPagePrecedes, trunc->pageno);
 	}
 	else
 		elog(PANIC, "commit_ts_redo: unknown op code %u", info);
