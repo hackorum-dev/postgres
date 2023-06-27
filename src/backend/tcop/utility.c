@@ -850,7 +850,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				closeAllVfds(); /* probably not necessary... */
 				/* Allowed names are restricted if you're not superuser */
-				load_file(stmt->filename, !superuser());
+				load_file_ext(stmt->filename, !superuser(), LLR_LOAD, NULL);
 			}
 			break;
 

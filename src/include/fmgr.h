@@ -741,10 +741,21 @@ extern bool CheckFunctionValidatorAccess(Oid validatorOid, Oid functionOid);
  */
 extern PGDLLIMPORT char *Dynamic_library_path;
 
+typedef enum LoadLibraryReason
+{
+	LLR_UNSPECIFIED,
+	LLR_GUC,
+	LLR_LOAD,
+	LLR_C_FUNCTION,
+	LLR_RESTORE_LIBRARY_STATE,
+} LoadLibraryReason;
+
 extern void *load_external_function(const char *filename, const char *funcname,
 									bool signalNotFound, void **filehandle);
 extern void *lookup_external_function(void *filehandle, const char *funcname);
 extern void load_file(const char *filename, bool restricted);
+extern void load_file_ext(const char *filename, bool restricted,
+						  LoadLibraryReason reason, const char *detail);
 extern void **find_rendezvous_variable(const char *varName);
 extern Size EstimateLibraryStateSpace(void);
 extern void SerializeLibraryState(Size maxsize, char *start_address);

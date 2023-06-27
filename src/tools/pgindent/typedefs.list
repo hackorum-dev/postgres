@@ -1431,6 +1431,8 @@ ListenAction
 ListenActionKind
 ListenStmt
 LoInfo
+LoadLibraryReason
+LoadLibraryErrorCallbackState
 LoadStmt
 LocalBufferLookupEnt
 LocalPgBackendStatus

@@ -18,6 +18,7 @@ LOAD :'regresslib';
 CREATE FUNCTION test1 (int) RETURNS int LANGUAGE C
     AS 'nosuchfile';
 ERROR:  could not access file "nosuchfile": No such file or directory
+CONTEXT:  library load for C function "test1"
 -- To produce stable regression test output, we have to filter the name
 -- of the regresslib file out of the error message in this test.
 \set VERBOSITY sqlstate

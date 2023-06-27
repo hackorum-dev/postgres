@@ -63,6 +63,15 @@ typedef struct df_files
 	char		filename[FLEXIBLE_ARRAY_MEMBER];	/* Full pathname of file */
 } DynamicFileList;
 
+/* State for load_library_error_callback() */
+typedef struct LoadLibraryErrorCallbackState
+{
+	const char *libname;
+	LoadLibraryReason reason;
+	const char *detail;
+	bool		in_pg_init;
+} LoadLibraryErrorCallbackState;
+
 static DynamicFileList *file_list = NULL;
 static DynamicFileList *file_tail = NULL;
 
@@ -75,7 +84,9 @@ static DynamicFileList *file_tail = NULL;
 
 char	   *Dynamic_library_path;
 
-static void *internal_load_library(const char *libname);
+static void *internal_load_library(const char *libname,
+								   LoadLibraryReason reason,
+								   const char *detail);
 static void incompatible_module_error(const char *libname,
 									  const Pg_magic_struct *module_magic_data) pg_attribute_noreturn();
 static bool file_exists(const char *name);
@@ -83,6 +94,7 @@ static char *expand_dynamic_library_name(const char *name);
 static void check_restricted_library_name(const char *name);
 static char *substitute_libpath_macro(const char *name);
 static char *find_in_dynamic_libpath(const char *basename);
+static void load_library_error_callback(void *arg);
 
 /* Magic structure that module needs to match to be accepted */
 static const Pg_magic_struct magic_data = PG_MODULE_MAGIC_DATA;
@@ -113,7 +125,7 @@ load_external_function(const char *filename, const char *funcname,
 	fullname = expand_dynamic_library_name(filename);
 
 	/* Load the shared library, unless we already did */
-	lib_handle = internal_load_library(fullname);
+	lib_handle = internal_load_library(fullname, LLR_C_FUNCTION, funcname);
 
 	/* Return handle if caller wants it */
 	if (filehandle)
@@ -139,9 +151,13 @@ load_external_function(const char *filename, const char *funcname,
  *
  * When 'restricted' is true, only libraries in the presumed-secure
  * directory $libdir/plugins may be referenced.
+ *
+ * 'reason' and 'detail' are used to set up an error context handler during
+ * library loading.
  */
 void
-load_file(const char *filename, bool restricted)
+load_file_ext(const char *filename, bool restricted,
+			  LoadLibraryReason reason, const char *detail)
 {
 	char	   *fullname;
 
@@ -153,9 +169,18 @@ load_file(const char *filename, bool restricted)
 	fullname = expand_dynamic_library_name(filename);
 
 	/* Load the shared library */
-	(void) internal_load_library(fullname);
+	(void) internal_load_library(fullname, reason, detail);
 
 	pfree(fullname);
+}
+
+/*
+ * Backward compatible wrapper around load_file_ext()
+ */
+void
+load_file(const char *filename, bool restricted)
+{
+	load_file_ext(filename, restricted, LLR_UNSPECIFIED, NULL);
 }
 
 /*
@@ -181,13 +206,26 @@ lookup_external_function(void *filehandle, const char *funcname)
  * perhaps other things that are definitely unsafe currently.
  */
 static void *
-internal_load_library(const char *libname)
+internal_load_library(const char *libname,
+					  LoadLibraryReason reason, const char *detail)
 {
 	DynamicFileList *file_scanner;
 	PGModuleMagicFunction magic_func;
 	char	   *load_error;
 	struct stat stat_buf;
 	PG_init_t	PG_init;
+	LoadLibraryErrorCallbackState errstate = {
+		.reason = reason,.detail = detail,
+		.libname = libname,
+		.in_pg_init = false,
+	};
+	ErrorContextCallback errcallback = {
+		.callback = load_library_error_callback,
+		.arg = (void *) &errstate,
+		.previous = error_context_stack,
+	};
+
+	error_context_stack = &errcallback;
 
 	/*
 	 * Scan the list of loaded FILES to see if the file has been loaded.
@@ -286,7 +324,11 @@ internal_load_library(const char *libname)
 		 */
 		PG_init = (PG_init_t) dlsym(file_scanner->handle, "_PG_init");
 		if (PG_init)
+		{
+			errstate.in_pg_init = true;
 			(*PG_init) ();
+			errstate.in_pg_init = false;
+		}
 
 		/* OK to link it into list */
 		if (file_list == NULL)
@@ -295,6 +337,8 @@ internal_load_library(const char *libname)
 			file_tail->next = file_scanner;
 		file_tail = file_scanner;
 	}
+
+	error_context_stack = errcallback.previous;
 
 	return file_scanner->handle;
 }
@@ -398,6 +442,41 @@ incompatible_module_error(const char *libname,
 			(errmsg("incompatible library \"%s\": magic block mismatch",
 					libname),
 			 errdetail_internal("%s", details.data)));
+}
+
+/*
+ * Error context callback for internal_load_library()
+ */
+static void
+load_library_error_callback(void *arg)
+{
+	LoadLibraryErrorCallbackState *state = (LoadLibraryErrorCallbackState *) arg;
+
+	/*
+	 * The errors in internal_load_library() contain the filename, but that's
+	 * not the case during _PG_init().
+	 */
+	if (state->in_pg_init)
+		errcontext("in \"%s\" callback of library \"%s\"", "_PG_init()", state->libname);
+
+	switch (state->reason)
+	{
+		case LLR_UNSPECIFIED:
+			errcontext("library load for unspecified reason");
+			break;
+		case LLR_GUC:
+			errcontext("library load for \"%s\" parameter", state->detail);
+			break;
+		case LLR_LOAD:
+			errcontext("library load for LOAD statement");
+			break;
+		case LLR_C_FUNCTION:
+			errcontext("library load for C function \"%s\"", state->detail);
+			break;
+		case LLR_RESTORE_LIBRARY_STATE:
+			errcontext("restoring library state in parallel worker");
+			break;
+	}
 }
 
 static bool
@@ -694,7 +773,7 @@ RestoreLibraryState(char *start_address)
 {
 	while (*start_address != '\0')
 	{
-		internal_load_library(start_address);
+		internal_load_library(start_address, LLR_RESTORE_LIBRARY_STATE, NULL);
 		start_address += strlen(start_address) + 1;
 	}
 }
