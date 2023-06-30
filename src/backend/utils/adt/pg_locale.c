@@ -191,6 +191,23 @@ wcstombs_l(char *dest, const wchar_t *src, size_t n, locale_t loc)
 }
 #endif
 
+
+/*
+ * Check if a locale is the C locale
+ *
+ * POSIX is an alias for C. Passing ingore_case as true will use
+ * pg_strcasecmp() instead of strcmp().
+ */
+bool
+locale_is_c(const char *locale, bool ignore_case)
+{
+	if (!ignore_case)
+		return strcmp(locale, "C") == 0 || strcmp(locale, "POSIX") == 0;
+
+	return pg_strcasecmp(locale, "C") == 0 || pg_strcasecmp(locale, "POSIX") == 0;
+}
+
+
 /*
  * pg_perm_setlocale
  *
@@ -1276,10 +1293,8 @@ lookup_collation_cache(Oid collation, bool set_flags)
 			datum = SysCacheGetAttrNotNull(COLLOID, tp, Anum_pg_collation_collctype);
 			collctype = TextDatumGetCString(datum);
 
-			cache_entry->collate_is_c = ((strcmp(collcollate, "C") == 0) ||
-										 (strcmp(collcollate, "POSIX") == 0));
-			cache_entry->ctype_is_c = ((strcmp(collctype, "C") == 0) ||
-									   (strcmp(collctype, "POSIX") == 0));
+			cache_entry->collate_is_c = locale_is_c(collcollate, false);
+			cache_entry->ctype_is_c = locale_is_c(collctype, false);
 		}
 		else
 		{
@@ -1327,12 +1342,8 @@ lc_collate_is_c(Oid collation)
 		if (!localeptr)
 			elog(ERROR, "invalid LC_COLLATE setting");
 
-		if (strcmp(localeptr, "C") == 0)
-			result = true;
-		else if (strcmp(localeptr, "POSIX") == 0)
-			result = true;
-		else
-			result = false;
+		result = locale_is_c(localeptr, false);
+
 		return (bool) result;
 	}
 
@@ -1380,12 +1391,8 @@ lc_ctype_is_c(Oid collation)
 		if (!localeptr)
 			elog(ERROR, "invalid LC_CTYPE setting");
 
-		if (strcmp(localeptr, "C") == 0)
-			result = true;
-		else if (strcmp(localeptr, "POSIX") == 0)
-			result = true;
-		else
-			result = false;
+		result = locale_is_c(localeptr, false);
+
 		return (bool) result;
 	}
 
