@@ -225,7 +225,7 @@ static dlist_head pgStatPending = DLIST_STATIC_INIT(pgStatPending);
  * Force the next stats flush to happen regardless of
  * PGSTAT_MIN_INTERVAL. Useful in test scripts.
  */
-static bool pgStatForceNextFlush = false;
+bool pgStatForceNextFlush = false;
 
 /*
  * Force-clear existing snapshot before next use when stats_fetch_consistency

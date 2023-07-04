@@ -1352,7 +1352,9 @@ pg_stat_get_io(PG_FUNCTION_ARGS)
 	ReturnSetInfo *rsinfo;
 	PgStat_IO  *backends_io_stats;
 	Datum		reset_time;
+	extern bool pgStatForceNextFlush;
 
+	Assert(!pgStatForceNextFlush);
 	InitMaterializedSRF(fcinfo, 0);
 	rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 
