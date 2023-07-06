@@ -3455,6 +3455,8 @@ typedef struct CreateSessionVarStmt
 	TypeName   *typeName;		/* the type of variable */
 	CollateClause *collClause;
 	bool		if_not_exists;	/* do nothing if it already exists */
+	bool		is_not_null;	/* disallow nulls */
+	bool		is_immutable;	/* don't allow changes */
 	Node	   *defexpr;		/* default expression */
 	char		eoxaction;		/* on commit action */
 } CreateSessionVarStmt;

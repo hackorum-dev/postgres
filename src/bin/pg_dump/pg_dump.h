@@ -710,6 +710,8 @@ typedef struct _VariableInfo
 	char	   *initrvaracl;
 	Oid			varcollation;
 	const char *rolname;		/* name of owner, or empty string */
+	bool		varisnotnull;
+	bool		varisimmutable;
 } VariableInfo;
 
 /*

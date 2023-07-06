@@ -5313,6 +5313,8 @@ getVariables(Archive *fout)
 	int			i_vareoxaction;
 	int			i_varowner;
 	int			i_varcollation;
+	int			i_varisnotnull;
+	int			i_varisimmutable;
 	int			i_varacl;
 	int			i_acldefault;
 	int			i,
@@ -5334,6 +5336,8 @@ getVariables(Archive *fout)
 					  "pg_catalog.format_type(v.vartype, v.vartypmod) as vartypname,\n"
 					  "CASE WHEN v.varcollation <> t.typcollation "
 					  "THEN v.varcollation ELSE 0 END AS varcollation,\n"
+					  "v.varisnotnull,\n"
+					  "v.varisimmutable,\n"
 					  "pg_catalog.pg_get_expr(v.vardefexpr,0) as vardefexpr,\n"
 					  "v.varowner,\n"
 					  "v.varacl,\n"
@@ -5355,6 +5359,8 @@ getVariables(Archive *fout)
 	i_vardefexpr = PQfnumber(res, "vardefexpr");
 	i_vareoxaction = PQfnumber(res, "vareoxaction");
 	i_varcollation = PQfnumber(res, "varcollation");
+	i_varisnotnull = PQfnumber(res, "varisnotnull");
+	i_varisimmutable = PQfnumber(res, "varisimmutable");
 
 	i_varowner = PQfnumber(res, "varowner");
 	i_varacl = PQfnumber(res, "varacl");
@@ -5379,6 +5385,8 @@ getVariables(Archive *fout)
 		varinfo[i].vartypname = pg_strdup(PQgetvalue(res, i, i_vartypname));
 		varinfo[i].vareoxaction = pg_strdup(PQgetvalue(res, i, i_vareoxaction));
 		varinfo[i].varcollation = atooid(PQgetvalue(res, i, i_varcollation));
+		varinfo[i].varisnotnull = *(PQgetvalue(res, i, i_varisnotnull)) == 't';
+		varinfo[i].varisimmutable = *(PQgetvalue(res, i, i_varisimmutable)) == 't';
 
 		varinfo[i].dacl.acl = pg_strdup(PQgetvalue(res, i, i_varacl));
 		varinfo[i].dacl.acldefault = pg_strdup(PQgetvalue(res, i, i_acldefault));
@@ -5428,7 +5436,9 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 	const char *vartypname;
 	const char *vardefexpr;
 	const char *vareoxaction;
+	const char *varisimmutable;
 	Oid			varcollation;
+	bool		varisnotnull;
 
 	/* Skip if not to be dumped */
 	if (!varinfo->dobj.dump || dopt->dataOnly)
@@ -5442,12 +5452,14 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 	vardefexpr = varinfo->vardefexpr;
 	vareoxaction = varinfo->vareoxaction;
 	varcollation = varinfo->varcollation;
+	varisnotnull = varinfo->varisnotnull;
+	varisimmutable = varinfo->varisimmutable ? "IMMUTABLE " : "";
 
 	appendPQExpBuffer(delq, "DROP VARIABLE %s;\n",
 					  qualvarname);
 
-	appendPQExpBuffer(query, "CREATE VARIABLE %s AS %s",
-					  qualvarname, vartypname);
+	appendPQExpBuffer(query, "CREATE %sVARIABLE %s AS %s",
+					  varisimmutable, qualvarname, vartypname);
 
 	if (OidIsValid(varcollation))
 	{
@@ -5458,6 +5470,9 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 			appendPQExpBuffer(query, " COLLATE %s",
 							  fmtQualifiedDumpable(coll));
 	}
+
+	if (varisnotnull)
+		appendPQExpBuffer(query, " NOT NULL");
 
 	if (vardefexpr)
 		appendPQExpBuffer(query, " DEFAULT %s",

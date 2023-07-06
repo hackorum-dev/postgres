@@ -92,6 +92,9 @@ typedef struct SVariableData
 	void	   *domain_check_extra;
 	LocalTransactionId domain_check_extra_lxid;
 
+	bool		is_not_null;
+	bool		is_immutable;
+
 	bool		reset_at_eox;
 
 	/*
@@ -110,6 +113,9 @@ typedef struct SVariableData
 	bool		is_valid;
 
 	uint32		hashvalue;		/* used for pairing sinval message */
+
+	/* true, when the value is already set, and cannot be changed more */
+	bool		protect_value;
 } SVariableData;
 
 typedef SVariableData *SVariable;
@@ -576,6 +582,23 @@ eval_assign_defexpr(SVariable svar, HeapTuple tup)
 
 			MemoryContextSwitchTo(oldcxt);
 		}
+		else
+		{
+			/*
+			 * Raise an error if this is a NOT NULL variable but the result of
+			 * DEFAULT expression is NULL.
+			 */
+			if (svar->is_not_null)
+				ereport(ERROR,
+						(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+						 errmsg("null value is not allowed for NOT NULL session variable \"%s.%s\"",
+								get_namespace_name(get_session_variable_namespace(svar->varid)),
+								get_session_variable_name(svar->varid)),
+						 errdetail("The result of DEFAULT expression is NULL.")));
+		}
+
+		if (svar->is_immutable)
+			svar->protect_value = true;
 
 		FreeExecutorState(estate);
 	}
@@ -606,6 +629,9 @@ setup_session_variable(SVariable svar, Oid varid, bool is_write)
 
 	get_typlenbyval(svar->typid, &svar->typlen, &svar->typbyval);
 
+	svar->is_not_null = varform->varisnotnull;
+	svar->is_immutable = varform->varisimmutable;
+
 	svar->is_domain = (get_typtype(varform->vartype) == TYPTYPE_DOMAIN);
 	svar->domain_check_extra = NULL;
 	svar->domain_check_extra_lxid = InvalidLocalTransactionId;
@@ -635,8 +661,30 @@ setup_session_variable(SVariable svar, Oid varid, bool is_write)
 	svar->hashvalue = GetSysCacheHashValue1(VARIABLEOID,
 											ObjectIdGetDatum(varid));
 
-	if (!is_write)
+	svar->protect_value = false;
+
+	/*
+	 * When the variable is marked as IMMUTABLE, we prefer to evaluate
+	 * possible DEFAULT before write op. In this case we want to protect
+	 * default value against any overwrite.
+	 */
+	if (!is_write ||
+		svar->is_immutable)
+	{
 		eval_assign_defexpr(svar, tup);
+
+		/*
+		 * Raise an error if this is a NOT NULL variable without default
+		 * expression.
+		 */
+		if (svar->isnull && svar->is_not_null)
+			ereport(ERROR,
+					(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+					 errmsg("null value is not allowed for NOT NULL session variable \"%s.%s\"",
+							get_namespace_name(get_session_variable_namespace(varid)),
+							get_session_variable_name(varid)),
+					 errdetail("The session variable was not initialized yet.")));
+	}
 
 	ReleaseSysCache(tup);
 }
@@ -656,6 +704,21 @@ set_session_variable(SVariable svar, Datum value, bool isnull)
 
 	Assert(svar);
 	Assert(!isnull || value == (Datum) 0);
+
+	if (svar->protect_value)
+		ereport(ERROR,
+				(errcode(ERRCODE_ERROR_IN_ASSIGNMENT),
+				 errmsg("session variable \"%s.%s\" is declared IMMUTABLE",
+						get_namespace_name(get_session_variable_namespace(svar->varid)),
+						get_session_variable_name(svar->varid))));
+
+	/* don't allow assignment of null to NOT NULL variable */
+	if (isnull && svar->is_not_null)
+		ereport(ERROR,
+				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+				 errmsg("null value is not allowed for NOT NULL session variable \"%s.%s\"",
+						get_namespace_name(get_session_variable_namespace(svar->varid)),
+						get_session_variable_name(svar->varid))));
 
 	/*
 	 * Use typbyval, typbylen from session variable only when they are
@@ -692,6 +755,10 @@ set_session_variable(SVariable svar, Datum value, bool isnull)
 
 	svar->value = newval;
 	svar->isnull = isnull;
+
+	/* don't allow more changes of value when variable is IMMUTABLE */
+	if (svar->is_immutable)
+		svar->protect_value = true;
 
 	/*
 	 * XXX While unlikely, an error here is possible. It wouldn't leak memory

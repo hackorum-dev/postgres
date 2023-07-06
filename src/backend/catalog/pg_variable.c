@@ -40,6 +40,8 @@ static ObjectAddress create_variable(const char *varName,
 									 Oid varOwner,
 									 Oid varCollation,
 									 bool if_not_exists,
+									 bool is_not_null,
+									 bool is_immutable,
 									 Node *varDefexpr,
 									 VariableEOXAction eoxaction);
 
@@ -55,6 +57,8 @@ create_variable(const char *varName,
 				Oid varOwner,
 				Oid varCollation,
 				bool if_not_exists,
+				bool is_not_null,
+				bool is_immutable,
 				Node *varDefexpr,
 				VariableEOXAction eoxaction)
 {
@@ -117,6 +121,8 @@ create_variable(const char *varName,
 	values[Anum_pg_variable_vartypmod - 1] = Int32GetDatum(varTypmod);
 	values[Anum_pg_variable_varowner - 1] = ObjectIdGetDatum(varOwner);
 	values[Anum_pg_variable_varcollation - 1] = ObjectIdGetDatum(varCollation);
+	values[Anum_pg_variable_varisnotnull - 1] = BoolGetDatum(is_not_null);
+	values[Anum_pg_variable_varisimmutable - 1] = BoolGetDatum(is_immutable);
 	values[Anum_pg_variable_vareoxaction - 1] = CharGetDatum(eoxaction);
 
 	if (varDefexpr)
@@ -259,6 +265,8 @@ CreateVariable(ParseState *pstate, CreateSessionVarStmt *stmt)
 							   varowner,
 							   collation,
 							   stmt->if_not_exists,
+							   stmt->is_not_null,
+							   stmt->is_immutable,
 							   cooked_default,
 							   stmt->eoxaction);
 
