@@ -1491,6 +1491,7 @@ LargeObjectDesc
 Latch
 LauncherLastStartTimesEntry
 LerpFunc
+LetStmt
 LexDescr
 LexemeEntry
 LexemeHashKey
@@ -2587,6 +2588,7 @@ SerializedTransactionState
 Session
 SessionBackupState
 SessionEndType
+SessionVariableValue
 SetConstraintState
 SetConstraintStateData
 SetConstraintTriggerData
@@ -2779,6 +2781,9 @@ SupportRequestRows
 SupportRequestSelectivity
 SupportRequestSimplify
 SupportRequestWFuncMonotonic
+SVariable
+SVariableData
+SVariableState
 Syn
 SyncOps
 SyncRepConfigData

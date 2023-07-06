@@ -26,6 +26,10 @@
 /* ----------------
  *		pg_variable definition.  cpp turns this into
  *		typedef struct FormData_pg_variable
+ *
+ * The column varcreate_lsn of XlogRecPtr type (8-byte) should be on position
+ * divisible by 8 unconditionally and before varname column of NameData type.
+ * see sanity_check:check_columns
  * ----------------
  */
 CATALOG(pg_variable,9222,VariableRelationId)
@@ -34,6 +38,9 @@ CATALOG(pg_variable,9222,VariableRelationId)
 
 	/* OID of entry in pg_type for variable's type */
 	Oid			vartype BKI_LOOKUP(pg_type);
+
+	/* used for identity check [oid, create_lsn] */
+	XLogRecPtr	varcreate_lsn;
 
 	/* variable name */
 	NameData	varname;
