@@ -1,16 +1,48 @@
-#!/bin/sh
+#!/usr/bin/perl
+
+# Copyright (c) 2023, PostgreSQL Global Development Group
 
 # script to detect compile time errors and warnings in all perl files
 
-INCLUDES="-I src/tools/msvc -I src/tools/msvc/dummylib -I src/backend/catalog"
-INCLUDES="-I src/test/perl -I src/backend/utils/mb/Unicode $INCLUDES"
-INCLUDES="-I src/bin/pg_rewind -I src/test/ssl/t $INCLUDES"
+use strict;
+use warnings;
 
-set -e
+use FindBin ();
+use lib "$FindBin::Bin";
 
-. src/tools/perlcheck/find_perl_files
+use Cwd qw(abs_path);
+use FindPerlFiles;
 
-# for zsh
-setopt shwordsplit 2>/dev/null || true
+die "No directories or files specified\n" unless @ARGV;
 
-find_perl_files "$@" | xargs -L 1 perl $INCLUDES -cw 2>&1 | grep -v OK
+my $srcroot = abs_path("$FindBin::Bin/../../..");
+
+my $includes="";
+
+my @incdirs = qw(
+    src/tools/msvc
+    src/tools/msvc/dummylib
+    src/backend/catalog
+    src/test/perl
+    src/backend/utils/mb/Unicode
+    src/bin/pg_rewind src/test/ssl/t
+);
+
+foreach my $inc (@incdirs)
+{
+    $includes .= "-I $srcroot/$inc ";
+}
+
+my @files =  FindPerlFiles::findperl(@ARGV);
+
+my $status = 0;
+
+foreach my $file (@files)
+{
+    my $out = `perl $includes -cw $file 2>&1`;
+    next if $out =~ /OK/;
+    $status = 1;
+    print $out;
+}
+
+exit $status;

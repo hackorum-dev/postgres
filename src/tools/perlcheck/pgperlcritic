@@ -1,20 +1,27 @@
-#!/bin/sh
+#!/usr/bin/perl
+
+# Copyright (c) 2023, PostgreSQL Global Development Group
 
 # src/tools/perlcheck/pgperlcritic
 
-test -f src/tools/perlcheck/perlcriticrc || {
-	echo could not find src/tools/perlcheck/perlcriticrc
-	exit 1
-	}
+use strict;
+use warnings;
 
-set -e
+use FindBin ();
+use lib "$FindBin::Bin";
+use FindPerlFiles;
+
+die "No directories or files specified\n" unless @ARGV;
+
+my $rc_loc = "$FindBin::Bin/perlcriticrc";
+
+die "no $rc_loc\n" unless -f $rc_loc;
 
 # set this to override default perlcritic program:
-PERLCRITIC=${PERLCRITIC:-perlcritic}
+my $perlcritic = $ENV{PERLCRITIC} || 'perlcritic';
 
-. src/tools/perlcheck/find_perl_files
+my @files = FindPerlFiles::findperl(@ARGV);
 
-find_perl_files "$@" | xargs $PERLCRITIC \
-	  --quiet \
-	  --program-extensions .pl \
-	  --profile=src/tools/perlcheck/perlcriticrc
+exit unless @files;
+
+exec $perlcritic, '--program-extensions',  '.pl', "--profile=$rc_loc", @files

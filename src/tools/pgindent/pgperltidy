@@ -1,12 +1,22 @@
-#!/bin/sh
+#!/usr/bin/perl
+
+# Copyright (c) 2023, PostgreSQL Global Development Group
 
 # src/tools/pgindent/pgperltidy
 
-set -e
+use strict;
+use warnings;
 
-# set this to override default perltidy program:
-PERLTIDY=${PERLTIDY:-perltidy}
+use FindBin ();
+use lib "$FindBin::Bin/../perlcheck";
+use FindPerlFiles;
 
-. src/tools/perlcheck/find_perl_files
+my $perltidy = $ENV{PERLTIDY} || 'perltidy';
 
-find_perl_files "$@" | xargs $PERLTIDY --profile=src/tools/pgindent/perltidyrc
+die "No directories or files specified\n" unless @ARGV;
+
+my @files = FindPerlFiles::findperl(@ARGV);
+
+exit unless @files;
+
+exec "$perltidy", "--profile=$FindBin::Bin /perltidyrc", @files;
