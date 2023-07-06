@@ -702,6 +702,7 @@ typedef struct _VariableInfo
 	DumpableAcl dacl;
 	Oid			vartype;
 	char	   *vartypname;
+	char	   *vardefexpr;
 	char	   *vareoxaction;
 	char	   *varacl;
 	char	   *rvaracl;

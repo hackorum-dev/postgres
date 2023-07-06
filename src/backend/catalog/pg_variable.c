@@ -24,6 +24,9 @@
 #include "catalog/pg_variable.h"
 #include "commands/session_variable.h"
 #include "miscadmin.h"
+#include "parser/parse_coerce.h"
+#include "parser/parse_collate.h"
+#include "parser/parse_expr.h"
 #include "parser/parse_type.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -37,6 +40,7 @@ static ObjectAddress create_variable(const char *varName,
 									 Oid varOwner,
 									 Oid varCollation,
 									 bool if_not_exists,
+									 Node *varDefexpr,
 									 VariableEOXAction eoxaction);
 
 
@@ -51,6 +55,7 @@ create_variable(const char *varName,
 				Oid varOwner,
 				Oid varCollation,
 				bool if_not_exists,
+				Node *varDefexpr,
 				VariableEOXAction eoxaction)
 {
 	Acl		   *varacl;
@@ -114,6 +119,11 @@ create_variable(const char *varName,
 	values[Anum_pg_variable_varcollation - 1] = ObjectIdGetDatum(varCollation);
 	values[Anum_pg_variable_vareoxaction - 1] = CharGetDatum(eoxaction);
 
+	if (varDefexpr)
+		values[Anum_pg_variable_vardefexpr - 1] = CStringGetTextDatum(nodeToString(varDefexpr));
+	else
+		nulls[Anum_pg_variable_vardefexpr - 1] = true;
+
 	varacl = get_user_default_acl(OBJECT_VARIABLE, varOwner,
 								  varNamespace);
 	if (varacl != NULL)
@@ -150,6 +160,11 @@ create_variable(const char *varName,
 	record_object_address_dependencies(&myself, addrs, DEPENDENCY_NORMAL);
 	free_object_addresses(addrs);
 
+	/* dependency on default expr */
+	if (varDefexpr)
+		recordDependencyOnExpr(&myself, (Node *) varDefexpr,
+							   NIL, DEPENDENCY_NORMAL);
+
 	/* dependency on owner */
 	recordDependencyOnOwner(VariableRelationId, varid, varOwner);
 
@@ -185,6 +200,7 @@ CreateVariable(ParseState *pstate, CreateSessionVarStmt *stmt)
 	Oid			collation;
 	Oid			typcollation;
 	ObjectAddress variable;
+	Node	   *cooked_default = NULL;
 
 	/* Check consistency of arguments */
 	if (stmt->eoxaction == VARIABLE_EOX_DROP
@@ -226,6 +242,16 @@ CreateVariable(ParseState *pstate, CreateSessionVarStmt *stmt)
 						format_type_be(typid)),
 				 parser_errposition(pstate, stmt->collClause->location)));
 
+	if (stmt->defexpr)
+	{
+		cooked_default = transformExpr(pstate, stmt->defexpr,
+									   EXPR_KIND_VARIABLE_DEFAULT);
+
+		cooked_default = coerce_to_specific_type(pstate,
+												 cooked_default, typid, "DEFAULT");
+		assign_expr_collations(pstate, cooked_default);
+	}
+
 	variable = create_variable(stmt->variable->relname,
 							   namespaceid,
 							   typid,
@@ -233,6 +259,7 @@ CreateVariable(ParseState *pstate, CreateSessionVarStmt *stmt)
 							   varowner,
 							   collation,
 							   stmt->if_not_exists,
+							   cooked_default,
 							   stmt->eoxaction);
 
 	elog(DEBUG1, "record for session variable \"%s\" (oid:%d) was created in pg_variable",

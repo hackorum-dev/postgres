@@ -5309,6 +5309,7 @@ getVariables(Archive *fout)
 	int			i_varnamespace;
 	int			i_vartype;
 	int			i_vartypname;
+	int			i_vardefexpr;
 	int			i_vareoxaction;
 	int			i_varowner;
 	int			i_varcollation;
@@ -5333,6 +5334,7 @@ getVariables(Archive *fout)
 					  "pg_catalog.format_type(v.vartype, v.vartypmod) as vartypname,\n"
 					  "CASE WHEN v.varcollation <> t.typcollation "
 					  "THEN v.varcollation ELSE 0 END AS varcollation,\n"
+					  "pg_catalog.pg_get_expr(v.vardefexpr,0) as vardefexpr,\n"
 					  "v.varowner,\n"
 					  "v.varacl,\n"
 					  "acldefault('V', v.varowner) AS acldefault\n"
@@ -5350,6 +5352,7 @@ getVariables(Archive *fout)
 	i_varnamespace = PQfnumber(res, "varnamespace");
 	i_vartype = PQfnumber(res, "vartype");
 	i_vartypname = PQfnumber(res, "vartypname");
+	i_vardefexpr = PQfnumber(res, "vardefexpr");
 	i_vareoxaction = PQfnumber(res, "vareoxaction");
 	i_varcollation = PQfnumber(res, "varcollation");
 
@@ -5386,6 +5389,11 @@ getVariables(Archive *fout)
 		/* Decide whether we want to dump it */
 		selectDumpableObject(&(varinfo[i].dobj), fout);
 
+		if (PQgetisnull(res, i, i_vardefexpr))
+			varinfo[i].vardefexpr = NULL;
+		else
+			varinfo[i].vardefexpr = pg_strdup(PQgetvalue(res, i, i_vardefexpr));
+
 		/* Do not try to dump ACL if no ACL exists. */
 		if (!PQgetisnull(res, i, i_varacl))
 			varinfo[i].dobj.components |= DUMP_COMPONENT_ACL;
@@ -5418,6 +5426,7 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 	PQExpBuffer query;
 	char	   *qualvarname;
 	const char *vartypname;
+	const char *vardefexpr;
 	const char *vareoxaction;
 	Oid			varcollation;
 
@@ -5430,6 +5439,7 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 
 	qualvarname = pg_strdup(fmtQualifiedDumpable(varinfo));
 	vartypname = varinfo->vartypname;
+	vardefexpr = varinfo->vardefexpr;
 	vareoxaction = varinfo->vareoxaction;
 	varcollation = varinfo->varcollation;
 
@@ -5448,6 +5458,10 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 			appendPQExpBuffer(query, " COLLATE %s",
 							  fmtQualifiedDumpable(coll));
 	}
+
+	if (vardefexpr)
+		appendPQExpBuffer(query, " DEFAULT %s",
+						  vardefexpr);
 
 	if (strcmp(vareoxaction, "r") == 0)
 		appendPQExpBuffer(query, " ON TRANSACTION END RESET");
