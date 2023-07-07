@@ -2459,6 +2459,8 @@ PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
 	char	   *bufptr;
 	const char *gid;
 	GlobalTransaction gxact;
+	bool addnewgxact = true;
+	int i;
 
 	Assert(LWLockHeldByMeInMode(TwoPhaseStateLock, LW_EXCLUSIVE));
 	Assert(RecoveryInProgress());
@@ -2477,15 +2479,54 @@ PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
 	 * that it got added in the redo phase
 	 */
 
+	/*
+	 * During recovery, the two-phase data can be added in two ways:
+	 * 1) restored from disk file when its xid < checkPoint.nextxid,
+	 * 2) restored from the WAL when its prepare_start_lsn > checkPoint.redo,
+	 * A two-phase transaction may satisfy above two conditions if we
+	 * crashed during doing a checkpoint. Considering that the data
+	 * on disk file may not be reliable, so in this case, we only store
+	 * the transaction data recorded in the WAL.
+	 */
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		GlobalTransaction curxact = TwoPhaseState->prepXacts[i];
+
+		if (curxact->xid == hdr->xid)
+		{
+			if (curxact->ondisk && !XLogRecPtrIsInvalid(start_lsn))
+			{
+				gxact = curxact;
+				addnewgxact = false;
+				ereport(WARNING,
+						(errmsg("found duplicate two-phase transaction:%u, store data from the WAL",
+								hdr->xid)));
+				break;
+			}
+			else
+				ereport(ERROR,
+						(errmsg("found unexpected duplicate two-phase transaction:%u, check for data correctness.",
+								hdr->xid)));
+		}
+	}
+
 	/* Get a free gxact from the freelist */
-	if (TwoPhaseState->freeGXacts == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OUT_OF_MEMORY),
-				 errmsg("maximum number of prepared transactions reached"),
-				 errhint("Increase max_prepared_transactions (currently %d).",
-						 max_prepared_xacts)));
-	gxact = TwoPhaseState->freeGXacts;
-	TwoPhaseState->freeGXacts = gxact->next;
+	if (addnewgxact)
+	{
+		if (TwoPhaseState->freeGXacts == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("maximum number of prepared transactions reached"),
+					 errhint("Increase max_prepared_transactions (currently %d).",
+							 max_prepared_xacts)));
+
+		gxact = TwoPhaseState->freeGXacts;
+		TwoPhaseState->freeGXacts = gxact->next;
+
+		/* And insert it into the active array */
+		Assert(TwoPhaseState->numPrepXacts < max_prepared_xacts);
+		TwoPhaseState->prepXacts[TwoPhaseState->numPrepXacts++] = gxact;
+	}
 
 	gxact->prepared_at = hdr->prepared_at;
 	gxact->prepare_start_lsn = start_lsn;
@@ -2497,10 +2538,6 @@ PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
 	gxact->ondisk = XLogRecPtrIsInvalid(start_lsn);
 	gxact->inredo = true;		/* yes, added in redo */
 	strcpy(gxact->gid, gid);
-
-	/* And insert it into the active array */
-	Assert(TwoPhaseState->numPrepXacts < max_prepared_xacts);
-	TwoPhaseState->prepXacts[TwoPhaseState->numPrepXacts++] = gxact;
 
 	if (origin_id != InvalidRepOriginId)
 	{
