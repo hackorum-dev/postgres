@@ -1826,13 +1826,11 @@ GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 			/*
 			 * We can't possibly have an unsafe conflict with a transaction in
 			 * another database.  The only possible overlap is on shared
-			 * catalogs, but we don't support SSI for shared catalogs.  The
-			 * invalid database case covers 2PC, because we don't yet record
-			 * database OIDs in the 2PC information.  We also filter out doomed
-			 * transactions as they can't possibly commit.
+			 * catalogs, but we don't support SSI for shared catalogs.  We
+			 * also filter out doomed transactions as they can't possibly
+			 * commit.
 			 */
-			if ((othersxact->database == InvalidOid ||
-				 othersxact->database == MyDatabaseId)
+			if (othersxact->database == MyDatabaseId
 				&& !SxactIsCommitted(othersxact)
 				&& !SxactIsDoomed(othersxact)
 				&& !SxactIsReadOnly(othersxact))
@@ -4859,7 +4857,7 @@ PredicateLockTwoPhaseFinish(TransactionId xid, bool isCommit)
  * Re-acquire a predicate lock belonging to a transaction that was prepared.
  */
 void
-predicatelock_twophase_recover(TransactionId xid, uint16 info,
+predicatelock_twophase_recover(Oid databaseid, TransactionId xid, uint16 info,
 							   void *recdata, uint32 len)
 {
 	TwoPhasePredicateRecord *record;
@@ -4894,7 +4892,7 @@ predicatelock_twophase_recover(TransactionId xid, uint16 info,
 		sxact->vxid.localTransactionId = (LocalTransactionId) xid;
 		sxact->pid = 0;
 		sxact->pgprocno = INVALID_PGPROCNO;
-		sxact->database = InvalidOid;
+		sxact->database = databaseid;
 
 		/* a prepared xact hasn't committed yet */
 		sxact->prepareSeqNo = RecoverySerCommitSeqNo;
