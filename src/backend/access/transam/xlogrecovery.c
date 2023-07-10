@@ -1867,6 +1867,12 @@ PerformWalRecovery(void)
 
 		RmgrCleanup();
 
+		/*
+		 * Check to see if the XLOG sequence contained any unresolved
+		 * references to uninitialized pages at the end of recovery.
+		 */
+		XLogCheckInvalidPages();
+
 		ereport(LOG,
 				errmsg("redo done at %X/%08X system usage: %s",
 					   LSN_FORMAT_ARGS(xlogreader->ReadRecPtr),
