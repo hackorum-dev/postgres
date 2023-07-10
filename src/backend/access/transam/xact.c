@@ -1877,8 +1877,18 @@ RecordTransactionAbort(bool isSubXact)
 	 * find that large aborts leave us with a long backlog for when commits
 	 * occur after the abort, increasing our window of data loss should
 	 * problems occur at that point.
+	 *
+	 * This abort should be flushed before deleting any self-created
+	 * relations. Otherwise, it's possible to miss flushing this abort
+	 * transaction's WAL after deleting self-created relations. Then, it
+	 * would leave some forgoten relation files behind forever during crash
+	 * recovery. If this abort transaction is across the last checkpoint,
+	 * it may also cause some invalid pages when startup process trys to
+	 * read blocks from those truncated relation files.
 	 */
-	if (!isSubXact)
+	if (nrels > 0)
+		XLogFlush(XactLastRecEnd);
+	else if (!isSubXact)
 		XLogSetAsyncXactLSN(XactLastRecEnd);
 
 	/*
