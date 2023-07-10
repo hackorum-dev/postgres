@@ -24,6 +24,14 @@
 }
 
 {
+	padding_XLogRecData_CRC_32_bit
+	Memcheck:Value4
+
+	fun:pg_comp_crc32c*
+	fun:XLogRecordAssemble
+}
+
+{
 	padding_XLogRecData_CRC
 	Memcheck:Value8
 
