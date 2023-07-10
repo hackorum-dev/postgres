@@ -490,12 +490,12 @@ static void ReleasePredicateLocksLocal(void);
  * Does this relation participate in predicate locking? Temporary and system
  * relations are exempt.
  *
- * Note that GetSerializableTransactionSnapshotInt() relies on the latter
- * exemption when considering separate databases to be fully partitioned from
- * each other for the purposes of the safe snapshot optimization.  If SSI is
- * ever applied to system catalogs, and in particular shared catalogs,
- * databases would not no longer be sufficiently isolated and that would need
- * to be reconsdered.
+ * Note that GetSerializableTransactionSnapshotInt() relies on system
+ * relations to be exempt.  It assumes separate databases to be fully
+ * partitioned from each other for the purposes of the safe snapshot
+ * optimization.  If SSI is ever applied to system catalogs, and in
+ * particular to shared system catalogs, databases would no longer be
+ * sufficiently isolated and that would need to be reconsidered.
  */
 static inline bool
 PredicateLockingNeededForRelation(Relation relation)
