@@ -41,6 +41,7 @@ enum
 	GUC_EQUALS = 5,
 	GUC_UNQUOTED_STRING = 6,
 	GUC_QUALIFIED_ID = 7,
+	GUC_SEMICOLON = 8,
 	GUC_EOL = 99,
 	GUC_ERROR = 100
 };
@@ -100,7 +101,7 @@ STRING			\'([^'\\\n]|\\.|\'\')*\'
 {INTEGER}		return GUC_INTEGER;
 {REAL}			return GUC_REAL;
 =				return GUC_EQUALS;
-
+;				return GUC_SEMICOLON;
 .				return GUC_ERROR;
 
 %%
@@ -416,8 +417,12 @@ ParseConfigFp(FILE *fp, const char *config_file, int depth, int elevel,
 		else
 			opt_value = pstrdup(yytext);
 
-		/* now we'd like an end of line, or possibly EOF */
+		/* allow for a single trailing semicolon */
 		token = yylex();
+		if (token == GUC_SEMICOLON)
+			token = yylex();
+
+		/* now we'd like an end of line, or possibly EOF */
 		if (token != GUC_EOL)
 		{
 			if (token != 0)
