@@ -670,6 +670,19 @@ restart:
 	else
 	{
 		/* XXX: more validation should be done here */
+
+		/*
+		 * RM_INVALID_ID can be an indication of end-of-WAL, or other signs of
+		 * corruption - that byte should be non-0.
+		 */
+		if (record->xl_rmid == RM_INVALID_ID)
+		{
+			report_invalid_record(state,
+								  "invalid resource manager id %u at %X/%X",
+								  (uint32) record->xl_rmid,
+								  LSN_FORMAT_ARGS(RecPtr));
+			goto err;
+		}
 		if (total_len < SizeOfXLogRecord)
 		{
 			report_invalid_record(state,

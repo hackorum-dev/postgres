@@ -99,7 +99,7 @@ print_rmgr_list(void)
 {
 	int			i;
 
-	for (i = 0; i <= RM_MAX_BUILTIN_ID; i++)
+	for (i = RM_INVALID_ID + 1; i <= RM_MAX_BUILTIN_ID; i++)
 	{
 		printf("%s\n", GetRmgrDesc(i)->rm_name);
 	}
@@ -967,7 +967,7 @@ main(int argc, char **argv)
 					else
 					{
 						/* then look for builtin rmgrs */
-						for (rmid = 0; rmid <= RM_MAX_BUILTIN_ID; rmid++)
+						for (rmid = RM_INVALID_ID + 1; rmid <= RM_MAX_BUILTIN_ID; rmid++)
 						{
 							if (pg_strcasecmp(optarg, GetRmgrDesc(rmid)->rm_name) == 0)
 							{
