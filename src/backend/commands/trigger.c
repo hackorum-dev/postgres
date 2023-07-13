@@ -168,7 +168,10 @@ CreateTrigger(const CreateTrigStmt *stmt, const char *queryString,
 		CreateTriggerFiringOn(stmt, queryString, relOid, refRelOid,
 							  constraintOid, indexOid, funcoid,
 							  parentTriggerOid, whenClause, isInternal,
-							  in_partition, TRIGGER_FIRES_ON_ORIGIN);
+							  in_partition,
+							  OidIsValid(constraintOid) ?
+							  TRIGGER_FIRES_ALWAYS:
+							  TRIGGER_FIRES_ON_ORIGIN);
 }
 
 /*
