@@ -2716,8 +2716,22 @@ check_log_destination(char **newval, void **extra, GucSource source)
 #endif
 		else
 		{
+			StringInfoData errhint;
+
+			initStringInfo(&errhint);
+			appendStringInfoString(&errhint, "stderr");
+#ifdef HAVE_SYSLOG
+			appendStringInfoString(&errhint, ", syslog");
+#endif
+#ifdef WIN32
+			appendStringInfoString(&errhint, ", eventlog");
+#endif
+			appendStringInfoString(&errhint, ", csvlog, and jsonlog");
+
 			GUC_check_errdetail("Unrecognized key word: \"%s\".", tok);
+			GUC_check_errhint("Valid values are combinations of %s.", errhint.data);
 			pfree(rawstring);
+			pfree(errhint.data);
 			list_free(elemlist);
 			return false;
 		}
