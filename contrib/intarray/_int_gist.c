@@ -201,11 +201,7 @@ g_int_compress(PG_FUNCTION_ARGS)
 	r = DatumGetArrayTypeP(entry->key);
 	CHECKARRVALID(r);
 	if (ARRISEMPTY(r))
-	{
-		if (r != (ArrayType *) DatumGetPointer(entry->key))
-			pfree(r);
 		PG_RETURN_POINTER(entry);
-	}
 
 	if ((len = ARRNELEMS(r)) >= 2 * num_ranges)
 	{							/* compress */
@@ -346,8 +342,6 @@ g_int_decompress(PG_FUNCTION_ARGS)
 			if ((!i) || *(dr - 1) != j)
 				*dr++ = j;
 
-	if (in != (ArrayType *) DatumGetPointer(entry->key))
-		pfree(in);
 	retval = palloc(sizeof(GISTENTRY));
 	gistentryinit(*retval, PointerGetDatum(r),
 				  entry->rel, entry->page, entry->offset, false);
