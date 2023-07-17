@@ -127,7 +127,8 @@ extern PGDLLIMPORT bool Trace_lwlocks;
 
 extern bool LWLockAcquire(LWLock *lock, LWLockMode mode);
 extern bool LWLockConditionalAcquire(LWLock *lock, LWLockMode mode);
-extern bool LWLockAcquireOrWait(LWLock *lock, LWLockMode mode);
+extern bool LWLockAcquireOrWait(LWLock *lock, LWLockMode mode,
+								uint32 wait_event_info);
 extern void LWLockRelease(LWLock *lock);
 extern void LWLockReleaseClearVar(LWLock *lock, uint64 *valptr, uint64 val);
 extern void LWLockReleaseAll(void);
@@ -135,7 +136,8 @@ extern bool LWLockHeldByMe(LWLock *lock);
 extern bool LWLockAnyHeldByMe(LWLock *lock, int nlocks, size_t stride);
 extern bool LWLockHeldByMeInMode(LWLock *lock, LWLockMode mode);
 
-extern bool LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval);
+extern bool LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval,
+							 uint32 wait_event_info);
 extern void LWLockUpdateVar(LWLock *lock, uint64 *valptr, uint64 val);
 
 extern Size LWLockShmemSize(void);

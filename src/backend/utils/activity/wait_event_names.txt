@@ -141,6 +141,8 @@ WAIT_EVENT_SYNC_REP	SyncRep	"Waiting for confirmation from a remote server durin
 WAIT_EVENT_WAL_RECEIVER_EXIT	WalReceiverExit	"Waiting for the WAL receiver to exit."
 WAIT_EVENT_WAL_RECEIVER_WAIT_START	WalReceiverWaitStart	"Waiting for startup process to send initial data for streaming replication."
 WAIT_EVENT_XACT_GROUP_UPDATE	XactGroupUpdate	"Waiting for the group leader to update transaction status at end of a parallel operation."
+WAIT_EVENT_WAL_WAIT_INSERT	WALWaitInsert	"Waiting for WAL record to be copied into buffers."
+WAIT_EVENT_WAL_WAIT_WRITE	WALWaitWrite	"Waiting for WAL buffers to be written or flushed to disk."
 
 
 #

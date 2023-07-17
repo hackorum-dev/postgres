@@ -1498,7 +1498,8 @@ WaitXLogInsertionsToFinish(XLogRecPtr upto)
 			 */
 			if (LWLockWaitForVar(&WALInsertLocks[i].l.lock,
 								 &WALInsertLocks[i].l.insertingAt,
-								 insertingat, &insertingat))
+								 insertingat, &insertingat,
+								 WAIT_EVENT_WAL_WAIT_INSERT))
 			{
 				/* the lock was free, so no insertion in progress */
 				insertingat = InvalidXLogRecPtr;
@@ -2586,7 +2587,8 @@ XLogFlush(XLogRecPtr record)
 		 * helps to maintain a good rate of group committing when the system
 		 * is bottlenecked by the speed of fsyncing.
 		 */
-		if (!LWLockAcquireOrWait(WALWriteLock, LW_EXCLUSIVE))
+		if (!LWLockAcquireOrWait(WALWriteLock, LW_EXCLUSIVE,
+								 WAIT_EVENT_WAL_WAIT_WRITE))
 		{
 			/*
 			 * The lock is now free, but we didn't acquire it yet. Before we
