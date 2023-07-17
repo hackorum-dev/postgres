@@ -31,7 +31,7 @@ foreach i : node_support_input_i
 endforeach
 
 node_support_output = [
-  'nodetags.h',
+  'nodesizes.h', 'nodetags.h',
   'outfuncs.funcs.c', 'outfuncs.switch.c',
   'readfuncs.funcs.c', 'readfuncs.switch.c',
   'copyfuncs.funcs.c', 'copyfuncs.switch.c',
@@ -39,6 +39,7 @@ node_support_output = [
   'queryjumblefuncs.funcs.c', 'queryjumblefuncs.switch.c',
 ]
 node_support_install = [
+  dir_include_server / 'nodes',
   dir_include_server / 'nodes',
   false, false,
   false, false,

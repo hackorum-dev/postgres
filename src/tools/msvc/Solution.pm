@@ -848,6 +848,14 @@ EOF
 	}
 
 	if (IsNewer(
+			'src/include/nodes/nodesizes.h',
+			'src/backend/nodes/nodesizes.h'))
+	{
+		copyFile('src/backend/nodes/nodesizes.h',
+			'src/include/nodes/nodesizes.h');
+	}
+
+	if (IsNewer(
 			'src/include/nodes/nodetags.h',
 			'src/backend/nodes/nodetags.h'))
 	{

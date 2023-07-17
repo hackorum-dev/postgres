@@ -99,4 +99,4 @@ queryjumblefuncs.o: queryjumblefuncs.c queryjumblefuncs.funcs.c queryjumblefuncs
 readfuncs.o:  readfuncs.c readfuncs.funcs.c readfuncs.switch.c | node-support-stamp
 
 maintainer-clean: clean
-	rm -f node-support-stamp $(addsuffix funcs.funcs.c,copy equal out queryjumble read) $(addsuffix funcs.switch.c,copy equal out queryjumble read) nodetags.h
+	rm -f node-support-stamp $(addsuffix funcs.funcs.c,copy equal out queryjumble read) $(addsuffix funcs.switch.c,copy equal out queryjumble read) nodesizes.h nodetags.h

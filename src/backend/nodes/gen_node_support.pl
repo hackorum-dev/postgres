@@ -2,6 +2,7 @@
 #----------------------------------------------------------------------
 #
 # Generate node support files:
+# - nodesizes.h
 # - nodetags.h
 # - copyfuncs
 # - equalfuncs
@@ -599,6 +600,28 @@ my $header_comment =
  */
 ';
 
+# nodesizes.h
+
+push @output_files, 'nodesizes.h';
+open my $ns, '>', "$output_path/nodesizes.h$tmpext"
+  or die "$output_path/nodesizes.h$tmpext: $!";
+
+printf $ns $header_comment, 'nodesizes.h';
+
+foreach my $n (@node_types)
+{
+	next if elem $n, @abstract_types;
+	if (defined $manual_nodetag_number{$n})
+	{
+		print $ns "\tsizeof(T_${n}),\n";
+	}
+	else
+	{
+		print $ns "\tsizeof(${n}),\n";
+	}
+}
+
+close $ns;
 
 # nodetags.h
 

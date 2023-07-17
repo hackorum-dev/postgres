@@ -5143,7 +5143,15 @@ create_ordered_paths(PlannerInfo *root,
 												input_path->pathkeys, &presorted_keys);
 
 		if (is_sorted)
-			sorted_path = input_path;
+		{
+			/*
+			 * Perform a flat copy of the already-sorted node so as not to reference an
+			 * existing Path from another RelOptInfo.  The add_path() call below may
+			 * pfree this path, which would be problematic when it's still referenced
+			 * by input_rel.
+			 */
+			sorted_path = copyObjectFlat(input_path);
+		}
 		else
 		{
 			/*

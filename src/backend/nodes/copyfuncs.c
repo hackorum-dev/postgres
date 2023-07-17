@@ -15,9 +15,54 @@
 
 #include "postgres.h"
 
+#include "access/amapi.h"
+#include "access/tableam.h"
+#include "access/tsmapi.h"
+#include "commands/event_trigger.h"
+#include "commands/trigger.h"
+#include "foreign/fdwapi.h"
 #include "miscadmin.h"
+#include "nodes/execnodes.h"
+#include "nodes/extensible.h"
+#include "nodes/miscnodes.h"
+#include "nodes/parsenodes.h"
+#include "nodes/pathnodes.h"
+#include "nodes/plannodes.h"
+#include "nodes/replnodes.h"
+#include "nodes/supportnodes.h"
+#include "nodes/tidbitmap.h"
 #include "utils/datum.h"
 
+static const Size flat_node_sizes[] = {
+	0, /* T_Invalid */
+#include "nodes/nodesizes.h"
+};
+
+/*
+ * copyObjectFlat
+ *		Allocate a new copy of the Node type denoted by 'from' and flat copy the
+ *		contents of it into the newly allocated node and return it.
+ */
+void *
+copyObjectFlat(const void *from)
+{
+	Size		size;
+	void	   *retval;
+	NodeTag		tag = nodeTag(from);
+
+	if ((unsigned int) tag >= lengthof(flat_node_sizes))
+	{
+		elog(ERROR, "unrecognized node type: %d", (int) tag);
+		return NULL;
+	}
+
+	/* XXX how to handle ExtensibleNodes? Can we just deep copy? */
+	size = flat_node_sizes[tag];
+	retval = palloc(size);
+	memcpy(retval, from, size);
+
+	return retval;
+}
 
 /*
  * Macros to simplify copying of different kinds of fields.  Use these

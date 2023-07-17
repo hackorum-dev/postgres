@@ -97,6 +97,10 @@ do
 	# sepgsql.h depends on headers that aren't there on most platforms.
 	test "$f" = contrib/sepgsql/sepgsql.h && continue
 
+	# nodesizes.h cannot be included standalone: it's just a code fragment.
+	test "$f" = src/include/nodes/nodesizes.h && continue
+	test "$f" = src/backend/nodes/nodesizes.h && continue
+
 	# nodetags.h cannot be included standalone: it's just a code fragment.
 	test "$f" = src/include/nodes/nodetags.h && continue
 	test "$f" = src/backend/nodes/nodetags.h && continue

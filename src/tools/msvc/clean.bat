@@ -41,6 +41,7 @@ REM Delete files created with GenerateFiles() in Solution.pm
 if exist src\include\pg_config.h del /q src\include\pg_config.h
 if exist src\include\pg_config_ext.h del /q src\include\pg_config_ext.h
 if exist src\include\pg_config_os.h del /q src\include\pg_config_os.h
+if exist src\include\nodes\nodesizes.h del /q src\include\nodes\nodesizes.h
 if exist src\include\nodes\nodetags.h del /q src\include\nodes\nodetags.h
 if exist src\include\utils\errcodes.h del /q src\include\utils\errcodes.h
 if exist src\include\utils\fmgroids.h del /q src\include\utils\fmgroids.h

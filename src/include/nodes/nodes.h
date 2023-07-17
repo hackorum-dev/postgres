@@ -235,6 +235,7 @@ extern int16 *readAttrNumberCols(int numCols);
 /*
  * nodes/copyfuncs.c
  */
+extern void *copyObjectFlat(const void *from);
 extern void *copyObjectImpl(const void *from);
 
 /* cast result back to argument type, if supported by compiler */
