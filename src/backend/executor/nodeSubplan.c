@@ -425,6 +425,7 @@ ExecScanSubPlan(SubPlanState *node,
 			result = rowresult;
 			*isNull = rownull;
 		}
+		ResetExprContext(econtext);
 	}
 
 	MemoryContextSwitchTo(oldcontext);
