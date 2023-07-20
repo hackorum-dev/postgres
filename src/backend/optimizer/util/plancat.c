@@ -437,7 +437,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			 * is partial then we have to use the same methods as we would for
 			 * a table, except we can be sure that the index is not larger
 			 * than the table.  We must ignore partitioned indexes here as
-			 * there are not physical indexes.
+			 * these are not physical indexes.
 			 */
 			if (indexRelation->rd_rel->relkind != RELKIND_PARTITIONED_INDEX)
 			{
@@ -455,27 +455,12 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 					if (info->tuples > rel->tuples)
 						info->tuples = rel->tuples;
 				}
-
-				if (info->relam == BTREE_AM_OID)
-				{
-					/*
-					 * For btrees, get tree height while we have the index
-					 * open
-					 */
-					info->tree_height = _bt_getrootheight(indexRelation);
-				}
-				else
-				{
-					/* For other index types, just set it to "unknown" for now */
-					info->tree_height = -1;
-				}
 			}
 			else
 			{
 				/* Zero these out for partitioned indexes */
 				info->pages = 0;
 				info->tuples = 0.0;
-				info->tree_height = -1;
 			}
 
 			index_close(indexRelation, NoLock);
@@ -534,6 +519,48 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	 */
 	if (get_relation_info_hook)
 		(*get_relation_info_hook) (root, relationObjectId, inhparent, rel);
+
+	/* Estimate the height of indexes, if any. */
+	if (hasindex)
+	{
+		ListCell *lc;
+
+		foreach(lc, rel->indexlist)
+		{
+			IndexOptInfo *info = (IndexOptInfo*)lfirst(lc);
+
+			/*
+			 * If get_relation_info_hook marked an index as hypothetical, we
+			 * honor its estimate of tree_height. If the hook implementation
+			 * did not set a value for the tree height, then we set it to
+			 * "unknown".
+			 *
+			 * For btrees, get tree height. For other index types, including
+			 * for partitioned indexes, just set it to "unknown" for now.
+			 */
+			if (info->hypothetical)
+			{
+				if	(info->tree_height == 0)
+					info->tree_height = -1;
+			}
+			else if (info->relam == BTREE_AM_OID)
+			{
+				/*
+				 * We had opened this index above with appropriate lock. And
+				 * since we're still holding that lock, we can get away with
+				 * specifying NoLock here.
+				 */
+				Oid			indexOid = info->indexoid;
+				Relation	indexRelation = index_open(indexOid, NoLock);
+
+				info->tree_height = _bt_getrootheight(indexRelation);
+
+				index_close(indexRelation, NoLock);
+			}
+			else
+				info->tree_height = -1;
+		}
+	}
 }
 
 /*
