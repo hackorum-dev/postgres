@@ -2556,13 +2556,13 @@ ReadToc(ArchiveHandle *AH)
 		if (AH->version >= K_VERS_1_8)
 		{
 			tmp = ReadStr(AH);
-			sscanf(tmp, "%u", &te->catalogId.tableoid);
+			te->catalogId.tableoid = strtoul(tmp, NULL, 10);
 			free(tmp);
 		}
 		else
 			te->catalogId.tableoid = InvalidOid;
 		tmp = ReadStr(AH);
-		sscanf(tmp, "%u", &te->catalogId.oid);
+		te->catalogId.oid = strtoul(tmp, NULL, 10);
 		free(tmp);
 
 		te->tag = ReadStr(AH);
@@ -2646,7 +2646,7 @@ ReadToc(ArchiveHandle *AH)
 					depSize *= 2;
 					deps = (DumpId *) pg_realloc(deps, sizeof(DumpId) * depSize);
 				}
-				sscanf(tmp, "%d", &deps[depIdx]);
+				deps[depIdx] = strtoul(tmp, NULL, 10);
 				free(tmp);
 				depIdx++;
 			}
