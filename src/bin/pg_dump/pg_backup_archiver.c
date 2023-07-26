@@ -2510,7 +2510,6 @@ WriteToc(ArchiveHandle *AH)
 		WriteStr(AH, te->tablespace);
 		WriteStr(AH, te->tableam);
 		WriteStr(AH, te->owner);
-		WriteStr(AH, "false");
 
 		/* Dump list of dependencies */
 		for (i = 0; i < te->nDeps; i++)
@@ -2618,7 +2617,7 @@ ReadToc(ArchiveHandle *AH)
 		is_supported = true;
 		if (AH->version < K_VERS_1_9)
 			is_supported = false;
-		else
+		else if (AH->version < K_VERS_1_16)
 		{
 			tmp = ReadStr(AH);
 

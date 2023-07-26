@@ -68,10 +68,11 @@
 #define K_VERS_1_15 MAKE_ARCHIVE_VERSION(1, 15, 0)	/* add
 													 * compression_algorithm
 													 * in header */
+#define K_VERS_1_16 MAKE_ARCHIVE_VERSION(1, 16, 0)	/* optimize dump format */
 
 /* Current archive version number (the format we can output) */
 #define K_VERS_MAJOR 1
-#define K_VERS_MINOR 15
+#define K_VERS_MINOR 16
 #define K_VERS_REV 0
 #define K_VERS_SELF MAKE_ARCHIVE_VERSION(K_VERS_MAJOR, K_VERS_MINOR, K_VERS_REV)
 
