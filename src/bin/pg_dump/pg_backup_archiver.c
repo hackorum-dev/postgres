@@ -2470,7 +2470,6 @@ void
 WriteToc(ArchiveHandle *AH)
 {
 	TocEntry   *te;
-	char		workbuf[32];
 	int			tocCount;
 	int			i;
 
@@ -2494,11 +2493,8 @@ WriteToc(ArchiveHandle *AH)
 		WriteInt(AH, te->dumpId);
 		WriteInt(AH, te->dataDumper ? 1 : 0);
 
-		/* OID is recorded as a string for historical reasons */
-		sprintf(workbuf, "%u", te->catalogId.tableoid);
-		WriteStr(AH, workbuf);
-		sprintf(workbuf, "%u", te->catalogId.oid);
-		WriteStr(AH, workbuf);
+		WriteInt(AH, te->catalogId.tableoid);
+		WriteInt(AH, te->catalogId.oid);
 
 		WriteStr(AH, te->tag);
 		WriteStr(AH, te->desc);
@@ -2514,10 +2510,9 @@ WriteToc(ArchiveHandle *AH)
 		/* Dump list of dependencies */
 		for (i = 0; i < te->nDeps; i++)
 		{
-			sprintf(workbuf, "%d", te->dependencies[i]);
-			WriteStr(AH, workbuf);
+			WriteInt(AH, te->dependencies[i]);
 		}
-		WriteStr(AH, NULL);		/* Terminate List */
+		WriteInt(AH, -1);		/* Terminate List */
 
 		if (AH->WriteExtraTocPtr)
 			AH->WriteExtraTocPtr(AH, te);
@@ -2529,6 +2524,7 @@ ReadToc(ArchiveHandle *AH)
 {
 	int			i;
 	char	   *tmp;
+	int			depId;
 	DumpId	   *deps;
 	int			depIdx;
 	int			depSize;
@@ -2553,7 +2549,11 @@ ReadToc(ArchiveHandle *AH)
 
 		te->hadDumper = ReadInt(AH);
 
-		if (AH->version >= K_VERS_1_8)
+		if (AH->version >= K_VERS_1_16)
+		{
+			te->catalogId.tableoid = ReadInt(AH);
+		}
+		else if (AH->version >= K_VERS_1_8)
 		{
 			tmp = ReadStr(AH);
 			te->catalogId.tableoid = strtoul(tmp, NULL, 10);
@@ -2561,9 +2561,15 @@ ReadToc(ArchiveHandle *AH)
 		}
 		else
 			te->catalogId.tableoid = InvalidOid;
-		tmp = ReadStr(AH);
-		te->catalogId.oid = strtoul(tmp, NULL, 10);
-		free(tmp);
+
+		if (AH->version >= K_VERS_1_16)
+			te->catalogId.oid = ReadInt(AH);
+		else
+		{
+			tmp = ReadStr(AH);
+			te->catalogId.oid = strtoul(tmp, NULL, 10);
+			free(tmp);
+		}
 
 		te->tag = ReadStr(AH);
 		te->desc = ReadStr(AH);
@@ -2638,16 +2644,31 @@ ReadToc(ArchiveHandle *AH)
 			depIdx = 0;
 			for (;;)
 			{
-				tmp = ReadStr(AH);
-				if (!tmp)
-					break;		/* end of list */
-				if (depIdx >= depSize)
+				if (AH->version >= K_VERS_1_16)
 				{
-					depSize *= 2;
-					deps = (DumpId *) pg_realloc(deps, sizeof(DumpId) * depSize);
+					depId = ReadInt(AH);
+					if (depId == -1)
+						break;		/* end of list */
+					if (depIdx >= depSize)
+					{
+						depSize *= 2;
+						deps = (DumpId *) pg_realloc(deps, sizeof(DumpId) * depSize);
+					}
+					deps[depIdx] = depId;
 				}
-				deps[depIdx] = strtoul(tmp, NULL, 10);
-				free(tmp);
+				else
+				{
+					tmp = ReadStr(AH);
+					if (!tmp)
+						break;		/* end of list */
+					if (depIdx >= depSize)
+					{
+						depSize *= 2;
+						deps = (DumpId *) pg_realloc(deps, sizeof(DumpId) * depSize);
+					}
+					deps[depIdx] = strtoul(tmp, NULL, 10);
+					free(tmp);
+				}
 				depIdx++;
 			}
 
