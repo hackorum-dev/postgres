@@ -525,6 +525,8 @@ GetNamedLWLockTranche(const char *tranche_name)
 	LocalNumUserDefinedTranches = LWLockTranches->num_user_defined;
 	SpinLockRelease(&LWLockTranches->lock);
 
+	Assert(LWLockHeldByMeInMode(AddinShmemInitLock, LW_EXCLUSIVE));
+
 	/*
 	 * Obtain the position of base address of LWLock belonging to requested
 	 * tranche_name in MainLWLockArray.  LWLocks for user-defined tranches
