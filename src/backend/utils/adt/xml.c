@@ -1339,7 +1339,7 @@ pg_xmlCharStrndup(const char *str, size_t len)
 static char *
 xml_pstrdup_and_free(xmlChar *str)
 {
-	char	   *result;
+	char	   *result = NULL;
 
 	if (str)
 	{
@@ -1353,8 +1353,6 @@ xml_pstrdup_and_free(xmlChar *str)
 		}
 		PG_END_TRY();
 	}
-	else
-		result = NULL;
 
 	return result;
 }

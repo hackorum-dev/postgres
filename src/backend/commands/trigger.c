@@ -2313,7 +2313,7 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 {
 	LOCAL_FCINFO(fcinfo, 0);
 	PgStat_FunctionCallUsage fcusage;
-	Datum		result;
+	Datum		result = PointerGetDatum(0);	/* keep compiler quiet */
 	MemoryContext oldContext;
 
 	/*
