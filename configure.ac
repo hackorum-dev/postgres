@@ -189,6 +189,13 @@ PGAC_ARG_BOOL(enable, debug, no,
 AC_SUBST(enable_debug)
 
 #
+# --enable-typedef-check adds clang typedef-check plugin
+#
+PGAC_ARG_BOOL(enable, typedef-check, no,
+              [build with typedef-check plugin])
+AC_SUBST(enable_typedef_check)
+
+#
 # --enable-profiling enables gcc profiling
 #
 PGAC_ARG_BOOL(enable, profiling, no,
@@ -729,6 +736,11 @@ fi
 
 if test "$enable_debug" = yes && test "$ac_cv_prog_cxx_g" = yes; then
   CXXFLAGS="$CXXFLAGS -g"
+fi
+
+if test "$enable_typedef_check" = yes; then
+  abs_path=`readlink -f $srcdir`
+  CFLAGS="$CFLAGS -Xclang -load -Xclang $abs_path/src/tools/clang/typedef_check/build/lib/TypedefCheck.so -Xclang -add-plugin -Xclang typedef-check"
 fi
 
 # enable code coverage if --enable-coverage
