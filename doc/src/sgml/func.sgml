@@ -23209,6 +23209,20 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
+         <primary>pg_servername</primary>
+        </indexterm>
+        <function>pg_servername</function> ()
+        <returnvalue>name</returnvalue>
+       </para>
+       <para>
+        Returns the server system hostname, more precisely, the hostname
+        associated with the server calling process's UTS namespace.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
          <primary>pg_trigger_depth</primary>
         </indexterm>
         <function>pg_trigger_depth</function> ()

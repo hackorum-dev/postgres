@@ -4245,6 +4245,11 @@
   proname => 'inet_server_port', proisstrict => 'f', provolatile => 's',
   proparallel => 'r', prorettype => 'int4', proargtypes => '',
   prosrc => 'inet_server_port' },
+{ oid => '2173', descr => 'returns the server system hostname',
+  proname => 'pg_servername', proisstrict => 'f', provolatile => 's',
+  proparallel => 'r', prorettype => 'text', proargtypes => '',
+  prosrc => 'pg_servername' },
+
 
 { oid => '2627',
   proname => 'inetnot', prorettype => 'inet', proargtypes => 'inet',

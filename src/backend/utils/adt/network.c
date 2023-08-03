@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 
 #include "access/stratnum.h"
 #include "catalog/pg_opfamily.h"
@@ -2101,4 +2102,19 @@ clean_ipv6_addr(int addr_family, char *addr)
 		if (pct)
 			*pct = '\0';
 	}
+}
+
+/* pg_servername will return the server hostname in the current UTS */
+Datum
+pg_servername(PG_FUNCTION_ARGS)
+{
+	char		servername[_SC_HOST_NAME_MAX + 1];
+	int		ret;
+
+	ret = gethostname(servername, sizeof(servername));
+
+	if (ret != 0)
+		PG_RETURN_NULL();
+
+	PG_RETURN_DATUM(cstring_to_text(servername));
 }
