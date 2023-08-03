@@ -781,6 +781,7 @@ enable_coverage
 GENHTML
 LCOV
 GCOV
+enable_typedef_check
 enable_debug
 enable_rpath
 default_port
@@ -847,6 +848,7 @@ enable_nls
 with_pgport
 enable_rpath
 enable_debug
+enable_typedef_check
 enable_profiling
 enable_coverage
 enable_dtrace
@@ -1548,6 +1550,7 @@ Optional Features:
   --disable-rpath         do not embed shared library search path in
                           executables
   --enable-debug          build with debugging symbols (-g)
+  --enable-typedef-check  build with typedef-check plugin
   --enable-profiling      build with profiling enabled
   --enable-coverage       build with coverage testing instrumentation
   --enable-dtrace         build with DTrace support
@@ -3317,6 +3320,34 @@ if test "${enable_debug+set}" = set; then :
 
 else
   enable_debug=no
+
+fi
+
+
+
+
+#
+# --enable-typedef-check adds clang typedef-check plugin
+#
+
+
+# Check whether --enable-typedef-check was given.
+if test "${enable_typedef_check+set}" = set; then :
+  enableval=$enable_typedef_check;
+  case $enableval in
+    yes)
+      :
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --enable-typedef-check option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  enable_typedef_check=no
 
 fi
 
@@ -7624,6 +7655,11 @@ fi
 
 if test "$enable_debug" = yes && test "$ac_cv_prog_cxx_g" = yes; then
   CXXFLAGS="$CXXFLAGS -g"
+fi
+
+if test "$enable_typedef_check" = yes; then
+  abs_path=`readlink -f $srcdir`
+  CFLAGS="$CFLAGS -Xclang -load -Xclang $abs_path/src/tools/clang/typedef_check/build/lib/TypedefCheck.so -Xclang -add-plugin -Xclang typedef-check"
 fi
 
 # enable code coverage if --enable-coverage
