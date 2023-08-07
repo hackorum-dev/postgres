@@ -166,6 +166,7 @@ static void deparseBoolExpr(BoolExpr *node, deparse_expr_cxt *context);
 static void deparseNullTest(NullTest *node, deparse_expr_cxt *context);
 static void deparseCaseExpr(CaseExpr *node, deparse_expr_cxt *context);
 static void deparseArrayExpr(ArrayExpr *node, deparse_expr_cxt *context);
+static void deparseRowCompareExpr(RowCompareExpr *node, deparse_expr_cxt *context);
 static void printRemoteParam(int paramindex, Oid paramtype, int32 paramtypmod,
 							 deparse_expr_cxt *context);
 static void printRemotePlaceholder(Oid paramtype, int32 paramtypmod,
@@ -285,6 +286,51 @@ is_foreign_expr(PlannerInfo *root,
 
 	/* OK to evaluate on the remote server */
 	return true;
+}
+
+/*
+ * Determines if the names and namespaces of operations match
+ */
+static bool
+opnames_match(List *opnos)
+{
+	Oid			oprns = InvalidOid;
+	char	   *oprname = NULL;
+	ListCell   *lc;
+	bool		match = true;
+
+	foreach(lc, opnos)
+	{
+		HeapTuple	opertup;
+		Form_pg_operator operform;
+		Oid			opno = lfirst_oid(lc);
+
+		opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(opno));
+		if (!HeapTupleIsValid(opertup))
+			elog(ERROR, "cache lookup failed for operator %u", opno);
+		operform = (Form_pg_operator) GETSTRUCT(opertup);
+		/* First op */
+		if (oprname == NULL)
+		{
+			oprname = pstrdup(NameStr(operform->oprname));
+			oprns = operform->oprnamespace;
+		}
+		else
+		{
+			Assert(OidIsValid(oprns));
+			if (oprns != operform->oprnamespace || (strcmp(oprname, NameStr(operform->oprname)) != 0))
+				match = false;
+		}
+		ReleaseSysCache(opertup);
+
+		if (!match)
+			break;
+	}
+
+	if (oprname)
+		pfree(oprname);
+
+	return match;
 }
 
 /*
@@ -870,6 +916,44 @@ foreign_expr_walker(Node *node,
 					state = FDW_COLLATE_NONE;
 				else
 					state = FDW_COLLATE_UNSAFE;
+			}
+			break;
+		case T_RowCompareExpr:
+			{
+				RowCompareExpr *rce = (RowCompareExpr *) node;
+				ListCell   *lc;
+
+				if (list_length(rce->opnos) == 0)
+					return false;
+
+				/*
+				 * Only shippable operators can be sent to remote.
+				 */
+				foreach(lc, rce->opnos)
+				{
+					if (!is_shippable(lfirst_oid(lc), OperatorRelationId, fpinfo))
+						return false;
+				}
+
+				/* If opnos names do not match, can't deparse such expression */
+				if (!opnames_match(rce->opnos))
+					return false;
+
+				/*
+				 * Recurse to arguments
+				 */
+				if (!foreign_expr_walker((Node *) rce->largs,
+										 glob_cxt, &inner_cxt, case_arg_cxt))
+					return false;
+
+				if (!foreign_expr_walker((Node *) rce->rargs,
+										 glob_cxt, &inner_cxt, case_arg_cxt))
+					return false;
+
+				/* Output is always boolean and so noncollatable. */
+				collation = InvalidOid;
+				state = FDW_COLLATE_NONE;
+
 			}
 			break;
 		case T_List:
@@ -2785,6 +2869,9 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
 		case T_ArrayExpr:
 			deparseArrayExpr((ArrayExpr *) node, context);
 			break;
+		case T_RowCompareExpr:
+			deparseRowCompareExpr((RowCompareExpr *) node, context);
+			break;
 		case T_Aggref:
 			deparseAggref((Aggref *) node, context);
 			break;
@@ -3506,6 +3593,58 @@ deparseArrayExpr(ArrayExpr *node, deparse_expr_cxt *context)
 	if (node->elements == NIL)
 		appendStringInfo(buf, "::%s",
 						 deparse_type_name(node->array_typeid, -1));
+}
+
+/*
+ * Deparse RowCompareExpr
+ */
+static void
+deparseRowCompareExpr(RowCompareExpr *node, deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+	bool		first;
+	ListCell   *arg;
+	HeapTuple	opertup;
+	Form_pg_operator operform;
+	Oid			opno = linitial_oid(node->opnos);
+
+	/* Deparse the first argument */
+	appendStringInfoString(buf, "(ROW(");
+
+	first = true;
+	foreach(arg, node->largs)
+	{
+		if (!first)
+			appendStringInfoString(buf, ", ");
+		deparseExpr((Expr *) lfirst(arg), context);
+		first = false;
+	}
+	appendStringInfoString(buf, ") ");
+
+	/*
+	 * Append operator name.  We've checked that the first operator name matches
+	 * other names.
+	 */
+
+	opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(opno));
+	if (!HeapTupleIsValid(opertup))
+		elog(ERROR, "cache lookup failed for operator %u", opno);
+	operform = (Form_pg_operator) GETSTRUCT(opertup);
+	deparseOperatorName(buf, operform);
+	ReleaseSysCache(opertup);
+
+	/* Deparse the second argument */
+	appendStringInfoString(buf, " ROW(");
+
+	first = true;
+	foreach(arg, node->rargs)
+	{
+		if (!first)
+			appendStringInfoString(buf, ", ");
+		deparseExpr((Expr *) lfirst(arg), context);
+		first = false;
+	}
+	appendStringInfoString(buf, "))");
 }
 
 /*

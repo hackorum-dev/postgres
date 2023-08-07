@@ -1163,6 +1163,55 @@ SELECT * FROM ft1 WHERE CASE c3 COLLATE "C" WHEN c6 THEN true ELSE c3 < 'bar' EN
    Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1"
 (4 rows)
 
+-- row-wise comparison can be shipped
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT c1,c2,c3 FROM ft2 WHERE (c1, c2) > (990, 100) ORDER BY c1;
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft2
+   Output: c1, c2, c3
+   Remote SQL: SELECT "C 1", c2, c3 FROM "S 1"."T 1" WHERE ((ROW("C 1", c2) > ROW(990, 100))) ORDER BY "C 1" ASC NULLS LAST
+(3 rows)
+
+SELECT c1,c2,c3 FROM ft2 WHERE (c1, c2) > (990, 100) ORDER BY c1;
+  c1  | c2 |  c3   
+------+----+-------
+  991 |  1 | 00991
+  992 |  2 | 00992
+  993 |  3 | 00993
+  994 |  4 | 00994
+  995 |  5 | 00995
+  996 |  6 | 00996
+  997 |  7 | 00997
+  998 |  8 | 00998
+  999 |  9 | 00999
+ 1000 |  0 | 01000
+(10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT c1,c2,c3 FROM ft2 WHERE (c1, c2) <= (10, 500) ORDER BY c1;
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft2
+   Output: c1, c2, c3
+   Remote SQL: SELECT "C 1", c2, c3 FROM "S 1"."T 1" WHERE ((ROW("C 1", c2) <= ROW(10, 500))) ORDER BY "C 1" ASC NULLS LAST
+(3 rows)
+
+SELECT c1,c2,c3 FROM ft2 WHERE (c1, c2) <= (10, 500) ORDER BY c1;
+ c1 | c2 |  c3   
+----+----+-------
+  1 |  1 | 00001
+  2 |  2 | 00002
+  3 |  3 | 00003
+  4 |  4 | 00004
+  5 |  5 | 00005
+  6 |  6 | 00006
+  7 |  7 | 00007
+  8 |  8 | 00008
+  9 |  9 | 00009
+ 10 |  0 | 00010
+(10 rows)
+
 -- a regconfig constant referring to this text search configuration
 -- is initially unshippable
 CREATE TEXT SEARCH CONFIGURATION public.custom_search

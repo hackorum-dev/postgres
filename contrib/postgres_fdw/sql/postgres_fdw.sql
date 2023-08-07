@@ -443,6 +443,15 @@ SELECT * FROM ft1 WHERE CASE c3 WHEN c6 THEN true ELSE c3 < 'bar' END;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM ft1 WHERE CASE c3 COLLATE "C" WHEN c6 THEN true ELSE c3 < 'bar' END;
 
+-- row-wise comparison can be shipped
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT c1,c2,c3 FROM ft2 WHERE (c1, c2) > (990, 100) ORDER BY c1;
+SELECT c1,c2,c3 FROM ft2 WHERE (c1, c2) > (990, 100) ORDER BY c1;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT c1,c2,c3 FROM ft2 WHERE (c1, c2) <= (10, 500) ORDER BY c1;
+SELECT c1,c2,c3 FROM ft2 WHERE (c1, c2) <= (10, 500) ORDER BY c1;
+
 -- a regconfig constant referring to this text search configuration
 -- is initially unshippable
 CREATE TEXT SEARCH CONFIGURATION public.custom_search
