@@ -72,6 +72,7 @@
 #endif
 #include <stdint.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <errno.h>
 #if defined(WIN32) || defined(__CYGWIN__)
 #include <fcntl.h>				/* ensure O_BINARY is available */
@@ -1000,11 +1001,13 @@ typedef NameData *Name;
 #ifndef USE_ASSERT_CHECKING
 
 #define Assert(condition)	((void)true)
+#define AssertLog(condition)	((void)true)
 #define AssertMacro(condition)	((void)true)
 
 #elif defined(FRONTEND)
 
 #define Assert(p) assert(p)
+#define AssertLog(p) assert(p)
 #define AssertMacro(p)	((void) assert(p))
 
 #else							/* USE_ASSERT_CHECKING && !FRONTEND */
@@ -1017,6 +1020,13 @@ typedef NameData *Name;
 	do { \
 		if (!(condition)) \
 			ExceptionalCondition(#condition, __FILE__, __LINE__); \
+	} while (0)
+
+#define AssertLog(condition) \
+	do { \
+		if (!(condition)) \
+			elog(ERROR, "failed Assert(\"%s\"), File: \"%s\", Line: %d, PID: %d", \
+						#condition , __FILE__, __LINE__, (int) getpid()); \
 	} while (0)
 
 /*
