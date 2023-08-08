@@ -4588,8 +4588,13 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 		 *
 		 * We don't check full_page_writes here because that logic is included
 		 * when we call XLogInsert() since the value changes dynamically.
+		 *
+		 * XXX: avoid to write WAL if we are in the binary-upgrade mode. Some
+		 * catalogs are read during the upgrade, but it may trigger to generate
+		 * XLOG_FPI_FOR_HINT. It may become the "WAL hole".
 		 */
 		if (XLogHintBitIsNeeded() &&
+			!IsBinaryUpgrade &&
 			(pg_atomic_read_u32(&bufHdr->state) & BM_PERMANENT))
 		{
 			/*

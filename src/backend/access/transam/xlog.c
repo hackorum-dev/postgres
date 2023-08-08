@@ -6555,7 +6555,8 @@ CreateCheckPoint(int flags)
 	if ((flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY |
 				  CHECKPOINT_FORCE)) == 0)
 	{
-		if (last_important_lsn == ControlFile->checkPoint)
+		if (XLogRecPtrIsInvalid(last_important_lsn) ||
+			last_important_lsn == ControlFile->checkPoint)
 		{
 			WALInsertLockRelease();
 			END_CRIT_SECTION();

@@ -276,6 +276,7 @@ BackgroundWriterMain(void)
 		{
 			TimestampTz timeout = 0;
 			TimestampTz now = GetCurrentTimestamp();
+			XLogRecPtr last_important = GetLastImportantRecPtr();
 
 			timeout = TimestampTzPlusMilliseconds(last_snapshot_ts,
 												  LOG_SNAPSHOT_INTERVAL_MS);
@@ -287,8 +288,8 @@ BackgroundWriterMain(void)
 			 * start of a record, whereas last_snapshot_lsn points just past
 			 * the end of the record.
 			 */
-			if (now >= timeout &&
-				last_snapshot_lsn <= GetLastImportantRecPtr())
+			if (now >= timeout && last_snapshot_lsn <= last_important &&
+				!XLogRecPtrIsInvalid(last_important))
 			{
 				last_snapshot_lsn = LogStandbySnapshot();
 				last_snapshot_ts = now;
