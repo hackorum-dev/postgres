@@ -496,7 +496,12 @@ SnapshotSetCommandId(CommandId curcid)
 		CurrentSnapshot->curcid = curcid;
 	if (SecondarySnapshot)
 		SecondarySnapshot->curcid = curcid;
-	/* Should we do the same with CatalogSnapshot? */
+
+	/*
+	 * There is no need to update the curcid of CatalogSnapshot, because
+	 * the CatalogSnapshot will be invalidated and recreated when updates
+	 * are made to the catalog tables in the current transaction.
+	 */
 }
 
 /*
