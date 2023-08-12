@@ -593,6 +593,10 @@ pqPutMsgEnd(PGconn *conn)
 	return 0;
 }
 
+bool read_disabled = false;
+#define DISABLE_READ_MARKER "=DISABLE_READ_MARKER="
+char RFQ_MSG[] = { 'Z', 0x00, 0x00, 0x00, 0x05, 'I' };
+
 /* ----------
  * pqReadData: read more data, if any is available
  *
@@ -696,8 +700,29 @@ pqReadData_internal(PGconn *conn)
 
 	/* OK, try to read some data */
 retry3:
+if (!read_disabled)
 	nread = pqsecure_read(conn, conn->inBuffer + conn->inEnd,
 						  conn->inBufSize - conn->inEnd);
+else {
+	if (conn->inBufSize - conn->inEnd > sizeof(RFQ_MSG)) {
+		memcpy(conn->inBuffer + conn->inEnd, RFQ_MSG, sizeof(RFQ_MSG));
+		nread = sizeof(RFQ_MSG);
+	} else
+		return 0;
+}
+
+if (nread >= strlen(DISABLE_READ_MARKER)) {
+	for (int i = 0; i <= (conn->inBufSize - conn->inEnd) - strlen(DISABLE_READ_MARKER); i++) {
+		if (conn->inBuffer[conn->inEnd + i] == DISABLE_READ_MARKER[0]) {
+			if (strncmp(conn->inBuffer + conn->inEnd + i,
+				DISABLE_READ_MARKER, strlen(DISABLE_READ_MARKER)) == 0) {
+				read_disabled = true;
+				break;
+			}
+		}
+	}
+}
+
 	if (nread < 0)
 	{
 		switch (SOCK_ERRNO)
