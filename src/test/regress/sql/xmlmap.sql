@@ -41,12 +41,18 @@ MOVE BACKWARD ALL IN xc;
 SELECT cursor_to_xml('xc'::refcursor, 5, true, false, '');
 SELECT cursor_to_xmlschema('xc'::refcursor, true, false, '');
 
+-- In order to not scan the relation which not belongs to
+-- the given schema, it is better to make sure the filter
+-- on relnamespace is executed as the first qual. Index
+-- scan can grantee that while SeqScan will just break it.
+
+set enable_seqscan to off;
 SELECT schema_to_xml('testxmlschema', false, true, '');
 SELECT schema_to_xml('testxmlschema', true, false, '');
 SELECT schema_to_xmlschema('testxmlschema', false, true, '');
 SELECT schema_to_xmlschema('testxmlschema', true, false, '');
 SELECT schema_to_xml_and_xmlschema('testxmlschema', true, true, 'foo');
-
+reset enable_seqscan;
 
 -- test that domains are transformed like their base types
 
