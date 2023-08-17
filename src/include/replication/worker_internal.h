@@ -54,6 +54,9 @@ typedef struct LogicalRepWorker
 	/* Subscription id for the worker. */
 	Oid			subid;
 
+	/* Receive the incremental changes immediately without waiting. */
+	bool		recv_immediately;
+
 	/* Used for initial table synchronization. */
 	Oid			relid;
 	char		relstate;

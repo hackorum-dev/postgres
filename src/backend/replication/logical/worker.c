@@ -3682,6 +3682,12 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 		if (endofstream)
 			break;
 
+		if (MyLogicalRepWorker->recv_immediately)
+		{
+			MyLogicalRepWorker->recv_immediately = false;
+			continue;
+		}
+
 		/*
 		 * Wait for more data or latch.  If we have unflushed transactions,
 		 * wake up after WalWriterDelay to see if they've been flushed yet (in
