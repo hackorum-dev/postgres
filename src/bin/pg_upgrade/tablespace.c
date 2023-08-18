@@ -54,12 +54,29 @@ get_tablespace_paths(void)
 	int			tblnum;
 	int			i_spclocation;
 	char		query[QUERY_ALLOC];
+	bool		allow_in_place_tablespaces;
+
+	snprintf(query, sizeof(query),
+			 "SELECT setting FROM pg_settings WHERE "
+			 "name = 'allow_in_place_tablespaces'");
+
+	res = executeQueryOrDie(conn, "%s", query);
+	allow_in_place_tablespaces = (strcmp(PQgetvalue(res, 0, 0), "on") == 0);
+	PQclear(res);
 
 	snprintf(query, sizeof(query),
 			 "SELECT pg_catalog.pg_tablespace_location(oid) AS spclocation "
 			 "FROM	pg_catalog.pg_tablespace "
 			 "WHERE	spcname != 'pg_default' AND "
 			 "		spcname != 'pg_global'");
+
+	/*
+	 * No need to check in-place tablespaces when allow_in_place_tablespaces is
+	 * on because they are part of the data folder.
+	 */
+	if (allow_in_place_tablespaces)
+		snprintf(query, sizeof(query),
+				 "%s AND pg_catalog.pg_tablespace_location(oid) != 'pg_tblspc/' || oid", query);
 
 	res = executeQueryOrDie(conn, "%s", query);
 
@@ -105,6 +122,12 @@ get_tablespace_paths(void)
 			old_cluster.tablespaces[tblnum] = psprintf("%s/%s", old_cluster.pgdata, spcloc);
 			new_cluster.tablespaces[tblnum] = psprintf("%s/%s", new_cluster.pgdata, spcloc);
 		}
+
+		if (!is_absolute_path(os_info.old_tablespaces[tblnum]))
+			report_status(PG_FATAL,
+						  "Disable to upgrade with in-place tablespaces, "
+						  "you can enable it with "
+						  "--old-options=\"-c allow_in_place_tablespaces=on\"");
 
 		/*
 		 * Check that the tablespace path exists and is a directory.
