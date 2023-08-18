@@ -588,6 +588,50 @@ $oldnode->start;
 $oldnode->safe_psql('postgres', 'DROP DATABASE regression_invalid');
 $oldnode->stop;
 
+# Create an in-place tablespace, will be deleted below
+$oldnode->start;
+$oldnode->safe_psql('postgres', qq(
+	SET allow_in_place_tablespaces = on;
+	CREATE TABLESPACE space_test LOCATION '';
+));
+$oldnode->stop;
+
+# Check that pg_upgrade fails without allow_in_place_tablespaces option
+command_checks_all(
+	[
+		'pg_upgrade', '--no-sync', '-d', $oldnode->data_dir,
+		'-D', $newnode->data_dir, '-b', $oldbindir,
+		'-B', $newbindir, '-s', $newnode->host,
+		'-p', $oldnode->port, '-P', $newnode->port,
+		$mode, '--check',
+	],
+	1,
+	[qr/Disable to upgrade with in-place tablespaces, you can enable it with --old-options="-c allow_in_place_tablespaces=on"/],
+	[qr//],
+	'fail to upgrade with in-place tablespaces');
+ok(-d $newnode->data_dir . "/pg_upgrade_output.d",
+	"pg_upgrade_output.d/ not removed after pg_upgrade failure");
+rmtree($newnode->data_dir . "/pg_upgrade_output.d");
+
+# Check that pg_upgrade succeeds with allow_in_place_tablespaces option
+command_ok(
+	[
+		'pg_upgrade', '--no-sync', '-d', $oldnode->data_dir,
+		'-D', $newnode->data_dir, '-b', $oldbindir,
+		'-B', $newbindir, '-s', $newnode->host,
+		'-p', $oldnode->port, '-P', $newnode->port,
+		'-o', '-c allow_in_place_tablespaces=on',
+		$mode, '--check',
+	],
+	'succeed to upgrade with in-place tablespaces');
+ok(!-d $newnode->data_dir . "/pg_upgrade_output.d",
+	"pg_upgrade_output.d/ removed after pg_upgrade --check success");
+
+# And drop in-place tablespace, so we can continue
+$oldnode->start;
+$oldnode->safe_psql('postgres', 'DROP TABLESPACE space_test');
+$oldnode->stop;
+
 # --check command works here, cleans up pg_upgrade_output.d.
 command_ok(
 	[
