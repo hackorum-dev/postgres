@@ -204,70 +204,41 @@ list_length(const List *l)
 /*
  * Convenience macros for building fixed-length lists
  */
-#define list_make_ptr_cell(v)	((ListCell) {.ptr_value = (v)})
-#define list_make_int_cell(v)	((ListCell) {.int_value = (v)})
-#define list_make_oid_cell(v)	((ListCell) {.oid_value = (v)})
-#define list_make_xid_cell(v)	((ListCell) {.xid_value = (v)})
+#define list_make1(x1) list_make(x1)
+#define list_make2(x1,x2) list_make(x1,x2)
+#define list_make3(x1,x2,x3) list_make(x1,x2,x3)
+#define list_make4(x1,x2,x3,x4) list_make(x1,x2,x3,x4)
+#define list_make5(x1,x2,x3,x4,x5) list_make(x1,x2,x3,x4,x5)
 
-#define list_make1(x1) \
-	list_make1_impl(T_List, list_make_ptr_cell(x1))
-#define list_make2(x1,x2) \
-	list_make2_impl(T_List, list_make_ptr_cell(x1), list_make_ptr_cell(x2))
-#define list_make3(x1,x2,x3) \
-	list_make3_impl(T_List, list_make_ptr_cell(x1), list_make_ptr_cell(x2), \
-					list_make_ptr_cell(x3))
-#define list_make4(x1,x2,x3,x4) \
-	list_make4_impl(T_List, list_make_ptr_cell(x1), list_make_ptr_cell(x2), \
-					list_make_ptr_cell(x3), list_make_ptr_cell(x4))
-#define list_make5(x1,x2,x3,x4,x5) \
-	list_make5_impl(T_List, list_make_ptr_cell(x1), list_make_ptr_cell(x2), \
-					list_make_ptr_cell(x3), list_make_ptr_cell(x4), \
-					list_make_ptr_cell(x5))
+#define list_make(...) \
+	list_make_impl(T_List, VA_ARGS_NARGS(__VA_ARGS__), __VA_ARGS__)
 
-#define list_make1_int(x1) \
-	list_make1_impl(T_IntList, list_make_int_cell(x1))
-#define list_make2_int(x1,x2) \
-	list_make2_impl(T_IntList, list_make_int_cell(x1), list_make_int_cell(x2))
-#define list_make3_int(x1,x2,x3) \
-	list_make3_impl(T_IntList, list_make_int_cell(x1), list_make_int_cell(x2), \
-					list_make_int_cell(x3))
-#define list_make4_int(x1,x2,x3,x4) \
-	list_make4_impl(T_IntList, list_make_int_cell(x1), list_make_int_cell(x2), \
-					list_make_int_cell(x3), list_make_int_cell(x4))
-#define list_make5_int(x1,x2,x3,x4,x5) \
-	list_make5_impl(T_IntList, list_make_int_cell(x1), list_make_int_cell(x2), \
-					list_make_int_cell(x3), list_make_int_cell(x4), \
-					list_make_int_cell(x5))
+#define list_make1_int(x1) list_make_int(x1)
+#define list_make2_int(x1,x2) list_make_int(_intx1,x2)
+#define list_make3_int(x1,x2,x3) list_make_int(x1,x2,x3)
+#define list_make4_int(x1,x2,x3,x4) list_make_int(x1,x2,x3,x4)
+#define list_make5_int(x1,x2,x3,x4,x5) list_make_int(x1,x2,x3,x4,x5)
 
-#define list_make1_oid(x1) \
-	list_make1_impl(T_OidList, list_make_oid_cell(x1))
-#define list_make2_oid(x1,x2) \
-	list_make2_impl(T_OidList, list_make_oid_cell(x1), list_make_oid_cell(x2))
-#define list_make3_oid(x1,x2,x3) \
-	list_make3_impl(T_OidList, list_make_oid_cell(x1), list_make_oid_cell(x2), \
-					list_make_oid_cell(x3))
-#define list_make4_oid(x1,x2,x3,x4) \
-	list_make4_impl(T_OidList, list_make_oid_cell(x1), list_make_oid_cell(x2), \
-					list_make_oid_cell(x3), list_make_oid_cell(x4))
-#define list_make5_oid(x1,x2,x3,x4,x5) \
-	list_make5_impl(T_OidList, list_make_oid_cell(x1), list_make_oid_cell(x2), \
-					list_make_oid_cell(x3), list_make_oid_cell(x4), \
-					list_make_oid_cell(x5))
+#define list_make_int(...) \
+	list_make_int_impl(T_IntList, VA_ARGS_NARGS(__VA_ARGS__), __VA_ARGS__)
 
-#define list_make1_xid(x1) \
-	list_make1_impl(T_XidList, list_make_xid_cell(x1))
-#define list_make2_xid(x1,x2) \
-	list_make2_impl(T_XidList, list_make_xid_cell(x1), list_make_xid_cell(x2))
-#define list_make3_xid(x1,x2,x3) \
-	list_make3_impl(T_XidList, list_make_xid_cell(x1), list_make_xid_cell(x2), \
-					list_make_xid_cell(x3))
-#define list_make4_xid(x1,x2,x3,x4) \
-	list_make4_impl(T_XidList, list_make_xid_cell(x1), list_make_xid_cell(x2), \
-					list_make_xid_cell(x3), list_make_xid_cell(x4))
-#define list_make5_xid(x1,x2,x3,x4,x5) \
-	list_make5_impl(T_XidList, list_make_xid_cell(x1), list_make_xid_cell(x2), \
-					list_make_xid_cell(x3), list_make_xid_cell(x4), \
-					list_make_xid_cell(x5))
+#define list_make1_oid(x1) list_make_oid((x1))
+#define list_make2_oid(x1,x2) list_make_oid((x1),(x2))
+#define list_make3_oid(x1,x2,x3) list_make_oid((x1),(x2),(x3))
+#define list_make4_oid(x1,x2,x3,x4) list_make_oid((x1),(x2),(x3),(x4))
+#define list_make5_oid(x1,x2,x3,x4,x5) list_make_oid((x1),(x2),(x3),(x4),(x5))
+
+#define list_make_oid(...) \
+	list_make_oid_impl(T_OidList, VA_ARGS_NARGS(__VA_ARGS__), __VA_ARGS__)
+
+#define list_make1_xid(x1) list_make_xid(x1)
+#define list_make2_xid(x1,x2) list_make_xid(_intx1,x2)
+#define list_make3_xid(x1,x2,x3) list_make_xid(x1,x2,x3)
+#define list_make4_xid(x1,x2,x3,x4) list_make_xid(x1,x2,x3,x4)
+#define list_make5_xid(x1,x2,x3,x4,x5) list_make_xid(x1,x2,x3,x4,x5)
+
+#define list_make_xid(...) \
+	list_make_xid_impl(T_XidList, VA_ARGS_NARGS(__VA_ARGS__), __VA_ARGS__)
 
 /*
  * Locate the n'th cell (counting from 0) of the list.
@@ -547,15 +518,10 @@ for_both_cell_setup(const List *list1, const ListCell *initcell1,
 
 /* Functions in src/backend/nodes/list.c */
 
-extern List *list_make1_impl(NodeTag t, ListCell datum1);
-extern List *list_make2_impl(NodeTag t, ListCell datum1, ListCell datum2);
-extern List *list_make3_impl(NodeTag t, ListCell datum1, ListCell datum2,
-							 ListCell datum3);
-extern List *list_make4_impl(NodeTag t, ListCell datum1, ListCell datum2,
-							 ListCell datum3, ListCell datum4);
-extern List *list_make5_impl(NodeTag t, ListCell datum1, ListCell datum2,
-							 ListCell datum3, ListCell datum4,
-							 ListCell datum5);
+extern List *list_make_impl(NodeTag t, int n, ...);
+extern List *list_make_int_impl(NodeTag t, int n, ...);
+extern List *list_make_oid_impl(NodeTag t, int n, ...);
+extern List *list_make_xid_impl(NodeTag t, int n, ...);
 
 extern pg_nodiscard List *lappend(List *list, void *datum);
 extern pg_nodiscard List *lappend_int(List *list, int datum);

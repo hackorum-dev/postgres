@@ -229,67 +229,69 @@ enlarge_list(List *list, int min_size)
 
 /*
  * Convenience functions to construct short Lists from given values.
- * (These are normally invoked via the list_makeN macros.)
+ * (These are normally invoked via the list_make* macros.)
  */
-List *
-list_make1_impl(NodeTag t, ListCell datum1)
-{
-	List	   *list = new_list(t, 1);
+#define list_make_ptr_cell(v)	((ListCell) {.ptr_value = (v)})
+#define list_make_int_cell(v)	((ListCell) {.int_value = (v)})
+#define list_make_oid_cell(v)	((ListCell) {.oid_value = (v)})
+#define list_make_xid_cell(v)	((ListCell) {.xid_value = (v)})
 
-	list->elements[0] = datum1;
+List *
+list_make_impl(NodeTag t, int n, ...)
+{
+	List	   *list = new_list(t, n);
+
+	va_list datum;
+	va_start(datum, n);
+
+	for (int i = 0; i < n; i++)
+		list->elements[i] = list_make_ptr_cell(va_arg(datum, void *));
+
 	check_list_invariants(list);
 	return list;
 }
 
 List *
-list_make2_impl(NodeTag t, ListCell datum1, ListCell datum2)
+list_make_int_impl(NodeTag t, int n, ...)
 {
-	List	   *list = new_list(t, 2);
+	List	   *list = new_list(t, n);
 
-	list->elements[0] = datum1;
-	list->elements[1] = datum2;
+	va_list datum;
+	va_start(datum, n);
+
+	for (int i = 0; i < n; i++)
+		list->elements[i] = list_make_int_cell(va_arg(datum, int));
+
 	check_list_invariants(list);
 	return list;
 }
 
 List *
-list_make3_impl(NodeTag t, ListCell datum1, ListCell datum2,
-				ListCell datum3)
+list_make_oid_impl(NodeTag t, int n, ...)
 {
-	List	   *list = new_list(t, 3);
+	List	   *list = new_list(t, n);
 
-	list->elements[0] = datum1;
-	list->elements[1] = datum2;
-	list->elements[2] = datum3;
+	va_list datum;
+	va_start(datum, n);
+
+	for (int i = 0; i < n; i++)
+		list->elements[i] = list_make_oid_cell(va_arg(datum, Oid));
+
 	check_list_invariants(list);
 	return list;
 }
 
 List *
-list_make4_impl(NodeTag t, ListCell datum1, ListCell datum2,
-				ListCell datum3, ListCell datum4)
+list_make_xid_impl(NodeTag t, int n, ...)
 {
-	List	   *list = new_list(t, 4);
+	List	   *list = new_list(t, n);
 
-	list->elements[0] = datum1;
-	list->elements[1] = datum2;
-	list->elements[2] = datum3;
-	list->elements[3] = datum4;
-	check_list_invariants(list);
-	return list;
-}
+	va_list datum;
+	va_start(datum, n);
 
-List *
-list_make5_impl(NodeTag t, ListCell datum1, ListCell datum2,
-				ListCell datum3, ListCell datum4, ListCell datum5)
-{
-	List	   *list = new_list(t, 5);
+	for (int i = 0; i < n; i++)
+		list->elements[i] = list_make_xid_cell(va_arg(datum, TransactionId));
 
-	list->elements[0] = datum1;
-	list->elements[1] = datum2;
-	list->elements[2] = datum3;
-	list->elements[3] = datum4;
-	list->elements[4] = datum5;
 	check_list_invariants(list);
 	return list;
 }
