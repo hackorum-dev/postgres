@@ -1693,8 +1693,7 @@ OpenTableList(List *tables)
 		}
 	}
 
-	list_free(relids);
-	list_free(relids_with_rf);
+	lists_free(relids, relids_with_rf);
 
 	return rels;
 }

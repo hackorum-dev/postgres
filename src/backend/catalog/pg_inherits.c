@@ -496,8 +496,7 @@ typeInheritsFrom(Oid subclassTypeId, Oid superclassTypeId)
 	/* clean up ... */
 	table_close(inhrel, AccessShareLock);
 
-	list_free(visited);
-	list_free(queue);
+	lists_free(visited, queue);
 
 	return result;
 }

@@ -1477,8 +1477,7 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 
 cleanup:
 	/* Free local memory before returning. */
-	list_free(merged_datums);
-	list_free(merged_indexes);
+	lists_free(merged_datums, merged_indexes);
 	free_partition_map(&outer_map);
 	free_partition_map(&inner_map);
 
@@ -1795,9 +1794,7 @@ merge_range_bounds(int partnatts, FmgrInfo *partsupfuncs,
 
 cleanup:
 	/* Free local memory before returning. */
-	list_free(merged_datums);
-	list_free(merged_kinds);
-	list_free(merged_indexes);
+	lists_free(merged_datums, merged_kinds, merged_indexes);
 	free_partition_map(&outer_map);
 	free_partition_map(&inner_map);
 

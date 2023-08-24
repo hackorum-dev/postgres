@@ -2198,9 +2198,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 			pgoutput_column_list_init(data, rel_publications, entry);
 		}
 
-		list_free(pubids);
-		list_free(schemaPubids);
-		list_free(rel_publications);
+		lists_free(pubids, schemaPubids, rel_publications);
 
 		entry->replicate_valid = true;
 	}

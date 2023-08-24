@@ -2439,8 +2439,7 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 	}
 	FreeTriggerDesc(relation->trigdesc);
 	list_free_deep(relation->rd_fkeylist);
-	list_free(relation->rd_indexlist);
-	list_free(relation->rd_statlist);
+	lists_free(relation->rd_indexlist, relation->rd_statlist);
 	bms_free(relation->rd_keyattr);
 	bms_free(relation->rd_pkattr);
 	bms_free(relation->rd_idattr);
@@ -5365,14 +5364,12 @@ restart:
 		relreplindex == relation->rd_replidindex)
 	{
 		/* Still the same index set, so proceed */
-		list_free(newindexoidlist);
-		list_free(indexoidlist);
+		lists_free(newindexoidlist, indexoidlist);
 	}
 	else
 	{
 		/* Gotta do it over ... might as well not leak memory */
-		list_free(newindexoidlist);
-		list_free(indexoidlist);
+		lists_free(newindexoidlist, indexoidlist);
 		bms_free(uindexattrs);
 		bms_free(pkindexattrs);
 		bms_free(idindexattrs);

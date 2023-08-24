@@ -2501,8 +2501,7 @@ get_steps_using_prefix_recurse(GeneratePruningStepsContext *context,
 													   step_cmpfns1);
 			result = list_concat(result, moresteps);
 
-			list_free(step_exprs1);
-			list_free(step_cmpfns1);
+			lists_free(step_exprs1, step_cmpfns1);
 		}
 	}
 	else

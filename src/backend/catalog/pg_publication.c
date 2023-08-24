@@ -349,8 +349,7 @@ GetTopMostAncestorInPublication(Oid puboid, List *ancestors, int *ancestor_level
 			}
 		}
 
-		list_free(apubids);
-		list_free(aschemaPubids);
+		lists_free(apubids, aschemaPubids);
 	}
 
 	return topmost_relid;

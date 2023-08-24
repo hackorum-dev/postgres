@@ -6299,8 +6299,7 @@ ProcessGUCArray(ArrayType *array,
 		pfree(value);
 	}
 
-	list_free(gucNames);
-	list_free(gucValues);
+	lists_free(gucNames, gucValues);
 }
 
 

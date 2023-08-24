@@ -5461,8 +5461,7 @@ calc_joinrel_size_estimate(PlannerInfo *root,
 										sjinfo);
 
 		/* Avoid leaking a lot of ListCells */
-		list_free(joinquals);
-		list_free(pushedquals);
+		lists_free(joinquals, pushedquals);
 	}
 	else
 	{

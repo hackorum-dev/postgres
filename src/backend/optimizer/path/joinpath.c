@@ -465,8 +465,7 @@ paraminfo_get_equal_hashops(PlannerInfo *root, ParamPathInfo *param_info,
 			if (!IsA(opexpr, OpExpr) || list_length(opexpr->args) != 2 ||
 				!clause_sides_match_join(rinfo, outerrel, innerrel))
 			{
-				list_free(*operators);
-				list_free(*param_exprs);
+				lists_free(*operators, *param_exprs);
 				return false;
 			}
 
@@ -484,8 +483,7 @@ paraminfo_get_equal_hashops(PlannerInfo *root, ParamPathInfo *param_info,
 			/* can't do memoize if we can't hash the outer type */
 			if (!OidIsValid(hasheqoperator))
 			{
-				list_free(*operators);
-				list_free(*param_exprs);
+				lists_free(*operators, *param_exprs);
 				return false;
 			}
 
@@ -517,8 +515,7 @@ paraminfo_get_equal_hashops(PlannerInfo *root, ParamPathInfo *param_info,
 		/* Reject if there are any volatile functions in lateral vars */
 		if (contain_volatile_functions(expr))
 		{
-			list_free(*operators);
-			list_free(*param_exprs);
+			lists_free(*operators, *param_exprs);
 			return false;
 		}
 
@@ -528,8 +525,7 @@ paraminfo_get_equal_hashops(PlannerInfo *root, ParamPathInfo *param_info,
 		/* can't use memoize without a valid hash proc and equals operator */
 		if (!OidIsValid(typentry->hash_proc) || !OidIsValid(typentry->eq_opr))
 		{
-			list_free(*operators);
-			list_free(*param_exprs);
+			lists_free(*operators, *param_exprs);
 			return false;
 		}
 

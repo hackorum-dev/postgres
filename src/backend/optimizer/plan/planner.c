@@ -5413,8 +5413,7 @@ make_group_input_target(PlannerInfo *root, PathTarget *final_target)
 	add_new_columns_to_pathtarget(input_target, non_group_vars);
 
 	/* clean up cruft */
-	list_free(non_group_vars);
-	list_free(non_group_cols);
+	lists_free(non_group_vars, non_group_cols);
 
 	/* XXX this causes some redundant cost calculation ... */
 	return set_pathtarget_cost_width(root, input_target);
@@ -5526,8 +5525,7 @@ make_partial_grouping_target(PlannerInfo *root,
 	}
 
 	/* clean up cruft */
-	list_free(non_group_exprs);
-	list_free(non_group_cols);
+	lists_free(non_group_exprs, non_group_cols);
 
 	/* XXX this causes some redundant cost calculation ... */
 	return set_pathtarget_cost_width(root, partial_target);
@@ -6009,8 +6007,7 @@ make_window_input_target(PlannerInfo *root,
 	add_new_columns_to_pathtarget(input_target, flattenable_vars);
 
 	/* clean up cruft */
-	list_free(flattenable_vars);
-	list_free(flattenable_cols);
+	lists_free(flattenable_vars, flattenable_cols);
 
 	/* XXX this causes some redundant cost calculation ... */
 	return set_pathtarget_cost_width(root, input_target);
@@ -6309,8 +6306,7 @@ make_sort_input_target(PlannerInfo *root,
 	add_new_columns_to_pathtarget(input_target, postponable_vars);
 
 	/* clean up cruft */
-	list_free(postponable_vars);
-	list_free(postponable_cols);
+	lists_free(postponable_vars, postponable_cols);
 
 	/* XXX this represents even more redundant cost calculation ... */
 	return set_pathtarget_cost_width(root, input_target);

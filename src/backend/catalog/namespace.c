@@ -3794,8 +3794,7 @@ recomputeNamespacePath(void)
 
 	/* Clean up. */
 	pfree(rawname);
-	list_free(namelist);
-	list_free(oidlist);
+	lists_free(namelist, oidlist);
 }
 
 /*

@@ -1293,8 +1293,8 @@ ExecPendingInserts(EState *estate)
 						estate, mtstate->canSetTag);
 	}
 
-	list_free(estate->es_insert_pending_result_relations);
-	list_free(estate->es_insert_pending_modifytables);
+	lists_free(estate->es_insert_pending_result_relations,
+			   estate->es_insert_pending_modifytables);
 	estate->es_insert_pending_result_relations = NIL;
 	estate->es_insert_pending_modifytables = NIL;
 }

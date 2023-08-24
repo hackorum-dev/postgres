@@ -2166,8 +2166,7 @@ lookup_proof_cache(Oid pred_op, Oid clause_op, bool refute_it)
 			break;
 	}
 
-	list_free_deep(pred_op_infos);
-	list_free_deep(clause_op_infos);
+	lists_free_deep(pred_op_infos, clause_op_infos);
 
 	if (!found)
 	{
