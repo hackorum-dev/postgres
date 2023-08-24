@@ -621,6 +621,11 @@ extern void list_deduplicate_oid(List *list);
 extern void list_free(List *list);
 extern void list_free_deep(List *list);
 
+#define lists_free(...) \
+	func_vectorizor(list_free, __VA_ARGS__)
+#define lists_free_deep(...) \
+	func_vectorizor(list_free_deep, __VA_ARGS__)
+
 extern pg_nodiscard List *list_copy(const List *oldlist);
 extern pg_nodiscard List *list_copy_head(const List *oldlist, int len);
 extern pg_nodiscard List *list_copy_tail(const List *oldlist, int nskip);

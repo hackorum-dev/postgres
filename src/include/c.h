@@ -1108,6 +1108,16 @@ extern void ExceptionalCondition(const char *conditionName,
 #define FLOAT8_FITS_IN_INT64(num) \
 	((num) >= (float8) PG_INT64_MIN && (num) < -((float8) PG_INT64_MIN))
 
+/*
+ * TODO: add comment
+ */
+#define func_vectorizor(func, ...) \
+do { \
+	void  *end = (int[]) {0}; \
+	void **args = (void *[]) {__VA_ARGS__, end}; \
+	for (int i = 0; args[i] != end; i++) \
+		func(args[i]); \
+} while (0)
 
 /* ----------------------------------------------------------------
  *				Section 8:	random stuff
