@@ -66,6 +66,7 @@ typedef struct SimpleActionList
 
 struct adhoc_opts
 {
+	bool		no_connect;
 	char	   *dbname;
 	char	   *host;
 	char	   *port;
@@ -249,7 +250,14 @@ main(int argc, char *argv[])
 		password = simple_prompt("Password: ", false);
 	}
 
+	if (options.no_connect)
+	{
+		if (options.list_dbs)
+			pg_fatal("--no-connect cannot be specified with --list");
+	}
+
 	/* loop until we have a password if requested by backend */
+	if (!options.no_connect)
 	do
 	{
 #define PARAMS_ARRAY_SIZE	8
@@ -305,6 +313,7 @@ main(int argc, char *argv[])
 		}
 	} while (new_pass);
 
+	if (!options.no_connect)
 	if (PQstatus(pset.db) == CONNECTION_BAD)
 	{
 		pg_log_error("%s", PQerrorMessage(pset.db));
@@ -504,6 +513,7 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 		{"field-separator", required_argument, NULL, 'F'},
 		{"field-separator-zero", no_argument, NULL, 'z'},
 		{"host", required_argument, NULL, 'h'},
+		{"no-connect", no_argument, NULL, 'C'},
 		{"html", no_argument, NULL, 'H'},
 		{"list", no_argument, NULL, 'l'},
 		{"log-file", required_argument, NULL, 'L'},
@@ -537,7 +547,7 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 
 	memset(options, 0, sizeof *options);
 
-	while ((c = getopt_long(argc, argv, "aAbc:d:eEf:F:h:HlL:no:p:P:qR:sStT:U:v:VwWxXz?01",
+	while ((c = getopt_long(argc, argv, "aAbc:d:eEf:F:h:CHlL:no:p:P:qR:sStT:U:v:VwWxXz?01",
 							long_options, &optindex)) != -1)
 	{
 		switch (c)
@@ -581,6 +591,9 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 				break;
 			case 'h':
 				options->host = pg_strdup(optarg);
+				break;
+			case 'C':
+				options->no_connect = true;
 				break;
 			case 'H':
 				pset.popt.topt.format = PRINT_HTML;
