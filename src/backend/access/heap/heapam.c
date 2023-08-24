@@ -3372,12 +3372,8 @@ l2:
 			ReleaseBuffer(vmbuffer);
 		*update_indexes = TU_None;
 
-		bms_free(hot_attrs);
-		bms_free(sum_attrs);
-		bms_free(key_attrs);
-		bms_free(id_attrs);
-		bms_free(modified_attrs);
-		bms_free(interesting_attrs);
+		bmss_free(hot_attrs, sum_attrs, key_attrs, id_attrs, modified_attrs,
+				  interesting_attrs);
 		return result;
 	}
 
@@ -3887,12 +3883,8 @@ l2:
 	if (old_key_tuple != NULL && old_key_copied)
 		heap_freetuple(old_key_tuple);
 
-	bms_free(hot_attrs);
-	bms_free(sum_attrs);
-	bms_free(key_attrs);
-	bms_free(id_attrs);
-	bms_free(modified_attrs);
-	bms_free(interesting_attrs);
+	bmss_free(hot_attrs, sum_attrs, key_attrs, id_attrs, modified_attrs,
+			  interesting_attrs);
 
 	return TM_Ok;
 }

@@ -84,6 +84,9 @@ extern int	bms_compare(const Bitmapset *a, const Bitmapset *b);
 extern Bitmapset *bms_make_singleton(int x);
 extern void bms_free(Bitmapset *a);
 
+#define bmss_free(...) \
+	func_vectorizor(bms_free, __VA_ARGS__)
+
 extern Bitmapset *bms_union(const Bitmapset *a, const Bitmapset *b);
 extern Bitmapset *bms_intersect(const Bitmapset *a, const Bitmapset *b);
 extern Bitmapset *bms_difference(const Bitmapset *a, const Bitmapset *b);

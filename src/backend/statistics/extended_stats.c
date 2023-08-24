@@ -1261,8 +1261,7 @@ choose_best_statistics(List *stats, char requiredkind, bool inh,
 
 		num_matched = bms_num_members(matched_attnums) + bms_num_members(matched_exprs);
 
-		bms_free(matched_attnums);
-		bms_free(matched_exprs);
+		bmss_free(matched_attnums, matched_exprs);
 
 		/*
 		 * save the actual number of keys in the stats so that we can choose

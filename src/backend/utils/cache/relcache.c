@@ -2440,11 +2440,8 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 	FreeTriggerDesc(relation->trigdesc);
 	list_free_deep(relation->rd_fkeylist);
 	lists_free(relation->rd_indexlist, relation->rd_statlist);
-	bms_free(relation->rd_keyattr);
-	bms_free(relation->rd_pkattr);
-	bms_free(relation->rd_idattr);
-	bms_free(relation->rd_hotblockingattr);
-	bms_free(relation->rd_summarizedattr);
+	bmss_free(relation->rd_keyattr, relation->rd_pkattr, relation->rd_idattr,
+			  relation->rd_hotblockingattr, relation->rd_summarizedattr);
 	if (relation->rd_pubdesc)
 		pfree(relation->rd_pubdesc);
 	if (relation->rd_options)
@@ -5370,26 +5367,20 @@ restart:
 	{
 		/* Gotta do it over ... might as well not leak memory */
 		lists_free(newindexoidlist, indexoidlist);
-		bms_free(uindexattrs);
-		bms_free(pkindexattrs);
-		bms_free(idindexattrs);
-		bms_free(hotblockingattrs);
-		bms_free(summarizedattrs);
+		bmss_free(uindexattrs, pkindexattrs, idindexattrs, hotblockingattrs,
+				  summarizedattrs);
 
 		goto restart;
 	}
 
 	/* Don't leak the old values of these bitmaps, if any */
 	relation->rd_attrsvalid = false;
-	bms_free(relation->rd_keyattr);
+	bmss_free(relation->rd_keyattr, relation->rd_pkattr, relation->rd_idattr,
+			  relation->rd_hotblockingattr, relation->rd_summarizedattr);
 	relation->rd_keyattr = NULL;
-	bms_free(relation->rd_pkattr);
 	relation->rd_pkattr = NULL;
-	bms_free(relation->rd_idattr);
 	relation->rd_idattr = NULL;
-	bms_free(relation->rd_hotblockingattr);
 	relation->rd_hotblockingattr = NULL;
-	bms_free(relation->rd_summarizedattr);
 	relation->rd_summarizedattr = NULL;
 
 	/*

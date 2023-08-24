@@ -418,9 +418,8 @@ ExecReScanAppend(AppendState *node)
 					node->as_prune_state->execparamids))
 	{
 		node->as_valid_subplans_identified = false;
-		bms_free(node->as_valid_subplans);
+		bmss_free(node->as_valid_subplans, node->as_valid_asyncplans);
 		node->as_valid_subplans = NULL;
-		bms_free(node->as_valid_asyncplans);
 		node->as_valid_asyncplans = NULL;
 	}
 

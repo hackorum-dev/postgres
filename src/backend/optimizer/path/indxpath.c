@@ -1847,8 +1847,7 @@ check_index_only(RelOptInfo *rel, IndexOptInfo *index)
 	/* Do we have all the necessary attributes? */
 	result = bms_is_subset(attrs_used, index_canreturn_attrs);
 
-	bms_free(attrs_used);
-	bms_free(index_canreturn_attrs);
+	bmss_free(attrs_used, index_canreturn_attrs);
 
 	return result;
 }

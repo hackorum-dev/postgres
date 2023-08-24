@@ -412,8 +412,7 @@ have_unsafe_outer_join_ref(PlannerInfo *root,
 	}
 
 	/* Waste no memory when we reject a path here */
-	bms_free(unsatisfied);
-	bms_free(satisfied);
+	bmss_free(unsatisfied, satisfied);
 
 	return result;
 }

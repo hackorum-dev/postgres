@@ -431,8 +431,7 @@ pub_collist_contains_invalid_column(Oid pubid, Relation relation, List *ancestor
 			}
 		}
 
-		bms_free(idattrs);
-		bms_free(columns);
+		bmss_free(idattrs, columns);
 	}
 
 	ReleaseSysCache(tuple);
