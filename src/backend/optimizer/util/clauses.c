@@ -5277,6 +5277,10 @@ recheck_cast_function_args(List *args, Oid result_type,
 	if (list_length(args) > FUNC_MAX_ARGS)
 		elog(ERROR, "too many function arguments");
 	nargs = 0;
+
+	/* Silence gcc 12 compiler at -O1. */
+	actual_arg_types[0] = InvalidOid;
+
 	foreach(lc, args)
 	{
 		actual_arg_types[nargs++] = exprType((Node *) lfirst(lc));
