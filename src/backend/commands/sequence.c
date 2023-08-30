@@ -182,6 +182,9 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 				coldef = makeColumnDef("is_called", BOOLOID, -1, InvalidOid);
 				value[i - 1] = BoolGetDatum(false);
 				break;
+			default: /* silence the compiler warning */
+				Assert(false);
+				return InvalidObjectAddress;
 		}
 
 		coldef->is_not_null = true;
