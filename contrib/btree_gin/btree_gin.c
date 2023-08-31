@@ -711,7 +711,7 @@ GIN_SUPPORT(cidr, leftmostvalue_inet, cidr_rhs_is_varlena, NULL, cidr_cmp_fns)
 static Datum
 leftmostvalue_text(void)
 {
-	return PointerGetDatum(cstring_to_text_with_len("", 0));
+	return PointerGetDatum(cstring_to_text(""));
 }
 
 static Datum
