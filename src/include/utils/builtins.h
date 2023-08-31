@@ -17,6 +17,7 @@
 #include "fmgr.h"
 #include "nodes/nodes.h"
 #include "utils/fmgrprotos.h"
+#include "varatt.h"
 
 /* Sign + the most decimal digits an 8-byte number could have */
 #define MAXINT8LEN 20
@@ -90,8 +91,37 @@ extern void generate_operator_clause(StringInfo buf,
 extern int	bpchartruelen(char *s, int len);
 
 /* popular functions from varlena.c */
-extern text *cstring_to_text(const char *s);
-extern text *cstring_to_text_with_len(const char *s, int len);
+
+/*
+ * cstring_to_text_with_len
+ *
+ * Same as cstring_to_text except the caller specifies the string length;
+ * the string need not be null-terminated.
+ */
+static inline text *
+cstring_to_text_with_len(const char *s, int len)
+{
+	text	   *result = (text *) palloc(len + VARHDRSZ);
+
+	SET_VARSIZE(result, len + VARHDRSZ);
+	memcpy(VARDATA(result), s, len);
+
+	return result;
+}
+
+/*
+ * cstring_to_text
+ *
+ * Create a text value from a null-terminated C string.
+ *
+ * The new text value is freshly palloc'd with a full-size VARHDR.
+ */
+static inline text *
+cstring_to_text(const char *s)
+{
+	return cstring_to_text_with_len(s, strlen(s));
+}
+
 extern char *text_to_cstring(const text *t);
 extern void text_to_cstring_buffer(const text *src, char *dst, size_t dst_len);
 

@@ -1307,7 +1307,7 @@ json_build_object(PG_FUNCTION_ARGS)
 Datum
 json_build_object_noargs(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_TEXT_P(cstring_to_text_with_len("{}", 2));
+	PG_RETURN_TEXT_P(cstring_to_text("{}"));
 }
 
 Datum
@@ -1363,7 +1363,7 @@ json_build_array(PG_FUNCTION_ARGS)
 Datum
 json_build_array_noargs(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_TEXT_P(cstring_to_text_with_len("[]", 2));
+	PG_RETURN_TEXT_P(cstring_to_text("[]"));
 }
 
 /*
