@@ -211,6 +211,15 @@ next_token(char **lineptr, StringInfo buf,
 	while (c != '\0' &&
 		   (!pg_isblank(c) || in_quote))
 	{
+
+		if (c == '[' && !in_quote)
+		{
+			appendStringInfoChar(buf, c);
+			while ((c = (*(*lineptr)++)) != '\0')
+				appendStringInfoChar(buf, c);
+			break;
+		}
+
 		/* skip comments to EOL */
 		if (c == '#' && !in_quote)
 		{
@@ -1861,6 +1870,15 @@ parse_hba_line(TokenizedAuthLine *tok_line, int elevel)
 
 			str = pstrdup(token->string);
 			val = strchr(str, '=');
+
+			if(str[0]=='[' && str[strlen(str)-1]==']')
+			{
+				str = str + 1 ;
+				str[strlen(str)-1]='\0';
+				parsedline->comments = str;
+				continue;
+			}
+
 			if (val == NULL)
 			{
 				/*
