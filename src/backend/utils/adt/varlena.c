@@ -174,36 +174,6 @@ static void text_format_append_string(StringInfo buf, const char *str,
  *****************************************************************************/
 
 /*
- * cstring_to_text
- *
- * Create a text value from a null-terminated C string.
- *
- * The new text value is freshly palloc'd with a full-size VARHDR.
- */
-text *
-cstring_to_text(const char *s)
-{
-	return cstring_to_text_with_len(s, strlen(s));
-}
-
-/*
- * cstring_to_text_with_len
- *
- * Same as cstring_to_text except the caller specifies the string length;
- * the string need not be null_terminated.
- */
-text *
-cstring_to_text_with_len(const char *s, int len)
-{
-	text	   *result = (text *) palloc(len + VARHDRSZ);
-
-	SET_VARSIZE(result, len + VARHDRSZ);
-	memcpy(VARDATA(result), s, len);
-
-	return result;
-}
-
-/*
  * text_to_cstring
  *
  * Create a palloc'd, null-terminated C string from a text value.
@@ -3975,7 +3945,7 @@ array_to_text_internal(FunctionCallInfo fcinfo, ArrayType *v,
 
 	/* if there are no elements, return an empty string */
 	if (nitems == 0)
-		return cstring_to_text_with_len("", 0);
+		return cstring_to_text("");
 
 	element_type = ARR_ELEMTYPE(v);
 	initStringInfo(&buf);

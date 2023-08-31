@@ -1810,8 +1810,8 @@ JsonbValueAsText(JsonbValue *v)
 
 		case jbvBool:
 			return v->val.boolean ?
-				cstring_to_text_with_len("true", 4) :
-				cstring_to_text_with_len("false", 5);
+				cstring_to_text("true") :
+				cstring_to_text("false");
 
 		case jbvString:
 			return cstring_to_text_with_len(v->val.string.val,
