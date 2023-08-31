@@ -1350,7 +1350,7 @@ hstore_to_json_loose(PG_FUNCTION_ARGS)
 	StringInfoData dst;
 
 	if (count == 0)
-		PG_RETURN_TEXT_P(cstring_to_text_with_len("{}", 2));
+		PG_RETURN_TEXT_P(cstring_to_text("{}"));
 
 	initStringInfo(&dst);
 
@@ -1402,7 +1402,7 @@ hstore_to_json(PG_FUNCTION_ARGS)
 	StringInfoData dst;
 
 	if (count == 0)
-		PG_RETURN_TEXT_P(cstring_to_text_with_len("{}", 2));
+		PG_RETURN_TEXT_P(cstring_to_text("{}"));
 
 	initStringInfo(&dst);
 
