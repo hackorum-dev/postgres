@@ -275,7 +275,8 @@ PostgreSQL documentation
       <term><option>--superuser</option></term>
       <listitem>
        <para>
-        The new user will be a superuser.
+        The new user will be a superuser.  Also implies <option>--createdb</option>
+        and <option>--createrole</option>.
        </para>
       </listitem>
      </varlistentry>
