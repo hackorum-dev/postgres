@@ -508,6 +508,7 @@ errfinish(const char *filename, int lineno, const char *funcname)
 	if (!edata->backtrace &&
 		edata->funcname &&
 		backtrace_functions &&
+		elevel == ERROR &&
 		matches_backtrace_functions(edata->funcname))
 		set_backtrace(edata, 2);
 
