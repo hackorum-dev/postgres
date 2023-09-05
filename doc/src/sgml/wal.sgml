@@ -601,9 +601,9 @@
   </para>
 
   <para>
-   On Linux and POSIX platforms <xref linkend="guc-checkpoint-flush-after"/>
-   allows to force the OS that pages written by the checkpoint should be
-   flushed to disk after a configurable number of bytes.  Otherwise, these
+   On Linux and POSIX platforms, <xref linkend="guc-checkpoint-flush-after"/>
+   forces the OS to flush dirty pages written by the checkpoint to disk
+   after writing the configured number of bytes. Otherwise, these
    pages may be kept in the OS's page cache, inducing a stall when
    <literal>fsync</literal> is issued at the end of a checkpoint.  This setting will
    often help to reduce transaction latency, but it also can have an adverse
