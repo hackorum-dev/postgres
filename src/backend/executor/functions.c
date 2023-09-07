@@ -520,11 +520,7 @@ init_execution_state(List *queryTree_list,
 			}
 
 			if (fcache->readonly_func && !CommandIsReadOnly(stmt))
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				/* translator: %s is a SQL statement name */
-						 errmsg("%s is not allowed in a non-volatile function",
-								CreateCommandName((Node *) stmt))));
+				ReportNonVolatileViolation(ERRCODE_FEATURE_NOT_SUPPORTED, stmt);
 
 			/* OK, build the execution_state for this query */
 			newes = (execution_state *) palloc(sizeof(execution_state));

@@ -406,6 +406,7 @@ ClassifyUtilityCommandAsReadOnly(Node *parsetree)
  *
  * This is useful partly to ensure consistency of the error message wording;
  * some callers have checked XactReadOnly for themselves.
+ * See also: PreventPlannedStmtIfReadOnly
  */
 void
 PreventCommandIfReadOnly(const char *cmdname)
@@ -417,6 +418,92 @@ PreventCommandIfReadOnly(const char *cmdname)
 				 errmsg("cannot execute %s in a read-only transaction",
 						cmdname)));
 }
+
+/*
+ * GetModifyingTableName
+ *
+ * Utility to get the alias name of a table that requires a RowExclusiveLock.
+ * Used to get a helpful name for error messages when a writeable CTE appears
+ * in read-only context.
+ */
+const char *
+GetModifyingTableName(const PlannedStmt *pstmt)
+{
+	const ListCell *l;
+	foreach(l, pstmt->rtable)
+	{
+		RangeTblEntry *rte = lfirst(l);
+
+		if (rte->rtekind == RTE_RELATION && rte->rellockmode == RowExclusiveLock) {
+			return rte->eref->aliasname;
+		}
+	}
+	Assert(false);
+	return ""; /* silence compiler */
+}
+
+/*
+ * ReportReadOnlyViolation: throw error about modifying command in read-only context
+ *
+ * Takes care of the writeable CTE special case that the command tag is SELECT
+ * and thus misleading for a read-only error message.
+ */
+void
+ReportReadOnlyViolation(int sqlerrcode, const PlannedStmt *pstmt)
+{
+	if (CreateCommandTag((Node *) pstmt) == CMDTAG_SELECT)
+		ereport(ERROR,
+				(errcode(sqlerrcode),
+		/* translator: %s is a table name */
+				 errmsg("cannot modify table \"%s\" in a read-only transaction",
+						  GetModifyingTableName(pstmt))));
+	else
+		ereport(ERROR,
+				(errcode(sqlerrcode),
+		/* translator: %s is name of a SQL command, eg INSERT */
+				 errmsg("cannot execute %s in a read-only transaction",
+						  CreateCommandName((Node *) pstmt))));
+}
+
+
+/*
+ * ReportNonVolatileViolation: throw error about modifying command in non-volatile context
+ *
+ * Takes care of the writeable CTE special case that the command tag is SELECT
+ * and thus misleading for a read-only error message.
+ */
+void
+ReportNonVolatileViolation(int sqlerrcode, const PlannedStmt *pstmt)
+{
+	if (CreateCommandTag((Node *) pstmt) == CMDTAG_SELECT)
+		ereport(ERROR,
+				(errcode(sqlerrcode),
+		/* translator: %s is a table name */
+				 errmsg("cannot modify table \"%s\" in a non-volatile function",
+						  GetModifyingTableName(pstmt))));
+	else
+		ereport(ERROR,
+				(errcode(sqlerrcode),
+		/* translator: %s is name of a SQL command, eg INSERT */
+				 errmsg("%s is not allowed in a non-volatile function",
+						  CreateCommandName((Node *) pstmt))));
+}
+
+
+/*
+ * PreventPlannedStmtIfReadOnly: throw error if XactReadOnly
+ *
+ * Like PreventCommandIfReadOnly but takes care of the writeable CTE special
+ * case that the command tag is SELECT and thus inappropriate for a read-only
+ * error message.
+ */
+void
+PreventPlannedStmtIfReadOnly(const PlannedStmt *pstmt)
+{
+	if (XactReadOnly)
+		ReportReadOnlyViolation(ERRCODE_READ_ONLY_SQL_TRANSACTION, pstmt);
+}
+
 
 /*
  * PreventCommandIfParallelMode: throw error if current (sub)transaction is

@@ -109,4 +109,9 @@ extern LogStmtLevel GetCommandLogLevel(Node *parsetree);
 
 extern bool CommandIsReadOnly(PlannedStmt *pstmt);
 
+extern const char * GetModifyingTableName(const PlannedStmt *pstm);
+extern void ReportReadOnlyViolation(int sqlerrcode, const PlannedStmt *pstmt);
+extern void ReportNonVolatileViolation(int sqlerrcode, const PlannedStmt *pstmt);
+extern void PreventPlannedStmtIfReadOnly(const PlannedStmt *pstmt);
+
 #endif							/* UTILITY_H */

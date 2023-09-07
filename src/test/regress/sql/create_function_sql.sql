@@ -204,6 +204,16 @@ CREATE FUNCTION functest_S_xx(x date) RETURNS boolean
     LANGUAGE SQL
     RETURN x > 1;
 
+-- check tricky violation of STABLE declaration
+CREATE FUNCTION functest_S_xx(x int) RETURNS boolean STABLE
+    LANGUAGE SQL
+    BEGIN ATOMIC
+        WITH cte AS (
+            INSERT INTO functest1 SELECT x RETURNING *
+        )
+        SELECT i<0 FROM cte;
+    END;
+
 -- tricky parsing
 CREATE FUNCTION functest_S_15(x int) RETURNS boolean
 LANGUAGE SQL

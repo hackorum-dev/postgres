@@ -56,6 +56,7 @@
 #include "executor/functions.h"
 #include "funcapi.h"
 #include "miscadmin.h"
+#include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
 #include "parser/analyze.h"
 #include "parser/parse_coerce.h"
@@ -842,6 +843,28 @@ compute_function_attributes(ParseState *pstate,
 		*parallel_p = interpret_func_parallel(parallel_item);
 }
 
+static bool
+validate_volatility_walker(Node *node, void *ctx)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Query))
+	{
+		Query *q = (Query*)node;
+		if (q->hasForUpdate || q->commandType == CMD_UTILITY)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("%s is not allowed in a non-volatile function", CreateCommandName(node))));
+		if (q->resultRelation > 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("cannot modify table \"%s\" in a non-volatile function",
+						 ((RangeTblEntry *) list_nth(q->rtable, (q->resultRelation)-1)) ->eref->aliasname)));
+		return query_tree_walker(q, validate_volatility_walker, ctx, 0);
+	} else {
+		return expression_tree_walker(node, validate_volatility_walker, ctx);
+	}
+}
 
 /*
  * For a dynamically linked C language object, the form of the clause is
@@ -858,7 +881,7 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
 					List *parameterTypes, List *inParameterNames,
 					char **prosrc_str_p, char **probin_str_p,
 					Node **sql_body_out,
-					const char *queryString)
+					const char *queryString, const char volatility)
 {
 	if (!sql_body_in && !as)
 		ereport(ERROR,
@@ -943,6 +966,8 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
 							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 							errmsg("%s is not yet supported in unquoted SQL function body",
 								   GetCommandTagName(CreateCommandTag(q->utilityStmt))));
+				if (volatility != PROVOLATILE_VOLATILE)
+					validate_volatility_walker((Node*)q, NULL);
 				transformed_stmts = lappend(transformed_stmts, q);
 				free_parsestate(pstate);
 			}
@@ -962,6 +987,8 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
 						errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						errmsg("%s is not yet supported in unquoted SQL function body",
 							   GetCommandTagName(CreateCommandTag(q->utilityStmt))));
+			if (volatility != PROVOLATILE_VOLATILE)
+				validate_volatility_walker((Node*)q, NULL);
 			free_parsestate(pstate);
 
 			*sql_body_out = (Node *) q;
@@ -1227,7 +1254,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	interpret_AS_clause(languageOid, language, funcname, as_clause, stmt->sql_body,
 						parameterTypes_list, inParameterNames_list,
 						&prosrc_str, &probin_str, &prosqlbody,
-						pstate->p_sourcetext);
+						pstate->p_sourcetext, volatility);
 
 	/*
 	 * Set default values for COST and ROWS depending on other parameters;

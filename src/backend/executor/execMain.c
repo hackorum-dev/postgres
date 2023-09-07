@@ -816,7 +816,7 @@ ExecCheckXactReadOnly(PlannedStmt *plannedstmt)
 		if (isTempNamespace(get_rel_namespace(perminfo->relid)))
 			continue;
 
-		PreventCommandIfReadOnly(CreateCommandName((Node *) plannedstmt));
+		PreventPlannedStmtIfReadOnly(plannedstmt);
 	}
 
 	if (plannedstmt->commandType != CMD_SELECT || plannedstmt->hasModifyingCTE)

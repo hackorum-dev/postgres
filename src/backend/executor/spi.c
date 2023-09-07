@@ -1736,11 +1736,7 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 			PlannedStmt *pstmt = lfirst_node(PlannedStmt, lc);
 
 			if (!CommandIsReadOnly(pstmt))
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				/* translator: %s is a SQL statement name */
-						 errmsg("%s is not allowed in a non-volatile function",
-								CreateCommandName((Node *) pstmt))));
+				ReportReadOnlyViolation(ERRCODE_FEATURE_NOT_SUPPORTED, pstmt);
 		}
 	}
 
@@ -2629,11 +2625,7 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 			}
 
 			if (options->read_only && !CommandIsReadOnly(stmt))
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				/* translator: %s is a SQL statement name */
-						 errmsg("%s is not allowed in a non-volatile function",
-								CreateCommandName((Node *) stmt))));
+				ReportReadOnlyViolation(ERRCODE_FEATURE_NOT_SUPPORTED, stmt);
 
 			/*
 			 * If not read-only mode, advance the command counter before each
