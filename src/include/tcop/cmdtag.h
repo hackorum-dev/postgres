@@ -30,7 +30,6 @@ typedef enum CommandTag
 typedef struct QueryCompletion
 {
 	CommandTag	commandTag;
-	CommandTag	explainCommandTag;
 	uint64		nprocessed;
 } QueryCompletion;
 
