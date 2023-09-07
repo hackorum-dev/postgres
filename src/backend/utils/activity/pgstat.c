@@ -395,11 +395,26 @@ static const PgStat_KindInfo pgstat_kind_infos[PGSTAT_NUM_KINDS] = {
 	},
 };
 
-
 /* ------------------------------------------------------------
  * Functions managing the state of the stats system for all backends.
  * ------------------------------------------------------------
  */
+
+/*
+ * Return the timestamp when called the first time. This is intended to be used
+ * to obatin the reset timestamp when a shared entry is created.
+ */
+TimestampTz
+pgstat_get_reset_timestamp(void)
+{
+	TimestampTz ts = GetCurrentTransactionStartTimestamp();
+
+	/* fall back to GetCurrentTimestamp if not available */
+	if (ts > 0)
+		return ts;
+
+	return GetCurrentTimestamp();
+}
 
 /*
  * Read on-disk stats into memory at server start.
@@ -1683,7 +1698,7 @@ error:
 static void
 pgstat_reset_after_failure(void)
 {
-	TimestampTz ts = GetCurrentTimestamp();
+	TimestampTz ts = pgstat_get_reset_timestamp();
 
 	/* reset fixed-numbered stats */
 	for (int kind = PGSTAT_KIND_FIRST_VALID; kind <= PGSTAT_KIND_LAST; kind++)

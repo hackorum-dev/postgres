@@ -258,7 +258,9 @@ PgStatShared_Common *
 pgstat_init_entry(PgStat_Kind kind,
 				  PgStatShared_HashEntry *shhashent)
 {
-	/* Create new stats entry. */
+	const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
+
+		/* Create new stats entry. */
 	dsa_pointer chunk;
 	PgStatShared_Common *shheader;
 
@@ -278,6 +280,9 @@ pgstat_init_entry(PgStat_Kind kind,
 	/* Link the new entry from the hash entry. */
 	shhashent->body = chunk;
 
+	if (kind_info->reset_timestamp_cb)
+		kind_info->reset_timestamp_cb(shheader, pgstat_get_reset_timestamp());
+
 	LWLockInitialize(&shheader->lock, LWTRANCHE_PGSTATS_DATA);
 
 	return shheader;
@@ -286,6 +291,7 @@ pgstat_init_entry(PgStat_Kind kind,
 static PgStatShared_Common *
 pgstat_reinit_entry(PgStat_Kind kind, PgStatShared_HashEntry *shhashent)
 {
+	const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
 	PgStatShared_Common *shheader;
 
 	shheader = dsa_get_address(pgStatLocal.dsa, shhashent->body);
@@ -298,6 +304,9 @@ pgstat_reinit_entry(PgStat_Kind kind, PgStatShared_HashEntry *shhashent)
 	Assert(shheader->magic == 0xdeadbeef);
 	memset(pgstat_get_entry_data(kind, shheader), 0,
 		   pgstat_get_entry_len(kind));
+
+	if (kind_info->reset_timestamp_cb)
+		kind_info->reset_timestamp_cb(shheader, pgstat_get_reset_timestamp());
 
 	return shheader;
 }
