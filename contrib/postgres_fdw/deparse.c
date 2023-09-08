@@ -581,7 +581,8 @@ foreign_expr_walker(Node *node,
 				 * If function's input collation is not derived from a foreign
 				 * Var, it can't be sent to remote.
 				 */
-				if (fe->inputcollid == InvalidOid)
+				if (fe->inputcollid == InvalidOid ||
+					 fe->funccollid == InvalidOid)
 					 /* OK, inputs are all noncollatable */ ;
 				else if (inner_cxt.state != FDW_COLLATE_SAFE ||
 						 fe->inputcollid != inner_cxt.collation)
