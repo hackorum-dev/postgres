@@ -2109,46 +2109,38 @@ findTargetlistEntrySQL92(ParseState *pstate, Node *node, List **tlist,
 	if (IsA(node, A_Const))
 	{
 		A_Const    *aconst = castNode(A_Const, node);
-		int			targetlist_pos = 0;
-		int			target_pos;
 
 		/*
-		 * Pre-v15 versions supported boolean constants in the GROUP BY clause.
-		 * Here we make a special case to allow these after boolean types were given
-		 * their own parse node type in v15.
+		 * Handle integer constants as the 1-based position in the query's
+		 * targetlist.  Other constant types are treated as expressions.
 		 */
-		if (IsA(&aconst->val, Boolean))
-			return findTargetlistEntrySQL99(pstate, node, tlist, exprKind);
-
-		if (!IsA(&aconst->val, Integer))
-			ereport(ERROR,
-					(errcode(ERRCODE_SYNTAX_ERROR),
-			/* translator: %s is name of a SQL construct, eg ORDER BY */
-					 errmsg("non-integer constant in %s",
-							ParseExprKindName(exprKind)),
-					 parser_errposition(pstate, aconst->location)));
-
-		target_pos = intVal(&aconst->val);
-		foreach(tl, *tlist)
+		if (IsA(&aconst->val, Integer))
 		{
-			TargetEntry *tle = (TargetEntry *) lfirst(tl);
+			int			targetlist_pos = 0;
+			int			target_pos;
 
-			if (!tle->resjunk)
+			target_pos = intVal(&aconst->val);
+			foreach(tl, *tlist)
 			{
-				if (++targetlist_pos == target_pos)
+				TargetEntry *tle = (TargetEntry *) lfirst(tl);
+
+				if (!tle->resjunk)
 				{
-					/* return the unique match, after suitable validation */
-					checkTargetlistEntrySQL92(pstate, tle, exprKind);
-					return tle;
+					if (++targetlist_pos == target_pos)
+					{
+						/* return the unique match, after suitable validation */
+						checkTargetlistEntrySQL92(pstate, tle, exprKind);
+						return tle;
+					}
 				}
 			}
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+			/* translator: %s is name of a SQL construct, eg ORDER BY */
+					 errmsg("%s position %d is not in select list",
+							ParseExprKindName(exprKind), target_pos),
+					 parser_errposition(pstate, aconst->location)));
 		}
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
-		/* translator: %s is name of a SQL construct, eg ORDER BY */
-				 errmsg("%s position %d is not in select list",
-						ParseExprKindName(exprKind), target_pos),
-				 parser_errposition(pstate, aconst->location)));
 	}
 
 	/*

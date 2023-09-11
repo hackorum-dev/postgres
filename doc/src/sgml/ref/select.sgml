@@ -804,10 +804,10 @@ GROUP BY [ ALL | DISTINCT ] <replaceable class="parameter">grouping_element</rep
     class="parameter">expression</replaceable> used inside a
     <replaceable class="parameter">grouping_element</replaceable>
     can be an input column name, or the name or ordinal number of an
-    output column (<command>SELECT</command> list item), or an arbitrary
-    expression formed from input-column values.  In case of ambiguity,
-    a <literal>GROUP BY</literal> name will be interpreted as an
-    input-column name rather than an output column name.
+    output column (<command>SELECT</command> list item) expressed as an
+    integer literal, or an arbitrary expression formed from input-column
+    values.  In case of ambiguity, a <literal>GROUP BY</literal> name will be
+    interpreted as an input-column name rather than an output column name.
    </para>
 
    <para>
