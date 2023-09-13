@@ -1266,6 +1266,47 @@ preprocess_phv_expression(PlannerInfo *root, Expr *expr)
 	return (Expr *) preprocess_expression(root, (Node *) expr, EXPRKIND_PHV);
 }
 
+static bool
+is_distinct_redundant(Query *parse, RelOptInfo *current_rel, PathTarget *sort_input_target)
+{
+	List	 *distinct_vars = NIL;
+	ListCell *lc1, *lc2;
+
+	/* Doesn't process DISTINCT ON because it can need grouping */
+	if (parse->hasDistinctOn)
+		return false;
+
+	/* Fetch Vars from DISTINCT clause */
+	foreach(lc1, sort_input_target->exprs)
+	{
+		Var *distinct_expr = (Var *) lfirst(lc1);
+
+		if (IsA(distinct_expr, Var))
+			distinct_vars = list_append_unique_int(distinct_vars, distinct_expr->varattno);
+		else
+			/* Doesn't process this case because it can need grouping */
+			return false;
+	}
+
+	foreach(lc2, current_rel->indexlist)
+	{
+		IndexOptInfo *indexinfo = (IndexOptInfo *) lfirst(lc2);
+		List		 *unique_indexkeys = NIL;
+		int			  i;
+
+		if (indexinfo->unique)
+		{
+			for (i = 0; i < indexinfo->ncolumns; i++)
+				unique_indexkeys = list_append_unique_int(unique_indexkeys, indexinfo->indexkeys[i]);
+
+			if (list_difference_int(unique_indexkeys, distinct_vars) == NIL)
+				return true;
+		}
+	}
+
+	return false;
+}
+
 /*--------------------
  * grouping_planner
  *	  Perform planning steps related to grouping, aggregation, etc.
@@ -1694,8 +1735,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 */
 		if (parse->distinctClause)
 		{
-			current_rel = create_distinct_paths(root,
-												current_rel);
+			if (!is_distinct_redundant(parse, current_rel, sort_input_target))
+				current_rel = create_distinct_paths(root,
+													current_rel);
 		}
 	}							/* end of if (setOperations) */
 
