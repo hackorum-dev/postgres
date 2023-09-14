@@ -117,6 +117,27 @@ SELECT $1, $2 \bind 'foo' 'bar' \g
  foo      | bar
 (1 row)
 
+-- should work in FETCH_COUNT mode too
+\set FETCH_COUNT 1
+SELECT 1 \bind \g
+ ?column? 
+----------
+        1
+(1 row)
+
+SELECT $1 \bind 'foo' \g
+ ?column? 
+----------
+ foo
+(1 row)
+
+SELECT $1, $2 \bind 'foo' 'bar' \g
+ ?column? | ?column? 
+----------+----------
+ foo      | bar
+(1 row)
+
+\unset FETCH_COUNT
 -- errors
 -- parse error
 SELECT foo \bind \g

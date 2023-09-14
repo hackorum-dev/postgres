@@ -51,6 +51,13 @@ SELECT 1 \bind \g
 SELECT $1 \bind 'foo' \g
 SELECT $1, $2 \bind 'foo' 'bar' \g
 
+-- should work in FETCH_COUNT mode too
+\set FETCH_COUNT 1
+SELECT 1 \bind \g
+SELECT $1 \bind 'foo' \g
+SELECT $1, $2 \bind 'foo' 'bar' \g
+\unset FETCH_COUNT
+
 -- errors
 -- parse error
 SELECT foo \bind \g

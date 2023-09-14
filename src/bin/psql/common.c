@@ -1755,7 +1755,11 @@ ExecQueryUsingCursor(const char *query, double *elapsed_msec)
 	appendPQExpBuffer(&buf, "DECLARE _psql_cursor NO SCROLL CURSOR FOR\n%s",
 					  query);
 
-	result = PQexec(pset.db, buf.data);
+    if (pset.bind_flag)
+        result = PQexecParams(pset.db, buf.data, pset.bind_nparams, NULL, (const char * const *) pset.bind_params, NULL, NULL, 0);
+    else
+        result = PQexec(pset.db, buf.data);
+    
 	OK = AcceptResult(result, true) &&
 		(PQresultStatus(result) == PGRES_COMMAND_OK);
 	if (!OK)
