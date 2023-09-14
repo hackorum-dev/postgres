@@ -736,7 +736,7 @@ XLogInsertRecord(XLogRecData *rdata,
 {
 	XLogCtlInsert *Insert = &XLogCtl->Insert;
 	pg_crc32c	rdata_crc;
-	bool		inserted;
+	bool		reserved;
 	XLogRecord *rechdr = (XLogRecord *) rdata->data;
 	uint8		info = rechdr->xl_info & ~XLR_INFO_MASK;
 	bool		isLogSwitch = (rechdr->xl_rmid == RM_XLOG_ID &&
@@ -838,15 +838,15 @@ XLogInsertRecord(XLogRecData *rdata,
 	 * pointer.
 	 */
 	if (isLogSwitch)
-		inserted = ReserveXLogSwitch(&StartPos, &EndPos, &rechdr->xl_prev);
+		reserved = ReserveXLogSwitch(&StartPos, &EndPos, &rechdr->xl_prev);
 	else
 	{
 		ReserveXLogInsertLocation(rechdr->xl_tot_len, &StartPos, &EndPos,
 								  &rechdr->xl_prev);
-		inserted = true;
+		reserved = true;
 	}
 
-	if (inserted)
+	if (reserved)
 	{
 		/*
 		 * Now that xl_prev has been filled in, calculate CRC of the record
@@ -930,7 +930,7 @@ XLogInsertRecord(XLogRecData *rdata,
 		 * reflected in EndPos, we return a pointer to just the end of the
 		 * xlog-switch record.
 		 */
-		if (inserted)
+		if (reserved)
 		{
 			EndPos = StartPos + SizeOfXLogRecord;
 			if (StartPos / XLOG_BLCKSZ != EndPos / XLOG_BLCKSZ)
@@ -1016,7 +1016,7 @@ XLogInsertRecord(XLogRecData *rdata,
 	XactLastRecEnd = EndPos;
 
 	/* Report WAL traffic to the instrumentation. */
-	if (inserted)
+	if (reserved)
 	{
 		pgWalUsage.wal_bytes += rechdr->xl_tot_len;
 		pgWalUsage.wal_records++;
