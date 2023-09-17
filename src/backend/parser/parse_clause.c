@@ -2112,6 +2112,14 @@ findTargetlistEntrySQL92(ParseState *pstate, Node *node, List **tlist,
 		int			targetlist_pos = 0;
 		int			target_pos;
 
+		/*
+		 * Pre-v15 versions supported boolean constants in the GROUP BY clause.
+		 * Here we make a special case to allow these after boolean types were given
+		 * their own parse node type in v15.
+		 */
+		if (IsA(&aconst->val, Boolean))
+			return findTargetlistEntrySQL99(pstate, node, tlist, exprKind);
+
 		if (!IsA(&aconst->val, Integer))
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
