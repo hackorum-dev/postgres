@@ -84,6 +84,12 @@ pg_realloc(void *ptr, size_t size)
 char *
 pg_strdup(const char *in)
 {
+	return pg_strdup_extended(in, 0);
+}
+
+char *
+pg_strdup_extended(const char *in, int flags)
+{
 	char	   *tmp;
 
 	if (!in)
@@ -95,8 +101,12 @@ pg_strdup(const char *in)
 	tmp = strdup(in);
 	if (!tmp)
 	{
-		fprintf(stderr, _("out of memory\n"));
-		exit(EXIT_FAILURE);
+		if ((flags & MCXT_ALLOC_NO_OOM) == 0)
+		{
+			fprintf(stderr, _("out of memory\n"));
+			exit(EXIT_FAILURE);
+		}
+		return NULL;
 	}
 	return tmp;
 }

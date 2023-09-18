@@ -3574,7 +3574,11 @@ getLOs(Archive *fout)
 	/*
 	 * Each large object has its own "BLOB" archive entry.
 	 */
-	loinfo = (LoInfo *) pg_malloc(ntups * sizeof(LoInfo));
+	loinfo = (LoInfo *) pg_malloc_extended(ntups * sizeof(LoInfo), MCXT_ALLOC_NO_OOM);
+	if (loinfo == NULL)
+	{
+		goto error;
+	}
 
 	for (i = 0; i < ntups; i++)
 	{
@@ -3583,9 +3587,18 @@ getLOs(Archive *fout)
 		loinfo[i].dobj.catId.oid = atooid(PQgetvalue(res, i, i_oid));
 		AssignDumpId(&loinfo[i].dobj);
 
-		loinfo[i].dobj.name = pg_strdup(PQgetvalue(res, i, i_oid));
-		loinfo[i].dacl.acl = pg_strdup(PQgetvalue(res, i, i_lomacl));
-		loinfo[i].dacl.acldefault = pg_strdup(PQgetvalue(res, i, i_acldefault));
+		loinfo[i].dobj.name = pg_strdup_extended(PQgetvalue(res, i, i_oid), MCXT_ALLOC_NO_OOM);
+		if (loinfo[i].dobj.name == NULL)
+			goto error;
+
+		loinfo[i].dacl.acl = pg_strdup_extended(PQgetvalue(res, i, i_lomacl), MCXT_ALLOC_NO_OOM);
+		if (loinfo[i].dacl.acl == NULL)
+			goto error;
+
+		loinfo[i].dacl.acldefault = pg_strdup_extended(PQgetvalue(res, i, i_acldefault), MCXT_ALLOC_NO_OOM);
+		if (loinfo[i].dacl.acldefault == NULL)
+			goto error;
+
 		loinfo[i].dacl.privtype = 0;
 		loinfo[i].dacl.initprivs = NULL;
 		loinfo[i].rolname = getRoleName(PQgetvalue(res, i, i_lomowner));
@@ -3614,7 +3627,12 @@ getLOs(Archive *fout)
 	 */
 	if (ntups > 0)
 	{
-		lodata = (DumpableObject *) pg_malloc(sizeof(DumpableObject));
+		lodata = (DumpableObject *) pg_malloc_extended(sizeof(DumpableObject), MCXT_ALLOC_NO_OOM);
+		if (lodata == NULL)
+		{
+			goto error;
+		}
+
 		lodata->objType = DO_LARGE_OBJECT_DATA;
 		lodata->catId = nilCatalogId;
 		AssignDumpId(lodata);
@@ -3624,6 +3642,11 @@ getLOs(Archive *fout)
 
 	PQclear(res);
 	destroyPQExpBuffer(loQry);
+	return;
+error:
+	pg_log_error("Could not get schema-level data about large objects: %s", strerror(errno));
+	pg_log_error_hint(LO_OOM_HINT);
+	exit(1);
 }
 
 /*

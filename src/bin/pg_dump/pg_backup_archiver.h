@@ -97,6 +97,10 @@ typedef struct _archiveHandle ArchiveHandle;
 typedef struct _tocEntry TocEntry;
 struct ParallelState;
 
+#define LO_OOM_HINT "If the database contains a large number of large objects, "\
+		"consider using the \"-B\" option to exclude them from the dump "\
+		"if it makes sense. Otherwise, add more memory to your machine."
+
 #define READ_ERROR_EXIT(fd) \
 	do { \
 		if (feof(fd)) \

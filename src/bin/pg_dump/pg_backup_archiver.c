@@ -1083,6 +1083,22 @@ WriteData(Archive *AHX, const void *data, size_t dLen)
 	AH->WriteDataPtr(AH, data, dLen);
 }
 
+#define fill_in_new_toc(a,b) \
+do { \
+	if (opts->b) \
+	{ \
+		newToc->a = pg_strdup_extended(opts->b, MCXT_ALLOC_NO_OOM); \
+		if (newToc->a == NULL) \
+		{ \
+			goto error; \
+		} \
+	} \
+	else \
+	{ \
+		newToc->a = NULL; \
+	} \
+} while(0)
+
 /*
  * Create a new TOC entry. The TOC was designed as a TOC, but is now the
  * repository for all metadata. But the name has stuck.
@@ -1100,7 +1116,11 @@ ArchiveEntry(Archive *AHX, CatalogId catalogId, DumpId dumpId,
 	ArchiveHandle *AH = (ArchiveHandle *) AHX;
 	TocEntry   *newToc;
 
-	newToc = (TocEntry *) pg_malloc0(sizeof(TocEntry));
+	newToc = (TocEntry *) pg_malloc_extended(sizeof(TocEntry), MCXT_ALLOC_NO_OOM|MCXT_ALLOC_ZERO);
+	if (newToc == NULL)
+	{
+		goto error;
+	}
 
 	AH->tocCount++;
 	if (dumpId > AH->maxDumpId)
@@ -1115,15 +1135,15 @@ ArchiveEntry(Archive *AHX, CatalogId catalogId, DumpId dumpId,
 	newToc->dumpId = dumpId;
 	newToc->section = opts->section;
 
-	newToc->tag = pg_strdup(opts->tag);
-	newToc->namespace = opts->namespace ? pg_strdup(opts->namespace) : NULL;
-	newToc->tablespace = opts->tablespace ? pg_strdup(opts->tablespace) : NULL;
-	newToc->tableam = opts->tableam ? pg_strdup(opts->tableam) : NULL;
-	newToc->owner = opts->owner ? pg_strdup(opts->owner) : NULL;
-	newToc->desc = pg_strdup(opts->description);
-	newToc->defn = opts->createStmt ? pg_strdup(opts->createStmt) : NULL;
-	newToc->dropStmt = opts->dropStmt ? pg_strdup(opts->dropStmt) : NULL;
-	newToc->copyStmt = opts->copyStmt ? pg_strdup(opts->copyStmt) : NULL;
+	fill_in_new_toc(tag, tag);
+	fill_in_new_toc(namespace, namespace);
+	fill_in_new_toc(tablespace, tablespace);
+	fill_in_new_toc(tableam, tableam);
+	fill_in_new_toc(owner, owner);
+	fill_in_new_toc(desc, description);
+	fill_in_new_toc(defn, createStmt);
+	fill_in_new_toc(dropStmt, dropStmt);
+	fill_in_new_toc(copyStmt, copyStmt);
 
 	if (opts->nDeps > 0)
 	{
@@ -1148,6 +1168,11 @@ ArchiveEntry(Archive *AHX, CatalogId catalogId, DumpId dumpId,
 		AH->ArchiveEntryPtr(AH, newToc);
 
 	return newToc;
+
+error:
+	pg_log_error("Could not add a new archive entry: %s", strerror(errno));
+	pg_log_error_hint(LO_OOM_HINT);
+	exit(1);
 }
 
 /* Public */

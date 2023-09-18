@@ -23,6 +23,7 @@
  * (except pg_malloc_extended with MCXT_ALLOC_NO_OOM)
  */
 extern char *pg_strdup(const char *in);
+extern char *pg_strdup_extended(const char *in, int flags);
 extern void *pg_malloc(size_t size);
 extern void *pg_malloc0(size_t size);
 extern void *pg_malloc_extended(size_t size, int flags);
