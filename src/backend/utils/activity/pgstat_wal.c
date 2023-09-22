@@ -42,9 +42,9 @@ static WalUsage prevWalUsage;
 void
 pgstat_report_wal(bool force)
 {
-	pgstat_flush_wal(force);
+	pgstat_flush_wal(!force);
 
-	pgstat_flush_io(force);
+	pgstat_flush_io(!force);
 }
 
 /*
