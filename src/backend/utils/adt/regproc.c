@@ -30,6 +30,7 @@
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_dict.h"
 #include "catalog/pg_type.h"
+#include "commands/tablespace.h"
 #include "lib/stringinfo.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
@@ -869,6 +870,122 @@ regoperatorsend(PG_FUNCTION_ARGS)
 	return oidsend(fcinfo);
 }
 
+/*
+ * regtablespacein    - converts "tablespacename" to tablespace OID
+ *
+ * We also accept a numeric OID, for symmetry with the output routine.
+ *
+ * '-' signifies unknown (OID 0).  In all other cases, the input must
+ * match an existing pg_tablespace entry.
+ */
+Datum
+regtablespacein(PG_FUNCTION_ARGS)
+{
+    char       *tablespace_name_or_oid = PG_GETARG_CSTRING(0);
+    Node       *escontext = fcinfo->context;
+    Oid         result;
+    List       *names;
+ 
+    /* Handle "-" or numeric OID */
+    if (parseDashOrOid(tablespace_name_or_oid, &result, escontext))
+        PG_RETURN_OID(result);
+ 
+    /* The rest of this wouldn't work in bootstrap mode */
+    if (IsBootstrapProcessingMode())
+        elog(ERROR, "regtablespace values must be OIDs in bootstrap mode");
+ 
+    /* Normal case: see if the name matches any pg_tablespace entry. */
+    names = stringToQualifiedNameList(tablespace_name_or_oid, escontext);
+    if (names == NIL)
+        PG_RETURN_NULL();
+ 
+    if (list_length(names) != 1)
+        ereturn(escontext, (Datum) 0,
+                (errcode(ERRCODE_INVALID_NAME),
+                 errmsg("invalid name syntax")));
+ 
+    result = get_tablespace_oid(strVal(linitial(names)), true);
+ 
+    if (!OidIsValid(result))
+        ereturn(escontext, (Datum) 0,
+                (errcode(ERRCODE_UNDEFINED_OBJECT),
+                 errmsg("tablespace \"%s\" does not exist",
+                        strVal(linitial(names)))));
+ 
+    PG_RETURN_OID(result);
+}
+ 
+/*
+ * to_regtablespace       - converts "tablespacename" to tablespace OID
+ *
+ * If the name is not found, we return NULL.
+ */
+Datum
+to_regtablespace(PG_FUNCTION_ARGS)
+{
+    char       *tablespace_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+    Datum       result;
+    ErrorSaveContext escontext = {T_ErrorSaveContext};
+ 
+    if (!DirectInputFunctionCallSafe(regtablespacein, tablespace_name,
+                                     InvalidOid, -1,
+                                     (Node *) &escontext,
+                                     &result))
+        PG_RETURN_NULL();
+    PG_RETURN_DATUM(result);
+}
+ 
+/*
+ * regtablespaceout       - converts tablespace OID to "tablespace_name"
+ */
+Datum
+regtablespaceout(PG_FUNCTION_ARGS)
+{
+    Oid         spcid = PG_GETARG_OID(0);
+    char       *result;
+ 
+    if (spcid == InvalidOid)
+    {
+        result = pstrdup("-");
+        PG_RETURN_CSTRING(result);
+    }
+ 
+    result = get_tablespace_name(spcid);
+ 
+    if (result)
+    {
+        /* pstrdup is not really necessary, but it avoids a compiler warning */
+        result = pstrdup(quote_identifier(result));
+    }
+    else
+    {
+        /* If OID doesn't match any tablespace, return it numerically */
+        result = (char *) palloc(NAMEDATALEN);
+        snprintf(result, NAMEDATALEN, "%u", spcid);
+    }
+ 
+    PG_RETURN_CSTRING(result);
+}
+
+/*
+ *      regtablespacerecv - converts external binary format to regtablespace
+ */
+Datum
+regtablespacerecv(PG_FUNCTION_ARGS)
+{
+    /* Exactly the same as oidrecv, so share code */
+    return oidrecv(fcinfo);
+}
+ 
+/*
+ *      regtablespacesend - converts regtablespace to binary format
+ */
+Datum
+regtablespacesend(PG_FUNCTION_ARGS)
+{
+    /* Exactly the same as oidsend, so share code */
+    return oidsend(fcinfo);
+}
 
 /*
  * regclassin		- converts "classname" to class OID
