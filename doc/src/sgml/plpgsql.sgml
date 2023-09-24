@@ -672,7 +672,7 @@ DECLARE
    </sect2>
 
   <sect2 id="plpgsql-declaration-type">
-   <title>Copying Types</title>
+   <title>Re-Using the Type of Columns and Variables</title>
 
 <synopsis>
 <replaceable>variable</replaceable>%TYPE
