@@ -3106,12 +3106,14 @@ SHOW search_path;
    <para>
     The first schema in the search path that exists is the default
     location for creating new objects.  That is the reason that by
-    default objects are created in the public schema.  When objects
-    are referenced in any other context without schema qualification
-    (table modification, data modification, or query commands) the
-    search path is traversed until a matching object is found.
-    Therefore, in the default configuration, any unqualified access
-    again can only refer to the public schema.
+    default objects are created in the public schema.
+    When objects are referenced in a context without schema qualification
+    (table modification, data modification, or query commands) the search path
+    is traversed until a matching object is found.
+    Therefore, again, in the default configuration, any unqualified name
+    refers to an object in the public schema; unless, given the default search
+    path, there is an object with that name accessible in the schema having
+    the name of the current user.
    </para>
 
    <para>
