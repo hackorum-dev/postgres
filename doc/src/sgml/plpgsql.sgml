@@ -2756,7 +2756,7 @@ NOTICE:  row = {10,11,12}
    </sect2>
 
    <sect2 id="plpgsql-error-trapping">
-    <title>Trapping Errors</title>
+    <title>Error Processing and Trapping Exceptions</title>
 
     <indexterm>
      <primary>exceptions</primary>
