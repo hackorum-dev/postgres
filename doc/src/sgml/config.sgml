@@ -10,9 +10,10 @@
 
   <para>
    There are many configuration parameters that affect the behavior of
-   the database system. In the first section of this chapter we
-   describe how to interact with configuration parameters. The subsequent sections
-   discuss each parameter in detail.
+   the database system.
+   The first section of this chapter describes how to interact with
+   configuration parameters.
+   Subsequent sections discuss each parameter in detail.
   </para>
 
   <sect1 id="config-setting">
