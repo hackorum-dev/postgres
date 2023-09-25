@@ -197,7 +197,7 @@ main(int argc, char *argv[])
 	else
 		PostmasterMain(argc, argv);
 	/* the functions above should not return */
-	abort();
+	pg_abort();
 }
 
 

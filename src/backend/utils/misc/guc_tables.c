@@ -427,6 +427,14 @@ static const struct config_enum_entry debug_logical_replication_streaming_option
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry core_dump_no_shared_buffers_options[] = {
+	{"none", COREDUMP_INCLUDE_ALL, false},
+	{"shmem", COREDUMP_EXCLUDE_SHMEM, false},
+	{"dsm", COREDUMP_EXCLUDE_DSM, false},
+	{"all", COREDUMP_EXCLUDE_ALL, false},
+	{NULL, 0, false}
+};
+
 StaticAssertDecl(lengthof(ssl_protocol_versions_info) == (PG_TLS1_3_VERSION + 2),
 				 "array length mismatch");
 
@@ -4968,6 +4976,17 @@ struct config_enum ConfigureNamesEnum[] =
 		},
 		&debug_logical_replication_streaming,
 		DEBUG_LOGICAL_REP_STREAMING_BUFFERED, debug_logical_replication_streaming_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"core_dump_no_shared_buffers", PGC_POSTMASTER, DEVELOPER_OPTIONS,
+			NULL,
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&core_dump_no_shared_buffers,
+		COREDUMP_INCLUDE_ALL, core_dump_no_shared_buffers_options,
 		NULL, NULL, NULL
 	},
 

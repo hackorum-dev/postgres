@@ -1469,7 +1469,7 @@ PostmasterMain(int argc, char *argv[])
 	 */
 	ExitPostmaster(status != STATUS_OK);
 
-	abort();					/* not reached */
+	pg_abort();					/* not reached */
 }
 
 

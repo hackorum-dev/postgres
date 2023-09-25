@@ -19,6 +19,32 @@
 #include <execinfo.h>
 #endif
 
+#include <storage/dsm.h>
+#include <storage/pg_shmem.h>
+
+int core_dump_no_shared_buffers = COREDUMP_INCLUDE_ALL;
+
+/*
+ * Remember, at the same time someone can work with shared memory, write them to
+ * disk and so on.
+ */
+void
+pg_abort(void)
+{
+	if (core_dump_no_shared_buffers != COREDUMP_INCLUDE_ALL)
+	{
+		if (core_dump_no_shared_buffers == COREDUMP_EXCLUDE_ALL ||
+			core_dump_no_shared_buffers == COREDUMP_EXCLUDE_DSM)
+			dsm_detach_all();
+
+		if (core_dump_no_shared_buffers == COREDUMP_EXCLUDE_ALL ||
+			core_dump_no_shared_buffers == COREDUMP_EXCLUDE_SHMEM)
+			PGSharedMemoryDetach();
+	}
+
+	abort();
+}
+
 /*
  * ExceptionalCondition - Handles the failure of an Assert()
  *
@@ -63,5 +89,5 @@ ExceptionalCondition(const char *conditionName,
 	sleep(1000000);
 #endif
 
-	abort();
+	pg_abort();
 }

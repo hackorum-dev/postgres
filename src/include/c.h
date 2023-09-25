@@ -892,6 +892,18 @@ typedef NameData *Name;
 #ifndef FRONTEND
 extern void ExceptionalCondition(const char *conditionName,
 								 const char *fileName, int lineNumber) pg_attribute_noreturn();
+
+/* possible values for core_dump_no_shared_buffers */
+typedef enum
+{
+	COREDUMP_INCLUDE_ALL,
+	COREDUMP_EXCLUDE_SHMEM,
+	COREDUMP_EXCLUDE_DSM,
+	COREDUMP_EXCLUDE_ALL
+}			CoreDumpGenerationMode;
+
+extern int core_dump_no_shared_buffers;
+void pg_abort(void);
 #endif
 
 /*
