@@ -2454,7 +2454,7 @@ verifyBackupPageConsistency(XLogReaderState *record)
 		if (!RestoreBlockImage(record, block_id, primary_image_masked))
 			ereport(ERROR,
 					(errcode(ERRCODE_INTERNAL_ERROR),
-					 errmsg_internal("%s", record->errormsg_buf)));
+					 errmsg_internal("%s", record->errordata.message)));
 
 		/*
 		 * If masking function is defined, mask both the primary and replay
@@ -3062,9 +3062,9 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 
 	for (;;)
 	{
-		char	   *errormsg;
+		XLogReaderError errordata = {0};
 
-		record = XLogPrefetcherReadRecord(xlogprefetcher, &errormsg);
+		record = XLogPrefetcherReadRecord(xlogprefetcher, &errordata);
 		if (record == NULL)
 		{
 			/*
@@ -3098,9 +3098,9 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 			 * StandbyMode that only happens if we have been triggered, so we
 			 * shouldn't loop anymore in that case.
 			 */
-			if (errormsg)
+			if (errordata.message)
 				ereport(emode_for_corrupt_record(emode, xlogreader->EndRecPtr),
-						(errmsg_internal("%s", errormsg) /* already translated */ ));
+						(errmsg_internal("%s", errordata.message) /* already translated */ ));
 		}
 
 		/*
@@ -3385,9 +3385,9 @@ retry:
 		 * Emit this error right now then retry this page immediately. Use
 		 * errmsg_internal() because the message was already translated.
 		 */
-		if (xlogreader->errormsg_buf[0])
+		if (xlogreader->errordata.message[0])
 			ereport(emode_for_corrupt_record(emode, xlogreader->EndRecPtr),
-					(errmsg_internal("%s", xlogreader->errormsg_buf)));
+					(errmsg_internal("%s", xlogreader->errordata.message)));
 
 		/* reset any error XLogReaderValidatePageHeader() might have set */
 		XLogReaderResetError(xlogreader);
