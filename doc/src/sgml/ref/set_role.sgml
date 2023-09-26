@@ -42,7 +42,8 @@ RESET ROLE
 
   <para>
    The specified <replaceable class="parameter">role_name</replaceable>
-   must be a role that the current session user is a member of.
+   must be a role that the current session user is a member of and
+   is granted <literal>WITH SET TRUE</literal>.
    (If the session user is a superuser, any role can be selected.)
   </para>
 
