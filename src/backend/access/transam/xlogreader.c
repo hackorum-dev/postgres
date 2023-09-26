@@ -541,6 +541,7 @@ XLogDecodeNextRecord(XLogReaderState *state, bool nonblocking)
 	int			readOff;
 	DecodedXLogRecord *decoded;
 	XLogReaderError errordata = {0};	/* not used */
+	bool        trigger_oom = false;
 
 	/*
 	 * randAccess indicates whether to verify the previous-record pointer of
@@ -690,7 +691,29 @@ restart:
 	decoded = XLogReadRecordAlloc(state,
 								  total_len,
 								  false /* allow_oversized */ );
-	if (decoded == NULL && nonblocking)
+
+#ifndef FRONTEND
+	/*
+	 * Trick to emulate an OOM after a hardcoded number of records
+	 * replayed.
+	 */
+	{
+		struct stat fstat;
+		static int counter = 0;
+		if (stat("/tmp/xlogreader_oom", &fstat) == 0)
+		{
+			counter++;
+			if (counter >= 100)
+			{
+				trigger_oom = true;
+				/* Reset counter, to not fail when shutting down WAL */
+				counter = 0;
+			}
+		}
+	}
+#endif
+
+	if ((decoded == NULL || trigger_oom) && nonblocking)
 	{
 		/*
 		 * There is no space in the circular decode buffer, and the caller is
@@ -833,7 +856,7 @@ restart:
 				Assert(gotlen <= lengthof(save_copy));
 				Assert(gotlen <= state->readRecordBufSize);
 				memcpy(save_copy, state->readRecordBuf, gotlen);
-				if (!allocate_recordbuf(state, total_len))
+				if (!allocate_recordbuf(state, total_len) || trigger_oom)
 				{
 					/* We treat this as an out-of-memory error */
 					report_invalid_record(state,
@@ -891,13 +914,13 @@ restart:
 	 * If we got here without a DecodedXLogRecord, it means we needed to
 	 * validate total_len before trusting it, but by now now we've done that.
 	 */
-	if (decoded == NULL)
+	if (decoded == NULL || trigger_oom)
 	{
 		Assert(!nonblocking);
 		decoded = XLogReadRecordAlloc(state,
 									  total_len,
 									  true /* allow_oversized */ );
-		if (decoded == NULL)
+		if (decoded == NULL || trigger_oom)
 		{
 			/*
 			 * We failed to allocate memory for an oversized record.  As
