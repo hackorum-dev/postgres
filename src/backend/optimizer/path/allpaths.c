@@ -4451,6 +4451,11 @@ print_path(PlannerInfo *root, Path *path, int indent)
 					ptype = "WorkTableScan";
 					break;
 				default:
+					/*
+					 * Handle unknown paths in non-cassert builds, but otherwise assert fail
+					 * to attempt to draw attention to the omission.
+					 */
+					Assert(false);
 					ptype = "???Path";
 					break;
 			}
@@ -4581,6 +4586,11 @@ print_path(PlannerInfo *root, Path *path, int indent)
 			subpath = ((LimitPath *) path)->subpath;
 			break;
 		default:
+			/*
+			 * Handle unknown paths in non-cassert builds, but otherwise assert fail to
+			 * attempt to draw attention to the omission.
+			 */
+			Assert(false);
 			ptype = "???Path";
 			break;
 	}
