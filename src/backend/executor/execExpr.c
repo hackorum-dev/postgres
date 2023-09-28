@@ -140,7 +140,17 @@ static void ExecInitJsonCoercion(ExprState *state, JsonReturning *returning,
  * although ExecQual and ExecCheck will accept one (and treat it as "true").
  */
 ExprState *
-ExecInitExpr(Expr *node, PlanState *parent)
+ExecInitExpr(Expr* node, PlanState* parent)
+{
+	return ExecInitExprWithErrorContext(node, parent, NULL);
+}
+
+/*
+ * As ExecInitExpr but attempt to save errors into 'err_context' when
+ * supported by the functions being called. XXX write something better here.
+ */
+ExprState *
+ExecInitExprWithErrorContext(Expr *node, PlanState *parent, fmNodePtr *err_context)
 {
 	ExprState  *state;
 	ExprEvalStep scratch = {0};
@@ -154,6 +164,7 @@ ExecInitExpr(Expr *node, PlanState *parent)
 	state->expr = node;
 	state->parent = parent;
 	state->ext_params = NULL;
+	state->err_context = err_context;
 
 	/* Insert setup steps as needed */
 	ExecCreateExprSetupSteps(state, (Node *) node);
@@ -2735,7 +2746,7 @@ ExecInitFunc(ExprEvalStep *scratch, Expr *node, List *args, Oid funcid,
 
 	/* Initialize function call parameter structure too */
 	InitFunctionCallInfoData(*fcinfo, flinfo,
-							 nargs, inputcollid, NULL, NULL);
+							 nargs, inputcollid, (fmNodePtr) state->err_context, NULL);
 
 	/* Keep extra copies of this info to save an indirection at runtime */
 	scratch->d.func.fn_addr = flinfo->fn_addr;

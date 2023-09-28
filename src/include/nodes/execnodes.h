@@ -146,6 +146,12 @@ typedef struct ExprState
 	PlanState  *parent;			/* parent PlanState node, if any */
 	ParamListInfo ext_params;	/* for compiling PARAM_EXTERN nodes */
 
+	/*
+	 * ErrorSaveContext pointer to record any saved ERRORs into or NULL if
+	 * errors are to be raised right away.
+	 */
+	fmNodePtr *err_context;
+
 	Datum	   *innermost_caseval;
 	bool	   *innermost_casenull;
 

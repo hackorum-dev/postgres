@@ -32,6 +32,7 @@
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "nodes/miscnodes.h"
 #include "nodes/multibitmapset.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/subscripting.h"
@@ -2797,7 +2798,7 @@ estimate_expression_value(PlannerInfo *root, Node *node)
 	((Node *) evaluate_expr((Expr *) (node), \
 							exprType((Node *) (node)), \
 							exprTypmod((Node *) (node)), \
-							exprCollation((Node *) (node))))
+							exprCollation((Node *) (node)), false))
 
 /*
  * Recursive guts of eval_const_expressions/estimate_expression_value
@@ -3833,7 +3834,8 @@ eval_const_expressions_mutator(Node *node,
 					return (Node *) evaluate_expr((Expr *) svf,
 												  svf->type,
 												  svf->typmod,
-												  InvalidOid);
+												  InvalidOid,
+												  false);
 				else
 					return copyObject((Node *) svf);
 			}
@@ -5399,7 +5401,7 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 	newexpr->location = -1;
 
 	return evaluate_expr((Expr *) newexpr, result_type, result_typmod,
-						 result_collid);
+						 result_collid, true);
 }
 
 /*
@@ -5853,11 +5855,16 @@ sql_inline_error_callback(void *arg)
  *
  * We use the executor's routine ExecEvalExpr() to avoid duplication of
  * code and ensure we get the same result as the executor would get.
+ *
+ * 'null_on_error' may be passed as true to have the expression evalulation
+ * code attempt to supress ERRORs and save them.  This of course requires
+ * functions properly errsave/ereturn rather than elog/ereport.
  */
 Expr *
 evaluate_expr(Expr *expr, Oid result_type, int32 result_typmod,
-			  Oid result_collation)
+			  Oid result_collation, bool null_on_error)
 {
+	ErrorSaveContext escontext = {T_ErrorSaveContext};
 	EState	   *estate;
 	ExprState  *exprstate;
 	MemoryContext oldcontext;
@@ -5881,7 +5888,12 @@ evaluate_expr(Expr *expr, Oid result_type, int32 result_typmod,
 	 * Prepare expr for execution.  (Note: we can't use ExecPrepareExpr
 	 * because it'd result in recursively invoking eval_const_expressions.)
 	 */
-	exprstate = ExecInitExpr(expr, NULL);
+	if (null_on_error)
+		exprstate = ExecInitExprWithErrorContext(expr,
+												 NULL,
+												 (fmNodePtr *) &escontext);
+	else
+		exprstate = ExecInitExpr(expr, NULL);
 
 	/*
 	 * And evaluate it.
@@ -5909,7 +5921,7 @@ evaluate_expr(Expr *expr, Oid result_type, int32 result_typmod,
 	 * data.  (makeConst would handle detoasting anyway, but it's worth a few
 	 * extra lines here so that we can do the copy and detoast in one step.)
 	 */
-	if (!const_is_null)
+	if (!escontext.error_occurred && !const_is_null)
 	{
 		if (resultTypLen == -1)
 			const_val = PointerGetDatum(PG_DETOAST_DATUM_COPY(const_val));
@@ -5919,6 +5931,9 @@ evaluate_expr(Expr *expr, Oid result_type, int32 result_typmod,
 
 	/* Release all the junk we just created */
 	FreeExecutorState(estate);
+
+	if (escontext.error_occurred)
+		return NULL;
 
 	/*
 	 * Make the constant result node.
