@@ -53,6 +53,15 @@
  </para>
 
  <para>
+   The managment of most database objects is by way of granting some role
+   ownership, but roles don't have owners.
+   Instead, roles are <link linkend="role-creation">managed</link> by
+   those roles having the <literal>CREATEROLE</literal> attribute, that
+   are also granted <literal>ADMIN</literal> privileges to the roles
+   which are managed.
+ </para>
+
+ <para>
   This chapter describes how to create and manage roles.
   More information about the effects of role privileges on various
   database objects can be found in <xref linkend="ddl-priv"/>.
