@@ -47,6 +47,7 @@
 #include "utils/lsyscache.h"
 #include "utils/rls.h"
 #include "utils/snapmgr.h"
+#include "optimizer/planner.h"
 
 typedef struct
 {
@@ -138,6 +139,9 @@ create_ctas_internal(List *attrList, IntoClause *into)
 		Query	   *query = copyObject(into->viewQuery);
 
 		StoreViewQuery(intoRelationAddr.objectId, query, false);
+		/* No need to sort for materialized view */
+		if(!limit_needed(query))
+			query->sortClause = NULL;
 		CommandCounterIncrement();
 	}
 
