@@ -428,6 +428,12 @@ CREATE [ OR REPLACE ] FUNCTION
     <term><literal>PARALLEL</literal></term>
 
     <listitem>
+
+     <indexterm>
+       <primary>parallel safety</primary>
+       <secondary>functions</secondary>
+     </indexterm>
+
      <para><literal>PARALLEL UNSAFE</literal> indicates that the function
       can't be executed in <link linkend="parallel-labeling">parallel
       mode</link> and the presence of such a
