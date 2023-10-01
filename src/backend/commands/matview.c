@@ -40,6 +40,7 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "optimizer/planner.h"
 
 
 typedef struct
@@ -421,6 +422,10 @@ refresh_matview_datafill(DestReceiver *dest, Query *query,
 		elog(ERROR, "unexpected rewrite result for %s",
 			 is_create ? "CREATE MATERIALIZED VIEW " : "REFRESH MATERIALIZED VIEW");
 	query = (Query *) linitial(rewritten);
+
+	/* No need to sort for materialized view */
+	if(!limit_needed(query))
+		query->sortClause = NULL;
 
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();
