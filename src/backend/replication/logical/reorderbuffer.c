@@ -1478,9 +1478,10 @@ ReorderBufferIterTXNNext(ReorderBuffer *rb, ReorderBufferIterTXNState *state)
 				dlist_head_element(ReorderBufferChange, node,
 								   &entry->txn->changes);
 
-			elog(DEBUG2, "restored %u/%u changes from disk",
+			elog(DEBUG2, "restored %u/%u changes in XID %u from disk",
 				 (uint32) entry->txn->nentries_mem,
-				 (uint32) entry->txn->nentries);
+				 (uint32) entry->txn->nentries,
+				 entry->txn->xid);
 
 			Assert(entry->txn->nentries_mem);
 			/* txn stays the same */
