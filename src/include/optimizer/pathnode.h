@@ -284,11 +284,16 @@ extern ModifyTablePath *create_modifytable_path(PlannerInfo *root,
 												List *withCheckOptionLists, List *returningLists,
 												List *rowMarks, OnConflictExpr *onconflict,
 												List *mergeActionLists, int epqParam);
+extern Path *pushdown_limit(PlannerInfo *root, RelOptInfo *rel,
+							Path *subpath,
+							Node *limitOffset, Node *limitCount,
+							LimitOption limitOption,
+							int64 offset_est, int64 count_est);
 extern LimitPath *create_limit_path(PlannerInfo *root, RelOptInfo *rel,
-									Path *subpath,
-									Node *limitOffset, Node *limitCount,
-									LimitOption limitOption,
-									int64 offset_est, int64 count_est);
+							   		Path *subpath,
+							   		Node *limitOffset, Node *limitCount,
+							   		LimitOption limitOption,
+							   		int64 offset_est, int64 count_est);
 extern void adjust_limit_rows_costs(double *rows,
 									Cost *startup_cost, Cost *total_cost,
 									int64 offset_est, int64 count_est);

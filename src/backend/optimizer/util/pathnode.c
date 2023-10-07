@@ -56,6 +56,21 @@ static int	append_startup_cost_compare(const ListCell *a, const ListCell *b);
 static List *reparameterize_pathlist_by_child(PlannerInfo *root,
 											  List *pathlist,
 											  RelOptInfo *child_rel);
+static Path *pushdown_limit_append(PlannerInfo *root, RelOptInfo *rel,
+								   AppendPath *appendPath,
+								   Node *limitOffset, Node *limitCount,
+								   LimitOption limitOption,
+								   int64 offset_est, int64 count_est);
+static Path *pushdown_limit_merge_append(PlannerInfo *root, RelOptInfo *rel,
+					 					 MergeAppendPath *mergeAppendPath,
+										 Node *limitOffset, Node *limitCount,
+										 LimitOption limitOption,
+										 int64 offset_est, int64 count_est);
+static Path * pushdown_limit_recurse(PlannerInfo *root, RelOptInfo *rel,
+									 Path *subpath,
+									 Node *limitOffset, Node *limitCount,
+									 LimitOption limitOption,
+									 int64 offset_est, int64 count_est);
 
 
 /*****************************************************************************
@@ -3740,6 +3755,206 @@ create_modifytable_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->mergeActionLists = mergeActionLists;
 
 	return pathnode;
+}
+
+/*
+ * limit_path
+ *	Pushes down LIMIT.
+ *
+ * Potentially creates a LimitPath.
+ */
+Path *pushdown_limit(PlannerInfo *root, RelOptInfo *rel,
+					 Path *subpath,
+					 Node *limitOffset, Node *limitCount,
+					 LimitOption limitOption,
+					 int64 offset_est, int64 count_est)
+{
+	switch (subpath->pathtype)
+	{
+		case T_Append:
+			if (limitOffset == NULL)
+			{
+				return pushdown_limit_append(
+					root,
+					rel,
+					(AppendPath *) subpath,
+					limitOffset,
+					limitCount,
+					limitOption,
+					offset_est,
+					count_est);
+			}
+			break;
+		case T_MergeAppend:
+			if (limitOffset == NULL)
+			{
+				return pushdown_limit_merge_append(
+					root,
+					rel,
+					(MergeAppendPath *) subpath,
+					limitOffset,
+					limitCount,
+					limitOption,
+					offset_est,
+					count_est);
+			}
+			break;
+		default:
+			break;
+	}
+	/*
+	 * Wrap subpath in LimitPath node by default
+	 */
+	return (Path *) create_limit_path(
+		root,
+		rel,
+		subpath,
+		limitOffset,
+		limitCount,
+		limitOption,
+		offset_est,
+		count_est);
+}
+
+static
+Path *pushdown_limit_append(PlannerInfo *root, RelOptInfo *rel,
+					 		AppendPath *appendPath,
+							Node *limitOffset, Node *limitCount,
+							LimitOption limitOption,
+							int64 offset_est, int64 count_est)
+{
+	List       *children = NIL;
+	List       *partialChildren = NIL;
+	Relids required_outer = NULL;
+	ListCell   *l;
+	int        i;
+	i = 0;
+	foreach(l, appendPath->subpaths) {
+		Path   *child = (Path*) lfirst(l);
+		child = (Path *) pushdown_limit_recurse(
+			root,
+			child->parent,
+			child,
+			limitOffset,
+			limitCount,
+			limitOption,
+			offset_est,
+			count_est);
+		if (i < appendPath->first_partial_path) {
+			children = lappend(children, child);
+		}
+		else {
+			partialChildren = lappend(partialChildren, child);
+		}
+		i++;
+	}
+	if (appendPath->path.param_info != NULL) {
+		required_outer = appendPath->path.param_info->ppi_req_outer;
+	}
+	Path *subpath = (Path *) create_append_path(
+			root,
+			appendPath->path.parent,
+			children,
+			partialChildren,
+			appendPath->path.pathkeys,
+			required_outer,
+			appendPath->path.parallel_workers,
+			appendPath->path.parallel_aware,
+			i * count_est);
+	return (Path *) create_limit_path(
+		root,
+		rel,
+		subpath,
+		limitOffset,
+		limitCount,
+		limitOption,
+		offset_est,
+		count_est);
+}
+
+static
+Path *pushdown_limit_merge_append(PlannerInfo *root, RelOptInfo *rel,
+					 			  MergeAppendPath *mergeAppendPath,
+								  Node *limitOffset, Node *limitCount,
+								  LimitOption limitOption,
+								  int64 offset_est, int64 count_est)
+{
+	Relids    required_outer = NULL;
+	List     *children = NIL;
+	ListCell *l;
+	foreach(l, mergeAppendPath->subpaths) {
+		Path   *child = (Path*) lfirst(l);
+		child = (Path *) pushdown_limit_recurse(
+			root,
+			child->parent,
+			child,
+			limitOffset,
+			limitCount,
+			limitOption,
+			offset_est,
+			count_est);
+		children = lappend(children, child);
+	}
+	if (mergeAppendPath->path.param_info != NULL) {
+		required_outer = mergeAppendPath->path.param_info->ppi_req_outer;
+	}
+	Path *subpath = (Path *) create_merge_append_path(
+		root,
+		mergeAppendPath->path.parent,
+		children,
+		mergeAppendPath->path.pathkeys,
+		required_outer);
+	return (Path *) create_limit_path(
+		root,
+		rel,
+		subpath,
+		limitOffset,
+		limitCount,
+		limitOption,
+		offset_est,
+		count_est);
+}
+
+static
+Path *pushdown_limit_recurse(PlannerInfo *root, RelOptInfo *rel,
+							 Path *subpath,
+							 Node *limitOffset, Node *limitCount,
+							 LimitOption limitOption,
+							 int64 offset_est, int64 count_est)
+{
+	switch (subpath->pathtype)
+	{
+		case T_ForeignScan:
+			{
+				ForeignPath	*fpath = (ForeignPath*) subpath;
+				PushDownLimit_function pushDownLimit = rel->fdwroutine->PushDownLimit;
+				if (pushDownLimit)
+				{
+					return pushDownLimit(
+						root,
+						rel,
+						fpath,
+						limitOffset,
+						limitCount,
+						limitOption,
+						offset_est,
+						count_est);
+				}
+			}
+			break;
+		default:
+			break;
+	}
+
+	return (Path *) create_limit_path(
+		root,
+		rel,
+		subpath,
+		limitOffset,
+		limitCount,
+		limitOption,
+		offset_est,
+		count_est);
 }
 
 /*

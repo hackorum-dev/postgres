@@ -191,6 +191,15 @@ typedef void (*ForeignAsyncConfigureWait_function) (AsyncRequest *areq);
 
 typedef void (*ForeignAsyncNotify_function) (AsyncRequest *areq);
 
+typedef Path *(*PushDownLimit_function) (PlannerInfo *root,
+										 RelOptInfo *rel,
+										 ForeignPath *fpath,
+										 Node *limitOffset,
+										 Node *limitCount,
+										 LimitOption limitOption,
+										 int64 offset_est,
+										 int64 count_est);
+
 /*
  * FdwRoutine is the struct returned by a foreign-data wrapper's handler
  * function.  It provides pointers to the callback functions needed by the
@@ -278,6 +287,8 @@ typedef struct FdwRoutine
 	ForeignAsyncRequest_function ForeignAsyncRequest;
 	ForeignAsyncConfigureWait_function ForeignAsyncConfigureWait;
 	ForeignAsyncNotify_function ForeignAsyncNotify;
+
+	PushDownLimit_function PushDownLimit;
 } FdwRoutine;
 
 

@@ -420,6 +420,15 @@ static bool postgresIsForeignPathAsyncCapable(ForeignPath *path);
 static void postgresForeignAsyncRequest(AsyncRequest *areq);
 static void postgresForeignAsyncConfigureWait(AsyncRequest *areq);
 static void postgresForeignAsyncNotify(AsyncRequest *areq);
+static Path *postgresPushDownLimit(PlannerInfo *root,
+								   RelOptInfo *rel,
+								   ForeignPath *fpath,
+								   Node *limitOffset,
+								   Node *limitCount,
+								   LimitOption limitOption,
+								   int64 offset_est,
+								   int64 count_est);
+
 
 /*
  * Helper functions
@@ -607,6 +616,8 @@ postgres_fdw_handler(PG_FUNCTION_ARGS)
 	routine->ForeignAsyncRequest = postgresForeignAsyncRequest;
 	routine->ForeignAsyncConfigureWait = postgresForeignAsyncConfigureWait;
 	routine->ForeignAsyncNotify = postgresForeignAsyncNotify;
+
+	routine->PushDownLimit = postgresPushDownLimit;
 
 	PG_RETURN_POINTER(routine);
 }
@@ -7821,4 +7832,27 @@ get_batch_size_option(Relation rel)
 	}
 
 	return batch_size;
+}
+
+static Path *postgresPushDownLimit(PlannerInfo *root,
+								   RelOptInfo *rel,
+								   ForeignPath *fpath,
+								   Node *limitOffset,
+								   Node *limitCount,
+								   LimitOption limitOption,
+								   int64 offset_est,
+								   int64 count_est)
+{
+	/*
+	 * TODO Implement this !!!
+	 */
+	return create_limit_path(
+		root,
+		rel,
+		fpath,
+		limitOffset,
+		limitCount,
+		limitOption,
+		offset_est,
+		count_est);
 }

@@ -1773,11 +1773,11 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 */
 		if (limit_needed(parse))
 		{
-			path = (Path *) create_limit_path(root, final_rel, path,
-											  parse->limitOffset,
-											  parse->limitCount,
-											  parse->limitOption,
-											  offset_est, count_est);
+			path = (Path *) pushdown_limit(root, final_rel, path,
+										   parse->limitOffset,
+										   parse->limitCount,
+										   parse->limitOption,
+										   offset_est, count_est);
 		}
 
 		/*
@@ -2410,7 +2410,7 @@ select_rowmark_type(RangeTblEntry *rte, LockClauseStrength strength)
  * for OFFSET but a little bit bogus for LIMIT: effectively we estimate
  * LIMIT 0 as though it were LIMIT 1.  But this is in line with the planner's
  * usual practice of never estimating less than one row.)  These values will
- * be passed to create_limit_path, which see if you change this code.
+ * be passed to pushdown_limit, which see if you change this code.
  *
  * The return value is the suitably adjusted tuple_fraction to use for
  * planning the query.  This adjustment is not overridable, since it reflects
@@ -5033,9 +5033,9 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 				 * not seem worth troubling over too much.
 				 */
 				add_path(distinct_rel, (Path *)
-						 create_limit_path(root, distinct_rel, sorted_path,
-										   NULL, limitCount,
-										   LIMIT_OPTION_COUNT, 0, 1));
+						 pushdown_limit(root, distinct_rel, sorted_path,
+										NULL, limitCount,
+										LIMIT_OPTION_COUNT, 0, 1));
 			}
 			else
 			{

@@ -1194,6 +1194,20 @@ mark_async_capable_plan(Plan *plan, Path *path)
 										((ProjectionPath *) path)->subpath))
 				return true;
 			return false;
+		case T_LimitPath:
+			/*
+			 * If the generated plan node includes a Result node for the
+			 * projection, we can't execute it asynchronously.
+			 */
+			if (IsA(plan, Result))
+				return false;
+
+			/*
+			* Limit node is async capable iff its child is async capable
+			*/
+			LimitPath *lpath = (LimitPath *) path;
+			return mark_async_capable_plan(plan->lefttree, lpath->subpath);
+			
 		default:
 			return false;
 	}
