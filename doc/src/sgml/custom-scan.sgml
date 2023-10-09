@@ -206,6 +206,10 @@ typedef struct CustomScan
     the actual scan tuples.  <structfield>custom_scan_tlist</structfield> must be
     provided for joins, and could be provided for scans if the custom scan
     provider can compute some non-Var expressions.
+	Don't include into <structfield>custom_scan_tlist</structfield> references to CTE
+	or SubPlan entries because it directly points to the list of RangeTableEntries.
+	In most cases it doesn't cause any issues but during the EXPLAIN ANALYZE it can fail
+	to find proper subplan during preparing textual representation of targetlist.
     <structfield>custom_relids</structfield> is set by the core code to the set of
     relations (range table indexes) that this scan node handles; except when
     this scan is replacing a join, it will have only one member.
