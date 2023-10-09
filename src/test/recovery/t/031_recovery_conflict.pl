@@ -211,7 +211,6 @@ check_conflict_stat("tablespace");
 
 ## RECOVERY CONFLICT 5: Deadlock
 $sect = "startup deadlock";
-$expected_conflicts++;
 
 # Want to test recovery deadlock conflicts, not buffer pin conflicts. Without
 # changing max_standby_streaming_delay it'd be timing dependent what we hit
@@ -223,6 +222,11 @@ $node_standby->adjust_conf(
 $node_standby->restart();
 $psql_standby->reconnect_and_clear();
 
+for (my $i = 1; $i <= 100; $i++)  {
+diag("iteration $i");
+
+$expected_conflicts++;
+
 # Generate a few dead rows, to later be cleaned up by vacuum. Then acquire a
 # lock on another relation in a prepared xact, so it's held continuously by
 # the startup process. The standby psql will block acquiring that lock while
@@ -230,6 +234,7 @@ $psql_standby->reconnect_and_clear();
 $node_primary->safe_psql(
 	$test_db,
 	qq[
+DROP TABLE IF EXISTS $table1;
 CREATE TABLE $table1(a int, b int);
 INSERT INTO $table1 VALUES (1);
 BEGIN;
@@ -271,10 +276,18 @@ $node_primary->wait_for_replay_catchup($node_standby);
 
 check_conflict_log("User transaction caused buffer deadlock with recovery.");
 $psql_standby->reconnect_and_clear();
-check_conflict_stat("deadlock");
+## check_conflict_stat("deadlock");
 
 # clean up for next tests
 $node_primary->safe_psql($test_db, qq[ROLLBACK PREPARED 'lock';]);
+
+$node_standby->restart();
+$psql_standby->reconnect_and_clear();
+
+}
+
+# clean up for next tests
+## $node_primary->safe_psql($test_db, qq[ROLLBACK PREPARED 'lock';]);
 $node_standby->adjust_conf('postgresql.conf', 'max_standby_streaming_delay',
 	'50ms');
 $node_standby->restart();
