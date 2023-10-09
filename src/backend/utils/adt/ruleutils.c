@@ -8823,6 +8823,16 @@ get_name_for_var_field(Var *var, int fieldno,
 					deparse_namespace save_dpns;
 					const char *result;
 
+					/*
+					 * Limitation, related to CustomScan nodes.
+					 * custom_scan_tlist points to the range table entries
+					 * directly. In the case of CTEs and subqueries we have some
+					 * sort of uncertainity here: only the developer of the
+					 * custom node knows from which subtree they get the subplan
+					 * link.
+					 */
+					Assert(!IsA(dpns->plan, CustomScan));
+
 					if (!dpns->inner_plan)
 					{
 						char	   *dummy_name = palloc(32);
@@ -8953,6 +8963,16 @@ get_name_for_var_field(Var *var, int fieldno,
 					TargetEntry *tle;
 					deparse_namespace save_dpns;
 					const char *result;
+
+					/*
+					 * Limitation, related to CustomScan nodes.
+					 * custom_scan_tlist points to the range table entries
+					 * directly. In the case of CTEs and subqueries we have some
+					 * sort of uncertainity here: only the developer of the
+					 * custom node knows from which subtree they get the subplan
+					 * link.
+					 */
+					Assert(!IsA(dpns->plan, CustomScan));
 
 					if (!dpns->inner_plan)
 					{
