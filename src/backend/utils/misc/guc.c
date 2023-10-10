@@ -1344,7 +1344,8 @@ check_GUC_init(const struct config_generic *gconf)
 			{
 				const struct config_real *conf = &gconf->_real;
 
-				if (*conf->variable != 0.0 && *conf->variable != conf->boot_val)
+				if (fabs(*conf->variable - 0.0) > 1e-6 && 
+					fabs(*conf->variable - conf->boot_val) > 1e-6)
 				{
 					elog(LOG, "GUC (PGC_REAL) %s, boot_val=%g, C-var=%g",
 						 gconf->name, conf->boot_val, *conf->variable);
