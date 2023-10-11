@@ -737,6 +737,7 @@ LogicalParallelApplyLoop(shm_mq_handle *mqh)
 	shm_mq_result shmq_res;
 	ErrorContextCallback errcallback;
 	MemoryContext oldcxt = CurrentMemoryContext;
+	StringInfoData s;
 
 	/*
 	 * Init the ApplyMessageContext which we clean up after each replication
@@ -754,6 +755,8 @@ LogicalParallelApplyLoop(shm_mq_handle *mqh)
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
+	initStringInfo(&s);
+
 	for (;;)
 	{
 		void	   *data;
@@ -768,16 +771,19 @@ LogicalParallelApplyLoop(shm_mq_handle *mqh)
 
 		if (shmq_res == SHM_MQ_SUCCESS)
 		{
-			StringInfoData s;
 			int			c;
 
 			if (len == 0)
 				elog(ERROR, "invalid message length");
 
-			s.cursor = 0;
-			s.maxlen = -1;
-			s.data = (char *) data;
-			s.len = len;
+			/*
+			 * Note that the data received via the shared memory queue is not
+			 * null-terminated. So we use the StringInfo API to store the
+			 * string so as to maintain the convention that StringInfos has a
+			 * trailing null.
+			 */
+			resetStringInfo(&s);
+			appendBinaryStringInfo(&s, data, len);
 
 			/*
 			 * The first byte of messages sent from leader apply worker to
