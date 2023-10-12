@@ -50,7 +50,8 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
    <literal>CREATE</literal> permission on the database. In addition,
    to alter the owner, you must be able to <literal>SET ROLE</literal> to the
    new owning role. If the subscription has
-   <literal>password_required=false</literal>, only superusers can modify it.
+   <literal>password_required=false</literal>, only superusers can modify it
+   (See <xref linkend="logical-replication-subscription-password-required"/>).
   </para>
 
   <para>

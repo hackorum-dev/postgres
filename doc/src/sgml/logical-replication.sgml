@@ -329,6 +329,38 @@
    </para>
   </sect2>
 
+  <sect2 id="logical-replication-subscription-password-required">
+   <title>Password required</title>
+
+   <para>
+    <literal>password_required</literal> is a subscription parameter which specifies whether
+    connections to the publisher made as a result of this subscription must
+    use password authentication. This setting is ignored when the subscription
+    is owned by a superuser and set to <literal>true</literal> by default.
+   </para>
+
+   <para>
+    If you want to have a subscription managed by a non-superuser with a connection string without
+    a password, you have to set <literal>password_required = false</literal> before transferring it's
+    ownership. In that case, only superusers can modify the subscription.
+   <programlisting>
+test_pub=# CREATE SUBSCRIPTION test_sub CONNECTION 'host=somehost port=5432 user=repli dbname=tests_pub' PUBLICATION test_pub WITH (password_required=false);
+CREATE SUBSCRIPTION
+test_pub=# ALTER SUBSCRIPTION test_sub OWNER TO new_sub_owner;
+ALTER SUBSCRIPTION
+   </programlisting>
+   </para>
+
+   <warning>
+   <para>
+   If the connection string doesn't contain a password or the publication
+   side doesn't require a password during authentication and you have set
+   <literal>password_required = true</literal>before transferring ownership,
+   the subscription will start failing.
+   </para>
+   </warning>
+  </sect2>
+
   <sect2 id="logical-replication-subscription-examples">
     <title>Examples: Set Up Logical Replication</title>
 
