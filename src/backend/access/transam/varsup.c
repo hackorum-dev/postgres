@@ -589,20 +589,29 @@ GetNewObjectId(void)
 /*
  * SetNextObjectId
  *
- * This may only be called during initdb; it advances the OID counter
- * to the specified value.
+ * This may only be called during initdb or pg_upgrade; it advances the OID
+ * counter to the specified value.
  */
-static void
+void
 SetNextObjectId(Oid nextOid)
 {
-	/* Safety check, this is only allowable during initdb */
-	if (IsPostmasterEnvironment)
+	/* Safety check, this is only allowable during initdb or pg_upgrade */
+	if (!IsBinaryUpgrade && IsPostmasterEnvironment)
 		elog(ERROR, "cannot advance OID counter anymore");
 
-	/* Taking the lock is, therefore, just pro forma; but do it anyway */
+	/*
+	 * Taking the lock. This may be not needed during the initdb, but do it
+	 * anyway.
+	 */
 	LWLockAcquire(OidGenLock, LW_EXCLUSIVE);
 
-	if (ShmemVariableCache->nextOid > nextOid)
+	/*
+	 * Make sure that the input is greater than the current next OID. This must
+	 * sbe skipped during the pg_upgrade: wraparound of the OID counter might
+	 * occur on the old cluster, but pg_upgrade tries to restore the counter to
+	 * the new cluster anyway.
+	 */
+	if (!IsBinaryUpgrade && ShmemVariableCache->nextOid > nextOid)
 		elog(ERROR, "too late to advance OID counter to %u, it is now %u",
 			 nextOid, ShmemVariableCache->nextOid);
 

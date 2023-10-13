@@ -345,7 +345,7 @@ void		output_check_banner(bool live_check);
 void		check_and_dump_old_cluster(bool live_check);
 void		check_new_cluster(void);
 void		report_clusters_compatible(void);
-void		issue_warnings_and_set_wal_level(void);
+void		issue_warnings_and_set_next_oid(void);
 void		output_completion_banner(char *deletion_script_file_name);
 void		check_cluster_versions(void);
 void		check_cluster_compatibility(bool live_check);

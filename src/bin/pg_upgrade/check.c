@@ -245,16 +245,40 @@ report_clusters_compatible(void)
 }
 
 
+static void
+set_next_oid_to_new_cluster(Oid next_oid)
+{
+	DbInfo	   *db = &new_cluster.dbarr.dbs[0];
+	PGconn	   *conn;
+
+	prep_status("Setting next OID for new cluster");
+
+	conn = connectToServer(&new_cluster, db->db_name);
+
+	PQclear(executeQueryOrDie(conn, "SELECT binary_upgrade_set_next_oid(%u);",
+							  next_oid));
+	PQfinish(conn);
+
+	check_ok();
+}
+
+
 void
-issue_warnings_and_set_wal_level(void)
+issue_warnings_and_set_next_oid(void)
 {
 	/*
-	 * We unconditionally start/stop the new server because pg_resetwal -o set
-	 * wal_level to 'minimum'.  If the user is upgrading standby servers using
-	 * the rsync instructions, they will need pg_upgrade to write its final
-	 * WAL record showing wal_level as 'replica'.
+	 * We unconditionally start/stop the new server because the OID counter
+	 * will be restored from the old server.
 	 */
 	start_postmaster(&new_cluster, true);
+
+	/*
+	 * Assuming OIDs are only used in system tables, there is no need to
+	 * restore the OID counter because we have not transferred any OIDs from
+	 * the old system, but we do it anyway just in case.  We do it late here
+	 * because there is no need to have the schema load use new oids.
+	 */
+	set_next_oid_to_new_cluster(old_cluster.controldata.chkpnt_nxtoid);
 
 	/* Reindex hash indexes for old < 10.0 */
 	if (GET_MAJOR_VERSION(old_cluster.major_version) <= 906)
