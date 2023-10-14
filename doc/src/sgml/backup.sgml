@@ -937,7 +937,7 @@ SELECT * FROM pg_backup_stop(wait_for_archive => true);
     <para>
      <function>pg_backup_stop</function> will return one row with three
      values. The second of these fields should be written to a file named
-     <filename>backup_label</filename> in the root directory of the backup. The
+     <filename>recovery_control</filename> in the root directory of the backup. The
      third field should be written to a file named
      <filename>tablespace_map</filename> unless the field is empty. These files are
      vital to the backup working and must be written byte for byte without
@@ -1062,7 +1062,7 @@ SELECT * FROM pg_backup_stop(wait_for_archive => true);
    </para>
 
    <para>
-    The backup label
+    The recovery control
     file includes the label string you gave to <function>pg_backup_start</function>,
     as well as the time at which <function>pg_backup_start</function> was run, and
     the name of the starting WAL file.  In case of confusion it is therefore

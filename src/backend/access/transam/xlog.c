@@ -5199,8 +5199,8 @@ StartupXLOG(void)
 	/*
 	 * Prepare for WAL recovery if needed.
 	 *
-	 * InitWalRecovery analyzes the control file and the backup label file, if
-	 * any.  It updates the in-memory ControlFile buffer according to the
+	 * InitWalRecovery analyzes the control file and the recovery_control file,
+	 * if any.  It updates the in-memory ControlFile buffer according to the
 	 * starting checkpoint, and sets InRecovery and ArchiveRecoveryRequested.
 	 * It also applies the tablespace map file, if any.
 	 */
@@ -5349,7 +5349,7 @@ StartupXLOG(void)
 		UpdateControlFile();
 
 		/*
-		 * If there was a backup label file, it's done its job and the info
+		 * If there was a recovery control file, it's done its job and the info
 		 * has now been propagated into pg_control.  We must get rid of the
 		 * label file so that if we crash during recovery, we'll pick up at
 		 * the latest recovery restartpoint instead of going all the way back
@@ -5358,8 +5358,8 @@ StartupXLOG(void)
 		 */
 		if (haveBackupLabel)
 		{
-			unlink(BACKUP_LABEL_OLD);
-			durable_rename(BACKUP_LABEL_FILE, BACKUP_LABEL_OLD, FATAL);
+			unlink(RECOVERY_CONTROL_OLD);
+			durable_rename(RECOVERY_CONTROL_FILE, RECOVERY_CONTROL_OLD, FATAL);
 		}
 
 		/*
@@ -5512,7 +5512,7 @@ StartupXLOG(void)
 	 * backup-from-replica (which can't inject records into the WAL stream),
 	 * that point is when we reach the minRecoveryPoint in pg_control (which
 	 * we purposefully copy last when backing up from a replica).  For
-	 * pg_rewind (which creates a backup_label with a method of "pg_rewind")
+	 * pg_rewind (which creates a recovery_control with a method of "pg_rewind")
 	 * or snapshot-style backups (which don't), backupEndRequired will be set
 	 * to false.
 	 *

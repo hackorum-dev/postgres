@@ -6424,7 +6424,7 @@
   proname => 'pg_backup_stop', provolatile => 'v', proparallel => 'r',
   prorettype => 'record', proargtypes => 'bool',
   proallargtypes => '{bool,pg_lsn,text,text}', proargmodes => '{i,o,o,o}',
-  proargnames => '{wait_for_archive,lsn,labelfile,spcmapfile}',
+  proargnames => '{wait_for_archive,lsn,recoveryctlfile,spcmapfile}',
   prosrc => 'pg_backup_stop' },
 { oid => '3436', descr => 'promote standby server',
   proname => 'pg_promote', provolatile => 'v', prorettype => 'bool',

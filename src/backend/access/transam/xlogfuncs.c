@@ -53,7 +53,7 @@ static MemoryContext backupcontext = NULL;
  * pg_backup_start: set up for taking an on-line backup dump
  *
  * Essentially what this does is to create the contents required for the
- * backup_label file and the tablespace map.
+ * recovery_control file and the tablespace map.
  *
  * Permission checking for this function is managed through the normal
  * GRANT system.
@@ -113,13 +113,14 @@ pg_backup_start(PG_FUNCTION_ARGS)
  * allows the user to choose if they want to wait for the WAL to be archived
  * or if we should just return as soon as the WAL record is written.
  *
- * This function stops an in-progress backup, creates backup_label contents and
- * it returns the backup stop LSN, backup_label and tablespace_map contents.
+ * This function stops an in-progress backup, creates recovery_control contents
+ * and it returns the backup stop LSN, recovery_control and tablespace_map
+ * contents.
  *
- * The backup_label contains the user-supplied label string (typically this
+ * recovery_control contains the user-supplied label string (typically this
  * would be used to tell where the backup dump will be stored), the starting
  * time, starting WAL location for the dump and so on.  It is the caller's
- * responsibility to write the backup_label and tablespace_map files in the
+ * responsibility to write recovery_control and tablespace_map files in the
  * data folder that will be restored from this backup.
  *
  * Permission checking for this function is managed through the normal
@@ -133,7 +134,7 @@ pg_backup_stop(PG_FUNCTION_ARGS)
 	Datum		values[PG_BACKUP_STOP_V2_COLS] = {0};
 	bool		nulls[PG_BACKUP_STOP_V2_COLS] = {0};
 	bool		waitforarchive = PG_GETARG_BOOL(0);
-	char	   *backup_label;
+	char	   *recovery_control;
 	SessionBackupState status = get_backup_status();
 
 	/* Initialize attributes information in the tuple descriptor */
@@ -152,15 +153,15 @@ pg_backup_stop(PG_FUNCTION_ARGS)
 	/* Stop the backup */
 	do_pg_backup_stop(backup_state, waitforarchive);
 
-	/* Build the contents of backup_label */
-	backup_label = build_backup_content(backup_state, false);
+	/* Build the contents of recovery_control */
+	recovery_control = build_backup_content(backup_state, false);
 
 	values[0] = LSNGetDatum(backup_state->stoppoint);
-	values[1] = CStringGetTextDatum(backup_label);
+	values[1] = CStringGetTextDatum(recovery_control);
 	values[2] = CStringGetTextDatum(tablespace_map->data);
 
 	/* Deallocate backup-related variables */
-	pfree(backup_label);
+	pfree(recovery_control);
 
 	/* Clean up the session-level state and its memory context */
 	backup_state = NULL;

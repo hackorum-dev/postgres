@@ -171,7 +171,7 @@ SKIP:
 
 # Write some files to test that they are not copied.
 foreach my $filename (
-	qw(backup_label tablespace_map postgresql.auto.conf.tmp
+	qw(recovery_control tablespace_map postgresql.auto.conf.tmp
 	current_logfiles.tmp global/pg_internal.init.123))
 {
 	open my $file, '>>', "$pgdata/$filename";
@@ -261,14 +261,14 @@ foreach my $filename (@tempRelationFiles)
 		"base/$postgresOid/$filename not copied");
 }
 
-# Make sure existing backup_label was ignored.
-isnt(slurp_file("$tempdir/backup/backup_label"),
-	'DONOTCOPY', 'existing backup_label not copied');
+# Make sure existing recovery_control was ignored.
+isnt(slurp_file("$tempdir/backup/recovery_control"),
+	'DONOTCOPY', 'existing recovery_control not copied');
 rmtree("$tempdir/backup");
 
-# Now delete the bogus backup_label file since it will interfere with startup
-unlink("$pgdata/backup_label")
-  or BAIL_OUT("unable to unlink $pgdata/backup_label");
+# Now delete the bogus recovery_control since it will interfere with startup
+unlink("$pgdata/recovery_control")
+  or BAIL_OUT("unable to unlink $pgdata/recovery_control");
 
 $node->command_ok(
 	[

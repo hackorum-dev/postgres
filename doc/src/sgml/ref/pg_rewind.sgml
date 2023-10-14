@@ -400,7 +400,7 @@ GRANT EXECUTE ON function pg_catalog.pg_read_binary_file(text, bigint, bigint, b
       <filename>pg_serial/</filename>, <filename>pg_snapshots/</filename>,
       <filename>pg_stat_tmp/</filename>, and <filename>pg_subtrans/</filename>
       are omitted from the data copied from the source cluster. The files
-      <filename>backup_label</filename>,
+      <filename>recovery_control</filename>,
       <filename>tablespace_map</filename>,
       <filename>pg_internal.init</filename>,
       <filename>postmaster.opts</filename>, and
@@ -410,7 +410,7 @@ GRANT EXECUTE ON function pg_catalog.pg_read_binary_file(text, bigint, bigint, b
     </step>
     <step>
      <para>
-      Create a <filename>backup_label</filename> file to begin WAL replay at
+      Create a <filename>recovery_control</filename> file to begin WAL replay at
       the checkpoint created at failover and configure the
       <filename>pg_control</filename> file with a minimum consistency LSN
       defined as the result of <literal>pg_current_wal_insert_lsn()</literal>

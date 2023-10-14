@@ -26763,12 +26763,12 @@ LOG:  Grand total: 1651920 bytes in 201 blocks; 622360 free (88 chunks); 1029560
           </optional> )
         <returnvalue>record</returnvalue>
         ( <parameter>lsn</parameter> <type>pg_lsn</type>,
-        <parameter>labelfile</parameter> <type>text</type>,
+        <parameter>recoveryctlfile</parameter> <type>text</type>,
         <parameter>spcmapfile</parameter> <type>text</type> )
        </para>
        <para>
         Finishes performing an on-line backup.  The desired contents of the
-        backup label file and the tablespace map file are returned as part of
+        recovery control file and the tablespace map file are returned as part of
         the result of the function and must be written to files in the
         backup area.  These files must not be written to the live data directory
         (doing so will cause PostgreSQL to fail to restart in the event of a
@@ -26803,7 +26803,7 @@ LOG:  Grand total: 1651920 bytes in 201 blocks; 622360 free (88 chunks); 1029560
         The result of the function is a single record.
         The <parameter>lsn</parameter> column holds the backup's ending
         write-ahead log location (which again can be ignored).  The second
-        column returns the contents of the backup label file, and the third
+        column returns the contents of the recovery control file, and the third
         column returns the contents of the tablespace map file.  These must be
         stored as part of the backup and are required as part of the restore
         process.

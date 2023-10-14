@@ -2447,7 +2447,7 @@ main(int argc, char **argv)
 		snprintf(postopts_file, MAXPGPATH, "%s/postmaster.opts", pg_data);
 		snprintf(version_file, MAXPGPATH, "%s/PG_VERSION", pg_data);
 		snprintf(pid_file, MAXPGPATH, "%s/postmaster.pid", pg_data);
-		snprintf(backup_file, MAXPGPATH, "%s/backup_label", pg_data);
+		snprintf(backup_file, MAXPGPATH, "%s/recovery_control", pg_data);
 
 		/*
 		 * Set mask based on PGDATA permissions,

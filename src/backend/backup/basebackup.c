@@ -191,10 +191,10 @@ static const struct exclude_list_item excludeFiles[] =
 	{RELCACHE_INIT_FILENAME, true},
 
 	/*
-	 * backup_label and tablespace_map should not exist in a running cluster
+	 * recovery_control and tablespace_map should not exist in a running cluster
 	 * capable of doing an online backup, but exclude them just in case.
 	 */
-	{BACKUP_LABEL_FILE, false},
+	{RECOVERY_CONTROL_FILE, false},
 	{TABLESPACE_MAP, false},
 
 	/*
@@ -326,15 +326,15 @@ perform_base_backup(basebackup_options *opt, bbsink *sink)
 			{
 				struct stat statbuf;
 				bool		sendtblspclinks = true;
-				char	   *backup_label;
+				char	   *recovery_control;
 
 				bbsink_begin_archive(sink, "base.tar");
 
-				/* In the main tar, include the backup_label first... */
-				backup_label = build_backup_content(backup_state, false);
-				sendFileWithContent(sink, BACKUP_LABEL_FILE,
-									backup_label, &manifest);
-				pfree(backup_label);
+				/* In the main tar, include the recovery_control first... */
+				recovery_control = build_backup_content(backup_state, false);
+				sendFileWithContent(sink, RECOVERY_CONTROL_FILE,
+									recovery_control, &manifest);
+				pfree(recovery_control);
 
 				/* Then the tablespace_map file, if required... */
 				if (opt->sendtblspcmapfile)
@@ -1053,7 +1053,7 @@ sendFileWithContent(bbsink *sink, const char *filename, const char *content,
 	len = strlen(content);
 
 	/*
-	 * Construct a stat struct for the backup_label file we're injecting in
+	 * Construct a stat struct for the recovery_control file we're injecting in
 	 * the tar.
 	 */
 	/* Windows doesn't have the concept of uid and gid */

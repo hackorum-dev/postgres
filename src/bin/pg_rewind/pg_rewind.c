@@ -651,10 +651,10 @@ perform_rewind(filemap_t *filemap, rewind_source *source,
 	}
 
 	if (showprogress)
-		pg_log_info("creating backup label and updating control file");
+		pg_log_info("creating recovery control and updating control file");
 
 	/*
-	 * Create a backup label file, to tell the target where to begin the WAL
+	 * Create recovery control file, to tell the target where to begin the WAL
 	 * replay. Normally, from the last common checkpoint between the source
 	 * and the target. But if the source is a standby server, it's possible
 	 * that the last common checkpoint is *after* the standby's restartpoint.
@@ -729,7 +729,7 @@ perform_rewind(filemap_t *filemap, rewind_source *source,
 static void
 sanityChecks(void)
 {
-	/* TODO Check that there's no backup_label in either cluster */
+	/* TODO Check that there's no recovery_control in either cluster */
 
 	/* Check system_identifier match */
 	if (ControlFile_target.system_identifier != ControlFile_source.system_identifier)
@@ -953,7 +953,7 @@ findCommonAncestorTimeline(TimeLineHistoryEntry *a_history, int a_nentries,
 
 
 /*
- * Create a backup_label file that forces recovery to begin at the last common
+ * Create recovery_control file that forces recovery to begin at the last common
  * checkpoint.
  */
 static void
@@ -971,7 +971,7 @@ createBackupLabel(XLogRecPtr startpoint, TimeLineID starttli, XLogRecPtr checkpo
 	XLogFileName(xlogfilename, starttli, startsegno, WalSegSz);
 
 	/*
-	 * Construct backup label file
+	 * Construct recovery control file
 	 */
 	stamp_time = time(NULL);
 	tmp = localtime(&stamp_time);
@@ -988,10 +988,10 @@ createBackupLabel(XLogRecPtr startpoint, TimeLineID starttli, XLogRecPtr checkpo
 				   LSN_FORMAT_ARGS(checkpointloc),
 				   strfbuf);
 	if (len >= sizeof(buf))
-		pg_fatal("backup label buffer too small");	/* shouldn't happen */
+		pg_fatal("recovery control buffer too small");	/* shouldn't happen */
 
 	/* TODO: move old file out of the way, if any. */
-	open_target_file("backup_label", true); /* BACKUP_LABEL_FILE */
+	open_target_file("recovery_control", true); /* RECOVERY_CONTROL_FILE */
 	write_target_range(buf, 0, len);
 	close_target_file();
 }

@@ -18,10 +18,10 @@
 #include "access/xlogbackup.h"
 
 /*
- * Build contents for backup_label or backup history file.
+ * Build contents for recovery_control or backup history file.
  *
  * When ishistoryfile is true, it creates the contents for a backup history
- * file, otherwise it creates contents for a backup_label file.
+ * file, otherwise it creates contents for a recovery_control file.
  *
  * Returns the result generated as a palloc'd string.
  */
