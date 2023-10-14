@@ -67,7 +67,7 @@
      <glossterm linkend="glossary-table">tables</glossterm>
      and other <glossterm linkend="glossary-relation">relations</glossterm>
      to help the <glossterm linkend="glossary-planner">query planner</glossterm>
-     to make decisions about how to execute
+     make decisions about how to execute
      <glossterm linkend="glossary-query">queries</glossterm>.
     </para>
     <para>
@@ -284,7 +284,7 @@
    <glossterm>Bloat</glossterm>
    <glossdef>
     <para>
-     Space in data pages which does not contain current row versions,
+     Space in data pages that does not contain current row versions,
      such as unused (free) space or outdated row versions.
     </para>
    </glossdef>
@@ -314,9 +314,9 @@
    <glossterm>Buffer Access Strategy</glossterm>
    <glossdef>
     <para>
-     Some operations will access a large number of
+     Some operations access a large number of
      <glossterm linkend="glossary-data-page">pages</glossterm>.  A
-     <firstterm>Buffer Access Strategy</firstterm> helps to prevent these
+     <firstterm>Buffer Access Strategy</firstterm> helps prevent these
      operations from evicting too many pages from
      <glossterm linkend="glossary-shared-memory">shared buffers</glossterm>.
     </para>
@@ -378,7 +378,7 @@
     <para>
      A type of <glossterm linkend="glossary-constraint">constraint</glossterm>
      defined on a <glossterm linkend="glossary-relation">relation</glossterm>
-     which restricts the values allowed in one or more
+     that restricts the values allowed in one or more
      <glossterm linkend="glossary-attribute">attributes</glossterm>. The
      check constraint can make reference to any attribute of the same row in
      the relation, but cannot reference other rows of the same relation or
@@ -454,12 +454,11 @@
      The operating system user that owns the
      <glossterm linkend="glossary-data-directory">data directory</glossterm>
      and under which the <literal>postgres</literal> process is run.
-     It is required that this user exist prior to creating a new
+     This user is required to exist prior to creating a new
      <glossterm linkend="glossary-db-cluster">database cluster</glossterm>.
     </para>
     <para>
-     On operating systems with a <literal>root</literal> user,
-     said user is not allowed to be the cluster owner.
+     The user <literal>root</literal> is not allowed to be the cluster owner.
     </para>
    </glossdef>
   </glossentry>
@@ -482,7 +481,7 @@
      The act of finalizing a
      <glossterm linkend="glossary-transaction">transaction</glossterm> within
      the <glossterm linkend="glossary-database">database</glossterm>, which
-     makes it visible to other transactions and assures its
+     makes it visible to other transactions and ensures its
      <glossterm linkend="glossary-durability">durability</glossterm>.
     </para>
     <para>
@@ -538,13 +537,13 @@
    <glossterm>Consistency</glossterm>
    <glossdef>
     <para>
-     The property that the data in the
+     The property that data in the
      <glossterm linkend="glossary-database">database</glossterm>
-     is always in compliance with
+     is always compliant with
      <glossterm linkend="glossary-constraint">integrity constraints</glossterm>.
-     Transactions may be allowed to violate some of the constraints
-     transiently before it commits, but if such violations are not resolved
-     by the time it commits, such a transaction is automatically
+     Transactions may allow constraints to be violated
+     temporarily, but violations must be resolved before the transaction
+     commits or it will be automatically
      <glossterm linkend="glossary-rollback">rolled back</glossterm>.
      This is one of the <acronym>ACID</acronym> properties.
     </para>
@@ -634,7 +633,7 @@
     </para>
     <para>
      See also <glossterm linkend="glossary-cluster-owner">cluster owner</glossterm>,
-     the operating-system owner of a cluster,
+     the operating system owner of a cluster,
      and <glossterm linkend="glossary-bootstrap-superuser">bootstrap superuser</glossterm>,
      the <productname>PostgreSQL</productname> owner of a cluster.
     </para>
@@ -714,7 +713,7 @@
    <glossterm>Delete</glossterm>
    <glossdef>
     <para>
-     An <acronym>SQL</acronym> command which removes
+     An <acronym>SQL</acronym> command that removes
      <glossterm linkend="glossary-tuple">rows</glossterm> from a given
      <glossterm linkend="glossary-table">table</glossterm>
      or <glossterm linkend="glossary-relation">relation</glossterm>.
@@ -777,7 +776,7 @@
    <glossterm>File segment</glossterm>
    <glossdef>
     <para>
-     A physical file which stores data for a given
+     A physical file that stores data for a given
      <glossterm linkend="glossary-relation">relation</glossterm>.
      File segments are limited in size by a configuration value
      (typically 1 gigabyte),
@@ -870,7 +869,7 @@
     <para>
      Each of the separate segmented file sets in which a relation is stored.
      The <firstterm>main fork</firstterm> is where the actual data resides.
-     There also exist two secondary forks for metadata:
+     There are two secondary forks for metadata:
      the <glossterm linkend="glossary-fsm">free space map</glossterm>
      and the <glossterm linkend="glossary-vm">visibility map</glossterm>.
      <glossterm linkend="glossary-unlogged">Unlogged relations</glossterm>
@@ -2087,8 +2086,8 @@
    <glossterm>Trigger</glossterm>
    <glossdef>
     <para>
-     A <glossterm linkend="glossary-function">function</glossterm> which can
-     be defined to execute whenever a certain operation (<command>INSERT</command>,
+     A <glossterm linkend="glossary-function">function</glossterm> that
+     executes whenever a certain operation (<command>INSERT</command>,
      <command>UPDATE</command>, <command>DELETE</command>,
      <command>TRUNCATE</command>) is applied to a
      <glossterm linkend="glossary-relation">relation</glossterm>.
