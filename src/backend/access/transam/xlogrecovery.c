@@ -43,6 +43,7 @@
 #include "backup/basebackup.h"
 #include "catalog/pg_control.h"
 #include "commands/tablespace.h"
+#include "common/base64.h"
 #include "common/file_utils.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -390,7 +391,8 @@ static void readRecoverySignalFile(void);
 static void validateRecoveryParameters(void);
 static bool read_backup_label(XLogRecPtr *checkPointLoc,
 							  TimeLineID *backupLabelTLI,
-							  bool *backupEndRequired, bool *backupFromStandby);
+							  bool *backupEndRequired, bool *backupFromStandby,
+							  ControlFileData *ControlFile);
 static bool read_tablespace_map(List **tablespaces);
 
 static void xlogrecovery_redo(XLogReaderState *record, TimeLineID replayTLI);
@@ -610,7 +612,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	primary_image_masked = (char *) palloc(BLCKSZ);
 
 	if (read_backup_label(&CheckPointLoc, &CheckPointTLI, &backupEndRequired,
-						  &backupFromStandby))
+						  &backupFromStandby, ControlFile))
 	{
 		List	   *tablespaces = NIL;
 
@@ -1167,7 +1169,8 @@ validateRecoveryParameters(void)
  */
 static bool
 read_backup_label(XLogRecPtr *checkPointLoc, TimeLineID *backupLabelTLI,
-				  bool *backupEndRequired, bool *backupFromStandby)
+				  bool *backupEndRequired, bool *backupFromStandby,
+				  ControlFileData *ControlFile)
 {
 	char		startxlogfilename[MAXFNAMELEN];
 	TimeLineID	tli_from_walseg,
@@ -1180,6 +1183,7 @@ read_backup_label(XLogRecPtr *checkPointLoc, TimeLineID *backupLabelTLI,
 	char		backuptime[128];
 	uint32		hi,
 				lo;
+	char 		controlB64Buf[684 + 1];
 
 	/* suppress possible uninitialized-variable warnings */
 	*checkPointLoc = InvalidXLogRecPtr;
@@ -1283,6 +1287,51 @@ read_backup_label(XLogRecPtr *checkPointLoc, TimeLineID *backupLabelTLI,
 		ereport(DEBUG1,
 				(errmsg_internal("backup timeline %u in file \"%s\"",
 								 tli_from_file, BACKUP_LABEL_FILE)));
+	}
+
+	/*
+	 * Read control data to be used to create pg_control. Control data may not
+	 * exist if the backup was made with an older version, in which case the
+	 * control file read from disk will be used.
+	 */
+	if (fscanf(lfp, "CONTROL DATA: %684s\n", controlB64Buf) == 1)
+	{
+		ControlFileData controlBuf;
+		pg_crc32c 		crc;
+
+		/* Check that the base64 data is the correct length */
+		if (strlen(controlB64Buf) != (sizeof(ControlFileData) + 2) / 3 * 4)
+			ereport(FATAL,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("invalid data in file \"%s\"", BACKUP_LABEL_FILE),
+					 errdetail("Control data expected %zu base64 characters.",
+							   (sizeof(ControlFileData) + 2) / 3 * 4)));
+
+		/* Decode control file */
+		if (pg_b64_decode(controlB64Buf, strlen(controlB64Buf), (char *)&controlBuf,
+		                  sizeof(ControlFileData)) == -1)
+			ereport(FATAL,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("invalid data in file \"%s\"", BACKUP_LABEL_FILE),
+					 errdetail("Control data contains invalid base64 encoding.")));
+
+		/* CRC check on stored control file */
+		INIT_CRC32C(crc);
+		COMP_CRC32C(crc, (char *)&controlBuf, offsetof(ControlFileData, crc));
+		FIN_CRC32C(crc);
+
+		if (!EQ_CRC32C(crc, controlBuf.crc))
+			ereport(FATAL,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("invalid data in file \"%s\"", BACKUP_LABEL_FILE),
+					 errdetail("Control data contains invalid CRC.")));
+
+		ereport(DEBUG1,
+				(errmsg_internal("backup control data in file \"%s\"",
+								 BACKUP_LABEL_FILE)));
+
+		/* Copy control data */
+		memcpy(ControlFile, &controlBuf, sizeof(ControlFileData));
 	}
 
 	if (ferror(lfp) || FreeFile(lfp))

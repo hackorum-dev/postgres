@@ -16,6 +16,7 @@
 #include "access/xlog.h"
 #include "access/xlog_internal.h"
 #include "access/xlogbackup.h"
+#include "common/base64.h"
 
 /*
  * Build contents for backup_label or backup history file.
@@ -75,6 +76,17 @@ build_backup_content(BackupState *state, bool ishistoryfile)
 
 		appendStringInfo(result, "STOP TIME: %s\n", stopstrfbuf);
 		appendStringInfo(result, "STOP TIMELINE: %u\n", state->stoptli);
+	}
+	/* Include a copy of control data */
+	else
+	{
+		char controlbuf[((sizeof(ControlFileData) + 2) / 3 * 4) + 1];
+
+		pg_b64_encode((char *)&state->controlFile, sizeof(ControlFileData),
+					  controlbuf, sizeof(controlbuf) - 1);
+		controlbuf[sizeof(controlbuf) - 1] = '\0';
+
+		appendStringInfo(result, "CONTROL DATA: %s\n", controlbuf);
 	}
 
 	data = result->data;

@@ -15,6 +15,7 @@
 #define XLOG_BACKUP_H
 
 #include "access/xlogdefs.h"
+#include "catalog/pg_control.h"
 #include "pgtime.h"
 
 /* Structure to hold backup state. */
@@ -33,6 +34,7 @@ typedef struct BackupState
 	XLogRecPtr	stoppoint;		/* backup stop WAL location */
 	TimeLineID	stoptli;		/* backup stop TLI */
 	pg_time_t	stoptime;		/* backup stop time */
+	ControlFileData controlFile;	/* Copy of control data */
 } BackupState;
 
 extern char *build_backup_content(BackupState *state,

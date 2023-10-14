@@ -330,13 +330,7 @@ perform_base_backup(basebackup_options *opt, bbsink *sink)
 
 				bbsink_begin_archive(sink, "base.tar");
 
-				/* In the main tar, include the backup_label first... */
-				backup_label = build_backup_content(backup_state, false);
-				sendFileWithContent(sink, BACKUP_LABEL_FILE,
-									backup_label, &manifest);
-				pfree(backup_label);
-
-				/* Then the tablespace_map file, if required... */
+				/* Send the tablespace_map file, if required... */
 				if (opt->sendtblspcmapfile)
 				{
 					sendFileWithContent(sink, TABLESPACE_MAP,
@@ -348,7 +342,7 @@ perform_base_backup(basebackup_options *opt, bbsink *sink)
 				sendDir(sink, ".", 1, false, state.tablespaces,
 						sendtblspclinks, &manifest, NULL);
 
-				/* ... and pg_control after everything else. */
+				/* ... and pg_control after everything but backup_label */
 				if (lstat(XLOG_CONTROL_FILE, &statbuf) != 0)
 					ereport(ERROR,
 							(errcode_for_file_access(),
@@ -356,6 +350,16 @@ perform_base_backup(basebackup_options *opt, bbsink *sink)
 									XLOG_CONTROL_FILE)));
 				sendFile(sink, XLOG_CONTROL_FILE, XLOG_CONTROL_FILE, &statbuf,
 						 false, InvalidOid, &manifest, NULL);
+
+				/* End the backup before sending backup_label */
+				basebackup_progress_wait_wal_archive(&state);
+				do_pg_backup_stop(backup_state, !opt->nowait);
+
+				/* Last in the main tar, include backup_label */
+				backup_label = build_backup_content(backup_state, false);
+				sendFileWithContent(sink, BACKUP_LABEL_FILE,
+									backup_label, &manifest);
+				pfree(backup_label);
 			}
 			else
 			{
@@ -388,9 +392,6 @@ perform_base_backup(basebackup_options *opt, bbsink *sink)
 				bbsink_end_archive(sink);
 			}
 		}
-
-		basebackup_progress_wait_wal_archive(&state);
-		do_pg_backup_stop(backup_state, !opt->nowait);
 
 		endptr = backup_state->stoppoint;
 		endtli = backup_state->stoptli;

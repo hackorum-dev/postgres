@@ -74,6 +74,7 @@
 #include "pg_trace.h"
 #include "pgstat.h"
 #include "port/atomics.h"
+#include "port/pg_crc32c.h"
 #include "port/pg_iovec.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/startup.h"
@@ -8692,6 +8693,21 @@ do_pg_backup_stop(BackupState *state, bool waitforarchive)
 						 "Try taking another online backup.")));
 
 	/*
+	 * Create a copy of control data to be stored in the backup label.
+	 * Recalculate the CRC so recovery can validate the contents but do not
+	 * bother with the timestamp since that will be applied before it is
+	 * written by recovery.
+	 */
+	LWLockAcquire(ControlFileLock, LW_SHARED);
+	state->controlFile = *ControlFile;
+	LWLockRelease(ControlFileLock);
+
+	INIT_CRC32C(state->controlFile.crc);
+	COMP_CRC32C(state->controlFile.crc, (char *)&state->controlFile,
+			    offsetof(ControlFileData, crc));
+	FIN_CRC32C(state->controlFile.crc);
+
+	/*
 	 * During recovery, we don't write an end-of-backup record. We assume that
 	 * pg_control was backed up last and its minimum recovery point can be
 	 * available as the backup end location. Since we don't have an
@@ -8741,11 +8757,8 @@ do_pg_backup_stop(BackupState *state, bool waitforarchive)
 							 "Enable full_page_writes and run CHECKPOINT on the primary, "
 							 "and then try an online backup again.")));
 
-
-		LWLockAcquire(ControlFileLock, LW_SHARED);
-		state->stoppoint = ControlFile->minRecoveryPoint;
-		state->stoptli = ControlFile->minRecoveryPointTLI;
-		LWLockRelease(ControlFileLock);
+		state->stoppoint = state->controlFile.minRecoveryPoint;
+		state->stoptli = state->controlFile.minRecoveryPointTLI;
 	}
 	else
 	{
