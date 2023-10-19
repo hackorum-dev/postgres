@@ -842,6 +842,9 @@ InitializeSessionUserIdStandalone(void)
 
 	AuthenticatedUserId = BOOTSTRAP_SUPERUSERID;
 	SetSessionUserId(BOOTSTRAP_SUPERUSERID, true);
+
+	/* Also mark our PGPROC entry with the  bootstrap superuser id */
+	MyProc->roleId = BOOTSTRAP_SUPERUSERID;
 }
 
 /*
