@@ -38,8 +38,16 @@ typedef struct
 	 * get an actual buffer, it needs to be used modulo NBuffers.
 	 */
 	pg_atomic_uint32 nextVictimBuffer;
+	#if defined(__x86_64__) || defined(__i386__)    /* size of slock_t is platform dependent */
+	unsigned char pad1 [59];                        /* this aligns members that cause false sharing on x86_64 and i386 */
+	#endif
 
 	int			firstFreeBuffer;	/* Head of list of unused buffers */
+
+	#if defined(__x86_64__) || defined(__i386__)
+	unsigned char pad2 [60];	/* this aligns members that cause false sharing on x86_64 and i386 */
+	#endif
+
 	int			lastFreeBuffer; /* Tail of list of unused buffers */
 
 	/*
@@ -53,6 +61,10 @@ typedef struct
 	 */
 	uint32		completePasses; /* Complete cycles of the clock sweep */
 	pg_atomic_uint32 numBufferAllocs;	/* Buffers allocated since last reset */
+
+	#if defined(__x86_64__) || defined(__i386__)
+	unsigned char pad3 [52];	/* this aligns members that cause false sharing on x86_64 and i386 */
+	#endif
 
 	/*
 	 * Bgworker process to be notified upon activity or -1 if none. See
