@@ -25141,7 +25141,7 @@ SELECT collation for ('foo' COLLATE "de_DE");
         object).  This description is intended to be human-readable, and might
         be translated, depending on server configuration.  This is especially
         useful to determine the identity of an object referenced in the
-        <structname>pg_depend</structname> catalog. This function returns
+        <link linkend="catalog-pg-depend"><structname>pg_depend</structname></link> catalog. This function returns
         <literal>NULL</literal> values for undefined objects.
        </para></entry>
       </row>
