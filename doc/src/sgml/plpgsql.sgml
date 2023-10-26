@@ -4515,18 +4515,8 @@ INSTEAD OF INSERT OR UPDATE OR DELETE ON emp_view
 
 <programlisting>
 --
--- Main tables - time dimension and sales fact.
+-- Main table - sales fact.
 --
-CREATE TABLE time_dimension (
-    time_key                    integer NOT NULL,
-    day_of_week                 integer NOT NULL,
-    day_of_month                integer NOT NULL,
-    month                       integer NOT NULL,
-    quarter                     integer NOT NULL,
-    year                        integer NOT NULL
-);
-CREATE UNIQUE INDEX time_dimension_key ON time_dimension(time_key);
-
 CREATE TABLE sales_fact (
     time_key                    integer NOT NULL,
     product_key                 integer NOT NULL,
