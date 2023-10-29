@@ -552,8 +552,9 @@ get_dirent_type(const char *path,
 	{
 		struct stat fst;
 		int			sret;
+		int			count = 0;
 
-
+retry:
 		if (look_through_symlinks)
 			sret = stat(path, &fst);
 		else
@@ -561,6 +562,16 @@ get_dirent_type(const char *path,
 
 		if (sret < 0)
 		{
+#if defined(WIN32) || defined(__CYGWIN__)
+			/* Retry is STATUS_DELETE_PENDING error.  Timeout after 10 sec. */
+			if (lstat_error_was_status_delete_pending() &&
+				++count <= 100)
+			{
+				pg_usleep(100000);		/* us */
+				goto retry;
+			}
+#endif
+
 			result = PGFILETYPE_ERROR;
 #ifdef FRONTEND
 			pg_log_generic(elevel, PG_LOG_PRIMARY, "could not stat file \"%s\": %m", path);

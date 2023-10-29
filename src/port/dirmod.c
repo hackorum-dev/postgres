@@ -100,7 +100,7 @@ pgrename(const char *from, const char *to)
  * This doesn't apply to Cygwin, which has its own lstat() that would report
  * the case as EACCES.
 */
-static bool
+bool
 lstat_error_was_status_delete_pending(void)
 {
 	if (errno != ENOENT)

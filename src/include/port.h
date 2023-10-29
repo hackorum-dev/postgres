@@ -275,6 +275,7 @@ extern int	pclose_check(FILE *stream);
  */
 extern int	pgrename(const char *from, const char *to);
 extern int	pgunlink(const char *path);
+extern bool lstat_error_was_status_delete_pending(void);
 
 /* Include this first so later includes don't see these defines */
 #ifdef _MSC_VER
