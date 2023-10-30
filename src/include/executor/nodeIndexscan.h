@@ -34,7 +34,8 @@ extern void ExecIndexScanInitializeWorker(IndexScanState *node,
  * nodeBitmapIndexscan.c
  */
 extern void ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
-								   List *quals, bool isorderby,
+								   List *quals,
+								   List *orderbyops,
 								   ScanKey *scanKeys, int *numScanKeys,
 								   IndexRuntimeKeyInfo **runtimeKeys, int *numRuntimeKeys,
 								   IndexArrayKeyInfo **arrayKeys, int *numArrayKeys);

@@ -188,7 +188,8 @@ static void match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
 									List **orderby_clauses_p,
 									List **clause_columns_p);
 static Expr *match_clause_to_ordering_op(IndexOptInfo *index,
-										 int indexcol, Expr *clause, Oid pk_opfamily);
+										 int indexcol, Expr *clause,
+										 Oid pk_opfamily, int pk_strategy);
 static bool ec_member_matches_indexcol(PlannerInfo *root, RelOptInfo *rel,
 									   EquivalenceClass *ec, EquivalenceMember *em,
 									   void *arg);
@@ -3092,8 +3093,8 @@ match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
 
 
 		/* Pathkey must request default sort order for the target opfamily */
-		if (pathkey->pk_strategy != BTLessStrategyNumber ||
-			pathkey->pk_nulls_first)
+		/* Fixme !!! */
+		if (!(pathkey->pk_strategy == BTLessStrategyNumber && !pathkey->pk_nulls_first || pathkey->pk_strategy == BTGreaterStrategyNumber && pathkey->pk_nulls_first))
 			return;
 
 		/* If eclass is volatile, no hope of using an indexscan */
@@ -3132,7 +3133,8 @@ match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
 				expr = match_clause_to_ordering_op(index,
 												   indexcol,
 												   member->em_expr,
-												   pathkey->pk_opfamily);
+												   pathkey->pk_opfamily,
+												   pathkey->pk_strategy);
 				if (expr)
 				{
 					*orderby_clauses_p = lappend(*orderby_clauses_p, expr);
@@ -3184,7 +3186,8 @@ static Expr *
 match_clause_to_ordering_op(IndexOptInfo *index,
 							int indexcol,
 							Expr *clause,
-							Oid pk_opfamily)
+							Oid pk_opfamily,
+							int pk_strategy)
 {
 	Oid			opfamily;
 	Oid			idxcollation;
@@ -3199,6 +3202,46 @@ match_clause_to_ordering_op(IndexOptInfo *index,
 
 	opfamily = index->opfamily[indexcol];
 	idxcollation = index->indexcollations[indexcol];
+
+	/*
+	 * If clause is a Var and matches the index then
+	 * try to find an ordering operator
+	 * registered as ordering operator in index operator family
+	 */
+	if (clause && IsA(clause, Var) && match_index_to_operand(clause, indexcol, index))
+	{
+		Var	*var = (Var *) clause;
+		/*
+		 * Copied from createplan.c - find ordering operator
+		 * There is an opportunity for refactoring
+		 * to avoid double cache lookup here and in creatplan
+		 */
+		Oid sortop = get_opfamily_member(pk_opfamily,
+										 var->vartype,
+										 var->vartype,
+										 pk_strategy);
+		/*
+		 * This should not happen???
+		 * For now just return no-match
+		 * Alternative is to err
+		 */
+		if (sortop == InvalidOid)
+			return NULL;
+
+		/*
+		 * Make sure
+		 * 1) ordering operator is registered in pg_amop for index am
+		 * 2) sort family is the same as requested ordering op family (BTree)
+		 */
+		Oid sortfamily = get_op_opfamily_sortfamily(sortop, opfamily);
+		if (sortfamily == pk_opfamily)
+			return clause;
+
+		/*
+		 * No match
+		 */
+		return NULL;
+	}
 
 	/*
 	 * Clause must be a binary opclause.

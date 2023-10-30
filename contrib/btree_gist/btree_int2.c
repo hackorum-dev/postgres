@@ -160,6 +160,19 @@ gbt_int2_distance(PG_FUNCTION_ARGS)
 {
 	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
 	int16		query = PG_GETARG_INT16(1);
+	StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
+
+	switch (strategy)
+	{
+		case RTLessStrategyNumber:
+			query = PG_INT16_MIN;
+			break;
+		case RTGreaterStrategyNumber:
+			query = PG_INT16_MAX;
+			break;
+		default:
+			break;
+	}
 
 	/* Oid		subtype = PG_GETARG_OID(3); */
 	int16KEY   *kkk = (int16KEY *) DatumGetPointer(entry->key);

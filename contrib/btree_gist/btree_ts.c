@@ -274,6 +274,21 @@ gbt_ts_distance(PG_FUNCTION_ARGS)
 {
 	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
 	Timestamp	query = PG_GETARG_TIMESTAMP(1);
+	StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
+
+	switch (strategy)
+	{
+		case RTLessStrategyNumber:
+			query = TIMESTAMP_MINUS_INFINITY;
+			break;
+
+		case RTGreaterStrategyNumber:
+			query = TIMESTAMP_INFINITY;
+			break;
+
+		default:
+			break;
+	}
 
 	/* Oid		subtype = PG_GETARG_OID(3); */
 	tsKEY	   *kkk = (tsKEY *) DatumGetPointer(entry->key);

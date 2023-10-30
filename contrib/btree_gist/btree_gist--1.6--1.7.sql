@@ -75,3 +75,29 @@ AS
 	FUNCTION	7	gbt_bool_same (gbtreekey2, gbtreekey2, internal),
 	FUNCTION	9   gbt_bool_fetch (internal),
 	STORAGE		gbtreekey2;
+
+
+-- Add ORDER BY support for int2, int4, int8, date, ts, time
+ALTER OPERATOR FAMILY gist_int2_ops USING gist ADD
+	OPERATOR	20	< (int2, int2) FOR ORDER BY pg_catalog.integer_ops,
+	OPERATOR	22	> (int2, int2) FOR ORDER BY pg_catalog.integer_ops;
+
+ALTER OPERATOR FAMILY gist_int4_ops USING gist ADD
+	OPERATOR	20	< (int4, int4) FOR ORDER BY pg_catalog.integer_ops,
+	OPERATOR	22	> (int4, int4) FOR ORDER BY pg_catalog.integer_ops;
+
+ALTER OPERATOR FAMILY gist_int8_ops USING gist ADD
+	OPERATOR	20	< (int8, int8) FOR ORDER BY pg_catalog.integer_ops,
+	OPERATOR	22	> (int8, int8) FOR ORDER BY pg_catalog.integer_ops;
+
+ALTER OPERATOR FAMILY gist_date_ops USING gist ADD
+	OPERATOR	20	< (date, date) FOR ORDER BY pg_catalog.integer_ops,
+	OPERATOR	22	> (date, date) FOR ORDER BY pg_catalog.integer_ops;
+
+ALTER OPERATOR FAMILY gist_timestamp_ops USING gist ADD
+	OPERATOR	20	< (timestamp, timestamp) FOR ORDER BY pg_catalog.interval_ops,
+	OPERATOR	22	> (timestamp, timestamp) FOR ORDER BY pg_catalog.interval_ops;
+
+ALTER OPERATOR FAMILY gist_timestamptz_ops USING gist ADD
+	OPERATOR	20	< (timestamptz, timestamptz) FOR ORDER BY pg_catalog.interval_ops,
+	OPERATOR	22	> (timestamptz, timestamptz) FOR ORDER BY pg_catalog.interval_ops;

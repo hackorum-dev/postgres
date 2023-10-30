@@ -495,6 +495,7 @@ typedef struct IndexOnlyScan
 	List	   *indexqual;		/* list of index quals (usually OpExprs) */
 	List	   *recheckqual;	/* index quals in recheckable form */
 	List	   *indexorderby;	/* list of index ORDER BY exprs */
+	List	   *indexorderbyops;/* OIDs of sort ops for ORDER BY exprs */
 	List	   *indextlist;		/* TargetEntry list describing index's cols */
 	ScanDirection indexorderdir;	/* forward or backward or don't care */
 } IndexOnlyScan;

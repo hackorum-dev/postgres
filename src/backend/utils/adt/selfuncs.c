@@ -6414,6 +6414,10 @@ index_other_operands_eval_cost(PlannerInfo *root, List *indexquals)
 		{
 			other_operand = NULL;
 		}
+		else if (IsA(clause, Var))
+		{
+			other_operand = (Node *) clause;
+		}
 		else
 		{
 			elog(ERROR, "unsupported indexqual type: %d",

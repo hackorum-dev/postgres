@@ -178,6 +178,21 @@ gbt_date_distance(PG_FUNCTION_ARGS)
 {
 	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
 	DateADT		query = PG_GETARG_DATEADT(1);
+	StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
+
+	switch (strategy)
+	{
+		case RTLessStrategyNumber:
+			query = DATEVAL_NOBEGIN;
+			break;
+
+		case RTGreaterStrategyNumber:
+			query = DATEVAL_NOEND;
+			break;
+		
+		default:
+			break;
+	}
 
 	/* Oid		subtype = PG_GETARG_OID(3); */
 	dateKEY    *kkk = (dateKEY *) DatumGetPointer(entry->key);

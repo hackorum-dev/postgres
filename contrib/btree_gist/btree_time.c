@@ -225,6 +225,21 @@ gbt_time_distance(PG_FUNCTION_ARGS)
 {
 	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
 	TimeADT		query = PG_GETARG_TIMEADT(1);
+	StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
+
+	switch (strategy)
+	{
+		case RTLessStrategyNumber:
+			query = PG_INT64_MIN;
+			break;
+
+		case RTGreaterStrategyNumber:
+			query = PG_INT64_MAX;
+			break;
+
+		default:
+			break;
+	}
 
 	/* Oid		subtype = PG_GETARG_OID(3); */
 	timeKEY    *kkk = (timeKEY *) DatumGetPointer(entry->key);

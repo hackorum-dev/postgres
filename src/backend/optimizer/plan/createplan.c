@@ -189,6 +189,7 @@ static IndexOnlyScan *make_indexonlyscan(List *qptlist, List *qpqual,
 										 Index scanrelid, Oid indexid,
 										 List *indexqual, List *recheckqual,
 										 List *indexorderby,
+										 List *indexorderbyops,
 										 List *indextlist,
 										 ScanDirection indexscandir);
 static BitmapIndexScan *make_bitmap_indexscan(Index scanrelid, Oid indexid,
@@ -3170,6 +3171,7 @@ create_indexscan_plan(PlannerInfo *root,
 												fixed_indexquals,
 												stripped_indexquals,
 												fixed_indexorderbys,
+												indexorderbyops,
 												indexinfo->indextlist,
 												best_path->indexscandir);
 	else
@@ -5114,6 +5116,10 @@ fix_indexqual_clause(PlannerInfo *root, IndexOptInfo *index, int indexcol,
 												 index,
 												 indexcol);
 	}
+	else if (IsA(clause, Var))
+	{
+		clause = fix_indexqual_operand(clause, index, indexcol);
+	}
 	else
 		elog(ERROR, "unsupported indexqual type: %d",
 			 (int) nodeTag(clause));
@@ -5551,6 +5557,7 @@ make_indexonlyscan(List *qptlist,
 				   List *indexqual,
 				   List *recheckqual,
 				   List *indexorderby,
+				   List *indexorderbyops,
 				   List *indextlist,
 				   ScanDirection indexscandir)
 {
@@ -5566,6 +5573,7 @@ make_indexonlyscan(List *qptlist,
 	node->indexqual = indexqual;
 	node->recheckqual = recheckqual;
 	node->indexorderby = indexorderby;
+	node->indexorderbyops = indexorderbyops;
 	node->indextlist = indextlist;
 	node->indexorderdir = indexscandir;
 

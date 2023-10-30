@@ -968,7 +968,7 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	ExecIndexBuildScanKeys((PlanState *) indexstate,
 						   indexstate->iss_RelationDesc,
 						   node->indexqual,
-						   false,
+						   NULL,
 						   &indexstate->iss_ScanKeys,
 						   &indexstate->iss_NumScanKeys,
 						   &indexstate->iss_RuntimeKeys,
@@ -982,7 +982,7 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	ExecIndexBuildScanKeys((PlanState *) indexstate,
 						   indexstate->iss_RelationDesc,
 						   node->indexorderby,
-						   true,
+						   node->indexorderbyops,
 						   &indexstate->iss_OrderByKeys,
 						   &indexstate->iss_NumOrderByKeys,
 						   &indexstate->iss_RuntimeKeys,
@@ -1134,12 +1134,13 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
  */
 void
 ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
-					   List *quals, bool isorderby,
+					   List *quals, List* orderbyops,
 					   ScanKey *scanKeys, int *numScanKeys,
 					   IndexRuntimeKeyInfo **runtimeKeys, int *numRuntimeKeys,
 					   IndexArrayKeyInfo **arrayKeys, int *numArrayKeys)
 {
 	ListCell   *qual_cell;
+	ListCell   *orderbyop_cell;
 	ScanKey		scan_keys;
 	IndexRuntimeKeyInfo *runtime_keys;
 	IndexArrayKeyInfo *array_keys;
@@ -1148,6 +1149,7 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 	int			max_runtime_keys;
 	int			n_array_keys;
 	int			j;
+	bool		isorderby	= (orderbyops != NULL);
 
 	/* Allocate array for ScanKey structs: one per qual */
 	n_scan_keys = list_length(quals);
@@ -1169,11 +1171,18 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 	n_array_keys = 0;
 
 	/*
+	 * Make sure forboth below works in all cases
+	 */
+	if (!isorderby)
+	{
+		orderbyops = quals;
+	}
+	/*
 	 * for each opclause in the given qual, convert the opclause into a single
 	 * scan key
 	 */
 	j = 0;
-	foreach(qual_cell, quals)
+	forboth(qual_cell, quals, orderbyop_cell, orderbyops)
 	{
 		Expr	   *clause = (Expr *) lfirst(qual_cell);
 		ScanKey		this_scan_key = &scan_keys[j++];
@@ -1596,8 +1605,30 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 								   InvalidOid,	/* no reg proc for this */
 								   (Datum) 0);	/* constant */
 		}
+		else if (isorderby && IsA(clause, Var))
+		{
+			Var	*var	= (Var *) clause;
+			int	flags	= SK_ORDER_BY;
+			varattno	= var->varattno;
+			opfamily	= index->rd_opfamily[varattno - 1];
+			opno		= lfirst(orderbyop_cell);
+			
+			get_op_opfamily_properties(opno, opfamily, isorderby,
+									   &op_strategy,
+									   &op_lefttype,
+									   &op_righttype);
+
+			ScanKeyEntryInitialize(this_scan_key,
+								   flags,
+								   varattno,	/* attribute number to scan */
+								   op_strategy, /* op's strategy */
+								   InvalidOid,	/* strategy subtype */
+								   var->varcollid,	/* collation */
+								   get_opcode(opno),	/* reg proc to use */
+								   (Datum) 0);	/* constant */
+		}
 		else
-			elog(ERROR, "unsupported indexqual type: %d",
+			elog(ERROR, "nodeIndexscan unsupported indexqual type: %d",
 				 (int) nodeTag(clause));
 	}
 
