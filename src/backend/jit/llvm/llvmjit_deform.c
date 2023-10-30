@@ -89,9 +89,8 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 
 	int			attnum;
 
-	/* virtual tuples never need deforming, so don't generate code */
-	if (ops == &TTSOpsVirtual)
-		return NULL;
+	/* virtual tuples never need deforming */
+	Assert(ops != &TTSOpsVirtual);
 
 	/* decline to JIT for slot types we don't know to handle */
 	if (ops != &TTSOpsHeapTuple && ops != &TTSOpsBufferHeapTuple &&
