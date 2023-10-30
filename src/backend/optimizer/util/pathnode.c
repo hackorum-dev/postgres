@@ -661,7 +661,19 @@ add_path(RelOptInfo *parent_rel, Path *new_path)
 	{
 		/* Reject and recycle the new path */
 		if (!IsA(new_path, IndexPath))
-			pfree(new_path);
+		{
+			if(new_path == new_path->parent->cheapest_startup_path)
+				new_path->parent->cheapest_startup_path = NULL;
+			if(new_path == new_path->parent->cheapest_total_path)
+				new_path->parent->cheapest_total_path = NULL;
+			foreach(p1, new_path->parent->pathlist)
+			{
+				Path *path = (Path *) lfirst(p1);
+
+				if (path == new_path)
+					new_path->parent->pathlist = foreach_delete_current(new_path->parent->pathlist, p1);
+			}
+		}
 	}
 }
 
@@ -895,7 +907,17 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 	else
 	{
 		/* Reject and recycle the new path */
-		pfree(new_path);
+		if(new_path == new_path->parent->cheapest_startup_path)
+			new_path->parent->cheapest_startup_path = NULL;
+		if(new_path == new_path->parent->cheapest_total_path)
+			new_path->parent->cheapest_total_path = NULL;
+		foreach(p1, new_path->parent->pathlist)
+		{
+			Path *path = (Path *) lfirst(p1);
+
+			if (path == new_path)
+				new_path->parent->pathlist = foreach_delete_current(new_path->parent->pathlist, p1);
+		}
 	}
 }
 
