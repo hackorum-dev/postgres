@@ -2074,7 +2074,7 @@ XLogRecGetBlockTagExtended(XLogReaderState *record, uint8 block_id,
 	if (!XLogRecHasBlockRef(record, block_id))
 		return false;
 
-	bkpb = &record->record->blocks[block_id];
+	bkpb = XLogRecGetBlock(record, block_id);
 	if (rlocator)
 		*rlocator = bkpb->rlocator;
 	if (forknum)
@@ -2096,11 +2096,10 @@ XLogRecGetBlockData(XLogReaderState *record, uint8 block_id, Size *len)
 {
 	DecodedBkpBlock *bkpb;
 
-	if (block_id > record->record->max_block_id ||
-		!record->record->blocks[block_id].in_use)
+	if (!XLogRecHasBlockRef(record, block_id))
 		return NULL;
 
-	bkpb = &record->record->blocks[block_id];
+	bkpb = XLogRecGetBlock(record, block_id);
 
 	if (!bkpb->has_data)
 	{
@@ -2129,8 +2128,7 @@ RestoreBlockImage(XLogReaderState *record, uint8 block_id, char *page)
 	char	   *ptr;
 	PGAlignedBlock tmp;
 
-	if (block_id > record->record->max_block_id ||
-		!record->record->blocks[block_id].in_use)
+	if (!XLogRecHasBlockRef(record, block_id))
 	{
 		report_invalid_record(record,
 							  "could not restore image at %X/%08X with invalid block %d specified",
@@ -2138,7 +2136,7 @@ RestoreBlockImage(XLogReaderState *record, uint8 block_id, char *page)
 							  block_id);
 		return false;
 	}
-	if (!record->record->blocks[block_id].has_image)
+	if (!XLogRecHasBlockImage(record, block_id))
 	{
 		report_invalid_record(record, "could not restore image at %X/%08X with invalid state, block %d",
 							  LSN_FORMAT_ARGS(record->ReadRecPtr),
@@ -2146,7 +2144,7 @@ RestoreBlockImage(XLogReaderState *record, uint8 block_id, char *page)
 		return false;
 	}
 
-	bkpb = &record->record->blocks[block_id];
+	bkpb = XLogRecGetBlock(record, block_id);
 	ptr = bkpb->bkp_image;
 
 	if (BKPIMAGE_COMPRESSED(bkpb->bimg_info))
