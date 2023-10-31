@@ -3208,6 +3208,32 @@ transformDistinctClause(ParseState *pstate,
 
 		if (tle->resjunk)
 			continue;			/* ignore junk */
+
+		if (IsA(tle->expr, RowExpr))
+		{
+			ListCell *lc = NULL;
+			Oid	restype = InvalidOid;
+
+			foreach(lc, ((RowExpr *)tle->expr)->args)
+			{
+				Node * expr = (Node*) lfirst(lc);
+
+				restype = exprType((Node *) expr);
+
+				/* if item is an UNKNOWN literal, change it to TEXT */
+				if (restype == UNKNOWNOID)
+				{
+					expr = (Node *) coerce_type(pstate, (Node *) expr,
+													restype, TEXTOID, -1,
+													COERCION_IMPLICIT,
+													COERCE_IMPLICIT_CAST,
+													-1);
+					lfirst(lc) = (void *) expr;
+					restype = TEXTOID;
+				}
+			}
+		}
+		
 		result = addTargetToGroupList(pstate, tle,
 									  result, *targetlist,
 									  exprLocation((Node *) tle->expr));
