@@ -2562,8 +2562,10 @@ endif
 
 
 ###############################################################
-# abidw
+# abidw/abidiff
 ###############################################################
+
+abidiff = find_program('abidiff', required: get_option('abidiff'))
 
 abidw = find_program('abidw', required: get_option('abidw'), disabler: true)
 abidw_flags = [

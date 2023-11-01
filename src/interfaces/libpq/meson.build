@@ -90,6 +90,14 @@ custom_target('libpq.abi.xml',
               command: abidw_cmd,
               build_by_default: true)
 
+if get_option('abidiff').enabled()
+  test('libpq.abidiff',
+       abidiff,
+       args: [files('libpq.@0@-@1@.abi.xml'.format(host_cpu, host_system)),
+              libpq_so],
+       suite: 'abidiff')
+endif
+
 pkgconfig.generate(
   name: 'libpq',
   description: 'PostgreSQL libpq library',

@@ -364,6 +364,7 @@ task:
         su postgres <<-EOF
           meson setup \
             --buildtype=debug \
+            -Dabidiff=enabled \
             -Dabidw=enabled \
             -Dcassert=true \
             ${LINUX_MESON_FEATURES} \

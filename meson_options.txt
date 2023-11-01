@@ -73,6 +73,9 @@ option('rpath', type: 'boolean', value: true,
 
 # External dependencies
 
+option('abidiff', type: 'feature', value: 'disabled',
+  description: 'Enable abidiff tests')
+
 option('abidw', type: 'feature', value: 'disabled',
   description: 'Build ELF ABI serializations')
 
