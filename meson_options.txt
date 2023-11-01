@@ -73,6 +73,9 @@ option('rpath', type: 'boolean', value: true,
 
 # External dependencies
 
+option('abidw', type: 'feature', value: 'disabled',
+  description: 'Build ELF ABI serializations')
+
 option('bonjour', type: 'feature', value: 'auto',
   description: 'Bonjour support')
 

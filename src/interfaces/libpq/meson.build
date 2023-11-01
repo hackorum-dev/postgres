@@ -84,6 +84,12 @@ libpq = declare_dependency(
   include_directories: [include_directories('.')]
 )
 
+custom_target('libpq.abi.xml',
+              input: libpq_so,
+              output: 'libpq.@0@-@1@.abi.xml'.format(host_cpu, host_system),
+              command: abidw_cmd,
+              build_by_default: true)
+
 pkgconfig.generate(
   name: 'libpq',
   description: 'PostgreSQL libpq library',

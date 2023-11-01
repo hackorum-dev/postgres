@@ -57,6 +57,12 @@ plpgsql = shared_module('plpgsql',
 )
 pl_targets += plpgsql
 
+custom_target('plpgsql.abi.xml',
+              input: plpgsql,
+              output: 'plpgsql.@0@-@1@.abi.xml'.format(host_cpu, host_system),
+              command: abidw_cmd,
+              build_by_default: true)
+
 install_data(
   'plpgsql.control',
   'plpgsql--1.0.sql',
