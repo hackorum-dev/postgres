@@ -940,11 +940,12 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	if (stmt->tablespacename)
 	{
 		tablespaceId = get_tablespace_oid(stmt->tablespacename, false);
-
+       /*
 		if (partitioned && tablespaceId == MyDatabaseTableSpace)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("cannot specify default tablespace for partitioned relations")));
+		*/
 	}
 	else if (stmt->partbound)
 	{
