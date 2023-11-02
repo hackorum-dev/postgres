@@ -794,10 +794,12 @@ DefineIndex(ParseState *pstate,
 	if (stmt->tableSpace)
 	{
 		tablespaceId = get_tablespace_oid(stmt->tableSpace, false);
+		/*
 		if (partitioned && tablespaceId == MyDatabaseTableSpace)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("cannot specify default tablespace for partitioned relations")));
+		*/
 	}
 	else
 	{
