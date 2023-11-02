@@ -231,13 +231,14 @@ SELECT relname, spcname FROM pg_catalog.pg_tablespace t, pg_catalog.pg_class c
 \d testschema.part_a_idx
 \d+ testschema.part_a_idx
 
--- partitioned rels cannot specify the default tablespace.  These fail:
+-- partitioned rels can specify the default tablespace.  These should not fail:
 CREATE TABLE testschema.dflt (a int PRIMARY KEY) PARTITION BY LIST (a) TABLESPACE pg_default;
-CREATE TABLE testschema.dflt (a int PRIMARY KEY USING INDEX TABLESPACE pg_default) PARTITION BY LIST (a);
+CREATE TABLE testschema.dflt2 (a int PRIMARY KEY USING INDEX TABLESPACE pg_default) PARTITION BY LIST (a);
 SET default_tablespace TO 'pg_default';
-CREATE TABLE testschema.dflt (a int PRIMARY KEY) PARTITION BY LIST (a) TABLESPACE regress_tblspace;
-CREATE TABLE testschema.dflt (a int PRIMARY KEY USING INDEX TABLESPACE regress_tblspace) PARTITION BY LIST (a);
--- but these work:
+CREATE TABLE testschema.dflt3 (a int PRIMARY KEY) PARTITION BY LIST (a) TABLESPACE regress_tblspace;
+CREATE TABLE testschema.dflt4 (a int PRIMARY KEY USING INDEX TABLESPACE regress_tblspace) PARTITION BY LIST (a);
+DROP TABLE testschema.dflt, testschema.dflt2, testschema.dflt3, testschema.dflt4;
+-- and these work:
 CREATE TABLE testschema.dflt (a int PRIMARY KEY USING INDEX TABLESPACE regress_tblspace) PARTITION BY LIST (a) TABLESPACE regress_tblspace;
 SET default_tablespace TO '';
 CREATE TABLE testschema.dflt2 (a int PRIMARY KEY) PARTITION BY LIST (a);
