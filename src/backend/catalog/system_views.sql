@@ -1178,6 +1178,7 @@ CREATE VIEW pg_stat_wal AS
         w.wal_sync,
         w.wal_write_time,
         w.wal_sync_time,
+        w.wal_throttled,
         w.stats_reset
     FROM pg_stat_get_wal() w;
 

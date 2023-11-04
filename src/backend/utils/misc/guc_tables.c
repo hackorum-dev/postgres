@@ -2893,6 +2893,18 @@ struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"wal_throttle_after", PGC_USERSET, REPLICATION_SENDING,
+			gettext_noop("Sets the maximum amount of WAL in kilobytes a backend generates "
+						 " before waiting for sync standby, to limit the replication lag."),
+			NULL,
+			GUC_UNIT_KB
+		},
+		&wal_throttle_threshold,
+		0, 0, MAX_KILOBYTES,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"extra_float_digits", PGC_USERSET, CLIENT_CONN_LOCALE,
 			gettext_noop("Sets the number of digits displayed for floating-point values."),
 			gettext_noop("This affects real, double precision, and geometric data types. "
