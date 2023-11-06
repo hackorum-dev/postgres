@@ -107,7 +107,7 @@ l_pbool_const(bool i)
 static inline LLVMValueRef
 l_struct_gep(LLVMBuilderRef b, LLVMTypeRef t, LLVMValueRef v, int32 idx, const char *name)
 {
-#if LLVM_VERSION_MAJOR < 16
+#if LLVM_VERSION_MAJOR < 14
 	return LLVMBuildStructGEP(b, v, idx, "");
 #else
 	return LLVMBuildStructGEP2(b, t, v, idx, "");
@@ -117,7 +117,7 @@ l_struct_gep(LLVMBuilderRef b, LLVMTypeRef t, LLVMValueRef v, int32 idx, const c
 static inline LLVMValueRef
 l_gep(LLVMBuilderRef b, LLVMTypeRef t, LLVMValueRef v, LLVMValueRef *indices, int32 nindices, const char *name)
 {
-#if LLVM_VERSION_MAJOR < 16
+#if LLVM_VERSION_MAJOR < 14
 	return LLVMBuildGEP(b, v, indices, nindices, name);
 #else
 	return LLVMBuildGEP2(b, t, v, indices, nindices, name);
@@ -127,7 +127,7 @@ l_gep(LLVMBuilderRef b, LLVMTypeRef t, LLVMValueRef v, LLVMValueRef *indices, in
 static inline LLVMValueRef
 l_load(LLVMBuilderRef b, LLVMTypeRef t, LLVMValueRef v, const char *name)
 {
-#if LLVM_VERSION_MAJOR < 16
+#if LLVM_VERSION_MAJOR < 14
 	return LLVMBuildLoad(b, v, name);
 #else
 	return LLVMBuildLoad2(b, t, v, name);
@@ -137,7 +137,7 @@ l_load(LLVMBuilderRef b, LLVMTypeRef t, LLVMValueRef v, const char *name)
 static inline LLVMValueRef
 l_call(LLVMBuilderRef b, LLVMTypeRef t, LLVMValueRef fn, LLVMValueRef *args, int32 nargs, const char *name)
 {
-#if LLVM_VERSION_MAJOR < 16
+#if LLVM_VERSION_MAJOR < 14
 	return LLVMBuildCall(b, fn, args, nargs, name);
 #else
 	return LLVMBuildCall2(b, t, fn, args, nargs, name);
