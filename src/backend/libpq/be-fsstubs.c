@@ -482,7 +482,7 @@ be_lo_export(PG_FUNCTION_ARGS)
 {
 	Oid			lobjId = PG_GETARG_OID(0);
 	text	   *filename = PG_GETARG_TEXT_PP(1);
-	int			fd;
+	int			fd = -1; /* silence old compiler */
 	int			nbytes,
 				tmp;
 	char		buf[BUFSIZE];
