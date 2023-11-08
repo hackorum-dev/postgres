@@ -43,6 +43,15 @@ ecpg_preproc_kw = {
   'build_by_default': false,
 }
 
+# ecpg leaks memory like no tomorrow; silence AddressSanitizer
+if get_option('b_sanitize').contains('address')
+  ecpg_preproc_kw += {
+    'env': {
+      'ASAN_OPTIONS': 'detect_leaks=0'
+    }
+  }
+endif
+
 ecpg_preproc_test_command_start = [
   ecpg_exe,
   '--regression',
