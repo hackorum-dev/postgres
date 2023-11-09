@@ -92,7 +92,11 @@ CREATE USER MAPPING [ IF NOT EXISTS ] FOR { <replaceable class="parameter">user_
       This clause specifies the options of the user mapping.  The
       options typically define the actual user name and password of
       the mapping.  Option names must be unique.  The allowed option
-      names and values are specific to the server's foreign-data wrapper.
+      names and values are specific to the server's foreign-data
+      wrapper.  Option values, including passwords, are visible in the
+      <link
+      linkend="catalog-pg-user-mapping"><structname>pg_user_mapping</structname></link>
+      system view.
      </para>
     </listitem>
    </varlistentry>
