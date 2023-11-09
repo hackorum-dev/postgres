@@ -308,7 +308,7 @@ get_row_security_policies(Query *root, RangeTblEntry *rte, int rt_index,
 								   select_restrictive_policies,
 								   withCheckOptions,
 								   hasSubLinks,
-								   true);
+								   false);
 		}
 
 		/*

@@ -82,7 +82,7 @@ CREATE POLICY <replaceable class="parameter">name</replaceable> ON <replaceable 
 
   <para>
    For policies that can have both <literal>USING</literal>
-   and <literal>WITH CHECK</literal> expressions (<literal>ALL</literal>
+   and <literal>WITH CHECK</literal> expressions (<literal>ALL</literal>, <literal>SELECT</literal>
    and <literal>UPDATE</literal>), if no <literal>WITH CHECK</literal>
    expression is defined, then the <literal>USING</literal> expression will be
    used both to determine which rows are visible (normal
@@ -270,9 +270,11 @@ CREATE POLICY <replaceable class="parameter">name</replaceable> ON <replaceable 
          that require <literal>SELECT</literal> permissions, such as
          <literal>UPDATE</literal>, will also only see those records
          that are allowed by the <literal>SELECT</literal> policy.
-         A <literal>SELECT</literal> policy cannot have a <literal>WITH
-         CHECK</literal> expression, as it only applies in cases where
-         records are being retrieved from the relation.
+         In addition, rows written by an <command>INSERT</command> or
+         <command>UPDATE</command> statement are checked against the
+         <literal>WITH CHECK</literal> expression of <literal>SELECT</literal>
+         policies on the table (or, if there is no <literal>WITH
+         CHECK</literal> expression, the <literal>USING</literal> expression).
        </para>
       </listitem>
      </varlistentry>
@@ -402,20 +404,24 @@ CREATE POLICY <replaceable class="parameter">name</replaceable> ON <replaceable 
 
    <table id="sql-createpolicy-summary">
     <title>Policies Applied by Command Type</title>
-    <tgroup cols="6">
-     <colspec colnum="4" colname="update-using"/>
-     <colspec colnum="5" colname="update-check"/>
+    <tgroup cols="7">
+     <colspec colnum="2" colname="insert-using"/>
+     <colspec colnum="3" colname="insert-check"/>
+     <colspec colnum="5" colname="update-using"/>
+     <colspec colnum="6" colname="update-check"/>
+     <spanspec namest="insert-using" nameend="insert-check" spanname="insert"/>
      <spanspec namest="update-using" nameend="update-check" spanname="update"/>
      <thead>
       <row>
        <entry morerows="1">Command</entry>
-       <entry><literal>SELECT/ALL policy</literal></entry>
+       <entry spanname="insert"><literal>SELECT/ALL policy</literal></entry>
        <entry><literal>INSERT/ALL policy</literal></entry>
        <entry spanname="update"><literal>UPDATE/ALL policy</literal></entry>
        <entry><literal>DELETE/ALL policy</literal></entry>
       </row>
       <row>
        <entry><literal>USING expression</literal></entry>
+       <entry><literal>WITH CHECK expression</literal></entry>
        <entry><literal>WITH CHECK expression</literal></entry>
        <entry><literal>USING expression</literal></entry>
        <entry><literal>WITH CHECK expression</literal></entry>
@@ -430,10 +436,12 @@ CREATE POLICY <replaceable class="parameter">name</replaceable> ON <replaceable 
        <entry>&mdash;</entry>
        <entry>&mdash;</entry>
        <entry>&mdash;</entry>
+       <entry>&mdash;</entry>
       </row>
       <row>
        <entry><command>SELECT FOR UPDATE/SHARE</command></entry>
        <entry>Existing row</entry>
+       <entry>&mdash;</entry>
        <entry>&mdash;</entry>
        <entry>Existing row</entry>
        <entry>&mdash;</entry>
@@ -442,6 +450,7 @@ CREATE POLICY <replaceable class="parameter">name</replaceable> ON <replaceable 
       <row>
        <entry><command>INSERT</command> / <command>MERGE ... THEN INSERT</command></entry>
        <entry>&mdash;</entry>
+       <entry>&mdash;</entry>
        <entry>New row</entry>
        <entry>&mdash;</entry>
        <entry>&mdash;</entry>
@@ -449,6 +458,7 @@ CREATE POLICY <replaceable class="parameter">name</replaceable> ON <replaceable 
       </row>
       <row>
        <entry><command>INSERT ... RETURNING</command></entry>
+       <entry>&mdash;</entry>
        <entry>
         New row <footnote id="rls-select-priv">
          <para>
@@ -465,9 +475,8 @@ CREATE POLICY <replaceable class="parameter">name</replaceable> ON <replaceable 
       </row>
       <row>
        <entry><command>UPDATE</command> / <command>MERGE ... THEN UPDATE</command></entry>
-       <entry>
-        Existing &amp; new rows <footnoteref linkend="rls-select-priv"/>
-       </entry>
+       <entry>Existing row <footnoteref linkend="rls-select-priv"/></entry>
+       <entry>New row</entry>
        <entry>&mdash;</entry>
        <entry>Existing row</entry>
        <entry>New row</entry>
@@ -481,11 +490,13 @@ CREATE POLICY <replaceable class="parameter">name</replaceable> ON <replaceable 
        <entry>&mdash;</entry>
        <entry>&mdash;</entry>
        <entry>&mdash;</entry>
+       <entry>&mdash;</entry>
        <entry>Existing row</entry>
       </row>
       <row>
        <entry><command>ON CONFLICT DO UPDATE</command></entry>
-       <entry>Existing &amp; new rows</entry>
+       <entry>Existing row</entry>
+       <entry>New row</entry>
        <entry>&mdash;</entry>
        <entry>Existing row</entry>
        <entry>New row</entry>

@@ -597,13 +597,12 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	polcmd = parse_policy_command(stmt->cmd_name);
 
 	/*
-	 * If the command is SELECT or DELETE then WITH CHECK should be NULL.
+	 * If the command is DELETE then WITH CHECK should be NULL.
 	 */
-	if ((polcmd == ACL_SELECT_CHR || polcmd == ACL_DELETE_CHR)
-		&& stmt->with_check != NULL)
+	if (polcmd == ACL_DELETE_CHR && stmt->with_check != NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("WITH CHECK cannot be applied to SELECT or DELETE")));
+				 errmsg("WITH CHECK cannot be applied to DELETE")));
 
 	/*
 	 * If the command is INSERT then WITH CHECK should be the only expression
@@ -899,13 +898,12 @@ AlterPolicy(AlterPolicyStmt *stmt)
 	polcmd = DatumGetChar(polcmd_datum);
 
 	/*
-	 * If the command is SELECT or DELETE then WITH CHECK should be NULL.
+	 * If the command is DELETE then WITH CHECK should be NULL.
 	 */
-	if ((polcmd == ACL_SELECT_CHR || polcmd == ACL_DELETE_CHR)
-		&& stmt->with_check != NULL)
+	if (polcmd == ACL_DELETE_CHR && stmt->with_check != NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("only USING expression allowed for SELECT, DELETE")));
+				 errmsg("only USING expression allowed for DELETE")));
 
 	/*
 	 * If the command is INSERT then WITH CHECK should be the only expression

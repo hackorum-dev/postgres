@@ -2030,6 +2030,17 @@ INSERT INTO r1 VALUES (10)
 INSERT INTO r1 VALUES (10)
     ON CONFLICT ON CONSTRAINT r1_pkey DO UPDATE SET a = 30;
 
+-- Add an explicit WITH CHECK clause to the FOR SELECT policy, so that the
+-- UPDATE that failed before can succeed
+ALTER POLICY p1 ON r1 WITH CHECK (true);
+
+BEGIN;
+UPDATE r1 SET a = 30 WHERE a = 10;
+ROLLBACK;
+BEGIN;
+UPDATE r1 SET a = 30 RETURNING *;
+ROLLBACK;
+
 DROP TABLE r1;
 
 -- Check dependency handling
