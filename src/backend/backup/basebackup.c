@@ -225,6 +225,8 @@ perform_base_backup(basebackup_options *opt, bbsink *sink)
 	bbsink_state state;
 	XLogRecPtr	endptr;
 	TimeLineID	endtli;
+	pg_time_t	starttime;
+	pg_time_t	stoptime;
 	backup_manifest_info manifest;
 	BackupState *backup_state;
 	StringInfo	tablespace_map;
@@ -243,7 +245,7 @@ perform_base_backup(basebackup_options *opt, bbsink *sink)
 	backup_started_in_recovery = RecoveryInProgress();
 
 	InitializeBackupManifest(&manifest, opt->manifest,
-							 opt->manifest_checksum_type);
+							 opt->manifest_checksum_type, opt->label);
 
 	total_checksum_failures = 0;
 
@@ -379,6 +381,10 @@ perform_base_backup(basebackup_options *opt, bbsink *sink)
 
 		endptr = backup_state->stoppoint;
 		endtli = backup_state->stoptli;
+
+		/* Record start/stop time for manifest */
+		starttime = backup_state->starttime;
+		stoptime = backup_state->stoptime;
 
 		/* Deallocate backup-related variables. */
 		pfree(tablespace_map->data);
@@ -629,6 +635,7 @@ perform_base_backup(basebackup_options *opt, bbsink *sink)
 
 	AddWALInfoToBackupManifest(&manifest, state.startptr, state.starttli,
 							   endptr, endtli);
+	AddTimeInfoToBackupManifest(&manifest, starttime, stoptime);
 
 	SendBackupManifest(&manifest, sink);
 
