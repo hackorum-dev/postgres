@@ -9526,7 +9526,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
         parameter was set to non-<literal>ISO</literal> output.
         The value <literal>iso_8601</literal> will produce output matching the time
         interval <quote>format with designators</quote> defined in section
-        4.4.3.2 of ISO 8601.
+        4.4.3.2 of ISO 8601:2004.
        </para>
        <para>
         The <varname>IntervalStyle</varname> parameter also affects the

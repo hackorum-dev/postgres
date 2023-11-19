@@ -596,7 +596,7 @@ dttofmtasc_replace(timestamp * ts, date dDate, int dow, struct tm *tm,
 					break;
 
 					/*
-					 * The ISO 8601:1988 week number of the current year as a
+					 * The ISO 8601 week number of the current year as a
 					 * decimal number.
 					 */
 				case 'V':

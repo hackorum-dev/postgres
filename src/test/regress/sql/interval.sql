@@ -323,7 +323,7 @@ select  interval '0'                                AS "zero",
         (interval '1-2' - interval '3 4:05:06.7')   AS "mixed sign",
         (- interval '1-2' + interval '3 4:05:06.7') AS "negative";
 
--- test inputting ISO 8601 4.4.2.1 "Format With Time Unit Designators"
+-- test inputting ISO 8601:2004 4.4.4.2.1 "Format with designators"
 SET IntervalStyle to sql_standard;
 select  interval 'P0Y'                    AS "zero",
         interval 'P1Y2M'                  AS "a year 2 months",
@@ -333,7 +333,7 @@ select  interval 'P0Y'                    AS "zero",
         interval 'P-1Y-2M-3DT-4H-5M-6.7S' AS "negative",
         interval 'PT-0.1S'                AS "fractional second";
 
--- test inputting ISO 8601 4.4.2.2 "Alternative Format"
+-- test inputting ISO 8601:2004 4.4.4.2.2 "Alternative format"
 SET IntervalStyle to postgres;
 select  interval 'P00021015T103020'       AS "ISO8601 Basic Format",
         interval 'P0002-10-15T10:30:20'   AS "ISO8601 Extended Format";

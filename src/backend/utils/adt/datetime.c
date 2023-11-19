@@ -3724,7 +3724,7 @@ ISO8601IntegerWidth(char *fieldstart)
 
 
 /* DecodeISO8601Interval()
- *	Decode an ISO 8601 time interval of the "format with designators"
+ *	Decode an ISO 8601:2004 time interval of the "format with designators"
  *	(section 4.4.3.2) or "alternative format" (section 4.4.3.3)
  *	Examples:  P1D	for 1 day
  *			   PT1H for 1 hour
@@ -3805,7 +3805,7 @@ DecodeISO8601Interval(char *str,
 						!AdjustFractMicroseconds(fval, USECS_PER_DAY, itm_in))
 						return DTERR_FIELD_OVERFLOW;
 					break;
-				case 'T':		/* ISO 8601 4.4.3.3 Alternative Format / Basic */
+				case 'T':		/* ISO 8601:2004 4.4.3.3 Alternative Format / Basic */
 				case '\0':
 					if (ISO8601IntegerWidth(fieldstart) == 8 && !havefield)
 					{
@@ -3822,7 +3822,7 @@ DecodeISO8601Interval(char *str,
 					}
 					/* Else fall through to extended alternative format */
 					/* FALLTHROUGH */
-				case '-':		/* ISO 8601 4.4.3.3 Alternative Format,
+				case '-':		/* ISO 8601:2004 4.4.3.3 Alternative Format,
 								 * Extended */
 					if (havefield)
 						return DTERR_BAD_FORMAT;
@@ -3893,7 +3893,7 @@ DecodeISO8601Interval(char *str,
 					if (!AdjustMicroseconds(val, fval, USECS_PER_SEC, itm_in))
 						return DTERR_FIELD_OVERFLOW;
 					break;
-				case '\0':		/* ISO 8601 4.4.3.3 Alternative Format */
+				case '\0':		/* ISO 8601:2004 4.4.3.3 Alternative Format */
 					if (ISO8601IntegerWidth(fieldstart) == 6 && !havefield)
 					{
 						if (!AdjustMicroseconds(val / 10000, 0, USECS_PER_HOUR, itm_in) ||
@@ -3905,7 +3905,7 @@ DecodeISO8601Interval(char *str,
 					}
 					/* Else fall through to extended alternative format */
 					/* FALLTHROUGH */
-				case ':':		/* ISO 8601 4.4.3.3 Alternative Format,
+				case ':':		/* ISO 8601:2004 4.4.3.3 Alternative Format,
 								 * Extended */
 					if (havefield)
 						return DTERR_BAD_FORMAT;
@@ -4596,7 +4596,7 @@ EncodeInterval(struct pg_itm *itm, int style, char *str)
 			}
 			break;
 
-			/* ISO 8601 "time-intervals by duration only" */
+			/* ISO 8601:2004 4.4.4.2 "time intervals by duration" */
 		case INTSTYLE_ISO_8601:
 			/* special-case zero to avoid printing nothing */
 			if (year == 0 && mon == 0 && mday == 0 &&

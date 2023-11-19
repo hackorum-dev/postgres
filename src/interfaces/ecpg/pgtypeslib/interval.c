@@ -169,7 +169,7 @@ DecodeISO8601Interval(char *str,
 					tm->tm_mday += val;
 					AdjustFractSeconds(fval, tm, fsec, SECS_PER_DAY);
 					break;
-				case 'T':		/* ISO 8601 4.4.3.3 Alternative Format / Basic */
+				case 'T':		/* ISO 8601:2004 4.4.3.3 Alternative Format / Basic */
 				case '\0':
 					if (ISO8601IntegerWidth(fieldstart) == 8 && !havefield)
 					{
@@ -185,7 +185,7 @@ DecodeISO8601Interval(char *str,
 					}
 					/* Else fall through to extended alternative format */
 					/* FALLTHROUGH */
-				case '-':		/* ISO 8601 4.4.3.3 Alternative Format,
+				case '-':		/* ISO 8601:2004 4.4.3.3 Alternative Format,
 								 * Extended */
 					if (havefield)
 						return DTERR_BAD_FORMAT;
@@ -253,7 +253,7 @@ DecodeISO8601Interval(char *str,
 					tm->tm_sec += val;
 					AdjustFractSeconds(fval, tm, fsec, 1);
 					break;
-				case '\0':		/* ISO 8601 4.4.3.3 Alternative Format */
+				case '\0':		/* ISO 8601:2004 4.4.3.3 Alternative Format */
 					if (ISO8601IntegerWidth(fieldstart) == 6 && !havefield)
 					{
 						tm->tm_hour += val / 10000;
@@ -264,7 +264,7 @@ DecodeISO8601Interval(char *str,
 					}
 					/* Else fall through to extended alternative format */
 					/* FALLTHROUGH */
-				case ':':		/* ISO 8601 4.4.3.3 Alternative Format,
+				case ':':		/* ISO 8601:2004 4.4.3.3 Alternative Format,
 								 * Extended */
 					if (havefield)
 						return DTERR_BAD_FORMAT;
@@ -850,7 +850,7 @@ EncodeInterval(struct /* pg_ */ tm *tm, fsec_t fsec, int style, char *str)
 			}
 			break;
 
-			/* ISO 8601 "time-intervals by duration only" */
+			/* ISO 8601:2004 4.4.4.2 "time intervals by duration" */
 		case INTSTYLE_ISO_8601:
 			/* special-case zero to avoid printing nothing */
 			if (year == 0 && mon == 0 && mday == 0 &&
