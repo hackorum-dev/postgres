@@ -78,7 +78,7 @@ static inline bool vector8_has_zero(const Vector8 v);
 static inline bool vector8_has_le(const Vector8 v, const uint8 c);
 static inline bool vector8_is_highbit_set(const Vector8 v);
 #ifndef USE_NO_SIMD
-static inline bool vector32_is_highbit_set(const Vector32 v);
+static inline bool vector32_is_any_lane_set(const Vector32 v);
 #endif
 
 /* arithmetic operations */
@@ -278,22 +278,21 @@ vector8_is_highbit_set(const Vector8 v)
 }
 
 /*
- * Exactly like vector8_is_highbit_set except for the input type, so it
- * looks at each byte separately.
+ * Return true if any 32-bit lane is set, otherwise false.
  *
- * XXX x86 uses the same underlying type for 8-bit, 16-bit, and 32-bit
- * integer elements, but Arm does not, hence the need for a separate
- * function. We could instead adopt the behavior of Arm's vmaxvq_u32(), i.e.
- * check each 32-bit element, but that would require an additional mask
- * operation on x86.
+ * XXX: We assume all lanes are either all zeros or all ones.
  */
 #ifndef USE_NO_SIMD
 static inline bool
-vector32_is_highbit_set(const Vector32 v)
+vector32_is_any_lane_set(const Vector32 v)
 {
 #if defined(USE_NEON)
-	return vector8_is_highbit_set((Vector8) v);
+	return vmaxvq_u32(v) > 0;
 #else
+	/*
+	 * There is no 32-bit version of _mm_movemask_epi8, but we can still use
+	 * the 8-bit version.
+	 */
 	return vector8_is_highbit_set(v);
 #endif
 }

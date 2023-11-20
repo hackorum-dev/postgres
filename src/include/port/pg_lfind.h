@@ -151,7 +151,7 @@ pg_lfind32(uint32 key, uint32 *base, uint32 nelem)
 		result = vector32_or(tmp1, tmp2);
 
 		/* see if there was a match */
-		if (vector32_is_highbit_set(result))
+		if (vector32_is_any_lane_set(result))
 		{
 			Assert(assert_result == true);
 			return true;
