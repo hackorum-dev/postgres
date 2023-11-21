@@ -185,9 +185,13 @@ create_ctas_nodata(List *tlist, IntoClause *into)
 			else
 				colname = tle->resname;
 
+			/*
+			 * Var doesn't have an ndims structure member, so we don't
+			 * have access to the original attndims, equals 0.
+			 */
 			col = makeColumnDef(colname,
 								exprType((Node *) tle->expr),
-								exprTypmod((Node *) tle->expr),
+								exprTypmod((Node *) tle->expr), 0,
 								exprCollation((Node *) tle->expr));
 
 			/*
@@ -494,9 +498,15 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 		else
 			colname = NameStr(attribute->attname);
 
+		/*
+		 * TupleDescData doesn't have an ndims structure member, so
+		 * we don't have access to the original attndims;
+		 * attribute->attndims equals 0.
+		 */
 		col = makeColumnDef(colname,
 							attribute->atttypid,
 							attribute->atttypmod,
+							attribute->attndims,
 							attribute->attcollation);
 
 		/*

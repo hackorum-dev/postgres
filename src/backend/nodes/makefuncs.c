@@ -479,6 +479,24 @@ makeTypeNameFromOid(Oid typeOid, int32 typmod)
 	n->typeOid = typeOid;
 	n->typemod = typmod;
 	n->location = -1;
+
+	return n;
+}
+
+/*
+ * makeTypeNameFromOid -
+ *	build a TypeName node to represent a type already known by OID/typmod/ndims
+ */
+TypeName *
+makeTypeNameWithNdimsFromOid(Oid typeOid, int32 typmod, int16 ndims)
+{
+	int i;
+	TypeName   *n = makeTypeNameFromOid(typeOid, typmod);
+
+	n->arrayBounds = NIL;
+	for (i = 0; i < ndims; i++)
+		n->arrayBounds = lcons_int(-1, n->arrayBounds);
+
 	return n;
 }
 
@@ -490,12 +508,13 @@ makeTypeNameFromOid(Oid typeOid, int32 typmod)
  * Other properties are all basic to start with.
  */
 ColumnDef *
-makeColumnDef(const char *colname, Oid typeOid, int32 typmod, Oid collOid)
+makeColumnDef(const char *colname, Oid typeOid, int32 typmod, int16 ndims,
+			  Oid collOid)
 {
 	ColumnDef  *n = makeNode(ColumnDef);
 
 	n->colname = pstrdup(colname);
-	n->typeName = makeTypeNameFromOid(typeOid, typmod);
+	n->typeName = makeTypeNameWithNdimsFromOid(typeOid, typmod, ndims);
 	n->inhcount = 0;
 	n->is_local = true;
 	n->is_not_null = false;

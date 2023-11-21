@@ -69,7 +69,7 @@ DefineVirtualRelation(RangeVar *relation, List *tlist, bool replace,
 		{
 			ColumnDef  *def = makeColumnDef(tle->resname,
 											exprType((Node *) tle->expr),
-											exprTypmod((Node *) tle->expr),
+											exprTypmod((Node *) tle->expr), 0,
 											exprCollation((Node *) tle->expr));
 
 			/*

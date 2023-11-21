@@ -72,9 +72,10 @@ extern RangeVar *makeRangeVar(char *schemaname, char *relname, int location);
 extern TypeName *makeTypeName(char *typnam);
 extern TypeName *makeTypeNameFromNameList(List *names);
 extern TypeName *makeTypeNameFromOid(Oid typeOid, int32 typmod);
+extern TypeName *makeTypeNameWithNdimsFromOid(Oid typeOid, int32 typmod, int16 ndims);
 
-extern ColumnDef *makeColumnDef(const char *colname,
-								Oid typeOid, int32 typmod, Oid collOid);
+extern ColumnDef *makeColumnDef(const char *colname, Oid typeOid,
+								int32 typmod, int16 ndims, Oid collOid);
 
 extern FuncExpr *makeFuncExpr(Oid funcid, Oid rettype, List *args,
 							  Oid funccollid, Oid inputcollid, CoercionForm fformat);

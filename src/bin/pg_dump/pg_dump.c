@@ -8471,7 +8471,12 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 						 "a.attlen,\n"
 						 "a.attalign,\n"
 						 "a.attislocal,\n"
-						 "pg_catalog.format_type(t.oid, a.atttypmod) AS atttypname,\n"
+						 "(pg_catalog.format_type(t.oid, a.atttypmod) || "
+						 /*
+						  * format_type() supplies one "[]" for arrays,
+						  * and we add if needed.
+						  */
+						 " repeat('[]', a.attndims - 1)) AS atttypname,\n"
 						 "array_to_string(a.attoptions, ', ') AS attoptions,\n"
 						 "CASE WHEN a.attcollation <> t.typcollation "
 						 "THEN a.attcollation ELSE 0 END AS attcollation,\n"

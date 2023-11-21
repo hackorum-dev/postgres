@@ -2845,7 +2845,8 @@ MergeAttributes(List *columns, const List *supers, char relpersistence,
 				 * No, create a new inherited column
 				 */
 				def = makeColumnDef(attributeName, attribute->atttypid,
-									attribute->atttypmod, attribute->attcollation);
+									attribute->atttypmod, attribute->attndims,
+									attribute->attcollation);
 				def->inhcount = 1;
 				def->is_local = false;
 				/* mark attnotnull if parent has it and it's not NO INHERIT */

@@ -1848,7 +1848,8 @@ describeOneTableDetails(const char *schemaname,
 	cols = 0;
 	printfPQExpBuffer(&buf, "SELECT a.attname");
 	attname_col = cols++;
-	appendPQExpBufferStr(&buf, ",\n  pg_catalog.format_type(a.atttypid, a.atttypmod)");
+	/* format_type() supplies one "[]" for arrays, and we add if needed. */
+	appendPQExpBufferStr(&buf, ",\n  pg_catalog.format_type(a.atttypid, a.atttypmod) || repeat('[]', a.attndims - 1)");
 	atttype_col = cols++;
 
 	if (show_column_details)

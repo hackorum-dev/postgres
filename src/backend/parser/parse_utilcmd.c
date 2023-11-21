@@ -1078,7 +1078,8 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 		 * Create a new column definition
 		 */
 		def = makeColumnDef(NameStr(attribute->attname), attribute->atttypid,
-							attribute->atttypmod, attribute->attcollation);
+							attribute->atttypmod, attribute->attndims,
+							attribute->attcollation);
 
 		/*
 		 * For constraints, ONLY the not-null constraint is inherited by the
@@ -1615,7 +1616,8 @@ transformOfType(CreateStmtContext *cxt, TypeName *ofTypename)
 			continue;
 
 		n = makeColumnDef(NameStr(attr->attname), attr->atttypid,
-						  attr->atttypmod, attr->attcollation);
+						  attr->atttypmod, attr->attndims,
+						  attr->attcollation);
 		n->is_from_type = true;
 
 		cxt->columns = lappend(cxt->columns, n);
