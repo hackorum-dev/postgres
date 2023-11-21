@@ -49,6 +49,7 @@
  *	  - SH_EQUAL(table, a, b) - compare two table keys
  *	  - SH_HASH_KEY(table, key) - generate hash for the key
  *	  - SH_STORE_HASH - if defined the hash is stored in the elements
+ *	  - SH_OPTIMIZE_REPEAT - optimize for repeated lookups of the same key
  *	  - SH_GET_HASH(tb, a) - return the field to store the hash in
  *
  *	  The element type is required to contain a "status" member that can store
@@ -162,6 +163,11 @@ typedef struct SH_TYPE
 
 	/* hash buckets */
 	SH_ELEMENT_TYPE *data;
+
+#ifdef SH_OPTIMIZE_REPEAT
+	/* last element found */
+	SH_ELEMENT_TYPE *previous;
+#endif
 
 #ifndef SH_RAW_ALLOCATOR
 	/* memory context to use for allocations */
@@ -781,7 +787,16 @@ restart:
 SH_SCOPE	SH_ELEMENT_TYPE *
 SH_INSERT(SH_TYPE * tb, SH_KEY_TYPE key, bool *found)
 {
-	uint32		hash = SH_HASH_KEY(tb, key);
+	uint32		hash;
+
+#ifdef SH_OPTIMIZE_REPEAT
+	if (tb->previous != NULL &&
+		tb->previous->status == SH_STATUS_IN_USE &&
+		SH_EQUAL(tb, key, tb->previous->SH_KEY))
+		return tb->previous;
+#endif
+
+	hash = SH_HASH_KEY(tb, key);
 
 	return SH_INSERT_HASH_INTERNAL(tb, key, hash, found);
 }
@@ -819,7 +834,12 @@ SH_LOOKUP_HASH_INTERNAL(SH_TYPE * tb, SH_KEY_TYPE key, uint32 hash)
 		Assert(entry->status == SH_STATUS_IN_USE);
 
 		if (SH_COMPARE_KEYS(tb, hash, key, entry))
+		{
+#ifdef SH_OPTIMIZE_REPEAT
+			tb->previous = entry;
+#endif
 			return entry;
+		}
 
 		/*
 		 * TODO: we could stop search based on distance. If the current
@@ -838,7 +858,16 @@ SH_LOOKUP_HASH_INTERNAL(SH_TYPE * tb, SH_KEY_TYPE key, uint32 hash)
 SH_SCOPE	SH_ELEMENT_TYPE *
 SH_LOOKUP(SH_TYPE * tb, SH_KEY_TYPE key)
 {
-	uint32		hash = SH_HASH_KEY(tb, key);
+	uint32		hash;
+
+#ifdef SH_OPTIMIZE_REPEAT
+	if (tb->previous != NULL &&
+		tb->previous->status == SH_STATUS_IN_USE &&
+		SH_EQUAL(tb, key, tb->previous->SH_KEY))
+		return tb->previous;
+#endif
+
+	hash = SH_HASH_KEY(tb, key);
 
 	return SH_LOOKUP_HASH_INTERNAL(tb, key, hash);
 }
@@ -1204,6 +1233,7 @@ SH_STAT(SH_TYPE * tb)
 #undef SH_DEFINE
 #undef SH_GET_HASH
 #undef SH_STORE_HASH
+#undef SH_OPTIMIZE_REPEAT
 #undef SH_USE_NONDEFAULT_ALLOCATOR
 #undef SH_EQUAL
 
