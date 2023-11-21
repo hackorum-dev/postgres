@@ -55,6 +55,7 @@ static void reportErrorPosition(PQExpBuffer msg, const char *query,
 								int loc, int encoding);
 static int	build_startup_packet(const PGconn *conn, char *packet,
 								 const PQEnvironmentOption *options);
+static void pqParseInput3Internal(PGconn *conn, PGresult *description);
 
 
 /*
@@ -62,8 +63,8 @@ static int	build_startup_packet(const PGconn *conn, char *packet,
  * until input is exhausted or a stopping state is reached.
  * Note that this function will NOT attempt to read more data from the backend.
  */
-void
-pqParseInput3(PGconn *conn)
+static void
+pqParseInput3Internal(PGconn *conn, PGresult *description)
 {
 	char		id;
 	int			msgLength;
@@ -402,11 +403,38 @@ pqParseInput3(PGconn *conn)
 					}
 					else
 					{
-						/* Set up to report error at end of query */
-						libpq_append_conn_error(conn, "server sent data (\"D\" message) without prior row description (\"T\" message)");
-						pqSaveErrorResult(conn);
-						/* Discard the unexpected message */
-						conn->inCursor += msgLength;
+						if (!description)
+						{
+							/* Set up to report error at end of query */
+							libpq_append_conn_error(conn,
+													"server sent data (\"D\" message) without prior row description (\"T\" message)");
+							pqSaveErrorResult(conn);
+							/* Discard the unexpected message */
+							conn->inCursor += msgLength;
+						}
+						else
+						{
+							/*
+							 * We didn't receive row description from the
+							 * server, but we have externally provided
+							 * description, use that.
+							 */
+							if (conn->result == NULL)
+							{
+								conn->result = PQmakeEmptyPGresult(conn, PGRES_TUPLES_OK);
+							}
+							if (!conn->result)
+							{
+								libpq_append_conn_error(conn, "out of memory");
+								pqSaveErrorResult(conn);
+							}
+							else
+							{
+								PQsetResultAttrs(conn->result, description->numAttributes, description->attDescs);
+								if (getAnotherTuple(conn, msgLength))
+									return;
+							}
+						}
 					}
 					break;
 				case PqMsg_CopyInResponse:
@@ -476,6 +504,18 @@ pqParseInput3(PGconn *conn)
 			conn->inStart += 5 + msgLength;
 		}
 	}
+}
+
+void
+pqParseInput3(PGconn *conn)
+{
+	pqParseInput3Internal(conn, NULL);
+}
+
+void
+pqParseInput3Predescribed(PGconn *conn, PGresult *description)
+{
+	pqParseInput3Internal(conn, description);
 }
 
 /*

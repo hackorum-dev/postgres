@@ -462,11 +462,21 @@ extern int	PQsendQueryPrepared(PGconn *conn,
 								const int *paramLengths,
 								const int *paramFormats,
 								int resultFormat);
+extern int	PQsendQueryPreparedPredescribed(PGconn *conn,
+											const char *stmtName,
+											int nParams,
+											const char *const *paramValues,
+											const int *paramLengths,
+											const int *paramFormats,
+											int resultFormat,
+											PGresult *description);
 extern int	PQsetSingleRowMode(PGconn *conn);
 extern PGresult *PQgetResult(PGconn *conn);
+extern PGresult *PQgetResultPredescribed(PGconn *conn, PGresult *description);
 
 /* Routines for managing an asynchronous query */
 extern int	PQisBusy(PGconn *conn);
+extern int	PQisBusyPredescribed(PGconn *conn, PGresult *description);
 extern int	PQconsumeInput(PGconn *conn);
 
 /* Routines for pipeline mode management */

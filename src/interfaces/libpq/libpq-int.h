@@ -706,6 +706,7 @@ extern int	PQsendQueryContinue(PGconn *conn, const char *query);
 extern char *pqBuildStartupPacket3(PGconn *conn, int *packetlen,
 								   const PQEnvironmentOption *options);
 extern void pqParseInput3(PGconn *conn);
+extern void pqParseInput3Predescribed(PGconn *conn, PGresult *description);
 extern int	pqGetErrorNotice3(PGconn *conn, bool isError);
 extern void pqBuildErrorMessage3(PQExpBuffer msg, const PGresult *res,
 								 PGVerbosity verbosity, PGContextVisibility show_context);

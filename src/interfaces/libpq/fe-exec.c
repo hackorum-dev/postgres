@@ -72,8 +72,19 @@ static int	PQsendQueryGuts(PGconn *conn,
 							const char *const *paramValues,
 							const int *paramLengths,
 							const int *paramFormats,
-							int resultFormat);
-static void parseInput(PGconn *conn);
+							int resultFormat,
+							bool sendDescribe);
+static int	PQsendQueryPreparedInternal(PGconn *conn,
+										const char *stmtName,
+										int nParams,
+										const char *const *paramValues,
+										const int *paramLengths,
+										const int *paramFormats,
+										int resultFormat,
+										bool sendDescribe);
+static int	PQisBusyInternal(PGconn *conn, PGresult *description);
+static PGresult *PQgetResultInternal(PGconn *conn, PGresult *description);
+static void parseInput(PGconn *conn, PGresult *description);
 static PGresult *getCopyResult(PGconn *conn, ExecStatusType copytype);
 static bool PQexecStart(PGconn *conn);
 static PGresult *PQexecFinish(PGconn *conn);
@@ -1528,7 +1539,8 @@ PQsendQueryParams(PGconn *conn,
 						   paramValues,
 						   paramLengths,
 						   paramFormats,
-						   resultFormat);
+						   resultFormat,
+						   true /* send Describe */ );
 }
 
 /*
@@ -1644,6 +1656,26 @@ PQsendQueryPrepared(PGconn *conn,
 					const int *paramFormats,
 					int resultFormat)
 {
+	return PQsendQueryPreparedInternal(conn,
+									   stmtName,
+									   nParams,
+									   paramValues,
+									   paramLengths,
+									   paramFormats,
+									   resultFormat,
+									   true /* send Describe */ );
+}
+
+int
+PQsendQueryPreparedInternal(PGconn *conn,
+							const char *stmtName,
+							int nParams,
+							const char *const *paramValues,
+							const int *paramLengths,
+							const int *paramFormats,
+							int resultFormat,
+							bool sendDescribe)
+{
 	if (!PQsendQueryStart(conn, true))
 		return 0;
 
@@ -1668,7 +1700,50 @@ PQsendQueryPrepared(PGconn *conn,
 						   paramValues,
 						   paramLengths,
 						   paramFormats,
-						   resultFormat);
+						   resultFormat,
+						   sendDescribe);
+}
+
+int
+PQsendQueryPreparedPredescribed(PGconn *conn,
+								const char *stmtName,
+								int nParams,
+								const char *const *paramValues,
+								const int *paramLengths,
+								const int *paramFormats,
+								int resultFormat,
+								PGresult *description)
+{
+	int			i;
+	int			nFields;
+	int			send_result;
+
+	if (!description)
+	{
+		libpq_append_conn_error(conn, "query result description is a null pointer");
+		return 0;
+	}
+
+	send_result = PQsendQueryPreparedInternal(conn,
+											  stmtName,
+											  nParams,
+											  paramValues,
+											  paramLengths,
+											  paramFormats,
+											  resultFormat,
+											  false /* send Describe */ );
+
+	/* We only need to adjust attributes format if send succeeded */
+	if (send_result && description->attDescs != NULL)
+	{
+		nFields = description->numAttributes;
+		for (i = 0; i < nFields; i++)
+		{
+			description->attDescs[i].format = resultFormat;
+		}
+	}
+
+	return send_result;
 }
 
 /*
@@ -1766,7 +1841,8 @@ PQsendQueryGuts(PGconn *conn,
 				const char *const *paramValues,
 				const int *paramLengths,
 				const int *paramFormats,
-				int resultFormat)
+				int resultFormat,
+				bool sendDescribe)
 {
 	int			i;
 	PGcmdQueueEntry *entry;
@@ -1873,12 +1949,15 @@ PQsendQueryGuts(PGconn *conn,
 	if (pqPutMsgEnd(conn) < 0)
 		goto sendFailed;
 
-	/* construct the Describe Portal message */
-	if (pqPutMsgStart(PqMsg_Describe, conn) < 0 ||
-		pqPutc('P', conn) < 0 ||
-		pqPuts("", conn) < 0 ||
-		pqPutMsgEnd(conn) < 0)
-		goto sendFailed;
+	if (sendDescribe)
+	{
+		/* construct the Describe Portal message */
+		if (pqPutMsgStart(PqMsg_Describe, conn) < 0 ||
+			pqPutc('P', conn) < 0 ||
+			pqPuts("", conn) < 0 ||
+			pqPutMsgEnd(conn) < 0)
+			goto sendFailed;
+	}
 
 	/* construct the Execute message */
 	if (pqPutMsgStart(PqMsg_Execute, conn) < 0 ||
@@ -1990,9 +2069,9 @@ PQconsumeInput(PGconn *conn)
  * Note that this function will NOT attempt to read more data from the backend.
  */
 static void
-parseInput(PGconn *conn)
+parseInput(PGconn *conn, PGresult *description)
 {
-	pqParseInput3(conn);
+	pqParseInput3Predescribed(conn, description);
 }
 
 /*
@@ -2003,11 +2082,17 @@ parseInput(PGconn *conn)
 int
 PQisBusy(PGconn *conn)
 {
+	return PQisBusyInternal(conn, NULL);
+}
+
+static int
+PQisBusyInternal(PGconn *conn, PGresult *description)
+{
 	if (!conn)
 		return false;
 
 	/* Parse any available data, if our state permits. */
-	parseInput(conn);
+	parseInput(conn, description);
 
 	/*
 	 * PQgetResult will return immediately in all states except BUSY.  Also,
@@ -2018,6 +2103,12 @@ PQisBusy(PGconn *conn)
 	 * server message or detect read EOF.
 	 */
 	return conn->asyncStatus == PGASYNC_BUSY && conn->status != CONNECTION_BAD;
+}
+
+int
+PQisBusyPredescribed(PGconn *conn, PGresult *description)
+{
+	return PQisBusyInternal(conn, description);
 }
 
 /*
@@ -2034,13 +2125,19 @@ PQisBusy(PGconn *conn)
 PGresult *
 PQgetResult(PGconn *conn)
 {
+	return PQgetResultInternal(conn, NULL);
+}
+
+static PGresult *
+PQgetResultInternal(PGconn *conn, PGresult *description)
+{
 	PGresult   *res;
 
 	if (!conn)
 		return NULL;
 
 	/* Parse any available data, if our state permits. */
-	parseInput(conn);
+	parseInput(conn, description);
 
 	/* If not ready to return something, block until we are. */
 	while (conn->asyncStatus == PGASYNC_BUSY)
@@ -2078,7 +2175,7 @@ PQgetResult(PGconn *conn)
 		}
 
 		/* Parse it. */
-		parseInput(conn);
+		parseInput(conn, description);
 
 		/*
 		 * If we had a write error, but nothing above obtained a query result
@@ -2180,6 +2277,12 @@ PQgetResult(PGconn *conn)
 		(void) PQfireResultCreateEvents(conn, res);
 
 	return res;
+}
+
+PGresult *
+PQgetResultPredescribed(PGconn *conn, PGresult *description)
+{
+	return PQgetResultInternal(conn, description);
 }
 
 /*
@@ -2638,7 +2741,7 @@ PQnotifies(PGconn *conn)
 		return NULL;
 
 	/* Parse any available data to see if we can extract NOTIFY messages. */
-	parseInput(conn);
+	parseInput(conn, NULL);
 
 	event = conn->notifyHead;
 	if (event)
@@ -2677,7 +2780,7 @@ PQputCopyData(PGconn *conn, const char *buffer, int nbytes)
 	 * input data into the input buffer happens down inside pqSendSome, but
 	 * it's not authorized to get rid of the data again.)
 	 */
-	parseInput(conn);
+	parseInput(conn, NULL);
 
 	if (nbytes > 0)
 	{
