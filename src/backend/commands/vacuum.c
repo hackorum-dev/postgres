@@ -1731,6 +1731,13 @@ vac_update_datfrozenxid(void)
 			if (TransactionIdPrecedes(lastSaneFrozenXid, relfrozenxid))
 			{
 				bogus = true;
+				ereport(WARNING,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("bogus relfrozenxid %llu for relation \"%s\"",
+								(unsigned long long) classForm->relfrozenxid,
+								NameStr(classForm->relname)),
+						 errhint("Relfrozenxid seem to be in the future, last sane xact is %llu.",
+								 (unsigned long long) lastSaneFrozenXid)));
 				break;
 			}
 
@@ -1745,6 +1752,13 @@ vac_update_datfrozenxid(void)
 			if (MultiXactIdPrecedes(lastSaneMinMulti, relminmxid))
 			{
 				bogus = true;
+				ereport(WARNING,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("bogus relminmxid %llu for relation \"%s\"",
+								(unsigned long long) classForm->relminmxid,
+								NameStr(classForm->relname)),
+						 errhint("Relminmxid seem to be in the future, last sane multixact is %llu. Consider running vacuumdb.",
+								 (unsigned long long) lastSaneMinMulti)));
 				break;
 			}
 
