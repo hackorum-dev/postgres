@@ -1,0 +1,6 @@
+# snowflake_sequence extension
+comment = 'System-wide unique value generator'
+default_version = '1.0'
+module_pathname = '$libdir/snowflake_sequence'
+relocatable = false
+schema = snowflake_sequence
