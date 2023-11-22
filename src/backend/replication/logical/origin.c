@@ -1134,35 +1134,32 @@ replorigin_session_setup(RepOriginId node, int acquired_by)
 		if (curstate->roident != node)
 			continue;
 
-		else if (curstate->acquired_by != 0 && acquired_by == 0)
-		{
+		if (curstate->acquired_by != 0 && acquired_by == 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_OBJECT_IN_USE),
 					 errmsg("replication origin with ID %d is already active for PID %d",
 							curstate->roident, curstate->acquired_by)));
-		}
 
 		/* ok, found slot */
 		session_replication_state = curstate;
 		break;
 	}
 
-
-	if (session_replication_state == NULL && free_slot == -1)
-		ereport(ERROR,
-				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
-				 errmsg("could not find free replication state slot for replication origin with ID %d",
-						node),
-				 errhint("Increase max_replication_slots and try again.")));
-	else if (session_replication_state == NULL)
+	if (session_replication_state == NULL)
 	{
+		if (free_slot == -1)
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+					 errmsg("could not find free replication state slot for replication origin with ID %d",
+							node),
+					 errhint("Increase max_replication_slots and try again.")));
+
 		/* initialize new slot */
 		session_replication_state = &replication_states[free_slot];
 		Assert(session_replication_state->remote_lsn == InvalidXLogRecPtr);
 		Assert(session_replication_state->local_lsn == InvalidXLogRecPtr);
 		session_replication_state->roident = node;
 	}
-
 
 	Assert(session_replication_state->roident != InvalidRepOriginId);
 
