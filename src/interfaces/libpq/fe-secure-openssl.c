@@ -180,8 +180,11 @@ rloop:
 				if (result_errno == EPIPE ||
 					result_errno == ECONNRESET)
 					libpq_append_conn_error(conn, "server closed the connection unexpectedly\n"
-											"\tThis probably means the server terminated abnormally\n"
-											"\tbefore or while processing the request.");
+											  "\tThis probably means the server terminated%s\n"
+											  "\tbefore or while processing the request.",
+											  (conn->result == NULL) ? " null" :
+											  (conn->result->resultStatus == PGRES_FATAL_ERROR) ?
+											  "" : " abnormally");
 				else
 					libpq_append_conn_error(conn, "SSL SYSCALL error: %s",
 											SOCK_STRERROR(result_errno,
@@ -316,8 +319,11 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 				result_errno = SOCK_ERRNO;
 				if (result_errno == EPIPE || result_errno == ECONNRESET)
 					libpq_append_conn_error(conn, "server closed the connection unexpectedly\n"
-											"\tThis probably means the server terminated abnormally\n"
-											"\tbefore or while processing the request.");
+											  "\tThis probably means the server terminated%s\n"
+											  "\tbefore or while processing the request.",
+											  (conn->result == NULL) ? " null" :
+											  (conn->result->resultStatus == PGRES_FATAL_ERROR) ?
+											  "" : " abnormally");
 				else
 					libpq_append_conn_error(conn, "SSL SYSCALL error: %s",
 											SOCK_STRERROR(result_errno,
