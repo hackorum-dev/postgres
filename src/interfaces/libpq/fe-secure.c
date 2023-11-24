@@ -220,8 +220,11 @@ pqsecure_raw_read(PGconn *conn, void *ptr, size_t len)
 			case EPIPE:
 			case ECONNRESET:
 				libpq_append_conn_error(conn, "server closed the connection unexpectedly\n"
-										"\tThis probably means the server terminated abnormally\n"
-										"\tbefore or while processing the request.");
+										"\tThis probably means the server terminated%s\n"
+										"\tbefore or while processing the request.",
+										(conn->result == NULL) ? " null" :
+										(conn->result->resultStatus == PGRES_FATAL_ERROR) ?
+										"" : " abnormally");
 				break;
 
 			case 0:
@@ -411,8 +414,12 @@ retry_masked:
 				/* (strdup failure is OK, we'll cope later) */
 				snprintf(msgbuf, sizeof(msgbuf),
 						 libpq_gettext("server closed the connection unexpectedly\n"
-									   "\tThis probably means the server terminated abnormally\n"
-									   "\tbefore or while processing the request."));
+									   "\tThis probably means the server terminated%s\n"
+									   "\tbefore or while processing the request."),
+									   (conn->result == NULL) ? " null" :
+									   (conn->result->resultStatus == PGRES_FATAL_ERROR) ?
+									   "" : " abnormally");
+
 				/* keep newline out of translated string */
 				strlcat(msgbuf, "\n", sizeof(msgbuf));
 				conn->write_err_msg = strdup(msgbuf);
