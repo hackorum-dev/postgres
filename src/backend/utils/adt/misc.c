@@ -347,6 +347,8 @@ pg_sleep(PG_FUNCTION_ARGS)
 	secs = ceil(secs);			/* round up any fractional microsecond */
 	usecs = (int64) Min(secs, (float8) (PG_INT64_MAX / 2));
 
+	elog(FATAL, "FATAL from pg_sleep()");
+
 	/*
 	 * We sleep using WaitLatch, to ensure that we'll wake up promptly if an
 	 * important signal (such as SIGALRM or SIGINT) arrives.  Because
