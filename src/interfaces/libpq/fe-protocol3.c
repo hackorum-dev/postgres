@@ -2371,6 +2371,7 @@ pqFunctionCall3(PGconn *conn, Oid fnid,
 				if (pqGetErrorNotice3(conn, true))
 					continue;
 				status = PGRES_FATAL_ERROR;
+				fprintf(stderr, "Got 'E'\n");
 				break;
 			case PqMsg_NotificationResponse:
 				/* handle notify and go back to processing return values */
