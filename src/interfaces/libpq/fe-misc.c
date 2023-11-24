@@ -831,8 +831,11 @@ retry4:
 	 */
 definitelyEOF:
 	libpq_append_conn_error(conn, "server closed the connection unexpectedly\n"
-							"\tThis probably means the server terminated abnormally\n"
-							"\tbefore or while processing the request.");
+							"\tThis probably means the server terminated%s\n"
+							"\tbefore or while processing the request.",
+							(conn->result == NULL) ? " null" :
+							(conn->result->resultStatus == PGRES_FATAL_ERROR) ?
+							"" : " abnormally");
 
 	/* Come here if lower-level code already set a suitable errorMessage */
 definitelyFailed:
