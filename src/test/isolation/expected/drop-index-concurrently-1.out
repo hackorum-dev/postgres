@@ -12,13 +12,15 @@ step preps: PREPARE getrow_seqscan AS SELECT * FROM test_dc WHERE data = 34 ORDE
 step begin: BEGIN;
 step disableseq: SET enable_seqscan = false;
 step explaini: EXPLAIN (COSTS OFF) EXECUTE getrow_idxscan;
-QUERY PLAN                                    
-----------------------------------------------
-Sort                                          
-  Sort Key: id                                
-  ->  Index Scan using test_dc_data on test_dc
-        Index Cond: (data = 34)               
-(4 rows)
+QUERY PLAN                                   
+---------------------------------------------
+Sort                                         
+  Sort Key: id                               
+  ->  Bitmap Heap Scan on test_dc            
+        Recheck Cond: (data = 34)            
+        ->  Bitmap Index Scan on test_dc_data
+              Index Cond: (data = 34)        
+(6 rows)
 
 step enableseq: SET enable_seqscan = true;
 step explains: EXPLAIN (COSTS OFF) EXECUTE getrow_seqscan;

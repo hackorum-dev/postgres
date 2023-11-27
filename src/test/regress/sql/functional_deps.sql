@@ -208,3 +208,39 @@ EXECUTE foo;
 ALTER TABLE articles DROP CONSTRAINT articles_pkey RESTRICT;
 
 EXECUTE foo;  -- fail
+
+/*
+ * Corner cases of PostgreSQL optimizer:
+ *
+ * Correlations between columns aren't found by DBMS.
+ * Selectivities multiplication of many columns increases total selectivity
+ * error. If such non-true selectivity is so small, that rows estimation
+ * give us absolute minimum (1) then the optimizer can't choose between different
+ * indexes and uses first from the index list (last created).
+ */
+\set scale 100000
+
+CREATE TABLE t AS (
+    SELECT  c1 AS c1, -- selectivity(c1)*selectivity(c2)*nrows <= 1
+            c1 AS c2,
+			-- Create two columns with different selectivity.
+            (c1 % 2) AS c3, -- missing from a good index.
+            (c1 % 4) AS c4 -- missing from a bad index.
+    FROM generate_series(1,:scale) AS c1
+);
+UPDATE t SET c1=1,c2=1,c3=1,c4=2 WHERE c1<:scale/1000;
+
+CREATE INDEX bad ON t (c1,c2,c3);
+CREATE INDEX good ON t (c1,c2,c4);
+ANALYZE t; -- update stat on the indexes.
+
+EXPLAIN (COSTS OFF) SELECT * FROM t WHERE c1=1 AND c2=1 AND c3=1 AND c4=1;
+
+-- Set the bad index to the first position in the index list.
+DROP INDEX bad;
+CREATE INDEX bad ON t (c1,c2,c3);
+ANALYZE t;
+
+EXPLAIN (COSTS OFF) SELECT * FROM t WHERE c1=1 AND c2=1 AND c3=1 AND c4=1;
+
+DROP TABLE t CASCADE;

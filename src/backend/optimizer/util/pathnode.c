@@ -455,6 +455,48 @@ add_path(RelOptInfo *parent_rel, Path *new_path)
 											 STD_FUZZ_FACTOR);
 
 		/*
+		 * Apply some heuristics on index paths.
+		 */
+		if (IsA(new_path, IndexPath) && IsA(old_path, IndexPath))
+		{
+			IndexPath *inp = (IndexPath *) new_path;
+			IndexPath *iop = (IndexPath *) old_path;
+
+			if (new_path->rows <= 1.0 && old_path->rows <= 1.0)
+			{
+				/*
+				 * When both paths are predicted to produce only one tuple,
+				 * the optimiser should prefer choosing a unique index scan
+				 * in all cases.
+				 */
+				if (inp->indexinfo->unique && !iop->indexinfo->unique)
+					costcmp = COSTS_BETTER1;
+				else if (!inp->indexinfo->unique && iop->indexinfo->unique)
+					costcmp = COSTS_BETTER2;
+				else if (costcmp != COSTS_DIFFERENT)
+					/*
+					 * If the optimiser doesn't have an obviously stable choice
+					 * of unique index, increase the chance of avoiding mistakes
+					 * by choosing an index with smaller selectivity.
+					 * This option makes decision more conservative and looks
+					 * debatable.
+					 */
+					costcmp = (inp->indexselectivity < iop->indexselectivity) ?
+												COSTS_BETTER1 : COSTS_BETTER2;
+			}
+			else if (costcmp == COSTS_EQUAL)
+				/*
+				 * The optimizer can't differ the value of two index paths.
+				 * To avoid making a decision that is based on only an index
+				 * order in the list, use some rational strategy based on
+				 * selectivity: prefer touching fewer tuples on the disk to
+				 * filtering them after.
+				 */
+				costcmp = (inp->indexselectivity < iop->indexselectivity) ?
+												COSTS_BETTER1 : COSTS_BETTER2;
+		}
+
+		/*
 		 * If the two paths compare differently for startup and total cost,
 		 * then we want to keep both, and we can skip comparing pathkeys and
 		 * required_outer rels.  If they compare the same, proceed with the
