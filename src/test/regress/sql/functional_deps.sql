@@ -208,3 +208,35 @@ EXECUTE foo;
 ALTER TABLE articles DROP CONSTRAINT articles_pkey RESTRICT;
 
 EXECUTE foo;  -- fail
+
+/*
+ * Corner case of the PostgreSQL optimizer:
+ *
+ * ANDed clauses selectivity multiplication increases total selectivity error.
+ * If such non-true selectivity is so tiny that row estimation predicts the
+ * absolute minimum number of tuples (1), the optimizer can't choose between
+ * different indexes and picks a first from the index list (last created).
+ */
+
+CREATE TABLE t AS (  -- selectivity(c1)*selectivity(c2)*nrows <= 1
+    SELECT  gs AS c1,
+            gs AS c2,
+            (gs % 10) AS c3, -- not in the good index.
+            (gs % 100) AS c4 -- not in the bad index.
+    FROM generate_series(1,1000) AS gs
+);
+
+CREATE INDEX bad ON t (c1,c2,c3);
+CREATE INDEX good ON t (c1,c2,c4);
+ANALYZE t;
+
+EXPLAIN (COSTS OFF) SELECT * FROM t WHERE c1=1 AND c2=1 AND c3=1 AND c4=1;
+
+-- Hack: set the bad index to the first position in the index list.
+DROP INDEX bad;
+CREATE INDEX bad ON t (c1,c2,c3);
+ANALYZE t;
+
+EXPLAIN (COSTS OFF) SELECT * FROM t WHERE c1=1 AND c2=1 AND c3=1 AND c4=1;
+
+DROP TABLE t CASCADE;
