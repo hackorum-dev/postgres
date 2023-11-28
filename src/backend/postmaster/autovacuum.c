@@ -1489,6 +1489,9 @@ AutoVacWorkerMain(const void *startup_data, size_t startup_data_len)
 		/* Report the error to the server log */
 		EmitErrorReport();
 
+		/* Make sure all locks are released so assertions don't hit in at-exit callbacks */
+		LWLockReleaseAll();
+
 		/*
 		 * We can now go away.  Note that because we called InitProcess, a
 		 * callback was registered to do ProcKill, which will clean up
