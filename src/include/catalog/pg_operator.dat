@@ -575,7 +575,7 @@
 { oid => '557', descr => 'subtract',
   oprname => '-', oprleft => 'int4', oprright => 'int2', oprresult => 'int4',
   oprcode => 'int42mi' },
-{ oid => '558', descr => 'negate',
+{ oid => '558', oid_symbol => 'Int4NegOperator', descr => 'negate',
   oprname => '-', oprkind => 'l', oprleft => '0', oprright => 'int4',
   oprresult => 'int4', oprcode => 'int4um' },
 { oid => '559', descr => 'negate',
@@ -2064,7 +2064,7 @@
   oprjoin => 'icnlikejoinsel' },
 
 # NUMERIC type - OID's 1700-1799
-{ oid => '1751', descr => 'negate',
+{ oid => '1751', oid_symbol => 'NumericNegOperator', descr => 'negate',
   oprname => '-', oprkind => 'l', oprleft => '0', oprright => 'numeric',
   oprresult => 'numeric', oprcode => 'numeric_uminus' },
 { oid => '1752', descr => 'equal',
