@@ -67,6 +67,7 @@
 #include "utils/rls.h"
 #include "utils/ruleutils.h"
 #include "utils/snapmgr.h"
+#include "commands/explain.h"
 
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
@@ -266,6 +267,11 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	InitPlan(queryDesc, eflags);
 
 	MemoryContextSwitchTo(oldcontext);
+
+	/*
+	 * Track query descriptor for in-flight explains
+	 */
+	ExplainTrackQuery(queryDesc);
 }
 
 /* ----------------------------------------------------------------

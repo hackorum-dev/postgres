@@ -16,6 +16,7 @@
 #include "executor/executor.h"
 #include "lib/stringinfo.h"
 #include "parser/parse_node.h"
+#include "miscadmin.h"
 
 typedef enum ExplainFormat
 {
@@ -58,6 +59,7 @@ typedef struct ExplainState
 	List	   *deparse_cxt;	/* context list for deparsing expressions */
 	Bitmapset  *printed_subplans;	/* ids of SubPlans we've printed */
 	bool		hide_workers;	/* set if we find an invisible Gather */
+	bool        in_flight;      /* set if tracking an active statement */
 	/* state related to the current plan node */
 	ExplainWorkersState *workers_state; /* needed if parallel plan */
 } ExplainState;
@@ -125,5 +127,9 @@ extern void ExplainOpenGroup(const char *objtype, const char *labelname,
 							 bool labeled, ExplainState *es);
 extern void ExplainCloseGroup(const char *objtype, const char *labelname,
 							  bool labeled, ExplainState *es);
+
+extern void HandleLogExplainPlanInterrupt(void);
+extern void ProcessLogExplainPlanInterrupt(void);
+extern void ExplainTrackQuery(QueryDesc *queryDesc);
 
 #endif							/* EXPLAIN_H */

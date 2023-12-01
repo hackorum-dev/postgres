@@ -3457,6 +3457,9 @@ ProcessInterrupts(void)
 	if (LogMemoryContextPending)
 		ProcessLogMemoryContextInterrupt();
 
+	if (LogExplainPlanPending)
+		ProcessLogExplainPlanInterrupt();
+
 	if (ParallelApplyMessagePending)
 		HandleParallelApplyMessages();
 }

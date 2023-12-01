@@ -39,6 +39,7 @@
 #include "utils/tuplesort.h"
 #include "utils/typcache.h"
 #include "utils/xml.h"
+#include "storage/procarray.h"
 
 
 /* Hook for plugins to get control in ExplainOneQuery() */
@@ -46,6 +47,9 @@ ExplainOneQuery_hook_type ExplainOneQuery_hook = NULL;
 
 /* Hook for plugins to get control in explain_get_index_name() */
 explain_get_index_name_hook_type explain_get_index_name_hook = NULL;
+
+/* Pointer to the currently running query descriptor for in-flight explain logging. */
+static QueryDesc  *queryDescGlobal;
 
 
 /* OR-able flags for ExplainXMLTag() */
@@ -153,6 +157,7 @@ static void ExplainIndentText(ExplainState *es);
 static void ExplainJSONLineEnding(ExplainState *es);
 static void ExplainYAMLLineStarting(ExplainState *es);
 static void escape_yaml(StringInfo buf, const char *str);
+static void QueryDescReleaseFunc(void *);
 
 
 
@@ -325,6 +330,8 @@ NewExplainState(void)
 	es->costs = true;
 	/* Prepare output buffer. */
 	es->str = makeStringInfo();
+	/* An explain state is not in-flight by default */
+	es->in_flight = false;
 
 	return es;
 }
@@ -1195,6 +1202,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	const char *operation = NULL;
 	const char *custom_name = NULL;
 	ExplainWorkersState *save_workers_state = es->workers_state;
+	Instrumentation *local_instr = NULL;
 	int			save_indent = es->indent;
 	bool		haschildren;
 
@@ -1653,28 +1661,57 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	 * instrumentation results the user didn't ask for.  But we do the
 	 * InstrEndLoop call anyway, if possible, to reduce the number of cases
 	 * auto_explain has to contend with.
+	 *
+	 * For regular explains instrumentation clean up is called directly in
+	 * the main instrumentation objects. In-flight explains need to clone
+	 * instrumentation object and forcibly end the loop in nodes that may
+	 * be running.
 	 */
-	if (planstate->instrument)
-		InstrEndLoop(planstate->instrument);
+	if (planstate->instrument) {
+	 	/* In flight explain. Clone instrumentation */
+	 	if (es->in_flight) {
+			local_instr = palloc0(sizeof(*local_instr));
+			*local_instr = *planstate->instrument;
+			/* Force end loop even if node is in progress */
+			InstrEndLoopForce(local_instr);
+	 	}
+	 	/* Use main instrumentation */
+	 	else {
+	 		local_instr = planstate->instrument;
+	 		InstrEndLoop(local_instr);
+	 	}
+	}
 
 	if (es->analyze &&
-		planstate->instrument && planstate->instrument->nloops > 0)
+		local_instr && local_instr->nloops > 0)
 	{
-		double		nloops = planstate->instrument->nloops;
-		double		startup_ms = 1000.0 * planstate->instrument->startup / nloops;
-		double		total_ms = 1000.0 * planstate->instrument->total / nloops;
-		double		rows = planstate->instrument->ntuples / nloops;
+		double		nloops = local_instr->nloops;
+		double		startup_ms = 1000.0 * local_instr->startup / nloops;
+		double		total_ms = 1000.0 * local_instr->total / nloops;
+		double		rows = local_instr->ntuples / nloops;
 
 		if (es->format == EXPLAIN_FORMAT_TEXT)
 		{
 			if (es->timing)
-				appendStringInfo(es->str,
+				/* Node in progress */
+				if (!INSTR_TIME_IS_ZERO(planstate->instrument->starttime))
+					appendStringInfo(es->str,
+								 " (actual time=%.3f..%.3f rows=%.0f loops=%.0f) (in progress)",
+								 startup_ms, total_ms, rows, nloops);
+				else
+					appendStringInfo(es->str,
 								 " (actual time=%.3f..%.3f rows=%.0f loops=%.0f)",
 								 startup_ms, total_ms, rows, nloops);
 			else
-				appendStringInfo(es->str,
-								 " (actual rows=%.0f loops=%.0f)",
-								 rows, nloops);
+				/* Node in progress */
+				if (!INSTR_TIME_IS_ZERO(planstate->instrument->starttime))
+					appendStringInfo(es->str,
+									 " (actual rows=%.0f loops=%.0f) (in progress)",
+									 rows, nloops);
+				else
+					appendStringInfo(es->str,
+									 " (actual rows=%.0f loops=%.0f)",
+									 rows, nloops);
 		}
 		else
 		{
@@ -1810,7 +1847,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 										   planstate, es);
 			if (es->analyze)
 				ExplainPropertyFloat("Heap Fetches", NULL,
-									 planstate->instrument->ntuples2, 0, es);
+									 local_instr->ntuples2, 0, es);
 			break;
 		case T_BitmapIndexScan:
 			show_scan_qual(((BitmapIndexScan *) plan)->indexqualorig,
@@ -2105,10 +2142,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	}
 
 	/* Show buffer/WAL usage */
-	if (es->buffers && planstate->instrument)
-		show_buffer_usage(es, &planstate->instrument->bufusage, false);
-	if (es->wal && planstate->instrument)
-		show_wal_usage(es, &planstate->instrument->walusage);
+	if (es->buffers && local_instr)
+		show_buffer_usage(es, &local_instr->bufusage, false);
+	if (es->wal && local_instr)
+		show_wal_usage(es, &local_instr->walusage);
 
 	/* Prepare per-worker buffer/WAL usage */
 	if (es->workers_state && (es->buffers || es->wal) && es->verbose)
@@ -2247,6 +2284,11 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	ExplainCloseGroup("Plan",
 					  relationship ? NULL : "Plan",
 					  true, es);
+
+	/* In flight explain. Free cloned instrumentation object */
+	if (es->in_flight && local_instr) {
+		pfree(local_instr);
+	}
 }
 
 /*
@@ -4089,11 +4131,22 @@ show_modifytable_info(ModifyTableState *mtstate, List *ancestors,
 			double		total;
 			double		insert_path;
 			double		other_path;
+			Instrumentation *local_instr;
 
-			InstrEndLoop(outerPlanState(mtstate)->instrument);
+			/* In flight explain. Clone instrumentation */
+			if (es->in_flight) {
+				local_instr = palloc0(sizeof(*local_instr));
+				*local_instr = *outerPlanState(mtstate)->instrument;
+				/* Force end loop even if node is in progress */
+				InstrEndLoopForce(local_instr);
+			}
+			else {
+				local_instr = outerPlanState(mtstate)->instrument;
+				InstrEndLoop(local_instr);
+			}
 
 			/* count the number of source rows */
-			total = outerPlanState(mtstate)->instrument->ntuples;
+			total = local_instr->ntuples;
 			other_path = mtstate->ps.instrument->ntuples2;
 			insert_path = total - other_path;
 
@@ -4101,6 +4154,10 @@ show_modifytable_info(ModifyTableState *mtstate, List *ancestors,
 								 insert_path, 0, es);
 			ExplainPropertyFloat("Conflicting Tuples", NULL,
 								 other_path, 0, es);
+
+			/* In flight explain. Free cloned instrumentation object */
+			if (es->in_flight)
+				pfree(local_instr);
 		}
 	}
 	else if (node->operation == CMD_MERGE)
@@ -4113,11 +4170,22 @@ show_modifytable_info(ModifyTableState *mtstate, List *ancestors,
 			double		update_path;
 			double		delete_path;
 			double		skipped_path;
+			Instrumentation *local_instr;
 
-			InstrEndLoop(outerPlanState(mtstate)->instrument);
+			/* In flight explain. Clone instrumentation */
+			if (es->in_flight) {
+				local_instr = palloc0(sizeof(*local_instr));
+				*local_instr = *outerPlanState(mtstate)->instrument;
+				/* Force end loop even if node is in progress */
+				InstrEndLoopForce(local_instr);
+			}
+			else {
+				local_instr = outerPlanState(mtstate)->instrument;
+				InstrEndLoop(local_instr);
+			}
 
 			/* count the number of source rows */
-			total = outerPlanState(mtstate)->instrument->ntuples;
+			total = local_instr->ntuples;
 			insert_path = mtstate->mt_merge_inserted;
 			update_path = mtstate->mt_merge_updated;
 			delete_path = mtstate->mt_merge_deleted;
@@ -4148,6 +4216,10 @@ show_modifytable_info(ModifyTableState *mtstate, List *ancestors,
 				ExplainPropertyFloat("Tuples Deleted", NULL, delete_path, 0, es);
 				ExplainPropertyFloat("Tuples Skipped", NULL, skipped_path, 0, es);
 			}
+
+			/* In flight explain. Free cloned instrumentation object */
+			if (es->in_flight)
+				pfree(local_instr);
 		}
 	}
 
@@ -5081,4 +5153,182 @@ static void
 escape_yaml(StringInfo buf, const char *str)
 {
 	escape_json(buf, str);
+}
+
+/*
+ * pg_log_backend_explain_plan
+ *		Signal a backend or an auxiliary process to log its execution plan.
+ *
+ * By default, only superusers are allowed to signal to log the execution
+ * plans because allowing any users to issue this request at an unbounded
+ * rate would cause lots of log messages and which can lead to denial of
+ * service. Additional roles can be permitted with GRANT.
+ *
+ * On receipt of this signal, a backend or an auxiliary process sets the
+ * flag in the signal handler, which causes the next CHECK_FOR_INTERRUPTS()
+ * or process-specific interrupt handler to log the explain execution plan.
+ */
+Datum
+pg_log_backend_explain_plan(PG_FUNCTION_ARGS)
+{
+	int			pid = PG_GETARG_INT32(0);
+	PGPROC	   *proc = BackendPidGetProc(pid);
+
+	/* Check if target is a valid PG process. */
+	if (proc == NULL)
+	{
+		/*
+		 * This is just a warning so a loop-through-resultset will not abort
+		 * if one backend terminated on its own during the run.
+		 */
+		ereport(WARNING,
+				(errmsg("PID %d is not a PostgreSQL server process", pid)));
+		PG_RETURN_BOOL(false);
+	}
+
+	/* Only allow superusers to log explain execution plans. */
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be a superuser to log explain plans")));
+
+	if (SendProcSignal(pid, PROCSIG_LOG_EXPLAIN_PLAN, proc->backendId) < 0)
+	{
+		/* Again, just a warning to allow loops */
+		ereport(WARNING,
+				(errmsg("could not send signal to process %d: %m", pid)));
+		PG_RETURN_BOOL(false);
+	}
+
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * HandleLogExplainPlanInterrupt
+ *		Handle receipt of an interrupt indicating logging of explain
+ *		execution plan.
+ *
+ * All the actual work is deferred to ProcessLogExplainPlanInterrupt(),
+ * because we cannot safely emit a log message inside the signal handler.
+ */
+void
+HandleLogExplainPlanInterrupt(void)
+{
+	InterruptPending = true;
+	LogExplainPlanPending = true;
+	/* latch will be set by procsignal_sigusr1_handler */
+}
+
+/*
+ * ProcessLogExplainPlanInterrupt
+ * 		Perform logging of explain execution plan of this backend process.
+ *
+ * Any backend that participates in ProcSignal signaling must arrange
+ * to call this function if we see LogExplainPlanPending set.
+ * It is called from CHECK_FOR_INTERRUPTS(), which is enough because
+ * the target process for logging of explain plans is a backend.
+ */
+void
+ProcessLogExplainPlanInterrupt(void)
+{
+	ExplainState *es;
+	/* Signal is consumed */
+	LogExplainPlanPending = false;
+
+	/* Produce a plan only if query isn't finished yet */
+	if (queryDescGlobal &&
+		queryDescGlobal->planstate &&
+		!queryDescGlobal->planstate->state->es_finished)
+	{
+		QueryDesc *currentQueryDesc = queryDescGlobal;
+
+		es = NewExplainState();
+		es->in_flight = true;
+		es->analyze = currentQueryDesc->instrument_options;
+		es->buffers = (currentQueryDesc->instrument_options &
+			INSTRUMENT_BUFFERS) != 0;
+		es->wal = (currentQueryDesc->instrument_options &
+			INSTRUMENT_WAL) != 0;
+		es->timing = (currentQueryDesc->instrument_options &
+			INSTRUMENT_TIMER) != 0;
+
+		/*
+		 * Customizable parameters. This could come from GUC variables
+		 * or parameters of pg_log_backend_explain_plan() function.
+		 */
+		es->summary = (es->analyze);
+		es->format = EXPLAIN_FORMAT_TEXT;
+		es->verbose = false;
+		es->settings = true;
+
+		ExplainBeginOutput(es);
+		ExplainQueryText(es, currentQueryDesc);
+		ExplainPrintPlan(es, currentQueryDesc);
+		ExplainEndOutput(es);
+
+		/*
+		 * Use LOG_SERVER_ONLY to prevent this message from being sent
+		 * to the connected client.
+		 */
+		ereport(LOG_SERVER_ONLY,
+			(errhidestmt(true),
+			 errhidecontext(true),
+			 errmsg("logging explain plan of PID %d\n%s",
+			 		MyProcPid, es->str->data)));
+
+		/*
+		 * Free local explain state before exiting as this function
+		 * may be called multiple times in the same memory context.
+		 */
+		pfree(es->str);
+		pfree(es);
+	}
+	else {
+		ereport(LOG_SERVER_ONLY,
+					(errhidestmt(true),
+					 errhidecontext(true),
+					 errmsg("PID %d not executing a statement with in-flight explain logging enabled",
+					 		MyProcPid)));
+	}
+}
+
+/*
+ * ExplainTrackQuery
+ * 		Enables in-flight explain logging for a query in the local backend.
+ *
+ * An in-flight explain logging is requested by another process via signal
+ * so we need to keep track of the target query descriptor in a global pointer.
+ *
+ * This pointer needs to be properly cleared when the query descriptor is
+ * gone, which is achieved with the help of a memory context callback configured
+ * in the same memory context where the query descriptor was created. This
+ * strategy allows clearing the pointer even when the query gets cancelled.
+ */
+void
+ExplainTrackQuery(QueryDesc *queryDesc)
+{
+	/*
+	 * Don't track a query descriptor when there is another tracking
+	 * in progress.
+	 */
+	if (queryDescGlobal == NULL) {
+		MemoryContextCallback *queryDescReleaseCallback;
+		queryDescReleaseCallback = (MemoryContextCallback *)
+			palloc0(sizeof(MemoryContextCallback));
+		queryDescReleaseCallback->func = QueryDescReleaseFunc;
+		queryDescReleaseCallback->arg = NULL;
+		MemoryContextRegisterResetCallback(CurrentMemoryContext,
+										   queryDescReleaseCallback);
+
+		queryDescGlobal = queryDesc;
+	}
+}
+
+/*
+ * QueryDescReleaseFunc
+ * 		Memory context release callback function to clear the global pointer.
+ */
+static void
+QueryDescReleaseFunc(void *) {
+	queryDescGlobal = NULL;
 }
