@@ -1004,7 +1004,17 @@ do
 
       <row>
        <entry><type>boolean</type></entry>
-       <entry><type>bool</type><footnote><para>declared in <filename>ecpglib.h</filename> if not native</para></footnote></entry>
+       <entry><type>bool</type>
+        <footnote>
+         <para>
+           Range of bool is true/false only.
+           There is no need to include any header like stdbool.h for type and
+           literals because they are defined by ECPG and ECPG internally
+           includes a appropriate C language standard header or deifnes them
+           if there is no such header.
+         </para>
+        </footnote>
+       </entry>
       </row>
 
       <row>
