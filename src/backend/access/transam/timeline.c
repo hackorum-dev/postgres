@@ -307,7 +307,7 @@ writeTimeLineHistory(TimeLineID newTLI, TimeLineID parentTLI,
 	char		path[MAXPGPATH];
 	char		tmppath[MAXPGPATH];
 	char		histfname[MAXFNAMELEN];
-	char		buffer[BLCKSZ];
+	PGAlignedBlock buffer;
 	int			srcfd;
 	int			fd;
 	int			nbytes;
@@ -354,7 +354,7 @@ writeTimeLineHistory(TimeLineID newTLI, TimeLineID parentTLI,
 		{
 			errno = 0;
 			pgstat_report_wait_start(WAIT_EVENT_TIMELINE_HISTORY_READ);
-			nbytes = (int) read(srcfd, buffer, sizeof(buffer));
+			nbytes = (int) read(srcfd, buffer.data, sizeof(buffer));
 			pgstat_report_wait_end();
 			if (nbytes < 0 || errno != 0)
 				ereport(ERROR,
@@ -364,7 +364,7 @@ writeTimeLineHistory(TimeLineID newTLI, TimeLineID parentTLI,
 				break;
 			errno = 0;
 			pgstat_report_wait_start(WAIT_EVENT_TIMELINE_HISTORY_WRITE);
-			if ((int) write(fd, buffer, nbytes) != nbytes)
+			if ((int) write(fd, buffer.data, nbytes) != nbytes)
 			{
 				int			save_errno = errno;
 
@@ -398,17 +398,17 @@ writeTimeLineHistory(TimeLineID newTLI, TimeLineID parentTLI,
 	 * If we did have a parent file, insert an extra newline just in case the
 	 * parent file failed to end with one.
 	 */
-	snprintf(buffer, sizeof(buffer),
+	snprintf(buffer.data, sizeof(buffer),
 			 "%s%u\t%X/%X\t%s\n",
 			 (srcfd < 0) ? "" : "\n",
 			 parentTLI,
 			 LSN_FORMAT_ARGS(switchpoint),
 			 reason);
 
-	nbytes = strlen(buffer);
+	nbytes = strlen(buffer.data);
 	errno = 0;
 	pgstat_report_wait_start(WAIT_EVENT_TIMELINE_HISTORY_WRITE);
-	if ((int) write(fd, buffer, nbytes) != nbytes)
+	if ((int) write(fd, buffer.data, nbytes) != nbytes)
 	{
 		int			save_errno = errno;
 

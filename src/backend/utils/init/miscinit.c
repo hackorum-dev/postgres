@@ -1508,8 +1508,8 @@ AddToDataDirLockFile(int target_line, const char *str)
 	int			lineno;
 	char	   *srcptr;
 	char	   *destptr;
-	char		srcbuffer[BLCKSZ];
-	char		destbuffer[BLCKSZ];
+	PGAlignedBlock srcbuffer;
+	PGAlignedBlock destbuffer;
 
 	fd = open(DIRECTORY_LOCK_FILE, O_RDWR | PG_BINARY, 0);
 	if (fd < 0)
@@ -1521,7 +1521,7 @@ AddToDataDirLockFile(int target_line, const char *str)
 		return;
 	}
 	pgstat_report_wait_start(WAIT_EVENT_LOCK_FILE_ADDTODATADIR_READ);
-	len = read(fd, srcbuffer, sizeof(srcbuffer) - 1);
+	len = read(fd, srcbuffer.data, sizeof(srcbuffer) - 1);
 	pgstat_report_wait_end();
 	if (len < 0)
 	{
@@ -1532,13 +1532,13 @@ AddToDataDirLockFile(int target_line, const char *str)
 		close(fd);
 		return;
 	}
-	srcbuffer[len] = '\0';
+	srcbuffer.data[len] = '\0';
 
 	/*
 	 * Advance over lines we are not supposed to rewrite, then copy them to
 	 * destbuffer.
 	 */
-	srcptr = srcbuffer;
+	srcptr = srcbuffer.data;
 	for (lineno = 1; lineno < target_line; lineno++)
 	{
 		char	   *eol = strchr(srcptr, '\n');
@@ -1547,8 +1547,8 @@ AddToDataDirLockFile(int target_line, const char *str)
 			break;				/* not enough lines in file yet */
 		srcptr = eol + 1;
 	}
-	memcpy(destbuffer, srcbuffer, srcptr - srcbuffer);
-	destptr = destbuffer + (srcptr - srcbuffer);
+	memcpy(destbuffer.data, srcbuffer.data, srcptr - srcbuffer.data);
+	destptr = destbuffer.data + (srcptr - srcbuffer.data);
 
 	/*
 	 * Fill in any missing lines before the target line, in case lines are
@@ -1556,14 +1556,14 @@ AddToDataDirLockFile(int target_line, const char *str)
 	 */
 	for (; lineno < target_line; lineno++)
 	{
-		if (destptr < destbuffer + sizeof(destbuffer))
+		if (destptr < destbuffer.data + sizeof(destbuffer))
 			*destptr++ = '\n';
 	}
 
 	/*
 	 * Write or rewrite the target line.
 	 */
-	snprintf(destptr, destbuffer + sizeof(destbuffer) - destptr, "%s\n", str);
+	snprintf(destptr, destbuffer.data + sizeof(destbuffer) - destptr, "%s\n", str);
 	destptr += strlen(destptr);
 
 	/*
@@ -1572,7 +1572,7 @@ AddToDataDirLockFile(int target_line, const char *str)
 	if ((srcptr = strchr(srcptr, '\n')) != NULL)
 	{
 		srcptr++;
-		snprintf(destptr, destbuffer + sizeof(destbuffer) - destptr, "%s",
+		snprintf(destptr, destbuffer.data + sizeof(destbuffer) - destptr, "%s",
 				 srcptr);
 	}
 
@@ -1580,10 +1580,10 @@ AddToDataDirLockFile(int target_line, const char *str)
 	 * And rewrite the data.  Since we write in a single kernel call, this
 	 * update should appear atomic to onlookers.
 	 */
-	len = strlen(destbuffer);
+	len = strlen(destbuffer.data);
 	errno = 0;
 	pgstat_report_wait_start(WAIT_EVENT_LOCK_FILE_ADDTODATADIR_WRITE);
-	if (pg_pwrite(fd, destbuffer, len, 0) != len)
+	if (pg_pwrite(fd, destbuffer.data, len, 0) != len)
 	{
 		pgstat_report_wait_end();
 		/* if write didn't set errno, assume problem is no disk space */
@@ -1633,7 +1633,7 @@ RecheckDataDirLockFile(void)
 	int			fd;
 	int			len;
 	long		file_pid;
-	char		buffer[BLCKSZ];
+	PGAlignedBlock buffer;
 
 	fd = open(DIRECTORY_LOCK_FILE, O_RDWR | PG_BINARY, 0);
 	if (fd < 0)
@@ -1663,7 +1663,7 @@ RecheckDataDirLockFile(void)
 		}
 	}
 	pgstat_report_wait_start(WAIT_EVENT_LOCK_FILE_RECHECKDATADIR_READ);
-	len = read(fd, buffer, sizeof(buffer) - 1);
+	len = read(fd, buffer.data, sizeof(buffer) - 1);
 	pgstat_report_wait_end();
 	if (len < 0)
 	{
@@ -1674,9 +1674,9 @@ RecheckDataDirLockFile(void)
 		close(fd);
 		return true;			/* treat read failure as nonfatal */
 	}
-	buffer[len] = '\0';
+	buffer.data[len] = '\0';
 	close(fd);
-	file_pid = atol(buffer);
+	file_pid = atol(buffer.data);
 	if (file_pid == getpid())
 		return true;			/* all is well */
 
