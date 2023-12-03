@@ -124,7 +124,11 @@ static xmlParserInputPtr xmlPgEntityLoader(const char *URL, const char *ID,
 										   xmlParserCtxtPtr ctxt);
 static void xml_errsave(Node *escontext, PgXmlErrorContext *errcxt,
 						int sqlcode, const char *msg);
+#if LIBXML_VERSION >= 21200
+static void xml_errorHandler(void *data, const xmlError *error);
+#else
 static void xml_errorHandler(void *data, xmlErrorPtr error);
+#endif
 static int	errdetail_for_xml_code(int code);
 static void chopStringInfoNewlines(StringInfo str);
 static void appendStringInfoLineSeparator(StringInfo str);
@@ -2023,8 +2027,11 @@ xml_errsave(Node *escontext, PgXmlErrorContext *errcxt,
 /*
  * Error handler for libxml errors and warnings
  */
-static void
-xml_errorHandler(void *data, xmlErrorPtr error)
+#if LIBXML_VERSION >= 21200
+static void xml_errorHandler(void *data, const xmlError *error)
+#else
+static void xml_errorHandler(void *data, xmlErrorPtr error)
+#endif
 {
 	PgXmlErrorContext *xmlerrcxt = (PgXmlErrorContext *) data;
 	xmlParserCtxtPtr ctxt = (xmlParserCtxtPtr) error->ctxt;
