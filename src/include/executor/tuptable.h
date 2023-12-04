@@ -18,6 +18,7 @@
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/tupdesc.h"
+#include "nodes/bitmapset.h"
 #include "storage/buf.h"
 
 /*----------
@@ -128,6 +129,8 @@ typedef struct TupleTableSlot
 	MemoryContext tts_mcxt;		/* slot itself is in this context */
 	ItemPointerData tts_tid;	/* stored tuple's tid */
 	Oid			tts_tableOid;	/* table oid of tuple */
+
+	Bitmapset  *detoast_attrs;  /* Index start from 0. */
 } TupleTableSlot;
 
 /* routines for a TupleTableSlot implementation */

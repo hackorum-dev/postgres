@@ -62,6 +62,7 @@
 #include "access/tupdesc_details.h"
 #include "catalog/pg_type.h"
 #include "funcapi.h"
+#include "jit/jit.h"
 #include "nodes/nodeFuncs.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
@@ -1143,6 +1144,7 @@ MakeTupleTableSlot(TupleDesc tupleDesc,
 
 	if (tupleDesc != NULL)
 	{
+		int		i;
 		slot->tts_values = (Datum *)
 			(((char *) slot)
 			 + MAXALIGN(basesz));
@@ -1152,6 +1154,20 @@ MakeTupleTableSlot(TupleDesc tupleDesc,
 			 + MAXALIGN(tupleDesc->natts * sizeof(Datum)));
 
 		PinTupleDesc(tupleDesc);
+
+		/* not ready jit so far, it's OK for a poc patch. */
+		if (!jit_enabled)
+		{
+			for (i = 0; i < tupleDesc->natts; i++)
+			{
+				Form_pg_attribute attr = TupleDescAttr(tupleDesc, i);
+				if (attr->attlen == -1 && attr->attstorage != TYPSTORAGE_PLAIN)
+				{
+					slot->detoast_attrs = bms_add_member(slot->detoast_attrs,
+														 attr->attnum - 1);
+				}
+			}
+		}
 	}
 
 	/*
