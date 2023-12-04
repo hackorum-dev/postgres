@@ -2137,6 +2137,36 @@ cost_incremental_sort(Path *path,
 										   NULL, NULL);
 
 	group_tuples = input_tuples / input_groups;
+
+	/*
+	 * Do we have a useful LIMIT?
+	 *
+	 * Unlike the full sort, which must read all the input tuples regardless
+	 * the limit, the incremental sort only needs to read the groups
+	 * containing at least limit_tuples tuples in total. In other words, the
+	 * number of input tuples is almost identical to the number of output
+	 * tuples. Therefore we apply the limit to the *input* set.
+	 */
+	if (limit_tuples > 0 && limit_tuples < input_tuples)
+	{
+		double	input_tuples_orig = input_tuples;
+
+		/*
+		 * We may need fewer groups, but there must be enough to accommodate
+		 * limit_tuples.
+		 */
+		input_groups = limit_tuples / group_tuples;
+		input_groups = ceil(input_groups);
+
+		/* Fewer input groups implies fewer input tuples. */
+		input_tuples = input_groups * group_tuples;
+		/* XXX Should we instead apply ceil() to group_tuples above? */
+		input_tuples = ceil(input_tuples);
+
+		/* Also adjust input_run_cost. */
+		input_run_cost /= input_tuples_orig / input_tuples;
+	}
+
 	group_input_run_cost = input_run_cost / input_groups;
 
 	/*
@@ -2145,7 +2175,7 @@ cost_incremental_sort(Path *path,
 	 */
 	cost_tuplesort(&group_startup_cost, &group_run_cost,
 				   group_tuples, width, comparison_cost, sort_mem,
-				   limit_tuples);
+				   -1);
 
 	/*
 	 * Startup cost of incremental sort is the startup cost of its first group
