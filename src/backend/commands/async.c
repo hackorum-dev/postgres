@@ -2408,14 +2408,14 @@ SignalBackends(void)
 }
 
 /*
- * AtAbort_Notify
+ * AtCleanup_Notify
  *
- *	This is called at transaction abort.
+ *	This is called at transaction cleanup.
  *
  *	Revert any staged listen/unlisten changes and clean up transaction state.
  */
 void
-AtAbort_Notify(void)
+AtCleanup_Notify(void)
 {
 	/*
 	 * If we failed during asyncQueueReadAllNotifications(), clear our
