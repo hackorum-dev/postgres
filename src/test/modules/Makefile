@@ -39,6 +39,7 @@ SUBDIRS = \
 		  test_lfind \
 		  test_lwlock_tranches \
 		  test_misc \
+		  test_notify_rollback \
 		  test_oat_hooks \
 		  test_parser \
 		  test_pg_dump \
