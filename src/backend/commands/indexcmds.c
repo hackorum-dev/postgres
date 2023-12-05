@@ -448,6 +448,7 @@ WaitForOlderSnapshots(TransactionId limitXmin, bool progress)
 	int			n_old_snapshots;
 	int			i;
 	VirtualTransactionId *old_snapshots;
+	TransactionId replication_slot_xmin = InvalidTransactionId;
 
 	old_snapshots = GetCurrentVirtualXIDs(limitXmin, true, false,
 										  PROC_IS_AUTOVACUUM | PROC_IN_VACUUM
@@ -507,6 +508,28 @@ WaitForOlderSnapshots(TransactionId limitXmin, bool progress)
 		if (progress)
 			pgstat_progress_update_param(PROGRESS_WAITFOR_DONE, i + 1);
 	}
+
+	do
+	{
+		if (!TransactionIdIsNormal(limitXmin))
+			break;
+
+		/*
+		 * Wait for the oldest replication slot xmin to exceed limitXmin to prevent
+		 * standby being unable to access old version data through the newly built
+		 * index.
+		 * It is necessary to wait only if replication_slot_xmin is "normal".
+		 * Since replication catalog xmin doesn't take into account snapshots for
+		 * backend connections, it doesn't need to be considered
+		 */
+		CHECK_FOR_INTERRUPTS();
+		ProcArrayGetReplicationSlotXmin(&replication_slot_xmin, NULL);
+		if (!TransactionIdIsNormal(replication_slot_xmin))
+			break;
+		if (!NormalTransactionIdPrecedes(replication_slot_xmin, limitXmin))
+			break;
+		pg_usleep(1000000);
+	} while (true);
 }
 
 
