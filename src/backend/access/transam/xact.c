@@ -2985,7 +2985,6 @@ AbortTransaction(void)
 	AtAbort_Portals();
 	smgrDoPendingSyncs(false, is_parallel_worker);
 	AtEOXact_LargeObject(false);
-	AtAbort_Notify();
 	AtEOXact_RelationMap(false, is_parallel_worker);
 	AtAbort_Twophase();
 
@@ -3098,6 +3097,7 @@ CleanupTransaction(void)
 	TopTransactionResourceOwner = NULL;
 
 	AtCleanup_Memory();			/* and transaction memory */
+	AtCleanup_Notify();
 
 	s->fullTransactionId = InvalidFullTransactionId;
 	s->subTransactionId = InvalidSubTransactionId;
