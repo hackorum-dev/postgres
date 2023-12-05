@@ -2408,16 +2408,16 @@ SignalBackends(void)
 }
 
 /*
- * AtAbort_Notify
+ * AtCleanup_Notify
  *
- *	This is called at transaction abort.
+ *	This is called at transaction cleanup.
  *
  *	Revert any staged listen/unlisten changes and clean up transaction state.
  *	This only does anything if we abort after PreCommit_Notify has staged
  *	some entries.
  */
 void
-AtAbort_Notify(void)
+AtCleanup_Notify(void)
 {
 	/* Revert staged listen/unlisten changes */
 	ApplyPendingListenActions(false);
