@@ -33,6 +33,14 @@ endif
 
 include $(top_srcdir)/src/backend/common.mk
 
+# Hacky rule to allow clang to generate tas.bc. One reasonably would think
+# that we could just compile tas.s, but on solaris tas.s can't be parsed with
+# clang. It's not interesting from a JIT perspective anyway, so just generate
+# an empty file.
+
+tas.bc: tas.s
+	echo | $(COMPILE.c.bc) -xc -o $@ -
+
 tas.o: tas.s
 ifeq ($(SUN_STUDIO_CC), yes)
 # preprocess assembler file with cpp
