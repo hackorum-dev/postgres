@@ -86,17 +86,28 @@ typedef enum vartag_external
 	VARTAG_INDIRECT = 1,
 	VARTAG_EXPANDED_RO = 2,
 	VARTAG_EXPANDED_RW = 3,
-	VARTAG_ONDISK = 18
+	VARTAG_ONDISK = 18,
+	VARTAG_CUSTOM = 127
 } vartag_external;
+
+typedef enum ToastPtrSizeType
+{
+	TPTR_DATUM_SIZE,
+	TPTR_RAW_SIZE,
+	TPTR_STORAGE_SIZE
+} ToastPtrSizeType;
+
+extern Size toast_custom_datum_size(const void *ptr, ToastPtrSizeType sz_type);
 
 /* this test relies on the specific tag values above */
 #define VARTAG_IS_EXPANDED(tag) \
 	(((tag) & ~1) == VARTAG_EXPANDED_RO)
 
-#define VARTAG_SIZE(tag) \
+#define VARTAG_SIZE(tag, ptr) \
 	((tag) == VARTAG_INDIRECT ? sizeof(varatt_indirect) : \
 	 VARTAG_IS_EXPANDED(tag) ? sizeof(varatt_expanded) : \
 	 (tag) == VARTAG_ONDISK ? sizeof(varatt_external) : \
+	 (tag) == VARTAG_CUSTOM ? toast_custom_datum_size((const void *)(ptr), TPTR_DATUM_SIZE) : \
 	 (AssertMacro(false), 0))
 
 /*
@@ -253,6 +264,7 @@ typedef struct
 #define VARHDRSZ_EXTERNAL		offsetof(varattrib_1b_e, va_data)
 #define VARHDRSZ_COMPRESSED		offsetof(varattrib_4b, va_compressed.va_data)
 #define VARHDRSZ_SHORT			offsetof(varattrib_1b, va_data)
+#define VARHDRSZ_CUSTOM			offsetof(varattrib_1b_e, va_data)
 
 #define VARATT_SHORT_MAX		0x7F
 #define VARATT_CAN_MAKE_SHORT(PTR) \
@@ -282,7 +294,7 @@ typedef struct
 #define VARDATA_SHORT(PTR)					VARDATA_1B(PTR)
 
 #define VARTAG_EXTERNAL(PTR)				VARTAG_1B_E(PTR)
-#define VARSIZE_EXTERNAL(PTR)				(VARHDRSZ_EXTERNAL + VARTAG_SIZE(VARTAG_EXTERNAL(PTR)))
+#define VARSIZE_EXTERNAL(PTR)				(VARHDRSZ_EXTERNAL + VARTAG_SIZE(VARTAG_EXTERNAL(PTR), (const void *)(PTR)))
 #define VARDATA_EXTERNAL(PTR)				VARDATA_1B_E(PTR)
 
 #define VARATT_IS_COMPRESSED(PTR)			VARATT_IS_4B_C(PTR)
@@ -301,6 +313,9 @@ typedef struct
 	(VARATT_IS_EXTERNAL(PTR) && !VARTAG_IS_EXPANDED(VARTAG_EXTERNAL(PTR)))
 #define VARATT_IS_SHORT(PTR)				VARATT_IS_1B(PTR)
 #define VARATT_IS_EXTENDED(PTR)				(!VARATT_IS_4B_U(PTR))
+
+#define VARATT_IS_CUSTOM(PTR) \
+	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_CUSTOM)
 
 #define SET_VARSIZE(PTR, len)				SET_VARSIZE_4B(PTR, len)
 #define SET_VARSIZE_SHORT(PTR, len)			SET_VARSIZE_1B(PTR, len)

@@ -55,6 +55,7 @@
  *	  src/backend/access/brin/brin_minmax_multi.c
  */
 #include "postgres.h"
+#include "varatt_custom.h"
 
 /* needed for PGSQL_AF_INET */
 #include <sys/socket.h>
