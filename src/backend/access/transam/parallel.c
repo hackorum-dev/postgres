@@ -1430,13 +1430,18 @@ ParallelWorkerMain(Datum main_arg)
 	 * variables.
 	 */
 	libraryspace = shm_toc_lookup(toc, PARALLEL_KEY_LIBRARY, false);
-	StartTransactionCommand();
 	RestoreLibraryState(libraryspace);
 
-	/* Restore GUC values from launching backend. */
+	/*
+	 * Restore GUC values from launching backend.  We want to do this without
+	 * starting a transaction as some GUC check hook functions require catalog
+	 * access.  It may be unsafe to access the catalogs as, for example,
+	 * reading buffer to load a catalog page may require writing dirty buffers
+	 * and we don't want to do that until I/O related GUCs such as fsync are
+	 * correctly set.
+	 */
 	gucspace = shm_toc_lookup(toc, PARALLEL_KEY_GUC, false);
 	RestoreGUCState(gucspace);
-	CommitTransactionCommand();
 
 	/* Crank up a transaction state appropriate to a parallel worker. */
 	tstatespace = shm_toc_lookup(toc, PARALLEL_KEY_TRANSACTION_STATE, false);

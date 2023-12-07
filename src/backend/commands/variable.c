@@ -814,6 +814,14 @@ check_session_authorization(char **newval, void **extra, GucSource source)
 	if (!IsTransactionState())
 	{
 		/*
+		 * If we're a parallel worker being started up, there's no need to
+		 * verify the role exists.  We'll end up running the same snapshot as
+		 * the leader process anyway so the role must exist.
+		 */
+		if (InitializingParallelWorker)
+			return true;
+
+		/*
 		 * Can't do catalog lookups, so fail.  The result of this is that
 		 * session_authorization cannot be set in postgresql.conf, which seems
 		 * like a good thing anyway, so we don't work hard to avoid it.
