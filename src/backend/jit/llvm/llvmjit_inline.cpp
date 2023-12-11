@@ -34,9 +34,7 @@ extern "C"
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "common/string.h"
 #include "miscadmin.h"
-#include "storage/fd.h"
 }
 
 #include <llvm-c/Core.h>
