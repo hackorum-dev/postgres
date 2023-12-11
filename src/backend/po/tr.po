@@ -25187,6 +25187,10 @@ msgstr "GIN indeksi için olan bekleme (pending) listesinin azami boyutunu ayarl
 msgid "TCP user timeout."
 msgstr ""
 
+#: utils/misc/guc.c:3432
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "Maksimum özerk oturum ömrü. Dakikalar içinde. varsayılan olarak 300."
+
 #: utils/misc/guc.c:3208
 msgid "Sets the planner's estimate of the cost of a sequentially fetched disk page."
 msgstr "Dıskten sırayla sayfa okuması için harcanacak işlem zamanı tahminini belirtiyor."

@@ -38,6 +38,7 @@
 #include "plpgsql.h"
 #include "storage/proc.h"
 #include "tcop/cmdtag.h"
+#include "tcop/autonomous.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "tcop/utility.h"
@@ -259,6 +260,10 @@ static HTAB *shared_cast_hash = NULL;
 /************************************************************
  * Local function forward declarations
  ************************************************************/
+static void build_symbol_table(PLpgSQL_execstate *estate,
+					   PLpgSQL_nsitem *ns_start, int *ret_nitems,
+					   const char ***ret_names, Oid **ret_types,
+					   Datum **ret_values, bool **ret_isnull);
 static void coerce_function_result_tuple(PLpgSQL_execstate *estate,
 										 TupleDesc tupdesc);
 static void plpgsql_exec_error_callback(void *arg);
@@ -1652,6 +1657,26 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 	volatile int rc = -1;
 	int			i;
 
+	/* Autonomous transactions */
+	{
+		AutonomousStackNode* node = NULL;
+		MemoryContext oldctx = MemoryContextSwitchTo(TopMemoryContext);
+
+		/* Store PLpgSQL_stmt_block to stack */
+		node = palloc(sizeof(AutonomousStackNode));
+		node->block = (void*)block;
+		node->session = NULL;
+		if (block->autonomous) {
+			estate->autonomous_session = AutonomousSessionGet();
+			if(!estate->autonomous_session) {
+				elog(ERROR, "No free autonomous workers, %s can't be executed", estate->func->fn_signature);
+			}
+			node->session = estate->autonomous_session;
+		}
+		slist_push_head(&AutonomousStack, &node->node);
+		MemoryContextSwitchTo(oldctx);
+	}
+
 	/*
 	 * First initialize all variables declared in this block
 	 */
@@ -1830,6 +1855,9 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 			ErrorData  *edata;
 			ListCell   *e;
 
+			/* Autonomous transactions */
+			estate->autonomous_session = AutonomousSessionPopStackSessionException(block);
+
 			estate->err_text = gettext_noop("during exception cleanup");
 
 			/* Save error info in our stmt_mcontext */
@@ -1943,6 +1971,9 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 	}
 
 	estate->err_text = NULL;
+
+	estate->autonomous_session = AutonomousSessionPopStackSession(block->autonomous);
+
 
 	/*
 	 * Handle the return code.  This is intentionally different from
@@ -2168,6 +2199,24 @@ exec_stmt_perform(PLpgSQL_execstate *estate, PLpgSQL_stmt_perform *stmt)
 {
 	PLpgSQL_expr *expr = stmt->expr;
 
+	if (estate->autonomous_session)
+	{
+		int		nparams = 0;
+		const char **param_names = NULL;
+		Oid	   *param_types = NULL;
+		AutonomousPreparedStatement *astmt;
+		Datum  *values;
+		bool   *nulls;
+		AutonomousResult *aresult;
+
+		build_symbol_table(estate, expr->ns, &nparams, &param_names, &param_types, &values, &nulls);
+		astmt = AutonomousSessionPrepare(estate->autonomous_session, expr->query, nparams, param_types, param_names);
+
+		aresult = AutonomousSessionExecutePrepared(astmt, nparams, values, nulls);
+		exec_set_found(estate, (list_length(aresult->tuples) != 0));
+		return PLPGSQL_RC_OK;
+	}
+
 	(void) exec_run_select(estate, expr, 0, NULL);
 	exec_set_found(estate, (estate->eval_processed != 0));
 	exec_eval_cleanup(estate);
@@ -2189,6 +2238,14 @@ exec_stmt_call(PLpgSQL_execstate *estate, PLpgSQL_stmt_call *stmt)
 	ParamListInfo paramLI;
 	SPIExecuteOptions options;
 	int			rc;
+
+	if (estate->autonomous_session)
+	{
+		ereport(ERROR,
+			(errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION),
+			 errmsg("call of procedures is forbidden currently in autonomous sessions, %s", stmt->expr->query)));
+	}
+
 
 	/*
 	 * Make a plan if we don't have one already.
@@ -4019,6 +4076,8 @@ plpgsql_estate_setup(PLpgSQL_execstate *estate,
 	}
 	estate->rsi = rsi;
 
+	estate->autonomous_session = NULL;
+
 	estate->found_varno = func->found_varno;
 	estate->ndatums = func->ndatums;
 	estate->datums = NULL;
@@ -4203,6 +4262,72 @@ exec_prepare_plan(PLpgSQL_execstate *estate,
 }
 
 
+static
+void build_symbol_table(PLpgSQL_execstate *estate,
+					   PLpgSQL_nsitem *ns_start,
+					   int *ret_nitems,
+					   const char ***ret_names,
+					   Oid **ret_types,
+					   Datum **ret_values,
+					   bool **ret_isnull)
+{
+	PLpgSQL_nsitem *nsitem;
+	List *names = NIL;
+	List *itemnos = NIL;
+
+	ListCell *l_name, *l_itemno;
+	int i, nitems;
+	const char **names_vector;
+	Oid *types_vector;
+	Datum *values_vector;
+	bool *isnull_vector;
+
+	for (nsitem = ns_start;
+		 nsitem;
+		 nsitem = nsitem->prev)
+	{
+		if (nsitem->itemtype == PLPGSQL_NSTYPE_VAR)
+		{
+			String  *name;
+
+			if (strcmp(nsitem->name, "found") == 0)
+				continue;  // XXX
+			elog(LOG, "namespace item variable itemno %d, name %s",
+				 nsitem->itemno, nsitem->name);
+			name = makeString(nsitem->name);
+			if (!list_member(names, name))
+			{
+				names = lappend(names, name);
+				itemnos = lappend_oid(itemnos, nsitem->itemno);
+			}
+		}
+	}
+
+	nitems = list_length(names);
+	names_vector = palloc(nitems * sizeof(char *));
+	types_vector = palloc(nitems * sizeof(Oid));
+	values_vector = palloc(nitems * sizeof(Datum));
+	isnull_vector = palloc(nitems * sizeof(bool));
+	i = 0;
+	forboth(l_name, names, l_itemno, itemnos)
+	{
+		int itemno = lfirst_oid(l_itemno);
+		PLpgSQL_datum *datum = estate->datums[itemno];
+		PLpgSQL_var *var = (PLpgSQL_var *) datum;
+		names_vector[i] = pstrdup(strVal(lfirst(l_name)));
+		types_vector[i] = var->datatype->typoid;
+		values_vector[i] = var->value;
+		isnull_vector[i] = var->isnull;
+		++i;
+	}
+
+	*ret_nitems = nitems;
+	*ret_names = names_vector;
+	*ret_types = types_vector;
+	*ret_values = values_vector;
+	*ret_isnull = isnull_vector;
+}
+
 /* ----------
  * exec_stmt_execsql			Execute an SQL statement (possibly with INTO).
  *
@@ -4224,6 +4349,24 @@ exec_stmt_execsql(PLpgSQL_execstate *estate,
 		too_many_rows_level = ERROR;
 	else if (plpgsql_extra_warnings & PLPGSQL_XCHECK_TOOMANYROWS)
 		too_many_rows_level = WARNING;
+
+	if (estate->autonomous_session)
+	{
+		int		nparams = 0;
+		const char **param_names = NULL;
+		Oid	   *param_types = NULL;
+		AutonomousPreparedStatement *astmt;
+		Datum  *values;
+		bool   *nulls;
+		AutonomousResult *aresult;
+
+		build_symbol_table(estate, stmt->sqlstmt->ns, &nparams, &param_names, &param_types, &values, &nulls);
+		astmt = AutonomousSessionPrepare(estate->autonomous_session, stmt->sqlstmt->query, nparams, param_types, param_names);
+
+		aresult = AutonomousSessionExecutePrepared(astmt, nparams, values, nulls);
+		exec_set_found(estate, (list_length(aresult->tuples) != 0));
+		return PLPGSQL_RC_OK;
+	}
 
 	/*
 	 * On the first call for this statement generate the plan, and detect
@@ -4471,6 +4614,12 @@ exec_stmt_dynexecute(PLpgSQL_execstate *estate,
 	querystr = MemoryContextStrdup(stmt_mcontext, querystr);
 
 	exec_eval_cleanup(estate);
+
+	if (estate->autonomous_session)
+	{
+		AutonomousSessionExecute(estate->autonomous_session, querystr);
+		return PLPGSQL_RC_OK;
+	}
 
 	/*
 	 * Execute the query without preparing a saved plan.
@@ -4958,10 +5107,18 @@ exec_stmt_close(PLpgSQL_execstate *estate, PLpgSQL_stmt_close *stmt)
 static int
 exec_stmt_commit(PLpgSQL_execstate *estate, PLpgSQL_stmt_commit *stmt)
 {
-	if (stmt->chain)
-		SPI_commit_and_chain();
+	if (estate->autonomous_session)
+	{
+		AutonomousSessionExecute(estate->autonomous_session, "COMMIT");
+		return PLPGSQL_RC_OK;
+	}
 	else
-		SPI_commit();
+	{
+		if (stmt->chain)
+			SPI_commit_and_chain();
+		else
+			SPI_commit();
+	}
 
 	/*
 	 * We need to build new simple-expression infrastructure, since the old
@@ -4982,10 +5139,18 @@ exec_stmt_commit(PLpgSQL_execstate *estate, PLpgSQL_stmt_commit *stmt)
 static int
 exec_stmt_rollback(PLpgSQL_execstate *estate, PLpgSQL_stmt_rollback *stmt)
 {
-	if (stmt->chain)
-		SPI_rollback_and_chain();
+	if (estate->autonomous_session)
+	{
+		AutonomousSessionExecute(estate->autonomous_session, "ROLLBACK");
+		return PLPGSQL_RC_OK;
+	}
 	else
-		SPI_rollback();
+	{
+		if (stmt->chain)
+			SPI_rollback_and_chain();
+		else
+			SPI_rollback();
+	}
 
 	/*
 	 * We need to build new simple-expression infrastructure, since the old

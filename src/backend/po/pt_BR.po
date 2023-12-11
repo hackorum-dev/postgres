@@ -19828,6 +19828,10 @@ msgstr "Define o número máximo de buffers temporários utilizados por cada ses
 msgid "Sets the TCP port the server listens on."
 msgstr "Define a porta TCP que o servidor escutará."
 
+#: utils/misc/guc.c:1728
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "Vida útil máxima da sessão autônoma. Em minutos. 300 por padrão."
+
 #: utils/misc/guc.c:1737
 msgid "Sets the access permissions of the Unix-domain socket."
 msgstr "Define as permissões de acesso do soquete de domínio Unix."

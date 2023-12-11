@@ -18196,6 +18196,10 @@ msgstr "Melakukan set jumlah maksimum dari temporary buffer yang digunakan pada 
 msgid "Sets the TCP port the server listens on."
 msgstr "Melakukan set port TCP yang di-listen."
 
+#: utils/misc/guc.c:1674
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "Masa pakai maksimum sesi otonom. Dalam hitungan menit. 300 secara default."
+
 #: utils/misc/guc.c:1683
 msgid "Sets the access permissions of the Unix-domain socket."
 msgstr "Melakukan set pada hak akses dalam Unix-domain socket."

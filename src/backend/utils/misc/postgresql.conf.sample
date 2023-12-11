@@ -632,6 +632,10 @@
 #log_planner_stats = off
 #log_executor_stats = off
 
+#------------------------------------------------------------------------------
+# AUTONOMOUS TRANSACTIONS
+#------------------------------------------------------------------------------
+#autonomous_session_lifetime = 300min	# lifetime of autonomous session
 
 #------------------------------------------------------------------------------
 # AUTOVACUUM

@@ -24083,6 +24083,10 @@ msgstr "Ustawia maksymalną liczbę buforów tymczasowych używanych przez każd
 msgid "Sets the TCP port the server listens on."
 msgstr "Ustawia port TCP, na którym nasłuchuje serwer."
 
+#: utils/misc/guc.c:1877
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "Maksymalny czas trwania sesji autonomicznej. Za kilka minut. Domyślnie 300."
+
 #: utils/misc/guc.c:1886
 msgid "Sets the access permissions of the Unix-domain socket."
 msgstr "Ustawia uprawnienia dostępu gniazda domeny Uniksa."

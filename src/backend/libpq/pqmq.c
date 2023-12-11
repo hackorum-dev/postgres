@@ -45,6 +45,17 @@ static const PQcommMethods PqCommMqMethods = {
 	.putmessage_noblock = mq_putmessage_noblock
 };
 
+typedef struct PQcontext {
+	const PQcommMethods *PqCommMethods;
+	shm_mq_handle *pq_mq_handle;
+	CommandDest whereToSendOutput;
+	ProtocolVersion FrontendProtocol;
+	dsm_segment *seg;
+} PQcontext;
+static const PQcontext null_ctx = {.PqCommMethods = NULL, .pq_mq_handle = NULL, .whereToSendOutput = DestNone, .seg = NULL};
+/*same as null_ctx, impossible to assign null_ctx: error: initializer element is not a compile-time constant */
+static PQcontext prev_ctx = {.PqCommMethods = NULL, .pq_mq_handle = NULL, .whereToSendOutput = DestNone, .seg = NULL};
+
 /*
  * Arrange to redirect frontend/backend protocol messages to a shared-memory
  * message queue.
@@ -52,11 +63,28 @@ static const PQcommMethods PqCommMqMethods = {
 void
 pq_redirect_to_shm_mq(dsm_segment *seg, shm_mq_handle *mqh)
 {
+	prev_ctx.PqCommMethods = PqCommMethods;
+	prev_ctx.whereToSendOutput = whereToSendOutput;
+	prev_ctx.FrontendProtocol = FrontendProtocol;
+	prev_ctx.pq_mq_handle = pq_mq_handle;
+	prev_ctx.seg = seg;
+
 	PqCommMethods = &PqCommMqMethods;
 	pq_mq_handle = mqh;
 	whereToSendOutput = DestRemote;
 	FrontendProtocol = PG_PROTOCOL_LATEST;
 	on_dsm_detach(seg, pq_cleanup_redirect_to_shm_mq, (Datum) 0);
+}
+
+void
+pq_stop_redirect_to_shm_mq(void)
+{
+	cancel_on_dsm_detach(prev_ctx.seg, pq_cleanup_redirect_to_shm_mq, (Datum) 0);
+	PqCommMethods = prev_ctx.PqCommMethods;
+	whereToSendOutput = prev_ctx.whereToSendOutput;
+	FrontendProtocol = prev_ctx.FrontendProtocol;
+	pq_mq_handle = prev_ctx.pq_mq_handle;
+	prev_ctx = null_ctx;
 }
 
 /*

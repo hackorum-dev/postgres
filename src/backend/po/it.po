@@ -27349,6 +27349,10 @@ msgstr "Imposta la dimensione massima della lista di attesa per gli indici GIN."
 msgid "TCP user timeout."
 msgstr "Timeout utente TCP."
 
+#: utils/misc/guc.c:3600
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "Durata massima della sessione autonoma. In pochi minuti. 300 per impostazione predefinita."
+
 #: utils/misc/guc.c:3610
 msgid "The size of huge page that should be requested."
 msgstr "La dimensione della pagina enorme che dovrebbe essere richiesta."

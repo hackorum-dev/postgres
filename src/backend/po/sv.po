@@ -29075,6 +29075,10 @@ msgstr "Sätter maximal storlek på väntelistan för GIN-index."
 msgid "TCP user timeout."
 msgstr "Användartimeout för TCP."
 
+#: utils/misc/guc.c:3432
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "Maximal livslängd för autonom session. Om några minuter. 300 som standard."
+
 #: utils/misc/guc_tables.c:3442
 msgid "The size of huge page that should be requested."
 msgstr "Storleken på stora sidor skall hämtas."

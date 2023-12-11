@@ -30,6 +30,7 @@
 #include "storage/proc.h"
 #include "storage/procsignal.h"
 #include "storage/shmem.h"
+#include "tcop/autonomous.h"
 #include "tcop/tcopprot.h"
 #include "utils/ascii.h"
 #include "utils/memutils.h"
@@ -131,6 +132,9 @@ static const struct
 	},
 	{
 		"ParallelApplyWorkerMain", ParallelApplyWorkerMain
+	},
+	{
+		"AutonomousSessionMain", AutonomousSessionMain
 	},
 	{
 		"TablesyncWorkerMain", TablesyncWorkerMain

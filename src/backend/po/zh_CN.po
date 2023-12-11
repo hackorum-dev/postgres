@@ -25514,6 +25514,10 @@ msgstr "为GIN索引设置待处理列表的最大尺寸。"
 msgid "TCP user timeout."
 msgstr "TCP用户超时."
 
+#: utils/misc/guc.c:3191
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "自治会话的最长生存期。 几分钟后。 默认情况下为300。"
+
 #: utils/misc/guc.c:3210
 msgid "Sets the planner's estimate of the cost of a sequentially fetched disk page."
 msgstr "设置计划器对顺序获取磁盘页的开销估算"

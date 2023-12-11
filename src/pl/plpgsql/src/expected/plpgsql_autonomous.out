@@ -1,0 +1,1423 @@
+--------------------------------------------------------------
+------ auton_func simple -------------------------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "auton_func simple"'; END; $$;
+NOTICE:  Test "auton_func simple"
+CREATE TABLE tbl (a int);
+CREATE OR REPLACE FUNCTION func() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES (1);
+END;
+$$;
+START TRANSACTION;
+SELECT func();
+ func 
+------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+ a 
+---
+ 1
+(1 row)
+
+DROP FUNCTION func;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- auton_func -> func call through SELECT -----------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "auton_func -> func call through SELECT"'; END; $$;
+NOTICE:  Test "auton_func -> func call through SELECT"
+CREATE TABLE tbl (a varchar);
+CREATE OR REPLACE FUNCTION func() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+BEGIN
+  INSERT INTO tbl VALUES ('in func');
+END;
+$$;
+CREATE OR REPLACE FUNCTION auton_func() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('before func');
+  START TRANSACTION;
+  SELECT func();
+  COMMIT;
+  INSERT INTO tbl VALUES ('after func');
+END;
+$$;
+START TRANSACTION;
+SELECT auton_func();
+ auton_func 
+------------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+      a      
+-------------
+ before func
+ in func
+ after func
+(3 rows)
+
+DROP FUNCTION func;
+DROP FUNCTION auton_func;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- auton_func -> func call through PERFORM ----------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "auton_func -> func call through PERFORM"'; END; $$;
+NOTICE:  Test "auton_func -> func call through PERFORM"
+CREATE TABLE tbl (a varchar);
+CREATE OR REPLACE FUNCTION func() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+BEGIN
+  INSERT INTO tbl VALUES ('in func');
+END;
+$$;
+CREATE OR REPLACE FUNCTION auton_func() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('before func');
+  START TRANSACTION;
+  PERFORM func();
+  COMMIT;
+  INSERT INTO tbl VALUES ('after func');
+END;
+$$;
+START TRANSACTION;
+SELECT auton_func();
+ auton_func 
+------------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+      a      
+-------------
+ before func
+ in func
+ after func
+(3 rows)
+
+DROP FUNCTION func;
+DROP FUNCTION auton_func;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- auton_func -> auton_func call through SELECT -----------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "auton_func -> auton_func call through SELECT"'; END; $$;
+NOTICE:  Test "auton_func -> auton_func call through SELECT"
+CREATE TABLE tbl (a varchar);
+CREATE OR REPLACE FUNCTION auton_func1() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('in auton_func1');
+END;
+$$;
+CREATE OR REPLACE FUNCTION auton_func2() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('before auton_func1');
+  START TRANSACTION;
+  SELECT auton_func1();
+  COMMIT;
+  INSERT INTO tbl VALUES ('after auton_func1');
+END;
+$$;
+START TRANSACTION;
+SELECT auton_func2();
+ auton_func2 
+-------------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+         a          
+--------------------
+ before auton_func1
+ in auton_func1
+ after auton_func1
+(3 rows)
+
+DROP FUNCTION auton_func1;
+DROP FUNCTION auton_func2;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- auton_func -> auton_func call through PERFORM-----------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "auton_func -> auton_func call through PERFORM"'; END; $$;
+NOTICE:  Test "auton_func -> auton_func call through PERFORM"
+CREATE TABLE tbl (a varchar);
+CREATE OR REPLACE FUNCTION auton_func1() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('in auton_func1');
+END;
+$$;
+CREATE OR REPLACE FUNCTION auton_func2() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('before auton_func1');
+  START TRANSACTION;
+  PERFORM auton_func1();
+  COMMIT;
+  INSERT INTO tbl VALUES ('after auton_func1');
+END;
+$$;
+START TRANSACTION;
+SELECT auton_func2();
+ auton_func2 
+-------------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+         a          
+--------------------
+ before auton_func1
+ in auton_func1
+ after auton_func1
+(3 rows)
+
+DROP FUNCTION auton_func1;
+DROP FUNCTION auton_func2;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- 4 auton func calls, simple SQL -------------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "4 auton func calls, simple SQL"'; END; $$;
+NOTICE:  Test "4 auton func calls, simple SQL"
+CREATE TABLE tbl (a int);
+CREATE OR REPLACE FUNCTION func1() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES (1);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func2() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  SELECT func1();
+  INSERT INTO tbl VALUES (2);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func3() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  SELECT func2();
+  INSERT INTO tbl VALUES (3);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func4() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES (0);
+  SELECT func3();
+  INSERT INTO tbl VALUES (4);
+END;
+$$;
+START TRANSACTION;
+SELECT func4();
+ func4 
+-------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+ a 
+---
+ 0
+ 1
+ 2
+ 3
+ 4
+(5 rows)
+
+TRUNCATE tbl;
+DROP FUNCTION func1;
+DROP FUNCTION func2;
+DROP FUNCTION func3;
+DROP FUNCTION func4;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- 5 func calls №1, simple SQL ----------------------------
+--------------------------------------------------------------
+-- auton_func -> func -> auton_func -> func -> auton_func
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "5 func calls 1, simple SQL"'; END; $$;
+NOTICE:  Test "5 func calls 1, simple SQL"
+CREATE TABLE tbl (a int);
+CREATE OR REPLACE FUNCTION func1() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES (1);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func2() RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM func1();
+  INSERT INTO tbl VALUES (2);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func3() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  SELECT func2();
+  INSERT INTO tbl VALUES (3);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func4() RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM func3();
+  INSERT INTO tbl VALUES (3);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func5() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES (0);
+  SELECT func4();
+  INSERT INTO tbl VALUES (5);
+END;
+$$;
+START TRANSACTION;
+SELECT func4();
+ func4 
+-------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+ a 
+---
+ 1
+ 2
+ 3
+(3 rows)
+
+TRUNCATE tbl;
+DROP FUNCTION func1;
+DROP FUNCTION func2;
+DROP FUNCTION func3;
+DROP FUNCTION func4;
+DROP FUNCTION func5;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- 5 func calls №2, simple SQL ----------------------------
+--------------------------------------------------------------
+-- func -> auton_func -> func -> auton_func -> func
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "5 func calls 2, simple SQL"'; END; $$;
+NOTICE:  Test "5 func calls 2, simple SQL"
+CREATE TABLE tbl (a int);
+CREATE OR REPLACE FUNCTION func1() RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES (1);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func2() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  SELECT func1();
+  INSERT INTO tbl VALUES (2);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func3() RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM func2();
+  INSERT INTO tbl VALUES (3);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func4() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  SELECT func3();
+  INSERT INTO tbl VALUES (3);
+END;
+$$;
+CREATE OR REPLACE FUNCTION func5() RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES (0);
+  PERFORM func4();
+  INSERT INTO tbl VALUES (5);
+END;
+$$;
+SELECT func4();
+ func4 
+-------
+ 
+(1 row)
+
+SELECT * FROM tbl;
+ a 
+---
+ 1
+ 2
+ 3
+ 3
+(4 rows)
+
+TRUNCATE tbl;
+DROP FUNCTION func1;
+DROP FUNCTION func2;
+DROP FUNCTION func3;
+DROP FUNCTION func4;
+DROP FUNCTION func5;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- auton_func -> auton_func call, dynamic SQL ---------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "auton -> auton call, dynamic SQL"'; END; $$;
+NOTICE:  Test "auton -> auton call, dynamic SQL"
+CREATE TABLE tbl (a int);
+CREATE OR REPLACE FUNCTION func1() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  EXECUTE 'INSERT INTO tbl VALUES (1)';
+END;
+$$;
+CREATE OR REPLACE FUNCTION func2() RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  EXECUTE 'INSERT INTO tbl VALUES (0)';
+  SELECT func1();
+  EXECUTE 'INSERT INTO tbl VALUES (2)';
+END;
+$$;
+START TRANSACTION;
+SELECT func2();
+ func2 
+-------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+ a 
+---
+ 0
+ 1
+ 2
+(3 rows)
+
+TRUNCATE tbl;
+DROP FUNCTION func1;
+DROP FUNCTION func2;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- for loop with transaction statements -------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "for loop with transaction statements"'; END; $$;
+NOTICE:  Test "for loop with transaction statements"
+CREATE TABLE tbl (a int);
+CREATE FUNCTION dynamic() RETURNS integer
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  FOR i IN 0..9 LOOP
+    START TRANSACTION;
+    EXECUTE 'INSERT INTO tbl VALUES (' || i::text || ')';
+    IF i % 2 = 0 THEN
+      COMMIT;
+    ELSE
+      ROLLBACK;
+    END IF;
+  END LOOP;
+
+  RETURN 42;
+END;
+$$;
+SELECT dynamic();
+ dynamic 
+---------
+      42
+(1 row)
+
+SELECT * FROM tbl;
+ a 
+---
+ 0
+ 2
+ 4
+ 6
+ 8
+(5 rows)
+
+TRUNCATE tbl;
+CREATE FUNCTION simple() RETURNS integer
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  FOR i IN 0..9 LOOP
+    START TRANSACTION;
+    INSERT INTO tbl VALUES (i);
+    IF i % 2 = 0 THEN
+      COMMIT;
+    ELSE
+      ROLLBACK;
+    END IF;
+  END LOOP;
+
+  RETURN 42;
+END;
+$$;
+SELECT simple();
+ simple 
+--------
+     42
+(1 row)
+
+SELECT * FROM tbl;
+ a 
+---
+ 0
+ 2
+ 4
+ 6
+ 8
+(5 rows)
+
+TRUNCATE tbl;
+DROP FUNCTION dynamic;
+DROP FUNCTION simple;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- transaction scope --------------------------------------
+--------------------------------------------------------------
+-- if error is in autonomous function, then exit from it
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "transaction scope"'; END; $$;
+NOTICE:  Test "transaction scope"
+CREATE TABLE tbl (a integer CHECK (a > 500));
+CREATE FUNCTION sep_trans()
+RETURNS void
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl(a) VALUES(700);   -- 1st autonomous transaction
+  INSERT INTO tbl(a) VALUES(100);   -- 2nd autonomous transaction
+  INSERT INTO tbl(a) VALUES(800);   -- no transaction, as in 2nd violation
+END
+$$ LANGUAGE plpgsql;
+SELECT sep_trans();
+ERROR:  new row for relation "tbl" violates check constraint "tbl_a_check"
+DETAIL:  Failing row contains (100).
+CONTEXT:  PL/pgSQL function sep_trans() line 6 at SQL statement
+SELECT * FROM tbl;
+  a  
+-----
+ 700
+(1 row)
+
+TRUNCATE TABLE tbl;
+CREATE FUNCTION one_trans()
+RETURNS void
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  START TRANSACTION; -- 1 autonomous transaction
+    INSERT INTO tbl(a) VALUES(1700);
+    INSERT INTO tbl(a) VALUES(200); -- violation of constraint
+    INSERT INTO tbl(a) VALUES(1800);
+  COMMIT;
+END
+$$ LANGUAGE plpgsql;
+SELECT one_trans();
+ERROR:  new row for relation "tbl" violates check constraint "tbl_a_check"
+DETAIL:  Failing row contains (200).
+CONTEXT:  PL/pgSQL function one_trans() line 7 at SQL statement
+SELECT * FROM tbl;
+ a 
+---
+(0 rows)
+
+TRUNCATE tbl;
+DROP FUNCTION sep_trans();
+DROP FUNCTION one_trans();
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- non transaction commands -------------------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "non transaction commands"'; END; $$;
+NOTICE:  Test "non transaction commands"
+CREATE TABLE tbl (a integer);
+DO $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+   EXECUTE 'VACUUM tbl';
+END $$;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- audit --------------------------------------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "audit"'; END; $$;
+NOTICE:  Test "audit"
+CREATE TABLE table_tracking(log_id serial, username text, event_date timestamp, msg text);
+CREATE FUNCTION log_action_atx (
+  username text, event_date timestamp, msg text
+) RETURNS void AS
+$body$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  START TRANSACTION;
+  INSERT INTO table_tracking VALUES (nextval('table_tracking_log_id_seq'::regclass),username, event_date, msg);
+  COMMIT;
+END;
+$body$
+LANGUAGE plpgsql;
+CREATE FUNCTION log_action (
+  username text, event_date timestamp, msg text
+) RETURNS void AS
+$body$
+DECLARE
+ v_query text;
+BEGIN
+  -- Call the autonomous function
+  v_query := 'SELECT log_action_atx ( ' || quote_nullable(username) ||
+             ',' || quote_nullable(event_date) || ',' || quote_nullable(msg) || ' )';
+  EXECUTE v_query;
+
+  -- Do something else
+  RAISE NOTICE 'Division by zero';
+  PERFORM 5/0;
+END;
+$body$
+LANGUAGE PLPGSQL;
+SELECT * FROM log_action(current_user::text, now()::timestamp, 'Test'::text);
+NOTICE:  Division by zero
+ERROR:  division by zero
+CONTEXT:  SQL statement "SELECT 5/0"
+PL/pgSQL function log_action(text,timestamp without time zone,text) line 12 at PERFORM
+SELECT msg FROM table_tracking;
+ msg  
+------
+ Test
+(1 row)
+
+DROP FUNCTION log_action;
+DROP FUNCTION log_action_atx;
+DROP TABLE table_tracking;
+--------------------------------------------------------------
+----- audit through trigger ----------------------------------
+--------------------------------------------------------------
+-- users are in pg_user table
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "audit through trigger"'; END; $$;
+NOTICE:  Test "audit through trigger"
+CREATE SCHEMA audtrig;
+CREATE TABLE audtrig.tbl (
+    id integer,
+    user_name varchar
+);
+CREATE TABLE audtrig.log (
+  user_name varchar,
+  event varchar
+);
+CREATE OR REPLACE FUNCTION audtrig.log_func()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+  v_action varchar;
+BEGIN
+  IF (TG_OP = 'INSERT') THEN
+      v_action := 'Added id=' || NEW.id::text;
+  ELSIF (TG_OP = 'UPDATE') THEN
+      v_action := 'Updated id=' || NEW.id::text;
+  ELSIF (TG_OP = 'DELETE') THEN
+      v_action := 'Deleted id=' || OLD.id::text;
+  END IF;
+  INSERT INTO audtrig.log VALUES (current_user, v_action);
+  RETURN NEW;
+END;
+$$;
+CREATE OR REPLACE TRIGGER audtrig_trig_func
+AFTER INSERT OR UPDATE OR DELETE
+ON audtrig.tbl
+FOR EACH ROW
+EXECUTE PROCEDURE audtrig.log_func();
+SELECT * FROM audtrig.log;
+ user_name | event 
+-----------+-------
+(0 rows)
+
+SELECT * FROM audtrig.tbl;
+ id | user_name 
+----+-----------
+(0 rows)
+
+INSERT INTO audtrig.tbl VALUES (9001,'SMITH');
+INSERT INTO audtrig.tbl VALUES (9002,'JONES');
+DELETE FROM audtrig.tbl WHERE id=9001;
+SELECT * FROM audtrig.log;
+ user_name |      event      
+-----------+-----------------
+ postgres  | Added id=9001
+ postgres  | Added id=9002
+ postgres  | Deleted id=9001
+(3 rows)
+
+SELECT * FROM audtrig.tbl;
+  id  | user_name 
+------+-----------
+ 9002 | JONES
+(1 row)
+
+TRUNCATE audtrig.log;
+TRUNCATE audtrig.tbl;
+START TRANSACTION;
+INSERT INTO audtrig.tbl VALUES (9001,'SMITH');
+INSERT INTO audtrig.tbl VALUES (9002,'JONES');
+DELETE FROM audtrig.tbl WHERE id=9001;
+ROLLBACK;
+SELECT * FROM audtrig.log;
+ user_name |      event      
+-----------+-----------------
+ postgres  | Added id=9001
+ postgres  | Added id=9002
+ postgres  | Deleted id=9001
+(3 rows)
+
+SELECT * FROM audtrig.tbl;
+ id | user_name 
+----+-----------
+(0 rows)
+
+DROP TABLE audtrig.log;
+DROP TABLE audtrig.tbl;
+--------------------------------------------------------------
+----- function and procedure call in autonomous sessions -----
+--------------------------------------------------------------
+-- procedure call is forbidden in autonomous functions
+-- but possible in simple functions, that are called in autonomous functions
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "function and procedure call in autonomous sessions"'; END; $$;
+NOTICE:  Test "function and procedure call in autonomous sessions"
+CREATE TABLE tbl (a int);
+CREATE FUNCTION func()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES (1);
+END;
+$$;
+CREATE PROCEDURE proc()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES (2);
+  ROLLBACK;
+  INSERT INTO tbl VALUES (3);
+END;
+$$;
+-- check: auton_func -> func
+--                   -> proc
+CREATE FUNCTION auton_func()
+RETURNS void
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES (10);
+  SELECT * FROM func();
+  CALL proc();
+  INSERT INTO tbl VALUES (20);
+END;
+$$ LANGUAGE plpgsql;
+SELECT  auton_func();
+ERROR:  call of procedures is forbidden currently in autonomous sessions, CALL proc()
+CONTEXT:  PL/pgSQL function auton_func() line 7 at CALL
+SELECT * FROM tbl;
+ a  
+----
+ 10
+  1
+(2 rows)
+
+TRUNCATE TABLE tbl;
+-- check: auton_proc -> func
+--                   -> proc
+CREATE PROCEDURE auton_proc()
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES (10);
+  SELECT * FROM func();
+  CALL proc();
+  INSERT INTO tbl VALUES (20);
+END;
+$$;
+CALL auton_proc();
+ERROR:  call of procedures is forbidden currently in autonomous sessions, CALL proc()
+CONTEXT:  PL/pgSQL function auton_proc() line 7 at CALL
+SELECT * FROM tbl;
+ a  
+----
+ 10
+  1
+(2 rows)
+
+TRUNCATE TABLE tbl;
+-- check: auton_func_2 -> func_2 -> proc_no_trans
+CREATE PROCEDURE proc_no_trans()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES (2);
+  INSERT INTO tbl VALUES (3);
+END;
+$$;
+CREATE FUNCTION func_2()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES (30);
+  CALL proc_no_trans();
+  INSERT INTO tbl VALUES (40);
+END;
+$$;
+CREATE FUNCTION auton_func_2()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES (10);
+  SELECT * FROM func_2();
+  INSERT INTO tbl VALUES (20);
+END;
+$$;
+SELECT auton_func_2();
+ auton_func_2 
+--------------
+ 
+(1 row)
+
+SELECT * FROM tbl;
+ a  
+----
+ 10
+ 30
+  2
+  3
+ 40
+ 20
+(6 rows)
+
+TRUNCATE TABLE tbl;
+DROP FUNCTION func;
+DROP FUNCTION func_2;
+DROP PROCEDURE proc;
+DROP PROCEDURE proc_no_trans;
+DROP FUNCTION auton_func;
+DROP FUNCTION auton_func_2;
+DROP PROCEDURE auton_proc;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- exception simple ---------------------------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "exception simple"'; END; $$;
+NOTICE:  Test "exception simple"
+CREATE FUNCTION f_exception()
+RETURNS VOID AS $$
+DECLARE
+      PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+      RAISE NOTICE 'Call f_exception';
+      RAISE EXCEPTION 'Test exception' USING ERRCODE = 'AB001';
+END;
+$$
+LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION f_main ()
+RETURNS VOID AS $$
+BEGIN
+  BEGIN
+    PERFORM f_exception();
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLSTATE = 'AB001' THEN
+        RAISE NOTICE 'Caught custom exception with SQLSTATE AB001.';
+      ELSE
+        RAISE NOTICE 'An exception occurred: %', SQLERRM;
+      END IF;
+  END;
+END;
+$$
+LANGUAGE plpgsql;
+SELECT * FROM f_main();
+NOTICE:  Call f_exception
+NOTICE:  Caught custom exception with SQLSTATE AB001.
+ f_main 
+--------
+ 
+(1 row)
+
+DROP FUNCTION f_exception;
+DROP FUNCTION f_main;
+--------------------------------------------------------------
+----- exception with many functions --------------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "exception with many functions"'; END; $$;
+NOTICE:  Test "exception with many functions"
+CREATE TABLE tbl (a varchar);
+CREATE FUNCTION f_exception_auton()
+RETURNS VOID AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('before raise');
+  RAISE EXCEPTION 'Test exception' USING ERRCODE = 'AB001';
+  INSERT INTO tbl VALUES ('after raise');
+END;
+$$
+LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION func0()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES ('before f_exception_auton');
+  PERFORM f_exception_auton();
+  INSERT INTO tbl VALUES ('after f_exception_auton');
+END;
+$$;
+CREATE OR REPLACE FUNCTION func0_auton()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('before func0');
+  PERFORM func0();
+  INSERT INTO tbl VALUES ('after func0');
+END;
+$$;
+CREATE OR REPLACE FUNCTION func1()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES ('before func0_auton');
+  PERFORM func0_auton();
+  INSERT INTO tbl VALUES ('after func0_auton');
+END;
+$$;
+CREATE OR REPLACE FUNCTION catch_exc()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+  BEGIN
+    INSERT INTO tbl VALUES ('before func1');
+    PERFORM func1();
+    INSERT INTO tbl VALUES ('after func1');
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLSTATE = 'AB001' THEN
+        RAISE NOTICE 'Caught custom exception with SQLSTATE AB001.';
+      ELSE
+        RAISE NOTICE 'An exception occurred: %', SQLERRM;
+      END IF;
+    INSERT INTO tbl VALUES ('after func1 in exc');
+  END;
+$$;
+CREATE OR REPLACE FUNCTION func1_auton()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  START TRANSACTION;
+    INSERT INTO tbl VALUES ('before catch_exc');
+    PERFORM catch_exc();
+    INSERT INTO tbl VALUES ('after catch_exc');
+  COMMIT;
+END;
+$$;
+CREATE OR REPLACE FUNCTION func2()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES ('before func1_auton');
+  PERFORM func1_auton();
+  INSERT INTO tbl VALUES ('after func1_auton');
+END;
+$$;
+CREATE OR REPLACE FUNCTION func2_auton()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  START TRANSACTION;
+    INSERT INTO tbl VALUES ('before func2');
+    PERFORM func2();
+    INSERT INTO tbl VALUES ('after func2');
+  ROLLBACK;
+END;
+$$;
+CREATE  OR REPLACE FUNCTION main()
+RETURNS void AS $$
+BEGIN
+  INSERT INTO tbl VALUES ('before func2_auton');
+  PERFORM func2_auton();
+  INSERT INTO tbl VALUES ('after func2_auton');
+END;
+$$ LANGUAGE plpgsql;
+SELECT main();
+NOTICE:  Caught custom exception with SQLSTATE AB001.
+ main 
+------
+ 
+(1 row)
+
+SELECT * FROM tbl;
+         a          
+--------------------
+ before func2_auton
+ before catch_exc
+ before func0
+ before raise
+ after func1 in exc
+ after catch_exc
+ after func2_auton
+(7 rows)
+
+DROP FUNCTION func0;
+DROP FUNCTION func0_auton;
+DROP FUNCTION func1;
+DROP FUNCTION func1_auton;
+DROP FUNCTION func2;
+DROP FUNCTION func2_auton;
+DROP FUNCTION catch_exc;
+DROP FUNCTION main;
+DROP FUNCTION f_exception_auton;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- subblock -> auton_subblock -----------------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "subblock -> auton_subblock"'; END; $$;
+NOTICE:  Test "subblock -> auton_subblock"
+CREATE TABLE tbl (a varchar);
+CREATE  OR REPLACE FUNCTION func()
+RETURNS void AS $$
+BEGIN
+  INSERT INTO tbl VALUES('subblock, before auton_subblock');
+  -- begin subblock
+  DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+  BEGIN
+    START TRANSACTION;
+    INSERT INTO tbl VALUES('rollback in auton_subblock');
+    ROLLBACK;
+
+    START TRANSACTION;
+    INSERT INTO tbl VALUES('commit in auton_subblock');
+    COMMIT;
+  END;
+  -- end subblock
+  INSERT INTO tbl VALUES('subblock, after auton_subblock');
+END;
+$$ LANGUAGE plpgsql;
+START TRANSACTION;
+SELECT func();
+ func 
+------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+            a             
+--------------------------
+ commit in auton_subblock
+(1 row)
+
+DROP FUNCTION func;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- auton_subblock -> subblock -----------------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "auton_subblock -> subblock"'; END; $$;
+NOTICE:  Test "auton_subblock -> subblock"
+CREATE TABLE tbl (a varchar);
+CREATE  OR REPLACE FUNCTION func()
+RETURNS void AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES('auton_subblock, before subblock');
+  START TRANSACTION;
+  -- begin subblock
+  BEGIN
+    START TRANSACTION;
+    INSERT INTO tbl VALUES('rollback in subblock');
+    ROLLBACK;
+
+    START TRANSACTION;
+    INSERT INTO tbl VALUES('commit in subblock');
+    COMMIT;
+  END;
+  -- end subblock
+  ROLLBACK;
+  INSERT INTO tbl VALUES('auton_subblock, after subblock');
+END;
+$$ LANGUAGE plpgsql;
+START TRANSACTION;
+SELECT func();
+NOTICE:  there is already a transaction in progress
+ERROR:  invalid transaction termination
+CONTEXT:  PL/pgSQL function func() line 18 at ROLLBACK
+ROLLBACK;
+SELECT * FROM tbl;
+                a                
+---------------------------------
+ auton_subblock, before subblock
+ commit in subblock
+(2 rows)
+
+DROP FUNCTION func;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- auton_subblock -> auton_subblock -----------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "auton_subblock -> auton_subblock"'; END; $$;
+NOTICE:  Test "auton_subblock -> auton_subblock"
+CREATE TABLE tbl (a varchar);
+CREATE  OR REPLACE FUNCTION func()
+RETURNS void AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES('auton_subblock 1, before auton_subblock');
+  START TRANSACTION;
+  -- begin subblock
+  DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+  BEGIN
+    START TRANSACTION;
+    INSERT INTO tbl VALUES('rollback in auton_subblock');
+    ROLLBACK;
+
+    START TRANSACTION;
+    INSERT INTO tbl VALUES('commit in auton_subblock');
+    COMMIT;
+  END;
+  -- end subblock
+  ROLLBACK;
+  INSERT INTO tbl VALUES('auton_subblock 1, after auton_subblock');
+END;
+$$ LANGUAGE plpgsql;
+START TRANSACTION;
+SELECT func();
+NOTICE:  Autonomous pool was resized, new capacity is 2
+ func 
+------
+ 
+(1 row)
+
+ROLLBACK;
+SELECT * FROM tbl;
+                    a                    
+-----------------------------------------
+ auton_subblock 1, before auton_subblock
+ commit in auton_subblock
+ auton_subblock 1, after auton_subblock
+(3 rows)
+
+DROP FUNCTION func;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- many subblocks with exception --------------------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "many subblocks with exception"'; END; $$;
+NOTICE:  Test "many subblocks with exception"
+CREATE TABLE tbl (a varchar);
+CREATE FUNCTION f_exception()
+RETURNS VOID AS $$
+BEGIN
+  RAISE EXCEPTION 'Test exception' USING ERRCODE = 'AB001';
+END;
+$$
+LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION func1()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES ('before f_exception');
+  PERFORM f_exception();
+  INSERT INTO tbl VALUES ('after f_exception');
+END;
+$$;
+CREATE  OR REPLACE FUNCTION main()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('main start');
+  START TRANSACTION;
+    INSERT INTO tbl VALUES ('trans 1 in start');
+
+    DECLARE
+      PRAGMA AUTONOMOUS_TRANSACTION;
+    BEGIN
+      START TRANSACTION;
+        INSERT INTO tbl VALUES ('trans 2 in start');
+
+        BEGIN
+          INSERT INTO tbl VALUES ('empty 1 begin');
+
+          BEGIN
+            INSERT INTO tbl VALUES ('exc begin');
+
+            DECLARE
+              PRAGMA AUTONOMOUS_TRANSACTION;
+            BEGIN
+              INSERT INTO tbl VALUES ('before func1');
+              PERFORM func1();
+              INSERT INTO tbl VALUES ('after func1');
+            END;
+
+          EXCEPTION
+            WHEN OTHERS THEN
+              IF SQLSTATE = 'AB001' THEN
+                RAISE NOTICE 'Caught custom exception with SQLSTATE AB001.';
+              ELSE
+                RAISE NOTICE 'An exception occurred: %', SQLERRM;
+              END IF;
+            INSERT INTO tbl VALUES ('exc end');
+          END;
+
+        INSERT INTO tbl VALUES ('empty 1 end');
+        END;
+
+        INSERT INTO tbl VALUES ('trans 2 in rollback');
+      ROLLBACK;
+    END;
+
+    INSERT INTO tbl VALUES ('trans 1 in commit');
+  COMMIT;
+
+  INSERT INTO tbl VALUES ('main end');
+END;
+$$;
+SELECT main();
+NOTICE:  Autonomous pool was resized, new capacity is 4
+NOTICE:  Caught custom exception with SQLSTATE AB001.
+ERROR:  invalid transaction termination
+CONTEXT:  PL/pgSQL function main() line 43 at ROLLBACK
+SELECT * FROM tbl;
+      a       
+--------------
+ main start
+ before func1
+(2 rows)
+
+DROP FUNCTION func1;
+DROP FUNCTION main;
+DROP FUNCTION f_exception;
+DROP TABLE tbl;
+--------------------------------------------------------------
+----- proc in many subblocks many with exception -------------
+--------------------------------------------------------------
+DO $$ BEGIN RAISE NOTICE 'Test "proc in many subblocks many with exception"'; END; $$;
+NOTICE:  Test "proc in many subblocks many with exception"
+CREATE TABLE tbl (a varchar);
+CREATE FUNCTION f_exception()
+RETURNS VOID AS $$
+BEGIN
+  RAISE EXCEPTION 'Test exception' USING ERRCODE = 'AB001';
+END;
+$$
+LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION func1()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES ('before f_exception');
+  PERFORM f_exception();
+  INSERT INTO tbl VALUES ('after f_exception');
+END;
+$$;
+CREATE OR REPLACE PROCEDURE proc()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO tbl VALUES ('proc before rollback');
+  ROLLBACK;
+  INSERT INTO tbl VALUES ('proc after rollback');
+END;
+$$;
+CREATE  OR REPLACE FUNCTION main()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO tbl VALUES ('main start');
+  START TRANSACTION;
+    INSERT INTO tbl VALUES ('trans 1 in start');
+
+    DECLARE
+      PRAGMA AUTONOMOUS_TRANSACTION;
+    BEGIN
+      START TRANSACTION;
+        INSERT INTO tbl VALUES ('trans 2 in start');
+
+        BEGIN
+          INSERT INTO tbl VALUES ('empty 1 begin');
+
+          BEGIN
+            INSERT INTO tbl VALUES ('exc begin');
+
+            DECLARE
+              PRAGMA AUTONOMOUS_TRANSACTION;
+            BEGIN
+              INSERT INTO tbl VALUES ('before func1');
+              PERFORM func1();
+              INSERT INTO tbl VALUES ('after func1');
+            END;
+
+          EXCEPTION
+            WHEN OTHERS THEN
+              IF SQLSTATE = 'AB001' THEN
+                RAISE NOTICE 'Caught custom exception with SQLSTATE AB001.';
+              ELSE
+                RAISE NOTICE 'An exception occurred: %', SQLERRM;
+              END IF;
+            INSERT INTO tbl VALUES ('exc before proc');
+            CALL proc();
+            INSERT INTO tbl VALUES ('exc after proc');
+            INSERT INTO tbl VALUES ('exc end');
+          END;
+
+        INSERT INTO tbl VALUES ('empty 1 end');
+        END;
+
+        INSERT INTO tbl VALUES ('trans 2 in rollback');
+      ROLLBACK;
+    END;
+
+    INSERT INTO tbl VALUES ('trans 1 in commit');
+  COMMIT;
+
+  INSERT INTO tbl VALUES ('main end');
+END;
+$$;
+SELECT main();
+NOTICE:  Autonomous pool was resized, new capacity is 2
+NOTICE:  Autonomous pool was resized, new capacity is 4
+NOTICE:  Caught custom exception with SQLSTATE AB001.
+ERROR:  call of procedures is forbidden currently in autonomous sessions, CALL proc()
+CONTEXT:  PL/pgSQL function main() line 37 at CALL
+SELECT * FROM tbl;
+      a       
+--------------
+ main start
+ before func1
+(2 rows)
+
+DROP FUNCTION func1;
+DROP FUNCTION main;
+DROP FUNCTION f_exception;
+DROP TABLE tbl;

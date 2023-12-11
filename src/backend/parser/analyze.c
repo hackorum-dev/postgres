@@ -146,7 +146,7 @@ parse_analyze_fixedparams(RawStmt *parseTree, const char *sourceText,
 Query *
 parse_analyze_varparams(RawStmt *parseTree, const char *sourceText,
 						Oid **paramTypes, int *numParams,
-						QueryEnvironment *queryEnv)
+						QueryEnvironment *queryEnv, const char *paramNames[])
 {
 	ParseState *pstate = make_parsestate(NULL);
 	Query	   *query;
@@ -156,7 +156,7 @@ parse_analyze_varparams(RawStmt *parseTree, const char *sourceText,
 
 	pstate->p_sourcetext = sourceText;
 
-	setup_parse_variable_parameters(pstate, paramTypes, numParams);
+	setup_parse_variable_parameters(pstate, paramTypes, numParams, paramNames);
 
 	pstate->p_queryEnv = queryEnv;
 
@@ -2967,7 +2967,7 @@ transformExplainStmt(ParseState *pstate, ExplainStmt *stmt)
 			/* don't "break", as we want the last value */
 		}
 		if (generic_plan)
-			setup_parse_variable_parameters(pstate, &paramTypes, &numParams);
+			setup_parse_variable_parameters(pstate, &paramTypes, &numParams, NULL);
 	}
 
 	/* transform contained query, allowing SELECT INTO */

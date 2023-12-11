@@ -27794,6 +27794,10 @@ msgstr "Встановлює максимальний розмір списку-
 msgid "TCP user timeout."
 msgstr "Таймаут користувача TCP."
 
+#: utils/misc/guc.c:3600
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "Максимальний час автономного сеансу. У хвилинах. За замовчуванням 300."
+
 #: utils/misc/guc.c:3610
 msgid "The size of huge page that should be requested."
 msgstr "Розмір величезної сторінки, яку необхідно затребувати."

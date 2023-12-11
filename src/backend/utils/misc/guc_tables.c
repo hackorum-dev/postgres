@@ -72,6 +72,7 @@
 #include "storage/pg_shmem.h"
 #include "storage/predicate.h"
 #include "storage/standby.h"
+#include "tcop/autonomous.h"
 #include "tcop/tcopprot.h"
 #include "tsearch/ts_cache.h"
 #include "utils/builtins.h"
@@ -2659,6 +2660,19 @@ struct config_int ConfigureNamesInt[] =
 		},
 		&max_predicate_locks_per_page,
 		2, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"autonomous_session_lifetime",
+			PGC_SIGHUP,
+			CUSTOM_OPTIONS,
+			gettext_noop("Maximum lifetime of autonomous session. In minutes. 300 by default."),
+			gettext_noop("A value of 0 turns off the timeout."),
+			GUC_UNIT_MIN
+		},
+		&autonomous_session_lifetime,
+		300, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 

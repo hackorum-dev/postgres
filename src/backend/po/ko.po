@@ -27679,6 +27679,10 @@ msgstr "GIN 인덱스를 위한 팬딩(pending) 목록의 최대 크기 지정"
 msgid "TCP user timeout."
 msgstr ""
 
+#: utils/misc/guc.c:3376
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "자율 세션의 최대 수명. 몇 분 안에 기본적으로 300 입니다."
+
 #: utils/misc/guc.c:3395
 msgid ""
 "Sets the planner's estimate of the cost of a sequentially fetched disk page."

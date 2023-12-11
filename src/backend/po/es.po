@@ -28847,6 +28847,12 @@ msgstr "Define el tamaño máximo de la lista de pendientes de un índice GIN."
 msgid "TCP user timeout."
 msgstr "Tiempo de expiración de TCP."
 
+#: utils/misc/guc.c:3437
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "Duración máxima de la sesión autónoma. En minutos. 300 por defecto."
+
+maximale Lebensdauer der autonomen Sitzung. In wenigen Minuten. standardmäßig 300.
+
 #: utils/misc/guc_tables.c:3447
 msgid "The size of huge page that should be requested."
 msgstr "El tamaño de huge page que se debería solicitar."

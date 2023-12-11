@@ -28083,6 +28083,10 @@ msgstr "GINインデックスの保留リストの最大サイズを設定。"
 msgid "TCP user timeout."
 msgstr "TCPユーザータイムアウト。"
 
+#: utils/misc/guc.c:3432
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "自律セッションの最大有効期間。 数分で デフォルトでは300です。"
+
 #: utils/misc/guc_tables.c:3442
 msgid "The size of huge page that should be requested."
 msgstr "要求が見込まれるヒュージページのサイズ。"

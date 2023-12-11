@@ -30450,7 +30450,7 @@ msgid "Sets the maximum allowed duration of any statement."
 msgstr "Задаёт предельную длительность для любого оператора."
 
 #: utils/misc/guc.c:2646 utils/misc/guc.c:2657 utils/misc/guc.c:2668
-#: utils/misc/guc.c:2679
+#: utils/misc/guc.c:2679 utils/misc/guc.c:3638
 msgid "A value of 0 turns off the timeout."
 msgstr "Нулевое значение отключает тайм-аут."
 
@@ -31042,6 +31042,10 @@ msgstr "Задаёт максимальный размер списка-очер
 #: utils/misc/guc.c:3589
 msgid "TCP user timeout."
 msgstr "Пользовательский таймаут TCP."
+
+#: utils/misc/guc.c:3590
+msgid "Maximum lifetime of autonomous session. In minutes. 300 by default."
+msgstr "Максимальное время жизни автономной сессии. В минутах. По умолчанию 300."
 
 #: utils/misc/guc.c:3600
 msgid "The size of huge page that should be requested."
