@@ -4232,6 +4232,11 @@ BackendInitialize(Port *port)
 	/* Save port etc. for ps status */
 	MyProcPort = port;
 
+	if (StreamSetupIo(port))
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("Unable to configure backend I/O")));
+
 	/* Tell fd.c about the long-lived FD associated with the port */
 	ReserveExternalFD();
 

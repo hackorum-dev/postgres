@@ -614,8 +614,8 @@ pqReadData(PGconn *conn)
 
 	/* OK, try to read some data */
 retry3:
-	nread = pqsecure_read(conn, conn->inBuffer + conn->inEnd,
-						  conn->inBufSize - conn->inEnd);
+	nread = io_stream_read(conn->io_stream, conn->inBuffer + conn->inEnd,
+						   conn->inBufSize - conn->inEnd, false);
 	if (nread < 0)
 	{
 		switch (SOCK_ERRNO)
@@ -709,8 +709,8 @@ retry3:
 	 * arrived.
 	 */
 retry4:
-	nread = pqsecure_read(conn, conn->inBuffer + conn->inEnd,
-						  conn->inBufSize - conn->inEnd);
+	nread = io_stream_read(conn->io_stream, conn->inBuffer + conn->inEnd,
+						   conn->inBufSize - conn->inEnd, false);
 	if (nread < 0)
 	{
 		switch (SOCK_ERRNO)
@@ -824,10 +824,11 @@ pqSendSome(PGconn *conn, int len)
 	/* while there's still data to send */
 	while (len > 0)
 	{
-		int			sent;
+		size_t		sent;
+		int			rc;
 
 #ifndef WIN32
-		sent = pqsecure_write(conn, ptr, len);
+		rc = io_stream_write(conn->io_stream, ptr, len, &sent);
 #else
 
 		/*
@@ -835,10 +836,13 @@ pqSendSome(PGconn *conn, int len)
 		 * failure-point appears to be different in different versions of
 		 * Windows, but 64k should always be safe.
 		 */
-		sent = pqsecure_write(conn, ptr, Min(len, 65536));
+		rc = io_stream_write(conn->io_stream, ptr, Min(len, 65536), &sent);
 #endif
+		ptr += sent;
+		len -= sent;
+		remaining -= sent;
 
-		if (sent < 0)
+		if (rc < 0)
 		{
 			/* Anything except EAGAIN/EWOULDBLOCK/EINTR is trouble */
 			switch (SOCK_ERRNO)
@@ -877,12 +881,6 @@ pqSendSome(PGconn *conn, int len)
 					else
 						return -1;
 			}
-		}
-		else
-		{
-			ptr += sent;
-			len -= sent;
-			remaining -= sent;
 		}
 
 		if (len > 0)
@@ -1048,14 +1046,11 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
 		return -1;
 	}
 
-#ifdef USE_SSL
-	/* Check for SSL library buffering read bytes */
-	if (forRead && conn->ssl_in_use && pgtls_read_pending(conn))
+	if (forRead && io_stream_buffered_read_data(conn->io_stream))
 	{
 		/* short-circuit the select */
 		return 1;
 	}
-#endif
 
 	/* We will retry as long as we get EINTR */
 	do
