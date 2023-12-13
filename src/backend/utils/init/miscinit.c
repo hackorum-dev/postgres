@@ -546,7 +546,7 @@ GetSessionUserId(void)
 }
 
 
-static void
+void
 SetSessionUserId(Oid userid, bool is_superuser)
 {
 	Assert(SecurityRestrictionContext == 0);
