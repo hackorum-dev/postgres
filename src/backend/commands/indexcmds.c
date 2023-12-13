@@ -577,9 +577,18 @@ DefineIndex(Oid tableId,
 	Oid			root_save_userid;
 	int			root_save_sec_context;
 	int			root_save_nestlevel;
+	ListCell   *lc;
 
 	root_save_nestlevel = NewGUCNestLevel();
 
+	foreach (lc, stmt->indexParams)
+	{
+		IndexElem *ielem = castNode(IndexElem, lfirst(lc));
+		if (IsA(ielem->expr, Var) && castNode(Var, ielem->expr)->varattno == 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+					errmsg("cannot create index on whole-row expression of table '%s'", ielem->indexcolname)));
+	}
 	/*
 	 * Some callers need us to run with an empty default_tablespace; this is a
 	 * necessary hack to be able to reproduce catalog state accurately when
