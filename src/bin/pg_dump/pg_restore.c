@@ -343,6 +343,13 @@ main(int argc, char **argv)
 		exit_nicely(1);
 	}
 
+	/* Complain if the input file is used as the output file */
+	if (opts->filename && inputFileSpec)
+	{
+		if (strcmp(opts->filename, "-") != 0 && strcmp(opts->filename, inputFileSpec) == 0)
+			pg_fatal("input file and output file cannot be the same");
+	}
+
 	/* Complain if neither -f nor -d was specified (except if dumping TOC) */
 	if (!opts->cparams.dbname && !opts->filename && !opts->tocSummary)
 		pg_fatal("one of -d/--dbname and -f/--file must be specified");
