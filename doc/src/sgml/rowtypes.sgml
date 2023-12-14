@@ -67,6 +67,16 @@ SELECT price_extension(item, 10) FROM on_hand;
 
  </para>
 
+ <note>
+  <para>
+   While you can use composite types in column definitions, there is usually no
+   benefit in doing so.  Also, if you create indexes on composite type columns,
+   beware of using <command>ALTER TYPE</command> to modify the type definition:
+   doing that could break the requirement that index expressions must be
+   immutable and might render the index corrupted.
+  </para>
+ </note>
+
  <para>
   Whenever you create a table, a composite type is also automatically
   created, with the same name as the table, to represent the table's
