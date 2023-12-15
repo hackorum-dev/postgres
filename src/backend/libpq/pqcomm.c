@@ -966,6 +966,8 @@ socket_read(IoStreamLayer * self, Port *port, void *ptr, size_t len, bool buffer
 #ifdef WIN32
 	pgwin32_noblock = false;
 #endif
+	if (n > 0)
+		pgstat_report_rx_socket_traffic(n);
 
 	return n;
 }
@@ -982,6 +984,8 @@ socket_write(IoStreamLayer * self, Port *port, const void *ptr, size_t len, size
 #ifdef WIN32
 	pgwin32_noblock = false;
 #endif
+	if (n > 0)
+		pgstat_report_tx_socket_traffic(n);
 
 	if (n >= 0)
 	{
@@ -1009,6 +1013,8 @@ io_read_with_wait(Port *port, void *ptr, size_t len)
 retry:
 	port->waitfor = WL_SOCKET_READABLE;
 	n = io_stream_read(port->io_stream, ptr, len, false);
+	if (n > 0)
+		pgstat_report_rx_pq_traffic(n);
 
 	/* In blocking mode, wait until the socket is ready */
 	if (n < 0 && !port->noblock && (errno == EWOULDBLOCK || errno == EAGAIN))
@@ -1092,6 +1098,8 @@ retry:
 	 */
 	rc = io_stream_write(port->io_stream, ptr + *bytes_processed, len - *bytes_processed, &count);
 	*bytes_processed += count;
+	if (count > 0)
+		pgstat_report_tx_pq_traffic(count);
 
 	if (rc < 0 && !port->noblock && (errno == EWOULDBLOCK || errno == EAGAIN))
 	{
