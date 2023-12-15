@@ -40,6 +40,7 @@
 
 /* include stuff common to fe and be */
 #include "libpq/pqcomm.h"
+#include "common/zpq_stream.h"
 /* include stuff found in fe only */
 #include "fe-auth-sasl.h"
 #include "pqexpbuffer.h"
@@ -406,6 +407,16 @@ struct pg_conn
 	char	   *gssdelegation;	/* Try to delegate GSS credentials? (0 or 1) */
 	char	   *ssl_min_protocol_version;	/* minimum TLS protocol version */
 	char	   *ssl_max_protocol_version;	/* maximum TLS protocol version */
+	char	   *compression;	/* stream compression (boolean value, "any" or
+								 * list of compression algorithms separated by
+								 * comma) */
+	pg_compress_specification compressors[COMPRESSION_ALGORITHM_COUNT]; /* descriptors of
+																		 * compression
+																		 * algorithms chosen by
+																		 * client */
+	unsigned	n_compressors;	/* size of compressors array  */
+	char	   *server_compression; /* compression settings set by server */
+
 	char	   *target_session_attrs;	/* desired session properties */
 	char	   *require_auth;	/* name of the expected auth method */
 	char	   *load_balance_hosts; /* load balance over hosts */
@@ -621,6 +632,9 @@ struct pg_conn
 
 	/* Buffer for receiving various parts of messages */
 	PQExpBufferData workBuffer; /* expansible string */
+
+	/* Compression stream */
+	ZpqStream  *zpqStream;
 };
 
 /* PGcancel stores all data necessary to cancel a connection. A copy of this
@@ -680,6 +694,7 @@ extern void pqDropConnection(PGconn *conn, bool flushInput);
 extern int	pqPacketSend(PGconn *conn, char pack_type,
 						 const void *buf, size_t buf_len);
 extern bool pqGetHomeDirectory(char *buf, int bufsize);
+extern void pqConfigureCompression(PGconn *conn, const char *compressors);
 
 extern pgthreadlock_t pg_g_threadlock;
 
@@ -712,7 +727,7 @@ extern void pqParseInput3(PGconn *conn);
 extern int	pqGetErrorNotice3(PGconn *conn, bool isError);
 extern void pqBuildErrorMessage3(PQExpBuffer msg, const PGresult *res,
 								 PGVerbosity verbosity, PGContextVisibility show_context);
-extern int	pqGetNegotiateProtocolVersion3(PGconn *conn);
+extern int	pqProcessNegotiateProtocolVersion3(PGconn *conn);
 extern int	pqGetCopyData3(PGconn *conn, char **buffer, int async);
 extern int	pqGetline3(PGconn *conn, char *s, int maxlen);
 extern int	pqGetlineAsync3(PGconn *conn, char *buffer, int bufsize);
@@ -750,6 +765,7 @@ extern int	pqWaitTimed(int forRead, int forWrite, PGconn *conn,
 						time_t finish_time);
 extern int	pqReadReady(PGconn *conn);
 extern int	pqWriteReady(PGconn *conn);
+extern int	pqReadPending(PGconn *conn);
 
 /* === in fe-secure.c === */
 

@@ -90,7 +90,7 @@ IoStreamProcessor pgtls_processor = {
 	.read = (io_stream_read_func) pgtls_read,
 	.write = (io_stream_write_func) pgtls_write,
 	.buffered_read_data = (io_stream_predicate) pgtls_read_pending,
-	.destroy = (io_stream_destroy_func) pgtls_close
+	.destroy = (io_stream_consumer) pgtls_close
 };
 
 static bool pq_init_ssl_lib = true;

@@ -38,6 +38,8 @@ common_sources = files(
   'username.c',
   'wait_error.c',
   'wchar.c',
+  'z_stream.c',
+  'zpq_stream.c'
 )
 
 if ssl.found()

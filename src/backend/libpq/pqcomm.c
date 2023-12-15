@@ -61,6 +61,7 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <pgstat.h>
 #include <unistd.h>
 #include <sys/file.h>
 #include <sys/socket.h>
@@ -76,7 +77,9 @@
 
 #include "common/ip.h"
 #include "common/io_stream.h"
+#include "common/zpq_stream.h"
 #include "libpq/libpq.h"
+#include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "port/pg_bswap.h"
 #include "storage/ipc.h"
@@ -84,6 +87,7 @@
 #include "utils/guc_hooks.h"
 #include "utils/memutils.h"
 #include "utils/wait_event.h"
+#include "utils/builtins.h"
 
 /*
  * Cope with the various platform-specific ways to spell TCP keepalive socket
@@ -1133,11 +1137,12 @@ retry:
 /* --------------------------------
  *		pq_recvbuf - load some bytes into the input buffer
  *
- *		returns 0 if OK, EOF if trouble
+ *      nowait parameter toggles non-blocking mode.
+ *		returns number of read bytes, EOF if trouble
  * --------------------------------
  */
 static int
-pq_recvbuf(void)
+pq_recvbuf(bool nowait)
 {
 	if (PqRecvPointer > 0)
 	{
@@ -1153,8 +1158,8 @@ pq_recvbuf(void)
 			PqRecvLength = PqRecvPointer = 0;
 	}
 
-	/* Ensure that we're in blocking mode */
-	socket_set_nonblocking(false);
+	/* Ensure that we're in the appropriate mode */
+	socket_set_nonblocking(nowait);
 
 	/* Can fill buffer from PqRecvLength and upwards */
 	for (;;)
@@ -1168,8 +1173,22 @@ pq_recvbuf(void)
 
 		if (r < 0)
 		{
+			if (r == ZS_DECOMPRESS_ERROR)
+			{
+				char const *msg = zpq_decompress_error(MyProcPort->zpq_stream);
+
+				if (msg == NULL)
+					msg = "end of stream";
+				ereport(COMMERROR,
+						(errcode_for_socket_access(),
+						 errmsg("failed to decompress data: %s", msg)));
+				return EOF;
+			}
 			if (errno == EINTR)
 				continue;		/* Ok if interrupted */
+
+			if (nowait && (errno == EAGAIN || errno == EWOULDBLOCK))
+				return 0;
 
 			/*
 			 * Careful: an ereport() that tries to write to the client would
@@ -1194,7 +1213,7 @@ pq_recvbuf(void)
 		}
 		/* r contains number of bytes read, so just incr length */
 		PqRecvLength += r;
-		return 0;
+		return r;
 	}
 }
 
@@ -1209,7 +1228,8 @@ pq_getbyte(void)
 
 	while (PqRecvPointer >= PqRecvLength)
 	{
-		if (pq_recvbuf())		/* If nothing in buffer, then recv some */
+		if (pq_recvbuf(false) == EOF)	/* If nothing in buffer, then recv
+										 * some */
 			return EOF;			/* Failed to recv data */
 	}
 	return (unsigned char) PqRecvBuffer[PqRecvPointer++];
@@ -1228,7 +1248,8 @@ pq_peekbyte(void)
 
 	while (PqRecvPointer >= PqRecvLength)
 	{
-		if (pq_recvbuf())		/* If nothing in buffer, then recv some */
+		if (pq_recvbuf(false) == EOF)	/* If nothing in buffer, then recv
+										 * some */
 			return EOF;			/* Failed to recv data */
 	}
 	return (unsigned char) PqRecvBuffer[PqRecvPointer];
@@ -1249,47 +1270,10 @@ pq_getbyte_if_available(unsigned char *c)
 
 	Assert(PqCommReadingMsg);
 
-	if (PqRecvPointer < PqRecvLength)
+	if (PqRecvPointer < PqRecvLength || (r = pq_recvbuf(true)) > 0)
 	{
 		*c = PqRecvBuffer[PqRecvPointer++];
 		return 1;
-	}
-
-	/* Put the socket into non-blocking mode */
-	socket_set_nonblocking(true);
-
-	errno = 0;
-
-	r = io_read_with_wait(MyProcPort, c, 1);
-	if (r < 0)
-	{
-		/*
-		 * Ok if no data available without blocking or interrupted (though
-		 * EINTR really shouldn't happen with a non-blocking socket). Report
-		 * other errors.
-		 */
-		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-			r = 0;
-		else
-		{
-			/*
-			 * Careful: an ereport() that tries to write to the client would
-			 * cause recursion to here, leading to stack overflow and core
-			 * dump!  This message must go *only* to the postmaster log.
-			 *
-			 * If errno is zero, assume it's EOF and let the caller complain.
-			 */
-			if (errno != 0)
-				ereport(COMMERROR,
-						(errcode_for_socket_access(),
-						 errmsg("could not receive data from client: %m")));
-			r = EOF;
-		}
-	}
-	else if (r == 0)
-	{
-		/* EOF detected */
-		r = EOF;
 	}
 
 	return r;
@@ -1312,7 +1296,8 @@ pq_getbytes(char *s, size_t len)
 	{
 		while (PqRecvPointer >= PqRecvLength)
 		{
-			if (pq_recvbuf())	/* If nothing in buffer, then recv some */
+			if (pq_recvbuf(false) == EOF)	/* If nothing in buffer, then recv
+											 * some */
 				return EOF;		/* Failed to recv data */
 		}
 		amount = PqRecvLength - PqRecvPointer;
@@ -1346,7 +1331,8 @@ pq_discardbytes(size_t len)
 	{
 		while (PqRecvPointer >= PqRecvLength)
 		{
-			if (pq_recvbuf())	/* If nothing in buffer, then recv some */
+			if (pq_recvbuf(false) == EOF)	/* If nothing in buffer, then recv
+											 * some */
 				return EOF;		/* Failed to recv data */
 		}
 		amount = PqRecvLength - PqRecvPointer;
@@ -1574,7 +1560,7 @@ internal_flush(void)
 	char	   *bufptr = PqSendBuffer + PqSendStart;
 	char	   *bufend = PqSendBuffer + PqSendPointer;
 
-	while (bufptr < bufend)
+	while (bufptr < bufend || io_stream_buffered_write_data(MyProcPort->io_stream) != 0)
 	{
 		int			rc;
 		size_t		bytes_sent;
@@ -1625,6 +1611,7 @@ internal_flush(void)
 			PqSendStart = PqSendPointer = 0;
 			ClientConnectionLost = 1;
 			InterruptPending = 1;
+			io_stream_reset_write_state(MyProcPort->io_stream);
 			return EOF;
 		}
 
@@ -1647,7 +1634,7 @@ socket_flush_if_writable(void)
 	int			res;
 
 	/* Quick exit if nothing to do */
-	if (PqSendPointer == PqSendStart)
+	if ((PqSendPointer == PqSendStart) && (io_stream_buffered_write_data(MyProcPort->io_stream) == 0))
 		return 0;
 
 	/* No-op if reentrant call */
@@ -1670,7 +1657,7 @@ socket_flush_if_writable(void)
 static bool
 socket_is_send_pending(void)
 {
-	return (PqSendStart < PqSendPointer);
+	return (PqSendStart < PqSendPointer || (io_stream_buffered_write_data(MyProcPort->io_stream) != 0));
 }
 
 /* --------------------------------

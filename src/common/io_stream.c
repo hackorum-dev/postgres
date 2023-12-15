@@ -129,6 +129,19 @@ io_stream_buffered_write_data(IoStream * stream)
 	return false;
 }
 
+void
+io_stream_reset_write_state(IoStream * stream)
+{
+
+	IoStreamLayer *layer;
+
+	for (layer = stream->layer; layer != NULL; layer = layer->next)
+	{
+		if (layer->processor->reset_write_state != NULL)
+			layer->processor->reset_write_state(layer->context);
+	}
+}
+
 ssize_t
 io_stream_next_read(IoStreamLayer * layer, void *data, size_t size, bool buffered_only)
 {

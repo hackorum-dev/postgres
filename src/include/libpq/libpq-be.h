@@ -53,6 +53,8 @@ typedef struct
 #endif
 #endif							/* ENABLE_SSPI */
 
+#include <common/zpq_stream.h>
+
 #include "common/io_stream.h"
 #include "datatype/timestamp.h"
 #include "libpq/hba.h"
@@ -161,6 +163,7 @@ typedef struct Port
 	int			remote_hostname_errcode;	/* see above */
 	char	   *remote_port;	/* text rep of remote port */
 	CAC_state	canAcceptConnections;	/* postmaster connection status */
+	ZpqStream  *zpq_stream;		/* streaming compression state */
 
 	/*
 	 * Information that needs to be saved from the startup packet and passed

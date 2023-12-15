@@ -25,6 +25,7 @@
 #include "common/ip.h"
 #include "common/link-canary.h"
 #include "common/scram-common.h"
+#include "common/zpq_stream.h"
 #include "common/string.h"
 #include "fe-auth.h"
 #include "libpq-fe.h"
@@ -398,6 +399,10 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Replication", "D", 5,
 	offsetof(struct pg_conn, replication)},
 
+	{"compression", "PGCOMPRESSION", "off", NULL,
+		"Libpq-compression", "", 16,
+	offsetof(struct pg_conn, compression)},
+
 	{"target_session_attrs", "PGTARGETSESSIONATTRS",
 		DefaultTargetSessionAttrs, NULL,
 		"Target-Session-Attrs", "", 15, /* sizeof("prefer-standby") = 15 */
@@ -523,6 +528,7 @@ pqDropConnection(PGconn *conn, bool flushInput)
 {
 	io_stream_destroy(conn->io_stream);
 	conn->io_stream = NULL;
+	conn->zpqStream = NULL;
 	/* Close the socket itself */
 	if (conn->sock != PGINVALID_SOCKET)
 		closesocket(conn->sock);
@@ -1711,6 +1717,34 @@ connectOptions2(PGconn *conn)
 		conn->gssencmode = strdup(DefaultGSSMode);
 		if (!conn->gssencmode)
 			goto oom_error;
+	}
+
+	/*
+	 * validate compression option
+	 */
+	if (conn->compression && conn->compression[0])
+	{
+		pg_compress_specification compressors[COMPRESSION_ALGORITHM_COUNT];
+		size_t		n_compressors;
+		int			rc = zpq_parse_compression_setting(conn->compression, compressors, &n_compressors);
+
+		if (rc == -1)
+		{
+			conn->status = CONNECTION_BAD;
+			appendPQExpBuffer(&conn->errorMessage,
+							  libpq_gettext("invalid %s value: \"%s\"\n"),
+							  "compression", conn->compression);
+			return false;
+		}
+
+		if (rc == 1 && n_compressors == 0)
+		{
+			conn->status = CONNECTION_BAD;
+			appendPQExpBuffer(&conn->errorMessage,
+							  libpq_gettext("no supported algorithms found, %s value: \"%s\"\n"),
+							  "compression", conn->compression);
+			return false;
+		}
 	}
 
 	/*
@@ -3348,6 +3382,20 @@ keep_going:						/* We will come back to here until there is
 				}
 
 				/*
+				 * By this point we have set up any encryption layers needed,
+				 * so we can inject compression processing if requested.
+				 */
+				if (!conn->zpqStream && conn->n_compressors > 0)
+				{
+					conn->zpqStream = zpq_create(conn->compressors, conn->n_compressors, conn->io_stream);
+					if (!conn->zpqStream)
+					{
+						libpq_append_conn_error(conn, "failed to set up compression stream");
+						goto error_return;
+					}
+				}
+
+				/*
 				 * Send the startup packet.
 				 *
 				 * Theoretically, this could block, but it really shouldn't
@@ -3834,14 +3882,22 @@ keep_going:						/* We will come back to here until there is
 				}
 				else if (beresp == PqMsg_NegotiateProtocolVersion)
 				{
-					if (pqGetNegotiateProtocolVersion3(conn))
+					if ((res = pqProcessNegotiateProtocolVersion3(conn)) < 0)
 					{
 						libpq_append_conn_error(conn, "received invalid protocol negotiation message");
 						goto error_return;
 					}
 					/* OK, we read the message; mark data consumed */
 					conn->inStart = conn->inCursor;
-					goto error_return;
+
+					if (res == 0)
+					{
+						goto error_return;
+					}
+					else
+					{
+						goto keep_going;
+					}
 				}
 
 				/* It is an authentication request. */
@@ -4270,6 +4326,50 @@ error_return:
 	return PGRES_POLLING_FAILED;
 }
 
+/*
+ * Based on server GUC libpq_compression, establishes a zpq_stream to compres
+ * protocol traffic. Should only be called once per connection lifecycle, as the
+ * zpq_stream cannot be reconfigured without restarting the connection
+ */
+void
+pqConfigureCompression(PGconn *conn, const char *compressors_str)
+{
+	pg_compress_specification be_compressors[COMPRESSION_ALGORITHM_COUNT];
+	size_t		n_be_compressors;
+
+	zpq_deserialize_compressors(compressors_str, be_compressors, &n_be_compressors);
+	if (conn->zpqStream)
+	{
+		pg_compress_algorithm algorithms[COMPRESSION_ALGORITHM_COUNT];
+		size_t		n_algorithms = 0;
+
+		if (n_be_compressors == 0)
+		{
+			return;
+		}
+
+		/*
+		 * Intersect client and server compressors to determine the final list
+		 * of the supported compressors. O(N^2) is negligible because of a
+		 * small number of the compression methods.
+		 */
+		for (size_t i = 0; i < conn->n_compressors; i++)
+		{
+			for (size_t j = 0; j < n_be_compressors; j++)
+			{
+				if (conn->compressors[i].algorithm == be_compressors[j].algorithm && conn->compressors[i].compress && be_compressors[j].decompress)
+				{
+					algorithms[n_algorithms] = conn->compressors[i].algorithm;
+					n_algorithms += 1;
+					break;
+				}
+			}
+		}
+
+		zpq_enable_compression(conn->zpqStream, algorithms, n_algorithms);
+	}
+}
+
 
 /*
  * internal_ping
@@ -4480,6 +4580,7 @@ freePGconn(PGconn *conn)
 	free(conn->fbappname);
 	free(conn->dbName);
 	free(conn->replication);
+	free(conn->compression);
 	free(conn->pguser);
 	if (conn->pgpass)
 	{
@@ -7164,6 +7265,24 @@ PQuser(const PGconn *conn)
 }
 
 char *
+PQcompression(const PGconn *conn)
+{
+	if (!conn || !conn->zpqStream)
+		return NULL;
+
+	return zpq_algorithms(conn->zpqStream);
+}
+
+char *
+PQserverCompression(const PGconn *conn)
+{
+	if (!conn)
+		return NULL;
+
+	return conn->server_compression;
+}
+
+char *
 PQpass(const PGconn *conn)
 {
 	char	   *password = NULL;
@@ -8048,7 +8167,8 @@ retry_masked:
 				strlcat(msgbuf, "\n", sizeof(msgbuf));
 				conn->write_err_msg = strdup(msgbuf);
 				/* Now claim the write succeeded */
-				n = len;
+				*bytes_written = n;
+				n = 0;
 				break;
 
 			default:
@@ -8063,7 +8183,8 @@ retry_masked:
 				strlcat(msgbuf, "\n", sizeof(msgbuf));
 				conn->write_err_msg = strdup(msgbuf);
 				/* Now claim the write succeeded */
-				n = len;
+				*bytes_written = n;
+				n = 0;
 				break;
 		}
 	}

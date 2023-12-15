@@ -78,7 +78,7 @@ static void be_tls_close(Port *port);
 IoStreamProcessor be_tls_processor = {
 	.read = (io_stream_read_func) be_tls_read,
 	.write = (io_stream_write_func) be_tls_write,
-	.destroy = (io_stream_destroy_func) be_tls_close
+	.destroy = (io_stream_consumer) be_tls_close
 };
 
 static char *X509_NAME_to_cstring(X509_NAME *name);
