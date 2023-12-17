@@ -221,7 +221,8 @@ zpq_choose_algorithm(ZpqStream * zpq, char msg_type, uint32 msg_len)
 	 * has not yet been enabled) for message types that would most obviously
 	 * benefit from compression
 	 */
-	if (msg_len >= ZPQ_COMPRESS_THRESHOLD && (msg_type == PqMsg_CopyData || msg_type == PqMsg_DataRow || msg_type == PqMsg_Query))
+	/* force enable for testing */
+	if (true || (msg_len >= ZPQ_COMPRESS_THRESHOLD && (msg_type == PqMsg_CopyData || msg_type == PqMsg_DataRow || msg_type == PqMsg_Query)))
 	{
 		return zpq->compress_algs[0];
 	}

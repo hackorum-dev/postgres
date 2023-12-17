@@ -17,7 +17,7 @@
 #include "utils/guc_hooks.h"
 
 /* GUC variable containing the allowed compression algorithms list (separated by semicolon) */
-char	   *libpq_compress_algorithms = "off";
+char	   *libpq_compress_algorithms = "on";
 pg_compress_specification libpq_compressors[COMPRESSION_ALGORITHM_COUNT];
 size_t		libpq_n_compressors = 0;
 

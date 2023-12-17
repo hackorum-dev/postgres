@@ -4550,7 +4550,7 @@ struct config_string ConfigureNamesString[] =
 			GUC_REPORT
 		},
 		&libpq_compress_algorithms,
-		"off",
+		"on",
 		check_libpq_compression, assign_libpq_compression, NULL
 	},
 

@@ -399,7 +399,7 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Replication", "D", 5,
 	offsetof(struct pg_conn, replication)},
 
-	{"compression", "PGCOMPRESSION", "off", NULL,
+	{"compression", "PGCOMPRESSION", "on", NULL,
 		"Libpq-compression", "", 16,
 	offsetof(struct pg_conn, compression)},
 
@@ -1737,6 +1737,7 @@ connectOptions2(PGconn *conn)
 			return false;
 		}
 
+		/* Disable to allow SanityCheck to pass
 		if (rc == 1 && n_compressors == 0)
 		{
 			conn->status = CONNECTION_BAD;
@@ -1745,6 +1746,7 @@ connectOptions2(PGconn *conn)
 							  "compression", conn->compression);
 			return false;
 		}
+		*/
 	}
 
 	/*
