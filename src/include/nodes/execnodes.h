@@ -2208,8 +2208,9 @@ typedef struct MergeJoinState
 	TupleTableSlot *mj_MarkedTupleSlot;
 	TupleTableSlot *mj_NullOuterTupleSlot;
 	TupleTableSlot *mj_NullInnerTupleSlot;
-	ExprContext *mj_OuterEContext;
-	ExprContext *mj_InnerEContext;
+
+	MemoryContext mj_outerTuple_memory;
+	MemoryContext mj_innerTuple_memory;
 } MergeJoinState;
 
 /* ----------------
