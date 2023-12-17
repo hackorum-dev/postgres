@@ -290,7 +290,7 @@ MJExamineQuals(List *mergeclauses,
 static MJEvalResult
 MJEvalOuterValues(MergeJoinState *mergestate)
 {
-	ExprContext *econtext = mergestate->mj_OuterEContext;
+	ExprContext *econtext = mergestate->js.ps.ps_ExprContext;
 	MJEvalResult result = MJEVAL_MATCHABLE;
 	int			i;
 	MemoryContext oldContext;
@@ -299,9 +299,9 @@ MJEvalOuterValues(MergeJoinState *mergestate)
 	if (TupIsNull(mergestate->mj_OuterTupleSlot))
 		return MJEVAL_ENDOFJOIN;
 
-	ResetExprContext(econtext);
+	MemoryContextReset(mergestate->mj_outerTuple_memory);
 
-	oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
+	oldContext = MemoryContextSwitchTo(mergestate->mj_outerTuple_memory);
 
 	econtext->ecxt_outertuple = mergestate->mj_OuterTupleSlot;
 
@@ -337,7 +337,7 @@ MJEvalOuterValues(MergeJoinState *mergestate)
 static MJEvalResult
 MJEvalInnerValues(MergeJoinState *mergestate, TupleTableSlot *innerslot)
 {
-	ExprContext *econtext = mergestate->mj_InnerEContext;
+	ExprContext *econtext = mergestate->js.ps.ps_ExprContext;
 	MJEvalResult result = MJEVAL_MATCHABLE;
 	int			i;
 	MemoryContext oldContext;
@@ -346,9 +346,9 @@ MJEvalInnerValues(MergeJoinState *mergestate, TupleTableSlot *innerslot)
 	if (TupIsNull(innerslot))
 		return MJEVAL_ENDOFJOIN;
 
-	ResetExprContext(econtext);
+	MemoryContextReset(mergestate->mj_innerTuple_memory);
 
-	oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
+	oldContext = MemoryContextSwitchTo(mergestate->mj_innerTuple_memory);
 
 	econtext->ecxt_innertuple = innerslot;
 
@@ -1444,6 +1444,7 @@ ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags)
 	TupleDesc	outerDesc,
 				innerDesc;
 	const TupleTableSlotOps *innerOps;
+	ExprContext *econtext;
 
 	/* check for unsupported flags */
 	Assert(!(eflags & (EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK)));
@@ -1468,13 +1469,19 @@ ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags)
 	 */
 	ExecAssignExprContext(estate, &mergestate->js.ps);
 
+	econtext = mergestate->js.ps.ps_ExprContext;
+
 	/*
-	 * we need two additional econtexts in which we can compute the join
-	 * expressions from the left and right input tuples.  The node's regular
-	 * econtext won't do because it gets reset too often.
+	 * we need two additional contexts in which we can compute the join
+	 * expressions from the left and right input tuples.  The econtext's
+	 * regular ecxt_per_tuple_memory won't do because it gets reset too often.
 	 */
-	mergestate->mj_OuterEContext = CreateExprContext(estate);
-	mergestate->mj_InnerEContext = CreateExprContext(estate);
+	mergestate->mj_outerTuple_memory = AllocSetContextCreate(econtext->ecxt_per_query_memory,
+															 "OuterTupleCtx",
+															 ALLOCSET_SMALL_SIZES);
+	mergestate->mj_innerTuple_memory = AllocSetContextCreate(econtext->ecxt_per_query_memory,
+															 "InnerTupleCtx",
+															 ALLOCSET_SMALL_SIZES);
 
 	/*
 	 * initialize child nodes
