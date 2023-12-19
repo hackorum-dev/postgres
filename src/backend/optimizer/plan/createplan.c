@@ -188,7 +188,8 @@ static SampleScan *make_samplescan(List *qptlist, List *qpqual, Index scanrelid,
 								   TableSampleClause *tsc);
 static IndexScan *make_indexscan(List *qptlist, List *qpqual, Index scanrelid,
 								 Oid indexid, List *indexqual, List *indexqualorig,
-								 List *indexfilters, List *indexfiltersorig,
+								 List *indexfilter, List *indexfilterorig,
+								 List *indexfilterqual,
 								 List *indexorderby, List *indexorderbyorig,
 								 List *indexorderbyops,
 								 ScanDirection indexscandir);
@@ -3014,6 +3015,7 @@ create_indexscan_plan(PlannerInfo *root,
 {
 	Scan	   *scan_plan;
 	List	   *indexclauses = best_path->indexclauses;
+	List	   *indexfilters = best_path->indexfilters;
 	List	   *indexorderbys = best_path->indexorderbys;
 	Index		baserelid = best_path->path.parent->relid;
 	IndexOptInfo *indexinfo = best_path->indexinfo;
@@ -3026,6 +3028,7 @@ create_indexscan_plan(PlannerInfo *root,
 	List	   *fixed_indexorderbys;
 	List	   *indexorderbyops = NIL;
 	ListCell   *l;
+	List	   *filterqual;
 
 	/* it should be a base rel... */
 	Assert(baserelid > 0);
@@ -3045,7 +3048,7 @@ create_indexscan_plan(PlannerInfo *root,
 							 &fixed_indexquals);
 
 	/*
-	 * Extract the index qual expressions (stripped of RestrictInfos) from the
+	 * Extract the index filter expressions (stripped of RestrictInfos) from the
 	 * IndexClauses list, and prepare a copy with index Vars substituted for
 	 * table Vars.  (This step also does replace_nestloop_params on the
 	 * fixed_indexquals.)
@@ -3088,6 +3091,7 @@ create_indexscan_plan(PlannerInfo *root,
 	 * extract_nonindex_conditions() in costsize.c.
 	 */
 	qpqual = NIL;
+	filterqual = NIL;
 	foreach(l, scan_clauses)
 	{
 		RestrictInfo *rinfo = lfirst_node(RestrictInfo, l);
@@ -3101,13 +3105,33 @@ create_indexscan_plan(PlannerInfo *root,
 								 false))
 			continue;			/* provably implied by indexquals */
 		qpqual = lappend(qpqual, rinfo);
+
+		/*
+		 * Maybe add it to the non-index quals, i.e. those that need to be
+		 * evaluated on the heap tuple. But only if we decided to not evaluate
+		 * it on the index directly.
+		 */
+		if (list_member_ptr(indexfilters, rinfo))
+			continue;
+
+		filterqual = lappend(filterqual, rinfo);
 	}
 
 	/* Sort clauses into best execution order */
-	qpqual = order_qual_clauses(root, qpqual);
+	qpqual = order_qual_clauses(root, qpqual);	/* XXX */
 
 	/* Reduce RestrictInfo list to bare expressions; ignore pseudoconstants */
 	qpqual = extract_actual_clauses(qpqual, false);
+
+	/*
+	 * Do the same cost reordering and reduction with non-index filters.
+	 *
+	 * XXX This is a bit strange/wrong, because it happens after we already
+	 * split the clauses into index and non-index part. So if we want to look
+	 * at the cost and stop pushing stuff down, this is probably too late.
+	 */
+	filterqual = order_qual_clauses(root, filterqual);
+	filterqual = extract_actual_clauses(filterqual, false);
 
 	/*
 	 * We have to replace any outer-relation variables with nestloop params in
@@ -3126,6 +3150,8 @@ create_indexscan_plan(PlannerInfo *root,
 			replace_nestloop_params(root, (Node *) stripped_indexfilters);
 		qpqual = (List *)
 			replace_nestloop_params(root, (Node *) qpqual);
+		filterqual = (List *)
+			replace_nestloop_params(root, (Node *) filterqual);
 		indexorderbys = (List *)
 			replace_nestloop_params(root, (Node *) indexorderbys);
 	}
@@ -3202,6 +3228,7 @@ create_indexscan_plan(PlannerInfo *root,
 											stripped_indexquals,
 											fixed_indexfilters,
 											stripped_indexfilters,
+											filterqual,	/* non-index quals */
 											fixed_indexorderbys,
 											indexorderbys,
 											indexorderbyops,
@@ -5595,8 +5622,9 @@ make_indexscan(List *qptlist,
 			   Oid indexid,
 			   List *indexqual,
 			   List *indexqualorig,
-			   List *indexfilters,
-			   List *indexfiltersorig,
+			   List *indexfilter,
+			   List *indexfilterorig,
+			   List *indexfilterqual,
 			   List *indexorderby,
 			   List *indexorderbyorig,
 			   List *indexorderbyops,
@@ -5613,8 +5641,9 @@ make_indexscan(List *qptlist,
 	node->indexid = indexid;
 	node->indexqual = indexqual;
 	node->indexqualorig = indexqualorig;
-	node->indexfilters = indexfilters;
-	node->indexfiltersorig = indexfiltersorig;
+	node->indexfilter = indexfilter;
+	node->indexfilterorig = indexfilterorig;
+	node->indexfilterqual = indexfilterqual;
 	node->indexorderby = indexorderby;
 	node->indexorderbyorig = indexorderbyorig;
 	node->indexorderbyops = indexorderbyops;
