@@ -83,7 +83,8 @@ LETTER			[A-Za-z_\200-\377]
 LETTER_OR_DIGIT [A-Za-z_0-9\200-\377]
 
 ID				{LETTER}{LETTER_OR_DIGIT}*
-QUALIFIED_ID	{ID}"."{ID}
+SUB_ID          "."{ID}
+QUALIFIED_ID	{ID}{SUB_ID}+
 
 UNQUOTED_STRING {LETTER}({LETTER_OR_DIGIT}|[-._:/])*
 STRING			\'([^'\\\n]|\\.|\'\')*\'
