@@ -286,6 +286,18 @@
 #endif
 
 /*
+ * Place on functions which return a pointer but can't return NULL. When used,
+ * it can allow the compiler to warn if a NULL check occurs in the parent
+ * function because that NULL check would always fail. It is also an opportunity
+ * to help the compiler with optimizations.
+ */
+#if __has_attribute (returns_nonnull)
+#define pg_returns_nonnull __attribute__((returns_nonnull))
+#else
+#define pg_returns_nonnull
+#endif
+
+/*
  * Hints to the compiler about the likelihood of a branch. Both likely() and
  * unlikely() return the boolean value of the contained expression.
  *
