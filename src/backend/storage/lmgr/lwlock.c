@@ -1707,10 +1707,10 @@ LWLockUpdateVar(LWLock *lock, pg_atomic_uint64 *valptr, uint64 val)
 	PRINT_LWDEBUG("LWLockUpdateVar", lock, LW_EXCLUSIVE);
 
 	/*
-	 * Note that pg_atomic_exchange_u64 is a full barrier, so we're guaranteed
-	 * that the variable is updated before waking up waiters.
+	 * We rely on the barrier provided by LWLockWaitListLock() to ensure the
+	 * variable is updated before waking up waiters.
 	 */
-	pg_atomic_exchange_u64(valptr, val);
+	pg_atomic_write_u64(valptr, val);
 
 	proclist_init(&wakeup);
 
@@ -1840,10 +1840,10 @@ void
 LWLockReleaseClearVar(LWLock *lock, pg_atomic_uint64 *valptr, uint64 val)
 {
 	/*
-	 * Note that pg_atomic_exchange_u64 is a full barrier, so we're guaranteed
-	 * that the variable is updated before releasing the lock.
+	 * We rely on the barrier provided by LWLockRelease() to ensure the
+	 * variable is updated before releasing the lock.
 	 */
-	pg_atomic_exchange_u64(valptr, val);
+	pg_atomic_write_u64(valptr, val);
 
 	LWLockRelease(lock);
 }
