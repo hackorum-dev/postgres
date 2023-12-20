@@ -201,6 +201,12 @@ $result = $node_primary->safe_psql(
 is($result, "rep1|f|t|lost|",
 	'check that the slot became inactive and the state "lost" persists');
 
+$result = $node_primary->safe_psql(
+	'postgres',
+	qq[SELECT pg_get_slot_invalidation_cause('rep1')]);
+is($result, "1",
+	'check that the invalidation cause of the slot is obtained correctly');
+
 # Wait until current checkpoint ends
 my $checkpoint_ended = 0;
 for (my $i = 0; $i < 10 * $PostgreSQL::Test::Utils::timeout_default; $i++)

@@ -226,6 +226,33 @@ pg_drop_replication_slot(PG_FUNCTION_ARGS)
 }
 
 /*
+ * SQL function for getting invalidation cause of a slot.
+ *
+ * Returns ReplicationSlotInvalidationCause enum value for valid slot_name;
+ * Returns RS_INVAL_NONE if the given slot is not invalidated.
+ */
+Datum
+pg_get_slot_invalidation_cause(PG_FUNCTION_ARGS)
+{
+	Name		name = PG_GETARG_NAME(0);
+	ReplicationSlot *s;
+	ReplicationSlotInvalidationCause cause;
+
+	s = SearchNamedReplicationSlot(NameStr(*name), true);
+	if (s == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("replication slot \"%s\" does not exist",
+						NameStr(*name))));
+
+	SpinLockAcquire(&s->mutex);
+	cause = s->data.invalidated;
+	SpinLockRelease(&s->mutex);
+
+	PG_RETURN_INT16(cause);
+}
+
+/*
  * pg_get_replication_slots - SQL SRF showing all replication slots
  * that currently exist on the database cluster.
  */
