@@ -371,7 +371,7 @@ build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
 	tle = makeTargetEntry(copyObject(mminfo->target),
 						  (AttrNumber) 1,
 						  pstrdup("agg_target"),
-						  false);
+						  NOT_JUNK);
 	tlist = list_make1(tle);
 	subroot->processed_tlist = parse->targetList = tlist;
 

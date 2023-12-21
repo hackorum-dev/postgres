@@ -145,7 +145,7 @@ add_to_flat_tlist(List *tlist, List *exprs)
 			tle = makeTargetEntry(copyObject(expr), /* copy needed?? */
 								  next_resno++,
 								  NULL,
-								  false);
+								  NOT_JUNK);
 			tlist = lappend(tlist, tle);
 		}
 	}
@@ -636,7 +636,7 @@ make_tlist_from_pathtarget(PathTarget *target)
 		tle = makeTargetEntry(expr,
 							  i + 1,
 							  NULL,
-							  false);
+							  NOT_JUNK);
 		if (target->sortgrouprefs)
 			tle->ressortgroupref = target->sortgrouprefs[i];
 		tlist = lappend(tlist, tle);
