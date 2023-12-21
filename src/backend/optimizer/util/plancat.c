@@ -1774,7 +1774,13 @@ build_physical_tlist(PlannerInfo *root, RelOptInfo *rel)
 				/*
 				 * A resjunk column of the subquery can be reflected as
 				 * resjunk in the physical tlist; we need not punt.
+				 *
+				 * Subquery planner will filter out these junk columns
+				 * from the final plan, so reflect that here.
 				 */
+				if (tle->resjunk == JUNK_SORT_GROUP_COL || tle->resjunk == JUNK_PLANNER_ONLY)
+					continue;
+
 				var = makeVarFromTargetEntry(varno, tle);
 
 				tlist = lappend(tlist,

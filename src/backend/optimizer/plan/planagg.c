@@ -420,6 +420,8 @@ build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
 
 	final_rel = query_planner(subroot, minmax_qp_callback, NULL);
 
+	subroot->final_tlist = subroot->processed_tlist;
+
 	/*
 	 * Since we didn't go through subquery_planner() to handle the subquery,
 	 * we have to do some of the same cleanup it would do, in particular cope

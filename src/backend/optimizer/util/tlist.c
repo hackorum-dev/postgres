@@ -359,6 +359,26 @@ get_sortgroupref_tle(Index sortref, List *targetList)
 }
 
 /*
+ * get_sortgroupref_tle_noerr
+ *		As above, but return NULL rather than throwing an error if not found.
+ */
+TargetEntry *
+get_sortgroupref_tle_noerr(Index sortref, List *targetList)
+{
+	ListCell   *l;
+
+	foreach(l, targetList)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(l);
+
+		if (tle->ressortgroupref == sortref)
+			return tle;
+	}
+
+	return NULL;
+}
+
+/*
  * get_sortgroupclause_tle
  *		Find the targetlist entry matching the given SortGroupClause
  *		by ressortgroupref, and return it.

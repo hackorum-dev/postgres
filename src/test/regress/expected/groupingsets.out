@@ -472,10 +472,10 @@ select grouping(ss.x)
 from int8_tbl i1
 cross join lateral (select (select i1.q1) as x) ss
 group by ss.x;
-                   QUERY PLAN                   
-------------------------------------------------
+                 QUERY PLAN                 
+--------------------------------------------
  GroupAggregate
-   Output: GROUPING((SubPlan 1)), ((SubPlan 2))
+   Output: GROUPING((SubPlan 1))
    Group Key: ((SubPlan 2))
    ->  Sort
          Output: ((SubPlan 2)), i1.q1
@@ -505,7 +505,7 @@ group by ss.x;
                  QUERY PLAN                 
 --------------------------------------------
  GroupAggregate
-   Output: (SubPlan 2), ((SubPlan 3))
+   Output: (SubPlan 2)
    Group Key: ((SubPlan 3))
    ->  Sort
          Output: ((SubPlan 3)), i1.q1

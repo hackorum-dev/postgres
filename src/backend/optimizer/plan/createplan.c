@@ -354,7 +354,7 @@ create_plan(PlannerInfo *root, Path *best_path)
 	 * nodes don't have a tlist matching the querytree targetlist.
 	 */
 	if (!IsA(plan, ModifyTable))
-		apply_tlist_labeling(plan->targetlist, root->processed_tlist);
+		apply_tlist_labeling(plan->targetlist, root->final_tlist);
 
 	/*
 	 * Attach any initPlans created in this query level to the topmost plan
@@ -2819,7 +2819,7 @@ create_modifytable_plan(PlannerInfo *root, ModifyTablePath *best_path)
 	subplan = create_plan_recurse(root, subpath, CP_EXACT_TLIST);
 
 	/* Transfer resname/resjunk labeling, too, to keep executor happy */
-	apply_tlist_labeling(subplan->targetlist, root->processed_tlist);
+	apply_tlist_labeling(subplan->targetlist, root->final_tlist);
 
 	plan = make_modifytable(root,
 							subplan,
