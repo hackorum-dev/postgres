@@ -1063,6 +1063,28 @@ select f1, (select min(unique1) from tenk1 where unique1 > f1) AS gt
  -2147483647 |  0
 (5 rows)
 
+-- check kNN search
+begin;
+set local enable_seqscan = off;
+explain (costs off)
+  SELECT min(f1 <-> '(0,0)'::point) FROM polygon_tbl;
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ Result
+   InitPlan 1 (returns $0)
+     ->  Limit
+           ->  Index Scan using gpolygonind on polygon_tbl
+                 Order By: (f1 <-> '(0,0)'::point)
+                 Filter: ((f1 <-> '(0,0)'::point) IS NOT NULL)
+(6 rows)
+
+SELECT min(f1 <-> '(0,0)'::point) FROM polygon_tbl;
+ min 
+-----
+   0
+(1 row)
+
+rollback;
 -- check some cases that were handled incorrectly in 8.3.0
 explain (costs off)
   select distinct max(unique2) from tenk1;
