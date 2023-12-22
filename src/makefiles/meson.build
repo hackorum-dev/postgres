@@ -137,6 +137,17 @@ else
     'CLANG': '',
     'LLVM_BINPATH': '',
   }
+  pgxscppopt = get_option('pgxscpp')
+  if add_languages('cpp', required: pgxscppopt, native: false)
+    cpp = meson.get_compiler('cpp')
+    pgxs_kv += {
+      'CXX': ' '.join(cpp.cmd_array()),
+    }
+  else
+    pgxs_kv += {
+      'CXX': '',
+    }
+  endif
 endif
 
 pgxs_bins = {
