@@ -852,7 +852,8 @@ find_computable_ec_member(PlannerInfo *root,
 	exprvars = pull_var_clause((Node *) exprs,
 							   PVC_INCLUDE_AGGREGATES |
 							   PVC_INCLUDE_WINDOWFUNCS |
-							   PVC_INCLUDE_PLACEHOLDERS);
+							   PVC_INCLUDE_PLACEHOLDERS |
+							   PVC_INCLUDE_CONVERTROWTYPES);
 
 	foreach(lc, ec->ec_members)
 	{
@@ -880,7 +881,8 @@ find_computable_ec_member(PlannerInfo *root,
 		emvars = pull_var_clause((Node *) em->em_expr,
 								 PVC_INCLUDE_AGGREGATES |
 								 PVC_INCLUDE_WINDOWFUNCS |
-								 PVC_INCLUDE_PLACEHOLDERS);
+								 PVC_INCLUDE_PLACEHOLDERS|
+								 PVC_INCLUDE_CONVERTROWTYPES);
 		foreach(lc2, emvars)
 		{
 			if (!list_member(exprvars, lfirst(lc2)))
