@@ -29,11 +29,13 @@ handle_help_version_opts(int argc, char *argv[],
 		if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-?") == 0)
 		{
 			hlp(get_progname(argv[0]));
+			fflush(stdout);
 			exit(0);
 		}
 		if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)
 		{
 			printf("%s (PostgreSQL) " PG_VERSION "\n", fixed_progname);
+			fflush(stdout);
 			exit(0);
 		}
 	}

@@ -145,6 +145,7 @@ main(int argc, char **argv)
 		if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-?") == 0)
 		{
 			help();
+			fflush(stdout);
 			exit(0);
 		}
 	}

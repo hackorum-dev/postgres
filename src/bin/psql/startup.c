@@ -140,11 +140,13 @@ main(int argc, char *argv[])
 		if ((strcmp(argv[1], "-?") == 0) || (argc == 2 && (strcmp(argv[1], "--help") == 0)))
 		{
 			usage(NOPAGER);
+			fflush(stdout);
 			exit(EXIT_SUCCESS);
 		}
 		if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)
 		{
 			showVersion();
+			fflush(stdout);
 			exit(EXIT_SUCCESS);
 		}
 	}
@@ -839,6 +841,7 @@ static void
 showVersion(void)
 {
 	puts("psql (PostgreSQL) " PG_VERSION);
+	fflush(stdout);
 }
 
 

@@ -90,11 +90,13 @@ parseCommandLine(int argc, char *argv[])
 		if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-?") == 0)
 		{
 			usage();
+			fflush(stdout);
 			exit(0);
 		}
 		if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)
 		{
 			puts("pg_upgrade (PostgreSQL) " PG_VERSION);
+			fflush(stdout);
 			exit(0);
 		}
 	}
