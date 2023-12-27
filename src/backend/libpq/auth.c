@@ -3029,7 +3029,7 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 						   encryptedpassword + i, &errstr))
 		{
 			ereport(LOG,
-					(errmsg("could not perform MD5 encryption of password: %s",
+					(errmsg("could not perform MD5 hashing of password: %s",
 							errstr)));
 			pfree(cryptvector);
 			pg_freeaddrinfo_all(hint.ai_family, serveraddrs);
@@ -3221,7 +3221,7 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 						   encryptedpassword, &errstr))
 		{
 			ereport(LOG,
-					(errmsg("could not perform MD5 encryption of received packet: %s",
+					(errmsg("could not perform MD5 hashing of received packet: %s",
 							errstr)));
 			pfree(cryptvector);
 			continue;

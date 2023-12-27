@@ -14,7 +14,7 @@ ALTER USER regress_passwordcheck_user1 PASSWORD 'xyzregress_passwordcheck_user1'
 -- error: contains only letters
 ALTER USER regress_passwordcheck_user1 PASSWORD 'alessnicelongpassword';
 
--- encrypted ok (password is "secret")
+-- hashed ok (password is "secret")
 ALTER USER regress_passwordcheck_user1 PASSWORD 'md592350e12ac34e52dd598f90893bb3ae7';
 
 -- error: password is user name

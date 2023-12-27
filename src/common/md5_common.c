@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * md5_common.c
- *	  Routines shared between all MD5 implementations used for encrypted
+ *	  Routines shared between all MD5 implementations used for hashed
  *	  passwords.
  *
  * Sverre H. Huseby <sverrehu@online.no>

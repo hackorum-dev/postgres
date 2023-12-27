@@ -4,7 +4,7 @@
  *	  Constants and common utilities related to MD5.
  *
  * These definitions are needed by both frontend and backend code to work
- * with MD5-encrypted passwords.
+ * with MD5-hashed passwords.
  *
  * Portions Copyright (c) 1996-2023, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California

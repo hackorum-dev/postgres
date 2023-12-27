@@ -4,8 +4,8 @@
 # Set of tests for authentication and pg_hba.conf. The following password
 # methods are checked through this test:
 # - Plain
-# - MD5-encrypted
-# - SCRAM-encrypted
+# - MD5-hashed
+# - SCRAM-hashed
 # This test can only run with Unix-domain sockets.
 
 use strict;

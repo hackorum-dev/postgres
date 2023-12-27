@@ -2054,15 +2054,15 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
   <variablelist>
 
   <varlistentry>
-   <term>Password Encryption</term>
+   <term>Password Hashing</term>
    <listitem>
 
     <para>
      Database user passwords are stored as hashes (determined by the setting
      <xref linkend="guc-password-encryption"/>), so the administrator cannot
      determine the actual password assigned to the user. If SCRAM or MD5
-     encryption is used for client authentication, the unencrypted password is
-     never even temporarily present on the server because the client encrypts
+     hashing is used for client authentication, the unhashed password is
+     never even temporarily present on the server because the client hashes
      it before being sent across the network. SCRAM is preferred, because it
      is an Internet standard and is more secure than the PostgreSQL-specific
      MD5 authentication protocol.

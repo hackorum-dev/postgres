@@ -1,5 +1,5 @@
 --
--- PGP encrypt using MD5
+-- PGP encrypt using MD5 hash
 --
 
 select pgp_sym_decrypt(

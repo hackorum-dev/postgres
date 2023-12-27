@@ -35,13 +35,13 @@ static check_password_hook_type prev_check_password_hook = NULL;
 /*
  * check_password
  *
- * performs checks on an encrypted or unencrypted password
+ * performs checks on an hashed or unencrypted password
  * ereport's if not acceptable
  *
  * username: name of role being created or changed
- * password: new password (possibly already encrypted)
+ * password: new password (possibly already hashed)
  * password_type: PASSWORD_TYPE_* code, to indicate if the password is
- *			in plaintext or encrypted form.
+ *			in plaintext or hashed form.
  * validuntil_time: password expiration time, as a timestamptz Datum
  * validuntil_null: true if password expiration time is NULL
  *
@@ -64,9 +64,9 @@ check_password(const char *username,
 	if (password_type != PASSWORD_TYPE_PLAINTEXT)
 	{
 		/*
-		 * Unfortunately we cannot perform exhaustive checks on encrypted
+		 * Unfortunately we cannot perform exhaustive checks on hashed
 		 * passwords - we are restricted to guessing. (Alternatively, we could
-		 * insist on the password being presented non-encrypted, but that has
+		 * insist on the password being presented non-hashed, but that has
 		 * its own security disadvantages.)
 		 *
 		 * We only check for username = password.

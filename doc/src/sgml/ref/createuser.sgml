@@ -543,7 +543,7 @@ PostgreSQL documentation
 </screen>
     In the above example, the new password isn't actually echoed when typed,
     but we show what was typed for clarity.  As you see, the password is
-    encrypted before it is sent to the client.
+    hashed before it is sent to the client.
    </para>
  </refsect1>
 

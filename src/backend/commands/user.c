@@ -442,7 +442,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 		}
 		else
 		{
-			/* Encrypt the password to the requested format. */
+			/* Hash the password to the requested format. */
 			shadow_pass = encrypt_password(Password_encryption, stmt->role,
 										   password);
 			new_record[Anum_pg_authid_rolpassword - 1] =
@@ -927,7 +927,7 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 		}
 		else
 		{
-			/* Encrypt the password to the requested format. */
+			/* Hash the password to the requested format. */
 			shadow_pass = encrypt_password(Password_encryption, rolename,
 										   password);
 			new_record[Anum_pg_authid_rolpassword - 1] =

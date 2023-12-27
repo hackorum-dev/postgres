@@ -39,20 +39,20 @@ SELECT rolname, rolpassword
     ORDER BY rolname, rolpassword;
 ALTER ROLE regress_passwd2_new RENAME TO regress_passwd2;
 
--- Change passwords with ALTER USER. With plaintext or already-encrypted
+-- Change passwords with ALTER USER. With plaintext or already-hashed
 -- passwords.
 SET password_encryption = 'md5';
 
--- encrypt with MD5
+-- hash with MD5
 ALTER ROLE regress_passwd2 PASSWORD 'foo';
--- already encrypted, use as they are
+-- already hashed, use as they are
 ALTER ROLE regress_passwd1 PASSWORD 'md5cd3578025fe2c3d7ed1b9a9b26238b70';
 ALTER ROLE regress_passwd3 PASSWORD 'SCRAM-SHA-256$4096:VLK4RMaQLCvNtQ==$6YtlR4t69SguDiwFvbVgVZtuz6gpJQQqUMZ7IQJK5yI=:ps75jrHeYU4lXCcXI4O8oIdJ3eO8o2jirjruw9phBTo=';
 
 SET password_encryption = 'scram-sha-256';
 -- create SCRAM secret
 ALTER ROLE  regress_passwd4 PASSWORD 'foo';
--- already encrypted with MD5, use as it is
+-- already hashed with MD5, use as it is
 CREATE ROLE regress_passwd5 PASSWORD 'md5e73a4b11df52a6068f8b39f90be36023';
 
 -- This looks like a valid SCRAM-SHA-256 secret, but it is not

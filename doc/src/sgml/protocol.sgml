@@ -302,7 +302,7 @@
       <listitem>
        <para>
         The frontend must now send a PasswordMessage containing the
-        password (with user name) encrypted via MD5, then encrypted
+        password (with user name) hashed via MD5, then hashed
         again using the 4-byte random salt specified in the
         AuthenticationMD5Password message.  If this is the correct
         password, the server responds with an AuthenticationOk,
@@ -3527,7 +3527,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Int32(5)</term>
        <listitem>
         <para>
-         Specifies that an MD5-encrypted password is required.
+         Specifies that an MD5-hashed password is required.
         </para>
        </listitem>
       </varlistentry>
@@ -3536,7 +3536,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Byte4</term>
        <listitem>
         <para>
-         The salt to use when encrypting the password.
+         The salt to use when hashing the password.
         </para>
        </listitem>
       </varlistentry>
@@ -5398,7 +5398,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>String</term>
        <listitem>
         <para>
-         The password (encrypted, if requested).
+         The password (hashed, if requested).
         </para>
        </listitem>
       </varlistentry>

@@ -169,7 +169,7 @@ sub configure_test_server_for_ssl
 		$node->psql('postgres',
 			"SET password_encryption='$params{password_enc}'; ALTER USER ssltestuser PASSWORD '$params{password}';"
 		);
-		# A special user that always has an md5-encrypted password
+		# A special user that always has an md5-hashed password
 		$node->psql('postgres',
 			"SET password_encryption='md5'; ALTER USER md5testuser PASSWORD '$params{password}';"
 		);

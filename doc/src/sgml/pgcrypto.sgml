@@ -119,7 +119,7 @@ hmac(data bytea, key bytea, type text) returns bytea
    <listitem>
     <para>
      They use a random value, called the <firstterm>salt</firstterm>, so that users
-     having the same password will have different encrypted passwords.
+     having the same password will have different hashed passwords.
      This is also an additional defense against reversing the algorithm.
     </para>
    </listitem>

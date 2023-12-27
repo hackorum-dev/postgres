@@ -7072,7 +7072,7 @@ void PQconninfoFree(PQconninfoOption *connOptions);
 
     <listitem>
      <para>
-      Prepares the encrypted form of a <productname>PostgreSQL</productname> password.
+      Prepares the hashed form of a <productname>PostgreSQL</productname> password.
 <synopsis>
 char *PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user, const char *algorithm);
 </synopsis>
@@ -7081,14 +7081,14 @@ char *PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user, 
       'pwd'</literal>.  It is good practice not to send the original cleartext
       password in such a command, because it might be exposed in command
       logs, activity displays, and so on.  Instead, use this function to
-      convert the password to encrypted form before it is sent.
+      convert the password to hashed form before it is sent.
      </para>
 
      <para>
       The <parameter>passwd</parameter> and <parameter>user</parameter> arguments
       are the cleartext password, and the SQL name of the user it is for.
-      <parameter>algorithm</parameter> specifies the encryption algorithm
-      to use to encrypt the password. Currently supported algorithms are
+      <parameter>algorithm</parameter> specifies the hashing algorithm
+      to use to hash the password. Currently supported algorithms are
       <literal>md5</literal> and <literal>scram-sha-256</literal> (<literal>on</literal> and
       <literal>off</literal> are also accepted as aliases for <literal>md5</literal>, for
       compatibility with older server versions). Note that support for
@@ -7121,7 +7121,7 @@ char *PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user, 
 
     <listitem>
      <para>
-      Prepares the md5-encrypted form of a <productname>PostgreSQL</productname> password.
+      Prepares the md5-hashed form of a <productname>PostgreSQL</productname> password.
 <synopsis>
 char *PQencryptPassword(const char *passwd, const char *user);
 </synopsis>
@@ -7129,7 +7129,7 @@ char *PQencryptPassword(const char *passwd, const char *user);
       <xref linkend="libpq-PQencryptPasswordConn"/>. The difference is that
       <xref linkend="libpq-PQencryptPassword"/> does not
       require a connection object, and <literal>md5</literal> is always used as the
-      encryption algorithm.
+      hashing algorithm.
      </para>
     </listitem>
    </varlistentry>

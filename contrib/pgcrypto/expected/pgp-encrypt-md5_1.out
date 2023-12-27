@@ -1,5 +1,5 @@
 --
--- PGP encrypt using MD5
+-- PGP encrypt using MD5 hash
 --
 select pgp_sym_decrypt(
 	pgp_sym_encrypt('Secret.', 'key', 's2k-digest-algo=md5'),

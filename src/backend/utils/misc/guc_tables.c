@@ -4943,7 +4943,7 @@ struct config_enum ConfigureNamesEnum[] =
 
 	{
 		{"password_encryption", PGC_USERSET, CONN_AUTH_AUTH,
-			gettext_noop("Chooses the algorithm for encrypting passwords."),
+			gettext_noop("Chooses the algorithm for hashing passwords."),
 			NULL
 		},
 		&Password_encryption,

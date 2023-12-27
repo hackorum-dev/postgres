@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * crypt.c
- *	  Functions for dealing with encrypted passwords stored in
+ *	  Functions for dealing with hashed passwords stored in
  *	  pg_authid.rolpassword.
  *
  * Portions Copyright (c) 1996-2023, PostgreSQL Global Development Group
@@ -109,7 +109,7 @@ get_password_type(const char *shadow_pass)
  * Given a user-supplied password, convert it into a secret of
  * 'target_type' kind.
  *
- * If the password is already in encrypted form, we cannot reverse the
+ * If the password is already in hashed form, we cannot reverse the
  * hash, so it is stored as it is regardless of the requested type.
  */
 char *
@@ -123,7 +123,7 @@ encrypt_password(PasswordType target_type, const char *role,
 	if (guessed_type != PASSWORD_TYPE_PLAINTEXT)
 	{
 		/*
-		 * Cannot convert an already-encrypted password from one format to
+		 * Cannot convert an already-hashed password from one format to
 		 * another, so return it as it is.
 		 */
 		return pstrdup(password);
@@ -136,21 +136,21 @@ encrypt_password(PasswordType target_type, const char *role,
 
 			if (!pg_md5_encrypt(password, role, strlen(role),
 								encrypted_password, &errstr))
-				elog(ERROR, "password encryption failed: %s", errstr);
+				elog(ERROR, "password hashing failed: %s", errstr);
 			return encrypted_password;
 
 		case PASSWORD_TYPE_SCRAM_SHA_256:
 			return pg_be_scram_build_secret(password);
 
 		case PASSWORD_TYPE_PLAINTEXT:
-			elog(ERROR, "cannot encrypt password with 'plaintext'");
+			elog(ERROR, "cannot hash password with 'plaintext'");
 	}
 
 	/*
 	 * This shouldn't happen, because the above switch statements should
 	 * handle every combination of source and target password types.
 	 */
-	elog(ERROR, "cannot encrypt password to requested type");
+	elog(ERROR, "cannot hash password to requested type");
 	return NULL;				/* keep compiler quiet */
 }
 
@@ -188,7 +188,7 @@ md5_crypt_verify(const char *role, const char *shadow_pass,
 	/*
 	 * Compute the correct answer for the MD5 challenge.
 	 */
-	/* stored password already encrypted, only do salt */
+	/* stored password already hashed, only do salt */
 	if (!pg_md5_encrypt(shadow_pass + strlen("md5"),
 						md5_salt, md5_salt_len,
 						crypt_pwd, &errstr))

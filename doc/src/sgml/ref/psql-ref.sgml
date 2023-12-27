@@ -2784,7 +2784,7 @@ lo_import 152801
         <listitem>
         <para>
         Changes the password of the specified user (by default, the current
-        user).  This command prompts for the new password, encrypts it, and
+        user).  This command prompts for the new password, hashes it, and
         sends it to the server as an <command>ALTER ROLE</command> command.  This
         makes sure that the new password does not appear in cleartext in the
         command history, the server log, or elsewhere.

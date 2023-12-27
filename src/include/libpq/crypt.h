@@ -19,7 +19,7 @@
  * Types of password hashes or secrets.
  *
  * Plaintext passwords can be passed in by the user, in a CREATE/ALTER USER
- * command. They will be encrypted to MD5 or SCRAM-SHA-256 format, before
+ * command. They will be hashed to MD5 or SCRAM-SHA-256 format, before
  * storing on-disk, so only MD5 and SCRAM-SHA-256 passwords should appear
  * in pg_authid.rolpassword. They are also the allowed values for the
  * password_encryption GUC.

@@ -538,7 +538,7 @@ include_dir         <replaceable>directory</replaceable>
         <term><literal>password</literal></term>
         <listitem>
          <para>
-          Require the client to supply an unencrypted password for
+          Require the client to supply an unhashed password for
           authentication.
           Since the password is sent in clear text over the
           network, this should not be used on untrusted networks.
@@ -1258,7 +1258,7 @@ omicron         bryanh                  guest1
        To ease transition from the <literal>md5</literal> method to the newer
        SCRAM method, if <literal>md5</literal> is specified as a method
        in <filename>pg_hba.conf</filename> but the user's password on the
-       server is encrypted for SCRAM (see below), then SCRAM-based
+       server is hashed for SCRAM (see below), then SCRAM-based
        authentication will automatically be chosen instead.
       </para>
      </listitem>
@@ -1295,17 +1295,17 @@ omicron         bryanh                  guest1
 
    <para>
     The availability of the different password-based authentication methods
-    depends on how a user's password on the server is encrypted (or hashed,
-    more accurately).  This is controlled by the configuration
+    depends on how a user's password on the server is hashed.
+    This is controlled by the configuration
     parameter <xref linkend="guc-password-encryption"/> at the time the
-    password is set.  If a password was encrypted using
+    password is set.  If a password was hashed using
     the <literal>scram-sha-256</literal> setting, then it can be used for the
     authentication methods <literal>scram-sha-256</literal>
     and <literal>password</literal> (but password transmission will be in
     plain text in the latter case).  The authentication method
     specification <literal>md5</literal> will automatically switch to using
     the <literal>scram-sha-256</literal> method in this case, as explained
-    above, so it will also work.  If a password was encrypted using
+    above, so it will also work.  If a password was hashed using
     the <literal>md5</literal> setting, then it can be used only for
     the <literal>md5</literal> and <literal>password</literal> authentication
     method specifications (again, with the password transmitted in plain text

@@ -3478,9 +3478,9 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
        <structfield>passwd</structfield> <type>text</type>
       </para>
       <para>
-       Password (possibly encrypted); null if none.  See
+       Password (possibly hashed); null if none.  See
        <link linkend="catalog-pg-authid"><structname>pg_authid</structname></link>
-       for details of how encrypted passwords are stored.
+       for details of how hashed passwords are stored.
       </para></entry>
      </row>
 

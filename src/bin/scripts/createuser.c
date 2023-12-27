@@ -306,7 +306,7 @@ main(int argc, char *argv[])
 												   newuser,
 												   NULL);
 		if (!encrypted_password)
-			pg_fatal("password encryption failed: %s",
+			pg_fatal("password hashing failed: %s",
 					 PQerrorMessage(conn));
 		appendStringLiteralConn(&sql, encrypted_password, conn);
 		PQfreemem(encrypted_password);

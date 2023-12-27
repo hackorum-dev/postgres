@@ -713,7 +713,7 @@ pg_password_sendauth(PGconn *conn, const char *password, AuthRequest areq)
 			return STATUS_ERROR;	/* shouldn't happen */
 	}
 
-	/* Encrypt the password if needed. */
+	/* Hash the password if needed. */
 
 	switch (areq)
 	{
@@ -735,14 +735,14 @@ pg_password_sendauth(PGconn *conn, const char *password, AuthRequest areq)
 									strlen(conn->pguser), crypt_pwd2,
 									&errstr))
 				{
-					libpq_append_conn_error(conn, "could not encrypt password: %s", errstr);
+					libpq_append_conn_error(conn, "could not hash password: %s", errstr);
 					free(crypt_pwd);
 					return STATUS_ERROR;
 				}
 				if (!pg_md5_encrypt(crypt_pwd2 + strlen("md5"), md5Salt,
 									4, crypt_pwd, &errstr))
 				{
-					libpq_append_conn_error(conn, "could not encrypt password: %s", errstr);
+					libpq_append_conn_error(conn, "could not hash password: %s", errstr);
 					free(crypt_pwd);
 					return STATUS_ERROR;
 				}
@@ -1223,10 +1223,10 @@ pg_fe_getauthname(PQExpBuffer errorMessage)
 
 
 /*
- * PQencryptPassword -- exported routine to encrypt a password with MD5
+ * PQencryptPassword -- exported routine to hash a password with MD5
  *
  * This function is equivalent to calling PQencryptPasswordConn with
- * "md5" as the encryption method, except that this doesn't require
+ * "md5" as the hashing method, except that this doesn't require
  * a connection object.  This function is deprecated, use
  * PQencryptPasswordConn instead.
  */
@@ -1250,19 +1250,19 @@ PQencryptPassword(const char *passwd, const char *user)
 }
 
 /*
- * PQencryptPasswordConn -- exported routine to encrypt a password
+ * PQencryptPasswordConn -- exported routine to hash a password
  *
  * This is intended to be used by client applications that wish to send
  * commands like ALTER USER joe PASSWORD 'pwd'.  The password need not
- * be sent in cleartext if it is encrypted on the client side.  This is
+ * be sent in cleartext if it is hashed on the client side.  This is
  * good because it ensures the cleartext password won't end up in logs,
  * pg_stat displays, etc.  We export the function so that clients won't
- * be dependent on low-level details like whether the encryption is MD5
+ * be dependent on low-level details like whether the hashing is MD5
  * or something else.
  *
  * Arguments are a connection object, the cleartext password, the SQL
  * name of the user it is for, and a string indicating the algorithm to
- * use for encrypting the password.  If algorithm is NULL, this queries
+ * use for hashing the password.  If algorithm is NULL, this queries
  * the server for the current 'password_encryption' value.  If you wish
  * to avoid that, e.g. to avoid blocking, you can execute
  * 'show password_encryption' yourself before calling this function, and
@@ -1344,7 +1344,7 @@ PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user,
 											 conn->scram_sha_256_iterations,
 											 &errstr);
 		if (!crypt_pwd)
-			libpq_append_conn_error(conn, "could not encrypt password: %s", errstr);
+			libpq_append_conn_error(conn, "could not hash password: %s", errstr);
 	}
 	else if (strcmp(algorithm, "md5") == 0)
 	{
@@ -1355,7 +1355,7 @@ PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user,
 
 			if (!pg_md5_encrypt(passwd, user, strlen(user), crypt_pwd, &errstr))
 			{
-				libpq_append_conn_error(conn, "could not encrypt password: %s", errstr);
+				libpq_append_conn_error(conn, "could not hash password: %s", errstr);
 				free(crypt_pwd);
 				crypt_pwd = NULL;
 			}
@@ -1365,7 +1365,7 @@ PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user,
 	}
 	else
 	{
-		libpq_append_conn_error(conn, "unrecognized password encryption algorithm \"%s\"",
+		libpq_append_conn_error(conn, "unrecognized password hashing algorithm \"%s\"",
 								algorithm);
 		return NULL;
 	}

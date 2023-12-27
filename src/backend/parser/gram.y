@@ -1197,7 +1197,7 @@ AlterOptRoleElem:
 			| ENCRYPTED PASSWORD Sconst
 				{
 					/*
-					 * These days, passwords are always stored in encrypted
+					 * These days, passwords are always stored in hashed
 					 * form, so there is no difference between PASSWORD and
 					 * ENCRYPTED PASSWORD.
 					 */
@@ -1209,7 +1209,7 @@ AlterOptRoleElem:
 					ereport(ERROR,
 							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 							 errmsg("UNENCRYPTED PASSWORD is no longer supported"),
-							 errhint("Remove UNENCRYPTED to store the password in encrypted form instead."),
+							 errhint("Remove UNENCRYPTED to store the password in hashed form instead."),
 							 parser_errposition(@1)));
 				}
 			| INHERIT

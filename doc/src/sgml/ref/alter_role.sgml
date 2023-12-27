@@ -88,9 +88,9 @@ ALTER ROLE { <replaceable class="parameter">role_specification</replaceable> | A
    roles for which they have been granted <literal>ADMIN OPTION</literal>.
    The current session user cannot be renamed.
    (Connect as a different user if you need to do that.)
-   Because <literal>MD5</literal>-encrypted passwords use the role name as
+   Because <literal>MD5</literal>-hashed passwords use the role name as
    cryptographic salt, renaming a role clears its password if the
-   password is <literal>MD5</literal>-encrypted.
+   password is <literal>MD5</literal>-hashed.
   </para>
 
   <para>
@@ -258,7 +258,7 @@ ALTER ROLE { <replaceable class="parameter">role_specification</replaceable> | A
   </para>
 
   <para>
-   Caution must be exercised when specifying an unencrypted password
+   Caution must be exercised when specifying an unhashed password
    with this command.  The password will be transmitted to the server
    in cleartext, and it might also be logged in the client's command
    history or the server log.  <xref linkend="app-psql"/>

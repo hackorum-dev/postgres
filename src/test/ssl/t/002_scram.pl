@@ -93,7 +93,7 @@ $node->connect_ok("$common_connstr user=ssltestuser channel_binding=disable",
 $node->connect_ok("$common_connstr user=ssltestuser channel_binding=require",
 	"SCRAM with SSL and channel_binding=require");
 
-# Now test when the user has an MD5-encrypted password; should fail
+# Now test when the user has an MD5-hashed password; should fail
 SKIP:
 {
 	skip "MD5 not supported" unless $md5_works;

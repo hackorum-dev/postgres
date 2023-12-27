@@ -750,7 +750,7 @@ px_crypt_des(const char *key, const char *setting)
 		output[0] = setting[0];
 
 		/*
-		 * If the encrypted password that the salt was extracted from is only
+		 * If the hashed password that the salt was extracted from is only
 		 * 1 character long, the salt will be corrupted.  We need to ensure
 		 * that the output string doesn't have an extra NUL in it!
 		 */
