@@ -61,7 +61,7 @@ extern bool lc_ctype_is_c(Oid collation);
  * Return the POSIX lconv struct (contains number/money formatting
  * information) with locale information for all categories.
  */
-extern struct lconv *PGLC_localeconv(void);
+extern pg_returns_nonnull struct lconv *PGLC_localeconv(void);
 
 extern void cache_locale_time(void);
 

@@ -9,6 +9,8 @@
 #ifndef FE_MEMUTILS_H
 #define FE_MEMUTILS_H
 
+#include "c.h"
+
 /*
  * Flags for pg_malloc_extended and palloc_extended, deliberately named
  * the same as the backend flags.
@@ -22,11 +24,11 @@
  * "Safe" memory allocation functions --- these exit(1) on failure
  * (except pg_malloc_extended with MCXT_ALLOC_NO_OOM)
  */
-extern char *pg_strdup(const char *in);
-extern void *pg_malloc(size_t size);
-extern void *pg_malloc0(size_t size);
+extern pg_returns_nonnull char *pg_strdup(const char *in);
+extern pg_returns_nonnull void *pg_malloc(size_t size);
+extern pg_returns_nonnull void *pg_malloc0(size_t size);
 extern void *pg_malloc_extended(size_t size, int flags);
-extern void *pg_realloc(void *ptr, size_t size);
+extern pg_returns_nonnull void *pg_realloc(void *ptr, size_t size);
 extern void pg_free(void *ptr);
 
 /*
@@ -52,12 +54,12 @@ extern void pg_free(void *ptr);
 #define pg_realloc_array(pointer, type, count) ((type *) pg_realloc(pointer, sizeof(type) * (count)))
 
 /* Equivalent functions, deliberately named the same as backend functions */
-extern char *pstrdup(const char *in);
-extern char *pnstrdup(const char *in, Size size);
-extern void *palloc(Size size);
-extern void *palloc0(Size size);
+extern pg_returns_nonnull char *pstrdup(const char *in);
+extern pg_returns_nonnull char *pnstrdup(const char *in, Size size);
+extern pg_returns_nonnull void *palloc(Size size);
+extern pg_returns_nonnull void *palloc0(Size size);
 extern void *palloc_extended(Size size, int flags);
-extern void *repalloc(void *pointer, Size size);
+extern pg_returns_nonnull void *repalloc(void *pointer, Size size);
 extern void pfree(void *pointer);
 
 #define palloc_object(type) ((type *) palloc(sizeof(type)))
@@ -67,7 +69,7 @@ extern void pfree(void *pointer);
 #define repalloc_array(pointer, type, count) ((type *) repalloc(pointer, sizeof(type) * (count)))
 
 /* sprintf into a palloc'd buffer --- these are in psprintf.c */
-extern char *psprintf(const char *fmt,...) pg_attribute_printf(1, 2);
+extern pg_returns_nonnull char *psprintf(const char *fmt,...) pg_attribute_printf(1, 2);
 extern size_t pvsnprintf(char *buf, size_t len, const char *fmt, va_list args) pg_attribute_printf(3, 0);
 
 #endif							/* FE_MEMUTILS_H */

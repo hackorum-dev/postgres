@@ -68,21 +68,21 @@ extern PGDLLIMPORT MemoryContext CurrentMemoryContext;
 /*
  * Fundamental memory-allocation operations (more are in utils/memutils.h)
  */
-extern void *MemoryContextAlloc(MemoryContext context, Size size);
-extern void *MemoryContextAllocZero(MemoryContext context, Size size);
+extern pg_returns_nonnull void *MemoryContextAlloc(MemoryContext context, Size size);
+extern pg_returns_nonnull void *MemoryContextAllocZero(MemoryContext context, Size size);
 extern void *MemoryContextAllocExtended(MemoryContext context,
 										Size size, int flags);
 extern void *MemoryContextAllocAligned(MemoryContext context,
 									   Size size, Size alignto, int flags);
 
-extern void *palloc(Size size);
-extern void *palloc0(Size size);
+extern pg_returns_nonnull void *palloc(Size size);
+extern pg_returns_nonnull void *palloc0(Size size);
 extern void *palloc_extended(Size size, int flags);
 extern void *palloc_aligned(Size size, Size alignto, int flags);
-extern pg_nodiscard void *repalloc(void *pointer, Size size);
+extern pg_nodiscard pg_returns_nonnull void *repalloc(void *pointer, Size size);
 extern pg_nodiscard void *repalloc_extended(void *pointer,
 											Size size, int flags);
-extern pg_nodiscard void *repalloc0(void *pointer, Size oldsize, Size size);
+extern pg_nodiscard pg_returns_nonnull void *repalloc0(void *pointer, Size oldsize, Size size);
 extern void pfree(void *pointer);
 
 /*
@@ -109,8 +109,8 @@ extern void pfree(void *pointer);
 #define repalloc0_array(pointer, type, oldcount, count) ((type *) repalloc0(pointer, sizeof(type) * (oldcount), sizeof(type) * (count)))
 
 /* Higher-limit allocators. */
-extern void *MemoryContextAllocHuge(MemoryContext context, Size size);
-extern pg_nodiscard void *repalloc_huge(void *pointer, Size size);
+extern pg_returns_nonnull void *MemoryContextAllocHuge(MemoryContext context, Size size);
+extern pg_nodiscard pg_returns_nonnull void *repalloc_huge(void *pointer, Size size);
 
 /*
  * Although this header file is nominally backend-only, certain frontend
@@ -120,7 +120,7 @@ extern pg_nodiscard void *repalloc_huge(void *pointer, Size size);
  */
 
 #ifndef FRONTEND
-static inline MemoryContext
+static inline MemoryContext pg_returns_nonnull
 MemoryContextSwitchTo(MemoryContext context)
 {
 	MemoryContext old = CurrentMemoryContext;
@@ -138,14 +138,14 @@ extern void MemoryContextRegisterResetCallback(MemoryContext context,
  * These are like standard strdup() except the copied string is
  * allocated in a context, not with malloc().
  */
-extern char *MemoryContextStrdup(MemoryContext context, const char *string);
-extern char *pstrdup(const char *in);
-extern char *pnstrdup(const char *in, Size len);
+extern pg_returns_nonnull char *MemoryContextStrdup(MemoryContext context, const char *string);
+extern pg_returns_nonnull char *pstrdup(const char *in);
+extern pg_returns_nonnull char *pnstrdup(const char *in, Size len);
 
-extern char *pchomp(const char *in);
+extern pg_returns_nonnull char *pchomp(const char *in);
 
 /* sprintf into a palloc'd buffer --- these are in psprintf.c */
-extern char *psprintf(const char *fmt,...) pg_attribute_printf(1, 2);
+extern char *psprintf(const char *fmt,...) pg_attribute_printf(1, 2) pg_returns_nonnull;
 extern size_t pvsnprintf(char *buf, size_t len, const char *fmt, va_list args) pg_attribute_printf(3, 0);
 
 #endif							/* PALLOC_H */
