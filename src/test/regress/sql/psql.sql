@@ -1379,7 +1379,7 @@ reset work_mem;
 \df has_database_privilege oid text
 \df has_database_privilege oid text -
 \dfa bit* small*
-\df *._pg_expandarray
+\df *._pg_index_position
 \do - pg_catalog.int4
 \do && anyarray *
 
