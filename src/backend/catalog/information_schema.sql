@@ -39,22 +39,15 @@ SET search_path TO information_schema;
  * A few supporting functions first ...
  */
 
-/* Expand any 1-D array into a set with integers 1..N */
-CREATE FUNCTION _pg_expandarray(IN anyarray, OUT x anyelement, OUT n int)
-    RETURNS SETOF RECORD
-    LANGUAGE sql STRICT IMMUTABLE PARALLEL SAFE
-    ROWS 100 SUPPORT pg_catalog.array_unnest_support
-    AS 'SELECT * FROM pg_catalog.unnest($1) WITH ORDINALITY';
-
 /* Given an index's OID and an underlying-table column number, return the
  * column's position in the index (NULL if not there) */
 CREATE FUNCTION _pg_index_position(oid, smallint) RETURNS int
     LANGUAGE sql STRICT STABLE
 BEGIN ATOMIC
-SELECT (ss.a).n FROM
-  (SELECT information_schema._pg_expandarray(indkey) AS a
-   FROM pg_catalog.pg_index WHERE indexrelid = $1) ss
-  WHERE (ss.a).x = $2;
+SELECT ik.icol
+FROM pg_catalog.pg_index,
+     pg_catalog.unnest(indkey) WITH ORDINALITY ik(tcol, icol)
+WHERE indexrelid = $1 AND ik.tcol = $2;
 END;
 
 CREATE FUNCTION _pg_truetypid(pg_attribute, pg_type) RETURNS oid
@@ -1075,37 +1068,32 @@ GRANT SELECT ON enabled_roles TO PUBLIC;
 
 CREATE VIEW key_column_usage AS
     SELECT CAST(current_database() AS sql_identifier) AS constraint_catalog,
-           CAST(nc_nspname AS sql_identifier) AS constraint_schema,
+           CAST(nc.nspname AS sql_identifier) AS constraint_schema,
            CAST(conname AS sql_identifier) AS constraint_name,
            CAST(current_database() AS sql_identifier) AS table_catalog,
-           CAST(nr_nspname AS sql_identifier) AS table_schema,
+           CAST(nr.nspname AS sql_identifier) AS table_schema,
            CAST(relname AS sql_identifier) AS table_name,
            CAST(a.attname AS sql_identifier) AS column_name,
-           CAST((ss.x).n AS cardinal_number) AS ordinal_position,
+           CAST(ck.icol AS cardinal_number) AS ordinal_position,
            CAST(CASE WHEN contype = 'f' THEN
-                       _pg_index_position(ss.conindid, ss.confkey[(ss.x).n])
+                       _pg_index_position(c.conindid, c.confkey[ck.icol])
                      ELSE NULL
                 END AS cardinal_number)
              AS position_in_unique_constraint
     FROM pg_attribute a,
-         (SELECT r.oid AS roid, r.relname, r.relowner,
-                 nc.nspname AS nc_nspname, nr.nspname AS nr_nspname,
-                 c.oid AS coid, c.conname, c.contype, c.conindid,
-                 c.confkey, c.confrelid,
-                 _pg_expandarray(c.conkey) AS x
-          FROM pg_namespace nr, pg_class r, pg_namespace nc,
-               pg_constraint c
-          WHERE nr.oid = r.relnamespace
-                AND r.oid = c.conrelid
-                AND nc.oid = c.connamespace
-                AND c.contype IN ('p', 'u', 'f')
-                AND r.relkind IN ('r', 'p')
-                AND (NOT pg_is_other_temp_schema(nr.oid)) ) AS ss
-    WHERE ss.roid = a.attrelid
-          AND a.attnum = (ss.x).x
+         pg_namespace nr, pg_class r, pg_namespace nc,
+         pg_constraint c, UNNEST(c.conkey) WITH ORDINALITY ck(tcol, icol)
+    WHERE nr.oid = r.relnamespace
+          AND r.oid = c.conrelid
+          AND nc.oid = c.connamespace
+          AND c.contype IN ('p', 'u', 'f')
+          AND r.relkind IN ('r', 'p')
+          AND (NOT pg_is_other_temp_schema(nr.oid))
+          AND r.oid = a.attrelid
+          AND a.attnum = ck.tcol
           AND NOT a.attisdropped
           AND (pg_has_role(relowner, 'USAGE')
-               OR has_column_privilege(roid, a.attnum,
+               OR has_column_privilege(r.oid, a.attnum,
                                        'SELECT, INSERT, UPDATE, REFERENCES'));
 
 GRANT SELECT ON key_column_usage TO PUBLIC;
@@ -1142,20 +1130,20 @@ GRANT SELECT ON key_column_usage TO PUBLIC;
 
 CREATE VIEW parameters AS
     SELECT CAST(current_database() AS sql_identifier) AS specific_catalog,
-           CAST(n_nspname AS sql_identifier) AS specific_schema,
-           CAST(nameconcatoid(proname, p_oid) AS sql_identifier) AS specific_name,
-           CAST((ss.x).n AS cardinal_number) AS ordinal_position,
+           CAST(n.nspname AS sql_identifier) AS specific_schema,
+           CAST(nameconcatoid(proname, p.oid) AS sql_identifier) AS specific_name,
+           CAST(a.argnum AS cardinal_number) AS ordinal_position,
            CAST(
              CASE WHEN proargmodes IS NULL THEN 'IN'
-                WHEN proargmodes[(ss.x).n] = 'i' THEN 'IN'
-                WHEN proargmodes[(ss.x).n] = 'o' THEN 'OUT'
-                WHEN proargmodes[(ss.x).n] = 'b' THEN 'INOUT'
-                WHEN proargmodes[(ss.x).n] = 'v' THEN 'IN'
-                WHEN proargmodes[(ss.x).n] = 't' THEN 'OUT'
+                WHEN proargmodes[a.argnum] = 'i' THEN 'IN'
+                WHEN proargmodes[a.argnum] = 'o' THEN 'OUT'
+                WHEN proargmodes[a.argnum] = 'b' THEN 'INOUT'
+                WHEN proargmodes[a.argnum] = 'v' THEN 'IN'
+                WHEN proargmodes[a.argnum] = 't' THEN 'OUT'
              END AS character_data) AS parameter_mode,
            CAST('NO' AS yes_or_no) AS is_result,
            CAST('NO' AS yes_or_no) AS as_locator,
-           CAST(NULLIF(proargnames[(ss.x).n], '') AS sql_identifier) AS parameter_name,
+           CAST(NULLIF(proargnames[a.argnum], '') AS sql_identifier) AS parameter_name,
            CAST(
              CASE WHEN t.typelem <> 0 AND t.typlen = -1 THEN 'ARRAY'
                   WHEN nt.nspname = 'pg_catalog' THEN format_type(t.oid, null)
@@ -1182,22 +1170,19 @@ CREATE VIEW parameters AS
            CAST(null AS sql_identifier) AS scope_schema,
            CAST(null AS sql_identifier) AS scope_name,
            CAST(null AS cardinal_number) AS maximum_cardinality,
-           CAST((ss.x).n AS sql_identifier) AS dtd_identifier,
+           CAST(a.argtypid AS sql_identifier) AS dtd_identifier,
            CAST(
              CASE WHEN pg_has_role(proowner, 'USAGE')
-                  THEN pg_get_function_arg_default(p_oid, (ss.x).n)
+                  THEN pg_get_function_arg_default(p.oid, a.argnum::int)
                   ELSE NULL END
              AS character_data) AS parameter_default
-
-    FROM pg_type t, pg_namespace nt,
-         (SELECT n.nspname AS n_nspname, p.proname, p.oid AS p_oid, p.proowner,
-                 p.proargnames, p.proargmodes,
-                 _pg_expandarray(coalesce(p.proallargtypes, p.proargtypes::oid[])) AS x
-          FROM pg_namespace n, pg_proc p
-          WHERE n.oid = p.pronamespace
-                AND (pg_has_role(p.proowner, 'USAGE') OR
-                     has_function_privilege(p.oid, 'EXECUTE'))) AS ss
-    WHERE t.oid = (ss.x).x AND t.typnamespace = nt.oid;
+    FROM pg_type t, pg_namespace nt, pg_namespace n, pg_proc p,
+         UNNEST(coalesce(p.proallargtypes, p.proargtypes::oid[]))
+           WITH ORDINALITY a(argtypid, argnum)
+    WHERE n.oid = p.pronamespace
+          AND (pg_has_role(p.proowner, 'USAGE') OR
+               has_function_privilege(p.oid, 'EXECUTE'))
+          AND t.oid = a.argtypid AND t.typnamespace = nt.oid;
 
 GRANT SELECT ON parameters TO PUBLIC;
 
@@ -2048,14 +2033,11 @@ CREATE VIEW triggered_update_columns AS
            CAST(c.relname AS sql_identifier) AS event_object_table,
            CAST(a.attname AS sql_identifier) AS event_object_column
 
-    FROM pg_namespace n, pg_class c, pg_trigger t,
-         (SELECT tgoid, (ta0.tgat).x AS tgattnum, (ta0.tgat).n AS tgattpos
-          FROM (SELECT oid AS tgoid, information_schema._pg_expandarray(tgattr) AS tgat FROM pg_trigger) AS ta0) AS ta,
-         pg_attribute a
+    FROM pg_namespace n, pg_class c, pg_trigger t, pg_attribute a,
+         UNNEST(tgattr) ta(tgattnum)
 
     WHERE n.oid = c.relnamespace
           AND c.oid = t.tgrelid
-          AND t.oid = ta.tgoid
           AND (a.attrelid, a.attnum) = (t.tgrelid, ta.tgattnum)
           AND NOT t.tgisinternal
           AND (NOT pg_is_other_temp_schema(n.oid))
@@ -2752,10 +2734,10 @@ CREATE VIEW element_types AS
            /* parameters */
            SELECT pronamespace,
                   CAST(nameconcatoid(proname, oid) AS sql_identifier),
-                  'ROUTINE'::text, (ss.x).n, (ss.x).x, 0
-           FROM (SELECT p.pronamespace, p.proname, p.oid,
-                        _pg_expandarray(coalesce(p.proallargtypes, p.proargtypes::oid[])) AS x
-                 FROM pg_proc p) AS ss
+                  'ROUTINE'::text, a.argnum, a.argtypid, 0
+            FROM pg_proc p,
+                 UNNEST(coalesce(p.proallargtypes, p.proargtypes::oid[]))
+                   WITH ORDINALITY a(argtypid, argnum)
 
            UNION ALL
 
