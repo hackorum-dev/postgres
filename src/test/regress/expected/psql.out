@@ -5517,11 +5517,11 @@ reset work_mem;
  pg_catalog | bit_xor | smallint         | smallint            | agg
 (3 rows)
 
-\df *._pg_expandarray
-                                             List of functions
-       Schema       |      Name       | Result data type |            Argument data types            | Type 
---------------------+-----------------+------------------+-------------------------------------------+------
- information_schema | _pg_expandarray | SETOF record     | anyarray, OUT x anyelement, OUT n integer | func
+\df *._pg_index_position
+                                    List of functions
+       Schema       |        Name        | Result data type | Argument data types | Type 
+--------------------+--------------------+------------------+---------------------+------
+ information_schema | _pg_index_position | integer          | oid, smallint       | func
 (1 row)
 
 \do - pg_catalog.int4
@@ -5574,11 +5574,10 @@ CREATE OR REPLACE FUNCTION information_schema._pg_index_position(oid, smallint)
  LANGUAGE sql
  STABLE STRICT
 BEGIN ATOMIC
- SELECT (ss.a).n AS n
-    FROM ( SELECT information_schema._pg_expandarray(pg_index.indkey) AS a
-            FROM pg_index
-           WHERE (pg_index.indexrelid = $1)) ss
-   WHERE ((ss.a).x = $2);
+ SELECT ik.icol
+    FROM pg_index,
+     LATERAL unnest(pg_index.indkey) WITH ORDINALITY ik(tcol, icol)
+   WHERE ((pg_index.indexrelid = $1) AND (ik.tcol = $2));
 END
 \sf+ information_schema._pg_index_position
         CREATE OR REPLACE FUNCTION information_schema._pg_index_position(oid, smallint)
@@ -5586,12 +5585,11 @@ END
          LANGUAGE sql
          STABLE STRICT
 1       BEGIN ATOMIC
-2        SELECT (ss.a).n AS n
-3           FROM ( SELECT information_schema._pg_expandarray(pg_index.indkey) AS a
-4                   FROM pg_index
-5                  WHERE (pg_index.indexrelid = $1)) ss
-6          WHERE ((ss.a).x = $2);
-7       END
+2        SELECT ik.icol
+3           FROM pg_index,
+4            LATERAL unnest(pg_index.indkey) WITH ORDINALITY ik(tcol, icol)
+5          WHERE ((pg_index.indexrelid = $1) AND (ik.tcol = $2));
+6       END
 \sf+ interval_pl_time
         CREATE OR REPLACE FUNCTION pg_catalog.interval_pl_time(interval, time without time zone)
          RETURNS time without time zone
