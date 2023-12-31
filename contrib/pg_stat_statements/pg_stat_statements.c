@@ -1371,6 +1371,10 @@ pgss_store(const char *query, int64 queryId,
 		if (!stored)
 			goto done;
 
+		elog(LOG, "calling entry_alloc for '%.40s', cur hash size %ld",
+			 norm_query ? norm_query : query, 
+			 hash_get_num_entries(pgss_hash));
+
 		/* OK to create a new hashtable entry */
 		entry = entry_alloc(&key, query_offset, query_len, encoding,
 							jstate != NULL);
@@ -2196,6 +2200,8 @@ entry_dealloc(void)
 	/* Now zap an appropriate fraction of lowest-usage entries */
 	nvictims = Max(10, i * USAGE_DEALLOC_PERCENT / 100);
 	nvictims = Min(nvictims, i);
+
+	elog(LOG, "entry_dealloc: zapping %d of %d victims", nvictims, i);
 
 	for (i = 0; i < nvictims; i++)
 	{
