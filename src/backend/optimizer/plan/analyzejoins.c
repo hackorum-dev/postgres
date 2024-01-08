@@ -115,7 +115,7 @@ restart:
 
 		/*
 		 * Currently, join_is_removable can only succeed when the sjinfo's
-		 * righthand is a single baserel.  Remove that rel from the query and
+		 * min_righthand is a single baserel.  Remove that rel from the query and
 		 * joinlist.
 		 */
 		innerrelid = bms_singleton_member(sjinfo->min_righthand);
