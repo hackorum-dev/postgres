@@ -29,6 +29,7 @@ OBJS = \
 	command.o \
 	common.o \
 	copy.o \
+	create_function.o \
 	crosstabview.o \
 	describe.o \
 	help.o \

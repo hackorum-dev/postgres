@@ -4,6 +4,7 @@ psql_sources = files(
   'command.c',
   'common.c',
   'copy.c',
+  'create_function.c',
   'crosstabview.c',
   'describe.c',
   'help.c',

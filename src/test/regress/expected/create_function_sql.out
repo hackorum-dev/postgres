@@ -706,9 +706,16 @@ LINE 2:     AS 'SELECT $2;';
 CREATE FUNCTION test1 (int) RETURNS int LANGUAGE SQL
     AS 'a', 'b';
 ERROR:  only one AS item needed for language "sql"
+\create_function from ./data/max.sql max(int,int) returns int LANGUAGE SQL
+select max(11, 22);
+ max 
+-----
+  22
+(1 row)
+
 -- Cleanup
 DROP SCHEMA temp_func_test CASCADE;
-NOTICE:  drop cascades to 30 other objects
+NOTICE:  drop cascades to 31 other objects
 DETAIL:  drop cascades to function functest_a_1(text,date)
 drop cascades to function functest_a_2(text[])
 drop cascades to function functest_a_3()
@@ -739,5 +746,6 @@ drop cascades to function voidtest3(integer)
 drop cascades to function voidtest4(integer)
 drop cascades to function voidtest5(integer)
 drop cascades to function double_append(anyarray,anyelement)
+drop cascades to function max(integer,integer)
 DROP USER regress_unpriv_user;
 RESET search_path;

@@ -276,3 +276,7 @@ if {$1 == "t"} {
 }
 elog NOTICE "end of function"
 $function$;
+
+\create_function from ./data/max.tcl max(int,int) returns int LANGUAGE pltcl
+
+select max(11, 22);

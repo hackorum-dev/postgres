@@ -792,3 +792,10 @@ SELECT self_modify(42);
          126
 (1 row)
 
+\create_function from ./data/max.pl max(int,int) returns int LANGUAGE plperl
+select max(11, 22);
+ max 
+-----
+  22
+(1 row)
+

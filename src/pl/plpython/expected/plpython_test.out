@@ -91,3 +91,10 @@ CONTEXT:  Traceback (most recent call last):
   PL/Python function "elog_test_basic", line 10, in <module>
     plpy.error('error')
 PL/Python function "elog_test_basic"
+\create_function from ./data/max.py max(int,int) returns int LANGUAGE plpython3u
+select max(11, 22);
+ max 
+-----
+  22
+(1 row)
+

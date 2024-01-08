@@ -521,3 +521,7 @@ $$ LANGUAGE plperl;
 
 SELECT self_modify(42);
 SELECT self_modify(42);
+
+\create_function from ./data/max.pl max(int,int) returns int LANGUAGE plperl
+
+select max(11, 22);

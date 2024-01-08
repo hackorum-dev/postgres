@@ -415,6 +415,10 @@ CREATE FUNCTION test1 (int) RETURNS int LANGUAGE SQL
 CREATE FUNCTION test1 (int) RETURNS int LANGUAGE SQL
     AS 'a', 'b';
 
+\create_function from ./data/max.sql max(int,int) returns int LANGUAGE SQL
+
+select max(11, 22);
+
 -- Cleanup
 DROP SCHEMA temp_func_test CASCADE;
 DROP USER regress_unpriv_user;

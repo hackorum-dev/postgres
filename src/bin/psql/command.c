@@ -30,6 +30,7 @@
 #include "common/logging.h"
 #include "common/string.h"
 #include "copy.h"
+#include "create_function.h"
 #include "crosstabview.h"
 #include "describe.h"
 #include "fe_utils/cancel.h"
@@ -71,6 +72,7 @@ static backslashResult exec_command_cd(PsqlScanState scan_state, bool active_bra
 static backslashResult exec_command_conninfo(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_copy(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_copyright(PsqlScanState scan_state, bool active_branch);
+static backslashResult exec_command_create_function(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_crosstabview(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_d(PsqlScanState scan_state, bool active_branch,
 									  const char *cmd);
@@ -323,6 +325,8 @@ exec_command(const char *cmd,
 		status = exec_command_copy(scan_state, active_branch);
 	else if (strcmp(cmd, "copyright") == 0)
 		status = exec_command_copyright(scan_state, active_branch);
+	else if (strcmp(cmd, "create_function") == 0)
+		status = exec_command_create_function(scan_state, active_branch);
 	else if (strcmp(cmd, "crosstabview") == 0)
 		status = exec_command_crosstabview(scan_state, active_branch);
 	else if (cmd[0] == 'd')
@@ -718,6 +722,28 @@ exec_command_copyright(PsqlScanState scan_state, bool active_branch)
 		print_copyright();
 
 	return PSQL_CMD_SKIP_LINE;
+}
+
+/*
+ * \create_function -- create a function obtaining its body from a file
+ */
+static backslashResult
+exec_command_create_function(PsqlScanState scan_state, bool active_branch)
+{
+	bool		success = true;
+
+	if (active_branch)
+	{
+		char	   *opt = psql_scan_slash_option(scan_state,
+												 OT_WHOLE_LINE, NULL, false);
+
+		success = do_create_function(opt);
+		free(opt);
+	}
+	else
+		ignore_slash_whole_line(scan_state);
+
+	return success ? PSQL_CMD_SKIP_LINE : PSQL_CMD_ERROR;
 }
 
 /*

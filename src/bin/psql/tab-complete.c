@@ -1714,7 +1714,7 @@ psql_completion(const char *text, int start, int end)
 		"\\a",
 		"\\bind",
 		"\\connect", "\\conninfo", "\\C", "\\cd", "\\copy",
-		"\\copyright", "\\crosstabview",
+		"\\copyright", "\\create_function", "\\crosstabview",
 		"\\d", "\\da", "\\dA", "\\dAc", "\\dAf", "\\dAo", "\\dAp",
 		"\\db", "\\dc", "\\dconfig", "\\dC", "\\dd", "\\ddp", "\\dD",
 		"\\des", "\\det", "\\deu", "\\dew", "\\dE", "\\df",
@@ -2912,6 +2912,21 @@ psql_completion(const char *text, int start, int end)
 	/* Complete COPY <sth> FROM <sth> WITH (<options>) */
 	else if (Matches("COPY|\\copy", MatchAny, "FROM", MatchAny, "WITH", MatchAny))
 		COMPLETE_WITH("WHERE");
+
+/* \create_function */
+
+	else if (Matches("\\create_function"))
+		COMPLETE_WITH("FROM");
+	else if (Matches("\\create_function", "FROM"))
+	{
+		completion_charp = "";
+		completion_force_quote = false;
+		matches = rl_completion_matches(text, complete_from_files);
+	}
+	else if (Matches("\\create_function", "FROM", MatchAny))
+	{
+		COMPLETE_WITH_VERSIONED_SCHEMA_QUERY(Query_for_list_of_functions);
+	}
 
 	/* CREATE ACCESS METHOD */
 	/* Complete "CREATE ACCESS METHOD <name>" */

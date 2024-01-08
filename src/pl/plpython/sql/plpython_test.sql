@@ -50,3 +50,7 @@ plpy.error('error')
 $$ LANGUAGE plpython3u;
 
 SELECT elog_test_basic();
+
+\create_function from ./data/max.py max(int,int) returns int LANGUAGE plpython3u
+
+select max(11, 22);
