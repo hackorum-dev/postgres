@@ -679,12 +679,12 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 	char	   *src_icurules = NULL;
 	char		src_locprovider = '\0';
 	char	   *src_collversion = NULL;
-	bool		src_istemplate;
-	bool		src_hasloginevt;
-	bool		src_allowconn;
+	bool		src_istemplate = false;
+	bool		src_hasloginevt = false;
+	bool		src_allowconn = false;
 	TransactionId src_frozenxid = InvalidTransactionId;
 	MultiXactId src_minmxid = InvalidMultiXactId;
-	Oid			src_deftablespace;
+	Oid			src_deftablespace = InvalidOid;
 	volatile Oid dst_deftablespace;
 	Relation	pg_database_rel;
 	HeapTuple	tuple;
