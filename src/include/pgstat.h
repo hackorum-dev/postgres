@@ -439,6 +439,9 @@ typedef struct PgStat_WalStats
 	PgStat_Counter wal_write_time;
 	PgStat_Counter wal_sync_time;
 	TimestampTz stat_reset_timestamp;
+	PgStat_Counter wal_insert_lock_acquire;
+	PgStat_Counter wal_insert_lock_acquire_time;
+	PgStat_Counter wal_wait_for_insert_to_finish_time;
 } PgStat_WalStats;
 
 /*
@@ -454,6 +457,9 @@ typedef struct PgStat_PendingWalStats
 	PgStat_Counter wal_sync;
 	instr_time	wal_write_time;
 	instr_time	wal_sync_time;
+	PgStat_Counter	wal_insert_lock_acquire;
+	instr_time	wal_insert_lock_acquire_time;
+	instr_time	wal_wait_for_insert_to_finish_time;
 } PgStat_PendingWalStats;
 
 

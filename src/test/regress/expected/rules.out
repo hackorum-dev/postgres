@@ -2233,8 +2233,11 @@ pg_stat_wal| SELECT wal_records,
     wal_sync,
     wal_write_time,
     wal_sync_time,
-    stats_reset
-   FROM pg_stat_get_wal() w(wal_records, wal_fpi, wal_bytes, wal_buffers_full, wal_write, wal_sync, wal_write_time, wal_sync_time, stats_reset);
+    stats_reset,
+    wal_insert_lock_acquire,
+    wal_insert_lock_acquire_time,
+    wal_wait_for_insert_to_finish_time
+   FROM pg_stat_get_wal() w(wal_records, wal_fpi, wal_bytes, wal_buffers_full, wal_write, wal_sync, wal_write_time, wal_sync_time, stats_reset, wal_insert_lock_acquire, wal_insert_lock_acquire_time, wal_wait_for_insert_to_finish_time);
 pg_stat_wal_receiver| SELECT pid,
     status,
     receive_start_lsn,

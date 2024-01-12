@@ -119,6 +119,9 @@ pgstat_flush_wal(bool nowait)
 	WALSTAT_ACC(wal_sync, PendingWalStats);
 	WALSTAT_ACC_INSTR_TIME(wal_write_time);
 	WALSTAT_ACC_INSTR_TIME(wal_sync_time);
+	WALSTAT_ACC(wal_insert_lock_acquire, PendingWalStats);
+	WALSTAT_ACC_INSTR_TIME(wal_insert_lock_acquire_time);
+	WALSTAT_ACC_INSTR_TIME(wal_wait_for_insert_to_finish_time);
 #undef WALSTAT_ACC_INSTR_TIME
 #undef WALSTAT_ACC
 
@@ -158,9 +161,7 @@ pgstat_init_wal(void)
 bool
 pgstat_have_pending_wal(void)
 {
-	return pgWalUsage.wal_records != prevWalUsage.wal_records ||
-		PendingWalStats.wal_write != 0 ||
-		PendingWalStats.wal_sync != 0;
+	return true;
 }
 
 void

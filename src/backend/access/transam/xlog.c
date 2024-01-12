@@ -1364,6 +1364,7 @@ static void
 WALInsertLockAcquire(void)
 {
 	bool		immed;
+	instr_time	start;
 
 	/*
 	 * It doesn't matter which of the WAL insertion locks we acquire, so try
@@ -1382,6 +1383,12 @@ WALInsertLockAcquire(void)
 		lockToTry = MyProc->pgprocno % NUM_XLOGINSERT_LOCKS;
 	MyLockNo = lockToTry;
 
+	/* Measure WAL insertion lock acquire time. */
+	if (track_wal_io_timing)
+		INSTR_TIME_SET_CURRENT(start);
+	else
+		INSTR_TIME_SET_ZERO(start);
+
 	/*
 	 * The insertingAt value is initially set to 0, as we don't know our
 	 * insert location yet.
@@ -1399,6 +1406,20 @@ WALInsertLockAcquire(void)
 		 */
 		lockToTry = (lockToTry + 1) % NUM_XLOGINSERT_LOCKS;
 	}
+
+	/*
+	 * Increment acquire time and number of times WAL insertion lock is
+	 * acquired.
+	 */
+	if (track_wal_io_timing)
+	{
+		instr_time	end;
+
+		INSTR_TIME_SET_CURRENT(end);
+		INSTR_TIME_ACCUM_DIFF(PendingWalStats.wal_insert_lock_acquire_time, end, start);
+	}
+
+	PendingWalStats.wal_insert_lock_acquire++;
 }
 
 /*
@@ -1501,6 +1522,7 @@ WaitXLogInsertionsToFinish(XLogRecPtr upto)
 	XLogRecPtr	finishedUpto;
 	XLogCtlInsert *Insert = &XLogCtl->Insert;
 	int			i;
+	instr_time	start;
 
 	if (MyProc == NULL)
 		elog(PANIC, "cannot wait without a PGPROC structure");
@@ -1537,6 +1559,13 @@ WaitXLogInsertionsToFinish(XLogRecPtr upto)
 	 * out for any insertion that's still in progress.
 	 */
 	finishedUpto = reservedUpto;
+
+	/* Measure wait for WAL insert to finish time. */
+	if (track_wal_io_timing)
+		INSTR_TIME_SET_CURRENT(start);
+	else
+		INSTR_TIME_SET_ZERO(start);
+
 	for (i = 0; i < NUM_XLOGINSERT_LOCKS; i++)
 	{
 		XLogRecPtr	insertingat = InvalidXLogRecPtr;
@@ -1584,6 +1613,16 @@ WaitXLogInsertionsToFinish(XLogRecPtr upto)
 		if (insertingat != InvalidXLogRecPtr && insertingat < finishedUpto)
 			finishedUpto = insertingat;
 	}
+
+	/* Increment wait for WAL insert to finish time. */
+	if (track_wal_io_timing)
+	{
+		instr_time	end;
+
+		INSTR_TIME_SET_CURRENT(end);
+		INSTR_TIME_ACCUM_DIFF(PendingWalStats.wal_wait_for_insert_to_finish_time, end, start);
+	}
+
 	return finishedUpto;
 }
 

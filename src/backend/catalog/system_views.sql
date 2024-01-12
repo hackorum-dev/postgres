@@ -1181,7 +1181,10 @@ CREATE VIEW pg_stat_wal AS
         w.wal_sync,
         w.wal_write_time,
         w.wal_sync_time,
-        w.stats_reset
+        w.stats_reset,
+        w.wal_insert_lock_acquire,
+        w.wal_insert_lock_acquire_time,
+        w.wal_wait_for_insert_to_finish_time
     FROM pg_stat_get_wal() w;
 
 CREATE VIEW pg_stat_progress_analyze AS
