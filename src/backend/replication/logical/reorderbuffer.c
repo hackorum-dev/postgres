@@ -2818,6 +2818,37 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	PG_END_TRY();
 }
 
+
+/*
+ * Add all invalidations contained in specified ReorderBufferTXN to all
+ * currently in-progress transactions.
+ */
+void
+ReorderBufferDistributeInvalidation(ReorderBuffer *reorder, XLogRecPtr lsn,
+									TransactionId xid)
+{
+	dlist_iter	iter;
+	ReorderBufferTXN *txn = NULL;
+	Size		nmsgs;
+	SharedInvalidationMessage *msgs = NULL;
+
+	txn = ReorderBufferTXNByXid(reorder, xid, false, false, lsn, false);
+	nmsgs = txn->ninvalidations;
+	msgs = txn->invalidations;
+
+	dlist_foreach(iter, &reorder->toplevel_by_lsn)
+	{
+		ReorderBufferTXN *cur_txn = dlist_container(ReorderBufferTXN, node,
+													iter.cur);
+
+		Assert(TransactionIdIsValid(cur_txn->xid));
+		if (xid == cur_txn->xid)
+			continue;
+
+		ReorderBufferAddInvalidations(reorder, cur_txn->xid, lsn, nmsgs, msgs);
+	}
+}
+
 /*
  * Perform the replay of a transaction and its non-aborted subtransactions.
  *

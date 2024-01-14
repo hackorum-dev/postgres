@@ -783,4 +783,8 @@ extern uint32 ReorderBufferGetInvalidations(ReorderBuffer *rb,
 
 extern void StartupReorderBuffer(void);
 
+extern void ReorderBufferDistributeInvalidation(ReorderBuffer *reorder,
+												XLogRecPtr lsn,
+												TransactionId xid);
+
 #endif
