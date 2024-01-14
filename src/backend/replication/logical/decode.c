@@ -704,6 +704,18 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 					   parsed->nsubxacts, parsed->subxacts,
 					   parsed->xinfo);
 
+	/*
+	 * When Alter Publication is performed during DML transaction, catalog
+	 * snapshot is updated later than cache invalidation. As a result, DML
+	 * operations in the transaction cannot be published. Adding new
+	 * invalidations after SnapBuildDistributeNewCatalogSnapshot will recheck
+	 * whether it should been published or not.
+	 */
+	if (ReorderBufferXidHasCatalogChanges(ctx->reorder, xid))
+	{
+		ReorderBufferDistributeInvalidation(ctx->reorder, buf->origptr, xid);
+	}
+
 	/* ----
 	 * Check whether we are interested in this specific transaction, and tell
 	 * the reorderbuffer to forget the content of the (sub-)transactions
