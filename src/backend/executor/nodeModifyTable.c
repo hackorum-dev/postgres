@@ -1889,7 +1889,11 @@ ExecDelete(ModifyTableContext *context,
 		bool		dodelete;
 
 		Assert(oldtuple != NULL);
-		dodelete = ExecIRDeleteTriggers(estate, resultRelInfo, oldtuple);
+
+		slot = ExecGetReturningSlot(estate, resultRelInfo);
+		ExecForceStoreHeapTuple(oldtuple, slot, false);
+
+		dodelete = ExecIRDeleteTriggers(estate, resultRelInfo, slot);
 
 		if (!dodelete)			/* "do nothing" */
 			return NULL;
@@ -2122,7 +2126,13 @@ ldelete:
 		 */
 		TupleTableSlot *rslot;
 
-		if (resultRelInfo->ri_FdwRoutine)
+		if (resultRelInfo->ri_TrigDesc &&
+			resultRelInfo->ri_TrigDesc->trig_delete_instead_row)
+		{
+			/* INSTEAD OF trigger handling should have provided a slot */
+			Assert(!TupIsNull(slot));
+		}
+		else if (resultRelInfo->ri_FdwRoutine)
 		{
 			/* FDW must have provided a slot containing the deleted row */
 			Assert(!TupIsNull(slot));
