@@ -4087,6 +4087,8 @@ foreach test_dir : tests
         'env': env,
       } + t.get('test_kwargs', {})
 
+      test_args = t.get('args', [])
+
       foreach onetap : t['tests']
         # Make tap test names prettier, remove t/ and .pl
         onetap_p = onetap
@@ -4105,7 +4107,7 @@ foreach test_dir : tests
             '--testname', onetap_p,
             '--', test_command,
             test_dir['sd'] / onetap,
-          ],
+          ] + test_args,
         )
       endforeach
       install_suites += test_group
