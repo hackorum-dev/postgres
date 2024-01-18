@@ -73,7 +73,7 @@ index_form_tuple_context(TupleDesc tupleDescriptor,
 				data_size,
 				hoff;
 	int			i;
-	unsigned short infomask = 0;
+	index_info  infomask = 0;
 	bool		hasnull = false;
 	uint16		tupmask = 0;
 	int			numberOfAttributes = tupleDescriptor->natts;
