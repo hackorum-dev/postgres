@@ -960,7 +960,7 @@ spgFormNodeTuple(SpGistState *state, Datum label, bool isnull)
 {
 	SpGistNodeTuple tup;
 	unsigned int size;
-	unsigned short infomask = 0;
+	index_info infomask = 0;
 
 	/* compute space needed (note result is already maxaligned) */
 	size = SGNTHDRSZ;
