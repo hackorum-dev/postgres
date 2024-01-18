@@ -1224,23 +1224,18 @@ bms_join(Bitmapset *a, Bitmapset *b)
  * It makes no difference in simple loop usage, but complex iteration logic
  * might need such an ability.
  */
-int
-bms_next_member(const Bitmapset *a, int prevbit)
+
+static int
+bms_next_member_internal(int nwords, const bitmapword *words, int prevbit)
 {
-	int			nwords;
 	int			wordnum;
 	bitmapword	mask;
 
-	Assert(a == NULL || IsA(a, Bitmapset));
-
-	if (a == NULL)
-		return -2;
-	nwords = a->nwords;
 	prevbit++;
 	mask = (~(bitmapword) 0) << BITNUM(prevbit);
 	for (wordnum = WORDNUM(prevbit); wordnum < nwords; wordnum++)
 	{
-		bitmapword	w = a->words[wordnum];
+		bitmapword	w = words[wordnum];
 
 		/* ignore bits before prevbit */
 		w &= mask;
@@ -1257,7 +1252,19 @@ bms_next_member(const Bitmapset *a, int prevbit)
 		/* in subsequent words, consider all bits */
 		mask = (~(bitmapword) 0);
 	}
+
 	return -2;
+}
+
+int
+bms_next_member(const Bitmapset *a, int prevbit)
+{
+	Assert(a == NULL || IsA(a, Bitmapset));
+
+	if (a == NULL)
+		return -2;
+
+	return bms_next_member_internal(a->nwords, a->words, prevbit);
 }
 
 /*
@@ -1364,4 +1371,159 @@ bitmap_match(const void *key1, const void *key2, Size keysize)
 	Assert(keysize == sizeof(Bitmapset *));
 	return !bms_equal(*((const Bitmapset *const *) key1),
 					  *((const Bitmapset *const *) key2));
+}
+
+/*
+ * bitset_init - create a Bitset. the set will be round up to nwords;
+ */
+Bitset *
+bitset_init(size_t size)
+{
+	int			nword = size + BITS_PER_BITMAPWORD - 1 / BITS_PER_BITMAPWORD;
+	Bitset	   *result;
+
+	Assert(size > 0);
+
+	result = (Bitset *) palloc0(sizeof(Bitset *) + nword * sizeof(bitmapword));
+	result->nwords = nword;
+
+	return result;
+}
+
+/*
+ * bitset_clear - clear the bits only, but the memory is still there.
+ */
+void
+bitset_clear(Bitset *a)
+{
+	Assert(a != NULL);
+	memset(a->words, 0, sizeof(bitmapword) * a->nwords);
+}
+
+void
+bitset_free(Bitset *a)
+{
+	Assert(a != NULL);
+	pfree(a);
+}
+
+void
+bitset_add_member(Bitset *a, int x)
+{
+	int			wordnum,
+				bitnum;
+
+	Assert(x >= 0);
+
+	wordnum = WORDNUM(x);
+	bitnum = BITNUM(x);
+
+	a->words[wordnum] |= ((bitmapword) 1 << bitnum);
+}
+
+void
+bitset_del_member(Bitset *a, int x)
+{
+	int			wordnum,
+				bitnum;
+
+	Assert(x >= 0);
+
+	wordnum = WORDNUM(x);
+	bitnum = BITNUM(x);
+
+	a->words[wordnum] &= ~((bitmapword) 1 << bitnum);
+}
+
+int
+bitset_is_member(Bitset *a, int x)
+{
+	int			wordnum,
+				bitnum;
+
+	/* used in expression engine */
+	Assert(x >= 0);
+
+	wordnum = WORDNUM(x);
+	bitnum = BITNUM(x);
+
+	Assert(wordnum < a->nwords);
+
+	return (a->words[wordnum] & ((bitmapword) 1 << bitnum)) != 0;
+}
+
+int
+bitset_next_member(Bitset *a, int prevbit)
+{
+	Assert(a != NULL);
+
+	return bms_next_member_internal(a->nwords, a->words, prevbit);
+}
+
+
+/*
+ * bitset_replace_members_fast
+ *		populate the a's members from b, where the a and b must have a
+ * equal number of words.
+ */
+void
+bitset_replace_members_fast(Bitset *a, Bitset *b)
+{
+	int			i;
+
+	Assert(a != NULL);
+	Assert(b != NULL);
+
+	if (a->nwords != b->nwords)
+		elog(ERROR,
+			 "Only replace members with same-size is supported.");
+
+	i = 0;
+	do
+	{
+		a->words[i] = b->words[i];
+	} while (++i < a->nwords);
+}
+
+
+/*
+ * bitset_to_bitmap - build a legal bitmapset from bitset.
+ */
+Bitmapset *
+bitset_to_bitmap(Bitset *a)
+{
+	int			n = a->nwords - 1;
+
+	bool		found = false;	/* any non-empty bits */
+	Bitmapset  *result;
+	int			i;
+
+	if (a->nwords == 0)
+		return NULL;
+
+	do
+	{
+		if (a->words[n] > 0)
+		{
+			found = true;
+			break;
+		}
+	} while (--n >= 0);
+
+	if (!found)
+		return NULL;
+
+	result = (Bitmapset *) palloc0(BITMAPSET_SIZE(n + 1));
+	result->type = T_Bitmapset;
+	result->nwords = n + 1;
+
+	Assert(result->nwords <= a->nwords);
+
+	i = 0;
+	do
+	{
+		result->words[i] = a->words[i];
+	} while (++i < result->nwords);
+
+	return result;
 }
