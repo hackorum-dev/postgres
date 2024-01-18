@@ -19,6 +19,8 @@
 #include "storage/bufpage.h"
 #include "storage/itemptr.h"
 
+typedef uint32 index_info;
+
 /*
  * Index tuple header structure
  *
@@ -39,14 +41,14 @@ typedef struct IndexTupleData
 	/* ---------------
 	 * t_info is laid out in the following fashion:
 	 *
-	 * 15th (high) bit: has nulls
-	 * 14th bit: has var-width attributes
-	 * 13th bit: AM-defined meaning
-	 * 12-0 bit: size of tuple
+	 * 31st (high) bit: has nulls
+	 * 30th bit: has var-width attributes
+	 * 29th bit: AM-defined meaning
+	 * 28-0 bit: size of tuple
 	 * ---------------
 	 */
 
-	unsigned short t_info;		/* various info about tuple */
+	index_info t_info;		        /* various info about tuple */
 
 } IndexTupleData;				/* MORE DATA FOLLOWS AT END OF STRUCT */
 
@@ -62,11 +64,11 @@ typedef IndexAttributeBitMapData * IndexAttributeBitMap;
 /*
  * t_info manipulation macros
  */
-#define INDEX_SIZE_MASK 0x1FFF
-#define INDEX_AM_RESERVED_BIT 0x2000	/* reserved for index-AM specific
-										 * usage */
-#define INDEX_VAR_MASK	0x4000
-#define INDEX_NULL_MASK 0x8000
+#define INDEX_SIZE_MASK 0x1FFFFFFF
+#define INDEX_AM_RESERVED_BIT 0x20000000	/* reserved for index-AM specific
+										     * usage */
+#define INDEX_VAR_MASK	0x40000000
+#define INDEX_NULL_MASK 0x80000000
 
 static inline Size
 IndexTupleSize(const IndexTupleData *itup)
@@ -110,7 +112,7 @@ extern IndexTuple index_truncate_tuple(TupleDesc sourceDescriptor,
  * at index_form_tuple time so enough space is allocated).
  */
 static inline Size
-IndexInfoFindDataOffset(unsigned short t_info)
+IndexInfoFindDataOffset(index_info t_info)
 {
 	if (!(t_info & INDEX_NULL_MASK))
 		return MAXALIGN(sizeof(IndexTupleData));
