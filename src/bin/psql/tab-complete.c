@@ -4288,9 +4288,9 @@ psql_completion(const char *text, int start, int end)
 	else if (TailMatches("VALUES") && !TailMatches("DEFAULT", "VALUES"))
 		COMPLETE_WITH("(");
 
-/* LET */
+/* LET, EXPLAIN LET, PREPARE LET */
 	/* If prev. word is LET suggest a list of variables */
-	else if (Matches("LET"))
+	else if (TailMatches("LET"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_variables);
 	/* Complete LET <variable> with "=" */
 	else if (TailMatches("LET", MatchAny))
