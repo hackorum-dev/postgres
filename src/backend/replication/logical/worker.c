@@ -4516,9 +4516,22 @@ run_apply_worker()
 											MySubscription->name, &err);
 
 	if (LogRepWorkerWalRcvConn == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_CONNECTION_FAILURE),
-				 errmsg("could not connect to the publisher: %s", err)));
+	{
+		PG_TRY();
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_CONNECTION_FAILURE),
+					errmsg("could not connect to the publisher: %s", err)));
+		}
+		PG_CATCH();
+		{
+			if (MySubscription->disableonerr)
+				DisableSubscriptionAndExit();
+
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
+	}
 
 	/*
 	 * We don't really use the output identify_system for anything but it does
