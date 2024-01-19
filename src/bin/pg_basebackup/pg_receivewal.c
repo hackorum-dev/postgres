@@ -51,6 +51,7 @@ static bool slot_exists_ok = false;
 static bool do_drop_slot = false;
 static bool do_sync = true;
 static bool synchronous = false;
+static bool skip_filesize_check = false;
 static char *replication_slot = NULL;
 static pg_compress_algorithm compression_algorithm = PG_COMPRESSION_NONE;
 static XLogRecPtr endpos = InvalidXLogRecPtr;
@@ -103,6 +104,7 @@ usage(void)
 	printf(_("\nOptional actions:\n"));
 	printf(_("      --create-slot      create a new replication slot (for the slot's name see --slot)\n"));
 	printf(_("      --drop-slot        drop the replication slot (for the slot's name see --slot)\n"));
+	printf(_("      --skip-filesize-check    Don't check file sizes at directory specified by -D option \n"));
 	printf(_("\nReport bugs to <%s>.\n"), PACKAGE_BUGREPORT);
 	printf(_("%s home page: <%s>\n"), PACKAGE_NAME, PACKAGE_URL);
 }
@@ -291,169 +293,172 @@ FindStreamingStart(uint32 *tli)
 		 */
 		XLogFromFileName(dirent->d_name, &tli, &segno, WalSegSz);
 
-		/*
-		 * Check that the segment has the right size, if it's supposed to be
-		 * completed.  For non-compressed segments just check the on-disk size
-		 * and see if it matches a completed segment.  For gzip-compressed
-		 * segments, look at the last 4 bytes of the compressed file, which is
-		 * where the uncompressed size is located for files with a size lower
-		 * than 4GB, and then compare it to the size of a completed segment.
-		 * The 4 last bytes correspond to the ISIZE member according to
-		 * http://www.zlib.org/rfc-gzip.html.
-		 *
-		 * For LZ4-compressed segments, uncompress the file in a throw-away
-		 * buffer keeping track of the uncompressed size, then compare it to
-		 * the size of a completed segment.  Per its protocol, LZ4 does not
-		 * store the uncompressed size of an object by default.  contentSize
-		 * is one possible way to do that, but we need to rely on a method
-		 * where WAL segments could have been compressed by a different source
-		 * than pg_receivewal, like an archive_command with lz4.
-		 */
-		if (!ispartial && wal_compression_algorithm == PG_COMPRESSION_NONE)
-		{
-			struct stat statbuf;
-			char		fullpath[MAXPGPATH * 2];
-
-			snprintf(fullpath, sizeof(fullpath), "%s/%s", basedir, dirent->d_name);
-			if (stat(fullpath, &statbuf) != 0)
-				pg_fatal("could not stat file \"%s\": %m", fullpath);
-
-			if (statbuf.st_size != WalSegSz)
+		if(!skip_filesize_check)
+		{	
+			/*
+			 * Check that the segment has the right size, if it's supposed to be
+			 * completed.  For non-compressed segments just check the on-disk size
+			 * and see if it matches a completed segment.  For gzip-compressed
+			 * segments, look at the last 4 bytes of the compressed file, which is
+			 * where the uncompressed size is located for files with a size lower
+			 * than 4GB, and then compare it to the size of a completed segment.
+			 * The 4 last bytes correspond to the ISIZE member according to
+			 * http://www.zlib.org/rfc-gzip.html.
+			 *
+			 * For LZ4-compressed segments, uncompress the file in a throw-away
+			 * buffer keeping track of the uncompressed size, then compare it to
+			 * the size of a completed segment.  Per its protocol, LZ4 does not
+			 * store the uncompressed size of an object by default.  contentSize
+			 * is one possible way to do that, but we need to rely on a method
+			 * where WAL segments could have been compressed by a different source
+			 * than pg_receivewal, like an archive_command with lz4.
+			 */
+			if (!ispartial && wal_compression_algorithm == PG_COMPRESSION_NONE)
 			{
-				pg_log_warning("segment file \"%s\" has incorrect size %lld, skipping",
-							   dirent->d_name, (long long int) statbuf.st_size);
-				continue;
-			}
-		}
-		else if (!ispartial && wal_compression_algorithm == PG_COMPRESSION_GZIP)
-		{
-			int			fd;
-			char		buf[4];
-			int			bytes_out;
-			char		fullpath[MAXPGPATH * 2];
-			int			r;
+				struct stat statbuf;
+				char		fullpath[MAXPGPATH * 2];
 
-			snprintf(fullpath, sizeof(fullpath), "%s/%s", basedir, dirent->d_name);
+				snprintf(fullpath, sizeof(fullpath), "%s/%s", basedir, dirent->d_name);
+				if (stat(fullpath, &statbuf) != 0)
+					pg_fatal("could not stat file \"%s\": %m", fullpath);
 
-			fd = open(fullpath, O_RDONLY | PG_BINARY, 0);
-			if (fd < 0)
-				pg_fatal("could not open compressed file \"%s\": %m",
-						 fullpath);
-			if (lseek(fd, (off_t) (-4), SEEK_END) < 0)
-				pg_fatal("could not seek in compressed file \"%s\": %m",
-						 fullpath);
-			r = read(fd, (char *) buf, sizeof(buf));
-			if (r != sizeof(buf))
-			{
-				if (r < 0)
-					pg_fatal("could not read compressed file \"%s\": %m",
-							 fullpath);
-				else
-					pg_fatal("could not read compressed file \"%s\": read %d of %zu",
-							 fullpath, r, sizeof(buf));
-			}
-
-			close(fd);
-			bytes_out = (buf[3] << 24) | (buf[2] << 16) |
-				(buf[1] << 8) | buf[0];
-
-			if (bytes_out != WalSegSz)
-			{
-				pg_log_warning("compressed segment file \"%s\" has incorrect uncompressed size %d, skipping",
-							   dirent->d_name, bytes_out);
-				continue;
-			}
-		}
-		else if (!ispartial && wal_compression_algorithm == PG_COMPRESSION_LZ4)
-		{
-#ifdef USE_LZ4
-#define LZ4_CHUNK_SZ	64 * 1024	/* 64kB as maximum chunk size read */
-			int			fd;
-			ssize_t		r;
-			size_t		uncompressed_size = 0;
-			char		fullpath[MAXPGPATH * 2];
-			char	   *outbuf;
-			char	   *readbuf;
-			LZ4F_decompressionContext_t ctx = NULL;
-			LZ4F_decompressOptions_t dec_opt;
-			LZ4F_errorCode_t status;
-
-			memset(&dec_opt, 0, sizeof(dec_opt));
-			snprintf(fullpath, sizeof(fullpath), "%s/%s", basedir, dirent->d_name);
-
-			fd = open(fullpath, O_RDONLY | PG_BINARY, 0);
-			if (fd < 0)
-				pg_fatal("could not open file \"%s\": %m", fullpath);
-
-			status = LZ4F_createDecompressionContext(&ctx, LZ4F_VERSION);
-			if (LZ4F_isError(status))
-				pg_fatal("could not create LZ4 decompression context: %s",
-						 LZ4F_getErrorName(status));
-
-			outbuf = pg_malloc0(LZ4_CHUNK_SZ);
-			readbuf = pg_malloc0(LZ4_CHUNK_SZ);
-			do
-			{
-				char	   *readp;
-				char	   *readend;
-
-				r = read(fd, readbuf, LZ4_CHUNK_SZ);
-				if (r < 0)
-					pg_fatal("could not read file \"%s\": %m", fullpath);
-
-				/* Done reading the file */
-				if (r == 0)
-					break;
-
-				/* Process one chunk */
-				readp = readbuf;
-				readend = readbuf + r;
-				while (readp < readend)
+				if (statbuf.st_size != WalSegSz)
 				{
-					size_t		out_size = LZ4_CHUNK_SZ;
-					size_t		read_size = readend - readp;
+					pg_log_warning("segment file \"%s\" has incorrect size %lld, skipping",
+								   dirent->d_name, (long long int) statbuf.st_size);
+					continue;
+				}
+			}
+			else if (!ispartial && wal_compression_algorithm == PG_COMPRESSION_GZIP)
+			{
+				int			fd;
+				char		buf[4];
+				int			bytes_out;
+				char		fullpath[MAXPGPATH * 2];
+				int			r;
 
-					memset(outbuf, 0, LZ4_CHUNK_SZ);
-					status = LZ4F_decompress(ctx, outbuf, &out_size,
-											 readp, &read_size, &dec_opt);
-					if (LZ4F_isError(status))
-						pg_fatal("could not decompress file \"%s\": %s",
-								 fullpath,
-								 LZ4F_getErrorName(status));
+				snprintf(fullpath, sizeof(fullpath), "%s/%s", basedir, dirent->d_name);
 
-					readp += read_size;
-					uncompressed_size += out_size;
+				fd = open(fullpath, O_RDONLY | PG_BINARY, 0);
+				if (fd < 0)
+					pg_fatal("could not open compressed file \"%s\": %m",
+							 fullpath);
+				if (lseek(fd, (off_t) (-4), SEEK_END) < 0)
+					pg_fatal("could not seek in compressed file \"%s\": %m",
+							 fullpath);
+				r = read(fd, (char *) buf, sizeof(buf));
+				if (r != sizeof(buf))
+				{
+					if (r < 0)
+						pg_fatal("could not read compressed file \"%s\": %m",
+								 fullpath);
+					else
+						pg_fatal("could not read compressed file \"%s\": read %d of %zu",
+								 fullpath, r, sizeof(buf));
 				}
 
-				/*
-				 * No need to continue reading the file when the
-				 * uncompressed_size exceeds WalSegSz, even if there are still
-				 * data left to read. However, if uncompressed_size is equal
-				 * to WalSegSz, it should verify that there is no more data to
-				 * read.
-				 */
-			} while (uncompressed_size <= WalSegSz && r > 0);
+				close(fd);
+				bytes_out = (buf[3] << 24) | (buf[2] << 16) |
+					(buf[1] << 8) | buf[0];
 
-			close(fd);
-			pg_free(outbuf);
-			pg_free(readbuf);
-
-			status = LZ4F_freeDecompressionContext(ctx);
-			if (LZ4F_isError(status))
-				pg_fatal("could not free LZ4 decompression context: %s",
-						 LZ4F_getErrorName(status));
-
-			if (uncompressed_size != WalSegSz)
-			{
-				pg_log_warning("compressed segment file \"%s\" has incorrect uncompressed size %zu, skipping",
-							   dirent->d_name, uncompressed_size);
-				continue;
+				if (bytes_out != WalSegSz)
+				{
+					pg_log_warning("compressed segment file \"%s\" has incorrect uncompressed size %d, skipping",
+								   dirent->d_name, bytes_out);
+					continue;
+				}
 			}
+			else if (!ispartial && wal_compression_algorithm == PG_COMPRESSION_LZ4)
+			{
+#ifdef USE_LZ4
+#define LZ4_CHUNK_SZ	64 * 1024	/* 64kB as maximum chunk size read */
+				int			fd;
+				ssize_t		r;
+				size_t		uncompressed_size = 0;
+				char		fullpath[MAXPGPATH * 2];
+				char	   *outbuf;
+				char	   *readbuf;
+				LZ4F_decompressionContext_t ctx = NULL;
+				LZ4F_decompressOptions_t dec_opt;
+				LZ4F_errorCode_t status;
+
+				memset(&dec_opt, 0, sizeof(dec_opt));
+				snprintf(fullpath, sizeof(fullpath), "%s/%s", basedir, dirent->d_name);
+
+				fd = open(fullpath, O_RDONLY | PG_BINARY, 0);
+				if (fd < 0)
+					pg_fatal("could not open file \"%s\": %m", fullpath);
+
+				status = LZ4F_createDecompressionContext(&ctx, LZ4F_VERSION);
+				if (LZ4F_isError(status))
+					pg_fatal("could not create LZ4 decompression context: %s",
+							 LZ4F_getErrorName(status));
+
+				outbuf = pg_malloc0(LZ4_CHUNK_SZ);
+				readbuf = pg_malloc0(LZ4_CHUNK_SZ);
+				do
+				{
+					char	   *readp;
+					char	   *readend;
+
+					r = read(fd, readbuf, LZ4_CHUNK_SZ);
+					if (r < 0)
+						pg_fatal("could not read file \"%s\": %m", fullpath);
+
+					/* Done reading the file */
+					if (r == 0)
+						break;
+
+					/* Process one chunk */
+					readp = readbuf;
+					readend = readbuf + r;
+					while (readp < readend)
+					{
+						size_t		out_size = LZ4_CHUNK_SZ;
+						size_t		read_size = readend - readp;
+
+						memset(outbuf, 0, LZ4_CHUNK_SZ);
+						status = LZ4F_decompress(ctx, outbuf, &out_size,
+												 readp, &read_size, &dec_opt);
+						if (LZ4F_isError(status))
+							pg_fatal("could not decompress file \"%s\": %s",
+									 fullpath,
+									 LZ4F_getErrorName(status));
+
+						readp += read_size;
+						uncompressed_size += out_size;
+					}
+
+					/*
+					 * No need to continue reading the file when the
+					 * uncompressed_size exceeds WalSegSz, even if there are still
+					 * data left to read. However, if uncompressed_size is equal
+					 * to WalSegSz, it should verify that there is no more data to
+					 * read.
+					 */
+				} while (uncompressed_size <= WalSegSz && r > 0);
+
+				close(fd);
+				pg_free(outbuf);
+				pg_free(readbuf);
+
+				status = LZ4F_freeDecompressionContext(ctx);
+				if (LZ4F_isError(status))
+					pg_fatal("could not free LZ4 decompression context: %s",
+							 LZ4F_getErrorName(status));
+
+				if (uncompressed_size != WalSegSz)
+				{
+					pg_log_warning("compressed segment file \"%s\" has incorrect uncompressed size %zu, skipping",
+								   dirent->d_name, uncompressed_size);
+					continue;
+				}
 #else
-			pg_log_error("cannot check file \"%s\": compression with %s not supported by this build",
-						 dirent->d_name, "LZ4");
-			exit(1);
+				pg_log_error("cannot check file \"%s\": compression with %s not supported by this build",
+							 dirent->d_name, "LZ4");
+				exit(1);
 #endif
+			}
 		}
 
 		/* Looks like a valid segment. Remember that we saw it. */
@@ -645,6 +650,7 @@ main(int argc, char **argv)
 		{"if-not-exists", no_argument, NULL, 3},
 		{"synchronous", no_argument, NULL, 4},
 		{"no-sync", no_argument, NULL, 5},
+		{"skip-filesize-check", no_argument, NULL, 6},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -742,6 +748,9 @@ main(int argc, char **argv)
 				break;
 			case 5:
 				do_sync = false;
+				break;
+			case 6:
+				skip_filesize_check = true;
 				break;
 			default:
 				/* getopt_long already emitted a complaint */
