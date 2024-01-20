@@ -3386,14 +3386,6 @@ transformCallStmt(ParseState *pstate, CallStmt *stmt)
 							 true,
 							 stmt->funccall->location);
 
-	/*
-	 * The arguments of CALL statement are evaluated by direct
-	 * expression executor call. This path is unsupported yet,
-	 * so block it. It will be enabled by some other patch.
-	 */
-	if (pstate->p_hasSessionVariables)
-		elog(ERROR, "session variable cannot be used as an argument");
-
 	assign_expr_collations(pstate, node);
 
 	fexpr = castNode(FuncExpr, node);
