@@ -832,6 +832,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %token		MODE_PLPGSQL_ASSIGN1
 %token		MODE_PLPGSQL_ASSIGN2
 %token		MODE_PLPGSQL_ASSIGN3
+%token		MODE_PLPGSQL_LET
 
 
 /* Precedence: lowest to highest */
@@ -960,6 +961,13 @@ parse_toplevel:
 				PLAssignStmt *n = (PLAssignStmt *) $2;
 
 				n->nnames = 3;
+				pg_yyget_extra(yyscanner)->parsetree =
+					list_make1(makeRawStmt((Node *) n, 0));
+			}
+			| MODE_PLPGSQL_LET LetStmt
+			{
+				LetStmt *n = (LetStmt *) $2;
+				n->plpgsql_mode = true;
 				pg_yyget_extra(yyscanner)->parsetree =
 					list_make1(makeRawStmt((Node *) n, 0));
 			}

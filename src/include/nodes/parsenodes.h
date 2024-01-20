@@ -2109,6 +2109,8 @@ typedef struct LetStmt
 	NodeTag		type;
 	List	   *target;			/* target variable */
 	Node	   *query;			/* source expression */
+	bool		plpgsql_mode;	/* true, when command will be executed
+								 * (parsed) by plpgsql runtime */
 	int			location;
 } LetStmt;
 
