@@ -203,7 +203,19 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 * related session variables are copied to dedicated array, and this array
 	 * is passed to executor.
 	 */
-	if (queryDesc->plannedstmt->sessionVariables)
+	if (queryDesc->num_session_variables > 0)
+	{
+		/*
+		 * When a parallel query needs to access query parameters (including
+		 * related session variables), then related session variables are
+		 * restored (deserialized) in queryDesc already. So just push pointer
+		 * of this array to executor's estate.
+		 */
+		Assert(IsParallelWorker());
+		estate->es_session_variables = queryDesc->session_variables;
+		estate->es_num_session_variables = queryDesc->num_session_variables;
+	}
+	else if (queryDesc->plannedstmt->sessionVariables)
 	{
 		ListCell   *lc;
 		int			nSessionVariables;
