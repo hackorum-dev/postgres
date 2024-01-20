@@ -1094,6 +1094,8 @@ fetch_remote_table_info(char *nspname, char *relname,
 		ExecDropSingleTupleTableSlot(slot);
 
 		walrcv_clear_result(res);
+
+		pfree(pub_names.data);
 	}
 
 	pfree(cmd.data);
