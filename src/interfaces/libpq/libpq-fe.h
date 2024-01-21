@@ -594,6 +594,9 @@ extern unsigned char *PQescapeBytea(const unsigned char *from, size_t from_lengt
 									size_t *to_length);
 
 
+/* Control of dynamic propagation settings to state parameters */
+extern PGresult *PQlinkParameterStatus(PGconn *conn, const char *paramName);
+extern PGresult *PQunlinkParameterStatus(PGconn *conn, const char *paramName);
 
 /* === in fe-print.c === */
 

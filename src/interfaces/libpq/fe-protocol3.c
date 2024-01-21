@@ -1998,7 +1998,6 @@ pqEndcopy3(PGconn *conn)
 	return 1;
 }
 
-
 /*
  * PQfn - Send a function call to the POSTGRES backend.
  *
