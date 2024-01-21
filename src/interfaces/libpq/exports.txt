@@ -195,3 +195,5 @@ PQchangePassword          192
 PQsendPipelineSync        193
 PQlinkParameterStatus     194
 PQunlinkParameterStatus   195
+PQprotocolVersionFull     196
+PQmakeProtocolVersionFull 197
