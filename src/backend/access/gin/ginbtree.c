@@ -108,7 +108,16 @@ ginFindLeafPage(GinBtree btree, bool searchMode,
 		 * encounter on the way.
 		 */
 		if (!searchMode && GinPageIsIncompleteSplit(page))
-			ginFinishSplit(btree, stack, false, NULL);
+		{
+			if (access == GIN_SHARE)
+			{
+				/* for internal page, we should relock our page */
+				LockBuffer(stack->buffer, GIN_UNLOCK);
+				LockBuffer(stack->buffer, GIN_EXCLUSIVE);
+			}
+			if GinPageIsIncompleteSplit(page)
+				ginFinishSplit(btree, stack, false, NULL);
+		}
 
 		/*
 		 * ok, page is correctly locked, we should check to move right ..,
@@ -123,7 +132,10 @@ ginFindLeafPage(GinBtree btree, bool searchMode,
 				/* rightmost page */
 				break;
 
-			stack->buffer = ginStepRight(stack->buffer, btree->index, access);
+			if (!searchMode)
+				stack->buffer = ginStepRight(stack->buffer, btree->index, GIN_EXCLUSIVE);
+			else
+				stack->buffer = ginStepRight(stack->buffer, btree->index, access);
 			stack->blkno = rightlink;
 			page = BufferGetPage(stack->buffer);
 
