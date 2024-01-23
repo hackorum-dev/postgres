@@ -2895,7 +2895,7 @@ check_valid_polymorphic_signature(Oid ret_type,
 				return NULL;	/* OK */
 		}
 		/* Keep this list in sync with IsPolymorphicTypeFamily2! */
-		return psprintf(_("A result of type %s requires at least one input of type anycompatible, anycompatiblearray, anycompatiblenonarray, anycompatiblerange, or anycompatiblemultirange."),
+		return psprintf(_("A result of type %s requires at least one input of type anycompatible, anycompatiblearray, anycompatiblenonarray, anycompatiblerange, or anycompatiblemultog)irange."),
 						format_type_be(ret_type));
 	}
 	else

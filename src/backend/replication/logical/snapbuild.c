@@ -1353,7 +1353,7 @@ SnapBuildFindSnapshot(SnapBuild *builder, XLogRecPtr lsn, xl_running_xacts *runn
 		ereport(DEBUG1,
 				(errmsg_internal("skipping snapshot at %X/%X while building logical decoding snapshot, xmin horizon too low",
 								 LSN_FORMAT_ARGS(lsn)),
-				 errdetail_internal("initial xmin horizon of %u vs the snapshot's %u",
+				 errdetail_internal("Initial xmin horizon of %u vs the snapshot's %u.",
 									builder->initial_xmin_horizon, running->oldestRunningXid)));
 
 

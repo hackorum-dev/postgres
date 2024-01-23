@@ -79,7 +79,7 @@ seg_yyerror(SEG *result, struct Node *escontext, const char *message)
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("bad seg representation"),
 				 /* translator: %s is typically "syntax error" */
-				 errdetail("%s at end of input", message)));
+				 errdetail("%s at end of input.", message)));
 	}
 	else
 	{
@@ -87,7 +87,7 @@ seg_yyerror(SEG *result, struct Node *escontext, const char *message)
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("bad seg representation"),
 				 /* translator: first %s is typically "syntax error" */
-				 errdetail("%s at or near \"%s\"", message, yytext)));
+				 errdetail("%s at or near \"%s\".", message, yytext)));
 	}
 }
 

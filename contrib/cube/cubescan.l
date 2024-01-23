@@ -82,7 +82,7 @@ cube_yyerror(NDBOX **result, Size scanbuflen,
 				(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
 				 errmsg("invalid input syntax for cube"),
 				 /* translator: %s is typically "syntax error" */
-				 errdetail("%s at end of input", message)));
+				 errdetail("%s at end of input.", message)));
 	}
 	else
 	{
@@ -90,7 +90,7 @@ cube_yyerror(NDBOX **result, Size scanbuflen,
 				(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
 				 errmsg("invalid input syntax for cube"),
 				 /* translator: first %s is typically "syntax error" */
-				 errdetail("%s at or near \"%s\"", message, yytext)));
+				 errdetail("%s at or near \"%s\".", message, yytext)));
 	}
 }
 

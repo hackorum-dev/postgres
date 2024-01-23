@@ -3961,7 +3961,7 @@ check_debug_io_direct(char **newval, void **extra, GucSource source)
 
 	if (!SplitGUCList(rawstring, ',', &elemlist))
 	{
-		GUC_check_errdetail("Invalid list syntax in parameter %s",
+		GUC_check_errdetail("Invalid list syntax in parameter %s.",
 							"debug_io_direct");
 		pfree(rawstring);
 		list_free(elemlist);
@@ -3981,7 +3981,7 @@ check_debug_io_direct(char **newval, void **extra, GucSource source)
 			flags |= IO_DIRECT_WAL_INIT;
 		else
 		{
-			GUC_check_errdetail("Invalid option \"%s\"", item);
+			GUC_check_errdetail("Invalid option \"%s\".", item);
 			result = false;
 			break;
 		}
@@ -3994,14 +3994,14 @@ check_debug_io_direct(char **newval, void **extra, GucSource source)
 #if XLOG_BLCKSZ < PG_IO_ALIGN_SIZE
 	if (result && (flags & (IO_DIRECT_WAL | IO_DIRECT_WAL_INIT)))
 	{
-		GUC_check_errdetail("debug_io_direct is not supported for WAL because XLOG_BLCKSZ is too small");
+		GUC_check_errdetail("debug_io_direct is not supported for WAL because XLOG_BLCKSZ is too small.");
 		result = false;
 	}
 #endif
 #if BLCKSZ < PG_IO_ALIGN_SIZE
 	if (result && (flags & IO_DIRECT_DATA))
 	{
-		GUC_check_errdetail("debug_io_direct is not supported for data because BLCKSZ is too small");
+		GUC_check_errdetail("debug_io_direct is not supported for data because BLCKSZ is too small.");
 		result = false;
 	}
 #endif
