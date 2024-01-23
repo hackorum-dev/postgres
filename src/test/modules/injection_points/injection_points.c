@@ -28,6 +28,7 @@ PG_MODULE_MAGIC;
 
 extern PGDLLEXPORT void injection_error(const char *name);
 extern PGDLLEXPORT void injection_notice(const char *name);
+extern PGDLLEXPORT void injection_notice_1arg(const char *name, void *arg1);
 
 
 /* Set of callbacks available to be attached to an injection point. */
@@ -43,6 +44,13 @@ injection_notice(const char *name)
 	elog(NOTICE, "notice triggered for injection point %s", name);
 }
 
+void
+injection_notice_1arg(const char *name, void *arg1)
+{
+	const char *str = (const char *) arg1;
+	elog(NOTICE, "notice triggered for injection point %s: %s", name, str);
+}
+
 /*
  * SQL function for creating an injection point.
  */
@@ -53,15 +61,21 @@ injection_points_attach(PG_FUNCTION_ARGS)
 	char	   *name = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	char	   *action = text_to_cstring(PG_GETARG_TEXT_PP(1));
 	char	   *function;
+	int			num_args = 0;
 
 	if (strcmp(action, "error") == 0)
 		function = "injection_error";
 	else if (strcmp(action, "notice") == 0)
 		function = "injection_notice";
+	else if (strcmp(action, "notice_1arg") == 0)
+	{
+		function = "injection_notice_1arg";
+		num_args = 1;
+	}
 	else
 		elog(ERROR, "incorrect action \"%s\" for injection point creation", action);
 
-	InjectionPointAttach(name, "injection_points", function);
+	InjectionPointAttach(name, "injection_points", function, num_args);
 
 	PG_RETURN_VOID();
 }
@@ -76,6 +90,21 @@ injection_points_run(PG_FUNCTION_ARGS)
 	char	   *name = text_to_cstring(PG_GETARG_TEXT_PP(0));
 
 	INJECTION_POINT(name);
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * SQL function for triggering an injection point, 1-argument flavor.
+ */
+PG_FUNCTION_INFO_V1(injection_points_run_1arg);
+Datum
+injection_points_run_1arg(PG_FUNCTION_ARGS)
+{
+	char	   *name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char	   *arg1 = text_to_cstring(PG_GETARG_TEXT_PP(1));
+
+	INJECTION_POINT_1ARG(name, (void *) arg1);
 
 	PG_RETURN_VOID();
 }

@@ -3607,13 +3607,15 @@ uint32 WaitEventExtensionNew(const char *wait_event_name)
      macro:
 <programlisting>
 INJECTION_POINT(name);
+INJECTION_POINT_1ARG(name, arg1);
 </programlisting>
 
      There are a few injection points already declared at strategic points
      within the server code. After adding a new injection point the code needs
      to be compiled in order for that injection point to be available in the
      binary. Add-ins written in C-language can declare injection points in
-     their own code using the same macro.
+     their own code using the same macro. It is possible to pass down arguments
+     to callbacks for runtime checks.
     </para>
 
     <para>
@@ -3622,12 +3624,14 @@ INJECTION_POINT(name);
 <programlisting>
 extern void InjectionPointAttach(const char *name,
                                  const char *library,
-                                 const char *function);
+                                 const char *function,
+                                 int num_args);
 </programlisting>
 
      <literal>name</literal> is the name of the injection point, which when
      reached during execution will execute the <literal>function</literal>
-     loaded from <literal>library</literal>.
+     loaded from <literal>library</literal>. <literal>num_args</literal> is
+     the number of arguments that are used by the callback.
     </para>
 
     <para>

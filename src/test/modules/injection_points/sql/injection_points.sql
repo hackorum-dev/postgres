@@ -31,4 +31,11 @@ SELECT injection_points_detach('TestInjectionLog'); -- fails
 
 SELECT injection_points_run('TestInjectionLog2'); -- notice
 
+-- 1-argument runs
+SELECT injection_points_run_1arg('TestInjectionLog2', 'blah'); -- error
+SELECT injection_points_attach('TestInjectionLogArg1', 'notice_1arg');
+SELECT injection_points_run('TestInjectionLogArg1'); -- error
+SELECT injection_points_run_1arg('TestInjectionLogArg1', 'blah'); -- notice
+SELECT injection_points_run_1arg('TestInjectionLogArg1', 'foobar'); -- notice
+
 DROP EXTENSION injection_points;
