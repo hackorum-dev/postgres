@@ -1426,24 +1426,6 @@ PostmasterMain(int argc, char *argv[])
 		 */
 	}
 
-#ifdef HAVE_PTHREAD_IS_THREADED_NP
-
-	/*
-	 * On macOS, libintl replaces setlocale() with a version that calls
-	 * CFLocaleCopyCurrent() when its second argument is "" and every relevant
-	 * environment variable is unset or empty.  CFLocaleCopyCurrent() makes
-	 * the process multithreaded.  The postmaster calls sigprocmask() and
-	 * calls fork() without an immediate exec(), both of which have undefined
-	 * behavior in a multithreaded program.  A multithreaded postmaster is the
-	 * normal case on Windows, which offers neither fork() nor sigprocmask().
-	 */
-	if (pthread_is_threaded_np() != 0)
-		ereport(FATAL,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("postmaster became multithreaded during startup"),
-				 errhint("Set the LC_ALL environment variable to a valid locale.")));
-#endif
-
 	/*
 	 * Remember postmaster startup time
 	 */
@@ -1848,15 +1830,6 @@ ServerLoop(void)
 		/* Get other worker processes running, if needed */
 		if (StartWorkerNeeded || HaveCrashedWorker)
 			maybe_start_bgworkers();
-
-#ifdef HAVE_PTHREAD_IS_THREADED_NP
-
-		/*
-		 * With assertions enabled, check regularly for appearance of
-		 * additional threads.  All builds check at start and exit.
-		 */
-		Assert(pthread_is_threaded_np() == 0);
-#endif
 
 		/*
 		 * Lastly, check to see if it's time to do some things that we don't
