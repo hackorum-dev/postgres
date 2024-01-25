@@ -1189,6 +1189,18 @@
    </glossdef>
   </glossentry>
 
+  <glossentry id="glossary-owner-rights">
+   <glossterm>Owner rights</glossterm>
+   <glossdef>
+    <para>
+     For objects that have an owner, which is nearly all of them, the owner
+     has certain rights to interact with the object that cannot be revoked:
+     Altering the object, dropping it, and granting privileges on it.  See
+     <xref linkend="ddl-priv"/> for more detail on object ownership and privileges.
+    </para>
+   </glossdef>
+  </glossentry>
+
   <glossentry>
    <glossterm>Optimizer</glossterm>
    <glosssee otherterm="glossary-planner" />
@@ -1294,6 +1306,34 @@
      that is considered the authoritative source of information is called
      the <firstterm>primary</firstterm>,
      also known as a <firstterm>master</firstterm>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-privilege">
+   <glossterm>Privilege</glossterm>
+   <glossdef>
+    <para>
+     The permission, given by bob, for alice to select data from the widget table, is a privilege.
+     Documented in detail in <xref linkend="ddl-priv"/> it consists of a grantor (bob), grantee (alice),
+     action (select) and target object (widget table).  This is a direct privilege.
+    </para>
+    <para>
+     In addition to the direct privileges held by a role by virtue of them being named
+     the grantee, a role may also exercise indirect privileges by virtue of being
+     a member of a membership chain with a parent group having the direct privilege.
+     See <xref linkend="role-membership"/>.
+    </para>
+    <para>
+     Direct privileges come about in two ways: explicit privileges arise from usage of
+     the <command>GRANT</command> command; while implicit privileges arise either from
+     being the owner of an object or the object being subject to default privileges
+     when the object was created.     
+    </para>
+    <para>
+     The system has a concept of built-in default privileges which are represented as
+     NULL. These defaults are still explicit privileges, and are only implicitly defined.
+     See <xref linkend="ddl-priv"/> for details.
     </para>
    </glossdef>
   </glossentry>
