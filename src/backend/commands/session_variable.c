@@ -102,7 +102,13 @@ pg_variable_cache_callback(Datum arg, int cacheid, uint32 hashvalue)
 
 	elog(DEBUG1, "pg_variable_cache_callback %u %u", cacheid, hashvalue);
 
-	Assert(sessionvars);
+	/*
+	 * There is no guarantee of sessionvars being initialized, even when
+	 * receiving an invalidation callback, as DISCARD [ ALL | VARIABLES ]
+	 * destroys the hash table entirely.
+	 */
+	if (!sessionvars)
+		return;
 
 	/*
 	 * When the hashvalue is not specified, then we have to recheck all
@@ -701,4 +707,24 @@ pg_session_variables(PG_FUNCTION_ARGS)
 	elog(DEBUG1, "pg_session_variables end");
 
 	return (Datum) 0;
+}
+
+/*
+ * Fast drop of the complete content of all session variables hash table, and
+ * cleanup of any list that wouldn't be relevant anymore.
+ * This is used by DISCARD VARIABLES (and DISCARD ALL) command.
+ */
+void
+ResetSessionVariables(void)
+{
+	/* Destroy hash table and reset related memory context */
+	if (sessionvars)
+	{
+		hash_destroy(sessionvars);
+		sessionvars = NULL;
+	}
+
+	/* Release memory allocated by session variables */
+	if (SVariableMemoryContext != NULL)
+		MemoryContextReset(SVariableMemoryContext);
 }
