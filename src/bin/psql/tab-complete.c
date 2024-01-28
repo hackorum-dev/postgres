@@ -3599,7 +3599,8 @@ psql_completion(const char *text, int start, int end)
 	}
 /* CREATE VARIABLE --- is allowed inside CREATE SCHEMA, so use TailMatches */
 	/* Complete CREATE VARIABLE <name> with AS */
-	else if (TailMatches("CREATE", "VARIABLE", MatchAny))
+	else if (TailMatches("CREATE", "VARIABLE", MatchAny) ||
+			 TailMatches("TEMP|TEMPORARY", "VARIABLE", MatchAny))
 		COMPLETE_WITH("AS");
 	else if (TailMatches("VARIABLE", MatchAny, "AS"))
 		/* Complete CREATE VARIABLE <name> with AS types */

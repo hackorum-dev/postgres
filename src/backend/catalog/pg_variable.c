@@ -36,7 +36,8 @@ static ObjectAddress create_variable(const char *varName,
 									 int32 varTypmod,
 									 Oid varOwner,
 									 Oid varCollation,
-									 bool if_not_exists);
+									 bool if_not_exists,
+									 VariableEOXAction eoxaction);
 
 
 /*
@@ -49,7 +50,8 @@ create_variable(const char *varName,
 				int32 varTypmod,
 				Oid varOwner,
 				Oid varCollation,
-				bool if_not_exists)
+				bool if_not_exists,
+				VariableEOXAction eoxaction)
 {
 	Acl		   *varacl;
 	NameData	varname;
@@ -110,6 +112,7 @@ create_variable(const char *varName,
 	values[Anum_pg_variable_vartypmod - 1] = Int32GetDatum(varTypmod);
 	values[Anum_pg_variable_varowner - 1] = ObjectIdGetDatum(varOwner);
 	values[Anum_pg_variable_varcollation - 1] = ObjectIdGetDatum(varCollation);
+	values[Anum_pg_variable_vareoxaction - 1] = CharGetDatum(eoxaction);
 
 	varacl = get_user_default_acl(OBJECT_VARIABLE, varOwner,
 								  varNamespace);
@@ -183,6 +186,13 @@ CreateVariable(ParseState *pstate, CreateSessionVarStmt *stmt)
 	Oid			typcollation;
 	ObjectAddress variable;
 
+	/* Check consistency of arguments */
+	if (stmt->eoxaction == VARIABLE_EOX_DROP
+		&& stmt->variable->relpersistence != RELPERSISTENCE_TEMP)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+				 errmsg("ON COMMIT DROP can only be used on temporary variables")));
+
 	namespaceid =
 		RangeVarGetAndCheckCreationNamespace(stmt->variable, NoLock, NULL);
 
@@ -222,13 +232,16 @@ CreateVariable(ParseState *pstate, CreateSessionVarStmt *stmt)
 							   typmod,
 							   varowner,
 							   collation,
-							   stmt->if_not_exists);
+							   stmt->if_not_exists,
+							   stmt->eoxaction);
 
 	elog(DEBUG1, "record for session variable \"%s\" (oid:%d) was created in pg_variable",
 		 stmt->variable->relname, variable.objectId);
 
 	/* We want SessionVariableCreatePostprocess to see the catalog changes. */
 	CommandCounterIncrement();
+
+	SessionVariableCreatePostprocess(variable.objectId, stmt->eoxaction);
 
 	return variable;
 }
@@ -242,6 +255,7 @@ DropVariableById(Oid varid)
 {
 	Relation	rel;
 	HeapTuple	tup;
+	char		eoxaction;
 
 	rel = table_open(VariableRelationId, RowExclusiveLock);
 
@@ -250,6 +264,8 @@ DropVariableById(Oid varid)
 	if (!HeapTupleIsValid(tup))
 		elog(ERROR, "cache lookup failed for variable %u", varid);
 
+	eoxaction = ((Form_pg_variable) GETSTRUCT(tup))->vareoxaction;
+
 	CatalogTupleDelete(rel, &tup->t_self);
 
 	ReleaseSysCache(tup);
@@ -257,5 +273,5 @@ DropVariableById(Oid varid)
 	table_close(rel, RowExclusiveLock);
 
 	/* Do the necessary cleanup if needed in local memory */
-	SessionVariableDropPostprocess(varid);
+	SessionVariableDropPostprocess(varid, eoxaction);
 }

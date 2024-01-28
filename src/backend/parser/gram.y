@@ -480,6 +480,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <ival>	 OptTemp
 %type <ival>	 OptNoLog
 %type <oncommit> OnCommitOption
+%type <ival>	 OnEOXActionOption
 
 %type <ival>	for_locking_strength
 %type <node>	for_locking_item
@@ -5221,25 +5222,38 @@ create_extension_opt_item:
  *****************************************************************************/
 
 CreateSessionVarStmt:
-			CREATE VARIABLE qualified_name opt_as Typename opt_collate_clause
+			CREATE OptTemp VARIABLE qualified_name opt_as Typename opt_collate_clause OnEOXActionOption
 				{
 					CreateSessionVarStmt *n = makeNode(CreateSessionVarStmt);
-					n->variable = $3;
-					n->typeName = $5;
-					n->collClause = (CollateClause *) $6;
+					$4->relpersistence = $2;
+					n->variable = $4;
+					n->typeName = $6;
+					n->collClause = (CollateClause *) $7;
+					n->eoxaction = $8;
 					n->if_not_exists = false;
 					$$ = (Node *) n;
 				}
-			| CREATE VARIABLE IF_P NOT EXISTS qualified_name opt_as Typename opt_collate_clause
+			| CREATE OptTemp VARIABLE IF_P NOT EXISTS qualified_name opt_as Typename opt_collate_clause OnEOXActionOption
 				{
 					CreateSessionVarStmt *n = makeNode(CreateSessionVarStmt);
-					n->variable = $6;
-					n->typeName = $8;
-					n->collClause = (CollateClause *) $9;
+					$7->relpersistence = $2;
+					n->variable = $7;
+					n->typeName = $9;
+					n->collClause = (CollateClause *) $10;
+					n->eoxaction = $11;
 					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
 		;
+
+/*
+ * Temporary session variables can be dropped on successful
+ * transaction end like tables.
+ */
+OnEOXActionOption:  ON COMMIT DROP					{ $$ = VARIABLE_EOX_DROP; }
+			| /*EMPTY*/								{ $$ = VARIABLE_EOX_NOOP; }
+		;
+
 
 /*****************************************************************************
  *

@@ -54,6 +54,9 @@ CATALOG(pg_variable,9222,VariableRelationId)
 	/* typmod for variable's type */
 	int32		vartypmod BKI_DEFAULT(-1);
 
+	/* action on transaction end */
+	char		vareoxaction BKI_DEFAULT(n);
+
 	/* variable collation */
 	Oid			varcollation BKI_DEFAULT(0) BKI_LOOKUP_OPT(pg_collation);
 
@@ -65,6 +68,12 @@ CATALOG(pg_variable,9222,VariableRelationId)
 
 #endif
 } FormData_pg_variable;
+
+typedef enum VariableEOXAction
+{
+	VARIABLE_EOX_NOOP = 'n',	/* NOOP */
+	VARIABLE_EOX_DROP = 'd',	/* ON COMMIT DROP */
+}			VariableEOXAction;
 
 /* ----------------
  *		Form_pg_variable corresponds to a pointer to a tuple with

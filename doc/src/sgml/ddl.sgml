@@ -5344,8 +5344,9 @@ SELECT current_user_id;
     been set to something else in the current session using the
     <command>LET</command> command. The content of a variable is not
     transactional. This is the same as regular variables in PL languages.
-    The session variables are persistent, but the content of session variables is
-    temporary and not shared (like the content of temporary tables).
+    The session variables can be persistent or can be temporary. In both cases,
+    the content of session variables is temporary and not shared (like the
+    content of temporary tables).
    </para>
 
    <para>
