@@ -36,6 +36,7 @@
 #include "catalog/pg_enum.h"
 #include "catalog/storage.h"
 #include "commands/async.h"
+#include "commands/session_variable.h"
 #include "commands/tablecmds.h"
 #include "commands/trigger.h"
 #include "common/pg_prng.h"
@@ -2266,6 +2267,9 @@ CommitTransaction(void)
 	 * don't see committed-but-broken files after a crash.
 	 */
 	smgrDoPendingSyncs(true, is_parallel_worker);
+
+	/* Remove values of dropped session variables from memory */
+	AtPreEOXact_SessionVariables();
 
 	/* close large objects before lower-level cleanup */
 	AtEOXact_LargeObject(true);
