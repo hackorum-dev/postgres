@@ -283,7 +283,8 @@ static void _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 									   Sharedsort *sharedsort2, int sortmem,
 									   bool progress);
 
-#include "nbtsort_spec.c"
+#define NBT_FILE "../../backend/access/nbtree/nbtsort_spec.c"
+#include "access/nbtree_spec.h"
 
 /*
  *	btbuild() -- build a new btree index.
@@ -535,6 +536,7 @@ static void
 _bt_leafbuild(BTSpool *btspool, BTSpool *btspool2)
 {
 	BTWriteState wstate;
+	nbts_prep_ctx(btspool->index);
 
 #ifdef BTREE_BUILD_STATS
 	if (log_btree_build_stats)
@@ -791,6 +793,7 @@ _bt_buildadd(BTWriteState *wstate, BTPageState *state, IndexTuple itup,
 	Size		pgspc;
 	Size		itupsz;
 	bool		isleaf;
+	nbts_prep_ctx(wstate->index);
 
 	/*
 	 * This is a handy place to check for cancel interrupts during the btree
