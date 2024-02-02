@@ -38,9 +38,6 @@ CATALOG(pg_language,2612,LanguageRelationId)
 	/* Language's owner */
 	Oid			lanowner BKI_DEFAULT(POSTGRES) BKI_LOOKUP(pg_authid);
 
-	/* Is a procedural language */
-	bool		lanispl BKI_DEFAULT(f);
-
 	/* PL is trusted */
 	bool		lanpltrusted BKI_DEFAULT(f);
 

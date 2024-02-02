@@ -111,7 +111,6 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 	namestrcpy(&langname, languageName);
 	values[Anum_pg_language_lanname - 1] = NameGetDatum(&langname);
 	values[Anum_pg_language_lanowner - 1] = ObjectIdGetDatum(languageOwner);
-	values[Anum_pg_language_lanispl - 1] = BoolGetDatum(true);
 	values[Anum_pg_language_lanpltrusted - 1] = BoolGetDatum(stmt->pltrusted);
 	values[Anum_pg_language_lanplcallfoid - 1] = ObjectIdGetDatum(handlerOid);
 	values[Anum_pg_language_laninline - 1] = ObjectIdGetDatum(inlineOid);
