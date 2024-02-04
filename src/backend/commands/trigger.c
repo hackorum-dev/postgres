@@ -892,50 +892,7 @@ CreateTriggerFiringOn(const CreateTrigStmt *stmt, const char *queryString,
 	values[Anum_pg_trigger_tgconstraint - 1] = ObjectIdGetDatum(constraintOid);
 	values[Anum_pg_trigger_tgdeferrable - 1] = BoolGetDatum(stmt->deferrable);
 	values[Anum_pg_trigger_tginitdeferred - 1] = BoolGetDatum(stmt->initdeferred);
-
-	if (stmt->args)
-	{
-		ListCell   *le;
-		char	   *args;
-		int16		nargs = list_length(stmt->args);
-		int			len = 0;
-
-		foreach(le, stmt->args)
-		{
-			char	   *ar = strVal(lfirst(le));
-
-			len += strlen(ar) + 4;
-			for (; *ar; ar++)
-			{
-				if (*ar == '\\')
-					len++;
-			}
-		}
-		args = (char *) palloc(len + 1);
-		args[0] = '\0';
-		foreach(le, stmt->args)
-		{
-			char	   *s = strVal(lfirst(le));
-			char	   *d = args + strlen(args);
-
-			while (*s)
-			{
-				if (*s == '\\')
-					*d++ = '\\';
-				*d++ = *s++;
-			}
-			strcpy(d, "\\000");
-		}
-		values[Anum_pg_trigger_tgnargs - 1] = Int16GetDatum(nargs);
-		values[Anum_pg_trigger_tgargs - 1] = DirectFunctionCall1(byteain,
-																 CStringGetDatum(args));
-	}
-	else
-	{
-		values[Anum_pg_trigger_tgnargs - 1] = Int16GetDatum(0);
-		values[Anum_pg_trigger_tgargs - 1] = DirectFunctionCall1(byteain,
-																 CStringGetDatum(""));
-	}
+	values[Anum_pg_trigger_tgargs - 1] = CStringGetTextDatum(nodeToString(stmt->args));
 
 	/* build column number array if it's a column-specific trigger */
 	ncolumns = list_length(stmt->columns);
@@ -1927,6 +1884,7 @@ RelationBuildTriggers(Relation relation)
 		Trigger    *build;
 		Datum		datum;
 		bool		isnull;
+		List	   *argslist;
 
 		if (numtrigs >= maxtrigs)
 		{
@@ -1948,7 +1906,6 @@ RelationBuildTriggers(Relation relation)
 		build->tgconstraint = pg_trigger->tgconstraint;
 		build->tgdeferrable = pg_trigger->tgdeferrable;
 		build->tginitdeferred = pg_trigger->tginitdeferred;
-		build->tgnargs = pg_trigger->tgnargs;
 		/* tgattr is first var-width field, so OK to access directly */
 		build->tgnattr = pg_trigger->tgattr.dim1;
 		if (build->tgnattr > 0)
@@ -1959,24 +1916,23 @@ RelationBuildTriggers(Relation relation)
 		}
 		else
 			build->tgattr = NULL;
+
+		datum = fastgetattr(htup, Anum_pg_trigger_tgargs,
+							tgrel->rd_att, &isnull);
+		if (isnull)
+			elog(ERROR, "tgargs is null in trigger for relation \"%s\"",
+				 RelationGetRelationName(relation));
+
+		argslist = castNode(List, stringToNode(TextDatumGetCString(datum)));
+		build->tgnargs = list_length(argslist);
 		if (build->tgnargs > 0)
 		{
-			bytea	   *val;
-			char	   *p;
+			ListCell   *lc;
 
-			val = DatumGetByteaPP(fastgetattr(htup,
-											  Anum_pg_trigger_tgargs,
-											  tgrel->rd_att, &isnull));
-			if (isnull)
-				elog(ERROR, "tgargs is null in trigger for relation \"%s\"",
-					 RelationGetRelationName(relation));
-			p = (char *) VARDATA_ANY(val);
 			build->tgargs = (char **) palloc(build->tgnargs * sizeof(char *));
-			for (i = 0; i < build->tgnargs; i++)
-			{
-				build->tgargs[i] = pstrdup(p);
-				p += strlen(p) + 1;
-			}
+			i = 0;
+			foreach(lc, argslist)
+				build->tgargs[i++] = pstrdup(strVal(lfirst(lc)));
 		}
 		else
 			build->tgargs = NULL;

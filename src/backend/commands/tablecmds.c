@@ -21625,25 +21625,16 @@ CloneRowTriggersToPartition(Relation parent, Relation partition)
 			}
 		}
 
-		/* Reconstruct trigger arguments list. */
-		if (trigForm->tgnargs > 0)
-		{
-			char	   *p;
+		/*
+		 * Reconstruct trigger arguments list.
+		 */
+		value = heap_getattr(tuple, Anum_pg_trigger_tgargs,
+							 RelationGetDescr(pg_trigger), &isnull);
+		if (isnull)
+			elog(ERROR, "tgargs is null for trigger \"%s\" in partition \"%s\"",
+				 NameStr(trigForm->tgname), RelationGetRelationName(partition));
 
-			value = heap_getattr(tuple, Anum_pg_trigger_tgargs,
-								 RelationGetDescr(pg_trigger), &isnull);
-			if (isnull)
-				elog(ERROR, "tgargs is null for trigger \"%s\" in partition \"%s\"",
-					 NameStr(trigForm->tgname), RelationGetRelationName(partition));
-
-			p = (char *) VARDATA_ANY(DatumGetByteaPP(value));
-
-			for (int i = 0; i < trigForm->tgnargs; i++)
-			{
-				trigargs = lappend(trigargs, makeString(pstrdup(p)));
-				p += strlen(p) + 1;
-			}
-		}
+		trigargs = stringToNode(TextDatumGetCString(value));
 
 		trigStmt = makeNode(CreateTrigStmt);
 		trigStmt->replace = false;

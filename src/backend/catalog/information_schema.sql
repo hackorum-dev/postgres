@@ -2138,8 +2138,7 @@ CREATE VIEW triggers AS
                ELSE null END
              AS character_data) AS action_condition,
            CAST(
-             substring(pg_get_triggerdef(t.oid) from
-                       position('EXECUTE FUNCTION' in substring(pg_get_triggerdef(t.oid) from 48)) + 47)
+             'EXECUTE FUNCTION ' || t.tgfoid::regprocedure || '(' || pg_get_expr(t.tgargs, 0) || ')'
              AS character_data) AS action_statement,
            CAST(
              -- hard-wired reference to TRIGGER_TYPE_ROW

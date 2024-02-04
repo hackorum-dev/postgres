@@ -9239,15 +9239,6 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
-       <structfield>tgnargs</structfield> <type>int2</type>
-      </para>
-      <para>
-       Number of argument strings passed to trigger function
-      </para></entry>
-     </row>
-
-     <row>
-      <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>tgattr</structfield> <type>int2vector</type>
        (references <link linkend="catalog-pg-attribute"><structname>pg_attribute</structname></link>.<structfield>attnum</structfield>)
       </para>
@@ -9259,10 +9250,11 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
-       <structfield>tgargs</structfield> <type>bytea</type>
+       <structfield>tgargs</structfield> <type>pg_node_tree</type>
       </para>
       <para>
-       Argument strings to pass to trigger, each NULL-terminated
+       List of argument strings to pass to trigger (in
+       <function>nodeToString()</function> representation)
       </para></entry>
      </row>
 

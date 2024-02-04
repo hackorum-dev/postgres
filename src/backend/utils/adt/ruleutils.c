@@ -1142,26 +1142,25 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 											NIL, NULL,
 											false, NULL, false));
 
-	if (trigrec->tgnargs > 0)
 	{
-		char	   *p;
-		int			i;
+		deparse_context context;
 
 		value = fastgetattr(ht_trig, Anum_pg_trigger_tgargs,
 							tgrel->rd_att, &isnull);
 		if (isnull)
 			elog(ERROR, "tgargs is null for trigger %u", trigid);
-		p = (char *) VARDATA_ANY(DatumGetByteaPP(value));
-		for (i = 0; i < trigrec->tgnargs; i++)
-		{
-			if (i > 0)
-				appendStringInfoString(&buf, ", ");
-			simple_quote_literal(&buf, p);
-			/* advance p to next string embedded in tgargs */
-			while (*p)
-				p++;
-			p++;
-		}
+
+		context.buf = &buf;
+		context.namespaces = NIL;
+		context.windowClause = NIL;
+		context.windowTList = NIL;
+		context.varprefix = true;
+		context.prettyFlags = pretty ? (PRETTYFLAG_PAREN | PRETTYFLAG_INDENT | PRETTYFLAG_SCHEMA) : PRETTYFLAG_INDENT;
+		context.wrapColumn = WRAP_COLUMN_DEFAULT;
+		context.indentLevel = PRETTYINDENT_STD;
+		context.special_exprkind = EXPR_KIND_NONE;
+
+		get_rule_expr(stringToNode(TextDatumGetCString(value)), &context, false);
 	}
 
 	/* We deliberately do not put semi-colon at end */
@@ -11188,6 +11187,10 @@ get_rule_expr(Node *node, deparse_context *context,
 					sep = ", ";
 				}
 			}
+			break;
+
+		case T_String:
+			simple_quote_literal(buf, strVal(node));
 			break;
 
 		case T_TableFunc:

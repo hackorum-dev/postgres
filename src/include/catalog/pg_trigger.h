@@ -57,7 +57,6 @@ CATALOG(pg_trigger,2620,TriggerRelationId)
 															 * if any */
 	bool		tgdeferrable;	/* constraint trigger is deferrable */
 	bool		tginitdeferred; /* constraint trigger is deferred initially */
-	int16		tgnargs;		/* # of extra arguments in tgargs */
 
 	/*
 	 * Variable-length fields start here, but we allow direct access to
@@ -67,7 +66,7 @@ CATALOG(pg_trigger,2620,TriggerRelationId)
 											 * on columns */
 
 #ifdef CATALOG_VARLEN
-	bytea		tgargs BKI_FORCE_NOT_NULL;	/* first\000second\000tgnargs\000 */
+	pg_node_tree tgargs BKI_FORCE_NOT_NULL; /* list of arguments */
 	pg_node_tree tgqual;		/* WHEN expression, or NULL if none */
 	NameData	tgoldtable;		/* old transition table, or NULL if none */
 	NameData	tgnewtable;		/* new transition table, or NULL if none */
