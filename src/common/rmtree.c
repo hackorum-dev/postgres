@@ -61,6 +61,7 @@ rmtree(const char *path, bool rmtopdir)
 	if (dir == NULL)
 	{
 		pg_log_warning("could not open directory \"%s\": %m", path);
+        pfree(dirnames);
 		return false;
 	}
 
