@@ -52,64 +52,8 @@ SHOW ALL
      <para>
       The name of a run-time parameter.  Available parameters are
       documented in <xref linkend="runtime-config"/> and on the <xref
-      linkend="sql-set"/> reference page.  In
-      addition, there are a few parameters that can be shown but not
-      set:
-
-      <variablelist>
-       <varlistentry>
-        <term><literal>SERVER_VERSION</literal></term>
-        <listitem>
-         <para>
-          Shows the server's version number.
-         </para>
-        </listitem>
-       </varlistentry>
-
-       <varlistentry>
-        <term><literal>SERVER_ENCODING</literal></term>
-        <listitem>
-         <para>
-          Shows the server-side character set encoding.  At present,
-          this parameter can be shown but not set, because the
-          encoding is determined at database creation time.
-         </para>
-        </listitem>
-       </varlistentry>
-
-       <varlistentry>
-        <term><literal>LC_COLLATE</literal></term>
-        <listitem>
-         <para>
-          Shows the database's locale setting for collation (text
-          ordering).  At present, this parameter can be shown but not
-          set, because the setting is determined at database creation
-          time.
-         </para>
-        </listitem>
-       </varlistentry>
-
-       <varlistentry>
-        <term><literal>LC_CTYPE</literal></term>
-        <listitem>
-         <para>
-          Shows the database's locale setting for character
-          classification.  At present, this parameter can be shown but
-          not set, because the setting is determined at database creation
-          time.
-         </para>
-        </listitem>
-       </varlistentry>
-
-       <varlistentry>
-        <term><literal>IS_SUPERUSER</literal></term>
-        <listitem>
-         <para>
-          True if the current role has superuser privileges.
-         </para>
-        </listitem>
-       </varlistentry>
-      </variablelist></para>
+      linkend="sql-set"/> reference page.
+     </para>
     </listitem>
    </varlistentry>
 
