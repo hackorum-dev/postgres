@@ -27196,11 +27196,13 @@ SELECT collation for ('foo' COLLATE "de_DE");
        </para>
        <para>
         Requests to log the backtrace of a backend with the specified process
-        ID. The backtraces will be logged to <systemitem>stderr</systemitem>.
-        Typically, a backtrace identifies which function a process is currently
-        executing, and is useful for developers to diagnose stuck processes.
-        This function is supported only if PostgreSQL was built with the
-        ability to capture backtraces, otherwise it will emit a warning.
+        ID. This function can send the request to backends and auxiliary
+        processes except logger. The backtraces will be logged to
+        <systemitem>stderr</systemitem>. Typically, a backtrace identifies
+        which function a process is currently executing, and is useful for
+        developers to diagnose stuck processes. This function is supported only
+        if PostgreSQL was built with the ability to capture backtraces,
+        otherwise it will emit a warning.
        </para></entry>
       </row>
 

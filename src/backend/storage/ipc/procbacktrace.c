@@ -92,15 +92,15 @@ LoadBacktraceFunctions(void)
 
 /*
  * pg_log_backend_backtrace
- *		Signal a backend to log its current backtrace.
+ *		Signal a backend or an auxiliary process to log its current backtrace.
  *
  * By default, only superusers are allowed to signal to log the backtrace
  * because allowing any users to issue this request at an unbounded
  * rate would cause lots of log messages on stderr and which can lead to
  * denial of service. Additional roles can be permitted with GRANT.
  *
- * On receipt of this signal, a backend emits the current backtrace to stderr
- * in the signal handler.
+ * On receipt of this signal, a backend or an auxiliary process emits the
+ * current backtrace to stderr in the signal handler.
  */
 Datum
 pg_log_backend_backtrace(PG_FUNCTION_ARGS)
@@ -108,15 +108,31 @@ pg_log_backend_backtrace(PG_FUNCTION_ARGS)
 #ifdef HAVE_BACKTRACE_SYMBOLS
 	int			pid = PG_GETARG_INT32(0);
 	PGPROC	   *proc;
+	BackendId	backendId = InvalidBackendId;
 
 	proc = BackendPidGetProc(pid);
 
 	/*
-	 * BackendPidGetProc returns NULL if the pid isn't valid.
+	 * See if the process with given pid is a backend or an auxiliary process.
 	 *
-	 * Note that the proc will also be NULL if the pid refers to an auxiliary
-	 * process or the postmaster (neither of which can be signaled via
-	 * pg_log_backend_backtrace() to get backtrace).
+	 * If the given process is a backend, use its backend id in
+	 * SendProcSignal() later to speed up the operation. Otherwise, don't do
+	 * that because auxiliary processes (except the startup process) don't
+	 * have a valid backend id.
+	 */
+	if (proc != NULL)
+		backendId = proc->backendId;
+	else
+		proc = AuxiliaryPidGetProc(pid);
+
+	/*
+	 * BackendPidGetProc() and AuxiliaryPidGetProc() return NULL if the pid
+	 * isn't valid; but by the time we reach kill(), a process for which we
+	 * get a valid proc here might have terminated on its own.  There's no way
+	 * to acquire a lock on an arbitrary process to prevent that. But since
+	 * this mechanism is usually used to debug a backend or an auxiliary
+	 * process running and consuming lots of memory, that it might end on its
+	 * own first and its memory contexts are not logged is not a problem.
 	 */
 	if (proc == NULL)
 	{
@@ -125,12 +141,11 @@ pg_log_backend_backtrace(PG_FUNCTION_ARGS)
 		 * if one backend terminated on its own during the run.
 		 */
 		ereport(WARNING,
-				(errmsg("PID %d is not a PostgreSQL backend process", pid)));
-
+				(errmsg("PID %d is not a PostgreSQL server process", pid)));
 		PG_RETURN_BOOL(false);
 	}
 
-	if (SendProcSignal(pid, PROCSIG_LOG_BACKTRACE, proc->backendId) < 0)
+	if (SendProcSignal(pid, PROCSIG_LOG_BACKTRACE, backendId) < 0)
 	{
 		/* Again, just a warning to allow loops */
 		ereport(WARNING,

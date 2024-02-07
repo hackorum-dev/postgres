@@ -114,6 +114,9 @@ DROP ROLE regress_log_memory;
 -- generation support.
 SET client_min_messages = 'ERROR';
 SELECT count(*) > 0 AS ok FROM pg_log_backend_backtrace(pg_backend_pid());
+SELECT pid AS c_pid FROM pg_stat_activity
+  WHERE backend_type = 'checkpointer' \gset
+SELECT count(*) > 0 AS ok FROM pg_log_backend_backtrace(:c_pid);
 RESET client_min_messages;
 
 CREATE ROLE regress_log_backtrace;

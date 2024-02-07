@@ -635,6 +635,8 @@ InitAuxiliaryProcess(void)
 	 */
 	InitLWLockAccess();
 
+	LoadBacktraceFunctions();
+
 #ifdef EXEC_BACKEND
 
 	/*
