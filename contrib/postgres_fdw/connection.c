@@ -144,7 +144,8 @@ static bool pgfdw_exec_cleanup_query_end(PGconn *conn, const char *query,
 										 bool consume_input,
 										 bool ignore_errors);
 static bool pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime,
-									 PGresult **result, bool *timed_out);
+									 PGresult **result, bool *timed_out,
+									 bool *internal_error);
 static void pgfdw_abort_cleanup(ConnCacheEntry *entry, bool toplevel);
 static bool pgfdw_abort_cleanup_begin(ConnCacheEntry *entry, bool toplevel,
 									  List **pending_entries,
@@ -1352,6 +1353,7 @@ pgfdw_cancel_query_end(PGconn *conn, TimestampTz endtime, bool consume_input)
 {
 	PGresult   *result = NULL;
 	bool		timed_out;
+	bool		internal_error;
 
 	/*
 	 * If requested, consume whatever data is available from the socket. (Note
@@ -1369,9 +1371,13 @@ pgfdw_cancel_query_end(PGconn *conn, TimestampTz endtime, bool consume_input)
 	}
 
 	/* Get and discard the result of the query. */
-	if (pgfdw_get_cleanup_result(conn, endtime, &result, &timed_out))
+	if (pgfdw_get_cleanup_result(conn, endtime, &result, &timed_out,
+								 &internal_error))
 	{
-		if (timed_out)
+		if (internal_error)
+			ereport(WARNING,
+					(errmsg("could not get result of cancel request due to internal error")));
+		else if (timed_out)
 			ereport(WARNING,
 					(errmsg("could not get result of cancel request due to timeout")));
 		else
@@ -1442,6 +1448,7 @@ pgfdw_exec_cleanup_query_end(PGconn *conn, const char *query,
 {
 	PGresult   *result = NULL;
 	bool		timed_out;
+	bool		internal_error;
 
 	/*
 	 * If requested, consume whatever data is available from the socket. (Note
@@ -1456,9 +1463,14 @@ pgfdw_exec_cleanup_query_end(PGconn *conn, const char *query,
 	}
 
 	/* Get the result of the query. */
-	if (pgfdw_get_cleanup_result(conn, endtime, &result, &timed_out))
+	if (pgfdw_get_cleanup_result(conn, endtime, &result, &timed_out,
+								 &internal_error))
 	{
-		if (timed_out)
+		if (internal_error)
+			ereport(WARNING,
+					(errmsg("could not get query result due to internal error"),
+					 errcontext("remote SQL command: %s", query)));
+		else if (timed_out)
 			ereport(WARNING,
 					(errmsg("could not get query result due to timeout"),
 					 query ? errcontext("remote SQL command: %s", query) : 0));
@@ -1487,17 +1499,21 @@ pgfdw_exec_cleanup_query_end(PGconn *conn, const char *query,
  *
  * endtime is the time at which we should give up and assume the remote
  * side is dead.  Returns true if the timeout expired or connection trouble
- * occurred, false otherwise.  Sets *result except in case of a timeout.
- * Sets timed_out to true only when the timeout expired.
+ * occurred, false otherwise.  Sets *result except in case of a timeout or an
+ * internal error.  Sets timed_out or internal_error to true only when the
+ * timeout expired or the internal error occurred.
  */
 static bool
 pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime, PGresult **result,
-						 bool *timed_out)
+						 bool *timed_out, bool *internal_error)
 {
 	volatile bool failed = false;
 	PGresult   *volatile last_res = NULL;
+	uint32		saveInterruptHoldoffCount = InterruptHoldoffCount;
+	MemoryContext ccxt = CurrentMemoryContext;
 
 	*timed_out = false;
+	*internal_error = false;
 
 	/* In what follows, do not leak any PGresults on an error. */
 	PG_TRY();
@@ -1558,8 +1574,11 @@ exit:	;
 	}
 	PG_CATCH();
 	{
-		PQclear(last_res);
-		PG_RE_THROW();
+		InterruptHoldoffCount = saveInterruptHoldoffCount;
+		MemoryContextSwitchTo(ccxt);
+		FlushErrorState();
+		*internal_error = true;
+		failed = true;
 	}
 	PG_END_TRY();
 
