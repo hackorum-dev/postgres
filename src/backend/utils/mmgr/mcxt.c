@@ -1041,6 +1041,13 @@ MemoryContextAlloc(MemoryContext context, Size size)
 	if (!AllocSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
 
+	/*
+	 * Memory allocation likely happens in many places without a outstanding
+	 * attention, and it's far more than a few dozen instructions, so it
+	 * should be only called when there is no spin lock is held.
+	 */
+	VerifyNoSpinLocksHeld(false);
+
 	context->isReset = false;
 
 	ret = context->methods->alloc(context, size);
@@ -1083,6 +1090,9 @@ MemoryContextAllocZero(MemoryContext context, Size size)
 
 	if (!AllocSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
+
+	/* see comments in MemoryContextAlloc. */
+	VerifyNoSpinLocksHeld(false);
 
 	context->isReset = false;
 
@@ -1210,6 +1220,9 @@ palloc(Size size)
 	if (!AllocSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
 
+	/* see comments in MemoryContextAlloc. */
+	VerifyNoSpinLocksHeld(false);
+
 	context->isReset = false;
 
 	ret = context->methods->alloc(context, size);
@@ -1240,6 +1253,9 @@ palloc0(Size size)
 
 	if (!AllocSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
+
+	/* see comments in MemoryContextAlloc. */
+	VerifyNoSpinLocksHeld(false);
 
 	context->isReset = false;
 
