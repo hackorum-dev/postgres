@@ -147,6 +147,12 @@ DisownLatch(Latch *latch)
 	Assert(latch->owner_pid == MyProcPid);
 
 	latch->owner_pid = 0;
+
+	/*
+	 * Ensure that another backend reusing this PGPROC during startup sees that
+	 * owner_pid = 0 and doesn't blow up in OwnLatch().
+	 */
+	pg_memory_barrier();
 }
 
 /*
