@@ -1077,7 +1077,9 @@ SerializeClientConnectionInfo(Size maxsize PG_USED_FOR_ASSERTS_ONLY,
 	Assert(maxsize >= sizeof(serialized));
 	memcpy(start_address, &serialized, sizeof(serialized));
 
+#ifdef USE_ASSERT_CHECKING
 	maxsize -= sizeof(serialized);
+#endif
 	start_address += sizeof(serialized);
 
 	/* Copy authn_id into the space after the struct */
