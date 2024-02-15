@@ -120,62 +120,85 @@ pgxmlNodeSetToText(xmlNodeSetPtr nodeset,
 				   xmlChar *septagname,
 				   xmlChar *plainsep)
 {
-	xmlBufferPtr buf;
+	xmlBufferPtr buf = NULL;
 	xmlChar    *result;
 	int			i;
+	PgXmlErrorContext *xmlerrcxt;
 
-	buf = xmlBufferCreate();
+	xmlerrcxt = pg_xml_init(PG_XML_STRICTNESS_LEGACY);
 
-	if ((toptagname != NULL) && (xmlStrlen(toptagname) > 0))
+	PG_TRY();
 	{
-		xmlBufferWriteChar(buf, "<");
-		xmlBufferWriteCHAR(buf, toptagname);
-		xmlBufferWriteChar(buf, ">");
-	}
-	if (nodeset != NULL)
-	{
-		for (i = 0; i < nodeset->nodeNr; i++)
+		buf = xmlBufferCreate();
+
+		if (buf == NULL)
+			xml_ereport(xmlerrcxt, ERROR, ERRCODE_OUT_OF_MEMORY,
+						"could not allocate xmlBuffer");
+
+		if ((toptagname != NULL) && (xmlStrlen(toptagname) > 0))
 		{
-			if (plainsep != NULL)
+			xmlBufferWriteChar(buf, "<");
+			xmlBufferWriteCHAR(buf, toptagname);
+			xmlBufferWriteChar(buf, ">");
+		}
+		if (nodeset != NULL)
+		{
+			for (i = 0; i < nodeset->nodeNr; i++)
 			{
-				xmlBufferWriteCHAR(buf,
-								   xmlXPathCastNodeToString(nodeset->nodeTab[i]));
-
-				/* If this isn't the last entry, write the plain sep. */
-				if (i < (nodeset->nodeNr) - 1)
-					xmlBufferWriteChar(buf, (char *) plainsep);
-			}
-			else
-			{
-				if ((septagname != NULL) && (xmlStrlen(septagname) > 0))
+				if (plainsep != NULL)
 				{
-					xmlBufferWriteChar(buf, "<");
-					xmlBufferWriteCHAR(buf, septagname);
-					xmlBufferWriteChar(buf, ">");
+					xmlBufferWriteCHAR(buf,
+									xmlXPathCastNodeToString(nodeset->nodeTab[i]));
+
+					/* If this isn't the last entry, write the plain sep. */
+					if (i < (nodeset->nodeNr) - 1)
+						xmlBufferWriteChar(buf, (char *) plainsep);
 				}
-				xmlNodeDump(buf,
-							nodeset->nodeTab[i]->doc,
-							nodeset->nodeTab[i],
-							1, 0);
-
-				if ((septagname != NULL) && (xmlStrlen(septagname) > 0))
+				else
 				{
-					xmlBufferWriteChar(buf, "</");
-					xmlBufferWriteCHAR(buf, septagname);
-					xmlBufferWriteChar(buf, ">");
+					if ((septagname != NULL) && (xmlStrlen(septagname) > 0))
+					{
+						xmlBufferWriteChar(buf, "<");
+						xmlBufferWriteCHAR(buf, septagname);
+						xmlBufferWriteChar(buf, ">");
+					}
+					xmlNodeDump(buf,
+								nodeset->nodeTab[i]->doc,
+								nodeset->nodeTab[i],
+								1, 0);
+
+					if ((septagname != NULL) && (xmlStrlen(septagname) > 0))
+					{
+						xmlBufferWriteChar(buf, "</");
+						xmlBufferWriteCHAR(buf, septagname);
+						xmlBufferWriteChar(buf, ">");
+					}
 				}
 			}
 		}
-	}
 
-	if ((toptagname != NULL) && (xmlStrlen(toptagname) > 0))
-	{
-		xmlBufferWriteChar(buf, "</");
-		xmlBufferWriteCHAR(buf, toptagname);
-		xmlBufferWriteChar(buf, ">");
+		if ((toptagname != NULL) && (xmlStrlen(toptagname) > 0))
+		{
+			xmlBufferWriteChar(buf, "</");
+			xmlBufferWriteCHAR(buf, toptagname);
+			xmlBufferWriteChar(buf, ">");
+		}
+		result = xmlStrdup(buf->content);
 	}
-	result = xmlStrdup(buf->content);
+	PG_CATCH();
+	{
+		if (buf)
+			xmlBufferFree(buf);
+
+		pg_xml_done(xmlerrcxt, true);
+
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
 	xmlBufferFree(buf);
+	pg_xml_done(xmlerrcxt, false);
+
 	return result;
 }
 
