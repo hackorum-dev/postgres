@@ -1203,7 +1203,7 @@ array_out(PG_FUNCTION_ARGS)
 	p = retval;
 
 #define APPENDSTR(str)	(strcpy(p, (str)), p += strlen(p))
-#define APPENDCHAR(ch)	(*p++ = (ch), *p = '\0')
+#define APPENDCHAR(ch)	(*p++ = (ch))
 
 	if (needdims)
 		APPENDSTR(dims_str);
@@ -1225,10 +1225,9 @@ array_out(PG_FUNCTION_ARGS)
 				char		ch = *tmp;
 
 				if (ch == '"' || ch == '\\')
-					*p++ = '\\';
-				*p++ = ch;
+					APPENDCHAR('\\');
+				APPENDCHAR(ch);
 			}
-			*p = '\0';
 			APPENDCHAR('"');
 		}
 		else
@@ -1250,6 +1249,8 @@ array_out(PG_FUNCTION_ARGS)
 		}
 		j = i;
 	} while (j != -1);
+
+	*p = '\0';
 
 #undef APPENDSTR
 #undef APPENDCHAR
