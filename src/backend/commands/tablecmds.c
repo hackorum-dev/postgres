@@ -231,6 +231,8 @@ typedef struct NewColumnValue
 	Expr	   *expr;			/* expression to compute */
 	ExprState  *exprstate;		/* execution state */
 	bool		is_generated;	/* is it a GENERATED expression? */
+	bool		new_on_null;	/* set the new value only when the old value
+								 * is NULL. */
 } NewColumnValue;
 
 /*
@@ -5594,7 +5596,8 @@ ATParseTransformCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 									 atstmt,
 									 context->queryString,
 									 &beforeStmts,
-									 &afterStmts);
+									 &afterStmts,
+									 context);
 
 	/* Execute any statements that should happen before these subcommand(s) */
 	foreach(lc, beforeStmts)
@@ -6230,10 +6233,11 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 					if (ex->is_generated)
 						continue;
 
-					newslot->tts_values[ex->attnum - 1]
-						= ExecEvalExpr(ex->exprstate,
-									   econtext,
-									   &newslot->tts_isnull[ex->attnum - 1]);
+					if (!ex->new_on_null || oldslot->tts_isnull[ex->attnum - 1])
+						newslot->tts_values[ex->attnum - 1]
+							= ExecEvalExpr(ex->exprstate,
+										   econtext,
+										   &newslot->tts_isnull[ex->attnum - 1]);
 				}
 
 				ExecStoreVirtualTuple(newslot);
@@ -13284,6 +13288,7 @@ ATPrepAlterColumnType(List **wqueue,
 		newval->attnum = attnum;
 		newval->expr = (Expr *) transform;
 		newval->is_generated = false;
+		newval->new_on_null = def->from_serial;
 
 		tab->newvals = lappend(tab->newvals, newval);
 		if (ATColumnChangeRequiresRewrite(transform, attnum))
@@ -13494,6 +13499,48 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	SysScanDesc scan;
 	HeapTuple	depTup;
 	ObjectAddress address;
+
+	if (def->from_serial)
+	{
+		/*
+		 * Store the DEFAULT for the from_serial
+		 */
+		/* XXX: copy from ATExecAddColumn */
+		RawColumnDefault *rawEnt;
+
+		heapTup = SearchSysCacheCopyAttName(RelationGetRelid(rel), colName);
+		attTup = (Form_pg_attribute) GETSTRUCT(heapTup);
+
+		rawEnt = (RawColumnDefault *) palloc(sizeof(RawColumnDefault));
+		rawEnt->attnum = attTup->attnum;
+		rawEnt->raw_default = copyObject(def->raw_default);
+
+		/*
+		 * Attempt to skip a complete table rewrite by storing the specified
+		 * DEFAULT value outside of the heap.  This may be disabled inside
+		 * AddRelationNewConstraints if the optimization cannot be applied.
+		 */
+		rawEnt->missingMode = (!def->generated);
+
+		rawEnt->generated = def->generated;
+
+		/*
+		 * This function is intended for CREATE TABLE, so it processes a
+		 * _list_ of defaults, but we just do one.
+		 */
+		AddRelationNewConstraints(rel, list_make1(rawEnt), NIL,
+								  false, true, false, NULL);
+
+		/* Make the additional catalog changes visible */
+		CommandCounterIncrement();
+
+		/*
+		 * Did the request for a missing value work? If not we'll have to do a
+		 * rewrite
+		 */
+		if (!rawEnt->missingMode)
+			tab->rewrite |= AT_REWRITE_DEFAULT_VAL;
+	}
 
 	/*
 	 * Clear all the missing values if we're rewriting the table, since this
@@ -14368,7 +14415,8 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 													(AlterTableStmt *) stmt,
 													cmd,
 													&beforeStmts,
-													&afterStmts);
+													&afterStmts,
+													NULL);
 			querytree_list = list_concat(querytree_list, beforeStmts);
 			querytree_list = lappend(querytree_list, stmt);
 			querytree_list = list_concat(querytree_list, afterStmts);

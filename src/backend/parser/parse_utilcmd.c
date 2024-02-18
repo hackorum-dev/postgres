@@ -28,6 +28,7 @@
 #include "access/reloptions.h"
 #include "access/table.h"
 #include "access/toast_compression.h"
+#include "access/xact.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/index.h"
@@ -59,6 +60,7 @@
 #include "parser/parse_utilcmd.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteManip.h"
+#include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -384,6 +386,8 @@ generateSerialExtraStmts(CreateStmtContext *cxt, ColumnDef *column,
 
 	/* Make a copy of this as we may end up modifying it in the code below */
 	seqoptions = list_copy(seqoptions);
+
+	column->from_serial = true;
 
 	/*
 	 * Determine namespace and name to use for the sequence.
@@ -3423,11 +3427,15 @@ transformRuleStmt(RuleStmt *stmt, const char *queryString,
  * To avoid race conditions, it's important that this function rely only on
  * the passed-in relid (and not on stmt->relation) to determine the target
  * relation.
+ *
+ * Note: context is used for creating the beforeStmt earlier, maybe NULL
+ * sometimes.
  */
 AlterTableStmt *
 transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 						const char *queryString,
-						List **beforeStmts, List **afterStmts)
+						List **beforeStmts, List **afterStmts,
+						struct AlterTableUtilityContext *context)
 {
 	Relation	rel;
 	TupleDesc	tupdesc;
@@ -3440,6 +3448,7 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 	bool		skipValidation = true;
 	AlterTableCmd *newcmd;
 	ParseNamespaceItem *nsitem;
+	bool		beforeStmtExecuted = false;
 
 	/* Caller is responsible for locking the relation */
 	rel = relation_open(relid, NoLock);
@@ -3539,6 +3548,30 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 				{
 					ColumnDef  *def = castNode(ColumnDef, cmd->def);
 					AttrNumber	attnum;
+
+					/*
+					 * transform the serial data type,  including 1. generate
+					 * the seq cmd as before stmt. 2. change the serial type
+					 * into intX 3. add not null constraint.
+					 */
+					transformColumnDefinition(&cxt, def);
+					if (def->from_serial)
+					{
+						/*
+						 * XXX: we have to execute this sooner for the later
+						 * transformExpr(.., raw_default) works.
+						 */
+						ListCell   *lc;
+
+						foreach(lc, cxt.blist)
+						{
+							Node	   *stmt = (Node *) lfirst(lc);
+
+							ProcessUtilityForAlterTable(stmt, context);
+							CommandCounterIncrement();
+						}
+						beforeStmtExecuted = true;
+					}
 
 					/*
 					 * For ALTER COLUMN TYPE, transform the USING clause if
@@ -3776,7 +3809,11 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 	 */
 	stmt->cmds = newcmds;
 
-	*beforeStmts = cxt.blist;
+	if (!beforeStmtExecuted)
+		*beforeStmts = cxt.blist;
+	else
+		*beforeStmts = NIL;
+
 	*afterStmts = list_concat(cxt.alist, save_alist);
 
 	return stmt;

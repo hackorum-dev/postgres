@@ -18,12 +18,14 @@
 
 struct AttrMap;					/* avoid including attmap.h here */
 
+struct AlterTableUtilityContext;
 
 extern List *transformCreateStmt(CreateStmt *stmt, const char *queryString);
 extern AlterTableStmt *transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 											   const char *queryString,
 											   List **beforeStmts,
-											   List **afterStmts);
+											   List **afterStmts,
+											   struct AlterTableUtilityContext *context);
 extern IndexStmt *transformIndexStmt(Oid relid, IndexStmt *stmt,
 									 const char *queryString);
 extern CreateStatsStmt *transformStatsStmt(Oid relid, CreateStatsStmt *stmt,

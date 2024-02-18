@@ -680,8 +680,14 @@ insert into atacc1 (test) values (2);
 insert into atacc1 (test) values (2);
 -- should succeed
 insert into atacc1 (test) values (4);
+-- insert a NULL.
+insert into atacc1 select;
 -- try to create duplicates via alter table using - should fail
 alter table atacc1 alter column test type integer using 0;
+alter table atacc1 alter column test type serial;
+select * from atacc1 order by 1;
+-- fail since the nextval of seq is 2 and 2 exist already.
+insert into atacc1 select;
 drop table atacc1;
 
 -- let's do one where the unique constraint fails when added
@@ -1431,11 +1437,13 @@ alter table at_tab1 alter column b type varchar; -- fails
 drop table at_tab1, at_tab2;
 
 -- Alter column type that's part of a partitioned index
-create table at_partitioned (a int, b text) partition by range (a);
+create table at_partitioned (a int, b text, c int) partition by range (a);
 create table at_part_1 partition of at_partitioned for values from (0) to (1000);
-insert into at_partitioned values (512, '0.123');
-create table at_part_2 (b text, a int);
-insert into at_part_2 values ('1.234', 1024);
+insert into at_partitioned values (512, '0.123', 1);
+insert into at_partitioned values (512, '0.123', NULL);
+create table at_part_2 (b text, c int, a int);
+insert into at_part_2 values ('1.234', 2, 1024);
+insert into at_part_2 values ('1.234', NULL, 1024);
 create index on at_partitioned (b);
 create index on at_partitioned (a);
 \d at_part_1
@@ -1445,6 +1453,10 @@ alter table at_partitioned attach partition at_part_2 for values from (1000) to 
 alter table at_partitioned alter column b type numeric using b::numeric;
 \d at_part_1
 \d at_part_2
+alter table at_partitioned alter column c type serial;
+select * from at_partitioned order by 1;
+\d+ at_part_1
+\d+ at_part_2
 drop table at_partitioned;
 
 -- Alter column type when no table rewrite is required

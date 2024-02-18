@@ -2599,6 +2599,7 @@ alter_table_cmd:
 					def->collClause = (CollateClause *) $7;
 					def->raw_default = $8;
 					def->location = @3;
+					def->colname = $3;
 					$$ = (Node *) n;
 				}
 			/* ALTER FOREIGN TABLE <name> ALTER [COLUMN] <colname> OPTIONS */
