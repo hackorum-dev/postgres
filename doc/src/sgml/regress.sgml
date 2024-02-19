@@ -583,12 +583,13 @@ make check EXTRA_REGRESS_OPTS="--temp-config=test_postgresql.conf"
 
    <para>
     The core regression test suite contains a few test files that are not
-    run by default, because they might be platform-dependent or take a
-    very long time to run.  You can run these or other extra test
+    run by default, because they might be platform-dependent, take a
+    very long time to run or be unreliable when run in conjunction with
+    other tests.  You can run these or other extra test
     files by setting the variable <envar>EXTRA_TESTS</envar>.  For
-    example, to run the <literal>numeric_big</literal> test:
+    example, to run the <literal>reindex_catalog</literal> test:
 <screen>
-make check EXTRA_TESTS=numeric_big
+make check EXTRA_TESTS=reindex_catalog
 </screen>
    </para>
   </sect2>
