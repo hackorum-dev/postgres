@@ -13,6 +13,7 @@
 #include "postgres.h"
 
 #include "access/tupconvert.h"
+#include "access/relation.h"
 #include "catalog/partition.h"
 #include "catalog/pg_publication.h"
 #include "catalog/pg_publication_rel.h"
@@ -214,6 +215,11 @@ static void init_rel_sync_cache(MemoryContext cachectx);
 static void cleanup_rel_sync_cache(TransactionId xid, bool is_commit);
 static RelationSyncEntry *get_rel_sync_entry(PGOutputData *data,
 											 Relation relation);
+static RelationSyncEntry *get_rel_sync_entry_by_relid(PGOutputData *data,
+													  Oid relid);
+static RelationSyncEntry *get_rel_sync_entry_internal(PGOutputData *data,
+													  Relation relation,
+													  Oid relid);
 static void rel_sync_cache_relation_cb(Datum arg, Oid relid);
 static void rel_sync_cache_publication_cb(Datum arg, int cacheid,
 										  uint32 hashvalue);
@@ -1963,10 +1969,28 @@ set_schema_sent_in_streamed_txn(RelationSyncEntry *entry, TransactionId xid)
 static RelationSyncEntry *
 get_rel_sync_entry(PGOutputData *data, Relation relation)
 {
+	return get_rel_sync_entry_internal(data, relation, InvalidOid);
+}
+
+static RelationSyncEntry *
+__attribute__ ((unused))
+get_rel_sync_entry_by_relid(PGOutputData *data, Oid relid)
+{
+	return get_rel_sync_entry_internal(data, NULL, relid);
+}
+
+static RelationSyncEntry *
+get_rel_sync_entry_internal(PGOutputData *data, Relation relation, Oid oid)
+{
 	RelationSyncEntry *entry;
 	bool		found;
 	MemoryContext oldctx;
-	Oid			relid = RelationGetRelid(relation);
+	Oid			relid = OidIsValid(oid) ? oid: RelationGetRelid(relation);
+	bool		started_xact = false, using_subtxn;
+
+	/* either oid or relation is provided. */
+	Assert(OidIsValid(oid) || RelationIsValid(relation));
+	Assert(!(OidIsValid(oid) && RelationIsValid(relation)));
 
 	Assert(RelationSyncCache != NULL);
 
@@ -1991,6 +2015,23 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 		entry->publish_as_relid = InvalidOid;
 		entry->columns = NULL;
 		entry->attrmap = NULL;
+	}
+
+	if (!entry->replicate_valid && !IsTransactionOrTransactionBlock())
+	{
+		/*
+		 * Validating the entry needs to access syscache, which must
+		 * be in a transaction state, if that's not ready, start one.
+		 */
+
+		using_subtxn = IsTransactionOrTransactionBlock();
+
+		if (using_subtxn)
+			BeginInternalSubTransaction(__func__);
+		else
+			StartTransactionCommand();
+
+		started_xact = true;
 	}
 
 	/* Validate the entry */
@@ -2198,8 +2239,18 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 		if (entry->pubactions.pubinsert || entry->pubactions.pubupdate ||
 			entry->pubactions.pubdelete)
 		{
+			bool rel_opened = false;
+
+			if (!RelationIsValid(relation))
+			{
+				relation = relation_open(oid, AccessShareLock);
+				rel_opened = true;
+			}
 			/* Initialize the tuple slot and map */
 			init_tuple_slot(data, relation, entry);
+
+			if (rel_opened)
+				relation_close(relation, AccessShareLock);
 
 			/* Initialize the row filter */
 			pgoutput_row_filter_init(data, rel_publications, entry);
@@ -2213,6 +2264,13 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 		list_free(rel_publications);
 
 		entry->replicate_valid = true;
+	}
+
+	if (started_xact)
+	{
+		AbortCurrentTransaction();
+		if (using_subtxn)
+			RollbackAndReleaseCurrentSubTransaction();
 	}
 
 	return entry;
