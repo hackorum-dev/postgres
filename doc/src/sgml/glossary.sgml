@@ -1064,6 +1064,7 @@
      with all its databases.  Many instances can run on the same
      <glossterm linkend="glossary-server">server</glossterm>
      as long as their <acronym>TCP</acronym> ports do not conflict.
+     Also called <firstterm>node</firstterm>.
     </para>
     <para>
      The instance handles all key features of a <acronym>DBMS</acronym>:
@@ -1294,6 +1295,11 @@
    </glossdef>
   </glossentry>
 
+  <glossentry id="glossary-node">
+   <glossterm>Node</glossterm>
+   <glosssee otherterm="glossary-instance" />
+  </glossentry>
+
   <glossentry id="glossary-null">
    <glossterm>Null</glossterm>
    <glossdef>
@@ -1428,6 +1434,36 @@
      <xref linkend="sql-createprocedure"/>.
     </para>
    </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-publication">
+   <glossterm>Publication</glossterm>
+   <glossdef>
+    <para>
+     A publication replicates the changes of one or more tables to a
+     <glossterm linkend="glossary-subscription">subscription</glossterm>.
+    </para>
+    <para>
+     For more information, see
+     <xref linkend="logical-replication-publication"/>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-publication-node">
+   <glossterm>Publication node</glossterm>
+   <glossdef>
+    <para>
+     A <glossterm linkend="glossary-node">node</glossterm> where a
+     <glossterm linkend="glossary-publication">publication</glossterm> is defined
+     for <glossterm linkend="glossary-replication">logical replication</glossterm>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry>
+   <glossterm>Publisher</glossterm>
+   <glosssee otherterm="glossary-publication-node" />
   </glossentry>
 
   <glossentry id="glossary-query">
@@ -1867,6 +1903,37 @@
      (The name is historical: the startup process was named before
      replication was implemented; the name refers to its task as it
      relates to the server startup following a crash.)
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry>
+   <glossterm>Subscriber</glossterm>
+   <glosssee otherterm="glossary-subscription-node" />
+  </glossentry>
+
+  <glossentry id="glossary-subscription">
+   <glossterm>Subscription</glossterm>
+   <glossdef>
+    <para>
+     A subscription receives the changes of one or more tables from the
+     <glossterm linkend="glossary-publication">publications</glossterm>
+     it subscribes to.
+    </para>
+    <para>
+     For more information, see
+     <xref linkend="logical-replication-subscription"/>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-subscription-node">
+   <glossterm>Subscription node</glossterm>
+   <glossdef>
+    <para>
+     A <glossterm linkend="glossary-node">node</glossterm> where a
+     <glossterm linkend="glossary-subscription">subscription</glossterm> is defined
+     for <glossterm linkend="glossary-replication">logical replication</glossterm>.
     </para>
    </glossdef>
   </glossentry>
