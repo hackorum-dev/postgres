@@ -307,6 +307,12 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	glob = makeNode(PlannerGlobal);
 
 	glob->boundParams = boundParams;
+	glob->planner_cxt = CurrentMemoryContext;
+	glob->planner_tmp_cxt = AllocSetContextCreate(glob->planner_cxt,
+												  "Planner temp context",
+												  ALLOCSET_DEFAULT_SIZES);
+	glob->planner_tmp_cxt_depth = 0;
+	glob->planner_tmp_cxt_usage = 0;
 	glob->subplans = NIL;
 	glob->subroots = NIL;
 	glob->rewindPlanIDs = NULL;
@@ -586,6 +592,9 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 			result->jitFlags |= PGJIT_DEFORM;
 	}
 
+	/* Clean up.  We aren't very thorough here. */
+	MemoryContextDelete(glob->planner_tmp_cxt);
+
 	if (glob->partition_directory != NULL)
 		DestroyPartitionDirectory(glob->partition_directory);
 
@@ -642,7 +651,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->parent_root = parent_root;
 	root->plan_params = NIL;
 	root->outer_params = NULL;
-	root->planner_cxt = CurrentMemoryContext;
+	root->planner_cxt = glob->planner_cxt;
 	root->init_plans = NIL;
 	root->cte_plan_ids = NIL;
 	root->multiexpr_params = NIL;
@@ -6509,11 +6518,18 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 
 	glob = makeNode(PlannerGlobal);
 
+	glob->planner_cxt = CurrentMemoryContext;
+	glob->planner_tmp_cxt = AllocSetContextCreate(glob->planner_cxt,
+												  "Planner temp context",
+												  ALLOCSET_DEFAULT_SIZES);
+	glob->planner_tmp_cxt_depth = 0;
+	glob->planner_tmp_cxt_usage = 0;
+
 	root = makeNode(PlannerInfo);
 	root->parse = query;
 	root->glob = glob;
 	root->query_level = 1;
-	root->planner_cxt = CurrentMemoryContext;
+	root->planner_cxt = glob->planner_cxt;
 	root->wt_param_id = -1;
 	root->join_domains = list_make1(makeNode(JoinDomain));
 
@@ -6552,7 +6568,10 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 	 * trust the index contents but use seqscan-and-sort.
 	 */
 	if (lc == NULL)				/* not in the list? */
+	{
+		MemoryContextDelete(glob->planner_tmp_cxt);
 		return true;			/* use sort */
+	}
 
 	/*
 	 * Rather than doing all the pushups that would be needed to use
@@ -6583,6 +6602,9 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 									  NIL, NIL, NIL, NIL,
 									  ForwardScanDirection, false,
 									  NULL, 1.0, false);
+
+	/* We assume this won't free *indexScanPath */
+	MemoryContextDelete(glob->planner_tmp_cxt);
 
 	return (seqScanAndSortPath.total_cost < indexScanPath->path.total_cost);
 }
@@ -6631,11 +6653,18 @@ plan_create_index_workers(Oid tableOid, Oid indexOid)
 
 	glob = makeNode(PlannerGlobal);
 
+	glob->planner_cxt = CurrentMemoryContext;
+	glob->planner_tmp_cxt = AllocSetContextCreate(glob->planner_cxt,
+												  "Planner temp context",
+												  ALLOCSET_DEFAULT_SIZES);
+	glob->planner_tmp_cxt_depth = 0;
+	glob->planner_tmp_cxt_usage = 0;
+
 	root = makeNode(PlannerInfo);
 	root->parse = query;
 	root->glob = glob;
 	root->query_level = 1;
-	root->planner_cxt = CurrentMemoryContext;
+	root->planner_cxt = glob->planner_cxt;
 	root->wt_param_id = -1;
 	root->join_domains = list_make1(makeNode(JoinDomain));
 
@@ -6725,6 +6754,8 @@ plan_create_index_workers(Oid tableOid, Oid indexOid)
 		parallel_workers--;
 
 done:
+	MemoryContextDelete(glob->planner_tmp_cxt);
+
 	index_close(index, NoLock);
 	table_close(heap, NoLock);
 
