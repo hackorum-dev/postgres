@@ -239,6 +239,9 @@ my $tab_upgraded1_oid = $old_sub->safe_psql('postgres',
 my $tab_upgraded2_oid = $old_sub->safe_psql('postgres',
 	"SELECT oid FROM pg_class WHERE relname = 'tab_upgraded2'");
 
+$sub_oid = $old_sub->safe_psql('postgres',
+	"SELECT oid FROM pg_subscription ORDER BY subname");
+
 $old_sub->stop;
 
 # Change configuration so that initial table sync sync does not get started
@@ -277,6 +280,10 @@ $publisher->safe_psql(
 ]);
 
 $new_sub->start;
+
+# The subscription oid should be preserved
+$result = $new_sub->safe_psql('postgres', "SELECT oid FROM pg_subscription ORDER BY subname");
+is($result, qq($sub_oid), "subscription oid should have been preserved");
 
 # The subscription's running status and failover option should be preserved
 # in the upgraded instance. So regress_sub4 should still have subenabled and
