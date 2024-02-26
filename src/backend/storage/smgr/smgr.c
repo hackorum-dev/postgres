@@ -142,6 +142,15 @@ static dlist_head unpinned_relns;
 static void smgrshutdown(int code, Datum arg);
 static void smgrdestroy(SMgrRelation reln);
 
+/*
+ * Hook for plugins to extend smgr functions.
+ * for example, collect statistics from smgr functions
+ * via recording the active relfilenode information.
+ */
+smgrcreate_hook_type smgrcreate_hook = NULL;
+smgrextend_hook_type smgrextend_hook = NULL;
+smgrtruncate_hook_type smgrtruncate_hook = NULL;
+smgrdounlinkall_hook_type smgrdounlinkall_hook = NULL;
 
 /*
  * smgrinit(), smgrshutdown() -- Initialize or shut down storage
@@ -413,6 +422,9 @@ smgrexists(SMgrRelation reln, ForkNumber forknum)
 void
 smgrcreate(SMgrRelation reln, ForkNumber forknum, bool isRedo)
 {
+	if (smgrcreate_hook)
+		(*smgrcreate_hook)(reln, forknum, isRedo);
+
 	smgrsw[reln->smgr_which].smgr_create(reln, forknum, isRedo);
 }
 
@@ -470,6 +482,9 @@ smgrdounlinkall(SMgrRelation *rels, int nrels, bool isRedo)
 
 	if (nrels == 0)
 		return;
+
+	if (smgrdounlinkall_hook)
+		(*smgrdounlinkall_hook)(rels, nrels, isRedo);
 
 	/*
 	 * Get rid of any remaining buffers for the relations.  bufmgr will just
@@ -538,6 +553,9 @@ void
 smgrextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 		   const void *buffer, bool skipFsync)
 {
+	if (smgrextend_hook)
+		(*smgrextend_hook)(reln, forknum, blocknum, buffer, skipFsync);
+
 	smgrsw[reln->smgr_which].smgr_extend(reln, forknum, blocknum,
 										 buffer, skipFsync);
 
@@ -705,6 +723,9 @@ void
 smgrtruncate(SMgrRelation reln, ForkNumber *forknum, int nforks, BlockNumber *nblocks)
 {
 	int			i;
+
+	if (smgrtruncate_hook)
+		(*smgrtruncate_hook)(reln, forknum, nforks, nblocks);
 
 	/*
 	 * Get rid of any buffers for the about-to-be-deleted blocks. bufmgr will

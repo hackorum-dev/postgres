@@ -124,4 +124,20 @@ smgrwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	smgrwritev(reln, forknum, blocknum, &buffer, 1, skipFsync);
 }
 
+/*
+ * Hook for plugins to extend smgr functions.
+ * for example, collect statistics from smgr functions
+ * via recording the active relfilenode information.
+ */
+typedef void (*smgrcreate_hook_type)(SMgrRelation reln, ForkNumber forknum, bool isRedo);
+extern PGDLLIMPORT smgrcreate_hook_type smgrcreate_hook;
+typedef void (*smgrextend_hook_type)(SMgrRelation reln, ForkNumber forknum,
+									 BlockNumber blocknum, const void *buffer, bool skipFsync);
+extern PGDLLIMPORT smgrextend_hook_type smgrextend_hook;
+typedef void (*smgrtruncate_hook_type)(SMgrRelation reln, ForkNumber *forknum,
+									   int nforks, BlockNumber *nblocks);
+extern PGDLLIMPORT smgrtruncate_hook_type smgrtruncate_hook;
+typedef void (*smgrdounlinkall_hook_type)(SMgrRelation *rels, int nrels, bool isRedo);
+extern PGDLLIMPORT smgrdounlinkall_hook_type smgrdounlinkall_hook;
+
 #endif							/* SMGR_H */
