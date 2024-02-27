@@ -3403,15 +3403,28 @@ eval_const_expressions_mutator(Node *node,
 			}
 			break;
 		case T_SubPlan:
+		{
+			SubPlan *subplan = makeNode(SubPlan);
+
+			memcpy(subplan, node, sizeof(SubPlan));
+
+			/*
+			 * Return a SubPlan unchanged. If the subplan had been uncorrelated
+			 * it already have been converted to an InitPlan.
+			 */
+			return (Node *) subplan;
+		}
 		case T_AlternativeSubPlan:
+		{
+			AlternativeSubPlan *subplan = makeNode(AlternativeSubPlan);
+
+			memcpy(subplan, node, sizeof(AlternativeSubPlan));
 
 			/*
 			 * Return a SubPlan unchanged --- too late to do anything with it.
-			 *
-			 * XXX should we ereport() here instead?  Probably this routine
-			 * should never be invoked after SubPlan creation.
 			 */
-			return node;
+			return (Node *) subplan;
+		}
 		case T_RelabelType:
 			{
 				RelabelType *relabel = (RelabelType *) node;
