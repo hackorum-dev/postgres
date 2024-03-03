@@ -1830,75 +1830,112 @@ SELECT <replaceable>select_list</replaceable>
     ORDER BY <replaceable>sort_expression1</replaceable> <optional>ASC | DESC</optional> <optional>NULLS { FIRST | LAST }</optional>
              <optional>, <replaceable>sort_expression2</replaceable> <optional>ASC | DESC</optional> <optional>NULLS { FIRST | LAST }</optional> ...</optional>
 </synopsis>
-   The sort expression(s) can be any expression that would be valid in the
-   query's select list.  An example is:
+   When more than one expression is specified, the later values are used to
+   sort rows that are equal according to the earlier values.
+  </para>
+
+  <sect2 id="queries-order-sort-expressions">
+   <title>Types of Sort Expression</title>
+
+   <para>
+    A <replaceable>sort_expression</replaceable> can be any expression (see
+    <xref linkend="sql-expressions"/>; <literal>*</literal> is not an
+    expression) that would be valid in the query's select list.  This is most
+    often a column or an operation on a column belonging to a relation
+    referenced in the query, such as:
 <programlisting>
 SELECT a, b FROM table1 ORDER BY a + b, c;
 </programlisting>
-   When more than one expression is specified,
-   the later values are used to sort rows that are equal according to the
-   earlier values.  Each expression can be followed by an optional
-   <literal>ASC</literal> or <literal>DESC</literal> keyword to set the sort direction to
-   ascending or descending.  <literal>ASC</literal> order is the default.
-   Ascending order puts smaller values first, where
-   <quote>smaller</quote> is defined in terms of the
-   <literal>&lt;</literal> operator.  Similarly, descending order is
-   determined with the <literal>&gt;</literal> operator.
-    <footnote>
-     <para>
-      Actually, <productname>PostgreSQL</productname> uses the <firstterm>default B-tree
-      operator class</firstterm> for the expression's data type to determine the sort
-      ordering for <literal>ASC</literal> and <literal>DESC</literal>.  Conventionally,
-      data types will be set up so that the <literal>&lt;</literal> and
-      <literal>&gt;</literal> operators correspond to this sort ordering,
-      but a user-defined data type's designer could choose to do something
-      different.
-     </para>
-    </footnote>
-  </para>
+    Columns do not have to be projected in the select list to be used in
+    <literal>ORDER BY</literal>. Non-column expressions may also be used;
+    <literal>ORDER BY random()</literal> is a common technique to shuffle
+    output records.
+   </para>
 
-  <para>
-   The <literal>NULLS FIRST</literal> and <literal>NULLS LAST</literal> options can be
-   used to determine whether nulls appear before or after non-null values
-   in the sort ordering.  By default, null values sort as if larger than any
-   non-null value; that is, <literal>NULLS FIRST</literal> is the default for
-   <literal>DESC</literal> order, and <literal>NULLS LAST</literal> otherwise.
-  </para>
-
-  <para>
-   Note that the ordering options are considered independently for each
-   sort column.  For example <literal>ORDER BY x, y DESC</literal> means
-   <literal>ORDER BY x ASC, y DESC</literal>, which is not the same as
-   <literal>ORDER BY x DESC, y DESC</literal>.
-  </para>
-
-  <para>
-   A <replaceable>sort_expression</replaceable> can also be the column label or number
-   of an output column, as in:
+   <para>
+    A <replaceable>sort_expression</replaceable> can also be the column label
+    or number of an output column.  The output column name must stand alone,
+    that is, it cannot be used in an expression.  For example:
 <programlisting>
-SELECT a + b AS sum, c FROM table1 ORDER BY sum;
-SELECT a, max(b) FROM table1 GROUP BY a ORDER BY 1;
+SELECT a + b AS sum, c FROM table1 ORDER BY sum;     -- sorts by a + b
+SELECT a, max(b) FROM table1 GROUP BY a ORDER BY 1;  -- sorts by a
+SELECT a + b AS sum, c FROM table1 ORDER BY sum + c; -- error
 </programlisting>
-   both of which sort by the first output column.  Note that an output
-   column name has to stand alone, that is, it cannot be used in an expression
-   &mdash; for example, this is <emphasis>not</emphasis> correct:
-<programlisting>
-SELECT a + b AS sum, c FROM table1 ORDER BY sum + c;          -- wrong
-</programlisting>
-   This restriction is made to reduce ambiguity.  There is still
-   ambiguity if an <literal>ORDER BY</literal> item is a simple name that
-   could match either an output column name or a column from the table
-   expression.  The output column is used in such cases.  This would
-   only cause confusion if you use <literal>AS</literal> to rename an output
-   column to match some other table column's name.
-  </para>
+    This restriction on expressions involving output columns is made to reduce
+    ambiguity.  There is still ambiguity if an <literal>ORDER BY</literal> item
+    is a simple name that could match either an output column name or a column
+    from the table expression.  The output column is used in such cases.  This
+    would only cause confusion if you use <literal>AS</literal> to rename an
+    output column to match some other table column's name.
+   </para>
 
-  <para>
-   <literal>ORDER BY</literal> can be applied to the result of a
-   <literal>UNION</literal>, <literal>INTERSECT</literal>, or <literal>EXCEPT</literal>
-   combination, but in this case it is only permitted to sort by
-   output column names or numbers, not by expressions.
-  </para>
+   <para>
+    When a <replaceable>sort_expression</replaceable> or grouping expression
+    (see <xref linkend="queries-group"/>) matches an expression or
+    subexpression in the select list, the query parser may interpret the former
+    as a consistent value even if the expression or subexpression is volatile.
+     This can cause unexpected behavior, for example with
+    <literal>random()</literal>:
+<programlisting>
+SELECT s, random(), random() FROM generate_series(1, 10) AS s
+ORDER BY random();
+</programlisting>
+    Here, <literal>random()</literal> is executed once per row in the
+    <literal>ORDER BY</literal>. The <literal>random()</literal> invocations in
+    the <command>SELECT</command> list refer to <emphasis>that</emphasis> value
+    for <literal>random()</literal> instead of executing the function again.
+   </para>
+  </sect2>
+
+  <sect2 id="queries-order-sort-options">
+   <title>Sort Expression Options</title>
+
+   <para>
+    Each expression can be followed by an optional <literal>ASC</literal> or
+    <literal>DESC</literal> keyword to set the sort direction to ascending or
+    descending.  <literal>ASC</literal> order is the default.
+    Ascending order puts smaller values first, where
+    <quote>smaller</quote> is defined in terms of the
+    <literal>&lt;</literal> operator.  Similarly, descending order is
+    determined with the <literal>&gt;</literal> operator.
+     <footnote>
+      <para>
+       Actually, <productname>PostgreSQL</productname> uses the <firstterm>default B-tree
+       operator class</firstterm> for the expression's data type to determine the sort
+       ordering for <literal>ASC</literal> and <literal>DESC</literal>.  Conventionally,
+       data types will be set up so that the <literal>&lt;</literal> and
+       <literal>&gt;</literal> operators correspond to this sort ordering,
+       but a user-defined data type's designer could choose to do something
+       different.
+      </para>
+     </footnote>
+   </para>
+
+   <para>
+    The <literal>NULLS FIRST</literal> and <literal>NULLS LAST</literal> options can be
+    used to determine whether nulls appear before or after non-null values
+    in the sort ordering.  By default, null values sort as if larger than any
+    non-null value; that is, <literal>NULLS FIRST</literal> is the default for
+    <literal>DESC</literal> order, and <literal>NULLS LAST</literal> otherwise.
+   </para>
+
+   <para>
+    Note that the ordering options are considered independently for each
+    sort column.  For example <literal>ORDER BY x, y DESC</literal> means
+    <literal>ORDER BY x ASC, y DESC</literal>, which is not the same as
+    <literal>ORDER BY x DESC, y DESC</literal>.
+   </para>
+  </sect2>
+
+  <sect2 id="queries-order-set-operations">
+   <title><literal>ORDER BY</literal> and Set Operations</title>
+   <para>
+    <literal>ORDER BY</literal> can be applied to the result of a
+    <literal>UNION</literal>, <literal>INTERSECT</literal>, or <literal>EXCEPT</literal>
+    combination.  In this case it is only permitted to sort by output column
+    names or numbers, not by expressions.
+   </para>
+  </sect2>
  </sect1>
 
 
