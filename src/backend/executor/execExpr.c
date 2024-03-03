@@ -938,22 +938,76 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				}
 				else
 				{
+					int			attnum;
+					Plan	   *plan = state->parent ? state->parent->plan : NULL;
+
 					/* regular user column */
 					scratch.d.var.attnum = variable->varattno - 1;
 					scratch.d.var.vartype = variable->vartype;
+					attnum = scratch.d.var.attnum;
+
 					switch (variable->varno)
 					{
 						case INNER_VAR:
-							scratch.opcode = EEOP_INNER_VAR;
+
+							if (is_join_plan(plan) &&
+								bms_is_member(attnum,
+											  ((JoinState *) state->parent)->inner_pre_detoast_attrs))
+							{
+								scratch.opcode = EEOP_INNER_VAR_TOAST;
+#ifdef DEBUG_PRE_DETOAST_DATUM
+								elog(INFO,
+									 "EEOP_INNER_VAR_TOAST: flags = %d costs=%.2f..%.2f, attnum: %d",
+									 state->flags,
+									 plan->startup_cost,
+									 plan->total_cost,
+									 attnum);
+#endif
+							}
+							else
+							{
+								scratch.opcode = EEOP_INNER_VAR;
+							}
 							break;
 						case OUTER_VAR:
-							scratch.opcode = EEOP_OUTER_VAR;
+							if (is_join_plan(plan) &&
+								bms_is_member(attnum,
+											  ((JoinState *) state->parent)->outer_pre_detoast_attrs))
+							{
+								scratch.opcode = EEOP_OUTER_VAR_TOAST;
+#ifdef DEBUG_PRE_DETOAST_DATUM
+									elog(INFO,
+										 "EEOP_OUTER_VAR_TOAST: flags = %u costs=%.2f..%.2f, attnum: %d",
+										 state->flags,
+										 plan->startup_cost,
+										 plan->total_cost,
+										 attnum);
+#endif
+							}
+							else
+								scratch.opcode = EEOP_OUTER_VAR;
 							break;
 
 							/* INDEX_VAR is handled by default case */
 
 						default:
-							scratch.opcode = EEOP_SCAN_VAR;
+							if (is_scan_plan(plan) && bms_is_member(
+																	attnum,
+																	((ScanState *) state->parent)->scan_pre_detoast_attrs))
+							{
+								scratch.opcode = EEOP_SCAN_VAR_TOAST;
+#ifdef DEBUG_PRE_DETOAST_DATUM
+									elog(INFO,
+										 "EEOP_SCAN_VAR_TOAST: flags = %u costs=%.2f..%.2f, scanId: %d, attnum: %d",
+										 state->flags,
+										 plan->startup_cost,
+										 plan->total_cost,
+										 ((Scan *) plan)->scanrelid,
+										 attnum);
+#endif
+							}
+							else
+								scratch.opcode = EEOP_SCAN_VAR;
 							break;
 					}
 				}

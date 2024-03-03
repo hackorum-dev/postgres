@@ -22,11 +22,11 @@
 #include "utils/expandeddatum.h"
 #include "utils/rel.h"
 
-static struct varlena *toast_fetch_datum(struct varlena *attr);
+static struct varlena *toast_fetch_datum(struct varlena *attr, MemoryContext ctx);
 static struct varlena *toast_fetch_datum_slice(struct varlena *attr,
 											   int32 sliceoffset,
 											   int32 slicelength);
-static struct varlena *toast_decompress_datum(struct varlena *attr);
+static struct varlena *toast_decompress_datum(struct varlena *attr, MemoryContext ctx);
 static struct varlena *toast_decompress_datum_slice(struct varlena *attr, int32 slicelength);
 
 /* ----------
@@ -42,7 +42,7 @@ static struct varlena *toast_decompress_datum_slice(struct varlena *attr, int32 
  * ----------
  */
 struct varlena *
-detoast_external_attr(struct varlena *attr)
+detoast_external_attr_ext(struct varlena *attr, MemoryContext ctx)
 {
 	struct varlena *result;
 
@@ -51,7 +51,7 @@ detoast_external_attr(struct varlena *attr)
 		/*
 		 * This is an external stored plain value
 		 */
-		result = toast_fetch_datum(attr);
+		result = toast_fetch_datum(attr, ctx);
 	}
 	else if (VARATT_IS_EXTERNAL_INDIRECT(attr))
 	{
@@ -68,13 +68,13 @@ detoast_external_attr(struct varlena *attr)
 
 		/* recurse if value is still external in some other way */
 		if (VARATT_IS_EXTERNAL(attr))
-			return detoast_external_attr(attr);
+			return detoast_external_attr_ext(attr, ctx);
 
 		/*
 		 * Copy into the caller's memory context, in case caller tries to
 		 * pfree the result.
 		 */
-		result = (struct varlena *) palloc(VARSIZE_ANY(attr));
+		result = (struct varlena *) MemoryContextAlloc(ctx, VARSIZE_ANY(attr));
 		memcpy(result, attr, VARSIZE_ANY(attr));
 	}
 	else if (VARATT_IS_EXTERNAL_EXPANDED(attr))
@@ -87,7 +87,7 @@ detoast_external_attr(struct varlena *attr)
 
 		eoh = DatumGetEOHP(PointerGetDatum(attr));
 		resultsize = EOH_get_flat_size(eoh);
-		result = (struct varlena *) palloc(resultsize);
+		result = (struct varlena *) MemoryContextAlloc(ctx, resultsize);
 		EOH_flatten_into(eoh, (void *) result, resultsize);
 	}
 	else
@@ -101,32 +101,45 @@ detoast_external_attr(struct varlena *attr)
 	return result;
 }
 
+struct varlena *
+detoast_external_attr(struct varlena *attr)
+{
+	return detoast_external_attr_ext(attr, CurrentMemoryContext);
+}
+
 
 /* ----------
- * detoast_attr -
+ * detoast_attr_ext -
  *
  *	Public entry point to get back a toasted value from compression
  *	or external storage.  The result is always non-extended varlena form.
+ *
+ * ctx: The memory context which the final value belongs to.
  *
  * Note some callers assume that if the input is an EXTERNAL or COMPRESSED
  * datum, the result will be a pfree'able chunk.
  * ----------
  */
-struct varlena *
-detoast_attr(struct varlena *attr)
+
+extern struct varlena *
+detoast_attr_ext(struct varlena *attr, MemoryContext ctx)
 {
 	if (VARATT_IS_EXTERNAL_ONDISK(attr))
 	{
 		/*
 		 * This is an externally stored datum --- fetch it back from there
 		 */
-		attr = toast_fetch_datum(attr);
+		attr = toast_fetch_datum(attr, ctx);
 		/* If it's compressed, decompress it */
 		if (VARATT_IS_COMPRESSED(attr))
 		{
 			struct varlena *tmp = attr;
 
-			attr = toast_decompress_datum(tmp);
+			attr = toast_decompress_datum(tmp, ctx);
+			/*
+			 * XXX: this pfree block us from using BumpContext directly
+			 * we need some extra effort to make it happen at least.
+			 */
 			pfree(tmp);
 		}
 	}
@@ -144,14 +157,14 @@ detoast_attr(struct varlena *attr)
 		Assert(!VARATT_IS_EXTERNAL_INDIRECT(attr));
 
 		/* recurse in case value is still extended in some other way */
-		attr = detoast_attr(attr);
+		attr = detoast_attr_ext(attr, ctx);
 
 		/* if it isn't, we'd better copy it */
 		if (attr == (struct varlena *) redirect.pointer)
 		{
 			struct varlena *result;
 
-			result = (struct varlena *) palloc(VARSIZE_ANY(attr));
+			result = (struct varlena *) MemoryContextAlloc(ctx, VARSIZE_ANY(attr));
 			memcpy(result, attr, VARSIZE_ANY(attr));
 			attr = result;
 		}
@@ -161,7 +174,7 @@ detoast_attr(struct varlena *attr)
 		/*
 		 * This is an expanded-object pointer --- get flat format
 		 */
-		attr = detoast_external_attr(attr);
+		attr = detoast_external_attr_ext(attr, ctx);
 		/* flatteners are not allowed to produce compressed/short output */
 		Assert(!VARATT_IS_EXTENDED(attr));
 	}
@@ -170,7 +183,7 @@ detoast_attr(struct varlena *attr)
 		/*
 		 * This is a compressed value inside of the main tuple
 		 */
-		attr = toast_decompress_datum(attr);
+		attr = toast_decompress_datum(attr, ctx);
 	}
 	else if (VARATT_IS_SHORT(attr))
 	{
@@ -181,7 +194,7 @@ detoast_attr(struct varlena *attr)
 		Size		new_size = data_size + VARHDRSZ;
 		struct varlena *new_attr;
 
-		new_attr = (struct varlena *) palloc(new_size);
+		new_attr = (struct varlena *) MemoryContextAlloc(ctx, new_size);
 		SET_VARSIZE(new_attr, new_size);
 		memcpy(VARDATA(new_attr), VARDATA_SHORT(attr), data_size);
 		attr = new_attr;
@@ -190,6 +203,11 @@ detoast_attr(struct varlena *attr)
 	return attr;
 }
 
+struct varlena *
+detoast_attr(struct varlena *attr)
+{
+	return detoast_attr_ext(attr, CurrentMemoryContext);
+}
 
 /* ----------
  * detoast_attr_slice -
@@ -262,7 +280,7 @@ detoast_attr_slice(struct varlena *attr,
 			preslice = toast_fetch_datum_slice(attr, 0, max_size);
 		}
 		else
-			preslice = toast_fetch_datum(attr);
+			preslice = toast_fetch_datum(attr, CurrentMemoryContext);
 	}
 	else if (VARATT_IS_EXTERNAL_INDIRECT(attr))
 	{
@@ -294,7 +312,7 @@ detoast_attr_slice(struct varlena *attr,
 		if (slicelimit >= 0)
 			preslice = toast_decompress_datum_slice(tmp, slicelimit);
 		else
-			preslice = toast_decompress_datum(tmp);
+			preslice = toast_decompress_datum(tmp, CurrentMemoryContext);
 
 		if (tmp != attr)
 			pfree(tmp);
@@ -340,7 +358,7 @@ detoast_attr_slice(struct varlena *attr,
  * ----------
  */
 static struct varlena *
-toast_fetch_datum(struct varlena *attr)
+toast_fetch_datum(struct varlena *attr, MemoryContext ctx)
 {
 	Relation	toastrel;
 	struct varlena *result;
@@ -355,7 +373,7 @@ toast_fetch_datum(struct varlena *attr)
 
 	attrsize = VARATT_EXTERNAL_GET_EXTSIZE(toast_pointer);
 
-	result = (struct varlena *) palloc(attrsize + VARHDRSZ);
+	result = (struct varlena *) MemoryContextAlloc(ctx, attrsize + VARHDRSZ);
 
 	if (VARATT_EXTERNAL_IS_COMPRESSED(toast_pointer))
 		SET_VARSIZE_COMPRESSED(result, attrsize + VARHDRSZ);
@@ -468,7 +486,7 @@ toast_fetch_datum_slice(struct varlena *attr, int32 sliceoffset,
  * Decompress a compressed version of a varlena datum
  */
 static struct varlena *
-toast_decompress_datum(struct varlena *attr)
+toast_decompress_datum(struct varlena *attr, MemoryContext ctx)
 {
 	ToastCompressionId cmid;
 
@@ -482,9 +500,9 @@ toast_decompress_datum(struct varlena *attr)
 	switch (cmid)
 	{
 		case TOAST_PGLZ_COMPRESSION_ID:
-			return pglz_decompress_datum(attr);
+			return pglz_decompress_datum(attr, ctx);
 		case TOAST_LZ4_COMPRESSION_ID:
-			return lz4_decompress_datum(attr);
+			return lz4_decompress_datum(attr, ctx);
 		default:
 			elog(ERROR, "invalid compression method id %d", cmid);
 			return NULL;		/* keep compiler quiet */
@@ -515,7 +533,7 @@ toast_decompress_datum_slice(struct varlena *attr, int32 slicelength)
 	 * more than the data's true decompressed size.
 	 */
 	if ((uint32) slicelength >= TOAST_COMPRESS_EXTSIZE(attr))
-		return toast_decompress_datum(attr);
+		return toast_decompress_datum(attr, CurrentMemoryContext);
 
 	/*
 	 * Fetch the compression method id stored in the compression header and

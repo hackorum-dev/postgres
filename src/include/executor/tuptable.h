@@ -19,6 +19,7 @@
 #include "access/sysattr.h"
 #include "access/tupdesc.h"
 #include "storage/buf.h"
+#include "utils/memutils.h"
 
 /*----------
  * The executor stores tuples in a "tuple table" which is a List of
@@ -126,6 +127,7 @@ typedef struct TupleTableSlot
 #define FIELDNO_TUPLETABLESLOT_ISNULL 6
 	bool	   *tts_isnull;		/* current per-attribute isnull flags */
 	MemoryContext tts_mcxt;		/* slot itself is in this context */
+	MemoryContext tts_data_mctx; /* The external content of tts_values[*] */
 	ItemPointerData tts_tid;	/* stored tuple's tid */
 	Oid			tts_tableOid;	/* table oid of tuple */
 } TupleTableSlot;
@@ -448,11 +450,23 @@ slot_is_current_xact_tuple(TupleTableSlot *slot)
 }
 
 /*
+ * ExecFreePreDetoastDatum - free the memory which is allocated in tts_data_mcxt.
+ */
+static inline void
+ExecFreePreDetoastDatum(TupleTableSlot *slot)
+{
+	if (slot->tts_data_mctx)
+		MemoryContextResetOnly(slot->tts_data_mctx);
+}
+
+/*
  * ExecClearTuple - clear the slot's contents
  */
 static inline TupleTableSlot *
 ExecClearTuple(TupleTableSlot *slot)
 {
+	ExecFreePreDetoastDatum(slot);
+
 	slot->tts_ops->clear(slot);
 
 	return slot;

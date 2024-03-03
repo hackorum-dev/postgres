@@ -1565,6 +1565,12 @@ typedef struct ScanState
 	Relation	ss_currentRelation;
 	struct TableScanDescData *ss_currentScanDesc;
 	TupleTableSlot *ss_ScanTupleSlot;
+
+	/*
+	 * The final attributes which should apply the pre-detoast-attrs logic on
+	 * the Scan nodes.
+	 */
+	Bitmapset  *scan_pre_detoast_attrs;
 } ScanState;
 
 /* ----------------
@@ -2088,6 +2094,13 @@ typedef struct JoinState
 	bool		single_match;	/* True if we should skip to next outer tuple
 								 * after finding one inner match */
 	ExprState  *joinqual;		/* JOIN quals (in addition to ps.qual) */
+
+	/*
+	 * The final attributes which should apply the pre-detoast-attrs logic on
+	 * the join nodes.
+	 */
+	Bitmapset  *outer_pre_detoast_attrs;
+	Bitmapset  *inner_pre_detoast_attrs;
 } JoinState;
 
 /* ----------------
@@ -2848,4 +2861,5 @@ typedef struct LimitState
 	TupleTableSlot *last_slot;	/* slot for evaluation of ties */
 } LimitState;
 
+extern void SetPredetoastAttrsForJoin(JoinState *joinstate);
 #endif							/* EXECNODES_H */

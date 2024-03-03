@@ -1,0 +1,264 @@
+The problem:
+-------------
+
+In the current expression engine, a toasted datum is detoasted when
+required, but the result is discarded immediately, either by pfree it
+immediately or leave it for ResetExprContext. Arguments for which one to
+use exists sometimes. More serious problem is detoasting is expensive,
+especially for the data types like jsonb or array, which the value might
+be very huge. In the blow example, the detoasting happens twice.
+
+SELECT jb_col->'a', jb_col->'b' FROM t;
+
+Within the shared-detoast-datum, we just need to detoast once for each
+tuple, and discard it immediately when the tuple is not needed any
+more. FWIW this issue may existing for small numeric, text as well
+because of SHORT_TOAST feature where the toast's len using 1 byte rather
+than 4 bytes.
+
+Current Design
+--------------
+
+The high level design is let createplan.c and setref.c decide which
+Vars can use this feature, and then the executor save the detoast
+datum back slot->to tts_values[*] during the ExprEvalStep of
+EEOP_{INNER|OUTER|SCAN}_VAR_TOAST. The reasons includes:
+
+- The existing expression engine read datum from tts_values[*], no any
+  extra work need to be done.
+- Reuse the lifespan of TupleTableSlot system to manage memory. It
+  is natural to think the detoast datum is a tts_value just that it is
+  in a detoast format. Since we have a clear lifespan for TupleTableSlot
+  already, like ExecClearTuple, ExecCopySlot et. We are easy to reuse
+  them for managing the datoast datum's memory.
+- The existing projection method can copy the datoasted datum (int64)
+  automatically to the next node's slot, but keeping the ownership
+  unchanged, so only the slot where the detoast really happen take the
+  charge of it's lifespan.
+
+Assuming which Var should use this feature has been decided in
+createplan.c and setref.c already. The following strategy is used to
+reduce the run time overhead.
+
+1. Putting the detoast datum into tts->tts_values[*]. then the ExprEval
+   system doesn't need any extra effort to find them.
+
+static inline void
+ExecSlotDetoastDatum(TupleTableSlot *slot, int attnum)
+{
+    if (!slot->tts_isnull[attnum] &&
+        VARATT_IS_EXTENDED(slot->tts_values[attnum]))
+    {
+        if (unlikely(slot->tts_data_mctx == NULL))
+            slot->tts_data_mctx = GenerationContextCreate(slot->tts_mcxt,
+                                     "tts_value_ctx",
+                                    ALLOCSET_START_SMALL_SIZES);
+        slot->tts_values[attnum] = PointerGetDatum(detoast_attr_ext((struct varlena *) slot->tts_values[attnum],
+                                                                 /* save the detoast value to the given MemoryContext. */
+                                        slot->tts_data_mctx));
+    }
+}
+
+2. Using a dedicated lazy created memory context under TupleTableSlot so
+   that the memory can be released effectively.
+
+static inline void
+ExecFreePreDetoastDatum(TupleTableSlot *slot)
+{
+    if (slot->tts_data_mctx)
+        MemoryContextResetOnly(slot->tts_data_mctx);
+}
+
+3. Control the memory usage by releasing them whenever the
+   slot->tts_values[*] is deemed as invalidate, so the lifespan is
+   likely short.
+
+4. Reduce the run-time overhead for checking if a VAR should use
+   pre-detoast feature, 3 new steps are introduced.
+   EEOP_{INNER,OUTER,SCAN}_VAR_TOAST, so that other Var is totally non
+   related.
+
+Now comes to the createplan.c/setref.c part, which decides which Vars
+should use the shared detoast feature. The guideline of this is:
+
+1. It needs a detoast for a given expression in the previous logic.
+2. It should not breaks the CP_SMALL_TLIST design. Since we saved the
+   detoast datum back to tts_values[*], which make tuple bigger. if we
+   do this blindly, it would be harmful to the ORDER / HASH style nodes.
+
+A high level data flow is:
+
+1. at the createplan.c, we walk the plan tree go gather the
+   CP_SMALL_TLIST because of SORT/HASH style nodes, information and save
+   it to Plan.forbid_pre_detoast_vars via the function
+   set_plan_forbid_pre_detoast_vars_recurse.
+
+2. at the setrefs.c, fix_{scan|join}_expr will recurse to Var for each
+   expression, so it is a good time to track the attribute number and
+   see if the Var is directly or indirectly accessed. Usually the
+   indirectly access a Var means a detoast would happens, for
+   example an expression like a > 3. However some known expressions is
+   ignored. for example: NullTest, pg_column_compression which needs the
+   raw datum, start_with/sub_string which needs a slice
+   detoasting. Currently there is some hard code here, we may needs a
+   pg_proc.detoasting_requirement flags to make this generic.  The
+   output is {Scan|Join}.xxx_reference_attrs;
+
+Note that here I used '_reference_' rather than '_detoast_' is because
+at this part, I still don't know if it is a toastable attrbiute, which
+is known at the MakeTupleTableSlot stage.
+
+3. At the InitPlan Stage, we calculate the final xxx_pre_detoast_attrs
+   in ScanState & JoinState, which will be passed into expression
+   engine in the ExecInitExprRec stage and EEOP_{INNER|OUTER|SCAN}
+   _VAR_TOAST steps are generated finally then everything is connected
+   with ExecSlotDetoastDatum!
+
+
+Testing
+-------
+
+Case 1: small numeric testing.
+===============================
+
+create table t (a numeric);
+insert into t select i from generate_series(1, 100000)i;
+
+cat 1.sql
+
+select * from t where a > 0;
+
+In this test, the current master run detoast twice for each datum. one
+in numeric_gt,  one in numeric_out.  this feature makes the detoast once.
+
+pgbench -f 1.sql -n postgres -T 10 -M prepared
+
+master: 30.218 ms
+patched: 26.957 ms
+
+
+Case 2: Big jsonbs test:
+=============================
+
+create table b(blog jsonb);
+
+INSERT INTO b
+SELECT jsonb_build_object(
+        'title', 'title ' || s.i::text,
+        'content', substring(repeat(md5(random()::text), 100), 1, 3000),
+        'subscriber', (random() * 100)::int,
+        'reader', (random() * 100)::int
+    )
+FROM generate_series(1, 10000) s(i);
+
+
+explain analyze
+select blog from b
+where cast(blog->'reader' as numeric) > 10 and
+cast(blog->'subscriber' as numeric) > 0;
+
+Dump and restore the above data into the current master:
+
+master: 24.588 ms
+patched: 17.664 ms
+
+Memory usage test:
+
+I run the workload of tpch scale 10 on against both master and patched
+versions, the memory usage looks stable and the performance doesn't have
+noticeable improvement and regression as well.
+
+A alternative design: toast cache
+---------------------------------
+
+This method is provided by Tomas during the review process. IIUC, this
+method would maintain a local HTAB which map a toast datum to a detoast
+datum and the entry is maintained / used in detoast_attr
+function. Within this method, the overall design is pretty clear and the
+code modification can be controlled in toasting system only.
+
+Comparison of advantages and disadvantages of the two schemes
+-------------------------------------------------------------
+
+advantage of Toast Cache:
+=========================
+
+- The modification can be controlled in the toasting system only.
+
+disadvantages of Toast Cache:
+=============================
+- As a cache system for user data, the cache is easy to be used up,
+  hence the memory usage is a key problem.
+- cache lookup and cache evict produces more overhead.
+
+advantage of current design:
+============================
+- the runtime overhead is pretty small.
+- the memory usage is easier to control since it is released whenever
+  the slot->tts_values[*] is invalidated.
+
+
+disadvantage of current design:
+================================
+- It modifies createplan.c & setref.c & execExpr.c & execExprInterp.c &
+  execTuples*.c, llvmjit_*.c and so on, I admit it is kinda of invasive,
+  but it is done with some clear reasons.
+
+- It assumes any_foo(toast_col) will detoast the whole datum totally,
+  however some functions like 'starts_with' just need to detoast a slice
+  of datum. we are lacking of a generic way to know this so it is hard
+  coded so far.
+
+
+Bad case testing of current design:
+====================================
+
+- The extra effort of createplan.c & setref.c & execExpr.c & InitPlan :
+
+CREATE TABLE t(a int, b numeric);
+
+q1:
+explain select * from t where a > 3;
+
+q2:
+set enable_hashjoin to off;
+set enable_mergejoin to off;
+set enable_nestloop to on;
+
+explain select * from t join t t2 using(a);
+
+q3:
+set enable_hashjoin to off;
+set enable_mergejoin to on;
+set enable_nestloop to off;
+explain select * from t join t t2 using(a);
+
+
+q4:
+set enable_hashjoin to on;
+set enable_mergejoin to off;
+set enable_nestloop to off;
+explain select * from t join t t2 using(a);
+
+
+pgbench -f x.sql -n postgres  -M simple -T10
+
+| query ID | patched (ms)                        | master (ms)                         | regression(%) |
+|----------+-------------------------------------+-------------------------------------+---------------|
+|        1 | {0.088, 0.088, 0.088, 0.087, 0.089} | {0.111, 0.103, 0.103, 0.099, 0.101} |            3% |
+|        2 |                                     |                                     |               |
+|        3 |                                     |                                     |               |
+|        4 |                                     |                                     |               |
+
+
+- The extra effort of ExecInterpExpr
+
+insert into t select i, i FROM generate_series(1, 100000) i;
+
+SELECT count(b) from t WHERE b > 0;
+
+In this query, the extra execution code is run but it doesn't buy anything.
+
+| master | patched | regression |
+|--------+---------+------------|
+|        |         |            |

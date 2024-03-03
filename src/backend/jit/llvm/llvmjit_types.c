@@ -182,4 +182,5 @@ void	   *referenced_functions[] =
 	strlen,
 	varsize_any,
 	ExecInterpExprStillValid,
+	ExecSlotDetoastDatumExternal,
 };

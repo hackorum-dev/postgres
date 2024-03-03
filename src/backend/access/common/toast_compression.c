@@ -79,13 +79,13 @@ pglz_compress_datum(const struct varlena *value)
  * Decompress a varlena that was compressed using PGLZ.
  */
 struct varlena *
-pglz_decompress_datum(const struct varlena *value)
+pglz_decompress_datum(const struct varlena *value, MemoryContext ctx)
 {
 	struct varlena *result;
 	int32		rawsize;
 
 	/* allocate memory for the uncompressed data */
-	result = (struct varlena *) palloc(VARDATA_COMPRESSED_GET_EXTSIZE(value) + VARHDRSZ);
+	result = (struct varlena *) MemoryContextAlloc(ctx, VARDATA_COMPRESSED_GET_EXTSIZE(value) + VARHDRSZ);
 
 	/* decompress the data */
 	rawsize = pglz_decompress((char *) value + VARHDRSZ_COMPRESSED,
@@ -179,7 +179,7 @@ lz4_compress_datum(const struct varlena *value)
  * Decompress a varlena that was compressed using LZ4.
  */
 struct varlena *
-lz4_decompress_datum(const struct varlena *value)
+lz4_decompress_datum(const struct varlena *value, MemoryContext ctx)
 {
 #ifndef USE_LZ4
 	NO_LZ4_SUPPORT();
@@ -189,7 +189,7 @@ lz4_decompress_datum(const struct varlena *value)
 	struct varlena *result;
 
 	/* allocate memory for the uncompressed data */
-	result = (struct varlena *) palloc(VARDATA_COMPRESSED_GET_EXTSIZE(value) + VARHDRSZ);
+	result = (struct varlena *) MemoryContextAlloc(ctx, VARDATA_COMPRESSED_GET_EXTSIZE(value) + VARHDRSZ);
 
 	/* decompress the data */
 	rawsize = LZ4_decompress_safe((char *) value + VARHDRSZ_COMPRESSED,
@@ -223,7 +223,7 @@ lz4_decompress_datum_slice(const struct varlena *value, int32 slicelength)
 
 	/* slice decompression not supported prior to 1.8.3 */
 	if (LZ4_versionNumber() < 10803)
-		return lz4_decompress_datum(value);
+		return lz4_decompress_datum(value, CurrentMemoryContext);
 
 	/* allocate memory for the uncompressed data */
 	result = (struct varlena *) palloc(slicelength + VARHDRSZ);

@@ -42,6 +42,7 @@ do { \
  * ----------
  */
 extern struct varlena *detoast_external_attr(struct varlena *attr);
+extern struct varlena *detoast_external_attr_ext(struct varlena *attr, MemoryContext ctx);
 
 /* ----------
  * detoast_attr() -
@@ -51,6 +52,8 @@ extern struct varlena *detoast_external_attr(struct varlena *attr);
  * ----------
  */
 extern struct varlena *detoast_attr(struct varlena *attr);
+extern struct varlena *detoast_attr_ext(struct varlena *attr, MemoryContext ctx);
+
 
 /* ----------
  * detoast_attr_slice() -

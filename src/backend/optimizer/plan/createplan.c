@@ -316,7 +316,9 @@ static ModifyTable *make_modifytable(PlannerInfo *root, Plan *subplan,
 									 int epqParam);
 static GatherMerge *create_gather_merge_plan(PlannerInfo *root,
 											 GatherMergePath *best_path);
-
+static void set_plan_forbid_pre_detoast_vars_recurse(Plan *plan,
+													 List *small_tlist);
+static void set_plan_not_pre_detoast_vars(Plan *plan, List *small_tlist);
 
 /*
  * create_plan
@@ -349,6 +351,12 @@ create_plan(PlannerInfo *root, Path *best_path)
 	plan = create_plan_recurse(root, best_path, CP_EXACT_TLIST);
 
 	/*
+	 * After the plan tree is built completed, we start to walk for which
+	 * expressions should not used the shared-detoast feature.
+	 */
+	set_plan_forbid_pre_detoast_vars_recurse(plan, NIL);
+
+	/*
 	 * Make sure the topmost plan node's targetlist exposes the original
 	 * column names and other decorative info.  Targetlists generated within
 	 * the planner don't bother with that stuff, but we must have it on the
@@ -378,6 +386,101 @@ create_plan(PlannerInfo *root, Path *best_path)
 	root->plan_params = NIL;
 
 	return plan;
+}
+
+/*
+ * set_plan_forbid_pre_detoast_vars_recurse
+ *	 Walking the Plan tree in the top-down manner to gather the vars which
+ * should be as small as possible and record them in Plan.forbid_pre_detoast_vars
+ *
+ * plan: the plan node to walk right now.
+ * small_tlist: a list of nodes which its subplan should provide them as
+ * small as possible.
+ */
+static void
+set_plan_forbid_pre_detoast_vars_recurse(Plan *plan, List *small_tlist)
+{
+	if (plan == NULL)
+		return;
+
+	set_plan_not_pre_detoast_vars(plan, small_tlist);
+
+	/* Recurse to its subplan.. */
+	if (IsA(plan, Sort) || IsA(plan, Memoize) || IsA(plan, WindowAgg) ||
+		IsA(plan, Hash) || IsA(plan, Material) || IsA(plan, IncrementalSort))
+	{
+		List	   *sub_small_tlist = get_tlist_exprs(plan->lefttree->targetlist, true);
+
+		/*
+		 * For the sort-like nodes, we want the output of its subplan as small
+		 * as possible, but the subplan's other expressions like Qual doesn't
+		 * have this restriction since they are not output to the upper nodes.
+		 * so we set the small_tlist to the subplan->targetlist.
+		 */
+		set_plan_forbid_pre_detoast_vars_recurse(plan->lefttree, sub_small_tlist);
+	}
+	else if (IsA(plan, HashJoin) && castNode(HashJoin, plan)->left_small_tlist)
+	{
+		List	   *sub_small_tlist = get_tlist_exprs(plan->lefttree->targetlist, true);
+
+		/*
+		 * If the left_small_tlist wants a as small as possible tlist, set it
+		 * in a way like sort for the left node.
+		 */
+		set_plan_forbid_pre_detoast_vars_recurse(plan->lefttree, sub_small_tlist);
+
+		/*
+		 * The righttree is a Hash node, it can be set with its own rule, so
+		 * the small_tlist provided is not important, we just need to recuse
+		 * to its subplan.
+		 */
+		set_plan_forbid_pre_detoast_vars_recurse(plan->righttree, plan->forbid_pre_detoast_vars);
+	}
+	else
+	{
+		/*
+		 * Recurse to its children, just push down the forbid_pre_detoast_vars
+		 * to its children.
+		 */
+		set_plan_forbid_pre_detoast_vars_recurse(plan->lefttree, plan->forbid_pre_detoast_vars);
+		set_plan_forbid_pre_detoast_vars_recurse(plan->righttree, plan->forbid_pre_detoast_vars);
+	}
+}
+
+/*
+ * set_plan_not_pre_detoast_vars
+ *
+ *	Set the Plan.forbid_pre_detoast_vars according the small_tlist information.
+ *
+ * small_tlist = NIL means nothing is forbidden, or else if a Var belongs to the
+ * small_tlist, then it must not be pre-detoasted.
+ */
+static void
+set_plan_not_pre_detoast_vars(Plan *plan, List *small_tlist)
+{
+	ListCell   *lc;
+	Var		   *var;
+
+	/*
+	 * fast path, if we don't have a small_tlist, the var in targetlist is
+	 * impossible member of it. and this case might be a pretty common case.
+	 */
+	if (small_tlist == NIL)
+		return;
+
+	foreach(lc, plan->targetlist)
+	{
+		TargetEntry *te = lfirst_node(TargetEntry, lc);
+
+		if (!IsA(te->expr, Var))
+			continue;
+		var = castNode(Var, te->expr);
+		if (var->varattno <= 0)
+			continue;
+		if (list_member(small_tlist, var))
+			/* pass the recheck */
+			plan->forbid_pre_detoast_vars = lappend(plan->forbid_pre_detoast_vars, var);
+	}
 }
 
 /*
@@ -4911,6 +5014,8 @@ create_hashjoin_plan(PlannerInfo *root,
 							  best_path->jpath.inner_unique);
 
 	copy_generic_path_info(&join_plan->join.plan, &best_path->jpath.path);
+
+	join_plan->left_small_tlist = (best_path->num_batches > 1);
 
 	return join_plan;
 }
