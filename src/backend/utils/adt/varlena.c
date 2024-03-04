@@ -1557,8 +1557,6 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 	{
 		pg_locale_t mylocale;
 
-		mylocale = pg_newlocale_from_collation(collid);
-
 		/*
 		 * memcmp() can't tell us which of two unequal strings sorts first,
 		 * but it's a cheap way to tell if they're equal.  Testing shows that
@@ -1571,6 +1569,7 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 		if (len1 == len2 && memcmp(arg1, arg2, len1) == 0)
 			return 0;
 
+		mylocale = pg_newlocale_from_collation(collid);
 		result = pg_strncoll(arg1, len1, arg2, len2, mylocale);
 
 		/* Break tie if necessary. */
