@@ -1086,6 +1086,39 @@ gen_random_uuid() returns uuid
     ciphertexts of a given size.
    </para>
   </sect3>
+
+  <sect3 id="pgcrypto-notes-disallowed">
+   <title>Deprecated Algorithms</title>
+
+   <para>
+    <filename>pgcrypto</filename> supports a number of algorithms which are
+    known to be vulnerable to attacks, and are widely advised against to be
+    used for new applications.
+   </para>
+   <para>
+    DES and 3DES cipher algorithms, are listed as disallowed for encryption in
+    <ulink url="https://doi.org/10.6028/NIST.SP.800-131Ar2">NIST SP800-131A</ulink>.
+    In order to be compliant with NIST guidelines, these algorithms should
+    only be used for decryption of already encrypted data.
+   </para>
+   <para>
+    <ulink url="https://datatracker.ietf.org/doc/html/rfc6151">RFC6151</ulink>
+    documents why MD5 should not be used for digital signatures.
+   </para>
+   <para>
+    Blowfish is vulnerable to the <ulink url="https://sweet32.info/">SWEET32</ulink>
+    birthday attack and is adviced against for new applications.
+   </para>
+   <para>
+    SHA-1 was deprecated for digital signature generation in
+    <ulink url="https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-107r1.pdf">
+    NIST SP800-107</ulink> and later disallowed in
+    <ulink url="https://doi.org/10.6028/NIST.SP.800-131Ar2">NIST SP800-131A</ulink>.
+    In order to be compliant with NIST guidelines, SHA-1 should only be used
+    for validating digital signatures.
+   </para>
+  </sect3>
+
  </sect2>
 
  <sect2 id="pgcrypto-author">
