@@ -20,8 +20,11 @@ $node->safe_psql(
 	'postgres', q(
 	CREATE EXTENSION amcheck;
 
+	CREATE SCHEMA test_amcheck;
+	SET search_path = test_amcheck;
+
 	CREATE FUNCTION ok_cmp (int4, int4)
-	RETURNS int LANGUAGE sql AS
+	RETURNS int LANGUAGE sql SET search_path = test_amcheck AS
 	$$
 		SELECT
 			CASE WHEN $1 < $2 THEN -1
@@ -34,7 +37,7 @@ $node->safe_psql(
 	--- Check 1: uniqueness violation.
 	---
 	CREATE FUNCTION ok_cmp1 (int4, int4)
-	RETURNS int LANGUAGE sql AS
+	RETURNS int LANGUAGE sql SET search_path = test_amcheck AS
 	$$
 		SELECT public.ok_cmp($1, $2);
 	$$;
@@ -43,7 +46,7 @@ $node->safe_psql(
 	--- Make values 768 and 769 look equal.
 	---
 	CREATE FUNCTION bad_cmp1 (int4, int4)
-	RETURNS int LANGUAGE sql AS
+	RETURNS int LANGUAGE sql SET search_path = test_amcheck AS
 	$$
 		SELECT
 			CASE WHEN ($1 = 768 AND $2 = 769) OR
@@ -56,13 +59,13 @@ $node->safe_psql(
 	--- Check 2: uniqueness violation without deduplication.
 	---
 	CREATE FUNCTION ok_cmp2 (int4, int4)
-	RETURNS int LANGUAGE sql AS
+	RETURNS int LANGUAGE sql SET search_path = test_amcheck AS
 	$$
 		SELECT public.ok_cmp($1, $2);
 	$$;
 
 	CREATE FUNCTION bad_cmp2 (int4, int4)
-	RETURNS int LANGUAGE sql AS
+	RETURNS int LANGUAGE sql SET search_path = test_amcheck AS
 	$$
 		SELECT
 			CASE WHEN $1 = $2 AND $1 = 400 THEN -1
@@ -74,13 +77,13 @@ $node->safe_psql(
 	--- Check 3: uniqueness violation with deduplication.
 	---
 	CREATE FUNCTION ok_cmp3 (int4, int4)
-	RETURNS int LANGUAGE sql AS
+	RETURNS int LANGUAGE sql SET search_path = test_amcheck AS
 	$$
 		SELECT public.ok_cmp($1, $2);
 	$$;
 
 	CREATE FUNCTION bad_cmp3 (int4, int4)
-	RETURNS int LANGUAGE sql AS
+	RETURNS int LANGUAGE sql SET search_path = test_amcheck AS
 	$$
 		SELECT public.bad_cmp2($1, $2);
 	$$;
@@ -142,7 +145,7 @@ my ($result, $stdout, $stderr);
 # We have not yet broken the index, so we should get no corruption
 $result = $node->safe_psql(
 	'postgres', q(
-	SELECT bt_index_check('bttest_unique_idx1', true, true);
+	SELECT bt_index_check('test_amcheck.bttest_unique_idx1', true, true);
 ));
 is($result, '', 'run amcheck on non-broken bttest_unique_idx1');
 
@@ -150,6 +153,7 @@ is($result, '', 'run amcheck on non-broken bttest_unique_idx1');
 # values to be equal.
 $node->safe_psql(
 	'postgres', q(
+	SET search_path = test_amcheck;
 	UPDATE pg_catalog.pg_amproc SET
 		   amproc = 'bad_cmp1'::regproc
 	WHERE amproc = 'ok_cmp1'::regproc;
@@ -157,7 +161,7 @@ $node->safe_psql(
 
 ($result, $stdout, $stderr) = $node->psql(
 	'postgres', q(
-	SELECT bt_index_check('bttest_unique_idx1', true, true);
+	SELECT bt_index_check('test_amcheck.bttest_unique_idx1', true, true);
 ));
 like(
 	$stderr,
@@ -177,7 +181,7 @@ like(
 # but no uniqueness violation.
 ($result, $stdout, $stderr) = $node->psql(
 	'postgres', q(
-	SELECT bt_index_check('bttest_unique_idx2', true, true);
+	SELECT bt_index_check('test_amcheck.bttest_unique_idx2', true, true);
 ));
 like(
 	$stderr,
@@ -186,6 +190,7 @@ like(
 
 $node->safe_psql(
 	'postgres', q(
+	SET search_path = test_amcheck;
 	UPDATE pg_catalog.pg_amproc SET
 		   amproc = 'ok_cmp2'::regproc
 	WHERE amproc = 'bad_cmp2'::regproc;
@@ -193,7 +198,7 @@ $node->safe_psql(
 
 ($result, $stdout, $stderr) = $node->psql(
 	'postgres', q(
-	SELECT bt_index_check('bttest_unique_idx2', true, true);
+	SELECT bt_index_check('test_amcheck.bttest_unique_idx2', true, true);
 ));
 like(
 	$stderr,
@@ -212,7 +217,7 @@ like(
 # but no uniqueness violation.
 ($result, $stdout, $stderr) = $node->psql(
 	'postgres', q(
-	SELECT bt_index_check('bttest_unique_idx3', true, true);
+	SELECT bt_index_check('test_amcheck.bttest_unique_idx3', true, true);
 ));
 like(
 	$stderr,
@@ -223,6 +228,7 @@ like(
 # with different visibility.
 $node->safe_psql(
 	'postgres', q(
+	SET search_path = test_amcheck;
 	DELETE FROM bttest_unique3 WHERE 380 <= i AND i <= 420;
 	INSERT INTO bttest_unique3 (SELECT * FROM generate_series(380, 420));
 	INSERT INTO bttest_unique3 VALUES (400);
@@ -236,6 +242,7 @@ $node->safe_psql(
 
 $node->safe_psql(
 	'postgres', q(
+	SET search_path = test_amcheck;
 	UPDATE pg_catalog.pg_amproc SET
 		   amproc = 'ok_cmp3'::regproc
 	WHERE amproc = 'bad_cmp3'::regproc;
@@ -243,7 +250,7 @@ $node->safe_psql(
 
 ($result, $stdout, $stderr) = $node->psql(
 	'postgres', q(
-	SELECT bt_index_check('bttest_unique_idx3', true, true);
+	SELECT bt_index_check('test_amcheck.bttest_unique_idx3', true, true);
 ));
 like(
 	$stderr,
