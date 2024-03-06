@@ -56,6 +56,9 @@ static void pgoutput_message(LogicalDecodingContext *ctx,
 							 Size sz, const char *message);
 static bool pgoutput_origin_filter(LogicalDecodingContext *ctx,
 								   RepOriginId origin_id);
+static void pgoutput_table_filter(LogicalDecodingContext *ctx,
+								  Relation relation,
+								  PublicationActions *pubactions);
 static void pgoutput_begin_prepare_txn(LogicalDecodingContext *ctx,
 									   ReorderBufferTXN *txn);
 static void pgoutput_prepare_txn(LogicalDecodingContext *ctx,
@@ -258,6 +261,7 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->commit_prepared_cb = pgoutput_commit_prepared_txn;
 	cb->rollback_prepared_cb = pgoutput_rollback_prepared_txn;
 	cb->filter_by_origin_cb = pgoutput_origin_filter;
+	cb->filter_by_table_cb = pgoutput_table_filter;
 	cb->shutdown_cb = pgoutput_shutdown;
 
 	/* transaction streaming */
@@ -1414,8 +1418,7 @@ pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	TupleTableSlot *old_slot = NULL;
 	TupleTableSlot *new_slot = NULL;
 
-	if (!is_publishable_relation(relation))
-		return;
+	Assert(is_publishable_relation(relation));
 
 	/*
 	 * Remember the xid for the change in streaming mode. We need to send xid
@@ -1682,6 +1685,27 @@ pgoutput_origin_filter(LogicalDecodingContext *ctx,
 
 	return false;
 }
+
+/*
+ * Return pubactions for relation
+ */
+static void
+pgoutput_table_filter(LogicalDecodingContext *ctx,
+					  Relation relation,
+					  PublicationActions *pubactions)
+{
+	PGOutputData *data = (PGOutputData *) ctx->output_plugin_private;
+	RelationSyncEntry *relentry;
+
+	if (!is_publishable_relation(relation))
+		return;
+
+	relentry = get_rel_sync_entry(data, relation);
+
+	if (pubactions)
+		*pubactions = relentry->pubactions;
+}
+
 
 /*
  * Shutdown the output plugin.

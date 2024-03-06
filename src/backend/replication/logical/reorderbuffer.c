@@ -92,6 +92,7 @@
 #include "access/xlog_internal.h"
 #include "catalog/catalog.h"
 #include "common/int.h"
+#include "common/string.h"
 #include "lib/binaryheap.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -104,8 +105,10 @@
 #include "storage/sinval.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
+#include "utils/inval.h"
 #include "utils/rel.h"
 #include "utils/relfilenumbermap.h"
+#include "utils/syscache.h"
 
 
 /* entry for a hash table we use to map from xid to our transaction state */
@@ -211,6 +214,14 @@ static const Size max_changes_in_memory = 4096; /* XXX for restore only */
 /* GUC variable */
 int			debug_logical_replication_streaming = DEBUG_LOGICAL_REP_STREAMING_BUFFERED;
 
+static HTAB *LocatorFilterCache = NULL;
+typedef struct LocatorFilterEntry
+{
+	RelFileLocator relfileocator;
+	Oid			relid;
+	PublicationActions pubactions;
+} LocatorFilterEntry;
+
 /* ---------------------------------------
  * primary reorderbuffer support routines
  * ---------------------------------------
@@ -273,6 +284,7 @@ static inline bool ReorderBufferCanStream(ReorderBuffer *rb);
 static inline bool ReorderBufferCanStartStreaming(ReorderBuffer *rb);
 static void ReorderBufferStreamTXN(ReorderBuffer *rb, ReorderBufferTXN *txn);
 static void ReorderBufferStreamCommit(ReorderBuffer *rb, ReorderBufferTXN *txn);
+static Snapshot ReorderBufferStreamTXNSnapShot(ReorderBuffer *rb, ReorderBufferTXN *txn);
 
 /* ---------------------------------------
  * toast reassembly support
@@ -294,6 +306,10 @@ static Size ReorderBufferChangeSize(ReorderBufferChange *change);
 static void ReorderBufferChangeMemoryUpdate(ReorderBuffer *rb,
 											ReorderBufferChange *change,
 											bool addition, Size sz);
+
+static void init_locator_filter_cache(MemoryContext cachectx);
+static void locator_filter_invalidate_syscache_cb(Datum arg, int cacheid, uint32 hashvalue);
+static void locator_filter_invalidate_relcache_cb(Datum arg, Oid relid);
 
 /*
  * Allocate a new ReorderBuffer and clean out any old serialized state from
@@ -1404,7 +1420,7 @@ ReorderBufferIterTXNNext(ReorderBuffer *rb, ReorderBufferIterTXNState *state)
 	{
 		dlist_node *next = dlist_next_node(&entry->txn->changes, &change->node);
 		ReorderBufferChange *next_change =
-			dlist_container(ReorderBufferChange, node, next);
+		dlist_container(ReorderBufferChange, node, next);
 
 		/* txn stays the same */
 		state->entries[off].lsn = next_change->lsn;
@@ -1435,8 +1451,8 @@ ReorderBufferIterTXNNext(ReorderBuffer *rb, ReorderBufferIterTXNState *state)
 		{
 			/* successfully restored changes from disk */
 			ReorderBufferChange *next_change =
-				dlist_head_element(ReorderBufferChange, node,
-								   &entry->txn->changes);
+			dlist_head_element(ReorderBufferChange, node,
+							   &entry->txn->changes);
 
 			elog(DEBUG2, "restored %u/%u changes from disk",
 				 (uint32) entry->txn->nentries_mem,
@@ -3837,7 +3853,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			{
 				char	   *data;
 				Size		inval_size = sizeof(SharedInvalidationMessage) *
-					change->data.inval.ninvalidations;
+				change->data.inval.ninvalidations;
 
 				sz += inval_size;
 
@@ -3978,6 +3994,38 @@ ReorderBufferCanStartStreaming(ReorderBuffer *rb)
 		return true;
 
 	return false;
+}
+
+static Snapshot
+ReorderBufferStreamTXNSnapShot(ReorderBuffer *rb, ReorderBufferTXN *txn)
+{
+	Snapshot	snapshot_now;
+	dlist_iter	subxact_i;
+
+	Assert(rbtxn_is_toptxn(txn));
+
+	/*
+	 * If this transaction has no snapshot, it didn't make any changes to the
+	 * database till now, so there's nothing to decode.
+	 */
+	if (txn->base_snapshot == NULL)
+	{
+		Assert(txn->ninvalidations == 0);
+		return NULL;
+	}
+
+	dlist_foreach(subxact_i, &txn->subtxns)
+	{
+		ReorderBufferTXN *subtxn;
+
+		subtxn = dlist_container(ReorderBufferTXN, node, subxact_i.cur);
+		ReorderBufferTransferSnapToParent(txn, subtxn);
+	}
+
+	snapshot_now = ReorderBufferCopySnap(rb, txn->base_snapshot,
+										 txn, txn->command_id);
+
+	return snapshot_now;
 }
 
 /*
@@ -4202,7 +4250,7 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	dlist_foreach_modify(cleanup_iter, &txn->changes)
 	{
 		ReorderBufferChange *cleanup =
-			dlist_container(ReorderBufferChange, node, cleanup_iter.cur);
+		dlist_container(ReorderBufferChange, node, cleanup_iter.cur);
 
 		dlist_delete(&cleanup->node);
 		ReorderBufferReturnChange(rb, cleanup, true);
@@ -4427,7 +4475,7 @@ ReorderBufferRestoreChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		case REORDER_BUFFER_CHANGE_INVALIDATION:
 			{
 				Size		inval_size = sizeof(SharedInvalidationMessage) *
-					change->data.inval.ninvalidations;
+				change->data.inval.ninvalidations;
 
 				change->data.inval.invalidations =
 					MemoryContextAlloc(rb->context, inval_size);
@@ -4932,7 +4980,7 @@ ReorderBufferToastReset(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		dlist_foreach_modify(it, &ent->chunks)
 		{
 			ReorderBufferChange *change =
-				dlist_container(ReorderBufferChange, node, it.cur);
+			dlist_container(ReorderBufferChange, node, it.cur);
 
 			dlist_delete(&change->node);
 			ReorderBufferReturnChange(rb, change, true);
@@ -5269,4 +5317,308 @@ restart:
 	if (cmax)
 		*cmax = ent->cmax;
 	return true;
+}
+
+/*
+ * Determine whether the record needs to be added to the transaction
+ * change list based on the RelFileLocator.
+ * In order to avoid excessive overhead, we use caching, that is, we need
+ * to construct information about whether the RelFileLocator is published
+ * during the first access or after the cache invalidated.
+ * A Historical Snapshot is required here. Although the current transaction
+ * may not be completely reorganized, the base snapshot can still be used for
+ * gradual iteration, just like the snapshot is processed in the ReorderBufferStreamTXN
+ * function, but we're just read-only here.
+ */
+bool
+ReorderBufferFilterByLocator(ReorderBuffer *rb, TransactionId xid, RelFileLocator *relfileocator, ReorderBufferChangeType action, XLogRecPtr lsn)
+{
+	LogicalDecodingContext *ctx = rb->private_data;
+	LocatorFilterEntry *entry;
+	bool		found;
+	Relation	relation = NULL;
+	Oid			reloid = InvalidOid;
+	bool		using_subtxn;
+	bool		filter = false;
+	Snapshot	snapshot_now = NULL;
+	ReorderBufferTXN *txn,
+			   *toptxn;
+
+
+	txn = ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
+	toptxn = rbtxn_get_toptxn(txn);
+
+	if (ctx->callbacks.filter_by_table_cb == NULL)
+		return false;
+
+	/*
+	 * If you don't filter it before reaching the restart lsn, let the
+	 * subsequent processing it.
+	 */
+	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, lsn) || ctx->fast_forward)
+		return false;
+
+	if (LocatorFilterCache == NULL)
+		init_locator_filter_cache(CacheMemoryContext);
+
+	/* Find cached relation info, creating if not found */
+	entry = (LocatorFilterEntry *) hash_search(LocatorFilterCache,
+											   relfileocator,
+											   HASH_ENTER, &found);
+	Assert(entry != NULL);
+	if (found)
+		goto filter_done;
+
+	entry->pubactions.pubdelete = entry->pubactions.pubinsert
+		= entry->pubactions.pubtruncate = entry->pubactions.pubupdate = false;
+
+	/* Constructs a temporary historical snapshot. */
+	snapshot_now = ReorderBufferStreamTXNSnapShot(rb, toptxn);
+
+	if (snapshot_now == NULL)
+		return false;
+
+	/* build data to be able to lookup the CommandIds of catalog tuples */
+	ReorderBufferBuildTupleCidHash(rb, toptxn);
+
+	/* setup the initial snapshot */
+	SetupHistoricSnapshot(snapshot_now, toptxn->tuplecid_hash);
+
+	entry->relid = InvalidOid;
+	using_subtxn = IsTransactionOrTransactionBlock();
+
+	if (using_subtxn)
+		BeginInternalSubTransaction("filter change by table");
+	else
+		StartTransactionCommand();
+
+	reloid = RelidByRelfilenumber(relfileocator->spcOid, relfileocator->relNumber);
+	if (reloid == InvalidOid)
+		goto init_cache_done;
+
+	relation = RelationIdGetRelation(reloid);
+
+	if (!RelationIsValid(relation))
+		elog(ERROR, "could not open relation with OID %u (for filenumber \"%s\")",
+			 reloid,
+			 relpathperm(*relfileocator,
+						 MAIN_FORKNUM));
+
+	if (!RelationIsLogicallyLogged(relation))
+		goto init_cache_done;
+
+	/*
+	 * Ignore temporary heaps created during DDL unless the plugin has asked
+	 * for them.
+	 */
+	if (relation->rd_rel->relrewrite && !rb->output_rewrites)
+		goto init_cache_done;
+
+	/*
+	 * For now ignore sequence changes entirely. Most of the time they don't
+	 * log changes using records we understand, so it doesn't make sense to
+	 * handle the few cases we do.
+	 */
+	if (relation->rd_rel->relkind == RELKIND_SEQUENCE)
+		goto init_cache_done;
+
+	if (IsToastRelation(relation))
+	{
+		Oid			real_reloid = InvalidOid;
+
+		/* pg_toast_ len is 9 */
+		char	   *toast_name = RelationGetRelationName(relation);
+		char	   *start_ch = &toast_name[9];
+
+		real_reloid = strtoint(start_ch, NULL, 10);
+
+		if (real_reloid == InvalidOid)
+			elog(ERROR, "cannot get the real table oid for toast table %s, error: %m", toast_name);
+
+		RelationClose(relation);
+
+		relation = RelationIdGetRelation(real_reloid);
+
+		if (!RelationIsValid(relation))
+			elog(ERROR, "could not open real relation with OID %u (for toast table filenumber \"%s\")",
+				 reloid,
+				 relpathperm(*relfileocator,
+							 MAIN_FORKNUM));
+	}
+
+	filter_by_table_cb_wrapper(ctx, relation, &entry->pubactions);
+	entry->relid = reloid;
+
+init_cache_done:
+
+	if (RelationIsValid(relation))
+		RelationClose(relation);
+
+	AbortCurrentTransaction();
+
+	if (using_subtxn)
+		RollbackAndReleaseCurrentSubTransaction();
+
+	TeardownHistoricSnapshot(false);
+	pfree(snapshot_now);
+
+filter_done:
+	/* check the table filter */
+	switch (action)
+	{
+		case REORDER_BUFFER_CHANGE_INSERT:
+			if (!entry->pubactions.pubinsert)
+				filter = true;
+			break;
+		case REORDER_BUFFER_CHANGE_UPDATE:
+			if (!entry->pubactions.pubupdate)
+				filter = true;
+			break;
+		case REORDER_BUFFER_CHANGE_DELETE:
+			if (!entry->pubactions.pubdelete)
+				filter = true;
+			break;
+		default:
+			filter = true;
+	}
+
+	if (filter)
+		elog(DEBUG1, "logical filter change by table %u", entry->relid);
+
+	return filter;
+}
+
+
+/*
+ * Initialize the locator filter cache for a decoding session.
+ *
+ * The hash table is destroyed at the end of a decoding session.
+ * After the relcache invalidated, the corresponding LocatorFilterEntry also needs to be recalculated.
+ * After these three syscache(NAMESPACEOID, PUBLICATIONRELMAP, PUBLICATIONNAMESPACEMAP) invalidated,
+ * all locator cache need to be invalidated. Just like RelationSyncCache.
+ */
+static void
+init_locator_filter_cache(MemoryContext cachectx)
+{
+	HASHCTL		ctl;
+	static bool relfile_callbacks_registered = false;
+
+	/* Nothing to do if hash table already exists */
+	if (LocatorFilterCache != NULL)
+		return;
+
+	/* Make a new hash table for the cache */
+	ctl.keysize = sizeof(RelFileLocator);
+	ctl.entrysize = sizeof(LocatorFilterEntry);
+	ctl.hcxt = cachectx;
+
+	LocatorFilterCache = hash_create("logical replication output RelFile cache",
+									 128, &ctl,
+									 HASH_ELEM | HASH_CONTEXT | HASH_BLOBS);
+
+	Assert(LocatorFilterCache != NULL);
+
+	/* No more to do if we already registered callbacks */
+	if (relfile_callbacks_registered)
+		return;
+
+	/* We must update the cache entry for a relation after a relcache flush */
+	CacheRegisterRelcacheCallback(locator_filter_invalidate_relcache_cb, (Datum) 0);
+
+	/*
+	 * Flush all cache entries after a pg_namespace change, in case it was a
+	 * schema rename affecting a relation being replicated.
+	 */
+	CacheRegisterSyscacheCallback(NAMESPACEOID,
+								  locator_filter_invalidate_syscache_cb,
+								  (Datum) 0);
+
+	/*
+	 * Flush all cache entries after any publication changes.  (We need no
+	 * callback entry for pg_publication, because publication_invalidation_cb
+	 * will take care of it.)
+	 */
+	CacheRegisterSyscacheCallback(PUBLICATIONRELMAP,
+								  locator_filter_invalidate_syscache_cb,
+								  (Datum) 0);
+	CacheRegisterSyscacheCallback(PUBLICATIONNAMESPACEMAP,
+								  locator_filter_invalidate_syscache_cb,
+								  (Datum) 0);
+
+	relfile_callbacks_registered = true;
+}
+
+/*
+ * Relation locator map syscache invalidation callback
+ *
+ * Called for invalidations on pg_publication, pg_publication_rel,
+ * pg_publication_namespace, and pg_namespace.
+ */
+static void
+locator_filter_invalidate_syscache_cb(Datum arg, int cacheid, uint32 hashvalue)
+{
+	HASH_SEQ_STATUS status;
+	LocatorFilterEntry *entry;
+
+	/*
+	 * We can get here if the plugin was used in SQL interface as the
+	 * LocatorFilterCache is destroyed when the decoding finishes, but there
+	 * is no way to unregister the invalidation callbacks.
+	 */
+	if (LocatorFilterCache == NULL)
+		return;
+
+	/*
+	 * We have no easy way to identify which cache entries this invalidation
+	 * event might have affected, so just mark them all invalid.
+	 */
+	hash_seq_init(&status, LocatorFilterCache);
+	while ((entry = (LocatorFilterEntry *) hash_seq_search(&status)) != NULL)
+	{
+		if (hash_search(LocatorFilterCache,
+						&entry->relfileocator,
+						HASH_REMOVE,
+						NULL) == NULL)
+			elog(ERROR, "hash table corrupted");
+	}
+}
+
+
+/*
+ * Flush mapping entries when pg_class is updated in a relevant fashion.
+ */
+static void
+locator_filter_invalidate_relcache_cb(Datum arg, Oid relid)
+{
+	LocatorFilterEntry *entry;
+
+	HASH_SEQ_STATUS status;
+
+	/*
+	 * We can get here if the plugin was used in SQL interface as the
+	 * LocatorFilterCache is destroyed when the decoding finishes, but there
+	 * is no way to unregister the invalidation callbacks.
+	 */
+	if (LocatorFilterCache == NULL)
+		return;
+
+	/*
+	 * If relid is InvalidOid, signaling a complete reset, we must remove all
+	 * entries, otherwise just remove the specific relation's entry. Always
+	 * remove negative cache entries.
+	 */
+	hash_seq_init(&status, LocatorFilterCache);
+	while ((entry = (LocatorFilterEntry *) hash_seq_search(&status)) != NULL)
+	{
+		if (relid == InvalidOid ||	/* complete reset */
+			entry->relid == InvalidOid ||	/* negative cache entry */
+			entry->relid == relid)	/* individual flushed relation */
+		{
+			if (hash_search(LocatorFilterCache,
+							&entry->relfileocator,
+							HASH_REMOVE,
+							NULL) == NULL)
+				elog(ERROR, "hash table corrupted");
+		}
+	}
 }

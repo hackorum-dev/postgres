@@ -10,6 +10,7 @@
 #define OUTPUT_PLUGIN_H
 
 #include "replication/reorderbuffer.h"
+#include "catalog/pg_publication.h"
 
 struct LogicalDecodingContext;
 struct OutputPluginCallbacks;
@@ -95,6 +96,13 @@ typedef void (*LogicalDecodeMessageCB) (struct LogicalDecodingContext *ctx,
  */
 typedef bool (*LogicalDecodeFilterByOriginCB) (struct LogicalDecodingContext *ctx,
 											   RepOriginId origin_id);
+
+/*
+ * Filter changes by table.
+ */
+typedef void (*LogicalDecodeFilterByRelCB) (struct LogicalDecodingContext *ctx,
+											Relation relation,
+											PublicationActions *pubactions);
 
 /*
  * Called to shutdown an output plugin.
@@ -222,6 +230,7 @@ typedef struct OutputPluginCallbacks
 	LogicalDecodeCommitCB commit_cb;
 	LogicalDecodeMessageCB message_cb;
 	LogicalDecodeFilterByOriginCB filter_by_origin_cb;
+	LogicalDecodeFilterByRelCB filter_by_table_cb;
 	LogicalDecodeShutdownCB shutdown_cb;
 
 	/* streaming of changes at prepare time */

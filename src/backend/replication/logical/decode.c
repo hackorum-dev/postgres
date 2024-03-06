@@ -152,7 +152,7 @@ xlog_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 		case XLOG_PARAMETER_CHANGE:
 			{
 				xl_parameter_change *xlrec =
-					(xl_parameter_change *) XLogRecGetData(buf->record);
+				(xl_parameter_change *) XLogRecGetData(buf->record);
 
 				/*
 				 * If wal_level on the primary is reduced to less than
@@ -914,6 +914,11 @@ DecodeInsert(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	if (target_locator.dbOid != ctx->slot->data.database)
 		return;
 
+	/* only interested in our published tables. */
+	if (ReorderBufferFilterByLocator(ctx->reorder, XLogRecGetXid(r), &target_locator,
+									 REORDER_BUFFER_CHANGE_INSERT, buf->origptr))
+		return;
+
 	/* output plugin doesn't look for this origin, no need to queue */
 	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
 		return;
@@ -962,6 +967,11 @@ DecodeUpdate(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	/* only interested in our database */
 	XLogRecGetBlockTag(r, 0, &target_locator, NULL, NULL);
 	if (target_locator.dbOid != ctx->slot->data.database)
+		return;
+
+	/* only interested in our published tables. */
+	if (ReorderBufferFilterByLocator(ctx->reorder, XLogRecGetXid(r), &target_locator,
+									 REORDER_BUFFER_CHANGE_UPDATE, buf->origptr))
 		return;
 
 	/* output plugin doesn't look for this origin, no need to queue */
@@ -1028,6 +1038,11 @@ DecodeDelete(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	/* only interested in our database */
 	XLogRecGetBlockTag(r, 0, &target_locator, NULL, NULL);
 	if (target_locator.dbOid != ctx->slot->data.database)
+		return;
+
+	/* only interested in our published tables. */
+	if (ReorderBufferFilterByLocator(ctx->reorder, XLogRecGetXid(r), &target_locator,
+									 REORDER_BUFFER_CHANGE_DELETE, buf->origptr))
 		return;
 
 	/* output plugin doesn't look for this origin, no need to queue */

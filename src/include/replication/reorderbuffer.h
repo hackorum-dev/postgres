@@ -730,5 +730,6 @@ extern TransactionId *ReorderBufferGetCatalogChangesXacts(ReorderBuffer *rb);
 extern void ReorderBufferSetRestartPoint(ReorderBuffer *rb, XLogRecPtr ptr);
 
 extern void StartupReorderBuffer(void);
+extern bool ReorderBufferFilterByLocator(ReorderBuffer *rb, TransactionId xid, RelFileLocator *relfileocator, ReorderBufferChangeType action, XLogRecPtr lsn);
 
 #endif
