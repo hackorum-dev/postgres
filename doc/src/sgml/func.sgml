@@ -2784,6 +2784,13 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
         and <parameter>count</parameter>.
        </para>
        <para>
+        <parameter>start</parameter> values less then one specify
+        a start position before the first character, and therefore
+        <parameter>count</parameter> must be two greater than the absolute
+        value of <parameter>start</parameter> to begin returning characters
+        from the start of the string.
+       </para>
+       <para>
         <literal>substring('Thomas' from 2 for 3)</literal>
         <returnvalue>hom</returnvalue>
        </para>
@@ -2794,6 +2801,10 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
        <para>
         <literal>substring('Thomas' for 2)</literal>
         <returnvalue>Th</returnvalue>
+       </para>
+       <para>
+        <literal>substring('Thomas' from -4 for 8)</literal>
+        <returnvalue>Tho</returnvalue>
        </para></entry>
       </row>
 
