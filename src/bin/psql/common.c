@@ -1406,9 +1406,9 @@ DescribeQuery(const char *query, double *elapsed_msec)
  * For other commands, the results are processed normally, depending on their
  * status.
  *
- * Returns 1 on complete success, 0 on interrupt and -1 or errors.  Possible
- * failure modes include purely client-side problems; check the transaction
- * status for the server-side opinion.
+ * Returns 1 on complete success, 0 on interrupt or results less than min_rows
+ * rows, and -1 on errors.  Possible failure modes include purely client-side
+ * problems; check the transaction status for the server-side opinion.
  *
  * Note that on a combined query, failure does not mean that nothing was
  * committed.
@@ -1450,6 +1450,9 @@ ExecQueryAndProcessResults(const char *query,
 		return -1;
 	}
 
+	/* first result */
+	result = PQgetResult(pset.db);
+
 	/*
 	 * If SIGINT is sent while the query is processing, the interrupt will be
 	 * consumed.  The user's intention, though, is to cancel the entire watch
@@ -1461,8 +1464,6 @@ ExecQueryAndProcessResults(const char *query,
 		return 0;
 	}
 
-	/* first result */
-	result = PQgetResult(pset.db);
 	if (min_rows > 0 && PQntuples(result) < min_rows)
 	{
 		return_early = true;
