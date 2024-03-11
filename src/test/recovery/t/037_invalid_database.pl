@@ -98,7 +98,7 @@ ok( $bgpsql->query_safe(
 	"blocked DROP DATABASE completion");
 
 # Try to drop. This will wait due to the still held lock.
-$bgpsql->query_until(qr//, "DROP DATABASE regression_invalid_interrupt;\n");
+$bgpsql->query_until(qr/.*/, "DROP DATABASE regression_invalid_interrupt;\n");
 
 # Ensure we're waiting for the lock
 $node->poll_query_until('postgres',

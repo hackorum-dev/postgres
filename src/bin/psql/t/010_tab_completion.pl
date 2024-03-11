@@ -414,7 +414,7 @@ check_completion(
 clear_query();
 
 # check no-completions code path
-check_completion("blarg \t\t", qr//, "check completion failure path");
+check_completion("blarg \t\t", qr/.*/, "check completion failure path");
 
 clear_query();
 
