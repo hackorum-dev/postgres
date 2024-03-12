@@ -1288,6 +1288,7 @@ ExecParallelHashIncreaseNumBatches(HashJoinTable hashtable)
 
 				/* Allocate new larger generation of batches. */
 				Assert(hashtable->nbatch == pstate->nbatch);
+
 				ExecParallelHashJoinSetUpBatches(hashtable, new_nbatch);
 				Assert(hashtable->nbatch == pstate->nbatch);
 
@@ -1390,6 +1391,8 @@ ExecParallelHashIncreaseNumBatches(HashJoinTable hashtable)
 				ParallelHashJoinBatch *old_batches;
 				bool		space_exhausted = false;
 				bool		extreme_skew_detected = false;
+				int			max_batches = (int) pg_prevpower2_32((uint32)
+					(MaxAllocSize / EstimateParallelHashJoinBatch(hashtable)));
 
 				/* Make sure that we have the current dimensions and buckets. */
 				ExecParallelHashEnsureBatchAccessors(hashtable);
@@ -1426,7 +1429,7 @@ ExecParallelHashIncreaseNumBatches(HashJoinTable hashtable)
 				}
 
 				/* Don't keep growing if it's not helping or we'd overflow. */
-				if (extreme_skew_detected || hashtable->nbatch >= INT_MAX / 2)
+				if (extreme_skew_detected || hashtable->nbatch >= max_batches)
 					pstate->growth = PHJ_GROWTH_DISABLED;
 				else if (space_exhausted)
 					pstate->growth = PHJ_GROWTH_NEED_MORE_BATCHES;
