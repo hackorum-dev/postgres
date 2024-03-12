@@ -14,7 +14,8 @@ SELECT getdatabaseencoding() <> 'UTF8' OR
        version() ~ '(Visual C\+\+|mingw32|windows)' OR
        (SELECT (datlocprovider = 'c' AND datctype = 'C') OR datlocprovider = 'i'
         FROM pg_database
-        WHERE datname=current_database())
+        WHERE datname=current_database()) OR
+	   (version() ~ 'windows' OR version() ~ 'Visual C\+\+' OR version() ~ 'mingw32')
        AS skip_test \gset
 \if :skip_test
 \quit
