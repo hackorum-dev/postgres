@@ -53,6 +53,8 @@
 #     that don't need their build products to be installed
 #   NO_INSTALLCHECK -- don't define an installcheck target, useful e.g. if
 #     tests require special configuration, or don't use pg_regress
+#   NO_LLVM_BITCODE -- don't generate LLVM bitcode even if the current
+#     PostgreSQL installation is configured with --with-llvm
 #   EXTRA_CLEAN -- extra files to remove in 'make clean'
 #   PG_CPPFLAGS -- will be prepended to CPPFLAGS
 #   PG_CFLAGS -- will be appended to CFLAGS
@@ -217,6 +219,10 @@ endef
 
 
 all: $(PROGRAM) $(DATA_built) $(HEADER_allbuilt) $(SCRIPTS_built) $(addsuffix $(DLSUFFIX), $(MODULES)) $(addsuffix .control, $(EXTENSION))
+
+ifdef NO_LLVM_BITCODE
+with_llvm := no
+endif # NO_LLVM_BITCODE
 
 ifeq ($(with_llvm), yes)
 all: $(addsuffix .bc, $(MODULES)) $(patsubst %.o,%.bc, $(OBJS))
