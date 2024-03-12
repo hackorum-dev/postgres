@@ -1720,6 +1720,15 @@ include $(PGXS)
       </listitem>
      </varlistentry>
 
+     <varlistentry id="extend-pgxs-no-llvm-bitcode">
+      <term><varname>NO_LLVM_BITCODE</varname></term>
+      <listitem>
+       <para>
+        don't generate LLVM bitcode even if the current PostgreSQL installation is configured with <term><option>--with-llvm</option></term>
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="extend-pgxs-extra-clean">
       <term><varname>EXTRA_CLEAN</varname></term>
       <listitem>
