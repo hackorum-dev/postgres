@@ -352,6 +352,7 @@ StrategySyncStart(uint32 *complete_passes, uint32 *num_buf_alloc)
 	{
 		*num_buf_alloc = pg_atomic_exchange_u32(&StrategyControl->numBufferAllocs, 0);
 	}
+pg_usleep(300);
 	SpinLockRelease(&StrategyControl->buffer_strategy_lock);
 	return result;
 }
