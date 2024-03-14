@@ -58,8 +58,13 @@ else
 endif
 
 
-# XXX: Need to determine proper version of the function cflags for clang
-bitcode_cflags = ['-fno-strict-aliasing', '-fwrapv']
+bitcode_cflags = []
+if llvm.version().version_compare('>=2.9.0')
+  bitcode_cflags += ['-fno-strict-aliasing']
+endif
+if llvm.version().version_compare('>=2.8.0')
+  bitcode_cflags += ['-fwrapv']
+endif
 if llvm.version().version_compare('=15.0')
   bitcode_cflags += ['-Xclang', '-no-opaque-pointers']
 endif
