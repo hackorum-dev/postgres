@@ -202,7 +202,6 @@ if host_system == 'cygwin'
   dlsuffix = '.dll'
   mod_link_args_fmt = ['@0@']
   mod_link_with_name = 'lib@0@.exe.a'
-  mod_link_with_dir = 'libdir'
 
 elif host_system == 'darwin'
   dlsuffix = '.dylib'
@@ -212,7 +211,6 @@ elif host_system == 'darwin'
   export_fmt = '-Wl,-exported_symbols_list,@0@'
 
   mod_link_args_fmt = ['-bundle_loader', '@0@']
-  mod_link_with_dir = 'bindir'
   mod_link_with_name = '@0@'
 
   sysroot_args = [files('src/tools/darwin_sysroot'), get_option('darwin_sysroot')]
@@ -269,7 +267,6 @@ elif host_system == 'windows'
     mod_link_with_name = 'lib@0@.exe.a'
   endif
   mod_link_args_fmt = ['@0@']
-  mod_link_with_dir = 'libdir'
 
   shmem_kind = 'win32'
   sema_kind = 'win32'
@@ -488,10 +485,8 @@ dir_pgxs = dir_lib_pkg / 'pgxs'
 dir_include = get_option('includedir')
 
 dir_include_pkg = dir_include
-dir_include_pkg_rel = ''
 if not (dir_prefix_contains_pg or dir_include_pkg.contains('pgsql') or dir_include_pkg.contains('postgres'))
   dir_include_pkg = dir_include_pkg / pkg
-  dir_include_pkg_rel = pkg
 endif
 
 dir_man = get_option('mandir')

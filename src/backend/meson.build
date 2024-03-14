@@ -154,7 +154,6 @@ if mod_link_args_fmt.length() > 0
 
   name = mod_link_with_name.format('postgres')
   link_with_uninst = meson.current_build_dir() / name
-  link_with_inst = '${@0@}/@1@'.format(mod_link_with_dir, name)
 
   foreach el : mod_link_args_fmt
     pg_mod_link_args += el.format(link_with_uninst)
