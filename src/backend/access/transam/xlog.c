@@ -1510,17 +1510,13 @@ WaitXLogInsertionsToFinish(XLogRecPtr upto)
 	 * No-one should request to flush a piece of WAL that hasn't even been
 	 * reserved yet. However, it can happen if there is a block with a bogus
 	 * LSN on disk, for example. XLogFlush checks for that situation and
-	 * complains, but only after the flush. Here we just assume that to mean
-	 * that all WAL that has been reserved needs to be finished. In this
-	 * corner-case, the return value can be smaller than 'upto' argument.
+	 * complains, but only after the flush. Here we detect this corner-case,
+	 * and will raise a PANIC-level error.
 	 */
 	if (upto > reservedUpto)
-	{
-		ereport(LOG,
-				(errmsg("request to flush past end of generated WAL; request %X/%X, current position %X/%X",
-						LSN_FORMAT_ARGS(upto), LSN_FORMAT_ARGS(reservedUpto))));
-		upto = reservedUpto;
-	}
+		elog(PANIC, "request to flush past end of generated WAL; request %X/%X, current position %X/%X",
+			 LSN_FORMAT_ARGS(upto),
+			 LSN_FORMAT_ARGS(reservedUpto));
 
 	/*
 	 * Loop through all the locks, sleeping on any in-progress insert older
