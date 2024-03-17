@@ -114,9 +114,6 @@ char	   *Log_destination_string = NULL;
 bool		syslog_sequence_numbers = true;
 bool		syslog_split_messages = true;
 
-/* Processed form of backtrace_functions GUC */
-static char *backtrace_function_list;
-
 #ifdef HAVE_SYSLOG
 
 /*
@@ -830,22 +827,42 @@ set_stack_entry_location(ErrorData *edata,
 static bool
 matches_backtrace_functions(const char *funcname)
 {
-	const char *p;
+	char	   *rawstring;
+	List	   *elemlist;
+	ListCell   *l;
+	bool		is_parasing_okay PG_USED_FOR_ASSERTS_ONLY;
 
-	if (!backtrace_function_list || funcname == NULL || funcname[0] == '\0')
+
+	if (backtrace_functions == NULL || backtrace_functions[0] == '\0' ||
+		funcname == NULL || funcname[0] == '\0')
 		return false;
 
-	p = backtrace_function_list;
-	for (;;)
-	{
-		if (*p == '\0')			/* end of backtrace_function_list */
-			break;
+	/* Need a modifiable copy of string */
+	rawstring = pstrdup(backtrace_functions);
 
-		if (strcmp(funcname, p) == 0)
+	/* Parse string into list of identifiers */
+	is_parasing_okay = SplitIdentifierString(rawstring, ',', &elemlist);
+
+	/*
+	 * We already have parsed the list in check_backtrace_functions, just
+	 * assert the fact here.
+	 */
+	Assert(is_parasing_okay);
+
+	foreach(l, elemlist)
+	{
+		char	   *tok = (char *) lfirst(l);
+
+		if (strcmp(tok, funcname) == 0)
+		{
+			pfree(rawstring);
+			list_free(elemlist);
 			return true;
-		p += strlen(p) + 1;
+		}
 	}
 
+	pfree(rawstring);
+	list_free(elemlist);
 	return false;
 }
 
@@ -2124,66 +2141,51 @@ DebugFileOpen(void)
 bool
 check_backtrace_functions(char **newval, void **extra, GucSource source)
 {
-	int			newvallen = strlen(*newval);
-	char	   *someval;
-	int			validlen;
-	int			i;
-	int			j;
+	char	   *rawstring;
+	List	   *elemlist;
+	ListCell   *l;
 
-	/*
-	 * Allow characters that can be C identifiers and commas as separators, as
-	 * well as some whitespace for readability.
-	 */
-	validlen = strspn(*newval,
-					  "0123456789_"
-					  "abcdefghijklmnopqrstuvwxyz"
-					  "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-					  ", \n\t");
-	if (validlen != newvallen)
+	/* Need a modifiable copy of string */
+	rawstring = pstrdup(*newval);
+
+	/* Parse string into list of identifiers */
+	if (!SplitIdentifierString(rawstring, ',', &elemlist))
 	{
-		GUC_check_errdetail("Invalid character");
+		/* syntax error in list */
+		GUC_check_errdetail("List syntax is invalid.");
+		pfree(rawstring);
+		list_free(elemlist);
 		return false;
 	}
 
-	if (*newval[0] == '\0')
+	foreach(l, elemlist)
 	{
-		*extra = NULL;
-		return true;
+		char	   *tok = (char *) lfirst(l);
+		int			toklen = strlen(tok);
+		int			validlen;
+
+		/*
+		 * Allow characters that can be C identifiers, commas as separators,
+		 * the wildcard symbol, as well as some whitespace for readability.
+		 */
+		validlen = strspn(tok,
+						  "0123456789_"
+						  "abcdefghijklmnopqrstuvwxyz"
+						  "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+						  ", \n\t");
+
+		if (validlen != toklen)
+		{
+			GUC_check_errdetail("Invalid character");
+			pfree(rawstring);
+			list_free(elemlist);
+			return false;
+		}
 	}
 
-	/*
-	 * Allocate space for the output and create the copy.  We could discount
-	 * whitespace chars to save some memory, but it doesn't seem worth the
-	 * trouble.
-	 */
-	someval = guc_malloc(ERROR, newvallen + 1 + 1);
-	for (i = 0, j = 0; i < newvallen; i++)
-	{
-		if ((*newval)[i] == ',')
-			someval[j++] = '\0';	/* next item */
-		else if ((*newval)[i] == ' ' ||
-				 (*newval)[i] == '\n' ||
-				 (*newval)[i] == '\t')
-			;					/* ignore these */
-		else
-			someval[j++] = (*newval)[i];	/* copy anything else */
-	}
-
-	/* two \0s end the setting */
-	someval[j] = '\0';
-	someval[j + 1] = '\0';
-
-	*extra = someval;
+	pfree(rawstring);
+	list_free(elemlist);
 	return true;
-}
-
-/*
- * GUC assign_hook for backtrace_functions
- */
-void
-assign_backtrace_functions(const char *newval, void *extra)
-{
-	backtrace_function_list = (char *) extra;
 }
 
 /*

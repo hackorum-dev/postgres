@@ -4652,11 +4652,11 @@ struct config_string ConfigureNamesString[] =
 		{"backtrace_functions", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Log backtrace for errors in these functions."),
 			NULL,
-			GUC_NOT_IN_SAMPLE
+			GUC_LIST_INPUT | GUC_NOT_IN_SAMPLE
 		},
 		&backtrace_functions,
 		"",
-		check_backtrace_functions, assign_backtrace_functions, NULL
+		check_backtrace_functions, NULL, NULL
 	},
 
 	{

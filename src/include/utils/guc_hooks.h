@@ -37,7 +37,6 @@ extern bool check_vacuum_buffer_usage_limit(int *newval, void **extra,
 											GucSource source);
 extern bool check_backtrace_functions(char **newval, void **extra,
 									  GucSource source);
-extern void assign_backtrace_functions(const char *newval, void *extra);
 extern bool check_bonjour(bool *newval, void **extra, GucSource source);
 extern bool check_canonical_path(char **newval, void **extra, GucSource source);
 extern void assign_checkpoint_completion_target(double newval, void *extra);
