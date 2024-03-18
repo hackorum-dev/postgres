@@ -1119,6 +1119,16 @@ SELECT '52093.89'::money::numeric::float8;
     value, the result is <type>double precision</type> (i.e., a pure number,
     not money); the currency units cancel each other out in the division.
    </para>
+
+   <note>
+    <para>
+     <type>Money</type> does not implement all
+     <link linkend="functions-math-op-table">operators</link>
+     that one might expect of a numeric type.  For example, use
+     <literal>(-amount::numeric)::money</literal> to negate
+     <literal>amount</literal>.
+    </para>
+   </note>
   </sect1>
 
 
