@@ -1010,14 +1010,6 @@
   </para>
 
   <para>
-   It is advantageous if the WAL is located on a different disk from the
-   main database files.  This can be achieved by moving the
-   <filename>pg_wal</filename> directory to another location (while the server
-   is shut down, of course) and creating a symbolic link from the
-   original location in the main data directory to the new location.
-  </para>
-
-  <para>
    The aim of <acronym>WAL</acronym> is to ensure that the log is
    written before database records are altered, but this can be subverted by
    disk drives<indexterm><primary>disk drive</primary></indexterm> that falsely report a
