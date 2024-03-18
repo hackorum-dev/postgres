@@ -312,7 +312,7 @@
         <returnvalue>integer[]</returnvalue>
        </para>
        <para>
-        Removes elements of the right array from the left array.
+        Computes the difference of the arguments.
        </para></entry>
       </row>
 
