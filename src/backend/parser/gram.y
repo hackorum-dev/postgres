@@ -5251,6 +5251,7 @@ CreateSessionVarStmt:
  * transaction end like tables.
  */
 OnEOXActionOption:  ON COMMIT DROP					{ $$ = VARIABLE_EOX_DROP; }
+			| ON TRANSACTION END_P RESET			{ $$ = VARIABLE_EOX_RESET; }
 			| /*EMPTY*/								{ $$ = VARIABLE_EOX_NOOP; }
 		;
 

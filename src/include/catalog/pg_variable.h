@@ -73,6 +73,7 @@ typedef enum VariableEOXAction
 {
 	VARIABLE_EOX_NOOP = 'n',	/* NOOP */
 	VARIABLE_EOX_DROP = 'd',	/* ON COMMIT DROP */
+	VARIABLE_EOX_RESET = 'r',	/* ON TRANSACTION END RESET */
 }			VariableEOXAction;
 
 /* ----------------

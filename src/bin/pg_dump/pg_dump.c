@@ -5309,6 +5309,7 @@ getVariables(Archive *fout)
 	int			i_varnamespace;
 	int			i_vartype;
 	int			i_vartypname;
+	int			i_vareoxaction;
 	int			i_varowner;
 	int			i_varcollation;
 	int			i_varacl;
@@ -5326,6 +5327,7 @@ getVariables(Archive *fout)
 	/* Get the variables in current database. */
 	appendPQExpBuffer(query,
 					  "SELECT v.tableoid, v.oid, v.varname,\n"
+					  "v.vareoxaction,\n"
 					  "v.varnamespace,\n"
 					  "v.vartype,\n"
 					  "pg_catalog.format_type(v.vartype, v.vartypmod) as vartypname,\n"
@@ -5348,6 +5350,7 @@ getVariables(Archive *fout)
 	i_varnamespace = PQfnumber(res, "varnamespace");
 	i_vartype = PQfnumber(res, "vartype");
 	i_vartypname = PQfnumber(res, "vartypname");
+	i_vareoxaction = PQfnumber(res, "vareoxaction");
 	i_varcollation = PQfnumber(res, "varcollation");
 
 	i_varowner = PQfnumber(res, "varowner");
@@ -5371,6 +5374,7 @@ getVariables(Archive *fout)
 
 		varinfo[i].vartype = atooid(PQgetvalue(res, i, i_vartype));
 		varinfo[i].vartypname = pg_strdup(PQgetvalue(res, i, i_vartypname));
+		varinfo[i].vareoxaction = pg_strdup(PQgetvalue(res, i, i_vareoxaction));
 		varinfo[i].varcollation = atooid(PQgetvalue(res, i, i_varcollation));
 
 		varinfo[i].dacl.acl = pg_strdup(PQgetvalue(res, i, i_varacl));
@@ -5414,6 +5418,7 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 	PQExpBuffer query;
 	char	   *qualvarname;
 	const char *vartypname;
+	const char *vareoxaction;
 	Oid			varcollation;
 
 	/* Skip if not to be dumped */
@@ -5425,6 +5430,7 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 
 	qualvarname = pg_strdup(fmtQualifiedDumpable(varinfo));
 	vartypname = varinfo->vartypname;
+	vareoxaction = varinfo->vareoxaction;
 	varcollation = varinfo->varcollation;
 
 	appendPQExpBuffer(delq, "DROP VARIABLE %s;\n",
@@ -5442,6 +5448,9 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 			appendPQExpBuffer(query, " COLLATE %s",
 							  fmtQualifiedDumpable(coll));
 	}
+
+	if (strcmp(vareoxaction, "r") == 0)
+		appendPQExpBuffer(query, " ON TRANSACTION END RESET");
 
 	appendPQExpBuffer(query, ";\n");
 
