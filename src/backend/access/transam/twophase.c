@@ -1310,7 +1310,7 @@ ReadTwoPhaseFile(TransactionId xid, bool missing_ok)
 	uint32		crc_offset;
 	pg_crc32c	calc_crc,
 				file_crc;
-	int			r;
+	ssize_t		r;
 
 	TwoPhaseFilePath(path, xid);
 
@@ -1368,8 +1368,13 @@ ReadTwoPhaseFile(TransactionId xid, bool missing_ok)
 					(errcode_for_file_access(),
 					 errmsg("could not read file \"%s\": %m", path)));
 		else
+			/*
+			 * We may get here with st_size out of the range of ssize_t and
+			 * even size_t. Therefore, we need to use %lld for the file size
+			 * here.
+			 */
 			ereport(ERROR,
-					(errmsg("could not read file \"%s\": read %d of %lld",
+					(errmsg("could not read file \"%s\": read %zd of %lld",
 							path, r, (long long int) stat.st_size)));
 	}
 

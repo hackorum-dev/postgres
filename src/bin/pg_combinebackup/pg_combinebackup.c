@@ -1298,6 +1298,11 @@ slurp_file(int fd, char *filename, StringInfo buf, int maxlen)
 		if (rb < 0)
 			pg_fatal("could not read file \"%s\": %m", filename);
 		else
+			/*
+			 * We may get here with st_size out of the range of ssize_t and
+			 * even size_t. Therefore, we need to use %lld for the file size
+			 * here.
+			 */
 			pg_fatal("could not read file \"%s\": read only %zd of %lld bytes",
 					 filename, rb, (long long int) st.st_size);
 	}

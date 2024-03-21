@@ -48,8 +48,8 @@
  * Therefore, these two #define's are effectively part of the protocol
  * spec and can't ever be changed.
  */
-#define PQ_GSS_SEND_BUFFER_SIZE 16384
-#define PQ_GSS_RECV_BUFFER_SIZE 16384
+#define PQ_GSS_SEND_BUFFER_SIZE ((size_t) 16384)
+#define PQ_GSS_RECV_BUFFER_SIZE ((size_t) 16384)
 
 /*
  * Since we manage at most one GSS-encrypted connection per backend,
@@ -572,7 +572,7 @@ secure_open_gssapi(Port *port)
 		if (input.length > PQ_GSS_RECV_BUFFER_SIZE)
 		{
 			ereport(COMMERROR,
-					(errmsg("oversize GSSAPI packet sent by the client (%zu > %d)",
+					(errmsg("oversize GSSAPI packet sent by the client (%zu > %zu)",
 							(size_t) input.length,
 							PQ_GSS_RECV_BUFFER_SIZE)));
 			return -1;

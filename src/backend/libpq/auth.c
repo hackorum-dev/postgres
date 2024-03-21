@@ -1883,8 +1883,8 @@ auth_peer(hbaPort *port)
 		int			save_errno = errno;
 
 		ereport(LOG,
-				(errmsg("could not look up local user ID %ld: %s",
-						(long) uid,
+				(errmsg("could not look up local user ID %d: %s",
+						uid,
 						save_errno ? strerror(save_errno) : _("user does not exist"))));
 		return STATUS_ERROR;
 	}

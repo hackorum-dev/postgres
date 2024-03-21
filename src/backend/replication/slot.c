@@ -2156,7 +2156,7 @@ RestoreSlotFromDisk(const char *name)
 	char		path[MAXPGPATH + 22];
 	int			fd;
 	bool		restored = false;
-	int			readBytes;
+	ssize_t		readBytes;
 	pg_crc32c	checksum;
 
 	/* no need to lock here, no concurrent access allowed yet */
@@ -2215,7 +2215,7 @@ RestoreSlotFromDisk(const char *name)
 		else
 			ereport(PANIC,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("could not read file \"%s\": read %d of %zu",
+					 errmsg("could not read file \"%s\": read %zd of %zu",
 							path, readBytes,
 							(Size) ReplicationSlotOnDiskConstantSize)));
 	}
@@ -2256,7 +2256,7 @@ RestoreSlotFromDisk(const char *name)
 		else
 			ereport(PANIC,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("could not read file \"%s\": read %d of %zu",
+					 errmsg("could not read file \"%s\": read %zd of %zu",
 							path, readBytes, (Size) cp.length)));
 	}
 

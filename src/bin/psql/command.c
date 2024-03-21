@@ -610,8 +610,8 @@ exec_command_cd(PsqlScanState scan_state, bool active_branch, const char *cmd)
 					dir = pw->pw_dir;
 				else
 				{
-					pg_log_error("could not get home directory for user ID %ld: %s",
-								 (long) user_id,
+					pg_log_error("could not get home directory for user ID %d: %s",
+								 user_id,
 								 errno ? strerror(errno) : _("user does not exist"));
 					success = false;
 				}

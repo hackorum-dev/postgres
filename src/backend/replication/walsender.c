@@ -644,7 +644,7 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 	while (bytesleft > 0)
 	{
 		PGAlignedBlock rbuf;
-		int			nread;
+		ssize_t		   nread;
 
 		pgstat_report_wait_start(WAIT_EVENT_WALSENDER_TIMELINE_HISTORY_READ);
 		nread = read(fd, rbuf.data, sizeof(rbuf));
@@ -657,7 +657,7 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 		else if (nread == 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("could not read file \"%s\": read %d of %zu",
+					 errmsg("could not read file \"%s\": read %zd of %zu",
 							path, nread, (Size) bytesleft)));
 
 		pq_sendbytes(&buf, rbuf.data, nread);

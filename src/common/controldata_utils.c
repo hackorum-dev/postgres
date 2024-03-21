@@ -70,7 +70,7 @@ get_controlfile_by_exact_path(const char *ControlFilePath, bool *crc_ok_p)
 	ControlFileData *ControlFile;
 	int			fd;
 	pg_crc32c	crc;
-	int			r;
+	ssize_t		r;
 #ifdef FRONTEND
 	pg_crc32c	last_crc;
 	int			retries = 0;
@@ -113,10 +113,14 @@ retry:
 #ifndef FRONTEND
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("could not read file \"%s\": read %d of %zu",
+					 /*
+					  * cast the sizeof reulst to avoid extra translatable
+					  * messages
+					  */
+					 errmsg("could not read file \"%s\": read %zd of %zu",
 							ControlFilePath, r, sizeof(ControlFileData))));
 #else
-			pg_fatal("could not read file \"%s\": read %d of %zu",
+			pg_fatal("could not read file \"%s\": read %zd of %zu",
 					 ControlFilePath, r, sizeof(ControlFileData));
 #endif
 	}

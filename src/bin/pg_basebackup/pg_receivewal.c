@@ -329,9 +329,9 @@ FindStreamingStart(uint32 *tli)
 		{
 			int			fd;
 			char		buf[4];
-			int			bytes_out;
+			size_t		bytes_out;
 			char		fullpath[MAXPGPATH * 2];
-			int			r;
+			ssize_t		r;
 
 			snprintf(fullpath, sizeof(fullpath), "%s/%s", basedir, dirent->d_name);
 
@@ -349,7 +349,7 @@ FindStreamingStart(uint32 *tli)
 					pg_fatal("could not read compressed file \"%s\": %m",
 							 fullpath);
 				else
-					pg_fatal("could not read compressed file \"%s\": read %d of %zu",
+					pg_fatal("could not read compressed file \"%s\": read %zd of %zu",
 							 fullpath, r, sizeof(buf));
 			}
 
@@ -359,7 +359,7 @@ FindStreamingStart(uint32 *tli)
 
 			if (bytes_out != WalSegSz)
 			{
-				pg_log_warning("compressed segment file \"%s\" has incorrect uncompressed size %d, skipping",
+				pg_log_warning("compressed segment file \"%s\" has incorrect uncompressed size %zu, skipping",
 							   dirent->d_name, bytes_out);
 				continue;
 			}

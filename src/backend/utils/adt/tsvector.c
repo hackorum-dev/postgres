@@ -213,15 +213,19 @@ tsvectorin(PG_FUNCTION_ARGS)
 		if (toklen >= MAXSTRLEN)
 			ereturn(escontext, (Datum) 0,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-					 errmsg("word is too long (%ld bytes, max %ld bytes)",
-							(long) toklen,
-							(long) (MAXSTRLEN - 1))));
+					 errmsg("word is too long (%d bytes, max %d bytes)",
+							toklen, MAXSTRLEN - 1)));
 
 		if (cur - tmpbuf > MAXSTRPOS)
 			ereturn(escontext, (Datum) 0,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-					 errmsg("string is too long for tsvector (%ld bytes, max %ld bytes)",
-							(long) (cur - tmpbuf), (long) MAXSTRPOS)));
+					 /*
+					  * Cast the pointer arithmetic to avoid extra translatable
+					  * messages. We are assuming that the result fits within
+					  * an int here.
+					  */
+					 errmsg("string is too long for tsvector (%d bytes, max %d bytes)",
+							(int) (cur - tmpbuf), MAXSTRPOS)));
 
 		/*
 		 * Enlarge buffers if needed

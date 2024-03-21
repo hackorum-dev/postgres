@@ -41,12 +41,12 @@ pg_get_user_name(uid_t user_id, char *buffer, size_t buflen)
 	if (pwerr != 0)
 		snprintf(buffer, buflen,
 				 _("could not look up local user ID %d: %s"),
-				 (int) user_id,
+				 user_id,
 				 strerror_r(pwerr, pwdbuf, sizeof(pwdbuf)));
 	else
 		snprintf(buffer, buflen,
 				 _("local user with ID %d does not exist"),
-				 (int) user_id);
+				 user_id);
 	return false;
 }
 
@@ -77,12 +77,12 @@ pg_get_user_home_dir(uid_t user_id, char *buffer, size_t buflen)
 	if (pwerr != 0)
 		snprintf(buffer, buflen,
 				 _("could not look up local user ID %d: %s"),
-				 (int) user_id,
+				 user_id,
 				 strerror_r(pwerr, pwdbuf, sizeof(pwdbuf)));
 	else
 		snprintf(buffer, buflen,
 				 _("local user with ID %d does not exist"),
-				 (int) user_id);
+				 user_id);
 	return false;
 }
 

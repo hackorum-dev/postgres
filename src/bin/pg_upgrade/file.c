@@ -62,8 +62,9 @@ cloneFile(const char *src, const char *dst,
 
 		unlink(dst);
 
-		pg_fatal("error while cloning relation \"%s.%s\" (\"%s\" to \"%s\"): %s",
-				 schemaName, relName, src, dst, strerror(save_errno));
+		errno = save_errno;
+		pg_fatal("error while cloning relation \"%s.%s\" (\"%s\" to \"%s\"): %m",
+				 schemaName, relName, src, dst);
 	}
 
 	close(src_fd);

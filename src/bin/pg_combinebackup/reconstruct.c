@@ -504,15 +504,16 @@ make_rfile(char *filename, bool missing_ok)
 static void
 read_bytes(rfile *rf, void *buffer, unsigned length)
 {
-	int			rb = read(rf->fd, buffer, length);
+	ssize_t		rb = read(rf->fd, buffer, length);
 
 	if (rb != length)
 	{
 		if (rb < 0)
 			pg_fatal("could not read file \"%s\": %m", rf->filename);
 		else
-			pg_fatal("could not read file \"%s\": read only %d of %u bytes",
-					 rf->filename, rb, length);
+			/* cast length to avoid extra translatable messages */
+			pg_fatal("could not read file \"%s\": read only %zd of %lld bytes",
+					 rf->filename, rb, (long long int) length);
 	}
 }
 

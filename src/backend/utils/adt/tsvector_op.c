@@ -935,8 +935,8 @@ tsvector_concat(PG_FUNCTION_ARGS)
 				i,
 				j,
 				i1,
-				i2,
-				dataoff,
+				i2;
+	size_t		dataoff,
 				output_bytes,
 				output_size;
 	char	   *data,
@@ -1123,7 +1123,7 @@ tsvector_concat(PG_FUNCTION_ARGS)
 	if (dataoff > MAXSTRPOS)
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-				 errmsg("string is too long for tsvector (%d bytes, max %d bytes)", dataoff, MAXSTRPOS)));
+				 errmsg("string is too long for tsvector (%zu bytes, max %zu bytes)", dataoff, MAXSTRPOS)));
 
 	/*
 	 * Adjust sizes (asserting that we didn't overrun the original estimates)

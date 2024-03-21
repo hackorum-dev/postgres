@@ -786,7 +786,7 @@ read_relmap_file(RelMapFile *map, char *dbpath, bool lock_held, int elevel)
 	char		mapfilename[MAXPGPATH];
 	pg_crc32c	crc;
 	int			fd;
-	int			r;
+	ssize_t		r;
 
 	Assert(elevel >= ERROR);
 
@@ -830,7 +830,7 @@ read_relmap_file(RelMapFile *map, char *dbpath, bool lock_held, int elevel)
 		else
 			ereport(elevel,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("could not read file \"%s\": read %d of %zu",
+					 errmsg("could not read file \"%s\": read %zd of %zu",
 							mapfilename, r, sizeof(RelMapFile))));
 	}
 	pgstat_report_wait_end();

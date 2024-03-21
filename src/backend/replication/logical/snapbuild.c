@@ -2016,7 +2016,7 @@ snapshot_not_interesting:
 static void
 SnapBuildRestoreContents(int fd, char *dest, Size size, const char *path)
 {
-	int			readBytes;
+	ssize_t		readBytes;
 
 	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_READ);
 	readBytes = read(fd, dest, size);
@@ -2037,7 +2037,7 @@ SnapBuildRestoreContents(int fd, char *dest, Size size, const char *path)
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("could not read file \"%s\": read %d of %zu",
+					 errmsg("could not read file \"%s\": read %zd of %zu",
 							path, readBytes, size)));
 	}
 }
