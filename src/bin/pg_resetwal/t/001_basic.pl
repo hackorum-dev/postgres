@@ -205,8 +205,20 @@ push @cmd,
   '-c',
   sprintf("%d,%d", hex($files[0]) == 0 ? 3 : hex($files[0]), hex($files[-1]));
 
+use constant SLRU_PAGES_PER_SEGMENT => 32;
+use constant MXOFF_SIZE => 4;
+use constant MXID_SIZE => 4;
+use constant MULTIXACT_MEMBERS_PER_MEMBERGROUP => 4;
+use constant MULTIXACT_FLAGBYTES_PER_GROUP => 4;
+use constant MULTIXACT_MEMBERGROUP_SIZE => MXID_SIZE * MULTIXACT_MEMBERS_PER_MEMBERGROUP + MULTIXACT_FLAGBYTES_PER_GROUP;
+use constant MULTIXACT_MEMBERGROUPS_PER_PAGE => int($blcksz / MULTIXACT_MEMBERGROUP_SIZE);
+use constant MULTIXACT_MEMBERS_PER_PAGE => MULTIXACT_MEMBERGROUPS_PER_PAGE * MULTIXACT_MEMBERS_PER_MEMBERGROUP;
+use constant MULTIXACT_OFFSETS_PER_PAGE => int($blcksz / MXOFF_SIZE);
+use constant CLOG_XACTS_PER_BYTE => 4;
+use constant CLOG_XACTS_PER_PAGE => $blcksz * CLOG_XACTS_PER_BYTE;
+
 @files = get_slru_files('pg_multixact/offsets');
-$mult = 32 * $blcksz / 4;
+$mult = SLRU_PAGES_PER_SEGMENT * MULTIXACT_OFFSETS_PER_PAGE;
 # -m argument is "new,old"
 push @cmd, '-m',
   sprintf("%d,%d",
@@ -214,11 +226,11 @@ push @cmd, '-m',
 	hex($files[0]) == 0 ? 1 : hex($files[0] * $mult));
 
 @files = get_slru_files('pg_multixact/members');
-$mult = 32 * int($blcksz / 20) * 4;
+$mult = SLRU_PAGES_PER_SEGMENT * MULTIXACT_MEMBERS_PER_PAGE;
 push @cmd, '-O', (hex($files[-1]) + 1) * $mult;
 
 @files = get_slru_files('pg_xact');
-$mult = 32 * $blcksz * 4;
+$mult = SLRU_PAGES_PER_SEGMENT * CLOG_XACTS_PER_PAGE;
 push @cmd,
   '-u', (hex($files[0]) == 0 ? 3 : hex($files[0]) * $mult),
   '-x', ((hex($files[-1]) + 1) * $mult);

@@ -104,8 +104,11 @@
  * MultiXactOffsetPagePrecedes).
  */
 
+#define MXOFF_SIZE sizeof(MultiXactOffset)
+#define MXID_SIZE sizeof(MultiXactId)
+
 /* We need four bytes per offset */
-#define MULTIXACT_OFFSETS_PER_PAGE (BLCKSZ / sizeof(MultiXactOffset))
+#define MULTIXACT_OFFSETS_PER_PAGE (BLCKSZ / MXOFF_SIZE)
 
 #define MultiXactIdToOffsetPage(xid) \
 	((xid) / (MultiXactOffset) MULTIXACT_OFFSETS_PER_PAGE)
@@ -1765,7 +1768,7 @@ AtPrepare_MultiXact(void)
 
 	if (MultiXactIdIsValid(myOldestMember))
 		RegisterTwoPhaseRecord(TWOPHASE_RM_MULTIXACT_ID, 0,
-							   &myOldestMember, sizeof(MultiXactId));
+							   &myOldestMember, MXID_SIZE);
 }
 
 /*
@@ -1832,7 +1835,7 @@ multixact_twophase_recover(TransactionId xid, uint16 info,
 	 * Get the oldest member XID from the state file record, and set it in the
 	 * OldestMemberMXactId slot reserved for this prepared transaction.
 	 */
-	Assert(len == sizeof(MultiXactId));
+	Assert(len == MXID_SIZE);
 	oldestMember = *((MultiXactId *) recdata);
 
 	OldestMemberMXactId[dummyProcNumber] = oldestMember;
@@ -1848,7 +1851,7 @@ multixact_twophase_postcommit(TransactionId xid, uint16 info,
 {
 	ProcNumber	dummyProcNumber = TwoPhaseGetDummyProcNumber(xid, true);
 
-	Assert(len == sizeof(MultiXactId));
+	Assert(len == MXID_SIZE);
 
 	OldestMemberMXactId[dummyProcNumber] = InvalidMultiXactId;
 }
@@ -1877,7 +1880,7 @@ MultiXactShmemSize(void)
 	/* We need 2*MaxOldestSlot perBackendXactIds[] entries */
 #define SHARED_MULTIXACT_STATE_SIZE \
 	add_size(offsetof(MultiXactStateData, perBackendXactIds), \
-			 mul_size(sizeof(MultiXactId) * 2, MaxOldestSlot))
+			 mul_size(MXID_SIZE * 2, MaxOldestSlot))
 
 	size = SHARED_MULTIXACT_STATE_SIZE;
 	size = add_size(size, SimpleLruShmemSize(multixact_offset_buffers, 0));
@@ -2146,7 +2149,7 @@ TrimMultiXact(void)
 		offptr = (MultiXactOffset *) MultiXactOffsetCtl->shared->page_buffer[slotno];
 		offptr += entryno;
 
-		MemSet(offptr, 0, BLCKSZ - (entryno * sizeof(MultiXactOffset)));
+		MemSet(offptr, 0, BLCKSZ - (entryno * MXOFF_SIZE));
 
 		MultiXactOffsetCtl->shared->page_dirty[slotno] = true;
 		LWLockRelease(lock);
