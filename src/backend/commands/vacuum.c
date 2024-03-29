@@ -1404,6 +1404,11 @@ vac_estimate_reltuples(Relation relation,
 	old_density = old_rel_tuples / old_rel_pages;
 	unscanned_pages = (double) total_pages - (double) scanned_pages;
 	total_tuples = old_density * unscanned_pages + scanned_tuples;
+	ereport(LOG,
+			(errmsg("vac_estimate_reltuples(%s): od %g, sp %u tp %u, st %g orl %g tt %g",
+					RelationGetRelationName(relation),
+					old_density, scanned_pages, total_pages,
+					scanned_tuples, old_rel_tuples, total_tuples)));
 	return floor(total_tuples + 0.5);
 }
 
