@@ -6334,19 +6334,22 @@ get_create_object_cmd(EditableObjectType obj_type, Oid oid,
 					char	   *reloptions = PQgetvalue(res, 0, 4);
 					char	   *checkoption = PQgetvalue(res, 0, 5);
 
-					/*
-					 * If the backend ever supports CREATE OR REPLACE
-					 * MATERIALIZED VIEW, allow that here; but as of today it
-					 * does not, so editing a matview definition in this way
-					 * is impossible.
-					 */
 					switch (relkind[0])
 					{
-#ifdef NOT_USED
 						case RELKIND_MATVIEW:
-							appendPQExpBufferStr(buf, "CREATE OR REPLACE MATERIALIZED VIEW ");
+							/*
+							 * Allow editing a matview via separate DROP and
+							 * CREATE statement inside a transaction.  Use meta
+							 * command \; to write more than one statement to
+							 * the query buffer without sending it to the server.
+							 */
+							appendPQExpBufferStr(buf, "BEGIN \\;\n");
+							appendPQExpBufferStr(buf, "DROP MATERIALIZED VIEW ");
+							appendPQExpBuffer(buf, "%s.", fmtId(nspname));
+							appendPQExpBufferStr(buf, fmtId(relname));
+							appendPQExpBufferStr(buf, " \\;\n");
+							appendPQExpBufferStr(buf, "CREATE MATERIALIZED VIEW ");
 							break;
-#endif
 						case RELKIND_VIEW:
 							appendPQExpBufferStr(buf, "CREATE OR REPLACE VIEW ");
 							break;
@@ -6384,6 +6387,14 @@ get_create_object_cmd(EditableObjectType obj_type, Oid oid,
 					if (checkoption && checkoption[0] != '\0')
 						appendPQExpBuffer(buf, "\n WITH %s CHECK OPTION",
 										  checkoption);
+
+					/* Matview is re-created inside a transaction. */
+					if (relkind[0] == RELKIND_MATVIEW)
+						/*
+						 * TODO Also re-create indexes and privileges that are
+						 *      lost by using DROP and CREATE.
+						 */
+						appendPQExpBufferStr(buf, "\n WITH DATA \\;\nCOMMIT");
 				}
 				break;
 		}
