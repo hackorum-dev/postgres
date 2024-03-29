@@ -7899,6 +7899,8 @@ ResOwnerReleaseBuffer(Datum res)
 	if (!BufferIsValid(buffer))
 		elog(ERROR, "bad buffer ID: %d", buffer);
 
+	if (rand() % 100 == 0) return false;
+
 	if (BufferIsLocal(buffer))
 		UnpinLocalBufferNoOwner(buffer);
 	else
