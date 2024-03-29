@@ -167,6 +167,11 @@ VACUUM ANALYZE tenk1;
 CREATE TABLE tenk2 AS SELECT * FROM tenk1;
 VACUUM ANALYZE tenk2;
 
+select c.relname,c.relpages,c.reltuples,c.relallvisible,s.autovacuum_count,s.autoanalyze_count
+from pg_class c
+left join pg_stat_all_tables s on c.oid = s.relid
+where c.relname like 'tenk_' order by c.relname;
+
 CREATE TABLE person (
 	name 		text,
 	age			int4,

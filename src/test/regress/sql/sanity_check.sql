@@ -1,4 +1,14 @@
+select c.relname,c.relpages,c.reltuples,c.relallvisible,s.autovacuum_count,s.autoanalyze_count
+from pg_class c
+left join pg_stat_all_tables s on c.oid = s.relid
+where c.relname like 'tenk_' order by c.relname;
+
 VACUUM;
+
+select c.relname,c.relpages,c.reltuples,c.relallvisible,s.autovacuum_count,s.autoanalyze_count
+from pg_class c
+left join pg_stat_all_tables s on c.oid = s.relid
+where c.relname like 'tenk_' order by c.relname;
 
 --
 -- Sanity check: every system catalog that has OIDs should have
