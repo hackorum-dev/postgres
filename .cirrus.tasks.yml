@@ -69,6 +69,7 @@ task:
     CCACHE_DIR: ${CIRRUS_WORKING_DIR}/ccache_dir
     # no options enabled, should be small
     CCACHE_MAXSIZE: "150M"
+    CC: ccache musl-gcc
 
   # While containers would start up a bit quicker, building is a bit
   # slower. This way we don't have to maintain a container image.
@@ -76,6 +77,14 @@ task:
 
   ccache_cache:
     folder: $CCACHE_DIR
+
+  setup_additional_packages_script: |
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get -y install musl-tools
+    ln -s -t /usr/include/x86_64-linux-musl/ \
+      /usr/include/linux \
+      /usr/include/asm-generic \
+      /usr/include/x86_64-linux-gnu/asm
 
   create_user_script: |
     useradd -m postgres
