@@ -4440,7 +4440,9 @@ PQescapeInternal(PGconn *conn, const char *str, size_t len, bool as_ident)
 
 	/* Closing quote and terminating NUL. */
 	*rp++ = quote_char;
-	*rp = '\0';
+	*rp++ = '\0';
+
+	Assert(rp == result + result_size);
 
 	return result;
 
