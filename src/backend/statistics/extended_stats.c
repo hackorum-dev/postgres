@@ -2829,7 +2829,7 @@ statext_determine_join_restrictions(PlannerInfo *root, RelOptInfo *rel,
  * on the conditions, to make sure it can be estimated using extended stats.
  */
 static bool
-statext_is_supported_join_clause(PlannerInfo *root, Node *clause, SpecialJoinInfo *sjinfo)
+statext_is_supported_join_clause(PlannerInfo *root, Node *clause)
 {
 	Oid			oprsel;
 	RestrictInfo *rinfo;
@@ -2843,10 +2843,6 @@ statext_is_supported_join_clause(PlannerInfo *root, Node *clause, SpecialJoinInf
 	 *
 	 * XXX See treat_as_join_clause.
 	 */
-
-	/* duplicated with statext_try_join_estimates */
-	if (sjinfo == NULL)
-		return false;
 
 	/* XXX Can we rely on always getting RestrictInfo here? */
 	if (!IsA(clause, RestrictInfo))
@@ -2974,7 +2970,7 @@ statext_try_join_estimates(PlannerInfo *root, List *clauses, int varRelid,
 		 * Skip clauses that are not join clauses or that we don't know how to
 		 * handle estimate using extended statistics.
 		 */
-		if (!statext_is_supported_join_clause(root, clause, sjinfo))
+		if (!statext_is_supported_join_clause(root, clause))
 			continue;
 
 		/*
@@ -3047,7 +3043,7 @@ typedef struct JoinPairInfo
  */
 static JoinPairInfo *
 statext_build_join_pairs(PlannerInfo *root, List *clauses,
-						 JoinType jointype, SpecialJoinInfo *sjinfo,
+						 JoinType jointype,
 						 Bitmapset *estimatedclauses, int *npairs)
 {
 	int			cnt;
@@ -3082,7 +3078,7 @@ statext_build_join_pairs(PlannerInfo *root, List *clauses,
 		 * moment we support just (Expr op Expr) clauses with each side
 		 * referencing just a single relation).
 		 */
-		if (!statext_is_supported_join_clause(root, clause, sjinfo))
+		if (!statext_is_supported_join_clause(root, clause))
 			continue;
 
 		/* statext_is_supported_join_clause guarantees RestrictInfo */
@@ -3281,7 +3277,7 @@ get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
  */
 Selectivity
 statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
-									JoinType jointype, SpecialJoinInfo *sjinfo,
+									JoinType jointype,
 									Bitmapset **estimatedclauses)
 {
 	int			i;
@@ -3295,7 +3291,7 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 		return 1.0;
 
 	/* extract pairs of joined relations from the list of clauses */
-	info = statext_build_join_pairs(root, clauses, jointype, sjinfo,
+	info = statext_build_join_pairs(root, clauses, jointype,
 									*estimatedclauses, &ninfo);
 
 	/* no useful join pairs */
