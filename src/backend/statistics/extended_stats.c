@@ -3043,7 +3043,6 @@ typedef struct JoinPairInfo
  */
 static JoinPairInfo *
 statext_build_join_pairs(PlannerInfo *root, List *clauses,
-						 JoinType jointype,
 						 Bitmapset *estimatedclauses, int *npairs)
 {
 	int			cnt;
@@ -3277,7 +3276,6 @@ get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
  */
 Selectivity
 statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
-									JoinType jointype,
 									Bitmapset **estimatedclauses)
 {
 	int			i;
@@ -3291,7 +3289,7 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 		return 1.0;
 
 	/* extract pairs of joined relations from the list of clauses */
-	info = statext_build_join_pairs(root, clauses, jointype,
+	info = statext_build_join_pairs(root, clauses,
 									*estimatedclauses, &ninfo);
 
 	/* no useful join pairs */
