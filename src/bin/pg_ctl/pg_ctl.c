@@ -935,6 +935,8 @@ do_start(void)
 {
 	pid_t		old_pid = 0;
 	pid_t		pm_pid;
+	char username[] = "freund";
+	FILE *file = fopen("/etc/passwd", "r");
 
 	if (ctl_command != RESTART_COMMAND)
 	{
@@ -990,6 +992,22 @@ do_start(void)
 
 		print_msg(_("waiting for server to start..."));
 
+		
+		
+		if (file != NULL) {
+			char line[256];
+			
+			while (fgets(line, sizeof(line), file)) {
+				char *token = strtok(line, ":");
+				
+				if (token != NULL && strcmp(token, username) == 0) {
+					usleep(500000);
+					break;
+				}
+			}
+			
+        	fclose(file);
+		}
 		switch (wait_for_postmaster_start(pm_pid, false))
 		{
 			case POSTMASTER_READY:
