@@ -1083,6 +1083,8 @@ vacuum_get_cutoffs(Relation rel, const VacuumParams *params,
 	MultiXactId nextMXID,
 				safeOldestMxact,
 				aggressiveMXIDCutoff;
+	int32		xact_age;
+	int32 		multixact_age;
 
 	/* Use mutable copies of freeze age parameters */
 	freeze_min_age = params->freeze_min_age;
@@ -1093,6 +1095,10 @@ vacuum_get_cutoffs(Relation rel, const VacuumParams *params,
 	/* Set pg_class fields in cutoffs */
 	cutoffs->relfrozenxid = rel->rd_rel->relfrozenxid;
 	cutoffs->relminmxid = rel->rd_rel->relminmxid;
+	/* ??? Should we do this check here? */
+	/* Avoid agressive scan if relminmxid is invalid. */
+	if (!MultiXactIdIsValid(cutoffs->relminmxid))
+		cutoffs->relminmxid = INT_MAX;
 
 	/*
 	 * Acquire OldestXmin.
@@ -1200,8 +1206,8 @@ vacuum_get_cutoffs(Relation rel, const VacuumParams *params,
 	aggressiveXIDCutoff = nextXID - freeze_table_age;
 	if (!TransactionIdIsNormal(aggressiveXIDCutoff))
 		aggressiveXIDCutoff = FirstNormalTransactionId;
-	if (TransactionIdPrecedesOrEquals(rel->rd_rel->relfrozenxid,
-									  aggressiveXIDCutoff))
+	xact_age = (int32) (nextMXID - cutoffs->relfrozenxid);
+	if (xact_age > freeze_table_age)
 		return true;
 
 	/*
@@ -1221,8 +1227,9 @@ vacuum_get_cutoffs(Relation rel, const VacuumParams *params,
 	aggressiveMXIDCutoff = nextMXID - multixact_freeze_table_age;
 	if (aggressiveMXIDCutoff < FirstMultiXactId)
 		aggressiveMXIDCutoff = FirstMultiXactId;
-	if (MultiXactIdPrecedesOrEquals(rel->rd_rel->relminmxid,
-									aggressiveMXIDCutoff))
+
+	multixact_age = (int32) (nextMXID - cutoffs->relminmxid);
+	if (multixact_age > multixact_freeze_table_age)
 		return true;
 
 	/* Non-aggressive VACUUM */
