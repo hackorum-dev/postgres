@@ -80,9 +80,12 @@ typedef struct PredIterInfoData
 		(info).cleanup_fn(&(info)); \
 	} while (0)
 
+typedef int ImplicationType;
+#define STRONG ((ImplicationType) 0x01)
+#define WEAK ((ImplicationType) 0x02)
 
 static bool predicate_implied_by_recurse(Node *clause, Node *predicate,
-										 bool weak);
+										 ImplicationType implication_mask);
 static bool predicate_refuted_by_recurse(Node *clause, Node *predicate,
 										 bool weak);
 static PredClass predicate_classify(Node *clause, PredIterInfo info);
@@ -97,11 +100,11 @@ static void arrayexpr_startup_fn(Node *clause, PredIterInfo info);
 static Node *arrayexpr_next_fn(PredIterInfo info);
 static void arrayexpr_cleanup_fn(PredIterInfo info);
 static bool predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
-											   bool weak);
+											   ImplicationType implication_mask);
 static bool predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 											   bool weak);
 static bool predicate_implied_not_null_by_clause(Expr *predicate, Node *clause,
-												 bool weak);
+												 ImplicationType implication_mask);
 static Node *extract_not_arg(Node *clause);
 static Node *extract_strong_not_arg(Node *clause);
 static bool clause_is_strict_for(Node *clause, Node *subexpr, bool allow_false);
@@ -180,7 +183,7 @@ predicate_implied_by(List *predicate_list, List *clause_list,
 		c = (Node *) clause_list;
 
 	/* And away we go ... */
-	return predicate_implied_by_recurse(c, p, weak);
+	return predicate_implied_by_recurse(c, p, weak ? WEAK : STRONG);
 }
 
 /*
@@ -297,7 +300,7 @@ predicate_refuted_by(List *predicate_list, List *clause_list,
  */
 static bool
 predicate_implied_by_recurse(Node *clause, Node *predicate,
-							 bool weak)
+							 ImplicationType implication_mask)
 {
 	PredIterInfoData clause_info;
 	PredIterInfoData pred_info;
@@ -325,7 +328,7 @@ predicate_implied_by_recurse(Node *clause, Node *predicate,
 					iterate_begin(pitem, predicate, pred_info)
 					{
 						if (!predicate_implied_by_recurse(clause, pitem,
-														  weak))
+														  implication_mask))
 						{
 							result = false;
 							break;
@@ -345,7 +348,7 @@ predicate_implied_by_recurse(Node *clause, Node *predicate,
 					iterate_begin(pitem, predicate, pred_info)
 					{
 						if (predicate_implied_by_recurse(clause, pitem,
-														 weak))
+														 implication_mask))
 						{
 							result = true;
 							break;
@@ -363,7 +366,7 @@ predicate_implied_by_recurse(Node *clause, Node *predicate,
 					iterate_begin(citem, clause, clause_info)
 					{
 						if (predicate_implied_by_recurse(citem, predicate,
-														 weak))
+														 implication_mask))
 						{
 							result = true;
 							break;
@@ -381,7 +384,7 @@ predicate_implied_by_recurse(Node *clause, Node *predicate,
 					iterate_begin(citem, clause, clause_info)
 					{
 						if (predicate_implied_by_recurse(citem, predicate,
-														 weak))
+														 implication_mask))
 						{
 							result = true;
 							break;
@@ -409,7 +412,7 @@ predicate_implied_by_recurse(Node *clause, Node *predicate,
 						iterate_begin(pitem, predicate, pred_info)
 						{
 							if (predicate_implied_by_recurse(citem, pitem,
-															 weak))
+															 implication_mask))
 							{
 								presult = true;
 								break;
@@ -437,7 +440,7 @@ predicate_implied_by_recurse(Node *clause, Node *predicate,
 					iterate_begin(citem, clause, clause_info)
 					{
 						if (!predicate_implied_by_recurse(citem, predicate,
-														  weak))
+														  implication_mask))
 						{
 							result = false;
 							break;
@@ -460,7 +463,7 @@ predicate_implied_by_recurse(Node *clause, Node *predicate,
 					iterate_begin(pitem, predicate, pred_info)
 					{
 						if (!predicate_implied_by_recurse(clause, pitem,
-														  weak))
+														  implication_mask))
 						{
 							result = false;
 							break;
@@ -478,7 +481,7 @@ predicate_implied_by_recurse(Node *clause, Node *predicate,
 					iterate_begin(pitem, predicate, pred_info)
 					{
 						if (predicate_implied_by_recurse(clause, pitem,
-														 weak))
+														 implication_mask))
 						{
 							result = true;
 							break;
@@ -495,7 +498,7 @@ predicate_implied_by_recurse(Node *clause, Node *predicate,
 					return
 						predicate_implied_by_simple_clause((Expr *) predicate,
 														   clause,
-														   weak);
+														   implication_mask);
 			}
 			break;
 	}
@@ -629,7 +632,7 @@ predicate_refuted_by_recurse(Node *clause, Node *predicate,
 					not_arg = extract_not_arg(predicate);
 					if (not_arg &&
 						predicate_implied_by_recurse(clause, not_arg,
-													 false))
+													 STRONG))
 						return true;
 
 					/*
@@ -711,7 +714,7 @@ predicate_refuted_by_recurse(Node *clause, Node *predicate,
 					not_arg = extract_not_arg(predicate);
 					if (not_arg &&
 						predicate_implied_by_recurse(clause, not_arg,
-													 false))
+													 STRONG))
 						return true;
 
 					/*
@@ -738,26 +741,24 @@ predicate_refuted_by_recurse(Node *clause, Node *predicate,
 			 * If A is a strong NOT-clause, A R=> B if B => A's arg
 			 *
 			 * Since A is strong, we may assume A's arg is false (not just
-			 * not-true).  If B weakly implies A's arg, then B can be neither
-			 * true nor null, so that strong refutation is proven.  If B
-			 * strongly implies A's arg, then B cannot be true, so that weak
-			 * refutation is proven.
+			 * not-true). If B strongly implies A's arg, then B cannot be true,
+			 * so that weak refutation is proven. If B weakly implies A's arg,
+			 * then B can be neither true nor null, so that strong refutation
+			 * are proven. In that case we can also prove weak refutation since
+			 * if B must be false, then surely it is not true.
 			 */
 			not_arg = extract_strong_not_arg(clause);
-			if (not_arg &&
-				predicate_implied_by_recurse(predicate, not_arg,
-											 !weak))
-				return true;
+			if (not_arg)
+			{
+				int useful_implications = weak ? STRONG : WEAK;
 
-			/*
-			 * Because weak refutation expands the allowed outcomes for B
-			 * from "false" to "false or null", we can additionally prove
-			 * weak refutation in the case that strong refutation is proven.
-			 */
-			if (weak && not_arg &&
-				predicate_implied_by_recurse(predicate, not_arg,
-											 true))
-				return true;
+				if (weak)
+					useful_implications |= WEAK;
+
+				if (predicate_implied_by_recurse(predicate, not_arg,
+												 useful_implications))
+					return true;
+			}
 
 			switch (pclass)
 			{
@@ -807,7 +808,7 @@ predicate_refuted_by_recurse(Node *clause, Node *predicate,
 					not_arg = extract_not_arg(predicate);
 					if (not_arg &&
 						predicate_implied_by_recurse(clause, not_arg,
-													 false))
+													 STRONG))
 						return true;
 
 					/*
@@ -1115,8 +1116,12 @@ arrayexpr_cleanup_fn(PredIterInfo info)
  */
 static bool
 predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
-								   bool weak)
+								   ImplicationType implication_mask)
 {
+	bool		weak = implication_mask & WEAK;
+	bool		strong = implication_mask & STRONG;
+
+
 	/* Allow interrupting long proof attempts */
 	CHECK_FOR_INTERRUPTS();
 
@@ -1304,7 +1309,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 						 * must be not null.
 						 */
 						if (predicate_implied_not_null_by_clause(predntest->arg,
-																 clause, weak))
+																 clause, implication_mask))
 							return true;
 						break;
 					case IS_NULL:
@@ -1334,7 +1339,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 						 * We can only prove strong implication here since
 						 * "null is true" is false rather than null.
 						 */
-						if (!weak && equal(clause, predbtest->arg))
+						if (strong && equal(clause, predbtest->arg))
 							return true;
 						break;
 					case IS_FALSE:
@@ -1344,7 +1349,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 						 * We can only prove strong implication here since "not
 						 * null" is null rather than true.
 						 */
-						if (!weak && is_notclause(clause) &&
+						if (strong && is_notclause(clause) &&
 							equal(get_notclausearg(clause), predbtest->arg))
 							return true;
 						break;
@@ -1403,7 +1408,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
 						 *
 						 * For example: truth of x implies x is not unknown.
 						 */
-						if (predicate_implied_not_null_by_clause(predbtest->arg, clause, weak))
+						if (predicate_implied_not_null_by_clause(predbtest->arg, clause, implication_mask))
 							return true;
 						break;
 				}
@@ -1446,7 +1451,7 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause,
  * cycles on at this point.
  */
 static bool
-predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, bool weak)
+predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, ImplicationType implication_mask)
 {
 	switch (nodeTag(clause))
 	{
@@ -1519,7 +1524,7 @@ predicate_implied_not_null_by_clause(Expr *predicate, Node *clause, bool weak)
 	 * work for weak implication, though, since the clause yielding the
 	 * non-false value NULL means the predicate will evaluate to false.
 	 */
-	if (!weak && clause_is_strict_for(clause, (Node *) predicate, true))
+	if (implication_mask & STRONG && clause_is_strict_for(clause, (Node *) predicate, true))
 		return true;
 
 	return false;
@@ -1580,7 +1585,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							 * = false" would mean both our clause and our
 							 * predicate would evaluate to "false".
 							 */
-							if (predicate_implied_not_null_by_clause(clausentest->arg, (Node *) predicate, true))
+							if (predicate_implied_not_null_by_clause(clausentest->arg, (Node *) predicate, WEAK))
 								return true;
 
 							/*
@@ -1590,7 +1595,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							 * in the predicate, it's known immutable).
 							 */
 							if (weak &&
-								clause_is_strict_for((Node *) predicate, (Node *) clausentest->arg, true))
+								clause_is_strict_for((Node *) predicate, (Node *) clausentest->arg, WEAK))
 								return true;
 
 							return false;	/* we can't succeed below... */
@@ -1667,7 +1672,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							 * = false" would mean both our clause and our
 							 * predicate would evaluate to "false".
 							 */
-							if (predicate_implied_not_null_by_clause(clausebtest->arg, (Node *) predicate, true))
+							if (predicate_implied_not_null_by_clause(clausebtest->arg, (Node *) predicate, WEAK))
 								return true;
 
 							/*
@@ -1730,7 +1735,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							 * refutation is a strict superset of weak
 							 * refutation.
 							 */
-							if (predicate_implied_not_null_by_clause(predntest->arg, clause, false))
+							if (predicate_implied_not_null_by_clause(predntest->arg, clause, STRONG))
 								return true;
 						}
 						break;
@@ -1761,7 +1766,7 @@ predicate_refuted_by_simple_clause(Expr *predicate, Node *clause,
 							 * refutation is a strict superset of weak
 							 * refutation.
 							 */
-							if (predicate_implied_not_null_by_clause(predbtest->arg, clause, false))
+							if (predicate_implied_not_null_by_clause(predbtest->arg, clause, STRONG))
 								return true;
 
 							return false;			/* we can't succeed below... */
