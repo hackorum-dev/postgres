@@ -140,11 +140,11 @@ generated-headers: $(top_builddir)/src/include/storage/lwlocknames.h $(top_build
 
 $(top_builddir)/src/include/storage/lwlocknames.h: storage/lmgr/lwlocknames.h
 	rm -f '$@'
-	$(LN_S) ../../backend/$< '$@'
+	$(LN_S) $(top_builddir)/src/backend/$< '$@'
 
 $(top_builddir)/src/include/utils/wait_event_types.h: utils/activity/wait_event_types.h
 	rm -f '$@'
-	$(LN_S) ../../backend/$< '$@'
+	$(LN_S) $(top_builddir)/src/backend/$< '$@'
 
 utils/probes.o: utils/probes.d $(SUBDIROBJS)
 	$(DTRACE) $(DTRACEFLAGS) -C -G -s $(call expand_subsys,$^) -o $@
