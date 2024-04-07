@@ -2326,9 +2326,15 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 		fmgr_info(get_opcode(opexpr->opno), &opprocs[idx]);
 
-		/* FIXME strip relabel etc. the way examine_opclause_args does */
 		expr1 = linitial(opexpr->args);
 		expr2 = lsecond(opexpr->args);
+
+		/* strip RelabelType from either side of the expression */
+		if (IsA(expr1, RelabelType))
+			expr1 = (Node *) ((RelabelType *) expr1)->arg;
+
+		if (IsA(expr2, RelabelType))
+			expr2 = (Node *) ((RelabelType *) expr2)->arg;
 
 		if ((bms_singleton_member(rinfo->left_relids) == rel1->relid) &&
 			(bms_singleton_member(rinfo->right_relids) == rel2->relid))
