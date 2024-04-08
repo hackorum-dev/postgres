@@ -1351,6 +1351,9 @@ internal_flush(void)
 /* --------------------------------
  *		internal_flush_buffer - flush the given buffer content
  *
+ * Updates start and end to reflect the portion of the buffer that still
+ * needs to be sent.
+ *
  * Returns 0 if OK (meaning everything was sent, or operation would block
  * and the socket is in non-blocking mode), or EOF if trouble.
  * --------------------------------
