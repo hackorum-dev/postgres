@@ -253,7 +253,7 @@ static bool get_variable_range(PlannerInfo *root, VariableStatData *vardata,
 							   Oid sortop, Oid collation,
 							   Datum *min, Datum *max);
 static void get_stats_slot_range(AttStatsSlot *sslot,
-								 Oid opfuncoid, FmgrInfo *opproc,
+								 FunctionCallInfo fcinfo,
 								 Oid collation, int16 typLen, bool typByVal,
 								 Datum *min, Datum *max, bool *p_have_data);
 static bool get_actual_variable_range(PlannerInfo *root,
@@ -6853,6 +6853,7 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata,
 	bool		typByVal;
 	Oid			opfuncoid;
 	FmgrInfo	opproc;
+	LOCAL_FCINFO(fcinfo, 2);
 	AttStatsSlot sslot;
 
 	/*
@@ -6884,8 +6885,6 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata,
 									   (opfuncoid = get_opcode(sortop))))
 		return false;
 
-	opproc.fn_oid = InvalidOid; /* mark this as not looked up yet */
-
 	get_typlenbyval(vardata->atttype, &typLen, &typByVal);
 
 	/*
@@ -6905,6 +6904,11 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata,
 		free_attstatsslot(&sslot);
 	}
 
+	fmgr_info(opfuncoid, &opproc);
+	InitFunctionCallInfoData(*fcinfo, &opproc, 2, collation, NULL, NULL);
+	fcinfo->args[0].isnull = false;
+	fcinfo->args[1].isnull = false;
+
 	/*
 	 * Otherwise, if there is a histogram with some other ordering, scan it
 	 * and get the min and max values according to the ordering we want.  This
@@ -6916,7 +6920,7 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata,
 						 STATISTIC_KIND_HISTOGRAM, InvalidOid,
 						 ATTSTATSSLOT_VALUES))
 	{
-		get_stats_slot_range(&sslot, opfuncoid, &opproc,
+		get_stats_slot_range(&sslot, fcinfo,
 							 collation, typLen, typByVal,
 							 &tmin, &tmax, &have_data);
 		free_attstatsslot(&sslot);
@@ -6951,7 +6955,7 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata,
 		}
 
 		if (use_mcvs)
-			get_stats_slot_range(&sslot, opfuncoid, &opproc,
+			get_stats_slot_range(&sslot, fcinfo,
 								 collation, typLen, typByVal,
 								 &tmin, &tmax, &have_data);
 		free_attstatsslot(&sslot);
@@ -6969,7 +6973,7 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata,
  * to what we find in the statistics array.
  */
 static void
-get_stats_slot_range(AttStatsSlot *sslot, Oid opfuncoid, FmgrInfo *opproc,
+get_stats_slot_range(AttStatsSlot *sslot, FunctionCallInfo fcinfo,
 					 Oid collation, int16 typLen, bool typByVal,
 					 Datum *min, Datum *max, bool *p_have_data)
 {
@@ -6978,10 +6982,6 @@ get_stats_slot_range(AttStatsSlot *sslot, Oid opfuncoid, FmgrInfo *opproc,
 	bool		have_data = *p_have_data;
 	bool		found_tmin = false;
 	bool		found_tmax = false;
-
-	/* Look up the comparison function, if we didn't already do so */
-	if (opproc->fn_oid != opfuncoid)
-		fmgr_info(opfuncoid, opproc);
 
 	/* Scan all the slot's values */
 	for (int i = 0; i < sslot->nvalues; i++)
@@ -6993,16 +6993,19 @@ get_stats_slot_range(AttStatsSlot *sslot, Oid opfuncoid, FmgrInfo *opproc,
 			*p_have_data = have_data = true;
 			continue;
 		}
-		if (DatumGetBool(FunctionCall2Coll(opproc,
-										   collation,
-										   sslot->values[i], tmin)))
+
+		fcinfo->args[0].value = sslot->values[i];
+		fcinfo->args[1].value = tmin;
+		if (DatumGetBool(FunctionCallInvoke(fcinfo)))
 		{
 			tmin = sslot->values[i];
 			found_tmin = true;
 		}
-		if (DatumGetBool(FunctionCall2Coll(opproc,
-										   collation,
-										   tmax, sslot->values[i])))
+
+		fcinfo->args[0].value = tmax;
+		fcinfo->args[1].value = sslot->values[i];
+
+		if (DatumGetBool(FunctionCallInvoke(fcinfo)))
 		{
 			tmax = sslot->values[i];
 			found_tmax = true;
