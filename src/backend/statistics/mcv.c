@@ -2725,6 +2725,7 @@ mcv_combine_simple(PlannerInfo *root, RelOptInfo *rel, StatisticExtInfo *stat,
 
 	/* info about clauses and how they match to MCV stats */
 	FmgrInfo	opproc;
+	LOCAL_FCINFO(fcinfo, 2);
 	int			index = 0;
 	bool		reverse = false;
 	RangeTblEntry *rte = root->simple_rte_array[rel->relid];
@@ -2770,8 +2771,9 @@ mcv_combine_simple(PlannerInfo *root, RelOptInfo *rel, StatisticExtInfo *stat,
 		OpExpr	   *opexpr;
 		Node	   *expr1,
 				   *expr2;
-		Bitmapset  *relids1,
-				   *relids2;
+		RestrictInfo *rinfo = (RestrictInfo *) clause;
+
+		Assert(IsA(clause, RestrictInfo));
 
 		/*
 		 * Strip the RestrictInfo node, get the actual clause.
@@ -2780,9 +2782,7 @@ mcv_combine_simple(PlannerInfo *root, RelOptInfo *rel, StatisticExtInfo *stat,
 		 * (e.g. RelabelType etc.). statext_is_supported_join_clause matches
 		 * this, but maybe we need to relax it?
 		 */
-		if (IsA(clause, RestrictInfo))
-			clause = (Node *) ((RestrictInfo *) clause)->clause;
-
+		clause = (Node *) rinfo->clause;
 		opexpr = (OpExpr *) clause;
 
 		/* Make sure we have the expected node type. */
@@ -2790,16 +2790,21 @@ mcv_combine_simple(PlannerInfo *root, RelOptInfo *rel, StatisticExtInfo *stat,
 		Assert(list_length(opexpr->args) == 2);
 
 		fmgr_info(get_opcode(opexpr->opno), &opproc);
+		InitFunctionCallInfoData(*fcinfo, &opproc, 2, opexpr->inputcollid, NULL, NULL);
+		fcinfo->args[0].isnull = false;
+		fcinfo->args[1].isnull = false;
 
-		/* FIXME strip relabel etc. the way examine_opclause_args does */
 		expr1 = linitial(opexpr->args);
 		expr2 = lsecond(opexpr->args);
 
-		/* determine order of clauses (rel1 op rel2) or (rel2 op rel1) */
-		relids1 = pull_varnos(root, expr1);
-		relids2 = pull_varnos(root, expr2);
+		/* strip RelabelType from either side of the expression */
+		if (IsA(expr1, RelabelType))
+			expr1 = (Node *) ((RelabelType *) expr1)->arg;
 
-		if (bms_singleton_member(relids1) == rel->relid)
+		if (IsA(expr2, RelabelType))
+			expr2 = (Node *) ((RelabelType *) expr2)->arg;
+
+		if (bms_singleton_member(rinfo->left_relids) == rel->relid)
 		{
 			Oid			collid;
 
@@ -2810,7 +2815,7 @@ mcv_combine_simple(PlannerInfo *root, RelOptInfo *rel, StatisticExtInfo *stat,
 			exprs1 = lappend(exprs1, expr1);
 			exprs2 = lappend(exprs2, expr2);
 		}
-		else if (bms_singleton_member(relids2) == rel->relid)
+		else if (bms_singleton_member(rinfo->right_relids) == rel->relid)
 		{
 			Oid			collid;
 
@@ -2877,14 +2882,16 @@ mcv_combine_simple(PlannerInfo *root, RelOptInfo *rel, StatisticExtInfo *stat,
 			 * FIXME Use appropriate collation.
 			 */
 			if (reverse)
-				match = DatumGetBool(FunctionCall2Coll(&opproc,
-													   InvalidOid,
-													   value2, value1));
+			{
+				fcinfo->args[0].value = value2;
+				fcinfo->args[1].value = value1;
+			}
 			else
-				match = DatumGetBool(FunctionCall2Coll(&opproc,
-													   InvalidOid,
-													   value1, value2));
-
+			{
+				fcinfo->args[0].value = value1;
+				fcinfo->args[1].value = value2;
+			}
+			match = DatumGetBool(FunctionCallInvoke(fcinfo));
 			if (match)
 			{
 				/* XXX Do we need to do something about base frequency? */
