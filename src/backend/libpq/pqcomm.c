@@ -119,7 +119,7 @@ static List *sock_paths = NIL;
 #define PQ_RECV_BUFFER_SIZE 8192
 
 static char *PqSendBuffer;
-static int	PqSendBufferSize;	/* Size send buffer */
+static size_t PqSendBufferSize; /* Size send buffer */
 static size_t PqSendPointer;	/* Next index to store a byte in PqSendBuffer */
 static size_t PqSendStart;		/* Next index to send a byte in PqSendBuffer */
 
@@ -1521,7 +1521,7 @@ static void
 socket_putmessage_noblock(char msgtype, const char *s, size_t len)
 {
 	int			res PG_USED_FOR_ASSERTS_ONLY;
-	int			required;
+	size_t		required;
 
 	/*
 	 * Ensure we have enough space in the output buffer for the message header
