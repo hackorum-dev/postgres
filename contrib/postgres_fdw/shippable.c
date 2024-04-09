@@ -106,7 +106,7 @@ InitializeShippableCache(void)
 }
 
 /*
- * Returns true if given object (operator/function/type) is shippable
+ * Returns true if a given function/operator is shippable
  * according to the server options.
  *
  * Right now "shippability" is exclusively a function of whether the object
