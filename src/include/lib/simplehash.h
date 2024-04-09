@@ -188,62 +188,62 @@ typedef struct SH_ITERATOR
 /* externally visible function prototypes */
 #ifdef SH_RAW_ALLOCATOR
 /* <prefix>_hash <prefix>_create(uint32 nelements, void *private_data) */
-SH_SCOPE	SH_TYPE *SH_CREATE(uint32 nelements, void *private_data);
+SH_SCOPE	SH_TYPE *SH_CREATE(uint32 nelements, void *private_data) pg_attribute_unused();
 #else
 /*
  * <prefix>_hash <prefix>_create(MemoryContext ctx, uint32 nelements,
  *								 void *private_data)
  */
 SH_SCOPE	SH_TYPE *SH_CREATE(MemoryContext ctx, uint32 nelements,
-							   void *private_data);
+							   void *private_data) pg_attribute_unused();
 #endif
 
 /* void <prefix>_destroy(<prefix>_hash *tb) */
-SH_SCOPE void SH_DESTROY(SH_TYPE * tb);
+SH_SCOPE void SH_DESTROY(SH_TYPE * tb) pg_attribute_unused();
 
 /* void <prefix>_reset(<prefix>_hash *tb) */
-SH_SCOPE void SH_RESET(SH_TYPE * tb);
+SH_SCOPE void SH_RESET(SH_TYPE * tb) pg_attribute_unused();
 
 /* void <prefix>_grow(<prefix>_hash *tb, uint64 newsize) */
-SH_SCOPE void SH_GROW(SH_TYPE * tb, uint64 newsize);
+SH_SCOPE void SH_GROW(SH_TYPE * tb, uint64 newsize) pg_attribute_unused();
 
 /* <element> *<prefix>_insert(<prefix>_hash *tb, <key> key, bool *found) */
-SH_SCOPE	SH_ELEMENT_TYPE *SH_INSERT(SH_TYPE * tb, SH_KEY_TYPE key, bool *found);
+SH_SCOPE	SH_ELEMENT_TYPE *SH_INSERT(SH_TYPE * tb, SH_KEY_TYPE key, bool *found) pg_attribute_unused();
 
 /*
  * <element> *<prefix>_insert_hash(<prefix>_hash *tb, <key> key, uint32 hash,
  * 								  bool *found)
  */
 SH_SCOPE	SH_ELEMENT_TYPE *SH_INSERT_HASH(SH_TYPE * tb, SH_KEY_TYPE key,
-											uint32 hash, bool *found);
+											uint32 hash, bool *found) pg_attribute_unused();
 
 /* <element> *<prefix>_lookup(<prefix>_hash *tb, <key> key) */
-SH_SCOPE	SH_ELEMENT_TYPE *SH_LOOKUP(SH_TYPE * tb, SH_KEY_TYPE key);
+SH_SCOPE	SH_ELEMENT_TYPE *SH_LOOKUP(SH_TYPE * tb, SH_KEY_TYPE key) pg_attribute_unused();
 
 /* <element> *<prefix>_lookup_hash(<prefix>_hash *tb, <key> key, uint32 hash) */
 SH_SCOPE	SH_ELEMENT_TYPE *SH_LOOKUP_HASH(SH_TYPE * tb, SH_KEY_TYPE key,
-											uint32 hash);
+											uint32 hash) pg_attribute_unused();
 
 /* void <prefix>_delete_item(<prefix>_hash *tb, <element> *entry) */
-SH_SCOPE void SH_DELETE_ITEM(SH_TYPE * tb, SH_ELEMENT_TYPE * entry);
+SH_SCOPE void SH_DELETE_ITEM(SH_TYPE * tb, SH_ELEMENT_TYPE * entry) pg_attribute_unused();
 
 /* bool <prefix>_delete(<prefix>_hash *tb, <key> key) */
-SH_SCOPE bool SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key);
+SH_SCOPE bool SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key) pg_attribute_unused();
 
 /* void <prefix>_start_iterate(<prefix>_hash *tb, <prefix>_iterator *iter) */
-SH_SCOPE void SH_START_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter);
+SH_SCOPE void SH_START_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter) pg_attribute_unused();
 
 /*
  * void <prefix>_start_iterate_at(<prefix>_hash *tb, <prefix>_iterator *iter,
  *								  uint32 at)
  */
-SH_SCOPE void SH_START_ITERATE_AT(SH_TYPE * tb, SH_ITERATOR * iter, uint32 at);
+SH_SCOPE void SH_START_ITERATE_AT(SH_TYPE * tb, SH_ITERATOR * iter, uint32 at) pg_attribute_unused();
 
 /* <element> *<prefix>_iterate(<prefix>_hash *tb, <prefix>_iterator *iter) */
-SH_SCOPE	SH_ELEMENT_TYPE *SH_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter);
+SH_SCOPE	SH_ELEMENT_TYPE *SH_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter) pg_attribute_unused();
 
 /* void <prefix>_stat(<prefix>_hash *tb */
-SH_SCOPE void SH_STAT(SH_TYPE * tb);
+SH_SCOPE void SH_STAT(SH_TYPE * tb) pg_attribute_unused();
 
 #endif							/* SH_DECLARE */
 
