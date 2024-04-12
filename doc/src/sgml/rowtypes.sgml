@@ -40,7 +40,7 @@ CREATE TYPE inventory_item AS (
   field names and types can be specified; no constraints (such as <literal>NOT
   NULL</literal>) can presently be included.  Note that the <literal>AS</literal> keyword
   is essential; without it, the system will think a different kind
-  of <command>CREATE TYPE</command> command is meant, and you will get odd syntax
+  of <xref linkend="sql-createtype"/> command is meant, and you will get odd syntax
   errors.
  </para>
 
