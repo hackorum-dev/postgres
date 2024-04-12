@@ -36,7 +36,7 @@ CREATE TYPE inventory_item AS (
     price           numeric
 );
 </programlisting>
-  The syntax is comparable to <command>CREATE TABLE</command>, except that only
+  The syntax is comparable to <xref linkend="sql-createtable"/>, except that only
   field names and types can be specified; no constraints (such as <literal>NOT
   NULL</literal>) can presently be included.  Note that the <literal>AS</literal> keyword
   is essential; without it, the system will think a different kind
