@@ -74,7 +74,7 @@ SELECT price_extension(item, 10) FROM on_hand;
 <programlisting>
 CREATE TABLE inventory_item (
     name            text,
-    supplier_id     integer REFERENCES suppliers,
+    supplier_id     integer,
     price           numeric CHECK (price &gt; 0)
 );
 </programlisting>
