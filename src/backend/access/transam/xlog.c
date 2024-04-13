@@ -7887,7 +7887,6 @@ CreateCheckPoint(int flags)
 		 * Some slots have been invalidated; recalculate the old-segment
 		 * horizon, starting again from RedoRecPtr.
 		 */
-		XLByteToSeg(RedoRecPtr, _logSegNo, wal_segment_size);
 		KeepLogSeg(recptr, &_logSegNo);
 	}
 	_logSegNo--;
@@ -8361,7 +8360,6 @@ CreateRestartPoint(int flags)
 		 * Some slots have been invalidated; recalculate the old-segment
 		 * horizon, starting again from RedoRecPtr.
 		 */
-		XLByteToSeg(RedoRecPtr, _logSegNo, wal_segment_size);
 		KeepLogSeg(endptr, &_logSegNo);
 	}
 	_logSegNo--;
