@@ -2140,6 +2140,8 @@ InvalidatePossiblyObsoleteSlot(uint32 possible_causes,
 			ConditionVariableSleep(&s->active_cv,
 								   WAIT_EVENT_REPLICATION_SLOT_DROP);
 
+			ConditionVariableCancelSleep();
+
 			/*
 			 * Re-acquire lock and start over; we expect to invalidate the
 			 * slot next time (unless another process acquires the slot in the
