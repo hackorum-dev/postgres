@@ -21,6 +21,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "port/pg_bitutils.h"
+#include "port/pg_iovec.h"
 #include "postmaster/bgworker.h"
 #include "storage/proc.h"
 #include "storage/shm_mq.h"
@@ -331,10 +332,10 @@ shm_mq_result
 shm_mq_send(shm_mq_handle *mqh, Size nbytes, const void *data, bool nowait,
 			bool force_flush)
 {
-	shm_mq_iovec iov;
+	struct iovec iov;
 
-	iov.data = data;
-	iov.len = nbytes;
+	iov.iov_base = unconstify(void *, data);
+	iov.iov_len = nbytes;
 
 	return shm_mq_sendv(mqh, &iov, 1, nowait, force_flush);
 }
@@ -360,7 +361,7 @@ shm_mq_send(shm_mq_handle *mqh, Size nbytes, const void *data, bool nowait,
  * ring size.
  */
 shm_mq_result
-shm_mq_sendv(shm_mq_handle *mqh, shm_mq_iovec *iov, int iovcnt, bool nowait,
+shm_mq_sendv(shm_mq_handle *mqh, struct iovec *iov, int iovcnt, bool nowait,
 			 bool force_flush)
 {
 	shm_mq_result res;
@@ -376,7 +377,7 @@ shm_mq_sendv(shm_mq_handle *mqh, shm_mq_iovec *iov, int iovcnt, bool nowait,
 
 	/* Compute total size of write. */
 	for (i = 0; i < iovcnt; ++i)
-		nbytes += iov[i].len;
+		nbytes += iov[i].iov_len;
 
 	/* Prevent writing messages overwhelming the receiver. */
 	if (nbytes > MaxAllocSize)
@@ -425,9 +426,9 @@ shm_mq_sendv(shm_mq_handle *mqh, shm_mq_iovec *iov, int iovcnt, bool nowait,
 		Size		chunksize;
 
 		/* Figure out which bytes need to be sent next. */
-		if (offset >= iov[which_iov].len)
+		if (offset >= iov[which_iov].iov_len)
 		{
-			offset -= iov[which_iov].len;
+			offset -= iov[which_iov].iov_len;
 			++which_iov;
 			if (which_iov >= iovcnt)
 				break;
@@ -444,16 +445,17 @@ shm_mq_sendv(shm_mq_handle *mqh, shm_mq_iovec *iov, int iovcnt, bool nowait,
 		 * MAXALIGN'd.
 		 */
 		if (which_iov + 1 < iovcnt &&
-			offset + MAXIMUM_ALIGNOF > iov[which_iov].len)
+			offset + MAXIMUM_ALIGNOF > iov[which_iov].iov_len)
 		{
 			char		tmpbuf[MAXIMUM_ALIGNOF];
 			int			j = 0;
 
 			for (;;)
 			{
-				if (offset < iov[which_iov].len)
+				if (offset < iov[which_iov].iov_len)
 				{
-					tmpbuf[j] = iov[which_iov].data[offset];
+					char *data = iov[which_iov].iov_base;
+					tmpbuf[j] = data[offset];
 					j++;
 					offset++;
 					if (j == MAXIMUM_ALIGNOF)
@@ -461,7 +463,7 @@ shm_mq_sendv(shm_mq_handle *mqh, shm_mq_iovec *iov, int iovcnt, bool nowait,
 				}
 				else
 				{
-					offset -= iov[which_iov].len;
+					offset -= iov[which_iov].iov_len;
 					which_iov++;
 					if (which_iov >= iovcnt)
 						break;
@@ -489,10 +491,11 @@ shm_mq_sendv(shm_mq_handle *mqh, shm_mq_iovec *iov, int iovcnt, bool nowait,
 		 * isn't a multiple of MAXIMUM_ALIGNOF.  Otherwise, we need to
 		 * MAXALIGN_DOWN the write size.
 		 */
-		chunksize = iov[which_iov].len - offset;
+		chunksize = iov[which_iov].iov_len - offset;
 		if (which_iov + 1 < iovcnt)
 			chunksize = MAXALIGN_DOWN(chunksize);
-		res = shm_mq_send_bytes(mqh, chunksize, &iov[which_iov].data[offset],
+		res = shm_mq_send_bytes(mqh, chunksize,
+								(char *) iov[which_iov].iov_base + offset,
 								nowait, &bytes_written);
 
 		if (res == SHM_MQ_DETACHED)
