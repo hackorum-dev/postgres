@@ -21,6 +21,7 @@ SUBDIRS = \
 		  test_dsm_registry \
 		  test_extensions \
 		  test_ginpostinglist \
+		  test_heapam \
 		  test_integerset \
 		  test_json_parser \
 		  test_lfind \

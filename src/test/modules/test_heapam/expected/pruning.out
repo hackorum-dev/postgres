@@ -1,0 +1,317 @@
+CREATE EXTENSION pageinspect;
+ERROR:  extension "pageinspect" already exists
+CREATE EXTENSION test_heapam;
+ERROR:  extension "test_heapam" already exists
+CREATE TABLE prunetest (data text) WITH (autovacuum_enabled=false);
+select pg_current_xact_id() as committed_xid
+\gset
+begin;
+select pg_current_xact_id() as aborted_xid;
+ aborted_xid 
+-------------
+         749
+(1 row)
+
+\gset
+rollback;
+create temporary view dump_items as
+  SELECT lp, case when lp_flags = 2 then lp_off else null end as redirect_off, t_xmin, t_xmax,
+  (heap_tuple_infomask_flags(t_infomask, t_infomask2)).*,
+  convert_from(substring(t_data, 2), 'utf8') as data
+  FROM heap_page_items(get_raw_page('prunetest', 0));
+select heappage_craft_new();
+ heappage_craft_new 
+--------------------
+ 
+(1 row)
+
+select heappage_craft_add_lp_unused('1');
+ heappage_craft_add_lp_unused 
+------------------------------
+ 
+(1 row)
+
+select heappage_craft_add_tuple('1', :'committed_xid', '0', '0', '(0, 1)', array[]::text[], 'normal');
+ heappage_craft_add_tuple 
+--------------------------
+ 
+(1 row)
+
+select heappage_craft_install('prunetest'::regclass, 0);
+ heappage_craft_install 
+------------------------
+ 
+(1 row)
+
+select * from dump_items;
+ lp | redirect_off | t_xmin | t_xmax |     raw_flags      | combined_flags |  data  
+----+--------------+--------+--------+--------------------+----------------+--------
+  1 |              |    748 |      0 | {HEAP_HASVARWIDTH} | {}             | normal
+(1 row)
+
+--SELECT *, (heap_tuple_infomask_flags(t_infomask, t_infomask2)).* FROM heap_page_items(get_raw_page('prunetest', 0));
+SELECT heappage_prune_and_freeze('prunetest', 0);
+NOTICE:  prune results:
+  ndeleted: 0
+  nnewlpdead: 0
+  nfrozen: 1
+  live_tuples: 1
+  recently_dead_tuples: 0
+  all_visible: 1
+  all_frozen: 1
+  vm_conflict_horizon: 0
+  hastup: 1
+  conflict_xid: 748
+  deadoffsets: []
+  new_relfrozen_xid: 752
+  new_relmin_mxid: 1
+
+ heappage_prune_and_freeze 
+---------------------------
+ 
+(1 row)
+
+select * from dump_items;
+ lp | redirect_off | t_xmin | t_xmax |                                 raw_flags                                  |   combined_flags   |  data  
+----+--------------+--------+--------+----------------------------------------------------------------------------+--------------------+--------
+  1 |              |    748 |      0 | {HEAP_HASVARWIDTH,HEAP_XMIN_COMMITTED,HEAP_XMIN_INVALID,HEAP_XMAX_INVALID} | {HEAP_XMIN_FROZEN} | normal
+(1 row)
+
+-- Page has two LP_DEAD items, one LP_UNUSED, nothing else.
+select heappage_craft_new();
+ heappage_craft_new 
+--------------------
+ 
+(1 row)
+
+select heappage_craft_add_lp_dead('1');
+ heappage_craft_add_lp_dead 
+----------------------------
+ 
+(1 row)
+
+select heappage_craft_add_lp_unused('2');
+ heappage_craft_add_lp_unused 
+------------------------------
+ 
+(1 row)
+
+select heappage_craft_add_lp_dead('3');
+ heappage_craft_add_lp_dead 
+----------------------------
+ 
+(1 row)
+
+select heappage_craft_install('prunetest'::regclass, 0);
+ heappage_craft_install 
+------------------------
+ 
+(1 row)
+
+select heappage_prune_and_freeze('prunetest', 0);
+NOTICE:  prune results:
+  ndeleted: 0
+  nnewlpdead: 0
+  nfrozen: 0
+  live_tuples: 0
+  recently_dead_tuples: 0
+  all_visible: 0
+  all_frozen: 0
+  vm_conflict_horizon: 0
+  hastup: 0
+  conflict_xid: 0
+  deadoffsets: [3, 1]
+  new_relfrozen_xid: 754
+  new_relmin_mxid: 1
+
+ heappage_prune_and_freeze 
+---------------------------
+ 
+(1 row)
+
+-- One aborted item, nothing else. 
+select heappage_craft_new();
+ heappage_craft_new 
+--------------------
+ 
+(1 row)
+
+select heappage_craft_add_tuple('1', :'aborted_xid', '0', '0', '(0, 1)', array[]::text[], 'aborted');
+ heappage_craft_add_tuple 
+--------------------------
+ 
+(1 row)
+
+select heappage_craft_install('prunetest'::regclass, 0);
+ heappage_craft_install 
+------------------------
+ 
+(1 row)
+
+select heappage_prune_and_freeze('prunetest', 0);
+NOTICE:  prune results:
+  ndeleted: 1
+  nnewlpdead: 1
+  nfrozen: 0
+  live_tuples: 0
+  recently_dead_tuples: 0
+  all_visible: 0
+  all_frozen: 0
+  vm_conflict_horizon: 0
+  hastup: 0
+  conflict_xid: 0
+  deadoffsets: [1]
+  new_relfrozen_xid: 756
+  new_relmin_mxid: 1
+
+ heappage_prune_and_freeze 
+---------------------------
+ 
+(1 row)
+
+-- One already-frozen item, nothing else. 
+select heappage_craft_new();
+ heappage_craft_new 
+--------------------
+ 
+(1 row)
+
+select heappage_craft_add_tuple('1', '2', '0', '0', '(0, 1)', array[]::text[], 'normal');
+ heappage_craft_add_tuple 
+--------------------------
+ 
+(1 row)
+
+select heappage_craft_install('prunetest'::regclass, 0);
+ heappage_craft_install 
+------------------------
+ 
+(1 row)
+
+select heappage_prune_and_freeze('prunetest', 0);
+NOTICE:  prune results:
+  ndeleted: 0
+  nnewlpdead: 0
+  nfrozen: 0
+  live_tuples: 1
+  recently_dead_tuples: 0
+  all_visible: 1
+  all_frozen: 1
+  vm_conflict_horizon: 0
+  hastup: 1
+  conflict_xid: 0
+  deadoffsets: []
+  new_relfrozen_xid: 758
+  new_relmin_mxid: 1
+
+ heappage_prune_and_freeze 
+---------------------------
+ 
+(1 row)
+
+-- One committed item, nothing else.
+select pg_current_xact_id() as committed_xid
+\gset
+select heappage_craft_new();
+ heappage_craft_new 
+--------------------
+ 
+(1 row)
+
+select heappage_craft_add_tuple('1', :'committed_xid', '0', '0', '(0, 1)', array[]::text[], 'normal');
+ heappage_craft_add_tuple 
+--------------------------
+ 
+(1 row)
+
+select heappage_craft_install('prunetest'::regclass, 0);
+ heappage_craft_install 
+------------------------
+ 
+(1 row)
+
+select heappage_prune_and_freeze('prunetest', 0);
+NOTICE:  prune results:
+  ndeleted: 0
+  nnewlpdead: 0
+  nfrozen: 1
+  live_tuples: 1
+  recently_dead_tuples: 0
+  all_visible: 1
+  all_frozen: 1
+  vm_conflict_horizon: 0
+  hastup: 1
+  conflict_xid: 759
+  deadoffsets: []
+  new_relfrozen_xid: 761
+  new_relmin_mxid: 1
+
+ heappage_prune_and_freeze 
+---------------------------
+ 
+(1 row)
+
+-- One visible item, one deleted item
+select pg_current_xact_id() as committed_xid1
+\gset
+select pg_current_xact_id() as committed_xid2
+\gset
+select heappage_craft_new();
+ heappage_craft_new 
+--------------------
+ 
+(1 row)
+
+select heappage_craft_add_tuple('1', :'committed_xid1', '0', '0', '(0, 1)', array[]::text[], 'normal');
+ heappage_craft_add_tuple 
+--------------------------
+ 
+(1 row)
+
+select heappage_craft_add_tuple('2', '2', :'committed_xid2', '0', '(0, 1)', array[]::text[], 'deleted');
+ heappage_craft_add_tuple 
+--------------------------
+ 
+(1 row)
+
+select heappage_craft_install('prunetest'::regclass, 0);
+ heappage_craft_install 
+------------------------
+ 
+(1 row)
+
+select * from dump_items;
+ lp | redirect_off | t_xmin | t_xmax |     raw_flags      | combined_flags |  data   
+----+--------------+--------+--------+--------------------+----------------+---------
+  1 |              |    762 |      0 | {HEAP_HASVARWIDTH} | {}             | normal
+  2 |              |      2 |    763 | {HEAP_HASVARWIDTH} | {}             | deleted
+(2 rows)
+
+select heappage_prune_and_freeze('prunetest', 0);
+NOTICE:  prune results:
+  ndeleted: 1
+  nnewlpdead: 1
+  nfrozen: 1
+  live_tuples: 1
+  recently_dead_tuples: 0
+  all_visible: 0
+  all_frozen: 0
+  vm_conflict_horizon: 762
+  hastup: 1
+  conflict_xid: 763
+  deadoffsets: [2]
+  new_relfrozen_xid: 765
+  new_relmin_mxid: 1
+
+ heappage_prune_and_freeze 
+---------------------------
+ 
+(1 row)
+
+select * from dump_items;
+ lp | redirect_off | t_xmin | t_xmax |                                 raw_flags                                  |   combined_flags   |  data  
+----+--------------+--------+--------+----------------------------------------------------------------------------+--------------------+--------
+  1 |              |    762 |      0 | {HEAP_HASVARWIDTH,HEAP_XMIN_COMMITTED,HEAP_XMIN_INVALID,HEAP_XMAX_INVALID} | {HEAP_XMIN_FROZEN} | normal
+  2 |              |        |        |                                                                            |                    | 
+(2 rows)
+
