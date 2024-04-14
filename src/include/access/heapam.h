@@ -256,6 +256,11 @@ typedef struct PruneFreezeResult
 	bool		hastup;
 
 	/*
+	 * Recovery conflict XID, if any. This is returned just for white-box tests.
+	 */
+	TransactionId conflict_xid;
+
+	/*
 	 * LP_DEAD items on the page after pruning.  Includes existing LP_DEAD
 	 * items.
 	 */

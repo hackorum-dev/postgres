@@ -366,6 +366,7 @@ heap_page_prune_and_freeze(Relation relation, Buffer buffer,
 	bool		do_hint;
 	bool		hint_bit_fpi;
 	int64		fpi_before = pgWalUsage.wal_fpi;
+	TransactionId conflict_xid = InvalidTransactionId;
 
 	/* Copy parameters to prstate */
 	prstate.vistest = vistest;
@@ -794,7 +795,6 @@ heap_page_prune_and_freeze(Relation relation, Buffer buffer,
 		/*
 		 * Emit a WAL XLOG_HEAP2_PRUNE_FREEZE record showing what we did
 		 */
-		if (RelationNeedsWAL(relation))
 		{
 			/*
 			 * The snapshotConflictHorizon for the whole record should be the
@@ -807,7 +807,6 @@ heap_page_prune_and_freeze(Relation relation, Buffer buffer,
 			 * record will freeze will conflict.
 			 */
 			TransactionId frz_conflict_horizon = InvalidTransactionId;
-			TransactionId conflict_xid;
 
 			/*
 			 * We can use the visibility_cutoff_xid as our cutoff for
@@ -832,13 +831,14 @@ heap_page_prune_and_freeze(Relation relation, Buffer buffer,
 			else
 				conflict_xid = prstate.latest_xid_removed;
 
-			log_heap_prune_and_freeze(relation, buffer,
-									  conflict_xid,
-									  true, reason,
-									  prstate.frozen, prstate.nfrozen,
-									  prstate.redirected, prstate.nredirected,
-									  prstate.nowdead, prstate.ndead,
-									  prstate.nowunused, prstate.nunused);
+			if (RelationNeedsWAL(relation))
+				log_heap_prune_and_freeze(relation, buffer,
+										  conflict_xid,
+										  true, reason,
+										  prstate.frozen, prstate.nfrozen,
+										  prstate.redirected, prstate.nredirected,
+										  prstate.nowdead, prstate.ndead,
+										  prstate.nowunused, prstate.nunused);
 		}
 	}
 
@@ -875,6 +875,8 @@ heap_page_prune_and_freeze(Relation relation, Buffer buffer,
 	}
 
 	presult->hastup = prstate.hastup;
+
+	presult->conflict_xid = conflict_xid;
 
 	/*
 	 * For callers planning to update the visibility map, the conflict horizon
