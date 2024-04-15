@@ -667,6 +667,14 @@ CheckpointWriteDelay(int flags, double progress)
 	if (!AmCheckpointerProcess())
 		return;
 
+	if (got_SIGHUP)
+	{
+		got_SIGHUP = false;
+		ProcessConfigFile(PGC_SIGHUP);
+		/* update shmem copies of config variables */
+		UpdateSharedMemoryConfig();
+	}
+
 	/*
 	 * Perform the usual duties and take a nap, unless we're behind schedule,
 	 * in which case we just try to catch up as quickly as possible.
@@ -676,13 +684,6 @@ CheckpointWriteDelay(int flags, double progress)
 		!ImmediateCheckpointRequested() &&
 		IsCheckpointOnSchedule(progress))
 	{
-		if (got_SIGHUP)
-		{
-			got_SIGHUP = false;
-			ProcessConfigFile(PGC_SIGHUP);
-			/* update shmem copies of config variables */
-			UpdateSharedMemoryConfig();
-		}
 
 		AbsorbSyncRequests();
 		absorb_counter = WRITES_PER_ABSORB;
