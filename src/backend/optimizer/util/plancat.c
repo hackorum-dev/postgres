@@ -119,6 +119,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	Relation	relation;
 	bool		hasindex;
 	List	   *indexinfos = NIL;
+	Index		i;
 
 	/*
 	 * We need not lock the relation since it was already locked, either by
@@ -202,6 +203,15 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 	/* Retrieve the parallel_workers reloption, or -1 if not set. */
 	rel->rel_parallel_workers = RelationGetParallelWorkers(relation, -1);
+
+	for (i = 0; i < relation->rd_att->natts; i++)
+	{
+		FormData_pg_attribute attr = relation->rd_att->attrs[i];
+
+		if (attr.attnotnull)
+			rel->notnullattrs = bms_add_member(rel->notnullattrs,
+											   attr.attnum - FirstLowInvalidHeapAttributeNumber);
+	}
 
 	/*
 	 * Make list of indexes.  Ignore indexes on system catalogs if told to.

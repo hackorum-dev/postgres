@@ -142,11 +142,17 @@ extern EquivalenceClass *get_eclass_for_sort_expr(PlannerInfo *root,
 extern EquivalenceMember *find_ec_member_matching_expr(EquivalenceClass *ec,
 													   Expr *expr,
 													   Relids relids);
+extern int	find_ec_position_matching_expr(PlannerInfo *root,
+										   Expr *expr,
+										   RelOptInfo *rel);
 extern EquivalenceMember *find_computable_ec_member(PlannerInfo *root,
 													EquivalenceClass *ec,
 													List *exprs,
 													Relids relids,
 													bool require_parallel_safe);
+extern Bitmapset *build_ec_positions_for_exprs(PlannerInfo *root,
+											   List *exprs,
+											   RelOptInfo *rel);
 extern bool relation_can_be_sorted_early(PlannerInfo *root, RelOptInfo *rel,
 										 EquivalenceClass *ec,
 										 bool require_parallel_safe);
@@ -270,4 +276,11 @@ extern PathKey *make_canonical_pathkey(PlannerInfo *root,
 extern void add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
 									List *live_childrels);
 
+extern bool relation_is_distinct_for(PlannerInfo *root, RelOptInfo *rel,
+									 List *distinct_pathkey);
+extern void populate_baserel_uniquekeys(PlannerInfo *root,
+										RelOptInfo *baserel);
+extern void populate_joinrel_uniquekeys(PlannerInfo *root, RelOptInfo *joinrel,
+										RelOptInfo *outerrel, RelOptInfo *innerrel,
+										List *restrictlist, JoinType jointype);
 #endif							/* PATHS_H */
