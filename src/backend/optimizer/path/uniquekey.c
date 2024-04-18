@@ -26,6 +26,11 @@ static bool add_uniquekey_for_uniqueindex(PlannerInfo *root,
 										  IndexOptInfo *unique_index,
 										  List *truncatable_exprs,
 										  List *expr_opfamilies);
+static Bitmapset *build_ec_positions_for_exprs(PlannerInfo *root, List *exprs,
+											   RelOptInfo *rel);
+static int find_ec_position_matching_expr(PlannerInfo *root,
+										  Expr *expr,
+										  RelOptInfo *baserel);
 static bool unique_ecs_useful_for_distinct(PlannerInfo *root, Bitmapset *ec_indexes);
 
 /* Helper functions to create UniqueKey. */
@@ -191,6 +196,54 @@ add_uniquekey_for_uniqueindex(PlannerInfo *root, IndexOptInfo *unique_index,
 							  make_uniquekey(unique_ecs,
 											 used_for_distinct));
 	return false;
+}
+
+/*
+ * find_ec_position_matching_expr
+ *		Locate the position of EquivalenceClass whose members matching
+ *		the given expr, if any; return -1 if no match.
+ */
+static int
+find_ec_position_matching_expr(PlannerInfo *root,
+							   Expr *expr,
+							   RelOptInfo *baserel)
+{
+	int			i = -1;
+
+	while ((i = bms_next_member(baserel->eclass_indexes, i)) >= 0)
+	{
+		EquivalenceClass *ec = list_nth(root->eq_classes, i);
+
+		if (find_ec_member_matching_expr(ec, expr, baserel->relids))
+			return i;
+	}
+	return -1;
+}
+
+/*
+ * build_ec_positions_for_exprs
+ *
+ *		Given a list of exprs, find the related EC positions for each of
+ *		them. if any exprs has no EC related, return NULL;
+ */
+static Bitmapset *
+build_ec_positions_for_exprs(PlannerInfo *root, List *exprs, RelOptInfo *rel)
+{
+	ListCell   *lc;
+	Bitmapset  *res = NULL;
+
+	foreach(lc, exprs)
+	{
+		int			pos = find_ec_position_matching_expr(root, lfirst(lc), rel);
+
+		if (pos < 0)
+		{
+			bms_free(res);
+			return NULL;
+		}
+		res = bms_add_member(res, pos);
+	}
+	return res;
 }
 
 /*
