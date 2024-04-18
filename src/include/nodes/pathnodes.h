@@ -1487,13 +1487,33 @@ typedef struct UniqueKey
 	pg_node_attr(no_read, no_query_jumble)
 
 	NodeTag		type;
-	Bitmapset  *eclass_indexes; /* Indexes in PlannerInfo's eq_class list of
-								 * ECs that is unique for a RelOptInfo. */
+
+	/*
+	 * A subset of columns that is unique across the output rows of the
+	 * underlying relation.
+	 *
+	 * For base relations and joins, the indexes point to equivalence classes
+	 * the columns belong to. (Essentially it's a subset of
+	 * RelOptInfo.eclass_indexes)
+	 *
+	 * For upper relations, the indexes point to the items of the relation
+	 * target.
+	 */
+	Bitmapset  *item_indexes;
+
+	/*
+	 * Here we store the operator families for each member of
+	 * 'item_indexes'. (i-th item of the list corresponds to i-th member of
+	 * 'item_indexes'). This is needed to create ECs in the parent query if
+	 * the upper relation represents a subquery.
+	 */
+	List	*opfamily_lists;
+
 	int			relid;
 	bool		use_for_distinct;	/* true if it is used in distinct-pathkey,
 									 * in this case we would never check if we
 									 * should discard it during join search. */
-}			UniqueKey;
+} UniqueKey;
 
 
 /*

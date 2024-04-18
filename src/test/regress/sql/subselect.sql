@@ -1020,3 +1020,16 @@ WHERE a.thousand < 750;
 explain (costs off)
 SELECT * FROM tenk1 A LEFT JOIN tenk2 B
 ON B.hundred in (SELECT min(c.hundred) FROM tenk2 C WHERE c.odd = b.odd);
+
+
+-- Check that uniqueness of the view output is recognized.
+begin;
+create table tabx as select * from generate_series(1,100) idx;
+create table taby as select * from generate_series(1,100) idy;
+create unique index on taby using btree (idy);
+create view viewy_barrier with (security_barrier=true) as select * from taby;
+analyze tabx, taby;
+explain (costs off, verbose on)
+select * from tabx x left join viewy_barrier y on idy = idx;
+
+rollback;

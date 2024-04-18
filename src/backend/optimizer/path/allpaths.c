@@ -2668,6 +2668,23 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	}
 
 	/*
+	 * Translate the subquery unique keys so that 'rel' can use them.
+	 *
+	 * The final relation is not guaranteed to have the target set, so
+	 * retrieve it from ->upper_targets.
+	 *
+	 * Unique keys are currently not supported for RELOPT_OTHER_MEMBER_REL.
+	 */
+	if (rel->reloptkind == RELOPT_BASEREL)
+	{
+		PathTarget	*sub_final_target;
+
+		sub_final_target = rel->subroot->upper_targets[UPPERREL_FINAL];
+		convert_unique_keys_for_rel(root, rel, NULL, sub_final_rel,
+									sub_final_target);
+	}
+
+	/*
 	 * Mark rel with estimated output rows, width, etc.  Note that we have to
 	 * do this before generating outer-query paths, else cost_subqueryscan is
 	 * not happy.

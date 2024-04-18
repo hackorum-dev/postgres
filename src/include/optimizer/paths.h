@@ -82,6 +82,8 @@ extern bool match_index_to_operand(Node *operand, int indexcol,
 								   IndexOptInfo *index);
 extern void check_index_predicates(PlannerInfo *root, RelOptInfo *rel);
 
+extern bool IsBooleanOpfamily(Oid opfamily);
+
 /*
  * tidpath.c
  *	  routines to generate tid paths
@@ -138,6 +140,7 @@ extern EquivalenceClass *get_eclass_for_sort_expr(PlannerInfo *root,
 												  Oid collation,
 												  Index sortref,
 												  Relids rel,
+												  JoinDomain *jdomain,
 												  bool create_it);
 extern EquivalenceMember *find_ec_member_matching_expr(EquivalenceClass *ec,
 													   Expr *expr,
@@ -277,4 +280,11 @@ extern void populate_baserel_uniquekeys(PlannerInfo *root,
 extern void populate_joinrel_uniquekeys(PlannerInfo *root, RelOptInfo *joinrel,
 										RelOptInfo *outerrel, RelOptInfo *innerrel,
 										List *restrictlist, JoinType jointype);
+extern void convert_unique_keys_for_rel(PlannerInfo *root, RelOptInfo *rel,
+										PathTarget *target, RelOptInfo *input_rel,
+										PathTarget *input_target);
+extern List *create_uniquekeys_for_sortop(SetOperationStmt *topop,
+										  List *targetlist);
+extern bool uniquekey_contains_multinulls(PlannerInfo *root, RelOptInfo *rel,
+										  UniqueKey * ukey);
 #endif							/* PATHS_H */

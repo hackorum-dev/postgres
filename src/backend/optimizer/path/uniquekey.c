@@ -19,7 +19,20 @@
 #include "nodes/pathnodes.h"
 #include "optimizer/optimizer.h"
 #include "optimizer/paths.h"
+#include "utils/lsyscache.h"
 
+/*
+ * Information on a column of an unique index for which we are trying to
+ * create an unique key.
+ */
+typedef struct UniqueKeyExpr
+{
+	/* The expression itself. */
+	Expr	*expr;
+
+	/* Operator family to find / create suitable equivalence class. */
+	Oid		opfamily;
+} UniqueKeyExpr;
 
 /* Functions to populate UniqueKey */
 static bool add_uniquekey_for_uniqueindex(PlannerInfo *root,
@@ -29,23 +42,24 @@ static bool add_uniquekey_for_uniqueindex(PlannerInfo *root,
 static Bitmapset *build_ec_positions_for_exprs(PlannerInfo *root, List *exprs,
 											   RelOptInfo *rel);
 static int find_ec_position_matching_expr(PlannerInfo *root,
-										  Expr *expr,
-										  RelOptInfo *baserel);
+										  RelOptInfo *baserel,
+										  Expr *expr, List *opfamilies);
 static bool unique_ecs_useful_for_distinct(PlannerInfo *root, Bitmapset *ec_indexes);
 
 /* Helper functions to create UniqueKey. */
-static UniqueKey * make_uniquekey(Bitmapset *eclass_indexes,
+static UniqueKey * make_uniquekey(Bitmapset *item_indexes,
+								  List *opfamily_lists,
 								  bool useful_for_distinct);
 static void mark_rel_singlerow(RelOptInfo *rel, int relid);
 
 static UniqueKey * rel_singlerow_uniquekey(RelOptInfo *rel);
-static bool uniquekey_contains_multinulls(PlannerInfo *root, RelOptInfo *rel, UniqueKey * ukey);
 
 /* Debug only */
 static void print_uniquekey(PlannerInfo *root, RelOptInfo *rel);
 
 static bool uniquekey_contains_in(PlannerInfo *root, UniqueKey * ukey, Bitmapset *ecs, Relids relids);
 static bool is_uniquekey_useful_afterjoin(PlannerInfo *root, UniqueKey * ukey, RelOptInfo *joinrel);
+static int find_expr_pos_in_list(Expr *expr, List *list);
 
 /*
  * populate_baserel_uniquekeys
@@ -60,6 +74,9 @@ populate_baserel_uniquekeys(PlannerInfo *root, RelOptInfo *rel)
 	ListCell   *lc;
 	List	   *truncatable_exprs = NIL,
 			   *expr_opfamilies = NIL;
+
+	if (rel->reloptkind != RELOPT_BASEREL)
+		return;
 
 	/*
 	 * Currently we only use UniqueKey for mark-distinct-as-noop case, so if
@@ -132,7 +149,8 @@ add_uniquekey_for_uniqueindex(PlannerInfo *root, IndexOptInfo *unique_index,
 	ListCell   *indexpr_item;
 	RelOptInfo *rel = unique_index->rel;
 	bool		used_for_distinct;
-	int			c;
+	int			c, i;
+	List		*opfamily_lists = NIL;
 
 	indexpr_item = list_head(unique_index->indexprs);
 
@@ -143,6 +161,7 @@ add_uniquekey_for_uniqueindex(PlannerInfo *root, IndexOptInfo *unique_index,
 		bool		matched_const = false;
 		ListCell   *lc1,
 				   *lc2;
+		UniqueKeyExpr	*uexpr;
 
 		if (attr > 0)
 		{
@@ -174,7 +193,10 @@ add_uniquekey_for_uniqueindex(PlannerInfo *root, IndexOptInfo *unique_index,
 		if (matched_const)
 			continue;
 
-		unique_exprs = lappend(unique_exprs, expr);
+		uexpr = palloc_object(UniqueKeyExpr);
+		uexpr->expr = expr;
+		uexpr->opfamily = unique_index->opfamily[c];
+		unique_exprs = lappend(unique_exprs, uexpr);
 	}
 
 	if (unique_exprs == NIL)
@@ -193,35 +215,94 @@ add_uniquekey_for_uniqueindex(PlannerInfo *root, IndexOptInfo *unique_index,
 	if (unique_ecs == NULL)
 		return false;
 
+	/* Collect the operator families. */
+	i = -1;
+	while ((i = bms_next_member(unique_ecs, i)) >= 0)
+	{
+		EquivalenceClass	*ec = list_nth(root->eq_classes, i);
+
+		opfamily_lists = lappend(opfamily_lists, ec->ec_opfamilies);
+	}
+
 	used_for_distinct = unique_ecs_useful_for_distinct(root, unique_ecs);
 
 
 	rel->uniquekeys = lappend(rel->uniquekeys,
-							  make_uniquekey(unique_ecs,
+							  make_uniquekey(unique_ecs, opfamily_lists,
 											 used_for_distinct));
 	return false;
 }
 
 /*
  * find_ec_position_matching_expr
- *		Locate the position of EquivalenceClass whose members matching
- *		the given expr, if any; return -1 if no match.
+ *		Locate the position of EquivalenceClass whose members matching the
+ *		given expr. Try to create EC if suitable one does not exist. Return -1
+ *		if there is not enough information in the catalog about the data type
+ *		to create the EC.
  */
 static int
-find_ec_position_matching_expr(PlannerInfo *root,
-							   Expr *expr,
-							   RelOptInfo *baserel)
+find_ec_position_matching_expr(PlannerInfo *root, RelOptInfo *baserel,
+							   Expr *expr, List *opfamilies)
 {
 	int			i = -1;
+	EquivalenceClass *ec;
+	int		ec_index;
+	JoinDomain *jdomain;
+	ListCell	*lc;
+
+	/*
+	 * XXX Currently the function is only used to build unique keys, so we
+	 * don't create ECs for boolean columns: normal EC processing does not
+	 * create them as well and build_index_pathkeys() considers boolean
+	 * pathkeys redundant, so missing boolean EC is o.k. However, if we
+	 * created the boolean ECs, build_index_pathkeys() would return the
+	 * corresponding pathkeys, and those could mismatch query_pathkeys.
+	 * Shouldn't this be handled in pathkeys_useful_for_ordering()?
+	 */
+	foreach(lc, opfamilies)
+	{
+		/* XXX The result should be the same for each item of the list. */
+		if (IsBooleanOpfamily(lfirst_oid(lc)))
+			return -1;
+	}
 
 	while ((i = bms_next_member(baserel->eclass_indexes, i)) >= 0)
 	{
-		EquivalenceClass *ec = list_nth(root->eq_classes, i);
+		List	*diff;
+
+		ec = list_nth(root->eq_classes, i);
+
+		/*
+		 * The EC must understand equality in the same way as the unique index
+		 * that guarantees the uniqueness. That is, ec_opfamilies must contain
+		 * all the opfamilies passed by the caller.
+		 */
+		diff = list_difference_oid(opfamilies, ec->ec_opfamilies);
+		if (list_length(diff) > 0)
+			continue;
 
 		if (find_ec_member_matching_expr(ec, expr, baserel->relids))
 			return i;
 	}
-	return -1;
+
+	/* Create the EC. */
+	jdomain = makeNode(JoinDomain);
+	jdomain->jd_relids = pull_varnos(root, (Node *) expr);
+	ec = get_eclass_for_sort_expr(root, expr,
+								  opfamilies,
+								  exprType((Node *) expr),
+								  exprCollation((Node *) expr),
+								  0,
+								  NULL,
+								  jdomain,
+								  true);
+	ec_index = list_length(root->eq_classes) - 1;
+
+	/* The new EC should now be known to both 'root' and 'baserel'. */
+	Assert(ec == llast(root->eq_classes));
+	Assert(bms_is_member(ec_index, baserel->eclass_indexes));
+
+	return ec_index;
 }
 
 /*
@@ -238,7 +319,10 @@ build_ec_positions_for_exprs(PlannerInfo *root, List *exprs, RelOptInfo *rel)
 
 	foreach(lc, exprs)
 	{
-		int			pos = find_ec_position_matching_expr(root, lfirst(lc), rel);
+		UniqueKeyExpr	*uexpr = (UniqueKeyExpr *) lfirst(lc);
+		int			pos = find_ec_position_matching_expr(root, rel,
+														 uexpr->expr,
+														 list_make1_oid(uexpr->opfamily));
 
 		if (pos < 0)
 		{
@@ -248,20 +332,23 @@ build_ec_positions_for_exprs(PlannerInfo *root, List *exprs, RelOptInfo *rel)
 		res = bms_add_member(res, pos);
 	}
 	return res;
+
 }
 
 /*
  *	make_uniquekey
  *		Based on UnqiueKey rules, it is impossible for a UnqiueKey
- * which have eclass_indexes and relid both set. This function just
- * handle eclass_indexes case.
+ * which have item_indexes and relid both set. This function just
+ * handle item_indexes case.
  */
 static UniqueKey *
-make_uniquekey(Bitmapset *eclass_indexes, bool useful_for_distinct)
+make_uniquekey(Bitmapset *item_indexes, List *opfamily_lists,
+			   bool useful_for_distinct)
 {
 	UniqueKey  *ukey = makeNode(UniqueKey);
 
-	ukey->eclass_indexes = eclass_indexes;
+	ukey->item_indexes = item_indexes;
+	ukey->opfamily_lists = opfamily_lists;
 	ukey->relid = 0;
 	ukey->use_for_distinct = useful_for_distinct;
 	return ukey;
@@ -321,7 +408,7 @@ print_uniquekey(PlannerInfo *root, RelOptInfo *rel)
 			UniqueKey  *ukey = lfirst_node(UniqueKey, lc);
 
 			elog(INFO, "UNIQUEKEY{indexes=%s, singlerow_rels=%d, use_for_distinct=%d}",
-				 bmsToString(ukey->eclass_indexes),
+				 bmsToString(ukey->item_indexes),
 				 ukey->relid,
 				 ukey->use_for_distinct);
 		}
@@ -352,12 +439,12 @@ var_is_nullable(PlannerInfo *root, Var *var, RelOptInfo *rel)
  *
  *	Check if the uniquekey contains nulls values.
  */
-static bool
+bool
 uniquekey_contains_multinulls(PlannerInfo *root, RelOptInfo *rel, UniqueKey * ukey)
 {
 	int			i = -1;
 
-	while ((i = bms_next_member(ukey->eclass_indexes, i)) >= 0)
+	while ((i = bms_next_member(ukey->item_indexes, i)) >= 0)
 	{
 		EquivalenceClass *ec = list_nth_node(EquivalenceClass, root->eq_classes, i);
 		ListCell   *lc;
@@ -421,7 +508,7 @@ relation_is_distinct_for(PlannerInfo *root, RelOptInfo *rel, List *distinct_path
 	{
 		UniqueKey  *ukey = lfirst_node(UniqueKey, lc);
 
-		if (bms_is_subset(ukey->eclass_indexes, pathkey_bm) &&
+		if (bms_is_subset(ukey->item_indexes, pathkey_bm) &&
 			!uniquekey_contains_multinulls(root, rel, ukey))
 			return true;
 	}
@@ -611,6 +698,10 @@ populate_joinrel_uniquekeys(PlannerInfo *root, RelOptInfo *joinrel,
 		foreach(lc2, innerrel->uniquekeys)
 		{
 			UniqueKey  *inner_ukey = lfirst(lc2);
+			Bitmapset	*indexes_new;
+			List	*opfamily_lists_new = NIL;
+			int		i;
+			ListCell	*lo, *li;
 
 			if (!is_uniquekey_useful_afterjoin(root, inner_ukey, joinrel))
 				continue;
@@ -618,9 +709,35 @@ populate_joinrel_uniquekeys(PlannerInfo *root, RelOptInfo *joinrel,
 			/* singlerow will make the outeruk_still_valid true */
 			Assert(!uniquekey_is_singlerow(inner_ukey));
 
+			/* Assemble opfamily_lists_new in the correct order.  */
+			i = -1;
+			indexes_new = bms_union(outer_ukey->item_indexes, inner_ukey->item_indexes);
+			lo = list_head(outer_ukey->opfamily_lists);
+			li = list_head(inner_ukey->opfamily_lists);
+			while ((i = bms_next_member(indexes_new, i)) >= 0)
+			{
+				List	*l;
+
+				if (bms_is_member(i, outer_ukey->item_indexes))
+				{
+					l = lfirst(lo);
+					lo = lnext(outer_ukey->opfamily_lists, lo);
+				}
+				else
+				{
+					Assert(bms_is_member(i, inner_ukey->item_indexes));
+
+					l = lfirst(li);
+					li = lnext(inner_ukey->opfamily_lists, li);
+				}
+
+				opfamily_lists_new = lappend(opfamily_lists_new, l);
+			}
+
 			joinrel->uniquekeys = lappend(joinrel->uniquekeys,
 										  make_uniquekey(
-														 bms_union(outer_ukey->eclass_indexes, inner_ukey->eclass_indexes),
+														 indexes_new,
+														 opfamily_lists_new,
 														 outer_ukey->use_for_distinct || inner_ukey->use_for_distinct));
 		}
 	}
@@ -640,7 +757,7 @@ uniquekey_contains_in(PlannerInfo *root, UniqueKey * ukey, Bitmapset *ecs, Relid
 		return bms_is_member(ukey->relid, relids);
 	}
 
-	return bms_is_subset(ukey->eclass_indexes, ecs);
+	return bms_is_subset(ukey->item_indexes, ecs);
 }
 
 
@@ -656,7 +773,7 @@ uniquekey_useful_for_merging(PlannerInfo *root, UniqueKey * ukey, RelOptInfo *re
 
 	int			i = -1;
 
-	while ((i = bms_next_member(ukey->eclass_indexes, i)) >= 0)
+	while ((i = bms_next_member(ukey->item_indexes, i)) >= 0)
 	{
 		EquivalenceClass *ec = list_nth(root->eq_classes, i);
 		ListCell   *j;
@@ -708,4 +825,322 @@ is_uniquekey_useful_afterjoin(PlannerInfo *root, UniqueKey * ukey, RelOptInfo *j
 
 
 	return uniquekey_useful_for_merging(root, ukey, joinrel);
+}
+
+
+/*
+ * convert_unique_keys_for_rel
+ *
+ * Convert unique keys of 'input_relation' and assign them to 'rel'. The
+ * comments of UniqueKey explain the difference in the format.
+ *
+ * This function assumes that at least one of the relations is "upper
+ * relation". If 'input_rel' is upper and 'rel' is base/join rel, pass NULL
+ * for 'target'.
+ */
+void
+convert_unique_keys_for_rel(PlannerInfo *root, RelOptInfo *rel,
+							PathTarget *target, RelOptInfo *input_rel,
+							PathTarget *input_target)
+{
+	ListCell	*lc1;
+
+	/* No unique keys, in case we return early. */
+	rel->uniquekeys = NIL;
+
+	/*
+	 * Set-returning functions can break uniqueness. This does not necessarily
+	 * affect all of the upper relations, but checking is not trivial and
+	 * should be done by the caller rather than by this function. Make the
+	 * logic simple for now.
+	 */
+	if (root->parse->hasTargetSRFs)
+		return;
+
+	/* No keys to convert? */
+	if (input_rel->uniquekeys == NIL)
+		return;
+
+	/*
+	 * If both relations are upper and if they have the same target,
+	 * just copy the uniquekeys unmodified.
+	 */
+	if (IS_UPPER_REL(rel) && IS_UPPER_REL(input_rel) &&
+		target == input_target)
+	{
+		rel->uniquekeys = copyObject(input_rel->uniquekeys);
+		return;
+	}
+
+	foreach(lc1, input_rel->uniquekeys)
+	{
+		UniqueKey  *key = lfirst_node(UniqueKey, lc1);
+		Bitmapset	*item_indexes_new = NULL;
+		List	*opfamily_lists_new = NIL;
+		int		matched;
+		int		i = -1;
+		ListCell	*lc2;
+
+		if (!IS_UPPER_REL(input_rel))
+		{
+			/* Conversion between base/join rels is currently not needed. */
+			IS_UPPER_REL(rel);
+
+			/*
+			 * For each key, check its ECs and find the EM present in
+			 * 'target'.
+			 */
+			while ((i = bms_next_member(key->item_indexes, i)) >= 0)
+			{
+				EquivalenceClass *ec = list_nth(root->eq_classes, i);
+
+				matched = -1;
+				foreach(lc2, ec->ec_members)
+				{
+					EquivalenceMember *em;
+					Expr	*expr;
+
+					em = lfirst_node(EquivalenceMember, lc2);
+					expr = em->em_expr;
+
+					/* EMs can be wrapped in RelabelType. */
+					while (expr && IsA(expr, RelabelType))
+						expr = ((RelabelType *) expr)->arg;
+
+					/*
+					 * Currently we only accept Vars, for simplicity (and
+					 * because the unique key shouldn't contain other
+					 * nodes). In general, we look for expressions that map
+					 * unique input value to unique output value. Not sure
+					 * though how we can recognize them easily.
+					 */
+					if (!IsA(expr, Var))
+						continue;
+
+					matched = find_expr_pos_in_list(expr, target->exprs);
+					if (matched >= 0)
+						break;
+				}
+
+				if (matched >= 0)
+				{
+					item_indexes_new = bms_add_member(item_indexes_new,
+													  matched);
+					opfamily_lists_new = lappend(opfamily_lists_new,
+												 ec->ec_opfamilies);
+				}
+				else
+				{
+					/* The caller does not want an incomplete unique key. */
+					bms_free(item_indexes_new);
+					item_indexes_new = NULL;
+					list_free(opfamily_lists_new);
+					opfamily_lists_new = NIL;
+					break;
+				}
+			}
+		}
+		else
+		{
+			ListCell	*lc2 = list_head(key->opfamily_lists);
+
+			/* IS_UPPER_REL(input_rel) */
+
+			Assert(bms_num_members(key->item_indexes) ==
+				   list_length(key->opfamily_lists));
+
+			/*
+			 * For an upper relation, 'index_items' point to expressions of an
+			 * existing target. For each key, find its target expressions in
+			 * 'target' or (if target==NULL) in the members of the ECs 'rel'
+			 * belongs to.
+			 */
+			while ((i = bms_next_member(key->item_indexes, i)) >= 0)
+			{
+				Expr	*expr;
+
+				expr = (Expr *) list_nth(input_target->exprs, i);
+
+				if (target)
+				{
+					Assert(IS_UPPER_REL(rel));
+
+					matched = find_expr_pos_in_list(expr, target->exprs);
+				}
+				else
+				{
+					ListCell	*lc3;
+					Var		*target_var = NULL;
+
+					/*
+					 * 'rel' should be a base relation, not upper or join
+					 * relation.
+					 */
+					Assert(!IS_UPPER_REL(rel));
+					Assert(rel->relid > 0);
+
+					/*
+					 * Base relation should use plain Var nodes to reference
+					 * the subquery target. Find the Var in the base relation
+					 * target that points to this expression.
+					 */
+					foreach(lc3, rel->reltarget->exprs)
+					{
+						Var		*var;
+
+						/*
+						 * If a general expression happens to be there, give
+						 * up because it can break uniqueness of the relation
+						 * output.
+						 */
+						if (!IsA(lfirst(lc3), Var))
+							return;
+
+						var = lfirst_node(Var, lc3);
+
+						if (var->varno == rel->relid &&
+							var->varattno == (i + 1))
+						{
+							target_var = var;
+							break;
+						}
+					}
+					if (target_var)
+					{
+						List		*opfamilies = lfirst(lc2);
+
+						matched = find_ec_position_matching_expr(root, rel,
+																 (Expr *) target_var,
+																 opfamilies);
+						lc2 = lnext(key->opfamily_lists, lc2);
+					}
+					else
+						matched = -1;
+
+					if (matched >= 0)
+					{
+						/*
+						 * By generating the unique key the subquery
+						 * guarantees that the value of the output column
+						 * cannot be NULL.
+						 */
+						rel->notnullattrs = bms_add_member(rel->notnullattrs,
+														   target_var->varattno - FirstLowInvalidHeapAttributeNumber);
+					}
+					else
+						matched = -1;
+				}
+
+				if (matched >= 0)
+					item_indexes_new = bms_add_member(item_indexes_new,
+													  matched);
+				else
+				{
+					/* The caller does not want an incomplete unique key. */
+					bms_free(item_indexes_new);
+					item_indexes_new = NULL;
+					break;
+				}
+			}
+		}
+
+		if (item_indexes_new)
+		{
+			UniqueKey	*key_new;
+
+			if (!IS_UPPER_REL(input_rel))
+				Assert(opfamily_lists_new);
+			else
+			{
+				Assert(opfamily_lists_new == NIL);
+
+				opfamily_lists_new = copyObject(key->opfamily_lists);
+			}
+
+
+			key_new = make_uniquekey(item_indexes_new, opfamily_lists_new,
+									 true);
+			rel->uniquekeys = lappend(rel->uniquekeys, key_new);
+		}
+	}
+}
+
+List *
+create_uniquekeys_for_sortop(SetOperationStmt *topop, List *targetlist)
+{
+	ListCell	*l, *lg;
+	int		i;
+	Bitmapset	*key_idxs = NULL;
+	List	*opfamily_lists = NIL;
+	UniqueKey	*key;
+
+	if (topop->all)
+	{
+		/*
+		 * There is no easy way to combine unique keys of the individual
+		 * queries.
+		 */
+		return NIL;
+	}
+
+	/* Iterate like in query_is_distinct_for() */
+	lg = list_head(topop->groupClauses);
+	i = 0;
+	foreach(l, targetlist)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(l);
+		SortGroupClause *sgc;
+		List	*sgc_opfamilies;
+
+		if (tle->resjunk)
+		{
+			i++;
+			continue;	/* ignore resjunk columns */
+		}
+
+		key_idxs = bms_add_member(key_idxs, i++);
+
+		/* non-resjunk columns should have grouping clauses */
+		Assert(lg != NULL);
+		sgc = (SortGroupClause *) lfirst(lg);
+		lg = lnext(topop->groupClauses, lg);
+		sgc_opfamilies = get_mergejoin_opfamilies(sgc->eqop);
+		if (sgc_opfamilies == NIL)
+		{
+			/* XXX Shouldn' this be ERROR? */
+			bms_free(key_idxs);
+			key_idxs = NULL;
+			break;
+		}
+		opfamily_lists = lappend(opfamily_lists, sgc_opfamilies);
+	}
+
+	if (key_idxs == NULL)
+		return NIL;
+
+	key = make_uniquekey(key_idxs, opfamily_lists, true);
+
+	return list_make1(key);
+}
+
+/*
+ * Return a zero-based index of an expression in a list, or -1 if not found.
+ */
+static int
+find_expr_pos_in_list(Expr *expr, List *list)
+{
+	ListCell	*lc;
+	int		idx = 0;
+
+	foreach(lc, list)
+	{
+		Expr	*lexpr = (Expr *) lfirst(lc);
+
+		if (equal(expr, lexpr))
+			return idx;
+
+		idx++;
+	}
+
+	return -1;
 }

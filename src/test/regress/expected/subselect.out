@@ -2105,3 +2105,27 @@ ON B.hundred in (SELECT min(c.hundred) FROM tenk2 C WHERE c.odd = b.odd);
                                                Filter: (odd = b.odd)
 (16 rows)
 
+-- Check that uniqueness of the view output is recognized.
+begin;
+create table tabx as select * from generate_series(1,100) idx;
+create table taby as select * from generate_series(1,100) idy;
+create unique index on taby using btree (idy);
+create view viewy_barrier with (security_barrier=true) as select * from taby;
+analyze tabx, taby;
+explain (costs off, verbose on)
+select * from tabx x left join viewy_barrier y on idy = idx;
+             QUERY PLAN              
+-------------------------------------
+ Hash Left Join
+   Output: x.idx, taby.idy
+   Inner Unique: true
+   Hash Cond: (x.idx = taby.idy)
+   ->  Seq Scan on public.tabx x
+         Output: x.idx
+   ->  Hash
+         Output: taby.idy
+         ->  Seq Scan on public.taby
+               Output: taby.idy
+(10 rows)
+
+rollback;
