@@ -98,8 +98,12 @@ populate_baserel_uniquekeys(PlannerInfo *root, RelOptInfo *rel)
 	{
 		IndexOptInfo *index = (IndexOptInfo *) lfirst(lc);
 
-		if (!index->unique || !index->immediate ||
-			(index->indpred != NIL && !index->predOK))
+		/*
+		 * Like in relation_has_unique_index_for(), we shouldn't use predOK
+		 * because its validity might depend on join clauses, however here we
+		 * test uniqueness of the join input.
+		 */
+		if (!index->unique || !index->immediate || index->indpred != NIL)
 			continue;
 
 		if (add_uniquekey_for_uniqueindex(root, index,
