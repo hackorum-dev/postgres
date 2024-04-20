@@ -45,6 +45,7 @@ sub create_sub_pub_w_errors
 		$db,
 		qq[
 	BEGIN;
+SELECT pg_sleep(0.5);
 	CREATE TABLE $table_name(a int primary key);
 	INSERT INTO $table_name VALUES (1);
 	CREATE SEQUENCE $sequence_name INCREMENT BY 10;
