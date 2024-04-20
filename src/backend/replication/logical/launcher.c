@@ -238,6 +238,7 @@ WaitForReplicationWorkerAttach(LogicalRepWorker *worker,
 
 		if (rc & WL_LATCH_SET)
 		{
+pg_usleep(300000);
 			ResetLatch(MyLatch);
 			CHECK_FOR_INTERRUPTS();
 			dropped_latch = true;
