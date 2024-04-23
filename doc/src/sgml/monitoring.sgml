@@ -4443,7 +4443,7 @@ description | Waiting for a newly initialized WAL file to reach durable storage
       </para>
       <para>
        Number of uses of logical slots in this database that have been
-       canceled due to old snapshots or too low a <xref linkend="guc-wal-level"/>
+       canceled due to old snapshots or too low <xref linkend="guc-wal-level"/>
        on the primary
       </para></entry>
      </row>
