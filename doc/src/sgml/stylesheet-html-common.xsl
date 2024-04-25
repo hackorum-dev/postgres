@@ -674,4 +674,163 @@ set       toc,title
   </xsl:for-each>
 </xsl:template>
 
+<xsl:template match="glossterm" name="glossterm">
+  <xsl:param name="firstterm" select="0"/>
+
+  <!-- To avoid extra <a name=""> anchor from inline.italicseq -->
+  <xsl:variable name="content">
+    <xsl:apply-templates/>
+  </xsl:variable>
+
+  <xsl:choose>
+    <xsl:when test="($firstterm.only.link = 0 or $firstterm = 1) and @linkend">
+      <xsl:variable name="targets" select="key('id',@linkend)"/>
+      <xsl:variable name="target" select="$targets[1]"/>
+
+      <xsl:call-template name="check.id.unique">
+        <xsl:with-param name="linkend" select="@linkend"/>
+      </xsl:call-template>
+
+      <xsl:choose>
+        <xsl:when test="$target">
+          <a>
+            <xsl:apply-templates select="." mode="common.html.attributes"/>
+
+            <xsl:attribute name="href">
+              <xsl:call-template name="href.target">
+                <xsl:with-param name="object" select="$target"/>
+              </xsl:call-template>
+            </xsl:attribute>
+
+            <xsl:call-template name="inline.italicseq">
+              <xsl:with-param name="contentwithlink" select="$content"/>
+            </xsl:call-template>
+          </a>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:call-template name="inline.italicseq">
+            <xsl:with-param name="content" select="$content"/>
+          </xsl:call-template>
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:when>
+
+    <xsl:when test="not(@linkend)                     and ($firstterm.only.link = 0 or $firstterm = 1)                     and ($glossterm.auto.link != 0)                     and $glossary.collection != ''">
+      <xsl:variable name="term">
+        <xsl:choose>
+          <xsl:when test="@baseform"><xsl:value-of select="@baseform"/></xsl:when>
+          <xsl:otherwise><xsl:value-of select="."/></xsl:otherwise>
+        </xsl:choose>
+      </xsl:variable>
+
+      <xsl:variable name="cterm" select="(document($glossary.collection,.)//glossentry[glossterm=$term])[1]"/>
+
+      <!-- HACK HACK HACK! But it works... -->
+      <!-- You'd need to do more work if you wanted to chunk on glossdiv, though -->
+
+      <xsl:variable name="glossary" select="//glossary[@role='auto']"/>
+
+      <xsl:if test="count($glossary) != 1">
+        <xsl:message>
+          <xsl:text>Warning: glossary.collection specified, but there are </xsl:text>
+          <xsl:value-of select="count($glossary)"/>
+          <xsl:text> automatic glossaries</xsl:text>
+        </xsl:message>
+      </xsl:if>
+
+      <xsl:variable name="glosschunk">
+        <xsl:call-template name="href.target">
+          <xsl:with-param name="object" select="$glossary"/>
+        </xsl:call-template>
+      </xsl:variable>
+
+      <xsl:variable name="chunkbase">
+        <xsl:choose>
+          <xsl:when test="contains($glosschunk, '#')">
+            <xsl:value-of select="substring-before($glosschunk, '#')"/>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:value-of select="$glosschunk"/>
+          </xsl:otherwise>
+        </xsl:choose>
+      </xsl:variable>
+
+      <xsl:choose>
+        <xsl:when test="not($cterm)">
+          <xsl:message>
+            <xsl:text>There's no entry for </xsl:text>
+            <xsl:value-of select="$term"/>
+            <xsl:text> in </xsl:text>
+            <xsl:value-of select="$glossary.collection"/>
+          </xsl:message>
+          <xsl:call-template name="inline.italicseq"/>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:variable name="id">
+            <xsl:call-template name="object.id">
+              <xsl:with-param name="object" select="$cterm"/>
+            </xsl:call-template>
+          </xsl:variable>
+          <a href="{$chunkbase}#{$id}">
+            <xsl:apply-templates select="." mode="common.html.attributes"/>
+            <xsl:call-template name="inline.italicseq">
+              <xsl:with-param name="content" select="$content"/>
+            </xsl:call-template>
+          </a>
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:when>
+
+    <xsl:when test="not(@linkend)                     and ($firstterm.only.link = 0 or $firstterm = 1)                     and $glossterm.auto.link != 0">
+      <xsl:variable name="term">
+        <xsl:choose>
+          <xsl:when test="@baseform">
+            <xsl:value-of select="normalize-space(@baseform)"/>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:value-of select="normalize-space(.)"/>
+          </xsl:otherwise>
+        </xsl:choose>
+      </xsl:variable>
+      <xsl:variable name="targets" select="key('glossentries', $term)"/>
+      <xsl:variable name="target" select="$targets[1]"/>
+
+      <xsl:choose>
+        <xsl:when test="count($targets)=0">
+          <xsl:message>
+            <xsl:text>Error: no glossentry for glossterm: </xsl:text>
+            <xsl:value-of select="."/>
+            <xsl:text>.</xsl:text>
+          </xsl:message>
+          <xsl:call-template name="inline.italicseq"/>
+        </xsl:when>
+        <xsl:otherwise>
+          <a>
+            <xsl:apply-templates select="." mode="common.html.attributes"/>
+            <xsl:if test="@id or @xml:id">
+              <xsl:attribute name="id">
+                <xsl:value-of select="(@id|@xml:id)[1]"/>
+              </xsl:attribute>
+            </xsl:if>
+
+            <xsl:attribute name="href">
+              <xsl:call-template name="href.target">
+                <xsl:with-param name="object" select="$target"/>
+              </xsl:call-template>
+            </xsl:attribute>
+
+            <xsl:call-template name="inline.italicseq">
+              <xsl:with-param name="contentwithlink" select="$content"/>
+            </xsl:call-template>
+          </a>
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:when>
+
+    <xsl:otherwise>
+      <xsl:call-template name="inline.italicseq"/>
+    </xsl:otherwise>
+  </xsl:choose>
+</xsl:template>
+
 </xsl:stylesheet>
