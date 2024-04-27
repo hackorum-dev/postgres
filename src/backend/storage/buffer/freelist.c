@@ -20,6 +20,7 @@
 #include "storage/buf_internals.h"
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
+#include "storage/write_stream.h"
 
 #define INT_ACCESS_ONCE(var)	((int)(*((volatile int *)&(var))))
 
@@ -81,6 +82,20 @@ typedef struct BufferAccessStrategyData
 	 * returned by GetBufferFromRing.
 	 */
 	int			current;
+
+	/*
+	 * Index of the write-behind slot in the ring.  If the caller indicates
+	 * that this buffer is dirty by calling StrategyReleaseBuffer(), we'll
+	 * queue it up to be cleaned by write_stream.
+	 */
+	int			write_behind;
+
+	/*
+	 * For strategies with write-behind logic.  Handles correspond to buffer
+	 * position in buffers[] array.
+	 */
+	WriteStream *write_stream;
+	WriteStreamWriteHandle *write_stream_handles;
 
 	/*
 	 * Array of buffer numbers.  InvalidBuffer (that is, zero) indicates we
@@ -610,6 +625,34 @@ GetAccessStrategyWithSize(BufferAccessStrategyType btype, int ring_size_kb)
 	strategy->btype = btype;
 	strategy->nbuffers = ring_buffers;
 
+	/*
+	 * Enable write-behind for the stategies expected to be used by code that
+	 * dirties buffers.  This will only actually have a useful effect if
+	 * callers use StrategyReleaseBuffer() instead of ReleaseBuffer() when
+	 * they are finished with each buffer, and if they read, dirty and release
+	 * them in the same order.
+	 */
+	if (strategy->btype == BAS_VACUUM || strategy->btype == BAS_BULKWRITE)
+	{
+		/*
+		 * We don't want the write stream to be constrained to flush the WAL
+		 * any more often than the worst case without the stream.  Allow it to
+		 * defer enough writes for the whole ring to be dirty and need to be
+		 * cleaned before recycling the oldest buffer.  The write stream will
+		 * try to clean buffers sooner than that, though, if concurrent WAL
+		 * activity allows earlier flushing.
+		 */
+		strategy->write_stream = write_stream_begin(0, NULL, ring_buffers);
+
+		/*
+		 * We need a way to make sure that write-behind has definitely
+		 * finished cleaning a buffer before we recycle it.  Record a handle
+		 * for each buffer, so we can wait for I/O to complete, if necessary.
+		 */
+		strategy->write_stream_handles =
+			palloc0(sizeof(WriteStreamWriteHandle) * ring_buffers);
+	}
+
 	return strategy;
 }
 
@@ -682,7 +725,22 @@ FreeAccessStrategy(BufferAccessStrategy strategy)
 {
 	/* don't crash if called on a "default" strategy */
 	if (strategy != NULL)
+	{
+		if (strategy->write_stream_handles)
+			pfree(strategy->write_stream_handles);
+		if (strategy->write_stream)
+		{
+			/*
+			 * If someone uses a temporary strategy and throws it away without
+			 * calling StrategyWaitAll(), we'll reset the write stream here so
+			 * that we don't generate extra writes.  That way we avoid
+			 * generating I/O when only a small amount of data is touched.
+			 */
+			write_stream_reset(strategy->write_stream);
+			write_stream_end(strategy->write_stream);
+		}
 		pfree(strategy);
+	}
 }
 
 /*
@@ -711,6 +769,15 @@ GetBufferFromRing(BufferAccessStrategy strategy, uint32 *buf_state)
 	bufnum = strategy->buffers[strategy->current];
 	if (bufnum == InvalidBuffer)
 		return NULL;
+
+	/*
+	 * If we were doing write-behind and the ring is very small, we might need
+	 * to force a write.  Usually we expect it to be done already, but we have
+	 * to make sure that it's no longer pinned by the write stream.
+	 */
+	if (strategy->write_stream)
+		write_stream_wait(strategy->write_stream,
+						  strategy->write_stream_handles[strategy->current]);
 
 	/*
 	 * If the buffer is pinned we cannot use it under any circumstances.
@@ -813,4 +880,79 @@ StrategyRejectBuffer(BufferAccessStrategy strategy, BufferDesc *buf, bool from_r
 	strategy->buffers[strategy->current] = InvalidBuffer;
 
 	return true;
+}
+
+/*
+ * Return a buffer to a strategy while it is still pinned.  This gives the
+ * strategy an opportunity to implement write-behind before unpinning it.
+ */
+void
+StrategyReleaseBuffer(BufferAccessStrategy strategy, Buffer buffer)
+{
+	/*
+	 * If enabled for this strategy, and this isn't a repeated release of the
+	 * same buffer, then we can try to implement write-behind.
+	 */
+	if (strategy &&
+		strategy->write_stream &&
+		strategy->buffers[strategy->write_behind] != buffer)
+	{
+		while (strategy->write_behind != strategy->current)
+		{
+			/* Advance to next slot. */
+			strategy->write_behind++;
+			if (strategy->write_behind == strategy->nbuffers)
+				strategy->write_behind = 0;
+			/* Have we found the right buffer? */
+			if (strategy->buffers[strategy->write_behind] == buffer)
+			{
+				/*
+				 * Start writing this buffer out.  The actual writing will
+				 * happen some time later, after I/O combining and deferring
+				 * for a while to give the WAL time to be flushed first.
+				 * Record the handle, so we can make sure it is finished
+				 * before reusing the buffer again.  Ownership of the pin is
+				 * transferred to the stream.
+				 */
+				strategy->write_stream_handles[strategy->write_behind] =
+					write_stream_write_buffer(strategy->write_stream, buffer);
+				return;
+			}
+		}
+	}
+
+	/* Write-behind is not possible.  Just release the buffer immediately. */
+	ReleaseBuffer(buffer);
+}
+
+/*
+ * Unlock a buffer, then return it still pinned to a strategy.
+ */
+void
+StrategyUnlockReleaseBuffer(BufferAccessStrategy strategy, Buffer buffer)
+{
+	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
+	StrategyReleaseBuffer(strategy, buffer);
+}
+
+/*
+ * Abandon any write-behind work, releasing any pins held by the strategy.
+ * This is useful before vacuum drops buffers to truncate a relation, throwing
+ * away dirty data.
+ */
+void
+StrategyReset(BufferAccessStrategy strategy)
+{
+	if (strategy && strategy->write_stream)
+		write_stream_reset(strategy->write_stream);
+}
+
+/*
+ * Finish any write-behind work, releasing any pins held by the strategy.
+ */
+void
+StrategyWaitAll(BufferAccessStrategy strategy)
+{
+	if (strategy && strategy->write_stream)
+		write_stream_wait_all(strategy->write_stream);
 }
