@@ -340,7 +340,7 @@ initscan(HeapScanDesc scan, ScanKey key, bool keep_startblock)
 	{
 		/* During a rescan, keep the previous strategy object. */
 		if (scan->rs_strategy == NULL)
-			scan->rs_strategy = GetAccessStrategy(BAS_BULKREAD);
+			scan->rs_strategy = GetAccessStrategy(BAS_BULKWRITE); /* XXX hack */
 	}
 	else
 	{
@@ -588,7 +588,7 @@ heap_fetch_next_buffer(HeapScanDesc scan, ScanDirection dir)
 	/* release previous scan buffer, if any */
 	if (BufferIsValid(scan->rs_cbuf))
 	{
-		ReleaseBuffer(scan->rs_cbuf);
+		StrategyReleaseBuffer(scan->rs_strategy, scan->rs_cbuf);
 		scan->rs_cbuf = InvalidBuffer;
 	}
 
