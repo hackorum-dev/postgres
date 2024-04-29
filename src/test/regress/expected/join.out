@@ -5483,6 +5483,15 @@ select 1 from a t1
          ->  Seq Scan on a t3
 (7 rows)
 
+explain (costs off)
+select a.id from a
+left join b on a.id = b.id
+left join c on c.id = a.id and c.id = b.id;
+  QUERY PLAN   
+---------------
+ Seq Scan on a
+(1 row)
+
 -- another example (bug #17781)
 explain (costs off)
 select ss1.f1

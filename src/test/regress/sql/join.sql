@@ -1967,6 +1967,11 @@ select 1 from a t1
    inner join a t3 on true
     left join a t4 on t2.id = t4.id and t2.id = t3.id;
 
+explain (costs off)
+select a.id from a
+left join b on a.id = b.id
+left join c on c.id = a.id and c.id = b.id;
+
 -- another example (bug #17781)
 explain (costs off)
 select ss1.f1

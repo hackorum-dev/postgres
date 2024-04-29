@@ -46,6 +46,10 @@ bool		enable_self_join_removal;
 /* local functions */
 static bool join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo);
 
+static bool innerrel_attrs_needed_above_outer_join(PlannerInfo *root,
+												   RelOptInfo *innerrel,
+												   SpecialJoinInfo *sjinfo,
+												   Relids joinrelids);
 static void remove_leftjoinrel_from_query(PlannerInfo *root, int relid,
 										  SpecialJoinInfo *sjinfo);
 static void remove_rel_from_restrictinfo(RestrictInfo *rinfo,
@@ -183,6 +187,8 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 	List	   *clause_list = NIL;
 	ListCell   *l;
 	int			attroff;
+	Oid			remove_ojrelid;
+	bool		remove_ojrelid_valid;
 
 	/*
 	 * Must be a left join to a single baserel, else we aren't going to be
@@ -219,6 +225,13 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 	joinrelids = bms_add_member(joinrelids, sjinfo->ojrelid);
 
 	/*
+	 * By default there's no reason to remove sjinfo->ojrelid from
+	 * attr_needed, see below.
+	 */
+	remove_ojrelid = InvalidOid;
+	remove_ojrelid_valid = false;
+
+	/*
 	 * We can't remove the join if any inner-rel attributes are used above the
 	 * join.  Here, "above" the join includes pushed-down conditions, so we
 	 * should reject if attr_needed includes the OJ's own relid; therefore,
@@ -233,7 +246,38 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 		 attroff >= 0;
 		 attroff--)
 	{
-		if (!bms_is_subset(innerrel->attr_needed[attroff], inputrelids))
+		Relids	attr_needed = innerrel->attr_needed[attroff];
+
+		/*
+		 * If this join was among outer relations of an already-removed join,
+		 * attr_needed may still contain the relid of the current join because
+		 * join clauses of the removed join referenced it. Re-check if another
+		 * join can still reference this join and if not, remove it from
+		 * attr_needed.
+		 */
+		if (bms_is_member(sjinfo->ojrelid, attr_needed))
+		{
+			/* Do the following check only once per inner relation. */
+			if (!remove_ojrelid_valid)
+			{
+				/*
+				 * If no clause requires the join relid anymore, remember that
+				 * we should remove it from attr_needed.
+				 */
+				if (!innerrel_attrs_needed_above_outer_join(root, innerrel,
+															sjinfo,
+															joinrelids))
+					remove_ojrelid = sjinfo->ojrelid;
+
+				remove_ojrelid_valid = true;
+			}
+
+			if (OidIsValid(remove_ojrelid))
+				innerrel->attr_needed[attroff] = bms_del_member(attr_needed,
+																remove_ojrelid);
+		}
+
+		if (!bms_is_subset(attr_needed, inputrelids))
 			return false;
 	}
 
@@ -333,6 +377,77 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 	return false;
 }
 
+/*
+ * innerrel_attrs_needed_above_outer_join
+ *	  Re-check whether attributes of inner relation of an OJ are still needed
+ *	  above that OJ.
+ */
+static bool
+innerrel_attrs_needed_above_outer_join(PlannerInfo *root, RelOptInfo *innerrel,
+									   SpecialJoinInfo *sjinfo,
+									   Relids joinrelids)
+{
+	bool	found = false;
+	ListCell	*l;
+
+	/* Check the join clauses */
+	foreach(l, innerrel->joininfo)
+	{
+		RestrictInfo *ri = lfirst_node(RestrictInfo, l);
+
+		if (bms_is_member(sjinfo->ojrelid, ri->required_relids))
+			return true;
+	}
+
+	/*
+	 * Also check if any clause generated from EC may need the ojrelid.
+	 */
+	foreach(l, root->eq_classes)
+	{
+		EquivalenceClass	*ec = lfirst_node(EquivalenceClass, l);
+
+		/*
+		 * Ignore ECs which cannot generate join clauses for this join.
+		 */
+		if (!bms_is_member(sjinfo->ojrelid, ec->ec_relids))
+			continue;
+
+		if (bms_is_subset(ec->ec_relids, joinrelids))
+		{
+			ListCell	*l2;
+
+			/*
+			 * Even if the EC does not exceed joinrelids, it might have been
+			 * created from a pushed-down clause. In such a case, the
+			 * attribute may be needed above the join, so we cannot remove the
+			 * ojrelid from attr_needed.
+			 */
+			foreach(l2, ec->ec_sources)
+			{
+				RestrictInfo	*ri = lfirst_node(RestrictInfo, l2);
+
+				if (RINFO_IS_PUSHED_DOWN(ri, joinrelids))
+				{
+					found = true;
+					break;
+				}
+			}
+			if (found)
+				break;
+		}
+		else
+		{
+			/*
+			 * The EC can generate a join clause between this join and
+			 * some other relation.
+			 */
+			found = true;
+			break;
+		}
+	}
+
+	return found;
+}
 
 /*
  * Remove the target rel->relid and references to the target join from the
