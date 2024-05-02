@@ -6339,6 +6339,10 @@ get_actual_variable_endpoint(Relation heapRel,
 	index_scan->xs_want_itup = true;
 	index_rescan(index_scan, scankeys, 1, NULL, 0);
 
+	/* Don't index scan forever; correctness is not the issue here */
+#define VISITED_PAGES_LIMIT 100
+	index_scan->xs_page_limit = VISITED_PAGES_LIMIT;
+
 	/* Fetch first/next tuple in specified direction */
 	while ((tid = index_getnext_tid(index_scan, indexscandir)) != NULL)
 	{
@@ -6361,7 +6365,6 @@ get_actual_variable_endpoint(Relation heapRel,
 				 * since other recently-accessed pages are probably still in
 				 * buffers too; but it's good enough for this heuristic.
 				 */
-#define VISITED_PAGES_LIMIT 100
 
 				if (block != last_heap_block)
 				{

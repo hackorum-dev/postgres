@@ -124,6 +124,9 @@ typedef struct IndexScanDescData
 	bool		xs_want_itup;	/* caller requests index tuples */
 	bool		xs_temp_snap;	/* unregister snapshot at scan end? */
 
+	uint32		xs_page_limit;	/* limit on num pages in scan, or 0=no limit */
+	uint32		xs_pages_visited; /* current num pages visited in scan */
+
 	/* signaling to index AM about killing index tuples */
 	bool		kill_prior_tuple;	/* last-returned tuple is dead */
 	bool		ignore_killed_tuples;	/* do not return killed entries */

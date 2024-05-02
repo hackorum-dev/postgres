@@ -2189,6 +2189,11 @@ _bt_readnextpage(IndexScanDesc scan, BlockNumber blkno, ScanDirection dir)
 				BTScanPosInvalidate(so->currPos);
 				return false;
 			}
+			if (unlikely(scan->xs_page_limit > 0) && ++scan->xs_pages_visited > scan->xs_page_limit)
+			{
+				BTScanPosInvalidate(so->currPos);
+				return false;
+			}
 			/* check for interrupts while we're not holding any buffer lock */
 			CHECK_FOR_INTERRUPTS();
 			/* step right one page */

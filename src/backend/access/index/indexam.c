@@ -333,6 +333,9 @@ index_beginscan_internal(Relation indexRelation,
 	scan->parallel_scan = pscan;
 	scan->xs_temp_snap = temp_snap;
 
+	scan->xs_page_limit = 0;
+	scan->xs_pages_visited = 0;
+
 	return scan;
 }
 
@@ -365,6 +368,9 @@ index_rescan(IndexScanDesc scan,
 
 	scan->kill_prior_tuple = false; /* for safety */
 	scan->xs_heap_continue = false;
+
+	scan->xs_page_limit = 0;
+	scan->xs_pages_visited = 0;
 
 	scan->indexRelation->rd_indam->amrescan(scan, keys, nkeys,
 											orderbys, norderbys);
