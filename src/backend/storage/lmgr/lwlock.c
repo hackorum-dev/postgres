@@ -549,7 +549,7 @@ GetNamedLWLockTranche(const char *tranche_name)
 		}
 	}
 
-	elog(ERROR, "requested tranche is not registered");
+	elog(ERROR, "requested tranche (%s) is not registered", tranche_name);
 
 	/* just to keep compiler quiet */
 	return NULL;
