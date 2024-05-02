@@ -422,6 +422,8 @@ helpVariables(unsigned short int pager)
 		  "    specifies the prompt used when a statement continues from a previous line\n");
 	HELP0("  PROMPT3\n"
 		  "    specifies the prompt used during COPY ... FROM STDIN\n");
+	HELP0("  HELP_URLS\n"
+		  "    specifies |-separated array of URLs with \%s\n");
 	HELP0("  QUIET\n"
 		  "    run quietly (same as -q option)\n");
 	HELP0("  ROW_COUNT\n"
@@ -555,6 +557,30 @@ helpVariables(unsigned short int pager)
 	ClosePager(output);
 
 	termPQExpBuffer(&buf);
+}
+
+
+static char *url_encode(const char *input) {
+	/* Allocate enough space for the encoded string */
+	char *output = calloc(strlen(input) * 3 + 1, sizeof(char));
+	int output_pos = 0;
+
+	for (int i = 0; input[i]; i++) {
+		unsigned char c = input[i];
+		if (c == ' ') {
+			output[output_pos++] = '%';
+			output[output_pos++] = '2';
+			output[output_pos++] = '0';
+		} else if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+			output[output_pos++] = c;
+		} else {
+			output[output_pos++] = '%';
+			output[output_pos++] = "0123456789ABCDEF"[c >> 4];
+			output[output_pos++] = "0123456789ABCDEF"[c & 0xF];
+		}
+	}
+
+	return output;
 }
 
 
@@ -713,10 +739,26 @@ helpSQL(const char *topic, unsigned short int pager)
 		/* If we never found anything, report that */
 		if (!output)
 		{
+			char* urls;
+			char* url;
+			char* encoded_topic;
 			output = PageOutput(2, pager ? &(pset.popt.topt) : NULL);
 			fprintf(output, _("No help available for \"%s\".\n"
-							  "Try \\h with no arguments to see available help.\n"),
+							  "Try \\h with no arguments to see available help or search online:\n"),
 					topic);
+			/* TODO: URL encode topic*/
+			encoded_topic = url_encode(topic);
+			urls = pstrdup(pset.help_urls);
+			url = strtok(urls,"|");
+			while (url != NULL)
+			{
+				fprintf(output, "\nURL: ");
+				fprintf(output, url, encoded_topic);
+				fprintf(output, "\n");
+				url = strtok(NULL, "|");
+			}
+			fprintf(output, "\n");
+			free(encoded_topic);
 		}
 
 		ClosePager(output);

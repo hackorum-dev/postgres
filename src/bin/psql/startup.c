@@ -203,6 +203,7 @@ main(int argc, char *argv[])
 	SetVariable(pset.vars, "PROMPT1", DEFAULT_PROMPT1);
 	SetVariable(pset.vars, "PROMPT2", DEFAULT_PROMPT2);
 	SetVariable(pset.vars, "PROMPT3", DEFAULT_PROMPT3);
+	SetVariable(pset.vars, "HELP_URLS", DEFAULT_HELP_URLS);
 	SetVariableBool(pset.vars, "SHOW_ALL_RESULTS");
 
 	parse_psql_options(argc, argv, &options);
@@ -1115,6 +1116,13 @@ prompt3_hook(const char *newval)
 	return true;
 }
 
+static bool
+help_urls_hook(const char *newval)
+{
+	pset.help_urls = newval ? newval : "";
+	return true;
+}
+
 static char *
 verbosity_substitute_hook(char *newval)
 {
@@ -1250,6 +1258,9 @@ EstablishVariableSpace(void)
 	SetVariableHooks(pset.vars, "PROMPT3",
 					 NULL,
 					 prompt3_hook);
+	SetVariableHooks(pset.vars, "HELP_URLS",
+					 NULL,
+					 help_urls_hook);
 	SetVariableHooks(pset.vars, "VERBOSITY",
 					 verbosity_substitute_hook,
 					 verbosity_hook);

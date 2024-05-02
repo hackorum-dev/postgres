@@ -27,6 +27,8 @@
 #define DEFAULT_PROMPT2 "%/%R%x%# "
 #define DEFAULT_PROMPT3 ">> "
 
+#define DEFAULT_HELP_URLS "https://www.postgresql.org/search/?q=%s"
+
 /*
  * Note: these enums should generally be chosen so that zero corresponds
  * to the default behavior.
@@ -151,6 +153,7 @@ typedef struct _psqlSettings
 	const char *prompt1;
 	const char *prompt2;
 	const char *prompt3;
+	const char *help_urls;
 	PGVerbosity verbosity;		/* current error verbosity level */
 	bool		show_all_results;
 	PGContextVisibility show_context;	/* current context display level */
