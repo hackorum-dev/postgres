@@ -181,6 +181,7 @@ select type, count(*) > 0 as ok FROM pg_wait_events
    type    | ok 
 -----------+----
  Activity  | t
+ Auth      | t
  BufferPin | t
  Client    | t
  Extension | t
@@ -189,7 +190,7 @@ select type, count(*) > 0 as ok FROM pg_wait_events
  LWLock    | t
  Lock      | t
  Timeout   | t
-(9 rows)
+(10 rows)
 
 -- Test that the pg_timezone_names and pg_timezone_abbrevs views are
 -- more-or-less working.  We can't test their contents in any great detail

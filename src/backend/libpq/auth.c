@@ -39,6 +39,7 @@
 #include "replication/walsender.h"
 #include "storage/ipc.h"
 #include "utils/memutils.h"
+#include "utils/wait_event.h"
 
 /*----------------------------------------------------------------
  * Global authentication functions
@@ -990,6 +991,7 @@ pg_GSS_recvauth(Port *port)
 		elog(DEBUG4, "processing received GSS token of length %u",
 			 (unsigned int) gbuf.length);
 
+		pgstat_report_wait_start(WAIT_EVENT_GSSAPI_ACCEPT_SEC_CONTEXT);
 		maj_stat = gss_accept_sec_context(&min_stat,
 										  &port->gss->ctx,
 										  port->gss->cred,
@@ -1001,6 +1003,7 @@ pg_GSS_recvauth(Port *port)
 										  &gflags,
 										  NULL,
 										  pg_gss_accept_delegation ? &delegated_creds : NULL);
+		pgstat_report_wait_end();
 
 		/* gbuf no longer used */
 		pfree(buf.data);
@@ -1212,6 +1215,7 @@ pg_SSPI_recvauth(Port *port)
 	/*
 	 * Acquire a handle to the server credentials.
 	 */
+	pgstat_report_wait_start(WAIT_EVENT_SSPI_ACQUIRE_CREDENTIALS_HANDLE);
 	r = AcquireCredentialsHandle(NULL,
 								 "negotiate",
 								 SECPKG_CRED_INBOUND,
@@ -1221,6 +1225,8 @@ pg_SSPI_recvauth(Port *port)
 								 NULL,
 								 &sspicred,
 								 &expiry);
+	pgstat_report_wait_end();
+
 	if (r != SEC_E_OK)
 		pg_SSPI_error(ERROR, _("could not acquire SSPI credentials"), r);
 
@@ -1286,6 +1292,7 @@ pg_SSPI_recvauth(Port *port)
 		elog(DEBUG4, "processing received SSPI token of length %u",
 			 (unsigned int) buf.len);
 
+		pgstat_report_wait_start(WAIT_EVENT_SSPI_ACCEPT_SECURITY_CONTEXT);
 		r = AcceptSecurityContext(&sspicred,
 								  sspictx,
 								  &inbuf,
@@ -1295,6 +1302,7 @@ pg_SSPI_recvauth(Port *port)
 								  &outbuf,
 								  &contextattr,
 								  NULL);
+		pgstat_report_wait_end();
 
 		/* input buffer no longer used */
 		pfree(buf.data);
@@ -1392,11 +1400,13 @@ pg_SSPI_recvauth(Port *port)
 
 	CloseHandle(token);
 
+	pgstat_report_wait_start(WAIT_EVENT_SSPI_LOOKUP_ACCOUNT_SID);
 	if (!LookupAccountSid(NULL, tokenuser->User.Sid, accountname, &accountnamesize,
 						  domainname, &domainnamesize, &accountnameuse))
 		ereport(ERROR,
 				(errmsg_internal("could not look up account SID: error code %lu",
 								 GetLastError())));
+	pgstat_report_wait_end();
 
 	free(tokenuser);
 
@@ -1493,8 +1503,11 @@ pg_SSPI_make_upn(char *accountname,
 	 */
 
 	samname = psprintf("%s\\%s", domainname, accountname);
+
+	pgstat_report_wait_start(WAIT_EVENT_SSPI_TRANSLATE_NAME);
 	res = TranslateName(samname, NameSamCompatible, NameUserPrincipal,
 						NULL, &upnamesize);
+	pgstat_report_wait_end();
 
 	if ((!res && GetLastError() != ERROR_INSUFFICIENT_BUFFER)
 		|| upnamesize == 0)
@@ -1509,8 +1522,10 @@ pg_SSPI_make_upn(char *accountname,
 	/* upnamesize includes the terminating NUL. */
 	upname = palloc(upnamesize);
 
+	pgstat_report_wait_start(WAIT_EVENT_SSPI_TRANSLATE_NAME);
 	res = TranslateName(samname, NameSamCompatible, NameUserPrincipal,
 						upname, &upnamesize);
+	pgstat_report_wait_end();
 
 	pfree(samname);
 	if (res)
@@ -2109,7 +2124,9 @@ CheckPAMAuth(Port *port, const char *user, const char *password)
 		return STATUS_ERROR;
 	}
 
+	pgstat_report_wait_start(WAIT_EVENT_PAM_AUTHENTICATE);
 	retval = pam_authenticate(pamh, 0);
+	pgstat_report_wait_end();
 
 	if (retval != PAM_SUCCESS)
 	{
@@ -2122,7 +2139,9 @@ CheckPAMAuth(Port *port, const char *user, const char *password)
 		return pam_no_password ? STATUS_EOF : STATUS_ERROR;
 	}
 
+	pgstat_report_wait_start(WAIT_EVENT_PAM_ACCT_MGMT);
 	retval = pam_acct_mgmt(pamh, 0);
+	pgstat_report_wait_end();
 
 	if (retval != PAM_SUCCESS)
 	{
@@ -2262,7 +2281,11 @@ InitializeLDAPConnection(Port *port, LDAP **ldap)
 			}
 
 			/* Look up a list of LDAP server hosts and port numbers */
-			if (ldap_domain2hostlist(domain, &hostlist))
+			pgstat_report_wait_start(WAIT_EVENT_LDAP_HOST_LOOKUP);
+			r = ldap_domain2hostlist(domain, &hostlist);
+			pgstat_report_wait_end();
+
+			if (r)
 			{
 				ereport(LOG,
 						(errmsg("LDAP authentication could not find DNS SRV records for \"%s\"",
@@ -2356,11 +2379,15 @@ InitializeLDAPConnection(Port *port, LDAP **ldap)
 
 	if (port->hba->ldaptls)
 	{
+		pgstat_report_wait_start(WAIT_EVENT_LDAP_START_TLS);
 #ifndef WIN32
-		if ((r = ldap_start_tls_s(*ldap, NULL, NULL)) != LDAP_SUCCESS)
+		r = ldap_start_tls_s(*ldap, NULL, NULL);
 #else
-		if ((r = ldap_start_tls_s(*ldap, NULL, NULL, NULL, NULL)) != LDAP_SUCCESS)
+		r = ldap_start_tls_s(*ldap, NULL, NULL, NULL, NULL);
 #endif
+		pgstat_report_wait_end();
+
+		if (r != LDAP_SUCCESS)
 		{
 			ereport(LOG,
 					(errmsg("could not start LDAP TLS session: %s",
@@ -2520,9 +2547,12 @@ CheckLDAPAuth(Port *port)
 		 * Bind with a pre-defined username/password (if available) for
 		 * searching. If none is specified, this turns into an anonymous bind.
 		 */
+		pgstat_report_wait_start(WAIT_EVENT_LDAP_BIND_FOR_SEARCH);
 		r = ldap_simple_bind_s(ldap,
 							   port->hba->ldapbinddn ? port->hba->ldapbinddn : "",
 							   port->hba->ldapbindpasswd ? ldap_password_hook(port->hba->ldapbindpasswd) : "");
+		pgstat_report_wait_end();
+
 		if (r != LDAP_SUCCESS)
 		{
 			ereport(LOG,
@@ -2545,6 +2575,8 @@ CheckLDAPAuth(Port *port)
 			filter = psprintf("(uid=%s)", port->user_name);
 
 		search_message = NULL;
+
+		pgstat_report_wait_start(WAIT_EVENT_LDAP_SEARCH);
 		r = ldap_search_s(ldap,
 						  port->hba->ldapbasedn,
 						  port->hba->ldapscope,
@@ -2552,6 +2584,7 @@ CheckLDAPAuth(Port *port)
 						  attributes,
 						  0,
 						  &search_message);
+		pgstat_report_wait_end();
 
 		if (r != LDAP_SUCCESS)
 		{
@@ -2620,7 +2653,9 @@ CheckLDAPAuth(Port *port)
 							port->user_name,
 							port->hba->ldapsuffix ? port->hba->ldapsuffix : "");
 
+	pgstat_report_wait_start(WAIT_EVENT_LDAP_BIND);
 	r = ldap_simple_bind_s(ldap, fulluser, passwd);
+	pgstat_report_wait_end();
 
 	if (r != LDAP_SUCCESS)
 	{
@@ -3069,8 +3104,12 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 		return STATUS_ERROR;
 	}
 
-	if (sendto(sock, radius_buffer, packetlength, 0,
-			   serveraddrs[0].ai_addr, serveraddrs[0].ai_addrlen) < 0)
+	pgstat_report_wait_start(WAIT_EVENT_RADIUS_SENDTO);
+	r = sendto(sock, radius_buffer, packetlength, 0,
+			   serveraddrs[0].ai_addr, serveraddrs[0].ai_addrlen);
+	pgstat_report_wait_end();
+
+	if (r < 0)
 	{
 		ereport(LOG,
 				(errmsg("could not send RADIUS packet: %m")));
@@ -3118,7 +3157,10 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 		FD_ZERO(&fdset);
 		FD_SET(sock, &fdset);
 
+		pgstat_report_wait_start(WAIT_EVENT_RADIUS_WAIT);
 		r = select(sock + 1, &fdset, NULL, NULL, &timeout);
+		pgstat_report_wait_end();
+
 		if (r < 0)
 		{
 			if (errno == EINTR)
@@ -3151,8 +3193,12 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 		 */
 
 		addrsize = sizeof(remoteaddr);
+
+		pgstat_report_wait_start(WAIT_EVENT_RADIUS_RECVFROM);
 		packetlength = recvfrom(sock, receive_buffer, RADIUS_BUFFER_SIZE, 0,
 								(struct sockaddr *) &remoteaddr, &addrsize);
+		pgstat_report_wait_end();
+
 		if (packetlength < 0)
 		{
 			ereport(LOG,

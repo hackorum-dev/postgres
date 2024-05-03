@@ -34,6 +34,7 @@ static const char *pgstat_get_wait_client(WaitEventClient w);
 static const char *pgstat_get_wait_ipc(WaitEventIPC w);
 static const char *pgstat_get_wait_timeout(WaitEventTimeout w);
 static const char *pgstat_get_wait_io(WaitEventIO w);
+static const char *pgstat_get_wait_auth(WaitEventAuth w);
 
 
 static uint32 local_my_wait_event_info;
@@ -413,6 +414,9 @@ pgstat_get_wait_event_type(uint32 wait_event_info)
 		case PG_WAIT_INJECTIONPOINT:
 			event_type = "InjectionPoint";
 			break;
+		case PG_WAIT_AUTH:
+			event_type = "Auth";
+			break;
 		default:
 			event_type = "???";
 			break;
@@ -493,6 +497,13 @@ pgstat_get_wait_event(uint32 wait_event_info)
 				WaitEventIO w = (WaitEventIO) wait_event_info;
 
 				event_name = pgstat_get_wait_io(w);
+				break;
+			}
+		case PG_WAIT_AUTH:
+			{
+				WaitEventAuth w = (WaitEventAuth) wait_event_info;
+
+				event_name = pgstat_get_wait_auth(w);
 				break;
 			}
 		default:

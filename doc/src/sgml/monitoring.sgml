@@ -1046,6 +1046,14 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
       </entry>
      </row>
      <row>
+      <entry><literal>Auth</literal></entry>
+      <entry>The server process is waiting for an external system to
+       authenticate and/or authorize the client connection.
+       <literal>wait_event</literal> will identify the specific wait point;
+       see <xref linkend="wait-event-auth-table"/>.
+      </entry>
+     </row>
+     <row>
       <entry><literal>BufferPin</literal></entry>
       <entry>The server process is waiting for exclusive access to
        a data buffer.  Buffer pin waits can be protracted if

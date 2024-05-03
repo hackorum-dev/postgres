@@ -163,6 +163,33 @@ XACT_GROUP_UPDATE	"Waiting for the group leader to update transaction status at 
 ABI_compatibility:
 
 #
+# Wait Events - Auth
+#
+# Use this category when a process is waiting for a third party to
+# authenticate/authorize the user.
+#
+
+Section: ClassName - WaitEventAuth
+
+GSSAPI_ACCEPT_SEC_CONTEXT	"Waiting for a response from a Kerberos server via GSSAPI."
+LDAP_BIND	"Waiting for an LDAP bind operation to authenticate the user."
+LDAP_BIND_FOR_SEARCH	"Waiting for an LDAP bind operation to search the directory."
+LDAP_HOST_LOOKUP	"Waiting for DNS lookup of LDAP servers."
+LDAP_SEARCH	"Waiting for an LDAP search operation to complete."
+LDAP_START_TLS	"Waiting for an LDAP StartTLS exchange."
+PAM_ACCT_MGMT	"Waiting for the PAM service to validate the user account."
+PAM_AUTHENTICATE	"Waiting for the PAM service to authenticate the user."
+RADIUS_RECVFROM	"Waiting for a <function>recvfrom</function> call during a RADIUS transaction."
+RADIUS_SENDTO	"Waiting for a <function>sendto</function> call during a RADIUS transaction."
+RADIUS_WAIT	"Waiting for a RADIUS server to respond."
+SSPI_ACCEPT_SECURITY_CONTEXT	"Waiting for a Windows security provider to accept the client's SSPI token."
+SSPI_ACQUIRE_CREDENTIALS_HANDLE	"Waiting for a Windows security provider to acquire server credentials for SSPI."
+SSPI_LOOKUP_ACCOUNT_SID	"Waiting for Windows to find the user's security identifier."
+SSPI_TRANSLATE_NAME	"Waiting for Windows to translate a Kerberos UPN."
+
+ABI_compatibility:
+
+#
 # Wait Events - Timeout
 #
 # Use this category when a process is waiting for a timeout to expire.

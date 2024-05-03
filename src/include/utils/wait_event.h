@@ -25,6 +25,7 @@
 #define PG_WAIT_TIMEOUT				0x09000000U
 #define PG_WAIT_IO					0x0A000000U
 #define PG_WAIT_INJECTIONPOINT		0x0B000000U
+#define PG_WAIT_AUTH				0x0C000000U
 
 /* enums for wait events */
 #include "utils/wait_event_types.h"
