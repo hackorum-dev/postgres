@@ -7485,6 +7485,8 @@ check_for_column_name_collision(Relation rel, const char *colname,
 	HeapTuple	attTuple;
 	int			attnum;
 
+	CheckAttributeReservedName(colname);
+
 	/*
 	 * this test is deliberately not attisdropped-aware, since if one tries to
 	 * add a column matching a dropped column name, it's gonna fail anyway.

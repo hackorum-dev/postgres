@@ -1097,6 +1097,12 @@ insert into atacc1(value) values (100);
 insert into atacc1(id, value) values (null, 0);
 drop table atacc1;
 
+-- test reserved column name
+create table atacc1(a int);
+alter table atacc1 add column "........pg.dropped.1........" int;
+alter table atacc1 rename column a to "........pg.dropped.1........";
+drop table atacc1;
+
 -- test inheritance
 create table parent (a int, b int, c int);
 insert into parent values (1, 2, 3);

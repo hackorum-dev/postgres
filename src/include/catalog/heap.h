@@ -23,6 +23,7 @@
 #define CHKATYPE_ANYARRAY		0x01	/* allow ANYARRAY */
 #define CHKATYPE_ANYRECORD		0x02	/* allow RECORD and RECORD[] */
 #define CHKATYPE_IS_PARTKEY		0x04	/* attname is part key # not column */
+#define CHKATYPE_RESERVED_NAME	0x04	/* allow reserved names */
 
 typedef struct RawColumnDefault
 {
@@ -147,6 +148,8 @@ extern void CheckAttributeType(const char *attname,
 							   Oid atttypid, Oid attcollation,
 							   List *containing_rowtypes,
 							   int flags);
+
+extern void CheckAttributeReservedName(const char *attname);
 
 /* pg_partitioned_table catalog manipulation functions */
 extern void StorePartitionKey(Relation rel,

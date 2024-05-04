@@ -91,6 +91,9 @@ SAVEPOINT q; DROP TABLE remember_node_subid; ROLLBACK TO q;
 COMMIT;
 DROP TABLE remember_node_subid;
 
+-- Verify that tables can't be created with reserved column names.
+CREATE TABLE reserved_name ("........pg.dropped.1........" int);
+
 --
 -- Partitioned tables
 --

@@ -231,6 +231,9 @@ static const FormData_pg_attribute a6 = {
 
 static const FormData_pg_attribute *const SysAtt[] = {&a1, &a2, &a3, &a4, &a5, &a6};
 
+static const char *dropped_col_pre = "........pg.dropped.";
+static const char *dropped_col_post = "........";
+
 /*
  * This function returns a Form_pg_attribute pointer for a system attribute.
  * Note that we elog if the presented attno is invalid, which would only
@@ -468,10 +471,10 @@ CheckAttributeNamesTypes(TupleDesc tupdesc, char relkind,
 						MaxHeapAttributeNumber)));
 
 	/*
-	 * first check for collision with system attribute names
+	 * first check for collision with system attribute and reserved names
 	 *
 	 * Skip this for a view or type relation, since those don't have system
-	 * attributes.
+	 * attributes and cannot drop columns.
 	 */
 	if (relkind != RELKIND_VIEW && relkind != RELKIND_COMPOSITE_TYPE)
 	{
@@ -484,6 +487,11 @@ CheckAttributeNamesTypes(TupleDesc tupdesc, char relkind,
 						(errcode(ERRCODE_DUPLICATE_COLUMN),
 						 errmsg("column name \"%s\" conflicts with a system column name",
 								NameStr(attr->attname))));
+
+			if ((CHKATYPE_RESERVED_NAME & flags) == 0)
+			{
+				CheckAttributeReservedName(NameStr(attr->attname));
+			}
 		}
 	}
 
@@ -677,6 +685,47 @@ CheckAttributeType(const char *attname,
 							attname, format_type_be(atttypid)),
 					 errhint("Use the COLLATE clause to set the collation explicitly.")));
 	}
+}
+
+/*
+ * TODO: Add function description.
+ */
+void
+CheckAttributeReservedName(const char *attname)
+{
+	size_t		name_len,
+				pre_len,
+				post_len;
+	int			i;
+
+	name_len = strlen(attname);
+	pre_len = strlen(dropped_col_pre);
+	post_len = strlen(dropped_col_post);
+
+	if (name_len < pre_len + post_len + 1)
+	{
+		return;
+	}
+	if (memcmp(attname, dropped_col_pre, pre_len) != 0)
+	{
+		return;
+	}
+	for (i = pre_len; i < name_len - post_len; i++)
+	{
+		if (!isdigit(attname[i]))
+		{
+			return;
+		}
+	}
+	if (memcmp(attname + (name_len - post_len), dropped_col_post, post_len) != 0)
+	{
+		return;
+	}
+
+	ereport(ERROR,
+			(errcode(ERRCODE_RESERVED_NAME),
+			 errmsg("column name \"%s\" conflicts with a reserved column name",
+					attname)));
 }
 
 /*
@@ -1148,7 +1197,7 @@ heap_create_with_catalog(const char *relname,
 	 * hack to allow creating pg_statistic and cloning it during VACUUM FULL.
 	 */
 	CheckAttributeNamesTypes(tupdesc, relkind,
-							 allow_system_table_mods ? CHKATYPE_ANYARRAY : 0);
+							 (allow_system_table_mods ? CHKATYPE_ANYARRAY : 0) | (is_internal ? CHKATYPE_RESERVED_NAME : 0));
 
 	/*
 	 * This would fail later on anyway, if the relation already exists.  But
@@ -1705,7 +1754,7 @@ RemoveAttributeById(Oid relid, AttrNumber attnum)
 	 * Change the column name to something that isn't likely to conflict
 	 */
 	snprintf(newattname, sizeof(newattname),
-			 "........pg.dropped.%d........", attnum);
+			 "%s%d%s", dropped_col_pre, attnum, dropped_col_post);
 	namestrcpy(&(attStruct->attname), newattname);
 
 	/* Clear the missing value */

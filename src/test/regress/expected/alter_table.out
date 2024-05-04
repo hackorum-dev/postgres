@@ -1554,6 +1554,13 @@ insert into atacc1(id, value) values (null, 0);
 ERROR:  null value in column "id" of relation "atacc1" violates not-null constraint
 DETAIL:  Failing row contains (null, 0).
 drop table atacc1;
+-- test reserved column name
+create table atacc1(a int);
+alter table atacc1 add column "........pg.dropped.1........" int;
+ERROR:  column name "........pg.dropped.1........" conflicts with a reserved column name
+alter table atacc1 rename column a to "........pg.dropped.1........";
+ERROR:  column name "........pg.dropped.1........" conflicts with a reserved column name
+drop table atacc1;
 -- test inheritance
 create table parent (a int, b int, c int);
 insert into parent values (1, 2, 3);

@@ -139,6 +139,9 @@ ALTER TABLE remember_node_subid ALTER c TYPE bigint;
 SAVEPOINT q; DROP TABLE remember_node_subid; ROLLBACK TO q;
 COMMIT;
 DROP TABLE remember_node_subid;
+-- Verify that tables can't be created with reserved column names.
+CREATE TABLE reserved_name ("........pg.dropped.1........" int);
+ERROR:  column name "........pg.dropped.1........" conflicts with a reserved column name
 --
 -- Partitioned tables
 --
