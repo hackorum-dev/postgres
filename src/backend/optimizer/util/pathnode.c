@@ -51,7 +51,8 @@ static int	append_total_cost_compare(const ListCell *a, const ListCell *b);
 static int	append_startup_cost_compare(const ListCell *a, const ListCell *b);
 static List *reparameterize_pathlist_by_child(PlannerInfo *root,
 											  List *pathlist,
-											  RelOptInfo *child_rel);
+											  RelOptInfo *child_rel,
+											  bool needFlatCopy);
 static bool pathlist_is_reparameterizable_by_child(List *pathlist,
 												   RelOptInfo *child_rel);
 
@@ -4084,6 +4085,59 @@ reparameterize_path(PlannerInfo *root, Path *path,
 	return NULL;
 }
 
+
+#define IS_PARTITION(rel) \
+	(rel->reloptkind == RELOPT_OTHER_JOINREL || \
+	rel->reloptkind == RELOPT_OTHER_MEMBER_REL)
+
+/*
+ * AJ path is a path which has OTHER_REL parent, non-other, non inherited relation on one side and partition on the opposite side
+ * Partitioned side of the AJ can be RELOPT_OTHER_MEMBER_REL (base table) or
+ * RELOPT_OTHER_JOINREL for a join. May it be OTHER_UPPER_REL? - not for now.
+ * We should differ AJ from trivial UNION ALL.
+ */
+bool
+is_asymmetric_join(Path *path)
+{
+	RelOptInfo *rel = ((Path *) path)->parent;
+	RelOptInfo *plainrel;
+	RelOptInfo *prel;
+	JoinPath   *jpath;
+
+	Assert(IsA(path, NestPath) || IsA(path, MergePath) || IsA(path, HashPath));
+	jpath = (JoinPath *) path;
+
+	if (!IS_OTHER_REL(rel))
+		return false;
+
+	Assert(rel->reloptkind != RELOPT_OTHER_UPPER_REL);
+
+	/* Discover left and right sides of the join */
+
+	plainrel = jpath->innerjoinpath->parent;
+	prel = jpath->outerjoinpath->parent;
+
+	/*
+	 * RelOptInfo can be implemented by a bushy path tree. In that case we
+	 * should dive below, but it is impractical right now - we can't check out
+	 * the code and test it because the case doesn't exists.
+	 */
+	Assert(prel != plainrel);
+
+	/* Identify prospective inner and outer of the AJ */
+	if (!IS_PARTITION(prel))
+	{
+		/* Inner join allows to change inner and outer sides of AJ */
+		plainrel = prel;
+		prel = jpath->innerjoinpath->parent;
+	}
+
+	if (!IS_PARTITION(prel) || IS_OTHER_REL(plainrel))
+		return false;
+
+	return true;
+}
+
 /*
  * reparameterize_path_by_child
  * 		Given a path parameterized by the parent of the given child relation,
@@ -4093,6 +4147,11 @@ reparameterize_path(PlannerInfo *root, Path *path,
  * adjusted to refer to the correct varnos, and any subpaths must be
  * recursively reparameterized.  Other fields that refer to specific relids
  * also need adjustment.
+ *
+ * In the case of asymmetric join we utilise the same RelOptInfo in different
+ * parts of the plan. Being kludge example of coding it needs to make a copy of
+ * the node before modifying it. Recheck needFlatCopy decision each time it
+ * finds a join node during reparameterization, if it still not needed.
  *
  * The cost, number of rows, width and parallel path properties depend upon
  * path->parent, which does not change during the translation.  So we need
@@ -4110,12 +4169,21 @@ reparameterize_path(PlannerInfo *root, Path *path,
  */
 Path *
 reparameterize_path_by_child(PlannerInfo *root, Path *path,
-							 RelOptInfo *child_rel)
+							 RelOptInfo *child_rel, bool needFlatCopy)
 {
 	Path	   *new_path;
 	ParamPathInfo *new_ppi;
 	ParamPathInfo *old_ppi;
 	Relids		required_outer;
+
+#define FLAT_COPY_PATH(newnode, node, nodetype)  \
+	if (needFlatCopy) \
+	{ \
+		(newnode) = makeNode(nodetype); \
+		memcpy((newnode), (node), sizeof(nodetype)); \
+	} \
+	else \
+		(newnode) = (nodetype *) node;
 
 #define ADJUST_CHILD_ATTRS(node) \
 	((node) = (void *) adjust_appendrel_attrs_multilevel(root, \
@@ -4125,7 +4193,7 @@ reparameterize_path_by_child(PlannerInfo *root, Path *path,
 
 #define REPARAMETERIZE_CHILD_PATH(path) \
 do { \
-	(path) = reparameterize_path_by_child(root, (path), child_rel); \
+	(path) = reparameterize_path_by_child(root, (path), child_rel, needFlatCopy); \
 	if ((path) == NULL) \
 		return NULL; \
 } while(0)
@@ -4135,7 +4203,7 @@ do { \
 	if ((pathlist) != NIL) \
 	{ \
 		(pathlist) = reparameterize_pathlist_by_child(root, (pathlist), \
-													  child_rel); \
+													  child_rel, needFlatCopy); \
 		if ((pathlist) == NIL) \
 			return NULL; \
 	} \
@@ -4164,7 +4232,7 @@ do { \
 	switch (nodeTag(path))
 	{
 		case T_Path:
-			new_path = path;
+			FLAT_COPY_PATH(new_path, path, Path);
 			ADJUST_CHILD_ATTRS(new_path->parent->baserestrictinfo);
 			if (path->pathtype == T_SampleScan)
 			{
@@ -4183,8 +4251,9 @@ do { \
 
 		case T_IndexPath:
 			{
-				IndexPath  *ipath = (IndexPath *) path;
+				IndexPath  *ipath;
 
+				FLAT_COPY_PATH(ipath, path, IndexPath);
 				ADJUST_CHILD_ATTRS(ipath->indexinfo->indrestrictinfo);
 				ADJUST_CHILD_ATTRS(ipath->indexclauses);
 				new_path = (Path *) ipath;
@@ -4193,8 +4262,9 @@ do { \
 
 		case T_BitmapHeapPath:
 			{
-				BitmapHeapPath *bhpath = (BitmapHeapPath *) path;
+				BitmapHeapPath *bhpath;
 
+				FLAT_COPY_PATH(bhpath, path, BitmapHeapPath);
 				ADJUST_CHILD_ATTRS(bhpath->path.parent->baserestrictinfo);
 				REPARAMETERIZE_CHILD_PATH(bhpath->bitmapqual);
 				new_path = (Path *) bhpath;
@@ -4203,8 +4273,9 @@ do { \
 
 		case T_BitmapAndPath:
 			{
-				BitmapAndPath *bapath = (BitmapAndPath *) path;
+				BitmapAndPath *bapath;
 
+				FLAT_COPY_PATH(bapath, path, BitmapAndPath);
 				REPARAMETERIZE_CHILD_PATH_LIST(bapath->bitmapquals);
 				new_path = (Path *) bapath;
 			}
@@ -4212,8 +4283,9 @@ do { \
 
 		case T_BitmapOrPath:
 			{
-				BitmapOrPath *bopath = (BitmapOrPath *) path;
+				BitmapOrPath *bopath;
 
+				FLAT_COPY_PATH(bopath, path, BitmapOrPath);
 				REPARAMETERIZE_CHILD_PATH_LIST(bopath->bitmapquals);
 				new_path = (Path *) bopath;
 			}
@@ -4221,9 +4293,10 @@ do { \
 
 		case T_ForeignPath:
 			{
-				ForeignPath *fpath = (ForeignPath *) path;
+				ForeignPath *fpath;
 				ReparameterizeForeignPathByChild_function rfpc_func;
 
+				FLAT_COPY_PATH(fpath, path, ForeignPath);
 				ADJUST_CHILD_ATTRS(fpath->path.parent->baserestrictinfo);
 				if (fpath->fdw_outerpath)
 					REPARAMETERIZE_CHILD_PATH(fpath->fdw_outerpath);
@@ -4242,8 +4315,9 @@ do { \
 
 		case T_CustomPath:
 			{
-				CustomPath *cpath = (CustomPath *) path;
+				CustomPath *cpath;
 
+				FLAT_COPY_PATH(cpath, path, CustomPath);
 				ADJUST_CHILD_ATTRS(cpath->path.parent->baserestrictinfo);
 				REPARAMETERIZE_CHILD_PATH_LIST(cpath->custom_paths);
 				if (cpath->custom_restrictinfo)
@@ -4260,9 +4334,14 @@ do { \
 
 		case T_NestPath:
 			{
-				NestPath   *npath = (NestPath *) path;
-				JoinPath   *jpath = (JoinPath *) npath;
+				NestPath   *npath;
+				JoinPath   *jpath;
 
+				if (!needFlatCopy)
+					needFlatCopy = is_asymmetric_join(path) ? true : false;
+
+				FLAT_COPY_PATH(npath, path, NestPath);
+				jpath = (JoinPath *) npath;
 				REPARAMETERIZE_CHILD_PATH(jpath->outerjoinpath);
 				REPARAMETERIZE_CHILD_PATH(jpath->innerjoinpath);
 				ADJUST_CHILD_ATTRS(jpath->joinrestrictinfo);
@@ -4272,9 +4351,15 @@ do { \
 
 		case T_MergePath:
 			{
-				MergePath  *mpath = (MergePath *) path;
-				JoinPath   *jpath = (JoinPath *) mpath;
+				MergePath  *mpath;
+				JoinPath   *jpath;
 
+				if (!needFlatCopy)
+					needFlatCopy = is_asymmetric_join(path) ? true : false;
+
+				FLAT_COPY_PATH(mpath, path, MergePath);
+
+				jpath = (JoinPath *) mpath;
 				REPARAMETERIZE_CHILD_PATH(jpath->outerjoinpath);
 				REPARAMETERIZE_CHILD_PATH(jpath->innerjoinpath);
 				ADJUST_CHILD_ATTRS(jpath->joinrestrictinfo);
@@ -4285,9 +4370,15 @@ do { \
 
 		case T_HashPath:
 			{
-				HashPath   *hpath = (HashPath *) path;
-				JoinPath   *jpath = (JoinPath *) hpath;
+				HashPath   *hpath;
+				JoinPath   *jpath;
 
+				if (!needFlatCopy)
+					needFlatCopy = is_asymmetric_join(path) ? true : false;
+
+				FLAT_COPY_PATH(hpath, path, HashPath);
+
+				jpath = (JoinPath *) hpath;
 				REPARAMETERIZE_CHILD_PATH(jpath->outerjoinpath);
 				REPARAMETERIZE_CHILD_PATH(jpath->innerjoinpath);
 				ADJUST_CHILD_ATTRS(jpath->joinrestrictinfo);
@@ -4298,8 +4389,9 @@ do { \
 
 		case T_AppendPath:
 			{
-				AppendPath *apath = (AppendPath *) path;
+				AppendPath *apath;
 
+				FLAT_COPY_PATH(apath, path, AppendPath);
 				REPARAMETERIZE_CHILD_PATH_LIST(apath->subpaths);
 				new_path = (Path *) apath;
 			}
@@ -4307,8 +4399,9 @@ do { \
 
 		case T_MaterialPath:
 			{
-				MaterialPath *mpath = (MaterialPath *) path;
+				MaterialPath *mpath;
 
+				FLAT_COPY_PATH(mpath, path, MaterialPath);
 				REPARAMETERIZE_CHILD_PATH(mpath->subpath);
 				new_path = (Path *) mpath;
 			}
@@ -4316,8 +4409,9 @@ do { \
 
 		case T_MemoizePath:
 			{
-				MemoizePath *mpath = (MemoizePath *) path;
+				MemoizePath *mpath;
 
+				FLAT_COPY_PATH(mpath, path, MemoizePath);
 				REPARAMETERIZE_CHILD_PATH(mpath->subpath);
 				ADJUST_CHILD_ATTRS(mpath->param_exprs);
 				new_path = (Path *) mpath;
@@ -4326,8 +4420,9 @@ do { \
 
 		case T_GatherPath:
 			{
-				GatherPath *gpath = (GatherPath *) path;
+				GatherPath *gpath;
 
+				FLAT_COPY_PATH(gpath, path, GatherPath);
 				REPARAMETERIZE_CHILD_PATH(gpath->subpath);
 				new_path = (Path *) gpath;
 			}
@@ -4374,7 +4469,14 @@ do { \
 
 		MemoryContextSwitchTo(oldcontext);
 	}
-	bms_free(required_outer);
+
+	/*
+	 * If adjust_child_relids_multilevel don't do replacements it returns
+	 * the original set, not a copy. It is possible in the case of asymmetric
+	 * JOIN and child_rel->relids contains relids only of plane relations.
+	 */
+	if (required_outer != old_ppi->ppi_req_outer)
+		bms_free(required_outer);
 
 	new_path->param_info = new_ppi;
 
@@ -4538,7 +4640,8 @@ do { \
 static List *
 reparameterize_pathlist_by_child(PlannerInfo *root,
 								 List *pathlist,
-								 RelOptInfo *child_rel)
+								 RelOptInfo *child_rel,
+								 bool needFlatCopy)
 {
 	ListCell   *lc;
 	List	   *result = NIL;
@@ -4546,7 +4649,7 @@ reparameterize_pathlist_by_child(PlannerInfo *root,
 	foreach(lc, pathlist)
 	{
 		Path	   *path = reparameterize_path_by_child(root, lfirst(lc),
-														child_rel);
+														child_rel, needFlatCopy);
 
 		if (path == NULL)
 		{
