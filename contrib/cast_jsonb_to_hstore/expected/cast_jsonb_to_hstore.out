@@ -1,0 +1,71 @@
+/* 
+ * The file is used to test cast_jsonb_to_hstore.sql
+*/
+CREATE EXTENSION hstore;
+CREATE EXTENSION cast_jsonb_to_hstore;
+SELECT '{"aaa":"absr"}'::jsonb::hstore;
+    hstore     
+---------------
+ "aaa"=>"absr"
+(1 row)
+
+SELECT '{"aaa":"absr"}'::jsonb::hstore->'aaa';
+ ?column? 
+----------
+ absr
+(1 row)
+
+SELECT '{"aaa":1234}'::jsonb::hstore;
+    hstore     
+---------------
+ "aaa"=>"1234"
+(1 row)
+
+SELECT '{"aaa":1234}'::jsonb::hstore->'aaa';
+ ?column? 
+----------
+ 1234
+(1 row)
+
+SELECT '{"aaa":true}'::jsonb::hstore;
+    hstore     
+---------------
+ "aaa"=>"true"
+(1 row)
+
+SELECT '{"aaa":true}'::jsonb::hstore->'aaa';
+ ?column? 
+----------
+ true
+(1 row)
+
+SELECT '{"aaa":null}'::jsonb::hstore;
+   hstore    
+-------------
+ "aaa"=>NULL
+(1 row)
+
+SELECT '{"aaa":null}'::jsonb::hstore->'aaa';
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '{"1234":"absr"}'::jsonb::hstore;
+     hstore     
+----------------
+ "1234"=>"absr"
+(1 row)
+
+SELECT E'{"a": "\'ght"}'::jsonb::hstore;
+   hstore    
+-------------
+ "a"=>"'ght"
+(1 row)
+
+SELECT E'{"a": "\'ght"}'::jsonb::hstore->'a';
+ ?column? 
+----------
+ 'ght
+(1 row)
+
