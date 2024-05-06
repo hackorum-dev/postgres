@@ -22,6 +22,7 @@
 #include "access/parallel.h"
 #include "access/sysattr.h"
 #include "access/table.h"
+#include "access/relation.h"
 #include "catalog/pg_aggregate.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_inherits.h"
@@ -255,6 +256,7 @@ static bool group_by_has_partkey(RelOptInfo *input_rel,
 static int	common_prefix_cmp(const void *a, const void *b);
 static List *generate_setop_child_grouplist(SetOperationStmt *op,
 											List *targetlist);
+static bool relationUsesEarlyLocking(RangeTblEntry *rte);
 
 
 /*****************************************************************************
@@ -2269,6 +2271,7 @@ preprocess_rowmarks(PlannerInfo *root)
 	List	   *prowmarks;
 	ListCell   *l;
 	int			i;
+	RangeTblEntry *resultRte = NULL;
 
 	if (parse->rowMarks)
 	{
@@ -2343,28 +2346,39 @@ preprocess_rowmarks(PlannerInfo *root)
 	}
 
 	/*
-	 * Now, add rowmarks for any non-target, non-locked base relations.
+	 * Check if the result relation uses early locking. In which case we do not
+	 * need to add rowmarks for non target relations.
 	 */
-	i = 0;
-	foreach(l, parse->rtable)
+	if (parse->resultRelation > 0)
+		resultRte = rt_fetch(parse->resultRelation, parse->rtable);
+
+	if (!relationUsesEarlyLocking(resultRte))
 	{
-		RangeTblEntry *rte = lfirst_node(RangeTblEntry, l);
-		PlanRowMark *newrc;
 
-		i++;
-		if (!bms_is_member(i, rels))
-			continue;
+		/*
+		* Now, add rowmarks for any non-target, non-locked base relations.
+		*/
+		i = 0;
+		foreach(l, parse->rtable)
+		{
+			RangeTblEntry *rte = lfirst_node(RangeTblEntry, l);
+			PlanRowMark *newrc;
 
-		newrc = makeNode(PlanRowMark);
-		newrc->rti = newrc->prti = i;
-		newrc->rowmarkId = ++(root->glob->lastRowMarkId);
-		newrc->markType = select_rowmark_type(rte, LCS_NONE);
-		newrc->allMarkTypes = (1 << newrc->markType);
-		newrc->strength = LCS_NONE;
-		newrc->waitPolicy = LockWaitBlock;	/* doesn't matter */
-		newrc->isParent = false;
+			i++;
+			if (!bms_is_member(i, rels))
+				continue;
 
-		prowmarks = lappend(prowmarks, newrc);
+			newrc = makeNode(PlanRowMark);
+			newrc->rti = newrc->prti = i;
+			newrc->rowmarkId = ++(root->glob->lastRowMarkId);
+			newrc->markType = select_rowmark_type(rte, LCS_NONE);
+			newrc->allMarkTypes = (1 << newrc->markType);
+			newrc->strength = LCS_NONE;
+			newrc->waitPolicy = LockWaitBlock;	/* doesn't matter */
+			newrc->isParent = false;
+
+			prowmarks = lappend(prowmarks, newrc);
+		}
 	}
 
 	root->rowMarks = prowmarks;
@@ -2420,6 +2434,34 @@ select_rowmark_type(RangeTblEntry *rte, LockClauseStrength strength)
 		elog(ERROR, "unrecognized LockClauseStrength %d", (int) strength);
 		return ROW_MARK_EXCLUSIVE;	/* keep compiler quiet */
 	}
+}
+
+/*
+ * relationUsesEarlyLocking - checks if the relation uses early locking.
+ *
+ * We do early locking for a foreign relation if the RefetchForeignRow API is not implemented by FDW.
+ */
+static bool
+relationUsesEarlyLocking(RangeTblEntry *rte)
+{
+	Relation rel;
+	FdwRoutine *fdwroutine = NULL;
+
+	/* Early locking is applicable for foreign tables. */
+	if (rte == NULL || rte->relkind != RELKIND_FOREIGN_TABLE)
+		return false;
+
+	rel = relation_open(rte->relid, NoLock);
+
+	fdwroutine = GetFdwRoutineForRelation(rel, false);
+
+	relation_close(rel, NoLock);
+
+	/* Check if FDW supports late locking */
+	if (fdwroutine && fdwroutine->RefetchForeignRow == NULL)
+		return true;
+
+	return false;
 }
 
 /*
