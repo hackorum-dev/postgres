@@ -1,0 +1,5 @@
+comment = 'function for convert json hstore'
+default_version = '1.0'
+module_pathname = '$libdir/cast_jsonb_to_hstore'
+relocatable = true
+requires = 'hstore'
