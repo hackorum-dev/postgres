@@ -1,3 +1,7 @@
+SET client_min_messages TO 'warning';
+DROP TYPE IF EXISTS int8alias1, int8alias2 CASCADE;
+DROP TABLE IF EXISTS ec0, ec1, ec2 CASCADE;
+RESET client_min_messages;
 --
 -- Tests for the planner's "equivalence class" mechanism
 --
