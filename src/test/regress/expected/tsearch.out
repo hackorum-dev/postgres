@@ -1,3 +1,6 @@
+SET client_min_messages TO 'warning';
+DROP TABLE IF EXISTS test_tsvector, test_tsquery CASCADE;
+RESET client_min_messages;
 -- directory paths are passed to us in environment variables
 \getenv abs_srcdir PG_ABS_SRCDIR
 --
