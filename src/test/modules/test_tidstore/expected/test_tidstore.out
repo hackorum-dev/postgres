@@ -6,6 +6,8 @@ CREATE TEMP TABLE hideblocks(blockno bigint);
 -- The maximum number of heap tuples (MaxHeapTuplesPerPage) in 8kB block is 291.
 -- We use a higher number to test tidstore.
 \set maxoffset 512
+-- We use work_mem as the maximum bytes in the tests.
+SET work_mem To '2MB';
 SELECT test_create(false);
  test_create 
 -------------
@@ -224,6 +226,35 @@ SELECT check_set_block_offsets();
 (1 row)
 
 -- cleanup
+SELECT test_destroy();
+ test_destroy 
+--------------
+ 
+(1 row)
+
+-- Test to create tidstore with a small maximum byte, using small memory block
+-- sizes internally.
+SET work_mem TO '64kB';
+SELECT test_create(false);
+ test_create 
+-------------
+ 
+(1 row)
+
+SELECT test_destroy();
+ test_destroy 
+--------------
+ 
+(1 row)
+
+-- Same test for shared tidstore with 1MB, the minimum value of maintenance_work_mem.
+SET work_mem TO '1MB';
+SELECT test_create(true);
+ test_create 
+-------------
+ 
+(1 row)
+
 SELECT test_destroy();
  test_destroy 
 --------------

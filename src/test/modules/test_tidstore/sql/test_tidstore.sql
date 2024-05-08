@@ -9,6 +9,8 @@ CREATE TEMP TABLE hideblocks(blockno bigint);
 -- We use a higher number to test tidstore.
 \set maxoffset 512
 
+-- We use work_mem as the maximum bytes in the tests.
+SET work_mem To '2MB';
 SELECT test_create(false);
 
 -- Test on empty tidstore.
@@ -83,4 +85,16 @@ SELECT check_set_block_offsets();
 
 -- cleanup
 SELECT test_destroy();
+
+-- Test to create tidstore with a small maximum byte, using small memory block
+-- sizes internally.
+SET work_mem TO '64kB';
+SELECT test_create(false);
+SELECT test_destroy();
+
+-- Same test for shared tidstore with 1MB, the minimum value of maintenance_work_mem.
+SET work_mem TO '1MB';
+SELECT test_create(true);
+SELECT test_destroy();
+
 DROP TABLE hideblocks;

@@ -19,6 +19,7 @@
 #include "access/tidstore.h"
 #include "fmgr.h"
 #include "funcapi.h"
+#include "miscadmin.h"
 #include "storage/block.h"
 #include "storage/itemptr.h"
 #include "storage/lwlock.h"
@@ -89,7 +90,7 @@ test_create(PG_FUNCTION_ARGS)
 	MemoryContext old_ctx;
 
 	/* doesn't really matter, since it's just a hint */
-	size_t		tidstore_max_size = 2 * 1024 * 1024;
+	size_t		tidstore_max_size = work_mem * 1024;
 	size_t		array_init_size = 1024;
 
 	Assert(tidstore == NULL);
