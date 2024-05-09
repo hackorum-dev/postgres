@@ -114,6 +114,8 @@ postgres_full_xml = custom_target('postgres-full.xml',
 docs += postgres_full_xml
 alldocs += postgres_full_xml
 
+# Shortcut to the above for checking doc syntax
+alias_target('check-docs', postgres_full_xml)
 
 if xsltproc_bin.found()
   xsltproc_flags = [
