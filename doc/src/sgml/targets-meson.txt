@@ -28,6 +28,7 @@ Documentation Targets:
   doc/src/sgml/postgres-US.pdf  Build documentation in PDF format, with US letter pages
   doc/src/sgml/postgres.html    Build documentation in single-page HTML format
   alldocs                       Build documentation in all supported formats
+  check-docs                    Check the syntax of the documentation
 
 Installation Targets:
   install                       Install postgres, excluding documentation
