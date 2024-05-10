@@ -978,8 +978,21 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 	 */
 	INIT_CRC32C(rdata_crc);
 	COMP_CRC32C(rdata_crc, hdr_scratch + SizeOfXLogRecord, hdr_rdt.len - SizeOfXLogRecord);
+
+char block1_copy[BLCKSZ];
+char *block1_ptr = NULL;
+int block1_len = 0;
+
 	for (rdt = hdr_rdt.next; rdt != NULL; rdt = rdt->next)
+{
+	if (!block1_ptr)
+	{
+		memcpy(block1_copy, rdt->data, rdt->len);
+		block1_ptr = rdt->data;
+		block1_len = rdt->len;
+	}
 		COMP_CRC32C(rdata_crc, rdt->data, rdt->len);
+}
 
 	/*
 	 * Ensure that the XLogRecord is not too large.
@@ -1005,6 +1018,12 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 	rechdr->xl_rmid = rmid;
 	rechdr->xl_prev = InvalidXLogRecPtr;
 	rechdr->xl_crc = rdata_crc;
+
+if (block1_ptr)
+{
+pg_usleep(100);
+Assert(memcmp(block1_ptr, block1_copy, block1_len) == 0);
+}
 
 	return &hdr_rdt;
 }
