@@ -309,6 +309,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	PgStat_Counter startreadtime = 0,
 				startwritetime = 0;
 	WalUsage	startwalusage = pgWalUsage;
+	int64		StartPageMiss = VacuumPageMiss;
 	BufferUsage startbufferusage = pgBufferUsage;
 	ErrorContextCallback errcallback;
 	char	  **indnames = NULL;
@@ -606,6 +607,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 			StringInfoData buf;
 			char	   *msgfmt;
 			int32		diff;
+			int64		PageMissOp = VacuumPageMiss - StartPageMiss;
 			double		read_rate = 0,
 						write_rate = 0;
 
@@ -748,8 +750,9 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 			appendStringInfo(&buf, _("avg read rate: %.3f MB/s, avg write rate: %.3f MB/s\n"),
 							 read_rate, write_rate);
 			appendStringInfo(&buf,
-							 _("buffer usage: %lld hits, %lld misses, %lld dirtied\n"),
+							 _("buffer usage: %lld hits, %lld misses in the previous version, %lld misses in the patched version, %lld dirtied\n"),
 							 (long long) (bufferusage.shared_blks_hit + bufferusage.local_blks_hit),
+							 (long long) (PageMissOp),
 							 (long long) (bufferusage.shared_blks_read + bufferusage.local_blks_read),
 							 (long long) (bufferusage.shared_blks_dirtied + bufferusage.local_blks_dirtied));
 			appendStringInfo(&buf,
