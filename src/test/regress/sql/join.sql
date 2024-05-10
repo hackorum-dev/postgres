@@ -2904,3 +2904,69 @@ where exists (select 1 from j3
       and t1.unique1 < 1;
 
 drop table j3;
+
+-- Bug #18429
+-- Setup
+create schema if not exists weird;
+create table weird.t (
+  wd int not null,
+  wt int not null,
+  primary key (wd, wt)
+);
+insert into weird.t values (4, 6);
+
+-- Q1
+with c2 as (
+  -- Return 1 row `(4, 6)` when fetched separately
+  select arrayd.ad d, coalesce(c.t, 0) t
+    from unnest(ARRAY[4]) as arrayd(ad)
+    left join lateral (
+      select wt t from weird.t
+        where wd = arrayd.ad
+        order by wt desc limit 1
+    ) c on true
+)
+-- `where` clause should return false: (14 - 6) / 4 = (12 - 6) / 4 → false
+select 1 from c2 where (14 - c2.t) / c2.d = (12 - c2.t) / c2.d;
+
+-- Q2 (simplified sub-query)
+with c2 as (
+  select wd d, wt t from weird.t
+)
+select 1 from c2 where (14 - c2.t) / c2.d = (12 - c2.t) / c2.d;
+
+-- Q3 (sub-select instead of `with`)
+select 1 from (
+  select arrayd.ad d, coalesce(c.t, 0) t
+    from unnest(ARRAY[4]) as arrayd(ad)
+    left join lateral (
+      select wt t from weird.t
+        where wd = arrayd.ad
+        order by wt desc limit 1
+    ) c on true
+  ) c2
+  where (14 - c2.t) / c2.d = (12 - c2.t) / c2.d;
+
+-- Q4 (remove `order by limit` from Q3)
+select 1 from (
+  select arrayd.ad d, coalesce(c.t, 0) t
+    from unnest(ARRAY[4]) as arrayd(ad)
+    left join lateral (
+      select wt t from weird.t
+        where wd = arrayd.ad
+    ) c on true
+  ) c2
+  where (14 - c2.t) / c2.d = (12 - c2.t) / c2.d;
+
+-- Q5 (remove `coalesce` from Q4)
+select 1 from (
+  select arrayd.ad d, c.t t
+    from unnest(ARRAY[4]) as arrayd(ad)
+    left join lateral (
+      select wt t from weird.t
+        where wd = arrayd.ad
+    ) c on true
+  ) c2
+  where (14 - c2.t) / c2.d = (12 - c2.t) / c2.d;
+drop table weird.t;
+drop schema weird;
