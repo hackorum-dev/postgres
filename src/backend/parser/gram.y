@@ -18467,6 +18467,7 @@ opt_target_list: target_list						{ $$ = $1; }
 target_list:
 			target_el								{ $$ = list_make1($1); }
 			| target_list ',' target_el				{ $$ = lappend($1, $3); }
+			| target_list ','						/* Handling trailing comma */
 		;
 
 target_el:	a_expr AS ColLabel
