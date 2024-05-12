@@ -271,3 +271,20 @@ create table list_parted_tbl1 partition of list_parted_tbl
   for values in (1) partition by list(b);
 explain (costs off) select * from list_parted_tbl;
 drop table list_parted_tbl;
+
+
+-- Handling trailing comma
+SELECT *, FROM onek
+   WHERE onek.unique1 < 10
+   ORDER BY onek.unique1;
+
+SELECT 1,,2,,,3 as dummy,;
+
+SELECT count(*),;
+
+SELECT count(*), FROM onek;
+
+SELECT v.k as x, FROM (VALUES(1)) v(k);
+
+-- Error is expected
+SELECT ,;
