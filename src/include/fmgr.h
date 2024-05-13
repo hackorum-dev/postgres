@@ -504,6 +504,7 @@ PG_MAGIC_FUNCTION_NAME(void) \
 	static const Pg_magic_struct Pg_magic_data = PG_MODULE_MAGIC_DATA; \
 	return &Pg_magic_data; \
 } \
+PGDLLEXPORT const char *Pg_extension_filename = NULL; \
 extern int no_such_variable
 
 

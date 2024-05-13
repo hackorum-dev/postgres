@@ -36,6 +36,7 @@
 #include "storage/fd.h"
 #include "storage/shmem.h"
 #include "utils/hsearch.h"
+#include "utils/memutils.h"
 
 
 /* signature for PostgreSQL-specific library init function */
@@ -267,6 +268,35 @@ internal_load_library(const char *libname)
 
 				/* issue suitable complaint */
 				incompatible_module_error(libname, &module_magic_data);
+			}
+
+			{
+				const char **extname;
+				char *libname_short;
+
+				extname = dlsym(file_scanner->handle,
+								"Pg_extension_filename");
+				if (!extname)
+					elog(ERROR, "couldn't find Pg_extension_filename");
+
+				/*
+				 * For loaded libraries, the filename, without file ending,
+				 * ought to be unique. Pg_extension_filename is intended for
+				 * logging, a full file path would be onerous.
+				 */
+				libname_short = last_dir_separator(libname) + 1;
+				libname_short = MemoryContextStrdup(TopMemoryContext,
+													last_dir_separator(libname) + 1);
+
+				for (int i = strlen(libname_short); i >= 0; i--)
+				{
+					if (libname_short[i] == '.')
+					{
+						libname_short[i] = '\0';
+						break;
+					}
+				}
+				*extname = MemoryContextStrdup(TopMemoryContext, libname_short);
 			}
 		}
 		else

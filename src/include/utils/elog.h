@@ -137,6 +137,13 @@ struct Node;
  * prevents gcc from making the unreachability deduction at optlevel -O0.
  *----------
  */
+#ifdef BUILDING_DLL
+#define ELOG_EXTNAME NULL
+#else
+extern PGDLLEXPORT const char *Pg_extension_filename;
+#define ELOG_EXTNAME Pg_extension_filename
+#endif
+
 #ifdef HAVE__BUILTIN_CONSTANT_P
 #define ereport_domain(elevel, domain, ...)	\
 	do { \
@@ -144,7 +151,7 @@ struct Node;
 		if (__builtin_constant_p(elevel) && (elevel) >= ERROR ? \
 			errstart_cold(elevel, domain) : \
 			errstart(elevel, domain)) \
-			__VA_ARGS__, errfinish(__FILE__, __LINE__, __func__); \
+			__VA_ARGS__, errfinish(__FILE__, __LINE__, __func__, ELOG_EXTNAME); \
 		if (__builtin_constant_p(elevel) && (elevel) >= ERROR) \
 			pg_unreachable(); \
 	} while(0)
@@ -154,7 +161,7 @@ struct Node;
 		const int elevel_ = (elevel); \
 		pg_prevent_errno_in_scope(); \
 		if (errstart(elevel_, domain)) \
-			__VA_ARGS__, errfinish(__FILE__, __LINE__, __func__); \
+			__VA_ARGS__, errfinish(__FILE__, __LINE__, __func__, ELOG_EXTNAME); \
 		if (elevel_ >= ERROR) \
 			pg_unreachable(); \
 	} while(0)
@@ -169,7 +176,7 @@ extern bool message_level_is_interesting(int elevel);
 
 extern bool errstart(int elevel, const char *domain);
 extern pg_attribute_cold bool errstart_cold(int elevel, const char *domain);
-extern void errfinish(const char *filename, int lineno, const char *funcname);
+extern void errfinish(const char *filename, int lineno, const char *funcname, const char *extfile);
 
 extern int	errcode(int sqlerrcode);
 
@@ -268,7 +275,7 @@ extern int	getinternalerrposition(void);
 		struct Node *context_ = (context); \
 		pg_prevent_errno_in_scope(); \
 		if (errsave_start(context_, domain)) \
-			__VA_ARGS__, errsave_finish(context_, __FILE__, __LINE__, __func__); \
+			__VA_ARGS__, errsave_finish(context_, __FILE__, __LINE__, __func__, ELOG_EXTNAME); \
 	} while(0)
 
 #define errsave(context, ...)	\
@@ -293,7 +300,7 @@ extern int	getinternalerrposition(void);
 extern bool errsave_start(struct Node *context, const char *domain);
 extern void errsave_finish(struct Node *context,
 						   const char *filename, int lineno,
-						   const char *funcname);
+						   const char *funcname, const char *extname);
 
 
 /* Support for constructing error strings separately from ereport() calls */
@@ -449,6 +456,7 @@ typedef struct ErrorData
 	const char *funcname;		/* __func__ of ereport() call */
 	const char *domain;			/* message domain */
 	const char *context_domain; /* message domain for context message */
+	const char *extname;		/* extension filename or NULL */
 	int			sqlerrcode;		/* encoded ERRSTATE */
 	char	   *message;		/* primary error message (translated) */
 	char	   *detail;			/* detail error message */

@@ -180,7 +180,7 @@ static ErrorData *get_error_stack_entry(void);
 static void set_stack_entry_domain(ErrorData *edata, const char *domain);
 static void set_stack_entry_location(ErrorData *edata,
 									 const char *filename, int lineno,
-									 const char *funcname);
+									 const char *funcname, const char *extname);
 static bool matches_backtrace_functions(const char *funcname);
 static pg_noinline void set_backtrace(ErrorData *edata, int num_skip);
 static void set_errdata_field(MemoryContextData *cxt, char **ptr, const char *str);
@@ -474,7 +474,7 @@ errstart(int elevel, const char *domain)
  * return to the caller.  See elog.h for the error level definitions.
  */
 void
-errfinish(const char *filename, int lineno, const char *funcname)
+errfinish(const char *filename, int lineno, const char *funcname, const char *extname)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
 	int			elevel;
@@ -485,7 +485,7 @@ errfinish(const char *filename, int lineno, const char *funcname)
 	CHECK_STACK_DEPTH();
 
 	/* Save the last few bits of error state into the stack entry */
-	set_stack_entry_location(edata, filename, lineno, funcname);
+	set_stack_entry_location(edata, filename, lineno, funcname, extname);
 
 	elevel = edata->elevel;
 
@@ -683,7 +683,7 @@ errsave_start(struct Node *context, const char *domain)
  */
 void
 errsave_finish(struct Node *context, const char *filename, int lineno,
-			   const char *funcname)
+			   const char *funcname, const char *extname)
 {
 	ErrorSaveContext *escontext = (ErrorSaveContext *) context;
 	ErrorData  *edata = &errordata[errordata_stack_depth];
@@ -697,7 +697,7 @@ errsave_finish(struct Node *context, const char *filename, int lineno,
 	 */
 	if (edata->elevel >= ERROR)
 	{
-		errfinish(filename, lineno, funcname);
+		errfinish(filename, lineno, funcname, extname);
 		pg_unreachable();
 	}
 
@@ -708,7 +708,7 @@ errsave_finish(struct Node *context, const char *filename, int lineno,
 	recursion_depth++;
 
 	/* Save the last few bits of error state into the stack entry */
-	set_stack_entry_location(edata, filename, lineno, funcname);
+	set_stack_entry_location(edata, filename, lineno, funcname, extname);
 
 	/* Replace the LOG value that errsave_start inserted */
 	edata->elevel = ERROR;
@@ -798,7 +798,7 @@ set_stack_entry_domain(ErrorData *edata, const char *domain)
 static void
 set_stack_entry_location(ErrorData *edata,
 						 const char *filename, int lineno,
-						 const char *funcname)
+						 const char *funcname, const char *extname)
 {
 	if (filename)
 	{
@@ -817,6 +817,7 @@ set_stack_entry_location(ErrorData *edata,
 	edata->filename = filename;
 	edata->lineno = lineno;
 	edata->funcname = funcname;
+	edata->extname = extname;
 }
 
 /*
@@ -1903,7 +1904,7 @@ ThrowErrorData(ErrorData *edata)
 	recursion_depth--;
 
 	/* Process the error. */
-	errfinish(edata->filename, edata->lineno, edata->funcname);
+	errfinish(edata->filename, edata->lineno, edata->funcname, edata->extname);
 }
 
 /*
@@ -2000,7 +2001,7 @@ pg_re_throw(void)
 		 */
 		error_context_stack = NULL;
 
-		errfinish(edata->filename, edata->lineno, edata->funcname);
+		errfinish(edata->filename, edata->lineno, edata->funcname, edata->extname);
 	}
 
 	/* Doesn't return ... */
@@ -3110,6 +3111,20 @@ log_status_format(StringInfo buf, const char *format, ErrorData *edata)
 				else
 					appendStringInfoString(buf, unpack_sql_state(edata->sqlerrcode));
 				break;
+			case 'E':
+				{
+					const char *extname = edata->extname;
+
+					if (!extname)
+						extname = "postgres";
+
+					if (padding != 0)
+						appendStringInfo(buf, "%*s", padding,
+										 extname);
+					else
+						appendStringInfoString(buf, extname);
+					break;
+				}
 			case 'Q':
 				if (padding != 0)
 					appendStringInfo(buf, "%*lld", padding,
