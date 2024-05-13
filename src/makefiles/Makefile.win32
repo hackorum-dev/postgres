@@ -10,34 +10,6 @@ endif
 
 override CPPFLAGS += -DWIN32_STACK_RLIMIT=$(WIN32_STACK_RLIMIT)
 
-ifneq (,$(findstring backend,$(subdir)))
-ifeq (,$(findstring conversion_procs,$(subdir)))
-ifeq (,$(findstring libpqwalreceiver,$(subdir)))
-ifeq (,$(findstring replication/pgoutput,$(subdir)))
-ifeq (,$(findstring snowball,$(subdir)))
-override CPPFLAGS+= -DBUILDING_DLL
-endif
-endif
-endif
-endif
-endif
-
-ifneq (,$(findstring src/common,$(subdir)))
-override CPPFLAGS+= -DBUILDING_DLL
-endif
-
-ifneq (,$(findstring src/port,$(subdir)))
-override CPPFLAGS+= -DBUILDING_DLL
-endif
-
-ifneq (,$(findstring timezone,$(subdir)))
-override CPPFLAGS+= -DBUILDING_DLL
-endif
-
-ifneq (,$(findstring ecpg/ecpglib,$(subdir)))
-override CPPFLAGS+= -DBUILDING_DLL
-endif
-
 # required by Python headers
 ifneq (,$(findstring src/pl/plpython,$(subdir)))
 override CPPFLAGS+= -DUSE_DL_IMPORT
