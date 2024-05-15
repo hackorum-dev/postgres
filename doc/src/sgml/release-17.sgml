@@ -1487,29 +1487,6 @@ Add event trigger support for REINDEX (Garrett Thornburg, Jian He)
 </listitem>
 
 <!--
-Author: Alvaro Herrera <alvherre@alvh.no-ip.org>
-2023-08-25 [b0e96f311] Catalog not-null constraints
-Author: Alvaro Herrera <alvherre@alvh.no-ip.org>
-2023-08-29 [9b581c534] Disallow changing NO INHERIT status of a not-null constr
-Author: Alvaro Herrera <alvherre@alvh.no-ip.org>
-2023-09-07 [3af721794] Update information_schema definition for not-null constr
-Author: Peter Eisentraut <peter@eisentraut.org>
-2024-03-20 [e5da0fe3c] Catalog domain not-null constraints
-Author: Peter Eisentraut <peter@eisentraut.org>
-2024-04-15 [9895b35cb] Fix ALTER DOMAIN NOT NULL syntax
--->
-
-<listitem>
-<para>
-Allow NOT NULL columns to be specified as column constraints and domains (Alvaro Herrera, Bernd Helmle, Kyotaro Horiguchi, Peter Eisentraut)
-</para>
-
-<para>
-Previously NOT NULL could only be specified as a column attribute.
-</para>
-</listitem>
-
-<!--
 Author: Nathan Bossart <nathan@postgresql.org>
 2023-07-19 [cdaedfc96] Support parenthesized syntax for CLUSTER without a table
 -->
