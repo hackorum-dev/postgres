@@ -796,7 +796,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	LEADING LEAKPROOF LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL
 	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED LSN_P
 
-	MAPPING MATCH MATCHED MATERIALIZED MAXVALUE MERGE MERGE_ACTION METHOD
+	MAPPING MATCH MATCHED MATERIALIZED MAXVALUE MERGE METHOD
 	MINUTE_P MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NESTED NEW NEXT NFC NFD NFKC NFKD NO NODE
@@ -17138,14 +17138,6 @@ func_expr_common_subexpr:
 					n->location = @1;
 					$$ = (Node *) n;
 				}
-			| MERGE_ACTION '(' ')'
-				{
-					MergeSupportFunc *m = makeNode(MergeSupportFunc);
-
-					m->msftype = TEXTOID;
-					m->location = @1;
-					$$ = (Node *) m;
-				}
 			| JSON_QUERY '('
 				json_value_expr ',' a_expr json_passing_clause_opt
 				json_returning_clause_opt
@@ -19241,7 +19233,6 @@ col_name_keyword:
 			| JSON_TABLE
 			| JSON_VALUE
 			| LEAST
-			| MERGE_ACTION
 			| NATIONAL
 			| NCHAR
 			| NONE
@@ -19645,7 +19636,6 @@ bare_label_keyword:
 			| MATERIALIZED
 			| MAXVALUE
 			| MERGE
-			| MERGE_ACTION
 			| METHOD
 			| MINVALUE
 			| MODE
