@@ -54,7 +54,6 @@ static Node *transformAExprDistinct(ParseState *pstate, A_Expr *a);
 static Node *transformAExprNullIf(ParseState *pstate, A_Expr *a);
 static Node *transformAExprIn(ParseState *pstate, A_Expr *a);
 static Node *transformAExprBetween(ParseState *pstate, A_Expr *a);
-static Node *transformMergeSupportFunc(ParseState *pstate, MergeSupportFunc *f);
 static Node *transformBoolExpr(ParseState *pstate, BoolExpr *a);
 static Node *transformFuncCall(ParseState *pstate, FuncCall *fn);
 static Node *transformMultiAssignRef(ParseState *pstate, MultiAssignRef *maref);
@@ -235,11 +234,6 @@ transformExprRecurse(ParseState *pstate, Node *expr)
 
 		case T_GroupingFunc:
 			result = transformGroupingFunc(pstate, (GroupingFunc *) expr);
-			break;
-
-		case T_MergeSupportFunc:
-			result = transformMergeSupportFunc(pstate,
-											   (MergeSupportFunc *) expr);
 			break;
 
 		case T_NamedArgExpr:
@@ -1389,31 +1383,6 @@ transformAExprBetween(ParseState *pstate, A_Expr *a)
 }
 
 static Node *
-transformMergeSupportFunc(ParseState *pstate, MergeSupportFunc *f)
-{
-	/*
-	 * All we need to do is check that we're in the RETURNING list of a MERGE
-	 * command.  If so, we just return the node as-is.
-	 */
-	if (pstate->p_expr_kind != EXPR_KIND_MERGE_RETURNING)
-	{
-		ParseState *parent_pstate = pstate->parentParseState;
-
-		while (parent_pstate &&
-			   parent_pstate->p_expr_kind != EXPR_KIND_MERGE_RETURNING)
-			parent_pstate = parent_pstate->parentParseState;
-
-		if (!parent_pstate)
-			ereport(ERROR,
-					errcode(ERRCODE_SYNTAX_ERROR),
-					errmsg("MERGE_ACTION() can only be used in the RETURNING list of a MERGE command"),
-					parser_errposition(pstate, f->location));
-	}
-
-	return (Node *) f;
-}
-
-static Node *
 transformBoolExpr(ParseState *pstate, BoolExpr *a)
 {
 	List	   *args = NIL;
@@ -1455,6 +1424,7 @@ transformFuncCall(ParseState *pstate, FuncCall *fn)
 	Node	   *last_srf = pstate->p_last_srf;
 	List	   *targs;
 	ListCell   *args;
+	Node *result;
 
 	/* Transform the list of arguments ... */
 	targs = NIL;
@@ -1485,13 +1455,52 @@ transformFuncCall(ParseState *pstate, FuncCall *fn)
 	}
 
 	/* ... and hand off to ParseFuncOrColumn */
-	return ParseFuncOrColumn(pstate,
+	result = ParseFuncOrColumn(pstate,
 							 fn->funcname,
 							 targs,
 							 last_srf,
 							 fn,
 							 false,
 							 fn->location);
+
+	if (IsA(result, FuncExpr))
+	{
+		FuncExpr *fe = castNode(FuncExpr, result);
+
+		if (fe->funcid == F_MERGE_ACTION)
+		{
+			MergeSupportFunc *m;
+
+			if (pstate->p_expr_kind != EXPR_KIND_MERGE_RETURNING)
+			{
+				ParseState *parent_pstate = pstate->parentParseState;
+
+				while (parent_pstate &&
+					   parent_pstate->p_expr_kind != EXPR_KIND_MERGE_RETURNING)
+					parent_pstate = parent_pstate->parentParseState;
+
+				if (!parent_pstate)
+					ereport(ERROR,
+							errcode(ERRCODE_SYNTAX_ERROR),
+							errmsg("MERGE_ACTION() can only be used in the RETURNING list of a MERGE command"),
+							parser_errposition(pstate, fe->location));
+			}
+
+			m = makeNode(MergeSupportFunc);
+			m->msftype = TEXTOID;
+			m->location = fe->location;
+
+			return (Node *) m;
+		}
+	}
+
+	return result;
+}
+
+Datum
+merge_support_dummy(PG_FUNCTION_ARGS)
+{
+	return 0;
 }
 
 static Node *
