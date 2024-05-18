@@ -2168,6 +2168,32 @@ CREATE VIEW phone_number WITH (security_barrier) AS
 </para>
 
 <para>
+    When working with <literal>security_barrier</literal> views or row-level
+    security policies, a query author can check in advance which index-access
+    operators cannot cross the security barrier by querying system catalogs:
+</para>
+
+<programlisting>
+SELECT
+  amname,
+  format('%s(%s,%s) [%s]', oprcode, lefttype.typname, righttype.typname, oprname)
+FROM pg_operator
+  JOIN pg_amop ON pg_operator.oid = pg_amop.amopopr
+  JOIN pg_am ON pg_amop.amopmethod = pg_am.oid
+  JOIN pg_proc ON pg_operator.oprcode = pg_proc.oid
+  JOIN pg_type lefttype ON pg_amop.amoplefttype = lefttype.oid
+  JOIN pg_type righttype ON pg_amop.amoprighttype = righttype.oid
+WHERE proleakproof = false;
+</programlisting>
+
+<para>
+    Any operator returned by the above query will not be able to perform an
+    indexed lookup through the security barrier. In that case, the view's own
+    conditions will be applied first, followed by conditions added by the query
+    author.
+</para>
+
+<para>
     It is important to understand that even a view created with the
     <literal>security_barrier</literal> option is intended to be secure only
     in the limited sense that the contents of the invisible tuples will not be
