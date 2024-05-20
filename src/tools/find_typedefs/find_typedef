@@ -1,0 +1,90 @@
+#!usr/bin/perl
+
+# src/tools/find_typedefs/find_typedef
+
+# wrapper around PostgreSQL::FindTypedefs::typedefs()
+
+# This script attempts to find all typedef's in the postgres binaries
+# by using 'objdump' or local equivalent to print typedef debugging symbols.
+# We need this because pgindent needs a list of typedef names.
+#
+# For this program to work, you must have compiled all code with
+# debugging symbols.
+
+#
+# We intentionally examine all files in the targeted directories so as to
+# find both .o files and executables.  Therefore, ignore error messages about
+# unsuitable files being fed to objdump.
+#
+# This is known to work on Linux and on some BSDen, including macOS, as well
+# as on Windows
+#
+# Caution: on the platforms we use, this only prints typedefs that are used
+# to declare at least one variable or struct field.  If you have say
+# "typedef struct foo { ... } foo;", and then the structure is only ever
+# referenced as "struct foo", "foo" will not be reported as a typedef,
+# causing pgindent to indent the typedef definition oddly.  This is not a
+# huge problem, since by definition there's just the one misindented line.
+#
+
+use strict;
+use warnings FATAL => 'all';
+
+use Config;
+use Getopt::Long;
+use FindBin qw($Bin);
+use lib $Bin;
+use PostgreSQL::FindTypedefs;
+
+my $osname = $Config{osname};
+
+my $srcdir = "$Bin/../../..";
+my $bindir;
+my @files;
+my $hostprefix="";
+my $msvc;
+my $help;
+
+GetOptions(
+	"srcdir=s" => \$srcdir,
+	"bindir=s" => \$bindir,
+	"file=s" => \@files,
+	"hostprefix=s" => \$hostprefix,
+	"msvc" => \$msvc,
+	"help" => \$help,
+   );
+
+if ($help)
+{
+	do_help();
+	exit 0;
+}
+
+die "cannot specify both file and bindir options" if ($bindir && @files);
+die "need either bindir or file options" unless ($bindir || @files);
+
+my %process_opts = ( srcdir => $srcdir );
+$process_opts{binloc} = $bindir ? $bindir : \@files;
+$process_opts{msvc} = $msvc if $msvc;
+$process_opts{hostopt} = $hostprefix if $hostprefix;
+
+print join("\n", @{typedefs(%process_opts)}), "\n";
+
+exit;
+
+####################
+
+sub do_help
+{
+	print qq!
+Usage: $0 [options]
+   --srcdir=DIR [default source tree where find_typedef is found]
+   --bindir=DIR
+   --file=FILE
+   --hostprefix=CROSS_COMPILER_NAME_PREFIX
+   --msvc
+
+The --file option can be used multiple times. Exactly one of --file and
+--bindir must be used.
+!;
+}
