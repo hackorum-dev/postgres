@@ -2448,6 +2448,8 @@ ResourceReleaseCallback
 ResourceReleaseCallbackItem
 ResourceReleasePhase
 ResourceReleasePriority
+RestoreModuleCallbacks
+RestoreModuleState
 RestoreOptions
 RestorePass
 RestrictInfo
