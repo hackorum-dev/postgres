@@ -47,6 +47,7 @@
 
 /* GUC parameters */
 bool		Transform_null_equals = false;
+bool		session_variables_ambiguity_warning = false;
 
 static Node *transformExprRecurse(ParseState *pstate, Node *expr);
 static Node *transformParamRef(ParseState *pstate, ParamRef *pref);
@@ -944,7 +945,8 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 	 * question is if we want to identify session's variables in these
 	 * contexts? The code can be more simple, when we don't do it, but then we
 	 * cannot to raise maybe useful message like "you cannot to use session
-	 * variables here".
+	 * variables here". On second hand, in this case the warnings about
+	 * session's variable shadowing can be messy.
 	 */
 	if (expr_kind_allows_session_variables(pstate->p_expr_kind))
 	{
@@ -963,10 +965,48 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 		 * SELECT foo.a, foo.b, foo.c FROM foo;
 		 *
 		 * This case can be messy and then we disallow it. When we know that a
-		 * possible variable will be shadowed, we don't try to identify
-		 * variable.
+		 * possible variable will be shadowed, we try to identify variable
+		 * only when session_variables_ambiguity_warning is requested.
 		 */
-		if (!node && !(relname && crerr == CRERR_NO_COLUMN))
+		if (node || (relname && crerr == CRERR_NO_COLUMN))
+		{
+			/*
+			 * In this path we just try (if it is wanted) detect if session
+			 * variable is shadowed.
+			 */
+			if (session_variables_ambiguity_warning)
+			{
+				/*
+				 * The AccessShareLock is created on related session variable.
+				 * The lock will be kept for the whole transaction.
+				 */
+				varid = IdentifyVariable(cref->fields, &attrname, &not_unique, true);
+
+				if (OidIsValid(varid))
+				{
+					/* This path will ending by WARNING. Unlock variable first */
+					UnlockDatabaseObject(VariableRelationId, varid, 0, AccessShareLock);
+
+					if (node)
+						ereport(WARNING,
+								(errcode(ERRCODE_AMBIGUOUS_COLUMN),
+								 errmsg("session variable \"%s\" is shadowed",
+										NameListToString(cref->fields)),
+								 errdetail("Session variables can be shadowed by columns, routine's variables and routine's arguments with the same name."),
+								 parser_errposition(pstate, cref->location)));
+					else
+						/* session variable is shadowed by RTE */
+						ereport(WARNING,
+								(errcode(ERRCODE_AMBIGUOUS_COLUMN),
+								 errmsg("session variable \"%s.%s\" is shadowed",
+										get_namespace_name(get_session_variable_namespace(varid)),
+										get_session_variable_name(varid)),
+								 errdetail("Session variables can be shadowed by tables or table's aliases with the same name."),
+								 parser_errposition(pstate, cref->location)));
+				}
+			}
+		}
+		else
 		{
 			/*
 			 * The AccessShareLock is created on related session variable. The
