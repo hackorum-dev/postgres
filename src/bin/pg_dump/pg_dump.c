@@ -5315,6 +5315,7 @@ getVariables(Archive *fout)
 	int			i_varcollation;
 	int			i_varisnotnull;
 	int			i_varisimmutable;
+	int			i_varistransact;
 	int			i_varacl;
 	int			i_acldefault;
 	int			i,
@@ -5338,6 +5339,7 @@ getVariables(Archive *fout)
 					  "THEN v.varcollation ELSE 0 END AS varcollation,\n"
 					  "v.varisnotnull,\n"
 					  "v.varisimmutable,\n"
+					  "v.varistransact,\n"
 					  "pg_catalog.pg_get_expr(v.vardefexpr,0) as vardefexpr,\n"
 					  "v.varowner,\n"
 					  "v.varacl,\n"
@@ -5361,6 +5363,7 @@ getVariables(Archive *fout)
 	i_varcollation = PQfnumber(res, "varcollation");
 	i_varisnotnull = PQfnumber(res, "varisnotnull");
 	i_varisimmutable = PQfnumber(res, "varisimmutable");
+	i_varistransact = PQfnumber(res, "varistransact");
 
 	i_varowner = PQfnumber(res, "varowner");
 	i_varacl = PQfnumber(res, "varacl");
@@ -5387,6 +5390,7 @@ getVariables(Archive *fout)
 		varinfo[i].varcollation = atooid(PQgetvalue(res, i, i_varcollation));
 		varinfo[i].varisnotnull = *(PQgetvalue(res, i, i_varisnotnull)) == 't';
 		varinfo[i].varisimmutable = *(PQgetvalue(res, i, i_varisimmutable)) == 't';
+		varinfo[i].varistransact = *(PQgetvalue(res, i, i_varistransact)) == 't';
 
 		varinfo[i].dacl.acl = pg_strdup(PQgetvalue(res, i, i_varacl));
 		varinfo[i].dacl.acldefault = pg_strdup(PQgetvalue(res, i, i_acldefault));
@@ -5437,6 +5441,7 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 	const char *vardefexpr;
 	const char *vareoxaction;
 	const char *varisimmutable;
+	const char *varistransact;
 	Oid			varcollation;
 	bool		varisnotnull;
 
@@ -5454,12 +5459,13 @@ dumpVariable(Archive *fout, const VariableInfo *varinfo)
 	varcollation = varinfo->varcollation;
 	varisnotnull = varinfo->varisnotnull;
 	varisimmutable = varinfo->varisimmutable ? "IMMUTABLE " : "";
+	varistransact = varinfo->varistransact ? "TRANSACTIONAL " : "";
 
 	appendPQExpBuffer(delq, "DROP VARIABLE %s;\n",
 					  qualvarname);
 
-	appendPQExpBuffer(query, "CREATE %sVARIABLE %s AS %s",
-					  varisimmutable, qualvarname, vartypname);
+	appendPQExpBuffer(query, "CREATE %s%sVARIABLE %s AS %s",
+					  varistransact, varisimmutable, qualvarname, vartypname);
 
 	if (OidIsValid(varcollation))
 	{

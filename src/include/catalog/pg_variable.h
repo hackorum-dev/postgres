@@ -60,6 +60,9 @@ CATALOG(pg_variable,9222,VariableRelationId)
 	/* don't allow changes */
 	bool		varisimmutable BKI_DEFAULT(f);
 
+	/* supports transactions */
+	bool		varistransact BKI_DEFAULT(f);
+
 	/* action on transaction end */
 	char		vareoxaction BKI_DEFAULT(n);
 
