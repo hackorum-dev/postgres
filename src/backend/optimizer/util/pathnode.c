@@ -2496,6 +2496,10 @@ create_mergejoin_path(PlannerInfo *root,
 	pathnode->outer_presorted_keys = outer_presorted_keys;
 	/* pathnode->skip_mark_restore will be set by final_cost_mergejoin */
 	/* pathnode->materialize_inner will be set by final_cost_mergejoin */
+	/*if(joinrel->rows ==29155)
+	joinrel->rows = 29998;
+	if(joinrel->rows ==894)
+	joinrel->rows = 7754;*/
 
 	final_cost_mergejoin(root, pathnode, workspace, extra);
 
