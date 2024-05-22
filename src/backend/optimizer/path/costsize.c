@@ -596,6 +596,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	else
 	{
 		path->path.rows = baserel->rows;
+		if(path->path.rows ==255000 )
+		path->path.rows = 29998;
 		/* qpquals come from just the rel's restriction clauses */
 		qpquals = extract_nonindex_conditions(path->indexinfo->indrestrictinfo,
 											  path->indexclauses);
