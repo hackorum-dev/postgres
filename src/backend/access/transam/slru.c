@@ -1433,6 +1433,15 @@ SimpleLruWriteAll(SlruDesc *ctl, bool allow_redirtied)
 			slru_errno = errno;
 			pageno = fdata.segno[i] * SLRU_PAGES_PER_SEGMENT;
 			ok = false;
+			// record all the error failing to close file
+			char path[MAXPGPATH];
+			SlruFileName(ctl, path, fdata.segno[i]);
+			errno = slru_errno;
+			ereport(LOG,
+					(errcode_for_file_access(),
+					 errmsg("could not access status of transaction %u", InvalidTransactionId),
+					 errdetail("Could not close file \"%s\": %m.",
+							   path)));
 		}
 	}
 	if (!ok)
