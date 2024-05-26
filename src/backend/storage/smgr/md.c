@@ -465,9 +465,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	MdfdVec    *v;
 
 	/* If this build supports direct I/O, the buffer must be I/O aligned. */
-	if (PG_O_DIRECT != 0 && PG_IO_ALIGN_SIZE <= BLCKSZ)
-		Assert((uintptr_t) buffer == TYPEALIGN(PG_IO_ALIGN_SIZE, buffer));
-
+#if PG_O_DIRECT != 0 && PG_IO_ALIGN_SIZE <= BLCKSZ
+	Assert((uintptr_t) buffer == TYPEALIGN(PG_IO_ALIGN_SIZE, buffer));
+#endif
 	/* This assert is too expensive to have on normally ... */
 #ifdef CHECK_WRITE_VS_EXTEND
 	Assert(blocknum >= mdnblocks(reln, forknum));
@@ -767,12 +767,13 @@ buffers_to_iovec(struct iovec *iov, void **buffers, int nblocks)
 	Assert(nblocks >= 1);
 
 	/* If this build supports direct I/O, buffers must be I/O aligned. */
+#if PG_O_DIRECT != 0 && PG_IO_ALIGN_SIZE <= BLCKSZ
 	for (int i = 0; i < nblocks; ++i)
 	{
-		if (PG_O_DIRECT != 0 && PG_IO_ALIGN_SIZE <= BLCKSZ)
-			Assert((uintptr_t) buffers[i] ==
-				   TYPEALIGN(PG_IO_ALIGN_SIZE, buffers[i]));
+		Assert((uintptr_t) buffers[i] ==
+			   TYPEALIGN(PG_IO_ALIGN_SIZE, buffers[i]));
 	}
+#endif
 
 	/* Start the first iovec off with the first buffer. */
 	iovp = &iov[0];
@@ -1057,10 +1058,8 @@ mdwriteback(SMgrRelation reln, ForkNumber forknum,
 		if (!v)
 			return;
 
-		/* compute offset inside the current segment */
-		segnum_start = blocknum / RELSEG_SIZE;
-
 		/* compute number of desired writes within the current segment */
+		segnum_start = blocknum / RELSEG_SIZE;
 		segnum_end = (blocknum + nblocks - 1) / RELSEG_SIZE;
 		if (segnum_start != segnum_end)
 			nflush = RELSEG_SIZE - (blocknum % ((BlockNumber) RELSEG_SIZE));
@@ -1068,6 +1067,7 @@ mdwriteback(SMgrRelation reln, ForkNumber forknum,
 		Assert(nflush >= 1);
 		Assert(nflush <= nblocks);
 
+		/* compute offset inside the current segment */
 		seekpos = (off_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
 
 		FileWriteback(v->mdfd_vfd, seekpos, (off_t) BLCKSZ * nflush, WAIT_EVENT_DATA_FILE_FLUSH);
