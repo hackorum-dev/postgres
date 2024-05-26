@@ -16,6 +16,7 @@
 
 #include "access/brin.h"
 #include "access/gin.h"
+#include "access/gist_private.h"
 #include "access/nbtree.h"
 #include "access/parallel.h"
 #include "access/session.h"
@@ -151,6 +152,9 @@ static const struct
 	},
 	{
 		"_gin_parallel_build_main", _gin_parallel_build_main
+	},
+	{
+		"_gist_parallel_build_main", _gist_parallel_build_main
 	},
 	{
 		"parallel_vacuum_main", parallel_vacuum_main
