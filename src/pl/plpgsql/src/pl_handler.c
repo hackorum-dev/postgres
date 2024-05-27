@@ -321,7 +321,7 @@ plpgsql_inline_handler(PG_FUNCTION_ARGS)
 	FmgrInfo	flinfo;
 	EState	   *simple_eval_estate;
 	ResourceOwner simple_eval_resowner;
-	Datum		retval;
+	volatile Datum retval = (Datum) 0;
 	int			rc;
 
 	/*
