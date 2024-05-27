@@ -153,6 +153,7 @@ $node_primary->wait_for_replay_catchup($node_standby);
 check_conflict_log(
 	"User query might have needed to see row versions that must be removed");
 $psql_standby->reconnect_and_clear();
+sleep(1);
 check_conflict_stat("snapshot");
 
 
