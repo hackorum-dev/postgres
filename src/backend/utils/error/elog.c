@@ -474,6 +474,8 @@ errstart(int elevel, const char *domain)
 	return true;
 }
 
+static bool do_sleep = false;
+
 /*
  * errfinish --- end an error-reporting cycle
  *
@@ -551,6 +553,12 @@ errfinish(const char *filename, int lineno, const char *funcname)
 		PG_RE_THROW();
 	}
 
+if (elevel == FATAL && rand() % 3 == 0)
+{
+long r = 0; for (long i = 0; i < 10000000L; i++) r += i % 2;
+fprintf(stderr, "!!!errfinish [%d]| r: %ld,  edata->funcname: %s, sleep() before EmitErrorReport()\n", getpid(), r, edata->funcname);
+do_sleep = true;
+}
 	/* Emit the message to the right places */
 	EmitErrorReport();
 
@@ -1923,6 +1931,12 @@ EmitErrorReport(void)
 	if (edata->output_to_server)
 		send_message_to_server_log(edata);
 
+if (do_sleep)
+{
+long r = 0; for (long i = 0; i < 30000000L; i++) r += i % 2;
+fprintf(stderr, "!!!EmitErrorReport [%d]| r: %ld, sleep() before send_message_to_frontend()...\n", getpid(), r);
+do_sleep = false;
+}
 	/* Send to client, if enabled */
 	if (edata->output_to_client)
 		send_message_to_frontend(edata);
