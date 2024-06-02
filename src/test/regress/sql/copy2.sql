@@ -676,3 +676,28 @@ truncate copy_default;
 
 -- DEFAULT cannot be used in COPY TO
 copy (select 1 as test) TO stdout with (default '\D');
+
+-- Test handling of control characters
+create temp table copy_ctl (a text, b text);
+
+copy copy_ctl from stdin;
+abc	def
+\n	def
+abc	\n
+\t	def
+abc	\t
+ab\b	\bdef
+a\vbc	def\v
+\f\f\f	g\fg
+\x0c	def
+abc	\x6
+\6	def
+abc	\017
+\\	\
+\	\\
+\9	\9999
+\1234	\j
+\.
+
+copy copy_ctl to stdout;
+copy copy_ctl to stdout with (format csv);

@@ -905,3 +905,41 @@ truncate copy_default;
 -- DEFAULT cannot be used in COPY TO
 copy (select 1 as test) TO stdout with (default '\D');
 ERROR:  COPY DEFAULT only available using COPY FROM
+-- Test handling of control characters
+create temp table copy_ctl (a text, b text);
+copy copy_ctl from stdin;
+copy copy_ctl to stdout;
+abc	def
+\n	def
+abc	\n
+\t	def
+abc	\t
+ab\b	\bdef
+a\vbc	def\v
+\f\f\f	g\fg
+\f	def
+abc	
+	def
+abc	
+\\	\n\t\\
+9	9999
+S4	j
+copy copy_ctl to stdout with (format csv);
+abc,def
+"
+",def
+abc,"
+"
+	,def
+abc,	
+ab,def
+abc,def
+,gg
+,def
+abc,
+,def
+abc,
+\,"
+	\"
+9,9999
+S4,j
