@@ -970,6 +970,145 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 	MemoryContextSwitchTo(oldcontext);
 }
 
+static void
+EmitTextCharacter(CopyToState cstate, char c)
+{
+	char	delimc = cstate->opts.delim[0];
+
+	if ((unsigned char) c < (unsigned char) 0x20)
+	{
+		/*
+		 * \r and \n must be escaped; we choose to escape several other common
+		 * control characters for the sake of tradition. We prefer to dump
+		 * these using the C-like notation, rather than a backslash and the
+		 * literal character, because it makes the dump file a bit more proof
+		 * against Microsoftish data mangling.
+		 */
+		switch (c)
+		{
+			case '\b':
+				c = 'b';
+				break;
+			case '\f':
+				c = 'f';
+				break;
+			case '\n':
+				c = 'n';
+				break;
+			case '\r':
+				c = 'r';
+				break;
+			case '\t':
+				c = 't';
+				break;
+			case '\v':
+				c = 'v';
+				break;
+			default:
+				/*
+				 * Record delimiter must be escaped, even if it is a control
+				 * character. Other control characters can be emitted as-is.
+				 */
+				if (c != delimc)
+				{
+					CopySendChar(cstate, c);
+					return;
+				}
+		}
+
+		CopySendChar(cstate, '\\');
+		CopySendChar(cstate, c);
+	}
+	else if (c == '\\' || c == delimc)
+	{
+		CopySendChar(cstate, '\\');
+		CopySendChar(cstate, c);
+	}
+	else
+	{
+		CopySendChar(cstate, c);
+	}
+}
+
+/*
+ * Send text representation of one attribute, with conversion and escaping.
+ * This variant is vectorized using SIMD instructions.  This is significantly
+ * faster for wide attributes, assuming that control characters are rare.
+ *
+ * This variant assumes that encoding_embeds_ascii is false.  This simplifies
+ * the implementation because we can look at arbitrary-sized chunks of bytes,
+ * without needing to go through the pg_encoding_mblen() machinery to ensure
+ * that multibyte characters don't cross chunk boundaries.  In principle we
+ * could combine vectorization with such encodings, but the bookkeeping
+ * required would be complicated.
+ */
+static void
+CopyAttributeOutTextVector(CopyToState cstate, const char *ptr)
+{
+	int			i;
+	int			len;
+	int			vlen;
+	int			start_idx;
+	Vector8		chunk;
+	char		delimc = cstate->opts.delim[0];
+
+	len = strlen(ptr);
+	vlen = len & (int) (~(sizeof(Vector8) - 1));
+	start_idx = 0;
+
+	for (i = 0; i < vlen; i += sizeof(Vector8))
+	{
+		vector8_load(&chunk, (const uint8 *) &ptr[i]);
+
+		/*
+		 * Check if the chunk contains any field delimiters or escape
+		 * sequences.  If so, switch to byte-by-byte processing.
+		 */
+		if (vector8_has_le(chunk, (unsigned char) 0x1f) ||
+			vector8_has(chunk, (unsigned char) '\\') ||
+			vector8_has(chunk, (unsigned char) delimc))
+		{
+			for (int j = i; j < (i + sizeof(Vector8)); j++)
+			{
+				char c = ptr[j];
+
+				if ((unsigned char) c <= (unsigned char) 0x1f ||
+					c == '\\' || c == delimc)
+				{
+					if (j > start_idx)
+					{
+						CopySendData(cstate, ptr + start_idx, j - start_idx);
+						start_idx = j;
+					}
+					EmitTextCharacter(cstate, c);
+					start_idx++;
+				}
+			}
+		}
+	}
+
+	/* Process the tail of the string */
+	for (; i < len; i++)
+	{
+		char c = ptr[i];
+
+		if ((unsigned char) c <= (unsigned char) 0x1f ||
+			c == '\\' || c == delimc)
+		{
+			if (i > start_idx)
+			{
+				CopySendData(cstate, ptr + start_idx, i - start_idx);
+				start_idx = i;
+			}
+			EmitTextCharacter(cstate, c);
+			start_idx++;
+		}
+	}
+
+	if (i > start_idx)
+		CopySendData(cstate, ptr + start_idx, i - start_idx);
+}
+
 #define DUMPSOFAR() \
 	do { \
 		if (ptr > start) \
@@ -992,137 +1131,26 @@ CopyAttributeOutText(CopyToState cstate, const char *string)
 	else
 		ptr = string;
 
-	/*
-	 * We have to grovel through the string searching for control characters
-	 * and instances of the delimiter character.  In most cases, though, these
-	 * are infrequent.  To avoid overhead from calling CopySendData once per
-	 * character, we dump out all characters between escaped characters in a
-	 * single call.  The loop invariant is that the data from "start" to "ptr"
-	 * can be sent literally, but hasn't yet been.
-	 *
-	 * We can skip pg_encoding_mblen() overhead when encoding is safe, because
-	 * in valid backend encodings, extra bytes of a multibyte character never
-	 * look like ASCII.  This loop is sufficiently performance-critical that
-	 * it's worth making two copies of it to get the IS_HIGHBIT_SET() test out
-	 * of the normal safe-encoding path.
-	 */
-	if (cstate->encoding_embeds_ascii)
+	if (!cstate->encoding_embeds_ascii)
 	{
-		start = ptr;
-		while ((c = *ptr) != '\0')
-		{
-			if ((unsigned char) c < (unsigned char) 0x20)
-			{
-				/*
-				 * \r and \n must be escaped, the others are traditional. We
-				 * prefer to dump these using the C-like notation, rather than
-				 * a backslash and the literal character, because it makes the
-				 * dump file a bit more proof against Microsoftish data
-				 * mangling.
-				 */
-				switch (c)
-				{
-					case '\b':
-						c = 'b';
-						break;
-					case '\f':
-						c = 'f';
-						break;
-					case '\n':
-						c = 'n';
-						break;
-					case '\r':
-						c = 'r';
-						break;
-					case '\t':
-						c = 't';
-						break;
-					case '\v':
-						c = 'v';
-						break;
-					default:
-						/* If it's the delimiter, must backslash it */
-						if (c == delimc)
-							break;
-						/* All ASCII control chars are length 1 */
-						ptr++;
-						continue;	/* fall to end of loop */
-				}
-				/* if we get here, we need to convert the control char */
-				DUMPSOFAR();
-				CopySendChar(cstate, '\\');
-				CopySendChar(cstate, c);
-				start = ++ptr;	/* do not include char in next run */
-			}
-			else if (c == '\\' || c == delimc)
-			{
-				DUMPSOFAR();
-				CopySendChar(cstate, '\\');
-				start = ptr++;	/* we include char in next run */
-			}
-			else if (IS_HIGHBIT_SET(c))
-				ptr += pg_encoding_mblen(cstate->file_encoding, ptr);
-			else
-				ptr++;
-		}
+		CopyAttributeOutTextVector(cstate, ptr);
+		return;
 	}
-	else
+
+	start = ptr;
+	while ((c = *ptr) != '\0')
 	{
-		start = ptr;
-		while ((c = *ptr) != '\0')
+		if ((unsigned char) c < (unsigned char) 0x20 ||
+			c == '\\' || c == delimc)
 		{
-			if ((unsigned char) c < (unsigned char) 0x20)
-			{
-				/*
-				 * \r and \n must be escaped, the others are traditional. We
-				 * prefer to dump these using the C-like notation, rather than
-				 * a backslash and the literal character, because it makes the
-				 * dump file a bit more proof against Microsoftish data
-				 * mangling.
-				 */
-				switch (c)
-				{
-					case '\b':
-						c = 'b';
-						break;
-					case '\f':
-						c = 'f';
-						break;
-					case '\n':
-						c = 'n';
-						break;
-					case '\r':
-						c = 'r';
-						break;
-					case '\t':
-						c = 't';
-						break;
-					case '\v':
-						c = 'v';
-						break;
-					default:
-						/* If it's the delimiter, must backslash it */
-						if (c == delimc)
-							break;
-						/* All ASCII control chars are length 1 */
-						ptr++;
-						continue;	/* fall to end of loop */
-				}
-				/* if we get here, we need to convert the control char */
-				DUMPSOFAR();
-				CopySendChar(cstate, '\\');
-				CopySendChar(cstate, c);
-				start = ++ptr;	/* do not include char in next run */
-			}
-			else if (c == '\\' || c == delimc)
-			{
-				DUMPSOFAR();
-				CopySendChar(cstate, '\\');
-				start = ptr++;	/* we include char in next run */
-			}
-			else
-				ptr++;
+			DUMPSOFAR();
+			EmitTextCharacter(cstate, c);
+			start = ++ptr;
 		}
+		else if (IS_HIGHBIT_SET(c))
+			ptr += pg_encoding_mblen(cstate->file_encoding, ptr);
+		else
+			ptr++;
 	}
 
 	DUMPSOFAR();
