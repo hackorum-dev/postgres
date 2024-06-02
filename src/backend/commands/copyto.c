@@ -969,15 +969,15 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 	MemoryContextSwitchTo(oldcontext);
 }
 
-/*
- * Send text representation of one attribute, with conversion and escaping
- */
 #define DUMPSOFAR() \
 	do { \
 		if (ptr > start) \
 			CopySendData(cstate, start, ptr - start); \
 	} while (0)
 
+/*
+ * Send text representation of one attribute, with conversion and escaping
+ */
 static void
 CopyAttributeOutText(CopyToState cstate, const char *string)
 {
