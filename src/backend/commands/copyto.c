@@ -29,6 +29,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "port/simd.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/lsyscache.h"
@@ -1128,6 +1129,144 @@ CopyAttributeOutText(CopyToState cstate, const char *string)
 }
 
 /*
+ * Send text representation of one attribute, with conversion and CSV-style
+ * escaping.  This is significantly faster for wide attributes, assuming that
+ * control characters are rare.
+ *
+ * This variant assumes that encoding_embeds_ascii is false.  This simplifies
+ * the implementation because we can look at arbitrary-sized chunks of bytes,
+ * without needing to go through the pg_encoding_mblen() machinery to ensure
+ * that multibyte characters don't cross chunk boundaries.  In principle we
+ * could combine vectorization with such encodings, but the bookkeeping
+ * required would be complicated.
+ */
+static void
+CopyAttributeOutCSVVector(CopyToState cstate, const char *ptr,
+						  bool use_quote)
+{
+	int			len;
+	int			vlen;
+	char		delimc = cstate->opts.delim[0];
+	char		quotec = cstate->opts.quote[0];
+	char		escapec = cstate->opts.escape[0];
+
+	len = strlen(ptr);
+	vlen = len & (int) (~(sizeof(Vector8) - 1));
+
+	/*
+	 * Make a preliminary pass to discover if it needs quoting
+	 */
+	if (!use_quote)
+	{
+		bool	single_attr = (list_length(cstate->attnumlist) == 1);
+
+		/*
+		 * Because '\.' can be a data value, quote it if it appears alone on a
+		 * line so it is not interpreted as the end-of-data marker.
+		 */
+		if (single_attr && strcmp(ptr, "\\.") == 0)
+			use_quote = true;
+		else
+		{
+			int		i;
+			Vector8 chunk;
+
+			for (i = 0; i < vlen; i += sizeof(Vector8))
+			{
+				vector8_load(&chunk, (const uint8 *) &ptr[i]);
+
+				if (vector8_has(chunk, (unsigned char) delimc) ||
+					vector8_has(chunk, (unsigned char) quotec) ||
+					vector8_has(chunk, (unsigned char) '\n') ||
+					vector8_has(chunk, (unsigned char) '\r'))
+				{
+					use_quote = true;
+					break;
+				}
+			}
+
+			/* Check the tail of the string */
+			if (!use_quote)
+			{
+				for (; i < len; i++)
+				{
+					char c = ptr[i];
+
+					if (c == delimc || c == quotec || c == '\n' || c == '\r')
+					{
+						use_quote = true;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	if (use_quote)
+	{
+		int		i;
+		int		start_idx = 0;
+		Vector8 chunk;
+
+		CopySendChar(cstate, quotec);
+
+		for (i = 0; i < vlen; i += sizeof(Vector8))
+		{
+			vector8_load(&chunk, (const uint8 *) &ptr[i]);
+
+			if (vector8_has(chunk, (unsigned char) delimc) ||
+				vector8_has(chunk, (unsigned char) quotec))
+			{
+				/*
+				 * This chunk has one or more characters that require
+				 * escaping, so switch to byte-at-a-time processing
+				 */
+				for (int j = i; j < (i + sizeof(Vector8)); j++)
+				{
+					char c = ptr[j];
+
+					if (c == quotec || c == escapec)
+					{
+						if (j > start_idx)
+							CopySendData(cstate, ptr + start_idx, j - start_idx);
+
+						CopySendChar(cstate, escapec);
+						start_idx = j;
+					}
+				}
+			}
+		}
+
+		/* Process the tail of the string */
+		for (; i < len; i++)
+		{
+			char c = ptr[i];
+
+			if (c == quotec || c == escapec)
+			{
+				if (i > start_idx)
+					CopySendData(cstate, ptr + start_idx, i - start_idx);
+
+				CopySendChar(cstate, escapec);
+				start_idx = i;
+			}
+		}
+
+		/* Send any remaining text */
+		if (start_idx < len)
+			CopySendData(cstate, ptr + start_idx, len - start_idx);
+
+		CopySendChar(cstate, quotec);
+	}
+	else
+	{
+		/* If it doesn't need quoting, we can just dump it as-is */
+		CopySendData(cstate, ptr, len);
+	}
+}
+
+
+/*
  * Send text representation of one attribute, with conversion and
  * CSV-style escaping
  */
@@ -1141,7 +1280,6 @@ CopyAttributeOutCSV(CopyToState cstate, const char *string,
 	char		delimc = cstate->opts.delim[0];
 	char		quotec = cstate->opts.quote[0];
 	char		escapec = cstate->opts.escape[0];
-	bool		single_attr = (list_length(cstate->attnumlist) == 1);
 
 	/* force quoting if it matches null_print (before conversion!) */
 	if (!use_quote && strcmp(string, cstate->opts.null_print) == 0)
@@ -1152,11 +1290,19 @@ CopyAttributeOutCSV(CopyToState cstate, const char *string,
 	else
 		ptr = string;
 
+	if (!cstate->encoding_embeds_ascii)
+	{
+		CopyAttributeOutCSVVector(cstate, ptr, use_quote);
+		return;
+	}
+
 	/*
 	 * Make a preliminary pass to discover if it needs quoting
 	 */
 	if (!use_quote)
 	{
+		bool	single_attr = (list_length(cstate->attnumlist) == 1);
+
 		/*
 		 * Because '\.' can be a data value, quote it if it appears alone on a
 		 * line so it is not interpreted as the end-of-data marker.
@@ -1174,7 +1320,7 @@ CopyAttributeOutCSV(CopyToState cstate, const char *string,
 					use_quote = true;
 					break;
 				}
-				if (IS_HIGHBIT_SET(c) && cstate->encoding_embeds_ascii)
+				if (IS_HIGHBIT_SET(c))
 					tptr += pg_encoding_mblen(cstate->file_encoding, tptr);
 				else
 					tptr++;
@@ -1198,7 +1344,7 @@ CopyAttributeOutCSV(CopyToState cstate, const char *string,
 				CopySendChar(cstate, escapec);
 				start = ptr;	/* we include char in next run */
 			}
-			if (IS_HIGHBIT_SET(c) && cstate->encoding_embeds_ascii)
+			if (IS_HIGHBIT_SET(c))
 				ptr += pg_encoding_mblen(cstate->file_encoding, ptr);
 			else
 				ptr++;
