@@ -29,6 +29,7 @@
 #include "access/xlogutils.h"
 #include "commands/tablespace.h"
 #include "common/file_utils.h"
+#include "common/int.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
 #include "pgstat.h"
@@ -1071,8 +1072,13 @@ mdwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 		 const void **buffers, BlockNumber nblocks, bool skipFsync)
 {
 	/* This assert is too expensive to have on normally ... */
-#ifdef CHECK_WRITE_VS_EXTEND
-	Assert((uint64) blocknum + (uint64) nblocks <= (uint64) mdnblocks(reln, forknum));
+#if defined(USE_ASSERT_CHECKING) && defined(CHECK_WRITE_VS_EXTEND)
+	uint32		tot_blocks;
+
+	if (pg_add_u32_overflow(blocknum, nblocks, &tot_blocks))
+		Assert(false);
+
+	Assert(tot_blocks <= mdnblocks(reln, forknum));
 #endif
 
 	while (nblocks > 0)
