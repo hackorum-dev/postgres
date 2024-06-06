@@ -505,6 +505,7 @@ findDependentObjects(const ObjectAddress *object,
 	int			maxDependentObjects;
 	ObjectAddressStack mystack;
 	ObjectAddressExtra extra;
+	SnapshotData SnapshotDirty;
 
 	/*
 	 * If the target object is already being visited in an outer recursion
@@ -878,8 +879,14 @@ findDependentObjects(const ObjectAddress *object,
 	else
 		nkeys = 2;
 
+	/*
+	 * We use a "dirty snapshot" to read rows modified by transactions still
+	 * in-progress, which wouldn't be visible with normal snapshots.
+	 */
+	InitDirtySnapshot(SnapshotDirty);
+
 	scan = systable_beginscan(*depRel, DependReferenceIndexId, true,
-							  NULL, nkeys, key);
+							  &SnapshotDirty, nkeys, key);
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
