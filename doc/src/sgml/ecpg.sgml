@@ -2164,11 +2164,13 @@ numeric *PGTYPESnumeric_from_asc(char *str, char **endptr);
         <literal>+3.44</literal>,
         <literal>592.49E07</literal> or
         <literal>-32.84e-4</literal>.
-       If the value could be parsed successfully, a valid pointer is returned,
-       else the NULL pointer. At the moment ECPG always parses the complete
-       string and so it currently does not support to store the address of the
-       first invalid character in <literal>*endptr</literal>. You can safely
-       set <literal>endptr</literal> to NULL.
+       If the function detects invalid format,
+       then it stores the address of the first invalid character in
+       <literal>endptr</literal>. However, don't assume it successed if
+       <literal>endptr</literal> points to end of input because other
+       processing(e.g. memory allocation) could fails.
+       Therefore, you should check return value and errno for detecting error.
+       You can safely <literal>endptr</literal> to NULL.
       </para>
      </listitem>
     </varlistentry>
@@ -2469,11 +2471,19 @@ date PGTYPESdate_from_timestamp(timestamp dt);
 date PGTYPESdate_from_asc(char *str, char **endptr);
 </synopsis>
         The function receives a C char* string <literal>str</literal> and a pointer to
-        a C char* string <literal>endptr</literal>. At the moment ECPG always parses
-        the complete string and so it currently does not support to store the
-        address of the first invalid character in <literal>*endptr</literal>.
-        You can safely set <literal>endptr</literal> to NULL.
+        a C char* string <literal>endptr</literal>.
+        If the function detects invalid format,
+        then it stores the address of the first invalid character in
+        <literal>endptr</literal>. However, don't assume it successed if
+        <literal>endptr</literal> points to end of input because other
+        processing(e.g. memory allocation) could fails.
+        Therefore, you should check errno for detecting error.
+        You can safely <literal>endptr</literal> to NULL.
        </para>
+       <para>
+        The global variable errno will be set if an error occurs.
+        In order to detect errors, check errno != 0 after calling.
+       <para>
        <para>
         Note that the function always assumes MDY-formatted dates and there is
         currently no variable to change that within ECPG.
@@ -2826,6 +2836,10 @@ int PGTYPESdate_defmt_asc(date *d, char *fmt, char *str);
         day.
        </para>
        <para>
+        Upon success, the function returns 0 and a negative value if an error occurred.
+        The global variable errno will be set if an error occurs.
+       </para>
+       <para>
         <xref linkend="ecpg-rdefmtdate-example-table"/> indicates a few possible formats. This will give
         you an idea of how to use this function.
        </para>
@@ -2935,10 +2949,13 @@ timestamp PGTYPEStimestamp_from_asc(char *str, char **endptr);
 </synopsis>
         The function receives the string to parse (<literal>str</literal>) and a
         pointer to a C char* (<literal>endptr</literal>).
-        At the moment ECPG always parses
-        the complete string and so it currently does not support to store the
-        address of the first invalid character in <literal>*endptr</literal>.
-        You can safely set <literal>endptr</literal> to NULL.
+        If the function detects invalid format,
+        then it stores the address of the first invalid character in
+        <literal>endptr</literal>. However, don't assume it successed if
+        <literal>endptr</literal> points to end of input because other
+        processing(e.g. memory allocation) could fails.
+        Therefore, you should check return value and errno for detecting error.
+        You can safely <literal>endptr</literal> to NULL.
        </para>
        <para>
         The function returns the parsed timestamp on success. On error,
@@ -3006,6 +3023,9 @@ char *PGTYPEStimestamp_to_asc(timestamp tstamp);
         its only argument and returns an allocated string that contains the
         textual representation of the timestamp.
         The result must be freed with <function>PGTYPESchar_free()</function>.
+       </para>
+       <para>
+        The function returns NULL and sets the global variable errno if an error occurred.
        </para>
       </listitem>
      </varlistentry>
@@ -3395,6 +3415,10 @@ int PGTYPEStimestamp_defmt_asc(char *str, char *fmt, timestamp *d);
         that <literal>d</literal> points to.
        </para>
        <para>
+        Upon success, the function returns 0 and 1 if an error occurred.
+        The global variable errno will not be set if an error occurs.
+       </para>
+       <para>
         If the formatting mask <literal>fmt</literal> is NULL, the function will fall
         back to the default formatting mask which is <literal>%Y-%m-%d
         %H:%M:%S</literal>.
@@ -3465,7 +3489,7 @@ int PGTYPEStimestamp_sub_interval(timestamp *tin, interval *span, timestamp *tou
       <term><function>PGTYPESinterval_new</function></term>
       <listitem>
        <para>
-        Return a pointer to a newly allocated interval variable.
+        Return a pointer to a newly allocated interval variable and NULL if an error occurred.
 <synopsis>
 interval *PGTYPESinterval_new(void);
 </synopsis>
@@ -3495,10 +3519,16 @@ interval *PGTYPESinterval_from_asc(char *str, char **endptr);
 </synopsis>
         The function parses the input string <literal>str</literal> and returns a
         pointer to an allocated interval variable.
-        At the moment ECPG always parses
-        the complete string and so it currently does not support to store the
-        address of the first invalid character in <literal>*endptr</literal>.
-        You can safely set <literal>endptr</literal> to NULL.
+        If the function detects invalid format,
+        then it stores the address of the first invalid character in
+        <literal>endptr</literal>. However, don't assume it successed if
+        <literal>endptr</literal> points to end of input because other
+        processing(e.g. memory allocation) could fails.
+        Therefore, you should check return value and errno for detecting error.
+        You can safely <literal>endptr</literal> to NULL.
+       </para>
+       <para>
+        It returns NULL and sets the global variable errno if an error occurs.
        </para>
       </listitem>
      </varlistentry>
@@ -3516,6 +3546,9 @@ char *PGTYPESinterval_to_asc(interval *span);
         <literal>@ 1 day 12 hours 59 mins 10 secs</literal>.
         The result must be freed with <function>PGTYPESchar_free()</function>.
        </para>
+       <para>
+        It returns NULL and sets the global variable errno if an error occurs.
+       </para>
       </listitem>
      </varlistentry>
 
@@ -3531,6 +3564,9 @@ int PGTYPESinterval_copy(interval *intvlsrc, interval *intvldest);
         points to into the variable that <literal>intvldest</literal> points to. Note
         that you need to allocate the memory for the destination variable
         before.
+       </para>
+       <para>
+        Upon success, the function returns 0 and non-0 value if an error occurred.
        </para>
       </listitem>
      </varlistentry>
@@ -3559,7 +3595,7 @@ int PGTYPESinterval_copy(interval *intvlsrc, interval *intvldest);
       <term><function>PGTYPESdecimal_new</function></term>
       <listitem>
        <para>
-       Request a pointer to a newly allocated decimal variable.
+       Request a pointer to a newly allocated decimal variable and NULL if an error occurred.
 <synopsis>
 decimal *PGTYPESdecimal_new(void);
 </synopsis>
