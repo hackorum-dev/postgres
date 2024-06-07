@@ -73,6 +73,7 @@
 #include "nodes/miscnodes.h"
 #include "pgstat.h"
 #include "port/pg_bswap.h"
+#include "port/simd.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
 
@@ -1180,6 +1181,7 @@ CopyReadLineText(CopyFromState cstate)
 	bool		need_data = false;
 	bool		hit_eof = false;
 	bool		result = false;
+	Vector8		chunk;
 
 	/* CSV variables */
 	bool		first_char_in_line = true;
@@ -1259,6 +1261,40 @@ CopyReadLineText(CopyFromState cstate)
 				break;
 			}
 			need_data = false;
+		}
+
+		/*
+		 * If there is enough data available, use SIMD to check for special
+		 * characters. This allows us to efficiently skip large chunks of
+		 * text, in the common case that newlines and control characters are
+		 * relatively rare.
+		 */
+		Assert(input_buf_ptr <= cstate->input_buf_len);
+		if (cstate->input_buf_len - input_buf_ptr >= sizeof(Vector8))
+		{
+			vector8_load(&chunk, (const uint8 *) &input_buf[input_buf_ptr]);
+
+			if (!(vector8_has(chunk, (unsigned char) '\\') ||
+				  vector8_has(chunk, (unsigned char) '\r') ||
+				  vector8_has(chunk, (unsigned char) '\n') ||
+				  (cstate->opts.csv_mode && vector8_has(
+					  chunk, (unsigned char) escapec)) ||
+				  (cstate->opts.csv_mode && vector8_has(
+					  chunk, (unsigned char) quotec))))
+			{
+				input_buf_ptr += sizeof(Vector8);
+				continue;
+			}
+
+			/*
+			 * Otherwise, proceed byte-by-byte. Note that on subsequent loop
+			 * iterations, because we will only advance input_buf_ptr by a few
+			 * bytes (usually only one), the SIMD checks above will often be
+			 * repeated on an overlapping range of bytes.
+			 *
+			 * TODO: check whether the bookkeeping required to avoid this is
+			 * worth the cost/complexity.
+			 */
 		}
 
 		/* OK to fetch a character */
