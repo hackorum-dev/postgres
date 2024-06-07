@@ -2942,8 +2942,14 @@ timestamp PGTYPEStimestamp_from_asc(char *str, char **endptr);
        </para>
        <para>
         The function returns the parsed timestamp on success. On error,
-        <literal>PGTYPESInvalidTimestamp</literal> is returned and <varname>errno</varname> is
-        set to <literal>PGTYPES_TS_BAD_TIMESTAMP</literal>. See <xref linkend="pgtypesinvalidtimestamp"/> for important notes on this value.
+        0 is returned and <varname>errno</varname> is set to
+        <literal>PGTYPES_TS_BAD_TIMESTAMP</literal>.
+        Note that due to the internal representation of the <type>timestamp</type> data type,
+        0 is also a valid timestamp at the same time.
+        It is set to <literal>1900-01-01 00:00:00</literal>. In order
+        to detect errors, make sure that your application does not only test
+        for return value but also for <literal>errno != 0</literal> after each call to
+        <function>PGTYPEStimestamp_from_asc</function>.
        </para>
        <para>
         In general, the input string can contain any combination of an allowed
@@ -3711,31 +3717,6 @@ void PGTYPESdecimal_free(decimal *var);
        <para>
         An infinite timestamp value was encountered in a context that
         cannot handle it.
-       </para>
-      </listitem>
-     </varlistentry>
-    </variablelist>
-   </para>
-  </sect2>
-
-   <sect2 id="ecpg-pgtypes-constants">
-    <title>Special Constants of pgtypeslib</title>
-   <para>
-    <variablelist>
-     <varlistentry id="pgtypesinvalidtimestamp">
-      <term><literal>PGTYPESInvalidTimestamp</literal></term>
-      <listitem>
-       <para>
-        A value of type timestamp representing an invalid time stamp. This is
-        returned by the function <function>PGTYPEStimestamp_from_asc</function> on
-        parse error.
-        Note that due to the internal representation of the <type>timestamp</type> data type,
-        <literal>PGTYPESInvalidTimestamp</literal> is also a valid timestamp at
-        the same time. It is set to <literal>1899-12-31 23:59:59</literal>. In order
-        to detect errors, make sure that your application does not only test
-        for <literal>PGTYPESInvalidTimestamp</literal> but also for
-        <literal>errno != 0</literal> after each call to
-        <function>PGTYPEStimestamp_from_asc</function>.
        </para>
       </listitem>
      </varlistentry>
