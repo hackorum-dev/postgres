@@ -188,18 +188,18 @@ main(void)
 	printf("timestamp_to_asc2: %s\n", text);
 	PGTYPESchar_free(text);
 
-	ts1 = PGTYPEStimestamp_from_asc("1994-02-11 26:10:35", NULL);
-	text = PGTYPEStimestamp_to_asc(ts1);
-	printf("timestamp_to_asc3: %s\n", text);
-	PGTYPESchar_free(text);
-
 /*	abc-03:10:35-def-02/11/94-gh  */
-/*      12345678901234567890123456789 */
+/*	12345678901234567890123456789 */
 
 	out = (char*) malloc(32);
 	i = PGTYPEStimestamp_fmt_asc(&ts1, out, 31, "abc-%X-def-%x-ghi%%");
 	printf("timestamp_fmt_asc: %d: %s\n", i, out);
 	free(out);
+
+	ts1 = PGTYPEStimestamp_from_asc("1994-02-11 26:10:35", NULL);
+	text = PGTYPEStimestamp_to_asc(ts1);
+	printf("timestamp_to_asc3: %s\n", text);
+	PGTYPESchar_free(text);
 
 	fmt = "This is a %m/%d/%y %H-%Ml%Stest";
 	in =  "This is a 4/12/80 3-39l12test";
