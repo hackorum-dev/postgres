@@ -120,7 +120,7 @@ RemoveObjects(DropStmt *stmt)
 	}
 
 	/* Here we really delete them. */
-	performMultipleDeletions(objects, stmt->behavior, 0);
+	performMultipleDeletions(objects, stmt->behavior, 0, true);
 
 	free_object_addresses(objects);
 }

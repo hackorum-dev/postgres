@@ -189,7 +189,7 @@ static void DeleteInitPrivs(const ObjectAddress *object);
  */
 static void
 deleteObjectsInList(ObjectAddresses *targetObjects, Relation *depRel,
-					int flags)
+					int flags, bool sort_objects)
 {
 	int			i;
 
@@ -219,6 +219,8 @@ deleteObjectsInList(ObjectAddresses *targetObjects, Relation *depRel,
 		}
 	}
 
+	if (sort_objects)
+		sort_object_addresses(targetObjects);
 	/*
 	 * Delete all the objects in the proper order, except that if told to, we
 	 * should skip the original object(s).
@@ -317,7 +319,7 @@ performDeletion(const ObjectAddress *object,
 						   object);
 
 	/* do the deed */
-	deleteObjectsInList(targetObjects, &depRel, flags);
+	deleteObjectsInList(targetObjects, &depRel, flags, false);
 
 	/* And clean up */
 	free_object_addresses(targetObjects);
@@ -386,16 +388,39 @@ performDeletionCheck(const ObjectAddress *object,
  */
 void
 performMultipleDeletions(const ObjectAddresses *objects,
-						 DropBehavior behavior, int flags)
+						 DropBehavior behavior, int flags, bool sortable)
 {
 	Relation	depRel;
 	ObjectAddresses *targetObjects;
 	int			i;
+	bool		sort_objects = true;
+	char		relkind = '\0';
 
 	/* No work if no objects... */
 	if (objects->numrefs <= 0)
 		return;
 
+	for (int j = 0; j < objects->numrefs; j++)
+	{
+		const ObjectAddress *thisobj = objects->refs + j;
+		if (thisobj->classId != RelationRelationId)
+			continue;
+		relkind = get_rel_relkind(thisobj->objectId);
+
+		/* 
+		 * for partitioned table, sequence findDependentObjects can resolve
+		 * the delete objects order correctly, othercase, we can sort the
+		 * to be deleted objects via sort_object_addresses in deleteObjectsInList
+		*/
+		if (relkind == RELKIND_PARTITIONED_TABLE || relkind == RELKIND_SEQUENCE)
+		{
+			sort_objects = false;
+			break;
+		}
+	}
+
+	if (!(sortable && sort_objects))
+		sort_objects = false;
 	/*
 	 * We save some cycles by opening pg_depend just once and passing the
 	 * Relation pointer down to all the recursive deletion steps.
@@ -443,7 +468,7 @@ performMultipleDeletions(const ObjectAddresses *objects,
 						   (objects->numrefs == 1 ? objects->refs : NULL));
 
 	/* do the deed */
-	deleteObjectsInList(targetObjects, &depRel, flags);
+	deleteObjectsInList(targetObjects, &depRel, flags, sort_objects);
 
 	/* And clean up */
 	free_object_addresses(targetObjects);

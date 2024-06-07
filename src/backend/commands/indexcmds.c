@@ -4534,7 +4534,7 @@ ReindexRelationConcurrently(const ReindexStmt *stmt, Oid relationOid, const Rein
 		 * right lock level.
 		 */
 		performMultipleDeletions(objects, DROP_RESTRICT,
-								 PERFORM_DELETION_CONCURRENT_LOCK | PERFORM_DELETION_INTERNAL);
+								 PERFORM_DELETION_CONCURRENT_LOCK | PERFORM_DELETION_INTERNAL, true);
 	}
 
 	PopActiveSnapshot();

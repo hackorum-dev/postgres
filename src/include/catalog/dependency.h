@@ -110,7 +110,7 @@ extern void performDeletion(const ObjectAddress *object,
 extern void performDeletionCheck(const ObjectAddress *object,
 								 DropBehavior behavior, int flags);
 extern void performMultipleDeletions(const ObjectAddresses *objects,
-									 DropBehavior behavior, int flags);
+									 DropBehavior behavior, int flags, bool sortable);
 
 extern void recordDependencyOnExpr(const ObjectAddress *depender,
 								   Node *expr, List *rtable,

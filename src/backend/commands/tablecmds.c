@@ -1601,6 +1601,7 @@ RemoveRelations(DropStmt *drop)
 	ListCell   *cell;
 	int			flags = 0;
 	LOCKMODE	lockmode = AccessExclusiveLock;
+	bool		sortable = true;
 
 	/* DROP CONCURRENTLY uses a weaker lock, and has some restrictions */
 	if (drop->concurrent)
@@ -1750,7 +1751,9 @@ RemoveRelations(DropStmt *drop)
 		add_exact_object_address(&obj, objects);
 	}
 
-	performMultipleDeletions(objects, drop->behavior, flags);
+	if (list_length(drop->objects) > 1)
+		sortable = false;
+	performMultipleDeletions(objects, drop->behavior, flags, sortable);
 
 	free_object_addresses(objects);
 }
@@ -9601,7 +9604,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	if (!recursing)
 	{
 		/* Recursion has ended, drop everything that was collected */
-		performMultipleDeletions(addrs, behavior, 0);
+		performMultipleDeletions(addrs, behavior, 0, true);
 		free_object_addresses(addrs);
 	}
 
@@ -16311,7 +16314,7 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 	 * It should be okay to use DROP_RESTRICT here, since nothing else should
 	 * be depending on these objects.
 	 */
-	performMultipleDeletions(objects, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
+	performMultipleDeletions(objects, DROP_RESTRICT, PERFORM_DELETION_INTERNAL, true);
 
 	free_object_addresses(objects);
 
@@ -20095,7 +20098,7 @@ PreCommit_on_commit_actions(void)
 		 * by the user, we pass the PERFORM_DELETION_INTERNAL flag.
 		 */
 		performMultipleDeletions(targetObjects, DROP_CASCADE,
-								 PERFORM_DELETION_INTERNAL | PERFORM_DELETION_QUIETLY);
+								 PERFORM_DELETION_INTERNAL | PERFORM_DELETION_QUIETLY, true);
 
 		PopActiveSnapshot();
 
@@ -22290,7 +22293,7 @@ DropClonedTriggersFromPartition(Oid partitionId)
 
 	/* make the dependency removal visible to the deletion below */
 	CommandCounterIncrement();
-	performMultipleDeletions(objects, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
+	performMultipleDeletions(objects, DROP_RESTRICT, PERFORM_DELETION_INTERNAL, true);
 
 	/* done */
 	free_object_addresses(objects);

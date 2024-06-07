@@ -1513,7 +1513,7 @@ shdepDropOwned(List *roleids, DropBehavior behavior)
 	sort_object_addresses(deleteobjs);
 
 	/* the dependency mechanism does the actual work */
-	performMultipleDeletions(deleteobjs, behavior, 0);
+	performMultipleDeletions(deleteobjs, behavior, 0, true);
 
 	table_close(sdepRel, RowExclusiveLock);
 
