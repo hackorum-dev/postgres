@@ -98,7 +98,7 @@
 #define IF_NEED_REFILL_AND_NOT_EOF_CONTINUE(extralen) \
 if (1) \
 { \
-	if (input_buf_ptr + (extralen) >= copy_buf_len && !hit_eof) \
+	if (input_buf_ptr + (extralen) >= input_buf_len && !hit_eof) \
 	{ \
 		input_buf_ptr = prev_raw_ptr; /* undo fetch */ \
 		need_data = true; \
@@ -110,10 +110,10 @@ if (1) \
 #define IF_NEED_REFILL_AND_EOF_BREAK(extralen) \
 if (1) \
 { \
-	if (input_buf_ptr + (extralen) >= copy_buf_len && hit_eof) \
+	if (input_buf_ptr + (extralen) >= input_buf_len && hit_eof) \
 	{ \
 		if (extralen) \
-			input_buf_ptr = copy_buf_len; /* consume the partial character */ \
+			input_buf_ptr = input_buf_len; /* consume the partial character */ \
 		/* backslash just before EOF, treat as data char */ \
 		result = true; \
 		break; \
@@ -130,7 +130,7 @@ if (1) \
 	if (input_buf_ptr > cstate->input_buf_index) \
 	{ \
 		appendBinaryStringInfo(&cstate->line_buf, \
-							 cstate->input_buf + cstate->input_buf_index, \
+							   cstate->input_buf + cstate->input_buf_index, \
 							   input_buf_ptr - cstate->input_buf_index); \
 		cstate->input_buf_index = input_buf_ptr; \
 	} \
@@ -1174,9 +1174,9 @@ CopyReadLine(CopyFromState cstate)
 static bool
 CopyReadLineText(CopyFromState cstate)
 {
-	char	   *copy_input_buf;
+	char	   *input_buf;
 	int			input_buf_ptr;
-	int			copy_buf_len;
+	int			input_buf_len;
 	bool		need_data = false;
 	bool		hit_eof = false;
 	bool		result = false;
@@ -1222,9 +1222,9 @@ CopyReadLineText(CopyFromState cstate)
 	 * For a little extra speed within the loop, we copy input_buf and
 	 * input_buf_len into local variables.
 	 */
-	copy_input_buf = cstate->input_buf;
+	input_buf = cstate->input_buf;
 	input_buf_ptr = cstate->input_buf_index;
-	copy_buf_len = cstate->input_buf_len;
+	input_buf_len = cstate->input_buf_len;
 
 	for (;;)
 	{
@@ -1239,7 +1239,7 @@ CopyReadLineText(CopyFromState cstate)
 		 * unsafe with the old v2 COPY protocol, but we don't support that
 		 * anymore.
 		 */
-		if (input_buf_ptr >= copy_buf_len || need_data)
+		if (input_buf_ptr >= input_buf_len || need_data)
 		{
 			REFILL_LINEBUF;
 
@@ -1247,7 +1247,7 @@ CopyReadLineText(CopyFromState cstate)
 			/* update our local variables */
 			hit_eof = cstate->input_reached_eof;
 			input_buf_ptr = cstate->input_buf_index;
-			copy_buf_len = cstate->input_buf_len;
+			input_buf_len = cstate->input_buf_len;
 
 			/*
 			 * If we are completely out of data, break out of the loop,
@@ -1263,7 +1263,7 @@ CopyReadLineText(CopyFromState cstate)
 
 		/* OK to fetch a character */
 		prev_raw_ptr = input_buf_ptr;
-		c = copy_input_buf[input_buf_ptr++];
+		c = input_buf[input_buf_ptr++];
 
 		if (cstate->opts.csv_mode)
 		{
@@ -1319,7 +1319,7 @@ CopyReadLineText(CopyFromState cstate)
 				IF_NEED_REFILL_AND_NOT_EOF_CONTINUE(0);
 
 				/* get next char */
-				c = copy_input_buf[input_buf_ptr];
+				c = input_buf[input_buf_ptr];
 
 				if (c == '\n')
 				{
@@ -1393,7 +1393,7 @@ CopyReadLineText(CopyFromState cstate)
 			 * through and continue processing.
 			 * -----
 			 */
-			c2 = copy_input_buf[input_buf_ptr];
+			c2 = input_buf[input_buf_ptr];
 
 			if (c2 == '.')
 			{
@@ -1409,7 +1409,7 @@ CopyReadLineText(CopyFromState cstate)
 					/* Get the next character */
 					IF_NEED_REFILL_AND_NOT_EOF_CONTINUE(0);
 					/* if hit_eof, c2 will become '\0' */
-					c2 = copy_input_buf[input_buf_ptr++];
+					c2 = input_buf[input_buf_ptr++];
 
 					if (c2 == '\n')
 					{
@@ -1434,7 +1434,7 @@ CopyReadLineText(CopyFromState cstate)
 				/* Get the next character */
 				IF_NEED_REFILL_AND_NOT_EOF_CONTINUE(0);
 				/* if hit_eof, c2 will become '\0' */
-				c2 = copy_input_buf[input_buf_ptr++];
+				c2 = input_buf[input_buf_ptr++];
 
 				if (c2 != '\r' && c2 != '\n')
 				{
