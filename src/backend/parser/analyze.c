@@ -1972,6 +1972,8 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 										NULL,
 										false);
 
+   list_free(targetnames);
+
 	sv_namespace = pstate->p_namespace;
 	pstate->p_namespace = NIL;
 
