@@ -408,15 +408,13 @@ CheckMyDatabase(const char *name, bool am_superuser, bool override_allow_connect
 	if (pg_perm_setlocale(LC_COLLATE, collate) == NULL)
 		ereport(FATAL,
 				(errmsg("database locale is incompatible with operating system"),
-				 errdetail("The database was initialized with LC_COLLATE \"%s\", "
-						   " which is not recognized by setlocale().", collate),
+				 errdetail("The database was initialized with LC_COLLATE \"%s\", which is not recognized by setlocale().", collate),
 				 errhint("Recreate the database with another locale or install the missing locale.")));
 
 	if (pg_perm_setlocale(LC_CTYPE, ctype) == NULL)
 		ereport(FATAL,
 				(errmsg("database locale is incompatible with operating system"),
-				 errdetail("The database was initialized with LC_CTYPE \"%s\", "
-						   " which is not recognized by setlocale().", ctype),
+				 errdetail("The database was initialized with LC_CTYPE \"%s\", which is not recognized by setlocale().", ctype),
 				 errhint("Recreate the database with another locale or install the missing locale.")));
 
 	if (strcmp(ctype, "C") == 0 ||
@@ -490,12 +488,9 @@ CheckMyDatabase(const char *name, bool am_superuser, bool override_allow_connect
 			ereport(WARNING,
 					(errmsg("database \"%s\" has a collation version mismatch",
 							name),
-					 errdetail("The database was created using collation version %s, "
-							   "but the operating system provides version %s.",
+					 errdetail("The database was created using collation version %s, but the operating system provides version %s.",
 							   collversionstr, actual_versionstr),
-					 errhint("Rebuild all objects in this database that use the default collation and run "
-							 "ALTER DATABASE %s REFRESH COLLATION VERSION, "
-							 "or build PostgreSQL with the right library version.",
+					 errhint("Rebuild all objects in this database that use the default collation and run ALTER DATABASE %s REFRESH COLLATION VERSION or build PostgreSQL with the right library version.",
 							 quote_identifier(name))));
 	}
 
