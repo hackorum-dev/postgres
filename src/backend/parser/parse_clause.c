@@ -1728,6 +1728,8 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 										   j->alias,
 										   true);
 
+       list_free(res_colnames);
+
 		/* Verify that we correctly predicted the join's RT index */
 		Assert(j->rtindex == nsitem->p_rtindex);
 		/* Cross-check number of columns, too */
