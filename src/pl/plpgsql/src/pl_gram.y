@@ -70,6 +70,8 @@ static	PLpgSQL_expr	*read_sql_construct(int until,
 											int *endtoken);
 static	PLpgSQL_expr	*read_sql_expression(int until,
 											 const char *expected);
+static	PLpgSQL_expr	*read_sql_expressions(int until,
+											  const char *expected);
 static	PLpgSQL_expr	*read_sql_expression2(int until, int until2,
 											  const char *expected,
 											  int *endtoken);
@@ -176,7 +178,7 @@ static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
 %type <nsitem>	decl_aliasitem
 
 %type <expr>	expr_until_semi
-%type <expr>	expr_until_then expr_until_loop opt_expr_until_when
+%type <expr>	expr_until_then expr_until_loop opt_expr_until_when exprs_until_then
 %type <expr>	opt_exitcond
 
 %type <var>		cursor_variable
@@ -1239,7 +1241,7 @@ case_when_list	: case_when_list case_when
 					}
 				;
 
-case_when		: K_WHEN expr_until_then proc_sect
+case_when		: K_WHEN exprs_until_then proc_sect
 					{
 						PLpgSQL_case_when *new = palloc(sizeof(PLpgSQL_case_when));
 
@@ -1248,6 +1250,10 @@ case_when		: K_WHEN expr_until_then proc_sect
 						new->stmts = $3;
 						$$ = new;
 					}
+				;
+
+exprs_until_then	:
+					{ $$ = read_sql_expressions(K_THEN, "THEN"); }
 				;
 
 opt_case_else	:
@@ -2641,6 +2647,15 @@ read_sql_expression(int until, const char *expected)
 							  true, true, NULL, NULL);
 }
 
+/* Convenience routine to read an expression with one possible terminator */
+static PLpgSQL_expr *
+read_sql_expressions(int until, const char *expected)
+{
+	return read_sql_construct(until, 0, 0, expected,
+							  RAW_PARSE_PLPGSQL_EXPR_LIST,
+							  true, true, NULL, NULL);
+}
+
 /* Convenience routine to read an expression with two possible terminators */
 static PLpgSQL_expr *
 read_sql_expression2(int until, int until2, const char *expected,
@@ -3977,7 +3992,7 @@ read_cursor_args(PLpgSQL_var *cursor, int until)
 
 	expr = palloc0(sizeof(PLpgSQL_expr));
 	expr->query = pstrdup(ds.data);
-	expr->parseMode = RAW_PARSE_PLPGSQL_EXPR;
+	expr->parseMode = any_named ? RAW_PARSE_PLPGSQL_EXPR_WITH_LABEL_LIST : RAW_PARSE_PLPGSQL_EXPR_LIST;
 	expr->plan = NULL;
 	expr->paramnos = NULL;
 	expr->target_param = -1;
@@ -4151,7 +4166,7 @@ make_case(int location, PLpgSQL_expr *t_expr,
 			StringInfoData ds;
 
 			/* We expect to have expressions not statements */
-			Assert(expr->parseMode == RAW_PARSE_PLPGSQL_EXPR);
+			Assert(expr->parseMode == RAW_PARSE_PLPGSQL_EXPR_LIST);
 
 			/* Do the string hacking */
 			initStringInfo(&ds);

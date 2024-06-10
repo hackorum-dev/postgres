@@ -1667,7 +1667,7 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_relfilenode oid;
 BEGIN
-    v_relfilenode := relfilenode FROM pg_class WHERE oid = p_tablename;
+    v_relfilenode := (select relfilenode FROM pg_class WHERE oid = p_tablename);
 
     EXECUTE p_ddl;
 

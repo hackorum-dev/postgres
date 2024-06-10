@@ -65,7 +65,6 @@
 #include "utils/numeric.h"
 #include "utils/xml.h"
 
-
 /*
  * Location tracking support --- simpler than bison's default, since we only
  * want to track the start position not the end position of each nonterminal.
@@ -323,7 +322,11 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
-				PLpgSQL_Expr PLAssignStmt
+				PLpgSQL_Expr PLAssignStmt PLpgSQL_Expr_list
+				PLpgSQL_Expr_with_label_list
+
+%type <target>	plpgsql_unnamed_target_el
+%type <list>	plpgsql_unnamed_target_list
 
 %type <str>			opt_single_name
 %type <list>		opt_qualified_name
@@ -439,7 +442,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				name_list role_list from_clause from_list opt_array_bounds
 				qualified_name_list any_name any_name_list type_name_list
 				any_operator expr_list attrs
-				distinct_clause opt_distinct_clause
+				distinct_clause
 				target_list opt_target_list insert_column_list set_target_list
 				merge_values_clause
 				set_clause_list set_clause
@@ -827,7 +830,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %token		MODE_PLPGSQL_ASSIGN1
 %token		MODE_PLPGSQL_ASSIGN2
 %token		MODE_PLPGSQL_ASSIGN3
-
+%token		MODE_PLPGSQL_EXPR_LIST
+%token		MODE_PLPGSQL_EXPR_WITH_LABEL_LIST
 
 /* Precedence: lowest to highest */
 %left		UNION EXCEPT
@@ -957,6 +961,16 @@ parse_toplevel:
 				n->nnames = 3;
 				pg_yyget_extra(yyscanner)->parsetree =
 					list_make1(makeRawStmt((Node *) n, 0));
+			}
+			| MODE_PLPGSQL_EXPR_LIST PLpgSQL_Expr_list
+			{
+				pg_yyget_extra(yyscanner)->parsetree =
+					list_make1(makeRawStmt($2, 0));
+			}
+			| MODE_PLPGSQL_EXPR_WITH_LABEL_LIST PLpgSQL_Expr_with_label_list
+			{
+				pg_yyget_extra(yyscanner)->parsetree =
+					list_make1(makeRawStmt($2, 0));
 			}
 		;
 
@@ -13118,11 +13132,6 @@ opt_all_clause:
 			| /*EMPTY*/
 		;
 
-opt_distinct_clause:
-			distinct_clause							{ $$ = $1; }
-			| opt_all_clause						{ $$ = NIL; }
-		;
-
 opt_sort_clause:
 			sort_clause								{ $$ = $1; }
 			| /*EMPTY*/								{ $$ = NIL; }
@@ -17429,7 +17438,6 @@ role_list:	RoleSpec
 				{ $$ = lappend($1, $3); }
 		;
 
-
 /*****************************************************************************
  *
  * PL/pgSQL extensions
@@ -17439,34 +17447,61 @@ role_list:	RoleSpec
  * Therefore the returned struct is a SelectStmt.
  *****************************************************************************/
 
-PLpgSQL_Expr: opt_distinct_clause opt_target_list
-			from_clause where_clause
-			group_clause having_clause window_clause
-			opt_sort_clause opt_select_limit opt_for_locking_clause
+PLpgSQL_Expr: a_expr
+				{
+					SelectStmt *n = makeNode(SelectStmt);
+					ResTarget *rt;
+
+					rt = makeNode(ResTarget);
+					rt->name = NULL;
+					rt->indirection = NIL;
+					rt->val = (Node *) $1;
+					rt->location = @1;
+
+					n->targetList = list_make1((Node *) rt);
+
+					$$ = (Node *) n;
+				}
+		;
+
+plpgsql_unnamed_target_el: a_expr
+				{
+					$$ = makeNode(ResTarget);
+					$$->name = NULL;
+					$$->indirection = NIL;
+					$$->val = (Node *) $1;
+					$$->location = @1;
+				}
+		;
+
+plpgsql_unnamed_target_list:
+			plpgsql_unnamed_target_el
+				{
+					$$ = list_make1($1);
+				}
+			| plpgsql_unnamed_target_list ',' plpgsql_unnamed_target_el
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+PLpgSQL_Expr_list: plpgsql_unnamed_target_list
 				{
 					SelectStmt *n = makeNode(SelectStmt);
 
-					n->distinctClause = $1;
-					n->targetList = $2;
-					n->fromClause = $3;
-					n->whereClause = $4;
-					n->groupClause = ($5)->list;
-					n->groupDistinct = ($5)->distinct;
-					n->havingClause = $6;
-					n->windowClause = $7;
-					n->sortClause = $8;
-					if ($9)
-					{
-						n->limitOffset = $9->limitOffset;
-						n->limitCount = $9->limitCount;
-						if (!n->sortClause &&
-							$9->limitOption == LIMIT_OPTION_WITH_TIES)
-							ereport(ERROR,
-									(errcode(ERRCODE_SYNTAX_ERROR),
-									 errmsg("WITH TIES cannot be specified without ORDER BY clause")));
-						n->limitOption = $9->limitOption;
-					}
-					n->lockingClause = $10;
+					n->targetList = $1;
+
+					$$ = (Node *) n;
+
+				}
+		;
+
+PLpgSQL_Expr_with_label_list: target_list
+				{
+					SelectStmt *n = makeNode(SelectStmt);
+
+					n->targetList = $1;
+
 					$$ = (Node *) n;
 				}
 		;
