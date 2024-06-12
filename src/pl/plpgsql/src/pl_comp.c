@@ -800,6 +800,13 @@ plpgsql_compile_inline(char *proc_source)
 	function->extra_warnings = 0;
 	function->extra_errors = 0;
 
+	/*
+	 * Although function->extra_errors is disabled, we want to
+	 * do strict_expr_check inside annoymous block too.
+	 */
+	if (plpgsql_extra_errors & PLPGSQL_XCHECK_STRICTEXPRCHECK)
+		function->extra_errors = PLPGSQL_XCHECK_STRICTEXPRCHECK;
+
 	function->nstatements = 0;
 	function->requires_procedure_resowner = false;
 	function->has_exception_block = false;

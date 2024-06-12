@@ -18,6 +18,7 @@
 #include "catalog/namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
+#include "nodes/nodeFuncs.h"
 #include "parser/parser.h"
 #include "parser/parse_type.h"
 #include "parser/scanner.h"
@@ -71,6 +72,7 @@ static	PLpgSQL_expr	*read_sql_construct(int until,
 											const char *expected,
 											RawParseMode parsemode,
 											bool isexpression,
+											bool allowlist,
 											bool valid_sql,
 											int *startloc,
 											int *endtoken,
@@ -106,7 +108,7 @@ static	PLpgSQL_row		*make_scalar_list1(char *initial_name,
 										   PLpgSQL_datum *initial_datum,
 										   int lineno, int location, yyscan_t yyscanner);
 static	void			 check_sql_expr(const char *stmt,
-										RawParseMode parseMode, int location, yyscan_t yyscanner);
+										RawParseMode parseMode, bool allowlist, int location, yyscan_t yyscanner);
 static	void			 plpgsql_sql_error_callback(void *arg);
 static	PLpgSQL_type	*parse_datatype(const char *string, int location, yyscan_t yyscanner);
 static	void			 check_labels(const char *start_label,
@@ -117,6 +119,7 @@ static	PLpgSQL_expr	*read_cursor_args(PLpgSQL_var *cursor, int until,
 										  YYSTYPE *yylvalp, YYLTYPE *yyllocp, yyscan_t yyscanner);
 static	List			*read_raise_options(YYSTYPE *yylvalp, YYLTYPE *yyllocp, yyscan_t yyscanner);
 static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
+static	bool			is_strict_expr(List *parsetree, int *errpos, bool allowlist);
 
 %}
 
@@ -193,6 +196,7 @@ static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
 %type <expr>	expr_until_semi
 %type <expr>	expr_until_then expr_until_loop opt_expr_until_when
 %type <expr>	opt_exitcond
+%type <expr>	expressions_until_then
 
 %type <var>		cursor_variable
 %type <datum>	decl_cursor_arg
@@ -914,7 +918,7 @@ stmt_perform	: K_PERFORM
 						 */
 						new->expr = read_sql_construct(';', 0, 0, ";",
 													   RAW_PARSE_DEFAULT,
-													   false, false,
+													   false, false, false,
 													   &startloc, NULL,
 													   &yylval, &yylloc, yyscanner);
 						/* overwrite "perform" ... */
@@ -924,7 +928,7 @@ stmt_perform	: K_PERFORM
 								strlen(new->expr->query));
 						/* offset syntax error position to account for that */
 						check_sql_expr(new->expr->query, new->expr->parseMode,
-									   startloc + 1, yyscanner);
+									   false, startloc + 1, yyscanner);
 
 						$$ = (PLpgSQL_stmt *) new;
 					}
@@ -1001,7 +1005,7 @@ stmt_assign		: T_DATUM
 						plpgsql_push_back_token(T_DATUM, &yylval, &yylloc, yyscanner);
 						new->expr = read_sql_construct(';', 0, 0, ";",
 													   pmode,
-													   false, true,
+													   false, false, true,
 													   NULL, NULL,
 													   &yylval, &yylloc, yyscanner);
 						mark_expr_as_assignment_source(new->expr, $1.datum);
@@ -1262,7 +1266,7 @@ case_when_list	: case_when_list case_when
 					}
 				;
 
-case_when		: K_WHEN expr_until_then proc_sect
+case_when		: K_WHEN expressions_until_then proc_sect
 					{
 						PLpgSQL_case_when *new = palloc_object(PLpgSQL_case_when);
 
@@ -1289,6 +1293,15 @@ opt_case_else	:
 							$$ = $2;
 						else
 							$$ = list_make1(NULL);
+					}
+				;
+
+expressions_until_then :
+					{
+						$$ = read_sql_construct(K_THEN, 0, 0, "THEN",
+												RAW_PARSE_PLPGSQL_EXPR, /* expr_list */
+												true, true, true, NULL, NULL,
+												&yylval, &yylloc, yyscanner);
 					}
 				;
 
@@ -1496,6 +1509,7 @@ for_control		: for_variable K_IN
 													   RAW_PARSE_DEFAULT,
 													   true,
 													   false,
+													   false,
 													   &expr1loc,
 													   &tok,
 													   &yylval, &yylloc, yyscanner);
@@ -1514,7 +1528,7 @@ for_control		: for_variable K_IN
 								 */
 								expr1->parseMode = RAW_PARSE_PLPGSQL_EXPR;
 								check_sql_expr(expr1->query, expr1->parseMode,
-											   expr1loc, yyscanner);
+											   false, expr1loc, yyscanner);
 
 								/* Read and check the second one */
 								expr2 = read_sql_expression2(K_LOOP, K_BY,
@@ -1571,7 +1585,7 @@ for_control		: for_variable K_IN
 
 								/* Check syntax as a regular query */
 								check_sql_expr(expr1->query, expr1->parseMode,
-											   expr1loc, yyscanner);
+											   false, expr1loc, yyscanner);
 
 								new = palloc0_object(PLpgSQL_stmt_fors);
 								new->cmd_type = PLPGSQL_STMT_FORS;
@@ -1903,7 +1917,7 @@ stmt_raise		: K_RAISE
 									expr = read_sql_construct(',', ';', K_USING,
 															  ", or ; or USING",
 															  RAW_PARSE_PLPGSQL_EXPR,
-															  true, true,
+															  true, false, true,
 															  NULL, &tok,
 															  &yylval, &yylloc, yyscanner);
 									new->params = lappend(new->params, expr);
@@ -2041,7 +2055,7 @@ stmt_dynexecute : K_EXECUTE
 						expr = read_sql_construct(K_INTO, K_USING, ';',
 												  "INTO or USING or ;",
 												  RAW_PARSE_PLPGSQL_EXPR,
-												  true, true,
+												  true, false, true,
 												  NULL, &endtoken,
 												  &yylval, &yylloc, yyscanner);
 
@@ -2081,7 +2095,7 @@ stmt_dynexecute : K_EXECUTE
 									expr = read_sql_construct(',', ';', K_INTO,
 															  ", or ; or INTO",
 															  RAW_PARSE_PLPGSQL_EXPR,
-															  true, true,
+															  true, false, true,
 															  NULL, &endtoken,
 															  &yylval, &yylloc, yyscanner);
 									new->params = lappend(new->params, expr);
@@ -2717,7 +2731,7 @@ read_sql_expression(int until, const char *expected, YYSTYPE *yylvalp, YYLTYPE *
 {
 	return read_sql_construct(until, 0, 0, expected,
 							  RAW_PARSE_PLPGSQL_EXPR,
-							  true, true, NULL, NULL,
+							  true, false, true, NULL, NULL,
 							  yylvalp, yyllocp, yyscanner);
 }
 
@@ -2728,7 +2742,7 @@ read_sql_expression2(int until, int until2, const char *expected,
 {
 	return read_sql_construct(until, until2, 0, expected,
 							  RAW_PARSE_PLPGSQL_EXPR,
-							  true, true, NULL, endtoken,
+							  true, false, true, NULL, endtoken,
 							  yylvalp, yyllocp, yyscanner);
 }
 
@@ -2738,7 +2752,7 @@ read_sql_stmt(YYSTYPE *yylvalp, YYLTYPE *yyllocp, yyscan_t yyscanner)
 {
 	return read_sql_construct(';', 0, 0, ";",
 							  RAW_PARSE_DEFAULT,
-							  false, true, NULL, NULL,
+							  false, false, true, NULL, NULL,
 							  yylvalp, yyllocp, yyscanner);
 }
 
@@ -2751,6 +2765,7 @@ read_sql_stmt(YYSTYPE *yylvalp, YYLTYPE *yyllocp, yyscan_t yyscanner)
  * expected:	text to use in complaining that terminator was not found
  * parsemode:	raw_parser() mode to use
  * isexpression: whether to say we're reading an "expression" or a "statement"
+ * allowlist:   the result can be list of expressions
  * valid_sql:   whether to check the syntax of the expr
  * startloc:	if not NULL, location of first token is stored at *startloc
  * endtoken:	if not NULL, ending token is stored at *endtoken
@@ -2763,6 +2778,7 @@ read_sql_construct(int until,
 				   const char *expected,
 				   RawParseMode parsemode,
 				   bool isexpression,
+				   bool allowlist,
 				   bool valid_sql,
 				   int *startloc,
 				   int *endtoken,
@@ -2858,7 +2874,7 @@ read_sql_construct(int until,
 	pfree(ds.data);
 
 	if (valid_sql)
-		check_sql_expr(expr->query, expr->parseMode, startlocation, yyscanner);
+		check_sql_expr(expr->query, expr->parseMode, allowlist, startlocation, yyscanner);
 
 	return expr;
 }
@@ -3179,7 +3195,7 @@ make_execsql_stmt(int firsttoken, int location, PLword *word, YYSTYPE *yylvalp, 
 	expr = make_plpgsql_expr(ds.data, RAW_PARSE_DEFAULT);
 	pfree(ds.data);
 
-	check_sql_expr(expr->query, expr->parseMode, location, yyscanner);
+	check_sql_expr(expr->query, expr->parseMode, false, location, yyscanner);
 
 	execsql = palloc0_object(PLpgSQL_stmt_execsql);
 	execsql->cmd_type = PLPGSQL_STMT_EXECSQL;
@@ -3780,11 +3796,15 @@ make_scalar_list1(char *initial_name,
  * If no error cursor is provided, we'll just point at "location".
  */
 static void
-check_sql_expr(const char *stmt, RawParseMode parseMode, int location, yyscan_t yyscanner)
+check_sql_expr(const char *stmt,
+			   RawParseMode parseMode, bool allowlist,
+			   int location, yyscan_t yyscanner)
 {
 	sql_error_callback_arg cbarg;
 	ErrorContextCallback syntax_errcontext;
 	MemoryContext oldCxt;
+	List   *parsetree;
+	int		errpos;
 
 	if (!plpgsql_check_syntax)
 		return;
@@ -3798,11 +3818,25 @@ check_sql_expr(const char *stmt, RawParseMode parseMode, int location, yyscan_t 
 	error_context_stack = &syntax_errcontext;
 
 	oldCxt = MemoryContextSwitchTo(plpgsql_compile_tmp_cxt);
-	(void) raw_parser(stmt, parseMode);
+	parsetree = raw_parser(stmt, parseMode);
 	MemoryContextSwitchTo(oldCxt);
 
 	/* Restore former ereport callback */
 	error_context_stack = syntax_errcontext.previous;
+
+	if (plpgsql_curr_compile->extra_warnings & PLPGSQL_XCHECK_STRICTEXPRCHECK ||
+		plpgsql_curr_compile->extra_errors & PLPGSQL_XCHECK_STRICTEXPRCHECK)
+	{
+		/* do this check only for expressions */
+		if (parseMode == RAW_PARSE_DEFAULT)
+			return;
+
+		if (!is_strict_expr(parsetree, &errpos, allowlist))
+			ereport(plpgsql_curr_compile->extra_errors & PLPGSQL_XCHECK_STRICTEXPRCHECK ? ERROR : WARNING,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("syntax of expression is not strict"),
+					 parser_errposition(errpos != -1 ? location + errpos : location)));
+	}
 }
 
 static void
@@ -3834,6 +3868,74 @@ plpgsql_sql_error_callback(void *arg)
 
 	/* In any case, flush errposition --- we want internalerrposition only */
 	errposition(0);
+}
+
+/*
+ * Returns true, when the only targetList is in parsetree. Cursors
+ * can require list of expressions or list of named expressions.
+ */
+static bool
+is_strict_expr(List *parsetree, int *errpos, bool allowlist)
+{
+	RawStmt *rawstmt;
+	SelectStmt *select;
+	int		targets = 0;
+	ListCell *lc;
+
+	/* Top should be RawStmt */
+	rawstmt = castNode(RawStmt, linitial(parsetree));
+
+	if (IsA(rawstmt->stmt, SelectStmt))
+	{
+		select = (SelectStmt *) rawstmt->stmt;
+	}
+	else if (IsA(rawstmt->stmt, PLAssignStmt))
+	{
+		select = castNode(SelectStmt, ((PLAssignStmt *) rawstmt->stmt)->val);
+	}
+	else
+		elog(ERROR, "unexpected node type");
+
+	if (!select->targetList)
+	{
+		*errpos = -1;
+		return false;
+	}
+	else
+		*errpos = exprLocation((Node *) select->targetList);
+
+	if (select->distinctClause ||
+		select->fromClause ||
+		select->whereClause ||
+		select->groupClause ||
+		select->groupDistinct ||
+		select->havingClause ||
+		select->windowClause ||
+		select->sortClause ||
+		select->limitOffset ||
+		select->limitCount ||
+		select->limitOption ||
+		select->lockingClause)
+		return false;
+
+	foreach(lc, select->targetList)
+	{
+		ResTarget *rt = castNode(ResTarget, lfirst(lc));
+
+		if (targets++ >= 1 && !allowlist)
+		{
+			*errpos = exprLocation((Node *) rt);
+			return false;
+		}
+
+		if (rt->name)
+		{
+			*errpos = exprLocation((Node *) rt);
+			return false;
+		}
+	}
+
+	return true;
 }
 
 /*
@@ -4025,7 +4127,7 @@ read_cursor_args(PLpgSQL_var *cursor, int until, YYSTYPE *yylvalp, YYLTYPE *yyll
 		item = read_sql_construct(',', ')', 0,
 								  ",\" or \")",
 								  RAW_PARSE_PLPGSQL_EXPR,
-								  true, true,
+								  true, false, true,
 								  NULL, &endtoken,
 								  yylvalp, yyllocp, yyscanner);
 

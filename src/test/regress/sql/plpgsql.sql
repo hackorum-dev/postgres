@@ -2618,6 +2618,20 @@ declare f1 int; begin return 1; end $$ language plpgsql;
 
 select shadowtest(1);
 
+-- test of strict expression check
+set plpgsql.extra_errors to 'strict_expr_check';
+
+create or replace function strict_expr_check_func()
+returns void as $$
+declare var int;
+begin
+  var = 1
+  delete from pg_class where false;
+end;
+$$ language plpgsql;
+
+reset plpgsql.extra_errors;
+
 -- runtime extra checks
 set plpgsql.extra_warnings to 'too_many_rows';
 
