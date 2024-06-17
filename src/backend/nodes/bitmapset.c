@@ -778,7 +778,8 @@ bms_num_members(const Bitmapset *a)
 int
 bms_nth_member(const Bitmapset *a, int i)
 {
-	int idx, res = -1;
+	int			idx,
+				res = -1;
 
 	for (idx = 0; idx <= i; idx++)
 	{

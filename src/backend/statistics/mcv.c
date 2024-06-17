@@ -2305,7 +2305,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	indexes2 = (int *) palloc(sizeof(int) * list_length(clauses));
 	reverse = (bool *) palloc(sizeof(bool) * list_length(clauses));
 
-	foreach (lc, clauses)
+	foreach(lc, clauses)
 	{
 		/*
 		 * XXX Can we just assume the clause has a RestrictInfo on top? IIRC
@@ -2316,13 +2316,13 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		 * (e.g. RelabelType etc.). statext_is_supported_join_clause matches
 		 * this, but maybe we need to relax it?
 		 */
-		RestrictInfo	*rinfo = (RestrictInfo *) lfirst(lc);
+		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 		Node	   *clause = (Node *) rinfo->clause;
 		OpExpr	   *opexpr;
 		Node	   *expr1,
 				   *expr2;
 
-		int		idx = list_cell_number(clauses, lc);
+		int			idx = list_cell_number(clauses, lc);
 
 		opexpr = (OpExpr *) clause;
 

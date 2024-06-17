@@ -3135,10 +3135,10 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 	 */
 	foreach(lc, info->clauses)
 	{
-		ListCell *lc2;
+		ListCell   *lc2;
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-		Node *clause = (Node *) rinfo->clause;
-		OpExpr *opclause = (OpExpr *) clause;
+		Node	   *clause = (Node *) rinfo->clause;
+		OpExpr	   *opclause = (OpExpr *) clause;
 
 		/* only opclauses supported for now */
 		Assert(is_opclause(clause));
@@ -3434,8 +3434,8 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 		foreach(lc, info->clauses)
 		{
 			RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-			Node *clause = (Node *) rinfo->clause;
-			ListCell *lc2;
+			Node	   *clause = (Node *) rinfo->clause;
+			ListCell   *lc2;
 
 			listidx = -1;
 			foreach(lc2, clauses)
