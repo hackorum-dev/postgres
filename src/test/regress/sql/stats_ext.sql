@@ -1564,8 +1564,6 @@ SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1) and (j1.b = j2.b)) where j1.c < 5 and j2.c < 3');
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1) and (j1.b = j2.b)) where j1.c < 5 and j2.c > 5');
 
--- can't be improved due to the optimization in clauselist_selectivity_ext,
--- which skips cases with a single (join) clause
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1)) where j1.c < 5');
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1)) where j1.c < 5 and j2.c < 5');
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1)) where j1.c < 5 and j2.c > 5');
@@ -1586,8 +1584,6 @@ SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1) and (j1.b = j2.b)) where j1.c < 5 and j2.c < 3');
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1) and (j1.b = j2.b)) where j1.c < 5 and j2.c > 5');
 
--- can't be improved due to the optimization in clauselist_selectivity_ext,
--- which skips cases with a single (join) clause
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1)) where j1.c < 5');
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1)) where j1.c < 5 and j2.c < 5');
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1)) where j1.c < 5 and j2.c > 5');

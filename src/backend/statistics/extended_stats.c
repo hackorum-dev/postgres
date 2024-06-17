@@ -3277,16 +3277,8 @@ get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
 
 /*
  * statext_clauselist_join_selectivity
- *		Use extended stats to estimate join clauses.
- *
- * XXX In principle, we should not restrict this to cases with multiple
- * join clauses - we should consider dependencies with conditions at the
- * base relations, i.e. calculate P(join clause | base restrictions).
- * But currently that does not happen, because clauselist_selectivity_ext
- * treats a single clause as a special case (and we don't apply extended
- * statistics in that case yet).
- *
- * XXX Isn't the preceding comment stale? We skip the optimization, no?
+ *		Use extended stats to estimate join clauses. the limitation is the
+ * extended statistics must covers all the join clauses.
  */
 Selectivity
 statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
