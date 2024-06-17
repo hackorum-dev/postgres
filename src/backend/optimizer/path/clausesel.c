@@ -130,22 +130,26 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	RangeQueryClause *rqlist = NULL;
 	ListCell   *l;
 	int			listidx;
+
+	/* skip expensive processing when estimating a single clause */
 	bool		single_clause_optimization = true;
 
 	/*
-	 * The optimization of skipping to clause_selectivity_ext for single
-	 * clauses means we can't improve join estimates with a single join
-	 * clause but additional baserel restrictions. So we disable it when
-	 * estimating joins.
+	 * Disable the single-clause optimization when estimating a join clause.
 	 *
-	 * XXX Not sure if this is the right way to do it, but more elaborate
-	 * checks would mostly negate the whole point of the optimization.
-	 * The (Var op Var) patch has the same issue.
+	 * The optimization skips clause_selectivity_ext when estimating a single
+	 * clause, but for join clauses it would mean we can't consider both the
+	 * join clause and the baserel restrictions. So we disable the optimization
+	 * when estimating a join clause.
 	 *
-	 * XXX An alternative might be making clause_selectivity_ext smarter
-	 * and make it use the join extended stats there. But that seems kinda
-	 * against the whole point of the optimization (skipping expensive
-	 * stuff) and it's making other parts more complex.
+	 * XXX Not sure if this is the best way to deal with the optimization. We
+	 * could make it more elaborate in various ways, but increasing the cost
+	 * of the checks might negate the whole point of the optimization.
+	 *
+	 * XXX Alternatively we could make clause_selectivity_ext smarter and
+	 * combine the join clauses and baserel restrictions there. But that seems
+	 * somewhat against the whole point of the optimization (skipping expensive
+	 * stuff) and it'd making other parts more complex.
 	 *
 	 * XXX Maybe this should check if there are at least some restrictions
 	 * on some base relations, which seems important. But then again, that
@@ -164,6 +168,7 @@ clauselist_selectivity_ext(PlannerInfo *root,
 			clause = (Node *) rinfo->clause;
 		}
 
+		/* disable optimization for join clauses */
 		single_clause_optimization
 			= !treat_as_join_clause(root, clause, rinfo, varRelid, sjinfo);
 	}
@@ -209,7 +214,7 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 */
 	if (use_extended_stats &&
 		statext_try_join_estimates(root, clauses, varRelid, jointype, sjinfo,
-						 estimatedclauses))
+								   estimatedclauses))
 	{
 		s1 *= statext_clauselist_join_selectivity(root, clauses, varRelid,
 												  jointype, sjinfo,

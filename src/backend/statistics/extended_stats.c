@@ -2643,23 +2643,28 @@ make_build_data(Relation rel, StatExtEntry *stat, int numrows, HeapTuple *rows,
  * statext_find_matching_mcv
  *		Search for a MCV covering all the attributes and expressions.
  *
- * We pick the statistics to use for join estimation. The statistics object has
- * to have MCV, and we require it to match all the join conditions, because it
- * makes the estimation simpler.
+ * Picks the extended statistics object to estimate join clause. The statistics
+ * object has to have a MCV, and we require it to match all the join conditions
+ * (be it plain attribute or an expression), as it makes the estimation simpler.
  *
- * If there are multiple candidate statistics objects (matching all join clauses),
- * we pick the smallest one, and we also consider additional conditions on
- * the base relations to restrict the MCV items used for estimation (using
- * conditional probability).
+ * If there are multiple applicable candidate statistics objects (matching all
+ * join clauses), picks the narrowest one. But we also consider additional
+ * restrictions on base relations that we can use to filter the MCV items
+ * (to calculate conditional probability).
+ *
+ * XXX How exactly this balances the "narrowest" and "additional conditions"?
+ * Which criteria we prefer?
  *
  * XXX The requirement that all the attributes need to be covered might be
  * too strong. We could relax this and and require fewer matches (at least two,
  * if counting the additional conditions), and we might even apply multiple
  * statistics etc. But that would require matching statistics on both sides of
- * the join, while now we simply know the statistics match. We don't really
- * expect many candidate MCVs, so this simple approach seems sufficient. And
- * the joins usually use only one or two columns, so there's not much room
- * for applying multiple statistics anyway.
+ * the join (using a statistics on a subset of conditions one one side means
+ * we need a matching statistics on the other side too). While now we simply
+ * know the statistics will match. We don't really expect many candidate MCVs,
+ * so this simple approach seems sufficient. And the joins usually use only one
+ * or two columns, so there's not much room for applying multiple statistics
+ * anyway.
  */
 StatisticExtInfo *
 statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
@@ -2679,12 +2684,7 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 		if (stat->kind != STATS_EXT_MCV)
 			continue;
 
-		/*
-		 * Ignore MCVs not covering all the attributes/expressions.
-		 *
-		 * XXX Maybe we shouldn't be so strict and consider only partial
-		 * matches for join clauses too?
-		 */
+		/* Ignore MCVs not covering all the attributes/expressions. */
 		if (!bms_is_subset(attnums, stat->keys) ||
 			!stat_covers_expressions(stat, exprs, NULL))
 			continue;
@@ -2697,8 +2697,8 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 		}
 
 		/*
-		 * OK, we have two candidate statistics objects and we need to decide
-		 * which one to keep. We'll use two simple heuristics:
+		 * We have two candidate statistics objects and we need to decide which
+		 * one to keep. We'll use two simple heuristics:
 		 *
 		 * (a) We prefer smaller statistics (fewer columns), on the assumption
 		 * that it represents a larger fraction of the data (due to having fewer
@@ -2723,6 +2723,23 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 		 * as well pick regular statistics for the column/expression, but it's
 		 * not clear if that actually exists (so we might reject the stats here
 		 * and then fail to find something simpler/better).
+		 *
+		 * XXX I'm not sure about the preceding comment. Why would we find a MCV
+		 * list for a single condition here, but not for the single attribute?
+		 * Would the "partial" extended MCV even be useful?
+		 */
+
+		/*
+		 * Match additional baserel conditions for the two statistics.
+		 *
+		 * XXX Shouldn't we keep this too? If there are more than 2 candidates,
+		 * we'll end up recalculating the conditions for the statistics we kept
+		 * from the preceding loop. Perhaps we could/should even pass the
+		 * conditions to the caller?
+		 *
+		 * XXX Or maybe we should simply "count" the restrictions here, instead
+		 * of constructing a list? Probably not a meaningful difference in CPU
+		 * costs or a memory leak.
 		 */
 		conditions1 = statext_determine_join_restrictions(root, rel, stat);
 		conditions2 = statext_determine_join_restrictions(root, rel, mcv);
@@ -2734,7 +2751,10 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 			continue;
 		}
 
-		/* The statistics seem about equal, so just use the smaller one. */
+		/* The statistics seem about equal, so just use the narrower one.
+		 *
+		 * XXX Maybe we should have a function/macro to count the keys/exprs?
+		 */
 		if (bms_num_members(mcv->keys) + list_length(mcv->exprs) >
 			bms_num_members(stat->keys) + list_length(stat->exprs))
 		{
@@ -2803,7 +2823,7 @@ statext_determine_join_restrictions(PlannerInfo *root, RelOptInfo *rel,
  * relation for now.
  *
  * Similar to treat_as_join_clause, but we place additional restrictions
- * on the conditions.
+ * on the conditions, to make sure it can be estimated using extended stats.
  */
 static bool
 statext_is_supported_join_clause(PlannerInfo *root, Node *clause,
@@ -2900,6 +2920,8 @@ statext_is_supported_join_clause(PlannerInfo *root, Node *clause,
  *
  * This is supposed to be a quick/cheap check to decide whether to expend
  * more effort on applying extended statistics to join clauses.
+ *
+ * XXX Probably should document arguments, see statext_mcv_clauselist_selectivity.
  */
 bool
 statext_try_join_estimates(PlannerInfo *root, List *clauses, int varRelid,
@@ -3098,6 +3120,10 @@ statext_build_join_pairs(PlannerInfo *root, List *clauses, int varRelid,
  *
  * XXX Can we have cases with indexes above 1? Probably for clauses mixing
  * vars from 3 relations, but statext_is_supported_join_clause rejects those.
+ *
+ * XXX Name should probably start with statext_ too.
+ *
+ * XXX The 0/1 index seems a bit weird. Is there a better way to do this?
  */
 static RelOptInfo *
 extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
@@ -3196,6 +3222,8 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
  *
  * XXX This should probably return a flag identifying whether it's the
  * left or right argument.
+ *
+ * XXX Name should probably start with statext_ too.
  */
 static Node *
 get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
@@ -3241,6 +3269,8 @@ get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
  * But currently that does not happen, because clauselist_selectivity_ext
  * treats a single clause as a special case (and we don't apply extended
  * statistics in that case yet).
+ *
+ * XXX Isn't the preceding comment stale? We skip the optimization, no?
  */
 Selectivity
 statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses, int varRelid,
