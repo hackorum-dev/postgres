@@ -2727,6 +2727,7 @@ mcv_combine_simple(PlannerInfo *root, RelOptInfo *rel, StatisticExtInfo *stat,
 
 	/* info about clauses and how they match to MCV stats */
 	FmgrInfo	opproc;
+
 	LOCAL_FCINFO(fcinfo, 2);
 	int			index = 0;
 	bool		reverse = false;
