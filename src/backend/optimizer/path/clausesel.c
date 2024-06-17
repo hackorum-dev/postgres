@@ -216,8 +216,8 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 * XXX Is that actually behaving like that? Won't the (t1.a=3) be turned
 	 * into a regular clause? I haven't tried, though.
 	 *
-	 * XXX: so we can grantee estimatedclauses == NULL now, so estimatedclauses
-	 * in statext_try_join_estimates is removed.
+	 * XXX: so we can grantee estimatedclauses == NULL now, so
+	 * estimatedclauses in statext_try_join_estimates is removed.
 	 *
 	 * XXX Maybe remove the comment and add an assert estimatedclauses==NULL.
 	 */
