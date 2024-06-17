@@ -3206,6 +3206,7 @@ SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_
      50000 |  50000
 (1 row)
 
+-- FIXME seems should have been in the preceding patch?
 -- test join with system column var, but the ext statistics can't be built in system attribute AND extended statistics
 -- must covers all the join columns, so the following 2 statements can use extended statistics for join.
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1) and (j1.b = j2.b)) and j1.cmin = j2.cmin');
