@@ -227,6 +227,8 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 * if we end up wanting to call an existing selfuncs function that needs
 	 * sjinfo in the future? Say because we want to call the regular join
 	 * estimator, and then apply some "correction" to the result?
+	 *
+	 * XXX Same thing for the joinType removal, I guess.
 	 */
 	if (use_extended_stats && rel == NULL &&
 		statext_try_join_estimates(root, clauses, varRelid, jointype, sjinfo))
