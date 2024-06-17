@@ -91,6 +91,11 @@ typedef struct
 #endif
 }			McvProc;
 
+/*
+ * XXX I kinda doubt this makes performance difference (thanks to caching in
+ * the memory contexts), but it does seem to make the code easier to read,
+ * which is nice.
+ */
 typedef struct
 {
 	int 	index1;
