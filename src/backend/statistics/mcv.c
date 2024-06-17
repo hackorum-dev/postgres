@@ -2663,6 +2663,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 	totalsel1 = s;
 
+	/* FIXME same comments / concerns as for preceding patch */
 	if (mcv2->ndimensions == list_length(clauses))
 	{
 		if (nd2 > mcv2->nitems)
