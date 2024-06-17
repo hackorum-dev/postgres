@@ -65,6 +65,13 @@ lnext:
 		return NULL;
 	}
 
+	/*
+	 * If the slot is virtual, we can't lock it. This should never happen, but
+	 * this will lead to a misleading could not read block error later otherwise.
+	 */
+	if (TTS_IS_VIRTUAL(slot))
+		elog(ERROR, "cannot lock virtual tuple");
+
 	/* We don't need EvalPlanQual unless we get updated tuple version(s) */
 	epq_needed = false;
 
