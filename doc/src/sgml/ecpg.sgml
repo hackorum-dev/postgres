@@ -5050,6 +5050,7 @@ struct
     long sqlerrd[6];
     char sqlwarn[8];
     char sqlstate[5];
+    char sqlstatepad;
 } sqlca;
 </programlisting>
     (In a multithreaded program, every thread automatically gets its
@@ -5198,6 +5199,11 @@ sqlstate: 42P01
     of consistency can be achieved by using this error code scheme
     throughout all applications.  For further information see
     <xref linkend="errcodes-appendix"/>.
+   </para>
+   <para>
+    <literal>sqlca.sqlstate</literal> field is a non-terminated character
+    array, in order to guard against accidental uses as a C string it is
+    followed by a padding nul character.
    </para>
 
    <para>
