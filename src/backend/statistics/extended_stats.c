@@ -3371,14 +3371,10 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 			{
 				/* note we allow use of nullfrac regardless of security check */
 				stats = (Form_pg_statistic) GETSTRUCT(vardata.statsTuple);
-
-				/*
-				 * FIXME should this call statistic_proc_security_check like
-				 * eqjoinsel?
-				 */
-				have_mcvs = get_attstatsslot(&sslot, vardata.statsTuple,
-											 STATISTIC_KIND_MCV, InvalidOid,
-											 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
+				if (statistic_proc_security_check(&vardata, F_EQJOINSEL))
+					have_mcvs = get_attstatsslot(&sslot, vardata.statsTuple,
+												 STATISTIC_KIND_MCV, InvalidOid,
+												 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
 			}
 
 			if (have_mcvs)
@@ -3415,14 +3411,10 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 			{
 				/* note we allow use of nullfrac regardless of security check */
 				stats = (Form_pg_statistic) GETSTRUCT(vardata.statsTuple);
-
-				/*
-				 * FIXME should this call statistic_proc_security_check like
-				 * eqjoinsel?
-				 */
-				have_mcvs = get_attstatsslot(&sslot, vardata.statsTuple,
-											 STATISTIC_KIND_MCV, InvalidOid,
-											 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
+				if (statistic_proc_security_check(&vardata, F_EQJOINSEL))
+					have_mcvs = get_attstatsslot(&sslot, vardata.statsTuple,
+												 STATISTIC_KIND_MCV, InvalidOid,
+												 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
 			}
 
 			if (have_mcvs)
