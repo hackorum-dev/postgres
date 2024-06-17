@@ -3216,8 +3216,8 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 static Node *
 get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
 {
-	OpExpr *opexpr;
-	Node   *expr;
+	OpExpr	   *opexpr;
+	Node	   *expr;
 	RestrictInfo *rinfo = (RestrictInfo *) clause;
 
 	Assert(IsA(clause, RestrictInfo));
