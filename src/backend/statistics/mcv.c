@@ -2508,13 +2508,6 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				continue;
 
 			/*
-			 * XXX We can't skip based on existing matches2 value, because
-			 * there may be duplicates in the first MCV.
-			 *
-			 * From Andy: what does this mean?
-			 */
-
-			/*
 			 * Evaluate if all the join clauses match between the two MCV
 			 * items.
 			 */
@@ -2564,6 +2557,14 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				/* XXX Do we need to do something about base frequency? */
 				matches1[i] = matches2[j] = true;
 				s += mcv1->items[i].frequency * mcv2->items[j].frequency;
+				nmatches += 1;
+
+				if (mcv2->ndimensions == list_length(clauses))
+					/*
+					 * no more items in mcv2 could match mcv1[i] in this case,
+					 * so break fast.
+					 */
+					break;
 			}
 		}
 	}
