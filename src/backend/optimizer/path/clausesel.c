@@ -138,6 +138,9 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	if (clauses == NULL)
 		return 1.0;
 
+	/*
+	 * FIXME this really deserves some comment, no?
+	 */
 	if (clauselist_selectivity_hook)
 		s1 = clauselist_selectivity_hook(root, clauses, varRelid, jointype,
 										 sjinfo, &estimatedclauses,
@@ -165,6 +168,8 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 * to go against the idea of this check to be cheap. Moreover, it won't
 	 * work for OR clauses, which may have multiple parts but we still see
 	 * them as a single BoolExpr clause (it doesn't work later, though).
+	 *
+	 * XXX Shouldn't this also consider the estimatedclauses?
 	 */
 	if (list_length(clauses) == 1)
 	{
@@ -238,6 +243,10 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 * estimator, and then apply some "correction" to the result?
 	 *
 	 * XXX Same thing for the joinType removal, I guess.
+	 *
+	 * XXX Isn't this broken if the hook estimates some of the clauses? We've
+	 * removed the bitmap from statext_try_join_estimates() on the grounds that
+	 * it's always NULL, but with the hook that's no longer the case.
 	 */
 	if (use_extended_stats && rel == NULL &&
 		statext_try_join_estimates(root, clauses, varRelid, jointype, sjinfo))
