@@ -2307,6 +2307,15 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 	foreach (lc, clauses)
 	{
+		/*
+		 * XXX Can we just assume the clause has a RestrictInfo on top? IIRC
+		 * there are cases where we can get here without it (e.g. AND
+		 * clause?).
+		 *
+		 * XXX Not sure if we need to care about removing other node types too
+		 * (e.g. RelabelType etc.). statext_is_supported_join_clause matches
+		 * this, but maybe we need to relax it?
+		 */
 		RestrictInfo	*rinfo = (RestrictInfo *) lfirst(lc);
 		Node	   *clause = (Node *) rinfo->clause;
 		OpExpr	   *opexpr;
