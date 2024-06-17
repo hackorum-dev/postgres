@@ -2247,7 +2247,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 	/* info about clauses and how they match to MCV stats */
 	FmgrInfo   *finfo;
-	FunctionCallInfo  *opprocs;
+	FunctionCallInfo *opprocs;
 	int		   *indexes1,
 			   *indexes2;
 	bool	   *reverse;
@@ -2296,8 +2296,12 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	 * that we don't have to do that for each MCV item or so.
 	 */
 	finfo = (FmgrInfo *) palloc(sizeof(FmgrInfo) * list_length(clauses));
-	// FIXME remove?
-	// opprocs = (FunctionCallInfo *) palloc(SizeForFunctionCallInfo(2) * list_length(clauses));
+	/* FIXME remove? */
+
+	/*
+	 * opprocs = (FunctionCallInfo *) palloc(SizeForFunctionCallInfo(2) *
+	 * list_length(clauses));
+	 */
 	opprocs = (FunctionCallInfo *) palloc(sizeof(FunctionCallInfo *) * list_length(clauses));
 	indexes1 = (int *) palloc(sizeof(int) * list_length(clauses));
 	indexes2 = (int *) palloc(sizeof(int) * list_length(clauses));
@@ -2319,7 +2323,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		OpExpr	   *opexpr;
 		Node	   *expr1,
 				   *expr2;
-		int		idx = list_cell_number(clauses, lc);
+		int			idx = list_cell_number(clauses, lc);
 		FunctionCallInfo fcinfo = palloc(SizeForFunctionCallInfo(2));
 
 		opexpr = (OpExpr *) clause;
@@ -2457,13 +2461,13 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			idx = 0;
 			foreach(lc, clauses)
 			{
-				bool	match;
-				int		index1 = indexes1[idx],
-						index2 = indexes2[idx];
-				Datum	value1,
-						value2;
-				bool	reverse_args = reverse[idx];
-				FunctionCallInfo	fcinfo = opprocs[idx];
+				bool		match;
+				int			index1 = indexes1[idx],
+							index2 = indexes2[idx];
+				Datum		value1,
+							value2;
+				bool		reverse_args = reverse[idx];
+				FunctionCallInfo fcinfo = opprocs[idx];
 
 				/* If either value is null, it's a mismatch */
 				if (mcv2->items[j].isnull[index2])
