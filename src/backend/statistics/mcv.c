@@ -91,6 +91,13 @@ typedef struct
 #endif
 }			McvProc;
 
+typedef struct
+{
+	int 	index1;
+	int 	index2;
+	bool 	reverse;
+} McvClauseInfo;
+
 /*
  * XXX What's the reasoning behind reordering the functions like this? Doesn't it
  * have the same issues with unpredictable behavior like the GROUP BY patch, which
@@ -2285,10 +2292,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				totalsel2;
 
 	/* info about clauses and how they match to MCV stats */
-	McvProc    *mcvProc;
-	int		   *indexes1,
-			   *indexes2;
-	bool	   *reverse;
+	McvProc		*mcvProc;
+	McvClauseInfo	*cinfo;
 	RangeTblEntry *rte1 = root->simple_rte_array[rel1->relid];
 	RangeTblEntry *rte2 = root->simple_rte_array[rel2->relid];
 
@@ -2334,9 +2339,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	 * that we don't have to do that for each MCV item or so.
 	 */
 	mcvProc = (McvProc *) palloc(sizeof(McvProc) * list_length(clauses));
-	indexes1 = (int *) palloc(sizeof(int) * list_length(clauses));
-	indexes2 = (int *) palloc(sizeof(int) * list_length(clauses));
-	reverse = (bool *) palloc(sizeof(bool) * list_length(clauses));
+	cinfo = (McvClauseInfo *) palloc(sizeof(McvClauseInfo) * list_length(clauses));
 
 	foreach(lc, clauses)
 	{
@@ -2393,13 +2396,13 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		{
 			Oid			collid;
 
-			indexes1[idx] = mcv_match_expression(expr1,
+			cinfo[idx].index1 = mcv_match_expression(expr1,
 												 stat1->keys, stat1->exprs,
 												 &collid);
-			indexes2[idx] = mcv_match_expression(expr2,
+			cinfo[idx].index2 = mcv_match_expression(expr2,
 												 stat2->keys, stat2->exprs,
 												 &collid);
-			reverse[idx] = false;
+			cinfo[idx].reverse = false;
 
 			exprs1 = lappend(exprs1, expr1);
 			exprs2 = lappend(exprs2, expr2);
@@ -2411,13 +2414,13 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		{
 			Oid			collid;
 
-			indexes1[idx] = mcv_match_expression(expr2,
+			cinfo[idx].index1 = mcv_match_expression(expr2,
 												 stat2->keys, stat2->exprs,
 												 &collid);
-			indexes2[idx] = mcv_match_expression(expr1,
+			cinfo[idx].index2 = mcv_match_expression(expr1,
 												 stat1->keys, stat1->exprs,
 												 &collid);
-			reverse[idx] = true;
+			cinfo[idx].reverse = true;
 
 			exprs1 = lappend(exprs1, expr2);
 			exprs2 = lappend(exprs2, expr1);
@@ -2428,11 +2431,11 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			/* should never happen */
 			Assert(false);
 
-		Assert((indexes1[idx] >= 0) &&
-			   (indexes1[idx] < bms_num_members(stat1->keys) + list_length(stat1->exprs)));
+		Assert((cinfo[idx].index1 >= 0) &&
+			   (cinfo[idx].index1 < bms_num_members(stat1->keys) + list_length(stat1->exprs)));
 
-		Assert((indexes2[idx] >= 0) &&
-			   (indexes2[idx] < bms_num_members(stat2->keys) + list_length(stat2->exprs)));
+		Assert((cinfo[idx].index2 >= 0) &&
+			   (cinfo[idx].index2 < bms_num_members(stat2->keys) + list_length(stat2->exprs)));
 
 		examine_variable(root, left_expr, rel1->relid, &vardata);
 		mcvProc[idx].n_distinct = get_variable_numdistinct(&vardata, &isdefault);
@@ -2484,7 +2487,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		 */
 		has_nulls = false;
 		for (j = 0; j < list_length(clauses); j++)
-			has_nulls |= mcv1->items[i].isnull[indexes1[j]];
+			has_nulls |= mcv1->items[i].isnull[cinfo[j].index1];
 
 		if (has_nulls)
 			continue;
@@ -2502,6 +2505,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			/*
 			 * XXX We can't skip based on existing matches2 value, because
 			 * there may be duplicates in the first MCV.
+			 *
+			 * From Andy: what does this mean?
 			 */
 
 			/*
@@ -2510,13 +2515,13 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			 */
 			for (idx = 0; idx < list_length(clauses); idx++)
 			{
-				bool		match;
-				int			index1 = indexes1[idx],
-							index2 = indexes2[idx];
-				Datum		value1,
-							value2;
-				bool		reverse_args = reverse[idx];
-				FunctionCallInfo fcinfo = mcvProc[idx].fcinfo;
+				bool	match;
+				int		index1 = cinfo[idx].index1,
+						index2 = cinfo[idx].index2;
+				Datum	value1,
+						value2;
+				bool	reverse_args = cinfo[idx].reverse;
+				FunctionCallInfo	fcinfo = mcvProc[idx].fcinfo;
 
 				/* If either value is null, it's a mismatch */
 				if (mcv2->items[j].isnull[index2])
