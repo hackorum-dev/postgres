@@ -138,6 +138,11 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	if (clauses == NULL)
 		return 1.0;
 
+	if (clauselist_selectivity_hook)
+		s1 = clauselist_selectivity_hook(root, clauses, varRelid, jointype,
+										 sjinfo, &estimatedclauses,
+										 use_extended_stats);
+
 	/*
 	 * Disable the single-clause optimization when estimating a join clause.
 	 *
