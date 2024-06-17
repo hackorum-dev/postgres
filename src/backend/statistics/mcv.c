@@ -72,7 +72,7 @@
 	 ((ndims) * sizeof(DimensionInfo)) + \
 	 ((nitems) * ITEM_SIZE(ndims)))
 
-// #define  DEBUG_MCV  1 /* should be removed after review. */
+ /*  #define  DEBUG_MCV  1 /* should be removed after review. */ * /
 
 /*
  * XXX The patch says "optimize the order of mcv equal function evaluation"
@@ -85,11 +85,11 @@ typedef struct
 {
 	FmgrInfo	fmgrinfo;
 	FunctionCallInfo fcinfo;
-	double	n_distinct;
+	double		n_distinct;
 #ifdef DEBUG_MCV
-	int		idx;
+	int			idx;
 #endif
-} McvProc;
+}			McvProc;
 
 /*
  * XXX What's the reasoning behind reordering the functions like this? Doesn't it
@@ -100,8 +100,8 @@ static int
 cmp_mcv_proc(const void *a, const void *b)
 {
 	/* sort the McvProc reversely based on n_distinct value. */
-	McvProc *m1 = (McvProc *) a;
-	McvProc *m2 = (McvProc *) b;
+	McvProc    *m1 = (McvProc *) a;
+	McvProc    *m2 = (McvProc *) b;
 
 	if (m1->n_distinct > m2->n_distinct)
 		return -1;
@@ -2285,7 +2285,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				totalsel2;
 
 	/* info about clauses and how they match to MCV stats */
-	McvProc		*mcvProc;
+	McvProc    *mcvProc;
 	int		   *indexes1,
 			   *indexes2;
 	bool	   *reverse;
@@ -2356,9 +2356,9 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				   *expr2;
 		int			idx = list_cell_number(clauses, lc);
 		FunctionCallInfo fcinfo = palloc(SizeForFunctionCallInfo(2));
-		VariableStatData	vardata;
-		bool	isdefault;
-		Node	*left_expr;
+		VariableStatData vardata;
+		bool		isdefault;
+		Node	   *left_expr;
 
 		opexpr = (OpExpr *) clause;
 
@@ -2436,7 +2436,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 		examine_variable(root, left_expr, rel1->relid, &vardata);
 		mcvProc[idx].n_distinct = get_variable_numdistinct(&vardata, &isdefault);
-		// elog(INFO, "n_distinct = %f", mcvProc[idx].n_distinct);
+		/* elog(INFO, "n_distinct = %f", mcvProc[idx].n_distinct); */
 		ReleaseVariableStats(vardata);
 	}
 
@@ -2505,17 +2505,18 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			 */
 
 			/*
-			 * Evaluate if all the join clauses match between the two MCV items.
+			 * Evaluate if all the join clauses match between the two MCV
+			 * items.
 			 */
-			for(idx = 0; idx < list_length(clauses); idx++)
+			for (idx = 0; idx < list_length(clauses); idx++)
 			{
-				bool	match;
-				int		index1 = indexes1[idx],
-						index2 = indexes2[idx];
-				Datum	value1,
-						value2;
-				bool	reverse_args = reverse[idx];
-				FunctionCallInfo	fcinfo = mcvProc[idx].fcinfo;
+				bool		match;
+				int			index1 = indexes1[idx],
+							index2 = indexes2[idx];
+				Datum		value1,
+							value2;
+				bool		reverse_args = reverse[idx];
+				FunctionCallInfo fcinfo = mcvProc[idx].fcinfo;
 
 				/* If either value is null, it's a mismatch */
 				if (mcv2->items[j].isnull[index2])
