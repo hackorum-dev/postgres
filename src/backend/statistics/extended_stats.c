@@ -3324,8 +3324,8 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 		StatisticExtInfo *stat1;
 		StatisticExtInfo *stat2;
 
-		List	*base_condition1 = NULL,
-				*base_condition2 = NULL;
+		List	   *base_condition1 = NULL,
+				   *base_condition2 = NULL;
 
 		/* extract info about the first relation */
 		rel1 = extract_relation_info(root, &info[i], 0, &stat1, &base_condition1);

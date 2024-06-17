@@ -2219,10 +2219,10 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	Selectivity s = 0;
 
 	/* match bitmaps and selectivity for baserel conditions (if any) */
-	List   *exprs1 = NIL,
-		   *exprs2 = NIL;
-	bool   *cmatches1 = NULL,
-		   *cmatches2 = NULL;
+	List	   *exprs1 = NIL,
+			   *exprs2 = NIL;
+	bool	   *cmatches1 = NULL,
+			   *cmatches2 = NULL;
 
 	double		csel1 = 1.0,
 				csel2 = 1.0;
