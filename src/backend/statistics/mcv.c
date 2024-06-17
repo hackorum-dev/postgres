@@ -2266,8 +2266,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	MCVList    *mcv1,
 			   *mcv2;
 	int			i,
-		j,
-		nmatches = 0;
+				j,
+				nmatches = 0;
 	Selectivity s = 0;
 
 	/* match bitmaps and selectivity for baserel conditions (if any) */
@@ -2290,12 +2290,12 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				nd1,
 				totalsel1;
 
-	double	matchfreq2,
-			unmatchfreq2,
-			otherfreq2,
-			mcvfreq2,
-			nd2,
-			totalsel2;
+	double		matchfreq2,
+				unmatchfreq2,
+				otherfreq2,
+				mcvfreq2,
+				nd2,
+				totalsel2;
 
 	/* info about clauses and how they match to MCV stats */
 	McvProc    *mcvProc;
