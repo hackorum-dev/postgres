@@ -2685,6 +2685,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
  * Most of the mcv_combine_extended comment applies here too, but we can make
  * some simplifications because we know the second (per-column) MCV is simpler,
  * contains no NULL or duplicate values, etc.
+ *
+ * XXX May make sense, but seems rather independent of this patch series.
  */
 Selectivity
 mcv_combine_simple(PlannerInfo *root, RelOptInfo *rel, StatisticExtInfo *stat,
