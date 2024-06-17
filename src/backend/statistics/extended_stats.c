@@ -2831,10 +2831,11 @@ statext_determine_join_restrictions(PlannerInfo *root, RelOptInfo *rel,
 static bool
 statext_is_supported_join_clause(PlannerInfo *root, Node *clause)
 {
-	Oid	oprsel;
-	RestrictInfo   *rinfo;
-	OpExpr		   *opclause;
-	int				left_relid, right_relid;
+	Oid			oprsel;
+	RestrictInfo *rinfo;
+	OpExpr	   *opclause;
+	int			left_relid,
+				right_relid;
 
 	/*
 	 * XXX isn't this comment stale after removal of varRelid?
