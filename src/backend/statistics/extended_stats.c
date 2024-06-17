@@ -3228,6 +3228,8 @@ get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
 	 * XXX Not sure if we need to care about removing other node types too
 	 * (e.g. RelabelType etc.). statext_is_supported_join_clause matches this,
 	 * but maybe we need to relax it?
+	 *
+	 * XXX Can we be sure there always is RestrictInfo?
 	 */
 	clause = (Node *) rinfo->clause;
 
