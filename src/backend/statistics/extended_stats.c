@@ -2672,13 +2672,13 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 {
 	ListCell   *l;
 	StatisticExtInfo *mcv = NULL;
-	List *stats = rel->statlist;
+	List	   *stats = rel->statlist;
 
 	foreach(l, stats)
 	{
 		StatisticExtInfo *stat = (StatisticExtInfo *) lfirst(l);
-		List *conditions1 = NIL,
-			 *conditions2 = NIL;
+		List	   *conditions1 = NIL,
+				   *conditions2 = NIL;
 
 		/* We only care about MCV statistics here. */
 		if (stat->kind != STATS_EXT_MCV)
@@ -2697,49 +2697,51 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 		}
 
 		/*
-		 * We have two candidate statistics objects and we need to decide which
-		 * one to keep. We'll use two simple heuristics:
+		 * We have two candidate statistics objects and we need to decide
+		 * which one to keep. We'll use two simple heuristics:
 		 *
 		 * (a) We prefer smaller statistics (fewer columns), on the assumption
-		 * that it represents a larger fraction of the data (due to having fewer
-		 * combinations with higher counts).
+		 * that it represents a larger fraction of the data (due to having
+		 * fewer combinations with higher counts).
 		 *
-		 * (b) If the statistics object covers some additional conditions for the rels,
-		 * that may help with considering additional dependencies between the
-		 * tables.
+		 * (b) If the statistics object covers some additional conditions for
+		 * the rels, that may help with considering additional dependencies
+		 * between the tables.
 		 *
-		 * Of course, those two heuristict are somewhat contradictory - smaller
-		 * stats are less likely to cover as many conditions as a larger one. We
-		 * consider the additional conditions first - if someone created such
-		 * statistics, there probably is a dependency worth considering.
+		 * Of course, those two heuristict are somewhat contradictory -
+		 * smaller stats are less likely to cover as many conditions as a
+		 * larger one. We consider the additional conditions first - if
+		 * someone created such statistics, there probably is a dependency
+		 * worth considering.
 		 *
 		 * When inspecting the restrictions, we need to be careful - we don't
-		 * know which of them are compatible with extended stats, so we have to
-		 * run them through statext_is_compatible_clause first and then match
-		 * them to the statistics.
+		 * know which of them are compatible with extended stats, so we have
+		 * to run them through statext_is_compatible_clause first and then
+		 * match them to the statistics.
 		 *
-		 * XXX Maybe we shouldn't pick statistics that covers just a single join
-		 * clause, without any additional conditions. In such case we could just
-		 * as well pick regular statistics for the column/expression, but it's
-		 * not clear if that actually exists (so we might reject the stats here
-		 * and then fail to find something simpler/better).
+		 * XXX Maybe we shouldn't pick statistics that covers just a single
+		 * join clause, without any additional conditions. In such case we
+		 * could just as well pick regular statistics for the
+		 * column/expression, but it's not clear if that actually exists (so
+		 * we might reject the stats here and then fail to find something
+		 * simpler/better).
 		 *
-		 * XXX I'm not sure about the preceding comment. Why would we find a MCV
-		 * list for a single condition here, but not for the single attribute?
-		 * Would the "partial" extended MCV even be useful?
+		 * XXX I'm not sure about the preceding comment. Why would we find a
+		 * MCV list for a single condition here, but not for the single
+		 * attribute? Would the "partial" extended MCV even be useful?
 		 */
 
 		/*
 		 * Match additional baserel conditions for the two statistics.
 		 *
-		 * XXX Shouldn't we keep this too? If there are more than 2 candidates,
-		 * we'll end up recalculating the conditions for the statistics we kept
-		 * from the preceding loop. Perhaps we could/should even pass the
-		 * conditions to the caller?
+		 * XXX Shouldn't we keep this too? If there are more than 2
+		 * candidates, we'll end up recalculating the conditions for the
+		 * statistics we kept from the preceding loop. Perhaps we could/should
+		 * even pass the conditions to the caller?
 		 *
-		 * XXX Or maybe we should simply "count" the restrictions here, instead
-		 * of constructing a list? Probably not a meaningful difference in CPU
-		 * costs or a memory leak.
+		 * XXX Or maybe we should simply "count" the restrictions here,
+		 * instead of constructing a list? Probably not a meaningful
+		 * difference in CPU costs or a memory leak.
 		 */
 		conditions1 = statext_determine_join_restrictions(root, rel, stat);
 		conditions2 = statext_determine_join_restrictions(root, rel, mcv);
@@ -2751,7 +2753,8 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 			continue;
 		}
 
-		/* The statistics seem about equal, so just use the narrower one.
+		/*
+		 * The statistics seem about equal, so just use the narrower one.
 		 *
 		 * XXX Maybe we should have a function/macro to count the keys/exprs?
 		 */
@@ -2788,12 +2791,12 @@ statext_determine_join_restrictions(PlannerInfo *root, RelOptInfo *rel,
 	List	   *conditions = NIL;
 
 	/* extract conditions that may be applied to the MCV list */
-	foreach (lc, rel->baserestrictinfo)
+	foreach(lc, rel->baserestrictinfo)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-		Bitmapset *indexes = NULL;
-		Bitmapset *attnums = NULL;
-		List *exprs = NIL;
+		Bitmapset  *indexes = NULL;
+		Bitmapset  *attnums = NULL;
+		List	   *exprs = NIL;
 
 		/* clause has to be supported by MCV in general */
 		if (!statext_is_compatible_clause(root, (Node *) rinfo, rel->relid,
@@ -2801,8 +2804,8 @@ statext_determine_join_restrictions(PlannerInfo *root, RelOptInfo *rel,
 			continue;
 
 		/*
-		 * clause is compatible in general, but is it actually covered
-		 * by this particular statistics object?
+		 * clause is compatible in general, but is it actually covered by this
+		 * particular statistics object?
 		 */
 		if (!bms_is_subset(attnums, info->keys) ||
 			!stat_covers_expressions(info, exprs, &indexes))
@@ -2829,10 +2832,10 @@ static bool
 statext_is_supported_join_clause(PlannerInfo *root, Node *clause,
 								 int varRelid, SpecialJoinInfo *sjinfo)
 {
-	Oid	oprsel;
-	RestrictInfo   *rinfo;
-	OpExpr		   *opclause;
-	ListCell	   *lc;
+	Oid			oprsel;
+	RestrictInfo *rinfo;
+	OpExpr	   *opclause;
+	ListCell   *lc;
 
 	/*
 	 * evaluation as a restriction clause, either at scan node or forced
@@ -2871,43 +2874,43 @@ statext_is_supported_join_clause(PlannerInfo *root, Node *clause,
 	 * Make sure we're not mixing vars from multiple relations on the same
 	 * side, like
 	 *
-	 *   (t1.a + t2.a) = (t1.b + t2.b)
+	 * (t1.a + t2.a) = (t1.b + t2.b)
 	 *
 	 * which is still technically an opclause, but we can't match it to
 	 * extended statistics in a simple way.
 	 *
 	 * XXX This also means we require rinfo->clause_relids to have 2 rels.
 	 *
-	 * XXX Also check it's not expression on system attributes, which we
-	 * don't allow in extended statistics.
+	 * XXX Also check it's not expression on system attributes, which we don't
+	 * allow in extended statistics.
 	 *
-	 * XXX Although maybe we could allow cases that combine expressions
-	 * from both relations on either side? Like (t1.a + t2.b = t1.c - t2.d)
-	 * or something like that. We could do "cartesian product" of the MCV
-	 * stats and restrict it using this condition.
+	 * XXX Although maybe we could allow cases that combine expressions from
+	 * both relations on either side? Like (t1.a + t2.b = t1.c - t2.d) or
+	 * something like that. We could do "cartesian product" of the MCV stats
+	 * and restrict it using this condition.
 	 */
-	foreach (lc, opclause->args)
+	foreach(lc, opclause->args)
 	{
-		Bitmapset *varnos = NULL;
-		Node *expr = (Node *) lfirst(lc);
+		Bitmapset  *varnos = NULL;
+		Node	   *expr = (Node *) lfirst(lc);
 
 		varnos = pull_varnos(root, expr);
 
 		/*
 		 * No argument should reference more than just one relation.
 		 *
-		 * This effectively means each side references just two relations.
-		 * If there's no relation on one side, it's a Const, and the other
-		 * side has to be either Const or Expr with a single rel. In which
-		 * case it can't be a join clause.
+		 * This effectively means each side references just two relations. If
+		 * there's no relation on one side, it's a Const, and the other side
+		 * has to be either Const or Expr with a single rel. In which case it
+		 * can't be a join clause.
 		 */
 		if (bms_num_members(varnos) > 1)
 			return false;
 
 		/*
-		 * XXX Maybe check that both relations have extended statistics
-		 * (no point in considering the clause as useful without it). But
-		 * we'll do that check later anyway, so keep this cheap.
+		 * XXX Maybe check that both relations have extended statistics (no
+		 * point in considering the clause as useful without it). But we'll do
+		 * that check later anyway, so keep this cheap.
 		 */
 	}
 
@@ -2945,19 +2948,21 @@ statext_try_join_estimates(PlannerInfo *root, List *clauses, int varRelid,
 	 *
 	 * XXX Currently this only allows simple OpExpr equality clauses with each
 	 * argument referring to single relation, AND-ed together. Maybe we could
-	 * relax this in the future, e.g. to allow more complex (deeper) expressions
-	 * and to allow OR-ed join clauses too. And maybe supporting inequalities.
+	 * relax this in the future, e.g. to allow more complex (deeper)
+	 * expressions and to allow OR-ed join clauses too. And maybe supporting
+	 * inequalities.
 	 *
 	 * Handling more complex expressions seems simple - we already do that for
-	 * baserel estimates by building the match bitmap recursively, and we could
-	 * do something similar for combinations of MCV items (a bit like building
-	 * a single bit in the match bitmap). The challenge is what to do about the
-	 * part not represented by MCV, which is now based on ndistinct estimates.
+	 * baserel estimates by building the match bitmap recursively, and we
+	 * could do something similar for combinations of MCV items (a bit like
+	 * building a single bit in the match bitmap). The challenge is what to do
+	 * about the part not represented by MCV, which is now based on ndistinct
+	 * estimates.
 	 */
 	listidx = -1;
-	foreach (lc, clauses)
+	foreach(lc, clauses)
 	{
-		Node *clause = (Node *) lfirst(lc);
+		Node	   *clause = (Node *) lfirst(lc);
 		RestrictInfo *rinfo;
 
 		/* needs to happen before skipping any clauses */
@@ -2968,15 +2973,15 @@ statext_try_join_estimates(PlannerInfo *root, List *clauses, int varRelid,
 			continue;
 
 		/*
-		 * Skip clauses that are not join clauses or that we don't know
-		 * how to handle estimate using extended statistics.
+		 * Skip clauses that are not join clauses or that we don't know how to
+		 * handle estimate using extended statistics.
 		 */
 		if (!statext_is_supported_join_clause(root, clause, varRelid, sjinfo))
 			continue;
 
 		/*
-		 * XXX We're guaranteed to have RestrictInfo thanks to the checks
-		 * in statext_is_supported_join_clause.
+		 * XXX We're guaranteed to have RestrictInfo thanks to the checks in
+		 * statext_is_supported_join_clause.
 		 */
 		rinfo = (RestrictInfo *) clause;
 
@@ -3003,15 +3008,17 @@ statext_try_join_estimates(PlannerInfo *root, List *clauses, int varRelid,
 	 * cross-check the exact joined pairs of rels, but it's supposed to be a
 	 * cheap check, so maybe better leave that for later.
 	 *
-	 * XXX We could also check the number of parameters in each rel to consider
-	 * extended stats. If there's just a single attribute, it's pointless to use
-	 * extended statistics. OTOH we can also consider restriction clauses from
-	 * baserestrictinfo and use them to calculate conditional probabilities.
+	 * XXX We could also check the number of parameters in each rel to
+	 * consider extended stats. If there's just a single attribute, it's
+	 * pointless to use extended statistics. OTOH we can also consider
+	 * restriction clauses from baserestrictinfo and use them to calculate
+	 * conditional probabilities.
 	 */
 	k = -1;
 	while ((k = bms_next_member(relids, k)) >= 0)
 	{
 		RelOptInfo *rel = find_base_rel(root, k);
+
 		if (rel->statlist)
 			return true;
 	}
@@ -3045,10 +3052,10 @@ statext_build_join_pairs(PlannerInfo *root, List *clauses, int varRelid,
 						 JoinType jointype, SpecialJoinInfo *sjinfo,
 						 Bitmapset *estimatedclauses, int *npairs)
 {
-	int				cnt;
-	int				listidx;
-	JoinPairInfo   *info;
-	ListCell	   *lc;
+	int			cnt;
+	int			listidx;
+	JoinPairInfo *info;
+	ListCell   *lc;
 
 	/*
 	 * Assume each clause is for a different pair of relations (some of them
@@ -3061,10 +3068,10 @@ statext_build_join_pairs(PlannerInfo *root, List *clauses, int varRelid,
 	listidx = -1;
 	foreach(lc, clauses)
 	{
-		int				i;
-		bool			found;
-		Node		   *clause = (Node *) lfirst(lc);
-		RestrictInfo   *rinfo;
+		int			i;
+		bool		found;
+		Node	   *clause = (Node *) lfirst(lc);
+		RestrictInfo *rinfo;
 
 		listidx++;
 
@@ -3073,9 +3080,9 @@ statext_build_join_pairs(PlannerInfo *root, List *clauses, int varRelid,
 			continue;
 
 		/*
-		 * Make sure the clause is a join clause of a supported shape (at
-		 * the moment we support just (Expr op Expr) clauses with each
-		 * side referencing just a single relation).
+		 * Make sure the clause is a join clause of a supported shape (at the
+		 * moment we support just (Expr op Expr) clauses with each side
+		 * referencing just a single relation).
 		 */
 		if (!statext_is_supported_join_clause(root, clause, varRelid, sjinfo))
 			continue;
@@ -3153,23 +3160,23 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 	rel = find_base_rel(root, relid);
 
 	/*
-	 * Walk the clauses for this join pair, and extract expressions about
-	 * the relation identified by index / relid. For simple Vars we extract
-	 * the attnum. Otherwise we keep the whole expression.
+	 * Walk the clauses for this join pair, and extract expressions about the
+	 * relation identified by index / relid. For simple Vars we extract the
+	 * attnum. Otherwise we keep the whole expression.
 	 */
-	foreach (lc, info->clauses)
+	foreach(lc, info->clauses)
 	{
-		ListCell *lc2;
-		Node *clause = (Node *) lfirst(lc);
-		OpExpr *opclause = (OpExpr *) clause;
+		ListCell   *lc2;
+		Node	   *clause = (Node *) lfirst(lc);
+		OpExpr	   *opclause = (OpExpr *) clause;
 
 		/* only opclauses supported for now */
 		Assert(is_opclause(clause));
 
-		foreach (lc2, opclause->args)
+		foreach(lc2, opclause->args)
 		{
-			Node *arg = (Node *) lfirst(lc2);
-			Bitmapset *varnos = NULL;
+			Node	   *arg = (Node *) lfirst(lc2);
+			Bitmapset  *varnos = NULL;
 
 			/* plain Var references (boolean Vars or recursive checks) */
 			if (IsA(arg, Var))
@@ -3184,7 +3191,10 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 				if (var->varlevelsup > 0)
 					continue;
 
-				/* Also skip system attributes (we don't allow stats on those). */
+				/*
+				 * Also skip system attributes (we don't allow stats on
+				 * those).
+				 */
 				if (!AttrNumberIsForUserDefinedAttr(var->varattno))
 					elog(ERROR, "unexpected system attribute");
 
@@ -3195,10 +3205,9 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 			}
 
 			/*
-			 * OK, it's a more complex expression, so check if it matches
-			 * the relid and maybe keep it as a whole. It should be
-			 * compatible because we already checked it when building the
-			 * join pairs.
+			 * OK, it's a more complex expression, so check if it matches the
+			 * relid and maybe keep it as a whole. It should be compatible
+			 * because we already checked it when building the join pairs.
 			 */
 			varnos = pull_varnos(root, arg);
 
@@ -3228,15 +3237,15 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 static Node *
 get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
 {
-	OpExpr *opexpr;
-	Node   *expr;
+	OpExpr	   *opexpr;
+	Node	   *expr;
 
 	/*
 	 * Strip the RestrictInfo node, get the actual clause.
 	 *
-	 * XXX Not sure if we need to care about removing other node types
-	 * too (e.g. RelabelType etc.). statext_is_supported_join_clause
-	 * matches this, but maybe we need to relax it?
+	 * XXX Not sure if we need to care about removing other node types too
+	 * (e.g. RelabelType etc.). statext_is_supported_join_clause matches this,
+	 * but maybe we need to relax it?
 	 */
 	if (IsA(clause, RestrictInfo))
 		clause = (Node *) ((RestrictInfo *) clause)->clause;
@@ -3279,10 +3288,10 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses, int varRel
 {
 	int			i;
 	int			listidx;
-	Selectivity	s = 1.0;
+	Selectivity s = 1.0;
 
 	JoinPairInfo *info;
-	int				ninfo;
+	int			ninfo;
 
 	if (!clauses)
 		return 1.0;
@@ -3298,27 +3307,27 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses, int varRel
 	/*
 	 * Process the join pairs, try to find a matching MCV on each side.
 	 *
-	 * XXX The basic principle is quite similar to eqjoinsel_inner, i.e.
-	 * we try to find a MCV on both sides of the join, and use it to get
-	 * a better join estimate. It's a bit more complicated, because there
-	 * might be multiple MCV lists, we also need ndistinct estimate, and
-	 * there may be interesting baserestrictions too.
+	 * XXX The basic principle is quite similar to eqjoinsel_inner, i.e. we
+	 * try to find a MCV on both sides of the join, and use it to get a better
+	 * join estimate. It's a bit more complicated, because there might be
+	 * multiple MCV lists, we also need ndistinct estimate, and there may be
+	 * interesting baserestrictions too.
 	 *
-	 * XXX At the moment we only handle the case with matching MCVs on
-	 * both sides, but it'd be good to also handle case with just ndistinct
+	 * XXX At the moment we only handle the case with matching MCVs on both
+	 * sides, but it'd be good to also handle case with just ndistinct
 	 * statistics improving ndistinct estimates.
 	 *
-	 * XXX We might also handle cases with a regular MCV on one side and
-	 * an extended MCV on the other side.
+	 * XXX We might also handle cases with a regular MCV on one side and an
+	 * extended MCV on the other side.
 	 *
-	 * XXX Perhaps it'd be good to also handle case with one side only
-	 * having "regular" statistics (e.g. MCV), especially in cases with
-	 * no conditions on that side of the join (where we can't use the
-	 * extended MCV to calculate conditional probability).
+	 * XXX Perhaps it'd be good to also handle case with one side only having
+	 * "regular" statistics (e.g. MCV), especially in cases with no conditions
+	 * on that side of the join (where we can't use the extended MCV to
+	 * calculate conditional probability).
 	 */
 	for (i = 0; i < ninfo; i++)
 	{
-		ListCell *lc;
+		ListCell   *lc;
 
 		RelOptInfo *rel1;
 		RelOptInfo *rel2;
@@ -3336,14 +3345,14 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses, int varRel
 		 * We can handle three basic cases:
 		 *
 		 * a) Extended stats (with MCV) on both sides is an ideal case, and we
-		 * can simply combine the two MCVs, possibly with additional conditions
-		 * from the relations.
+		 * can simply combine the two MCVs, possibly with additional
+		 * conditions from the relations.
 		 *
 		 * b) Extended stats on one side, regular MCV on the other side (this
 		 * means there's just one join clause / expression). It also means the
-		 * extended stats likely covers at least one extra condition, otherwise
-		 * we could just use regular statistics. We can combine the stats just
-		 * similarly to (a).
+		 * extended stats likely covers at least one extra condition,
+		 * otherwise we could just use regular statistics. We can combine the
+		 * stats just similarly to (a).
 		 *
 		 * c) No extended stats with MCV. If there are multiple join clauses,
 		 * we can try using ndistinct coefficients and do what eqjoinsel does.
@@ -3358,14 +3367,14 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses, int varRel
 		else if (stat1 && (list_length(info[i].clauses) == 1))
 		{
 			/* try finding MCV on the other relation */
-			VariableStatData	vardata;
-			AttStatsSlot		sslot;
-			Form_pg_statistic	stats = NULL;
-			bool				have_mcvs = false;
-			Node			   *clause = linitial(info[i].clauses);
-			Node			   *expr = get_expression_for_rel(root, rel2, clause);
-			double				nd;
-			bool				isdefault;
+			VariableStatData vardata;
+			AttStatsSlot sslot;
+			Form_pg_statistic stats = NULL;
+			bool		have_mcvs = false;
+			Node	   *clause = linitial(info[i].clauses);
+			Node	   *expr = get_expression_for_rel(root, rel2, clause);
+			double		nd;
+			bool		isdefault;
 
 			examine_variable(root, expr, 0, &vardata);
 
@@ -3377,7 +3386,11 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses, int varRel
 			{
 				/* note we allow use of nullfrac regardless of security check */
 				stats = (Form_pg_statistic) GETSTRUCT(vardata.statsTuple);
-				/* FIXME should this call statistic_proc_security_check like eqjoinsel? */
+
+				/*
+				 * FIXME should this call statistic_proc_security_check like
+				 * eqjoinsel?
+				 */
 				have_mcvs = get_attstatsslot(&sslot, vardata.statsTuple,
 											 STATISTIC_KIND_MCV, InvalidOid,
 											 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
@@ -3398,14 +3411,14 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses, int varRel
 		else if (stat2 && (list_length(info[i].clauses) == 1))
 		{
 			/* try finding MCV on the other relation */
-			VariableStatData	vardata;
-			AttStatsSlot		sslot;
-			Form_pg_statistic	stats = NULL;
-			bool				have_mcvs = false;
-			Node			   *clause = (Node *) linitial(info[i].clauses);
-			Node			   *expr = get_expression_for_rel(root, rel1, clause);
-			double				nd;
-			bool				isdefault;
+			VariableStatData vardata;
+			AttStatsSlot sslot;
+			Form_pg_statistic stats = NULL;
+			bool		have_mcvs = false;
+			Node	   *clause = (Node *) linitial(info[i].clauses);
+			Node	   *expr = get_expression_for_rel(root, rel1, clause);
+			double		nd;
+			bool		isdefault;
 
 			examine_variable(root, expr, 0, &vardata);
 
@@ -3417,7 +3430,11 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses, int varRel
 			{
 				/* note we allow use of nullfrac regardless of security check */
 				stats = (Form_pg_statistic) GETSTRUCT(vardata.statsTuple);
-				/* FIXME should this call statistic_proc_security_check like eqjoinsel? */
+
+				/*
+				 * FIXME should this call statistic_proc_security_check like
+				 * eqjoinsel?
+				 */
 				have_mcvs = get_attstatsslot(&sslot, vardata.statsTuple,
 											 STATISTIC_KIND_MCV, InvalidOid,
 											 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
@@ -3441,18 +3458,19 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses, int varRel
 		/*
 		 * Now mark all the clauses for this join pair as estimated.
 		 *
-		 * XXX Maybe track the indexes in JoinPairInfo, so that we can
-		 * simply union the two bitmaps, without the extra matching.
+		 * XXX Maybe track the indexes in JoinPairInfo, so that we can simply
+		 * union the two bitmaps, without the extra matching.
 		 */
-		foreach (lc, info->clauses)
+		foreach(lc, info->clauses)
 		{
-			Node *clause = (Node *) lfirst(lc);
-			ListCell *lc2;
+			Node	   *clause = (Node *) lfirst(lc);
+			ListCell   *lc2;
 
 			listidx = -1;
-			foreach (lc2, clauses)
+			foreach(lc2, clauses)
 			{
-				Node *clause2 = (Node *) lfirst(lc2);
+				Node	   *clause2 = (Node *) lfirst(lc2);
+
 				listidx++;
 
 				Assert(IsA(clause2, RestrictInfo));

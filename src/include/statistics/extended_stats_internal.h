@@ -15,7 +15,7 @@
 #define EXTENDED_STATS_INTERNAL_H
 
 #include "statistics/statistics.h"
-#include "utils/lsyscache.h"		/* XXX is this needed? */
+#include "utils/lsyscache.h"	/* XXX is this needed? */
 #include "utils/sortsupport.h"
 
 typedef struct

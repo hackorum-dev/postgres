@@ -139,8 +139,8 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 *
 	 * The optimization skips clause_selectivity_ext when estimating a single
 	 * clause, but for join clauses it would mean we can't consider both the
-	 * join clause and the baserel restrictions. So we disable the optimization
-	 * when estimating a join clause.
+	 * join clause and the baserel restrictions. So we disable the
+	 * optimization when estimating a join clause.
 	 *
 	 * XXX Not sure if this is the best way to deal with the optimization. We
 	 * could make it more elaborate in various ways, but increasing the cost
@@ -148,18 +148,18 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 *
 	 * XXX Alternatively we could make clause_selectivity_ext smarter and
 	 * combine the join clauses and baserel restrictions there. But that seems
-	 * somewhat against the whole point of the optimization (skipping expensive
-	 * stuff) and it'd making other parts more complex.
+	 * somewhat against the whole point of the optimization (skipping
+	 * expensive stuff) and it'd making other parts more complex.
 	 *
-	 * XXX Maybe this should check if there are at least some restrictions
-	 * on some base relations, which seems important. But then again, that
-	 * seems to go against the idea of this check to be cheap. Moreover, it
-	 * won't work for OR clauses, which may have multiple parts but we still
-	 * see them as a single BoolExpr clause (it doesn't work later, though).
+	 * XXX Maybe this should check if there are at least some restrictions on
+	 * some base relations, which seems important. But then again, that seems
+	 * to go against the idea of this check to be cheap. Moreover, it won't
+	 * work for OR clauses, which may have multiple parts but we still see
+	 * them as a single BoolExpr clause (it doesn't work later, though).
 	 */
 	if (list_length(clauses) == 1)
 	{
-		Node *clause = linitial(clauses);
+		Node	   *clause = linitial(clauses);
 		RestrictInfo *rinfo = NULL;
 
 		if (IsA(clause, RestrictInfo))
@@ -205,9 +205,9 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	}
 
 	/*
-	 * Try applying extended statistics to joins. There's not much we can
-	 * do to detect when this makes sense, but we can check that there are
-	 * join clauses, and that at least some of the rels have stats.
+	 * Try applying extended statistics to joins. There's not much we can do
+	 * to detect when this makes sense, but we can check that there are join
+	 * clauses, and that at least some of the rels have stats.
 	 *
 	 * XXX Isn't this mutually exclusive with the preceding block which
 	 * calculates estimates for a single relation?

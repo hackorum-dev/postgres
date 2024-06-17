@@ -1289,6 +1289,7 @@ JoinCostWorkspace
 JoinDomain
 JoinExpr
 JoinHashEntry
+JoinPairInfo
 JoinPath
 JoinPathExtraData
 JoinState
