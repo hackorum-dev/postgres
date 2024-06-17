@@ -2745,6 +2745,8 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 		 * XXX Or maybe we should simply "count" the restrictions here,
 		 * instead of constructing a list? Probably not a meaningful
 		 * difference in CPU costs or a memory leak.
+		 *
+		 * XXX Why are we recalculating conditions1 here?
 		 */
 		conditions1 = statext_determine_join_restrictions(root, rel, stat);
 		conditions2 = statext_determine_join_restrictions(root, rel, mcv);
@@ -3123,6 +3125,10 @@ statext_build_join_pairs(PlannerInfo *root, List *clauses,
  * XXX Name should probably start with statext_ too.
  *
  * XXX The 0/1 index seems a bit weird. Is there a better way to do this?
+ *
+ * XXX I somehow dislike the finctions returning a lot of stuff using output
+ * arguments / pointers. Maybe it's time to invent a new struct returned by
+ * this function?
  */
 static RelOptInfo *
 extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,

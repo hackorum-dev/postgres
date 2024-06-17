@@ -2208,8 +2208,7 @@ mcv_clause_selectivity_or(PlannerInfo *root, StatisticExtInfo *stat,
 Selectivity
 mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 					 StatisticExtInfo *stat1, StatisticExtInfo *stat2,
-					 List *base_cond1, List *base_cond2,
-					 List *clauses)
+					 List *base_cond1, List *base_cond2, List *clauses)
 {
 	ListCell   *lc;
 
