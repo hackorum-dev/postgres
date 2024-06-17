@@ -72,7 +72,7 @@
 	 ((ndims) * sizeof(DimensionInfo)) + \
 	 ((nitems) * ITEM_SIZE(ndims)))
 
- /*  #define  DEBUG_MCV  1 /* should be removed after review. */ * /
+ /* #define  DEBUG_MCV  1 /* should be removed after review. */ * /
 
 /*
  * XXX The patch says "optimize the order of mcv equal function evaluation"
@@ -98,10 +98,10 @@ typedef struct
  */
 typedef struct
 {
-	int 	index1;
-	int 	index2;
-	bool 	reverse;
-} McvClauseInfo;
+	int			index1;
+	int			index2;
+	bool		reverse;
+}			McvClauseInfo;
 
 /*
  * XXX What's the reasoning behind reordering the functions like this? Doesn't it
@@ -2297,8 +2297,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				totalsel2;
 
 	/* info about clauses and how they match to MCV stats */
-	McvProc		*mcvProc;
-	McvClauseInfo	*cinfo;
+	McvProc    *mcvProc;
+	McvClauseInfo *cinfo;
 	RangeTblEntry *rte1 = root->simple_rte_array[rel1->relid];
 	RangeTblEntry *rte2 = root->simple_rte_array[rel2->relid];
 
@@ -2402,11 +2402,11 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			Oid			collid;
 
 			cinfo[idx].index1 = mcv_match_expression(expr1,
-												 stat1->keys, stat1->exprs,
-												 &collid);
+													 stat1->keys, stat1->exprs,
+													 &collid);
 			cinfo[idx].index2 = mcv_match_expression(expr2,
-												 stat2->keys, stat2->exprs,
-												 &collid);
+													 stat2->keys, stat2->exprs,
+													 &collid);
 			cinfo[idx].reverse = false;
 
 			exprs1 = lappend(exprs1, expr1);
@@ -2420,11 +2420,11 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			Oid			collid;
 
 			cinfo[idx].index1 = mcv_match_expression(expr2,
-												 stat2->keys, stat2->exprs,
-												 &collid);
+													 stat2->keys, stat2->exprs,
+													 &collid);
 			cinfo[idx].index2 = mcv_match_expression(expr1,
-												 stat1->keys, stat1->exprs,
-												 &collid);
+													 stat1->keys, stat1->exprs,
+													 &collid);
 			cinfo[idx].reverse = true;
 
 			exprs1 = lappend(exprs1, expr2);
@@ -2520,13 +2520,13 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			 */
 			for (idx = 0; idx < list_length(clauses); idx++)
 			{
-				bool	match;
-				int		index1 = cinfo[idx].index1,
-						index2 = cinfo[idx].index2;
-				Datum	value1,
-						value2;
-				bool	reverse_args = cinfo[idx].reverse;
-				FunctionCallInfo	fcinfo = mcvProc[idx].fcinfo;
+				bool		match;
+				int			index1 = cinfo[idx].index1,
+							index2 = cinfo[idx].index2;
+				Datum		value1,
+							value2;
+				bool		reverse_args = cinfo[idx].reverse;
+				FunctionCallInfo fcinfo = mcvProc[idx].fcinfo;
 
 				/* If either value is null, it's a mismatch */
 				if (mcv2->items[j].isnull[index2])
