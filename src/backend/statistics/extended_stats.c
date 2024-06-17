@@ -2846,11 +2846,11 @@ statext_determine_join_restrictions(PlannerInfo *root, RelOptInfo *rel,
 static bool
 statext_is_supported_join_clause(PlannerInfo *root, Node *clause)
 {
-	Oid			oprsel;
-	RestrictInfo *rinfo;
-	OpExpr	   *opclause;
-	int			left_relid,
-				right_relid;
+	Oid	oprsel;
+	RestrictInfo   *rinfo;
+	OpExpr		   *opclause;
+	int				left_relid, right_relid;
+	Var			   *var;
 
 	/* XXX Can we rely on always getting RestrictInfo here? */
 	if (!IsA(clause, RestrictInfo))
@@ -2906,6 +2906,14 @@ statext_is_supported_join_clause(PlannerInfo *root, Node *clause)
 	 * handle it.
 	 */
 	if (left_relid == right_relid)
+		return false;
+
+	var = (Var *) linitial(opclause->args);
+	if (IsA(var, Var) && var->varattno < 0)
+		return false;
+
+	var = (Var *) lsecond(opclause->args);
+	if (IsA(var, Var) && var->varattno < 0)
 		return false;
 
 	return true;
@@ -3195,6 +3203,15 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 		}
 	}
 
+	/*
+	 * Find a stat which covers *all* the attnums and exprs for simplification.
+	 *
+	 * To overcome above limitation, statext_find_matching_mcv has to smart enough to
+	 * decide which expression to discard as the first step. and later the other
+	 * side of join has to use a stats which match or superset of expression here.
+	 * at last mcv_combine_extended should be improved to handle the not-exactly-same
+	 * mcv.
+	 */
 	*stat = statext_find_matching_mcv(root, rel, attnums, exprs, base_conditions);
 
 	return rel;

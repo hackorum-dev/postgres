@@ -1595,6 +1595,12 @@ SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on (j1.a + 1 = j2.a) where j1.c < 5');
 SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on (j1.a + 1 = j2.a + 1) where j1.c < 5');
 
+-- test join with system column var, but the ext statistics can't be built in system attribute AND extended statistics
+-- must covers all the join columns, so the following 2 statements can use extended statistics for join.
+SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1) and (j1.b = j2.b)) and j1.cmin = j2.cmin');
+-- Join with system column expression.
+SELECT * FROM check_estimated_rows('select * from join_test_1 j1 join join_test_2 j2 on ((j1.a + 1 = j2.a + 1) and (j1.b = j2.b)) and j1.cmin::text::int4 = j2.cmin::text::int4');
+
 -- try combining with single-column (and single-expression) statistics
 DROP STATISTICS join_stats_2;
 
