@@ -2266,7 +2266,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	MCVList    *mcv1,
 			   *mcv2;
 	int			i,
-				j;
+		j,
+		nmatches = 0;
 	Selectivity s = 0;
 
 	/* match bitmaps and selectivity for baserel conditions (if any) */
@@ -2289,12 +2290,12 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				nd1,
 				totalsel1;
 
-	double		matchfreq2,
-				unmatchfreq2,
-				otherfreq2,
-				mcvfreq2,
-				nd2,
-				totalsel2;
+	double	matchfreq2,
+			unmatchfreq2,
+			otherfreq2,
+			mcvfreq2,
+			nd2,
+			totalsel2;
 
 	/* info about clauses and how they match to MCV stats */
 	McvProc    *mcvProc;
@@ -2661,24 +2662,36 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	nd2 *= csel2;
 
 	totalsel1 = s;
-	totalsel1 += unmatchfreq1 * otherfreq2 / nd2;
-	totalsel1 += otherfreq1 * (otherfreq2 + unmatchfreq2) / nd2;
 
-/* 	if (nd2 > mcvb->nitems) */
-/* 		totalsel1 += unmatchfreq1 * otherfreq2 / (nd2 - mcvb->nitems); */
-/* 	if (nd2 > nmatches) */
-/* 		totalsel1 += otherfreq1 * (otherfreq2 + unmatchfreq2) / */
-/* 			(nd2 - nmatches); */
+	if (mcv2->ndimensions == list_length(clauses))
+	{
+		if (nd2 > mcv2->nitems)
+			totalsel1 += unmatchfreq1 * otherfreq2 / (nd2 - mcv2->nitems);
+		if (nd2 > nmatches)
+			totalsel1 += otherfreq1 * (otherfreq2 + unmatchfreq2) /
+				(nd2 - nmatches);
+	}
+	else
+	{
+		totalsel1 += unmatchfreq1 * otherfreq2 / nd2;
+		totalsel1 += otherfreq1 * (otherfreq2 + unmatchfreq2) / nd2;
+	}
 
 	totalsel2 = s;
-	totalsel2 += unmatchfreq2 * otherfreq1 / nd1;
-	totalsel2 += otherfreq2 * (otherfreq1 + unmatchfreq1) / nd1;
 
-/* 	if (nd1 > mcva->nitems) */
-/* 		totalsel2 += unmatchfreq2 * otherfreq1 / (nd1 - mcva->nitems); */
-/* 	if (nd1 > nmatches) */
-/* 		totalsel2 += otherfreq2 * (otherfreq1 + unmatchfreq1) / */
-/* 			(nd1 - nmatches); */
+	if (mcv1->ndimensions == list_length(clauses))
+	{
+		if (nd1 > mcv1->nitems)
+			totalsel2 += unmatchfreq2 * otherfreq1 / (nd1 - mcv1->nitems);
+		if (nd1 > nmatches)
+			totalsel2 += otherfreq2 * (otherfreq1 + unmatchfreq1) /
+				(nd1 - nmatches);
+	}
+	else
+	{
+		totalsel2 += unmatchfreq2 * otherfreq1 / nd1;
+		totalsel2 += otherfreq2 * (otherfreq1 + unmatchfreq1) / nd1;
+	}
 
 	s = Min(totalsel1, totalsel2);
 
