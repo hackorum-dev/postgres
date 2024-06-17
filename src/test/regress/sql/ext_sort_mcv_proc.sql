@@ -1,3 +1,6 @@
+-- FIXME would be nice to explain what's the point of the test, what it tries to verify
+-- FIXME maybe use "costs off"?
+-- FIXME where's the expected output for the test? also, not added to the schedule
 create table t(level_1 text, level_2 text, level_3 text);
 
 insert into t

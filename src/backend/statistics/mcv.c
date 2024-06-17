@@ -74,6 +74,13 @@
 
 // #define  DEBUG_MCV  1 /* should be removed after review. */
 
+/*
+ * XXX The patch says "optimize the order of mcv equal function evaluation"
+ * but how is this new struct related to that?
+ *
+ * XXX Anyway, if we want to do this, surely this is not the only opportunity
+ * to replace a couple separate variables with a struct wrapping them logically?
+ */
 typedef struct
 {
 	FmgrInfo	fmgrinfo;
@@ -84,6 +91,11 @@ typedef struct
 #endif
 } McvProc;
 
+/*
+ * XXX What's the reasoning behind reordering the functions like this? Doesn't it
+ * have the same issues with unpredictable behavior like the GROUP BY patch, which
+ * got eventually reverted and reworked?
+ */
 static int
 cmp_mcv_proc(const void *a, const void *b)
 {
