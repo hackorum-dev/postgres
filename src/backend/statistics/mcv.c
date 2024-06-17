@@ -2559,7 +2559,15 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				s += mcv1->items[i].frequency * mcv2->items[j].frequency;
 				nmatches += 1;
 
+				/*
+				 * XXX Comment should be before the condition, and should
+				 * explain why there could be no more matches.
+				 *
+				 * XXX I'm not sure about this optimization, could there be a
+				 * case with two clauses matching the same MCV dimension?
+				 */
 				if (mcv2->ndimensions == list_length(clauses))
+
 					/*
 					 * no more items in mcv2 could match mcv1[i] in this case,
 					 * so break fast.
