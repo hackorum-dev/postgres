@@ -2901,8 +2901,7 @@ statext_is_supported_join_clause(PlannerInfo *root, Node *clause)
 		return false;
 
 	/*
-	 * XXX:
-	 * Join two columns in the same relation is uncommon and
+	 * XXX: Join two columns in the same relation is uncommon and
 	 * extract_relation_info requires 2 different relids, so no bother to
 	 * handle it.
 	 */
@@ -2952,7 +2951,7 @@ statext_try_join_estimates(PlannerInfo *root, List *clauses, int varRelid,
 	 * about the part not represented by MCV, which is now based on ndistinct
 	 * estimates.
 	 */
-	foreach (lc, clauses)
+	foreach(lc, clauses)
 	{
 		Node	   *clause = (Node *) lfirst(lc);
 		RestrictInfo *rinfo;
@@ -3036,9 +3035,9 @@ static JoinPairInfo *
 statext_build_join_pairs(PlannerInfo *root, List *clauses,
 						 Bitmapset *estimatedclauses, int *npairs)
 {
-	int				cnt;
-	JoinPairInfo   *info;
-	ListCell	   *lc;
+	int			cnt;
+	JoinPairInfo *info;
+	ListCell   *lc;
 
 	/*
 	 * Assume each clause is for a different pair of relations (some of them
@@ -3050,11 +3049,11 @@ statext_build_join_pairs(PlannerInfo *root, List *clauses,
 
 	foreach(lc, clauses)
 	{
-		int				i;
-		bool			found;
-		Node		   *clause = (Node *) lfirst(lc);
-		RestrictInfo   *rinfo;
-		int				listidx = list_cell_number(clauses, lc);
+		int			i;
+		bool		found;
+		Node	   *clause = (Node *) lfirst(lc);
+		RestrictInfo *rinfo;
+		int			listidx = list_cell_number(clauses, lc);
 
 		/* skip already estimated clauses */
 		if (bms_is_member(listidx, estimatedclauses))
@@ -3266,7 +3265,7 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 									Bitmapset **estimatedclauses)
 {
 	int			i;
-	Selectivity	s = 1.0;
+	Selectivity s = 1.0;
 
 	JoinPairInfo *info;
 	int			ninfo;
@@ -3449,10 +3448,10 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 			Node	   *clause = (Node *) rinfo->clause;
 			ListCell   *lc2;
 
-			foreach (lc2, clauses)
+			foreach(lc2, clauses)
 			{
-				Node *clause2 = (Node *) lfirst(lc2);
-				int listidx = list_cell_number(clauses, lc2);
+				Node	   *clause2 = (Node *) lfirst(lc2);
+				int			listidx = list_cell_number(clauses, lc2);
 
 				Assert(IsA(clause2, RestrictInfo));
 
