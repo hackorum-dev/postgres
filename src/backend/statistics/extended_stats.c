@@ -2641,7 +2641,8 @@ make_build_data(Relation rel, StatExtEntry *stat, int numrows, HeapTuple *rows,
 
 /*
  * statext_find_matching_mcv
- *		Search for a MCV covering all the attributes and expressions.
+ *		Search for a MCV covering all the attributes and expressions and set
+ * the conditions to calculate conditional probability.
  *
  * Picks the extended statistics object to estimate join clause. The statistics
  * object has to have a MCV, and we require it to match all the join conditions
@@ -2668,7 +2669,8 @@ make_build_data(Relation rel, StatExtEntry *stat, int numrows, HeapTuple *rows,
  */
 StatisticExtInfo *
 statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
-						  Bitmapset *attnums, List *exprs)
+						  Bitmapset *attnums, List *exprs,
+						  List **base_conditions)
 {
 	ListCell   *l;
 	StatisticExtInfo *mcv = NULL;
@@ -2693,6 +2695,7 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 		if (!mcv)
 		{
 			mcv = stat;
+			*base_conditions = statext_determine_join_restrictions(root, rel, mcv);
 			continue;
 		}
 
@@ -2750,7 +2753,12 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 		if (list_length(conditions1) > list_length(conditions2))
 		{
 			mcv = stat;
+			*base_conditions = conditions1;
 			continue;
+		}
+		else
+		{
+			*base_conditions = conditions2;
 		}
 
 		/*
@@ -2762,6 +2770,11 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
 			bms_num_members(stat->keys) + list_length(stat->exprs))
 		{
 			mcv = stat;
+			*base_conditions = conditions1;
+		}
+		else
+		{
+			*base_conditions = conditions2;
 		}
 	}
 
@@ -2776,7 +2789,7 @@ statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
  * and covered by the extended statistics object.
  *
  * When using extended statistics to estimate joins, we can use conditions
- * from base relations to calculate conditional probability
+ * from base relations to calculate conditional probability.
  *
  *    P(join clauses | baserel restrictions)
  *
@@ -3113,7 +3126,7 @@ statext_build_join_pairs(PlannerInfo *root, List *clauses,
  */
 static RelOptInfo *
 extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
-					  StatisticExtInfo **stat)
+					  StatisticExtInfo **stat, List **base_conditions)
 {
 	int			relid;
 	RelOptInfo *rel;
@@ -3187,7 +3200,7 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 		}
 	}
 
-	*stat = statext_find_matching_mcv(root, rel, attnums, exprs);
+	*stat = statext_find_matching_mcv(root, rel, attnums, exprs, base_conditions);
 
 	return rel;
 }
@@ -3305,11 +3318,14 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 		StatisticExtInfo *stat1;
 		StatisticExtInfo *stat2;
 
+		List	*base_condition1 = NULL,
+				*base_condition2 = NULL;
+
 		/* extract info about the first relation */
-		rel1 = extract_relation_info(root, &info[i], 0, &stat1);
+		rel1 = extract_relation_info(root, &info[i], 0, &stat1, &base_condition1);
 
 		/* extract info about the second relation */
-		rel2 = extract_relation_info(root, &info[i], 1, &stat2);
+		rel2 = extract_relation_info(root, &info[i], 1, &stat2, &base_condition2);
 
 		/*
 		 * We can handle three basic cases:
@@ -3332,7 +3348,9 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 		 */
 		if (stat1 && stat2)
 		{
-			s *= mcv_combine_extended(root, rel1, rel2, stat1, stat2, info[i].clauses);
+			s *= mcv_combine_extended(root, rel1, rel2, stat1, stat2,
+									  base_condition1, base_condition2,
+									  info[i].clauses);
 		}
 		else if (stat1 && (list_length(info[i].clauses) == 1))
 		{

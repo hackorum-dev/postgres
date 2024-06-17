@@ -141,6 +141,8 @@ extern Selectivity mcv_combine_extended(PlannerInfo *root,
 										RelOptInfo *rel2,
 										StatisticExtInfo *stat1,
 										StatisticExtInfo *stat2,
+										List	*base_cond1,
+										List	*base_cond2,
 										List *clauses);
 
 extern List *statext_determine_join_restrictions(PlannerInfo *root,

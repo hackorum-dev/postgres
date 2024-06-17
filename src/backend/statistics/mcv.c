@@ -2208,6 +2208,7 @@ mcv_clause_selectivity_or(PlannerInfo *root, StatisticExtInfo *stat,
 Selectivity
 mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 					 StatisticExtInfo *stat1, StatisticExtInfo *stat2,
+					 List *base_cond1, List *base_cond2,
 					 List *clauses)
 {
 	ListCell   *lc;
@@ -2219,12 +2220,10 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	Selectivity s = 0;
 
 	/* match bitmaps and selectivity for baserel conditions (if any) */
-	List	   *exprs1 = NIL,
-			   *exprs2 = NIL;
-	List	   *conditions1 = NIL,
-			   *conditions2 = NIL;
-	bool	   *cmatches1 = NULL,
-			   *cmatches2 = NULL;
+	List   *exprs1 = NIL,
+		   *exprs2 = NIL;
+	bool   *cmatches1 = NULL,
+		   *cmatches2 = NULL;
 
 	double		csel1 = 1.0,
 				csel2 = 1.0;
@@ -2264,28 +2263,24 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	/* should only get here with MCV on both sides */
 	Assert(mcv1 && mcv2);
 
-	/* Determine which baserel clauses to use for conditional probability. */
-	conditions1 = statext_determine_join_restrictions(root, rel1, stat1);
-	conditions2 = statext_determine_join_restrictions(root, rel2, stat2);
-
 	/*
 	 * Calculate match bitmaps for restrictions on either side of the join
 	 * (there may be none, in which case this will be NULL).
 	 */
-	if (conditions1)
+	if (base_cond1)
 	{
-		cmatches1 = mcv_get_match_bitmap(root, conditions1,
+		cmatches1 = mcv_get_match_bitmap(root, base_cond1,
 										 stat1->keys, stat1->exprs,
 										 mcv1, false);
-		csel1 = clauselist_selectivity(root, conditions1, rel1->relid, 0, NULL);
+		csel1 = clauselist_selectivity(root, base_cond1, rel1->relid, 0, NULL);
 	}
 
-	if (conditions2)
+	if (base_cond2)
 	{
-		cmatches2 = mcv_get_match_bitmap(root, conditions2,
+		cmatches2 = mcv_get_match_bitmap(root, base_cond2,
 										 stat2->keys, stat2->exprs,
 										 mcv2, false);
-		csel2 = clauselist_selectivity(root, conditions2, rel2->relid, 0, NULL);
+		csel2 = clauselist_selectivity(root, base_cond2, rel2->relid, 0, NULL);
 	}
 
 	/*

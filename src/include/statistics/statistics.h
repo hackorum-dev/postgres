@@ -128,7 +128,8 @@ extern StatisticExtInfo *choose_best_statistics(List *stats, char requiredkind,
 extern HeapTuple statext_expressions_load(Oid stxoid, bool inh, int idx);
 
 extern StatisticExtInfo *statext_find_matching_mcv(PlannerInfo *root, RelOptInfo *rel,
-												   Bitmapset *attnums, List *exprs);
+												   Bitmapset *attnums, List *exprs,
+												   List **base_conditions);
 
 extern bool statext_try_join_estimates(PlannerInfo *root, List *clauses, int varRelid,
 									   JoinType jointype, SpecialJoinInfo *sjinfo);
