@@ -2837,6 +2837,8 @@ statext_is_supported_join_clause(PlannerInfo *root, Node *clause, SpecialJoinInf
 	ListCell   *lc;
 
 	/*
+	 * XXX isn't this comment stale after removal of varRelid?
+	 *
 	 * evaluation as a restriction clause, either at scan node or forced
 	 *
 	 * XXX See treat_as_join_clause.

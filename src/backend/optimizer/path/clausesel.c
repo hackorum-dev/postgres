@@ -213,8 +213,13 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 * t1 left join t2 ON t1.a = 3, but it can grantee we can't use extended
 	 * statistics for estimation since it has only 1 relid.
 	 *
+	 * XXX Is that actually behaving like that? Won't the (t1.a=3) be turned
+	 * into a regular clause? I haven't tried, though.
+	 *
 	 * XXX: so we can grantee estimatedclauses == NULL now, so estimatedclauses
 	 * in statext_try_join_estimates is removed.
+	 *
+	 * XXX Maybe remove the comment and add an assert estimatedclauses==NULL.
 	 */
 	if (use_extended_stats && rel == NULL &&
 		statext_try_join_estimates(root, clauses, varRelid, jointype, sjinfo))
