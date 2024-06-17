@@ -3216,8 +3216,11 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 static Node *
 get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
 {
-	OpExpr	   *opexpr;
-	Node	   *expr;
+	OpExpr *opexpr;
+	Node   *expr;
+	RestrictInfo *rinfo = (RestrictInfo *) clause;
+
+	Assert(IsA(clause, RestrictInfo));
 
 	/*
 	 * Strip the RestrictInfo node, get the actual clause.
@@ -3226,8 +3229,7 @@ get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
 	 * (e.g. RelabelType etc.). statext_is_supported_join_clause matches this,
 	 * but maybe we need to relax it?
 	 */
-	if (IsA(clause, RestrictInfo))
-		clause = (Node *) ((RestrictInfo *) clause)->clause;
+	clause = (Node *) rinfo->clause;
 
 	opexpr = (OpExpr *) clause;
 
@@ -3237,11 +3239,11 @@ get_expression_for_rel(PlannerInfo *root, RelOptInfo *rel, Node *clause)
 
 	/* FIXME strip relabel etc. the way examine_opclause_args does */
 	expr = linitial(opexpr->args);
-	if (bms_singleton_member(pull_varnos(root, expr)) == rel->relid)
+	if (bms_singleton_member(rinfo->left_relids) == rel->relid)
 		return expr;
 
 	expr = lsecond(opexpr->args);
-	if (bms_singleton_member(pull_varnos(root, expr)) == rel->relid)
+	if (bms_singleton_member(rinfo->right_relids) == rel->relid)
 		return expr;
 
 	return NULL;
