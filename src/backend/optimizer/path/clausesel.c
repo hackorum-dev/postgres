@@ -134,6 +134,7 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	/* skip expensive processing when estimating a single clause */
 	bool		single_clause_optimization = true;
 
+	/* XXX Does this actually make meaningful difference? */
 	if (clauses == NULL)
 		return 1.0;
 
