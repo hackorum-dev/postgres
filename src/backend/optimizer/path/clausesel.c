@@ -223,9 +223,9 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 * to detect when this makes sense, but we can check that there are join
 	 * clauses, and that at least some of the rels have stats.
 	 *
-	 * rel != NULL can't guarantee the clause is not a join clause, for example
-	 * t1 left join t2 ON t1.a = 3, but it can guarantee we can't use extended
-	 * statistics for estimation since it has only 1 relid.
+	 * rel != NULL can't guarantee the clause is not a join clause, for
+	 * example t1 left join t2 ON t1.a = 3, but it can guarantee we can't use
+	 * extended statistics for estimation since it has only 1 relid.
 	 *
 	 * XXX Is that actually behaving like that? Won't the (t1.a=3) be turned
 	 * into a regular clause? I haven't tried, though.
@@ -245,8 +245,8 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	 * XXX Same thing for the joinType removal, I guess.
 	 *
 	 * XXX Isn't this broken if the hook estimates some of the clauses? We've
-	 * removed the bitmap from statext_try_join_estimates() on the grounds that
-	 * it's always NULL, but with the hook that's no longer the case.
+	 * removed the bitmap from statext_try_join_estimates() on the grounds
+	 * that it's always NULL, but with the hook that's no longer the case.
 	 */
 	if (use_extended_stats && rel == NULL &&
 		statext_try_join_estimates(root, clauses, varRelid, jointype, sjinfo))

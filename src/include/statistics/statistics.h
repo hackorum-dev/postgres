@@ -109,9 +109,9 @@ extern Selectivity statext_mcv_clauselist_selectivity(PlannerInfo *root,
 													  int varRelid,
 													  JoinType jointype,
 													  SpecialJoinInfo *sjinfo,
-													   RelOptInfo *rel,
-													   Bitmapset **estimatedclauses,
-													   bool is_or);
+													  RelOptInfo *rel,
+													  Bitmapset **estimatedclauses,
+													  bool is_or);
 extern Selectivity dependencies_clauselist_selectivity(PlannerInfo *root,
 													   List *clauses,
 													   int varRelid,
