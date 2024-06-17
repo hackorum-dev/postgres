@@ -52,7 +52,8 @@ static struct sqlca_t sqlca_init =
 	},
 	{
 		'0', '0', '0', '0', '0'
-	}
+	},
+	'\0'
 };
 
 static pthread_key_t sqlca_key;
@@ -276,8 +277,8 @@ ecpg_log(const char *format, ...)
 		/* dump out internal sqlca variables */
 		if (ecpg_internal_regression_mode && sqlca != NULL)
 		{
-			fprintf(debugstream, "[NO_PID]: sqlca: code: %ld, state: %s\n",
-					sqlca->sqlcode, sqlca->sqlstate);
+			fprintf(debugstream, "[NO_PID]: sqlca: code: %ld, state: %.*s\n",
+					sqlca->sqlcode, (int) sizeof(sqlca->sqlstate), sqlca->sqlstate);
 		}
 
 		fflush(debugstream);
