@@ -2296,6 +2296,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	 * that we don't have to do that for each MCV item or so.
 	 */
 	finfo = (FmgrInfo *) palloc(sizeof(FmgrInfo) * list_length(clauses));
+	// FIXME remove?
 	// opprocs = (FunctionCallInfo *) palloc(SizeForFunctionCallInfo(2) * list_length(clauses));
 	opprocs = (FunctionCallInfo *) palloc(sizeof(FunctionCallInfo *) * list_length(clauses));
 	indexes1 = (int *) palloc(sizeof(int) * list_length(clauses));
@@ -2334,6 +2335,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 								 NULL, NULL);
 		fcinfo->args[0].isnull = false;
 		fcinfo->args[1].isnull = false;
+
+		/* XXX Do we even need this, if we have finfo? */
 		opprocs[idx] = fcinfo;
 
 		expr1 = linitial(opexpr->args);
