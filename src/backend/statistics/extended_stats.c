@@ -2908,6 +2908,7 @@ statext_is_supported_join_clause(PlannerInfo *root, Node *clause)
 	if (left_relid == right_relid)
 		return false;
 
+	/* FIXME add some comments explainig why we need to do this */
 	var = (Var *) linitial(opclause->args);
 	if (IsA(var, Var) && var->varattno < 0)
 		return false;
@@ -3211,6 +3212,10 @@ extract_relation_info(PlannerInfo *root, JoinPairInfo *info, int index,
 	 * side of join has to use a stats which match or superset of expression here.
 	 * at last mcv_combine_extended should be improved to handle the not-exactly-same
 	 * mcv.
+	 *
+	 * XXX I don't understand what "above limitation" this refers to. The comment
+	 * would benefit from some clarification, but I'm not sure what it's trying
+	 * to say exactly :-(
 	 */
 	*stat = statext_find_matching_mcv(root, rel, attnums, exprs, base_conditions);
 
