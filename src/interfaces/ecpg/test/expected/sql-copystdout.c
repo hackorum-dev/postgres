@@ -64,6 +64,7 @@ struct sqlca_t
 	/* 7: empty						*/
 
 	char		sqlstate[5];
+	char		sqlstatepad;	/* nul terminator for sqlstate */
 };
 
 struct sqlca_t *ECPGget_sqlca(void);
