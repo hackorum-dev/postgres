@@ -2852,6 +2852,11 @@ statext_is_supported_join_clause(PlannerInfo *root, Node *clause)
 	rinfo = (RestrictInfo *) clause;
 	clause = (Node *) rinfo->clause;
 
+	/*
+	 * XXX why not to retain the BMS_MULTIPLE check on clause_relids, seems
+	 * cheap so maybe we could do it before the more expensive stuff?
+	 */
+
 	/* we only support simple operator clauses for now */
 	if (!is_opclause(clause))
 		return false;
