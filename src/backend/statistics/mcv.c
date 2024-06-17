@@ -2246,7 +2246,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				totalsel2;
 
 	/* info about clauses and how they match to MCV stats */
-	FmgrInfo   *opprocs;
+	FmgrInfo   *finfo;
+	FunctionCallInfo  *opprocs;
 	int		   *indexes1,
 			   *indexes2;
 	bool	   *reverse;
@@ -2294,7 +2295,9 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	 * stats we picked. We do this only once before processing the lists, so
 	 * that we don't have to do that for each MCV item or so.
 	 */
-	opprocs = (FmgrInfo *) palloc(sizeof(FmgrInfo) * list_length(clauses));
+	finfo = (FmgrInfo *) palloc(sizeof(FmgrInfo) * list_length(clauses));
+	// opprocs = (FunctionCallInfo *) palloc(SizeForFunctionCallInfo(2) * list_length(clauses));
+	opprocs = (FunctionCallInfo *) palloc(sizeof(FunctionCallInfo *) * list_length(clauses));
 	indexes1 = (int *) palloc(sizeof(int) * list_length(clauses));
 	indexes2 = (int *) palloc(sizeof(int) * list_length(clauses));
 	reverse = (bool *) palloc(sizeof(bool) * list_length(clauses));
@@ -2315,8 +2318,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		OpExpr	   *opexpr;
 		Node	   *expr1,
 				   *expr2;
-
-		int			idx = list_cell_number(clauses, lc);
+		int		idx = list_cell_number(clauses, lc);
+		FunctionCallInfo fcinfo = palloc(SizeForFunctionCallInfo(2));
 
 		opexpr = (OpExpr *) clause;
 
@@ -2324,7 +2327,14 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		Assert(is_opclause(clause));
 		Assert(list_length(opexpr->args) == 2);
 
-		fmgr_info(get_opcode(opexpr->opno), &opprocs[idx]);
+		fmgr_info(get_opcode(opexpr->opno), &finfo[idx]);
+
+		InitFunctionCallInfoData(*fcinfo, &finfo[idx],
+								 2, opexpr->inputcollid,
+								 NULL, NULL);
+		fcinfo->args[0].isnull = false;
+		fcinfo->args[1].isnull = false;
+		opprocs[idx] = fcinfo;
 
 		expr1 = linitial(opexpr->args);
 		expr2 = lsecond(opexpr->args);
@@ -2444,12 +2454,13 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			idx = 0;
 			foreach(lc, clauses)
 			{
-				bool		match;
-				int			index1 = indexes1[idx],
-							index2 = indexes2[idx];
-				Datum		value1,
-							value2;
-				bool		reverse_args = reverse[idx];
+				bool	match;
+				int		index1 = indexes1[idx],
+						index2 = indexes2[idx];
+				Datum	value1,
+						value2;
+				bool	reverse_args = reverse[idx];
+				FunctionCallInfo	fcinfo = opprocs[idx];
 
 				/* If either value is null, it's a mismatch */
 				if (mcv2->items[j].isnull[index2])
@@ -2462,17 +2473,18 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 					/*
 					 * Careful about order of parameters. For same-type
 					 * equality that should not matter, but easy enough.
-					 *
-					 * FIXME Use appropriate collation.
 					 */
 					if (reverse_args)
-						match = DatumGetBool(FunctionCall2Coll(&opprocs[idx],
-															   InvalidOid,
-															   value2, value1));
+					{
+						fcinfo->args[0].value = value2;
+						fcinfo->args[1].value = value1;
+					}
 					else
-						match = DatumGetBool(FunctionCall2Coll(&opprocs[idx],
-															   InvalidOid,
-															   value1, value2));
+					{
+						fcinfo->args[0].value = value1;
+						fcinfo->args[1].value = value2;
+					}
+					match = DatumGetBool(FunctionCallInvoke(fcinfo));
 				}
 
 				items_match &= match;
