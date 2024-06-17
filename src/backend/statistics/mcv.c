@@ -72,6 +72,33 @@
 	 ((ndims) * sizeof(DimensionInfo)) + \
 	 ((nitems) * ITEM_SIZE(ndims)))
 
+// #define  DEBUG_MCV  1 /* should be removed after review. */
+
+typedef struct
+{
+	FmgrInfo	fmgrinfo;
+	FunctionCallInfo fcinfo;
+	double	n_distinct;
+#ifdef DEBUG_MCV
+	int		idx;
+#endif
+} McvProc;
+
+static int
+cmp_mcv_proc(const void *a, const void *b)
+{
+	/* sort the McvProc reversely based on n_distinct value. */
+	McvProc *m1 = (McvProc *) a;
+	McvProc *m2 = (McvProc *) b;
+
+	if (m1->n_distinct > m2->n_distinct)
+		return -1;
+	else if (m1->n_distinct == m2->n_distinct)
+		return 0;
+	else
+		return 1;
+}
+
 static MultiSortSupport build_mss(StatsBuildData *data);
 
 static SortItem *build_distinct_groups(int numrows, SortItem *items,
@@ -2246,8 +2273,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				totalsel2;
 
 	/* info about clauses and how they match to MCV stats */
-	FmgrInfo   *finfo;
-	FunctionCallInfo *opprocs;
+	McvProc		*mcvProc;
 	int		   *indexes1,
 			   *indexes2;
 	bool	   *reverse;
@@ -2295,14 +2321,7 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 	 * stats we picked. We do this only once before processing the lists, so
 	 * that we don't have to do that for each MCV item or so.
 	 */
-	finfo = (FmgrInfo *) palloc(sizeof(FmgrInfo) * list_length(clauses));
-	/* FIXME remove? */
-
-	/*
-	 * opprocs = (FunctionCallInfo *) palloc(SizeForFunctionCallInfo(2) *
-	 * list_length(clauses));
-	 */
-	opprocs = (FunctionCallInfo *) palloc(sizeof(FunctionCallInfo *) * list_length(clauses));
+	mcvProc = (McvProc *) palloc(sizeof(McvProc) * list_length(clauses));
 	indexes1 = (int *) palloc(sizeof(int) * list_length(clauses));
 	indexes2 = (int *) palloc(sizeof(int) * list_length(clauses));
 	reverse = (bool *) palloc(sizeof(bool) * list_length(clauses));
@@ -2325,6 +2344,9 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 				   *expr2;
 		int			idx = list_cell_number(clauses, lc);
 		FunctionCallInfo fcinfo = palloc(SizeForFunctionCallInfo(2));
+		VariableStatData	vardata;
+		bool	isdefault;
+		Node	*left_expr;
 
 		opexpr = (OpExpr *) clause;
 
@@ -2332,16 +2354,17 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		Assert(is_opclause(clause));
 		Assert(list_length(opexpr->args) == 2);
 
-		fmgr_info(get_opcode(opexpr->opno), &finfo[idx]);
-
-		InitFunctionCallInfoData(*fcinfo, &finfo[idx],
+		fmgr_info(get_opcode(opexpr->opno), &mcvProc[idx].fmgrinfo);
+		mcvProc[idx].fcinfo = fcinfo;
+#ifdef DEBUG_MCV
+		mcvProc[idx].idx = idx;
+#endif
+		InitFunctionCallInfoData(*mcvProc[idx].fcinfo,
+								 &mcvProc[idx].fmgrinfo,
 								 2, opexpr->inputcollid,
 								 NULL, NULL);
 		fcinfo->args[0].isnull = false;
 		fcinfo->args[1].isnull = false;
-
-		/* XXX Do we even need this, if we have finfo? */
-		opprocs[idx] = fcinfo;
 
 		expr1 = linitial(opexpr->args);
 		expr2 = lsecond(opexpr->args);
@@ -2368,6 +2391,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 			exprs1 = lappend(exprs1, expr1);
 			exprs2 = lappend(exprs2, expr2);
+
+			left_expr = expr1;
 		}
 		else if ((bms_singleton_member(rinfo->right_relids) == rel1->relid) &&
 				 (bms_singleton_member(rinfo->left_relids) == rel2->relid))
@@ -2384,6 +2409,8 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 			exprs1 = lappend(exprs1, expr2);
 			exprs2 = lappend(exprs2, expr1);
+
+			left_expr = expr2;
 		}
 		else
 			/* should never happen */
@@ -2394,7 +2421,22 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 		Assert((indexes2[idx] >= 0) &&
 			   (indexes2[idx] < bms_num_members(stat2->keys) + list_length(stat2->exprs)));
+
+		examine_variable(root, left_expr, rel1->relid, &vardata);
+		mcvProc[idx].n_distinct = get_variable_numdistinct(&vardata, &isdefault);
+		// elog(INFO, "n_distinct = %f", mcvProc[idx].n_distinct);
+		ReleaseVariableStats(vardata);
 	}
+
+	/* order the McvProc */
+	pg_qsort(mcvProc, list_length(clauses), sizeof(McvProc), cmp_mcv_proc);
+
+#ifdef DEBUG_MCV
+	for (i = 0; i < list_length(clauses); i++)
+	{
+		elog(INFO, "%d", mcvProc[i].idx);
+	}
+#endif
 
 	/*
 	 * Match items between the two MCV lists.
@@ -2451,23 +2493,17 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 			 */
 
 			/*
-			 * Evaluate if all the join clauses match between the two MCV
-			 * items.
-			 *
-			 * XXX We might optimize the order of evaluation, using the costs
-			 * of operator functions for individual columns. It does depend on
-			 * the number of distinct values, etc.
+			 * Evaluate if all the join clauses match between the two MCV items.
 			 */
-			idx = 0;
-			foreach(lc, clauses)
+			for(idx = 0; idx < list_length(clauses); idx++)
 			{
-				bool		match;
-				int			index1 = indexes1[idx],
-							index2 = indexes2[idx];
-				Datum		value1,
-							value2;
-				bool		reverse_args = reverse[idx];
-				FunctionCallInfo fcinfo = opprocs[idx];
+				bool	match;
+				int		index1 = indexes1[idx],
+						index2 = indexes2[idx];
+				Datum	value1,
+						value2;
+				bool	reverse_args = reverse[idx];
+				FunctionCallInfo	fcinfo = mcvProc[idx].fcinfo;
 
 				/* If either value is null, it's a mismatch */
 				if (mcv2->items[j].isnull[index2])
@@ -2498,8 +2534,6 @@ mcv_combine_extended(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 
 				if (!items_match)
 					break;
-
-				idx++;
 			}
 
 			if (items_match)
