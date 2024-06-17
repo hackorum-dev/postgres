@@ -2852,6 +2852,7 @@ statext_is_supported_join_clause(PlannerInfo *root, Node *clause)
 	int			left_relid,
 				right_relid;
 
+	/* XXX Can we rely on always getting RestrictInfo here? */
 	if (!IsA(clause, RestrictInfo))
 		return false;
 
@@ -3270,6 +3271,8 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 	JoinPairInfo *info;
 	int			ninfo;
 
+	/* XXX Shouldn't we have at least an assert that (clauses != NULL)? */
+
 	/* extract pairs of joined relations from the list of clauses */
 	info = statext_build_join_pairs(root, clauses,
 									*estimatedclauses, &ninfo);
@@ -3457,6 +3460,7 @@ statext_clauselist_join_selectivity(PlannerInfo *root, List *clauses,
 
 				if (equal(clause, clause2))
 				{
+					/* XXX why not to just call list_cell_number here? */
 					*estimatedclauses = bms_add_member(*estimatedclauses, listidx);
 					break;
 				}
