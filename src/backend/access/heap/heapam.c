@@ -6929,6 +6929,7 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 	Assert(t_infomask & HEAP_XMAX_IS_MULTI);
 
 	if (!MultiXactIdIsValid(multi) ||
+		(t_infomask & HEAP_XMAX_INVALID) ||
 		HEAP_LOCKED_UPGRADED(t_infomask))
 	{
 		*flags |= FRM_INVALIDATE_XMAX;
