@@ -1858,12 +1858,13 @@ WalSndWaitForWal(XLogRecPtr loc)
 		ProcessRepliesIfAny();
 
 		/*
-		 * If we're shutting down, trigger pending WAL to be written out,
-		 * otherwise we'd possibly end up waiting for WAL that never gets
-		 * written, because walwriter has shut down already.
+		 * If we're shutting down, all WAL-writing processes are gone, leaving
+		 * only checkpointer to perform the shutdown checkpoint. Ensure that
+		 * any pending WAL is written out here; otherwise, we'd possibly end up
+		 * waiting for WAL that never gets written.
 		 */
-		if (got_STOPPING)
-			XLogBackgroundFlush();
+		if (got_STOPPING && !RecoveryInProgress())
+			XLogFlush(GetInsertRecPtr());
 
 		/*
 		 * To avoid the scenario where standbys need to catch up to a newer
