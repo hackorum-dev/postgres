@@ -9162,14 +9162,16 @@ do_pg_backup_stop(BackupState *state, bool waitforarchive)
 	}
 	else
 	{
+		xl_backup_end xlrec;
 		char	   *history_file;
 
 		/*
 		 * Write the backup-end xlog record
 		 */
+		xlrec.startpoint = state->startpoint;
+		xlrec.end_time = GetCurrentTimestamp();
 		XLogBeginInsert();
-		XLogRegisterData((char *) (&state->startpoint),
-						 sizeof(state->startpoint));
+		XLogRegisterData((char *) (&xlrec), sizeof(xlrec));
 		state->stoppoint = XLogInsert(RM_XLOG_ID, XLOG_BACKUP_END);
 
 		/*

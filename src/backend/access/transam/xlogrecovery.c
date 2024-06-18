@@ -2434,6 +2434,11 @@ getRecordTimestamp(XLogReaderState *record, TimestampTz *recordXtime)
 		*recordXtime = ((xl_restore_point *) XLogRecGetData(record))->rp_time;
 		return true;
 	}
+	if (rmid == RM_XLOG_ID && info == XLOG_BACKUP_END)
+	{
+		*recordXtime = ((xl_backup_end *) XLogRecGetData(record))->end_time;
+		return true;
+	}
 	if (rmid == RM_XACT_ID && (xact_info == XLOG_XACT_COMMIT ||
 							   xact_info == XLOG_XACT_COMMIT_PREPARED))
 	{
@@ -2814,6 +2819,12 @@ recoveryStopsAfter(XLogReaderState *record)
 				ereport(LOG,
 						(errmsg("recovery stopping at restore point \"%.*s\", time %s",
 								MAXFNAMELEN, recordRestorePointData->rp_name,
+								timestamptz_to_str(recoveryStopTime))));
+			}
+			else if (info == XLOG_BACKUP_END)
+			{
+				ereport(LOG,
+						(errmsg("recovery stopping at backup end, time %s",
 								timestamptz_to_str(recoveryStopTime))));
 			}
 			else

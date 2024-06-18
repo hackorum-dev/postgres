@@ -4032,6 +4032,7 @@ worktable
 wrap
 ws_file_info
 ws_options
+xl_backup_end
 xl_brin_createidx
 xl_brin_desummarize
 xl_brin_insert

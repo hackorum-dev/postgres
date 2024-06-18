@@ -289,6 +289,13 @@ typedef struct xl_restore_point
 	char		rp_name[MAXFNAMELEN];
 } xl_restore_point;
 
+/* backup end record */
+typedef struct xl_backup_end
+{
+	XLogRecPtr	startpoint;
+	TimestampTz end_time;
+} xl_backup_end;
+
 /* Overwrite of prior contrecord */
 typedef struct xl_overwrite_contrecord
 {

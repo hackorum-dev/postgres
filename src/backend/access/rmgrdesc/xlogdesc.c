@@ -86,10 +86,12 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 	}
 	else if (info == XLOG_BACKUP_END)
 	{
-		XLogRecPtr	startpoint;
+		xl_backup_end xlrec;
 
-		memcpy(&startpoint, rec, sizeof(XLogRecPtr));
-		appendStringInfo(buf, "%X/%X", LSN_FORMAT_ARGS(startpoint));
+		memcpy(&xlrec, rec, sizeof(xl_backup_end));
+		appendStringInfo(buf, "%X/%X; time %s",
+						 LSN_FORMAT_ARGS(xlrec.startpoint),
+						 timestamptz_to_str(xlrec.end_time));
 	}
 	else if (info == XLOG_PARAMETER_CHANGE)
 	{

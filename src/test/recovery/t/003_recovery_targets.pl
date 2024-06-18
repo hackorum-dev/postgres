@@ -114,8 +114,22 @@ $node_primary->safe_psql('postgres',
 my $lsn5 = my $recovery_lsn =
   $node_primary->safe_psql('postgres', "SELECT pg_current_wal_lsn()");
 
+# Try recovery target time for backup
 $node_primary->safe_psql('postgres',
 	"INSERT INTO tab_int VALUES (generate_series(5001,6000))");
+
+my $main_h = $node_primary->background_psql('postgres');
+$main_h->query_safe("SELECT pg_backup_start('test', true)");
+print("AFTER backup_start\n");
+my $lsn6 =
+	$node_primary->safe_psql('postgres', "SELECT pg_current_wal_lsn()");
+my $out = $main_h->query_safe("SELECT now(), pg_backup_stop(false);");
+print("AFTER backup_stop\n");
+my ($recovery_backup_time) = $out =~ /(20\d\d-\d\d-\d\d [\d:.+-]+)/;
+$main_h->quit();
+
+$node_primary->safe_psql('postgres',
+	"INSERT INTO tab_int VALUES (generate_series(6001,7000))");
 
 # Force archiving of WAL file
 $node_primary->safe_psql('postgres', "SELECT pg_switch_wal()");
@@ -139,6 +153,9 @@ test_recovery_standby('rp_time', 'standby_4_time', $node_primary, \@recovery_par
 @recovery_params = ("recovery_target_lsn = '$recovery_lsn'");
 test_recovery_standby('LSN', 'standby_5', $node_primary, \@recovery_params,
 	"5000", $lsn5);
+@recovery_params = ("recovery_target_time = '$recovery_backup_time'");
+test_recovery_standby('be_time', 'standby_6', $node_primary, \@recovery_params,
+	"6000", $lsn6, "recovery stopping at backup end");
 
 # Multiple targets
 #
@@ -151,9 +168,9 @@ test_recovery_standby('LSN', 'standby_5', $node_primary, \@recovery_params,
 	"recovery_target_name = ''",
 	"recovery_target_time = '$recovery_time'");
 test_recovery_standby('multiple overriding settings',
-	'standby_6', $node_primary, \@recovery_params, "3000", $lsn3);
+	'standby_7', $node_primary, \@recovery_params, "3000", $lsn3);
 
-my $node_standby = PostgreSQL::Test::Cluster->new('standby_7');
+my $node_standby = PostgreSQL::Test::Cluster->new('standby_8');
 $node_standby->init_from_backup($node_primary, 'my_backup',
 	has_restoring => 1);
 $node_standby->append_conf(
@@ -173,7 +190,7 @@ ok($logfile =~ qr/multiple recovery targets specified/,
 
 # Check behavior when recovery ends before target is reached
 
-$node_standby = PostgreSQL::Test::Cluster->new('standby_8');
+$node_standby = PostgreSQL::Test::Cluster->new('standby_9');
 $node_standby->init_from_backup(
 	$node_primary, 'my_backup',
 	has_restoring => 1,
