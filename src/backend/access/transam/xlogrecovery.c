@@ -2783,6 +2783,49 @@ recoveryStopsAfter(XLogReaderState *record)
 		return true;
 	}
 
+	if (recoveryTarget == RECOVERY_TARGET_TIME &&
+		rmid == RM_XLOG_ID && getRecordTimestamp(record, &recordXtime))
+	{
+		bool		stops_here = false;
+
+		/*
+		 * Use same conditions as in recoveryStopsBefore for transaction
+		 * records to not override transactions time handling.
+		 */
+		if (recoveryTargetInclusive)
+			stops_here = recordXtime > recoveryTargetTime;
+		else
+			stops_here = recordXtime >= recoveryTargetTime;
+
+		if (stops_here)
+		{
+			recoveryStopAfter = true;
+			recoveryStopXid = InvalidTransactionId;
+			recoveryStopTime = recordXtime;
+			recoveryStopLSN = InvalidXLogRecPtr;
+			recoveryStopName[0] = '\0';
+
+			if (info == XLOG_RESTORE_POINT)
+			{
+				xl_restore_point *recordRestorePointData;
+
+				recordRestorePointData = (xl_restore_point *) XLogRecGetData(record);
+
+				ereport(LOG,
+						(errmsg("recovery stopping at restore point \"%.*s\", time %s",
+								MAXFNAMELEN, recordRestorePointData->rp_name,
+								timestamptz_to_str(recoveryStopTime))));
+			}
+			else
+			{
+				ereport(LOG,
+						(errmsg("recovery stopping at %s, time %s",
+								xlog_identify(info),
+								timestamptz_to_str(recoveryStopTime))));
+			}
+		}
+	}
+
 	if (rmid != RM_XACT_ID)
 		return false;
 

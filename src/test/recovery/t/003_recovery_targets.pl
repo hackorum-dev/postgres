@@ -22,6 +22,7 @@ sub test_recovery_standby
 	my $recovery_params = shift;
 	my $num_rows = shift;
 	my $until_lsn = shift;
+	my $expect_in_log = shift;
 
 	my $node_standby = PostgreSQL::Test::Cluster->new($node_name);
 	$node_standby->init_from_backup($node_primary, 'my_backup',
@@ -44,6 +45,16 @@ sub test_recovery_standby
 	my $result =
 	  $node_standby->safe_psql('postgres', "SELECT count(*) FROM tab_int");
 	is($result, qq($num_rows), "check standby content for $test_name");
+
+	if (defined $expect_in_log)
+	{
+		local $/;
+		open(my $FH, '<', $node_standby->logfile())
+			or die "Can't open standby nodes's log";
+		my $lines = <$FH>;
+		close($FH);
+		like($lines, qr/${expect_in_log}/i, "expecting \'$expect_in_log\' in log file for $test_name");
+	}
 
 	# Stop standby node
 	$node_standby->teardown_node;
@@ -93,8 +104,9 @@ $node_primary->safe_psql('postgres',
 my $recovery_name = "my_target";
 my $lsn4 =
   $node_primary->safe_psql('postgres', "SELECT pg_current_wal_lsn();");
-$node_primary->safe_psql('postgres',
-	"SELECT pg_create_restore_point('$recovery_name');");
+$ret = $node_primary->safe_psql('postgres',
+	"SELECT now(), pg_create_restore_point('$recovery_name');");
+my $recovery_restore_point_time = (split /\|/, $ret)[0];
 
 # And now for a recovery target LSN
 $node_primary->safe_psql('postgres',
@@ -121,6 +133,9 @@ test_recovery_standby('time', 'standby_3', $node_primary, \@recovery_params,
 @recovery_params = ("recovery_target_name = '$recovery_name'");
 test_recovery_standby('name', 'standby_4', $node_primary, \@recovery_params,
 	"4000", $lsn4);
+@recovery_params = ("recovery_target_time = '$recovery_restore_point_time'");
+test_recovery_standby('rp_time', 'standby_4_time', $node_primary, \@recovery_params,
+	"4000", $lsn4, "recovery stopping at restore point \"$recovery_name\"");
 @recovery_params = ("recovery_target_lsn = '$recovery_lsn'");
 test_recovery_standby('LSN', 'standby_5', $node_primary, \@recovery_params,
 	"5000", $lsn5);
