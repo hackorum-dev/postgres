@@ -13,11 +13,14 @@
 
 #include "common/username.h"
 #include "pg_upgrade.h"
+#include "portability/instr_time.h"
 
 LogOpts		log_opts;
 
 static void pg_log_v(eLogType type, const char *fmt, va_list ap) pg_attribute_printf(2, 0);
 
+static instr_time starttime = {0};
+static instr_time stoptime = {0};
 
 /*
  * report_status()
@@ -131,6 +134,8 @@ prep_status(const char *fmt, ...)
 	va_list		args;
 	char		message[MAX_STRING];
 
+	INSTR_TIME_SET_CURRENT(starttime);
+
 	va_start(args, fmt);
 	vsnprintf(message, sizeof(message), fmt, args);
 	va_end(args);
@@ -157,6 +162,8 @@ prep_status_progress(const char *fmt, ...)
 {
 	va_list		args;
 	char		message[MAX_STRING];
+
+	INSTR_TIME_SET_CURRENT(starttime);
 
 	va_start(args, fmt);
 	vsnprintf(message, sizeof(message), fmt, args);
@@ -279,12 +286,44 @@ pg_fatal(const char *fmt, ...)
 	exit(1);
 }
 
+#define MS_PER_MINUTE 60000
+#define MS_PER_S 1000
 
 void
 check_ok(void)
 {
+	double runtime;
+	char *unit;
+
+	/*
+	 * If verbose logging is disabled, just print a normal "ok".
+	 */
+	if (INSTR_TIME_IS_ZERO(starttime) || !log_opts.verbose)
+	{
+		report_status(PG_REPORT, "ok");
+		return;
+	}
+
+	INSTR_TIME_SET_CURRENT(stoptime);
+	INSTR_TIME_SUBTRACT(stoptime, starttime);
+	INSTR_TIME_SET_ZERO(starttime);
+
+	runtime = INSTR_TIME_GET_MILLISEC(stoptime);
+
+	/*
+	 * If the runtime is greater than a minute then switch resolution to
+	 * seconds instead to milliseconds to keep it readable.
+	 */
+	if (runtime > MS_PER_MINUTE)
+	{
+		runtime = runtime / MS_PER_S;
+		unit = "s";
+	}
+	else
+		unit = "ms";
+
 	/* all seems well */
-	report_status(PG_REPORT, "ok");
+	report_status(PG_REPORT, "ok (%8.0f %s)", runtime, unit);
 }
 
 
