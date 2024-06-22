@@ -37,7 +37,14 @@ HeapKeyTest(HeapTuple tuple, TupleDesc tupdesc, int nkeys, ScanKey keys)
 		Datum		test;
 
 		if (cur_key->sk_flags & SK_ISNULL)
-			return false;
+		{
+			Assert(cur_key->sk_flags & (SK_SEARCHNULL | SK_SEARCHNOTNULL));
+			isnull = heap_attisnull(tuple, cur_key->sk_attno, tupdesc);
+			if (cur_key->sk_flags & SK_SEARCHNULL)
+				return isnull;
+			else
+				return !isnull;
+		}
 
 		atp = heap_getattr(tuple, cur_key->sk_attno, tupdesc, &isnull);
 
