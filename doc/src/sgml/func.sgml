@@ -18772,7 +18772,7 @@ ERROR:  jsonpath array subscript is out of bounds
         The <literal>ON EMPTY</literal> clause specifies the behavior if
         evaluating <replaceable>path_expression</replaceable> yields no value
         at all. The default when <literal>ON EMPTY</literal> is not specified
-        is to return a null value.
+        is to return an SQL <literal>NULL</literal> value.
        </para>
        <para>
         The <literal>ON ERROR</literal> clause specifies the
@@ -18781,7 +18781,7 @@ ERROR:  jsonpath array subscript is out of bounds
         coerce the result value to the output type, or during the execution of
         <literal>ON EMPTY</literal> behavior (that is caused by empty result
         of <replaceable>path_expression</replaceable> evaluation).  The default
-        when <literal>ON ERROR</literal> is not specified is to return a null
+        when <literal>ON ERROR</literal> is not specified is to return an SQL <literal>NULL</literal>
         value.
        </para>
        <para>
@@ -18823,8 +18823,13 @@ DETAIL:  Missing "]" after array dimensions.
        </para>
        <para>
         The extracted value must be a single <acronym>SQL/JSON</acronym>
-        scalar item; an error is thrown if that's not the case.  If you expect
-        that extracted value might be an object or an array, use the
+        scalar item; an error is thrown if that's not the case.
+        If the extracted value is a JSON null, an SQL <literal>NULL</literal> value will return.
+        This means that you cannot use <function>json_value</function> to distinguish the JSON value null
+        from evaluating path_expression yields no value at all;
+        SQL <literal>NULL</literal> indicates both cases,
+        to distinguish these two cases, use <function>json_query</function> instead.
+        If you expect that extracted value might be an object or an array, use the
         <function>json_query</function> function instead.
        </para>
        <para>
