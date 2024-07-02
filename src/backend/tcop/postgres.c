@@ -1370,6 +1370,7 @@ exec_simple_query(const char *query_string)
 					(errmsg("duration: %s ms  statement: %s",
 							msec_str, query_string),
 					 errhidestmt(true),
+					 errmessagetype(LOG_MESSAGE_TYPE_DURATION),
 					 errdetail_execute(parsetree_list)));
 			break;
 	}
@@ -1607,7 +1608,8 @@ exec_parse_message(const char *query_string,	/* string to execute */
 							msec_str,
 							*stmt_name ? stmt_name : "<unnamed>",
 							query_string),
-					 errhidestmt(true)));
+					 errhidestmt(true),
+					 errmessagetype(LOG_MESSAGE_TYPE_DURATION)));
 			break;
 	}
 
@@ -2064,6 +2066,7 @@ exec_bind_message(StringInfo input_message)
 							*portal_name ? portal_name : "",
 							psrc->query_string),
 					 errhidestmt(true),
+					 errmessagetype(LOG_MESSAGE_TYPE_DURATION),
 					 errdetail_params(params)));
 			break;
 	}
@@ -2317,6 +2320,7 @@ exec_execute_message(const char *portal_name, long max_rows)
 							*portal_name ? portal_name : "",
 							sourceText),
 					 errhidestmt(true),
+					 errmessagetype(LOG_MESSAGE_TYPE_DURATION),
 					 errdetail_params(portalParams)));
 			break;
 	}
