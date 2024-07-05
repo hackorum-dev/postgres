@@ -269,8 +269,11 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	/* make the toast relation visible, else table_open will fail */
 	CommandCounterIncrement();
 
-	/* ShareLock is not really needed here, but take it anyway */
-	toast_rel = table_open(toast_relid, ShareLock);
+	/*
+	 * ShareLock is not really needed here, since this is the only transaction
+	 * the relation is visible to.
+	 */
+	toast_rel = table_open(toast_relid, NoLock);
 
 	/*
 	 * Create unique index on chunk_id, chunk_seq.

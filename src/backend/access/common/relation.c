@@ -35,7 +35,7 @@
  *		If lockmode is not "NoLock", the specified kind of lock is
  *		obtained on the relation.  (Generally, NoLock should only be
  *		used if the caller knows it has some appropriate lock on the
- *		relation already.)
+ *		relation already or the relation is only visible to the caller.)
  *
  *		An error is raised if the relation does not exist.
  *
@@ -61,12 +61,14 @@ relation_open(Oid relationId, LOCKMODE lockmode)
 		elog(ERROR, "could not open relation with OID %u", relationId);
 
 	/*
-	 * If we didn't get the lock ourselves, assert that caller holds one,
-	 * except in bootstrap mode where no locks are used.
+	 * If we didn't get the lock ourselves, assert that caller holds one or
+	 * this relation is created in current trasaction except in bootstrap
+	 * mode where no locks are used.
 	 */
 	Assert(lockmode != NoLock ||
 		   IsBootstrapProcessingMode() ||
-		   CheckRelationLockedByMe(r, AccessShareLock, true));
+		   CheckRelationLockedByMe(r, AccessShareLock, true) ||
+		   OidIsValid(r->rd_createSubid));
 
 	/* Make note that we've accessed a temporary relation */
 	if (RelationUsesLocalBuffers(r))
