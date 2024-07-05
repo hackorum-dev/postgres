@@ -578,15 +578,17 @@ mdzeroextend(SMgrRelation reln, ForkNumber forknum,
 		if (numblocks > 8)
 		{
 			int			ret;
+			off_t		addbytes = (off_t) BLCKSZ * numblocks;
 
 			ret = FileFallocate(v->mdfd_vfd,
-								seekpos, (off_t) BLCKSZ * numblocks,
+								seekpos, addbytes,
 								WAIT_EVENT_DATA_FILE_EXTEND);
 			if (ret != 0)
 			{
 				ereport(ERROR,
 						errcode_for_file_access(),
-						errmsg("could not extend file \"%s\" with FileFallocate(): %m",
+						errmsg("could not allocate additional %lld bytes from position %lld in file \"%s\": %m",
+							   (long long) addbytes, (long long) seekpos,
 							   FilePathName(v->mdfd_vfd)),
 						errhint("Check free disk space."));
 			}
@@ -594,6 +596,7 @@ mdzeroextend(SMgrRelation reln, ForkNumber forknum,
 		else
 		{
 			int			ret;
+			off_t		addbytes = (off_t) BLCKSZ * numblocks;
 
 			/*
 			 * Even if we don't want to use fallocate, we can still extend a
@@ -603,12 +606,13 @@ mdzeroextend(SMgrRelation reln, ForkNumber forknum,
 			 * whole length of the extension.
 			 */
 			ret = FileZero(v->mdfd_vfd,
-						   seekpos, (off_t) BLCKSZ * numblocks,
+						   seekpos, addbytes,
 						   WAIT_EVENT_DATA_FILE_EXTEND);
 			if (ret < 0)
 				ereport(ERROR,
 						errcode_for_file_access(),
-						errmsg("could not extend file \"%s\": %m",
+						errmsg("could not zero additional %lld bytes from position %lld file \"%s\": %m",
+							   (long long) addbytes, (long long) seekpos,
 							   FilePathName(v->mdfd_vfd)),
 						errhint("Check free disk space."));
 		}

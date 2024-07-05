@@ -2423,6 +2423,13 @@ retry:
 	 */
 	if (returnCode != EINVAL && returnCode != EOPNOTSUPP)
 		return -1;
+
+	if (returnCode != EOPNOTSUPP)
+		ereport(WARNING,
+				errcode(ERRCODE_WARNING),
+				errmsg("could not allocate additional %lld bytes from position %lld in file \"%s\", retrying by zeroing: %m",
+					   (long long) amount, (long long) offset,
+					   VfdCache[file].fileName));
 #endif
 
 	return FileZero(file, offset, amount, wait_event_info);
