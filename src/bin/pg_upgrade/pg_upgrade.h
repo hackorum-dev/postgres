@@ -327,6 +327,9 @@ typedef struct
 	int			jobs;			/* number of processes/threads to use */
 	char	   *socketdir;		/* directory to use for Unix sockets */
 	char	   *sync_method;
+	bool		skip_check; 	/* true -> skip check in actual upgrade,
+								 * assuming the various failure cases are
+								 * impossible. */
 } UserOpts;
 
 typedef struct

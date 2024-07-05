@@ -60,6 +60,7 @@ parseCommandLine(int argc, char *argv[])
 		{"copy", no_argument, NULL, 2},
 		{"copy-file-range", no_argument, NULL, 3},
 		{"sync-method", required_argument, NULL, 4},
+		{"skip-check", no_argument, NULL, 5},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -211,6 +212,9 @@ parseCommandLine(int argc, char *argv[])
 					exit(1);
 				user_opts.sync_method = pg_strdup(optarg);
 				break;
+			case 5:
+				user_opts.skip_check = true;
+				break;
 
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
@@ -289,6 +293,7 @@ usage(void)
 	printf(_("  -B, --new-bindir=BINDIR       new cluster executable directory (default\n"
 			 "                                same directory as pg_upgrade)\n"));
 	printf(_("  -c, --check                   check clusters only, don't change any data\n"));
+	printf(_("  --skip-check                  skip the check in actual upgrade \n"));
 	printf(_("  -d, --old-datadir=DATADIR     old cluster data directory\n"));
 	printf(_("  -D, --new-datadir=DATADIR     new cluster data directory\n"));
 	printf(_("  -j, --jobs=NUM                number of simultaneous processes or threads to use\n"));

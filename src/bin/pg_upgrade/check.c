@@ -590,6 +590,9 @@ check_and_dump_old_cluster(bool live_check)
 
 	get_loadable_libraries();
 
+	/* skip the below check */
+	if (user_opts.skip_check)
+		goto generate_old_dump;
 
 	/*
 	 * Check for various failure cases
@@ -659,6 +662,8 @@ check_and_dump_old_cluster(bool live_check)
 	/* 9.5 and below should not have roles starting with pg_ */
 	if (GET_MAJOR_VERSION(old_cluster.major_version) <= 905)
 		check_for_pg_role_prefix(&old_cluster);
+
+generate_old_dump:
 
 	/*
 	 * While not a check option, we do this now because this is the only time

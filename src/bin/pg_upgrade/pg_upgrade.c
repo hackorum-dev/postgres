@@ -125,6 +125,12 @@ main(int argc, char **argv)
 
 	setup(argv[0], &live_check);
 
+	if (live_check && user_opts.skip_check)
+	{
+		pg_fatal("skip-check can't be used in check mode. Please turn off "
+				 "skip-check if you want to perform a live check .\n");
+	}
+
 	output_check_banner(live_check);
 
 	check_cluster_versions();
