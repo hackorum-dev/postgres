@@ -2717,28 +2717,25 @@ FastPathTransferRelationLocks(LockMethod lockMethodTable, const LOCKTAG *locktag
 		PGPROC	   *proc = &ProcGlobal->allProcs[i];
 		uint32		f;
 
-		LWLockAcquire(&proc->fpInfoLock, LW_EXCLUSIVE);
-
 		/*
 		 * If the target backend isn't referencing the same database as the
 		 * lock, then we needn't examine the individual relation IDs at all;
 		 * none of them can be relevant.
 		 *
 		 * proc->databaseId is set at backend startup time and never changes
-		 * thereafter, so it might be safe to perform this test before
-		 * acquiring &proc->fpInfoLock.  In particular, it's certainly safe to
+		 * thereafter, so it is safe to perform this test before acquiring
+		 * &proc->fpInfoLock.  In particular, it's certainly safe to
 		 * assume that if the target backend holds any fast-path locks, it
 		 * must have performed a memory-fencing operation (in particular, an
-		 * LWLock acquisition) since setting proc->databaseId.  However, it's
-		 * less clear that our backend is certain to have performed a memory
-		 * fencing operation since the other backend set proc->databaseId.  So
-		 * for now, we test it after acquiring the LWLock just to be safe.
+		 * LWLock acquisition) since setting proc->databaseId.  So once a read
+		 * barrier is performed, we can see the true proc->database if the
+		 * target backend has acquired its fpInfoLock.
 		 */
+		pg_read_barrier();
 		if (proc->databaseId != locktag->locktag_field1)
-		{
-			LWLockRelease(&proc->fpInfoLock);
 			continue;
-		}
+
+		LWLockAcquire(&proc->fpInfoLock, LW_EXCLUSIVE);
 
 		for (f = 0; f < FP_LOCK_SLOTS_PER_BACKEND; f++)
 		{
@@ -2964,21 +2961,19 @@ GetLockConflicts(const LOCKTAG *locktag, LOCKMODE lockmode, int *countp)
 			if (proc == MyProc)
 				continue;
 
-			LWLockAcquire(&proc->fpInfoLock, LW_SHARED);
-
 			/*
 			 * If the target backend isn't referencing the same database as
 			 * the lock, then we needn't examine the individual relation IDs
 			 * at all; none of them can be relevant.
 			 *
 			 * See FastPathTransferRelationLocks() for discussion of why we do
-			 * this test after acquiring the lock.
+			 * pg_read_barrier here.
 			 */
+			pg_read_barrier();
 			if (proc->databaseId != locktag->locktag_field1)
-			{
-				LWLockRelease(&proc->fpInfoLock);
 				continue;
-			}
+
+			LWLockAcquire(&proc->fpInfoLock, LW_SHARED);
 
 			for (f = 0; f < FP_LOCK_SLOTS_PER_BACKEND; f++)
 			{
