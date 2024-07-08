@@ -2374,11 +2374,11 @@ explain (costs off) select min(a), max(a) from parted_minmax where b = '12345';
    InitPlan 1
      ->  Limit
            ->  Index Only Scan using parted_minmax1i on parted_minmax1 parted_minmax
-                 Index Cond: ((a IS NOT NULL) AND (b = '12345'::text))
+                 Index Cond: ((a IS NOT NULL) AND ((b)::text = '12345'::text))
    InitPlan 2
      ->  Limit
            ->  Index Only Scan Backward using parted_minmax1i on parted_minmax1 parted_minmax_1
-                 Index Cond: ((a IS NOT NULL) AND (b = '12345'::text))
+                 Index Cond: ((a IS NOT NULL) AND ((b)::text = '12345'::text))
 (9 rows)
 
 select min(a), max(a) from parted_minmax where b = '12345';

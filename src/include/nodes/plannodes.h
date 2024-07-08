@@ -494,6 +494,7 @@ typedef struct IndexOnlyScan
 	Scan		scan;
 	Oid			indexid;		/* OID of index to scan */
 	List	   *indexqual;		/* list of index quals (usually OpExprs) */
+	List	   *indexqualorig;	/* the same in original form */
 	List	   *recheckqual;	/* index quals in recheckable form */
 	List	   *indexorderby;	/* list of index ORDER BY exprs */
 	List	   *indextlist;		/* TargetEntry list describing index's cols */

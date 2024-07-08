@@ -2400,6 +2400,11 @@ finalize_plan(PlannerInfo *root, Plan *plan,
 			 * we need not look at indextlist, since it cannot contain Params.
 			 */
 			context.paramids = bms_add_members(context.paramids, scan_params);
+
+			/*
+			 * we need not look at indexqualorig, since it will have the same
+			 * param references as indexqual.
+			 */
 			break;
 
 		case T_BitmapIndexScan:

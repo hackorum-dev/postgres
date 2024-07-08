@@ -202,6 +202,20 @@ explain (costs off)
 select * from btree_bpchar where f1::bpchar like 'foo%';
 select * from btree_bpchar where f1::bpchar like 'foo%';
 
+-- Test for indexonlyscan with binary-compatible cases
+set enable_seqscan to false;
+set enable_bitmapscan to false;
+
+explain (costs off)
+select * from btree_bpchar where f1::bpchar like 'foo';
+select * from btree_bpchar where f1::bpchar like 'foo';
+explain (costs off)
+select * from btree_bpchar where f1::bpchar like 'foo%';
+select * from btree_bpchar where f1::bpchar like 'foo%';
+
+reset enable_seqscan;
+reset enable_bitmapscan;
+
 -- get test coverage for "single value" deduplication strategy:
 insert into btree_bpchar select 'foo' from generate_series(1,1500);
 

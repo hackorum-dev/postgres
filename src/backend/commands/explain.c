@@ -1981,7 +1981,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 										   planstate, es);
 			break;
 		case T_IndexOnlyScan:
-			show_scan_qual(((IndexOnlyScan *) plan)->indexqual,
+			show_scan_qual(((IndexOnlyScan *) plan)->indexqualorig,
 						   "Index Cond", planstate, ancestors, es);
 			if (((IndexOnlyScan *) plan)->recheckqual)
 				show_instrumentation_count("Rows Removed by Index Recheck", 2,

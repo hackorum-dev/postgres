@@ -409,6 +409,42 @@ select * from btree_bpchar where f1::bpchar like 'foo%';
  fool
 (2 rows)
 
+-- Test for indexonlyscan with binary-compatible cases
+set enable_seqscan to false;
+set enable_bitmapscan to false;
+explain (costs off)
+select * from btree_bpchar where f1::bpchar like 'foo';
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Index Only Scan using btree_bpchar_f1_idx on btree_bpchar
+   Index Cond: ((f1)::bpchar = 'foo'::bpchar)
+   Filter: ((f1)::bpchar ~~ 'foo'::text)
+(3 rows)
+
+select * from btree_bpchar where f1::bpchar like 'foo';
+ f1  
+-----
+ foo
+(1 row)
+
+explain (costs off)
+select * from btree_bpchar where f1::bpchar like 'foo%';
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Index Only Scan using btree_bpchar_f1_idx on btree_bpchar
+   Index Cond: (((f1)::bpchar >= 'foo'::bpchar) AND ((f1)::bpchar < 'fop'::bpchar))
+   Filter: ((f1)::bpchar ~~ 'foo%'::text)
+(3 rows)
+
+select * from btree_bpchar where f1::bpchar like 'foo%';
+  f1  
+------
+ foo
+ fool
+(2 rows)
+
+reset enable_seqscan;
+reset enable_bitmapscan;
 -- get test coverage for "single value" deduplication strategy:
 insert into btree_bpchar select 'foo' from generate_series(1,1500);
 --

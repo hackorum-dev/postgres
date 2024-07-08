@@ -5584,6 +5584,7 @@ make_indexonlyscan(List *qptlist,
 {
 	IndexOnlyScan *node = makeNode(IndexOnlyScan);
 	Plan	   *plan = &node->scan.plan;
+	List	   *indexqualorig = copyObject(recheckqual);
 
 	plan->targetlist = qptlist;
 	plan->qual = qpqual;
@@ -5592,6 +5593,7 @@ make_indexonlyscan(List *qptlist,
 	node->scan.scanrelid = scanrelid;
 	node->indexid = indexid;
 	node->indexqual = indexqual;
+	node->indexqualorig = indexqualorig;
 	node->recheckqual = recheckqual;
 	node->indexorderby = indexorderby;
 	node->indextlist = indextlist;
