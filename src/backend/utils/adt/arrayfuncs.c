@@ -457,19 +457,25 @@ ReadArrayDimensions(char **srcptr, int *ndim_p, int *dim, int *lBound,
 						(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
 						 errmsg("malformed array literal: \"%s\"", origStr),
 						 errdetail("Missing array dimension value.")));
+			if (*p != ']')
+				ereturn(escontext, false,
+						(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+						errmsg("malformed array literal: \"%s\"", origStr),
+						errdetail("Missing \"%s\" after array dimensions.",
+								"]")));
 		}
 		else
 		{
 			/* [n] format */
 			lBound[ndim] = 1;
 			ub = i;
+			if (*p != ']')
+				ereturn(escontext, false,
+						(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+						errmsg("malformed array literal: \"%s\"", origStr),
+						errdetail("Missing delimiter \"%s\" while specifying array dimensions.",
+								":")));
 		}
-		if (*p != ']')
-			ereturn(escontext, false,
-					(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-					 errmsg("malformed array literal: \"%s\"", origStr),
-					 errdetail("Missing \"%s\" after array dimensions.",
-							   "]")));
 		p++;
 
 		/*
