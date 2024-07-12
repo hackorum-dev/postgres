@@ -961,33 +961,10 @@ TransactionIdIsCurrentTransactionId(TransactionId xid)
 
 	/*
 	 * In parallel workers, the XIDs we must consider as current are stored in
-	 * ParallelCurrentXids rather than the transaction-state stack.  Note that
-	 * the XIDs in this array are sorted numerically rather than according to
-	 * transactionIdPrecedes order.
+	 * ParallelCurrentXids rather than the transaction-state stack.
 	 */
-	if (nParallelCurrentXids > 0)
-	{
-		int			low,
-					high;
-
-		low = 0;
-		high = nParallelCurrentXids - 1;
-		while (low <= high)
-		{
-			int			middle;
-			TransactionId probe;
-
-			middle = low + (high - low) / 2;
-			probe = ParallelCurrentXids[middle];
-			if (probe == xid)
-				return true;
-			else if (probe < xid)
-				low = middle + 1;
-			else
-				high = middle - 1;
-		}
-		return false;
-	}
+	if (TransactionIdInArray(xid, ParallelCurrentXids, nParallelCurrentXids))
+		return true;
 
 	/*
 	 * We will return true for the Xid of the current subtransaction, any of

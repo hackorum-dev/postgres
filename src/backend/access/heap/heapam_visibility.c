@@ -1560,16 +1560,6 @@ HeapTupleHeaderIsOnlyLocked(HeapTupleHeader tuple)
 }
 
 /*
- * check whether the transaction id 'xid' is in the pre-sorted array 'xip'.
- */
-static bool
-TransactionIdInArray(TransactionId xid, TransactionId *xip, Size num)
-{
-	return num > 0 &&
-		bsearch(&xid, xip, num, sizeof(TransactionId), xidComparator) != NULL;
-}
-
-/*
  * See the comments for HeapTupleSatisfiesMVCC for the semantics this function
  * obeys.
  *

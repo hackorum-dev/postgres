@@ -370,6 +370,38 @@ FullTransactionIdNewer(FullTransactionId a, FullTransactionId b)
 	return b;
 }
 
+/*
+ * Check whether the transaction id 'xid' is in the pre-sorted array 'xip'.
+ *
+ * Note that the XIDs in this array must be sorted numerically rather than
+ * according to TransactionIdPrecedes order.
+ */
+static inline bool
+TransactionIdInArray(TransactionId xid, TransactionId *xip, Size num)
+{
+	int			low, high;
+
+	if (num == 0)
+		return false;
+
+	low = 0;
+	high = num - 1;
+	while (low <= high)
+	{
+		int			middle;
+		TransactionId probe;
+
+		middle = low + (high - low) / 2;
+		probe = xip[middle];
+		if (probe == xid)
+			return true;
+		else if (probe < xid)
+			low = middle + 1;
+		else
+			high = middle - 1;
+	}
+	return false;
+}
 #endif							/* FRONTEND */
 
 #endif							/* TRANSAM_H */

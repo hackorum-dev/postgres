@@ -5136,17 +5136,6 @@ ApplyLogicalMappingFile(HTAB *tuplecid_data, Oid relid, const char *fname)
 				 errmsg("could not close file \"%s\": %m", path)));
 }
 
-
-/*
- * Check whether the TransactionId 'xid' is in the pre-sorted array 'xip'.
- */
-static bool
-TransactionIdInArray(TransactionId xid, TransactionId *xip, Size num)
-{
-	return bsearch(&xid, xip, num,
-				   sizeof(TransactionId), xidComparator) != NULL;
-}
-
 /*
  * list_sort() comparator for sorting RewriteMappingFiles in LSN order.
  */
