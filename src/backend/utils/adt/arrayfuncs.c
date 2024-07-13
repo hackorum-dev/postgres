@@ -103,7 +103,7 @@ static bool ReadArrayStr(char **srcptr,
 						 int *nitems_p,
 						 Datum **values_p, bool **nulls_p,
 						 const char *origStr, Node *escontext);
-static ArrayToken ReadArrayToken(char **srcptr, StringInfo elembuf, char typdelim,
+static ArrayToken ReadArrayToken(char **srcptr, StringInfo elembuf, char typdelim, bool is_record,
 								 const char *origStr, Node *escontext);
 static void ReadArrayBinary(StringInfo buf, int nitems,
 							FmgrInfo *receiveproc, Oid typioparam, int32 typmod,
@@ -607,6 +607,7 @@ ReadArrayStr(char **srcptr,
 	bool		ndim_frozen;
 	bool		expect_delim;
 	int			nelems[MAXDIM];
+	bool		is_record;
 
 	/* Allocate some starting output workspace; we'll enlarge as needed */
 	maxitems = 16;
@@ -619,6 +620,9 @@ ReadArrayStr(char **srcptr,
 	/* Loop below assumes first token is ATOK_LEVEL_START */
 	Assert(**srcptr == '{');
 
+	/* Whether '(' should be treated as a special character that denotes the start of a record */
+	is_record = (inputproc->fn_oid == F_RECORD_IN);
+
 	/* Parse tokens until we reach the matching right brace */
 	nest_level = 0;
 	nitems = 0;
@@ -628,7 +632,7 @@ ReadArrayStr(char **srcptr,
 	{
 		ArrayToken	tok;
 
-		tok = ReadArrayToken(srcptr, &elembuf, typdelim, origStr, escontext);
+		tok = ReadArrayToken(srcptr, &elembuf, typdelim, is_record, origStr, escontext);
 
 		switch (tok)
 		{
@@ -797,7 +801,7 @@ dimension_error:
  * If the token is ATOK_ELEM, the de-escaped string is returned in elembuf.
  */
 static ArrayToken
-ReadArrayToken(char **srcptr, StringInfo elembuf, char typdelim,
+ReadArrayToken(char **srcptr, StringInfo elembuf, char typdelim, bool is_record,
 			   const char *origStr, Node *escontext)
 {
 	char	   *p = *srcptr;
@@ -916,6 +920,22 @@ unquoted_element:
 				dstlen = elembuf->len;	/* treat it as non-whitespace */
 				has_escapes = true;
 				break;
+			case '(':
+				if (is_record) {
+					bool in_quote = false;
+					while (*p && (in_quote || *p != ')')) {
+						if (*p == '"') {
+							in_quote = !in_quote;
+						}
+						appendStringInfoChar(elembuf, *p++);
+					}
+					if (*p == '\0')
+						goto ending_error;
+					appendStringInfoChar(elembuf, *p++);
+					dstlen = elembuf->len;
+					break;
+				}
+				// fall through
 			default:
 				/* End of elem? */
 				if (*p == typdelim || *p == '}')
