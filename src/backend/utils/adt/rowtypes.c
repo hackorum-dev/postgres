@@ -204,8 +204,15 @@ record_in(PG_FUNCTION_ARGS)
 			/* Extract string for this column */
 			bool		inquote = false;
 
+			/* Keep the string as it is since this is an array and its elements will be extracted later */
+			bool		is_array = att->attndims != 0;
+			int16	    nested_level = 0;
+
+			/* If '{' / '}' are encountered outside a record, they denote the start / end of an array dimension  */
+			bool		in_record = false;
+
 			resetStringInfo(&buf);
-			while (inquote || !(*ptr == ',' || *ptr == ')'))
+			while (is_array || inquote || !(*ptr == ',' || *ptr == ')'))
 			{
 				char		ch = *ptr++;
 
@@ -229,6 +236,9 @@ record_in(PG_FUNCTION_ARGS)
 								 errdetail("Unexpected end of input.")));
 						goto fail;
 					}
+					if (is_array) {
+						appendStringInfoChar(&buf, ch);
+					}
 					appendStringInfoChar(&buf, *ptr++);
 				}
 				else if (ch == '"')
@@ -242,9 +252,27 @@ record_in(PG_FUNCTION_ARGS)
 					}
 					else
 						inquote = false;
-				}
-				else
+
+					if (is_array) {
+						appendStringInfoChar(&buf, ch);
+					}
+				} else if (!in_record && !inquote && (ch == '{' || ch == '}')) {
+					if (ch == '{') {
+						nested_level++;
+					} else {
+						nested_level--;
+						if (nested_level == 0) {
+							is_array = false;
+						}
+					}
 					appendStringInfoChar(&buf, ch);
+				}
+				else {
+					if (is_array && !inquote && (ch == '(' || ch == ')')) {
+						in_record = (ch == '(');
+					}
+					appendStringInfoChar(&buf, ch);
+				}
 			}
 
 			column_data = buf.data;
