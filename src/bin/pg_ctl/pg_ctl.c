@@ -101,6 +101,9 @@ static char logrotate_file[MAXPGPATH];
 
 static volatile pid_t postmasterPID = -1;
 
+static char *pre_check_start_script = NULL;	/*added*/
+static char *pre_check_stop_script = NULL;	/*added*/
+
 #ifdef WIN32
 static DWORD pgctl_start_type = SERVICE_AUTO_START;
 static SERVICE_STATUS status;
@@ -922,6 +925,18 @@ do_init(void)
 static void
 do_start(void)
 {
+        /*added*/
+        if (pre_check_start_script)
+        {
+                if (system(pre_check_start_script) != 0)
+                {
+                        write_stderr(_("%s: pre-check for start failed, aborting start\n"), progname);
+                        free(pre_check_start_script);
+                        free(pre_check_stop_script);
+                        exit(1);
+                }
+        }
+
 	pid_t		old_pid = 0;
 	pid_t		pm_pid;
 
@@ -1014,6 +1029,18 @@ do_start(void)
 static void
 do_stop(void)
 {
+        /*added*/
+        if (pre_check_stop_script)
+        {
+                if (system(pre_check_stop_script) != 0)
+                {
+                        write_stderr(_("%s: pre-check for stop failed, aborting stop\n"), progname);
+                        free(pre_check_start_script);
+                        free(pre_check_stop_script);
+                        exit(1);
+                }
+        }
+        
 	pid_t		pid;
 
 	pid = get_pgpid(false);
@@ -1082,6 +1109,14 @@ do_restart(void)
 					 progname, pid_file);
 		write_stderr(_("Is server running?\n"));
 		write_stderr(_("trying to start server anyway\n"));
+                /*added*/
+                if (pre_check_start_script && system(pre_check_start_script) != 0)
+                {
+                        write_stderr(_("%s: pre-check script for start failed, aborting start\n"), progname);
+                        free(pre_check_start_script);
+                        free(pre_check_stop_script);
+                        exit(1);
+                }
 		do_start();
 		return;
 	}
@@ -1100,9 +1135,21 @@ do_restart(void)
 
 	if (postmaster_is_alive(pid))
 	{
+                /*added*/
+                if (pre_check_stop_script && system(pre_check_stop_script) != 0)
+                {
+                        write_stderr(_("%s: pre-check script for stop failed, aborting stop\n"), progname);
+                        free(pre_check_start_script);
+                        free(pre_check_stop_script);
+                        exit(1);
+                }
+
 		if (kill(pid, sig) != 0)
 		{
 			write_stderr(_("%s: could not send stop signal (PID: %d): %m\n"), progname, (int) pid);
+                        /*added*/
+                        free(pre_check_start_script);
+                        free(pre_check_stop_script);
 			exit(1);
 		}
 
@@ -1117,6 +1164,9 @@ do_restart(void)
 			if (shutdown_mode == SMART_MODE)
 				write_stderr(_("HINT: The \"-m fast\" option immediately disconnects sessions rather than\n"
 							   "waiting for session-initiated disconnection.\n"));
+                        /*added*/
+                        free(pre_check_start_script);
+                        free(pre_check_stop_script);
 			exit(1);
 		}
 
@@ -1129,6 +1179,14 @@ do_restart(void)
 					 progname, (int) pid);
 		write_stderr(_("starting server anyway\n"));
 	}
+        /*added*/
+        if (pre_check_start_script && system(pre_check_start_script) != 0)
+        {
+                write_stderr(_("%s: pre-check script for start failed, aborting start\n"), progname);
+                free(pre_check_start_script);
+                free(pre_check_stop_script);
+                exit(1);
+        }
 
 	do_start();
 }
@@ -1964,10 +2022,10 @@ do_help(void)
 	printf(_("Usage:\n"));
 	printf(_("  %s init[db]   [-D DATADIR] [-s] [-o OPTIONS]\n"), progname);
 	printf(_("  %s start      [-D DATADIR] [-l FILENAME] [-W] [-t SECS] [-s]\n"
-			 "                    [-o OPTIONS] [-p PATH] [-c]\n"), progname);
-	printf(_("  %s stop       [-D DATADIR] [-m SHUTDOWN-MODE] [-W] [-t SECS] [-s]\n"), progname);
-	printf(_("  %s restart    [-D DATADIR] [-m SHUTDOWN-MODE] [-W] [-t SECS] [-s]\n"
-			 "                    [-o OPTIONS] [-c]\n"), progname);
+                         "                    [-o OPTIONS] [-A SCRIPT] [-p PATH] [-c]\n"), progname);                   /*added*/
+        printf(_("  %s stop       [-D DATADIR] [-m SHUTDOWN-MODE] [-W] [-t SECS] [-s] [-Z SCRIPT] \n"), progname);      /*added*/
+        printf(_("  %s restart    [-D DATADIR] [-m SHUTDOWN-MODE] [-W] [-t SECS] [-s]\n"
+                         "                    [-o OPTIONS] [-A SCRIPT] [-Z SCRIPT] [-c]\n"), progname);                 /*added*/
 	printf(_("  %s reload     [-D DATADIR] [-s]\n"), progname);
 	printf(_("  %s status     [-D DATADIR]\n"), progname);
 	printf(_("  %s promote    [-D DATADIR] [-W] [-t SECS] [-s]\n"), progname);
@@ -2002,7 +2060,9 @@ do_help(void)
 	printf(_("  -o, --options=OPTIONS  command line options to pass to postgres\n"
 			 "                         (PostgreSQL server executable) or initdb\n"));
 	printf(_("  -p PATH-TO-POSTGRES    normally not necessary\n"));
-	printf(_("\nOptions for stop or restart:\n"));
+        printf(_("  -A, --pre-check-start=SCRIPT        pre-cehck user script for start\n"));                   /*added*/
+        printf(_("\nOptions for stop or restart:\n"));
+        printf(_("  -Z, --pre-check-stop=SCRIPT        pre-cehck user script for stop\n"));                     /*added*/
 	printf(_("  -m, --mode=MODE        MODE can be \"smart\", \"fast\", or \"immediate\"\n"));
 
 	printf(_("\nShutdown modes are:\n"));
@@ -2201,6 +2261,8 @@ main(int argc, char **argv)
 		{"core-files", no_argument, NULL, 'c'},
 		{"wait", no_argument, NULL, 'w'},
 		{"no-wait", no_argument, NULL, 'W'},
+                {"pre-check-start", required_argument, NULL, 'A'},		/*added*/
+                {"pre-check-stop", required_argument, NULL, 'Z'},		/*added*/
 		{NULL, 0, NULL, 0}
 	};
 
@@ -2341,6 +2403,12 @@ main(int argc, char **argv)
 			case 'c':
 				allow_core_files = true;
 				break;
+                        case 'A': /*added*/
+                                pre_check_start_script = strdup(optarg);
+                                break;
+                        case 'Z': /*added*/
+                                pre_check_stop_script = strdup(optarg);
+                                break;
 			default:
 				/* getopt_long already issued a suitable error message */
 				do_advice();
@@ -2499,6 +2567,8 @@ main(int argc, char **argv)
 		default:
 			break;
 	}
+        free(pre_check_start_script);           /*added*/
+        free(pre_check_stop_script);            /*added*/
 
 	exit(0);
 }

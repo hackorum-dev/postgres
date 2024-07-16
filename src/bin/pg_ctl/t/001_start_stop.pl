@@ -40,11 +40,29 @@ else
 	print $conf "listen_addresses = '127.0.0.1'\n";
 }
 close $conf;
+
+# Set up scripts for pre-check
+my $pre_check_start_script = "$tempdir/pre_check_start.sh";
+my $pre_check_stop_script = "$tempdir/pre_check_stop.sh";
++
+# Create pre_check_start_script
+open(my $fh, '>', $pre_check_start_script) or die "Could not open file '$pre_check_start_script' $!";
+print $fh "#!/bin/sh\nexit 0\n";
+close $fh;
+chmod 0755, $pre_check_start_script;
++
+# Create pre_check_stop_script
+open($fh, '>', $pre_check_stop_script) or die "Could not open file '$pre_check_stop_script' $!";
+print $fh "#!/bin/sh\nexit 0\n";
+close $fh;
+chmod 0755, $pre_check_stop_script;
+
 my $ctlcmd = [
 	'pg_ctl', 'start', '-D', "$tempdir/data", '-l',
-	"$PostgreSQL::Test::Utils::log_path/001_start_stop_server.log"
+	"$PostgreSQL::Test::Utils::log_path/001_start_stop_server.log",
+        '-A', $pre_check_start_script, '-Z', $pre_check_stop_script
 ];
-command_like($ctlcmd, qr/done.*server started/s, 'pg_ctl start');
+command_like($ctlcmd, qr/done.*server started/s, 'pg_ctl start with pre-check scripts');
 
 # sleep here is because Windows builds can't check postmaster.pid exactly,
 # so they may mistake a pre-existing postmaster.pid for one created by the
@@ -53,7 +71,7 @@ command_like($ctlcmd, qr/done.*server started/s, 'pg_ctl start');
 sleep 3 if ($windows_os);
 command_fails([ 'pg_ctl', 'start', '-D', "$tempdir/data" ],
 	'second pg_ctl start fails');
-command_ok([ 'pg_ctl', 'stop', '-D', "$tempdir/data" ], 'pg_ctl stop');
+command_ok([ 'pg_ctl', 'stop', '-D', "$tempdir/data", '-Z', $pre_check_stop_script ], 'pg_ctl stop with pre-check script');
 command_fails([ 'pg_ctl', 'stop', '-D', "$tempdir/data" ],
 	'second pg_ctl stop fails');
 
@@ -61,8 +79,8 @@ command_fails([ 'pg_ctl', 'stop', '-D', "$tempdir/data" ],
 # Windows but we still want to do the restart test.
 my $logFileName = "$tempdir/data/perm-test-600.log";
 
-command_ok([ 'pg_ctl', 'restart', '-D', "$tempdir/data", '-l', $logFileName ],
-	'pg_ctl restart with server not running');
+command_ok([ 'pg_ctl', 'restart', '-D', "$tempdir/data", '-l', $logFileName, '-A', $pre_check_start_script, '-Z', $pre_check_stop_script ],
+        'pg_ctl restart with server not running and pre-check scripts');
 
 # Permissions on log file should be default
 SKIP:
@@ -89,16 +107,16 @@ SKIP:
 	chmod_recursive("$tempdir/data", 0750, 0640);
 
 	command_ok(
-		[ 'pg_ctl', 'start', '-D', "$tempdir/data", '-l', $logFileName ],
+                [ 'pg_ctl', 'start', '-D', "$tempdir/data", '-l', $logFileName, '-A', $pre_check_start_script, '-Z', $pre_check_stop_script ],
 		'start server to check group permissions');
 
 	ok(-f $logFileName);
 	ok(check_mode_recursive("$tempdir/data", 0750, 0640));
 }
 
-command_ok([ 'pg_ctl', 'restart', '-D', "$tempdir/data" ],
-	'pg_ctl restart with server running');
+command_ok([ 'pg_ctl', 'restart', '-D', "$tempdir/data", '-A', $pre_check_start_script, '-Z', $pre_check_stop_script ],
+        'pg_ctl restart with server running and pre-check scripts');
 
-system_or_bail 'pg_ctl', 'stop', '-D', "$tempdir/data";
+system_or_bail 'pg_ctl', 'stop', '-D', "$tempdir/data", '-Z', $pre_check_stop_script;
 
 done_testing();
