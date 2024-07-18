@@ -2979,7 +2979,8 @@ RelationTruncateIndexes(Relation heapRelation)
 		IndexInfo  *indexInfo;
 
 		/* Open the index relation; use exclusive lock, just to be sure */
-		currentIndex = index_open(indexId, AccessExclusiveLock);
+		LockRelationOidExtended(indexId, AccessExclusiveLock, true);
+		currentIndex = index_open(indexId, NoLock);
 
 		/*
 		 * Fetch info needed for index_build.  Since we know there are no
@@ -2998,7 +2999,8 @@ RelationTruncateIndexes(Relation heapRelation)
 
 		/* Initialize the index and rebuild */
 		/* Note: we do not need to re-establish pkey setting */
-		index_build(heapRelation, currentIndex, indexInfo, true, false);
+		currentIndex->rd_indam->ambuild(heapRelation, currentIndex,
+											 indexInfo);
 
 		/* We're done with this index */
 		index_close(currentIndex, NoLock);
@@ -3026,7 +3028,9 @@ heap_truncate(List *relids)
 		Oid			rid = lfirst_oid(cell);
 		Relation	rel;
 
-		rel = table_open(rid, AccessExclusiveLock);
+		/* Take lock beforehand without logging to wal */
+		LockRelationOidExtended(rid, AccessExclusiveLock, true);
+		rel = table_open(rid, NoLock);
 		relations = lappend(relations, rel);
 	}
 
@@ -3077,7 +3081,9 @@ heap_truncate_one_rel(Relation rel)
 	toastrelid = rel->rd_rel->reltoastrelid;
 	if (OidIsValid(toastrelid))
 	{
-		Relation	toastrel = table_open(toastrelid, AccessExclusiveLock);
+		Relation	toastrel;
+		LockRelationOidExtended(toastrelid, AccessExclusiveLock, true);
+		toastrel = table_open(toastrelid, NoLock);
 
 		table_relation_nontransactional_truncate(toastrel);
 		RelationTruncateIndexes(toastrel);

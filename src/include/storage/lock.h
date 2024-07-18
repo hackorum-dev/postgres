@@ -558,7 +558,8 @@ extern LockAcquireResult LockAcquireExtended(const LOCKTAG *locktag,
 											 bool sessionLock,
 											 bool dontWait,
 											 bool reportMemoryError,
-											 LOCALLOCK **locallockp);
+											 LOCALLOCK **locallockp,
+											 bool disablewal);
 extern void AbortStrongLockAcquire(void);
 extern void MarkLockClear(LOCALLOCK *locallock);
 extern bool LockRelease(const LOCKTAG *locktag,

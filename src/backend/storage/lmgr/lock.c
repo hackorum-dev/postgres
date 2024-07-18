@@ -759,7 +759,7 @@ LockAcquire(const LOCKTAG *locktag,
 			bool dontWait)
 {
 	return LockAcquireExtended(locktag, lockmode, sessionLock, dontWait,
-							   true, NULL);
+							   true, NULL, false);
 }
 
 /*
@@ -782,7 +782,8 @@ LockAcquireExtended(const LOCKTAG *locktag,
 					bool sessionLock,
 					bool dontWait,
 					bool reportMemoryError,
-					LOCALLOCK **locallockp)
+					LOCALLOCK **locallockp,
+					bool disablewal)
 {
 	LOCKMETHODID lockmethodid = locktag->locktag_lockmethodid;
 	LockMethod	lockMethodTable;
@@ -908,6 +909,7 @@ LockAcquireExtended(const LOCKTAG *locktag,
 	 * matches the one in GetRunningTransactionLocks().
 	 */
 	if (lockmode >= AccessExclusiveLock &&
+		!disablewal &&
 		locktag->locktag_type == LOCKTAG_RELATION &&
 		!RecoveryInProgress() &&
 		XLogStandbyInfoActive())
