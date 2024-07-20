@@ -3742,6 +3742,7 @@ reindex_index(const ReindexStmt *stmt, Oid indexId,
 	bool		skipped_constraint = false;
 	PGRUsage	ru0;
 	bool		progress = ((params->options & REINDEXOPT_REPORT_PROGRESS) != 0);
+	bool		partition = ((params->options & REINDEXOPT_PARTITION) != 0);
 	bool		set_tablespace = false;
 
 	pg_rusage_init(&ru0);
@@ -3787,8 +3788,9 @@ reindex_index(const ReindexStmt *stmt, Oid indexId,
 			indexId
 		};
 
-		pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX,
-									  heapId);
+		if (!partition)
+			pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX,
+										  heapId);
 		pgstat_progress_update_multi_param(2, progress_cols, progress_vals);
 	}
 
@@ -4028,8 +4030,11 @@ reindex_index(const ReindexStmt *stmt, Oid indexId,
 	index_close(iRel, NoLock);
 	table_close(heapRelation, NoLock);
 
-	if (progress)
+	if (progress && !partition)
+	{
+		/* progress for partitions is tracked in the caller */
 		pgstat_progress_end_command();
+	}
 }
 
 /*
