@@ -3703,17 +3703,19 @@ reindex_index(const ReindexStmt *stmt, Oid indexId,
 	{
 		const int	progress_cols[] = {
 			PROGRESS_CREATEIDX_COMMAND,
-			PROGRESS_CREATEIDX_INDEX_OID
+			PROGRESS_CREATEIDX_INDEX_OID,
+			PROGRESS_CREATEIDX_PARTITION_RELID
 		};
 		const int64 progress_vals[] = {
 			PROGRESS_CREATEIDX_COMMAND_REINDEX,
-			indexId
+			indexId,
+			partition ? heapId : 0
 		};
 
 		if (!partition)
 			pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX,
 										  heapId);
-		pgstat_progress_update_multi_param(2, progress_cols, progress_vals);
+		pgstat_progress_update_multi_param(3, progress_cols, progress_vals);
 	}
 
 	/*
