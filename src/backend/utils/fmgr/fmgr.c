@@ -16,6 +16,8 @@
 #include "postgres.h"
 
 #include "access/detoast.h"
+#include "commands/extension.h"
+#include "catalog/dependency.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
@@ -641,6 +643,15 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 			   *lc3;
 	volatile int save_nestlevel;
 	PgStat_FunctionCallUsage fcusage;
+	Oid			extensionOid = InvalidOid;
+
+	/*
+	 * Let's check if this is an extension created function. If it is, we'll set
+	 * the CurrentExtensionId before calling it, so that preprocessNamespacePath
+	 * can handle $extension_schema correctly.
+	 */
+	extensionOid = getExtensionOfObject(ProcedureRelationId,
+										fcinfo->flinfo->fn_oid);
 
 	if (!fcinfo->flinfo->fn_extra)
 	{
@@ -737,6 +748,9 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 	 */
 	save_flinfo = fcinfo->flinfo;
 
+	if (OidIsValid(extensionOid))
+		SetCurrentExtensionId(extensionOid);
+
 	PG_TRY();
 	{
 		fcinfo->flinfo = &fcache->flinfo;
@@ -758,6 +772,7 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 	PG_CATCH();
 	{
 		fcinfo->flinfo = save_flinfo;
+		SetCurrentExtensionId(InvalidOid);
 		if (fmgr_hook)
 			(*fmgr_hook) (FHET_ABORT, &fcache->flinfo, &fcache->arg);
 		PG_RE_THROW();
@@ -765,6 +780,7 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 	PG_END_TRY();
 
 	fcinfo->flinfo = save_flinfo;
+	SetCurrentExtensionId(InvalidOid);
 
 	if (fcache->configNames != NIL)
 		AtEOXact_GUC(true, save_nestlevel);

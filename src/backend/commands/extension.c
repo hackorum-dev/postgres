@@ -70,6 +70,8 @@
 /* Globally visible state variables */
 bool		creating_extension = false;
 Oid			CurrentExtensionObject = InvalidOid;
+bool		create_extension_set_search_path = false;
+Oid			CurrentExtensionId = InvalidOid;
 
 /*
  * Internal data structure to hold the results of parsing a control file
@@ -86,6 +88,8 @@ typedef struct ExtensionControlFile
 	bool		relocatable;	/* is ALTER EXTENSION SET SCHEMA supported? */
 	bool		superuser;		/* must be superuser to install? */
 	bool		trusted;		/* allow becoming superuser on the fly? */
+	bool		protected;		/* should we protect extension by setting implicit
+								 * search_path for functions and procedures? */
 	int			encoding;		/* encoding of the script file, or -1 */
 	List	   *requires;		/* names of prerequisite extensions */
 	List	   *no_relocate;	/* names of prerequisite extensions that
@@ -117,7 +121,8 @@ static Oid	get_required_extension(char *reqExtensionName,
 								   char *origSchemaName,
 								   bool cascade,
 								   List *parents,
-								   bool is_create);
+								   bool is_create,
+								   bool set_search_path);
 static void get_available_versions_for_extension(ExtensionControlFile *pcontrol,
 												 Tuplestorestate *tupstore,
 												 TupleDesc tupdesc);
@@ -128,12 +133,30 @@ static void ApplyExtensionUpdates(Oid extensionOid,
 								  List *updateVersions,
 								  char *origSchemaName,
 								  bool cascade,
-								  bool is_create);
+								  bool is_create,
+								  bool set_search_path);
 static void ExecAlterExtensionContentsRecurse(AlterExtensionContentsStmt *stmt,
 											  ObjectAddress extension,
 											  ObjectAddress object);
 static char *read_whole_file(const char *filename, int *length);
 
+/*
+ * SetCurrentExtensionId - Set the current extension Oid.
+ */
+void
+SetCurrentExtensionId(Oid extensionOid)
+{
+	CurrentExtensionId = extensionOid;
+}
+
+/*
+ * GetCurrentExtensionId - Get the current extension Oid.
+ */
+Oid
+GetCurrentExtensionId()
+{
+	return CurrentExtensionId;
+}
 
 /*
  * get_extension_oid - given an extension name, look up the OID
@@ -585,6 +608,14 @@ parse_extension_control_file(ExtensionControlFile *control,
 						 errmsg("parameter \"%s\" requires a Boolean value",
 								item->name)));
 		}
+		else if (strcmp(item->name, "protected") == 0)
+		{
+			if (!parse_bool(item->value, &control->protected))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("parameter \"%s\" requires a Boolean value",
+								item->name)));
+		}
 		else if (strcmp(item->name, "encoding") == 0)
 		{
 			control->encoding = pg_valid_server_encoding(item->value);
@@ -871,7 +902,8 @@ execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 						 const char *from_version,
 						 const char *version,
 						 List *requiredSchemas,
-						 const char *schemaName, Oid schemaOid)
+						 const char *schemaName, Oid schemaOid,
+						 bool set_search_path)
 {
 	bool		switch_to_superuser = false;
 	char	   *filename;
@@ -992,6 +1024,7 @@ execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 	 */
 	creating_extension = true;
 	CurrentExtensionObject = extensionOid;
+	create_extension_set_search_path = set_search_path;
 	PG_TRY();
 	{
 		char	   *c_sql = read_extension_script_file(control, filename);
@@ -1116,6 +1149,7 @@ execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 	{
 		creating_extension = false;
 		CurrentExtensionObject = InvalidOid;
+		create_extension_set_search_path = false;
 	}
 	PG_END_TRY();
 
@@ -1475,6 +1509,7 @@ CreateExtensionInternal(char *extensionName,
 	Oid			extensionOid;
 	ObjectAddress address;
 	ListCell   *lc;
+	bool		set_search_path = false;
 
 	/*
 	 * Read the primary control file.  Note we assume that it does not contain
@@ -1541,6 +1576,10 @@ CreateExtensionInternal(char *extensionName,
 	 * Fetch control parameters for installation target version
 	 */
 	control = read_extension_aux_control_file(pcontrol, versionName);
+
+	/* Check if this extension requires protection */
+	if (control->protected)
+		set_search_path = true;
 
 	/*
 	 * Determine the target schema to install the extension into
@@ -1648,7 +1687,8 @@ CreateExtensionInternal(char *extensionName,
 										origSchemaName,
 										cascade,
 										parents,
-										is_create);
+										is_create,
+										set_search_path);
 		reqschema = get_extension_schema(reqext);
 		requiredExtensions = lappend_oid(requiredExtensions, reqext);
 		requiredSchemas = lappend_oid(requiredSchemas, reqschema);
@@ -1677,7 +1717,7 @@ CreateExtensionInternal(char *extensionName,
 	execute_extension_script(extensionOid, control,
 							 NULL, versionName,
 							 requiredSchemas,
-							 schemaName, schemaOid);
+							 schemaName, schemaOid, set_search_path);
 
 	/*
 	 * If additional update scripts have to be executed, apply the updates as
@@ -1685,7 +1725,7 @@ CreateExtensionInternal(char *extensionName,
 	 */
 	ApplyExtensionUpdates(extensionOid, pcontrol,
 						  versionName, updateVersions,
-						  origSchemaName, cascade, is_create);
+						  origSchemaName, cascade, is_create, set_search_path);
 
 	return address;
 }
@@ -1699,7 +1739,8 @@ get_required_extension(char *reqExtensionName,
 					   char *origSchemaName,
 					   bool cascade,
 					   List *parents,
-					   bool is_create)
+					   bool is_create,
+					   bool set_search_path)
 {
 	Oid			reqExtensionOid;
 
@@ -3115,7 +3156,7 @@ ExecAlterExtensionStmt(ParseState *pstate, AlterExtensionStmt *stmt)
 	 */
 	ApplyExtensionUpdates(extensionOid, control,
 						  oldVersionName, updateVersions,
-						  NULL, false, false);
+						  NULL, false, false, false);
 
 	ObjectAddressSet(address, ExtensionRelationId, extensionOid);
 
@@ -3137,7 +3178,8 @@ ApplyExtensionUpdates(Oid extensionOid,
 					  List *updateVersions,
 					  char *origSchemaName,
 					  bool cascade,
-					  bool is_create)
+					  bool is_create,
+					  bool set_search_path)
 {
 	const char *oldVersionName = initialVersion;
 	ListCell   *lcv;
@@ -3232,7 +3274,8 @@ ApplyExtensionUpdates(Oid extensionOid,
 											origSchemaName,
 											cascade,
 											NIL,
-											is_create);
+											is_create,
+											set_search_path);
 			reqschema = get_extension_schema(reqext);
 			requiredExtensions = lappend_oid(requiredExtensions, reqext);
 			requiredSchemas = lappend_oid(requiredSchemas, reqschema);
@@ -3269,7 +3312,7 @@ ApplyExtensionUpdates(Oid extensionOid,
 		execute_extension_script(extensionOid, control,
 								 oldVersionName, versionName,
 								 requiredSchemas,
-								 schemaName, schemaOid);
+								 schemaName, schemaOid, set_search_path);
 
 		/*
 		 * Update prior-version name and loop around.  Since

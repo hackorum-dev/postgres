@@ -29,6 +29,8 @@
  */
 extern PGDLLIMPORT bool creating_extension;
 extern PGDLLIMPORT Oid CurrentExtensionObject;
+extern PGDLLIMPORT bool create_extension_set_search_path;
+extern PGDLLIMPORT Oid CurrentExtensionId;
 
 
 extern ObjectAddress CreateExtension(ParseState *pstate, CreateExtensionStmt *stmt);
@@ -52,5 +54,8 @@ extern bool extension_file_exists(const char *extensionName);
 
 extern ObjectAddress AlterExtensionNamespace(const char *extensionName, const char *newschema,
 											 Oid *oldschema);
+
+extern void SetCurrentExtensionId(Oid extensionOid);
+extern Oid GetCurrentExtensionId(void);
 
 #endif							/* EXTENSION_H */

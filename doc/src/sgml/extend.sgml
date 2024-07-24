@@ -822,6 +822,21 @@ RETURNS anycompatible AS ...
        </para>
       </listitem>
      </varlistentry>
+
+    <varlistentry id="extend-extensions-files-protected">
+      <term><varname>protected</varname> (<type>boolean</type>)</term>
+      <listitem>
+       <para>
+        This parameter, if set to true (which is not the default), defines the
+        implicit search_path for functions and procedures created by the
+        extension. It sets the <varname>search_path</varname> to
+        <literal>$extension_schema</literal>, <literal>pg_temp</literal>, where
+        <literal>$extension_schema</literal> is a special name that dynamically
+        resolves to all schemas on which the extension depends. This resolution
+        occurs at the time of function or procedure execution.
+       </para>
+      </listitem>
+     </varlistentry>
     </variablelist>
 
     <para>
@@ -1288,10 +1303,10 @@ SELECT * FROM pg_extension_update_paths('<replaceable>extension_name</replaceabl
           PostgreSQL contained no such defect. -->
      <para>
       If you cannot set the <varname>search_path</varname> to contain only
-      secure schemas, assume that each unqualified name could resolve to an
-      object that a malicious user has defined.  Beware of constructs that
-      depend on <varname>search_path</varname> implicitly; for
-      example, <token>IN</token>
+      secure schemas, or mark the extension as protected, then assume that each
+      unqualified name could resolve to an object that a malicious user has
+      defined.  Beware of constructs that depend on
+      <varname>search_path</varname> implicitly; for example, <token>IN</token>
       and <literal>CASE <replaceable>expression</replaceable> WHEN</literal>
       always select an operator using the search path.  In their place, use
       <literal>OPERATOR(<replaceable>schema</replaceable>.=) ANY</literal>

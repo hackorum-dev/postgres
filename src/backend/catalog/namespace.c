@@ -42,6 +42,7 @@
 #include "catalog/pg_ts_template.h"
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
+#include "commands/extension.h"
 #include "common/hashfn_unstable.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
@@ -4151,6 +4152,37 @@ preprocessNamespacePath(const char *searchPath, Oid roleid,
 				if (oidlist == NIL)
 					*temp_missing = true;
 			}
+		}
+		else if (strcmp(curname, "$extension_schema") == 0)
+		{
+			/*
+			 * $extension_schema --- substitute namespace on which the extension
+			 * depends, if executing functions or procedures related to an
+			 * extension that has search_path set in its proconfig to
+			 * $extension_schema; otherwise, skip.
+			 */
+			Oid			extOid = GetCurrentExtensionId();
+			List	   *extList;
+			ListCell   *lc;
+
+			if (!OidIsValid(extOid))
+				continue;
+
+			extList = getExtensionsOfExtension(extOid);
+			extList = lappend_oid(extList, extOid);
+
+			foreach(lc, extList)
+			{
+				extOid = lfirst_oid(lc);
+
+				namespaceId = get_extension_schema(extOid);
+				if (OidIsValid(namespaceId) &&
+					object_aclcheck(NamespaceRelationId, namespaceId, roleid,
+									ACL_USAGE) == ACLCHECK_OK)
+					oidlist = lappend_oid(oidlist, namespaceId);
+			}
+
+			list_free(extList);
 		}
 		else
 		{

@@ -52,6 +52,7 @@
 #include "executor/functions.h"
 #include "funcapi.h"
 #include "miscadmin.h"
+#include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
 #include "parser/analyze.h"
@@ -71,6 +72,7 @@
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
+#include "utils/varlena.h"
 
 /*
  *	 Examine the RETURNS clause of the CREATE FUNCTION statement
@@ -705,6 +707,25 @@ interpret_func_support(DefElem *defel)
 	return procOid;
 }
 
+/*
+ * Returns true if search_path is set in set_items list.
+ */
+static bool
+IsSearchPathSet(List *set_items)
+{
+	ListCell   *l;
+
+	foreach(l, set_items)
+	{
+		VariableSetStmt *sstmt = lfirst_node(VariableSetStmt, l);
+
+		if (pg_strcasecmp(sstmt->name, "search_path") == 0 &&
+			sstmt->kind == VAR_SET_VALUE)
+			return true;
+	}
+
+	return false;
+}
 
 /*
  * Dissect the list of options assembled in gram.y into function
@@ -726,7 +747,8 @@ compute_function_attributes(ParseState *pstate,
 							float4 *procost,
 							float4 *prorows,
 							Oid *prosupport,
-							char *parallel_p)
+							char *parallel_p,
+							Oid namespaceId)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -813,6 +835,53 @@ compute_function_attributes(ParseState *pstate,
 		*security_definer = boolVal(security_item->arg);
 	if (leakproof_item)
 		*leakproof_p = boolVal(leakproof_item->arg);
+
+	/*
+	 * If "create_extension_set_search_path" is enabled, it indicates that the
+	 * user has set "protected" flag inside the extension control file.
+	 * Therefore, we must ensure that the function(s) created by an extension
+	 * have their search_path set to trusted schema(s), which includes the
+	 * schema where the function is being created and the search_path set by the
+	 * extension. See execute_extension_script() for details on search_path set
+	 * by the extension.
+	 */
+	if (creating_extension && create_extension_set_search_path)
+	{
+		/* If the search_path is already set, there is nothing to do. */
+		if (!set_items || !IsSearchPathSet(set_items))
+		{
+			StringInfoData sp_string;
+			VariableSetStmt *sp_node = makeNode(VariableSetStmt);
+			List	 *schemaList;
+			ListCell *lc;
+
+			sp_node->kind = VAR_SET_VALUE;
+			sp_node->name = "search_path";
+
+			initStringInfo(&sp_string);
+
+			if (namespaceId != get_extension_schema(CurrentExtensionObject))
+			{
+				appendStringInfoString(&sp_string, get_namespace_name(namespaceId));
+				appendStringInfoString(&sp_string, ", ");
+			}
+			appendStringInfoString(&sp_string, "$extension_schema, pg_temp");
+
+			(void) SplitIdentifierString(sp_string.data, ',', &schemaList);
+
+			foreach(lc, schemaList)
+			{
+				char *schema_name = lfirst(lc);
+
+				sp_node->args = lappend(sp_node->args,
+										makeStringConst(pstrdup(schema_name), -1));
+			}
+
+			set_items = lappend(set_items, sp_node);
+			pfree(sp_string.data);
+		}
+	}
+
 	if (set_items)
 		*proconfig = update_proconfig_value(NULL, set_items);
 	if (cost_item)
@@ -1079,7 +1148,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 								&isWindowFunc, &volatility,
 								&isStrict, &security, &isLeakProof,
 								&proconfig, &procost, &prorows,
-								&prosupport, &parallel);
+								&prosupport, &parallel, namespaceId);
 
 	if (!language)
 	{
