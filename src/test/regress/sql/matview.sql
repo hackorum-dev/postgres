@@ -342,6 +342,14 @@ SELECT * FROM mvtest_replace; -- error: not populated
 REFRESH MATERIALIZED VIEW mvtest_replace;
 SELECT * FROM mvtest_replace;
 
+-- replace query but keep old data
+CREATE OR REPLACE MATERIALIZED VIEW mvtest_replace AS
+  SELECT 5 AS a
+  WITH OLD DATA;
+SELECT * FROM mvtest_replace;
+REFRESH MATERIALIZED VIEW mvtest_replace;
+SELECT * FROM mvtest_replace;
+
 -- add column
 CREATE OR REPLACE MATERIALIZED VIEW mvtest_replace AS
   SELECT 4 AS a, 1 b;
@@ -435,3 +443,8 @@ CREATE OR REPLACE MATERIALIZED VIEW IF NOT EXISTS mvtest_replace AS
   SELECT 1 AS a;
 
 DROP MATERIALIZED VIEW mvtest_replace;
+
+-- Clause WITH OLD DATA is not allowed when creating a new matview.
+CREATE OR REPLACE MATERIALIZED VIEW mvtest_replace AS
+  SELECT 17 AS a
+  WITH OLD DATA; -- error

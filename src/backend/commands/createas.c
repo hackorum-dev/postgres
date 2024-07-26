@@ -329,18 +329,26 @@ ExecCreateTableAs(ParseState *pstate, CreateTableAsStmt *stmt,
 		/* An existing materialized view can be replaced. */
 		if (is_matview && into->replace)
 		{
-			RefreshMatViewStmt *refresh;
-
 			/* Change the relation to match the new query and other options. */
-			(void) create_ctas_nodata(query->targetList, into);
+			address = create_ctas_nodata(query->targetList, into);
 
-			/* Refresh the materialized view with a fake statement. */
-			refresh = makeNode(RefreshMatViewStmt);
-			refresh->relation = into->rel;
-			refresh->skipData = into->skipData;
-			refresh->concurrent = false;
+			/*
+			 * Refresh the materialized view with a fake statement unless we
+			 * must keep the old data.
+			 */
+			if (!into->keepData)
+			{
+				RefreshMatViewStmt *refresh;
 
-			return ExecRefreshMatView(refresh, pstate->p_sourcetext, qc);
+				refresh = makeNode(RefreshMatViewStmt);
+				refresh->relation = into->rel;
+				refresh->skipData = into->skipData;
+				refresh->concurrent = false;
+
+				address = ExecRefreshMatView(refresh, pstate->p_sourcetext, qc);
+			}
+
+			return address;
 		}
 
 		return InvalidObjectAddress;
@@ -383,6 +391,9 @@ ExecCreateTableAs(ParseState *pstate, CreateTableAsStmt *stmt,
 	 */
 	if (is_matview)
 	{
+		if (into->keepData)
+			elog(ERROR, "must not specify WITH OLD DATA when creating a new materialized view");
+
 		do_refresh = !into->skipData;
 		into->skipData = true;
 	}
