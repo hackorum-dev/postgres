@@ -205,7 +205,10 @@ spin_delay(void)
 #ifdef __x86_64__		/* AMD Opteron, Intel EM64T */
 #define HAS_TEST_AND_SET
 
-typedef unsigned char slock_t;
+typedef struct slock_t
+{
+	char	is_free;
+} slock_t;
 
 #define TAS(lock) tas(lock)
 
@@ -217,21 +220,27 @@ typedef unsigned char slock_t;
  * and IA32, by Michael Chynoweth and Mary R. Lee. As of this writing, it is
  * available at:
  * http://software.intel.com/en-us/articles/implementing-scalable-atomic-locks-for-multi-core-intel-em64t-and-ia32-architectures
+ *
+ * To catch uses of uninitialized spinlocks, we define 1 as unlocked and 0 as
+ * locked. That causes the first acquisition of an uninitialized spinlock to
+ * block forever. A dedicated state for initialized locks would allow for a
+ * nicer assertion, but ends up with slightly less dense code (a three byte
+ * cmp with an immediate, instead of a 2 byte test).
  */
-#define TAS_SPIN(lock)    (*(lock) ? 1 : TAS(lock))
+#define TAS_SPIN(lock)    ((lock)->is_free == 0 ? 1 : TAS(lock))
 
 static __inline__ int
 tas(volatile slock_t *lock)
 {
-	slock_t		_res = 1;
+	char		was_free = 0;
 
 	__asm__ __volatile__(
 		"	lock			\n"
 		"	xchgb	%0,%1	\n"
-:		"+q"(_res), "+m"(*lock)
+:		"+q"(was_free), "+m"(lock->is_free)
 :		/* no inputs */
 :		"memory", "cc");
-	return (int) _res;
+	return was_free == 0;
 }
 
 #define SPIN_DELAY() spin_delay()
@@ -246,6 +255,13 @@ spin_delay(void)
 	__asm__ __volatile__(
 		" rep; nop			\n");
 }
+
+#define S_UNLOCK(lock)	\
+	do { __asm__ __volatile__("" : : : "memory");  (lock)->is_free = 1; } while (0)
+
+#define S_LOCK_FREE(lock)	((lock)->is_free == 1)
+
+#define S_INIT_LOCK(lock)	S_UNLOCK(lock)
 
 #endif	 /* __x86_64__ */
 
