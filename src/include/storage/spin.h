@@ -61,7 +61,22 @@
 
 #define SpinLockAcquire(lock) S_LOCK(lock)
 
-#define SpinLockRelease(lock) S_UNLOCK(lock)
+static inline void
+SpinLockRelease(volatile slock_t *lock)
+{
+	/*
+	 * Check that this backend actually held the spinlock. Implemented as a
+	 * static inline to avoid multiple-evaluation hazards.
+	 *
+	 * Can't assert when using the semaphore fallback implementation - it
+	 * doesn't implement S_LOCK_FREE() - but the fallback triggers failures in
+	 * the case of double-release on its own.
+	 */
+#ifdef HAVE_SPINLOCKS
+	Assert(!S_LOCK_FREE(lock));
+#endif
+	S_UNLOCK(lock);
+}
 
 #define SpinLockFree(lock)	S_LOCK_FREE(lock)
 
