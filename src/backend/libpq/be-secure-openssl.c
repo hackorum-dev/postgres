@@ -476,13 +476,18 @@ be_tls_init(bool isServerStart)
 	}
 
 	/*
-	 * Disallow SSL session tickets. OpenSSL use both stateful and stateless
-	 * tickets for TLSv1.3, and stateless ticket for TLSv1.2. SSL_OP_NO_TICKET
-	 * is available since 0.9.8f but only turns off stateless tickets. In
-	 * order to turn off stateful tickets we need SSL_CTX_set_num_tickets,
-	 * which is available since OpenSSL 1.1.1.  LibreSSL 3.5.4 (from OpenBSD
-	 * 7.1) introduced this API for compatibility, but doesn't support session
-	 * tickets at all so it's a no-op there.
+	 * Disallow TLS session tickets.  PostgreSQL doesn't support TLS session
+	 * resumption, and some resumption capable client libraries can experience
+	 * connection failures if they try to use tickets received in the
+	 * connection setup.  Also, since they aren't used, sending them incurs
+	 * network overhead in the connection setup phase which provides no value.
+	 * OpenSSL use both stateful and stateless tickets for TLSv1.3, and
+	 * stateless ticket for TLSv1.2. SSL_OP_NO_TICKET is available since 0.9.8f
+	 * but only turns off stateless tickets. In order to turn off stateful
+	 * tickets we need SSL_CTX_set_num_tickets, which is available since
+	 * OpenSSL 1.1.1.  LibreSSL 3.5.4 (from OpenBSD 7.1) introduced this API
+	 * for compatibility, but doesn't support session tickets at all so it's a
+	 * no-op there.
 	 */
 #ifdef HAVE_SSL_CTX_SET_NUM_TICKETS
 	SSL_CTX_set_num_tickets(context, 0);
@@ -496,12 +501,15 @@ be_tls_init(bool isServerStart)
 	SSL_CTX_set_options(context, SSL_OP_NO_COMPRESSION);
 
 	/*
-	 * Disallow SSL renegotiation.  This concerns only TLSv1.2 and older
-	 * protocol versions, as TLSv1.3 has no support for renegotiation.
-	 * SSL_OP_NO_RENEGOTIATION is available in OpenSSL since 1.1.0h (via a
-	 * backport from 1.1.1). SSL_OP_NO_CLIENT_RENEGOTIATION is available in
-	 * LibreSSL since 2.5.1 disallowing all client-initiated renegotiation
-	 * (this is usually on by default).
+	 * Disallow SSL renegotiation. Renegotiation can be used as an attack
+	 * vector during MITM attacks allowing the attacker to pose as the
+	 * authenticated client and pass commands and data to the server.  This
+	 * concerns only TLSv1.2 and older protocol versions, as TLSv1.3 has no
+	 * support for renegotiation.  SSL_OP_NO_RENEGOTIATION is available in
+	 * OpenSSL since 1.1.0h (via a backport from 1.1.1).
+	 * SSL_OP_NO_CLIENT_RENEGOTIATION is available in LibreSSL since 2.5.1
+	 * disallowing all client-initiated renegotiation (this is usually on by
+	 * default).
 	 */
 #ifdef SSL_OP_NO_RENEGOTIATION
 	SSL_CTX_set_options(context, SSL_OP_NO_RENEGOTIATION);
