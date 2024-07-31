@@ -116,12 +116,19 @@ copydir(const char *fromdir, const char *todir, bool recurse)
 void
 copy_file(const char *fromfile, const char *tofile)
 {
+	copy_file_extended(fromfile, tofile, false);
+}
+
+void
+copy_file_extended(const char *fromfile, const char *tofile, bool overwrite)
+{
 	char	   *buffer;
 	int			srcfd;
 	int			dstfd;
 	int			nbytes;
 	off_t		offset;
 	off_t		flush_offset;
+	int			dstflags;
 
 	/* Size of copy buffer (read and write requests) */
 #define COPY_BUF_SIZE (8 * BLCKSZ)
@@ -150,7 +157,11 @@ copy_file(const char *fromfile, const char *tofile)
 				(errcode_for_file_access(),
 				 errmsg("could not open file \"%s\": %m", fromfile)));
 
-	dstfd = OpenTransientFile(tofile, O_RDWR | O_CREAT | O_EXCL | PG_BINARY);
+	dstflags = O_RDWR | O_CREAT | PG_BINARY;
+	if (!overwrite)
+		dstflags |= O_EXCL;
+
+	dstfd = OpenTransientFile(tofile, dstflags);
 	if (dstfd < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
@@ -159,6 +170,9 @@ copy_file(const char *fromfile, const char *tofile)
 	/*
 	 * Do the data copying.
 	 */
+	if (overwrite)
+		pg_truncate(tofile, 0);
+
 	flush_offset = 0;
 	for (offset = 0;; offset += nbytes)
 	{

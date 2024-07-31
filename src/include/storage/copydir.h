@@ -15,5 +15,7 @@
 
 extern void copydir(const char *fromdir, const char *todir, bool recurse);
 extern void copy_file(const char *fromfile, const char *tofile);
+extern void copy_file_extended(const char *fromfile, const char *tofile,
+							   bool overwrite);
 
 #endif							/* COPYDIR_H */
