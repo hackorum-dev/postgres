@@ -1,0 +1,10 @@
+test_listsort is a module for stress testing the list_sort implementation based on the x86-simd-sort library.
+It generates an array of ListCells and sorts it based on the float value held by each ListCell.
+
+One function is provided:
+
+test_listsort (arg1 integer, arg2 integer, arg3 integer, arg4 boolean) returns float[]
+
+arg1 is the size of the ListCell array to be sorted.
+arg2 and arg3 are used to generate ties. This is used while generating test data.
+arg4 is a flag to select the SIMD-enabled (using the x86-simd-sort library) or qsort version of list_sort

@@ -544,6 +544,272 @@ test_canonicalize_path(PG_FUNCTION_ARGS)
 	PG_RETURN_TEXT_P(cstring_to_text(path));
 }
 
+typedef struct SortTestData
+{
+	float		value;
+	int			tiebreaker;
+} SortTestData;
+
+static int
+tie_breaker(const ListCell *a, const ListCell *b)
+{
+	SortTestData *sorttestdata1 = (SortTestData *) a->ptr_value;
+	int			val1 = sorttestdata1->tiebreaker;
+
+	SortTestData *sorttestdata2 = (SortTestData *) b->ptr_value;
+	int			val2 = sorttestdata2->tiebreaker;
+
+	if (val1 > val2)
+	{
+		return 1;
+	}
+	else if (val1 < val2)
+	{
+		return -1;
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+static float
+get_value(const ListCell *a)
+{
+	SortTestData *sorttestdata = (SortTestData *) a->ptr_value;
+
+	return sorttestdata->value;
+}
+
+static int
+get_tie_breaker_value(const ListCell *a)
+{
+	SortTestData *sorttestdata = (SortTestData *) a->ptr_value;
+
+	return sorttestdata->tiebreaker;
+}
+
+static int
+custom_comparator(const ListCell *a, const ListCell *b)
+{
+	float		val1 = get_value(a);
+	float		val2 = get_value(b);
+
+	if (val1 > val2)
+	{
+		return 1;
+	}
+	else if (val1 < val2)
+	{
+		return -1;
+	}
+	else
+	{
+		return tie_breaker(a, b);;
+	}
+}
+
+/* Test for list_sort_simd_float starting from a list in descending order. The list is sorted in ascending order.
+  */
+Datum		test_list_sort_simd_float(PG_FUNCTION_ARGS);
+
+PG_FUNCTION_INFO_V1(test_list_sort_simd_float);
+Datum
+test_list_sort_simd_float(PG_FUNCTION_ARGS)
+{
+	int			size = PG_GETARG_INT32(0);
+
+	float		currentsize = (float) size;
+	ListCell   *listcells;
+	ListCell  **listcellptrs;
+	List	   *list;
+	Datum	   *array_elements;
+	ArrayType  *result;
+
+	listcells = (ListCell *) palloc(size * sizeof(ListCell));
+	Assert(listcells != NULL);
+
+	listcellptrs = (ListCell **) palloc(size * sizeof(ListCell *));
+	Assert(listcellptrs != NULL);
+
+	for (int i = 0; i < size; i++)
+	{
+		ListCell	currentcell;
+		ListCell   *cell;
+		SortTestData *sorttestdata;
+
+		cell = (ListCell *) palloc(sizeof(ListCell));
+		Assert(cell != NULL);
+
+		sorttestdata = (SortTestData *) palloc(sizeof(SortTestData));
+		Assert(sorttestdata != NULL);
+
+		sorttestdata->value = currentsize;
+		currentsize = currentsize - 1;
+		sorttestdata->tiebreaker = i;
+		cell->ptr_value = sorttestdata;
+		currentcell = *cell;
+		listcells[i] = currentcell;
+		listcellptrs[i] = cell;
+	}
+
+	list = (List *) palloc(sizeof(List));
+	list->elements = listcells;
+	list->length = size;
+	list->max_length = size;
+	list->type = T_List;
+
+	list_sort_simd_float(list, get_value, custom_comparator);
+
+	for (int i = 0; i < size; i++)
+	{
+		Assert(get_value(&listcells[i]) == (float) (i + 1));
+	}
+
+	array_elements = (Datum *) palloc(sizeof(Datum) * 10);
+	for (int i = 0; i < 10; i++)
+	{
+		array_elements[i] = Float4GetDatum(get_value(&listcells[i]));
+	}
+
+	result = construct_array_builtin(array_elements, 10, FLOAT4OID);
+
+	pfree(array_elements);
+	pfree(listcells);
+	for (int i = 0; i < size; i++)
+	{
+		pfree(listcellptrs[i]->ptr_value);
+		pfree(listcellptrs[i]);
+	}
+	pfree(listcellptrs);
+
+	PG_RETURN_ARRAYTYPE_P(result);
+}
+
+/*  Creates ListCells with each ListCell having a float value.
+ *  The max_random and tie_case_limit parameters are used to introduce ties.
+ */
+static ListCell **
+create_list_cell(ListCell *list_cells, int size, int max_random, int tie_case_limit)
+{
+	ListCell  **list_cell_ptrs = (ListCell **) palloc(size * sizeof(ListCell *));
+
+	for (int i = 0; i < size; i++)
+	{
+		ListCell	current_cell;
+		ListCell   *cell = (ListCell *) palloc(sizeof(ListCell));
+
+		SortTestData *sort_test_data = (SortTestData *) palloc(sizeof(SortTestData));
+
+		float		random_float = 0;
+		int			random_number = rand();
+		int			bounded_random_number = random_number % max_random;
+
+		if (bounded_random_number > 0 && bounded_random_number <= tie_case_limit)
+		{
+			random_float = bounded_random_number;
+		}
+		else
+		{
+			random_float = (float) random_number / (float) RAND_MAX;
+		}
+
+		sort_test_data->value = random_float;
+		sort_test_data->tiebreaker = i;
+		cell->ptr_value = sort_test_data;
+		current_cell = *cell;
+		list_cells[i] = current_cell;
+		list_cell_ptrs[i] = cell;
+	}
+
+	return list_cell_ptrs;
+}
+
+/* Test for list_sort_simd_float starting from a list in random order. The list is sorted in ascending order.
+ */
+Datum		test_list_sort_simd_float_random(PG_FUNCTION_ARGS);
+
+PG_FUNCTION_INFO_V1(test_list_sort_simd_float_random);
+Datum
+test_list_sort_simd_float_random(PG_FUNCTION_ARGS)
+{
+	int			size = PG_GETARG_INT32(0);
+	int			max_random = PG_GETARG_INT32(1);
+	int			tie_case_limit = PG_GETARG_INT32(2);
+	bool		call_simd_sort = PG_GETARG_BOOL(3);
+
+	ListCell   *list_cells;
+	ListCell  **list_cell_ptrs;
+	List	   *list;
+	Datum	   *array_elements;
+	ArrayType  *result;
+	int			result_len;
+
+	srand(42);
+
+	list_cells = (ListCell *) palloc(size * sizeof(ListCell));
+	Assert(list_cells != NULL);
+
+	list_cell_ptrs = create_list_cell(list_cells, size, max_random, tie_case_limit);
+
+	list = (List *) palloc(sizeof(List));
+	Assert(list != NULL);
+
+	list->elements = list_cells;
+	list->length = size;
+	list->max_length = size;
+	list->type = T_List;
+
+	if (call_simd_sort)
+	{
+		list_sort_simd_float(list, get_value, custom_comparator);
+	}
+	else
+	{
+		list_sort_simd_float(list, NULL, custom_comparator);
+	}
+
+	for (int i = 0; i < size - 1; i++)
+	{
+		Assert(get_value(&list_cells[i]) <= get_value(&list_cells[i + 1]));
+	}
+
+	for (int i = 0; i < size - 1; i++)
+	{
+		if (get_value(&list_cells[i]) == get_value(&list_cells[i + 1]))
+		{
+			Assert(get_tie_breaker_value(&list_cells[i]) <= get_tie_breaker_value(&list_cells[i + 1]));
+		}
+	}
+
+	/*
+	 * we choose to return an array of size 10 for larger sort sizes ( > 10).
+	 * The reason behind this is to make sure the corresponding .out file does
+	 * not have to show all the sorted floats especially when sort size is
+	 * large. Otherwise this will make the .out file difficult to maintain.
+	 */
+	result_len = (size < 10 ? size : 10);
+	array_elements = (Datum *) palloc(sizeof(Datum) * result_len);
+	for (int i = 0; i < result_len; i++)
+	{
+		array_elements[i] = Float4GetDatum(get_value(&list_cells[i]));
+	}
+
+	result = construct_array_builtin(array_elements, result_len, FLOAT4OID);
+
+	pfree(array_elements);
+	pfree(list_cells);
+	pfree(list);
+	for (int i = 0; i < size; i++)
+	{
+		pfree(list_cell_ptrs[i]->ptr_value);
+		pfree(list_cell_ptrs[i]);
+	}
+	pfree(list_cell_ptrs);
+
+	PG_RETURN_ARRAYTYPE_P(result);
+}
+
 PG_FUNCTION_INFO_V1(make_tuple_indirect);
 Datum
 make_tuple_indirect(PG_FUNCTION_ARGS)

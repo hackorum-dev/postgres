@@ -112,6 +112,9 @@ option('libxslt', type: 'feature', value: 'auto',
 option('llvm', type: 'feature', value: 'disabled',
   description: 'LLVM support')
 
+option('simdsort', type: 'feature', value: 'auto',
+  description: 'SIMDSORT support')
+
 option('lz4', type: 'feature', value: 'auto',
   description: 'LZ4 support')
 
@@ -173,6 +176,9 @@ option('FOP', type: 'string', value: 'fop',
 
 option('GZIP', type: 'string', value: 'gzip',
   description: 'Path to gzip binary')
+
+option('SIMDSORT', type: 'string', value: 'simdsort',
+  description: 'Path to simdsort binary')
 
 option('LZ4', type: 'string', value: 'lz4',
   description: 'Path to lz4 binary')

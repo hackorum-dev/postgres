@@ -895,6 +895,28 @@ else
   libxslt = not_found_dep
 endif
 
+###############################################################
+# Library: simdsort
+###############################################################
+
+simdsortopt = get_option('simdsort')
+if not simdsortopt.disabled()
+  simdsort = dependency('x86simdsortcpp', required: false)
+  # Unfortunately the dependency is named differently with cmake
+  if not simdsort.found() # combine with above once meson 0.60.0 is required
+    simdsort = dependency('x86simdsortcpp', required: simdsortopt,
+                     method: 'cmake', modules: ['SIMDSORT::simdsort_shared'],
+                    )
+  endif
+
+  if simdsort.found()
+    cdata.set('USE_SIMDSORT', 1)
+    cdata.set('HAVE_LIBSIMDSORT', 1)
+  endif
+
+else
+  simdsort = not_found_dep
+endif
 
 
 ###############################################################
@@ -3069,6 +3091,7 @@ backend_both_deps += [
   ldap,
   libintl,
   libxml,
+  simdsort,
   lz4,
   pam,
   ssl,
@@ -3723,6 +3746,7 @@ if meson.version().version_compare('>=0.57')
       'libxml': libxml,
       'libxslt': libxslt,
       'llvm': llvm,
+      'simdsort':simdsort,
       'lz4': lz4,
       'nls': libintl,
       'openssl': ssl,

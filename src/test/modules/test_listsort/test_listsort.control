@@ -1,0 +1,5 @@
+# test_listsort extension
+comment = 'example of a custom quick sort for sorting floating point numbers'
+default_version = '1.0'
+module_pathname = '$libdir/test_listsort'
+relocatable = true

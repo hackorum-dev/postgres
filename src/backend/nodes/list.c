@@ -23,6 +23,9 @@
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
 
+#ifdef USE_SIMDSORT
+void		keyvalue_qsort_float_sizet(float *, size_t *, size_t);
+#endif
 
 /*
  * The previous List implementation, since it used a separate palloc chunk
@@ -1653,6 +1656,222 @@ list_copy_deep(const List *oldlist)
 
 	check_list_invariants(newlist);
 	return newlist;
+}
+
+#ifdef USE_SIMDSORT
+/*
+ * Checks whether the given index is in between the first and the last index of a sequence of the specified length..
+ * Returns true if the index is neither the first element nor the last element.
+ */
+static bool
+is_not_boundary(int index, int length)
+{
+	return index != 0 && index != length - 1;
+}
+
+/*
+ * Checks at the given index, if start of the tie interval is found in the key array.
+ * Returns true if the start of a tie interval is found at the given index, otherwise returns false.
+ */
+static bool
+is_start_found(int index, int length, float *key)
+{
+	if (is_not_boundary(index, length))
+	{
+		return (key[index] == key[index + 1]) && (key[index] != key[index - 1]);
+	}
+	else
+	{
+		return (index == 0) && (key[index] == key[index + 1]);
+	}
+}
+
+/*
+ * Checks at the given index, if end of the tie interval is found in the key array.
+ * Returns true if the end of the tie interval is found at the given index, otherwise returns false.
+ */
+static bool
+is_end_found(int index, int length, float *key)
+{
+	if (is_not_boundary(index, length))
+	{
+		return (key[index] != key[index + 1]) && (key[index] == key[index - 1]);
+	}
+	else
+	{
+		return (index == length - 1) && (key[index] == key[index - 1]);
+	}
+}
+
+static void
+free_list_sort_resources(float *key, size_t *arg, bool *done)
+{
+	pfree(key);
+	pfree(arg);
+	pfree(done);
+}
+
+/*
+ * Sort a list using the x86-simd-sort library.
+ *
+ * The list is sorted in-place.
+ *
+ * The extract function provides an implementation to extract a float value from each ListCell.
+ * The ListCells are sorted based on the float value.
+ *
+ * The comparator function is the same as the one required by list_sort.
+ *
+ * Like qsort(), this provides no guarantees about sort stability
+ * for equal keys.
+ */
+static void
+list_sort_simd_float_impl(List *list, list_sort_extractor_float extract, list_sort_comparator cmp)
+{
+	typedef int (*qsort_comparator) (const void *a, const void *b);
+	int			len;
+	ListCell   *list_cells;
+
+	float	   *key;
+	size_t	   *arg;
+	bool	   *done;
+
+	size_t		start;
+	size_t		end;
+	bool		start_found;
+
+	check_list_invariants(list);
+
+	len = list_length(list);
+	if (len <= 1)
+	{
+		return;
+	}
+
+	/*
+	 * The null check for this is taken care in check_list_invariants function
+	 */
+	list_cells = list->elements;
+	if (extract == NULL)
+	{
+		list_sort(list, cmp);
+		return;
+	}
+
+	/*
+	 * key array stores the float values based on which ListCells are sorted.
+	 * arg array stores the indexes corresponding to the sorted order after
+	 * sorting is done. done array tracks rearrangement of the values based on
+	 * the sorted indices
+	 */
+	key = (float *) palloc(len * sizeof(float));
+	arg = (size_t *) palloc(len * sizeof(size_t));
+	done = (bool *) palloc(len * sizeof(bool));
+
+	if (key == NULL || arg == NULL || done == NULL)
+	{
+		if (key != NULL)
+		{
+			pfree(key);
+		}
+		if (arg != NULL)
+		{
+			pfree(arg);
+		}
+		if (done != NULL)
+		{
+			pfree(done);
+		}
+		list_sort(list, cmp);
+		return;
+	}
+
+	for (size_t ii = 0; ii < len; ii++)
+	{
+		key[ii] = extract(&list_cells[ii]);
+		arg[ii] = ii;
+		done[ii] = false;
+	}
+
+	keyvalue_qsort_float_sizet(key, arg, len);
+
+	/*
+	 * The below loop rearranges each ListCell based on the sequence of
+	 * indexes stored in the arg array which represents index of the elements
+	 * in sorted order.
+	 */
+	for (size_t ii = 0; ii < len; ii++)
+	{
+		size_t		actual_index;
+		size_t		sorted_index;
+
+		if (done[ii])
+		{
+			continue;
+		}
+		done[ii] = true;
+
+		actual_index = ii;
+		sorted_index = arg[ii];
+
+		while (ii != sorted_index)
+		{
+			ListCell	temp = list_cells[actual_index];
+			ListCell	sorted_cell = list_cells[sorted_index];
+
+			list_cells[actual_index] = sorted_cell;
+			list_cells[sorted_index] = temp;
+
+			done[sorted_index] = true;
+			actual_index = sorted_index;
+			sorted_index = arg[sorted_index];
+		}
+	}
+
+	if (cmp == NULL)
+	{
+		free_list_sort_resources(key, arg, done);
+		return;
+	}
+
+	start = 0;
+	end = 0;
+	start_found = false;
+
+	for (size_t ii = 0; ii < len; ii++)
+	{
+		if (!start_found && is_start_found(ii, len, key))
+		{
+			start = ii;
+			start_found = true;
+		}
+		else if (is_end_found(ii, len, key))
+		{
+			ListCell   *start_ptr = &list_cells[start];
+
+			end = ii;
+
+			qsort(start_ptr, end - start + 1, sizeof(ListCell), (qsort_comparator) cmp);
+			start_found = false;
+		}
+	}
+
+	free_list_sort_resources(key, arg, done);
+}
+#endif
+
+/*
+ * Directs sorting to the SIMD-enabled version of list_sort if Postgres is built
+ * with x86-simd-sort support, else it directs it to list_sort.
+ */
+void
+list_sort_simd_float(List *list, list_sort_extractor_float extract, list_sort_comparator cmp)
+{
+#ifdef USE_SIMDSORT
+	list_sort_simd_float_impl(list, extract, cmp);
+#else
+	list_sort(list, cmp);
+#endif
+
 }
 
 /*

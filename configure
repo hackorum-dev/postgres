@@ -701,6 +701,9 @@ with_zstd
 LZ4_LIBS
 LZ4_CFLAGS
 with_lz4
+SIMDSORT_LIBS
+SIMDSORT_CFLAGS
+with_simdsort
 with_zlib
 with_system_tzdata
 with_libxslt
@@ -803,6 +806,7 @@ infodir
 docdir
 oldincludedir
 includedir
+runstatedir
 localstatedir
 sharedstatedir
 sysconfdir
@@ -868,6 +872,7 @@ with_libxml
 with_libxslt
 with_system_tzdata
 with_zlib
+with_simdsort
 with_lz4
 with_zstd
 with_ssl
@@ -897,6 +902,8 @@ ICU_LIBS
 XML2_CONFIG
 XML2_CFLAGS
 XML2_LIBS
+SIMDSORT_CFLAGS
+SIMDSORT_LIBS
 LZ4_CFLAGS
 LZ4_LIBS
 ZSTD_CFLAGS
@@ -945,6 +952,7 @@ datadir='${datarootdir}'
 sysconfdir='${prefix}/etc'
 sharedstatedir='${prefix}/com'
 localstatedir='${prefix}/var'
+runstatedir='${localstatedir}/run'
 includedir='${prefix}/include'
 oldincludedir='/usr/include'
 docdir='${datarootdir}/doc/${PACKAGE_TARNAME}'
@@ -1197,6 +1205,15 @@ do
   | -silent | --silent | --silen | --sile | --sil)
     silent=yes ;;
 
+  -runstatedir | --runstatedir | --runstatedi | --runstated \
+  | --runstate | --runstat | --runsta | --runst | --runs \
+  | --run | --ru | --r)
+    ac_prev=runstatedir ;;
+  -runstatedir=* | --runstatedir=* | --runstatedi=* | --runstated=* \
+  | --runstate=* | --runstat=* | --runsta=* | --runst=* | --runs=* \
+  | --run=* | --ru=* | --r=*)
+    runstatedir=$ac_optarg ;;
+
   -sbindir | --sbindir | --sbindi | --sbind | --sbin | --sbi | --sb)
     ac_prev=sbindir ;;
   -sbindir=* | --sbindir=* | --sbindi=* | --sbind=* | --sbin=* \
@@ -1334,7 +1351,7 @@ fi
 for ac_var in	exec_prefix prefix bindir sbindir libexecdir datarootdir \
 		datadir sysconfdir sharedstatedir localstatedir includedir \
 		oldincludedir docdir infodir htmldir dvidir pdfdir psdir \
-		libdir localedir mandir
+		libdir localedir mandir runstatedir
 do
   eval ac_val=\$$ac_var
   # Remove trailing slashes.
@@ -1487,6 +1504,7 @@ Fine tuning of the installation directories:
   --sysconfdir=DIR        read-only single-machine data [PREFIX/etc]
   --sharedstatedir=DIR    modifiable architecture-independent data [PREFIX/com]
   --localstatedir=DIR     modifiable single-machine data [PREFIX/var]
+  --runstatedir=DIR       modifiable per-process data [LOCALSTATEDIR/run]
   --libdir=DIR            object code libraries [EPREFIX/lib]
   --includedir=DIR        C header files [PREFIX/include]
   --oldincludedir=DIR     C header files for non-gcc [/usr/include]
@@ -1579,6 +1597,7 @@ Optional Packages:
   --with-system-tzdata=DIR
                           use system time zone data in DIR
   --without-zlib          do not use Zlib
+  --with-simdsort         build with SIMDSORT support
   --with-lz4              build with LZ4 support
   --with-zstd             build with ZSTD support
   --with-ssl=LIB          use LIB for SSL/TLS support (openssl)
@@ -1610,6 +1629,10 @@ Some influential environment variables:
   XML2_CONFIG path to xml2-config utility
   XML2_CFLAGS C compiler flags for XML2, overriding pkg-config
   XML2_LIBS   linker flags for XML2, overriding pkg-config
+  SIMDSORT_CFLAGS
+              C compiler flags for SIMDSORT, overriding pkg-config
+  SIMDSORT_LIBS
+              linker flags for SIMDSORT, overriding pkg-config
   LZ4_CFLAGS  C compiler flags for LZ4, overriding pkg-config
   LZ4_LIBS    linker flags for LZ4, overriding pkg-config
   ZSTD_CFLAGS C compiler flags for ZSTD, overriding pkg-config
@@ -9037,6 +9060,147 @@ fi
 
 
 #
+# SIMDSORT
+#
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build with SIMDSORT support" >&5
+$as_echo_n "checking whether to build with SIMDSORT support... " >&6; }
+
+
+
+# Check whether --with-simdsort was given.
+if test "${with_simdsort+set}" = set; then :
+  withval=$with_simdsort;
+  case $withval in
+    yes)
+
+$as_echo "#define USE_SIMDSORT 1" >>confdefs.h
+
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --with-simdsort option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  with_simdsort=no
+
+fi
+
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_simdsort" >&5
+$as_echo "$with_simdsort" >&6; }
+
+
+if test "$with_simdsort" = yes; then
+
+pkg_failed=no
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for x86simdsortcpp" >&5
+$as_echo_n "checking for x86simdsortcpp... " >&6; }
+
+if test -n "$SIMDSORT_CFLAGS"; then
+    pkg_cv_SIMDSORT_CFLAGS="$SIMDSORT_CFLAGS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"x86simdsortcpp\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "x86simdsortcpp") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_SIMDSORT_CFLAGS=`$PKG_CONFIG --cflags "x86simdsortcpp" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+if test -n "$SIMDSORT_LIBS"; then
+    pkg_cv_SIMDSORT_LIBS="$SIMDSORT_LIBS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"x86simdsortcpp\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "x86simdsortcpp") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_SIMDSORT_LIBS=`$PKG_CONFIG --libs "x86simdsortcpp" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+
+
+
+if test $pkg_failed = yes; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+
+if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
+        _pkg_short_errors_supported=yes
+else
+        _pkg_short_errors_supported=no
+fi
+        if test $_pkg_short_errors_supported = yes; then
+	        SIMDSORT_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "x86simdsortcpp" 2>&1`
+        else
+	        SIMDSORT_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "x86simdsortcpp" 2>&1`
+        fi
+	# Put the nasty error message in config.log where it belongs
+	echo "$SIMDSORT_PKG_ERRORS" >&5
+
+	as_fn_error $? "Package requirements (x86simdsortcpp) were not met:
+
+$SIMDSORT_PKG_ERRORS
+
+Consider adjusting the PKG_CONFIG_PATH environment variable if you
+installed software in a non-standard prefix.
+
+Alternatively, you may set the environment variables SIMDSORT_CFLAGS
+and SIMDSORT_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details." "$LINENO" 5
+elif test $pkg_failed = untried; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+	{ { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "The pkg-config script could not be found or is too old.  Make sure it
+is in your PATH or set the PKG_CONFIG environment variable to the full
+path to pkg-config.
+
+Alternatively, you may set the environment variables SIMDSORT_CFLAGS
+and SIMDSORT_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details.
+
+To get pkg-config, see <http://pkg-config.freedesktop.org/>.
+See \`config.log' for more details" "$LINENO" 5; }
+else
+	SIMDSORT_CFLAGS=$pkg_cv_SIMDSORT_CFLAGS
+	SIMDSORT_LIBS=$pkg_cv_SIMDSORT_LIBS
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+
+fi
+  # We only care about -I, -D, and -L switches;
+  # note that -lsimdsort will be added by AC_CHECK_LIB below.
+  for pgac_option in $SIMDSORT_CFLAGS; do
+    case $pgac_option in
+      -I*|-D*) CPPFLAGS="$CPPFLAGS $pgac_option";;
+    esac
+  done
+  for pgac_option in $SIMDSORT_LIBS; do
+    case $pgac_option in
+      -L*) LDFLAGS="$LDFLAGS $pgac_option";;
+    esac
+  done
+fi
+
+#
 # LZ4
 #
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build with LZ4 support" >&5
@@ -12753,6 +12917,56 @@ fi
 
 fi
 
+if test "$with_simdsort" = yes ; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for keyvalue_qsort_float_sizet in -lx86simdsortcpp" >&5
+$as_echo_n "checking for keyvalue_qsort_float_sizet in -lx86simdsortcpp... " >&6; }
+if ${ac_cv_lib_x86simdsortcpp_keyvalue_qsort_float_sizet+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lx86simdsortcpp  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char keyvalue_qsort_float_sizet ();
+int
+main ()
+{
+return keyvalue_qsort_float_sizet ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_x86simdsortcpp_keyvalue_qsort_float_sizet=yes
+else
+  ac_cv_lib_x86simdsortcpp_keyvalue_qsort_float_sizet=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_x86simdsortcpp_keyvalue_qsort_float_sizet" >&5
+$as_echo "$ac_cv_lib_x86simdsortcpp_keyvalue_qsort_float_sizet" >&6; }
+if test "x$ac_cv_lib_x86simdsortcpp_keyvalue_qsort_float_sizet" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBX86SIMDSORTCPP 1
+_ACEOF
+
+  LIBS="-lx86simdsortcpp $LIBS"
+
+else
+  as_fn_error $? "library 'x86simdsortcpp' is required for SIMDSORt support" "$LINENO" 5
+fi
+
+fi
+
 if test "$with_lz4" = yes ; then
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for LZ4_compress_default in -llz4" >&5
 $as_echo_n "checking for LZ4_compress_default in -llz4... " >&6; }
@@ -12854,6 +13068,8 @@ fi
 fi
 
 # Note: We can test for libldap_r only after we know PTHREAD_LIBS
+# also, on AIX, we may need to have openssl in LIBS for this step.
+
 if test "$with_ldap" = yes ; then
   _LIBS="$LIBS"
   if test "$PORTNAME" != "win32"; then
@@ -14785,7 +15001,7 @@ else
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -14831,7 +15047,7 @@ else
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -14855,7 +15071,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -14900,7 +15116,7 @@ else
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -14924,7 +15140,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];

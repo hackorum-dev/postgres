@@ -683,4 +683,6 @@ extern void list_sort(List *list, list_sort_comparator cmp);
 extern int	list_int_cmp(const ListCell *p1, const ListCell *p2);
 extern int	list_oid_cmp(const ListCell *p1, const ListCell *p2);
 
+typedef float (*list_sort_extractor_float) (const ListCell *a);
+extern void list_sort_simd_float(List *list, list_sort_extractor_float extract, list_sort_comparator cmp);
 #endif							/* PG_LIST_H */

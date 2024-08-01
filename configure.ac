@@ -1070,6 +1070,31 @@ PGAC_ARG_BOOL(with, zlib, yes,
 AC_SUBST(with_zlib)
 
 #
+# SIMDSORT
+#
+AC_MSG_CHECKING([whether to build with SIMDSORT support])
+PGAC_ARG_BOOL(with, simdsort, no, [build with SIMDSORT support],
+              [AC_DEFINE([USE_SIMDSORT], 1, [Define to 1 to build with SIMDSORT support. (--with-simdsort)])])
+AC_MSG_RESULT([$with_simdsort])
+AC_SUBST(with_simdsort)
+
+if test "$with_simdsort" = yes; then
+  PKG_CHECK_MODULES(SIMDSORT, x86simdsortcpp)
+  # We only care about -I, -D, and -L switches;
+  # note that -lsimdsort will be added by AC_CHECK_LIB below.
+  for pgac_option in $SIMDSORT_CFLAGS; do
+    case $pgac_option in
+      -I*|-D*) CPPFLAGS="$CPPFLAGS $pgac_option";;
+    esac
+  done
+  for pgac_option in $SIMDSORT_LIBS; do
+    case $pgac_option in
+      -L*) LDFLAGS="$LDFLAGS $pgac_option";;
+    esac
+  done
+fi
+
+#
 # LZ4
 #
 AC_MSG_CHECKING([whether to build with LZ4 support])
@@ -1353,6 +1378,10 @@ if test "$with_libxslt" = yes ; then
   AC_CHECK_LIB(xslt, xsltCleanupGlobals, [], [AC_MSG_ERROR([library 'xslt' is required for XSLT support])])
 fi
 
+if test "$with_simdsort" = yes ; then
+  AC_CHECK_LIB(x86simdsortcpp, keyvalue_qsort_float_sizet, [], [AC_MSG_ERROR([library 'x86simdsortcpp' is required for SIMDSORt support])])
+fi
+
 if test "$with_lz4" = yes ; then
   AC_CHECK_LIB(lz4, LZ4_compress_default, [], [AC_MSG_ERROR([library 'lz4' is required for LZ4 support])])
 fi
@@ -1362,6 +1391,8 @@ if test "$with_zstd" = yes ; then
 fi
 
 # Note: We can test for libldap_r only after we know PTHREAD_LIBS
+# also, on AIX, we may need to have openssl in LIBS for this step.
+
 if test "$with_ldap" = yes ; then
   _LIBS="$LIBS"
   if test "$PORTNAME" != "win32"; then
