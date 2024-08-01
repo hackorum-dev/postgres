@@ -523,11 +523,11 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  */
 void
 mdzeroextend(SMgrRelation reln, ForkNumber forknum,
-			 BlockNumber blocknum, int nblocks, bool skipFsync)
+			 BlockNumber blocknum, BlockNumber nblocks, bool skipFsync)
 {
 	MdfdVec    *v;
 	BlockNumber curblocknum = blocknum;
-	int			remblocks = nblocks;
+	int64		remblocks = nblocks;
 
 	Assert(nblocks > 0);
 
@@ -712,7 +712,7 @@ mdclose(SMgrRelation reln, ForkNumber forknum)
  */
 bool
 mdprefetch(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
-		   int nblocks)
+		   BlockNumber nblocks)
 {
 #ifdef USE_PREFETCH
 

@@ -85,9 +85,10 @@ typedef struct f_smgr
 	void		(*smgr_extend) (SMgrRelation reln, ForkNumber forknum,
 								BlockNumber blocknum, const void *buffer, bool skipFsync);
 	void		(*smgr_zeroextend) (SMgrRelation reln, ForkNumber forknum,
-									BlockNumber blocknum, int nblocks, bool skipFsync);
+									BlockNumber blocknum, BlockNumber nblocks,
+									bool skipFsync);
 	bool		(*smgr_prefetch) (SMgrRelation reln, ForkNumber forknum,
-								  BlockNumber blocknum, int nblocks);
+								  BlockNumber blocknum, BlockNumber nblocks);
 	void		(*smgr_readv) (SMgrRelation reln, ForkNumber forknum,
 							   BlockNumber blocknum,
 							   void **buffers, BlockNumber nblocks);
@@ -558,7 +559,7 @@ smgrextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  */
 void
 smgrzeroextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
-			   int nblocks, bool skipFsync)
+			   BlockNumber nblocks, bool skipFsync)
 {
 	smgrsw[reln->smgr_which].smgr_zeroextend(reln, forknum, blocknum,
 											 nblocks, skipFsync);
@@ -583,7 +584,7 @@ smgrzeroextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  */
 bool
 smgrprefetch(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
-			 int nblocks)
+			 BlockNumber nblocks)
 {
 	return smgrsw[reln->smgr_which].smgr_prefetch(reln, forknum, blocknum, nblocks);
 }

@@ -29,9 +29,10 @@ extern void mdunlink(RelFileLocatorBackend rlocator, ForkNumber forknum, bool is
 extern void mdextend(SMgrRelation reln, ForkNumber forknum,
 					 BlockNumber blocknum, const void *buffer, bool skipFsync);
 extern void mdzeroextend(SMgrRelation reln, ForkNumber forknum,
-						 BlockNumber blocknum, int nblocks, bool skipFsync);
+						 BlockNumber blocknum, BlockNumber nblocks,
+						 bool skipFsync);
 extern bool mdprefetch(SMgrRelation reln, ForkNumber forknum,
-					   BlockNumber blocknum, int nblocks);
+					   BlockNumber blocknum, BlockNumber nblocks);
 extern void mdreadv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 					void **buffers, BlockNumber nblocks);
 extern void mdwritev(SMgrRelation reln, ForkNumber forknum,
