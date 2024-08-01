@@ -240,7 +240,7 @@ typedef struct pgssEntry
 	int			encoding;		/* query text encoding */
 	TimestampTz stats_since;	/* timestamp of entry allocation */
 	TimestampTz minmax_stats_since; /* timestamp of last min/max values reset */
-	slock_t		mutex;			/* protects the counters only */
+	LWLock		mutex;			/* protects the counters only */
 } pgssEntry;
 
 /*
@@ -256,6 +256,7 @@ typedef struct pgssSharedState
 	int			n_writers;		/* number of active writers to query file */
 	int			gc_count;		/* query file garbage collection cycle count */
 	pgssGlobalStats stats;		/* global statistics for pgss */
+	int			tranche;
 } pgssSharedState;
 
 /*---- Local variables ----*/
@@ -554,6 +555,7 @@ pgss_shmem_startup(void)
 		pgss->gc_count = 0;
 		pgss->stats.dealloc = 0;
 		pgss->stats.stats_reset = GetCurrentTimestamp();
+		pgss->tranche = LWLockNewTrancheId();
 	}
 
 	info.keysize = sizeof(pgssHashKey);
@@ -564,6 +566,8 @@ pgss_shmem_startup(void)
 							  HASH_ELEM | HASH_BLOBS);
 
 	LWLockRelease(AddinShmemInitLock);
+
+	LWLockRegisterTranche(pgss->tranche, "pg_stat_statements counters");
 
 	/*
 	 * If we're in the postmaster (or a standalone backend...), set up a shmem
@@ -1411,7 +1415,7 @@ pgss_store(const char *query, int64 queryId,
 		 * Grab the spinlock while updating the counters (see comment about
 		 * locking rules at the head of the file)
 		 */
-		SpinLockAcquire(&entry->mutex);
+		LWLockAcquire(&entry->mutex, LW_EXCLUSIVE);
 
 		/* "Unstick" entry if it was previously sticky */
 		if (IS_STICKY(entry->counters))
@@ -1511,7 +1515,7 @@ pgss_store(const char *query, int64 queryId,
 		else if (planOrigin == PLAN_STMT_CACHE_CUSTOM)
 			entry->counters.custom_plan_calls++;
 
-		SpinLockRelease(&entry->mutex);
+		LWLockRelease(&entry->mutex);
 	}
 
 done:
@@ -1901,9 +1905,9 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 		}
 
 		/* copy counters to a local variable to keep locking time short */
-		SpinLockAcquire(&entry->mutex);
+		LWLockAcquire(&entry->mutex, LW_SHARED);
 		tmp = entry->counters;
-		SpinLockRelease(&entry->mutex);
+		LWLockRelease(&entry->mutex);
 
 		/*
 		 * The spinlock is not required when reading these two as they are
@@ -2134,7 +2138,7 @@ entry_alloc(pgssHashKey *key, Size query_offset, int query_len, int encoding,
 		/* set the appropriate initial usage count */
 		entry->counters.usage = sticky ? pgss->cur_median_usage : USAGE_INIT;
 		/* re-initialize the mutex each time ... we assume no one using it */
-		SpinLockInit(&entry->mutex);
+		LWLockInitialize(&entry->mutex, pgss->tranche);
 		/* ... and don't forget the query text metadata */
 		Assert(query_len >= 0);
 		entry->query_offset = query_offset;
