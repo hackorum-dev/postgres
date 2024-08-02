@@ -567,11 +567,11 @@ ProcLockHashCode(const PROCLOCKTAG *proclocktag, uint32 hashcode)
  * Given two lock modes, return whether they would conflict.
  */
 bool
-DoLockModesConflict(LOCKMODE mode1, LOCKMODE mode2)
+DoLockModesConflict(LOCKMODE lockmode1, LOCKMODE lockmode2)
 {
 	LockMethod	lockMethodTable = LockMethods[DEFAULT_LOCKMETHOD];
 
-	if (lockMethodTable->conflictTab[mode1] & LOCKBIT_ON(mode2))
+	if (lockMethodTable->conflictTab[lockmode1] & LOCKBIT_ON(lockmode2))
 		return true;
 
 	return false;
@@ -4057,11 +4057,11 @@ GetRunningTransactionLocks(int *nlocks)
 
 /* Provide the textual name of any lock mode */
 const char *
-GetLockmodeName(LOCKMETHODID lockmethodid, LOCKMODE mode)
+GetLockmodeName(LOCKMETHODID lockmethodid, LOCKMODE lockmode)
 {
 	Assert(lockmethodid > 0 && lockmethodid < lengthof(LockMethods));
-	Assert(mode > 0 && mode <= LockMethods[lockmethodid]->numLockModes);
-	return LockMethods[lockmethodid]->lockModeNames[mode];
+	Assert(lockmode > 0 && lockmode <= LockMethods[lockmethodid]->numLockModes);
+	return LockMethods[lockmethodid]->lockModeNames[lockmode];
 }
 
 #ifdef LOCK_DEBUG

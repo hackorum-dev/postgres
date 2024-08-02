@@ -756,7 +756,7 @@ vacuum_is_permitted_for_relation(Oid relid, Form_pg_class reltuple,
  */
 Relation
 vacuum_open_relation(Oid relid, RangeVar *relation, bits32 options,
-					 bool verbose, LOCKMODE lmode)
+					 bool verbose, LOCKMODE lockmode)
 {
 	Relation	rel;
 	bool		rel_lock = true;
@@ -774,8 +774,8 @@ vacuum_open_relation(Oid relid, RangeVar *relation, bits32 options,
 	 * in non-blocking mode, before calling try_relation_open().
 	 */
 	if (!(options & VACOPT_SKIP_LOCKED))
-		rel = try_relation_open(relid, lmode);
-	else if (ConditionalLockRelationOid(relid, lmode))
+		rel = try_relation_open(relid, lockmode);
+	else if (ConditionalLockRelationOid(relid, lockmode))
 		rel = try_relation_open(relid, NoLock);
 	else
 	{

@@ -344,7 +344,7 @@ extern bool vacuum_is_permitted_for_relation(Oid relid, Form_pg_class reltuple,
 											 bits32 options);
 extern Relation vacuum_open_relation(Oid relid, RangeVar *relation,
 									 bits32 options, bool verbose,
-									 LOCKMODE lmode);
+									 LOCKMODE lockmode);
 extern IndexBulkDeleteResult *vac_bulkdel_one_index(IndexVacuumInfo *ivinfo,
 													IndexBulkDeleteResult *istat,
 													TidStore *dead_items,

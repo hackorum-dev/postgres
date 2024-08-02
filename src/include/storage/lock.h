@@ -548,7 +548,7 @@ extern void InitLocks(void);
 extern LockMethod GetLocksMethodTable(const LOCK *lock);
 extern LockMethod GetLockTagsMethodTable(const LOCKTAG *locktag);
 extern uint32 LockTagHashCode(const LOCKTAG *locktag);
-extern bool DoLockModesConflict(LOCKMODE mode1, LOCKMODE mode2);
+extern bool DoLockModesConflict(LOCKMODE lockmode1, LOCKMODE lockmode2);
 extern LockAcquireResult LockAcquire(const LOCKTAG *locktag,
 									 LOCKMODE lockmode,
 									 bool sessionLock,
@@ -589,7 +589,7 @@ extern LockData *GetLockStatusData(void);
 extern BlockedProcsData *GetBlockerStatusData(int blocked_pid);
 
 extern xl_standby_lock *GetRunningTransactionLocks(int *nlocks);
-extern const char *GetLockmodeName(LOCKMETHODID lockmethodid, LOCKMODE mode);
+extern const char *GetLockmodeName(LOCKMETHODID lockmethodid, LOCKMODE lockmode);
 
 extern void lock_twophase_recover(TransactionId xid, uint16 info,
 								  void *recdata, uint32 len);
