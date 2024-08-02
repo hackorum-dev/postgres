@@ -160,7 +160,7 @@ static BufMgrCleanup * cleanups = NULL; /* head of linked list */
 typedef struct RelFileForks
 {
 	RelFileLocator rloc;	 /* key member for qsort */
-	ForkBitmap	   forks;	 /* fork number in bitmap */
+	ForkBitmap	   forks;	 /* fork numbers in bitmap */
 } RelFileForks;
 
 /* GUC variables */

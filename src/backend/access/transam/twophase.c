@@ -203,6 +203,7 @@ static void RecordTransactionCommitPrepared(TransactionId xid,
 											TransactionId *children,
 											int nrels,
 											RelFileLocator *rels,
+											ForkBitmap *forks,
 											int nstats,
 											xl_xact_stats_item *stats,
 											int ninvalmsgs,
@@ -214,6 +215,7 @@ static void RecordTransactionAbortPrepared(TransactionId xid,
 										   TransactionId *children,
 										   int nrels,
 										   RelFileLocator *rels,
+										   ForkBitmap *forks,
 										   int nstats,
 										   xl_xact_stats_item *stats,
 										   const char *gid);
@@ -1089,7 +1091,9 @@ StartPrepare(GlobalTransaction gxact)
 	TwoPhaseFileHeader hdr;
 	TransactionId *children;
 	RelFileLocator *commitrels;
+	ForkBitmap	   *commitforks = NULL;
 	RelFileLocator *abortrels;
+	ForkBitmap	   *abortforks = NULL;
 	xl_xact_stats_item *abortstats = NULL;
 	xl_xact_stats_item *commitstats = NULL;
 	SharedInvalidationMessage *invalmsgs;
@@ -1116,7 +1120,9 @@ StartPrepare(GlobalTransaction gxact)
 	hdr.owner = gxact->owner;
 	hdr.nsubxacts = xactGetCommittedChildren(&children);
 	hdr.ncommitrels = smgrGetPendingDeletes(true, &commitrels);
+	hdr.comhasforks = false;
 	hdr.nabortrels = smgrGetPendingDeletes(false, &abortrels);
+	hdr.abohasforks = false;
 	hdr.ncommitstats =
 		pgstat_get_transactional_drops(true, &commitstats);
 	hdr.nabortstats =
@@ -1145,11 +1151,23 @@ StartPrepare(GlobalTransaction gxact)
 	{
 		save_state_data(commitrels, hdr.ncommitrels * sizeof(RelFileLocator));
 		pfree(commitrels);
+
+		if (hdr.comhasforks)
+		{
+			save_state_data(commitforks, hdr.ncommitrels * sizeof(ForkBitmap));
+			pfree(commitforks);
+		}
 	}
 	if (hdr.nabortrels > 0)
 	{
 		save_state_data(abortrels, hdr.nabortrels * sizeof(RelFileLocator));
 		pfree(abortrels);
+
+		if (hdr.abohasforks)
+		{
+			save_state_data(abortforks, hdr.nabortrels * sizeof(ForkBitmap));
+			pfree(abortforks);
+		}
 	}
 	if (hdr.ncommitstats > 0)
 	{
@@ -1532,8 +1550,11 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	TransactionId latestXid;
 	TransactionId *children;
 	RelFileLocator *commitrels;
+	ForkBitmap	   *commitforks = NULL;
 	RelFileLocator *abortrels;
+	ForkBitmap	   *abortforks = NULL;
 	RelFileLocator *delrels;
+	ForkBitmap	   *delforks = NULL;
 	int			ndelrels;
 	xl_xact_stats_item *commitstats;
 	xl_xact_stats_item *abortstats;
@@ -1595,7 +1616,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	if (isCommit)
 		RecordTransactionCommitPrepared(xid,
 										hdr->nsubxacts, children,
-										hdr->ncommitrels, commitrels,
+										hdr->ncommitrels,
+										commitrels, commitforks,
 										hdr->ncommitstats,
 										commitstats,
 										hdr->ninvalmsgs, invalmsgs,
@@ -1603,7 +1625,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	else
 		RecordTransactionAbortPrepared(xid,
 									   hdr->nsubxacts, children,
-									   hdr->nabortrels, abortrels,
+									   hdr->nabortrels,
+									   abortrels, abortforks,
 									   hdr->nabortstats,
 									   abortstats,
 									   gid);
@@ -1624,6 +1647,9 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	 */
 	gxact->valid = false;
 
+	/* Currently, prepare info should not have per-fork storage information. */
+	Assert(!commitforks);
+
 	/*
 	 * We have to remove any files that were supposed to be dropped. For
 	 * consistency with the regular xact.c code paths, must do this before
@@ -1635,15 +1661,17 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	{
 		delrels = commitrels;
 		ndelrels = hdr->ncommitrels;
+		delforks = commitforks;
 	}
 	else
 	{
 		delrels = abortrels;
 		ndelrels = hdr->nabortrels;
+		delforks = abortforks;
 	}
 
 	/* Make sure files supposed to be dropped are dropped */
-	DropRelationFiles(delrels, ndelrels, false);
+	DropRelationFiles(delrels, delforks, ndelrels, false);
 
 	if (isCommit)
 		pgstat_execute_transactional_drops(hdr->ncommitstats, commitstats, false);
@@ -2337,7 +2365,7 @@ RecordTransactionCommitPrepared(TransactionId xid,
 								int nchildren,
 								TransactionId *children,
 								int nrels,
-								RelFileLocator *rels,
+								RelFileLocator *rels, ForkBitmap *forks,
 								int nstats,
 								xl_xact_stats_item *stats,
 								int ninvalmsgs,
@@ -2368,7 +2396,7 @@ RecordTransactionCommitPrepared(TransactionId xid,
 	 * not they do.
 	 */
 	recptr = XactLogCommitRecord(committs,
-								 nchildren, children, nrels, rels,
+								 nchildren, children, nrels, rels, forks,
 								 nstats, stats,
 								 ninvalmsgs, invalmsgs,
 								 initfileinval,
@@ -2436,6 +2464,7 @@ RecordTransactionAbortPrepared(TransactionId xid,
 							   TransactionId *children,
 							   int nrels,
 							   RelFileLocator *rels,
+							   ForkBitmap *forks,
 							   int nstats,
 							   xl_xact_stats_item *stats,
 							   const char *gid)
@@ -2466,8 +2495,7 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	 * not they do.
 	 */
 	recptr = XactLogAbortRecord(GetCurrentTimestamp(),
-								nchildren, children,
-								nrels, rels,
+								nchildren, children, nrels, rels, forks,
 								nstats, stats,
 								MyXactFlags | XACT_FLAGS_ACQUIREDACCESSEXCLUSIVELOCK,
 								xid, gid);

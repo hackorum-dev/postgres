@@ -1319,6 +1319,7 @@ RecordTransactionCommit(void)
 	TransactionId latestXid = InvalidTransactionId;
 	int			nrels;
 	RelFileLocator *rels;
+	ForkBitmap	   *forks = NULL;
 	int			nchildren;
 	TransactionId *children;
 	int			ndroppedstats = 0;
@@ -1440,7 +1441,7 @@ RecordTransactionCommit(void)
 		 * Insert the commit XLOG record.
 		 */
 		XactLogCommitRecord(GetCurrentTransactionStopTimestamp(),
-							nchildren, children, nrels, rels,
+							nchildren, children, nrels, rels, forks,
 							ndroppedstats, droppedstats,
 							nmsgs, invalMessages,
 							RelcacheInitFileInval,
@@ -1757,6 +1758,7 @@ RecordTransactionAbort(bool isSubXact)
 	TransactionId latestXid;
 	int			nrels;
 	RelFileLocator *rels;
+	ForkBitmap	   *forks = NULL;
 	int			ndroppedstats = 0;
 	xl_xact_stats_item *droppedstats = NULL;
 	int			nchildren;
@@ -1818,7 +1820,7 @@ RecordTransactionAbort(bool isSubXact)
 
 	XactLogAbortRecord(xact_time,
 					   nchildren, children,
-					   nrels, rels,
+					   nrels, rels, forks,
 					   ndroppedstats, droppedstats,
 					   MyXactFlags, InvalidTransactionId,
 					   NULL);
@@ -5819,7 +5821,7 @@ xactGetCommittedChildren(TransactionId **ptr)
 XLogRecPtr
 XactLogCommitRecord(TimestampTz commit_time,
 					int nsubxacts, TransactionId *subxacts,
-					int nrels, RelFileLocator *rels,
+					int nrels, RelFileLocator *rels, ForkBitmap *forks,
 					int ndroppedstats, xl_xact_stats_item *droppedstats,
 					int nmsgs, SharedInvalidationMessage *msgs,
 					bool relcacheInval,
@@ -5887,6 +5889,9 @@ XactLogCommitRecord(TimestampTz commit_time,
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILELOCATORS;
 		xl_relfilelocators.nrels = nrels;
 		info |= XLR_SPECIAL_REL_UPDATE;
+
+		if (forks)
+			xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILEFORKS;
 	}
 
 	if (ndroppedstats > 0)
@@ -5949,6 +5954,10 @@ XactLogCommitRecord(TimestampTz commit_time,
 						 MinSizeOfXactRelfileLocators);
 		XLogRegisterData((char *) rels,
 						 nrels * sizeof(RelFileLocator));
+
+		if (xl_xinfo.xinfo & XACT_XINFO_HAS_RELFILEFORKS)
+			XLogRegisterData((char *) forks,
+							 nrels * sizeof(ForkBitmap));
 	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DROPPED_STATS)
@@ -5991,7 +6000,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 XLogRecPtr
 XactLogAbortRecord(TimestampTz abort_time,
 				   int nsubxacts, TransactionId *subxacts,
-				   int nrels, RelFileLocator *rels,
+				   int nrels, RelFileLocator *rels, ForkBitmap *forks,
 				   int ndroppedstats, xl_xact_stats_item *droppedstats,
 				   int xactflags, TransactionId twophase_xid,
 				   const char *twophase_gid)
@@ -6036,6 +6045,9 @@ XactLogAbortRecord(TimestampTz abort_time,
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILELOCATORS;
 		xl_relfilelocators.nrels = nrels;
 		info |= XLR_SPECIAL_REL_UPDATE;
+
+		if (forks)
+			xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILEFORKS;
 	}
 
 	if (ndroppedstats > 0)
@@ -6102,6 +6114,10 @@ XactLogAbortRecord(TimestampTz abort_time,
 						 MinSizeOfXactRelfileLocators);
 		XLogRegisterData((char *) rels,
 						 nrels * sizeof(RelFileLocator));
+
+		if (xl_xinfo.xinfo & XACT_XINFO_HAS_RELFILEFORKS)
+			XLogRegisterData((char *) forks,
+							 nrels * sizeof(ForkBitmap));
 	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DROPPED_STATS)
@@ -6242,7 +6258,8 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		XLogFlush(lsn);
 
 		/* Make sure files supposed to be dropped are dropped */
-		DropRelationFiles(parsed->xlocators, parsed->nrels, true);
+		DropRelationFiles(parsed->xlocators, parsed->xforks, parsed->nrels,
+						  true);
 	}
 
 	AtEOXact_UndoLog(xid);
@@ -6356,7 +6373,8 @@ xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid,
 		 */
 		XLogFlush(lsn);
 
-		DropRelationFiles(parsed->xlocators, parsed->nrels, true);
+		DropRelationFiles(parsed->xlocators, parsed->xforks, parsed->nrels,
+						  true);
 	}
 
 	AtEOXact_UndoLog(xid);
