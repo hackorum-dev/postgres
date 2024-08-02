@@ -64,6 +64,7 @@ int			wal_skip_threshold = 2048;	/* in kilobytes */
 typedef struct PendingRelDelete
 {
 	RelFileLocator rlocator;	/* relation that may need to be deleted */
+	ForkBitmap	forks;			/* fork bitmap */
 	ProcNumber	procNumber;		/* INVALID_PROC_NUMBER if not a temp rel */
 	bool		atCommit;		/* T=delete at commit; F=delete at abort */
 	int			nestLevel;		/* xact nesting level of request */
@@ -187,18 +188,48 @@ RelationCreateFork(SMgrRelation srel, ForkNumber forkNum,
 	/* Schedule the removal of this init fork at abort if requested. */
 	if (undo_log)
 	{
-		PendingRelDelete *pending;
+		bool found = false;
 
 		ulog_smgrcreate(srel, forkNum);
 
-		pending = (PendingRelDelete *)
-			MemoryContextAlloc(TopMemoryContext, sizeof(PendingRelDelete));
-		pending->rlocator = srel->smgr_rlocator.locator;
-		pending->procNumber = INVALID_PROC_NUMBER;
-		pending->atCommit = false;	/* delete if abort */
-		pending->nestLevel = GetCurrentTransactionNestLevel();
-		pending->next = pendingDeletes;
-		pendingDeletes = pending;
+		/* Update exiting entry if any */
+		for (PendingRelDelete *p = pendingDeletes ; p != NULL ; p = p->next)
+		{
+			if (!p->atCommit &&
+				RelFileLocatorEquals(srel->smgr_rlocator.locator,
+									 p->rlocator))
+			{
+				Assert(p->procNumber == INVALID_PROC_NUMBER);
+				/* we mustn't have an entry when creating a main fork */
+				Assert(forkNum != MAIN_FORKNUM);
+				found = true;
+				FORKBITMAP_SET(p->forks, forkNum);
+				break;
+			}
+		}
+
+		/* Otherwise, add a new entry. */
+		if (!found)
+		{
+			PendingRelDelete *pending;
+
+			pending = (PendingRelDelete *)
+				MemoryContextAlloc(TopMemoryContext, sizeof(PendingRelDelete));
+			pending->rlocator = srel->smgr_rlocator.locator;
+			/*
+			 * Creating a main fork means that pending deletes must remove all
+			 * forks at abort.
+			 */
+			if (forkNum == MAIN_FORKNUM)
+				pending->forks = FORKBITMAP_ALLFORKS();
+			else
+				pending->forks = FORKBITMAP_BIT(forkNum);
+			pending->procNumber = INVALID_PROC_NUMBER;
+			pending->atCommit = false;	/* delete if abort */
+			pending->nestLevel = GetCurrentTransactionNestLevel();
+			pending->next = pendingDeletes;
+			pendingDeletes = pending;
+		}
 	}
 
 	/* WAL-log this creation if requested. */
@@ -292,6 +323,7 @@ RelationDropStorage(Relation rel)
 	pending = (PendingRelDelete *)
 		MemoryContextAlloc(TopMemoryContext, sizeof(PendingRelDelete));
 	pending->rlocator = rel->rd_locator;
+	pending->forks = FORKBITMAP_ALLFORKS();
 	pending->procNumber = rel->rd_backend;
 	pending->atCommit = true;	/* delete if commit */
 	pending->nestLevel = GetCurrentTransactionNestLevel();
@@ -343,6 +375,8 @@ RelationPreserveStorage(RelFileLocator rlocator, bool atCommit)
 		if (RelFileLocatorEquals(rlocator, pending->rlocator)
 			&& pending->atCommit == atCommit)
 		{
+			Assert(pending->forks == FORKBITMAP_ALLFORKS());
+
 			found = true;
 
 			/* unlink and delete list entry */
@@ -696,7 +730,7 @@ SerializePendingSyncs(Size maxSize, char *startAddress)
 
 	/* remove deleted rnodes */
 	for (delete = pendingDeletes; delete != NULL; delete = delete->next)
-		if (delete->atCommit)
+		if (delete->atCommit && delete->forks == FORKBITMAP_ALLFORKS())
 			(void) hash_search(tmphash, &delete->rlocator,
 							   HASH_REMOVE, NULL);
 
@@ -750,6 +784,7 @@ smgrDoPendingDeletes(bool isCommit)
 	int			nrels = 0,
 				maxrels = 0;
 	SMgrRelation *srels = NULL;
+	ForkBitmap	 *forks = NULL;
 
 	prev = NULL;
 	for (pending = pendingDeletes; pending != NULL; pending = next)
@@ -772,6 +807,8 @@ smgrDoPendingDeletes(bool isCommit)
 			{
 				SMgrRelation srel;
 
+				Assert(pending->forks == FORKBITMAP_ALLFORKS());
+
 				srel = smgropen(pending->rlocator, pending->procNumber);
 
 				/* allocate the initial array, or extend it, if needed */
@@ -784,7 +821,25 @@ smgrDoPendingDeletes(bool isCommit)
 				{
 					maxrels *= 2;
 					srels = repalloc(srels, sizeof(SMgrRelation) * maxrels);
+
+					/* expand forks array if any */
+					if (forks)
+						forks = repalloc(forks, sizeof(ForkBitmap) * maxrels);
 				}
+
+				/* Create forks array on encountering partial forks. */
+				Assert((pending->forks & ~FORKBITMAP_ALLFORKS()) == 0);
+				if (!forks && pending->forks != FORKBITMAP_ALLFORKS())
+				{
+					forks = palloc(sizeof(ForkBitmap) * maxrels);
+
+					/* fill in the past elements */
+					for (int i = 0 ; i < nrels ; i++)
+						forks[i] = FORKBITMAP_ALLFORKS();
+				}
+
+				if (forks)
+					forks[nrels] = pending->forks;
 
 				srels[nrels++] = srel;
 			}
@@ -796,12 +851,15 @@ smgrDoPendingDeletes(bool isCommit)
 
 	if (nrels > 0)
 	{
-		smgrdounlinkall(srels, NULL, nrels, false);
+		smgrdounlinkall(srels, forks, nrels, false);
 
 		for (int i = 0; i < nrels; i++)
 			smgrclose(srels[i]);
 
 		pfree(srels);
+
+		if (forks)
+			pfree(forks);
 	}
 }
 
@@ -961,27 +1019,42 @@ smgrDoPendingSyncs(bool isCommit, bool isParallelWorker)
  * by upper-level transactions.
  */
 int
-smgrGetPendingDeletes(bool forCommit, RelFileLocator **ptr)
+smgrGetPendingDeletes(bool forCommit, RelFileLocator **ptr, ForkBitmap **fptr)
 {
 	int			nestLevel = GetCurrentTransactionNestLevel();
 	int			nrels;
+	bool		hasforks = false;
 	RelFileLocator *rptr;
+	ForkBitmap	   *rfptr = NULL;
 	PendingRelDelete *pending;
 
 	nrels = 0;
 	for (pending = pendingDeletes; pending != NULL; pending = pending->next)
 	{
+		Assert((pending->forks & ~FORKBITMAP_ALLFORKS()) == 0);
+
 		if (pending->nestLevel >= nestLevel && pending->atCommit == forCommit
 			&& pending->procNumber == INVALID_PROC_NUMBER)
+		{
 			nrels++;
+
+			if (pending->forks != FORKBITMAP_ALLFORKS())
+				hasforks = true;
+		}
 	}
 	if (nrels == 0)
 	{
 		*ptr = NULL;
+		*fptr = NULL;
 		return 0;
 	}
 	rptr = (RelFileLocator *) palloc(nrels * sizeof(RelFileLocator));
 	*ptr = rptr;
+
+	if (hasforks)
+		rfptr = (ForkBitmap *) palloc(nrels * sizeof(ForkBitmap));
+	*fptr = rfptr;
+
 	for (pending = pendingDeletes; pending != NULL; pending = pending->next)
 	{
 		if (pending->nestLevel >= nestLevel && pending->atCommit == forCommit
@@ -989,6 +1062,12 @@ smgrGetPendingDeletes(bool forCommit, RelFileLocator **ptr)
 		{
 			*rptr = pending->rlocator;
 			rptr++;
+
+			if (rfptr)
+			{
+				*rfptr = pending->forks;
+				rfptr++;
+			}
 		}
 	}
 	return nrels;

@@ -1091,9 +1091,10 @@ StartPrepare(GlobalTransaction gxact)
 	TwoPhaseFileHeader hdr;
 	TransactionId *children;
 	RelFileLocator *commitrels;
-	ForkBitmap	   *commitforks = NULL;
+	ForkBitmap	   *commitforks;
 	RelFileLocator *abortrels;
-	ForkBitmap	   *abortforks = NULL;
+	ForkBitmap	   *abortforks;
+
 	xl_xact_stats_item *abortstats = NULL;
 	xl_xact_stats_item *commitstats = NULL;
 	SharedInvalidationMessage *invalmsgs;
@@ -1119,10 +1120,10 @@ StartPrepare(GlobalTransaction gxact)
 	hdr.prepared_at = gxact->prepared_at;
 	hdr.owner = gxact->owner;
 	hdr.nsubxacts = xactGetCommittedChildren(&children);
-	hdr.ncommitrels = smgrGetPendingDeletes(true, &commitrels);
-	hdr.comhasforks = false;
-	hdr.nabortrels = smgrGetPendingDeletes(false, &abortrels);
-	hdr.abohasforks = false;
+	hdr.ncommitrels = smgrGetPendingDeletes(true, &commitrels, &commitforks);
+	hdr.comhasforks = (commitforks != NULL);
+	hdr.nabortrels = smgrGetPendingDeletes(false, &abortrels, &abortforks);
+	hdr.abohasforks = (abortforks != NULL);
 	hdr.ncommitstats =
 		pgstat_get_transactional_drops(true, &commitstats);
 	hdr.nabortstats =
@@ -1591,7 +1592,17 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	commitrels = (RelFileLocator *) bufptr;
 	bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileLocator));
 	abortrels = (RelFileLocator *) bufptr;
+	if (hdr->comhasforks)
+	{
+		commitforks = (ForkBitmap *) bufptr;
+		bufptr += MAXALIGN(hdr->ncommitrels * sizeof(ForkBitmap));
+	}
 	bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileLocator));
+	if (hdr->abohasforks)
+	{
+		abortforks = (ForkBitmap *) bufptr;
+		bufptr += MAXALIGN(hdr->nabortrels * sizeof(ForkBitmap));
+	}
 	commitstats = (xl_xact_stats_item *) bufptr;
 	bufptr += MAXALIGN(hdr->ncommitstats * sizeof(xl_xact_stats_item));
 	abortstats = (xl_xact_stats_item *) bufptr;
