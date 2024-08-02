@@ -818,6 +818,7 @@ ForeignServer
 ForeignServerInfo
 ForeignTable
 ForeignTruncateInfo
+ForkBitmap
 ForkNumber
 FormData_pg_aggregate
 FormData_pg_am
