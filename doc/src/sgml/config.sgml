@@ -13070,6 +13070,26 @@ dynamic_library_path = '/usr/local/lib/postgresql:$libdir'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-trace-connection-negotiation" xreflabel="trace_connection_negotiation">
+      <term><varname>trace_connection_negotiation</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>trace_connection_negotiation</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        If on, log information about encryption negotiation packets for
+        each client connection.  This can be useful for debugging
+        client connectivity issues from the server side.  The log messages do
+        not contain sensitive information like encryption keys.
+       </para>
+       <para>
+        This parameter can only be set in the
+        <filename>postgresql.conf</filename> file or on the server command line.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-trace-notify" xreflabel="trace_notify">
       <term><varname>trace_notify</varname> (<type>boolean</type>)
       <indexterm>
