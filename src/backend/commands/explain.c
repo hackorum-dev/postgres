@@ -16,6 +16,7 @@
 #include "access/relscan.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
+#include "catalog/namespace.h"
 #include "commands/createas.h"
 #include "commands/defrem.h"
 #include "commands/explain.h"
@@ -27,6 +28,7 @@
 #include "jit/jit.h"
 #include "libpq/pqformat.h"
 #include "libpq/protocol.h"
+#include "miscadmin.h"
 #include "nodes/extensible.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -335,6 +337,10 @@ standard_ExplainOneQuery(Query *query, int cursorOptions,
 	MemoryContext planner_ctx = NULL;
 	MemoryContext saved_ctx = NULL;
 
+	Oid			save_userid = InvalidOid;
+	int			save_sec_context = 0;
+	int			save_nestlevel = 0;
+
 	if (es->memory)
 	{
 		/*
@@ -354,6 +360,24 @@ standard_ExplainOneQuery(Query *query, int cursorOptions,
 	if (es->buffers)
 		bufusage_start = pgBufferUsage;
 	INSTR_TIME_SET_CURRENT(planstart);
+
+	/*
+	 * For CREATE MATERIALIZED VIEW command, switch to the owner's userid, so
+	 * that any functions are run as that user.  Also lock down security-restricted
+	 * operations and arrange to make GUC variable changes local to this command.
+	 */
+	if (into && into->viewQuery)
+	{
+		Oid	nspid = RangeVarGetCreationNamespace(into->rel);
+
+		into->rel = makeRangeVar(get_namespace_name(nspid), into->rel->relname, -1);
+
+		GetUserIdAndSecContext(&save_userid, &save_sec_context);
+		SetUserIdAndSecContext(save_userid,
+							   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+		save_nestlevel = NewGUCNestLevel();
+		RestrictSearchPath();
+	}
 
 	/* plan the query */
 	plan = pg_plan_query(query, queryString, cursorOptions, params, es);
@@ -378,6 +402,16 @@ standard_ExplainOneQuery(Query *query, int cursorOptions,
 	ExplainOnePlan(plan, into, es, queryString, params, queryEnv,
 				   &planduration, (es->buffers ? &bufusage : NULL),
 				   es->memory ? &mem_counters : NULL);
+
+	/* CREATE MATERIALIZED VIEW command */
+	if (into && into->viewQuery)
+	{
+		/* Roll back any GUC changes */
+		AtEOXact_GUC(false, save_nestlevel);
+
+		/* Restore userid and security context */
+		SetUserIdAndSecContext(save_userid, save_sec_context);
+	}
 }
 
 /*
