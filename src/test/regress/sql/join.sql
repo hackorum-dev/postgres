@@ -2952,3 +2952,57 @@ SELECT t1.a FROM skip_fetch t1 LEFT JOIN skip_fetch t2 ON t2.a = 1 WHERE t2.a IS
 
 RESET enable_indexonlyscan;
 RESET enable_seqscan;
+
+-- Test USING with system columns
+
+-- Generate 2 tables with 3 rows each.
+-- xmin (transaction number) is an integer value represented as T1, T2, etc.
+-- The xmin values of the first and second rows are equal to each other,
+-- respectively. The values T3 and T4 of the third rows are not equal.
+-- J1: id1 | xmin      J2: id2 | xmin
+--     ----+-------       -----+-------
+--       1 | T1            101 | T1
+--       2 | T2            102 | T2
+--       3 | T3            103 | T4
+CREATE TABLE j1 (id1 INT);
+CREATE TABLE j2 (id2 INT);
+BEGIN;
+  INSERT INTO j1 (id1) VALUES (1);
+  INSERT INTO j2 (id2) VALUES (101);
+COMMIT;
+BEGIN;
+  INSERT INTO j1 (id1) VALUES (2);
+  INSERT INTO j2 (id2) VALUES (102);
+COMMIT;
+BEGIN;
+  INSERT INTO j1 (id1) VALUES (3);
+COMMIT;
+BEGIN;
+  INSERT INTO j2 (id2) VALUES (103);
+COMMIT;
+
+-- The xmin values are not output, as they will differ with each run.
+-- So, only the column headers and the values of id1 and id2 are displayed.
+SELECT * FROM j1 JOIN j2 USING (xmin) LIMIT 0;
+SELECT j1.id1, j2.id2 FROM j1 JOIN j2 USING (xmin);
+SELECT * FROM j1 LEFT JOIN j2 USING (xmin) LIMIT 0;
+SELECT j1.id1, j2.id2 FROM j1 LEFT JOIN j2 USING (xmin);
+SELECT * FROM j1 RIGHT JOIN j2 USING (xmin) LIMIT 0;
+SELECT j1.id1, j2.id2 FROM j1 RIGHT JOIN j2 USING (xmin);
+SELECT * FROM j1 FULL JOIN j2 USING (xmin) LIMIT 0;
+SELECT j1.id1, j2.id2 FROM j1 FULL JOIN j2 USING (xmin);
+-- Test if USING can add all system columns at once
+SELECT *
+  FROM j1 JOIN j2 USING (tableoid, xmin, cmin, xmax, cmax, ctid);
+-- Test USING exceptions
+SELECT * FROM j1 JOIN j2 USING (id2);
+SELECT * FROM j1 JOIN j2 USING (id1);
+WITH j1_dubbed AS (SELECT id1, id1 FROM j1)
+  SELECT * FROM j1_dubbed JOIN j1 USING (id1);
+WITH j1_dubbed AS (SELECT id1, id1 FROM j1)
+  SELECT * FROM j1 JOIN j1_dubbed USING (id1);
+-- Test multiple USING joins, each based on the prior result.
+CREATE TABLE j3 (id3 INT);
+SELECT * FROM j1 JOIN j2 USING (xmin) JOIN j3 USING (xmin) LIMIT 0;
+
+DROP TABLE j1, J2, J3;

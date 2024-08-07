@@ -24,6 +24,7 @@
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_type.h"
+#include "catalog/heap.h"
 #include "commands/defrem.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -76,6 +77,10 @@ static Node *transformFromClauseItem(ParseState *pstate, Node *n,
 									 List **namespace);
 static Var *buildVarFromNSColumn(ParseState *pstate,
 								 ParseNamespaceColumn *nscol);
+static Var *buildVarFromSystemAttribute(ParseState *pstate,
+										int rtindex, int attnum);
+static void fillNSColumnParametersFromVar(ParseNamespaceColumn *rescolumn,
+										  const Var *colvar);
 static Node *buildMergedJoinVar(ParseState *pstate, JoinType jointype,
 								Var *l_colvar, Var *r_colvar);
 static void markRelsAsNulledBy(ParseState *pstate, Node *n, int jindex);
@@ -273,7 +278,16 @@ extractRemainingColumns(ParseState *pstate,
 	prevcols = NULL;
 	foreach(lc, *src_colnos)
 	{
-		prevcols = bms_add_member(prevcols, lfirst_int(lc));
+		int col_index = lfirst_int(lc);
+		if (col_index < 0)
+		{
+			/*
+			 * Attribute number of system column. Don't collect the number
+			 * because the name of this column cannot be among src_colnames.
+			 */
+			continue;
+		}
+		prevcols = bms_add_member(prevcols, col_index);
 	}
 
 	attnum = 0;
@@ -326,10 +340,6 @@ transformJoinUsingClause(ParseState *pstate,
 		Var		   *lvar = (Var *) lfirst(lvars);
 		Var		   *rvar = (Var *) lfirst(rvars);
 		A_Expr	   *e;
-
-		/* Require read access to the join variables */
-		markVarForSelectPriv(pstate, lvar);
-		markVarForSelectPriv(pstate, rvar);
 
 		/* Now create the lvar = rvar join condition */
 		e = makeSimpleA_Expr(AEXPR_OP, "=",
@@ -1291,7 +1301,9 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 
 		/* this may be larger than needed, but it's not worth being exact */
 		res_nscolumns = (ParseNamespaceColumn *)
-			palloc0((list_length(l_colnames) + list_length(r_colnames)) *
+			palloc0((list_length(l_colnames) +
+					 list_length(r_colnames) +
+					 SystemAttributeTotalNumber()) *
 					sizeof(ParseNamespaceColumn));
 		res_colindex = 0;
 
@@ -1332,6 +1344,14 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 										u_colname)));
 				}
 
+				/*
+				 * It is important to understand that among the l_colnames or
+				 * r_colnames there may be a system column name. A system
+				 * column name may appear if it was added in the previous step.
+				 * This is because a query can contain multiple USING joins,
+				 * where each join uses the result of the previous one.
+				 */
+
 				/* Find it in left input */
 				ndx = 0;
 				foreach(col, l_colnames)
@@ -1349,12 +1369,25 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 					}
 					ndx++;
 				}
-				if (l_index < 0)
+
+				l_colvar = (Var *) scanNSItemForColumn(pstate,
+													   l_nsitem,
+													   0, u_colname, -1);
+				if (l_colvar == NULL)
 					ereport(ERROR,
 							(errcode(ERRCODE_UNDEFINED_COLUMN),
 							 errmsg("column \"%s\" specified in USING clause does not exist in left table",
 									u_colname)));
-				l_colnos = lappend_int(l_colnos, l_index + 1);
+				if (l_index >= 0)
+				{
+					/* User-defined column */
+					l_colnos = lappend_int(l_colnos, l_index + 1);
+				}
+				else
+				{
+					/* System column */
+					l_colnos = lappend_int(l_colnos, l_colvar->varattno);
+				}
 
 				/* Find it in right input */
 				ndx = 0;
@@ -1373,17 +1406,30 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 					}
 					ndx++;
 				}
-				if (r_index < 0)
+
+				r_colvar = (Var *) scanNSItemForColumn(pstate,
+													   r_nsitem,
+													   0, u_colname, -1);
+
+				if (r_colvar == NULL)
 					ereport(ERROR,
 							(errcode(ERRCODE_UNDEFINED_COLUMN),
 							 errmsg("column \"%s\" specified in USING clause does not exist in right table",
 									u_colname)));
-				r_colnos = lappend_int(r_colnos, r_index + 1);
+
+				if (r_index >= 0)
+				{
+					/* User-defined column */
+					r_colnos = lappend_int(r_colnos, r_index + 1);
+				}
+				else
+				{
+					/* System column */
+					r_colnos = lappend_int(r_colnos, r_colvar->varattno);
+				}
 
 				/* Build Vars to use in the generated JOIN ON clause */
-				l_colvar = buildVarFromNSColumn(pstate, l_nscolumns + l_index);
 				l_usingvars = lappend(l_usingvars, l_colvar);
-				r_colvar = buildVarFromNSColumn(pstate, r_nscolumns + r_index);
 				r_usingvars = lappend(r_usingvars, r_colvar);
 
 				/*
@@ -1461,8 +1507,8 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 			/* Scan the colnos lists to recover info from the previous loop */
 			forboth(lc1, l_colnos, lc2, r_colnos)
 			{
-				int			l_index = lfirst_int(lc1) - 1;
-				int			r_index = lfirst_int(lc2) - 1;
+				int			l_index = lfirst_int(lc1);
+				int			r_index = lfirst_int(lc2);
 				Var		   *l_colvar,
 						   *r_colvar;
 				Node	   *u_colvar;
@@ -1472,8 +1518,33 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 				 * Note we re-build these Vars: they might have different
 				 * varnullingrels than the ones made in the previous loop.
 				 */
-				l_colvar = buildVarFromNSColumn(pstate, l_nscolumns + l_index);
-				r_colvar = buildVarFromNSColumn(pstate, r_nscolumns + r_index);
+				if (l_index > 0)
+				{
+					/* User-defined column */
+					l_colvar = buildVarFromNSColumn(pstate,
+													l_nscolumns + l_index - 1);
+				}
+				else
+				{
+					/* System column, so l_index is attnum. */
+					l_colvar = buildVarFromSystemAttribute(pstate,
+														   l_nsitem->p_rtindex,
+														   l_index);
+				}
+
+				if (r_index > 0)
+				{
+					/* User-defined column */
+					r_colvar = buildVarFromNSColumn(pstate,
+													r_nscolumns + r_index - 1);
+				}
+				else
+				{
+					/* System column, so r_index is attnum. */
+					r_colvar = buildVarFromSystemAttribute(pstate,
+														   r_nsitem->p_rtindex,
+														   r_index);
+				}
 
 				/* Construct the join alias Var for this column */
 				u_colvar = buildMergedJoinVar(pstate,
@@ -1488,12 +1559,32 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 				if (u_colvar == (Node *) l_colvar)
 				{
 					/* Merged column is equivalent to left input */
-					*res_nscolumn = l_nscolumns[l_index];
+					if (l_index > 0)
+					{
+						/* User-defined column, so just take it. */
+						*res_nscolumn = l_nscolumns[l_index - 1];
+					}
+					else
+					{
+						/* System column, so construct new column. */
+						fillNSColumnParametersFromVar(res_nscolumn,
+													  l_colvar);
+					}
 				}
 				else if (u_colvar == (Node *) r_colvar)
 				{
 					/* Merged column is equivalent to right input */
-					*res_nscolumn = r_nscolumns[r_index];
+					if (r_index > 0)
+					{
+						/* User-defined column, so just take it. */
+						*res_nscolumn = r_nscolumns[r_index - 1];
+					}
+					else
+					{
+						/* System column, so construct new column. */
+						fillNSColumnParametersFromVar(res_nscolumn,
+													  r_colvar);
+					}
 				}
 				else
 				{
@@ -1656,6 +1747,57 @@ buildVarFromNSColumn(ParseState *pstate, ParseNamespaceColumn *nscol)
 	markNullableIfNeeded(pstate, var);
 
 	return var;
+}
+
+/*
+ * buildVarFromSystemAttribute -
+ *	  build a Var node using system attribute, e.g. "xmin".
+ *
+ * rtindex is the relation's index in the rangetable.
+ * attnum is the number of system attribute.
+ * Returns NULL if there is no such system attribute.
+ */
+static Var *
+buildVarFromSystemAttribute(ParseState *pstate, int rtindex, int attnum)
+{
+	Var		   *var;
+	const FormData_pg_attribute *sysatt;
+
+	sysatt = SystemAttributeDefinition(attnum);
+
+	if (sysatt == NULL)
+		return NULL;
+
+	var = makeVar(rtindex,
+				  attnum,
+				  sysatt->atttypid,
+				  sysatt->atttypmod,
+				  sysatt->attcollation,
+				  0);
+
+	/* update varnullingrels */
+	markNullableIfNeeded(pstate, var);
+	return var;
+}
+
+/*
+ * fillNSColumnParametersFromVar -
+ *	  fill ParseNamespaceColumn data using Var data.
+ *
+ * rescolumn is pointer to the structure to be filled.
+ * colvar is the Var where to get data from.
+ */
+static void
+fillNSColumnParametersFromVar(ParseNamespaceColumn *rescolumn,
+							  const Var *colvar)
+{
+	rescolumn->p_varno = colvar->varno;
+	rescolumn->p_varattno = colvar->varattno;
+	rescolumn->p_vartype = colvar->vartype;
+	rescolumn->p_vartypmod = colvar->vartypmod;
+	rescolumn->p_varcollid = colvar->varcollid;
+	rescolumn->p_varnosyn = colvar->varnosyn;
+	rescolumn->p_varattnosyn = colvar->varattnosyn;
 }
 
 /*

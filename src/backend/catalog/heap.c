@@ -264,6 +264,14 @@ SystemAttributeByName(const char *attname)
 	return NULL;
 }
 
+/*
+ * Returns the total number of system attributes.
+ */
+size_t SystemAttributeTotalNumber(void)
+{
+	return lengthof(SysAtt);
+}
+
 
 /* ----------------------------------------------------------------
  *				XXX END OF UGLY HARD CODED BADNESS XXX
