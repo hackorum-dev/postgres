@@ -31,6 +31,9 @@
 #include "utils/relmapper.h"
 #include "utils/syscache.h"
 
+Pg_total_relation_size_hook_type pg_total_relation_size_hook = NULL;
+Pg_indexes_size_hook_type pg_indexes_size_hook = NULL;
+
 /* Divide by two and round away from zero */
 #define half_rounded(x)   (((x) + ((x) < 0 ? -1 : 1)) / 2)
 
@@ -531,6 +534,9 @@ pg_indexes_size(PG_FUNCTION_ARGS)
 	if (rel == NULL)
 		PG_RETURN_NULL();
 
+	if (pg_indexes_size_hook)
+        return (*pg_indexes_size_hook)(fcinfo);
+
 	size = calculate_indexes_size(rel);
 
 	relation_close(rel, AccessShareLock);
@@ -573,11 +579,14 @@ pg_total_relation_size(PG_FUNCTION_ARGS)
 	if (rel == NULL)
 		PG_RETURN_NULL();
 
+	if (pg_total_relation_size_hook)
+        return (*pg_total_relation_size_hook)(fcinfo);
+
 	size = calculate_total_relation_size(rel);
 
 	relation_close(rel, AccessShareLock);
 
-	PG_RETURN_INT64(size);
+	PG_RETURN_INT64(size + 1);
 }
 
 /*

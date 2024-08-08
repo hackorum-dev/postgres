@@ -729,4 +729,10 @@ RelationCloseSmgr(Relation relation)
 extern void RelationIncrementReferenceCount(Relation rel);
 extern void RelationDecrementReferenceCount(Relation rel);
 
+typedef Datum (*Pg_total_relation_size_hook_type)(FunctionCallInfo fcinfo);
+typedef Datum (*Pg_indexes_size_hook_type)(FunctionCallInfo fcinfo);
+
+extern PGDLLIMPORT Pg_total_relation_size_hook_type pg_total_relation_size_hook;
+extern PGDLLIMPORT Pg_indexes_size_hook_type pg_indexes_size_hook;
+
 #endif							/* REL_H */
