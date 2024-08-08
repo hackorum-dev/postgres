@@ -31,6 +31,10 @@ static bool pq_mq_busy = false;
 static pid_t pq_mq_parallel_leader_pid = 0;
 static ProcNumber pq_mq_parallel_leader_proc_number = INVALID_PROC_NUMBER;
 
+static PQcommMethods *pre_PqCommMethods = NULL;
+static CommandDest pre_whereToSendOutput = DestNone;
+static ProtocolVersion pre_FrontendProtocol = PG_PROTOCOL_LATEST;
+
 static void pq_cleanup_redirect_to_shm_mq(dsm_segment *seg, Datum arg);
 static void mq_comm_reset(void);
 static int	mq_flush(void);
@@ -55,11 +59,27 @@ static const PQcommMethods PqCommMqMethods = {
 void
 pq_redirect_to_shm_mq(dsm_segment *seg, shm_mq_handle *mqh)
 {
+	pre_PqCommMethods = PqCommMethods;
+	pre_whereToSendOutput = whereToSendOutput;
+	pre_FrontendProtocol = FrontendProtocol;
+
 	PqCommMethods = &PqCommMqMethods;
 	pq_mq_handle = mqh;
 	whereToSendOutput = DestRemote;
 	FrontendProtocol = PG_PROTOCOL_LATEST;
-	on_dsm_detach(seg, pq_cleanup_redirect_to_shm_mq, (Datum) 0);
+	if (seg != NULL)
+		on_dsm_detach(seg, pq_cleanup_redirect_to_shm_mq, (Datum) 0);
+}
+
+void
+pq_leave_shm_mq()
+{
+	if (pq_mq_handle == NULL)
+		return;
+	pq_mq_handle = NULL;
+	PqCommMethods = pre_PqCommMethods;
+	whereToSendOutput = pre_whereToSendOutput;
+	FrontendProtocol = pre_FrontendProtocol;
 }
 
 /*
