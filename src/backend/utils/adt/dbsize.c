@@ -586,7 +586,7 @@ pg_total_relation_size(PG_FUNCTION_ARGS)
 
 	relation_close(rel, AccessShareLock);
 
-	PG_RETURN_INT64(size + 1);
+	PG_RETURN_INT64(size);
 }
 
 /*
