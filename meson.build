@@ -936,7 +936,7 @@ if have_cxx
 
     # Some distros put LLVM and clang in different paths, so fallback to
     # find via PATH, too.
-    clang = find_program(llvm_binpath / 'clang', 'clang', required: true)
+    clang = find_program(llvm_binpath / 'clang', 'clang', version: llvm.version(), required: true)
   endif
 else
   msg = 'llvm requires a C++ compiler'
