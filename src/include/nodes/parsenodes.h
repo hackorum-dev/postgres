@@ -794,8 +794,8 @@ typedef struct IndexElem
  * DefElem - a generic "name = value" option definition
  *
  * In some contexts the name can be qualified.  Also, certain SQL commands
- * allow a SET/ADD/DROP action to be attached to option settings, so it's
- * convenient to carry a field for that too.  (Note: currently, it is our
+ * allow a SET/ADD/DROP/APPEND/REMOVE action to be attached to option settings,
+ * so it's convenient to carry a field for that too.  (Note: currently, it is our
  * practice that the grammar allows namespace and action only in statements
  * where they are relevant; C code can just ignore those fields in other
  * statements.)
@@ -806,6 +806,8 @@ typedef enum DefElemAction
 	DEFELEM_SET,
 	DEFELEM_ADD,
 	DEFELEM_DROP,
+	DEFELEM_APPEND,
+	DEFELEM_REMOVE
 } DefElemAction;
 
 typedef struct DefElem
@@ -815,7 +817,8 @@ typedef struct DefElem
 	char	   *defname;
 	Node	   *arg;			/* typically Integer, Float, String, or
 								 * TypeName */
-	DefElemAction defaction;	/* unspecified action, or SET/ADD/DROP */
+	DefElemAction defaction;	/* unspecified action, or
+								 * SET/ADD/DROP/APPEND/REMOVE */
 	ParseLoc	location;		/* token location, or -1 if unknown */
 } DefElem;
 
