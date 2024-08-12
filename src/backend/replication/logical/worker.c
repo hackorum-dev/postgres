@@ -280,6 +280,7 @@
 #include "replication/origin.h"
 #include "replication/slot.h"
 #include "replication/walreceiver.h"
+#include "replication/walsender_private.h"
 #include "replication/worker_internal.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/buffile.h"
@@ -3920,6 +3921,16 @@ get_flush_position(XLogRecPtr *write, XLogRecPtr *flush,
 {
 	dlist_mutable_iter iter;
 	XLogRecPtr	local_flush = GetFlushRecPtr(NULL);
+
+	/*
+	 * If synchronous replication is configured, take into account its position.
+	 */
+	if (SyncRepStandbyNames != NULL && SyncRepStandbyNames[0] != '\0')
+	{
+		LWLockAcquire(SyncRepLock, LW_SHARED);
+		local_flush = Min(local_flush, WalSndCtl->lsn[SYNC_REP_WAIT_FLUSH]);
+		LWLockRelease(SyncRepLock);
+	}
 
 	*write = InvalidXLogRecPtr;
 	*flush = InvalidXLogRecPtr;
