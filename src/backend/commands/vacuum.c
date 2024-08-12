@@ -2524,7 +2524,7 @@ vacuum_delay_point(bool is_analyze)
 			INSTR_TIME_SET_CURRENT(delay_start);
 
 		pgstat_report_wait_start(WAIT_EVENT_VACUUM_DELAY);
-		pg_usleep(msec * 1000);
+		pg_usleep_non_interruptible(msec * 1000);
 		pgstat_report_wait_end();
 
 		if (track_cost_delay_timing)
