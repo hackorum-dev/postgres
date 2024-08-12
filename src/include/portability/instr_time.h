@@ -43,6 +43,10 @@
  *
  * INSTR_TIME_GET_NANOSEC(t)		convert t to int64 (in nanoseconds)
  *
+ * INSTR_TIME_ADD_MICROSEC(x,t)		add t (in microseconds) to x
+ *
+ * INSTR_TIME_IS_GREATER(x,y)		is x greater than y?
+ *
  * Note that INSTR_TIME_SUBTRACT and INSTR_TIME_ACCUM_DIFF convert
  * absolute times to intervals.  The INSTR_TIME_GET_xxx operations are
  * only useful on intervals.
@@ -461,5 +465,11 @@ pg_get_ticks_fast(void)
 
 #define INSTR_TIME_GET_MICROSEC(t) \
 	(INSTR_TIME_GET_NANOSEC(t) / NS_PER_US)
+
+#define INSTR_TIME_ADD_MICROSEC(x,t) \
+	((x).ticks += (t) * NS_PER_US)
+
+#define INSTR_TIME_IS_GREATER(x,y) \
+	((x).ticks > (y).ticks)
 
 #endif							/* INSTR_TIME_H */
