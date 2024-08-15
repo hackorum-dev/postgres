@@ -87,6 +87,12 @@ bool		XactDeferrable;
 int			synchronous_commit = SYNCHRONOUS_COMMIT_ON;
 
 /*
+ * Indicate whether relation persistence flipping was performed in the current
+ * transacion.
+ */
+bool	XactPersistenceChanged;
+
+/*
  * CheckXidAlive is a xid value pointing to a possibly ongoing (sub)
  * transaction.  Currently, it is used in logical decoding.  It's possible
  * that such transactions can get aborted while the decoding is ongoing in
@@ -2131,6 +2137,7 @@ StartTransaction(void)
 		s->startedInRecovery = false;
 		XactReadOnly = DefaultXactReadOnly;
 	}
+	XactPersistenceChanged = false;
 	XactDeferrable = DefaultXactDeferrable;
 	XactIsoLevel = DefaultXactIsoLevel;
 	forceSyncCommit = false;

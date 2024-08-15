@@ -1125,6 +1125,7 @@ retry:
 	relation->rd_createSubid = InvalidSubTransactionId;
 	relation->rd_newRelfilelocatorSubid = InvalidSubTransactionId;
 	relation->rd_firstRelfilelocatorSubid = InvalidSubTransactionId;
+	relation->rd_firstPersistenceChangeSubid = InvalidSubTransactionId;
 	relation->rd_droppedSubid = InvalidSubTransactionId;
 	switch (relation->rd_rel->relpersistence)
 	{
@@ -1888,6 +1889,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	relation->rd_createSubid = InvalidSubTransactionId;
 	relation->rd_newRelfilelocatorSubid = InvalidSubTransactionId;
 	relation->rd_firstRelfilelocatorSubid = InvalidSubTransactionId;
+	relation->rd_firstPersistenceChangeSubid = InvalidSubTransactionId;
 	relation->rd_droppedSubid = InvalidSubTransactionId;
 	relation->rd_backend = INVALID_PROC_NUMBER;
 	relation->rd_islocaltemp = false;
@@ -2691,6 +2693,7 @@ RelationRebuildRelation(Relation relation)
 		SWAPFIELD(SubTransactionId, rd_createSubid);
 		SWAPFIELD(SubTransactionId, rd_newRelfilelocatorSubid);
 		SWAPFIELD(SubTransactionId, rd_firstRelfilelocatorSubid);
+		SWAPFIELD(SubTransactionId, rd_firstPersistenceChangeSubid);
 		SWAPFIELD(SubTransactionId, rd_droppedSubid);
 		/* un-swap rd_rel pointers, swap contents instead */
 		SWAPFIELD(Form_pg_class, rd_rel);
@@ -2780,7 +2783,8 @@ static void
 RelationFlushRelation(Relation relation)
 {
 	if (relation->rd_createSubid != InvalidSubTransactionId ||
-		relation->rd_firstRelfilelocatorSubid != InvalidSubTransactionId)
+		relation->rd_firstRelfilelocatorSubid != InvalidSubTransactionId ||
+		relation->rd_firstPersistenceChangeSubid != InvalidSubTransactionId)
 	{
 		/*
 		 * New relcache entries are always rebuilt, not flushed; else we'd
@@ -2857,7 +2861,8 @@ RelationForgetRelation(Oid rid)
 
 	Assert(relation->rd_droppedSubid == InvalidSubTransactionId);
 	if (relation->rd_createSubid != InvalidSubTransactionId ||
-		relation->rd_firstRelfilelocatorSubid != InvalidSubTransactionId)
+		relation->rd_firstRelfilelocatorSubid != InvalidSubTransactionId ||
+		relation->rd_firstPersistenceChangeSubid != InvalidSubTransactionId)
 	{
 		/*
 		 * In the event of subtransaction rollback, we must not forget
@@ -2973,7 +2978,8 @@ RelationCacheInvalidate(bool debug_discard)
 		 * applicable pending invalidations.
 		 */
 		if (relation->rd_createSubid != InvalidSubTransactionId ||
-			relation->rd_firstRelfilelocatorSubid != InvalidSubTransactionId)
+			relation->rd_firstRelfilelocatorSubid != InvalidSubTransactionId ||
+			relation->rd_firstPersistenceChangeSubid != InvalidSubTransactionId)
 			continue;
 
 		relcacheInvalsReceived++;
@@ -3295,6 +3301,7 @@ AtEOXact_cleanup(Relation relation, bool isCommit)
 	relation->rd_createSubid = InvalidSubTransactionId;
 	relation->rd_newRelfilelocatorSubid = InvalidSubTransactionId;
 	relation->rd_firstRelfilelocatorSubid = InvalidSubTransactionId;
+	relation->rd_firstPersistenceChangeSubid = InvalidSubTransactionId;
 	relation->rd_droppedSubid = InvalidSubTransactionId;
 
 	if (clear_relcache)
@@ -3410,6 +3417,7 @@ AtEOSubXact_cleanup(Relation relation, bool isCommit,
 			relation->rd_createSubid = InvalidSubTransactionId;
 			relation->rd_newRelfilelocatorSubid = InvalidSubTransactionId;
 			relation->rd_firstRelfilelocatorSubid = InvalidSubTransactionId;
+			relation->rd_firstPersistenceChangeSubid = InvalidSubTransactionId;
 			relation->rd_droppedSubid = InvalidSubTransactionId;
 			RelationClearRelation(relation);
 			return;
@@ -3455,6 +3463,14 @@ AtEOSubXact_cleanup(Relation relation, bool isCommit,
 			relation->rd_droppedSubid = parentSubid;
 		else
 			relation->rd_droppedSubid = InvalidSubTransactionId;
+	}
+
+	if (relation->rd_firstPersistenceChangeSubid == mySubid)
+	{
+		if (isCommit)
+			relation->rd_firstPersistenceChangeSubid = parentSubid;
+		else
+			relation->rd_firstPersistenceChangeSubid = InvalidSubTransactionId;
 	}
 }
 
@@ -3546,6 +3562,7 @@ RelationBuildLocalRelation(const char *relname,
 	rel->rd_createSubid = GetCurrentSubTransactionId();
 	rel->rd_newRelfilelocatorSubid = InvalidSubTransactionId;
 	rel->rd_firstRelfilelocatorSubid = InvalidSubTransactionId;
+	rel->rd_firstPersistenceChangeSubid = InvalidSubTransactionId;
 	rel->rd_droppedSubid = InvalidSubTransactionId;
 
 	/*
@@ -3927,6 +3944,21 @@ RelationAssumeNewRelfilelocator(Relation relation)
 	EOXactListAdd(relation);
 }
 
+/*
+ * RelationAssumePersistenceChange
+ *
+ * Code that changes relation persistence must call this.  This call triggers
+ * abort-time cleanups and prevents further data manipulation on the relation.
+ */
+void
+RelationAssumePersistenceChange(Relation relation)
+{
+	XactPersistenceChanged = true;
+	relation->rd_firstPersistenceChangeSubid = GetCurrentSubTransactionId();
+
+	/* Flag relation as needing eoxact cleanup (to clear this field) */
+	EOXactListAdd(relation);
+}
 
 /*
  *		RelationCacheInitialize
@@ -6413,6 +6445,7 @@ load_relcache_init_file(bool shared)
 		rel->rd_createSubid = InvalidSubTransactionId;
 		rel->rd_newRelfilelocatorSubid = InvalidSubTransactionId;
 		rel->rd_firstRelfilelocatorSubid = InvalidSubTransactionId;
+		rel->rd_firstPersistenceChangeSubid = InvalidSubTransactionId;
 		rel->rd_droppedSubid = InvalidSubTransactionId;
 		rel->rd_amcache = NULL;
 		rel->pgstat_info = NULL;

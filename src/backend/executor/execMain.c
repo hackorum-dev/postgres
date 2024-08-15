@@ -162,7 +162,7 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 * against performing unsafe operations in parallel mode, but this gives a
 	 * more user-friendly error message.
 	 */
-	if ((XactReadOnly || IsInParallelMode()) &&
+	if ((XactReadOnly || XactPersistenceChanged || IsInParallelMode()) &&
 		!(eflags & EXEC_FLAG_EXPLAIN_ONLY))
 		ExecCheckXactReadOnly(queryDesc->plannedstmt);
 
@@ -815,6 +815,9 @@ ExecCheckXactReadOnly(PlannedStmt *plannedstmt)
 			continue;
 
 		PreventCommandIfReadOnly(CreateCommandName((Node *) plannedstmt));
+
+		PreventCommandIfPersistenceChanged(
+			CreateCommandName((Node *) plannedstmt), perminfo->relid);
 	}
 
 	if (plannedstmt->commandType != CMD_SELECT || plannedstmt->hasModifyingCTE)
