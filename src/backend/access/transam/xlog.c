@@ -5917,6 +5917,7 @@ StartupXLOG(void)
 		 */
 		if (!reachedConsistency)
 		{
+			BufmgrDoCleanupRedo();
 			UndoLogCleanup(true);
 			ResetUnloggedRelations(UNLOGGED_RELATION_CLEANUP);
 		}

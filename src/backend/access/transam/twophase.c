@@ -1608,6 +1608,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 									   abortstats,
 									   gid);
 
+	/* Clean up buffer persistence changes and unecessary files. */
+	PreCommit_Buffers(isCommit);
 	UndoLog_UndoByXid(isCommit, xid, hdr->nsubxacts, children);
 
 	ProcArrayRemove(proc, latestXid);

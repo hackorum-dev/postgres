@@ -58,6 +58,7 @@
 #include "storage/smgr.h"
 #include "storage/standby.h"
 #include "utils/memdebug.h"
+#include "utils/memutils.h"
 #include "utils/ps_status.h"
 #include "utils/rel.h"
 #include "utils/resowner.h"
@@ -135,6 +136,22 @@ typedef struct SMgrSortArray
 	RelFileLocator rlocator;	/* This must be the first member */
 	SMgrRelation srel;
 } SMgrSortArray;
+
+/*
+ * We keep a list of all relations whose buffer persistence has been switched
+ * in the current transaction. This allows us to properly revert the
+ * persistence if the transaction is aborted.
+ */
+typedef struct BufMgrCleanup
+{
+	RelFileLocator rlocator;	/* relation that may need to be deleted */
+	bool		bufpersistence; /* buffer persistence to set */
+	int			nestLevel;		/* xact nesting level of request */
+	TransactionId xid;			/* used during recovery */
+	struct BufMgrCleanup *next;	/* linked-list link */
+} BufMgrCleanup;
+
+static BufMgrCleanup * cleanups = NULL; /* head of linked list */
 
 /* GUC variables */
 bool		zero_damaged_pages = false;
@@ -222,6 +239,8 @@ static void ResOwnerReleaseBufferIO(Datum res);
 static char *ResOwnerPrintBufferIO(Datum res);
 static void ResOwnerReleaseBufferPin(Datum res);
 static char *ResOwnerPrintBufferPin(Datum res);
+
+static void set_relation_buffers_persistence(SMgrRelation srel, bool permanent);
 
 const ResourceOwnerDesc buffer_io_resowner_desc =
 {
@@ -3549,6 +3568,153 @@ SyncOneBuffer(int buf_id, bool skip_recently_used, WritebackContext *wb_context)
 }
 
 /*
+ * bufmgrDoCleanup() -- Take care of buffer persistence chages at end of xact
+ *
+ * This function is called at the end of both transactions and subtransactions,
+ * aiming to immediately clean up failed transactions.
+ */
+static void
+bufmgrDoCleanup(bool isCommit)
+{
+	int	nestLevel = GetCurrentTransactionNestLevel();
+	BufMgrCleanup *cu;
+	BufMgrCleanup *next;
+
+	for (cu = cleanups ; cu && cu->nestLevel <= nestLevel ; cu = next)
+	{
+		next = cu->next;
+		cleanups = next;
+
+		if (!isCommit)
+		{
+			SMgrRelation srel = smgropen(cu->rlocator, INVALID_PROC_NUMBER);
+			set_relation_buffers_persistence(srel, cu->bufpersistence);
+		}
+		pfree(cu);
+	}
+
+#ifdef USE_ASSERT_CHECKING
+	/* All remaining entriespertain to upper levels. */
+	for (cu = cleanups ; cu ; cu = cu->next)
+		Assert(cu->nestLevel < nestLevel);
+#endif
+}
+
+/*
+ * AtEOXact_Buffers_Redo() -- End-of-transaction cleanup of buffer persistence
+ *      chages during rcovery.
+ *
+ * Unlike normal operation, the cleanup entries are keyed by xid rather than by
+ * nestLevel. See SetRelationBuffersPersistenceRedo() for details on the
+ * registration of those entries.
+ */
+void
+AtEOXact_Buffers_Redo(bool isCommit, TransactionId xid,
+					  int nchildren, TransactionId *children)
+{
+	BufMgrCleanup *cu;
+	BufMgrCleanup *prev;
+	BufMgrCleanup *next;
+
+	prev = NULL;
+	for (cu = cleanups ; cu ; cu = next)
+	{
+		next = cu->next;
+
+		if (cu->xid != xid)
+		{
+			int i;
+
+			for (i = 0 ; i < nchildren && cu->xid != children[i] ; i++);
+
+			if (i == nchildren)
+			{
+				/* did not match, go to next */
+				prev = cu;
+				continue;
+			}
+		}
+
+		if (!isCommit)
+		{
+			/*
+			 * Record this revert to WAL without re-registering a BufMgrCleanup
+			 * entry.
+			 */
+			SMgrRelation srel = smgropen(cu->rlocator, INVALID_PROC_NUMBER);
+			set_relation_buffers_persistence(srel, cu->bufpersistence);
+		}
+		if (prev)
+			prev->next = next;
+		else
+			cleanups = next;
+		pfree(cu);
+	}
+}
+
+/*
+ * BufmgrDoCleanupRedo() -- End-of-recovery cleanup of buffer persistence
+ *        chages.
+ *
+ * Revert buffer persistence changes made in transactions that are not
+ * committed at the end of recovery.
+ */
+void
+BufmgrDoCleanupRedo(void)
+{
+	BufMgrCleanup *cu;
+	BufMgrCleanup *next;
+
+	for (cu = cleanups ; cu ; cu = next)
+	{
+		SMgrRelation srel = smgropen(cu->rlocator, INVALID_PROC_NUMBER);
+		set_relation_buffers_persistence(srel, cu->bufpersistence);
+
+		next = cu->next;
+		pfree(cu);
+	}
+
+	cleanups = NULL;
+}
+
+/*
+ * PreSubCommit_Buffers() -- Take care of buffer persistence changes at subxact
+ * end
+ */
+void
+PreSubCommit_Buffers(bool isCommit)
+{
+	int	nestLevel = GetCurrentTransactionNestLevel();
+
+	if (!isCommit)
+	{
+		bufmgrDoCleanup(isCommit);
+		return;
+	}
+
+	/*
+	 * Reassign all cleanup items at the current nestlevel to the parent
+	 * transaction.
+	 */
+
+	for (BufMgrCleanup *cu = cleanups ;
+		 cu && cu->nestLevel >= nestLevel ;
+		 cu = cu->next)
+	{
+		/* no lower-level entry is expected */
+		Assert(cu->nestLevel == nestLevel);
+
+		cu->nestLevel = nestLevel - 1;
+	}
+}
+
+void
+PreCommit_Buffers(bool isCommit)
+{
+	bufmgrDoCleanup(isCommit);
+}
+
+/*
  *		AtEOXact_Buffers - clean up at end of transaction.
  *
  *		As of PostgreSQL 8.0, buffer pins should get released by the
@@ -4140,6 +4306,168 @@ DropRelationBuffers(SMgrRelation smgr_reln, ForkNumber *forkNum,
 		if (j >= nforks)
 			UnlockBufHdr(bufHdr, buf_state);
 	}
+}
+
+/*
+ * set_relation_buffers_persistence()
+ *
+ * When switching to PERMANENT, this function changes the persistence of all
+ * buffer pages for a relation, then writes all dirty pages to disk (or kernel
+ * buffers) to ensure the kernel has the latest view of the relation.
+ * Otherwise, it simply flips the persistence of every page.
+ *
+ * The caller must hold an AccessExclusiveLock on the target relation to
+ * prevent other backends from loading additional blocks.
+ *
+ * XXX: Currently, this function sequentially searches the buffer pool;
+ * consider implementing more efficient search methods. Since this routine is
+ * not used in performance-critical paths, additional optimization isn't
+ * warranted; see also DropRelationBuffers.
+ */
+static void
+set_relation_buffers_persistence(SMgrRelation srel, bool permanent)
+{
+	int			i;
+	RelFileLocator rlocator = srel->smgr_rlocator.locator;
+
+	Assert(!RelFileLocatorBackendIsTemp(srel->smgr_rlocator));
+
+	ResourceOwnerEnlarge(CurrentResourceOwner);
+
+	for (i = 0; i < NBuffers; i++)
+	{
+		BufferDesc *bufHdr = GetBufferDescriptor(i);
+		uint32		buf_state;
+
+		/* try unlocked check to avoid locking irrelevant buffers */
+		if (!RelFileLocatorEquals(BufTagGetRelFileLocator(&bufHdr->tag),
+								  rlocator))
+			continue;
+
+		ReservePrivateRefCountEntry();
+
+		buf_state = LockBufHdr(bufHdr);
+
+		if (!RelFileLocatorEquals(BufTagGetRelFileLocator(&bufHdr->tag),
+								  rlocator))
+		{
+			UnlockBufHdr(bufHdr, buf_state);
+			continue;
+		}
+
+		if (permanent)
+		{
+			/* The init fork is being dropped, drop buffers for it. */
+			if (BufTagGetForkNum(&bufHdr->tag) == INIT_FORKNUM)
+			{
+				InvalidateBuffer(bufHdr);
+				continue;
+			}
+
+			/* Switch the buffer state to BM_PERMANENT before flushing it. */
+			Assert((buf_state & BM_PERMANENT) == 0);
+			buf_state |= BM_PERMANENT;
+			pg_atomic_write_u32(&bufHdr->state, buf_state);
+
+			/*
+			 * We haven't written WALs for this buffer. Flush this buffer to
+			 * establish the epoch for subsequent WAL records.
+			 */
+			if ((buf_state & (BM_VALID | BM_DIRTY)) == (BM_VALID | BM_DIRTY))
+			{
+				PinBuffer_Locked(bufHdr);
+				LWLockAcquire(BufferDescriptorGetContentLock(bufHdr),
+							  LW_SHARED);
+				FlushBuffer(bufHdr, srel, IOOBJECT_RELATION, IOCONTEXT_NORMAL);
+				LWLockRelease(BufferDescriptorGetContentLock(bufHdr));
+				UnpinBuffer(bufHdr);
+			}
+			else
+				UnlockBufHdr(bufHdr, buf_state);
+		}
+		else
+		{
+			/* There shouldn't be an init fork for this relation */
+			Assert(BufTagGetForkNum(&bufHdr->tag) != INIT_FORKNUM);
+			Assert(buf_state & BM_PERMANENT);
+
+			/* Just switch the buffer state to non-permanent. */
+			buf_state &= ~BM_PERMANENT;
+			UnlockBufHdr(bufHdr, buf_state);
+		}
+	}
+}
+
+/* ---------------------------------------------------------------------
+ *	SetRelationBuffersPersistence
+ *
+ *		This function changes the persistence of all buffer pages of a
+ *		relation. See set_relation_buffers_persistence() for functionality
+ *		details.
+ *
+ *		This function's behavior is transactional, meaning that the changes it
+ *		makes will be reverted if this or any higher-level transaction is
+ *		aborted.
+ *
+ *		The caller must be holding AccessExclusiveLock on the target relation
+ *		to ensure no other backend is busy loading more blocks.
+ *		--------------------------------------------------------------------
+ */
+void
+SetRelationBuffersPersistence(SMgrRelation srel, bool permanent)
+{
+	BufMgrCleanup *cu;
+	RelFileLocator rlocator = srel->smgr_rlocator.locator;
+
+	/*
+	 * Prevent double-flipping of relation persistence within the same
+	 * transaction.  Performing double-flipping adds significant complexity
+	 * with minimal benefit.  Error out if persistence has already been flipped
+	 * for this relation in the current transaction.
+	 */
+	for (cu = cleanups ; cu ; cu = cu->next)
+	{
+		if (RelFileLocatorEquals(rlocator, cu->rlocator))
+			ereport(ERROR,
+					errmsg("persistence of this relation has been already changed in the current transaction"));
+	}
+
+	set_relation_buffers_persistence(srel, permanent);
+
+	/* Schedule reverting this change at abort, keying by nestLevel. */
+	cu = (BufMgrCleanup *)
+		MemoryContextAlloc(TopMemoryContext, sizeof(BufMgrCleanup));
+	cu->rlocator = rlocator;
+	cu->bufpersistence = !permanent;
+	cu->nestLevel = GetCurrentTransactionNestLevel();
+	cu->next = cleanups;
+	cleanups = cu;
+}
+
+/* ---------------------------------------------------------------------
+ *  SetRelationBuffersPersistenceRedo
+ *
+ *     This function changes the persistence of all buffer pages for a
+ *     relation during recovery. In recovery, cleanup entries are keyed by
+ *     transaction ID, rather than by nestLevel.
+ *	   --------------------------------------------------------------------
+ */
+void
+SetRelationBuffersPersistenceRedo(SMgrRelation srel, bool permanent,
+								  TransactionId xid)
+{
+	BufMgrCleanup *cu;
+
+	set_relation_buffers_persistence(srel, permanent);
+
+	/* Schedule reverting this change at abort */
+	cu = (BufMgrCleanup *)
+		MemoryContextAlloc(TopMemoryContext, sizeof(BufMgrCleanup));
+	cu->rlocator = srel->smgr_rlocator.locator;
+	cu->bufpersistence = !permanent;
+	cu->xid = xid;
+	cu->next = cleanups;
+	cleanups = cu;
 }
 
 /* ---------------------------------------------------------------------

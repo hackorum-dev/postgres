@@ -2280,6 +2280,9 @@ CommitTransaction(void)
 	CallXactCallbacks(is_parallel_worker ? XACT_EVENT_PARALLEL_PRE_COMMIT
 					  : XACT_EVENT_PRE_COMMIT);
 
+	/* Clean up buffer persistence changes */
+	PreCommit_Buffers(true);
+
 	/*
 	 * If this xact has started any unfinished parallel operation, clean up
 	 * its workers, warning about leaked resources.  (But we don't actually
@@ -2864,6 +2867,9 @@ AbortTransaction(void)
 	 * infrastructure will be functional if needed while aborting.
 	 */
 	sigprocmask(SIG_SETMASK, &UnBlockSig, NULL);
+
+	/* Clean up buffer persistence changes */
+	PreCommit_Buffers(false);
 
 	/*
 	 * check the current transaction state
@@ -5114,6 +5120,9 @@ CommitSubTransaction(void)
 	CallSubXactCallbacks(SUBXACT_EVENT_PRE_COMMIT_SUB, s->subTransactionId,
 						 s->parent->subTransactionId);
 
+	/* Clean up buffer persistence changes. */
+	PreSubCommit_Buffers(true);
+
 	/*
 	 * If this subxact has started any unfinished parallel operation, clean up
 	 * its workers and exit parallel mode.  Warn about leaked resources.
@@ -5260,6 +5269,9 @@ AbortSubTransaction(void)
 	 * reschedule lock or deadlock check timeouts.
 	 */
 	reschedule_timeouts();
+
+	/* Clean up buffer persistence changes */
+	PreSubCommit_Buffers(false);
 
 	/*
 	 * Re-enable signals, in case we got here by longjmp'ing out of a signal
@@ -6234,6 +6246,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 	}
 
 	AtEOXact_UndoLog(xid);
+	AtEOXact_Buffers_Redo(true, xid, parsed->nsubxacts, parsed->subxacts);
 
 	if (parsed->nstats > 0)
 	{
@@ -6347,6 +6360,7 @@ xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid,
 	}
 
 	AtEOXact_UndoLog(xid);
+	AtEOXact_Buffers_Redo(false, xid, parsed->nsubxacts, parsed->subxacts);
 
 	if (parsed->nstats > 0)
 	{

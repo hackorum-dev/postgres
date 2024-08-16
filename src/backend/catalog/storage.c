@@ -257,6 +257,29 @@ ulog_smgrpreserve(RelFileLocator rloc, ForkNumber forkNum)
 }
 
 /*
+ * Perform XLogInsert of an XLOG_SMGR_BUFPERSISTENCE record to WAL.
+ *
+ * XXX: This function essentially belongs in bufmgr.c, but is placed here to
+ * avoid adding a new rmgr type solely for this record type.
+ */
+void
+log_smgrbufpersistence(const RelFileLocator rlocator, bool persistence)
+{
+	xl_smgr_bufpersistence xlrec;
+
+	/*
+	 * Make an XLOG entry reporting the change of buffer persistence.
+	 */
+	xlrec.rlocator = rlocator;
+	xlrec.persistence = persistence;
+	xlrec.topxid = GetTopTransactionId();
+
+	XLogBeginInsert();
+	XLogRegisterData((char *) &xlrec, sizeof(xlrec));
+	XLogInsert(RM_SMGR_ID, XLOG_SMGR_BUFPERSISTENCE | XLR_SPECIAL_REL_UPDATE);
+}
+
+/*
  * RelationDropStorage
  *		Schedule unlinking of physical storage at transaction commit.
  */
@@ -1137,6 +1160,16 @@ smgr_redo(XLogReaderState *record)
 									InvalidBlockNumber);
 
 		FreeFakeRelcacheEntry(rel);
+	}
+	else if (info == XLOG_SMGR_BUFPERSISTENCE)
+	{
+		xl_smgr_bufpersistence *xlrec =
+		(xl_smgr_bufpersistence *) XLogRecGetData(record);
+		SMgrRelation reln;
+
+		reln = smgropen(xlrec->rlocator, INVALID_PROC_NUMBER);
+		SetRelationBuffersPersistenceRedo(reln, xlrec->persistence,
+										  XLogRecGetXid(record));
 	}
 	else
 		elog(PANIC, "smgr_redo: unknown op code %u", info);

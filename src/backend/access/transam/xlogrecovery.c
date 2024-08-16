@@ -2268,6 +2268,7 @@ CheckRecoveryConsistency(void)
 		 * backends don't try to read whatever garbage is left over from
 		 * before.
 		 */
+		BufmgrDoCleanupRedo();
 		UndoLogCleanup(false);
 		ResetUnloggedRelations(UNLOGGED_RELATION_CLEANUP);
 
