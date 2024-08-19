@@ -4363,7 +4363,7 @@ PostgresSingleUserMain(int argc, char *argv[],
 void
 PostgresMain(const char *dbname, const char *username)
 {
-	sigjmp_buf	local_sigjmp_buf;
+	PG_exception    local_sigjmp_buf = {PG_exception_magic};
 
 	/* these must be volatile to ensure state is preserved across longjmp: */
 	volatile bool send_ready_for_query = true;
@@ -4570,7 +4570,7 @@ PostgresMain(const char *dbname, const char *username)
 	 * were inside a transaction.
 	 */
 
-	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
+	if (sigsetjmp(local_sigjmp_buf.buf, 1) != 0)
 	{
 		/*
 		 * NOTE: if you are tempted to add more code in this if-block,
@@ -4685,7 +4685,6 @@ PostgresMain(const char *dbname, const char *username)
 
 	/* We can now handle ereport(ERROR) */
 	PG_exception_stack = &local_sigjmp_buf;
-
 	if (!ignore_till_sync)
 		send_ready_for_query = true;	/* initially, or after error */
 

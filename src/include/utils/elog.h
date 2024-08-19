@@ -387,11 +387,11 @@ extern PGDLLIMPORT ErrorContextCallback *error_context_stack;
  */
 #define PG_TRY(...)  \
 	do { \
-		sigjmp_buf *_save_exception_stack##__VA_ARGS__ = PG_exception_stack; \
+		PG_exception *_save_exception_stack##__VA_ARGS__ = PG_exception_stack; \
 		ErrorContextCallback *_save_context_stack##__VA_ARGS__ = error_context_stack; \
-		sigjmp_buf _local_sigjmp_buf##__VA_ARGS__; \
+		PG_exception _local_sigjmp_buf##__VA_ARGS__ = {PG_exception_magic}; \
 		bool _do_rethrow##__VA_ARGS__ = false; \
-		if (sigsetjmp(_local_sigjmp_buf##__VA_ARGS__, 0) == 0) \
+		if (sigsetjmp(_local_sigjmp_buf##__VA_ARGS__.buf, 0) == 0) \
 		{ \
 			PG_exception_stack = &_local_sigjmp_buf##__VA_ARGS__
 
@@ -421,7 +421,13 @@ extern PGDLLIMPORT ErrorContextCallback *error_context_stack;
 #define PG_RE_THROW()  \
 	pg_re_throw()
 
-extern PGDLLIMPORT sigjmp_buf *PG_exception_stack;
+#define PG_exception_magic 0x12345678
+typedef struct PG_exception
+{
+	int magic;
+	sigjmp_buf buf;
+} PG_exception;
+extern PGDLLIMPORT PG_exception *PG_exception_stack;
 
 
 /* Stuff that error handlers might want to use */
