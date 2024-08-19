@@ -519,7 +519,7 @@ pgarch_ArchiverCopyLoop(void)
 static bool
 pgarch_archiveXlog(char *xlog)
 {
-	sigjmp_buf	local_sigjmp_buf;
+	PG_exception    local_sigjmp_buf = {PG_exception_magic};
 	MemoryContext oldcontext;
 	char		pathname[MAXPGPATH];
 	char		activitymsg[MAXFNAMELEN + 16];
@@ -548,7 +548,7 @@ pgarch_archiveXlog(char *xlog)
 	 * PgArchiverMain() and use PG_TRY/PG_CATCH here, but the extra code to
 	 * avoid the odd archiver restart doesn't seem worth it.
 	 */
-	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
+	if (sigsetjmp(local_sigjmp_buf.buf, 1) != 0)
 	{
 		/* Since not using PG_TRY, must reset error stack by hand */
 		error_context_stack = NULL;
