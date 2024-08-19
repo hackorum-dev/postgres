@@ -2508,6 +2508,18 @@ struct config_int ConfigureNamesInt[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"debug_palloc_context_threshold", PGC_USERSET, RESOURCES_MEM,
+			gettext_noop("Dump memory context usage stats when using more than this memory in context."),
+			gettext_noop("Dump MemoryContextStats() when palloc() ends up "
+						 "with more than context->mem_used than defined here"),
+			GUC_UNIT_KB
+		},
+		&debug_palloc_context_threshold,
+		0, 0, MAX_KILOBYTES,
+		NULL, NULL, NULL
+	},
+
 	/*
 	 * Dynamic shared memory has a higher overhead than local memory contexts,
 	 * so when testing low-memory scenarios that could use shared memory, the

@@ -265,6 +265,7 @@ extern PGDLLIMPORT int IntervalStyle;
 extern PGDLLIMPORT bool enableFsync;
 extern PGDLLIMPORT bool allowSystemTableMods;
 extern PGDLLIMPORT int work_mem;
+extern PGDLLIMPORT int debug_palloc_context_threshold;
 extern PGDLLIMPORT double hash_mem_multiplier;
 extern PGDLLIMPORT int maintenance_work_mem;
 extern PGDLLIMPORT int max_parallel_maintenance_workers;

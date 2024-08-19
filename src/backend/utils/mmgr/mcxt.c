@@ -27,6 +27,7 @@
 #include "utils/memutils.h"
 #include "utils/memutils_internal.h"
 #include "utils/memutils_memorychunk.h"
+#include "portability/instr_time.h"
 
 
 static void BogusFree(void *pointer);
@@ -156,6 +157,9 @@ MemoryContext CurTransactionContext = NULL;
 
 /* This is a transient link to the active portal's memory context: */
 MemoryContext PortalContext = NULL;
+/* Last timestamp when there was MemoryContextStats() dump by debug_palloc_context_threshold */
+static instr_time debug_palloc_context_last_ts;
+static int recursion_level = 0;
 
 static void MemoryContextDeleteOnly(MemoryContext context);
 static void MemoryContextCallResetCallbacks(MemoryContext context);
@@ -1313,6 +1317,43 @@ ProcessLogMemoryContextInterrupt(void)
 	MemoryContextStatsDetail(TopMemoryContext, 100, 100, false);
 }
 
+/*
+ * dump_memory_debug_if_necessary
+ *		Log using MemoryContextStats(), but not too often
+ *
+ */
+static void
+dump_memory_debug_if_necessary(MemoryContext context)
+{
+	/* We need to never recurse infinitley as some routines used later on
+	 * may also call palloc() internally.
+	 */
+	if(recursion_level >= 1)
+		return;
+	recursion_level++;
+
+	if (debug_palloc_context_threshold != 0 &&
+		context->mem_allocated * 1024 >= debug_palloc_context_threshold) {
+		instr_time now, ts_diff;
+		INSTR_TIME_SET_CURRENT(now);
+		ts_diff = now;
+		INSTR_TIME_SUBTRACT(ts_diff, debug_palloc_context_last_ts);
+
+#define MEMSTAT_DUMP_INTERVAL_MS 100
+		/* Rate limit the messages to avoid log clutter */
+		if ((double) INSTR_TIME_GET_MILLISEC(ts_diff) >= MEMSTAT_DUMP_INTERVAL_MS) {
+			ereport(LOG,
+				(errmsg("dumping memory context stats"),
+				 errdetail("Context \"%s\".", context->name),
+				 errbacktrace()));
+			MemoryContextStatsDetail(context, 100, 100, false);
+			debug_palloc_context_last_ts = now;
+		}
+	}
+
+	recursion_level--;
+}
+
 void *
 palloc(Size size)
 {
@@ -1340,6 +1381,8 @@ palloc(Size size)
 	Assert(ret != NULL);
 	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
 
+	dump_memory_debug_if_necessary(context);
+
 	return ret;
 }
 
@@ -1360,6 +1403,8 @@ palloc0(Size size)
 	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
 
 	MemSetAligned(ret, 0, size);
+
+	dump_memory_debug_if_necessary(context);
 
 	return ret;
 }
@@ -1386,6 +1431,8 @@ palloc_extended(Size size, int flags)
 
 	if ((flags & MCXT_ALLOC_ZERO) != 0)
 		MemSetAligned(ret, 0, size);
+
+	dump_memory_debug_if_necessary(context);
 
 	return ret;
 }
@@ -1488,6 +1535,8 @@ MemoryContextAllocAligned(MemoryContext context,
 
 	/* Disallow access to the redirection chunk header. */
 	VALGRIND_MAKE_MEM_NOACCESS(alignedchunk, sizeof(MemoryChunk));
+
+	dump_memory_debug_if_necessary(context);
 
 	return aligned;
 }
@@ -1659,6 +1708,8 @@ MemoryContextAllocHuge(MemoryContext context, Size size)
 	ret = context->methods->alloc(context, size, MCXT_ALLOC_HUGE);
 
 	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+
+	dump_memory_debug_if_necessary(context);
 
 	return ret;
 }
