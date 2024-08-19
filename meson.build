@@ -3966,6 +3966,12 @@ sys.exit(sp.returncode)
 running_suites = []
 install_suites = []
 
+temp_config_env = run_command([
+  python,
+  '-c',
+  'import os; print(os.getenv("TEMP_CONFIG", ""))'
+], check: true).stdout().strip()
+
 testwrap = files('src/tools/testwrap')
 
 foreach test_dir : tests
@@ -4031,6 +4037,10 @@ foreach test_dir : tests
 
       env = test_env
       env.prepend('PATH', temp_install_bindir, test_dir['bd'])
+
+      if temp_config_env != ''
+        test_command_base += [ '--temp-config=' + temp_config_env ]
+      endif
 
       test_kwargs = {
         'protocol': 'tap',
