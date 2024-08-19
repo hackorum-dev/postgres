@@ -8321,7 +8321,8 @@ get_name_for_var_field(Var *var, int fieldno,
 					{
 						char	   *dummy_name = palloc(32);
 
-						Assert(dpns->plan && IsA(dpns->plan, Result));
+						Assert(dpns->plan && (IsA(dpns->plan, Result) ||
+											  IsA(dpns->plan, CustomScan)));
 						snprintf(dummy_name, 32, "f%d", fieldno);
 						return dummy_name;
 					}
@@ -8452,7 +8453,8 @@ get_name_for_var_field(Var *var, int fieldno,
 					{
 						char	   *dummy_name = palloc(32);
 
-						Assert(dpns->plan && IsA(dpns->plan, Result));
+						Assert(dpns->plan && (IsA(dpns->plan, Result) ||
+											  IsA(dpns->plan, CustomScan)));
 						snprintf(dummy_name, 32, "f%d", fieldno);
 						return dummy_name;
 					}
