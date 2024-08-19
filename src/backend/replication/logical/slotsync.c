@@ -1609,7 +1609,7 @@ ReplSlotSyncWorkerMain(const void *startup_data, size_t startup_data_len)
 	WalReceiverConn *wrconn = NULL;
 	char	   *dbname;
 	char	   *err;
-	sigjmp_buf	local_sigjmp_buf;
+	PG_exception    local_sigjmp_buf = {PG_exception_magic};
 	StringInfoData app_name;
 
 	Assert(startup_data_len == 0);
@@ -1647,7 +1647,7 @@ ReplSlotSyncWorkerMain(const void *startup_data, size_t startup_data_len)
 	 * operates at the bottom of the exception stack, ERRORs turn into FATALs.
 	 * Therefore, we create our own exception handler to catch ERRORs.
 	 */
-	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
+	if (sigsetjmp(local_sigjmp_buf.buf, 1) != 0)
 	{
 		/* since not using PG_TRY, must reset error stack by hand */
 		error_context_stack = NULL;
