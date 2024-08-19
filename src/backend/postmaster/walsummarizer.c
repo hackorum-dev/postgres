@@ -222,7 +222,7 @@ WalSummarizerShmemInit(void *arg)
 void
 WalSummarizerMain(const void *startup_data, size_t startup_data_len)
 {
-	sigjmp_buf	local_sigjmp_buf;
+	PG_exception    local_sigjmp_buf = {PG_exception_magic};
 	MemoryContext context;
 
 	/*
@@ -284,7 +284,7 @@ WalSummarizerMain(const void *startup_data, size_t startup_data_len)
 	/*
 	 * If an exception is encountered, processing resumes here.
 	 */
-	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
+	if (sigsetjmp(local_sigjmp_buf.buf, 1) != 0)
 	{
 		/* Since not using PG_TRY, must reset error stack by hand */
 		error_context_stack = NULL;

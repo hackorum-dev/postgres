@@ -405,7 +405,7 @@ static void check_av_worker_gucs(void);
 void
 AutoVacLauncherMain(const void *startup_data, size_t startup_data_len)
 {
-	sigjmp_buf	local_sigjmp_buf;
+	PG_exception	local_sigjmp_buf = {PG_exception_magic};
 
 	Assert(startup_data_len == 0);
 
@@ -479,7 +479,7 @@ AutoVacLauncherMain(const void *startup_data, size_t startup_data_len)
 	 * call redundant, but it is not since InterruptPending might be set
 	 * already.
 	 */
-	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
+	if (sigsetjmp(local_sigjmp_buf.buf, 1) != 0)
 	{
 		/* since not using PG_TRY, must reset error stack by hand */
 		error_context_stack = NULL;
@@ -1412,7 +1412,7 @@ avl_sigusr2_handler(SIGNAL_ARGS)
 void
 AutoVacWorkerMain(const void *startup_data, size_t startup_data_len)
 {
-	sigjmp_buf	local_sigjmp_buf;
+	PG_exception    local_sigjmp_buf = {PG_exception_magic};
 	Oid			dbid;
 
 	Assert(startup_data_len == 0);
@@ -1473,7 +1473,7 @@ AutoVacWorkerMain(const void *startup_data, size_t startup_data_len)
 	 * seem that this policy makes the HOLD_INTERRUPTS() call redundant, but
 	 * it is not since InterruptPending might be set already.
 	 */
-	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
+	if (sigsetjmp(local_sigjmp_buf.buf, 1) != 0)
 	{
 		/* since not using PG_TRY, must reset error stack by hand */
 		error_context_stack = NULL;
