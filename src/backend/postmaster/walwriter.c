@@ -88,7 +88,7 @@ int			WalWriterFlushAfter = DEFAULT_WAL_WRITER_FLUSH_AFTER;
 void
 WalWriterMain(const void *startup_data, size_t startup_data_len)
 {
-	sigjmp_buf	local_sigjmp_buf;
+	PG_exception    local_sigjmp_buf = {PG_exception_magic};
 	MemoryContext walwriter_context;
 	int			left_till_hibernate;
 	bool		hibernating;
@@ -143,7 +143,7 @@ WalWriterMain(const void *startup_data, size_t startup_data_len)
 	 * call redundant, but it is not since InterruptPending might be set
 	 * already.
 	 */
-	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
+	if (sigsetjmp(local_sigjmp_buf.buf, 1) != 0)
 	{
 		/* Since not using PG_TRY, must reset error stack by hand */
 		error_context_stack = NULL;
