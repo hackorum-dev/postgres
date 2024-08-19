@@ -740,7 +740,7 @@ SanityCheckBackgroundWorker(BackgroundWorker *worker, int elevel)
 void
 BackgroundWorkerMain(const void *startup_data, size_t startup_data_len)
 {
-	sigjmp_buf	local_sigjmp_buf;
+	PG_exception	local_sigjmp_buf = {PG_exception_magic};
 	BackgroundWorker *worker;
 	bgworker_main_type entrypt;
 
@@ -804,7 +804,7 @@ BackgroundWorkerMain(const void *startup_data, size_t startup_data_len)
 	 *
 	 * We just need to clean up, report the error, and go away.
 	 */
-	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
+	if (sigsetjmp(local_sigjmp_buf.buf, 1) != 0)
 	{
 		/* Since not using PG_TRY, must reset error stack by hand */
 		error_context_stack = NULL;
