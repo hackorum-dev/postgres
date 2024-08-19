@@ -99,7 +99,7 @@
 /* Global variables */
 ErrorContextCallback *error_context_stack = NULL;
 
-sigjmp_buf *PG_exception_stack = NULL;
+PG_exception *PG_exception_stack = NULL;
 
 /*
  * Hook for intercepting messages before they are sent to the server log.
@@ -2201,7 +2201,15 @@ pg_re_throw(void)
 {
 	/* If possible, throw the error to the next outer setjmp handler */
 	if (PG_exception_stack != NULL)
-		siglongjmp(*PG_exception_stack, 1);
+	{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused"
+		void *stackTop = NULL;
+#pragma clang diagnostic pop
+		Assert((void *)PG_exception_stack > &stackTop ||
+				PG_exception_stack->magic == PG_exception_magic);
+		siglongjmp(PG_exception_stack->buf, 1);
+	}
 	else
 	{
 		/*
