@@ -18,9 +18,6 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#include "common/logging.h"
-#include "common/parse_manifest.h"
-#include "fe_utils/simple_list.h"
 #include "getopt_long.h"
 #include "pg_verifybackup.h"
 #include "pgtime.h"
