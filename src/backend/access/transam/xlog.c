@@ -10139,6 +10139,25 @@ GetXLogWriteRecPtr(void)
 }
 
 /*
+ * Get the end pointer of the last inserted WAL record.
+ * The returned value will differ from the current insert pointer
+ * returned by GetXLogInsertRecPtr() if the last WAL record ends
+ * up at a page boundary.
+ */
+XLogRecPtr
+GetXLogLastInsertEndRecPtr(void)
+{
+	XLogCtlInsert *Insert = &XLogCtl->Insert;
+	uint64		current_bytepos;
+
+	SpinLockAcquire(&Insert->insertpos_lck);
+	current_bytepos = Insert->CurrBytePos;
+	SpinLockRelease(&Insert->insertpos_lck);
+
+	return XLogBytePosToEndRecPtr(current_bytepos);
+}
+
+/*
  * Returns the redo pointer of the last checkpoint or restartpoint. This is
  * the oldest point in WAL that we still need, if we have to restart recovery.
  */
