@@ -1230,11 +1230,13 @@ CreateLockFile(const char *filename, bool amPostmaster,
 		/*
 		 * Couldn't create the pid file. Probably it already exists.
 		 */
-		if ((errno != EEXIST && errno != EACCES) || ntries > 100)
+		if ((errno != EEXIST && errno != EACCES) || ntries > 10)
+{
 			ereport(FATAL,
 					(errcode_for_file_access(),
-					 errmsg("could not create lock file \"%s\": %m",
-							filename)));
+					 errmsg("could not create lock file (ntries: %d) \"%s\": %m",
+							ntries, filename)));
+}
 
 		/*
 		 * Read the file to get the old owner's PID.  Note race condition
