@@ -277,6 +277,9 @@ get_pgpid(bool is_status_request)
 	pidf = fopen(pid_file, "r");
 	if (pidf == NULL)
 	{
+int en = errno;
+write_stderr("!!!get_pgpid| pid_file: %s, pidf: %p, errno: %d\n", pid_file, pidf, en);
+errno = en;
 		/* No pid file, not an error on startup */
 		if (errno == ENOENT)
 			return 0;
@@ -726,7 +729,10 @@ wait_for_postmaster_stop(void)
 		pid_t		pid;
 
 		if ((pid = get_pgpid(false)) == 0)
+{
+write_stderr("!!!wait_for_postmaster_stop| pid: %d\n", pid);
 			return true;		/* pid file is gone */
+}
 
 		if (kill(pid, 0) != 0)
 		{
