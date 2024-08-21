@@ -148,8 +148,14 @@ pgwin32_open_handle(const char *fileName, int fileFlags, bool backup_semantics)
 		 * invisible.  With O_CREAT, we have no choice but to report that
 		 * there's a file in the way (which wouldn't happen on Unix).
 		 */
+DWORD ntstat = pg_RtlGetLastNtStatus();
+if (strstr(fileName, "postmaster.pid") != NULL)
+{
+fprintf(stderr, "!!!pgwin32_open_handle| fileFlags: %X, err: %d, ntstatus: %X\n", fileFlags, err, ntstat);
+}
+
 		if (err == ERROR_ACCESS_DENIED &&
-			pg_RtlGetLastNtStatus() == STATUS_DELETE_PENDING)
+			ntstat == STATUS_DELETE_PENDING)
 		{
 			if (fileFlags & O_CREAT)
 				err = ERROR_FILE_EXISTS;
@@ -224,6 +230,12 @@ pgwin32_fopen(const char *fileName, const char *mode)
 		openmode |= O_TEXT;
 
 	fd = pgwin32_open(fileName, openmode);
+if (strstr(fileName, "postmaster.pid") != NULL)
+{
+int en = errno;
+fprintf(stderr, "!!!pgwin32_fopen| fileName: %s, fd: %d, errno: %d\n", fileName, fd, en);
+errno = en;
+}
 	if (fd == -1)
 		return NULL;
 	return _fdopen(fd, mode);
