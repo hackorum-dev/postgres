@@ -1726,7 +1726,7 @@ stop_standby_server(const char *datadir)
 	char	   *pg_ctl_cmd;
 	int			rc;
 
-	pg_ctl_cmd = psprintf("\"%s\" stop -D \"%s\" -s", pg_ctl_path,
+	pg_ctl_cmd = psprintf("\"%s\" stop -D \"%s\" ", pg_ctl_path,
 						  datadir);
 	pg_log_debug("pg_ctl command is: %s", pg_ctl_cmd);
 	rc = system(pg_ctl_cmd);
