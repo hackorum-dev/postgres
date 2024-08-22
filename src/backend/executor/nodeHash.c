@@ -194,7 +194,7 @@ MultiExecPrivateHash(HashState *node)
 			else
 			{
 				/* Not subject to skew optimization, so insert normally */
-				ExecHashTableInsert(hashtable, slot, hashvalue);
+				ExecHashTableInsertSlot(hashtable, slot, hashvalue);
 			}
 			hashtable->totalTuples += 1;
 		}
@@ -1760,7 +1760,7 @@ ExecParallelHashIncreaseNumBuckets(HashJoinTable hashtable)
 }
 
 /*
- * ExecHashTableInsert
+ * ExecHashTableInsertSlot
  *		insert a tuple into the hash table depending on the hash value
  *		it may just go to a temp file for later batches
  *
@@ -1771,12 +1771,29 @@ ExecParallelHashIncreaseNumBuckets(HashJoinTable hashtable)
  * worth the messiness required.
  */
 void
-ExecHashTableInsert(HashJoinTable hashtable,
-					TupleTableSlot *slot,
-					uint32 hashvalue)
+ExecHashTableInsertSlot(HashJoinTable hashtable,
+						TupleTableSlot *slot,
+						uint32 hashvalue)
 {
 	bool		shouldFree;
 	MinimalTuple tuple = ExecFetchSlotMinimalTuple(slot, &shouldFree);
+
+	ExecHashTableInsertTuple(hashtable, tuple, hashvalue);
+
+	if (shouldFree)
+		heap_free_minimal_tuple(tuple);
+}
+
+/*
+ * ExecHashTableInsertTuple
+ *		insert a tuple into the hash table depending on the hash value
+ *		it may just go to a temp file for later batches
+ */
+void
+ExecHashTableInsertTuple(HashJoinTable hashtable,
+						 MinimalTuple tuple,
+						 uint32 hashvalue)
+{
 	int			bucketno;
 	int			batchno;
 
@@ -1852,9 +1869,6 @@ ExecHashTableInsert(HashJoinTable hashtable,
 							  &hashtable->innerBatchFile[batchno],
 							  hashtable);
 	}
-
-	if (shouldFree)
-		heap_free_minimal_tuple(tuple);
 }
 
 /*
@@ -1928,12 +1942,10 @@ retry:
  * tuples that belong in the current batch once growth has been disabled.
  */
 void
-ExecParallelHashTableInsertCurrentBatch(HashJoinTable hashtable,
-										TupleTableSlot *slot,
-										uint32 hashvalue)
+ExecParallelHashTableInsertTupleCurrentBatch(HashJoinTable hashtable,
+											 MinimalTuple tuple,
+											 uint32 hashvalue)
 {
-	bool		shouldFree;
-	MinimalTuple tuple = ExecFetchSlotMinimalTuple(slot, &shouldFree);
 	HashJoinTuple hashTuple;
 	dsa_pointer shared;
 	int			batchno;
@@ -1949,6 +1961,21 @@ ExecParallelHashTableInsertCurrentBatch(HashJoinTable hashtable,
 	HeapTupleHeaderClearMatch(HJTUPLE_MINTUPLE(hashTuple));
 	ExecParallelHashPushTuple(&hashtable->buckets.shared[bucketno],
 							  hashTuple, shared);
+}
+
+/*
+ * like ExecParallelHashTableInsertTupleCurrentBatch,
+ * but this function accept a TupleTableSlot
+ */
+void
+ExecParallelHashTableInsertSlotCurrentBatch(HashJoinTable hashtable,
+										TupleTableSlot *slot,
+										uint32 hashvalue)
+{
+	bool		shouldFree;
+	MinimalTuple tuple = ExecFetchSlotMinimalTuple(slot, &shouldFree);
+
+	ExecParallelHashTableInsertTupleCurrentBatch(hashtable, tuple, hashvalue);
 
 	if (shouldFree)
 		heap_free_minimal_tuple(tuple);
@@ -2621,7 +2648,7 @@ ExecHashGetSkewBucket(HashJoinTable hashtable, uint32 hashvalue)
  *		Insert a tuple into the skew hashtable.
  *
  * This should generally match up with the current-batch case in
- * ExecHashTableInsert.
+ * ExecHashTableInsertSlot.
  */
 static void
 ExecHashSkewTableInsert(HashJoinTable hashtable,
@@ -2702,8 +2729,8 @@ ExecHashRemoveNextSkewBucket(HashJoinTable hashtable)
 		Size		tupleSize;
 
 		/*
-		 * This code must agree with ExecHashTableInsert.  We do not use
-		 * ExecHashTableInsert directly as ExecHashTableInsert expects a
+		 * This code must agree with ExecHashTableInsertSlot.  We do not use
+		 * ExecHashTableInsertSlot directly as ExecHashTableInsertSlot expects a
 		 * TupleTableSlot while we already have HashJoinTuples.
 		 */
 		tuple = HJTUPLE_MINTUPLE(hashTuple);
