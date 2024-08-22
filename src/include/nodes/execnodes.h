@@ -2261,6 +2261,7 @@ typedef struct HashJoinState
 	TupleTableSlot *hj_NullInnerTupleSlot;
 	Tuplestorestate *hj_NullOuterTupleStore;
 	TupleTableSlot *hj_FirstOuterTupleSlot;
+	StringInfo	hj_outerTupleBuffer;
 	int			hj_JoinState;
 	bool		hj_KeepNullTuples;
 	bool		hj_MatchedOuter;
