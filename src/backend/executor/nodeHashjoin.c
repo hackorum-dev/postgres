@@ -199,10 +199,10 @@ static TupleTableSlot *ExecHashJoinOuterGetTuple(PlanState *outerNode,
 static TupleTableSlot *ExecParallelHashJoinOuterGetTuple(PlanState *outerNode,
 														 HashJoinState *hjstate,
 														 uint32 *hashvalue);
-static TupleTableSlot *ExecHashJoinGetSavedTuple(HashJoinState *hjstate,
-												 BufFile *file,
-												 uint32 *hashvalue,
-												 TupleTableSlot *tupleSlot);
+static MinimalTuple ExecHashJoinGetSavedTuple(HashJoinState *hjstate,
+											  BufFile *file,
+											  uint32 *hashvalue,
+											  StringInfo buf);
 static bool ExecHashJoinNewBatch(HashJoinState *hjstate);
 static bool ExecParallelHashJoinNewBatch(HashJoinState *hjstate);
 static void ExecParallelHashJoinPartitionOuter(HashJoinState *hjstate);
@@ -1039,6 +1039,7 @@ ExecInitHashJoin(HashJoin *node, EState *estate, int eflags)
 	hjstate->hj_HashTable = NULL;
 	hjstate->hj_NullOuterTupleStore = NULL;
 	hjstate->hj_FirstOuterTupleSlot = NULL;
+	hjstate->hj_outerTupleBuffer = NULL;
 
 	hjstate->hj_CurHashValue = 0;
 	hjstate->hj_CurBucketNo = 0;
@@ -1169,6 +1170,7 @@ ExecHashJoinOuterGetTuple(PlanState *outerNode,
 	}
 	else if (curbatch < hashtable->nbatch)
 	{
+		MinimalTuple mtup;
 		BufFile    *file = hashtable->outerBatchFile[curbatch];
 
 		/*
@@ -1178,12 +1180,38 @@ ExecHashJoinOuterGetTuple(PlanState *outerNode,
 		if (file == NULL)
 			return NULL;
 
-		slot = ExecHashJoinGetSavedTuple(hjstate,
+		if (unlikely(hjstate->hj_outerTupleBuffer == NULL))
+		{
+			/*
+			 * Avoid realloc memory for MinimalTuple, we alloc a buffer
+			 * to reuse store MinimalTuple. MemoryContext same as hjstate.
+			 */
+			MemoryContext oldcontext = MemoryContextSwitchTo(GetMemoryChunkContext(hjstate));
+			hjstate->hj_outerTupleBuffer = makeStringInfo();
+			MemoryContextSwitchTo(oldcontext);
+		}
+
+		mtup = ExecHashJoinGetSavedTuple(hjstate,
 										 file,
 										 hashvalue,
-										 hjstate->hj_OuterTupleSlot);
-		if (!TupIsNull(slot))
+										 hjstate->hj_outerTupleBuffer);
+		if (likely(mtup != NULL))
+		{
+			slot = hjstate->hj_OuterTupleSlot;
+
+			/*
+			 * mtup is hold in hjstate->hj_outerTupleBuffer, so we can using
+			 * shouldFree as false to call ExecForceStoreMinimalTuple().
+			 * 
+			 * When slot is TTSOpsMinimalTuple we can avoid realloc memory for
+			 * new MinimalTuple(reuse StringInfo to call ExecHashJoinGetSavedTuple).
+			 * 
+			 * More importantly, in non-TTSOpsMinimalTuple scenarios, it can avoid
+			 * reform(materialize) tuple(see ExecForceStoreMinimalTuple).
+			 */
+			ExecForceStoreMinimalTuple(mtup, slot, false);
 			return slot;
+		}
 	}
 
 	/* End of this batch */
@@ -1282,7 +1310,6 @@ ExecHashJoinNewBatch(HashJoinState *hjstate)
 	int			nbatch;
 	int			curbatch;
 	BufFile    *innerFile;
-	TupleTableSlot *slot;
 	uint32		hashvalue;
 
 	nbatch = hashtable->nbatch;
@@ -1373,21 +1400,25 @@ ExecHashJoinNewBatch(HashJoinState *hjstate)
 
 	if (innerFile != NULL)
 	{
+		StringInfoData buf;
+		MinimalTuple tuple;
+
 		if (BufFileSeek(innerFile, 0, 0, SEEK_SET))
 			ereport(ERROR,
 					(errcode_for_file_access(),
 					 errmsg("could not rewind hash-join temporary file")));
 
-		while ((slot = ExecHashJoinGetSavedTuple(hjstate,
-												 innerFile,
-												 &hashvalue,
-												 hjstate->hj_HashTupleSlot)))
+		initStringInfo(&buf);
+		while ((tuple = ExecHashJoinGetSavedTuple(hjstate,
+												  innerFile,
+												  &hashvalue,
+												  &buf)))
 		{
 			/*
 			 * NOTE: some tuples may be sent to future batches.  Also, it is
 			 * possible for hashtable->nbatch to be increased here!
 			 */
-			ExecHashTableInsert(hashtable, slot, hashvalue);
+			ExecHashTableInsertTuple(hashtable, tuple, hashvalue);
 		}
 
 		/*
@@ -1396,6 +1427,7 @@ ExecHashJoinNewBatch(HashJoinState *hjstate)
 		 */
 		BufFileClose(innerFile);
 		hashtable->innerBatchFile[curbatch] = NULL;
+		pfree(buf.data);
 	}
 
 	/*
@@ -1454,7 +1486,6 @@ ExecParallelHashJoinNewBatch(HashJoinState *hjstate)
 	{
 		uint32		hashvalue;
 		MinimalTuple tuple;
-		TupleTableSlot *slot;
 
 		if (!hashtable->batches[batchno].done)
 		{
@@ -1486,12 +1517,9 @@ ExecParallelHashJoinNewBatch(HashJoinState *hjstate)
 					while ((tuple = sts_parallel_scan_next(inner_tuples,
 														   &hashvalue)))
 					{
-						ExecForceStoreMinimalTuple(tuple,
-												   hjstate->hj_HashTupleSlot,
-												   false);
-						slot = hjstate->hj_HashTupleSlot;
-						ExecParallelHashTableInsertCurrentBatch(hashtable, slot,
-																hashvalue);
+						ExecParallelHashTableInsertTupleCurrentBatch(hashtable,
+																	 tuple,
+																	 hashvalue);
 					}
 					sts_end_parallel_scan(inner_tuples);
 					BarrierArriveAndWait(batch_barrier,
@@ -1605,14 +1633,14 @@ ExecHashJoinSaveTuple(MinimalTuple tuple, uint32 hashvalue,
  * ExecHashJoinGetSavedTuple
  *		read the next tuple from a batch file.  Return NULL if no more.
  *
- * On success, *hashvalue is set to the tuple's hash value, and the tuple
- * itself is stored in the given slot.
+ * On success, *hashvalue is set to the tuple's hash value, and return
+ * the tuple(stored in the given buf) itself.
  */
-static TupleTableSlot *
+static MinimalTuple
 ExecHashJoinGetSavedTuple(HashJoinState *hjstate,
 						  BufFile *file,
 						  uint32 *hashvalue,
-						  TupleTableSlot *tupleSlot)
+						  StringInfo buf)
 {
 	uint32		header[2];
 	size_t		nread;
@@ -1631,19 +1659,20 @@ ExecHashJoinGetSavedTuple(HashJoinState *hjstate,
 	 * cheating.
 	 */
 	nread = BufFileReadMaybeEOF(file, header, sizeof(header), true);
-	if (nread == 0)				/* end of file */
-	{
-		ExecClearTuple(tupleSlot);
+	if (unlikely(nread == 0))				/* end of file */
 		return NULL;
-	}
+
+	buf->len = 0;	/* inline resetStringInfo(buf); */
+	enlargeStringInfo(buf, header[1]);
+	buf->len = header[1];
 	*hashvalue = header[0];
-	tuple = (MinimalTuple) palloc(header[1]);
+	tuple = (MinimalTuple) buf->data;
 	tuple->t_len = header[1];
 	BufFileReadExact(file,
 					 (char *) tuple + sizeof(uint32),
 					 header[1] - sizeof(uint32));
-	ExecForceStoreMinimalTuple(tuple, tupleSlot, true);
-	return tupleSlot;
+
+	return tuple;
 }
 
 

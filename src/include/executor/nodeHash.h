@@ -33,15 +33,21 @@ extern void ExecHashTableDetachBatch(HashJoinTable hashtable);
 extern void ExecParallelHashTableSetCurrentBatch(HashJoinTable hashtable,
 												 int batchno);
 
-extern void ExecHashTableInsert(HashJoinTable hashtable,
-								TupleTableSlot *slot,
-								uint32 hashvalue);
+extern void ExecHashTableInsertSlot(HashJoinTable hashtable,
+									TupleTableSlot *slot,
+									uint32 hashvalue);
+extern void ExecHashTableInsertTuple(HashJoinTable hashtable,
+									 MinimalTuple tuple,
+									 uint32 hashvalue);
 extern void ExecParallelHashTableInsert(HashJoinTable hashtable,
 										TupleTableSlot *slot,
 										uint32 hashvalue);
-extern void ExecParallelHashTableInsertCurrentBatch(HashJoinTable hashtable,
-													TupleTableSlot *slot,
-													uint32 hashvalue);
+extern void ExecParallelHashTableInsertSlotCurrentBatch(HashJoinTable hashtable,
+														TupleTableSlot *slot,
+														uint32 hashvalue);
+extern void ExecParallelHashTableInsertTupleCurrentBatch(HashJoinTable hashtable,
+														 MinimalTuple tuple,
+														 uint32 hashvalue);
 extern void ExecHashGetBucketAndBatch(HashJoinTable hashtable,
 									  uint32 hashvalue,
 									  int *bucketno,
