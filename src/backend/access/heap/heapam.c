@@ -2340,7 +2340,6 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 
 		tuple = ExecFetchSlotHeapTuple(slots[i], true, NULL);
 		slots[i]->tts_tableOid = RelationGetRelid(relation);
-		tuple->t_tableOid = slots[i]->tts_tableOid;
 		heaptuples[i] = heap_prepare_insert(relation, tuple, xid, cid,
 											options);
 	}
