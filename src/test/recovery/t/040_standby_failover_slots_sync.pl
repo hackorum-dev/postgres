@@ -711,6 +711,141 @@ is($result, 't',
 	"subscriber1 gets data from primary after standby1 acknowledges changes");
 
 ##################################################
+# Test that logical failover replication slots wait for the specified
+# synchronous replicas to receive the changes first. It uses the
+# following set up:
+#
+# 				(synchronous physical standbys)
+#				| ----> standby1 (application_name = standby1)
+#				| ----> standby2 (application_name = standby2)
+# primary -----	|
+#				(logical replication)
+#				| ----> subscriber1 (failover = true, slot_name = lsub1_slot)
+#				| ----> subscriber2 (failover = false, slot_name = lsub2_slot)
+#
+# synchronous_commit = 'on'
+# synchronous_standby_names = 'ANY 2 (standby1, standby2)'
+#
+# The setup is configured in such a way that the logical slot of subscriber1 is
+# enabled for failover, and thus the subscriber1 will wait for the changes to have
+# been synchronously replicated before receiving the decoded changes.
+##################################################
+
+$primary->safe_psql('postgres', "TRUNCATE tab_int;");
+# Setup synchronous replication
+$primary->append_conf(
+	'postgresql.conf', qq(
+		synchronous_commit = 'on'
+		synchronous_standby_names = 'ANY 2 (standby1, standby2)'
+));
+
+$primary->reload;
+
+$standby1->append_conf('postgresql.conf', "primary_conninfo = '$connstr_1 dbname=postgres application_name=standby1'");
+$standby1->reload;
+
+$standby2->append_conf('postgresql.conf', "primary_conninfo = '$connstr_1 dbname=postgres application_name=standby2'");
+$standby2->reload;
+
+# Check that synchronous replication is setup properly
+$standby2->stop;
+
+# Create some data on the primary
+$primary_row_count = 10;
+
+my $sync_back_q = $primary->background_psql(
+	'postgres',
+	on_error_stop => 0,
+	timeout => $PostgreSQL::Test::Utils::timeout_default);
+
+$sync_back_q->query_until(qr/insert_blocked_on_sync_rep/, q(
+    \echo insert_blocked_on_sync_rep
+   INSERT INTO tab_int SELECT generate_series(1, 10);
+));
+
+$result = $primary->safe_psql('postgres',
+	"SELECT count(*) = $primary_row_count FROM tab_int;");
+
+is($result, 'f', "primary row count is not updated due to synchronous replication");
+
+# Verify the standby specified in synchronized_standby_slots (sb1_slot aka standby1)
+# catches up with the primary.
+$primary->wait_for_replay_catchup($standby1);
+$result = $standby1->safe_psql('postgres',
+	"SELECT count(*) = $primary_row_count FROM tab_int;");
+is($result, 't', "standby1 gets data from primary");
+
+# Validate that synchronized_standby_slots takes precedence over waiting for
+# changes to have been synchronous replicated.
+# Since the slot specified (sb1_slot) has received the changes, primary can send
+# the decoded changes to the subscription enabled for failover
+# (i.e. regress_mysub1).
+$primary->wait_for_catchup('regress_mysub1');
+$result = $subscriber1->safe_psql('postgres',
+	"SELECT count(*) = $primary_row_count FROM tab_int;");
+is($result, 't',
+	"subscriber1 gets data from primary after standby1 acknowledges changes");
+
+$standby2->start;
+$primary->wait_for_replay_catchup($standby2);
+
+# Unset synchronized_standby_slots to test synchronous replication
+# blocks primary from sending logical decoded changes to failover slots until
+# changes have been synchronously replicated.
+$primary->append_conf(
+	'postgresql.conf', qq(
+	synchronized_standby_slots = ''));
+$primary->reload;
+
+$primary_row_count = 20;
+$standby2->stop;
+
+$sync_back_q->query_until(
+	qr/insert_blocked_on_additional_sync_rep/, q(
+	\echo insert_blocked_on_additional_sync_rep
+	INSERT INTO tab_int SELECT generate_series(11, 20);
+));
+
+# Since $standby2 has not received the changes, validate that subscriber1 (failover = true)
+# has not received the decoded changes, but subscriber2 (failover = false) has.
+$primary->wait_for_catchup('regress_mysub2');
+
+$result = $subscriber2->safe_psql('postgres',
+	"SELECT count(*) = $primary_row_count FROM tab_int;");
+is($result, 't',
+	"subscriber2 gets data from primary even if the changes have not been synchronously acknowledged.");
+
+$result = $subscriber1->safe_psql('postgres',
+	"SELECT count(*) = $primary_row_count FROM tab_int;");
+is($result, 'f',
+	"subscriber1 does not get data from primary since changes have not been synchronously acknowledged.");
+
+# Start standby2 to allow the changes to be acknowledged by all the synchronous standbys.
+$standby2->start;
+$primary->wait_for_replay_catchup($standby2);
+$primary->wait_for_catchup('regress_mysub1');
+
+# Now that the changes have been replicated to all synchronous nodes,
+# primary can send the decoded changes to the subscription enabled for failover
+# (i.e. regress_mysub1). While the standby was down, regress_mysub1 didn't
+# receive any data from the primary. i.e. the primary didn't allow it to go
+# ahead of requirements of synchronous commit.
+$result = $subscriber1->safe_psql('postgres',
+	"SELECT count(*) = $primary_row_count FROM tab_int;");
+is($result, 't',
+	"subscriber1 gets data from primary since changes have been syhcronously acknowledged.");
+# No longer need to run the background session.
+$sync_back_q->quit;
+
+# Reset synchronized_standby_slots and synchronous commit for below test cases
+$primary->append_conf(
+	'postgresql.conf', qq(
+synchronized_standby_slots = 'sb1_slot'
+synchronous_standby_names = ''
+));
+$primary->reload;
+
+##################################################
 # Verify that when using pg_logical_slot_get_changes to consume changes from a
 # logical failover slot, it will also wait for the slots specified in
 # synchronized_standby_slots to catch up.

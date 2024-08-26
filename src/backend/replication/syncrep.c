@@ -78,6 +78,7 @@
 #include "common/int.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "replication/slot.h"
 #include "replication/syncrep.h"
 #include "replication/walsender.h"
 #include "replication/walsender_private.h"
@@ -95,7 +96,7 @@ char	   *SyncRepStandbyNames;
 static bool announce_next_takeover = true;
 
 SyncRepConfigData *SyncRepConfig = NULL;
-static int	SyncRepWaitMode = SYNC_REP_NO_WAIT;
+int	SyncRepWaitMode = SYNC_REP_NO_WAIT;
 
 static void SyncRepQueueInsert(int mode);
 static void SyncRepCancelWait(void);
@@ -123,6 +124,8 @@ static int	cmp_lsn(const void *a, const void *b);
 #ifdef USE_ASSERT_CHECKING
 static bool SyncRepQueueIsOrderedByLSN(int mode);
 #endif
+
+bool SyncRepConfigured(void);
 
 /*
  * ===========================================================
@@ -169,8 +172,7 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 	 * described in SyncRepUpdateSyncStandbysDefined(). On the other hand, if
 	 * it's false, the lock is not necessary because we don't touch the queue.
 	 */
-	if (!SyncRepRequested() ||
-		!((volatile WalSndCtlData *) WalSndCtl)->sync_standbys_defined)
+	if (!SyncRepConfigured())
 		return;
 
 	/* Cap the level for anything other than commit to remote flush only. */
@@ -522,6 +524,15 @@ SyncRepReleaseWaiters(void)
 	}
 
 	LWLockRelease(SyncRepLock);
+
+	/*
+	 * If synchronized_standby_slots is set, the respective walsender's
+	 * will be responsible for broadcasting the value.
+	 */
+	if (strcmp(synchronized_standby_slots, "") == 0)
+	{
+		ConditionVariableBroadcast(&WalSndCtl->wal_confirm_rcv_cv);
+	}
 
 	elog(DEBUG3, "released %d procs up to write %X/%X, %d procs up to flush %X/%X, %d procs up to apply %X/%X",
 		 numwrite, LSN_FORMAT_ARGS(writePtr),
@@ -1068,4 +1079,14 @@ assign_synchronous_commit(int newval, void *extra)
 			SyncRepWaitMode = SYNC_REP_NO_WAIT;
 			break;
 	}
+}
+
+bool
+SyncRepConfigured()
+{
+	if (!SyncRepRequested() ||
+		!((volatile WalSndCtlData *) WalSndCtl)->sync_standbys_defined)
+		return false;
+
+	return true;
 }

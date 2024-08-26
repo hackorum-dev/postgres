@@ -82,6 +82,7 @@ extern PGDLLIMPORT char *SyncRepStandbyNames;
 
 /* called by user backend */
 extern void SyncRepWaitForLSN(XLogRecPtr lsn, bool commit);
+extern bool SyncRepConfigured();
 
 /* called at backend exit */
 extern void SyncRepCleanupAtProcExit(void);
@@ -95,6 +96,8 @@ extern int	SyncRepGetCandidateStandbys(SyncRepStandbyData **standbys);
 
 /* called by checkpointer */
 extern void SyncRepUpdateSyncStandbysDefined(void);
+
+extern int	SyncRepWaitMode;
 
 /*
  * Internal functions for parsing synchronous_standby_names grammar,

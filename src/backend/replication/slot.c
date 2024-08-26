@@ -49,6 +49,7 @@
 #include "postmaster/interrupt.h"
 #include "replication/slotsync.h"
 #include "replication/slot.h"
+#include "replication/syncrep.h"
 #include "replication/walsender_private.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -2591,8 +2592,8 @@ SlotExistsInSyncStandbySlots(const char *slot_name)
 }
 
 /*
- * Return true if the slots specified in synchronized_standby_slots have caught up to
- * the given WAL location, false otherwise.
+ * Return true if the slots specified in synchronized_standby_slots or synchronous
+ * replication have caught up to the given WAL location, false otherwise.
  *
  * The elevel parameter specifies the error level used for logging messages
  * related to slots that do not exist, are invalidated, or are inactive.
@@ -2606,9 +2607,9 @@ StandbySlotsHaveCaughtup(XLogRecPtr wait_for_lsn, int elevel)
 
 	/*
 	 * Don't need to wait for the standbys to catch up if there is no value in
-	 * synchronized_standby_slots.
+	 * synchronized_standby_slots or synchronous replication is not configured.
 	 */
-	if (synchronized_standby_slots_config == NULL)
+	if (synchronized_standby_slots_config == NULL && !SyncRepConfigured())
 		return true;
 
 	/*
@@ -2619,144 +2620,182 @@ StandbySlotsHaveCaughtup(XLogRecPtr wait_for_lsn, int elevel)
 		return true;
 
 	/*
-	 * Don't need to wait for the standbys to catch up if they are already
-	 * beyond the specified WAL location.
+	 * In the event that synchronized_standby_slots and synchronous replication is
+	 * configured, have the former take precedence.
 	 */
-	if (!XLogRecPtrIsInvalid(ss_oldest_flush_lsn) &&
-		ss_oldest_flush_lsn >= wait_for_lsn)
-		return true;
-
-	/*
-	 * To prevent concurrent slot dropping and creation while filtering the
-	 * slots, take the ReplicationSlotControlLock outside of the loop.
-	 */
-	LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
-
-	name = synchronized_standby_slots_config->slot_names;
-	for (int i = 0; i < synchronized_standby_slots_config->nslotnames; i++)
+	if (synchronized_standby_slots_config != NULL)
 	{
-		XLogRecPtr	restart_lsn;
-		bool		invalidated;
-		bool		inactive;
-		ReplicationSlot *slot;
+		/*
+		 * Don't need to wait for the standbys to catch up if they are already
+		 * beyond the specified WAL location.
+		 */
+		if (!XLogRecPtrIsInvalid(ss_oldest_flush_lsn) &&
+			ss_oldest_flush_lsn >= wait_for_lsn)
+			return true;
 
-		slot = SearchNamedReplicationSlot(name, false);
+		/*
+		 * To prevent concurrent slot dropping and creation while filtering the
+		 * slots, take the ReplicationSlotControlLock outside of the loop.
+		 */
+		LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
 
-		if (!slot)
+		name = synchronized_standby_slots_config->slot_names;
+		for (int i = 0; i < synchronized_standby_slots_config->nslotnames; i++)
 		{
-			/*
-			 * If a slot name provided in synchronized_standby_slots does not
-			 * exist, report a message and exit the loop. A user can specify a
-			 * slot name that does not exist just before the server startup.
-			 * The GUC check_hook(validate_sync_standby_slots) cannot validate
-			 * such a slot during startup as the ReplicationSlotCtl shared
-			 * memory is not initialized at that time. It is also possible for
-			 * a user to drop the slot in synchronized_standby_slots
-			 * afterwards.
-			 */
-			ereport(elevel,
-					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					errmsg("replication slot \"%s\" specified in parameter \"%s\" does not exist",
-						   name, "synchronized_standby_slots"),
-					errdetail("Logical replication is waiting on the standby associated with replication slot \"%s\".",
-							  name),
-					errhint("Create the replication slot \"%s\" or amend parameter \"%s\".",
-							name, "synchronized_standby_slots"));
-			break;
-		}
+			XLogRecPtr	restart_lsn;
+			bool		invalidated;
+			bool		inactive;
+			ReplicationSlot	*slot;
 
-		if (SlotIsLogical(slot))
-		{
-			/*
-			 * If a logical slot name is provided in
-			 * synchronized_standby_slots, report a message and exit the loop.
-			 * Similar to the non-existent case, a user can specify a logical
-			 * slot name in synchronized_standby_slots before the server
-			 * startup, or drop an existing physical slot and recreate a
-			 * logical slot with the same name.
-			 */
-			ereport(elevel,
-					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					errmsg("cannot specify logical replication slot \"%s\" in parameter \"%s\"",
-						   name, "synchronized_standby_slots"),
-					errdetail("Logical replication is waiting for correction on replication slot \"%s\".",
-							  name),
-					errhint("Remove the logical replication slot \"%s\" from parameter \"%s\".",
-							name, "synchronized_standby_slots"));
-			break;
-		}
+			slot = SearchNamedReplicationSlot(name, false);
 
-		SpinLockAcquire(&slot->mutex);
-		restart_lsn = slot->data.restart_lsn;
-		invalidated = slot->data.invalidated != RS_INVAL_NONE;
-		inactive = slot->active_pid == 0;
-		SpinLockRelease(&slot->mutex);
-
-		if (invalidated)
-		{
-			/* Specified physical slot has been invalidated */
-			ereport(elevel,
-					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					errmsg("physical replication slot \"%s\" specified in parameter \"%s\" has been invalidated",
-						   name, "synchronized_standby_slots"),
-					errdetail("Logical replication is waiting on the standby associated with replication slot \"%s\".",
-							  name),
-					errhint("Drop and recreate the replication slot \"%s\", or amend parameter \"%s\".",
-							name, "synchronized_standby_slots"));
-			break;
-		}
-
-		if (XLogRecPtrIsInvalid(restart_lsn) || restart_lsn < wait_for_lsn)
-		{
-			/* Log a message if no active_pid for this physical slot */
-			if (inactive)
+			if (!slot)
+			{
+				/*
+				 * If a slot name provided in synchronized_standby_slots does not
+				 * exist, report a message and exit the loop. A user can specify a
+				 * slot name that does not exist just before the server startup.
+				 * The GUC check_hook(validate_sync_standby_slots) cannot validate
+				 * such a slot during startup as the ReplicationSlotCtl shared
+				 * memory is not initialized at that time. It is also possible for
+				 * a user to drop the slot in synchronized_standby_slots
+				 * afterwards.
+				 */
 				ereport(elevel,
-						errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-						errmsg("replication slot \"%s\" specified in parameter \"%s\" does not have active_pid",
+						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("replication slot \"%s\" specified in parameter \"%s\" does not exist",
 							   name, "synchronized_standby_slots"),
 						errdetail("Logical replication is waiting on the standby associated with replication slot \"%s\".",
 								  name),
-						errhint("Start the standby associated with the replication slot \"%s\", or amend parameter \"%s\".",
+						errhint("Create the replication slot \"%s\" or amend parameter \"%s\".",
 								name, "synchronized_standby_slots"));
+				break;
+			}
 
-			/* Continue if the current slot hasn't caught up. */
-			break;
+			if (SlotIsLogical(slot))
+			{
+				/*
+				 * If a logical slot name is provided in
+				 * synchronized_standby_slots, report a message and exit the loop.
+				 * Similar to the non-existent case, a user can specify a logical
+				 * slot name in synchronized_standby_slots before the server
+				 * startup, or drop an existing physical slot and recreate a
+				 * logical slot with the same name.
+				 */
+				ereport(elevel,
+						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("cannot specify logical replication slot \"%s\" in parameter \"%s\"",
+							   name, "synchronized_standby_slots"),
+						errdetail("Logical replication is waiting for correction on replication slot \"%s\".",
+								  name),
+						errhint("Remove the logical replication slot \"%s\" from parameter \"%s\".",
+								name, "synchronized_standby_slots"));
+				break;
+			}
+
+			SpinLockAcquire(&slot->mutex);
+			restart_lsn = slot->data.restart_lsn;
+			invalidated = slot->data.invalidated != RS_INVAL_NONE;
+			inactive = slot->active_pid == 0;
+			SpinLockRelease(&slot->mutex);
+
+			if (invalidated)
+			{
+				/* Specified physical slot has been invalidated */
+				ereport(elevel,
+						errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						errmsg("physical replication slot \"%s\" specified in parameter \"%s\" has been invalidated",
+							   name, "synchronized_standby_slots"),
+						errdetail("Logical replication is waiting on the standby associated with replication slot \"%s\".",
+								  name),
+						errhint("Drop and recreate the replication slot \"%s\", or amend parameter \"%s\".",
+								name, "synchronized_standby_slots"));
+				break;
+			}
+
+			if (XLogRecPtrIsInvalid(restart_lsn) || restart_lsn < wait_for_lsn)
+			{
+				/* Log a message if no active_pid for this physical slot */
+				if (inactive)
+					ereport(elevel,
+							errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+							errmsg("replication slot \"%s\" specified in parameter \"%s\" does not have active_pid",
+								   name, "synchronized_standby_slots"),
+							errdetail("Logical replication is waiting on the standby associated with replication slot \"%s\".",
+									  name),
+							errhint("Start the standby associated with the replication slot \"%s\", or amend parameter \"%s\".",
+									name, "synchronized_standby_slots"));
+
+				/* Continue if the current slot hasn't caught up. */
+				break;
+			}
+
+			Assert(restart_lsn >= wait_for_lsn);
+
+			if (XLogRecPtrIsInvalid(min_restart_lsn) ||
+				min_restart_lsn > restart_lsn)
+				min_restart_lsn = restart_lsn;
+
+			caught_up_slot_num++;
+
+			name += strlen(name) + 1;
 		}
 
-		Assert(restart_lsn >= wait_for_lsn);
+		LWLockRelease(ReplicationSlotControlLock);
 
-		if (XLogRecPtrIsInvalid(min_restart_lsn) ||
-			min_restart_lsn > restart_lsn)
-			min_restart_lsn = restart_lsn;
+		/*
+		 * Return false if not all the standbys have caught up to the specified
+		 * WAL location.
+		 */
+		if (caught_up_slot_num != synchronized_standby_slots_config->nslotnames)
+			return false;
 
-		caught_up_slot_num++;
+		/* The ss_oldest_flush_lsn must not retreat. */
+		Assert(XLogRecPtrIsInvalid(ss_oldest_flush_lsn) ||
+			   min_restart_lsn >= ss_oldest_flush_lsn);
 
-		name += strlen(name) + 1;
+		ss_oldest_flush_lsn = min_restart_lsn;
+
+		return true;
 	}
+	else
+	{
+		volatile WalSndCtlData *walsndctl = WalSndCtl;
+		static XLogRecPtr	lsn[NUM_SYNC_REP_WAIT_MODE]; /* Cache LSNs */
+		static bool initialized = false;
+		int i;
 
-	LWLockRelease(ReplicationSlotControlLock);
+		if (!initialized)
+		{
+			for (i = 0; i < NUM_SYNC_REP_WAIT_MODE; i++)
+			{
+				lsn[i] = InvalidXLogRecPtr;
+			}
+			initialized = true;
+		}
 
-	/*
-	 * Return false if not all the standbys have caught up to the specified
-	 * WAL location.
-	 */
-	if (caught_up_slot_num != synchronized_standby_slots_config->nslotnames)
+		Assert(SyncRepWaitMode >= 0);
+
+		if (lsn[SyncRepWaitMode] >= wait_for_lsn)
+			return true;
+
+		LWLockAcquire(SyncRepLock, LW_SHARED);
+		memcpy(lsn, (XLogRecPtr *) walsndctl->lsn, sizeof(lsn));
+		LWLockRelease(SyncRepLock);
+
+		if (lsn[SyncRepWaitMode] >= wait_for_lsn)
+			return true;
+
 		return false;
-
-	/* The ss_oldest_flush_lsn must not retreat. */
-	Assert(XLogRecPtrIsInvalid(ss_oldest_flush_lsn) ||
-		   min_restart_lsn >= ss_oldest_flush_lsn);
-
-	ss_oldest_flush_lsn = min_restart_lsn;
-
-	return true;
+	}
 }
 
 /*
  * Wait for physical standbys to confirm receiving the given lsn.
  *
  * Used by logical decoding SQL functions. It waits for physical standbys
- * corresponding to the physical slots specified in the synchronized_standby_slots GUC.
+ * corresponding to the physical slots specified in the synchronized_standby_slots GUC,
+ * or synchronous replication.
  */
 void
 WaitForStandbyConfirmation(XLogRecPtr wait_for_lsn)
@@ -2766,7 +2805,7 @@ WaitForStandbyConfirmation(XLogRecPtr wait_for_lsn)
 	 * slot is not a logical failover slot, or there is no value in
 	 * synchronized_standby_slots.
 	 */
-	if (!MyReplicationSlot->data.failover || !synchronized_standby_slots_config)
+	if (!MyReplicationSlot->data.failover || !(synchronized_standby_slots_config || SyncRepConfigured()))
 		return;
 
 	ConditionVariablePrepareToSleep(&WalSndCtl->wal_confirm_rcv_cv);
