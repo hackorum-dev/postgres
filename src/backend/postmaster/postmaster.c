@@ -101,6 +101,7 @@
 #include "pg_getopt.h"
 #include "pgstat.h"
 #include "port/pg_bswap.h"
+#include "portability/instr_time.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/auxprocess.h"
 #include "postmaster/bgworker_internals.h"
@@ -1956,6 +1957,10 @@ handle_pm_reload_request_signal(SIGNAL_ARGS)
 static void
 process_pm_reload_request(void)
 {
+#ifdef USE_SYSTEMD
+	instr_time	cur_time;
+#endif
+
 	pending_pm_reload_request = false;
 
 	ereport(DEBUG2,
@@ -1963,6 +1968,13 @@ process_pm_reload_request(void)
 
 	if (Shutdown <= SmartShutdown)
 	{
+#ifdef USE_SYSTEMD
+		/* Set MONOTONIC_USEC for Type=notify-reload. */
+		INSTR_TIME_SET_CURRENT(cur_time);
+		sd_notifyf(0, "RELOADING=1\nMONOTONIC_USEC=" UINT64_FORMAT,
+				   INSTR_TIME_GET_MICROSEC(cur_time));
+#endif
+
 		ereport(LOG,
 				(errmsg("received SIGHUP, reloading configuration files")));
 		ProcessConfigFile(PGC_SIGHUP);
@@ -2018,6 +2030,10 @@ process_pm_reload_request(void)
 #ifdef EXEC_BACKEND
 		/* Update the starting-point file for future children */
 		write_nondefault_variables(PGC_SIGHUP);
+#endif
+
+#ifdef USE_SYSTEMD
+		sd_notify(0, "READY=1");
 #endif
 	}
 }
