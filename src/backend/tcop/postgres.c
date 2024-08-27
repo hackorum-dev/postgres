@@ -3261,6 +3261,7 @@ ProcessInterrupts(void)
 	{
 		ProcDiePending = false;
 		QueryCancelPending = false; /* ProcDie trumps QueryCancel */
+		XLogThrottlePending = false;
 		LockErrorCleanup();
 		/* As in quickdie, don't risk sending to client during auth */
 		if (ClientAuthInProgress && whereToSendOutput == DestRemote)
@@ -3479,6 +3480,12 @@ ProcessInterrupts(void)
 
 	if (ParallelApplyMessagePending)
 		HandleParallelApplyMessages();
+
+	if (XLogThrottlePending)
+	{
+		XLogThrottlePending = false;
+		wait_to_avoid_large_repl_lag();
+	}
 }
 
 /*

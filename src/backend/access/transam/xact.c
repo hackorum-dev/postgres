@@ -2204,6 +2204,9 @@ StartTransaction(void)
 	if (TransactionTimeout > 0)
 		enable_timeout_after(TRANSACTION_TIMEOUT, TransactionTimeout);
 
+	/* Initialize wal_bytes_written */
+	wal_bytes_written = 0;
+
 	ShowTransactionState("StartTransaction");
 }
 

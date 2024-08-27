@@ -56,8 +56,11 @@ extern PGDLLIMPORT int CommitDelay;
 extern PGDLLIMPORT int CommitSiblings;
 extern PGDLLIMPORT bool track_wal_io_timing;
 extern PGDLLIMPORT int wal_decode_buffer_size;
+extern PGDLLIMPORT int rep_lag_avoidance_threshold;
 
 extern PGDLLIMPORT int CheckPointSegments;
+
+extern uint64_t wal_bytes_written;
 
 /* Archive modes */
 typedef enum ArchiveMode
@@ -268,6 +271,7 @@ extern void ReachedEndOfBackup(XLogRecPtr EndRecPtr, TimeLineID tli);
 extern void SetInstallXLogFileSegmentActive(void);
 extern bool IsInstallXLogFileSegmentActive(void);
 extern void XLogShutdownWalRcv(void);
+extern void wait_to_avoid_large_repl_lag(void);
 
 /*
  * Routines to start, stop, and get status of a base backup.

@@ -526,6 +526,14 @@ XLogInsert(RmgrId rmid, uint8 info)
 
 	XLogResetInsertion();
 
+	/* rep_lag_avoidance_threshold is defined in KB */
+	if (rep_lag_avoidance_threshold &&
+		wal_bytes_written > (rep_lag_avoidance_threshold * 1024))
+	{
+		InterruptPending = true;
+		XLogThrottlePending = true;
+	}
+
 	return EndPos;
 }
 

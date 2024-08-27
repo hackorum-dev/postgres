@@ -2903,6 +2903,18 @@ struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"wait_for_replication_threshold", PGC_SIGHUP, REPLICATION_PRIMARY,
+			gettext_noop("Maximum amount of WAL written by a transaction prior to waiting for replication."),
+			gettext_noop("This is used just to prevent primary from racing too far ahead "
+							"of the standby. A value of 0 disables the behavior"),
+			GUC_UNIT_KB
+		},
+		&rep_lag_avoidance_threshold,
+		0, 0, MAX_KILOBYTES,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"checkpoint_timeout", PGC_SIGHUP, WAL_CHECKPOINTS,
 			gettext_noop("Sets the maximum time between automatic WAL checkpoints."),
 			NULL,

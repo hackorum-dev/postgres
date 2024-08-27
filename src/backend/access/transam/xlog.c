@@ -82,6 +82,7 @@
 #include "replication/origin.h"
 #include "replication/slot.h"
 #include "replication/snapbuild.h"
+#include "replication/syncrep.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
@@ -134,6 +135,7 @@ int			wal_retrieve_retry_interval = 5000;
 int			max_slot_wal_keep_size_mb = -1;
 int			wal_decode_buffer_size = 512 * 1024;
 bool		track_wal_io_timing = false;
+int         rep_lag_avoidance_threshold = 0;
 
 #ifdef WAL_DEBUG
 bool		XLOG_DEBUG = false;
@@ -163,6 +165,15 @@ static double PrevCheckPointDistance = 0;
  * specified in wal_consistency_checking.
  */
 static bool check_wal_consistency_checking_deferred = false;
+
+/*
+ * This is used to track how much xlog has been written by this backend, since
+ * start of transaction or last time SyncReplWaitForLSN() was called for this
+ * transaction. Currently, this is used to check if replication lag avoidance
+ * threshold has reached and if its time to wait for replication before moving
+ * forward for this transaction.
+ */
+uint64_t wal_bytes_written = 0;
 
 /*
  * GUC support
@@ -921,6 +932,7 @@ XLogInsertRecord(XLogRecData *rdata,
 		CopyXLogRecordToWAL(rechdr->xl_tot_len,
 							class == WALINSERT_SPECIAL_SWITCH, rdata,
 							StartPos, EndPos, insertTLI);
+		wal_bytes_written += rechdr->xl_tot_len;
 
 		/*
 		 * Unless record is flagged as not important, update LSN of last
@@ -9479,4 +9491,25 @@ SetWalWriterSleeping(bool sleeping)
 	SpinLockAcquire(&XLogCtl->info_lck);
 	XLogCtl->WalWriterSleeping = sleeping;
 	SpinLockRelease(&XLogCtl->info_lck);
+}
+
+/*
+ * This function checks if the current transaction has written above
+ * rep_lag_avoidance_threshold bytes, and waits for the standby and
+ * enters synrep wait if so.
+ */
+void
+wait_to_avoid_large_repl_lag(void)
+{
+	Assert(rep_lag_avoidance_threshold);
+
+	if (wal_bytes_written > (rep_lag_avoidance_threshold * 1024))
+	{
+		HOLD_INTERRUPTS();
+		/* we use local cached copy of LogwrtResult here */
+		SyncRepWaitForLSN(LogwrtResult.Flush, false);
+		RESUME_INTERRUPTS();
+
+		wal_bytes_written = 0;
+	}
 }
