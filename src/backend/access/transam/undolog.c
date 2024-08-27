@@ -757,9 +757,10 @@ UndoLog_UndoByXid(bool isCommit, TransactionId xid,
  * During recovery, it should pass the target transaction ID.
  */
 void
-AtEOXact_UndoLog(TransactionId xid)
+AtEOXact_UndoLog(bool isCommit, TransactionId xid)
 {
 	FullTransactionId fxid = ULogLocal.current_xid;
+	bool redo = false;
 
 	if (TransactionIdIsValid(xid))
 	{
@@ -767,7 +768,8 @@ AtEOXact_UndoLog(TransactionId xid)
 		TransactionId oldest_xid;
 		TransactionId next_xid;
 		uint32		oldest_epoch;
-		
+
+		redo = true;
 		LWLockAcquire(XactTruncationLock, LW_SHARED);
 		next_fxid = TransamVariables->nextXid;
 		oldest_xid = TransamVariables->oldestClogXid;
@@ -785,7 +787,31 @@ AtEOXact_UndoLog(TransactionId xid)
 	}
 
 	if (FullTransactionIdIsValid(fxid))
-		undolog_drop_ulog(fxid);
+	{
+		UndoLogSlot *slot;
+
+		slot = undolog_find_slot(fxid, false);
+		if (slot)
+		{
+			undolog_flush_slot(slot, false);
+			LWLockRelease(&slot->lock);
+		}
+
+		if (slot || undolog_file_exists(fxid))
+		{
+			char fname[MAXPGPATH];
+			ULogContext cxt;
+
+			if (isCommit)
+				cxt = ULOGCXT_COMMIT;
+			else
+				cxt = ULOGCXT_ABORT;
+
+			UndoLogSetFilename(fname, fxid);
+			undolog_process_ulog(fname, cxt, redo);
+			undolog_drop_ulog(fxid);
+		}
+	}
 }
 
 /*

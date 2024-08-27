@@ -80,7 +80,7 @@ extern Size UndoLogShmemSize(void);
 extern void UndoLogShmemInit(void);
 extern void InitUndoLog(void);
 extern void UndoLogWrite(RmgrId rmgr, uint8 info, void *data, int len);
-extern void AtEOXact_UndoLog(TransactionId xid);
+extern void AtEOXact_UndoLog(bool isCommit, TransactionId xid);
 extern void AtPrepare_UndoLog(void);
 extern void UndoLog_UndoByXid(bool isCommit, TransactionId xid,
 							  int nchildren, TransactionId *children);

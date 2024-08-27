@@ -32,6 +32,8 @@
 #include "miscadmin.h"
 #include "storage/bulk_write.h"
 #include "storage/freespace.h"
+#include "storage/copydir.h"
+#include "storage/fd.h"
 #include "storage/proc.h"
 #include "storage/smgr.h"
 #include "utils/hsearch.h"
@@ -556,6 +558,58 @@ RelationTruncate(Relation rel, BlockNumber nblocks)
 	 */
 	if (need_fsm_vacuum)
 		FreeSpaceMapVacuumRange(rel, nblocks, InvalidBlockNumber);
+}
+
+/*
+ * Reset an unlogged relation using the INIT fork, intended for use during the
+ * commit of prepared transactions. The relation is assumed to be UNLOGGED, so
+ * no WAL-logging is required.
+ */
+static void
+ResetUnloggedRelation(RelFileLocator rloc, ProcNumber backend)
+{
+	char *srcpath;
+	char *dstpath;
+	SMgrRelation srel = smgropen(rloc, backend);
+	ForkNumber forks[MAX_FORKNUM];
+	BlockNumber blocks[MAX_FORKNUM];
+	BlockNumber old_blocks[MAX_FORKNUM];
+	int			nforks = 0;
+
+	srel = smgropen(rloc, backend);
+
+	Assert(smgrexists(srel, INIT_FORKNUM));
+
+	for (int i = 0 ; i <= MAX_FORKNUM ; i++)
+	{
+		if (i == INIT_FORKNUM || !smgrexists(srel, i))
+			continue;
+
+		forks[nforks] = i;
+		old_blocks[nforks] = smgrnblocks(srel, i);
+		blocks[nforks] = 0;
+		nforks++;
+	}
+
+	/*
+	 * This relation is unlogged. Therefore, unlike RelationTruncate(), there
+	 * is no need to call RelationPreTruncate().
+	 */
+	START_CRIT_SECTION();
+	smgrtruncate(srel, forks, nforks, old_blocks, blocks);
+	END_CRIT_SECTION();
+
+	/* Note that this leaves the first segment of the main fork. */
+	for (int i = 0 ; i < nforks ; i++)
+		smgrunlink(srel, forks[i], false);
+
+	/* copy init fork to main fork */
+	srcpath = GetRelationPath(rloc.dbOid, rloc.spcOid, rloc.relNumber,
+							   backend, INIT_FORKNUM);
+	dstpath = GetRelationPath(rloc.dbOid, rloc.spcOid, rloc.relNumber,
+							  backend, MAIN_FORKNUM);
+	copy_file_extended(srcpath, dstpath, true);
+	fsync_fname(dstpath, false);
 }
 
 /*
@@ -1314,8 +1368,62 @@ smgr_undo(UndoLogRecord *record, ULogContext cxt, bool redo, bool crashed)
 		else
 			elog(PANIC, "smgr_undo: unknown op code %d", info);
 	}
-	else if (cxt == ULOGCXT_COMMIT || cxt == ULOGCXT_ABORT ||
-			 cxt == ULOGCXT_PREPARED)
+	else if (cxt == ULOGCXT_COMMIT)
+	{
+		Assert(record);
+		info = record->ul_info & ~ULR_INFO_MASK;
+
+		if (info == ULOG_SMGR_CREATE)
+		{
+			ul_smgr_create *ulrec = (ul_smgr_create *) ULogRecGetData(record);
+			/*
+			 * If an init fork was created during recovery, the entire relation
+			 * is set to be reset at recovery-end or the consistency point.
+			 * Therefore, we need to drop the relation's buffers to prevent the
+			 * end-of-recovery checkpoint from flushing storage files for these
+			 * relations once they have been reset.
+			 */
+			if (redo && ulrec->forknum == INIT_FORKNUM)
+			{
+				SMgrRelation reln;
+				int nforks;
+				ForkNumber forks[MAX_FORKNUM + 1];
+				BlockNumber firstblocks[MAX_FORKNUM + 1] = {0};
+
+				Assert(ulrec->backend == INVALID_PROC_NUMBER);
+
+				reln = smgropen(ulrec->rlocator, ulrec->backend);
+
+				nforks = 0;
+				for (int i = 0 ; i <= MAX_FORKNUM ; i++)
+				{
+					if (smgrexists(reln, i))
+						forks[nforks++] = i;
+				}
+
+				if (nforks > 0)
+					DropRelationBuffers(reln, forks, nforks, firstblocks);
+
+				smgrclose(reln);
+			}
+			else if (!redo && crashed && ulrec->forknum == INIT_FORKNUM)
+			{
+				/*
+				 * System has been crashed until the transaction was
+				 * prepared. Now that the init fork is persists, the relation
+				 * needs to be cleared.
+				 */
+				ResetUnloggedRelation(ulrec->rlocator, ulrec->backend);
+				ereport(WARNING,
+						errmsg("unlogged relation %u/%u/%u was reset",
+							   ulrec->rlocator.spcOid, ulrec->rlocator.dbOid,
+							   ulrec->rlocator.relNumber),
+						errdetail("Server experinced a crash after the transaction that altered the relation was prepared."));
+			}
+				
+		}
+	}
+	else if(cxt == ULOGCXT_PREPARED || cxt == ULOGCXT_ABORT)
 	{
 		/* nothing to do here */
 	}

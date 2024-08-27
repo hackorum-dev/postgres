@@ -2480,7 +2480,7 @@ CommitTransaction(void)
 	AtEOXact_on_commit_actions(true);
 	AtEOXact_Namespace(true, is_parallel_worker);
 	AtEOXact_SMgr();
-	AtEOXact_UndoLog(InvalidTransactionId);
+	AtEOXact_UndoLog(true, InvalidTransactionId);
 	AtEOXact_Files(true);
 	AtEOXact_ComboCid();
 	AtEOXact_HashTables(true);
@@ -2999,7 +2999,7 @@ AbortTransaction(void)
 		AtEOXact_on_commit_actions(false);
 		AtEOXact_Namespace(false, is_parallel_worker);
 		AtEOXact_SMgr();
-		AtEOXact_UndoLog(InvalidTransactionId);
+		AtEOXact_UndoLog(false, InvalidTransactionId);
 		AtEOXact_Files(false);
 		AtEOXact_ComboCid();
 		AtEOXact_HashTables(false);
@@ -6269,7 +6269,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 						  true);
 	}
 
-	AtEOXact_UndoLog(xid);
+	AtEOXact_UndoLog(true, xid);
 	AtEOXact_Buffers_Redo(true, xid, parsed->nsubxacts, parsed->subxacts);
 
 	if (parsed->nstats > 0)
@@ -6384,7 +6384,7 @@ xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid,
 						  true);
 	}
 
-	AtEOXact_UndoLog(xid);
+	AtEOXact_UndoLog(false, xid);
 	AtEOXact_Buffers_Redo(false, xid, parsed->nsubxacts, parsed->subxacts);
 
 	if (parsed->nstats > 0)
