@@ -3779,7 +3779,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 				 * Try to restore the file from archive, or read an existing
 				 * file from pg_wal.
 				 */
-				readFile = XLogFileReadAnyTLI(readSegNo, DEBUG2,
+				readFile = XLogFileReadAnyTLI(readSegNo, ERROR,
 											  currentSource == XLOG_FROM_ARCHIVE ? XLOG_FROM_ANY :
 											  currentSource);
 				if (readFile >= 0)
