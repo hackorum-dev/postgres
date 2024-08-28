@@ -2210,13 +2210,15 @@ is_simple_values(PlannerInfo *root, RangeTblEntry *rte)
 	 * about validity of PHVs for the VALUES' outputs.
 	 */
 
+	/* To be paranoid, let's recheck functions inside the VALUES */
+	Assert(!expression_returns_set((Node *) rte->values_lists));
+
 	/*
-	 * Don't pull up a VALUES that contains any set-returning or volatile
+	 * Don't pull up a VALUES that contains any volatile
 	 * functions.  The considerations here are basically identical to the
 	 * restrictions on a pull-able subquery's targetlist.
 	 */
-	if (expression_returns_set((Node *) rte->values_lists) ||
-		contain_volatile_functions((Node *) rte->values_lists))
+	if (contain_volatile_functions((Node *) rte->values_lists))
 		return false;
 
 	/*
