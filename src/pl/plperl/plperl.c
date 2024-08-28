@@ -2194,8 +2194,32 @@ plperl_call_perl_func(plperl_proc_desc *desc, FunctionCallInfo fcinfo)
 	Oid		   *argtypes = NULL;
 	int			nargs = 0;
 
+	HV		   *hv;			 // hash
+	SV		   *FNsv;		 // scalar reference to the hash
+	SV		   *svFN;		 // local reference to the hash
+
 	ENTER;
 	SAVETMPS;
+
+	/* Give functions some metadata about what's going on in $_FN (Similar to $_TD for triggers) */
+
+	FNsv = get_sv("main::_FN", GV_ADD);
+	if (!FNsv)
+		ereport(ERROR,
+				(errcode(ERRCODE_EXTERNAL_ROUTINE_EXCEPTION),
+				 errmsg("couldn't fetch $_FN")));
+
+	hv = newHV(); // create new hash
+	hv_store_string(hv, "name", cstr2sv(desc->proname));
+
+	save_item(FNsv);			/* local $_FN */
+
+	sv_upgrade(FNsv, SVt_RV);
+	SvRV_set(FNsv, (SV*)hv);
+	SvROK_on(FNsv);
+
+	svFN = newRV_noinc((SV *) hv); // reference to the new hash
+	sv_setsv(FNsv, svFN);
 
 	PUSHMARK(SP);
 	EXTEND(sp, desc->nargs);
