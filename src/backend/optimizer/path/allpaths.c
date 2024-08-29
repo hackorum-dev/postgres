@@ -898,7 +898,7 @@ set_tablesample_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *
 		 bms_membership(root->all_query_rels) != BMS_SINGLETON) &&
 		!(GetTsmRoutine(rte->tablesample->tsmhandler)->repeatable_across_scans))
 	{
-		path = (Path *) create_material_path(rel, path);
+		path = (Path *) create_material_path(rel, path, enable_material);
 	}
 
 	add_path(rel, path);
@@ -3371,6 +3371,7 @@ make_rel_from_joinlist(PlannerInfo *root, List *joinlist)
 	}
 	else
 	{
+
 		/*
 		 * Consider the different orders in which we could join the rels,
 		 * using a plugin, GEQO, or the regular join search code.
@@ -3381,11 +3382,14 @@ make_rel_from_joinlist(PlannerInfo *root, List *joinlist)
 		root->initial_rels = initial_rels;
 
 		if (join_search_hook)
-			return (*join_search_hook) (root, levels_needed, initial_rels);
+			return (*join_search_hook) (root, levels_needed, initial_rels,
+										root->glob->default_jsa_mask);
 		else if (enable_geqo && levels_needed >= geqo_threshold)
-			return geqo(root, levels_needed, initial_rels);
+			return geqo(root, levels_needed, initial_rels,
+						root->glob->default_jsa_mask);
 		else
-			return standard_join_search(root, levels_needed, initial_rels);
+			return standard_join_search(root, levels_needed, initial_rels,
+										root->glob->default_jsa_mask);
 	}
 }
 
@@ -3419,7 +3423,8 @@ make_rel_from_joinlist(PlannerInfo *root, List *joinlist)
  * original states of those data structures.  See geqo_eval() for an example.
  */
 RelOptInfo *
-standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
+standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels,
+					 unsigned jsa_mask)
 {
 	int			lev;
 	RelOptInfo *rel;
@@ -3454,7 +3459,7 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 		 * level, and build paths for making each one from every available
 		 * pair of lower-level relations.
 		 */
-		join_search_one_level(root, lev);
+		join_search_one_level(root, lev, jsa_mask);
 
 		/*
 		 * Run generate_partitionwise_join_paths() and

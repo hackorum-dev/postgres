@@ -2481,7 +2481,7 @@ cost_merge_append(Path *path, PlannerInfo *root,
  */
 void
 cost_material(Path *path,
-			  int input_disabled_nodes,
+			  bool enabled, int input_disabled_nodes,
 			  Cost input_startup_cost, Cost input_total_cost,
 			  double tuples, int width)
 {
@@ -2519,7 +2519,7 @@ cost_material(Path *path,
 		run_cost += seq_page_cost * npages;
 	}
 
-	path->disabled_nodes = input_disabled_nodes + (enable_material ? 0 : 1);
+	path->disabled_nodes = input_disabled_nodes + (enabled ? 0 : 1);
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
 }
@@ -3266,7 +3266,7 @@ cost_group(Path *path, PlannerInfo *root,
  */
 void
 initial_cost_nestloop(PlannerInfo *root, JoinCostWorkspace *workspace,
-					  JoinType jointype,
+					  JoinType jointype, unsigned nestloop_subtype,
 					  Path *outer_path, Path *inner_path,
 					  JoinPathExtraData *extra)
 {
@@ -3280,7 +3280,7 @@ initial_cost_nestloop(PlannerInfo *root, JoinCostWorkspace *workspace,
 	Cost		inner_rescan_run_cost;
 
 	/* Count up disabled nodes. */
-	disabled_nodes = enable_nestloop ? 0 : 1;
+	disabled_nodes = (extra->jsa_mask & nestloop_subtype) == 0 ? 1 : 0;
 	disabled_nodes += inner_path->disabled_nodes;
 	disabled_nodes += outer_path->disabled_nodes;
 
@@ -3678,7 +3678,12 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	Assert(outerstartsel <= outerendsel);
 	Assert(innerstartsel <= innerendsel);
 
-	disabled_nodes = enable_mergejoin ? 0 : 1;
+	/*
+	 * Assume for now that this node is not itself disabled. We'll sort out
+	 * whether that's really the case in final_cost_mergejoin(); here, we'll
+	 * just account for any disabled child nodes.
+	 */
+	disabled_nodes = 0;
 
 	/* cost of source data */
 
@@ -3859,9 +3864,6 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 				rescannedtuples;
 	double		rescanratio;
 
-	/* Set the number of disabled nodes. */
-	path->jpath.path.disabled_nodes = workspace->disabled_nodes;
-
 	/* Protect some assumptions below that rowcounts aren't zero */
 	if (inner_path_rows <= 0)
 		inner_path_rows = 1;
@@ -3988,16 +3990,20 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 		path->materialize_inner = false;
 
 	/*
-	 * Prefer materializing if it looks cheaper, unless the user has asked to
-	 * suppress materialization.
+	 * If merge joins with materialization are enabled, then choose
+	 * materialization if either (a) it looks cheaper or (b) merge joins
+	 * without materialization are disabled.
 	 */
-	else if (enable_material && mat_inner_cost < bare_inner_cost)
+	else if ((extra->jsa_mask & JSA_MERGEJOIN_MATERIALIZE) != 0 &&
+			 (mat_inner_cost < bare_inner_cost ||
+			  (extra->jsa_mask & JSA_MERGEJOIN_PLAIN) == 0))
 		path->materialize_inner = true;
 
 	/*
-	 * Even if materializing doesn't look cheaper, we *must* do it if the
-	 * inner path is to be used directly (without sorting) and it doesn't
-	 * support mark/restore.
+	 * Regardless of what plan shapes are enabled and what the costs seem
+	 * to be, we *must* materialize it if the inner path is to be used directly
+	 * (without sorting) and it doesn't support mark/restore. Planner failure
+	 * is not an option!
 	 *
 	 * Since the inner side must be ordered, and only Sorts and IndexScans can
 	 * create order to begin with, and they both support mark/restore, you
@@ -4005,10 +4011,6 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * merge joins can *preserve* the order of their inputs, so they can be
 	 * selected as the input of a mergejoin, and they don't support
 	 * mark/restore at present.
-	 *
-	 * We don't test the value of enable_material here, because
-	 * materialization is required for correctness in this case, and turning
-	 * it off does not entitle us to deliver an invalid plan.
 	 */
 	else if (innersortkeys == NIL &&
 			 !ExecSupportsMarkRestore(inner_path))
@@ -4025,7 +4027,8 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * rather than necessary for correctness, we skip it if enable_material is
 	 * off.
 	 */
-	else if (enable_material && innersortkeys != NIL &&
+	else if ((extra->jsa_mask & JSA_MERGEJOIN_MATERIALIZE) != 0 &&
+			 innersortkeys != NIL &&
 			 relation_byte_size(inner_path_rows,
 								inner_path->pathtarget->width) >
 			 (work_mem * 1024L))
@@ -4033,11 +4036,25 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	else
 		path->materialize_inner = false;
 
-	/* Charge the right incremental cost for the chosen case */
+	/* Get the number of disabled nodes, not yet including this one. */
+	path->jpath.path.disabled_nodes = workspace->disabled_nodes;
+
+	/*
+	 * Charge the right incremental cost for the chosen case, and increment
+	 * disabled_nodes if appropriate.
+	 */
 	if (path->materialize_inner)
+	{
 		run_cost += mat_inner_cost;
+		if ((extra->jsa_mask & JSA_MERGEJOIN_MATERIALIZE) == 0)
+			++path->jpath.path.disabled_nodes;
+	}
 	else
+	{
 		run_cost += bare_inner_cost;
+		if ((extra->jsa_mask & JSA_MERGEJOIN_PLAIN) == 0)
+			++path->jpath.path.disabled_nodes;
+	}
 
 	/* CPU costs */
 
@@ -4177,7 +4194,7 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	size_t		space_allowed;	/* unused */
 
 	/* Count up disabled nodes. */
-	disabled_nodes = enable_hashjoin ? 0 : 1;
+	disabled_nodes = (extra->jsa_mask & JSA_HASHJOIN) == 0 ? 1 : 0;
 	disabled_nodes += inner_path->disabled_nodes;
 	disabled_nodes += outer_path->disabled_nodes;
 

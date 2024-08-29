@@ -40,7 +40,7 @@ typedef struct
 } Clump;
 
 static List *merge_clump(PlannerInfo *root, List *clumps, Clump *new_clump,
-						 int num_gene, bool force);
+						 int num_gene, bool force, unsigned jsa_mask);
 static bool desirable_join(PlannerInfo *root,
 						   RelOptInfo *outer_rel, RelOptInfo *inner_rel);
 
@@ -54,7 +54,7 @@ static bool desirable_join(PlannerInfo *root,
  * returns DBL_MAX.
  */
 Cost
-geqo_eval(PlannerInfo *root, Gene *tour, int num_gene)
+geqo_eval(PlannerInfo *root, Gene *tour, int num_gene, unsigned jsa_mask)
 {
 	MemoryContext mycontext;
 	MemoryContext oldcxt;
@@ -99,7 +99,7 @@ geqo_eval(PlannerInfo *root, Gene *tour, int num_gene)
 	root->join_rel_hash = NULL;
 
 	/* construct the best path for the given combination of relations */
-	joinrel = gimme_tree(root, tour, num_gene);
+	joinrel = gimme_tree(root, tour, num_gene, jsa_mask);
 
 	/*
 	 * compute fitness, if we found a valid join
@@ -160,7 +160,7 @@ geqo_eval(PlannerInfo *root, Gene *tour, int num_gene)
  * since there's no provision for un-clumping, this must lead to failure.)
  */
 RelOptInfo *
-gimme_tree(PlannerInfo *root, Gene *tour, int num_gene)
+gimme_tree(PlannerInfo *root, Gene *tour, int num_gene, unsigned jsa_mask)
 {
 	GeqoPrivateData *private = (GeqoPrivateData *) root->join_search_private;
 	List	   *clumps;
@@ -196,7 +196,8 @@ gimme_tree(PlannerInfo *root, Gene *tour, int num_gene)
 		cur_clump->size = 1;
 
 		/* Merge it into the clumps list, using only desirable joins */
-		clumps = merge_clump(root, clumps, cur_clump, num_gene, false);
+		clumps = merge_clump(root, clumps, cur_clump, num_gene, false,
+							 jsa_mask);
 	}
 
 	if (list_length(clumps) > 1)
@@ -210,7 +211,8 @@ gimme_tree(PlannerInfo *root, Gene *tour, int num_gene)
 		{
 			Clump	   *clump = (Clump *) lfirst(lc);
 
-			fclumps = merge_clump(root, fclumps, clump, num_gene, true);
+			fclumps = merge_clump(root, fclumps, clump, num_gene, true,
+								  jsa_mask);
 		}
 		clumps = fclumps;
 	}
@@ -236,7 +238,7 @@ gimme_tree(PlannerInfo *root, Gene *tour, int num_gene)
  */
 static List *
 merge_clump(PlannerInfo *root, List *clumps, Clump *new_clump, int num_gene,
-			bool force)
+			bool force, unsigned jsa_mask)
 {
 	ListCell   *lc;
 	int			pos;
@@ -259,7 +261,8 @@ merge_clump(PlannerInfo *root, List *clumps, Clump *new_clump, int num_gene,
 			 */
 			joinrel = make_join_rel(root,
 									old_clump->joinrel,
-									new_clump->joinrel);
+									new_clump->joinrel,
+									jsa_mask);
 
 			/* Keep searching if join order is not valid */
 			if (joinrel)
@@ -292,7 +295,8 @@ merge_clump(PlannerInfo *root, List *clumps, Clump *new_clump, int num_gene,
 				 * others.  When no further merge is possible, we'll reinsert
 				 * it into the list.
 				 */
-				return merge_clump(root, clumps, old_clump, num_gene, force);
+				return merge_clump(root, clumps, old_clump, num_gene, force,
+								   jsa_mask);
 			}
 		}
 	}

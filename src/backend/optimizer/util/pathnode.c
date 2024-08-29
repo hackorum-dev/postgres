@@ -1631,7 +1631,7 @@ create_group_result_path(PlannerInfo *root, RelOptInfo *rel,
  *	  pathnode.
  */
 MaterialPath *
-create_material_path(RelOptInfo *rel, Path *subpath)
+create_material_path(RelOptInfo *rel, Path *subpath, bool enabled)
 {
 	MaterialPath *pathnode = makeNode(MaterialPath);
 
@@ -1650,6 +1650,7 @@ create_material_path(RelOptInfo *rel, Path *subpath)
 	pathnode->subpath = subpath;
 
 	cost_material(&pathnode->path,
+				  enabled,
 				  subpath->disabled_nodes,
 				  subpath->startup_cost,
 				  subpath->total_cost,
@@ -4158,7 +4159,8 @@ reparameterize_path(PlannerInfo *root, Path *path,
 											loop_count);
 				if (spath == NULL)
 					return NULL;
-				return (Path *) create_material_path(rel, spath);
+				return (Path *) create_material_path(rel, spath,
+													 enable_material);
 			}
 		case T_Memoize:
 			{

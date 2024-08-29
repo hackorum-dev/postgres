@@ -16,10 +16,44 @@
 
 #include "nodes/pathnodes.h"
 
+/*
+ * Join strategy advice.
+ *
+ * Paths that don't match the join strategy advice will be either be disabled
+ * or will not be generated in the first place. It's only permissible to skip
+ * generating a path if doing so can't result in planner failure. The initial
+ * mask is computed on the basis of the various enable_* GUCs, and can be
+ * overriden by hooks.
+ *
+ * We have five main join strategies: a foreign join (when supported by the
+ * relevant FDW), a merge join, a nested loop, a hash join, and a partitionwise
+ * join. Merge joins are further subdivided based on whether the inner side
+ * is materialized, and nested loops are further subdivided based on whether
+ * the inner side is materialized, memoized, or neither. "Plain" means a
+ * strategy where neither materialization nor memoization is used.
+ *
+ * If you don't care whether materialization or memoization is used, set all
+ * the bits for the relevant major join strategy. If you do care, just set the
+ * subset of bits that correspond to the cases you want to allow.
+ */
+#define JSA_FOREIGN						0x0001
+#define JSA_MERGEJOIN_PLAIN				0x0002
+#define JSA_MERGEJOIN_MATERIALIZE		0x0004
+#define JSA_NESTLOOP_PLAIN				0x0008
+#define JSA_NESTLOOP_MATERIALIZE		0x0010
+#define JSA_NESTLOOP_MEMOIZE			0x0020
+#define JSA_HASHJOIN					0x0040
+#define JSA_PARTITIONWISE				0x0080
+
+#define JSA_MERGEJOIN_ANY	\
+	(JSA_MERGEJOIN_PLAIN | JSA_MERGEJOIN_MATERIALIZE)
+#define JSA_NESTLOOP_ANY \
+	(JSA_NESTLOOP_PLAIN | JSA_NESTLOOP_MATERIALIZE | JSA_NESTLOOP_MEMOIZE)
 
 /*
  * allpaths.c
  */
+
 extern PGDLLIMPORT bool enable_geqo;
 extern PGDLLIMPORT int geqo_threshold;
 extern PGDLLIMPORT int min_parallel_table_scan_size;
@@ -33,7 +67,14 @@ typedef void (*set_rel_pathlist_hook_type) (PlannerInfo *root,
 											RangeTblEntry *rte);
 extern PGDLLIMPORT set_rel_pathlist_hook_type set_rel_pathlist_hook;
 
-/* Hook for plugins to get control in add_paths_to_joinrel() */
+/* Hooks for plugins to get control in add_paths_to_joinrel() */
+typedef void (*join_path_setup_hook_type) (PlannerInfo *root,
+										   RelOptInfo *joinrel,
+										   RelOptInfo *outerrel,
+										   RelOptInfo *innerrel,
+										   JoinType jointype,
+										   JoinPathExtraData *extra);
+extern PGDLLIMPORT join_path_setup_hook_type join_path_setup_hook;
 typedef void (*set_join_pathlist_hook_type) (PlannerInfo *root,
 											 RelOptInfo *joinrel,
 											 RelOptInfo *outerrel,
@@ -45,13 +86,14 @@ extern PGDLLIMPORT set_join_pathlist_hook_type set_join_pathlist_hook;
 /* Hook for plugins to replace standard_join_search() */
 typedef RelOptInfo *(*join_search_hook_type) (PlannerInfo *root,
 											  int levels_needed,
-											  List *initial_rels);
+											  List *initial_rels,
+											  unsigned jsa_mask);
 extern PGDLLIMPORT join_search_hook_type join_search_hook;
 
 
 extern RelOptInfo *make_one_rel(PlannerInfo *root, List *joinlist);
 extern RelOptInfo *standard_join_search(PlannerInfo *root, int levels_needed,
-										List *initial_rels);
+										List *initial_rels, unsigned jsa_mask);
 
 extern void generate_gather_paths(PlannerInfo *root, RelOptInfo *rel,
 								  bool override_rows);
@@ -92,15 +134,17 @@ extern bool create_tidscan_paths(PlannerInfo *root, RelOptInfo *rel);
 extern void add_paths_to_joinrel(PlannerInfo *root, RelOptInfo *joinrel,
 								 RelOptInfo *outerrel, RelOptInfo *innerrel,
 								 JoinType jointype, SpecialJoinInfo *sjinfo,
-								 List *restrictlist);
+								 List *restrictlist, unsigned jsa_mask);
 
 /*
  * joinrels.c
  *	  routines to determine which relations to join
  */
-extern void join_search_one_level(PlannerInfo *root, int level);
+extern void join_search_one_level(PlannerInfo *root, int level,
+								  unsigned jsa_mask);
 extern RelOptInfo *make_join_rel(PlannerInfo *root,
-								 RelOptInfo *rel1, RelOptInfo *rel2);
+								 RelOptInfo *rel1, RelOptInfo *rel2,
+								 unsigned jsa_mask);
 extern Relids add_outer_joins_to_relids(PlannerInfo *root, Relids input_relids,
 										SpecialJoinInfo *sjinfo,
 										List **pushed_down_joins);

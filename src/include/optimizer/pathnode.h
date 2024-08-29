@@ -82,7 +82,8 @@ extern GroupResultPath *create_group_result_path(PlannerInfo *root,
 												 RelOptInfo *rel,
 												 PathTarget *target,
 												 List *havingqual);
-extern MaterialPath *create_material_path(RelOptInfo *rel, Path *subpath);
+extern MaterialPath *create_material_path(RelOptInfo *rel, Path *subpath,
+										  bool enabled);
 extern MemoizePath *create_memoize_path(PlannerInfo *root,
 										RelOptInfo *rel,
 										Path *subpath,
@@ -324,7 +325,8 @@ extern RelOptInfo *build_join_rel(PlannerInfo *root,
 								  RelOptInfo *inner_rel,
 								  SpecialJoinInfo *sjinfo,
 								  List *pushed_down_joins,
-								  List **restrictlist_ptr);
+								  List **restrictlist_ptr,
+								  unsigned jsa_mask);
 extern Relids min_join_parameterization(PlannerInfo *root,
 										Relids joinrelids,
 										RelOptInfo *outer_rel,
@@ -351,6 +353,7 @@ extern RelOptInfo *build_child_join_rel(PlannerInfo *root,
 										RelOptInfo *outer_rel, RelOptInfo *inner_rel,
 										RelOptInfo *parent_joinrel, List *restrictlist,
 										SpecialJoinInfo *sjinfo,
-										int nappinfos, AppendRelInfo **appinfos);
+										int nappinfos, AppendRelInfo **appinfos,
+										unsigned jsa_mask);
 
 #endif							/* PATHNODE_H */

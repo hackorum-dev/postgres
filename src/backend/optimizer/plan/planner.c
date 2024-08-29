@@ -419,6 +419,27 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 		tuple_fraction = 0.0;
 	}
 
+	/* Compute the initial join strategy advice mask. */
+	glob->default_jsa_mask = JSA_FOREIGN;
+	if (enable_hashjoin)
+		glob->default_jsa_mask |= JSA_HASHJOIN;
+	if (enable_mergejoin)
+	{
+		glob->default_jsa_mask |= JSA_MERGEJOIN_PLAIN;
+		if (enable_material)
+			glob->default_jsa_mask |= JSA_MERGEJOIN_MATERIALIZE;
+	}
+	if (enable_nestloop)
+	{
+		glob->default_jsa_mask |= JSA_NESTLOOP_PLAIN;
+		if (enable_material)
+			glob->default_jsa_mask |= JSA_NESTLOOP_MATERIALIZE;
+		if (enable_memoize)
+			glob->default_jsa_mask |= JSA_NESTLOOP_MEMOIZE;
+	}
+	if (enable_partitionwise_join)
+		glob->default_jsa_mask |= JSA_PARTITIONWISE;
+
 	/* primary planning entry point (may recurse for subqueries) */
 	root = subquery_planner(glob, parse, NULL, false, tuple_fraction, NULL);
 

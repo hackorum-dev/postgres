@@ -161,6 +161,9 @@ typedef struct PlannerGlobal
 	/* worst PROPARALLEL hazard level */
 	char		maxParallelHazard;
 
+	/* default join strategy advice, except where overrriden by hooks */
+	uint32		default_jsa_mask;
+
 	/* partition descriptors */
 	PartitionDirectory partition_directory pg_node_attr(read_write_ignore);
 } PlannerGlobal;
@@ -3231,6 +3234,7 @@ typedef struct SemiAntiJoinFactors
  * sjinfo is extra info about special joins for selectivity estimation
  * semifactors is as shown above (only valid for SEMI/ANTI/inner_unique joins)
  * param_source_rels are OK targets for parameterization of result paths
+ * jsa_mask is a bitmask of JSA_* constants to direct the join strategy
  */
 typedef struct JoinPathExtraData
 {
@@ -3240,6 +3244,7 @@ typedef struct JoinPathExtraData
 	SpecialJoinInfo *sjinfo;
 	SemiAntiJoinFactors semifactors;
 	Relids		param_source_rels;
+	unsigned	jsa_mask;
 } JoinPathExtraData;
 
 /*

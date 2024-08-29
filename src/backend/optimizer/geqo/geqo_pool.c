@@ -88,7 +88,7 @@ free_pool(PlannerInfo *root, Pool *pool)
  *		initialize genetic pool
  */
 void
-random_init_pool(PlannerInfo *root, Pool *pool)
+random_init_pool(PlannerInfo *root, Pool *pool, unsigned jsa_mask)
 {
 	Chromosome *chromo = (Chromosome *) pool->data;
 	int			i;
@@ -107,7 +107,7 @@ random_init_pool(PlannerInfo *root, Pool *pool)
 	{
 		init_tour(root, chromo[i].string, pool->string_length);
 		pool->data[i].worth = geqo_eval(root, chromo[i].string,
-										pool->string_length);
+										pool->string_length, jsa_mask);
 		if (pool->data[i].worth < DBL_MAX)
 			i++;
 		else

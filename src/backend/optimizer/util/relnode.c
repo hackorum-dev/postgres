@@ -69,7 +69,8 @@ static void build_joinrel_partition_info(PlannerInfo *root,
 										 RelOptInfo *joinrel,
 										 RelOptInfo *outer_rel, RelOptInfo *inner_rel,
 										 SpecialJoinInfo *sjinfo,
-										 List *restrictlist);
+										 List *restrictlist,
+										 unsigned jsa_mask);
 static bool have_partkey_equi_join(PlannerInfo *root, RelOptInfo *joinrel,
 								   RelOptInfo *rel1, RelOptInfo *rel2,
 								   JoinType jointype, List *restrictlist);
@@ -668,7 +669,8 @@ build_join_rel(PlannerInfo *root,
 			   RelOptInfo *inner_rel,
 			   SpecialJoinInfo *sjinfo,
 			   List *pushed_down_joins,
-			   List **restrictlist_ptr)
+			   List **restrictlist_ptr,
+			   unsigned jsa_mask)
 {
 	RelOptInfo *joinrel;
 	List	   *restrictlist;
@@ -817,7 +819,7 @@ build_join_rel(PlannerInfo *root,
 
 	/* Store the partition information. */
 	build_joinrel_partition_info(root, joinrel, outer_rel, inner_rel, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 
 	/*
 	 * Set estimates of the joinrel's size.
@@ -882,7 +884,8 @@ RelOptInfo *
 build_child_join_rel(PlannerInfo *root, RelOptInfo *outer_rel,
 					 RelOptInfo *inner_rel, RelOptInfo *parent_joinrel,
 					 List *restrictlist, SpecialJoinInfo *sjinfo,
-					 int nappinfos, AppendRelInfo **appinfos)
+					 int nappinfos, AppendRelInfo **appinfos,
+					 unsigned jsa_mask)
 {
 	RelOptInfo *joinrel = makeNode(RelOptInfo);
 
@@ -981,7 +984,7 @@ build_child_join_rel(PlannerInfo *root, RelOptInfo *outer_rel,
 
 	/* Is the join between partitions itself partitioned? */
 	build_joinrel_partition_info(root, joinrel, outer_rel, inner_rel, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 
 	/* Child joinrel is parallel safe if parent is parallel safe. */
 	joinrel->consider_parallel = parent_joinrel->consider_parallel;
@@ -2005,12 +2008,12 @@ static void
 build_joinrel_partition_info(PlannerInfo *root,
 							 RelOptInfo *joinrel, RelOptInfo *outer_rel,
 							 RelOptInfo *inner_rel, SpecialJoinInfo *sjinfo,
-							 List *restrictlist)
+							 List *restrictlist, unsigned jsa_mask)
 {
 	PartitionScheme part_scheme;
 
 	/* Nothing to do if partitionwise join technique is disabled. */
-	if (!enable_partitionwise_join)
+	if ((jsa_mask & JSA_PARTITIONWISE) == 0)
 	{
 		Assert(!IS_PARTITIONED_REL(joinrel));
 		return;

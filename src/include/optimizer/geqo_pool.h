@@ -29,7 +29,7 @@
 extern Pool *alloc_pool(PlannerInfo *root, int pool_size, int string_length);
 extern void free_pool(PlannerInfo *root, Pool *pool);
 
-extern void random_init_pool(PlannerInfo *root, Pool *pool);
+extern void random_init_pool(PlannerInfo *root, Pool *pool, unsigned jsa_mask);
 extern Chromosome *alloc_chromo(PlannerInfo *root, int string_length);
 extern void free_chromo(PlannerInfo *root, Chromosome *chromo);
 

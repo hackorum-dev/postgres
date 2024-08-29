@@ -6623,6 +6623,7 @@ materialize_finished_plan(Plan *subplan)
 
 	/* Set cost data */
 	cost_material(&matpath,
+				  enable_material,
 				  subplan->disabled_nodes,
 				  subplan->startup_cost,
 				  subplan->total_cost,

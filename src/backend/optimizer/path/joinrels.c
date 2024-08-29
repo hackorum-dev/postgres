@@ -26,10 +26,12 @@
 static void make_rels_by_clause_joins(PlannerInfo *root,
 									  RelOptInfo *old_rel,
 									  List *other_rels,
-									  int first_rel_idx);
+									  int first_rel_idx,
+									  unsigned jsa_mask);
 static void make_rels_by_clauseless_joins(PlannerInfo *root,
 										  RelOptInfo *old_rel,
-										  List *other_rels);
+										  List *other_rels,
+										  unsigned jsa_mask);
 static bool has_join_restriction(PlannerInfo *root, RelOptInfo *rel);
 static bool has_legal_joinclause(PlannerInfo *root, RelOptInfo *rel);
 static bool restriction_is_constant_false(List *restrictlist,
@@ -37,11 +39,13 @@ static bool restriction_is_constant_false(List *restrictlist,
 										  bool only_pushed_down);
 static void populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 										RelOptInfo *rel2, RelOptInfo *joinrel,
-										SpecialJoinInfo *sjinfo, List *restrictlist);
+										SpecialJoinInfo *sjinfo,
+										List *restrictlist, unsigned jsa_mask);
 static void try_partitionwise_join(PlannerInfo *root, RelOptInfo *rel1,
 								   RelOptInfo *rel2, RelOptInfo *joinrel,
 								   SpecialJoinInfo *parent_sjinfo,
-								   List *parent_restrictlist);
+								   List *parent_restrictlist,
+								   unsigned jsa_mask);
 static SpecialJoinInfo *build_child_join_sjinfo(PlannerInfo *root,
 												SpecialJoinInfo *parent_sjinfo,
 												Relids left_relids, Relids right_relids);
@@ -69,7 +73,7 @@ static void get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
  * The result is returned in root->join_rel_level[level].
  */
 void
-join_search_one_level(PlannerInfo *root, int level)
+join_search_one_level(PlannerInfo *root, int level, unsigned jsa_mask)
 {
 	List	  **joinrels = root->join_rel_level;
 	ListCell   *r;
@@ -114,7 +118,8 @@ join_search_one_level(PlannerInfo *root, int level)
 			else
 				first_rel = 0;
 
-			make_rels_by_clause_joins(root, old_rel, joinrels[1], first_rel);
+			make_rels_by_clause_joins(root, old_rel, joinrels[1], first_rel,
+									  jsa_mask);
 		}
 		else
 		{
@@ -132,7 +137,8 @@ join_search_one_level(PlannerInfo *root, int level)
 			 */
 			make_rels_by_clauseless_joins(root,
 										  old_rel,
-										  joinrels[1]);
+										  joinrels[1],
+										  jsa_mask);
 		}
 	}
 
@@ -189,7 +195,7 @@ join_search_one_level(PlannerInfo *root, int level)
 					if (have_relevant_joinclause(root, old_rel, new_rel) ||
 						have_join_order_restriction(root, old_rel, new_rel))
 					{
-						(void) make_join_rel(root, old_rel, new_rel);
+						(void) make_join_rel(root, old_rel, new_rel, jsa_mask);
 					}
 				}
 			}
@@ -227,7 +233,8 @@ join_search_one_level(PlannerInfo *root, int level)
 
 			make_rels_by_clauseless_joins(root,
 										  old_rel,
-										  joinrels[1]);
+										  joinrels[1],
+										  jsa_mask);
 		}
 
 		/*----------
@@ -279,7 +286,8 @@ static void
 make_rels_by_clause_joins(PlannerInfo *root,
 						  RelOptInfo *old_rel,
 						  List *other_rels,
-						  int first_rel_idx)
+						  int first_rel_idx,
+						  unsigned jsa_mask)
 {
 	ListCell   *l;
 
@@ -291,7 +299,7 @@ make_rels_by_clause_joins(PlannerInfo *root,
 			(have_relevant_joinclause(root, old_rel, other_rel) ||
 			 have_join_order_restriction(root, old_rel, other_rel)))
 		{
-			(void) make_join_rel(root, old_rel, other_rel);
+			(void) make_join_rel(root, old_rel, other_rel, jsa_mask);
 		}
 	}
 }
@@ -312,7 +320,8 @@ make_rels_by_clause_joins(PlannerInfo *root,
 static void
 make_rels_by_clauseless_joins(PlannerInfo *root,
 							  RelOptInfo *old_rel,
-							  List *other_rels)
+							  List *other_rels,
+							  unsigned jsa_mask)
 {
 	ListCell   *l;
 
@@ -322,7 +331,7 @@ make_rels_by_clauseless_joins(PlannerInfo *root,
 
 		if (!bms_overlap(other_rel->relids, old_rel->relids))
 		{
-			(void) make_join_rel(root, old_rel, other_rel);
+			(void) make_join_rel(root, old_rel, other_rel, jsa_mask);
 		}
 	}
 }
@@ -701,7 +710,8 @@ init_dummy_sjinfo(SpecialJoinInfo *sjinfo, Relids left_relids,
  * turned into joins.
  */
 RelOptInfo *
-make_join_rel(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
+make_join_rel(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
+			  unsigned jsa_mask)
 {
 	Relids		joinrelids;
 	SpecialJoinInfo *sjinfo;
@@ -759,7 +769,7 @@ make_join_rel(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 	 */
 	joinrel = build_join_rel(root, joinrelids, rel1, rel2,
 							 sjinfo, pushed_down_joins,
-							 &restrictlist);
+							 &restrictlist, jsa_mask);
 
 	/*
 	 * If we've already proven this join is empty, we needn't consider any
@@ -773,7 +783,7 @@ make_join_rel(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 
 	/* Add paths to the join relation. */
 	populate_joinrel_with_paths(root, rel1, rel2, joinrel, sjinfo,
-								restrictlist);
+								restrictlist, jsa_mask);
 
 	bms_free(joinrelids);
 
@@ -892,7 +902,8 @@ add_outer_joins_to_relids(PlannerInfo *root, Relids input_relids,
 static void
 populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 							RelOptInfo *rel2, RelOptInfo *joinrel,
-							SpecialJoinInfo *sjinfo, List *restrictlist)
+							SpecialJoinInfo *sjinfo, List *restrictlist,
+							unsigned jsa_mask)
 {
 	/*
 	 * Consider paths using each rel as both outer and inner.  Depending on
@@ -923,10 +934,10 @@ populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 			}
 			add_paths_to_joinrel(root, joinrel, rel1, rel2,
 								 JOIN_INNER, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 			add_paths_to_joinrel(root, joinrel, rel2, rel1,
 								 JOIN_INNER, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 			break;
 		case JOIN_LEFT:
 			if (is_dummy_rel(rel1) ||
@@ -940,10 +951,10 @@ populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 				mark_dummy_rel(rel2);
 			add_paths_to_joinrel(root, joinrel, rel1, rel2,
 								 JOIN_LEFT, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 			add_paths_to_joinrel(root, joinrel, rel2, rel1,
 								 JOIN_RIGHT, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 			break;
 		case JOIN_FULL:
 			if ((is_dummy_rel(rel1) && is_dummy_rel(rel2)) ||
@@ -954,10 +965,10 @@ populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 			}
 			add_paths_to_joinrel(root, joinrel, rel1, rel2,
 								 JOIN_FULL, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 			add_paths_to_joinrel(root, joinrel, rel2, rel1,
 								 JOIN_FULL, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 
 			/*
 			 * If there are join quals that aren't mergeable or hashable, we
@@ -990,10 +1001,10 @@ populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 				}
 				add_paths_to_joinrel(root, joinrel, rel1, rel2,
 									 JOIN_SEMI, sjinfo,
-									 restrictlist);
+									 restrictlist, jsa_mask);
 				add_paths_to_joinrel(root, joinrel, rel2, rel1,
 									 JOIN_RIGHT_SEMI, sjinfo,
-									 restrictlist);
+									 restrictlist, jsa_mask);
 			}
 
 			/*
@@ -1016,10 +1027,10 @@ populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 				}
 				add_paths_to_joinrel(root, joinrel, rel1, rel2,
 									 JOIN_UNIQUE_INNER, sjinfo,
-									 restrictlist);
+									 restrictlist, jsa_mask);
 				add_paths_to_joinrel(root, joinrel, rel2, rel1,
 									 JOIN_UNIQUE_OUTER, sjinfo,
-									 restrictlist);
+									 restrictlist, jsa_mask);
 			}
 			break;
 		case JOIN_ANTI:
@@ -1034,10 +1045,10 @@ populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 				mark_dummy_rel(rel2);
 			add_paths_to_joinrel(root, joinrel, rel1, rel2,
 								 JOIN_ANTI, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 			add_paths_to_joinrel(root, joinrel, rel2, rel1,
 								 JOIN_RIGHT_ANTI, sjinfo,
-								 restrictlist);
+								 restrictlist, jsa_mask);
 			break;
 		default:
 			/* other values not expected here */
@@ -1046,7 +1057,8 @@ populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 	}
 
 	/* Apply partitionwise join technique, if possible. */
-	try_partitionwise_join(root, rel1, rel2, joinrel, sjinfo, restrictlist);
+	try_partitionwise_join(root, rel1, rel2, joinrel, sjinfo, restrictlist,
+						   jsa_mask);
 }
 
 
@@ -1480,7 +1492,7 @@ restriction_is_constant_false(List *restrictlist,
 static void
 try_partitionwise_join(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 					   RelOptInfo *joinrel, SpecialJoinInfo *parent_sjinfo,
-					   List *parent_restrictlist)
+					   List *parent_restrictlist, unsigned jsa_mask)
 {
 	bool		rel1_is_simple = IS_SIMPLE_REL(rel1);
 	bool		rel2_is_simple = IS_SIMPLE_REL(rel2);
@@ -1662,7 +1674,8 @@ try_partitionwise_join(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		{
 			child_joinrel = build_child_join_rel(root, child_rel1, child_rel2,
 												 joinrel, child_restrictlist,
-												 child_sjinfo, nappinfos, appinfos);
+												 child_sjinfo, nappinfos,
+												 appinfos, jsa_mask);
 			joinrel->part_rels[cnt_parts] = child_joinrel;
 			joinrel->live_parts = bms_add_member(joinrel->live_parts, cnt_parts);
 			joinrel->all_partrels = bms_add_members(joinrel->all_partrels,
@@ -1677,7 +1690,7 @@ try_partitionwise_join(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 		/* And make paths for the child join */
 		populate_joinrel_with_paths(root, child_rel1, child_rel2,
 									child_joinrel, child_sjinfo,
-									child_restrictlist);
+									child_restrictlist, jsa_mask);
 
 		/*
 		 * When there are thousands of partitions involved, this loop will

@@ -81,10 +81,13 @@ typedef struct
 
 /* routines in geqo_main.c */
 extern RelOptInfo *geqo(PlannerInfo *root,
-						int number_of_rels, List *initial_rels);
+						int number_of_rels, List *initial_rels,
+						unsigned jsa_mask);
 
 /* routines in geqo_eval.c */
-extern Cost geqo_eval(PlannerInfo *root, Gene *tour, int num_gene);
-extern RelOptInfo *gimme_tree(PlannerInfo *root, Gene *tour, int num_gene);
+extern Cost geqo_eval(PlannerInfo *root, Gene *tour, int num_gene,
+					  unsigned jsa_mask);
+extern RelOptInfo *gimme_tree(PlannerInfo *root, Gene *tour, int num_gene,
+							  unsigned jsa_mask);
 
 #endif							/* GEQO_H */

@@ -69,7 +69,8 @@ static int	gimme_number_generations(int pool_size);
  */
 
 RelOptInfo *
-geqo(PlannerInfo *root, int number_of_rels, List *initial_rels)
+geqo(PlannerInfo *root, int number_of_rels, List *initial_rels,
+	 unsigned jsa_mask)
 {
 	GeqoPrivateData private;
 	int			generation;
@@ -116,7 +117,7 @@ geqo(PlannerInfo *root, int number_of_rels, List *initial_rels)
 	pool = alloc_pool(root, pool_size, number_of_rels);
 
 /* random initialization of the pool */
-	random_init_pool(root, pool);
+	random_init_pool(root, pool, jsa_mask);
 
 /* sort the pool according to cheapest path as fitness */
 	sort_pool(root, pool);		/* we have to do it only one time, since all
@@ -218,7 +219,8 @@ geqo(PlannerInfo *root, int number_of_rels, List *initial_rels)
 
 
 		/* EVALUATE FITNESS */
-		kid->worth = geqo_eval(root, kid->string, pool->string_length);
+		kid->worth = geqo_eval(root, kid->string, pool->string_length,
+							   jsa_mask);
 
 		/* push the kid into the wilderness of life according to its worth */
 		spread_chromo(root, kid, pool);
@@ -269,7 +271,7 @@ geqo(PlannerInfo *root, int number_of_rels, List *initial_rels)
 	 */
 	best_tour = (Gene *) pool->data[0].string;
 
-	best_rel = gimme_tree(root, best_tour, pool->string_length);
+	best_rel = gimme_tree(root, best_tour, pool->string_length, jsa_mask);
 
 	if (best_rel == NULL)
 		elog(ERROR, "geqo failed to make a valid plan");
