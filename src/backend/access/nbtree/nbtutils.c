@@ -2784,6 +2784,47 @@ _bt_preprocess_keys(IndexScanDesc scan)
 						xform[BTGreaterStrategyNumber - 1].skey = NULL;
 				}
 			}
+			/* maybe , detect the contradictory case that like x <4 and x >10 */
+			bool 	    macthed = true;
+			ScanKey 	op, left, right;
+
+			if (xform[BTGreaterStrategyNumber - 1].skey)
+			{
+				op = right = xform[BTGreaterStrategyNumber - 1].skey;
+				if (xform[BTLessStrategyNumber - 1].skey)
+					left = xform[BTLessStrategyNumber - 1].skey;
+				else if (xform[BTLessEqualStrategyNumber - 1].skey)
+					left = xform[BTLessEqualStrategyNumber - 1].skey;
+				else
+					macthed = false;          
+			}
+			else if (xform[BTLessStrategyNumber - 1].skey)
+			{
+				op = right = xform[BTLessStrategyNumber - 1].skey;
+				if (xform[BTGreaterStrategyNumber - 1].skey)
+					left = xform[BTGreaterStrategyNumber - 1].skey;
+				else if (xform[BTGreaterEqualStrategyNumber - 1].skey)
+					left = xform[BTGreaterEqualStrategyNumber - 1].skey;
+				else
+					macthed = false; 
+			}
+			else if (xform[BTLessEqualStrategyNumber - 1].skey
+				&& xform[BTGreaterEqualStrategyNumber - 1].skey)
+			{
+				op = right = xform[BTGreaterEqualStrategyNumber - 1].skey;
+				left = xform[BTLessEqualStrategyNumber - 1].skey;
+			}
+			else
+				macthed = false;
+            if (macthed && _bt_compare_scankey_args(scan, op, left, right, NULL, NULL,
+											 &test_result))
+			{
+				if (!test_result)
+				{
+					so->qual_ok = false;
+					return;
+				}
+			}   
 
 			/*
 			 * Emit the cleaned-up keys into the outkeys[] array, and then
