@@ -161,11 +161,13 @@ typedef struct BTMetaPageData
  * a heap index tuple to make space for a tiebreaker heap TID
  * attribute, which we account for here.
  */
-#define BTMaxItemSize(page) \
-	(MAXALIGN_DOWN((PageGetPageSize(page) - \
+#define BTMaxItemSizeForPageSize(pagesize) \
+	(MAXALIGN_DOWN(((pagesize) - \
 					MAXALIGN(SizeOfPageHeaderData + 3*sizeof(ItemIdData)) - \
 					MAXALIGN(sizeof(BTPageOpaqueData))) / 3) - \
 					MAXALIGN(sizeof(ItemPointerData)))
+#define BTMaxItemSize(page) BTMaxItemSizeForPageSize(PageGetPageSize(page))
+
 #define BTMaxItemSizeNoHeapTid(page) \
 	MAXALIGN_DOWN((PageGetPageSize(page) - \
 				   MAXALIGN(SizeOfPageHeaderData + 3*sizeof(ItemIdData)) - \
@@ -880,6 +882,11 @@ typedef struct BTDedupStateData
 	int			nitems;			/* Number of existing tuples/line pointers */
 	Size		phystupsize;	/* Includes line pointer overhead */
 
+	/* Metadata used during index build */
+	int			rcvdallupto;	/* index of latest received min TID */
+	int			nhtidssorted;	/* number of sorted tids, starting at 0 */
+	int			maxnhtids;		/* current max entries of ntids allocation */
+
 	/*
 	 * Array of tuples to go on new version of the page.  Contains one entry
 	 * for each group of consecutive items.  Note that existing tuples that
@@ -1200,12 +1207,16 @@ extern bool _bt_bottomupdel_pass(Relation rel, Buffer buf, Relation heapRel,
 extern void _bt_dedup_start_pending(BTDedupState state, IndexTuple base,
 									OffsetNumber baseoff);
 extern bool _bt_dedup_save_htid(BTDedupState state, IndexTuple itup);
+extern bool _bt_sort_dedup_save_htids(BTDedupState state, IndexTuple itup);
 extern Size _bt_dedup_finish_pending(Page newpage, BTDedupState state);
 extern IndexTuple _bt_form_posting(IndexTuple base, ItemPointer htids,
 								   int nhtids);
 extern void _bt_update_posting(BTVacuumPosting vacposting);
 extern IndexTuple _bt_swap_posting(IndexTuple newitem, IndexTuple oposting,
 								   int postingoff);
+#ifdef USE_ASSERT_CHECKING
+extern bool _bt_posting_valid(IndexTuple posting);
+#endif
 
 /*
  * prototypes for functions in nbtinsert.c

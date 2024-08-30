@@ -101,6 +101,7 @@ typedef struct BTShared
 	Oid			indexrelid;
 	bool		isunique;
 	bool		nulls_not_distinct;
+	bool		deduplicate;
 	bool		isconcurrent;
 	int			scantuplesortstates;
 
@@ -205,6 +206,7 @@ typedef struct BTBuildState
 {
 	bool		isunique;
 	bool		nulls_not_distinct;
+	bool		deduplicate;
 	bool		havedead;
 	Relation	heap;
 	BTSpool    *spool;
@@ -282,10 +284,8 @@ static Size _bt_parallel_estimate_shared(Relation heap, Snapshot snapshot);
 static double _bt_parallel_heapscan(BTBuildState *buildstate,
 									bool *brokenhotchain);
 static void _bt_leader_participate_as_worker(BTBuildState *buildstate);
-static void _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
-									   BTShared *btshared, Sharedsort *sharedsort,
-									   Sharedsort *sharedsort2, int sortmem,
-									   bool progress);
+static void _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2, BTShared *btshared, Sharedsort *sharedsort,
+									   Sharedsort *sharedsort2, int sortmem, bool deduplicate, bool progress);
 
 
 /*
@@ -311,6 +311,8 @@ btbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	buildstate.spool2 = NULL;
 	buildstate.indtuples = 0;
 	buildstate.btleader = NULL;
+	buildstate.deduplicate = _bt_allequalimage(index, true) &&
+		!indexInfo->ii_Unique && BTGetDeduplicateItems(index);
 
 	/*
 	 * We expect to be called exactly once for any index relation. If that's
@@ -430,7 +432,7 @@ _bt_spools_heapscan(Relation heap, Relation index, BTBuildState *buildstate,
 		tuplesort_begin_index_btree(heap, index, buildstate->isunique,
 									buildstate->nulls_not_distinct,
 									maintenance_work_mem, coordinate,
-									TUPLESORT_NONE);
+									TUPLESORT_NONE, buildstate->deduplicate);
 
 	/*
 	 * If building a unique index, put dead tuples in a second spool to keep
@@ -469,7 +471,8 @@ _bt_spools_heapscan(Relation heap, Relation index, BTBuildState *buildstate,
 		 */
 		buildstate->spool2->sortstate =
 			tuplesort_begin_index_btree(heap, index, false, false, work_mem,
-										coordinate2, TUPLESORT_NONE);
+										coordinate2, TUPLESORT_NONE,
+										buildstate->deduplicate);
 	}
 
 	/* Fill spool using either serial or parallel heap scan */
@@ -1021,6 +1024,87 @@ _bt_buildadd(BTWriteState *wstate, BTPageState *state, IndexTuple itup,
 }
 
 /*
+ * Add pending posting list tuples
+ */
+static void
+_bt_sort_dedup_output_pending(BTWriteState *wstate, BTPageState *state,
+							  BTDedupState dstate)
+{
+	IndexTuple	postingtuple;
+	Size		truncextra;
+	/* request TIDs/tuple based on tuple size */
+	int			optmaxhtids = 0;
+	/* max TIDs/tuple possible based on tuple and page size */
+	int			physmaxhtids;
+	/* actual limit of TIDs per tuple */
+	int			maxpostnhtids;
+	ItemPointer	htids;
+
+	physmaxhtids = (BTMaxItemSizeForPageSize(BLCKSZ) - dstate->basetupsize)
+		/ sizeof(ItemPointerData);
+
+	if (dstate->basetupsize < dstate->maxpostingsize)
+	{
+		optmaxhtids = (dstate->maxpostingsize - dstate->basetupsize) /
+					sizeof(ItemPointerData);
+	}
+
+	Assert(dstate->maxnhtids >= dstate->nhtids);
+	Assert(dstate->nhtids >= dstate->nhtidssorted);
+	Assert(dstate->nhtidssorted >= dstate->rcvdallupto);
+
+	/*------
+	 * We 
+	 *   Must be able to fit 1 TID in the tuple;
+	 *   Cannot fit more than physmaxhtids in the posting list;
+	 *   Want at least 10 TIDs in the posting list, and
+	 *   would otherwise want to fill the tuple up to maxpostingsize.
+	 */
+	maxpostnhtids = Max(1, Min(Max(10, optmaxhtids), physmaxhtids));
+
+	Assert(dstate->nhtids >= dstate->rcvdallupto);
+	Assert(maxpostnhtids > 0);
+	htids = dstate->htids;
+
+	/*
+	 * We can keep writing while we have TIDs of which we know no earlier
+	 * TIDs will arrive.
+	 */
+	while (dstate->rcvdallupto >= maxpostnhtids)
+	{
+		/* form a tuple with a posting list */
+		postingtuple = _bt_form_posting(dstate->base, htids, maxpostnhtids);
+		truncextra = IndexTupleSize(postingtuple) - dstate->basetupsize;
+
+		_bt_buildadd(wstate, state, postingtuple, truncextra);
+
+		htids += maxpostnhtids;
+		dstate->nhtids -= maxpostnhtids;
+		dstate->rcvdallupto -= maxpostnhtids;
+		dstate->nhtidssorted -= maxpostnhtids;
+		dstate->nmaxitems++;
+	}
+
+	/*
+	 * Only memmove TIDs once per output call; that reduces overhead.
+	 */
+	if (htids != dstate->htids)
+	{
+		memmove(dstate->htids, htids,
+				dstate->nhtids * sizeof(ItemPointerData));
+	}
+}
+
+static int32
+tidcmp(const void *a, const void *b)
+{
+	ItemPointer iptr1 = ((const ItemPointer) a);
+	ItemPointer iptr2 = ((const ItemPointer) b);
+
+	return ItemPointerCompare(iptr1, iptr2);
+}
+
+/*
  * Finalize pending posting list tuple, and add it to the index.  Final tuple
  * is based on saved base tuple, and saved list of heap TIDs.
  *
@@ -1033,27 +1117,66 @@ _bt_sort_dedup_finish_pending(BTWriteState *wstate, BTPageState *state,
 {
 	Assert(dstate->nitems > 0);
 
-	if (dstate->nitems == 1)
-		_bt_buildadd(wstate, state, dstate->base, 0);
-	else
+	/*
+	 * We're done with this combination of key values, so let's flush
+	 * all max-sized tuples.
+	 */
+	if (dstate->nhtids != dstate->nhtidssorted)
 	{
-		IndexTuple	postingtuple;
-		Size		truncextra;
+		int		tosort = dstate->nhtids - dstate->rcvdallupto;
+		qsort(dstate->htids + dstate->rcvdallupto, tosort,
+			  sizeof(ItemPointerData), tidcmp);
+		dstate->nhtidssorted = dstate->nhtids;
+	}
 
-		/* form a tuple with a posting list */
-		postingtuple = _bt_form_posting(dstate->base,
-										dstate->htids,
-										dstate->nhtids);
-		/* Calculate posting list overhead */
-		truncextra = IndexTupleSize(postingtuple) -
-			BTreeTupleGetPostingOffset(postingtuple);
+	dstate->rcvdallupto = dstate->nhtids;
 
-		_bt_buildadd(wstate, state, postingtuple, truncextra);
-		pfree(postingtuple);
+	_bt_sort_dedup_output_pending(wstate, state, dstate);
+
+	if (dstate->nhtids > 0)
+	{
+		/*
+		 * We haven't merged any data into the base tuple, we can add it
+		 * directly to the index.
+		 */
+		if (dstate->nitems == 1)
+			_bt_buildadd(wstate, state, dstate->base, 0);
+		else
+		{
+			/*
+			 * The index tuple was updated/merged, so we have to create new
+			 * index tuples. Note that nhtids can be 1 when _output_pending
+			 * left just 1 TID in the array.
+			 */
+			IndexTuple	postingtuple;
+			Size		truncextra;
+	
+			/* form a tuple with a posting list */
+			postingtuple = _bt_form_posting(dstate->base,
+											dstate->htids,
+											dstate->nhtids);
+
+			if (dstate->nhtids > 1)
+			{
+				/* Calculate posting list overhead */
+				truncextra = IndexTupleSize(postingtuple) -
+							 BTreeTupleGetPostingOffset(postingtuple);
+			}
+			else
+			{
+				/* no truncatable overhead for single-value tuples */
+				truncextra = 0;
+			}
+
+			_bt_buildadd(wstate, state, postingtuple, truncextra);
+			pfree(postingtuple);
+		}
 	}
 
 	dstate->nmaxitems = 0;
 	dstate->nhtids = 0;
+	dstate->rcvdallupto = 0;
+	dstate->nhtidssorted = 0;
 	dstate->nitems = 0;
 	dstate->phystupsize = 0;
 }
@@ -1282,6 +1405,9 @@ _bt_load(BTWriteState *wstate, BTSpool *btspool, BTSpool *btspool2)
 		dstate->nitems = 0;
 		dstate->phystupsize = 0;	/* unused */
 		dstate->nintervals = 0; /* unused */
+		/* tuplesort-generated posting list tuple merging */
+		dstate->nhtidssorted = 0;
+		dstate->rcvdallupto = 0;
 
 		while ((itup = tuplesort_getindextuple(btspool->sortstate,
 											   true)) != NULL)
@@ -1308,26 +1434,38 @@ _bt_load(BTWriteState *wstate, BTSpool *btspool, BTSpool *btspool2)
 				Assert(dstate->maxpostingsize <= BTMaxItemSize((Page) state->btps_buf) &&
 					   dstate->maxpostingsize <= INDEX_SIZE_MASK);
 				dstate->htids = palloc(dstate->maxpostingsize);
+				dstate->maxnhtids =
+					dstate->maxpostingsize / sizeof(ItemPointerData);
 
 				/* start new pending posting list with itup copy */
 				_bt_dedup_start_pending(dstate, CopyIndexTuple(itup),
 										InvalidOffsetNumber);
 			}
 			else if (_bt_keep_natts_fast(wstate->index, dstate->base,
-										 itup) > keysz &&
-					 _bt_dedup_save_htid(dstate, itup))
+										 itup) > keysz)
 			{
-				/*
-				 * Tuple is equal to base tuple of pending posting list.  Heap
-				 * TID from itup has been saved in state.
-				 */
+				/* tuple is equal to base tuple of pending posting list. */
+
+				if (_bt_sort_dedup_save_htids(dstate, itup))
+				{
+					/*
+					 * Heap TIDs from itup have been saved in dstate; we don't
+					 * yet have enough to fill a maxsized tuple.
+					 */
+				}
+				else
+				{
+					/*
+					 * _bt_sort_dedup_save_htids() noticed we have enough TIDs
+					 * to emit a new max-sized index tuple.
+					 */
+					_bt_sort_dedup_output_pending(wstate, state, dstate);
+				}
 			}
 			else
 			{
 				/*
-				 * Tuple is not equal to pending posting list tuple, or
-				 * _bt_dedup_save_htid() opted to not merge current item into
-				 * pending posting list.
+				 * Tuple is not equal to pending posting list tuple.
 				 */
 				_bt_sort_dedup_finish_pending(wstate, state, dstate);
 				pfree(dstate->base);
@@ -1505,6 +1643,7 @@ _bt_begin_parallel(BTBuildState *buildstate, bool isconcurrent, int request)
 	btshared->indexrelid = RelationGetRelid(btspool->index);
 	btshared->isunique = btspool->isunique;
 	btshared->nulls_not_distinct = btspool->nulls_not_distinct;
+	btshared->deduplicate = buildstate->deduplicate;
 	btshared->isconcurrent = isconcurrent;
 	btshared->scantuplesortstates = scantuplesortstates;
 	btshared->queryid = pgstat_get_my_query_id();
@@ -1725,7 +1864,7 @@ _bt_leader_participate_as_worker(BTBuildState *buildstate)
 	/* Perform work common to all participants */
 	_bt_parallel_scan_and_sort(leaderworker, leaderworker2, btleader->btshared,
 							   btleader->sharedsort, btleader->sharedsort2,
-							   sortmem, true);
+							   sortmem, buildstate->deduplicate, true);
 
 #ifdef BTREE_BUILD_STATS
 	if (log_btree_build_stats)
@@ -1832,7 +1971,8 @@ _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc)
 	/* Perform sorting of spool, and possibly a spool2 */
 	sortmem = maintenance_work_mem / btshared->scantuplesortstates;
 	_bt_parallel_scan_and_sort(btspool, btspool2, btshared, sharedsort,
-							   sharedsort2, sortmem, false);
+							   sharedsort2, sortmem, btshared->deduplicate,
+							   false);
 
 	/* Report WAL/buffer usage during parallel execution */
 	bufferusage = shm_toc_lookup(toc, PARALLEL_KEY_BUFFER_USAGE, false);
@@ -1867,7 +2007,8 @@ _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc)
 static void
 _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 						   BTShared *btshared, Sharedsort *sharedsort,
-						   Sharedsort *sharedsort2, int sortmem, bool progress)
+						   Sharedsort *sharedsort2, int sortmem,
+						   bool deduplicate, bool progress)
 {
 	SortCoordinate coordinate;
 	BTBuildState buildstate;
@@ -1887,7 +2028,8 @@ _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 													 btspool->isunique,
 													 btspool->nulls_not_distinct,
 													 sortmem, coordinate,
-													 TUPLESORT_NONE);
+													 TUPLESORT_NONE,
+													 deduplicate);
 
 	/*
 	 * Just as with serial case, there may be a second spool.  If so, a
@@ -1910,7 +2052,7 @@ _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 		btspool2->sortstate =
 			tuplesort_begin_index_btree(btspool->heap, btspool->index, false, false,
 										Min(sortmem, work_mem), coordinate2,
-										false);
+										TUPLESORT_NONE, deduplicate);
 	}
 
 	/* Fill in buildstate for _bt_build_callback() */

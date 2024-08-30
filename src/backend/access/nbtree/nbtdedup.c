@@ -26,9 +26,6 @@ static bool _bt_do_singleval(Relation rel, Page page, BTDedupState state,
 							 OffsetNumber minoff, IndexTuple newitem);
 static void _bt_singleval_fillfactor(Page page, BTDedupState state,
 									 Size newitemsz);
-#ifdef USE_ASSERT_CHECKING
-static bool _bt_posting_valid(IndexTuple posting);
-#endif
 
 /*
  * Perform a deduplication pass.
@@ -97,6 +94,10 @@ _bt_dedup_pass(Relation rel, Buffer buf, IndexTuple newitem, Size newitemsz,
 	state->phystupsize = 0;
 	/* nintervals should be initialized to zero */
 	state->nintervals = 0;
+	/* unused here; initialize to 0 */
+	state->maxnhtids = 0;
+	state->nhtidssorted = 0;
+	state->rcvdallupto = 0;
 
 	minoff = P_FIRSTDATAKEY(opaque);
 	maxoff = PageGetMaxOffsetNumber(page);
@@ -333,6 +334,10 @@ _bt_bottomupdel_pass(Relation rel, Buffer buf, Relation heapRel,
 	state->nitems = 0;
 	state->phystupsize = 0;
 	state->nintervals = 0;
+	/* unused here; initialize to 0 */
+	state->maxnhtids = 0;
+	state->nhtidssorted = 0;
+	state->rcvdallupto = 0;
 
 	/*
 	 * Initialize tableam state that describes bottom-up index deletion
@@ -452,12 +457,33 @@ _bt_dedup_start_pending(BTDedupState state, IndexTuple base,
 		int			nposting;
 
 		nposting = BTreeTupleGetNPosting(base);
+
+		if (state->maxnhtids > 0 && nposting > state->maxnhtids)
+		{
+			while (nposting > state->maxnhtids)
+				state->maxnhtids *= 2;
+			
+			state->htids = repalloc(state->htids, state->maxnhtids
+									* sizeof(ItemPointerData));
+		}
+
 		memcpy(state->htids, BTreeTupleGetPosting(base),
 			   sizeof(ItemPointerData) * nposting);
+
 		state->nhtids = nposting;
 		/* basetupsize should not include existing posting list */
 		state->basetupsize = BTreeTupleGetPostingOffset(base);
 	}
+
+	state->nhtidssorted = state->nhtids;
+	state->rcvdallupto = 1;
+
+	Assert(state->nhtids >= 0);
+	Assert(state->maxnhtids <= 0 || (
+		   state->maxnhtids >= state->nhtids &&
+		   state->nhtids >= state->nhtidssorted &&
+		   state->nhtidssorted >= state->rcvdallupto &&
+		   state->rcvdallupto >= 0));
 
 	/*
 	 * Save new base tuple itself -- it'll be needed if we actually create a
@@ -539,6 +565,155 @@ _bt_dedup_save_htid(BTDedupState state, IndexTuple itup)
 		   sizeof(ItemPointerData) * nhtids);
 	state->nhtids += nhtids;
 	state->phystupsize += MAXALIGN(IndexTupleSize(itup)) + sizeof(ItemIdData);
+
+	return true;
+}
+
+static int32
+tidcmp(const void *a, const void *b)
+{
+	ItemPointer iptr1 = ((const ItemPointer) a);
+	ItemPointer iptr2 = ((const ItemPointer) b);
+
+	return ItemPointerCompare(iptr1, iptr2);
+}
+
+/*
+ * Save itup heap TID(s) into pending posting list where possible.
+ *
+ * Returns bool indicating if the pending posting list managed by state now
+ * includes itup's heap TID(s).
+ */
+bool
+_bt_sort_dedup_save_htids(BTDedupState state, IndexTuple itup)
+{
+	int			addnhtids;
+	ItemPointer htids;
+	Size		mergedtupsz;
+
+	Assert(!BTreeTupleIsPivot(itup));
+	Assert(state->nhtids >= 0);
+
+	if (!BTreeTupleIsPosting(itup))
+	{
+		addnhtids = 1;
+		htids = &itup->t_tid;
+	}
+	else
+	{
+		Assert(_bt_posting_valid(itup));
+
+		addnhtids = BTreeTupleGetNPosting(itup);
+		htids = BTreeTupleGetPosting(itup);
+	}
+
+	/* increase TID buffer size if we need to */
+	if (state->nhtids + addnhtids > state->maxnhtids)
+	{
+		while (state->maxnhtids < (state->nhtids + addnhtids))
+			state->maxnhtids *= 2;
+
+		state->htids = repalloc(state->htids,
+								sizeof(ItemPointerData) * state->maxnhtids);
+	}
+
+	state->nitems++;
+	memcpy(&state->htids[state->nhtids], htids,
+		   sizeof(ItemPointerData) * addnhtids);
+
+	if (state->nhtids > 0)
+	{
+		if (state->nhtidssorted == state->nhtids &&
+			ItemPointerCompare(&state->htids[state->nhtids - 1], htids) < 0)
+		{
+			int		old_nhtids = state->nhtids;
+
+			state->nhtids += addnhtids;
+			state->nhtidssorted += addnhtids;
+			/* new tuples may contain htids[0] + 1 */
+			state->rcvdallupto = old_nhtids + 1;
+		}
+		else
+		{
+			int		old_nhtids = state->nhtids;
+
+			state->nhtids += addnhtids;
+
+			/*
+			 * Only sort every doubling of number of TIDs, so that we don't
+			 * spend too much time sorting.
+			 */
+			if (state->nhtids > state->nhtidssorted * 2)
+			{
+				ItemPointer	ptr;
+				int		allreceived;
+
+				Assert(state->maxnhtids >= state->nhtids &&
+					   state->nhtids >= state->nhtidssorted &&
+					   state->nhtidssorted >= state->rcvdallupto &&
+					   state->rcvdallupto >= 0);
+
+				/*
+				 * Sort all TIDs. Note that contents haven't changed for the
+				 * data < rcvdallupto, so we don't have to sort those again.
+				 */
+				qsort((&state->htids[state->rcvdallupto]),
+					  state->nhtids - state->rcvdallupto,
+					  sizeof(ItemPointerData),
+					  tidcmp);
+
+				state->nhtidssorted = state->nhtids;
+
+				ptr = bsearch(htids, state->htids, state->nhtids,
+							  sizeof(ItemPointerData), tidcmp);
+
+				allreceived = (ptr - state->htids) + 1;
+
+				/*
+				 * We added a tuple, so the number of known-storable TIDs must
+				 * have increased.
+				 */
+				Assert(allreceived > 0 && allreceived > state->rcvdallupto &&
+					   allreceived <= old_nhtids + 1);
+				Assert(ItemPointerCompare(&state->htids[allreceived - 1],
+										  htids) == 0);
+
+				state->rcvdallupto = allreceived;
+			}
+		}
+	}
+	else
+	{
+		/* all TIDs are new */
+		state->nhtids = addnhtids;
+		state->nhtidssorted = addnhtids;
+		state->rcvdallupto = 1;
+	}
+
+	Assert(state->maxnhtids >= state->nhtids &&
+		   state->nhtids >= state->nhtidssorted &&
+		   state->nhtidssorted >= state->rcvdallupto &&
+		   state->rcvdallupto >= 0);
+
+	mergedtupsz = MAXALIGN(state->rcvdallupto * sizeof(ItemPointerData) +
+						   state->basetupsize);
+
+	if (mergedtupsz > state->maxpostingsize)
+	{
+		/*
+		 * Count this as an oversized item for single value strategy, though
+		 * only when there are 50 TIDs in the final posting list tuple.  This
+		 * limit (which is fairly arbitrary) avoids confusion about how many
+		 * 1/6 of a page tuples have been encountered/created by the current
+		 * deduplication pass.
+		 *
+		 * Note: We deliberately don't consider which deduplication pass
+		 * merged together tuples to create this item (could be a previous
+		 * deduplication pass, or current pass).  See _bt_do_singleval()
+		 * comments.
+		 */
+		return false;
+	}
 
 	return true;
 }
@@ -1074,7 +1249,7 @@ _bt_swap_posting(IndexTuple newitem, IndexTuple oposting, int postingoff)
  * tuple.  Used within assertions.
  */
 #ifdef USE_ASSERT_CHECKING
-static bool
+bool
 _bt_posting_valid(IndexTuple posting)
 {
 	ItemPointerData last;
