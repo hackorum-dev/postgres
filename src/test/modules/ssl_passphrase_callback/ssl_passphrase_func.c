@@ -25,8 +25,10 @@ static char *ssl_passphrase = NULL;
 /* callback function */
 static int	rot13_passphrase(char *buf, int size, int rwflag, void *userdata);
 
+#ifdef USE_SSL
 /* hook function to set the callback */
 static void set_rot13(SSL_CTX *context, bool isServerStart);
+#endif
 
 /*
  * Module load callback
@@ -48,10 +50,13 @@ _PG_init(void)
 
 	MarkGUCPrefixReserved("ssl_passphrase");
 
+#ifdef USE_SSL
 	if (ssl_passphrase)
 		openssl_tls_init_hook = set_rot13;
+#endif
 }
 
+#ifdef USE_SSL
 static void
 set_rot13(SSL_CTX *context, bool isServerStart)
 {
@@ -62,6 +67,7 @@ set_rot13(SSL_CTX *context, bool isServerStart)
 
 	SSL_CTX_set_default_passwd_cb(context, rot13_passphrase);
 }
+#endif
 
 static int
 rot13_passphrase(char *buf, int size, int rwflag, void *userdata)
