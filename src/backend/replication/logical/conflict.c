@@ -201,6 +201,7 @@ errdetail_apply_conflict(EState *estate, ResultRelInfo *relinfo,
 	StringInfoData err_detail;
 	char	   *val_desc;
 	char	   *origin_name;
+	int			errd;
 
 	initStringInfo(&err_detail);
 
@@ -289,9 +290,15 @@ errdetail_apply_conflict(EState *estate, ResultRelInfo *relinfo,
 	 * replica identity columns after the message.
 	 */
 	if (val_desc)
+	{
 		appendStringInfo(&err_detail, "\n%s", val_desc);
+		pfree(val_desc);
+	}
 
-	return errdetail_internal("%s", err_detail.data);
+	errd = errdetail_internal("%s", err_detail.data);
+	pfree(err_detail.data);
+
+	return errd;
 }
 
 /*
