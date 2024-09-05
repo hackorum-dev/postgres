@@ -420,6 +420,35 @@ ExplainResultDesc(ExplainStmt *stmt)
 }
 
 /*
+ * Notice whether estimated rows is bad.
+ */
+static void
+ExplainPrintEstimatedRowsAttention(ExplainState *es, QueryDesc *queryDesc)
+{
+	double     rows;
+	double     nloops;
+	PlanState *planstate = queryDesc->planstate;
+
+	if (es->analyze &&
+		planstate->instrument && planstate->instrument->nloops > 0)
+	{
+		nloops = planstate->instrument->nloops;
+		rows   = planstate->instrument->ntuples / nloops;
+
+		if(queryDesc->planstate->plan->plan_rows / rows < estimated_rows_scale_factor)
+			ereport(NOTICE,
+					(errmsg("Estimated rows (%.0f) less than actual rows (%.0f).",
+								queryDesc->planstate->plan->plan_rows,
+								rows), errhidestmt(true)));
+		else if (rows / queryDesc->planstate->plan->plan_rows < estimated_rows_scale_factor)
+			ereport(NOTICE,
+					(errmsg("Estimated rows (%.0f) greater than actual rows (%.0f).",
+								queryDesc->planstate->plan->plan_rows,
+								rows), errhidestmt(true)));
+	}
+}
+
+/*
  * ExplainOneQuery -
  *	  print out the execution plan for one Query
  *
@@ -720,6 +749,8 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 
 	/* Create textual dump of plan tree */
 	ExplainPrintPlan(es, queryDesc);
+
+	ExplainPrintEstimatedRowsAttention(es, queryDesc);
 
 	/* Show buffer and/or memory usage in planning */
 	if (peek_buffer_usage(es, bufusage) || mem_counters)

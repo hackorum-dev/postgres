@@ -528,6 +528,7 @@ int			log_parameter_max_length_on_error = 0;
 int			log_temp_files = -1;
 double		log_statement_sample_rate = 1.0;
 double		log_xact_sample_rate = 0;
+double      estimated_rows_scale_factor = 1.0;
 char	   *backtrace_functions;
 
 int			temp_file_limit = -1;
@@ -3991,6 +3992,16 @@ struct config_real ConfigureNamesReal[] =
 						 "statements for all transactions).")
 		},
 		&log_xact_sample_rate,
+		0.0, 0.0, 1.0,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"estimated_rows_scale_factor", PGC_SUSET, LOGGING_WHEN,
+			gettext_noop("Estimated rows, as a fraction of actual rows"),
+			NULL
+		},
+		&estimated_rows_scale_factor,
 		0.0, 0.0, 1.0,
 		NULL, NULL, NULL
 	},
