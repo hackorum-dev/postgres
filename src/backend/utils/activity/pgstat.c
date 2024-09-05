@@ -834,7 +834,7 @@ pgstat_reset_of_kind(PgStat_Kind kind)
 	const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
 	TimestampTz ts = GetCurrentTimestamp();
 
-	if (kind_info->fixed_amount)
+	if (kind_info != NULL && kind_info->fixed_amount)
 		kind_info->reset_all_cb(ts);
 	else
 		pgstat_reset_entries_of_kind(kind, ts);
@@ -893,6 +893,10 @@ pgstat_fetch_entry(PgStat_Kind kind, Oid dboid, Oid objoid)
 	PgStat_EntryRef *entry_ref;
 	void	   *stats_data;
 	const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
+
+	/* nothing to do */
+	if (kind_info == NULL)
+		return NULL;
 
 	/* should be called from backends */
 	Assert(IsUnderPostmaster || !IsPostmasterEnvironment);
@@ -1110,12 +1114,12 @@ pgstat_build_snapshot(void)
 		 * database or objects not associated with a database (e.g. shared
 		 * relations).
 		 */
+		if (kind_info == NULL || p->dropped)
+			continue;
+
 		if (p->key.dboid != MyDatabaseId &&
 			p->key.dboid != InvalidOid &&
 			!kind_info->accessed_across_databases)
-			continue;
-
-		if (p->dropped)
 			continue;
 
 		Assert(pg_atomic_read_u32(&p->refcount) > 0);
@@ -1166,7 +1170,7 @@ static void
 pgstat_build_snapshot_fixed(PgStat_Kind kind)
 {
 	const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
-	int			idx;
+	uint32		idx;
 	bool	   *valid;
 
 	/* Position in fixed_valid or custom_valid */
@@ -1198,7 +1202,9 @@ pgstat_build_snapshot_fixed(PgStat_Kind kind)
 
 	Assert(!valid[idx]);
 
-	kind_info->snapshot_cb();
+	/* call callback if exist */
+	if (kind_info != NULL && kind_info->snapshot_cb)
+		kind_info->snapshot_cb();
 
 	Assert(!valid[idx]);
 	valid[idx] = true;
@@ -1238,12 +1244,17 @@ pgstat_prep_pending_entry(PgStat_Kind kind, Oid dboid, Oid objoid, bool *created
 
 	if (entry_ref->pending == NULL)
 	{
-		size_t		entrysize = pgstat_get_kind_info(kind)->pending_size;
+		const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
 
-		Assert(entrysize != (size_t) -1);
+		if (kind_info != NULL)
+		{
+			size_t		entrysize = kind_info->pending_size;
 
-		entry_ref->pending = MemoryContextAllocZero(pgStatPendingContext, entrysize);
-		dlist_push_tail(&pgStatPending, &entry_ref->pending_node);
+			Assert(entrysize != (size_t) -1);
+
+			entry_ref->pending = MemoryContextAllocZero(pgStatPendingContext, entrysize);
+			dlist_push_tail(&pgStatPending, &entry_ref->pending_node);
+		}
 	}
 
 	return entry_ref;
@@ -1279,7 +1290,7 @@ pgstat_delete_pending_entry(PgStat_EntryRef *entry_ref)
 	/* !fixed_amount stats should be handled explicitly */
 	Assert(!pgstat_get_kind_info(kind)->fixed_amount);
 
-	if (kind_info->delete_pending_cb)
+	if (kind_info != NULL && kind_info->delete_pending_cb)
 		kind_info->delete_pending_cb(entry_ref);
 
 	pfree(pending_data);
@@ -1320,8 +1331,13 @@ pgstat_flush_pending_entries(bool nowait)
 		bool		did_flush;
 		dlist_node *next;
 
+		if (kind_info == NULL || kind_info->flush_pending_cb == NULL)
+		{
+			cur = next;
+			continue;
+		}
+
 		Assert(!kind_info->fixed_amount);
-		Assert(kind_info->flush_pending_cb != NULL);
 
 		/* flush the stats, if possible */
 		did_flush = kind_info->flush_pending_cb(entry_ref, nowait);
@@ -1594,7 +1610,7 @@ pgstat_write_statsfile(XLogRecPtr redo)
 	while ((ps = dshash_seq_next(&hstat)) != NULL)
 	{
 		PgStatShared_Common *shstats;
-		const PgStat_KindInfo *kind_info = NULL;
+		const PgStat_KindInfo *kind_info;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -1614,9 +1630,15 @@ pgstat_write_statsfile(XLogRecPtr redo)
 			continue;
 		}
 
-		shstats = (PgStatShared_Common *) dsa_get_address(pgStatLocal.dsa, ps->body);
-
 		kind_info = pgstat_get_kind_info(ps->key.kind);
+		if (kind_info == NULL)
+		{
+			elog(WARNING, "found unknown stats entry %u/%u/%u",
+				 ps->key.kind, ps->key.dboid, ps->key.objoid);
+			continue;
+		}
+
+		shstats = (PgStatShared_Common *) dsa_get_address(pgStatLocal.dsa, ps->body);
 
 		/* if not dropped the valid-entry refcount should exist */
 		Assert(pg_atomic_read_u32(&ps->refcount) > 0);
@@ -1811,7 +1833,7 @@ pgstat_read_statsfile(XLogRecPtr redo)
 							info->shared_data_off;
 					else
 					{
-						int			idx = kind - PGSTAT_KIND_CUSTOM_MIN;
+						uint32			idx = kind - PGSTAT_KIND_CUSTOM_MIN;
 
 						ptr = ((char *) shmem->custom_data[idx]) +
 							info->shared_data_off;
