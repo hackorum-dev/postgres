@@ -1566,6 +1566,7 @@ LogicalOutputPluginWriterPrepareWrite
 LogicalOutputPluginWriterUpdateProgress
 LogicalOutputPluginWriterWrite
 LogicalRepBeginData
+LogicalRepClockSkewAction
 LogicalRepCommitData
 LogicalRepCommitPreparedTxnData
 LogicalRepCtxStruct

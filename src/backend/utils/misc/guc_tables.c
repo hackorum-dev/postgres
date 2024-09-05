@@ -68,6 +68,7 @@
 #include "postmaster/walsummarizer.h"
 #include "postmaster/walwriter.h"
 #include "replication/logicallauncher.h"
+#include "replication/logicalworker.h"
 #include "replication/slot.h"
 #include "replication/slotsync.h"
 #include "replication/syncrep.h"
@@ -482,6 +483,7 @@ extern const struct config_enum_entry archive_mode_options[];
 extern const struct config_enum_entry recovery_target_action_options[];
 extern const struct config_enum_entry wal_sync_method_options[];
 extern const struct config_enum_entry dynamic_shared_memory_options[];
+extern const struct config_enum_entry logical_rep_clock_skew_action_options[];
 
 /*
  * GUC option variables that are exported from this module
@@ -3714,6 +3716,33 @@ struct config_int ConfigureNamesInt[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"max_logical_rep_clock_skew", PGC_SIGHUP, REPLICATION_SUBSCRIBERS,
+			gettext_noop("Sets maximum clock skew tolerance between logical "
+						 "replication nodes beyond which action configured "
+						 "in max_logical_rep_clock_skew_action is triggered."),
+			gettext_noop("-1 turns this check off."),
+			GUC_UNIT_S
+		},
+		&max_logical_rep_clock_skew,
+		LR_CLOCK_SKEW_DEFAULT, LR_CLOCK_SKEW_DEFAULT, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"max_logical_rep_clock_skew_wait", PGC_SIGHUP, REPLICATION_SUBSCRIBERS,
+			gettext_noop("Sets max limit on how long apply worker shall wait to "
+						 "bring clock skew within permissible range of max_logical_rep_clock_skew. "
+						 "If the computed wait time is more than this value, "
+						 "apply worker will error out without waiting."),
+			gettext_noop("0 turns this limit off."),
+			GUC_UNIT_S
+		},
+		&max_logical_rep_clock_skew_wait,
+		300, 0, 3600,
+		NULL, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, 0, 0, NULL, NULL, NULL
@@ -4988,6 +5017,17 @@ struct config_enum ConfigureNamesEnum[] =
 		},
 		&recoveryTargetAction,
 		RECOVERY_TARGET_ACTION_PAUSE, recovery_target_action_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"max_logical_rep_clock_skew_action", PGC_POSTMASTER, REPLICATION_SUBSCRIBERS,
+			gettext_noop("Sets the action to perform if a clock skew higher "
+						 "than max_logical_rep_clock_skew is detected."),
+			NULL
+		},
+		&max_logical_rep_clock_skew_action,
+		LR_CLOCK_SKEW_ACTION_ERROR, logical_rep_clock_skew_action_options,
 		NULL, NULL, NULL
 	},
 

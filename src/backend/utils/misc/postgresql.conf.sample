@@ -383,7 +383,14 @@
 					# (change requires restart)
 #max_sync_workers_per_subscription = 2	# taken from max_logical_replication_workers
 #max_parallel_apply_workers_per_subscription = 2	# taken from max_logical_replication_workers
-
+#max_logical_rep_clock_skew = -1	# maximum clock skew tolerance between logical
+					# replication nodes beyond which action configured in
+					# 'max_logical_rep_clock_skew_action' is triggered.
+#max_logical_rep_clock_skew_action = error # error or wait
+					   # (change requires restart)
+#max_logical_rep_clock_skew_wait = 300 # max limit on how long apply worker
+					# shall wait to bring clock skew within permissible
+					# range of max_logical_rep_clock_skew.
 
 #------------------------------------------------------------------------------
 # QUERY TUNING

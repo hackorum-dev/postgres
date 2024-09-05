@@ -319,6 +319,20 @@ static uint32 parallel_stream_nchanges = 0;
 bool		InitializingApplyWorker = false;
 
 /*
+ * GUC support
+ */
+const struct config_enum_entry logical_rep_clock_skew_action_options[] = {
+	{"error", LR_CLOCK_SKEW_ACTION_ERROR, false},
+	{"wait", LR_CLOCK_SKEW_ACTION_WAIT, false},
+	{NULL, 0, false}
+};
+
+/* GUCs */
+int			max_logical_rep_clock_skew = LR_CLOCK_SKEW_DEFAULT;
+int			max_logical_rep_clock_skew_action = LR_CLOCK_SKEW_ACTION_ERROR;
+int			max_logical_rep_clock_skew_wait = 300;	/* 5 mins */
+
+/*
  * We enable skipping all data modification changes (INSERT, UPDATE, etc.) for
  * the subscription if the remote transaction's finish LSN matches the subskiplsn.
  * Once we start skipping changes, we don't stop it until we skip all changes of
@@ -983,6 +997,95 @@ slot_modify_data(TupleTableSlot *slot, TupleTableSlot *srcslot,
 }
 
 /*
+ * Manage clock skew between nodes.
+ *
+ * It checks if the remote timestamp is ahead of the local clock
+ * and if the difference exceeds max_logical_rep_clock_skew, it performs
+ * the action specified by the max_logical_rep_clock_skew_action.
+ */
+static void
+manage_clock_skew(TimestampTz origin_timestamp)
+{
+	TimestampTz current;
+	TimestampTz delayUntil;
+	long		msecs;
+	int			rc;
+
+	/* nothing to do if no max clock skew configured */
+	if (max_logical_rep_clock_skew == LR_CLOCK_SKEW_DEFAULT)
+		return;
+
+	current = GetCurrentTimestamp();
+
+	/*
+	 * If the timestamp of the currently replayed transaction is in the future
+	 * compared to the current time on the subscriber and the difference is
+	 * larger than max_logical_rep_clock_skew, then perform the action
+	 * specified by the max_logical_rep_clock_skew_action setting.
+	 */
+	if (origin_timestamp > current &&
+		TimestampDifferenceExceeds(current, origin_timestamp,
+								   max_logical_rep_clock_skew * 1000))
+	{
+		if (max_logical_rep_clock_skew_action == LR_CLOCK_SKEW_ACTION_ERROR)
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+					 errmsg_internal("clock skew exceeds max_logical_rep_clock_skew (%d seconds)",
+									 max_logical_rep_clock_skew)));
+
+		/* Perform the wait */
+		while (true)
+		{
+			delayUntil =
+				TimestampTzMinusSeconds(origin_timestamp,
+										max_logical_rep_clock_skew);
+
+			/* Exit without waiting if it's already past 'delayUntil' time */
+			msecs = TimestampDifferenceMilliseconds(GetCurrentTimestamp(),
+													delayUntil);
+			if (msecs <= 0)
+				break;
+
+			/* The wait time should not exceed max_logical_rep_clock_skew_wait */
+			if (msecs > (max_logical_rep_clock_skew_wait * 1000L))
+				ereport(ERROR,
+						(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+						 errmsg_internal("clock skew wait time exceeds max_logical_rep_clock_skew_wait (%d seconds)",
+										 max_logical_rep_clock_skew_wait)));
+
+			elog(DEBUG2, "delaying apply for %ld milliseconds to manage clock skew",
+				 msecs);
+
+			/* Sleep until we are signaled or msecs have elapsed */
+			rc = WaitLatch(MyLatch,
+						   WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+						   msecs,
+						   WAIT_EVENT_LOGICAL_CLOCK_SKEW);
+
+			/* Exit the loop if msecs have elapsed */
+			if (rc & WL_TIMEOUT)
+				break;
+
+			if (rc & WL_LATCH_SET)
+			{
+				ResetLatch(MyLatch);
+				CHECK_FOR_INTERRUPTS();
+			}
+
+			/*
+			 * This might change max_logical_rep_clock_skew and
+			 * max_logical_rep_clock_skew_wait.
+			 */
+			if (ConfigReloadPending)
+			{
+				ConfigReloadPending = false;
+				ProcessConfigFile(PGC_SIGHUP);
+			}
+		}
+	}
+}
+
+/*
  * Handle BEGIN message.
  */
 static void
@@ -1003,6 +1106,9 @@ apply_handle_begin(StringInfo s)
 	in_remote_transaction = true;
 
 	pgstat_report_activity(STATE_RUNNING, NULL);
+
+	/* Check if there is any clock skew and perform configured action */
+	manage_clock_skew(begin_data.committime);
 }
 
 /*
@@ -1060,6 +1166,9 @@ apply_handle_begin_prepare(StringInfo s)
 	in_remote_transaction = true;
 
 	pgstat_report_activity(STATE_RUNNING, NULL);
+
+	/* Check if there is any clock skew and perform configured action */
+	manage_clock_skew(begin_data.prepare_time);
 }
 
 /*
@@ -1315,7 +1424,8 @@ apply_handle_stream_prepare(StringInfo s)
 			 * spooled operations.
 			 */
 			apply_spooled_messages(MyLogicalRepWorker->stream_fileset,
-								   prepare_data.xid, prepare_data.prepare_lsn);
+								   prepare_data.xid, prepare_data.prepare_lsn,
+								   prepare_data.prepare_time);
 
 			/* Mark the transaction as prepared. */
 			apply_handle_prepare_internal(&prepare_data);
@@ -2020,7 +2130,8 @@ ensure_last_message(FileSet *stream_fileset, TransactionId xid, int fileno,
  */
 void
 apply_spooled_messages(FileSet *stream_fileset, TransactionId xid,
-					   XLogRecPtr lsn)
+					   XLogRecPtr lsn,
+					   TimestampTz origin_timestamp)
 {
 	int			nchanges;
 	char		path[MAXPGPATH];
@@ -2072,6 +2183,13 @@ apply_spooled_messages(FileSet *stream_fileset, TransactionId xid,
 	pgstat_report_activity(STATE_RUNNING, NULL);
 
 	end_replication_step();
+
+	/*
+	 * If origin_timestamp is provided by caller, then check clock skew with
+	 * respect to the passed time and take configured action.
+	 */
+	if (origin_timestamp)
+		manage_clock_skew(origin_timestamp);
 
 	/*
 	 * Read the entries one by one and pass them through the same logic as in
@@ -2178,7 +2296,8 @@ apply_handle_stream_commit(StringInfo s)
 			 * spooled operations.
 			 */
 			apply_spooled_messages(MyLogicalRepWorker->stream_fileset, xid,
-								   commit_data.commit_lsn);
+								   commit_data.commit_lsn,
+								   commit_data.committime);
 
 			apply_handle_commit_internal(&commit_data);
 

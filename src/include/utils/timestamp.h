@@ -84,6 +84,7 @@ IntervalPGetDatum(const Interval *X)
 /* Macros for doing timestamp arithmetic without assuming timestamp's units */
 #define TimestampTzPlusMilliseconds(tz,ms) ((tz) + ((ms) * (int64) 1000))
 #define TimestampTzPlusSeconds(tz,s) ((tz) + ((s) * (int64) 1000000))
+#define TimestampTzMinusSeconds(tz,s) ((tz) - ((s) * (int64) 1000000))
 
 
 /* Set at postmaster start */

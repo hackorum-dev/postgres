@@ -312,6 +312,13 @@ pa_can_start(void)
 	if (!AllTablesyncsReady())
 		return false;
 
+	/*
+	 * Do not start a new parallel worker if user has configured max clock
+	 * skew, as we need the commit timestamp in the beginning.
+	 */
+	if ((max_logical_rep_clock_skew > LR_CLOCK_SKEW_DEFAULT))
+		return false;
+
 	return true;
 }
 
@@ -696,9 +703,14 @@ pa_process_spooled_messages_if_required(void)
 	}
 	else if (fileset_state == FS_READY)
 	{
+		/*
+		 * Currently we do not support starting parallel apply worker when
+		 * clock skew is configured, thus it is okay to pass 0 as
+		 * origin-timestamp here.
+		 */
 		apply_spooled_messages(&MyParallelShared->fileset,
 							   MyParallelShared->xid,
-							   InvalidXLogRecPtr);
+							   InvalidXLogRecPtr, 0);
 		pa_set_fileset_state(MyParallelShared, FS_EMPTY);
 	}
 
