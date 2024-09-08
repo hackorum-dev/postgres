@@ -70,6 +70,7 @@ pgkill(int pid, int sig)
 		return 0;
 	}
 
+int le = GetLastError();
 	switch (GetLastError())
 	{
 		case ERROR_BROKEN_PIPE:
@@ -89,6 +90,7 @@ pgkill(int pid, int sig)
 			errno = EPERM;
 			return -1;
 		default:
+fprintf(stderr, "!!!pgkill| GetLastError(): %d\n", le);
 			errno = EINVAL;		/* unexpected */
 			return -1;
 	}
