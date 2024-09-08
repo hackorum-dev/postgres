@@ -1170,12 +1170,17 @@ do_reload(void)
 		exit(1);
 	}
 
-	if (kill(pid, sig) != 0)
+for (int i = 1; i <= 100; i++)
+{
+int res, en;
+	if ((res = kill(pid, sig)) != 0)
 	{
-		write_stderr(_("%s: could not send reload signal (PID: %d): %m\n"),
-					 progname, (int) pid);
+en = errno;
+		write_stderr(_("%s: could not send reload signal (PID: %d), iteration: %d, res: %d, errno: %d: %m\n"),
+					 progname, (int) pid, i, res, en);
 		exit(1);
 	}
+}
 
 	print_msg(_("server signaled\n"));
 }
