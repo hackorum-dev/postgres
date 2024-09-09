@@ -4157,6 +4157,7 @@ rescanLatestTimeLine(TimeLineID replayTLI, XLogRecPtr replayLSN)
 				(errmsg("new timeline %u is not a child of database system timeline %u",
 						newtarget,
 						replayTLI)));
+		list_free_deep(newExpectedTLEs);
 		return false;
 	}
 
@@ -4172,6 +4173,7 @@ rescanLatestTimeLine(TimeLineID replayTLI, XLogRecPtr replayLSN)
 						newtarget,
 						replayTLI,
 						LSN_FORMAT_ARGS(replayLSN))));
+		list_free_deep(newExpectedTLEs);
 		return false;
 	}
 
