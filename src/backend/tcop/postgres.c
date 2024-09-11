@@ -73,6 +73,7 @@
 #include "tcop/utility.h"
 #include "utils/guc_hooks.h"
 #include "utils/injection_point.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
@@ -2774,6 +2775,8 @@ start_xact_command(void)
 		!get_timeout_active(CLIENT_CONNECTION_CHECK_TIMEOUT))
 		enable_timeout_after(CLIENT_CONNECTION_CHECK_TIMEOUT,
 							 client_connection_check_interval);
+
+	AcceptInvalidationMessages();
 }
 
 static void

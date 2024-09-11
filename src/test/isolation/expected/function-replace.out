@@ -1,0 +1,20 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_exec_fn s2_replace s1_exec_fn s2_drop s1_exec_fn s1_end
+step s1_exec_fn: SELECT test_fn();
+test_fn
+-------
+      1
+(1 row)
+
+step s2_replace: CREATE OR REPLACE FUNCTION test_fn() RETURNS integer LANGUAGE sql AS $$ SELECT 2; $$;
+step s1_exec_fn: SELECT test_fn();
+test_fn
+-------
+      2
+(1 row)
+
+step s2_drop: DROP FUNCTION test_fn;
+step s1_exec_fn: SELECT test_fn();
+ERROR:  function test_fn() does not exist
+step s1_end: END;
