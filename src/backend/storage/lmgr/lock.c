@@ -1449,15 +1449,6 @@ SetupLockInTable(LockMethod lockMethodTable, PGPROC *proc,
 	}
 
 	/*
-	 * lock->nRequested and lock->requested[] count the total number of
-	 * requests, whether granted or waiting, so increment those immediately.
-	 * The other counts don't increment till we get the lock.
-	 */
-	lock->nRequested++;
-	lock->requested[lockmode]++;
-	Assert((lock->nRequested > 0) && (lock->requested[lockmode] > 0));
-
-	/*
 	 * We shouldn't already hold the desired lock; else locallock table is
 	 * broken.
 	 */
@@ -1466,6 +1457,15 @@ SetupLockInTable(LockMethod lockMethodTable, PGPROC *proc,
 			 lockMethodTable->lockModeNames[lockmode],
 			 lock->tag.locktag_field1, lock->tag.locktag_field2,
 			 lock->tag.locktag_field3);
+
+	/*
+	 * lock->nRequested and lock->requested[] count the total number of
+	 * requests, whether granted or waiting, so increment those immediately.
+	 * The other counts don't increment till we get the lock.
+	 */
+	lock->nRequested++;
+	lock->requested[lockmode]++;
+	Assert((lock->nRequested > 0) && (lock->requested[lockmode] > 0));
 
 	return proclock;
 }
@@ -4476,14 +4476,6 @@ lock_twophase_recover(FullTransactionId fxid, uint16 info,
 	}
 
 	/*
-	 * lock->nRequested and lock->requested[] count the total number of
-	 * requests, whether granted or waiting, so increment those immediately.
-	 */
-	lock->nRequested++;
-	lock->requested[lockmode]++;
-	Assert((lock->nRequested > 0) && (lock->requested[lockmode] > 0));
-
-	/*
 	 * We shouldn't already hold the desired lock.
 	 */
 	if (proclock->holdMask & LOCKBIT_ON(lockmode))
@@ -4491,6 +4483,14 @@ lock_twophase_recover(FullTransactionId fxid, uint16 info,
 			 lockMethodTable->lockModeNames[lockmode],
 			 lock->tag.locktag_field1, lock->tag.locktag_field2,
 			 lock->tag.locktag_field3);
+
+	/*
+	 * lock->nRequested and lock->requested[] count the total number of
+	 * requests, whether granted or waiting, so increment those immediately.
+	 */
+	lock->nRequested++;
+	lock->requested[lockmode]++;
+	Assert((lock->nRequested > 0) && (lock->requested[lockmode] > 0));
 
 	/*
 	 * We ignore any possible conflicts and just grant ourselves the lock. Not
