@@ -111,14 +111,14 @@ static void drop_existing_subscriptions(PGconn *conn, const char *subname,
 #define	USEC_PER_SEC	1000000
 #define	WAIT_INTERVAL	1		/* 1 second */
 
-static const char *progname;
+static const char *prog_name;
 
 static char *primary_slot_name = NULL;
 static bool dry_run = false;
 
 static bool success = false;
 
-static struct LogicalRepInfo *dbinfo;
+static struct LogicalRepInfo *db_info;
 static int	num_dbs = 0;		/* number of specified databases */
 static int	num_pubs = 0;		/* number of specified publications */
 static int	num_subs = 0;		/* number of specified subscriptions */
@@ -173,17 +173,17 @@ cleanup_objects_atexit(void)
 
 	for (int i = 0; i < num_dbs; i++)
 	{
-		if (dbinfo[i].made_publication || dbinfo[i].made_replslot)
+		if (db_info[i].made_publication || db_info[i].made_replslot)
 		{
 			PGconn	   *conn;
 
-			conn = connect_database(dbinfo[i].pubconninfo, false);
+			conn = connect_database(db_info[i].pubconninfo, false);
 			if (conn != NULL)
 			{
-				if (dbinfo[i].made_publication)
-					drop_publication(conn, &dbinfo[i]);
-				if (dbinfo[i].made_replslot)
-					drop_replication_slot(conn, &dbinfo[i], dbinfo[i].replslotname);
+				if (db_info[i].made_publication)
+					drop_publication(conn, &db_info[i]);
+				if (db_info[i].made_replslot)
+					drop_replication_slot(conn, &db_info[i], db_info[i].replslotname);
 				disconnect_database(conn, false);
 			}
 			else
@@ -193,16 +193,16 @@ cleanup_objects_atexit(void)
 				 * that some objects were left on primary and should be
 				 * removed before trying again.
 				 */
-				if (dbinfo[i].made_publication)
+				if (db_info[i].made_publication)
 				{
 					pg_log_warning("publication \"%s\" created in database \"%s\" on primary was left behind",
-								   dbinfo[i].pubname, dbinfo[i].dbname);
+								   db_info[i].pubname, db_info[i].dbname);
 					pg_log_warning_hint("Drop this publication before trying again.");
 				}
-				if (dbinfo[i].made_replslot)
+				if (db_info[i].made_replslot)
 				{
 					pg_log_warning("replication slot \"%s\" created in database \"%s\" on primary was left behind",
-								   dbinfo[i].replslotname, dbinfo[i].dbname);
+								   db_info[i].replslotname, db_info[i].dbname);
 					pg_log_warning_hint("Drop this replication slot soon to avoid retention of WAL files.");
 				}
 			}
@@ -217,9 +217,9 @@ static void
 usage(void)
 {
 	printf(_("%s creates a new logical replica from a standby server.\n\n"),
-		   progname);
+		   prog_name);
 	printf(_("Usage:\n"));
-	printf(_("  %s [OPTION]...\n"), progname);
+	printf(_("  %s [OPTION]...\n"), prog_name);
 	printf(_("\nOptions:\n"));
 	printf(_("  -d, --database=DBNAME           database in which to create a subscription\n"));
 	printf(_("  -D, --pgdata=DATADIR            location for the subscriber data directory\n"));
@@ -323,7 +323,7 @@ get_sub_conninfo(const struct CreateSubscriberOptions *opt)
 #endif
 	if (opt->sub_username != NULL)
 		appendConnStrItem(buf, "user", opt->sub_username);
-	appendConnStrItem(buf, "fallback_application_name", progname);
+	appendConnStrItem(buf, "fallback_application_name", prog_name);
 
 	ret = pg_strdup(buf->data);
 
@@ -1903,7 +1903,7 @@ main(int argc, char **argv)
 
 	pg_logging_init(argv[0]);
 	pg_logging_set_level(PG_LOG_WARNING);
-	progname = get_progname(argv[0]);
+	prog_name = get_progname(argv[0]);
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_basebackup"));
 
 	if (argc > 1)
@@ -1943,7 +1943,7 @@ main(int argc, char **argv)
 	{
 		pg_log_error("cannot be executed by \"root\"");
 		pg_log_error_hint("You must run %s as the PostgreSQL superuser.",
-						  progname);
+						  prog_name);
 		exit(1);
 	}
 #endif
@@ -2034,7 +2034,7 @@ main(int argc, char **argv)
 				break;
 			default:
 				/* getopt_long already emitted a complaint */
-				pg_log_error_hint("Try \"%s --help\" for more information.", progname);
+				pg_log_error_hint("Try \"%s --help\" for more information.", prog_name);
 				exit(1);
 		}
 	}
@@ -2044,7 +2044,7 @@ main(int argc, char **argv)
 	{
 		pg_log_error("too many command-line arguments (first is \"%s\")",
 					 argv[optind]);
-		pg_log_error_hint("Try \"%s --help\" for more information.", progname);
+		pg_log_error_hint("Try \"%s --help\" for more information.", prog_name);
 		exit(1);
 	}
 
@@ -2052,7 +2052,7 @@ main(int argc, char **argv)
 	if (subscriber_dir == NULL)
 	{
 		pg_log_error("no subscriber data directory specified");
-		pg_log_error_hint("Try \"%s --help\" for more information.", progname);
+		pg_log_error_hint("Try \"%s --help\" for more information.", prog_name);
 		exit(1);
 	}
 
@@ -2080,7 +2080,7 @@ main(int argc, char **argv)
 		 * not, we would fail anyway.
 		 */
 		pg_log_error("no publisher connection string specified");
-		pg_log_error_hint("Try \"%s --help\" for more information.", progname);
+		pg_log_error_hint("Try \"%s --help\" for more information.", prog_name);
 		exit(1);
 	}
 	pg_log_info("validating publisher connection string");
@@ -2113,7 +2113,7 @@ main(int argc, char **argv)
 		{
 			pg_log_error("no database name specified");
 			pg_log_error_hint("Try \"%s --help\" for more information.",
-							  progname);
+							  prog_name);
 			exit(1);
 		}
 	}
@@ -2153,7 +2153,7 @@ main(int argc, char **argv)
 	 * called before atexit() because its return is used in the
 	 * cleanup_objects_atexit().
 	 */
-	dbinfo = store_pub_sub_info(&opt, pub_base_conninfo, sub_base_conninfo);
+	db_info = store_pub_sub_info(&opt, pub_base_conninfo, sub_base_conninfo);
 
 	/* Register a function to clean up objects in case of failure */
 	atexit(cleanup_objects_atexit);
@@ -2162,7 +2162,7 @@ main(int argc, char **argv)
 	 * Check if the subscriber data directory has the same system identifier
 	 * than the publisher data directory.
 	 */
-	pub_sysid = get_primary_sysid(dbinfo[0].pubconninfo);
+	pub_sysid = get_primary_sysid(db_info[0].pubconninfo);
 	sub_sysid = get_standby_sysid(subscriber_dir);
 	if (pub_sysid != sub_sysid)
 		pg_fatal("subscriber data directory is not a copy of the source database cluster");
@@ -2192,10 +2192,10 @@ main(int argc, char **argv)
 	start_standby_server(&opt, true, false);
 
 	/* Check if the standby server is ready for logical replication */
-	check_subscriber(dbinfo);
+	check_subscriber(db_info);
 
 	/* Check if the primary server is ready for logical replication */
-	check_publisher(dbinfo);
+	check_publisher(db_info);
 
 	/*
 	 * Stop the target server. The recovery process requires that the server
@@ -2208,10 +2208,10 @@ main(int argc, char **argv)
 	stop_standby_server(subscriber_dir);
 
 	/* Create the required objects for each database on publisher */
-	consistent_lsn = setup_publisher(dbinfo);
+	consistent_lsn = setup_publisher(db_info);
 
 	/* Write the required recovery parameters */
-	setup_recovery(dbinfo, subscriber_dir, consistent_lsn);
+	setup_recovery(db_info, subscriber_dir, consistent_lsn);
 
 	/*
 	 * Start subscriber so the recovery parameters will take effect. Wait
@@ -2222,7 +2222,7 @@ main(int argc, char **argv)
 	start_standby_server(&opt, true, true);
 
 	/* Waiting the subscriber to be promoted */
-	wait_for_end_recovery(dbinfo[0].subconninfo, &opt);
+	wait_for_end_recovery(db_info[0].subconninfo, &opt);
 
 	/*
 	 * Create the subscription for each database on subscriber. It does not
@@ -2230,13 +2230,13 @@ main(int argc, char **argv)
 	 * point to the LSN reported by setup_publisher().  It also cleans up
 	 * publications created by this tool and replication to the standby.
 	 */
-	setup_subscriber(dbinfo, consistent_lsn);
+	setup_subscriber(db_info, consistent_lsn);
 
 	/* Remove primary_slot_name if it exists on primary */
-	drop_primary_replication_slot(dbinfo, primary_slot_name);
+	drop_primary_replication_slot(db_info, primary_slot_name);
 
 	/* Remove failover replication slots if they exist on subscriber */
-	drop_failover_replication_slots(dbinfo);
+	drop_failover_replication_slots(db_info);
 
 	/* Stop the subscriber */
 	pg_log_info("stopping the subscriber");
