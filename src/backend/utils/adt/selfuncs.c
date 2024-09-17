@@ -8357,7 +8357,7 @@ gistcostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 */
 	if (index->tuples > 1)		/* avoid computing log(0) */
 	{
-		descentCost = ceil(log(index->tuples)) * cpu_operator_cost;
+		descentCost = ceil(log(index->tuples) / log(2.0)) * cpu_operator_cost;
 		costs.indexStartupCost += descentCost;
 		costs.indexTotalCost += costs.num_sa_scans * descentCost;
 	}
