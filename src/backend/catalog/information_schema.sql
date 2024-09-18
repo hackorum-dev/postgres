@@ -670,7 +670,7 @@ CREATE VIEW columns AS
            CAST(c.relname AS sql_identifier) AS table_name,
            CAST(a.attname AS sql_identifier) AS column_name,
            CAST(a.attnum AS cardinal_number) AS ordinal_position,
-           CAST(CASE WHEN a.attgenerated = '' THEN pg_get_expr(ad.adbin, ad.adrelid) END AS character_data) AS column_default,
+           CAST(CASE WHEN a.attgenerated = '' AND a.atthasdef THEN pg_get_expr(ad.adbin, ad.adrelid) END AS character_data) AS column_default,
            CAST(CASE WHEN a.attnotnull OR (t.typtype = 'd' AND t.typnotnull) THEN 'NO' ELSE 'YES' END
              AS yes_or_no)
              AS is_nullable,
@@ -759,8 +759,8 @@ CREATE VIEW columns AS
            CAST(seq.seqmin AS character_data) AS identity_minimum,
            CAST(CASE WHEN seq.seqcycle THEN 'YES' ELSE 'NO' END AS yes_or_no) AS identity_cycle,
 
-           CAST(CASE WHEN a.attgenerated <> '' THEN 'ALWAYS' ELSE 'NEVER' END AS character_data) AS is_generated,
-           CAST(CASE WHEN a.attgenerated <> '' THEN pg_get_expr(ad.adbin, ad.adrelid) END AS character_data) AS generation_expression,
+           CAST(CASE WHEN a.attgenerated <> '' AND a.atthasdef THEN 'ALWAYS' ELSE 'NEVER' END AS character_data) AS is_generated,
+           CAST(CASE WHEN a.attgenerated <> '' AND a.atthasdef THEN pg_get_expr(ad.adbin, ad.adrelid) END AS character_data) AS generation_expression,
 
            CAST(CASE WHEN c.relkind IN ('r', 'p') OR
                           (c.relkind IN ('v', 'f') AND
