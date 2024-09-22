@@ -26,6 +26,7 @@ OBJS = \
 	proto.o \
 	relation.o \
 	reorderbuffer.o \
+	reorderbuffer_pglz.o \
 	slotsync.o \
 	snapbuild.o \
 	tablesync.o \

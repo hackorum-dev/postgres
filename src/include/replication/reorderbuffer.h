@@ -26,6 +26,7 @@
 /* GUC variables */
 extern PGDLLIMPORT int logical_decoding_work_mem;
 extern PGDLLIMPORT int debug_logical_replication_streaming;
+extern PGDLLIMPORT int logical_decoding_spill_compression;
 
 /* possible values for debug_logical_replication_streaming */
 typedef enum
@@ -426,6 +427,11 @@ typedef struct ReorderBufferTXN
 	 * Private data pointer of the output plugin.
 	 */
 	void	   *output_plugin_private;
+
+	/*
+	 * Streaming compression state used for spill files compression.
+	 */
+	void	   *compressor_state;
 } ReorderBufferTXN;
 
 /* so we can define the callbacks used inside struct ReorderBuffer itself */

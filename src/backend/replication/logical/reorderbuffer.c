@@ -97,11 +97,13 @@
 #include "access/xlog_internal.h"
 #include "catalog/catalog.h"
 #include "common/int.h"
+#include "common/pg_lzcompress.h"
 #include "lib/binaryheap.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "replication/logical.h"
 #include "replication/reorderbuffer.h"
+#include "replication/reorderbuffer_compression.h"
 #include "replication/slot.h"
 #include "replication/snapbuild.h"	/* just for SnapBuildSnapDecRefcount */
 #include "storage/bufmgr.h"
@@ -176,9 +178,10 @@ typedef struct ReorderBufferToastEnt
 /* Disk serialization support datastructures */
 typedef struct ReorderBufferDiskChange
 {
-	Size		size;
-	ReorderBufferChange change;
-	/* data follows */
+	ReorderBufferCompressionStrategy comp_strat;	/* Compression strategy */
+	Size		size;			/* Ondisk size */
+	Size		raw_size;		/* Raw/uncompressed data size */
+	/* ReorderBufferChange + data follow */
 } ReorderBufferDiskChange;
 
 #define IsSpecInsert(action) \
@@ -214,6 +217,9 @@ static const Size max_changes_in_memory = 4096; /* XXX for restore only */
 
 /* GUC variable */
 int			debug_logical_replication_streaming = DEBUG_LOGICAL_REP_STREAMING_BUFFERED;
+
+/* Compression strategy for spilled data. */
+int			logical_decoding_spill_compression = REORDER_BUFFER_PGLZ_COMPRESSION;
 
 /* ---------------------------------------
  * primary reorderbuffer support routines
@@ -255,6 +261,8 @@ static void ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *tx
 										 int fd, ReorderBufferChange *change);
 static Size ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 										TXNEntryFile *file, XLogSegNo *segno);
+static bool ReorderBufferReadOndiskChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
+										  TXNEntryFile *file, XLogSegNo *segno);
 static void ReorderBufferRestoreChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 									   char *data);
 static void ReorderBufferRestoreCleanup(ReorderBuffer *rb, ReorderBufferTXN *txn);
@@ -300,6 +308,24 @@ static void ReorderBufferChangeMemoryUpdate(ReorderBuffer *rb,
 											ReorderBufferChange *change,
 											ReorderBufferTXN *txn,
 											bool addition, Size sz);
+
+/*
+ * ---------------------------------------
+ * spill files compression
+ * ---------------------------------------
+ */
+static void *ReorderBufferNewCompressorState(MemoryContext context,
+											 int compression_method);
+static void ReorderBufferFreeCompressorState(MemoryContext context,
+											 int compression_method,
+											 void *compressor_state);
+static void ReorderBufferCompress(ReorderBuffer *rb,
+								  ReorderBufferDiskChange **ondisk,
+								  int compression_method, Size data_size,
+								  void *compressor_state);
+static void ReorderBufferDecompress(ReorderBuffer *rb, char *data,
+									ReorderBufferDiskChange *ondisk,
+									void *compressor_state);
 
 /*
  * Allocate a new ReorderBuffer and clean out any old serialized state from
@@ -432,6 +458,8 @@ ReorderBufferGetTXN(ReorderBuffer *rb)
 	/* InvalidCommandId is not zero, so set it explicitly */
 	txn->command_id = InvalidCommandId;
 	txn->output_plugin_private = NULL;
+	txn->compressor_state = ReorderBufferNewCompressorState(rb->context,
+															logical_decoding_spill_compression);
 
 	return txn;
 }
@@ -468,6 +496,10 @@ ReorderBufferReturnTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		pfree(txn->invalidations);
 		txn->invalidations = NULL;
 	}
+
+	ReorderBufferFreeCompressorState(rb->context,
+									 logical_decoding_spill_compression,
+									 txn->compressor_state);
 
 	/* Reset the toast hash */
 	ReorderBufferToastReset(rb, txn);
@@ -3806,12 +3838,12 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 							 int fd, ReorderBufferChange *change)
 {
 	ReorderBufferDiskChange *ondisk;
-	Size		sz = sizeof(ReorderBufferDiskChange);
+	Size		sz = sizeof(ReorderBufferDiskChange) + sizeof(ReorderBufferChange);
 
 	ReorderBufferSerializeReserve(rb, sz);
 
 	ondisk = (ReorderBufferDiskChange *) rb->outbuf;
-	memcpy(&ondisk->change, change, sizeof(ReorderBufferChange));
+	memcpy((char *) rb->outbuf + sizeof(ReorderBufferDiskChange), change, sizeof(ReorderBufferChange));
 
 	switch (change->action)
 	{
@@ -3847,7 +3879,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 				/* make sure we have enough space */
 				ReorderBufferSerializeReserve(rb, sz);
 
-				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange);
+				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange) + sizeof(ReorderBufferChange);
 				/* might have been reallocated above */
 				ondisk = (ReorderBufferDiskChange *) rb->outbuf;
 
@@ -3879,7 +3911,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 					sizeof(Size) + sizeof(Size);
 				ReorderBufferSerializeReserve(rb, sz);
 
-				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange);
+				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange) + sizeof(ReorderBufferChange);
 
 				/* might have been reallocated above */
 				ondisk = (ReorderBufferDiskChange *) rb->outbuf;
@@ -3909,7 +3941,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 				sz += inval_size;
 
 				ReorderBufferSerializeReserve(rb, sz);
-				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange);
+				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange) + sizeof(ReorderBufferChange);
 
 				/* might have been reallocated above */
 				ondisk = (ReorderBufferDiskChange *) rb->outbuf;
@@ -3931,7 +3963,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 				/* make sure we have enough space */
 				ReorderBufferSerializeReserve(rb, sz);
-				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange);
+				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange) + sizeof(ReorderBufferChange);
 				/* might have been reallocated above */
 				ondisk = (ReorderBufferDiskChange *) rb->outbuf;
 
@@ -3965,7 +3997,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 				/* make sure we have enough space */
 				ReorderBufferSerializeReserve(rb, sz);
 
-				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange);
+				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange) + sizeof(ReorderBufferChange);
 				/* might have been reallocated above */
 				ondisk = (ReorderBufferDiskChange *) rb->outbuf;
 
@@ -3982,7 +4014,9 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			break;
 	}
 
-	ondisk->size = sz;
+	/* Inplace ReorderBuffer content compression before writing it on disk */
+	ReorderBufferCompress(rb, &ondisk, logical_decoding_spill_compression,
+						  sz, txn->compressor_state);
 
 	errno = 0;
 	pgstat_report_wait_start(WAIT_EVENT_REORDER_BUFFER_WRITE);
@@ -4011,8 +4045,6 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	 */
 	if (txn->final_lsn < change->lsn)
 		txn->final_lsn = change->lsn;
-
-	Assert(ondisk->change.action == change->action);
 }
 
 /* Returns true, if the output plugin supports streaming, false, otherwise. */
@@ -4281,9 +4313,6 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 	while (restored < max_changes_in_memory && *segno <= last_segno)
 	{
-		int			readBytes;
-		ReorderBufferDiskChange *ondisk;
-
 		CHECK_FOR_INTERRUPTS();
 
 		if (*fd == -1)
@@ -4322,60 +4351,15 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		}
 
 		/*
-		 * Read the statically sized part of a change which has information
-		 * about the total size. If we couldn't read a record, we're at the
-		 * end of this file.
+		 * Read the full change from disk. If ReorderBufferReadOndiskChange
+		 * returns false, then we are at the eof, so, move to the next
+		 * segment.
 		 */
-		ReorderBufferSerializeReserve(rb, sizeof(ReorderBufferDiskChange));
-		readBytes = FileRead(file->vfd, rb->outbuf,
-							 sizeof(ReorderBufferDiskChange),
-							 file->curOffset, WAIT_EVENT_REORDER_BUFFER_READ);
-
-		/* eof */
-		if (readBytes == 0)
+		if (!ReorderBufferReadOndiskChange(rb, txn, file, segno))
 		{
-			FileClose(*fd);
 			*fd = -1;
-			(*segno)++;
 			continue;
 		}
-		else if (readBytes < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not read from reorderbuffer spill file: %m")));
-		else if (readBytes != sizeof(ReorderBufferDiskChange))
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not read from reorderbuffer spill file: read %d instead of %u bytes",
-							readBytes,
-							(uint32) sizeof(ReorderBufferDiskChange))));
-
-		file->curOffset += readBytes;
-
-		ondisk = (ReorderBufferDiskChange *) rb->outbuf;
-
-		ReorderBufferSerializeReserve(rb,
-									  sizeof(ReorderBufferDiskChange) + ondisk->size);
-		ondisk = (ReorderBufferDiskChange *) rb->outbuf;
-
-		readBytes = FileRead(file->vfd,
-							 rb->outbuf + sizeof(ReorderBufferDiskChange),
-							 ondisk->size - sizeof(ReorderBufferDiskChange),
-							 file->curOffset,
-							 WAIT_EVENT_REORDER_BUFFER_READ);
-
-		if (readBytes < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not read from reorderbuffer spill file: %m")));
-		else if (readBytes != ondisk->size - sizeof(ReorderBufferDiskChange))
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not read from reorderbuffer spill file: read %d instead of %u bytes",
-							readBytes,
-							(uint32) (ondisk->size - sizeof(ReorderBufferDiskChange)))));
-
-		file->curOffset += readBytes;
 
 		/*
 		 * ok, read a full change from disk, now restore it into proper
@@ -4386,6 +4370,83 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	}
 
 	return restored;
+}
+
+/*
+ * Read a change spilled to disk and decompress it if compressed.
+ */
+static bool
+ReorderBufferReadOndiskChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
+							  TXNEntryFile *file, XLogSegNo *segno)
+{
+	int			readBytes;
+	ReorderBufferDiskChange *ondisk;
+	char	   *header;			/* header buffer */
+	char	   *data;			/* data buffer */
+
+	/*
+	 * Read the statically sized part of a change which has information about
+	 * the total size and compression method. If we couldn't read a record,
+	 * we're at the end of this file.
+	 */
+	header = (char *) palloc0(sizeof(ReorderBufferDiskChange));
+	readBytes = FileRead(file->vfd, header,
+						 sizeof(ReorderBufferDiskChange),
+						 file->curOffset, WAIT_EVENT_REORDER_BUFFER_READ);
+
+	/* eof */
+	if (readBytes == 0)
+	{
+
+		FileClose(file->vfd);
+		(*segno)++;
+		pfree(header);
+
+		return false;
+	}
+	else if (readBytes < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read from reorderbuffer spill file: %m")));
+	else if (readBytes != sizeof(ReorderBufferDiskChange))
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read from reorderbuffer spill file: read %d instead of %u bytes",
+						readBytes,
+						(uint32) sizeof(ReorderBufferDiskChange))));
+
+	file->curOffset += readBytes;
+
+	ondisk = (ReorderBufferDiskChange *) header;
+
+	/* Read ondisk data */
+	data = (char *) palloc0(ondisk->size - sizeof(ReorderBufferDiskChange));
+	readBytes = FileRead(file->vfd,
+						 data,
+						 ondisk->size - sizeof(ReorderBufferDiskChange),
+						 file->curOffset,
+						 WAIT_EVENT_REORDER_BUFFER_READ);
+
+	if (readBytes < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read from reorderbuffer spill file: %m")));
+	else if (readBytes != (ondisk->size - sizeof(ReorderBufferDiskChange)))
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read from reorderbuffer spill file: read %d instead of %u bytes",
+						readBytes,
+						(uint32) (ondisk->size - sizeof(ReorderBufferDiskChange)))));
+
+	/* Decompress data */
+	ReorderBufferDecompress(rb, data, ondisk, txn->compressor_state);
+
+	pfree(data);
+	pfree(header);
+
+	file->curOffset += readBytes;
+
+	return true;
 }
 
 /*
@@ -4400,17 +4461,14 @@ static void
 ReorderBufferRestoreChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 						   char *data)
 {
-	ReorderBufferDiskChange *ondisk;
 	ReorderBufferChange *change;
-
-	ondisk = (ReorderBufferDiskChange *) data;
 
 	change = ReorderBufferGetChange(rb);
 
 	/* copy static part */
-	memcpy(change, &ondisk->change, sizeof(ReorderBufferChange));
+	memcpy(change, data + sizeof(ReorderBufferDiskChange), sizeof(ReorderBufferChange));
 
-	data += sizeof(ReorderBufferDiskChange);
+	data += sizeof(ReorderBufferDiskChange) + sizeof(ReorderBufferChange);
 
 	/* restore individual stuff */
 	switch (change->action)
@@ -5337,4 +5395,162 @@ restart:
 	if (cmax)
 		*cmax = ent->cmax;
 	return true;
+}
+
+/*
+ * Allocate a new Compressor State, depending on the compression method.
+ */
+static void *
+ReorderBufferNewCompressorState(MemoryContext context, int compression_method)
+{
+	switch (compression_method)
+	{
+		case REORDER_BUFFER_PGLZ_COMPRESSION:
+			return pglz_NewCompressorState(context);
+			break;
+		case REORDER_BUFFER_NO_COMPRESSION:
+		default:
+			return NULL;
+			break;
+	}
+}
+
+/*
+ * Free memory allocated to a Compressor State, depending on the compression
+ * method.
+ */
+static void
+ReorderBufferFreeCompressorState(MemoryContext context, int compression_method,
+								 void *compressor_state)
+{
+	switch (compression_method)
+	{
+		case REORDER_BUFFER_PGLZ_COMPRESSION:
+			return pglz_FreeCompressorState(context, compressor_state);
+			break;
+		case REORDER_BUFFER_NO_COMPRESSION:
+		default:
+			break;
+	}
+}
+
+/*
+ * Compress ReorderBuffer content. This function is called in order to compress
+ * data before spilling on disk.
+ */
+static void
+ReorderBufferCompress(ReorderBuffer *rb, ReorderBufferDiskChange **ondisk,
+					  int compression_method, Size data_size, void *compressor_state)
+{
+	ReorderBufferDiskChange *hdr = *ondisk;
+
+	switch (compression_method)
+	{
+			/* No compression */
+		case REORDER_BUFFER_NO_COMPRESSION:
+			{
+				hdr->comp_strat = REORDER_BUFFER_STRAT_UNCOMPRESSED;
+				hdr->size = data_size;
+				hdr->raw_size = data_size - sizeof(ReorderBufferDiskChange);
+
+				break;
+			}
+			/* PGLZ compression */
+		case REORDER_BUFFER_PGLZ_COMPRESSION:
+			{
+				int32		dst_size = 0;
+				char	   *src = (char *) rb->outbuf + sizeof(ReorderBufferDiskChange);
+				int32		src_size = data_size - sizeof(ReorderBufferDiskChange);
+				int32		max_size = PGLZ_MAX_OUTPUT(src_size);
+				PGLZCompressorState *cstate = (PGLZCompressorState *) compressor_state;
+
+				/*
+				 * Make sure the buffer used for data compression has enough
+				 * space.
+				 */
+				enlargeStringInfo(cstate->buf, max_size);
+
+				dst_size = pglz_compress(src, src_size, cstate->buf->data, PGLZ_strategy_always);
+
+				cstate->buf->len = dst_size;
+
+				if (dst_size < 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_DATA_CORRUPTED),
+							 errmsg_internal("PGLZ compression failed")));
+
+				ReorderBufferSerializeReserve(rb, (Size) (dst_size + sizeof(ReorderBufferDiskChange)));
+
+				hdr = (ReorderBufferDiskChange *) rb->outbuf;
+				hdr->comp_strat = REORDER_BUFFER_STRAT_PGLZ;
+				hdr->size = (Size) dst_size + sizeof(ReorderBufferDiskChange);
+				hdr->raw_size = (Size) src_size;
+
+				*ondisk = hdr;
+
+				/* Copy back compressed data into the ReorderBuffer */
+				memcpy((char *) rb->outbuf + sizeof(ReorderBufferDiskChange),
+					   cstate->buf->data, cstate->buf->len);
+
+				break;
+			}
+		default:
+			/* Other compression methods not yet supported */
+			break;
+	}
+}
+
+/*
+ * Decompress data read from disk and copy it into the ReorderBuffer.
+ */
+static void
+ReorderBufferDecompress(ReorderBuffer *rb, char *data,
+						ReorderBufferDiskChange *ondisk, void *compressor_state)
+{
+	/*
+	 * Make sure the output reorder buffer has enough space to store
+	 * decompressed/raw data.
+	 */
+	ReorderBufferSerializeReserve(rb, (Size) (ondisk->raw_size + sizeof(ReorderBufferDiskChange)));
+
+	/* Make a copy of the header read on disk into the ReorderBuffer */
+	memcpy(rb->outbuf, (char *) ondisk, sizeof(ReorderBufferDiskChange));
+
+	switch (ondisk->comp_strat)
+	{
+			/* No decompression */
+		case REORDER_BUFFER_STRAT_UNCOMPRESSED:
+			{
+				/*
+				 * Make a copy of what was read on disk into the reorder
+				 * buffer.
+				 */
+				memcpy((char *) rb->outbuf + sizeof(ReorderBufferDiskChange),
+					   data, ondisk->raw_size);
+				break;
+			}
+			/* PGLZ decompression */
+		case REORDER_BUFFER_STRAT_PGLZ:
+			{
+				char	   *buf = NULL;
+				int32		src_size = (int32) ondisk->size - sizeof(ReorderBufferDiskChange);
+				int32		buf_size = (int32) ondisk->raw_size;
+				int32		decBytes;
+
+				/* Decompress data directly into the ReorderBuffer */
+				buf = (char *) rb->outbuf;
+				buf += sizeof(ReorderBufferDiskChange);
+
+				decBytes = pglz_decompress(data, src_size, buf, buf_size, false);
+
+				if (decBytes < 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_DATA_CORRUPTED),
+							 errmsg_internal("compressed PGLZ data is corrupted")));
+				break;
+			}
+		default:
+			/* Other compression methods not yet supported */
+			break;
+	}
 }
