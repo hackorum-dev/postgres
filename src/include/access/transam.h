@@ -130,7 +130,7 @@ FullTransactionIdAdvance(FullTransactionId *dest)
 	dest->value++;
 
 	/* see FullTransactionIdAdvance() */
-	if (FullTransactionIdPrecedes(*dest, FirstNormalFullTransactionId))
+	if (unlikely(FullTransactionIdPrecedes(*dest, FirstNormalFullTransactionId)))
 		return;
 
 	while (XidFromFullTransactionId(*dest) < FirstNormalTransactionId)
