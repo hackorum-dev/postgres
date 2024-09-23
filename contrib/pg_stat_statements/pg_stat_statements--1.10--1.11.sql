@@ -70,9 +70,9 @@ CREATE VIEW pg_stat_statements AS
 GRANT SELECT ON pg_stat_statements TO PUBLIC;
 
 CREATE FUNCTION pg_stat_statements_reset(IN userid Oid DEFAULT 0,
-	IN dbid Oid DEFAULT 0,
-	IN queryid bigint DEFAULT 0,
-	IN minmax_only boolean DEFAULT false
+    IN dbid Oid DEFAULT 0,
+    IN queryid bigint DEFAULT 0,
+    IN minmax_only boolean DEFAULT false
 )
 RETURNS timestamp with time zone
 AS 'MODULE_PATHNAME', 'pg_stat_statements_reset_1_11'
