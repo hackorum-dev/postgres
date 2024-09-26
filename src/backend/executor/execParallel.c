@@ -48,6 +48,7 @@
 #include "utils/dsa.h"
 #include "utils/lsyscache.h"
 #include "utils/snapmgr.h"
+#include "optimizer/optimizer.h"
 
 /*
  * Magic numbers for parallel executor communication.  We use constants
@@ -136,7 +137,7 @@ static bool ExecParallelRetrieveInstrumentation(PlanState *planstate,
 												SharedExecutorInstrumentation *instrumentation);
 
 /* Helper function that runs in the parallel worker. */
-static DestReceiver *ExecParallelGetReceiver(dsm_segment *seg, shm_toc *toc);
+static DestReceiver *ExecParallelGetReceiver(dsm_segment *seg, shm_toc *toc, bool auto_flush);
 
 /*
  * Create a serialized representation of the plan to be sent to each worker.
@@ -1220,7 +1221,7 @@ ExecParallelCleanup(ParallelExecutorInfo *pei)
  * for that purpose.
  */
 static DestReceiver *
-ExecParallelGetReceiver(dsm_segment *seg, shm_toc *toc)
+ExecParallelGetReceiver(dsm_segment *seg, shm_toc *toc, bool auto_flush)
 {
 	char	   *mqspace;
 	shm_mq	   *mq;
@@ -1229,7 +1230,7 @@ ExecParallelGetReceiver(dsm_segment *seg, shm_toc *toc)
 	mqspace += ParallelWorkerNumber * PARALLEL_TUPLE_QUEUE_SIZE;
 	mq = (shm_mq *) mqspace;
 	shm_mq_set_sender(mq, MyProc);
-	return CreateTupleQueueDestReceiver(shm_mq_attach(mq, seg, NULL));
+	return CreateTupleQueueDestReceiver(shm_mq_attach(mq, seg, NULL), auto_flush);
 }
 
 /*
@@ -1417,8 +1418,9 @@ ParallelQueryMain(dsm_segment *seg, shm_toc *toc)
 	/* Get fixed-size state. */
 	fpes = shm_toc_lookup(toc, PARALLEL_KEY_EXECUTOR_FIXED, false);
 
+
 	/* Set up DestReceiver, SharedExecutorInstrumentation, and QueryDesc. */
-	receiver = ExecParallelGetReceiver(seg, toc);
+	receiver = ExecParallelGetReceiver(seg, toc, parallel_tuplequeue_autoflush);
 	instrumentation = shm_toc_lookup(toc, PARALLEL_KEY_INSTRUMENTATION, true);
 	if (instrumentation != NULL)
 		instrument_options = instrumentation->instrument_options;

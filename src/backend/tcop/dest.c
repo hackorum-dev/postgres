@@ -151,7 +151,7 @@ CreateDestReceiver(CommandDest dest)
 			return CreateTransientRelDestReceiver(InvalidOid);
 
 		case DestTupleQueue:
-			return CreateTupleQueueDestReceiver(NULL);
+			return CreateTupleQueueDestReceiver(NULL, false);
 
 		case DestExplainSerialize:
 			return CreateExplainSerializeDestReceiver(NULL);

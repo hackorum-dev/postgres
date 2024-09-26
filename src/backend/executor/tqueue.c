@@ -31,6 +31,7 @@ typedef struct TQueueDestReceiver
 {
 	DestReceiver pub;			/* public fields */
 	shm_mq_handle *queue;		/* shm_mq to send to */
+	bool auto_flush;
 } TQueueDestReceiver;
 
 /*
@@ -60,7 +61,7 @@ tqueueReceiveSlot(TupleTableSlot *slot, DestReceiver *self)
 
 	/* Send the tuple itself. */
 	tuple = ExecFetchSlotMinimalTuple(slot, &should_free);
-	result = shm_mq_send(tqueue->queue, tuple->t_len, tuple, false, false);
+	result = shm_mq_send(tqueue->queue, tuple->t_len, tuple, false, tqueue->auto_flush);
 
 	if (should_free)
 		pfree(tuple);
@@ -116,7 +117,7 @@ tqueueDestroyReceiver(DestReceiver *self)
  * Create a DestReceiver that writes tuples to a tuple queue.
  */
 DestReceiver *
-CreateTupleQueueDestReceiver(shm_mq_handle *handle)
+CreateTupleQueueDestReceiver(shm_mq_handle *handle, bool auto_flush)
 {
 	TQueueDestReceiver *self;
 
@@ -128,6 +129,7 @@ CreateTupleQueueDestReceiver(shm_mq_handle *handle)
 	self->pub.rDestroy = tqueueDestroyReceiver;
 	self->pub.mydest = DestTupleQueue;
 	self->queue = handle;
+	self->auto_flush = auto_flush;
 
 	return (DestReceiver *) self;
 }

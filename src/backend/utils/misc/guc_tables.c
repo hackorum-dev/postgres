@@ -1961,6 +1961,17 @@ struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+ 	{
+ 		{"parallel_tuplequeue_autoflush", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
+ 			gettext_noop("Controls whether parallel tuple queues auto flush on tuple send."),
+ 			gettext_noop("Should parallel tuple queues auto flush on tuple send?"),
+ 			GUC_EXPLAIN
+ 		},
+ 		&parallel_tuplequeue_autoflush,
+ 		false,
+ 		NULL, NULL, NULL
+ 	},
+
 	{
 		{"jit", PGC_USERSET, QUERY_TUNING_OTHER,
 			gettext_noop("Allow JIT compilation."),
