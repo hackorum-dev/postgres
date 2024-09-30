@@ -13,6 +13,7 @@ backend_sources += files(
   'transam.c',
   'twophase.c',
   'twophase_rmgr.c',
+  'undolog.c',
   'varsup.c',
   'xact.c',
   'xlog.c',

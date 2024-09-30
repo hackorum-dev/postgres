@@ -3043,6 +3043,9 @@ ULONG
 ULONG_PTR
 UV
 UVersionInfo
+UndoDescData
+UndoLogFileHeader
+UndoLogRecord
 UnicodeNormalizationForm
 UnicodeNormalizationQC
 Unique
@@ -4147,6 +4150,8 @@ xl_standby_locks
 xl_tblspc_create_rec
 xl_tblspc_drop_rec
 xl_testcustomrmgrs_message
+xl_ulog_create
+xl_ulog_write
 xl_xact_abort
 xl_xact_assignment
 xl_xact_commit

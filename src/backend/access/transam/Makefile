@@ -25,6 +25,7 @@ OBJS = \
 	transam.o \
 	twophase.o \
 	twophase_rmgr.o \
+	undolog.o \
 	varsup.o \
 	xact.o \
 	xlog.o \

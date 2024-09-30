@@ -30,6 +30,7 @@
 #include "access/multixact.h"
 #include "access/nbtxlog.h"
 #include "access/spgxlog.h"
+#include "access/undolog.h"
 #include "access/xact.h"
 #include "catalog/storage_xlog.h"
 #include "commands/dbcommands_xlog.h"
@@ -44,7 +45,7 @@
 
 
 /* must be kept in sync with RmgrData definition in xlog_internal.h */
-#define PG_RMGR(symname,name,redo,desc,identify,startup,cleanup,mask,decode) \
+#define PG_RMGR(symname,name,redo,desc,identify,startup,cleanup,mask,decode,undo,undo_desc,undo_identify,undo_event) \
 	{ name, redo, desc, identify, startup, cleanup, mask, decode },
 
 RmgrData	RmgrTable[RM_MAX_ID + 1] = {
