@@ -56,6 +56,7 @@
 #include "storage/latch.h"
 #include "storage/pmsignal.h"
 #include "storage/procarray.h"
+#include "storage/reinit.h"
 #include "storage/spin.h"
 #include "utils/datetime.h"
 #include "utils/fmgrprotos.h"
@@ -2260,6 +2261,14 @@ CheckRecoveryConsistency(void)
 		reachedConsistency &&
 		IsUnderPostmaster)
 	{
+		/*
+		 * Unlogged relations may be trashed and must be reset.  This should be
+		 * done BEFORE allowing Hot Standby connections, so that read-only
+		 * backends don't try to read whatever garbage is left over from
+		 * before.
+		 */
+		ResetUnloggedRelations(UNLOGGED_RELATION_CLEANUP);
+
 		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
 		XLogRecoveryCtl->SharedHotStandbyActive = true;
 		SpinLockRelease(&XLogRecoveryCtl->info_lck);

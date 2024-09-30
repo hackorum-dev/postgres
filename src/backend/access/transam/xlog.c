@@ -5762,14 +5762,6 @@ StartupXLOG(void)
 		CheckRequiredParameterValues();
 
 		/*
-		 * We're in recovery, so unlogged relations may be trashed and must be
-		 * reset.  This should be done BEFORE allowing Hot Standby
-		 * connections, so that read-only backends don't try to read whatever
-		 * garbage is left over from before.
-		 */
-		ResetUnloggedRelations(UNLOGGED_RELATION_CLEANUP);
-
-		/*
 		 * Likewise, delete any saved transaction snapshot files that got left
 		 * behind by crashed backends.
 		 */
@@ -5916,7 +5908,16 @@ StartupXLOG(void)
 	 * end-of-recovery steps fail.
 	 */
 	if (InRecovery)
+	{
+		/*
+		 * Clean up unlogged relations if not already done. If consistency has
+		 * been established, this cleanup would have occurred when entering hot
+		 * standby mode (see CheckRecoveryConsistency for details).
+		 */
+		if (!reachedConsistency)
+			ResetUnloggedRelations(UNLOGGED_RELATION_CLEANUP);
 		ResetUnloggedRelations(UNLOGGED_RELATION_INIT);
+	}
 
 	/*
 	 * Pre-scan prepared transactions to find out the range of XIDs present.
