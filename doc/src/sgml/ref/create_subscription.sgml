@@ -129,7 +129,7 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
           Since no connection is made when this option is
           <literal>false</literal>, no tables are subscribed. To initiate
           replication, you must manually create the replication slot, enable
-          the failover if required, enable the subscription, and refresh the
+          the <literal>failover</literal> if required, enable the subscription, and refresh the
           subscription. See
           <xref linkend="logical-replication-subscription-examples-deferred-slot"/>
           for examples.
