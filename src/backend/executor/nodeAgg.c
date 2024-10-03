@@ -1013,7 +1013,8 @@ process_ordered_aggregate_multi(AggState *aggstate,
 		/* Reset context each time */
 		ResetExprContext(tmpcontext);
 
-		ExecClearTuple(slot1);
+		if (slot1)
+			ExecClearTuple(slot1);
 	}
 
 	if (slot2)
