@@ -794,10 +794,11 @@ pg_prepared_xact(PG_FUNCTION_ARGS)
  *		specified by XID
  *
  * If lock_held is set to true, TwoPhaseStateLock will not be taken, so the
- * caller had better hold it.
+ * caller had better hold it. If noerror is true, returns NULL if the global
+ * transaction does not exist.
  */
 static GlobalTransaction
-TwoPhaseGetGXact(TransactionId xid, bool lock_held)
+TwoPhaseGetGXact(TransactionId xid, bool lock_held, bool noerror)
 {
 	GlobalTransaction result = NULL;
 	int			i;
@@ -831,8 +832,13 @@ TwoPhaseGetGXact(TransactionId xid, bool lock_held)
 	if (!lock_held)
 		LWLockRelease(TwoPhaseStateLock);
 
-	if (result == NULL)			/* should not happen */
-		elog(ERROR, "failed to find GlobalTransaction for xid %u", xid);
+	if (result == NULL)
+	{
+		if (!noerror)
+			elog(ERROR, "failed to find GlobalTransaction for xid %u", xid);
+
+		return NULL;
+	}
 
 	cached_xid = xid;
 	cached_gxact = result;
@@ -902,7 +908,7 @@ TwoPhaseGetXidByVirtualXID(VirtualTransactionId vxid,
 ProcNumber
 TwoPhaseGetDummyProcNumber(TransactionId xid, bool lock_held)
 {
-	GlobalTransaction gxact = TwoPhaseGetGXact(xid, lock_held);
+	GlobalTransaction gxact = TwoPhaseGetGXact(xid, lock_held, false);
 
 	return gxact->pgprocno;
 }
@@ -917,9 +923,22 @@ TwoPhaseGetDummyProcNumber(TransactionId xid, bool lock_held)
 PGPROC *
 TwoPhaseGetDummyProc(TransactionId xid, bool lock_held)
 {
-	GlobalTransaction gxact = TwoPhaseGetGXact(xid, lock_held);
+	GlobalTransaction gxact = TwoPhaseGetGXact(xid, lock_held, false);
 
 	return GetPGProcByNumber(gxact->pgprocno);
+}
+
+/*
+ * TwoPhaseXidExists
+ *		Returns whether the prepared transaction specified by XID exists
+ *
+ * If lock_held is set to true, TwoPhaseStateLock will not be taken, so the
+ * caller had better hold it.
+ */
+bool
+TwoPhaseXidExists(TransactionId xid, bool lock_held)
+{
+	return TwoPhaseGetGXact(xid, lock_held, true) != NULL;
 }
 
 /************************************************************************/
