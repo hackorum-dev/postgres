@@ -132,6 +132,13 @@ typedef enum
 	PROC_WAIT_STATUS_ERROR,
 } ProcWaitStatus;
 
+typedef enum
+{
+	LOG_LOCK_WAIT_NONE = 0,
+	LOG_LOCK_WAIT_TERSE,
+	LOG_LOCK_WAIT_VERBOSE,
+} LogLockWaitVerbosity;
+
 /*
  * Each backend has a PGPROC struct in shared memory.  There is also a list of
  * currently-unused PGPROC structs that will be reallocated to new backends.
@@ -456,7 +463,7 @@ extern PGDLLIMPORT int LockTimeout;
 extern PGDLLIMPORT int IdleInTransactionSessionTimeout;
 extern PGDLLIMPORT int TransactionTimeout;
 extern PGDLLIMPORT int IdleSessionTimeout;
-extern PGDLLIMPORT bool log_lock_waits;
+extern PGDLLIMPORT int log_lock_waits;
 
 #ifdef EXEC_BACKEND
 extern PGDLLIMPORT slock_t *ProcStructLock;

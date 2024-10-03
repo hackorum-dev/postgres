@@ -474,6 +474,20 @@ static const struct config_enum_entry wal_compression_options[] = {
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry log_lock_waits_options[] = {
+	{"verbose", LOG_LOCK_WAIT_VERBOSE, false},
+	{"terse", LOG_LOCK_WAIT_TERSE, false},
+	{"on", LOG_LOCK_WAIT_TERSE, false},
+	{"off", LOG_LOCK_WAIT_NONE, false},
+	{"true", LOG_LOCK_WAIT_TERSE, true},
+	{"false", LOG_LOCK_WAIT_NONE, true},
+	{"yes", LOG_LOCK_WAIT_TERSE, true},
+	{"no", LOG_LOCK_WAIT_NONE, true},
+	{"1", LOG_LOCK_WAIT_TERSE, true},
+	{"0", LOG_LOCK_WAIT_NONE, true},
+	{NULL, 0, false}
+};
+
 /*
  * Options for enum values stored in other modules
  */
@@ -1552,15 +1566,6 @@ struct config_bool ConfigureNamesBool[] =
 	},
 #endif
 
-	{
-		{"log_lock_waits", PGC_SUSET, LOGGING_WHAT,
-			gettext_noop("Logs long lock waits."),
-			NULL
-		},
-		&log_lock_waits,
-		false,
-		NULL, NULL, NULL
-	},
 	{
 		{"log_recovery_conflict_waits", PGC_SIGHUP, LOGGING_WHAT,
 			gettext_noop("Logs standby recovery conflict waits."),
@@ -5019,6 +5024,16 @@ struct config_enum ConfigureNamesEnum[] =
 		},
 		&wal_compression,
 		WAL_COMPRESSION_NONE, wal_compression_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"log_lock_waits", PGC_SUSET, LOGGING_WHAT,
+			gettext_noop("Logs long lock waits."),
+			NULL
+		},
+		&log_lock_waits,
+		LOG_LOCK_WAIT_NONE, log_lock_waits_options,
 		NULL, NULL, NULL
 	},
 

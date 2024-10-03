@@ -882,7 +882,7 @@ pgstat_read_current_status(void)
  * ----------
  */
 const char *
-pgstat_get_backend_current_activity(int pid, bool checkUser)
+pgstat_get_backend_current_activity(int pid, bool checkUser, bool checkDeadLockTimeout)
 {
 	PgBackendStatus *beentry;
 	int			i;
@@ -929,6 +929,8 @@ pgstat_get_backend_current_activity(int pid, bool checkUser)
 				return "<insufficient privilege>";
 			else if (*(beentry->st_activity_raw) == '\0')
 				return "<command string not enabled>";
+			else if (checkDeadLockTimeout && !TimestampDifferenceExceeds(beentry->st_activity_start_timestamp, GetCurrentTimestamp(), DeadlockTimeout))
+				return "<command string has been changed>";
 			else
 			{
 				/* this'll leak a bit of memory, but that seems acceptable */

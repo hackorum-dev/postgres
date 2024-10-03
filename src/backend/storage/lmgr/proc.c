@@ -61,7 +61,7 @@ int			LockTimeout = 0;
 int			IdleInTransactionSessionTimeout = 0;
 int			TransactionTimeout = 0;
 int			IdleSessionTimeout = 0;
-bool		log_lock_waits = false;
+int			log_lock_waits = LOG_LOCK_WAIT_NONE;
 
 /* Pointer to this process's PGPROC struct, if any */
 PGPROC	   *MyProc = NULL;
@@ -1514,7 +1514,8 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable, bool dontWait)
 		{
 			StringInfoData buf,
 						lock_waiters_sbuf,
-						lock_holders_sbuf;
+						lock_holders_sbuf,
+						lock_queries_sbuf;
 			const char *modename;
 			long		secs;
 			int			usecs;
@@ -1528,6 +1529,7 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable, bool dontWait)
 			initStringInfo(&buf);
 			initStringInfo(&lock_waiters_sbuf);
 			initStringInfo(&lock_holders_sbuf);
+			initStringInfo(&lock_queries_sbuf);
 
 			DescribeLockTag(&buf, &locallock->tag.lock);
 			modename = GetLockmodeName(locallock->tag.lock.locktag_lockmethodid,
@@ -1572,6 +1574,15 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable, bool dontWait)
 				}
 				else
 				{
+					if (log_lock_waits == LOG_LOCK_WAIT_VERBOSE && myWaitStatus == PROC_WAIT_STATUS_WAITING)
+					{
+						appendStringInfoChar(&lock_queries_sbuf, '\n');
+
+						appendStringInfo(&lock_queries_sbuf,
+										 _("Process %d: %s"),
+										 curproclock->tag.myProc->pid,
+										 pgstat_get_backend_current_activity(curproclock->tag.myProc->pid, false, true));
+					}
 					if (first_holder)
 					{
 						appendStringInfo(&lock_holders_sbuf, "%d",
@@ -1616,9 +1627,9 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable, bool dontWait)
 				ereport(LOG,
 						(errmsg("process %d still waiting for %s on %s after %ld.%03d ms",
 								MyProcPid, modename, buf.data, msecs, usecs),
-						 (errdetail_log_plural("Process holding the lock: %s. Wait queue: %s.",
-											   "Processes holding the lock: %s. Wait queue: %s.",
-											   lockHoldersNum, lock_holders_sbuf.data, lock_waiters_sbuf.data))));
+						 (errdetail_log_plural("Process holding the lock: %s. Wait queue: %s.%s",
+											   "Processes holding the lock: %s. Wait queue: %s.%s",
+											   lockHoldersNum, lock_holders_sbuf.data, lock_waiters_sbuf.data, lock_queries_sbuf.data))));
 			else if (myWaitStatus == PROC_WAIT_STATUS_OK)
 				ereport(LOG,
 						(errmsg("process %d acquired %s on %s after %ld.%03d ms",
@@ -1654,6 +1665,7 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable, bool dontWait)
 			pfree(buf.data);
 			pfree(lock_holders_sbuf.data);
 			pfree(lock_waiters_sbuf.data);
+			pfree(lock_queries_sbuf.data);
 		}
 	} while (myWaitStatus == PROC_WAIT_STATUS_WAITING);
 
