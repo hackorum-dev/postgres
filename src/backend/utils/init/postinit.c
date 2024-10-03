@@ -25,6 +25,7 @@
 #include "access/parallel.h"
 #include "access/session.h"
 #include "access/tableam.h"
+#include "access/undolog.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
@@ -640,6 +641,9 @@ BaseInit(void)
 	 * try to insert XLOG.
 	 */
 	InitXLogInsert();
+
+	/* Initialize undo log system */
+	InitUndoLog();
 
 	/* Initialize lock manager's local structs */
 	InitLockManagerAccess();

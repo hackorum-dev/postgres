@@ -26,6 +26,7 @@
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/twophase.h"
+#include "access/undolog.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
@@ -2431,6 +2432,7 @@ CommitTransaction(void)
 
 	AtEOXact_MultiXact();
 
+
 	ResourceOwnerRelease(TopTransactionResourceOwner,
 						 RESOURCE_RELEASE_LOCKS,
 						 true, true);
@@ -2466,6 +2468,7 @@ CommitTransaction(void)
 	AtEOXact_on_commit_actions(true);
 	AtEOXact_Namespace(true, is_parallel_worker);
 	AtEOXact_SMgr();
+	AtEOXact_UndoLog(InvalidTransactionId);
 	AtEOXact_Files(true);
 	AtEOXact_ComboCid();
 	AtEOXact_HashTables(true);
@@ -2669,6 +2672,7 @@ PrepareTransaction(void)
 	AtPrepare_PgStat();
 	AtPrepare_MultiXact();
 	AtPrepare_RelationMap();
+	AtPrepare_UndoLog();
 
 	/*
 	 * Here is where we really truly prepare.
@@ -2965,6 +2969,7 @@ AbortTransaction(void)
 		AtEOXact_TypeCache();
 		AtEOXact_Inval(false);
 		AtEOXact_MultiXact();
+
 		ResourceOwnerRelease(TopTransactionResourceOwner,
 							 RESOURCE_RELEASE_LOCKS,
 							 false, true);
@@ -2979,6 +2984,7 @@ AbortTransaction(void)
 		AtEOXact_on_commit_actions(false);
 		AtEOXact_Namespace(false, is_parallel_worker);
 		AtEOXact_SMgr();
+		AtEOXact_UndoLog(InvalidTransactionId);
 		AtEOXact_Files(false);
 		AtEOXact_ComboCid();
 		AtEOXact_HashTables(false);
@@ -6227,6 +6233,8 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		DropRelationFiles(parsed->xlocators, parsed->nrels, true);
 	}
 
+	AtEOXact_UndoLog(xid);
+
 	if (parsed->nstats > 0)
 	{
 		/* see equivalent call for relations above */
@@ -6337,6 +6345,8 @@ xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid,
 
 		DropRelationFiles(parsed->xlocators, parsed->nrels, true);
 	}
+
+	AtEOXact_UndoLog(xid);
 
 	if (parsed->nstats > 0)
 	{

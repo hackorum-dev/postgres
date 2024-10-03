@@ -2485,6 +2485,7 @@ RewriteState
 RmgrData
 RmgrDescData
 RmgrId
+RmgrUndoData
 RoleNameEntry
 RoleNameItem
 RoleSpec
@@ -3041,10 +3042,15 @@ UINT
 ULARGE_INTEGER
 ULONG
 ULONG_PTR
+ULogOp
+ULogStateData
 UV
 UVersionInfo
 UndoDescData
+UndoLogCtrlStruct
+UndoLogEntry
 UndoLogFileHeader
+UndoLogHashEntry
 UndoLogRecord
 UnicodeNormalizationForm
 UnicodeNormalizationQC

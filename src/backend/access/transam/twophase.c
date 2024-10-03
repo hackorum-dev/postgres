@@ -82,6 +82,7 @@
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/twophase_rmgr.h"
+#include "access/undolog.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
@@ -1606,6 +1607,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 									   hdr->nabortstats,
 									   abortstats,
 									   gid);
+
+	UndoLog_UndoByXid(isCommit, xid, hdr->nsubxacts, children);
 
 	ProcArrayRemove(proc, latestXid);
 

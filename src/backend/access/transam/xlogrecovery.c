@@ -33,6 +33,7 @@
 
 #include "access/timeline.h"
 #include "access/transam.h"
+#include "access/undolog.h"
 #include "access/xact.h"
 #include "access/xlog_internal.h"
 #include "access/xlogarchive.h"
@@ -2267,6 +2268,7 @@ CheckRecoveryConsistency(void)
 		 * backends don't try to read whatever garbage is left over from
 		 * before.
 		 */
+		UndoLogCleanup(false);
 		ResetUnloggedRelations(UNLOGGED_RELATION_CLEANUP);
 
 		SpinLockAcquire(&XLogRecoveryCtl->info_lck);

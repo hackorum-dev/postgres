@@ -55,6 +55,7 @@
 #include "access/timeline.h"
 #include "access/transam.h"
 #include "access/twophase.h"
+#include "access/undolog.h"
 #include "access/xact.h"
 #include "access/xlog_internal.h"
 #include "access/xlogarchive.h"
@@ -5910,13 +5911,19 @@ StartupXLOG(void)
 	if (InRecovery)
 	{
 		/*
-		 * Clean up unlogged relations if not already done. If consistency has
-		 * been established, this cleanup would have occurred when entering hot
-		 * standby mode (see CheckRecoveryConsistency for details).
+		 * If consistency has not been established, process undo log files to
+		 * clean up storage files from unfinished transactions and clean up
+		 * unlogged relations. (See CheckRecoveryConsistency for details.)
 		 */
 		if (!reachedConsistency)
+		{
+			UndoLogCleanup(true);
 			ResetUnloggedRelations(UNLOGGED_RELATION_CLEANUP);
+		}
+
 		ResetUnloggedRelations(UNLOGGED_RELATION_INIT);
+
+		UndoLogRecoveryEnd();
 	}
 
 	/*
@@ -7515,6 +7522,7 @@ CheckPointGuts(XLogRecPtr checkPointRedo, int flags)
 	CheckPointSnapBuild();
 	CheckPointLogicalRewriteHeap();
 	CheckPointReplicationOrigin();
+	CheckPointUndoLog();
 
 	/* Write out all dirty data in SLRUs and the main buffer pool */
 	TRACE_POSTGRESQL_BUFFER_CHECKPOINT_START(flags);

@@ -22,6 +22,7 @@
 #include "access/syncscan.h"
 #include "access/transam.h"
 #include "access/twophase.h"
+#include "access/undolog.h"
 #include "access/xlogprefetcher.h"
 #include "access/xlogrecovery.h"
 #include "commands/async.h"
@@ -148,6 +149,7 @@ CalculateShmemSize(int *num_semaphores)
 	size = add_size(size, WaitEventCustomShmemSize());
 	size = add_size(size, InjectionPointShmemSize());
 	size = add_size(size, SlotSyncShmemSize());
+	size = add_size(size, UndoLogShmemSize());
 
 	/* include additional requested shmem from preload libraries */
 	size = add_size(size, total_addin_request);
@@ -285,6 +287,7 @@ CreateOrAttachShmemStructs(void)
 	XLogPrefetchShmemInit();
 	XLogRecoveryShmemInit();
 	CLOGShmemInit();
+	UndoLogShmemInit();
 	CommitTsShmemInit();
 	SUBTRANSShmemInit();
 	MultiXactShmemInit();
