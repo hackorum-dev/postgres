@@ -528,6 +528,18 @@ COMMIT;
     other transactions that committed after their own transaction started.
    </para>
 
+   <tip>
+    <para>
+     Note that the snapshot is not obtained at the <command>BEGIN</command>,
+     so your view of the data is not locked into place until the first
+     statement. Note that a <command>SHOW</command> statement will not
+     obtain a snapshot, but <emphasis>ANY</emphasis> <command>SELECT</command>
+     statement will. Issuing a <literal>SELECT timeofday();</literal> after
+     the <command>BEGIN</command> is a good way to both start the snapshot and
+     return the time it was created.
+    </para>
+   </tip>
+
    <para>
     Applications using this level must be prepared to retry transactions
     due to serialization failures.
