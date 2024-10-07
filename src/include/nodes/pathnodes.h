@@ -161,6 +161,9 @@ typedef struct PlannerGlobal
 	/* worst PROPARALLEL hazard level */
 	char		maxParallelHazard;
 
+	/* default scan strategy advice, except where overrriden by hooks */
+	uint32		default_ssa_mask;
+
 	/* default join strategy advice, except where overrriden by hooks */
 	uint32		default_jsa_mask;
 
@@ -931,6 +934,8 @@ typedef struct RelOptInfo
 	Relids	   *attr_needed pg_node_attr(read_write_ignore);
 	/* array indexed [min_attr .. max_attr] */
 	int32	   *attr_widths pg_node_attr(read_write_ignore);
+	/* scan strategy advice */
+	uint32		ssa_mask;
 
 	/*
 	 * Zero-based set containing attnums of NOT NULL columns.  Not populated

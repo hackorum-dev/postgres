@@ -1735,8 +1735,8 @@ check_index_only(RelOptInfo *rel, IndexOptInfo *index)
 	ListCell   *lc;
 	int			i;
 
-	/* Index-only scans must be enabled */
-	if (!enable_indexonlyscan)
+	/* If we're not allowed to consider index-only scans, give up now */
+	if ((rel->ssa_mask & SSA_CONSIDER_INDEXONLY) == 0)
 		return false;
 
 	/*

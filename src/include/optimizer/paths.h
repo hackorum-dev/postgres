@@ -17,6 +17,36 @@
 #include "nodes/pathnodes.h"
 
 /*
+ * Scan strategy advice.
+ *
+ * If SSA_CONSIDER_INDEXONLY is not set, index-only scan paths will not even
+ * be generated, and we'll generated index-scan paths for the same cases
+ * instead. If any other bit is not set, paths of that type will still be
+ * generated but will be marked as disabled.
+ *
+ * So, if you want to avoid an index-only scan, you can either unset
+ * SSA_CONSIDER_INDEXONLY (in which case you'll get an index-scan instead,
+ * which may end up disabled if you also unset SSA_INDEXSCAN) or you can
+ * unset SSA_INDEXONLYSCAN (in which the index-only scan will be disabled
+ * and the cheapest non-disabled alternative, if any, will be chosen, but
+ * no corresponding index scan will be considered). If, on the other hand,
+ * you want to encourage an index-only scan, you can set just SSA_INDEXONLYSCAN
+ * and SSA_CONSIDER_INDEXONLY and clear all of the other bits.
+ *
+ * A default scan strategy advice mask is stored in the PlannerGlobal object
+ * based on the values of the various enable_* GUCs. This value is propagted
+ * into each RelOptInfo for a baserel, and from baserels to their inheritance
+ * children when partitions are expanded. In either case, the value can be
+ * usefully changed in get_relation_info_hook.
+ */
+#define SSA_TIDSCAN						0x0001
+#define SSA_SEQSCAN						0x0002
+#define SSA_INDEXSCAN					0x0004
+#define SSA_INDEXONLYSCAN				0x0008
+#define SSA_BITMAPSCAN					0x0010
+#define SSA_CONSIDER_INDEXONLY			0x0020
+
+/*
  * Join strategy advice.
  *
  * Paths that don't match the join strategy advice will be either be disabled

@@ -354,7 +354,7 @@ cost_seqscan(Path *path, PlannerInfo *root,
 		path->rows = clamp_row_est(path->rows / parallel_divisor);
 	}
 
-	path->disabled_nodes = enable_seqscan ? 0 : 1;
+	path->disabled_nodes = (baserel->ssa_mask & SSA_SEQSCAN) != 0 ? 0 : 1;
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + cpu_run_cost + disk_run_cost;
 }
@@ -583,6 +583,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	double		pages_fetched;
 	double		rand_heap_pages;
 	double		index_pages;
+	bool		enabled;
 
 	/* Should only be applied to base relations */
 	Assert(IsA(baserel, RelOptInfo) &&
@@ -614,8 +615,12 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 											  path->indexclauses);
 	}
 
-	/* we don't need to check enable_indexonlyscan; indxpath.c does that */
-	path->path.disabled_nodes = enable_indexscan ? 0 : 1;
+	/* is this scan type disabled? */
+	if (indexonly)
+		enabled = (baserel->ssa_mask & SSA_INDEXONLYSCAN) ? 1 : 0;
+	else
+		enabled = (baserel->ssa_mask & SSA_INDEXSCAN) ? 1 : 0;
+	path->path.disabled_nodes = enabled ? 0 : 1;
 
 	/*
 	 * Call index-access-method-specific code to estimate the processing cost
@@ -1109,7 +1114,7 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 	startup_cost += path->pathtarget->cost.startup;
 	run_cost += path->pathtarget->cost.per_tuple * path->rows;
 
-	path->disabled_nodes = enable_bitmapscan ? 0 : 1;
+	path->disabled_nodes = (baserel->ssa_mask & SSA_BITMAPSCAN) != 0 ? 0 : 1;
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
 }
@@ -1287,10 +1292,10 @@ cost_tidscan(Path *path, PlannerInfo *root,
 
 		/*
 		 * We must use a TID scan for CurrentOfExpr; in any other case, we
-		 * should be generating a TID scan only if enable_tidscan=true. Also,
+		 * should be generating a TID scan only if TID scans are allowed. Also,
 		 * if CurrentOfExpr is the qual, there should be only one.
 		 */
-		Assert(enable_tidscan || IsA(qual, CurrentOfExpr));
+		Assert((baserel->ssa_mask & SSA_TIDSCAN) != 0 || IsA(qual, CurrentOfExpr));
 		Assert(list_length(tidquals) == 1 || !IsA(qual, CurrentOfExpr));
 
 		if (IsA(qual, ScalarArrayOpExpr))
@@ -1342,8 +1347,8 @@ cost_tidscan(Path *path, PlannerInfo *root,
 
 	/*
 	 * There are assertions above verifying that we only reach this function
-	 * either when enable_tidscan=true or when the TID scan is the only legal
-	 * path, so it's safe to set disabled_nodes to zero here.
+	 * either when baserel->ssa_mask includes SSA_TIDSCAN or when the TID scan
+	 * is the only legal path, so it's safe to set disabled_nodes to zero here.
 	 */
 	path->disabled_nodes = 0;
 	path->startup_cost = startup_cost;
@@ -1438,8 +1443,8 @@ cost_tidrangescan(Path *path, PlannerInfo *root,
 	startup_cost += path->pathtarget->cost.startup;
 	run_cost += path->pathtarget->cost.per_tuple * path->rows;
 
-	/* we should not generate this path type when enable_tidscan=false */
-	Assert(enable_tidscan);
+	/* we should not generate this path type when TID scans are disabled */
+	Assert((baserel->ssa_mask & SSA_TIDSCAN) != 0);
 	path->disabled_nodes = 0;
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;

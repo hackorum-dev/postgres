@@ -321,6 +321,12 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptInfo *parent)
 		rel->direct_lateral_relids = parent->direct_lateral_relids;
 		rel->lateral_relids = parent->lateral_relids;
 		rel->lateral_referencers = parent->lateral_referencers;
+
+		/*
+		 * By default, a parent's scan strategy advice is preserved for each
+		 * inheritance child.
+		 */
+		rel->ssa_mask = parent->ssa_mask;
 	}
 	else
 	{
@@ -331,6 +337,7 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptInfo *parent)
 		rel->direct_lateral_relids = NULL;
 		rel->lateral_relids = NULL;
 		rel->lateral_referencers = NULL;
+		rel->ssa_mask = root->glob->default_ssa_mask;
 	}
 
 	/* Check type of rtable entry */

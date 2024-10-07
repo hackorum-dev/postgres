@@ -419,6 +419,28 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 		tuple_fraction = 0.0;
 	}
 
+	/*
+	 * Compute the initial scan strategy advice mask.
+	 *
+	 * It may seem surprising that enable_indexscan sets both SSA_INDEXSCAN
+	 * and SSA_INDEXONLYSCAN. However, the historical behavior of this GUC
+	 * corresponds to this exactly: enable_indexscan=off disables both
+	 * index-scan and index-only scan paths, whereas enable_indexonlyscan=off
+	 * converts the index-only scan paths that we would have considered into
+	 * index scan paths.
+	 */
+	glob->default_ssa_mask = 0;
+	if (enable_tidscan)
+		glob->default_ssa_mask |= SSA_TIDSCAN;
+	if (enable_seqscan)
+		glob->default_ssa_mask |= SSA_SEQSCAN;
+	if (enable_indexscan)
+		glob->default_ssa_mask |= SSA_INDEXSCAN | SSA_INDEXONLYSCAN;
+	if (enable_indexonlyscan)
+		glob->default_ssa_mask |= SSA_CONSIDER_INDEXONLY;
+	if (enable_bitmapscan)
+		glob->default_ssa_mask |= SSA_BITMAPSCAN;
+
 	/* Compute the initial join strategy advice mask. */
 	glob->default_jsa_mask = JSA_FOREIGN;
 	if (enable_hashjoin)
