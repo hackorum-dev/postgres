@@ -48,6 +48,7 @@ CREATE FOREIGN TABLE [ IF NOT EXISTS ] <replaceable class="parameter">table_name
   CHECK ( <replaceable class="parameter">expression</replaceable> ) [ NO INHERIT ] |
   DEFAULT <replaceable>default_expr</replaceable> |
   GENERATED ALWAYS AS ( <replaceable>generation_expr</replaceable> ) STORED }
+  GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( <replaceable>sequence_options</replaceable> ) ] |
 
 <phrase>and <replaceable class="parameter">table_constraint</replaceable> is:</phrase>
 
@@ -305,6 +306,52 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       The name of an existing foreign server to use for the foreign table.
       For details on defining a server, see <xref
       linkend="sql-createserver"/>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( <replaceable>sequence_options</replaceable> ) ]</literal></term>
+    <listitem>
+     <para>
+      This clause creates the column as an <firstterm>identity
+      column</firstterm>.  It will have an implicit sequence attached to it
+      and the column in new rows will automatically have values from the
+      sequence assigned to it.  (The computed value will be presented
+      to the foreign-data wrapper for storage and must be returned on
+      reading.)
+      Such a column is implicitly <literal>NOT NULL</literal>.
+     </para>
+
+     <para>
+      The clauses <literal>ALWAYS</literal> and <literal>BY DEFAULT</literal>
+      determine how explicitly user-specified values are handled in
+      <command>INSERT</command> and <command>UPDATE</command> commands.
+     </para>
+
+     <para>
+      In an <command>INSERT</command> command, if <literal>ALWAYS</literal> is
+      selected, a user-specified value is only accepted if the
+      <command>INSERT</command> statement specifies <literal>OVERRIDING SYSTEM
+      VALUE</literal>.  If <literal>BY DEFAULT</literal> is selected, then the
+      user-specified value takes precedence.  See <xref linkend="sql-insert"/>
+      for details.  (In the <command>COPY</command> command, user-specified
+      values are always used regardless of this setting.)
+     </para>
+
+     <para>
+      In an <command>UPDATE</command> command, if <literal>ALWAYS</literal> is
+      selected, any update of the column to any value other than
+      <literal>DEFAULT</literal> will be rejected.  If <literal>BY
+      DEFAULT</literal> is selected, the column can be updated normally.
+      (There is no <literal>OVERRIDING</literal> clause for the
+      <command>UPDATE</command> command.)
+     </para>
+
+     <para>
+      The optional <replaceable>sequence_options</replaceable> clause can be
+      used to override the options of the sequence.
+      See <xref linkend="sql-createsequence"/> for details.
      </para>
     </listitem>
    </varlistentry>
