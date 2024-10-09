@@ -65,7 +65,6 @@ get_opts(int argc, char **argv, struct options *my_opts)
 	static const struct option long_options[] = {
 		{"dbname", required_argument, NULL, 'd'},
 		{"host", required_argument, NULL, 'h'},
-		{"host", required_argument, NULL, 'H'}, /* deprecated */
 		{"filenode", required_argument, NULL, 'f'},
 		{"indexes", no_argument, NULL, 'i'},
 		{"oid", required_argument, NULL, 'o'},
@@ -131,7 +130,6 @@ get_opts(int argc, char **argv, struct options *my_opts)
 				break;
 
 				/* host to connect to */
-			case 'H':			/* deprecated */
 			case 'h':
 				my_opts->hostname = pg_strdup(optarg);
 				break;
@@ -217,7 +215,6 @@ help(const char *progname)
 		   "\nConnection options:\n"
 		   "  -d, --dbname=DBNAME        database to connect to\n"
 		   "  -h, --host=HOSTNAME        database server host or socket directory\n"
-		   "  -H                         (same as -h, deprecated)\n"
 		   "  -p, --port=PORT            database server port number\n"
 		   "  -U, --username=USERNAME    connect as specified database user\n"
 		   "\nThe default action is to show all database OIDs.\n\n"
