@@ -992,12 +992,12 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
-        <type>numeric</type> <literal>^</literal> <type>numeric</type>
-        <returnvalue>numeric</returnvalue>
+        <replaceable>numeric</replaceable> <literal>^</literal> <replaceable>numeric</replaceable>
+        <returnvalue><replaceable>numeric</replaceable></returnvalue>
        </para>
        <para role="func_signature">
-        <type>double precision</type> <literal>^</literal> <type>double precision</type>
-        <returnvalue>double precision</returnvalue>
+        <replaceable>double precision</replaceable> <literal>^</literal> <replaceable>double precision</replaceable>
+        <returnvalue><replaceable>double precision</replaceable></returnvalue>
        </para>
        <para>
         Exponentiation
@@ -1022,8 +1022,8 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
-        <literal>|/</literal> <type>double precision</type>
-        <returnvalue>double precision</returnvalue>
+        <literal>|/</literal> <replaceable>double precision</replaceable>
+        <returnvalue><replaceable>double precision</replaceable></returnvalue>
        </para>
        <para>
         Square root
@@ -1036,8 +1036,8 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
-        <literal>||/</literal> <type>double precision</type>
-        <returnvalue>double precision</returnvalue>
+        <literal>||/</literal> <replaceable>double precision</replaceable>
+        <returnvalue><replaceable>double precision</replaceable></returnvalue>
        </para>
        <para>
         Cube root
