@@ -5041,6 +5041,7 @@ fi
     case $pgac_component in
       engine) pgac_components="$pgac_components $pgac_component";;
       debuginfodwarf) pgac_components="$pgac_components $pgac_component";;
+      orcdebugging) pgac_components="$pgac_components $pgac_component";;
       orcjit) pgac_components="$pgac_components $pgac_component";;
       passes) pgac_components="$pgac_components $pgac_component";;
       native) pgac_components="$pgac_components $pgac_component";;
