@@ -96,7 +96,7 @@ ExecMaterial(PlanState *pstate)
 			 * to return the one before that, if possible. So do an extra
 			 * fetch.
 			 */
-			if (!tuplestore_advance(tuplestorestate, forward))
+			if (tuplestorestate == NULL || !tuplestore_advance(tuplestorestate, forward))
 				return NULL;	/* the tuplestore must be empty */
 		}
 		eof_tuplestore = false;
