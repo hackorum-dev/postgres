@@ -1501,8 +1501,8 @@ SELECT $1 \parse stmt1
         If <literal>x</literal> is appended to the command name, the results
         are displayed in expanded mode.
         If <literal>+</literal> is appended to the command name, each tablespace
-        is listed with its associated options, on-disk size, permissions and
-        description.
+        is listed with its associated options, on-disk size (NULL if user lacks
+        access privileges), permissions and description.
         </para>
         </listitem>
       </varlistentry>
