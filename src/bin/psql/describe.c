@@ -224,7 +224,7 @@ describeTablespaces(const char *pattern, bool verbose)
 	appendPQExpBuffer(&buf,
 					  "SELECT spcname AS \"%s\",\n"
 					  "  pg_catalog.pg_get_userbyid(spcowner) AS \"%s\",\n"
-					  "  pg_catalog.pg_tablespace_location(oid) AS \"%s\"",
+					  "  pg_catalog.pg_tablespace_location(t.oid) AS \"%s\"",
 					  gettext_noop("Name"),
 					  gettext_noop("Owner"),
 					  gettext_noop("Location"));
@@ -233,17 +233,34 @@ describeTablespaces(const char *pattern, bool verbose)
 	{
 		appendPQExpBufferStr(&buf, ",\n  ");
 		printACLColumn(&buf, "spcacl");
+		/*
+		 * Calling pg_tablespace_size(oid) requires certain privileges or the
+		 * it must be the database's default tablespace.  Guard that call and
+		 * report an unknown size by returning NULL if the current role lacks
+		 * the necessary privileges.
+		 */
 		appendPQExpBuffer(&buf,
 						  ",\n  spcoptions AS \"%s\""
-						  ",\n  pg_catalog.pg_size_pretty(pg_catalog.pg_tablespace_size(oid)) AS \"%s\""
-						  ",\n  pg_catalog.shobj_description(oid, 'pg_tablespace') AS \"%s\"",
+						  ",\n  CASE WHEN pg_catalog.has_tablespace_privilege(t.oid, 'CREATE')\n"
+						  "            OR pg_catalog.pg_has_role('pg_read_all_stats', 'USAGE')\n"
+						  "            OR dattablespace IS NOT NULL\n"
+						  "       THEN pg_catalog.pg_size_pretty(pg_catalog.pg_tablespace_size(t.oid))\n"
+						  "       ELSE null\n"
+						  "  END AS \"%s\""
+						  ",\n  pg_catalog.shobj_description(t.oid, 'pg_tablespace') AS \"%s\"",
 						  gettext_noop("Options"),
 						  gettext_noop("Size"),
 						  gettext_noop("Description"));
 	}
 
 	appendPQExpBufferStr(&buf,
-						 "\nFROM pg_catalog.pg_tablespace\n");
+						 "\nFROM pg_catalog.pg_tablespace t\n");
+
+	if (verbose)
+		appendPQExpBufferStr(&buf,
+							 "     LEFT JOIN pg_catalog.pg_database"
+							 " ON datname = pg_catalog.current_database()"
+							 " AND dattablespace = t.oid\n");
 
 	if (!validateSQLNamePattern(&buf, pattern, false, false,
 								NULL, "spcname", NULL,
