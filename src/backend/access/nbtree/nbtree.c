@@ -72,6 +72,9 @@ typedef struct BTParallelScanDescData
 	BTPS_State	btps_pageStatus;	/* indicates whether next page is
 									 * available for scan. see above for
 									 * possible states of parallel scan. */
+	uint32		btps_arrElemsGen;	/* number of new prim scan opportunities */
+	bool		btps_checkPrimScan;	/* did we skid past the most opportune
+									 * endpoint of a primitive scan? */
 	LWLock		btps_lock;		/* protects shared parallel state */
 	ConditionVariable btps_cv;	/* used to synchronize parallel scan */
 
@@ -356,6 +359,9 @@ btbeginscan(Relation rel, int nkeys, int norderbys)
 	so->arrayKeys = NULL;
 	so->orderProcs = NULL;
 	so->arrayContext = NULL;
+	
+	so->testPrimScan = false;
+	so->arrElemsGen = 0;
 
 	so->killedItems = NULL;		/* until needed */
 	so->numKilled = 0;
@@ -731,6 +737,8 @@ btinitparallelscan(void *target)
 	bt_target->btps_nextScanPage = InvalidBlockNumber;
 	bt_target->btps_lastCurrPage = InvalidBlockNumber;
 	bt_target->btps_pageStatus = BTPARALLEL_NOT_INITIALIZED;
+	bt_target->btps_arrElemsGen = 0;
+	bt_target->btps_checkPrimScan = false;
 	ConditionVariableInit(&bt_target->btps_cv);
 }
 
@@ -757,13 +765,15 @@ btparallelrescan(IndexScanDesc scan)
 	btscan->btps_nextScanPage = InvalidBlockNumber;
 	btscan->btps_lastCurrPage = InvalidBlockNumber;
 	btscan->btps_pageStatus = BTPARALLEL_NOT_INITIALIZED;
+	btscan->btps_arrElemsGen = 0;
+	btscan->btps_checkPrimScan = false;
 	LWLockRelease(&btscan->btps_lock);
 }
 
 /*
  * _bt_parallel_seize() -- Begin the process of advancing the scan to a new
- *		page.  Other scans must wait until we call _bt_parallel_release()
- *		or _bt_parallel_done().
+ *		page.  Other scans must wait until we call _bt_parallel_done(),
+ *		[_btp]_opt_release_early/late(), or [_btp]_primscan_schedule().
  *
  * The return value is true if we successfully seized the scan and false
  * if we did not.  The latter case occurs when no pages remain, or when
@@ -835,6 +845,8 @@ _bt_parallel_seize(IndexScanDesc scan, BlockNumber *next_scan_page,
 		{
 			/* We're done with this parallel index scan */
 			status = false;
+			so->testPrimScan = false;
+			so->arrElemsGen = 0;
 		}
 		else if (btscan->btps_pageStatus == BTPARALLEL_IDLE &&
 				 btscan->btps_nextScanPage == P_NONE)
@@ -855,6 +867,8 @@ _bt_parallel_seize(IndexScanDesc scan, BlockNumber *next_scan_page,
 				/* Restore scan's array keys from serialized values */
 				_bt_parallel_restore_arrays(rel, btscan, so);
 				exit_loop = true;
+				so->arrElemsGen = btscan->btps_arrElemsGen;
+				so->testPrimScan = false;
 			}
 			else
 			{
@@ -884,6 +898,8 @@ _bt_parallel_seize(IndexScanDesc scan, BlockNumber *next_scan_page,
 			Assert(btscan->btps_nextScanPage != P_NONE);
 			*next_scan_page = btscan->btps_nextScanPage;
 			*last_curr_page = btscan->btps_lastCurrPage;
+
+			so->arrElemsGen = btscan->btps_arrElemsGen;
 			exit_loop = true;
 		}
 		LWLockRelease(&btscan->btps_lock);
@@ -901,7 +917,7 @@ _bt_parallel_seize(IndexScanDesc scan, BlockNumber *next_scan_page,
 }
 
 /*
- * _bt_parallel_release() -- Complete the process of advancing the scan to a
+ * _bt_parallel_opt_release_early() -- Complete the process of advancing the scan to a
  *		new page.  We now have the new value btps_nextScanPage; another backend
  *		can now begin advancing the scan.
  *
@@ -919,8 +935,8 @@ _bt_parallel_seize(IndexScanDesc scan, BlockNumber *next_scan_page,
  * scan can never change.
  */
 void
-_bt_parallel_release(IndexScanDesc scan, BlockNumber next_scan_page,
-					 BlockNumber curr_page)
+_bt_parallel_opt_release_early(IndexScanDesc scan, BlockNumber next_scan_page,
+							   BlockNumber curr_page)
 {
 	ParallelIndexScanDesc parallel_scan = scan->parallel_scan;
 	BTParallelScanDesc btscan;
@@ -931,11 +947,76 @@ _bt_parallel_release(IndexScanDesc scan, BlockNumber next_scan_page,
 												  parallel_scan->ps_offset_am);
 
 	LWLockAcquire(&btscan->btps_lock, LW_EXCLUSIVE);
-	btscan->btps_nextScanPage = next_scan_page;
+	/*
+	 * If a parallel worker noticed that it had skipped past the end of a
+	 * primitive scan after another backend already acquired the parallel scan
+	 * status, we don't release the scan before reading the page's contents.
+	 * Instead, we transition to a position which will 
+	 */
+	if (likely(!btscan->btps_checkPrimScan))
+	{
+		btscan->btps_nextScanPage = next_scan_page;
 	btscan->btps_lastCurrPage = curr_page;
+		btscan->btps_pageStatus = BTPARALLEL_IDLE;
+		LWLockRelease(&btscan->btps_lock);
+		ConditionVariableSignal(&btscan->btps_cv);
+	}
+	else
+	{
+		BTScanOpaque	so = (BTScanOpaque) scan->opaque;
+		so->testPrimScan = true;
+		LWLockRelease(&btscan->btps_lock);
+	}
+}
+
+/*
+ * _bt_parallel_opt_release_late() -- Complete the process of advancing the
+ *		scan to a new page.
+ *
+ * We're only called when a concurrent backend wanted to schedule a skip scan,
+ * but failed to do so because the parallel scan already advanced past its
+ * own page.
+ */
+void
+_bt_parallel_opt_release_late(IndexScanDesc scan, BlockNumber next_scan_page,
+							  BlockNumber curr_page)
+{
+	ParallelIndexScanDesc parallel_scan = scan->parallel_scan;
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	BTParallelScanDesc btscan;
+
+	if (!so->testPrimScan)
+		return;
+
+	btscan = (BTParallelScanDesc) OffsetToPointer((void *) parallel_scan,
+												  parallel_scan->ps_offset_am);
+
+	LWLockAcquire(&btscan->btps_lock, LW_EXCLUSIVE);
+	Assert(btscan->btps_checkPrimScan);
+	btscan->btps_lastCurrPage = curr_page;
+	btscan->btps_nextScanPage = next_scan_page;
 	btscan->btps_pageStatus = BTPARALLEL_IDLE;
+
+	/*
+	 * A late release implies that
+	 *
+	 * 1) a concurrent backend noticed we should've started a new primitive
+	 * scan, but that
+	 * 
+	 * 2) parallel workers already read far enough ahead that the current
+	 * scan position is already at (or past) the point where that next
+	 * primitive index scan would've positioned itself.
+	 *
+	 * So, we do what executing a primitive scan would've done with the shared
+	 * state: we increase the generation number, unset checkPrimScan, and
+	 * continue on as normal.
+	 */
+	btscan->btps_checkPrimScan = false;
+	btscan->btps_arrElemsGen += 1;
 	LWLockRelease(&btscan->btps_lock);
 	ConditionVariableSignal(&btscan->btps_cv);
+
+	so->testPrimScan = false;
 }
 
 /*
@@ -952,6 +1033,7 @@ _bt_parallel_done(IndexScanDesc scan)
 	ParallelIndexScanDesc parallel_scan = scan->parallel_scan;
 	BTParallelScanDesc btscan;
 	bool		status_changed = false;
+	so->testPrimScan = false;
 
 	Assert(!BTScanPosIsValid(so->currPos));
 
@@ -990,10 +1072,10 @@ _bt_parallel_done(IndexScanDesc scan)
 /*
  * _bt_parallel_primscan_schedule() -- Schedule another primitive index scan.
  *
- * Caller passes the curr_page most recently passed to _bt_parallel_release
- * by its backend.  Caller successfully schedules the next primitive index scan
- * if the shared parallel state hasn't been seized since caller's backend last
- * advanced the scan.
+ * Caller passes the curr_page most recently passed to
+ * _bt_parallel_opt_release_early by its backend.  Caller successfully
+ * schedules the next primitive index scan if the shared parallel state hasn't
+ * been seized since caller's backend last advanced the scan.
  */
 void
 _bt_parallel_primscan_schedule(IndexScanDesc scan, BlockNumber curr_page)
@@ -1009,17 +1091,37 @@ _bt_parallel_primscan_schedule(IndexScanDesc scan, BlockNumber curr_page)
 												  parallel_scan->ps_offset_am);
 
 	LWLockAcquire(&btscan->btps_lock, LW_EXCLUSIVE);
-	if (btscan->btps_lastCurrPage == curr_page &&
-		btscan->btps_pageStatus == BTPARALLEL_IDLE)
+	if ((btscan->btps_lastCurrPage == curr_page &&
+		 btscan->btps_pageStatus == BTPARALLEL_IDLE) ||
+		unlikely(so->testPrimScan))
 	{
+		/*
+		 * When called with so->testPrimScan, we had not yet released the page
+		 * for parallel work, so the page state should still be ADVANCING.
+		 */
+		Assert(!so->testPrimScan || btscan->btps_pageStatus == BTPARALLEL_ADVANCING);
 		btscan->btps_nextScanPage = InvalidBlockNumber;
 		btscan->btps_lastCurrPage = InvalidBlockNumber;
 		btscan->btps_pageStatus = BTPARALLEL_NEED_PRIMSCAN;
+		btscan->btps_arrElemsGen += 1;
 
 		/* Serialize scan's current array keys */
 		_bt_parallel_serialize_arrays(rel, btscan, so);
 	}
+	/*
+	 * If the shared array keys are still those of the primitive scan we used
+	 * to access prev_scan_page, make a note that the next page may be a good
+	 * opportunity to start a new primitive scan.  Once marked, a worker will
+	 * not release the scan until it has processed its page and knows for
+	 * sure whether a new prim scan is needed.
+	 */
+	else if (btscan->btps_arrElemsGen == so->arrElemsGen)
+	{
+		btscan->btps_checkPrimScan = true;
+	}
 	LWLockRelease(&btscan->btps_lock);
+
+	so->testPrimScan = false;
 }
 
 /*

@@ -1067,6 +1067,11 @@ typedef struct BTScanOpaqueData
 	FmgrInfo   *orderProcs;		/* ORDER procs for required equality keys */
 	MemoryContext arrayContext; /* scan-lifespan context for array data */
 
+	/* local state for coordinating skips in parallel scans */
+	bool		testPrimScan;	/* Are we trying to do a new primitive scan */
+	uint32		arrElemsGen;	/* Generation number of prim scan we want to
+								 * improve on */
+
 	/* info about killed items if any (killedItems is NULL if never used) */
 	int		   *killedItems;	/* currPos.items indexes of killed items */
 	int			numKilled;		/* number of currently stored items */
@@ -1215,9 +1220,12 @@ extern StrategyNumber bttranslatecmptype(CompareType cmptype, Oid opfamily);
  */
 extern bool _bt_parallel_seize(IndexScanDesc scan, BlockNumber *next_scan_page,
 							   BlockNumber *last_curr_page, bool first);
-extern void _bt_parallel_release(IndexScanDesc scan,
-								 BlockNumber next_scan_page,
-								 BlockNumber curr_page);
+extern void _bt_parallel_opt_release_early(IndexScanDesc scan,
+										   BlockNumber next_scan_page,
+										   BlockNumber scan_page);
+extern void _bt_parallel_opt_release_late(IndexScanDesc scan,
+										  BlockNumber next_scan_page,
+										  BlockNumber curr_page);
 extern void _bt_parallel_done(IndexScanDesc scan);
 extern void _bt_parallel_primscan_schedule(IndexScanDesc scan,
 										   BlockNumber curr_page);

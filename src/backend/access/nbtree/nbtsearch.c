@@ -1585,7 +1585,7 @@ _bt_next(IndexScanDesc scan, ScanDirection dir)
  *
  * In the case of a parallel scan, caller must have called _bt_parallel_seize
  * prior to calling this function; this function will invoke
- * _bt_parallel_release before returning.
+ * _bt_parallel_opt_release_early before returning.
  *
  * Returns true if any matching items found on the page, false if none.
  */
@@ -1619,11 +1619,11 @@ _bt_readpage(IndexScanDesc scan, ScanDirection dir, OffsetNumber offnum,
 	{
 		/* allow next/prev page to be read by other worker without delay */
 		if (ScanDirectionIsForward(dir))
-			_bt_parallel_release(scan, so->currPos.nextPage,
-								 so->currPos.currPage);
+			_bt_parallel_opt_release_early(scan, so->currPos.nextPage,
+										   so->currPos.currPage);
 		else
-			_bt_parallel_release(scan, so->currPos.prevPage,
-								 so->currPos.currPage);
+			_bt_parallel_opt_release_early(scan, so->currPos.prevPage,
+										   so->currPos.currPage);
 	}
 
 	/* initialize remaining currPos fields related to current page */
@@ -1993,6 +1993,20 @@ _bt_readpage(IndexScanDesc scan, ScanDirection dir, OffsetNumber offnum,
 	 */
 	Assert(!pstate.forcenonrequired);
 
+	/*
+	 * If !continuescan, releasing will be (or has been) done by either
+	 * _bt_p*_done or _bt_p*_primscan_schedule.
+	 */
+	if (scan->parallel_scan && pstate.continuescan)
+	{
+		if (ScanDirectionIsForward(dir))
+			_bt_parallel_opt_release_late(scan, so->currPos.nextPage,
+										  so->currPos.currPage);
+		else
+			_bt_parallel_opt_release_late(scan, so->currPos.prevPage,
+										  so->currPos.currPage);
+	}
+
 	return (so->currPos.firstItem <= so->currPos.lastItem);
 }
 
@@ -2213,7 +2227,8 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
  * records in the given direction.
  *
  * We always release the scan for a parallel scan caller, regardless of
- * success or failure; we'll call _bt_parallel_release as soon as possible.
+ * success or failure; we'll call _bt_parallel_opt_release_early as soon as
+ * possible.
  */
 static bool
 _bt_readfirstpage(IndexScanDesc scan, OffsetNumber offnum, ScanDirection dir)
@@ -2301,7 +2316,8 @@ _bt_readfirstpage(IndexScanDesc scan, OffsetNumber offnum, ScanDirection dir)
  * locks and pins, invalidate so->currPos, and return false.
  *
  * We always release the scan for a parallel scan caller, regardless of
- * success or failure; we'll call _bt_parallel_release as soon as possible.
+ * success or failure; we'll call _bt_parallel_opt_release_early as soon as
+ * possible.
  */
 static bool
 _bt_readnextpage(IndexScanDesc scan, BlockNumber blkno,
@@ -2398,8 +2414,10 @@ _bt_readnextpage(IndexScanDesc scan, BlockNumber blkno,
 				blkno = opaque->btpo_next;
 			else
 				blkno = opaque->btpo_prev;
+
+			/* allow next page be processed by parallel worker */
 			if (scan->parallel_scan != NULL)
-				_bt_parallel_release(scan, blkno, lastcurrblkno);
+				_bt_parallel_opt_release_early(scan, blkno, lastcurrblkno);
 		}
 
 		/* no matching tuples on this page */
