@@ -71,7 +71,8 @@
     <row>
      <entry>field size</entry>
      <entry>1 GB</entry>
-     <entry></entry>
+     <entry>limited by <function>palloc()</function> restriction; see note
+     below</entry>
     </row>
 
     <row>
@@ -145,5 +146,15 @@
   can become expensive, in turn slowing down INSERT/UPDATE statements.
   Typically, this is only an issue for tables containing many terabytes
   of data; partitioning is a possible workaround.
+ </para>
+
+ <para>
+  The 1 GB field size limit is imposed by the memory-allocating
+  <function>palloc()</function> function. The practical limit is less than
+  1 GB, especially if the data is serialized or dumped. In cases where
+  larger allocations are needed, <function>palloc_extended()</function>
+  can be used, as it bypasses this restriction by invoking
+  <function>malloc()</function> for large memory blocks, which allows
+  requesting memory directly from the operating system.
  </para>
 </appendix>
