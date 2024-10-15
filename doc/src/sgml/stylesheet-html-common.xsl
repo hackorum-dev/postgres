@@ -390,6 +390,45 @@ set       toc,title
   </xsl:if>
 </xsl:template>
 
+<!-- Add an id link for each refsect entry -->
+<xsl:template match="refsect1/title
+                    |refsect2/title
+                    |refsect3/title">
+
+  <xsl:param name="section"
+            select="(ancestor::refsect1
+                    |ancestor::refsect2
+                    |ancestor::refsect3)[last()]"/>
+
+  <!-- Select header size related to section level -->
+  <xsl:variable name="hlevel">
+    <xsl:choose>
+      <xsl:when test="local-name($section) = 'refsect1'">2</xsl:when>
+      <xsl:when test="local-name($section) = 'refsect2'">3</xsl:when>
+      <xsl:when test="local-name($section) = 'refsect3'">4</xsl:when>
+      <xsl:otherwise>1</xsl:otherwise>
+    </xsl:choose>
+  </xsl:variable>
+  <!-- We need to redo <h[2..4]> tag to make same font size. -->
+    <xsl:text disable-output-escaping="yes">&lt;h</xsl:text>
+    <xsl:value-of select ="$hlevel"/>
+    <xsl:text disable-output-escaping="yes">&gt;</xsl:text>
+  <!-- Apply default templates -->
+    <xsl:apply-templates/>
+    <!-- Check that title parent has @id variable -->
+    <xsl:choose>
+      <xsl:when test="$section/@id or $section/@xml:id">
+      <!-- Form and add link -->
+        <xsl:call-template name="pg.id.link">
+          <xsl:with-param name="object" select="$section"/>
+        </xsl:call-template>
+      </xsl:when>
+    </xsl:choose>
+    <!-- We need to redo </h[2..4]> tag to make same font size. -->
+    <xsl:text disable-output-escaping="yes">&lt;/h</xsl:text>
+    <xsl:value-of select ="$hlevel"/>
+    <xsl:text disable-output-escaping="yes">&gt;</xsl:text>
+</xsl:template>
 
 <!-- Create a link pointing to an id within the document -->
 <xsl:template name="pg.id.link">
