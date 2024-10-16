@@ -2804,9 +2804,9 @@ BEGIN
     <replaceable>statements</replaceable>
 EXCEPTION
     WHEN <replaceable>condition</replaceable> <optional> OR <replaceable>condition</replaceable> ... </optional> THEN
-        <replaceable>handler_statements</replaceable>
+        <optional> <replaceable>handler_statements</replaceable> </optional>
     <optional> WHEN <replaceable>condition</replaceable> <optional> OR <replaceable>condition</replaceable> ... </optional> THEN
-          <replaceable>handler_statements</replaceable>
+          <optional> <replaceable>handler_statements</replaceable> </optional>
       ... </optional>
 END;
 </synopsis>
@@ -2821,8 +2821,8 @@ END;
      abandoned, and control passes to the <literal>EXCEPTION</literal> list.
      The list is searched for the first <replaceable>condition</replaceable>
      matching the error that occurred.  If a match is found, the
-     corresponding <replaceable>handler_statements</replaceable> are
-     executed, and then control passes to the next statement after
+     corresponding <replaceable>handler_statements</replaceable>, if
+     specified, are executed, and then control passes to the next statement after
      <literal>END</literal>.  If no match is found, the error propagates out
      as though the <literal>EXCEPTION</literal> clause were not there at all:
      the error can be caught by an enclosing block with
