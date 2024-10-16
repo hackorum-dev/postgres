@@ -920,6 +920,13 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       does not specify a value for the column.  If there is no default
       for a column, then the default is null.
      </para>
+
+     <para>
+      Note, a string that returns a volatile result once cast to a data
+      type, like <literal>'now'::timestamptz</literal>, is evaluated at
+      table creation time, while <literal>now::timestamptz</literal>
+      (without quotes) is evaluated at data insertion time.
+     </para>
     </listitem>
    </varlistentry>
 
