@@ -2998,10 +2998,40 @@ aclcheck_error_col(AclResult aclerr, ObjectType objtype,
 			/* no error, so return to caller */
 			break;
 		case ACLCHECK_NO_PRIV:
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied for column \"%s\" of relation \"%s\"",
-							colname, objectname)));
+			if (!colname)
+			{
+				/*
+				 * No column has the required privilege checks even though any
+				 * column with the required privileges would have sufficed.
+				 */
+				ereport(ERROR,
+						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						 errmsg("permission denied for relation \"%s\" and all of its columns",
+								objectname),
+						 errhint("required permission on the relation or any of its columns")));
+			}
+			else if (objtype == OBJECT_COLUMN)
+			{
+				/*
+				 * The column (as against its relation) doesn't have required
+				 * privileges.
+				 */
+				ereport(ERROR,
+						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						 errmsg("permission denied for column \"%s\" of relation \"%s\"",
+								colname, objectname)));
+			}
+			else
+			{
+				/*
+				 * Neither the relation nor the column has the required
+				 * privileges.
+				 */
+				ereport(ERROR,
+						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						 errmsg("permission denied for relation \"%s\" as well as its column \"%s\"",
+								objectname, colname)));
+			}
 			break;
 		case ACLCHECK_NOT_OWNER:
 			/* relation msg is OK since columns don't have separate owners */
@@ -3946,14 +3976,19 @@ pg_attribute_aclcheck_ext(Oid table_oid, AttrNumber attnum,
  * Exported routine for checking a user's access privileges to any/all columns
  *
  * If 'how' is ACLMASK_ANY, then returns ACLCHECK_OK if user has any of the
- * privileges identified by 'mode' on any non-dropped column in the relation;
- * otherwise returns a suitable error code (in practice, always
- * ACLCHECK_NO_PRIV).
+ * privileges identified by 'mode' on any non-dropped column in the relation.
+ * Otherwise returns a suitable error code (in practice, always
+ * ACLCHECK_NO_PRIV) with attnum, if provided, set to
+ * FirstLowInvalidHeapAttributeNumber.
  *
  * If 'how' is ACLMASK_ALL, then returns ACLCHECK_OK if user has any of the
  * privileges identified by 'mode' on each non-dropped column in the relation
- * (and there must be at least one such column); otherwise returns a suitable
- * error code (in practice, always ACLCHECK_NO_PRIV).
+ * (and there must be at least one such column). Otherwise returns a suitable
+ * error code (in practice, always ACLCHECK_NO_PRIV) with attnum, if provided,
+ * set to the first column without required privileges. If there are no columns,
+ * attnum is set to FirstLowInvalidHeapAttributeNumber.
+ *
+ * When the function returns ACLCHECK_OK, attnum is undefined, if provided.
  *
  * As with pg_attribute_aclmask, only privileges granted directly on the
  * column(s) are considered here.
@@ -3963,9 +3998,9 @@ pg_attribute_aclcheck_ext(Oid table_oid, AttrNumber attnum,
  */
 AclResult
 pg_attribute_aclcheck_all(Oid table_oid, Oid roleid, AclMode mode,
-						  AclMaskHow how)
+						  AclMaskHow how, AttrNumber *attnum)
 {
-	return pg_attribute_aclcheck_all_ext(table_oid, roleid, mode, how, NULL);
+	return pg_attribute_aclcheck_all_ext(table_oid, roleid, mode, how, NULL, attnum);
 }
 
 /*
@@ -3975,7 +4010,7 @@ pg_attribute_aclcheck_all(Oid table_oid, Oid roleid, AclMode mode,
 AclResult
 pg_attribute_aclcheck_all_ext(Oid table_oid, Oid roleid,
 							  AclMode mode, AclMaskHow how,
-							  bool *is_missing)
+							  bool *is_missing, AttrNumber *attnum)
 {
 	AclResult	result;
 	HeapTuple	classTuple;
@@ -4014,6 +4049,8 @@ pg_attribute_aclcheck_all_ext(Oid table_oid, Oid roleid,
 	 * report failure in such cases for either value of 'how'.
 	 */
 	result = ACLCHECK_NO_PRIV;
+	if (attnum)
+		*attnum = FirstLowInvalidHeapAttributeNumber;
 
 	for (curr_att = 1; curr_att <= nattrs; curr_att++)
 	{
@@ -4076,7 +4113,11 @@ pg_attribute_aclcheck_all_ext(Oid table_oid, Oid roleid,
 		{
 			result = ACLCHECK_NO_PRIV;
 			if (how == ACLMASK_ALL)
+			{
+				if (attnum)
+					*attnum = curr_att;
 				break;			/* fail on any failure */
+			}
 		}
 	}
 

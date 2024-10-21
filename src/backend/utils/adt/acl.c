@@ -2330,7 +2330,7 @@ has_any_column_privilege_name_name(PG_FUNCTION_ARGS)
 	aclresult = pg_class_aclcheck(tableoid, roleid, mode);
 	if (aclresult != ACLCHECK_OK)
 		aclresult = pg_attribute_aclcheck_all(tableoid, roleid, mode,
-											  ACLMASK_ANY);
+											  ACLMASK_ANY, NULL);
 
 	PG_RETURN_BOOL(aclresult == ACLCHECK_OK);
 }
@@ -2359,7 +2359,7 @@ has_any_column_privilege_name(PG_FUNCTION_ARGS)
 	aclresult = pg_class_aclcheck(tableoid, roleid, mode);
 	if (aclresult != ACLCHECK_OK)
 		aclresult = pg_attribute_aclcheck_all(tableoid, roleid, mode,
-											  ACLMASK_ANY);
+											  ACLMASK_ANY, NULL);
 
 	PG_RETURN_BOOL(aclresult == ACLCHECK_OK);
 }
@@ -2390,7 +2390,7 @@ has_any_column_privilege_name_id(PG_FUNCTION_ARGS)
 		if (is_missing)
 			PG_RETURN_NULL();
 		aclresult = pg_attribute_aclcheck_all_ext(tableoid, roleid, mode,
-												  ACLMASK_ANY, &is_missing);
+												  ACLMASK_ANY, &is_missing, NULL);
 		if (is_missing)
 			PG_RETURN_NULL();
 	}
@@ -2424,7 +2424,7 @@ has_any_column_privilege_id(PG_FUNCTION_ARGS)
 		if (is_missing)
 			PG_RETURN_NULL();
 		aclresult = pg_attribute_aclcheck_all_ext(tableoid, roleid, mode,
-												  ACLMASK_ANY, &is_missing);
+												  ACLMASK_ANY, &is_missing, NULL);
 		if (is_missing)
 			PG_RETURN_NULL();
 	}
@@ -2454,7 +2454,7 @@ has_any_column_privilege_id_name(PG_FUNCTION_ARGS)
 	aclresult = pg_class_aclcheck(tableoid, roleid, mode);
 	if (aclresult != ACLCHECK_OK)
 		aclresult = pg_attribute_aclcheck_all(tableoid, roleid, mode,
-											  ACLMASK_ANY);
+											  ACLMASK_ANY, NULL);
 
 	PG_RETURN_BOOL(aclresult == ACLCHECK_OK);
 }
@@ -2483,7 +2483,7 @@ has_any_column_privilege_id_id(PG_FUNCTION_ARGS)
 		if (is_missing)
 			PG_RETURN_NULL();
 		aclresult = pg_attribute_aclcheck_all_ext(tableoid, roleid, mode,
-												  ACLMASK_ANY, &is_missing);
+												  ACLMASK_ANY, &is_missing, NULL);
 		if (is_missing)
 			PG_RETURN_NULL();
 	}

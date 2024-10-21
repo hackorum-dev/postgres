@@ -1662,7 +1662,7 @@ statext_is_compatible_clause(PlannerInfo *root, Node *clause, Index relid,
 			{
 				/* Whole-row reference, so must have access to all columns */
 				if (pg_attribute_aclcheck_all(rte->relid, userid, ACL_SELECT,
-											  ACLMASK_ALL) != ACLCHECK_OK)
+											  ACLMASK_ALL, NULL) != ACLCHECK_OK)
 					return false;
 			}
 			else

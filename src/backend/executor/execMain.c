@@ -84,10 +84,12 @@ static void ExecutePlan(EState *estate, PlanState *planstate,
 						ScanDirection direction,
 						DestReceiver *dest,
 						bool execute_once);
-static bool ExecCheckOneRelPerms(RTEPermissionInfo *perminfo);
+static bool ExecCheckOneRelPerms(RTEPermissionInfo *perminfo,
+								 AttrNumber *attnum);
 static bool ExecCheckPermissionsModified(Oid relOid, Oid userid,
 										 Bitmapset *modifiedCols,
-										 AclMode requiredPerms);
+										 AclMode requiredPerms,
+										 AttrNumber *attnum);
 static void ExecCheckXactReadOnly(PlannedStmt *plannedstmt);
 static void EvalPlanQualStart(EPQState *epqstate, Plan *planTree);
 
@@ -614,15 +616,39 @@ ExecCheckPermissions(List *rangeTable, List *rteperminfos,
 	foreach(l, rteperminfos)
 	{
 		RTEPermissionInfo *perminfo = lfirst_node(RTEPermissionInfo, l);
+		AttrNumber	attno;
 
 		Assert(OidIsValid(perminfo->relid));
-		result = ExecCheckOneRelPerms(perminfo);
+		result = ExecCheckOneRelPerms(perminfo, &attno);
 		if (!result)
 		{
 			if (ereport_on_violation)
-				aclcheck_error(ACLCHECK_NO_PRIV,
-							   get_relkind_objtype(get_rel_relkind(perminfo->relid)),
-							   get_rel_name(perminfo->relid));
+			{
+				if (AttributeNumberIsValid(attno))
+				{
+					const char *colname;
+
+					if (attno > FirstLowInvalidHeapAttributeNumber)
+						colname = get_attname(perminfo->relid, attno, true);
+					else
+					{
+						/*
+						 * None of the columns have required privileges. We
+						 * cannot name any one column. aclcheck_error_col()
+						 * knows how to handle this case.
+						 */
+						colname = NULL;
+					}
+
+					aclcheck_error_col(ACLCHECK_NO_PRIV,
+									   get_relkind_objtype(get_rel_relkind(perminfo->relid)),
+									   get_rel_name(perminfo->relid), colname);
+				}
+				else
+					aclcheck_error(ACLCHECK_NO_PRIV,
+								   get_relkind_objtype(get_rel_relkind(perminfo->relid)),
+								   get_rel_name(perminfo->relid));
+			}
 			return false;
 		}
 	}
@@ -636,9 +662,14 @@ ExecCheckPermissions(List *rangeTable, List *rteperminfos,
 /*
  * ExecCheckOneRelPerms
  *		Check access permissions for a single relation.
+ *
+ * If column level privileges are examined, the first column to fail the checks
+ * is returned in attnum. Please refer to pg_attribute_aclcheck_all() for
+ * details. When column privileges are not examined, attnum is set to
+ * InvalidAttrNumber.
  */
 static bool
-ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
+ExecCheckOneRelPerms(RTEPermissionInfo *perminfo, AttrNumber *attnum)
 {
 	AclMode		requiredPerms;
 	AclMode		relPerms;
@@ -648,6 +679,7 @@ ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
 
 	requiredPerms = perminfo->requiredPerms;
 	Assert(requiredPerms != 0);
+	*attnum = InvalidAttrNumber;
 
 	/*
 	 * userid to check as: current user unless we have a setuid indication.
@@ -695,7 +727,7 @@ ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
 			if (bms_is_empty(perminfo->selectedCols))
 			{
 				if (pg_attribute_aclcheck_all(relOid, userid, ACL_SELECT,
-											  ACLMASK_ANY) != ACLCHECK_OK)
+											  ACLMASK_ANY, attnum) != ACLCHECK_OK)
 					return false;
 			}
 
@@ -708,14 +740,17 @@ ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
 				{
 					/* Whole-row reference, must have priv on all cols */
 					if (pg_attribute_aclcheck_all(relOid, userid, ACL_SELECT,
-												  ACLMASK_ALL) != ACLCHECK_OK)
+												  ACLMASK_ALL, attnum) != ACLCHECK_OK)
 						return false;
 				}
 				else
 				{
 					if (pg_attribute_aclcheck(relOid, attno, userid,
 											  ACL_SELECT) != ACLCHECK_OK)
+					{
+						*attnum = attno;
 						return false;
+					}
 				}
 			}
 		}
@@ -728,14 +763,14 @@ ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
 			!ExecCheckPermissionsModified(relOid,
 										  userid,
 										  perminfo->insertedCols,
-										  ACL_INSERT))
+										  ACL_INSERT, attnum))
 			return false;
 
 		if (remainingPerms & ACL_UPDATE &&
 			!ExecCheckPermissionsModified(relOid,
 										  userid,
 										  perminfo->updatedCols,
-										  ACL_UPDATE))
+										  ACL_UPDATE, attnum))
 			return false;
 	}
 	return true;
@@ -748,7 +783,7 @@ ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
  */
 static bool
 ExecCheckPermissionsModified(Oid relOid, Oid userid, Bitmapset *modifiedCols,
-							 AclMode requiredPerms)
+							 AclMode requiredPerms, AttrNumber *attnum)
 {
 	int			col = -1;
 
@@ -760,7 +795,7 @@ ExecCheckPermissionsModified(Oid relOid, Oid userid, Bitmapset *modifiedCols,
 	if (bms_is_empty(modifiedCols))
 	{
 		if (pg_attribute_aclcheck_all(relOid, userid, requiredPerms,
-									  ACLMASK_ANY) != ACLCHECK_OK)
+									  ACLMASK_ANY, attnum) != ACLCHECK_OK)
 			return false;
 	}
 
@@ -778,7 +813,11 @@ ExecCheckPermissionsModified(Oid relOid, Oid userid, Bitmapset *modifiedCols,
 		{
 			if (pg_attribute_aclcheck(relOid, attno, userid,
 									  requiredPerms) != ACLCHECK_OK)
+			{
+				if (attnum)
+					*attnum = attno;
 				return false;
+			}
 		}
 	}
 	return true;

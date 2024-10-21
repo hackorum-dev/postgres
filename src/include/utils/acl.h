@@ -254,10 +254,12 @@ extern AclResult pg_attribute_aclcheck_ext(Oid table_oid, AttrNumber attnum,
 										   Oid roleid, AclMode mode,
 										   bool *is_missing);
 extern AclResult pg_attribute_aclcheck_all(Oid table_oid, Oid roleid,
-										   AclMode mode, AclMaskHow how);
+										   AclMode mode, AclMaskHow how,
+										   AttrNumber *attnum);
 extern AclResult pg_attribute_aclcheck_all_ext(Oid table_oid, Oid roleid,
 											   AclMode mode, AclMaskHow how,
-											   bool *is_missing);
+											   bool *is_missing,
+											   AttrNumber *attnum);
 extern AclResult pg_class_aclcheck(Oid table_oid, Oid roleid, AclMode mode);
 extern AclResult pg_class_aclcheck_ext(Oid table_oid, Oid roleid,
 									   AclMode mode, bool *is_missing);

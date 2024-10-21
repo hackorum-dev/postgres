@@ -1375,7 +1375,7 @@ SELECT * FROM rw_view2; -- ok
 (2 rows)
 
 INSERT INTO base_tbl VALUES (3, 'Row 3', 3.0); -- not allowed
-ERROR:  permission denied for table base_tbl
+ERROR:  permission denied for relation "base_tbl" as well as its column "a"
 INSERT INTO rw_view1 VALUES ('Row 3', 3.0, 3); -- not allowed
 ERROR:  permission denied for view rw_view1
 INSERT INTO rw_view2 VALUES ('Row 3', 3.0, 3); -- not allowed
@@ -1506,7 +1506,8 @@ SELECT * FROM rw_view1;
 (1 row)
 
 SELECT * FROM rw_view1 FOR UPDATE;  -- not allowed
-ERROR:  permission denied for table base_tbl
+ERROR:  permission denied for relation "base_tbl" and all of its columns
+HINT:  required permission on the relation or any of its columns
 UPDATE rw_view1 SET b = 'foo' WHERE a = 1;  -- not allowed
 ERROR:  permission denied for table base_tbl
 MERGE INTO rw_view1 t USING (VALUES (1)) AS v(a) ON t.a = v.a
