@@ -334,6 +334,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM atest12v x, atest12v y
 EXPLAIN (COSTS OFF) SELECT * FROM atest12sbv x, atest12sbv y
   WHERE x.a = y.b and abs(y.a) <<< 5;
 
+GRANT SELECT (a, b) ON atest12 TO PUBLIC; -- fails
 -- Now regress_priv_user1 grants sufficient access to regress_priv_user2.
 SET SESSION AUTHORIZATION regress_priv_user1;
 GRANT SELECT (a, b) ON atest12 TO PUBLIC;

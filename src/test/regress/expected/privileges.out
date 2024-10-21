@@ -512,6 +512,8 @@ EXPLAIN (COSTS OFF) SELECT * FROM atest12sbv x, atest12sbv y
          Filter: (b <<< 5)
 (8 rows)
 
+GRANT SELECT (a, b) ON atest12 TO PUBLIC; -- fails
+ERROR:  permission denied for column "a" of relation "atest12"
 -- Now regress_priv_user1 grants sufficient access to regress_priv_user2.
 SET SESSION AUTHORIZATION regress_priv_user1;
 GRANT SELECT (a, b) ON atest12 TO PUBLIC;
