@@ -219,7 +219,7 @@ static const Size max_changes_in_memory = 4096; /* XXX for restore only */
 int			debug_logical_replication_streaming = DEBUG_LOGICAL_REP_STREAMING_BUFFERED;
 
 /* Compression strategy for spilled data. */
-int			logical_decoding_spill_compression = REORDER_BUFFER_LZ4_COMPRESSION;
+int			logical_decoding_spill_compression = REORDER_BUFFER_ZSTD_COMPRESSION;
 
 /* ---------------------------------------
  * primary reorderbuffer support routines
@@ -5411,6 +5411,9 @@ ReorderBufferNewCompressorState(MemoryContext context, int compression_method)
 		case REORDER_BUFFER_LZ4_COMPRESSION:
 			return lz4_NewCompressorState(context);
 			break;
+		case REORDER_BUFFER_ZSTD_COMPRESSION:
+			return zstd_NewCompressorState(context);
+			break;
 		case REORDER_BUFFER_NO_COMPRESSION:
 		default:
 			return NULL;
@@ -5433,6 +5436,9 @@ ReorderBufferFreeCompressorState(MemoryContext context, int compression_method,
 			break;
 		case REORDER_BUFFER_LZ4_COMPRESSION:
 			return lz4_FreeCompressorState(context, compressor_state);
+			break;
+		case REORDER_BUFFER_ZSTD_COMPRESSION:
+			return zstd_FreeCompressorState(context, compressor_state);
 			break;
 		case REORDER_BUFFER_NO_COMPRESSION:
 		default:
@@ -5561,6 +5567,37 @@ ReorderBufferCompress(ReorderBuffer *rb, ReorderBufferDiskChange **ondisk,
 
 				break;
 			}
+			/* ZSTD Compression */
+		case REORDER_BUFFER_ZSTD_COMPRESSION:
+			{
+				Size		dst_size = 0;
+				char	   *src = (char *) rb->outbuf + sizeof(ReorderBufferDiskChange);
+				Size		src_size = data_size - sizeof(ReorderBufferDiskChange);
+				StringInfo	buf = zstd_GetStringInfoBuffer(compressor_state);
+
+				dst_size = zstd_CompressBound(src_size);
+				enlargeStringInfo(buf, dst_size);
+
+				/* Use ZSTD streaming compression */
+				zstd_StreamingCompressData(rb->context, src, src_size,
+										   buf->data, &dst_size,
+										   compressor_state);
+				buf->len = dst_size;
+
+				ReorderBufferSerializeReserve(rb, (dst_size + sizeof(ReorderBufferDiskChange)));
+
+				hdr = (ReorderBufferDiskChange *) rb->outbuf;
+				hdr->comp_strat = REORDER_BUFFER_STRAT_ZSTD_STREAMING;
+				hdr->size = dst_size + sizeof(ReorderBufferDiskChange);
+				hdr->raw_size = src_size;
+
+				*ondisk = hdr;
+
+				memcpy((char *) rb->outbuf + sizeof(ReorderBufferDiskChange),
+					   buf->data, buf->len);
+
+				break;
+			}
 		default:
 			/* Other compression methods not yet supported */
 			break;
@@ -5634,6 +5671,25 @@ ReorderBufferDecompress(ReorderBuffer *rb, char *data,
 				 * Not necessary to free buf in this case: it points to the
 				 * decompressed data stored in LZ4 output ring buffer.
 				 */
+				break;
+			}
+			/* ZSTD streaming decompression */
+		case REORDER_BUFFER_STRAT_ZSTD_STREAMING:
+			{
+				StringInfo	buf = zstd_GetStringInfoBuffer(compressor_state);
+				Size		src_size = ondisk->size - sizeof(ReorderBufferDiskChange);
+				Size		buf_size = ondisk->raw_size;
+
+				enlargeStringInfo(buf, buf_size);
+
+				zstd_StreamingDecompressData(rb->context, data, src_size,
+											 buf->data, buf_size,
+											 compressor_state);
+				buf->len = buf_size;
+
+				/* Copy decompressed data into the ReorderBuffer */
+				memcpy((char *) rb->outbuf + sizeof(ReorderBufferDiskChange),
+					   buf->data, buf->len);
 				break;
 			}
 		default:

@@ -17,12 +17,17 @@
 #include <lz4.h>
 #endif
 
+#ifdef USE_ZSTD
+#include <zstd.h>
+#endif
+
 /* ReorderBuffer on disk compression algorithms */
 typedef enum ReorderBufferCompressionMethod
 {
 	REORDER_BUFFER_NO_COMPRESSION,
 	REORDER_BUFFER_PGLZ_COMPRESSION,
 	REORDER_BUFFER_LZ4_COMPRESSION,
+	REORDER_BUFFER_ZSTD_COMPRESSION,
 }			ReorderBufferCompressionMethod;
 
 /*
@@ -33,6 +38,7 @@ typedef enum ReorderBufferCompressionStrategy
 	REORDER_BUFFER_STRAT_UNCOMPRESSED,
 	REORDER_BUFFER_STRAT_PGLZ,
 	REORDER_BUFFER_STRAT_LZ4_STREAMING,
+	REORDER_BUFFER_STRAT_ZSTD_STREAMING,
 }			ReorderBufferCompressionStrategy;
 
 typedef struct PGLZCompressorState
@@ -72,6 +78,42 @@ typedef struct LZ4StreamingCompressorState
 }			LZ4StreamingCompressorState;
 #endif
 
+#ifdef USE_ZSTD
+/*
+ * Low compression level provides high compression speed and decent compression
+ * rate. Minimum level is 1, maximum is 22.
+ */
+#define ZSTD_COMPRESSION_LEVEL 1
+
+/*
+ * Maximum volume of data encoded in the current ZSTD frame. When this
+ * threshold is reached then we close the current frame and start a new one.
+ */
+#define ZSTD_MAX_FRAME_SIZE (64 * 1024)
+
+/*
+ * ZSTD streaming compression/decompression handlers and buffers.
+ */
+typedef struct ZSTDStreamingCompressorState
+{
+	/* Compression */
+	ZSTD_CCtx  *zstd_c_ctx;
+	Size		zstd_c_in_buf_size;
+	char	   *zstd_c_in_buf;
+	Size		zstd_c_out_buf_size;
+	char	   *zstd_c_out_buf;
+	Size		zstd_frame_size;
+	/* Decompression */
+	ZSTD_DCtx  *zstd_d_ctx;
+	Size		zstd_d_in_buf_size;
+	char	   *zstd_d_in_buf;
+	Size		zstd_d_out_buf_size;
+	char	   *zstd_d_out_buf;
+	/* Buffer used to store compressed/decompressed data */
+	StringInfo	buf;
+}			ZSTDStreamingCompressorState;
+#endif
+
 extern void *lz4_NewCompressorState(MemoryContext context);
 extern void lz4_FreeCompressorState(MemoryContext context,
 									void *compressor_state);
@@ -87,5 +129,17 @@ extern StringInfo lz4_GetStringInfoBuffer(void *compressor_state);
 extern void *pglz_NewCompressorState(MemoryContext context);
 extern void pglz_FreeCompressorState(MemoryContext context,
 									 void *compressor_state);
+
+extern void *zstd_NewCompressorState(MemoryContext context);
+extern void zstd_FreeCompressorState(MemoryContext context,
+									 void *compressor_state);
+extern void zstd_StreamingCompressData(MemoryContext context, char *src,
+									   Size src_size, char *dst, Size *dst_size,
+									   void *compressor_state);
+extern void zstd_StreamingDecompressData(MemoryContext context, char *src,
+										 Size src_size, char *dst,
+										 Size dst_size, void *compressor_state);
+extern Size zstd_CompressBound(Size src_size);
+extern StringInfo zstd_GetStringInfoBuffer(void *compressor_state);
 
 #endif							/* REORDERBUFFER_COMPRESSION_H */

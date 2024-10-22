@@ -14,6 +14,7 @@ backend_sources += files(
   'reorderbuffer.c',
   'reorderbuffer_pglz.c',
   'reorderbuffer_lz4.c',
+  'reorderbuffer_zstd.c',
   'slotsync.c',
   'snapbuild.c',
   'tablesync.c',
