@@ -2056,7 +2056,8 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
        <symbol>BLCKSZ</symbol>).  This is only an estimate used by the
        planner.  It is updated by <link linkend="sql-vacuum"><command>VACUUM</command></link>,
        <link linkend="sql-analyze"><command>ANALYZE</command></link>, and a few DDL commands such as
-       <link linkend="sql-createindex"><command>CREATE INDEX</command></link>.
+       <link linkend="sql-createindex"><command>CREATE INDEX</command></link>. For partitioned
+       tables, <structfield>relpages</structfield> is <literal>-1</literal>.
       </para></entry>
      </row>
 
