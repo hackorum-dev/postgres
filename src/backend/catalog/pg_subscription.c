@@ -141,6 +141,12 @@ GetSubscription(Oid subid, bool missing_ok)
 	/* Is the subscription owner a superuser? */
 	sub->ownersuperuser = superuser_arg(sub->owner);
 
+	/* Get spill_compression */
+	datum = SysCacheGetAttrNotNull(SUBSCRIPTIONOID,
+								   tup,
+								   Anum_pg_subscription_subspillcompression);
+	sub->spill_compression = TextDatumGetCString(datum);
+
 	ReleaseSysCache(tup);
 
 	return sub;

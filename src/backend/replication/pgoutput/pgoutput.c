@@ -27,6 +27,7 @@
 #include "replication/logicalproto.h"
 #include "replication/origin.h"
 #include "replication/pgoutput.h"
+#include "replication/reorderbuffer_compression.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -283,11 +284,13 @@ parse_output_parameters(List *options, PGOutputData *data)
 	bool		streaming_given = false;
 	bool		two_phase_option_given = false;
 	bool		origin_option_given = false;
+	bool		spill_compression_option_given = false;
 
 	data->binary = false;
 	data->streaming = LOGICALREP_STREAM_OFF;
 	data->messages = false;
 	data->two_phase = false;
+	data->spill_compression_method = REORDER_BUFFER_NO_COMPRESSION;
 
 	foreach(lc, options)
 	{
@@ -395,6 +398,28 @@ parse_output_parameters(List *options, PGOutputData *data)
 				ereport(ERROR,
 						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						errmsg("unrecognized origin value: \"%s\"", origin));
+		}
+		else if (strcmp(defel->defname, "spill_compression") == 0)
+		{
+			uint8		method;
+			char	   *method_str;
+
+			if (spill_compression_option_given)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			spill_compression_option_given = true;
+
+			method_str = defGetString(defel);
+			method = ReorderBufferParseCompressionMethod(method_str);
+
+			if (method == REORDER_BUFFER_INVALID_COMPRESSION)
+				ereport(ERROR,
+						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("invalid spill files compression method: \"%s\"",
+							   method_str));
+
+			data->spill_compression_method = method;
 		}
 		else
 			elog(ERROR, "unrecognized pgoutput option: %s", defel->defname);
@@ -507,6 +532,9 @@ pgoutput_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 		/* Init publication state. */
 		data->publications = NIL;
 		publications_valid = false;
+
+		/* Init spill files compression method */
+		ctx->spill_compression_method = data->spill_compression_method;
 
 		/*
 		 * Register callback for pg_publication if we didn't already do that

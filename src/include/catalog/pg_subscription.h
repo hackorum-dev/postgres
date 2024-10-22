@@ -113,6 +113,9 @@ CATALOG(pg_subscription,6100,SubscriptionRelationId) BKI_SHARED_RELATION BKI_ROW
 
 	/* Only publish data originating from the specified origin */
 	text		suborigin BKI_DEFAULT(LOGICALREP_ORIGIN_ANY);
+
+	/* Spill files compression algorithm */
+	text		subspillcompression BKI_FORCE_NOT_NULL;
 #endif
 } FormData_pg_subscription;
 
@@ -157,6 +160,7 @@ typedef struct Subscription
 	List	   *publications;	/* List of publication names to subscribe to */
 	char	   *origin;			/* Only publish data originating from the
 								 * specified origin */
+	char	   *spill_compression;	/* Spill files compression algorithm */
 } Subscription;
 
 /* Disallow streaming in-progress transactions. */

@@ -33,6 +33,7 @@ typedef struct PGOutputData
 	bool		messages;
 	bool		two_phase;
 	bool		publish_no_origin;
+	uint8		spill_compression_method;
 } PGOutputData;
 
 #endif							/* PGOUTPUT_H */

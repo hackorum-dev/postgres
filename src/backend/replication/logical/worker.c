@@ -4021,7 +4021,8 @@ maybe_reread_subscription(void)
 		newsub->passwordrequired != MySubscription->passwordrequired ||
 		strcmp(newsub->origin, MySubscription->origin) != 0 ||
 		newsub->owner != MySubscription->owner ||
-		!equal(newsub->publications, MySubscription->publications))
+		!equal(newsub->publications, MySubscription->publications) ||
+		strcmp(newsub->spill_compression, MySubscription->spill_compression) != 0)
 	{
 		if (am_parallel_apply_worker())
 			ereport(LOG,
@@ -4468,6 +4469,16 @@ set_stream_options(WalRcvStreamOptions *options,
 		options->proto.logical.streaming_str = NULL;
 		MyLogicalRepWorker->parallel_apply = false;
 	}
+
+	if (server_version >= 180000 &&
+		MySubscription->stream == LOGICALREP_STREAM_OFF &&
+		MySubscription->spill_compression != NULL)
+	{
+		options->proto.logical.spill_compression =
+			pstrdup(MySubscription->spill_compression);
+	}
+	else
+		options->proto.logical.spill_compression = NULL;
 
 	options->proto.logical.twophase = false;
 	options->proto.logical.origin = pstrdup(MySubscription->origin);

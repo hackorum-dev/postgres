@@ -36,6 +36,7 @@
 #include "replication/decode.h"
 #include "replication/logical.h"
 #include "replication/reorderbuffer.h"
+#include "replication/reorderbuffer_compression.h"
 #include "replication/slotsync.h"
 #include "replication/snapbuild.h"
 #include "storage/proc.h"
@@ -297,6 +298,9 @@ StartupDecodingContext(List *output_plugin_options,
 	ctx->output_plugin_options = output_plugin_options;
 
 	ctx->fast_forward = fast_forward;
+
+	/* No spill files compression by default */
+	ctx->spill_compression_method = REORDER_BUFFER_NO_COMPRESSION;
 
 	MemoryContextSwitchTo(old_context);
 

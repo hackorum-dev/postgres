@@ -24,6 +24,7 @@
 /* ReorderBuffer on disk compression algorithms */
 typedef enum ReorderBufferCompressionMethod
 {
+	REORDER_BUFFER_INVALID_COMPRESSION,
 	REORDER_BUFFER_NO_COMPRESSION,
 	REORDER_BUFFER_PGLZ_COMPRESSION,
 	REORDER_BUFFER_LZ4_COMPRESSION,
@@ -117,6 +118,9 @@ typedef struct ZSTDStreamingCompressorState
 extern void *lz4_NewCompressorState(MemoryContext context);
 extern void lz4_FreeCompressorState(MemoryContext context,
 									void *compressor_state);
+extern ReorderBufferCompressionMethod ReorderBufferParseCompressionMethod(const char *method);
+extern void ReorderBufferValidateCompressionMethod(const char *method,
+												   int elevel);
 extern void lz4_StreamingCompressData(MemoryContext context, char *src,
 									  Size src_size, char *dst, Size *dst_size,
 									  void *compressor_state);

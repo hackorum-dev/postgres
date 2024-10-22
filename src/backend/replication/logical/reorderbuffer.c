@@ -219,7 +219,7 @@ static const Size max_changes_in_memory = 4096; /* XXX for restore only */
 int			debug_logical_replication_streaming = DEBUG_LOGICAL_REP_STREAMING_BUFFERED;
 
 /* Compression strategy for spilled data. */
-int			logical_decoding_spill_compression = REORDER_BUFFER_ZSTD_COMPRESSION;
+int			logical_decoding_spill_compression = REORDER_BUFFER_NO_COMPRESSION;
 
 /* ---------------------------------------
  * primary reorderbuffer support routines
@@ -438,6 +438,15 @@ ReorderBufferFree(ReorderBuffer *rb)
 	ReorderBufferCleanupSerializedTXNs(NameStr(MyReplicationSlot->data.name));
 }
 
+/* Returns spill files compression method */
+static inline uint8
+ReorderBufferSpillCompressionMethod(ReorderBuffer *rb)
+{
+	LogicalDecodingContext *ctx = rb->private_data;
+
+	return ctx->spill_compression_method;
+}
+
 /*
  * Get an unused, possibly preallocated, ReorderBufferTXN.
  */
@@ -459,7 +468,7 @@ ReorderBufferGetTXN(ReorderBuffer *rb)
 	txn->command_id = InvalidCommandId;
 	txn->output_plugin_private = NULL;
 	txn->compressor_state = ReorderBufferNewCompressorState(rb->context,
-															logical_decoding_spill_compression);
+															ReorderBufferSpillCompressionMethod(rb));
 
 	return txn;
 }
@@ -498,7 +507,7 @@ ReorderBufferReturnTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	}
 
 	ReorderBufferFreeCompressorState(rb->context,
-									 logical_decoding_spill_compression,
+									 ReorderBufferSpillCompressionMethod(rb),
 									 txn->compressor_state);
 
 	/* Reset the toast hash */
@@ -4015,7 +4024,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	}
 
 	/* Inplace ReorderBuffer content compression before writing it on disk */
-	ReorderBufferCompress(rb, &ondisk, logical_decoding_spill_compression,
+	ReorderBufferCompress(rb, &ondisk, ReorderBufferSpillCompressionMethod(rb),
 						  sz, txn->compressor_state);
 
 	errno = 0;
@@ -5696,4 +5705,61 @@ ReorderBufferDecompress(ReorderBuffer *rb, char *data,
 			/* Other compression methods not yet supported */
 			break;
 	}
+}
+
+/*
+ * According to a given compression method (as string representation), returns
+ * the corresponding ReorderBufferCompressionMethod
+ */
+ReorderBufferCompressionMethod
+ReorderBufferParseCompressionMethod(const char *method)
+{
+	if (pg_strcasecmp(method, "on") == 0)
+		return REORDER_BUFFER_PGLZ_COMPRESSION;
+	else if (pg_strcasecmp(method, "pglz") == 0)
+		return REORDER_BUFFER_PGLZ_COMPRESSION;
+	else if (pg_strcasecmp(method, "off") == 0)
+		return REORDER_BUFFER_NO_COMPRESSION;
+#ifdef USE_LZ4
+	else if (pg_strcasecmp(method, "lz4") == 0)
+		return REORDER_BUFFER_LZ4_COMPRESSION;
+#endif
+#ifdef USE_ZSTD
+	else if (pg_strcasecmp(method, "zstd") == 0)
+		return REORDER_BUFFER_ZSTD_COMPRESSION;
+#endif
+	else
+		return REORDER_BUFFER_INVALID_COMPRESSION;
+}
+
+/*
+ * Check whether the passed compression method is valid and report errors at
+ * elevel.
+ *
+ * As this validation is intended to be executed on subscriber side, then we
+ * actually don't know if the server running the publisher supports external
+ * compression libraries. We only check if the compression method is
+ * potentially supported. The real validation is done by the publisher when
+ * the replication starts, an error is then triggered if the compression method
+ * is not supported.
+ */
+void
+ReorderBufferValidateCompressionMethod(const char *method, int elevel)
+{
+	bool		valid = false;
+	char		methods[5][5] = {"on", "off", "pglz", "lz4", "zstd"};
+
+	for (int i = 0; i < 5; i++)
+	{
+		if (pg_strcasecmp(method, methods[i]) == 0)
+		{
+			valid = true;
+			break;
+		}
+	}
+
+	if (!valid)
+		ereport(elevel,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("compression method \"%s\" not valid", method)));
 }

@@ -112,6 +112,8 @@ typedef struct LogicalDecodingContext
 
 	/* Do we need to process any change in fast_forward mode? */
 	bool		processing_required;
+	/* Compression method used to compress spill files */
+	uint8		spill_compression_method;
 } LogicalDecodingContext;
 
 

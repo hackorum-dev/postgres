@@ -6543,7 +6543,7 @@ describeSubscriptions(const char *pattern, bool verbose)
 	printQueryOpt myopt = pset.popt;
 	static const bool translate_columns[] = {false, false, false, false,
 		false, false, false, false, false, false, false, false, false, false,
-	false};
+	false, false};
 
 	if (pset.sversion < 100000)
 	{
@@ -6623,6 +6623,11 @@ describeSubscriptions(const char *pattern, bool verbose)
 			appendPQExpBuffer(&buf,
 							  ", subskiplsn AS \"%s\"\n",
 							  gettext_noop("Skip LSN"));
+
+		if (pset.sversion >= 180000)
+			appendPQExpBuffer(&buf,
+							  ", subspillcompression AS \"%s\"\n",
+							  gettext_noop("Spill files compression"));
 	}
 
 	/* Only display subscriptions in current database. */

@@ -40,6 +40,7 @@
 #include "replication/logicallauncher.h"
 #include "replication/logicalworker.h"
 #include "replication/origin.h"
+#include "replication/reorderbuffer_compression.h"
 #include "replication/slot.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
@@ -73,6 +74,7 @@
 #define SUBOPT_FAILOVER				0x00002000
 #define SUBOPT_LSN					0x00004000
 #define SUBOPT_ORIGIN				0x00008000
+#define SUBOPT_SPILL_COMPRESSION	0x00010000
 
 /* check if the 'val' has 'bits' set */
 #define IsSet(val, bits)  (((val) & (bits)) == (bits))
@@ -100,6 +102,7 @@ typedef struct SubOpts
 	bool		failover;
 	char	   *origin;
 	XLogRecPtr	lsn;
+	char	   *spill_compression;
 } SubOpts;
 
 static List *fetch_table_list(WalReceiverConn *wrconn, List *publications);
@@ -164,6 +167,8 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 		opts->failover = false;
 	if (IsSet(supported_opts, SUBOPT_ORIGIN))
 		opts->origin = pstrdup(LOGICALREP_ORIGIN_ANY);
+	if (IsSet(supported_opts, SUBOPT_SPILL_COMPRESSION))
+		opts->spill_compression = "off";
 
 	/* Parse options */
 	foreach(lc, stmt_options)
@@ -356,6 +361,18 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 
 			opts->specified_opts |= SUBOPT_LSN;
 			opts->lsn = lsn;
+		}
+		else if (IsSet(supported_opts, SUBOPT_SPILL_COMPRESSION) &&
+				 strcmp(defel->defname, "spill_compression") == 0)
+		{
+			if (IsSet(opts->specified_opts, SUBOPT_SPILL_COMPRESSION))
+				errorConflictingDefElem(defel, pstate);
+
+			opts->specified_opts |= SUBOPT_SPILL_COMPRESSION;
+			opts->spill_compression = defGetString(defel);
+
+			ReorderBufferValidateCompressionMethod(opts->spill_compression,
+												   ERROR);
 		}
 		else
 			ereport(ERROR,
@@ -563,7 +580,8 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 					  SUBOPT_SYNCHRONOUS_COMMIT | SUBOPT_BINARY |
 					  SUBOPT_STREAMING | SUBOPT_TWOPHASE_COMMIT |
 					  SUBOPT_DISABLE_ON_ERR | SUBOPT_PASSWORD_REQUIRED |
-					  SUBOPT_RUN_AS_OWNER | SUBOPT_FAILOVER | SUBOPT_ORIGIN);
+					  SUBOPT_RUN_AS_OWNER | SUBOPT_FAILOVER | SUBOPT_ORIGIN |
+					  SUBOPT_SPILL_COMPRESSION);
 	parse_subscription_options(pstate, stmt->options, supported_opts, &opts);
 
 	/*
@@ -683,6 +701,8 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 		publicationListToArray(publications);
 	values[Anum_pg_subscription_suborigin - 1] =
 		CStringGetTextDatum(opts.origin);
+	values[Anum_pg_subscription_subspillcompression - 1] =
+		CStringGetTextDatum(opts.spill_compression);
 
 	tup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 
@@ -1165,7 +1185,7 @@ AlterSubscription(ParseState *pstate, AlterSubscriptionStmt *stmt,
 								  SUBOPT_DISABLE_ON_ERR |
 								  SUBOPT_PASSWORD_REQUIRED |
 								  SUBOPT_RUN_AS_OWNER | SUBOPT_FAILOVER |
-								  SUBOPT_ORIGIN);
+								  SUBOPT_ORIGIN | SUBOPT_SPILL_COMPRESSION);
 
 				parse_subscription_options(pstate, stmt->options,
 										   supported_opts, &opts);
@@ -1330,6 +1350,13 @@ AlterSubscription(ParseState *pstate, AlterSubscriptionStmt *stmt,
 					values[Anum_pg_subscription_suborigin - 1] =
 						CStringGetTextDatum(opts.origin);
 					replaces[Anum_pg_subscription_suborigin - 1] = true;
+				}
+
+				if (IsSet(opts.specified_opts, SUBOPT_SPILL_COMPRESSION))
+				{
+					values[Anum_pg_subscription_subspillcompression - 1] =
+						CStringGetTextDatum(opts.spill_compression);
+					replaces[Anum_pg_subscription_subspillcompression - 1] = true;
 				}
 
 				update_tuple = true;

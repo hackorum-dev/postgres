@@ -620,6 +620,11 @@ libpqrcv_startstreaming(WalReceiverConn *conn,
 			PQserverVersion(conn->streamConn) >= 140000)
 			appendStringInfoString(&cmd, ", binary 'true'");
 
+		if (options->proto.logical.spill_compression &&
+			PQserverVersion(conn->streamConn) >= 180000)
+			appendStringInfo(&cmd, ", spill_compression '%s'",
+							 options->proto.logical.spill_compression);
+
 		appendStringInfoChar(&cmd, ')');
 	}
 	else

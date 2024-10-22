@@ -673,6 +673,7 @@ typedef struct _SubscriptionInfo
 	char	   *suborigin;
 	char	   *suboriginremotelsn;
 	char	   *subfailover;
+	char	   *subspillcompression;
 } SubscriptionInfo;
 
 /*

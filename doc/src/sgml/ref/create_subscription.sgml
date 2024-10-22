@@ -435,6 +435,30 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
          </para>
         </listitem>
        </varlistentry>
+
+       <varlistentry id="sql-createsubscription-params-with-spill-compression">
+        <term><literal>spill_compression</literal> (<type>enum</type>)</term>
+        <listitem>
+         <para>
+          Specifies whether the decoded changes that eventually need to be
+          temporarily written on disk by the publisher are compressed or not.
+          Default value is <literal>off</literal> meaning no data compression
+          involved. Setting <literal>spill_compression</literal> to
+          <literal>on</literal> or <literal>pglz</literal> means that the
+          decoded changes are compressed using the internal
+          <literal>PGLZ</literal> compression algorithm.
+         </para>
+
+         <para>
+          If the <productname>PostgreSQL</productname> server running the
+          publisher node supports the external compression libraries
+          <productname>LZ4</productname> or
+          <productname>Zstandard</productname>,
+          <literal>spill_compression</literal> can be set respectively to
+          <literal>lz4</literal> or <literal>zstd</literal>.
+         </para>
+        </listitem>
+       </varlistentry>
       </variablelist></para>
 
     </listitem>

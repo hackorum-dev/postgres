@@ -140,6 +140,10 @@ ALTER SUBSCRIPTION regress_testsub RENAME TO regress_testsub_foo;
 ALTER SUBSCRIPTION regress_testsub_foo SET (synchronous_commit = local);
 ALTER SUBSCRIPTION regress_testsub_foo SET (synchronous_commit = foobar);
 
+ALTER SUBSCRIPTION regress_testsub_foo SET (spill_compression = pglz);
+ALTER SUBSCRIPTION regress_testsub_foo SET (spill_compression = off);
+ALTER SUBSCRIPTION regress_testsub_foo SET (spill_compression = foobar);
+
 \dRs+
 
 -- rename back to keep the rest simple

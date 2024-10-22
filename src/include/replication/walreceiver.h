@@ -186,6 +186,7 @@ typedef struct
 									 * prepare time */
 			char	   *origin; /* Only publish data originating from the
 								 * specified origin */
+			char	   *spill_compression;	/* Spill files compression algo */
 		}			logical;
 	}			proto;
 } WalRcvStreamOptions;

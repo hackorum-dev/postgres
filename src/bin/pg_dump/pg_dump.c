@@ -4850,6 +4850,7 @@ getSubscriptions(Archive *fout)
 	int			i_suboriginremotelsn;
 	int			i_subenabled;
 	int			i_subfailover;
+	int			i_subspillcompression;
 	int			i,
 				ntups;
 
@@ -4922,10 +4923,17 @@ getSubscriptions(Archive *fout)
 
 	if (fout->remoteVersion >= 170000)
 		appendPQExpBufferStr(query,
-							 " s.subfailover\n");
+							 " s.subfailover,\n");
 	else
 		appendPQExpBuffer(query,
-						  " false AS subfailover\n");
+						  " false AS subfailover,\n");
+
+	if (fout->remoteVersion >= 180000)
+		appendPQExpBufferStr(query,
+							 " s.subspillcompression\n");
+	else
+		appendPQExpBuffer(query,
+						  " 'off' AS subspillcompression\n");
 
 	appendPQExpBufferStr(query,
 						 "FROM pg_subscription s\n");
@@ -4965,6 +4973,7 @@ getSubscriptions(Archive *fout)
 	i_suboriginremotelsn = PQfnumber(res, "suboriginremotelsn");
 	i_subenabled = PQfnumber(res, "subenabled");
 	i_subfailover = PQfnumber(res, "subfailover");
+	i_subspillcompression = PQfnumber(res, "subspillcompression");
 
 	subinfo = pg_malloc(ntups * sizeof(SubscriptionInfo));
 
@@ -5011,6 +5020,8 @@ getSubscriptions(Archive *fout)
 			pg_strdup(PQgetvalue(res, i, i_subenabled));
 		subinfo[i].subfailover =
 			pg_strdup(PQgetvalue(res, i, i_subfailover));
+		subinfo[i].subspillcompression =
+			pg_strdup(PQgetvalue(res, i, i_subspillcompression));
 
 		/* Decide whether we want to dump it */
 		selectDumpableObject(&(subinfo[i].dobj), fout);
@@ -5258,6 +5269,9 @@ dumpSubscription(Archive *fout, const SubscriptionInfo *subinfo)
 
 	if (pg_strcasecmp(subinfo->suborigin, LOGICALREP_ORIGIN_ANY) != 0)
 		appendPQExpBuffer(query, ", origin = %s", subinfo->suborigin);
+
+	if (strcmp(subinfo->subspillcompression, "off") != 0)
+		appendPQExpBuffer(query, ", spill_compression = %s", subinfo->subspillcompression);
 
 	appendPQExpBufferStr(query, ");\n");
 
