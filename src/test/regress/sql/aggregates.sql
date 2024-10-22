@@ -1210,6 +1210,7 @@ ROLLBACK;
 CREATE TABLE btg AS SELECT
   i % 10 AS x,
   i % 10 AS y,
+  i % 10 AS n,
   'abc' || i % 10 AS z,
   i AS w
 FROM generate_series(1, 100) AS i;
@@ -1237,8 +1238,8 @@ SET enable_hashjoin = off;
 SET enable_nestloop = off;
 EXPLAIN (COSTS OFF)
 SELECT count(*)
-  FROM btg t1 JOIN btg t2 ON t1.w = t2.w AND t1.x = t2.x AND t1.z = t2.z
-  GROUP BY t1.w, t1.z, t1.x;
+  FROM btg t1 JOIN btg t2 ON t1.n = t2.n AND t1.x = t2.x AND t1.z = t2.z
+  GROUP BY t1.n, t1.z, t1.x;
 RESET enable_nestloop;
 RESET enable_hashjoin;
 

@@ -205,6 +205,8 @@ static double page_size(double tuples, int width);
 static double get_parallel_divisor(Path *path);
 static EquivalenceMember *identify_sort_ecmember(PlannerInfo *root,
 												 EquivalenceClass *ec);
+static double sort_comparisons_factor(PlannerInfo *root, List *pathkeys,
+									  double ntuples);
 
 
 /*
@@ -2155,8 +2157,7 @@ cost_sort(Path *path, PlannerInfo *root,
 {
 	Cost		startup_cost;
 	Cost		run_cost;
-	double		cmpfrac =
-						(pathkeys == NIL) ? 2.0 : list_length(pathkeys) + 1.0;
+	double		cmpfrac = sort_comparisons_factor(root, pathkeys, tuples);
 
 	cost_tuplesort(&startup_cost, &run_cost,
 				   tuples, width, cmpfrac,
@@ -6673,4 +6674,43 @@ identify_sort_ecmember(PlannerInfo *root, EquivalenceClass *ec)
 
 	Assert(candidate != NULL);
 	return candidate;
+}
+
+/*
+ * Calculate multiplier reflecting the number of comparisons which executor
+ * have to perform during the sort with this specific order of columns.
+ *
+ * The comparison factor f = 1.+F(pathkeys). There 1. incapsulates the
+ * second-order of significance phusics which cost function doesn't consider.
+ * F(pathkeys) is the estimated fraction of comparisons in the range [1..N].
+ * F = 1 corresponds the 'all-unique' first column case. In that case the sort
+ * will call comparison function only once for each couple of tuples.
+ * F = N represents the case, when values in all columns are constant.
+ */
+static double
+sort_comparisons_factor(PlannerInfo *root, List *pathkeys, double ntuples)
+{
+	int		n = list_length(pathkeys);
+	double	cmpfrac = (n == 0) ? 2.0 : n + 1;
+
+	if (root != NULL && ntuples > 1 && n > 1)
+	{
+		PathKey			   *key = linitial_node(PathKey, pathkeys);
+		EquivalenceMember  *em =  identify_sort_ecmember(root, key->pk_eclass);
+
+		Assert(em->em_ndistinct >= 0);
+
+		if (em->em_ndistinct == 0.)
+			/*
+			 * Optimiser doesn't have an info on ndistinct value, return
+			 * extreme case
+			 */
+			return cmpfrac;
+
+		if (ntuples >= em->em_ndistinct)
+			cmpfrac =
+				2.0 + ((ntuples - em->em_ndistinct) / (ntuples - 1)) * (n - 1);
+	}
+
+	return cmpfrac;
 }
