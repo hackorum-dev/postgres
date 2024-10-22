@@ -193,4 +193,5 @@ extern void InitializeLatchWaitSet(void);
 extern int	GetNumRegisteredWaitEvents(WaitEventSet *set);
 extern bool WaitEventSetCanReportClosed(void);
 
+extern PGDLLIMPORT bool debug_latch;
 #endif							/* LATCH_H */

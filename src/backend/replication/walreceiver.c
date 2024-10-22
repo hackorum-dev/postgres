@@ -300,12 +300,14 @@ WalReceiverMain(char *startup_data, size_t startup_data_len)
 
 	/* Establish the connection to the primary for XLOG streaming */
 	appname = cluster_name[0] ? cluster_name : "walreceiver";
+elog(LOG, "!!!WalReceiverMain| before walrcv_connect");
 	wrconn = walrcv_connect(conninfo, true, false, false, appname, &err);
 	if (!wrconn)
 		ereport(ERROR,
 				(errcode(ERRCODE_CONNECTION_FAILURE),
 				 errmsg("streaming replication receiver \"%s\" could not connect to the primary server: %s",
 						appname, err)));
+elog(LOG, "!!!WalReceiverMain| wrconn: %p", wrconn);
 
 	/*
 	 * Save user-visible connection string.  This clobbers the original

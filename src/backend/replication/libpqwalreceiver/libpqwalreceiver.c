@@ -221,6 +221,7 @@ libpqrcv_connect(const char *conninfo, bool replication, bool logical,
 	 * Per spec for PQconnectPoll, first wait till socket is write-ready.
 	 */
 	status = PGRES_POLLING_WRITING;
+fprintf(stderr, "!!!libpqrcv_connect| before loop\n");
 	do
 	{
 		int			io_flag;
@@ -236,11 +237,16 @@ libpqrcv_connect(const char *conninfo, bool replication, bool logical,
 		else
 			io_flag = WL_SOCKET_WRITEABLE;
 
+fprintf(stderr, "!!!libpqrcv_connect| before WaitLatchOrSocket(io_flag: %d)\n",
+io_flag);
+debug_latch = true;
 		rc = WaitLatchOrSocket(MyLatch,
 							   WL_EXIT_ON_PM_DEATH | WL_LATCH_SET | io_flag,
 							   PQsocket(conn->streamConn),
 							   0,
 							   WAIT_EVENT_LIBPQWALRECEIVER_CONNECT);
+debug_latch = false;
+fprintf(stderr, "!!!libpqrcv_connect| after WaitLatchOrSocket, rc: %d\n", rc);
 
 		/* Interrupted? */
 		if (rc & WL_LATCH_SET)
@@ -253,6 +259,7 @@ libpqrcv_connect(const char *conninfo, bool replication, bool logical,
 		if (rc & io_flag)
 			status = PQconnectPoll(conn->streamConn);
 	} while (status != PGRES_POLLING_OK && status != PGRES_POLLING_FAILED);
+fprintf(stderr, "!!!libpqrcv_connect| after loop\n");
 
 	if (PQstatus(conn->streamConn) != CONNECTION_OK)
 		goto bad_connection_errmsg;

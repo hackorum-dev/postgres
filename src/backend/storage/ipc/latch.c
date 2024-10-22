@@ -98,6 +98,8 @@
 #endif
 #endif
 
+bool debug_latch = false;
+
 /* typedef in latch.h */
 struct WaitEventSet
 {
@@ -2029,6 +2031,8 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 				occurred_events->fd = cur_event->fd;
 				return 1;
 			}
+if (debug_latch)
+fprintf(stderr, "\t!!!WaitEventSetWaitBlock| WL_SOCKET_READABLE, cur_event->fd: %d, WSAGetLastError(): %d\n", cur_event->fd, WSAGetLastError());
 		}
 
 		/*
@@ -2069,8 +2073,12 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 	 *
 	 * Need to wait for ->nevents + 1, because signal handle is in [0].
 	 */
+if (debug_latch)
+fprintf(stderr, "\t!!!WaitEventSetWaitBlock| before WaitForMultipleObjects\n");
 	rc = WaitForMultipleObjects(set->nevents + 1, set->handles, FALSE,
 								cur_timeout);
+if (debug_latch)
+fprintf(stderr, "\t!!!WaitEventSetWaitBlock| WaitForMultipleObjects returned: %d\n", rc);
 
 	/* Check return code */
 	if (rc == WAIT_FAILED)
