@@ -151,6 +151,7 @@ typedef struct
 #define  REG_UEMPTYMATCH	004000	/* can match a zero-length string */
 #define  REG_UIMPOSSIBLE	010000	/* provably cannot match anything */
 #define  REG_USHORTEST		020000	/* has non-greedy quantifier */
+#define  PG_REG_SIMILAR_TO	100000	/* PostgreSQL: RE was converted from SIMILAR TO */
 	int			re_csize;		/* sizeof(character) */
 	char	   *re_endp;		/* backward compatibility kludge */
 	Oid			re_collation;	/* Collation that defines LC_CTYPE behavior */

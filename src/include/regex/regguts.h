@@ -545,4 +545,5 @@ struct guts
 
 /* prototypes for functions that are exported from regcomp.c to regexec.c */
 extern void pg_set_regex_collation(Oid collation);
+extern void pg_check_regex_collation(bool is_similar_to);
 extern color pg_reg_getcolor(struct colormap *cm, chr c);

@@ -122,6 +122,10 @@ prefixes(struct vars *v)
 				v->cflags |= REG_ADVANCED;
 				v->now += 4;
 				break;
+			case CHR('S'):		/* "***S" was a converted SIMILAR TO pattern */
+				NOTE(REG_UNONPOSIX | PG_REG_SIMILAR_TO);
+				v->now += 4;
+				break;
 			default:			/* otherwise *** is just an error */
 				ERR(REG_BADRPT);
 				return;

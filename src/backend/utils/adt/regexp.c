@@ -841,8 +841,17 @@ similar_escape_internal(text *pat_text, text *esc_text)
 	 * as 3 output bytes per input byte; since the input is at most 1GB this
 	 * can't overflow size_t.
 	 */
-	result = (text *) palloc(VARHDRSZ + 23 + 3 * (size_t) plen);
+	result = (text *) palloc(VARHDRSZ + 27 + 3 * (size_t) plen);
 	r = VARDATA(result);
+
+	/*
+	 * Prefix with "***S" so that the core regular expression code can tell
+	 * that this was a SIMILAR TO pattern.
+	 */
+	*r++ = '*';
+	*r++ = '*';
+	*r++ = '*';
+	*r++ = 'S';
 
 	*r++ = '^';
 	*r++ = '(';

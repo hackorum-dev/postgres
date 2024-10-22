@@ -450,6 +450,7 @@ pg_regcomp(regex_t *re,
 
 	/* parsing */
 	lexstart(v);				/* also handles prefixes */
+	pg_check_regex_collation(v->re->re_info & PG_REG_SIMILAR_TO);
 	if ((v->cflags & REG_NLSTOP) || (v->cflags & REG_NLANCH))
 	{
 		/* assign newline a unique color */

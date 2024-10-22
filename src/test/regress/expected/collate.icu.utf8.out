@@ -1518,9 +1518,13 @@ ERROR:  nondeterministic collations are not supported for LIKE
 SELECT x FROM test3ci WHERE x ILIKE 'a%';
 ERROR:  nondeterministic collations are not supported for ILIKE
 SELECT x FROM test3ci WHERE x SIMILAR TO 'a%';
-ERROR:  nondeterministic collations are not supported for regular expressions
+ERROR:  nondeterministic collations are not supported for SIMILAR TO
 SELECT x FROM test3ci WHERE x ~ 'a';
-ERROR:  nondeterministic collations are not supported for regular expressions
+  x  
+-----
+ abc
+(1 row)
+
 SELECT x FROM test1ci UNION SELECT x FROM test2ci ORDER BY x;
   x  
 -----
@@ -1636,9 +1640,13 @@ ERROR:  nondeterministic collations are not supported for LIKE
 SELECT x FROM test3bpci WHERE x ILIKE 'a%';
 ERROR:  nondeterministic collations are not supported for ILIKE
 SELECT x FROM test3bpci WHERE x SIMILAR TO 'a%';
-ERROR:  nondeterministic collations are not supported for regular expressions
+ERROR:  nondeterministic collations are not supported for SIMILAR TO
 SELECT x FROM test3bpci WHERE x ~ 'a';
-ERROR:  nondeterministic collations are not supported for regular expressions
+  x  
+-----
+ abc
+(1 row)
+
 SELECT x FROM test1bpci UNION SELECT x FROM test2bpci ORDER BY x;
   x  
 -----

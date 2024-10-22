@@ -5413,12 +5413,6 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
     </para>
    </caution>
 
-   <para>
-    The pattern matching operators of all three kinds do not support
-    nondeterministic collations.  If required, apply a different collation to
-    the expression to work around this limitation.
-   </para>
-
   <sect2 id="functions-like">
    <title><function>LIKE</function></title>
 
@@ -5689,6 +5683,11 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
    </para>
 
    <para>
+    <function>SIMILAR TO</function> does not support nondeterministic
+    collations.
+   </para>
+
+   <para>
     The <function>substring</function> function with three parameters
     provides extraction of a substring that matches an SQL
     regular expression pattern.  The function can be written according
@@ -5898,6 +5897,16 @@ substring('foobar' similar '#"o_b#"%' escape '#')    <lineannotation>NULL</linea
 'abcd' ~ '^a'     <lineannotation>true &mdash; <literal>^</literal> anchors to start of string</lineannotation>
 'abcd' ~ '^(b|c)' <lineannotation>false &mdash; would match except for anchoring</lineannotation>
 </programlisting>
+    </para>
+
+    <para>
+     Regular expression matching uses the applicable collation for character
+     classification, but not for string comparison.  A single character in a
+     pattern always matches only exactly that character, independent of the
+     collation (unless a flag such as for case-insensitive matching is
+     specified; see below).  It is different in this respect from
+     <function>LIKE</function>, which uses the collation to compare literal
+     substrings in the pattern. <!-- XXX different patch -->
     </para>
 
     <para>

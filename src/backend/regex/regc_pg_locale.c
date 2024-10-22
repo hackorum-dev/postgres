@@ -260,11 +260,6 @@ pg_set_regex_collation(Oid collation)
 	{
 		locale = pg_newlocale_from_collation(collation);
 
-		if (!locale->deterministic)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("nondeterministic collations are not supported for regular expressions")));
-
 		if (locale->ctype_is_c)
 		{
 			/*
@@ -299,6 +294,15 @@ pg_set_regex_collation(Oid collation)
 	pg_regex_strategy = strategy;
 	pg_regex_locale = locale;
 	pg_regex_collation = collation;
+}
+
+void
+pg_check_regex_collation(bool is_similar_to)
+{
+	if (is_similar_to && !pg_regex_locale->deterministic)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("nondeterministic collations are not supported for SIMILAR TO")));
 }
 
 static int
