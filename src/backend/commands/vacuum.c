@@ -1442,13 +1442,14 @@ vac_estimate_reltuples(Relation relation,
  *		always allowable.
  *
  *		Note: num_tuples should count only *live* tuples, since
- *		pg_class.reltuples is defined that way.
+ *		pg_class.reltuples is defined that way. Also, num_pages is signed,
+ *		because partitioned tables have relpages of -1.
  *
  *		This routine is shared by VACUUM and ANALYZE.
  */
 void
 vac_update_relstats(Relation relation,
-					BlockNumber num_pages, double num_tuples,
+					int32 num_pages, double num_tuples,
 					BlockNumber num_all_visible_pages,
 					BlockNumber num_all_frozen_pages,
 					bool hasindex, TransactionId frozenxid,
@@ -1485,9 +1486,9 @@ vac_update_relstats(Relation relation,
 	/* Apply statistical updates, if any, to copied tuple */
 
 	dirty = false;
-	if (pgcform->relpages != (int32) num_pages)
+	if (pgcform->relpages != num_pages)
 	{
-		pgcform->relpages = (int32) num_pages;
+		pgcform->relpages = num_pages;
 		dirty = true;
 	}
 	if (pgcform->reltuples != (float4) num_tuples)

@@ -373,7 +373,7 @@ extern double vac_estimate_reltuples(Relation relation,
 									 BlockNumber scanned_pages,
 									 double scanned_tuples);
 extern void vac_update_relstats(Relation relation,
-								BlockNumber num_pages,
+								int32 num_pages,
 								double num_tuples,
 								BlockNumber num_all_visible_pages,
 								BlockNumber num_all_frozen_pages,
