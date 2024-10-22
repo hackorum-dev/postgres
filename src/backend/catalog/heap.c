@@ -1020,7 +1020,10 @@ AddNewRelationTuple(Relation pg_class_desc,
 	new_rel_reltup = new_rel_desc->rd_rel;
 
 	/* The relation is empty */
-	new_rel_reltup->relpages = 0;
+	if (relkind == RELKIND_PARTITIONED_TABLE)
+		new_rel_reltup->relpages = -1;
+	else
+		new_rel_reltup->relpages = 0;
 	new_rel_reltup->reltuples = -1;
 	new_rel_reltup->relallvisible = 0;
 	new_rel_reltup->relallfrozen = 0;
