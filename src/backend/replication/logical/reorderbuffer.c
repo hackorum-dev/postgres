@@ -219,7 +219,7 @@ static const Size max_changes_in_memory = 4096; /* XXX for restore only */
 int			debug_logical_replication_streaming = DEBUG_LOGICAL_REP_STREAMING_BUFFERED;
 
 /* Compression strategy for spilled data. */
-int			logical_decoding_spill_compression = REORDER_BUFFER_PGLZ_COMPRESSION;
+int			logical_decoding_spill_compression = REORDER_BUFFER_LZ4_COMPRESSION;
 
 /* ---------------------------------------
  * primary reorderbuffer support routines
@@ -5408,6 +5408,9 @@ ReorderBufferNewCompressorState(MemoryContext context, int compression_method)
 		case REORDER_BUFFER_PGLZ_COMPRESSION:
 			return pglz_NewCompressorState(context);
 			break;
+		case REORDER_BUFFER_LZ4_COMPRESSION:
+			return lz4_NewCompressorState(context);
+			break;
 		case REORDER_BUFFER_NO_COMPRESSION:
 		default:
 			return NULL;
@@ -5427,6 +5430,9 @@ ReorderBufferFreeCompressorState(MemoryContext context, int compression_method,
 	{
 		case REORDER_BUFFER_PGLZ_COMPRESSION:
 			return pglz_FreeCompressorState(context, compressor_state);
+			break;
+		case REORDER_BUFFER_LZ4_COMPRESSION:
+			return lz4_FreeCompressorState(context, compressor_state);
 			break;
 		case REORDER_BUFFER_NO_COMPRESSION:
 		default:
@@ -5494,6 +5500,67 @@ ReorderBufferCompress(ReorderBuffer *rb, ReorderBufferDiskChange **ondisk,
 
 				break;
 			}
+			/* LZ4 Compression */
+		case REORDER_BUFFER_LZ4_COMPRESSION:
+			{
+				Size		dst_size = 0;
+				char	   *src = (char *) rb->outbuf + sizeof(ReorderBufferDiskChange);
+				Size		src_size = data_size - sizeof(ReorderBufferDiskChange);
+				StringInfo	buf = lz4_GetStringInfoBuffer(compressor_state);
+
+				/*
+				 * LZ4 streaming compression implies keeping a copy of the
+				 * "raw" data in LZ4 input ring buffer. If the "raw" data does
+				 * not fit in this buffer, then we should not try to compress
+				 * it. Let's store it uncompressed.
+				 *
+				 * Even if individual changes larger than 64kB shouldn't
+				 * exist, we still want to be sure that this case is covered
+				 * anyway.
+				 */
+				if (unlikely(src_size > LZ4_RING_BUFFER_SIZE))
+					return ReorderBufferCompress(rb, ondisk,
+												 REORDER_BUFFER_NO_COMPRESSION,
+												 data_size, compressor_state);
+
+				/*
+				 * Make sure the buffer we'll use to store compressed data has
+				 * enough space.
+				 */
+				dst_size = lz4_CompressBound(src_size);
+				enlargeStringInfo(buf, dst_size);
+
+				/* Use LZ4 streaming compression */
+				lz4_StreamingCompressData(rb->context, src, src_size, buf->data,
+										  &dst_size, compressor_state);
+				buf->len = dst_size;
+
+				/*
+				 * Make sure the ReorderBuffer has enough space to store
+				 * compressed data. Compressed data must be smaller than raw
+				 * data, so, the ReorderBuffer should already have room for
+				 * compressed data, but we do this to avoid buffer overflow
+				 * risks.
+				 */
+				ReorderBufferSerializeReserve(rb, (dst_size + sizeof(ReorderBufferDiskChange)));
+
+				hdr = (ReorderBufferDiskChange *) rb->outbuf;
+				hdr->comp_strat = REORDER_BUFFER_STRAT_LZ4_STREAMING;
+				hdr->size = dst_size + sizeof(ReorderBufferDiskChange);
+				hdr->raw_size = src_size;
+
+				/*
+				 * Update ondisk: hdr pointer has potentially changed due to
+				 * ReorderBufferSerializeReserve()
+				 */
+				*ondisk = hdr;
+
+				/* Copy back compressed data into the ReorderBuffer */
+				memcpy((char *) rb->outbuf + sizeof(ReorderBufferDiskChange),
+					   buf->data, buf->len);
+
+				break;
+			}
 		default:
 			/* Other compression methods not yet supported */
 			break;
@@ -5547,6 +5614,26 @@ ReorderBufferDecompress(ReorderBuffer *rb, char *data,
 					ereport(ERROR,
 							(errcode(ERRCODE_DATA_CORRUPTED),
 							 errmsg_internal("compressed PGLZ data is corrupted")));
+				break;
+			}
+			/* LZ4 streaming decompression */
+		case REORDER_BUFFER_STRAT_LZ4_STREAMING:
+			{
+				char	   *buf = NULL;
+				Size		src_size = ondisk->size - sizeof(ReorderBufferDiskChange);
+				Size		buf_size = ondisk->raw_size;
+
+				lz4_StreamingDecompressData(rb->context, data, src_size, &buf,
+											buf_size, compressor_state);
+
+				/* Copy decompressed data into the ReorderBuffer */
+				memcpy((char *) rb->outbuf + sizeof(ReorderBufferDiskChange),
+					   buf, buf_size);
+
+				/*
+				 * Not necessary to free buf in this case: it points to the
+				 * decompressed data stored in LZ4 output ring buffer.
+				 */
 				break;
 			}
 		default:

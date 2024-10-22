@@ -13,6 +13,7 @@ backend_sources += files(
   'relation.c',
   'reorderbuffer.c',
   'reorderbuffer_pglz.c',
+  'reorderbuffer_lz4.c',
   'slotsync.c',
   'snapbuild.c',
   'tablesync.c',

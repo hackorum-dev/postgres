@@ -27,6 +27,7 @@ OBJS = \
 	relation.o \
 	reorderbuffer.o \
 	reorderbuffer_pglz.o \
+	reorderbuffer_lz4.o \
 	slotsync.o \
 	snapbuild.o \
 	tablesync.o \
