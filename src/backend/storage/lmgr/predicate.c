@@ -3358,9 +3358,6 @@ ReleasePredicateLocks(bool isCommit, bool isReadOnlySafe)
 	topLevelIsDeclaredReadOnly = SxactIsReadOnly(MySerializableXact);
 
 	/*
-	 * We don't hold XidGenLock lock here, assuming that TransactionId is
-	 * atomic!
-	 *
 	 * If this value is changing, we don't care that much whether we get the
 	 * old or new value -- it is just used to determine how far
 	 * SxactGlobalXmin must advance before this transaction can be fully
@@ -3368,7 +3365,9 @@ ReleasePredicateLocks(bool isCommit, bool isReadOnlySafe)
 	 * transaction to complete before freeing some RAM; correctness of visible
 	 * behavior is not affected.
 	 */
+	LWLockAcquire(XidGenLock, LW_SHARED);
 	MySerializableXact->finishedBefore = XidFromFullTransactionId(TransamVariables->nextXid);
+	LWLockRelease(XidGenLock);
 
 	/*
 	 * If it's not a commit it's either a rollback or a read-only transaction
