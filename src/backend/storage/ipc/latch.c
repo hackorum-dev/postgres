@@ -554,8 +554,10 @@ WaitLatch(Latch *latch, int wakeEvents, long timeout,
  *
  * wakeEvents must include either WL_EXIT_ON_PM_DEATH for automatic exit
  * if the postmaster dies or WL_POSTMASTER_DEATH for a flag set in the
- * return value if the postmaster dies.  The latter is useful for rare cases
- * where some behavior other than immediate exit is needed.
+ * return value if the postmaster dies. The latter is useful for cases
+ * where some behavior other than immediate exit could be needed, though
+ * immediate exit is also allowed in processing WL_POSTMASTER_DEATH if
+ * no other behavior needed.
  *
  * NB: These days this is just a wrapper around the WaitEventSet API. When
  * using a latch very frequently, consider creating a longer living
@@ -693,7 +695,7 @@ SetLatch(Latch *latch)
 	}
 	else
 		kill(owner_pid, SIGURG);
-
+/:
 #else
 
 	/*
@@ -930,7 +932,7 @@ FreeWaitEventSetAfterFork(WaitEventSet *set)
 /* ---
  * Add an event to the set. Possible events are:
  * - WL_LATCH_SET: Wait for the latch to be set
- * - WL_POSTMASTER_DEATH: Wait for postmaster to die
+ * - WL_POSTMASTER_DEATH: Wait for postmaster to die or finish immediately
  * - WL_SOCKET_READABLE: Wait for socket to become readable,
  *	 can be combined in one event with other WL_SOCKET_* events
  * - WL_SOCKET_WRITEABLE: Wait for socket to become writeable,
@@ -958,6 +960,10 @@ FreeWaitEventSetAfterFork(WaitEventSet *set)
  * The user_data pointer specified here will be set for the events returned
  * by WaitEventSetWait(), allowing to easily associate additional data with
  * events.
+ *
+ * Unlike WL_EXIT_ON_PM_DEATH that is only for immediate exit WL_POSTMASTER_DEATH
+ * allows the process to set a return values and wait for postmaster to die, but
+ * also allows exiting immediately if return value is not needed.
  */
 int
 AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch,
