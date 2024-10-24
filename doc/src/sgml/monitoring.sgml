@@ -1561,10 +1561,24 @@ description | Waiting for a newly initialized WAL file to reach durable storage
         <structfield>spill_bytes</structfield> <type>bigint</type>
        </para>
        <para>
-        Amount of decoded transaction data spilled to disk while performing
-        decoding of changes from WAL for this slot. This and other spill
-        counters can be used to gauge the I/O which occurred during logical
-        decoding and allow tuning <literal>logical_decoding_work_mem</literal>.
+        Amount of decoded transaction data requiring to be eventually compressed
+        and spilled to disk while performing decoding of changes from WAL for
+        this slot. This and other spill counters can be used to gauge the I/O
+        which occurred during logical decoding and allow tuning
+        <literal>logical_decoding_work_mem</literal>.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>spill_write_bytes</structfield> <type>bigint</type>
+       </para>
+       <para>
+        Amount of decoded transaction data eventually compressed and spilled
+        to disk while performing decoding of changes from WAL for this slot.
+        When using data compression, <literal>spill_write_bytes</literal>
+        should be significantly smaller than <literal>spill_bytes</literal>
+        which represents uncompressed data size.
       </para></entry>
      </row>
 

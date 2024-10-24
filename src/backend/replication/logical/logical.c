@@ -1942,11 +1942,12 @@ UpdateDecodingStats(LogicalDecodingContext *ctx)
 	if (rb->spillBytes <= 0 && rb->streamBytes <= 0 && rb->totalBytes <= 0)
 		return;
 
-	elog(DEBUG2, "UpdateDecodingStats: updating stats %p %lld %lld %lld %lld %lld %lld %lld %lld",
+	elog(DEBUG2, "UpdateDecodingStats: updating stats %p %lld %lld %lld %lld %lld %lld %lld %lld %lld",
 		 rb,
 		 (long long) rb->spillTxns,
 		 (long long) rb->spillCount,
 		 (long long) rb->spillBytes,
+		 (long long) rb->spillWriteBytes,
 		 (long long) rb->streamTxns,
 		 (long long) rb->streamCount,
 		 (long long) rb->streamBytes,
@@ -1956,6 +1957,7 @@ UpdateDecodingStats(LogicalDecodingContext *ctx)
 	repSlotStat.spill_txns = rb->spillTxns;
 	repSlotStat.spill_count = rb->spillCount;
 	repSlotStat.spill_bytes = rb->spillBytes;
+	repSlotStat.spill_write_bytes = rb->spillWriteBytes;
 	repSlotStat.stream_txns = rb->streamTxns;
 	repSlotStat.stream_count = rb->streamCount;
 	repSlotStat.stream_bytes = rb->streamBytes;
@@ -1967,6 +1969,7 @@ UpdateDecodingStats(LogicalDecodingContext *ctx)
 	rb->spillTxns = 0;
 	rb->spillCount = 0;
 	rb->spillBytes = 0;
+	rb->spillWriteBytes = 0;
 	rb->streamTxns = 0;
 	rb->streamCount = 0;
 	rb->streamBytes = 0;

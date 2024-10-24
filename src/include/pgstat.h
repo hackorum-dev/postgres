@@ -403,6 +403,7 @@ typedef struct PgStat_StatReplSlotEntry
 	PgStat_Counter spill_txns;
 	PgStat_Counter spill_count;
 	PgStat_Counter spill_bytes;
+	PgStat_Counter spill_write_bytes;
 	PgStat_Counter stream_txns;
 	PgStat_Counter stream_count;
 	PgStat_Counter stream_bytes;

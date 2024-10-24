@@ -1030,6 +1030,7 @@ CREATE VIEW pg_stat_replication_slots AS
             s.spill_txns,
             s.spill_count,
             s.spill_bytes,
+            s.spill_write_bytes,
             s.stream_txns,
             s.stream_count,
             s.stream_bytes,

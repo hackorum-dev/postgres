@@ -257,7 +257,7 @@ static void ReorderBufferExecuteInvalidations(uint32 nmsgs, SharedInvalidationMe
  */
 static void ReorderBufferCheckMemoryLimit(ReorderBuffer *rb);
 static void ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn);
-static void ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
+static Size ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 										 int fd, ReorderBufferChange *change);
 static Size ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 										TXNEntryFile *file, XLogSegNo *segno);
@@ -3756,6 +3756,7 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	XLogSegNo	curOpenSegNo = 0;
 	Size		spilled = 0;
 	Size		size = txn->size;
+	Size		written = 0;
 
 	elog(DEBUG2, "spill %u changes in XID %u to disk",
 		 (uint32) txn->nentries_mem, txn->xid);
@@ -3807,7 +3808,7 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 						 errmsg("could not open file \"%s\": %m", path)));
 		}
 
-		ReorderBufferSerializeChange(rb, txn, fd, change);
+		written += ReorderBufferSerializeChange(rb, txn, fd, change);
 		dlist_delete(&change->node);
 		ReorderBufferReturnChange(rb, change, false);
 
@@ -3822,6 +3823,7 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	{
 		rb->spillCount += 1;
 		rb->spillBytes += size;
+		rb->spillWriteBytes += written;
 
 		/* don't consider already serialized transactions */
 		rb->spillTxns += (rbtxn_is_serialized(txn) || rbtxn_is_serialized_clear(txn)) ? 0 : 1;
@@ -3842,7 +3844,7 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 /*
  * Serialize individual change to disk.
  */
-static void
+static Size
 ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 							 int fd, ReorderBufferChange *change)
 {
@@ -4054,6 +4056,9 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	 */
 	if (txn->final_lsn < change->lsn)
 		txn->final_lsn = change->lsn;
+
+	/* Return the size of data written on disk */
+	return ondisk->size - sizeof(ReorderBufferDiskChange);
 }
 
 /* Returns true, if the output plugin supports streaming, false, otherwise. */
