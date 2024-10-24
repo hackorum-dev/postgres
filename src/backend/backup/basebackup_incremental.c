@@ -653,7 +653,7 @@ GetIncrementalFilePath(Oid dboid, Oid spcoid, RelFileNumber relfilenumber,
  * an incremental file in the backup instead of the entire file. On return,
  * *num_blocks_required will be set to the number of blocks that need to be
  * sent, and the actual block numbers will have been stored in
- * relative_block_numbers, which should be an array of at least RELSEG_SIZE.
+ * relative_block_numbers, which should be an array of at most RELSEG_SIZE.
  * In addition, *truncation_block_length will be set to the value that should
  * be included in the incremental file.
  */
