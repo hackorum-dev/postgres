@@ -150,6 +150,7 @@ typedef struct Port
 	 */
 	char	   *database_name;
 	char	   *user_name;
+	bool		wait_for_lsn_enabled;
 	char	   *cmdline_options;
 	List	   *guc_options;
 

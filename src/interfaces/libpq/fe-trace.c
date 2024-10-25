@@ -478,6 +478,7 @@ pqTraceOutput_Query(FILE *f, const char *message, int *cursor)
 {
 	fprintf(f, "Query\t");
 	pqTraceOutputString(f, message, cursor, false);
+	/* FIXME */
 }
 
 static void
@@ -609,6 +610,7 @@ pqTraceOutput_ReadyForQuery(FILE *f, const char *message, int *cursor)
 {
 	fprintf(f, "ReadyForQuery\t");
 	pqTraceOutputByte1(f, message, cursor);
+	/* FIXME */
 }
 
 /*

@@ -426,6 +426,7 @@ struct pg_conn
 	char	   *ssl_max_protocol_version;	/* maximum TLS protocol version */
 	char	   *target_session_attrs;	/* desired session properties */
 	char	   *require_auth;	/* name of the expected auth method */
+	char	   *wait_for_lsn_setting;
 	char	   *load_balance_hosts; /* load balance over hosts */
 
 	bool		cancelRequest;	/* true if this connection is used to send a
@@ -448,6 +449,7 @@ struct pg_conn
 	ConnStatusType status;
 	PGAsyncStatusType asyncStatus;
 	PGTransactionStatusType xactStatus; /* never changes to ACTIVE */
+	char		last_lsn[128];
 	char		last_sqlstate[6];	/* last reported SQLSTATE */
 	bool		options_valid;	/* true if OK to attempt connection */
 	bool		nonblocking;	/* whether this connection is using nonblock
@@ -529,6 +531,7 @@ struct pg_conn
 	PGVerbosity verbosity;		/* error/notice message verbosity */
 	PGContextVisibility show_context;	/* whether to show CONTEXT field */
 	PGlobjfuncs *lobjfuncs;		/* private state for large-object access fns */
+	bool		wait_for_lsn_enabled;
 	pg_prng_state prng_state;	/* prng state for load balancing connections */
 
 

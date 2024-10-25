@@ -768,12 +768,23 @@ ProcessStartupPacket(Port *port, bool ssl_done, bool gss_done)
 									valptr),
 							 errhint("Valid values are: \"false\", 0, \"true\", 1, \"database\".")));
 			}
+			else if (strcmp(nameptr, "_pq_.wait_for_lsn") == 0)
+			{
+				if (strcmp(valptr, "1") == 0)
+					port->wait_for_lsn_enabled = true;
+				else
+					ereport(FATAL,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("invalid value for parameter \"%s\": \"%s\"",
+									"wait_for_lsn",
+									valptr),
+							 errhint("Valid values are: 1.")));
+			}
 			else if (strncmp(nameptr, "_pq_.", 5) == 0)
 			{
 				/*
 				 * Any option beginning with _pq_. is reserved for use as a
-				 * protocol-level option, but at present no such options are
-				 * defined.
+				 * protocol-level option.
 				 */
 				unrecognized_protocol_options =
 					lappend(unrecognized_protocol_options, pstrdup(nameptr));

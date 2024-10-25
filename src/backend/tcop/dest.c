@@ -31,6 +31,8 @@
 #include "access/printsimple.h"
 #include "access/printtup.h"
 #include "access/xact.h"
+#include "access/xlog.h"
+#include "access/xlog_internal.h"
 #include "commands/copy.h"
 #include "commands/createas.h"
 #include "commands/explain.h"
@@ -40,6 +42,7 @@
 #include "executor/tstoreReceiver.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
+#include "miscadmin.h"
 
 
 /* ----------------
@@ -265,6 +268,15 @@ ReadyForQuery(CommandDest dest)
 
 				pq_beginmessage(&buf, PqMsg_ReadyForQuery);
 				pq_sendbyte(&buf, TransactionBlockStatusCode());
+				if (MyProcPort->wait_for_lsn_enabled)
+				{
+					char		xloc[MAXFNAMELEN];
+					XLogRecPtr	logptr;
+
+					logptr = GetXLogWriteRecPtr();
+					snprintf(xloc, sizeof(xloc), "%X/%X", LSN_FORMAT_ARGS(logptr));
+					pq_sendstring(&buf, xloc);
+				}
 				pq_endmessage(&buf);
 			}
 			/* Flush output at end of cycle in any case. */

@@ -38,6 +38,7 @@
 #include "commands/async.h"
 #include "commands/event_trigger.h"
 #include "commands/prepare.h"
+#include "commands/waitlsn.h"
 #include "common/pg_prng.h"
 #include "jit/jit.h"
 #include "libpq/libpq.h"
@@ -75,6 +76,7 @@
 #include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_lsn.h"
 #include "utils/ps_status.h"
 #include "utils/snapmgr.h"
 #include "utils/timeout.h"
@@ -4782,6 +4784,27 @@ PostgresMain(const char *dbname, const char *username)
 					SetCurrentStatementStartTimestamp();
 
 					query_string = pq_getmsgstring(&input_message);
+					if (MyProcPort && MyProcPort->wait_for_lsn_enabled)
+					{
+						const char *wait_for_lsn = pq_getmsgstring(&input_message);
+						XLogRecPtr	lsn;
+						bool		error;
+
+						lsn = pg_lsn_in_internal(wait_for_lsn, &error);
+						if (error)
+							ereport(ERROR,
+									(errcode(ERRCODE_PROTOCOL_VIOLATION),
+									 errmsg("invalid LSN %s", wait_for_lsn)));
+						if (RecoveryInProgress())
+							WaitForLSNReplay(lsn, 0);
+						else
+						{
+							if (GetXLogWriteRecPtr() != lsn)
+								ereport(ERROR,
+										(errcode(ERRCODE_PROTOCOL_VIOLATION),
+										 errmsg("LSN mismatch")));
+						}
+					}
 					pq_getmsgend(&input_message);
 
 					if (am_walsender)

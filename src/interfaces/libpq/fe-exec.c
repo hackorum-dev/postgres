@@ -1454,6 +1454,7 @@ PQsendQueryInternal(PGconn *conn, const char *query, bool newQuery)
 	/* construct the outgoing Query message */
 	if (pqPutMsgStart(PqMsg_Query, conn) < 0 ||
 		pqPuts(query, conn) < 0 ||
+		(conn->wait_for_lsn_enabled && pqPuts(conn->last_lsn, conn)) ||
 		pqPutMsgEnd(conn) < 0)
 	{
 		/* error message should be set up already */

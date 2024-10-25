@@ -1625,6 +1625,23 @@ getReadyForQuery(PGconn *conn)
 			break;
 	}
 
+	if (conn->wait_for_lsn_enabled)
+	{
+		PQExpBufferData buf;
+
+		initPQExpBuffer(&buf);
+		if (pqGets(&buf, conn))
+		{
+			termPQExpBuffer(&buf);
+			return EOF;
+		}
+		else
+		{
+			strlcpy(conn->last_lsn, buf.data, sizeof conn->last_lsn);
+			termPQExpBuffer(&buf);
+		}
+	}
+
 	return 0;
 }
 
@@ -2297,6 +2314,9 @@ build_startup_packet(const PGconn *conn, char *packet,
 
 	if (conn->client_encoding_initial && conn->client_encoding_initial[0])
 		ADD_STARTUP_OPTION("client_encoding", conn->client_encoding_initial);
+
+	if (conn->wait_for_lsn_enabled)
+		ADD_STARTUP_OPTION("_pq_.wait_for_lsn", "1");
 
 	/* Add any environment-driven GUC settings needed */
 	for (next_eo = options; next_eo->envName; next_eo++)

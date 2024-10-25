@@ -360,6 +360,10 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Target-Session-Attrs", "", 15, /* sizeof("prefer-standby") = 15 */
 	offsetof(struct pg_conn, target_session_attrs)},
 
+	{"wait_for_lsn", "PGWAITFORLSN", "0", NULL,
+		"Wait-For-LSN", "", 1,
+	offsetof(struct pg_conn, wait_for_lsn_setting)},
+
 	{"load_balance_hosts", "PGLOADBALANCEHOSTS",
 		DefaultLoadBalanceHosts, NULL,
 		"Load-Balance-Hosts", "", 8,	/* sizeof("disable") = 8 */
@@ -1845,6 +1849,28 @@ pqConnectOptions2(PGconn *conn)
 		conn->client_encoding_initial = strdup(pg_encoding_to_char(pg_get_encoding_from_locale(NULL, true)));
 		if (!conn->client_encoding_initial)
 			goto oom_error;
+	}
+
+	/*
+	 * validate wait_for_lsn option
+	 */
+	if (conn->wait_for_lsn_setting)
+	{
+		if (strcmp(conn->wait_for_lsn_setting, "on") == 0 ||
+			strcmp(conn->wait_for_lsn_setting, "true") == 0 ||
+			strcmp(conn->wait_for_lsn_setting, "1") == 0)
+			conn->wait_for_lsn_enabled = true;
+		else if (strcmp(conn->wait_for_lsn_setting, "off") == 0 ||
+				 strcmp(conn->wait_for_lsn_setting, "false") == 0 ||
+				 strcmp(conn->wait_for_lsn_setting, "0") == 0)
+			conn->wait_for_lsn_enabled = false;
+		else
+		{
+			conn->status = CONNECTION_BAD;
+			libpq_append_conn_error(conn, "invalid %s value: \"%s\"",
+									"wait_for_lsn", conn->wait_for_lsn_setting);
+			return false;
+		}
 	}
 
 	/*
