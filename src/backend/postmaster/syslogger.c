@@ -1396,22 +1396,25 @@ logfile_rotate(bool time_based_rotation, int size_rotation_for)
 		fntime = time(NULL);
 
 	/* file rotation for stderr */
-	if (!logfile_rotate_dest(time_based_rotation, size_rotation_for, fntime,
-							 LOG_DESTINATION_STDERR, &last_sys_file_name,
-							 &syslogFile))
-		return;
+	if ((Log_destination & LOG_DESTINATION_STDERR) != 0)
+		if (!logfile_rotate_dest(time_based_rotation, size_rotation_for, fntime,
+								 LOG_DESTINATION_STDERR, &last_sys_file_name,
+								 &syslogFile))
+			return;
 
 	/* file rotation for csvlog */
-	if (!logfile_rotate_dest(time_based_rotation, size_rotation_for, fntime,
-							 LOG_DESTINATION_CSVLOG, &last_csv_file_name,
-							 &csvlogFile))
-		return;
+	if ((Log_destination & LOG_DESTINATION_CSVLOG) != 0)
+		if (!logfile_rotate_dest(time_based_rotation, size_rotation_for, fntime,
+								 LOG_DESTINATION_CSVLOG, &last_csv_file_name,
+								 &csvlogFile))
+			return;
 
 	/* file rotation for jsonlog */
-	if (!logfile_rotate_dest(time_based_rotation, size_rotation_for, fntime,
-							 LOG_DESTINATION_JSONLOG, &last_json_file_name,
-							 &jsonlogFile))
-		return;
+	if ((Log_destination & LOG_DESTINATION_JSONLOG) != 0)
+		if (!logfile_rotate_dest(time_based_rotation, size_rotation_for, fntime,
+								 LOG_DESTINATION_JSONLOG, &last_json_file_name,
+								 &jsonlogFile))
+			return;
 
 	update_metainfo_datafile();
 
