@@ -16,6 +16,8 @@ include $(top_builddir)/src/Makefile.global
 EXTRA_INSTALL = contrib/hstore
 
 export with_icu
+export with_lz4
+export with_zstd
 
 check:
 	$(prove_check)
