@@ -28,6 +28,7 @@ static struct varlena *toast_fetch_datum_slice(struct varlena *attr,
 											   int32 slicelength);
 static struct varlena *toast_decompress_datum(struct varlena *attr);
 static struct varlena *toast_decompress_datum_slice(struct varlena *attr, int32 slicelength);
+static struct varlena *toast_EOH_datum(struct varlena *attr);
 
 /* ----------
  * detoast_external_attr -
@@ -79,16 +80,7 @@ detoast_external_attr(struct varlena *attr)
 	}
 	else if (VARATT_IS_EXTERNAL_EXPANDED(attr))
 	{
-		/*
-		 * This is an expanded-object pointer --- get flat format
-		 */
-		ExpandedObjectHeader *eoh;
-		Size		resultsize;
-
-		eoh = DatumGetEOHP(PointerGetDatum(attr));
-		resultsize = EOH_get_flat_size(eoh);
-		result = (struct varlena *) palloc(resultsize);
-		EOH_flatten_into(eoh, result, resultsize);
+		result = toast_EOH_datum(attr);
 	}
 	else
 	{
@@ -158,12 +150,7 @@ detoast_attr(struct varlena *attr)
 	}
 	else if (VARATT_IS_EXTERNAL_EXPANDED(attr))
 	{
-		/*
-		 * This is an expanded-object pointer --- get flat format
-		 */
-		attr = detoast_external_attr(attr);
-		/* flatteners are not allowed to produce compressed/short output */
-		Assert(!VARATT_IS_EXTENDED(attr));
+		attr = toast_EOH_datum(attr);
 	}
 	else if (VARATT_IS_COMPRESSED(attr))
 	{
@@ -279,7 +266,7 @@ detoast_attr_slice(struct varlena *attr,
 	else if (VARATT_IS_EXTERNAL_EXPANDED(attr))
 	{
 		/* pass it off to detoast_external_attr to flatten */
-		preslice = detoast_external_attr(attr);
+		preslice = toast_EOH_datum(attr);
 	}
 	else
 		preslice = attr;
@@ -491,7 +478,6 @@ toast_decompress_datum(struct varlena *attr)
 	}
 }
 
-
 /* ----------
  * toast_decompress_datum_slice -
  *
@@ -532,6 +518,32 @@ toast_decompress_datum_slice(struct varlena *attr, int32 slicelength)
 			elog(ERROR, "invalid compression method id %d", cmid);
 			return NULL;		/* keep compiler quiet */
 	}
+}
+
+
+/* ----------
+ * toast_EOH_datum -
+ *
+ *	Reconstruct a non-extended varlena form from a EOP version of a
+ *  varlena datum.
+ */
+static struct varlena *
+toast_EOH_datum(struct varlena *attr)
+{
+	/*
+	 * This is an expanded-object pointer --- get flat format
+	 */
+	ExpandedObjectHeader *eoh;
+	Size		resultsize;
+	struct varlena *result;
+
+	Assert(VARATT_IS_EXTERNAL_EXPANDED(attr));
+	eoh = DatumGetEOHP(PointerGetDatum(attr));
+	resultsize = EOH_get_flat_size(eoh);
+	result = (struct varlena *) palloc(resultsize);
+	EOH_flatten_into(eoh, (void *) result, resultsize);
+	Assert(!VARATT_IS_EXTENDED(result));
+	return result;
 }
 
 /* ----------
