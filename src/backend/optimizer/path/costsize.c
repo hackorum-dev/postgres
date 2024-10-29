@@ -203,6 +203,8 @@ static int32 get_expr_width(PlannerInfo *root, const Node *expr);
 static double relation_byte_size(double tuples, int width);
 static double page_size(double tuples, int width);
 static double get_parallel_divisor(Path *path);
+static EquivalenceMember *identify_sort_ecmember(PlannerInfo *root,
+												 EquivalenceClass *ec);
 
 
 /*
@@ -2052,22 +2054,21 @@ cost_incremental_sort(Path *path,
 	 */
 	foreach(l, pathkeys)
 	{
-		PathKey    *key = (PathKey *) lfirst(l);
-		EquivalenceMember *member = (EquivalenceMember *)
-			linitial(key->pk_eclass->ec_members);
+		PathKey			   *key = (PathKey *) lfirst(l);
+		EquivalenceMember  *em = identify_sort_ecmember(root, key->pk_eclass);
 
 		/*
 		 * Check if the expression contains Var with "varno 0" so that we
 		 * don't call estimate_num_groups in that case.
 		 */
-		if (bms_is_member(0, pull_varnos(root, (Node *) member->em_expr)))
+		if (bms_is_member(0, pull_varnos(root, (Node *) em->em_expr)))
 		{
 			unknown_varno = true;
 			break;
 		}
 
 		/* expression not containing any Vars with "varno 0" */
-		presortedExprs = lappend(presortedExprs, member->em_expr);
+		presortedExprs = lappend(presortedExprs, em->em_expr);
 
 		if (foreach_current_index(l) + 1 >= presorted_keys)
 			break;
@@ -6603,4 +6604,65 @@ compute_gather_rows(Path *path)
 	Assert(path->parallel_workers > 0);
 
 	return clamp_row_est(path->rows * get_parallel_divisor(path));
+}
+
+/*
+ * Find suitable member of the equivalence class.
+ * Passing through the list of EC members find the member with minimum of
+ * distinct values. Cache estimated number of distincts in the em_ndistinct
+ * field of each member.
+ */
+static EquivalenceMember *
+identify_sort_ecmember(PlannerInfo *root, EquivalenceClass *ec)
+{
+	EquivalenceMember  *candidate = linitial(ec->ec_members);
+
+	if (root == NULL)
+		/* Fast path */
+		return candidate;
+
+	foreach_node(EquivalenceMember, em, ec->ec_members)
+	{
+		VariableStatData	vardata;
+
+		if (em->em_ndistinct == 0.)
+			/* Nothing helpful */
+			continue;
+
+		if (em->em_is_child || em->em_is_const || bms_is_empty(em->em_relids) ||
+			bms_is_member(0, em->em_relids))
+		{
+			em->em_ndistinct = 0.;
+			continue;
+		}
+
+		if (em->em_ndistinct < 0.)
+		{
+			bool	isdefault = true;
+			double	ndist = 0.;
+
+			/* Let's check candidate's ndistinct value */
+			examine_variable(root, (Node *) em->em_expr, 0, &vardata);
+			if (HeapTupleIsValid(vardata.statsTuple))
+				ndist = get_variable_numdistinct(&vardata, &isdefault);
+			ReleaseVariableStats(vardata);
+
+			if (isdefault)
+			{
+				em->em_ndistinct = 0.;
+				continue;
+			}
+
+			em->em_ndistinct = ndist;
+		}
+
+		Assert(em->em_ndistinct > 0.);
+
+		if (candidate->em_ndistinct == 0. ||
+			em->em_ndistinct < candidate->em_ndistinct)
+			candidate = em;
+	}
+
+	Assert(candidate != NULL);
+	return candidate;
 }
