@@ -1208,14 +1208,14 @@ ROLLBACK;
 
 -- GROUP BY optimization by reordering GROUP BY clauses
 CREATE TABLE btg AS SELECT
-  i % 10 AS x,
-  i % 10 AS y,
+  i % 231 AS x,
+  i % 49 AS y,
   i % 10 AS n,
-  'abc' || i % 10 AS z,
+  'abc' || i % 2 AS z,
   i AS w
-FROM generate_series(1, 100) AS i;
+FROM generate_series(1, 1000) AS i;
 CREATE INDEX btg_x_y_idx ON btg(x, y);
-ANALYZE btg;
+VACUUM ANALYZE btg;
 
 SET enable_hashagg = off;
 SET enable_seqscan = off;
