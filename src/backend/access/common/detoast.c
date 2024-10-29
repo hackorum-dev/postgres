@@ -161,9 +161,15 @@ detoast_attr(varlena *attr)
 		/*
 		 * This is an expanded-object pointer --- get flat format
 		 */
-		attr = detoast_external_attr(attr);
-		/* flatteners are not allowed to produce compressed/short output */
-		Assert(!VARATT_IS_EXTENDED(attr));
+		ExpandedObjectHeader *eoh;
+		Size		resultsize;
+		struct varlena *result;
+
+		eoh = DatumGetEOHP(PointerGetDatum(attr));
+		resultsize = EOH_get_flat_size(eoh);
+		result = (struct varlena *) palloc(resultsize);
+		EOH_flatten_into(eoh, (void *) result, resultsize);
+		attr = result;
 	}
 	else if (VARATT_IS_COMPRESSED(attr))
 	{
