@@ -5941,7 +5941,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
 
          In addition to the above, other parameters may be listed.
          Parameter names beginning with <literal>_pq_.</literal> are
-         reserved for use as protocol extensions, while others are
+         reserved for use as protocol options, while others are
          treated as run-time parameters to be set at backend start
          time.  Such settings will be applied during backend start
          (after parsing the command-line arguments if any) and will

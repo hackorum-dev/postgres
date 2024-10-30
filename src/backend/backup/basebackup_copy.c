@@ -9,7 +9,7 @@
  * the course of that single COPY OUT. Each CopyData message begins with a
  * type byte, allowing us to signal the start of a new archive, or the
  * manifest, by some means other than ending the COPY stream. This also allows
- * for future protocol extensions, since we can include arbitrary information
+ * for future protocol options, since we can include arbitrary information
  * in the message stream as long as we're certain that the client will know
  * what to do with it.
  *

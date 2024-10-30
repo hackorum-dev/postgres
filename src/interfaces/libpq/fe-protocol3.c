@@ -1439,8 +1439,8 @@ pqGetNegotiateProtocolVersion3(PGconn *conn)
 	if (num > 0)
 	{
 		appendPQExpBuffer(&conn->errorMessage,
-						  libpq_ngettext("protocol extension not supported by server: %s",
-										 "protocol extensions not supported by server: %s", num),
+						  libpq_ngettext("protocol option not supported by server: %s",
+										 "protocol options not supported by server: %s", num),
 						  buf.data);
 		appendPQExpBufferChar(&conn->errorMessage, '\n');
 	}
