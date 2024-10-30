@@ -64,6 +64,14 @@ consume_xids_until(PG_FUNCTION_ARGS)
 }
 
 /*
+ * These constants copied from .c files, because they're private.
+ */
+#define COMMIT_TS_XACTS_PER_PAGE (BLCKSZ / 10)
+#define SUBTRANS_XACTS_PER_PAGE (BLCKSZ / sizeof(TransactionId))
+#define CLOG_XACTS_PER_BYTE 4
+#define CLOG_XACTS_PER_PAGE (BLCKSZ * CLOG_XACTS_PER_BYTE)
+
+/*
  * Common functionality between the two public functions.
  */
 static FullTransactionId
@@ -121,7 +129,7 @@ consume_xids_common(FullTransactionId untilxid, uint64 nxids)
 		 * If we still have plenty of XIDs to consume, try to take a shortcut
 		 * and bump up the nextXid counter directly.
 		 */
-		if (xids_left > 2000 &&
+		if (xids_left > COMMIT_TS_XACTS_PER_PAGE &&
 			consumed - last_reported_at < REPORT_INTERVAL &&
 			MyProc->subxidStatus.overflowed)
 		{
@@ -158,14 +166,6 @@ consume_xids_common(FullTransactionId untilxid, uint64 nxids)
 
 	return lastxid;
 }
-
-/*
- * These constants copied from .c files, because they're private.
- */
-#define COMMIT_TS_XACTS_PER_PAGE (BLCKSZ / 10)
-#define SUBTRANS_XACTS_PER_PAGE (BLCKSZ / sizeof(TransactionId))
-#define CLOG_XACTS_PER_BYTE 4
-#define CLOG_XACTS_PER_PAGE (BLCKSZ * CLOG_XACTS_PER_BYTE)
 
 /*
  * All the interesting action in GetNewTransactionId happens when we extend
