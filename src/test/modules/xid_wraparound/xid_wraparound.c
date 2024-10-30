@@ -26,6 +26,7 @@ static FullTransactionId consume_xids_common(FullTransactionId untilxid, uint64 
 
 /*
  * Consume the specified number of XIDs.
+ * Returns the last XID assigned by this function.
  */
 PG_FUNCTION_INFO_V1(consume_xids);
 Datum
@@ -34,11 +35,8 @@ consume_xids(PG_FUNCTION_ARGS)
 	int64		nxids = PG_GETARG_INT64(0);
 	FullTransactionId lastxid;
 
-	if (nxids < 0)
+	if (nxids <= 0)
 		elog(ERROR, "invalid nxids argument: %lld", (long long) nxids);
-
-	if (nxids == 0)
-		lastxid = ReadNextFullTransactionId();
 	else
 		lastxid = consume_xids_common(InvalidFullTransactionId, (uint64) nxids);
 
@@ -47,6 +45,7 @@ consume_xids(PG_FUNCTION_ARGS)
 
 /*
  * Consume XIDs, up to the given XID.
+ * Returns the last XID assigned by this function.
  */
 PG_FUNCTION_INFO_V1(consume_xids_until);
 Datum
@@ -88,8 +87,15 @@ consume_xids_common(FullTransactionId untilxid, uint64 nxids)
 	 * GetNewTransactionId registers them in the subxid cache in PGPROC, until
 	 * the cache overflows, but beyond that, we don't keep track of the
 	 * consumed XIDs.
+	 * 
+	 * If no top-level XID is assigned, a new one is obtained,
+	 * and the consumed XID counter is incremented.
 	 */
-	(void) GetTopTransactionId();
+	if(!FullTransactionIdIsValid(GetTopFullTransactionIdIfAny()))
+	{
+		lastxid = GetTopFullTransactionId();
+		consumed++;
+	}
 
 	for (;;)
 	{
