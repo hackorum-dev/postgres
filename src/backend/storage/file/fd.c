@@ -772,6 +772,10 @@ fsync_fname(const char *fname, bool isdir)
  * might not be on the same filesystem. Therefore this routine does not
  * support renaming across directories.
  *
+ * Note that there is a window between the rename and the fsync(s). If "newfile"
+ * is opened, written to and then fdatasynced, and if there is a crash before
+ * the fsync(s) hits disk, the written data could be .
+ *
  * Log errors with the caller specified severity.
  *
  * Returns 0 if the operation succeeded, -1 otherwise. Note that errno is not

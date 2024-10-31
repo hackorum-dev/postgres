@@ -459,6 +459,11 @@ typedef struct XLogCtlData
 
 	/* Fake LSN counter, for unlogged relations. */
 	pg_atomic_uint64 unloggedLSN;
+	/*
+	 * Approximation of the last WAL segment number that is known to have been
+	 * installed by InstallXLogFileSegment().
+	 */
+	pg_atomic_uint64 last_known_installed_segno;
 
 	/* Time and LSN of last xlog segment switch. Protected by WALWriteLock. */
 	pg_time_t	lastSegSwitchTime;
@@ -3226,7 +3231,28 @@ XLogFileInitInternal(XLogSegNo logsegno, TimeLineID logtli,
 					 errmsg("could not open file \"%s\": %m", path)));
 	}
 	else
+	{
+		/*
+		 * The file is there, but it is possible that InstallXLogFileSegment()
+		 * has recently renamed it and not yet made the new name durable.  We
+		 * don't want to be able to flush data into a file whose name might
+		 * not survive power loss, since it would become unreachable in
+		 * recovery.  Since InstallXlogFileSegment() holds ControlFileLock,
+		 * acquiring it here is enough to wait for any durable_rename() call
+		 * that might have started before we opened the file.
+		 *
+		 * We can skip that if we can already see that the WAL space we need
+		 * is fully synchronized.  We may see a slightly out of date value
+		 * since we haven't acquired the lock yet, but that's OK, it just
+		 * means we might take the lock when we don't need to.
+		 */
+		if (pg_atomic_read_u64(&XLogCtl->last_known_installed_segno) < logsegno)
+		{
+			LWLockAcquire(ControlFileLock, LW_SHARED);
+			LWLockRelease(ControlFileLock);
+		}
 		return fd;
+	}
 
 	/*
 	 * Initialize an empty (all zeroes) segment.  NOTE: it is possible that
@@ -3561,6 +3587,11 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 
 	XLogFilePath(path, tli, *segno, wal_segment_size);
 
+	/*
+	 * Acquire and keep the ControlFileLock held *until* we have renamed the
+	 * target segment durably. See XLogFileInitInternal() for details as to why
+	 * it is dangerous otherwise.
+	 */
 	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 	if (!XLogCtl->InstallXLogFileSegmentActive)
 	{
@@ -3596,6 +3627,8 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 		/* durable_rename already emitted log message */
 		return false;
 	}
+
+	pg_atomic_write_u64(&XLogCtl->last_known_installed_segno, *segno);
 
 	LWLockRelease(ControlFileLock);
 
@@ -4913,6 +4946,7 @@ XLOGShmemInit(void)
 	char	   *allocptr;
 	int			i;
 	ControlFileData *localControlFile;
+	XLogSegNo 	lastKnownInstalledSegno = 0;
 
 #ifdef WAL_DEBUG
 
@@ -4960,6 +4994,12 @@ XLOGShmemInit(void)
 	{
 		memcpy(ControlFile, localControlFile, sizeof(ControlFileData));
 		pfree(localControlFile);
+		/*
+		 * A decent approximation for the last known installed WAL segment
+		 * number can be the segment in which the checkpoint record resides,
+		 * specially in cases where we have had a clean shutdown.
+		 */
+		XLByteToSeg(ControlFile->checkPoint, lastKnownInstalledSegno, wal_segment_size);
 	}
 
 	/*
@@ -5014,6 +5054,7 @@ XLOGShmemInit(void)
 	pg_atomic_init_u64(&XLogCtl->logWriteResult, InvalidXLogRecPtr);
 	pg_atomic_init_u64(&XLogCtl->logFlushResult, InvalidXLogRecPtr);
 	pg_atomic_init_u64(&XLogCtl->unloggedLSN, InvalidXLogRecPtr);
+	pg_atomic_init_u64(&XLogCtl->last_known_installed_segno, lastKnownInstalledSegno);
 }
 
 /*
