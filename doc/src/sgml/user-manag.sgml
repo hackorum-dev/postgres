@@ -672,6 +672,17 @@ GRANT pg_signal_backend TO admin_user;
      </listitem>
     </varlistentry>
 
+    <varlistentry id="predefined-role-pg-manage-extensions" xreflabel="pg_manage_extensions">
+     <term><varname>pg_manage_extensions</varname></term>
+     <listitem>
+      <para>
+       <literal>pg_manage_extensions</literal> allows creating, altering or
+       dropping extensions, even if the extensions are untrusted or the user
+       does not have <literal>CREATE</literal> rights on the database.
+      </para>
+     </listitem>
+    </varlistentry>
+
     <varlistentry id="predefined-role-pg-monitor" xreflabel="pg_monitor">
      <term><varname>pg_monitor</varname></term>
      <term><varname>pg_read_all_settings</varname></term>
