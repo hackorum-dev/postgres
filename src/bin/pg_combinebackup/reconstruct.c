@@ -49,6 +49,9 @@ typedef struct rfile
 static void debug_reconstruction(int n_source,
 								 rfile **sources,
 								 bool dry_run);
+static void debug_reconstruction_plan(unsigned block_length,
+									  rfile **sourcemap,
+									  off_t *offsetmap);
 static unsigned find_reconstructed_block_length(rfile *s);
 static rfile *make_incremental_rfile(char *filename);
 static rfile *make_rfile(char *filename, bool missing_ok);
@@ -61,6 +64,9 @@ static void write_reconstructed_file(char *input_filename,
 									 CopyMethod copy_method,
 									 bool debug,
 									 bool dry_run);
+static void copy_block(int fd, char *output_filename, rfile *source,
+					   off_t offset, CopyMethod copy_method,
+					   pg_checksum_context *checksum_ctx);
 static void read_bytes(rfile *rf, void *buffer, unsigned length);
 static void write_block(int fd, char *output_filename,
 						uint8 *buffer,
@@ -429,6 +435,68 @@ debug_reconstruction(int n_source, rfile **sources, bool dry_run)
 }
 
 /*
+ * Print out information about the source of each reconstructed block.
+ */
+static void
+debug_reconstruction_plan(unsigned block_length, rfile **sourcemap,
+						  off_t *offsetmap)
+{
+	StringInfoData debug_buf;
+	unsigned	start_of_range = 0;
+	unsigned	current_block = 0;
+
+	/* Print out the plan for reconstructing this file. */
+	initStringInfo(&debug_buf);
+	while (current_block < block_length)
+	{
+		rfile	   *s = sourcemap[current_block];
+
+		/* Extend range, if possible. */
+		if (current_block + 1 < block_length &&
+			s == sourcemap[current_block + 1])
+		{
+			++current_block;
+			continue;
+		}
+
+		/* Add details about this range. */
+		if (s == NULL)
+		{
+			if (current_block == start_of_range)
+				appendStringInfo(&debug_buf, " %u:zero", current_block);
+			else
+				appendStringInfo(&debug_buf, " %u-%u:zero",
+								 start_of_range, current_block);
+		}
+		else
+		{
+			if (current_block == start_of_range)
+				appendStringInfo(&debug_buf, " %u:%s@" UINT64_FORMAT,
+								 current_block, s->filename,
+								 (uint64) offsetmap[current_block]);
+			else
+				appendStringInfo(&debug_buf, " %u-%u:%s@" UINT64_FORMAT,
+								 start_of_range, current_block,
+								 s->filename,
+								 (uint64) offsetmap[current_block]);
+		}
+
+		/* Begin new range. */
+		start_of_range = ++current_block;
+
+		/* If the output is very long or we are done, dump it now. */
+		if (current_block == block_length || debug_buf.len > 1024)
+		{
+			pg_log_debug("reconstruction plan:%s", debug_buf.data);
+			resetStringInfo(&debug_buf);
+		}
+	}
+
+	/* Free memory. */
+	pfree(debug_buf.data);
+}
+
+/*
  * When we perform reconstruction using an incremental file, the output file
  * should be at least as long as the truncation_block_length. Any blocks
  * present in the incremental file increase the output length as far as is
@@ -565,10 +633,6 @@ write_reconstructed_file(char *input_filename,
 	/* Debugging output. */
 	if (debug)
 	{
-		StringInfoData debug_buf;
-		unsigned	start_of_range = 0;
-		unsigned	current_block = 0;
-
 		/* Basic information about the output file to be produced. */
 		if (dry_run)
 			pg_log_debug("would reconstruct \"%s\" (%u blocks, checksum %s)",
@@ -579,55 +643,8 @@ write_reconstructed_file(char *input_filename,
 						 output_filename, block_length,
 						 pg_checksum_type_name(checksum_ctx->type));
 
-		/* Print out the plan for reconstructing this file. */
-		initStringInfo(&debug_buf);
-		while (current_block < block_length)
-		{
-			rfile	   *s = sourcemap[current_block];
-
-			/* Extend range, if possible. */
-			if (current_block + 1 < block_length &&
-				s == sourcemap[current_block + 1])
-			{
-				++current_block;
-				continue;
-			}
-
-			/* Add details about this range. */
-			if (s == NULL)
-			{
-				if (current_block == start_of_range)
-					appendStringInfo(&debug_buf, " %u:zero", current_block);
-				else
-					appendStringInfo(&debug_buf, " %u-%u:zero",
-									 start_of_range, current_block);
-			}
-			else
-			{
-				if (current_block == start_of_range)
-					appendStringInfo(&debug_buf, " %u:%s@" UINT64_FORMAT,
-									 current_block, s->filename,
-									 (uint64) offsetmap[current_block]);
-				else
-					appendStringInfo(&debug_buf, " %u-%u:%s@" UINT64_FORMAT,
-									 start_of_range, current_block,
-									 s->filename,
-									 (uint64) offsetmap[current_block]);
-			}
-
-			/* Begin new range. */
-			start_of_range = ++current_block;
-
-			/* If the output is very long or we are done, dump it now. */
-			if (current_block == block_length || debug_buf.len > 1024)
-			{
-				pg_log_debug("reconstruction plan:%s", debug_buf.data);
-				resetStringInfo(&debug_buf);
-			}
-		}
-
-		/* Free memory. */
-		pfree(debug_buf.data);
+		/* Detailed dump. */
+		debug_reconstruction_plan(block_length, sourcemap, offsetmap);
 	}
 
 	/* Open the output file, except in dry_run mode. */
@@ -657,7 +674,7 @@ write_reconstructed_file(char *input_filename,
 		if (dry_run)
 			continue;
 
-		/* Read or zero-fill the block as appropriate. */
+		/* If there's no source for the block, zero fill it. */
 		if (s == NULL)
 		{
 			/*
@@ -673,57 +690,9 @@ write_reconstructed_file(char *input_filename,
 			continue;
 		}
 
-		/* Copy the block using the appropriate copy method. */
-		if (copy_method != COPY_METHOD_COPY_FILE_RANGE)
-		{
-			/*
-			 * Read the block from the correct source file, and then write it
-			 * out, possibly with a checksum update.
-			 */
-			read_block(s, offsetmap[i], buffer);
-			write_block(wfd, output_filename, buffer, checksum_ctx);
-		}
-		else					/* use copy_file_range */
-		{
-#if defined(HAVE_COPY_FILE_RANGE)
-			/* copy_file_range modifies the offset, so use a local copy */
-			off_t		off = offsetmap[i];
-			size_t		nwritten = 0;
-
-			/*
-			 * Retry until we've written all the bytes (the offset is updated
-			 * by copy_file_range, and so is the wfd file offset).
-			 */
-			do
-			{
-				int			wb;
-
-				wb = copy_file_range(s->fd, &off, wfd, NULL, BLCKSZ - nwritten, 0);
-
-				if (wb < 0)
-					pg_fatal("error while copying file range from \"%s\" to \"%s\": %m",
-							 input_filename, output_filename);
-
-				nwritten += wb;
-
-			} while (BLCKSZ > nwritten);
-
-			/*
-			 * When checksum calculation not needed, we're done, otherwise
-			 * read the block and pass it to the checksum calculation.
-			 */
-			if (checksum_ctx->type == CHECKSUM_TYPE_NONE)
-				continue;
-
-			read_block(s, offsetmap[i], buffer);
-
-			if (pg_checksum_update(checksum_ctx, buffer, BLCKSZ) < 0)
-				pg_fatal("could not update checksum of file \"%s\"",
-						 output_filename);
-#else
-			pg_fatal("copy_file_range not supported on this platform");
-#endif
-		}
+		/* Copy the block. */
+		copy_block(wfd, output_filename, s, offsetmap[i], copy_method,
+				   checksum_ctx);
 	}
 
 	/* Debugging output. */
@@ -738,6 +707,73 @@ write_reconstructed_file(char *input_filename,
 	/* Close the output file. */
 	if (wfd >= 0 && close(wfd) != 0)
 		pg_fatal("could not close file \"%s\": %m", output_filename);
+}
+
+/*
+ * Copy one block from source to output.
+ *
+ * The block should be written to fd; in case of error, output_filename
+ * should be used in the error message. The block should be written from
+ * source at the given offset. copy_method specifies how the copy is
+ * to be performed, and checksum_ctx should be updated for the bytes written.
+ */
+static void
+copy_block(int fd, char *output_filename, rfile *source, off_t offset,
+		   CopyMethod copy_method, pg_checksum_context *checksum_ctx)
+{
+	uint8		buffer[BLCKSZ];
+
+	/* Copy the block using the appropriate copy method. */
+	if (copy_method != COPY_METHOD_COPY_FILE_RANGE)
+	{
+		/*
+		 * Read the block from the correct source file, and then write it out,
+		 * possibly with a checksum update.
+		 */
+		read_block(source, offset, buffer);
+		write_block(fd, output_filename, buffer, checksum_ctx);
+	}
+	else						/* use copy_file_range */
+	{
+#if defined(HAVE_COPY_FILE_RANGE)
+		/* copy_file_range modifies the offset, so use a local copy */
+		off_t		off = offset;
+		size_t		nwritten = 0;
+
+		/*
+		 * Retry until we've written all the bytes (the offset is updated by
+		 * copy_file_range, and so is the fd file offset).
+		 */
+		do
+		{
+			int			wb;
+
+			wb = copy_file_range(source->fd, &off, fd, NULL, BLCKSZ - nwritten, 0);
+
+			if (wb < 0)
+				pg_fatal("error while copying file range from \"%s\" to \"%s\": %m",
+						 input_filename, output_filename);
+
+			nwritten += wb;
+
+		} while (BLCKSZ > nwritten);
+
+		/*
+		 * When checksum calculation not needed, we're done, otherwise read
+		 * the block and pass it to the checksum calculation.
+		 */
+		if (checksum_ctx->type == CHECKSUM_TYPE_NONE)
+			continue;
+
+		read_block(s, offset, buffer);
+
+		if (pg_checksum_update(checksum_ctx, buffer, BLCKSZ) < 0)
+			pg_fatal("could not update checksum of file \"%s\"",
+					 output_filename);
+#else
+		pg_fatal("copy_file_range not supported on this platform");
+#endif
+	}
 }
 
 /*
