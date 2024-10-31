@@ -1261,13 +1261,14 @@ execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 	ListCell   *lc2;
 
 	/*
-	 * Enforce superuser-ness if appropriate.  We postpone these checks until
-	 * here so that the control flags are correctly associated with the right
+	 * Enforce superuser-ness/membership of the pg_manage_extensions
+	 * predefined role if appropriate.  We postpone these checks until here
+	 * so that the control flags are correctly associated with the right
 	 * script(s) if they happen to be set in secondary control files.
 	 */
 	if (control->superuser && !superuser())
 	{
-		if (extension_is_trusted(control))
+		if (extension_is_trusted(control) || has_privs_of_role(GetUserId(), ROLE_PG_MANAGE_EXTENSIONS))
 			switch_to_superuser = true;
 		else if (from_version == NULL)
 			ereport(ERROR,
@@ -1276,7 +1277,7 @@ execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 							control->name),
 					 control->trusted
 					 ? errhint("Must have CREATE privilege on current database to create this extension.")
-					 : errhint("Must be superuser to create this extension.")));
+					 : errhint("Must be superuser or member of pg_manage_extensions to create this extension.")));
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -1284,7 +1285,7 @@ execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 							control->name),
 					 control->trusted
 					 ? errhint("Must have CREATE privilege on current database to update this extension.")
-					 : errhint("Must be superuser to update this extension.")));
+					 : errhint("Must be superuser or member of pg_manage_extensions to update this extension.")));
 	}
 
 	filename = get_extension_script_filename(control, from_version, version);
