@@ -4640,13 +4640,14 @@ ExecModifyTable(PlanState *pstate)
 	CmdType		operation = node->operation;
 	ResultRelInfo *resultRelInfo;
 	PlanState  *subplanstate;
-	TupleTableSlot *slot;
+	TupleTableSlot *slot = NULL;
 	TupleTableSlot *oldSlot;
 	ItemPointerData tuple_ctid;
 	HeapTupleData oldtupdata;
 	HeapTuple	oldtuple;
 	ItemPointer tupleid;
 	bool		tuplock;
+	List		*items_to_delete = NULL;
 
 	CHECK_FOR_INTERRUPTS();
 
@@ -5026,8 +5027,15 @@ ExecModifyTable(PlanState *pstate)
 				break;
 
 			case CMD_DELETE:
-				slot = ExecDelete(&context, resultRelInfo, tupleid, oldtuple,
-								  true, false, node->canSetTag, NULL, NULL, NULL);
+				ItemPointer item_ptr = (ItemPointer) palloc0(sizeof(ItemPointerData));
+				item_ptr->ip_blkid = tupleid->ip_blkid;
+				item_ptr->ip_posid = tupleid->ip_posid;
+
+				if (!items_to_delete)
+					items_to_delete = list_make1(item_ptr);
+				else
+					items_to_delete = lappend(items_to_delete, item_ptr);
+
 				break;
 
 			case CMD_MERGE:
@@ -5044,8 +5052,26 @@ ExecModifyTable(PlanState *pstate)
 		 * If we got a RETURNING result, return it to caller.  We'll continue
 		 * the work on next call.
 		 */
-		if (slot)
+		if (slot && !(operation == CMD_DELETE))
 			return slot;
+	}
+
+	if (list_length(items_to_delete) > 0)
+	{
+		ListCell *cell;
+		ereport(WARNING, errmsg("NUM ITEMS TO DELETE = %d", list_length(items_to_delete)));
+		foreach(cell, items_to_delete)
+		{
+			ItemPointer item_ptr = (ItemPointer) lfirst(cell);
+			if (!slot)
+				slot = ExecDelete(&context, resultRelInfo, item_ptr, NULL,
+								  true, false, node->canSetTag, NULL, NULL, NULL);
+			else
+				ExecDelete(&context, resultRelInfo, item_ptr, NULL,
+							true, false, node->canSetTag, NULL, NULL, NULL);
+		}
+
+		return slot;
 	}
 
 	/*
