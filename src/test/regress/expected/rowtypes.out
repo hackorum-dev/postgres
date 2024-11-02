@@ -1193,10 +1193,10 @@ explain (verbose, costs off)
 select r, r is null as isnull, r is not null as isnotnull
 from (values (1,row(1,2)), (1,row(null,null)), (1,null),
              (null,row(1,2)), (null,row(null,null)), (null,null) ) r(a,b);
-                                                                                                         QUERY PLAN                                                                                                          
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Values Scan on "*VALUES*"
-   Output: ROW("*VALUES*".column1, "*VALUES*".column2), (("*VALUES*".column1 IS NULL) AND ("*VALUES*".column2 IS NOT DISTINCT FROM NULL)), (("*VALUES*".column1 IS NOT NULL) AND ("*VALUES*".column2 IS DISTINCT FROM NULL))
+                                                            QUERY PLAN                                                             
+-----------------------------------------------------------------------------------------------------------------------------------
+ Values Scan on r
+   Output: ROW(r.a, r.b), ((r.a IS NULL) AND (r.b IS NOT DISTINCT FROM NULL)), ((r.a IS NOT NULL) AND (r.b IS DISTINCT FROM NULL))
 (2 rows)
 
 select r, r is null as isnull, r is not null as isnotnull

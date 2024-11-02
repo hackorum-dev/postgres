@@ -141,11 +141,11 @@ cross join lateral
                              QUERY PLAN                             
 --------------------------------------------------------------------
  Nested Loop
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v
    ->  Limit
          ->  Index Only Scan using gist_tbl_point_index on gist_tbl
-               Index Cond: (p <@ "*VALUES*".column1)
-               Order By: (p <-> ("*VALUES*".column1)[0])
+               Index Cond: (p <@ v.bb)
+               Order By: (p <-> (v.bb)[0])
 (6 rows)
 
 select p from

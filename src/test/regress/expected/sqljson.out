@@ -1070,15 +1070,15 @@ DROP VIEW json_arrayagg_view;
 -- Test JSON_ARRAY(subquery) deparsing
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT JSON_ARRAY(SELECT i FROM (VALUES (1), (2), (NULL), (4)) foo(i) RETURNING jsonb);
-                             QUERY PLAN                              
----------------------------------------------------------------------
+                       QUERY PLAN                       
+--------------------------------------------------------
  Result
    Output: (InitPlan 1).col1
    InitPlan 1
      ->  Aggregate
-           Output: JSON_ARRAYAGG("*VALUES*".column1 RETURNING jsonb)
-           ->  Values Scan on "*VALUES*"
-                 Output: "*VALUES*".column1
+           Output: JSON_ARRAYAGG(foo.i RETURNING jsonb)
+           ->  Values Scan on foo
+                 Output: foo.i
 (7 rows)
 
 CREATE VIEW json_array_subquery_view AS

@@ -36,6 +36,7 @@ extern Query *parse_analyze_withcb(RawStmt *parseTree, const char *sourceText,
 
 extern Query *parse_sub_analyze(Node *parseTree, ParseState *parentParseState,
 								CommonTableExpr *parentCTE,
+								Alias *parentAlias,
 								bool locked_from_parent,
 								bool resolve_unknowns);
 

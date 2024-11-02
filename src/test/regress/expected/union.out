@@ -481,27 +481,27 @@ reset enable_hashagg;
 set enable_hashagg to on;
 explain (costs off)
 select x from (values ('11'::varbit), ('10'::varbit)) _(x) union select x from (values ('11'::varbit), ('10'::varbit)) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+              QUERY PLAN              
+--------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1
+         Sort Key: _.x
          ->  Append
-               ->  Values Scan on "*VALUES*"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on _
+               ->  Values Scan on __1
 (6 rows)
 
 set enable_hashagg to off;
 explain (costs off)
 select x from (values ('11'::varbit), ('10'::varbit)) _(x) union select x from (values ('11'::varbit), ('10'::varbit)) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+              QUERY PLAN              
+--------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1
+         Sort Key: _.x
          ->  Append
-               ->  Values Scan on "*VALUES*"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on _
+               ->  Values Scan on __1
 (6 rows)
 
 reset enable_hashagg;
@@ -509,13 +509,13 @@ reset enable_hashagg;
 set enable_hashagg to on;
 explain (costs off)
 select x from (values (array[1, 2]), (array[1, 3])) _(x) union select x from (values (array[1, 2]), (array[1, 4])) _(x);
-               QUERY PLAN                
------------------------------------------
+           QUERY PLAN           
+--------------------------------
  HashAggregate
-   Group Key: "*VALUES*".column1
+   Group Key: _.x
    ->  Append
-         ->  Values Scan on "*VALUES*"
-         ->  Values Scan on "*VALUES*_1"
+         ->  Values Scan on _
+         ->  Values Scan on __1
 (5 rows)
 
 select x from (values (array[1, 2]), (array[1, 3])) _(x) union select x from (values (array[1, 2]), (array[1, 4])) _(x);
@@ -528,14 +528,14 @@ select x from (values (array[1, 2]), (array[1, 3])) _(x) union select x from (va
 
 explain (costs off)
 select x from (values (array[1, 2]), (array[1, 3])) _(x) intersect select x from (values (array[1, 2]), (array[1, 4])) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+                QUERY PLAN                 
+-------------------------------------------
  HashSetOp Intersect
    ->  Append
          ->  Subquery Scan on "*SELECT* 1"
-               ->  Values Scan on "*VALUES*"
+               ->  Values Scan on _
          ->  Subquery Scan on "*SELECT* 2"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on __1
 (6 rows)
 
 select x from (values (array[1, 2]), (array[1, 3])) _(x) intersect select x from (values (array[1, 2]), (array[1, 4])) _(x);
@@ -546,14 +546,14 @@ select x from (values (array[1, 2]), (array[1, 3])) _(x) intersect select x from
 
 explain (costs off)
 select x from (values (array[1, 2]), (array[1, 3])) _(x) except select x from (values (array[1, 2]), (array[1, 4])) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+                QUERY PLAN                 
+-------------------------------------------
  HashSetOp Except
    ->  Append
          ->  Subquery Scan on "*SELECT* 1"
-               ->  Values Scan on "*VALUES*"
+               ->  Values Scan on _
          ->  Subquery Scan on "*SELECT* 2"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on __1
 (6 rows)
 
 select x from (values (array[1, 2]), (array[1, 3])) _(x) except select x from (values (array[1, 2]), (array[1, 4])) _(x);
@@ -565,14 +565,14 @@ select x from (values (array[1, 2]), (array[1, 3])) _(x) except select x from (v
 -- non-hashable type
 explain (costs off)
 select x from (values (array['10'::varbit]), (array['11'::varbit])) _(x) union select x from (values (array['10'::varbit]), (array['01'::varbit])) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+              QUERY PLAN              
+--------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1
+         Sort Key: _.x
          ->  Append
-               ->  Values Scan on "*VALUES*"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on _
+               ->  Values Scan on __1
 (6 rows)
 
 select x from (values (array['10'::varbit]), (array['11'::varbit])) _(x) union select x from (values (array['10'::varbit]), (array['01'::varbit])) _(x);
@@ -586,14 +586,14 @@ select x from (values (array['10'::varbit]), (array['11'::varbit])) _(x) union s
 set enable_hashagg to off;
 explain (costs off)
 select x from (values (array[1, 2]), (array[1, 3])) _(x) union select x from (values (array[1, 2]), (array[1, 4])) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+              QUERY PLAN              
+--------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1
+         Sort Key: _.x
          ->  Append
-               ->  Values Scan on "*VALUES*"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on _
+               ->  Values Scan on __1
 (6 rows)
 
 select x from (values (array[1, 2]), (array[1, 3])) _(x) union select x from (values (array[1, 2]), (array[1, 4])) _(x);
@@ -606,16 +606,16 @@ select x from (values (array[1, 2]), (array[1, 3])) _(x) union select x from (va
 
 explain (costs off)
 select x from (values (array[1, 2]), (array[1, 3])) _(x) intersect select x from (values (array[1, 2]), (array[1, 4])) _(x);
-                     QUERY PLAN                      
------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  SetOp Intersect
    ->  Sort
          Sort Key: "*SELECT* 1".x
          ->  Append
                ->  Subquery Scan on "*SELECT* 1"
-                     ->  Values Scan on "*VALUES*"
+                     ->  Values Scan on _
                ->  Subquery Scan on "*SELECT* 2"
-                     ->  Values Scan on "*VALUES*_1"
+                     ->  Values Scan on __1
 (8 rows)
 
 select x from (values (array[1, 2]), (array[1, 3])) _(x) intersect select x from (values (array[1, 2]), (array[1, 4])) _(x);
@@ -626,16 +626,16 @@ select x from (values (array[1, 2]), (array[1, 3])) _(x) intersect select x from
 
 explain (costs off)
 select x from (values (array[1, 2]), (array[1, 3])) _(x) except select x from (values (array[1, 2]), (array[1, 4])) _(x);
-                     QUERY PLAN                      
------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  SetOp Except
    ->  Sort
          Sort Key: "*SELECT* 1".x
          ->  Append
                ->  Subquery Scan on "*SELECT* 1"
-                     ->  Values Scan on "*VALUES*"
+                     ->  Values Scan on _
                ->  Subquery Scan on "*SELECT* 2"
-                     ->  Values Scan on "*VALUES*_1"
+                     ->  Values Scan on __1
 (8 rows)
 
 select x from (values (array[1, 2]), (array[1, 3])) _(x) except select x from (values (array[1, 2]), (array[1, 4])) _(x);
@@ -649,14 +649,14 @@ reset enable_hashagg;
 set enable_hashagg to on;
 explain (costs off)
 select x from (values (row(1, 2)), (row(1, 3))) _(x) union select x from (values (row(1, 2)), (row(1, 4))) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+              QUERY PLAN              
+--------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1
+         Sort Key: _.x
          ->  Append
-               ->  Values Scan on "*VALUES*"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on _
+               ->  Values Scan on __1
 (6 rows)
 
 select x from (values (row(1, 2)), (row(1, 3))) _(x) union select x from (values (row(1, 2)), (row(1, 4))) _(x);
@@ -669,16 +669,16 @@ select x from (values (row(1, 2)), (row(1, 3))) _(x) union select x from (values
 
 explain (costs off)
 select x from (values (row(1, 2)), (row(1, 3))) _(x) intersect select x from (values (row(1, 2)), (row(1, 4))) _(x);
-                     QUERY PLAN                      
------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  SetOp Intersect
    ->  Sort
          Sort Key: "*SELECT* 1".x
          ->  Append
                ->  Subquery Scan on "*SELECT* 1"
-                     ->  Values Scan on "*VALUES*"
+                     ->  Values Scan on _
                ->  Subquery Scan on "*SELECT* 2"
-                     ->  Values Scan on "*VALUES*_1"
+                     ->  Values Scan on __1
 (8 rows)
 
 select x from (values (row(1, 2)), (row(1, 3))) _(x) intersect select x from (values (row(1, 2)), (row(1, 4))) _(x);
@@ -689,16 +689,16 @@ select x from (values (row(1, 2)), (row(1, 3))) _(x) intersect select x from (va
 
 explain (costs off)
 select x from (values (row(1, 2)), (row(1, 3))) _(x) except select x from (values (row(1, 2)), (row(1, 4))) _(x);
-                     QUERY PLAN                      
------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  SetOp Except
    ->  Sort
          Sort Key: "*SELECT* 1".x
          ->  Append
                ->  Subquery Scan on "*SELECT* 1"
-                     ->  Values Scan on "*VALUES*"
+                     ->  Values Scan on _
                ->  Subquery Scan on "*SELECT* 2"
-                     ->  Values Scan on "*VALUES*_1"
+                     ->  Values Scan on __1
 (8 rows)
 
 select x from (values (row(1, 2)), (row(1, 3))) _(x) except select x from (values (row(1, 2)), (row(1, 4))) _(x);
@@ -712,14 +712,14 @@ select x from (values (row(1, 2)), (row(1, 3))) _(x) except select x from (value
 -- type is hashable.  (Otherwise, this would fail at execution time.)
 explain (costs off)
 select x from (values (row('10'::varbit)), (row('11'::varbit))) _(x) union select x from (values (row('10'::varbit)), (row('01'::varbit))) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+              QUERY PLAN              
+--------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1
+         Sort Key: _.x
          ->  Append
-               ->  Values Scan on "*VALUES*"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on _
+               ->  Values Scan on __1
 (6 rows)
 
 select x from (values (row('10'::varbit)), (row('11'::varbit))) _(x) union select x from (values (row('10'::varbit)), (row('01'::varbit))) _(x);
@@ -735,14 +735,14 @@ select x from (values (row('10'::varbit)), (row('11'::varbit))) _(x) union selec
 create type ct1 as (f1 varbit);
 explain (costs off)
 select x from (values (row('10'::varbit)::ct1), (row('11'::varbit)::ct1)) _(x) union select x from (values (row('10'::varbit)::ct1), (row('01'::varbit)::ct1)) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+              QUERY PLAN              
+--------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1
+         Sort Key: _.x
          ->  Append
-               ->  Values Scan on "*VALUES*"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on _
+               ->  Values Scan on __1
 (6 rows)
 
 select x from (values (row('10'::varbit)::ct1), (row('11'::varbit)::ct1)) _(x) union select x from (values (row('10'::varbit)::ct1), (row('01'::varbit)::ct1)) _(x);
@@ -757,14 +757,14 @@ drop type ct1;
 set enable_hashagg to off;
 explain (costs off)
 select x from (values (row(1, 2)), (row(1, 3))) _(x) union select x from (values (row(1, 2)), (row(1, 4))) _(x);
-                  QUERY PLAN                   
------------------------------------------------
+              QUERY PLAN              
+--------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1
+         Sort Key: _.x
          ->  Append
-               ->  Values Scan on "*VALUES*"
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on _
+               ->  Values Scan on __1
 (6 rows)
 
 select x from (values (row(1, 2)), (row(1, 3))) _(x) union select x from (values (row(1, 2)), (row(1, 4))) _(x);
@@ -777,16 +777,16 @@ select x from (values (row(1, 2)), (row(1, 3))) _(x) union select x from (values
 
 explain (costs off)
 select x from (values (row(1, 2)), (row(1, 3))) _(x) intersect select x from (values (row(1, 2)), (row(1, 4))) _(x);
-                     QUERY PLAN                      
------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  SetOp Intersect
    ->  Sort
          Sort Key: "*SELECT* 1".x
          ->  Append
                ->  Subquery Scan on "*SELECT* 1"
-                     ->  Values Scan on "*VALUES*"
+                     ->  Values Scan on _
                ->  Subquery Scan on "*SELECT* 2"
-                     ->  Values Scan on "*VALUES*_1"
+                     ->  Values Scan on __1
 (8 rows)
 
 select x from (values (row(1, 2)), (row(1, 3))) _(x) intersect select x from (values (row(1, 2)), (row(1, 4))) _(x);
@@ -797,16 +797,16 @@ select x from (values (row(1, 2)), (row(1, 3))) _(x) intersect select x from (va
 
 explain (costs off)
 select x from (values (row(1, 2)), (row(1, 3))) _(x) except select x from (values (row(1, 2)), (row(1, 4))) _(x);
-                     QUERY PLAN                      
------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  SetOp Except
    ->  Sort
          Sort Key: "*SELECT* 1".x
          ->  Append
                ->  Subquery Scan on "*SELECT* 1"
-                     ->  Values Scan on "*VALUES*"
+                     ->  Values Scan on _
                ->  Subquery Scan on "*SELECT* 2"
-                     ->  Values Scan on "*VALUES*_1"
+                     ->  Values Scan on __1
 (8 rows)
 
 select x from (values (row(1, 2)), (row(1, 3))) _(x) except select x from (values (row(1, 2)), (row(1, 4))) _(x);

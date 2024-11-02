@@ -221,6 +221,7 @@ parse_analyze_withcb(RawStmt *parseTree, const char *sourceText,
 Query *
 parse_sub_analyze(Node *parseTree, ParseState *parentParseState,
 				  CommonTableExpr *parentCTE,
+				  Alias *parentAlias,
 				  bool locked_from_parent,
 				  bool resolve_unknowns)
 {
@@ -228,6 +229,7 @@ parse_sub_analyze(Node *parseTree, ParseState *parentParseState,
 	Query	   *query;
 
 	pstate->p_parent_cte = parentCTE;
+	pstate->p_parent_alias = parentAlias;
 	pstate->p_locked_from_parent = locked_from_parent;
 	pstate->p_resolve_unknowns = resolve_unknowns;
 
@@ -1578,6 +1580,7 @@ transformValuesClause(ParseState *pstate, SelectStmt *stmt)
 	List	  **colexprs = NULL;
 	int			sublist_length = -1;
 	bool		lateral = false;
+	Alias	   *valias;
 	ParseNamespaceItem *nsitem;
 	ListCell   *lc;
 	ListCell   *lc2;
@@ -1725,11 +1728,20 @@ transformValuesClause(ParseState *pstate, SelectStmt *stmt)
 		lateral = true;
 
 	/*
-	 * Generate the VALUES RTE
+	 * Generate the VALUES RTE.  If we're in a RangeSubselect of an outer
+	 * query level, and that had an Alias, we prefer to use that alias rather
+	 * than "*VALUES*".columnN.  But stick with "*VALUES*" if there is a
+	 * sortClause, because that could contain references to the "*VALUES*"
+	 * names.  (If we supported a lockingClause, that could too; but we
+	 * don't.)
 	 */
+	if (pstate->p_parent_alias && stmt->sortClause == NIL)
+		valias = copyObject(pstate->p_parent_alias);
+	else
+		valias = NULL;
 	nsitem = addRangeTableEntryForValues(pstate, exprsLists,
 										 coltypes, coltypmods, colcollations,
-										 NULL, lateral, true);
+										 valias, lateral, true);
 	addNSItemToQuery(pstate, nsitem, true, true, true);
 
 	/*
@@ -2167,7 +2179,7 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 		 * namespace list.
 		 */
 		selectQuery = parse_sub_analyze((Node *) stmt, pstate,
-										NULL, false, false);
+										NULL, NULL, false, false);
 
 		/*
 		 * Check for bogus references to Vars on the current query level (but

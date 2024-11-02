@@ -251,14 +251,14 @@ select pct, count(unique1) from
   (values (0),(100)) v(pct),
   lateral (select * from tenk1 tablesample bernoulli (pct)) ss
   group by pct;
-                       QUERY PLAN                       
---------------------------------------------------------
+                QUERY PLAN                 
+-------------------------------------------
  HashAggregate
-   Group Key: "*VALUES*".column1
+   Group Key: v.pct
    ->  Nested Loop
-         ->  Values Scan on "*VALUES*"
+         ->  Values Scan on v
          ->  Sample Scan on tenk1
-               Sampling: bernoulli ("*VALUES*".column1)
+               Sampling: bernoulli (v.pct)
 (6 rows)
 
 select pct, count(unique1) from

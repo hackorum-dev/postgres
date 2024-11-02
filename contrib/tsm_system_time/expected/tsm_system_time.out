@@ -47,7 +47,7 @@ SELECT * FROM
          ->  Materialize
                ->  Sample Scan on test_tablesample
                      Sampling: system_time ('100000'::double precision)
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v
 (6 rows)
 
 SELECT * FROM
@@ -65,14 +65,14 @@ SELECT * FROM
   (VALUES (0),(100000)) v(time),
   LATERAL (SELECT COUNT(*) FROM test_tablesample
            TABLESAMPLE system_time (time)) ss;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Nested Loop
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v
    ->  Aggregate
          ->  Materialize
                ->  Sample Scan on test_tablesample
-                     Sampling: system_time ("*VALUES*".column1)
+                     Sampling: system_time (v."time")
 (6 rows)
 
 SELECT * FROM

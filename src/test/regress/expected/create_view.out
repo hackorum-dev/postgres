@@ -2189,34 +2189,34 @@ select pg_get_viewdef('tt25v', true);
 -- also check cases seen only in EXPLAIN
 explain (verbose, costs off)
 select * from tt24v;
-                                        QUERY PLAN                                        
-------------------------------------------------------------------------------------------
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
  Hash Join
-   Output: (cte.r).column2, ((ROW("*VALUES*".column1, "*VALUES*".column2))).column2
-   Hash Cond: ((cte.r).column1 = ((ROW("*VALUES*".column1, "*VALUES*".column2))).column1)
+   Output: (cte.r).column2, ((ROW(rr.column1, rr.column2))).column2
+   Hash Cond: ((cte.r).column1 = ((ROW(rr.column1, rr.column2))).column1)
    CTE cte
-     ->  Values Scan on "*VALUES*_1"
-           Output: ROW("*VALUES*_1".column1, "*VALUES*_1".column2)
+     ->  Values Scan on r
+           Output: ROW(r.column1, r.column2)
    ->  CTE Scan on cte
          Output: cte.r
    ->  Hash
-         Output: (ROW("*VALUES*".column1, "*VALUES*".column2))
+         Output: (ROW(rr.column1, rr.column2))
          ->  Limit
-               Output: (ROW("*VALUES*".column1, "*VALUES*".column2))
-               ->  Values Scan on "*VALUES*"
-                     Output: ROW("*VALUES*".column1, "*VALUES*".column2)
+               Output: (ROW(rr.column1, rr.column2))
+               ->  Values Scan on rr
+                     Output: ROW(rr.column1, rr.column2)
 (14 rows)
 
 explain (verbose, costs off)
 select (r).column2 from (select r from (values(1,2),(3,4)) r limit 1) ss;
-                            QUERY PLAN                             
--------------------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  Subquery Scan on ss
    Output: (ss.r).column2
    ->  Limit
-         Output: (ROW("*VALUES*".column1, "*VALUES*".column2))
-         ->  Values Scan on "*VALUES*"
-               Output: ROW("*VALUES*".column1, "*VALUES*".column2)
+         Output: (ROW(r.column1, r.column2))
+         ->  Values Scan on r
+               Output: ROW(r.column1, r.column2)
 (6 rows)
 
 -- test pretty-print parenthesization rules, and SubLink deparsing
@@ -2265,6 +2265,67 @@ select viewname from pg_views where viewname = 'tt27v'; -- Ok to access a system
 (1 row)
 
 reset restrict_nonsystem_relation_kind;
+-- test assignment of aliases to VALUES clauses
+create view tt28v as
+select *
+from (values (4),(2),(3),(1) order by "*VALUES*".column1 limit 2) as t1(x);
+select pg_get_viewdef('tt28v', true);
+            pg_get_viewdef             
+---------------------------------------
+  SELECT x                            +
+    FROM ( VALUES (4), (2), (3), (1)  +
+           ORDER BY "*VALUES*".column1+
+          LIMIT 2) t1(x);
+(1 row)
+
+explain (verbose, costs off) select * from tt28v where x > 0;
+                   QUERY PLAN                   
+------------------------------------------------
+ Subquery Scan on t1
+   Output: t1.x
+   Filter: (t1.x > 0)
+   ->  Limit
+         Output: "*VALUES*".column1
+         ->  Sort
+               Output: "*VALUES*".column1
+               Sort Key: "*VALUES*".column1
+               ->  Values Scan on "*VALUES*"
+                     Output: "*VALUES*".column1
+(10 rows)
+
+create view tt29v as
+select *
+from (values (4),(2),(3),(1) order by "*VALUES*".column1) t1(a),
+     (values (9),(8),(6),(7) order by "*VALUES*".column1) t2(b);
+select pg_get_viewdef('tt29v', true);
+                pg_get_viewdef                 
+-----------------------------------------------
+  SELECT t1.a,                                +
+     t2.b                                     +
+    FROM ( VALUES (4), (2), (3), (1)          +
+           ORDER BY "*VALUES*".column1) t1(a),+
+     ( VALUES (9), (8), (6), (7)              +
+           ORDER BY "*VALUES*".column1) t2(b);
+(1 row)
+
+explain (verbose, costs off) select * from tt29v where a > 0;
+                     QUERY PLAN                     
+----------------------------------------------------
+ Nested Loop
+   Output: "*VALUES*".column1, "*VALUES*_1".column1
+   ->  Sort
+         Output: "*VALUES*".column1
+         Sort Key: "*VALUES*".column1
+         ->  Values Scan on "*VALUES*"
+               Output: "*VALUES*".column1
+               Filter: ("*VALUES*".column1 > 0)
+   ->  Sort
+         Output: "*VALUES*_1".column1
+         Sort Key: "*VALUES*_1".column1
+         ->  Values Scan on "*VALUES*_1"
+               Output: "*VALUES*_1".column1
+(13 rows)
+
 -- clean up all the random objects we made above
 DROP SCHEMA temp_view_test CASCADE;
 NOTICE:  drop cascades to 27 other objects
@@ -2296,7 +2357,7 @@ drop cascades to view aliased_view_2
 drop cascades to view aliased_view_3
 drop cascades to view aliased_view_4
 DROP SCHEMA testviewschm2 CASCADE;
-NOTICE:  drop cascades to 80 other objects
+NOTICE:  drop cascades to 82 other objects
 DETAIL:  drop cascades to table t1
 drop cascades to view temporal1
 drop cascades to view temporal2
@@ -2377,3 +2438,5 @@ drop cascades to view tt25v
 drop cascades to view tt26v
 drop cascades to table tt27v_tbl
 drop cascades to view tt27v
+drop cascades to view tt28v
+drop cascades to view tt29v

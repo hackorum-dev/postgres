@@ -49,13 +49,13 @@ SELECT * FROM
   (VALUES (0),(10),(100)) v(nrows),
   LATERAL (SELECT count(*) FROM test_tablesample
            TABLESAMPLE system_rows (nrows)) ss;
-                        QUERY PLAN                        
-----------------------------------------------------------
+                  QUERY PLAN                   
+-----------------------------------------------
  Nested Loop
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v
    ->  Aggregate
          ->  Sample Scan on test_tablesample
-               Sampling: system_rows ("*VALUES*".column1)
+               Sampling: system_rows (v.nrows)
 (5 rows)
 
 SELECT * FROM

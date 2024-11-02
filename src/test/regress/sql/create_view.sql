@@ -838,6 +838,21 @@ insert into tt27v values (1); -- Error
 select viewname from pg_views where viewname = 'tt27v'; -- Ok to access a system view.
 reset restrict_nonsystem_relation_kind;
 
+-- test assignment of aliases to VALUES clauses
+
+create view tt28v as
+select *
+from (values (4),(2),(3),(1) order by "*VALUES*".column1 limit 2) as t1(x);
+select pg_get_viewdef('tt28v', true);
+explain (verbose, costs off) select * from tt28v where x > 0;
+
+create view tt29v as
+select *
+from (values (4),(2),(3),(1) order by "*VALUES*".column1) t1(a),
+     (values (9),(8),(6),(7) order by "*VALUES*".column1) t2(b);
+select pg_get_viewdef('tt29v', true);
+explain (verbose, costs off) select * from tt29v where a > 0;
+
 -- clean up all the random objects we made above
 DROP SCHEMA temp_view_test CASCADE;
 DROP SCHEMA testviewschm2 CASCADE;

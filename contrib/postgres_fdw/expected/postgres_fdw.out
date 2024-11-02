@@ -8992,16 +8992,16 @@ insert into utrtest values (2, 'qux');
 -- with a non-direct modification plan
 explain (verbose, costs off)
 update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x returning *;
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                        QUERY PLAN                                         
+-------------------------------------------------------------------------------------------
  Update on public.utrtest
-   Output: utrtest_1.a, utrtest_1.b, "*VALUES*".column1
+   Output: utrtest_1.a, utrtest_1.b, s.x
    Foreign Update on public.remp utrtest_1
      Remote SQL: UPDATE public.loct SET a = $2 WHERE ctid = $1 RETURNING a, b
    Update on public.locp utrtest_2
    ->  Hash Join
-         Output: 1, "*VALUES*".*, "*VALUES*".column1, utrtest.tableoid, utrtest.ctid, utrtest.*
-         Hash Cond: (utrtest.a = "*VALUES*".column1)
+         Output: 1, s.*, s.x, utrtest.tableoid, utrtest.ctid, utrtest.*
+         Hash Cond: (utrtest.a = s.x)
          ->  Append
                ->  Foreign Scan on public.remp utrtest_1
                      Output: utrtest_1.a, utrtest_1.tableoid, utrtest_1.ctid, utrtest_1.*
@@ -9009,9 +9009,9 @@ update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x returning *;
                ->  Seq Scan on public.locp utrtest_2
                      Output: utrtest_2.a, utrtest_2.tableoid, utrtest_2.ctid, NULL::record
          ->  Hash
-               Output: "*VALUES*".*, "*VALUES*".column1
-               ->  Values Scan on "*VALUES*"
-                     Output: "*VALUES*".*, "*VALUES*".column1
+               Output: s.*, s.x
+               ->  Values Scan on s
+                     Output: s.*, s.x
 (18 rows)
 
 update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x returning *;
@@ -9049,16 +9049,16 @@ ERROR:  cannot route tuples into foreign table to be updated "remp"
 -- with a non-direct modification plan
 explain (verbose, costs off)
 update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x returning *;
-                                             QUERY PLAN                                              
------------------------------------------------------------------------------------------------------
+                                        QUERY PLAN                                         
+-------------------------------------------------------------------------------------------
  Update on public.utrtest
-   Output: utrtest_1.a, utrtest_1.b, "*VALUES*".column1
+   Output: utrtest_1.a, utrtest_1.b, s.x
    Update on public.locp utrtest_1
    Foreign Update on public.remp utrtest_2
      Remote SQL: UPDATE public.loct SET a = $2 WHERE ctid = $1 RETURNING a, b
    ->  Hash Join
-         Output: 3, "*VALUES*".*, "*VALUES*".column1, utrtest.tableoid, utrtest.ctid, (NULL::record)
-         Hash Cond: (utrtest.a = "*VALUES*".column1)
+         Output: 3, s.*, s.x, utrtest.tableoid, utrtest.ctid, (NULL::record)
+         Hash Cond: (utrtest.a = s.x)
          ->  Append
                ->  Seq Scan on public.locp utrtest_1
                      Output: utrtest_1.a, utrtest_1.tableoid, utrtest_1.ctid, NULL::record
@@ -9066,9 +9066,9 @@ update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x returning *;
                      Output: utrtest_2.a, utrtest_2.tableoid, utrtest_2.ctid, utrtest_2.*
                      Remote SQL: SELECT a, b, ctid FROM public.loct FOR UPDATE
          ->  Hash
-               Output: "*VALUES*".*, "*VALUES*".column1
-               ->  Values Scan on "*VALUES*"
-                     Output: "*VALUES*".*, "*VALUES*".column1
+               Output: s.*, s.x
+               ->  Values Scan on s
+                     Output: s.*, s.x
 (18 rows)
 
 update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x returning *; -- ERROR

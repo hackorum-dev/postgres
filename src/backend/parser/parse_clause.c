@@ -428,6 +428,7 @@ transformRangeSubselect(ParseState *pstate, RangeSubselect *r)
 	 * might still be required (if there is an all-tables locking clause).
 	 */
 	query = parse_sub_analyze(r->subquery, pstate, NULL,
+							  r->alias,
 							  isLockedRefname(pstate,
 											  r->alias == NULL ? NULL :
 											  r->alias->aliasname),

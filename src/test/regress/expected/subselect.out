@@ -1124,7 +1124,7 @@ explain (verbose, costs off)
     (select (select now()) as x from (values(1),(2)) v(y)) ss;
                    QUERY PLAN                   
 ------------------------------------------------
- Values Scan on "*VALUES*"
+ Values Scan on v
    Output: (InitPlan 1).col1, (InitPlan 2).col1
    InitPlan 1
      ->  Result
@@ -1141,7 +1141,7 @@ explain (verbose, costs off)
 -----------------------------------
  Subquery Scan on ss
    Output: ss.x, ss.x
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v
          Output: (InitPlan 1).col1
          InitPlan 1
            ->  Result
@@ -1151,33 +1151,33 @@ explain (verbose, costs off)
 explain (verbose, costs off)
   select x, x from
     (select (select now() where y=y) as x from (values(1),(2)) v(y)) ss;
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- Values Scan on "*VALUES*"
+               QUERY PLAN               
+----------------------------------------
+ Values Scan on v
    Output: (SubPlan 1), (SubPlan 2)
    SubPlan 1
      ->  Result
            Output: now()
-           One-Time Filter: ("*VALUES*".column1 = "*VALUES*".column1)
+           One-Time Filter: (v.y = v.y)
    SubPlan 2
      ->  Result
            Output: now()
-           One-Time Filter: ("*VALUES*".column1 = "*VALUES*".column1)
+           One-Time Filter: (v.y = v.y)
 (10 rows)
 
 explain (verbose, costs off)
   select x, x from
     (select (select random() where y=y) as x from (values(1),(2)) v(y)) ss;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                  QUERY PLAN                  
+----------------------------------------------
  Subquery Scan on ss
    Output: ss.x, ss.x
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v
          Output: (SubPlan 1)
          SubPlan 1
            ->  Result
                  Output: random()
-                 One-Time Filter: ("*VALUES*".column1 = "*VALUES*".column1)
+                 One-Time Filter: (v.y = v.y)
 (8 rows)
 
 --
@@ -1366,13 +1366,13 @@ select * from
   (3 not in (select * from (values (1), (2)) ss1)),
   (false)
 ) ss;
-               QUERY PLAN               
-----------------------------------------
- Values Scan on "*VALUES*"
-   Output: "*VALUES*".column1
+          QUERY PLAN           
+-------------------------------
+ Values Scan on ss
+   Output: ss.column1
    SubPlan 1
-     ->  Values Scan on "*VALUES*_1"
-           Output: "*VALUES*_1".column1
+     ->  Values Scan on ss1
+           Output: ss1.column1
 (5 rows)
 
 select * from

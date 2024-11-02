@@ -312,7 +312,7 @@ analyzeCTE(ParseState *pstate, CommonTableExpr *cte)
 	}
 
 	/* Now we can get on with analyzing the CTE's query */
-	query = parse_sub_analyze(cte->ctequery, pstate, cte, false, true);
+	query = parse_sub_analyze(cte->ctequery, pstate, cte, NULL, false, true);
 	cte->ctequery = (Node *) query;
 
 	/*

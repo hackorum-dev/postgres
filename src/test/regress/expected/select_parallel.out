@@ -432,7 +432,7 @@ select * from
                                 QUERY PLAN                                
 --------------------------------------------------------------------------
  Nested Loop Left Join
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v
    ->  Finalize Aggregate
          ->  Gather
                Workers Planned: 4
@@ -458,7 +458,7 @@ select * from
                                       QUERY PLAN                                      
 --------------------------------------------------------------------------------------
  Nested Loop Left Join
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v
    ->  Finalize Aggregate
          ->  Gather
                Workers Planned: 4
@@ -609,7 +609,7 @@ select * from explain_parallel_sort_stats();
                        explain_parallel_sort_stats                        
 --------------------------------------------------------------------------
  Nested Loop Left Join (actual rows=30000 loops=1)
-   ->  Values Scan on "*VALUES*" (actual rows=3 loops=1)
+   ->  Values Scan on v (actual rows=3 loops=1)
    ->  Gather Merge (actual rows=10000 loops=3)
          Workers Planned: 4
          Workers Launched: 4
@@ -873,7 +873,7 @@ select * from
                         QUERY PLAN                        
 ----------------------------------------------------------
  Nested Loop Left Join
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v
    ->  Finalize GroupAggregate
          Group Key: tenk1.string4
          ->  Gather Merge

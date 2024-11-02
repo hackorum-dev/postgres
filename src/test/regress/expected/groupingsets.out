@@ -846,17 +846,17 @@ select v.c, (select count(*) from gstest2 group by () having v.c)
 explain (costs off)
   select v.c, (select count(*) from gstest2 group by () having v.c)
     from (values (false),(true)) v(c) order by v.c;
-                        QUERY PLAN                         
------------------------------------------------------------
+                  QUERY PLAN                   
+-----------------------------------------------
  Sort
-   Sort Key: "*VALUES*".column1
-   ->  Values Scan on "*VALUES*"
+   Sort Key: v.c
+   ->  Values Scan on v
          SubPlan 1
            ->  Aggregate
                  Group Key: ()
-                 Filter: "*VALUES*".column1
+                 Filter: v.c
                  ->  Result
-                       One-Time Filter: "*VALUES*".column1
+                       One-Time Filter: v.c
                        ->  Seq Scan on gstest2
 (10 rows)
 
@@ -1349,15 +1349,15 @@ explain (costs off)
     from (values (1),(2)) v(x), gstest_data(v.x)
    group by grouping sets (a,b)
    order by 3, 1, 2;
-                             QUERY PLAN                              
----------------------------------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Sort
-   Sort Key: (sum("*VALUES*".column1)), gstest_data.a, gstest_data.b
+   Sort Key: (sum(v.x)), gstest_data.a, gstest_data.b
    ->  HashAggregate
          Hash Key: gstest_data.a
          Hash Key: gstest_data.b
          ->  Nested Loop
-               ->  Values Scan on "*VALUES*"
+               ->  Values Scan on v
                ->  Function Scan on gstest_data
 (8 rows)
 
@@ -1481,7 +1481,7 @@ explain (costs off)
          Hash Key: gstest_data.b
          Group Key: ()
          ->  Nested Loop
-               ->  Values Scan on "*VALUES*"
+               ->  Values Scan on v
                ->  Function Scan on gstest_data
 (10 rows)
 
@@ -2323,16 +2323,16 @@ select distinct on (a, b) a, b
 from (values (1, 1), (2, 2)) as t (a, b) where a = b
 group by grouping sets((a, b), (a))
 order by a, b;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+             QUERY PLAN              
+-------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1, "*VALUES*".column2
+         Sort Key: t.a, t.b
          ->  HashAggregate
-               Hash Key: "*VALUES*".column1, "*VALUES*".column2
-               Hash Key: "*VALUES*".column1
-               ->  Values Scan on "*VALUES*"
-                     Filter: (column1 = column2)
+               Hash Key: t.a, t.b
+               Hash Key: t.a
+               ->  Values Scan on t
+                     Filter: (a = b)
 (8 rows)
 
 select distinct on (a, b) a, b
@@ -2352,16 +2352,16 @@ select distinct on (a, b+1) a, b+1
 from (values (1, 0), (2, 1)) as t (a, b) where a = b+1
 group by grouping sets((a, b+1), (a))
 order by a, b+1;
-                              QUERY PLAN                              
-----------------------------------------------------------------------
+                QUERY PLAN                 
+-------------------------------------------
  Unique
    ->  Sort
-         Sort Key: "*VALUES*".column1, (("*VALUES*".column2 + 1))
+         Sort Key: t.a, ((t.b + 1))
          ->  HashAggregate
-               Hash Key: "*VALUES*".column1, ("*VALUES*".column2 + 1)
-               Hash Key: "*VALUES*".column1
-               ->  Values Scan on "*VALUES*"
-                     Filter: (column1 = (column2 + 1))
+               Hash Key: t.a, (t.b + 1)
+               Hash Key: t.a
+               ->  Values Scan on t
+                     Filter: (a = (b + 1))
 (8 rows)
 
 select distinct on (a, b+1) a, b+1
@@ -2381,15 +2381,15 @@ select a, b
 from (values (1, 1), (2, 2)) as t (a, b) where a = b
 group by grouping sets((a, b), (a))
 order by a, b nulls first;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+            QUERY PLAN            
+----------------------------------
  Sort
-   Sort Key: "*VALUES*".column1, "*VALUES*".column2 NULLS FIRST
+   Sort Key: t.a, t.b NULLS FIRST
    ->  HashAggregate
-         Hash Key: "*VALUES*".column1, "*VALUES*".column2
-         Hash Key: "*VALUES*".column1
-         ->  Values Scan on "*VALUES*"
-               Filter: (column1 = column2)
+         Hash Key: t.a, t.b
+         Hash Key: t.a
+         ->  Values Scan on t
+               Filter: (a = b)
 (7 rows)
 
 select a, b
@@ -2427,16 +2427,16 @@ explain (costs off)
 select a, b, row_number() over (order by a, b nulls first)
 from (values (1, 1), (2, 2)) as t (a, b) where a = b
 group by grouping sets((a, b), (a));
-                              QUERY PLAN                              
-----------------------------------------------------------------------
+               QUERY PLAN               
+----------------------------------------
  WindowAgg
    ->  Sort
-         Sort Key: "*VALUES*".column1, "*VALUES*".column2 NULLS FIRST
+         Sort Key: t.a, t.b NULLS FIRST
          ->  HashAggregate
-               Hash Key: "*VALUES*".column1, "*VALUES*".column2
-               Hash Key: "*VALUES*".column1
-               ->  Values Scan on "*VALUES*"
-                     Filter: (column1 = column2)
+               Hash Key: t.a, t.b
+               Hash Key: t.a
+               ->  Values Scan on t
+                     Filter: (a = b)
 (8 rows)
 
 select a, b, row_number() over (order by a, b nulls first)

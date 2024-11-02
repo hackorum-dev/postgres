@@ -2988,15 +2988,15 @@ EXPLAIN (costs off)
 MERGE INTO rw_view1 t
   USING (VALUES ('Tom'), ('Dick'), ('Harry')) AS v(person) ON t.person = v.person
   WHEN MATCHED AND snoop(t.person) THEN UPDATE SET person = v.person;
-                         QUERY PLAN                          
--------------------------------------------------------------
+                     QUERY PLAN                      
+-----------------------------------------------------
  Merge on base_tbl
    ->  Nested Loop
-         Join Filter: (base_tbl.person = "*VALUES*".column1)
+         Join Filter: (base_tbl.person = v.person)
          ->  Seq Scan on base_tbl
                Filter: (visibility = 'public'::text)
          ->  Materialize
-               ->  Values Scan on "*VALUES*"
+               ->  Values Scan on v
 (7 rows)
 
 -- security barrier view on top of security barrier view
@@ -3090,10 +3090,10 @@ MERGE INTO rw_view2 t
 -------------------------------------------------------------------------
  Merge on base_tbl
    ->  Nested Loop
-         Join Filter: (base_tbl.person = "*VALUES*".column1)
+         Join Filter: (base_tbl.person = v.person)
          ->  Seq Scan on base_tbl
                Filter: ((visibility = 'public'::text) AND snoop(person))
-         ->  Values Scan on "*VALUES*"
+         ->  Values Scan on v
 (6 rows)
 
 DROP TABLE base_tbl CASCADE;

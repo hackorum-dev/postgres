@@ -4508,16 +4508,16 @@ select * from
 (values (1, array[10,20]), (2, array[20,30])) as v1(v1x,v1ys)
 left join (values (1, 10), (2, 20)) as v2(v2x,v2y) on v2x = v1x
 left join unnest(v1ys) as u1(u1y) on u1y = v2y;
-                         QUERY PLAN                          
--------------------------------------------------------------
+               QUERY PLAN               
+----------------------------------------
  Nested Loop Left Join
-   ->  Values Scan on "*VALUES*"
+   ->  Values Scan on v1
    ->  Hash Right Join
-         Hash Cond: (u1.u1y = "*VALUES*_1".column2)
-         Filter: ("*VALUES*_1".column1 = "*VALUES*".column1)
+         Hash Cond: (u1.u1y = v2.v2y)
+         Filter: (v2.v2x = v1.v1x)
          ->  Function Scan on unnest u1
          ->  Hash
-               ->  Values Scan on "*VALUES*_1"
+               ->  Values Scan on v2
 (8 rows)
 
 select * from
@@ -4654,10 +4654,10 @@ using (join_key);
                                 QUERY PLAN                                
 --------------------------------------------------------------------------
  Nested Loop Left Join
-   Output: "*VALUES*".column1, i1.f1, (666)
-   Join Filter: ("*VALUES*".column1 = i1.f1)
-   ->  Values Scan on "*VALUES*"
-         Output: "*VALUES*".column1
+   Output: foo1.join_key, i1.f1, (666)
+   Join Filter: (foo1.join_key = i1.f1)
+   ->  Values Scan on foo1
+         Output: foo1.join_key
    ->  Materialize
          Output: i1.f1, (666)
          ->  Nested Loop Left Join
@@ -6541,12 +6541,12 @@ explain (costs off)
    ->  Nested Loop
          ->  Nested Loop
                ->  Index Only Scan using tenk1_unique1 on tenk1 a
-               ->  Values Scan on "*VALUES*"
+               ->  Values Scan on ss
          ->  Memoize
-               Cache Key: "*VALUES*".column1
+               Cache Key: ss.x
                Cache Mode: logical
                ->  Index Only Scan using tenk1_unique2 on tenk1 b
-                     Index Cond: (unique2 = "*VALUES*".column1)
+                     Index Cond: (unique2 = ss.x)
 (10 rows)
 
 select count(*) from tenk1 a,
@@ -7326,12 +7326,12 @@ select * from
   lateral (select f1 from int4_tbl
            where f1 = any (select unique1 from tenk1
                            where unique2 = v.x offset 0)) ss;
-                              QUERY PLAN                              
-----------------------------------------------------------------------
+                            QUERY PLAN                            
+------------------------------------------------------------------
  Nested Loop
-   Output: "*VALUES*".column1, "*VALUES*".column2, int4_tbl.f1
-   ->  Values Scan on "*VALUES*"
-         Output: "*VALUES*".column1, "*VALUES*".column2
+   Output: v.id, v.x, int4_tbl.f1
+   ->  Values Scan on v
+         Output: v.id, v.x
    ->  Nested Loop Semi Join
          Output: int4_tbl.f1
          Join Filter: (int4_tbl.f1 = tenk1.unique1)
@@ -7341,7 +7341,7 @@ select * from
                Output: tenk1.unique1
                ->  Index Scan using tenk1_unique2 on public.tenk1
                      Output: tenk1.unique1
-                     Index Cond: (tenk1.unique2 = "*VALUES*".column2)
+                     Index Cond: (tenk1.unique2 = v.x)
 (14 rows)
 
 select * from
@@ -7368,13 +7368,13 @@ lateral (select * from int8_tbl t1,
                                                          QUERY PLAN                                                         
 ----------------------------------------------------------------------------------------------------------------------------
  Nested Loop
-   Output: "*VALUES*".column1, t1.q1, t1.q2, ss2.q1, ss2.q2
+   Output: v.id, t1.q1, t1.q2, ss2.q1, ss2.q2
    ->  Seq Scan on public.int8_tbl t1
          Output: t1.q1, t1.q2
    ->  Nested Loop
-         Output: "*VALUES*".column1, ss2.q1, ss2.q2
-         ->  Values Scan on "*VALUES*"
-               Output: "*VALUES*".column1
+         Output: v.id, ss2.q1, ss2.q2
+         ->  Values Scan on v
+               Output: v.id
          ->  Subquery Scan on ss2
                Output: ss2.q1, ss2.q2
                Filter: (t1.q1 = ss2.q2)
@@ -7390,7 +7390,7 @@ lateral (select * from int8_tbl t1,
                                      Output: GREATEST(t1.q1, t2.q2)
                              InitPlan 2
                                ->  Result
-                                     Output: ("*VALUES*".column1 = 0)
+                                     Output: (v.id = 0)
                              ->  Seq Scan on public.int8_tbl t3
                                    Output: t3.q1, t3.q2
                                    Filter: (t3.q2 = (InitPlan 1).col1)

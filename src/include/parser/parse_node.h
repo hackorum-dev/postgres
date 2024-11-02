@@ -161,6 +161,9 @@ typedef Node *(*CoerceParamHook) (ParseState *pstate, Param *param,
  * p_parent_cte: CommonTableExpr that immediately contains the current query,
  * if any.
  *
+ * p_parent_alias: Alias attached to the current sub-SELECT in the parent
+ * query level, if any.
+ *
  * p_target_relation: target relation, if query is INSERT/UPDATE/DELETE/MERGE
  *
  * p_target_nsitem: target relation's ParseNamespaceItem.
@@ -222,6 +225,7 @@ struct ParseState
 	List	   *p_ctenamespace; /* current namespace for common table exprs */
 	List	   *p_future_ctes;	/* common table exprs not yet in namespace */
 	CommonTableExpr *p_parent_cte;	/* this query's containing CTE */
+	Alias	   *p_parent_alias; /* outer level's alias for this query */
 	Relation	p_target_relation;	/* INSERT/UPDATE/DELETE/MERGE target rel */
 	ParseNamespaceItem *p_target_nsitem;	/* target rel's NSItem, or NULL */
 	ParseNamespaceItem *p_grouping_nsitem;	/* NSItem for grouping, or NULL */
