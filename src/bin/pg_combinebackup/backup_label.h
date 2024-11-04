@@ -24,6 +24,8 @@ extern void parse_backup_label(char *filename, StringInfo buf,
 							   TimeLineID *previous_tli,
 							   XLogRecPtr *previous_lsn);
 extern void write_backup_label(char *output_directory, StringInfo buf,
+							   TimeLineID incremental_from_tli,
+							   XLogRecPtr incremental_from_lsn,
 							   pg_checksum_type checksum_type,
 							   struct manifest_writer *mwriter);
 

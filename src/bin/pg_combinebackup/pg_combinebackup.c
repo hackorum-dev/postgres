@@ -72,6 +72,7 @@ typedef struct cb_options
 	bool		debug;
 	char	   *output;
 	bool		dry_run;
+	bool		incremental;
 	bool		no_sync;
 	cb_tablespace_mapping *tsmappings;
 	pg_checksum_type manifest_checksums;
@@ -100,7 +101,10 @@ typedef struct cb_tablespace
 static cb_cleanup_dir *cleanup_dir_list = NULL;
 
 static void add_tablespace_mapping(cb_options *opt, char *arg);
-static StringInfo check_backup_label_files(int n_backups, char **backup_dirs);
+static StringInfo check_backup_label_files(int n_backups, char **backup_dirs,
+										   bool incremental,
+										   TimeLineID *incremental_from_tli,
+										   XLogRecPtr *incremental_from_lsn);
 static uint64 check_control_files(int n_backups, char **backup_dirs);
 static void check_input_dir_permissions(char *dir);
 static void cleanup_directories_atexit(void);
@@ -131,6 +135,7 @@ main(int argc, char *argv[])
 {
 	static struct option long_options[] = {
 		{"debug", no_argument, NULL, 'd'},
+		{"incremental", no_argument, NULL, 'i'},
 		{"dry-run", no_argument, NULL, 'n'},
 		{"no-sync", no_argument, NULL, 'N'},
 		{"output", required_argument, NULL, 'o'},
@@ -160,6 +165,8 @@ main(int argc, char *argv[])
 	StringInfo	last_backup_label;
 	manifest_data **manifests;
 	manifest_writer *mwriter;
+	TimeLineID	incremental_from_tli;
+	XLogRecPtr	incremental_from_lsn;
 
 	pg_logging_init(argv[0]);
 	progname = get_progname(argv[0]);
@@ -172,7 +179,7 @@ main(int argc, char *argv[])
 	opt.copy_method = COPY_METHOD_COPY;
 
 	/* process command-line options */
-	while ((c = getopt_long(argc, argv, "dnNo:T:",
+	while ((c = getopt_long(argc, argv, "dinNo:T:",
 							long_options, &optindex)) != -1)
 	{
 		switch (c)
@@ -180,6 +187,9 @@ main(int argc, char *argv[])
 			case 'd':
 				opt.debug = true;
 				pg_logging_increase_verbosity();
+				break;
+			case 'i':
+				opt.incremental = true;
 				break;
 			case 'n':
 				opt.dry_run = true;
@@ -272,8 +282,16 @@ main(int argc, char *argv[])
 	n_backups = argc - optind;
 	system_identifier = check_control_files(n_backups, argv + optind);
 
-	/* Sanity-check backup_label files, and get the contents of the last one. */
-	last_backup_label = check_backup_label_files(n_backups, argv + optind);
+	/*
+	 * Check the contents of the backup label files and extract necessary
+	 * details. The return value is the last backup label file. We also
+	 * extract the INCREMENTAL FROM TLI and INCREMENTAL FROM LSN fields from
+	 * the fist backup label file, which need to be included in the output
+	 * backup_label if we're consolidating incrementals.
+	 */
+	last_backup_label =
+		check_backup_label_files(n_backups, argv + optind, opt.incremental,
+								 &incremental_from_tli, &incremental_from_lsn);
 
 	/*
 	 * We'll need the pathnames to the prior backups. By "prior" we mean all
@@ -350,6 +368,7 @@ main(int argc, char *argv[])
 		pg_log_debug("generating \"%s/backup_label\"", opt.output);
 		last_backup_label->cursor = 0;
 		write_backup_label(opt.output, last_backup_label,
+						   incremental_from_tli, incremental_from_lsn,
 						   opt.manifest_checksums, mwriter);
 	}
 
@@ -494,11 +513,18 @@ add_tablespace_mapping(cb_options *opt, char *arg)
 }
 
 /*
- * Check that the backup_label files form a coherent backup chain, and return
- * the contents of the backup_label file from the latest backup.
+ * Check that the backup_label files form a coherent backup chain.
+ *
+ * Return the contents of the backup_label file from the latest backup.
+ * Sets *incremntal_from_tli and *incremental_from_lsn based on the earliest
+ * backup; these will be 0 and InvalidXLogRecPtr unless we're consolidating
+ * incremental backups.
  */
 static StringInfo
-check_backup_label_files(int n_backups, char **backup_dirs)
+check_backup_label_files(int n_backups, char **backup_dirs,
+						 bool incremental,
+						 TimeLineID *incremental_from_tli,
+						 XLogRecPtr *incremental_from_lsn)
 {
 	StringInfo	buf = makeStringInfo();
 	StringInfo	lastbuf = buf;
@@ -541,6 +567,13 @@ check_backup_label_files(int n_backups, char **backup_dirs)
 		parse_backup_label(pathbuf, buf, &start_tli, &start_lsn,
 						   &previous_tli, &previous_lsn);
 
+		/* Save values from first backup. */
+		if (i == 0)
+		{
+			*incremental_from_tli = previous_tli;
+			*incremental_from_lsn = previous_lsn;
+		}
+
 		/*
 		 * Sanity checks.
 		 *
@@ -550,11 +583,24 @@ check_backup_label_files(int n_backups, char **backup_dirs)
 		 * we don't have that information.
 		 */
 		if (i > 0 && previous_tli == 0)
-			pg_fatal("backup at \"%s\" is a full backup, but only the first backup should be a full backup",
-					 backup_dirs[i]);
-		if (i == 0 && previous_tli != 0)
-			pg_fatal("backup at \"%s\" is an incremental backup, but the first backup should be a full backup",
-					 backup_dirs[i]);
+		{
+			pg_log_error("backup at \"%s\" is a full backup", backup_dirs[i]);
+			pg_log_error_detail("Only the first backup may be a full backup.");
+			exit(1);
+		}
+		if (i == 0 && !incremental && previous_tli != 0)
+		{
+			pg_log_error("backup at \"%s\" is an incremental backup",
+						 backup_dirs[i]);
+			pg_log_error_hint("Use --incremental to combine incremental backups without a full backup.");
+			exit(1);
+		}
+		if (i == 0 && incremental && previous_tli == 0)
+		{
+			pg_fatal("backup at \"%s\" is a full backup", backup_dirs[i]);
+			pg_log_error_hint("Do not use --incremental when combining with a full backup.");
+			exit(1);
+		}
 		if (i < n_backups - 1 && start_tli != check_tli)
 			pg_fatal("backup at \"%s\" starts on timeline %u, but expected %u",
 					 backup_dirs[i], start_tli, check_tli);
@@ -761,6 +807,7 @@ help(const char *progname)
 	printf(_("  %s [OPTION]... DIRECTORY...\n"), progname);
 	printf(_("\nOptions:\n"));
 	printf(_("  -d, --debug               generate lots of debugging output\n"));
+	printf(_("  -i, --incremental         combine incrementals without a full backup\n"));
 	printf(_("  -n, --dry-run             do not actually do anything\n"));
 	printf(_("  -N, --no-sync             do not wait for changes to be written safely to disk\n"));
 	printf(_("  -o, --output=DIRECTORY    output directory\n"));
@@ -936,6 +983,8 @@ process_directory_recursively(Oid tsoid,
 		PGFileType	type;
 		char		ifullpath[MAXPGPATH];
 		char		ofullpath[MAXPGPATH];
+		char		ofullpath_incremental[MAXPGPATH];
+		char	   *ofullpath_actual = ofullpath;
 		char		manifest_path[MAXPGPATH];
 		Oid			oid = InvalidOid;
 		int			checksum_length = 0;
@@ -1015,10 +1064,18 @@ process_directory_recursively(Oid tsoid,
 			strncmp(de->d_name, INCREMENTAL_PREFIX,
 					INCREMENTAL_PREFIX_LENGTH) == 0)
 		{
-			/* Output path should not include "INCREMENTAL." prefix. */
+			bool		incremental_result;
+
+			/*
+			 * The normal output path should not include "INCREMENTAL."
+			 * prefix, but if we're combining incremental backups into a
+			 * consolidated incremental backup, then it's possible that we
+			 * might write an incremental file rather than a full file.
+			 */
 			snprintf(ofullpath, MAXPGPATH, "%s/%s", ofulldir,
 					 de->d_name + INCREMENTAL_PREFIX_LENGTH);
-
+			snprintf(ofullpath_incremental, MAXPGPATH, "%s/%s", ofulldir,
+					 de->d_name);
 
 			/* Manifest path likewise omits incremental prefix. */
 			snprintf(manifest_path, MAXPGPATH, "%s%s", manifest_prefix,
@@ -1026,6 +1083,7 @@ process_directory_recursively(Oid tsoid,
 
 			/* Reconstruction logic will do the rest. */
 			reconstruct_from_incremental_file(ifullpath, ofullpath,
+											  opt->incremental ? ofullpath_incremental : NULL,
 											  manifest_prefix,
 											  de->d_name + INCREMENTAL_PREFIX_LENGTH,
 											  n_prior_backups,
@@ -1035,9 +1093,25 @@ process_directory_recursively(Oid tsoid,
 											  checksum_type,
 											  &checksum_length,
 											  &checksum_payload,
+											  &incremental_result,
 											  opt->copy_method,
 											  opt->debug,
 											  opt->dry_run);
+
+			/*
+			 * It's possible that we're combining incrementals without a full
+			 * backup; and if so, it's possible that a file backed up
+			 * incrementally has no full version in any previous backup. In
+			 * that case, we need to update ofullpath_actual and manifest_path
+			 * to include the "INCREMENTAL." prefix.
+			 */
+			if (incremental_result)
+			{
+				Assert(opt->incremental);
+				ofullpath_actual = ofullpath_incremental;
+				snprintf(manifest_path, MAXPGPATH, "%s%s", manifest_prefix,
+						 de->d_name);
+			}
 		}
 		else
 		{
@@ -1127,8 +1201,8 @@ process_directory_recursively(Oid tsoid,
 			 * trickier. Since we have to stat() anyway to get the mtime,
 			 * there's no point in worrying about it.
 			 */
-			if (stat(ofullpath, &sb) < 0)
-				pg_fatal("could not stat file \"%s\": %m", ofullpath);
+			if (stat(ofullpath_actual, &sb) < 0)
+				pg_fatal("could not stat file \"%s\": %m", ofullpath_actual);
 
 			/* OK, now do the work. */
 			add_file_to_manifest(mwriter, manifest_path,

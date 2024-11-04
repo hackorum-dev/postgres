@@ -51,10 +51,21 @@ static void debug_reconstruction(int n_source,
 								 bool dry_run);
 static void debug_reconstruction_plan(unsigned block_length,
 									  rfile **sourcemap,
-									  off_t *offsetmap);
+									  off_t *offsetmap,
+									  bool consolidate);
 static unsigned find_reconstructed_block_length(rfile *s);
 static rfile *make_incremental_rfile(char *filename);
 static rfile *make_rfile(char *filename, bool missing_ok);
+static void write_consolidated_file(char *input_filename,
+									char *output_filename,
+									unsigned block_length,
+									rfile **sourcemap,
+									off_t *offsetmap,
+									unsigned truncation_block_length,
+									pg_checksum_context *checksum_ctx,
+									CopyMethod copy_method,
+									bool debug,
+									bool dry_run);
 static void write_reconstructed_file(char *input_filename,
 									 char *output_filename,
 									 unsigned block_length,
@@ -93,6 +104,7 @@ static void read_block(rfile *s, off_t off, uint8 *buffer);
 void
 reconstruct_from_incremental_file(char *input_filename,
 								  char *output_filename,
+								  char *output_filename_incremental,
 								  char *relative_path,
 								  char *bare_file_name,
 								  int n_prior_backups,
@@ -102,6 +114,7 @@ reconstruct_from_incremental_file(char *input_filename,
 								  pg_checksum_type checksum_type,
 								  int *checksum_length,
 								  uint8 **checksum_payload,
+								  bool *incremental_result,
 								  CopyMethod copy_method,
 								  bool debug,
 								  bool dry_run)
@@ -338,12 +351,22 @@ reconstruct_from_incremental_file(char *input_filename,
 	 * Otherwise, reconstruct.
 	 */
 	if (copy_source != NULL)
+	{
 		copy_file(copy_source->filename, output_filename,
 				  &checksum_ctx, copy_method, dry_run);
+		*incremental_result = false;
+	}
 	else if (sidx == 0 && source[0]->header_length != 0)
 	{
-		pg_fatal("full backup contains unexpected incremental file \"%s\"",
-				 source[0]->filename);
+		if (output_filename_incremental == NULL)
+			pg_fatal("full backup contains unexpected incremental file \"%s\"",
+					 source[0]->filename);
+		write_consolidated_file(input_filename, output_filename_incremental,
+								block_length, sourcemap, offsetmap,
+								latest_source->truncation_block_length,
+								&checksum_ctx, copy_method, debug, dry_run);
+		debug_reconstruction(n_prior_backups + 1, source, dry_run);
+		*incremental_result = true;
 	}
 	else
 	{
@@ -352,6 +375,7 @@ reconstruct_from_incremental_file(char *input_filename,
 								 &checksum_ctx, copy_method,
 								 debug, dry_run);
 		debug_reconstruction(n_prior_backups + 1, source, dry_run);
+		*incremental_result = false;
 	}
 
 	/* Save results of checksum calculation. */
@@ -439,7 +463,7 @@ debug_reconstruction(int n_source, rfile **sources, bool dry_run)
  */
 static void
 debug_reconstruction_plan(unsigned block_length, rfile **sourcemap,
-						  off_t *offsetmap)
+						  off_t *offsetmap, bool consolidate)
 {
 	StringInfoData debug_buf;
 	unsigned	start_of_range = 0;
@@ -459,16 +483,16 @@ debug_reconstruction_plan(unsigned block_length, rfile **sourcemap,
 			continue;
 		}
 
-		/* Add details about this range. */
-		if (s == NULL)
-		{
-			if (current_block == start_of_range)
-				appendStringInfo(&debug_buf, " %u:zero", current_block);
-			else
-				appendStringInfo(&debug_buf, " %u-%u:zero",
-								 start_of_range, current_block);
-		}
-		else
+		/*
+		 * Add details about this range, if appropriate.
+		 *
+		 * When consolidate = false, we're reconstructing a full file and any
+		 * unsourced blocks must be zeroed. When consolidate = true, we're
+		 * consolidating incremental files into a new incremental file, and
+		 * unsourced blocks are not included in the output. We therefore don't
+		 * include them in the debugging output, either.
+		 */
+		if (s != NULL)
 		{
 			if (current_block == start_of_range)
 				appendStringInfo(&debug_buf, " %u:%s@" UINT64_FORMAT,
@@ -480,6 +504,14 @@ debug_reconstruction_plan(unsigned block_length, rfile **sourcemap,
 								 s->filename,
 								 (uint64) offsetmap[current_block]);
 		}
+		else if (!consolidate)
+		{
+			if (current_block == start_of_range)
+				appendStringInfo(&debug_buf, " %u:zero", current_block);
+			else
+				appendStringInfo(&debug_buf, " %u-%u:zero",
+								 start_of_range, current_block);
+		}
 
 		/* Begin new range. */
 		start_of_range = ++current_block;
@@ -487,7 +519,12 @@ debug_reconstruction_plan(unsigned block_length, rfile **sourcemap,
 		/* If the output is very long or we are done, dump it now. */
 		if (current_block == block_length || debug_buf.len > 1024)
 		{
-			pg_log_debug("reconstruction plan:%s", debug_buf.data);
+			if (debug_buf.len == 0)
+				appendStringInfoString(&debug_buf, " empty");
+			if (consolidate)
+				pg_log_debug("consolidation plan:%s", debug_buf.data);
+			else
+				pg_log_debug("reconstruction plan:%s", debug_buf.data);
 			resetStringInfo(&debug_buf);
 		}
 	}
@@ -613,6 +650,138 @@ read_bytes(rfile *rf, void *buffer, unsigned length)
 }
 
 /*
+ * Write out a consolidated incremental file.
+ */
+static void
+write_consolidated_file(char *input_filename,
+						char *output_filename,
+						unsigned block_length,
+						rfile **sourcemap,
+						off_t *offsetmap,
+						unsigned truncation_block_length,
+						pg_checksum_context *checksum_ctx,
+						CopyMethod copy_method,
+						bool debug,
+						bool dry_run)
+{
+	unsigned	magic = INCREMENTAL_MAGIC;
+	int			wfd = -1;
+	BlockNumber i;
+	unsigned	sourced_blocks = 0;
+	StringInfoData buf;
+
+	/* Count the number of blocks for which we have a source. */
+	for (i = 0; i < block_length; ++i)
+		if (sourcemap[i] != NULL)
+			++sourced_blocks;
+
+	/* Debugging output. */
+	if (debug)
+	{
+		/* Basic information about the output file to be produced. */
+		if (dry_run)
+			pg_log_debug("would write consolidated file \"%s\" (%u blocks, checksum %s)",
+						 output_filename, sourced_blocks,
+						 pg_checksum_type_name(checksum_ctx->type));
+		else
+			pg_log_debug("writing consolidated file \"%s\" (%u blocks, checksum %s)",
+						 output_filename, sourced_blocks,
+						 pg_checksum_type_name(checksum_ctx->type));
+
+		/* Detailed dump. */
+		debug_reconstruction_plan(block_length, sourcemap, offsetmap, true);
+	}
+
+	/* Except in dry-run mode, open output file and write header. */
+	if (!dry_run)
+	{
+		int			wb;
+
+		/* Open the output file. */
+		if ((wfd = open(output_filename, O_RDWR | PG_BINARY | O_CREAT | O_EXCL,
+						pg_file_create_mode)) < 0)
+			pg_fatal("could not open file \"%s\": %m", output_filename);
+
+		/* Construct incremental file header. */
+		initStringInfo(&buf);
+		appendBinaryStringInfo(&buf, &magic, sizeof(magic));
+		appendBinaryStringInfo(&buf, &sourced_blocks, sizeof(sourced_blocks));
+		appendBinaryStringInfo(&buf, &truncation_block_length,
+							   sizeof(truncation_block_length));
+		for (i = 0; i < block_length; ++i)
+			if (sourcemap[i] != NULL)
+				appendBinaryStringInfo(&buf, &i, sizeof(i));
+
+		/*
+		 * Add padding to align header to a multiple of BLCKSZ, but only if
+		 * the incremental file has some blocks, and the alignment is actually
+		 * needed (i.e. header is not already a multiple of BLCKSZ). If there
+		 * are no blocks we don't want to make the file unnecessarily large,
+		 * as that might make some filesystem optimizations impossible.
+		 */
+		if (sourced_blocks > 0 && (buf.len % BLCKSZ) != 0)
+		{
+			unsigned	paddinglen = BLCKSZ - (buf.len % BLCKSZ);
+
+			/*
+			 * This logic is similar to appendStringInfoSpaces. Note that we
+			 * adda terminating \0 even though we're adding zeroes. That's not
+			 * strictly necessary here but might as well be consistent with
+			 * usual practice.
+			 */
+			enlargeStringInfo(&buf, paddinglen);
+			memset(buf.data + buf.len, '\0', paddinglen + 1);
+			buf.len += paddinglen;
+		}
+
+		/* Write out the file header. */
+		if ((wb = write(wfd, buf.data, buf.len)) != buf.len)
+		{
+			if (wb < 0)
+				pg_fatal("could not write file \"%s\": %m", output_filename);
+			else
+				pg_fatal("could not write file \"%s\": wrote %d of %d",
+						 output_filename, wb, BLCKSZ);
+		}
+
+		/* Incorporate file header into checksum computation. */
+		if (pg_checksum_update(checksum_ctx, (uint8 *) buf.data, buf.len) < 0)
+			pg_fatal("could not update checksum of file \"%s\"",
+					 output_filename);
+
+		/* Avoid leaking memory. */
+		pfree(buf.data);
+	}
+
+	/* Read and write the blocks as required. */
+	for (i = 0; i < block_length; ++i)
+	{
+		rfile	   *s = sourcemap[i];
+
+		/* Disregard unsourced blocks. */
+		if (s == NULL)
+			continue;
+
+		/* Update accounting information. */
+		s->num_blocks_read++;
+		s->highest_offset_read = Max(s->highest_offset_read,
+									 offsetmap[i] + BLCKSZ);
+
+		/* Skip the rest of this in dry-run mode. */
+		if (dry_run)
+			continue;
+
+		/* Copy the block. */
+		copy_block(wfd, output_filename, s, offsetmap[i], copy_method,
+				   checksum_ctx);
+	}
+
+	/* Close the output file. */
+	if (wfd >= 0 && close(wfd) != 0)
+		pg_fatal("could not close file \"%s\": %m", output_filename);
+}
+
+/*
  * Write out a reconstructed file.
  */
 static void
@@ -644,7 +813,7 @@ write_reconstructed_file(char *input_filename,
 						 pg_checksum_type_name(checksum_ctx->type));
 
 		/* Detailed dump. */
-		debug_reconstruction_plan(block_length, sourcemap, offsetmap);
+		debug_reconstruction_plan(block_length, sourcemap, offsetmap, false);
 	}
 
 	/* Open the output file, except in dry_run mode. */
@@ -657,7 +826,6 @@ write_reconstructed_file(char *input_filename,
 	/* Read and write the blocks as required. */
 	for (i = 0; i < block_length; ++i)
 	{
-		uint8		buffer[BLCKSZ];
 		rfile	   *s = sourcemap[i];
 
 		/* Update accounting information. */
@@ -677,6 +845,8 @@ write_reconstructed_file(char *input_filename,
 		/* If there's no source for the block, zero fill it. */
 		if (s == NULL)
 		{
+			uint8		buffer[BLCKSZ];
+
 			/*
 			 * New block not mentioned in the WAL summary. Should have been an
 			 * uninitialized block, so just zero-fill it.

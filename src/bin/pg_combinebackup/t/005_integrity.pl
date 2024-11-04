@@ -88,7 +88,7 @@ $node1->command_fails_like(
 		'pg_combinebackup', $backup1path, $backup1path, '-o',
 		$resultpath, $mode
 	],
-	qr/is a full backup, but only the first backup should be a full backup/,
+	qr/is a full backup.*Only the first backup may be a full backup/s,
 	"can't combine full backups");
 
 # Can't combine 2 incremental backups.
@@ -97,7 +97,7 @@ $node1->command_fails_like(
 		'pg_combinebackup', $backup2path, $backup2path, '-o',
 		$resultpath, $mode
 	],
-	qr/is an incremental backup, but the first backup should be a full backup/,
+	qr/is an incremental backup.*Use --incremental to combine/s,
 	"can't combine full backups");
 
 # Can't combine full backup with an incremental backup from a different system.

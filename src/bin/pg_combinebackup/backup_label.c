@@ -125,6 +125,8 @@ parse_backup_label(char *filename, StringInfo buf,
  */
 void
 write_backup_label(char *output_directory, StringInfo buf,
+				   TimeLineID incremental_from_tli,
+				   XLogRecPtr incremental_from_lsn,
 				   pg_checksum_type checksum_type, manifest_writer *mwriter)
 {
 	char		output_filename[MAXPGPATH];
@@ -168,6 +170,36 @@ write_backup_label(char *output_directory, StringInfo buf,
 		}
 
 		buf->cursor = eo;
+	}
+
+	if (incremental_from_tli != 0)
+	{
+		StringInfoData ibuf;
+		ssize_t		wb;
+
+		Assert(!XLogRecPtrIsInvalid(incremental_from_lsn));
+		initStringInfo(&ibuf);
+		appendStringInfo(&ibuf, "INCREMENTAL FROM LSN: %X/%X\n",
+						 LSN_FORMAT_ARGS(incremental_from_lsn));
+		appendStringInfo(&ibuf, "INCREMENTAL FROM TLI: %u\n",
+						 incremental_from_tli);
+		wb = write(output_fd, ibuf.data, ibuf.len);
+
+		if (wb != ibuf.len)
+		{
+			if (wb < 0)
+				pg_fatal("could not write file \"%s\": %m", output_filename);
+			else
+				pg_fatal("could not write file \"%s\": wrote %d of %d",
+						 output_filename, (int) wb, ibuf.len);
+		}
+
+		if (pg_checksum_update(&checksum_ctx,
+							   (uint8 *) ibuf.data, ibuf.len) < 0)
+			pg_fatal("could not update checksum of file \"%s\"",
+					 output_filename);
+
+		pfree(ibuf.data);
 	}
 
 	if (close(output_fd) != 0)
