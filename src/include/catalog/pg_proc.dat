@@ -8587,9 +8587,9 @@
 
 # start time function
 { oid => '2560', descr => 'postmaster start time',
-  proname => 'pg_postmaster_start_time', provolatile => 's',
+  proname => 'pg_postgres_start_time', provolatile => 's',
   prorettype => 'timestamptz', proargtypes => '',
-  prosrc => 'pg_postmaster_start_time' },
+  prosrc => 'pg_postgres_start_time' },
 
 # config reload time function
 { oid => '2034', descr => 'configuration load time',

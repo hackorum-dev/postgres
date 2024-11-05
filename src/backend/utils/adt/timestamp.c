@@ -49,7 +49,7 @@
 
 #define SAMESIGN(a,b)	(((a) < 0) == ((b) < 0))
 
-/* Set at postmaster start */
+/* Set at postgres start */
 TimestampTz PgStartTime;
 
 /* Set at configuration reload */
@@ -1623,7 +1623,7 @@ clock_timestamp(PG_FUNCTION_ARGS)
 }
 
 Datum
-pg_postmaster_start_time(PG_FUNCTION_ARGS)
+pg_postgres_start_time(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_TIMESTAMPTZ(PgStartTime);
 }

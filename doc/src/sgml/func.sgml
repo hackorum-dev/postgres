@@ -24816,9 +24816,9 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
-         <primary>pg_postmaster_start_time</primary>
+         <primary>pg_postgres_start_time</primary>
         </indexterm>
-        <function>pg_postmaster_start_time</function> ()
+        <function>pg_postgres_start_time</function> ()
         <returnvalue>timestamp with time zone</returnvalue>
        </para>
        <para>
