@@ -94,7 +94,6 @@ typedef struct
 	List	   *alist;			/* "after list" of things to do after creating
 								 * the table */
 	IndexStmt  *pkey;			/* PRIMARY KEY index, if any */
-	bool		ispartitioned;	/* true if table is partitioned */
 	PartitionBoundSpec *partbound;	/* transformed FOR VALUES */
 	bool		ofType;			/* true if statement contains OF typename */
 } CreateStmtContext;
@@ -246,7 +245,6 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 	cxt.blist = NIL;
 	cxt.alist = NIL;
 	cxt.pkey = NULL;
-	cxt.ispartitioned = stmt->partspec != NULL;
 	cxt.partbound = stmt->partbound;
 	cxt.ofType = (stmt->ofTypename != NULL);
 
@@ -3898,7 +3896,6 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 	cxt.blist = NIL;
 	cxt.alist = NIL;
 	cxt.pkey = NULL;
-	cxt.ispartitioned = (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE);
 	cxt.partbound = NULL;
 	cxt.ofType = false;
 
