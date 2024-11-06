@@ -86,6 +86,23 @@ ok( pump_until(
 $killme_stdout = '';
 $killme_stderr = '';
 
+#also, create a table whose storage should *not* survive.
+$killme_stdin .= q[
+CREATE TABLE should_not_survive (a int);
+SELECT pg_relation_filepath('should_not_survive');
+];
+ok( pump_until(
+		$killme, $psql_timeout, \$killme_stdout,
+		qr/base\/[[:digit:]\/]+[\r\n]$/m),
+	'created a table');
+my $relfilerelpath = $killme_stdout;
+chomp($relfilerelpath);
+$killme_stdout = '';
+$killme_stderr = '';
+
+my $relfilepath = $node->data_dir . "/" . $relfilerelpath;
+ok( -e $relfilepath,
+	"storage file is created in xact that is going to crash");
 
 # Start longrunning query in second session; its failure will signal that
 # crash-restart has occurred.  The initial wait for the trivial select is to
@@ -144,6 +161,8 @@ $killme->run();
 ($monitor_stdin, $monitor_stdout, $monitor_stderr) = ('', '', '');
 $monitor->run();
 
+ok( ! -e $relfilepath,
+	"orphaned storage file is correctly removed");
 
 # Acquire pid of new backend
 $killme_stdin .= q[

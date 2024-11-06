@@ -14,6 +14,8 @@
 #include "postgres.h"
 
 #include "access/undolog.h"
+#include "catalog/storage.h"
+#include "catalog/storage_ulog.h"
 
 typedef struct UndoDescData
 {

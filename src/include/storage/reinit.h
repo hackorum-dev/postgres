@@ -16,9 +16,13 @@
 #define REINIT_H
 
 #include "common/relpath.h"
+#include "storage/relfilelocator.h"
 
 
 extern void ResetUnloggedRelations(int op);
+extern void ResetUnloggedRelationIgnore(RelFileLocator rloc,
+										ProcNumber backend);
+extern void ResetUnloggedRelationIgnoreClear(void);
 extern bool parse_filename_for_nontemp_relation(const char *name,
 												RelFileNumber *relnumber,
 												ForkNumber *fork,

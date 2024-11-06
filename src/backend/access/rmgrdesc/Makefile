@@ -26,6 +26,7 @@ OBJS = \
 	rmgrdesc_utils.o \
 	seqdesc.o \
 	smgrdesc.o \
+	smgrundodesc.o \
 	spgdesc.o \
 	standbydesc.o \
 	tblspcdesc.o \

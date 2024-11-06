@@ -28,6 +28,7 @@
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "lib/dshash.h"
+#include "catalog/storage_ulog.h"
 #include "miscadmin.h"
 #include "storage/fd.h"
 #include "storage/procarray.h"
