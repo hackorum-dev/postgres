@@ -3038,10 +3038,10 @@ relation_needs_vacanalyze(Oid relid,
 		/* If the table hasn't yet been vacuumed, take reltuples as zero */
 		if (reltuples < 0)
 			reltuples = 0;
-
-		vacthresh = (float4) vac_base_thresh + vac_scale_factor * reltuples;
+                /* Use logarithmic function algorithm to solve auto vacuum trigger problem of large table */
+		vacthresh = (float4) fmin(vac_base_thresh + (vac_scale_factor * reltuples) , 1000.0 * log2(reltuples));
+		anlthresh = (float4) fmin(anl_base_thresh + (anl_scale_factor * reltuples) , 1000.0 * log2(reltuples));
 		vacinsthresh = (float4) vac_ins_base_thresh + vac_ins_scale_factor * reltuples;
-		anlthresh = (float4) anl_base_thresh + anl_scale_factor * reltuples;
 
 		/*
 		 * Note that we don't need to take special consideration for stat
