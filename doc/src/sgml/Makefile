@@ -130,6 +130,9 @@ html-stamp: stylesheet.xsl postgres-full.xml $(ALL_IMAGES)
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) $(XSLTPROC_HTML_FLAGS) $(wordlist 1,2,$^)
 	touch $@
 
+html-serve: html
+	python3 -m http.server --directory '$(top_builddir)/$(subdir)/html' 0
+
 # single-page HTML
 postgres.html: stylesheet-html-nochunk.xsl postgres-full.xml $(ALL_IMAGES)
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) $(XSLTPROC_HTML_FLAGS) -o $@ $(wordlist 1,2,$^)
