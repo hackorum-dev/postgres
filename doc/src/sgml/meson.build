@@ -156,6 +156,19 @@ if docs_dep.found()
   alias_target('html', html)
   alias_target('install-html', install_doc_html)
 
+  run_target(
+    'html-serve',
+    command: [
+      python,
+      '-m',
+      'http.server',
+      '--directory',
+      meson.current_build_dir() / 'html',
+      '0',
+    ],
+    depends: html,
+  )
+
   # build and install multi-page html docs as part of docs target
   docs += html
   installdocs += install_doc_html
