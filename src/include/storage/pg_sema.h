@@ -40,6 +40,8 @@ typedef HANDLE PGSemaphore;
 /* Request shared memory needed for semaphores */
 extern void PGSemaphoreShmemRequest(int maxSemas);
 
+extern void PGSemaphoreInitializeLocal(void);
+
 /* Module initialization (called during postmaster start or shmem reinit) */
 extern void PGSemaphoreInit(int maxSemas);
 
@@ -54,6 +56,7 @@ extern void PGSemaphoreLock(PGSemaphore sema);
 
 /* Unlock a semaphore (increment count) */
 extern void PGSemaphoreUnlock(PGSemaphore sema);
+extern void PGSemaphoreUnlockV(PGSemaphore *sema, int n);
 
 /* Lock a semaphore only if able to do so without blocking */
 extern bool PGSemaphoreTryLock(PGSemaphore sema);
