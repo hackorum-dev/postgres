@@ -58,6 +58,7 @@
 #include "pgstat.h"
 #include "postmaster/bgworker.h"
 #include "port/pg_lfind.h"
+#include "storage/pg_sema.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "storage/procsignal.h"
@@ -787,6 +788,9 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 	PROC_HDR   *procglobal = ProcGlobal;
 	uint32		nextidx;
 	uint32		wakeidx;
+	/* FIXME: magic value , allocate in dynamic way one day?*/
+	PGSemaphore semsv[1024]; /*JW*/
+	int 		semc = 0;
 
 	/* We should definitely have an XID to clear. */
 	Assert(TransactionIdIsValid(proc->xid));
@@ -830,6 +834,7 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 		Assert(pg_atomic_read_u32(&proc->procArrayGroupNext) == INVALID_PROC_NUMBER);
 
 		/* Fix semaphore count for any absorbed wakeups */
+		/* JW, FIXME: I think could we vectorize this too (WAKEUP many times same futex)*/
 		while (extraWaits-- > 0)
 			PGSemaphoreUnlock(proc->sem);
 		return;
@@ -882,9 +887,20 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 
 		nextproc->procArrayGroupMember = false;
 
+#if 1
 		if (nextproc != MyProc)
-			PGSemaphoreUnlock(nextproc->sem);
+			semsv[semc++] = nextproc->sem; /*JW*/
+
+		/* FIXME: magic value */
+		Assert(semc < 1024);
 	}
+
+	PGSemaphoreUnlockV(semsv, semc);
+#else
+		if (nextproc != MyProc) 
+			PGSemaphoreUnlock(nextproc->sem); /*JW*/
+	}
+#endif
 }
 
 /*
