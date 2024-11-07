@@ -44,6 +44,7 @@
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
+#include "storage/pg_sema.h"
 #include "storage/pg_shmem.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
@@ -131,6 +132,11 @@ InitPostmasterChild(void)
 	InitializeWaitEventSupport();
 	InitProcessLocalLatch();
 	InitializeLatchWaitSet();
+
+	/* JW */
+#if 1
+	PGSemaphoreInitializeLocal();
+#endif
 
 	/*
 	 * If possible, make this process a group leader, so that the postmaster
