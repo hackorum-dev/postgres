@@ -1149,7 +1149,7 @@ Do not specify C<cluster_name>; it is set from the node name.
 
 =cut
 
-sub start
+sub _start
 {
 	my ($self, %params) = @_;
 	my $port = $self->port;
@@ -1195,8 +1195,20 @@ sub start
 		BAIL_OUT("pg_ctl start failed") unless $params{fail_ok};
 		return 0;
 	}
+}
 
+sub start
+{
+	my ($self) = @_;
+	$self->_start;
 	$self->_update_pid(1);
+	return 1;
+}
+
+sub start_with_enabled_shutdown
+{
+	my ($self) = @_;
+	$self->_start;
 	return 1;
 }
 
