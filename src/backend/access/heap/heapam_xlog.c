@@ -249,13 +249,13 @@ heap_xlog_visible(XLogReaderState *record)
 
 		/*
 		 * Since FSM is not WAL-logged and only updated heuristically, it
-		 * easily becomes stale in standbys.  If the standby is later promoted
+		 * easily becomes stale in standbys. If the standby is later promoted
 		 * and runs VACUUM, it will skip updating individual free space
 		 * figures for pages that became all-visible (or all-frozen, depending
-		 * on the vacuum mode,) which is troublesome when FreeSpaceMapVacuum
+		 * on the vacuum mode), which is troublesome when FreeSpaceMapVacuum
 		 * propagates too optimistic free space values to upper FSM layers;
-		 * later inserters try to use such pages only to find out that they
-		 * are unusable.  This can cause long stalls when there are many such
+		 * Later, inserters try to use such pages only to find out that they
+		 * are unusable. This can cause long stalls when there are many such
 		 * pages.
 		 *
 		 * Forestall those problems by updating FSM's idea about a page that
