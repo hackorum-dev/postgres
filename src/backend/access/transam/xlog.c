@@ -162,6 +162,12 @@ int			wal_segment_size = DEFAULT_XLOG_SEG_SIZE;
  */
 int			CheckPointSegments;
 
+/*
+ * Whether the xact_time of xlrec is modified to ensure the commit timestamps
+ * are monotonically increasing.
+ */
+static bool	XlogRecordModified = false;
+
 /* Estimated distance between checkpoints, in bytes */
 static double CheckPointDistanceEstimate = 0;
 static double PrevCheckPointDistance = 0;
@@ -560,6 +566,14 @@ typedef struct XLogCtlData
 	uint32		data_checksum_version;
 
 	slock_t		info_lck;		/* locks shared variables shown above */
+
+	/*
+	 * This is our shared, logical clock that we use to force
+	 * commit timestamps to be monotonically increasing in
+	 * commit-LSN order. This is protected by the Wal-insert
+	 * spinlock.
+	 */
+	TimestampTz lastXactStopTime;
 } XLogCtlData;
 
 /*
@@ -734,6 +748,7 @@ static void CopyXLogRecordToWAL(int write_len, bool isLogSwitch,
 								XLogRecData *rdata,
 								XLogRecPtr StartPos, XLogRecPtr EndPos,
 								TimeLineID tli);
+static void XLogRecordCorrectCRC(XLogRecData *rdata);
 static void ReserveXLogInsertLocation(int size, XLogRecPtr *StartPos,
 									  XLogRecPtr *EndPos, XLogRecPtr *PrevPtr);
 static bool ReserveXLogSwitch(XLogRecPtr *StartPos, XLogRecPtr *EndPos,
@@ -814,6 +829,12 @@ XLogInsertRecord(XLogRecData *rdata,
 	/* cross-check on whether we should be here or not */
 	if (!XLogInsertAllowed())
 		elog(ERROR, "cannot make new WAL entries during recovery");
+
+	/*
+	 * Make sure the flag telling that ReserveXLog...() modified the record is
+	 * false at this point.
+	 */
+	XlogRecordModified = false;
 
 	/*
 	 * Given that we're not in recovery, InsertTimeLineID is set and can't
@@ -943,6 +964,15 @@ XLogInsertRecord(XLogRecData *rdata,
 
 	if (inserted)
 	{
+		/*
+		 * If modified the XLog Record, recalculate the CRC.
+		 */
+		if (XlogRecordModified)
+		{
+			XLogRecordCorrectCRC(rdata);
+			XlogRecordModified = false;
+		}
+
 		/*
 		 * Now that xl_prev has been filled in, calculate CRC of the record
 		 * header.
@@ -1128,6 +1158,25 @@ XLogInsertRecord(XLogRecData *rdata,
 }
 
 /*
+ * Function to recalculate the WAL Record's CRC in case it was altered to
+ * ensure a monotonically increasing commit timestamp in LSN order.
+ */
+static void
+XLogRecordCorrectCRC(XLogRecData *rdata)
+{
+	XLogRecData *rdt;
+	XLogRecord *rechdr = (XLogRecord *) rdata->data;
+	pg_crc32c	rdata_crc;
+
+	INIT_CRC32C(rdata_crc);
+	COMP_CRC32C(rdata_crc, rdata->data + SizeOfXLogRecord, rdata->len - SizeOfXLogRecord);
+	for (rdt = rdata->next; rdt != NULL; rdt = rdt->next)
+		COMP_CRC32C(rdata_crc, rdt->data, rdt->len);
+
+	rechdr->xl_crc = rdata_crc;
+}
+
+/*
  * Reserves the right amount of space for a record of given size from the WAL.
  * *StartPos is set to the beginning of the reserved section, *EndPos to
  * its end+1. *PrevPtr is set to the beginning of the previous record; it is
@@ -1153,6 +1202,10 @@ ReserveXLogInsertLocation(int size, XLogRecPtr *StartPos, XLogRecPtr *EndPos,
 	uint64		startbytepos;
 	uint64		endbytepos;
 	uint64		prevbytepos;
+	TimestampTz	orgxacttime = 0;
+
+	if (xlcommitrec)
+		orgxacttime = xlcommitrec->xact_time;
 
 	size = MAXALIGN(size);
 
@@ -1168,20 +1221,55 @@ ReserveXLogInsertLocation(int size, XLogRecPtr *StartPos, XLogRecPtr *EndPos,
 	 * positions (XLogRecPtrs) can be done outside the locked region, and
 	 * because the usable byte position doesn't include any headers, reserving
 	 * X bytes from WAL is almost as simple as "CurrBytePos += X".
+	 *
+	 * Note that for the commit record, we need to ensure that the commit
+	 * timestamp is monotonically increased in the commit-LSN order to avoid
+	 * inconsistency between the two.
 	 */
-	SpinLockAcquire(&Insert->insertpos_lck);
+	if (xlcommitrec)
+	{
+		SpinLockAcquire(&Insert->insertpos_lck);
 
-	startbytepos = Insert->CurrBytePos;
-	endbytepos = startbytepos + size;
-	prevbytepos = Insert->PrevBytePos;
-	Insert->CurrBytePos = endbytepos;
-	Insert->PrevBytePos = startbytepos;
+		/*
+		 * This is a local transaction. Make sure that the xact_time higher
+		 * than any timestamp we have seen thus far.
+		 */
+		if (unlikely(XLogCtl->lastXactStopTime >= xlcommitrec->xact_time))
+		{
+			XLogCtl->lastXactStopTime++;
+			xlcommitrec->xact_time = XLogCtl->lastXactStopTime;
+			xactStopTimestamp = XLogCtl->lastXactStopTime;
+		}
+		else
+			XLogCtl->lastXactStopTime = xlcommitrec->xact_time;
 
-	SpinLockRelease(&Insert->insertpos_lck);
+		startbytepos = Insert->CurrBytePos;
+		endbytepos = startbytepos + size;
+		prevbytepos = Insert->PrevBytePos;
+		Insert->CurrBytePos = endbytepos;
+		Insert->PrevBytePos = startbytepos;
+
+		SpinLockRelease(&Insert->insertpos_lck);
+	}
+	else
+	{
+		SpinLockAcquire(&Insert->insertpos_lck);
+
+		startbytepos = Insert->CurrBytePos;
+		endbytepos = startbytepos + size;
+		prevbytepos = Insert->PrevBytePos;
+		Insert->CurrBytePos = endbytepos;
+		Insert->PrevBytePos = startbytepos;
+
+		SpinLockRelease(&Insert->insertpos_lck);
+	}
 
 	*StartPos = XLogBytePosToRecPtr(startbytepos);
 	*EndPos = XLogBytePosToEndRecPtr(endbytepos);
 	*PrevPtr = XLogBytePosToRecPtr(prevbytepos);
+
+	if (xlcommitrec && orgxacttime != xlcommitrec->xact_time)
+		XlogRecordModified = true;
 
 	/*
 	 * Check that the conversions between "usable byte positions" and
@@ -1211,12 +1299,20 @@ ReserveXLogSwitch(XLogRecPtr *StartPos, XLogRecPtr *EndPos, XLogRecPtr *PrevPtr)
 	uint32		size = MAXALIGN(SizeOfXLogRecord);
 	XLogRecPtr	ptr;
 	uint32		segleft;
+	TimestampTz	orgxacttime = 0;
+
+	if (xlcommitrec)
+		orgxacttime = xlcommitrec->xact_time;
 
 	/*
 	 * These calculations are a bit heavy-weight to be done while holding a
 	 * spinlock, but since we're holding all the WAL insertion locks, there
 	 * are no other inserters competing for it. GetXLogInsertRecPtr() does
 	 * compete for it, but that's not called very frequently.
+	 *
+	 * Note that for the commit record, we need to ensure that the commit
+	 * timestamp is monotonically increased in the commit-LSN order to avoid
+	 * inconsistency between the two.
 	 */
 	SpinLockAcquire(&Insert->insertpos_lck);
 
@@ -1228,6 +1324,22 @@ ReserveXLogSwitch(XLogRecPtr *StartPos, XLogRecPtr *EndPos, XLogRecPtr *PrevPtr)
 		SpinLockRelease(&Insert->insertpos_lck);
 		*EndPos = *StartPos = ptr;
 		return false;
+	}
+
+	if (xlcommitrec)
+	{
+		/*
+		 * This is a local transaction. Make sure that the xact_time higher
+		 * than any timestamp we have seen thus far.
+		 */
+		if (unlikely(XLogCtl->lastXactStopTime >= xlcommitrec->xact_time))
+		{
+			XLogCtl->lastXactStopTime++;
+			xlcommitrec->xact_time = XLogCtl->lastXactStopTime;
+			xactStopTimestamp = XLogCtl->lastXactStopTime;
+		}
+		else
+			XLogCtl->lastXactStopTime = xlcommitrec->xact_time;
 	}
 
 	endbytepos = startbytepos + size;
@@ -1249,6 +1361,9 @@ ReserveXLogSwitch(XLogRecPtr *StartPos, XLogRecPtr *EndPos, XLogRecPtr *PrevPtr)
 	SpinLockRelease(&Insert->insertpos_lck);
 
 	*PrevPtr = XLogBytePosToRecPtr(prevbytepos);
+
+	if (xlcommitrec && orgxacttime != xlcommitrec->xact_time)
+		XlogRecordModified = true;
 
 	Assert(XLogSegmentOffset(*EndPos, wal_segment_size) == 0);
 	Assert(XLogRecPtrToBytePos(*EndPos) == endbytepos);

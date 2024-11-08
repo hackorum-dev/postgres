@@ -432,6 +432,8 @@ typedef struct xl_xact_parsed_abort
 	TimestampTz origin_timestamp;
 } xl_xact_parsed_abort;
 
+extern PGDLLIMPORT xl_xact_commit *xlcommitrec;
+extern PGDLLIMPORT TimestampTz xactStopTimestamp;
 
 /* ----------------
  *		extern definitions

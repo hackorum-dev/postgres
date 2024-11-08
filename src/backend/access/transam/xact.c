@@ -281,7 +281,7 @@ static bool currentCommandIdUsed;
  */
 static TimestampTz xactStartTimestamp;
 static TimestampTz stmtStartTimestamp;
-static TimestampTz xactStopTimestamp;
+TimestampTz xactStopTimestamp;
 
 /*
  * GID to be used for preparing the current transaction.  This is also
@@ -328,6 +328,7 @@ typedef struct SubXactCallbackItem
 
 static SubXactCallbackItem *SubXact_callbacks = NULL;
 
+xl_xact_commit *xlcommitrec = NULL;
 
 /* local function prototypes */
 static void AssignTransactionId(TransactionState s);
@@ -2255,6 +2256,9 @@ StartTransaction(void)
 	/* Schedule transaction timeout */
 	if (TransactionTimeout > 0)
 		enable_timeout_after(TRANSACTION_TIMEOUT, TransactionTimeout);
+
+	/* Reset xlcommitrec */
+	xlcommitrec = NULL;
 
 	ShowTransactionState("StartTransaction");
 }
@@ -5888,6 +5892,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	xl_xact_twophase xl_twophase;
 	xl_xact_origin xl_origin;
 	uint8		info;
+	XLogRecPtr	result;
 
 	Assert(CritSectionCount > 0);
 
@@ -6031,7 +6036,16 @@ XactLogCommitRecord(TimestampTz commit_time,
 	/* we allow filtering by xacts */
 	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-	return XLogInsert(RM_XACT_ID, info);
+	/*
+	 * Save the commit xlrec so that we can modify the xactStopTimestamp and
+	 * the xact_time of the xlrec while holding the lock that determines the
+	 * commit-LSN to ensure the commit timestamps are monotonically increasing.
+	 */
+	xlcommitrec = &xlrec;
+	result = XLogInsert(RM_XACT_ID, info);
+	xlcommitrec = NULL;
+
+	return result;
 }
 
 /*
