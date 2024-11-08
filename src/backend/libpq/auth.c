@@ -2373,7 +2373,9 @@ InitializeLDAPConnection(Port *port, LDAP **ldap)
 				(errmsg("could not set LDAP protocol version: %s",
 						ldap_err2string(r)),
 				 errdetail_for_ldap(*ldap)));
+		pgstat_report_wait_start(WAIT_EVENT_LDAP_UNBIND_AFTER_SET_OPTION);
 		ldap_unbind(*ldap);
+		pgstat_report_wait_end();
 		return STATUS_ERROR;
 	}
 
@@ -2393,7 +2395,9 @@ InitializeLDAPConnection(Port *port, LDAP **ldap)
 					(errmsg("could not start LDAP TLS session: %s",
 							ldap_err2string(r)),
 					 errdetail_for_ldap(*ldap)));
+			pgstat_report_wait_start(WAIT_EVENT_LDAP_UNBIND_AFTER_START_TLS);
 			ldap_unbind(*ldap);
+			pgstat_report_wait_end();
 			return STATUS_ERROR;
 		}
 	}
@@ -2537,7 +2541,9 @@ CheckLDAPAuth(Port *port)
 			{
 				ereport(LOG,
 						(errmsg("invalid character in user name for LDAP authentication")));
+				pgstat_report_wait_start(WAIT_EVENT_LDAP_UNBIND_AFTER_NAME_CHECK);
 				ldap_unbind(ldap);
+				pgstat_report_wait_end();
 				pfree(passwd);
 				return STATUS_ERROR;
 			}
@@ -2561,7 +2567,9 @@ CheckLDAPAuth(Port *port)
 							server_name,
 							ldap_err2string(r)),
 					 errdetail_for_ldap(ldap)));
+			pgstat_report_wait_start(WAIT_EVENT_LDAP_UNBIND_AFTER_BIND_FOR_SEARCH);
 			ldap_unbind(ldap);
+			pgstat_report_wait_end();
 			pfree(passwd);
 			return STATUS_ERROR;
 		}
@@ -2594,7 +2602,9 @@ CheckLDAPAuth(Port *port)
 					 errdetail_for_ldap(ldap)));
 			if (search_message != NULL)
 				ldap_msgfree(search_message);
+			pgstat_report_wait_start(WAIT_EVENT_LDAP_UNBIND_AFTER_SEARCH);
 			ldap_unbind(ldap);
+			pgstat_report_wait_end();
 			pfree(passwd);
 			pfree(filter);
 			return STATUS_ERROR;
@@ -2616,7 +2626,9 @@ CheckLDAPAuth(Port *port)
 										  count,
 										  filter, server_name, count)));
 
+			pgstat_report_wait_start(WAIT_EVENT_LDAP_UNBIND_AFTER_COUNT_ENTRIES);
 			ldap_unbind(ldap);
+			pgstat_report_wait_end();
 			pfree(passwd);
 			pfree(filter);
 			ldap_msgfree(search_message);
@@ -2635,7 +2647,9 @@ CheckLDAPAuth(Port *port)
 							filter, server_name,
 							ldap_err2string(error)),
 					 errdetail_for_ldap(ldap)));
+			pgstat_report_wait_start(WAIT_EVENT_LDAP_UNBIND_AFTER_GET_DN);
 			ldap_unbind(ldap);
+			pgstat_report_wait_end();
 			pfree(passwd);
 			pfree(filter);
 			ldap_msgfree(search_message);
@@ -2663,7 +2677,9 @@ CheckLDAPAuth(Port *port)
 				(errmsg("LDAP login failed for user \"%s\" on server \"%s\": %s",
 						fulluser, server_name, ldap_err2string(r)),
 				 errdetail_for_ldap(ldap)));
+		pgstat_report_wait_start(WAIT_EVENT_LDAP_UNBIND_AFTER_BIND);
 		ldap_unbind(ldap);
+		pgstat_report_wait_end();
 		pfree(passwd);
 		pfree(fulluser);
 		return STATUS_ERROR;
@@ -2672,7 +2688,9 @@ CheckLDAPAuth(Port *port)
 	/* Save the original bind DN as the authenticated identity. */
 	set_authn_id(port, fulluser);
 
+	pgstat_report_wait_start(WAIT_EVENT_LDAP_UNBIND_SUCCESS);
 	ldap_unbind(ldap);
+	pgstat_report_wait_end();
 	pfree(passwd);
 	pfree(fulluser);
 
