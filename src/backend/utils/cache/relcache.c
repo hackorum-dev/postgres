@@ -3746,23 +3746,23 @@ RelationSetNewRelfilenumber(Relation relation, char persistence)
 	}
 	else if (relation->rd_rel->relkind == RELKIND_INDEX)
 	{
-		if (!OidIsValid(binary_upgrade_next_index_pg_class_relfilenumber))
+		if (!RelFileNumberIsValid(binary_upgrade_next_index_pg_class_relfilenumber))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("index relfilenumber value not set when in binary upgrade mode")));
 
 		newrelfilenumber = binary_upgrade_next_index_pg_class_relfilenumber;
-		binary_upgrade_next_index_pg_class_relfilenumber = InvalidOid;
+		binary_upgrade_next_index_pg_class_relfilenumber = InvalidRelFileNumber;
 	}
 	else if (relation->rd_rel->relkind == RELKIND_RELATION)
 	{
-		if (!OidIsValid(binary_upgrade_next_heap_pg_class_relfilenumber))
+		if (!RelFileNumberIsValid(binary_upgrade_next_heap_pg_class_relfilenumber))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("heap relfilenumber value not set when in binary upgrade mode")));
 
 		newrelfilenumber = binary_upgrade_next_heap_pg_class_relfilenumber;
-		binary_upgrade_next_heap_pg_class_relfilenumber = InvalidOid;
+		binary_upgrade_next_heap_pg_class_relfilenumber = InvalidRelFileNumber;
 	}
 	else
 		ereport(ERROR,

@@ -1277,7 +1277,7 @@ SummarizeDbaseRecord(XLogReaderState *xlogreader, BlockRefTable *brtab)
 			(xl_dbase_create_file_copy_rec *) XLogRecGetData(xlogreader);
 		rlocator.spcOid = xlrec->tablespace_id;
 		rlocator.dbOid = xlrec->db_id;
-		rlocator.relNumber = 0;
+		rlocator.relNumber = InvalidRelFileNumber;
 		BlockRefTableSetLimitBlock(brtab, &rlocator, MAIN_FORKNUM, 0);
 	}
 	else if (info == XLOG_DBASE_CREATE_WAL_LOG)
@@ -1288,7 +1288,7 @@ SummarizeDbaseRecord(XLogReaderState *xlogreader, BlockRefTable *brtab)
 		xlrec = (xl_dbase_create_wal_log_rec *) XLogRecGetData(xlogreader);
 		rlocator.spcOid = xlrec->tablespace_id;
 		rlocator.dbOid = xlrec->db_id;
-		rlocator.relNumber = 0;
+		rlocator.relNumber = InvalidRelFileNumber;
 		BlockRefTableSetLimitBlock(brtab, &rlocator, MAIN_FORKNUM, 0);
 	}
 	else if (info == XLOG_DBASE_DROP)
@@ -1299,7 +1299,7 @@ SummarizeDbaseRecord(XLogReaderState *xlogreader, BlockRefTable *brtab)
 
 		xlrec = (xl_dbase_drop_rec *) XLogRecGetData(xlogreader);
 		rlocator.dbOid = xlrec->db_id;
-		rlocator.relNumber = 0;
+		rlocator.relNumber = InvalidRelFileNumber;
 		for (i = 0; i < xlrec->ntablespaces; ++i)
 		{
 			rlocator.spcOid = xlrec->tablespace_ids[i];

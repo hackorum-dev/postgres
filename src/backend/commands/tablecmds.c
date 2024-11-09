@@ -15441,7 +15441,7 @@ ATExecSetTableSpaceNoStorage(Relation rel, Oid newTableSpace)
 	}
 
 	/* Update can be done, so change reltablespace */
-	SetRelationTableSpace(rel, newTableSpace, InvalidOid);
+	SetRelationTableSpace(rel, newTableSpace, InvalidRelFileNumber);
 
 	InvokeObjectPostAlterHook(RelationRelationId, RelationGetRelid(rel), 0);
 

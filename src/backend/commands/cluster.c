@@ -1072,6 +1072,7 @@ swap_relation_files(Oid r1, Oid r2, bool target_is_pg_class,
 	RelFileNumber relfilenumber1,
 				relfilenumber2;
 	RelFileNumber swaptemp;
+	Oid 		swaptempoid;
 	char		swptmpchr;
 	Oid			relam1,
 				relam2;
@@ -1107,13 +1108,13 @@ swap_relation_files(Oid r1, Oid r2, bool target_is_pg_class,
 		relform1->relfilenode = relform2->relfilenode;
 		relform2->relfilenode = swaptemp;
 
-		swaptemp = relform1->reltablespace;
+		swaptempoid = relform1->reltablespace;
 		relform1->reltablespace = relform2->reltablespace;
-		relform2->reltablespace = swaptemp;
+		relform2->reltablespace = swaptempoid;
 
-		swaptemp = relform1->relam;
+		swaptempoid = relform1->relam;
 		relform1->relam = relform2->relam;
-		relform2->relam = swaptemp;
+		relform2->relam = swaptempoid;
 
 		swptmpchr = relform1->relpersistence;
 		relform1->relpersistence = relform2->relpersistence;
@@ -1122,9 +1123,9 @@ swap_relation_files(Oid r1, Oid r2, bool target_is_pg_class,
 		/* Also swap toast links, if we're swapping by links */
 		if (!swap_toast_by_content)
 		{
-			swaptemp = relform1->reltoastrelid;
+			swaptempoid = relform1->reltoastrelid;
 			relform1->reltoastrelid = relform2->reltoastrelid;
-			relform2->reltoastrelid = swaptemp;
+			relform2->reltoastrelid = swaptempoid;
 		}
 	}
 	else

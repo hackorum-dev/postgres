@@ -30,6 +30,8 @@
  */
 typedef unsigned int Oid;
 
+typedef Oid RelFileNumber;
+
 #ifdef __cplusplus
 #define InvalidOid		(Oid(0))
 #else

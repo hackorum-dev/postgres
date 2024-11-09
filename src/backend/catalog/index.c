@@ -3740,7 +3740,8 @@ reindex_index(const ReindexStmt *stmt, Oid indexId,
 	if (set_tablespace)
 	{
 		/* Update its pg_class row */
-		SetRelationTableSpace(iRel, params->tablespaceOid, InvalidOid);
+		SetRelationTableSpace(iRel, params->tablespaceOid,
+							  InvalidRelFileNumber);
 
 		/*
 		 * Schedule unlinking of the old index storage at transaction commit.

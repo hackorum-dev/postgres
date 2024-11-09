@@ -54,7 +54,7 @@ CATALOG(pg_class,1259,RelationRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(83,Relat
 
 	/* identifier of physical storage file */
 	/* relfilenode == 0 means it is a "mapped" relation, see relmapper.c */
-	Oid			relfilenode BKI_DEFAULT(0);
+	RelFileNumber	relfilenode BKI_DEFAULT(0);
 
 	/* identifier of table space for relation (0 means default for database) */
 	Oid			reltablespace BKI_DEFAULT(0) BKI_LOOKUP_OPT(pg_tablespace);

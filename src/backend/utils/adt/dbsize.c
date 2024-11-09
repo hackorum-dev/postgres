@@ -890,7 +890,7 @@ pg_relation_filenode(PG_FUNCTION_ARGS)
 
 	if (RELKIND_HAS_STORAGE(relform->relkind))
 	{
-		if (relform->relfilenode)
+		if (RelFileNumberIsValid(relform->relfilenode))
 			result = relform->relfilenode;
 		else					/* Consult the relation mapper */
 			result = RelationMapOidToFilenumber(relid,
@@ -973,7 +973,7 @@ pg_relation_filepath(PG_FUNCTION_ARGS)
 			rlocator.dbOid = InvalidOid;
 		else
 			rlocator.dbOid = MyDatabaseId;
-		if (relform->relfilenode)
+		if (RelFileNumberIsValid(relform->relfilenode))
 			rlocator.relNumber = relform->relfilenode;
 		else					/* Consult the relation mapper */
 			rlocator.relNumber = RelationMapOidToFilenumber(relid,

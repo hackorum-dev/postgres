@@ -32,6 +32,7 @@ sub ParseHeader
 		'int32' => 'int4',
 		'int64' => 'int8',
 		'Oid' => 'oid',
+		'RelFileNumber' => 'oid',
 		'NameData' => 'name',
 		'TransactionId' => 'xid',
 		'XLogRecPtr' => 'pg_lsn');

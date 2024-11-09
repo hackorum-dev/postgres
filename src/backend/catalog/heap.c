@@ -346,7 +346,7 @@ heap_create(const char *relname,
 		 * with oid same as relid.
 		 */
 		if (!RelFileNumberIsValid(relfilenumber))
-			relfilenumber = relid;
+			relfilenumber = (RelFileNumber) relid;
 	}
 
 	/*

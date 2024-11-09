@@ -206,7 +206,7 @@ Boot_CreateStmt:
 												   PG_CATALOG_NAMESPACE,
 												   shared_relation ? GLOBALTABLESPACE_OID : 0,
 												   $3,
-												   InvalidOid,
+												   InvalidRelFileNumber,
 												   HEAP_TABLE_AM_OID,
 												   tupdesc,
 												   RELKIND_RELATION,

@@ -22,7 +22,6 @@
 /*
  * RelFileNumber data type identifies the specific relation file name.
  */
-typedef Oid RelFileNumber;
 #define InvalidRelFileNumber		((RelFileNumber) InvalidOid)
 #define RelFileNumberIsValid(relnumber) \
 				((bool) ((relnumber) != InvalidRelFileNumber))
