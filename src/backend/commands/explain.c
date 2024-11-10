@@ -219,6 +219,8 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt,
 			es->settings = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "generic_plan") == 0)
 			es->generic = defGetBoolean(opt);
+		else if (strcmp(opt->defname, "usage") == 0)
+			es->usage = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "timing") == 0)
 		{
 			timing_set = true;
@@ -383,6 +385,7 @@ NewExplainState(void)
 
 	/* Set default options (most fields can be left as zeroes). */
 	es->costs = true;
+	es->usage = true;
 	/* Prepare output buffer. */
 	es->str = makeStringInfo();
 
@@ -3465,22 +3468,47 @@ show_hash_info(HashState *hashstate, ExplainState *es)
 		else if (hinstrument.nbatch_original != hinstrument.nbatch ||
 				 hinstrument.nbuckets_original != hinstrument.nbuckets)
 		{
+			ListCell   *lc;
+
 			ExplainIndentText(es);
 			appendStringInfo(es->str,
-							 "Buckets: %d (originally %d)  Batches: %d (originally %d)  Memory Usage: " UINT64_FORMAT "kB\n",
+							 "Buckets: %d (originally %d)  Batches: %d (originally %d)",
 							 hinstrument.nbuckets,
 							 hinstrument.nbuckets_original,
 							 hinstrument.nbatch,
-							 hinstrument.nbatch_original,
-							 spacePeakKb);
+							 hinstrument.nbatch_original);
+			if (es->usage)
+				appendStringInfo(es->str, "  Memory Usage: %ldkB\n", spacePeakKb);
+			else
+				appendStringInfo(es->str, "\n");
+
+			foreach(lc, hinstrument.fallback_batches_stats)
+			{
+				FallbackBatchStats *fbs = lfirst(lc);
+
+				ExplainIndentText(es);
+				appendStringInfo(es->str, "Batch: %d  Stripes: %d\n", fbs->batchno, fbs->numstripes);
+			}
 		}
 		else
 		{
+			ListCell   *lc;
+
 			ExplainIndentText(es);
-			appendStringInfo(es->str,
-							 "Buckets: %d  Batches: %d  Memory Usage: " UINT64_FORMAT "kB\n",
-							 hinstrument.nbuckets, hinstrument.nbatch,
-							 spacePeakKb);
+			if (es->usage)
+				appendStringInfo(es->str, "  Memory Usage: %ldkB\n", spacePeakKb);
+			else
+				appendStringInfo(es->str, "\n");
+			foreach(lc, hinstrument.fallback_batches_stats)
+			{
+				FallbackBatchStats *fbs = lfirst(lc);
+
+				ExplainIndentText(es);
+				appendStringInfo(es->str,
+								 "Batch: %d  Stripes: %d\n",
+								 fbs->batchno,
+								 fbs->numstripes);
+			}
 		}
 	}
 }

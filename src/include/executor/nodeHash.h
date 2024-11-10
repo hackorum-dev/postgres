@@ -30,6 +30,7 @@ extern void ExecParallelHashTableAlloc(HashJoinTable hashtable,
 extern void ExecHashTableDestroy(HashJoinTable hashtable);
 extern void ExecHashTableDetach(HashJoinTable hashtable);
 extern void ExecHashTableDetachBatch(HashJoinTable hashtable);
+extern bool ExecHashTableDetachStripe(HashJoinTable hashtable);
 extern void ExecParallelHashTableSetCurrentBatch(HashJoinTable hashtable,
 												 int batchno);
 
@@ -39,9 +40,11 @@ extern void ExecHashTableInsert(HashJoinTable hashtable,
 extern void ExecParallelHashTableInsert(HashJoinTable hashtable,
 										TupleTableSlot *slot,
 										uint32 hashvalue);
-extern void ExecParallelHashTableInsertCurrentBatch(HashJoinTable hashtable,
+extern MinimalTuple
+			ExecParallelHashTableInsertCurrentBatch(HashJoinTable hashtable,
 													TupleTableSlot *slot,
-													uint32 hashvalue);
+													uint32 hashvalue,
+													int read_participant);
 extern void ExecHashGetBucketAndBatch(HashJoinTable hashtable,
 									  uint32 hashvalue,
 									  int *bucketno,
@@ -55,6 +58,8 @@ extern bool ExecScanHashTableForUnmatched(HashJoinState *hjstate,
 extern bool ExecParallelScanHashTableForUnmatched(HashJoinState *hjstate,
 												  ExprContext *econtext);
 extern void ExecHashTableReset(HashJoinTable hashtable);
+extern void
+			ExecParallelHashTableRecycle(HashJoinTable hashtable);
 extern void ExecHashTableResetMatchFlags(HashJoinTable hashtable);
 extern void ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 									bool try_combined_hash_mem,
