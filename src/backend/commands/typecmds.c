@@ -1011,6 +1011,16 @@ DefineDomain(CreateDomainStmt *stmt)
 						 errmsg("specifying constraint deferrability not supported for domains")));
 				break;
 
+			case CONSTR_IDENTITY:
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("identity columns are not supported on domains")));
+				break;
+			case CONSTR_GENERATED:
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("generated columns are not supported on domains")));
+				break;
 			default:
 				elog(ERROR, "unrecognized constraint subtype: %d",
 					 (int) constr->contype);
@@ -2934,8 +2944,16 @@ AlterDomainAddConstraint(List *names, Node *newConstraint,
 	switch (constr->contype)
 	{
 		case CONSTR_CHECK:
+			if (constr->is_no_inherit)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+						 errmsg("check constraints for domains cannot be marked NO INHERIT")));
+			break;
 		case CONSTR_NOTNULL:
-			/* processed below */
+			if (constr->is_no_inherit)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+						 errmsg("NOT NULL constraints for domains cannot be marked NO INHERIT")));
 			break;
 
 		case CONSTR_UNIQUE:
