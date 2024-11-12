@@ -199,10 +199,20 @@ sort(PG_FUNCTION_ARGS)
 	int32		dc = (dirstr) ? VARSIZE_ANY_EXHDR(dirstr) : 0;
 	char	   *d = (dirstr) ? VARDATA_ANY(dirstr) : NULL;
 	int			dir = -1;
+	int ndim,
+	nelems,
+	step;
 
 	CHECKARRVALID(a);
 	if (ARRNELEMS(a) < 2)
 		PG_RETURN_POINTER(a);
+
+	ndim = ARR_NDIM(a);
+	if (ndim < 1)
+		PG_RETURN_POINTER(a);
+
+	nelems = ARRNELEMS(a);
+	step = nelems / ARR_DIMS(a)[0];
 
 	if (dirstr == NULL || (dc == 3
 						   && (d[0] == 'A' || d[0] == 'a')
@@ -219,7 +229,7 @@ sort(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("second parameter must be \"ASC\" or \"DESC\"")));
-	QSORT(a, dir);
+	QSORT_ARRAY(a, dir, ARR_DIMS(a)[0], step);
 	PG_RETURN_POINTER(a);
 }
 
@@ -227,9 +237,19 @@ Datum
 sort_asc(PG_FUNCTION_ARGS)
 {
 	ArrayType  *a = PG_GETARG_ARRAYTYPE_P_COPY(0);
+	int ndim,
+	nelems,
+	step;
 
 	CHECKARRVALID(a);
-	QSORT(a, 1);
+
+	ndim = ARR_NDIM(a);
+	if (ndim < 1)
+		PG_RETURN_POINTER(a);
+
+	nelems = ARRNELEMS(a);
+	step = nelems / ARR_DIMS(a)[0];
+	QSORT_ARRAY(a, 1, ARR_DIMS(a)[0], step);
 	PG_RETURN_POINTER(a);
 }
 
@@ -237,9 +257,19 @@ Datum
 sort_desc(PG_FUNCTION_ARGS)
 {
 	ArrayType  *a = PG_GETARG_ARRAYTYPE_P_COPY(0);
+	int ndim,
+	nelems,
+	step;
 
 	CHECKARRVALID(a);
-	QSORT(a, 0);
+
+	ndim = ARR_NDIM(a);
+	if (ndim < 1)
+		PG_RETURN_POINTER(a);
+
+	nelems = ARRNELEMS(a);
+	step = nelems / ARR_DIMS(a)[0];
+	QSORT_ARRAY(a, 0, ARR_DIMS(a)[0], step);
 	PG_RETURN_POINTER(a);
 }
 

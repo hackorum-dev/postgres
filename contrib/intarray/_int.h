@@ -188,4 +188,16 @@ int			compDESC(const void *a, const void *b);
 				  (direction) ? compASC : compDESC ); \
 	} while(0)
 
+
+int			compArrayASC(const void *a, const void *b, void *arg);
+int			compArrayDESC(const void *a, const void *b, void *arg);
+
+/* sort, either ascending or descending */
+#define QSORT_ARRAY(a, direction, dim0, step) \
+	do { \
+		if (dim0 > 1) \
+			qsort_arg((void*) ARRPTR(a), dim0, sizeof(int32) * step, \
+				  (direction) ? compArrayASC : compArrayDESC, &step); \
+	} while(0)
+
 #endif							/* ___INT_H__ */

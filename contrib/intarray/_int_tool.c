@@ -405,3 +405,31 @@ compDESC(const void *a, const void *b)
 {
 	return pg_cmp_s32(*(const int32 *) b, *(const int32 *) a);
 }
+
+int
+compArrayASC(const void *a, const void *b, void *arg)
+{
+	int cnt = *(int*)arg;
+	for (int i = 0; i < cnt; i++) {
+		int cmp = pg_cmp_s32(((const int32 *) a)[i], ((const int32 *) b)[i]);
+		if (cmp == 0) {
+			continue;
+		}
+		return cmp;
+	}
+	return 0;
+}
+
+int
+compArrayDESC(const void *a, const void *b, void *arg)
+{
+	int cnt = *(int*)arg;
+	for (int i = 0; i < cnt; i++) {
+		int cmp = pg_cmp_s32(((const int32 *) b)[i], ((const int32 *) a)[i]);
+		if (cmp == 0) {
+			continue;
+		}
+		return cmp;
+	}
+	return 0;
+}
