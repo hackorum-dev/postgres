@@ -2783,6 +2783,23 @@ ALTER TABLE hash_parted ATTACH PARTITION fail_part FOR VALUES WITH (MODULUS 3, R
 DROP TABLE fail_part;
 
 --
+-- Prevent marking a constraint as NO INHERIT on a child table when it
+-- inherits a constraint with the same name from its parent, to ensure that
+-- the grandchildren consistently inherit the constraint.
+--
+CREATE TABLE parent_with_check (a int NOT NULL, CONSTRAINT check_a CHECK (a > 0));
+CREATE TABLE child1_with_noinherit_check (a int, CONSTRAINT check_a CHECK (a > 0) NO INHERIT);
+ALTER TABLE child1_with_noinherit_check INHERIT parent_with_check;	-- not ok
+DROP TABLE parent_with_check, child1_with_noinherit_check;
+
+-- No need to have that restriction for leaf partitions though, because they
+-- cannot have any children of their own
+CREATE TABLE parted_parent_with_check (a int, CONSTRAINT check_a CHECK (a > 0)) PARTITION BY LIST (a);
+CREATE TABLE part1_with_noinherit_check (a int, CONSTRAINT check_a CHECK (a > 0) NO INHERIT);
+ALTER TABLE parted_parent_with_check ATTACH PARTITION part1_with_noinherit_check FOR VALUES IN (1);	-- ok
+DROP TABLE parted_parent_with_check;
+
+--
 -- DETACH PARTITION
 --
 
