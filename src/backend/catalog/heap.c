@@ -2818,8 +2818,15 @@ MergeWithExistingConstraint(Relation rel, const char *ccname, Node *expr,
 					 errmsg("constraint \"%s\" for relation \"%s\" already exists",
 							ccname, RelationGetRelationName(rel))));
 
-		/* If the child constraint is "no inherit" then cannot merge */
-		if (con->connoinherit)
+		/*
+		 * If the child constraint is "no inherit" then cannot merge because
+		 * that would prevent lower-level children from inheriting it. That's
+		 * not a concern if the child table is a leaf partition which cannot
+		 * have child tables, so we allow the merge.
+		 */
+		if (con->connoinherit &&
+			(!rel->rd_rel->relispartition ||
+			 RELKIND_HAS_PARTITIONS(rel->rd_rel->relkind)))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("constraint \"%s\" conflicts with non-inherited constraint on relation \"%s\"",
@@ -2828,9 +2835,12 @@ MergeWithExistingConstraint(Relation rel, const char *ccname, Node *expr,
 		/*
 		 * Must not change an existing inherited constraint to "no inherit"
 		 * status.  That's because inherited constraints should be able to
-		 * propagate to lower-level children.
+		 * propagate to lower-level children.  It's fine to allow doing so for
+		 * leaf partitions, as described above.
 		 */
-		if (con->coninhcount > 0 && is_no_inherit)
+		if (con->coninhcount > 0 && is_no_inherit &&
+			(!rel->rd_rel->relispartition ||
+			 RELKIND_HAS_PARTITIONS(rel->rd_rel->relkind)))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("constraint \"%s\" conflicts with inherited constraint on relation \"%s\"",
