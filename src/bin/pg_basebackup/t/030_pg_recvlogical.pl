@@ -65,6 +65,23 @@ $node->command_ok(
 	],
 	'replayed a transaction');
 
+$node->command_fails(
+	[
+		'pg_recvlogical', '-S',
+		'test', '-d',
+		$node->connstr('postgres'), '--create-slot'
+	],
+	'slot cannot be created again');
+
+$node->command_ok(
+	[
+		'pg_recvlogical', '-S',
+		'test', '-d',
+		$node->connstr('postgres'), '--create-slot',
+                '--if-not-exists'
+	],
+	'if-not-exists');
+
 $node->command_ok(
 	[
 		'pg_recvlogical', '-S',
@@ -72,6 +89,54 @@ $node->command_ok(
 		$node->connstr('postgres'), '--drop-slot'
 	],
 	'slot dropped');
+
+# slot() returns a hash with all values set to the empty string if the
+# slot does not exist.
+$slot = $node->slot('test');
+is(0+grep({$_ ne ''} values %$slot), 0, 'slot does not exist anymore');
+
+$node->command_ok(
+	[
+		'pg_recvlogical', '-S', 'test', '-d', $node->connstr('postgres'),
+		'--create-slot', '--temporary-slot',
+		'--start', '--endpos', "$nextlsn", '--no-loop', '-f', '-'
+	],
+	'create temporary slot');
+
+$slot = $node->slot('test');
+is(0+grep({$_ ne ''} values %$slot), 0, 'temp slot is gone when connection is dropped');
+
+$node->command_ok(
+	[
+		'pg_recvlogical', '-S',
+		'test', '-d',
+		$node->connstr('postgres'), '--create-slot',
+	],
+	'create slot again');
+
+$node->command_fails(
+	[
+		'pg_recvlogical', '-S', 'test', '-d', $node->connstr('postgres'),
+		'--create-slot', '--temporary-slot',
+		'--start', '--endpos', "$nextlsn", '--no-loop', '-f', '-'
+	],
+	'create temporary slot fails if target slot exists');
+
+$node->command_ok(
+	[
+		'pg_recvlogical', '-S', 'test', '-d', $node->connstr('postgres'),
+		'--create-slot', '--temporary-slot', '--if-not-exists',
+		'--start', '--endpos', "$nextlsn", '--no-loop', '-f', '-'
+	],
+	'create temporary with --if-not-exists');
+
+$node->command_ok(
+	[
+		'pg_recvlogical', '-S',
+		'test', '-d',
+		$node->connstr('postgres'), '--drop-slot'
+	],
+	'slot dropped again');
 
 #test with two-phase option enabled
 $node->command_ok(

@@ -269,6 +269,31 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+       <term><option>--temporary-slot</option></term>
+       <listitem>
+       <para>
+        Create a temporary replication slot. This option is only useful if
+        specified together with <option>--create-slot</option> and
+        <option>--start</option>. A temporary slot is automatically dropped
+        when the database connection is dropped.
+       </para>
+       <para>
+        If used together with <option>--if-not-exists</option> and if a
+        permanent slot by the requested name exists, that slot is used instead
+        of creating a new one. That permanent slot is then not automatically
+        removed when the connection is dropped.
+       </para>
+       <para>
+        Unless <option>--no-loop</option> is specified,
+        <command>pg_recvlogical</command> will try to reconnect automatically
+        when the server connection is lost. If a temporary slot is requested,
+        the slot will be recreated first. If at that time another slot by the
+        same name exists, creation will fail.
+       </para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
        <term><option>-t</option></term>
        <term><option>--two-phase</option></term>
        <listitem>

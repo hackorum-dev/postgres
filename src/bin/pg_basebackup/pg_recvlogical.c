@@ -48,6 +48,7 @@ static int	fsync_interval = 10 * 1000; /* 10 sec = default */
 static XLogRecPtr startpos = InvalidXLogRecPtr;
 static XLogRecPtr endpos = InvalidXLogRecPtr;
 static bool do_create_slot = false;
+static bool slot_is_temporary = false;
 static bool slot_exists_ok = false;
 static bool do_start_slot = false;
 static bool do_drop_slot = false;
@@ -102,6 +103,7 @@ usage(void)
 	printf(_("  -s, --status-interval=SECS\n"
 			 "                         time between status packets sent to server (default: %d)\n"), (standby_message_timeout / 1000));
 	printf(_("  -S, --slot=SLOTNAME    name of the logical replication slot\n"));
+	printf(_("      --temporary-slot   the slot created exists until the connection is dropped\n"));
 	printf(_("  -t, --two-phase        enable decoding of prepared transactions when creating a slot\n"));
 	printf(_("  -v, --verbose          output verbose messages\n"));
 	printf(_("  -V, --version          output version information, then exit\n"));
@@ -214,7 +216,7 @@ StreamLogicalLog(void)
 	char	   *copybuf = NULL;
 	TimestampTz last_status = -1;
 	int			i;
-	PQExpBuffer query;
+	PQExpBuffer query = NULL;
 	XLogRecPtr	cur_record_lsn;
 
 	output_written_lsn = InvalidXLogRecPtr;
@@ -225,10 +227,24 @@ StreamLogicalLog(void)
 	 * Connect in replication mode to the server
 	 */
 	if (!conn)
+	{
 		conn = GetConnection();
-	if (!conn)
-		/* Error message already written in GetConnection() */
-		return;
+		if (!conn)
+			/* Error message already written in GetConnection() */
+			return;
+
+		/* Recreate a replication slot. */
+		if (do_create_slot && slot_is_temporary)
+		{
+			if (verbose)
+				pg_log_info("recreating replication slot \"%s\"", replication_slot);
+
+			if (!CreateReplicationSlot(conn, replication_slot, plugin, slot_is_temporary,
+									   false, false, slot_exists_ok, two_phase))
+				goto error;
+			startpos = InvalidXLogRecPtr;
+		}
+	}
 
 	/*
 	 * Start the replication
@@ -654,7 +670,8 @@ error:
 		PQfreemem(copybuf);
 		copybuf = NULL;
 	}
-	destroyPQExpBuffer(query);
+	if (query != NULL)
+		destroyPQExpBuffer(query);
 	PQfinish(conn);
 	conn = NULL;
 }
@@ -717,6 +734,7 @@ main(int argc, char **argv)
 		{"start", no_argument, NULL, 2},
 		{"drop-slot", no_argument, NULL, 3},
 		{"if-not-exists", no_argument, NULL, 4},
+		{"temporary-slot", no_argument, NULL, 5},
 		{NULL, 0, NULL, 0}
 	};
 	int			c;
@@ -844,6 +862,9 @@ main(int argc, char **argv)
 				break;
 			case 4:
 				slot_exists_ok = true;
+				break;
+			case 5:
+				slot_is_temporary = true;
 				break;
 
 			default:
@@ -979,7 +1000,7 @@ main(int argc, char **argv)
 		if (verbose)
 			pg_log_info("creating replication slot \"%s\"", replication_slot);
 
-		if (!CreateReplicationSlot(conn, replication_slot, plugin, false,
+		if (!CreateReplicationSlot(conn, replication_slot, plugin, slot_is_temporary,
 								   false, false, slot_exists_ok, two_phase))
 			exit(1);
 		startpos = InvalidXLogRecPtr;
