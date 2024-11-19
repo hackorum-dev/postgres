@@ -3656,7 +3656,7 @@ include_dir 'conf.d'
         If data checksums are enabled, hint bit updates are always WAL-logged
         and this setting is ignored. You can use this setting to test how much
         extra WAL-logging would occur if your database had data checksums
-        enabled.
+        disabled.
        </para>
 
        <para>
