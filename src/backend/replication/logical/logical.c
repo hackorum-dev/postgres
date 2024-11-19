@@ -391,6 +391,7 @@ CreateInitDecodingContext(const char *plugin,
 	else
 	{
 		SpinLockAcquire(&slot->mutex);
+		Assert(slot->data.restart_lsn <= restart_lsn);
 		slot->data.restart_lsn = restart_lsn;
 		SpinLockRelease(&slot->mutex);
 	}
@@ -1876,6 +1877,8 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 			MyReplicationSlot->candidate_restart_valid <= lsn)
 		{
 			Assert(MyReplicationSlot->candidate_restart_lsn != InvalidXLogRecPtr);
+
+			Assert(MyReplicationSlot->data.restart_lsn <= MyReplicationSlot->candidate_restart_lsn);
 
 			MyReplicationSlot->data.restart_lsn = MyReplicationSlot->candidate_restart_lsn;
 			MyReplicationSlot->candidate_restart_lsn = InvalidXLogRecPtr;

@@ -1468,6 +1468,7 @@ ReplicationSlotReserveWal(void)
 			restart_lsn = GetXLogInsertRecPtr();
 
 		SpinLockAcquire(&slot->mutex);
+		Assert(slot->data.restart_lsn <= restart_lsn);
 		slot->data.restart_lsn = restart_lsn;
 		SpinLockRelease(&slot->mutex);
 
