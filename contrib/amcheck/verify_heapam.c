@@ -1319,6 +1319,12 @@ check_tuple_visibility(HeapCheckContext *ctx, bool *xmin_commit_status_ok,
 			return false;
 		}
 	}
+	else if (xmin_status != XID_COMMITTED)
+	{
+		report_corruption(ctx,
+				psprintf("uncommitted xmin %u while tuple has HEAP_XMIN_COMMITTED flag",
+				xmin));
+	}
 
 	/*
 	 * Okay, the inserter committed, so it was good at some point.  Now what
@@ -1380,6 +1386,14 @@ check_tuple_visibility(HeapCheckContext *ctx, bool *xmin_commit_status_ok,
 		 * toast cannot be vacuumed out from under us.
 		 */
 		ctx->tuple_could_be_pruned = false;
+
+		if (xmax_status == XID_COMMITTED && (tuphdr->t_infomask & HEAP_UPDATED))
+		{
+			report_corruption(ctx,
+					psprintf("committed xmax %u while tuple has HEAP_XMAX_INVALID and HEAP_UPDATED flags",
+					xmax));
+		}
+
 		return true;
 	}
 
