@@ -61,6 +61,11 @@ relation_open(Oid relationId, LOCKMODE lockmode)
 	if (!RelationIsValid(r))
 		elog(ERROR, "could not open relation with OID %u", relationId);
 
+	if (RELATION_IS_OTHER_TEMP(r))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot access temporary tables of other sessions")));
+
 	/*
 	 * If we didn't get the lock ourselves, assert that caller holds one,
 	 * except in bootstrap mode where no locks are used.
