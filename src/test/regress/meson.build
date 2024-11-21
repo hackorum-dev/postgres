@@ -43,23 +43,19 @@ regress_module = shared_module('regress',
 )
 test_install_libs += regress_module
 
-# Get some extra C modules from contrib/spi but mark them as not to be
-# installed.
-# FIXME: avoid the duplication.
-
-autoinc_regress = shared_module('autoinc',
-  ['../../../contrib/spi/autoinc.c'],
-  kwargs: pg_test_mod_args,
+autoinc_regress = custom_target('autoinc',
+  command: ['copy.py', autoinc.full_path(), meson.current_build_dir()],
+  output: fs.name(autoinc.full_path()),
+  depends: [autoinc],
+  build_by_default: true,
 )
-test_install_libs += autoinc_regress
 
-refint_regress = shared_module('refint',
-  ['../../../contrib/spi/refint.c'],
-  c_args: refint_cflags,
-  kwargs: pg_test_mod_args,
+refint_regress = custom_target('refint',
+  command: ['copy.py', refint.full_path(), meson.current_build_dir()],
+  output: fs.name(refint.full_path()),
+  depends: [refint],
+  build_by_default: true,
 )
-test_install_libs += refint_regress
-
 
 tests += {
   'name': 'regress',
