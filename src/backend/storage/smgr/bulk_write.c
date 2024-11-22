@@ -46,8 +46,6 @@
 
 #define MAX_PENDING_WRITES XLR_MAX_BLOCK_ID
 
-static const PGIOAlignedBlock zero_buffer = {{0}};	/* worth BLCKSZ */
-
 typedef struct PendingWrite
 {
 	BulkWriteBuffer buf;
@@ -274,39 +272,68 @@ smgr_bulk_flush(BulkWriteState *bulkstate)
 					 npending, blknos, pages, page_std);
 	}
 
-	for (int i = 0; i < npending; i++)
+	while (npending > 0)
 	{
-		BlockNumber blkno = pending_writes[i].blkno;
-		Page		page = pending_writes[i].buf->data;
+		const void  *buffers[MAX_PENDING_WRITES];
+		int		nbufs = 0;
 
-		PageSetChecksumInplace(page, blkno);
+		BlockNumber	blkno = pending_writes[nbufs].blkno;
+		buffers[nbufs] = pending_writes[nbufs].buf->data;
 
-		if (blkno >= bulkstate->relsize)
+		PageSetChecksumInplace(pending_writes[nbufs].buf->data, blkno + nbufs);
+		nbufs++;
+
+		for (; nbufs < npending && nbufs < MAX_PENDING_WRITES;)
 		{
-			/*
-			 * If we have to write pages nonsequentially, fill in the space
-			 * with zeroes until we come back and overwrite.  This is not
-			 * logically necessary on standard Unix filesystems (unwritten
-			 * space will read as zeroes anyway), but it should help to avoid
-			 * fragmentation.  The dummy pages aren't WAL-logged though.
-			 */
-			while (blkno > bulkstate->relsize)
-			{
-				/* don't set checksum for all-zero page */
-				smgrextend(bulkstate->smgr, bulkstate->forknum,
-						   bulkstate->relsize,
-						   &zero_buffer,
-						   true);
-				bulkstate->relsize++;
-			}
+			if (pending_writes[nbufs].blkno != blkno + nbufs)
+				break;
 
-			smgrextend(bulkstate->smgr, bulkstate->forknum, blkno, page, true);
-			bulkstate->relsize++;
+			/*
+			 * Never combine past the end of the relation; we need to separate
+			 * smgrwritev() and smgrextendv()
+			 */
+			if (blkno + nbufs == bulkstate->relsize)
+				break;
+
+			buffers[nbufs] = pending_writes[nbufs].buf->data;
+			PageSetChecksumInplace(pending_writes[nbufs].buf->data,
+								   blkno + nbufs);
+			nbufs++;
+		}
+		
+		Assert(((int64) blkno) + nbufs <= InvalidBlockNumber);
+
+		if (blkno < bulkstate->relsize)
+		{
+			Assert(blkno + nbufs <= bulkstate->relsize);
+
+			smgrwritev(bulkstate->smgr, bulkstate->forknum, blkno,
+					   buffers, nbufs, true);
 		}
 		else
-			smgrwrite(bulkstate->smgr, bulkstate->forknum, blkno, page, true);
-		pfree(page);
+		{
+			Assert(blkno >= bulkstate->relsize);
+
+			if (blkno > bulkstate->relsize)
+				smgrzeroextend(bulkstate->smgr, bulkstate->forknum,
+							   bulkstate->relsize,
+							   (int) (blkno - bulkstate->relsize),
+							   true);
+
+			smgrextendv(bulkstate->smgr, bulkstate->forknum, blkno,
+						buffers, nbufs, true);
+
+			bulkstate->relsize = blkno + nbufs;
+		}
+
+		npending -= nbufs;
+		pending_writes += nbufs;
+
+		for (int i = 0; i < nbufs; i++)
+			pfree((void *) buffers[i]);
 	}
+
+	Assert(npending == 0);
 
 	bulkstate->npending = 0;
 }
