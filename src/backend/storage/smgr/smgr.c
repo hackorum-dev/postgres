@@ -82,8 +82,9 @@ typedef struct f_smgr
 	bool		(*smgr_exists) (SMgrRelation reln, ForkNumber forknum);
 	void		(*smgr_unlink) (RelFileLocatorBackend rlocator, ForkNumber forknum,
 								bool isRedo);
-	void		(*smgr_extend) (SMgrRelation reln, ForkNumber forknum,
-								BlockNumber blocknum, const void *buffer, bool skipFsync);
+	void		(*smgr_extendv) (SMgrRelation reln, ForkNumber forknum,
+								 BlockNumber blocknum, const void **buffers,
+								 int nblocks, bool skipFsync);
 	void		(*smgr_zeroextend) (SMgrRelation reln, ForkNumber forknum,
 									BlockNumber blocknum, int nblocks, bool skipFsync);
 	bool		(*smgr_prefetch) (SMgrRelation reln, ForkNumber forknum,
@@ -116,7 +117,7 @@ static const f_smgr smgrsw[] = {
 		.smgr_create = mdcreate,
 		.smgr_exists = mdexists,
 		.smgr_unlink = mdunlink,
-		.smgr_extend = mdextend,
+		.smgr_extendv = mdextendv,
 		.smgr_zeroextend = mdzeroextend,
 		.smgr_prefetch = mdprefetch,
 		.smgr_maxcombine = mdmaxcombine,
@@ -535,11 +536,11 @@ smgrdounlinkall(SMgrRelation *rels, int nrels, bool isRedo)
  * causes intervening file space to become filled with zeroes.
  */
 void
-smgrextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
-		   const void *buffer, bool skipFsync)
+smgrextendv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+			const void **buffers, int nblocks, bool skipFsync)
 {
-	smgrsw[reln->smgr_which].smgr_extend(reln, forknum, blocknum,
-										 buffer, skipFsync);
+	smgrsw[reln->smgr_which].smgr_extendv(reln, forknum, blocknum,
+										  buffers, nblocks, skipFsync);
 
 	/*
 	 * Normally we expect this to increase nblocks by one, but if the cached
@@ -547,7 +548,7 @@ smgrextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	 * kernel.
 	 */
 	if (reln->smgr_cached_nblocks[forknum] == blocknum)
-		reln->smgr_cached_nblocks[forknum] = blocknum + 1;
+		reln->smgr_cached_nblocks[forknum] = blocknum + nblocks;
 	else
 		reln->smgr_cached_nblocks[forknum] = InvalidBlockNumber;
 }

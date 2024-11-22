@@ -448,17 +448,17 @@ mdunlinkfork(RelFileLocatorBackend rlocator, ForkNumber forknum, bool isRedo)
 }
 
 /*
- * mdextend() -- Add a block to the specified relation.
+ * mdextendv() -- Add blocks to the specified relation.
  *
- * The semantics are nearly the same as mdwrite(): write at the
+ * The semantics are nearly the same as mdwritev(): write at the
  * specified position.  However, this is to be used for the case of
  * extending a relation (i.e., blocknum is at or beyond the current
  * EOF).  Note that we assume writing a block beyond current EOF
  * causes intervening file space to become filled with zeroes.
  */
 void
-mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
-		 const void *buffer, bool skipFsync)
+mdextendv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+		  const void **buffers, int nblocks, bool skipFsync)
 {
 	off_t		seekpos;
 	int			nbytes;
@@ -466,7 +466,7 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 
 	/* If this build supports direct I/O, the buffer must be I/O aligned. */
 	if (PG_O_DIRECT != 0 && PG_IO_ALIGN_SIZE <= BLCKSZ)
-		Assert((uintptr_t) buffer == TYPEALIGN(PG_IO_ALIGN_SIZE, buffer));
+		Assert((uintptr_t) *buffers == TYPEALIGN(PG_IO_ALIGN_SIZE, *buffers));
 
 	/* This assert is too expensive to have on normally ... */
 #ifdef CHECK_WRITE_VS_EXTEND
@@ -479,40 +479,72 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	 * InvalidBlockNumber.  (Note that this failure should be unreachable
 	 * because of upstream checks in bufmgr.c.)
 	 */
-	if (blocknum == InvalidBlockNumber)
+	if (blocknum >= InvalidBlockNumber - nblocks)
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 				 errmsg("cannot extend file \"%s\" beyond %u blocks",
 						relpath(reln->smgr_rlocator, forknum),
 						InvalidBlockNumber)));
 
-	v = _mdfd_getseg(reln, forknum, blocknum, skipFsync, EXTENSION_CREATE);
 
-	seekpos = (off_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
-
-	Assert(seekpos < (off_t) BLCKSZ * RELSEG_SIZE);
-
-	if ((nbytes = FileWrite(v->mdfd_vfd, buffer, BLCKSZ, seekpos, WAIT_EVENT_DATA_FILE_EXTEND)) != BLCKSZ)
+	while (nblocks > 0)
 	{
-		if (nbytes < 0)
+		int		seg_remaining = RELSEG_SIZE - (blocknum % RELSEG_SIZE);
+		int		write_this_seg = Min(seg_remaining, nblocks);
+		struct iovec ios[PG_IOV_MAX];
+		int		tot_io_len = 0;
+		int		num_ios = 0;
+		char   *last_buf_end = NULL;
+
+		v = _mdfd_getseg(reln, forknum, blocknum, skipFsync, EXTENSION_CREATE);
+
+		seekpos = (off_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
+
+		Assert(seekpos < (off_t) BLCKSZ * RELSEG_SIZE);
+
+		for (int i = 0; i < write_this_seg; i++)
+		{
+			if (last_buf_end && last_buf_end == (char *) buffers[i])
+			{
+				ios[num_ios - 1].iov_len += BLCKSZ;
+				last_buf_end += BLCKSZ;
+			}
+			else
+			{
+				ios[num_ios].iov_len = BLCKSZ;
+				ios[num_ios].iov_base = (void *) buffers[i];
+				last_buf_end = ((char *) buffers[i]) + BLCKSZ;
+				num_ios++;
+			}
+			tot_io_len += BLCKSZ;
+		}
+
+		if ((nbytes = (int) FileWriteV(v->mdfd_vfd, ios, num_ios, seekpos, WAIT_EVENT_DATA_FILE_EXTEND)) != tot_io_len)
+		{
+			if (nbytes < 0)
+				ereport(ERROR,
+						(errcode_for_file_access(),
+							errmsg("could not extend file \"%s\": %m",
+								   FilePathName(v->mdfd_vfd)),
+							errhint("Check free disk space.")));
+			/* short write: complain appropriately */
 			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not extend file \"%s\": %m",
-							FilePathName(v->mdfd_vfd)),
-					 errhint("Check free disk space.")));
-		/* short write: complain appropriately */
-		ereport(ERROR,
-				(errcode(ERRCODE_DISK_FULL),
-				 errmsg("could not extend file \"%s\": wrote only %d of %d bytes at block %u",
-						FilePathName(v->mdfd_vfd),
-						nbytes, BLCKSZ, blocknum),
-				 errhint("Check free disk space.")));
+					(errcode(ERRCODE_DISK_FULL),
+						errmsg("could not extend file \"%s\": wrote only %d of %d bytes at block %u",
+							   FilePathName(v->mdfd_vfd),
+							   nbytes, tot_io_len, blocknum),
+						errhint("Check free disk space.")));
+		}
+
+		if (!skipFsync && !SmgrIsTemp(reln))
+			register_dirty_segment(reln, forknum, v);
+
+		Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
+
+		blocknum += write_this_seg;
+		buffers += write_this_seg;
+		nblocks -= write_this_seg;
 	}
-
-	if (!skipFsync && !SmgrIsTemp(reln))
-		register_dirty_segment(reln, forknum, v);
-
-	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
 }
 
 /*
@@ -1676,9 +1708,9 @@ _mdfd_getseg(SMgrRelation reln, ForkNumber forknum, BlockNumber blkno,
 				char	   *zerobuf = palloc_aligned(BLCKSZ, PG_IO_ALIGN_SIZE,
 													 MCXT_ALLOC_ZERO);
 
-				mdextend(reln, forknum,
-						 nextsegno * ((BlockNumber) RELSEG_SIZE) - 1,
-						 zerobuf, skipFsync);
+				mdextendv(reln, forknum,
+						  nextsegno * ((BlockNumber) RELSEG_SIZE) - 1,
+						  (const void **) &zerobuf, 1, skipFsync);
 				pfree(zerobuf);
 			}
 			flags = O_CREAT;
