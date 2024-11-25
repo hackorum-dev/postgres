@@ -1219,19 +1219,19 @@ SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a < ANY (ARRAY[1, 51]) AND b > ''1''');
  estimated | actual 
 -----------+--------
-      2472 |   2400
+      2448 |   2400
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a >= ANY (ARRAY[1, 51]) AND b <= ANY (ARRAY[''1'', ''2''])');
  estimated | actual 
 -----------+--------
-      1441 |   1250
+      1287 |   1250
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a <= ANY (ARRAY[1, 2, 51, 52]) AND b >= ANY (ARRAY[''1'', ''2''])');
  estimated | actual 
 -----------+--------
-      3909 |   2550
+      2597 |   2550
 (1 row)
 
 -- ALL (should not benefit from functional dependencies)
@@ -1244,13 +1244,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a IN (1, 51) AND b = ALL (ARRAY[''1'', ''2''])');
  estimated | actual 
 -----------+--------
-         1 |      0
+         0 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a IN (1, 2, 51, 52) AND b = ALL (ARRAY[''1'', ''2''])');
  estimated | actual 
 -----------+--------
-         1 |      0
+         0 |      0
 (1 row)
 
 -- create statistics
@@ -1385,38 +1385,38 @@ SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a < ANY (ARRAY[1, 51]) AND b > ''1''');
  estimated | actual 
 -----------+--------
-      2472 |   2400
+      2448 |   2400
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a >= ANY (ARRAY[1, 51]) AND b <= ANY (ARRAY[''1'', ''2''])');
  estimated | actual 
 -----------+--------
-      1441 |   1250
+      1287 |   1250
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a <= ANY (ARRAY[1, 2, 51, 52]) AND b >= ANY (ARRAY[''1'', ''2''])');
  estimated | actual 
 -----------+--------
-      3909 |   2550
+      2597 |   2550
 (1 row)
 
 -- ALL (should not benefit from functional dependencies)
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a IN (1, 51) AND b = ALL (ARRAY[''1''])');
  estimated | actual 
 -----------+--------
-         2 |    100
+       100 |    100
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a IN (1, 51) AND b = ALL (ARRAY[''1'', ''2''])');
  estimated | actual 
 -----------+--------
-         1 |      0
+         0 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE a IN (1, 2, 51, 52) AND b = ALL (ARRAY[''1'', ''2''])');
  estimated | actual 
 -----------+--------
-         1 |      0
+         0 |      0
 (1 row)
 
 -- changing the type of column c causes all its stats to be dropped, reverting
@@ -2032,37 +2032,37 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a = ANY (ARRAY
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a <= ANY (ARRAY[1, 2, 3]) AND b IN (''1'', ''2'', ''3'')');
  estimated | actual 
 -----------+--------
-        26 |    150
+        12 |    150
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a <= ANY (ARRAY[1, NULL, 2, 3]) AND b IN (''1'', ''2'', NULL, ''3'')');
  estimated | actual 
 -----------+--------
-        26 |    150
+        12 |    150
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a < ALL (ARRAY[4, 5]) AND c > ANY (ARRAY[1, 2, 3])');
  estimated | actual 
 -----------+--------
-        10 |    100
+       184 |    100
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a < ALL (ARRAY[4, 5]) AND c > ANY (ARRAY[1, 2, 3, NULL])');
  estimated | actual 
 -----------+--------
-        10 |    100
+       184 |    100
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a < ALL (ARRAY[4, 5]) AND b IN (''1'', ''2'', ''3'') AND c > ANY (ARRAY[1, 2, 3])');
  estimated | actual 
 -----------+--------
-         1 |    100
+        11 |    100
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a < ALL (ARRAY[4, 5]) AND b IN (''1'', ''2'', NULL, ''3'') AND c > ANY (ARRAY[1, 2, NULL, 3])');
  estimated | actual 
 -----------+--------
-         1 |    100
+        11 |    100
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a = ANY (ARRAY[4,5]) AND 4 = ANY(ia)');

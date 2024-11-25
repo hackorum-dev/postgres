@@ -2766,10 +2766,10 @@ explain (costs off) select * from list_parted where a in ('ab', 'cd', 'ef');
 (5 rows)
 
 explain (costs off) select * from list_parted where a = 'ab' or a in (null, 'cd');
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
+                        QUERY PLAN                        
+----------------------------------------------------------
  Seq Scan on part_ab_cd list_parted
-   Filter: (((a)::text = 'ab'::text) OR ((a)::text = ANY ('{NULL,cd}'::text[])))
+   Filter: (((a)::text = 'ab'::text) OR (a = 'cd'::text))
 (2 rows)
 
 explain (costs off) select * from list_parted where a = 'ab';

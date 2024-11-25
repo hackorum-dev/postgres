@@ -1,0 +1,2607 @@
+--
+-- SELF CONTRADICTORY
+--
+-- Create table
+--
+CREATE TABLE self_a (a INT, b INT, c INT, d INT, z BOOL);
+CREATE TABLE self_b (a VARCHAR(6));
+--INSERT INTO self_a 
+--SELECT ceil(rANDom()*(1000-1)+1) , 
+--ceil(RANDOM()*(1000-1)+1) , 
+--ceil(RANDOM()*(1000-1)+1) , 
+--ceil(RANDOM()*(1000-1)+1) , 
+--(RANDOM())::int::bool
+--FROM generate_series(1 ,  300);
+--Load data
+--
+INSERT INTO self_a VALUES (56 , 118 , 32 , 780 , true);
+INSERT INTO self_a VALUES (854 , 610 , 991 , 526 , false);
+INSERT INTO self_a VALUES (837 , 872 , 417 , 130 , true);
+INSERT INTO self_a VALUES (193 , 326 , 902 , 976 , false);
+INSERT INTO self_a VALUES (414 , 913 , 549 , 289 , true);
+INSERT INTO self_a VALUES (733 , 159 , 285 , 496 , false);
+INSERT INTO self_a VALUES (44 , 253 , 569 , 357 , true);
+INSERT INTO self_a VALUES (269 , 39 , 540 , 941 , true);
+INSERT INTO self_a VALUES (807 , 974 , 329 , 4 , false);
+INSERT INTO self_a VALUES (392 , 582 , 559 , 657 , true);
+INSERT INTO self_a VALUES (836 , 337 , 672 , 303 , false);
+INSERT INTO self_a VALUES (241 , 161 , 464 , 926 , true);
+INSERT INTO self_a VALUES (569 , 792 , 682 , 462 , false);
+INSERT INTO self_a VALUES (994 , 629 , 653 , 562 , true);
+INSERT INTO self_a VALUES (614 , 505 , 543 , 510 , false);
+INSERT INTO self_a VALUES (796 , 634 , 72 , 519 , false);
+INSERT INTO self_a VALUES (982 , 357 , 767 , 752 , true);
+INSERT INTO self_a VALUES (318 , 13 , 119 , 148 , false);
+INSERT INTO self_a VALUES (568 , 940 , 548 , 426 , true);
+INSERT INTO self_a VALUES (356 , 732 , 660 , 303 , true);
+INSERT INTO self_a VALUES (332 , 755 , 409 , 493 , true);
+INSERT INTO self_a VALUES (263 , 710 , 622 , 40 , false);
+INSERT INTO self_a VALUES (205 , 128 , 909 , 468 , true);
+INSERT INTO self_a VALUES (6 , 514 , 536 , 746 , false);
+INSERT INTO self_a VALUES (153 , 850 , 127 , 470 , true);
+INSERT INTO self_a VALUES (289 , 430 , 843 , 929 , true);
+INSERT INTO self_a VALUES (797 , 168 , 438 , 902 , false);
+INSERT INTO self_a VALUES (870 , 667 , 792 , 275 , false);
+INSERT INTO self_a VALUES (247 , 382 , 911 , 522 , false);
+INSERT INTO self_a VALUES (27 , 203 , 125 , 400 , false);
+INSERT INTO self_a VALUES (153 , 678 , 79 , 278 , false);
+INSERT INTO self_a VALUES (731 , 516 , 81 , 324 , false);
+INSERT INTO self_a VALUES (602 , 648 , 892 , 787 , true);
+INSERT INTO self_a VALUES (691 , 177 , 873 , 183 , false);
+INSERT INTO self_a VALUES (455 , 962 , 675 , 268 , false);
+INSERT INTO self_a VALUES (899 , 679 , 71 , 88 , false);
+INSERT INTO self_a VALUES (755 , 985 , 569 , 555 , false);
+INSERT INTO self_a VALUES (862 , 344 , 659 , 984 , true);
+INSERT INTO self_a VALUES (222 , 163 , 299 , 75 , false);
+INSERT INTO self_a VALUES (139 , 603 , 93 , 681 , false);
+INSERT INTO self_a VALUES (196 , 783 , 85 , 485 , false);
+INSERT INTO self_a VALUES (688 , 963 , 463 , 465 , true);
+INSERT INTO self_a VALUES (804 , 894 , 833 , 52 , false);
+INSERT INTO self_a VALUES (254 , 332 , 481 , 563 , true);
+INSERT INTO self_a VALUES (564 , 43 , 33 , 445 , false);
+INSERT INTO self_a VALUES (283 , 4 , 598 , 347 , true);
+INSERT INTO self_a VALUES (108 , 736 , 693 , 731 , false);
+INSERT INTO self_a VALUES (836 , 502 , 543 , 294 , false);
+INSERT INTO self_a VALUES (900 , 739 , 645 , 132 , true);
+INSERT INTO self_a VALUES (918 , 798 , 360 , 621 , false);
+INSERT INTO self_a VALUES (302 , 998 , 212 , 696 , true);
+INSERT INTO self_a VALUES (711 , 906 , 273 , 384 , false);
+INSERT INTO self_a VALUES (699 , 884 , 563 , 120 , true);
+INSERT INTO self_a VALUES (357 , 456 , 709 , 762 , true);
+INSERT INTO self_a VALUES (708 , 276 , 237 , 862 , false);
+INSERT INTO self_a VALUES (274 , 40 , 478 , 495 , true);
+INSERT INTO self_a VALUES (564 , 973 , 743 , 123 , true);
+INSERT INTO self_a VALUES (195 , 848 , 401 , 908 , false);
+INSERT INTO self_a VALUES (819 , 38 , 449 , 715 , false);
+INSERT INTO self_a VALUES (688 , 549 , 702 , 819 , false);
+INSERT INTO self_a VALUES (242 , 716 , 55 , 88 , true);
+INSERT INTO self_a VALUES (866 , 508 , 610 , 30 , false);
+INSERT INTO self_a VALUES (720 , 558 , 719 , 721 , true);
+INSERT INTO self_a VALUES (895 , 106 , 7 , 231 , false);
+INSERT INTO self_a VALUES (895 , 926 , 991 , 18 , true);
+INSERT INTO self_a VALUES (15 , 49 , 670 , 482 , true);
+INSERT INTO self_a VALUES (499 , 122 , 139 , 68 , false);
+INSERT INTO self_a VALUES (44 , 486 , 900 , 526 , false);
+INSERT INTO self_a VALUES (502 , 390 , 266 , 59 , true);
+INSERT INTO self_a VALUES (197 , 481 , 798 , 954 , true);
+INSERT INTO self_a VALUES (1000 , 512 , 245 , 310 , false);
+INSERT INTO self_a VALUES (207 , 938 , 856 , 191 , true);
+INSERT INTO self_a VALUES (666 , 883 , 47 , 664 , false);
+INSERT INTO self_a VALUES (964 , 852 , 439 , 173 , false);
+INSERT INTO self_a VALUES (294 , 262 , 404 , 259 , false);
+INSERT INTO self_a VALUES (81 , 799 , 100 , 620 , true);
+INSERT INTO self_a VALUES (633 , 272 , 145 , 644 , true);
+INSERT INTO self_a VALUES (287 , 256 , 875 , 53 , false);
+INSERT INTO self_a VALUES (962 , 216 , 696 , 315 , false);
+INSERT INTO self_a VALUES (299 , 875 , 355 , 584 , false);
+INSERT INTO self_a VALUES (645 , 249 , 655 , 667 , true);
+INSERT INTO self_a VALUES (223 , 71 , 627 , 251 , true);
+INSERT INTO self_a VALUES (677 , 849 , 978 , 114 , false);
+INSERT INTO self_a VALUES (130 , 199 , 836 , 596 , false);
+INSERT INTO self_a VALUES (710 , 775 , 416 , 215 , false);
+INSERT INTO self_a VALUES (146 , 621 , 442 , 338 , true);
+INSERT INTO self_a VALUES (924 , 349 , 600 , 116 , false);
+INSERT INTO self_a VALUES (165 , 330 , 678 , 57 , true);
+INSERT INTO self_a VALUES (593 , 187 , 258 , 974 , true);
+INSERT INTO self_a VALUES (951 , 698 , 928 , 139 , false);
+INSERT INTO self_a VALUES (322 , 965 , 961 , 464 , false);
+INSERT INTO self_a VALUES (884 , 683 , 173 , 38 , true);
+INSERT INTO self_a VALUES (701 , 443 , 368 , 748 , true);
+INSERT INTO self_a VALUES (461 , 619 , 15 , 596 , true);
+INSERT INTO self_a VALUES (526 , 364 , 607 , 397 , true);
+INSERT INTO self_a VALUES (13 , 937 , 247 , 801 , false);
+INSERT INTO self_a VALUES (538 , 82 , 145 , 879 , false);
+INSERT INTO self_a VALUES (169 , 168 , 389 , 321 , true);
+INSERT INTO self_a VALUES (405 , 769 , 699 , 908 , true);
+INSERT INTO self_a VALUES (348 , 429 , 644 , 521 , false);
+INSERT INTO self_a VALUES (838 , 877 , 729 , 7 , false);
+INSERT INTO self_a VALUES (989 , 254 , 808 , 71 , true);
+INSERT INTO self_a VALUES (699 , 140 , 379 , 557 , true);
+INSERT INTO self_a VALUES (493 , 671 , 500 , 809 , true);
+INSERT INTO self_a VALUES (177 , 403 , 995 , 70 , true);
+INSERT INTO self_a VALUES (750 , 967 , 470 , 128 , true);
+INSERT INTO self_a VALUES (955 , 473 , 813 , 315 , true);
+INSERT INTO self_a VALUES (742 , 784 , 627 , 420 , false);
+INSERT INTO self_a VALUES (403 , 717 , 646 , 329 , true);
+INSERT INTO self_a VALUES (292 , 990 , 701 , 988 , false);
+INSERT INTO self_a VALUES (79 , 78 , 834 , 834 , false);
+INSERT INTO self_a VALUES (440 , 724 , 690 , 536 , false);
+INSERT INTO self_a VALUES (707 , 875 , 351 , 404 , true);
+INSERT INTO self_a VALUES (945 , 955 , 885 , 897 , false);
+INSERT INTO self_a VALUES (108 , 476 , 668 , 405 , false);
+INSERT INTO self_a VALUES (986 , 343 , 552 , 587 , true);
+INSERT INTO self_a VALUES (629 , 22 , 667 , 504 , true);
+INSERT INTO self_a VALUES (104 , 146 , 576 , 513 , true);
+INSERT INTO self_a VALUES (356 , 991 , 397 , 396 , true);
+INSERT INTO self_a VALUES (899 , 817 , 237 , 392 , true);
+INSERT INTO self_a VALUES (240 , 393 , 590 , 310 , false);
+INSERT INTO self_a VALUES (906 , 573 , 999 , 354 , false);
+INSERT INTO self_a VALUES (907 , 66 , 936 , 59 , false);
+INSERT INTO self_a VALUES (577 , 327 , 245 , 713 , false);
+INSERT INTO self_a VALUES (254 , 271 , 113 , 58 , true);
+INSERT INTO self_a VALUES (326 , 43 , 673 , 87 , true);
+INSERT INTO self_a VALUES (867 , 954 , 699 , 647 , false);
+INSERT INTO self_a VALUES (99 , 826 , 378 , 172 , false);
+INSERT INTO self_a VALUES (158 , 375 , 950 , 802 , false);
+INSERT INTO self_a VALUES (104 , 157 , 523 , 396 , true);
+INSERT INTO self_a VALUES (902 , 125 , 613 , 44 , false);
+INSERT INTO self_a VALUES (564 , 635 , 608 , 48 , true);
+INSERT INTO self_a VALUES (753 , 539 , 692 , 111 , true);
+INSERT INTO self_a VALUES (27 , 613 , 633 , 693 , true);
+INSERT INTO self_a VALUES (859 , 855 , 512 , 28 , false);
+INSERT INTO self_a VALUES (684 , 452 , 757 , 209 , false);
+INSERT INTO self_a VALUES (198 , 591 , 500 , 940 , false);
+INSERT INTO self_a VALUES (442 , 198 , 182 , 663 , true);
+INSERT INTO self_a VALUES (797 , 965 , 909 , 98 , false);
+INSERT INTO self_a VALUES (466 , 665 , 849 , 828 , true);
+INSERT INTO self_a VALUES (615 , 689 , 767 , 773 , false);
+INSERT INTO self_a VALUES (743 , 760 , 860 , 232 , true);
+INSERT INTO self_a VALUES (86 , 444 , 683 , 217 , true);
+INSERT INTO self_a VALUES (772 , 725 , 436 , 862 , true);
+INSERT INTO self_a VALUES (34 , 820 , 627 , 320 , true);
+INSERT INTO self_a VALUES (5 , 437 , 23 , 829 , false);
+INSERT INTO self_a VALUES (697 , 222 , 752 , 984 , true);
+INSERT INTO self_a VALUES (426 , 273 , 972 , 901 , false);
+INSERT INTO self_a VALUES (782 , 610 , 78 , 267 , true);
+INSERT INTO self_a VALUES (238 , 126 , 75 , 601 , true);
+INSERT INTO self_a VALUES (385 , 443 , 912 , 100 , true);
+INSERT INTO self_a VALUES (939 , 715 , 692 , 21 , true);
+INSERT INTO self_a VALUES (108 , 291 , 894 , 132 , false);
+INSERT INTO self_a VALUES (632 , 316 , 108 , 815 , true);
+INSERT INTO self_a VALUES (849 , 847 , 786 , 601 , false);
+INSERT INTO self_a VALUES (218 , 153 , 138 , 574 , true);
+INSERT INTO self_a VALUES (947 , 673 , 758 , 151 , true);
+INSERT INTO self_a VALUES (146 , 807 , 30 , 963 , false);
+INSERT INTO self_a VALUES (748 , 222 , 931 , 664 , true);
+INSERT INTO self_a VALUES (916 , 19 , 100 , 457 , false);
+INSERT INTO self_a VALUES (921 , 287 , 386 , 201 , true);
+INSERT INTO self_a VALUES (521 , 177 , 935 , 268 , true);
+INSERT INTO self_a VALUES (58 , 222 , 195 , 749 , true);
+INSERT INTO self_a VALUES (95 , 430 , 46 , 825 , true);
+INSERT INTO self_a VALUES (290 , 121 , 520 , 759 , false);
+INSERT INTO self_a VALUES (655 , 640 , 203 , 331 , false);
+INSERT INTO self_a VALUES (30 , 950 , 632 , 526 , true);
+INSERT INTO self_a VALUES (997 , 996 , 179 , 575 , true);
+INSERT INTO self_a VALUES (523 , 881 , 463 , 602 , false);
+INSERT INTO self_a VALUES (277 , 298 , 806 , 724 , true);
+INSERT INTO self_a VALUES (601 , 467 , 772 , 305 , false);
+INSERT INTO self_a VALUES (169 , 341 , 646 , 492 , false);
+INSERT INTO self_a VALUES (739 , 718 , 98 , 513 , true);
+INSERT INTO self_a VALUES (91 , 996 , 871 , 954 , true);
+INSERT INTO self_a VALUES (248 , 367 , 704 , 899 , true);
+INSERT INTO self_a VALUES (679 , 192 , 687 , 192 , true);
+INSERT INTO self_a VALUES (840 , 429 , 830 , 93 , false);
+INSERT INTO self_a VALUES (750 , 263 , 652 , 749 , true);
+INSERT INTO self_a VALUES (835 , 478 , 266 , 402 , true);
+INSERT INTO self_a VALUES (264 , 277 , 668 , 230 , true);
+INSERT INTO self_a VALUES (55 , 662 , 473 , 776 , true);
+INSERT INTO self_a VALUES (800 , 594 , 825 , 638 , true);
+INSERT INTO self_a VALUES (549 , 29 , 951 , 607 , false);
+INSERT INTO self_a VALUES (472 , 908 , 939 , 703 , true);
+INSERT INTO self_a VALUES (536 , 969 , 814 , 303 , true);
+INSERT INTO self_a VALUES (316 , 173 , 228 , 312 , false);
+INSERT INTO self_a VALUES (584 , 885 , 329 , 479 , false);
+INSERT INTO self_a VALUES (229 , 716 , 536 , 417 , false);
+INSERT INTO self_a VALUES (177 , 769 , 282 , 339 , true);
+INSERT INTO self_a VALUES (987 , 512 , 477 , 629 , false);
+INSERT INTO self_a VALUES (744 , 252 , 336 , 551 , false);
+INSERT INTO self_a VALUES (655 , 429 , 250 , 603 , true);
+INSERT INTO self_a VALUES (965 , 733 , 863 , 363 , false);
+INSERT INTO self_a VALUES (459 , 276 , 576 , 510 , true);
+INSERT INTO self_a VALUES (626 , 986 , 829 , 345 , false);
+INSERT INTO self_a VALUES (434 , 614 , 655 , 288 , true);
+INSERT INTO self_a VALUES (570 , 17 , 675 , 416 , true);
+INSERT INTO self_a VALUES (882 , 270 , 147 , 862 , false);
+INSERT INTO self_a VALUES (593 , 669 , 145 , 386 , false);
+INSERT INTO self_a VALUES (313 , 369 , 21 , 781 , true);
+INSERT INTO self_a VALUES (869 , 116 , 133 , 611 , true);
+INSERT INTO self_a VALUES (604 , 368 , 695 , 100 , true);
+INSERT INTO self_a VALUES (943 , 847 , 120 , 483 , true);
+INSERT INTO self_a VALUES (396 , 231 , 437 , 772 , false);
+INSERT INTO self_a VALUES (583 , 177 , 580 , 506 , true);
+INSERT INTO self_a VALUES (170 , 542 , 784 , 61 , false);
+INSERT INTO self_a VALUES (978 , 493 , 12 , 236 , false);
+INSERT INTO self_a VALUES (222 , 162 , 612 , 15 , false);
+INSERT INTO self_a VALUES (585 , 138 , 641 , 274 , true);
+INSERT INTO self_a VALUES (246 , 657 , 243 , 852 , true);
+INSERT INTO self_a VALUES (62 , 869 , 96 , 25 , false);
+INSERT INTO self_a VALUES (847 , 224 , 676 , 869 , false);
+INSERT INTO self_a VALUES (211 , 709 , 672 , 470 , true);
+INSERT INTO self_a VALUES (366 , 647 , 964 , 221 , false);
+INSERT INTO self_a VALUES (980 , 847 , 37 , 587 , false);
+INSERT INTO self_a VALUES (450 , 386 , 594 , 112 , false);
+INSERT INTO self_a VALUES (729 , 463 , 931 , 920 , false);
+INSERT INTO self_a VALUES (498 , 604 , 51 , 871 , false);
+INSERT INTO self_a VALUES (464 , 727 , 491 , 891 , false);
+INSERT INTO self_a VALUES (522 , 316 , 82 , 316 , true);
+INSERT INTO self_a VALUES (32 , 27 , 138 , 337 , false);
+INSERT INTO self_a VALUES (733 , 939 , 991 , 449 , true);
+INSERT INTO self_a VALUES (221 , 235 , 992 , 855 , false);
+INSERT INTO self_a VALUES (770 , 463 , 881 , 616 , false);
+INSERT INTO self_a VALUES (558 , 738 , 71 , 74 , false);
+INSERT INTO self_a VALUES (914 , 682 , 217 , 242 , false);
+INSERT INTO self_a VALUES (524 , 444 , 281 , 455 , false);
+INSERT INTO self_a VALUES (778 , 756 , 230 , 393 , false);
+INSERT INTO self_a VALUES (114 , 63 , 606 , 47 , true);
+INSERT INTO self_a VALUES (657 , 625 , 890 , 806 , false);
+INSERT INTO self_a VALUES (988 , 903 , 337 , 739 , true);
+INSERT INTO self_a VALUES (536 , 189 , 430 , 446 , true);
+INSERT INTO self_a VALUES (357 , 44 , 70 , 638 , false);
+INSERT INTO self_a VALUES (540 , 578 , 772 , 484 , true);
+INSERT INTO self_a VALUES (567 , 975 , 658 , 611 , true);
+INSERT INTO self_a VALUES (458 , 747 , 744 , 234 , false);
+INSERT INTO self_a VALUES (695 , 291 , 666 , 535 , false);
+INSERT INTO self_a VALUES (4 , 23 , 607 , 997 , true);
+INSERT INTO self_a VALUES (345 , 401 , 923 , 576 , true);
+INSERT INTO self_a VALUES (634 , 912 , 328 , 860 , true);
+INSERT INTO self_a VALUES (104 , 807 , 925 , 747 , true);
+INSERT INTO self_a VALUES (155 , 19 , 238 , 464 , true);
+INSERT INTO self_a VALUES (569 , 117 , 844 , 808 , false);
+INSERT INTO self_a VALUES (171 , 227 , 751 , 287 , true);
+INSERT INTO self_a VALUES (196 , 762 , 443 , 759 , true);
+INSERT INTO self_a VALUES (657 , 445 , 668 , 569 , false);
+INSERT INTO self_a VALUES (372 , 215 , 899 , 368 , true);
+INSERT INTO self_a VALUES (223 , 794 , 499 , 736 , false);
+INSERT INTO self_a VALUES (433 , 94 , 321 , 359 , true);
+INSERT INTO self_a VALUES (423 , 575 , 251 , 637 , false);
+INSERT INTO self_a VALUES (508 , 734 , 783 , 781 , true);
+INSERT INTO self_a VALUES (278 , 653 , 931 , 500 , false);
+INSERT INTO self_a VALUES (726 , 993 , 9 , 298 , true);
+INSERT INTO self_a VALUES (677 , 426 , 376 , 226 , false);
+INSERT INTO self_a VALUES (967 , 639 , 659 , 731 , false);
+INSERT INTO self_a VALUES (488 , 774 , 321 , 573 , false);
+INSERT INTO self_a VALUES (65 , 909 , 5 , 331 , true);
+INSERT INTO self_a VALUES (426 , 554 , 297 , 168 , true);
+INSERT INTO self_a VALUES (460 , 846 , 500 , 416 , true);
+INSERT INTO self_a VALUES (887 , 664 , 705 , 592 , true);
+INSERT INTO self_a VALUES (98 , 83 , 24 , 146 , false);
+INSERT INTO self_a VALUES (79 , 343 , 431 , 601 , false);
+INSERT INTO self_a VALUES (127 , 942 , 871 , 783 , true);
+INSERT INTO self_a VALUES (20 , 441 , 998 , 508 , false);
+INSERT INTO self_a VALUES (267 , 62 , 303 , 239 , true);
+INSERT INTO self_a VALUES (239 , 62 , 439 , 837 , true);
+INSERT INTO self_a VALUES (89 , 686 , 252 , 569 , false);
+INSERT INTO self_a VALUES (891 , 135 , 718 , 114 , true);
+INSERT INTO self_a VALUES (606 , 246 , 74 , 214 , false);
+INSERT INTO self_a VALUES (552 , 359 , 115 , 783 , false);
+INSERT INTO self_a VALUES (712 , 930 , 700 , 976 , false);
+INSERT INTO self_a VALUES (107 , 852 , 200 , 230 , true);
+INSERT INTO self_a VALUES (554 , 263 , 759 , 69 , false);
+INSERT INTO self_a VALUES (391 , 345 , 544 , 436 , false);
+INSERT INTO self_a VALUES (12 , 425 , 493 , 606 , false);
+INSERT INTO self_a VALUES (869 , 453 , 75 , 48 , true);
+INSERT INTO self_a VALUES (455 , 58 , 920 , 372 , true);
+INSERT INTO self_a VALUES (227 , 864 , 928 , 982 , false);
+INSERT INTO self_a VALUES (6 , 513 , 218 , 928 , false);
+INSERT INTO self_a VALUES (844 , 740 , 455 , 993 , false);
+INSERT INTO self_a VALUES (850 , 418 , 336 , 521 , false);
+INSERT INTO self_a VALUES (209 , 470 , 482 , 456 , true);
+INSERT INTO self_a VALUES (177 , 631 , 900 , 590 , true);
+INSERT INTO self_a VALUES (899 , 485 , 322 , 890 , true);
+INSERT INTO self_a VALUES (733 , 33 , 64 , 48 , true);
+INSERT INTO self_a VALUES (700 , 47 , 989 , 640 , false);
+INSERT INTO self_a VALUES (252 , 571 , 608 , 239 , false);
+INSERT INTO self_a VALUES (480 , 100 , 299 , 783 , false);
+INSERT INTO self_a VALUES (40 , 341 , 956 , 192 , false);
+INSERT INTO self_a VALUES (304 , 201 , 128 , 344 , true);
+INSERT INTO self_a VALUES (150 , 276 , 114 , 435 , false);
+INSERT INTO self_a VALUES (412 , 482 , 930 , 265 , false);
+INSERT INTO self_a VALUES (219 , 597 , 726 , 347 , true);
+INSERT INTO self_a VALUES (248 , 74 , 303 , 763 , true);
+INSERT INTO self_a VALUES (402 , 604 , 706 , 483 , true);
+INSERT INTO self_a VALUES (491 , 662 , 324 , 100 , false);
+INSERT INTO self_a VALUES (680 , 890 , 651 , 440 , true);
+INSERT INTO self_a VALUES (42 , 791 , 890 , 623 , true);
+INSERT INTO self_a VALUES (144 , 166 , 928 , 774 , false);
+INSERT INTO self_a VALUES (272 , 507 , 710 , 514 , true);
+INSERT INTO self_a VALUES (NULL, NULL, NULL, NULL);
+CREATE INDEX idx_self_a ON self_a USING BTREE (a , b , c);
+ANALYZE self_a;
+--
+-- Test single attribute self-contradictory
+--
+explain (costs off)
+SELECT * FROM self_a WHERE a > 10 AND a < 9;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 10 AND a < 10;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <= 10 AND a > 10;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <= 10 AND a >= 10;
+             QUERY PLAN              
+-------------------------------------
+ Seq Scan on self_a
+   Filter: ((a <= 10) AND (a >= 10))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 10 AND a < 10 AND a > 8 AND a <= 12;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 10 AND a = 10;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 10 AND a = 10;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 10)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a < 10 AND a = 10;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <= 10 AND a = 10;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 10)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a = 10 AND a <> 10;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a = 10 AND a <> 9;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 10)
+(2 rows)
+
+--
+-- Boolean type is a little tricky.
+--
+explain (costs off)
+SELECT * FROM self_a WHERE z IS TRUE AND z IS NOT TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS TRUE AND z IS FALSE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS TRUE AND z IS NOT FALSE;
+                  QUERY PLAN                  
+----------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS TRUE) AND (z IS NOT FALSE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS TRUE AND z IS UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS TRUE AND z IS NOT UNKNOWN;
+                   QUERY PLAN                   
+------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS TRUE) AND (z IS NOT UNKNOWN))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS FALSE AND z IS NOT FALSE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS FALSE AND z IS UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS FALSE AND z IS NOT UNKNOWN;
+                   QUERY PLAN                    
+-------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS FALSE) AND (z IS NOT UNKNOWN))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS UNKNOWN AND z IS TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS UNKNOWN AND z IS NOT TRUE;
+                   QUERY PLAN                   
+------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS UNKNOWN) AND (z IS NOT TRUE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS UNKNOWN AND z IS NOT UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z AND z IS NOT TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z AND z IS NOT FALSE;
+             QUERY PLAN             
+------------------------------------
+ Seq Scan on self_a
+   Filter: (z AND (z IS NOT FALSE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z AND z IS FALSE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z AND z IS TRUE;
+          QUERY PLAN           
+-------------------------------
+ Seq Scan on self_a
+   Filter: (z AND (z IS TRUE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z AND z IS UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE NOT z AND z IS NOT UNKNOWN;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on self_a
+   Filter: ((NOT z) AND (z IS NOT UNKNOWN))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE NOT z AND z IS NOT TRUE;
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on self_a
+   Filter: ((NOT z) AND (z IS NOT TRUE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE NOT z AND z IS NOT FALSE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE NOT z AND z IS FALSE;
+              QUERY PLAN              
+--------------------------------------
+ Seq Scan on self_a
+   Filter: ((NOT z) AND (z IS FALSE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE NOT z AND z IS TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE NOT z AND z IS UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE NOT z AND z IS NOT UNKNOWN;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on self_a
+   Filter: ((NOT z) AND (z IS NOT UNKNOWN))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND NOT z;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z >= TRUE AND NOT z;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z >= FALSE AND NOT z;
+              QUERY PLAN              
+--------------------------------------
+ Seq Scan on self_a
+   Filter: ((NOT z) AND (z >= false))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z;
+     QUERY PLAN      
+---------------------
+ Seq Scan on self_a
+   Filter: (z AND z)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z IS TRUE;
+          QUERY PLAN           
+-------------------------------
+ Seq Scan on self_a
+   Filter: (z AND (z IS TRUE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z IS FALSE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z IS NOT TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z IS NOT FALSE;
+             QUERY PLAN             
+------------------------------------
+ Seq Scan on self_a
+   Filter: (z AND (z IS NOT FALSE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z IS UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z IS NOT UNKNOWN;
+              QUERY PLAN              
+--------------------------------------
+ Seq Scan on self_a
+   Filter: (z AND (z IS NOT UNKNOWN))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z >= TRUE;
+          QUERY PLAN           
+-------------------------------
+ Seq Scan on self_a
+   Filter: (z AND (z >= true))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z > TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z <= TRUE;
+          QUERY PLAN           
+-------------------------------
+ Seq Scan on self_a
+   Filter: (z AND (z <= true))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z < TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z < FALSE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z > TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z >= TRUE AND z IS UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z >= TRUE AND z IS NOT TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z >= TRUE AND z IS NOT FALSE;
+                  QUERY PLAN                  
+----------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NOT FALSE) AND (z >= true))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z >= TRUE AND z IS FALSE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z > FALSE AND z IS UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z > FALSE AND z IS NOT UNKNOWN;
+                   QUERY PLAN                   
+------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NOT UNKNOWN) AND (z > false))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z > FALSE AND NOT z;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z > FALSE AND z IS NOT TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z >= FALSE AND z IS NOT TRUE;
+                  QUERY PLAN                  
+----------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NOT TRUE) AND (z >= false))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z > FALSE AND z IS NOT FALSE;
+                  QUERY PLAN                  
+----------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NOT FALSE) AND (z > false))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z > FALSE AND z IS FALSE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z <> TRUE AND z;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z <> TRUE AND NOT z;
+           QUERY PLAN            
+---------------------------------
+ Seq Scan on self_a
+   Filter: ((NOT z) AND (NOT z))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z <> TRUE AND z = true;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z <> TRUE AND z > false;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z <> TRUE AND z >= false;
+              QUERY PLAN              
+--------------------------------------
+ Seq Scan on self_a
+   Filter: ((NOT z) AND (z >= false))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z <> TRUE AND z >= true;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z <> FALSE AND NOT z;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z <> FALSE AND z >= false;
+           QUERY PLAN           
+--------------------------------
+ Seq Scan on self_a
+   Filter: (z AND (z >= false))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z <> FALSE AND z <= false;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--
+-- Null test
+--
+explain (costs off)
+SELECT * FROM self_a WHERE a IS NULL AND a IS NOT NULL;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IS NOT NULL AND a > 10;
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a IS NOT NULL) AND (a > 10))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IS NULL AND a = 10;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IS NULL AND a > 10;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IS NULL AND a <> 10;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NULL AND z;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NULL AND NOT z;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NULL AND z <> TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NULL AND z IS TRUE;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NULL AND z IS NOT TRUE;
+                 QUERY PLAN                  
+---------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NULL) AND (z IS NOT TRUE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NULL AND z IS UNKNOWN;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NULL) AND (z IS UNKNOWN))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NULL AND z IS NOT UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NOT NULL AND NOT z;
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NOT NULL) AND (NOT z))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NOT NULL AND z <> TRUE;
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NOT NULL) AND (NOT z))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NOT NULL AND z IS TRUE;
+                 QUERY PLAN                  
+---------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NOT NULL) AND (z IS TRUE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NOT NULL AND z IS NOT TRUE;
+                   QUERY PLAN                    
+-------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NOT NULL) AND (z IS NOT TRUE))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NOT NULL AND z IS NOT UNKNOWN;
+                     QUERY PLAN                     
+----------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((z IS NOT NULL) AND (z IS NOT UNKNOWN))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS NOT NULL AND z IS UNKNOWN;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--
+-- Test weak restriction that have the sematic of same level will being eliminated and IS self contradictory or not
+--
+explain (costs off)
+SELECT * FROM self_a WHERE a > 4 AND a > 5;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a > 5)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 4 AND a > 5 AND a < 5;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 4 AND a >= 5;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a >= 5)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 4 AND a >= 5 AND a < 5;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 4 AND a >= 4;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a > 4)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 4 AND a >= 4 AND a < 4;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 4 AND a >= 5;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a >= 5)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 4 AND a >= 5 AND a < 5;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 4 AND a > 5;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a > 5)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 4 AND a > 5 AND a < 5;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 4 AND a = 4;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 4)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 4 AND a = 4 AND a <> 4;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 3 AND a = 4;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 4)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a >= 3 AND a = 4 AND a < 4;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 3 AND a = 4;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 4)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <> 3 AND a = 4;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 4)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <> 3 AND a = 4 AND a > 4;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--
+-- Test same type coercion will be accepted
+--
+explain (costs off)
+select * from self_a WHERE  a = 1 AND a <>'1'::int;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--
+-- Test different type coercion will be ignored
+--
+explain (costs off)
+SELECT * FROM self_a WHERE  a = 1 AND a <>'1'::bigint;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a <> '1'::bigint) AND (a = 1))
+(2 rows)
+
+--
+-- Test specified collation will be ignored
+--
+explain (costs off)
+SELECT * FROM self_b  WHERE  a > 'c' AND a < 'b' COLLATE "pg_c_utf8";
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Seq Scan on self_b
+   Filter: (((a)::text > 'c'::text) AND ((a)::text < 'b'::text COLLATE pg_c_utf8))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_b  WHERE  a > 'c' AND a < 'b';
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--
+-- Redundant clause will be eliminated
+--
+explain (costs off)
+select * from self_a WHERE  a = 1 AND a = 1;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 1)
+(2 rows)
+
+explain (costs off)
+select * from self_a WHERE  a > 10 AND a > 10;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a > 10)
+(2 rows)
+
+explain (costs off)
+select * from self_a WHERE  a >= 10 AND a >= 10;
+     QUERY PLAN      
+---------------------
+ Seq Scan on self_a
+   Filter: (a >= 10)
+(2 rows)
+
+explain (costs off)
+select * from self_a WHERE  a < 4 AND a < 4;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a < 4)
+(2 rows)
+
+explain (costs off)
+select * from self_a WHERE  a <= 4 AND a <= 4;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a <= 4)
+(2 rows)
+
+--
+-- Test base or-clause
+--
+--
+-- Test or-clause self-contradictory
+--
+explain (costs off)
+SELECT * FROM self_a WHERE a > 10 AND a < 9 OR b > 8 AND b < 6;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 10 AND a < 9 OR ((b > 8 AND b < 7 or b = 10)  AND b < 6);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--
+-- Test or-clause can be pruned
+--
+explain (costs off)
+SELECT * FROM self_a WHERE a < 9 AND a > 10 OR b < 8;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (b < 8)
+(2 rows)
+
+SELECT * FROM self_a WHERE a < 9 AND a > 10 OR b < 8;
+  a  | b |  c  |  d  | z 
+-----+---+-----+-----+---
+ 283 | 4 | 598 | 347 | t
+(1 row)
+
+--
+-- Test or-clause redundant clause will be eliminated
+--
+explain (costs off)
+SELECT * FROM self_a WHERE a < 14 AND a < 10 OR b < 8;
+           QUERY PLAN            
+---------------------------------
+ Seq Scan on self_a
+   Filter: ((a < 10) OR (b < 8))
+(2 rows)
+
+SELECT * FROM self_a WHERE a < 14 AND a < 10 OR b < 8;
+  a  |  b  |  c  |  d  | z 
+-----+-----+-----+-----+---
+   6 | 514 | 536 | 746 | f
+ 283 |   4 | 598 | 347 | t
+   5 | 437 |  23 | 829 | f
+   4 |  23 | 607 | 997 | t
+   6 | 513 | 218 | 928 | f
+(5 rows)
+
+--
+-- Test same level and-clause whether can be push down into or-clause to test self-contradictory and can be pruned
+--
+explain (costs off)
+SELECT * FROM self_a WHERE a > 10 AND b > 12 AND (a < 9 OR b < 11);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 10 AND b > 12 AND (a < 9 AND b < 11 OR b <=16);
+                   QUERY PLAN                    
+-------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a > 10) AND (b > 12) AND (b <= 16))
+(2 rows)
+
+SELECT * FROM self_a WHERE a > 10 AND b > 12 AND (a < 9 AND b < 11 OR b <=16);
+  a  | b  |  c  |  d  | z 
+-----+----+-----+-----+---
+ 318 | 13 | 119 | 148 | f
+(1 row)
+
+--
+-- Test mixed expr clause
+--
+explain (costs off)
+SELECT * FROM self_a WHERE  NOT(a = 1 AND a <>1) AND a = 1;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 1)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IS NULL AND a IS NOT NULL OR a = 1;
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 1)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IS NULL AND a IS NOT NULL OR a = 1 AND a > 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z IS TRUE AND z IS NOT TRUE OR a = 1 AND a > 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE z = TRUE AND z IS NOT TRUE OR z IS NULL AND z IS NOT NULL;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a BETWEEN 10 AND 5;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a  WHERE (a > 4::bigint AND a > 4 AND a < 4 OR b > 3 AND b < 2) OR (a < 20);
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a < 20)
+(2 rows)
+
+SELECT * FROM self_a WHERE (a > 1 AND a <1 OR b < 10 ) AND z IS TRUE OR b < 20 or z IS null;
+  a  | b  |  c  |  d  | z 
+-----+----+-----+-----+---
+ 318 | 13 | 119 | 148 | f
+ 283 |  4 | 598 | 347 | t
+ 916 | 19 | 100 | 457 | f
+ 570 | 17 | 675 | 416 | t
+ 155 | 19 | 238 | 464 | t
+     |    |     |     | 
+(6 rows)
+
+--
+-- Test pruned and self-contradictory mixed case
+--
+explain (costs off)
+SELECT * FROM self_a WHERE (a > 10 AND a > 12 OR b > 8) AND b < 7 AND b < 15;
+            QUERY PLAN            
+----------------------------------
+ Seq Scan on self_a
+   Filter: ((b < 7) AND (a > 12))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 10 AND b > 12 AND (a > 10 AND a < 9 OR b < 11 OR a < 7);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > 10 AND b > 12 AND (((a < 9 OR b < 11) OR (b < 15 AND b < 17 OR a <12)) OR b >=8 AND a < 14);
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a > 10) AND (b > 12) AND ((b < 15) OR (a < 12) OR ((b > 12) AND (a < 14))))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <> 3 AND a <> 4 AND a <> 8 AND (b > 12 AND c < 80 OR c = 16 AND (a = 4 OR a = 8));
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a <> 3) AND (a <> 4) AND (a <> 8) AND (b > 12) AND (c < 80))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IS not null  AND (b > 12 AND c < 80 OR c = 16 AND (a IS null OR a = 8));
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a IS NOT NULL) AND (((b > 12) AND (c < 80)) OR ((c = 16) AND (a = 8))))
+(2 rows)
+
+--
+-- Test self-contradictory join case
+--
+explain (costs off)
+SELECT * FROM self_a a LEFT JOIN self_a b ON a.a = b.a WHERE b.a > 300 AND a.a = 145;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+select * from self_a a JOIN self_a b ON a.a =b.a  WHERE a.a= 145 AND b.a < 79;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--
+-- Test row comparison
+-- It's need to add define DEBUG_ROW_DECODE for debug
+--
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b) > (NULL , 3);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) < (100 , null , 3);
+     QUERY PLAN      
+---------------------
+ Seq Scan on self_a
+   Filter: (a < 100)
+(2 rows)
+
+--Equal expression
+--a<100
+--or a=100 and b<null
+--or a=100 and b=null and c<3
+--After converted
+--a<100
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) < (100 , null , 3) AND a = 101;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) > (1 , 2 , null);
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, c) > ROW(1, 2, NULL::integer))
+(2 rows)
+
+--Equal expression
+--a>1
+--or a=1 AND b>2
+--or a=1 AND b=2 AND c>null
+--After converted
+--a>1
+--or a=1 AND b>2
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) > (1 , 2 , null) AND a < 1;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(NULL , b) > (3 , 3);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , null , b) > (2 , 3 , 4);
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a > 2)
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 and null>3
+--or a=2 and null=3 and b>4
+--After converted
+--a>2
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , null , b) > (2 , 3 , 4) AND a = 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , null) >= (2 , 3 , 4);
+                      QUERY PLAN                      
+------------------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, NULL::integer) >= ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 and b>3
+--or a=2 and b=3 and null>=4
+--After converted
+--a>2
+--or a=2 and b>3
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , null) >= (2 , 3 , 4) AND a < 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , null) > (2 , 3 , 4);
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, NULL::integer) > ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 and b>3
+--or a=2 and b=3 and null>4
+--After converted
+--a>2
+--or a=2 and b>3
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (a , 3 , 4);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, c) >= ROW(a, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>a
+--or a=a AND b>3
+--or a=a AND b=3 AND c>=4
+--After converted
+--a is not null and b>3
+--or a IS not null and b=3 AND c>=4
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (a , 3 , 4) AND a IS NULL;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) > (a , 3 , 4);
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, c) > ROW(a, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>a
+--or a=a AND b>3
+--or a=a AND b=3 AND c>4
+--After converted
+--a is not null and b>3
+--or a IS not null and b=3 AND c>4
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (2 , b , 4);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, c) >= ROW(2, b, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 and b>b
+--or a=2 AND b=b AND c >=4
+--After converted
+--a>2
+--or a=2 AND b IS not null AND c >=4
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (2 , b , 4) AND a = 2 AND c < 4;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) > (2 , b , 4);
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, c) > ROW(2, b, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 and b>b
+--or a=2 AND b=b AND c >4
+--After converted
+--a>2
+--or a=2 AND b IS not null AND c >4
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (2 , 3 , c);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, c) >= ROW(2, 3, c))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3 AND c>=c
+--After converted
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3 AND c IS not null
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (2 , 3 , c) AND a = 2 AND c = 3 AND c IS NULL;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) > (2 , 3 , c);
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, c) > ROW(2, 3, c))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3 AND c>c
+--After converted
+--a>2
+--or a=2 AND b>3
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) > (2 , b , c);
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a > 2)
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>b
+--or a=2 AND b=b AND c>c
+--After converted
+--a>2
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) > (2 , b , c) AND a = 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (2 , b , c);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, c) >= ROW(2, b, c))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>b
+--or a=2 AND b=b AND c>=c
+--After converted
+--a>2
+--or a=2 AND b=b AND c>=c
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (2 , b , c) AND a = 2 AND b IS NULL;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) > (a , b , c);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--Equal expression
+--a>a
+--or a=a AND b>b
+--or a=a AND b=b AND c>c
+--After converted
+--false
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (a , b , c);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, c) >= ROW(a, b, c))
+(2 rows)
+
+--Equal expression
+--a>a
+--or a=a AND b>b
+--or a=a AND b=b AND c>=c
+--After converted
+--a=a AND b=b AND c>=c
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , c) >= (a , b , c) AND a IS NULL;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(2 , b , c) >= (2 , 3 , 4);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(2, b, c) >= ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--2>2
+--or 2=2 AND b>3
+--or 2=2 AND b=3 AND c>=4
+--After converted
+--b>3
+--or b=3 AND c>=4
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(2 , b , c) >= (2 , 3 , 4) AND c < 4 AND b = 3;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(2 , b , c) > (2 , 3 , 4);
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(2, b, c) > ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--2>2
+--or 2=2 AND b>3
+--or 2=2 AND b=3 AND c>=4
+--After converted
+--b>3
+--or b=3 AND c>4
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 3 , c) >= (2 , 3 , 4);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, 3, c) >= ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND 3>3
+--or a=2 AND 3=3 AND c>=4
+--After converted
+--a>2
+--or a=2 AND c>=4
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 3 , c) >= (2 , 3 , 4) AND c < 4 AND a = 1;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 4) >= (2 , 3 , 4);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, 4) >= ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3 AND 4>=4
+--After converted
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 4) >= (2 , 3 , 4) AND b = 3 AND a = 1;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 4) > (2 , 3 , 4);
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, 4) > ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3 AND 4>4
+--After converted
+--a>2
+--or a=2 AND b>3
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 4) > (2 , 3 , 4)  AND a = 2 AND b = 1;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 3 , 4) >= (2 , 3 , 4);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, 3, 4) >= ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND 3>3
+--or a=2 AND 3=3 AND 4>=4
+--After converted
+--a>2
+--or a=2
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 3 , 4) >= (2 , 3 , 4) AND a = 1;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 3 , 4) > (2 , 3 , 4);
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a > 2)
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND 3>3
+--or a=2 AND 3=3 AND 4>4
+--After converted
+--a>2
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 3 , 4) > (2 , 3 , 4) AND a = 1;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(2 , 3 , 4) >= (2 , 3 , 4);
+                    QUERY PLAN                     
+---------------------------------------------------
+ Result
+   One-Time Filter: (ROW(2, 3, 4) >= ROW(2, 3, 4))
+   ->  Seq Scan on self_a
+(3 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(2 , 3 , 4) > (2 , 3 , 4);
+                    QUERY PLAN                    
+--------------------------------------------------
+ Result
+   One-Time Filter: (ROW(2, 3, 4) > ROW(2, 3, 4))
+   ->  Seq Scan on self_a
+(3 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 3 , 4) > (a , 3 , 4);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--Equal expression
+--a>a
+--or a=a AND 3>3
+--or a=a AND 3=3 AND 4>4
+--After converted
+--false
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 3 , 4) >= (a , 3 , 4);
+        QUERY PLAN         
+---------------------------
+ Seq Scan on self_a
+   Filter: (a IS NOT NULL)
+(2 rows)
+
+--Equal expression
+--a>a
+--or a=a AND 3>3
+--or a=a AND 3=3 AND 4>=4
+--After converted
+--a IS NOT NULL
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 3 , 4) >= (a , 3 , 4) AND a IS NULL;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(4 , a , b) > (4 , a , b);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--After converted
+--false
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(4 , a , b) >= (4 , a , b);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(4, a, b) >= ROW(4, a, b))
+(2 rows)
+
+--Equal expression
+--4>4
+--or 4=4 AND a>a
+--or 4=4 AND a=a AND b>=b
+--After converted
+--a IS NOT NULL and b IS NOT NULL
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(4 , a , b) >= (4 , a , b) AND a IS NULL;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 4 , b) >= (a , 4 , b);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, 4, b) >= ROW(a, 4, b))
+(2 rows)
+
+--Equal expression
+--a>a
+--or a=a AND 4>4
+--or a=a AND 4=4 AND b>=b
+--After converted
+--a IS NOT NULL and b IS NOT NULL
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(4 , a , 4) >= (4 , a , 4);
+        QUERY PLAN         
+---------------------------
+ Seq Scan on self_a
+   Filter: (a IS NOT NULL)
+(2 rows)
+
+--Equal expression
+--4>4
+--or 4=4 AND a>a
+--or 4=4 AND a=a AND 4>=4
+--After converted
+--a IS NOT NULL
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , a , a) >= (a , a , a);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, a, a) >= ROW(a, a, a))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , a , a) > (a , a , a);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--Test const are not equal
+--negative
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(1 , b , c) >= (2 , 3 , 4);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--Equal expression
+--1>2
+--or 1=2 AND b>3
+--or 1=2 AND b=3 AND c>=4
+--After converted
+--false
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(1 , b , c) > (2 , 3 , 4);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--Equal expression
+--1>2
+--or 1=2 AND b>3
+--or 1=2 AND b=3 AND c>4
+--After converted
+--false
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 2 , c) >= (2 , 3 , 4);
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a > 2)
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND 2>3
+--or a=2 AND 2=3 AND c>=4
+--After converted
+--a>2
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 2 , c) >= (2 , 3 , 4) AND a = 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 3) >= (2 , 3 , 4);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, 3) >= ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3 AND 3>=4
+--After converted
+--a>2
+--or a=2 AND b>3
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 3) >= (2 , 3 , 4) AND a < 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 3 , c) >= (2 , 3 , 4 , 5);
+                   QUERY PLAN                   
+------------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, 3, c) >= ROW(2, 3, 4, 5))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3 AND 3>=4
+--or a=2 AND b=3 AND 3=4 and c>=5
+--After converted
+--a>2
+--or a=2 AND b>3
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 3) >= (a , b , 4);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--Equal expression
+--a>a
+--or a=a AND b>b
+--or a=a AND b=b AND 3>=4
+--After converted
+--false
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 5 , b , 3) >= (a , 5 , b , 4);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--Equal expression
+--a>a
+--or a=a AND 5>5
+--or a=a AND 5=5 and b>b
+--or a=a AND 5=5 and b=b and 3>=4
+--After converted
+--false
+--positive
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(5 , b , c) > (2 , 3 , 4);
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+(1 row)
+
+--Equal expression
+--5>2
+--or 5=2 AND b>3
+--or 5=2 AND b=3 AND c>4
+--After converted
+--true
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 5 , c) >= (2 , 3 , 4);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, 5, c) >= ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND 5>3
+--or a=2 AND 5=3 AND c>=4
+--After converted
+--a>2
+--or a=2
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 5 , c) >= (2 , 3 , 4) AND a = 1;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 5) >= (2 , 3 , 4);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, 5) >= ROW(2, 3, 4))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3 AND 5>=4
+--After converted
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 5) >= (2 , 3 , 4) AND a = 2 AND b < 3;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b , 5 , c) >= (2 , 3 , 4 , 6);
+                   QUERY PLAN                   
+------------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, b, 5, c) >= ROW(2, 3, 4, 6))
+(2 rows)
+
+--Equal expression
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3 AND 5>=4
+--or a=2 AND b=3 AND 5=4 and c>=6
+--After converted
+--a>2
+--or a=2 AND b>3
+--or a=2 AND b=3
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 2 , b , 4 , 3 , c) >= (108 , 2 , b , 2 , 4 , 5);
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Seq Scan on self_a
+   Filter: (ROW(a, 2, b, 4, 3, c) >= ROW(108, 2, b, 2, 4, 5))
+(2 rows)
+
+--Equal expression
+--a>108
+--or a=108 and 2>2
+--or a=108 and 2=2 and b>b
+--or a=108 and 2=2 and b=b and 4>2
+--or a=108 and 2=2 and b=b and 4=2 and 3>4
+--or a=108 and 2=2 and b=b and 4=2 and 3=4 and c>=5
+--After converted
+--a>108
+--or a=108 and b IS NOT NULL
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , 2 , b , 4 , 3 , c) >= (108 , 2 , b , 2 , 4 , 5) AND a = 108 AND b is NULL;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--Only keep expr that is simple after converted.
+explain (costs off)
+SELECT * FROM self_a WHERE ROW(a , b, c) > (23, 34, 56) AND b = 34 AND c = 56;
+                   QUERY PLAN                   
+------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a > 23) AND (b = 34) AND (c = 56))
+(2 rows)
+
+--Test row comparison under the or-expr is const true and the or-expr will be const true.
+explain (costs off)
+SELECT * FROM self_a WHERE (ROW(2,a,b) > (1,3,5) OR c < 345 AND a = 89) AND a < 150 OR c = 178;
+             QUERY PLAN             
+------------------------------------
+ Seq Scan on self_a
+   Filter: ((a < 150) OR (c = 178))
+(2 rows)
+
+--
+-- Test scalar array operation expr
+--
+explain (costs off)
+SELECT * FROM self_a WHERE a <> ALL (array[2 , 3 , 4]) AND a = 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <> ALL (array[2 , 3 , 4]) AND a < 20;
+                 QUERY PLAN                  
+---------------------------------------------
+ Bitmap Heap Scan on self_a
+   Recheck Cond: (a < 20)
+   Filter: (a <> ALL ('{2,3,4}'::integer[]))
+   ->  Bitmap Index Scan on idx_self_a
+         Index Cond: (a < 20)
+(5 rows)
+
+SELECT COUNT(*) FROM self_a WHERE a <> ALL (array[2 , 3 , 4]) AND a < 20;
+ count 
+-------
+     6
+(1 row)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <> ALL (array[2 , 3 , 4]) AND (a = 2 or a = 4);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <> ALL (array[2 , 2]) AND a = 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a <> ANY (array[2 , 2]) AND a = 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a < ALL (array[20 , 30 , 40]) AND a = 27;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a < ALL (array[20 , 30 , 40]) AND a > 25;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a < ALL (array[20 , 20]) AND a >= 25;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a < ANY (array[20 , 30 , 40]) AND a >= 25;
+                  QUERY PLAN                  
+----------------------------------------------
+ Bitmap Heap Scan on self_a
+   Recheck Cond: ((a >= 25) AND (a < 40))
+   ->  Bitmap Index Scan on idx_self_a
+         Index Cond: ((a >= 25) AND (a < 40))
+(4 rows)
+
+SELECT COUNT(*) FROM self_a WHERE a < ANY (array[20 , 30 , 40]) AND a >= 25;
+ count 
+-------
+     5
+(1 row)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a < ANY (array[20 , 30 , 40]) AND a > 40;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a < ANY (array[20 , 20]) AND a > 20;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a = ALL (array[2 , 3]);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a = ALL (array[54, NULL]);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a = ALL (array[2 , 2]) AND a <> 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a = ALL (array[27 , 27]) AND (a <> 27 OR a =27);
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 27)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a = ANY (array[2]) AND a <> 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a = ANY (array[2 , 2]) AND a <> 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a = ANY (array[2 , 3 , 4]) AND a < 2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IN (2 , 3 , 4) AND a IN (5);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a < ANY (array[1 , 2]) AND a > ANY (array[2 , 3]);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > ALL (array[2 , 3]) AND a <=3;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > ANY (array[2 , 3]) AND a <=3;
+            QUERY PLAN            
+----------------------------------
+ Seq Scan on self_a
+   Filter: ((a <= 3) AND (a > 2))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > ANY (array[2 , 3]) AND a <=2;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IN (58 , 32 , 4) AND a IN (1 , 32 , 6);
+     QUERY PLAN     
+--------------------
+ Seq Scan on self_a
+   Filter: (a = 32)
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IN (58 , 32 , 4) AND a IN (1 , 3 , 6);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IN (1 , 2 , 3) AND a IN (1 , 3 , 6) AND a > 1;
+           QUERY PLAN            
+---------------------------------
+ Seq Scan on self_a
+   Filter: ((a > 1) AND (a = 3))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a > ANY (array[2 , 3]) AND a <=2 OR a = ANY (array[2 , 3]) AND a > 4;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+-- Test push scalar array expr down.
+explain (costs off)
+SELECT * FROM self_a WHERE a IN (89, 12, 219) AND (b > 50 OR c < 300 AND a IN (89, 121, 319));
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a = ANY ('{89,12,219}'::integer[])) AND ((b > 50) OR ((c < 300) AND (a = 89))))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a IN (89, 12, 219) AND (b > 50 OR (c < 345 AND c < 78 OR a IN (89, 121, 319)));
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a = ANY ('{89,12,219}'::integer[])) AND ((b > 50) OR (c < 78) OR (a = 89)))
+(2 rows)
+
+--
+-- Test push scalar array expr that operator is <> down.
+--
+explain (costs off)
+SELECT * FROM self_a WHERE a not in (89, 12, 219) AND (b > 50 OR c < 345 AND a = 89);
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((b > 50) AND (a <> ALL ('{89,12,219}'::integer[])))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a not in (89, 12, 219) AND (b > 50 OR (c < 345 AND c < 78 OR a = 89));
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Seq Scan on self_a
+   Filter: ((a <> ALL ('{89,12,219}'::integer[])) AND ((b > 50) OR (c < 78)))
+(2 rows)
+
+explain (costs off)
+SELECT * FROM self_a WHERE a not in (89, 12, 219) AND (b > 50 and a = 12 OR (c < 345 AND c < 78 and a = 219 OR a = 89));
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+--Test using binary search.
+explain (costs off)
+SELECT * FROM self_a WHERE a not in (89, 12, 219, 78, 69) AND (b > 50 and a = 12 OR (c < 345 AND c < 78 and a = 219 OR a = 89));
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+

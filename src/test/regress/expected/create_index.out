@@ -2275,10 +2275,10 @@ ORDER BY thousand DESC, tenthous DESC;
 --
 explain (costs off)
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 = ANY('{7, 8, 9}');
-                                             QUERY PLAN                                             
-----------------------------------------------------------------------------------------------------
+                  QUERY PLAN                  
+----------------------------------------------
  Index Only Scan using tenk1_unique1 on tenk1
-   Index Cond: ((unique1 = ANY ('{1,42,7}'::integer[])) AND (unique1 = ANY ('{7,8,9}'::integer[])))
+   Index Cond: (unique1 = 7)
 (2 rows)
 
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 = ANY('{7, 8, 9}');
@@ -2302,10 +2302,10 @@ SELECT unique1 FROM tenk1 WHERE unique1 = ANY('{7, 14, 22}') and unique1 = ANY('
 
 explain (costs off)
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 = 1;
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+                  QUERY PLAN                  
+----------------------------------------------
  Index Only Scan using tenk1_unique1 on tenk1
-   Index Cond: ((unique1 = ANY ('{1,42,7}'::integer[])) AND (unique1 = 1))
+   Index Cond: (unique1 = 1)
 (2 rows)
 
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 = 1;
@@ -2316,10 +2316,10 @@ SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 = 1;
 
 explain (costs off)
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 = 12345;
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
- Index Only Scan using tenk1_unique1 on tenk1
-   Index Cond: ((unique1 = ANY ('{1,42,7}'::integer[])) AND (unique1 = 12345))
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
 (2 rows)
 
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 = 12345;
@@ -2329,10 +2329,10 @@ SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 = 12345;
 
 explain (costs off)
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 >= 42;
-                                 QUERY PLAN                                  
------------------------------------------------------------------------------
+                     QUERY PLAN                     
+----------------------------------------------------
  Index Only Scan using tenk1_unique1 on tenk1
-   Index Cond: ((unique1 = ANY ('{1,42,7}'::integer[])) AND (unique1 >= 42))
+   Index Cond: ((unique1 >= 42) AND (unique1 = 42))
 (2 rows)
 
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 >= 42;
@@ -2343,10 +2343,10 @@ SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 >= 42;
 
 explain (costs off)
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 > 42;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
- Index Only Scan using tenk1_unique1 on tenk1
-   Index Cond: ((unique1 = ANY ('{1,42,7}'::integer[])) AND (unique1 > 42))
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
 (2 rows)
 
 SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 > 42;
@@ -2356,10 +2356,10 @@ SELECT unique1 FROM tenk1 WHERE unique1 IN (1, 42, 7) and unique1 > 42;
 
 explain (costs off)
 SELECT unique1 FROM tenk1 WHERE unique1 > 9996 and unique1 >= 9999;
-                       QUERY PLAN                       
---------------------------------------------------------
+                  QUERY PLAN                  
+----------------------------------------------
  Index Only Scan using tenk1_unique1 on tenk1
-   Index Cond: ((unique1 > 9996) AND (unique1 >= 9999))
+   Index Cond: (unique1 >= 9999)
 (2 rows)
 
 SELECT unique1 FROM tenk1 WHERE unique1 > 9996 and unique1 >= 9999;
@@ -2370,10 +2370,10 @@ SELECT unique1 FROM tenk1 WHERE unique1 > 9996 and unique1 >= 9999;
 
 explain (costs off)
 SELECT unique1 FROM tenk1 WHERE unique1 < 3 and unique1 <= 3;
-                    QUERY PLAN                    
---------------------------------------------------
+                  QUERY PLAN                  
+----------------------------------------------
  Index Only Scan using tenk1_unique1 on tenk1
-   Index Cond: ((unique1 < 3) AND (unique1 <= 3))
+   Index Cond: (unique1 < 3)
 (2 rows)
 
 SELECT unique1 FROM tenk1 WHERE unique1 < 3 and unique1 <= 3;

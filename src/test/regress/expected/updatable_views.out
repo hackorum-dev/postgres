@@ -535,7 +535,7 @@ EXPLAIN (costs off) UPDATE rw_view1 SET a=6 WHERE a=5;
 --------------------------------------------------
  Update on base_tbl
    ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: ((a > 0) AND (a = 5))
+         Index Cond: (a = 5)
 (3 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view1 WHERE a=5;
@@ -543,7 +543,7 @@ EXPLAIN (costs off) DELETE FROM rw_view1 WHERE a=5;
 --------------------------------------------------
  Delete on base_tbl
    ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: ((a > 0) AND (a = 5))
+         Index Cond: (a = 5)
 (3 rows)
 
 EXPLAIN (costs off)
@@ -553,7 +553,7 @@ MERGE INTO rw_view1 t USING (VALUES (5, 'X')) AS v(a,b) ON t.a = v.a
 --------------------------------------------------
  Merge on base_tbl
    ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: ((a > 0) AND (a = 5))
+         Index Cond: (a = 5)
 (3 rows)
 
 EXPLAIN (costs off)
@@ -728,19 +728,19 @@ SELECT * FROM rw_view2 ORDER BY aaa;
 (3 rows)
 
 EXPLAIN (costs off) UPDATE rw_view2 SET aaa=5 WHERE aaa=4;
-                       QUERY PLAN                       
---------------------------------------------------------
+                    QUERY PLAN                    
+--------------------------------------------------
  Update on base_tbl
    ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: ((a < 10) AND (a > 0) AND (a = 4))
+         Index Cond: (a = 4)
 (3 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view2 WHERE aaa=4;
-                       QUERY PLAN                       
---------------------------------------------------------
+                    QUERY PLAN                    
+--------------------------------------------------
  Delete on base_tbl
    ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: ((a < 10) AND (a > 0) AND (a = 4))
+         Index Cond: (a = 4)
 (3 rows)
 
 DROP TABLE base_tbl CASCADE;
@@ -924,14 +924,14 @@ MERGE INTO rw_view2 t USING (VALUES (3, 'Row 3')) AS v(a,b) ON t.a = v.a
 ERROR:  cannot execute MERGE on relation "rw_view1"
 DETAIL:  MERGE is not supported for relations with rules.
 EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Update on base_tbl
    ->  Nested Loop
          ->  Index Scan using base_tbl_pkey on base_tbl
                Index Cond: (a = 2)
          ->  Subquery Scan on rw_view1
-               Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
+               Filter: (rw_view1.a = 2)
                ->  Bitmap Heap Scan on base_tbl base_tbl_1
                      Recheck Cond: (a > 0)
                      ->  Bitmap Index Scan on base_tbl_pkey
@@ -939,14 +939,14 @@ EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
 (10 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Delete on base_tbl
    ->  Nested Loop
          ->  Index Scan using base_tbl_pkey on base_tbl
                Index Cond: (a = 2)
          ->  Subquery Scan on rw_view1
-               Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
+               Filter: (rw_view1.a = 2)
                ->  Bitmap Heap Scan on base_tbl base_tbl_1
                      Recheck Cond: (a > 0)
                      ->  Bitmap Index Scan on base_tbl_pkey
@@ -1202,11 +1202,11 @@ SELECT * FROM base_tbl ORDER BY a;
 (6 rows)
 
 EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
-                        QUERY PLAN                        
-----------------------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Update on rw_view1 rw_view1_1
    ->  Subquery Scan on rw_view1
-         Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
+         Filter: (rw_view1.a = 2)
          ->  Bitmap Heap Scan on base_tbl
                Recheck Cond: (a > 0)
                ->  Bitmap Index Scan on base_tbl_pkey
@@ -1214,11 +1214,11 @@ EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
 (7 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
-                        QUERY PLAN                        
-----------------------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Delete on rw_view1 rw_view1_1
    ->  Subquery Scan on rw_view1
-         Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
+         Filter: (rw_view1.a = 2)
          ->  Bitmap Heap Scan on base_tbl
                Recheck Cond: (a > 0)
                ->  Bitmap Index Scan on base_tbl_pkey
@@ -3265,7 +3265,7 @@ UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
          ->  Append
                ->  Index Scan using t1_a_idx on public.t1 t1_1
                      Output: t1_1.a, t1_1.tableoid, t1_1.ctid
-                     Index Cond: ((t1_1.a > 5) AND (t1_1.a = 8))
+                     Index Cond: (t1_1.a = 8)
                      Filter: (EXISTS(SubPlan 1) AND snoop(t1_1.a) AND leakproof(t1_1.a))
                      SubPlan 1
                        ->  Append
@@ -3275,15 +3275,15 @@ UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
                                    Filter: (t12_2.a = t1_1.a)
                ->  Index Scan using t11_a_idx on public.t11 t1_2
                      Output: t1_2.a, t1_2.tableoid, t1_2.ctid
-                     Index Cond: ((t1_2.a > 5) AND (t1_2.a = 8))
+                     Index Cond: (t1_2.a = 8)
                      Filter: (EXISTS(SubPlan 1) AND snoop(t1_2.a) AND leakproof(t1_2.a))
                ->  Index Scan using t12_a_idx on public.t12 t1_3
                      Output: t1_3.a, t1_3.tableoid, t1_3.ctid
-                     Index Cond: ((t1_3.a > 5) AND (t1_3.a = 8))
+                     Index Cond: (t1_3.a = 8)
                      Filter: (EXISTS(SubPlan 1) AND snoop(t1_3.a) AND leakproof(t1_3.a))
                ->  Index Scan using t111_a_idx on public.t111 t1_4
                      Output: t1_4.a, t1_4.tableoid, t1_4.ctid
-                     Index Cond: ((t1_4.a > 5) AND (t1_4.a = 8))
+                     Index Cond: (t1_4.a = 8)
                      Filter: (EXISTS(SubPlan 1) AND snoop(t1_4.a) AND leakproof(t1_4.a))
 (30 rows)
 
