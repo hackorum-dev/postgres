@@ -405,7 +405,7 @@ PageGetItem(PageData *page, const ItemIdData *itemId)
  *		of items on the page.
  *
  *		NOTE: if the page is not initialized (pd_lower == 0), we must
- *		return zero to ensure sane behavior.
+ *		return InvalidOffsetNumber to ensure sane behavior.
  */
 static inline OffsetNumber
 PageGetMaxOffsetNumber(const PageData *page)
@@ -413,7 +413,7 @@ PageGetMaxOffsetNumber(const PageData *page)
 	const PageHeaderData *pageheader = (const PageHeaderData *) page;
 
 	if (pageheader->pd_lower <= SizeOfPageHeaderData)
-		return 0;
+		return InvalidOffsetNumber;
 	else
 		return (pageheader->pd_lower - SizeOfPageHeaderData) / sizeof(ItemIdData);
 }
