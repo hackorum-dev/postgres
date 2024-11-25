@@ -6,7 +6,7 @@ CREATE EXTENSION pgstattuple;
 -- indexes should be that.
 --
 
-create table test (a int primary key, b int[]);
+create table test (a int primary key, b int[], c point);
 
 select * from pgstattuple('test');
 select * from pgstattuple('test'::text);
@@ -52,6 +52,8 @@ create index test_hashidx on test using hash (b);
 
 select * from pgstathashindex('test_hashidx');
 
+create index test_gistidx ON test USING gist(c);
+
 -- these should error with the wrong type
 select pgstatginindex('test_pkey');
 select pgstathashindex('test_pkey');
@@ -61,6 +63,10 @@ select pgstathashindex('test_ginidx');
 
 select pgstatindex('test_hashidx');
 select pgstatginindex('test_hashidx');
+
+select pgstattuple('test_pkey');
+select pgstattuple('test_gistidx');
+select pgstattuple('test_hashidx');
 
 -- check that using any of these functions with unsupported relations will fail
 create table test_partitioned (a int) partition by range (a);

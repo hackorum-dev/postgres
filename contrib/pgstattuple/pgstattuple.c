@@ -61,22 +61,18 @@ typedef struct pgstattuple_type
 	uint64		free_space;		/* free/reusable space in bytes */
 } pgstattuple_type;
 
-typedef void (*pgstat_page) (pgstattuple_type *, Relation, BlockNumber,
-							 BufferAccessStrategy);
+typedef void (*pgstat_page) (pgstattuple_type *, Relation, Buffer);
 
 static Datum build_pgstattuple_type(pgstattuple_type *stat,
 									FunctionCallInfo fcinfo);
 static Datum pgstat_relation(Relation rel, FunctionCallInfo fcinfo);
 static Datum pgstat_heap(Relation rel, FunctionCallInfo fcinfo);
 static void pgstat_btree_page(pgstattuple_type *stat,
-							  Relation rel, BlockNumber blkno,
-							  BufferAccessStrategy bstrategy);
+							  Relation rel, Buffer buf);
 static void pgstat_hash_page(pgstattuple_type *stat,
-							 Relation rel, BlockNumber blkno,
-							 BufferAccessStrategy bstrategy);
+							 Relation rel, Buffer buf);
 static void pgstat_gist_page(pgstattuple_type *stat,
-							 Relation rel, BlockNumber blkno,
-							 BufferAccessStrategy bstrategy);
+							 Relation rel, Buffer buf);
 static Datum pgstat_index(Relation rel, BlockNumber start,
 						  pgstat_page pagefn, FunctionCallInfo fcinfo);
 static void pgstat_index_page(pgstattuple_type *stat, Page page,
@@ -405,13 +401,10 @@ pgstat_heap(Relation rel, FunctionCallInfo fcinfo)
  * pgstat_btree_page -- check tuples in a btree page
  */
 static void
-pgstat_btree_page(pgstattuple_type *stat, Relation rel, BlockNumber blkno,
-				  BufferAccessStrategy bstrategy)
+pgstat_btree_page(pgstattuple_type *stat, Relation rel, Buffer buf)
 {
-	Buffer		buf;
 	Page		page;
 
-	buf = ReadBufferExtended(rel, MAIN_FORKNUM, blkno, RBM_NORMAL, bstrategy);
 	LockBuffer(buf, BT_READ);
 	page = BufferGetPage(buf);
 
@@ -449,13 +442,15 @@ pgstat_btree_page(pgstattuple_type *stat, Relation rel, BlockNumber blkno,
  * pgstat_hash_page -- check tuples in a hash page
  */
 static void
-pgstat_hash_page(pgstattuple_type *stat, Relation rel, BlockNumber blkno,
-				 BufferAccessStrategy bstrategy)
+pgstat_hash_page(pgstattuple_type *stat, Relation rel, Buffer buf)
 {
-	Buffer		buf;
 	Page		page;
 
-	buf = _hash_getbuf_with_strategy(rel, blkno, HASH_READ, 0, bstrategy);
+	LockBuffer(buf, HASH_READ);
+
+	/* ref count and lock type are correct */
+
+	_hash_checkpage(rel, buf, 0);
 	page = BufferGetPage(buf);
 
 	if (PageGetSpecialSize(page) == MAXALIGN(sizeof(HashPageOpaqueData)))
@@ -491,13 +486,10 @@ pgstat_hash_page(pgstattuple_type *stat, Relation rel, BlockNumber blkno,
  * pgstat_gist_page -- check tuples in a gist page
  */
 static void
-pgstat_gist_page(pgstattuple_type *stat, Relation rel, BlockNumber blkno,
-				 BufferAccessStrategy bstrategy)
+pgstat_gist_page(pgstattuple_type *stat, Relation rel, Buffer buf)
 {
-	Buffer		buf;
 	Page		page;
 
-	buf = ReadBufferExtended(rel, MAIN_FORKNUM, blkno, RBM_NORMAL, bstrategy);
 	LockBuffer(buf, GIST_SHARE);
 	gistcheckpage(rel, buf);
 	page = BufferGetPage(buf);
@@ -523,14 +515,25 @@ pgstat_index(Relation rel, BlockNumber start, pgstat_page pagefn,
 			 FunctionCallInfo fcinfo)
 {
 	BlockNumber nblocks;
-	BlockNumber blkno;
 	BufferAccessStrategy bstrategy;
 	pgstattuple_type stat = {0};
+	Buffer		buf;
+	BlockRangeReadStreamPrivate p;
+	ReadStream *stream = NULL;
+	int64		block;
 
 	/* prepare access strategy for this index */
 	bstrategy = GetAccessStrategy(BAS_BULKREAD);
 
-	blkno = start;
+	p.current_blocknum = start;
+	stream = read_stream_begin_relation(READ_STREAM_FULL,
+										bstrategy,
+										rel,
+										MAIN_FORKNUM,
+										block_range_read_stream_cb,
+										&p,
+										0);
+
 	for (;;)
 	{
 		/* Get the current relation length */
@@ -539,20 +542,33 @@ pgstat_index(Relation rel, BlockNumber start, pgstat_page pagefn,
 		UnlockRelationForExtension(rel, ExclusiveLock);
 
 		/* Quit if we've scanned the whole relation */
-		if (blkno >= nblocks)
+		if (p.current_blocknum >= nblocks)
 		{
 			stat.table_len = (uint64) nblocks * BLCKSZ;
 
 			break;
 		}
 
-		for (; blkno < nblocks; blkno++)
+		p.last_exclusive = nblocks;
+
+		for (block = start; block < nblocks; ++block)
 		{
 			CHECK_FOR_INTERRUPTS();
-
-			pagefn(&stat, rel, blkno, bstrategy);
+			buf = read_stream_next_buffer(stream, NULL);
+			Assert(buf != InvalidBuffer);
+			pagefn(&stat, rel, buf);
 		}
+
+		Assert(read_stream_next_buffer(stream, NULL) == InvalidBuffer);
+
+		/*
+		 * After reaching the end we have to reset stream to use it again.
+		 * Extra restart in case of just one iteration does not cost us much.
+		 */
+		read_stream_reset(stream);
 	}
+
+	read_stream_end(stream);
 
 	relation_close(rel, AccessShareLock);
 

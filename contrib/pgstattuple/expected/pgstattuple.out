@@ -4,7 +4,7 @@ CREATE EXTENSION pgstattuple;
 -- the pgstattuple functions, but the results for empty tables and
 -- indexes should be that.
 --
-create table test (a int primary key, b int[]);
+create table test (a int primary key, b int[], c point);
 select * from pgstattuple('test');
  table_len | tuple_count | tuple_len | tuple_percent | dead_tuple_count | dead_tuple_len | dead_tuple_percent | free_space | free_percent 
 -----------+-------------+-----------+---------------+------------------+----------------+--------------------+------------+--------------
@@ -137,6 +137,7 @@ select * from pgstathashindex('test_hashidx');
        4 |            4 |              0 |            1 |            0 |          0 |          0 |          100
 (1 row)
 
+create index test_gistidx ON test USING gist(c);
 -- these should error with the wrong type
 select pgstatginindex('test_pkey');
 ERROR:  relation "test_pkey" is not a GIN index
@@ -150,6 +151,24 @@ select pgstatindex('test_hashidx');
 ERROR:  relation "test_hashidx" is not a btree index
 select pgstatginindex('test_hashidx');
 ERROR:  relation "test_hashidx" is not a GIN index
+select pgstattuple('test_pkey');
+      pgstattuple       
+------------------------
+ (8192,0,0,0,0,0,0,0,0)
+(1 row)
+
+select pgstattuple('test_gistidx');
+      pgstattuple       
+------------------------
+ (8192,0,0,0,0,0,0,0,0)
+(1 row)
+
+select pgstattuple('test_hashidx');
+           pgstattuple           
+---------------------------------
+ (49152,0,0,0,0,0,0,32608,66.34)
+(1 row)
+
 -- check that using any of these functions with unsupported relations will fail
 create table test_partitioned (a int) partition by range (a);
 create index test_partitioned_index on test_partitioned(a);
