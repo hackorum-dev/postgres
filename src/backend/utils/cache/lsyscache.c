@@ -1182,6 +1182,45 @@ get_language_name(Oid langoid, bool missing_ok)
 /*				---------- OPCLASS CACHE ----------						 */
 
 /*
+ * default_opclassinfo_for_am
+ *
+ *		Extract all records these opcdefault is true with specified AM oid.
+ */
+bool
+default_opclassinfo_for_am(Oid amoid, SortOpclassCallback callback, void *infocxt)
+{
+	bool		result = false;
+	CatCList   *opclist;
+	int			i;
+	
+	/*
+	 * Search through all the specified AM's opclass details to 
+	 * grab records which opcintype is true.
+	 */
+	opclist = SearchSysCacheList1(CLAAMNAMENSP, ObjectIdGetDatum(amoid));
+
+	for (i = 0; i < opclist->n_members; i++)
+	{
+		HeapTuple	classtup = &opclist->members[i]->tuple;
+		Form_pg_opclass classform = (Form_pg_opclass) GETSTRUCT(classtup);
+
+		if (classform->opcdefault)
+		{
+			callback(opclist->n_members,
+						classform->oid,
+						classform->opcfamily,
+						classform->opcintype,
+						infocxt);
+		}
+	}
+	if (opclist->n_members > 0)
+		result = true;
+	ReleaseCatCacheList(opclist);
+
+	return result;
+}
+
+/*
  * get_opclass_family
  *
  *		Returns the OID of the operator family the opclass belongs to.

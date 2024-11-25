@@ -187,6 +187,8 @@ query_planner(PlannerInfo *root,
 
 	joinlist = deconstruct_jointree(root);
 
+	examine_self_contradictory_rels_phase1(root);
+
 	/*
 	 * Reconsider any postponed outer-join quals now that we have built up
 	 * equivalence classes.  (This could result in further additions or
@@ -200,6 +202,8 @@ query_planner(PlannerInfo *root,
 	 * later.)
 	 */
 	generate_base_implied_equalities(root);
+
+	examine_self_contradictory_rels_phase2(root);
 
 	/*
 	 * We have completed merging equivalence sets, so it's now possible to

@@ -982,6 +982,7 @@ typedef struct RelOptInfo
 	 * used by various scans and joins:
 	 */
 	/* RestrictInfo structures (if base rel) */
+	uint32		baseri_nums;
 	List	   *baserestrictinfo;
 	/* cost of evaluating the above */
 	QualCost	baserestrictcost;
@@ -2572,6 +2573,12 @@ typedef struct RestrictInfo
 
 	/* the represented clause of WHERE or JOIN */
 	Expr	   *clause;
+
+	JoinDomain *jdomain pg_node_attr(copy_as_scalar, equal_ignore, read_write_ignore);
+
+	bool		fromec;
+	
+	bool		allow_equivalence;
 
 	/* true if clause was pushed down in level */
 	bool		is_pushed_down;

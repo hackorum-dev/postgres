@@ -127,7 +127,7 @@ static void distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 									List **postponed_oj_qual_list);
 static bool check_redundant_nullability_qual(PlannerInfo *root, Node *clause);
 static Relids get_join_domain_min_rels(PlannerInfo *root, Relids domain_relids);
-static void check_mergejoinable(RestrictInfo *restrictinfo);
+void check_mergejoinable(RestrictInfo *restrictinfo);
 static void check_hashjoinable(RestrictInfo *restrictinfo);
 static void check_memoizable(RestrictInfo *restrictinfo);
 
@@ -2534,7 +2534,8 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 									 relids,
 									 incompatible_relids,
 									 outerjoin_nonnullable);
-
+	restrictinfo->jdomain = jtitem->jdomain;
+	restrictinfo->allow_equivalence = allow_equivalence;
 	/*
 	 * If it's a join clause, add vars used in the clause to targetlists of
 	 * their relations, so that they will be emitted by the plan nodes that
@@ -2616,7 +2617,16 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 		if (maybe_equivalence)
 		{
 			if (process_equivalence(root, &restrictinfo, jtitem->jdomain))
+			{
+				/* Distribute to base rel. */
+				int relid;
+				if (bms_get_singleton_member(restrictinfo->required_relids, &relid))
+				{
+					restrictinfo->fromec = true;
+					distribute_restrictinfo_to_rels(root, restrictinfo);
+				}
 				return;
+			}
 			/* EC rejected it, so set left_ec/right_ec the hard way ... */
 			if (restrictinfo->mergeopfamilies)	/* EC might have changed this */
 				initialize_mergeclause_eclasses(root, restrictinfo);
@@ -3519,7 +3529,7 @@ match_foreign_keys_to_quals(PlannerInfo *root)
  *	  the operator is a mergejoinable operator.  The arguments can be
  *	  anything --- as long as there are no volatile functions in them.
  */
-static void
+void
 check_mergejoinable(RestrictInfo *restrictinfo)
 {
 	Expr	   *clause = restrictinfo->clause;

@@ -9,4 +9,5 @@ backend_sources += files(
   'planner.c',
   'setrefs.c',
   'subselect.c',
+  'contradictory.c',
 )

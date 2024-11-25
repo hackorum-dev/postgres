@@ -20,6 +20,7 @@ OBJS = \
 	planmain.o \
 	planner.o \
 	setrefs.o \
-	subselect.o
+	subselect.o \
+	contradictory.o
 
 include $(top_srcdir)/src/backend/common.mk

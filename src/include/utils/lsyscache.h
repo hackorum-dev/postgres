@@ -61,6 +61,8 @@ typedef struct AttStatsSlot
 	void	   *numbers_arr;	/* palloc'd numbers array, if any */
 } AttStatsSlot;
 
+typedef void (*SortOpclassCallback) (int nums, Oid opcid, Oid opcfamily, Oid opcintype, void *infocxt);
+
 /* Hook for plugins to get control in get_attavgwidth() */
 typedef int32 (*get_attavgwidth_hook_type) (Oid relid, AttrNumber attnum);
 extern PGDLLIMPORT get_attavgwidth_hook_type get_attavgwidth_hook;
@@ -103,6 +105,7 @@ extern Oid	get_constraint_index(Oid conoid);
 extern char get_constraint_type(Oid conoid);
 
 extern char *get_language_name(Oid langoid, bool missing_ok);
+extern bool default_opclassinfo_for_am(Oid amoid, SortOpclassCallback callback, void *infocxt);
 extern Oid	get_opclass_family(Oid opclass);
 extern Oid	get_opclass_input_type(Oid opclass);
 extern bool get_opclass_opfamily_and_input_type(Oid opclass,
