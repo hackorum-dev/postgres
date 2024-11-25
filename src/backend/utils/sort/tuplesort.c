@@ -122,6 +122,7 @@
 
 /* GUC variables */
 bool		trace_sort = false;
+bool		debug_branchless_sort = false;	/* XXX not for commit */
 
 #ifdef DEBUG_BOUNDED_SORT
 bool		optimize_bounded_sort = true;
@@ -618,6 +619,155 @@ qsort_tuple_int32_compare(SortTuple *a, SortTuple *b, Tuplesortstate *state)
 #define ST_SCOPE static
 #define ST_DEFINE
 #include "lib/sort_template.h"
+
+
+/*
+ * WIP: Branchless partitioning assumes NULLs have been handled already,
+ * so we don't consider them here.
+ * XXX: only works on first sort key, possibly abbreviated.
+ */
+#define LEADING_DATUM_CMP(a, b) \
+	ApplySortComparator((a)->datum1, false, \
+						(b)->datum1, false, ssup)
+
+static pg_noinline SortTuple *
+datum_med3(SortTuple *a,
+		   SortTuple *b,
+		   SortTuple *c, SortSupport ssup)
+{
+	return LEADING_DATUM_CMP(a, b) < 0 ?
+		(LEADING_DATUM_CMP(b, c) < 0 ? b : (LEADING_DATUM_CMP(a, c) < 0 ? c : a))
+		: (LEADING_DATUM_CMP(b, c) > 0 ? b : (LEADING_DATUM_CMP(a, c) < 0 ? a : c));
+}
+
+#define CMP_2WAY(a, b) (DatumGetInt64((a).datum1) < DatumGetInt64((b).datum1))
+#define CMP_3WAY(a,b) qsort_tuple_signed_compare(a,b,state)
+static size_t
+part_right_datum_signed_asc(SortTuple *v, size_t n, SortTuple *pivot_pos)
+{
+#include "tuple_partition.h"
+}
+
+static size_t
+part_left_datum_signed_asc(SortTuple *v, size_t n, SortTuple *pivot_pos)
+{
+#define PARTITION_LEFT
+#include "tuple_partition.h"
+#undef PARTITION_LEFT
+}
+
+static inline void
+small_sort_datum_signed(SortTuple *begin, size_t n, Tuplesortstate *state)
+{
+#include "tuple_small_sort.h"
+}
+#undef CMP_2WAY
+#undef CMP_3WAY
+
+
+static void
+qsort_tuple_datum(SortTuple *data, size_t n, Tuplesortstate *state, SortTuple *ancestor_pivot)
+{
+	SortTuple  *a = data,
+			   *pl,
+			   *pm,
+			   *pn;
+	size_t		n_left_part;
+	SortSupportData *ssup = state->base.sortKeys;
+
+
+loop:
+	CHECK_FOR_INTERRUPTS();
+
+	if (n < 7)
+	{
+		SortTuple  *begin;
+
+		if (ancestor_pivot != NULL &&
+			state->base.onlyKey == NULL)
+		{
+			/*
+			 * We must inculde the ancestor pivot, because the previous
+			 * partitioning step only compared the first key (possibly
+			 * abbreviated).
+			 */
+			begin = ancestor_pivot;
+			n++;
+		}
+		else
+			begin = a;
+
+		if (state->base.sortKeys[0].comparator == ssup_datum_signed_cmp)
+			small_sort_datum_signed(begin, n, state);
+
+		return;
+	}
+
+	pm = a + (n / 2);
+	if (n > 7)
+	{
+		pl = a;
+		pn = a + (n - 1);
+		if (n > 40)
+		{
+			size_t		d = (n / 8);
+
+			pl = datum_med3(pl, pl + d, pl + 2 * d, ssup);
+			pm = datum_med3(pm - d, pm, pm + d, ssup);
+			pn = datum_med3(pn - 2 * d, pn - d, pn, ssup);
+		}
+		pm = datum_med3(pl, pm, pn, ssup);
+	}
+
+	/*
+	 * Heuristic for when to bucket duplicates: If pivot compares equal to the
+	 * ancestor pivot, then there are likely a large number of duplicates in
+	 * this partition. In this case we "partition left", putting
+	 * elements equal to the pivot into the left partition, and greater elements
+	 * in the right partition.
+	 */
+	if (ancestor_pivot != NULL && LEADING_DATUM_CMP(ancestor_pivot, pm) == 0)
+	{
+		n_left_part = state->base.partition_left(a, n, pm);
+
+		/*
+		 * If the leading datum is authoritative, we are done. If not, we
+		 * recurse with a standard sort using the tiebreak comparator. We must
+		 * inculde both the current pivot and ancestor pivot.
+		 */
+		if (state->base.onlyKey == NULL)
+			qsort_tuple(ancestor_pivot, n_left_part + 1,
+						state->base.comparetup_tiebreak,
+						state);
+
+		/*
+		 * The only time this value must be correctly set to NULL is when we
+		 * enter the root partition. Setting it NULL here is an optimization:
+		 * Since all elements to the right of the current pivot are strictly
+		 * greater than it, we won't include it when we eventually
+		 * recurse to a small sort.
+		 */
+		ancestor_pivot = NULL;
+
+		a += n_left_part;
+		n -= n_left_part;
+		goto loop;
+	}
+	else
+		n_left_part = state->base.partition_right(a, n, pm);
+
+	/* WIP: Keep recursion simple for now. */
+
+	/* Recurse on left partition... */
+	qsort_tuple_datum(a, n_left_part, state, ancestor_pivot);
+
+	/* ..., then iterate on right partition to save stack space */
+	ancestor_pivot = a + n_left_part;
+	a = ancestor_pivot + 1;
+	n -= n_left_part + 1;
+	goto loop;
+}
+
 
 /*
  *		tuplesort_begin_xxx
@@ -2679,6 +2829,23 @@ tuplesort_sort_memtuples(Tuplesortstate *state)
 
 	if (state->memtupcount > 1)
 	{
+		int presorted = 1;
+
+		/* one-time precheck for monotonic input */
+		for (SortTuple* pm = state->memtuples + 1;
+			 pm < state->memtuples + state->memtupcount;
+			 pm++)
+		{
+			CHECK_FOR_INTERRUPTS();
+			if (COMPARETUP(state, pm - 1, pm) > 0)
+			{
+				presorted = 0;
+				break;
+			}
+		}
+		if (presorted)
+			return;
+
 		/*
 		 * Do we have the leading column's value or abbreviation in datum1,
 		 * and is there a specialization for its comparator?
@@ -2695,9 +2862,28 @@ tuplesort_sort_memtuples(Tuplesortstate *state)
 #if SIZEOF_DATUM >= 8
 			else if (state->base.sortKeys[0].comparator == ssup_datum_signed_cmp)
 			{
-				qsort_tuple_signed(state->memtuples,
-								   state->memtupcount,
-								   state);
+				/* WIP: proof of concept for one datum type */
+				SortTuple  *pm;
+
+				if (debug_branchless_sort)
+				{
+					state->base.partition_right = part_right_datum_signed_asc;
+					state->base.partition_left = part_left_datum_signed_asc;
+					qsort_tuple_datum(state->memtuples,
+									  state->memtupcount,
+									  state, NULL);
+				}
+				else
+					qsort_tuple_signed(state->memtuples,
+									   state->memtupcount,
+									   state);
+
+				/* WIP: correctness check */
+				for (pm = state->memtuples + 1;
+					 pm < state->memtuples + state->memtupcount;
+					 pm++)
+					Assert(COMPARETUP(state, pm - 1, pm) <= 0);
+
 				return;
 			}
 #endif

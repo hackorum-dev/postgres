@@ -180,6 +180,10 @@ typedef struct
 	 */
 	SortTupleComparator comparetup_tiebreak;
 
+	/* Optional partition functions for single-instruction comparators */
+	size_t		(*partition_right) (SortTuple *begin, size_t n, SortTuple *pivot_pos);
+	size_t		(*partition_left) (SortTuple *begin, size_t n, SortTuple *pivot_pos);
+
 	/*
 	 * Alter datum1 representation in the SortTuple's array back from the
 	 * abbreviated key to the first column value.

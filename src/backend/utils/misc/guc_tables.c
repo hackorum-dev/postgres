@@ -1720,6 +1720,18 @@ struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		/* XXX not for commit */
+		{"debug_branchless_sort", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("WIP testing of branchless sort techniques"),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&debug_branchless_sort,
+		false,
+		NULL, NULL, NULL
+	},
+
 #ifdef TRACE_SYNCSCAN
 	/* this is undocumented because not exposed in a standard build */
 	{
