@@ -5548,6 +5548,7 @@ get_parameterized_baserel_size(PlannerInfo *root, RelOptInfo *rel,
 {
 	List	   *allclauses;
 	double		nrows;
+	double		nrows2;
 
 	/*
 	 * Estimate the number of rows returned by the parameterized scan, knowing
@@ -5562,7 +5563,19 @@ get_parameterized_baserel_size(PlannerInfo *root, RelOptInfo *rel,
 							   rel->relid,	/* do not use 0! */
 							   JOIN_INNER,
 							   NULL);
+
+	nrows2 = rel->rows *
+		clauselist_selectivity(root,
+							   param_clauses,
+							   rel->relid,	/* do not use 0! */
+							   JOIN_INNER,
+							   NULL);
 	nrows = clamp_row_est(nrows);
+	nrows2 = clamp_row_est(nrows2);
+
+	if (nrows != nrows2)
+		elog(NOTICE, "nrows = %g, nrows2 = %g", nrows, nrows2);
+
 	/* For safety, make sure result is not more than the base estimate */
 	if (nrows > rel->rows)
 		nrows = rel->rows;
