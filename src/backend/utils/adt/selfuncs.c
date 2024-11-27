@@ -6199,6 +6199,28 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 		subquery = subroot->parse;
 		Assert(IsA(subquery, Query));
 
+		/* Get the subquery output expression referenced by the upper Var */
+		if (subquery->returningList)
+			subtlist = subquery->returningList;
+		else
+			subtlist = subquery->targetList;
+		ste = get_tle_by_resno(subtlist, var->varattno);
+		if (ste == NULL || ste->resjunk)
+			elog(ERROR, "subquery %s does not have attribute %d",
+				 rte->eref->aliasname, var->varattno);
+		var = (Var *) ste->expr;
+
+		/*
+		 * If the subquery has a GROUP BY clause, we cannot rely on statistics
+		 * for the column. However, if the GROUP BY contains only one column and 
+		 * the variable is present in the group list, we can consider it unique.
+		 */
+		if(subquery->groupClause) {
+			if (list_length(subquery->groupClause) == 1 &&
+				targetIsInSortList(ste, InvalidOid, subquery->groupClause))
+				vardata->isunique = true;
+		}
+		
 		/*
 		 * Punt if subquery uses set operations or grouping sets, as these
 		 * will mash underlying columns' stats beyond recognition.  (Set ops
@@ -6213,17 +6235,6 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 		if (subquery->setOperations ||
 			subquery->groupingSets)
 			return;
-
-		/* Get the subquery output expression referenced by the upper Var */
-		if (subquery->returningList)
-			subtlist = subquery->returningList;
-		else
-			subtlist = subquery->targetList;
-		ste = get_tle_by_resno(subtlist, var->varattno);
-		if (ste == NULL || ste->resjunk)
-			elog(ERROR, "subquery %s does not have attribute %d",
-				 rte->eref->aliasname, var->varattno);
-		var = (Var *) ste->expr;
 
 		/*
 		 * If subquery uses DISTINCT, we can't make full use of stats for the
