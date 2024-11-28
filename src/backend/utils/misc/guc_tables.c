@@ -474,6 +474,13 @@ static const struct config_enum_entry wal_compression_options[] = {
 	{NULL, 0, false}
 };
 
+/* vacuum_algorithm guc */
+static const struct config_enum_entry autovacuum_algorithm_options[] = {
+	{"linear", AUTOVACUUM_ALGORITHM_LINEAR, false},
+	{"sqrt", AUTOVACUUM_ALGORITHM_SQRT, false},
+	{"pow", AUTOVACUUM_ALGORITHM_POW, false},
+	{NULL, 0, false}
+};
 /*
  * Options for enum values stored in other modules
  */
@@ -5214,6 +5221,16 @@ struct config_enum ConfigureNamesEnum[] =
 		},
 		&debug_logical_replication_streaming,
 		DEBUG_LOGICAL_REP_STREAMING_BUFFERED, debug_logical_replication_streaming_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"autovacuum_algorithm", PGC_SIGHUP, AUTOVACUUM,
+			gettext_noop("vacuum trigger algorithm."),
+			NULL
+		},
+		&autovacuum_algorithm,
+		AUTOVACUUM_ALGORITHM_LINEAR, autovacuum_algorithm_options,
 		NULL, NULL, NULL
 	},
 

@@ -109,7 +109,7 @@
 #include "utils/syscache.h"
 #include "utils/timeout.h"
 #include "utils/timestamp.h"
-
+#include <math.h>
 
 /*
  * GUC parameters
@@ -132,6 +132,7 @@ int			autovacuum_vac_cost_limit;
 
 int			Log_autovacuum_min_duration = 600000;
 
+int		autovacuum_algorithm = AUTOVACUUM_ALGORITHM_LINEAR;
 /* the minimum allowed time between two awakenings of the launcher */
 #define MIN_AUTOVAC_SLEEPTIME 100.0 /* milliseconds */
 #define MAX_AUTOVAC_SLEEPTIME 300	/* seconds */
@@ -3038,10 +3039,24 @@ relation_needs_vacanalyze(Oid relid,
 		/* If the table hasn't yet been vacuumed, take reltuples as zero */
 		if (reltuples < 0)
 			reltuples = 0;
-
-		vacthresh = (float4) vac_base_thresh + vac_scale_factor * reltuples;
+		switch (autovacuum_algorithm)
+		{
+			case AUTOVACUUM_ALGORITHM_LINEAR:
+				vacthresh = (float4) vac_base_thresh + vac_scale_factor * reltuples;
+				anlthresh = (float4) anl_base_thresh + anl_scale_factor * reltuples;
+				break;
+			case AUTOVACUUM_ALGORITHM_SQRT:
+				vacthresh = (float4) fmin(vac_base_thresh + vac_scale_factor * reltuples, vac_base_thresh + vac_scale_factor * sqrt(reltuples) * 1000.0 );
+				anlthresh = (float4) fmin(anl_base_thresh + anl_scale_factor * reltuples, vac_base_thresh + anl_scale_factor * sqrt(reltuples) * 1000.0 );
+				break;
+			case AUTOVACUUM_ALGORITHM_POW:
+				vacthresh = (float4) fmin(vac_base_thresh + vac_scale_factor * reltuples, vac_base_thresh + vac_scale_factor * pow(reltuples,0.7) * 100.0 );
+				anlthresh = (float4) fmin(anl_base_thresh + anl_scale_factor * reltuples, vac_base_thresh + anl_scale_factor * pow(reltuples,0.7) * 100.0 );
+				break;
+			default:
+				elog(ERROR, "Unknown vacuum_algorithm value.");
+		}
 		vacinsthresh = (float4) vac_ins_base_thresh + vac_ins_scale_factor * reltuples;
-		anlthresh = (float4) anl_base_thresh + anl_scale_factor * reltuples;
 
 		/*
 		 * Note that we don't need to take special consideration for stat

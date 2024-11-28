@@ -47,6 +47,16 @@ extern PGDLLIMPORT int AutovacuumLauncherPid;
 
 extern PGDLLIMPORT int Log_autovacuum_min_duration;
 
+/*  algorithms for Vacuum */
+typedef enum Autovacuum_algorithm
+{
+	AUTOVACUUM_ALGORITHM_LINEAR,
+	AUTOVACUUM_ALGORITHM_SQRT,
+	AUTOVACUUM_ALGORITHM_POW
+} Autovacuum_algorithm;
+
+extern PGDLLIMPORT int autovacuum_algorithm;
+
 /* Status inquiry functions */
 extern bool AutoVacuumingActive(void);
 

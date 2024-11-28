@@ -161,6 +161,7 @@
 #vacuum_buffer_usage_limit = 2MB	# size of vacuum and analyze buffer access strategy ring;
 					# 0 to disable vacuum buffer access strategy;
 					# range 128kB to 16GB
+#autovacuum_algorithm = linear # autovacuum_algorithm of (sqrt,linear,pow) default linear
 
 # SLRU buffers (change requires restart)
 #commit_timestamp_buffers = 0		# memory for pg_commit_ts (0 = auto)
