@@ -918,7 +918,7 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
  * is surely a loser.
  */
 bool
-add_partial_path_precheck(RelOptInfo *parent_rel, int disabled_nodes,
+add_partial_path_precheck(RelOptInfo *parent_rel, int disabled_nodes, Cost startup_cost,
 						  Cost total_cost, List *pathkeys)
 {
 	ListCell   *p1;
@@ -937,16 +937,13 @@ add_partial_path_precheck(RelOptInfo *parent_rel, int disabled_nodes,
 	foreach(p1, parent_rel->partial_pathlist)
 	{
 		Path	   *old_path = (Path *) lfirst(p1);
-		PathKeysComparison keyscmp;
 
 		keyscmp = compare_pathkeys(pathkeys, old_path->pathkeys);
 		if (keyscmp != PATHKEYS_DIFFERENT)
 		{
-			if (total_cost > old_path->total_cost * STD_FUZZ_FACTOR &&
-				keyscmp != PATHKEYS_BETTER1)
+			if (total_cost > old_path->total_cost * STD_FUZZ_FACTOR)
 				return false;
-			if (old_path->total_cost > total_cost * STD_FUZZ_FACTOR &&
-				keyscmp != PATHKEYS_BETTER2)
+			if (old_path->total_cost > total_cost * STD_FUZZ_FACTOR)
 				return true;
 		}
 	}
@@ -962,7 +959,7 @@ add_partial_path_precheck(RelOptInfo *parent_rel, int disabled_nodes,
 	 * partial path; the resulting plans, if run in parallel, will be run to
 	 * completion.
 	 */
-	if (!add_path_precheck(parent_rel, disabled_nodes, total_cost, total_cost,
+	if (!add_path_precheck(parent_rel, disabled_nodes, startup_cost, total_cost,
 						   pathkeys, NULL))
 		return false;
 

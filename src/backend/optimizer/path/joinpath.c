@@ -999,7 +999,7 @@ try_partial_nestloop_path(PlannerInfo *root,
 	 */
 	initial_cost_nestloop(root, &workspace, jointype,
 						  outer_path, inner_path, extra);
-	if (!add_partial_path_precheck(joinrel, workspace.disabled_nodes,
+	if (!add_partial_path_precheck(joinrel, workspace.disabled_nodes, workspace.startup_cost,
 								   workspace.total_cost, pathkeys))
 		return;
 
@@ -1169,7 +1169,7 @@ try_partial_mergejoin_path(PlannerInfo *root,
 						   outersortkeys, innersortkeys,
 						   extra);
 
-	if (!add_partial_path_precheck(joinrel, workspace.disabled_nodes,
+	if (!add_partial_path_precheck(joinrel, workspace.disabled_nodes, workspace.startup_cost,
 								   workspace.total_cost, pathkeys))
 		return;
 
@@ -1300,7 +1300,7 @@ try_partial_hashjoin_path(PlannerInfo *root,
 	 */
 	initial_cost_hashjoin(root, &workspace, jointype, hashclauses,
 						  outer_path, inner_path, extra, parallel_hash);
-	if (!add_partial_path_precheck(joinrel, workspace.disabled_nodes,
+	if (!add_partial_path_precheck(joinrel, workspace.disabled_nodes, workspace.startup_cost,
 								   workspace.total_cost, NIL))
 		return;
 
