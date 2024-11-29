@@ -373,10 +373,9 @@ RelationPreserveStorage(RelFileLocator rlocator, bool atCommit)
 	{
 		next = pending->next;
 		if (RelFileLocatorEquals(rlocator, pending->rlocator)
-			&& pending->atCommit == atCommit)
+			&& pending->atCommit == atCommit
+			&& FORKBITMAP_ISSET(pending->forks, MAIN_FORKNUM))
 		{
-			Assert(pending->forks == FORKBITMAP_ALLFORKS());
-
 			found = true;
 
 			/* unlink and delete list entry */
@@ -807,8 +806,6 @@ smgrDoPendingDeletes(bool isCommit)
 			{
 				SMgrRelation srel;
 
-				Assert(pending->forks == FORKBITMAP_ALLFORKS());
-
 				srel = smgropen(pending->rlocator, pending->procNumber);
 
 				/* allocate the initial array, or extend it, if needed */
@@ -1109,8 +1106,18 @@ AtSubCommit_smgr(void)
 
 	for (pending = pendingDeletes; pending != NULL; pending = pending->next)
 	{
-		if (pending->nestLevel >= nestLevel)
-			pending->nestLevel = nestLevel - 1;
+		if (pending->nestLevel < nestLevel)
+		{
+#ifdef USE_ASSERT_CHECKING
+			/* all the remaining entries must be of upper subtransactions */
+			for (; pending ; pending = pending->next)
+				Assert(pending->nestLevel < nestLevel);
+#endif
+			break;
+		}
+
+		/* move this entry to the immediately upper subtransaction */
+		pending->nestLevel = nestLevel - 1;
 	}
 }
 
@@ -1324,10 +1331,11 @@ smgr_undoevent(ULogEvent event)
 		SMgrRelation reln;
 		ForkNumber	forks[3];
 		BlockNumber firstblocks[3] = {0};
-		int			nforks = 0;
+		int			nforks;
 
 		for (int i = 0 ; i < rlocs_len ; i++)
 		{
+			nforks = 0;
 			forks[nforks++] = MAIN_FORKNUM;
 
 			/*
