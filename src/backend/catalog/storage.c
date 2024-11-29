@@ -242,6 +242,30 @@ RelationCreateFork(SMgrRelation srel, ForkNumber forkNum,
 }
 
 /*
+ * RelationDropInitFork
+ *		Delete physical storage for the init fork of a relation.
+ */
+void
+RelationDropInitFork(SMgrRelation srel)
+{
+	int 			nestLevel = GetCurrentTransactionNestLevel();
+	RelFileLocator	rlocator = srel->smgr_rlocator.locator;
+	ProcNumber		procNumber = srel->smgr_rlocator.backend;
+	PendingRelDelete *pending;
+
+	/* Schedule the removal of this init fork at commit. */
+	pending = (PendingRelDelete *)
+		MemoryContextAlloc(TopMemoryContext, sizeof(PendingRelDelete));
+	pending->rlocator = rlocator;
+	pending->forks = FORKBITMAP_BIT(INIT_FORKNUM);
+	pending->procNumber = procNumber;
+	pending->atCommit = true;	/* delete if commit */
+	pending->nestLevel = nestLevel;
+	pending->next = pendingDeletes;
+	pendingDeletes = pending;
+}
+
+/*
  * Perform XLogInsert of an XLOG_SMGR_CREATE record to WAL.
  */
 void
