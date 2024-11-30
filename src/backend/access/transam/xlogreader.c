@@ -742,6 +742,14 @@ restart:
 	}
 	else
 	{
+		/* Record length is zero. */
+		if (total_len == 0)
+		{
+			report_invalid_record(state,
+								  "record with zero length at %X/%X",
+								  LSN_FORMAT_ARGS(RecPtr));
+			goto err;
+		}
 		/* There may be no next page if it's too small. */
 		if (total_len < SizeOfXLogRecord)
 		{
@@ -1233,6 +1241,13 @@ ValidXLogRecordHeader(XLogReaderState *state, XLogRecPtr RecPtr,
 					  XLogRecPtr PrevRecPtr, XLogRecord *record,
 					  bool randAccess)
 {
+	if (record->xl_tot_len == 0)
+	{
+		report_invalid_record(state,
+							  "record with zero length at %X/%X",
+							  LSN_FORMAT_ARGS(RecPtr));
+		return false;
+	}
 	if (record->xl_tot_len < SizeOfXLogRecord)
 	{
 		report_invalid_record(state,
