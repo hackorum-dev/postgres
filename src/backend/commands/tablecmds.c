@@ -218,6 +218,7 @@ typedef struct NewConstraint
 	Oid			refrelid;		/* PK rel, if FOREIGN */
 	Oid			refindid;		/* OID of PK's index, if FOREIGN */
 	bool		conwithperiod;	/* Whether the new FOREIGN KEY uses PERIOD */
+	bool		already_validated;	/* already validated for check constraint */
 	Oid			conid;			/* OID of pg_constraint entry, if FOREIGN */
 	Node	   *qual;			/* Check expr or CONSTR_FOREIGN Constraint */
 	ExprState  *qualstate;		/* Execution state for CHECK expr */
@@ -977,6 +978,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 			cooked->is_local = true;	/* not used for defaults */
 			cooked->inhcount = 0;	/* ditto */
 			cooked->is_no_inherit = false;
+			cooked->already_validated = false;
 			cookedDefaults = lappend(cookedDefaults, cooked);
 			attr->atthasdef = true;
 		}
@@ -6093,6 +6095,8 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		{
 			case CONSTR_CHECK:
 				needscan = true;
+				if(con->already_validated)
+					needscan = false;
 				con->qualstate = ExecPrepareExpr((Expr *) con->qual, estate);
 				break;
 			case CONSTR_FOREIGN:
@@ -9597,7 +9601,7 @@ ATAddCheckNNConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			newcon->name = ccon->name;
 			newcon->contype = ccon->contype;
 			newcon->qual = ccon->expr;
-
+			newcon->already_validated = ccon->already_validated;
 			tab->constraints = lappend(tab->constraints, newcon);
 		}
 
@@ -10718,6 +10722,7 @@ addFkRecurseReferencing(List **wqueue, Constraint *fkconstraint, Relation rel,
 			newcon->refindid = indexOid;
 			newcon->conid = parentConstr;
 			newcon->conwithperiod = fkconstraint->fk_with_period;
+			newcon->already_validated = false;
 			newcon->qual = (Node *) fkconstraint;
 
 			tab->constraints = lappend(tab->constraints, newcon);
@@ -12027,6 +12032,7 @@ ATExecValidateConstraint(List **wqueue, Relation rel, char *constrName,
 			newcon->refindid = con->conindid;
 			newcon->conid = con->oid;
 			newcon->qual = (Node *) fkconstraint;
+			newcon->already_validated = false;
 
 			/* Find or create work queue entry for this table */
 			tab = ATGetQueueEntry(wqueue, rel);
@@ -12095,6 +12101,7 @@ ATExecValidateConstraint(List **wqueue, Relation rel, char *constrName,
 			newcon->refrelid = InvalidOid;
 			newcon->refindid = InvalidOid;
 			newcon->conid = con->oid;
+			newcon->already_validated = false;
 
 			val = SysCacheGetAttrNotNull(CONSTROID, tuple,
 										 Anum_pg_constraint_conbin);

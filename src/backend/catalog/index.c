@@ -4257,3 +4257,77 @@ RestoreReindexState(const void *reindexstate)
 	/* Note the worker has its own transaction nesting level */
 	reindexingNestLevel = GetCurrentTransactionNestLevel();
 }
+
+/*
+ * relation_get_indexattnums
+ * 		Returns a Bitmapsets with member of attribute number (ref:
+ * 		pg_attribute.attnum) that have suitable index on it.
+*/
+Bitmapset *
+relation_get_indexattnums(Relation rel)
+{
+	Bitmapset *attnums = NULL;
+
+	Relation	pg_index;
+	HeapTuple	indexTuple;
+	SysScanDesc scan;
+	ScanKeyData skey;
+
+	/* Scan pg_index for unique index of the target rel */
+	pg_index = table_open(IndexRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				Anum_pg_index_indrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(RelationGetRelid(rel)));
+	scan = systable_beginscan(pg_index, IndexIndrelidIndexId, true,
+							  NULL, 1, &skey);
+
+	while (HeapTupleIsValid(indexTuple = systable_getnext(scan)))
+	{
+		Datum		adatum;
+		bool		isNull;
+		Datum	   *keys;
+		int			nelems;
+
+		Form_pg_index index = (Form_pg_index) GETSTRUCT(indexTuple);
+		if (!index->indislive)
+			continue;
+
+		/* Skip invalid, exclusion index or deferred index */
+		if (!index->indisvalid || index->indisexclusion || !index->indimmediate)
+			continue;
+
+		/* Skip expression index or predicate index */
+		if (!heap_attisnull(indexTuple, Anum_pg_index_indpred, NULL) ||
+			!heap_attisnull(indexTuple, Anum_pg_index_indexprs, NULL))
+			continue;
+
+		/* Extract the pg_index->indkey int2vector */
+		adatum = heap_getattr(indexTuple, Anum_pg_index_indkey,
+							RelationGetDescr(pg_index), &isNull);
+		if (isNull)
+			elog(ERROR, "null int2vector for index %u", index->indexrelid);
+
+		deconstruct_array_builtin(DatumGetArrayTypeP(adatum), INT2OID,
+								  &keys,
+								  NULL,
+								  &nelems);
+
+		if (nelems != index->indnatts)
+			elog(ERROR, "corrupted int2vector for index %u", index->indexrelid);
+
+		Assert(nelems >= index->indnkeyatts);
+
+		for (int i = 0; i < index->indnkeyatts; i++)
+		{
+			int	attno = DatumGetInt16(keys[i]);
+
+			attnums = bms_add_member(attnums, attno);
+		}
+	}
+	systable_endscan(scan);
+
+	table_close(pg_index, AccessShareLock);
+	return attnums;
+}

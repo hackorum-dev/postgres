@@ -57,6 +57,7 @@
 #include "commands/tablecmds.h"
 #include "commands/typecmds.h"
 #include "common/int.h"
+#include "executor/spi.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
@@ -115,6 +116,17 @@ static Node *cookConstraint(ParseState *pstate,
 							Node *raw_constraint,
 							char *relname);
 
+typedef struct checkexpr_context
+{
+	Bitmapset  *bms_indexattno;
+	bool		cannot_be_indexed;
+} checkexpr_context;
+static bool
+checkconstraint_expr_walker(Node *node, checkexpr_context *context);
+static bool
+index_validate_check_constraint(Oid constrOid, Relation rel,
+								Node *expr,
+								const char *constrname);
 
 /* ----------------------------------------------------------------
  *				XXX UGLY HARD CODED BADNESS FOLLOWS XXX
@@ -2409,6 +2421,7 @@ AddRelationNewConstraints(Relation rel,
 		cooked->is_local = is_local;
 		cooked->inhcount = is_local ? 0 : 1;
 		cooked->is_no_inherit = false;
+		cooked->already_validated = false;
 		cookedConstraints = lappend(cookedConstraints, cooked);
 	}
 
@@ -2527,6 +2540,8 @@ AddRelationNewConstraints(Relation rel,
 				StoreRelCheck(rel, ccname, expr, cdef->initially_valid, is_local,
 							  is_local ? 0 : 1, cdef->is_no_inherit, is_internal);
 
+			/* we need this for index_validate_check_constraint*/
+			CommandCounterIncrement();
 			numchecks++;
 
 			cooked = (CookedConstraint *) palloc(sizeof(CookedConstraint));
@@ -2539,6 +2554,13 @@ AddRelationNewConstraints(Relation rel,
 			cooked->is_local = is_local;
 			cooked->inhcount = is_local ? 0 : 1;
 			cooked->is_no_inherit = cdef->is_no_inherit;
+			/* internal, readd check constraint cannot be prevalidated */
+			if (is_internal)
+				cooked->already_validated = false;
+			else
+				cooked->already_validated =
+					index_validate_check_constraint(constrOid, rel, expr, ccname);
+
 			cookedConstraints = lappend(cookedConstraints, cooked);
 		}
 		else if (cdef->contype == CONSTR_NOTNULL)
@@ -2609,6 +2631,7 @@ AddRelationNewConstraints(Relation rel,
 			nncooked->is_local = is_local;
 			nncooked->inhcount = inhcount;
 			nncooked->is_no_inherit = cdef->is_no_inherit;
+			nncooked->already_validated = false;
 
 			cookedConstraints = lappend(cookedConstraints, nncooked);
 		}
@@ -2626,6 +2649,201 @@ AddRelationNewConstraints(Relation rel,
 	return cookedConstraints;
 }
 
+static bool
+index_validate_check_constraint(Oid constrOid, Relation rel, Node *expr, const char *constrname)
+{
+	StringInfoData querybuf;
+	BMS_Comparison cmp;
+	text	   	*constrdef_text;
+	Bitmapset	*idx_attnums = NULL;
+	char	   	*constrdef = NULL;
+	char	   	*constrdef_value = NULL;
+	bool		check_constraint_ok = false;
+
+	checkexpr_context	context = {0};
+	context.bms_indexattno = NULL;
+	context.cannot_be_indexed = false;
+
+	/*
+	 * we use CHECK constraint definition for constructing SQL query, later we
+	 * using SPI to execute it.
+	 */
+	constrdef_text = DatumGetTextPP(DirectFunctionCall2(pg_get_constraintdef,
+													ObjectIdGetDatum(constrOid),
+													BoolGetDatum(false)));
+	constrdef = text_to_cstring(constrdef_text);
+
+	if (constrdef == NULL)
+		return false;
+
+	/* CHECK constraint is a plain Var node, var type should only be bool */
+	if (IsA(expr, Var))
+	{
+		Var		   *var = (Var *) expr;
+		if (var->vartype == BOOLOID)
+			return true;
+		else
+			return false;
+	}
+
+	idx_attnums = relation_get_indexattnums(rel);
+	/* no appropriate index on this relation, so gave up */
+	if (idx_attnums == NULL)
+		return false;
+
+	checkconstraint_expr_walker(expr, &context);
+	if (context.cannot_be_indexed || context.bms_indexattno == NULL)
+		return false;
+
+	/* all the referenced vars in the expr should have index on it */
+	cmp = bms_subset_compare(context.bms_indexattno, idx_attnums);
+	if (cmp == BMS_SUBSET2 || cmp == BMS_DIFFERENT)
+		return false;
+
+	/*
+	 * set enable_seqscan to off to force optimizer using index scan.
+	 * we already checked that check constraint expr varnode is not-null
+	 * and have appropriate index on it.
+	 */
+	SPI_connect();
+	if (SPI_execute("set enable_seqscan to off", false, 0) != SPI_OK_UTILITY)
+		elog(ERROR, "SPI_exec failed for query: \"%s\"", "set enable_seqscan to off");
+
+	initStringInfo(&querybuf);
+	constrdef_value  = pstrdup(constrdef + 5); /*check constraint first word is CHECK, that's why offset 5*/
+	appendStringInfo(&querybuf, "SELECT 1 FROM %s WHERE (NOT %s) AND %s IS NOT NULL LIMIT 1",
+								RelationGetRelationName(rel),
+								constrdef_value,
+								constrdef_value);
+
+	if (SPI_execute(querybuf.data, false, 1) != SPI_OK_SELECT)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	check_constraint_ok = (SPI_processed == 0);
+
+	/*we need reset enable_seqscan GUC */
+	if (SPI_execute("reset enable_seqscan;", false, 0) != SPI_OK_UTILITY)
+		elog(ERROR, "SPI_exec failed for query: \"%s\"", "reset enable_seqscan");
+	SPI_finish();
+
+	return check_constraint_ok;
+}
+
+static bool
+checkconstraint_expr_walker(Node *node, checkexpr_context *context)
+{
+	Node	   *leftop = NULL;
+	Node	   *rightop = NULL;
+
+	if (node == NULL)
+		return false;
+
+	/* volatile check expression will influence the result of to be executed SPI
+	 * query. so we forbiden it.
+	 */
+	if (contain_volatile_functions(node))
+	{
+		context->cannot_be_indexed = true;
+		return false;
+	}
+
+	if (IsA(node, Var))
+	{
+		Var		   *var = (Var *) node;
+
+		/* wholerow expression cannot be used for indexscan */
+		if (var->varattno == 0)
+		{
+			context->cannot_be_indexed = true;
+			return false;
+		}
+		context->bms_indexattno = bms_add_member(context->bms_indexattno,
+												var->varattno);
+	}
+
+	if (IsA(node, OpExpr))
+	{
+		bool		leftop_have_var;
+		bool		rightop_have_var;
+		OpExpr	   *opexpr = (OpExpr *) node;
+
+		if (opexpr->opresulttype != BOOLOID
+			|| !OidIsValid(get_negator(opexpr->opno)))
+		{
+			context->cannot_be_indexed = true;
+			return false;
+		}
+
+		/*
+		* Check the expression form: (Var node operator constant) or (constant
+		* operator Var).
+		*/
+		leftop = (Node *) linitial(opexpr->args);
+		rightop = (Node *) lsecond(opexpr->args);
+
+		if (IsA(leftop, RelabelType))
+			leftop = (Node *) ((RelabelType *) leftop)->arg;
+		if (IsA(rightop, RelabelType))
+			rightop = (Node *) ((RelabelType *) rightop)->arg;
+
+		/*
+		 * cannot both side contain Var node. current index scan cannot handle
+		 * qual like `where col1 < colb`. we also skip case where bothside don't
+		 * have var clause.
+		 */
+		leftop_have_var = contain_var_clause(leftop);
+		rightop_have_var = contain_var_clause(rightop);
+		if ((leftop_have_var && rightop_have_var) ||
+		   (!leftop_have_var && !rightop_have_var))
+		{
+			context->cannot_be_indexed = true;
+			return false;
+		}
+
+		if (IsA(leftop, Const) && !OidIsValid(get_commutator(opexpr->opno)))
+		{
+			/* commutator doesn't exist, we can't reverse the order */
+			context->cannot_be_indexed = true;
+			return false;
+		}
+
+		/* maybe this is not necessary? skip row/composite type first.*/
+		if (type_is_rowtype(exprType(leftop)) ||
+			type_is_rowtype(exprType(rightop)))
+		{
+			context->cannot_be_indexed = true;
+			return false;
+		}
+	}
+
+	if (IsA(node, ScalarArrayOpExpr))
+	{
+		ScalarArrayOpExpr *saop = (ScalarArrayOpExpr *) node;
+
+		leftop = (Node *) linitial(saop->args);
+		if (leftop && IsA(leftop, RelabelType))
+			leftop = (Node *) ((RelabelType *) leftop)->arg;
+
+		if (!IsA(leftop, Var))
+		{
+			context->cannot_be_indexed = true;
+			return false;
+		}
+
+		rightop = (Node *) lsecond(saop->args);
+		if (rightop && IsA(rightop, RelabelType))
+			rightop = (Node *) ((RelabelType *) rightop)->arg;
+
+		if (!IsA(rightop, Const))
+		{
+			context->cannot_be_indexed = true;
+			return false;
+		}
+	}
+
+	return expression_tree_walker(node, checkconstraint_expr_walker,
+								  (void *) context);
+}
 /*
  * Check for a pre-existing check constraint that conflicts with a proposed
  * new one, and either adjust its conislocal/coninhcount settings or throw

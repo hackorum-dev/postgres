@@ -82,6 +82,28 @@ INSERT INTO CHECK2_TBL VALUES (7, 'check ok', 7);
 
 SELECT * from CHECK2_TBL;
 
+create table t1(a int not null, b int not null, c bool not null, d int[] not null);
+create index t1_idx_a on t1(a);
+create index t1_idx_b on t1(b);
+create index t1_idx_c on t1(c);
+create index t1_idx_d on t1(d);
+--empty table, can be optimized
+alter table t1 add constraint nc check(a>0);
+insert into t1 values(1,2, true, '{1,2}');
+insert into t1 values(1,2, true, '{1,3,4}');
+insert into t1 values(11,2, true, '{1,3,5}');
+
+alter table t1 add  check(a>0);
+alter table t1 add  check(a <> 12);
+alter table t1 add  check(a>0 and a < 12);
+alter table t1 add  check((a>0 and a < 12) or (a < 13 or a > -1) or b = 2);
+alter table t1 add  check((a>0 and a < 12) or (d = '{13,12}'));
+alter table t1 add  check((a = any('{1,11}')));
+alter table t1 add  check((b = all('{2}')));
+--cannot optimzied for now.
+alter table t1 add  check((d[1] = 1));
+drop table t1;
+
 --
 -- Check constraints on INSERT
 --

@@ -826,6 +826,7 @@ RelationGetNotNullConstraints(Oid relid, bool cooked, bool include_noinh)
 			cooked->is_local = true;
 			cooked->inhcount = 0;
 			cooked->is_no_inherit = conForm->connoinherit;
+			cooked->already_validated = false;
 
 			notnulls = lappend(notnulls, cooked);
 		}

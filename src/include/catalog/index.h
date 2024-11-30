@@ -175,6 +175,7 @@ extern void RestoreReindexState(const void *reindexstate);
 
 extern void IndexSetParentIndex(Relation partitionIdx, Oid parentOid);
 
+extern Bitmapset *relation_get_indexattnums(Relation rel);
 
 /*
  * itemptr_encode - Encode ItemPointer as int64/int8

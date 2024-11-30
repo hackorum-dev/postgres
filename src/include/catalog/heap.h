@@ -45,6 +45,7 @@ typedef struct CookedConstraint
 	int16		inhcount;		/* number of times constraint is inherited */
 	bool		is_no_inherit;	/* constraint has local def and cannot be
 								 * inherited */
+	bool		already_validated; /* already validated for check constraint */
 } CookedConstraint;
 
 extern Relation heap_create(const char *relname,
