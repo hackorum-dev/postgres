@@ -573,6 +573,8 @@ _bt_binsrch_insert(Relation rel, BTInsertState insertstate)
 										 RelationGetRelationName(rel))));
 
 			insertstate->postingoff = _bt_binsrch_posting(key, page, mid);
+			low = mid;
+			break;
 		}
 	}
 
