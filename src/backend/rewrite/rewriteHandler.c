@@ -95,7 +95,7 @@ static void markQueryForLocking(Query *qry, Node *jtnode,
 								bool pushedDown);
 static List *matchLocks(CmdType event, Relation relation,
 						int varno, Query *parsetree, bool *hasUpdate);
-static Query *fireRIRrules(Query *parsetree, List *activeRIRs);
+static Query *fireRIRrules(Query *parsetree, List *activeRIRs, bool *hasRowSecurity);
 static Bitmapset *adjust_view_column_set(Bitmapset *cols, List *targetlist);
 static List *get_generated_columns(Relation rel, int rt_index, bool include_stored);
 
@@ -1769,6 +1769,7 @@ ApplyRetrieveRule(Query *parsetree,
 	RangeTblEntry *rte;
 	RowMarkClause *rc;
 	int			numCols;
+	bool		hasRowSecurity = false;
 
 	if (list_length(rule->actions) != 1)
 		elog(ERROR, "expected just one rule action");
@@ -1882,13 +1883,13 @@ ApplyRetrieveRule(Query *parsetree,
 	/*
 	 * Recursively expand any view references inside the view.
 	 */
-	rule_action = fireRIRrules(rule_action, activeRIRs);
+	rule_action = fireRIRrules(rule_action, activeRIRs, &hasRowSecurity);
 
 	/*
 	 * Make sure the query is marked as having row security if the view query
 	 * does.
 	 */
-	parsetree->hasRowSecurity |= rule_action->hasRowSecurity;
+	parsetree->hasRowSecurity |= hasRowSecurity;
 
 	/*
 	 * Now, plug the view query in as a subselect, converting the relation's
@@ -2010,15 +2011,17 @@ fireRIRonSubLink(Node *node, fireRIRonSubLink_context *context)
 	if (IsA(node, SubLink))
 	{
 		SubLink    *sub = (SubLink *) node;
+		bool		hasRowSecurity = false;
 
 		/* Do what we came for */
 		sub->subselect = (Node *) fireRIRrules((Query *) sub->subselect,
-											   context->activeRIRs);
+											   context->activeRIRs,
+											   &hasRowSecurity);
 
 		/*
 		 * Remember if any of the sublinks have row security.
 		 */
-		context->hasRowSecurity |= ((Query *) sub->subselect)->hasRowSecurity;
+		context->hasRowSecurity |= hasRowSecurity;
 
 		/* Fall through to process lefthand args of SubLink */
 	}
@@ -2039,7 +2042,7 @@ fireRIRonSubLink(Node *node, fireRIRonSubLink_context *context)
  * rules for, used to detect/reject recursion.
  */
 static Query *
-fireRIRrules(Query *parsetree, List *activeRIRs)
+fireRIRrules(Query *parsetree, List *activeRIRs, bool *hasRowSecurity)
 {
 	int			origResultRelation = parsetree->resultRelation;
 	int			rt_index;
@@ -2097,13 +2100,15 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 		 */
 		if (rte->rtekind == RTE_SUBQUERY)
 		{
-			rte->subquery = fireRIRrules(rte->subquery, activeRIRs);
+			bool		hasRowSecurity_internal = false;
+
+			rte->subquery = fireRIRrules(rte->subquery, activeRIRs, &hasRowSecurity_internal);
 
 			/*
 			 * While we are here, make sure the query is marked as having row
 			 * security if any of its subqueries do.
 			 */
-			parsetree->hasRowSecurity |= rte->subquery->hasRowSecurity;
+			parsetree->hasRowSecurity |= hasRowSecurity_internal;
 
 			continue;
 		}
@@ -2215,15 +2220,16 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 	foreach(lc, parsetree->cteList)
 	{
 		CommonTableExpr *cte = (CommonTableExpr *) lfirst(lc);
+		bool		hasRowSecurity_internal = false;
 
 		cte->ctequery = (Node *)
-			fireRIRrules((Query *) cte->ctequery, activeRIRs);
+			fireRIRrules((Query *) cte->ctequery, activeRIRs, &hasRowSecurity_internal);
 
 		/*
 		 * While we are here, make sure the query is marked as having row
 		 * security if any of its CTEs do.
 		 */
-		parsetree->hasRowSecurity |= ((Query *) cte->ctequery)->hasRowSecurity;
+		parsetree->hasRowSecurity |= hasRowSecurity_internal;
 	}
 
 	/*
@@ -2260,7 +2266,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 		Relation	rel;
 		List	   *securityQuals;
 		List	   *withCheckOptions;
-		bool		hasRowSecurity;
+		bool		hasRowSecurity_internal = false;
 		bool		hasSubLinks;
 
 		++rt_index;
@@ -2278,7 +2284,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 		 */
 		get_row_security_policies(parsetree, rte, rt_index,
 								  &securityQuals, &withCheckOptions,
-								  &hasRowSecurity, &hasSubLinks);
+								  &hasRowSecurity_internal, &hasSubLinks);
 
 		if (securityQuals != NIL || withCheckOptions != NIL)
 		{
@@ -2327,10 +2333,10 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 
 				/*
 				 * We can ignore the value of fire_context.hasRowSecurity
-				 * since we only reach this code in cases where hasRowSecurity
-				 * is already true.
+				 * since we only reach this code in cases where
+				 * hasRowSecurity_internal is already true.
 				 */
-				Assert(hasRowSecurity);
+				Assert(hasRowSecurity_internal);
 
 				activeRIRs = list_delete_last(activeRIRs);
 			}
@@ -2352,7 +2358,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 		 * Make sure the query is marked correctly if row-level security
 		 * applies, or if the new quals had sublinks.
 		 */
-		if (hasRowSecurity)
+		if (hasRowSecurity_internal)
 			parsetree->hasRowSecurity = true;
 		if (hasSubLinks)
 			parsetree->hasSubLinks = true;
@@ -2360,6 +2366,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 		table_close(rel, NoLock);
 	}
 
+	*hasRowSecurity = parsetree->hasRowSecurity;
 	return parsetree;
 }
 
@@ -4826,8 +4833,9 @@ QueryRewrite(Query *parsetree)
 	foreach(l, querylist)
 	{
 		Query	   *query = (Query *) lfirst(l);
+		bool		hasRowSecurity pg_attribute_unused() = false;
 
-		query = fireRIRrules(query, NIL);
+		query = fireRIRrules(query, NIL, &hasRowSecurity);
 
 		query->queryId = input_query_id;
 
