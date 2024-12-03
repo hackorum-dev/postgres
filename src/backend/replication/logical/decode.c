@@ -137,10 +137,26 @@ xlog_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 	switch (info)
 	{
-			/* this is also used in END_OF_RECOVERY checkpoints */
+			/*
+			 * this is also used in END_OF_RECOVERY checkpoints
+			 * This is a point where, if there are any transactions with
+			 * with ReorderBuffer, that are incomplete (they do not have a
+			 * commit, abort or prepare record),then they must be aborted.
+			 * They exist due to a prior unclean termination, which did not allow
+			 * logging an abort.
+			 * If not aborted, these transactions may be held by the ReorderBuffer
+			 * for long periods of time, especially if a prepared transaction
+			 * precedes it that does not get committed or aborted and holds down
+			 * the oldestRunningXid
+			 */
 		case XLOG_CHECKPOINT_SHUTDOWN:
 		case XLOG_END_OF_RECOVERY:
 			SnapBuildSerializationPoint(builder, buf->origptr);
+			elog(DEBUG2,
+				"decoding: recovery/shutdown checkpoint at lsn=%X/%X",
+				(uint32)(buf->origptr >> 32),
+				(uint32)(buf->origptr));
+			ReorderBufferAbortOlderThanLSN(ctx->reorder, buf->origptr);
 
 			break;
 		case XLOG_CHECKPOINT_ONLINE:
