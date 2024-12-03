@@ -3160,6 +3160,67 @@ ReorderBufferAbort(ReorderBuffer *rb, TransactionId xid, XLogRecPtr lsn,
 /*
  * Abort all transactions that aren't actually running anymore because the
  * server restarted.
+ * This is called since there may be prepared transactions holding back
+ * back the oldestRunningXid. This is a version of ReorderBufferAbortOld
+ * that aborts all older transactions, that are not in prepared state.
+ */
+void
+ReorderBufferAbortOlderThanLSN(ReorderBuffer *rb, XLogRecPtr cutoff)
+{
+	dlist_mutable_iter it;
+
+	/*
+	 * Iterate through all (potential) toplevel TXNs and abort all that are
+	 * older than what possibly can be running. Once we've found the first
+	 * that is alive we stop, there might be some that acquired an xid earlier
+	 * but started writing later, but it's unlikely and they will be cleaned
+	 * up in a later call to this function.
+	 */
+	dlist_foreach_modify(it, &rb->toplevel_by_lsn)
+	{
+		ReorderBufferTXN *txn;
+
+		txn = dlist_container(ReorderBufferTXN, node, it.cur);
+
+		if (rbtxn_prepared(txn) || rbtxn_skip_prepared(txn))
+		{
+			elog(DEBUG2, "txn: %u is prepared and cannot be cleaned up", txn->xid);
+		}
+		else if (txn->first_lsn < cutoff)
+		{
+			/*
+			 * We set final_lsn on a transaction when we decode its commit or
+			 * abort record, but we never see those records for crashed
+			 * transactions.  To ensure cleanup of these transactions, set
+			 * final_lsn to that of their last change; this causes
+			 * ReorderBufferRestoreCleanup to do the right thing.
+			 */
+			if (rbtxn_is_serialized(txn) && txn->final_lsn == InvalidXLogRecPtr)
+			{
+				ReorderBufferChange *last =
+				dlist_tail_element(ReorderBufferChange, node, &txn->changes);
+
+				txn->final_lsn = last->lsn;
+			}
+
+			elog(DEBUG2, "aborting an incomplete transaction %u", txn->xid);
+
+			/* remove potential on-disk data, and deallocate this tx */
+			ReorderBufferCleanupTXN(rb, txn);
+		}
+		else if (txn->first_lsn >= cutoff)
+		{
+			/* Should not reach here */
+			elog(FATAL,
+				"ReorderBufferAbortOlderThanLSN: found transaction in the future: %u",
+				txn->xid);
+		}
+	}
+}
+
+/*
+ * Abort all transactions that aren't actually running anymore because the
+ * server restarted.
  *
  * NB: These really have to be transactions that have aborted due to a server
  * crash/immediate restart, as we don't deal with invalidations here.
