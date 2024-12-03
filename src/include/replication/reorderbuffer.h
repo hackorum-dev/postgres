@@ -744,6 +744,7 @@ extern void ReorderBufferCommitChild(ReorderBuffer *rb, TransactionId xid,
 extern void ReorderBufferAbort(ReorderBuffer *rb, TransactionId xid, XLogRecPtr lsn,
 							   TimestampTz abort_time);
 extern void ReorderBufferAbortOld(ReorderBuffer *rb, TransactionId oldestRunningXid);
+extern void ReorderBufferAbortOlderThanLSN(ReorderBuffer *rb, XLogRecPtr cutoff);
 extern void ReorderBufferForget(ReorderBuffer *rb, TransactionId xid, XLogRecPtr lsn);
 extern void ReorderBufferCleanupAbortedTupleCids(ReorderBuffer *rb,
 												 TransactionId xid,
