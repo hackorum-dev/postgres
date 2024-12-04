@@ -59,6 +59,7 @@
 #include "commands/comment.h"
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
+#include "commands/progress.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
@@ -6148,6 +6149,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		List	   *dropped_attrs = NIL;
 		ListCell   *lc;
 		Snapshot	snapshot;
+		int64		nprocessed;
 
 		if (newrel)
 			ereport(DEBUG1,
@@ -6220,6 +6222,10 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		 */
 		snapshot = RegisterSnapshot(GetLatestSnapshot());
 		scan = table_beginscan(oldrel, snapshot, 0, NULL);
+
+		/* initialize progress */
+		pgstat_progress_start_command(PROGRESS_COMMAND_REWRITE, RelationGetRelid(oldrel));
+		nprocessed = 0;
 
 		/*
 		 * Switch to per-tuple memory context and reset it for each tuple
@@ -6378,8 +6384,13 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 
 			ResetExprContext(econtext);
 
+			++nprocessed;
+			pgstat_progress_update_param(PROGRESS_REWRITE_TUPLES_PROCESSED, nprocessed);
+
 			CHECK_FOR_INTERRUPTS();
 		}
+
+		pgstat_progress_end_command();
 
 		MemoryContextSwitchTo(oldCxt);
 		table_endscan(scan);
