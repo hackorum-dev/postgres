@@ -1,0 +1,478 @@
+--
+-- Basic URL tests for the behavior of functions.
+-- The tests for compliance with the specification are located separately.
+--
+-- The tests are designed for a UTF-8 database.  Skip otherwise.
+SELECT getdatabaseencoding() NOT IN ('UTF8')
+  AS skip_test \gset
+\if :skip_test
+  \quit
+\endif
+SELECT getdatabaseencoding(); -- label the results files
+ getdatabaseencoding 
+---------------------
+ UTF8
+(1 row)
+
+CREATE EXTENSION url;
+-- Getters
+select ('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url).scheme; -- OK, https
+ scheme 
+--------
+ https
+(1 row)
+
+select ('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url).username; -- OK, root
+ username 
+----------
+ root
+(1 row)
+
+select ('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url).password; -- OK, qwerty
+ password 
+----------
+ qwerty
+(1 row)
+
+select ('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url).host; -- OK, example.com
+    host     
+-------------
+ example.com
+(1 row)
+
+select ('https://root:qwerty@εxαmπle.cθm:8080/path/to/home?abc=xyz#anchor'::url).host; -- OK, xn--xmle-0ldw4f.xn--cm-x9b
+            host            
+----------------------------
+ xn--xmle-0ldw4f.xn--cm-x9b
+(1 row)
+
+select ('https://root:qwerty@εxαmπle.cθm:8080/path/to/home?abc=xyz#anchor'::url).host_unicode; -- OK, εxαmπle.cθm
+ host_unicode 
+--------------
+ εxαmπle.cθm
+(1 row)
+
+select ('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url).port; -- OK, 8080
+ port 
+------
+ 8080
+(1 row)
+
+select ('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url).path; -- OK, /path/to/home
+     path      
+---------------
+ /path/to/home
+(1 row)
+
+select ('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url).query; -- OK, abc=xyz
+  query  
+---------
+ abc=xyz
+(1 row)
+
+select ('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url).fragment; -- OK, anchor
+ fragment 
+----------
+ anchor
+(1 row)
+
+-- Setters
+select url_scheme_set('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, 'wss'); -- OK
+                         url_scheme_set                         
+----------------------------------------------------------------
+ wss://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor
+(1 row)
+
+select url_username_set('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, 'guest'); -- OK
+                         url_username_set                          
+-------------------------------------------------------------------
+ https://guest:qwerty@example.com:8080/path/to/home?abc=xyz#anchor
+(1 row)
+
+select url_password_set('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, '12345'); -- OK
+                        url_password_set                         
+-----------------------------------------------------------------
+ https://root:12345@example.com:8080/path/to/home?abc=xyz#anchor
+(1 row)
+
+select url_host_set('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, 'postgresql.org'); -- OK
+                            url_host_set                             
+---------------------------------------------------------------------
+ https://root:qwerty@postgresql.org:8080/path/to/home?abc=xyz#anchor
+(1 row)
+
+select url_port_set('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, '80'); -- OK
+                          url_port_set                          
+----------------------------------------------------------------
+ https://root:qwerty@example.com:80/path/to/home?abc=xyz#anchor
+(1 row)
+
+select url_path_set('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, '/docs/books/'); -- OK
+                          url_path_set                           
+-----------------------------------------------------------------
+ https://root:qwerty@example.com:8080/docs/books/?abc=xyz#anchor
+(1 row)
+
+select url_query_set('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, 'xyz=abc'); -- OK
+                          url_query_set                           
+------------------------------------------------------------------
+ https://root:qwerty@example.com:8080/path/to/home?xyz=abc#anchor
+(1 row)
+
+select url_fragment_set('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, 'general_questions'); -- OK
+                              url_fragment_set                               
+-----------------------------------------------------------------------------
+ https://root:qwerty@example.com:8080/path/to/home?abc=xyz#general_questions
+(1 row)
+
+-- Base
+select url_base(NULL::url, NULL); -- OK, NULL
+ url_base 
+----------
+ 
+(1 row)
+
+select url_base('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, NULL); -- OK
+                         url_base                          
+-----------------------------------------------------------
+ https://root:qwerty@example.com:8080/path/to/home?abc=xyz
+(1 row)
+
+select url_base('https://root:qwerty@example.com:8080/path/to/home?abc=xyz#anchor'::url, '/change/path'); -- OK
+                     url_base                     
+--------------------------------------------------
+ https://root:qwerty@example.com:8080/change/path
+(1 row)
+
+-- Unicode
+select ('https://εxαmπle.cθm/'::url).host; -- OK, xn--xmle-0ldw4f.xn--cm-x9b
+            host            
+----------------------------
+ xn--xmle-0ldw4f.xn--cm-x9b
+(1 row)
+
+select ('https://εxαmπle.cθm/'::url).host_unicode; -- OK, εxαmπle.cθm
+ host_unicode 
+--------------
+ εxαmπle.cθm
+(1 row)
+
+-- Percent Encode
+select ('https://βεst@example.com'::url).username; -- OK
+    username    
+----------------
+ %CE%B2%CE%B5st
+(1 row)
+
+select ('https://:παssφord@example.com'::url).password; -- OK
+        password         
+-------------------------
+ %CF%80%CE%B1ss%CF%86ord
+(1 row)
+
+select ('https://example.com/pαth/to/hθmε'::url).path; -- OK
+             path             
+------------------------------
+ /p%CE%B1th/to/h%CE%B8m%CE%B5
+(1 row)
+
+select ('https://xample.com/?αβγ=χψω'::url).query; -- OK
+                 query                 
+---------------------------------------
+ %CE%B1%CE%B2%CE%B3=%CF%87%CF%88%CF%89
+(1 row)
+
+select ('https://xample.com/#αnchθrΩ'::url).fragment; -- OK
+        fragment        
+------------------------
+ %CE%B1nch%CE%B8r%CE%A9
+(1 row)
+
+-- Getters Ok, Error
+select ''::url;  -- ERROR
+ERROR:  failed to parse the URL ""
+LINE 1: select ''::url;
+               ^
+select NULL::url; -- OK
+ url 
+-----
+ 
+(1 row)
+
+select (NULL::url).scheme; -- OK
+ scheme 
+--------
+ 
+(1 row)
+
+select ('file://path/to'::url).scheme; -- OK
+ scheme 
+--------
+ file
+(1 row)
+
+select ('/bad/url'::url).scheme; -- ERROR
+ERROR:  failed to parse the URL "/bad/url"
+LINE 1: select ('/bad/url'::url).scheme;
+                ^
+select (NULL::url).username; -- OK
+ username 
+----------
+ 
+(1 row)
+
+select ('https://example.com'::url).username; -- OK
+ username 
+----------
+ 
+(1 row)
+
+select (NULL::url).password; -- OK
+ password 
+----------
+ 
+(1 row)
+
+select ('https://example.com'::url).password; -- OK
+ password 
+----------
+ 
+(1 row)
+
+select (NULL::url).host; -- OK
+ host 
+------
+ 
+(1 row)
+
+select ('file://host/to'::url).host; -- OK
+ host 
+------
+ host
+(1 row)
+
+select ('file:/path/to'::url).host; -- OK
+ host 
+------
+ 
+(1 row)
+
+select (NULL::url).host_unicode; -- OK
+ host_unicode 
+--------------
+ 
+(1 row)
+
+select ('file://host/to'::url).host_unicode; -- OK
+ host_unicode 
+--------------
+ host
+(1 row)
+
+select ('file:/path/to'::url).host_unicode; -- OK
+ host_unicode 
+--------------
+ 
+(1 row)
+
+select (NULL::url).port; -- OK
+ port 
+------
+     
+(1 row)
+
+select ('https://example.com'::url).port; -- OK
+ port 
+------
+     
+(1 row)
+
+select (NULL::url).path; -- OK
+ path 
+------
+ 
+(1 row)
+
+select ('https://example.com'::url).path; -- OK
+ path 
+------
+ /
+(1 row)
+
+select ('file:/path/to'::url).path; -- OK
+   path   
+----------
+ /path/to
+(1 row)
+
+select (NULL::url).query; -- OK
+ query 
+-------
+ 
+(1 row)
+
+select ('https://example.com'::url).query; -- OK
+ query 
+-------
+ 
+(1 row)
+
+select (NULL::url).fragment; -- OK
+ fragment 
+----------
+ 
+(1 row)
+
+select ('https://example.com'::url).fragment; -- OK
+ fragment 
+----------
+ 
+(1 row)
+
+-- Setters Ok, Error
+select url_scheme_set('https://example.com'::url, NULL); -- ERROR
+ERROR:  failed to parse "scheme" part "" of URL
+select url_scheme_set('https://example.com'::url, ''); -- ERROR
+ERROR:  failed to parse "scheme" part "" of URL
+select url_scheme_set('https://example.com'::url, '---+'); -- ERROR
+ERROR:  failed to parse "scheme" part "---+" of URL
+select url_username_set('https://root:qwerty@example.com'::url, NULL); -- OK
+       url_username_set       
+------------------------------
+ https://:qwerty@example.com/
+(1 row)
+
+select url_username_set('https://root:qwerty@example.com'::url, ''); -- OK
+       url_username_set       
+------------------------------
+ https://:qwerty@example.com/
+(1 row)
+
+select url_username_set('https://root:qwerty@example.com'::url, 'αβγ'); -- OK
+                url_username_set                
+------------------------------------------------
+ https://%CE%B1%CE%B2%CE%B3:qwerty@example.com/
+(1 row)
+
+select url_password_set('https://root:qwerty@example.com'::url, NULL); -- OK
+     url_password_set      
+---------------------------
+ https://root@example.com/
+(1 row)
+
+select url_password_set('https://root:qwerty@example.com'::url, ''); -- OK
+     url_password_set      
+---------------------------
+ https://root@example.com/
+(1 row)
+
+select url_password_set('https://root:qwerty@example.com'::url, 'αβγ'); -- OK
+               url_password_set               
+----------------------------------------------
+ https://root:%CE%B1%CE%B2%CE%B3@example.com/
+(1 row)
+
+select url_port_set('https://example.com:8080'::url, NULL); -- OK
+     url_port_set     
+----------------------
+ https://example.com/
+(1 row)
+
+select url_port_set('https://example.com:8080'::url, ''); -- OK
+     url_port_set     
+----------------------
+ https://example.com/
+(1 row)
+
+select url_port_set('https://example.com:8080'::url, '80'); -- OK
+      url_port_set       
+-------------------------
+ https://example.com:80/
+(1 row)
+
+select url_port_set('https://example.com:8080'::url, '123456'); -- ERROR
+ERROR:  failed to parse "port" part "123456" of URL
+select url_port_set('https://example.com:8080'::url, 80); -- OK
+      url_port_set       
+-------------------------
+ https://example.com:80/
+(1 row)
+
+select url_port_set('https://example.com:8080'::url, 123456); -- ERROR
+ERROR:  failed to parse "port" part "123456" of URL
+select url_host_set('https://example.com'::url, NULL); -- ERROR
+ERROR:  failed to parse "host" part "" of URL
+select url_host_set('https://example.com'::url, ''); -- ERROR
+ERROR:  failed to parse "host" part "" of URL
+select url_host_set('https://example.com'::url, '123'); -- OK
+    url_host_set    
+--------------------
+ https://0.0.0.123/
+(1 row)
+
+select url_host_set('https://example.com'::url, 'αβγ'); -- OK
+    url_host_set    
+--------------------
+ https://xn--mxacd/
+(1 row)
+
+select url_path_set('https://example.com/path/to/home'::url, NULL); -- OK
+     url_path_set     
+----------------------
+ https://example.com/
+(1 row)
+
+select url_path_set('https://example.com/path/to/home'::url, ''); -- OK
+     url_path_set     
+----------------------
+ https://example.com/
+(1 row)
+
+select url_path_set('https://example.com/path/to/home'::url, '/'); -- OK
+     url_path_set     
+----------------------
+ https://example.com/
+(1 row)
+
+select url_path_set('https://example.com/path/to/home'::url, 'αβγ'); -- OK
+              url_path_set              
+----------------------------------------
+ https://example.com/%CE%B1%CE%B2%CE%B3
+(1 row)
+
+select url_query_set('https://example.com?abc=xyz'::url, NULL); -- OK
+    url_query_set     
+----------------------
+ https://example.com/
+(1 row)
+
+select url_query_set('https://example.com?abc=xyz'::url, ''); -- OK
+    url_query_set     
+----------------------
+ https://example.com/
+(1 row)
+
+select url_query_set('https://example.com?abc=xyz'::url, 'αβγ'); -- OK
+              url_query_set              
+-----------------------------------------
+ https://example.com/?%CE%B1%CE%B2%CE%B3
+(1 row)
+
+select url_fragment_set('https://example.com#anchor'::url, NULL); -- OK
+   url_fragment_set   
+----------------------
+ https://example.com/
+(1 row)
+
+select url_fragment_set('https://example.com#anchor'::url, ''); -- OK
+   url_fragment_set   
+----------------------
+ https://example.com/
+(1 row)
+
+select url_fragment_set('https://example.com#anchor'::url, 'αβγ'); -- OK
+            url_fragment_set             
+-----------------------------------------
+ https://example.com/#%CE%B1%CE%B2%CE%B3
+(1 row)
+
