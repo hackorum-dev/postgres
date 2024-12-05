@@ -2465,11 +2465,12 @@ BufferIsExclusiveLocked(Buffer buffer)
 		int			bufid = -buffer - 1;
 
 		bufHdr = GetLocalBufferDescriptor(bufid);
+		Assert(BufferIsPinned(buffer));
+
+		return true;
 	}
-	else
-	{
-		bufHdr = GetBufferDescriptor(buffer - 1);
-	}
+
+	bufHdr = GetBufferDescriptor(buffer - 1);
 
 	Assert(BufferIsPinned(buffer));
 	return LWLockHeldByMeInMode(BufferDescriptorGetContentLock(bufHdr),
@@ -2498,11 +2499,11 @@ BufferIsDirty(Buffer buffer)
 	else
 	{
 		bufHdr = GetBufferDescriptor(buffer - 1);
+		Assert(LWLockHeldByMeInMode(BufferDescriptorGetContentLock(bufHdr),
+									LW_EXCLUSIVE));
 	}
 
 	Assert(BufferIsPinned(buffer));
-	Assert(LWLockHeldByMeInMode(BufferDescriptorGetContentLock(bufHdr),
-								LW_EXCLUSIVE));
 
 	return pg_atomic_read_u32(&bufHdr->state) & BM_DIRTY;
 }
