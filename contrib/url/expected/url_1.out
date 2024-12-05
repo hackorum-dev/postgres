@@ -1,0 +1,9 @@
+--
+-- Basic URL tests for the behavior of functions.
+-- The tests for compliance with the specification are located separately.
+--
+-- The tests are designed for a UTF-8 database.  Skip otherwise.
+SELECT getdatabaseencoding() NOT IN ('UTF8')
+  AS skip_test \gset
+\if :skip_test
+  \quit
