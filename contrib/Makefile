@@ -91,6 +91,12 @@ else
 ALWAYS_SUBDIRS += hstore_plpython jsonb_plpython ltree_plpython
 endif
 
+ifeq ($(with_icu),yes)
+SUBDIRS += url
+else
+ALWAYS_SUBDIRS += url
+endif
+
 # Missing:
 #		start-scripts	\ (does not have a makefile)
 
