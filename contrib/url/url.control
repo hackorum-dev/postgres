@@ -1,0 +1,5 @@
+# url extension
+comment = 'data type for Uniform Resource Locator'
+default_version = '1.0'
+module_pathname = '$libdir/url'
+relocatable = true
