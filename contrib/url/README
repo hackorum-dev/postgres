@@ -1,0 +1,137 @@
+URL type for PostgreSQL
+---------------------------
+
+To register the new SQL type:
+
+    CREATE EXTENSION url;
+
+URL Functions
+
+Function: to_url()
+Return Type: url
+Description: Returns the value as url.
+Example: to_url('https://example.com/'::text)
+Result: "https://example.com/"
+
+Function: url_base()
+Return Type: url
+Description: Returns url on the basis of absolute and relative url.
+Example: url_base('https://example.com/a/b/c/d/e/f'::url, '../../x/y/z'::text)
+Result: "https://example.com/a/b/c/x/y/z"
+
+Getters
+
+Function: scheme()
+Return Type: text
+Description: Returns scheme from the url if exists, otherwise NULL.
+Example: ('https://example.com/'::url).scheme
+Result: "https"
+
+Function: username()
+Return Type: text
+Description: Returns username from the url if exists, otherwise NULL.
+Example: ('https://root:qwerty@example.com/'::url).username
+Result: "root"
+
+Function: password()
+Return Type: text
+Description: Returns password from the url if exists, otherwise NULL.
+Example: ('https://root:qwerty@example.com/'::url).password
+Result: "qwerty"
+
+Function: host()
+Return Type: text
+Description: Returns host from the url if exists, otherwise NULL.
+Example: ('https://事例.com/'::url).host
+Result: "xn--3kq3x.com"
+
+Function: host_unicode()
+Return Type: text
+Description: Returns host as unicode from the url if exists, otherwise NULL.
+Example: ('https://事例.com/'::url).host_unicode
+Result: "事例.com"
+
+Function: port()
+Return Type: integer
+Description: Returns port from the url if exists, otherwise NULL.
+Example: ('https://example.com:8080/'::url).port
+Result: 8080
+
+Function: path()
+Return Type: text
+Description: Returns path from the url.
+Example: ('https://example.com/path/to/home'::url).path
+Result: "/path/to/home"
+
+Function: query()
+Return Type: text
+Description: Returns query from the url if exists, otherwise NULL.
+Example: ('https://example.com?abc=xyz&1=2'::url).query
+Result: "abc=xyz&1=2"
+
+Function: fragment()
+Return Type: text
+Description: Returns fragment from the url if exists, otherwise NULL.
+Example: ('https://example.com#comments'::url).fragment
+Result: "comments"
+
+
+Setters
+
+Function: url_scheme_set(url, text)
+Return Type: url
+Description: Sets a new scheme for the url.
+Example: url_scheme_set('https://example.com'::url, 'wss')
+Result: "wss://example.com/"
+
+Function: url_username_set(url, text)
+Return Type: url
+Description: Sets a new username for the url.  If the username is NULL or an empty value, it deletes it.
+Example: url_username_set('https://root:qwerty@example.com'::url, 'guest')
+Result: "https://guest:qwerty@example.com/"
+
+Function: url_password_set(url, text)
+Return Type: url
+Description: Sets a new password for the url.  If the password is NULL or an empty value, it deletes it.
+Example: url_password_set('https://root:qwerty@example.com'::url, '12345')
+Result: "https://root:12345@example.com/"
+
+Function: url_host_set(url, text)
+Return Type: url
+Description: Sets a new host for the url.
+Example: url_host_set('https://example.com'::url, 'postgresql.org')
+Result: "https://postgresql.org/"
+
+Function: url_hostname_set(url, text)
+Return Type: url
+Description: Sets a new host for the url.
+Example: url_hostname_set('https://example.com'::url, 'postgresql.org')
+Result: "https://postgresql.org/"
+
+Function: url_port_set(url, text or integer)
+Return Type: url
+Description: Sets a new port for the url.  If the port is NULL or an empty value, it deletes it.
+Example: url_port_set('https://example.com:8080'::url, '80')
+Result: "https://example.com:80/"
+
+Function: url_path_set(url, text)
+Return Type: url
+Description: Sets a new path for the url.  If the path is NULL or an empty value, it deletes it.
+Example: url_path_set('https://example.com/path/to/home'::url, '/a/b/c')
+Result: "https://example.com/a/b/c"
+
+Function: url_query_set(url, text)
+Return Type: url
+Description: Sets a new query for the url.  If the query is NULL or an empty value, it deletes it.
+Example: url_query_set('https://example.com?abc=xyz'::url, '123=abc')
+Result: "https://example.com/?123=abc"
+
+Function: url_fragment_set(url, text)
+Return Type: url
+Description: Sets a new fragment for the url.  If the fragment is NULL or an empty value, it deletes it.
+Example: url_fragment_set('https://example.com#comment'::url, 'position')
+Result: "https://example.com/#position"
+
+NOTE:
+If you pass NULL as url, NULL will be returned.
+
