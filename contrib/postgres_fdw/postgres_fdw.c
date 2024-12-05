@@ -431,6 +431,7 @@ static void estimate_path_cost_size(PlannerInfo *root,
 									Cost *p_startup_cost, Cost *p_total_cost);
 static void get_remote_estimate(const char *sql,
 								PGconn *conn,
+								PgFdwConnState *conn_state,
 								double *rows,
 								int *width,
 								Cost *startup_cost,
@@ -2987,9 +2988,11 @@ postgresExecForeignTruncate(List *rels,
 	Oid			serverid = InvalidOid;
 	UserMapping *user = NULL;
 	PGconn	   *conn = NULL;
+	PgFdwConnState *conn_state;
 	StringInfoData sql;
 	ListCell   *lc;
 	bool		server_truncatable = true;
+	PGresult   *res = NULL;
 
 	/*
 	 * By default, all postgres_fdw foreign tables are assumed truncatable.
@@ -3059,14 +3062,22 @@ postgresExecForeignTruncate(List *rels,
 	 * establish new connection if necessary.
 	 */
 	user = GetUserMapping(GetUserId(), serverid);
-	conn = GetConnection(user, false, NULL);
+	conn = GetConnection(user, false, &conn_state);
 
 	/* Construct the TRUNCATE command string */
 	initStringInfo(&sql);
 	deparseTruncateSql(&sql, rels, behavior, restart_seqs);
 
-	/* Issue the TRUNCATE command to remote server */
-	do_sql_command(conn, sql.data);
+	/*
+	 * Issue the TRUNCATE command to remote server
+	 *
+	 * We don't use a PG_TRY block here, so be careful not to throw error
+	 * without releasing the PGresult.
+	 */
+	res = pgfdw_exec_query(conn, sql.data, conn_state);
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+		pgfdw_report_error(ERROR, res, conn, true, sql.data);
+	PQclear(res);
 
 	pfree(sql.data);
 }
@@ -3119,6 +3130,7 @@ estimate_path_cost_size(PlannerInfo *root,
 		List	   *local_param_join_conds;
 		StringInfoData sql;
 		PGconn	   *conn;
+		PgFdwConnState *conn_state;
 		Selectivity local_sel;
 		QualCost	local_cost;
 		List	   *fdw_scan_tlist = NIL;
@@ -3162,8 +3174,8 @@ estimate_path_cost_size(PlannerInfo *root,
 								false, &retrieved_attrs, NULL);
 
 		/* Get the remote estimate */
-		conn = GetConnection(fpinfo->user, false, NULL);
-		get_remote_estimate(sql.data, conn, &rows, &width,
+		conn = GetConnection(fpinfo->user, false, &conn_state);
+		get_remote_estimate(sql.data, conn, conn_state, &rows, &width,
 							&startup_cost, &total_cost);
 		ReleaseConnection(conn);
 
@@ -3594,7 +3606,7 @@ estimate_path_cost_size(PlannerInfo *root,
  * The given "sql" must be an EXPLAIN command.
  */
 static void
-get_remote_estimate(const char *sql, PGconn *conn,
+get_remote_estimate(const char *sql, PGconn *conn, PgFdwConnState *conn_state,
 					double *rows, int *width,
 					Cost *startup_cost, Cost *total_cost)
 {
@@ -3610,7 +3622,7 @@ get_remote_estimate(const char *sql, PGconn *conn,
 		/*
 		 * Execute EXPLAIN remotely.
 		 */
-		res = pgfdw_exec_query(conn, sql, NULL);
+		res = pgfdw_exec_query(conn, sql, conn_state);
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 			pgfdw_report_error(ERROR, res, conn, false, sql);
 
@@ -3740,6 +3752,14 @@ create_cursor(ForeignScanState *node)
 		process_pending_request(fsstate->conn_state->pendingAreq);
 
 	/*
+	 * Next, if emulating READ COMMITTED behavior, refresh the snapshot for
+	 * the remote transaction if allowed.
+	 */
+	if (fsstate->conn_state->rcIsEmulated &&
+		snapshot_refresh_ok(fsstate->conn_state))
+		do_snapshot_refresh(fsstate->conn_state);
+
+	/*
 	 * Construct array of query parameter values in text format.  We do the
 	 * conversions in the short-lived per-tuple context, so as not to cause a
 	 * memory leak over repeated scans.
@@ -3795,6 +3815,13 @@ create_cursor(ForeignScanState *node)
 
 	/* Clean up */
 	pfree(buf.data);
+
+	/*
+	 * If emulating READ COMMITTED behavior, update information related to
+	 * that mode.
+	 */
+	if (fsstate->conn_state->rcIsEmulated)
+		update_emulated_rc_mode_info(fsstate->conn_state);
 }
 
 /*
@@ -4224,6 +4251,14 @@ prepare_foreign_modify(PgFdwModifyState *fmstate)
 	 * if any, so no need to do it here.
 	 */
 
+	/*
+	 * Next, if emulating READ COMMITTED behavior, refresh the snapshot for
+	 * the remote transaction if allowed.
+	 */
+	if (fmstate->conn_state->rcIsEmulated &&
+		snapshot_refresh_ok(fmstate->conn_state))
+		do_snapshot_refresh(fmstate->conn_state);
+
 	/* Construct name we'll use for the prepared statement. */
 	snprintf(prep_name, sizeof(prep_name), "pgsql_fdw_prep_%u",
 			 GetPrepStmtNumber(fmstate->conn));
@@ -4256,6 +4291,13 @@ prepare_foreign_modify(PgFdwModifyState *fmstate)
 
 	/* This action shows that the prepare has been done. */
 	fmstate->p_name = p_name;
+
+	/*
+	 * If emulating READ COMMITTED behavior, update information related to
+	 * that mode.
+	 */
+	if (fmstate->conn_state->rcIsEmulated)
+		update_emulated_rc_mode_info(fmstate->conn_state);
 }
 
 /*
@@ -4566,6 +4608,14 @@ execute_dml_stmt(ForeignScanState *node)
 		process_pending_request(dmstate->conn_state->pendingAreq);
 
 	/*
+	 * Next, if emulating READ COMMITTED behavior, refresh the snapshot for
+	 * the remote transaction if allowed.
+	 */
+	if (dmstate->conn_state->rcIsEmulated &&
+		snapshot_refresh_ok(dmstate->conn_state))
+		do_snapshot_refresh(dmstate->conn_state);
+
+	/*
 	 * Construct array of query parameter values in text format.
 	 */
 	if (numParams > 0)
@@ -4602,6 +4652,13 @@ execute_dml_stmt(ForeignScanState *node)
 		dmstate->num_tuples = PQntuples(dmstate->result);
 	else
 		dmstate->num_tuples = atoi(PQcmdTuples(dmstate->result));
+
+	/*
+	 * If emulating READ COMMITTED behavior, update information related to
+	 * that mode.
+	 */
+	if (dmstate->conn_state->rcIsEmulated)
+		update_emulated_rc_mode_info(dmstate->conn_state);
 }
 
 /*
@@ -4946,6 +5003,7 @@ postgresAnalyzeForeignTable(Relation relation,
 	ForeignTable *table;
 	UserMapping *user;
 	PGconn	   *conn;
+	PgFdwConnState *conn_state;
 	StringInfoData sql;
 	PGresult   *volatile res = NULL;
 
@@ -4965,7 +5023,7 @@ postgresAnalyzeForeignTable(Relation relation,
 	 */
 	table = GetForeignTable(RelationGetRelid(relation));
 	user = GetUserMapping(relation->rd_rel->relowner, table->serverid);
-	conn = GetConnection(user, false, NULL);
+	conn = GetConnection(user, false, &conn_state);
 
 	/*
 	 * Construct command to get page count for relation.
@@ -4976,7 +5034,7 @@ postgresAnalyzeForeignTable(Relation relation,
 	/* In what follows, do not risk leaking any PGresults. */
 	PG_TRY();
 	{
-		res = pgfdw_exec_query(conn, sql.data, NULL);
+		res = pgfdw_exec_query(conn, sql.data, conn_state);
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 			pgfdw_report_error(ERROR, res, conn, false, sql.data);
 
@@ -5462,6 +5520,7 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	ForeignServer *server;
 	UserMapping *mapping;
 	PGconn	   *conn;
+	PgFdwConnState *conn_state;
 	StringInfoData buf;
 	PGresult   *volatile res = NULL;
 	int			numrows,
@@ -5493,7 +5552,7 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	 */
 	server = GetForeignServer(serverOid);
 	mapping = GetUserMapping(GetUserId(), server->serverid);
-	conn = GetConnection(mapping, false, NULL);
+	conn = GetConnection(mapping, false, &conn_state);
 
 	/* Don't attempt to import collation if remote server hasn't got it */
 	if (PQserverVersion(conn) < 90100)
@@ -5509,7 +5568,7 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		appendStringInfoString(&buf, "SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = ");
 		deparseStringLiteral(&buf, stmt->remote_schema);
 
-		res = pgfdw_exec_query(conn, buf.data, NULL);
+		res = pgfdw_exec_query(conn, buf.data, conn_state);
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 			pgfdw_report_error(ERROR, res, conn, false, buf.data);
 

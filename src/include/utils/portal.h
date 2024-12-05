@@ -203,6 +203,13 @@ typedef struct PortalData
 	/* Presentation data, primarily used by the pg_cursors system view */
 	TimestampTz creation_time;	/* time at which this portal was defined */
 	bool		visible;		/* include this portal in pg_cursors? */
+
+	/*
+	 * State data for remembering which iteration of the PostgresMain loop the
+	 * portal was created at, for use by extensions like postgres_fdw.
+	 */
+	uint64		createIterId;
+	uint64		createIterSubId;
 }			PortalData;
 
 /*
@@ -246,6 +253,7 @@ extern PlannedStmt *PortalGetPrimaryStmt(Portal portal);
 extern void PortalCreateHoldStore(Portal portal);
 extern void PortalHashTableDeleteAll(void);
 extern bool ThereAreNoReadyPortals(void);
+extern bool ThereAreNoOldLivePortals(void);
 extern void HoldPinnedPortals(void);
 extern void ForgetPortalSnapshots(void);
 

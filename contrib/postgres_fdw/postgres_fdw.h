@@ -137,6 +137,17 @@ typedef struct PgFdwRelationInfo
 typedef struct PgFdwConnState
 {
 	AsyncRequest *pendingAreq;	/* pending async request */
+
+	bool		rcIsEmulated;	/* do we emulate READ COMMITTED behavior in
+								 * this xact? */
+	bool		haveFirstQuery;	/* have we executed first query in this
+								 * xact? */
+	uint64		lastIterId;		/* id of PostgresMain loop iteration during
+								 * which we have executed last query in this
+								 * xact */
+	uint64		lastIterSubId;	/* subid of PostgresMain loop iteration during
+								 * which we have executed last query in this
+								 * xact */
 } PgFdwConnState;
 
 /*
@@ -168,6 +179,9 @@ extern PGresult *pgfdw_exec_query(PGconn *conn, const char *query,
 								  PgFdwConnState *state);
 extern void pgfdw_report_error(int elevel, PGresult *res, PGconn *conn,
 							   bool clear, const char *sql);
+extern bool snapshot_refresh_ok(PgFdwConnState *state);
+extern void do_snapshot_refresh(PgFdwConnState *state);
+extern void update_emulated_rc_mode_info(PgFdwConnState *state);
 
 /* in option.c */
 extern int	ExtractConnectionOptions(List *defelems,

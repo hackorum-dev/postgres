@@ -27,9 +27,11 @@
 #include "pgstat.h"
 #include "postgres_fdw.h"
 #include "storage/latch.h"
+#include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
+#include "utils/portal.h"
 #include "utils/syscache.h"
 
 /*
@@ -70,6 +72,9 @@ typedef struct ConnCacheEntry
 	uint32		mapping_hashvalue;	/* hash value of user mapping OID */
 	PgFdwConnState state;		/* extra per-connection state */
 } ConnCacheEntry;
+
+#define PgFdwConnStateContainer(ptr) \
+	(ConnCacheEntry *) ((char *) (ptr) - offsetof(ConnCacheEntry, state))
 
 /*
  * Connection cache (initialized on first use)
@@ -773,6 +778,15 @@ begin_remote_xact(ConnCacheEntry *entry)
 		do_sql_command(entry->conn, sql);
 		entry->xact_depth = 1;
 		entry->changing_xact_state = false;
+
+		if (!IsolationUsesXactSnapshot() &&
+			PQserverVersion(entry->conn) >= 180000)
+		{
+			entry->state.rcIsEmulated = true;
+			entry->state.haveFirstQuery = false;
+			entry->state.lastIterId = 0;
+			entry->state.lastIterSubId = 0;
+		}
 	}
 
 	/*
@@ -848,13 +862,34 @@ GetPrepStmtNumber(PGconn *conn)
 PGresult *
 pgfdw_exec_query(PGconn *conn, const char *query, PgFdwConnState *state)
 {
+	PGresult   *res = NULL;
+
 	/* First, process a pending asynchronous request, if any. */
 	if (state && state->pendingAreq)
 		process_pending_request(state->pendingAreq);
 
+	/*
+	 * Next, if emulating READ COMMITTED behavior, refresh the snapshot for
+	 * the remote transaction if allowed.
+	 */
+	if (state && state->rcIsEmulated && snapshot_refresh_ok(state))
+		do_snapshot_refresh(state);
+
 	if (!PQsendQuery(conn, query))
 		return NULL;
-	return pgfdw_get_result(conn);
+	res = pgfdw_get_result(conn);
+
+	/*
+	 * If emulating READ COMMITTED behavior, check to see if the query has
+	 * been executed successfully, and if so, update information related to
+	 * that mode.
+	 */
+	if (state && state->rcIsEmulated &&
+		(PQresultStatus(res) == PGRES_COMMAND_OK ||
+		 PQresultStatus(res) == PGRES_TUPLES_OK))
+		update_emulated_rc_mode_info(state);
+
+	return res;
 }
 
 /*
@@ -1282,6 +1317,14 @@ pgfdw_reset_xact_state(ConnCacheEntry *entry, bool toplevel)
 		/* Reset state to show we're out of a transaction */
 		entry->xact_depth = 0;
 
+		if (entry->state.rcIsEmulated)
+		{
+			entry->state.rcIsEmulated = false;
+			entry->state.haveFirstQuery = false;
+			entry->state.lastIterId = 0;
+			entry->state.lastIterSubId = 0;
+		}
+
 		/*
 		 * If the connection isn't in a good idle state, it is marked as
 		 * invalid or keep_connections option of its server is disabled, then
@@ -1652,7 +1695,7 @@ pgfdw_abort_cleanup(ConnCacheEntry *entry, bool toplevel)
 	 * fetch_more_data(); in that case reset the per-connection state here.
 	 */
 	if (entry->state.pendingAreq)
-		memset(&entry->state, 0, sizeof(entry->state));
+		entry->state.pendingAreq = NULL;
 
 	/* Disarm changing_xact_state if it all worked */
 	entry->changing_xact_state = false;
@@ -1938,7 +1981,7 @@ pgfdw_finish_abort_cleanup(List *pending_entries, List *cancel_requested,
 
 		/* Reset the per-connection state if needed */
 		if (entry->state.pendingAreq)
-			memset(&entry->state, 0, sizeof(entry->state));
+			entry->state.pendingAreq = NULL;
 
 		/* We're done with this entry; unset the changing_xact_state flag */
 		entry->changing_xact_state = false;
@@ -1983,12 +2026,101 @@ pgfdw_finish_abort_cleanup(List *pending_entries, List *cancel_requested,
 
 		/* Reset the per-connection state if needed */
 		if (entry->state.pendingAreq)
-			memset(&entry->state, 0, sizeof(entry->state));
+			entry->state.pendingAreq = NULL;
 
 		/* We're done with this entry; unset the changing_xact_state flag */
 		entry->changing_xact_state = false;
 		pgfdw_reset_xact_state(entry, toplevel);
 	}
+}
+
+/*
+ * Check if it is safe to refresh the snapshot for the remote transaction.
+ */
+bool
+snapshot_refresh_ok(PgFdwConnState *state)
+{
+	uint64		lastIterId = state->lastIterId;
+	uint64		lastIterSubId = state->lastIterSubId;
+
+	Assert(state->rcIsEmulated);
+	Assert(PostgresMainLoopIterationId >= lastIterId);
+	Assert(PostgresMainLoopIterationSubId >= lastIterSubId);
+
+	/*
+	 * If we haven't executed any query in the remote transaction, there's no
+	 * need to refresh the snapshot as the transaction will take a fresh
+	 * snapshot when executing the first query.
+	 */
+	if (!state->haveFirstQuery)
+		return false;
+
+	/*
+	 * If we have already executed any query from within the current top-level
+	 * query in the remote transaction, the transaction should reuse the
+	 * snapthot when executing the query we are about to send to the remote;
+	 * don't refresh the snapshot.
+	 */
+	if (PostgresMainLoopIterationId == lastIterId &&
+		PostgresMainLoopIterationSubId == lastIterSubId)
+		return false;
+	Assert(PostgresMainLoopIterationId > lastIterId ||
+		   PostgresMainLoopIterationSubId > lastIterSubId);
+
+	/*
+	 * If there is any live portal that was created in a previous top-level
+	 * query, the portal's query might access foreign tables by re-creating
+	 * the remote cursor, which should use the same snapshot as before; don't
+	 * refresh the snapshot.
+	 */
+	if (!ThereAreNoOldLivePortals())
+		return false;
+
+	/* Otherwise, it is safe to refresh the snapshot. */
+	return true;
+}
+
+/*
+ * Refresh the snapshot for the remote transaction.
+ */
+void
+do_snapshot_refresh(PgFdwConnState *state)
+{
+	ConnCacheEntry *entry = PgFdwConnStateContainer(state);
+	PGconn	   *conn = entry->conn;
+	const char *sql = "SELECT pg_catalog.pg_refresh_snapshot()";
+	PGresult   *res = NULL;
+
+	/* In what follows, do not risk leaking any PGresults. */
+	PG_TRY();
+	{
+		if (!PQsendQuery(conn, sql))
+			pgfdw_report_error(ERROR, NULL, conn, false, sql);
+
+		res = pgfdw_get_result(conn);
+		if (PQresultStatus(res) != PGRES_TUPLES_OK)
+			pgfdw_report_error(ERROR, res, conn, false, sql);
+
+		if (PQntuples(res) != 1 || PQnfields(res) != 1)
+			elog(ERROR, "unexpected result from snapshot refresh query");
+	}
+	PG_FINALLY();
+	{
+		PQclear(res);
+	}
+	PG_END_TRY();
+}
+
+/*
+ * Update information related to emulated READ COMMITTED mode.
+ */
+void
+update_emulated_rc_mode_info(PgFdwConnState *state)
+{
+	if (!state->haveFirstQuery)
+		state->haveFirstQuery = true;
+	state->lastIterId = PostgresMainLoopIterationId;
+	state->lastIterSubId = PostgresMainLoopIterationSubId;
 }
 
 /* Number of output arguments (columns) for various API versions */

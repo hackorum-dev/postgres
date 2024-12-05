@@ -23,6 +23,7 @@
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "storage/ipc.h"
+#include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
@@ -217,6 +218,8 @@ CreatePortal(const char *name, bool allowDup, bool dupSilent)
 	portal->atEnd = true;		/* disallow fetches until query is set */
 	portal->visible = true;
 	portal->creation_time = GetCurrentStatementStartTimestamp();
+	portal->createIterId = PostgresMainLoopIterationId;
+	portal->createIterSubId = PostgresMainLoopIterationSubId;
 
 	/* put portal in table (sets portal->name) */
 	PortalHashTableInsert(portal, name);
@@ -1181,6 +1184,31 @@ ThereAreNoReadyPortals(void)
 
 		if (portal->status == PORTAL_READY)
 			return false;
+	}
+
+	return true;
+}
+
+bool
+ThereAreNoOldLivePortals(void)
+{
+	HASH_SEQ_STATUS status;
+	PortalHashEnt *hentry;
+
+	hash_seq_init(&status, PortalHashTable);
+
+	while ((hentry = (PortalHashEnt *) hash_seq_search(&status)) != NULL)
+	{
+		Portal		portal = hentry->portal;
+
+		if ((portal->status == PORTAL_READY ||
+			 portal->status == PORTAL_ACTIVE) &&
+			(portal->createIterId < PostgresMainLoopIterationId ||
+			 portal->createIterSubId < PostgresMainLoopIterationSubId))
+		{
+			hash_seq_term(&status);
+			return false;
+		}
 	}
 
 	return true;

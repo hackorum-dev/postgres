@@ -6643,6 +6643,10 @@
   proname => 'pg_export_snapshot', provolatile => 'v', proparallel => 'u',
   prorettype => 'text', proargtypes => '', prosrc => 'pg_export_snapshot' },
 
+{ oid => '8000', descr => 'refresh transaction snapshot',
+  proname => 'pg_refresh_snapshot', provolatile => 'v', proparallel => 'u',
+  prorettype => 'void', proargtypes => '', prosrc => 'pg_refresh_snapshot' },
+
 { oid => '3810', descr => 'true if server is in recovery',
   proname => 'pg_is_in_recovery', provolatile => 'v', prorettype => 'bool',
   proargtypes => '', prosrc => 'pg_is_in_recovery' },

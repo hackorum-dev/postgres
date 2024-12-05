@@ -159,6 +159,7 @@ static Snapshot CopySnapshot(Snapshot snapshot);
 static void UnregisterSnapshotNoOwner(Snapshot snapshot);
 static void FreeSnapshot(Snapshot snapshot);
 static void SnapshotResetXmin(void);
+static Snapshot RefreshTransactionSnapshot(void);
 
 /* ResourceOwner callbacks to track snapshot references */
 static void ResOwnerReleaseSnapshot(Datum res);
@@ -1840,6 +1841,70 @@ void
 RestoreTransactionSnapshot(Snapshot snapshot, void *source_pgproc)
 {
 	SetTransactionSnapshot(snapshot, NULL, InvalidPid, source_pgproc);
+}
+
+/*
+ * RefreshTransactionSnapshot
+ *		Refresh the snapshot for a REPEATABLE READ transaction.
+ */
+static Snapshot
+RefreshTransactionSnapshot(void)
+{
+	bool		resetXmin = false;
+
+	Assert(FirstSnapshotSet);
+	Assert(FirstXactSnapshot->regd_count > 0);
+	Assert(!pairingheap_is_empty(&RegisteredSnapshots));
+
+	/*
+	 * Decrement the reference count of the current transaction snapshot, and
+	 * free the snapshot if no more references remain.
+	 */
+	FirstXactSnapshot->regd_count--;
+	if (FirstXactSnapshot->regd_count == 0)
+		pairingheap_remove(&RegisteredSnapshots,
+						   &FirstXactSnapshot->ph_node);
+
+	if (FirstXactSnapshot->regd_count == 0 &&
+		FirstXactSnapshot->active_count == 0)
+	{
+		FreeSnapshot(FirstXactSnapshot);
+		resetXmin = true;
+	}
+
+	/* Don't allow catalog snapshot to be older than xact snapshot. */
+	InvalidateCatalogSnapshot();
+
+	/* First, create the snapshot in CurrentSnapshotData */
+	CurrentSnapshot = GetSnapshotData(&CurrentSnapshotData);
+
+	/* Make a saved copy */
+	CurrentSnapshot = CopySnapshot(CurrentSnapshot);
+	FirstXactSnapshot = CurrentSnapshot;
+	/* Mark it as "registered" in FirstXactSnapshot */
+	FirstXactSnapshot->regd_count++;
+	pairingheap_add(&RegisteredSnapshots, &FirstXactSnapshot->ph_node);
+
+	if (resetXmin)
+		SnapshotResetXmin();
+
+	return CurrentSnapshot;
+}
+
+/*
+ * pg_refresh_snapshot
+ *		SQL-callable wrapper for RefreshTransactionSnapshot.
+ */
+Datum
+pg_refresh_snapshot(PG_FUNCTION_ARGS)
+{
+	if (XactIsoLevel != XACT_REPEATABLE_READ)
+		ereport(ERROR,
+				(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+				 errmsg("pg_refresh_snapshot must be called in a repeatable-read transaction")));
+
+	RefreshTransactionSnapshot();
+	PG_RETURN_VOID();
 }
 
 /*

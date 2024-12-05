@@ -103,6 +103,14 @@ int			PostAuthDelay = 0;
 /* Time between checks that the client is still connected. */
 int			client_connection_check_interval = 0;
 
+/*
+ * IDs for iterations of the PostgresMain loop, for use by extensions like
+ * postgres_fdw to know which top-level query is currently being processed,
+ * for example.
+ */
+uint64		PostgresMainLoopIterationId = 0;
+uint64		PostgresMainLoopIterationSubId = 0;
+
 /* flags for non-system relation kinds to restrict use */
 int			restrict_nonsystem_relation_kind;
 
@@ -1116,6 +1124,8 @@ exec_simple_query(const char *query_string)
 		int16		format;
 		const char *cmdtagname;
 		size_t		cmdtaglen;
+
+		PostgresMainLoopIterationSubId += 1;
 
 		pgstat_report_query_id(0, true);
 
@@ -4605,6 +4615,9 @@ PostgresMain(const char *dbname, const char *username)
 	{
 		int			firstchar;
 		StringInfoData input_message;
+
+		PostgresMainLoopIterationId += 1;
+		PostgresMainLoopIterationSubId = 0;
 
 		/*
 		 * At top of loop, reset extended-query-message flag, so that any
