@@ -425,6 +425,9 @@ LockRelationForExtension(Relation relation, LOCKMODE lockmode)
 {
 	LOCKTAG		tag;
 
+	if (relation->rd_islocaltemp)
+		return;
+
 	SET_LOCKTAG_RELATION_EXTEND(tag,
 								relation->rd_lockInfo.lockRelId.dbId,
 								relation->rd_lockInfo.lockRelId.relId);
