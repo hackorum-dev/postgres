@@ -115,6 +115,8 @@ typedef void (*EndForeignInsert_function) (EState *estate,
 
 typedef int (*IsForeignRelUpdatable_function) (Relation rel);
 
+typedef bool (*IsForeignServerMergeCapable_function) (void);
+
 typedef bool (*PlanDirectModify_function) (PlannerInfo *root,
 										   ModifyTable *plan,
 										   Index resultRelation,
@@ -251,6 +253,9 @@ typedef struct FdwRoutine
 	GetForeignRowMarkType_function GetForeignRowMarkType;
 	RefetchForeignRow_function RefetchForeignRow;
 	RecheckForeignScan_function RecheckForeignScan;
+
+	/* Support functions for MERGE */
+	IsForeignServerMergeCapable_function IsForeignServerMergeCapable;
 
 	/* Support functions for EXPLAIN */
 	ExplainForeignScan_function ExplainForeignScan;
