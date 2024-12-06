@@ -1288,6 +1288,31 @@ RecheckForeignScan(ForeignScanState *node,
     </para>
    </sect2>
 
+   <sect2 id="fdw-callbacks-merge">
+    <title>FDW Routines for <command>MERGE</command></title>
+
+    <para>
+<programlisting>
+bool
+IsForeignServerMergeCapable();
+</programlisting>
+
+     Postgres doesn't support <command>MERGE</command> on foreign tables,
+     see <function>ExecMerge</function>. Still, extensions may provide
+     custom scan nodes to support <command>MERGE</command> on foreign
+     tables. If your extension provides such custom scan node, this
+     function should return true.
+    </para>
+
+    <para>
+     If the <function>IsForeignServerMergeCapable</function> pointer is set to
+     <literal>NULL</literal> or returns <literal>false</literal>,
+     <command>MERGE</command> fails on the planning phase with a proper
+     error message.
+    </para>
+
+   </sect2>
+
    <sect2 id="fdw-callbacks-explain">
     <title>FDW Routines for <command>EXPLAIN</command></title>
 
