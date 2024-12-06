@@ -1375,6 +1375,7 @@ IpcSemaphoreId
 IpcSemaphoreKey
 IsForeignPathAsyncCapable_function
 IsForeignRelUpdatable_function
+IsForeignServerMergeCapable_function
 IsForeignScanParallelSafe_function
 IsoConnInfo
 IspellDict
