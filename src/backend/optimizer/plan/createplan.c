@@ -7189,13 +7189,17 @@ make_modifytable(PlannerInfo *root, Plan *subplan,
 		 */
 		if (operation == CMD_MERGE && fdwroutine != NULL)
 		{
-			RangeTblEntry *rte = planner_rt_fetch(rti, root);
+			/* Check if the foreign table is mergeable */
+			if (!fdwroutine->IsForeignServerMergeCapable || !fdwroutine->IsForeignServerMergeCapable())
+			{
+				RangeTblEntry *rte = planner_rt_fetch(rti, root);
 
-			ereport(ERROR,
-					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					errmsg("cannot execute MERGE on relation \"%s\"",
-						   get_rel_name(rte->relid)),
-					errdetail_relkind_not_supported(rte->relkind));
+				ereport(ERROR,
+						errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						errmsg("cannot execute MERGE on relation \"%s\"",
+							   get_rel_name(rte->relid)),
+						errdetail_relkind_not_supported(rte->relkind));
+			}
 		}
 
 		/*
