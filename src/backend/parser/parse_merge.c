@@ -194,10 +194,18 @@ transformMergeStmt(ParseState *pstate, MergeStmt *stmt)
 										 false, targetPerms);
 	qry->mergeTargetRelation = qry->resultRelation;
 
-	/* The target relation must be a table or a view */
+	/*
+	 * The target relation must be a table or a view.
+	 *
+	 * Although the Merge command on foreign tables are allowed in the
+	 * grammar, it is not natively supported for foreign tables. We allow the
+	 * parser so that we give extensions a chance to support it via custom
+	 * scan nodes.
+	 */
 	if (pstate->p_target_relation->rd_rel->relkind != RELKIND_RELATION &&
 		pstate->p_target_relation->rd_rel->relkind != RELKIND_PARTITIONED_TABLE &&
-		pstate->p_target_relation->rd_rel->relkind != RELKIND_VIEW)
+		pstate->p_target_relation->rd_rel->relkind != RELKIND_VIEW &&
+		pstate->p_target_relation->rd_rel->relkind != RELKIND_FOREIGN_TABLE)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot execute MERGE on relation \"%s\"",
