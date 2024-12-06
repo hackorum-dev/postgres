@@ -460,6 +460,7 @@ static void postgresBeginForeignInsert(ModifyTableState *mtstate,
 static void postgresEndForeignInsert(EState *estate,
 									 ResultRelInfo *resultRelInfo);
 static int	postgresIsForeignRelUpdatable(Relation rel);
+static bool postgresIsForeignServerMergeCapable(void);
 static bool postgresPlanDirectModify(PlannerInfo *root,
 									 ModifyTable *plan,
 									 Index resultRelation,
@@ -700,6 +701,7 @@ postgres_fdw_handler(PG_FUNCTION_ARGS)
 	routine->BeginForeignInsert = postgresBeginForeignInsert;
 	routine->EndForeignInsert = postgresEndForeignInsert;
 	routine->IsForeignRelUpdatable = postgresIsForeignRelUpdatable;
+	routine->IsForeignServerMergeCapable = postgresIsForeignServerMergeCapable;
 	routine->PlanDirectModify = postgresPlanDirectModify;
 	routine->BeginDirectModify = postgresBeginDirectModify;
 	routine->IterateDirectModify = postgresIterateDirectModify;
@@ -2568,6 +2570,20 @@ postgresIsForeignRelUpdatable(Relation rel)
 	 */
 	return updatable ?
 		(1 << CMD_INSERT) | (1 << CMD_UPDATE) | (1 << CMD_DELETE) : 0;
+}
+
+
+/*
+ * postgresIsForeignServerMergeCapable
+ *		Determine whether the foreign server is capable of merge. Core code (ExecMerge())
+ *		doesn't support merge on foreign tables, so we always return false. Some FDWs
+ *		may support merge via CustomScan nodes, in which case they should return true.
+ */
+static bool
+postgresIsForeignServerMergeCapable(void)
+{
+	/* postgres_fdw does not support CMD_MERGE */
+	return false;
 }
 
 /*
