@@ -1758,7 +1758,13 @@ pgstat_write_statsfile(void)
 		 */
 		Assert(!ps->dropped);
 		if (ps->dropped)
+		{
+			PgStat_HashKey key = ps->key;
+			elog(WARNING, "found non-deleted stats entry %u/%u/%llu at server shutdown",
+						   key.kind, key.dboid,
+						   (unsigned long long) key.objid);
 			continue;
+		}
 
 		/*
 		 * This discards data related to custom stats kinds that are unknown
