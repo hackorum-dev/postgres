@@ -48,8 +48,10 @@ GRANT CREATE ON DATABASE regression TO regress_createrole WITH GRANT OPTION;
 CREATE ROLE regress_login LOGIN;
 CREATE ROLE regress_inherit INHERIT;
 CREATE ROLE regress_connection_limit CONNECTION LIMIT 5;
+SET plaintext_password_warnings = off;
 CREATE ROLE regress_encrypted_password ENCRYPTED PASSWORD 'foo';
 CREATE ROLE regress_password_null PASSWORD NULL;
+SET plaintext_password_warnings = on;
 
 -- ok, backwards compatible noise words should be ignored
 CREATE ROLE regress_noiseword SYSID 12345;

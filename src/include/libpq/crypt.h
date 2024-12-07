@@ -25,6 +25,9 @@
  */
 #define MAX_ENCRYPTED_PASSWORD_LEN (512)
 
+/* Enables usage warnings for plaintext passwords. */
+extern PGDLLIMPORT bool plaintext_password_warnings;
+
 /* Enables deprecation warnings for MD5 passwords. */
 extern PGDLLIMPORT bool md5_password_warnings;
 

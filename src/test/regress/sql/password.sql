@@ -12,6 +12,7 @@ SET password_encryption = 'scram-sha-256'; -- ok
 SET password_encryption = 'md5';
 CREATE ROLE regress_passwd1;
 ALTER ROLE regress_passwd1 PASSWORD 'role_pwd1';
+SET plaintext_password_warnings = off;
 CREATE ROLE regress_passwd2;
 ALTER ROLE regress_passwd2 PASSWORD 'role_pwd2';
 SET password_encryption = 'scram-sha-256';
@@ -46,8 +47,10 @@ SET password_encryption = 'md5';
 -- encrypt with MD5
 ALTER ROLE regress_passwd2 PASSWORD 'foo';
 -- already encrypted, use as they are
+SET plaintext_password_warnings = on;
 ALTER ROLE regress_passwd1 PASSWORD 'md5cd3578025fe2c3d7ed1b9a9b26238b70';
 ALTER ROLE regress_passwd3 PASSWORD 'SCRAM-SHA-256$4096:VLK4RMaQLCvNtQ==$6YtlR4t69SguDiwFvbVgVZtuz6gpJQQqUMZ7IQJK5yI=:ps75jrHeYU4lXCcXI4O8oIdJ3eO8o2jirjruw9phBTo=';
+SET plaintext_password_warnings = off;
 
 SET password_encryption = 'scram-sha-256';
 -- create SCRAM secret
@@ -118,3 +121,5 @@ SELECT rolname, rolpassword
     FROM pg_authid
     WHERE rolname LIKE 'regress_passwd%'
     ORDER BY rolname, rolpassword;
+
+SET plaintext_password_warnings = on;

@@ -2088,6 +2088,15 @@ struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"plaintext_password_warnings", PGC_USERSET, CONN_AUTH_AUTH,
+			gettext_noop("Enables usage warnings for plaintext passwords."),
+		},
+		&plaintext_password_warnings,
+		true,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"md5_password_warnings", PGC_USERSET, CONN_AUTH_AUTH,
 			gettext_noop("Enables deprecation warnings for MD5 passwords."),
 		},

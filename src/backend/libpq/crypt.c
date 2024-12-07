@@ -23,6 +23,11 @@
 #include "utils/builtins.h"
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
+#include "utils/guc.h"
+#include "tcop/tcopprot.h"
+
+/* Enables usage warnings for plaintext passwords. */
+bool		plaintext_password_warnings = true;
 
 /* Enables deprecation warnings for MD5 passwords. */
 bool		md5_password_warnings = true;
@@ -175,6 +180,14 @@ encrypt_password(PasswordType target_type, const char *role,
 				 errdetail("Encrypted passwords must be no longer than %d bytes.",
 						   MAX_ENCRYPTED_PASSWORD_LEN)));
 	}
+
+	if (plaintext_password_warnings &&
+		get_password_type(password) == PASSWORD_TYPE_PLAINTEXT &&
+		(log_statement == LOGSTMT_ALL || log_statement == LOGSTMT_DDL || log_min_duration_statement > -1))
+		ereport(WARNING,
+				(errmsg("using a plaintext password in a query"),
+				 errdetail("plaintext password may be logged."),
+				 errhint("Refer to the PostgreSQL documentation for details about using encrypted password in queries.")));
 
 	if (md5_password_warnings &&
 		get_password_type(encrypted_password) == PASSWORD_TYPE_MD5)
