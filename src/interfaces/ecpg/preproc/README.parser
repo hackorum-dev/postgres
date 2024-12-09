@@ -40,7 +40,9 @@ continue to use the normal Bison notations.)
 
 
 ecpg.addons contains entries that begin with a line like
+
        ECPG: ruletype tokenlist
+
 and typically have one or more following lines that are the code
 for a grammar action.  Any line not starting with "ECPG:" is taken
 to be part of the code block for the preceding "ECPG:" line.
@@ -49,26 +51,29 @@ to be part of the code block for the preceding "ECPG:" line.
 It is simply a list of the target nonterminal and the input tokens
 from the gram.y rule.  For example, to modify the action for a
 gram.y rule like this:
+
       target: tokenA tokenB tokenC {...}
+
 "tokenlist" would be "target tokenA tokenB tokenC".  If we want to
 modify a non-first alternative for a nonterminal, we still write the
 nonterminal.  For example, "tokenlist" should be "target tokenD tokenE"
 to affect the second alternative in:
+
       target: tokenA tokenB tokenC {...}
               | tokenD tokenE {...}
 
 "ruletype" is one of:
 
-a) "block" - the automatic action that parse.pl would create is
+1) "block" - the automatic action that parse.pl would create is
     completely overridden.  Instead the entry's code block is emitted.
     The code block must include the braces ({}) needed for a Bison action.
 
-b) "addon" - the entry's code block is inserted into the generated
+2) "addon" - the entry's code block is inserted into the generated
     action, ahead of the automatic token-concatenation code.
     In this case the code block need not contain braces, since
     it will be inserted within braces.
 
-c) "rule" - the automatic action is emitted, but then the entry's
+3) "rule" - the automatic action is emitted, but then the entry's
     code block is added verbatim afterwards.  This typically is
     used to add new alternatives to a nonterminal of the core grammar.
     For example, given the entry:
