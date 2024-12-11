@@ -41,6 +41,8 @@ typedef uint32 pg_crc32c;
 #define INIT_CRC32C(crc) ((crc) = 0xFFFFFFFF)
 #define EQ_CRC32C(c1, c2) ((c1) == (c2))
 
+extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
+
 #if defined(USE_SSE42_CRC32C)
 /* Use Intel SSE4.2 instructions. */
 #define COMP_CRC32C(crc, data, len) \
@@ -106,5 +108,15 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
 extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
 
 #endif
+
+/* semi-private to files in src/port that compute CRCs in parallel */
+
+#define CRC_BYTES_PER_ITER (3 * sizeof(uint64))
+/* for parallel computation, max number of words per block for recombination */
+#define CRC_MAX_BLOCK_LEN 350
+
+extern PGDLLIMPORT const uint64 combine_crc_lookup[CRC_MAX_BLOCK_LEN];
+
+extern uint64 pg_clmul(uint32 a, uint32 b);
 
 #endif							/* PG_CRC32C_H */
