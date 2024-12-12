@@ -2045,14 +2045,12 @@ typedef struct UniquePath
 
 /*
  * GatherPath runs several copies of a plan in parallel and collects the
- * results.  The parallel leader may also execute the plan, unless the
- * single_copy flag is set.
+ * results.
  */
 typedef struct GatherPath
 {
 	Path		path;
 	Path	   *subpath;		/* path for each worker */
-	bool		single_copy;	/* don't execute path more than once */
 	int			num_workers;	/* number of workers sought to help */
 } GatherPath;
 

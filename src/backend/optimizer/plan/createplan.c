@@ -300,7 +300,7 @@ static Unique *make_unique_from_sortclauses(Plan *lefttree, List *distinctList);
 static Unique *make_unique_from_pathkeys(Plan *lefttree,
 										 List *pathkeys, int numCols);
 static Gather *make_gather(List *qptlist, List *qpqual,
-						   int nworkers, int rescan_param, bool single_copy, Plan *subplan);
+						   int nworkers, int rescan_param, Plan *subplan);
 static SetOp *make_setop(SetOpCmd cmd, SetOpStrategy strategy, Plan *lefttree,
 						 List *distinctList, AttrNumber flagColIdx, int firstFlag,
 						 long numGroups);
@@ -1940,7 +1940,6 @@ create_gather_plan(PlannerInfo *root, GatherPath *best_path)
 							  NIL,
 							  best_path->num_workers,
 							  assign_special_exec_param(root),
-							  best_path->single_copy,
 							  subplan);
 
 	copy_generic_path_info(&gather_plan->plan, &best_path->path);
@@ -6930,7 +6929,6 @@ make_gather(List *qptlist,
 			List *qpqual,
 			int nworkers,
 			int rescan_param,
-			bool single_copy,
 			Plan *subplan)
 {
 	Gather	   *node = makeNode(Gather);
@@ -6942,7 +6940,7 @@ make_gather(List *qptlist,
 	plan->righttree = NULL;
 	node->num_workers = nworkers;
 	node->rescan_param = rescan_param;
-	node->single_copy = single_copy;
+	node->single_copy = false;
 	node->invisible = false;
 	node->initParam = NULL;
 

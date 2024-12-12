@@ -2059,15 +2059,8 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.pathkeys = NIL;	/* Gather has unordered result */
 
 	pathnode->subpath = subpath;
+	Assert(subpath->parallel_workers > 0);
 	pathnode->num_workers = subpath->parallel_workers;
-	pathnode->single_copy = false;
-
-	if (pathnode->num_workers == 0)
-	{
-		pathnode->path.pathkeys = subpath->pathkeys;
-		pathnode->num_workers = 1;
-		pathnode->single_copy = true;
-	}
 
 	cost_gather(pathnode, root, rel, pathnode->path.param_info, rows);
 
