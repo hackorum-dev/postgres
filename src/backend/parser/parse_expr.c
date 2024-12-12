@@ -502,6 +502,12 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 	return result;
 }
 
+static bool
+type_is_subfieldable(Oid typeid)
+{
+	return ISCOMPLEX(typeid) || typeid == RECORDOID;
+}
+
 /*
  * Transform a ColumnRef.
  *
@@ -510,18 +516,19 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 static Node *
 transformColumnRef(ParseState *pstate, ColumnRef *cref)
 {
-	Node	   *node = NULL;
+	Node	   *node = NULL, *node2 = NULL;
 	char	   *nspname = NULL;
 	char	   *relname = NULL;
 	char	   *colname = NULL;
-	ParseNamespaceItem *nsitem;
-	int			levels_up;
+	ParseNamespaceItem *nsitem, *nsitem2;
+	int			levels_up, levels_up2;
+	ColumnRef  *indcref = NULL;
+	List	   *indirection = NULL;
 	enum
 	{
 		CRERR_NO_COLUMN,
 		CRERR_NO_RTE,
-		CRERR_WRONG_DB,
-		CRERR_TOO_MANY
+		CRERR_AMBIGUOUS,
 	}			crerr = CRERR_NO_COLUMN;
 	const char *err;
 
@@ -634,8 +641,12 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 	 *			if no luck, try to resolve as unqualified table name (A.*).
 	 * A.B		A is an unqualified table name; B is either a
 	 *			column or function name (trying column name first).
-	 * A.B.C	schema A, table B, col or func name C.
-	 * A.B.C.D	catalog A, schema B, table C, col or func D.
+	 * A.B.C	schema A, table B, col or func name C; or
+	 *          correlation A, column B, field C.
+	 * A.B.C.D	catalog A, schema B, table C, col or func D; or
+	 *          correlation A, column B, fields C, D.
+	 * A.B.C.D.E...
+	 *          correlation A, column B, fields C, D, E, etc.
 	 * A.*		A is an unqualified table name; means whole-row value.
 	 * A.B.*	whole-row value of table B in schema A.
 	 * A.B.C.*	whole-row value of table C in schema B in catalog A.
@@ -741,7 +752,45 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 				nsitem = refnameNamespaceItem(pstate, nspname, relname,
 											  cref->location,
 											  &levels_up);
-				if (nsitem == NULL)
+
+				/*
+				 * Also look it up as a subfieldable column reference, but
+				 * then it can't end with a star
+				 */
+				if (!IsA(field3, A_Star))
+					nsitem2 = refnameNamespaceItem(pstate, NULL, strVal(field1),
+												   cref->location,
+												   &levels_up2);
+				else
+					nsitem2 = NULL;
+
+				/* must be an explicit alias */
+				if (nsitem2 && nsitem2->p_rte->alias == NULL)
+					nsitem2 = NULL;
+
+				if (nsitem2)
+					node2 = scanNSItemForColumn(pstate, nsitem2, levels_up2, strVal(field2), cref->location);
+
+				/*
+				 * If we found a potential subfield reference, check that the
+				 * type is subfieldable, else forget it.
+				 */
+				if (node2)
+				{
+					if (type_is_subfieldable(castNode(Var, node2)->vartype))
+					{
+						indcref = copyObject(cref);
+						indcref->fields = list_truncate(indcref->fields, 2);
+						indirection = list_copy_tail(cref->fields, 2);
+					}
+					else
+					{
+						nsitem2 = NULL;
+						node2 = NULL;
+					}
+				}
+
+				if (nsitem == NULL && nsitem2 == NULL)
 				{
 					crerr = CRERR_NO_RTE;
 					break;
@@ -757,9 +806,12 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 
 				colname = strVal(field3);
 
+				if (nsitem)
+				{
 				/* Try to identify as a column of the nsitem */
 				node = scanNSItemForColumn(pstate, nsitem, levels_up, colname,
 										   cref->location);
+
 				if (node == NULL)
 				{
 					/* Try it as a function call on the whole row */
@@ -772,6 +824,13 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 											 NULL,
 											 false,
 											 cref->location);
+				}
+				}
+
+				if (node != NULL && node2 != NULL)
+				{
+					crerr = CRERR_AMBIGUOUS;
+					break;
 				}
 				break;
 			}
@@ -787,20 +846,52 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 				nspname = strVal(field2);
 				relname = strVal(field3);
 
+				/* Locate the referenced nsitem (only eligible if database name matches) */
+				if (strcmp(catname, get_database_name(MyDatabaseId)) == 0)
+					nsitem = refnameNamespaceItem(pstate, nspname, relname,
+												  cref->location,
+												  &levels_up);
+				else
+					nsitem = NULL;
+
 				/*
-				 * We check the catalog name and then ignore it.
+				 * Also look it up as a subfieldable column reference, but
+				 * then it can't end with a star
 				 */
-				if (strcmp(catname, get_database_name(MyDatabaseId)) != 0)
+				if (!IsA(field4, A_Star))
+					nsitem2 = refnameNamespaceItem(pstate, NULL, strVal(field1),
+												   cref->location,
+												   &levels_up2);
+				else
+					nsitem2 = NULL;
+
+				/* must be an explicit alias */
+				if (nsitem2 && nsitem2->p_rte->alias == NULL)
+					nsitem2 = NULL;
+
+				if (nsitem2)
+					node2 = scanNSItemForColumn(pstate, nsitem2, levels_up2, strVal(field2), cref->location);
+
+				/*
+				 * If we found a potential subfield reference, check that the
+				 * type is subfieldable, else forget it.
+				 */
+				if (node2)
 				{
-					crerr = CRERR_WRONG_DB;
-					break;
+					if (type_is_subfieldable(castNode(Var, node2)->vartype))
+					{
+						indcref = copyObject(cref);
+						indcref->fields = list_truncate(indcref->fields, 2);
+						indirection = list_copy_tail(cref->fields, 2);
+					}
+					else
+					{
+						nsitem2 = NULL;
+						node2 = NULL;
+					}
 				}
 
-				/* Locate the referenced nsitem */
-				nsitem = refnameNamespaceItem(pstate, nspname, relname,
-											  cref->location,
-											  &levels_up);
-				if (nsitem == NULL)
+				if (nsitem == NULL && nsitem2 == NULL)
 				{
 					crerr = CRERR_NO_RTE;
 					break;
@@ -816,6 +907,8 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 
 				colname = strVal(field4);
 
+				if (nsitem)
+				{
 				/* Try to identify as a column of the nsitem */
 				node = scanNSItemForColumn(pstate, nsitem, levels_up, colname,
 										   cref->location);
@@ -832,11 +925,85 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 											 false,
 											 cref->location);
 				}
+				}
+
+				if (node != NULL && node2 != NULL)
+				{
+					crerr = CRERR_AMBIGUOUS;
+					break;
+				}
 				break;
 			}
 		default:
-			crerr = CRERR_TOO_MANY; /* too many dotted names */
-			break;
+			{
+				Node	   *field1 = (Node *) linitial(cref->fields);
+				Node	   *field2 = (Node *) lsecond(cref->fields);
+				Node	   *fieldl = (Node *) llast(cref->fields);
+
+				/* XXX for error reporting below */
+				relname = strVal(field1);
+
+				/*
+				 * Look it up as a subfieldable column reference, but then it
+				 * can't end with a star
+				 */
+				if (!IsA(fieldl, A_Star))
+					nsitem2 = refnameNamespaceItem(pstate, NULL, strVal(field1),
+												   cref->location,
+												   &levels_up2);
+				else
+					nsitem2 = NULL;
+
+				/* must be an explicit alias */
+				if (nsitem2 && nsitem2->p_rte->alias == NULL)
+					nsitem2 = NULL;
+
+				if (nsitem2)
+					node2 = scanNSItemForColumn(pstate, nsitem2, levels_up2, strVal(field2), cref->location);
+
+				/*
+				 * If we found a potential subfield reference, check that the
+				 * type is subfieldable, else forget it.
+				 */
+				if (node2)
+				{
+					if (type_is_subfieldable(castNode(Var, node2)->vartype))
+					{
+						indcref = copyObject(cref);
+						indcref->fields = list_truncate(indcref->fields, 2);
+						indirection = list_copy_tail(cref->fields, 2);
+					}
+					else
+					{
+						nsitem2 = NULL;
+						node2 = NULL;
+					}
+				}
+
+				if (nsitem2 == NULL)
+				{
+					crerr = CRERR_NO_RTE;
+					break;
+				}
+				break;
+			}
+	}
+
+	/*
+	 * If we decided it's a subfield reference, convert it to an indirection
+	 * (as if you had written "(A.B).C.D" instead of "A.B.C.D").  (Note that
+	 * the subfield references detected above always come from an identifier
+	 * chain of length >= 3, but the indirections we are building here have a
+	 * column reference of length 2, and so there won't be any endless
+	 * recursion.)
+	 */
+	if (node2)
+	{
+		A_Indirection *a = makeNode(A_Indirection);
+
+		a->arg = (Node *) indcref;
+		a->indirection = indirection;
+		node = transformIndirection(pstate, a);
 	}
 
 	/*
@@ -877,17 +1044,10 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 				errorMissingRTE(pstate, makeRangeVar(nspname, relname,
 													 cref->location));
 				break;
-			case CRERR_WRONG_DB:
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("cross-database references are not implemented: %s",
-								NameListToString(cref->fields)),
-						 parser_errposition(pstate, cref->location)));
-				break;
-			case CRERR_TOO_MANY:
+			case CRERR_AMBIGUOUS:
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("improper qualified name (too many dotted names): %s",
+						 errmsg("ambiguous identifier chain: %s",
 								NameListToString(cref->fields)),
 						 parser_errposition(pstate, cref->location)));
 				break;
