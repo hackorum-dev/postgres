@@ -38,6 +38,7 @@ SELECT pg_input_is_valid('(1,zed)', 'complex');
 SELECT * FROM pg_input_error_info('(1,zed)', 'complex');
 SELECT * FROM pg_input_error_info('(1,1e400)', 'complex');
 
+-- test identifier chain syntax for column and field references
 create temp table quadtable(f1 int, q quad);
 
 insert into quadtable values (1, ((3.3,4.4),(5.5,6.6)));
@@ -48,6 +49,11 @@ select * from quadtable;
 select f1, q.c1 from quadtable;		-- fails, q is a table reference
 
 select f1, (q).c1, (qq.q).c1.i from quadtable qq;
+
+select f1, qq.q.c1 from quadtable qq;
+select f1, qq.q.c1.i from quadtable qq;
+
+select f1, quadtable.q.c1.i from quadtable;  -- fails, works only with explicit alias
 
 create temp table people (fn fullname, bd date);
 
