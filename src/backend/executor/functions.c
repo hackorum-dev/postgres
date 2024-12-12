@@ -378,6 +378,9 @@ sql_fn_post_column_ref(ParseState *pstate, ColumnRef *cref, Node *var)
 	 *			(the first possibility takes precedence)
 	 * A.B.C	A = function name, B = record-typed parameter name,
 	 *			C = field name
+	 * A.B.C.D...
+	 *			A = function name, B = record-typed parameter name,
+	 *			C, D, etc. = field names TODO
 	 * A.*		Whole-row reference to composite parameter A.
 	 * A.B.*	Same, with A = function name, B = parameter name
 	 *
