@@ -1406,6 +1406,8 @@ $1[10:42]
     <primary>field selection</primary>
    </indexterm>
 
+   <!-- TODO -->
+
    <para>
     If an expression yields a value of a composite type (row type), then a
     specific field of the row can be extracted by writing
