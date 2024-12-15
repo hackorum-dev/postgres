@@ -91,8 +91,10 @@ test: select_parallel
 test: write_parallel
 test: vacuum_parallel
 
-# no relation related tests can be put in this group
-test: publication subscription
+# These test are flaky when run in parallel with eachother, see:
+# https://www.postgresql.org/message-id/flat/18dcfb7f-5deb-4487-ae22-a2c16839519a%40gmail.com
+test: publication
+test: subscription
 
 # ----------
 # Another group of parallel tests
