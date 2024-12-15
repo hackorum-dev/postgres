@@ -1076,7 +1076,7 @@ CAST ( '<replaceable>string</replaceable>' AS <replaceable>type</replaceable> )
        <entry><token>&lt;</token> <token>&gt;</token> <token>=</token> <token>&lt;=</token> <token>&gt;=</token> <token>&lt;&gt;</token>
 </entry>
        <entry></entry>
-       <entry>comparison operators</entry>
+       <entry>comparison operators *</entry>
       </row>
 
       <row>
@@ -1116,6 +1116,16 @@ CAST ( '<replaceable>string</replaceable>' AS <replaceable>type</replaceable> )
     matter what yours does.
    </para>
 
+   <para>
+    * Note that <productname>PostgreSQL</productname> follows SQL's 3VL,
+    due to that some comparisons regarding NULL values may not work as
+    you might expect.
+    As an example, two nullable columns that contain NULL, when compared using
+    the <literal>OPERATOR</literal> <token>=</token>, will return nothing
+    instead of TRUE like your programming language may do.
+    In this case, only 'IS NOT DISTINCT FROM' would return the result you expect.
+   </para>
+   
    <para>
     When a schema-qualified operator name is used in the
     <literal>OPERATOR</literal> syntax, as for example in:
