@@ -24,6 +24,7 @@
 #include "nodes/extensible.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "jit/jit.h"
 #include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/optimizer.h"
@@ -325,6 +326,7 @@ static ModifyTable *make_modifytable(PlannerInfo *root, Plan *subplan,
 static GatherMerge *create_gather_merge_plan(PlannerInfo *root,
 											 GatherMergePath *best_path);
 
+static void plan_consider_jit(Plan *plan);
 
 /*
  * create_plan
@@ -546,8 +548,33 @@ create_plan_recurse(PlannerInfo *root, Path *best_path, int flags)
 			break;
 	}
 
+	plan_consider_jit(plan);
 	return plan;
 }
+
+static void
+plan_consider_jit(Plan *plan)
+{
+	plan->jit = false;
+
+	 /* Determine which JIT options to enable for this plan node */
+	if (jit_enabled)
+	{
+		Cost	total_cost;
+
+		/*
+		 * Take into account the number of times that we expect to rescan a
+		 * given plan node.  For example, subplans being invoked under the
+		 * inside of a Nested Loop may be rescanned many times.  JITing these
+		 * may be more worthwhile.
+		 */
+		total_cost = plan->total_cost * plan->plan_rows;
+
+		if (total_cost > jit_above_cost)
+			plan->jit = true;
+	}
+}
+
 
 /*
  * create_scan_plan
