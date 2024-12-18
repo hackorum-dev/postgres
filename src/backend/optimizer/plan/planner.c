@@ -696,8 +696,7 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	result->stmt_len = parse->stmt_len;
 
 	result->jitFlags = PGJIT_NONE;
-	if (jit_enabled && jit_above_cost >= 0 &&
-		top_plan->total_cost > jit_above_cost)
+	if (jit_enabled && jit_above_cost >= 0 && top_plan->jit)
 	{
 		result->jitFlags |= PGJIT_PERFORM;
 
