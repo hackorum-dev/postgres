@@ -134,7 +134,8 @@ static double adjust_rowcount_for_semijoins(PlannerInfo *root,
 static double approximate_joinrel_size(PlannerInfo *root, Relids relids);
 static void match_restriction_clauses_to_index(PlannerInfo *root,
 											   IndexOptInfo *index,
-											   IndexClauseSet *clauseset);
+											   IndexClauseSet *clauseset,
+											   List **orclauses);
 static void match_join_clauses_to_index(PlannerInfo *root,
 										RelOptInfo *rel, IndexOptInfo *index,
 										IndexClauseSet *clauseset,
@@ -145,15 +146,18 @@ static void match_eclass_clauses_to_index(PlannerInfo *root,
 static void match_clauses_to_index(PlannerInfo *root,
 								   List *clauses,
 								   IndexOptInfo *index,
-								   IndexClauseSet *clauseset);
+								   IndexClauseSet *clauseset,
+								   List **orclauses);
 static void match_clause_to_index(PlannerInfo *root,
 								  RestrictInfo *rinfo,
 								  IndexOptInfo *index,
-								  IndexClauseSet *clauseset);
+								  IndexClauseSet *clauseset,
+								  List **orclauses);
 static IndexClause *match_clause_to_indexcol(PlannerInfo *root,
 											 RestrictInfo *rinfo,
 											 int indexcol,
-											 IndexOptInfo *index);
+											 IndexOptInfo *index,
+											 List **orclauses);
 static bool IsBooleanOpfamily(Oid opfamily);
 static IndexClause *match_boolean_index_clause(PlannerInfo *root,
 											   RestrictInfo *rinfo,
@@ -161,17 +165,20 @@ static IndexClause *match_boolean_index_clause(PlannerInfo *root,
 static IndexClause *match_opclause_to_indexcol(PlannerInfo *root,
 											   RestrictInfo *rinfo,
 											   int indexcol,
-											   IndexOptInfo *index);
+											   IndexOptInfo *index,
+											   List **orclauses);
 static IndexClause *match_funcclause_to_indexcol(PlannerInfo *root,
 												 RestrictInfo *rinfo,
 												 int indexcol,
-												 IndexOptInfo *index);
+												 IndexOptInfo *index,
+												 List **orclauses);
 static IndexClause *get_index_clause_from_support(PlannerInfo *root,
 												  RestrictInfo *rinfo,
 												  Oid funcid,
 												  int indexarg,
 												  int indexcol,
-												  IndexOptInfo *index);
+												  IndexOptInfo *index,
+												  List* *orclauses);
 static IndexClause *match_saopclause_to_indexcol(PlannerInfo *root,
 												 RestrictInfo *rinfo,
 												 int indexcol,
@@ -244,6 +251,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 	List	   *bitindexpaths;
 	List	   *bitjoinpaths;
 	List	   *joinorclauses;
+	List	   *orclauses;
 	IndexClauseSet rclauseset;
 	IndexClauseSet jclauseset;
 	IndexClauseSet eclauseset;
@@ -254,7 +262,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 		return;
 
 	/* Bitmap paths are collected and then dealt with at the end */
-	bitindexpaths = bitjoinpaths = joinorclauses = NIL;
+	bitindexpaths = bitjoinpaths = joinorclauses = orclauses = NIL;
 
 	/* Examine each index in turn */
 	foreach(lc, rel->indexlist)
@@ -274,9 +282,11 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 
 		/*
 		 * Identify the restriction clauses that can match the index.
+		 * Also, collect OR clauses returnd by support functions for later.
 		 */
 		MemSet(&rclauseset, 0, sizeof(rclauseset));
-		match_restriction_clauses_to_index(root, index, &rclauseset);
+		match_restriction_clauses_to_index(root, index,
+										   &rclauseset, &orclauses);
 
 		/*
 		 * Build index paths from the restriction clauses.  These will be
@@ -321,7 +331,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 	 * restriction list.  Add these to bitindexpaths.
 	 */
 	indexpaths = generate_bitmap_or_paths(root, rel,
-										  rel->baserestrictinfo, NIL);
+										  rel->baserestrictinfo, NULL);
 	bitindexpaths = list_concat(bitindexpaths, indexpaths);
 
 	/*
@@ -330,6 +340,14 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 	 */
 	indexpaths = generate_bitmap_or_paths(root, rel,
 										  joinorclauses, rel->baserestrictinfo);
+	bitjoinpaths = list_concat(bitjoinpaths, indexpaths);
+
+	/*
+	 * Likewise, generate BitmapOrPaths for any suitable OR-clauses present in
+	 * the orclauses returned by a support function.  Add these to bitjoinpaths.
+	 */
+	indexpaths = generate_bitmap_or_paths(root, rel,
+										  orclauses, rel->baserestrictinfo);
 	bitjoinpaths = list_concat(bitjoinpaths, indexpaths);
 
 	/*
@@ -1145,7 +1163,7 @@ build_paths_for_OR(PlannerInfo *root, RelOptInfo *rel,
 		 * Identify the restriction clauses that can match the index.
 		 */
 		MemSet(&clauseset, 0, sizeof(clauseset));
-		match_clauses_to_index(root, clauses, index, &clauseset);
+		match_clauses_to_index(root, clauses, index, &clauseset, NULL);
 
 		/*
 		 * If no matches so far, and the index predicate isn't useful, we
@@ -1157,7 +1175,7 @@ build_paths_for_OR(PlannerInfo *root, RelOptInfo *rel,
 		/*
 		 * Add "other" restriction clauses to the clauseset.
 		 */
-		match_clauses_to_index(root, other_clauses, index, &clauseset);
+		match_clauses_to_index(root, other_clauses, index, &clauseset, NULL);
 
 		/*
 		 * Construct paths if possible.
@@ -2398,15 +2416,18 @@ approximate_joinrel_size(PlannerInfo *root, Relids relids)
 /*
  * match_restriction_clauses_to_index
  *	  Identify restriction clauses for the rel that match the index.
- *	  Matching clauses are added to *clauseset.
+ *	  Matching clauses are added to *clauseset. Also, OR clauses
+ *	  returned by support functions are collected in orclauses.
  */
 static void
 match_restriction_clauses_to_index(PlannerInfo *root,
 								   IndexOptInfo *index,
-								   IndexClauseSet *clauseset)
+								   IndexClauseSet *clauseset,
+								   List **orclauses)
 {
 	/* We can ignore clauses that are implied by the index predicate */
-	match_clauses_to_index(root, index->indrestrictinfo, index, clauseset);
+	match_clauses_to_index(root, index->indrestrictinfo, index,
+						   clauseset, orclauses);
 }
 
 /*
@@ -2436,7 +2457,7 @@ match_join_clauses_to_index(PlannerInfo *root,
 		if (restriction_is_or_clause(rinfo))
 			*joinorclauses = lappend(*joinorclauses, rinfo);
 		else
-			match_clause_to_index(root, rinfo, index, clauseset);
+			match_clause_to_index(root, rinfo, index, clauseset, NULL);
 	}
 }
 
@@ -2474,20 +2495,21 @@ match_eclass_clauses_to_index(PlannerInfo *root, IndexOptInfo *index,
 		 * since for non-btree indexes the EC's equality operators might not
 		 * be in the index opclass (cf ec_member_matches_indexcol).
 		 */
-		match_clauses_to_index(root, clauses, index, clauseset);
+		match_clauses_to_index(root, clauses, index, clauseset, NULL);
 	}
 }
 
 /*
  * match_clauses_to_index
  *	  Perform match_clause_to_index() for each clause in a list.
- *	  Matching clauses are added to *clauseset.
+ *	  Matching clauses are added to *clauseset. Also, OR clauses
+ *	  returned by support functions are collected in orclauses.
  */
 static void
 match_clauses_to_index(PlannerInfo *root,
 					   List *clauses,
 					   IndexOptInfo *index,
-					   IndexClauseSet *clauseset)
+					   IndexClauseSet *clauseset, List **orclauses)
 {
 	ListCell   *lc;
 
@@ -2495,7 +2517,7 @@ match_clauses_to_index(PlannerInfo *root,
 	{
 		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
 
-		match_clause_to_index(root, rinfo, index, clauseset);
+		match_clause_to_index(root, rinfo, index, clauseset, orclauses);
 	}
 }
 
@@ -2505,7 +2527,8 @@ match_clauses_to_index(PlannerInfo *root,
  *
  * If the clause is usable, add an IndexClause entry for it to the appropriate
  * list in *clauseset.  (*clauseset must be initialized to zeroes before first
- * call.)
+ * call.) Also, OR clauses returned by support functions are collected in
+ * orclauses.
  *
  * Note: in some circumstances we may find the same RestrictInfos coming from
  * multiple places.  Defend against redundant outputs by refusing to add a
@@ -2520,7 +2543,8 @@ static void
 match_clause_to_index(PlannerInfo *root,
 					  RestrictInfo *rinfo,
 					  IndexOptInfo *index,
-					  IndexClauseSet *clauseset)
+					  IndexClauseSet *clauseset,
+					  List **orclauses)
 {
 	int			indexcol;
 
@@ -2559,7 +2583,8 @@ match_clause_to_index(PlannerInfo *root,
 		iclause = match_clause_to_indexcol(root,
 										   rinfo,
 										   indexcol,
-										   index);
+										   index,
+										   orclauses);
 		if (iclause)
 		{
 			/* Success, so record it */
@@ -2635,6 +2660,7 @@ match_clause_to_index(PlannerInfo *root,
  * 'rinfo' is the clause to be tested (as a RestrictInfo node).
  * 'indexcol' is a column number of 'index' (counting from 0).
  * 'index' is the index of interest.
+ * 'orclauses" stores OR clauses returned by planner support functions.
  *
  * Returns an IndexClause if the clause can be used with this index key,
  * or NULL if not.
@@ -2646,7 +2672,8 @@ static IndexClause *
 match_clause_to_indexcol(PlannerInfo *root,
 						 RestrictInfo *rinfo,
 						 int indexcol,
-						 IndexOptInfo *index)
+						 IndexOptInfo *index,
+						 List **orclauses)
 {
 	IndexClause *iclause;
 	Expr	   *clause = rinfo->clause;
@@ -2677,11 +2704,13 @@ match_clause_to_indexcol(PlannerInfo *root,
 	 */
 	if (IsA(clause, OpExpr))
 	{
-		return match_opclause_to_indexcol(root, rinfo, indexcol, index);
+		return match_opclause_to_indexcol(root, rinfo, indexcol, index,
+										  orclauses);
 	}
 	else if (IsA(clause, FuncExpr))
 	{
-		return match_funcclause_to_indexcol(root, rinfo, indexcol, index);
+		return match_funcclause_to_indexcol(root, rinfo, indexcol, index,
+											orclauses);
 	}
 	else if (IsA(clause, ScalarArrayOpExpr))
 	{
@@ -2839,7 +2868,8 @@ static IndexClause *
 match_opclause_to_indexcol(PlannerInfo *root,
 						   RestrictInfo *rinfo,
 						   int indexcol,
-						   IndexOptInfo *index)
+						   IndexOptInfo *index,
+						   List **orclauses)
 {
 	IndexClause *iclause;
 	OpExpr	   *clause = (OpExpr *) rinfo->clause;
@@ -2895,7 +2925,8 @@ match_opclause_to_indexcol(PlannerInfo *root,
 
 		/*
 		 * If we didn't find a member of the index's opfamily, try the support
-		 * function for the operator's underlying function.
+		 * function for the operator's underlying function. OR clauses returned
+		 * by the support function are collected in orclauses.
 		 */
 		set_opfuncid(clause);	/* make sure we have opfuncid */
 		return get_index_clause_from_support(root,
@@ -2903,7 +2934,8 @@ match_opclause_to_indexcol(PlannerInfo *root,
 											 clause->opfuncid,
 											 0, /* indexarg on left */
 											 indexcol,
-											 index);
+											 index,
+											 orclauses);
 	}
 
 	if (match_index_to_operand(rightop, indexcol, index) &&
@@ -2935,7 +2967,8 @@ match_opclause_to_indexcol(PlannerInfo *root,
 
 		/*
 		 * If we didn't find a member of the index's opfamily, try the support
-		 * function for the operator's underlying function.
+		 * function for the operator's underlying function. OR clauses returned
+		 * by the support function are collected in orclauses.
 		 */
 		set_opfuncid(clause);	/* make sure we have opfuncid */
 		return get_index_clause_from_support(root,
@@ -2943,7 +2976,8 @@ match_opclause_to_indexcol(PlannerInfo *root,
 											 clause->opfuncid,
 											 1, /* indexarg on right */
 											 indexcol,
-											 index);
+											 index,
+											 orclauses);
 	}
 
 	return NULL;
@@ -2958,7 +2992,8 @@ static IndexClause *
 match_funcclause_to_indexcol(PlannerInfo *root,
 							 RestrictInfo *rinfo,
 							 int indexcol,
-							 IndexOptInfo *index)
+							 IndexOptInfo *index,
+							 List **orclauses)
 {
 	FuncExpr   *clause = (FuncExpr *) rinfo->clause;
 	int			indexarg;
@@ -2968,7 +3003,8 @@ match_funcclause_to_indexcol(PlannerInfo *root,
 	 * We have no built-in intelligence about function clauses, but if there's
 	 * a planner support function, it might be able to do something.  But, to
 	 * cut down on wasted planning cycles, only call the support function if
-	 * at least one argument matches the target index column.
+	 * at least one argument matches the target index column. Also, OR clauses
+	 * returned by the support function are collected in orclauses.
 	 *
 	 * Note that we don't insist on the other arguments being pseudoconstants;
 	 * the support function has to check that.  This is to allow cases where
@@ -2986,7 +3022,8 @@ match_funcclause_to_indexcol(PlannerInfo *root,
 												 clause->funcid,
 												 indexarg,
 												 indexcol,
-												 index);
+												 index,
+												 orclauses);
 		}
 
 		indexarg++;
@@ -2999,6 +3036,8 @@ match_funcclause_to_indexcol(PlannerInfo *root,
  * get_index_clause_from_support()
  *		If the function has a planner support function, try to construct
  *		an IndexClause using indexquals created by the support function.
+ *		If the support function returns OR clauses, collect them into
+ *		orclauses for bitmap scans.
  */
 static IndexClause *
 get_index_clause_from_support(PlannerInfo *root,
@@ -3006,7 +3045,8 @@ get_index_clause_from_support(PlannerInfo *root,
 							  Oid funcid,
 							  int indexarg,
 							  int indexcol,
-							  IndexOptInfo *index)
+							  IndexOptInfo *index,
+							  List **orclauses)
 {
 	Oid			prosupport = get_func_support(funcid);
 	SupportRequestIndexCondition req;
@@ -3044,6 +3084,14 @@ get_index_clause_from_support(PlannerInfo *root,
 		foreach(lc, sresult)
 		{
 			Expr	   *clause = (Expr *) lfirst(lc);
+
+			if (is_orclause(clause))
+			{
+				if (orclauses)
+					*orclauses = lappend(*orclauses,
+										 make_simple_restrictinfo(root, clause));
+				continue;
+			}
 
 			indexquals = lappend(indexquals,
 								 make_simple_restrictinfo(root, clause));
