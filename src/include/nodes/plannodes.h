@@ -212,6 +212,8 @@ typedef struct Plan
 	/* average row width in bytes */
 	int			plan_width;
 
+	bool jit; /* true if the plan node is worth to compile */
+
 	/*
 	 * information needed for parallel query
 	 */
