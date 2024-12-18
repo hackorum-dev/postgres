@@ -48,6 +48,7 @@
 #include "storage/smgr.h"
 #include "storage/standby.h"
 #include "utils/memutils.h"
+#include "utils/pgstat_internal.h"
 #include "utils/resowner.h"
 #include "utils/timestamp.h"
 
@@ -235,7 +236,9 @@ BackgroundWriterMain(char *startup_data, size_t startup_data_len)
 
 		/* Report pending statistics to the cumulative stats system */
 		pgstat_report_bgwriter();
-		pgstat_report_wal(true);
+		pgstat_flush_wal(false);
+		pgstat_flush_io(false);
+
 
 		if (FirstCallSinceLastCheckpoint())
 		{

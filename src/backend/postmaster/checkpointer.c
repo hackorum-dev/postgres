@@ -58,6 +58,7 @@
 #include "storage/spin.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
+#include "utils/pgstat_internal.h"
 #include "utils/resowner.h"
 
 
@@ -529,7 +530,8 @@ CheckpointerMain(char *startup_data, size_t startup_data_len)
 
 		/* Report pending statistics to the cumulative stats system */
 		pgstat_report_checkpointer();
-		pgstat_report_wal(true);
+		pgstat_flush_wal(false);
+		pgstat_flush_io(false);
 
 		/*
 		 * If any checkpoint flags have been set, redo the loop to handle the
@@ -607,7 +609,8 @@ HandleCheckpointerInterrupts(void)
 		PendingCheckpointerStats.num_requested++;
 		ShutdownXLOG(0, 0);
 		pgstat_report_checkpointer();
-		pgstat_report_wal(true);
+		pgstat_flush_wal(false);
+		pgstat_flush_io(false);
 
 		/* Normal exit from the checkpointer is here */
 		proc_exit(0);			/* done */

@@ -772,7 +772,6 @@ extern void pgstat_execute_transactional_drops(int ndrops, struct xl_xact_stats_
  * Functions in pgstat_wal.c
  */
 
-extern void pgstat_report_wal(bool force);
 extern PgStat_WalStats *pgstat_fetch_stat_wal(void);
 
 

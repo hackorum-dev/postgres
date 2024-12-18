@@ -60,6 +60,7 @@
 #include "storage/smgr.h"
 #include "utils/hsearch.h"
 #include "utils/memutils.h"
+#include "utils/pgstat_internal.h"
 #include "utils/resowner.h"
 
 
@@ -250,8 +251,12 @@ WalWriterMain(char *startup_data, size_t startup_data_len)
 		else if (left_till_hibernate > 0)
 			left_till_hibernate--;
 
-		/* report pending statistics to the cumulative stats system */
-		pgstat_report_wal(false);
+		/*
+		 * Report pending statistics to the cumulative stats system. IO
+		 * statistics are not reported as not tracked for the walwriter (see
+		 * pgstat_tracks_io_bktype()).
+		 */
+		pgstat_flush_wal(true);
 
 		/*
 		 * Sleep until we are signaled or WalWriterDelay has elapsed.  If we

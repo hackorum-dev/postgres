@@ -25,39 +25,12 @@ PgStat_PendingWalStats PendingWalStats = {0};
 
 /*
  * WAL usage counters saved from pgWalUsage at the previous call to
- * pgstat_report_wal(). This is used to calculate how much WAL usage
- * happens between pgstat_report_wal() calls, by subtracting
+ * pgstat_flush_wal(). This is used to calculate how much WAL usage
+ * happens between pgstat_flush_wal() calls, by subtracting
  * the previous counters from the current ones.
  */
 static WalUsage prevWalUsage;
 
-
-/*
- * Calculate how much WAL usage counters have increased and update
- * shared WAL and IO statistics.
- *
- * Must be called by processes that generate WAL, that do not call
- * pgstat_report_stat(), like walwriter.
- *
- * "force" set to true ensures that the statistics are flushed; note that
- * this needs to acquire the pgstat shmem LWLock, waiting on it.  When
- * set to false, the statistics may not be flushed if the lock could not
- * be acquired.
- */
-void
-pgstat_report_wal(bool force)
-{
-	bool		nowait;
-
-	/* like in pgstat.c, don't wait for lock acquisition when !force */
-	nowait = !force;
-
-	/* flush wal stats */
-	pgstat_flush_wal(nowait);
-
-	/* flush IO stats */
-	pgstat_flush_io(nowait);
-}
 
 /*
  * Support function for the SQL-callable pgstat* functions. Returns
