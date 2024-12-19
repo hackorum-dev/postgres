@@ -344,10 +344,10 @@ SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_t
 set enable_seqscan = off;
 explain (costs off)
 select * from collate_test1 where b ilike 'abc';
-select * from collate_test1 where b ilike 'abc';
+select * from collate_test1 where b ilike 'abc' order by 1;
 explain (costs off)
 select * from collate_test1 where b ilike 'ABC';
-select * from collate_test1 where b ilike 'ABC';
+select * from collate_test1 where b ilike 'ABC' order by 1;
 reset enable_seqscan;
 
 

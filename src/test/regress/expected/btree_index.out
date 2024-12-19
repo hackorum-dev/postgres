@@ -459,14 +459,19 @@ select proname from pg_proc where proname ilike '00%foo' order by 1;
 
 explain (costs off)
 select proname from pg_proc where proname ilike 'ri%foo' order by 1;
-                  QUERY PLAN                  
-----------------------------------------------
+                                                                                             QUERY PLAN                                                                                             
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Sort
    Sort Key: proname
-   ->  Seq Scan on pg_proc
-         Disabled: true
+   ->  Bitmap Heap Scan on pg_proc
+         Recheck Cond: (((proname >= 'R'::text) AND (proname < 'S'::text) AND (proname ~~* 'ri%foo'::text)) OR ((proname >= 'r'::text) AND (proname < 's'::text) AND (proname ~~* 'ri%foo'::text)))
          Filter: (proname ~~* 'ri%foo'::text)
-(5 rows)
+         ->  BitmapOr
+               ->  Bitmap Index Scan on pg_proc_proname_args_nsp_index
+                     Index Cond: ((proname >= 'R'::text) AND (proname < 'S'::text))
+               ->  Bitmap Index Scan on pg_proc_proname_args_nsp_index
+                     Index Cond: ((proname >= 'r'::text) AND (proname < 's'::text))
+(10 rows)
 
 reset enable_seqscan;
 reset enable_indexscan;

@@ -66,7 +66,10 @@ typedef enum
 
 typedef enum
 {
-	Pattern_Prefix_None, Pattern_Prefix_Partial, Pattern_Prefix_Exact,
+	Pattern_Prefix_None,
+	Pattern_Prefix_Partial,
+	Pattern_Prefix_Partial_IC,
+	Pattern_Prefix_Exact,
 } Pattern_Prefix_Status;
 
 static Node *like_regex_support(Node *rawreq, Pattern_Type ptype);
@@ -245,7 +248,7 @@ match_pattern_prefix(Node *leftop,
 					 Oid opfamily,
 					 Oid indexcollation)
 {
-	List	   *result;
+	List	   *result = NIL;
 	Const	   *patt;
 	Const	   *prefix;
 	Pattern_Prefix_Status pstatus;
@@ -259,6 +262,8 @@ match_pattern_prefix(Node *leftop,
 	Expr	   *expr;
 	FmgrInfo	ltproc;
 	Const	   *greaterstr;
+	List	   *prefixes;
+	ListCell   *lc;
 
 	/*
 	 * Can't do anything with a non-constant or NULL pattern argument.
@@ -434,34 +439,111 @@ match_pattern_prefix(Node *leftop,
 		return NIL;
 
 	/*
-	 * We can always say "x >= prefix".
+	 * If the pattern for case-insensiive matching has a case-varying
+	 * character, make two prefixes including the upper letter and the
+	 * lower letter respectively. For example, if the pattern is
+	 * '123foo%', we get '123F' and '123f' as prefixes.
 	 */
-	if (!op_in_opfamily(geopr, opfamily))
-		return NIL;
-	expr = make_opclause(geopr, BOOLOID, false,
-						 (Expr *) leftop, (Expr *) prefix,
-						 InvalidOid, indexcollation);
-	result = list_make1(expr);
-
-	/*-------
-	 * If we can create a string larger than the prefix, we can say
-	 * "x < greaterstr".  NB: we rely on make_greater_string() to generate
-	 * a guaranteed-greater string, not just a probably-greater string.
-	 * In general this is only guaranteed in C locale, so we'd better be
-	 * using a C-locale index collation.
-	 *-------
-	 */
-	if (!op_in_opfamily(ltopr, opfamily))
-		return result;
-	fmgr_info(get_opcode(ltopr), &ltproc);
-	greaterstr = make_greater_string(prefix, &ltproc, indexcollation);
-	if (greaterstr)
+	if (pstatus == Pattern_Prefix_Partial_IC)
 	{
-		expr = make_opclause(ltopr, BOOLOID, false,
-							 (Expr *) leftop, (Expr *) greaterstr,
-							 InvalidOid, indexcollation);
-		result = lappend(result, expr);
+		int			prefix_len;
+		Datum		first_letter;
+		Datum		upper_letter;
+		Datum		lower_letter;
+		const char *prefix_l;
+		const char *prefix_u;
+
+		Assert(ptype == Pattern_Type_Like_IC);
+
+		/* get the first case-varying characketer in the pattern */
+		prefix_len = DatumGetInt32(DirectFunctionCall1Coll(textlen,
+														   indexcollation,
+														   prefix->constvalue));
+		first_letter = DirectFunctionCall3Coll(text_substr, indexcollation,
+											   patt->constvalue,
+											   Int32GetDatum(prefix_len + 1),
+											   Int32GetDatum(1));
+
+
+		/* prefix followed by the upper letter */
+		upper_letter = DirectFunctionCall1Coll(upper, indexcollation,
+											   first_letter);
+		prefix_u = TextDatumGetCString(DirectFunctionCall2Coll(textcat,
+															   indexcollation,
+															   prefix->constvalue,
+															   upper_letter));
+		prefixes = list_make1(string_to_const(prefix_u, prefix->consttype));
+
+		/* prefix followed by the lower letter */
+		lower_letter = DirectFunctionCall1Coll(lower, indexcollation,
+											   first_letter);
+		prefix_l = TextDatumGetCString(DirectFunctionCall2Coll(textcat,
+															   indexcollation,
+															   prefix->constvalue,
+															   lower_letter));
+		if (!DatumGetBool(DirectFunctionCall2Coll(texteq,
+										   indexcollation,
+										   CStringGetTextDatum(prefix_u),
+										   CStringGetTextDatum(prefix_l))))
+			prefixes = lappend(prefixes, string_to_const(prefix_l, prefix->consttype));
 	}
+	else
+		prefixes = list_make1(prefix);
+
+	foreach (lc, prefixes)
+	{
+		List  *clauses;
+
+		prefix = (Const *) lfirst(lc);
+
+		/*
+		 * We can always say "x >= prefix".
+		 */
+		if (!op_in_opfamily(geopr, opfamily))
+			return NIL;
+		expr = make_opclause(geopr, BOOLOID, false,
+							 (Expr *) leftop, (Expr *) prefix,
+							 InvalidOid, indexcollation);
+		clauses = list_make1(expr);
+
+		/*-------
+		 * If we can create a string larger than the prefix, we can say
+		 * "x < greaterstr".  NB: we rely on make_greater_string() to generate
+		 * a guaranteed-greater string, not just a probably-greater string.
+		 * In general this is only guaranteed in C locale, so we'd better be
+		 * using a C-locale index collation.
+		 *-------
+		 */
+		if (op_in_opfamily(ltopr, opfamily))
+		{
+			fmgr_info(get_opcode(ltopr), &ltproc);
+			greaterstr = make_greater_string(prefix, &ltproc, indexcollation);
+			if (greaterstr)
+			{
+				expr = make_opclause(ltopr, BOOLOID, false,
+									 (Expr *) leftop, (Expr *) greaterstr,
+									 InvalidOid, indexcollation);
+				clauses = lappend(clauses, expr);
+			}
+		}
+
+		/*
+		 * If case-insensitive pattern matching generated two clauses for
+		 * uppder and lower letters, convert them to explicit AND because
+		 * they will be under OR later.
+		 */
+		if (pstatus == Pattern_Prefix_Partial_IC && list_length(prefixes) > 1)
+			result = lappend(result, make_ands_explicit(clauses));
+		else
+			result = clauses;
+	}
+
+	/*
+	 * If case-insensitive pattern matching generated two clauses for upper and
+	 * lower letters, OR them.
+	 */
+	if (pstatus == Pattern_Prefix_Partial_IC && list_length(prefixes) > 1)
+		result = list_make1(make_orclause(result));
 
 	return result;
 }
@@ -997,6 +1079,7 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 				match_pos;
 	bool		is_multibyte = (pg_database_encoding_max_length() > 1);
 	pg_locale_t locale = 0;
+	bool		has_case_varying = false;
 
 	/* the right-hand const is type text or bytea */
 	Assert(typeid == BYTEAOID || typeid == TEXTOID);
@@ -1058,7 +1141,10 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 		/* Stop if case-varying character (it's sort of a wildcard) */
 		if (case_insensitive &&
 			pattern_char_isalpha(patt[pos], is_multibyte, locale))
+		{
+			has_case_varying = true;
 			break;
+		}
 
 		match[match_pos++] = patt[pos];
 	}
@@ -1076,6 +1162,9 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 
 	pfree(patt);
 	pfree(match);
+
+	if (case_insensitive && has_case_varying)
+		return Pattern_Prefix_Partial_IC;
 
 	/* in LIKE, an empty pattern is an exact match! */
 	if (pos == pattlen)

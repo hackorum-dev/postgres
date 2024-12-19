@@ -988,14 +988,13 @@ SELECT relname, pg_get_indexdef(oid) FROM pg_class WHERE relname LIKE 'collate_t
 set enable_seqscan = off;
 explain (costs off)
 select * from collate_test1 where b ilike 'abc';
-          QUERY PLAN           
--------------------------------
- Seq Scan on collate_test1
-   Disabled: true
+                      QUERY PLAN                      
+------------------------------------------------------
+ Index Scan using collate_test1_idx3 on collate_test1
    Filter: (b ~~* 'abc'::text)
-(3 rows)
+(2 rows)
 
-select * from collate_test1 where b ilike 'abc';
+select * from collate_test1 where b ilike 'abc' order by 1;
  a |  b  
 ---+-----
  1 | abc
@@ -1004,14 +1003,13 @@ select * from collate_test1 where b ilike 'abc';
 
 explain (costs off)
 select * from collate_test1 where b ilike 'ABC';
-          QUERY PLAN           
--------------------------------
- Seq Scan on collate_test1
-   Disabled: true
+                      QUERY PLAN                      
+------------------------------------------------------
+ Index Scan using collate_test1_idx3 on collate_test1
    Filter: (b ~~* 'ABC'::text)
-(3 rows)
+(2 rows)
 
-select * from collate_test1 where b ilike 'ABC';
+select * from collate_test1 where b ilike 'ABC' order by 1;
  a |  b  
 ---+-----
  1 | abc
