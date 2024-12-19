@@ -415,7 +415,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 	IndexTuple	curitup = NULL;
 	ItemId		curitemid = NULL;
 	BTScanInsert itup_key = insertstate->itup_key;
-	SnapshotData SnapshotDirty;
+	DirtySnapshotData SnapshotDirty;
 	OffsetNumber offset;
 	OffsetNumber maxoff;
 	Page		page;
@@ -560,7 +560,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 				 * index entry for the entire chain.
 				 */
 				else if (table_index_fetch_tuple_check(heapRel, &htid,
-													   &SnapshotDirty,
+													   (Snapshot) &SnapshotDirty,
 													   &all_dead))
 				{
 					TransactionId xwait;
@@ -585,15 +585,15 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 					 * If this tuple is being updated by other transaction
 					 * then we have to wait for its commit/abort.
 					 */
-					xwait = (TransactionIdIsValid(SnapshotDirty.xmin)) ?
-						SnapshotDirty.xmin : SnapshotDirty.xmax;
+					xwait = (TransactionIdIsValid(SnapshotDirty.updating_xmin)) ?
+						SnapshotDirty.updating_xmin : SnapshotDirty.updating_xmax;
 
 					if (TransactionIdIsValid(xwait))
 					{
 						if (nbuf != InvalidBuffer)
 							_bt_relbuf(rel, nbuf);
 						/* Tell _bt_doinsert to wait... */
-						*speculativeToken = SnapshotDirty.speculativeToken;
+						*speculativeToken = SnapshotDirty.speculative_token;
 						/* Caller releases lock on buf immediately */
 						insertstate->bounds_valid = false;
 						return xwait;

@@ -229,9 +229,9 @@ InitializeParallelDSM(ParallelContext *pcxt)
 	Snapshot	transaction_snapshot = GetTransactionSnapshot();
 	Snapshot	active_snapshot = GetActiveSnapshot();
 
-	if (transaction_snapshot->snapshot_type != SNAPSHOT_MVCC)
+	if (transaction_snapshot->base.snapshot_type != SNAPSHOT_MVCC)
 		elog(ERROR, "cannot use parallel workers with non-MVCC transaction snapshot");
-	if (active_snapshot->snapshot_type != SNAPSHOT_MVCC)
+	if (active_snapshot->base.snapshot_type != SNAPSHOT_MVCC)
 		elog(ERROR, "cannot use parallel workers with non-MVCC active snapshot");
 
 	/* We might be running in a very short-lived memory context. */
@@ -284,10 +284,10 @@ InitializeParallelDSM(ParallelContext *pcxt)
 		shm_toc_estimate_chunk(&pcxt->estimator, combocidlen);
 		if (IsolationUsesXactSnapshot())
 		{
-			tsnaplen = EstimateSnapshotSpace(transaction_snapshot);
+			tsnaplen = EstimateSnapshotSpace((MVCCSnapshot) transaction_snapshot);
 			shm_toc_estimate_chunk(&pcxt->estimator, tsnaplen);
 		}
-		asnaplen = EstimateSnapshotSpace(active_snapshot);
+		asnaplen = EstimateSnapshotSpace((MVCCSnapshot) active_snapshot);
 		shm_toc_estimate_chunk(&pcxt->estimator, asnaplen);
 		tstatelen = EstimateTransactionStateSpace();
 		shm_toc_estimate_chunk(&pcxt->estimator, tstatelen);
@@ -406,14 +406,14 @@ InitializeParallelDSM(ParallelContext *pcxt)
 		if (IsolationUsesXactSnapshot())
 		{
 			tsnapspace = shm_toc_allocate(pcxt->toc, tsnaplen);
-			SerializeSnapshot(transaction_snapshot, tsnapspace);
+			SerializeSnapshot((MVCCSnapshot) transaction_snapshot, tsnapspace);
 			shm_toc_insert(pcxt->toc, PARALLEL_KEY_TRANSACTION_SNAPSHOT,
 						   tsnapspace);
 		}
 
 		/* Serialize the active snapshot. */
 		asnapspace = shm_toc_allocate(pcxt->toc, asnaplen);
-		SerializeSnapshot(active_snapshot, asnapspace);
+		SerializeSnapshot((MVCCSnapshot) active_snapshot, asnapspace);
 		shm_toc_insert(pcxt->toc, PARALLEL_KEY_ACTIVE_SNAPSHOT, asnapspace);
 
 		/* Provide the handle for per-session segment. */
@@ -1325,8 +1325,8 @@ ParallelWorkerMain(Datum main_arg)
 	char	   *uncommittedenumsspace;
 	char	   *clientconninfospace;
 	char	   *session_dsm_handle_space;
-	Snapshot	tsnapshot;
-	Snapshot	asnapshot;
+	MVCCSnapshot tsnapshot;
+	MVCCSnapshot asnapshot;
 
 	/* Set flag to indicate that we're initializing a parallel worker. */
 	InitializingParallelWorker = true;
@@ -1507,9 +1507,8 @@ ParallelWorkerMain(Datum main_arg)
 	tsnapspace = shm_toc_lookup(toc, PARALLEL_KEY_TRANSACTION_SNAPSHOT, true);
 	asnapshot = RestoreSnapshot(asnapspace);
 	tsnapshot = tsnapspace ? RestoreSnapshot(tsnapspace) : asnapshot;
-	RestoreTransactionSnapshot(tsnapshot,
-							   fps->parallel_leader_pgproc);
-	PushActiveSnapshot(asnapshot);
+	RestoreTransactionSnapshot(tsnapshot, fps->parallel_leader_pgproc);
+	PushActiveSnapshot((Snapshot) asnapshot);
 
 	/*
 	 * We've changed which tuples we can see, and must therefore invalidate

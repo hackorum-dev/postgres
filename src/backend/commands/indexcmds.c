@@ -1760,7 +1760,7 @@ DefineIndex(Oid tableId,
 	 * they must wait for.  But first, save the snapshot's xmin to use as
 	 * limitXmin for GetCurrentVirtualXIDs().
 	 */
-	limitXmin = snapshot->xmin;
+	limitXmin = snapshot->mvcc.xmin;
 
 	PopActiveSnapshot();
 	UnregisterSnapshot(snapshot);
@@ -4190,7 +4190,7 @@ ReindexRelationConcurrently(const ReindexStmt *stmt, Oid relationOid, const Rein
 		 * We can now do away with our active snapshot, we still need to save
 		 * the xmin limit to wait for older snapshots.
 		 */
-		limitXmin = snapshot->xmin;
+		limitXmin = snapshot->mvcc.xmin;
 
 		PopActiveSnapshot();
 		UnregisterSnapshot(snapshot);

@@ -373,14 +373,16 @@ pg_current_snapshot(PG_FUNCTION_ARGS)
 	pg_snapshot *snap;
 	uint32		nxip,
 				i;
-	Snapshot	cur;
+	Snapshot	active_snap;
+	MVCCSnapshot cur;
 	FullTransactionId next_fxid = ReadNextFullTransactionId();
 
-	cur = GetActiveSnapshot();
-	if (cur == NULL)
+	active_snap = GetActiveSnapshot();
+	if (active_snap == NULL)
 		elog(ERROR, "no active snapshot set");
-	if (cur->snapshot_type != SNAPSHOT_MVCC)
+	if (active_snap->base.snapshot_type != SNAPSHOT_MVCC)
 		elog(ERROR, "pg_current_snapshot() cannot be used with a non-MVCC snapshot");
+	cur = &active_snap->mvcc;
 
 	/* allocate */
 	nxip = cur->xcnt;

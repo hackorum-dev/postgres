@@ -669,16 +669,16 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
  *
  * A special hack is that the passed-in snapshot struct is used as an
  * output argument to return the xids of concurrent xacts that affected the
- * tuple.  snapshot->xmin is set to the tuple's xmin if that is another
- * transaction that's still in progress; or to InvalidTransactionId if the
- * tuple's xmin is committed good, committed dead, or my own xact.
- * Similarly for snapshot->xmax and the tuple's xmax.  If the tuple was
- * inserted speculatively, meaning that the inserter might still back down
- * on the insertion without aborting the whole transaction, the associated
- * token is also returned in snapshot->speculativeToken.
+ * tuple.  snapshot->updating_xmin is set to the tuple's xmin if that is
+ * another transaction that's still in progress; or to InvalidTransactionId
+ * if the tuple's xmin is committed good, committed dead, or my own xact.
+ * Similarly for snapshot->updating_xmax and the tuple's xmax.  If the tuple
+ * was inserted speculatively, meaning that the inserter might still back
+ * down on the insertion without aborting the whole transaction, the
+ * associated token is also returned in snapshot->speculative_token.
  */
 static bool
-HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
+HeapTupleSatisfiesDirty(HeapTuple htup, DirtySnapshotData *snapshot,
 						Buffer buffer)
 {
 	HeapTupleHeader tuple = htup->t_data;
@@ -686,8 +686,9 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 	Assert(ItemPointerIsValid(&htup->t_self));
 	Assert(htup->t_tableOid != InvalidOid);
 
-	snapshot->xmin = snapshot->xmax = InvalidTransactionId;
-	snapshot->speculativeToken = 0;
+	snapshot->updating_xmin = InvalidTransactionId;
+	snapshot->updating_xmax = InvalidTransactionId;
+	snapshot->speculative_token = 0;
 
 	if (!HeapTupleHeaderXminCommitted(tuple))
 	{
@@ -740,13 +741,13 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 			 */
 			if (HeapTupleHeaderIsSpeculative(tuple))
 			{
-				snapshot->speculativeToken =
+				snapshot->speculative_token =
 					HeapTupleHeaderGetSpeculativeToken(tuple);
 
-				Assert(snapshot->speculativeToken != 0);
+				Assert(snapshot->speculative_token != 0);
 			}
 
-			snapshot->xmin = HeapTupleHeaderGetRawXmin(tuple);
+			snapshot->updating_xmin = HeapTupleHeaderGetRawXmin(tuple);
 			/* XXX shouldn't we fall through to look at xmax? */
 			return true;		/* in insertion by other */
 		}
@@ -790,7 +791,7 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 			return false;
 		if (TransactionIdIsInProgress(xmax))
 		{
-			snapshot->xmax = xmax;
+			snapshot->updating_xmax = xmax;
 			return true;
 		}
 		if (TransactionIdDidCommit(xmax))
@@ -809,7 +810,7 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 	if (TransactionIdIsInProgress(HeapTupleHeaderGetRawXmax(tuple)))
 	{
 		if (!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
-			snapshot->xmax = HeapTupleHeaderGetRawXmax(tuple);
+			snapshot->updating_xmax = HeapTupleHeaderGetRawXmax(tuple);
 		return true;
 	}
 
@@ -858,7 +859,7 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
  * and more contention on ProcArrayLock.
  */
 static bool
-HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
+HeapTupleSatisfiesMVCC(HeapTuple htup, MVCCSnapshot snapshot,
 					   Buffer buffer)
 {
 	HeapTupleHeader tuple = htup->t_data;
@@ -1264,7 +1265,7 @@ HeapTupleSatisfiesVacuumHorizon(HeapTuple htup, Buffer buffer, TransactionId *de
  *	snapshot->vistest must have been set up with the horizon to use.
  */
 static bool
-HeapTupleSatisfiesNonVacuumable(HeapTuple htup, Snapshot snapshot,
+HeapTupleSatisfiesNonVacuumable(HeapTuple htup, NonVacuumableSnapshotData *snapshot,
 								Buffer buffer)
 {
 	TransactionId dead_after = InvalidTransactionId;
@@ -1422,7 +1423,7 @@ TransactionIdInArray(TransactionId xid, TransactionId *xip, Size num)
  * complicated than when dealing "only" with the present.
  */
 static bool
-HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, Snapshot snapshot,
+HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, HistoricMVCCSnapshot snapshot,
 							   Buffer buffer)
 {
 	HeapTupleHeader tuple = htup->t_data;
@@ -1439,7 +1440,7 @@ HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, Snapshot snapshot,
 		return false;
 	}
 	/* check if it's one of our txids, toplevel is also in there */
-	else if (TransactionIdInArray(xmin, snapshot->subxip, snapshot->subxcnt))
+	else if (TransactionIdInArray(xmin, snapshot->curxip, snapshot->curxcnt))
 	{
 		bool		resolved;
 		CommandId	cmin = HeapTupleHeaderGetRawCommandId(tuple);
@@ -1498,7 +1499,7 @@ HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, Snapshot snapshot,
 		return false;
 	}
 	/* check if it's a committed transaction in [xmin, xmax) */
-	else if (TransactionIdInArray(xmin, snapshot->xip, snapshot->xcnt))
+	else if (TransactionIdInArray(xmin, snapshot->committed_xids, snapshot->xcnt))
 	{
 		/* fall through */
 	}
@@ -1531,7 +1532,7 @@ HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, Snapshot snapshot,
 	}
 
 	/* check if it's one of our txids, toplevel is also in there */
-	if (TransactionIdInArray(xmax, snapshot->subxip, snapshot->subxcnt))
+	if (TransactionIdInArray(xmax, snapshot->curxip, snapshot->curxcnt))
 	{
 		bool		resolved;
 		CommandId	cmin;
@@ -1584,7 +1585,7 @@ HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, Snapshot snapshot,
 	else if (TransactionIdFollowsOrEquals(xmax, snapshot->xmax))
 		return true;
 	/* xmax is between [xmin, xmax), check known committed array */
-	else if (TransactionIdInArray(xmax, snapshot->xip, snapshot->xcnt))
+	else if (TransactionIdInArray(xmax, snapshot->committed_xids, snapshot->xcnt))
 		return false;
 	/* xmax is between [xmin, xmax), but known not to have committed yet */
 	else
@@ -1604,10 +1605,10 @@ HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, Snapshot snapshot,
 bool
 HeapTupleSatisfiesVisibility(HeapTuple htup, Snapshot snapshot, Buffer buffer)
 {
-	switch (snapshot->snapshot_type)
+	switch (snapshot->base.snapshot_type)
 	{
 		case SNAPSHOT_MVCC:
-			return HeapTupleSatisfiesMVCC(htup, snapshot, buffer);
+			return HeapTupleSatisfiesMVCC(htup, &snapshot->mvcc, buffer);
 		case SNAPSHOT_SELF:
 			return HeapTupleSatisfiesSelf(htup, snapshot, buffer);
 		case SNAPSHOT_ANY:
@@ -1615,11 +1616,11 @@ HeapTupleSatisfiesVisibility(HeapTuple htup, Snapshot snapshot, Buffer buffer)
 		case SNAPSHOT_TOAST:
 			return HeapTupleSatisfiesToast(htup, snapshot, buffer);
 		case SNAPSHOT_DIRTY:
-			return HeapTupleSatisfiesDirty(htup, snapshot, buffer);
+			return HeapTupleSatisfiesDirty(htup, &snapshot->dirty, buffer);
 		case SNAPSHOT_HISTORIC_MVCC:
-			return HeapTupleSatisfiesHistoricMVCC(htup, snapshot, buffer);
+			return HeapTupleSatisfiesHistoricMVCC(htup, &snapshot->historic_mvcc, buffer);
 		case SNAPSHOT_NON_VACUUMABLE:
-			return HeapTupleSatisfiesNonVacuumable(htup, snapshot, buffer);
+			return HeapTupleSatisfiesNonVacuumable(htup, &snapshot->nonvacuumable, buffer);
 	}
 
 	return false;				/* keep compiler quiet */

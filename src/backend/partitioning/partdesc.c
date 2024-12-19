@@ -107,8 +107,8 @@ RelationGetPartitionDesc(Relation rel, bool omit_detached)
 		 * through to let RelationBuildPartitionDesc() handle it.  (It
 		 * currently just throws an error.)
 		 */
-		if (activesnap->snapshot_type == SNAPSHOT_MVCC &&
-			!XidInMVCCSnapshot(rel->rd_partdesc_nodetached_xmin, activesnap))
+		if (activesnap->base.snapshot_type == SNAPSHOT_MVCC &&
+			!XidInMVCCSnapshot(rel->rd_partdesc_nodetached_xmin, &activesnap->mvcc))
 			return rel->rd_partdesc_nodetached;
 	}
 

@@ -440,7 +440,7 @@ bt_check_every_level(Relation rel, Relation heaprel, bool heapkeyspace,
 		 */
 		state->snapshot = RegisterSnapshot(GetTransactionSnapshot());
 
-		if (state->snapshot->snapshot_type != SNAPSHOT_MVCC)
+		if (state->snapshot->base.snapshot_type != SNAPSHOT_MVCC)
 			elog(ERROR, "cannot check index consistency with a non-MVCC snapshot");
 
 		/*
@@ -457,7 +457,7 @@ bt_check_every_level(Relation rel, Relation heaprel, bool heapkeyspace,
 		 */
 		if (IsolationUsesXactSnapshot() && rel->rd_index->indcheckxmin &&
 			!TransactionIdPrecedes(HeapTupleHeaderGetXmin(rel->rd_indextuple->t_data),
-								   state->snapshot->xmin))
+								   state->snapshot->mvcc.xmin))
 			ereport(ERROR,
 					errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 					errmsg("index \"%s\" cannot be verified using transaction snapshot",

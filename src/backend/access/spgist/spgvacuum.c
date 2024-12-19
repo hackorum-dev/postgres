@@ -804,12 +804,17 @@ spgvacuumscan(spgBulkDeleteState *bds)
 	BlockNumber num_pages;
 	BlockRangeReadStreamPrivate p;
 	ReadStream *stream = NULL;
+	Snapshot	active_snap;
 
 	/* Finish setting up spgBulkDeleteState */
 	initSpGistState(&bds->spgstate, index);
 	bds->pendingList = NULL;
-	bds->myXmin = GetActiveSnapshot()->xmin;
 	bds->lastFilledBlock = SPGIST_LAST_FIXED_BLKNO;
+
+	active_snap = GetActiveSnapshot();
+	if (active_snap->base.snapshot_type != SNAPSHOT_MVCC)
+		elog(ERROR, "unexpected non-MVCC snapshot in vacuum");
+	bds->myXmin = active_snap->mvcc.xmin;
 
 	/*
 	 * Reset counts that will be incremented during the scan; needed in case

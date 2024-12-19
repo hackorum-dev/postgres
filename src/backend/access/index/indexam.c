@@ -479,7 +479,7 @@ index_parallelscan_estimate(Relation indexRelation, int nkeys, int norderbys,
 	RELATION_CHECKS;
 
 	nbytes = offsetof(ParallelIndexScanDescData, ps_snapshot_data);
-	nbytes = add_size(nbytes, EstimateSnapshotSpace(snapshot));
+	nbytes = add_size(nbytes, EstimateSnapshotSpace(&snapshot->mvcc));
 	nbytes = MAXALIGN(nbytes);
 
 	if (instrument)
@@ -524,20 +524,25 @@ index_parallelscan_initialize(Relation heapRelation, Relation indexRelation,
 							  ParallelIndexScanDesc target)
 {
 	Size		offset;
+	MVCCSnapshot mvcc_snapshot;
 
 	Assert(instrument || parallel_aware);
 
 	RELATION_CHECKS;
 
+	if (snapshot->base.snapshot_type != SNAPSHOT_MVCC)
+		elog(ERROR, "cannot perform parallel scan with non-MVCC snapshot");
+	mvcc_snapshot = &snapshot->mvcc;
+
 	offset = add_size(offsetof(ParallelIndexScanDescData, ps_snapshot_data),
-					  EstimateSnapshotSpace(snapshot));
+					  EstimateSnapshotSpace(mvcc_snapshot));
 	offset = MAXALIGN(offset);
 
 	target->ps_locator = heapRelation->rd_locator;
 	target->ps_indexlocator = indexRelation->rd_locator;
 	target->ps_offset_ins = 0;
 	target->ps_offset_am = 0;
-	SerializeSnapshot(snapshot, target->ps_snapshot_data);
+	SerializeSnapshot(mvcc_snapshot, target->ps_snapshot_data);
 
 	if (instrument)
 	{
@@ -601,8 +606,8 @@ index_beginscan_parallel(Relation heaprel, Relation indexrel,
 	Assert(RelFileLocatorEquals(heaprel->rd_locator, pscan->ps_locator));
 	Assert(RelFileLocatorEquals(indexrel->rd_locator, pscan->ps_indexlocator));
 
-	snapshot = RestoreSnapshot(pscan->ps_snapshot_data);
-	RegisterSnapshot(snapshot);
+	snapshot = (Snapshot) RestoreSnapshot(pscan->ps_snapshot_data);
+	snapshot = RegisterSnapshot(snapshot);
 	scan = index_beginscan_internal(indexrel, nkeys, norderbys, snapshot,
 									pscan, true);
 

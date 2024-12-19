@@ -1992,7 +1992,7 @@ asyncQueueProcessPageEntries(QueuePosition *current,
 	alignas(AsyncQueueEntry) char local_buf[QUEUE_PAGESIZE];
 	char	   *local_buf_end = local_buf;
 
-	Assert(snapshot->snapshot_type == SNAPSHOT_MVCC);
+	Assert(snapshot->base.snapshot_type == SNAPSHOT_MVCC);
 
 	slotno = SimpleLruReadPage_ReadOnly(NotifyCtl, curpage,
 										InvalidTransactionId);
@@ -2018,7 +2018,7 @@ asyncQueueProcessPageEntries(QueuePosition *current,
 		/* Ignore messages destined for other databases */
 		if (qe->dboid == MyDatabaseId)
 		{
-			if (XidInMVCCSnapshot(qe->xid, snapshot))
+			if (XidInMVCCSnapshot(qe->xid, (MVCCSnapshot) snapshot))
 			{
 				/*
 				 * The source transaction is still in progress, so we can't

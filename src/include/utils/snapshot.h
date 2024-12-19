@@ -17,7 +17,7 @@
 
 
 /*
- * The different snapshot types.  We use SnapshotData structures to represent
+ * The different snapshot types.  We use the SnapshotData union to represent
  * both "regular" (MVCC) snapshots and "special" snapshots that have non-MVCC
  * semantics.  The specific semantics of a snapshot are encoded by its type.
  *
@@ -27,6 +27,9 @@
  * The reason the snapshot type rather than a callback as it used to be is
  * that that allows to use the same snapshot for different table AMs without
  * having one callback per AM.
+ *
+ * The executor deals with MVCC snapshots, but the table AM and some other
+ * parts of the system also support the special snapshots.
  */
 typedef enum SnapshotType
 {
@@ -85,14 +88,7 @@ typedef enum SnapshotType
 	 * A special hack is that when a snapshot of this type is used to
 	 * determine tuple visibility, the passed-in snapshot struct is used as an
 	 * output argument to return the xids of concurrent xacts that affected
-	 * the tuple.  snapshot->xmin is set to the tuple's xmin if that is
-	 * another transaction that's still in progress; or to
-	 * InvalidTransactionId if the tuple's xmin is committed good, committed
-	 * dead, or my own xact.  Similarly for snapshot->xmax and the tuple's
-	 * xmax.  If the tuple was inserted speculatively, meaning that the
-	 * inserter might still back down on the insertion without aborting the
-	 * whole transaction, the associated token is also returned in
-	 * snapshot->speculativeToken.  See also InitDirtySnapshot().
+	 * the tuple.  See HeapTupleSatisfiesDirty().
 	 * -------------------------------------------------------------------------
 	 */
 	SNAPSHOT_DIRTY,
@@ -100,7 +96,9 @@ typedef enum SnapshotType
 	/*
 	 * A tuple is visible iff it follows the rules of SNAPSHOT_MVCC, but
 	 * supports being called in timetravel context (for decoding catalog
-	 * contents in the context of logical decoding).
+	 * contents in the context of logical decoding).  A historic MVCC snapshot
+	 * should only be used on catalog tables, as we only track XIDs that
+	 * modify catalogs during logical decoding.
 	 */
 	SNAPSHOT_HISTORIC_MVCC,
 
@@ -114,37 +112,42 @@ typedef enum SnapshotType
 	SNAPSHOT_NON_VACUUMABLE,
 } SnapshotType;
 
-typedef struct SnapshotData *Snapshot;
 
-#define InvalidSnapshot		((Snapshot) NULL)
+/* This macro encodes the knowledge of which snapshots are MVCC-safe */
+#define IsMVCCSnapshot(snapshot)  \
+	((snapshot)->base.snapshot_type == SNAPSHOT_MVCC || \
+	 (snapshot)->base.snapshot_type == SNAPSHOT_HISTORIC_MVCC)
+
+#define IsHistoricMVCCSnapshot(snapshot)  \
+	((snapshot)->base.snapshot_type == SNAPSHOT_HISTORIC_MVCC)
 
 /*
- * Struct representing all kind of possible snapshots.
- *
- * There are several different kinds of snapshots:
- * * Normal MVCC snapshots
- * * MVCC snapshots taken during recovery (in Hot-Standby mode)
- * * Historic MVCC snapshots used during logical decoding
- * * snapshots passed to HeapTupleSatisfiesDirty()
- * * snapshots passed to HeapTupleSatisfiesNonVacuumable()
- * * snapshots used for SatisfiesAny, Toast, Self where no members are
- *	 accessed.
- *
- * TODO: It's probably a good idea to split this struct using a NodeTag
- * similar to how parser and executor nodes are handled, with one type for
- * each different kind of snapshot to avoid overloading the meaning of
- * individual fields.
+ * Convenience macro to check the 'takenDuringRecovery' flag, when you're not
+ * necessarily dealing with an MVCC snapshot.  Returns false for all non-MVCC
+ * snapshots, also for historic MVCC snapshots.
  */
-typedef struct SnapshotData
+#define IsSnapshotTakenDuringRecovery(snapshot)	\
+	((snapshot)->base.snapshot_type == SNAPSHOT_MVCC ? \
+	 (snapshot)->mvcc.takenDuringRecovery : false)
+
+/* fields common to all snapshot types */
+typedef struct SnapshotBaseData
 {
 	SnapshotType snapshot_type; /* type of snapshot */
+} SnapshotBaseData;
+
+/*
+ * Struct representing a normal MVCC snapshot.
+ *
+ * MVCC snapshots come in two variants: those taken during recovery in hot
+ * standby mode, and "normal" MVCC snapshots.  They are distinguished by
+ * takenDuringRecovery.
+ */
+typedef struct MVCCSnapshotData
+{
+	SnapshotBaseData base;		/* must be first */
 
 	/*
-	 * The remaining fields are used only for MVCC snapshots, and are normally
-	 * just zeroes in special snapshots.  (But xmin and xmax are used
-	 * specially by HeapTupleSatisfiesDirty, and xmin is used specially by
-	 * HeapTupleSatisfiesNonVacuumable.)
-	 *
 	 * An MVCC snapshot can never see the effects of XIDs >= xmax. It can see
 	 * the effects of all older XIDs except those listed in the snapshot. xmin
 	 * is stored as an optimization to avoid needing to search the XID arrays
@@ -154,10 +157,8 @@ typedef struct SnapshotData
 	TransactionId xmax;			/* all XID >= xmax are invisible to me */
 
 	/*
-	 * For normal MVCC snapshot this contains the all xact IDs that are in
-	 * progress, unless the snapshot was taken during recovery in which case
-	 * it's empty. For historic MVCC snapshots, the meaning is inverted, i.e.
-	 * it contains *committed* transactions between xmin and xmax.
+	 * xip contains the all xact IDs that are in progress, unless the snapshot
+	 * was taken during recovery in which case it's empty.
 	 *
 	 * note: all ids in xip[] satisfy xmin <= xip[i] < xmax
 	 */
@@ -165,10 +166,8 @@ typedef struct SnapshotData
 	uint32		xcnt;			/* # of xact ids in xip[] */
 
 	/*
-	 * For non-historic MVCC snapshots, this contains subxact IDs that are in
-	 * progress (and other transactions that are in progress if taken during
-	 * recovery). For historic snapshot it contains *all* xids assigned to the
-	 * replayed transaction, including the toplevel xid.
+	 * subxip contains subxact IDs that are in progress (and other
+	 * transactions that are in progress if taken during recovery).
 	 *
 	 * note: all ids in subxip[] are >= xmin, but we don't bother filtering
 	 * out any that are >= xmax
@@ -183,18 +182,6 @@ typedef struct SnapshotData
 	CommandId	curcid;			/* in my xact, CID < curcid are visible */
 
 	/*
-	 * An extra return value for HeapTupleSatisfiesDirty, not used in MVCC
-	 * snapshots.
-	 */
-	uint32		speculativeToken;
-
-	/*
-	 * For SNAPSHOT_NON_VACUUMABLE (and hopefully more in the future) this is
-	 * used to determine whether row could be vacuumed.
-	 */
-	struct GlobalVisState *vistest;
-
-	/*
 	 * Book-keeping information, used by the snapshot manager
 	 */
 	uint32		active_count;	/* refcount on ActiveSnapshot stack */
@@ -207,6 +194,100 @@ typedef struct SnapshotData
 	 * transactions completed since the last GetSnapshotData().
 	 */
 	uint64		snapXactCompletionCount;
+} MVCCSnapshotData;
+
+typedef struct MVCCSnapshotData *MVCCSnapshot;
+
+#define InvalidMVCCSnapshot ((MVCCSnapshot) NULL)
+
+/*
+ * Struct representing a "historic" MVCC snapshot during logical decoding.
+ * These are constructed by src/replication/logical/snapbuild.c.
+ */
+typedef struct HistoricMVCCSnapshotData
+{
+	SnapshotBaseData base;		/* must be first */
+
+	/*
+	 * xmin and xmax like in a normal MVCC snapshot.
+	 */
+	TransactionId xmin;			/* all XID < xmin are visible to me */
+	TransactionId xmax;			/* all XID >= xmax are invisible to me */
+
+	/*
+	 * committed_xids contains *committed* transactions between xmin and xmax.
+	 * (This is the inverse of 'xip' in normal MVCC snapshots, which contains
+	 * all non-committed transactions.)  The array is sorted by XID to allow
+	 * binary search.
+	 *
+	 * note: all ids in committed_xids[] satisfy xmin <= committed_xids[i] <
+	 * xmax
+	 */
+	TransactionId *committed_xids;
+	uint32		xcnt;			/* # of xact ids in committed_xids[] */
+
+	/*
+	 * curxip contains *all* xids assigned to the replayed transaction,
+	 * including the toplevel xid.
+	 */
+	TransactionId *curxip;
+	int32		curxcnt;		/* # of xact ids in curxip[] */
+
+	CommandId	curcid;			/* in my xact, CID < curcid are visible */
+
+	bool		copied;			/* false if it's a "base" snapshot */
+
+	uint32		refcount;		/* refcount managed by snapbuild.c  */
+	uint32		active_count;	/* refcount on ActiveSnapshot stack */
+	uint32		regd_count;		/* refcount registered with resource owners */
+
+} HistoricMVCCSnapshotData;
+
+typedef struct HistoricMVCCSnapshotData *HistoricMVCCSnapshot;
+
+/*
+ * Struct representing a special "snapshot" which sees all tuples as visible
+ * if they are visible to anyone, i.e. if they are not vacuumable.
+ * i.e. SNAPSHOT_NON_VACUUMABLE.
+ */
+typedef struct NonVacuumableSnapshotData
+{
+	SnapshotBaseData base;		/* must be first */
+
+	/* This is used to determine whether row could be vacuumed. */
+	struct GlobalVisState *vistest;
+} NonVacuumableSnapshotData;
+
+/*
+ * Return values to the caller of HeapTupleSatisfyDirty.
+ */
+typedef struct DirtySnapshotData
+{
+	SnapshotBaseData base;		/* must be first */
+
+	TransactionId updating_xmin;
+	TransactionId updating_xmax;
+	uint32		speculative_token;
+} DirtySnapshotData;
+
+/*
+ * Generic union representing all kind of possible snapshots.
+ *
+ * 'base' contains the fields common to all snapshots.  Some snapshot types
+ * have type-specific structs with more fields.
+ */
+typedef union SnapshotData
+{
+	SnapshotBaseData base;
+
+	MVCCSnapshotData mvcc;
+	DirtySnapshotData dirty;
+	HistoricMVCCSnapshotData historic_mvcc;
+	NonVacuumableSnapshotData nonvacuumable;
 } SnapshotData;
+
+typedef union SnapshotData *Snapshot;
+
+#define InvalidSnapshot		((Snapshot) NULL)
 
 #endif							/* SNAPSHOT_H */

@@ -717,7 +717,7 @@ check_exclusion_or_unique_constraint(Relation heap, Relation index,
 	int			indnkeyatts = IndexRelationGetNumberOfKeyAttributes(index);
 	IndexScanDesc index_scan;
 	ScanKeyData scankeys[INDEX_MAX_KEYS];
-	SnapshotData DirtySnapshot;
+	DirtySnapshotData DirtySnapshot;
 	int			i;
 	bool		conflict;
 	bool		found_self;
@@ -816,7 +816,7 @@ check_exclusion_or_unique_constraint(Relation heap, Relation index,
 retry:
 	conflict = false;
 	found_self = false;
-	index_scan = index_beginscan(heap, index, &DirtySnapshot, NULL, indnkeyatts, 0);
+	index_scan = index_beginscan(heap, index, (Snapshot) &DirtySnapshot, NULL, indnkeyatts, 0);
 	index_rescan(index_scan, scankeys, indnkeyatts, NULL, 0);
 
 	while (index_getnext_slot(index_scan, ForwardScanDirection, existing_slot))
@@ -870,21 +870,21 @@ retry:
 		 * happen often enough to be worth trying harder, and anyway we don't
 		 * want to hold any index internal locks while waiting.
 		 */
-		xwait = TransactionIdIsValid(DirtySnapshot.xmin) ?
-			DirtySnapshot.xmin : DirtySnapshot.xmax;
+		xwait = TransactionIdIsValid(DirtySnapshot.updating_xmin) ?
+			DirtySnapshot.updating_xmin : DirtySnapshot.updating_xmax;
 
 		if (TransactionIdIsValid(xwait) &&
 			(waitMode == CEOUC_WAIT ||
 			 (waitMode == CEOUC_LIVELOCK_PREVENTING_WAIT &&
-			  DirtySnapshot.speculativeToken &&
+			  DirtySnapshot.speculative_token &&
 			  TransactionIdPrecedes(GetCurrentTransactionId(), xwait))))
 		{
 			reason_wait = indexInfo->ii_ExclusionOps ?
 				XLTW_RecheckExclusionConstr : XLTW_InsertIndex;
 			index_endscan(index_scan);
-			if (DirtySnapshot.speculativeToken)
-				SpeculativeInsertionWait(DirtySnapshot.xmin,
-										 DirtySnapshot.speculativeToken);
+			if (DirtySnapshot.speculative_token)
+				SpeculativeInsertionWait(DirtySnapshot.updating_xmin,
+										 DirtySnapshot.speculative_token);
 			else
 				XactLockTableWait(xwait, heap,
 								  &existing_slot->tts_tid, reason_wait);

@@ -643,5 +643,5 @@ get_toast_snapshot(void)
 	if (!HaveRegisteredOrActiveSnapshot())
 		elog(ERROR, "cannot fetch toast data without an active snapshot");
 
-	return &SnapshotToastData;
+	return (Snapshot) &SnapshotToastData;
 }

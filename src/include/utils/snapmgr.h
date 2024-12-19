@@ -25,22 +25,22 @@ extern PGDLLIMPORT TransactionId TransactionXmin;
 extern PGDLLIMPORT TransactionId RecentXmin;
 
 /* Variables representing various special snapshot semantics */
-extern PGDLLIMPORT SnapshotData SnapshotSelfData;
-extern PGDLLIMPORT SnapshotData SnapshotAnyData;
-extern PGDLLIMPORT SnapshotData SnapshotToastData;
+extern PGDLLIMPORT SnapshotBaseData SnapshotSelfData;
+extern PGDLLIMPORT SnapshotBaseData SnapshotAnyData;
+extern PGDLLIMPORT SnapshotBaseData SnapshotToastData;
 
-#define SnapshotSelf		(&SnapshotSelfData)
-#define SnapshotAny			(&SnapshotAnyData)
+#define SnapshotSelf		((Snapshot) &SnapshotSelfData)
+#define SnapshotAny			((Snapshot) &SnapshotAnyData)
 
 /* Use get_toast_snapshot() for the TOAST snapshot */
 
 /*
  * We don't provide a static SnapshotDirty variable because it would be
  * non-reentrant.  Instead, users of that snapshot type should declare a
- * local variable of type SnapshotData, and initialize it with this macro.
+ * local variable of type DirtySnapshotData, and initialize it with this macro.
  */
 #define InitDirtySnapshot(snapshotdata)  \
-	((snapshotdata).snapshot_type = SNAPSHOT_DIRTY)
+	((snapshotdata).base.snapshot_type = SNAPSHOT_DIRTY)
 
 /*
  * Similarly, some initialization is required for a NonVacuumable snapshot.
@@ -48,16 +48,8 @@ extern PGDLLIMPORT SnapshotData SnapshotToastData;
  * GlobalVisTestFor()).
  */
 #define InitNonVacuumableSnapshot(snapshotdata, vistestp)  \
-	((snapshotdata).snapshot_type = SNAPSHOT_NON_VACUUMABLE, \
-	 (snapshotdata).vistest = (vistestp))
-
-/* This macro encodes the knowledge of which snapshots are MVCC-safe */
-#define IsMVCCSnapshot(snapshot)  \
-	((snapshot)->snapshot_type == SNAPSHOT_MVCC || \
-	 (snapshot)->snapshot_type == SNAPSHOT_HISTORIC_MVCC)
-
-#define IsHistoricMVCCSnapshot(snapshot)  \
-	((snapshot)->snapshot_type == SNAPSHOT_HISTORIC_MVCC)
+	((snapshotdata).base.snapshot_type = SNAPSHOT_NON_VACUUMABLE, \
+	 (snapshotdata).nonvacuumable.vistest = (vistestp))
 
 extern Snapshot GetTransactionSnapshot(void);
 extern Snapshot GetLatestSnapshot(void);
@@ -92,7 +84,7 @@ extern void WaitForOlderSnapshots(TransactionId limitXmin, bool progress);
 extern bool ThereAreNoPriorRegisteredSnapshots(void);
 extern bool HaveRegisteredOrActiveSnapshot(void);
 
-extern char *ExportSnapshot(Snapshot snapshot);
+extern char *ExportSnapshot(MVCCSnapshot snapshot);
 
 /*
  * These live in procarray.c because they're intimately linked to the
@@ -108,19 +100,19 @@ extern bool GlobalVisCheckRemovableFullXid(Relation rel, FullTransactionId fxid)
 /*
  * Utility functions for implementing visibility routines in table AMs.
  */
-extern bool XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
+extern bool XidInMVCCSnapshot(TransactionId xid, MVCCSnapshot snapshot);
 
 /* Support for catalog timetravel for logical decoding */
 struct HTAB;
 extern struct HTAB *HistoricSnapshotGetTupleCids(void);
-extern void SetupHistoricSnapshot(Snapshot historic_snapshot, struct HTAB *tuplecids);
+extern void SetupHistoricSnapshot(HistoricMVCCSnapshot historic_snapshot, struct HTAB *tuplecids);
 extern void TeardownHistoricSnapshot(bool is_error);
 extern bool HistoricSnapshotActive(void);
 
-extern Size EstimateSnapshotSpace(Snapshot snapshot);
-extern void SerializeSnapshot(Snapshot snapshot, char *start_address);
-extern Snapshot RestoreSnapshot(char *start_address);
+extern Size EstimateSnapshotSpace(MVCCSnapshot snapshot);
+extern void SerializeSnapshot(MVCCSnapshot snapshot, char *start_address);
+extern MVCCSnapshot RestoreSnapshot(char *start_address);
 struct PGPROC;
-extern void RestoreTransactionSnapshot(Snapshot snapshot, struct PGPROC *source_pgproc);
+extern void RestoreTransactionSnapshot(MVCCSnapshot snapshot, struct PGPROC *source_pgproc);
 
 #endif							/* SNAPMGR_H */

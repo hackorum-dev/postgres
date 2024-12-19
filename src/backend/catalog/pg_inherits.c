@@ -149,10 +149,10 @@ find_inheritance_children_extended(Oid parentrelId, bool omit_detached,
 
 				/* XXX: what should we do with a non-MVCC snapshot? */
 				snap = GetActiveSnapshot();
-				if (snap->snapshot_type != SNAPSHOT_MVCC)
+				if (snap->base.snapshot_type != SNAPSHOT_MVCC)
 					elog(ERROR, "cannot look up partition information with a non-MVCC snapshot");
 
-				if (!XidInMVCCSnapshot(xmin, snap))
+				if (!XidInMVCCSnapshot(xmin, (MVCCSnapshot) snap))
 				{
 					if (detached_xmin)
 					{

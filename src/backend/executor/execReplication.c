@@ -186,7 +186,7 @@ RelationFindReplTupleByIndex(Relation rel, Oid idxoid,
 	ScanKeyData skey[INDEX_MAX_KEYS];
 	int			skey_attoff;
 	IndexScanDesc scan;
-	SnapshotData snap;
+	DirtySnapshotData snap;
 	TransactionId xwait;
 	Relation	idxrel;
 	bool		found;
@@ -204,7 +204,7 @@ RelationFindReplTupleByIndex(Relation rel, Oid idxoid,
 	skey_attoff = build_replindex_scan_key(skey, rel, idxrel, searchslot);
 
 	/* Start an index scan. */
-	scan = index_beginscan(rel, idxrel, &snap, NULL, skey_attoff, 0);
+	scan = index_beginscan(rel, idxrel, (Snapshot) &snap, NULL, skey_attoff, 0);
 
 retry:
 	found = false;
@@ -229,8 +229,8 @@ retry:
 
 		ExecMaterializeSlot(outslot);
 
-		xwait = TransactionIdIsValid(snap.xmin) ?
-			snap.xmin : snap.xmax;
+		xwait = TransactionIdIsValid(snap.updating_xmin) ?
+			snap.updating_xmin : snap.updating_xmax;
 
 		/*
 		 * If the tuple is locked, wait for locking transaction to finish and
@@ -370,7 +370,7 @@ RelationFindReplTupleSeq(Relation rel, LockTupleMode lockmode,
 {
 	TupleTableSlot *scanslot;
 	TableScanDesc scan;
-	SnapshotData snap;
+	DirtySnapshotData snap;
 	TypeCacheEntry **eq;
 	TransactionId xwait;
 	bool		found;
@@ -382,7 +382,7 @@ RelationFindReplTupleSeq(Relation rel, LockTupleMode lockmode,
 
 	/* Start a heap scan. */
 	InitDirtySnapshot(snap);
-	scan = table_beginscan(rel, &snap, 0, NULL);
+	scan = table_beginscan(rel, (Snapshot) &snap, 0, NULL);
 	scanslot = table_slot_create(rel, NULL);
 
 retry:
@@ -399,8 +399,8 @@ retry:
 		found = true;
 		ExecCopySlot(outslot, scanslot);
 
-		xwait = TransactionIdIsValid(snap.xmin) ?
-			snap.xmin : snap.xmax;
+		xwait = TransactionIdIsValid(snap.updating_xmin) ?
+			snap.updating_xmin : snap.updating_xmax;
 
 		/*
 		 * If the tuple is locked, wait for locking transaction to finish and

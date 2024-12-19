@@ -390,7 +390,7 @@ tuple_lock_retry:
 
 		if (!ItemPointerEquals(&tmfd->ctid, &tuple->t_self))
 		{
-			SnapshotData SnapshotDirty;
+			DirtySnapshotData SnapshotDirty;
 			TransactionId priorXmax;
 
 			/* it was updated, so look at the updated version */
@@ -415,7 +415,7 @@ tuple_lock_retry:
 							 errmsg("tuple to be locked was already moved to another partition due to concurrent update")));
 
 				tuple->t_self = *tid;
-				if (heap_fetch(relation, &SnapshotDirty, tuple, &buffer, true))
+				if (heap_fetch(relation, (Snapshot) &SnapshotDirty, tuple, &buffer, true))
 				{
 					/*
 					 * If xmin isn't what we're expecting, the slot must have
@@ -435,11 +435,11 @@ tuple_lock_retry:
 					}
 
 					/* otherwise xmin should not be dirty... */
-					if (TransactionIdIsValid(SnapshotDirty.xmin))
+					if (TransactionIdIsValid(SnapshotDirty.updating_xmin))
 						ereport(ERROR,
 								(errcode(ERRCODE_DATA_CORRUPTED),
 								 errmsg_internal("t_xmin %u is uncommitted in tuple (%u,%u) to be updated in table \"%s\"",
-												 SnapshotDirty.xmin,
+												 SnapshotDirty.updating_xmin,
 												 ItemPointerGetBlockNumber(&tuple->t_self),
 												 ItemPointerGetOffsetNumber(&tuple->t_self),
 												 RelationGetRelationName(relation))));
@@ -448,23 +448,23 @@ tuple_lock_retry:
 					 * If tuple is being updated by other transaction then we
 					 * have to wait for its commit/abort, or die trying.
 					 */
-					if (TransactionIdIsValid(SnapshotDirty.xmax))
+					if (TransactionIdIsValid(SnapshotDirty.updating_xmax))
 					{
 						ReleaseBuffer(buffer);
 						switch (wait_policy)
 						{
 							case LockWaitBlock:
-								XactLockTableWait(SnapshotDirty.xmax,
+								XactLockTableWait(SnapshotDirty.updating_xmax,
 												  relation, &tuple->t_self,
 												  XLTW_FetchUpdated);
 								break;
 							case LockWaitSkip:
-								if (!ConditionalXactLockTableWait(SnapshotDirty.xmax, false))
+								if (!ConditionalXactLockTableWait(SnapshotDirty.updating_xmax, false))
 									/* skip instead of waiting */
 									return TM_WouldBlock;
 								break;
 							case LockWaitError:
-								if (!ConditionalXactLockTableWait(SnapshotDirty.xmax, log_lock_failures))
+								if (!ConditionalXactLockTableWait(SnapshotDirty.updating_xmax, log_lock_failures))
 									ereport(ERROR,
 											(errcode(ERRCODE_LOCK_NOT_AVAILABLE),
 											 errmsg("could not obtain lock on row in relation \"%s\"",
@@ -2281,8 +2281,7 @@ heapam_scan_sample_next_tuple(TableScanDesc scan, SampleScanState *scanstate,
 		LockBuffer(hscan->rs_cbuf, BUFFER_LOCK_SHARE);
 
 	page = BufferGetPage(hscan->rs_cbuf);
-	all_visible = PageIsAllVisible(page) &&
-		!scan->rs_snapshot->takenDuringRecovery;
+	all_visible = PageIsAllVisible(page) && !IsSnapshotTakenDuringRecovery(scan->rs_snapshot);
 	maxoffset = PageGetMaxOffsetNumber(page);
 
 	for (;;)

@@ -2040,7 +2040,7 @@ GetMaxSnapshotSubxidCount(void)
  * least in the case we already hold a snapshot), but that's for another day.
  */
 static bool
-GetSnapshotDataReuse(Snapshot snapshot)
+GetSnapshotDataReuse(MVCCSnapshot snapshot)
 {
 	uint64		curXactCompletionCount;
 
@@ -2119,8 +2119,8 @@ GetSnapshotDataReuse(Snapshot snapshot)
  * Note: this function should probably not be called with an argument that's
  * not statically allocated (see xip allocation below).
  */
-Snapshot
-GetSnapshotData(Snapshot snapshot)
+MVCCSnapshot
+GetSnapshotData(MVCCSnapshot snapshot)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId *other_xids = ProcGlobal->xids;

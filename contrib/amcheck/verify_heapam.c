@@ -312,9 +312,9 @@ verify_heapam(PG_FUNCTION_ARGS)
 	 * while we're running.
 	 */
 	snap = GetTransactionSnapshot();
-	if (snap->snapshot_type != SNAPSHOT_MVCC)
+	if (snap->base.snapshot_type != SNAPSHOT_MVCC)
 		elog(ERROR, "verify_heapam() cannot be used with a non-MVCC snapshot");
-	ctx.safe_xmin = snap->xmin;
+	ctx.safe_xmin = snap->mvcc.xmin;
 
 	/*
 	 * If we report corruption when not examining some individual attribute,
