@@ -1,0 +1,5 @@
+# vacuum_stats extension
+comment = 'track history of statistics on various events'
+default_version = '1.0'
+module_pathname = '$libdir/stats_history'
+relocatable = true
