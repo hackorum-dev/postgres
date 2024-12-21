@@ -385,4 +385,45 @@ extern double anl_random_fract(void);
 extern double anl_init_selection_state(int n);
 extern double anl_get_next_S(double t, int n, double *stateptr);
 
+/* hook to store all vacuum-related stats */
+typedef void (*vacuum_log_hook_type) (TimestampTz starttime,
+									  TimestampTz endtime,
+									  Oid relid,
+									  bool is_autovacuum,
+									  bool is_aggressive,
+									  bool is_wraparound,
+									  bool index_cleanup,
+									  int64 pages_removed,
+									  int64 pages_remain,
+									  int64 pages_scanned,
+									  int64 pages_frozen,
+									  int64 pages_missed_dead,
+									  int64 pages_new_visible,
+									  int64 pages_new_frozen,
+									  int64 pages_new_visible_frozen,
+									  int64 tuples_removed,
+									  int64 tuples_remain,
+									  int64 tuples_not_removable,
+									  int64 tuples_frozen,
+									  int64 tuples_missed_dead,
+									  int32 removable_cutoff,
+									  int32 relfrozenxid_advance,
+									  int32 relminmxid_advance,
+									  int64 index_scans,
+									  int32 index_count,
+									  int64 index_pages,
+									  int64 index_pages_newly_deleted,
+									  int64 index_pages_deleted,
+									  int64 index_pages_free,
+									  double io_read_ms,
+									  double io_write_ms,
+									  int64 wal_records,
+									  int64 wal_fpis,
+									  int64 wal_bytes,
+									  double cpu_user,
+									  double cpu_system,
+									  double cpu_elapsed);
+
+extern PGDLLIMPORT vacuum_log_hook_type vacuum_log_hook;
+
 #endif							/* VACUUM_H */

@@ -239,6 +239,7 @@ typedef struct LVSavedErrInfo
 	VacErrPhase phase;
 } LVSavedErrInfo;
 
+vacuum_log_hook_type vacuum_log_hook = NULL;
 
 /* non-export function prototypes */
 static void lazy_scan_heap(LVRelState *vacrel);
@@ -328,7 +329,8 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 
 	verbose = (params->options & VACOPT_VERBOSE) != 0;
 	instrument = (verbose || (AmAutoVacuumWorkerProcess() &&
-							  params->log_min_duration >= 0));
+							  params->log_min_duration >= 0)
+						  || (vacuum_log_hook != NULL));
 	if (instrument)
 	{
 		pg_rusage_init(&ru0);
@@ -613,6 +615,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 		TimestampTz endtime = GetCurrentTimestamp();
 
 		if (verbose || params->log_min_duration == 0 ||
+			(vacuum_log_hook != NULL) ||
 			TimestampDifferenceExceeds(starttime, endtime,
 									   params->log_min_duration))
 		{
@@ -623,11 +626,17 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 			StringInfoData buf;
 			char	   *msgfmt;
 			int32		diff;
-			double		read_rate = 0,
+			double		read_ms = 0,
+						write_ms = 0,
+						read_rate = 0,
 						write_rate = 0;
 			int64		total_blks_hit;
 			int64		total_blks_read;
 			int64		total_blks_dirtied;
+			int64		index_pages = 0,
+						index_pages_newly_deleted = 0,
+						index_pages_deleted = 0,
+						index_pages_free = 0;
 
 			TimestampDifference(starttime, endtime, &secs_dur, &usecs_dur);
 			memset(&walusage, 0, sizeof(WalUsage));
@@ -764,11 +773,16 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 								 istat->pages_newly_deleted,
 								 istat->pages_deleted,
 								 istat->pages_free);
+
+				index_pages += istat->num_pages;
+				index_pages_newly_deleted += istat->pages_newly_deleted;
+				index_pages_deleted += istat->pages_deleted;
+				index_pages_free += istat->pages_free;
 			}
 			if (track_io_timing)
 			{
-				double		read_ms = (double) (pgStatBlockReadTime - startreadtime) / 1000;
-				double		write_ms = (double) (pgStatBlockWriteTime - startwritetime) / 1000;
+				read_ms = (double) (pgStatBlockReadTime - startreadtime) / 1000;
+				write_ms = (double) (pgStatBlockWriteTime - startwritetime) / 1000;
 
 				appendStringInfo(&buf, _("I/O timings: read: %.3f ms, write: %.3f ms\n"),
 								 read_ms, write_ms);
@@ -797,6 +811,94 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 			ereport(verbose ? INFO : LOG,
 					(errmsg_internal("%s", buf.data)));
 			pfree(buf.data);
+
+			if (vacuum_log_hook)
+			{
+				PGRUsage	ru1;
+
+				int32	removable_cutoff;
+				int32	relfrozenxid_advance = -1;
+				int32	relminmxid_advance = -1;
+
+				double	cpu_elapsed,
+						cpu_user,
+						cpu_system;
+
+				pg_rusage_init(&ru1);
+
+				cpu_elapsed = (ru1.tv.tv_sec - ru0.tv.tv_sec) +
+							  (ru1.tv.tv_usec - ru0.tv.tv_usec) / 1000000.0;
+
+				cpu_user = (ru1.ru.ru_utime.tv_sec - ru0.ru.ru_utime.tv_sec) +
+						   (ru1.ru.ru_utime.tv_usec - ru0.ru.ru_utime.tv_usec) / 1000000.0;
+
+				cpu_system = (ru1.ru.ru_stime.tv_sec - ru0.ru.ru_stime.tv_sec) +
+							 (ru1.ru.ru_stime.tv_usec - ru0.ru.ru_stime.tv_usec) / 1000000.0;
+
+				removable_cutoff = (int32) (ReadNextTransactionId() - vacrel->cutoffs.OldestXmin);
+
+				if (frozenxid_updated)
+					relfrozenxid_advance = (int32) (vacrel->NewRelfrozenXid - vacrel->cutoffs.relfrozenxid);
+
+				if (minmulti_updated)
+					relminmxid_advance = (int32) (vacrel->NewRelminMxid - vacrel->cutoffs.relminmxid);
+
+				vacuum_log_hook(starttime,
+								endtime,
+
+								RelationGetRelid(rel),
+
+								AmAutoVacuumWorkerProcess(),	/* is_autovacuum */
+								vacrel->aggressive,				/* is_aggressive */
+								params->is_wraparound,			/* is_wraparound */
+								params->index_cleanup,			/* index_cleanup */
+
+								/* pages */
+								vacrel->removed_pages,			/* pages_removed */
+								new_rel_pages,					/* pages_remain */
+								vacrel->scanned_pages,			/* pages_scanned */
+								vacrel->new_frozen_tuple_pages,	/* pages_frozen */
+								vacrel->missed_dead_pages,		/* pages_missed_dead */
+
+								/* visibility map info */
+								vacrel->vm_new_visible_pages,	/* new_visible */
+								vacrel->vm_new_frozen_pages,	/* new_frozen */
+								vacrel->vm_new_visible_frozen_pages,	/* new_visible_frozen */
+
+								/* tuples */
+								vacrel->tuples_deleted,			/* tuples_removed */
+								vacrel->new_rel_tuples,			/* tuples_remain */
+								vacrel->recently_dead_tuples,	/* tuples_not_removable */
+								vacrel->tuples_frozen,			/* tuples_frozen */
+								vacrel->missed_dead_tuples,		/* tuples_missed_dead */
+
+								/* cutoffs */
+								removable_cutoff,				/* removable_cutoff */
+								relfrozenxid_advance,			/* relfrozenxid_advance */
+								relminmxid_advance,				/* relminmxid_advance */
+
+								/* indexes */
+								vacrel->num_index_scans,		/* index_scans */
+								vacrel->nindexes,				/* index_count */
+								index_pages,					/* index_pages */
+								index_pages_newly_deleted,		/* index_pages_newly_deleted */
+								index_pages_deleted,			/* index_pages_deleted */
+								index_pages_free,				/* index_pages_free */
+
+								/* I/O */
+								read_ms,						/* io_read_ms */
+								write_ms,						/* io_write_ms */
+
+								/* WAL */
+								walusage.wal_records,			/* wal_records */
+								walusage.wal_fpi,				/* wal_fpis */
+								walusage.wal_bytes,				/* wal_bytes */
+
+								/* CPU */
+								cpu_user,						/* cpu_user */
+								cpu_system,						/* cpu_system */
+								cpu_elapsed);					/* cpu_elapsed */
+			}
 		}
 	}
 
