@@ -183,6 +183,36 @@ typedef struct CheckpointStatsData
 
 extern PGDLLIMPORT CheckpointStatsData CheckpointStats;
 
+/* hook to store all checkpoint-related stats */
+typedef void (*checkpoint_log_hook_type) (
+						TimestampTz start_time,
+						TimestampTz end_time,
+						bool is_shutdown,
+						bool is_end_of_recovery,
+						bool is_immediate,
+						bool is_force,
+						bool is_wait,
+						bool is_wal,
+						bool is_time,
+						bool is_flush_all,
+						int buffers_written,
+						int slru_written,
+						int segs_added,
+						int segs_removed,
+						int segs_recycled,
+						long write_ms,
+						long sync_ms,
+						long total_ms,
+						int sync_files,
+						long sync_longest_ms,
+						long sync_average_ms,
+						double distance_prev,
+						double distance_est,
+						XLogRecPtr lsn,
+						XLogRecPtr redo_lsn);
+
+extern PGDLLIMPORT checkpoint_log_hook_type checkpoint_log_hook;
+
 /*
  * GetWALAvailability return codes
  */

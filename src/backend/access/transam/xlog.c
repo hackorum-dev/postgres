@@ -651,6 +651,8 @@ static bool updateMinRecoveryPoint = true;
 static int	MyLockNo = 0;
 static bool holdingAllLocks = false;
 
+checkpoint_log_hook_type checkpoint_log_hook = NULL;
+
 #ifdef WAL_DEBUG
 static MemoryContext walDebugCxt = NULL;
 #endif
@@ -6678,7 +6680,7 @@ LogCheckpointStart(int flags, bool restartpoint)
  * Log end of a checkpoint.
  */
 static void
-LogCheckpointEnd(bool restartpoint)
+LogCheckpointEnd(int flags, bool restartpoint)
 {
 	long		write_msecs,
 				sync_msecs,
@@ -6701,9 +6703,11 @@ LogCheckpointEnd(bool restartpoint)
 
 	/*
 	 * All of the published timing statistics are accounted for.  Only
-	 * continue if a log message is to be written.
+	 * continue if a log message is to be written, or with checkpoint
+	 * log hook.
 	 */
-	if (!log_checkpoints)
+	if (!log_checkpoints &&
+		(checkpoint_log_hook == NULL))
 		return;
 
 	total_msecs = TimestampDifferenceMilliseconds(CheckpointStats.ckpt_start_t,
@@ -6720,6 +6724,42 @@ LogCheckpointEnd(bool restartpoint)
 		average_sync_time = CheckpointStats.ckpt_agg_sync_time /
 			CheckpointStats.ckpt_sync_rels;
 	average_msecs = (long) ((average_sync_time + 999) / 1000);
+
+	if (checkpoint_log_hook)
+	{
+		checkpoint_log_hook(
+						CheckpointStats.ckpt_start_t,			/* start_time */
+						CheckpointStats.ckpt_end_t,				/* end_time */
+						(flags & CHECKPOINT_IS_SHUTDOWN),		/* is_shutdown */
+						(flags & CHECKPOINT_END_OF_RECOVERY),	/* is_end_of_recovery */
+						(flags & CHECKPOINT_IMMEDIATE),			/* is_immediate */
+						(flags & CHECKPOINT_FORCE),				/* is_force */
+						(flags & CHECKPOINT_WAIT),				/* is_wait */
+						(flags & CHECKPOINT_CAUSE_XLOG),		/* is_wal */
+						(flags & CHECKPOINT_CAUSE_TIME),		/* is_time */
+						(flags & CHECKPOINT_FLUSH_ALL),			/* is_flush_all */
+						CheckpointStats.ckpt_bufs_written,		/* buffers_written */
+						CheckpointStats.ckpt_slru_written,		/* slru_written */
+						CheckpointStats.ckpt_segs_added,		/* segs_added */
+						CheckpointStats.ckpt_segs_removed,		/* segs_removed */
+						CheckpointStats.ckpt_segs_recycled,		/* segs_recycled */
+						write_msecs,							/* write_ms */
+						sync_msecs,								/* sync_ms */
+						total_msecs,							/* total_ms */
+						CheckpointStats.ckpt_sync_rels,			/* sync_files */
+						longest_msecs,							/* sync_longest_ms */
+						average_msecs,							/* sync_average_ms */
+						PrevCheckPointDistance,					/* distance_prev */
+						CheckPointDistanceEstimate,				/* distance_est */
+						ControlFile->checkPoint,				/* lsn */
+						ControlFile->checkPointCopy.redo);		/* redo_lsn */
+	}
+
+	/*
+	 * Only the actual logging remains.
+	 */
+	if (!log_checkpoints)
+		return;
 
 	/*
 	 * ControlFileLock is not required to see ControlFile->checkPoint and
@@ -7349,7 +7389,7 @@ CreateCheckPoint(int flags)
 		TruncateSUBTRANS(GetOldestTransactionIdConsideredRunning());
 
 	/* Real work is done; log and update stats. */
-	LogCheckpointEnd(false);
+	LogCheckpointEnd(flags, false);
 
 	/* Reset the process title */
 	update_checkpoint_display(flags, false, true);
@@ -7818,7 +7858,7 @@ CreateRestartPoint(int flags)
 		TruncateSUBTRANS(GetOldestTransactionIdConsideredRunning());
 
 	/* Real work is done; log and update stats. */
-	LogCheckpointEnd(true);
+	LogCheckpointEnd(flags, true);
 
 	/* Reset the process title */
 	update_checkpoint_display(flags, true, true);
