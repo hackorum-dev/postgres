@@ -342,9 +342,17 @@ CheckMyDatabase(const char *name, bool am_superuser, bool override_allow_connect
 	 * a way to recover from disabling all access to all databases, for
 	 * example "UPDATE pg_database SET datallowconn = false;".
 	 *
-	 * We do not enforce them for autovacuum worker processes either.
+	 * We do not enforce them for autovacuum worker processes either, so that
+	 * autovacuuming can still happen in all databases.
+	 *
+	 * We do not enforce them for parallel worker processes either: it's
+	 * assumed that the checks applied when the leader started are sufficient.
+	 * (To do otherwise would make the use of parallel query less transparent
+	 * than we want.)
 	 */
-	if (IsUnderPostmaster && !AmAutoVacuumWorkerProcess())
+	if (IsUnderPostmaster &&
+		!AmAutoVacuumWorkerProcess() &&
+		!InitializingParallelWorker)
 	{
 		/*
 		 * Check that the database is currently allowing connections.
@@ -865,23 +873,7 @@ InitPostgres(const char *in_dbname, Oid dboid,
 		{
 			InitializeSessionUserId(username, useroid,
 									(flags & INIT_PG_OVERRIDE_ROLE_LOGIN) != 0);
-
-			/*
-			 * In a parallel worker, set am_superuser based on the
-			 * authenticated user ID, not the current role.  This is pretty
-			 * dubious but it matches our historical behavior.  Note that this
-			 * value of am_superuser is used only for connection-privilege
-			 * checks here and in CheckMyDatabase (we won't reach
-			 * process_startup_options in a background worker).
-			 *
-			 * In other cases, there's been no opportunity for the current
-			 * role to diverge from the authenticated user ID yet, so we can
-			 * just rely on superuser() and avoid an extra catalog lookup.
-			 */
-			if (InitializingParallelWorker)
-				am_superuser = superuser_arg(GetAuthenticatedUserId());
-			else
-				am_superuser = superuser();
+			am_superuser = superuser();
 		}
 	}
 	else
@@ -909,16 +901,17 @@ InitPostgres(const char *in_dbname, Oid dboid,
 
 	/*
 	 * The last few connection slots are reserved for superusers and roles
-	 * with privileges of pg_use_reserved_connections.  Replication
-	 * connections are drawn from slots reserved with max_wal_senders and are
-	 * not limited by max_connections, superuser_reserved_connections, or
-	 * reserved_connections.
+	 * with privileges of pg_use_reserved_connections.
+	 *
+	 * This does not apply to walsenders (which are instead limited by
+	 * max_wal_senders) nor parallel workers (which are instead limited by
+	 * max_parallel_workers).
 	 *
 	 * Note: At this point, the new backend has already claimed a proc struct,
 	 * so we must check whether the number of free slots is strictly less than
 	 * the reserved connection limits.
 	 */
-	if (!am_superuser && !am_walsender &&
+	if (!am_superuser && !am_walsender && !InitializingParallelWorker &&
 		(SuperuserReservedConnections + ReservedConnections) > 0 &&
 		!HaveNFreeProcs(SuperuserReservedConnections + ReservedConnections, &nfree))
 	{
