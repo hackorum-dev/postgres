@@ -46,6 +46,11 @@
  *		are defined, so you can supply your own
  *	  The following parameters are only relevant when SH_DEFINE is defined:
  *	  - SH_KEY - name of the element in SH_ELEMENT_TYPE containing the hash key
+ *	  - SH_MAKE_KEY(table, key) - if defined, given a key passed to SH_LOOKUP,
+ *	    SH_LOOKUP_HASH, SH_INSERT, or SH_INSERT_HASH, return a value that can
+ *	    be assigned to an SH_KEY
+ *	  - SH_UNMAKE_KEY(table, stored_key) - if defined, process a stored key
+ *	    prior to removing the entry via SH_DELETE or SH_DELETE_ITEM
  *	  - SH_EQUAL(table, a, b) - compare two table keys
  *	  - SH_HASH_KEY(table, key) - generate hash for the key
  *	  - SH_STORE_HASH - if defined the hash is stored in the elements
@@ -277,6 +282,28 @@ SH_SCOPE void SH_STAT(SH_TYPE * tb);
 #define SH_GROW_MIN_FILLFACTOR 0.1
 #endif
 
+#ifndef SH_MAKE_KEY
+#define SH_MAKE_KEY(table, key) key
+#endif
+
+#ifdef SH_UNMAKE_KEY
+#define SH_UNMAKE_ALL_KEYS(tb) \
+	if (tb->members) \
+	{ \
+		SH_ELEMENT_TYPE *elem = tb->data; \
+		SH_ELEMENT_TYPE *end = elem + tb->size; \
+		while (elem < end) \
+		{ \
+			if (elem->status == SH_STATUS_IN_USE) \
+				SH_UNMAKE_KEY(tb, elem->SH_KEY); \
+			elem++; \
+		} \
+	}
+#else
+#define SH_UNMAKE_KEY(table, key) do {} while (false)
+#define SH_UNMAKE_ALL_KEYS(table) do {} while (false)
+#endif
+
 #ifdef SH_STORE_HASH
 #define SH_COMPARE_KEYS(tb, ahash, akey, b) (ahash == SH_GET_HASH(tb, b) && SH_EQUAL(tb, b->SH_KEY, akey))
 #else
@@ -471,6 +498,7 @@ SH_CREATE(MemoryContext ctx, uint32 nelements, void *private_data)
 SH_SCOPE void
 SH_DESTROY(SH_TYPE * tb)
 {
+	SH_UNMAKE_ALL_KEYS(tb);
 	SH_FREE(tb, tb->data);
 	pfree(tb);
 }
@@ -479,6 +507,7 @@ SH_DESTROY(SH_TYPE * tb)
 SH_SCOPE void
 SH_RESET(SH_TYPE * tb)
 {
+	SH_UNMAKE_ALL_KEYS(tb);
 	memset(tb->data, 0, sizeof(SH_ELEMENT_TYPE) * tb->size);
 	tb->members = 0;
 }
@@ -652,7 +681,7 @@ restart:
 		if (entry->status == SH_STATUS_EMPTY)
 		{
 			tb->members++;
-			entry->SH_KEY = key;
+			entry->SH_KEY = SH_MAKE_KEY(tb, key);
 #ifdef SH_STORE_HASH
 			SH_GET_HASH(tb, entry) = hash;
 #endif
@@ -740,7 +769,7 @@ restart:
 			/* and fill the now empty spot */
 			tb->members++;
 
-			entry->SH_KEY = key;
+			entry->SH_KEY = SH_MAKE_KEY(tb, key);
 #ifdef SH_STORE_HASH
 			SH_GET_HASH(tb, entry) = hash;
 #endif
@@ -872,6 +901,8 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 		{
 			SH_ELEMENT_TYPE *lastentry = entry;
 
+			SH_UNMAKE_KEY(tb, entry->SH_KEY);
+
 			tb->members--;
 
 			/*
@@ -934,6 +965,8 @@ SH_DELETE_ITEM(SH_TYPE * tb, SH_ELEMENT_TYPE * entry)
 
 	/* Calculate the index of 'entry' */
 	curelem = entry - &tb->data[0];
+
+	SH_UNMAKE_KEY(tb, entry->SH_KEY);
 
 	tb->members--;
 
@@ -1148,6 +1181,9 @@ SH_STAT(SH_TYPE * tb)
 #undef SH_KEY_TYPE
 #undef SH_KEY
 #undef SH_ELEMENT_TYPE
+#undef SH_MAKE_KEY
+#undef SH_UNMAKE_KEY
+#undef SH_UNMAKE_ALL_KEYS
 #undef SH_HASH_KEY
 #undef SH_SCOPE
 #undef SH_DECLARE
