@@ -3661,7 +3661,8 @@ typedef struct NotifyStmt
 typedef struct ListenStmt
 {
 	NodeTag		type;
-	char	   *conditionname;	/* condition name to listen on */
+	char	   *conditionname;	/* condition name to listen on, or NULL for
+								 * all */
 } ListenStmt;
 
 /* ----------------------

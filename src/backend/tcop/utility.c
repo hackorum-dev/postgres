@@ -824,7 +824,10 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 							 errmsg("cannot execute %s within a background process",
 									"LISTEN")));
 
-				Async_Listen(stmt->conditionname);
+				if (stmt->conditionname)
+					Async_Listen(stmt->conditionname);
+				else
+					Async_ListenAll();
 			}
 			break;
 

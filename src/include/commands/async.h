@@ -29,6 +29,7 @@ extern void NotifyMyFrontEnd(const char *channel,
 /* notify-related SQL statements */
 extern void Async_Notify(const char *channel, const char *payload);
 extern void Async_Listen(const char *channel);
+extern void Async_ListenAll(void);
 extern void Async_Unlisten(const char *channel);
 extern void Async_UnlistenAll(void);
 

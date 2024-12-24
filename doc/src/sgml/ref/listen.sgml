@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-LISTEN <replaceable class="parameter">channel</replaceable>
+LISTEN { <replaceable class="parameter">channel</replaceable> | * }
 </synopsis>
  </refsynopsisdiv>
 
@@ -37,18 +37,31 @@ LISTEN <replaceable class="parameter">channel</replaceable>
   </para>
 
   <para>
+   A session can be unregistered for a given notification channel with the
+   <command>UNLISTEN</command> command.  A session's listen
+   registrations are automatically cleared when the session ends.
+  </para>
+
+  <para>
+   The special wildcard <literal>*</literal> cancels all listener
+   registrations for the current session and replaces them with a
+   virtual registration that matches all channels. Subsequent
+   <command>UNLISTEN <replaceable class="parameter">channel</replaceable>
+   </command> commands add to a list of exceptions and will not be
+   delivered. Any <command>LISTEN <replaceable class="parameter">channel</replaceable>
+   </command> commands after <command>LISTEN *</command> will remove
+   previously set <command>UNLISTEN</command> exceptions, if present.
+   Otherwise they will be ignored until the session sees the
+   <command>UNLISTEN *</command> command.
+  </para>
+
+  <para>
    Whenever the command <command>NOTIFY <replaceable
    class="parameter">channel</replaceable></command> is invoked, either
    by this session or another one connected to the same database, all
    the sessions currently listening on that notification channel are
    notified, and each will in turn notify its connected client
    application.
-  </para>
-
-  <para>
-   A session can be unregistered for a given notification channel with the
-   <command>UNLISTEN</command> command.  A session's listen
-   registrations are automatically cleared when the session ends.
   </para>
 
   <para>
@@ -74,6 +87,16 @@ LISTEN <replaceable class="parameter">channel</replaceable>
     <listitem>
      <para>
       Name of a notification channel (any identifier).
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>*</literal></term>
+    <listitem>
+     <para>
+      All current listen registrations for this session are cleared and
+      replaced by a virtual registration that matches all channels.
      </para>
     </listitem>
    </varlistentry>

@@ -336,11 +336,18 @@ typedef struct
 #include "lib/simplehash.h"
 
 /*
- * listenChannels identifies the channels we are actually listening to
- * (ie, have committed a LISTEN on).  It is a simplehash.h of channel names,
+ * listenChannels identifies the channels we are actually listening to.
+ * We represent it as a boolean flag indicating whether or not we want
+ * to see all notifications, and a simplehash.h of the exeptions,
  * allocated in TopMemoryContext.
  */
-static listen_hash * listenChannels = NULL; /* hash table of ListenHashEntry */
+typedef struct
+{
+	listen_hash *exceptions;
+	bool		wantAll;
+}			ListenChannels;
+
+static ListenChannels * listenChannels = NULL;
 
 /* Initialize the hash table with this many elements when we start listening. */
 #define LISTEN_HASH_START_SIZE 16
@@ -358,6 +365,7 @@ static listen_hash * listenChannels = NULL; /* hash table of ListenHashEntry */
 typedef enum
 {
 	LISTEN_LISTEN,
+	LISTEN_LISTEN_ALL,
 	LISTEN_UNLISTEN,
 	LISTEN_UNLISTEN_ALL,
 } ListenActionKind;
@@ -460,8 +468,11 @@ static void queue_listen(ListenActionKind action, const char *channel);
 static void Async_UnlistenOnExit(int code, Datum arg);
 static void Exec_ListenPreCommit(void);
 static void Exec_ListenCommit(const char *channel);
+static void Exec_ListenAllCommit(void);
 static void Exec_UnlistenCommit(const char *channel);
 static void Exec_UnlistenAllCommit(void);
+static bool NoActiveListens(void);
+static void ResetListens(void);
 static bool IsListeningOn(const char *channel);
 static void asyncQueueUnregister(void);
 static bool asyncQueueIsFull(void);
@@ -709,8 +720,8 @@ Async_Notify(const char *channel, const char *payload)
  *		Common code for listen, unlisten, unlisten all commands.
  *
  *		Adds the request to the list of pending actions.
- *		Actual update of the listenChannels list happens during transaction
- *		commit.
+ *		Actual update of the listenChannels data structure happens during
+ *		transaction commit.
  */
 static void
 queue_listen(ListenActionKind action, const char *channel)
@@ -770,6 +781,20 @@ Async_Listen(const char *channel)
 }
 
 /*
+ * Async_ListenAll
+ *
+ *		This is executed by the SQL LISTEN * command.
+ */
+void
+Async_ListenAll(void)
+{
+	if (Trace_notify)
+		elog(DEBUG1, "Async_ListenAll(%d)", MyProcPid);
+
+	queue_listen(LISTEN_LISTEN_ALL, "");
+}
+
+/*
  * Async_Unlisten
  *
  *		This is executed by the SQL unlisten command.
@@ -826,7 +851,7 @@ pg_listening_channels(PG_FUNCTION_ARGS)
 		if (listenChannels)
 		{
 			funcctx->user_fctx = MemoryContextAlloc(funcctx->multi_call_memory_ctx, sizeof(listen_iterator));
-			listen_start_iterate(listenChannels, (listen_iterator *) funcctx->user_fctx);
+			listen_start_iterate(listenChannels->exceptions, (listen_iterator *) funcctx->user_fctx);
 		}
 	}
 
@@ -836,7 +861,7 @@ pg_listening_channels(PG_FUNCTION_ARGS)
 	if (listenChannels)
 	{
 		/* next item from the hash table iterator */
-		item = listen_iterate(listenChannels, (listen_iterator *) funcctx->user_fctx);
+		item = listen_iterate(listenChannels->exceptions, (listen_iterator *) funcctx->user_fctx);
 		/* iterate has skipped over all empty slots for us */
 		if (item)
 			SRF_RETURN_NEXT(funcctx, CStringGetTextDatum(item->channel));
@@ -911,6 +936,7 @@ PreCommit_Notify(void)
 			switch (actrec->action)
 			{
 				case LISTEN_LISTEN:
+				case LISTEN_LISTEN_ALL:
 					Exec_ListenPreCommit();
 					break;
 				case LISTEN_UNLISTEN:
@@ -1024,6 +1050,9 @@ AtCommit_Notify(void)
 				case LISTEN_LISTEN:
 					Exec_ListenCommit(actrec->channel);
 					break;
+				case LISTEN_LISTEN_ALL:
+					Exec_ListenAllCommit();
+					break;
 				case LISTEN_UNLISTEN:
 					Exec_UnlistenCommit(actrec->channel);
 					break;
@@ -1035,7 +1064,7 @@ AtCommit_Notify(void)
 	}
 
 	/* If no longer listening to anything, get out of listener array */
-	if (amRegisteredListener && (listenChannels->members == 0))
+	if (amRegisteredListener && NoActiveListens())
 		asyncQueueUnregister();
 
 	/*
@@ -1146,7 +1175,8 @@ Exec_ListenPreCommit(void)
 	LWLockRelease(NotifyQueueLock);
 
 	/* Create the structures to manage listens */
-	listenChannels = listen_create(TopMemoryContext, LISTEN_HASH_START_SIZE, NULL);
+	listenChannels = MemoryContextAllocZero(TopMemoryContext, sizeof(ListenChannels));
+	listenChannels->exceptions = listen_create(TopMemoryContext, LISTEN_HASH_START_SIZE, NULL);
 
 	/* Now we are listed in the global array, so remember we're listening */
 	amRegisteredListener = true;
@@ -1175,6 +1205,9 @@ Exec_ListenCommit(const char *channel)
 
 	Assert(listenChannels != NULL);
 
+	if (Trace_notify)
+		elog(DEBUG1, "Exec_ListenCommit(%s,%d)", channel, MyProcPid);
+
 	/*
 	 * Add the new channel name to listenChannels.
 	 *
@@ -1182,10 +1215,33 @@ Exec_ListenCommit(const char *channel)
 	 * which would be bad because we already committed.  For the moment it
 	 * doesn't seem worth trying to guard against that, but maybe improve this
 	 * later.
-	 *
-	 * Does nothing if we are already listening on this channel.
 	 */
-	listen_insert(listenChannels, channel, &found);
+	if (listenChannels->wantAll)
+	{
+		/* remove any existing exception */
+		listen_delete(listenChannels->exceptions, channel);
+	}
+	else
+	{
+		/* add an explicit exception */
+		(void) listen_insert(listenChannels->exceptions, channel, &found);
+	}
+}
+
+/*
+ * Exec_ListenAllCommit --- subroutine for AtCommit_Notify
+ *
+ * Listen to ALL of the channels.
+ */
+static void
+Exec_ListenAllCommit(void)
+{
+	if (Trace_notify)
+		elog(DEBUG1, "Exec_ListenAlllistenCommit(%d)", MyProcPid);
+
+	/* By definition, 'LISTEN *' resets the world. */
+	ResetListens();
+	listenChannels->wantAll = true;
 }
 
 /*
@@ -1196,6 +1252,8 @@ Exec_ListenCommit(const char *channel)
 static void
 Exec_UnlistenCommit(const char *channel)
 {
+	bool		found;
+
 	if (Trace_notify)
 		elog(DEBUG1, "Exec_UnlistenCommit(%s,%d)", channel, MyProcPid);
 
@@ -1203,7 +1261,16 @@ Exec_UnlistenCommit(const char *channel)
 	if (!listenChannels)
 		return;
 
-	listen_delete(listenChannels, channel);
+	if (!listenChannels->wantAll)
+	{
+		/* remove any existing exception */
+		listen_delete(listenChannels->exceptions, channel);
+	}
+	else
+	{
+		/* add an explicit exception */
+		(void) listen_insert(listenChannels->exceptions, channel, &found);
+	}
 
 	/*
 	 * We do not complain about unlistening something not being listened;
@@ -1226,7 +1293,23 @@ Exec_UnlistenAllCommit(void)
 	if (!listenChannels)
 		return;
 
-	listen_reset(listenChannels);
+	ResetListens();
+	listenChannels->wantAll = false;
+}
+
+/*
+ * Test if we have any active listens.
+ */
+static bool
+NoActiveListens(void)
+{
+	/* Determine if we have any active listens, then invert that. */
+	return !(
+	/* Missing data structure? No listens possible. */
+			 (listenChannels != NULL) &&
+	/* Want everything? No, want anything? */
+			 ((listenChannels->wantAll) || (listenChannels->exceptions->members != 0))
+		);
 }
 
 /*
@@ -1237,9 +1320,36 @@ Exec_UnlistenAllCommit(void)
 static bool
 IsListeningOn(const char *channel)
 {
+	bool		found;
+
 	if (listenChannels == NULL)
 		return false;
-	return listen_lookup(listenChannels, channel) != NULL;
+
+	/* determine if we have an entry for it */
+	found = listen_lookup(listenChannels->exceptions, channel) != NULL;
+	/*---------------------
+	 * wantAll found result
+	 *    f      f     f
+	 *    f      t     t
+	 *    t      f     t
+	 *    t      t     f
+	 *---------------------
+	 */
+	return listenChannels->wantAll ^ found;
+}
+
+/* Reset the listen exceptions hash.
+ *
+ * Because we allocate the channel key separate from the table we
+ * must free them all before resetting the table.
+ */
+static void
+ResetListens(void)
+{
+	if ((listenChannels == NULL) || (listenChannels->exceptions == NULL))
+		return;
+
+	listen_reset(listenChannels->exceptions);
 }
 
 /*
@@ -1249,13 +1359,14 @@ IsListeningOn(const char *channel)
 static void
 asyncQueueUnregister(void)
 {
-	Assert((listenChannels == NULL) || (listenChannels->members == 0)); /* else caller error */
+	Assert(NoActiveListens());	/* else caller error */
 
 	if (!amRegisteredListener)	/* nothing to do */
 		return;
 
 	/* Release our listen_hash data structures */
-	listen_destroy(listenChannels);
+	listen_destroy(listenChannels->exceptions);
+	pfree(listenChannels);
 	listenChannels = NULL;
 
 	/*
@@ -1698,7 +1809,7 @@ AtAbort_Notify(void)
 	 * we have registered as a listener but have not made any entry in
 	 * listenChannels.  In that case, deregister again.
 	 */
-	if (amRegisteredListener && (listenChannels->members == 0))
+	if (amRegisteredListener && NoActiveListens())
 		asyncQueueUnregister();
 
 	/* And clean up */
@@ -2209,7 +2320,7 @@ ProcessIncomingNotify(bool flush)
 	notifyInterruptPending = false;
 
 	/* Do nothing else if we aren't actively listening */
-	if (listenChannels == NULL)
+	if (NoActiveListens())
 		return;
 
 	if (Trace_notify)

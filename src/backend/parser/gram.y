@@ -10992,11 +10992,19 @@ notify_payload:
 			| /*EMPTY*/							{ $$ = NULL; }
 		;
 
-ListenStmt: LISTEN ColId
+ListenStmt:
+			LISTEN ColId
 				{
 					ListenStmt *n = makeNode(ListenStmt);
 
 					n->conditionname = $2;
+					$$ = (Node *) n;
+				}
+			| LISTEN '*'
+				{
+					ListenStmt *n = makeNode(ListenStmt);
+
+					n->conditionname = NULL;
 					$$ = (Node *) n;
 				}
 		;
