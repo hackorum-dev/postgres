@@ -15,7 +15,11 @@ SELECT pg_notify('notify_async_channel_name_too_long____________________________
 --Should work. Valid NOTIFY/LISTEN/UNLISTEN commands
 NOTIFY notify_async2;
 LISTEN notify_async2;
+SELECT pg_listening_channels(); -- expect one entry
 UNLISTEN notify_async2;
+--Should work. Ignore unlistened channels
+UNLISTEN notify_async2; -- no-op
+--Should work. Ignore unlisten all with no channels
 UNLISTEN *;
 
 -- Should return zero while there are no pending notifications.
