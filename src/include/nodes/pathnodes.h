@@ -101,6 +101,25 @@ typedef struct PlannerGlobal
 	/* Param values provided to planner() */
 	ParamListInfo boundParams pg_node_attr(read_write_ignore);
 
+	/* Context holding PlannerGlobal */
+	MemoryContext planner_cxt pg_node_attr(read_write_ignore);
+
+	/* short-lived context for purposes such as calling selectivity functions */
+	MemoryContext planner_tmp_cxt pg_node_attr(read_write_ignore);
+	/* nesting depth of uses of planner_tmp_cxt; reset it only at level 0 */
+	int			planner_tmp_cxt_depth;
+	/* how many times we've used planner_tmp_cxt since last reset */
+	int			planner_tmp_cxt_usage;
+
+	/*
+	 * How often we want to reset it.
+	 * It may be costly to clean up the context used for quick operations
+	 * likewise selectivity estimation causing instensive allocations of small
+	 * pieces of memory. Use it as high as possible to cut off peak memory
+	 * consumptions during the planning.
+	 */
+#define PLANNER_TMP_CXT_USAGE_RESET 1000
+
 	/* Plans for SubPlan nodes */
 	List	   *subplans;
 
@@ -477,7 +496,7 @@ struct PlannerInfo
 	/* List of MinMaxAggInfos */
 	List	   *minmax_aggs;
 
-	/* context holding PlannerInfo */
+	/* context holding PlannerInfo (copied from PlannerGlobal) */
 	MemoryContext planner_cxt pg_node_attr(read_write_ignore);
 
 	/* # of pages in all non-dummy tables of query */
