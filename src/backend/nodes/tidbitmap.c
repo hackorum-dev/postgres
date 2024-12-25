@@ -814,10 +814,17 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 			while ((page = pagetable_iterate(tbm->pagetable, &i)) != NULL)
 			{
 				idx = page - ptbase->ptentry;
-				if (page->ischunk)
+				if (page->ischunk && (nchunks + 1 <= tbm->nchunks))
 					ptchunks->index[nchunks++] = idx;
-				else
+				else if (npages + 1 <= tbm->npages)
 					ptpages->index[npages++] = idx;
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_INTERNAL_ERROR),
+							 errmsg("invalid chunks/pages num in tidbitmap : %d"
+							 		" chunks met of %d available, %d pages met "
+									"of %d available", nchunks, tbm->nchunks,
+									npages, tbm->npages)));
 			}
 
 			Assert(npages == tbm->npages);
