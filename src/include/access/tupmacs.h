@@ -199,6 +199,35 @@ fetch_att(const void *T, bool attbyval, int attlen)
 	)) \
 )
 
+/*
+ * att_addvarsize_datum increments the given offset by the space needed for
+ * the given Datum variable to store it.  attdatum is only accessed if we are
+ * dealing with a variable-length attribute.
+ */
+#define att_addvarsize_datum(cur_offset, typlen, typstor, datum) \
+	att_addvarsize_pointer(cur_offset, typlen, typstor, DatumGetPointer(datum))
+
+#define att_addvarsize_pointer(cur_offset, typlen, typstor, ptr) \
+( \
+	((typlen) > 0) ? \
+	( \
+		(cur_offset) + (typlen) \
+	) \
+	: (((typlen) == -1) ? \
+	( \
+		((TYPE_IS_PACKABLE(typlen, typstor) && VARATT_CAN_MAKE_SHORT(ptr)) ? \
+			(cur_offset) + VARATT_CONVERTED_SHORT_SIZE(ptr) \
+		: \
+			(cur_offset) + VARSIZE_ANY(ptr) \
+		) \
+	) \
+	: \
+	( \
+		AssertMacro((typlen) == -2), \
+		(cur_offset) + (strlen((char *) (ptr)) + 1) \
+	)) \
+)
+
 #ifndef FRONTEND
 /*
  * store_att_byval is a partial inverse of fetch_att: store a given Datum

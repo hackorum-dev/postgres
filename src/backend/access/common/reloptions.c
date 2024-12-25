@@ -1179,8 +1179,8 @@ transformRelOptions(Datum oldOptions, List *defList, const char *namspace,
 
 		for (i = 0; i < noldoptions; i++)
 		{
-			char	   *text_str = VARDATA(oldoptions[i]);
-			int			text_len = VARSIZE(oldoptions[i]) - VARHDRSZ;
+			char	   *text_str = VARDATA_ANY(oldoptions[i]);
+			int			text_len = VARSIZE_ANY_EXHDR(oldoptions[i]);
 
 			/* Search for a match in defList */
 			foreach(cell, defList)
@@ -1436,8 +1436,8 @@ parseRelOptionsInternal(Datum options, bool validate,
 
 	for (i = 0; i < noptions; i++)
 	{
-		char	   *text_str = VARDATA(optiondatums[i]);
-		int			text_len = VARSIZE(optiondatums[i]) - VARHDRSZ;
+		char	   *text_str = VARDATA_ANY(optiondatums[i]);
+		int			text_len = VARSIZE_ANY_EXHDR(optiondatums[i]);
 		int			j;
 
 		/* Search for a match in reloptions */

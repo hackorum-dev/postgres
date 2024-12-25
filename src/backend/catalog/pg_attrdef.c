@@ -148,7 +148,8 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 															 defAttStruct->atttypid,
 															 defAttStruct->attlen,
 															 defAttStruct->attbyval,
-															 defAttStruct->attalign));
+															 defAttStruct->attalign,
+															 defAttStruct->attstorage));
 			}
 
 			valuesAtt[Anum_pg_attribute_atthasmissing - 1] = !missingIsNull;

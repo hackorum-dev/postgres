@@ -627,6 +627,7 @@ RelationBuildTupleDesc(Relation relation)
 											attp->attlen,
 											attp->attbyval,
 											attp->attalign,
+											attp->attstorage,
 											&is_null);
 				Assert(!is_null);
 				if (attp->attbyval)

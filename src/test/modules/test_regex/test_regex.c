@@ -678,7 +678,8 @@ build_test_info_result(regex_t *cpattern, test_re_flags *flags)
 	lbs[0] = 1;
 	/* XXX: this hardcodes assumptions about the text type */
 	return construct_md_array(elems, NULL, 1, dims, lbs,
-							  TEXTOID, -1, false, TYPALIGN_INT);
+							  TEXTOID, -1, false,
+							  TYPALIGN_INT, TYPSTORAGE_EXTENDED);
 }
 
 /*
@@ -758,5 +759,6 @@ build_test_match_result(test_regex_ctx *matchctx)
 	lbs[0] = 1;
 	/* XXX: this hardcodes assumptions about the text type */
 	return construct_md_array(elems, nulls, 1, dims, lbs,
-							  TEXTOID, -1, false, TYPALIGN_INT);
+							  TEXTOID, -1, false,
+							  TYPALIGN_INT, TYPSTORAGE_EXTENDED);
 }

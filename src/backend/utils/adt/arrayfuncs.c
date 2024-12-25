@@ -74,6 +74,7 @@ typedef struct ArrayIteratorData
 	int16		typlen;			/* element type's length */
 	bool		typbyval;		/* element type's byval property */
 	char		typalign;		/* element type's align property */
+	char		typstorage;		/* element type's storage property */
 
 	/* information about the requested slice size */
 	int			slice_ndim;		/* slice dimension, or 0 if not slicing */
@@ -105,46 +106,51 @@ static ArrayToken ReadArrayToken(char **srcptr, StringInfo elembuf, char typdeli
 								 const char *origStr, Node *escontext);
 static void ReadArrayBinary(StringInfo buf, int nitems,
 							FmgrInfo *receiveproc, Oid typioparam, int32 typmod,
-							int typlen, bool typbyval, char typalign,
+							int typlen, bool typbyval, char typalign, char typstor,
 							Datum *values, bool *nulls,
 							bool *hasnulls, int32 *nbytes);
 static Datum array_get_element_expanded(Datum arraydatum,
 										int nSubscripts, int *indx,
 										int arraytyplen,
-										int elmlen, bool elmbyval, char elmalign,
-										bool *isNull);
+										int elmlen, bool elmbyval,
+										char elmalign, char typstor, bool *isNull);
 static Datum array_set_element_expanded(Datum arraydatum,
 										int nSubscripts, int *indx,
 										Datum dataValue, bool isNull,
 										int arraytyplen,
-										int elmlen, bool elmbyval, char elmalign);
+										int elmlen, bool elmbyval,
+										char elmalign, char typstor);
 static bool array_get_isnull(const bits8 *nullbitmap, int offset);
 static void array_set_isnull(bits8 *nullbitmap, int offset, bool isNull);
 static Datum ArrayCast(char *value, bool byval, int len);
 static int	ArrayCastAndSet(Datum src,
-							int typlen, bool typbyval, char typalign,
-							char *dest);
+							int typlen, bool typbyval,
+							char typalign, char typstor, char *dest);
 static char *array_seek(char *ptr, int offset, bits8 *nullbitmap, int nitems,
-						int typlen, bool typbyval, char typalign);
+						int typlen, bool typbyval, char typalign, char typstor);
 static int	array_nelems_size(char *ptr, int offset, bits8 *nullbitmap,
-							  int nitems, int typlen, bool typbyval, char typalign);
+							  int nitems, int typlen, bool typbyval,
+							  char typalign, char typstor);
 static int	array_copy(char *destptr, int nitems,
 					   char *srcptr, int offset, bits8 *nullbitmap,
-					   int typlen, bool typbyval, char typalign);
+					   int typlen, bool typbyval, char typalign, char typstor);
 static int	array_slice_size(char *arraydataptr, bits8 *arraynullsptr,
 							 int ndim, int *dim, int *lb,
 							 int *st, int *endp,
-							 int typlen, bool typbyval, char typalign);
+							 int typlen, bool typbyval,
+							 char typalign, char typstor);
 static void array_extract_slice(ArrayType *newarray,
 								int ndim, int *dim, int *lb,
 								char *arraydataptr, bits8 *arraynullsptr,
 								int *st, int *endp,
-								int typlen, bool typbyval, char typalign);
+								int typlen, bool typbyval,
+								char typalign, char typstor);
 static void array_insert_slice(ArrayType *destArray, ArrayType *origArray,
 							   ArrayType *srcArray,
 							   int ndim, int *dim, int *lb,
 							   int *st, int *endp,
-							   int typlen, bool typbyval, char typalign);
+							   int typlen, bool typbyval,
+							   char typalign, char typstor);
 static int	array_cmp(FunctionCallInfo fcinfo);
 static ArrayType *create_array_envelope(int ndims, int *dimv, int *lbsv, int nbytes,
 										Oid elmtype, int dataoffset);
@@ -187,6 +193,7 @@ array_in(PG_FUNCTION_ARGS)
 	bool		typbyval;
 	char		typalign;
 	char		typdelim;
+	char		typstor;
 	Oid			typioparam;
 	char	   *p;
 	int			nitems;
@@ -220,10 +227,7 @@ array_in(PG_FUNCTION_ARGS)
 		/*
 		 * Get info about element type, including its input conversion proc
 		 */
-		get_type_io_data(element_type, IOFunc_input,
-						 &my_extra->typlen, &my_extra->typbyval,
-						 &my_extra->typalign, &my_extra->typdelim,
-						 &my_extra->typioparam, &my_extra->typiofunc);
+		array_type_metadata(element_type, IOFunc_input, my_extra);
 		fmgr_info_cxt(my_extra->typiofunc, &my_extra->proc,
 					  fcinfo->flinfo->fn_mcxt);
 		my_extra->element_type = element_type;
@@ -231,6 +235,7 @@ array_in(PG_FUNCTION_ARGS)
 	typlen = my_extra->typlen;
 	typbyval = my_extra->typbyval;
 	typalign = my_extra->typalign;
+	typstor = my_extra->typstorage;
 	typdelim = my_extra->typdelim;
 	typioparam = my_extra->typioparam;
 
@@ -326,7 +331,7 @@ array_in(PG_FUNCTION_ARGS)
 			/* let's just make sure data is not toasted */
 			if (typlen == -1)
 				values[i] = PointerGetDatum(PG_DETOAST_DATUM(values[i]));
-			nbytes = att_addlength_datum(nbytes, typlen, values[i]);
+			nbytes = att_addvarsize_datum(nbytes, typlen, typstor, values[i]);
 			nbytes = att_align_nominal(nbytes, typalign);
 			/* check for overflow of total request */
 			if (!AllocSizeIsValid(nbytes))
@@ -366,7 +371,7 @@ array_in(PG_FUNCTION_ARGS)
 
 	CopyArrayEls(retval,
 				 values, nulls, nitems,
-				 typlen, typbyval, typalign,
+				 typlen, typbyval, typalign, typstor,
 				 true);
 
 	pfree(values);
@@ -949,7 +954,7 @@ ending_error:
  * values: array of Datums to be copied
  * nulls: array of is-null flags (can be NULL if no nulls)
  * nitems: number of Datums to be copied
- * typbyval, typlen, typalign: info about element datatype
+ * typbyval, typlen, typalign, typstor: info about element datatype
  * freedata: if true and element type is pass-by-ref, pfree data values
  * referenced by Datums after copying them.
  *
@@ -965,6 +970,7 @@ CopyArrayEls(ArrayType *array,
 			 int typlen,
 			 bool typbyval,
 			 char typalign,
+			 char typstor,
 			 bool freedata)
 {
 	char	   *p = ARR_DATA_PTR(array);
@@ -987,7 +993,8 @@ CopyArrayEls(ArrayType *array,
 		else
 		{
 			bitval |= bitmask;
-			p += ArrayCastAndSet(values[i], typlen, typbyval, typalign, p);
+			p += ArrayCastAndSet(values[i],
+								 typlen, typbyval, typalign, typstor, p);
 			if (freedata)
 				pfree(DatumGetPointer(values[i]));
 		}
@@ -1065,10 +1072,7 @@ array_out(PG_FUNCTION_ARGS)
 		/*
 		 * Get info about element type, including its output conversion proc
 		 */
-		get_type_io_data(element_type, IOFunc_output,
-						 &my_extra->typlen, &my_extra->typbyval,
-						 &my_extra->typalign, &my_extra->typdelim,
-						 &my_extra->typioparam, &my_extra->typiofunc);
+		array_type_metadata(element_type, IOFunc_output, my_extra);
 		fmgr_info_cxt(my_extra->typiofunc, &my_extra->proc,
 					  fcinfo->flinfo->fn_mcxt);
 		my_extra->element_type = element_type;
@@ -1278,6 +1282,7 @@ array_recv(PG_FUNCTION_ARGS)
 	int			typlen;
 	bool		typbyval;
 	char		typalign;
+	char		typstor;
 	Oid			typioparam;
 	int			i,
 				nitems;
@@ -1368,10 +1373,7 @@ array_recv(PG_FUNCTION_ARGS)
 	if (my_extra->element_type != element_type)
 	{
 		/* Get info about element type, including its receive proc */
-		get_type_io_data(element_type, IOFunc_receive,
-						 &my_extra->typlen, &my_extra->typbyval,
-						 &my_extra->typalign, &my_extra->typdelim,
-						 &my_extra->typioparam, &my_extra->typiofunc);
+		array_type_metadata(element_type, IOFunc_receive, my_extra);
 		if (!OidIsValid(my_extra->typiofunc))
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_FUNCTION),
@@ -1391,13 +1393,14 @@ array_recv(PG_FUNCTION_ARGS)
 	typlen = my_extra->typlen;
 	typbyval = my_extra->typbyval;
 	typalign = my_extra->typalign;
+	typstor = my_extra->typstorage;
 	typioparam = my_extra->typioparam;
 
 	dataPtr = (Datum *) palloc(nitems * sizeof(Datum));
 	nullsPtr = (bool *) palloc(nitems * sizeof(bool));
 	ReadArrayBinary(buf, nitems,
 					&my_extra->proc, typioparam, typmod,
-					typlen, typbyval, typalign,
+					typlen, typbyval, typalign, typstor,
 					dataPtr, nullsPtr,
 					&hasnulls, &nbytes);
 	if (hasnulls)
@@ -1420,7 +1423,7 @@ array_recv(PG_FUNCTION_ARGS)
 
 	CopyArrayEls(retval,
 				 dataPtr, nullsPtr, nitems,
-				 typlen, typbyval, typalign,
+				 typlen, typbyval, typalign, typstor,
 				 true);
 
 	pfree(dataPtr);
@@ -1438,7 +1441,7 @@ array_recv(PG_FUNCTION_ARGS)
  *	nitems: total number of array elements (already read).
  *	receiveproc: type-specific receive procedure for element datatype.
  *	typioparam, typmod: auxiliary values to pass to receiveproc.
- *	typlen, typbyval, typalign: storage parameters of element datatype.
+ *	typlen, typbyval, typalign, typstor: storage parameters of element datatype.
  *
  * Outputs:
  *	values[]: filled with converted data values.
@@ -1459,6 +1462,7 @@ ReadArrayBinary(StringInfo buf,
 				int typlen,
 				bool typbyval,
 				char typalign,
+				char typstor,
 				Datum *values,
 				bool *nulls,
 				bool *hasnulls,
@@ -1524,7 +1528,7 @@ ReadArrayBinary(StringInfo buf,
 			/* let's just make sure data is not toasted */
 			if (typlen == -1)
 				values[i] = PointerGetDatum(PG_DETOAST_DATUM(values[i]));
-			totbytes = att_addlength_datum(totbytes, typlen, values[i]);
+			totbytes = att_addvarsize_datum(totbytes, typlen, typstor, values[i]);
 			totbytes = att_align_nominal(totbytes, typalign);
 			/* check for overflow of total request */
 			if (!AllocSizeIsValid(totbytes))
@@ -1578,10 +1582,7 @@ array_send(PG_FUNCTION_ARGS)
 	if (my_extra->element_type != element_type)
 	{
 		/* Get info about element type, including its send proc */
-		get_type_io_data(element_type, IOFunc_send,
-						 &my_extra->typlen, &my_extra->typbyval,
-						 &my_extra->typalign, &my_extra->typdelim,
-						 &my_extra->typioparam, &my_extra->typiofunc);
+		array_type_metadata(element_type, IOFunc_send, my_extra);
 		if (!OidIsValid(my_extra->typiofunc))
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_FUNCTION),
@@ -1811,6 +1812,7 @@ array_cardinality(PG_FUNCTION_ARGS)
  *	elmlen: pg_type.typlen for the array's element type
  *	elmbyval: pg_type.typbyval for the array's element type
  *	elmalign: pg_type.typalign for the array's element type
+ *	elmstor: pg_type.typstorage for the array's element type
  *
  * Outputs:
  *	The return value is the element Datum.
@@ -1824,6 +1826,7 @@ array_get_element(Datum arraydatum,
 				  int elmlen,
 				  bool elmbyval,
 				  char elmalign,
+				  char elmstor,
 				  bool *isNull)
 {
 	int			i,
@@ -1860,6 +1863,7 @@ array_get_element(Datum arraydatum,
 										  elmlen,
 										  elmbyval,
 										  elmalign,
+										  elmstor,
 										  isNull);
 	}
 	else
@@ -1910,7 +1914,7 @@ array_get_element(Datum arraydatum,
 	 */
 	*isNull = false;
 	retptr = array_seek(arraydataptr, 0, arraynullsptr, offset,
-						elmlen, elmbyval, elmalign);
+						elmlen, elmbyval, elmalign, elmstor);
 	return ArrayCast(retptr, elmbyval, elmlen);
 }
 
@@ -1921,7 +1925,8 @@ static Datum
 array_get_element_expanded(Datum arraydatum,
 						   int nSubscripts, int *indx,
 						   int arraytyplen,
-						   int elmlen, bool elmbyval, char elmalign,
+						   int elmlen, bool elmbyval,
+						   char elmalign, char typstor,
 						   bool *isNull)
 {
 	ExpandedArrayHeader *eah;
@@ -1941,6 +1946,7 @@ array_get_element_expanded(Datum arraydatum,
 	Assert(elmlen == eah->typlen);
 	Assert(elmbyval == eah->typbyval);
 	Assert(elmalign == eah->typalign);
+	Assert(typstor == eah->typstorage);
 
 	ndim = eah->ndims;
 	dim = eah->dims;
@@ -2015,6 +2021,7 @@ array_get_element_expanded(Datum arraydatum,
  *	elmlen: pg_type.typlen for the array's element type
  *	elmbyval: pg_type.typbyval for the array's element type
  *	elmalign: pg_type.typalign for the array's element type
+ *	elmstor: pg_type.typstorage for the array's element type
  *
  * Outputs:
  *	The return value is the new array Datum (it's never NULL)
@@ -2036,7 +2043,8 @@ array_get_slice(Datum arraydatum,
 				int arraytyplen,
 				int elmlen,
 				bool elmbyval,
-				char elmalign)
+				char elmalign,
+				char elmstor)
 {
 	ArrayType  *array;
 	ArrayType  *newarray;
@@ -2124,7 +2132,7 @@ array_get_slice(Datum arraydatum,
 	bytes = array_slice_size(arraydataptr, arraynullsptr,
 							 ndim, dim, lb,
 							 lowerIndx, upperIndx,
-							 elmlen, elmbyval, elmalign);
+							 elmlen, elmbyval, elmalign, elmstor);
 
 	/*
 	 * Currently, we put a null bitmap in the result if the source has one;
@@ -2160,7 +2168,7 @@ array_get_slice(Datum arraydatum,
 						ndim, dim, lb,
 						arraydataptr, arraynullsptr,
 						lowerIndx, upperIndx,
-						elmlen, elmbyval, elmalign);
+						elmlen, elmbyval, elmalign, elmstor);
 
 	return PointerGetDatum(newarray);
 }
@@ -2182,6 +2190,7 @@ array_get_slice(Datum arraydatum,
  *	elmlen: pg_type.typlen for the array's element type
  *	elmbyval: pg_type.typbyval for the array's element type
  *	elmalign: pg_type.typalign for the array's element type
+ *	elmstor: pg_type.typstorage for the array's element type
  *
  * Result:
  *		  A new array is returned, just like the old except for the one
@@ -2206,7 +2215,8 @@ array_set_element(Datum arraydatum,
 				  int arraytyplen,
 				  int elmlen,
 				  bool elmbyval,
-				  char elmalign)
+				  char elmalign,
+				  char elmstor)
 {
 	ArrayType  *array;
 	ArrayType  *newarray;
@@ -2257,7 +2267,7 @@ array_set_element(Datum arraydatum,
 		resultarray = (char *) palloc(arraytyplen);
 		memcpy(resultarray, DatumGetPointer(arraydatum), arraytyplen);
 		elt_ptr = (char *) resultarray + indx[0] * elmlen;
-		ArrayCastAndSet(dataValue, elmlen, elmbyval, elmalign, elt_ptr);
+		ArrayCastAndSet(dataValue, elmlen, elmbyval, elmalign, elmstor, elt_ptr);
 		return PointerGetDatum(resultarray);
 	}
 
@@ -2281,7 +2291,8 @@ array_set_element(Datum arraydatum,
 										  arraytyplen,
 										  elmlen,
 										  elmbyval,
-										  elmalign);
+										  elmalign,
+										  elmstor);
 	}
 
 	/* detoast input array if necessary */
@@ -2307,7 +2318,8 @@ array_set_element(Datum arraydatum,
 		return PointerGetDatum(construct_md_array(&dataValue, &isNull,
 												  nSubscripts, dim, lb,
 												  elmtype,
-												  elmlen, elmbyval, elmalign));
+												  elmlen, elmbyval,
+												  elmalign, elmstor));
 	}
 
 	if (ndim != nSubscripts)
@@ -2408,13 +2420,13 @@ array_set_element(Datum arraydatum,
 	{
 		offset = ArrayGetOffset(nSubscripts, dim, lb, indx);
 		elt_ptr = array_seek(ARR_DATA_PTR(array), 0, oldnullbitmap, offset,
-							 elmlen, elmbyval, elmalign);
+							 elmlen, elmbyval, elmalign, elmstor);
 		lenbefore = (int) (elt_ptr - ARR_DATA_PTR(array));
 		if (array_get_isnull(oldnullbitmap, offset))
 			olditemlen = 0;
 		else
 		{
-			olditemlen = att_addlength_pointer(0, elmlen, elt_ptr);
+			olditemlen = att_addvarsize_pointer(0, elmlen, elmstor, elt_ptr);
 			olditemlen = att_align_nominal(olditemlen, elmalign);
 		}
 		lenafter = (int) (olddatasize - lenbefore - olditemlen);
@@ -2424,7 +2436,7 @@ array_set_element(Datum arraydatum,
 		newitemlen = 0;
 	else
 	{
-		newitemlen = att_addlength_datum(0, elmlen, dataValue);
+		newitemlen = att_addvarsize_datum(0, elmlen, elmstor, dataValue);
 		newitemlen = att_align_nominal(newitemlen, elmalign);
 	}
 
@@ -2448,7 +2460,7 @@ array_set_element(Datum arraydatum,
 		   (char *) array + oldoverheadlen,
 		   lenbefore);
 	if (!isNull)
-		ArrayCastAndSet(dataValue, elmlen, elmbyval, elmalign,
+		ArrayCastAndSet(dataValue, elmlen, elmbyval, elmalign, elmstor,
 						(char *) newarray + overheadlen + lenbefore);
 	memcpy((char *) newarray + overheadlen + lenbefore + newitemlen,
 		   (char *) array + oldoverheadlen + lenbefore + olditemlen,
@@ -2502,7 +2514,8 @@ array_set_element_expanded(Datum arraydatum,
 						   int nSubscripts, int *indx,
 						   Datum dataValue, bool isNull,
 						   int arraytyplen,
-						   int elmlen, bool elmbyval, char elmalign)
+						   int elmlen, bool elmbyval,
+						   char elmalign, char typstor)
 {
 	ExpandedArrayHeader *eah;
 	Datum	   *dvalues;
@@ -2526,6 +2539,7 @@ array_set_element_expanded(Datum arraydatum,
 	Assert(elmlen == eah->typlen);
 	Assert(elmbyval == eah->typbyval);
 	Assert(elmalign == eah->typalign);
+	Assert(typstor == eah->typstorage);
 
 	/*
 	 * Copy dimension info into local storage.  This allows us to modify the
@@ -2782,6 +2796,7 @@ array_set_element_expanded(Datum arraydatum,
  *	elmlen: pg_type.typlen for the array's element type
  *	elmbyval: pg_type.typbyval for the array's element type
  *	elmalign: pg_type.typalign for the array's element type
+ *	elmstor: pg_type.typstorage for the array's element type
  *
  * Result:
  *		  A new array is returned, just like the old except for the
@@ -2814,7 +2829,8 @@ array_set_slice(Datum arraydatum,
 				int arraytyplen,
 				int elmlen,
 				bool elmbyval,
-				char elmalign)
+				char elmalign,
+				char elmstor)
 {
 	ArrayType  *array;
 	ArrayType  *srcArray;
@@ -2875,7 +2891,7 @@ array_set_slice(Datum arraydatum,
 		int			nelems;
 		Oid			elmtype = ARR_ELEMTYPE(array);
 
-		deconstruct_array(srcArray, elmtype, elmlen, elmbyval, elmalign,
+		deconstruct_array(srcArray, elmtype, elmlen, elmbyval, elmalign, elmstor,
 						  &dvalues, &dnulls, &nelems);
 
 		for (i = 0; i < nSubscripts; i++)
@@ -2906,7 +2922,8 @@ array_set_slice(Datum arraydatum,
 
 		return PointerGetDatum(construct_md_array(dvalues, dnulls, nSubscripts,
 												  dim, lb, elmtype,
-												  elmlen, elmbyval, elmalign));
+												  elmlen, elmbyval,
+												  elmalign, elmstor));
 	}
 
 	if (ndim < nSubscripts || ndim <= 0 || ndim > MAXDIM)
@@ -3026,7 +3043,7 @@ array_set_slice(Datum arraydatum,
 		overheadlen = ARR_OVERHEAD_NONULLS(ndim);
 	newitemsize = array_nelems_size(ARR_DATA_PTR(srcArray), 0,
 									ARR_NULLBITMAP(srcArray), nsrcitems,
-									elmlen, elmbyval, elmalign);
+									elmlen, elmbyval, elmalign, elmstor);
 	oldoverheadlen = ARR_DATA_OFFSET(array);
 	olddatasize = ARR_SIZE(array) - oldoverheadlen;
 	if (ndim > 1)
@@ -3039,7 +3056,7 @@ array_set_slice(Datum arraydatum,
 									   ARR_NULLBITMAP(array),
 									   ndim, dim, lb,
 									   lowerIndx, upperIndx,
-									   elmlen, elmbyval, elmalign);
+									   elmlen, elmbyval, elmalign, elmstor);
 		lenbefore = lenafter = 0;	/* keep compiler quiet */
 		itemsbefore = itemsafter = nolditems = 0;
 	}
@@ -3060,7 +3077,7 @@ array_set_slice(Datum arraydatum,
 		itemsbefore = Min(slicelb, oldub + 1) - oldlb;
 		lenbefore = array_nelems_size(oldarraydata, 0, oldarraybitmap,
 									  itemsbefore,
-									  elmlen, elmbyval, elmalign);
+									  elmlen, elmbyval, elmalign, elmstor);
 		/* count/size of old array entries that will be replaced by slice */
 		if (slicelb > sliceub)
 		{
@@ -3073,7 +3090,7 @@ array_set_slice(Datum arraydatum,
 			olditemsize = array_nelems_size(oldarraydata + lenbefore,
 											itemsbefore, oldarraybitmap,
 											nolditems,
-											elmlen, elmbyval, elmalign);
+											elmlen, elmbyval, elmalign, elmstor);
 		}
 		/* count/size of old array entries that will go after the slice */
 		itemsafter = oldub + 1 - Max(sliceub + 1, oldlb);
@@ -3099,7 +3116,7 @@ array_set_slice(Datum arraydatum,
 		array_insert_slice(newarray, array, srcArray,
 						   ndim, dim, lb,
 						   lowerIndx, upperIndx,
-						   elmlen, elmbyval, elmalign);
+						   elmlen, elmbyval, elmalign, elmstor);
 	}
 	else
 	{
@@ -3144,11 +3161,11 @@ array_set_slice(Datum arraydatum,
  */
 Datum
 array_ref(ArrayType *array, int nSubscripts, int *indx,
-		  int arraytyplen, int elmlen, bool elmbyval, char elmalign,
-		  bool *isNull)
+		  int arraytyplen, int elmlen, bool elmbyval,
+		  char elmalign, char elmstor, bool *isNull)
 {
 	return array_get_element(PointerGetDatum(array), nSubscripts, indx,
-							 arraytyplen, elmlen, elmbyval, elmalign,
+							 arraytyplen, elmlen, elmbyval, elmalign, elmstor,
 							 isNull);
 }
 
@@ -3161,14 +3178,15 @@ array_ref(ArrayType *array, int nSubscripts, int *indx,
  */
 ArrayType *
 array_set(ArrayType *array, int nSubscripts, int *indx,
-		  Datum dataValue, bool isNull,
-		  int arraytyplen, int elmlen, bool elmbyval, char elmalign)
+		  Datum dataValue, bool isNull, int arraytyplen,
+		  int elmlen, bool elmbyval, char elmalign, char elmstor)
 {
 	return DatumGetArrayTypeP(array_set_element(PointerGetDatum(array),
 												nSubscripts, indx,
 												dataValue, isNull,
 												arraytyplen,
-												elmlen, elmbyval, elmalign));
+												elmlen, elmbyval,
+												elmalign, elmstor));
 }
 
 /*
@@ -3220,6 +3238,7 @@ array_map(Datum arrayd,
 	int			typlen;
 	bool		typbyval;
 	char		typalign;
+	char		typstor;
 	array_iter	iter;
 	ArrayMetaState *inp_extra;
 	ArrayMetaState *ret_extra;
@@ -3260,15 +3279,17 @@ array_map(Datum arrayd,
 
 	if (ret_extra->element_type != retType)
 	{
-		get_typlenbyvalalign(retType,
-							 &ret_extra->typlen,
-							 &ret_extra->typbyval,
-							 &ret_extra->typalign);
+		get_type_stores(retType,
+						&ret_extra->typlen,
+						&ret_extra->typbyval,
+						&ret_extra->typalign,
+						&ret_extra->typstorage);
 		ret_extra->element_type = retType;
 	}
 	typlen = ret_extra->typlen;
 	typbyval = ret_extra->typbyval;
 	typalign = ret_extra->typalign;
+	typstor = ret_extra->typstorage;
 
 	/* Allocate temporary arrays for new values */
 	values = (Datum *) palloc(nitems * sizeof(Datum));
@@ -3296,7 +3317,7 @@ array_map(Datum arrayd,
 			if (typlen == -1)
 				values[i] = PointerGetDatum(PG_DETOAST_DATUM(values[i]));
 			/* Update total result size */
-			nbytes = att_addlength_datum(nbytes, typlen, values[i]);
+			nbytes = att_addvarsize_datum(nbytes, typlen, typstor, values[i]);
 			nbytes = att_align_nominal(nbytes, typalign);
 			/* check for overflow of total request */
 			if (!AllocSizeIsValid(nbytes))
@@ -3328,7 +3349,7 @@ array_map(Datum arrayd,
 
 	CopyArrayEls(result,
 				 values, nulls, nitems,
-				 typlen, typbyval, typalign,
+				 typlen, typbyval, typalign, typstor,
 				 false);
 
 	/*
@@ -3346,7 +3367,8 @@ array_map(Datum arrayd,
  * elems: array of Datum items to become the array contents
  *		  (NULL element values are not supported).
  * nelems: number of items
- * elmtype, elmlen, elmbyval, elmalign: info for the datatype of the items
+ * elmtype, elmlen, elmbyval, elmalign, elmstor:
+ * 		  info for the datatype of the items
  *
  * A palloc'd 1-D array object is constructed and returned.  Note that
  * elem values will be copied into the object even if pass-by-ref type.
@@ -3360,7 +3382,7 @@ array_map(Datum arrayd,
 ArrayType *
 construct_array(Datum *elems, int nelems,
 				Oid elmtype,
-				int elmlen, bool elmbyval, char elmalign)
+				int elmlen, bool elmbyval, char elmalign, char elmstor)
 {
 	int			dims[1];
 	int			lbs[1];
@@ -3369,13 +3391,13 @@ construct_array(Datum *elems, int nelems,
 	lbs[0] = 1;
 
 	return construct_md_array(elems, NULL, 1, dims, lbs,
-							  elmtype, elmlen, elmbyval, elmalign);
+							  elmtype, elmlen, elmbyval, elmalign, elmstor);
 }
 
 /*
  * Like construct_array(), where elmtype must be a built-in type, and
- * elmlen/elmbyval/elmalign is looked up from hardcoded data.  This is often
- * useful when manipulating arrays from/for system catalogs.
+ * elmlen/elmbyval/elmalign/elmstor is looked up from hardcoded data.
+ * This is often useful when manipulating arrays from/for system catalogs.
  */
 ArrayType *
 construct_array_builtin(Datum *elems, int nelems, Oid elmtype)
@@ -3383,6 +3405,7 @@ construct_array_builtin(Datum *elems, int nelems, Oid elmtype)
 	int			elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 
 	switch (elmtype)
 	{
@@ -3390,48 +3413,56 @@ construct_array_builtin(Datum *elems, int nelems, Oid elmtype)
 			elmlen = 1;
 			elmbyval = true;
 			elmalign = TYPALIGN_CHAR;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case CSTRINGOID:
 			elmlen = -2;
 			elmbyval = false;
 			elmalign = TYPALIGN_CHAR;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case FLOAT4OID:
 			elmlen = sizeof(float4);
 			elmbyval = true;
 			elmalign = TYPALIGN_INT;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case FLOAT8OID:
 			elmlen = sizeof(float8);
 			elmbyval = FLOAT8PASSBYVAL;
 			elmalign = TYPALIGN_DOUBLE;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case INT2OID:
 			elmlen = sizeof(int16);
 			elmbyval = true;
 			elmalign = TYPALIGN_SHORT;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case INT4OID:
 			elmlen = sizeof(int32);
 			elmbyval = true;
 			elmalign = TYPALIGN_INT;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case INT8OID:
 			elmlen = sizeof(int64);
 			elmbyval = FLOAT8PASSBYVAL;
 			elmalign = TYPALIGN_DOUBLE;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case NAMEOID:
 			elmlen = NAMEDATALEN;
 			elmbyval = false;
 			elmalign = TYPALIGN_CHAR;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case OIDOID:
@@ -3439,24 +3470,28 @@ construct_array_builtin(Datum *elems, int nelems, Oid elmtype)
 			elmlen = sizeof(Oid);
 			elmbyval = true;
 			elmalign = TYPALIGN_INT;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case TEXTOID:
 			elmlen = -1;
 			elmbyval = false;
 			elmalign = TYPALIGN_INT;
+			elmstor = TYPSTORAGE_EXTENDED;
 			break;
 
 		case TIDOID:
 			elmlen = sizeof(ItemPointerData);
 			elmbyval = false;
 			elmalign = TYPALIGN_SHORT;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case XIDOID:
 			elmlen = sizeof(TransactionId);
 			elmbyval = true;
 			elmalign = TYPALIGN_INT;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		default:
@@ -3465,9 +3500,11 @@ construct_array_builtin(Datum *elems, int nelems, Oid elmtype)
 			elmlen = 0;
 			elmbyval = false;
 			elmalign = 0;
+			elmstor = 0;
 	}
 
-	return construct_array(elems, nelems, elmtype, elmlen, elmbyval, elmalign);
+	return construct_array(elems, nelems, elmtype, elmlen, elmbyval,
+						   elmalign, elmstor);
 }
 
 /*
@@ -3479,7 +3516,8 @@ construct_array_builtin(Datum *elems, int nelems, Oid elmtype)
  * ndims: number of dimensions
  * dims: integer array with size of each dimension
  * lbs: integer array with lower bound of each dimension
- * elmtype, elmlen, elmbyval, elmalign: info for the datatype of the items
+ * elmtype, elmlen, elmbyval, elmalign, elmstor:
+ * 		  info for the datatype of the items
  *
  * A palloc'd ndims-D array object is constructed and returned.  Note that
  * elem values will be copied into the object even if pass-by-ref type.
@@ -3496,7 +3534,8 @@ construct_md_array(Datum *elems,
 				   int ndims,
 				   int *dims,
 				   int *lbs,
-				   Oid elmtype, int elmlen, bool elmbyval, char elmalign)
+				   Oid elmtype, int elmlen, bool elmbyval,
+				   char elmalign, char elmstor)
 {
 	ArrayType  *result;
 	bool		hasnulls;
@@ -3536,7 +3575,7 @@ construct_md_array(Datum *elems,
 		/* make sure data is not toasted */
 		if (elmlen == -1)
 			elems[i] = PointerGetDatum(PG_DETOAST_DATUM(elems[i]));
-		nbytes = att_addlength_datum(nbytes, elmlen, elems[i]);
+		nbytes = att_addvarsize_datum(nbytes, elmlen, elmstor, elems[i]);
 		nbytes = att_align_nominal(nbytes, elmalign);
 		/* check for overflow of total request */
 		if (!AllocSizeIsValid(nbytes))
@@ -3567,7 +3606,7 @@ construct_md_array(Datum *elems,
 
 	CopyArrayEls(result,
 				 elems, nulls, nelems,
-				 elmlen, elmbyval, elmalign,
+				 elmlen, elmbyval, elmalign, elmstor,
 				 false);
 
 	return result;
@@ -3610,7 +3649,8 @@ construct_empty_expanded_array(Oid element_type,
  * deconstruct_array  --- simple method for extracting data from an array
  *
  * array: array object to examine (must not be NULL)
- * elmtype, elmlen, elmbyval, elmalign: info for the datatype of the items
+ * elmtype, elmlen, elmbyval, elmalign, elmstor:
+ * 		  info for the datatype of the items
  * elemsp: return value, set to point to palloc'd array of Datum values
  * nullsp: return value, set to point to palloc'd array of isnull markers
  * nelemsp: return value, set to number of extracted values
@@ -3622,15 +3662,15 @@ construct_empty_expanded_array(Oid element_type,
  * If array elements are pass-by-ref data type, the returned Datums will
  * be pointers into the array object.
  *
- * NOTE: it would be cleaner to look up the elmlen/elmbval/elmalign info
- * from the system catalogs, given the elmtype.  However, the caller is
+ * NOTE: it would be cleaner to look up the elmlen/elmbval/elmalign/elmstor
+ * info from the system catalogs, given the elmtype.  However, the caller is
  * in a better position to cache this info across multiple uses, or even
  * to hard-wire values if the element type is hard-wired.
  */
 void
 deconstruct_array(ArrayType *array,
 				  Oid elmtype,
-				  int elmlen, bool elmbyval, char elmalign,
+				  int elmlen, bool elmbyval, char elmalign, char elmstor,
 				  Datum **elemsp, bool **nullsp, int *nelemsp)
 {
 	Datum	   *elems;
@@ -3701,6 +3741,7 @@ deconstruct_array_builtin(ArrayType *array,
 	int			elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 
 	switch (elmtype)
 	{
@@ -3708,42 +3749,49 @@ deconstruct_array_builtin(ArrayType *array,
 			elmlen = 1;
 			elmbyval = true;
 			elmalign = TYPALIGN_CHAR;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case CSTRINGOID:
 			elmlen = -2;
 			elmbyval = false;
 			elmalign = TYPALIGN_CHAR;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case FLOAT8OID:
 			elmlen = sizeof(float8);
 			elmbyval = FLOAT8PASSBYVAL;
 			elmalign = TYPALIGN_DOUBLE;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case INT2OID:
 			elmlen = sizeof(int16);
 			elmbyval = true;
 			elmalign = TYPALIGN_SHORT;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case OIDOID:
 			elmlen = sizeof(Oid);
 			elmbyval = true;
 			elmalign = TYPALIGN_INT;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		case TEXTOID:
 			elmlen = -1;
 			elmbyval = false;
 			elmalign = TYPALIGN_INT;
+			elmstor = TYPSTORAGE_EXTENDED;
 			break;
 
 		case TIDOID:
 			elmlen = sizeof(ItemPointerData);
 			elmbyval = false;
 			elmalign = TYPALIGN_SHORT;
+			elmstor = TYPSTORAGE_PLAIN;
 			break;
 
 		default:
@@ -3752,9 +3800,11 @@ deconstruct_array_builtin(ArrayType *array,
 			elmlen = 0;
 			elmbyval = false;
 			elmalign = 0;
+			elmstor = 0;
 	}
 
-	deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign, elemsp, nullsp, nelemsp);
+	deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign, elmstor,
+					  elemsp, nullsp, nelemsp);
 }
 
 /*
@@ -4215,6 +4265,7 @@ hash_array(PG_FUNCTION_ARGS)
 			record_typentry->typlen = typentry->typlen;
 			record_typentry->typbyval = typentry->typbyval;
 			record_typentry->typalign = typentry->typalign;
+			record_typentry->typstorage = typentry->typstorage;
 			fmgr_info(F_HASH_RECORD, &record_typentry->hash_proc_finfo);
 
 			MemoryContextSwitchTo(oldcontext);
@@ -4392,6 +4443,7 @@ array_contain_compare(AnyArrayType *array1, AnyArrayType *array2, Oid collation,
 	int			typlen;
 	bool		typbyval;
 	char		typalign;
+	char		typstor;
 	int			i;
 	int			j;
 	array_iter	it1;
@@ -4423,6 +4475,7 @@ array_contain_compare(AnyArrayType *array1, AnyArrayType *array2, Oid collation,
 	typlen = typentry->typlen;
 	typbyval = typentry->typbyval;
 	typalign = typentry->typalign;
+	typstor = typentry->typstorage;
 
 	/*
 	 * Since we probably will need to scan array2 multiple times, it's
@@ -4439,7 +4492,7 @@ array_contain_compare(AnyArrayType *array1, AnyArrayType *array2, Oid collation,
 	}
 	else
 		deconstruct_array((ArrayType *) array2,
-						  element_type, typlen, typbyval, typalign,
+						  element_type, typlen, typbyval, typalign, typstor,
 						  &values2, &nulls2, &nelems2);
 
 	/*
@@ -4619,12 +4672,14 @@ array_create_iterator(ArrayType *arr, int slice_ndim, ArrayMetaState *mstate)
 		iterator->typlen = mstate->typlen;
 		iterator->typbyval = mstate->typbyval;
 		iterator->typalign = mstate->typalign;
+		iterator->typstorage = mstate->typstorage;
 	}
 	else
-		get_typlenbyvalalign(ARR_ELEMTYPE(arr),
-							 &iterator->typlen,
-							 &iterator->typbyval,
-							 &iterator->typalign);
+		get_type_stores(ARR_ELEMTYPE(arr),
+						&iterator->typlen,
+						&iterator->typbyval,
+						&iterator->typalign,
+						&iterator->typstorage);
 
 	/*
 	 * Remember the slicing parameters.
@@ -4743,7 +4798,8 @@ array_iterate(ArrayIterator iterator, Datum *value, bool *isnull)
 									ARR_ELEMTYPE(iterator->arr),
 									iterator->typlen,
 									iterator->typbyval,
-									iterator->typalign);
+									iterator->typalign,
+									iterator->typstorage);
 
 		*isnull = false;
 		*value = PointerGetDatum(result);
@@ -4828,6 +4884,7 @@ ArrayCastAndSet(Datum src,
 				int typlen,
 				bool typbyval,
 				char typalign,
+				char typstor,
 				char *dest)
 {
 	int			inc;
@@ -4839,6 +4896,14 @@ ArrayCastAndSet(Datum src,
 		else
 			memmove(dest, DatumGetPointer(src), typlen);
 		inc = att_align_nominal(typlen, typalign);
+	}
+	else if (TYPE_IS_PACKABLE(typlen, typstor) && VARATT_CAN_MAKE_SHORT(src))
+	{
+		Assert(!typbyval);
+		inc = VARATT_CONVERTED_SHORT_SIZE(src);
+		SET_VARSIZE_SHORT(dest, inc);
+		memcpy(dest + 1, VARDATA(DatumGetPointer(src)), inc - 1);
+		inc = att_align_nominal(inc, typalign);
 	}
 	else
 	{
@@ -4858,13 +4923,14 @@ ArrayCastAndSet(Datum src,
  * offset: 0-based linear element number of first element (the one at *ptr)
  * nullbitmap: start of array's null bitmap, or NULL if none
  * nitems: number of array elements to advance over (>= 0)
- * typlen, typbyval, typalign: storage parameters of array element datatype
+ * typlen, typbyval, typalign, typstor:
+ * 			storage parameters of array element datatype
  *
  * It is caller's responsibility to ensure that nitems is within range
  */
 static char *
 array_seek(char *ptr, int offset, bits8 *nullbitmap, int nitems,
-		   int typlen, bool typbyval, char typalign)
+		   int typlen, bool typbyval, char typalign, char typstor)
 {
 	int			bitmask;
 	int			i;
@@ -4883,7 +4949,7 @@ array_seek(char *ptr, int offset, bits8 *nullbitmap, int nitems,
 		{
 			if (*nullbitmap & bitmask)
 			{
-				ptr = att_addlength_pointer(ptr, typlen, ptr);
+				ptr = att_addvarsize_pointer(ptr, typlen, typstor, ptr);
 				ptr = (char *) att_align_nominal(ptr, typalign);
 			}
 			bitmask <<= 1;
@@ -4898,7 +4964,7 @@ array_seek(char *ptr, int offset, bits8 *nullbitmap, int nitems,
 	{
 		for (i = 0; i < nitems; i++)
 		{
-			ptr = att_addlength_pointer(ptr, typlen, ptr);
+			ptr = att_addvarsize_pointer(ptr, typlen, typstor, ptr);
 			ptr = (char *) att_align_nominal(ptr, typalign);
 		}
 	}
@@ -4912,10 +4978,10 @@ array_seek(char *ptr, int offset, bits8 *nullbitmap, int nitems,
  */
 static int
 array_nelems_size(char *ptr, int offset, bits8 *nullbitmap, int nitems,
-				  int typlen, bool typbyval, char typalign)
+				  int typlen, bool typbyval, char typalign, char typstor)
 {
 	return array_seek(ptr, offset, nullbitmap, nitems,
-					  typlen, typbyval, typalign) - ptr;
+					  typlen, typbyval, typalign, typstor) - ptr;
 }
 
 /*
@@ -4926,7 +4992,8 @@ array_nelems_size(char *ptr, int offset, bits8 *nullbitmap, int nitems,
  * srcptr: starting location in source array
  * offset: 0-based linear element number of first element (the one at *srcptr)
  * nullbitmap: start of source array's null bitmap, or NULL if none
- * typlen, typbyval, typalign: storage parameters of array element datatype
+ * typlen, typbyval, typalign, typstor:
+ * 			storage parameters of array element datatype
  *
  * Returns number of bytes copied
  *
@@ -4935,12 +5002,12 @@ array_nelems_size(char *ptr, int offset, bits8 *nullbitmap, int nitems,
 static int
 array_copy(char *destptr, int nitems,
 		   char *srcptr, int offset, bits8 *nullbitmap,
-		   int typlen, bool typbyval, char typalign)
+		   int typlen, bool typbyval, char typalign, char typstor)
 {
 	int			numbytes;
 
 	numbytes = array_nelems_size(srcptr, offset, nullbitmap, nitems,
-								 typlen, typbyval, typalign);
+								 typlen, typbyval, typalign, typstor);
 	memcpy(destptr, srcptr, numbytes);
 	return numbytes;
 }
@@ -5037,7 +5104,7 @@ static int
 array_slice_size(char *arraydataptr, bits8 *arraynullsptr,
 				 int ndim, int *dim, int *lb,
 				 int *st, int *endp,
-				 int typlen, bool typbyval, char typalign)
+				 int typlen, bool typbyval, char typalign, char typstor)
 {
 	int			src_offset,
 				span[MAXDIM],
@@ -5059,7 +5126,7 @@ array_slice_size(char *arraydataptr, bits8 *arraynullsptr,
 	/* Else gotta do it the hard way */
 	src_offset = ArrayGetOffset(ndim, dim, lb, st);
 	ptr = array_seek(arraydataptr, 0, arraynullsptr, src_offset,
-					 typlen, typbyval, typalign);
+					 typlen, typbyval, typalign, typstor);
 	mda_get_prod(ndim, dim, prod);
 	mda_get_offset_values(ndim, dist, prod, span);
 	for (i = 0; i < ndim; i++)
@@ -5070,12 +5137,12 @@ array_slice_size(char *arraydataptr, bits8 *arraynullsptr,
 		if (dist[j])
 		{
 			ptr = array_seek(ptr, src_offset, arraynullsptr, dist[j],
-							 typlen, typbyval, typalign);
+							 typlen, typbyval, typalign, typstor);
 			src_offset += dist[j];
 		}
 		if (!array_get_isnull(arraynullsptr, src_offset))
 		{
-			inc = att_addlength_pointer(0, typlen, ptr);
+			inc = att_addvarsize_pointer(0, typlen, typstor, ptr);
 			inc = att_align_nominal(inc, typalign);
 			ptr += inc;
 			count += inc;
@@ -5104,7 +5171,8 @@ array_extract_slice(ArrayType *newarray,
 					int *endp,
 					int typlen,
 					bool typbyval,
-					char typalign)
+					char typalign,
+					char typstor)
 {
 	char	   *destdataptr = ARR_DATA_PTR(newarray);
 	bits8	   *destnullsptr = ARR_NULLBITMAP(newarray);
@@ -5121,7 +5189,7 @@ array_extract_slice(ArrayType *newarray,
 
 	src_offset = ArrayGetOffset(ndim, dim, lb, st);
 	srcdataptr = array_seek(arraydataptr, 0, arraynullsptr, src_offset,
-							typlen, typbyval, typalign);
+							typlen, typbyval, typalign, typstor);
 	mda_get_prod(ndim, dim, prod);
 	mda_get_range(ndim, span, st, endp);
 	mda_get_offset_values(ndim, dist, prod, span);
@@ -5136,12 +5204,12 @@ array_extract_slice(ArrayType *newarray,
 			/* skip unwanted elements */
 			srcdataptr = array_seek(srcdataptr, src_offset, arraynullsptr,
 									dist[j],
-									typlen, typbyval, typalign);
+									typlen, typbyval, typalign, typstor);
 			src_offset += dist[j];
 		}
 		inc = array_copy(destdataptr, 1,
 						 srcdataptr, src_offset, arraynullsptr,
-						 typlen, typbyval, typalign);
+						 typlen, typbyval, typalign, typstor);
 		if (destnullsptr)
 			array_bitmap_copy(destnullsptr, dest_offset,
 							  arraynullsptr, src_offset,
@@ -5177,7 +5245,8 @@ array_insert_slice(ArrayType *destArray,
 				   int *endp,
 				   int typlen,
 				   bool typbyval,
-				   char typalign)
+				   char typalign,
+				   char typstor)
 {
 	char	   *destPtr = ARR_DATA_PTR(destArray);
 	char	   *origPtr = ARR_DATA_PTR(origArray);
@@ -5202,7 +5271,7 @@ array_insert_slice(ArrayType *destArray,
 	/* copy items before the slice start */
 	inc = array_copy(destPtr, dest_offset,
 					 origPtr, 0, origBitmap,
-					 typlen, typbyval, typalign);
+					 typlen, typbyval, typalign, typstor);
 	destPtr += inc;
 	origPtr += inc;
 	if (destBitmap)
@@ -5222,7 +5291,7 @@ array_insert_slice(ArrayType *destArray,
 		{
 			inc = array_copy(destPtr, dist[j],
 							 origPtr, orig_offset, origBitmap,
-							 typlen, typbyval, typalign);
+							 typlen, typbyval, typalign, typstor);
 			destPtr += inc;
 			origPtr += inc;
 			if (destBitmap)
@@ -5235,7 +5304,7 @@ array_insert_slice(ArrayType *destArray,
 		/* Copy new element at this slice position */
 		inc = array_copy(destPtr, 1,
 						 srcPtr, src_offset, srcBitmap,
-						 typlen, typbyval, typalign);
+						 typlen, typbyval, typalign, typstor);
 		if (destBitmap)
 			array_bitmap_copy(destBitmap, dest_offset,
 							  srcBitmap, src_offset,
@@ -5246,14 +5315,14 @@ array_insert_slice(ArrayType *destArray,
 		src_offset++;
 		/* Advance over old element at this slice position */
 		origPtr = array_seek(origPtr, orig_offset, origBitmap, 1,
-							 typlen, typbyval, typalign);
+							 typlen, typbyval, typalign, typstor);
 		orig_offset++;
 	} while ((j = mda_next_tuple(ndim, indx, span)) != -1);
 
 	/* don't miss any data at the end */
 	array_copy(destPtr, orignitems - orig_offset,
 			   origPtr, orig_offset, origBitmap,
-			   typlen, typbyval, typalign);
+			   typlen, typbyval, typalign, typstor);
 	if (destBitmap)
 		array_bitmap_copy(destBitmap, dest_offset,
 						  origBitmap, orig_offset,
@@ -5330,10 +5399,11 @@ initArrayResultWithSize(Oid element_type, MemoryContext rcontext,
 		MemoryContextAlloc(arr_context, astate->alen * sizeof(bool));
 	astate->nelems = 0;
 	astate->element_type = element_type;
-	get_typlenbyvalalign(element_type,
-						 &astate->typlen,
-						 &astate->typbyval,
-						 &astate->typalign);
+	get_type_stores(element_type,
+					&astate->typlen,
+					&astate->typbyval,
+					&astate->typalign,
+					&astate->typstorage);
 
 	return astate;
 }
@@ -5470,7 +5540,8 @@ makeMdArrayResult(ArrayBuildState *astate,
 								astate->element_type,
 								astate->typlen,
 								astate->typbyval,
-								astate->typalign);
+								astate->typalign,
+								astate->typstorage);
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -6093,6 +6164,7 @@ array_fill_internal(ArrayType *dims, ArrayType *lbs,
 	int16		elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 	ArrayMetaState *my_extra;
 
 	/*
@@ -6177,16 +6249,18 @@ array_fill_internal(ArrayType *dims, ArrayType *lbs,
 	if (my_extra->element_type != elmtype)
 	{
 		/* Get info about element type */
-		get_typlenbyvalalign(elmtype,
-							 &my_extra->typlen,
-							 &my_extra->typbyval,
-							 &my_extra->typalign);
+		get_type_stores(elmtype,
+						&my_extra->typlen,
+						&my_extra->typbyval,
+						&my_extra->typalign,
+						&my_extra->typstorage);
 		my_extra->element_type = elmtype;
 	}
 
 	elmlen = my_extra->typlen;
 	elmbyval = my_extra->typbyval;
 	elmalign = my_extra->typalign;
+	elmstor = my_extra->typstorage;
 
 	/* compute required space */
 	if (!isnull)
@@ -6225,7 +6299,7 @@ array_fill_internal(ArrayType *dims, ArrayType *lbs,
 
 		p = ARR_DATA_PTR(result);
 		for (i = 0; i < nitems; i++)
-			p += ArrayCastAndSet(value, elmlen, elmbyval, elmalign, p);
+			p += ArrayCastAndSet(value, elmlen, elmbyval, elmalign, elmstor, p);
 	}
 	else
 	{
@@ -6398,6 +6472,7 @@ array_replace_internal(ArrayType *array,
 	int			typlen;
 	bool		typbyval;
 	char		typalign;
+	char		typstor;
 	char	   *arraydataptr;
 	bits8	   *bitmap;
 	int			bitmask;
@@ -6442,6 +6517,7 @@ array_replace_internal(ArrayType *array,
 	typlen = typentry->typlen;
 	typbyval = typentry->typbyval;
 	typalign = typentry->typalign;
+	typstor = typentry->typstorage;
 
 	/*
 	 * Detoast values if they are toasted.  The replacement value must be
@@ -6502,7 +6578,7 @@ array_replace_internal(ArrayType *array,
 		{
 			isNull = false;
 			elt = fetch_att(arraydataptr, typbyval, typlen);
-			arraydataptr = att_addlength_datum(arraydataptr, typlen, elt);
+			arraydataptr = att_addvarsize_datum(arraydataptr, typlen, typstor, elt);
 			arraydataptr = (char *) att_align_nominal(arraydataptr, typalign);
 
 			if (search_isnull)
@@ -6549,7 +6625,7 @@ array_replace_internal(ArrayType *array,
 			else
 			{
 				/* Update total result size */
-				nbytes = att_addlength_datum(nbytes, typlen, values[nresult]);
+				nbytes = att_addvarsize_datum(nbytes, typlen, typstor, values[nresult]);
 				nbytes = att_align_nominal(nbytes, typalign);
 				/* check for overflow of total request */
 				if (!AllocSizeIsValid(nbytes))
@@ -6619,7 +6695,7 @@ array_replace_internal(ArrayType *array,
 	/* Insert data into result array */
 	CopyArrayEls(result,
 				 values, nulls, nresult,
-				 typlen, typbyval, typalign,
+				 typlen, typbyval, typalign, typstor,
 				 false);
 
 	pfree(values);
@@ -6925,6 +7001,7 @@ trim_array(PG_FUNCTION_ARGS)
 	int16		elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 	int			lower[MAXDIM];
 	int			upper[MAXDIM];
 	bool		lowerProvided[MAXDIM];
@@ -6948,12 +7025,12 @@ trim_array(PG_FUNCTION_ARGS)
 	}
 
 	/* Fetch the needed information about the element type */
-	get_typlenbyvalalign(ARR_ELEMTYPE(v), &elmlen, &elmbyval, &elmalign);
+	get_type_stores(ARR_ELEMTYPE(v), &elmlen, &elmbyval, &elmalign, &elmstor);
 
 	/* Get the slice */
 	result = array_get_slice(PointerGetDatum(v), 1,
 							 upper, lower, upperProvided, lowerProvided,
-							 -1, elmlen, elmbyval, elmalign);
+							 -1, elmlen, elmbyval, elmalign, elmstor);
 
 	PG_RETURN_DATUM(result);
 }

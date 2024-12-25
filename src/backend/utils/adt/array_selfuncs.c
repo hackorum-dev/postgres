@@ -448,6 +448,7 @@ mcelem_array_selec(ArrayType *array, TypeCacheEntry *typentry,
 					  typentry->typlen,
 					  typentry->typbyval,
 					  typentry->typalign,
+					  typentry->typstorage,
 					  &elem_values, &elem_nulls, &num_elems);
 
 	/* Collapse out any null elements */

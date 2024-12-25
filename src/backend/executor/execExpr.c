@@ -1886,10 +1886,11 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				scratch.d.arrayexpr.elemtype = arrayexpr->element_typeid;
 
 				/* do one-time catalog lookup for type info */
-				get_typlenbyvalalign(arrayexpr->element_typeid,
-									 &scratch.d.arrayexpr.elemlength,
-									 &scratch.d.arrayexpr.elembyval,
-									 &scratch.d.arrayexpr.elemalign);
+				get_type_stores(arrayexpr->element_typeid,
+										&scratch.d.arrayexpr.elemlength,
+										&scratch.d.arrayexpr.elembyval,
+										&scratch.d.arrayexpr.elemalign,
+										&scratch.d.arrayexpr.elemstorage);
 
 				/* prepare to evaluate all arguments */
 				elemoff = 0;

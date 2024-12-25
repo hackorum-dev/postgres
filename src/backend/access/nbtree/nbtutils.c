@@ -340,6 +340,7 @@ _bt_preprocess_array_keys(IndexScanDesc scan, int *new_numberOfKeys)
 		int16		elmlen;
 		bool		elmbyval;
 		char		elmalign;
+		char		elmstor;
 		int			num_elems;
 		Datum	   *elem_values;
 		bool	   *elem_nulls;
@@ -364,11 +365,11 @@ _bt_preprocess_array_keys(IndexScanDesc scan, int *new_numberOfKeys)
 		 */
 		arrayval = DatumGetArrayTypeP(cur->sk_argument);
 		/* We could cache this data, but not clear it's worth it */
-		get_typlenbyvalalign(ARR_ELEMTYPE(arrayval),
-							 &elmlen, &elmbyval, &elmalign);
+		get_type_stores(ARR_ELEMTYPE(arrayval),
+							 &elmlen, &elmbyval, &elmalign, &elmstor);
 		deconstruct_array(arrayval,
 						  ARR_ELEMTYPE(arrayval),
-						  elmlen, elmbyval, elmalign,
+						  elmlen, elmbyval, elmalign, elmstor,
 						  &elem_values, &elem_nulls, &num_elems);
 
 		/*

@@ -85,6 +85,12 @@ extern pg_nodiscard void *repalloc_extended(void *pointer,
 extern pg_nodiscard void *repalloc0(void *pointer, Size oldsize, Size size);
 extern void pfree(void *pointer);
 
+#define PFREE_IF_NEW(newptr, oldptr) \
+	do { \
+		if ((Pointer)(newptr) != (Pointer)(oldptr)) \
+			pfree(newptr); \
+	} while (0)
+
 /*
  * Variants with easier notation and more type safety
  */

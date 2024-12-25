@@ -3211,7 +3211,8 @@ ExecEvalArrayExpr(ExprState *state, ExprEvalStep *op)
 									element_type,
 									op->d.arrayexpr.elemlength,
 									op->d.arrayexpr.elembyval,
-									op->d.arrayexpr.elemalign);
+									op->d.arrayexpr.elemalign,
+									op->d.arrayexpr.elemstorage);
 	}
 	else
 	{

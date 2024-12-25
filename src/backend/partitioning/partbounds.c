@@ -4778,6 +4778,7 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
 		int16		variadic_typlen;
 		bool		variadic_typbyval;
 		char		variadic_typalign;
+		char		variadic_typstorage;
 		Oid			partcollid[PARTITION_MAX_KEYS];
 		FmgrInfo	partsupfunc[FLEXIBLE_ARRAY_MEMBER];
 	} ColumnsHashData;
@@ -4881,10 +4882,11 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
 			my_extra->relid = parentId;
 			my_extra->nkeys = key->partnatts;
 			my_extra->variadic_type = ARR_ELEMTYPE(variadic_array);
-			get_typlenbyvalalign(my_extra->variadic_type,
+			get_type_stores(my_extra->variadic_type,
 								 &my_extra->variadic_typlen,
 								 &my_extra->variadic_typbyval,
-								 &my_extra->variadic_typalign);
+								 &my_extra->variadic_typalign,
+								 &my_extra->variadic_typstorage);
 			my_extra->partcollid[0] = key->partcollation[0];
 
 			/* check argument types */
@@ -4949,6 +4951,7 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
 						  my_extra->variadic_typlen,
 						  my_extra->variadic_typbyval,
 						  my_extra->variadic_typalign,
+						  my_extra->variadic_typstorage,
 						  &datum, &isnull, &nelems);
 
 		/* complain if wrong number of column values */

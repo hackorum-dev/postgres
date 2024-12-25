@@ -6126,7 +6126,8 @@ strlist_to_textarray(List *list)
 
 	lb[0] = 1;
 	arr = construct_md_array(datums, nulls, 1, &j,
-							 lb, TEXTOID, -1, false, TYPALIGN_INT);
+							 lb, TEXTOID, -1, false,
+							 TYPALIGN_INT, TYPSTORAGE_EXTENDED);
 
 	MemoryContextDelete(memcxt);
 

@@ -127,7 +127,7 @@ gin_extract_hstore_query(PG_FUNCTION_ARGS)
 			/* Nulls in the array are ignored, cf hstoreArrayToPairs */
 			if (key_nulls[i])
 				continue;
-			item = makeitem(VARDATA(key_datums[i]), VARSIZE(key_datums[i]) - VARHDRSZ, KEYFLAG);
+			item = makeitem(VARDATA_ANY(key_datums[i]), VARSIZE_ANY_EXHDR(key_datums[i]), KEYFLAG);
 			entries[j++] = PointerGetDatum(item);
 		}
 

@@ -16,6 +16,8 @@
 
 #include "nodes/execnodes.h"
 #include "nodes/parsenodes.h"
+#include "utils/array.h"
+#include "utils/lsyscache.h"
 
 
 /*
@@ -60,6 +62,10 @@ union YYSTYPE;
 #define YY_TYPEDEF_YY_SCANNER_T
 typedef void *yyscan_t;
 #endif
+
+extern void boot_array_type_metadata(Oid typid,
+									 IOFuncSelector which_func,
+									 ArrayMetaState *metadata);
 
 extern int	boot_yyparse(yyscan_t yyscanner);
 extern int	boot_yylex_init(yyscan_t *yyscannerp);

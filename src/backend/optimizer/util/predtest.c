@@ -965,6 +965,7 @@ arrayconst_startup_fn(Node *clause, PredIterInfo info)
 	int16		elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 
 	/* Create working state struct */
 	state = (ArrayConstIterState *) palloc(sizeof(ArrayConstIterState));
@@ -973,11 +974,11 @@ arrayconst_startup_fn(Node *clause, PredIterInfo info)
 	/* Deconstruct the array literal */
 	arrayconst = (Const *) lsecond(saop->args);
 	arrayval = DatumGetArrayTypeP(arrayconst->constvalue);
-	get_typlenbyvalalign(ARR_ELEMTYPE(arrayval),
-						 &elmlen, &elmbyval, &elmalign);
+	get_type_stores(ARR_ELEMTYPE(arrayval),
+						 &elmlen, &elmbyval, &elmalign, &elmstor);
 	deconstruct_array(arrayval,
 					  ARR_ELEMTYPE(arrayval),
-					  elmlen, elmbyval, elmalign,
+					  elmlen, elmbyval, elmalign, elmstor,
 					  &state->elem_values, &state->elem_nulls,
 					  &state->num_elems);
 

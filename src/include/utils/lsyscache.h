@@ -16,6 +16,7 @@
 #include "access/attnum.h"
 #include "access/htup.h"
 #include "nodes/pg_list.h"
+#include "utils/array.h"
 
 /* avoid including subscripting.h here */
 struct SubscriptRoutines;
@@ -150,7 +151,12 @@ extern bool get_typbyval(Oid typid);
 extern void get_typlenbyval(Oid typid, int16 *typlen, bool *typbyval);
 extern void get_typlenbyvalalign(Oid typid, int16 *typlen, bool *typbyval,
 								 char *typalign);
+extern void get_type_stores(Oid typid, int16 *typlen,
+							bool *typbyval, char *typalign, char *typstor);
 extern Oid	getTypeIOParam(HeapTuple typeTuple);
+extern void array_type_metadata(Oid typid,
+								IOFuncSelector which_func,
+								ArrayMetaState *metadata);
 extern void get_type_io_data(Oid typid,
 							 IOFuncSelector which_func,
 							 int16 *typlen,

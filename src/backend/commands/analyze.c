@@ -1721,7 +1721,8 @@ update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
 									   stats->statypid[k],
 									   stats->statyplen[k],
 									   stats->statypbyval[k],
-									   stats->statypalign[k]);
+									   stats->statypalign[k],
+									   stats->statypstorage[k]);
 				values[i++] = PointerGetDatum(arry);	/* stavaluesN */
 			}
 			else

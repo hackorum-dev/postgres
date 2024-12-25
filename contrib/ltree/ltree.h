@@ -6,6 +6,7 @@
 #include "fmgr.h"
 #include "tsearch/ts_locale.h"
 #include "utils/memutils.h"
+#include "varatt.h"
 
 
 /* ltree */
@@ -211,6 +212,29 @@ bool		compare_subnode(ltree_level *t, char *qn, int len,
 							int (*cmpptr) (const char *, const char *, size_t), bool anyend);
 ltree	   *lca_inner(ltree **a, int len);
 int			ltree_strncasecmp(const char *a, const char *b, size_t s);
+
+/* normalize ltree/lquery in array if it is short version. */
+static inline char*
+ltree_norm_short_item(char *item)
+{
+	if (VARATT_IS_SHORT(item))
+	{
+		/*
+		* This is a short-header varlena --- convert to 4-byte header format
+		*/
+		char   *newitem;
+		Size	data_size = VARSIZE_SHORT(item) - VARHDRSZ_SHORT;
+		Size	new_size = data_size + VARHDRSZ;
+
+		newitem = palloc(new_size);
+		SET_VARSIZE(newitem, new_size);
+		memcpy(VARDATA(newitem), VARDATA_SHORT(item), data_size);
+
+		return newitem;
+	}
+	else
+		return item;
+}
 
 /* fmgr macros for ltree objects */
 #define DatumGetLtreeP(X)			((ltree *) PG_DETOAST_DATUM(X))

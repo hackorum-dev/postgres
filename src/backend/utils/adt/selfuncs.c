@@ -1926,6 +1926,7 @@ scalararraysel(PlannerInfo *root,
 		int16		elmlen;
 		bool		elmbyval;
 		char		elmalign;
+		char		elmstor;
 		int			num_elems;
 		Datum	   *elem_values;
 		bool	   *elem_nulls;
@@ -1934,11 +1935,11 @@ scalararraysel(PlannerInfo *root,
 		if (arrayisnull)		/* qual can't succeed if null array */
 			return (Selectivity) 0.0;
 		arrayval = DatumGetArrayTypeP(arraydatum);
-		get_typlenbyvalalign(ARR_ELEMTYPE(arrayval),
-							 &elmlen, &elmbyval, &elmalign);
+		get_type_stores(ARR_ELEMTYPE(arrayval),
+							 &elmlen, &elmbyval, &elmalign, &elmstor);
 		deconstruct_array(arrayval,
 						  ARR_ELEMTYPE(arrayval),
-						  elmlen, elmbyval, elmalign,
+						  elmlen, elmbyval, elmalign, elmstor,
 						  &elem_values, &elem_nulls, &num_elems);
 
 		/*
@@ -7488,6 +7489,7 @@ gincost_scalararrayopexpr(PlannerInfo *root,
 	int16		elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 	int			numElems;
 	Datum	   *elemValues;
 	bool	   *elemNulls;
@@ -7523,11 +7525,11 @@ gincost_scalararrayopexpr(PlannerInfo *root,
 
 	/* Otherwise, extract the array elements and iterate over them */
 	arrayval = DatumGetArrayTypeP(((Const *) rightop)->constvalue);
-	get_typlenbyvalalign(ARR_ELEMTYPE(arrayval),
-						 &elmlen, &elmbyval, &elmalign);
+	get_type_stores(ARR_ELEMTYPE(arrayval),
+						 &elmlen, &elmbyval, &elmalign, &elmstor);
 	deconstruct_array(arrayval,
 					  ARR_ELEMTYPE(arrayval),
-					  elmlen, elmbyval, elmalign,
+					  elmlen, elmbyval, elmalign, elmstor,
 					  &elemValues, &elemNulls, &numElems);
 
 	memset(&arraycounts, 0, sizeof(arraycounts));

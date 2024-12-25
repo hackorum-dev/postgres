@@ -1484,6 +1484,7 @@ plperl_ref_from_pg_array(Datum arg, Oid typid)
 	int16		typlen;
 	bool		typbyval;
 	char		typalign,
+				typstor,
 				typdelim;
 	Oid			typioparam;
 	Oid			typoutputfunc;
@@ -1505,6 +1506,8 @@ plperl_ref_from_pg_array(Datum arg, Oid typid)
 	get_type_io_data(elementtype, IOFunc_output,
 					 &typlen, &typbyval, &typalign,
 					 &typdelim, &typioparam, &typoutputfunc);
+
+	typstor = get_typstorage(elementtype);
 
 	/* Check for a transform function */
 	transform_funcid = get_transform_fromsql(elementtype,
@@ -1531,8 +1534,8 @@ plperl_ref_from_pg_array(Datum arg, Oid typid)
 	else
 	{
 		deconstruct_array(ar, elementtype, typlen, typbyval,
-						  typalign, &info->elements, &info->nulls,
-						  &nitems);
+						  typalign, typstor,
+						  &info->elements, &info->nulls, &nitems);
 
 		/* Get total number of elements in each dimension */
 		info->nelems = palloc(sizeof(int) * info->ndims);

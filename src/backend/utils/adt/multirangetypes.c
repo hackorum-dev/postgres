@@ -996,7 +996,8 @@ multirange_constructor2(PG_FUNCTION_ARGS)
 	else
 	{
 		deconstruct_array(rangeArray, rngtypid, rangetyp->typlen, rangetyp->typbyval,
-						  rangetyp->typalign, &elements, &nulls, &range_count);
+						  rangetyp->typalign, rangetyp->typstorage,
+						  &elements, &nulls, &range_count);
 
 		ranges = palloc0(range_count * sizeof(RangeType *));
 		for (i = 0; i < range_count; i++)

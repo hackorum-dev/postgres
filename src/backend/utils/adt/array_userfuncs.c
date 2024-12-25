@@ -161,8 +161,9 @@ array_append(PG_FUNCTION_ARGS)
 	my_extra = (ArrayMetaState *) fcinfo->flinfo->fn_extra;
 
 	result = array_set_element(EOHPGetRWDatum(&eah->hdr),
-							   1, &indx, newelem, isNull,
-							   -1, my_extra->typlen, my_extra->typbyval, my_extra->typalign);
+							   1, &indx, newelem, isNull, -1,
+							   my_extra->typlen, my_extra->typbyval,
+							   my_extra->typalign, my_extra->typstorage);
 
 	PG_RETURN_DATUM(result);
 }
@@ -216,8 +217,9 @@ array_prepend(PG_FUNCTION_ARGS)
 	my_extra = (ArrayMetaState *) fcinfo->flinfo->fn_extra;
 
 	result = array_set_element(EOHPGetRWDatum(&eah->hdr),
-							   1, &indx, newelem, isNull,
-							   -1, my_extra->typlen, my_extra->typbyval, my_extra->typalign);
+							   1, &indx, newelem, isNull, -1,
+							   my_extra->typlen, my_extra->typbyval,
+							   my_extra->typalign, my_extra->typstorage);
 
 	/* Readjust result's LB to match the input's, as expected for prepend */
 	Assert(result == EOHPGetRWDatum(&eah->hdr));
@@ -654,6 +656,9 @@ array_agg_serialize(PG_FUNCTION_ARGS)
 	/* typalign */
 	pq_sendbyte(&buf, state->typalign);
 
+	/* typstorage */
+	pq_sendbyte(&buf, state->typstorage);
+
 	/* dnulls */
 	pq_sendbytes(&buf, state->dnulls, sizeof(bool) * state->nelems);
 
@@ -748,6 +753,9 @@ array_agg_deserialize(PG_FUNCTION_ARGS)
 
 	/* typalign */
 	result->typalign = pq_getmsgbyte(&buf);
+
+	/* typstorage */
+	result->typstorage = pq_getmsgbyte(&buf);
 
 	/* dnulls */
 	temp = pq_getmsgbytes(&buf, sizeof(bool) * nelems);
@@ -1321,10 +1329,11 @@ array_position_common(FunctionCallInfo fcinfo)
 
 	if (my_extra->element_type != element_type)
 	{
-		get_typlenbyvalalign(element_type,
-							 &my_extra->typlen,
-							 &my_extra->typbyval,
-							 &my_extra->typalign);
+		get_type_stores(element_type,
+						&my_extra->typlen,
+						&my_extra->typbyval,
+						&my_extra->typalign,
+						&my_extra->typstorage);
 
 		typentry = lookup_type_cache(element_type, TYPECACHE_EQ_OPR_FINFO);
 
@@ -1464,10 +1473,12 @@ array_positions(PG_FUNCTION_ARGS)
 
 	if (my_extra->element_type != element_type)
 	{
-		get_typlenbyvalalign(element_type,
-							 &my_extra->typlen,
-							 &my_extra->typbyval,
-							 &my_extra->typalign);
+		get_type_stores(element_type,
+						&my_extra->typlen,
+						&my_extra->typbyval,
+						&my_extra->typalign,
+						&my_extra->typstorage);
+
 
 		typentry = lookup_type_cache(element_type, TYPECACHE_EQ_OPR_FINFO);
 
@@ -1548,6 +1559,7 @@ array_shuffle_n(ArrayType *array, int n, bool keep_lb,
 	int16		elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 	Datum	   *elms,
 			   *ielms;
 	bool	   *nuls,
@@ -1560,12 +1572,13 @@ array_shuffle_n(ArrayType *array, int n, bool keep_lb,
 	elmlen = typentry->typlen;
 	elmbyval = typentry->typbyval;
 	elmalign = typentry->typalign;
+	elmstor = typentry->typstorage;
 
 	/* If the target array is empty, exit fast */
 	if (ndim < 1 || dims[0] < 1 || n < 1)
 		return construct_empty_array(elmtyp);
 
-	deconstruct_array(array, elmtyp, elmlen, elmbyval, elmalign,
+	deconstruct_array(array, elmtyp, elmlen, elmbyval, elmalign, elmstor,
 					  &elms, &nuls, &nelm);
 
 	nitem = dims[0];			/* total number of items */
@@ -1608,7 +1621,7 @@ array_shuffle_n(ArrayType *array, int n, bool keep_lb,
 		rlbs[0] = 1;
 
 	result = construct_md_array(elms, nuls, ndim, rdims, rlbs,
-								elmtyp, elmlen, elmbyval, elmalign);
+								elmtyp, elmlen, elmbyval, elmalign, elmstor);
 
 	pfree(elms);
 	pfree(nuls);
@@ -1709,6 +1722,7 @@ array_reverse_n(ArrayType *array, Oid elmtyp, TypeCacheEntry *typentry)
 	int16		elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 	Datum	   *elms,
 			   *ielms;
 	bool	   *nuls,
@@ -1721,8 +1735,9 @@ array_reverse_n(ArrayType *array, Oid elmtyp, TypeCacheEntry *typentry)
 	elmlen = typentry->typlen;
 	elmbyval = typentry->typbyval;
 	elmalign = typentry->typalign;
+	elmstor = typentry->typstorage;
 
-	deconstruct_array(array, elmtyp, elmlen, elmbyval, elmalign,
+	deconstruct_array(array, elmtyp, elmlen, elmbyval, elmalign, elmstor,
 					  &elms, &nuls, &nelm);
 
 	nitem = dims[0];			/* total number of items */
@@ -1756,7 +1771,7 @@ array_reverse_n(ArrayType *array, Oid elmtyp, TypeCacheEntry *typentry)
 	rdims[0] = nitem;
 
 	result = construct_md_array(elms, nuls, ndim, rdims, rlbs,
-								elmtyp, elmlen, elmbyval, elmalign);
+								elmtyp, elmlen, elmbyval, elmalign, elmstor);
 
 	pfree(elms);
 	pfree(nuls);

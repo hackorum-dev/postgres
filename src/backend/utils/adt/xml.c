@@ -2482,6 +2482,7 @@ map_sql_value_to_xml_value(Datum value, Oid type, bool xml_escape_strings)
 		int16		elmlen;
 		bool		elmbyval;
 		char		elmalign;
+		char		elmstor;
 		int			num_elems;
 		Datum	   *elem_values;
 		bool	   *elem_nulls;
@@ -2490,10 +2491,11 @@ map_sql_value_to_xml_value(Datum value, Oid type, bool xml_escape_strings)
 
 		array = DatumGetArrayTypeP(value);
 		elmtype = ARR_ELEMTYPE(array);
-		get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+		get_type_stores(elmtype, &elmlen,
+							&elmbyval, &elmalign, &elmstor);
 
 		deconstruct_array(array, elmtype,
-						  elmlen, elmbyval, elmalign,
+						  elmlen, elmbyval, elmalign, elmstor,
 						  &elem_values, &elem_nulls,
 						  &num_elems);
 

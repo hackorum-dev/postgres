@@ -3428,11 +3428,12 @@ match_orclause_to_indexcol(PlannerInfo *root,
 		int16		typlen;
 		bool		typbyval;
 		char		typalign;
+		char		typstor;
 		Datum	   *elems;
 		int			i = 0;
 		ArrayType  *arrayConst;
 
-		get_typlenbyvalalign(consttype, &typlen, &typbyval, &typalign);
+		get_type_stores(consttype, &typlen, &typbyval, &typalign, &typstor);
 
 		elems = (Datum *) palloc(sizeof(Datum) * list_length(consts));
 		foreach_node(Const, value, consts)
@@ -3443,7 +3444,7 @@ match_orclause_to_indexcol(PlannerInfo *root,
 		}
 
 		arrayConst = construct_array(elems, i, consttype,
-									 typlen, typbyval, typalign);
+									 typlen, typbyval, typalign, typstor);
 		arrayNode = (Node *) makeConst(arraytype, -1, inputcollid,
 									   -1, PointerGetDatum(arrayConst),
 									   false, false);

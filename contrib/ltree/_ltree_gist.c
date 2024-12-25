@@ -26,7 +26,7 @@ PG_FUNCTION_INFO_V1(_ltree_consistent);
 PG_FUNCTION_INFO_V1(_ltree_gist_options);
 
 #define GETENTRY(vec,pos) ((ltree_gist *) DatumGetPointer((vec)->vector[(pos)].key))
-#define NEXTVAL(x) ( (ltree*)( (char*)(x) + INTALIGN( VARSIZE(x) ) ) )
+#define NEXTVAL(x) ( (ltree*)( (char*)(x) + INTALIGN( VARSIZE_ANY(x) ) ) )
 
 #define WISH_F(a,b,c) (double)( -(double)(((a)-(b))*((a)-(b))*((a)-(b)))*(c) )
 
@@ -60,6 +60,7 @@ _ltree_compress(PG_FUNCTION_ARGS)
 		ArrayType  *val = DatumGetArrayTypeP(entry->key);
 		int			num = ArrayGetNItems(ARR_NDIM(val), ARR_DIMS(val));
 		ltree	   *item = (ltree *) ARR_DATA_PTR(val);
+		ltree	   *newitem;
 
 		if (ARR_NDIM(val) > 1)
 			ereport(ERROR,
@@ -74,7 +75,10 @@ _ltree_compress(PG_FUNCTION_ARGS)
 
 		while (num > 0)
 		{
-			hashing(LTG_SIGN(key), item, siglen);
+			newitem = (ltree *)ltree_norm_short_item((char *)item);
+
+			hashing(LTG_SIGN(key), newitem, siglen);
+			PFREE_IF_NEW(newitem, item);
 			num--;
 			item = NEXTVAL(item);
 		}
@@ -481,6 +485,7 @@ static bool
 _arrq_cons(ltree_gist *key, ArrayType *_query, int siglen)
 {
 	lquery	   *query = (lquery *) ARR_DATA_PTR(_query);
+	lquery	   *newqry;
 	int			num = ArrayGetNItems(ARR_NDIM(_query), ARR_DIMS(_query));
 
 	if (ARR_NDIM(_query) > 1)
@@ -494,8 +499,16 @@ _arrq_cons(ltree_gist *key, ArrayType *_query, int siglen)
 
 	while (num > 0)
 	{
-		if (gist_qe(key, query, siglen))
+		newqry = (lquery *)ltree_norm_short_item((char *)query);
+
+		if (gist_qe(key, newqry, siglen))
+		{
+			PFREE_IF_NEW(newqry, query);
 			return true;
+		}
+
+		PFREE_IF_NEW(newqry, query);
+
 		num--;
 		query = (lquery *) NEXTVAL(query);
 	}

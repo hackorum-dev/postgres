@@ -107,8 +107,8 @@ hstoreArrayToPairs(ArrayType *a, int *npairs)
 	{
 		if (!key_nulls[i])
 		{
-			key_pairs[j].key = VARDATA(key_datums[i]);
-			key_pairs[j].keylen = VARSIZE(key_datums[i]) - VARHDRSZ;
+			key_pairs[j].key = VARDATA_ANY(key_datums[i]);
+			key_pairs[j].keylen = VARSIZE_ANY_EXHDR(key_datums[i]);
 			key_pairs[j].val = NULL;
 			key_pairs[j].vallen = 0;
 			key_pairs[j].needfree = 0;
@@ -599,7 +599,7 @@ hstore_slice_to_array(PG_FUNCTION_ARGS)
 		if (key_nulls[i])
 			idx = -1;
 		else
-			idx = hstoreFindKey(hs, NULL, VARDATA(key), VARSIZE(key) - VARHDRSZ);
+			idx = hstoreFindKey(hs, NULL, VARDATA_ANY(key), VARSIZE_ANY_EXHDR(key));
 
 		if (idx < 0 || HSTORE_VALISNULL(entries, idx))
 		{
@@ -619,7 +619,8 @@ hstore_slice_to_array(PG_FUNCTION_ARGS)
 							  ARR_NDIM(key_array),
 							  ARR_DIMS(key_array),
 							  ARR_LBOUND(key_array),
-							  TEXTOID, -1, false, TYPALIGN_INT);
+							  TEXTOID, -1, false,
+							  TYPALIGN_INT, TYPSTORAGE_EXTENDED);
 
 	PG_RETURN_POINTER(aout);
 }
@@ -762,7 +763,8 @@ hstore_avals(PG_FUNCTION_ARGS)
 	}
 
 	a = construct_md_array(d, nulls, 1, &count, &lb,
-						   TEXTOID, -1, false, TYPALIGN_INT);
+						   TEXTOID, -1, false,
+						   TYPALIGN_INT, TYPSTORAGE_EXTENDED);
 
 	PG_RETURN_POINTER(a);
 }
@@ -814,7 +816,8 @@ hstore_to_array_internal(HStore *hs, int ndims)
 
 	return construct_md_array(out_datums, out_nulls,
 							  ndims, out_size, lb,
-							  TEXTOID, -1, false, TYPALIGN_INT);
+							  TEXTOID, -1, false,
+							  TYPALIGN_INT, TYPSTORAGE_EXTENDED);
 }
 
 PG_FUNCTION_INFO_V1(hstore_to_array);

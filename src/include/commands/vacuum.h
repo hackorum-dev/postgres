@@ -163,6 +163,7 @@ typedef struct VacAttrStats
 	int16		statyplen[STATISTIC_NUM_SLOTS];
 	bool		statypbyval[STATISTIC_NUM_SLOTS];
 	char		statypalign[STATISTIC_NUM_SLOTS];
+	char		statypstorage[STATISTIC_NUM_SLOTS];
 
 	/*
 	 * These fields are private to the main ANALYZE code and should not be

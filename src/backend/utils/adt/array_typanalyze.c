@@ -42,6 +42,7 @@ typedef struct
 	bool		typbyval;		/* physical properties of element type */
 	int16		typlen;
 	char		typalign;
+	char		typstorage;
 
 	/*
 	 * Lookup data for element type's comparison and hash functions (these are
@@ -139,6 +140,7 @@ array_typanalyze(PG_FUNCTION_ARGS)
 	extra_data->typbyval = typentry->typbyval;
 	extra_data->typlen = typentry->typlen;
 	extra_data->typalign = typentry->typalign;
+	extra_data->typstorage = typentry->typstorage;
 	extra_data->cmp = &typentry->cmp_proc_finfo;
 	extra_data->hash = &typentry->hash_proc_finfo;
 
@@ -340,6 +342,7 @@ compute_array_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 						  extra_data->typlen,
 						  extra_data->typbyval,
 						  extra_data->typalign,
+						  extra_data->typstorage,
 						  &elem_values, &elem_nulls, &num_elems);
 
 		/*
@@ -568,6 +571,7 @@ compute_array_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			stats->statyplen[slot_idx] = extra_data->typlen;
 			stats->statypbyval[slot_idx] = extra_data->typbyval;
 			stats->statypalign[slot_idx] = extra_data->typalign;
+			stats->statypstorage[slot_idx] = extra_data->typstorage;
 			slot_idx++;
 		}
 

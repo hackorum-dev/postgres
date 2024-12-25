@@ -345,6 +345,10 @@ MAKE_SYSCACHE(TYPENAMENSP, pg_type_typname_nsp_index, 64);
 #endif							/* EXPOSE_TO_CLIENT_CODE */
 
 
+/* Does datatype allow packing into the 1-byte-header varlena format? */
+#define TYPE_IS_PACKABLE(typlen, typstorage) \
+	((typlen) == -1 && (typstorage) != TYPSTORAGE_PLAIN)
+
 extern ObjectAddress TypeShellMake(const char *typeName,
 								   Oid typeNamespace,
 								   Oid ownerId);

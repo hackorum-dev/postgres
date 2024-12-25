@@ -2285,6 +2285,30 @@ get_typlenbyvalalign(Oid typid, int16 *typlen, bool *typbyval,
 }
 
 /*
+ * get_type_stores
+ *
+ *  A four-fer: given the type OID, return typlen,
+ *  			typbyval, typalign, typstorage.
+ */
+void
+get_type_stores(Oid typid, int16 *typlen, bool *typbyval,
+						   char *typalign, char *typstor)
+{
+	HeapTuple	tp;
+	Form_pg_type typtup;
+
+	tp = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for type %u", typid);
+	typtup = (Form_pg_type) GETSTRUCT(tp);
+	*typlen = typtup->typlen;
+	*typbyval = typtup->typbyval;
+	*typalign = typtup->typalign;
+	*typstor = typtup->typstorage;
+	ReleaseSysCache(tp);
+}
+
+/*
  * getTypeIOParam
  *		Given a pg_type row, select the type OID to pass to I/O functions
  *
@@ -2389,6 +2413,63 @@ get_type_io_data(Oid typid,
 			break;
 		case IOFunc_send:
 			*func = typeStruct->typsend;
+			break;
+	}
+	ReleaseSysCache(typeTuple);
+}
+
+/*
+ * array_type_metadata
+ *
+ *		A six-fer:	given the type OID, return typlen, typbyval, typalign,
+ *					typdelim, typioparam, and IO function OID. The IO function
+ *					returned is controlled by IOFuncSelector
+ */
+void
+array_type_metadata(Oid typid,
+				 IOFuncSelector which_func,
+				 ArrayMetaState *metadata)
+{
+	HeapTuple	typeTuple;
+	Form_pg_type typeStruct;
+
+	/*
+	 * In bootstrap mode, pass it off to bootstrap.c.  This hack allows us to
+	 * use array_in and array_out during bootstrap.
+	 */
+	if (unlikely(IsBootstrapProcessingMode()))
+	{
+		boot_array_type_metadata(typid,
+								 which_func,
+								 metadata);
+
+		return;
+	}
+
+	typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typid));
+	if (!HeapTupleIsValid(typeTuple))
+		elog(ERROR, "cache lookup failed for type %u", typid);
+	typeStruct = (Form_pg_type) GETSTRUCT(typeTuple);
+
+	metadata->typlen = typeStruct->typlen;
+	metadata->typbyval = typeStruct->typbyval;
+	metadata->typalign = typeStruct->typalign;
+	metadata->typstorage = typeStruct->typstorage;
+	metadata->typdelim = typeStruct->typdelim;
+	metadata->typioparam = getTypeIOParam(typeTuple);
+	switch (which_func)
+	{
+		case IOFunc_input:
+			metadata->typiofunc = typeStruct->typinput;
+			break;
+		case IOFunc_output:
+			metadata->typiofunc = typeStruct->typoutput;
+			break;
+		case IOFunc_receive:
+			metadata->typiofunc = typeStruct->typreceive;
+			break;
+		case IOFunc_send:
+			metadata->typiofunc = typeStruct->typsend;
 			break;
 	}
 	ReleaseSysCache(typeTuple);
@@ -3287,6 +3368,7 @@ get_attstatsslot(AttStatsSlot *sslot, HeapTuple statstuple,
 						  typeForm->typlen,
 						  typeForm->typbyval,
 						  typeForm->typalign,
+						  typeForm->typstorage,
 						  &sslot->values, NULL, &sslot->nvalues);
 
 		/*

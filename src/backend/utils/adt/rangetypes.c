@@ -30,6 +30,7 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_type.h"
 #include "common/hashfn.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
@@ -2670,10 +2671,6 @@ range_contains_elem_internal(TypeCacheEntry *typcache, const RangeType *r, Datum
  * heaptuple.c's ATT_IS_PACKABLE macro.  See the comments there for more
  * details.
  */
-
-/* Does datatype allow packing into the 1-byte-header varlena format? */
-#define TYPE_IS_PACKABLE(typlen, typstorage) \
-	((typlen) == -1 && (typstorage) != TYPSTORAGE_PLAIN)
 
 /*
  * Increment data_length by the space needed by the datum, including any

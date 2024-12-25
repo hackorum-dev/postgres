@@ -92,6 +92,7 @@ expand_array(Datum arraydatum, MemoryContext parentcontext,
 		metacache->typlen = oldeah->typlen;
 		metacache->typbyval = oldeah->typbyval;
 		metacache->typalign = oldeah->typalign;
+		metacache->typstorage = oldeah->typstorage;
 
 		/*
 		 * If element type is pass-by-value and we have a Datum-array
@@ -144,14 +145,17 @@ expand_array(Datum arraydatum, MemoryContext parentcontext,
 		eah->typlen = metacache->typlen;
 		eah->typbyval = metacache->typbyval;
 		eah->typalign = metacache->typalign;
+		eah->typstorage = metacache->typstorage;
 	}
 	else
 	{
 		/* No, so look it up */
-		get_typlenbyvalalign(eah->element_type,
+		get_type_stores(eah->element_type,
 							 &eah->typlen,
 							 &eah->typbyval,
-							 &eah->typalign);
+							 &eah->typalign,
+							 &eah->typstorage);
+
 		/* Update cache if provided */
 		if (metacache)
 		{
@@ -159,6 +163,7 @@ expand_array(Datum arraydatum, MemoryContext parentcontext,
 			metacache->typlen = eah->typlen;
 			metacache->typbyval = eah->typbyval;
 			metacache->typalign = eah->typalign;
+			metacache->typstorage = eah->typstorage;
 		}
 	}
 
@@ -203,6 +208,7 @@ copy_byval_expanded_array(ExpandedArrayHeader *eah,
 	eah->typlen = oldeah->typlen;
 	eah->typbyval = oldeah->typbyval;
 	eah->typalign = oldeah->typalign;
+	eah->typstorage = oldeah->typstorage;
 
 	/* Copy the deconstructed representation */
 	eah->dvalues = (Datum *) MemoryContextAlloc(objcxt,
@@ -333,7 +339,7 @@ EA_flatten_into(ExpandedObjectHeader *eohptr,
 
 	CopyArrayEls(aresult,
 				 eah->dvalues, eah->dnulls, nelems,
-				 eah->typlen, eah->typbyval, eah->typalign,
+				 eah->typlen, eah->typbyval, eah->typalign, eah->typstorage,
 				 false);
 }
 
@@ -384,6 +390,7 @@ DatumGetExpandedArrayX(Datum d, ArrayMetaState *metacache)
 			metacache->typlen = eah->typlen;
 			metacache->typbyval = eah->typbyval;
 			metacache->typalign = eah->typalign;
+			metacache->typstorage = eah->typstorage;
 		}
 		return eah;
 	}
@@ -433,7 +440,8 @@ deconstruct_expanded_array(ExpandedArrayHeader *eah)
 		dnulls = NULL;
 		deconstruct_array(eah->fvalue,
 						  eah->element_type,
-						  eah->typlen, eah->typbyval, eah->typalign,
+						  eah->typlen, eah->typbyval,
+						  eah->typalign, eah->typstorage,
 						  &dvalues,
 						  ARR_HASNULL(eah->fvalue) ? &dnulls : NULL,
 						  &nelems);

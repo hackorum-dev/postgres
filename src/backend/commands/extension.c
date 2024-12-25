@@ -2654,7 +2654,8 @@ pg_extension_config_dump(PG_FUNCTION_ARGS)
 					  -1 /* varlena array */ ,
 					  sizeof(Oid) /* OID's typlen */ ,
 					  true /* OID's typbyval */ ,
-					  TYPALIGN_INT /* OID's typalign */ );
+					  TYPALIGN_INT /* OID's typalign */,
+					  TYPSTORAGE_PLAIN /* OID's typstorage */ );
 	}
 	repl_val[Anum_pg_extension_extconfig - 1] = PointerGetDatum(a);
 	repl_repl[Anum_pg_extension_extconfig - 1] = true;
@@ -2690,7 +2691,8 @@ pg_extension_config_dump(PG_FUNCTION_ARGS)
 					  -1 /* varlena array */ ,
 					  -1 /* TEXT's typlen */ ,
 					  false /* TEXT's typbyval */ ,
-					  TYPALIGN_INT /* TEXT's typalign */ );
+					  TYPALIGN_INT /* TEXT's typalign */ ,
+					  TYPSTORAGE_EXTENDED /* TEXT's typstorage */ );
 	}
 	repl_val[Anum_pg_extension_extcondition - 1] = PointerGetDatum(a);
 	repl_repl[Anum_pg_extension_extcondition - 1] = true;

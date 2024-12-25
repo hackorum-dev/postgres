@@ -80,6 +80,7 @@ typedef struct OSAPerQueryState
 	int16		typLen;
 	bool		typByVal;
 	char		typAlign;
+	char		typStorage;
 	/* Info about sort ordering: */
 	Oid			sortOperator;
 	Oid			eqOperator;
@@ -264,10 +265,11 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 			qstate->sortNullsFirst = sortcl->nulls_first;
 
 			/* Save datatype info */
-			get_typlenbyvalalign(qstate->sortColType,
-								 &qstate->typLen,
-								 &qstate->typByVal,
-								 &qstate->typAlign);
+			get_type_stores(qstate->sortColType,
+							&qstate->typLen,
+							&qstate->typByVal,
+							&qstate->typAlign,
+							&qstate->typStorage);
 		}
 
 		fcinfo->flinfo->fn_extra = qstate;
@@ -838,7 +840,8 @@ percentile_disc_multi_final(PG_FUNCTION_ARGS)
 										 osastate->qstate->sortColType,
 										 osastate->qstate->typLen,
 										 osastate->qstate->typByVal,
-										 osastate->qstate->typAlign));
+										 osastate->qstate->typAlign,
+										 osastate->qstate->typStorage));
 }
 
 /*
@@ -847,7 +850,8 @@ percentile_disc_multi_final(PG_FUNCTION_ARGS)
 static Datum
 percentile_cont_multi_final_common(FunctionCallInfo fcinfo,
 								   Oid expect_type,
-								   int16 typLen, bool typByVal, char typAlign,
+								   int16 typLen, bool typByVal,
+								   char typAlign, char typStor,
 								   LerpFunc lerpfunc)
 {
 	OSAPerGroupState *osastate;
@@ -994,7 +998,7 @@ percentile_cont_multi_final_common(FunctionCallInfo fcinfo,
 										 expect_type,
 										 typLen,
 										 typByVal,
-										 typAlign));
+										 typAlign, typStor));
 }
 
 /*
@@ -1009,6 +1013,7 @@ percentile_cont_float8_multi_final(PG_FUNCTION_ARGS)
 											  sizeof(float8),
 											  FLOAT8PASSBYVAL,
 											  TYPALIGN_DOUBLE,
+											  TYPSTORAGE_PLAIN,
 											  float8_lerp);
 }
 
@@ -1022,6 +1027,7 @@ percentile_cont_interval_multi_final(PG_FUNCTION_ARGS)
 											  INTERVALOID,
 	/* hard-wired info on type interval */
 											  16, false, TYPALIGN_DOUBLE,
+											  TYPSTORAGE_PLAIN,
 											  interval_lerp);
 }
 

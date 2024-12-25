@@ -32,13 +32,14 @@ PG_FUNCTION_INFO_V1(_lca);
 
 typedef Datum (*PGCALL2) (PG_FUNCTION_ARGS);
 
-#define NEXTVAL(x) ( (ltree*)( (char*)(x) + INTALIGN( VARSIZE(x) ) ) )
+#define NEXTVAL(x) ( (ltree*)( (char*)(x) + INTALIGN( VARSIZE_ANY(x) ) ) )
 
 static bool
 array_iterator(ArrayType *la, PGCALL2 callback, void *param, ltree **found)
 {
 	int			num = ArrayGetNItems(ARR_NDIM(la), ARR_DIMS(la));
 	ltree	   *item = (ltree *) ARR_DATA_PTR(la);
+	ltree	   *newitem;
 
 	if (ARR_NDIM(la) > 1)
 		ereport(ERROR,
@@ -53,14 +54,20 @@ array_iterator(ArrayType *la, PGCALL2 callback, void *param, ltree **found)
 		*found = NULL;
 	while (num > 0)
 	{
+		newitem = (ltree *)ltree_norm_short_item((char *)item);
+
 		if (DatumGetBool(DirectFunctionCall2(callback,
-											 PointerGetDatum(item), PointerGetDatum(param))))
+											 PointerGetDatum(newitem), PointerGetDatum(param))))
 		{
+			PFREE_IF_NEW(newitem, item);
 
 			if (found)
 				*found = item;
 			return true;
 		}
+
+		PFREE_IF_NEW(newitem, item);
+
 		num--;
 		item = NEXTVAL(item);
 	}
@@ -137,6 +144,7 @@ _lt_q_regex(PG_FUNCTION_ARGS)
 	ArrayType  *_tree = PG_GETARG_ARRAYTYPE_P(0);
 	ArrayType  *_query = PG_GETARG_ARRAYTYPE_P(1);
 	lquery	   *query = (lquery *) ARR_DATA_PTR(_query);
+	lquery	   *newqry;
 	bool		res = false;
 	int			num = ArrayGetNItems(ARR_NDIM(_query), ARR_DIMS(_query));
 
@@ -151,11 +159,18 @@ _lt_q_regex(PG_FUNCTION_ARGS)
 
 	while (num > 0)
 	{
-		if (array_iterator(_tree, ltq_regex, query, NULL))
+		newqry = (lquery *)ltree_norm_short_item((char *)query);
+
+		if (array_iterator(_tree, ltq_regex, newqry, NULL))
 		{
+			PFREE_IF_NEW(newqry, query);
+
 			res = true;
 			break;
 		}
+
+		PFREE_IF_NEW(newqry, query);
+
 		num--;
 		query = (lquery *) NEXTVAL(query);
 	}
@@ -297,6 +312,8 @@ _lca(PG_FUNCTION_ARGS)
 	ltree	   *item = (ltree *) ARR_DATA_PTR(la);
 	ltree	  **a,
 			   *res;
+	int			i;
+	bool	   *copied;
 
 	if (ARR_NDIM(la) > 1)
 		ereport(ERROR,
@@ -308,14 +325,25 @@ _lca(PG_FUNCTION_ARGS)
 				 errmsg("array must not contain nulls")));
 
 	a = (ltree **) palloc(sizeof(ltree *) * num);
-	while (num > 0)
+	copied = (bool *)palloc(sizeof(bool) * num);
+
+	for (i = 0; i < num; i++)
 	{
-		num--;
-		a[num] = item;
+		a[i] = (ltree *)ltree_norm_short_item((char *)item);
+		copied[i] = (a[i] != item);
 		item = NEXTVAL(item);
 	}
+
 	res = lca_inner(a, ArrayGetNItems(ARR_NDIM(la), ARR_DIMS(la)));
+
+	for (i = 0; i < num; i++)
+	{
+		if (copied[i])
+			pfree(a[i]);
+	}
+
 	pfree(a);
+	pfree(copied);
 
 	PG_FREE_IF_COPY(la, 0);
 

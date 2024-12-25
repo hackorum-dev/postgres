@@ -2280,6 +2280,7 @@ match_clause_to_partition_key(GeneratePruningStepsContext *context,
 			int16		elemlen;
 			bool		elembyval;
 			char		elemalign;
+			char		elemstor;
 			Datum	   *elem_values;
 			bool	   *elem_nulls;
 			int			num_elems,
@@ -2290,11 +2291,11 @@ match_clause_to_partition_key(GeneratePruningStepsContext *context,
 				return PARTCLAUSE_MATCH_CONTRADICT;
 
 			arrval = DatumGetArrayTypeP(arr->constvalue);
-			get_typlenbyvalalign(ARR_ELEMTYPE(arrval),
-								 &elemlen, &elembyval, &elemalign);
+			get_type_stores(ARR_ELEMTYPE(arrval),
+								 &elemlen, &elembyval, &elemalign, &elemstor);
 			deconstruct_array(arrval,
 							  ARR_ELEMTYPE(arrval),
-							  elemlen, elembyval, elemalign,
+							  elemlen, elembyval, elemalign, elemstor,
 							  &elem_values, &elem_nulls,
 							  &num_elems);
 			for (i = 0; i < num_elems; i++)

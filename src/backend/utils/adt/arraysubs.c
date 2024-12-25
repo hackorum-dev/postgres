@@ -34,6 +34,7 @@ typedef struct ArraySubWorkspace
 	int16		refelemlength;	/* typlen of the array element type */
 	bool		refelembyval;	/* is the element type pass-by-value? */
 	char		refelemalign;	/* typalign of the element type */
+	char		refelemstorage;	/* typstorage of the element type */
 
 	/*
 	 * Subscript values converted to integers.  Note that these arrays must be
@@ -250,6 +251,7 @@ array_subscript_fetch(ExprState *state,
 									  workspace->refelemlength,
 									  workspace->refelembyval,
 									  workspace->refelemalign,
+									  workspace->refelemstorage,
 									  op->resnull);
 }
 
@@ -280,7 +282,8 @@ array_subscript_fetch_slice(ExprState *state,
 									workspace->refattrlength,
 									workspace->refelemlength,
 									workspace->refelembyval,
-									workspace->refelemalign);
+									workspace->refelemalign,
+									workspace->refelemstorage);
 	/* The slice is never NULL, so no need to change *op->resnull */
 }
 
@@ -330,7 +333,8 @@ array_subscript_assign(ExprState *state,
 									  workspace->refattrlength,
 									  workspace->refelemlength,
 									  workspace->refelembyval,
-									  workspace->refelemalign);
+									  workspace->refelemalign,
+									  workspace->refelemstorage);
 	/* The result is never NULL, so no need to change *op->resnull */
 }
 
@@ -383,7 +387,8 @@ array_subscript_assign_slice(ExprState *state,
 									workspace->refattrlength,
 									workspace->refelemlength,
 									workspace->refelembyval,
-									workspace->refelemalign);
+									workspace->refelemalign,
+									workspace->refelemstorage);
 	/* The result is never NULL, so no need to change *op->resnull */
 }
 
@@ -417,6 +422,7 @@ array_subscript_fetch_old(ExprState *state,
 												   workspace->refelemlength,
 												   workspace->refelembyval,
 												   workspace->refelemalign,
+												   workspace->refelemstorage,
 												   &sbsrefstate->prevnull);
 }
 
@@ -460,7 +466,8 @@ array_subscript_fetch_old_slice(ExprState *state,
 												 workspace->refattrlength,
 												 workspace->refelemlength,
 												 workspace->refelembyval,
-												 workspace->refelemalign);
+												 workspace->refelemalign,
+												 workspace->refelemstorage);
 		/* slices of non-null arrays are never null */
 		sbsrefstate->prevnull = false;
 	}
@@ -504,10 +511,11 @@ array_exec_setup(const SubscriptingRef *sbsref,
 	 */
 	workspace->refelemtype = sbsref->refelemtype;
 	workspace->refattrlength = get_typlen(sbsref->refcontainertype);
-	get_typlenbyvalalign(sbsref->refelemtype,
-						 &workspace->refelemlength,
-						 &workspace->refelembyval,
-						 &workspace->refelemalign);
+	get_type_stores(sbsref->refelemtype,
+					&workspace->refelemlength,
+					&workspace->refelembyval,
+					&workspace->refelemalign,
+					&workspace->refelemstorage);
 
 	/*
 	 * Pass back pointers to appropriate step execution functions.

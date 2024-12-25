@@ -2023,6 +2023,7 @@ extract_variadic_args(FunctionCallInfo fcinfo, int variadic_start,
 		Oid			element_type;
 		bool		typbyval;
 		char		typalign;
+		char		typstor;
 		int16		typlen;
 
 		Assert(PG_NARGS() == variadic_start + 1);
@@ -2033,10 +2034,10 @@ extract_variadic_args(FunctionCallInfo fcinfo, int variadic_start,
 		array_in = PG_GETARG_ARRAYTYPE_P(variadic_start);
 		element_type = ARR_ELEMTYPE(array_in);
 
-		get_typlenbyvalalign(element_type,
-							 &typlen, &typbyval, &typalign);
+		get_type_stores(element_type,
+						&typlen, &typbyval, &typalign, &typstor);
 		deconstruct_array(array_in, element_type, typlen, typbyval,
-						  typalign, &args_res, &nulls_res,
+						  typalign, typstor, &args_res, &nulls_res,
 						  &nargs);
 
 		/* All the elements of the array have the same type */

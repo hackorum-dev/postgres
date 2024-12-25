@@ -13750,13 +13750,15 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 										   attTup->attlen,
 										   attTup->attbyval,
 										   attTup->attalign,
+										   attTup->attstorage,
 										   &isNull);
 			missingval = PointerGetDatum(construct_array(&missingval,
 														 1,
 														 targettype,
 														 tform->typlen,
 														 tform->typbyval,
-														 tform->typalign));
+														 tform->typalign,
+														 tform->typstorage));
 
 			valuesAtt[Anum_pg_attribute_attmissingval - 1] = missingval;
 			replacesAtt[Anum_pg_attribute_attmissingval - 1] = true;

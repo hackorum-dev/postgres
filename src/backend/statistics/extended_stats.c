@@ -575,6 +575,7 @@ examine_attribute(Node *expr)
 		stats->statyplen[i] = stats->attrtype->typlen;
 		stats->statypbyval[i] = stats->attrtype->typbyval;
 		stats->statypalign[i] = stats->attrtype->typalign;
+		stats->statypstorage[i] = stats->attrtype->typstorage;
 	}
 
 	/*
@@ -660,6 +661,7 @@ examine_expression(Node *expr, int stattarget)
 		stats->statyplen[i] = stats->attrtype->typlen;
 		stats->statypbyval[i] = stats->attrtype->typbyval;
 		stats->statypalign[i] = stats->attrtype->typalign;
+		stats->statypstorage[i] = stats->attrtype->typstorage;
 	}
 
 	/*
@@ -2393,7 +2395,8 @@ serialize_expr_stats(AnlExprData *exprdata, int nexprs)
 									   stats->statypid[k],
 									   stats->statyplen[k],
 									   stats->statypbyval[k],
-									   stats->statypalign[k]);
+									   stats->statypalign[k],
+									   stats->statypstorage[k]);
 				values[i++] = PointerGetDatum(arry);	/* stavaluesN */
 			}
 			else

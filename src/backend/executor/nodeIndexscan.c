@@ -678,6 +678,7 @@ ExecIndexEvalArrayKeys(ExprContext *econtext,
 		int16		elmlen;
 		bool		elmbyval;
 		char		elmalign;
+		char		elmstor;
 		int			num_elems;
 		Datum	   *elem_values;
 		bool	   *elem_nulls;
@@ -696,11 +697,11 @@ ExecIndexEvalArrayKeys(ExprContext *econtext,
 		}
 		arrayval = DatumGetArrayTypeP(arraydatum);
 		/* We could cache this data, but not clear it's worth it */
-		get_typlenbyvalalign(ARR_ELEMTYPE(arrayval),
-							 &elmlen, &elmbyval, &elmalign);
+		get_type_stores(ARR_ELEMTYPE(arrayval),
+							 &elmlen, &elmbyval, &elmalign, &elmstor);
 		deconstruct_array(arrayval,
 						  ARR_ELEMTYPE(arrayval),
-						  elmlen, elmbyval, elmalign,
+						  elmlen, elmbyval, elmalign, elmstor,
 						  &elem_values, &elem_nulls, &num_elems);
 		if (num_elems <= 0)
 		{

@@ -904,6 +904,7 @@ array_to_jsonb_internal(Datum array, JsonbInState *result)
 	int16		typlen;
 	bool		typbyval;
 	char		typalign;
+	char		typstor;
 	JsonTypeCategory tcategory;
 	Oid			outfuncoid;
 
@@ -918,14 +919,14 @@ array_to_jsonb_internal(Datum array, JsonbInState *result)
 		return;
 	}
 
-	get_typlenbyvalalign(element_type,
-						 &typlen, &typbyval, &typalign);
+	get_type_stores(element_type,
+						 &typlen, &typbyval, &typalign, &typstor);
 
 	json_categorize_type(element_type, true,
 						 &tcategory, &outfuncoid);
 
 	deconstruct_array(v, element_type, typlen, typbyval,
-					  typalign, &elements, &nulls,
+					  typalign, typstor, &elements, &nulls,
 					  &nitems);
 
 	array_dim_to_jsonb(result, 0, ndim, dim, elements, nulls, &count, tcategory,

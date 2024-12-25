@@ -484,6 +484,7 @@ array_to_json_internal(Datum array, StringInfo result, bool use_line_feeds)
 	int16		typlen;
 	bool		typbyval;
 	char		typalign;
+	char		typstor;
 	JsonTypeCategory tcategory;
 	Oid			outfuncoid;
 
@@ -497,14 +498,14 @@ array_to_json_internal(Datum array, StringInfo result, bool use_line_feeds)
 		return;
 	}
 
-	get_typlenbyvalalign(element_type,
-						 &typlen, &typbyval, &typalign);
+	get_type_stores(element_type,
+						 &typlen, &typbyval, &typalign, &typstor);
 
 	json_categorize_type(element_type, false,
 						 &tcategory, &outfuncoid);
 
 	deconstruct_array(v, element_type, typlen, typbyval,
-					  typalign, &elements, &nulls,
+					  typalign, typstor, &elements, &nulls,
 					  &nitems);
 
 	array_dim_to_json(result, 0, ndim, dim, elements, nulls, &count, tcategory,

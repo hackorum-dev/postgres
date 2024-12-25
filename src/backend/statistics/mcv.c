@@ -1724,6 +1724,7 @@ mcv_get_match_bitmap(PlannerInfo *root, List *clauses,
 			int16		elmlen;
 			bool		elmbyval;
 			char		elmalign;
+			char		elmstor;
 			int			num_elems;
 			Datum	   *elem_values;
 			bool	   *elem_nulls;
@@ -1745,11 +1746,11 @@ mcv_get_match_bitmap(PlannerInfo *root, List *clauses,
 			if (!cst->constisnull)
 			{
 				arrayval = DatumGetArrayTypeP(cst->constvalue);
-				get_typlenbyvalalign(ARR_ELEMTYPE(arrayval),
-									 &elmlen, &elmbyval, &elmalign);
+				get_type_stores(ARR_ELEMTYPE(arrayval),
+									 &elmlen, &elmbyval, &elmalign, &elmstor);
 				deconstruct_array(arrayval,
 								  ARR_ELEMTYPE(arrayval),
-								  elmlen, elmbyval, elmalign,
+								  elmlen, elmbyval, elmalign, elmstor,
 								  &elem_values, &elem_nulls, &num_elems);
 			}
 

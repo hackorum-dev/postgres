@@ -4867,10 +4867,7 @@ array_to_text_internal(FunctionCallInfo fcinfo, ArrayType *v,
 		/*
 		 * Get info about element type, including its output conversion proc
 		 */
-		get_type_io_data(element_type, IOFunc_output,
-						 &my_extra->typlen, &my_extra->typbyval,
-						 &my_extra->typalign, &my_extra->typdelim,
-						 &my_extra->typioparam, &my_extra->typiofunc);
+		array_type_metadata(element_type, IOFunc_output, my_extra);
 		fmgr_info_cxt(my_extra->typiofunc, &my_extra->proc,
 					  fcinfo->flinfo->fn_mcxt);
 		my_extra->element_type = element_type;
@@ -5678,6 +5675,7 @@ text_format(PG_FUNCTION_ARGS)
 		int16		elmlen;
 		bool		elmbyval;
 		char		elmalign;
+		char		elmstor;
 		int			nitems;
 
 		/* Should have just the one argument */
@@ -5702,12 +5700,12 @@ text_format(PG_FUNCTION_ARGS)
 
 			/* Get info about array element type */
 			element_type = ARR_ELEMTYPE(arr);
-			get_typlenbyvalalign(element_type,
-								 &elmlen, &elmbyval, &elmalign);
+			get_type_stores(element_type,
+								 &elmlen, &elmbyval, &elmalign, &elmstor);
 
 			/* Extract all array elements */
 			deconstruct_array(arr, element_type, elmlen, elmbyval, elmalign,
-							  &elements, &nulls, &nitems);
+							  elmstor, &elements, &nulls, &nitems);
 		}
 
 		nargs = nitems + 1;

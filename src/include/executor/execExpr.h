@@ -458,6 +458,7 @@ typedef struct ExprEvalStep
 			int16		elemlength; /* typlen of the array element type */
 			bool		elembyval;	/* is the element type pass-by-value? */
 			char		elemalign;	/* typalign of the element type */
+			char		elemstorage;	/* typstorage of the element type */
 			bool		multidims;	/* is array expression multi-D? */
 		}			arrayexpr;
 

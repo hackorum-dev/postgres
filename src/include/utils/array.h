@@ -130,6 +130,7 @@ typedef struct ExpandedArrayHeader
 	int16		typlen;			/* needed info about element datatype */
 	bool		typbyval;
 	char		typalign;
+	char		typstorage;
 
 	/*
 	 * If we have a Datum-array representation of the array, it's kept here;
@@ -195,6 +196,7 @@ typedef struct ArrayBuildState
 	int16		typlen;			/* needed info about datatype */
 	bool		typbyval;
 	char		typalign;
+	char		typstorage;
 	bool		private_cxt;	/* use private memory context */
 } ArrayBuildState;
 
@@ -240,6 +242,7 @@ typedef struct ArrayMetaState
 	bool		typbyval;
 	char		typalign;
 	char		typdelim;
+	char		typstorage;
 	Oid			typioparam;
 	Oid			typiofunc;
 	FmgrInfo	proc;
@@ -358,30 +361,34 @@ extern void CopyArrayEls(ArrayType *array,
 						 int typlen,
 						 bool typbyval,
 						 char typalign,
+						 char typstor,
 						 bool freedata);
 
 extern Datum array_get_element(Datum arraydatum, int nSubscripts, int *indx,
-							   int arraytyplen, int elmlen, bool elmbyval, char elmalign,
-							   bool *isNull);
+							   int arraytyplen, int elmlen, bool elmbyval,
+							   char elmalign, char elmstor, bool *isNull);
 extern Datum array_set_element(Datum arraydatum, int nSubscripts, int *indx,
 							   Datum dataValue, bool isNull,
-							   int arraytyplen, int elmlen, bool elmbyval, char elmalign);
+							   int arraytyplen, int elmlen, bool elmbyval,
+							   char elmalign, char elmstor);
 extern Datum array_get_slice(Datum arraydatum, int nSubscripts,
 							 int *upperIndx, int *lowerIndx,
 							 bool *upperProvided, bool *lowerProvided,
-							 int arraytyplen, int elmlen, bool elmbyval, char elmalign);
+							 int arraytyplen, int elmlen, bool elmbyval,
+							 char elmalign, char typstor);
 extern Datum array_set_slice(Datum arraydatum, int nSubscripts,
 							 int *upperIndx, int *lowerIndx,
 							 bool *upperProvided, bool *lowerProvided,
 							 Datum srcArrayDatum, bool isNull,
-							 int arraytyplen, int elmlen, bool elmbyval, char elmalign);
+							 int arraytyplen, int elmlen, bool elmbyval,
+							 char elmalign, char elmstor);
 
 extern Datum array_ref(ArrayType *array, int nSubscripts, int *indx,
 					   int arraytyplen, int elmlen, bool elmbyval, char elmalign,
-					   bool *isNull);
+					   char elmstor, bool *isNull);
 extern ArrayType *array_set(ArrayType *array, int nSubscripts, int *indx,
-							Datum dataValue, bool isNull,
-							int arraytyplen, int elmlen, bool elmbyval, char elmalign);
+							Datum dataValue, bool isNull, int arraytyplen,
+							int elmlen, bool elmbyval, char elmalign, char elmstor);
 
 extern Datum array_map(Datum arrayd,
 					   struct ExprState *exprstate, struct ExprContext *econtext,
@@ -393,21 +400,23 @@ extern void array_bitmap_copy(bits8 *destbitmap, int destoffset,
 
 extern ArrayType *construct_array(Datum *elems, int nelems,
 								  Oid elmtype,
-								  int elmlen, bool elmbyval, char elmalign);
+								  int elmlen, bool elmbyval,
+								  char elmalign, char elmstor);
 extern ArrayType *construct_array_builtin(Datum *elems, int nelems, Oid elmtype);
 extern ArrayType *construct_md_array(Datum *elems,
 									 bool *nulls,
 									 int ndims,
 									 int *dims,
 									 int *lbs,
-									 Oid elmtype, int elmlen, bool elmbyval, char elmalign);
+									 Oid elmtype, int elmlen, bool elmbyval,
+									 char elmalign, char elmstor);
 extern ArrayType *construct_empty_array(Oid elmtype);
 extern ExpandedArrayHeader *construct_empty_expanded_array(Oid element_type,
 														   MemoryContext parentcontext,
 														   ArrayMetaState *metacache);
 extern void deconstruct_array(ArrayType *array,
 							  Oid elmtype,
-							  int elmlen, bool elmbyval, char elmalign,
+							  int elmlen, bool elmbyval, char elmalign, char elmstor,
 							  Datum **elemsp, bool **nullsp, int *nelemsp);
 extern void deconstruct_array_builtin(ArrayType *array,
 									  Oid elmtype,

@@ -904,6 +904,105 @@ boot_get_type_io_data(Oid typid,
 }
 
 /* ----------------
+ *		boot_array_type_metadata
+ *
+ * Obtain type metadata at bootstrap time.  This intentionally has
+ * almost the same API as lsyscache.c's array_type_metadata, except that
+ * we only support obtaining the typinput and typoutput routines, not
+ * the binary I/O routines.  It is exported so that array_in and array_out
+ * can be made to work during early bootstrap.
+ * ----------------
+ */
+void
+boot_array_type_metadata(Oid typid,
+						 IOFuncSelector which_func,
+						 ArrayMetaState *metadata)
+{
+	if (Typ != NIL)
+	{
+		/* We have the boot-time contents of pg_type, so use it */
+		struct typmap *ap = NULL;
+		ListCell   *lc;
+
+		foreach(lc, Typ)
+		{
+			ap = lfirst(lc);
+			if (ap->am_oid == typid)
+				break;
+		}
+
+		if (!ap || ap->am_oid != typid)
+			elog(ERROR, "type OID %u not found in Typ list", typid);
+
+		metadata->typlen = ap->am_typ.typlen;
+		metadata->typbyval = ap->am_typ.typbyval;
+		metadata->typalign = ap->am_typ.typalign;
+		metadata->typstorage = ap->am_typ.typstorage;
+		metadata->typdelim = ap->am_typ.typdelim;
+
+		/* XXX this logic must match getTypeIOParam() */
+		if (OidIsValid(ap->am_typ.typelem))
+			metadata->typioparam = ap->am_typ.typelem;
+		else
+			metadata->typioparam = typid;
+
+		switch (which_func)
+		{
+			case IOFunc_input:
+				metadata->typiofunc = ap->am_typ.typinput;
+				break;
+			case IOFunc_output:
+				metadata->typiofunc = ap->am_typ.typoutput;
+				break;
+			default:
+				elog(ERROR, "binary I/O not supported during bootstrap");
+				break;
+		}
+
+		return;
+	}
+	else
+	{
+		/* We don't have pg_type yet, so use the hard-wired TypInfo array */
+		int			typeindex;
+
+		for (typeindex = 0; typeindex < n_types; typeindex++)
+		{
+			if (TypInfo[typeindex].oid == typid)
+				break;
+		}
+		if (typeindex >= n_types)
+			elog(ERROR, "type OID %u not found in TypInfo", typid);
+
+		metadata->typlen = TypInfo[typeindex].len;
+		metadata->typbyval = TypInfo[typeindex].byval;
+		metadata->typalign = TypInfo[typeindex].align;
+		metadata->typstorage = TypInfo[typeindex].storage;
+		/* We assume typdelim is ',' for all boot-time types */
+		metadata->typdelim = ',';
+
+		/* XXX this logic must match getTypeIOParam() */
+		if (OidIsValid(TypInfo[typeindex].elem))
+			metadata->typioparam = TypInfo[typeindex].elem;
+		else
+			metadata->typioparam = typid;
+
+		switch (which_func)
+		{
+			case IOFunc_input:
+				metadata->typiofunc = TypInfo[typeindex].inproc;
+				break;
+			case IOFunc_output:
+				metadata->typiofunc = TypInfo[typeindex].outproc;
+				break;
+			default:
+				elog(ERROR, "binary I/O not supported during bootstrap");
+				break;
+		}
+	}
+}
+
+/* ----------------
  *		AllocateAttribute
  *
  * Note: bootstrap never sets any per-column ACLs, so we only need

@@ -12,7 +12,7 @@
 #include "ltree.h"
 #include "utils/array.h"
 
-#define NEXTVAL(x) ( (lquery*)( (char*)(x) + INTALIGN( VARSIZE(x) ) ) )
+#define NEXTVAL(x) ( (lquery*)( (char*)(x) + INTALIGN( VARSIZE_ANY(x) ) ) )
 #define ISEQ(a,b)	( (a)->numlevel == (b)->numlevel && ltree_compare(a,b)==0 )
 
 PG_FUNCTION_INFO_V1(ltree_gist_in);
@@ -592,6 +592,7 @@ static bool
 arrq_cons(ltree_gist *key, ArrayType *_query, int siglen)
 {
 	lquery	   *query = (lquery *) ARR_DATA_PTR(_query);
+	lquery	   *newqry;
 	int			num = ArrayGetNItems(ARR_NDIM(_query), ARR_DIMS(_query));
 
 	if (ARR_NDIM(_query) > 1)
@@ -605,11 +606,21 @@ arrq_cons(ltree_gist *key, ArrayType *_query, int siglen)
 
 	while (num > 0)
 	{
-		if (gist_qe(key, query, siglen) && gist_between(key, query, siglen))
+		newqry = (lquery *)ltree_norm_short_item((char *)query);
+
+		if (gist_qe(key, newqry, siglen) && gist_between(key, newqry, siglen))
+		{
+			PFREE_IF_NEW(newqry, query);
+
 			return true;
+		}
+
+		PFREE_IF_NEW(newqry, query);
+
 		num--;
 		query = NEXTVAL(query);
 	}
+
 	return false;
 }
 

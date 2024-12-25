@@ -3055,6 +3055,7 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 						  -1 /* TEXT's typlen */ ,
 						  false /* TEXT's typbyval */ ,
 						  TYPALIGN_INT /* TEXT's typalign */ ,
+						  TYPSTORAGE_EXTENDED /* TEXT's typalign */ ,
 						  &isnull);
 			if (!isnull)
 			{

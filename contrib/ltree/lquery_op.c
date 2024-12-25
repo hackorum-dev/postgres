@@ -19,7 +19,7 @@ PG_FUNCTION_INFO_V1(ltq_rregex);
 PG_FUNCTION_INFO_V1(lt_q_regex);
 PG_FUNCTION_INFO_V1(lt_q_rregex);
 
-#define NEXTVAL(x) ( (lquery*)( (char*)(x) + INTALIGN( VARSIZE(x) ) ) )
+#define NEXTVAL(x) ( (lquery*)( (char*)(x) + INTALIGN( VARSIZE_ANY(x) ) ) )
 
 static char *
 getlexeme(char *start, char *end, int *len)
@@ -241,6 +241,7 @@ lt_q_regex(PG_FUNCTION_ARGS)
 	ltree	   *tree = PG_GETARG_LTREE_P(0);
 	ArrayType  *_query = PG_GETARG_ARRAYTYPE_P(1);
 	lquery	   *query = (lquery *) ARR_DATA_PTR(_query);
+	lquery	   *newqry;
 	bool		res = false;
 	int			num = ArrayGetNItems(ARR_NDIM(_query), ARR_DIMS(_query));
 
@@ -255,13 +256,19 @@ lt_q_regex(PG_FUNCTION_ARGS)
 
 	while (num > 0)
 	{
+		newqry = (lquery *)ltree_norm_short_item((char *)query);
+
 		if (DatumGetBool(DirectFunctionCall2(ltq_regex,
-											 PointerGetDatum(tree), PointerGetDatum(query))))
+											 PointerGetDatum(tree), PointerGetDatum(newqry))))
 		{
+			PFREE_IF_NEW(newqry, query);
 
 			res = true;
 			break;
 		}
+
+		PFREE_IF_NEW(newqry, query);
+
 		num--;
 		query = NEXTVAL(query);
 	}

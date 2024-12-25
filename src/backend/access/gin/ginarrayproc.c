@@ -39,16 +39,17 @@ ginarrayextract(PG_FUNCTION_ARGS)
 	int16		elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 	Datum	   *elems;
 	bool	   *nulls;
 	int			nelems;
 
-	get_typlenbyvalalign(ARR_ELEMTYPE(array),
-						 &elmlen, &elmbyval, &elmalign);
+	get_type_stores(ARR_ELEMTYPE(array),
+						 &elmlen, &elmbyval, &elmalign, &elmstor);
 
 	deconstruct_array(array,
 					  ARR_ELEMTYPE(array),
-					  elmlen, elmbyval, elmalign,
+					  elmlen, elmbyval, elmalign, elmstor,
 					  &elems, &nulls, &nelems);
 
 	*nkeys = nelems;
@@ -90,16 +91,17 @@ ginqueryarrayextract(PG_FUNCTION_ARGS)
 	int16		elmlen;
 	bool		elmbyval;
 	char		elmalign;
+	char		elmstor;
 	Datum	   *elems;
 	bool	   *nulls;
 	int			nelems;
 
-	get_typlenbyvalalign(ARR_ELEMTYPE(array),
-						 &elmlen, &elmbyval, &elmalign);
+	get_type_stores(ARR_ELEMTYPE(array),
+						 &elmlen, &elmbyval, &elmalign, &elmstor);
 
 	deconstruct_array(array,
 					  ARR_ELEMTYPE(array),
-					  elmlen, elmbyval, elmalign,
+					  elmlen, elmbyval, elmalign, elmstor,
 					  &elems, &nulls, &nelems);
 
 	*nkeys = nelems;

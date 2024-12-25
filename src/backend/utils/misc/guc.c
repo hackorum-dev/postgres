@@ -6420,6 +6420,7 @@ TransformGUCArray(ArrayType *array, List **names, List **values)
 					  -1 /* TEXT's typlen */ ,
 					  false /* TEXT's typbyval */ ,
 					  TYPALIGN_INT /* TEXT's typalign */ ,
+					  TYPSTORAGE_EXTENDED /* TEXT's typalign */ ,
 					  &isnull);
 
 		if (isnull)
@@ -6529,6 +6530,7 @@ GUCArrayAdd(ArrayType *array, const char *name, const char *value)
 						  -1 /* TEXT's typlen */ ,
 						  false /* TEXT's typbyval */ ,
 						  TYPALIGN_INT /* TEXT's typalign */ ,
+						  TYPSTORAGE_EXTENDED /* TEXT's typalign */ ,
 						  &isnull);
 			if (isnull)
 				continue;
@@ -6548,7 +6550,8 @@ GUCArrayAdd(ArrayType *array, const char *name, const char *value)
 					  -1 /* varlena array */ ,
 					  -1 /* TEXT's typlen */ ,
 					  false /* TEXT's typbyval */ ,
-					  TYPALIGN_INT /* TEXT's typalign */ );
+					  TYPALIGN_INT /* TEXT's typalign */ ,
+					  TYPSTORAGE_EXTENDED /* TEXT's typstorage */ );
 	}
 	else
 		a = construct_array_builtin(&datum, 1, TEXTOID);
@@ -6598,6 +6601,7 @@ GUCArrayDelete(ArrayType *array, const char *name)
 					  -1 /* TEXT's typlen */ ,
 					  false /* TEXT's typbyval */ ,
 					  TYPALIGN_INT /* TEXT's typalign */ ,
+					  TYPSTORAGE_EXTENDED /* TEXT's typalign */ ,
 					  &isnull);
 		if (isnull)
 			continue;
@@ -6616,7 +6620,8 @@ GUCArrayDelete(ArrayType *array, const char *name)
 								 -1 /* varlenarray */ ,
 								 -1 /* TEXT's typlen */ ,
 								 false /* TEXT's typbyval */ ,
-								 TYPALIGN_INT /* TEXT's typalign */ );
+								 TYPALIGN_INT /* TEXT's typalign */ ,
+								 TYPSTORAGE_EXTENDED /* TEXT's typstorage */ );
 		else
 			newarray = construct_array_builtin(&d, 1, TEXTOID);
 
@@ -6662,6 +6667,7 @@ GUCArrayReset(ArrayType *array)
 					  -1 /* TEXT's typlen */ ,
 					  false /* TEXT's typbyval */ ,
 					  TYPALIGN_INT /* TEXT's typalign */ ,
+					  TYPSTORAGE_EXTENDED /* TEXT's typalign */ ,
 					  &isnull);
 		if (isnull)
 			continue;
@@ -6682,7 +6688,8 @@ GUCArrayReset(ArrayType *array)
 								 -1 /* varlenarray */ ,
 								 -1 /* TEXT's typlen */ ,
 								 false /* TEXT's typbyval */ ,
-								 TYPALIGN_INT /* TEXT's typalign */ );
+								 TYPALIGN_INT /* TEXT's typalign */ ,
+								 TYPSTORAGE_EXTENDED /* TEXT's typstorage */ );
 		else
 			newarray = construct_array_builtin(&d, 1, TEXTOID);
 
