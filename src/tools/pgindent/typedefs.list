@@ -2166,6 +2166,7 @@ PgStat_StatDBEntry
 PgStat_StatFuncEntry
 PgStat_StatInjEntry
 PgStat_StatInjFixedEntry
+PgStat_StatInjRecord
 PgStat_StatReplSlotEntry
 PgStat_StatSubEntry
 PgStat_StatTabEntry
