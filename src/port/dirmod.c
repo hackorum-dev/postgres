@@ -310,7 +310,12 @@ pgreadlink(const char *path, char *buf, size_t size)
 {
 	DWORD		attr;
 	HANDLE		h;
-	char		buffer[MAX_PATH * sizeof(WCHAR) + offsetof(REPARSE_JUNCTION_DATA_BUFFER, PathBuffer)];
+/*
+ * The buffer size described in documentation
+ * https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-set-reparse-point
+ * It stores paths for SubstitutaName and PrintName.
+ */
+	char		buffer[MAXIMUM_REPARSE_DATA_BUFFER_SIZE];
 	REPARSE_JUNCTION_DATA_BUFFER *reparseBuf = (REPARSE_JUNCTION_DATA_BUFFER *) buffer;
 	DWORD		len;
 	int			r;
@@ -350,6 +355,8 @@ pgreadlink(const char *path, char *buf, size_t size)
 						 NULL))
 	{
 		LPSTR		msg;
+		/* the maximal size of the message returned by FormatMessage is 64Kb */
+		char		msgBuffer[0x10000];
 
 		errno = 0;
 		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
@@ -358,17 +365,24 @@ pgreadlink(const char *path, char *buf, size_t size)
 					  NULL, GetLastError(),
 					  MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT),
 					  (LPSTR) &msg, 0, NULL);
+		strncpy(msgBuffer, msg, sizeof(msgBuffer));
+		if (strlen(msg) >= sizeof(msgBuffer))
+		{
+			msgBuffer[sizeof(msgBuffer) - 1] = 0;
+		}
 #ifndef FRONTEND
+		LocalFree(msg);
+		CloseHandle(h);
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not get junction for \"%s\": %s",
-						path, msg)));
+						path, msgBuffer)));
 #else
 		fprintf(stderr, _("could not get junction for \"%s\": %s\n"),
 				path, msg);
-#endif
 		LocalFree(msg);
 		CloseHandle(h);
+#endif
 		errno = EINVAL;
 		return -1;
 	}
