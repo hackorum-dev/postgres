@@ -54,6 +54,10 @@ else
 ALWAYS_SUBDIRS += ssl_passphrase_callback
 endif
 
+ifneq (test_backend_memory,$(filter test_backend_memory,$(PG_TEST_SKIP)))
+SUBDIRS += test_backend_memory
+endif
+
 # Test runs an LDAP server, so only run if ldap is in PG_TEST_EXTRA
 ifeq ($(with_ldap),yes)
 ifneq (,$(filter ldap,$(PG_TEST_EXTRA)))

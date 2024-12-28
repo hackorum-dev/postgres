@@ -2337,6 +2337,23 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+    <varlistentry id="guc-max-backend-memory" xreflabel="max_backend_memory">
+      <term><varname>max_backend_memory</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>max_backend_memory</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies the maximum amount of memory that can be allocated to a backend.
+        Zero means no limit.
+       </para>
+       <para>
+        Default: 0
+       </para>
+      </listitem>
+     </varlistentry>
+
      </variablelist>
      </sect2>
 

@@ -11,6 +11,7 @@
 #define BACKEND_STATUS_H
 
 #include "datatype/timestamp.h"
+#include "fmgr.h"
 #include "libpq/pqcomm.h"
 #include "miscadmin.h"			/* for BackendType */
 #include "storage/procnumber.h"
@@ -285,6 +286,7 @@ typedef struct LocalPgBackendStatus
  */
 extern PGDLLIMPORT bool pgstat_track_activities;
 extern PGDLLIMPORT int pgstat_track_activity_query_size;
+extern PGDLLIMPORT int max_backend_memory_size_mb;
 
 
 /* ----------
@@ -337,5 +339,13 @@ extern LocalPgBackendStatus *pgstat_get_local_beentry_by_proc_number(ProcNumber 
 extern LocalPgBackendStatus *pgstat_get_local_beentry_by_index(int idx);
 extern char *pgstat_clip_activity(const char *raw_activity);
 
+/*
+ * Fuctions to count memory
+ */
+extern void *malloc_and_count(Size size);
+extern void *realloc_and_count(void *ptr, Size new_size, Size old_size);
+extern void free_and_count(void *ptr, Size size);
+extern Datum pg_get_backend_memory_contexts_total_bytes(PG_FUNCTION_ARGS);
+extern Datum pg_get_backend_memory_allocation_stats(PG_FUNCTION_ARGS);
 
 #endif							/* BACKEND_STATUS_H */

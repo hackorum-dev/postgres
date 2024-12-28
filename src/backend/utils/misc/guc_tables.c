@@ -3732,6 +3732,16 @@ struct config_int ConfigureNamesInt[] =
 		SCRAM_SHA_256_DEFAULT_ITERATIONS, 1, INT_MAX,
 		NULL, NULL, NULL
 	},
+	{
+		{"max_backend_memory", PGC_SU_BACKEND, RESOURCES_MEM,
+			gettext_noop("Restrict total backend memory allocations to this max (rounded up to the nearest MB)."),
+			NULL,
+			GUC_UNIT_MB
+		},
+		&max_backend_memory_size_mb,
+		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
 
 	/* End-of-list marker */
 	{

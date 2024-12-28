@@ -47,6 +47,7 @@
 #include "postgres.h"
 
 #include "port/pg_bitutils.h"
+#include "utils/backend_status.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
 #include "utils/memutils_internal.h"
@@ -441,7 +442,7 @@ AllocSetContextCreateInternal(MemoryContext parent,
 	 * Allocate the initial block.  Unlike other aset.c blocks, it starts with
 	 * the context header and its block header follows that.
 	 */
-	set = (AllocSet) malloc(firstBlockSize);
+	set = (AllocSet) malloc_and_count(firstBlockSize);
 	if (set == NULL)
 	{
 		if (TopMemoryContext)
@@ -579,13 +580,16 @@ AllocSetReset(MemoryContext context)
 		}
 		else
 		{
+			Size	deallocation_size;
+
 			/* Normal case, release the block */
-			context->mem_allocated -= block->endptr - ((char *) block);
+			deallocation_size = block->endptr - ((char *) block);
+			context->mem_allocated -= deallocation_size;
 
 #ifdef CLOBBER_FREED_MEMORY
 			wipe_mem(block, block->freeptr - ((char *) block));
 #endif
-			free(block);
+			free_and_count(block, deallocation_size);
 		}
 		block = next;
 	}
@@ -649,7 +653,7 @@ AllocSetDelete(MemoryContext context)
 				freelist->num_free--;
 
 				/* All that remains is to free the header/initial block */
-				free(oldset);
+				free_and_count(oldset, oldset->header.mem_allocated);
 			}
 			Assert(freelist->num_free == 0);
 		}
@@ -666,16 +670,20 @@ AllocSetDelete(MemoryContext context)
 	while (block != NULL)
 	{
 		AllocBlock	next = block->next;
+		Size		deallocation_size = 0;
 
 		if (!IsKeeperBlock(set, block))
-			context->mem_allocated -= block->endptr - ((char *) block);
+		{
+			deallocation_size = block->endptr - ((char *) block);
+			context->mem_allocated -= deallocation_size;
+		}
 
 #ifdef CLOBBER_FREED_MEMORY
 		wipe_mem(block, block->freeptr - ((char *) block));
 #endif
 
 		if (!IsKeeperBlock(set, block))
-			free(block);
+			free_and_count(block, deallocation_size);
 
 		block = next;
 	}
@@ -683,7 +691,7 @@ AllocSetDelete(MemoryContext context)
 	Assert(context->mem_allocated == keepersize);
 
 	/* Finally, free the context header, including the keeper block */
-	free(set);
+	free_and_count(set, keepersize);
 }
 
 /*
@@ -712,7 +720,7 @@ AllocSetAllocLarge(MemoryContext context, Size size, int flags)
 #endif
 
 	blksize = chunk_size + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
-	block = (AllocBlock) malloc(blksize);
+	block = (AllocBlock) malloc_and_count(blksize);
 	if (block == NULL)
 		return MemoryContextAllocationFailure(context, size, flags);
 
@@ -905,7 +913,7 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
 		blksize <<= 1;
 
 	/* Try to allocate it */
-	block = (AllocBlock) malloc(blksize);
+	block = (AllocBlock) malloc_and_count(blksize);
 
 	/*
 	 * We could be asking for pretty big blocks here, so cope if malloc fails.
@@ -916,7 +924,7 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
 		blksize >>= 1;
 		if (blksize < required_size)
 			break;
-		block = (AllocBlock) malloc(blksize);
+		block = (AllocBlock) malloc_and_count(blksize);
 	}
 
 	if (block == NULL)
@@ -1071,6 +1079,7 @@ AllocSetFree(void *pointer)
 	{
 		/* Release single-chunk block. */
 		AllocBlock	block = ExternalChunkGetBlock(chunk);
+		Size		deallocation_size;
 
 		/*
 		 * Try to verify that we have a sane block pointer: the block header
@@ -1099,12 +1108,13 @@ AllocSetFree(void *pointer)
 		if (block->next)
 			block->next->prev = block->prev;
 
-		set->header.mem_allocated -= block->endptr - ((char *) block);
+		deallocation_size = block->endptr - ((char *) block);
+		set->header.mem_allocated -= deallocation_size;
 
 #ifdef CLOBBER_FREED_MEMORY
 		wipe_mem(block, block->freeptr - ((char *) block));
 #endif
-		free(block);
+		free_and_count(block, deallocation_size);
 	}
 	else
 	{
@@ -1223,7 +1233,7 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		blksize = chksize + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
 		oldblksize = block->endptr - ((char *) block);
 
-		block = (AllocBlock) realloc(block, blksize);
+		block = (AllocBlock) realloc_and_count(block, blksize, oldblksize);
 		if (block == NULL)
 		{
 			/* Disallow access to the chunk header. */

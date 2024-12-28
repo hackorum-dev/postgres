@@ -171,6 +171,7 @@
 #serializable_buffers = 32		# memory for pg_serial
 #subtransaction_buffers = 0		# memory for pg_subtrans (0 = auto)
 #transaction_buffers = 0		# memory for pg_xact (0 = auto)
+#max_backend_memory = 0			# limit amount of per-backend allocated memory in megabytes
 
 # - Disk -
 

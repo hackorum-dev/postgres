@@ -37,6 +37,7 @@
 
 #include "lib/ilist.h"
 #include "port/pg_bitutils.h"
+#include "utils/backend_status.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
 #include "utils/memutils_internal.h"
@@ -206,7 +207,7 @@ GenerationContextCreate(MemoryContext parent,
 	 * Allocate the initial block.  Unlike other generation.c blocks, it
 	 * starts with the context header and its block header follows that.
 	 */
-	set = (GenerationContext *) malloc(allocSize);
+	set = (GenerationContext *) malloc_and_count(allocSize);
 	if (set == NULL)
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -330,7 +331,7 @@ GenerationDelete(MemoryContext context)
 	/* Reset to release all releasable GenerationBlocks */
 	GenerationReset(context);
 	/* And free the context header and keeper block */
-	free(context);
+	free_and_count(context, context->mem_allocated + MAXALIGN(sizeof(GenerationContext)));
 }
 
 /*
@@ -361,7 +362,7 @@ GenerationAllocLarge(MemoryContext context, Size size, int flags)
 	required_size = chunk_size + Generation_CHUNKHDRSZ;
 	blksize = required_size + Generation_BLOCKHDRSZ;
 
-	block = (GenerationBlock *) malloc(blksize);
+	block = (GenerationBlock *) malloc_and_count(blksize);
 	if (block == NULL)
 		return MemoryContextAllocationFailure(context, size, flags);
 
@@ -482,7 +483,7 @@ GenerationAllocFromNewBlock(MemoryContext context, Size size, int flags,
 	if (blksize < required_size)
 		blksize = pg_nextpower2_size_t(required_size);
 
-	block = (GenerationBlock *) malloc(blksize);
+	block = (GenerationBlock *) malloc_and_count(blksize);
 
 	if (block == NULL)
 		return MemoryContextAllocationFailure(context, size, flags);
@@ -663,6 +664,9 @@ GenerationBlockFreeBytes(GenerationBlock *block)
 static inline void
 GenerationBlockFree(GenerationContext *set, GenerationBlock *block)
 {
+	/* Have to store the value locally, block will be wiped. */
+	Size	blksize = block->blksize;
+
 	/* Make sure nobody tries to free the keeper block */
 	Assert(!IsKeeperBlock(set, block));
 	/* We shouldn't be freeing the freeblock either */
@@ -671,13 +675,13 @@ GenerationBlockFree(GenerationContext *set, GenerationBlock *block)
 	/* release the block from the list of blocks */
 	dlist_delete(&block->node);
 
-	((MemoryContext) set)->mem_allocated -= block->blksize;
+	((MemoryContext) set)->mem_allocated -= blksize;
 
 #ifdef CLOBBER_FREED_MEMORY
-	wipe_mem(block, block->blksize);
+	wipe_mem(block, blksize);
 #endif
 
-	free(block);
+	free_and_count(block, blksize);
 }
 
 /*

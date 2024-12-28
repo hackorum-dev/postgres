@@ -12,6 +12,7 @@
 #include "postgres.h"
 
 #include "access/xact.h"
+#include "funcapi.h"
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
@@ -20,6 +21,7 @@
 #include "storage/proc.h"		/* for MyProc */
 #include "storage/procarray.h"
 #include "utils/ascii.h"
+#include "utils/builtins.h"
 #include "utils/guc.h"			/* for application_name */
 #include "utils/memutils.h"
 
@@ -73,6 +75,17 @@ static void pgstat_beshutdown_hook(int code, Datum arg);
 static void pgstat_read_current_status(void);
 static void pgstat_setup_backend_status_context(void);
 
+/*
+ * Total memory size allocated by backend.
+ */
+static Size my_allocated_bytes = 0;
+
+/*
+ * GUC variable
+ *
+ * Max backend memory allocation allowed (MB). 0 = disabled
+ */
+int max_backend_memory_size_mb = 0;
 
 /*
  * Report shared-memory space needed by BackendStatusShmemInit.
@@ -1221,4 +1234,326 @@ pgstat_clip_activity(const char *raw_activity)
 	activity[cliplen] = '\0';
 
 	return activity;
+}
+
+#ifdef USE_ASSERT_CHECKING
+/*
+ * Single memory allocation.
+ */
+typedef struct
+{
+	void   *addr;
+	Size	size;
+	bool	deleted;
+} HeapBlock;
+
+/*
+ * Dynamic array of all allocated memory.
+ */
+typedef struct
+{
+	HeapBlock	   *blocks;
+	Size			size;
+	Size			capacity;
+	Size			ndeleted;
+} HeapBlockStat;
+
+static HeapBlockStat heapstat =
+{
+	.blocks = NULL,
+	.size = 0,
+	.capacity = 0,
+	.ndeleted = 0
+};
+
+/*
+ * Extend heapstat allocation stat array.
+ */
+static inline void
+HeapBlockStatExtend(void)
+{
+	if (heapstat.capacity == 0)
+	{
+#define INIT_MEMORY_CAPACITY 1024
+		heapstat.capacity = INIT_MEMORY_CAPACITY;
+		heapstat.blocks = (HeapBlock *) malloc(heapstat.capacity *
+											sizeof(heapstat.blocks[0]));
+	}
+	else if (heapstat.capacity == heapstat.size)
+	{
+		heapstat.capacity *= 2;
+		heapstat.blocks = (HeapBlock *) realloc(heapstat.blocks,
+											 heapstat.capacity *
+											 sizeof(heapstat.blocks[0]));
+	}
+}
+
+/*
+ * Compare HeapBlocks. Put not deleted in the beginning of an array.
+ */
+static int
+HeapBlockCmp(const void *p, const void *q)
+{
+	const HeapBlock    *a = (const HeapBlock *) p,
+					   *b = (const HeapBlock *) q;
+	int					arg1 = a->deleted,
+						arg2 = b->deleted;
+
+	if (arg1 < arg2)
+		return -1;
+	if (arg1 > arg2)
+		return 1;
+	return 0;
+}
+
+/*
+ * Put all not deleted items in the beginning.
+ */
+static void
+HeapBlockStatCompactify(void)
+{
+	if (heapstat.ndeleted < heapstat.size / 2)
+		return;
+
+	qsort(heapstat.blocks, heapstat.size, sizeof(heapstat.blocks[0]), HeapBlockCmp);
+	heapstat.size -= heapstat.ndeleted;
+	heapstat.ndeleted = 0;
+}
+
+/*
+ * Push new memory allocation.
+ */
+static void
+HeapBlockStatPush(void *ptr, Size size)
+{
+	Size	i;
+
+	HeapBlockStatExtend();
+	HeapBlockStatCompactify();
+
+	for (i = 0; i < heapstat.size; ++i)
+		Assert(heapstat.blocks[i].deleted || heapstat.blocks[i].addr != ptr);
+
+	Assert(heapstat.ndeleted <= heapstat.size);
+
+	/* Try to find deleted item to reuse it... */
+	for (i = 0; i < heapstat.size; ++i)
+	{
+		if (heapstat.blocks[i].deleted == true)
+		{
+			heapstat.blocks[i].addr = ptr;
+			heapstat.blocks[i].size = size;
+			heapstat.blocks[i].deleted = false;
+			--heapstat.ndeleted;
+			Assert(heapstat.ndeleted <= heapstat.size);
+			return;
+		}
+	}
+
+	/* ... no empty places, append! */
+	heapstat.blocks[i].addr = ptr;
+	heapstat.blocks[i].size = size;
+	heapstat.blocks[i].deleted = false;
+
+	++heapstat.size;
+}
+
+/*
+ * Pop memory allocation.
+ */
+static Size
+HeapBlockStatPop(void *ptr)
+{
+	Size	i;
+
+	for (i = 0; i < heapstat.size; ++i)
+	{
+		if (heapstat.blocks[i].addr == ptr)
+		{
+			Assert(heapstat.blocks[i].deleted == false);
+			heapstat.blocks[i].deleted = true;
+			++heapstat.ndeleted;
+			Assert(heapstat.ndeleted <= heapstat.size);
+			return heapstat.blocks[i].size;
+		}
+	}
+
+	/* should not get here... */
+	Assert(i != heapstat.size);
+	return 0;
+}
+#endif /* USE_ASSERT_CHECKING */
+
+/*
+ * Count backend allocated memory.
+ * If limit is set (max_backend_memory_size_mb) and check=true, then need to
+ * check my_allocated_bytes for going beyond the limit.
+ */
+static bool
+pgstat_alloc(Size size, bool check)
+{
+	/* Exclude auxiliary processes from the check */
+	switch (MyBackendType)
+	{
+		case B_STARTUP:
+		case B_ARCHIVER:
+		case B_BG_WRITER:
+		case B_CHECKPOINTER:
+		case B_WAL_WRITER:
+		case B_WAL_RECEIVER:
+		case B_WAL_SUMMARIZER:
+			return true;
+		default:
+			break;
+	}
+
+	my_allocated_bytes += size;
+
+	if (max_backend_memory_size_mb == 0 || !check)
+		return true;
+
+	/* Check for going beyond the limit */
+#define TO_BYTES(mb)	((Size)(mb) * 1024 * 1024)
+	if (my_allocated_bytes > TO_BYTES(max_backend_memory_size_mb))
+	{
+		my_allocated_bytes -= size;
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * Count deallocated backend memory.
+ */
+static void
+pgstat_free(Size size)
+{
+	/* Exclude auxiliary processes from the check */
+	switch (MyBackendType)
+	{
+		case B_STARTUP:
+		case B_ARCHIVER:
+		case B_BG_WRITER:
+		case B_CHECKPOINTER:
+		case B_WAL_WRITER:
+		case B_WAL_RECEIVER:
+		case B_WAL_SUMMARIZER:
+			return;
+		default:
+			break;
+	}
+
+	Assert(my_allocated_bytes >= size);
+	my_allocated_bytes -= size;
+}
+
+/*
+ * malloc() with bytes counter
+ */
+void *
+malloc_and_count(Size size)
+{
+	void   *ptr;
+
+	if (!pgstat_alloc(size, true))
+		return NULL;
+
+	ptr = malloc(size);
+	if (ptr == NULL)
+		pgstat_free(size);
+#ifdef USE_ASSERT_CHECKING
+	else
+		HeapBlockStatPush(ptr, size);
+#endif
+
+	return ptr;
+}
+
+/*
+ * realloc() with bytes counter
+ */
+void *
+realloc_and_count(void *ptr, Size new_size, Size old_size)
+{
+	Assert(old_size == HeapBlockStatPop(ptr));
+
+	pgstat_free(old_size);
+
+	if (!pgstat_alloc(new_size, true))
+	{
+		/* New buffer can not be alloced, so need to restore old one */
+		pgstat_alloc(old_size, false);
+#ifdef USE_ASSERT_CHECKING
+		HeapBlockStatPush(ptr, old_size);
+#endif
+		return NULL;
+	}
+
+	ptr = realloc(ptr, new_size);
+	if (ptr == NULL)
+		pgstat_free(new_size);
+#ifdef USE_ASSERT_CHECKING
+	else
+		HeapBlockStatPush(ptr, new_size);
+#endif
+
+	return ptr;
+}
+
+/*
+ * free() with bytes counter
+ */
+void
+free_and_count(void *ptr, Size size)
+{
+#ifdef USE_ASSERT_CHECKING
+	Assert(size == HeapBlockStatPop(ptr));
+#endif
+
+	pgstat_free(size);
+	free(ptr);
+}
+
+/*
+ * pg_get_backend_memory_contexts_total_bytes
+ *		Total amount of bytes in all allocated contexts.
+ */
+Datum
+pg_get_backend_memory_contexts_total_bytes(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(my_allocated_bytes);
+}
+
+/*
+ * pg_get_backend_memory_allocation_stats
+ *		SQL SRF showing backend allocated memory.
+ */
+Datum
+pg_get_backend_memory_allocation_stats(PG_FUNCTION_ARGS)
+{
+#ifdef USE_ASSERT_CHECKING
+#define MEMORY_ALLOCATION_COLS 3
+	ReturnSetInfo  *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	Datum			values[MEMORY_ALLOCATION_COLS];
+	bool			nulls[MEMORY_ALLOCATION_COLS];
+	Size			i;
+	char			text[16];
+
+	InitMaterializedSRF(fcinfo, 0);
+
+	memset(nulls, 0, sizeof(nulls));
+	for (i = 0; i < heapstat.size; ++i)
+	{
+		pg_snprintf(text, sizeof(text), "%p", heapstat.blocks[i].addr);
+		values[0] = CStringGetTextDatum(text);
+		values[1] = Int64GetDatum(heapstat.blocks[i].size);
+		values[2] = BoolGetDatum(heapstat.blocks[i].deleted);
+		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
+	}
+#else
+	elog(ERROR, "this only works for builds with asserts enabled");
+#endif
+
+	return (Datum) 0;
 }

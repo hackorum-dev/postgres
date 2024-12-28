@@ -69,6 +69,7 @@
 #include "postgres.h"
 
 #include "lib/ilist.h"
+#include "utils/backend_status.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
 #include "utils/memutils_internal.h"
@@ -361,7 +362,7 @@ SlabContextCreate(MemoryContext parent,
 
 
 
-	slab = (SlabContext *) malloc(Slab_CONTEXT_HDRSZ(chunksPerBlock));
+	slab = (SlabContext *) malloc_and_count(Slab_CONTEXT_HDRSZ(chunksPerBlock));
 	if (slab == NULL)
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -451,7 +452,7 @@ SlabReset(MemoryContext context)
 #ifdef CLOBBER_FREED_MEMORY
 		wipe_mem(block, slab->blockSize);
 #endif
-		free(block);
+		free_and_count(block, slab->blockSize);
 		context->mem_allocated -= slab->blockSize;
 	}
 
@@ -467,7 +468,7 @@ SlabReset(MemoryContext context)
 #ifdef CLOBBER_FREED_MEMORY
 			wipe_mem(block, slab->blockSize);
 #endif
-			free(block);
+			free_and_count(block, slab->blockSize);
 			context->mem_allocated -= slab->blockSize;
 		}
 	}
@@ -484,10 +485,14 @@ SlabReset(MemoryContext context)
 void
 SlabDelete(MemoryContext context)
 {
+#ifdef MEMORY_CONTEXT_CHECKING
+	SlabContext *slab = (SlabContext *) context;
+#endif
+
 	/* Reset to release all the SlabBlocks */
 	SlabReset(context);
 	/* And free the context header */
-	free(context);
+	free_and_count(context, Slab_CONTEXT_HDRSZ(slab->chunksPerBlock));
 }
 
 /*
@@ -562,7 +567,7 @@ SlabAllocFromNewBlock(MemoryContext context, Size size, int flags)
 	}
 	else
 	{
-		block = (SlabBlock *) malloc(slab->blockSize);
+		block = (SlabBlock *) malloc_and_count(slab->blockSize);
 
 		if (unlikely(block == NULL))
 			return MemoryContextAllocationFailure(context, size, flags);
@@ -795,7 +800,7 @@ SlabFree(void *pointer)
 #ifdef CLOBBER_FREED_MEMORY
 			wipe_mem(block, slab->blockSize);
 #endif
-			free(block);
+			free_and_count(block, slab->blockSize);
 			slab->header.mem_allocated -= slab->blockSize;
 		}
 
