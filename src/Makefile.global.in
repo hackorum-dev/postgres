@@ -19,7 +19,7 @@
 #
 # Meta configuration
 
-standard_targets = all install installdirs uninstall clean distclean coverage check checkprep installcheck init-po update-po
+standard_targets = all install installdirs uninstall clean distclean coccicheck coverage check checkprep installcheck init-po update-po
 # these targets should recurse even into subdirectories not being built:
 standard_always_targets = clean distclean
 
@@ -208,6 +208,7 @@ enable_rpath	= @enable_rpath@
 enable_nls	= @enable_nls@
 enable_debug	= @enable_debug@
 enable_dtrace	= @enable_dtrace@
+enable_coccicheck 	= @enable_coccicheck@
 enable_coverage	= @enable_coverage@
 enable_injection_points = @enable_injection_points@
 enable_tap_tests	= @enable_tap_tests@
@@ -389,7 +390,7 @@ CLDR_VERSION = 47
 # If a particular subdirectory knows this isn't needed in itself or its
 # children, it can set NO_GENERATED_HEADERS.
 
-all install check installcheck: submake-generated-headers
+all install check installcheck coccicheck: submake-generated-headers
 
 .PHONY: submake-generated-headers
 
@@ -537,6 +538,11 @@ DBTOEPUB	= @DBTOEPUB@
 FOP				= @FOP@
 XMLLINT			= @XMLLINT@
 XSLTPROC		= @XSLTPROC@
+
+# Coccinelle
+
+SPATCH = @SPATCH@
+SPFLAGS = @SPFLAGS@
 
 # Code coverage
 
@@ -1004,6 +1010,20 @@ include $(top_srcdir)/src/nls-global.mk
 endif # nls.mk
 endif # enable_nls
 
+
+##########################################################################
+#
+# Coccinelle checks
+#
+
+ifeq ($(enable_coccicheck), yes)
+coccicheck_py = $(top_srcdir)/src/tools/coccicheck.py
+coccicheck = SPATCH=$(SPATCH) SPFLAGS=$(SPFLAGS) $(PYTHON) $(coccicheck_py)
+
+.PHONY: coccicheck
+coccicheck:
+	$(coccicheck) --mode=$(MODE) 'cocci/**/*.cocci' $(top_srcdir)
+endif # enable_coccicheck
 
 ##########################################################################
 #

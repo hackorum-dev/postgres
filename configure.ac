@@ -194,6 +194,18 @@ PGAC_ARG_BOOL(enable, profiling, no,
               [build with profiling enabled ])
 
 #
+# --enable-coccicheck enables Coccinelle check target "coccicheck"
+#
+PGAC_ARG_BOOL(enable, coccicheck, no,
+              [enable Coccinelle checks (requires spatch)],
+[PGAC_PATH_PROGS(SPATCH, spatch)
+if test -z "$SPATCH"; then
+  AC_MSG_ERROR([spatch not found])
+fi
+AC_SUBST(SPFLAGS)])
+AC_SUBST(enable_coccicheck)
+
+#
 # --enable-coverage enables generation of code coverage metrics with gcov
 #
 PGAC_ARG_BOOL(enable, coverage, no,
