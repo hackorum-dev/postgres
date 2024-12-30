@@ -95,6 +95,9 @@ endif
 ifeq ($(FLEX),)
 FLEX = flex
 endif
+ifeq ($(SPATCH),)
+SPATCH = spatch
+endif
 
 endif # PGXS
 
