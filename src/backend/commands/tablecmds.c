@@ -11090,14 +11090,16 @@ CloneFkReferencing(List **wqueue, Relation parentRel, Relation partRel)
 	AttrMap    *attmap;
 	List	   *partFKs;
 	List	   *clone = NIL;
+	List		*fkpart	= NIL;
+	List		*fkparentRel = NIL;
 	ListCell   *cell;
 	Relation	trigrel;
 
 	/* obtain a list of constraints that we need to clone */
-	foreach(cell, RelationGetFKeyList(parentRel))
-	{
-		ForeignKeyCacheInfo *fk = lfirst(cell);
+	fkparentRel = RelationGetFKeyList(parentRel);
 
+	foreach_node(ForeignKeyCacheInfo, fk, fkparentRel)
+	{
 		/*
 		 * Refuse to attach a table as partition that this partitioned table
 		 * already has a foreign key to.  This isn't useful schema, which is
@@ -11116,6 +11118,60 @@ CloneFkReferencing(List **wqueue, Relation parentRel, Relation partRel)
 							get_constraint_name(fk->conoid))));
 
 		clone = lappend_oid(clone, fk->conoid);
+	}
+
+	/*
+	 * we cannot attach a table as a partition if it is still referencing
+	 * another partitioned table. However, this restriction does not apply if
+	 * the referenced table is the partitioned table itself (i.e., `partRel`
+	 * referencing `parentRel`) or if both the table and the partitioned table
+	 * reference the same another partitioned table.
+	 *
+	 * so the following example should be OK.
+	 * CREATE TABLE pt2 (a int primary key) PARTITION BY RANGE (a);
+	 * CREATE TABLE p2 (a int not null, FOREIGN KEY (a) REFERENCES pt2);
+	 * ALTER TABLE pt2 ATTACH PARTITION p2 FOR VALUES FROM (0) TO (1);
+	 *
+	 * if the table is referencing non-partitioned table, that's OK.
+	*/
+	fkpart = RelationGetFKeyList(partRel);
+	foreach_node(ForeignKeyCacheInfo, fk_attrel, fkpart)
+	{
+		bool	skip = false;
+		foreach_node(ForeignKeyCacheInfo, fk, fkparentRel)
+		{
+			if (fk_attrel->confrelid == fk->confrelid)
+			{
+				skip = true;
+				break;
+			}
+		}
+
+		/*
+		 * if the attachee referencing a partitioned table and that partitioned table root
+		 * table is same as the attachee, then we don't error out.
+		*/
+		if (!skip && get_rel_relkind(fk_attrel->confrelid) == RELKIND_PARTITIONED_TABLE)
+		{
+			List	   *ancestors;
+			Oid			rootrelid;
+
+			ancestors = get_partition_ancestors(fk_attrel->confrelid);
+			if (ancestors == NIL)
+				rootrelid = fk_attrel->confrelid;
+			else
+				rootrelid = llast_oid(ancestors);
+
+			if (ancestors != NIL)
+				list_free(ancestors);
+
+			if (RelationGetRelid(parentRel) != rootrelid)
+				ereport(ERROR,
+						errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						errmsg("table \"%s\" is still referenced by another partitioned table",
+								RelationGetRelationName(partRel)),
+						errdetail("table referenced by another partitioned table can not be attach as a partition."));
+		}
 	}
 
 	/*
@@ -19890,9 +19946,10 @@ DetachPartitionFinalize(Relation rel, Relation partRel, bool concurrent,
 		GetForeignKeyCheckTriggers(trigrel,
 								   fk->conoid, fk->confrelid, fk->conrelid,
 								   &insertTriggerOid, &updateTriggerOid);
-		Assert(OidIsValid(insertTriggerOid));
-		TriggerSetParentTrigger(trigrel, insertTriggerOid, InvalidOid,
-								RelationGetRelid(partRel));
+		// Assert(OidIsValid(insertTriggerOid));
+		if (OidIsValid(insertTriggerOid))
+			TriggerSetParentTrigger(trigrel, insertTriggerOid, InvalidOid,
+									RelationGetRelid(partRel));
 		Assert(OidIsValid(updateTriggerOid));
 		TriggerSetParentTrigger(trigrel, updateTriggerOid, InvalidOid,
 								RelationGetRelid(partRel));

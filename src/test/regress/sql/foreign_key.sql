@@ -2087,6 +2087,27 @@ UPDATE fkpart11.pk SET a = 1 WHERE a = 2;
 
 DROP SCHEMA fkpart11 CASCADE;
 
+
+---BUG #18741 https://postgr.es/m/18741-e4ef6f7aa8a956cb@postgresql.org
+CREATE TABLE pk (a int PRIMARY KEY) PARTITION BY RANGE (a);
+CREATE TABLE fk (a int) PARTITION BY RANGE (a);
+CREATE TABLE fk_1 (a int, FOREIGN KEY (a) REFERENCES pk);
+--should fail. fk_1 already referencing pk, but fk itself didn't
+ALTER TABLE fk ATTACH PARTITION fk_1 FOR VALUES FROM (0) TO (1);
+DROP TABLE fk, fk_1, pk;
+
+CREATE TABLE pk (a int primary key) PARTITION BY RANGE (a);
+CREATE TABLE fk (a int not null, FOREIGN KEY (a) REFERENCES pk);
+ALTER TABLE pk ATTACH PARTITION fk FOR VALUES FROM (0) TO (1);
+DROP TABLE fk, pk;
+
+--should ok. since fk_1 referencing "pk" is non-partitioned table
+CREATE TABLE pk (a int primary key);
+CREATE TABLE fk (a int not null) partition by range(a);
+CREATE TABLE fk_1 (a int not null, FOREIGN KEY (a) REFERENCES pk) partition by range(a);
+ALTER TABLE fk ATTACH PARTITION fk_1 FOR VALUES FROM (0) TO (1);
+DROP TABLE fk, pk;
+
 -- When a table is attached as partition to a partitioned table that has
 -- a foreign key to another partitioned table, it acquires a clone of the
 -- FK.  Upon detach, this clone is not removed, but instead becomes an
