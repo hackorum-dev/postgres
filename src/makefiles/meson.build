@@ -57,6 +57,7 @@ pgxs_kv = {
   'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
   'enable_tap_tests': tap_tests_enabled ? 'yes' : 'no',
   'enable_debug': get_option('debug') ? 'yes' : 'no',
+  'enable_coccicheck': spatch.found() ? 'yes' : 'no',
   'enable_coverage': 'no',
   'enable_dtrace': dtrace.found() ? 'yes' : 'no',
 
@@ -151,6 +152,7 @@ pgxs_bins = {
   'TAR': tar,
   'ZSTD': program_zstd,
   'DTRACE': dtrace,
+  'SPATCH': spatch,
 }
 
 pgxs_empty = [
@@ -166,6 +168,10 @@ pgxs_empty = [
   'DBTOEPUB',
   'FOP',
 
+  # Coccinelle is not supported by pgxs
+  'SPATCH',
+  'SPFLAGS',
+  
   # supporting coverage for pgxs-in-meson build doesn't seem worth it
   'GENHTML',
   'LCOV',
