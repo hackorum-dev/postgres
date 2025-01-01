@@ -350,6 +350,7 @@ missing = find_program('config/missing', native: true)
 cp = find_program('cp', required: false, native: true)
 xmllint_bin = find_program(get_option('XMLLINT'), native: true, required: false)
 xsltproc_bin = find_program(get_option('XSLTPROC'), native: true, required: false)
+spatch = find_program(get_option('SPATCH'), native: true, required: false)
 
 bison_flags = []
 if bison.found()
@@ -1722,6 +1723,34 @@ else
 endif
 
 
+###############################################################
+# Option: Coccinelle checks
+###############################################################
+
+coccicheck_opt = get_option('coccicheck')
+coccicheck_dep = not_found_dep
+if not coccicheck_opt.disabled()
+  if spatch.found()
+    coccicheck_dep = declare_dependency()
+  elif coccicheck_opt.enabled()
+    error('missing required tools (spatch needed) for Coccinelle checks')
+  endif
+endif
+
+if coccicheck_opt.enabled()
+    coccicheck_modes = ['context', 'report', 'patch']
+    foreach mode : coccicheck_modes
+      run_target('coccicheck-' + mode,
+		 command: [python, files('src/tools/coccicheck.py'),
+			   '--mode', mode,
+			   '--spatch', spatch,
+			   '--patchdir', '@SOURCE_ROOT@',
+			   '@SOURCE_ROOT@/cocci/**/*.cocci',
+			   '@SOURCE_ROOT@/src',
+			   '@SOURCE_ROOT@/contrib',
+			  ])
+    endforeach
+endif
 
 ###############################################################
 # Compiler tests
@@ -3948,6 +3977,7 @@ summary(
   {
     'bison': '@0@ @1@'.format(bison.full_path(), bison_version),
     'dtrace': dtrace,
+    'spatch': spatch,
     'flex': '@0@ @1@'.format(flex.full_path(), flex_version),
   },
   section: 'Programs',

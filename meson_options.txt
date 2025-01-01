@@ -43,6 +43,9 @@ option('cassert', type: 'boolean', value: false,
 option('tap_tests', type: 'feature', value: 'auto',
   description: 'Enable TAP tests')
 
+option('coccicheck', type: 'feature', value: 'auto',
+       description: 'Enable Coccinelle checks')
+
 option('injection_points', type: 'boolean', value: false,
   description: 'Enable injection points')
 
@@ -51,7 +54,6 @@ option('PG_TEST_EXTRA', type: 'string', value: '',
 
 option('PG_GIT_REVISION', type: 'string', value: 'HEAD',
   description: 'git revision to be packaged by pgdist target')
-
 
 # Compilation options
 
@@ -200,6 +202,9 @@ option('PYTHON', type: 'array', value: ['python3', 'python'],
 
 option('SED', type: 'string', value: 'gsed',
   description: 'Path to sed binary')
+
+option('SPATCH', type: 'string', value: 'spatch',
+  description: 'Path to spatch binary, used for SmPL patches')
 
 option('STRIP', type: 'string', value: 'strip',
   description: 'Path to strip binary, used for PGXS emulation')
