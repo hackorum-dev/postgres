@@ -17,6 +17,7 @@
 #include "catalog/pg_operator.h"
 #include "commands/vacuum.h"
 #include "common/hashfn.h"
+#include "statistics/statistics.h"
 #include "tsearch/ts_type.h"
 #include "utils/builtins.h"
 #include "varatt.h"
@@ -64,8 +65,8 @@ ts_typanalyze(PG_FUNCTION_ARGS)
 		stats->attstattarget = default_statistics_target;
 
 	stats->compute_stats = compute_tsvector_stats;
-	/* see comment about the choice of minrows in commands/analyze.c */
-	stats->minrows = 300 * stats->attstattarget;
+	/* see comment about the choice of minrows in statistics/statistics.h */
+	stats->minrows = (STATS_MIN_ROWS * stats->attstattarget);
 
 	PG_RETURN_BOOL(true);
 }

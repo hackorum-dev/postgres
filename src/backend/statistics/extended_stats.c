@@ -352,7 +352,7 @@ ComputeExtStatisticsRows(Relation onerel,
 	MemoryContextDelete(cxt);
 
 	/* compute sample size based on the statistics target */
-	return (300 * result);
+	return (EXT_STATS_MIN_ROWS * result);
 }
 
 /*
