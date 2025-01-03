@@ -26,6 +26,7 @@
 
 #include "catalog/pg_operator.h"
 #include "commands/vacuum.h"
+#include "statistics/statistics.h"
 #include "utils/float.h"
 #include "utils/fmgrprotos.h"
 #include "utils/lsyscache.h"
@@ -57,7 +58,7 @@ range_typanalyze(PG_FUNCTION_ARGS)
 	stats->compute_stats = compute_range_stats;
 	stats->extra_data = typcache;
 	/* same as in std_typanalyze */
-	stats->minrows = 300 * stats->attstattarget;
+	stats->minrows = (STATS_MIN_ROWS * stats->attstattarget);
 
 	PG_RETURN_BOOL(true);
 }
@@ -83,7 +84,7 @@ multirange_typanalyze(PG_FUNCTION_ARGS)
 	stats->compute_stats = compute_range_stats;
 	stats->extra_data = typcache;
 	/* same as in std_typanalyze */
-	stats->minrows = 300 * stats->attstattarget;
+	stats->minrows = (STATS_MIN_ROWS * stats->attstattarget);
 
 	PG_RETURN_BOOL(true);
 }
