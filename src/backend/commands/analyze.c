@@ -1978,40 +1978,22 @@ std_typanalyze(VacAttrStats *stats)
 	{
 		/* Seems to be a scalar datatype */
 		stats->compute_stats = compute_scalar_stats;
-		/*--------------------
-		 * The following choice of minrows is based on the paper
-		 * "Random sampling for histogram construction: how much is enough?"
-		 * by Surajit Chaudhuri, Rajeev Motwani and Vivek Narasayya, in
-		 * Proceedings of ACM SIGMOD International Conference on Management
-		 * of Data, 1998, Pages 436-447.  Their Corollary 1 to Theorem 5
-		 * says that for table size n, histogram size k, maximum relative
-		 * error in bin size f, and error probability gamma, the minimum
-		 * random sample size is
-		 *		r = 4 * k * ln(2*n/gamma) / f^2
-		 * Taking f = 0.5, gamma = 0.01, n = 10^6 rows, we obtain
-		 *		r = 305.82 * k
-		 * Note that because of the log function, the dependence on n is
-		 * quite weak; even at n = 10^12, a 300*k sample gives <= 0.66
-		 * bin size error with probability 0.99.  So there's no real need to
-		 * scale for n, which is a good thing because we don't necessarily
-		 * know it at this point.
-		 *--------------------
-		 */
-		stats->minrows = 300 * stats->attstattarget;
+		/* see comment about the choice of minrows in statistics/statistics.h */
+		stats->minrows = (STATS_MIN_ROWS * stats->attstattarget);
 	}
 	else if (OidIsValid(eqopr))
 	{
 		/* We can still recognize distinct values */
 		stats->compute_stats = compute_distinct_stats;
 		/* Might as well use the same minrows as above */
-		stats->minrows = 300 * stats->attstattarget;
+		stats->minrows = (STATS_MIN_ROWS * stats->attstattarget);
 	}
 	else
 	{
 		/* Can't do much but the trivial stuff */
 		stats->compute_stats = compute_trivial_stats;
 		/* Might as well use the same minrows as above */
-		stats->minrows = 300 * stats->attstattarget;
+		stats->minrows = (STATS_MIN_ROWS * stats->attstattarget);
 	}
 
 	return true;
