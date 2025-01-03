@@ -17,6 +17,17 @@
 #include "statistics/statistics.h"
 #include "utils/sortsupport.h"
 
+/* Minimum of rows wanted for extended stats
+ *
+ * Based on research, a fixed size proportional to statistics_target
+ * (300 * statistics_target) is generally sufficient for accurate single-column
+ * histograms and MCV lists. Its suitability for extended statistics.
+ *
+ * XXX While this value works reasonably well for individual columns, its
+ * suitability for extended statistics is still an open question.
+ */
+#define EXT_STATS_MIN_ROWS	STATS_MIN_ROWS
+
 typedef struct
 {
 	Oid			eqopr;			/* '=' operator for datatype, if any */
