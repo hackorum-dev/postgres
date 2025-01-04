@@ -2181,8 +2181,8 @@ get_cheapest_parameterized_child_path(PlannerInfo *root, RelOptInfo *rel,
 											  required_outer,
 											  TOTAL_COST,
 											  false);
-	Assert(cheapest != NULL);
-	if (bms_equal(PATH_REQ_OUTER(cheapest), required_outer))
+
+	if (cheapest != NULL && bms_equal(PATH_REQ_OUTER(cheapest), required_outer))
 		return cheapest;
 
 	/*
