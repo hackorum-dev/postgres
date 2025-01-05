@@ -475,7 +475,7 @@ gbt_var_picksplit(const GistEntryVector *entryvec, GIST_SPLITVEC *v,
 	v->spl_nleft = 0;
 	v->spl_nright = 0;
 
-	sv = palloc(sizeof(bytea *) * (maxoff + 1));
+	sv = palloc((maxoff + 1) * sizeof(GBT_VARKEY *));
 
 	/* Sort entries */
 

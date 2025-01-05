@@ -1241,7 +1241,7 @@ tsqueryrecv(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid size of tsquery");
 
 	/* Allocate space to temporarily hold operand strings */
-	operands = palloc(size * sizeof(char *));
+	operands = palloc(size * sizeof(const char *));
 
 	/* Allocate space for all the QueryItems. */
 	len = HDRSIZETQ + sizeof(QueryItem) * size;
