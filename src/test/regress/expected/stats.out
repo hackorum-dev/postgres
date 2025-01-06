@@ -834,6 +834,12 @@ SELECT num_requested AS rqst_ckpts_before FROM pg_stat_checkpointer \gset
 SELECT wal_bytes AS wal_bytes_before FROM pg_stat_wal \gset
 CREATE TEMP TABLE test_stats_temp AS SELECT 17;
 DROP TABLE test_stats_temp;
+SELECT pg_sleep(10);
+ pg_sleep 
+----------
+ 
+(1 row)
+
 -- Checkpoint twice: The checkpointer reports stats after reporting completion
 -- of the checkpoint. But after a second checkpoint we'll see at least the
 -- results of the first.
@@ -1296,6 +1302,12 @@ SELECT :my_io_sum_shared_after_extends > :my_io_sum_shared_before_extends;
  ?column? 
 ----------
  t
+(1 row)
+
+SELECT pg_sleep(10);
+ pg_sleep 
+----------
+ 
 (1 row)
 
 -- After a checkpoint, there should be some additional IOCONTEXT_NORMAL writes

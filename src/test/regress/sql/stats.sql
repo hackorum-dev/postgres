@@ -426,6 +426,7 @@ SELECT wal_bytes AS wal_bytes_before FROM pg_stat_wal \gset
 CREATE TEMP TABLE test_stats_temp AS SELECT 17;
 DROP TABLE test_stats_temp;
 
+SELECT pg_sleep(10);
 -- Checkpoint twice: The checkpointer reports stats after reporting completion
 -- of the checkpoint. But after a second checkpoint we'll see at least the
 -- results of the first.
@@ -632,6 +633,7 @@ SELECT sum(extends) AS my_io_sum_shared_after_extends
   WHERE context = 'normal' AND object = 'relation' \gset
 SELECT :my_io_sum_shared_after_extends > :my_io_sum_shared_before_extends;
 
+SELECT pg_sleep(10);
 -- After a checkpoint, there should be some additional IOCONTEXT_NORMAL writes
 -- and fsyncs in the global stats (usually not for the backend).
 -- See comment above for rationale for two explicit CHECKPOINTs.
