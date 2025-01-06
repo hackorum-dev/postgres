@@ -197,7 +197,9 @@ static bool are_peers(WindowAggState *winstate, TupleTableSlot *slot1,
 					  TupleTableSlot *slot2);
 static bool window_gettupleslot(WindowObject winobj, int64 pos,
 								TupleTableSlot *slot);
-
+static int	WinGetSlotInFrame(WindowObject winobj, TupleTableSlot *slot,
+							  int relpos, int seektype, bool set_mark,
+							  bool *isnull, bool *isout);
 
 /*
  * initialize_windowaggregate
@@ -3468,13 +3470,55 @@ WinGetFuncArgInFrame(WindowObject winobj, int argno,
 	WindowAggState *winstate;
 	ExprContext *econtext;
 	TupleTableSlot *slot;
-	int64		abs_pos;
-	int64		mark_pos;
 
 	Assert(WindowObjectIsValid(winobj));
 	winstate = winobj->winstate;
 	econtext = winstate->ss.ps.ps_ExprContext;
 	slot = winstate->temp_slot_1;
+
+	if (WinGetSlotInFrame(winobj, slot,
+						  relpos, seektype, set_mark,
+						  isnull, isout) == 0)
+	{
+		econtext->ecxt_outertuple = slot;
+		return ExecEvalExpr((ExprState *) list_nth(winobj->argstates, argno),
+							econtext, isnull);
+	}
+
+	if (isout)
+		*isout = true;
+	*isnull = true;
+	return (Datum) 0;
+}
+
+/*
+ * WinGetSlotInFrame
+ *		Obtain a row of the window frame specified by 'relpos', 'seektype' and
+ *		return it on 'slot'.
+ *
+ * slot: TupleTableSlot to store the result
+ * relpos: signed rowcount offset from the seek position
+ * seektype: WINDOW_SEEK_HEAD or WINDOW_SEEK_TAIL
+ * set_mark: If the row is found/in frame and set_mark is true, the mark is
+ *		moved to the row as a side-effect.
+ * isnull: output argument, receives isnull status of result
+ * isout: output argument, set to indicate whether target row position
+ *		is out of frame (can pass NULL if caller doesn't care about this)
+ *
+ * Returns 0 if we successfullt got the slot. false if out of frame.
+ * (also isout is set)
+ */
+static int
+WinGetSlotInFrame(WindowObject winobj, TupleTableSlot *slot,
+				  int relpos, int seektype, bool set_mark,
+				  bool *isnull, bool *isout)
+{
+	WindowAggState *winstate;
+	int64		abs_pos;
+	int64		mark_pos;
+
+	Assert(WindowObjectIsValid(winobj));
+	winstate = winobj->winstate;
 
 	switch (seektype)
 	{
@@ -3547,6 +3591,7 @@ WinGetFuncArgInFrame(WindowObject winobj, int argno,
 			/* rejecting relpos > 0 is easy and simplifies code below */
 			if (relpos > 0)
 				goto out_of_frame;
+
 			update_frametailpos(winstate);
 			abs_pos = winstate->frametailpos - 1 + relpos;
 
@@ -3631,15 +3676,13 @@ WinGetFuncArgInFrame(WindowObject winobj, int argno,
 		*isout = false;
 	if (set_mark)
 		WinSetMarkPosition(winobj, mark_pos);
-	econtext->ecxt_outertuple = slot;
-	return ExecEvalExpr((ExprState *) list_nth(winobj->argstates, argno),
-						econtext, isnull);
+	return 0;
 
 out_of_frame:
 	if (isout)
 		*isout = true;
 	*isnull = true;
-	return (Datum) 0;
+	return -1;
 }
 
 /*
