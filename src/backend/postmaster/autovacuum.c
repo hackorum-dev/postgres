@@ -1986,8 +1986,17 @@ do_autovacuum(void)
 		bool		doanalyze;
 		bool		wraparound;
 
+		/*
+		 * While RELKIND_RELATION and RELKIND_MATVIEW are used for vacuuming,
+		 * RELKIND_RELATION, RELKIND_SEQUENCE, RELKIND_VIEW, and
+		 * RELKIND_PARTITIONED_TABLE are used for cleaning up orphaned temporary
+		 * relations.
+		 */
 		if (classForm->relkind != RELKIND_RELATION &&
-			classForm->relkind != RELKIND_MATVIEW)
+			classForm->relkind != RELKIND_MATVIEW &&
+			classForm->relkind != RELKIND_SEQUENCE &&
+			classForm->relkind != RELKIND_VIEW &&
+			classForm->relkind != RELKIND_PARTITIONED_TABLE)
 			continue;
 
 		relid = classForm->oid;
@@ -2016,6 +2025,10 @@ do_autovacuum(void)
 			}
 			continue;
 		}
+
+		if (classForm->relkind != RELKIND_RELATION &&
+			classForm->relkind != RELKIND_MATVIEW)
+			continue;
 
 		/* Fetch reloptions and the pgstat entry for this table */
 		relopts = extract_autovac_opts(tuple, pg_class_desc);
@@ -2166,7 +2179,9 @@ do_autovacuum(void)
 		 * completely unrelated to the one we saw before.
 		 */
 		if (!((classForm->relkind == RELKIND_RELATION ||
-			   classForm->relkind == RELKIND_MATVIEW) &&
+			   classForm->relkind == RELKIND_SEQUENCE ||
+			   classForm->relkind == RELKIND_VIEW ||
+			   classForm->relkind == RELKIND_PARTITIONED_TABLE) &&
 			  classForm->relpersistence == RELPERSISTENCE_TEMP))
 		{
 			UnlockRelationOid(relid, AccessExclusiveLock);
