@@ -1,3 +1,7 @@
+SET client_min_messages TO 'warning';
+DROP FUNCTION IF EXISTS sp_parallel_restricted CASCADE;
+RESET client_min_messages;
+
 --
 -- PARALLEL
 --
