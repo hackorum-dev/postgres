@@ -1920,6 +1920,44 @@ pg_timezone_abbrev_is_known(const char *abbrev,
 }
 
 /*
+ * Iteratively fetch all the abbreviations used in the given time zone.
+ *
+ * *indx is a state counter that the caller must initialize to zero
+ * before the first call, and not touch between calls.
+ *
+ * Returns the next known abbreviation, or NULL if there are no more.
+ *
+ * Note: the caller typically applies pg_interpret_timezone_abbrev()
+ * to each result.  While that nominally results in O(N^2) time spent
+ * searching the sp->chars[] array, we don't expect any zone to have
+ * enough abbreviations to make that meaningful.
+ */
+const char *
+pg_get_next_timezone_abbrev(int *indx,
+							const pg_tz *tz)
+{
+	const char *result;
+	const struct state *sp = &tz->state;
+	const char *abbrs;
+	int			abbrind;
+
+	/* If we're still in range, the result is the current abbrev. */
+	abbrs = sp->chars;
+	abbrind = *indx;
+	if (abbrind < 0 || abbrind >= sp->charcnt)
+		return NULL;
+	result = abbrs + abbrind;
+
+	/* Advance *indx past this abbrev and its trailing null. */
+	while (abbrs[abbrind] != '\0')
+		abbrind++;
+	abbrind++;
+	*indx = abbrind;
+
+	return result;
+}
+
+/*
  * If the given timezone uses only one GMT offset, store that offset
  * into *gmtoff and return true, else return false.
  */

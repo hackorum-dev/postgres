@@ -5110,11 +5110,99 @@ FetchDynamicTimeZone(TimeZoneAbbrevTable *tbl, const datetkn *tp,
 
 
 /*
- * This set-returning function reads all the available time zone abbreviations
+ * This set-returning function reads all the time zone abbreviations
+ * defined by the IANA data for the current timezone setting,
  * and returns a set of (abbrev, utc_offset, is_dst).
  */
 Datum
-pg_timezone_abbrevs(PG_FUNCTION_ARGS)
+pg_timezone_abbrevs_zone(PG_FUNCTION_ARGS)
+{
+	FuncCallContext *funcctx;
+	int		   *pindex;
+	Datum		result;
+	HeapTuple	tuple;
+	Datum		values[3];
+	bool		nulls[3] = {0};
+	TimestampTz now = GetCurrentTransactionStartTimestamp();
+	pg_time_t	t = timestamptz_to_time_t(now);
+	const char *abbrev;
+	long int	gmtoff;
+	int			isdst;
+	struct pg_itm_in itm_in;
+	Interval   *resInterval;
+
+	/* stuff done only on the first call of the function */
+	if (SRF_IS_FIRSTCALL())
+	{
+		TupleDesc	tupdesc;
+		MemoryContext oldcontext;
+
+		/* create a function context for cross-call persistence */
+		funcctx = SRF_FIRSTCALL_INIT();
+
+		/*
+		 * switch to memory context appropriate for multiple function calls
+		 */
+		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+		/* allocate memory for user context */
+		pindex = (int *) palloc(sizeof(int));
+		*pindex = 0;
+		funcctx->user_fctx = pindex;
+
+		if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+			elog(ERROR, "return type must be a row type");
+		funcctx->tuple_desc = tupdesc;
+
+		MemoryContextSwitchTo(oldcontext);
+	}
+
+	/* stuff done on every call of the function */
+	funcctx = SRF_PERCALL_SETUP();
+	pindex = (int *) funcctx->user_fctx;
+
+	while ((abbrev = pg_get_next_timezone_abbrev(pindex,
+												 session_timezone)) != NULL)
+	{
+		/* Ignore abbreviations that aren't all-alphabetic */
+		if (strspn(abbrev, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") != strlen(abbrev))
+			continue;
+
+		/* Determine the current meaning of the abbrev */
+		if (!pg_interpret_timezone_abbrev(abbrev,
+										  &t,
+										  &gmtoff,
+										  &isdst,
+										  session_timezone))
+			continue;			/* hm, not actually used in this zone? */
+
+		values[0] = CStringGetTextDatum(abbrev);
+
+		/* Convert offset (in seconds) to an interval; can't overflow */
+		MemSet(&itm_in, 0, sizeof(struct pg_itm_in));
+		itm_in.tm_usec = (int64) gmtoff * USECS_PER_SEC;
+		resInterval = (Interval *) palloc(sizeof(Interval));
+		(void) itmin2interval(&itm_in, resInterval);
+		values[1] = IntervalPGetDatum(resInterval);
+
+		values[2] = BoolGetDatum(isdst);
+
+		tuple = heap_form_tuple(funcctx->tuple_desc, values, nulls);
+		result = HeapTupleGetDatum(tuple);
+
+		SRF_RETURN_NEXT(funcctx, result);
+	}
+
+	SRF_RETURN_DONE(funcctx);
+}
+
+/*
+ * This set-returning function reads all the time zone abbreviations
+ * defined by the timezone_abbreviations setting,
+ * and returns a set of (abbrev, utc_offset, is_dst).
+ */
+Datum
+pg_timezone_abbrevs_abbrevs(PG_FUNCTION_ARGS)
 {
 	FuncCallContext *funcctx;
 	int		   *pindex;
