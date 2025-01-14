@@ -170,6 +170,7 @@ dumpOptionsFromRestoreOptions(RestoreOptions *ropt)
 	dopt->dumpData = ropt->dumpData;
 	dopt->dumpSchema = ropt->dumpSchema;
 	dopt->if_exists = ropt->if_exists;
+	dopt->include_analyze = ropt->include_analyze;
 	dopt->column_inserts = ropt->column_inserts;
 	dopt->dumpSections = ropt->dumpSections;
 	dopt->aclsSkip = ropt->aclsSkip;
@@ -2940,6 +2941,9 @@ _tocEntryRequired(TocEntry *te, teSection curSection, ArchiveHandle *AH)
 	if (ropt->aclsSkip && _tocEntryIsACL(te))
 		return 0;
 
+	if (!ropt->include_analyze && strcmp(te->desc, "ANALYZE") == 0)
+		return 0;
+
 	/* If it's a comment, maybe ignore it */
 	if (ropt->no_comments && strcmp(te->desc, "COMMENT") == 0)
 		return 0;
@@ -3196,7 +3200,8 @@ _tocEntryRestorePass(TocEntry *te)
 		strcmp(te->desc, "DEFAULT ACL") == 0)
 		return RESTORE_PASS_ACL;
 	if (strcmp(te->desc, "EVENT TRIGGER") == 0 ||
-		strcmp(te->desc, "MATERIALIZED VIEW DATA") == 0)
+		strcmp(te->desc, "MATERIALIZED VIEW DATA") == 0 ||
+		strcmp(te->desc, "ANALYZE") == 0)
 		return RESTORE_PASS_POST_ACL;
 
 	/*

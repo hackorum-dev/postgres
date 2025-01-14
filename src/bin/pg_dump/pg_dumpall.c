@@ -96,6 +96,7 @@ static int	column_inserts = 0;
 static int	disable_dollar_quoting = 0;
 static int	disable_triggers = 0;
 static int	if_exists = 0;
+static int	include_analyze = 0;
 static int	inserts = 0;
 static int	no_table_access_method = 0;
 static int	no_tablespaces = 0;
@@ -159,6 +160,7 @@ main(int argc, char *argv[])
 		{"exclude-database", required_argument, NULL, 6},
 		{"extra-float-digits", required_argument, NULL, 5},
 		{"if-exists", no_argument, &if_exists, 1},
+		{"include-analyze", no_argument, &include_analyze, 1},
 		{"inserts", no_argument, &inserts, 1},
 		{"lock-wait-timeout", required_argument, NULL, 2},
 		{"no-table-access-method", no_argument, &no_table_access_method, 1},
@@ -435,6 +437,8 @@ main(int argc, char *argv[])
 		appendPQExpBufferStr(pgdumpopts, " --disable-triggers");
 	if (inserts)
 		appendPQExpBufferStr(pgdumpopts, " --inserts");
+	if (include_analyze)
+		appendPQExpBufferStr(pgdumpopts, " --include-analyze");
 	if (no_table_access_method)
 		appendPQExpBufferStr(pgdumpopts, " --no-table-access-method");
 	if (no_tablespaces)
@@ -660,6 +664,7 @@ help(void)
 	printf(_("  --extra-float-digits=NUM     override default setting for extra_float_digits\n"));
 	printf(_("  --filter=FILENAME            exclude databases based on expressions in FILENAME\n"));
 	printf(_("  --if-exists                  use IF EXISTS when dropping objects\n"));
+	printf(_("  --include-analyze            do dump analyze commands\n"));
 	printf(_("  --inserts                    dump data as INSERT commands, rather than COPY\n"));
 	printf(_("  --load-via-partition-root    load partitions via the root table\n"));
 	printf(_("  --no-comments                do not dump comment commands\n"));

@@ -51,6 +51,12 @@ command_fails_like(
 );
 
 command_fails_like(
+	[ 'pg_dump', '-s', '--include-analyze' ],
+	qr/\Qpg_dump: error: options -s\/--schema-only and --include-analyze cannot be used together\E/,
+	'pg_dump: error: options -s/--schema-only and --include-analyze cannot be used together'
+);
+
+command_fails_like(
 	[ 'pg_dump', '-s', '--include-foreign-data=xxx' ],
 	qr/\Qpg_dump: error: options -s\/--schema-only and --include-foreign-data cannot be used together\E/,
 	'pg_dump: options -s/--schema-only and --include-foreign-data cannot be used together'
@@ -60,6 +66,12 @@ command_fails_like(
 	[ 'pg_dump', '-j2', '--include-foreign-data=xxx' ],
 	qr/\Qpg_dump: error: option --include-foreign-data is not supported with parallel backup\E/,
 	'pg_dump: option --include-foreign-data is not supported with parallel backup'
+);
+
+command_fails_like(
+	[ 'pg_restore', '-s', '-f -', '--include-analyze' ],
+	qr/\Qg_restore: error: options -s\/--schema-only and --include-analyze cannot be used together\E/,
+	'pg_restore: error: options -s/--schema-only and --include-analyze cannot be used together'
 );
 
 command_fails_like(

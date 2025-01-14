@@ -672,6 +672,17 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--include-analyze</option></term>
+      <listitem>
+       <para>
+        Do output <command>ANALYZE</command> commands for analyzing tables if the archive contains them.
+        If <application>pg_dump</application> specified <option>--include-analyze</option> option,
+        the archive may contain <command>ANALYZE</command> commands.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>--no-comments</option></term>
       <listitem>
        <para>
@@ -1044,6 +1055,8 @@ CREATE DATABASE foo WITH TEMPLATE template0;
    restored table so the optimizer has useful statistics; see
    <xref linkend="vacuum-for-statistics"/> and
    <xref linkend="autovacuum"/> for more information.
+   You can achieve the same effect by including the <option>--include-analyze</option> option
+   when running <application>pg_restore</application>.
   </para>
 
  </refsect1>

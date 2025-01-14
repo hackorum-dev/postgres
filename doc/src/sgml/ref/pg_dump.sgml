@@ -983,6 +983,16 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--include-analyze</option></term>
+      <listitem>
+       <para>
+        Do dump <command>ANALYZE</command> commands.
+        This option only applys to regular table, materialized view or partitioned table.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>--include-foreign-data=<replaceable class="parameter">foreignserver</replaceable></option></term>
       <listitem>
        <para>

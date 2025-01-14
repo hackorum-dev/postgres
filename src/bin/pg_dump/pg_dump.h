@@ -78,6 +78,7 @@ typedef enum
 	DO_POST_DATA_BOUNDARY,
 	DO_EVENT_TRIGGER,
 	DO_REFRESH_MATVIEW,
+	DO_ANALYZE,
 	DO_POLICY,
 	DO_PUBLICATION,
 	DO_PUBLICATION_REL,
@@ -625,6 +626,17 @@ typedef struct _policyInfo
 	char	   *polwithcheck;
 } PolicyInfo;
 
+
+/*
+ * The AnalyzeInfo struct is used to represent ANALYZE command on a table and to
+ * indicate if a table need ANALYZE
+ */
+typedef struct _analyzeInfo
+{
+	DumpableObject dobj;
+	TableInfo  *analyzetable;
+} AnalyzeInfo;
+
 /*
  * The PublicationInfo struct is used to represent publications.
  */
@@ -784,6 +796,7 @@ extern void processExtensionTables(Archive *fout, ExtensionInfo extinfo[],
 								   int numExtensions);
 extern void getEventTriggers(Archive *fout);
 extern void getPolicies(Archive *fout, TableInfo tblinfo[], int numTables);
+extern void getAnalyzes(Archive *fout, TableInfo tblinfo[], int numTables);
 extern void getPublications(Archive *fout);
 extern void getPublicationNamespaces(Archive *fout);
 extern void getPublicationTables(Archive *fout, TableInfo tblinfo[],

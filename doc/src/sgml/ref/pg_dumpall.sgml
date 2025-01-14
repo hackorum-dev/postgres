@@ -368,6 +368,16 @@ exclude database <replaceable class="parameter">PATTERN</replaceable>
      </varlistentry>
 
      <varlistentry>
+      <term><option>--include-analyze</option></term>
+      <listitem>
+       <para>
+        Do dump <command>ANALYZE</command> commands.
+        This option only applys to regular table, materialized view or partitioned table.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>--inserts</option></term>
       <listitem>
        <para>

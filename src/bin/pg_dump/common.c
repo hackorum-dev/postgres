@@ -228,6 +228,9 @@ getSchemaData(Archive *fout, int *numTablesPtr)
 	pg_log_info("reading rewrite rules");
 	getRules(fout);
 
+	pg_log_info("reading analyze info");
+	getAnalyzes(fout, tblinfo, numTables);
+
 	pg_log_info("reading policies");
 	getPolicies(fout, tblinfo, numTables);
 

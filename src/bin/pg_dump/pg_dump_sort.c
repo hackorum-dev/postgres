@@ -97,7 +97,8 @@ enum dbObjectTypePriorities
 	PRIO_SUBSCRIPTION_REL,
 	PRIO_DEFAULT_ACL,			/* done in ACL pass */
 	PRIO_EVENT_TRIGGER,			/* must be next to last! */
-	PRIO_REFRESH_MATVIEW		/* must be last! */
+	PRIO_REFRESH_MATVIEW,		/* must be last! */
+	PRIO_ANALYZE,				/* must really be last! */
 };
 
 /* This table is indexed by enum DumpableObjectType */
@@ -144,6 +145,7 @@ static const int dbObjectTypePriority[] =
 	[DO_POST_DATA_BOUNDARY] = PRIO_POST_DATA_BOUNDARY,
 	[DO_EVENT_TRIGGER] = PRIO_EVENT_TRIGGER,
 	[DO_REFRESH_MATVIEW] = PRIO_REFRESH_MATVIEW,
+	[DO_ANALYZE] = PRIO_ANALYZE,
 	[DO_POLICY] = PRIO_POLICY,
 	[DO_PUBLICATION] = PRIO_PUBLICATION,
 	[DO_PUBLICATION_REL] = PRIO_PUBLICATION_REL,
@@ -1354,6 +1356,11 @@ describeDumpableObject(DumpableObject *obj, char *buf, int bufsize)
 		case DO_REFRESH_MATVIEW:
 			snprintf(buf, bufsize,
 					 "REFRESH MATERIALIZED VIEW %s  (ID %d OID %u)",
+					 obj->name, obj->dumpId, obj->catId.oid);
+			return;
+		case DO_ANALYZE:
+			snprintf(buf, bufsize,
+					 "ANALYZE %s  (ID %d OID %u)",
 					 obj->name, obj->dumpId, obj->catId.oid);
 			return;
 		case DO_RULE:

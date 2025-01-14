@@ -359,6 +359,7 @@ static void getLOs(Archive *fout);
 static void dumpLO(Archive *fout, const LoInfo *loinfo);
 static int	dumpLOs(Archive *fout, const void *arg);
 static void dumpPolicy(Archive *fout, const PolicyInfo *polinfo);
+static void dumpAnalyze(Archive *fout, const AnalyzeInfo *analyzeinfo);
 static void dumpPublication(Archive *fout, const PublicationInfo *pubinfo);
 static void dumpPublicationTable(Archive *fout, const PublicationRelInfo *pubrinfo);
 static void dumpSubscription(Archive *fout, const SubscriptionInfo *subinfo);
@@ -479,6 +480,7 @@ main(int argc, char **argv)
 		{"exclude-table-data", required_argument, NULL, 4},
 		{"extra-float-digits", required_argument, NULL, 8},
 		{"if-exists", no_argument, &dopt.if_exists, 1},
+		{"include-analyze", no_argument, &dopt.include_analyze, 1},
 		{"inserts", no_argument, NULL, 9},
 		{"lock-wait-timeout", required_argument, NULL, 2},
 		{"no-table-access-method", no_argument, &dopt.outputNoTableAm, 1},
@@ -787,6 +789,9 @@ main(int argc, char **argv)
 
 	if (schema_only && foreign_servers_include_patterns.head != NULL)
 		pg_fatal("options -s/--schema-only and --include-foreign-data cannot be used together");
+
+	if (schema_only && dopt.include_analyze)
+		pg_fatal("options -s/--schema-only and --include-analyze cannot be used together");
 
 	if (numWorkers > 1 && foreign_servers_include_patterns.head != NULL)
 		pg_fatal("option --include-foreign-data is not supported with parallel backup");
@@ -1100,6 +1105,7 @@ main(int argc, char **argv)
 	ropt->dumpData = dopt.dumpData;
 	ropt->dumpSchema = dopt.dumpSchema;
 	ropt->if_exists = dopt.if_exists;
+	ropt->include_analyze = dopt.include_analyze;
 	ropt->column_inserts = dopt.column_inserts;
 	ropt->dumpSections = dopt.dumpSections;
 	ropt->aclsSkip = dopt.aclsSkip;
@@ -1213,6 +1219,7 @@ help(const char *progname)
 	printf(_("  --filter=FILENAME            include or exclude objects and data from dump\n"
 			 "                               based on expressions in FILENAME\n"));
 	printf(_("  --if-exists                  use IF EXISTS when dropping objects\n"));
+	printf(_("  --include-analyze            do dump analyze commands\n"));
 	printf(_("  --include-foreign-data=PATTERN\n"
 			 "                               include data of foreign tables on foreign\n"
 			 "                               servers matching PATTERN\n"));
@@ -4152,6 +4159,68 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 }
 
 /*
+ * getAnalyzes
+ * get information about tables (regular table, partitioned table, materialized
+ * view) to be analyzed.
+ */
+void
+getAnalyzes(Archive *fout, TableInfo tblinfo[], int numTables)
+{
+	int			i = 0;
+	int			ntbl = 0;
+	AnalyzeInfo *analyze_info = NULL;
+	TableInfo  	*tbinfo = NULL;
+	Oid		   *tabldids = NULL;
+
+	if(!fout->dopt->include_analyze ||
+		fout->remoteVersion < 180000)
+		return;
+
+	tabldids = pg_malloc0(numTables * sizeof(Oid));
+	for (i = 0; i < numTables; i++)
+	{
+		tbinfo = &tblinfo[i];
+
+		/* It can't have RLS or policies if it's not a table */
+		if (!(tbinfo->relkind == RELKIND_RELATION ||
+			 tbinfo->relkind == RELKIND_MATVIEW ||
+			 tbinfo->relkind == RELKIND_PARTITIONED_TABLE))
+			continue;
+
+		if (tbinfo->relpersistence != RELPERSISTENCE_PERMANENT)
+			continue;
+
+		if (!tbinfo->dobj.dump)
+			continue;
+
+		if (!tbinfo->interesting)
+			continue;
+
+		tabldids[ntbl] = tbinfo->dobj.catId.oid;
+		ntbl++;
+	}
+
+	if(ntbl >0)
+	{
+		analyze_info = pg_malloc(ntbl * sizeof(AnalyzeInfo));
+
+		for (i = 0; i < ntbl; i++)
+		{
+			tbinfo = findTableByOid(tabldids[i]);
+			analyze_info[i].dobj.objType = DO_ANALYZE;
+			analyze_info[i].dobj.catId.tableoid = 0;
+			analyze_info[i].dobj.catId.oid = tbinfo->dobj.catId.oid;
+			AssignDumpId(&analyze_info[i].dobj);
+			analyze_info[i].dobj.catId.tableoid = RelationRelationId;
+			analyze_info[i].dobj.namespace = tbinfo->dobj.namespace;
+			analyze_info[i].dobj.name = pg_strdup(tbinfo->dobj.name);
+			analyze_info[i].analyzetable = tbinfo;
+		}
+	}
+	free(tabldids);
+}
+
+/*
  * dumpPolicy
  *	  dump the definition of the given policy
  */
@@ -4267,6 +4336,45 @@ dumpPolicy(Archive *fout, const PolicyInfo *polinfo)
 	destroyPQExpBuffer(delqry);
 	destroyPQExpBuffer(polprefix);
 	free(qtabname);
+}
+
+/*
+ * dumpAnalyze
+ * dump the definition of the ANALYZE command for appliable table.
+ */
+static void
+dumpAnalyze(Archive *fout, const AnalyzeInfo *analyzeinfo)
+{
+	PQExpBuffer q;
+	TableInfo * tbinfo = NULL;
+	DumpOptions *dopt = fout->dopt;
+
+	/* Do nothing if not include_analyze specified */
+	if (!dopt->include_analyze)
+		return;
+	Assert(dopt->dumpData);
+
+	tbinfo = (TableInfo *) analyzeinfo->analyzetable;
+	q = createPQExpBuffer();
+	if (tbinfo->relkind == RELKIND_PARTITIONED_TABLE)
+		appendPQExpBuffer(q, "ANALYZE ONLY %s;",
+					fmtQualifiedDumpable(tbinfo));
+	else
+	{
+		appendPQExpBuffer(q, "ANALYZE %s;",
+						fmtQualifiedDumpable(tbinfo));
+		Assert(tbinfo->relkind == RELKIND_MATVIEW || tbinfo->relkind == RELKIND_RELATION);
+	}
+
+	ArchiveEntry(fout, analyzeinfo->dobj.catId, analyzeinfo->dobj.dumpId,
+		ARCHIVE_OPTS(.tag = tbinfo->dobj.name,
+					.namespace = analyzeinfo->dobj.namespace->dobj.name,
+					.relkind = tbinfo->relkind,
+					.owner = tbinfo->rolname,
+					.description = "ANALYZE",
+					.section = SECTION_POST_DATA,
+					.createStmt = q->data));
+	destroyPQExpBuffer(q);
 }
 
 /*
@@ -10635,6 +10743,9 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 		case DO_REFRESH_MATVIEW:
 			refreshMatViewData(fout, (const TableDataInfo *) dobj);
 			break;
+		case DO_ANALYZE:
+			dumpAnalyze(fout, (const AnalyzeInfo *) dobj);
+			break;
 		case DO_RULE:
 			dumpRule(fout, (const RuleInfo *) dobj);
 			break;
@@ -16888,6 +16999,7 @@ dumpTableSchema(Archive *fout, const TableInfo *tbinfo)
 	free(qualrelname);
 }
 
+
 /*
  * dumpTableAttach
  *	  write to fout the commands to attach a child partition
@@ -18940,6 +19052,7 @@ addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 			case DO_INDEX_ATTACH:
 			case DO_STATSEXT:
 			case DO_REFRESH_MATVIEW:
+			case DO_ANALYZE:
 			case DO_TRIGGER:
 			case DO_EVENT_TRIGGER:
 			case DO_DEFAULT_ACL:

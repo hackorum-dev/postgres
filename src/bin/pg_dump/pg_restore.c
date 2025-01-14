@@ -70,6 +70,7 @@ main(int argc, char **argv)
 	static int	outputNoTableAm = 0;
 	static int	outputNoTablespaces = 0;
 	static int	use_setsessauth = 0;
+	static int	include_analyze = 0;
 	static int	no_comments = 0;
 	static int	no_publications = 0;
 	static int	no_security_labels = 0;
@@ -115,6 +116,7 @@ main(int argc, char **argv)
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"enable-row-security", no_argument, &enable_row_security, 1},
 		{"if-exists", no_argument, &if_exists, 1},
+		{"include-analyze", no_argument, &include_analyze, 1},
 		{"no-data-for-failed-tables", no_argument, &no_data_for_failed_tables, 1},
 		{"no-table-access-method", no_argument, &outputNoTableAm, 1},
 		{"no-tablespaces", no_argument, &outputNoTablespaces, 1},
@@ -361,6 +363,9 @@ main(int argc, char **argv)
 	if (opts->single_txn && numWorkers > 1)
 		pg_fatal("cannot specify both --single-transaction and multiple jobs");
 
+	if (schema_only && include_analyze)
+		pg_fatal("options -s/--schema-only and --include-analyze cannot be used together");
+
 	/* set derivative flags */
 	opts->dumpSchema = (!data_only);
 	opts->dumpData = (!schema_only);
@@ -379,6 +384,7 @@ main(int argc, char **argv)
 	if (if_exists && !opts->dropSchema)
 		pg_fatal("option --if-exists requires option -c/--clean");
 	opts->if_exists = if_exists;
+	opts->include_analyze = include_analyze;
 	opts->strict_names = strict_names;
 
 	if (opts->formatName)
@@ -490,6 +496,7 @@ usage(const char *progname)
 	printf(_("  --filter=FILENAME            restore or skip objects based on expressions\n"
 			 "                               in FILENAME\n"));
 	printf(_("  --if-exists                  use IF EXISTS when dropping objects\n"));
+	printf(_("  --include-analyze            do restore analyze commands\n"));
 	printf(_("  --no-comments                do not restore comment commands\n"));
 	printf(_("  --no-data-for-failed-tables  do not restore data of tables that could not be\n"
 			 "                               created\n"));
