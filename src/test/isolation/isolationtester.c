@@ -319,8 +319,8 @@ check_testspec(TestSpec *testspec)
 			}
 			pstep->step = *this;
 
-			/* Mark the step used, for check below */
-			pstep->step->used = true;
+			/* Mark the step used by incrementing non-complete counter*/
+			pstep->step->non_complete++;
 		}
 
 		/*
@@ -378,7 +378,7 @@ check_testspec(TestSpec *testspec)
 	{
 		for (i = 0; i < nallsteps; i++)
 		{
-			if (!allsteps[i]->used)
+			if (allsteps[i]->non_complete == 0)
 				fprintf(stderr, "unused step name: %s\n", allsteps[i]->name);
 		}
 	}
@@ -567,6 +567,11 @@ run_permutation(TestSpec *testspec, int nsteps, PermutationStep **steps)
 			PQclear(res);
 		}
 	}
+
+	for (i = 0; i < nsteps; i++)
+		steps[i]->step->non_complete = 0;
+	for (i = 0; i < nsteps; i++)
+		steps[i]->step->non_complete++;
 
 	/* Perform steps */
 	for (i = 0; i < nsteps; i++)
@@ -1002,6 +1007,7 @@ try_complete_step(TestSpec *testspec, PermutationStep *pstep, int flags)
 		printf("step %s: <... completed>\n", step->name);
 	else
 		printf("step %s: %s\n", step->name, step->sql);
+	step->non_complete--;
 
 	while ((res = PQgetResult(conn)))
 	{
@@ -1093,9 +1099,7 @@ step_has_blocker(PermutationStep *pstep)
 				break;
 			case PSB_OTHER_STEP:
 				/* Block if referenced step is active */
-				iconn = &conns[1 + blocker->step->session];
-				if (iconn->active_step &&
-					iconn->active_step->step == blocker->step)
+				if (blocker->step->non_complete > 0)
 					return true;
 				break;
 			case PSB_NUM_NOTICES:

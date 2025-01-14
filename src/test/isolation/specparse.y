@@ -156,7 +156,7 @@ step:
 				$$->name = $2;
 				$$->sql = $3;
 				$$->session = -1; /* until filled */
-				$$->used = false;
+				$$->non_complete = 0;
 			}
 		;
 

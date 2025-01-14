@@ -36,7 +36,7 @@ struct Step
 	char	   *sql;
 	/* These fields are filled by check_testspec(): */
 	int			session;		/* identifies owning session */
-	bool		used;			/* has step been used in a permutation? */
+	int			non_complete;	/* number of step execution in permutation which are not yet completed */
 };
 
 typedef enum

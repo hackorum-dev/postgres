@@ -183,9 +183,9 @@ A marker consisting solely of a step name indicates that this step may
 not be reported as completing until that other step has completed.
 This allows stabilizing cases where two queries might be seen to complete
 in either order.  Note that this step can be *launched* before the other
-step has completed.  (If the other step is used more than once in the
-current permutation, this step cannot complete while any of those
-instances is active.)
+step has completed or launched.  (If the other step is used more than once
+in the current permutation, this step cannot complete while any of those
+instances are not yet complete.)
 
 A marker of the form "<other step name> notices <n>" (where <n> is a
 positive integer) indicates that this step may not be reported as

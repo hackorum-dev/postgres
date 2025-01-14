@@ -44,6 +44,7 @@ tests += {
     'specs': [
       'basic',
       'inplace',
+      'markers',
     ],
   },
   'tap': {

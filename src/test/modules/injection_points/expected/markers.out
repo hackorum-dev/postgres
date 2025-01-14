@@ -1,0 +1,101 @@
+Parsed test spec with 3 sessions
+
+starting permutation: after before detach1 wakeup1 detach2 wakeup2
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step after: SELECT injection_points_run('injection-points-wait-1'); <waiting ...>
+step before: SELECT injection_points_run('injection-points-wait-2'); <waiting ...>
+step detach1: SELECT injection_points_detach('injection-points-wait-1');
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step wakeup1: SELECT injection_points_wakeup('injection-points-wait-1');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step detach2: SELECT injection_points_detach('injection-points-wait-2');
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step wakeup2: SELECT injection_points_wakeup('injection-points-wait-2');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step before: <... completed>
+injection_points_run
+--------------------
+                    
+(1 row)
+
+step after: <... completed>
+injection_points_run
+--------------------
+                    
+(1 row)
+
+
+starting permutation: after wakeup1 before detach1 detach2 wakeup2
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step after: SELECT injection_points_run('injection-points-wait-1'); <waiting ...>
+step wakeup1: SELECT injection_points_wakeup('injection-points-wait-1');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step before: SELECT injection_points_run('injection-points-wait-2'); <waiting ...>
+step detach1: SELECT injection_points_detach('injection-points-wait-1');
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step detach2: SELECT injection_points_detach('injection-points-wait-2');
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step wakeup2: SELECT injection_points_wakeup('injection-points-wait-2');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step before: <... completed>
+injection_points_run
+--------------------
+                    
+(1 row)
+
+step after: <... completed>
+injection_points_run
+--------------------
+                    
+(1 row)
+
