@@ -2510,6 +2510,12 @@ AddRelationNewConstraints(Relation rel,
 				checknames = lappend(checknames, ccname);
 			}
 
+			/* XXX improve error report */
+			if (cdef->was_not_valid && cdef->initially_valid && cdef->is_enforced)
+				ereport(WARNING,
+						errcode(ERRCODE_WARNING),
+						errmsg("NOT VALID flag for constraint \"%s\" ignored", ccname));
+
 			/*
 			 * OK, store it.
 			 */
@@ -2966,6 +2972,8 @@ AddRelationNotNullConstraints(Relation rel, List *constraints,
 										   RelationGetNamespace(rel),
 										   nnnames);
 		nnnames = lappend(nnnames, conname);
+
+		/* XXX if NOT VALID is given during CREATE TABLE, throw warning */
 
 		StoreRelNotNull(rel, conname,
 						attnum, true, true,

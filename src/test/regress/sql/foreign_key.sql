@@ -48,7 +48,7 @@ DROP TABLE PKTABLE;
 --
 CREATE TABLE PKTABLE ( ptest1 int, ptest2 int, ptest3 text, PRIMARY KEY(ptest1, ptest2) );
 CREATE TABLE FKTABLE ( ftest1 int, ftest2 int, ftest3 int, CONSTRAINT constrname FOREIGN KEY(ftest1, ftest2)
-                       REFERENCES PKTABLE MATCH FULL ON DELETE SET NULL ON UPDATE SET NULL);
+                       REFERENCES PKTABLE MATCH FULL ON DELETE SET NULL ON UPDATE SET NULL NOT VALID);
 
 -- Test comments
 COMMENT ON CONSTRAINT constrname_wrong ON FKTABLE IS 'fk constraint comment';

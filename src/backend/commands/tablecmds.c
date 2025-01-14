@@ -10435,6 +10435,13 @@ addFkConstraint(addFkConstraintSides fkside,
 		connoinherit = rel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE;
 	}
 
+	/* XXX improve error report */
+	if (fkconstraint->was_not_valid && fkconstraint->initially_valid)
+		ereport(WARNING,
+				errcode(ERRCODE_WARNING),
+				errmsg("NOT VALID flag for constraint \"%s\" ignored",
+					   fkconstraint->conname));
+
 	/*
 	 * Record the FK constraint in pg_constraint.
 	 */

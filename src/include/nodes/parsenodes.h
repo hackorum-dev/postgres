@@ -2762,6 +2762,7 @@ typedef struct Constraint
 	bool		is_enforced;	/* enforced constraint? */
 	bool		skip_validation;	/* skip validation of existing rows? */
 	bool		initially_valid;	/* mark the new constraint as valid? */
+	bool		was_not_valid;	/* did the user request NOT VALID? */
 	bool		is_no_inherit;	/* is constraint non-inheritable? */
 	Node	   *raw_expr;		/* CHECK or DEFAULT expression, as
 								 * untransformed parse tree */

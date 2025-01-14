@@ -574,6 +574,7 @@ DROP TABLE attmp2;
 -- exclusion until validated
 set constraint_exclusion TO 'partition';
 create table nv_parent (d date, check (false) no inherit not valid);
+WARNING:  NOT VALID flag for constraint "nv_parent_check" ignored
 -- not valid constraint added at creation time should automatically become valid
 \d nv_parent
             Table "public.nv_parent"

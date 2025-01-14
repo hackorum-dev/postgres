@@ -4172,6 +4172,7 @@ ConstraintElem:
 								   NULL, NULL, &n->is_enforced, &n->skip_validation,
 								   &n->is_no_inherit, yyscanner);
 					n->initially_valid = !n->skip_validation;
+					n->was_not_valid = n->skip_validation;
 					$$ = (Node *) n;
 				}
 			| NOT NULL_P ColId ConstraintAttributeSpec
@@ -4306,6 +4307,7 @@ ConstraintElem:
 								   NULL, &n->skip_validation, NULL,
 								   yyscanner);
 					n->initially_valid = !n->skip_validation;
+					n->was_not_valid = n->skip_validation;
 					$$ = (Node *) n;
 				}
 		;
