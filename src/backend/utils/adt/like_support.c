@@ -414,31 +414,8 @@ match_pattern_prefix(Node *leftop,
 		return NIL;
 
 	/*
-	 * Otherwise, we have a nonempty required prefix of the values.  Some
-	 * opclasses support prefix checks directly, otherwise we'll try to
-	 * generate a range constraint.
-	 */
-	if (OidIsValid(preopr) && op_in_opfamily(preopr, opfamily))
-	{
-		expr = make_opclause(preopr, BOOLOID, false,
-							 (Expr *) leftop, (Expr *) prefix,
-							 InvalidOid, indexcollation);
-		result = list_make1(expr);
-		return result;
-	}
-
-	/*
-	 * Since we need a range constraint, it's only going to work reliably if
-	 * the index is collation-insensitive or has "C" collation.  Note that
-	 * here we are looking at the index's collation, not the expression's
-	 * collation -- this test is *not* dependent on the LIKE/regex operator's
-	 * collation.
-	 */
-	if (collation_aware &&
-		!pg_newlocale_from_collation(indexcollation)->collate_is_c)
-		return NIL;
-
-	/*
+	 * Otherwise, we have a nonempty required prefix of the values.
+	 *
 	 * If the pattern for case-insensiive matching has a case-varying
 	 * character, make two prefixes including the upper letter and the
 	 * lower letter respectively. For example, if the pattern is
@@ -489,6 +466,42 @@ match_pattern_prefix(Node *leftop,
 	}
 	else
 		prefixes = list_make1(prefix);
+
+	/*
+	 * Some opclasses support prefix checks directly, otherwise we'll try to
+	 * generate a range constraint.
+	 */
+	if (OidIsValid(preopr) && op_in_opfamily(preopr, opfamily))
+	{
+		foreach (lc, prefixes)
+		{
+			prefix = (Const *) lfirst(lc);
+			expr = make_opclause(preopr, BOOLOID, false,
+								 (Expr *) leftop, (Expr *) prefix,
+								 InvalidOid, indexcollation);
+			result = lappend(result, expr);
+		}
+
+		/*
+		 * If case-insensitive pattern matching generated two clauses for
+		 * upper and lower letters, OR them.
+		 */
+		if (pstatus == Pattern_Prefix_Partial_IC && list_length(prefixes) > 1)
+			result = list_make1(make_orclause(result));
+
+		return result;
+	}
+
+	/*
+	 * Since we need a range constraint, it's only going to work reliably if
+	 * the index is collation-insensitive or has "C" collation.  Note that
+	 * here we are looking at the index's collation, not the expression's
+	 * collation -- this test is *not* dependent on the LIKE/regex operator's
+	 * collation.
+	 */
+	if (collation_aware &&
+		!pg_newlocale_from_collation(indexcollation)->collate_is_c)
+		return NIL;
 
 	foreach (lc, prefixes)
 	{
