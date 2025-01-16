@@ -69,6 +69,7 @@
 #include "catalog/pg_database.h"
 #include "common/controldata_utils.h"
 #include "common/file_utils.h"
+#include "common/pg_prng.h"
 #include "executor/instrument.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
@@ -1419,8 +1420,7 @@ CopyXLogRecordToWAL(int write_len, bool isLogSwitch, XLogRecData *rdata,
 static void
 WALInsertLockAcquire(void)
 {
-	bool		immed;
-
+	int attempts = 2;
 	/*
 	 * It doesn't matter which of the WAL insertion locks we acquire, so try
 	 * the one we used last time.  If the system isn't particularly busy, it's
@@ -1432,29 +1432,38 @@ WALInsertLockAcquire(void)
 	 * (semi-)randomly.  This allows the locks to be used evenly if you have a
 	 * lot of very short connections.
 	 */
-	static int	lockToTry = -1;
+	static uint32 lockToTry = 0;
+	static uint32 lockDelta = 0;
 
-	if (lockToTry == -1)
-		lockToTry = MyProcNumber % NUM_XLOGINSERT_LOCKS;
-	MyLockNo = lockToTry;
+	if (lockDelta == 0)
+	{
+		uint32 rng = pg_prng_uint32(&pg_global_prng_state);
+
+		lockToTry = rng % NUM_XLOGINSERT_LOCKS;
+		lockDelta = ((rng >> 16) % NUM_XLOGINSERT_LOCKS) | 1; /* must be odd */
+	}
 
 	/*
 	 * The insertingAt value is initially set to 0, as we don't know our
 	 * insert location yet.
 	 */
-	immed = LWLockAcquire(&WALInsertLocks[MyLockNo].l.lock, LW_EXCLUSIVE);
-	if (!immed)
-	{
-		/*
-		 * If we couldn't get the lock immediately, try another lock next
-		 * time.  On a system with more insertion locks than concurrent
-		 * inserters, this causes all the inserters to eventually migrate to a
-		 * lock that no-one else is using.  On a system with more inserters
-		 * than locks, it still helps to distribute the inserters evenly
-		 * across the locks.
-		 */
-		lockToTry = (lockToTry + 1) % NUM_XLOGINSERT_LOCKS;
-	}
+	MyLockNo = lockToTry;
+retry:
+	if (LWLockConditionalAcquire(&WALInsertLocks[MyLockNo].l.lock, LW_EXCLUSIVE))
+		return;
+	/*
+	 * If we couldn't get the lock immediately, try another lock next
+	 * time.  On a system with more insertion locks than concurrent
+	 * inserters, this causes all the inserters to eventually migrate to a
+	 * lock that no-one else is using.  On a system with more inserters
+	 * than locks, it still helps to distribute the inserters evenly
+	 * across the locks.
+	 */
+	lockToTry = (lockToTry + lockDelta) % NUM_XLOGINSERT_LOCKS;
+	MyLockNo = lockToTry;
+	if (--attempts)
+		goto retry;
+	LWLockAcquire(&WALInsertLocks[MyLockNo].l.lock, LW_EXCLUSIVE);
 }
 
 /*
