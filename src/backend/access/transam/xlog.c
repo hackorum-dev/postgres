@@ -154,7 +154,7 @@ int			wal_segment_size = DEFAULT_XLOG_SEG_SIZE;
  * to happen concurrently, but adds some CPU overhead to flushing the WAL,
  * which needs to iterate all the locks.
  */
-#define NUM_XLOGINSERT_LOCKS  8
+#define NUM_XLOGINSERT_LOCKS  64
 
 /*
  * Max distance from last checkpoint, before triggering a new xlog-based
@@ -1489,7 +1489,11 @@ WALInsertLockRelease(void)
 	{
 		int			i;
 
-		for (i = 0; i < NUM_XLOGINSERT_LOCKS; i++)
+		/*
+		 * LWLockRelease hopes we will release in reverse order for faster
+		 * search in held_lwlocks.
+		 */
+		for (i = NUM_XLOGINSERT_LOCKS - 1; i >= 0; i--)
 			LWLockReleaseClearVar(&WALInsertLocks[i].l.lock,
 								  &WALInsertLocks[i].l.insertingAt,
 								  0);
