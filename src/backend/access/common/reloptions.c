@@ -153,6 +153,15 @@ static relopt_bool boolRelOpts[] =
 		},
 		true
 	},
+	{
+		{
+			"on_update_set_default",
+			"Automatically set the column to its default value if the column has a default value in an UPDATE statement",
+			RELOPT_KIND_ATTRIBUTE,
+			ShareUpdateExclusiveLock
+		},
+		false
+	},
 	/* list terminator */
 	{{NULL}}
 };
@@ -2292,7 +2301,8 @@ attribute_reloptions(Datum reloptions, bool validate)
 {
 	static const relopt_parse_elt tab[] = {
 		{"n_distinct", RELOPT_TYPE_REAL, offsetof(AttributeOpts, n_distinct)},
-		{"n_distinct_inherited", RELOPT_TYPE_REAL, offsetof(AttributeOpts, n_distinct_inherited)}
+		{"n_distinct_inherited", RELOPT_TYPE_REAL, offsetof(AttributeOpts, n_distinct_inherited)},
+		{"on_update_set_default", RELOPT_TYPE_BOOL, offsetof(AttributeOpts, on_update_set_default)}
 	};
 
 	return (bytea *) build_reloptions(reloptions, validate,
