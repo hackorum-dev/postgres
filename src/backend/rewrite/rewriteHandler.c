@@ -41,6 +41,7 @@
 #include "rewrite/rewriteSearchCycle.h"
 #include "rewrite/rowsecurity.h"
 #include "tcop/tcopprot.h"
+#include "utils/attoptcache.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -897,6 +898,7 @@ rewriteTargetListIU(List *targetList,
 	{
 		TargetEntry *new_tle = new_tles[attrno - 1];
 		bool		apply_default;
+		bool		on_update_set_default = false;
 
 		att_tup = TupleDescAttr(target_relation->rd_att, attrno - 1);
 
@@ -1033,6 +1035,17 @@ rewriteTargetListIU(List *targetList,
 								NameStr(att_tup->attname)),
 						 errdetail("Column \"%s\" is a generated column.",
 								   NameStr(att_tup->attname))));
+
+			if (!new_tle)
+			{
+				AttributeOpts *aopt;
+
+				Assert(!apply_default);
+
+				aopt = get_attribute_options(target_relation->rd_id, attrno);
+				if (aopt != NULL && aopt->on_update_set_default)
+					on_update_set_default = true;
+			}
 		}
 
 		if (att_tup->attgenerated)
@@ -1068,6 +1081,24 @@ rewriteTargetListIU(List *targetList,
 													 att_tup->attbyval);
 			}
 
+			if (new_expr)
+				new_tle = makeTargetEntry((Expr *) new_expr,
+										  attrno,
+										  pstrdup(NameStr(att_tup->attname)),
+										  false);
+		}
+		else if(on_update_set_default)
+		{
+			Node	*new_expr;
+
+			Assert(!new_tle);
+
+			new_expr = build_column_default(target_relation, attrno);
+			/*
+			 * If there is a default value, it should be automatically updated
+			 * to the default value; otherwise, we should not modify the value
+			 * of that column.
+			 */
 			if (new_expr)
 				new_tle = makeTargetEntry((Expr *) new_expr,
 										  attrno,
