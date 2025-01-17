@@ -6555,6 +6555,19 @@ StartupXLOG(void)
 	UpdateFullPageWrites();
 
 	/*
+	 * Code below is for test purposes only to reveal possible timeline issue.
+	 */
+	{
+		struct stat st;
+
+		elog(LOG, "Start delay in StartupXLOG()");
+
+		while (stat("delay_recovery.signal", &st) == 0)
+			pg_usleep(10000L); /* sleep for 10 ms*/
+
+		elog(LOG, "Stop delay in StartupXLOG()");
+	}
+	/*
 	 * Emit checkpoint or end-of-recovery record in XLOG, if required.
 	 */
 	if (performedWalRecovery)
