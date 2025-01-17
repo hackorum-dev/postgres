@@ -201,6 +201,8 @@ typedef struct autovac_table
 	VacuumParams at_params;
 	double		at_storage_param_vac_cost_delay;
 	int			at_storage_param_vac_cost_limit;
+	float4		anl_scale_factor;
+	int			anl_base_thresh;
 	bool		at_dobalance;
 	bool		at_sharedrel;
 	char	   *at_relname;
@@ -334,12 +336,18 @@ static autovac_table *table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 static void recheck_relation_needs_vacanalyze(Oid relid, AutoVacOpts *avopts,
 											  Form_pg_class classForm,
 											  int effective_multixact_freeze_max_age,
-											  bool *dovacuum, bool *doanalyze, bool *wraparound);
+											  bool *dovacuum, bool *doanalyze, bool *wraparound,
+											  float4 *anl_scale_factor, int *anl_base_thresh);
+static void recheck_relation_needs_analyze(TupleDesc pg_class_desc, autovac_table *tab);
+
 static void relation_needs_vacanalyze(Oid relid, AutoVacOpts *relopts,
 									  Form_pg_class classForm,
 									  PgStat_StatTabEntry *tabentry,
 									  int effective_multixact_freeze_max_age,
-									  bool *dovacuum, bool *doanalyze, bool *wraparound);
+									  bool *dovacuum, bool *doanalyze, bool *wraparound,
+									  float4 *anl_scale_factor, int *anl_base_thresh);
+static void relation_needs_analyze(autovac_table *tab, Form_pg_class classForm,
+								   PgStat_StatTabEntry *tabentry, bool *doanalyze);
 
 static void autovacuum_do_vac_analyze(autovac_table *tab,
 									  BufferAccessStrategy bstrategy);
@@ -1997,6 +2005,8 @@ do_autovacuum(void)
 		bool		dovacuum;
 		bool		doanalyze;
 		bool		wraparound;
+		float4 anl_scale_factor;
+		int anl_base_thresh;
 
 		if (classForm->relkind != RELKIND_RELATION &&
 			classForm->relkind != RELKIND_MATVIEW)
@@ -2037,7 +2047,8 @@ do_autovacuum(void)
 		/* Check if it needs vacuum or analyze */
 		relation_needs_vacanalyze(relid, relopts, classForm, tabentry,
 								  effective_multixact_freeze_max_age,
-								  &dovacuum, &doanalyze, &wraparound);
+								  &dovacuum, &doanalyze, &wraparound,
+								  &anl_scale_factor, &anl_base_thresh);
 
 		/* Relations that need work are added to table_oids */
 		if (dovacuum || doanalyze)
@@ -2090,6 +2101,8 @@ do_autovacuum(void)
 		bool		dovacuum;
 		bool		doanalyze;
 		bool		wraparound;
+		float4		anl_scale_factor;
+		int			anl_base_thresh;
 
 		/*
 		 * We cannot safely process other backends' temp tables, so skip 'em.
@@ -2120,7 +2133,8 @@ do_autovacuum(void)
 
 		relation_needs_vacanalyze(relid, relopts, classForm, tabentry,
 								  effective_multixact_freeze_max_age,
-								  &dovacuum, &doanalyze, &wraparound);
+								  &dovacuum, &doanalyze, &wraparound,
+								  &anl_scale_factor, &anl_base_thresh);
 
 		/* ignore analyze for toast tables */
 		if (dovacuum)
@@ -2470,6 +2484,80 @@ do_autovacuum(void)
 
 		did_vacuum = true;
 
+		/*
+		 * If only VACUUM was executed, recheck whether the pgstat data
+		 * indicates that ANALYZE is needed for this table.
+		 *
+		 * If VACUUM runs for a long time and frequent data updates occur,
+		 * the reported pg_class.reltuples value may become extremely small,
+		 * potentially leading to query performance degradation. Although
+		 * the next ANALYZE will correct this, the next VACUUM might run
+		 * for a long time again, and the degradation could persist for an
+		 * extended period. This allows ANALYZE to be executed immediately.
+		 */
+		if ((tab->at_params.options & VACOPT_VACUUM) &&
+			!(tab->at_params.options & VACOPT_ANALYZE))
+		{
+#ifdef USE_INJECTION_POINTS
+			char *rel_nspname = get_namespace_name(get_rel_namespace(relid));
+			if (strcmp(rel_nspname, "pg_catalog") != 0 &&
+				strcmp(rel_nspname, "information_schema") != 0 &&
+				strcmp(rel_nspname, "pg_toast") != 0)
+				INJECTION_POINT("before-recheck-autoanalyze");
+#endif
+			/* start transaction to fetch latest relation's relcache entry */
+			CommitTransactionCommand();
+			StartTransactionCommand();
+
+			recheck_relation_needs_analyze(pg_class_desc, tab);
+
+			if (tab->at_params.options & VACOPT_ANALYZE)
+			{
+				/*
+				 * We will abort vacuuming the current table if something errors out,
+				 * and continue with the next one in schedule; in particular, this
+				 * happens if we are interrupted with SIGINT.
+				 */
+				PG_TRY();
+				{
+					/* Use PortalContext for any per-table allocations */
+					MemoryContextSwitchTo(PortalContext);
+
+					/* have at it */
+					autovacuum_do_vac_analyze(tab, bstrategy);
+
+					/*
+					 * Clear a possible query-cancel signal, to avoid a late reaction
+					 * to an automatically-sent signal because of vacuuming the
+					 * current table (we're done with it, so it would make no sense to
+					 * cancel at this point.)
+					 */
+					QueryCancelPending = false;
+				}
+				PG_CATCH();
+				{
+					/*
+					 * Abort the transaction, start a new one, and proceed with the
+					 * next table in our list.
+					 */
+					HOLD_INTERRUPTS();
+					errcontext("automatic analyze of table \"%s.%s.%s\"",
+							   tab->at_datname, tab->at_nspname, tab->at_relname);
+					EmitErrorReport();
+
+					/* this resets ProcGlobal->statusFlags[i] too */
+					AbortOutOfAnyTransaction();
+					FlushErrorState();
+					MemoryContextReset(PortalContext);
+
+					/* restart our transaction for the following operations */
+					StartTransactionCommand();
+					RESUME_INTERRUPTS();
+				}
+				PG_END_TRY();
+			}
+		}
+
 		/* ProcGlobal->statusFlags[i] are reset at the next end of xact */
 
 		/* be tidy */
@@ -2706,6 +2794,49 @@ extract_autovac_opts(HeapTuple tup, TupleDesc pg_class_desc)
 	return av;
 }
 
+/*
+ * table_recheck_autoanalyze
+ *
+ * Recheck whether a table needs analyze after vacuum completes,
+ * and update tab->at_params.options.
+ */
+static void
+recheck_relation_needs_analyze(TupleDesc pg_class_desc, autovac_table *tab)
+{
+	HeapTuple	classTup;
+	Form_pg_class	classForm;
+	PgStat_StatTabEntry	*tabentry;
+	bool doanalyze = false;
+
+	/* ANALYZE refuses to work with pg_statistic */
+	if (tab->at_relid == StatisticRelationId)
+		return;
+
+	/* fetch the relation's relcache entry */
+	classTup = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(tab->at_relid));
+	if (!HeapTupleIsValid(classTup))
+		return;
+	classForm = (Form_pg_class) GETSTRUCT(classTup);
+
+	/* ignore ANALYZE for toast tables */
+	if (classForm->relkind == RELKIND_TOASTVALUE)
+	{
+		heap_freetuple(classTup);
+		return;
+	}
+
+	/* fetch the pgstat table entry */
+	tabentry = pgstat_fetch_stat_tabentry_ext(classForm->relisshared,
+											  tab->at_relid);
+
+	relation_needs_analyze(tab, classForm, tabentry, &doanalyze);
+
+	/* update options */
+	if (doanalyze)
+		tab->at_params.options = VACOPT_ANALYZE;
+
+	heap_freetuple(classTup);
+}
 
 /*
  * table_recheck_autovac
@@ -2727,6 +2858,8 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 	autovac_table *tab = NULL;
 	bool		wraparound;
 	AutoVacOpts *avopts;
+	float4 anl_scale_factor;
+	int anl_base_thresh;
 
 	/* fetch the relation's relcache entry */
 	classTup = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(relid));
@@ -2752,7 +2885,8 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 
 	recheck_relation_needs_vacanalyze(relid, avopts, classForm,
 									  effective_multixact_freeze_max_age,
-									  &dovacuum, &doanalyze, &wraparound);
+									  &dovacuum, &doanalyze, &wraparound,
+									  &anl_scale_factor, &anl_base_thresh);
 
 	/* OK, it needs something done */
 	if (doanalyze || dovacuum)
@@ -2830,6 +2964,8 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 			avopts->vacuum_cost_limit : 0;
 		tab->at_storage_param_vac_cost_delay = avopts ?
 			avopts->vacuum_cost_delay : -1;
+		tab->anl_scale_factor = anl_scale_factor;
+		tab->anl_base_thresh = anl_base_thresh;
 		tab->at_relname = NULL;
 		tab->at_nspname = NULL;
 		tab->at_datname = NULL;
@@ -2862,7 +2998,9 @@ recheck_relation_needs_vacanalyze(Oid relid,
 								  int effective_multixact_freeze_max_age,
 								  bool *dovacuum,
 								  bool *doanalyze,
-								  bool *wraparound)
+								  bool *wraparound,
+								  float4 *anl_scale_factor,
+								  int *anl_base_thresh)
 {
 	PgStat_StatTabEntry *tabentry;
 
@@ -2872,7 +3010,8 @@ recheck_relation_needs_vacanalyze(Oid relid,
 
 	relation_needs_vacanalyze(relid, avopts, classForm, tabentry,
 							  effective_multixact_freeze_max_age,
-							  dovacuum, doanalyze, wraparound);
+							  dovacuum, doanalyze, wraparound,
+							  anl_scale_factor, anl_base_thresh);
 
 	/* ignore ANALYZE for toast tables */
 	if (classForm->relkind == RELKIND_TOASTVALUE)
@@ -2925,7 +3064,9 @@ relation_needs_vacanalyze(Oid relid,
  /* output params below */
 						  bool *dovacuum,
 						  bool *doanalyze,
-						  bool *wraparound)
+						  bool *wraparound,
+						  float4 *anl_scale_factor,
+						  int *anl_base_thresh)
 {
 	bool		force_vacuum;
 	bool		av_enabled;
@@ -2933,11 +3074,9 @@ relation_needs_vacanalyze(Oid relid,
 
 	/* constants from reloptions or GUC variables */
 	int			vac_base_thresh,
-				vac_ins_base_thresh,
-				anl_base_thresh;
+				vac_ins_base_thresh;
 	float4		vac_scale_factor,
-				vac_ins_scale_factor,
-				anl_scale_factor;
+				vac_ins_scale_factor;
 
 	/* thresholds calculated from above constants */
 	float4		vacthresh,
@@ -2983,11 +3122,11 @@ relation_needs_vacanalyze(Oid relid,
 		? relopts->vacuum_ins_threshold
 		: autovacuum_vac_ins_thresh;
 
-	anl_scale_factor = (relopts && relopts->analyze_scale_factor >= 0)
+	*anl_scale_factor = (relopts && relopts->analyze_scale_factor >= 0)
 		? relopts->analyze_scale_factor
 		: autovacuum_anl_scale;
 
-	anl_base_thresh = (relopts && relopts->analyze_threshold >= 0)
+	*anl_base_thresh = (relopts && relopts->analyze_threshold >= 0)
 		? relopts->analyze_threshold
 		: autovacuum_anl_thresh;
 
@@ -3048,7 +3187,7 @@ relation_needs_vacanalyze(Oid relid,
 
 		vacthresh = (float4) vac_base_thresh + vac_scale_factor * reltuples;
 		vacinsthresh = (float4) vac_ins_base_thresh + vac_ins_scale_factor * reltuples;
-		anlthresh = (float4) anl_base_thresh + anl_scale_factor * reltuples;
+		anlthresh = (float4) *anl_base_thresh + *anl_scale_factor * reltuples;
 
 		/*
 		 * Note that we don't need to take special consideration for stat
@@ -3082,6 +3221,50 @@ relation_needs_vacanalyze(Oid relid,
 
 	/* ANALYZE refuses to work with pg_statistic */
 	if (relid == StatisticRelationId)
+		*doanalyze = false;
+}
+
+/*
+ * relation_needs_analyze
+ *
+ * Check whether a relation needs to be analyzed. It reuses analyze equation
+ * parameters when called from relation_needs_vacanalyze().
+ */
+static void
+relation_needs_analyze(autovac_table *tab,
+					   Form_pg_class classForm,
+					   PgStat_StatTabEntry *tabentry,
+ /* output params below */
+					   bool *doanalyze)
+{
+	/*
+	 * If we found stats for the table, and autovacuum is currently enabled,
+	 * make a threshold-based decision whether to analyze.
+	 */
+	if (PointerIsValid(tabentry) && AutoVacuumingActive())
+	{
+		float4		reltuples;
+		float4		anlthresh;
+		float4		anltuples;
+
+		Assert(classForm != NULL);
+		Assert(OidIsValid(tab->at_relid));
+
+		reltuples = classForm->reltuples;
+		anltuples = tabentry->mod_since_analyze;
+
+		/* Vacuum could update the value to -1 */
+		if (reltuples < 0)
+			reltuples = 0;
+
+		/* Determine if this table needs analyze. */
+		anlthresh = (float4) tab->anl_base_thresh + tab->anl_scale_factor * reltuples;
+		*doanalyze = (anltuples > anlthresh);
+
+		elog(DEBUG3, "%s: anl: %.0f (threshold %.0f)",
+			 NameStr(classForm->relname), anltuples, anlthresh);
+	}
+	else
 		*doanalyze = false;
 }
 
