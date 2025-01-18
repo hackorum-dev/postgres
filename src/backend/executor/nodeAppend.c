@@ -200,7 +200,7 @@ ExecInitAppend(Append *node, EState *estate, int eflags)
 		 * as sync ones; don't do this when initializing an EvalPlanQual plan
 		 * tree.
 		 */
-		if (initNode->async_capable && estate->es_epq_active == NULL)
+		if (initNode->async_capable && estate->es_epqstate == NULL)
 		{
 			asyncplans = bms_add_member(asyncplans, j);
 			nasyncplans++;

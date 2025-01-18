@@ -433,7 +433,7 @@ void
 ExecIndexOnlyMarkPos(IndexOnlyScanState *node)
 {
 	EState	   *estate = node->ss.ps.state;
-	EPQState   *epqstate = estate->es_epq_active;
+	EPQState   *epqstate = estate->es_epqstate;
 
 	if (epqstate != NULL)
 	{
@@ -470,9 +470,9 @@ void
 ExecIndexOnlyRestrPos(IndexOnlyScanState *node)
 {
 	EState	   *estate = node->ss.ps.state;
-	EPQState   *epqstate = estate->es_epq_active;
+	EPQState   *epqstate = estate->es_epqstate;
 
-	if (estate->es_epq_active != NULL)
+	if (estate->es_epqstate != NULL)
 	{
 		/* See comments in ExecIndexMarkPos */
 		Index		scanrelid = ((Scan *) node->ss.ps.plan)->scanrelid;

@@ -39,9 +39,9 @@ ExecScanFetch(ScanState *node,
 
 	CHECK_FOR_INTERRUPTS();
 
-	if (estate->es_epq_active != NULL)
+	if (estate->es_epqstate != NULL)
 	{
-		EPQState   *epqstate = estate->es_epq_active;
+		EPQState   *epqstate = estate->es_epqstate;
 
 		/*
 		 * We are inside an EvalPlanQual recheck.  Return the test tuple if
@@ -308,9 +308,9 @@ ExecScanReScan(ScanState *node)
 	 * Rescan EvalPlanQual tuple(s) if we're inside an EvalPlanQual recheck.
 	 * But don't lose the "blocked" status of blocked target relations.
 	 */
-	if (estate->es_epq_active != NULL)
+	if (estate->es_epqstate != NULL)
 	{
-		EPQState   *epqstate = estate->es_epq_active;
+		EPQState   *epqstate = estate->es_epqstate;
 		Index		scanrelid = ((Scan *) node->ps.plan)->scanrelid;
 
 		if (scanrelid > 0)

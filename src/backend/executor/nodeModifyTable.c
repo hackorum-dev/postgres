@@ -3998,7 +3998,7 @@ ExecModifyTable(PlanState *pstate)
 	 * case it is within a CTE subplan.  Hence this test must be here, not in
 	 * ExecInitModifyTable.)
 	 */
-	if (estate->es_epq_active != NULL)
+	if (estate->es_epqstate != NULL)
 		elog(ERROR, "ModifyTable should not be called during EvalPlanQual");
 
 	/*

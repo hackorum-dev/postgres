@@ -720,7 +720,7 @@ typedef struct EState
 	 * need to perform EPQ related work, and to provide necessary information
 	 * to do so.
 	 */
-	struct EPQState *es_epq_active;
+	struct EPQState *es_epqstate;
 
 	bool		es_use_parallel_mode;	/* can we use parallel workers? */
 

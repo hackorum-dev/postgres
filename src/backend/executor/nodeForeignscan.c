@@ -53,7 +53,7 @@ ForeignNext(ForeignScanState *node)
 		 * direct modifications cannot be re-evaluated, so shouldn't get here
 		 * during EvalPlanQual processing
 		 */
-		Assert(node->ss.ps.state->es_epq_active == NULL);
+		Assert(node->ss.ps.state->es_epqstate == NULL);
 
 		slot = node->fdwroutine->IterateDirectModify(node);
 	}
@@ -125,7 +125,7 @@ ExecForeignScan(PlanState *pstate)
 	 * Ignore direct modifications when EvalPlanQual is active --- they are
 	 * irrelevant for EvalPlanQual rechecking
 	 */
-	if (estate->es_epq_active != NULL && plan->operation != CMD_SELECT)
+	if (estate->es_epqstate != NULL && plan->operation != CMD_SELECT)
 		return NULL;
 
 	return ExecScan(&node->ss,
@@ -230,7 +230,7 @@ ExecInitForeignScan(ForeignScan *node, EState *estate, int eflags)
 	 * this has to be kept in sync with the code in ExecInitAppend().
 	 */
 	scanstate->ss.ps.async_capable = (((Plan *) node)->async_capable &&
-									  estate->es_epq_active == NULL);
+									  estate->es_epqstate == NULL);
 
 	/*
 	 * Initialize FDW-related state.
@@ -249,7 +249,7 @@ ExecInitForeignScan(ForeignScan *node, EState *estate, int eflags)
 	 * EvalPlanQual processing, EvalPlanQual only initializes the subtree
 	 * under the ModifyTable, and doesn't run ExecInitModifyTable.
 	 */
-	if (node->resultRelation > 0 && estate->es_epq_active == NULL)
+	if (node->resultRelation > 0 && estate->es_epqstate == NULL)
 	{
 		if (estate->es_result_relations == NULL ||
 			estate->es_result_relations[node->resultRelation - 1] == NULL)
@@ -278,7 +278,7 @@ ExecInitForeignScan(ForeignScan *node, EState *estate, int eflags)
 		 * so we need to ignore such ForeignScan nodes during EvalPlanQual
 		 * processing.  See also ExecForeignScan/ExecReScanForeignScan.
 		 */
-		if (estate->es_epq_active == NULL)
+		if (estate->es_epqstate == NULL)
 			fdwroutine->BeginDirectModify(scanstate, eflags);
 	}
 	else
@@ -302,7 +302,7 @@ ExecEndForeignScan(ForeignScanState *node)
 	/* Let the FDW shut down */
 	if (plan->operation != CMD_SELECT)
 	{
-		if (estate->es_epq_active == NULL)
+		if (estate->es_epqstate == NULL)
 			node->fdwroutine->EndDirectModify(node);
 	}
 	else
@@ -330,7 +330,7 @@ ExecReScanForeignScan(ForeignScanState *node)
 	 * Ignore direct modifications when EvalPlanQual is active --- they are
 	 * irrelevant for EvalPlanQual rechecking
 	 */
-	if (estate->es_epq_active != NULL && plan->operation != CMD_SELECT)
+	if (estate->es_epqstate != NULL && plan->operation != CMD_SELECT)
 		return;
 
 	node->fdwroutine->ReScanForeignScan(node);

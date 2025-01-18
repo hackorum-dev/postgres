@@ -925,7 +925,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	estate->es_tupleTable = NIL;
 
 	/* signal that this EState is not used for EPQ */
-	estate->es_epq_active = NULL;
+	estate->es_epqstate = NULL;
 
 	/*
 	 * Initialize private state information for each SubPlan.  We must do this
@@ -2842,7 +2842,7 @@ EvalPlanQualStart(EPQState *epqstate, Plan *planTree)
 	oldcontext = MemoryContextSwitchTo(rcestate->es_query_cxt);
 
 	/* signal that this is an EState for executing EPQ */
-	rcestate->es_epq_active = epqstate;
+	rcestate->es_epqstate = epqstate;
 
 	/*
 	 * Child EPQ EStates share the parent's copy of unchanging state such as
