@@ -1459,10 +1459,27 @@ ProcessUtilitySlow(ParseState *pstate,
 					LOCKMODE	lockmode;
 					int			nparts = -1;
 					bool		is_alter_table;
+					bool		verbose = false;
+					ListCell *lc;
 
 					if (stmt->concurrent)
 						PreventInTransactionBlock(isTopLevel,
 												  "CREATE INDEX CONCURRENTLY");
+
+					/* Parse option list */
+					foreach(lc, stmt->params)
+					{
+						DefElem    *opt = (DefElem *) lfirst(lc);
+
+						if (strcmp(opt->defname, "verbose") == 0)
+							verbose = defGetBoolean(opt);
+						else
+							ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 errmsg("unrecognized CREATE INDEX option \"%s\"",
+								 opt->defname),
+								 parser_errposition(pstate, opt->location)));
+					}
 
 					/*
 					 * Look up the relation OID just once, right here at the
@@ -1495,7 +1512,6 @@ ProcessUtilitySlow(ParseState *pstate,
 					if (stmt->relation->inh &&
 						get_rel_relkind(relid) == RELKIND_PARTITIONED_TABLE)
 					{
-						ListCell   *lc;
 						List	   *inheritors = NIL;
 
 						inheritors = find_all_inheritors(relid, lockmode, NULL);
@@ -1552,7 +1568,8 @@ ProcessUtilitySlow(ParseState *pstate,
 									true,	/* check_rights */
 									true,	/* check_not_in_use */
 									false,	/* skip_build */
-									false); /* quiet */
+									false,  /* quiet */
+									verbose); /* verbose */
 
 					/*
 					 * Add the CREATE INDEX node itself to stash right away;

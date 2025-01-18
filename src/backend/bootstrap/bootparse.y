@@ -318,6 +318,7 @@ Boot_DeclareIndexStmt:
 								false,
 								false,
 								true, /* skip_build */
+								false,
 								false);
 					do_end();
 				}
@@ -371,6 +372,7 @@ Boot_DeclareUniqueIndexStmt:
 								false,
 								false,
 								true, /* skip_build */
+								false,
 								false);
 					do_end();
 				}

@@ -308,6 +308,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	indexInfo->ii_Am = BTREE_AM_OID;
 	indexInfo->ii_AmCache = NULL;
 	indexInfo->ii_Context = CurrentMemoryContext;
+	indexInfo->ii_verbose = false;
 
 	collationIds[0] = InvalidOid;
 	collationIds[1] = InvalidOid;

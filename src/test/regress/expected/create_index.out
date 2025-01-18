@@ -1449,6 +1449,19 @@ DROP FUNCTION predicate_stable();
 BEGIN;
 CREATE INDEX std_index on concur_heap(f2);
 COMMIT;
+-- CREATE INDEX (VERBOSE)
+CREATE TABLE verbose_test (id int);
+\set VERBOSITY terse \\ -- suppress machine-dependent details
+CREATE INDEX (VERBOSE) verbose_test_id ON verbose_test(id);
+INFO:  building index "verbose_test_id" on table "verbose_test" serially
+INFO:  index "public.verbose_test" was created
+ALTER TABLE verbose_test SET (parallel_workers = 1);
+CREATE INDEX (VERBOSE) verbose_test_id2 ON verbose_test(id);
+INFO:  building index "verbose_test_id2" on table "verbose_test" with parallel workers
+INFO:  launched 1 parallel workers for index creation (planned: 1)
+INFO:  index "public.verbose_test" was created
+\set VERBOSITY default
+DROP TABLE  verbose_test;
 -- Failed builds are left invalid by VACUUM FULL, fixed by REINDEX
 VACUUM FULL concur_heap;
 REINDEX TABLE concur_heap;
@@ -2515,6 +2528,12 @@ explain (costs off)
 CREATE TABLE reindex_verbose(id integer primary key);
 \set VERBOSITY terse \\ -- suppress machine-dependent details
 REINDEX (VERBOSE) TABLE reindex_verbose;
+INFO:  building index "reindex_verbose_pkey" on table "reindex_verbose" serially
+INFO:  index "reindex_verbose_pkey" was reindexed
+ALTER TABLE reindex_verbose SET (parallel_workers = 1);
+REINDEX (VERBOSE) TABLE reindex_verbose;
+INFO:  building index "reindex_verbose_pkey" on table "reindex_verbose" with parallel workers
+INFO:  launched 1 parallel workers for index creation (planned: 1)
 INFO:  index "reindex_verbose_pkey" was reindexed
 \set VERBOSITY default
 DROP TABLE reindex_verbose;

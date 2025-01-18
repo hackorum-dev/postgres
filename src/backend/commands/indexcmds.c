@@ -244,7 +244,8 @@ CheckIndexCompatible(Oid oldId,
 	 */
 	indexInfo = makeIndexInfo(numberOfAttributes, numberOfAttributes,
 							  accessMethodId, NIL, NIL, false, false,
-							  false, false, amsummarizing, isWithoutOverlaps);
+							  false, false, amsummarizing, isWithoutOverlaps,
+							  false);
 	typeIds = palloc_array(Oid, numberOfAttributes);
 	collationIds = palloc_array(Oid, numberOfAttributes);
 	opclassIds = palloc_array(Oid, numberOfAttributes);
@@ -550,7 +551,8 @@ DefineIndex(Oid tableId,
 			bool check_rights,
 			bool check_not_in_use,
 			bool skip_build,
-			bool quiet)
+			bool quiet,
+			bool verbose)
 {
 	bool		concurrent;
 	char	   *indexRelationName;
@@ -591,10 +593,13 @@ DefineIndex(Oid tableId,
 	Oid			root_save_userid;
 	int			root_save_sec_context;
 	int			root_save_nestlevel;
+	PGRUsage	ru0;
 
 	root_save_nestlevel = NewGUCNestLevel();
 
 	RestrictSearchPath();
+
+	pg_rusage_init(&ru0);
 
 	/*
 	 * Some callers need us to run with an empty default_tablespace; this is a
@@ -929,7 +934,8 @@ DefineIndex(Oid tableId,
 							  !concurrent,
 							  concurrent,
 							  amissummarizing,
-							  stmt->iswithoutoverlaps);
+							  stmt->iswithoutoverlaps,
+							  verbose);
 
 	typeIds = palloc_array(Oid, numberOfAttributes);
 	collationIds = palloc_array(Oid, numberOfAttributes);
@@ -1246,7 +1252,16 @@ DefineIndex(Oid tableId,
 
 		/* If this is the top-level index, we're done */
 		if (!OidIsValid(parentIndexId))
+		{
+			/* Log what we did */
+			if (indexInfo->ii_verbose)
+				ereport(INFO,
+						(errmsg("index \"%s.%s\" was created",
+								get_namespace_name(RelationGetNamespace(rel)), RelationGetRelationName(rel)),
+						 errdetail("%s.", pg_rusage_show(&ru0))));
+
 			pgstat_progress_end_command();
+		}
 
 		return address;
 	}
@@ -1502,7 +1517,7 @@ DefineIndex(Oid tableId,
 									-1,
 									is_alter_table, check_rights,
 									check_not_in_use,
-									skip_build, quiet);
+									skip_build, quiet, false);
 					SetUserIdAndSecContext(child_save_userid,
 										   child_save_sec_context);
 
@@ -1559,7 +1574,16 @@ DefineIndex(Oid tableId,
 		SetUserIdAndSecContext(root_save_userid, root_save_sec_context);
 		table_close(rel, NoLock);
 		if (!OidIsValid(parentIndexId))
+		{
+			/* Log what we did */
+			if (indexInfo->ii_verbose)
+				ereport(INFO,
+						(errmsg("index \"%s.%s\" was created",
+								get_namespace_name(RelationGetNamespace(rel)), RelationGetRelationName(rel)),
+						 errdetail("%s.", pg_rusage_show(&ru0))));
+
 			pgstat_progress_end_command();
+		}
 		else
 		{
 			/* Update progress for an intermediate partitioned index itself */
@@ -1582,7 +1606,16 @@ DefineIndex(Oid tableId,
 		 * otherwise, increment progress to report one child index is done.
 		 */
 		if (!OidIsValid(parentIndexId))
+		{
+			/* Log what we did */
+			if (indexInfo->ii_verbose)
+				ereport(INFO,
+						(errmsg("index \"%s.%s\" was created",
+								get_namespace_name(RelationGetNamespace(rel)), RelationGetRelationName(rel)),
+						 errdetail("%s.", pg_rusage_show(&ru0))));
+
 			pgstat_progress_end_command();
+		}
 		else
 			pgstat_progress_incr_param(PROGRESS_CREATEIDX_PARTITIONS_DONE, 1);
 
@@ -1682,7 +1715,7 @@ DefineIndex(Oid tableId,
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	/* Perform concurrent build of index */
-	index_concurrently_build(tableId, indexRelationId);
+	index_concurrently_build(tableId, indexRelationId, verbose);
 
 	/* we can do away with our snapshot */
 	PopActiveSnapshot();
@@ -1797,6 +1830,13 @@ DefineIndex(Oid tableId,
 	 * Last thing to do is release the session-level lock on the parent table.
 	 */
 	UnlockRelationIdForSession(&heaprelid, ShareUpdateExclusiveLock);
+
+	/* Log what we did */
+	if (indexInfo->ii_verbose)
+		ereport(INFO,
+				(errmsg("index \"%s.%s\" was created",
+						get_namespace_name(RelationGetNamespace(rel)), RelationGetRelationName(rel)),
+				 errdetail("%s.", pg_rusage_show(&ru0))));
 
 	pgstat_progress_end_command();
 
@@ -4096,7 +4136,7 @@ ReindexRelationConcurrently(const ReindexStmt *stmt, Oid relationOid, const Rein
 		pgstat_progress_update_multi_param(4, progress_index, progress_vals);
 
 		/* Perform concurrent build of new index */
-		index_concurrently_build(newidx->tableId, newidx->indexId);
+		index_concurrently_build(newidx->tableId, newidx->indexId, params->options & REINDEXOPT_VERBOSE);
 
 		PopActiveSnapshot();
 		CommitTransactionCommand();

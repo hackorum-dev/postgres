@@ -1275,7 +1275,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 						RelationGetRelid(idxRel),
 						constraintOid,
 						-1,
-						false, false, false, false, false);
+						false, false, false, false, false, false);
 
 			index_close(idxRel, AccessShareLock);
 		}
@@ -9320,7 +9320,8 @@ ATExecAddIndex(AlteredTableInfo *tab, Relation rel,
 						  check_rights,
 						  false,	/* check_not_in_use - we did it already */
 						  skip_build,
-						  quiet);
+						  quiet,
+						  false);
 
 	/*
 	 * If TryReuseIndex() stashed a relfilenumber for us, we used it for the
@@ -19624,7 +19625,7 @@ AttachPartitionEnsureIndexes(List **wqueue, Relation rel, Relation attachrel)
 						RelationGetRelid(idxRel),
 						conOid,
 						-1,
-						true, false, false, false, false);
+						true, false, false, false, false, false);
 		}
 
 		index_close(idxRel, AccessShareLock);

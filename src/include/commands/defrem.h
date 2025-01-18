@@ -35,7 +35,8 @@ extern ObjectAddress DefineIndex(Oid tableId,
 								 bool check_rights,
 								 bool check_not_in_use,
 								 bool skip_build,
-								 bool quiet);
+								 bool quiet,
+								 bool verbose);
 extern void ExecReindex(ParseState *pstate, const ReindexStmt *stmt, bool isTopLevel);
 extern char *makeObjectName(const char *name1, const char *name2,
 							const char *label);

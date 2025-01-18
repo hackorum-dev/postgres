@@ -276,7 +276,7 @@ static void _bt_uppershutdown(BTWriteState *wstate, BTPageState *state);
 static void _bt_load(BTWriteState *wstate,
 					 BTSpool *btspool, BTSpool *btspool2);
 static void _bt_begin_parallel(BTBuildState *buildstate, bool isconcurrent,
-							   int request);
+							   int request, bool verbose);
 static void _bt_end_parallel(BTLeader *btleader);
 static Size _bt_parallel_estimate_shared(Relation heap, Snapshot snapshot);
 static double _bt_parallel_heapscan(BTBuildState *buildstate,
@@ -390,7 +390,7 @@ _bt_spools_heapscan(Relation heap, Relation index, BTBuildState *buildstate,
 	/* Attempt to launch parallel worker scan when required */
 	if (indexInfo->ii_ParallelWorkers > 0)
 		_bt_begin_parallel(buildstate, indexInfo->ii_Concurrent,
-						   indexInfo->ii_ParallelWorkers);
+						   indexInfo->ii_ParallelWorkers, indexInfo->ii_verbose);
 
 	/*
 	 * If parallel build requested and at least one worker process was
@@ -1395,7 +1395,7 @@ _bt_load(BTWriteState *wstate, BTSpool *btspool, BTSpool *btspool2)
  * never set, and caller should proceed with a serial index build.
  */
 static void
-_bt_begin_parallel(BTBuildState *buildstate, bool isconcurrent, int request)
+_bt_begin_parallel(BTBuildState *buildstate, bool isconcurrent, int request, bool verbose)
 {
 	ParallelContext *pcxt;
 	int			scantuplesortstates;
@@ -1581,6 +1581,11 @@ _bt_begin_parallel(BTBuildState *buildstate, bool isconcurrent, int request)
 	btleader->snapshot = snapshot;
 	btleader->walusage = walusage;
 	btleader->bufferusage = bufferusage;
+
+	if (verbose)
+		ereport(INFO,
+				(errmsg_internal("launched %d parallel workers for index creation (planned: %d)",
+								 pcxt->nworkers_launched, pcxt->nworkers_to_launch)));
 
 	/* If no workers were successfully launched, back out (do serial build) */
 	if (pcxt->nworkers_launched == 0)

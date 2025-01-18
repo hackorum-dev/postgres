@@ -185,7 +185,7 @@ typedef struct ExprState
  *		AmCache				private cache area for index AM
  *		Context				memory context holding this IndexInfo
  *
- * ii_Concurrent, ii_BrokenHotChain, and ii_ParallelWorkers are used only
+ * ii_Concurrent, ii_BrokenHotChain, and ii_ParallelWorkers, ii_verbose are used only
  * during index build; they're conventionally zeroed otherwise.
  * ----------------
  */
@@ -218,6 +218,7 @@ typedef struct IndexInfo
 	Oid			ii_Am;
 	void	   *ii_AmCache;
 	MemoryContext ii_Context;
+	bool		ii_verbose;
 } IndexInfo;
 
 /* ----------------

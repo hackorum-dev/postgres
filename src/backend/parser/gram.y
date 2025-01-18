@@ -559,6 +559,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <ival>	reindex_target_relation reindex_target_all
 %type <list>	opt_reindex_option_list
 
+%type <list>	opt_index_option_list
+
 %type <node>	copy_generic_opt_arg copy_generic_opt_arg_list_item
 %type <defelt>	copy_generic_opt_elem
 %type <list>	copy_generic_opt_list copy_generic_opt_arg_list
@@ -8158,23 +8160,24 @@ defacl_privilege_target:
  * willing to make TABLESPACE a fully reserved word.
  *****************************************************************************/
 
-IndexStmt:	CREATE opt_unique INDEX opt_concurrently opt_single_name
+IndexStmt:	CREATE opt_unique INDEX opt_index_option_list opt_concurrently opt_single_name
 			ON relation_expr access_method_clause '(' index_params ')'
 			opt_include opt_unique_null_treatment opt_reloptions OptTableSpace where_clause
 				{
 					IndexStmt *n = makeNode(IndexStmt);
 
 					n->unique = $2;
-					n->concurrent = $4;
-					n->idxname = $5;
-					n->relation = $7;
-					n->accessMethod = $8;
-					n->indexParams = $10;
-					n->indexIncludingParams = $12;
-					n->nulls_not_distinct = !$13;
-					n->options = $14;
-					n->tableSpace = $15;
-					n->whereClause = $16;
+					n->params = $4;
+					n->concurrent = $5;
+					n->idxname = $6;
+					n->relation = $8;
+					n->accessMethod = $9;
+					n->indexParams = $11;
+					n->indexIncludingParams = $13;
+					n->nulls_not_distinct = !$14;
+					n->options = $15;
+					n->tableSpace = $16;
+					n->whereClause = $17;
 					n->excludeOpNames = NIL;
 					n->idxcomment = NULL;
 					n->indexOid = InvalidOid;
@@ -8190,23 +8193,24 @@ IndexStmt:	CREATE opt_unique INDEX opt_concurrently opt_single_name
 					n->reset_default_tblspc = false;
 					$$ = (Node *) n;
 				}
-			| CREATE opt_unique INDEX opt_concurrently IF_P NOT EXISTS name
+			| CREATE opt_unique INDEX opt_index_option_list opt_concurrently IF_P NOT EXISTS name
 			ON relation_expr access_method_clause '(' index_params ')'
 			opt_include opt_unique_null_treatment opt_reloptions OptTableSpace where_clause
 				{
 					IndexStmt *n = makeNode(IndexStmt);
 
 					n->unique = $2;
-					n->concurrent = $4;
-					n->idxname = $8;
-					n->relation = $10;
-					n->accessMethod = $11;
-					n->indexParams = $13;
-					n->indexIncludingParams = $15;
-					n->nulls_not_distinct = !$16;
-					n->options = $17;
-					n->tableSpace = $18;
-					n->whereClause = $19;
+					n->params = $4;
+					n->concurrent = $5;
+					n->idxname = $9;
+					n->relation = $11;
+					n->accessMethod = $12;
+					n->indexParams = $14;
+					n->indexIncludingParams = $16;
+					n->nulls_not_distinct = !$17;
+					n->options = $18;
+					n->tableSpace = $19;
+					n->whereClause = $20;
 					n->excludeOpNames = NIL;
 					n->idxcomment = NULL;
 					n->indexOid = InvalidOid;
@@ -8238,6 +8242,10 @@ index_params:	index_elem							{ $$ = list_make1($1); }
 			| index_params ',' index_elem			{ $$ = lappend($1, $3); }
 		;
 
+opt_index_option_list:
+			'(' utility_option_list ')'				{ $$ = $2; }
+			| /* EMPTY */							{ $$ = NULL; }
+		;
 
 index_elem_options:
 	opt_collate opt_qualified_name opt_asc_desc opt_nulls_order

@@ -1396,7 +1396,8 @@ index_concurrently_create_copy(Relation heapRelation, Oid oldIndexId,
 							false,	/* not ready for inserts */
 							true,
 							indexRelation->rd_indam->amsummarizing,
-							oldInfo->ii_WithoutOverlaps);
+							oldInfo->ii_WithoutOverlaps,
+							false);
 
 	/*
 	 * Extract the list of column names and the column numbers for the new
@@ -1482,7 +1483,8 @@ index_concurrently_create_copy(Relation heapRelation, Oid oldIndexId,
  */
 void
 index_concurrently_build(Oid heapRelationId,
-						 Oid indexRelationId)
+						 Oid indexRelationId,
+						 bool verbose)
 {
 	Relation	heapRel;
 	Oid			save_userid;
@@ -1519,6 +1521,7 @@ index_concurrently_build(Oid heapRelationId,
 	Assert(!indexInfo->ii_ReadyForInserts);
 	indexInfo->ii_Concurrent = true;
 	indexInfo->ii_BrokenHotChain = false;
+	indexInfo->ii_verbose = verbose;
 
 	/* Now build the index */
 	index_build(heapRel, indexRelation, indexInfo, false, true);
@@ -2451,7 +2454,8 @@ BuildIndexInfo(Relation index)
 					   indexStruct->indisready,
 					   false,
 					   index->rd_indam->amsummarizing,
-					   indexStruct->indisexclusion && indexStruct->indisunique);
+					   indexStruct->indisexclusion && indexStruct->indisunique,
+					   false);
 
 	/* fill in attribute numbers */
 	for (i = 0; i < numAtts; i++)
@@ -2511,7 +2515,8 @@ BuildDummyIndexInfo(Relation index)
 					   indexStruct->indisready,
 					   false,
 					   index->rd_indam->amsummarizing,
-					   indexStruct->indisexclusion && indexStruct->indisunique);
+					   indexStruct->indisexclusion && indexStruct->indisunique,
+					   false);
 
 	/* fill in attribute numbers */
 	for (i = 0; i < numAtts; i++)
@@ -3001,17 +3006,19 @@ index_build(Relation heapRelation,
 			plan_create_index_workers(RelationGetRelid(heapRelation),
 									  RelationGetRelid(indexRelation));
 
-	if (indexInfo->ii_ParallelWorkers == 0)
-		ereport(DEBUG1,
-				(errmsg_internal("building index \"%s\" on table \"%s\" serially",
-								 RelationGetRelationName(indexRelation),
-								 RelationGetRelationName(heapRelation))));
-	else
-		ereport(DEBUG1,
-				(errmsg_internal("building index \"%s\" on table \"%s\" with request for %d parallel workers",
-								 RelationGetRelationName(indexRelation),
-								 RelationGetRelationName(heapRelation),
-								 indexInfo->ii_ParallelWorkers)));
+	if (indexInfo->ii_verbose)
+	{
+		if (indexInfo->ii_ParallelWorkers == 0)
+			ereport(INFO,
+					(errmsg_internal("building index \"%s\" on table \"%s\" serially",
+									 RelationGetRelationName(indexRelation),
+									 RelationGetRelationName(heapRelation))));
+		else
+			ereport(INFO,
+					(errmsg_internal("building index \"%s\" on table \"%s\" with parallel workers",
+									 RelationGetRelationName(indexRelation),
+									 RelationGetRelationName(heapRelation))));
+	}
 
 	/*
 	 * Switch to the table owner's userid, so that any index functions are run
@@ -3773,6 +3780,8 @@ reindex_index(const ReindexStmt *stmt, Oid indexId,
 		indexInfo->ii_ExclusionProcs = NULL;
 		indexInfo->ii_ExclusionStrats = NULL;
 	}
+
+	indexInfo->ii_verbose = params->options & REINDEXOPT_VERBOSE;
 
 	/* Suppress use of the target index while rebuilding it */
 	SetReindexProcessing(heapId, indexId);

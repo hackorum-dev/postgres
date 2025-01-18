@@ -3373,6 +3373,20 @@ match_previous_words(int pattern_id,
 	else if (TailMatches("CREATE|UNIQUE", "INDEX", "CONCURRENTLY"))
 		COMPLETE_WITH_SCHEMA_QUERY_PLUS(Query_for_list_of_indexes,
 										"ON");
+
+	/* Complete CREATE|UNIQUE INDEX with "VERBOSE" */
+	else if (TailMatches("CREATE|UNIQUE", "INDEX", "(*") &&
+			 !TailMatches("CREATE|UNIQUE", "INDEX", "(*)"))
+	{
+		/*
+		 * This fires if we're in an unfinished parenthesized option list.
+		 * get_previous_words treats a completed parenthesized option list as
+		 * one word, so the above test is correct.
+		 */
+		if (ends_with(prev_wd, '('))
+			COMPLETE_WITH( "VERBOSE");
+	}
+
 	/* Complete CREATE|UNIQUE INDEX [CONCURRENTLY] <sth> with "ON" */
 	else if (TailMatches("CREATE|UNIQUE", "INDEX", MatchAny) ||
 			 TailMatches("CREATE|UNIQUE", "INDEX", "CONCURRENTLY", MatchAny))

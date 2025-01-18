@@ -101,7 +101,8 @@ extern Oid	index_concurrently_create_copy(Relation heapRelation,
 										   const char *newName);
 
 extern void index_concurrently_build(Oid heapRelationId,
-									 Oid indexRelationId);
+									 Oid indexRelationId,
+									 bool verbose);
 
 extern void index_concurrently_swap(Oid newIndexId,
 									Oid oldIndexId,

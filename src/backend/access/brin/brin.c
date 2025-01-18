@@ -229,7 +229,7 @@ static void brin_fill_empty_ranges(BrinBuildState *state,
 
 /* parallel index builds */
 static void _brin_begin_parallel(BrinBuildState *buildstate, Relation heap, Relation index,
-								 bool isconcurrent, int request);
+								 bool isconcurrent, int request, bool verbose);
 static void _brin_end_parallel(BrinLeader *brinleader, BrinBuildState *state);
 static Size _brin_parallel_estimate_shared(Relation heap, Snapshot snapshot);
 static double _brin_parallel_heapscan(BrinBuildState *state);
@@ -1161,7 +1161,7 @@ brinbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	 */
 	if (indexInfo->ii_ParallelWorkers > 0)
 		_brin_begin_parallel(state, heap, index, indexInfo->ii_Concurrent,
-							 indexInfo->ii_ParallelWorkers);
+							 indexInfo->ii_ParallelWorkers, indexInfo->ii_verbose);
 
 	/*
 	 * If parallel build requested and at least one worker process was
@@ -2353,7 +2353,7 @@ check_null_keys(BrinValues *bval, ScanKey *nullkeys, int nnullkeys)
  */
 static void
 _brin_begin_parallel(BrinBuildState *buildstate, Relation heap, Relation index,
-					 bool isconcurrent, int request)
+					 bool isconcurrent, int request, bool verbose)
 {
 	ParallelContext *pcxt;
 	int			scantuplesortstates;
@@ -2511,6 +2511,11 @@ _brin_begin_parallel(BrinBuildState *buildstate, Relation heap, Relation index,
 	brinleader->snapshot = snapshot;
 	brinleader->walusage = walusage;
 	brinleader->bufferusage = bufferusage;
+
+	if (verbose)
+		ereport(INFO,
+				(errmsg_internal("launched %d parallel workers for index creation (planned: %d)",
+								 pcxt->nworkers_launched, pcxt->nworkers_to_launch)));
 
 	/* If no workers were successfully launched, back out (do serial build) */
 	if (pcxt->nworkers_launched == 0)

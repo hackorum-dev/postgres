@@ -787,7 +787,7 @@ IndexInfo *
 makeIndexInfo(int numattrs, int numkeyattrs, Oid amoid, List *expressions,
 			  List *predicates, bool unique, bool nulls_not_distinct,
 			  bool isready, bool concurrent, bool summarizing,
-			  bool withoutoverlaps)
+			  bool withoutoverlaps, bool verbose)
 {
 	IndexInfo  *n = makeNode(IndexInfo);
 
@@ -803,6 +803,7 @@ makeIndexInfo(int numattrs, int numkeyattrs, Oid amoid, List *expressions,
 	n->ii_Concurrent = concurrent;
 	n->ii_Summarizing = summarizing;
 	n->ii_WithoutOverlaps = withoutoverlaps;
+	n->ii_verbose = verbose;
 
 	/* summarizing indexes cannot contain non-key attributes */
 	Assert(!summarizing || (numkeyattrs == numattrs));

@@ -526,6 +526,16 @@ BEGIN;
 CREATE INDEX std_index on concur_heap(f2);
 COMMIT;
 
+-- CREATE INDEX (VERBOSE)
+CREATE TABLE verbose_test (id int);
+\set VERBOSITY terse \\ -- suppress machine-dependent details
+CREATE INDEX (VERBOSE) verbose_test_id ON verbose_test(id);
+ALTER TABLE verbose_test SET (parallel_workers = 1);
+CREATE INDEX (VERBOSE) verbose_test_id2 ON verbose_test(id);
+\set VERBOSITY default
+DROP TABLE  verbose_test;
+
+
 -- Failed builds are left invalid by VACUUM FULL, fixed by REINDEX
 VACUUM FULL concur_heap;
 REINDEX TABLE concur_heap;
@@ -967,6 +977,8 @@ explain (costs off)
 --
 CREATE TABLE reindex_verbose(id integer primary key);
 \set VERBOSITY terse \\ -- suppress machine-dependent details
+REINDEX (VERBOSE) TABLE reindex_verbose;
+ALTER TABLE reindex_verbose SET (parallel_workers = 1);
 REINDEX (VERBOSE) TABLE reindex_verbose;
 \set VERBOSITY default
 DROP TABLE reindex_verbose;
