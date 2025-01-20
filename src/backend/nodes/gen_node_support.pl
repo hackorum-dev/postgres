@@ -148,7 +148,7 @@ my @abstract_types = qw(Node);
 # is not in a header file.  We generate node tags for them, but
 # they otherwise don't participate in node support.
 my @extra_tags = qw(
-  IntList OidList XidList
+  IntList Int64List OidList XidList
   AllocSetContext GenerationContext SlabContext BumpContext
   TIDBitmap
   WindowObjectData

@@ -54,6 +54,7 @@
  */
 #define IsPointerList(l)		((l) == NIL || IsA((l), List))
 #define IsIntegerList(l)		((l) == NIL || IsA((l), IntList))
+#define IsInt64List(l)			((l) == NIL || IsA((l), Int64List))
 #define IsOidList(l)			((l) == NIL || IsA((l), OidList))
 #define IsXidList(l)			((l) == NIL || IsA((l), XidList))
 
@@ -73,6 +74,7 @@ check_list_invariants(const List *list)
 
 	Assert(list->type == T_List ||
 		   list->type == T_IntList ||
+		   list->type == T_Int64List ||
 		   list->type == T_OidList ||
 		   list->type == T_XidList);
 }
@@ -364,6 +366,24 @@ lappend_int(List *list, int datum)
 		new_tail_cell(list);
 
 	llast_int(list) = datum;
+	check_list_invariants(list);
+	return list;
+}
+
+/*
+ * Append an int64 to the specified list. See lappend()
+ */
+List *
+lappend_int64(List *list, int64 datum)
+{
+	Assert(IsInt64List(list));
+
+	if (list == NIL)
+		list = new_list(T_Int64List, 1);
+	else
+		new_tail_cell(list);
+
+	llast_int64(list) = datum;
 	check_list_invariants(list);
 	return list;
 }
@@ -709,6 +729,26 @@ list_member_int(const List *list, int datum)
 	foreach(cell, list)
 	{
 		if (lfirst_int(cell) == datum)
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * Return true iff the int64 'datum' is a member of the list.
+ */
+bool
+list_member_int64(const List *list, int64 datum)
+{
+	const ListCell *cell;
+
+	Assert(IsInt64List(list));
+	check_list_invariants(list);
+
+	foreach(cell, list)
+	{
+		if (lfirst_int64(cell) == datum)
 			return true;
 	}
 

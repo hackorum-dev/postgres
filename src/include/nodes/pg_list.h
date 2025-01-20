@@ -46,6 +46,7 @@ typedef union ListCell
 {
 	void	   *ptr_value;
 	int			int_value;
+	int64		int64_value;
 	Oid			oid_value;
 	TransactionId xid_value;
 } ListCell;
@@ -171,12 +172,14 @@ list_length(const List *l)
  */
 #define lfirst(lc)				((lc)->ptr_value)
 #define lfirst_int(lc)			((lc)->int_value)
+#define lfirst_int64(lc)		((lc)->int64_value)
 #define lfirst_oid(lc)			((lc)->oid_value)
 #define lfirst_xid(lc)			((lc)->xid_value)
 #define lfirst_node(type,lc)	castNode(type, lfirst(lc))
 
 #define linitial(l)				lfirst(list_nth_cell(l, 0))
 #define linitial_int(l)			lfirst_int(list_nth_cell(l, 0))
+#define linitial_int64(l)		lfirst_int64(list_nth_cell(l, 0))
 #define linitial_oid(l)			lfirst_oid(list_nth_cell(l, 0))
 #define linitial_node(type,l)	castNode(type, linitial(l))
 
@@ -197,6 +200,7 @@ list_length(const List *l)
 
 #define llast(l)				lfirst(list_last_cell(l))
 #define llast_int(l)			lfirst_int(list_last_cell(l))
+#define llast_int64(l)			lfirst_int64(list_last_cell(l))
 #define llast_oid(l)			lfirst_oid(list_last_cell(l))
 #define llast_xid(l)			lfirst_xid(list_last_cell(l))
 #define llast_node(type,l)		castNode(type, llast(l))
@@ -204,10 +208,11 @@ list_length(const List *l)
 /*
  * Convenience macros for building fixed-length lists
  */
-#define list_make_ptr_cell(v)	((ListCell) {.ptr_value = (v)})
-#define list_make_int_cell(v)	((ListCell) {.int_value = (v)})
-#define list_make_oid_cell(v)	((ListCell) {.oid_value = (v)})
-#define list_make_xid_cell(v)	((ListCell) {.xid_value = (v)})
+#define list_make_ptr_cell(  v)	((ListCell) {.ptr_value   = (v)})
+#define list_make_int_cell(  v)	((ListCell) {.int_value   = (v)})
+#define list_make_int64_cell(v)	((ListCell) {.int64_value = (v)})
+#define list_make_oid_cell(  v)	((ListCell) {.oid_value   = (v)})
+#define list_make_xid_cell(  v)	((ListCell) {.xid_value   = (v)})
 
 #define list_make1(x1) \
 	list_make1_impl(T_List, list_make_ptr_cell(x1))
@@ -238,6 +243,9 @@ list_length(const List *l)
 	list_make5_impl(T_IntList, list_make_int_cell(x1), list_make_int_cell(x2), \
 					list_make_int_cell(x3), list_make_int_cell(x4), \
 					list_make_int_cell(x5))
+
+#define list_make1_int64(x1) \
+	list_make1_impl(T_Int64List, list_make_int64_cell(x1))
 
 #define list_make1_oid(x1) \
 	list_make1_impl(T_OidList, list_make_oid_cell(x1))
@@ -468,6 +476,7 @@ for_each_cell_setup(const List *lst, const ListCell *initcell)
  */
 #define foreach_ptr(type, var, lst) foreach_internal(type, *, var, lst, lfirst)
 #define foreach_int(var, lst)	foreach_internal(int, , var, lst, lfirst_int)
+#define foreach_int64(var, lst)	foreach_internal(int64, , var, lst, lfirst_int64)
 #define foreach_oid(var, lst)	foreach_internal(Oid, , var, lst, lfirst_oid)
 #define foreach_xid(var, lst)	foreach_internal(TransactionId, , var, lst, lfirst_xid)
 
@@ -610,6 +619,7 @@ extern List *list_make5_impl(NodeTag t, ListCell datum1, ListCell datum2,
 
 extern pg_nodiscard List *lappend(List *list, void *datum);
 extern pg_nodiscard List *lappend_int(List *list, int datum);
+extern pg_nodiscard List *lappend_int64(List *list, int64 datum);
 extern pg_nodiscard List *lappend_oid(List *list, Oid datum);
 extern pg_nodiscard List *lappend_xid(List *list, TransactionId datum);
 
@@ -629,6 +639,7 @@ extern pg_nodiscard List *list_truncate(List *list, int new_size);
 extern bool list_member(const List *list, const void *datum);
 extern bool list_member_ptr(const List *list, const void *datum);
 extern bool list_member_int(const List *list, int datum);
+extern bool list_member_int64(const List *list, int64 datum);
 extern bool list_member_oid(const List *list, Oid datum);
 extern bool list_member_xid(const List *list, TransactionId datum);
 
