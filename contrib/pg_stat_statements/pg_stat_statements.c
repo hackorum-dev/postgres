@@ -82,7 +82,7 @@ PG_MODULE_MAGIC;
 #define PGSS_TEXT_FILE	PG_STAT_TMP_DIR "/pgss_query_texts.stat"
 
 /* Magic number identifying the stats file format */
-static const uint32 PGSS_FILE_HEADER = 0x20220408;
+static const uint32 PGSS_FILE_HEADER = 0x20250120;
 
 /* PostgreSQL major version number, changes in which invalidate all entries */
 static const uint32 PGSS_PG_MAJOR_VERSION = PG_VERSION_NUM / 100;
@@ -233,7 +233,11 @@ typedef struct pgssEntry
 	int			encoding;		/* query text encoding */
 	TimestampTz stats_since;	/* timestamp of entry allocation */
 	TimestampTz minmax_stats_since; /* timestamp of last min/max values reset */
-	slock_t		mutex;			/* protects the counters only */
+	/*
+	 * protects the counters only. Should be the very last field, as this field
+	 * isn't copied to PGSS_DUMP_FILE
+	 */
+	slock_t		mutex;
 } pgssEntry;
 
 /*
@@ -625,7 +629,8 @@ pgss_shmem_startup(void)
 		pgssEntry  *entry;
 		Size		query_offset;
 
-		if (fread(&temp, sizeof(pgssEntry), 1, file) != 1)
+		/* Read whole pgssEntry excluding very last mutex field */
+		if (fread(&temp, offsetof(pgssEntry, mutex), 1, file) != 1)
 			goto read_error;
 
 		/* Encoding is the only field we can easily sanity-check */
@@ -782,7 +787,8 @@ pgss_shmem_shutdown(int code, Datum arg)
 		if (qstr == NULL)
 			continue;			/* Ignore any entries with bogus texts */
 
-		if (fwrite(entry, sizeof(pgssEntry), 1, file) != 1 ||
+		/* Write whole pgssEntry excluding very last mutex field */
+		if (fwrite(entry, offsetof(pgssEntry, mutex), 1, file) != 1 ||
 			fwrite(qstr, 1, len + 1, file) != len + 1)
 		{
 			/* note: we assume hash_seq_term won't change errno */
