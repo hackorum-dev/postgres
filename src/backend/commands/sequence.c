@@ -178,15 +178,18 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 		switch (i)
 		{
 			case SEQ_COL_LASTVAL:
-				coldef = makeColumnDef("last_value", INT8OID, -1, InvalidOid);
+				coldef = makeColumnDef("last_value", INT8OID, -1,
+									   InvalidOid, 0);
 				value[i - 1] = Int64GetDatumFast(seqdataform.last_value);
 				break;
 			case SEQ_COL_LOG:
-				coldef = makeColumnDef("log_cnt", INT8OID, -1, InvalidOid);
+				coldef = makeColumnDef("log_cnt", INT8OID, -1,
+									   InvalidOid, 0);
 				value[i - 1] = Int64GetDatum((int64) 0);
 				break;
 			case SEQ_COL_CALLED:
-				coldef = makeColumnDef("is_called", BOOLOID, -1, InvalidOid);
+				coldef = makeColumnDef("is_called", BOOLOID, -1,
+									   InvalidOid, 0);
 				value[i - 1] = BoolGetDatum(false);
 				break;
 		}

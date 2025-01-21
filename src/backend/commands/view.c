@@ -64,7 +64,8 @@ DefineVirtualRelation(RangeVar *relation, List *tlist, bool replace,
 			ColumnDef  *def = makeColumnDef(tle->resname,
 											exprType((Node *) tle->expr),
 											exprTypmod((Node *) tle->expr),
-											exprCollation((Node *) tle->expr));
+											exprCollation((Node *) tle->expr),
+											-1 /* detect array-ness */ );
 
 			/*
 			 * It's possible that the column is of a collatable type but the

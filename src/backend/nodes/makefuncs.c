@@ -512,15 +512,29 @@ makeTypeNameFromOid(Oid typeOid, int32 typmod)
  *	build a ColumnDef node to represent a simple column definition.
  *
  * Type and collation are specified by OID.
+ * Typmod must be given in numeric form.
+ *
+ * ndims can be positive to select that number of array dimensions,
+ * or 0 if it's not an array, or -1 for this function to detect whether
+ * it's an array type.  (In that case we will declare the column as having a
+ * single array dimension.  This might not accurately reproduce the source of,
+ * say, CREATE TABLE AS; but we don't have the information to do better.)
+ *
  * Other properties are all basic to start with.
  */
 ColumnDef *
-makeColumnDef(const char *colname, Oid typeOid, int32 typmod, Oid collOid)
+makeColumnDef(const char *colname, Oid typeOid, int32 typmod,
+			  Oid collOid, int ndims)
 {
 	ColumnDef  *n = makeNode(ColumnDef);
 
 	n->colname = pstrdup(colname);
 	n->typeName = makeTypeNameFromOid(typeOid, typmod);
+	if (ndims < 0)
+		ndims = OidIsValid(get_element_type(typeOid)) ? 1 : 0;
+	while (ndims-- > 0)
+		n->typeName->arrayBounds = lappend(n->typeName->arrayBounds,
+										   makeInteger(-1));
 	n->inhcount = 0;
 	n->is_local = true;
 	n->is_not_null = false;

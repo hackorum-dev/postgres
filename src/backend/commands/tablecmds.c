@@ -2741,7 +2741,9 @@ MergeAttributes(List *columns, const List *supers, char relpersistence,
 			 * Create new column definition
 			 */
 			newdef = makeColumnDef(attributeName, attribute->atttypid,
-								   attribute->atttypmod, attribute->attcollation);
+								   attribute->atttypmod,
+								   attribute->attcollation,
+								   attribute->attndims);
 			newdef->storage = attribute->attstorage;
 			newdef->generated = attribute->attgenerated;
 			if (CompressionMethodIsValid(attribute->attcompression))

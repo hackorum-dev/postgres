@@ -183,7 +183,8 @@ create_ctas_nodata(List *tlist, IntoClause *into)
 			col = makeColumnDef(colname,
 								exprType((Node *) tle->expr),
 								exprTypmod((Node *) tle->expr),
-								exprCollation((Node *) tle->expr));
+								exprCollation((Node *) tle->expr),
+								-1 /* detect array-ness */ );
 
 			/*
 			 * It's possible that the column is of a collatable type but the
@@ -492,10 +493,17 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 		else
 			colname = NameStr(attribute->attname);
 
+		/*
+		 * Note: we pass ndims as -1 not attribute->attndims because (a) the
+		 * tupledesc we are given may not have accurate attndims, and (b) it
+		 * seems best for this path to give results matching
+		 * create_ctas_nodata.
+		 */
 		col = makeColumnDef(colname,
 							attribute->atttypid,
 							attribute->atttypmod,
-							attribute->attcollation);
+							attribute->attcollation,
+							-1 /* detect array-ness */ );
 
 		/*
 		 * It's possible that the column is of a collatable type but the

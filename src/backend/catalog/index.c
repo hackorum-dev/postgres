@@ -382,6 +382,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 			to->atttypid = keyType;
 			to->attlen = typeTup->typlen;
 			to->atttypmod = exprTypmod(indexkey);
+			to->attndims = IsTrueArrayType(typeTup) ? 1 : 0;
 			to->attbyval = typeTup->typbyval;
 			to->attalign = typeTup->typalign;
 			to->attstorage = typeTup->typstorage;
@@ -467,6 +468,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 
 			to->atttypid = keyType;
 			to->atttypmod = -1;
+			to->attndims = IsTrueArrayType(typeTup) ? 1 : 0;
 			to->attlen = typeTup->typlen;
 			to->attbyval = typeTup->typbyval;
 			to->attalign = typeTup->typalign;

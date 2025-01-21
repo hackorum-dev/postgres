@@ -221,7 +221,37 @@ CREATE TABLE ctlt11a (LIKE ctlv1 INCLUDING ALL);
 CREATE TYPE ctlty1 AS (a int, b text);
 CREATE TABLE ctlt12 (LIKE ctlty1);
 
+
+/* Check that LIKE propagates attndims correctly */
+
+CREATE TABLE ctlarr1 (a int, b int[], c int[][]);
+CREATE TABLE ctlt13 (LIKE ctlarr1);
+SELECT attname, atttypid::regtype, attndims
+  FROM pg_attribute
+ WHERE attrelid = 'ctlarr1'::regclass AND attnum > 0
+ORDER BY attnum;
+SELECT attname, atttypid::regtype, attndims
+  FROM pg_attribute
+ WHERE attrelid = 'ctlt13'::regclass AND attnum > 0
+ORDER BY attnum;
+
+/*
+ * While we're here, check attndims consistency globally.
+ * Since this runs relatively late in the regression order, this will
+ * catch problems in system views and many types of indexes.
+ */
+SELECT relname, attname, attndims, typname
+  FROM pg_attribute a JOIN pg_type t ON (a.atttypid = t.oid)
+       JOIN pg_class c ON (a.attrelid = c.oid)
+ WHERE typsubscript = 'array_subscript_handler'::regproc AND attndims = 0;
+
+SELECT relname, attname, attndims, typname
+  FROM pg_attribute a JOIN pg_type t ON (a.atttypid = t.oid)
+       JOIN pg_class c ON (a.attrelid = c.oid)
+ WHERE typsubscript != 'array_subscript_handler'::regproc AND attndims != 0;
+
+
 DROP SEQUENCE ctlseq1;
 DROP TYPE ctlty1;
 DROP VIEW ctlv1;
-DROP TABLE IF EXISTS ctlt4, ctlt10, ctlt11, ctlt11a, ctlt12;
+DROP TABLE IF EXISTS ctlt4, ctlt10, ctlt11, ctlt11a, ctlt12, ctlarr1, ctlt13;
