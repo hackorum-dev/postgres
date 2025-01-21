@@ -216,6 +216,28 @@ get_extension_schema(Oid ext_oid)
 }
 
 /*
+ * get_extension_version - given an extension OID, look up the version
+ *
+ * Returns a palloc'd string, or NULL if no such extension.
+ */
+char *
+get_extension_version(Oid ext_oid)
+{
+	char	   *result;
+	HeapTuple	tuple;
+
+	tuple = SearchSysCache1(EXTENSIONOID, ObjectIdGetDatum(ext_oid));
+
+	if (!HeapTupleIsValid(tuple))
+		return NULL;
+
+	result = pstrdup(NameStr(((Form_pg_extension) GETSTRUCT(tuple))->extversion));
+	ReleaseSysCache(tuple);
+
+	return result;
+}
+
+/*
  * Utility functions to check validity of extension and version names
  */
 static void
