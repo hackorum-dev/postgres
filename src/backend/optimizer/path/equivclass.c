@@ -764,16 +764,26 @@ find_ec_member_matching_expr(EquivalenceClass *ec,
 							 Expr *expr,
 							 Relids relids)
 {
-	ListCell   *lc;
-
 	/* We ignore binary-compatible relabeling on both ends */
 	while (expr && IsA(expr, RelabelType))
 		expr = ((RelabelType *) expr)->arg;
 
-	foreach(lc, ec->ec_members)
+	/*
+	 * When creating ordered paths for a partitioned table, the total time taken
+	 * by this linear search becomes effectively quadratic in the number of
+	 * partitions, which starts seriously affecting the planning performance
+	 * after we hit 1k partitions. Ideally, ec_members should be a hash table,
+	 * but as a quick fix, we can make use of the fact that this search usually
+	 * looks up the either the same EM as before, or the next one, and start the
+	 * search from the previous position. This speeds up the common case.
+	 */
+	static int previous_em_found_at = 0;
+	int n = list_length(ec->ec_members);
+	for(int search_offset = 0; search_offset < n; search_offset++)
 	{
-		EquivalenceMember *em = (EquivalenceMember *) lfirst(lc);
-		Expr	   *emexpr;
+		const int current_position = (search_offset + previous_em_found_at) % n;
+		EquivalenceMember *em = list_nth_node(EquivalenceMember, ec->ec_members,
+			current_position);
 
 		/*
 		 * We shouldn't be trying to sort by an equivalence class that
@@ -792,12 +802,15 @@ find_ec_member_matching_expr(EquivalenceClass *ec,
 		/*
 		 * Match if same expression (after stripping relabel).
 		 */
-		emexpr = em->em_expr;
+		Expr *emexpr = em->em_expr;
 		while (emexpr && IsA(emexpr, RelabelType))
 			emexpr = ((RelabelType *) emexpr)->arg;
 
 		if (equal(emexpr, expr))
+		{
+			previous_em_found_at = current_position;
 			return em;
+		}
 	}
 
 	return NULL;
