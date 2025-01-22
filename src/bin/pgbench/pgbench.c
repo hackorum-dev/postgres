@@ -7192,6 +7192,8 @@ main(int argc, char **argv)
 				dbName = env;
 			else if ((env = getenv("PGUSER")) != NULL && *env != '\0')
 				dbName = env;
+			else if (username)
+				dbName = username;
 			else
 				dbName = get_user_name_or_exit(progname);
 		}
