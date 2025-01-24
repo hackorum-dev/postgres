@@ -2034,6 +2034,10 @@ cannotCastJsonbValue(enum jbvType type, const char *sqltype)
 	elog(ERROR, "unknown jsonb type: %d", (int) type);
 }
 
+/*
+ * Assorted jsonb-to-scalar-type conversion functions.
+ */
+
 Datum
 jsonb_bool(PG_FUNCTION_ARGS)
 {
@@ -2220,6 +2224,74 @@ jsonb_float8(PG_FUNCTION_ARGS)
 	PG_FREE_IF_COPY(in, 0);
 
 	PG_RETURN_DATUM(retValue);
+}
+
+/* Note: this is also used for jsonb-to-varchar */
+Datum
+jsonb_text(PG_FUNCTION_ARGS)
+{
+	Jsonb	   *in = PG_GETARG_JSONB_P(0);
+	JsonbValue	v;
+	StringInfoData jtext;
+
+	/* Convert scalar null to SQL null */
+	if (JsonbExtractScalar(&in->root, &v) && v.type == jbvNull)
+	{
+		PG_FREE_IF_COPY(in, 0);
+		PG_RETURN_NULL();
+	}
+
+	/* Every other case acts like jsonb_out() */
+	initStringInfo(&jtext);
+	(void) JsonbToCString(&jtext, &in->root, VARSIZE(in));
+
+	PG_FREE_IF_COPY(in, 0);
+
+	PG_RETURN_TEXT_P(cstring_to_text_with_len(jtext.data, jtext.len));
+}
+
+Datum
+jsonb_bpchar(PG_FUNCTION_ARGS)
+{
+	/*
+	 * This is really equivalent to jsonb_text, but it must be a separate C
+	 * function to keep opr_sanity.sql from complaining.
+	 */
+	return jsonb_text(fcinfo);
+}
+
+Datum
+jsonb_name(PG_FUNCTION_ARGS)
+{
+	Jsonb	   *in = PG_GETARG_JSONB_P(0);
+	Name		result;
+	JsonbValue	v;
+	StringInfoData jtext;
+	int			len;
+
+	/* Convert scalar null to SQL null */
+	if (JsonbExtractScalar(&in->root, &v) && v.type == jbvNull)
+	{
+		PG_FREE_IF_COPY(in, 0);
+		PG_RETURN_NULL();
+	}
+
+	/* Every other case acts like jsonb_out() */
+	initStringInfo(&jtext);
+	(void) JsonbToCString(&jtext, &in->root, VARSIZE(in));
+
+	PG_FREE_IF_COPY(in, 0);
+
+	/* Truncate oversize input */
+	len = jtext.len;
+	if (len >= NAMEDATALEN)
+		len = pg_mbcliplen(jtext.data, len, NAMEDATALEN - 1);
+
+	/* We use palloc0 here to ensure result is zero-padded */
+	result = (Name) palloc0(NAMEDATALEN);
+	memcpy(NameStr(*result), jtext.data, len);
+
+	PG_RETURN_NAME(result);
 }
 
 /*

@@ -4705,6 +4705,18 @@
 { oid => '2580', descr => 'convert jsonb to float8',
   proname => 'float8', prorettype => 'float8', proargtypes => 'jsonb',
   prosrc => 'jsonb_float8' },
+{ oid => '8079', descr => 'convert jsonb to text',
+  proname => 'text', prorettype => 'text', proargtypes => 'jsonb',
+  prosrc => 'jsonb_text' },
+{ oid => '8080', descr => 'convert jsonb to varchar',
+  proname => 'varchar', prorettype => 'varchar', proargtypes => 'jsonb',
+  prosrc => 'jsonb_text' },
+{ oid => '8081', descr => 'convert jsonb to char(n)',
+  proname => 'bpchar', prorettype => 'bpchar', proargtypes => 'jsonb',
+  prosrc => 'jsonb_bpchar' },
+{ oid => '8082', descr => 'convert jsonb to name',
+  proname => 'name', prorettype => 'name', proargtypes => 'jsonb',
+  prosrc => 'jsonb_name' },
 
 # formatting
 { oid => '1770', descr => 'format timestamp with time zone to text',
