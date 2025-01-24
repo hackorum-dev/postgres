@@ -65,6 +65,7 @@ makeString(char *str)
 	String	   *v = makeNode(String);
 
 	v->sval = str;
+	v->location = -1;
 	return v;
 }
 
