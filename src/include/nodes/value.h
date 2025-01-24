@@ -66,6 +66,8 @@ typedef struct String
 
 	NodeTag		type;
 	char	   *sval;
+
+	ParseLoc	location pg_node_attr(query_jumble_location);
 } String;
 
 typedef struct BitString
