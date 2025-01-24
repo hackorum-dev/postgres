@@ -1300,8 +1300,11 @@ AlterOptRoleList:
 AlterOptRoleElem:
 			PASSWORD Sconst
 				{
+					String *str = makeString($2);
+					str->location = @2;
+
 					$$ = makeDefElem("password",
-									 (Node *) makeString($2), @1);
+									 (Node *) str, @1);
 				}
 			| PASSWORD NULL_P
 				{
@@ -1314,8 +1317,11 @@ AlterOptRoleElem:
 					 * form, so there is no difference between PASSWORD and
 					 * ENCRYPTED PASSWORD.
 					 */
+					String *str = makeString($3);
+					str->location = @3;
+
 					$$ = makeDefElem("password",
-									 (Node *) makeString($3), @1);
+									 (Node *) str, @1);
 				}
 			| UNENCRYPTED PASSWORD Sconst
 				{
