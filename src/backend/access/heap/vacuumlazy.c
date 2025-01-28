@@ -3037,7 +3037,7 @@ dead_items_alloc(LVRelState *vacrel, int nworkers)
 	 */
 
 	dead_items_info = (VacDeadItemsInfo *) palloc(sizeof(VacDeadItemsInfo));
-	dead_items_info->max_bytes = vac_work_mem * 1024L;
+	dead_items_info->max_bytes = vac_work_mem * (Size)1024;
 	dead_items_info->num_items = 0;
 	vacrel->dead_items_info = dead_items_info;
 

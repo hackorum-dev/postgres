@@ -263,7 +263,7 @@ static int	tbm_shared_comparator(const void *left, const void *right,
  * be allocated from the DSA.
  */
 TIDBitmap *
-tbm_create(long maxbytes, dsa_area *dsa)
+tbm_create(Size maxbytes, dsa_area *dsa)
 {
 	TIDBitmap  *tbm;
 
@@ -1539,10 +1539,10 @@ pagetable_free(pagetable_hash *pagetable, void *pointer)
  *
  * Estimate number of hashtable entries we can have within maxbytes.
  */
-long
-tbm_calculate_entries(double maxbytes)
+Size
+tbm_calculate_entries(Size maxbytes)
 {
-	long		nbuckets;
+	Size		nbuckets;
 
 	/*
 	 * Estimate number of hashtable entries we can have within maxbytes. This

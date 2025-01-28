@@ -18,8 +18,7 @@
 
 
 /* upper limit for GUC variables measured in kilobytes of memory */
-/* note that various places assume the byte size fits in a "long" variable */
-#if SIZEOF_SIZE_T > 4 && SIZEOF_LONG > 4
+#if SIZEOF_SIZE_T > 4
 #define MAX_KILOBYTES	INT_MAX
 #else
 #define MAX_KILOBYTES	(INT_MAX / 1024)

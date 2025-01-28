@@ -456,7 +456,7 @@ ginHeapTupleFastInsert(GinState *ginstate, GinTupleCollector *collector)
 	 * ginInsertCleanup() should not be called inside our CRIT_SECTION.
 	 */
 	cleanupSize = GinGetPendingListCleanupSize(index);
-	if (metadata->nPendingPages * GIN_PAGE_FREESIZE > cleanupSize * 1024L)
+	if (metadata->nPendingPages * GIN_PAGE_FREESIZE > cleanupSize * (Size)1024)
 		needCleanup = true;
 
 	UnlockReleaseBuffer(metabuffer);

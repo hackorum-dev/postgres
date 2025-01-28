@@ -26,7 +26,7 @@
 int			max_stack_depth = 100;
 
 /* max_stack_depth converted to bytes for speed of checking */
-static long max_stack_depth_bytes = 100 * 1024L;
+static Size max_stack_depth_bytes = 100 * (Size)1024;
 
 /*
  * Stack base pointer -- initialized by set_stack_base(), which
@@ -158,7 +158,7 @@ check_max_stack_depth(int *newval, void **extra, GucSource source)
 void
 assign_max_stack_depth(int newval, void *extra)
 {
-	long		newval_bytes = newval * 1024L;
+	Size		newval_bytes = newval * (Size)1024;
 
 	max_stack_depth_bytes = newval_bytes;
 }

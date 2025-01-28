@@ -325,7 +325,7 @@ CreateWorkExprContext(EState *estate)
 	Size		maxBlockSize = ALLOCSET_DEFAULT_MAXSIZE;
 
 	/* choose the maxBlockSize to be no larger than 1/16 of work_mem */
-	while (16 * maxBlockSize > work_mem * 1024L)
+	while (16 * maxBlockSize > work_mem * (Size)1024)
 		maxBlockSize >>= 1;
 
 	if (maxBlockSize < ALLOCSET_DEFAULT_INITSIZE)
