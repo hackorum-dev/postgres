@@ -103,8 +103,6 @@ static bool max_parallel_hazard_walker(Node *node,
 									   max_parallel_hazard_context *context);
 static bool contain_nonstrict_functions_walker(Node *node, void *context);
 static bool contain_exec_param_walker(Node *node, List *param_ids);
-static bool contain_context_dependent_node(Node *clause);
-static bool contain_context_dependent_node_walker(Node *node, int *flags);
 static bool contain_leaked_vars_walker(Node *node, void *context);
 static Relids find_nonnullable_rels_walker(Node *node, bool top_level);
 static List *find_nonnullable_vars_walker(Node *node, bool top_level);
@@ -1165,95 +1163,6 @@ contain_exec_param_walker(Node *node, List *param_ids)
 			return true;
 	}
 	return expression_tree_walker(node, contain_exec_param_walker, param_ids);
-}
-
-/*****************************************************************************
- *		Check clauses for context-dependent nodes
- *****************************************************************************/
-
-/*
- * contain_context_dependent_node
- *	  Recursively search for context-dependent nodes within a clause.
- *
- * CaseTestExpr nodes must appear directly within the corresponding CaseExpr,
- * not nested within another one, or they'll see the wrong test value.  If one
- * appears "bare" in the arguments of a SQL function, then we can't inline the
- * SQL function for fear of creating such a situation.  The same applies for
- * CaseTestExpr used within the elemexpr of an ArrayCoerceExpr.
- *
- * CoerceToDomainValue would have the same issue if domain CHECK expressions
- * could get inlined into larger expressions, but presently that's impossible.
- * Still, it might be allowed in future, or other node types with similar
- * issues might get invented.  So give this function a generic name, and set
- * up the recursion state to allow multiple flag bits.
- */
-static bool
-contain_context_dependent_node(Node *clause)
-{
-	int			flags = 0;
-
-	return contain_context_dependent_node_walker(clause, &flags);
-}
-
-#define CCDN_CASETESTEXPR_OK	0x0001	/* CaseTestExpr okay here? */
-
-static bool
-contain_context_dependent_node_walker(Node *node, int *flags)
-{
-	if (node == NULL)
-		return false;
-	if (IsA(node, CaseTestExpr))
-		return !(*flags & CCDN_CASETESTEXPR_OK);
-	else if (IsA(node, CaseExpr))
-	{
-		CaseExpr   *caseexpr = (CaseExpr *) node;
-
-		/*
-		 * If this CASE doesn't have a test expression, then it doesn't create
-		 * a context in which CaseTestExprs should appear, so just fall
-		 * through and treat it as a generic expression node.
-		 */
-		if (caseexpr->arg)
-		{
-			int			save_flags = *flags;
-			bool		res;
-
-			/*
-			 * Note: in principle, we could distinguish the various sub-parts
-			 * of a CASE construct and set the flag bit only for some of them,
-			 * since we are only expecting CaseTestExprs to appear in the
-			 * "expr" subtree of the CaseWhen nodes.  But it doesn't really
-			 * seem worth any extra code.  If there are any bare CaseTestExprs
-			 * elsewhere in the CASE, something's wrong already.
-			 */
-			*flags |= CCDN_CASETESTEXPR_OK;
-			res = expression_tree_walker(node,
-										 contain_context_dependent_node_walker,
-										 flags);
-			*flags = save_flags;
-			return res;
-		}
-	}
-	else if (IsA(node, ArrayCoerceExpr))
-	{
-		ArrayCoerceExpr *ac = (ArrayCoerceExpr *) node;
-		int			save_flags;
-		bool		res;
-
-		/* Check the array expression */
-		if (contain_context_dependent_node_walker((Node *) ac->arg, flags))
-			return true;
-
-		/* Check the elemexpr, which is allowed to contain CaseTestExpr */
-		save_flags = *flags;
-		*flags |= CCDN_CASETESTEXPR_OK;
-		res = contain_context_dependent_node_walker((Node *) ac->elemexpr,
-													flags);
-		*flags = save_flags;
-		return res;
-	}
-	return expression_tree_walker(node, contain_context_dependent_node_walker,
-								  flags);
 }
 
 /*****************************************************************************
@@ -4658,8 +4567,6 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
  * doesn't work in the general case because it discards information such
  * as OUT-parameter declarations.
  *
- * Also, context-dependent expression nodes in the argument list are trouble.
- *
  * Returns a simplified expression if successful, or NULL if cannot
  * simplify the function.
  */
@@ -4897,13 +4804,6 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 
 	if (funcform->proisstrict &&
 		contain_nonstrict_functions(newexpr))
-		goto fail;
-
-	/*
-	 * If any parameter expression contains a context-dependent node, we can't
-	 * inline, for fear of putting such a node into the wrong context.
-	 */
-	if (contain_context_dependent_node((Node *) args))
 		goto fail;
 
 	/*
