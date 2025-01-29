@@ -50,6 +50,34 @@ typedef struct
 } published_rel;
 
 /*
+ * Check is relation has foreign partitions or
+ * it's foreign table itself.
+ */
+static bool IsRelationWithForeignData(Oid relid)
+{
+	List	   *all_parts;
+	ListCell   *lc;
+	char		relkind = get_rel_relkind(relid);
+
+	if (relkind == RELKIND_FOREIGN_TABLE)
+		return true;
+	else if (relkind != RELKIND_PARTITIONED_TABLE)
+		return false;
+
+	all_parts = find_all_inheritors(relid, NoLock, NULL);
+
+	foreach(lc, all_parts)
+	{
+		Oid			partOid = lfirst_oid(lc);
+
+		if (get_rel_relkind(partOid) == RELKIND_FOREIGN_TABLE)
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * Check if relation can be in given publication and throws appropriate
  * error if not.
  */
@@ -85,6 +113,14 @@ check_publication_add_relation(PublicationRelInfo *pri)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg(errormsg, relname),
 				 errdetail_relkind_not_supported(RelationGetForm(targetrel)->relkind)));
+
+	/* Can't be partitioned table with foreign partitions */
+	if (IsRelationWithForeignData(RelationGetForm(targetrel)->oid))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("cannot add relation \"%s\" to publication",
+						RelationGetRelationName(targetrel)),
+				 errdetail("This operation is not supported for partitioned tables with foreign partitions")));
 
 	/* Can't be system table */
 	if (IsCatalogRelation(targetrel))
