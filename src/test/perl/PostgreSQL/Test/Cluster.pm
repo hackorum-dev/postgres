@@ -1341,6 +1341,30 @@ sub promote
 
 =pod
 
+=item $node->demote()
+
+Wrapper for pg_ctl demote
+
+=cut
+
+sub demote
+{
+	my ($self) = @_;
+	my $pgdata = $self->data_dir;
+	my $logfile = $self->logfile;
+	my $name = $self->name;
+
+	local %ENV = $self->_get_env();
+
+	print "### Demoting node \"$name\"\n";
+
+	PostgreSQL::Test::Utils::system_or_bail('pg_ctl', '-D', $pgdata, '-l',
+		$logfile, 'demote');
+	return;
+}
+
+=pod
+
 =item $node->logrotate()
 
 Wrapper for pg_ctl logrotate
