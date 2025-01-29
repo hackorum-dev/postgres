@@ -1698,21 +1698,33 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				 * Construct a sub-expression for the per-element expression;
 				 * but don't ready it until after we check it for triviality.
 				 * We assume it hasn't any Var references, but does have a
-				 * CaseTestExpr representing the source array element values.
+				 * Param representing the source array element values.
 				 */
 				elemstate = makeNode(ExprState);
 				elemstate->expr = acoerce->elemexpr;
 				elemstate->parent = state->parent;
 				elemstate->ext_params = state->ext_params;
 
-				elemstate->innermost_caseval = (Datum *) palloc(sizeof(Datum));
-				elemstate->innermost_casenull = (bool *) palloc(sizeof(bool));
+				/*
+				 * Push a step that copies the elemstate's resvalue/resnull
+				 * into the appropriate Param slot; this is so that array_map
+				 * doesn't need much knowledge about where to put the element
+				 * values.  The generated expression might not do anything
+				 * more than fetch the value back; if so we optimize it below.
+				 */
+				scratch.opcode = EEOP_PARAM_SET_EXPR;
+				Assert(acoerce->acparam > 0);
+				scratch.d.paramset.paramid = acoerce->acparam;
+				scratch.d.paramset.setvalue = &elemstate->resvalue;
+				scratch.d.paramset.setnull = &elemstate->resnull;
+				ExprEvalPushStep(elemstate, &scratch);
 
 				ExecInitExprRec(acoerce->elemexpr, elemstate,
 								&elemstate->resvalue, &elemstate->resnull);
 
-				if (elemstate->steps_len == 1 &&
-					elemstate->steps[0].opcode == EEOP_CASE_TESTVAL)
+				if (elemstate->steps_len == 2 &&
+					elemstate->steps[0].opcode == EEOP_PARAM_SET_EXPR &&
+					elemstate->steps[1].opcode == EEOP_PARAM_EXPR)
 				{
 					/* Trivial, so we need no per-element work at runtime */
 					elemstate = NULL;

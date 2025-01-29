@@ -936,9 +936,13 @@ build_coercion_expression(Node *node,
 
 		/*
 		 * Set up a CaseTestExpr representing one element of the source array.
-		 * This is an abuse of CaseTestExpr, but it's OK as long as there
-		 * can't be any CaseExpr or ArrayCoerceExpr within the completed
-		 * elemexpr.
+		 * This is an abuse of CaseTestExpr, but it's safe because the
+		 * finished elemexpr will simply be a coercion applied to the
+		 * CaseTestExpr.  The coercion expression cannot directly contain a
+		 * CASE, nor any other construct that similarly abuses CaseTestExpr.
+		 * (Subsequent inlining of a SQL-language cast function could create a
+		 * hazard, but we leave it to the planner to deal with that scenario
+		 * by replacing the CaseTestExpr with a Param beforehand.)
 		 */
 		ctest->typeId = get_element_type(sourceBaseTypeId);
 		Assert(OidIsValid(ctest->typeId));

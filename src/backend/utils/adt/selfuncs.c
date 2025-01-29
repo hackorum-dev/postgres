@@ -1790,11 +1790,13 @@ strip_array_coercion(Node *node)
 			ArrayCoerceExpr *acoerce = (ArrayCoerceExpr *) node;
 
 			/*
-			 * If the per-element expression is just a RelabelType on top of
-			 * CaseTestExpr, then we know it's a binary-compatible relabeling.
+			 * If the per-element expression is just a RelabelType on top of a
+			 * Param, then we know it's a binary-compatible relabeling.  (We
+			 * could verify that it's the matching PARAM_EXPR Param, but that
+			 * seems like overkill.)
 			 */
 			if (IsA(acoerce->elemexpr, RelabelType) &&
-				IsA(((RelabelType *) acoerce->elemexpr)->arg, CaseTestExpr))
+				IsA(((RelabelType *) acoerce->elemexpr)->arg, Param))
 				node = (Node *) acoerce->arg;
 			else
 				break;

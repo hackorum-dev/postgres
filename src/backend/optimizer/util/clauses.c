@@ -150,6 +150,7 @@ static Node *substitute_actual_parameters(Node *expr, int nargs, List *args,
 static Node *substitute_actual_parameters_mutator(Node *node,
 												  substitute_actual_parameters_context *context);
 static void sql_inline_error_callback(void *arg);
+static bool find_casetestexpr(Node *node, CaseTestExpr **result);
 static Param *generate_new_expr_param(eval_const_expressions_context *context,
 									  Oid paramtype, int32 paramtypmod,
 									  Oid paramcollation);
@@ -3075,7 +3076,7 @@ eval_const_expressions_mutator(Node *node,
 		case T_ArrayCoerceExpr:
 			{
 				ArrayCoerceExpr *ac = makeNode(ArrayCoerceExpr);
-				Node	   *save_case_val;
+				CaseTestExpr *ctexpr = NULL;
 
 				/*
 				 * Copy the node and const-simplify its arguments.  We can't
@@ -3088,17 +3089,55 @@ eval_const_expressions_mutator(Node *node,
 												   context);
 
 				/*
-				 * Set up for the CaseTestExpr node contained in the elemexpr.
-				 * We must prevent it from absorbing any outer CASE value.
+				 * Find the CaseTestExpr in elemexpr; this is probably much
+				 * cheaper than recomputing its type/typmod/collation from the
+				 * values we have.  Also, if we don't find it, we know that we
+				 * are re-simplifying an already-simplified ArrayCoerceExpr
+				 * and must not change acparam.
 				 */
-				save_case_val = context->case_val;
-				context->case_val = NULL;
+				if (find_casetestexpr((Node *) ac->elemexpr, &ctexpr))
+				{
+					/*
+					 * Set up the node to substitute for the CaseTestExpr node
+					 * contained in elemexpr.  Normally we replace it with a
+					 * PARAM_EXPR Param, but if we're just estimating, leave
+					 * it alone.  (Even in estimation mode, assign a Param if
+					 * we might try to evaluate the expression below.  This
+					 * will sometimes result in wasting a PARAM_EXPR slot, but
+					 * that hardly matters.)
+					 *
+					 * We must save and restore context->case_val so as not to
+					 * affect surrounding constructs.
+					 */
+					Node	   *save_case_val = context->case_val;
 
-				ac->elemexpr = (Expr *)
-					eval_const_expressions_mutator((Node *) ac->elemexpr,
-												   context);
+					/* If we found a CaseTestExpr, we can't be re-simplifying */
+					Assert(ac->acparam == 0);
+					if (!context->estimate ||
+						(ac->arg && IsA(ac->arg, Const)))
+					{
+						Param	   *p;
 
-				context->case_val = save_case_val;
+						p = generate_new_expr_param(context,
+													ctexpr->typeId,
+													ctexpr->typeMod,
+													ctexpr->collation);
+						context->case_val = (Node *) p;
+						ac->acparam = p->paramid;
+					}
+					else
+						context->case_val = NULL;
+
+					ac->elemexpr = (Expr *)
+						eval_const_expressions_mutator((Node *) ac->elemexpr,
+													   context);
+
+					context->case_val = save_case_val;
+				}
+				else
+					ac->elemexpr = (Expr *)
+						eval_const_expressions_mutator((Node *) ac->elemexpr,
+													   context);
 
 				/*
 				 * If constant argument and the per-element expression is
@@ -5038,6 +5077,26 @@ sql_inline_error_callback(void *arg)
 	}
 
 	errcontext("SQL function \"%s\" during inlining", callback_arg->proname);
+}
+
+/*
+ * Locate the CaseTestExpr, if any, within the given node tree.
+ *
+ * This should only be called on node trees in which it's certain that
+ * there's not more than one CaseTestExpr, else the result is indeterminate.
+ * Note that *result is left unset on false return.
+ */
+static bool
+find_casetestexpr(Node *node, CaseTestExpr **result)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, CaseTestExpr))
+	{
+		*result = (CaseTestExpr *) node;
+		return true;
+	}
+	return expression_tree_walker(node, find_casetestexpr, result);
 }
 
 /*

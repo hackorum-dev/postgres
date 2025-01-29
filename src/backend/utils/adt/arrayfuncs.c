@@ -3177,7 +3177,7 @@ array_set(ArrayType *array, int nSubscripts, int *indx,
  * Map an array through an arbitrary expression.  Return a new array with
  * the same dimensions and each source element transformed by the given,
  * already-compiled expression.  Each source element is placed in the
- * innermost_caseval/innermost_casenull fields of the ExprState.
+ * resvalue/resnull fields of the ExprState before evaluating the expression.
  *
  * Parameters are:
  * * arrayd: Datum representing array argument.
@@ -3223,8 +3223,8 @@ array_map(Datum arrayd,
 	array_iter	iter;
 	ArrayMetaState *inp_extra;
 	ArrayMetaState *ret_extra;
-	Datum	   *transform_source = exprstate->innermost_caseval;
-	bool	   *transform_source_isnull = exprstate->innermost_casenull;
+	Datum	   *transform_source = &exprstate->resvalue;
+	bool	   *transform_source_isnull = &exprstate->resnull;
 
 	inpType = AARR_ELEMTYPE(v);
 	ndim = AARR_NDIM(v);

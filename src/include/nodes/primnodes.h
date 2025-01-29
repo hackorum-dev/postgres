@@ -1248,8 +1248,9 @@ typedef struct CoerceViaIO
  * ArrayCoerceExpr represents a type coercion from one array type to another,
  * which is implemented by applying the per-element coercion expression
  * "elemexpr" to each element of the source array.  Within elemexpr, the
- * source element is represented by a CaseTestExpr node.  Note that even if
- * elemexpr is a no-op (that is, just CaseTestExpr + RelabelType), the
+ * source element is initially represented by a CaseTestExpr node, which
+ * will be replaced by a PARAM_EXPR Param during planning.  Note that even
+ * if elemexpr is a no-op (that is, just CaseTestExpr + RelabelType), the
  * coercion still requires some effort: we have to fix the element type OID
  * stored in the array header.
  * ----------------
@@ -1267,6 +1268,8 @@ typedef struct ArrayCoerceExpr
 	Oid			resultcollid pg_node_attr(query_jumble_ignore);
 	/* how to display this node */
 	CoercionForm coerceformat pg_node_attr(query_jumble_ignore);
+	/* ID of PARAM_EXPR Param representing input, if assigned; else 0 */
+	int			acparam pg_node_attr(equal_ignore, query_jumble_ignore);
 	ParseLoc	location;		/* token location, or -1 if unknown */
 } ArrayCoerceExpr;
 
