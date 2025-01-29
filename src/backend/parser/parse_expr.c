@@ -1667,6 +1667,11 @@ transformCaseExpr(ParseState *pstate, CaseExpr *c)
 		placeholder->typeId = exprType(arg);
 		placeholder->typeMod = exprTypmod(arg);
 		placeholder->collation = exprCollation(arg);
+
+		/*
+		 * Note: the planner will replace the CaseTestExpr(s) with PARAM_EXPR
+		 * Params, and will fill the CaseExpr's caseparam field at that time.
+		 */
 	}
 	else
 		placeholder = NULL;

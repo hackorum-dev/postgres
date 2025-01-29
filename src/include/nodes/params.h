@@ -19,6 +19,7 @@ struct Bitmapset;
 struct ExprState;
 struct Param;
 struct ParseState;
+struct SubPlanState;
 
 
 /*
@@ -129,8 +130,8 @@ typedef struct ParamListInfoData
 /* ----------------
  *	  ParamExecData
  *
- *	  ParamExecData entries are used for executor internal parameters
- *	  (that is, values being passed into or out of a sub-query).  The
+ *	  ParamExecData entries are used for executor internal PARAM_EXEC
+ *	  parameters (values being passed between plan nodes).  The
  *	  paramid of a PARAM_EXEC Param is a (zero-based) index into an
  *	  array of ParamExecData records, which is referenced through
  *	  es_param_exec_vals or ecxt_param_exec_vals.
@@ -145,10 +146,30 @@ typedef struct ParamListInfoData
 
 typedef struct ParamExecData
 {
-	void	   *execPlan;		/* should be "SubPlanState *" */
+	struct SubPlanState *execPlan;
 	Datum		value;
 	bool		isnull;
 } ParamExecData;
+
+
+/* ----------------
+ *	  ParamExprData
+ *
+ *	  ParamExprData entries are used for executor internal PARAM_EXPR
+ *	  parameters (values being passed within an expression).  The
+ *	  paramid of a PARAM_EXPR Param is a (one-based) index into an
+ *	  array of ParamExprData records, which is referenced through
+ *	  es_param_expr_vals or ecxt_param_expr_vals.  Values are assumed
+ *	  to be valid when needed.
+ * ----------------
+ */
+
+typedef struct ParamExprData
+{
+	Datum		value;
+	bool		isnull;
+} ParamExprData;
+
 
 /* type of argument for ParamsErrorCallback */
 typedef struct ParamsErrorCbData

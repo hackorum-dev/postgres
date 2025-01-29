@@ -185,9 +185,13 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		int			nParamExec;
 
 		nParamExec = list_length(queryDesc->plannedstmt->paramExecTypes);
-		estate->es_param_exec_vals = (ParamExecData *)
-			palloc0(nParamExec * sizeof(ParamExecData));
+		estate->es_param_exec_vals = palloc0_array(ParamExecData, nParamExec);
 	}
+
+	estate->es_num_param_expr_vals = queryDesc->plannedstmt->numExprParams;
+	if (estate->es_num_param_expr_vals > 0)
+		estate->es_param_expr_vals =
+			palloc0_array(ParamExprData, estate->es_num_param_expr_vals);
 
 	/* We now require all callers to provide sourceText */
 	Assert(queryDesc->sourceText != NULL);
@@ -2875,9 +2879,10 @@ EvalPlanQualStart(EPQState *epqstate, Plan *planTree)
 
 	/*
 	 * The external param list is simply shared from parent.  The internal
-	 * param workspace has to be local state, but we copy the initial values
-	 * from the parent, so as to have access to any param values that were
-	 * already set from other parts of the parent's plan tree.
+	 * param workspaces have to be local state, but we copy the initial values
+	 * for PARAM_EXEC Params from the parent, so as to have access to any
+	 * param values that were already set from other parts of the parent's
+	 * plan tree.
 	 */
 	rcestate->es_param_list_info = parentestate->es_param_list_info;
 	if (parentestate->es_plannedstmt->paramExecTypes != NIL)
@@ -2907,8 +2912,7 @@ EvalPlanQualStart(EPQState *epqstate, Plan *planTree)
 
 		/* now make the internal param workspace ... */
 		i = list_length(parentestate->es_plannedstmt->paramExecTypes);
-		rcestate->es_param_exec_vals = (ParamExecData *)
-			palloc0(i * sizeof(ParamExecData));
+		rcestate->es_param_exec_vals = palloc0_array(ParamExecData, i);
 		/* ... and copy down all values, whether really needed or not */
 		while (--i >= 0)
 		{
@@ -2919,6 +2923,11 @@ EvalPlanQualStart(EPQState *epqstate, Plan *planTree)
 				parentestate->es_param_exec_vals[i].isnull;
 		}
 	}
+
+	rcestate->es_num_param_expr_vals = parentestate->es_num_param_expr_vals;
+	if (rcestate->es_num_param_expr_vals > 0)
+		rcestate->es_param_expr_vals =
+			palloc0_array(ParamExprData, rcestate->es_num_param_expr_vals);
 
 	/*
 	 * Initialize private state information for each SubPlan.  We must do this

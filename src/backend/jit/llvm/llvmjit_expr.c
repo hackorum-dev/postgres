@@ -1182,6 +1182,12 @@ llvm_compile_expr(ExprState *state)
 				LLVMBuildBr(b, opblocks[opno + 1]);
 				break;
 
+			case EEOP_PARAM_EXPR:
+				build_EvalXFunc(b, mod, "ExecEvalParamExpr",
+								v_state, op, v_econtext);
+				LLVMBuildBr(b, opblocks[opno + 1]);
+				break;
+
 			case EEOP_PARAM_EXTERN:
 				build_EvalXFunc(b, mod, "ExecEvalParamExtern",
 								v_state, op, v_econtext);
@@ -1208,8 +1214,14 @@ llvm_compile_expr(ExprState *state)
 					break;
 				}
 
-			case EEOP_PARAM_SET:
-				build_EvalXFunc(b, mod, "ExecEvalParamSet",
+			case EEOP_PARAM_SET_EXEC:
+				build_EvalXFunc(b, mod, "ExecEvalParamSetExec",
+								v_state, op, v_econtext);
+				LLVMBuildBr(b, opblocks[opno + 1]);
+				break;
+
+			case EEOP_PARAM_SET_EXPR:
+				build_EvalXFunc(b, mod, "ExecEvalParamSetExpr",
 								v_state, op, v_econtext);
 				LLVMBuildBr(b, opblocks[opno + 1]);
 				break;

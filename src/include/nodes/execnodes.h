@@ -276,33 +276,35 @@ typedef struct ExprContext
 
 	/* Values to substitute for Param nodes in expression */
 	ParamExecData *ecxt_param_exec_vals;	/* for PARAM_EXEC params */
+	ParamExprData *ecxt_param_expr_vals;	/* for PARAM_EXPR params */
+	int			ecxt_num_param_expr_vals;
 	ParamListInfo ecxt_param_list_info; /* for other param types */
 
 	/*
 	 * Values to substitute for Aggref nodes in the expressions of an Agg
 	 * node, or for WindowFunc nodes within a WindowAgg node.
 	 */
-#define FIELDNO_EXPRCONTEXT_AGGVALUES 8
+#define FIELDNO_EXPRCONTEXT_AGGVALUES 10
 	Datum	   *ecxt_aggvalues; /* precomputed values for aggs/windowfuncs */
-#define FIELDNO_EXPRCONTEXT_AGGNULLS 9
+#define FIELDNO_EXPRCONTEXT_AGGNULLS 11
 	bool	   *ecxt_aggnulls;	/* null flags for aggs/windowfuncs */
 
 	/* Value to substitute for CaseTestExpr nodes in expression */
-#define FIELDNO_EXPRCONTEXT_CASEDATUM 10
+#define FIELDNO_EXPRCONTEXT_CASEDATUM 12
 	Datum		caseValue_datum;
-#define FIELDNO_EXPRCONTEXT_CASENULL 11
+#define FIELDNO_EXPRCONTEXT_CASENULL 13
 	bool		caseValue_isNull;
 
 	/* Value to substitute for CoerceToDomainValue nodes in expression */
-#define FIELDNO_EXPRCONTEXT_DOMAINDATUM 12
+#define FIELDNO_EXPRCONTEXT_DOMAINDATUM 14
 	Datum		domainValue_datum;
-#define FIELDNO_EXPRCONTEXT_DOMAINNULL 13
+#define FIELDNO_EXPRCONTEXT_DOMAINNULL 15
 	bool		domainValue_isNull;
 
 	/* Tuples that OLD/NEW Var nodes in RETURNING may refer to */
-#define FIELDNO_EXPRCONTEXT_OLDTUPLE 14
+#define FIELDNO_EXPRCONTEXT_OLDTUPLE 16
 	TupleTableSlot *ecxt_oldtuple;
-#define FIELDNO_EXPRCONTEXT_NEWTUPLE 15
+#define FIELDNO_EXPRCONTEXT_NEWTUPLE 17
 	TupleTableSlot *ecxt_newtuple;
 
 	/* Link to containing EState (NULL if a standalone ExprContext) */
@@ -684,6 +686,8 @@ typedef struct EState
 	/* Parameter info: */
 	ParamListInfo es_param_list_info;	/* values of external params */
 	ParamExecData *es_param_exec_vals;	/* values of internal params */
+	ParamExprData *es_param_expr_vals;	/* values of internal params */
+	int			es_num_param_expr_vals;
 
 	QueryEnvironment *es_queryEnv;	/* query environment */
 

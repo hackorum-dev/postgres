@@ -1041,6 +1041,12 @@ ExecInitExprRec(Expr *node, ExprState *state,
 						scratch.d.param.paramtype = param->paramtype;
 						ExprEvalPushStep(state, &scratch);
 						break;
+					case PARAM_EXPR:
+						scratch.opcode = EEOP_PARAM_EXPR;
+						scratch.d.param.paramid = param->paramid;
+						scratch.d.param.paramtype = param->paramtype;
+						ExprEvalPushStep(state, &scratch);
+						break;
 					case PARAM_EXTERN:
 
 						/*
@@ -1771,23 +1777,17 @@ ExecInitExprRec(Expr *node, ExprState *state,
 			{
 				CaseExpr   *caseExpr = (CaseExpr *) node;
 				List	   *adjust_jumps = NIL;
-				Datum	   *caseval = NULL;
-				bool	   *casenull = NULL;
 				ListCell   *lc;
 
 				/*
 				 * If there's a test expression, we have to evaluate it and
-				 * save the value where the CaseTestExpr placeholders can find
-				 * it.
+				 * save the value where the PARAM_EXPR Params can find it.
 				 */
 				if (caseExpr->arg != NULL)
 				{
-					/* Evaluate testexpr into caseval/casenull workspace */
-					caseval = palloc(sizeof(Datum));
-					casenull = palloc(sizeof(bool));
-
+					/* Evaluate testexpr into CASE's result variables */
 					ExecInitExprRec(caseExpr->arg, state,
-									caseval, casenull);
+									resv, resnull);
 
 					/*
 					 * Since value might be read multiple times, force to R/O
@@ -1795,17 +1795,20 @@ ExecInitExprRec(Expr *node, ExprState *state,
 					 */
 					if (get_typlen(exprType((Node *) caseExpr->arg)) == -1)
 					{
-						/* change caseval in-place */
+						/* change testexpr value in-place */
 						scratch.opcode = EEOP_MAKE_READONLY;
-						scratch.resvalue = caseval;
-						scratch.resnull = casenull;
-						scratch.d.make_readonly.value = caseval;
-						scratch.d.make_readonly.isnull = casenull;
+						scratch.d.make_readonly.value = resv;
+						scratch.d.make_readonly.isnull = resnull;
 						ExprEvalPushStep(state, &scratch);
-						/* restore normal settings of scratch fields */
-						scratch.resvalue = resv;
-						scratch.resnull = resnull;
 					}
+
+					/* Now copy value into the appropriate Param slot */
+					Assert(caseExpr->caseparam > 0);
+					scratch.opcode = EEOP_PARAM_SET_EXPR;
+					scratch.d.paramset.paramid = caseExpr->caseparam;
+					scratch.d.paramset.setvalue = resv;
+					scratch.d.paramset.setnull = resnull;
+					ExprEvalPushStep(state, &scratch);
 				}
 
 				/*
@@ -1822,19 +1825,13 @@ ExecInitExprRec(Expr *node, ExprState *state,
 					int			whenstep;
 
 					/*
-					 * Make testexpr result available to CaseTestExpr nodes
-					 * within the condition.  We must save and restore prior
-					 * setting of innermost_caseval fields, in case this node
-					 * is itself within a larger CASE.
-					 *
-					 * If there's no test expression, we don't actually need
-					 * to save and restore these fields; but it's less code to
-					 * just do so unconditionally.
+					 * XXX innermost_caseval/casenull will go away, but for
+					 * now just make them NULL.
 					 */
 					save_innermost_caseval = state->innermost_caseval;
 					save_innermost_casenull = state->innermost_casenull;
-					state->innermost_caseval = caseval;
-					state->innermost_casenull = casenull;
+					state->innermost_caseval = NULL;
+					state->innermost_casenull = NULL;
 
 					/* evaluate condition into CASE's result variables */
 					ExecInitExprRec(when->expr, state, resv, resnull);
@@ -2836,7 +2833,7 @@ ExecInitSubPlanExpr(SubPlan *subplan,
 		ExecInitExprRec(arg, state,
 						&state->resvalue, &state->resnull);
 
-		scratch.opcode = EEOP_PARAM_SET;
+		scratch.opcode = EEOP_PARAM_SET_EXEC;
 		scratch.d.param.paramid = paramid;
 		/* paramtype's not actually used, but we might as well fill it */
 		scratch.d.param.paramtype = exprType((Node *) arg);

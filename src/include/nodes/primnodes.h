@@ -361,10 +361,21 @@ typedef struct Const
  *				Such parameters are numbered from 1 to n.
  *
  *		PARAM_EXEC:  The parameter is an internal executor parameter, used
- *				for passing values into and out of sub-queries or from
- *				nestloop joins to their inner scans.
+ *				for passing values between plan nodes (for example, values
+ *				passed into and out of sub-queries or from nestloop joins to
+ *				their inner scans).
  *				For historical reasons, such parameters are numbered from 0.
  *				These numbers are independent of PARAM_EXTERN numbers.
+ *
+ *		PARAM_EXPR:  The parameter is an internal executor parameter, used
+ *				for passing values between parts of a single expression
+ *				(for example, from CaseExpr into its test expressions).
+ *				We distinguish these from PARAM_EXEC so that they do not
+ *				affect decisions about inter-plan-node dependencies or
+ *				parallel safety.
+ *				Such parameters are numbered from 1 to n.
+ *				These numbers are independent of PARAM_EXTERN and PARAM_EXEC
+ *				numbers.
  *
  *		PARAM_SUBLINK:	The parameter represents an output column of a SubLink
  *				node's sub-select.  The column number is contained in the
@@ -382,6 +393,7 @@ typedef enum ParamKind
 {
 	PARAM_EXTERN,
 	PARAM_EXEC,
+	PARAM_EXPR,
 	PARAM_SUBLINK,
 	PARAM_MULTIEXPR,
 } ParamKind;
@@ -1310,10 +1322,16 @@ typedef struct CollateExpr
  * of the WHEN clauses are just the comparison values.  Parse analysis
  * converts these to valid boolean expressions of the form
  *		CaseTestExpr '=' compexpr
- * where the CaseTestExpr node is a placeholder that emits the correct
+ * where the CaseTestExpr node is a placeholder that will emit the correct
  * value at runtime.  This structure is used so that the testexpr need be
  * evaluated only once.  Note that after parse analysis, the condition
  * expressions always yield boolean.
+ *
+ * The planner will replace CaseTestExprs with PARAM_EXPR Params to ensure
+ * that different CASE expressions do not interfere with each other.
+ * Ideally we'd generate that representation in parse analysis and not use
+ * CaseTestExpr at all, but that would complicate rewriting, subquery pullup,
+ * and so forth unduly.
  *
  * Note: we can test whether a CaseExpr has been through parse analysis
  * yet by checking whether casetype is InvalidOid or not.
@@ -1329,6 +1347,8 @@ typedef struct CaseExpr
 	Expr	   *arg;			/* implicit equality comparison argument */
 	List	   *args;			/* the arguments (list of WHEN clauses) */
 	Expr	   *defresult;		/* the default result (ELSE clause) */
+	/* ID of PARAM_EXPR Param representing arg, if assigned; else 0 */
+	int			caseparam pg_node_attr(equal_ignore, query_jumble_ignore);
 	ParseLoc	location;		/* token location, or -1 if unknown */
 } CaseExpr;
 

@@ -62,6 +62,7 @@ typedef struct
 	PlannerInfo *root;
 	List	   *active_fns;
 	Node	   *case_val;
+	int			numExprParams;
 	bool		estimate;
 } eval_const_expressions_context;
 
@@ -149,6 +150,9 @@ static Node *substitute_actual_parameters(Node *expr, int nargs, List *args,
 static Node *substitute_actual_parameters_mutator(Node *node,
 												  substitute_actual_parameters_context *context);
 static void sql_inline_error_callback(void *arg);
+static Param *generate_new_expr_param(eval_const_expressions_context *context,
+									  Oid paramtype, int32 paramtypmod,
+									  Oid paramcollation);
 static Query *substitute_actual_srf_parameters(Query *expr,
 											   int nargs, List *args);
 static Node *substitute_actual_srf_parameters_mutator(Node *node,
@@ -921,17 +925,25 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	}
 
 	/*
-	 * We can't pass Params to workers at the moment either, so they are also
-	 * parallel-restricted, unless they are PARAM_EXTERN Params or are
-	 * PARAM_EXEC Params listed in safe_param_ids, meaning they could be
-	 * either generated within workers or can be computed by the leader and
-	 * then their value can be passed to workers.
+	 * Params are parallel-restricted except in these cases:
+	 *
+	 * PARAM_EXTERN Params are made available to workers by copying the
+	 * executor's ParamListInfo to workers, so they're parallel-safe.
+	 *
+	 * PARAM_EXPR Params are assumed to be supplied from somewhere higher in
+	 * the same expression.  Since we don't parallelize at the subexpression
+	 * level, these can be considered parallel-safe.
+	 *
+	 * PARAM_EXEC Params are safe if listed in safe_param_ids, meaning they
+	 * could be either generated within workers or can be computed by the
+	 * leader and then their value can be passed to workers.
 	 */
 	else if (IsA(node, Param))
 	{
 		Param	   *param = (Param *) node;
 
-		if (param->paramkind == PARAM_EXTERN)
+		if (param->paramkind == PARAM_EXTERN ||
+			param->paramkind == PARAM_EXPR)
 			return false;
 
 		if (param->paramkind != PARAM_EXEC ||
@@ -2236,6 +2248,15 @@ rowtype_field_matches(Oid rowtypeid, int fieldnum,
  * root->glob->invalItems.  This ensures the plan is known to depend on
  * such functions, even though they aren't referenced anymore.
  *
+ * This function also performs certain essential pre-processing on
+ * expression trees, including insertion of function default arguments,
+ * conversion of named-argument calls to positional notation, and
+ * replacement of CaseTestExpr nodes with suitable Params.  Because of
+ * that, this *must* be invoked on all expressions, even when there
+ * might not be much value in the constant-folding aspect.  It'd be
+ * cleaner to do those things separately, but the cost of an additional
+ * mutation pass seems unattractive.
+ *
  * We assume that the tree has already been type-checked and contains
  * only operators and functions that are reasonable to try to execute.
  *
@@ -2244,10 +2265,6 @@ rowtype_field_matches(Oid rowtypeid, int fieldnum,
  *
  * NOTE: the planner assumes that this will always flatten nested AND and
  * OR clauses into N-argument form.  See comments in prepqual.c.
- *
- * NOTE: another critical effect is that any function calls that require
- * default arguments will be expanded, and named-argument calls will be
- * converted to positional notation.  The executor won't handle either.
  *--------------------
  */
 Node *
@@ -2262,6 +2279,7 @@ eval_const_expressions(PlannerInfo *root, Node *node)
 	context.root = root;		/* for inlined-function dependencies */
 	context.active_fns = NIL;	/* nothing being recursively simplified */
 	context.case_val = NULL;	/* no CASE being examined */
+	context.numExprParams = 0;	/* used only if no root */
 	context.estimate = false;	/* safe transformations only */
 	return eval_const_expressions_mutator(node, &context);
 }
@@ -2389,6 +2407,10 @@ convert_saop_to_hashed_saop_walker(Node *node, void *context)
  *	  value of the Param.
  * 2. Fold stable, as well as immutable, functions to constants.
  * 3. Reduce PlaceHolderVar nodes to their contained expressions.
+ *
+ * A step that is *not* taken in this mode is replacement of CaseTestExpr
+ * nodes with Params.  Doing so would just result in useless consumption
+ * of PARAM_EXPR slots, since the result will never be executed.
  *--------------------
  */
 Node *
@@ -2401,6 +2423,7 @@ estimate_expression_value(PlannerInfo *root, Node *node)
 	context.root = NULL;
 	context.active_fns = NIL;	/* nothing being recursively simplified */
 	context.case_val = NULL;	/* no CASE being examined */
+	context.numExprParams = 0;	/* not used in this path */
 	context.estimate = true;	/* unsafe transformations OK */
 	return eval_const_expressions_mutator(node, &context);
 }
@@ -3146,6 +3169,13 @@ eval_const_expressions_mutator(Node *node,
 				 * expression when executing the CASE, since any contained
 				 * CaseTestExprs that might have referred to it will have been
 				 * replaced by the constant.
+				 *
+				 * If the test expression doesn't reduce to a constant, then
+				 * contained CaseTestExpr placeholders need to be replaced
+				 * with PARAM_EXPR Params instead.  This ensures they will
+				 * continue to be correctly associated with this CaseExpr
+				 * even in the face of subsequent slicing-and-dicing of the
+				 * expression tree.
 				 *----------
 				 */
 				CaseExpr   *caseexpr = (CaseExpr *) node;
@@ -3155,18 +3185,53 @@ eval_const_expressions_mutator(Node *node,
 				List	   *newargs;
 				bool		const_true_cond;
 				Node	   *defresult = NULL;
+				int			case_param = 0;
 				ListCell   *arg;
 
 				/* Simplify the test expression, if any */
 				newarg = eval_const_expressions_mutator((Node *) caseexpr->arg,
 														context);
 
-				/* Set up for contained CaseTestExpr nodes */
+				/*
+				 * Set up the node to substitute for contained CaseTestExpr
+				 * nodes.  If we reduced the arg to a Const we can always
+				 * replace CaseTestExprs with that.  Otherwise, generate a
+				 * PARAM_EXPR Param; or if we are just estimating, leave the
+				 * CaseTestExprs alone.
+				 *
+				 * We must save and restore context->case_val so as not to
+				 * affect surrounding constructs.
+				 */
 				save_case_val = context->case_val;
-				if (newarg && IsA(newarg, Const))
+
+				if (caseexpr->caseparam > 0)
+				{
+					/*
+					 * We get here if asked to re-simplify an
+					 * already-simplified CASE.  We must not generate a new
+					 * Param, or we'd be out of sync with the already-replaced
+					 * CaseTestExprs.
+					 */
+					case_param = caseexpr->caseparam;
+					context->case_val = NULL;	/* no CaseTestExprs expected */
+				}
+				else if (newarg == NULL)
+					context->case_val = NULL;	/* no CaseTestExprs expected */
+				else if (IsA(newarg, Const))
 				{
 					context->case_val = newarg;
 					newarg = NULL;	/* not needed anymore, see above */
+				}
+				else if (!context->estimate)
+				{
+					Param	   *p;
+
+					p = generate_new_expr_param(context,
+												exprType(newarg),
+												exprTypmod(newarg),
+												exprCollation(newarg));
+					context->case_val = (Node *) p;
+					case_param = p->paramid;
 				}
 				else
 					context->case_val = NULL;
@@ -3245,15 +3310,25 @@ eval_const_expressions_mutator(Node *node,
 				newcase->arg = (Expr *) newarg;
 				newcase->args = newargs;
 				newcase->defresult = (Expr *) defresult;
+				newcase->caseparam = case_param;
 				newcase->location = caseexpr->location;
 				return (Node *) newcase;
 			}
 		case T_CaseTestExpr:
 			{
 				/*
-				 * If we know a constant test value for the current CASE
+				 * If we have a replacement node for the current CASE
 				 * construct, substitute it for the placeholder.  Else just
 				 * return the placeholder as-is.
+				 *
+				 * Note: this behavior is subtler than it looks.  We can rely
+				 * on context->case_val to be from the matching CASE construct
+				 * because we are dealing with an expression as it was created
+				 * by the parser.  Subsequent processing, such as inlining of
+				 * SQL-language functions, might result in insertion of CASE
+				 * or other CaseTestExpr-abusing constructs between here and
+				 * there --- but it will no longer matter once we've replaced
+				 * the CaseTestExpr with a numbered Param.
 				 */
 				if (context->case_val)
 					return copyObject(context->case_val);
@@ -4928,6 +5003,7 @@ substitute_actual_parameters_mutator(Node *node,
 	{
 		Param	   *param = (Param *) node;
 
+		/* Only EXTERN Params should appear in the tree as yet */
 		if (param->paramkind != PARAM_EXTERN)
 			elog(ERROR, "unexpected paramkind: %d", (int) param->paramkind);
 		if (param->paramid <= 0 || param->paramid > context->nargs)
@@ -4962,6 +5038,48 @@ sql_inline_error_callback(void *arg)
 	}
 
 	errcontext("SQL function \"%s\" during inlining", callback_arg->proname);
+}
+
+/*
+ * Generate a new PARAM_EXPR Param node that will not conflict with any other.
+ *
+ * Possibly this should be in paramassign.c, but then it couldn't rely on
+ * struct eval_const_expressions_context, which would make for a much more
+ * awkward API.  Currently there seems no need to allocate PARAM_EXPR Params
+ * anywhere except within eval_const_expressions.
+ */
+static Param *
+generate_new_expr_param(eval_const_expressions_context *context,
+						Oid paramtype, int32 paramtypmod, Oid paramcollation)
+{
+	Param	   *retval;
+	int			paramid;
+
+	/*
+	 * If we're doing normal planning, use root->glob->numExprParams to count
+	 * PARAM_EXPR Params, so that we allocate them uniquely across the entire
+	 * plan tree.  This is extremely conservative, as in most cases Params in
+	 * different subexpressions won't have overlapping lifetimes and could
+	 * share a ParamExprData slot.  But the slots are small, so trying to
+	 * re-use them seems more dangerous than it's worth.
+	 *
+	 * When processing a standalone expression, use context->numExprParams,
+	 * meaning that the assignments are unique only within the expression.
+	 */
+	if (context->root)
+		paramid = ++context->root->glob->numExprParams;
+	else
+		paramid = ++context->numExprParams;
+
+	retval = makeNode(Param);
+	retval->paramkind = PARAM_EXPR;
+	retval->paramid = paramid;
+	retval->paramtype = paramtype;
+	retval->paramtypmod = paramtypmod;
+	retval->paramcollid = paramcollation;
+	retval->location = -1;
+
+	return retval;
 }
 
 /*

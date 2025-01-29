@@ -520,9 +520,11 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		&&CASE_EEOP_BOOLTEST_IS_FALSE,
 		&&CASE_EEOP_BOOLTEST_IS_NOT_FALSE,
 		&&CASE_EEOP_PARAM_EXEC,
+		&&CASE_EEOP_PARAM_EXPR,
 		&&CASE_EEOP_PARAM_EXTERN,
 		&&CASE_EEOP_PARAM_CALLBACK,
-		&&CASE_EEOP_PARAM_SET,
+		&&CASE_EEOP_PARAM_SET_EXEC,
+		&&CASE_EEOP_PARAM_SET_EXPR,
 		&&CASE_EEOP_CASE_TESTVAL,
 		&&CASE_EEOP_MAKE_READONLY,
 		&&CASE_EEOP_IOCOERCE,
@@ -1250,6 +1252,14 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			EEO_NEXT();
 		}
 
+		EEO_CASE(EEOP_PARAM_EXPR)
+		{
+			/* out of line implementation (XXX should make it inline) */
+			ExecEvalParamExpr(state, op, econtext);
+
+			EEO_NEXT();
+		}
+
 		EEO_CASE(EEOP_PARAM_EXTERN)
 		{
 			/* out of line implementation: too large */
@@ -1264,10 +1274,17 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			EEO_NEXT();
 		}
 
-		EEO_CASE(EEOP_PARAM_SET)
+		EEO_CASE(EEOP_PARAM_SET_EXEC)
 		{
 			/* out of line, unlikely to matter performance-wise */
-			ExecEvalParamSet(state, op, econtext);
+			ExecEvalParamSetExec(state, op, econtext);
+			EEO_NEXT();
+		}
+
+		EEO_CASE(EEOP_PARAM_SET_EXPR)
+		{
+			/* out of line implementation: too large */
+			ExecEvalParamSetExpr(state, op, econtext);
 			EEO_NEXT();
 		}
 
@@ -2975,6 +2992,7 @@ ExecEvalParamExec(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 {
 	ParamExecData *prm;
 
+	/* paramid is zero-based */
 	prm = &(econtext->ecxt_param_exec_vals[op->d.param.paramid]);
 	if (unlikely(prm->execPlan != NULL))
 	{
@@ -2983,6 +3001,24 @@ ExecEvalParamExec(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 		/* ExecSetParamPlan should have processed this param... */
 		Assert(prm->execPlan == NULL);
 	}
+	*op->resvalue = prm->value;
+	*op->resnull = prm->isnull;
+}
+
+/*
+ * Evaluate a PARAM_EXPR parameter.
+ *
+ * PARAM_EXPR params (internal executor parameters) are stored in the
+ * ecxt_param_expr_vals array, and can be accessed by array index.
+ */
+void
+ExecEvalParamExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
+{
+	ParamExprData *prm;
+
+	/* paramid is one-based */
+	Assert(op->d.param.paramid <= econtext->ecxt_num_param_expr_vals);
+	prm = &(econtext->ecxt_param_expr_vals[op->d.param.paramid - 1]);
 	*op->resvalue = prm->value;
 	*op->resnull = prm->isnull;
 }
@@ -3032,11 +3068,10 @@ ExecEvalParamExtern(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 }
 
 /*
- * Set value of a param (currently always PARAM_EXEC) from
- * state->res{value,null}.
+ * Set value of a PARAM_EXEC Param from state->res{value,null}.
  */
 void
-ExecEvalParamSet(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
+ExecEvalParamSetExec(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 {
 	ParamExecData *prm;
 
@@ -3047,6 +3082,43 @@ ExecEvalParamSet(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 
 	prm->value = state->resvalue;
 	prm->isnull = state->resnull;
+}
+
+/*
+ * Set value of a PARAM_EXPR Param from *op->paramset.set{value,null}.
+ */
+void
+ExecEvalParamSetExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
+{
+	ParamExprData *prm;
+
+	/*
+	 * In normal query execution, the ecxt_param_expr_vals array should be
+	 * large enough already.  However, in a standalone expression we may have
+	 * to resize it larger, since there is no good place to initialize the
+	 * array for that case.
+	 */
+	if (unlikely(op->d.paramset.paramid > econtext->ecxt_num_param_expr_vals))
+	{
+		MemoryContext oldcontext;
+
+		/* Be sure to put it in the same context as econtext itself */
+		oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
+		if (econtext->ecxt_param_expr_vals == NULL)
+			econtext->ecxt_param_expr_vals =
+				palloc0_array(ParamExprData, op->d.paramset.paramid);
+		else
+			econtext->ecxt_param_expr_vals =
+				repalloc0_array(econtext->ecxt_param_expr_vals,
+								ParamExprData,
+								econtext->ecxt_num_param_expr_vals,
+								op->d.paramset.paramid);
+		econtext->ecxt_num_param_expr_vals = op->d.paramset.paramid;
+		MemoryContextSwitchTo(oldcontext);
+	}
+	prm = &(econtext->ecxt_param_expr_vals[op->d.paramset.paramid - 1]);
+	prm->value = *op->d.paramset.setvalue;
+	prm->isnull = *op->d.paramset.setnull;
 }
 
 /*

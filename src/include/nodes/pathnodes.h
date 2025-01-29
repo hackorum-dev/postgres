@@ -137,6 +137,9 @@ typedef struct PlannerGlobal
 	/* type OIDs for PARAM_EXEC Params */
 	List	   *paramExecTypes;
 
+	/* count of PARAM_EXPR Params (we don't need anything but a count) */
+	int			numExprParams;
+
 	/* highest PlaceHolderVar ID assigned */
 	Index		lastPHId;
 

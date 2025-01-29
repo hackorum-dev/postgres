@@ -2022,6 +2022,7 @@ ParallelWorkerInfo
 Param
 ParamCompileHook
 ParamExecData
+ParamExprData
 ParamExternData
 ParamFetchHook
 ParamKind
@@ -3516,6 +3517,7 @@ fmStringInfo
 fmgr_hook_type
 foreign_glob_cxt
 foreign_loc_cxt
+foreign_param_cxt
 freefunc
 fsec_t
 gbt_vsrt_arg

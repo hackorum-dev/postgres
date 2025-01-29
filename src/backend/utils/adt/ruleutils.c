@@ -8744,10 +8744,11 @@ get_parameter(Param *param, deparse_context *context)
 	/*
 	 * Not PARAM_EXEC, or couldn't find referent: just print $N.
 	 *
-	 * It's a bug if we get here for anything except PARAM_EXTERN Params, but
-	 * in production builds printing $N seems more useful than failing.
+	 * It's a bug if we get here for anything except PARAM_EXTERN or
+	 * PARAM_EXPR Params, but in production builds printing $N seems more
+	 * useful than failing.
 	 */
-	Assert(param->paramkind == PARAM_EXTERN);
+	Assert(param->paramkind == PARAM_EXTERN || param->paramkind == PARAM_EXPR);
 
 	appendStringInfo(context->buf, "$%d", param->paramid);
 }
@@ -9748,21 +9749,30 @@ get_rule_expr(Node *node, deparse_context *context,
 						 * form "CaseTestExpr = RHS", possibly with an
 						 * implicit coercion inserted above the CaseTestExpr.
 						 * For accurate decompilation of rules it's essential
-						 * that we show just the RHS.  However in an
-						 * expression that's been through the optimizer, the
-						 * WHEN clause could be almost anything (since the
-						 * equality operator could have been expanded into an
-						 * inline function).  If we don't recognize the form
-						 * of the WHEN clause, just punt and display it as-is.
+						 * that we show just the RHS.  In an expression that's
+						 * been through the optimizer, the WHEN clause would
+						 * typically look like "PARAM_EXPR Param = RHS", and
+						 * we prefer to show just the RHS.  However, an
+						 * optimized WHEN clause could be almost anything
+						 * (since the equality operator could have been
+						 * expanded into an inline function).  If we don't
+						 * recognize the form of the WHEN clause, just punt
+						 * and display it as-is.
 						 */
 						if (IsA(w, OpExpr))
 						{
 							List	   *args = ((OpExpr *) w)->args;
 
-							if (list_length(args) == 2 &&
-								IsA(strip_implicit_coercions(linitial(args)),
-									CaseTestExpr))
-								w = (Node *) lsecond(args);
+							if (list_length(args) == 2)
+							{
+								Node	   *larg = strip_implicit_coercions(linitial(args));
+
+								if (IsA(larg, CaseTestExpr) ||
+									(IsA(larg, Param) &&
+									 ((Param *) larg)->paramkind == PARAM_EXPR &&
+									 ((Param *) larg)->paramid == caseexpr->caseparam))
+									w = (Node *) lsecond(args);
+							}
 						}
 					}
 

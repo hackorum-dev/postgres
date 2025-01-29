@@ -133,6 +133,8 @@ CreateExecutorState(void)
 
 	estate->es_param_list_info = NULL;
 	estate->es_param_exec_vals = NULL;
+	estate->es_param_expr_vals = NULL;
+	estate->es_num_param_expr_vals = 0;
 
 	estate->es_queryEnv = NULL;
 
@@ -262,6 +264,8 @@ CreateExprContextInternal(EState *estate, Size minContextSize,
 							  maxBlockSize);
 
 	econtext->ecxt_param_exec_vals = estate->es_param_exec_vals;
+	econtext->ecxt_param_expr_vals = estate->es_param_expr_vals;
+	econtext->ecxt_num_param_expr_vals = estate->es_num_param_expr_vals;
 	econtext->ecxt_param_list_info = estate->es_param_list_info;
 
 	econtext->ecxt_aggvalues = NULL;
@@ -377,6 +381,8 @@ CreateStandaloneExprContext(void)
 							  ALLOCSET_DEFAULT_SIZES);
 
 	econtext->ecxt_param_exec_vals = NULL;
+	econtext->ecxt_param_expr_vals = NULL;
+	econtext->ecxt_num_param_expr_vals = 0;
 	econtext->ecxt_param_list_info = NULL;
 
 	econtext->ecxt_aggvalues = NULL;

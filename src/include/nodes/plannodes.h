@@ -92,6 +92,8 @@ typedef struct PlannedStmt
 
 	List	   *paramExecTypes; /* type OIDs for PARAM_EXEC Params */
 
+	int			numExprParams;	/* count of PARAM_EXPR Params */
+
 	Node	   *utilityStmt;	/* non-null if this is utility stmt */
 
 	/* statement location in source string (copied from Query) */
