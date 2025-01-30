@@ -892,14 +892,57 @@ ExecCheck(ExprState *state, ExprContext *econtext)
  * Prepare a compiled expression for execution.  This has to be called for
  * every ExprState before it can be executed.
  *
- * NB: While this currently only calls ExecReadyInterpretedExpr(),
- * this will likely get extended to further expression evaluation methods.
- * Therefore this should be used instead of directly calling
- * ExecReadyInterpretedExpr().
+ * Here we perform some simple optimizations on the completed steps list,
+ * and then dispatch to the appropriate evaluation method.
  */
 static void
 ExecReadyExpr(ExprState *state)
 {
+	/*
+	 * Simple peephole-like optimizations can be done on the steps list. While
+	 * JIT compilation could perhaps perform the equivalent optimizations by
+	 * itself, it's surely cheaper to do it here.
+	 */
+
+	/* DIRECT_THREADED should not already be set, else we can't test opcodes */
+	Assert((state->flags & EEO_FLAG_DIRECT_THREADED) == 0);
+
+	/*
+	 * A common pattern is for the steps list to include EEOP_PARAM_SET_EXPR
+	 * followed by EEOP_PARAM_EXPR to load the same Param's value to the same
+	 * place.  The load step is clearly useless.  Moreover, if there are no
+	 * further reads of that Param, we can dispense with the
+	 * EEOP_PARAM_SET_EXPR step too.
+	 */
+	for (int i = 0; i < state->steps_len - 2; i++)
+	{
+		if (state->steps[i].opcode == EEOP_PARAM_SET_EXPR &&
+			state->steps[i + 1].opcode == EEOP_PARAM_EXPR &&
+			state->steps[i].d.param.paramid == state->steps[i + 1].d.param.paramid &&
+			state->steps[i].resvalue == state->steps[i + 1].resvalue &&
+			state->steps[i].resnull == state->steps[i + 1].resnull)
+		{
+			int			paramid = state->steps[i].d.param.paramid;
+			int			numdel = 2; /* assume both can be removed */
+
+			for (int j = i + 2; j < state->steps_len; j++)
+			{
+				if (state->steps[j].opcode == EEOP_PARAM_EXPR &&
+					state->steps[j].d.param.paramid == paramid)
+				{
+					/* found another read, so must keep the SET */
+					numdel = 1;
+					break;
+				}
+			}
+			memmove(&state->steps[i + 2 - numdel], &state->steps[i + 2],
+					(state->steps_len - i - 2) * sizeof(ExprEvalStep));
+			state->steps_len -= numdel;
+			i--;				/* reconsider the current position */
+		}
+	}
+
+	/* Now dispatch... */
 	if (jit_compile_expr(state))
 		return;
 
