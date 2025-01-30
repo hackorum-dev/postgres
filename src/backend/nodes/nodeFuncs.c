@@ -3225,6 +3225,7 @@ expression_tree_mutator_impl(Node *node,
 				MUTATE(newnode->arg, fstore->arg, Expr *);
 				MUTATE(newnode->newvals, fstore->newvals, List *);
 				newnode->fieldnums = list_copy(fstore->fieldnums);
+				newnode->fldparams = list_copy(fstore->fldparams);
 				return (Node *) newnode;
 			}
 			break;

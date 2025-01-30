@@ -87,7 +87,6 @@ static void ExecInitSubscriptingRef(ExprEvalStep *scratch,
 									SubscriptingRef *sbsref,
 									ExprState *state,
 									Datum *resv, bool *resnull);
-static bool isAssignmentIndirectionExpr(Expr *expr);
 static void ExecInitCoerceToDomain(ExprEvalStep *scratch, CoerceToDomain *ctest,
 								   ExprState *state,
 								   Datum *resv, bool *resnull);
@@ -1519,7 +1518,8 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				bool	   *nulls;
 				int			ncolumns;
 				ListCell   *l1,
-						   *l2;
+						   *l2,
+						   *l3;
 
 				/* find out the number of columns in the composite type */
 				tupDesc = lookup_rowtype_tupdesc(fstore->resulttype, -1);
@@ -1547,52 +1547,43 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				ExprEvalPushStep(state, &scratch);
 
 				/* evaluate new field values, store in workspace columns */
-				forboth(l1, fstore->newvals, l2, fstore->fieldnums)
+				Assert(list_length(fstore->newvals) == list_length(fstore->fieldnums));
+				Assert(list_length(fstore->newvals) == list_length(fstore->fldparams));
+				forthree(l1, fstore->newvals,
+						 l2, fstore->fieldnums,
+						 l3, fstore->fldparams)
 				{
 					Expr	   *e = (Expr *) lfirst(l1);
 					AttrNumber	fieldnum = lfirst_int(l2);
-					Datum	   *save_innermost_caseval;
-					bool	   *save_innermost_casenull;
+					int			fldparam = lfirst_int(l3);
 
 					if (fieldnum <= 0 || fieldnum > ncolumns)
 						elog(ERROR, "field number %d is out of range in FieldStore",
 							 fieldnum);
 
 					/*
-					 * Use the CaseTestExpr mechanism to pass down the old
-					 * value of the field being replaced; this is needed in
-					 * case the newval is itself a FieldStore or
-					 * SubscriptingRef that has to obtain and modify the old
-					 * value.  It's safe to reuse the CASE mechanism because
-					 * there cannot be a CASE between here and where the value
-					 * would be needed, and a field assignment can't be within
-					 * a CASE either.  (So saving and restoring
-					 * innermost_caseval is just paranoia, but let's do it
-					 * anyway.)
+					 * If the new field value contains a reference to the
+					 * field's old value, put that into the appropriate
+					 * PARAM_EXPR Param.  This is needed in case the newval is
+					 * itself a FieldStore or SubscriptingRef that has to
+					 * obtain and modify the old value.
 					 *
-					 * Another non-obvious point is that it's safe to use the
-					 * field's values[]/nulls[] entries as both the caseval
-					 * source and the result address for this subexpression.
-					 * That's okay only because (1) both FieldStore and
-					 * SubscriptingRef evaluate their arg or refexpr inputs
-					 * first, and (2) any such CaseTestExpr is directly the
-					 * arg or refexpr input.  So any read of the caseval will
-					 * occur before there's a chance to overwrite it.  Also,
-					 * if multiple entries in the newvals/fieldnums lists
-					 * target the same field, they'll effectively be applied
-					 * left-to-right which is what we want.
+					 * Note: if multiple entries in the newvals/fieldnums
+					 * lists target the same field, they'll effectively be
+					 * applied left-to-right which is what we want.
 					 */
-					save_innermost_caseval = state->innermost_caseval;
-					save_innermost_casenull = state->innermost_casenull;
-					state->innermost_caseval = &values[fieldnum - 1];
-					state->innermost_casenull = &nulls[fieldnum - 1];
+					if (fldparam > 0)
+					{
+						scratch.opcode = EEOP_PARAM_SET_EXPR;
+						scratch.d.paramset.paramid = fldparam;
+						scratch.d.paramset.setvalue = &values[fieldnum - 1];
+						scratch.d.paramset.setnull = &nulls[fieldnum - 1];
+						ExprEvalPushStep(state, &scratch);
+					}
 
 					ExecInitExprRec(e, state,
 									&values[fieldnum - 1],
 									&nulls[fieldnum - 1]);
-
-					state->innermost_caseval = save_innermost_caseval;
-					state->innermost_casenull = save_innermost_casenull;
 				}
 
 				/* finally, form result tuple */
@@ -3391,9 +3382,6 @@ ExecInitSubscriptingRef(ExprEvalStep *scratch, SubscriptingRef *sbsref,
 
 	if (isAssignment)
 	{
-		Datum	   *save_innermost_caseval;
-		bool	   *save_innermost_casenull;
-
 		/* Check for unimplemented methods */
 		if (!methods.sbs_assign)
 			ereport(ERROR,
@@ -3406,16 +3394,12 @@ ExecInitSubscriptingRef(ExprEvalStep *scratch, SubscriptingRef *sbsref,
 		 * refassgnexpr is itself a FieldStore or SubscriptingRef that needs
 		 * to obtain and modify the previous value of the array element or
 		 * slice being replaced.  If so, we have to extract that value from
-		 * the array and pass it down via the CaseTestExpr mechanism.  It's
-		 * safe to reuse the CASE mechanism because there cannot be a CASE
-		 * between here and where the value would be needed, and an array
-		 * assignment can't be within a CASE either.  (So saving and restoring
-		 * innermost_caseval is just paranoia, but let's do it anyway.)
+		 * the array and pass it down via a PARAM_EXPR Param.
 		 *
 		 * Since fetching the old element might be a nontrivial expense, do it
 		 * only if the argument actually needs it.
 		 */
-		if (isAssignmentIndirectionExpr(sbsref->refassgnexpr))
+		if (sbsref->refassgnparam > 0)
 		{
 			if (!methods.sbs_fetch_old)
 				ereport(ERROR,
@@ -3426,20 +3410,17 @@ ExecInitSubscriptingRef(ExprEvalStep *scratch, SubscriptingRef *sbsref,
 			scratch->d.sbsref.subscriptfunc = methods.sbs_fetch_old;
 			scratch->d.sbsref.state = sbsrefstate;
 			ExprEvalPushStep(state, scratch);
+			/* SBSREF_OLD puts extracted value into prevvalue/prevnull */
+			scratch->opcode = EEOP_PARAM_SET_EXPR;
+			scratch->d.paramset.paramid = sbsref->refassgnparam;
+			scratch->d.paramset.setvalue = &sbsrefstate->prevvalue;
+			scratch->d.paramset.setnull = &sbsrefstate->prevnull;
+			ExprEvalPushStep(state, scratch);
 		}
-
-		/* SBSREF_OLD puts extracted value into prevvalue/prevnull */
-		save_innermost_caseval = state->innermost_caseval;
-		save_innermost_casenull = state->innermost_casenull;
-		state->innermost_caseval = &sbsrefstate->prevvalue;
-		state->innermost_casenull = &sbsrefstate->prevnull;
 
 		/* evaluate replacement value into replacevalue/replacenull */
 		ExecInitExprRec(sbsref->refassgnexpr, state,
 						&sbsrefstate->replacevalue, &sbsrefstate->replacenull);
-
-		state->innermost_caseval = save_innermost_caseval;
-		state->innermost_casenull = save_innermost_casenull;
 
 		/* and perform the assignment */
 		scratch->opcode = EEOP_SBSREF_ASSIGN;
@@ -3473,57 +3454,6 @@ ExecInitSubscriptingRef(ExprEvalStep *scratch, SubscriptingRef *sbsref,
 			as->d.jump.jumpdone = state->steps_len;
 		}
 	}
-}
-
-/*
- * Helper for preparing SubscriptingRef expressions for evaluation: is expr
- * a nested FieldStore or SubscriptingRef that needs the old element value
- * passed down?
- *
- * (We could use this in FieldStore too, but in that case passing the old
- * value is so cheap there's no need.)
- *
- * Note: it might seem that this needs to recurse, but in most cases it does
- * not; the CaseTestExpr, if any, will be directly the arg or refexpr of the
- * top-level node.  Nested-assignment situations give rise to expression
- * trees in which each level of assignment has its own CaseTestExpr, and the
- * recursive structure appears within the newvals or refassgnexpr field.
- * There is an exception, though: if the array is an array-of-domain, we will
- * have a CoerceToDomain or RelabelType as the refassgnexpr, and we need to
- * be able to look through that.
- */
-static bool
-isAssignmentIndirectionExpr(Expr *expr)
-{
-	if (expr == NULL)
-		return false;			/* just paranoia */
-	if (IsA(expr, FieldStore))
-	{
-		FieldStore *fstore = (FieldStore *) expr;
-
-		if (fstore->arg && IsA(fstore->arg, CaseTestExpr))
-			return true;
-	}
-	else if (IsA(expr, SubscriptingRef))
-	{
-		SubscriptingRef *sbsRef = (SubscriptingRef *) expr;
-
-		if (sbsRef->refexpr && IsA(sbsRef->refexpr, CaseTestExpr))
-			return true;
-	}
-	else if (IsA(expr, CoerceToDomain))
-	{
-		CoerceToDomain *cd = (CoerceToDomain *) expr;
-
-		return isAssignmentIndirectionExpr(cd->arg);
-	}
-	else if (IsA(expr, RelabelType))
-	{
-		RelabelType *r = (RelabelType *) expr;
-
-		return isAssignmentIndirectionExpr(r->arg);
-	}
-	return false;
 }
 
 /*

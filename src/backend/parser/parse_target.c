@@ -707,7 +707,9 @@ transformAssignmentIndirection(ParseState *pstate,
 		 * to do so because the only nodes that will be above the CaseTestExpr
 		 * in the finished expression will be FieldStore and SubscriptingRef
 		 * nodes. (There could be other stuff in the tree, but it will be
-		 * within other child fields of those node types.)
+		 * within other child fields of those node types.)  The planner will
+		 * replace the CaseTestExpr with a PARAM_EXPR Param node to remove
+		 * ambiguity before it performs any expression optimization.
 		 */
 		CaseTestExpr *ctest = makeNode(CaseTestExpr);
 

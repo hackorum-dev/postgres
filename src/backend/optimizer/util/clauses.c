@@ -149,6 +149,7 @@ static Node *substitute_actual_parameters_mutator(Node *node,
 												  substitute_actual_parameters_context *context);
 static void sql_inline_error_callback(void *arg);
 static bool find_casetestexpr(Node *node, CaseTestExpr **result);
+static bool isAssignmentIndirectionExpr(Expr *expr, CaseTestExpr **result);
 static Param *generate_new_expr_param(eval_const_expressions_context *context,
 									  Oid paramtype, int32 paramtypmod,
 									  Oid paramcollation);
@@ -2879,6 +2880,168 @@ eval_const_expressions_mutator(Node *node,
 			 * should never be invoked after SubPlan creation.
 			 */
 			return node;
+
+		case T_SubscriptingRef:
+			{
+				SubscriptingRef *sbsref = makeNode(SubscriptingRef);
+				CaseTestExpr *ctexpr = NULL;
+
+				/*
+				 * Copy the node and const-simplify its arguments.  We can't
+				 * use ece_generic_processing() here because we may need to
+				 * mess with case_val while processing the refassgnexpr.
+				 */
+				memcpy(sbsref, node, sizeof(SubscriptingRef));
+				sbsref->refupperindexpr = (List *)
+					eval_const_expressions_mutator((Node *) sbsref->refupperindexpr,
+												   context);
+				sbsref->reflowerindexpr = (List *)
+					eval_const_expressions_mutator((Node *) sbsref->reflowerindexpr,
+												   context);
+				sbsref->refexpr = (Expr *)
+					eval_const_expressions_mutator((Node *) sbsref->refexpr,
+												   context);
+
+				/*
+				 * The refassgnexpr might or might not contain a CaseTestExpr;
+				 * if it doesn't, we don't want to uselessly consume a
+				 * PARAM_EXPR slot.  Furthermore, we have a good idea of the
+				 * possible structure of the refassgnexpr, so apply
+				 * specialized code to avoid being fooled by other
+				 * CaseTestExprs.
+				 */
+				if (isAssignmentIndirectionExpr(sbsref->refassgnexpr, &ctexpr))
+				{
+					/*
+					 * Set up the node to substitute for the CaseTestExpr node
+					 * contained in refassgnexpr.  Normally we replace it with
+					 * a PARAM_EXPR Param, but if we're just estimating, leave
+					 * it alone.
+					 *
+					 * We must save and restore context->case_val so as not to
+					 * affect surrounding constructs.
+					 */
+					Node	   *save_case_val = context->case_val;
+
+					/* If we found a CaseTestExpr, we can't be re-simplifying */
+					Assert(sbsref->refassgnparam == 0);
+					if (!context->estimate)
+					{
+						Param	   *p;
+
+						p = generate_new_expr_param(context,
+													ctexpr->typeId,
+													ctexpr->typeMod,
+													ctexpr->collation);
+						context->case_val = (Node *) p;
+						sbsref->refassgnparam = p->paramid;
+					}
+					else
+						context->case_val = NULL;
+
+					sbsref->refassgnexpr = (Expr *)
+						eval_const_expressions_mutator((Node *) sbsref->refassgnexpr,
+													   context);
+
+					context->case_val = save_case_val;
+				}
+				else
+					sbsref->refassgnexpr = (Expr *)
+						eval_const_expressions_mutator((Node *) sbsref->refassgnexpr,
+													   context);
+
+				/*
+				 * If all arguments are Consts, we can fold to a constant.
+				 * Treating SubscriptingRef this way assumes that subscripting
+				 * fetch and assignment are both immutable.  This constrains
+				 * type-specific subscripting implementations; maybe we should
+				 * relax it someday.
+				 */
+				if (ece_all_arguments_const(sbsref))
+					return ece_evaluate_expr(sbsref);
+
+				return (Node *) sbsref;
+			}
+
+		case T_FieldStore:
+			{
+				FieldStore *fstore = makeNode(FieldStore);
+				Node	   *save_case_val = context->case_val;
+
+				/*
+				 * Copy the node and const-simplify its arguments.  We can't
+				 * use ece_generic_processing() here because we need to mess
+				 * with case_val while processing the fields.
+				 */
+				memcpy(fstore, node, sizeof(FieldStore));
+				fstore->arg = (Expr *)
+					eval_const_expressions_mutator((Node *) fstore->arg,
+												   context);
+
+				/*
+				 * If we're re-simplifying the node, fldparams is already
+				 * computed and we mustn't modify it, just copy it.
+				 */
+				if (fstore->fldparams != NIL)
+				{
+					context->case_val = NULL;	/* No CaseTestExprs expected */
+					fstore->newvals = (List *)
+						eval_const_expressions_mutator((Node *) fstore->newvals,
+													   context);
+					fstore->fldparams = list_copy(fstore->fldparams);
+				}
+				else
+				{
+					List	   *newnewvals = NIL;
+					ListCell   *lc;
+
+					/*
+					 * For each field value, check whether it involves a
+					 * CaseTestExpr, and if so set up to replace that with a
+					 * PARAM_EXPR Param.  Put zeroes into the fldparams list
+					 * for fields that don't need a Param.
+					 */
+					foreach(lc, fstore->newvals)
+					{
+						Node	   *newval = lfirst(lc);
+						CaseTestExpr *ctexpr = NULL;
+						int			fparam;
+
+						/*
+						 * We have a good idea of the possible structure of
+						 * the newval, so apply specialized code to avoid
+						 * being fooled by other CaseTestExprs.
+						 */
+						if (isAssignmentIndirectionExpr((Expr *) newval,
+														&ctexpr))
+						{
+							Param	   *p;
+
+							p = generate_new_expr_param(context,
+														ctexpr->typeId,
+														ctexpr->typeMod,
+														ctexpr->collation);
+							context->case_val = (Node *) p;
+							fparam = p->paramid;
+						}
+						else
+						{
+							context->case_val = NULL;
+							fparam = 0;
+						}
+						newval = eval_const_expressions_mutator(newval,
+																context);
+						newnewvals = lappend(newnewvals, newval);
+						fstore->fldparams = lappend_int(fstore->fldparams,
+														fparam);
+					}
+					fstore->newvals = newnewvals;
+				}
+				fstore->fieldnums = list_copy(fstore->fieldnums);
+				context->case_val = save_case_val;
+				return (Node *) fstore;
+			}
+
 		case T_RelabelType:
 			{
 				RelabelType *relabel = (RelabelType *) node;
@@ -3283,7 +3446,6 @@ eval_const_expressions_mutator(Node *node,
 				else
 					return copyObject(node);
 			}
-		case T_SubscriptingRef:
 		case T_ArrayExpr:
 		case T_RowExpr:
 		case T_MinMaxExpr:
@@ -3292,11 +3454,6 @@ eval_const_expressions_mutator(Node *node,
 				 * Generic handling for node types whose own processing is
 				 * known to be immutable, and for which we need no smarts
 				 * beyond "simplify if all inputs are constants".
-				 *
-				 * Treating SubscriptingRef this way assumes that subscripting
-				 * fetch and assignment are both immutable.  This constrains
-				 * type-specific subscripting implementations; maybe we should
-				 * relax it someday.
 				 *
 				 * Treating MinMaxExpr this way amounts to assuming that the
 				 * btree comparison function it calls is immutable; see the
@@ -5140,6 +5297,57 @@ find_casetestexpr(Node *node, CaseTestExpr **result)
 		return true;
 	}
 	return expression_tree_walker(node, find_casetestexpr, result);
+}
+
+/*
+ * Locate the CaseTestExpr, if any, within a nested FieldStore or
+ * SubscriptingRef assignment source expression.
+ *
+ * This has basically the same charter as find_casetestexpr, but we have
+ * specific knowledge of where the relevant CaseTestExpr could be, and
+ * we want to ignore any others so as not to generate useless Params.
+ *
+ * Note: it might seem that this needs to recurse, but in most cases it does
+ * not; the CaseTestExpr, if any, will be directly the arg or refexpr of the
+ * top-level node.  Nested-assignment situations give rise to expression
+ * trees in which each level of assignment has its own CaseTestExpr, and the
+ * recursive structure appears within the newvals or refassgnexpr field.
+ * There is an exception, though: if an array is an array-of-domain, we will
+ * have a CoerceToDomain as the refassgnexpr, and we need to be able to look
+ * through that.
+ */
+static bool
+isAssignmentIndirectionExpr(Expr *expr, CaseTestExpr **result)
+{
+	if (expr == NULL)
+		return false;
+	if (IsA(expr, FieldStore))
+	{
+		FieldStore *fstore = (FieldStore *) expr;
+
+		if (fstore->arg && IsA(fstore->arg, CaseTestExpr))
+		{
+			*result = (CaseTestExpr *) fstore->arg;
+			return true;
+		}
+	}
+	else if (IsA(expr, SubscriptingRef))
+	{
+		SubscriptingRef *sbsRef = (SubscriptingRef *) expr;
+
+		if (sbsRef->refexpr && IsA(sbsRef->refexpr, CaseTestExpr))
+		{
+			*result = (CaseTestExpr *) sbsRef->refexpr;
+			return true;
+		}
+	}
+	else if (IsA(expr, CoerceToDomain))
+	{
+		CoerceToDomain *cd = (CoerceToDomain *) expr;
+
+		return isAssignmentIndirectionExpr(cd->arg, result);
+	}
+	return false;
 }
 
 /*

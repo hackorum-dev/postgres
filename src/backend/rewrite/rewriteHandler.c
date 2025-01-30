@@ -1150,6 +1150,8 @@ process_matched_tle(TargetEntry *src_tle,
 			fstore->fieldnums =
 				list_concat_copy(((FieldStore *) prior_expr)->fieldnums,
 								 ((FieldStore *) src_expr)->fieldnums);
+			/* fldparams has not been computed yet */
+			Assert(fstore->fldparams == NIL);
 		}
 		else
 		{

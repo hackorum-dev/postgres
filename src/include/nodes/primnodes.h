@@ -698,6 +698,11 @@ typedef struct MergeSupportFunc
  * subscripting logic.  Likewise, reftypmod and refcollid will match the
  * container's properties in a store, but could be different in a fetch.
  *
+ * In a store, it might be necessary for the refassgnexpr to reference the
+ * old value of the element being replaced (this happens with nested container
+ * types).  If so, the parser will generate a CaseTestExpr that represents
+ * the old value, which the planner will replace with a PARAM_EXPR Param.
+ *
  * Any internal state data is ignored for the query jumbling.
  *
  * Note: for the cases where a container is returned, if refexpr yields a R/W
@@ -729,6 +734,8 @@ typedef struct SubscriptingRef
 	Expr	   *refexpr;
 	/* expression for the source value, or NULL if fetch */
 	Expr	   *refassgnexpr;
+	/* ID of PARAM_EXPR Param for old value within refassgnexpr; 0 if none */
+	int			refassgnparam pg_node_attr(equal_ignore, query_jumble_ignore);
 } SubscriptingRef;
 
 /*
@@ -1178,6 +1185,14 @@ typedef struct FieldSelect
  * fields.  The parser only generates FieldStores with single-element lists,
  * but the planner will collapse multiple updates of the same base column
  * into one FieldStore.
+ *
+ * In nested-assignment cases, such as assigning to an element of an array
+ * that is a field in the given tuple, an element of the newvals list can
+ * itself be a FieldStore or SubscriptingRef that has to operate on the old
+ * value of the field.  The old value will be represented by a CaseTestExpr
+ * in the output of the parser.  The planner will replace that with a
+ * PARAM_EXPR Param, to ensure that no confusion arises during expression
+ * optimization.
  * ----------------
  */
 
@@ -1188,6 +1203,8 @@ typedef struct FieldStore
 	List	   *newvals;		/* new value(s) for field(s) */
 	/* integer list of field attnums */
 	List	   *fieldnums pg_node_attr(query_jumble_ignore);
+	/* integer list of Param IDs, or 0 if not needed (filled by planner) */
+	List	   *fldparams pg_node_attr(equal_ignore, query_jumble_ignore);
 	/* type of result (same as type of arg) */
 	Oid			resulttype pg_node_attr(query_jumble_ignore);
 	/* Like RowExpr, we deliberately omit a typmod and collation here */

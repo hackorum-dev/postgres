@@ -9249,22 +9249,6 @@ get_rule_expr(Node *node, deparse_context *context,
 				bool		need_parens;
 
 				/*
-				 * If the argument is a CaseTestExpr, we must be inside a
-				 * FieldStore, ie, we are assigning to an element of an array
-				 * within a composite column.  Since we already punted on
-				 * displaying the FieldStore's target information, just punt
-				 * here too, and display only the assignment source
-				 * expression.
-				 */
-				if (IsA(sbsref->refexpr, CaseTestExpr))
-				{
-					Assert(sbsref->refassgnexpr);
-					get_rule_expr((Node *) sbsref->refassgnexpr,
-								  context, showimplicit);
-					break;
-				}
-
-				/*
 				 * Parenthesize the argument unless it's a simple Var or a
 				 * FieldSelect.  (In particular, if it's another
 				 * SubscriptingRef, we *must* parenthesize to avoid
