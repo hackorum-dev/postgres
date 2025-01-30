@@ -1781,7 +1781,7 @@ void
 LWLockRelease(LWLock *lock)
 {
 	LWLockMode	mode;
-	uint32		oldstate;
+	uint32		newstate;
 	bool		check_waiters;
 	int			i;
 
@@ -1809,12 +1809,12 @@ LWLockRelease(LWLock *lock)
 	 * others, even if we still have to wakeup other waiters.
 	 */
 	if (mode == LW_EXCLUSIVE)
-		oldstate = pg_atomic_sub_fetch_u32(&lock->state, LW_VAL_EXCLUSIVE);
+		newstate = pg_atomic_sub_fetch_u32(&lock->state, LW_VAL_EXCLUSIVE);
 	else
-		oldstate = pg_atomic_sub_fetch_u32(&lock->state, LW_VAL_SHARED);
+		newstate = pg_atomic_sub_fetch_u32(&lock->state, LW_VAL_SHARED);
 
 	/* nobody else can have that kind of lock */
-	Assert(!(oldstate & LW_VAL_EXCLUSIVE));
+	Assert(!(newstate & LW_VAL_EXCLUSIVE));
 
 	if (TRACE_POSTGRESQL_LWLOCK_RELEASE_ENABLED())
 		TRACE_POSTGRESQL_LWLOCK_RELEASE(T_NAME(lock));
@@ -1823,9 +1823,9 @@ LWLockRelease(LWLock *lock)
 	 * We're still waiting for backends to get scheduled, don't wake them up
 	 * again.
 	 */
-	if ((oldstate & (LW_FLAG_HAS_WAITERS | LW_FLAG_RELEASE_OK)) ==
+	if ((newstate & (LW_FLAG_HAS_WAITERS | LW_FLAG_RELEASE_OK)) ==
 		(LW_FLAG_HAS_WAITERS | LW_FLAG_RELEASE_OK) &&
-		(oldstate & LW_LOCK_MASK) == 0)
+		(newstate & LW_LOCK_MASK) == 0)
 		check_waiters = true;
 	else
 		check_waiters = false;
