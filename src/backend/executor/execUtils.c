@@ -271,9 +271,6 @@ CreateExprContextInternal(EState *estate, Size minContextSize,
 	econtext->ecxt_aggvalues = NULL;
 	econtext->ecxt_aggnulls = NULL;
 
-	econtext->caseValue_datum = (Datum) 0;
-	econtext->caseValue_isNull = true;
-
 	econtext->domainValue_datum = (Datum) 0;
 	econtext->domainValue_isNull = true;
 
@@ -387,9 +384,6 @@ CreateStandaloneExprContext(void)
 
 	econtext->ecxt_aggvalues = NULL;
 	econtext->ecxt_aggnulls = NULL;
-
-	econtext->caseValue_datum = (Datum) 0;
-	econtext->caseValue_isNull = true;
 
 	econtext->domainValue_datum = (Datum) 0;
 	econtext->domainValue_isNull = true;

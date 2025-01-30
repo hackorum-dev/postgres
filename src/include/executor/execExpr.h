@@ -174,9 +174,6 @@ typedef enum ExprEvalOp
 	EEOP_PARAM_SET_EXEC,
 	EEOP_PARAM_SET_EXPR,
 
-	/* return CaseTestExpr value */
-	EEOP_CASE_TESTVAL,
-
 	/* apply MakeExpandedObjectReadOnly() to target value */
 	EEOP_MAKE_READONLY,
 
@@ -438,12 +435,12 @@ typedef struct ExprEvalStep
 			Oid			paramtype;	/* OID of parameter's datatype */
 		}			cparam;
 
-		/* for EEOP_CASE_TESTVAL/DOMAIN_TESTVAL */
+		/* for EEOP_DOMAIN_TESTVAL */
 		struct
 		{
 			Datum	   *value;	/* value to return */
 			bool	   *isnull;
-		}			casetest;
+		}			domaintest;
 
 		/* for EEOP_MAKE_READONLY */
 		struct

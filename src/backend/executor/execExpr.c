@@ -1823,24 +1823,10 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				foreach(lc, caseExpr->args)
 				{
 					CaseWhen   *when = (CaseWhen *) lfirst(lc);
-					Datum	   *save_innermost_caseval;
-					bool	   *save_innermost_casenull;
 					int			whenstep;
-
-					/*
-					 * XXX innermost_caseval/casenull will go away, but for
-					 * now just make them NULL.
-					 */
-					save_innermost_caseval = state->innermost_caseval;
-					save_innermost_casenull = state->innermost_casenull;
-					state->innermost_caseval = NULL;
-					state->innermost_casenull = NULL;
 
 					/* evaluate condition into CASE's result variables */
 					ExecInitExprRec(when->expr, state, resv, resnull);
-
-					state->innermost_caseval = save_innermost_caseval;
-					state->innermost_casenull = save_innermost_casenull;
 
 					/* If WHEN result isn't true, jump to next CASE arm */
 					scratch.opcode = EEOP_JUMP_IF_NOT_TRUE;
@@ -1890,25 +1876,6 @@ ExecInitExprRec(Expr *node, ExprState *state,
 					as->d.jump.jumpdone = state->steps_len;
 				}
 
-				break;
-			}
-
-		case T_CaseTestExpr:
-			{
-				/*
-				 * Read from location identified by innermost_caseval.  Note
-				 * that innermost_caseval could be NULL, if this node isn't
-				 * actually within a CaseExpr, ArrayCoerceExpr, etc structure.
-				 * That can happen because some parts of the system abuse
-				 * CaseTestExpr to cause a read of a value externally supplied
-				 * in econtext->caseValue_datum.  We'll take care of that
-				 * scenario at runtime.
-				 */
-				scratch.opcode = EEOP_CASE_TESTVAL;
-				scratch.d.casetest.value = state->innermost_caseval;
-				scratch.d.casetest.isnull = state->innermost_casenull;
-
-				ExprEvalPushStep(state, &scratch);
 				break;
 			}
 
@@ -2616,9 +2583,8 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				 * scenario at runtime.
 				 */
 				scratch.opcode = EEOP_DOMAIN_TESTVAL;
-				/* we share instruction union variant with case testval */
-				scratch.d.casetest.value = state->innermost_domainval;
-				scratch.d.casetest.isnull = state->innermost_domainnull;
+				scratch.d.domaintest.value = state->innermost_domainval;
+				scratch.d.domaintest.isnull = state->innermost_domainnull;
 
 				ExprEvalPushStep(state, &scratch);
 				break;

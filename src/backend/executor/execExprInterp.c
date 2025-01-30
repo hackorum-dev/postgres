@@ -160,7 +160,6 @@ static Datum ExecJustScanVar(ExprState *state, ExprContext *econtext, bool *isnu
 static Datum ExecJustAssignInnerVar(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustAssignOuterVar(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustAssignScanVar(ExprState *state, ExprContext *econtext, bool *isnull);
-static Datum ExecJustApplyFuncToCase(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustConst(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustInnerVarVirt(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustOuterVarVirt(ExprState *state, ExprContext *econtext, bool *isnull);
@@ -364,13 +363,6 @@ ExecReadyInterpretedExpr(ExprState *state)
 			state->evalfunc_private = ExecJustAssignScanVar;
 			return;
 		}
-		else if (step0 == EEOP_CASE_TESTVAL &&
-				 step1 == EEOP_FUNCEXPR_STRICT &&
-				 state->steps[0].d.casetest.value)
-		{
-			state->evalfunc_private = ExecJustApplyFuncToCase;
-			return;
-		}
 		else if (step0 == EEOP_INNER_VAR &&
 				 step1 == EEOP_HASHDATUM_FIRST)
 		{
@@ -525,7 +517,6 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		&&CASE_EEOP_PARAM_CALLBACK,
 		&&CASE_EEOP_PARAM_SET_EXEC,
 		&&CASE_EEOP_PARAM_SET_EXPR,
-		&&CASE_EEOP_CASE_TESTVAL,
 		&&CASE_EEOP_MAKE_READONLY,
 		&&CASE_EEOP_IOCOERCE,
 		&&CASE_EEOP_IOCOERCE_SAFE,
@@ -1288,40 +1279,21 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			EEO_NEXT();
 		}
 
-		EEO_CASE(EEOP_CASE_TESTVAL)
+		EEO_CASE(EEOP_DOMAIN_TESTVAL)
 		{
 			/*
 			 * Normally upper parts of the expression tree have setup the
 			 * values to be returned here, but some parts of the system
-			 * currently misuse {caseValue,domainValue}_{datum,isNull} to set
-			 * run-time data.  So if no values have been set-up, use
-			 * ExprContext's.  This isn't pretty, but also not *that* ugly,
-			 * and this is unlikely to be performance sensitive enough to
-			 * worry about an extra branch.
+			 * currently misuse domainValue_{datum,isNull} to set run-time
+			 * data.  So if no values have been set-up, use ExprContext's.
+			 * This isn't pretty, but also not *that* ugly, and this is
+			 * unlikely to be performance sensitive enough to worry about an
+			 * extra branch.
 			 */
-			if (op->d.casetest.value)
+			if (op->d.domaintest.value)
 			{
-				*op->resvalue = *op->d.casetest.value;
-				*op->resnull = *op->d.casetest.isnull;
-			}
-			else
-			{
-				*op->resvalue = econtext->caseValue_datum;
-				*op->resnull = econtext->caseValue_isNull;
-			}
-
-			EEO_NEXT();
-		}
-
-		EEO_CASE(EEOP_DOMAIN_TESTVAL)
-		{
-			/*
-			 * See EEOP_CASE_TESTVAL comment.
-			 */
-			if (op->d.casetest.value)
-			{
-				*op->resvalue = *op->d.casetest.value;
-				*op->resnull = *op->d.casetest.isnull;
+				*op->resvalue = *op->d.domaintest.value;
+				*op->resnull = *op->d.domaintest.isnull;
 			}
 			else
 			{
@@ -2567,44 +2539,6 @@ static Datum
 ExecJustAssignScanVar(ExprState *state, ExprContext *econtext, bool *isnull)
 {
 	return ExecJustAssignVarImpl(state, econtext->ecxt_scantuple, isnull);
-}
-
-/* Evaluate CASE_TESTVAL and apply a strict function to it */
-static Datum
-ExecJustApplyFuncToCase(ExprState *state, ExprContext *econtext, bool *isnull)
-{
-	ExprEvalStep *op = &state->steps[0];
-	FunctionCallInfo fcinfo;
-	NullableDatum *args;
-	int			nargs;
-	Datum		d;
-
-	/*
-	 * XXX with some redesign of the CaseTestExpr mechanism, maybe we could
-	 * get rid of this data shuffling?
-	 */
-	*op->resvalue = *op->d.casetest.value;
-	*op->resnull = *op->d.casetest.isnull;
-
-	op++;
-
-	nargs = op->d.func.nargs;
-	fcinfo = op->d.func.fcinfo_data;
-	args = fcinfo->args;
-
-	/* strict function, so check for NULL args */
-	for (int argno = 0; argno < nargs; argno++)
-	{
-		if (args[argno].isnull)
-		{
-			*isnull = true;
-			return (Datum) 0;
-		}
-	}
-	fcinfo->isnull = false;
-	d = op->d.func.fn_addr(fcinfo);
-	*isnull = fcinfo->isnull;
-	return d;
 }
 
 /* Simple Const expression */

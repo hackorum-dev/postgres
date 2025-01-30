@@ -134,9 +134,6 @@ typedef struct ExprState
 	struct PlanState *parent;	/* parent PlanState node, if any */
 	ParamListInfo ext_params;	/* for compiling PARAM_EXTERN nodes */
 
-	Datum	   *innermost_caseval;
-	bool	   *innermost_casenull;
-
 	Datum	   *innermost_domainval;
 	bool	   *innermost_domainnull;
 
@@ -289,22 +286,16 @@ typedef struct ExprContext
 #define FIELDNO_EXPRCONTEXT_AGGNULLS 11
 	bool	   *ecxt_aggnulls;	/* null flags for aggs/windowfuncs */
 
-	/* Value to substitute for CaseTestExpr nodes in expression */
-#define FIELDNO_EXPRCONTEXT_CASEDATUM 12
-	Datum		caseValue_datum;
-#define FIELDNO_EXPRCONTEXT_CASENULL 13
-	bool		caseValue_isNull;
-
 	/* Value to substitute for CoerceToDomainValue nodes in expression */
-#define FIELDNO_EXPRCONTEXT_DOMAINDATUM 14
+#define FIELDNO_EXPRCONTEXT_DOMAINDATUM 12
 	Datum		domainValue_datum;
-#define FIELDNO_EXPRCONTEXT_DOMAINNULL 15
+#define FIELDNO_EXPRCONTEXT_DOMAINNULL 13
 	bool		domainValue_isNull;
 
 	/* Tuples that OLD/NEW Var nodes in RETURNING may refer to */
-#define FIELDNO_EXPRCONTEXT_OLDTUPLE 16
+#define FIELDNO_EXPRCONTEXT_OLDTUPLE 14
 	TupleTableSlot *ecxt_oldtuple;
-#define FIELDNO_EXPRCONTEXT_NEWTUPLE 17
+#define FIELDNO_EXPRCONTEXT_NEWTUPLE 15
 	TupleTableSlot *ecxt_newtuple;
 
 	/* Link to containing EState (NULL if a standalone ExprContext) */
