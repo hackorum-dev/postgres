@@ -170,6 +170,7 @@ typedef struct					/* cast_hash table entry */
 	plpgsql_CastExprHashEntry *cast_centry; /* link to matching expr entry */
 	/* ExprState is valid only when cast_lxid matches current LXID */
 	ExprState  *cast_exprstate; /* expression's eval tree */
+	ParamListInfo cast_params;	/* input Param value for cast expr */
 	bool		cast_in_use;	/* true while we're executing eval tree */
 	LocalTransactionId cast_lxid;
 } plpgsql_CastHashEntry;
@@ -7754,17 +7755,28 @@ do_cast_value(PLpgSQL_execstate *estate,
 	if (cast_entry)
 	{
 		ExprContext *econtext = estate->eval_econtext;
+		ParamListInfo paramLI;
 		MemoryContext oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(get_eval_mcontext(estate));
 
-		econtext->caseValue_datum = value;
-		econtext->caseValue_isNull = *isnull;
-
 		cast_entry->cast_in_use = true;
+
+		/* Set up the value for the cast expression's Param */
+		paramLI = cast_entry->cast_params;
+		paramLI->params[0].value = value;
+		paramLI->params[0].isnull = *isnull;
+
+		/*
+		 * Someday we might need to save-n-restore ecxt_param_list_info here,
+		 * but that day is not yet: it's always NULL except during expr eval.
+		 */
+		econtext->ecxt_param_list_info = paramLI;
 
 		value = ExecEvalExpr(cast_entry->cast_exprstate, econtext,
 							 isnull);
+
+		econtext->ecxt_param_list_info = NULL;
 
 		cast_entry->cast_in_use = false;
 
@@ -7780,7 +7792,7 @@ do_cast_value(PLpgSQL_execstate *estate,
  * Returns a plpgsql_CastHashEntry if an expression has to be evaluated,
  * or NULL if the cast is a mere no-op relabeling.  If there's work to be
  * done, the cast_exprstate field contains an expression evaluation tree
- * based on a CaseTestExpr input, and the cast_in_use field should be set
+ * based on a PARAM_EXTERN parameter, and the cast_in_use field should be set
  * true while executing it.
  * ----------
  */
@@ -7816,6 +7828,7 @@ get_cast_hashentry(PLpgSQL_execstate *estate,
 
 		cast_entry->cast_centry = expr_entry;
 		cast_entry->cast_exprstate = NULL;
+		cast_entry->cast_params = NULL;
 		cast_entry->cast_in_use = false;
 		cast_entry->cast_lxid = InvalidLocalTransactionId;
 	}
@@ -7834,7 +7847,7 @@ get_cast_hashentry(PLpgSQL_execstate *estate,
 		 */
 		Node	   *cast_expr;
 		CachedExpression *cast_cexpr;
-		CaseTestExpr *placeholder;
+		Param	   *placeholder;
 
 		/*
 		 * Drop old cached expression if there is one.
@@ -7853,13 +7866,16 @@ get_cast_hashentry(PLpgSQL_execstate *estate,
 		oldcontext = MemoryContextSwitchTo(get_eval_mcontext(estate));
 
 		/*
-		 * We use a CaseTestExpr as the base of the coercion tree, since it's
-		 * very cheap to insert the source value for that.
+		 * We use a PARAM_EXTERN Param as the base of the coercion tree.  The
+		 * cast expression will not contain any other such Params.
 		 */
-		placeholder = makeNode(CaseTestExpr);
-		placeholder->typeId = srctype;
-		placeholder->typeMod = srctypmod;
-		placeholder->collation = get_typcollation(srctype);
+		placeholder = makeNode(Param);
+		placeholder->paramkind = PARAM_EXTERN;
+		placeholder->paramid = 1;
+		placeholder->paramtype = srctype;
+		placeholder->paramtypmod = srctypmod;
+		placeholder->paramcollid = get_typcollation(srctype);
+		placeholder->location = -1;
 
 		/*
 		 * Apply coercion.  We use the special coercion context
@@ -7929,6 +7945,7 @@ get_cast_hashentry(PLpgSQL_execstate *estate,
 
 		/* Be sure to reset the exprstate hashtable entry, too. */
 		cast_entry->cast_exprstate = NULL;
+		cast_entry->cast_params = NULL;
 		cast_entry->cast_in_use = false;
 		cast_entry->cast_lxid = InvalidLocalTransactionId;
 
@@ -7954,8 +7971,14 @@ get_cast_hashentry(PLpgSQL_execstate *estate,
 	curlxid = MyProc->vxid.lxid;
 	if (cast_entry->cast_lxid != curlxid || cast_entry->cast_in_use)
 	{
+		ParamListInfo paramLI;
+
 		oldcontext = MemoryContextSwitchTo(estate->simple_eval_estate->es_query_cxt);
-		cast_entry->cast_exprstate = ExecInitExpr(expr_entry->cast_expr, NULL);
+		cast_entry->cast_params = paramLI = makeParamList(1);
+		paramLI->params[0].pflags = 0;
+		paramLI->params[0].ptype = srctype;
+		cast_entry->cast_exprstate = ExecInitExprWithParams(expr_entry->cast_expr,
+															paramLI);
 		cast_entry->cast_in_use = false;
 		cast_entry->cast_lxid = curlxid;
 		MemoryContextSwitchTo(oldcontext);
