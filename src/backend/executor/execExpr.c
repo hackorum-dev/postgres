@@ -2465,16 +2465,20 @@ ExecInitExprRec(Expr *node, ExprState *state,
 
 				if (ctor->coercion)
 				{
-					Datum	   *innermost_caseval = state->innermost_caseval;
-					bool	   *innermost_isnull = state->innermost_casenull;
-
-					state->innermost_caseval = resv;
-					state->innermost_casenull = resnull;
+					/*
+					 * Apply the coercion expression to the result-so-far.  We
+					 * assume it has a PARAM_EXPR Param representing the input
+					 * value.  Push a step that copies the current result into
+					 * the appropriate Param slot.
+					 */
+					scratch.opcode = EEOP_PARAM_SET_EXPR;
+					Assert(ctor->coparam > 0);
+					scratch.d.paramset.paramid = ctor->coparam;
+					scratch.d.paramset.setvalue = resv;
+					scratch.d.paramset.setnull = resnull;
+					ExprEvalPushStep(state, &scratch);
 
 					ExecInitExprRec(ctor->coercion, state, resv, resnull);
-
-					state->innermost_caseval = innermost_caseval;
-					state->innermost_casenull = innermost_isnull;
 				}
 			}
 			break;
@@ -2495,6 +2499,20 @@ ExecInitExprRec(Expr *node, ExprState *state,
 		case T_JsonExpr:
 			{
 				JsonExpr   *jsexpr = castNode(JsonExpr, node);
+
+				/*
+				 * If the expression involves a Param, the caller will have
+				 * loaded the source value into resv/resnull.  Push a step
+				 * that copies that into the appropriate Param slot.
+				 */
+				if (jsexpr->feparam > 0)
+				{
+					scratch.opcode = EEOP_PARAM_SET_EXPR;
+					scratch.d.paramset.paramid = jsexpr->feparam;
+					scratch.d.paramset.setvalue = resv;
+					scratch.d.paramset.setnull = resnull;
+					ExprEvalPushStep(state, &scratch);
+				}
 
 				/*
 				 * No need to initialize a full JsonExprState For

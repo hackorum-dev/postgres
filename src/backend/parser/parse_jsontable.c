@@ -319,6 +319,17 @@ transformJsonTableColumns(JsonTableParseContext *cxt, List *columns,
 					JsonFuncExpr *jfe;
 					CaseTestExpr *param = makeNode(CaseTestExpr);
 
+					/*
+					 * We abuse CaseTestExpr here as a placeholder to pass the
+					 * row pattern value to any coercion function that may be
+					 * needed.  This is safe because the finished column
+					 * expression cannot directly contain a CASE, nor any
+					 * other construct that similarly abuses CaseTestExpr.
+					 * (Subsequent inlining of a SQL-language cast function
+					 * could create a hazard, but we leave it to the planner
+					 * to deal with that scenario by replacing the
+					 * CaseTestExpr with a Param beforehand.)
+					 */
 					param->collation = InvalidOid;
 					param->typeId = contextItemTypid;
 					param->typeMod = -1;

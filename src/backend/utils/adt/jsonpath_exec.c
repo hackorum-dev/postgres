@@ -4470,17 +4470,11 @@ JsonTableGetValue(TableFuncScanState *state, int colnum,
 	/* Evaluate JsonExpr. */
 	else if (estate)
 	{
-		Datum		saved_caseValue = econtext->caseValue_datum;
-		bool		saved_caseIsNull = econtext->caseValue_isNull;
-
-		/* Pass the row pattern value via CaseTestExpr. */
-		econtext->caseValue_datum = current->value;
-		econtext->caseValue_isNull = false;
+		/* Pass the row pattern value where the expression expects it. */
+		estate->resvalue = current->value;
+		estate->resnull = false;
 
 		result = ExecEvalExpr(estate, econtext, isnull);
-
-		econtext->caseValue_datum = saved_caseValue;
-		econtext->caseValue_isNull = saved_caseIsNull;
 	}
 	/* ORDINAL column */
 	else

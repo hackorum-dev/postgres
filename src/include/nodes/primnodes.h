@@ -1753,6 +1753,11 @@ typedef enum JsonConstructorType
 /*
  * JsonConstructorExpr -
  *		wrapper over FuncExpr/Aggref/WindowFunc for SQL/JSON constructors
+ *
+ * If a coercion to the RETURNING type is required, the coercion field holds a
+ * suitable coercion expression tree (else it's NULL).  The base node of that
+ * tree is initially a CaseTestExpr, but the planner replaces that with a
+ * PARAM_EXPR Param, and sets coparam to that Param's paramid.
  */
 typedef struct JsonConstructorExpr
 {
@@ -1761,6 +1766,8 @@ typedef struct JsonConstructorExpr
 	List	   *args;
 	Expr	   *func;			/* underlying json[b]_xxx() function call */
 	Expr	   *coercion;		/* coercion to RETURNING type */
+	/* ID of PARAM_EXPR Param representing input, if assigned; else 0 */
+	int			coparam pg_node_attr(equal_ignore, query_jumble_ignore);
 	JsonReturning *returning;	/* RETURNING clause */
 	bool		absent_on_null; /* ABSENT ON NULL? */
 	bool		unique;			/* WITH UNIQUE KEYS? (JSON_OBJECT[AGG] only) */
@@ -1875,6 +1882,9 @@ typedef struct JsonExpr
 
 	/* jsonb-valued expression to query */
 	Node	   *formatted_expr;
+
+	/* ID of PARAM_EXPR Param within formatted_expr, if any; else 0 */
+	int			feparam pg_node_attr(equal_ignore, query_jumble_ignore);
 
 	/* Format of the above expression needed by ruleutils.c */
 	JsonFormat *format;

@@ -3676,7 +3676,12 @@ makeJsonConstructorExpr(ParseState *pstate, JsonConstructorType type,
 	 * Coerce to the RETURNING type and format, if needed.  We abuse
 	 * CaseTestExpr here as placeholder to pass the result of either
 	 * evaluating 'fexpr' or whatever is produced by ExecEvalJsonConstructor()
-	 * that is of type JSON or JSONB to the coercion function.
+	 * that is of type JSON or JSONB to the coercion function.  This is safe
+	 * because the finished coercion expression cannot directly contain a
+	 * CASE, nor any other construct that similarly abuses CaseTestExpr.
+	 * (Subsequent inlining of a SQL-language cast function could create a
+	 * hazard, but we leave it to the planner to deal with that scenario by
+	 * replacing the CaseTestExpr with a Param beforehand.)
 	 */
 	if (fexpr)
 	{

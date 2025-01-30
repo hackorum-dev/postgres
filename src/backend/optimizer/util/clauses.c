@@ -3734,6 +3734,149 @@ eval_const_expressions_mutator(Node *node,
 					return ece_evaluate_expr((Node *) newcre);
 				return (Node *) newcre;
 			}
+		case T_JsonConstructorExpr:
+			{
+				JsonConstructorExpr *jce = makeNode(JsonConstructorExpr);
+				CaseTestExpr *ctexpr = NULL;
+
+				/*
+				 * Copy the node and const-simplify its arguments.  We can't
+				 * use ece_generic_processing() here because we need to mess
+				 * with case_val only while processing the coercion expr.
+				 */
+				memcpy(jce, node, sizeof(JsonConstructorExpr));
+				jce->args = (List *)
+					eval_const_expressions_mutator((Node *) jce->args,
+												   context);
+				jce->func = (Expr *)
+					eval_const_expressions_mutator((Node *) jce->func,
+												   context);
+
+				/*
+				 * Find the CaseTestExpr in coercion; this is simpler than
+				 * recomputing its type/typmod/collation from the values we
+				 * have.  Also, if we don't find it, we know that we are
+				 * re-simplifying an already-simplified JsonConstructorExpr
+				 * (or that coercion is empty) and must not change coparam.
+				 */
+				if (find_casetestexpr((Node *) jce->coercion, &ctexpr))
+				{
+					/*
+					 * Set up the node to substitute for the CaseTestExpr node
+					 * contained in coercion.  Normally we replace it with a
+					 * PARAM_EXPR Param, but if we're just estimating, leave
+					 * it alone.
+					 *
+					 * We must save and restore context->case_val so as not to
+					 * affect surrounding constructs.
+					 */
+					Node	   *save_case_val = context->case_val;
+
+					/* If we found a CaseTestExpr, we can't be re-simplifying */
+					Assert(jce->coparam == 0);
+					if (!context->estimate)
+					{
+						Param	   *p;
+
+						p = generate_new_expr_param(context,
+													ctexpr->typeId,
+													ctexpr->typeMod,
+													ctexpr->collation);
+						context->case_val = (Node *) p;
+						jce->coparam = p->paramid;
+					}
+					else
+						context->case_val = NULL;
+
+					jce->coercion = (Expr *)
+						eval_const_expressions_mutator((Node *) jce->coercion,
+													   context);
+
+					context->case_val = save_case_val;
+				}
+				else
+					jce->coercion = (Expr *)
+						eval_const_expressions_mutator((Node *) jce->coercion,
+													   context);
+
+				jce->returning = (JsonReturning *)
+					eval_const_expressions_mutator((Node *) jce->returning,
+												   context);
+				return (Node *) jce;
+			}
+		case T_JsonExpr:
+			{
+				JsonExpr   *je = makeNode(JsonExpr);
+				CaseTestExpr *ctexpr = NULL;
+
+				/*
+				 * Copy the node and const-simplify its arguments.  We can't
+				 * use ece_generic_processing() here because we need to mess
+				 * with case_val only while processing the formatted_expr.
+				 */
+				memcpy(je, node, sizeof(JsonExpr));
+
+				/*
+				 * The formatted_expr might or might not contain a
+				 * CaseTestExpr; if it doesn't, we don't want to uselessly
+				 * consume a PARAM_EXPR slot.  Besides that, copying its
+				 * type/typmod/collation is much easier than trying to
+				 * reverse-engineer what it would have been.
+				 */
+				if (find_casetestexpr(je->formatted_expr, &ctexpr))
+				{
+					/*
+					 * Set up the node to substitute for the CaseTestExpr node
+					 * contained in formatted_expr.  Normally we replace it
+					 * with a PARAM_EXPR Param, but if we're just estimating,
+					 * leave it alone.
+					 *
+					 * We must save and restore context->case_val so as not to
+					 * affect surrounding constructs.
+					 */
+					Node	   *save_case_val = context->case_val;
+
+					/* If we found a CaseTestExpr, we can't be re-simplifying */
+					Assert(je->feparam == 0);
+					if (!context->estimate)
+					{
+						Param	   *p;
+
+						p = generate_new_expr_param(context,
+													ctexpr->typeId,
+													ctexpr->typeMod,
+													ctexpr->collation);
+						context->case_val = (Node *) p;
+						je->feparam = p->paramid;
+					}
+					else
+						context->case_val = NULL;
+
+					je->formatted_expr =
+						eval_const_expressions_mutator(je->formatted_expr,
+													   context);
+
+					context->case_val = save_case_val;
+				}
+				else
+					je->formatted_expr =
+						eval_const_expressions_mutator(je->formatted_expr,
+													   context);
+
+				je->path_spec =
+					eval_const_expressions_mutator(je->path_spec,
+												   context);
+				je->passing_values = (List *)
+					eval_const_expressions_mutator((Node *) je->passing_values,
+												   context);
+				je->on_empty = (JsonBehavior *)
+					eval_const_expressions_mutator((Node *) je->on_empty,
+												   context);
+				je->on_error = (JsonBehavior *)
+					eval_const_expressions_mutator((Node *) je->on_error,
+												   context);
+				return (Node *) je;
+			}
 		default:
 			break;
 	}
