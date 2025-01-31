@@ -5688,7 +5688,7 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 		 * of learning something even with it.
 		 */
 		if (subquery->setOperations ||
-			subquery->groupClause ||
+			// subquery->groupClause ||
 			subquery->groupingSets)
 			return;
 
@@ -5702,6 +5702,42 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 			elog(ERROR, "subquery %s does not have attribute %d",
 				 rte->eref->aliasname, var->varattno);
 		var = (Var *) ste->expr;
+
+	if (subquery->groupClause)
+	{
+		List *groupVars = NIL;
+		List *targetVars = NIL;
+		ListCell *lc;
+
+		/* Collect unique expressions from GROUP BY */
+		foreach (lc, subquery->groupClause)
+		{
+			SortGroupClause *sgc = (SortGroupClause *) lfirst(lc);
+			TargetEntry *tle = get_sortgroupref_tle(sgc->tleSortGroupRef, subquery->targetList);
+
+			if (tle && tle->expr)
+				groupVars = list_append_unique(groupVars, tle->expr);
+		}
+
+		/* Collect unique expressions from the target list */
+		foreach (lc, subquery->targetList)
+		{
+			TargetEntry *targetTle = (TargetEntry *) lfirst(lc);
+			if (targetTle && targetTle->expr)
+				targetVars = list_append_unique(targetVars, targetTle->expr);
+		}
+
+		if (equal(groupVars, targetVars))
+		{
+			vardata->isunique = true;
+		}
+
+		list_free(groupVars);
+		list_free(targetVars);
+	}
+
+
+
 
 		/*
 		 * If subquery uses DISTINCT, we can't make use of any stats for the
