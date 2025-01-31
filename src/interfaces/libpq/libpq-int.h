@@ -405,6 +405,7 @@ struct pg_conn
 										 * retransmits */
 	char	   *keepalives_count;	/* maximum number of TCP keepalive
 									 * retransmits */
+	char	   *tcp_syn_count;		/* maximum number of TCP SYN retransmits */
 	char	   *sslmode;		/* SSL mode (require,prefer,allow,disable) */
 	char	   *sslnegotiation; /* SSL initiation style (postgres,direct) */
 	char	   *sslcompression; /* SSL compression (0 or 1) */
