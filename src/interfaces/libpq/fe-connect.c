@@ -279,6 +279,10 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"TCP-User-Timeout", "", 10, /* strlen(INT32_MAX) == 10 */
 	offsetof(struct pg_conn, pgtcp_user_timeout)},
 
+	{"tcp_syn_count", NULL, NULL, NULL,
+		"TCP-SYN-Count", "", 10, /* strlen(INT32_MAX) == 10 */
+	offsetof(struct pg_conn, tcp_syn_count)},
+
 	/*
 	 * ssl options are allowed even without client SSL support because the
 	 * client can still handle SSL modes "disable" and "allow". Other
@@ -2713,6 +2717,41 @@ setTCPUserTimeout(PGconn *conn)
 	return 1;
 }
 
+/*
+* Set the maximum number of SYN retransmissions.
+*/
+static int
+setTCPSynCnt(PGconn *conn)
+{
+	int			count;
+
+	if (conn->tcp_syn_count == NULL)
+		return 1;
+
+	if (!pqParseIntParam(conn->tcp_syn_count, &count, conn,
+						 "tcp_syn_count"))
+		return 0;
+
+	if (count < 0)
+		count = 0;
+
+#ifdef TCP_SYNCNT
+	if (setsockopt(conn->sock, IPPROTO_TCP, TCP_SYNCNT,
+				   (char *) &count, sizeof(count)) < 0)
+	{
+		char		sebuf[PG_STRERROR_R_BUFLEN];
+
+		libpq_append_conn_error(conn, "%s(%s) failed: %s",
+								"setsockopt",
+								"TCP_SYNCNT",
+								SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
+		return 0;
+	}
+#endif
+
+	return 1;
+}
+
 /* ----------
  * pqConnectDBStart -
  *		Begin the process of making a connection to the backend.
@@ -3448,6 +3487,15 @@ keep_going:						/* We will come back to here until there is
 							err = 1;
 
 						if (err)
+						{
+							conn->try_next_addr = true;
+							goto keep_going;
+						}
+					}
+
+					if (addr_cur->family != AF_UNIX)
+					{
+						if (!setTCPSynCnt(conn))
 						{
 							conn->try_next_addr = true;
 							goto keep_going;
@@ -5130,6 +5178,7 @@ freePGconn(PGconn *conn)
 	free(conn->keepalives_idle);
 	free(conn->keepalives_interval);
 	free(conn->keepalives_count);
+	free(conn->tcp_syn_count);
 	free(conn->sslmode);
 	free(conn->sslnegotiation);
 	free(conn->sslcompression);
