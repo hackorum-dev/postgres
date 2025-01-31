@@ -226,7 +226,7 @@ struct HeapTupleHeaderData
  * See also HeapTupleHeaderIsOnlyLocked, which also checks for a possible
  * aborted updater transaction.
  */
-static inline bool
+static pg_attribute_always_inline bool
 HEAP_XMAX_IS_LOCKED_ONLY(uint16 infomask)
 {
 	return (infomask & HEAP_XMAX_LOCK_ONLY) ||
@@ -251,7 +251,7 @@ HEAP_XMAX_IS_LOCKED_ONLY(uint16 infomask)
  * bogus, regardless of where they stand with respect to the current valid
  * multixact range.
  */
-static inline bool
+static pg_attribute_always_inline bool
 HEAP_LOCKED_UPGRADED(uint16 infomask)
 {
 	return
@@ -263,19 +263,19 @@ HEAP_LOCKED_UPGRADED(uint16 infomask)
 /*
  * Use these to test whether a particular lock is applied to a tuple
  */
-static inline bool
+static pg_attribute_always_inline bool
 HEAP_XMAX_IS_SHR_LOCKED(int16 infomask)
 {
 	return (infomask & HEAP_LOCK_MASK) == HEAP_XMAX_SHR_LOCK;
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HEAP_XMAX_IS_EXCL_LOCKED(int16 infomask)
 {
 	return (infomask & HEAP_LOCK_MASK) == HEAP_XMAX_EXCL_LOCK;
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HEAP_XMAX_IS_KEYSHR_LOCKED(int16 infomask)
 {
 	return (infomask & HEAP_LOCK_MASK) == HEAP_XMAX_KEYSHR_LOCK;
@@ -319,72 +319,72 @@ static bool HeapTupleHeaderXminFrozen(const HeapTupleHeaderData *tup);
  * the xmin to FrozenTransactionId, and that value may still be encountered
  * on disk.
  */
-static inline TransactionId
+static pg_attribute_always_inline TransactionId
 HeapTupleHeaderGetRawXmin(const HeapTupleHeaderData *tup)
 {
 	return tup->t_choice.t_heap.t_xmin;
 }
 
-static inline TransactionId
+static pg_attribute_always_inline TransactionId
 HeapTupleHeaderGetXmin(const HeapTupleHeaderData *tup)
 {
 	return HeapTupleHeaderXminFrozen(tup) ?
 		FrozenTransactionId : HeapTupleHeaderGetRawXmin(tup);
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetXmin(HeapTupleHeaderData *tup, TransactionId xid)
 {
 	tup->t_choice.t_heap.t_xmin = xid;
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHeaderXminCommitted(const HeapTupleHeaderData *tup)
 {
 	return (tup->t_infomask & HEAP_XMIN_COMMITTED) != 0;
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHeaderXminInvalid(const HeapTupleHeaderData *tup) \
 {
 	return (tup->t_infomask & (HEAP_XMIN_COMMITTED | HEAP_XMIN_INVALID)) ==
 		HEAP_XMIN_INVALID;
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHeaderXminFrozen(const HeapTupleHeaderData *tup)
 {
 	return (tup->t_infomask & HEAP_XMIN_FROZEN) == HEAP_XMIN_FROZEN;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetXminCommitted(HeapTupleHeaderData *tup)
 {
 	Assert(!HeapTupleHeaderXminInvalid(tup));
 	tup->t_infomask |= HEAP_XMIN_COMMITTED;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetXminInvalid(HeapTupleHeaderData *tup)
 {
 	Assert(!HeapTupleHeaderXminCommitted(tup));
 	tup->t_infomask |= HEAP_XMIN_INVALID;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetXminFrozen(HeapTupleHeaderData *tup)
 {
 	Assert(!HeapTupleHeaderXminInvalid(tup));
 	tup->t_infomask |= HEAP_XMIN_FROZEN;
 }
 
-static inline TransactionId
+static pg_attribute_always_inline TransactionId
 HeapTupleHeaderGetRawXmax(const HeapTupleHeaderData *tup)
 {
 	return tup->t_choice.t_heap.t_xmax;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetXmax(HeapTupleHeaderData *tup, TransactionId xid)
 {
 	tup->t_choice.t_heap.t_xmax = xid;
@@ -398,7 +398,7 @@ HeapTupleHeaderSetXmax(HeapTupleHeaderData *tup, TransactionId xid)
  * to resolve the MultiXactId if necessary.  This might involve multixact I/O,
  * so it should only be used if absolutely necessary.
  */
-static inline TransactionId
+static pg_attribute_always_inline TransactionId
 HeapTupleHeaderGetUpdateXid(const HeapTupleHeaderData *tup)
 {
 	if (!((tup)->t_infomask & HEAP_XMAX_INVALID) &&
@@ -416,14 +416,14 @@ HeapTupleHeaderGetUpdateXid(const HeapTupleHeaderData *tup)
  * HeapTupleHeaderGetCmax instead, but note that those Assert that you can
  * get a legitimate result, ie you are in the originating transaction!
  */
-static inline CommandId
+static pg_attribute_always_inline CommandId
 HeapTupleHeaderGetRawCommandId(const HeapTupleHeaderData *tup)
 {
 	return tup->t_choice.t_heap.t_field3.t_cid;
 }
 
 /* SetCmin is reasonably simple since we never need a combo CID */
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetCmin(HeapTupleHeaderData *tup, CommandId cid)
 {
 	Assert(!(tup->t_infomask & HEAP_MOVED));
@@ -432,7 +432,7 @@ HeapTupleHeaderSetCmin(HeapTupleHeaderData *tup, CommandId cid)
 }
 
 /* SetCmax must be used after HeapTupleHeaderAdjustCmax; see combocid.c */
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetCmax(HeapTupleHeaderData *tup, CommandId cid, bool iscombo)
 {
 	Assert(!((tup)->t_infomask & HEAP_MOVED));
@@ -443,7 +443,7 @@ HeapTupleHeaderSetCmax(HeapTupleHeaderData *tup, CommandId cid, bool iscombo)
 		tup->t_infomask &= ~HEAP_COMBOCID;
 }
 
-static inline TransactionId
+static pg_attribute_always_inline TransactionId
 HeapTupleHeaderGetXvac(const HeapTupleHeaderData *tup)
 {
 	if (tup->t_infomask & HEAP_MOVED)
@@ -452,7 +452,7 @@ HeapTupleHeaderGetXvac(const HeapTupleHeaderData *tup)
 		return InvalidTransactionId;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetXvac(HeapTupleHeaderData *tup, TransactionId xid)
 {
 	Assert(tup->t_infomask & HEAP_MOVED);
@@ -462,68 +462,68 @@ HeapTupleHeaderSetXvac(HeapTupleHeaderData *tup, TransactionId xid)
 StaticAssertDecl(MaxOffsetNumber < SpecTokenOffsetNumber,
 				 "invalid speculative token constant");
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHeaderIsSpeculative(const HeapTupleHeaderData *tup)
 {
 	return ItemPointerGetOffsetNumberNoCheck(&tup->t_ctid) == SpecTokenOffsetNumber;
 }
 
-static inline BlockNumber
+static pg_attribute_always_inline BlockNumber
 HeapTupleHeaderGetSpeculativeToken(const HeapTupleHeaderData *tup)
 {
 	Assert(HeapTupleHeaderIsSpeculative(tup));
 	return ItemPointerGetBlockNumber(&tup->t_ctid);
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetSpeculativeToken(HeapTupleHeaderData *tup, BlockNumber token)
 {
 	ItemPointerSet(&tup->t_ctid, token, SpecTokenOffsetNumber);
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHeaderIndicatesMovedPartitions(const HeapTupleHeaderData *tup)
 {
 	return ItemPointerIndicatesMovedPartitions(&tup->t_ctid);
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetMovedPartitions(HeapTupleHeaderData *tup)
 {
 	ItemPointerSetMovedPartitions(&tup->t_ctid);
 }
 
-static inline uint32
+static pg_attribute_always_inline uint32
 HeapTupleHeaderGetDatumLength(const HeapTupleHeaderData *tup)
 {
 	return VARSIZE(tup);
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetDatumLength(HeapTupleHeaderData *tup, uint32 len)
 {
 	SET_VARSIZE(tup, len);
 }
 
-static inline Oid
+static pg_attribute_always_inline Oid
 HeapTupleHeaderGetTypeId(const HeapTupleHeaderData *tup)
 {
 	return tup->t_choice.t_datum.datum_typeid;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetTypeId(HeapTupleHeaderData *tup, Oid datum_typeid)
 {
 	tup->t_choice.t_datum.datum_typeid = datum_typeid;
 }
 
-static inline int32
+static pg_attribute_always_inline int32
 HeapTupleHeaderGetTypMod(const HeapTupleHeaderData *tup)
 {
 	return tup->t_choice.t_datum.datum_typmod;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetTypMod(HeapTupleHeaderData *tup, int32 typmod)
 {
 	tup->t_choice.t_datum.datum_typmod = typmod;
@@ -535,7 +535,7 @@ HeapTupleHeaderSetTypMod(HeapTupleHeaderData *tup, int32 typmod)
  * efficiency, check tuple visibility before using this function, so that the
  * INVALID bits will be as up to date as possible.
  */
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHeaderIsHotUpdated(const HeapTupleHeaderData *tup)
 {
 	return
@@ -544,31 +544,31 @@ HeapTupleHeaderIsHotUpdated(const HeapTupleHeaderData *tup)
 		!HeapTupleHeaderXminInvalid(tup);
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetHotUpdated(HeapTupleHeaderData *tup)
 {
 	tup->t_infomask2 |= HEAP_HOT_UPDATED;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderClearHotUpdated(HeapTupleHeaderData *tup)
 {
 	tup->t_infomask2 &= ~HEAP_HOT_UPDATED;
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHeaderIsHeapOnly(const HeapTupleHeaderData *tup) \
 {
 	return (tup->t_infomask2 & HEAP_ONLY_TUPLE) != 0;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetHeapOnly(HeapTupleHeaderData *tup)
 {
 	tup->t_infomask2 |= HEAP_ONLY_TUPLE;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderClearHeapOnly(HeapTupleHeaderData *tup)
 {
 	tup->t_infomask2 &= ~HEAP_ONLY_TUPLE;
@@ -595,7 +595,7 @@ HeapTupleHeaderClearHeapOnly(HeapTupleHeaderData *tup)
  * BITMAPLEN(NATTS) -
  *		Computes size of null bitmap given number of data columns.
  */
-static inline int
+static pg_attribute_always_inline int
 BITMAPLEN(int NATTS)
 {
 	return (NATTS + 7) / 8;
@@ -707,19 +707,19 @@ struct MinimalTupleData
  * MinimalTuple accessor functions
  */
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHeaderHasMatch(const MinimalTupleData *tup)
 {
 	return (tup->t_infomask2 & HEAP_TUPLE_HAS_MATCH) != 0;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderSetMatch(MinimalTupleData *tup)
 {
 	tup->t_infomask2 |= HEAP_TUPLE_HAS_MATCH;
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleHeaderClearMatch(MinimalTupleData *tup)
 {
 	tup->t_infomask2 &= ~HEAP_TUPLE_HAS_MATCH;
@@ -729,7 +729,7 @@ HeapTupleHeaderClearMatch(MinimalTupleData *tup)
 /*
  * GETSTRUCT - given a HeapTuple pointer, return address of the user data
  */
-static inline void *
+static pg_attribute_always_inline void *
 GETSTRUCT(const HeapTupleData *tuple)
 {
 	return ((char *) (tuple->t_data) + tuple->t_data->t_hoff);
@@ -739,67 +739,67 @@ GETSTRUCT(const HeapTupleData *tuple)
  * Accessor functions to be used with HeapTuple pointers.
  */
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHasNulls(const HeapTupleData *tuple)
 {
 	return (tuple->t_data->t_infomask & HEAP_HASNULL) != 0;
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleNoNulls(const HeapTupleData *tuple)
 {
 	return !HeapTupleHasNulls(tuple);
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHasVarWidth(const HeapTupleData *tuple)
 {
 	return (tuple->t_data->t_infomask & HEAP_HASVARWIDTH) != 0;
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleAllFixed(const HeapTupleData *tuple)
 {
 	return !HeapTupleHasVarWidth(tuple);
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleHasExternal(const HeapTupleData *tuple)
 {
 	return (tuple->t_data->t_infomask & HEAP_HASEXTERNAL) != 0;
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleIsHotUpdated(const HeapTupleData *tuple)
 {
 	return HeapTupleHeaderIsHotUpdated(tuple->t_data);
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleSetHotUpdated(const HeapTupleData *tuple)
 {
 	HeapTupleHeaderSetHotUpdated(tuple->t_data);
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleClearHotUpdated(const HeapTupleData *tuple)
 {
 	HeapTupleHeaderClearHotUpdated(tuple->t_data);
 }
 
-static inline bool
+static pg_attribute_always_inline bool
 HeapTupleIsHeapOnly(const HeapTupleData *tuple)
 {
 	return HeapTupleHeaderIsHeapOnly(tuple->t_data);
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleSetHeapOnly(const HeapTupleData *tuple)
 {
 	HeapTupleHeaderSetHeapOnly(tuple->t_data);
 }
 
-static inline void
+static pg_attribute_always_inline void
 HeapTupleClearHeapOnly(const HeapTupleData *tuple)
 {
 	HeapTupleHeaderClearHeapOnly(tuple->t_data);
