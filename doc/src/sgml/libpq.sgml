@@ -1576,6 +1576,21 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       </listitem>
      </varlistentry>
 
+     <varlistentry id="libpq-tcp-syn-count" xreflabel="tcp_syn_count">
+      <term><literal>tcp_syn_count</literal></term>
+      <listitem>
+       <para>
+        Controls the maximum number of SYN retransmissions that TCP
+        will send before aborting the attempt to establish a connection.
+        A higher value increases the number of retries before giving up,
+        while a lower value results in faster failure detection.
+        This parameter is only effective on systems where
+        <symbol>TCP_SYNCNT</symbol> is available; on other systems,
+        it has no effect.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="libpq-connect-replication" xreflabel="replication">
       <term><literal>replication</literal></term>
       <listitem>
