@@ -1767,6 +1767,152 @@ Included in publications:
     the publisher.
    </para>
   </note>
+
+  <sect2 id="logical-replication-gencols-examples">
+   <title>Examples</title>
+
+   <para>
+    Setup the publisher and subscriber tables. Note that the subscriber
+    table columns have same names, but are not defined the same as the
+    publisher columns.
+<programlisting>
+test_pub=# CREATE TABLE t1 (
+               a int PRIMARY KEY,
+               b int,
+               c int GENERATED ALWAYS AS (a + 1) STORED,
+               d int GENERATED ALWAYS AS (b + 1) STORED);
+
+test_pub=# CREATE TABLE t2 (
+               a int PRIMARY KEY,
+               b int,
+               c int GENERATED ALWAYS AS (a + 1) STORED,
+               d int GENERATED ALWAYS AS (b + 1) STORED);
+</programlisting>
+
+<programlisting>
+test_sub=# CREATE TABLE t1 (
+               a int PRIMARY KEY,
+               b int,
+               c int,
+               d int GENERATED ALWAYS AS (b * 100) STORED);
+
+test_sub=# CREATE TABLE t2 (
+               a int PRIMARY KEY,
+               b int,
+               c int,
+               d int);
+</programlisting>
+   </para>
+
+   <para>
+    Create the <literal>PUBLICATION</literal> and the <literal>SUBSCRIPTION</literal>.
+    Note that the publication specifies a column list for table <literal>t2</literal>.
+    The publication also sets parameter <literal>publish_generated_columns=none</literal>,
+    but that is just for demonstration because <literal>none</literal> is the
+    default anyway.
+<programlisting>
+test_pub=# CREATE PUBLICATION pub1 FOR TABLE t1, t2(a,c)
+               WITH (publish_generated_columns=none);
+</programlisting>
+
+<programlisting>
+test_sub=# CREATE SUBSCRIPTION sub1
+               CONNECTION 'dbname=test_pub'
+               PUBLICATION pub1;
+</programlisting>
+   </para>
+
+   <para>
+    Insert some data to the publisher tables:
+<programlisting>
+test_pub=# INSERT INTO t1 VALUES (1,2);
+INSERT 0 1
+test_pub=# INSERT INTO t2 VALUES (1,2);
+INSERT 0 1
+
+test_pub=# SELECT * FROM t1;
+ a | b | c | d
+---+---+---+---
+ 1 | 2 | 2 | 3
+(1 row)
+
+test_pub=# SELECT * FROM t2;
+ a | b | c | d
+---+---+---+---
+ 1 | 2 | 2 | 3
+(1 row)
+</programlisting>
+   </para>
+
+   <para>
+    Observe how columns for table <literal>t1</literal> were replicated:
+<programlisting>
+test_sub=# SELECT * FROM t1;
+ a | b | c |  d
+---+---+---+-----
+ 1 | 2 |   | 200
+(1 row)
+</programlisting>
+    <itemizedlist>
+     <listitem><para>
+      <literal>t1.a</literal> is a regular column. It gets replicated normally.
+     </para></listitem>
+
+     <listitem><para>
+      <literal>t1.b</literal> is a regular column. It gets replicated normally.
+     </para></listitem>
+
+     <listitem><para>
+      <literal>t1.c</literal> is a generated column. It is not replicated because
+      <literal>publish_generated_columns=none</literal>. The subscriber
+      <literal>t2.c</literal> default column value is used.
+     </para></listitem>
+
+     <listitem><para>
+      <literal>t1.d</literal> is a generated column. It is not replicated because
+      <literal>publish_generated_columns=none</literal>. The subscriber
+      <literal>t2.d</literal> generated column value is used.
+     </para></listitem>
+    </itemizedlist>
+   </para>
+
+   <para>
+    Observe how columns for table <literal>t2</literal> were replicated.
+<programlisting>
+test_sub=# SELECT * FROM t2;
+ a | b | c | d
+---+---+---+---
+ 1 |   | 2 |
+(1 row)
+</programlisting>
+    <itemizedlist>
+     <listitem><para>
+      <literal>t2.a</literal> is a regular column. It was specified in the column
+      list, so is replicated normally.
+     </para></listitem>
+
+     <listitem><para>
+      <literal>t2.b</literal> is a regular column. It was not specified in column
+      list so is not replicated. The subscriber <literal>t2.b</literal> default
+      value is used.
+     </para></listitem>
+
+     <listitem><para>
+      <literal>t2.c</literal> is a generated column. It was specified in the
+      column list, so is replicated to the subscriber <literal>t2.c</literal>
+      regular column.
+     </para></listitem>
+
+     <listitem><para>
+      <literal>t2.d</literal> is a generated column. It was not specified in the
+      column list, so is not replicated. The subscriber <literal>t2.d</literal>
+      default value is used.
+     </para></listitem>
+    </itemizedlist>
+   </para>
+
+  </sect2>
+
  </sect1>
 
  <sect1 id="logical-replication-sequences">
