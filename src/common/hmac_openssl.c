@@ -209,6 +209,18 @@ pg_hmac_init(pg_hmac_ctx *ctx, const uint8 *key, size_t len)
 }
 
 /*
+ * pg_hmac_reuse
+ *
+ * Reuse a HMAC context with the same key.  Returns 0 on success, -1 on failure.
+ */
+int
+pg_hmac_reuse(pg_hmac_ctx *ctx, const uint8 *key, size_t len)
+{
+	/* OpenSSL skips unnecessary reinitialization if the key is NULL */
+	return pg_hmac_init(ctx, NULL, len);
+}
+
+/*
  * pg_hmac_update
  *
  * Update a HMAC context.  Returns 0 on success, -1 on failure.
