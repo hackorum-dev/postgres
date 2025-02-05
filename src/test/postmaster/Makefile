@@ -13,6 +13,8 @@ subdir = src/test/postmaster
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
+export with_systemd
+
 check:
 	$(prove_check)
 

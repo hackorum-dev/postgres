@@ -72,6 +72,10 @@
 #include <mstcpip.h>
 #endif
 
+#ifdef USE_SYSTEMD
+#include <systemd/sd-daemon.h>
+#endif
+
 #include "common/ip.h"
 #include "libpq/libpq.h"
 #include "miscadmin.h"
@@ -423,6 +427,7 @@ ListenServerPort(int family, const char *hostName, unsigned short portNumber,
 	int			err;
 	int			maxconn;
 	int			ret;
+	int			systemd_fd_count = 0;
 	char		portNumberStr[32];
 	const char *familyDesc;
 	char		familyDescBuf[64];
@@ -444,6 +449,12 @@ ListenServerPort(int family, const char *hostName, unsigned short portNumber,
 	hint.ai_flags = AI_PASSIVE;
 	hint.ai_socktype = SOCK_STREAM;
 
+#ifdef USE_SYSTEMD
+	systemd_fd_count = sd_listen_fds(0);
+	if (systemd_fd_count > 0 && systemd_fd_count <= (*NumListenSockets))
+		elog(FATAL, "Sockets passed by systemd  (%d) are less than listen_addresses configured in postgresql.conf", systemd_fd_count);
+#endif
+
 	if (family == AF_UNIX)
 	{
 		/*
@@ -459,12 +470,16 @@ ListenServerPort(int family, const char *hostName, unsigned short portNumber,
 							(int) (UNIXSOCK_PATH_BUFLEN - 1))));
 			return STATUS_ERROR;
 		}
-		if (Lock_AF_UNIX(unixSocketDir, unixSocketPath) != STATUS_OK)
+		if (systemd_fd_count == 0 && Lock_AF_UNIX(unixSocketDir, unixSocketPath) != STATUS_OK)
 			return STATUS_ERROR;
 		service = unixSocketPath;
+		if (systemd_fd_count > 0 && sd_is_socket_unix(SD_LISTEN_FDS_START + (*NumListenSockets), SOCK_STREAM, 1, unixSocketPath, 0) < 1)
+			elog(FATAL, "Sockets (%d) passed by systemd is not same type as configured in postgresql.conf", *NumListenSockets);
 	}
 	else
 	{
+		if (systemd_fd_count > 0 && sd_is_socket_inet(SD_LISTEN_FDS_START + (*NumListenSockets), AF_UNSPEC, SOCK_STREAM, 1, portNumber) < 1)
+			elog(FATAL, "Sockets (%d) passed by systemd is not same type as configured in postgresql.conf", *NumListenSockets);
 		snprintf(portNumberStr, sizeof(portNumberStr), "%d", portNumber);
 		service = portNumberStr;
 	}
@@ -538,7 +553,14 @@ ListenServerPort(int family, const char *hostName, unsigned short portNumber,
 			addrDesc = addrBuf;
 		}
 
-		if ((fd = socket(addr->ai_family, SOCK_STREAM, 0)) == PGINVALID_SOCKET)
+		if (systemd_fd_count > 0)
+		{
+			fd = SD_LISTEN_FDS_START + (*NumListenSockets);
+			ereport(LOG, (errmsg("Using systemd FD %d at %d", fd, *NumListenSockets)));
+		}
+		else
+			fd = socket(addr->ai_family, SOCK_STREAM, 0);
+		if (fd == PGINVALID_SOCKET)
 		{
 			ereport(LOG,
 					(errcode_for_socket_access(),
@@ -598,32 +620,34 @@ ListenServerPort(int family, const char *hostName, unsigned short portNumber,
 			}
 		}
 #endif
-
-		/*
-		 * Note: This might fail on some OS's, like Linux older than
-		 * 2.4.21-pre3, that don't have the IPV6_V6ONLY socket option, and map
-		 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
-		 * connections.
-		 */
-		err = bind(fd, addr->ai_addr, addr->ai_addrlen);
-		if (err < 0)
+		if (systemd_fd_count == 0)
 		{
-			int			saved_errno = errno;
+			/*
+			 * Note: This might fail on some OS's, like Linux older than
+			 * 2.4.21-pre3, that don't have the IPV6_V6ONLY socket option, and
+			 * map ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all
+			 * ipv4 connections.
+			 */
+			err = bind(fd, addr->ai_addr, addr->ai_addrlen);
+			if (err < 0)
+			{
+				int			saved_errno = errno;
 
-			ereport(LOG,
-					(errcode_for_socket_access(),
-			/* translator: first %s is IPv4, IPv6, or Unix */
-					 errmsg("could not bind %s address \"%s\": %m",
-							familyDesc, addrDesc),
-					 saved_errno == EADDRINUSE ?
-					 (addr->ai_family == AF_UNIX ?
-					  errhint("Is another postmaster already running on port %d?",
-							  (int) portNumber) :
-					  errhint("Is another postmaster already running on port %d?"
-							  " If not, wait a few seconds and retry.",
-							  (int) portNumber)) : 0));
-			closesocket(fd);
-			continue;
+				ereport(LOG,
+						(errcode_for_socket_access(),
+				/* translator: first %s is IPv4, IPv6, or Unix */
+						 errmsg("could not bind %s address \"%s\": %m",
+								familyDesc, addrDesc),
+						 saved_errno == EADDRINUSE ?
+						 (addr->ai_family == AF_UNIX ?
+						  errhint("Is another postmaster already running on port %d?",
+								  (int) portNumber) :
+						  errhint("Is another postmaster already running on port %d?"
+								  " If not, wait a few seconds and retry.",
+								  (int) portNumber)) : 0));
+				closesocket(fd);
+				continue;
+			}
 		}
 
 		if (addr->ai_family == AF_UNIX)
