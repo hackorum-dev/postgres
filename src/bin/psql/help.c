@@ -235,11 +235,11 @@ slashUsage(unsigned short int pager)
 	HELP0("  \\dd[Sx]  [PATTERN]     show object descriptions not displayed elsewhere\n");
 	HELP0("  \\dD[Sx+] [PATTERN]     list domains\n");
 	HELP0("  \\ddp[x]  [PATTERN]     list default privileges\n");
-	HELP0("  \\dE[Sx+] [PATTERN]     list foreign tables\n");
-	HELP0("  \\des[x+] [PATTERN]     list foreign servers\n");
-	HELP0("  \\det[x+] [PATTERN]     list foreign tables\n");
-	HELP0("  \\deu[x+] [PATTERN]     list user mappings\n");
 	HELP0("  \\dew[x+] [PATTERN]     list foreign-data wrappers\n");
+	HELP0("  \\des[x+] [PATTERN]     list foreign servers\n");
+	HELP0("  \\dE[Sx+] [PATTERN]     list foreign tables (basic info)\n");
+	HELP0("  \\det[x+] [PATTERN]     list foreign tables (foreign info)\n");
+	HELP0("  \\deu[x+] [PATTERN]     list user mappings\n");
 	HELP0("  \\df[anptw][Sx+] [FUNCPTRN [TYPEPTRN ...]]\n"
 		  "                         list [only agg/normal/procedure/trigger/window] functions\n");
 	HELP0("  \\dF[x+]  [PATTERN]     list text search configurations\n");

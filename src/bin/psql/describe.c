@@ -4017,7 +4017,7 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	int			cols_so_far;
 	bool		translate_columns[] = {false, false, true, false, false, false, false, false, false};
 
-	/* If tabtypes is empty, we default to \dtvmsE (but see also command.c) */
+	/* If tabtypes is empty, we default to \dtivmsE (but see also command.c) */
 	if (!(showTables || showIndexes || showViews || showMatViews || showSeq || showForeign))
 		showTables = showViews = showMatViews = showSeq = showForeign = true;
 
@@ -4176,7 +4176,48 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	}
 	else
 	{
-		myopt.title = _("List of relations");
+		char title[100] = "List of ";
+		int cntTitle = 0;
+		if (showTables) {
+			strcat(title, "tables");
+			cntTitle++;
+		}
+		if (showIndexes) {
+			if (cntTitle != 0) {
+				strcat(title, ", ");
+			}
+			strcat(title, "indexes");
+			cntTitle++;
+		}
+		if (showViews) {
+			if (cntTitle != 0) {
+				strcat(title, ", ");
+			}
+			strcat(title, "views");
+			cntTitle++;
+		}
+		if (showMatViews) {
+			if (cntTitle != 0) {
+				strcat(title, ", ");
+			}
+			strcat(title, "materialized views");
+			cntTitle++;
+		}
+		if (showSeq) {
+			if (cntTitle != 0) {
+				strcat(title, ", ");
+			}
+			strcat(title, "sequences");
+			cntTitle++;
+		}
+		if (showForeign) {
+			if (cntTitle != 0) {
+				strcat(title, ", ");
+			}
+			strcat(title, "foreign tables");
+			cntTitle++;
+		}
+		myopt.title = _(title);
 		myopt.translate_header = true;
 		myopt.translate_columns = translate_columns;
 		myopt.n_translate_columns = lengthof(translate_columns);
