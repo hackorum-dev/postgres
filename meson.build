@@ -440,6 +440,8 @@ cdata.set('USE_INJECTION_POINTS', get_option('injection_points') ? 1 : false)
 
 blocksize = get_option('blocksize').to_int() * 1024
 
+slru_pages_per_segment = get_option('slru_pps').to_int()
+
 if get_option('segsize_blocks') != 0
   if get_option('segsize') != 1
     warning('both segsize and segsize_blocks specified, segsize_blocks wins')
@@ -458,6 +460,21 @@ cdata.set('BLCKSZ', blocksize, description:
    currently 2^15 (32768). This is determined by the 15-bit widths of the
    lp_off and lp_len fields in ItemIdData (see include/storage/itemid.h).
    Changing BLCKSZ requires an initdb.''')
+
+cdata.set('SLRU_PAGES_PER_SEGMENT', slru_pages_per_segment, description:
+'''SLRU segment size in pages. A page is the same BLCKSZ as is used everywhere
+	 else in Postgres.  The segment size can be chosen somewhat arbitrarily;
+	 we make it 32 pages by default, or 256Kb, i.e. 1M transactions for CLOG
+	 or 64K transactions for SUBTRANS.
+
+	 Note: because TransactionIds are 32 bits and wrap around at 0xFFFFFFFF,
+	 default page numbering also wraps around at 0xFFFFFFFF/xxxx_XACTS_PER_PAGE
+	 (where xxxx is CLOG or SUBTRANS, respectively), and segment numbering at
+	 0xFFFFFFFF/xxxx_XACTS_PER_PAGE/SLRU_PAGES_PER_SEGMENT.  We need
+	 take no explicit notice of that fact in slru.c, except when comparing
+	 segment and page numbers in SimpleLruTruncate (see PagePrecedes()).
+
+	 Changing SLRU_PAGES_PER_SEGMENT requires an initdb.''')
 
 cdata.set('XLOG_BLCKSZ', get_option('wal_blocksize').to_int() * 1024)
 cdata.set('RELSEG_SIZE', segsize)

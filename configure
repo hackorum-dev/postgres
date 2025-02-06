@@ -841,6 +841,7 @@ enable_dtrace
 enable_tap_tests
 enable_injection_points
 with_blocksize
+with_slru_pps
 with_segsize
 with_segsize_blocks
 with_wal_blocksize
@@ -1549,6 +1550,7 @@ Optional Packages:
   --with-pgport=PORTNUM   set default port number [5432]
   --with-blocksize=BLOCKSIZE
                           set table block size in kB [8]
+  --with-slru-pps=SLRUPPS set slru segment size in blocks
   --with-segsize=SEGSIZE  set table segment size in GB [1]
   --with-segsize-blocks=SEGSIZE_BLOCKS
                           set table segment size in blocks [0]
@@ -3704,6 +3706,57 @@ $as_echo "${blocksize}kB" >&6; }
 
 cat >>confdefs.h <<_ACEOF
 #define BLCKSZ ${BLCKSZ}
+_ACEOF
+
+
+#
+# SLRU pages per segment
+#
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for slru pages per segment" >&5
+$as_echo_n "checking for slru pages per segment... " >&6; }
+
+
+
+# Check whether --with-slru-pps was given.
+if test "${with_slru_pps+set}" = set; then :
+  withval=$with_slru_pps;
+  case $withval in
+    yes)
+      as_fn_error $? "argument required for --with-slru-pps option" "$LINENO" 5
+      ;;
+    no)
+      as_fn_error $? "argument required for --with-slru-pps option" "$LINENO" 5
+      ;;
+    *)
+      slru_pages_per_segment=$withval
+      ;;
+  esac
+
+else
+  slru_pages_per_segment=32
+fi
+
+
+
+INT_MAX=2147483647
+if test "${slru_pages_per_segment}" -lt 32; then :
+  as_fn_error $? "Invalid slru_pps value. It cannot be less than 32." "$LINENO" 5
+fi
+
+if test "${slru_pages_per_segment}" -gt "${INT_MAX}"; then :
+  as_fn_error $? "Invalid slru_pps value. It cannot be greater than INT_MAX." "$LINENO" 5
+fi
+
+if test $(expr ${slru_pages_per_segment} % 2) -ne 0; then :
+  as_fn_error $? "Invalid slru_pps value. It must be a power of 2." "$LINENO" 5
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: ${slru_pages_per_segment} pages" >&5
+$as_echo "${slru_pages_per_segment} pages" >&6; }
+
+
+cat >>confdefs.h <<_ACEOF
+#define SLRU_PAGES_PER_SEGMENT ${slru_pages_per_segment}
 _ACEOF
 
 

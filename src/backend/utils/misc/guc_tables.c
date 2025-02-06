@@ -594,6 +594,7 @@ static int	max_function_args;
 static int	max_index_keys;
 static int	max_identifier_length;
 static int	block_size;
+static int	slru_pages_per_segment;
 static int	segment_size;
 static int	shared_memory_size_mb;
 static int	shared_memory_size_in_huge_pages;
@@ -3344,6 +3345,17 @@ struct config_int ConfigureNamesInt[] =
 		},
 		&block_size,
 		BLCKSZ, BLCKSZ, BLCKSZ,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"slru_pps", PGC_INTERNAL, PRESET_OPTIONS,
+			gettext_noop("Shows the number of slru pages per segment."),
+			NULL,
+			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+		},
+		&slru_pages_per_segment,
+		SLRU_PAGES_PER_SEGMENT, SLRU_PAGES_PER_SEGMENT, SLRU_PAGES_PER_SEGMENT,
 		NULL, NULL, NULL
 	},
 

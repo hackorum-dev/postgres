@@ -279,6 +279,42 @@ AC_DEFINE_UNQUOTED([BLCKSZ], ${BLCKSZ}, [
 ])
 
 #
+# SLRU pages per segment
+#
+AC_MSG_CHECKING([for slru pages per segment])
+PGAC_ARG_REQ(with, slru-pps, [SLRUPPS], [set slru segment size in blocks],
+             [slru_pages_per_segment=$withval],
+             [slru_pages_per_segment=32])
+
+INT_MAX=2147483647
+AS_IF([test "${slru_pages_per_segment}" -lt 32],
+      [AC_MSG_ERROR([Invalid slru_pps value. It cannot be less than 32.])])
+
+AS_IF([test "${slru_pages_per_segment}" -gt "${INT_MAX}"],
+      [AC_MSG_ERROR([Invalid slru_pps value. It cannot be greater than INT_MAX.])])
+
+AS_IF([test $(expr ${slru_pages_per_segment} % 2) -ne 0],
+      [AC_MSG_ERROR([Invalid slru_pps value. It must be a power of 2.])])
+
+AC_MSG_RESULT([${slru_pages_per_segment} pages])
+
+AC_DEFINE_UNQUOTED([SLRU_PAGES_PER_SEGMENT], ${slru_pages_per_segment}, [
+  SLRU segment size in pages. A page is the same BLCKSZ as is used everywhere
+	else in Postgres.  The segment size can be chosen somewhat arbitrarily;
+	we make it 32 pages by default, or 256Kb, i.e. 1M transactions for CLOG
+	or 64K transactions for SUBTRANS.
+
+	Note: because TransactionIds are 32 bits and wrap around at 0xFFFFFFFF,
+	default page numbering also wraps around at 0xFFFFFFFF/xxxx_XACTS_PER_PAGE
+	(where xxxx is CLOG or SUBTRANS, respectively), and segment numbering at
+	0xFFFFFFFF/xxxx_XACTS_PER_PAGE/SLRU_PAGES_PER_SEGMENT.  We need
+	take no explicit notice of that fact in slru.c, except when comparing
+	segment and page numbers in SimpleLruTruncate (see PagePrecedes()).
+
+	Changing SLRU_PAGES_PER_SEGMENT requires an initdb.
+])
+
+#
 # Relation segment size
 #
 PGAC_ARG_REQ(with, segsize, [SEGSIZE], [set table segment size in GB [1]],

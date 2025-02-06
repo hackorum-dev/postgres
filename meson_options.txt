@@ -7,6 +7,9 @@ option('blocksize', type: 'combo',
   value: '8',
   description: 'Relation block size, in kilobytes')
 
+option('slru_pps', type: 'integer', value: 32,
+  description: 'SLRU segment size, in blocks')
+
 option('wal_blocksize', type: 'combo',
   choices: ['1', '2', '4', '8', '16', '32', '64'],
   value: '8',
