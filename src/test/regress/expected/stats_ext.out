@@ -2880,6 +2880,18 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_partial WHERE (a = 0
          6 |    102
 (1 row)
 
+SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_partial WHERE (a = 0 OR a = 10) AND (b = 0 OR b = 10) AND (c = 0 OR c = 10)');
+ estimated | actual 
+-----------+--------
+         1 |    104
+(1 row)
+
+SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_partial WHERE (a BETWEEN 7 AND 10) AND (b BETWEEN 7 AND 10) AND (c BETWEEN 7 AND 10)');
+ estimated | actual 
+-----------+--------
+         1 |    308
+(1 row)
+
 CREATE STATISTICS mcv_lists_partial_stats (mcv) ON a, b, c
   FROM mcv_lists_partial;
 ANALYZE mcv_lists_partial;
@@ -2929,6 +2941,18 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_partial WHERE (a = 0
  estimated | actual 
 -----------+--------
        108 |    102
+(1 row)
+
+SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_partial WHERE (a = 0 OR a = 10) AND (b = 0 OR b = 10) AND (c = 0 OR c = 10)');
+ estimated | actual 
+-----------+--------
+       104 |    104
+(1 row)
+
+SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_partial WHERE (a BETWEEN 7 AND 10) AND (b BETWEEN 7 AND 10) AND (c BETWEEN 7 AND 10)');
+ estimated | actual 
+-----------+--------
+       309 |    308
 (1 row)
 
 DROP TABLE mcv_lists_partial;
