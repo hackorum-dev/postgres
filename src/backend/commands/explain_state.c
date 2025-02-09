@@ -103,6 +103,8 @@ ParseExplainOptionList(ExplainState *es, List *options, ParseState *pstate)
 			es->settings = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "generic_plan") == 0)
 			es->generic = defGetBoolean(opt);
+		else if (strcmp(opt->defname, "stats") == 0)
+			es->stats = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "timing") == 0)
 		{
 			timing_set = true;

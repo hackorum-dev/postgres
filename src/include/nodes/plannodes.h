@@ -239,6 +239,9 @@ typedef struct Plan
 	 */
 	Bitmapset  *extParam;
 	Bitmapset  *allParam;
+
+	/* info about applied extended statistics */
+	struct Applied_ExtStats *app_extstats;
 } Plan;
 
 /* ----------------
@@ -1791,5 +1794,17 @@ typedef enum MonotonicFunction
 	MONOTONICFUNC_DECREASING = (1 << 1),
 	MONOTONICFUNC_BOTH = MONOTONICFUNC_INCREASING | MONOTONICFUNC_DECREASING,
 } MonotonicFunction;
+
+/*
+ * Applied_ExtStats - Information to show applied Extend Statistics
+ *
+ */
+typedef struct Applied_ExtStats
+{
+	NodeTag	type;
+	List    *applied_stats;
+	List    *applied_clauses;
+	List    *applied_clauses_or;
+} Applied_ExtStats;
 
 #endif							/* PLANNODES_H */
