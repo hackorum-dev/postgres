@@ -4338,8 +4338,8 @@ match_previous_words(int pattern_id,
 		if (ends_with(prev_wd, '(') || ends_with(prev_wd, ','))
 			COMPLETE_WITH("ANALYZE", "VERBOSE", "COSTS", "SETTINGS", "GENERIC_PLAN",
 						  "BUFFERS", "SERIALIZE", "WAL", "TIMING", "SUMMARY",
-						  "MEMORY", "FORMAT");
-		else if (TailMatches("ANALYZE|VERBOSE|COSTS|SETTINGS|GENERIC_PLAN|BUFFERS|WAL|TIMING|SUMMARY|MEMORY"))
+						  "MEMORY", "FORMAT", "STATS");
+		else if (TailMatches("ANALYZE|VERBOSE|COSTS|SETTINGS|GENERIC_PLAN|BUFFERS|WAL|TIMING|SUMMARY|MEMORY|STATS"))
 			COMPLETE_WITH("ON", "OFF");
 		else if (TailMatches("SERIALIZE"))
 			COMPLETE_WITH("TEXT", "NONE", "BINARY");
