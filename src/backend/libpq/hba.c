@@ -1598,6 +1598,26 @@ parse_hba_line(TokenizedAuthLine *tok_line, int elevel)
 										token->string);
 					return NULL;
 				}
+
+				/*
+				 * Throw an error if we are putting a /0 on a non-zero IP
+				 * address
+				 */
+				if (strspn(cidr_slash + 1, "0") == strlen(cidr_slash + 1)
+					&& strcspn(token->string, "123456789abcdefABCDEF") != strlen(token->string))
+				{
+					ereport(elevel,
+							(errcode(ERRCODE_CONFIG_FILE_ERROR),
+							 errmsg("invalid CIDR mask in address \"%s\"",
+									token->string),
+							 errhint("A mask of 0 will allow ALL IP addresses."),
+							 errcontext("line %d of configuration file \"%s\"",
+										line_num, file_name)));
+					*err_msg = psprintf("invalid CIDR mask in address \"%s\"",
+										token->string);
+					return NULL;
+				}
+
 				parsedline->masklen = parsedline->addrlen;
 				pfree(str);
 			}
