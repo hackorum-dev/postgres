@@ -547,6 +547,7 @@ StreamLog(void)
 			if (!GetSlotInformation(conn, replication_slot, &stream.startpos,
 									&stream.timeline))
 			{
+				pg_free(sysidentifier);
 				/* Error is logged by GetSlotInformation() */
 				return;
 			}
