@@ -21,10 +21,10 @@
 #include "nodes/params.h"
 #include "parser/parse_node.h"
 #include "storage/shmem.h"
+#include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
-
 
 static void paramlist_parser_setup(ParseState *pstate, void *arg);
 static Node *paramlist_param_ref(ParseState *pstate, ParamRef *pref);
@@ -365,9 +365,10 @@ BuildParamLogString(ParamListInfo params, char **knownTextValues, int maxlen)
 		ParamExternData *param = &params->params[paramno];
 
 		appendStringInfo(&buf,
-						 "%s$%d = ",
+						 "%s$%d = (%s)",
 						 paramno > 0 ? ", " : "",
-						 paramno + 1);
+						 paramno + 1,
+						 format_type_extended(param->ptype, -1, FORMAT_TYPE_ALLOW_INVALID));
 
 		if (param->isnull || !OidIsValid(param->ptype))
 			appendStringInfoString(&buf, "NULL");
