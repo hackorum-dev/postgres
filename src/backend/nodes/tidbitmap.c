@@ -107,24 +107,6 @@ typedef struct PTEntryArray
 } PTEntryArray;
 
 /*
- * We want to avoid the overhead of creating the hashtable, which is
- * comparatively large, when not necessary. Particularly when we are using a
- * bitmap scan on the inside of a nestloop join: a bitmap may well live only
- * long enough to accumulate one entry in such cases.  We therefore avoid
- * creating an actual hashtable until we need two pagetable entries.  When
- * just one pagetable entry is needed, we store it in a fixed field of
- * TIDBitMap.  (NOTE: we don't get rid of the hashtable if the bitmap later
- * shrinks down to zero or one page again.  So, status can be TBM_HASH even
- * when nentries is zero or one.)
- */
-typedef enum
-{
-	TBM_EMPTY,					/* no hashtable, nentries == 0 */
-	TBM_ONE_PAGE,				/* entry1 contains the single entry */
-	TBM_HASH,					/* pagetable is valid, entry1 is not */
-} TBMStatus;
-
-/*
  * Current iterating state of the TBM.
  */
 typedef enum
@@ -141,7 +123,6 @@ struct TIDBitmap
 {
 	NodeTag		type;			/* to make it a valid Node */
 	MemoryContext mcxt;			/* memory context containing me */
-	TBMStatus	status;			/* see codes above */
 	struct pagetable_hash *pagetable;	/* hash table of PagetableEntry's */
 	int			nentries;		/* number of entries in pagetable */
 	int			maxentries;		/* limit on same to meet maxbytes */
@@ -149,7 +130,6 @@ struct TIDBitmap
 	int			nchunks;		/* number of lossy entries in pagetable */
 	TBMIteratingState iterating;	/* tbm_begin_iterate called? */
 	uint32		lossify_start;	/* offset to start lossifying hashtable at */
-	PagetableEntry entry1;		/* used when status == TBM_ONE_PAGE */
 	/* these are valid when iterating is true: */
 	PagetableEntry **spages;	/* sorted exact-page list, or NULL */
 	PagetableEntry **schunks;	/* sorted lossy-chunk list, or NULL */
@@ -260,7 +240,8 @@ tbm_create(Size maxbytes, dsa_area *dsa)
 	tbm = makeNode(TIDBitmap);
 
 	tbm->mcxt = CurrentMemoryContext;
-	tbm->status = TBM_EMPTY;
+	Assert(tbm->pagetable == NULL);
+	tbm->pagetable = pagetable_create(tbm->mcxt, 128, tbm);
 
 	tbm->maxentries = tbm_calculate_entries(maxbytes);
 	tbm->lossify_start = 0;
@@ -271,37 +252,6 @@ tbm_create(Size maxbytes, dsa_area *dsa)
 	tbm->ptchunks = InvalidDsaPointer;
 
 	return tbm;
-}
-
-/*
- * Actually create the hashtable.  Since this is a moderately expensive
- * proposition, we don't do it until we have to.
- */
-static void
-tbm_create_pagetable(TIDBitmap *tbm)
-{
-	Assert(tbm->status != TBM_HASH);
-	Assert(tbm->pagetable == NULL);
-
-	tbm->pagetable = pagetable_create(tbm->mcxt, 128, tbm);
-
-	/* If entry1 is valid, push it into the hashtable */
-	if (tbm->status == TBM_ONE_PAGE)
-	{
-		PagetableEntry *page;
-		bool		found;
-		char		oldstatus;
-
-		page = pagetable_insert(tbm->pagetable,
-								tbm->entry1.blockno,
-								&found);
-		Assert(!found);
-		oldstatus = page->status;
-		memcpy(page, &tbm->entry1, sizeof(PagetableEntry));
-		page->status = oldstatus;
-	}
-
-	tbm->status = TBM_HASH;
 }
 
 /*
@@ -451,14 +401,10 @@ tbm_union(TIDBitmap *a, const TIDBitmap *b)
 	if (b->nentries == 0)
 		return;
 	/* Scan through chunks and pages in b, merge into a */
-	if (b->status == TBM_ONE_PAGE)
-		tbm_union_page(a, &b->entry1);
-	else
 	{
 		pagetable_iterator i;
 		PagetableEntry *bpage;
 
-		Assert(b->status == TBM_HASH);
 		pagetable_start_iterate(b->pagetable, &i);
 		while ((bpage = pagetable_iterate(b->pagetable, &i)) != NULL)
 			tbm_union_page(a, bpage);
@@ -533,24 +479,10 @@ tbm_intersect(TIDBitmap *a, const TIDBitmap *b)
 	if (a->nentries == 0)
 		return;
 	/* Scan through chunks and pages in a, try to match to b */
-	if (a->status == TBM_ONE_PAGE)
-	{
-		if (tbm_intersect_page(a, &a->entry1, b))
-		{
-			/* Page is now empty, remove it from a */
-			Assert(!a->entry1.ischunk);
-			a->npages--;
-			a->nentries--;
-			Assert(a->nentries == 0);
-			a->status = TBM_EMPTY;
-		}
-	}
-	else
 	{
 		pagetable_iterator i;
 		PagetableEntry *apage;
 
-		Assert(a->status == TBM_HASH);
 		pagetable_start_iterate(a->pagetable, &i);
 		while ((apage = pagetable_iterate(a->pagetable, &i)) != NULL)
 		{
@@ -701,7 +633,7 @@ tbm_begin_private_iterate(TIDBitmap *tbm)
 	 * attached to the bitmap not the iterator, so they can be used by more
 	 * than one iterator.
 	 */
-	if (tbm->status == TBM_HASH && tbm->iterating == TBM_NOT_ITERATING)
+	if (tbm->iterating == TBM_NOT_ITERATING)
 	{
 		pagetable_iterator i;
 		PagetableEntry *page;
@@ -802,13 +734,10 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 		}
 
 		/*
-		 * If TBM status is TBM_HASH then iterate over the pagetable and
-		 * convert it to page and chunk arrays.  But if it's in the
-		 * TBM_ONE_PAGE mode then directly allocate the space for one entry
-		 * from the DSA.
+		 * iterate over the pagetable and
+		 * convert it to page and chunk arrays.
 		 */
 		npages = nchunks = 0;
-		if (tbm->status == TBM_HASH)
 		{
 			ptbase = dsa_get_address(tbm->dsa, tbm->dsapagetable);
 
@@ -824,19 +753,6 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 
 			Assert(npages == tbm->npages);
 			Assert(nchunks == tbm->nchunks);
-		}
-		else if (tbm->status == TBM_ONE_PAGE)
-		{
-			/*
-			 * In one page mode allocate the space for one pagetable entry,
-			 * initialize it, and directly store its index (i.e. 0) in the
-			 * page array.
-			 */
-			tbm->dsapagetable = dsa_allocate(tbm->dsa, sizeof(PTEntryArray) +
-											 sizeof(PagetableEntry));
-			ptbase = dsa_get_address(tbm->dsa, tbm->dsapagetable);
-			memcpy(ptbase->ptentry, &tbm->entry1, sizeof(PagetableEntry));
-			ptpages->index[0] = 0;
 		}
 
 		if (ptbase != NULL)
@@ -1027,10 +943,6 @@ tbm_private_iterate(TBMPrivateIterator *iterator, TBMIterateResult *tbmres)
 	{
 		PagetableEntry *page;
 
-		/* In TBM_ONE_PAGE state, we don't allocate an spages[] array */
-		if (tbm->status == TBM_ONE_PAGE)
-			page = &tbm->entry1;
-		else
 			page = tbm->spages[iterator->spageptr];
 
 		tbmres->internal_page = page;
@@ -1177,15 +1089,6 @@ tbm_find_pageentry(const TIDBitmap *tbm, BlockNumber pageno)
 	if (tbm->nentries == 0)		/* in case pagetable doesn't exist */
 		return NULL;
 
-	if (tbm->status == TBM_ONE_PAGE)
-	{
-		page = &tbm->entry1;
-		if (page->blockno != pageno)
-			return NULL;
-		Assert(!page->ischunk);
-		return page;
-	}
-
 	page = pagetable_lookup(tbm->pagetable, pageno);
 	if (page == NULL)
 		return NULL;
@@ -1208,24 +1111,7 @@ tbm_get_pageentry(TIDBitmap *tbm, BlockNumber pageno)
 	PagetableEntry *page;
 	bool		found;
 
-	if (tbm->status == TBM_EMPTY)
 	{
-		/* Use the fixed slot */
-		page = &tbm->entry1;
-		found = false;
-		tbm->status = TBM_ONE_PAGE;
-	}
-	else
-	{
-		if (tbm->status == TBM_ONE_PAGE)
-		{
-			page = &tbm->entry1;
-			if (page->blockno == pageno)
-				return page;
-			/* Time to switch from one page to a hashtable */
-			tbm_create_pagetable(tbm);
-		}
-
 		/* Look up or create an entry */
 		page = pagetable_insert(tbm->pagetable, pageno, &found);
 	}
@@ -1259,7 +1145,6 @@ tbm_page_is_lossy(const TIDBitmap *tbm, BlockNumber pageno)
 	/* we can skip the lookup if there are no lossy chunks */
 	if (tbm->nchunks == 0)
 		return false;
-	Assert(tbm->status == TBM_HASH);
 
 	bitno = pageno % PAGES_PER_CHUNK;
 	chunk_pageno = pageno - bitno;
@@ -1292,10 +1177,6 @@ tbm_mark_page_lossy(TIDBitmap *tbm, BlockNumber pageno)
 	int			bitno;
 	int			wordnum;
 	int			bitnum;
-
-	/* We force the bitmap into hashtable mode whenever it's lossy */
-	if (tbm->status != TBM_HASH)
-		tbm_create_pagetable(tbm);
 
 	bitno = pageno % PAGES_PER_CHUNK;
 	chunk_pageno = pageno - bitno;
@@ -1371,7 +1252,6 @@ tbm_lossify(TIDBitmap *tbm)
 	 * just end up doing this again very soon.  We shoot for maxentries/2.
 	 */
 	Assert(tbm->iterating == TBM_NOT_ITERATING);
-	Assert(tbm->status == TBM_HASH);
 
 	pagetable_start_iterate_at(tbm->pagetable, &i, tbm->lossify_start);
 	while ((page = pagetable_iterate(tbm->pagetable, &i)) != NULL)
