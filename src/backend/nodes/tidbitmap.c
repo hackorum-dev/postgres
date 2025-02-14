@@ -1239,6 +1239,8 @@ tbm_mark_page_lossy(TIDBitmap *tbm, BlockNumber pageno)
 static void
 tbm_lossify(TIDBitmap *tbm)
 {
+
+#if 0
 	pagetable_iterator i;
 	PagetableEntry *page;
 
@@ -1299,6 +1301,7 @@ tbm_lossify(TIDBitmap *tbm)
 	 */
 	if (tbm->nentries > tbm->maxentries / 2)
 		tbm->maxentries = Min(tbm->nentries, (INT_MAX - 1) / 2) * 2;
+#endif
 }
 
 /*
