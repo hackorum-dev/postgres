@@ -8,19 +8,31 @@ use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
 
+# Use perl one-liner as a portable 'cat' replacement for Windows compatibility.
+# On Windows, perl opens file handles in text mode by default, which corrupts
+# binary archive data by translating newlines and interpreting EOF characters.
+# We use -Mopen=IO,:raw to force raw binary mode. We use -pe 1 instead of
+# -pe '' to avoid shell quoting issues with empty strings on Windows cmd.exe.
+my $perlbin = $^X;
+$perlbin =~ s!\\!/!g if $PostgreSQL::Test::Utils::windows_os;
+my $perl_cat = "\"$perlbin\" -Mopen=IO,:raw -pe 1";
+
 my $dbname1 = 'regression_src';
 my $dbname2 = 'regression_dest1';
 my $dbname3 = 'regression_dest2';
+my $dbname4 = 'regression_dest3';
 
 my $node = PostgreSQL::Test::Cluster->new('main');
 $node->init;
 $node->start;
 
 my $backupdir = $node->backup_dir;
+$backupdir =~ s!\\!/!g if $PostgreSQL::Test::Utils::windows_os;
 
 $node->run_log([ 'createdb', $dbname1 ]);
 $node->run_log([ 'createdb', $dbname2 ]);
 $node->run_log([ 'createdb', $dbname3 ]);
+$node->run_log([ 'createdb', $dbname4 ]);
 
 $node->safe_psql(
 	$dbname1,
@@ -87,4 +99,35 @@ $node->command_ok(
 	],
 	'parallel restore as inserts');
 
+mkdir "$backupdir/dump_pipe";
+
+# Pre-calculate pipe commands for readability and unified syntax.
+# Use double-layer quoting only on Windows to protect shell operators.
+my $is_win = $PostgreSQL::Test::Utils::windows_os;
+my $raw_pipe_dump = "$perl_cat > \"$backupdir/dump_pipe/%f\"";
+my $raw_pipe_restore = "$perl_cat \"$backupdir/dump_pipe/%f\"";
+
+my $pipe_dump = $is_win ? "\"$raw_pipe_dump\"" : $raw_pipe_dump;
+my $pipe_restore = $is_win ? "\"$raw_pipe_restore\"" : $raw_pipe_restore;
+
+$node->command_ok(
+	[
+		'pg_dump',
+		'--format' => 'directory',
+		'--no-sync',
+		'--jobs' => 2,
+		"--pipe=$pipe_dump",
+		$node->connstr($dbname1),
+	],
+	'parallel dump with pipe');
+
+$node->command_ok(
+	[
+		'pg_restore', '--verbose',
+		'--dbname' => $node->connstr($dbname4),
+		'--format' => 'directory',
+		'--jobs' => 3,
+		"--pipe=$pipe_restore",
+	],
+	'parallel restore with pipe');
 done_testing();
