@@ -72,6 +72,7 @@
 #include "utils/rls.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "jit/jit.h"
 
 
 /*
@@ -1015,6 +1016,10 @@ BuildCachedPlan(CachedPlanSource *plansource, List *qlist,
 			is_transient = true;
 		if (plannedstmt->dependsOnRole)
 			plan->dependsOnRole = true;
+		if (!plansource->is_oneshot && !plannedstmt->jit_context)
+		{
+			plannedstmt->jit_context = CACHED_JITCONTEXT_EMPTY;
+		}
 	}
 	if (is_transient)
 	{
@@ -1305,7 +1310,23 @@ ReleaseCachedPlan(CachedPlan *plan, ResourceOwner owner)
 
 		/* One-shot plans do not own their context, so we can't free them */
 		if (!plan->is_oneshot)
+		{
+#ifdef USE_LLVM
+			/* release cached jit contexts */
+			ListCell   *lc;
+			foreach(lc, plan->stmt_list)
+			{
+				PlannedStmt *plannedstmt = lfirst_node(PlannedStmt, lc);
+
+				if (plannedstmt->jit_context &&
+					plannedstmt->jit_context != CACHED_JITCONTEXT_EMPTY)
+				{
+					jit_release_context(plannedstmt->jit_context); /* todo fix to correct pointer to jit context (.jit)*/
+				}
+			}
+#endif
 			MemoryContextDelete(plan->context);
+		}
 	}
 }
 

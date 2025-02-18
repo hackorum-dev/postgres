@@ -865,6 +865,14 @@ _equal${n}(const $n *a, const $n *b)
 			print $cff "\tCOPY_SCALAR_FIELD($f);\n" unless $copy_ignore;
 			print $eff "\tCOMPARE_SCALAR_FIELD($f);\n" unless $equal_ignore;
 		}
+		elsif ($t eq 'struct JitContext*')
+		{
+			# Fields of these types are required to be a pointer to a
+			# static struct.  So we don't copy the struct itself,
+			# just reference the original one.
+			print $cff "\tCOPY_SCALAR_FIELD($f);\n" unless $copy_ignore;
+			print $eff "\tCOMPARE_SCALAR_FIELD($f);\n" unless $equal_ignore;
+		}
 		else
 		{
 			die
@@ -1213,6 +1221,11 @@ _read${n}(void)
 		local_node->methods = methods;
 	}
 ! unless $no_read;
+		}
+		elsif ($t eq 'struct JitContext*')
+		{
+			print $off "\tWRITE_JITCONTEXT_FIELD($f);\n";
+			print $rff "\tREAD_JITCONTEXT_FIELD($f);\n" unless $no_read;
 		}
 		else
 		{

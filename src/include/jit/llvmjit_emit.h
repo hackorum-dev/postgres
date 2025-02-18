@@ -25,7 +25,7 @@
  * Emit a non-LLVM pointer as an LLVM constant.
  */
 static inline LLVMValueRef
-l_ptr_const(void *ptr, LLVMTypeRef type)
+l_ptr_const(void *ptr, LLVMTypeRef type, LLVMTypeRef TypeSizeT)
 {
 	LLVMValueRef c = LLVMConstInt(TypeSizeT, (uintptr_t) ptr, false);
 
@@ -77,33 +77,6 @@ l_int64_const(LLVMContextRef lc, int64 i)
 	return LLVMConstInt(LLVMInt64TypeInContext(lc), i, false);
 }
 
-/*
- * Emit constant integer.
- */
-static inline LLVMValueRef
-l_sizet_const(size_t i)
-{
-	return LLVMConstInt(TypeSizeT, i, false);
-}
-
-/*
- * Emit constant boolean, as used for storage (e.g. global vars, structs).
- */
-static inline LLVMValueRef
-l_sbool_const(bool i)
-{
-	return LLVMConstInt(TypeStorageBool, (int) i, false);
-}
-
-/*
- * Emit constant boolean, as used for parameters (e.g. function parameters).
- */
-static inline LLVMValueRef
-l_pbool_const(bool i)
-{
-	return LLVMConstInt(TypeParamBool, (int) i, false);
-}
-
 static inline LLVMValueRef
 l_struct_gep(LLVMBuilderRef b, LLVMTypeRef t, LLVMValueRef v, int32 idx, const char *name)
 {
@@ -147,6 +120,31 @@ static inline LLVMValueRef
 l_load_gep1(LLVMBuilderRef b, LLVMTypeRef t, LLVMValueRef v, LLVMValueRef idx, const char *name)
 {
 	return l_load(b, t, l_gep(b, t, v, &idx, 1, ""), name);
+}
+
+/*
+ * Load value of a structure using offset of member in structure.
+ * b - builder
+ * v - value of sturcture
+ * dest - the type of the structure member
+ * offset - the offset of the structure member in the structure v
+ */
+static inline LLVMValueRef
+l_load_member_value_by_offset(LLVMBuilderRef b, LLVMContextRef lc, LLVMValueRef v, LLVMTypeRef dest, int offset)
+{
+    LLVMValueRef offsets = l_int32_const(lc, offset);
+    LLVMValueRef member_address = l_gep(b,(LLVMInt8TypeInContext(lc)), v, &offsets, 1, "member_address");
+    return l_load(b, dest, member_address, "member_value");
+}
+
+#define l_ptr_const_step(m,t) l_load_member_value_by_offset(b,lc, v_op, t, offsetof(ExprEvalStep ,m))
+
+static inline LLVMValueRef
+l_struct_member_ptr_by_offset(LLVMBuilderRef b, LLVMContextRef lc, LLVMValueRef v, /* LLVMTypeRef dest, */ int offset)
+{
+    LLVMValueRef offsets = l_int32_const(lc, offset);
+    LLVMValueRef member_address = l_gep(b,(LLVMInt8TypeInContext(lc)), v, &offsets, 1, "member_address");
+    return member_address;
 }
 
 /* separate, because pg_attribute_printf(2, 3) can't appear in definition */
@@ -232,15 +230,15 @@ l_callsite_alwaysinline(LLVMValueRef f)
  * Emit code to switch memory context.
  */
 static inline LLVMValueRef
-l_mcxt_switch(LLVMModuleRef mod, LLVMBuilderRef b, LLVMValueRef nc)
+l_mcxt_switch(LLVMModuleRef mod, LLVMBuilderRef b, LLVMValueRef nc, LLVMJitTypes *g)
 {
 	const char *cmc = "CurrentMemoryContext";
 	LLVMValueRef cur;
 	LLVMValueRef ret;
 
 	if (!(cur = LLVMGetNamedGlobal(mod, cmc)))
-		cur = LLVMAddGlobal(mod, l_ptr(StructMemoryContextData), cmc);
-	ret = l_load(b, l_ptr(StructMemoryContextData), cur, cmc);
+		cur = LLVMAddGlobal(mod, l_ptr(g->StructMemoryContextData), cmc);
+	ret = l_load(b, l_ptr(g->StructMemoryContextData), cur, cmc);
 	LLVMBuildStore(b, nc, cur);
 
 	return ret;
@@ -250,23 +248,23 @@ l_mcxt_switch(LLVMModuleRef mod, LLVMBuilderRef b, LLVMValueRef nc)
  * Return pointer to the argno'th argument nullness.
  */
 static inline LLVMValueRef
-l_funcnullp(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno)
+l_funcnullp(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno, LLVMJitTypes *g)
 {
 	LLVMValueRef v_args;
 	LLVMValueRef v_argn;
 
 	v_args = l_struct_gep(b,
-						  StructFunctionCallInfoData,
+						  g->StructFunctionCallInfoData,
 						  v_fcinfo,
 						  FIELDNO_FUNCTIONCALLINFODATA_ARGS,
 						  "");
 	v_argn = l_struct_gep(b,
-						  LLVMArrayType(StructNullableDatum, 0),
+						  LLVMArrayType(g->StructNullableDatum, 0),
 						  v_args,
 						  argno,
 						  "");
 	return l_struct_gep(b,
-						StructNullableDatum,
+						g->StructNullableDatum,
 						v_argn,
 						FIELDNO_NULLABLE_DATUM_ISNULL,
 						"");
@@ -276,23 +274,23 @@ l_funcnullp(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno)
  * Return pointer to the argno'th argument datum.
  */
 static inline LLVMValueRef
-l_funcvaluep(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno)
+l_funcvaluep(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno, LLVMJitTypes *g)
 {
 	LLVMValueRef v_args;
 	LLVMValueRef v_argn;
 
 	v_args = l_struct_gep(b,
-						  StructFunctionCallInfoData,
+						  g->StructFunctionCallInfoData,
 						  v_fcinfo,
 						  FIELDNO_FUNCTIONCALLINFODATA_ARGS,
 						  "");
 	v_argn = l_struct_gep(b,
-						  LLVMArrayType(StructNullableDatum, 0),
+						  LLVMArrayType(g->StructNullableDatum, 0),
 						  v_args,
 						  argno,
 						  "");
 	return l_struct_gep(b,
-						StructNullableDatum,
+						g->StructNullableDatum,
 						v_argn,
 						FIELDNO_NULLABLE_DATUM_DATUM,
 						"");
@@ -302,18 +300,18 @@ l_funcvaluep(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno)
  * Return argno'th argument nullness.
  */
 static inline LLVMValueRef
-l_funcnull(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno)
+l_funcnull(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno, LLVMJitTypes *g)
 {
-	return l_load(b, TypeStorageBool, l_funcnullp(b, v_fcinfo, argno), "");
+	return l_load(b, g->TypeStorageBool, l_funcnullp(b, v_fcinfo, argno, g), "");
 }
 
 /*
  * Return argno'th argument datum.
  */
 static inline LLVMValueRef
-l_funcvalue(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno)
+l_funcvalue(LLVMBuilderRef b, LLVMValueRef v_fcinfo, size_t argno, LLVMJitTypes *g)
 {
-	return l_load(b, TypeSizeT, l_funcvaluep(b, v_fcinfo, argno), "");
+	return l_load(b, g->TypeSizeT, l_funcvaluep(b, v_fcinfo, argno, g), "");
 }
 
 #endif							/* USE_LLVM */

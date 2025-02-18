@@ -69,6 +69,7 @@ MinimalTupleTableSlot StructMinimalTupleTableSlot;
 TupleDescData StructTupleDescData;
 PlanState	StructPlanState;
 MinimalTupleData StructMinimalTupleData;
+WindowFuncExprState StructWindowFuncExprState;
 
 
 /*

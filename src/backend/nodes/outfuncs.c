@@ -93,6 +93,10 @@ static void outDouble(StringInfo str, double d);
 #define WRITE_LOCATION_FIELD(fldname) \
 	appendStringInfo(str, " :" CppAsString(fldname) " %d", write_location_fields ? node->fldname : -1)
 
+/* Write a parse jit context field (actually same as INT case) */
+#define WRITE_JITCONTEXT_FIELD(fldname) \
+	appendStringInfo(str, " :" CppAsString(fldname) " %d", 0)
+
 /* Write a Node field */
 #define WRITE_NODE_FIELD(fldname) \
 	(appendStringInfoString(str, " :" CppAsString(fldname) " "), \

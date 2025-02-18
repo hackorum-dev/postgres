@@ -84,6 +84,12 @@
 #define COMPARE_COERCIONFORM_FIELD(fldname) \
 	((void) 0)
 
+/* Compare a saved jit context */
+#define COMPARE_JITCONTEXT_FIELD(fldname) \
+	do { \
+		if (a->fldname != b->fldname) \
+			return false; \
+	} while (0)
 
 #include "equalfuncs.funcs.c"
 

@@ -2004,6 +2004,18 @@ struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"jit_cached", PGC_USERSET, QUERY_TUNING_OTHER,
+			gettext_noop("Allow JIT compilation to store in a plan cache."),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&jit_cached,
+		false,
+		NULL, NULL, NULL
+	},
+
+
+	{
 		{"jit_debugging_support", PGC_SU_BACKEND, DEVELOPER_OPTIONS,
 			gettext_noop("Register JIT-compiled functions with debugger."),
 			NULL,

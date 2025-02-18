@@ -61,6 +61,9 @@
 #define COPY_LOCATION_FIELD(fldname) \
 	(newnode->fldname = from->fldname)
 
+/* Copy a saved jit context */
+#define COPY_JITCONTEXT_FIELD(fldname) \
+	(newnode->fldname = from->fldname)
 
 #include "copyfuncs.funcs.c"
 

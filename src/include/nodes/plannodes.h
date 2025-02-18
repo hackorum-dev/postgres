@@ -22,7 +22,8 @@
 #include "nodes/lockoptions.h"
 #include "nodes/primnodes.h"
 
-
+struct JitContext;
+#define CACHED_JITCONTEXT_EMPTY ((struct JitContext*)(-1))
 /* ----------------------------------------------------------------
  *						node definitions
  * ----------------------------------------------------------------
@@ -133,6 +134,8 @@ typedef struct PlannedStmt
 	ParseLoc	stmt_location;
 	/* length in bytes; 0 means "rest of string" */
 	ParseLoc	stmt_len;
+	/* context of save jit-module */
+	struct JitContext	*jit_context;
 } PlannedStmt;
 
 /* macro for fetching the Plan associated with a SubPlan node */

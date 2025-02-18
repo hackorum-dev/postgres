@@ -81,6 +81,7 @@ struct JitProviderCallbacks
 
 /* GUCs */
 extern PGDLLIMPORT bool jit_enabled;
+extern PGDLLIMPORT bool jit_cached;
 extern PGDLLIMPORT char *jit_provider;
 extern PGDLLIMPORT bool jit_debugging_support;
 extern PGDLLIMPORT bool jit_dump_bitcode;

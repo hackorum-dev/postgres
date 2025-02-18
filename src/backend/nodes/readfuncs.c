@@ -131,6 +131,12 @@
 	local_node->fldname = -1	/* set field to "unknown" */
 #endif
 
+/* Read a parse jit context field*/
+#define READ_JITCONTEXT_FIELD(fldname) \
+	token = pg_strtok(&length);		/* skip :fldname */ \
+	token = pg_strtok(&length);		/* get field value */ \
+	local_node->fldname = 0 		/* set field to "not cached" */
+
 /* Read a Node field */
 #define READ_NODE_FIELD(fldname) \
 	token = pg_strtok(&length);		/* skip :fldname */ \
