@@ -304,7 +304,7 @@ SELECT abs(cube_distance(ll_to_earth(-30,-90), '(0)'::cube) / earth() - 1) <
 --
 
 -- list what's installed
-\dT
+\dT public.*
 
 drop extension cube;  -- fail, earthdistance requires it
 
@@ -313,7 +313,7 @@ drop extension earthdistance;
 drop type cube;  -- fail, extension cube requires it
 
 -- list what's installed
-\dT
+\dT public.*
 
 create table foo (f1 cube, f2 int);
 
@@ -324,9 +324,9 @@ drop table foo;
 drop extension cube;
 
 -- list what's installed
-\dT
-\df
-\do
+\dT public.*
+\df public.*
+\do public.*
 
 create schema c;
 
