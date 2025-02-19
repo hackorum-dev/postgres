@@ -297,6 +297,9 @@ binary_upgrade_check_logical_slot_pending_wal(PG_FUNCTION_ARGS)
 	 */
 	Assert(has_rolreplication(GetUserId()));
 
+	/* Slot manipulation is not allowed in single-user mode */
+	CheckSlotIsInSingleUserMode();
+
 	slot_name = PG_GETARG_NAME(0);
 	scan_cutoff_lsn = PG_GETARG_LSN(1);
 
