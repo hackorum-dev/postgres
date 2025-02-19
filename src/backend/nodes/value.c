@@ -64,6 +64,8 @@ makeString(char *str)
 {
 	String	   *v = makeNode(String);
 
+	Assert(str);
+
 	v->sval = str;
 	return v;
 }
