@@ -376,6 +376,7 @@ extern void CheckPointReplicationSlots(bool is_shutdown);
 
 extern void CheckSlotRequirements(bool repack);
 extern void CheckSlotPermissions(void);
+extern void CheckSlotIsInSingleUserMode(void);
 extern ReplicationSlotInvalidationCause
 			GetSlotInvalidationCause(const char *cause_name);
 extern const char *GetSlotInvalidationCauseName(ReplicationSlotInvalidationCause cause);
