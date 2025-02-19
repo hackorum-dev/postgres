@@ -606,6 +606,14 @@ errfinish(const char *filename, int lineno, const char *funcname)
 		 * worthy of panic, depending on which subprocess returns it.
 		 */
 		proc_exit(1);
+
+		/*
+		 * Closes all of the calling process's open streams.
+		 * On Windows, close and remove all temporary files created by tmpfile function.
+		 */
+		#ifdef NDEBUG
+		fcloseall();
+		#endif
 	}
 
 	if (elevel >= PANIC)
@@ -618,6 +626,15 @@ errfinish(const char *filename, int lineno, const char *funcname)
 		 * children...
 		 */
 		fflush(NULL);
+
+		/*
+		 * Closes all of the calling process's open streams.
+		 * On Windows, close and remove all temporary files created by tmpfile function.
+		 */
+		#ifdef NDEBUG
+		fcloseall();
+		#endif
+
 		abort();
 	}
 
