@@ -575,29 +575,44 @@ var_eq_non_const(VariableStatData *vardata, Oid oproid, Oid collation,
 
 		/*
 		 * Search is for a value that we do not know a priori, but we will
-		 * assume it is not NULL.  Estimate the selectivity as non-null
-		 * fraction divided by number of distinct values, so that we get a
-		 * result averaged over all possible values whether common or
-		 * uncommon.  (Essentially, we are assuming that the not-yet-known
-		 * comparison value is equally likely to be any of the possible
-		 * values, regardless of their frequency in the table.  Is that a good
-		 * idea?)
+		 * assume it is not NULL.  Estimate the selectivity as quadratic mean of
+		 * non-null fraction divided by number of distinct values and set of MCV
+		 * selectivities. Use quadratic mean because it includes the squared
+		 * deviation (error) as well and here it would be nice to compute upper
+		 * limit of estimation to prevent wrong choose of nested loop, for
+		 * example.
 		 */
 		selec = 1.0 - nullfrac;
 		ndistinct = get_variable_numdistinct(vardata, &isdefault);
 		if (ndistinct > 1)
 			selec /= ndistinct;
 
-		/*
-		 * Cross-check: selectivity should never be estimated as more than the
-		 * most common value's.
-		 */
 		if (get_attstatsslot(&sslot, vardata->statsTuple,
 							 STATISTIC_KIND_MCV, InvalidOid,
-							 ATTSTATSSLOT_NUMBERS))
+							 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS))
 		{
-			if (sslot.nnumbers > 0 && selec > sslot.numbers[0])
-				selec = sslot.numbers[0];
+			int i;
+			double sum_selec = 0.0;
+
+			/*
+			 * Compute quadratic mean, walk on array in reverse direction to
+			 * do not lose accuracy. We don't bother about sslot.nnumbers
+			 * equality to zero, because in this case we just get the same
+			 * result. But equality to zero is unlikely.
+			 */
+			for(i=sslot.nnumbers - 1; i>=0; i--)
+				sum_selec += sslot.numbers[i] * sslot.numbers[i];
+
+			selec = sqrt((selec * selec + sum_selec) /
+						 ((double)sslot.nnumbers + 1.0));
+
+			/*
+			 * Cross-check: selectivity should never be estimated as
+			 * more than the most common value's.
+			 */
+			 if (sslot.nnumbers > 0 && selec > sslot.numbers[0])
+					selec = sslot.numbers[0];
+
 			free_attstatsslot(&sslot);
 		}
 	}
