@@ -183,6 +183,8 @@
 #define RT_LOCK_SHARE RT_MAKE_NAME(lock_share)
 #define RT_UNLOCK RT_MAKE_NAME(unlock)
 #endif
+#define RT_GET_SLOT RT_MAKE_NAME (get_slot)
+#define RT_SET_SLOT RT_MAKE_NAME (set_slot)
 #define RT_SET RT_MAKE_NAME(set)
 #define RT_BEGIN_ITERATE RT_MAKE_NAME(begin_iterate)
 #define RT_ITERATE_NEXT RT_MAKE_NAME(iterate_next)
@@ -288,6 +290,8 @@ RT_SCOPE	RT_RADIX_TREE *RT_CREATE(MemoryContext ctx);
 RT_SCOPE void RT_FREE(RT_RADIX_TREE * tree);
 
 RT_SCOPE	RT_VALUE_TYPE *RT_FIND(RT_RADIX_TREE * tree, uint64 key);
+RT_SCOPE void* RT_GET_SLOT(RT_RADIX_TREE * tree, uint64 key, bool* found);
+RT_SCOPE bool RT_SET_SLOT(RT_RADIX_TREE * tree, void* slot_v, RT_VALUE_TYPE * value_p, bool found);
 RT_SCOPE bool RT_SET(RT_RADIX_TREE * tree, uint64 key, RT_VALUE_TYPE * value_p);
 
 #ifdef RT_USE_DELETE
@@ -1692,18 +1696,10 @@ RT_GET_SLOT_RECURSIVE(RT_RADIX_TREE * tree, RT_PTR_ALLOC * parent_slot, uint64 k
 	}
 }
 
-/*
- * Set key to value that value_p points to. If the entry already exists, we
- * update its value and return true. Returns false if entry doesn't yet exist.
- *
- * Taking a lock in exclusive mode is the caller's responsibility.
- */
-RT_SCOPE bool
-RT_SET(RT_RADIX_TREE * tree, uint64 key, RT_VALUE_TYPE * value_p)
+RT_SCOPE void *
+RT_GET_SLOT(RT_RADIX_TREE * tree, uint64 key, bool * found)
 {
-	bool		found;
 	RT_PTR_ALLOC *slot;
-	size_t		value_sz = RT_GET_VALUE_SIZE(value_p);
 
 #ifdef RT_SHMEM
 	Assert(tree->ctl->magic == RT_RADIX_TREE_MAGIC);
@@ -1733,7 +1729,8 @@ RT_SET(RT_RADIX_TREE * tree, uint64 key, RT_VALUE_TYPE * value_p)
 			n4->chunks[0] = RT_GET_KEY_CHUNK(key, start_shift);
 
 			slot = RT_EXTEND_DOWN(tree, &n4->children[0], key, start_shift);
-			found = false;
+			*found = false;
+
 			tree->ctl->start_shift = start_shift;
 			tree->ctl->max_val = RT_SHIFT_GET_MAX_VAL(start_shift);
 			goto have_slot;
@@ -1743,10 +1740,29 @@ RT_SET(RT_RADIX_TREE * tree, uint64 key, RT_VALUE_TYPE * value_p)
 	}
 
 	slot = RT_GET_SLOT_RECURSIVE(tree, &tree->ctl->root,
-								 key, tree->ctl->start_shift, &found);
+								 key, tree->ctl->start_shift, found);
 
 have_slot:
 	Assert(slot != NULL);
+
+	/* Update the statistics */
+	if (!*found)
+		tree->ctl->num_keys++;
+
+	return slot;
+}
+
+/*
+ * Set key to value that value_p points to. If the entry already exists, we
+ * update its value and return true. Returns false if entry doesn't yet exist.
+ *
+ * Taking a lock in exclusive mode is the caller's responsibility.
+ */
+RT_SCOPE bool
+RT_SET_SLOT(RT_RADIX_TREE * tree, void * slot_v, RT_VALUE_TYPE * value_p, bool found)
+{
+	RT_PTR_ALLOC * slot = (RT_PTR_ALLOC *) (slot_v);
+	size_t		value_sz = RT_GET_VALUE_SIZE(value_p);
 
 	if (RT_VALUE_IS_EMBEDDABLE(value_p))
 	{
@@ -1797,10 +1813,23 @@ have_slot:
 		memcpy(leaf.local, value_p, value_sz);
 	}
 
-	/* Update the statistics */
-	if (!found)
-		tree->ctl->num_keys++;
+	return found;
+}
 
+/*
+ * Set key to value that value_p points to. If the entry already exists, we
+ * update its value and return true. Returns false if entry doesn't yet exist.
+ *
+ * Taking a lock in exclusive mode is the caller's responsibility.
+ */
+RT_SCOPE bool
+RT_SET(RT_RADIX_TREE * tree, uint64 key, RT_VALUE_TYPE * value_p)
+{
+	bool found;
+	void * slot;
+
+	slot = RT_GET_SLOT(tree, key, &found);
+	RT_SET_SLOT(tree, slot, value_p, found);
 	return found;
 }
 
@@ -2967,6 +2996,8 @@ RT_DUMP_NODE(RT_NODE * node)
 #undef RT_UNLOCK
 #undef RT_GET_HANDLE
 #undef RT_FIND
+#undef RT_GET_SLOT
+#undef RT_SET_SLOT
 #undef RT_SET
 #undef RT_BEGIN_ITERATE
 #undef RT_ITERATE_NEXT
