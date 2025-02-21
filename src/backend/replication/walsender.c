@@ -1523,7 +1523,7 @@ WalSndPrepareWrite(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xi
 	if (!last_write)
 		lsn = InvalidXLogRecPtr;
 
-	resetStringInfo(ctx->out);
+	Assert(ctx->out->len == 0);
 
 	pq_sendbyte(ctx->out, 'w');
 	pq_sendint64(ctx->out, lsn);	/* dataStart */
@@ -1548,6 +1548,8 @@ WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
 				bool last_write)
 {
 	TimestampTz now;
+
+	Assert(ctx->out->len >= 1 + 3 * sizeof(int64);
 
 	/*
 	 * Fill the send timestamp last, so that it is taken as late as possible.
