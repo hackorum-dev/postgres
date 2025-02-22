@@ -201,6 +201,7 @@ Use $node->connstr() if you want a connection string.
 sub port
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	return $self->{_port};
 }
 
@@ -217,6 +218,7 @@ Use $node->connstr() if you want a connection string.
 sub host
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	return $self->{_host};
 }
 
@@ -232,6 +234,7 @@ backups, etc.
 sub basedir
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	return $self->{_basedir};
 }
 
@@ -246,6 +249,7 @@ The name assigned to the node at creation time.
 sub name
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	return $self->{_name};
 }
 
@@ -260,6 +264,7 @@ Path to the PostgreSQL log file for this instance.
 sub logfile
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	return $self->{_logfile};
 }
 
@@ -275,6 +280,7 @@ this node. Suitable for passing to psql, DBD::Pg, etc.
 sub connstr
 {
 	my ($self, $dbname) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my $pgport = $self->port;
 	my $pghost = $self->host;
 	if (!defined($dbname))
@@ -302,6 +308,7 @@ used by low-level protocol and connection limit tests.
 sub raw_connect
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $pgport = $self->port;
 	my $pghost = $self->host;
 
@@ -348,6 +355,7 @@ architecture".
 sub raw_connect_works
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 
 	# If we're using Unix domain sockets, we need a working
 	# IO::Socket::UNIX implementation.
@@ -377,6 +385,7 @@ Does the data dir allow group access?
 sub group_access
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 
 	my $dir_stat = stat($self->data_dir);
 
@@ -398,6 +407,7 @@ always here.
 sub data_dir
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $res = $self->basedir;
 	return "$res/pgdata";
 }
@@ -413,6 +423,7 @@ If archiving is enabled, WAL files go here.
 sub archive_dir
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $basedir = $self->basedir;
 	return "$basedir/archives";
 }
@@ -428,6 +439,7 @@ The output path for backups taken with $node->backup()
 sub backup_dir
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $basedir = $self->basedir;
 	return "$basedir/backup";
 }
@@ -443,6 +455,7 @@ The configured install path (if any) for the node.
 sub install_path
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	return $self->{_install_path};
 }
 
@@ -457,6 +470,7 @@ The version number for the node, from PostgreSQL::Version.
 sub pg_version
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	return $self->{_pg_version};
 }
 
@@ -477,6 +491,7 @@ If options are supplied, return the list of values.
 sub config_data
 {
 	my ($self, @options) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	local %ENV = $self->_get_env();
 
 	my ($stdout, $stderr);
@@ -516,6 +531,7 @@ about this node.
 sub info
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $_info = '';
 	open my $fh, '>', \$_info or die;
 	print $fh "Name: " . $self->name . "\n";
@@ -543,6 +559,7 @@ Print $node->info()
 sub dump_info
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	print $self->info;
 	return;
 }
@@ -553,6 +570,7 @@ sub dump_info
 sub set_replication_conf
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $pgdata = $self->data_dir;
 
 	$self->host eq $test_pghost
@@ -759,6 +777,7 @@ A newline is automatically appended to the string.
 sub append_conf
 {
 	my ($self, $filename, $str) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 
 	my $conffile = $self->data_dir . '/' . $filename;
 
@@ -787,6 +806,7 @@ responsibility to do that.
 sub adjust_conf
 {
 	my ($self, $filename, $setting, $value, $skip_equals) = @_;
+    die "Too many arguments for subroutine" if @_ > 5;
 
 	my $conffile = $self->data_dir . '/' . $filename;
 
@@ -863,6 +883,7 @@ Use B<backup> if you want to back up a running server.
 sub backup_fs_cold
 {
 	my ($self, $backup_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 
 	PostgreSQL::Test::RecursiveCopy::copypath(
 		$self->data_dir,
@@ -1088,6 +1109,7 @@ will use the new name.  Return the new name.
 sub rotate_logfile
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	$self->{_logfile} = sprintf('%s_%d.log',
 		$self->{_logfile_base},
 		++$self->{_logfile_generation});
@@ -1171,6 +1193,7 @@ this to fail.  Otherwise, tests might fail to detect server crashes.
 sub kill9
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $name = $self->name;
 	return unless defined $self->{_pid};
 
@@ -1246,6 +1269,7 @@ Reload configuration parameters on the node.
 sub reload
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $port = $self->port;
 	my $pgdata = $self->data_dir;
 	my $name = $self->name;
@@ -1312,6 +1336,7 @@ Wrapper for pg_ctl promote
 sub promote
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $port = $self->port;
 	my $pgdata = $self->data_dir;
 	my $logfile = $self->logfile;
@@ -1336,6 +1361,7 @@ Wrapper for pg_ctl logrotate
 sub logrotate
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $port = $self->port;
 	my $pgdata = $self->data_dir;
 	my $logfile = $self->logfile;
@@ -1353,6 +1379,7 @@ sub logrotate
 sub enable_streaming
 {
 	my ($self, $root_node) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my $root_connstr = $root_node->connstr;
 	my $name = $self->name;
 
@@ -1369,6 +1396,7 @@ primary_conninfo='$root_connstr'
 sub enable_restoring
 {
 	my ($self, $root_node, $standby) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	my $path = $root_node->archive_dir;
 	my $name = $self->name;
 
@@ -1414,6 +1442,7 @@ Place recovery.signal file.
 sub set_recovery_mode
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 
 	$self->append_conf('recovery.signal', '');
 	return;
@@ -1430,6 +1459,7 @@ Place standby.signal file.
 sub set_standby_mode
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 
 	$self->append_conf('standby.signal', '');
 	return;
@@ -1439,6 +1469,7 @@ sub set_standby_mode
 sub enable_archiving
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $path = $self->archive_dir;
 	my $name = $self->name;
 
@@ -1472,6 +1503,7 @@ archive_command = '$copy_command'
 sub _update_pid
 {
 	my ($self, $is_running) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my $name = $self->name;
 
 	# If we can open the PID file, read its first line and that's the PID we
@@ -1639,6 +1671,7 @@ sub new
 sub _set_pg_version
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my $inst = $self->{_install_path};
 	my $pg_config = "pg_config";
 
@@ -1759,6 +1792,7 @@ sub _get_env
 sub installed_command
 {
 	my ($self, $cmd) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 
 	# Nodes using alternate installation locations use their installation's
 	# bin/ directory explicitly
@@ -1851,6 +1885,7 @@ sub get_free_port
 sub can_bind
 {
 	my ($host, $port) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my $iaddr = inet_aton($host);
 	my $paddr = sockaddr_in($port, $iaddr);
 
@@ -2417,6 +2452,7 @@ sub interactive_psql
 sub _pgbench_make_files
 {
 	my ($self, $files) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my @file_opts;
 
 	if (defined $files)
@@ -2626,6 +2662,7 @@ Returns 1 if successful, 0 if timed out.
 sub poll_query_until
 {
 	my ($self, $dbname, $query, $expected) = @_;
+    die "Too many arguments for subroutine" if @_ > 4;
 
 	local %ENV = $self->_get_env();
 
@@ -2787,6 +2824,7 @@ sub issues_sql_like
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 
 	my ($self, $cmd, $expected_sql, $test_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 4;
 
 	local %ENV = $self->_get_env();
 
@@ -2811,6 +2849,7 @@ Returns the contents of log of the node
 sub log_content
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	return PostgreSQL::Test::Utils::slurp_file($self->logfile);
 }
 
@@ -2887,6 +2926,7 @@ Find pattern in logfile of node after offset byte.
 sub log_contains
 {
 	my ($self, $pattern, $offset) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 
 	return PostgreSQL::Test::Utils::slurp_file($self->logfile, $offset) =~
 	  m/$pattern/;
@@ -2929,6 +2969,7 @@ mode must be specified.
 sub lsn
 {
 	my ($self, $mode) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my %modes = (
 		'insert' => 'pg_current_wal_insert_lsn()',
 		'flush' => 'pg_current_wal_flush_lsn()',
@@ -2967,6 +3008,7 @@ Returns the path of the WAL segment written to.
 sub write_wal
 {
 	my ($self, $tli, $lsn, $segment_size, $data) = @_;
+    die "Too many arguments for subroutine" if @_ > 5;
 
 	# Calculate segment number and offset position in segment based on the
 	# input LSN.
@@ -2996,6 +3038,7 @@ Returns the end LSN of the record inserted, in bytes.
 sub emit_wal
 {
 	my ($self, $size) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 
 	return int(
 		$self->safe_psql(
@@ -3011,6 +3054,7 @@ sub emit_wal
 sub _get_insert_lsn
 {
 	my ($self) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	return int(
 		$self->safe_psql(
 			'postgres', "SELECT pg_current_wal_insert_lsn() - '0/0'"));
@@ -3033,6 +3077,7 @@ Returns the end LSN up to which WAL has advanced, in bytes.
 sub advance_wal_out_of_record_splitting_zone
 {
 	my ($self, $wal_block_size) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 
 	my $page_threshold = $wal_block_size / 4;
 	my $end_lsn = $self->_get_insert_lsn();
@@ -3060,6 +3105,7 @@ Returns the end LSN up to which WAL has advanced, in bytes.
 sub advance_wal_to_record_splitting_zone
 {
 	my ($self, $wal_block_size) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 
 	# Size of record header.
 	my $RECORD_HEADER_SIZE = 24;
@@ -3115,6 +3161,7 @@ Returns 1 if the extension is available, 0 otherwise.
 sub check_extension
 {
 	my ($self, $extension_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 
 	my $result = $self->safe_psql('postgres',
 		"SELECT count(*) > 0 FROM pg_available_extensions WHERE name = '$extension_name';"
@@ -3134,6 +3181,7 @@ Poll pg_stat_activity until backend_type reaches wait_event_name.
 sub wait_for_event
 {
 	my ($self, $backend_type, $wait_event_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 
 	$self->poll_query_until(
 		'postgres', qq[
@@ -3184,6 +3232,7 @@ This is not a test. It die()s on failure.
 sub wait_for_catchup
 {
 	my ($self, $standby_name, $mode, $target_lsn) = @_;
+    die "Too many arguments for subroutine" if @_ > 4;
 	$mode = defined($mode) ? $mode : 'replay';
 	my %valid_modes =
 	  ('sent' => 1, 'write' => 1, 'flush' => 1, 'replay' => 1);
@@ -3268,6 +3317,7 @@ This is not a test. It die()s on failure.
 sub wait_for_replay_catchup
 {
 	my ($self, $standby_name, $node) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	$node = defined($node) ? $node : $self;
 
 	$self->wait_for_catchup($standby_name, 'replay', $node->lsn('flush'));
@@ -3294,6 +3344,7 @@ Note that for logical slots, restart_lsn is held down by the oldest in-progress 
 sub wait_for_slot_catchup
 {
 	my ($self, $slot_name, $mode, $target_lsn) = @_;
+    die "Too many arguments for subroutine" if @_ > 4;
 	$mode = defined($mode) ? $mode : 'restart';
 	if (!($mode eq 'restart' || $mode eq 'confirmed_flush'))
 	{
@@ -3343,6 +3394,7 @@ This is not a test. It die()s on failure.
 sub wait_for_subscription_sync
 {
 	my ($self, $publisher, $subname, $dbname) = @_;
+    die "Too many arguments for subroutine" if @_ > 4;
 	my $name = $self->name;
 
 	$dbname = defined($dbname) ? $dbname : 'postgres';
@@ -3387,6 +3439,7 @@ If successful, returns the length of the entire log file, in bytes.
 sub wait_for_log
 {
 	my ($self, $regexp, $offset) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	$offset = 0 unless defined $offset;
 
 	my $max_attempts = 10 * $PostgreSQL::Test::Utils::timeout_default;
@@ -3471,6 +3524,7 @@ either.
 sub slot
 {
 	my ($self, $slot_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my @columns = (
 		'plugin', 'slot_type', 'datoid', 'database',
 		'active', 'active_pid', 'xmin', 'catalog_xmin',
@@ -3588,6 +3642,7 @@ page_offset had better be a multiple of the cluster's block size.
 sub corrupt_page_checksum
 {
 	my ($self, $file, $page_offset) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	my $pgdata = $self->data_dir;
 	my $pageheader;
 
@@ -3616,6 +3671,7 @@ the standby.
 sub log_standby_snapshot
 {
 	my ($self, $standby, $slot_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 
 	# Once the slot's restart_lsn is determined, the standby looks for
 	# xl_running_xacts WAL record from the restart_lsn onwards. First wait
@@ -3645,6 +3701,7 @@ Create logical replication slot on given standby
 sub create_logical_slot_on_standby
 {
 	my ($self, $primary, $slot_name, $dbname) = @_;
+    die "Too many arguments for subroutine" if @_ > 4;
 	my ($stdout, $stderr);
 
 	my $handle;
@@ -3684,6 +3741,7 @@ time and return it.
 sub validate_slot_inactive_since
 {
 	my ($self, $slot_name, $reference_time) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	my $name = $self->name;
 
 	my $inactive_since = $self->safe_psql(
@@ -3716,6 +3774,7 @@ Advance WAL of node by given number of segments.
 sub advance_wal
 {
 	my ($self, $num) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 
 	# Advance by $n segments (= (wal_segment_size * $num) bytes).
 	# pg_switch_wal() forces a WAL flush, making pg_logical_emit_message()

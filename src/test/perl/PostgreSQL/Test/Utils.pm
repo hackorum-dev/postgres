@@ -290,6 +290,7 @@ Otherwise the template is C<tmp_test_XXXX>.
 sub tempdir
 {
 	my ($prefix) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	$prefix = "tmp_test" unless defined $prefix;
 	return File::Temp::tempdir(
 		$prefix . '_XXXX',
@@ -418,6 +419,7 @@ The return value is C<($stdout, $stderr)>.
 sub run_command
 {
 	my ($cmd) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my ($stdout, $stderr);
 	my $result = IPC::Run::run $cmd, '>', \$stdout, '2>', \$stderr;
 	chomp($stdout);
@@ -436,6 +438,7 @@ Pump until string is matched on the specified stream, or timeout occurs.
 sub pump_until
 {
 	my ($proc, $timeout, $stream, $until) = @_;
+    die "Too many arguments for subroutine" if @_ > 4;
 	$proc->pump_nb();
 	while (1)
 	{
@@ -470,6 +473,7 @@ Generate a string made of the given range of ASCII characters.
 sub generate_ascii_string
 {
 	my ($from_char, $to_char) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my $res;
 
 	for my $i ($from_char .. $to_char)
@@ -490,6 +494,7 @@ Return the complete list of entries in the specified directory.
 sub slurp_dir
 {
 	my ($dir) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	opendir(my $dh, $dir)
 	  or croak "could not opendir \"$dir\": $!";
 	my @direntries = readdir $dh;
@@ -509,6 +514,7 @@ offset position if specified.
 sub slurp_file
 {
 	my ($filename, $offset) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	local $/;
 	my $contents;
 	my $fh;
@@ -553,6 +559,7 @@ end of file.)
 sub append_to_file
 {
 	my ($filename, $str) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	open my $fh, ">>", $filename
 	  or croak "could not write \"$filename\": $!";
 	print $fh $str;
@@ -571,6 +578,7 @@ Find and replace string of a given file.
 sub string_replace_file
 {
 	my ($filename, $find, $replace) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	open(my $in, '<', $filename) or croak $!;
 	my $content = '';
 	while (<$in>)
@@ -598,6 +606,7 @@ ignoring files in C<ignore_list> (basename only).
 sub check_mode_recursive
 {
 	my ($dir, $expected_dir_mode, $expected_file_mode, $ignore_list) = @_;
+    die "Too many arguments for subroutine" if @_ > 4;
 
 	# Result defaults to true
 	my $result = 1;
@@ -688,6 +697,7 @@ C<chmod> recursively each file and directory within the given directory.
 sub chmod_recursive
 {
 	my ($dir, $dir_mode, $file_mode) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 
 	find(
 		{
@@ -721,6 +731,7 @@ retrieve specific value patterns from the installation's header files.
 sub scan_server_header
 {
 	my ($header_path, $regexp) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 
 	my ($stdout, $stderr);
 	my $result = IPC::Run::run [ 'pg_config', '--includedir-server' ], '>',
@@ -760,6 +771,7 @@ within the installation's C<pg_config.h>.
 sub check_pg_config
 {
 	my ($regexp) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my ($stdout, $stderr);
 	my $result = IPC::Run::run [ 'pg_config', '--includedir' ], '>',
 	  \$stdout, '2>', \$stderr
@@ -787,6 +799,7 @@ function, passed down as-is to File::Compare::compare_text.
 sub compare_files
 {
 	my ($file1, $file2, $testname, $line_comp_function) = @_;
+    die "Too many arguments for subroutine" if @_ > 4;
 
 	# If nothing is given, all lines should be equal.
 	$line_comp_function = sub { $_[0] ne $_[1] }
@@ -862,6 +875,7 @@ sub command_ok
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $test_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my $result = run_log($cmd);
 	ok($result, $test_name);
 	return;
@@ -879,6 +893,7 @@ sub command_fails
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $test_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 2;
 	my $result = run_log($cmd);
 	ok(!$result, $test_name);
 	return;
@@ -896,6 +911,7 @@ sub command_exit_is
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $expected, $test_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	print("# Running: " . join(" ", @{$cmd}) . "\n");
 	my $h = IPC::Run::start $cmd;
 	$h->finish();
@@ -923,6 +939,7 @@ sub program_help_ok
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my ($stdout, $stderr);
 	print("# Running: $cmd --help\n");
 	my $result = IPC::Run::run [ $cmd, '--help' ], '>', \$stdout, '2>',
@@ -954,6 +971,7 @@ sub program_version_ok
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my ($stdout, $stderr);
 	print("# Running: $cmd --version\n");
 	my $result = IPC::Run::run [ $cmd, '--version' ], '>', \$stdout, '2>',
@@ -977,6 +995,7 @@ sub program_options_handling_ok
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd) = @_;
+    die "Too many arguments for subroutine" if @_ > 1;
 	my ($stdout, $stderr);
 	print("# Running: $cmd --not-a-valid-option\n");
 	my $result = IPC::Run::run [ $cmd, '--not-a-valid-option' ], '>',
@@ -1000,6 +1019,7 @@ sub command_like
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $expected_stdout, $test_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	my ($stdout, $stderr);
 	print("# Running: " . join(" ", @{$cmd}) . "\n");
 	my $result = IPC::Run::run $cmd, '>', \$stdout, '2>', \$stderr;
@@ -1027,6 +1047,7 @@ sub command_like_safe
 	# which can fail, causing the process to hang, notably on Msys
 	# when used with 'pg_ctl start'
 	my ($cmd, $expected_stdout, $test_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	my ($stdout, $stderr);
 	my $stdoutfile = File::Temp->new();
 	my $stderrfile = File::Temp->new();
@@ -1053,6 +1074,7 @@ sub command_fails_like
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $expected_stderr, $test_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 3;
 	my ($stdout, $stderr);
 	print("# Running: " . join(" ", @{$cmd}) . "\n");
 	my $result = IPC::Run::run $cmd, '>', \$stdout, '2>', \$stderr;
@@ -1089,6 +1111,7 @@ sub command_checks_all
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 
 	my ($cmd, $expected_ret, $out, $err, $test_name) = @_;
+    die "Too many arguments for subroutine" if @_ > 5;
 
 	# run command
 	my ($stdout, $stderr);
