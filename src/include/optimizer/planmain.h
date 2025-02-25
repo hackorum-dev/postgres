@@ -46,9 +46,11 @@ extern ForeignScan *make_foreignscan(List *qptlist, List *qpqual,
 									 Plan *outer_plan);
 extern Plan *change_plan_targetlist(Plan *subplan, List *tlist,
 									bool tlist_parallel_safe);
-extern Plan *materialize_finished_plan(Plan *subplan);
+extern Plan *materialize_finished_plan(PlannerGlobal *glob, Plan *subplan);
 extern bool is_projection_capable_path(Path *path);
 extern bool is_projection_capable_plan(Plan *plan);
+extern int	add_workmem(PlannerGlobal *glob);
+extern int	add_hash_workmem(PlannerGlobal *glob);
 
 /* External use of these functions is deprecated: */
 extern Sort *make_sort_from_sortclauses(List *sortcls, Plan *lefttree);

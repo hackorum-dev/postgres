@@ -18,6 +18,7 @@ backend_sources += files(
   'execScan.c',
   'execTuples.c',
   'execUtils.c',
+  'execWorkmem.c',
   'functions.c',
   'instrument.c',
   'nodeAgg.c',

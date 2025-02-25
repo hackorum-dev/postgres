@@ -1111,6 +1111,9 @@ typedef struct SubPlan
 	/* Estimated execution costs: */
 	Cost		startup_cost;	/* one-time setup cost */
 	Cost		per_call_cost;	/* cost for each subplan evaluation */
+	/* 1-based id of workMem to use, or else zero: */
+	int			hashtab_workmem_id; /* for hash table */
+	int			hashnul_workmem_id; /* for NULLs hash table */
 } SubPlan;
 
 /*

@@ -33,6 +33,8 @@ build_hash_table(RecursiveUnionState *rustate)
 {
 	RecursiveUnion *node = (RecursiveUnion *) rustate->ps.plan;
 	TupleDesc	desc = ExecGetResultType(outerPlanState(rustate));
+	int			workmem_limit = workMemLimitFromId(rustate,
+												   node->hashWorkMemId);
 
 	Assert(node->numCols > 0);
 	Assert(node->numGroups > 0);
@@ -52,6 +54,7 @@ build_hash_table(RecursiveUnionState *rustate)
 											 node->dupCollations,
 											 node->numGroups,
 											 0,
+											 (Size) workmem_limit * 1024,
 											 rustate->ps.state->es_query_cxt,
 											 rustate->tableContext,
 											 rustate->tempContext,
@@ -202,8 +205,15 @@ ExecInitRecursiveUnion(RecursiveUnion *node, EState *estate, int eflags)
 	/* initialize processing state */
 	rustate->recursing = false;
 	rustate->intermediate_empty = true;
-	rustate->working_table = tuplestore_begin_heap(false, false, work_mem);
-	rustate->intermediate_table = tuplestore_begin_heap(false, false, work_mem);
+
+	/*
+	 * NOTE: each of our working tables gets the same workmem_limit, since
+	 * we're going to swap them repeatedly.
+	 */
+	rustate->working_table = tuplestore_begin_heap(false, false,
+												   workMemLimit(rustate));
+	rustate->intermediate_table = tuplestore_begin_heap(false, false,
+														workMemLimit(rustate));
 
 	/*
 	 * If hashing, we need a per-tuple memory context for comparisons, and a

@@ -447,7 +447,7 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	if (cursorOptions & CURSOR_OPT_SCROLL)
 	{
 		if (!ExecSupportsBackwardScan(top_plan))
-			top_plan = materialize_finished_plan(top_plan);
+			top_plan = materialize_finished_plan(glob, top_plan);
 	}
 
 	/*
@@ -583,6 +583,9 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	result->utilityStmt = parse->utilityStmt;
 	result->stmt_location = parse->stmt_location;
 	result->stmt_len = parse->stmt_len;
+
+	result->workMemCategories = glob->workMemCategories;
+	result->workMemLimits = glob->workMemLimits;
 
 	result->jitFlags = PGJIT_NONE;
 	if (jit_enabled && jit_above_cost >= 0 &&

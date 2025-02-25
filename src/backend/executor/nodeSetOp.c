@@ -105,6 +105,7 @@ build_hash_table(SetOpState *setopstate)
 												node->cmpCollations,
 												node->numGroups,
 												sizeof(SetOpStatePerGroupData),
+												(Size) workMemLimit(setopstate) * 1024,
 												setopstate->ps.state->es_query_cxt,
 												setopstate->tableContext,
 												econtext->ecxt_per_tuple_memory,

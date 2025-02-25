@@ -154,12 +154,22 @@ typedef struct PlannedStmt
 	ParseLoc	stmt_location;
 	/* length in bytes; 0 means "rest of string" */
 	ParseLoc	stmt_len;
+
+	/*
+	 * Working-memory info, for Plan and SubPlans. Any Plan or SubPlan that
+	 * needs working memory for a data structure maintains a "workmem_id"
+	 * index into the following lists (all kept in sync).
+	 */
+
+	/* - IntList (of WorkMemCategory): is this a Hash or "normal" limit? */
+	List	   *workMemCategories;
+	/* - IntList: limit (in KB), after which data structure must spill */
+	List	   *workMemLimits;
 } PlannedStmt;
 
 /* macro for fetching the Plan associated with a SubPlan node */
 #define exec_subplan_get_plan(plannedstmt, subplan) \
 	((Plan *) list_nth((plannedstmt)->subplans, (subplan)->plan_id - 1))
-
 
 /* ----------------
  *		Plan node
@@ -216,6 +226,8 @@ typedef struct Plan
 	 */
 	/* unique across entire final plan tree */
 	int			plan_node_id;
+	/* 1-based id of workMem to use, or else zero */
+	int			workmem_id;
 	/* target list to be computed at this node */
 	List	   *targetlist;
 	/* implicitly-ANDed qual conditions */
@@ -447,6 +459,9 @@ typedef struct RecursiveUnion
 
 	/* estimated number of groups in input */
 	long		numGroups;
+
+	/* 1-based id of workMem to use for hash table, or else zero */
+	int			hashWorkMemId;
 } RecursiveUnion;
 
 /* ----------------
@@ -1176,6 +1191,9 @@ typedef struct Agg
 	Oid		   *grpOperators pg_node_attr(array_size(numCols));
 	Oid		   *grpCollations pg_node_attr(array_size(numCols));
 
+	/* 1-based id of workMem to use to sort inputs, or else zero */
+	int			sortWorkMemId;
+
 	/* estimated number of groups in input */
 	long		numGroups;
 
@@ -1791,5 +1809,12 @@ typedef enum MonotonicFunction
 	MONOTONICFUNC_DECREASING = (1 << 1),
 	MONOTONICFUNC_BOTH = MONOTONICFUNC_INCREASING | MONOTONICFUNC_DECREASING,
 } MonotonicFunction;
+
+/* different data structures get different working-memory limits*/
+typedef enum WorkMemCategory
+{
+	WORKMEM_NORMAL,				/* gets work_mem */
+	WORKMEM_HASH,				/* gets hash_mem_multiplier * work_mem */
+}			WorkMemCategory;
 
 #endif							/* PLANNODES_H */

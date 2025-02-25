@@ -533,7 +533,7 @@ build_subplan(PlannerInfo *root, Plan *plan, Path *path,
 		 */
 		else if (splan->parParam == NIL && enable_material &&
 				 !ExecMaterializesOutput(nodeTag(plan)))
-			plan = materialize_finished_plan(plan);
+			plan = materialize_finished_plan(root->glob, plan);
 
 		result = (Node *) splan;
 		isInitPlan = false;

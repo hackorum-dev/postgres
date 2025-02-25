@@ -1706,6 +1706,8 @@ create_material_plan(PlannerInfo *root, MaterialPath *best_path, int flags)
 
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
 
+	plan->plan.workmem_id = add_workmem(root->glob);
+
 	return plan;
 }
 
@@ -1760,6 +1762,8 @@ create_memoize_plan(PlannerInfo *root, MemoizePath *best_path, int flags)
 						best_path->est_unique_keys, best_path->est_hit_ratio);
 
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
+
+	plan->plan.workmem_id = add_hash_workmem(root->glob);
 
 	return plan;
 }
@@ -1907,6 +1911,8 @@ create_unique_plan(PlannerInfo *root, UniquePath *best_path, int flags)
 								 best_path->path.rows,
 								 0,
 								 subplan);
+
+		plan->workmem_id = add_hash_workmem(root->glob);
 	}
 	else
 	{
@@ -2253,6 +2259,8 @@ create_sort_plan(PlannerInfo *root, SortPath *best_path, int flags)
 
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
 
+	plan->plan.workmem_id = add_workmem(root->glob);
+
 	return plan;
 }
 
@@ -2278,6 +2286,8 @@ create_incrementalsort_plan(PlannerInfo *root, IncrementalSortPath *best_path,
 											  best_path->nPresortedCols);
 
 	copy_generic_path_info(&plan->sort.plan, (Path *) best_path);
+
+	plan->sort.plan.workmem_id = add_workmem(root->glob);
 
 	return plan;
 }
@@ -2390,6 +2400,12 @@ create_agg_plan(PlannerInfo *root, AggPath *best_path)
 
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
 
+	if (plan->aggstrategy == AGG_HASHED)
+		plan->plan.workmem_id = add_hash_workmem(root->glob);
+
+	/* Also include working memory needed to sort the input: */
+	plan->sortWorkMemId = add_workmem(root->glob);
+
 	return plan;
 }
 
@@ -2443,6 +2459,7 @@ static Plan *
 create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 {
 	Agg		   *plan;
+	Agg		   *first_sort_agg = NULL;
 	Plan	   *subplan;
 	List	   *rollups = best_path->rollups;
 	AttrNumber *grouping_map;
@@ -2508,7 +2525,7 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 			RollupData *rollup = lfirst(lc);
 			AttrNumber *new_grpColIdx;
 			Plan	   *sort_plan = NULL;
-			Plan	   *agg_plan;
+			Agg		   *agg_plan;
 			AggStrategy strat;
 
 			new_grpColIdx = remap_groupColIdx(root, rollup->groupClause);
@@ -2531,19 +2548,19 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 			else
 				strat = AGG_SORTED;
 
-			agg_plan = (Plan *) make_agg(NIL,
-										 NIL,
-										 strat,
-										 AGGSPLIT_SIMPLE,
-										 list_length((List *) linitial(rollup->gsets)),
-										 new_grpColIdx,
-										 extract_grouping_ops(rollup->groupClause),
-										 extract_grouping_collations(rollup->groupClause, subplan->targetlist),
-										 rollup->gsets,
-										 NIL,
-										 rollup->numGroups,
-										 best_path->transitionSpace,
-										 sort_plan);
+			agg_plan = make_agg(NIL,
+								NIL,
+								strat,
+								AGGSPLIT_SIMPLE,
+								list_length((List *) linitial(rollup->gsets)),
+								new_grpColIdx,
+								extract_grouping_ops(rollup->groupClause),
+								extract_grouping_collations(rollup->groupClause, subplan->targetlist),
+								rollup->gsets,
+								NIL,
+								rollup->numGroups,
+								best_path->transitionSpace,
+								sort_plan);
 
 			/*
 			 * Remove stuff we don't need to avoid bloating debug output.
@@ -2552,6 +2569,12 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 			{
 				sort_plan->targetlist = NIL;
 				sort_plan->lefttree = NULL;
+			}
+
+			if (agg_plan->aggstrategy == AGG_SORTED && !first_sort_agg)
+			{
+				/* This might be the first Sort agg. */
+				first_sort_agg = agg_plan;
 			}
 
 			chain = lappend(chain, agg_plan);
@@ -2586,6 +2609,29 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 
 		/* Copy cost data from Path to Plan */
 		copy_generic_path_info(&plan->plan, &best_path->path);
+
+		/*
+		 * NOTE: We will place the workmem needed to sort the input (if any)
+		 * on the first agg, the Hash workmem on the first Hash agg, and the
+		 * Sort workmem (if any) on the first Sort agg.
+		 */
+		if (plan->aggstrategy == AGG_HASHED || plan->aggstrategy == AGG_MIXED)
+		{
+			/* All Hash Grouping Sets share the same workmem limit. */
+			plan->plan.workmem_id = add_hash_workmem(root->glob);
+		}
+		else if (plan->aggstrategy == AGG_SORTED)
+		{
+			/* Every Sort Grouping Set gets its own workmem limit. */
+			first_sort_agg = plan;
+		}
+
+		/* Store the workmem limit, for all Sorts, on the first Sort. */
+		if (first_sort_agg)
+			first_sort_agg->plan.workmem_id = add_workmem(root->glob);
+
+		/* Also include working memory needed to sort the input: */
+		plan->sortWorkMemId = add_workmem(root->glob);
 	}
 
 	return (Plan *) plan;
@@ -2750,6 +2796,8 @@ create_windowagg_plan(PlannerInfo *root, WindowAggPath *best_path)
 
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
 
+	plan->plan.workmem_id = add_workmem(root->glob);
+
 	return plan;
 }
 
@@ -2790,6 +2838,8 @@ create_setop_plan(PlannerInfo *root, SetOpPath *best_path, int flags)
 
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
 
+	plan->plan.workmem_id = add_hash_workmem(root->glob);
+
 	return plan;
 }
 
@@ -2825,6 +2875,12 @@ create_recursiveunion_plan(PlannerInfo *root, RecursiveUnionPath *best_path)
 								numGroups);
 
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
+
+	plan->plan.workmem_id = add_workmem(root->glob);
+
+	/* Also include working memory for hash table. */
+	if (plan->numCols > 0)
+		plan->hashWorkMemId = add_hash_workmem(root->glob);
 
 	return plan;
 }
@@ -3532,6 +3588,9 @@ create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 		plan->plan_width = 0;	/* meaningless */
 		plan->parallel_aware = false;
 		plan->parallel_safe = ipath->path.parallel_safe;
+
+		plan->workmem_id = add_workmem(root->glob);
+
 		/* Extract original index clauses, actual index quals, relevant ECs */
 		subquals = NIL;
 		subindexquals = NIL;
@@ -3839,6 +3898,8 @@ create_functionscan_plan(PlannerInfo *root, Path *best_path,
 
 	copy_generic_path_info(&scan_plan->scan.plan, best_path);
 
+	scan_plan->scan.plan.workmem_id = add_workmem(root->glob);
+
 	return scan_plan;
 }
 
@@ -3881,6 +3942,8 @@ create_tablefuncscan_plan(PlannerInfo *root, Path *best_path,
 								   tablefunc);
 
 	copy_generic_path_info(&scan_plan->scan.plan, best_path);
+
+	scan_plan->scan.plan.workmem_id = add_workmem(root->glob);
 
 	return scan_plan;
 }
@@ -4019,6 +4082,8 @@ create_ctescan_plan(PlannerInfo *root, Path *best_path,
 							 plan_id, cte_param_id);
 
 	copy_generic_path_info(&scan_plan->scan.plan, best_path);
+
+	scan_plan->scan.plan.workmem_id = add_workmem(root->glob);
 
 	return scan_plan;
 }
@@ -4722,6 +4787,8 @@ create_mergejoin_plan(PlannerInfo *root,
 		copy_plan_costsize(matplan, inner_plan);
 		matplan->total_cost += cpu_operator_cost * matplan->plan_rows;
 
+		matplan->workmem_id = add_workmem(root->glob);
+
 		inner_plan = matplan;
 	}
 
@@ -5066,6 +5133,9 @@ create_hashjoin_plan(PlannerInfo *root,
 							  best_path->jpath.inner_unique);
 
 	copy_generic_path_info(&join_plan->join.plan, &best_path->jpath.path);
+
+	/* Assign workmem to the Hash subnode, not its parent HashJoin node. */
+	hash_plan->plan.workmem_id = add_hash_workmem(root->glob);
 
 	return join_plan;
 }
@@ -5619,6 +5689,8 @@ label_sort_with_costsize(PlannerInfo *root, Sort *plan, double limit_tuples)
 	plan->plan.plan_width = lefttree->plan_width;
 	plan->plan.parallel_aware = false;
 	plan->plan.parallel_safe = lefttree->parallel_safe;
+
+	plan->plan.workmem_id = add_workmem(root->glob);
 }
 
 /*
@@ -5650,6 +5722,8 @@ label_incrementalsort_with_costsize(PlannerInfo *root, IncrementalSort *plan,
 	plan->sort.plan.plan_width = lefttree->plan_width;
 	plan->sort.plan.parallel_aware = false;
 	plan->sort.plan.parallel_safe = lefttree->parallel_safe;
+
+	plan->sort.plan.workmem_id = add_workmem(root->glob);
 }
 
 /*
@@ -6701,14 +6775,14 @@ make_material(Plan *lefttree)
 
 /*
  * materialize_finished_plan: stick a Material node atop a completed plan
- *
+ *r/
  * There are a couple of places where we want to attach a Material node
  * after completion of create_plan(), without any MaterialPath path.
  * Those places should probably be refactored someday to do this on the
  * Path representation, but it's not worth the trouble yet.
  */
 Plan *
-materialize_finished_plan(Plan *subplan)
+materialize_finished_plan(PlannerGlobal *glob, Plan *subplan)
 {
 	Plan	   *matplan;
 	Path		matpath;		/* dummy for result of cost_material */
@@ -6746,6 +6820,8 @@ materialize_finished_plan(Plan *subplan)
 	matplan->plan_width = subplan->plan_width;
 	matplan->parallel_aware = false;
 	matplan->parallel_safe = subplan->parallel_safe;
+
+	matplan->workmem_id = add_workmem(glob);
 
 	return matplan;
 }
@@ -7511,4 +7587,42 @@ is_projection_capable_plan(Plan *plan)
 			break;
 	}
 	return true;
+}
+
+static int
+add_workmem_internal(PlannerGlobal *glob, WorkMemCategory category)
+{
+	glob->workMemCategories = lappend_int(glob->workMemCategories, category);
+	/* the executor will fill this in later: */
+	glob->workMemLimits = lappend_int(glob->workMemLimits, 0);
+
+	Assert(list_length(glob->workMemCategories) ==
+		   list_length(glob->workMemLimits));
+
+	return list_length(glob->workMemCategories);
+}
+
+/*
+ * add_workmem
+ *	  Add (non-hash) workmem info to the glob's lists
+ *
+ * This data structure will have its working-memory limit set to work_mem.
+ */
+int
+add_workmem(PlannerGlobal *glob)
+{
+	return add_workmem_internal(glob, WORKMEM_NORMAL);
+}
+
+/*
+ * add_hash_workmem
+ *	  Add hash workmem info to the glob's lists
+ *
+ * This data structure will have its working-memory limit set to work_mem *
+ * hash_mem_multiplier.
+ */
+int
+add_hash_workmem(PlannerGlobal *glob)
+{
+	return add_workmem_internal(glob, WORKMEM_HASH);
 }

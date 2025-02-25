@@ -140,6 +140,7 @@ extern TupleHashTable BuildTupleHashTable(PlanState *parent,
 										  Oid *collations,
 										  long nbuckets,
 										  Size additionalsize,
+										  Size hash_mem_limit,
 										  MemoryContext metacxt,
 										  MemoryContext tablecxt,
 										  MemoryContext tempcxt,
@@ -559,6 +560,7 @@ extern Tuplestorestate *ExecMakeTableFunctionResult(SetExprState *setexpr,
 													ExprContext *econtext,
 													MemoryContext argContext,
 													TupleDesc expectedDesc,
+													int workMem,
 													bool randomAccess);
 extern SetExprState *ExecInitFunctionResultSet(Expr *expr,
 											   ExprContext *econtext, PlanState *parent);
@@ -795,5 +797,10 @@ extern ResultRelInfo *ExecLookupResultRelByOid(ModifyTableState *node,
 											   Oid resultoid,
 											   bool missing_ok,
 											   bool update_cache);
+
+/*
+ * prototypes from functions in execWorkmem.c
+ */
+extern void ExecAssignWorkMem(PlannedStmt *plannedstmt);
 
 #endif							/* EXECUTOR_H  */

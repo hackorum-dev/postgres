@@ -1276,6 +1276,19 @@ typedef struct PlanState
 			((PlanState *)(node))->instrument->nfiltered2 += (delta); \
 	} while(0)
 
+/* macros for fetching the workmem info associated with a PlanState */
+#define workMemFieldFromId(node, field, id)								\
+	(list_nth_int(((PlanState *)(node))->state->es_plannedstmt->field, \
+				  (id) - 1))
+#define workMemField(node, field)   \
+	(workMemFieldFromId((node), field, ((PlanState *)(node))->plan->workmem_id))
+
+/* workmem limit: */
+#define workMemLimitFromId(node, id) \
+	(workMemFieldFromId(node, workMemLimits, id))
+#define workMemLimit(node) \
+	(workMemField(node, workMemLimits))
+
 /*
  * EPQState is state for executing an EvalPlanQual recheck on a candidate
  * tuples e.g. in ModifyTable or LockRows.

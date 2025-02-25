@@ -536,6 +536,12 @@ buildSubPlanHash(SubPlanState *node, ExprContext *econtext)
 	if (node->hashtable)
 		ResetTupleHashTable(node->hashtable);
 	else
+	{
+		int			workmem_limit;
+
+		workmem_limit = workMemLimitFromId(planstate,
+										   subplan->hashtab_workmem_id);
+
 		node->hashtable = BuildTupleHashTable(node->parent,
 											  node->descRight,
 											  &TTSOpsVirtual,
@@ -546,10 +552,12 @@ buildSubPlanHash(SubPlanState *node, ExprContext *econtext)
 											  node->tab_collations,
 											  nbuckets,
 											  0,
+											  (Size) workmem_limit * 1024,
 											  node->planstate->state->es_query_cxt,
 											  node->hashtablecxt,
 											  node->hashtempcxt,
 											  false);
+	}
 
 	if (!subplan->unknownEqFalse)
 	{
@@ -565,6 +573,12 @@ buildSubPlanHash(SubPlanState *node, ExprContext *econtext)
 		if (node->hashnulls)
 			ResetTupleHashTable(node->hashnulls);
 		else
+		{
+			int			workmem_limit;
+
+			workmem_limit = workMemLimitFromId(planstate,
+											   subplan->hashnul_workmem_id);
+
 			node->hashnulls = BuildTupleHashTable(node->parent,
 												  node->descRight,
 												  &TTSOpsVirtual,
@@ -575,10 +589,12 @@ buildSubPlanHash(SubPlanState *node, ExprContext *econtext)
 												  node->tab_collations,
 												  nbuckets,
 												  0,
+												  (Size) workmem_limit * 1024,
 												  node->planstate->state->es_query_cxt,
 												  node->hashtablecxt,
 												  node->hashtempcxt,
 												  false);
+		}
 	}
 	else
 		node->hashnulls = NULL;

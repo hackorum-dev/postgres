@@ -30,6 +30,7 @@ OBJS = \
 	execScan.o \
 	execTuples.o \
 	execUtils.o \
+	execWorkmem.o \
 	functions.o \
 	instrument.o \
 	nodeAgg.o \

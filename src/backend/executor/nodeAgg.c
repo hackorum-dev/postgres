@@ -258,6 +258,7 @@
 #include "executor/execExpr.h"
 #include "executor/executor.h"
 #include "executor/nodeAgg.h"
+#include "executor/nodeHash.h"
 #include "lib/hyperloglog.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
@@ -403,7 +404,8 @@ static void find_cols(AggState *aggstate, Bitmapset **aggregated,
 					  Bitmapset **unaggregated);
 static bool find_cols_walker(Node *node, FindColsContext *context);
 static void build_hash_tables(AggState *aggstate);
-static void build_hash_table(AggState *aggstate, int setno, long nbuckets);
+static void build_hash_table(AggState *aggstate, int setno, long nbuckets,
+							 Size hash_mem_limit);
 static void hashagg_recompile_expressions(AggState *aggstate, bool minslot,
 										  bool nullcheck);
 static void hash_create_memory(AggState *aggstate);
@@ -412,6 +414,7 @@ static long hash_choose_num_buckets(double hashentrysize,
 static int	hash_choose_num_partitions(double input_groups,
 									   double hashentrysize,
 									   int used_bits,
+									   Size hash_mem_limit,
 									   int *log2_npartitions);
 static void initialize_hash_entry(AggState *aggstate,
 								  TupleHashTable hashtable,
@@ -434,7 +437,7 @@ static HashAggBatch *hashagg_batch_new(LogicalTape *input_tape, int setno,
 static MinimalTuple hashagg_batch_read(HashAggBatch *batch, uint32 *hashp);
 static void hashagg_spill_init(HashAggSpill *spill, LogicalTapeSet *tapeset,
 							   int used_bits, double input_groups,
-							   double hashentrysize);
+							   double hashentrysize, Size hash_mem_limit);
 static Size hashagg_spill_tuple(AggState *aggstate, HashAggSpill *spill,
 								TupleTableSlot *inputslot, uint32 hash);
 static void hashagg_spill_finish(AggState *aggstate, HashAggSpill *spill,
@@ -522,6 +525,15 @@ initialize_phase(AggState *aggstate, int newphase)
 		Sort	   *sortnode = aggstate->phases[newphase + 1].sortnode;
 		PlanState  *outerNode = outerPlanState(aggstate);
 		TupleDesc	tupDesc = ExecGetResultType(outerNode);
+		int			workmem_limit;
+
+		/*
+		 * Read the sort-output workmem limit off the first AGG_SORTED node.
+		 * Since phase 0 is always AGG_HASHED, this will always be phase 1.
+		 */
+		workmem_limit =
+			workMemLimitFromId(aggstate,
+							   aggstate->phases[1].aggnode->plan.workmem_id);
 
 		aggstate->sort_out = tuplesort_begin_heap(tupDesc,
 												  sortnode->numCols,
@@ -529,7 +541,7 @@ initialize_phase(AggState *aggstate, int newphase)
 												  sortnode->sortOperators,
 												  sortnode->collations,
 												  sortnode->nullsFirst,
-												  work_mem,
+												  workmem_limit,
 												  NULL, TUPLESORT_NONE);
 	}
 
@@ -585,6 +597,8 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
 	 */
 	if (pertrans->aggsortrequired)
 	{
+		int			workmem_limit;
+
 		/*
 		 * In case of rescan, maybe there could be an uncompleted sort
 		 * operation?  Clean it up if so.
@@ -592,6 +606,12 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
 		if (pertrans->sortstates[aggstate->current_set])
 			tuplesort_end(pertrans->sortstates[aggstate->current_set]);
 
+		/*
+		 * Read the sort-input workmem limit off the first Agg node.
+		 */
+		workmem_limit =
+			workMemLimitFromId(aggstate,
+							   ((Agg *) aggstate->ss.ps.plan)->sortWorkMemId);
 
 		/*
 		 * We use a plain Datum sorter when there's a single input column;
@@ -607,7 +627,7 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
 									  pertrans->sortOperators[0],
 									  pertrans->sortCollations[0],
 									  pertrans->sortNullsFirst[0],
-									  work_mem, NULL, TUPLESORT_NONE);
+									  workmem_limit, NULL, TUPLESORT_NONE);
 		}
 		else
 			pertrans->sortstates[aggstate->current_set] =
@@ -617,7 +637,7 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
 									 pertrans->sortOperators,
 									 pertrans->sortCollations,
 									 pertrans->sortNullsFirst,
-									 work_mem, NULL, TUPLESORT_NONE);
+									 workmem_limit, NULL, TUPLESORT_NONE);
 	}
 
 	/*
@@ -1496,7 +1516,7 @@ build_hash_tables(AggState *aggstate)
 		}
 #endif
 
-		build_hash_table(aggstate, setno, nbuckets);
+		build_hash_table(aggstate, setno, nbuckets, memory);
 	}
 
 	aggstate->hash_ngroups_current = 0;
@@ -1506,7 +1526,8 @@ build_hash_tables(AggState *aggstate)
  * Build a single hashtable for this grouping set.
  */
 static void
-build_hash_table(AggState *aggstate, int setno, long nbuckets)
+build_hash_table(AggState *aggstate, int setno, long nbuckets,
+				 Size hash_mem_limit)
 {
 	AggStatePerHash perhash = &aggstate->perhash[setno];
 	MemoryContext metacxt = aggstate->hash_metacxt;
@@ -1535,6 +1556,7 @@ build_hash_table(AggState *aggstate, int setno, long nbuckets)
 											 perhash->aggnode->grpCollations,
 											 nbuckets,
 											 additionalsize,
+											 hash_mem_limit,
 											 metacxt,
 											 tablecxt,
 											 tmpcxt,
@@ -1807,12 +1829,11 @@ hashagg_recompile_expressions(AggState *aggstate, bool minslot, bool nullcheck)
  */
 void
 hash_agg_set_limits(double hashentrysize, double input_groups, int used_bits,
-					Size *mem_limit, uint64 *ngroups_limit,
+					Size hash_mem_limit, Size *mem_limit, uint64 *ngroups_limit,
 					int *num_partitions)
 {
 	int			npartitions;
 	Size		partition_mem;
-	Size		hash_mem_limit = get_hash_memory_limit();
 
 	/* if not expected to spill, use all of hash_mem */
 	if (input_groups * hashentrysize <= hash_mem_limit)
@@ -1832,6 +1853,7 @@ hash_agg_set_limits(double hashentrysize, double input_groups, int used_bits,
 	npartitions = hash_choose_num_partitions(input_groups,
 											 hashentrysize,
 											 used_bits,
+											 hash_mem_limit,
 											 NULL);
 	if (num_partitions != NULL)
 		*num_partitions = npartitions;
@@ -1932,7 +1954,8 @@ hash_agg_enter_spill_mode(AggState *aggstate)
 
 			hashagg_spill_init(spill, aggstate->hash_tapeset, 0,
 							   perhash->aggnode->numGroups,
-							   aggstate->hashentrysize);
+							   aggstate->hashentrysize,
+							   (Size) workMemLimit(aggstate) * 1024);
 		}
 	}
 }
@@ -2081,9 +2104,9 @@ hash_choose_num_buckets(double hashentrysize, long ngroups, Size memory)
  */
 static int
 hash_choose_num_partitions(double input_groups, double hashentrysize,
-						   int used_bits, int *log2_npartitions)
+						   int used_bits, Size hash_mem_limit,
+						   int *log2_npartitions)
 {
-	Size		hash_mem_limit = get_hash_memory_limit();
 	double		partition_limit;
 	double		mem_wanted;
 	double		dpartitions;
@@ -2219,7 +2242,8 @@ lookup_hash_entries(AggState *aggstate)
 			if (spill->partitions == NULL)
 				hashagg_spill_init(spill, aggstate->hash_tapeset, 0,
 								   perhash->aggnode->numGroups,
-								   aggstate->hashentrysize);
+								   aggstate->hashentrysize,
+								   (Size) workMemLimit(aggstate) * 1024);
 
 			hashagg_spill_tuple(aggstate, spill, slot, hash);
 			pergroup[setno] = NULL;
@@ -2693,7 +2717,9 @@ agg_refill_hash_table(AggState *aggstate)
 	aggstate->hash_batches = list_delete_last(aggstate->hash_batches);
 
 	hash_agg_set_limits(aggstate->hashentrysize, batch->input_card,
-						batch->used_bits, &aggstate->hash_mem_limit,
+						batch->used_bits,
+						(Size) workMemLimit(aggstate) * 1024,
+						&aggstate->hash_mem_limit,
 						&aggstate->hash_ngroups_limit, NULL);
 
 	/*
@@ -2783,7 +2809,8 @@ agg_refill_hash_table(AggState *aggstate)
 				 */
 				spill_initialized = true;
 				hashagg_spill_init(&spill, tapeset, batch->used_bits,
-								   batch->input_card, aggstate->hashentrysize);
+								   batch->input_card, aggstate->hashentrysize,
+								   (Size) workMemLimit(aggstate) * 1024);
 			}
 			/* no memory for a new group, spill */
 			hashagg_spill_tuple(aggstate, &spill, spillslot, hash);
@@ -2982,13 +3009,15 @@ agg_retrieve_hash_table_in_memory(AggState *aggstate)
  */
 static void
 hashagg_spill_init(HashAggSpill *spill, LogicalTapeSet *tapeset, int used_bits,
-				   double input_groups, double hashentrysize)
+				   double input_groups, double hashentrysize,
+				   Size hash_mem_limit)
 {
 	int			npartitions;
 	int			partition_bits;
 
 	npartitions = hash_choose_num_partitions(input_groups, hashentrysize,
-											 used_bits, &partition_bits);
+											 used_bits, hash_mem_limit,
+											 &partition_bits);
 
 #ifdef USE_INJECTION_POINTS
 	if (IS_INJECTION_POINT_ATTACHED("hash-aggregate-single-partition"))
@@ -3712,6 +3741,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 			totalGroups += aggstate->perhash[k].aggnode->numGroups;
 
 		hash_agg_set_limits(aggstate->hashentrysize, totalGroups, 0,
+							(Size) workMemLimit(aggstate) * 1024,
 							&aggstate->hash_mem_limit,
 							&aggstate->hash_ngroups_limit,
 							&aggstate->hash_planned_partitions);

@@ -182,6 +182,17 @@ typedef struct PlannerGlobal
 
 	/* hash table for NOT NULL attnums of relations */
 	struct HTAB *rel_notnullatts_hash pg_node_attr(read_write_ignore);
+
+	/*
+	 * Working-memory info, for Plan and SubPlans. Any Plan or SubPlan that
+	 * needs working memory for a data structure maintains a "workmem_id"
+	 * index into the following lists (all kept in sync).
+	 */
+
+	/* - IntList (of WorkMemCategory): is this a Hash or "normal" limit? */
+	List	   *workMemCategories;
+	/* - IntList: limit (in KB), after which data structure must spill */
+	List	   *workMemLimits;
 } PlannerGlobal;
 
 /* macro for fetching the Plan associated with a SubPlan node */

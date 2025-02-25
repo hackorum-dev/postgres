@@ -253,7 +253,8 @@ typedef struct ParallelHashJoinState
 	ParallelHashGrowth growth;	/* control batch/bucket growth */
 	dsa_pointer chunk_work_queue;	/* chunk work queue */
 	int			nparticipants;
-	size_t		space_allowed;
+	size_t		space_allowed;	/* -- might be shared with other workers */
+	size_t		worker_space_allowed;	/* -- exclusive to this worker */
 	size_t		total_tuples;	/* total number of inner tuples */
 	LWLock		lock;			/* lock protecting the above */
 

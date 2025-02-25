@@ -59,7 +59,8 @@ extern void ExecHashTableResetMatchFlags(HashJoinTable hashtable);
 extern void ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 									bool try_combined_hash_mem,
 									int parallel_workers,
-									size_t *space_allowed,
+									size_t worker_space_allowed,
+									size_t *total_space_allowed,
 									int *numbuckets,
 									int *numbatches,
 									int *num_skew_mcvs);

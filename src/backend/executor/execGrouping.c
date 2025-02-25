@@ -168,6 +168,7 @@ BuildTupleHashTable(PlanState *parent,
 					Oid *collations,
 					long nbuckets,
 					Size additionalsize,
+					Size hash_mem_limit,
 					MemoryContext metacxt,
 					MemoryContext tablecxt,
 					MemoryContext tempcxt,
@@ -175,7 +176,6 @@ BuildTupleHashTable(PlanState *parent,
 {
 	TupleHashTable hashtable;
 	Size		entrysize;
-	Size		hash_mem_limit;
 	MemoryContext oldcontext;
 	bool		allow_jit;
 	uint32		hash_iv = 0;
@@ -184,8 +184,12 @@ BuildTupleHashTable(PlanState *parent,
 	additionalsize = MAXALIGN(additionalsize);
 	entrysize = sizeof(TupleHashEntryData) + additionalsize;
 
-	/* Limit initial table size request to not more than hash_mem */
-	hash_mem_limit = get_hash_memory_limit() / entrysize;
+	/*
+	 * Limit initial table size request to not more than hash_mem
+	 *
+	 * XXX - we should also limit the *maximum* table size to hash_mem.
+	 */
+	hash_mem_limit = hash_mem_limit / entrysize;
 	if (nbuckets > hash_mem_limit)
 		nbuckets = hash_mem_limit;
 

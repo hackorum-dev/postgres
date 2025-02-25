@@ -950,6 +950,12 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	estate->es_epq_active = NULL;
 
 	/*
+	 * Assign working memory to SubPlan and Plan nodes, before initializing
+	 * their states.
+	 */
+	ExecAssignWorkMem(plannedstmt);
+
+	/*
 	 * Initialize private state information for each SubPlan.  We must do this
 	 * before running ExecInitNode on the main query tree, since
 	 * ExecInitSubPlan expects to be able to find these entries.

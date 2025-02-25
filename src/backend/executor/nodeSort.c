@@ -107,7 +107,7 @@ ExecSort(PlanState *pstate)
 												   plannode->sortOperators[0],
 												   plannode->collations[0],
 												   plannode->nullsFirst[0],
-												   work_mem,
+												   workMemLimit(pstate),
 												   NULL,
 												   tuplesortopts);
 		else
@@ -117,7 +117,7 @@ ExecSort(PlanState *pstate)
 												  plannode->sortOperators,
 												  plannode->collations,
 												  plannode->nullsFirst,
-												  work_mem,
+												  workMemLimit(pstate),
 												  NULL,
 												  tuplesortopts);
 		if (node->bounded)

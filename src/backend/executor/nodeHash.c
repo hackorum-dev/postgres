@@ -448,6 +448,7 @@ ExecHashTableCreate(HashState *state)
 	Hash	   *node;
 	HashJoinTable hashtable;
 	Plan	   *outerNode;
+	size_t		worker_space_allowed;
 	size_t		space_allowed;
 	int			nbuckets;
 	int			nbatch;
@@ -471,11 +472,15 @@ ExecHashTableCreate(HashState *state)
 	 */
 	rows = node->plan.parallel_aware ? node->rows_total : outerNode->plan_rows;
 
+	worker_space_allowed = (size_t) workMemLimit(state) * 1024;
+	Assert(worker_space_allowed > 0);
+
 	ExecChooseHashTableSize(rows, outerNode->plan_width,
 							OidIsValid(node->skewTable),
 							state->parallel_state != NULL,
 							state->parallel_state != NULL ?
 							state->parallel_state->nparticipants - 1 : 0,
+							worker_space_allowed,
 							&space_allowed,
 							&nbuckets, &nbatch, &num_skew_mcvs);
 
@@ -599,6 +604,7 @@ ExecHashTableCreate(HashState *state)
 		{
 			pstate->nbatch = nbatch;
 			pstate->space_allowed = space_allowed;
+			pstate->worker_space_allowed = worker_space_allowed;
 			pstate->growth = PHJ_GROWTH_OK;
 
 			/* Set up the shared state for coordinating batches. */
@@ -658,7 +664,8 @@ void
 ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 						bool try_combined_hash_mem,
 						int parallel_workers,
-						size_t *space_allowed,
+						size_t worker_space_allowed,
+						size_t *total_space_allowed,
 						int *numbuckets,
 						int *numbatches,
 						int *num_skew_mcvs)
@@ -687,9 +694,9 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 	inner_rel_bytes = ntuples * tupsize;
 
 	/*
-	 * Compute in-memory hashtable size limit from GUCs.
+	 * Caller tells us our (per-worker) in-memory hashtable size limit.
 	 */
-	hash_table_bytes = get_hash_memory_limit();
+	hash_table_bytes = worker_space_allowed;
 
 	/*
 	 * Parallel Hash tries to use the combined hash_mem of all workers to
@@ -706,7 +713,7 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 		hash_table_bytes = (size_t) newlimit;
 	}
 
-	*space_allowed = hash_table_bytes;
+	*total_space_allowed = hash_table_bytes;
 
 	/*
 	 * If skew optimization is possible, estimate the number of skew buckets
@@ -808,7 +815,8 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 		{
 			ExecChooseHashTableSize(ntuples, tupwidth, useskew,
 									false, parallel_workers,
-									space_allowed,
+									worker_space_allowed,
+									total_space_allowed,
 									numbuckets,
 									numbatches,
 									num_skew_mcvs);
@@ -929,7 +937,7 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 		nbatch /= 2;
 		nbuckets *= 2;
 
-		*space_allowed = (*space_allowed) * 2;
+		*total_space_allowed = (*total_space_allowed) * 2;
 	}
 
 	Assert(nbuckets > 0);
@@ -1235,7 +1243,7 @@ ExecParallelHashIncreaseNumBatches(HashJoinTable hashtable)
 					 * to switch from one large combined memory budget to the
 					 * regular hash_mem budget.
 					 */
-					pstate->space_allowed = get_hash_memory_limit();
+					pstate->space_allowed = pstate->worker_space_allowed;
 
 					/*
 					 * The combined hash_mem of all participants wasn't

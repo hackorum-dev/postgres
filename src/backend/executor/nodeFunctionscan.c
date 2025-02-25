@@ -95,6 +95,7 @@ FunctionNext(FunctionScanState *node)
 											node->ss.ps.ps_ExprContext,
 											node->argcontext,
 											node->funcstates[0].tupdesc,
+											workMemLimit(node),
 											node->eflags & EXEC_FLAG_BACKWARD);
 
 			/*
@@ -154,6 +155,7 @@ FunctionNext(FunctionScanState *node)
 											node->ss.ps.ps_ExprContext,
 											node->argcontext,
 											fs->tupdesc,
+											workMemLimit(node),
 											node->eflags & EXEC_FLAG_BACKWARD);
 
 			/*

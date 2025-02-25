@@ -216,6 +216,8 @@ ExecSerializePlan(Plan *plan, EState *estate)
 	pstmt->utilityStmt = NULL;
 	pstmt->stmt_location = -1;
 	pstmt->stmt_len = -1;
+	pstmt->workMemCategories = estate->es_plannedstmt->workMemCategories;
+	pstmt->workMemLimits = estate->es_plannedstmt->workMemLimits;
 
 	/* Return serialized copy of our dummy PlannedStmt. */
 	return nodeToString(pstmt);
