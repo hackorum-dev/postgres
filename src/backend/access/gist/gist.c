@@ -95,7 +95,6 @@ gisthandler(PG_FUNCTION_ARGS)
 	amroutine->amcanreturn = gistcanreturn;
 	amroutine->amcostestimate = gistcostestimate;
 	amroutine->amgettreeheight = NULL;
-	amroutine->amoptions = gistoptions;
 	amroutine->amproperty = gistproperty;
 	amroutine->ambuildphasename = NULL;
 	amroutine->amvalidate = gistvalidate;
@@ -112,6 +111,7 @@ gisthandler(PG_FUNCTION_ARGS)
 	amroutine->amparallelrescan = NULL;
 	amroutine->amtranslatestrategy = NULL;
 	amroutine->amtranslatecmptype = gisttranslatecmptype;
+	amroutine->amreloptspecset = gistgetreloptspecset;
 
 	PG_RETURN_POINTER(amroutine);
 }

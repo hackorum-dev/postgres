@@ -94,7 +94,6 @@ hashhandler(PG_FUNCTION_ARGS)
 	amroutine->amcanreturn = NULL;
 	amroutine->amcostestimate = hashcostestimate;
 	amroutine->amgettreeheight = NULL;
-	amroutine->amoptions = hashoptions;
 	amroutine->amproperty = NULL;
 	amroutine->ambuildphasename = NULL;
 	amroutine->amvalidate = hashvalidate;
@@ -111,6 +110,7 @@ hashhandler(PG_FUNCTION_ARGS)
 	amroutine->amparallelrescan = NULL;
 	amroutine->amtranslatestrategy = hashtranslatestrategy;
 	amroutine->amtranslatecmptype = hashtranslatecmptype;
+	amroutine->amreloptspecset = hashgetreloptspecset;
 
 	PG_RETURN_POINTER(amroutine);
 }

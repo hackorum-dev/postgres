@@ -15,6 +15,7 @@
 #include "access/cmptype.h"
 #include "access/genam.h"
 #include "access/stratnum.h"
+#include "access/options.h"
 
 /*
  * We don't wish to include planner header files here, since most of an index
@@ -159,9 +160,9 @@ typedef void (*amcostestimate_function) (struct PlannerInfo *root,
  */
 typedef int (*amgettreeheight_function) (Relation rel);
 
-/* parse index reloptions */
-typedef bytea *(*amoptions_function) (Datum reloptions,
-									  bool validate);
+
+/* get Spec Set for relation options */
+typedef options_spec_set *(*amreloptspecset_function) ();
 
 /* report AM, index, or index column property */
 typedef bool (*amproperty_function) (Oid index_oid, int attno,
@@ -298,7 +299,7 @@ typedef struct IndexAmRoutine
 	amcanreturn_function amcanreturn;	/* can be NULL */
 	amcostestimate_function amcostestimate;
 	amgettreeheight_function amgettreeheight;	/* can be NULL */
-	amoptions_function amoptions;
+	amreloptspecset_function amreloptspecset;	/* can be NULL */
 	amproperty_function amproperty; /* can be NULL */
 	ambuildphasename_function ambuildphasename; /* can be NULL */
 	amvalidate_function amvalidate;
