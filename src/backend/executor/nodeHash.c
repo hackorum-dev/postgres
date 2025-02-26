@@ -482,7 +482,7 @@ ExecHashTableCreate(HashState *state)
 							state->parallel_state != NULL,
 							state->parallel_state != NULL ?
 							state->parallel_state->nparticipants - 1 : 0,
-							worker_space_allowed,
+							&worker_space_allowed,
 							&space_allowed,
 							&nbuckets, &nbatch, &num_skew_mcvs, &workmem);
 
@@ -666,7 +666,7 @@ void
 ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 						bool try_combined_hash_mem,
 						int parallel_workers,
-						size_t worker_space_allowed,
+						size_t *worker_space_allowed,
 						size_t *total_space_allowed,
 						int *numbuckets,
 						int *numbatches,
@@ -699,7 +699,7 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 	/*
 	 * Caller tells us our (per-worker) in-memory hashtable size limit.
 	 */
-	hash_table_bytes = worker_space_allowed;
+	hash_table_bytes = *worker_space_allowed;
 
 	/*
 	 * Parallel Hash tries to use the combined hash_mem of all workers to
@@ -963,6 +963,7 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 		nbatch /= 2;
 		nbuckets *= 2;
 
+		*worker_space_allowed = (*worker_space_allowed) * 2;
 		*total_space_allowed = (*total_space_allowed) * 2;
 	}
 

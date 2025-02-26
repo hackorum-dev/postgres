@@ -4309,6 +4309,7 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	int			numbuckets;
 	int			numbatches;
 	int			num_skew_mcvs;
+	size_t		worker_space_allowed;
 	size_t		space_allowed;	/* unused */
 
 	/* Count up disabled nodes. */
@@ -4354,12 +4355,13 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	 * XXX at some point it might be interesting to try to account for skew
 	 * optimization in the cost estimate, but for now, we don't.
 	 */
+	worker_space_allowed = get_hash_memory_limit();
 	ExecChooseHashTableSize(inner_path_rows_total,
 							inner_path->pathtarget->width,
 							true,	/* useskew */
 							parallel_hash,	/* try_combined_hash_mem */
 							outer_path->parallel_workers,
-							get_hash_memory_limit(),
+							&worker_space_allowed,
 							&space_allowed,
 							&numbuckets,
 							&numbatches,

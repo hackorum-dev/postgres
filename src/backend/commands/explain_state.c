@@ -115,6 +115,8 @@ ParseExplainOptionList(ExplainState *es, List *options, ParseState *pstate)
 		}
 		else if (strcmp(opt->defname, "memory") == 0)
 			es->memory = defGetBoolean(opt);
+		else if (strcmp(opt->defname, "work_mem") == 0)
+			es->work_mem = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "serialize") == 0)
 		{
 			if (opt->arg)

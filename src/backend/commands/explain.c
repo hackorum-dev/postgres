@@ -22,6 +22,8 @@
 #include "commands/explain_format.h"
 #include "commands/explain_state.h"
 #include "commands/prepare.h"
+#include "executor/hashjoin.h"
+#include "executor/nodeHash.h"
 #include "foreign/fdwapi.h"
 #include "jit/jit.h"
 #include "libpq/pqformat.h"
@@ -29,6 +31,7 @@
 #include "nodes/extensible.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/cost.h"
 #include "parser/analyze.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
@@ -165,6 +168,14 @@ static ExplainWorkersState *ExplainCreateWorkersState(int num_workers);
 static void ExplainOpenWorker(int n, ExplainState *es);
 static void ExplainCloseWorker(int n, ExplainState *es);
 static void ExplainFlushWorkersState(ExplainState *es);
+static void compute_subplan_workmem(List *plans, double *sp_estimate,
+									double *sp_limit);
+static void compute_agg_workmem(PlanState *planstate, Agg *agg,
+								double *agg_estimate, double *agg_limit);
+static void compute_hash_workmem(PlanState *planstate, double *hash_estimate,
+								 double *hash_limit);
+static void increment_workmem(PlanState *planstate, int workmem_id,
+							  double *estimate, double *limit);
 
 
 
@@ -677,6 +688,14 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 	if (es->summary && es->analyze)
 		ExplainPropertyFloat("Execution Time", "ms", 1000.0 * totaltime, 3,
 							 es);
+
+	if (es->work_mem)
+	{
+		ExplainPropertyFloat("Total Working Memory Estimate", "kB",
+							 es->total_workmem_estimate, 0, es);
+		ExplainPropertyFloat("Total Working Memory Limit", "kB",
+							 es->total_workmem_limit, 0, es);
+	}
 
 	ExplainCloseGroup("Query", NULL, true, es);
 }
@@ -1813,6 +1832,72 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		}
 	}
 
+	if (es->work_mem)
+	{
+		double		plan_estimate = 0.0;
+		double		plan_limit = 0.0;
+
+		/*
+		 * Include working memory used by this Plan's SubPlan objects, whether
+		 * they are included on the Plan's initPlan or subPlan lists.
+		 */
+		compute_subplan_workmem(planstate->initPlan, &plan_estimate,
+								&plan_limit);
+		compute_subplan_workmem(planstate->subPlan, &plan_estimate,
+								&plan_limit);
+
+		/* Include working memory used by this Plan, itself. */
+		switch (nodeTag(plan))
+		{
+			case T_Agg:
+				compute_agg_workmem(planstate, (Agg *) plan,
+									&plan_estimate, &plan_limit);
+				break;
+			case T_Hash:
+				compute_hash_workmem(planstate, &plan_estimate, &plan_limit);
+				break;
+			case T_RecursiveUnion:
+				{
+					RecursiveUnion *runion = (RecursiveUnion *) plan;
+
+					if (runion->hashWorkMemId > 0)
+						increment_workmem(planstate, runion->hashWorkMemId,
+										  &plan_estimate, &plan_limit);
+				}
+				/* FALLTHROUGH */
+			default:
+				if (plan->workmem_id > 0)
+					increment_workmem(planstate, plan->workmem_id,
+									  &plan_estimate, &plan_limit);
+				break;
+		}
+
+		/*
+		 * Every parallel worker (plus the leader) gets its own copy of
+		 * working memory.
+		 */
+		plan_estimate *= (1 + es->num_workers);
+		plan_limit *= (1 + es->num_workers);
+
+		es->total_workmem_estimate += plan_estimate;
+		es->total_workmem_limit += plan_limit;
+
+		if (plan_estimate > 0.0 || plan_limit > 0.0)
+		{
+			if (es->format == EXPLAIN_FORMAT_TEXT)
+				appendStringInfo(es->str,
+								 "  (work_mem=%.0f kB) (limit=%.0f kB)",
+								 plan_estimate, plan_limit);
+			else
+			{
+				ExplainPropertyFloat("Working Memory Estimate", "kB",
+									 plan_estimate, 0, es);
+				ExplainPropertyFloat("Working Memory Limit", "kB",
+									 plan_limit, 0, es);
+			}
+		}
+	}
+
 	/*
 	 * We have to forcibly clean up the instrumentation state because we
 	 * haven't done ExecutorEnd yet.  This is pretty grotty ...
@@ -2366,6 +2451,24 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	if (planstate->initPlan)
 		ExplainSubPlans(planstate->initPlan, ancestors, "InitPlan", es);
 
+	if (nodeTag(plan) == T_Gather || nodeTag(plan) == T_GatherMerge)
+	{
+		/*
+		 * Other than initPlan-s, every node below us gets the # of planned
+		 * workers we specified.
+		 */
+		Assert(es->num_workers == 0);
+
+		if (nodeTag(plan) == T_Gather)
+			es->num_workers = es->analyze ?
+				((GatherState *) planstate)->nworkers_launched :
+				((Gather *) plan)->num_workers;
+		else
+			es->num_workers = es->analyze ?
+				((GatherMergeState *) planstate)->nworkers_launched :
+				((GatherMerge *) plan)->num_workers;
+	}
+
 	/* lefttree */
 	if (outerPlanState(planstate))
 		ExplainNode(outerPlanState(planstate), ancestors,
@@ -2420,6 +2523,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	{
 		ancestors = list_delete_first(ancestors);
 		ExplainCloseGroup("Plans", "Plans", false, es);
+	}
+
+	if (nodeTag(plan) == T_Gather || nodeTag(plan) == T_GatherMerge)
+	{
+		/* End of parallel sub-tree. */
+		es->num_workers = 0;
 	}
 
 	/* in text format, undo whatever indentation we added */
@@ -4993,4 +5102,126 @@ ExplainFlushWorkersState(ExplainState *es)
 	pfree(wstate->worker_str);
 	pfree(wstate->worker_state_save);
 	pfree(wstate);
+}
+
+/*
+ * compute_subplan_work_mem - compute total workmem for a SubPlan object
+ *
+ * If a SubPlan object uses a hash table, then that hash table needs working
+ * memory. We display that working memory on the owning Plan. This function
+ * increments work_mem counters to include the SubPlan's working-memory.
+ */
+static void
+compute_subplan_workmem(List *plans, double *sp_estimate, double *sp_limit)
+{
+	foreach_node(SubPlanState, sps, plans)
+	{
+		SubPlan    *sp = sps->subplan;
+
+		if (sp->hashtab_workmem_id > 0)
+			increment_workmem(sps->planstate, sp->hashtab_workmem_id,
+							  sp_estimate, sp_limit);
+
+		if (sp->hashnul_workmem_id > 0)
+			increment_workmem(sps->planstate, sp->hashnul_workmem_id,
+							  sp_estimate, sp_limit);
+	}
+}
+
+static void
+compute_agg_workmem_node(PlanState *planstate, Agg *agg, double *agg_estimate,
+						 double *agg_limit)
+{
+	/* Record memory used for output data structures. */
+	if (agg->plan.workmem_id > 0)
+		increment_workmem(planstate, agg->plan.workmem_id, agg_estimate,
+						  agg_limit);
+
+	/* Record memory used for input sort buffers. */
+	if (agg->sortWorkMemId > 0)
+		increment_workmem(planstate, agg->sortWorkMemId, agg_estimate,
+						  agg_limit);
+}
+
+/*
+ * compute_agg_workmem - compute Agg node's total workmem estimate and limit
+ *
+ * An Agg node might point to a chain of additional Agg nodes. When we explain
+ * the plan, we display only the first, "main" Agg node.
+ */
+static void
+compute_agg_workmem(PlanState *planstate, Agg *agg, double *agg_estimate,
+					double *agg_limit)
+{
+	compute_agg_workmem_node(planstate, agg, agg_estimate, agg_limit);
+
+	/* Also include the chain of GROUPING SETS aggs. */
+	foreach_node(Agg, aggnode, agg->chain)
+		compute_agg_workmem_node(planstate, aggnode, agg_estimate, agg_limit);
+}
+
+/*
+ * compute_hash_workmem - compute total workmem for a Hash node
+ *
+ * This function is complicated, because we currently can adjust workmem limits
+ * for Hash (Joins), at runtime; and because the memory a Hash (Join) needs
+ * per-batch is not currently counted against the workmem limit.
+ *
+ * Here, we try to give a more accurate accounting than we'd get from just
+ * displaying limit * count.
+ */
+static void
+compute_hash_workmem(PlanState *planstate, double *hash_estimate,
+					 double *hash_limit)
+{
+	double		count = workMemCount(planstate);
+	double		estimate = workMemEstimate(planstate);
+	size_t		limit = workMemLimit(planstate);
+	HashState  *hstate = (HashState *) planstate;
+	Plan	   *plan = planstate->plan;
+	Hash	   *hash = (Hash *) plan;
+	Plan	   *outerNode = outerPlan(plan);
+	double		rows;
+	size_t		nbytes;
+	size_t		total_space_allowed;	/* ignored */
+	int			nbuckets;		/* ignored */
+	int			nbatch;
+	int			num_skew_mcvs;	/* ignored */
+	int			workmem_estimate;	/* ignored */
+
+	/*
+	 * For Hash Joins, we currently don't count per-batch memory against the
+	 * "workmem_limit", but we can at least estimate it for display with the
+	 * Plan.
+	 */
+	rows = plan->parallel_aware ? hash->rows_total : outerNode->plan_rows;
+	nbytes = limit * 1024;
+
+	ExecChooseHashTableSize(rows, outerNode->plan_width,
+							OidIsValid(hash->skewTable),
+							hstate->parallel_state != NULL,
+							hstate->parallel_state != NULL ?
+							hstate->parallel_state->nparticipants - 1 : 0,
+							&nbytes, &total_space_allowed,
+							&nbuckets, &nbatch, &num_skew_mcvs,
+							&workmem_estimate);
+
+	/* Include space for per-batch memory, if any: 2 blocks per batch. */
+	if (nbatch > 1)
+		nbytes += nbatch * 2 * BLCKSZ;
+
+	Assert(nbytes >= limit * 1024);
+
+	*hash_estimate += estimate * count;
+	*hash_limit += (double) normalize_work_bytes(nbytes) * count;
+}
+
+static void
+increment_workmem(PlanState *planstate, int workmem_id, double *estimate,
+				  double *limit)
+{
+	double		count = workMemCountFromId(planstate, workmem_id);
+
+	*estimate += workMemEstimateFromId(planstate, workmem_id) * count;
+	*limit += workMemLimitFromId(planstate, workmem_id) * count;
 }

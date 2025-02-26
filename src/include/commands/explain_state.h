@@ -69,6 +69,9 @@ typedef struct ExplainState
 	bool		hide_workers;	/* set if we find an invisible Gather */
 	int			rtable_size;	/* length of rtable excluding the RTE_GROUP
 								 * entry */
+	int			num_workers;	/* # of worker processes *planned* to use */
+	double		total_workmem_estimate; /* total working memory estimate */
+	double		total_workmem_limit;	/* total working memory limit */
 	/* state related to the current plan node */
 	ExplainWorkersState *workers_state; /* needed if parallel plan */
 	/* extensions */
