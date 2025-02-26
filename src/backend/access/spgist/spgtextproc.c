@@ -48,6 +48,7 @@
 #include "utils/pg_locale.h"
 #include "utils/varlena.h"
 #include "varatt.h"
+#include <pg_collation_d.h>
 
 
 /*
@@ -589,7 +590,6 @@ spg_text_leaf_consistent(PG_FUNCTION_ARGS)
 
 	leafValue = DatumGetTextPP(in->leafDatum);
 
-	/* As above, in->reconstructedValue isn't toasted or short. */
 	if (DatumGetPointer(in->reconstructedValue))
 		reconstrValue = (text *) DatumGetPointer(in->reconstructedValue);
 
@@ -624,23 +624,38 @@ spg_text_leaf_consistent(PG_FUNCTION_ARGS)
 		StrategyNumber strategy = in->scankeys[j].sk_strategy;
 		text	   *query = DatumGetTextPP(in->scankeys[j].sk_argument);
 		int			queryLen = VARSIZE_ANY_EXHDR(query);
+		char	   *queryData = VARDATA_ANY(query);
 		int			r;
 
 		if (strategy == RTPrefixStrategyNumber)
 		{
 			/*
-			 * if level >= length of query then reconstrValue must begin with
-			 * query (prefix) string, so we don't need to check it again.
+			 * Optimize prefix check for C collation using memcmp. For non-C
+			 * collations, fall back to text_starts_with.
 			 */
-			res = (level >= queryLen) ||
-				DatumGetBool(DirectFunctionCall2Coll(text_starts_with,
-													 PG_GET_COLLATION(),
-													 out->leafValue,
-													 PointerGetDatum(query)));
+			if (level >= queryLen)
+			{
+				res = true;
+			}
+			else if (PG_GET_COLLATION() == C_COLLATION_OID)
+			{
+				/* Use fast memcmp for C collation */
+				res = (fullLen >= queryLen) &&
+					(memcmp(fullValue, queryData, queryLen) == 0);
+			}
+			else
+			{
+				/* Use existing text_starts_with for other collations */
+				res = DatumGetBool(DirectFunctionCall2Coll(
+														   text_starts_with,
+														   PG_GET_COLLATION(),
+														   out->leafValue,
+														   PointerGetDatum(query)
+														   ));
+			}
 
-			if (!res)			/* no need to consider remaining conditions */
+			if (!res)
 				break;
-
 			continue;
 		}
 
@@ -648,19 +663,15 @@ spg_text_leaf_consistent(PG_FUNCTION_ARGS)
 		{
 			/* Collation-aware comparison */
 			strategy -= SPG_STRATEGY_ADDITION;
-
-			/* If asserts enabled, verify encoding of reconstructed string */
 			Assert(pg_verifymbstr(fullValue, fullLen, false));
-
-			r = varstr_cmp(fullValue, fullLen,
-						   VARDATA_ANY(query), queryLen,
-						   PG_GET_COLLATION());
+			r = varstr_cmp(fullValue, fullLen, queryData, queryLen, PG_GET_COLLATION());
 		}
 		else
 		{
-			/* Non-collation-aware comparison */
-			r = memcmp(fullValue, VARDATA_ANY(query), Min(queryLen, fullLen));
+			/* Optimized non-collation-aware comparison */
+			int			minLen = Min(queryLen, fullLen);
 
+			r = memcmp(fullValue, queryData, minLen);
 			if (r == 0)
 			{
 				if (queryLen > fullLen)
@@ -688,14 +699,13 @@ spg_text_leaf_consistent(PG_FUNCTION_ARGS)
 				res = (r > 0);
 				break;
 			default:
-				elog(ERROR, "unrecognized strategy number: %d",
-					 in->scankeys[j].sk_strategy);
+				elog(ERROR, "unrecognized strategy number: %d", strategy);
 				res = false;
 				break;
 		}
 
 		if (!res)
-			break;				/* no need to consider remaining conditions */
+			break;
 	}
 
 	PG_RETURN_BOOL(res);
