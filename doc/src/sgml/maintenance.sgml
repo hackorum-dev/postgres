@@ -714,8 +714,8 @@ HINT:  Execute a database-wide VACUUM in that database.
      </listitem>
      <listitem>
       <simpara>Drop any old replication slots. Use
-       <link linkend="monitoring-pg-stat-replication-view">pg_stat_replication</link> to
-       find slots where <literal>age(xmin)</literal> or <literal>age(catalog_xmin)</literal>
+       <link linkend="view-pg-replication-slots"><structname>pg_replication_slots</structname></link>
+       to find slots where <literal>age(xmin)</literal> or <literal>age(catalog_xmin)</literal>
        is large. In many cases, such slots were created for replication to servers that no
        longer exist, or that have been down for a long time. If you drop a slot for a server
        that still exists and might still try to connect to that slot, that replica may
