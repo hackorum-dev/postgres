@@ -1214,6 +1214,14 @@ be_tls_read(Port *port, void *ptr, size_t len, int *waitfor)
 	errno = 0;
 	ERR_clear_error();
 	n = SSL_read(port->ssl, ptr, len);
+
+	/*
+	 * If n is greater than 0, SSL_get_error() will return SSL_ERROR_NONE,
+	 * so it can be returned directly when n is greater than 0.
+	 */
+	if (n > 0)
+		return n;
+
 	err = SSL_get_error(port->ssl, n);
 	ecode = (err != SSL_ERROR_NONE || n < 0) ? ERR_get_error() : 0;
 	switch (err)
@@ -1273,6 +1281,14 @@ be_tls_write(Port *port, const void *ptr, size_t len, int *waitfor)
 	errno = 0;
 	ERR_clear_error();
 	n = SSL_write(port->ssl, ptr, len);
+
+	/*
+	 * If n is greater than 0, SSL_get_error() will return SSL_ERROR_NONE,
+	 * so it can be returned directly when n is greater than 0.
+	 */
+	if (n > 0)
+		return n;
+
 	err = SSL_get_error(port->ssl, n);
 	ecode = (err != SSL_ERROR_NONE || n < 0) ? ERR_get_error() : 0;
 	switch (err)
