@@ -138,6 +138,14 @@ rloop:
 	SOCK_ERRNO_SET(0);
 	ERR_clear_error();
 	n = SSL_read(conn->ssl, ptr, len);
+
+	/*
+	 * If n is greater than 0, SSL_get_error() will return SSL_ERROR_NONE,
+	 * so it can be returned directly when n is greater than 0.
+	 */
+	if (n > 0)
+		return n;
+
 	err = SSL_get_error(conn->ssl, n);
 
 	/*
@@ -279,6 +287,14 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 	SOCK_ERRNO_SET(0);
 	ERR_clear_error();
 	n = SSL_write(conn->ssl, ptr, len);
+
+	/*
+	 * If n is greater than 0, SSL_get_error() will return SSL_ERROR_NONE,
+	 * so it can be returned directly when n is greater than 0.
+	 */
+	if (n > 0)
+		return n;
+
 	err = SSL_get_error(conn->ssl, n);
 	ecode = (err != SSL_ERROR_NONE || n < 0) ? ERR_get_error() : 0;
 	switch (err)
