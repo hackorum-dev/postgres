@@ -501,6 +501,23 @@ select f1, (select distinct min(t1.f1) from int4_tbl t1 where t1.f1 = t0.f1)
 from int4_tbl t0;
 rollback;
 
+--Check min/max optimization for join expressions
+create unique index tenk1_unique1_idx on tenk1(unique1);
+create index tenk1_unique2_idx on tenk1(unique2);
+create unique index INT4_TBL_f1_idx on INT4_TBL(f1);
+explain (COSTS OFF)
+select min(t1.unique2) from tenk1 t1 left join INT4_TBL t2 on t1.unique1 = t2.f1;
+
+explain (COSTS OFF)
+select min(t1.unique2) from tenk1 t1 inner join INT4_TBL t2 on t1.unique1 = t2.f1;
+
+explain (COSTS OFF)
+select min(t1.unique2) from tenk1 t1 left outer join INT4_TBL t2 on t1.unique1 = t2.f1;
+
+DROP INDEX tenk1_unique1_idx;
+DROP INDEX tenk1_unique2_idx;
+DROP INDEX INT4_TBL_f1_idx;
+
 -- check for correct detection of nested-aggregate errors
 select max(min(unique1)) from tenk1;
 select (select max(min(unique1)) from int8_tbl) from tenk1;
