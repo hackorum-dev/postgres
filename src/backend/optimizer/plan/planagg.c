@@ -126,9 +126,19 @@ preprocess_minmax_aggregates(PlannerInfo *root)
 			return;
 		jtnode = linitial(jtnode->fromlist);
 	}
-	if (!IsA(jtnode, RangeTblRef))
+
+	/*
+	 * Let's consider applying optimization to the remaining
+	 * single relations after join removal optimization.
+	 * To do this, we need to make sure that fromlist is empty and
+	 * quals contains only one RTE relation.aggs_list.
+	 */
+	if (IsA(jtnode, JoinExpr) && jtnode->fromlist == NIL && IsA(jtnode->quals, RangeTblRef))
+		rtr = (RangeTblRef *) (jtnode->quals);
+	else if (IsA(jtnode, RangeTblRef))
+		rtr = (RangeTblRef *) jtnode;
+	else
 		return;
-	rtr = (RangeTblRef *) jtnode;
 	rte = planner_rt_fetch(rtr->rtindex, root);
 	if (rte->rtekind == RTE_RELATION)
 		 /* ordinary relation, ok */ ;
