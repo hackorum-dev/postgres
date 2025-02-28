@@ -63,7 +63,7 @@ sub test_conn
 # Initialize primary node
 my $node = PostgreSQL::Test::Cluster->new('primary');
 $node->init;
-$node->append_conf('postgresql.conf', "log_connections = on\n");
+$node->append_conf('postgresql.conf', "log_connection_messages = all\n");
 $node->start;
 
 # could fail in FIPS mode

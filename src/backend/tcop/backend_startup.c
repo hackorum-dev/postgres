@@ -201,8 +201,8 @@ BackendInitialize(ClientSocket *client_sock, CAC_state cac)
 	port->remote_host = MemoryContextStrdup(TopMemoryContext, remote_host);
 	port->remote_port = MemoryContextStrdup(TopMemoryContext, remote_port);
 
-	/* And now we can issue the Log_connections message, if wanted */
-	if (Log_connections)
+	/* And now we can issue the "connection received" message, if wanted */
+	if (Log_connection_messages & LOG_CONNECTION_RECEIVED)
 	{
 		if (remote_port[0])
 			ereport(LOG,
