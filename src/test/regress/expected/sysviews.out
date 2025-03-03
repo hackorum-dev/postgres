@@ -232,3 +232,42 @@ select * from pg_timezone_abbrevs where abbrev = 'LMT';
  LMT    | @ 7 hours 52 mins 58 secs ago | f
 (1 row)
 
+select active_count as prev_active_count from pg_stat_session where pid = pg_backend_pid() \gset
+select (select active_count from pg_stat_session where pid = pg_backend_pid()) - :prev_active_count = 1 as ok;
+ ok 
+----
+ t
+(1 row)
+
+select idle_count as prev_idle_count from pg_stat_session where pid = pg_backend_pid() \gset
+select (select idle_count from pg_stat_session where pid = pg_backend_pid()) - :prev_idle_count = 1 as ok;
+ ok 
+----
+ t
+(1 row)
+
+select idle_in_transaction_count as prev_idle_in_transaction_count from pg_stat_session where pid = pg_backend_pid() \gset
+begin;
+commit;
+select (select idle_in_transaction_count from pg_stat_session where pid = pg_backend_pid()) - :prev_idle_in_transaction_count = 1 as ok;
+ ok 
+----
+ t
+(1 row)
+
+select idle_in_transaction_aborted_count as prev_idle_in_transaction_aborted_count from pg_stat_session where pid = pg_backend_pid() \gset
+begin;
+do $$
+begin
+raise 'test error';
+end;
+$$ language plpgsql;
+ERROR:  test error
+CONTEXT:  PL/pgSQL function inline_code_block line 3 at RAISE
+rollback;
+select (select idle_in_transaction_aborted_count from pg_stat_session where pid = pg_backend_pid()) - :prev_idle_in_transaction_aborted_count = 1 as ok;
+ ok 
+----
+ t
+(1 row)
+

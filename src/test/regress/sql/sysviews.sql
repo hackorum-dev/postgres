@@ -101,3 +101,24 @@ select count(distinct utc_offset) >= 24 as ok from pg_timezone_abbrevs;
 -- One specific case we can check without much fear of breakage
 -- is the historical local-mean-time value used for America/Los_Angeles.
 select * from pg_timezone_abbrevs where abbrev = 'LMT';
+
+select active_count as prev_active_count from pg_stat_session where pid = pg_backend_pid() \gset
+select (select active_count from pg_stat_session where pid = pg_backend_pid()) - :prev_active_count = 1 as ok;
+
+select idle_count as prev_idle_count from pg_stat_session where pid = pg_backend_pid() \gset
+select (select idle_count from pg_stat_session where pid = pg_backend_pid()) - :prev_idle_count = 1 as ok;
+
+select idle_in_transaction_count as prev_idle_in_transaction_count from pg_stat_session where pid = pg_backend_pid() \gset
+begin;
+commit;
+select (select idle_in_transaction_count from pg_stat_session where pid = pg_backend_pid()) - :prev_idle_in_transaction_count = 1 as ok;
+
+select idle_in_transaction_aborted_count as prev_idle_in_transaction_aborted_count from pg_stat_session where pid = pg_backend_pid() \gset
+begin;
+do $$
+begin
+raise 'test error';
+end;
+$$ language plpgsql;
+rollback;
+select (select idle_in_transaction_aborted_count from pg_stat_session where pid = pg_backend_pid()) - :prev_idle_in_transaction_aborted_count = 1 as ok;
