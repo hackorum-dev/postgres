@@ -6723,6 +6723,7 @@ generate_series_timestamp(PG_FUNCTION_ARGS)
 	FuncCallContext *funcctx;
 	generate_series_timestamp_fctx *fctx;
 	Timestamp	result;
+	Timestamp	nextval = 0;
 
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())
@@ -6751,18 +6752,25 @@ generate_series_timestamp(PG_FUNCTION_ARGS)
 		fctx->finish = finish;
 		fctx->step = *step;
 
-		/* Determine sign of the interval */
-		fctx->step_sign = interval_sign(&fctx->step);
+		if (INTERVAL_NOT_FINITE((&fctx->step)))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("step size cannot be infinite")));
+
+		/*
+		 * Compute the next series value so that we can identify the step
+		 * direction.  This seems more reliable than trusting interval_sign().
+		 */
+		nextval =
+			DatumGetTimestamp(DirectFunctionCall2(timestamp_pl_interval,
+												  TimestampGetDatum(start),
+												  PointerGetDatum(&fctx->step)));
+		fctx->step_sign = timestamp_cmp_internal(nextval, start);
 
 		if (fctx->step_sign == 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("step size cannot equal zero")));
-
-		if (INTERVAL_NOT_FINITE((&fctx->step)))
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("step size cannot be infinite")));
 
 		funcctx->user_fctx = fctx;
 		MemoryContextSwitchTo(oldcontext);
@@ -6782,9 +6790,18 @@ generate_series_timestamp(PG_FUNCTION_ARGS)
 		timestamp_cmp_internal(result, fctx->finish) >= 0)
 	{
 		/* increment current in preparation for next iteration */
-		fctx->current = DatumGetTimestamp(DirectFunctionCall2(timestamp_pl_interval,
-															  TimestampGetDatum(fctx->current),
-															  PointerGetDatum(&fctx->step)));
+		if (nextval)
+			fctx->current = nextval;	/* already calculated it */
+		else
+			fctx->current =
+				DatumGetTimestamp(DirectFunctionCall2(timestamp_pl_interval,
+													  TimestampGetDatum(result),
+													  PointerGetDatum(&fctx->step)));
+		/* check for directional instability */
+		if (fctx->step_sign != timestamp_cmp_internal(fctx->current, result))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("step size changed sign")));
 
 		/* do when there is more left to send */
 		SRF_RETURN_NEXT(funcctx, TimestampGetDatum(result));
