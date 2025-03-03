@@ -3478,7 +3478,7 @@ dead_items_alloc(LVRelState *vacrel, int nworkers)
 	 * be used for an index, so we invoke parallelism only if there are at
 	 * least two indexes on a table.
 	 */
-	if (nworkers >= 0 && vacrel->nindexes > 1 && vacrel->do_index_vacuuming)
+	if (nworkers >= 0 && vacrel->nindexes > 0 && vacrel->do_index_vacuuming)
 	{
 		/*
 		 * Since parallel workers cannot access data in temporary tables, we
@@ -3513,6 +3513,8 @@ dead_items_alloc(LVRelState *vacrel, int nworkers)
 			return;
 		}
 	}
+
+	elog(ERROR, "shoudn't reach here");
 
 	/*
 	 * Serial VACUUM case. Allocate both dead_items and dead_items_info

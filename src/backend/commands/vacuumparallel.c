@@ -272,7 +272,7 @@ parallel_vacuum_init(Relation rel, Relation *indrels, int nindexes,
 	parallel_workers = parallel_vacuum_compute_workers(indrels, nindexes,
 													   nrequested_workers,
 													   will_parallel_vacuum);
-	if (parallel_workers <= 0)
+	if (false) //(parallel_workers <= 0)
 	{
 		/* Can't perform vacuum in parallel -- return NULL */
 		pfree(will_parallel_vacuum);
