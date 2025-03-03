@@ -419,6 +419,7 @@ typedef struct LVSavedErrInfo
 	VacErrPhase phase;
 } LVSavedErrInfo;
 
+static int _heap_scan = 0, _index_vac = 0, _heap_vac = 0;
 
 /* non-export function prototypes */
 static void lazy_scan_heap(LVRelState *vacrel);
@@ -830,11 +831,15 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	lazy_check_wraparound_failsafe(vacrel);
 	dead_items_alloc(vacrel, params->nworkers);
 
+	TimestampTz start = GetCurrentTimestamp();
+
 	/*
 	 * Call lazy_scan_heap to perform all required heap pruning, index
 	 * vacuuming, and heap vacuuming (plus related processing)
 	 */
 	lazy_scan_heap(vacrel);
+
+	_heap_scan = (int) (GetCurrentTimestamp() - start) / 1000;
 
 	/*
 	 * Free resources managed by dead_items_alloc.  This ends parallel mode in
@@ -931,6 +936,9 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 						 vacrel->missed_dead_tuples,
 						 starttime);
 	pgstat_progress_end_command();
+
+	elog(INFO, "heap_scan %d index_vac %d heap_vac %d",
+		 _heap_scan, _index_vac, _heap_vac);
 
 	if (instrument)
 	{
@@ -2519,7 +2527,9 @@ lazy_vacuum(LVRelState *vacrel)
 		 * We successfully completed a round of index vacuuming.  Do related
 		 * heap vacuuming now.
 		 */
+		TimestampTz start = GetCurrentTimestamp();
 		lazy_vacuum_heap_rel(vacrel);
+		_heap_vac = (int) (GetCurrentTimestamp() - start) / 1000;
 	}
 	else
 	{
@@ -2588,6 +2598,8 @@ lazy_vacuum_all_indexes(LVRelState *vacrel)
 	progress_start_val[1] = vacrel->nindexes;
 	pgstat_progress_update_multi_param(2, progress_start_index, progress_start_val);
 
+	TimestampTz start = GetCurrentTimestamp();
+
 	if (!ParallelVacuumIsActive(vacrel))
 	{
 		for (int idx = 0; idx < vacrel->nindexes; idx++)
@@ -2624,6 +2636,8 @@ lazy_vacuum_all_indexes(LVRelState *vacrel)
 		if (lazy_check_wraparound_failsafe(vacrel))
 			allindexes = false;
 	}
+
+	_index_vac = (int) (GetCurrentTimestamp() - start) / 1000;
 
 	/*
 	 * We delete all LP_DEAD items from the first heap pass in all indexes on
