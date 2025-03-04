@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-LISTEN <replaceable class="parameter">channel</replaceable>
+LISTEN { <replaceable class="parameter">channel</replaceable> | <replaceable>pattern</replaceable> }
 </synopsis>
  </refsynopsisdiv>
 
@@ -30,17 +30,18 @@ LISTEN <replaceable class="parameter">channel</replaceable>
 
   <para>
    <command>LISTEN</command> registers the current session as a
-   listener on the notification channel named <replaceable
-   class="parameter">channel</replaceable>.
+   listener on the notification channels named <replaceable
+   class="parameter">channel</replaceable> or whose name match
+   the <replaceable class="parameter">pattern</replaceable>.
    If the current session is already registered as a listener for
-   this notification channel, nothing is done.
+   these notification channels, nothing is done.
   </para>
 
   <para>
    Whenever the command <command>NOTIFY <replaceable
    class="parameter">channel</replaceable></command> is invoked, either
    by this session or another one connected to the same database, all
-   the sessions currently listening on that notification channel are
+   the sessions currently listening on those notification channels are
    notified, and each will in turn notify its connected client
    application.
   </para>
@@ -74,6 +75,15 @@ LISTEN <replaceable class="parameter">channel</replaceable>
     <listitem>
      <para>
       Name of a notification channel (any identifier).
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">pattern</replaceable></term>
+    <listitem>
+     <para>
+      Pattern of notification channel names (<xref linkend="functions-like"/> expression).
      </para>
     </listitem>
    </varlistentry>
@@ -130,6 +140,17 @@ LISTEN <replaceable class="parameter">channel</replaceable>
 LISTEN virtual;
 NOTIFY virtual;
 Asynchronous notification "virtual" received from server process with PID 8448.
+</programlisting></para>
+  <para>
+   Configure and execute a listen pattern from
+   <application>psql</application>:
+
+<programlisting>
+LISTEN 'virtual%';
+NOTIFY virtual0;
+Asynchronous notification "virtual0" received from server process with PID 8448.
+NOTIFY virtual1;
+Asynchronous notification "virtual1" received from server process with PID 8448.
 </programlisting></para>
  </refsect1>
 

@@ -133,6 +133,7 @@
 #include "access/slru.h"
 #include "access/transam.h"
 #include "access/xact.h"
+#include "catalog/pg_collation.h"
 #include "catalog/pg_database.h"
 #include "commands/async.h"
 #include "common/hashfn.h"
@@ -312,6 +313,12 @@ static SlruCtlData NotifyCtlData;
 
 #define QUEUE_FULL_WARN_INTERVAL	5000	/* warn at most once every 5s */
 
+typedef struct
+{
+	bool	ispatt;
+	char	channel[FLEXIBLE_ARRAY_MEMBER]; /* nul-terminated string */
+} ListenChannel;
+
 /*
  * listenChannels identifies the channels we are actually listening to
  * (ie, have committed a LISTEN on).  It is a simple list of channel names,
@@ -339,6 +346,7 @@ typedef enum
 typedef struct
 {
 	ListenActionKind action;
+	bool			 ispatt;
 	char		channel[FLEXIBLE_ARRAY_MEMBER]; /* nul-terminated string */
 } ListenAction;
 
@@ -430,13 +438,13 @@ int			max_notify_queue_pages = 1048576;
 /* local function prototypes */
 static inline int64 asyncQueuePageDiff(int64 p, int64 q);
 static inline bool asyncQueuePagePrecedes(int64 p, int64 q);
-static void queue_listen(ListenActionKind action, const char *channel);
+static void queue_listen(ListenActionKind action, const bool ispatt, const char *channel);
 static void Async_UnlistenOnExit(int code, Datum arg);
 static void Exec_ListenPreCommit(void);
-static void Exec_ListenCommit(const char *channel);
-static void Exec_UnlistenCommit(const char *channel);
+static void Exec_ListenCommit(const bool ispatt, const char *channel);
+static void Exec_UnlistenCommit(const bool ispatt, const char *channel);
 static void Exec_UnlistenAllCommit(void);
-static bool IsListeningOn(const char *channel);
+static bool IsListeningOn(const bool trymatch, const bool ispatt, const char *channel);
 static void asyncQueueUnregister(void);
 static bool asyncQueueIsFull(void);
 static bool asyncQueueAdvance(volatile QueuePosition *position, int entryLength);
@@ -687,7 +695,7 @@ Async_Notify(const char *channel, const char *payload)
  *		commit.
  */
 static void
-queue_listen(ListenActionKind action, const char *channel)
+queue_listen(ListenActionKind action, const bool ispatt, const char *channel)
 {
 	MemoryContext oldcontext;
 	ListenAction *actrec;
@@ -705,6 +713,7 @@ queue_listen(ListenActionKind action, const char *channel)
 	actrec = (ListenAction *) palloc(offsetof(ListenAction, channel) +
 									 strlen(channel) + 1);
 	actrec->action = action;
+	actrec->ispatt = ispatt;
 	strcpy(actrec->channel, channel);
 
 	if (pendingActions == NULL || my_level > pendingActions->nestingLevel)
@@ -735,12 +744,12 @@ queue_listen(ListenActionKind action, const char *channel)
  *		This is executed by the SQL listen command.
  */
 void
-Async_Listen(const char *channel)
+Async_Listen(const bool ispatt, const char *channel)
 {
 	if (Trace_notify)
 		elog(DEBUG1, "Async_Listen(%s,%d)", channel, MyProcPid);
 
-	queue_listen(LISTEN_LISTEN, channel);
+	queue_listen(LISTEN_LISTEN, ispatt, channel);
 }
 
 /*
@@ -749,7 +758,7 @@ Async_Listen(const char *channel)
  *		This is executed by the SQL unlisten command.
  */
 void
-Async_Unlisten(const char *channel)
+Async_Unlisten(const bool ispatt, const char *channel)
 {
 	if (Trace_notify)
 		elog(DEBUG1, "Async_Unlisten(%s,%d)", channel, MyProcPid);
@@ -758,7 +767,7 @@ Async_Unlisten(const char *channel)
 	if (pendingActions == NULL && !unlistenExitRegistered)
 		return;
 
-	queue_listen(LISTEN_UNLISTEN, channel);
+	queue_listen(LISTEN_UNLISTEN, ispatt, channel);
 }
 
 /*
@@ -776,7 +785,7 @@ Async_UnlistenAll(void)
 	if (pendingActions == NULL && !unlistenExitRegistered)
 		return;
 
-	queue_listen(LISTEN_UNLISTEN_ALL, "");
+	queue_listen(LISTEN_UNLISTEN_ALL, false, "");
 }
 
 /*
@@ -803,10 +812,31 @@ pg_listening_channels(PG_FUNCTION_ARGS)
 
 	if (funcctx->call_cntr < list_length(listenChannels))
 	{
-		char	   *channel = (char *) list_nth(listenChannels,
-												funcctx->call_cntr);
+		ListenChannel *chnl;
 
-		SRF_RETURN_NEXT(funcctx, CStringGetTextDatum(channel));
+		chnl = (ListenChannel *)list_nth(listenChannels, funcctx->call_cntr);
+
+		if (chnl->ispatt)
+		{
+			Size plen;
+			char *result;
+			MemoryContext oldcontext;
+
+			oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+			plen = strlen(chnl->channel);
+			result = (char *)palloc(plen + 3);
+			result[0] = '\'';
+			memcpy(result + 1, chnl->channel, plen);
+			result[plen + 1] = '\'';
+			result[plen + 2] = '\0';
+
+			MemoryContextSwitchTo(oldcontext);
+
+			SRF_RETURN_NEXT(funcctx, CStringGetTextDatum(result));
+		}
+		else
+			SRF_RETURN_NEXT(funcctx, CStringGetTextDatum(chnl->channel));
 	}
 
 	SRF_RETURN_DONE(funcctx);
@@ -989,10 +1019,10 @@ AtCommit_Notify(void)
 			switch (actrec->action)
 			{
 				case LISTEN_LISTEN:
-					Exec_ListenCommit(actrec->channel);
+					Exec_ListenCommit(actrec->ispatt, actrec->channel);
 					break;
 				case LISTEN_UNLISTEN:
-					Exec_UnlistenCommit(actrec->channel);
+					Exec_UnlistenCommit(actrec->ispatt, actrec->channel);
 					break;
 				case LISTEN_UNLISTEN_ALL:
 					Exec_UnlistenAllCommit();
@@ -1133,12 +1163,13 @@ Exec_ListenPreCommit(void)
  * Add the channel to the list of channels we are listening on.
  */
 static void
-Exec_ListenCommit(const char *channel)
+Exec_ListenCommit(const bool ispatt, const char *channel)
 {
-	MemoryContext oldcontext;
+	MemoryContext	oldcontext;
+	ListenChannel  *chnl;
 
 	/* Do nothing if we are already listening on this channel */
-	if (IsListeningOn(channel))
+	if (IsListeningOn(false, ispatt, channel))
 		return;
 
 	/*
@@ -1150,7 +1181,15 @@ Exec_ListenCommit(const char *channel)
 	 * later.
 	 */
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-	listenChannels = lappend(listenChannels, pstrdup(channel));
+
+	chnl = (ListenChannel *) palloc(offsetof(ListenChannel, channel) +
+								strlen(channel) + 1);
+
+	chnl->ispatt = ispatt;
+	strcpy(chnl->channel, channel);
+
+	listenChannels = lappend(listenChannels, chnl);
+
 	MemoryContextSwitchTo(oldcontext);
 }
 
@@ -1160,7 +1199,7 @@ Exec_ListenCommit(const char *channel)
  * Remove the specified channel name from listenChannels.
  */
 static void
-Exec_UnlistenCommit(const char *channel)
+Exec_UnlistenCommit(const bool ispatt, const char *channel)
 {
 	ListCell   *q;
 
@@ -1169,9 +1208,12 @@ Exec_UnlistenCommit(const char *channel)
 
 	foreach(q, listenChannels)
 	{
-		char	   *lchan = (char *) lfirst(q);
+		ListenChannel *lchan = (ListenChannel *) lfirst(q);
 
-		if (strcmp(lchan, channel) == 0)
+		if (lchan->ispatt != ispatt)
+			continue;
+
+		if (strcmp(lchan->channel, channel) == 0)
 		{
 			listenChannels = foreach_delete_current(listenChannels, q);
 			pfree(lchan);
@@ -1209,16 +1251,37 @@ Exec_UnlistenAllCommit(void)
  * fairly short, though.
  */
 static bool
-IsListeningOn(const char *channel)
+IsListeningOn(const bool trymatch, const bool ispatt, const char *channel)
 {
 	ListCell   *p;
 
 	foreach(p, listenChannels)
 	{
-		char	   *lchan = (char *) lfirst(p);
+		ListenChannel *lchan = (ListenChannel *) lfirst(p);
 
-		if (strcmp(lchan, channel) == 0)
-			return true;
+		if (trymatch)
+		{
+			Assert(!ispatt);
+
+			if (lchan->ispatt)
+			{
+				Datum s = PointerGetDatum(cstring_to_text(channel));
+				Datum p = PointerGetDatum(cstring_to_text(lchan->channel));
+
+				if (DatumGetBool(DirectFunctionCall2Coll(textlike, DEFAULT_COLLATION_OID, s, p)))
+					return true;
+			}
+			else if (strcmp(lchan->channel, channel) == 0)
+				return true;
+		}
+		else
+		{
+			if (ispatt == lchan->ispatt)
+			{
+				if (strcmp(lchan->channel, channel) == 0)
+					return true;
+			}
+		}
 	}
 	return false;
 }
@@ -2071,7 +2134,7 @@ asyncQueueProcessPageEntries(volatile QueuePosition *current,
 				/* qe->data is the null-terminated channel name */
 				char	   *channel = qe->data;
 
-				if (IsListeningOn(channel))
+				if (IsListeningOn(true, false, channel))
 				{
 					/* payload follows channel name */
 					char	   *payload = qe->data + strlen(channel) + 1;

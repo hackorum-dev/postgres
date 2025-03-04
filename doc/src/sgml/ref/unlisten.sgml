@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-UNLISTEN { <replaceable class="parameter">channel</replaceable> | * }
+UNLISTEN { <replaceable class="parameter">channel</replaceable> | <replaceable class="parameter">pattern</replaceable> | * }
 </synopsis>
  </refsynopsisdiv>
 
@@ -33,10 +33,11 @@ UNLISTEN { <replaceable class="parameter">channel</replaceable> | * }
    registration for <command>NOTIFY</command> events.
    <command>UNLISTEN</command> cancels any existing registration of
    the current <productname>PostgreSQL</productname> session as a
-   listener on the notification channel named <replaceable
-   class="parameter">channel</replaceable>.  The special wildcard
-   <literal>*</literal> cancels all listener registrations for the
-   current session.
+   listener on the notification channels named <replaceable
+   class="parameter">channel</replaceable> or whose name match
+   the <replaceable class="parameter">pattern</replaceable>.
+   The special wildcard <literal>*</literal> cancels all listener
+   registrations for the current session.
   </para>
 
   <para>
@@ -56,6 +57,15 @@ UNLISTEN { <replaceable class="parameter">channel</replaceable> | * }
     <listitem>
      <para>
       Name of a notification channel (any identifier).
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">pattern</replaceable></term>
+    <listitem>
+     <para>
+      Pattern of notification channel names (<xref linkend="functions-like"/> expression).
      </para>
     </listitem>
    </varlistentry>

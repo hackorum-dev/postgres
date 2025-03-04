@@ -11037,6 +11037,14 @@ ListenStmt: LISTEN ColId
 					n->conditionname = $2;
 					$$ = (Node *) n;
 				}
+			| LISTEN Sconst
+				{
+					ListenStmt *n = makeNode(ListenStmt);
+
+					n->ispatt = true;
+					n->conditionname = $2;
+					$$ = (Node *) n;
+				}
 		;
 
 UnlistenStmt:
@@ -11052,6 +11060,14 @@ UnlistenStmt:
 					UnlistenStmt *n = makeNode(UnlistenStmt);
 
 					n->conditionname = NULL;
+					$$ = (Node *) n;
+				}
+			| UNLISTEN Sconst
+				{
+					UnlistenStmt *n = makeNode(UnlistenStmt);
+
+					n->ispatt = true;
+					n->conditionname = $2;
 					$$ = (Node *) n;
 				}
 		;

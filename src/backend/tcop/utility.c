@@ -824,7 +824,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 							 errmsg("cannot execute %s within a background process",
 									"LISTEN")));
 
-				Async_Listen(stmt->conditionname);
+				Async_Listen(stmt->ispatt, stmt->conditionname);
 			}
 			break;
 
@@ -834,7 +834,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				CheckRestrictedOperation("UNLISTEN");
 				if (stmt->conditionname)
-					Async_Unlisten(stmt->conditionname);
+					Async_Unlisten(stmt->ispatt, stmt->conditionname);
 				else
 					Async_UnlistenAll();
 			}

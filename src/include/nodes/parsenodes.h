@@ -3720,6 +3720,7 @@ typedef struct NotifyStmt
 typedef struct ListenStmt
 {
 	NodeTag		type;
+	bool		ispatt;			/* condition name is a pattern */
 	char	   *conditionname;	/* condition name to listen on */
 } ListenStmt;
 
@@ -3730,6 +3731,7 @@ typedef struct ListenStmt
 typedef struct UnlistenStmt
 {
 	NodeTag		type;
+	bool		ispatt;			/* condition name is a pattern */
 	char	   *conditionname;	/* name to unlisten on, or NULL for all */
 } UnlistenStmt;
 
