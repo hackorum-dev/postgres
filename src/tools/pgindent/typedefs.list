@@ -2823,6 +2823,7 @@ Subscription
 SubscriptionInfo
 SubscriptionRelState
 SummarizerReadLocalXLogPrivate
+SupportRequestAggregate
 SupportRequestCost
 SupportRequestIndexCondition
 SupportRequestModifyInPlace

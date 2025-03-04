@@ -390,4 +390,11 @@ typedef struct SupportRequestModifyInPlace
 	int			paramid;		/* ID of Param(s) representing variable */
 } SupportRequestModifyInPlace;
 
+typedef struct SupportRequestAggregate
+{
+	NodeTag		type;
+
+	Aggref	   *aggref;
+} SupportRequestAggregate;
+
 #endif							/* SUPPORTNODES_H */
