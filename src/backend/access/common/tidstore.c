@@ -100,7 +100,7 @@ typedef struct BlocktableEntry
 
 #define RT_PREFIX shared_ts
 #define RT_SHMEM
-#define RT_SCOPE static
+#define RT_SCOPE static pg_noinline
 #define RT_DECLARE
 #define RT_DEFINE
 #define RT_VALUE_TYPE BlocktableEntry
