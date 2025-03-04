@@ -35,6 +35,7 @@
 #include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
 #include "miscadmin.h"
+#include "optimizer/cost.h"
 #include "port/pg_bitutils.h"
 #include "utils/dynahash.h"
 #include "utils/lsyscache.h"
@@ -453,6 +454,7 @@ ExecHashTableCreate(HashState *state)
 	int			nbuckets;
 	int			nbatch;
 	double		rows;
+	int			workmem;		/* ignored */
 	int			num_skew_mcvs;
 	int			log2_nbuckets;
 	MemoryContext oldcxt;
@@ -482,7 +484,7 @@ ExecHashTableCreate(HashState *state)
 							state->parallel_state->nparticipants - 1 : 0,
 							worker_space_allowed,
 							&space_allowed,
-							&nbuckets, &nbatch, &num_skew_mcvs);
+							&nbuckets, &nbatch, &num_skew_mcvs, &workmem);
 
 	/* nbuckets must be a power of 2 */
 	log2_nbuckets = my_log2(nbuckets);
@@ -668,7 +670,8 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 						size_t *total_space_allowed,
 						int *numbuckets,
 						int *numbatches,
-						int *num_skew_mcvs)
+						int *num_skew_mcvs,
+						int *workmem)
 {
 	int			tupsize;
 	double		inner_rel_bytes;
@@ -769,6 +772,27 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 		*num_skew_mcvs = 0;
 
 	/*
+	 * Set "workmem" to the amount of memory needed to hold the inner rel in a
+	 * single batch. So this calculation doesn't care about "max_pointers".
+	 */
+	dbuckets = ceil(ntuples / NTUP_PER_BUCKET);
+	nbuckets = (int) dbuckets;
+	/* don't let nbuckets be really small, though ... */
+	nbuckets = Max(nbuckets, 1024);
+	/* ... and force it to be a power of 2. */
+	nbuckets = pg_nextpower2_32(nbuckets);
+	bucket_bytes = sizeof(HashJoinTuple) * nbuckets;
+
+	/* Don't forget the 2% overhead reserved for skew buckets! */
+	*workmem = useskew ?
+		normalize_work_bytes((inner_rel_bytes + bucket_bytes) *
+							 100.0 / (100.0 - SKEW_HASH_MEM_PERCENT)) :
+		normalize_work_bytes(inner_rel_bytes + bucket_bytes);
+
+	/*
+	 * Now redo the nbuckets and bucket_bytes calculations, taking memory
+	 * limits into account.
+	 *
 	 * Set nbuckets to achieve an average bucket load of NTUP_PER_BUCKET when
 	 * memory is filled, assuming a single batch; but limit the value so that
 	 * the pointer arrays we'll try to allocate do not exceed hash_table_bytes
@@ -799,6 +823,7 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 	 * the required bucket headers, we will need multiple batches.
 	 */
 	bucket_bytes = sizeof(HashJoinTuple) * nbuckets;
+
 	if (inner_rel_bytes + bucket_bytes > hash_table_bytes)
 	{
 		/* We'll need multiple batches */
@@ -819,7 +844,8 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 									total_space_allowed,
 									numbuckets,
 									numbatches,
-									num_skew_mcvs);
+									num_skew_mcvs,
+									workmem);
 			return;
 		}
 

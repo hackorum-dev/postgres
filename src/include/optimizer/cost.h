@@ -106,7 +106,7 @@ extern void cost_namedtuplestorescan(Path *path, PlannerInfo *root,
 									 RelOptInfo *baserel, ParamPathInfo *param_info);
 extern void cost_resultscan(Path *path, PlannerInfo *root,
 							RelOptInfo *baserel, ParamPathInfo *param_info);
-extern void cost_recursive_union(Path *runion, Path *nrterm, Path *rterm);
+extern void cost_recursive_union(RecursiveUnionPath *runion, Path *nrterm, Path *rterm);
 extern void cost_sort(Path *path, PlannerInfo *root,
 					  List *pathkeys, int input_disabled_nodes,
 					  Cost input_cost, double tuples, int width,
@@ -139,7 +139,7 @@ extern void cost_windowagg(Path *path, PlannerInfo *root,
 						   List *windowFuncs, WindowClause *winclause,
 						   int input_disabled_nodes,
 						   Cost input_startup_cost, Cost input_total_cost,
-						   double input_tuples);
+						   double input_tuples, int width);
 extern void cost_group(Path *path, PlannerInfo *root,
 					   int numGroupCols, double numGroups,
 					   List *quals,
@@ -218,9 +218,18 @@ extern void set_namedtuplestore_size_estimates(PlannerInfo *root, RelOptInfo *re
 extern void set_result_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_foreign_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern PathTarget *set_pathtarget_cost_width(PlannerInfo *root, PathTarget *target);
+extern double relation_byte_size(double tuples, int width);
 extern double compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel,
 								   Path *bitmapqual, double loop_count,
 								   Cost *cost_p, double *tuples_p);
 extern double compute_gather_rows(Path *path);
+extern int	compute_agg_input_workmem(double input_tuples, double input_width);
+extern int	compute_agg_output_workmem(PlannerInfo *root,
+									   AggStrategy aggstrategy,
+									   double numGroups, uint64 transitionSpace,
+									   double input_tuples, double input_width,
+									   bool cost_sort);
+extern int	normalize_work_kb(double nkb);
+extern int	normalize_work_bytes(double nbytes);
 
 #endif							/* COST_H */

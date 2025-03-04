@@ -691,5 +691,17 @@ get_agg_clause_costs(PlannerInfo *root, AggSplit aggsplit, AggClauseCosts *costs
 			costs->finalCost.startup += argcosts.startup;
 			costs->finalCost.per_tuple += argcosts.per_tuple;
 		}
+
+		/*
+		 * How many aggrefs need to sort their input? (Each such aggref gets
+		 * its own sort buffer. The logic here MUST match the corresponding
+		 * logic in function build_pertrans_for_aggref().)
+		 */
+		if (!AGGKIND_IS_ORDERED_SET(aggref->aggkind) &&
+			!aggref->aggpresorted &&
+			(aggref->aggdistinct || aggref->aggorder))
+		{
+			++costs->numSortBuffers;
+		}
 	}
 }

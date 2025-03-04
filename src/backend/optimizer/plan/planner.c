@@ -585,6 +585,8 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	result->stmt_len = parse->stmt_len;
 
 	result->workMemCategories = glob->workMemCategories;
+	result->workMemEstimates = glob->workMemEstimates;
+	result->workMemCounts = glob->workMemCounts;
 	result->workMemLimits = glob->workMemLimits;
 
 	result->jitFlags = PGJIT_NONE;

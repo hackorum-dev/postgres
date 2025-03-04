@@ -105,6 +105,7 @@
 #include "optimizer/planmain.h"
 #include "optimizer/restrictinfo.h"
 #include "parser/parsetree.h"
+#include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/selfuncs.h"
 #include "utils/spccache.h"
@@ -201,9 +202,14 @@ static Cost append_nonpartial_cost(List *subpaths, int numpaths,
 								   int parallel_workers);
 static void set_rel_width(PlannerInfo *root, RelOptInfo *rel);
 static int32 get_expr_width(PlannerInfo *root, const Node *expr);
-static double relation_byte_size(double tuples, int width);
 static double page_size(double tuples, int width);
 static double get_parallel_divisor(Path *path);
+static void compute_sort_output_sizes(double input_tuples, int input_width,
+									  double limit_tuples,
+									  double *output_tuples,
+									  double *output_bytes);
+static double compute_bitmap_workmem(RelOptInfo *baserel, Path *bitmapqual,
+									 Cardinality max_ancestor_rows);
 
 
 /*
@@ -1113,6 +1119,18 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 	path->disabled_nodes = enable_bitmapscan ? 0 : 1;
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
+
+
+	/*
+	 * Set an overall working-memory estimate for the entire BitmapHeapPath --
+	 * including all of the IndexPaths and BitmapOrPaths in its bitmapqual.
+	 *
+	 * (When we convert this path into a BitmapHeapScan plan, we'll break this
+	 * overall estimate down into per-node estimates, just as we do for
+	 * AggPaths.)
+	 */
+	path->workmem = compute_bitmap_workmem(baserel, bitmapqual,
+										   0.0 /* max_ancestor_rows */ );
 }
 
 /*
@@ -1588,6 +1606,16 @@ cost_functionscan(Path *path, PlannerInfo *root,
 	path->disabled_nodes = 0;
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
+
+	/*
+	 * Per "XXX" comment above, this workmem estimate is likely to be wrong,
+	 * because the "rows" estimate is pretty phony. Report the estimate
+	 * anyway, for completeness. (This is at least better than saying it won't
+	 * use *any* working memory.)
+	 */
+	path->workmem = list_length(rte->functions) *
+		normalize_work_bytes(relation_byte_size(path->rows,
+												path->pathtarget->width));
 }
 
 /*
@@ -1645,6 +1673,16 @@ cost_tablefuncscan(Path *path, PlannerInfo *root,
 	path->disabled_nodes = 0;
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
+
+	/*
+	 * Per "XXX" comment above, this workmem estimate is likely to be wrong,
+	 * because the "rows" estimate is pretty phony. Report the estimate
+	 * anyway, for completeness. (This is at least better than saying it won't
+	 * use *any* working memory.)
+	 */
+	path->workmem =
+		normalize_work_bytes(relation_byte_size(path->rows,
+												path->pathtarget->width));
 }
 
 /*
@@ -1741,6 +1779,9 @@ cost_ctescan(Path *path, PlannerInfo *root,
 	path->disabled_nodes = 0;
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
+	path->workmem =
+		normalize_work_bytes(relation_byte_size(path->rows,
+												path->pathtarget->width));
 }
 
 /*
@@ -1824,7 +1865,7 @@ cost_resultscan(Path *path, PlannerInfo *root,
  * We are given Paths for the nonrecursive and recursive terms.
  */
 void
-cost_recursive_union(Path *runion, Path *nrterm, Path *rterm)
+cost_recursive_union(RecursiveUnionPath *runion, Path *nrterm, Path *rterm)
 {
 	Cost		startup_cost;
 	Cost		total_cost;
@@ -1851,12 +1892,37 @@ cost_recursive_union(Path *runion, Path *nrterm, Path *rterm)
 	 */
 	total_cost += cpu_tuple_cost * total_rows;
 
-	runion->disabled_nodes = nrterm->disabled_nodes + rterm->disabled_nodes;
-	runion->startup_cost = startup_cost;
-	runion->total_cost = total_cost;
-	runion->rows = total_rows;
-	runion->pathtarget->width = Max(nrterm->pathtarget->width,
-									rterm->pathtarget->width);
+	runion->path.disabled_nodes = nrterm->disabled_nodes + rterm->disabled_nodes;
+	runion->path.startup_cost = startup_cost;
+	runion->path.total_cost = total_cost;
+	runion->path.rows = total_rows;
+	runion->path.pathtarget->width = Max(nrterm->pathtarget->width,
+										 rterm->pathtarget->width);
+
+	/*
+	 * Include memory for working and intermediate tables. Since we'll
+	 * repeatedly swap the two tables, use 2x whichever is larger as our
+	 * estimate.
+	 */
+	runion->path.workmem =
+		normalize_work_bytes(
+							 Max(relation_byte_size(nrterm->rows,
+													nrterm->pathtarget->width),
+								 relation_byte_size(rterm->rows,
+													rterm->pathtarget->width))
+							 * 2);
+
+	if (list_length(runion->distinctList) > 0)
+	{
+		/* Also include memory for hash table. */
+		Size		hashentrysize;
+
+		hashentrysize = MAXALIGN(runion->path.pathtarget->width) +
+			MAXALIGN(SizeofMinimalTupleHeader);
+
+		runion->path.workmem +=
+			normalize_work_bytes(runion->numGroups * hashentrysize);
+	}
 }
 
 /*
@@ -1896,7 +1962,7 @@ cost_recursive_union(Path *runion, Path *nrterm, Path *rterm)
  * 'limit_tuples' is the bound on the number of output tuples; -1 if no bound
  */
 static void
-cost_tuplesort(Cost *startup_cost, Cost *run_cost,
+cost_tuplesort(Cost *startup_cost, Cost *run_cost, Cost *nbytes,
 			   double tuples, int width,
 			   Cost comparison_cost, int sort_mem,
 			   double limit_tuples)
@@ -1916,17 +1982,8 @@ cost_tuplesort(Cost *startup_cost, Cost *run_cost,
 	/* Include the default cost-per-comparison */
 	comparison_cost += 2.0 * cpu_operator_cost;
 
-	/* Do we have a useful LIMIT? */
-	if (limit_tuples > 0 && limit_tuples < tuples)
-	{
-		output_tuples = limit_tuples;
-		output_bytes = relation_byte_size(output_tuples, width);
-	}
-	else
-	{
-		output_tuples = tuples;
-		output_bytes = input_bytes;
-	}
+	compute_sort_output_sizes(tuples, width, limit_tuples,
+							  &output_tuples, &output_bytes);
 
 	if (output_bytes > sort_mem_bytes)
 	{
@@ -1983,6 +2040,7 @@ cost_tuplesort(Cost *startup_cost, Cost *run_cost,
 	 * counting the LIMIT otherwise.
 	 */
 	*run_cost = cpu_operator_cost * tuples;
+	*nbytes = output_bytes;
 }
 
 /*
@@ -2012,6 +2070,7 @@ cost_incremental_sort(Path *path,
 				input_groups;
 	Cost		group_startup_cost,
 				group_run_cost,
+				group_nbytes,
 				group_input_run_cost;
 	List	   *presortedExprs = NIL;
 	ListCell   *l;
@@ -2086,7 +2145,7 @@ cost_incremental_sort(Path *path,
 	 * Estimate the average cost of sorting of one group where presorted keys
 	 * are equal.
 	 */
-	cost_tuplesort(&group_startup_cost, &group_run_cost,
+	cost_tuplesort(&group_startup_cost, &group_run_cost, &group_nbytes,
 				   group_tuples, width, comparison_cost, sort_mem,
 				   limit_tuples);
 
@@ -2127,6 +2186,14 @@ cost_incremental_sort(Path *path,
 
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
+
+	/*
+	 * Incremental sort switches between two Tuplesortstates: one that sorts
+	 * all columns ("full"), and that sorts only suffix columns ("prefix").
+	 * We'll assume they're both around the same size: large enough to hold
+	 * one sort group.
+	 */
+	path->workmem = normalize_work_bytes(group_nbytes * 2.0);
 }
 
 /*
@@ -2151,8 +2218,9 @@ cost_sort(Path *path, PlannerInfo *root,
 {
 	Cost		startup_cost;
 	Cost		run_cost;
+	Cost		nbytes;
 
-	cost_tuplesort(&startup_cost, &run_cost,
+	cost_tuplesort(&startup_cost, &run_cost, &nbytes,
 				   tuples, width,
 				   comparison_cost, sort_mem,
 				   limit_tuples);
@@ -2163,6 +2231,7 @@ cost_sort(Path *path, PlannerInfo *root,
 	path->disabled_nodes = input_disabled_nodes + (enable_sort ? 0 : 1);
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
+	path->workmem = normalize_work_bytes(nbytes);
 }
 
 /*
@@ -2549,6 +2618,7 @@ cost_material(Path *path,
 	path->disabled_nodes = input_disabled_nodes + (enable_material ? 0 : 1);
 	path->startup_cost = startup_cost;
 	path->total_cost = startup_cost + run_cost;
+	path->workmem = normalize_work_bytes(nbytes);
 }
 
 /*
@@ -2621,6 +2691,9 @@ cost_memoize_rescan(PlannerInfo *root, MemoizePath *mpath,
 
 	/* Remember the ndistinct estimate for EXPLAIN */
 	mpath->est_unique_keys = ndistinct;
+
+	/* How much working memory would we need, to store every distinct tuple? */
+	mpath->path.workmem = normalize_work_bytes(ndistinct * est_entry_bytes);
 
 	/*
 	 * Since we've already estimated the maximum number of entries we can
@@ -2899,6 +2972,19 @@ cost_agg(Path *path, PlannerInfo *root,
 	path->disabled_nodes = disabled_nodes;
 	path->startup_cost = startup_cost;
 	path->total_cost = total_cost;
+
+	/* Include memory needed to produce output. */
+	path->workmem =
+		compute_agg_output_workmem(root, aggstrategy, numGroups,
+								   aggcosts->transitionSpace, input_tuples,
+								   input_width, false /* cost_sort */ );
+
+	/* Also include memory needed to sort inputs (if needed): */
+	if (aggcosts->numSortBuffers > 0)
+	{
+		path->workmem += (double) aggcosts->numSortBuffers *
+			compute_agg_input_workmem(input_tuples, input_width);
+	}
 }
 
 /*
@@ -3133,7 +3219,7 @@ cost_windowagg(Path *path, PlannerInfo *root,
 			   List *windowFuncs, WindowClause *winclause,
 			   int input_disabled_nodes,
 			   Cost input_startup_cost, Cost input_total_cost,
-			   double input_tuples)
+			   double input_tuples, int width)
 {
 	Cost		startup_cost;
 	Cost		total_cost;
@@ -3215,6 +3301,11 @@ cost_windowagg(Path *path, PlannerInfo *root,
 	if (startup_tuples > 1.0)
 		path->startup_cost += (total_cost - startup_cost) / input_tuples *
 			(startup_tuples - 1.0);
+
+
+	/* We need to store a window of size "startup_tuples", in a Tuplestore. */
+	path->workmem =
+		normalize_work_bytes(relation_byte_size(startup_tuples, width));
 }
 
 /*
@@ -3369,6 +3460,7 @@ initial_cost_nestloop(PlannerInfo *root, JoinCostWorkspace *workspace,
 	workspace->total_cost = startup_cost + run_cost;
 	/* Save private data for final_cost_nestloop */
 	workspace->run_cost = run_cost;
+	workspace->workmem = 0;
 }
 
 /*
@@ -3833,6 +3925,14 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	workspace->total_cost = startup_cost + run_cost + inner_run_cost;
 	/* Save private data for final_cost_mergejoin */
 	workspace->run_cost = run_cost;
+
+	/*
+	 * By itself, Merge Join requires no working memory. If it adds one or
+	 * more Sort or Material nodes, we'll track their working memory when we
+	 * create them, inside createplan.c.
+	 */
+	workspace->workmem = 0;
+
 	workspace->inner_run_cost = inner_run_cost;
 	workspace->outer_rows = outer_rows;
 	workspace->inner_rows = inner_rows;
@@ -4204,6 +4304,7 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	double		outer_path_rows = outer_path->rows;
 	double		inner_path_rows = inner_path->rows;
 	double		inner_path_rows_total = inner_path_rows;
+	int			workmem;
 	int			num_hashclauses = list_length(hashclauses);
 	int			numbuckets;
 	int			numbatches;
@@ -4262,7 +4363,8 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 							&space_allowed,
 							&numbuckets,
 							&numbatches,
-							&num_skew_mcvs);
+							&num_skew_mcvs,
+							&workmem);
 
 	/*
 	 * If inner relation is too big then we will need to "batch" the join,
@@ -4293,6 +4395,7 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	workspace->numbuckets = numbuckets;
 	workspace->numbatches = numbatches;
 	workspace->inner_rows_total = inner_path_rows_total;
+	workspace->workmem = workmem;
 }
 
 /*
@@ -4301,8 +4404,8 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
  *
  * Note: the numbatches estimate is also saved into 'path' for use later
  *
- * 'path' is already filled in except for the rows and cost fields and
- *		num_batches
+ * 'path' is already filled in except for the rows and cost fields,
+ *		num_batches, and workmem
  * 'workspace' is the result from initial_cost_hashjoin
  * 'extra' contains miscellaneous information about the join
  */
@@ -4319,6 +4422,7 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	List	   *hashclauses = path->path_hashclauses;
 	Cost		startup_cost = workspace->startup_cost;
 	Cost		run_cost = workspace->run_cost;
+	int			workmem = workspace->workmem;
 	int			numbuckets = workspace->numbuckets;
 	int			numbatches = workspace->numbatches;
 	Cost		cpu_per_tuple;
@@ -4555,6 +4659,7 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 
 	path->jpath.path.startup_cost = startup_cost;
 	path->jpath.path.total_cost = startup_cost + run_cost;
+	path->jpath.path.workmem = workmem;
 }
 
 
@@ -4577,6 +4682,9 @@ cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan)
 
 	if (subplan->useHashTable)
 	{
+		long		nbuckets;
+		Size		hashentrysize;
+
 		/*
 		 * If we are using a hash table for the subquery outputs, then the
 		 * cost of evaluating the query is a one-time cost.  We charge one
@@ -4588,13 +4696,37 @@ cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan)
 
 		/*
 		 * Working memory needed for the hashtable (and hashnulls, if needed).
+		 * The logic below MUST match the logic in buildSubPlanHash() and
+		 * ExecInitSubPlan().
 		 */
-		subplan->hashtab_workmem_id = add_hash_workmem(root->glob);
+		nbuckets = clamp_cardinality_to_long(plan->plan_rows);
+		if (nbuckets < 1)
+			nbuckets = 1;
+
+		hashentrysize = MAXALIGN(plan->plan_width) +
+			MAXALIGN(SizeofMinimalTupleHeader);
+
+		subplan->hashtab_workmem_id =
+			add_hash_workmem(root->glob,
+							 normalize_work_bytes((double) nbuckets *
+												  hashentrysize));
 
 		if (!subplan->unknownEqFalse)
 		{
 			/* Also needs a hashnulls table.  */
-			subplan->hashnul_workmem_id = add_hash_workmem(root->glob);
+			if (IsA(subplan->testexpr, OpExpr))
+				nbuckets = 1;	/* there can be only one entry */
+			else
+			{
+				nbuckets /= 16;
+				if (nbuckets < 1)
+					nbuckets = 1;
+			}
+
+			subplan->hashnul_workmem_id =
+				add_hash_workmem(root->glob,
+								 normalize_work_bytes((double) nbuckets *
+													  hashentrysize));
 		}
 
 		/*
@@ -6481,7 +6613,7 @@ get_expr_width(PlannerInfo *root, const Node *expr)
  *	  Estimate the storage space in bytes for a given number of tuples
  *	  of a given width (size in bytes).
  */
-static double
+double
 relation_byte_size(double tuples, int width)
 {
 	return tuples * (MAXALIGN(width) + MAXALIGN(SizeofHeapTupleHeader));
@@ -6659,4 +6791,220 @@ compute_gather_rows(Path *path)
 	Assert(path->parallel_workers > 0);
 
 	return clamp_row_est(path->rows * get_parallel_divisor(path));
+}
+
+/*
+ * compute_sort_output_sizes
+ *	  Estimate amount of memory and rows needed to hold a Sort operator's output
+ */
+static void
+compute_sort_output_sizes(double input_tuples, int input_width,
+						  double limit_tuples,
+						  double *output_tuples, double *output_bytes)
+{
+	/*
+	 * We want to be sure the cost of a sort is never estimated as zero, even
+	 * if passed-in tuple count is zero.  Besides, mustn't do log(0)...
+	 */
+	if (input_tuples < 2.0)
+		input_tuples = 2.0;
+
+	/* Do we have a useful LIMIT? */
+	if (limit_tuples > 0 && limit_tuples < input_tuples)
+		*output_tuples = limit_tuples;
+	else
+		*output_tuples = input_tuples;
+
+	*output_bytes = relation_byte_size(*output_tuples, input_width);
+}
+
+/*
+ * compute_agg_input_workmem
+ *	  Estimate memory (in KB) needed to hold a sort buffer for aggregate's input
+ *
+ * Some aggregates involve DISTINCT or ORDER BY, so they need to sort their
+ * input, before they can process it. We need one sort buffer per such
+ * aggregate, and this function returns that sort buffer's (estimated) size (in
+ * KB).
+ */
+int
+compute_agg_input_workmem(double input_tuples, double input_width)
+{
+	double		output_tuples;	/* ignored */
+	double		output_bytes;
+
+	/* Account for size of one buffer needed to sort the input. */
+	compute_sort_output_sizes(input_tuples, input_width,
+							  0.0 /* limit_tuples */ ,
+							  &output_tuples, &output_bytes);
+	return normalize_work_bytes(output_bytes);
+}
+
+/*
+ * compute_agg_output_workmem
+ *	  Estimate amount of memory needed (in KB) to hold an aggregate's output
+ *
+ * In a Hash aggregate, we need space for the hash table that holds the
+ * aggregated data.
+ *
+ * Sort aggregates require output space only if they are part of a Grouping
+ * Sets chain: the first aggregate writes to its "sort_out" buffer, which the
+ * second aggregate uses as its "sort_in" buffer, and sorts.
+ *
+ * In the latter case, the "Path" code already costs the sort by calling
+ * cost_sort(), so it passes "cost_sort = false" to this function, to avoid
+ * double-counting.
+ */
+int
+compute_agg_output_workmem(PlannerInfo *root, AggStrategy aggstrategy,
+						   double numGroups, uint64 transitionSpace,
+						   double input_tuples, double input_width,
+						   bool cost_sort)
+{
+	/* Account for size of hash table to hold the output. */
+	if (aggstrategy == AGG_HASHED || aggstrategy == AGG_MIXED)
+	{
+		double		hashentrysize;
+
+		hashentrysize = hash_agg_entry_size(list_length(root->aggtransinfos),
+											input_width, transitionSpace);
+		return normalize_work_bytes(numGroups * hashentrysize);
+	}
+
+	/* Account for the size of the "sort_out" buffer. */
+	if (cost_sort && aggstrategy == AGG_SORTED)
+	{
+		double		output_tuples;	/* ignored */
+		double		output_bytes;
+
+		Assert(aggstrategy == AGG_SORTED);
+
+		compute_sort_output_sizes(numGroups, input_width,
+								  0.0 /* limit_tuples */ ,
+								  &output_tuples, &output_bytes);
+		return normalize_work_bytes(output_bytes);
+	}
+
+	return 0;
+}
+
+/*
+ * compute_bitmap_workmem
+ *	  Estimate total working memory (in KB) needed by bitmapqual
+ *
+ * Although we don't fill in the workmem_est or rows fields on the bitmapqual's
+ * paths, we fill them in on the owning BitmapHeapPath. This function estimates
+ * the total work_mem needed by all BitmapOrPaths and IndexPaths inside
+ * bitmapqual.
+ */
+static double
+compute_bitmap_workmem(RelOptInfo *baserel, Path *bitmapqual,
+					   Cardinality max_ancestor_rows)
+{
+	double		workmem = 0.0;
+	Cost		cost;			/* not used */
+	Selectivity selec;
+	Cardinality plan_rows;
+
+	/* How many rows will this node output? */
+	cost_bitmap_tree_node(bitmapqual, &cost, &selec);
+	plan_rows = clamp_row_est(selec * baserel->tuples);
+
+	/*
+	 * At runtime, we'll reuse the left-most child's TID bitmap. Let that
+	 * child that child know to request enough working memory to hold all its
+	 * ancestors' results.
+	 */
+	max_ancestor_rows = Max(max_ancestor_rows, plan_rows);
+
+	if (IsA(bitmapqual, BitmapAndPath))
+	{
+		BitmapAndPath *apath = (BitmapAndPath *) bitmapqual;
+		ListCell   *l;
+
+		foreach(l, apath->bitmapquals)
+		{
+			workmem +=
+				compute_bitmap_workmem(baserel, (Path *) lfirst(l),
+									   foreach_current_index(l) == 0 ?
+									   max_ancestor_rows : 0.0);
+		}
+	}
+	else if (IsA(bitmapqual, BitmapOrPath))
+	{
+		BitmapOrPath *opath = (BitmapOrPath *) bitmapqual;
+		ListCell   *l;
+
+		foreach(l, opath->bitmapquals)
+		{
+			workmem +=
+				compute_bitmap_workmem(baserel, (Path *) lfirst(l),
+									   foreach_current_index(l) == 0 ?
+									   max_ancestor_rows : 0.0);
+		}
+	}
+	else if (IsA(bitmapqual, IndexPath))
+	{
+		/* Working memory needed for 1 TID bitmap. */
+		workmem +=
+			normalize_work_bytes(tbm_calculate_bytes(max_ancestor_rows));
+	}
+
+	return workmem;
+}
+
+/*
+ * normalize_work_kb
+ *	  Convert a double, "KB" working-memory estimate to an int, "KB" value
+ *
+ * Normalizes non-zero input to a minimum of 64 (KB), rounding up to the
+ * nearest whole KB.
+ */
+int
+normalize_work_kb(double nkb)
+{
+	double		workmem;
+
+	if (nkb == 0.0)
+		return 0;				/* caller apparently doesn't need any workmem */
+
+	/*
+	 * We'll assign working-memory to SQL operators in 1 KB increments, so
+	 * round up to the next whole KB.
+	 */
+	workmem = ceil(nkb);
+
+	/*
+	 * Although some components can probably work with < 64 KB of working
+	 * memory, PostgreSQL has imposed a hard minimum of 64 KB on the
+	 * "work_mem" GUC, for a long time; so, by now, some components probably
+	 * rely on this minimum, implicitly, and would fail if we tried to assign
+	 * them < 64 KB.
+	 *
+	 * Perhaps this minimum can be relaxed, in the future; but memory sizes
+	 * keep increasing, and right now the minimum of 64 KB = 1.6 percent of
+	 * the default "work_mem" of 4 MB.
+	 *
+	 * So, even with this (overly?) cautious normalization, with the default
+	 * GUC settings, we can still achieve a working-memory reduction of
+	 * 64-to-1.
+	 */
+	workmem = Max((double) 64, workmem);
+
+	/* And clamp to MAX_KILOBYTES. */
+	workmem = Min(workmem, (double) MAX_KILOBYTES);
+
+	return (int) workmem;
+}
+
+/*
+ * normalize_work_bytes
+ *	  Convert a double, "bytes" working-memory estimate to an int, "KB" value
+ *
+ * Same as above, but takes input in bytes rather than in KB.
+ */
+int
+normalize_work_bytes(double nbytes)
+{
+	return normalize_work_kb(nbytes / 1024.0);
 }

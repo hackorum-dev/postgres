@@ -1561,6 +1561,24 @@ tbm_calculate_entries(Size maxbytes)
 }
 
 /*
+ * tbm_calculate_bytes
+ *
+ * Estimate number of bytes needed to store maxentries hashtable entries.
+ *
+ * This function is the inverse of tbm_calculate_entries(), and is used to
+ * estimate a work_mem limit, based on cardinality.
+ */
+double
+tbm_calculate_bytes(double maxentries)
+{
+	maxentries = Min(maxentries, INT_MAX - 1);	/* safety limit */
+	maxentries = Max(maxentries, 16);	/* sanity limit */
+
+	return maxentries * (sizeof(PagetableEntry) + sizeof(Pointer) +
+						 sizeof(Pointer));
+}
+
+/*
  * Create a shared or private bitmap iterator and start iteration.
  *
  * `tbm` is only used to create the private iterator and dsa and dsp are only

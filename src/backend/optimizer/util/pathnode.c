@@ -1737,6 +1737,13 @@ create_memoize_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.total_cost = subpath->total_cost + cpu_tuple_cost;
 	pathnode->path.rows = subpath->rows;
 
+	/*
+	 * For now, set workmem at hash memory limit. Function
+	 * cost_memoize_rescan() will adjust this field, same as it does for field
+	 * "est_entries".
+	 */
+	pathnode->path.workmem = normalize_work_bytes(get_hash_memory_limit());
+
 	return pathnode;
 }
 
@@ -1965,12 +1972,14 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		pathnode->path.disabled_nodes = agg_path.disabled_nodes;
 		pathnode->path.startup_cost = agg_path.startup_cost;
 		pathnode->path.total_cost = agg_path.total_cost;
+		pathnode->path.workmem = agg_path.workmem;
 	}
 	else
 	{
 		pathnode->path.disabled_nodes = sort_path.disabled_nodes;
 		pathnode->path.startup_cost = sort_path.startup_cost;
 		pathnode->path.total_cost = sort_path.total_cost;
+		pathnode->path.workmem = sort_path.workmem;
 	}
 
 	rel->cheapest_unique_path = (Path *) pathnode;
@@ -2316,6 +2325,13 @@ create_worktablescan_path(PlannerInfo *root, RelOptInfo *rel,
 
 	/* Cost is the same as for a regular CTE scan */
 	cost_ctescan(pathnode, root, rel, pathnode->param_info);
+
+	/*
+	 * But working memory used is 0, since the worktable scan doesn't create a
+	 * tuplestore -- it just reuses a tuplestore already created by a
+	 * recursive union.
+	 */
+	pathnode->workmem = 0;
 
 	return pathnode;
 }
@@ -3314,6 +3330,7 @@ create_agg_path(PlannerInfo *root,
 
 	pathnode->aggstrategy = aggstrategy;
 	pathnode->aggsplit = aggsplit;
+	pathnode->numSortBuffers = aggcosts ? aggcosts->numSortBuffers : 0;
 	pathnode->numGroups = numGroups;
 	pathnode->transitionSpace = aggcosts ? aggcosts->transitionSpace : 0;
 	pathnode->groupClause = groupClause;
@@ -3364,6 +3381,8 @@ create_groupingsets_path(PlannerInfo *root,
 	ListCell   *lc;
 	bool		is_first = true;
 	bool		is_first_sort = true;
+	int			num_sort_nodes = 0;
+	double		max_sort_workmem = 0.0;
 
 	/* The topmost generated Plan node will be an Agg */
 	pathnode->path.pathtype = T_Agg;
@@ -3400,6 +3419,7 @@ create_groupingsets_path(PlannerInfo *root,
 		pathnode->path.pathkeys = NIL;
 
 	pathnode->aggstrategy = aggstrategy;
+	pathnode->numSortBuffers = agg_costs ? agg_costs->numSortBuffers : 0;
 	pathnode->rollups = rollups;
 	pathnode->qual = having_qual;
 	pathnode->transitionSpace = agg_costs ? agg_costs->transitionSpace : 0;
@@ -3463,6 +3483,8 @@ create_groupingsets_path(PlannerInfo *root,
 						 subpath->pathtarget->width);
 				if (!rollup->is_hashed)
 					is_first_sort = false;
+
+				pathnode->path.workmem += agg_path.workmem;
 			}
 			else
 			{
@@ -3474,6 +3496,12 @@ create_groupingsets_path(PlannerInfo *root,
 						  0.0,
 						  work_mem,
 						  -1.0);
+
+				/*
+				 * We costed sorting the previous "sort" rollup's "sort_out"
+				 * buffer. How much memory did it need?
+				 */
+				max_sort_workmem = Max(max_sort_workmem, sort_path.workmem);
 
 				/* Account for cost of aggregation */
 
@@ -3488,18 +3516,34 @@ create_groupingsets_path(PlannerInfo *root,
 						 sort_path.total_cost,
 						 sort_path.rows,
 						 subpath->pathtarget->width);
+
+				pathnode->path.workmem += agg_path.workmem;
 			}
 
 			pathnode->path.disabled_nodes += agg_path.disabled_nodes;
 			pathnode->path.total_cost += agg_path.total_cost;
 			pathnode->path.rows += agg_path.rows;
 		}
+
+		if (!rollup->is_hashed)
+			++num_sort_nodes;
 	}
 
 	/* add tlist eval cost for each output row */
 	pathnode->path.startup_cost += target->cost.startup;
 	pathnode->path.total_cost += target->cost.startup +
 		target->cost.per_tuple * pathnode->path.rows;
+
+	/*
+	 * Include working memory needed to sort agg output. If there's only 1
+	 * sort rollup, then we don't need any memory. If there are 2 sort
+	 * rollups, we need enough memory for 1 sort buffer. If there are >= 3
+	 * sort rollups, we need only 2 sort buffers, since we're
+	 * double-buffering.
+	 */
+	pathnode->path.workmem += num_sort_nodes > 2 ?
+		max_sort_workmem * 2.0 :
+		max_sort_workmem;
 
 	return pathnode;
 }
@@ -3650,7 +3694,8 @@ create_windowagg_path(PlannerInfo *root,
 				   subpath->disabled_nodes,
 				   subpath->startup_cost,
 				   subpath->total_cost,
-				   subpath->rows);
+				   subpath->rows,
+				   subpath->pathtarget->width);
 
 	/* add tlist eval cost for each output row */
 	pathnode->path.startup_cost += target->cost.startup;
@@ -3775,7 +3820,11 @@ create_setop_path(PlannerInfo *root,
 			MAXALIGN(SizeofMinimalTupleHeader);
 		if (hashentrysize * numGroups > get_hash_memory_limit())
 			pathnode->path.disabled_nodes++;
+
+		pathnode->path.workmem =
+			normalize_work_bytes(numGroups * hashentrysize);
 	}
+
 	pathnode->path.rows = outputRows;
 
 	return pathnode;
@@ -3826,7 +3875,7 @@ create_recursiveunion_path(PlannerInfo *root,
 	pathnode->wtParam = wtParam;
 	pathnode->numGroups = numGroups;
 
-	cost_recursive_union(&pathnode->path, leftpath, rightpath);
+	cost_recursive_union(pathnode, leftpath, rightpath);
 
 	return pathnode;
 }

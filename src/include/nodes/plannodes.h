@@ -160,9 +160,12 @@ typedef struct PlannedStmt
 	 * needs working memory for a data structure maintains a "workmem_id"
 	 * index into the following lists (all kept in sync).
 	 */
-
 	/* - IntList (of WorkMemCategory): is this a Hash or "normal" limit? */
 	List	   *workMemCategories;
+	/* - IntList: estimate (in KB) of memory needed to avoid spilling */
+	List	   *workMemEstimates;
+	/* - IntList: how many data structures get a copy of this info */
+	List	   *workMemCounts;
 	/* - IntList: limit (in KB), after which data structure must spill */
 	List	   *workMemLimits;
 } PlannedStmt;
@@ -1191,6 +1194,8 @@ typedef struct Agg
 	Oid		   *grpOperators pg_node_attr(array_size(numCols));
 	Oid		   *grpCollations pg_node_attr(array_size(numCols));
 
+	/* number of inputs that require sorting */
+	int			numSorts;
 	/* 1-based id of workMem to use to sort inputs, or else zero */
 	int			sortWorkMemId;
 

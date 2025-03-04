@@ -1283,6 +1283,18 @@ typedef struct PlanState
 #define workMemField(node, field)   \
 	(workMemFieldFromId((node), field, ((PlanState *)(node))->plan->workmem_id))
 
+/* workmem estimate: */
+#define workMemEstimateFromId(node, id) \
+	(workMemFieldFromId(node, workMemEstimates, id))
+#define workMemEstimate(node) \
+	(workMemField(node, workMemEstimates))
+
+/* workmem count: */
+#define workMemCountFromId(node, id) \
+	(workMemFieldFromId(node, workMemCounts, id))
+#define workMemCount(node) \
+	(workMemField(node, workMemCounts))
+
 /* workmem limit: */
 #define workMemLimitFromId(node, id) \
 	(workMemFieldFromId(node, workMemLimits, id))

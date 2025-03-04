@@ -108,6 +108,7 @@ extern void tbm_end_shared_iterate(TBMSharedIterator *iterator);
 extern TBMSharedIterator *tbm_attach_shared_iterate(dsa_area *dsa,
 													dsa_pointer dp);
 extern int	tbm_calculate_entries(Size maxbytes);
+extern double tbm_calculate_bytes(double maxentries);
 
 extern TBMIterator tbm_begin_iterate(TIDBitmap *tbm,
 									 dsa_area *dsa, dsa_pointer dsp);

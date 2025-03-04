@@ -60,6 +60,7 @@ typedef struct AggClauseCosts
 	QualCost	transCost;		/* total per-input-row execution costs */
 	QualCost	finalCost;		/* total per-aggregated-row costs */
 	Size		transitionSpace;	/* space for pass-by-ref transition data */
+	int			numSortBuffers; /* # of required input-sort buffers */
 } AggClauseCosts;
 
 /*
@@ -188,9 +189,12 @@ typedef struct PlannerGlobal
 	 * needs working memory for a data structure maintains a "workmem_id"
 	 * index into the following lists (all kept in sync).
 	 */
-
 	/* - IntList (of WorkMemCategory): is this a Hash or "normal" limit? */
 	List	   *workMemCategories;
+	/* - IntList: estimate (in KB) of memory needed to avoid spilling */
+	List	   *workMemEstimates;
+	/* - IntList: how many data structures get a copy of this info */
+	List	   *workMemCounts;
 	/* - IntList: limit (in KB), after which data structure must spill */
 	List	   *workMemLimits;
 } PlannerGlobal;
@@ -1807,6 +1811,7 @@ typedef struct Path
 	int			disabled_nodes; /* count of disabled nodes */
 	Cost		startup_cost;	/* cost expended before fetching any tuples */
 	Cost		total_cost;		/* total cost (assuming all tuples fetched) */
+	Cost		workmem;		/* estimated work_mem (in KB) */
 
 	/* sort ordering of path's output; a List of PathKey nodes; see above */
 	List	   *pathkeys;
@@ -2411,6 +2416,7 @@ typedef struct AggPath
 	Path	   *subpath;		/* path representing input source */
 	AggStrategy aggstrategy;	/* basic strategy, see nodes.h */
 	AggSplit	aggsplit;		/* agg-splitting mode, see nodes.h */
+	int			numSortBuffers; /* number of inputs that require sorting */
 	Cardinality numGroups;		/* estimated number of groups in input */
 	uint64		transitionSpace;	/* for pass-by-ref transition data */
 	List	   *groupClause;	/* a list of SortGroupClause's */
@@ -2452,6 +2458,7 @@ typedef struct GroupingSetsPath
 	Path		path;
 	Path	   *subpath;		/* path representing input source */
 	AggStrategy aggstrategy;	/* basic strategy */
+	int			numSortBuffers; /* number of inputs that require sorting */
 	List	   *rollups;		/* list of RollupData */
 	List	   *qual;			/* quals (HAVING quals), if any */
 	uint64		transitionSpace;	/* for pass-by-ref transition data */
@@ -3495,6 +3502,7 @@ typedef struct JoinCostWorkspace
 
 	/* Fields below here should be treated as private to costsize.c */
 	Cost		run_cost;		/* non-startup cost components */
+	Cost		workmem;		/* estimated work_mem (in KB) */
 
 	/* private for cost_nestloop code */
 	Cost		inner_run_cost; /* also used by cost_mergejoin code */

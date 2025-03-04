@@ -63,7 +63,8 @@ extern void ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 									size_t *total_space_allowed,
 									int *numbuckets,
 									int *numbatches,
-									int *num_skew_mcvs);
+									int *num_skew_mcvs,
+									int *workmem);
 extern int	ExecHashGetSkewBucket(HashJoinTable hashtable, uint32 hashvalue);
 extern void ExecHashEstimate(HashState *node, ParallelContext *pcxt);
 extern void ExecHashInitializeDSM(HashState *node, ParallelContext *pcxt);
