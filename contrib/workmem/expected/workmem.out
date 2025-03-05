@@ -1,0 +1,676 @@
+load 'workmem';
+-- Note: Function derived from file explain.sql. We can't use that other
+-- function, since we're run in parallel with explain.sql.
+create or replace function workmem_filter(text) returns setof text
+language plpgsql as
+$$
+declare
+    ln text;
+begin
+    for ln in execute $1
+    loop
+        -- Mask out work_mem estimate, since it might be brittle
+        ln := regexp_replace(ln, '\mwork_mem=\d+\M', 'work_mem=N', 'g');
+        ln := regexp_replace(ln, '\mMemory Estimate: \d+\M', 'Memory Estimate: N', 'g');
+        return next ln;
+    end loop;
+end;
+$$;
+--====
+-- Test suite 1: default workmem.query_work_mem (= 100 MB)
+--====
+----
+-- Some tests from src/test/regress/sql/workmem.sql that don't require
+-- test_setup.sql, etc., to be run first.
+----
+-- Grouping Sets (Hash)
+select workmem_filter('
+explain (costs off, work_mem on)
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1), (2, 2)) as t (a, b) where a = b
+group by grouping sets((a, b), (a));
+');
+                            workmem_filter                            
+----------------------------------------------------------------------
+ WindowAgg  (work_mem=N kB) (limit=25600 kB)
+   ->  Sort  (work_mem=N kB) (limit=25600 kB)
+         Sort Key: "*VALUES*".column1, "*VALUES*".column2 NULLS FIRST
+         ->  HashAggregate  (work_mem=N kB) (limit=51200 kB)
+               Hash Key: "*VALUES*".column1, "*VALUES*".column2
+               Hash Key: "*VALUES*".column1
+               ->  Values Scan on "*VALUES*"
+                     Filter: (column1 = column2)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 102400 kB
+(10 rows)
+
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1), (2, 2)) as t (a, b) where a = b
+group by grouping sets((a, b), (a));
+ a | b | row_number 
+---+---+------------
+ 1 |   |          1
+ 1 | 1 |          2
+ 2 |   |          3
+ 2 | 2 |          4
+(4 rows)
+
+-- Grouping Sets (Sort)
+set enable_hashagg = off;
+select workmem_filter('
+explain (costs off, work_mem on)
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1, 1, 1), (2, 2, 2, 2)) as t (a, b, c, d) where a = b
+group by grouping sets((a, b), (a), (b), (c), (d));
+');
+                            workmem_filter                            
+----------------------------------------------------------------------
+ WindowAgg  (work_mem=N kB) (limit=20480 kB)
+   ->  Sort  (work_mem=N kB) (limit=20480 kB)
+         Sort Key: "*VALUES*".column1, "*VALUES*".column2 NULLS FIRST
+         ->  GroupAggregate  (work_mem=N kB) (limit=40960 kB)
+               Group Key: "*VALUES*".column1, "*VALUES*".column2
+               Group Key: "*VALUES*".column1
+               Sort Key: "*VALUES*".column2
+                 Group Key: "*VALUES*".column2
+               Sort Key: "*VALUES*".column3
+                 Group Key: "*VALUES*".column3
+               Sort Key: "*VALUES*".column4
+                 Group Key: "*VALUES*".column4
+               ->  Sort  (work_mem=N kB) (limit=20480 kB)
+                     Sort Key: "*VALUES*".column1
+                     ->  Values Scan on "*VALUES*"
+                           Filter: (column1 = column2)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 102400 kB
+(18 rows)
+
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1, 1, 1), (2, 2, 2, 2)) as t (a, b, c, d) where a = b
+group by grouping sets((a, b), (a), (b), (c), (d));
+ a | b | row_number 
+---+---+------------
+ 1 |   |          1
+ 1 | 1 |          2
+ 2 |   |          3
+ 2 | 2 |          4
+   |   |          5
+   |   |          6
+   |   |          7
+   |   |          8
+   | 1 |          9
+   | 2 |         10
+(10 rows)
+
+reset enable_hashagg;
+-- Function Scan
+select workmem_filter('
+explain (work_mem on, costs off)
+select count(*) from (
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+) t;
+');
+                               workmem_filter                                
+-----------------------------------------------------------------------------
+ Aggregate
+   ->  Function Scan on generate_series a  (work_mem=N kB) (limit=102400 kB)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 102400 kB
+(4 rows)
+
+select count(*) from (
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+) t;
+ count 
+-------
+  2000
+(1 row)
+
+-- Three Function Scans
+select workmem_filter('
+explain (work_mem on, costs off)
+select count(*)
+from rows from(generate_series(1, 5),
+               generate_series(2, 10),
+               generate_series(4, 15));
+');
+                              workmem_filter                               
+---------------------------------------------------------------------------
+ Aggregate
+   ->  Function Scan on generate_series  (work_mem=N kB) (limit=102399 kB)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 102399 kB
+(4 rows)
+
+select count(*)
+from rows from(generate_series(1, 5),
+               generate_series(2, 10),
+               generate_series(4, 15));
+ count 
+-------
+    12
+(1 row)
+
+-- WindowAgg
+select workmem_filter('
+explain (costs off, work_mem on)
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+limit 5;
+');
+                                     workmem_filter                                     
+----------------------------------------------------------------------------------------
+ Limit
+   ->  WindowAgg  (work_mem=N kB) (limit=34134 kB)
+         ->  Sort  (work_mem=N kB) (limit=34133 kB)
+               Sort Key: ((a.n < 3))
+               ->  Function Scan on generate_series a  (work_mem=N kB) (limit=34133 kB)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 102400 kB
+(7 rows)
+
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+limit 5;
+   sum   
+---------
+ 2000997
+ 2000997
+ 2000997
+ 2000997
+ 2000997
+(5 rows)
+
+-- InitPlan with hash table ("IN SELECT")
+select workmem_filter('
+explain (costs off, work_mem on)
+select ''foo''::text in (select ''bar''::name union all select ''bar''::name);
+');
+              workmem_filter               
+-------------------------------------------
+ Result  (work_mem=N kB) (limit=102400 kB)
+   SubPlan 1
+     ->  Append
+           ->  Result
+           ->  Result
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 102400 kB
+(7 rows)
+
+select 'foo'::text in (select 'bar'::name union all select 'bar'::name);
+ ?column? 
+----------
+ f
+(1 row)
+
+-- SubPlan with hash table
+select workmem_filter('
+explain (costs off, work_mem on)
+select 1 = any (select (select 1) where 1 = any (select 1));
+');
+                         workmem_filter                         
+----------------------------------------------------------------
+ Result  (work_mem=N kB) (limit=68267 kB)
+   SubPlan 3
+     ->  Result  (work_mem=N kB) (limit=34133 kB)
+           One-Time Filter: (ANY (1 = (hashed SubPlan 2).col1))
+           InitPlan 1
+             ->  Result
+           SubPlan 2
+             ->  Result
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 102400 kB
+(10 rows)
+
+select 1 = any (select (select 1) where 1 = any (select 1));
+ ?column? 
+----------
+ t
+(1 row)
+
+--====
+-- Test suite 2: set workmem.query_work_mem to 4 MB
+--====
+set workmem.query_work_mem = 4096;
+----
+-- Some tests from src/test/regress/sql/workmem.sql that don't require
+-- test_setup.sql, etc., to be run first.
+----
+-- Grouping Sets (Hash)
+select workmem_filter('
+explain (costs off, work_mem on)
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1), (2, 2)) as t (a, b) where a = b
+group by grouping sets((a, b), (a));
+');
+                            workmem_filter                            
+----------------------------------------------------------------------
+ WindowAgg  (work_mem=N kB) (limit=1024 kB)
+   ->  Sort  (work_mem=N kB) (limit=1024 kB)
+         Sort Key: "*VALUES*".column1, "*VALUES*".column2 NULLS FIRST
+         ->  HashAggregate  (work_mem=N kB) (limit=2048 kB)
+               Hash Key: "*VALUES*".column1, "*VALUES*".column2
+               Hash Key: "*VALUES*".column1
+               ->  Values Scan on "*VALUES*"
+                     Filter: (column1 = column2)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 4096 kB
+(10 rows)
+
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1), (2, 2)) as t (a, b) where a = b
+group by grouping sets((a, b), (a));
+ a | b | row_number 
+---+---+------------
+ 1 |   |          1
+ 1 | 1 |          2
+ 2 |   |          3
+ 2 | 2 |          4
+(4 rows)
+
+-- Grouping Sets (Sort)
+set enable_hashagg = off;
+select workmem_filter('
+explain (costs off, work_mem on)
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1, 1, 1), (2, 2, 2, 2)) as t (a, b, c, d) where a = b
+group by grouping sets((a, b), (a), (b), (c), (d));
+');
+                            workmem_filter                            
+----------------------------------------------------------------------
+ WindowAgg  (work_mem=N kB) (limit=820 kB)
+   ->  Sort  (work_mem=N kB) (limit=819 kB)
+         Sort Key: "*VALUES*".column1, "*VALUES*".column2 NULLS FIRST
+         ->  GroupAggregate  (work_mem=N kB) (limit=1638 kB)
+               Group Key: "*VALUES*".column1, "*VALUES*".column2
+               Group Key: "*VALUES*".column1
+               Sort Key: "*VALUES*".column2
+                 Group Key: "*VALUES*".column2
+               Sort Key: "*VALUES*".column3
+                 Group Key: "*VALUES*".column3
+               Sort Key: "*VALUES*".column4
+                 Group Key: "*VALUES*".column4
+               ->  Sort  (work_mem=N kB) (limit=819 kB)
+                     Sort Key: "*VALUES*".column1
+                     ->  Values Scan on "*VALUES*"
+                           Filter: (column1 = column2)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 4096 kB
+(18 rows)
+
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1, 1, 1), (2, 2, 2, 2)) as t (a, b, c, d) where a = b
+group by grouping sets((a, b), (a), (b), (c), (d));
+ a | b | row_number 
+---+---+------------
+ 1 |   |          1
+ 1 | 1 |          2
+ 2 |   |          3
+ 2 | 2 |          4
+   |   |          5
+   |   |          6
+   |   |          7
+   |   |          8
+   | 1 |          9
+   | 2 |         10
+(10 rows)
+
+reset enable_hashagg;
+-- Function Scan
+select workmem_filter('
+explain (work_mem on, costs off)
+select count(*) from (
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+) t;
+');
+                              workmem_filter                               
+---------------------------------------------------------------------------
+ Aggregate
+   ->  Function Scan on generate_series a  (work_mem=N kB) (limit=4096 kB)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 4096 kB
+(4 rows)
+
+select count(*) from (
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+) t;
+ count 
+-------
+  2000
+(1 row)
+
+-- Three Function Scans
+select workmem_filter('
+explain (work_mem on, costs off)
+select count(*)
+from rows from(generate_series(1, 5),
+               generate_series(2, 10),
+               generate_series(4, 15));
+');
+                             workmem_filter                              
+-------------------------------------------------------------------------
+ Aggregate
+   ->  Function Scan on generate_series  (work_mem=N kB) (limit=4095 kB)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 4095 kB
+(4 rows)
+
+select count(*)
+from rows from(generate_series(1, 5),
+               generate_series(2, 10),
+               generate_series(4, 15));
+ count 
+-------
+    12
+(1 row)
+
+-- WindowAgg
+select workmem_filter('
+explain (costs off, work_mem on)
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+limit 5;
+');
+                                    workmem_filter                                     
+---------------------------------------------------------------------------------------
+ Limit
+   ->  WindowAgg  (work_mem=N kB) (limit=1366 kB)
+         ->  Sort  (work_mem=N kB) (limit=1365 kB)
+               Sort Key: ((a.n < 3))
+               ->  Function Scan on generate_series a  (work_mem=N kB) (limit=1365 kB)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 4096 kB
+(7 rows)
+
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+limit 5;
+   sum   
+---------
+ 2000997
+ 2000997
+ 2000997
+ 2000997
+ 2000997
+(5 rows)
+
+-- InitPlan with hash table ("IN SELECT")
+select workmem_filter('
+explain (costs off, work_mem on)
+select ''foo''::text in (select ''bar''::name union all select ''bar''::name);
+');
+             workmem_filter              
+-----------------------------------------
+ Result  (work_mem=N kB) (limit=4096 kB)
+   SubPlan 1
+     ->  Append
+           ->  Result
+           ->  Result
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 4096 kB
+(7 rows)
+
+select 'foo'::text in (select 'bar'::name union all select 'bar'::name);
+ ?column? 
+----------
+ f
+(1 row)
+
+-- SubPlan with hash table
+select workmem_filter('
+explain (costs off, work_mem on)
+select 1 = any (select (select 1) where 1 = any (select 1));
+');
+                         workmem_filter                         
+----------------------------------------------------------------
+ Result  (work_mem=N kB) (limit=2731 kB)
+   SubPlan 3
+     ->  Result  (work_mem=N kB) (limit=1365 kB)
+           One-Time Filter: (ANY (1 = (hashed SubPlan 2).col1))
+           InitPlan 1
+             ->  Result
+           SubPlan 2
+             ->  Result
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 4096 kB
+(10 rows)
+
+select 1 = any (select (select 1) where 1 = any (select 1));
+ ?column? 
+----------
+ t
+(1 row)
+
+reset workmem.query_work_mem;
+--====
+-- Test suite 3: set workmem.query_work_mem to 80 KB
+--====
+set workmem.query_work_mem = 80;
+----
+-- Some tests from src/test/regress/sql/workmem.sql that don't require
+-- test_setup.sql, etc., to be run first.
+----
+-- Grouping Sets (Hash)
+select workmem_filter('
+explain (costs off, work_mem on)
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1), (2, 2)) as t (a, b) where a = b
+group by grouping sets((a, b), (a));
+');
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+                            workmem_filter                            
+----------------------------------------------------------------------
+ WindowAgg  (work_mem=N kB) (limit=20 kB)
+   ->  Sort  (work_mem=N kB) (limit=20 kB)
+         Sort Key: "*VALUES*".column1, "*VALUES*".column2 NULLS FIRST
+         ->  HashAggregate  (work_mem=N kB) (limit=40 kB)
+               Hash Key: "*VALUES*".column1, "*VALUES*".column2
+               Hash Key: "*VALUES*".column1
+               ->  Values Scan on "*VALUES*"
+                     Filter: (column1 = column2)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 80 kB
+(10 rows)
+
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1), (2, 2)) as t (a, b) where a = b
+group by grouping sets((a, b), (a));
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+ a | b | row_number 
+---+---+------------
+ 1 |   |          1
+ 1 | 1 |          2
+ 2 |   |          3
+ 2 | 2 |          4
+(4 rows)
+
+-- Grouping Sets (Sort)
+set enable_hashagg = off;
+select workmem_filter('
+explain (costs off, work_mem on)
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1, 1, 1), (2, 2, 2, 2)) as t (a, b, c, d) where a = b
+group by grouping sets((a, b), (a), (b), (c), (d));
+');
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+                            workmem_filter                            
+----------------------------------------------------------------------
+ WindowAgg  (work_mem=N kB) (limit=16 kB)
+   ->  Sort  (work_mem=N kB) (limit=16 kB)
+         Sort Key: "*VALUES*".column1, "*VALUES*".column2 NULLS FIRST
+         ->  GroupAggregate  (work_mem=N kB) (limit=32 kB)
+               Group Key: "*VALUES*".column1, "*VALUES*".column2
+               Group Key: "*VALUES*".column1
+               Sort Key: "*VALUES*".column2
+                 Group Key: "*VALUES*".column2
+               Sort Key: "*VALUES*".column3
+                 Group Key: "*VALUES*".column3
+               Sort Key: "*VALUES*".column4
+                 Group Key: "*VALUES*".column4
+               ->  Sort  (work_mem=N kB) (limit=16 kB)
+                     Sort Key: "*VALUES*".column1
+                     ->  Values Scan on "*VALUES*"
+                           Filter: (column1 = column2)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 80 kB
+(18 rows)
+
+select a, b, row_number() over (order by a, b nulls first)
+from (values (1, 1, 1, 1), (2, 2, 2, 2)) as t (a, b, c, d) where a = b
+group by grouping sets((a, b), (a), (b), (c), (d));
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+ a | b | row_number 
+---+---+------------
+ 1 |   |          1
+ 1 | 1 |          2
+ 2 |   |          3
+ 2 | 2 |          4
+   |   |          5
+   |   |          6
+   |   |          7
+   |   |          8
+   | 1 |          9
+   | 2 |         10
+(10 rows)
+
+reset enable_hashagg;
+-- Function Scan
+select workmem_filter('
+explain (work_mem on, costs off)
+select count(*) from (
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+) t;
+');
+                             workmem_filter                              
+-------------------------------------------------------------------------
+ Aggregate
+   ->  Function Scan on generate_series a  (work_mem=N kB) (limit=80 kB)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 80 kB
+(4 rows)
+
+select count(*) from (
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+) t;
+ count 
+-------
+  2000
+(1 row)
+
+-- Three Function Scans
+select workmem_filter('
+explain (work_mem on, costs off)
+select count(*)
+from rows from(generate_series(1, 5),
+               generate_series(2, 10),
+               generate_series(4, 15));
+');
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+                            workmem_filter                             
+-----------------------------------------------------------------------
+ Aggregate
+   ->  Function Scan on generate_series  (work_mem=N kB) (limit=78 kB)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 78 kB
+(4 rows)
+
+select count(*)
+from rows from(generate_series(1, 5),
+               generate_series(2, 10),
+               generate_series(4, 15));
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+ count 
+-------
+    12
+(1 row)
+
+-- WindowAgg
+select workmem_filter('
+explain (costs off, work_mem on)
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+limit 5;
+');
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+                                   workmem_filter                                    
+-------------------------------------------------------------------------------------
+ Limit
+   ->  WindowAgg  (work_mem=N kB) (limit=27 kB)
+         ->  Sort  (work_mem=N kB) (limit=27 kB)
+               Sort Key: ((a.n < 3))
+               ->  Function Scan on generate_series a  (work_mem=N kB) (limit=26 kB)
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 80 kB
+(7 rows)
+
+select sum(n) over(partition by m)
+from (SELECT n < 3 as m, n from generate_series(1,2000) a(n))
+limit 5;
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+   sum   
+---------
+ 2000997
+ 2000997
+ 2000997
+ 2000997
+ 2000997
+(5 rows)
+
+-- InitPlan with hash table ("IN SELECT")
+select workmem_filter('
+explain (costs off, work_mem on)
+select ''foo''::text in (select ''bar''::name union all select ''bar''::name);
+');
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+            workmem_filter             
+---------------------------------------
+ Result  (work_mem=N kB) (limit=80 kB)
+   SubPlan 1
+     ->  Append
+           ->  Result
+           ->  Result
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 80 kB
+(7 rows)
+
+select 'foo'::text in (select 'bar'::name union all select 'bar'::name);
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+ ?column? 
+----------
+ f
+(1 row)
+
+-- SubPlan with hash table
+select workmem_filter('
+explain (costs off, work_mem on)
+select 1 = any (select (select 1) where 1 = any (select 1));
+');
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+                         workmem_filter                         
+----------------------------------------------------------------
+ Result  (work_mem=N kB) (limit=54 kB)
+   SubPlan 3
+     ->  Result  (work_mem=N kB) (limit=26 kB)
+           One-Time Filter: (ANY (1 = (hashed SubPlan 2).col1))
+           InitPlan 1
+             ->  Result
+           SubPlan 2
+             ->  Result
+ Total Working Memory Estimate: N kB
+ Total Working Memory Limit: 80 kB
+(10 rows)
+
+select 1 = any (select (select 1) where 1 = any (select 1));
+WARNING:  not enough working memory for query: increase workmem.query_work_mem
+ ?column? 
+----------
+ t
+(1 row)
+
+reset workmem.query_work_mem;

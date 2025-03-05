@@ -52,6 +52,10 @@
 #include "nodes/plannodes.h"
 
 
+/* Hook for plugins to get control in ExecAssignWorkMem */
+ExecAssignWorkMem_hook_type ExecAssignWorkMem_hook = NULL;
+
+
 /* ------------------------------------------------------------------------
  *		ExecAssignWorkMem
  *
@@ -65,18 +69,34 @@
 void
 ExecAssignWorkMem(PlannedStmt *plannedstmt)
 {
+	if (ExecAssignWorkMem_hook)
+		(*ExecAssignWorkMem_hook) (plannedstmt);
+	else
+	{
+		/*
+		 * No need to re-assign working memory on parallel workers, since
+		 * workers have the same work_mem and hash_mem_multiplier GUCs as the
+		 * leader.
+		 *
+		 * We already assigned working-memory limits on the leader, and those
+		 * limits were sent to the workers inside the serialized Plan.
+		 *
+		 * We bail out here, in case the hook wants to re-assign memory on
+		 * parallel workers, and maybe wants to call
+		 * standard_ExecAssignWorkMem() first, as well.
+		 */
+		if (IsParallelWorker())
+			return;
+
+		standard_ExecAssignWorkMem(plannedstmt);
+	}
+}
+
+void
+standard_ExecAssignWorkMem(PlannedStmt *plannedstmt)
+{
 	ListCell   *lc_category;
 	ListCell   *lc_limit;
-
-	/*
-	 * No need to re-assign working memory on parallel workers, since workers
-	 * have the same work_mem and hash_mem_multiplier GUCs as the leader.
-	 *
-	 * We already assigned working-memory limits on the leader, and those
-	 * limits were sent to the workers inside the serialized Plan.
-	 */
-	if (IsParallelWorker())
-		return;
 
 	forboth(lc_category, plannedstmt->workMemCategories,
 			lc_limit, plannedstmt->workMemLimits)

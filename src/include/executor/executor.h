@@ -96,6 +96,9 @@ typedef bool (*ExecutorCheckPerms_hook_type) (List *rangeTable,
 											  bool ereport_on_violation);
 extern PGDLLIMPORT ExecutorCheckPerms_hook_type ExecutorCheckPerms_hook;
 
+/* Hook for plugins to get control in ExecAssignWorkMem() */
+typedef void (*ExecAssignWorkMem_hook_type) (PlannedStmt *plannedstmt);
+extern PGDLLIMPORT ExecAssignWorkMem_hook_type ExecAssignWorkMem_hook;
 
 /*
  * prototypes from functions in execAmi.c
@@ -802,5 +805,6 @@ extern ResultRelInfo *ExecLookupResultRelByOid(ModifyTableState *node,
  * prototypes from functions in execWorkmem.c
  */
 extern void ExecAssignWorkMem(PlannedStmt *plannedstmt);
+extern void standard_ExecAssignWorkMem(PlannedStmt *plannedstmt);
 
 #endif							/* EXECUTOR_H  */
