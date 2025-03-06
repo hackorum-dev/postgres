@@ -20,6 +20,7 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/plancat.h"
 #include "statistics/statistics.h"
+#include "statistics/extended_stats_internal.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/selfuncs.h"
@@ -341,6 +342,51 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	return s1;
 }
 
+static bool
+is_simple_equality_clause(Node *clause, Var **var)
+{
+	Node	   *clause_expr;
+
+	if (IsA(clause, RestrictInfo))
+	{
+		RestrictInfo *rinfo = (RestrictInfo *) clause;
+
+		/* Pseudoconstants are not interesting (they couldn't contain a Var) */
+		if (rinfo->pseudoconstant)
+			return false;
+
+		/* Clauses referencing multiple, or no, varnos are incompatible */
+		if (bms_membership(rinfo->clause_relids) != BMS_SINGLETON)
+			return false;
+
+		clause = (Node *) rinfo->clause;
+	}
+
+	if (is_opclause(clause))
+	{
+		OpExpr *expr = (OpExpr *) clause;
+
+		/* Only expressions with two arguments are considered compatible. */
+		if (list_length(expr->args) != 2)
+			return false;
+
+		/* Check if the expression has the right shape */
+		if (!examine_opclause_args(expr->args, &clause_expr, NULL, NULL))
+			return false;
+
+		/* If it's not an "=" operator, just ignore the clause */
+		if (get_oprrest(expr->opno) != F_EQSEL)
+			return false;
+
+		if (IsA(clause_expr, Var))
+			*var = (Var *) clause_expr;
+	}
+	else
+		return false;
+
+	return true;
+}
+
 /*
  * clauselist_selectivity_or -
  *	  Compute the selectivity of an implicitly-ORed list of boolean
@@ -353,7 +399,6 @@ clauselist_selectivity_ext(PlannerInfo *root,
  *
  * The basic approach is to apply extended statistics first, on as many
  * clauses as possible, in order to capture cross-column dependencies etc.
- * The remaining clauses are then estimated as if they were independent.
  */
 static Selectivity
 clauselist_selectivity_or(PlannerInfo *root,
@@ -368,6 +413,8 @@ clauselist_selectivity_or(PlannerInfo *root,
 	Bitmapset  *estimatedclauses = NULL;
 	ListCell   *lc;
 	int			listidx;
+	bool		all_eq_clauses = true;
+	Var			*first_var = NULL;
 
 	/*
 	 * Determine if these clauses reference a single relation.  If so, and if
@@ -387,14 +434,38 @@ clauselist_selectivity_or(PlannerInfo *root,
 											&estimatedclauses, true);
 	}
 
-	/*
-	 * Estimate the remaining clauses as if they were independent.
-	 *
-	 * Selectivities for an OR clause are computed as s1+s2 - s1*s2 to account
-	 * for the probable overlap of selected tuple sets.
-	 *
-	 * XXX is this too conservative?
-	 */
+	/* Check if all clauses use the same column and only equality conditions */
+	listidx = -1;
+ 	foreach (lc, clauses)
+	{
+		Node *clause = (Node *) lfirst(lc);
+		Var *var = NULL;
+
+		listidx++;
+
+		/*
+		 * Skip this clause if it's already been estimated by some other
+		 * statistics above.
+		 */
+		if (bms_is_member(listidx, estimatedclauses))
+			continue;
+
+		if (!is_simple_equality_clause(clause, &var))
+		{
+			all_eq_clauses = false;
+			break;
+		}
+
+		if (first_var == NULL)
+			first_var = var;
+		else if (!equal(first_var, var))
+		{
+			all_eq_clauses = false;
+			break;
+		}
+	}
+
+	/* Estimate the remaining clauses. */
 	listidx = -1;
 	foreach(lc, clauses)
 	{
@@ -412,7 +483,16 @@ clauselist_selectivity_or(PlannerInfo *root,
 		s2 = clause_selectivity_ext(root, (Node *) lfirst(lc), varRelid,
 									jointype, sjinfo, use_extended_stats);
 
-		s1 = s1 + s2 - s1 * s2;
+		if (all_eq_clauses)
+		{
+			/* If clauses are like 'a = 1 OR a = 2 OR ... ' */
+			s1 = s1 + s2;
+		}
+		else
+		{
+			/* If clauses are independent. */
+			s1 = s1 + s2 - s1 * s2;
+		}
 	}
 
 	return s1;
