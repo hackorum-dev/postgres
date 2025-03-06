@@ -125,6 +125,131 @@ have_createrole_privilege(void)
 	return has_createrole_privilege(GetUserId());
 }
 
+/*
+ * check_drop_role_dependency
+ *
+ * Check if there are any dependencies associated with the role being dropped.
+ *
+ * This function scans the pg_auth_members table to find: 1) roles that are
+ * admins of the role being dropped, and 2) roles where the role being dropped
+ * is an admin. If both conditions are met, it means the roles that are admins
+ * of the role being dropped rely on it for admin privileges on roles where the
+ * role being dropped is an admin.
+ *
+ * For example, if userA creates userB, and userB creates userC, both userB and
+ * userA would have admin privileges on userC. UserB has admin privileges on
+ * userC because it created userC, while userA inherits those admin privileges
+ * from userB. This means userA relies on userB for admin privileges on userC.
+ * Therefore, if userB is dropped, userA will lose its admin privileges on
+ * userC.
+ *
+ * If such a dependency exists, this function raises an error to prevent the
+ * role from being dropped.
+ *
+ * pg_auth_members_rel: relation object representing the pg_auth_members system
+ * catalog.
+ * roleid: Oid of the role that is being dropped.
+ */
+static void
+check_drop_role_dependency(Relation pg_auth_members_rel, Oid roleid)
+{
+	ScanKeyData	scankey;
+	SysScanDesc	sscan;
+	HeapTuple	tmp_tuple;
+	List	   *admin_members_of_drop_role = NULL;  			/* List of roles that are admin members of the role to drop */
+	List	   *roles_with_drop_role_as_admin_member = NULL;	/* List of roles where the role to drop is an admin member */
+
+	ScanKeyInit(&scankey,
+				Anum_pg_auth_members_roleid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(roleid));
+
+	sscan = systable_beginscan(pg_auth_members_rel,
+							   AuthMemRoleMemIndexId,
+							   true, NULL, 1, &scankey);
+
+	while (HeapTupleIsValid(tmp_tuple = systable_getnext(sscan)))
+	{
+		Form_pg_auth_members authmem_form;
+		authmem_form = (Form_pg_auth_members) GETSTRUCT(tmp_tuple);
+
+		if (authmem_form->admin_option)
+		{
+			if (!admin_members_of_drop_role)
+				admin_members_of_drop_role =
+						list_make1_oid(authmem_form->member);
+			else
+				admin_members_of_drop_role =
+						lappend_oid(admin_members_of_drop_role,
+									authmem_form->member);
+		}
+	}
+
+	systable_endscan(sscan);
+
+	ScanKeyInit(&scankey,
+				Anum_pg_auth_members_member,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(roleid));
+
+	sscan = systable_beginscan(pg_auth_members_rel,
+							   AuthMemRoleMemIndexId,
+							   true, NULL, 1, &scankey);
+
+	while (HeapTupleIsValid(tmp_tuple = systable_getnext(sscan)))
+	{
+		Form_pg_auth_members authmem_form;
+		authmem_form = (Form_pg_auth_members) GETSTRUCT(tmp_tuple);
+
+		if (authmem_form->admin_option)
+		{
+			if (!roles_with_drop_role_as_admin_member)
+				roles_with_drop_role_as_admin_member =
+							list_make1_oid(authmem_form->roleid);
+			else
+				roles_with_drop_role_as_admin_member =
+							lappend_oid(roles_with_drop_role_as_admin_member,
+										authmem_form->roleid);
+		}
+	}
+
+	systable_endscan(sscan);
+
+	/* If there are dependencies, raise an error */
+	if (admin_members_of_drop_role && roles_with_drop_role_as_admin_member)
+	{
+		ListCell *dependent_role;
+		ListCell *referenced_role;
+		StringInfoData detail_log;
+
+		/* Initialize StringInfo to build the detailed error log message */
+		initStringInfo(&detail_log);
+
+		foreach(dependent_role, admin_members_of_drop_role)
+		{
+			Oid dependent_role_oid = lfirst_oid(dependent_role);
+
+			foreach(referenced_role, roles_with_drop_role_as_admin_member)
+			{
+				Oid referenced_role_oid = lfirst_oid(referenced_role);
+
+				if (detail_log.len > 0)
+					appendStringInfoChar(&detail_log, '\n');
+
+				appendStringInfo(&detail_log, "role %s inherits ADMIN privileges on role %s through role %s",
+								 GetUserNameFromId(dependent_role_oid, false),
+								 GetUserNameFromId(referenced_role_oid, false),
+								 GetUserNameFromId(roleid, false));
+			}
+		}
+
+		ereport(ERROR,
+				(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
+				 errmsg("role \"%s\" cannot be dropped because some objects depend on it",
+					   GetUserNameFromId(roleid, false)),
+				 errdetail("%s", detail_log.data)));
+	}
+}
 
 /*
  * CREATE ROLE
@@ -1196,6 +1321,12 @@ DropRole(DropRoleStmt *stmt)
 		 * her.  We keep the lock until the end of transaction.
 		 */
 		LockSharedObject(AuthIdRelationId, roleid, 0, AccessExclusiveLock);
+
+		/*
+		 * Check if there are any existing dependencies on the role before dropping
+		 * it.
+		 */
+		check_drop_role_dependency(pg_auth_members_rel, roleid);
 
 		/*
 		 * If there is a pg_auth_members entry that has one of the roles to be
