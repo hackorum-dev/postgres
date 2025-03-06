@@ -190,6 +190,20 @@ REVOKE CREATE ON DATABASE regression FROM regress_createrole CASCADE;
 DROP ROLE regress_replication_bypassrls;
 DROP ROLE regress_replication;
 DROP ROLE regress_bypassrls;
+-- should fail, as some roles have dependency on these roles
+DROP ROLE regress_createdb;
+DROP ROLE regress_createrole;
+DROP ROLE regress_login;
+DROP ROLE regress_inherit;
+DROP ROLE regress_connection_limit;
+DROP ROLE regress_encrypted_password;
+DROP ROLE regress_password_null;
+-- remove any dependencies associated with the role before dropping it
+-- should pass
+RESET SESSION AUTHORIZATION;
+REVOKE regress_createdb, regress_createrole, regress_login,
+	   regress_inherit, regress_connection_limit, regress_encrypted_password, regress_password_null
+FROM regress_role_admin;
 DROP ROLE regress_createdb;
 DROP ROLE regress_createrole;
 DROP ROLE regress_login;
@@ -200,6 +214,7 @@ DROP ROLE regress_password_null;
 DROP ROLE regress_noiseword;
 DROP ROLE regress_inroles;
 DROP ROLE regress_adminroles;
+SET SESSION AUTHORIZATION regress_role_admin;
 
 -- fail, cannot drop ourself, nor superusers or roles we lack ADMIN for
 DROP ROLE regress_role_super;
