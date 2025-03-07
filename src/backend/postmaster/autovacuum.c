@@ -2956,7 +2956,8 @@ relation_needs_vacanalyze(Oid relid,
 	/* number of vacuum (resp. analyze) tuples at this time */
 	float4		vactuples,
 				instuples,
-				anltuples;
+				anltuples,
+				livetuples;
 
 	/* freeze parameters */
 	int			freeze_max_age;
@@ -3052,6 +3053,7 @@ relation_needs_vacanalyze(Oid relid,
 	if (PointerIsValid(tabentry) && AutoVacuumingActive())
 	{
 		float4		pcnt_unfrozen = 1;
+		float4		pcnt_visibletuples = 1;
 		float4		reltuples = classForm->reltuples;
 		int32		relpages = classForm->relpages;
 		int32		relallfrozen = classForm->relallfrozen;
@@ -3059,6 +3061,7 @@ relation_needs_vacanalyze(Oid relid,
 		vactuples = tabentry->dead_tuples;
 		instuples = tabentry->ins_since_vacuum;
 		anltuples = tabentry->mod_since_analyze;
+		livetuples = tabentry->live_tuples;
 
 		/* If the table hasn't yet been vacuumed, take reltuples as zero */
 		if (reltuples < 0)
@@ -3081,14 +3084,26 @@ relation_needs_vacanalyze(Oid relid,
 			pcnt_unfrozen = 1 - ((float4) relallfrozen / relpages);
 		}
 
-		vacthresh = (float4) vac_base_thresh + vac_scale_factor * reltuples;
+		/*
+		 * If we have data for visibletuples, calculate the visibletuples 
+		 * of the table to modify vac_scale_factor. This helps us decide
+		 * whether or not to vacuum an update-heavy table based on the number
+		 * of updates to the more "active" part of the table.
+		 */
+		if (livetuples > 0 && vactuples > 0)
+		{
+			/* pcnt_visibletuples calculations.*/
+			pcnt_visibletuples = (float4) (livetuples / (livetuples + vactuples));
+		}
+
+		vacthresh = (float4) vac_base_thresh + vac_scale_factor * reltuples * pcnt_visibletuples;
 		if (vac_max_thresh >= 0 && vacthresh > (float4) vac_max_thresh)
 			vacthresh = (float4) vac_max_thresh;
 
 		vacinsthresh = (float4) vac_ins_base_thresh +
 			vac_ins_scale_factor * reltuples * pcnt_unfrozen;
-		anlthresh = (float4) anl_base_thresh + anl_scale_factor * reltuples;
-
+		anlthresh = (float4) anl_base_thresh + anl_scale_factor * reltuples * pcnt_visibletuples;
+		elog(DEBUG2, "vacthresh: %f,anlthresh: %f, the %s has %f reltuples, pcnt_unfrozen: %f, pcnt_visibletuples: %f ", vacthresh, anlthresh,NameStr(classForm->relname), reltuples, pcnt_unfrozen, pcnt_visibletuples);
 		/*
 		 * Note that we don't need to take special consideration for stat
 		 * reset, because if that happens, the last vacuum and analyze counts
