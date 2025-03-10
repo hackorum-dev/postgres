@@ -61,13 +61,16 @@ is_cancel_in_progress(void)
 
 #define MAX_ON_EXIT_NICELY				20
 
-static struct
+typedef struct on_exit_nicely_item
 {
 	on_exit_nicely_callback function;
 	void	   *arg;
-}			on_exit_nicely_list[MAX_ON_EXIT_NICELY];
+} on_exit_nicely_item;
 
-static int	on_exit_nicely_index;
+static on_exit_nicely_item *on_exit_nicely_list = NULL;
+static int on_exit_nicely_index;
+static int max_on_exit_nicely_list;
+static void EnlargeExitNicelyArray(void);
 
 /*
  * Parse a --section=foo command line argument.
@@ -97,13 +100,42 @@ set_dump_section(const char *arg, int *dumpSections)
 	}
 }
 
+/*
+ * EnlargeExitNicelyArray
+ *
+ * Enlarges the array size, if required.  If first time, we allocate the memory
+ * using malloc.
+ */
+static void
+EnlargeExitNicelyArray(void)
+{
+	/* If array has space for 1 entry, then return from here. */
+	if (on_exit_nicely_index < max_on_exit_nicely_list)
+		return;
+
+	/* Double the capacity of the array. */
+	max_on_exit_nicely_list = (max_on_exit_nicely_list > 0) ? max_on_exit_nicely_list * 2 : MAX_ON_EXIT_NICELY;
+
+	/* If array is pointing to NULL, then allocate memory for fixed size. */
+	if (!on_exit_nicely_list)
+		on_exit_nicely_list = (on_exit_nicely_item *) pg_malloc0(max_on_exit_nicely_list * sizeof(on_exit_nicely_item));
+	else
+	{
+		/*
+		 * As array already have some memory so instead of alloc, using
+		 * repalloc so that all old data of array will be copied into new
+		 * allocated memory.
+		 */
+		on_exit_nicely_list = (on_exit_nicely_item *) pg_realloc(on_exit_nicely_list,
+				max_on_exit_nicely_list * sizeof(on_exit_nicely_item));
+	}
+}
 
 /* Register a callback to be run when exit_nicely is invoked. */
 void
 on_exit_nicely(on_exit_nicely_callback function, void *arg)
 {
-	if (on_exit_nicely_index >= MAX_ON_EXIT_NICELY)
-		pg_fatal("out of on_exit_nicely slots");
+	EnlargeExitNicelyArray();
 	on_exit_nicely_list[on_exit_nicely_index].function = function;
 	on_exit_nicely_list[on_exit_nicely_index].arg = arg;
 	on_exit_nicely_index++;
