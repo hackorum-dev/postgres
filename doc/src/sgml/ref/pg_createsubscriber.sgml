@@ -23,23 +23,10 @@ PostgreSQL documentation
   <cmdsynopsis>
    <command>pg_createsubscriber</command>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
-   <group choice="plain">
-    <group choice="req">
-     <arg choice="plain"><option>-d</option></arg>
-     <arg choice="plain"><option>--database</option></arg>
-    </group>
-    <replaceable>dbname</replaceable>
-    <group choice="req">
-     <arg choice="plain"><option>-D</option> </arg>
-     <arg choice="plain"><option>--pgdata</option></arg>
-    </group>
-    <replaceable>datadir</replaceable>
-    <group choice="req">
-     <arg choice="plain"><option>-P</option></arg>
-     <arg choice="plain"><option>--publisher-server</option></arg>
-    </group>
-    <replaceable>connstr</replaceable>
-   </group>
+   <arg choice="plain"><option>-D</option></arg>
+   <arg choice="plain"><replaceable>datadir</replaceable></arg>
+   <arg choice="plain"><option>-P</option></arg>
+   <arg choice="plain"><replaceable>connstr</replaceable></arg>
   </cmdsynopsis>
  </refsynopsisdiv>
 
@@ -50,32 +37,26 @@ PostgreSQL documentation
    <application>pg_createsubscriber</application> creates a new logical
    replica from a physical standby server.  All tables in the specified
    database are included in the <link linkend="logical-replication">logical
-   replication</link> setup.  A pair of
-   publication and subscription objects are created for each database.  It
-   must be run at the target server.
+   replication</link> setup.  It must be run at the target server.
+  </para>
+
+  <para>
+   The minimal command shown above replicates only a single database: the
+   one named in the connection string pointing to the source server.  More
+   commonly, you would use the <option>--database</option> (<option>-d</option>)
+   option one or more times to specify which databases in the source to replicate.
+   The corresponding publications, subscriptions, and replication slots are
+   then created using auto-generated names, which can be overriden
+   using the corresponding long-form command-line options, once each per database.
   </para>
 
   <para>
    After a successful run, the state of the target server is analogous to a
-   fresh logical replication setup.  The main difference between the logical
-   replication setup and <application>pg_createsubscriber</application> is how
-   the data synchronization is done. <application>pg_createsubscriber</application>
-   does not copy the initial table data. It does only the synchronization phase,
-   which ensures each table is brought up to a synchronized state.
-  </para>
-
-  <para>
-   <application>pg_createsubscriber</application> targets large database
-   systems because in logical replication setup, most of the time is spent
-   doing the initial data copy.  Furthermore, a side effect of this long time
-   spent synchronizing data is usually a large amount of changes to be applied
-   (that were produced during the initial data copy), which increases even
-   more the time when the logical replica will be unavailable. For smaller
-   databases, it is recommended to set up logical replication with initial data
-   synchronization.  For details, see the <command>CREATE SUBSCRIPTION</command>
-   <link linkend="sql-createsubscription-params-with-copy-data">
-   <literal>copy_data</literal></link> option.
-
+   fresh logical replication setup.  The main difference compared the logical
+   replication setup is that <application>pg_createsubscriber</application>
+   does not perform an initial data copy.  Instead it relies on a LSN-based
+   point-in-time recovery of physical backup to coincide with the LSN-based
+   starting point of the subscription(s) it creates.
   </para>
  </refsect1>
 
@@ -92,12 +73,12 @@ PostgreSQL documentation
      <term><option>--database=<replaceable class="parameter">dbname</replaceable></option></term>
      <listitem>
       <para>
-       The name of the database in which to create a subscription.  Multiple
+       The name of the database for which to create a subscription.  Multiple
        databases can be selected by writing multiple <option>-d</option>
-       options. If <option>-d</option> option is not provided, the database
-       name will be obtained from <option>-P</option> option. If the database
-       name is not specified in either the <option>-d</option> option or
-       <option>-P</option> option, an error will be reported.
+       options. If no <option>-d</option> option is provided, the database
+       name will be obtained from the <option>-P</option> option. If the database
+       name is not specified in either the <option>-d</option> or
+       <option>-P</option> options, an error will be reported.
       </para>
      </listitem>
     </varlistentry>
@@ -107,7 +88,7 @@ PostgreSQL documentation
      <term><option>--pgdata=<replaceable class="parameter">directory</replaceable></option></term>
      <listitem>
       <para>
-       The target directory that contains a cluster directory from a physical
+       The target directory that contains a cluster directory of a physical
        replica.
       </para>
      </listitem>
@@ -143,6 +124,11 @@ PostgreSQL documentation
        The connection string to the publisher.  For details see <xref
        linkend="libpq-connstring"/>.
       </para>
+      <para>
+       If the <option>-d</option> option is not provided, the database name
+       of the single database to replicate is obtained from here.  If a database
+       name is also not specified in this connection string, an error will be reported.
+      </para>
      </listitem>
     </varlistentry>
 
@@ -162,8 +148,8 @@ PostgreSQL documentation
      <term><option>--recovery-timeout=<replaceable class="parameter">seconds</replaceable></option></term>
      <listitem>
       <para>
-       The maximum number of seconds to wait for recovery to end.  Setting to
-       0 disables.  The default is 0.
+       The maximum number of seconds to wait for recovery to end.
+       A value of 0 (the default) disables.
       </para>
      </listitem>
     </varlistentry>
@@ -186,7 +172,7 @@ PostgreSQL documentation
      <term><option>--subscriber-username=<replaceable class="parameter">username</replaceable></option></term>
      <listitem>
       <para>
-       The user name to connect as on target server.  Defaults to the current
+       The user name to connect as on the target server.  Defaults to the current
        operating system user name.
       </para>
      </listitem>
@@ -210,12 +196,18 @@ PostgreSQL documentation
      <term><option>--config-file=<replaceable class="parameter">filename</replaceable></option></term>
      <listitem>
       <para>
-       Use the specified main server configuration file for the target data
-       directory.  <application>pg_createsubscriber</application> internally uses
+       Use the specified main server configuration file for the target service.
+       <application>pg_createsubscriber</application> internally uses
        the <application>pg_ctl</application> command to start and
-       stop the target server.  It allows you to specify the actual
-       <filename>postgresql.conf</filename> configuration file if it is stored
-       outside the data directory.
+       stop the target server; which by default expects a <filename>postgresql.conf</filename>
+       configuration file to exist in the data directory.  Pass the actual file location via this option
+       if that is not the case.
+      </para>
+      <para>
+       Note, the configuration setting <literal>port</literal> in this file is effectively ignored
+       as <application>pg_createsubscriber</application> always specifies the target listening port
+       on the <application>pg_ctl</application> command-line.
+       Use the <option>-p</option> option to specify which port the target server should listen on.
       </para>
      </listitem>
     </varlistentry>
@@ -310,7 +302,7 @@ PostgreSQL documentation
    </para>
 
    <para>
-    The target server must be used as a physical standby.  The target server
+    The target server must be setup as a physical standby.  The target server
     must have <xref linkend="guc-max-replication-slots"/> and <xref
     linkend="guc-max-logical-replication-workers"/> configured to a value
     greater than or equal to the number of specified databases.  The target
@@ -344,16 +336,17 @@ PostgreSQL documentation
    </para>
 
    <para>
-    <application>pg_createsubscriber</application> usually starts the target
-    server with different connection settings during transformation.  Hence,
-    connections to the target server should fail.
+    <application>pg_createsubscriber</application> is designed have full and
+    exclusive control over the target server.  Plan for downtime or migration
+    of any applications or users of the target server in its soon-to-be converted
+    physical standby mode.
    </para>
 
    <para>
     Since DDL commands are not replicated by logical replication, avoid
     executing DDL commands that change the database schema while running
     <application>pg_createsubscriber</application>.  If the target server has
-    already been converted to logical replica, the DDL commands might not be
+    already been converted to a logical replica, the DDL commands might not be
     replicated, which might cause an error.
    </para>
 
