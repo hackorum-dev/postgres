@@ -735,18 +735,12 @@ check_control_data(ControlData *oldctrl,
 	 * check_for_isn_and_int8_passing_mismatch().
 	 */
 
-	/*
-	 * We might eventually allow upgrades from checksum to no-checksum
-	 * clusters.
-	 */
-	if (oldctrl->data_checksum_version == 0 &&
-		newctrl->data_checksum_version != 0)
-		pg_fatal("old cluster does not use data checksums but the new one does");
-	else if (oldctrl->data_checksum_version != 0 &&
-			 newctrl->data_checksum_version == 0)
-		pg_fatal("old cluster uses data checksums but the new one does not");
-	else if (oldctrl->data_checksum_version != newctrl->data_checksum_version)
-		pg_fatal("old and new cluster pg_controldata checksum versions do not match");
+	/* FIXME: what about upgrade from checksum to non-checksum? */
+	if (oldctrl->data_checksum_version != newctrl->data_checksum_version)
+	{
+		if (!user_opts.update_checksums)
+			pg_fatal("when upgrading between clusters with different data checksum settings, option %s must be used", "--update-checksums");
+	}
 }
 
 

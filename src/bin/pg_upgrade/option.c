@@ -62,6 +62,7 @@ parseCommandLine(int argc, char *argv[])
 		{"sync-method", required_argument, NULL, 4},
 		{"no-statistics", no_argument, NULL, 5},
 		{"set-char-signedness", required_argument, NULL, 6},
+		{"update-checksums", no_argument, NULL, 7},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -228,6 +229,11 @@ parseCommandLine(int argc, char *argv[])
 				else
 					pg_fatal("invalid argument for option %s", "--set-char-signedness");
 				break;
+
+			case 7:
+				user_opts.update_checksums = true;
+				break;
+
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 						os_info.progname);
@@ -240,6 +246,9 @@ parseCommandLine(int argc, char *argv[])
 
 	if (!user_opts.sync_method)
 		user_opts.sync_method = pg_strdup("fsync");
+
+	if (user_opts.update_checksums && user_opts.transfer_mode != TRANSFER_MODE_COPY)
+		pg_fatal("option %s requires transfer mode %s", "--update-checksums", "--copy");
 
 	if (log_opts.verbose)
 		pg_log(PG_REPORT, "Running in verbose mode");
