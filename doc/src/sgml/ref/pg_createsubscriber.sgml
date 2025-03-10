@@ -70,7 +70,7 @@ PostgreSQL documentation
    doing the initial data copy.  Furthermore, a side effect of this long time
    spent synchronizing data is usually a large amount of changes to be applied
    (that were produced during the initial data copy), which increases even
-   more the time when the logical replica will be available. For smaller
+   more the time when the logical replica will be unavailable. For smaller
    databases, it is recommended to set up logical replication with initial data
    synchronization.  For details, see the <command>CREATE SUBSCRIPTION</command>
    <link linkend="sql-createsubscription-params-with-copy-data">
@@ -94,7 +94,7 @@ PostgreSQL documentation
       <para>
        The name of the database in which to create a subscription.  Multiple
        databases can be selected by writing multiple <option>-d</option>
-       switches. If <option>-d</option> option is not provided, the database
+       options. If <option>-d</option> option is not provided, the database
        name will be obtained from <option>-P</option> option. If the database
        name is not specified in either the <option>-d</option> option or
        <option>-P</option> option, an error will be reported.
@@ -128,7 +128,7 @@ PostgreSQL documentation
      <term><option>--subscriber-port=<replaceable class="parameter">port</replaceable></option></term>
      <listitem>
       <para>
-       The port number on which the target server is listening for
+       The port number on which the target server will listen for
        connections.  Defaults to running the target server on port 50432 to
        avoid unintended client connections.
       </para>
@@ -226,10 +226,10 @@ PostgreSQL documentation
       <para>
        The publication name to set up the logical replication.  Multiple
        publications can be specified by writing multiple
-       <option>--publication</option> switches.  The number of publication
+       <option>--publication</option> options.  The number of publication
        names must match the number of specified databases, otherwise an error
-       is reported.  The order of the multiple publication name switches must
-       match the order of database switches.  If this option is not specified,
+       is reported.  The order of the multiple publication name options must
+       match the order of database options.  If this option is not specified,
        a generated name is assigned to the publication name.
       </para>
      </listitem>
@@ -241,10 +241,10 @@ PostgreSQL documentation
       <para>
        The replication slot name to set up the logical replication.  Multiple
        replication slots can be specified by writing multiple
-       <option>--replication-slot</option> switches.  The number of
+       <option>--replication-slot</option> options.  The number of
        replication slot names must match the number of specified databases,
        otherwise an error is reported.  The order of the multiple replication
-       slot name switches must match the order of database switches.  If this
+       slot name options must match the order of database options.  If this
        option is not specified, the subscription name is assigned to the
        replication slot name.
       </para>
@@ -257,10 +257,10 @@ PostgreSQL documentation
       <para>
        The subscription name to set up the logical replication.  Multiple
        subscriptions can be specified by writing multiple
-       <option>--subscription</option> switches.  The number of subscription
+       <option>--subscription</option> options.  The number of subscription
        names must match the number of specified databases, otherwise an error
-       is reported.  The order of the multiple subscription name switches must
-       match the order of database switches.  If this option is not specified,
+       is reported.  The order of the multiple subscription name options must
+       match the order of database options.  If this option is not specified,
        a generated name is assigned to the subscription name.
       </para>
      </listitem>
@@ -281,7 +281,7 @@ PostgreSQL documentation
      <term><option>--help</option></term>
      <listitem>
       <para>
-       Show help about <application>pg_createsubscriber</application> command
+       Show help about <application>pg_createsubscriber</application> command-
        line arguments, and exit.
       </para>
      </listitem>
@@ -300,7 +300,7 @@ PostgreSQL documentation
     There are some prerequisites for
     <application>pg_createsubscriber</application> to convert the target server
     into a logical replica.  If these are not met, an error will be reported.
-    The source and target servers must have the same major version as the
+    The source and target servers must have the same major version as
     <application>pg_createsubscriber</application>.  The given target data
     directory must have the same system identifier as the source data
     directory.  The given database user for the target data directory must have
@@ -317,7 +317,7 @@ PostgreSQL documentation
     server must have <xref linkend="guc-max-worker-processes"/> configured to a
     value greater than the number of specified databases.  The target server
     must accept local connections. If you are planning to use the
-    <option>--enable-two-phase</option> switch then you will also need to set
+    <option>--enable-two-phase</option> option then you will also need to set
     the <xref linkend="guc-max-prepared-transactions"/> appropriately.
    </para>
 
@@ -361,14 +361,14 @@ PostgreSQL documentation
     If <application>pg_createsubscriber</application> fails while processing,
     objects (publications, replication slots) created on the source server are
     removed.  The removal might fail if the target server cannot connect to
-    the source server.  In such a case, a warning message will inform the
-    objects left.  If the target server is running, it will be stopped.
+    the source server.  In such a case, a warning message will list the
+    remaining objects.  If the target server is running, it will be stopped.
    </para>
 
    <para>
     If the replication is using <xref linkend="guc-primary-slot-name"/>, it
-    will be removed from the source server after the logical replication
-    setup.
+    will be removed from the source server once the logical replication
+    synchronization begins.
    </para>
 
    <para>
@@ -378,7 +378,7 @@ PostgreSQL documentation
    </para>
 
    <para>
-    Unless the <option>--enable-two-phase</option> switch is specified,
+    Unless the <option>--enable-two-phase</option> option is specified,
     <application>pg_createsubscriber</application> sets up logical
     replication with two-phase commit disabled.  This means that any
     prepared transactions will be replicated at the time
@@ -391,8 +391,8 @@ PostgreSQL documentation
 
    <para>
     <application>pg_createsubscriber</application> changes the system
-    identifier using <application>pg_resetwal</application>.  It would avoid
-    situations in which the target server might use WAL files from the source
+    identifier using <application>pg_resetwal</application>.  This prevents
+    situations where the target server would use WAL files from the source
     server.  If the target server has a standby, replication will break and a
     fresh standby should be created.
    </para>
@@ -410,7 +410,7 @@ PostgreSQL documentation
 
    <para>
     The basic idea is to have a replication start point from the source server
-    and set up a logical replication to start from this point:
+    and set up logical replication to start from this point:
    </para>
 
    <procedure>
@@ -439,7 +439,7 @@ PostgreSQL documentation
       linkend="sql-createpublication-params-for-all-tables"><literal>FOR ALL
       TABLES</literal></link>.  If the <option>--publication</option> option
       is not specified, the publication has the following name pattern:
-      <quote><literal>pg_createsubscriber_%u_%x</literal></quote> (parameter:
+      <quote><literal>pg_createsubscriber_%u_%x</literal></quote> (parameters:
       database <parameter>oid</parameter>, random <parameter>int</parameter>).
       If the <option>--replication-slot</option> option is not specified, the
       replication slot has the following name pattern:
@@ -449,7 +449,7 @@ PostgreSQL documentation
       step.  The last replication slot LSN is used as a stopping point in the
       <xref linkend="guc-recovery-target-lsn"/> parameter and by the
       subscriptions as a replication start point.  It guarantees that no
-      transaction will be lost.
+      transactions will be lost.
      </para>
     </step>
 
@@ -460,16 +460,11 @@ PostgreSQL documentation
       linkend="guc-recovery-target-lsn"/>) of the write-ahead log location up
       to which recovery will proceed.  It also specifies
       <literal>promote</literal> as the action that the server should take
-      once the recovery target is reached.  Additional <link
-      linkend="runtime-config-wal-recovery-target">recovery parameters</link>
-      are added to avoid unexpected behavior during the recovery process such
-      as end of the recovery as soon as a consistent state is reached (WAL
-      should be applied until the replication start location) and multiple
-      recovery targets that can cause a failure.  This step finishes once the
+      once the recovery target is reached.  This step finishes once the
       server ends standby mode and is accepting read-write transactions.  If
-      <option>--recovery-timeout</option> option is set,
-      <application>pg_createsubscriber</application> terminates if recovery
-      does not end until the given number of seconds.
+      a non-zero <option>--recovery-timeout</option> is set,
+      <application>pg_createsubscriber</application> terminates if promotion
+      does not happen within the given number of seconds.
      </para>
     </step>
 
@@ -491,8 +486,7 @@ PostgreSQL documentation
     <step>
      <para>
       Drop publications on the target server that were replicated because they
-      were created before the replication start location.  It has no use on
-      the subscriber.
+      were created before the replication start location.
      </para>
     </step>
 
@@ -502,7 +496,7 @@ PostgreSQL documentation
       subscription.  When the target server starts the recovery process, it
       catches up to the replication start point.  This is the exact LSN to be
       used as a initial replication location for each subscription.  The
-      replication origin name is obtained since the subscription was created.
+      replication origin name was obtained when the subscription was created.
       The replication origin name and the replication start point are used in
       <link
       linkend="pg-replication-origin-advance"><function>pg_replication_origin_advance()</function></link>
@@ -536,7 +530,7 @@ PostgreSQL documentation
 
     <step>
      <para>
-      Update the system identifier on the target server. The
+      Update the system identifier on the target server. The application
       <xref linkend="app-pgresetwal"/> is run to modify the system identifier.
       The target server is stopped as a <command>pg_resetwal</command> requirement.
      </para>
