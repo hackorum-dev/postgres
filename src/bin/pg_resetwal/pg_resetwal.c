@@ -65,7 +65,7 @@ static bool guessed = false;	/* T if we had to guess at any values */
 static const char *progname;
 static uint32 set_xid_epoch = (uint32) -1;
 static TransactionId set_oldest_xid = 0;
-static TransactionId set_xid = 0;
+static uint64 set_xid = 0;
 static TransactionId set_oldest_commit_ts_xid = 0;
 static TransactionId set_newest_commit_ts_xid = 0;
 static Oid	set_oid = 0;
@@ -89,7 +89,41 @@ static void KillExistingArchiveStatus(void);
 static void KillExistingWALSummaries(void);
 static void WriteEmptyXLOG(void);
 static void usage(void);
+static void AdvanceNextXid(TransactionId oldval, TransactionId newval);
+static void AdvanceNextMultiXid(MultiXactId oldval, MultiXactId newval);
 
+/*
+ * Note: this structure is copied from commit_ts.c and should be kept in sync.
+ */
+typedef struct CommitTimestampEntry
+{
+	TimestampTz time;
+	RepOriginId nodeid;
+} CommitTimestampEntry;
+
+/*
+ * Note: these macros are copied from clog.c, commit_ts.c and subtrans.c and
+ * should be kept in sync.
+ */
+#define CLOG_BITS_PER_XACT	2
+#define CLOG_XACTS_PER_BYTE 4
+#define CLOG_XACTS_PER_PAGE (BLCKSZ * CLOG_XACTS_PER_BYTE)
+
+#define TransactionIdToPgIndex(xid) ((xid) % (TransactionId) CLOG_XACTS_PER_PAGE)
+#define TransactionIdToByte(xid)	(TransactionIdToPgIndex(xid) / CLOG_XACTS_PER_BYTE)
+#define TransactionIdToBIndex(xid)	((xid) % (TransactionId) CLOG_XACTS_PER_BYTE)
+
+#define SUBTRANS_XACTS_PER_PAGE (BLCKSZ / sizeof(TransactionId))
+
+#define SizeOfCommitTimestampEntry (offsetof(CommitTimestampEntry, nodeid) + \
+									sizeof(RepOriginId))
+
+#define COMMIT_TS_XACTS_PER_PAGE \
+	(BLCKSZ / SizeOfCommitTimestampEntry)
+
+#define MULTIXACT_OFFSETS_PER_PAGE (BLCKSZ / sizeof(MultiXactOffset))
+
+#define SLRU_PAGES_PER_SEGMENT	32
 
 int
 main(int argc, char *argv[])
@@ -441,9 +475,47 @@ main(int argc, char *argv[])
 	}
 
 	if (set_xid != 0)
+	{
+		FullTransactionId current_fxid = ControlFile.checkPointCopy.nextXid;
+		FullTransactionId full_datfrozenxid;
+		uint32			  current_epoch;
+
+		full_datfrozenxid =
+			FullTransactionIdFromEpochAndXid(EpochFromFullTransactionId(current_fxid),
+											 ControlFile.checkPointCopy.oldestXid);
+
+		if (set_xid > full_datfrozenxid.value &&
+			(set_xid - full_datfrozenxid.value) > INT32_MAX)
+		{
+			/*
+			 * Cannot advance transaction ID in this case, because all unfrozen
+			 * transactions in cluster will be considered as 'future' for given
+			 * and all subsequent transaction IDs.
+			 */
+			pg_fatal("transaction ID (-x) cannot be ahead of datfrozenxid by %u", INT32_MAX);
+		}
+		else if (set_xid >= MaxTransactionId)
+		{
+			/*
+			 * Given transaction ID might exeed current epoch, so advance epoch
+			 * if needed.
+			 */
+			current_epoch = set_xid / MaxTransactionId;
+			set_xid = set_xid % MaxTransactionId;
+		}
+		else
+			current_epoch = EpochFromFullTransactionId(current_fxid);
+
 		ControlFile.checkPointCopy.nextXid =
-			FullTransactionIdFromEpochAndXid(EpochFromFullTransactionId(ControlFile.checkPointCopy.nextXid),
-											 set_xid);
+			FullTransactionIdFromEpochAndXid(current_epoch, set_xid);
+
+		if (FullTransactionIdPrecedes(current_fxid, ControlFile.checkPointCopy.nextXid) &&
+			!noupdate)
+		{
+			AdvanceNextXid(XidFromFullTransactionId(current_fxid),
+						   XidFromFullTransactionId(ControlFile.checkPointCopy.nextXid));
+		}
+	}
 
 	if (set_oldest_commit_ts_xid != 0)
 		ControlFile.checkPointCopy.oldestCommitTsXid = set_oldest_commit_ts_xid;
@@ -455,12 +527,19 @@ main(int argc, char *argv[])
 
 	if (set_mxid != 0)
 	{
+		MultiXactId current_mxid = ControlFile.checkPointCopy.nextMulti;
 		ControlFile.checkPointCopy.nextMulti = set_mxid;
 
 		ControlFile.checkPointCopy.oldestMulti = set_oldestmxid;
 		if (ControlFile.checkPointCopy.oldestMulti < FirstMultiXactId)
 			ControlFile.checkPointCopy.oldestMulti += FirstMultiXactId;
 		ControlFile.checkPointCopy.oldestMultiDB = InvalidOid;
+
+		/*
+		 * If current_mxid precedes set_mxid.
+		 */
+		if (((int32) (current_mxid - set_mxid) < 0) && !noupdate)
+			AdvanceNextMultiXid(current_mxid, set_mxid);
 	}
 
 	if (set_mxoff != -1)
@@ -1217,4 +1296,257 @@ usage(void)
 
 	printf(_("\nReport bugs to <%s>.\n"), PACKAGE_BUGREPORT);
 	printf(_("%s home page: <%s>\n"), PACKAGE_NAME, PACKAGE_URL);
+}
+
+/*
+ * Calculate how many xacts can fit one page of given SLRU type.
+ */
+static int64
+calculate_xacts_per_page(char *slru_type)
+{
+	int64 result = -1;
+
+	if (strcmp(slru_type, "pg_xact") == 0)
+		result = CLOG_XACTS_PER_PAGE;
+	else if (strcmp(slru_type, "pg_commit_ts") == 0)
+		result = COMMIT_TS_XACTS_PER_PAGE;
+	else if (strcmp(slru_type, "pg_subtrans") == 0)
+		result = SUBTRANS_XACTS_PER_PAGE;
+	else if (strcmp(slru_type, "pg_multixact/offsets") == 0)
+		result = MULTIXACT_OFFSETS_PER_PAGE;
+	else
+		pg_fatal("unknown SLRU type : %s", slru_type);
+
+	return result;
+}
+
+/*
+ * Fill given SLRU segment with zeroes.
+ */
+static void
+zero_segment(int fd, char *path)
+{
+	char zeroes[BLCKSZ] = {0};
+
+	for (int i = 0; i < SLRU_PAGES_PER_SEGMENT; i++)
+	{
+		errno = 0;
+		if (write(fd, zeroes, BLCKSZ) != BLCKSZ)
+		{
+			if (errno == 0)
+				errno = ENOSPC;
+			pg_fatal("could not write file \"%s\": %m", path);
+		}
+	}
+}
+
+/*
+ * Fill entry for given transaction ID with zeroes in clog.
+ */
+static void
+zero_clog_xact_info(int fd, char *path, char *slru_type, TransactionId xid)
+{
+	int64 pageno;
+	int byteno = TransactionIdToByte(xid);
+	int bshift = TransactionIdToBIndex(xid) * CLOG_BITS_PER_XACT;
+	char *byteptr;
+	char byteval;
+	int status = 0x00;
+	char buff[BLCKSZ];
+
+	pageno = (xid / CLOG_XACTS_PER_PAGE) % SLRU_PAGES_PER_SEGMENT;
+
+	if (lseek(fd, pageno * BLCKSZ, SEEK_SET) != pageno * BLCKSZ)
+		pg_fatal("could not iterate through file \"%s\": %m", path);
+
+	if (read(fd, buff, BLCKSZ) != BLCKSZ)
+		pg_fatal("could not read file \"%s\": %m", path);
+
+	byteptr = buff + byteno;
+
+	byteval = *byteptr;
+	byteval &= ~(((1 << CLOG_BITS_PER_XACT) - 1) << bshift);
+	byteval |= (status << bshift);
+	*byteptr = byteval;
+
+	if (write(fd, buff, BLCKSZ) != BLCKSZ)
+	{
+		if (errno == 0)
+			errno = ENOSPC;
+		pg_fatal("could not write file \"%s\": %m", path);
+	}
+}
+
+/*
+ * Fill entry for given transaction ID with zeroes in specified SLRU type.
+ */
+static void
+zero_xact_info(int fd, char *path, char *slru_type, TransactionId xid)
+{
+	int  	offset		= 0,
+			entry_size	= 0;
+	int64	pageno;
+	char	buff[BLCKSZ];
+
+	if (strcmp(slru_type, "pg_xact") == 0)
+	{
+		zero_clog_xact_info(fd, path, slru_type, xid);
+		return;
+	}
+	else if (strcmp(slru_type, "pg_commit_ts") == 0)
+	{
+		entry_size	= SizeOfCommitTimestampEntry;
+		offset		= (xid % COMMIT_TS_XACTS_PER_PAGE) * entry_size;
+		pageno		= xid / COMMIT_TS_XACTS_PER_PAGE;
+	}
+	else if (strcmp(slru_type, "pg_subtrans") == 0)
+	{
+		entry_size	= sizeof(TransactionId);
+		offset		= (xid % SUBTRANS_XACTS_PER_PAGE) * entry_size;
+		pageno		= xid / SUBTRANS_XACTS_PER_PAGE;
+	}
+	else if (strcmp(slru_type, "pg_multixact/offsets") == 0)
+	{
+		entry_size	= sizeof(MultiXactOffset);
+		offset		= (xid % MULTIXACT_OFFSETS_PER_PAGE) * entry_size;
+		pageno		= xid / MULTIXACT_OFFSETS_PER_PAGE;
+	}
+	else
+		pg_fatal("unknown SLRU type : %s", slru_type);
+
+	if (lseek(fd, pageno * BLCKSZ, SEEK_SET) != pageno * BLCKSZ)
+		pg_fatal("could not iterate through file \"%s\": %m", path);
+
+	if (read(fd, buff, BLCKSZ) != BLCKSZ)
+		pg_fatal("could not read file \"%s\": %m", path);
+
+	memset(buff + offset, 0, entry_size);
+
+	if (write(fd, buff, BLCKSZ) != BLCKSZ)
+	{
+		if (errno == 0)
+			errno = ENOSPC;
+		pg_fatal("could not write file \"%s\": %m", path);
+	}
+}
+
+/*
+ * Make sure that given xid has entry in specified SLRU type.
+ */
+static void
+enlarge_slru(TransactionId xid, char *dir)
+{
+	char  path[MAXPGPATH];
+	int   fd,
+		  flags = O_RDWR | O_APPEND | O_EXCL | PG_BINARY;
+	int64 segno,
+		  pageno,
+		  xacts_per_page;
+
+	xacts_per_page = calculate_xacts_per_page(dir);
+	pageno = xid / xacts_per_page;
+	segno = pageno / SLRU_PAGES_PER_SEGMENT;
+
+	snprintf(path, MAXPGPATH, "%s/%04X", dir, (unsigned int) segno);
+
+	errno = 0;
+	if (access(path, F_OK) != 0)
+	{
+		if (errno != ENOENT)
+			pg_fatal("cannot access file \"%s\" : %m", path);
+
+		flags |= O_CREAT;
+	}
+
+	/*
+	 * Create or open segment file
+	 */
+	fd = open(path, flags, pg_file_create_mode);
+	if (fd < 0)
+		pg_fatal("could not create/open file \"%s\": %m", path);
+
+	/*
+	 * If segment doen't exist - create segment and fill all it's pages
+	 * with zeroes.
+	 */
+	if (flags & O_CREAT)
+		zero_segment(fd, path);
+	/*
+	 * If segment already exists - fill with zeroes given transaction's
+	 * entry in it.
+	 */
+	else
+		zero_xact_info(fd, path, dir, xid);
+
+	if (fsync(fd) != 0)
+		pg_fatal("fsync error: %m");
+
+	close(fd);
+}
+
+/*
+ * Extend clog so that is can accomodate statuses of all transactions from
+ * oldval to newval.
+ */
+static void
+AdvanceNextXid(TransactionId oldval, TransactionId newval)
+{
+	int64 current_segno = -1, /* last existing slru segment */
+		  pageno,
+		  segno;
+
+	if (newval < oldval) /* handle wraparound */
+		oldval = FirstNormalTransactionId;
+	else /* oldval already has entry in clog */
+		oldval += 1;
+
+	for (TransactionId xid = oldval; xid <= newval; xid++)
+	{
+		pageno = xid / CLOG_XACTS_PER_PAGE;
+		segno = pageno / SLRU_PAGES_PER_SEGMENT;
+
+		/*
+		 * We already zeroed all necessary pages in this segment during
+		 * previous xid processing.
+		 */
+		if (segno == current_segno)
+			continue;
+
+		enlarge_slru(xid, "pg_xact");
+
+		current_segno = segno;
+	}
+
+	pageno = newval / COMMIT_TS_XACTS_PER_PAGE;
+	if (pageno > (oldval / COMMIT_TS_XACTS_PER_PAGE))
+	{
+		enlarge_slru(newval, "pg_commit_ts");
+	}
+
+	pageno = (newval / SUBTRANS_XACTS_PER_PAGE);
+	if (pageno > (oldval / SUBTRANS_XACTS_PER_PAGE))
+	{
+		enlarge_slru(newval, "pg_subtrans");
+	}
+}
+
+static void
+AdvanceNextMultiXid(MultiXactId oldval, MultiXactId newval)
+{
+	int64 current_segno = -1,
+		  pageno,
+		  segno;
+
+	for (MultiXactId mxid = oldval + 1; mxid <= newval; mxid++)
+	{
+		pageno = mxid / MULTIXACT_OFFSETS_PER_PAGE;
+		segno = pageno / SLRU_PAGES_PER_SEGMENT;
+
+		if (segno == current_segno)
+			continue;
+
+		enlarge_slru(mxid, "pg_multixact/offsets");
+
+		current_segno = segno;
+	}
 }

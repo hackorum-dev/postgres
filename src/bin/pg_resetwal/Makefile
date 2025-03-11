@@ -17,6 +17,10 @@ include $(top_builddir)/src/Makefile.global
 
 LDFLAGS_INTERNAL += -L$(top_builddir)/src/fe_utils -lpgfeutils
 
+# required for 03_advance.pl
+REGRESS_SHLIB=$(top_builddir)/src/test/regress/regress$(DLSUFFIX)
+export REGRESS_SHLIB
+
 OBJS = \
 	$(WIN32RES) \
 	pg_resetwal.o
