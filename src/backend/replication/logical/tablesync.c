@@ -1089,6 +1089,34 @@ copy_table(Relation rel)
 	fetch_remote_table_info(get_namespace_name(RelationGetNamespace(rel)),
 							RelationGetRelationName(rel), &lrel, &qual,
 							&gencol_published);
+		/* Get the subscriber table schema */
+	TupleDesc tupdesc = RelationGetDescr(rel);
+	for (int i = 0; i < lrel.natts; i++)
+	{
+    /* Get column type OIDs */
+    Oid local_typid = TupleDescAttr(tupdesc, i)->atttypid;
+    Oid remote_typid = lrel.atttyps[i];
+
+    /* Get human-readable type names */
+    char *local_typname = format_type_be(local_typid);
+    char *remote_typname = format_type_be(remote_typid);
+
+    /* Check if types are different */
+    if (local_typid != remote_typid)
+    {
+        ereport(WARNING,
+                (errmsg("Datatype mismatch for column \"%s\" in table \"%s.%s\": "
+                        "Publisher type is %s, Subscriber type is %s",
+                        lrel.attnames[i], lrel.nspname, lrel.relname,
+                        remote_typname, local_typname)));
+    }
+
+    /* Free allocated memory */
+    pfree(local_typname);
+    pfree(remote_typname);
+	}
+
+					
 
 	/* Put the relation into relmap. */
 	logicalrep_relmap_update(&lrel);
