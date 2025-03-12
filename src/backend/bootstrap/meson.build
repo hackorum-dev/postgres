@@ -18,8 +18,13 @@ bootparse = custom_target('bootparse',
   input: 'bootparse.y',
   kwargs: bison_kw,
 )
+bc_generated_backend_sources += {
+  'srcfiles': [bootscanner],
+  'extra_depends': [bootparse]
+}
 generated_sources += bootparse.to_list()
 boot_parser_sources += bootparse
+bc_generated_backend_sources += {'srcfiles': [bootparse[0]]}
 
 boot_parser = static_library('boot_parser',
   boot_parser_sources,

@@ -24,8 +24,13 @@ repl_gram = custom_target('repl_gram',
   input: 'repl_gram.y',
   kwargs: bison_kw,
 )
+bc_generated_backend_sources += {
+  'srcfiles': [repl_scanner],
+  'extra_depends': [repl_gram]
+}
 generated_sources += repl_gram.to_list()
 repl_parser_sources += repl_gram
+bc_generated_backend_sources += {'srcfiles': [repl_gram[0]]}
 
 syncrep_scanner = custom_target('syncrep_scanner',
   input: 'syncrep_scanner.l',
@@ -39,8 +44,13 @@ syncrep_gram = custom_target('syncrep_gram',
   input: 'syncrep_gram.y',
   kwargs: bison_kw,
 )
+bc_generated_backend_sources += {
+  'srcfiles': [syncrep_scanner],
+  'extra_depends': [syncrep_gram]
+}
 generated_sources += syncrep_gram.to_list()
 repl_parser_sources += syncrep_gram
+bc_generated_backend_sources += {'srcfiles': [syncrep_gram[0]]}
 
 repl_parser = static_library('repl_parser',
   repl_parser_sources,

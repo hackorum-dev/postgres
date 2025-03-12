@@ -5,6 +5,7 @@ backend_sources = []
 backend_link_with = [pgport_srv, common_srv]
 
 generated_backend_sources = []
+bc_generated_backend_sources = []
 post_export_backend_sources = []
 
 var_bitcode_cflags = []
@@ -172,6 +173,7 @@ bitcode_modules += {
   'name': 'postgres',
   'target': postgres_lib,
   'srcfiles': backend_sources,
+  'gen_sources': bc_generated_backend_sources,
 }
 
 pg_mod_c_args = cflags_mod
