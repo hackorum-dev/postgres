@@ -171,6 +171,46 @@ ExecInitExpr(Expr *node, PlanState *parent)
 }
 
 /*
+ * ExecInitExpr: soft error variant of ExecInitExpr.
+ * use it only for expression nodes support soft errors, not all expression
+ * nodes support it.
+*/
+ExprState *
+ExecInitExprSafe(Expr *node, PlanState *parent)
+{
+	ExprState  *state;
+	ExprEvalStep scratch = {0};
+
+	/* Special case: NULL expression produces a NULL ExprState pointer */
+	if (node == NULL)
+		return NULL;
+
+	/* Initialize ExprState with empty step list */
+	state = makeNode(ExprState);
+	state->expr = node;
+	state->parent = parent;
+	state->ext_params = NULL;
+	state->escontext = makeNode(ErrorSaveContext);
+	state->escontext->type = T_ErrorSaveContext;
+	state->escontext->error_occurred = false;
+	state->escontext->details_wanted = true;
+
+	/* Insert setup steps as needed */
+	ExecCreateExprSetupSteps(state, (Node *) node);
+
+	/* Compile the expression proper */
+	ExecInitExprRec(node, state, &state->resvalue, &state->resnull);
+
+	/* Finally, append a DONE step */
+	scratch.opcode = EEOP_DONE_RETURN;
+	ExprEvalPushStep(state, &scratch);
+
+	ExecReadyExpr(state);
+
+	return state;
+}
+
+/*
  * ExecInitExprWithParams: prepare a standalone expression tree for execution
  *
  * This is the same as ExecInitExpr, except that there is no parent PlanState,
@@ -772,6 +812,29 @@ ExecPrepareExpr(Expr *node, EState *estate)
 	node = expression_planner(node);
 
 	result = ExecInitExpr(node, NULL);
+
+	MemoryContextSwitchTo(oldcontext);
+
+	return result;
+}
+
+/*
+ * ExecPrepareExprSafe: soft error variant of ExecPrepareExpr.
+ *
+ * use it when expression node *support* soft error expression execution.
+ * ExecPrepareExpr comments apply to here too.
+ */
+ExprState *
+ExecPrepareExprSafe(Expr *node, EState *estate)
+{
+	ExprState  *result;
+	MemoryContext oldcontext;
+
+	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+
+	node = expression_planner(node);
+
+	result = ExecInitExprSafe(node, NULL);
 
 	MemoryContextSwitchTo(oldcontext);
 
