@@ -157,10 +157,6 @@ static void SnapBuildPurgeOlderTxn(SnapBuild *builder);
 /* snapshot building/manipulation/distribution functions */
 static HistoricMVCCSnapshot SnapBuildBuildSnapshot(SnapBuild *builder);
 
-static void SnapBuildFreeSnapshot(HistoricMVCCSnapshot snap);
-
-static void SnapBuildSnapIncRefcount(HistoricMVCCSnapshot snap);
-
 static void SnapBuildDistributeSnapshotAndInval(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid);
 
 static inline bool SnapBuildXidHasCatalogChanges(SnapBuild *builder, TransactionId xid,
@@ -246,31 +242,6 @@ FreeSnapshotBuilder(SnapBuild *builder)
 }
 
 /*
- * Free an unreferenced snapshot that has previously been built by us.
- */
-static void
-SnapBuildFreeSnapshot(HistoricMVCCSnapshot snap)
-{
-	/* make sure we don't get passed an external snapshot */
-	Assert(snap->base.snapshot_type == SNAPSHOT_HISTORIC_MVCC);
-
-	/* make sure nobody modified our snapshot */
-	Assert(snap->curcid == FirstCommandId);
-	Assert(snap->regd_count == 0);
-
-	/* slightly more likely, so it's checked even without c-asserts */
-	if (snap->copied)
-		elog(ERROR, "cannot free a copied snapshot");
-
-	if (snap->active_count)
-		elog(ERROR, "cannot free an active snapshot");
-	if (snap->refcount)
-		elog(ERROR, "cannot free a snapshot that's in use");
-
-	pfree(snap);
-}
-
-/*
  * In which state of snapshot building are we?
  */
 SnapBuildState
@@ -312,7 +283,7 @@ SnapBuildXactNeedsSkip(SnapBuild *builder, XLogRecPtr ptr)
  * This is used when handing out a snapshot to some external resource or when
  * adding a Snapshot as builder->snapshot.
  */
-static void
+void
 SnapBuildSnapIncRefcount(HistoricMVCCSnapshot snap)
 {
 	snap->refcount++;
@@ -320,9 +291,6 @@ SnapBuildSnapIncRefcount(HistoricMVCCSnapshot snap)
 
 /*
  * Decrease refcount of a snapshot and free if the refcount reaches zero.
- *
- * Externally visible, so that external resources that have been handed an
- * IncRef'ed Snapshot can adjust its refcount easily.
  */
 void
 SnapBuildSnapDecRefcount(HistoricMVCCSnapshot snap)
@@ -330,21 +298,16 @@ SnapBuildSnapDecRefcount(HistoricMVCCSnapshot snap)
 	/* make sure we don't get passed an external snapshot */
 	Assert(snap->base.snapshot_type == SNAPSHOT_HISTORIC_MVCC);
 
-	/* make sure nobody modified our snapshot */
-	Assert(snap->curcid == FirstCommandId);
-
 	Assert(snap->refcount > 0);
 	Assert(snap->regd_count == 0);
 
 	/* slightly more likely, so it's checked even without casserts */
-	if (snap->copied)
-		elog(ERROR, "cannot free a copied snapshot");
 	if (snap->active_count)
 		elog(ERROR, "cannot free an active snapshot");
 
 	snap->refcount--;
 	if (snap->refcount == 0)
-		SnapBuildFreeSnapshot(snap);
+		pfree(snap);
 }
 
 /*
@@ -417,7 +380,6 @@ SnapBuildBuildSnapshot(SnapBuild *builder)
 	snapshot->curxcnt = 0;
 	snapshot->curxip = NULL;
 
-	snapshot->copied = false;
 	snapshot->curcid = FirstCommandId;
 	snapshot->refcount = 0;
 	snapshot->active_count = 0;
@@ -1087,17 +1049,15 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 			SnapBuildSnapDecRefcount(builder->snapshot);
 
 		builder->snapshot = SnapBuildBuildSnapshot(builder);
+		SnapBuildSnapIncRefcount(builder->snapshot);
 
 		/* we might need to execute invalidations, add snapshot */
 		if (!ReorderBufferXidHasBaseSnapshot(builder->reorder, xid))
 		{
-			SnapBuildSnapIncRefcount(builder->snapshot);
 			ReorderBufferSetBaseSnapshot(builder->reorder, xid, lsn,
 										 builder->snapshot);
+			SnapBuildSnapIncRefcount(builder->snapshot);
 		}
-
-		/* refcount of the snapshot builder for the new snapshot */
-		SnapBuildSnapIncRefcount(builder->snapshot);
 
 		/*
 		 * Add a new catalog snapshot and invalidations messages to all

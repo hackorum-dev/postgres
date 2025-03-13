@@ -235,8 +235,6 @@ typedef struct HistoricMVCCSnapshotData
 
 	CommandId	curcid;			/* in my xact, CID < curcid are visible */
 
-	bool		copied;			/* false if it's a "base" snapshot */
-
 	uint32		refcount;		/* refcount managed by snapbuild.c  */
 	uint32		active_count;	/* refcount on ActiveSnapshot stack */
 	uint32		regd_count;		/* refcount registered with resource owners */
