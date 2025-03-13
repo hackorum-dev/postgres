@@ -1346,8 +1346,8 @@ CopyFrom(CopyFromState cstate)
 				/* Compute stored generated columns */
 				if (resultRelInfo->ri_RelationDesc->rd_att->constr &&
 					resultRelInfo->ri_RelationDesc->rd_att->constr->has_generated_stored)
-					ExecComputeStoredGenerated(resultRelInfo, estate, myslot,
-											   CMD_INSERT);
+					ExecComputeGenerated(resultRelInfo, estate, myslot,
+										 CMD_INSERT);
 
 				/*
 				 * If the target is a plain table, check the constraints of

@@ -557,8 +557,8 @@ ExecSimpleRelationInsert(ResultRelInfo *resultRelInfo,
 		/* Compute stored generated columns */
 		if (rel->rd_att->constr &&
 			rel->rd_att->constr->has_generated_stored)
-			ExecComputeStoredGenerated(resultRelInfo, estate, slot,
-									   CMD_INSERT);
+			ExecComputeGenerated(resultRelInfo, estate, slot,
+								 CMD_INSERT);
 
 		/* Check the constraints of the tuple */
 		if (rel->rd_att->constr)
@@ -654,8 +654,8 @@ ExecSimpleRelationUpdate(ResultRelInfo *resultRelInfo,
 		/* Compute stored generated columns */
 		if (rel->rd_att->constr &&
 			rel->rd_att->constr->has_generated_stored)
-			ExecComputeStoredGenerated(resultRelInfo, estate, slot,
-									   CMD_UPDATE);
+			ExecComputeGenerated(resultRelInfo, estate, slot,
+								 CMD_UPDATE);
 
 		/* Check the constraints of the tuple */
 		if (rel->rd_att->constr)

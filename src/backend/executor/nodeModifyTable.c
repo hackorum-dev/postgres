@@ -517,12 +517,12 @@ ExecInitGenerated(ResultRelInfo *resultRelInfo,
 }
 
 /*
- * Compute stored generated columns for a tuple
+ * Compute generated columns for a tuple.
+ * we might support virtual generated column in future, currently not.
  */
 void
-ExecComputeStoredGenerated(ResultRelInfo *resultRelInfo,
-						   EState *estate, TupleTableSlot *slot,
-						   CmdType cmdtype)
+ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
+					 TupleTableSlot *slot, CmdType cmdtype)
 {
 	Relation	rel = resultRelInfo->ri_RelationDesc;
 	TupleDesc	tupdesc = RelationGetDescr(rel);
@@ -911,8 +911,8 @@ ExecInsert(ModifyTableContext *context,
 		 */
 		if (resultRelationDesc->rd_att->constr &&
 			resultRelationDesc->rd_att->constr->has_generated_stored)
-			ExecComputeStoredGenerated(resultRelInfo, estate, slot,
-									   CMD_INSERT);
+			ExecComputeGenerated(resultRelInfo, estate, slot,
+								 CMD_INSERT);
 
 		/*
 		 * If the FDW supports batching, and batching is requested, accumulate
@@ -1038,8 +1038,8 @@ ExecInsert(ModifyTableContext *context,
 		 */
 		if (resultRelationDesc->rd_att->constr &&
 			resultRelationDesc->rd_att->constr->has_generated_stored)
-			ExecComputeStoredGenerated(resultRelInfo, estate, slot,
-									   CMD_INSERT);
+			ExecComputeGenerated(resultRelInfo, estate, slot,
+								 CMD_INSERT);
 
 		/*
 		 * Check any RLS WITH CHECK policies.
@@ -2126,8 +2126,8 @@ ExecUpdatePrepareSlot(ResultRelInfo *resultRelInfo,
 	 */
 	if (resultRelationDesc->rd_att->constr &&
 		resultRelationDesc->rd_att->constr->has_generated_stored)
-		ExecComputeStoredGenerated(resultRelInfo, estate, slot,
-								   CMD_UPDATE);
+		ExecComputeGenerated(resultRelInfo, estate, slot,
+							 CMD_UPDATE);
 }
 
 /*
