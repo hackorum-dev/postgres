@@ -1125,6 +1125,21 @@ dsm_segment_handle(dsm_segment *seg)
 	return seg->handle;
 }
 
+uint32_t dsm_segment_refcnt(dsm_segment *seg)
+{
+	uint32_t refcnt = 0;
+
+	if (seg->control_slot != INVALID_CONTROL_SLOT)
+	{
+		LWLockAcquire(DynamicSharedMemoryControlLock, LW_EXCLUSIVE);
+		Assert(dsm_control->item[seg->control_slot].handle == seg->handle);
+		refcnt = dsm_control->item[seg->control_slot].refcnt;
+		LWLockRelease(DynamicSharedMemoryControlLock);
+	}
+
+	return refcnt;
+}
+
 /*
  * Register an on-detach callback for a dynamic shared memory segment.
  */
