@@ -64,6 +64,7 @@
 #include "utils/pg_lsn.h"
 #include "utils/ps_status.h"
 #include "utils/pg_rusage.h"
+#include "utils/timeout.h"
 
 /* Unsupported old recovery command file names (relative to $PGDATA) */
 #define RECOVERY_COMMAND_FILE	"recovery.conf"
@@ -146,6 +147,13 @@ bool		InArchiveRecovery = false;
  */
 static bool StandbyModeRequested = false;
 bool		StandbyMode = false;
+
+/*
+ * Whether we are currently in process of processing recovery records while
+ * allowing downstream replication instances
+ */
+#define StandbyWithCascadeReplication() \
+		(AmStartupProcess() && StandbyMode && AllowCascadeReplication())
 
 /* was a signal file present at startup? */
 static bool standby_signal_file_found = false;
@@ -303,6 +311,25 @@ bool		reachedConsistency = false;
 static char *replay_image_masked = NULL;
 static char *primary_image_masked = NULL;
 
+/*
+ * Maximum number of applied records in batch before notifying walsender during
+ * cascade replication
+ */
+int			cascadeReplicationMaxBatchSize;
+
+/*
+ * Maximum batching delay before notifying walsender during cascade replication
+ */
+int			cascadeReplicationMaxBatchDelay;
+
+/* Counter for applied records which are not yet signaled to walsenders */
+static int	appliedRecords = 0;
+
+/*
+ * True if downstream walsenders need to be notified about pending WAL records,
+ * set by timeout handler.
+ */
+volatile sig_atomic_t replicationNotificationPending = false;
 
 /*
  * Shared-memory state for WAL recovery.
@@ -1844,6 +1871,17 @@ PerformWalRecovery(void)
 		 * end of main redo apply loop
 		 */
 
+		/* Send notification for batched messages once loop is ended */
+		if (StandbyWithCascadeReplication() &&
+			cascadeReplicationMaxBatchSize > 1 &&
+			appliedRecords > 0)
+		{
+			if (cascadeReplicationMaxBatchDelay > 0)
+				disable_timeout(STANDBY_CASCADE_WAL_SEND_TIMEOUT, false);
+			appliedRecords = 0;
+			WalSndWakeup(false, true);
+		}
+
 		if (reachedRecoveryTarget)
 		{
 			if (!reachedConsistency)
@@ -2042,8 +2080,40 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	 *    be created otherwise)
 	 * ------
 	 */
-	if (AllowCascadeReplication())
-		WalSndWakeup(switchedTLI, true);
+
+	if (StandbyWithCascadeReplication())
+	{
+		if (cascadeReplicationMaxBatchSize <= 1)
+			WalSndWakeup(switchedTLI, true);
+		else
+		{
+			/*
+			 * If time line has switched, then we do not want to delay the
+			 * notification, otherwise we will wait until we apply specified
+			 * number of records before notifying downstream logical
+			 * walsenders.
+			 */
+			bool		batchFlushRequired =
+				++appliedRecords >= cascadeReplicationMaxBatchSize ||
+				replicationNotificationPending ||
+				switchedTLI;
+
+			if (batchFlushRequired)
+			{
+				if (appliedRecords > 0 && cascadeReplicationMaxBatchDelay > 0)
+					disable_timeout(STANDBY_CASCADE_WAL_SEND_TIMEOUT, false);
+				appliedRecords = 0;
+				replicationNotificationPending = false;
+			}
+
+			WalSndWakeup(switchedTLI, batchFlushRequired);
+
+			/* Setup timeout to limit maximum delay for notifications */
+			if (appliedRecords == 1 && cascadeReplicationMaxBatchDelay > 0)
+				enable_timeout_after(STANDBY_CASCADE_WAL_SEND_TIMEOUT,
+									 cascadeReplicationMaxBatchDelay);
+		}
+	}
 
 	/*
 	 * If rm_redo called XLogRequestWalReceiverReply, then we wake up the
@@ -5069,4 +5139,29 @@ assign_recovery_target_xid(const char *newval, void *extra)
 	}
 	else
 		recoveryTarget = RECOVERY_TARGET_UNSET;
+}
+
+/*
+ * Send notifications to downstream walsenders
+ */
+void
+StandbyWalCheckSendNotify(void)
+{
+	if (appliedRecords > 0)
+	{
+		WalSndWakeup(false, true);
+		appliedRecords = 0;
+	}
+	replicationNotificationPending = false;
+}
+
+/*
+ * Timer handler for batch notifications in cascade replication
+ */
+void
+StandbyWalSendTimeoutHandler(void)
+{
+	replicationNotificationPending = true;
+	/* Most likely process is waiting for arrival of WAL records */
+	SetLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
 }

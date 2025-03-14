@@ -2319,6 +2319,28 @@ struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"cascade_replication_batch_size", PGC_POSTMASTER, REPLICATION_STANDBY,
+			gettext_noop("Set the maximum number of applied WAL records before cascade walsenders are notified on standby."),
+			gettext_noop("0 disabled records batching in cascade replication"),
+			GUC_NOT_IN_SAMPLE
+		},
+		&cascadeReplicationMaxBatchSize,
+		500, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"cascade_replication_batch_delay", PGC_POSTMASTER, REPLICATION_STANDBY,
+			gettext_noop("Sets the maximum time before cascade walsenders are notified on standby about applied records."),
+			gettext_noop("0 disables timed notifications"),
+			GUC_NOT_IN_SAMPLE | GUC_UNIT_MS
+		},
+		&cascadeReplicationMaxBatchDelay,
+		500, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"max_connections", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the maximum number of concurrent connections."),
 			NULL

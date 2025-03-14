@@ -189,6 +189,10 @@ ProcessStartupProcInterrupts(void)
 	if (ProcSignalBarrierPending)
 		ProcessProcSignalBarrier();
 
+	/* Send a notification to downstream walsenders if required */
+	if (replicationNotificationPending)
+		StandbyWalCheckSendNotify();
+
 	/* Perform logging of memory contexts of this process */
 	if (LogMemoryContextPending)
 		ProcessLogMemoryContextInterrupt();
@@ -250,6 +254,7 @@ StartupProcessMain(const void *startup_data, size_t startup_data_len)
 	RegisterTimeout(STANDBY_DEADLOCK_TIMEOUT, StandbyDeadLockHandler);
 	RegisterTimeout(STANDBY_TIMEOUT, StandbyTimeoutHandler);
 	RegisterTimeout(STANDBY_LOCK_TIMEOUT, StandbyLockTimeoutHandler);
+	RegisterTimeout(STANDBY_CASCADE_WAL_SEND_TIMEOUT, StandbyWalSendTimeoutHandler);
 
 	/*
 	 * Unblock signals (they were blocked when the postmaster forked us)

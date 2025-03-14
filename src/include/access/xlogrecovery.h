@@ -11,6 +11,8 @@
 #ifndef XLOGRECOVERY_H
 #define XLOGRECOVERY_H
 
+#include <signal.h>
+
 #include "access/xlogreader.h"
 #include "catalog/pg_control.h"
 #include "lib/stringinfo.h"
@@ -57,6 +59,8 @@ extern PGDLLIMPORT char *PrimarySlotName;
 extern PGDLLIMPORT char *recoveryRestoreCommand;
 extern PGDLLIMPORT char *recoveryEndCommand;
 extern PGDLLIMPORT char *archiveCleanupCommand;
+extern PGDLLIMPORT int cascadeReplicationMaxBatchSize;
+extern PGDLLIMPORT int cascadeReplicationMaxBatchDelay;
 
 /* indirectly set via GUC system */
 extern PGDLLIMPORT TransactionId recoveryTargetXid;
@@ -154,5 +158,9 @@ extern void XLogRequestWalReceiverReply(void);
 extern void RecoveryRequiresIntParameter(const char *param_name, int currValue, int minValue);
 
 extern void xlog_outdesc(StringInfo buf, XLogReaderState *record);
+
+extern PGDLLIMPORT volatile sig_atomic_t replicationNotificationPending;
+extern void StandbyWalCheckSendNotify(void);
+extern void StandbyWalSendTimeoutHandler(void);
 
 #endif							/* XLOGRECOVERY_H */
