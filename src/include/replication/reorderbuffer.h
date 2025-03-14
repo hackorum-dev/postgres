@@ -259,12 +259,6 @@ typedef struct ReorderBufferChange
 	((txn)->txn_flags & RBTXN_IS_ABORTED) != 0 \
 )
 
-/* prepare for this transaction skipped? */
-#define rbtxn_skip_prepared(txn) \
-( \
-	((txn)->txn_flags & RBTXN_SKIPPED_PREPARE) != 0 \
-)
-
 /* Is this a top-level transaction? */
 #define rbtxn_is_toptxn(txn) \
 ( \
