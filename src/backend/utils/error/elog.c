@@ -109,11 +109,15 @@ int			Log_error_verbosity = PGERROR_DEFAULT;
 char	   *Log_line_prefix = NULL; /* format for extra log line info */
 int			Log_destination = LOG_DESTINATION_STDERR;
 char	   *Log_destination_string = NULL;
+char	   *log_suppress_errcodes = NULL;
 bool		syslog_sequence_numbers = true;
 bool		syslog_split_messages = true;
 
 /* Processed form of backtrace_functions GUC */
 static char *backtrace_function_list;
+
+/* Processed form form of log_suppress_errcodes (zero-terminated array) */
+static int *suppressed_errcodes;
 
 #ifdef HAVE_SYSLOG
 
@@ -858,6 +862,30 @@ errcode(int sqlerrcode)
 	CHECK_STACK_DEPTH();
 
 	edata->sqlerrcode = sqlerrcode;
+
+	/*
+	 * ERROR and FATAL messages with codes in log_suppress_errcodes don't get
+	 * logged.  We only want to suppress error messages from ordinary backend
+	 * processes.
+	 */
+	if ((MyBackendType == B_BACKEND ||
+		 MyBackendType == B_STANDALONE_BACKEND) &&
+		(edata->elevel == ERROR ||
+		 edata->elevel == FATAL) &&
+		suppressed_errcodes != NULL)
+	{
+		int		   *state;
+
+		for (state = suppressed_errcodes; *state != 0; state++)
+			/* error categories match all error codes in the category */
+			if (sqlerrcode == *state ||
+				(ERRCODE_IS_CATEGORY(*state) &&
+				 ERRCODE_TO_CATEGORY(sqlerrcode) == *state))
+			{
+				edata->output_to_server = false;
+				break;
+			}
+	}
 
 	return 0;					/* return value does not matter */
 }
@@ -2297,6 +2325,134 @@ void
 assign_log_destination(const char *newval, void *extra)
 {
 	Log_destination = *((int *) extra);
+}
+
+/*
+ * GUC check_hook for log_suppress_errcodes
+ *
+ * Split the string on the commas, check the SQLSTATEs for validity, convert
+ * them into the packed integer form and store them in a 0-terminated array.
+ * That array is returned as "extra" and will be assigned to
+ * "suppressed_errcodes" in the assign hook.
+ *
+ * Replace the actual parameter with a sanitized version reassembled from that
+ * array.
+ */
+bool
+check_log_suppress_errcodes(char **newval, void **extra, GucSource source)
+{
+	/* SplitIdentifierString modifies the string */
+	char	   *new_copy = pstrdup(*newval);
+	int			listlen;
+	int		   *statelist = NULL;
+	int			index = 0;
+	int			param_len = 1;	/* size of the parameter value replacement */
+	List	   *states;
+	ListCell   *c;
+
+	if (!SplitIdentifierString(new_copy, ',', &states))
+	{
+		GUC_check_errdetail("List syntax is invalid.");
+		goto failed;
+	}
+
+	listlen = list_length(states);
+	/* we need guc_malloc(), because that will be returned in "extra" */
+	statelist = guc_malloc(LOG, sizeof(int) * (listlen + 1));
+	if (!statelist)
+		goto failed;
+
+	/* check all error codes for validity and compile them into statelist */
+	foreach(c, states)
+	{
+		char	   *state = lfirst(c);
+		char	   *p;
+		int			errcode;
+		int			i;
+		bool		duplicate = false;
+
+		if (strlen(state) != 5)
+		{
+			GUC_check_errdetail("error codes must have 5 characters.");
+			goto failed;
+		}
+
+		/*
+		 * Check the the values are alphanumeric and convert them to upper
+		 * case (SplitIdentifierString converted them to lower case).
+		 */
+		for (p = state; *p != '\0'; p++)
+			if (*p >= 'a' && *p <= 'z')
+				*p += 'A' - 'a';
+			else if (*p < '0' || *p > '9')
+			{
+				GUC_check_errdetail("error codes can only contain digits and ASCII letters.");
+				goto failed;
+			}
+
+		errcode = MAKE_SQLSTATE(state[0], state[1], state[2], state[3], state[4]);
+		/* ignore 0: it cannot be an error code, and we use it to end the list */
+		if (errcode == ERRCODE_SUCCESSFUL_COMPLETION)
+			continue;
+
+		/* ignore duplicate entries */
+		for (i = 0; i < index; i++)
+			if (statelist[i] == errcode)
+				duplicate = true;
+		if (duplicate)
+			continue;
+
+		statelist[index++] = errcode;
+		param_len += 6;
+	}
+	statelist[index] = 0;
+
+	/* will be assigned to "suppressed_errcodes" */
+	*extra = statelist;
+
+	/*
+	 * Now that we have successfully parsed the SQLSTATEs, reassemble a string
+	 * list for the actual parameter value.  That will remove extra spaces and
+	 * duplicates and convert the values to upper case.
+	 */
+	guc_free(*newval);
+	*newval = guc_malloc(LOG, param_len);
+	if (!*newval)
+		goto failed;
+
+	list_free(states);
+	pfree(new_copy);
+
+	(*newval)[0] = '\0';
+	index = 0;
+	while (statelist[index] != 0)
+	{
+		if (index > 0)
+			strncat(*newval, ",", 2);
+		strncat(*newval, unpack_sql_state(statelist[index]), 6);
+		index++;
+	}
+
+	return true;
+
+failed:
+	list_free(states);
+	pfree(new_copy);
+	guc_free(statelist);		/* won't gag on NULL */
+	return false;
+}
+
+/*
+ * GUC assign_hook for log_suppress_errcodes
+ */
+void
+assign_log_suppress_errcodes(const char *newval, void *extra)
+{
+	/* store NULL instead of an empty array for performance */
+	if (*(int *) extra == 0)
+		suppressed_errcodes = NULL;
+	else
+		suppressed_errcodes = extra;
 }
 
 /*
