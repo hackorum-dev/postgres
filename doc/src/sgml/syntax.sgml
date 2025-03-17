@@ -1598,10 +1598,10 @@ sqrt(2)
     syntax of an aggregate expression is one of the following:
 
 <synopsis>
-<replaceable>aggregate_name</replaceable> (<replaceable>expression</replaceable> [ , ... ] [ <replaceable>order_by_clause</replaceable> ] ) [ FILTER ( WHERE <replaceable>filter_clause</replaceable> ) ]
-<replaceable>aggregate_name</replaceable> (ALL <replaceable>expression</replaceable> [ , ... ] [ <replaceable>order_by_clause</replaceable> ] ) [ FILTER ( WHERE <replaceable>filter_clause</replaceable> ) ]
-<replaceable>aggregate_name</replaceable> (DISTINCT <replaceable>expression</replaceable> [ , ... ] [ <replaceable>order_by_clause</replaceable> ] ) [ FILTER ( WHERE <replaceable>filter_clause</replaceable> ) ]
-<replaceable>aggregate_name</replaceable> ( * ) [ FILTER ( WHERE <replaceable>filter_clause</replaceable> ) ]
+<replaceable>aggregate_name</replaceable> (<replaceable>expression</replaceable> [ , ... ] [ <replaceable>order_by_clause</replaceable> ] ) [ FILTER ( WHERE <replaceable>filter_clause</replaceable> ) ] [ PARTIAL_AGGREGATE ]
+<replaceable>aggregate_name</replaceable> (ALL <replaceable>expression</replaceable> [ , ... ] [ <replaceable>order_by_clause</replaceable> ] ) [ FILTER ( WHERE <replaceable>filter_clause</replaceable> ) ] [ PARTIAL_AGGREGATE ]
+<replaceable>aggregate_name</replaceable> (DISTINCT <replaceable>expression</replaceable> [ , ... ] [ <replaceable>order_by_clause</replaceable> ] ) [ FILTER ( WHERE <replaceable>filter_clause</replaceable> ) ] [ PARTIAL_AGGREGATE ]
+<replaceable>aggregate_name</replaceable> ( * ) [ FILTER ( WHERE <replaceable>filter_clause</replaceable> ) ] [ PARTIAL_AGGREGATE ]
 <replaceable>aggregate_name</replaceable> ( [ <replaceable>expression</replaceable> [ , ... ] ] ) WITHIN GROUP ( <replaceable>order_by_clause</replaceable> ) [ FILTER ( WHERE <replaceable>filter_clause</replaceable> ) ]
 </synopsis>
 
@@ -1775,6 +1775,25 @@ FROM generate_series(1,10) AS s(i);
  unfiltered | filtered
 ------------+----------
          10 |        4
+(1 row)
+</programlisting>
+   </para>
+
+   <para>
+    If <literal>PARTIAL_AGGREGATE</literal> is specified, then the aggregate
+    expression yields the value before finalization of the aggregation.
+    For example, the data type of the state value of <literal>avg ( integer )</literal> is <literal>bigint[]</literal>.
+    The state value of <literal>avg ( integer )</literal> has two elements, which are the total number
+    of input values and the sum of the input values. Therefore, an example of a
+    call of <literal>avg ( integer )</literal> with <literal>PARTIAL_AGGREGATE</literal> is:
+<programlisting>
+WITH vals (v) AS ( VALUES (1),(5) )
+SELECT
+    avg(v) PARTIAL_AGGREGATE
+FROM vals;
+  avg
+-------
+ {2,3}
 (1 row)
 </programlisting>
    </para>
