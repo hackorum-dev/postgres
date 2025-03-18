@@ -122,6 +122,9 @@ do
 	test "$f" = src/include/nodes/nodetags.h && continue
 	test "$f" = src/backend/nodes/nodetags.h && continue
 
+	# pg_crc32c_parallel.h contains just a code fragment
+	test "$f" = src/port/pg_crc32c_parallel.h && continue
+
 	# These files are not meant to be included standalone, because
 	# they contain lists that might have multiple use-cases.
 	test "$f" = src/include/access/rmgrlist.h && continue
