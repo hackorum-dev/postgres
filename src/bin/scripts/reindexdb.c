@@ -351,13 +351,6 @@ reindex_one_database(ConnParams *cparams, ReindexType type,
 				process_list = get_parallel_tables_list(conn, process_type,
 														user_list, echo);
 				process_type = REINDEX_TABLE;
-
-				/* Bail out if nothing to process */
-				if (process_list == NULL)
-				{
-					PQfinish(conn);
-					return;
-				}
 				break;
 
 			case REINDEX_INDEX:
@@ -383,7 +376,6 @@ reindex_one_database(ConnParams *cparams, ReindexType type,
 
 			case REINDEX_SYSTEM:
 				/* not supported */
-				process_list = NULL;
 				Assert(false);
 				break;
 
@@ -391,6 +383,13 @@ reindex_one_database(ConnParams *cparams, ReindexType type,
 				process_list = user_list;
 				break;
 		}
+	}
+
+	/* Bail out if nothing to process */
+	if (process_list == NULL)
+	{
+		PQfinish(conn);
+		return;
 	}
 
 	/*
@@ -437,7 +436,7 @@ reindex_one_database(ConnParams *cparams, ReindexType type,
 
 		ParallelSlotSetHandler(free_slot, TableCommandResultHandler, NULL);
 		initPQExpBuffer(&sql);
-		if (parallel && process_type == REINDEX_INDEX)
+		if (parallel && process_type == REINDEX_INDEX && indices_tables_cell)
 		{
 			/*
 			 * For parallel index-level REINDEX, the indices of the same table
@@ -447,17 +446,16 @@ reindex_one_database(ConnParams *cparams, ReindexType type,
 			 */
 			gen_reindex_command(free_slot->connection, process_type, objname,
 								echo, verbose, concurrently, tablespace, &sql);
-			while (indices_tables_cell->next &&
+			while (indices_tables_cell && indices_tables_cell->next &&
 				   indices_tables_cell->val == indices_tables_cell->next->val)
 			{
-				indices_tables_cell = indices_tables_cell->next;
 				cell = cell->next;
 				objname = cell->val;
 				appendPQExpBufferChar(&sql, '\n');
 				gen_reindex_command(free_slot->connection, process_type, objname,
 									echo, verbose, concurrently, tablespace, &sql);
+				indices_tables_cell = indices_tables_cell->next;
 			}
-			indices_tables_cell = indices_tables_cell->next;
 		}
 		else
 		{
