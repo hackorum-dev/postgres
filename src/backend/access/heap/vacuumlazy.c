@@ -166,8 +166,8 @@
  * REL_TRUNCATE_MINIMUM or (relsize / REL_TRUNCATE_FRACTION) (whichever
  * is less) potentially-freeable pages.
  */
-#define REL_TRUNCATE_MINIMUM	1000
-#define REL_TRUNCATE_FRACTION	16
+#define REL_TRUNCATE_MINIMUM	2
+#define REL_TRUNCATE_FRACTION	32
 
 /*
  * Timing parameters for truncate locking heuristics.
@@ -3151,9 +3151,7 @@ should_attempt_truncation(LVRelState *vacrel)
 		return false;
 
 	possibly_freeable = vacrel->rel_pages - vacrel->nonempty_pages;
-	if (possibly_freeable > 0 &&
-		(possibly_freeable >= REL_TRUNCATE_MINIMUM ||
-		 possibly_freeable >= vacrel->rel_pages / REL_TRUNCATE_FRACTION))
+	if (possibly_freeable >= vacrel->rel_pages / REL_TRUNCATE_FRACTION + REL_TRUNCATE_MINIMUM)
 		return true;
 
 	return false;
