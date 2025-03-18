@@ -1169,6 +1169,8 @@ static const uint32 pg_crc32c_table[8][256] = {
 };
 
 
+/* platform-independent infrastructure for parallel CRC computation */
+
 /*
  * Carryless multiplication in software
  */
