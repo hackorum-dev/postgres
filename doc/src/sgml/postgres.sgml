@@ -233,6 +233,11 @@ break is not needed in a wider output rendering.
 
  </part>
 
+ <!--
+  In this section most of the parts have been defined in this file.
+  The Reference Part, however, contains many entity references which would
+  clutter up this file, so it has its own file and entity.
+ -->
  &reference;
 
  <part id="internals">

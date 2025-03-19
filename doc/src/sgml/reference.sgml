@@ -1,5 +1,13 @@
 <!-- doc/src/sgml/reference.sgml -->
+<!--
+  Referenced by postgres.sgml, instead of being written inline, because
+  of the large number of entities that are referenced here.  This markup
+  of this part is also unique compared to the rest of the manual, using
+  reference elements instead of chapters and sectN elements.
 
+  The entities referenced herein are defined in ref/allfiles.sgml.  See
+  that file for additional structural commentary.
+-->
 <part id="reference">
  <title>Reference</title>
 

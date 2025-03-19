@@ -2,6 +2,14 @@
 doc/src/sgml/ref/allfiles.sgml
 PostgreSQL documentation
 Complete list of usable sgml source files in this directory.
+
+See ../filelist.sgml for how this is incorporated into the manual.
+These pages are also used to generate the "man" build outputs.
+
+Pages are listed in alphabetical order.  They use refentry top-level
+elements instead of chapters or sections.
+
+Entities defined here are referenced in ../reference.sgml
 -->
 
 <!-- SQL commands -->

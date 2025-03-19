@@ -70,6 +70,25 @@
   </para>
  </sect1>
 
+ <sect1 id="docguide-structure">
+  <title>Documentation Structure</title>
+
+  <para>
+   The root of the XML document that is the manual, the <literal>book</literal>
+   element, is found in <filename>/doc/src/sgml/postgres.sgml</filename>.
+   Within the book are parts, mostly defined within the same file, expect for the
+   Reference part, which is found in <filename>/doc/src/sgml/reference.sgml</filename>.
+  </para>
+
+  <para>
+   Modularization is done by using entities.  These are defined in two places as
+   well (corresponding to <filename>postgres.sgml</filename> and
+   <filename>reference.sgml</filename>),
+   <filename>/doc/src/sgml/filelist.sgml</filename> and
+   <filename>/doc/src/sgml/ref/allfiles.sgml</filename>.  See comments in those
+   files for more information.
+  </para>
+ </sect1>
 
  <sect1 id="docguide-toolsets">
   <title>Tool Sets</title>
