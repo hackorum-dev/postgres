@@ -443,8 +443,11 @@ endif # NO_INSTALLCHECK
 # Runs independently of any installation
 ifdef PGXS
 check:
-	@echo '"$(MAKE) check" is not supported.'
-	@echo 'Do "$(MAKE) install", then "$(MAKE) installcheck" instead.'
+ifdef REGRESS
+	echo "dynamic_library_path = '\$$libdir:$(CURDIR)'" >>$(CURDIR)/temp.conf
+	echo "extension_control_path = '\$$system:$(CURDIR)'" >>$(CURDIR)/temp.conf
+	$(pg_regress_check) $(REGRESS_OPTS) $(REGRESS) --temp-config $(CURDIR)/temp.conf
+endif
 else
 check: submake $(REGRESS_PREP)
 ifdef REGRESS
