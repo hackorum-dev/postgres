@@ -409,6 +409,7 @@ endif
 # In much the same way as above, these rules ensure that we build a temp
 # install tree just once in any recursive "make check".  The additional test
 # on abs_top_builddir prevents doing anything foolish to the root directory.
+ifndef PGXS
 
 check: temp-install
 
@@ -452,6 +453,8 @@ endif
 # file can fail with EEXIST.
 checkprep:
 	$(if $(EXTRA_INSTALL),for extra in $(EXTRA_INSTALL); do $(MAKE) -C '$(top_builddir)'/$$extra DESTDIR='$(abs_top_builddir)'/tmp_install install || exit; done)
+
+endif  # not PGXS
 
 PROVE = @PROVE@
 # There are common routines in src/test/perl, and some test suites have
