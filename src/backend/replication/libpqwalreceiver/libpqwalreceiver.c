@@ -820,7 +820,7 @@ libpqrcv_PQgetResult(PGconn *streamConn)
 		if (rc & WL_LATCH_SET)
 		{
 			ResetLatch(MyLatch);
-			ProcessWalRcvInterrupts();
+			CHECK_FOR_INTERRUPTS();
 		}
 
 		/* Consume whatever data is available from the socket */
@@ -1172,7 +1172,7 @@ libpqrcv_processTuples(PGresult *pgres, WalRcvExecResult *walres,
 	{
 		char	   *cstrs[MaxTupleAttributeNumber];
 
-		ProcessWalRcvInterrupts();
+		CHECK_FOR_INTERRUPTS();
 
 		/* Do the allocations in temporary context. */
 		oldcontext = MemoryContextSwitchTo(rowcontext);
