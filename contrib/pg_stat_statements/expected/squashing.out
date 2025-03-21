@@ -333,6 +333,44 @@ SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
  SELECT pg_stat_statements_reset() IS NOT NULL AS t                   |     1
 (2 rows)
 
+-- Test bind parameters
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+SELECT * FROM test_squash_bigint WHERE data IN ($1, $2, $3) \bind 1 2 3
+;
+ id | data 
+----+------
+(0 rows)
+
+SELECT * FROM test_squash_bigint WHERE data IN ($1, $2, $3, $4) \bind 1 2 3 4
+;
+ id | data 
+----+------
+(0 rows)
+
+SELECT * FROM test_squash_bigint WHERE data IN
+	($1::bigint, $2::bigint, $3::bigint, $4::bigint) \bind 1 2 3 4
+;
+ id | data 
+----+------
+(0 rows)
+
+SELECT * FROM test_squash_bigint WHERE data IN (1, 2, 3, 4);
+ id | data 
+----+------
+(0 rows)
+
+SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
+                             query                              | calls 
+----------------------------------------------------------------+-------
+ SELECT * FROM test_squash_bigint WHERE data IN ($1 /*, ... */) |     4
+ SELECT pg_stat_statements_reset() IS NOT NULL AS t             |     1
+(2 rows)
+
 -- CoerceViaIO
 -- Create some dummy type to force CoerceViaIO
 CREATE TYPE casttesttype;

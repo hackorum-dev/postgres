@@ -106,6 +106,18 @@ SELECT * FROM test_squash_jsonb WHERE data IN
 	 (SELECT '"10"')::jsonb);
 SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
 
+-- Test bind parameters
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT * FROM test_squash_bigint WHERE data IN ($1, $2, $3) \bind 1 2 3
+;
+SELECT * FROM test_squash_bigint WHERE data IN ($1, $2, $3, $4) \bind 1 2 3 4
+;
+SELECT * FROM test_squash_bigint WHERE data IN
+	($1::bigint, $2::bigint, $3::bigint, $4::bigint) \bind 1 2 3 4
+;
+SELECT * FROM test_squash_bigint WHERE data IN (1, 2, 3, 4);
+SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
+
 -- CoerceViaIO
 
 -- Create some dummy type to force CoerceViaIO

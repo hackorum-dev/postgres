@@ -244,7 +244,8 @@ RecordConstLocation(JumbleState *jstate, int location, bool squashed)
  * - Ignore a possible wrapping RelabelType and CoerceViaIO.
  * - If it's a FuncExpr, check that the function is an implicit
  *   cast and its arguments are Const.
- * - Otherwise test if the expression is a simple Const.
+ * - Otherwise test if the expression is a simple Const or an
+ *   external parameter.
  */
 static bool
 IsSquashableConst(Node *element)
@@ -278,10 +279,21 @@ IsSquashableConst(Node *element)
 		return true;
 	}
 
-	if (!IsA(element, Const))
-		return false;
+	switch (nodeTag(element))
+	{
+		case T_Const:
+			return true;
+		case T_Param:
+			{
+				Param      *param = (Param *) element;
 
-	return true;
+				return param->paramkind == PARAM_EXTERN;
+			}
+		default:
+			break;
+	}
+
+	return false;
 }
 
 /*
