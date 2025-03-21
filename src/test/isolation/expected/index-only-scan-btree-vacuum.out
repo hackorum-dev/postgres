@@ -1,0 +1,59 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s2_mod s1_begin s1_prepare_sorted_asc s1_fetch_1 s2_vacuum s1_fetch_all s1_commit
+step s2_mod: 
+  DELETE FROM ios_needs_cleanup_lock WHERE a BETWEEN 2 AND 9;
+
+step s1_begin: BEGIN;
+step s1_prepare_sorted_asc: 
+	DECLARE foo NO SCROLL CURSOR FOR SELECT a as x FROM ios_needs_cleanup_lock ORDER BY a ASC;
+
+step s1_fetch_1: 
+	FETCH FROM foo;
+
+x
+-
+1
+(1 row)
+
+step s2_vacuum: 
+  VACUUM (TRUNCATE false) ios_needs_cleanup_lock;
+
+step s1_fetch_all: 
+	FETCH ALL FROM foo;
+
+ x
+--
+10
+(1 row)
+
+step s1_commit: COMMIT;
+
+starting permutation: s2_mod s1_begin s1_prepare_sorted_desc s1_fetch_1 s2_vacuum s1_fetch_all s1_commit
+step s2_mod: 
+  DELETE FROM ios_needs_cleanup_lock WHERE a BETWEEN 2 AND 9;
+
+step s1_begin: BEGIN;
+step s1_prepare_sorted_desc: 
+	DECLARE foo NO SCROLL CURSOR FOR SELECT a as x FROM ios_needs_cleanup_lock ORDER BY a DESC;
+
+step s1_fetch_1: 
+	FETCH FROM foo;
+
+ x
+--
+10
+(1 row)
+
+step s2_vacuum: 
+  VACUUM (TRUNCATE false) ios_needs_cleanup_lock;
+
+step s1_fetch_all: 
+	FETCH ALL FROM foo;
+
+x
+-
+1
+(1 row)
+
+step s1_commit: COMMIT;
