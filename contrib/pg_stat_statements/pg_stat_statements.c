@@ -50,6 +50,7 @@
 #include "access/parallel.h"
 #include "catalog/pg_authid.h"
 #include "common/int.h"
+#include "common/pg_prng.h"
 #include "executor/instrument.h"
 #include "funcapi.h"
 #include "jit/jit.h"
@@ -257,6 +258,9 @@ typedef struct pgssSharedState
 /* Current nesting depth of planner/ExecutorRun/ProcessUtility calls */
 static int	nesting_level = 0;
 
+/* Is the current top-level query to be sampled? */
+static bool is_query_sampled = false;
+
 /* Saved hook values */
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
@@ -295,11 +299,13 @@ static bool pgss_track_utility = true;	/* whether to track utility commands */
 static bool pgss_track_planning = false;	/* whether to track planning
 											 * duration */
 static bool pgss_save = true;	/* whether to save stats across shutdown */
+static double pgss_sample_rate = 1.0; /* fraction of statements to track */
 
-#define pgss_enabled(level) \
+#define pgss_enabled(level, skip_sampling_check) \
 	(!IsParallelWorker() && \
 	(pgss_track == PGSS_TRACK_ALL || \
-	(pgss_track == PGSS_TRACK_TOP && (level) == 0)))
+	(pgss_track == PGSS_TRACK_TOP && (level) == 0)) && \
+	(skip_sampling_check == PGSS_INVALID || current_query_sampled()))
 
 #define record_gc_qtexts() \
 	do { \
@@ -373,6 +379,7 @@ static char *generate_normalized_query(JumbleState *jstate, const char *query,
 static void fill_in_constant_lengths(JumbleState *jstate, const char *query,
 									 int query_loc);
 static int	comp_location(const void *a, const void *b);
+static bool	current_query_sampled(void);
 
 
 /*
@@ -409,6 +416,19 @@ _PG_init(void)
 							100,
 							INT_MAX / 2,
 							PGC_POSTMASTER,
+							0,
+							NULL,
+							NULL,
+							NULL);
+
+	DefineCustomRealVariable("pg_stat_statements.sample_rate",
+							"Fraction of queries to track.",
+							NULL,
+							&pgss_sample_rate,
+							1.0,
+							0.0,
+							1.0,
+							PGC_SUSET,
 							0,
 							NULL,
 							NULL,
@@ -836,7 +856,7 @@ pgss_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 		prev_post_parse_analyze_hook(pstate, query, jstate);
 
 	/* Safety check... */
-	if (!pgss || !pgss_hash || !pgss_enabled(nesting_level))
+	if (!pgss || !pgss_hash || !pgss_enabled(nesting_level, PGSS_INVALID))
 		return;
 
 	/*
@@ -894,7 +914,7 @@ pgss_planner(Query *parse,
 	 * pgss_store needs it.  We also ignore query without queryid, as it would
 	 * be treated as a utility statement, which may not be the case.
 	 */
-	if (pgss_enabled(nesting_level)
+	if (pgss_enabled(nesting_level, PGSS_PLAN)
 		&& pgss_track_planning && query_string
 		&& parse->queryId != UINT64CONST(0))
 	{
@@ -1005,7 +1025,8 @@ pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 * counting of optimizable statements that are directly contained in
 	 * utility statements.
 	 */
-	if (pgss_enabled(nesting_level) && queryDesc->plannedstmt->queryId != UINT64CONST(0))
+	if (pgss_enabled(nesting_level, PGSS_EXEC) &&
+		queryDesc->plannedstmt->queryId != UINT64CONST(0))
 	{
 		/*
 		 * Set up to track total elapsed time in ExecutorRun.  Make sure the
@@ -1076,7 +1097,7 @@ pgss_ExecutorEnd(QueryDesc *queryDesc)
 	uint64		queryId = queryDesc->plannedstmt->queryId;
 
 	if (queryId != UINT64CONST(0) && queryDesc->totaltime &&
-		pgss_enabled(nesting_level))
+		pgss_enabled(nesting_level, PGSS_EXEC))
 	{
 		/*
 		 * Make sure stats accumulation is done.  (Note: it's okay if several
@@ -1119,7 +1140,7 @@ pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 	uint64		saved_queryId = pstmt->queryId;
 	int			saved_stmt_location = pstmt->stmt_location;
 	int			saved_stmt_len = pstmt->stmt_len;
-	bool		enabled = pgss_track_utility && pgss_enabled(nesting_level);
+	bool		enabled = pgss_track_utility && pgss_enabled(nesting_level, PGSS_EXEC);
 
 	/*
 	 * Force utility statements to get queryId zero.  We do this even in cases
@@ -3080,4 +3101,22 @@ comp_location(const void *a, const void *b)
 	int			r = ((const LocationLen *) b)->location;
 
 	return pg_cmp_s32(l, r);
+}
+
+/*
+ * Determine whether the current query should be sampled.
+ *
+ * At the beginning of each top-level statement, decide whether we'll
+ * sample this statement. If nested-statement tracking is enabled,
+ * either all nested statements will be tracked or none will.
+ */
+static bool
+current_query_sampled(void)
+{
+	if (nesting_level == 0)
+		is_query_sampled = pgss_sample_rate != 0.0 &&
+			(pgss_sample_rate == 1.0 ||
+			pg_prng_double(&pg_global_prng_state) <= pgss_sample_rate);
+
+	return is_query_sampled;
 }

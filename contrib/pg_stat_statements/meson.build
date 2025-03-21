@@ -54,6 +54,7 @@ tests += {
       'privileges',
       'extended',
       'parallel',
+      'sampling',
       'cleanup',
       'oldextversions',
       'squashing',
