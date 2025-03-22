@@ -68,6 +68,11 @@ extern Oid	LookupFuncName(List *funcname, int nargs, const Oid *argtypes,
 extern Oid	LookupFuncWithArgs(ObjectType objtype, ObjectWithArgs *func,
 							   bool missing_ok);
 
+extern Oid	LookupHandlerName(List *funcname, int nargs, const Oid *argtypes,
+								Oid *handlerkey, bool missing_ok);
+extern Oid	LookupHandlerWithArgs(ObjectType objtype, ObjectWithArgs *func,
+									Oid *handlerkey, bool missing_ok);
+
 extern void check_srf_call_placement(ParseState *pstate, Node *last_srf,
 									 int location);
 

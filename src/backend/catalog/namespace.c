@@ -1115,9 +1115,20 @@ TypeIsVisibleExt(Oid typid, bool *is_missing)
 	return visible;
 }
 
-
+FuncCandidateList
+FuncnameGetCandidates(List *names, int nargs, List *argnames,
+					  bool expand_variadic, bool expand_defaults,
+					  bool include_out_arguments,
+					  bool missing_ok)
+{
+	return HandlerGetCandidates(names, nargs, argnames,
+								 expand_variadic, expand_defaults,
+								 include_out_arguments,
+								 NULL,
+								 missing_ok);
+}
 /*
- * FuncnameGetCandidates
+ * HandlerGetCandidates
  *		Given a possibly-qualified function name and argument count,
  *		retrieve a list of the possible matches.
  *
@@ -1184,14 +1195,20 @@ TypeIsVisibleExt(Oid typid, bool *is_missing)
  * The caller might end up discarding such an entry anyway, but if it selects
  * such an entry it should react as though the call were ambiguous.
  *
+ * The presence of a handlerkey further restricts the search to functions whose
+ * return data type matches the handlerkey.  These are pseudo-types known to
+ * the system are are never schema-qualified.
+ *
  * If missing_ok is true, an empty list (NULL) is returned if the name was
  * schema-qualified with a schema that does not exist.  Likewise if no
  * candidate is found for other reasons.
  */
 FuncCandidateList
-FuncnameGetCandidates(List *names, int nargs, List *argnames,
-					  bool expand_variadic, bool expand_defaults,
-					  bool include_out_arguments, bool missing_ok)
+HandlerGetCandidates(List *names, int nargs, List *argnames,
+					 bool expand_variadic, bool expand_defaults,
+					 bool include_out_arguments,
+					 Oid *handlerkey,
+					 bool missing_ok)
 {
 	FuncCandidateList resultList = NULL;
 	bool		any_special = false;
@@ -1372,6 +1389,14 @@ FuncnameGetCandidates(List *names, int nargs, List *argnames,
 			/* Ignore if it doesn't match requested argument count */
 			if (nargs >= 0 && pronargs != nargs && !variadic && !use_defaults)
 				continue;
+		}
+
+		if (handlerkey)
+		{
+			{
+				if (procform->prorettype != handlerkey)
+					continue;
+			}
 		}
 
 		/*

@@ -50,7 +50,9 @@ static Node *ParseComplexProjection(ParseState *pstate, const char *funcname,
 									Node *first_arg, int location);
 static Oid	LookupFuncNameInternal(ObjectType objtype, List *funcname,
 								   int nargs, const Oid *argtypes,
-								   bool include_out_arguments, bool missing_ok,
+								   bool include_out_arguments,
+								   Oid *handlerkey,
+								   bool missing_ok,
 								   FuncLookupError *lookupError);
 
 
@@ -2048,7 +2050,9 @@ func_signature_string(List *funcname, int nargs,
 static Oid
 LookupFuncNameInternal(ObjectType objtype, List *funcname,
 					   int nargs, const Oid *argtypes,
-					   bool include_out_arguments, bool missing_ok,
+					   bool include_out_arguments,
+					   Oid *handlerkey,
+					   bool missing_ok,
 					   FuncLookupError *lookupError)
 {
 	Oid			result = InvalidOid;
@@ -2061,8 +2065,8 @@ LookupFuncNameInternal(ObjectType objtype, List *funcname,
 	*lookupError = FUNCLOOKUP_NOSUCHFUNC;
 
 	/* Get list of candidate objects */
-	clist = FuncnameGetCandidates(funcname, nargs, NIL, false, false,
-								  include_out_arguments, missing_ok);
+	clist = HandlerGetCandidates(funcname, nargs, NIL, false, false,
+								  include_out_arguments, handlerkey, missing_ok);
 
 	/* Scan list for a match to the arg types (if specified) and the objtype */
 	for (; clist != NULL; clist = clist->next)
@@ -2118,8 +2122,13 @@ LookupFuncNameInternal(ObjectType objtype, List *funcname,
 	return result;
 }
 
+Oid
+LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool missing_ok)
+{
+	return LookupHandlerName(funcname, nargs, argtypes, NULL, missing_ok);
+}
 /*
- * LookupFuncName
+ * LookupHandlerName
  *
  * Given a possibly-qualified function name and optionally a set of argument
  * types, look up the function.  Pass nargs == -1 to indicate that the number
@@ -2139,16 +2148,20 @@ LookupFuncNameInternal(ObjectType objtype, List *funcname,
  * Only functions will be found; procedures will be ignored even if they
  * match the name and argument types.  (However, we don't trouble to reject
  * aggregates or window functions here.)
+ *
+ * The presence of a handlerkey further restricts the search to functions whose
+ * return data type matches the handlerkey.  These are pseudo-types known to
+ * the system are are never schema-qualified.
  */
 Oid
-LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool missing_ok)
+LookupHandlerName(List *funcname, int nargs, const Oid *argtypes, Oid *handlerkey, bool missing_ok)
 {
 	Oid			funcoid;
 	FuncLookupError lookupError;
 
 	funcoid = LookupFuncNameInternal(OBJECT_FUNCTION,
 									 funcname, nargs, argtypes,
-									 false, missing_ok,
+									 false, handlerkey, missing_ok,
 									 &lookupError);
 
 	if (OidIsValid(funcoid))
@@ -2187,10 +2200,16 @@ LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool missing_ok)
 	return InvalidOid;			/* Keep compiler quiet */
 }
 
+Oid
+LookupFuncWithArgs(ObjectType objtype, ObjectWithArgs *func, bool missing_ok)
+{
+	return LookupHandlerWithArgs(objtype, func, NULL, missing_ok);
+}
+
 /*
- * LookupFuncWithArgs
+ * LookupHandlerWithArgs
  *
- * Like LookupFuncName, but the argument types are specified by an
+ * Like LookupHandlerName, but the argument types are specified by an
  * ObjectWithArgs node.  Also, this function can check whether the result is a
  * function, procedure, or aggregate, based on the objtype argument.  Pass
  * OBJECT_ROUTINE to accept any of them.
@@ -2201,9 +2220,13 @@ LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool missing_ok)
  * When missing_ok is true we don't generate any error for missing objects and
  * return InvalidOid.  Other types of errors can still be raised, regardless
  * of the value of missing_ok.
+ *
+ * The presence of a handlerkey further restricts the search to functions whose
+ * return data type matches the handlerkey.  These are pseudo-types known to
+ * the system are are never schema-qualified.
  */
 Oid
-LookupFuncWithArgs(ObjectType objtype, ObjectWithArgs *func, bool missing_ok)
+LookupHandlerWithArgs(ObjectType objtype, ObjectWithArgs *func, Oid *handlerkey, bool missing_ok)
 {
 	Oid			argoids[FUNC_MAX_ARGS];
 	int			argcount;
@@ -2269,7 +2292,7 @@ LookupFuncWithArgs(ObjectType objtype, ObjectWithArgs *func, bool missing_ok)
 	 */
 	oid = LookupFuncNameInternal(func->args_unspecified ? objtype : OBJECT_ROUTINE,
 								 func->objname, nargs, argoids,
-								 false, missing_ok,
+								 false, handlerkey, missing_ok,
 								 &lookupError);
 
 	/*
@@ -2315,7 +2338,7 @@ LookupFuncWithArgs(ObjectType objtype, ObjectWithArgs *func, bool missing_ok)
 			/* For objtype == OBJECT_PROCEDURE, we can ignore non-procedures */
 			poid = LookupFuncNameInternal(objtype, func->objname,
 										  argcount, argoids,
-										  true, missing_ok,
+										  true, handlerkey, missing_ok,
 										  &lookupError);
 
 			/* Combine results, handling ambiguity */

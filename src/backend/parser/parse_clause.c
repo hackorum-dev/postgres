@@ -924,7 +924,7 @@ transformRangeTableSample(ParseState *pstate, RangeTableSample *rts)
 	 */
 	funcargtypes[0] = INTERNALOID;
 
-	handlerOid = LookupFuncName(rts->method, 1, funcargtypes, true);
+	handlerOid = LookupHandlerName(rts->method, 1, funcargtypes, (Oid *) TSM_HANDLEROID, true);
 
 	/* we want error to complain about no-such-method, not no-such-function */
 	if (!OidIsValid(handlerOid))
@@ -932,14 +932,6 @@ transformRangeTableSample(ParseState *pstate, RangeTableSample *rts)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("tablesample method %s does not exist",
 						NameListToString(rts->method)),
-				 parser_errposition(pstate, rts->location)));
-
-	/* check that handler has correct return type */
-	if (get_func_rettype(handlerOid) != TSM_HANDLEROID)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("function %s must return type %s",
-						NameListToString(rts->method), "tsm_handler"),
 				 parser_errposition(pstate, rts->location)));
 
 	/* OK, run the handler to get TsmRoutine, for argument type info */
