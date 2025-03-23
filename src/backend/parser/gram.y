@@ -2663,7 +2663,7 @@ alter_table_cmd:
 					n->def = (Node *) c;
 					c->conname = $3;
 					c->alterDeferrability = true;
-					processCASbits($4, @4, "FOREIGN KEY",
+					processCASbits($4, @4, NULL,
 									&c->deferrable,
 									&c->initdeferred,
 									NULL, NULL, NULL, yyscanner);
@@ -19531,9 +19531,11 @@ processCASbits(int cas_bits, int location, const char *constrType,
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			/* translator: %s is CHECK, UNIQUE, or similar */
+					 constrType ?
+					 /* translator: %s is CHECK, UNIQUE, TRIGGER, or similar */
 					 errmsg("%s constraints cannot be marked DEFERRABLE",
-							constrType),
+							constrType) :
+					 errmsg("constraint cannot be marked DEFERRABLE"),
 					 parser_errposition(location)));
 	}
 
@@ -19544,9 +19546,11 @@ processCASbits(int cas_bits, int location, const char *constrType,
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			/* translator: %s is CHECK, UNIQUE, or similar */
+					 constrType ?
+					 /* translator: %s is CHECK, UNIQUE, TRIGGER, or similar */
 					 errmsg("%s constraints cannot be marked DEFERRABLE",
-							constrType),
+							constrType) :
+					 errmsg("constraint cannot be marked DEFERRABLE"),
 					 parser_errposition(location)));
 	}
 
@@ -19557,9 +19561,11 @@ processCASbits(int cas_bits, int location, const char *constrType,
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			/* translator: %s is CHECK, UNIQUE, or similar */
+					 constrType ?
+					 /* translator: %s is CHECK, UNIQUE, TRIGGER, or similar */
 					 errmsg("%s constraints cannot be marked NOT VALID",
-							constrType),
+							constrType) :
+					 errmsg("constraint cannot be marked NOT VALID"),
 					 parser_errposition(location)));
 	}
 
@@ -19570,9 +19576,11 @@ processCASbits(int cas_bits, int location, const char *constrType,
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			/* translator: %s is CHECK, UNIQUE, or similar */
+					 constrType ?
+					 /* translator: %s is CHECK, UNIQUE, TRIGGER, or similar */
 					 errmsg("%s constraints cannot be marked NO INHERIT",
-							constrType),
+							constrType) :
+					 errmsg("constraint cannot be marked NO INHERIT"),
 					 parser_errposition(location)));
 	}
 
@@ -19583,9 +19591,11 @@ processCASbits(int cas_bits, int location, const char *constrType,
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 /* translator: %s is CHECK, UNIQUE, or similar */
+					 constrType ?
+					 /* translator: %s is CHECK, UNIQUE, TRIGGER, or similar */
 					 errmsg("%s constraints cannot be marked NOT ENFORCED",
-							constrType),
+							constrType) :
+					 errmsg("constraint cannot be marked NOT ENFORCED"),
 					 parser_errposition(location)));
 
 		/*
@@ -19605,9 +19615,11 @@ processCASbits(int cas_bits, int location, const char *constrType,
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 /* translator: %s is CHECK, UNIQUE, or similar */
+					 constrType ?
+					 /* translator: %s is CHECK, UNIQUE, TRIGGER, or similar */
 					 errmsg("%s constraints cannot be marked ENFORCED",
-							constrType),
+							constrType) :
+					 errmsg("constraint cannot be marked ENFORCED"),
 					 parser_errposition(location)));
 	}
 }
