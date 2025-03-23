@@ -2,6 +2,14 @@
 -- create FDW objects
 -- ===================================================================
 
+SET client_min_messages TO 'warning';
+DROP EXTENSION IF EXISTS postgres_fdw CASCADE;
+DROP SCHEMA IF EXISTS "S 1", import_source, import_dest1, import_dest2, import_dest3, import_dest4, import_dest5 CASCADE;
+DROP TYPE IF EXISTS user_enum, "Colors", typ1 CASCADE;
+DROP TABLE IF EXISTS loct_empty, loct3, child_tbl, loc1, gloc1, trig_null, loct4, loc2, fprt1, fprt1_p1, fprt1_p2, fprt2, fprt2_p1, fprt2_p2, pagg_tab, pagg_tab_p1, pagg_tab_p2, pagg_tab_p3, ploc1, ploc2 CASCADE;
+DROP FUNCTION IF EXISTS trigger_func, trig_row_before_insupdate, trig_null, br_insert_trigfunc CASCADE;
+RESET client_min_messages;
+
 CREATE EXTENSION postgres_fdw;
 
 SELECT current_database() AS current_database,
