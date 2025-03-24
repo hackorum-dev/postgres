@@ -8240,6 +8240,10 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
         <entry>month number (01&ndash;12)</entry>
        </row>
        <row>
+        <entry><literal>MZ</literal></entry>
+        <entry>month number (zero&ndash;based) (00&ndash;11)</entry>
+       </row>
+       <row>
         <entry><literal>DAY</literal></entry>
         <entry>full upper case day name (blank-padded to 9 chars)</entry>
        </row>

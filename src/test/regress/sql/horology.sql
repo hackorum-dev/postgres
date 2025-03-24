@@ -565,6 +565,9 @@ SELECT to_date('1 4 1902', 'Q MM YYYY');  -- Q is ignored
 SELECT to_date('3 4 21 01', 'W MM CC YY');
 SELECT to_date('2458872', 'J');
 
+SELECT to_date('01012025', 'DDMZYYYY');
+SELECT to_date('01122025', 'DDMZYYYY'); -- error
+
 --
 -- Check handling of BC dates
 --

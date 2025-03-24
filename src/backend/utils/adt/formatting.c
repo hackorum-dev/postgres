@@ -667,6 +667,7 @@ typedef enum
 	DCH_I,
 	DCH_J,
 	DCH_MI,
+	DCH_MZ,
 	DCH_MM,
 	DCH_MONTH,
 	DCH_MON,
@@ -839,6 +840,7 @@ static const KeyWord DCH_keywords[] = {
 	{"MS", 2, DCH_MS, true, FROM_CHAR_DATE_NONE},
 	{"Month", 5, DCH_Month, false, FROM_CHAR_DATE_GREGORIAN},
 	{"Mon", 3, DCH_Mon, false, FROM_CHAR_DATE_GREGORIAN},
+	{"MZ", 2, DCH_MZ, true, FROM_CHAR_DATE_GREGORIAN},
 	{"OF", 2, DCH_OF, false, FROM_CHAR_DATE_NONE},	/* O */
 	{"P.M.", 4, DCH_P_M, false, FROM_CHAR_DATE_NONE},	/* P */
 	{"PM", 2, DCH_PM, false, FROM_CHAR_DATE_NONE},
@@ -893,6 +895,7 @@ static const KeyWord DCH_keywords[] = {
 	{"month", 5, DCH_month, false, FROM_CHAR_DATE_GREGORIAN},
 	{"mon", 3, DCH_mon, false, FROM_CHAR_DATE_GREGORIAN},
 	{"ms", 2, DCH_MS, true, FROM_CHAR_DATE_NONE},
+	{"mz", 2, DCH_MZ, true, FROM_CHAR_DATE_GREGORIAN},
 	{"of", 2, DCH_OF, false, FROM_CHAR_DATE_NONE},	/* o */
 	{"p.m.", 4, DCH_p_m, false, FROM_CHAR_DATE_NONE},	/* p */
 	{"pm", 2, DCH_pm, false, FROM_CHAR_DATE_NONE},
@@ -2816,6 +2819,13 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					str_numth(s, s, S_TH_TYPE(n->suffix));
 				s += strlen(s);
 				break;
+			case DCH_MZ:
+				sprintf(s, "%0*d", S_FM(n->suffix) ? 0 : (tm->tm_mon >= 0) ? 2 : 3,
+						tm->tm_mon - 1);
+				if (S_THth(n->suffix))
+					str_numth(s, s, S_TH_TYPE(n->suffix));
+				s += strlen(s);
+				break;
 			case DCH_DAY:
 				INVALID_FOR_INTERVAL;
 				if (S_TM(n->suffix))
@@ -3500,6 +3510,18 @@ DCH_from_char(FormatNode *node, const char *in, TmFromChar *out,
 					return;
 				SKIP_THth(s, n->suffix);
 				break;
+			case DCH_MZ:
+				if (from_char_parse_int(&out->mm, &s, n, escontext) < 0)
+					return;
+				if (out->mm >= 0 && out->mm <= 11) {
+					out->mm += 1;  // Convert (0-11) to (1-12)
+				}
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_DATETIME_FORMAT),
+							errmsg("Invalid month value for MZ: must be between 0 and 11")));
+				SKIP_THth(s, n->suffix);
+				break;
 			case DCH_DAY:
 			case DCH_Day:
 			case DCH_day:
@@ -3779,6 +3801,7 @@ DCH_datetime_type(FormatNode *node)
 			case DCH_MON:
 			case DCH_Mon:
 			case DCH_mon:
+			case DCH_MZ:
 			case DCH_MM:
 			case DCH_DAY:
 			case DCH_Day:
