@@ -2206,9 +2206,9 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams *params,
 	{
 		StdRdOptions *opts = (StdRdOptions *) rel->rd_options;
 
-		if (opts && opts->vacuum_truncate_set)
+		if (opts && opts->vacuum_truncate != STDRD_OPTION_BOOL_NOT_SET)
 		{
-			if (opts->vacuum_truncate)
+			if (opts->vacuum_truncate == STDRD_OPTION_BOOL_ON)
 				params->truncate = VACOPTVALUE_ENABLED;
 			else
 				params->truncate = VACOPTVALUE_DISABLED;

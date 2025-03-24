@@ -149,15 +149,6 @@ static relopt_bool boolRelOpts[] =
 	},
 	{
 		{
-			"vacuum_truncate",
-			"Enables vacuum to truncate empty pages at the end of this table",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
-			ShareUpdateExclusiveLock
-		},
-		true
-	},
-	{
-		{
 			"deduplicate_items",
 			"Enables \"deduplicate items\" feature for this btree index",
 			RELOPT_KIND_BTREE,
@@ -524,6 +515,43 @@ static relopt_enum_elt_def viewCheckOptValues[] =
 	{(const char *) NULL}		/* list terminator */
 };
 
+/*
+ * The values are from StdRdOptBool.
+ *
+ * This enum is meant to be used for Boolean reloptions for which we need to
+ * be able to determine whether the value was explicitly set for the relation.
+ * There is a third unusable StdRdOptBool value called
+ * STDRD_OPTION_BOOL_NOT_SET that should be set as the default value for such
+ * options.  Then, code that uses the option can first test for the "not set"
+ * value and fall back to something else (e.g., a GUC) as needed.
+ *
+ * Note that the strings below have been carefully chosen to match the behavior
+ * of parse_bool().
+ */
+static relopt_enum_elt_def StdRdOptBoolValues[] =
+{
+	{"on", STDRD_OPTION_BOOL_ON},
+	{"of", STDRD_OPTION_BOOL_OFF},
+	{"off", STDRD_OPTION_BOOL_OFF},
+	{"t", STDRD_OPTION_BOOL_ON},
+	{"tr", STDRD_OPTION_BOOL_ON},
+	{"tru", STDRD_OPTION_BOOL_ON},
+	{"true", STDRD_OPTION_BOOL_ON},
+	{"f", STDRD_OPTION_BOOL_OFF},
+	{"fa", STDRD_OPTION_BOOL_OFF},
+	{"fal", STDRD_OPTION_BOOL_OFF},
+	{"fals", STDRD_OPTION_BOOL_OFF},
+	{"false", STDRD_OPTION_BOOL_OFF},
+	{"y", STDRD_OPTION_BOOL_ON},
+	{"ye", STDRD_OPTION_BOOL_ON},
+	{"yes", STDRD_OPTION_BOOL_ON},
+	{"n", STDRD_OPTION_BOOL_OFF},
+	{"no", STDRD_OPTION_BOOL_OFF},
+	{"1", STDRD_OPTION_BOOL_ON},
+	{"0", STDRD_OPTION_BOOL_OFF},
+	{(const char *) NULL}		/* list terminator */
+};
+
 static relopt_enum enumRelOpts[] =
 {
 	{
@@ -558,6 +586,16 @@ static relopt_enum enumRelOpts[] =
 		viewCheckOptValues,
 		VIEW_OPTION_CHECK_OPTION_NOT_SET,
 		gettext_noop("Valid values are \"local\" and \"cascaded\".")
+	},
+	{
+		{
+			"vacuum_truncate",
+			"Enables vacuum to truncate empty pages at the end of this table",
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			ShareUpdateExclusiveLock
+		},
+		StdRdOptBoolValues,
+		STDRD_OPTION_BOOL_NOT_SET
 	},
 	/* list terminator */
 	{{NULL}}
@@ -1672,12 +1710,29 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 					}
 				}
 				if (validate && !parsed)
+				{
+					/*
+					 * If the enum is using StdRdOptBoolValues, it is actually
+					 * a Boolean reloption for all intents and purposes, but
+					 * we need to be able to use a third value of "not set" as
+					 * the default for the reloption to be able to determine
+					 * whether it is actually set for the relation.  To uphold
+					 * the illusion that this is a Boolean reloption, we emit
+					 * the same error message as for RELOPT_TYPE_BOOL above.
+					 */
+					if (optenum->members == StdRdOptBoolValues)
+						ereport(ERROR,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("invalid value for boolean option \"%s\": %s",
+										option->gen->name, value)));
+
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 							 errmsg("invalid value for enum option \"%s\": %s",
 									option->gen->name, value),
 							 optenum->detailmsg ?
 							 errdetail_internal("%s", _(optenum->detailmsg)) : 0));
+				}
 
 				/*
 				 * If value is not among the allowed string values, but we are
@@ -1778,17 +1833,6 @@ fillRelOptions(void *rdopts, Size basesize,
 				relopt_string *optstring;
 				char	   *itempos = ((char *) rdopts) + elems[j].offset;
 				char	   *string_val;
-
-				/*
-				 * If isset_offset is provided, store whether the reloption is
-				 * set there.
-				 */
-				if (elems[j].isset_offset > 0)
-				{
-					char	   *setpos = ((char *) rdopts) + elems[j].isset_offset;
-
-					*(bool *) setpos = options[i].isset;
-				}
 
 				switch (options[i].gen->type)
 				{
@@ -1911,8 +1955,8 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 		offsetof(StdRdOptions, parallel_workers)},
 		{"vacuum_index_cleanup", RELOPT_TYPE_ENUM,
 		offsetof(StdRdOptions, vacuum_index_cleanup)},
-		{"vacuum_truncate", RELOPT_TYPE_BOOL,
-		offsetof(StdRdOptions, vacuum_truncate), offsetof(StdRdOptions, vacuum_truncate_set)},
+		{"vacuum_truncate", RELOPT_TYPE_ENUM,
+		offsetof(StdRdOptions, vacuum_truncate)},
 		{"vacuum_max_eager_freeze_failure_rate", RELOPT_TYPE_REAL,
 		offsetof(StdRdOptions, vacuum_max_eager_freeze_failure_rate)}
 	};
@@ -1992,7 +2036,6 @@ build_local_reloptions(local_relopts *relopts, Datum options, bool validate)
 		elems[i].optname = opt->option->name;
 		elems[i].opttype = opt->option->type;
 		elems[i].offset = opt->offset;
-		elems[i].isset_offset = 0;	/* not supported for local relopts yet */
 
 		i++;
 	}

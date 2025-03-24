@@ -334,6 +334,18 @@ typedef enum StdRdOptIndexCleanup
 	STDRD_OPTION_VACUUM_INDEX_CLEANUP_ON,
 } StdRdOptIndexCleanup;
 
+/*
+ * This is useful for Boolean relopts when we need to be able to determine
+ * whether it's explicitly set for a relation.  See comment atop
+ * StdRdOptBoolValues in reloptions.c for details.
+ */
+typedef enum StdRdOptBool
+{
+	STDRD_OPTION_BOOL_NOT_SET = 0,
+	STDRD_OPTION_BOOL_ON,
+	STDRD_OPTION_BOOL_OFF,
+} StdRdOptBool;
+
 typedef struct StdRdOptions
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
@@ -343,8 +355,7 @@ typedef struct StdRdOptions
 	bool		user_catalog_table; /* use as an additional catalog relation */
 	int			parallel_workers;	/* max number of parallel workers */
 	StdRdOptIndexCleanup vacuum_index_cleanup;	/* controls index vacuuming */
-	bool		vacuum_truncate;	/* enables vacuum to truncate a relation */
-	bool		vacuum_truncate_set;	/* whether vacuum_truncate is set */
+	StdRdOptBool vacuum_truncate;	/* enables vacuum to truncate a relation */
 
 	/*
 	 * Fraction of pages in a relation that vacuum can eagerly scan and fail
