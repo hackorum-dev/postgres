@@ -17,6 +17,37 @@
 #include "utils/timestamp.h"
 
 /*
+ * The flag indicates if we allow hot standby queries to be run.
+ */
+#define SX_HOT_STANDBY_ACTIVE			0x01	/* SX: Startup Xlog */
+/*
+ * The flag indicates if a standby promotion has been triggered.
+ */
+#define SX_PROMOTE_IS_TRIGGERED			0x02
+/*
+ * When SX_ARCHIVE_RECOVERY_REQUESTED is set, archive recovery was requested,
+ * i.e. signal files were present.  When SX_IN_ARCHIVE_RECOVERY is set, we are
+ * currently recovering using offline XLOG archives.  These variables are only
+ * valid in the startup process.
+ *
+ * When SX_ARCHIVE_RECOVERY_REQUESTED is set, but SX_IN_ARCHIVE_RECOVERY is
+ * not, we're currently performing crash recovery using only XLOG files in
+ * pg_wal, but will switch to using offline XLOG archives as soon as we reach
+ * the end of WAL in pg_wal.
+ */
+#define SX_ARCHIVE_RECOVERY_REQUESTED	0x04
+#define SX_IN_ARCHIVE_RECOVERY			0x08
+/*
+ * When SX_STANDBY_MODE_REQUESTED is set, standby mode was requested, i.e.
+ * standby.signal file was present.  When SX_IN_STANDBY_MODE is set, we are
+ * currently in standby mode.  These variables are only valid in the startup
+ * process. They work similarly to SX_ARCHIVE_RECOVERY_REQUESTED and
+ * SX_IN_ARCHIVE_RECOVERY.
+ */
+#define SX_STANDBY_MODE_REQUESTED		0x10
+#define SX_IN_STANDBY_MODE				0x20
+
+/*
  * Recovery target type.
  * Only set during a Point in Time recovery, not when in standby mode.
  */
@@ -72,9 +103,6 @@ extern PGDLLIMPORT TimeLineID recoveryTargetTLI;
 
 /* Have we already reached a consistent database state? */
 extern PGDLLIMPORT bool reachedConsistency;
-
-/* Are we currently in standby mode? */
-extern PGDLLIMPORT bool StandbyMode;
 
 extern Size XLogRecoveryShmemSize(void);
 extern void XLogRecoveryShmemInit(void);

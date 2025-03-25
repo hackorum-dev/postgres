@@ -124,30 +124,7 @@ TimeLineID	recoveryTargetTLI = 0;
 static List *expectedTLEs;
 static TimeLineID curFileTLI;
 
-/*
- * When ArchiveRecoveryRequested is set, archive recovery was requested,
- * ie. signal files were present.  When InArchiveRecovery is set, we are
- * currently recovering using offline XLOG archives.  These variables are only
- * valid in the startup process.
- *
- * When ArchiveRecoveryRequested is true, but InArchiveRecovery is false, we're
- * currently performing crash recovery using only XLOG files in pg_wal, but
- * will switch to using offline XLOG archives as soon as we reach the end of
- * WAL in pg_wal.
- */
-bool		ArchiveRecoveryRequested = false;
-bool		InArchiveRecovery = false;
-
-/*
- * When StandbyModeRequested is set, standby mode was requested, i.e.
- * standby.signal file was present.  When StandbyMode is set, we are currently
- * in standby mode.  These variables are only valid in the startup process.
- * They work similarly to ArchiveRecoveryRequested and InArchiveRecovery.
- */
-static bool StandbyModeRequested = false;
-bool		StandbyMode = false;
-
-/* was a signal file present at startup? */
+/* Was a signal file present at startup? */
 static bool standby_signal_file_found = false;
 static bool recovery_signal_file_found = false;
 
@@ -171,16 +148,19 @@ static XLogRecPtr RedoStartLSN = InvalidXLogRecPtr;
 static TimeLineID RedoStartTLI = 0;
 
 /*
- * Local copy of SharedHotStandbyActive variable. False actually means "not
- * known, need to check the shared state".
+ * Local flags:
+ * SX_ARCHIVE_RECOVERY_REQUESTED
+ * SX_IN_ARCHIVE_RECOVERY
+ * SX_STANDBY_MODE_REQUESTED
+ * SX_IN_STANDBY_MODE
+ *
+ * and local copies of sharedRecoveryFlags:
+ * SX_HOT_STANDBY_ACTIVE,
+ * SX_PROMOTE_IS_TRIGGERED.
+ * If some flag is not set, that actually means "not known, need to check
+ * the shared state".
  */
-static bool LocalHotStandbyActive = false;
-
-/*
- * Local copy of SharedPromoteIsTriggered variable. False actually means "not
- * known, need to check the shared state".
- */
-static bool LocalPromoteIsTriggered = false;
+static bits32 localRecoveryFlags = 0;
 
 /* Has the recovery code requested a walreceiver wakeup? */
 static bool doRequestWalReceiverReply;
@@ -298,23 +278,16 @@ bool		reachedConsistency = false;
 static char *replay_image_masked = NULL;
 static char *primary_image_masked = NULL;
 
-
 /*
  * Shared-memory state for WAL recovery.
  */
 typedef struct XLogRecoveryCtlData
 {
 	/*
-	 * SharedHotStandbyActive indicates if we allow hot standby queries to be
-	 * run.  Protected by info_lck.
+	 * The bit array stores the following states
+	 * SX_HOT_STANDBY_ACTIVE, SX_PROMOTE_IS_TRIGGERED. Protected by info_lck.
 	 */
-	bool		SharedHotStandbyActive;
-
-	/*
-	 * SharedPromoteIsTriggered indicates if a standby promotion has been
-	 * triggered.  Protected by info_lck.
-	 */
-	bool		SharedPromoteIsTriggered;
+	bits32		sharedRecoveryFlags;
 
 	/*
 	 * recoveryWakeupLatch is used to wake up the startup process to continue
@@ -441,6 +414,7 @@ static bool HotStandbyActiveInReplay(void);
 static void SetCurrentChunkStartTime(TimestampTz xtime);
 static void SetLatestXTime(TimestampTz xtime);
 
+static bool StandbyModeRequested(void);
 /*
  * Initialization of shared memory for WAL recovery
  */
@@ -478,7 +452,7 @@ XLogRecoveryShmemInit(void)
 static void
 EnableStandbyMode(void)
 {
-	StandbyMode = true;
+	localRecoveryFlags |= SX_IN_STANDBY_MODE;
 
 	/*
 	 * To avoid server log bloat, we don't report recovery progress in a
@@ -506,8 +480,8 @@ EnableStandbyMode(void)
  * disk does after initializing other subsystems, but before calling
  * PerformWalRecovery().
  *
- * This initializes some global variables like ArchiveRecoveryRequested, and
- * StandbyModeRequested and InRecovery.
+ * This initializes some flags like SX_ARCHIVE_RECOVERY_REQUESTED and
+ * SX_STABDBY_MODE_REQUESTED and global variable InRecovery.
  */
 void
 InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
@@ -545,7 +519,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	 * Take ownership of the wakeup latch if we're going to sleep during
 	 * recovery, if required.
 	 */
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 		OwnLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
 
 	/*
@@ -600,8 +574,8 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 		 * file, we know how far we need to replay to reach consistency. Enter
 		 * archive recovery directly.
 		 */
-		InArchiveRecovery = true;
-		if (StandbyModeRequested)
+		localRecoveryFlags |= SX_IN_ARCHIVE_RECOVERY;
+		if (StandbyModeRequested())
 			EnableStandbyMode();
 
 		/*
@@ -750,14 +724,14 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 		 * to minRecoveryPoint, up to backupEndPoint, or until we see an
 		 * end-of-backup record), and we can enter archive recovery directly.
 		 */
-		if (ArchiveRecoveryRequested &&
+		if (ArchiveRecoveryRequested() &&
 			(ControlFile->minRecoveryPoint != InvalidXLogRecPtr ||
 			 ControlFile->backupEndRequired ||
 			 ControlFile->backupEndPoint != InvalidXLogRecPtr ||
 			 ControlFile->state == DB_SHUTDOWNED))
 		{
-			InArchiveRecovery = true;
-			if (StandbyModeRequested)
+			localRecoveryFlags |= SX_IN_ARCHIVE_RECOVERY;
+			if (StandbyModeRequested())
 				EnableStandbyMode();
 		}
 
@@ -800,9 +774,9 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 		wasShutdown = ((record->xl_info & ~XLR_INFO_MASK) == XLOG_CHECKPOINT_SHUTDOWN);
 	}
 
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 	{
-		if (StandbyModeRequested)
+		if (StandbyModeRequested())
 			ereport(LOG,
 					(errmsg("entering standby mode")));
 		else if (recoveryTarget == RECOVERY_TARGET_XID)
@@ -914,7 +888,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	}
 	else if (ControlFile->state != DB_SHUTDOWNED)
 		InRecovery = true;
-	else if (ArchiveRecoveryRequested)
+	else if (ArchiveRecoveryRequested())
 	{
 		/* force recovery due to presence of recovery signal file */
 		InRecovery = true;
@@ -931,7 +905,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	 */
 	if (InRecovery)
 	{
-		if (InArchiveRecovery)
+		if (InArchiveRecovery())
 		{
 			ControlFile->state = DB_IN_ARCHIVE_RECOVERY;
 		}
@@ -950,7 +924,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 		}
 		ControlFile->checkPoint = CheckPointLoc;
 		ControlFile->checkPointCopy = checkPoint;
-		if (InArchiveRecovery)
+		if (InArchiveRecovery())
 		{
 			/* initialize minRecoveryPoint if not set yet */
 			if (ControlFile->minRecoveryPoint < checkPoint.redo)
@@ -997,7 +971,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	backupStartPoint = ControlFile->backupStartPoint;
 	backupEndRequired = ControlFile->backupEndRequired;
 	backupEndPoint = ControlFile->backupEndPoint;
-	if (InArchiveRecovery)
+	if (InArchiveRecovery())
 	{
 		minRecoveryPoint = ControlFile->minRecoveryPoint;
 		minRecoveryPointTLI = ControlFile->minRecoveryPointTLI;
@@ -1083,17 +1057,16 @@ readRecoverySignalFile(void)
 		recovery_signal_file_found = true;
 	}
 
-	StandbyModeRequested = false;
-	ArchiveRecoveryRequested = false;
+	localRecoveryFlags &= ~SX_STANDBY_MODE_REQUESTED;
+	localRecoveryFlags &= ~SX_ARCHIVE_RECOVERY_REQUESTED;
 	if (standby_signal_file_found)
 	{
-		StandbyModeRequested = true;
-		ArchiveRecoveryRequested = true;
+		localRecoveryFlags |= SX_STANDBY_MODE_REQUESTED;
+		localRecoveryFlags |= SX_ARCHIVE_RECOVERY_REQUESTED;
 	}
 	else if (recovery_signal_file_found)
 	{
-		StandbyModeRequested = false;
-		ArchiveRecoveryRequested = true;
+		localRecoveryFlags |= SX_ARCHIVE_RECOVERY_REQUESTED;
 	}
 	else
 		return;
@@ -1102,7 +1075,7 @@ readRecoverySignalFile(void)
 	 * We don't support standby mode in standalone backends; that requires
 	 * other processes such as the WAL receiver to be alive.
 	 */
-	if (StandbyModeRequested && !IsUnderPostmaster)
+	if (StandbyModeRequested() && !IsUnderPostmaster)
 		ereport(FATAL,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("standby mode is not supported by single-user servers")));
@@ -1111,13 +1084,13 @@ readRecoverySignalFile(void)
 static void
 validateRecoveryParameters(void)
 {
-	if (!ArchiveRecoveryRequested)
+	if (!ArchiveRecoveryRequested())
 		return;
 
 	/*
 	 * Check for compulsory parameters
 	 */
-	if (StandbyModeRequested)
+	if (StandbyModeRequested())
 	{
 		if ((PrimaryConnInfo == NULL || strcmp(PrimaryConnInfo, "") == 0) &&
 			(recoveryRestoreCommand == NULL || strcmp(recoveryRestoreCommand, "") == 0))
@@ -1158,8 +1131,8 @@ validateRecoveryParameters(void)
 	/*
 	 * If user specified recovery_target_timeline, validate it or compute the
 	 * "latest" value.  We can't do this until after we've gotten the restore
-	 * command and set InArchiveRecovery, because we need to fetch timeline
-	 * history files from the archive.
+	 * command and set SX_IN_ARCHIVE_RECOVERY, because we need to fetch
+	 * timeline history files from the archive.
 	 */
 	if (recoveryTargetTimeLineGoal == RECOVERY_TARGET_TIMELINE_NUMERIC)
 	{
@@ -1497,7 +1470,7 @@ FinishWalRecovery(void)
 	 * i.e., calling XLogShutdownWalRcv().
 	 */
 	Assert(!WalRcvStreaming());
-	StandbyMode = false;
+	localRecoveryFlags &= ~SX_IN_STANDBY_MODE;
 
 	/*
 	 * Determine where to start writing WAL next.
@@ -1535,7 +1508,7 @@ FinishWalRecovery(void)
 	 */
 	result->endOfLogTLI = xlogreader->seg.ws_tli;
 
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 	{
 		/*
 		 * We are no longer in archive recovery state.
@@ -1543,8 +1516,8 @@ FinishWalRecovery(void)
 		 * We are now done reading the old WAL.  Turn off archive fetching if
 		 * it was active.
 		 */
-		Assert(InArchiveRecovery);
-		InArchiveRecovery = false;
+		Assert(InArchiveRecovery());
+		localRecoveryFlags &= ~SX_IN_ARCHIVE_RECOVERY;
 
 		/*
 		 * If the ending log segment is still open, close it (to avoid
@@ -1624,7 +1597,7 @@ ShutdownWalRecovery(void)
 	XLogReaderFree(xlogreader);
 	XLogPrefetcherFree(xlogprefetcher);
 
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 	{
 		/*
 		 * Since there might be a partial WAL segment named RECOVERYXLOG, get
@@ -1642,7 +1615,7 @@ ShutdownWalRecovery(void)
 	 * We don't need the latch anymore. It's not strictly necessary to disown
 	 * it, but let's do it for the sake of tidiness.
 	 */
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 		DisownLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
 }
 
@@ -1744,7 +1717,7 @@ PerformWalRecovery(void)
 						LSN_FORMAT_ARGS(xlogreader->ReadRecPtr))));
 
 		/* Prepare to report progress of the redo phase. */
-		if (!StandbyMode)
+		if (!InStandbyMode())
 			begin_startup_progress_phase();
 
 		/*
@@ -1752,7 +1725,7 @@ PerformWalRecovery(void)
 		 */
 		do
 		{
-			if (!StandbyMode)
+			if (!InStandbyMode())
 				ereport_startup_progress("redo in progress, elapsed time: %ld.%02d s, current LSN: %X/%X",
 										 LSN_FORMAT_ARGS(xlogreader->ReadRecPtr));
 
@@ -1897,7 +1870,7 @@ PerformWalRecovery(void)
 	 * This check is intentionally after the above log messages that indicate
 	 * how far recovery went.
 	 */
-	if (ArchiveRecoveryRequested &&
+	if (ArchiveRecoveryRequested() &&
 		recoveryTarget != RECOVERY_TARGET_UNSET &&
 		!reachedRecoveryTarget)
 		ereport(FATAL,
@@ -2189,7 +2162,7 @@ CheckRecoveryConsistency(void)
 	if (XLogRecPtrIsInvalid(minRecoveryPoint))
 		return;
 
-	Assert(InArchiveRecovery);
+	Assert(InArchiveRecovery());
 
 	/*
 	 * assume that we are called in the startup process, and hence don't need
@@ -2259,15 +2232,15 @@ CheckRecoveryConsistency(void)
 	 * enabling connections.
 	 */
 	if (standbyState == STANDBY_SNAPSHOT_READY &&
-		!LocalHotStandbyActive &&
+		!(localRecoveryFlags & SX_HOT_STANDBY_ACTIVE) &&
 		reachedConsistency &&
 		IsUnderPostmaster)
 	{
 		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-		XLogRecoveryCtl->SharedHotStandbyActive = true;
+		XLogRecoveryCtl->sharedRecoveryFlags |= SX_HOT_STANDBY_ACTIVE;
 		SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
-		LocalHotStandbyActive = true;
+		localRecoveryFlags |= SX_HOT_STANDBY_ACTIVE;
 
 		SendPostmasterSignal(PMSIGNAL_BEGIN_HOT_STANDBY);
 	}
@@ -2587,7 +2560,7 @@ recoveryStopsBefore(XLogReaderState *record)
 	 * Ignore recovery target settings when not in archive recovery (meaning
 	 * we are in crash recovery).
 	 */
-	if (!ArchiveRecoveryRequested)
+	if (!ArchiveRecoveryRequested())
 		return false;
 
 	/* Check if we should stop as soon as reaching consistency */
@@ -2739,7 +2712,7 @@ recoveryStopsAfter(XLogReaderState *record)
 	 * Ignore recovery target settings when not in archive recovery (meaning
 	 * we are in crash recovery).
 	 */
-	if (!ArchiveRecoveryRequested)
+	if (!ArchiveRecoveryRequested())
 		return false;
 
 	info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
@@ -2930,11 +2903,11 @@ static void
 recoveryPausesHere(bool endOfRecovery)
 {
 	/* Don't pause unless users can connect! */
-	if (!LocalHotStandbyActive)
+	if (!(localRecoveryFlags & SX_HOT_STANDBY_ACTIVE))
 		return;
 
 	/* Don't pause after standby promotion has been triggered */
-	if (LocalPromoteIsTriggered)
+	if (localRecoveryFlags & SX_PROMOTE_IS_TRIGGERED)
 		return;
 
 	if (endOfRecovery)
@@ -3000,7 +2973,7 @@ recoveryApplyDelay(XLogReaderState *record)
 		return false;
 
 	/* nothing to do if crash recovery is requested */
-	if (!ArchiveRecoveryRequested)
+	if (!ArchiveRecoveryRequested())
 		return false;
 
 	/*
@@ -3162,13 +3135,13 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 			 * to indicate to downstream WAL readers that that portion is to
 			 * be ignored.
 			 *
-			 * However, when ArchiveRecoveryRequested = true, we're going to
+			 * However, when ArchiveRecoveryRequested() = true, we're going to
 			 * switch to a new timeline at the end of recovery. We will only
 			 * copy WAL over to the new timeline up to the end of the last
 			 * complete record, so if we did this, we would later create an
 			 * overwrite contrecord in the wrong place, breaking everything.
 			 */
-			if (!ArchiveRecoveryRequested &&
+			if (!ArchiveRecoveryRequested() &&
 				!XLogRecPtrIsInvalid(xlogreader->abortedRecPtr))
 			{
 				abortedRecPtr = xlogreader->abortedRecPtr;
@@ -3237,13 +3210,13 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 			 * we'd have no idea how far we'd have to replay to reach
 			 * consistency.  So err on the safe side and give up.
 			 */
-			if (!InArchiveRecovery && ArchiveRecoveryRequested &&
+			if (!InArchiveRecovery() && ArchiveRecoveryRequested() &&
 				!fetching_ckpt)
 			{
 				ereport(DEBUG1,
 						(errmsg_internal("reached end of WAL in pg_wal, entering archive recovery")));
-				InArchiveRecovery = true;
-				if (StandbyModeRequested)
+				localRecoveryFlags |= SX_IN_ARCHIVE_RECOVERY;
+				if (StandbyModeRequested())
 					EnableStandbyMode();
 
 				SwitchIntoArchiveRecovery(xlogreader->EndRecPtr, replayTLI);
@@ -3263,7 +3236,7 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 			}
 
 			/* In standby mode, loop back to retry. Otherwise, give up. */
-			if (StandbyMode && !CheckForStandbyTrigger())
+			if (InStandbyMode() && !CheckForStandbyTrigger())
 				continue;
 			else
 				return NULL;
@@ -3325,7 +3298,7 @@ XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 		 * Request a restartpoint if we've replayed too much xlog since the
 		 * last one.
 		 */
-		if (ArchiveRecoveryRequested && IsUnderPostmaster)
+		if (ArchiveRecoveryRequested() && IsUnderPostmaster)
 		{
 			if (XLogCheckpointNeeded(readSegNo))
 			{
@@ -3478,7 +3451,7 @@ retry:
 	 * page header here for the retry. Instead, ReadPageInternal() is
 	 * responsible for the validation.
 	 */
-	if (StandbyMode &&
+	if (InStandbyMode() &&
 		(targetPagePtr % wal_segment_size) == 0 &&
 		!XLogReaderValidatePageHeader(xlogreader, targetPagePtr, readBuf))
 	{
@@ -3515,7 +3488,7 @@ next_record_is_invalid:
 	readSource = XLOG_FROM_ANY;
 
 	/* In standby-mode, keep trying */
-	if (StandbyMode)
+	if (InStandbyMode())
 		goto retry;
 	else
 		return XLREAD_FAIL;
@@ -3590,10 +3563,10 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 	 * the end of recovery.
 	 *-------
 	 */
-	if (!InArchiveRecovery)
+	if (!InArchiveRecovery())
 		currentSource = XLOG_FROM_PG_WAL;
 	else if (currentSource == XLOG_FROM_ANY ||
-			 (!StandbyMode && currentSource == XLOG_FROM_STREAM))
+			 (!InStandbyMode() && currentSource == XLOG_FROM_STREAM))
 	{
 		lastSourceFailed = false;
 		currentSource = XLOG_FROM_ARCHIVE;
@@ -3631,7 +3604,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * finish replaying as much as we can from archive and
 					 * pg_wal before failover.
 					 */
-					if (StandbyMode && CheckForStandbyTrigger())
+					if (InStandbyMode() && CheckForStandbyTrigger())
 					{
 						XLogShutdownWalRcv();
 						return XLREAD_FAIL;
@@ -3641,7 +3614,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * Not in standby mode, and we've now tried the archive
 					 * and pg_wal.
 					 */
-					if (!StandbyMode)
+					if (!InStandbyMode())
 						return XLREAD_FAIL;
 
 					/*
@@ -3673,7 +3646,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * We should be able to move to XLOG_FROM_STREAM only in
 					 * standby mode.
 					 */
-					Assert(StandbyMode);
+					Assert(InStandbyMode());
 
 					/*
 					 * Before we leave XLOG_FROM_STREAM state, make sure that
@@ -3744,7 +3717,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 			 * the archive over ones in pg_wal, so try the next file again
 			 * from the archive first.
 			 */
-			if (InArchiveRecovery)
+			if (InArchiveRecovery())
 				currentSource = XLOG_FROM_ARCHIVE;
 		}
 
@@ -3804,7 +3777,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * We should be able to move to XLOG_FROM_STREAM only in
 					 * standby mode.
 					 */
-					Assert(StandbyMode);
+					Assert(InStandbyMode());
 
 					/*
 					 * First, shutdown walreceiver if its restart has been
@@ -4412,21 +4385,22 @@ PromoteIsTriggered(void)
 	 * triggered. We can't trigger a promotion again, so there's no need to
 	 * keep checking after the shared variable has once been seen true.
 	 */
-	if (LocalPromoteIsTriggered)
+	if (localRecoveryFlags & SX_PROMOTE_IS_TRIGGERED)
 		return true;
 
 	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-	LocalPromoteIsTriggered = XLogRecoveryCtl->SharedPromoteIsTriggered;
+	localRecoveryFlags |=
+		(XLogRecoveryCtl->sharedRecoveryFlags & SX_PROMOTE_IS_TRIGGERED);
 	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
-	return LocalPromoteIsTriggered;
+	return localRecoveryFlags & SX_PROMOTE_IS_TRIGGERED;
 }
 
 static void
 SetPromoteIsTriggered(void)
 {
 	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-	XLogRecoveryCtl->SharedPromoteIsTriggered = true;
+	XLogRecoveryCtl->sharedRecoveryFlags |= SX_PROMOTE_IS_TRIGGERED;
 	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
 	/*
@@ -4437,7 +4411,7 @@ SetPromoteIsTriggered(void)
 	 */
 	SetRecoveryPause(false);
 
-	LocalPromoteIsTriggered = true;
+	localRecoveryFlags |= SX_PROMOTE_IS_TRIGGERED;
 }
 
 /*
@@ -4446,7 +4420,7 @@ SetPromoteIsTriggered(void)
 static bool
 CheckForStandbyTrigger(void)
 {
-	if (LocalPromoteIsTriggered)
+	if (localRecoveryFlags & SX_PROMOTE_IS_TRIGGERED)
 		return true;
 
 	if (IsPromoteSignaled() && CheckPromoteSignal())
@@ -4520,16 +4494,17 @@ HotStandbyActive(void)
 	 * can't de-activate Hot Standby, so there's no need to keep checking
 	 * after the shared variable has once been seen true.
 	 */
-	if (LocalHotStandbyActive)
+	if (localRecoveryFlags & SX_HOT_STANDBY_ACTIVE)
 		return true;
 	else
 	{
 		/* spinlock is essential on machines with weak memory ordering! */
 		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
-		LocalHotStandbyActive = XLogRecoveryCtl->SharedHotStandbyActive;
+		localRecoveryFlags |=
+			(XLogRecoveryCtl->sharedRecoveryFlags & SX_HOT_STANDBY_ACTIVE);
 		SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
-		return LocalHotStandbyActive;
+		return localRecoveryFlags & SX_HOT_STANDBY_ACTIVE;
 	}
 }
 
@@ -4541,7 +4516,7 @@ static bool
 HotStandbyActiveInReplay(void)
 {
 	Assert(AmStartupProcess() || !IsPostmasterEnvironment);
-	return LocalHotStandbyActive;
+	return localRecoveryFlags & SX_HOT_STANDBY_ACTIVE;
 }
 
 /*
@@ -5057,4 +5032,24 @@ assign_recovery_target_xid(const char *newval, void *extra)
 	}
 	else
 		recoveryTarget = RECOVERY_TARGET_UNSET;
+}
+
+bool StandbyModeRequested(void)
+{
+	return localRecoveryFlags & SX_STANDBY_MODE_REQUESTED;
+}
+
+bool ArchiveRecoveryRequested(void)
+{
+	return localRecoveryFlags & SX_ARCHIVE_RECOVERY_REQUESTED;
+}
+
+bool InArchiveRecovery(void)
+{
+	return localRecoveryFlags & SX_IN_ARCHIVE_RECOVERY;
+}
+
+bool InStandbyMode(void)
+{
+	return localRecoveryFlags & SX_IN_STANDBY_MODE;
 }

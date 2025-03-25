@@ -93,7 +93,7 @@ readTimeLineHistory(TimeLineID targetTLI)
 		return list_make1(entry);
 	}
 
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 	{
 		TLHistoryFileName(histfname, targetTLI);
 		fromArchive =
@@ -229,7 +229,7 @@ existsTimeLineHistory(TimeLineID probeTLI)
 	if (probeTLI == 1)
 		return false;
 
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 	{
 		TLHistoryFileName(histfname, probeTLI);
 		RestoreArchivedFile(path, histfname, "RECOVERYHISTORY", 0, false);
@@ -331,7 +331,7 @@ writeTimeLineHistory(TimeLineID newTLI, TimeLineID parentTLI,
 	/*
 	 * If a history file exists for the parent, copy it verbatim
 	 */
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 	{
 		TLHistoryFileName(histfname, parentTLI);
 		RestoreArchivedFile(path, histfname, "RECOVERYHISTORY", 0, false);

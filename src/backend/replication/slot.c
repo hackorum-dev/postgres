@@ -2537,7 +2537,7 @@ RestoreSlotFromDisk(const char *name)
 		 * primary reduces wal_level < logical while hot standby is disabled,
 		 * logical slots would remain valid even after promotion.
 		 */
-		if (StandbyMode && !EnableHotStandby)
+		if (InStandbyMode() && !EnableHotStandby)
 			ereport(FATAL,
 					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 					 errmsg("logical replication slot \"%s\" exists on the standby, but \"hot_standby\" = \"off\"",

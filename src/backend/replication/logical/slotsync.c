@@ -1517,7 +1517,7 @@ update_synced_slots_inactive_since(void)
 	 * long time after promotion if they haven't been synchronized recently.
 	 * Whoever acquires the slot, i.e., makes the slot active, will reset it.
 	 */
-	if (!StandbyMode)
+	if (!InStandbyMode())
 		return;
 
 	/* The slot sync worker or SQL function mustn't be running by now */

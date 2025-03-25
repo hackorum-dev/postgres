@@ -5434,7 +5434,7 @@ CheckRequiredParameterValues(void)
 	 * For archive recovery, the WAL must be generated with at least 'replica'
 	 * wal_level.
 	 */
-	if (ArchiveRecoveryRequested && ControlFile->wal_level == WAL_LEVEL_MINIMAL)
+	if (ArchiveRecoveryRequested() && ControlFile->wal_level == WAL_LEVEL_MINIMAL)
 	{
 		ereport(FATAL,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -5447,7 +5447,7 @@ CheckRequiredParameterValues(void)
 	 * For Hot Standby, the WAL must be generated with 'replica' mode, and we
 	 * must have at least as many backend slots as the primary.
 	 */
-	if (ArchiveRecoveryRequested && EnableHotStandby)
+	if (ArchiveRecoveryRequested() && EnableHotStandby)
 	{
 		/* We ignore autovacuum_worker_slots when we make this test. */
 		RecoveryRequiresIntParameter("max_connections",
@@ -5607,8 +5607,8 @@ StartupXLOG(void)
 	 *
 	 * InitWalRecovery analyzes the control file and the backup label file, if
 	 * any.  It updates the in-memory ControlFile buffer according to the
-	 * starting checkpoint, and sets InRecovery and ArchiveRecoveryRequested.
-	 * It also applies the tablespace map file, if any.
+	 * starting checkpoint, and sets SX_ARCHIVE_RECOVERY_REQUESTED and
+	 * InRecovery. It also applies the tablespace map file, if any.
 	 */
 	InitWalRecovery(ControlFile, &wasShutdown,
 					&haveBackupLabel, &haveTblspcMap);
@@ -5740,7 +5740,7 @@ StartupXLOG(void)
 	{
 		/* Initialize state for RecoveryInProgress() */
 		SpinLockAcquire(&XLogCtl->info_lck);
-		if (InArchiveRecovery)
+		if (InArchiveRecovery())
 			XLogCtl->SharedRecoveryState = RECOVERY_STATE_ARCHIVE;
 		else
 			XLogCtl->SharedRecoveryState = RECOVERY_STATE_CRASH;
@@ -5793,7 +5793,7 @@ StartupXLOG(void)
 		 * startup process to think that there are still invalid page
 		 * references when checking for data consistency.
 		 */
-		if (InArchiveRecovery)
+		if (InArchiveRecovery())
 		{
 			LocalMinRecoveryPoint = ControlFile->minRecoveryPoint;
 			LocalMinRecoveryPointTLI = ControlFile->minRecoveryPointTLI;
@@ -5827,7 +5827,7 @@ StartupXLOG(void)
 		 * control file and we've established a recovery snapshot from a
 		 * running-xacts WAL record.
 		 */
-		if (ArchiveRecoveryRequested && EnableHotStandby)
+		if (ArchiveRecoveryRequested() && EnableHotStandby)
 		{
 			TransactionId *xids;
 			int			nxids;
@@ -5940,7 +5940,7 @@ StartupXLOG(void)
 		 * recover from an online backup but never called pg_backup_stop(), or
 		 * you didn't archive all the WAL needed.
 		 */
-		if (ArchiveRecoveryRequested || ControlFile->backupEndRequired)
+		if (ArchiveRecoveryRequested() || ControlFile->backupEndRequired)
 		{
 			if (!XLogRecPtrIsInvalid(ControlFile->backupStartPoint) || ControlFile->backupEndRequired)
 				ereport(FATAL,
@@ -5992,7 +5992,7 @@ StartupXLOG(void)
 	 * In a normal crash recovery, we can just extend the timeline we were in.
 	 */
 	newTLI = endOfRecoveryInfo->lastRecTLI;
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 	{
 		newTLI = findNewestTimeLine(recoveryTargetTLI) + 1;
 		ereport(LOG,
@@ -6185,7 +6185,7 @@ StartupXLOG(void)
 	XLogReportParameters();
 
 	/* If this is archive recovery, perform post-recovery cleanup actions. */
-	if (ArchiveRecoveryRequested)
+	if (ArchiveRecoveryRequested())
 		CleanupAfterArchiveRecovery(EndOfLogTLI, EndOfLog, newTLI);
 
 	/*
@@ -6344,7 +6344,7 @@ PerformRecoveryXLogAction(void)
 	 * of a full checkpoint. A checkpoint is requested later, after we're
 	 * fully out of recovery mode and already accepting queries.
 	 */
-	if (ArchiveRecoveryRequested && IsUnderPostmaster &&
+	if (ArchiveRecoveryRequested() && IsUnderPostmaster &&
 		PromoteIsTriggered())
 	{
 		promoted = true;
@@ -8338,7 +8338,7 @@ xlog_redo(XLogReaderState *record)
 		 * record, the backup was canceled and the end-of-backup record will
 		 * never arrive.
 		 */
-		if (ArchiveRecoveryRequested &&
+		if (ArchiveRecoveryRequested() &&
 			!XLogRecPtrIsInvalid(ControlFile->backupStartPoint) &&
 			XLogRecPtrIsInvalid(ControlFile->backupEndPoint))
 			ereport(PANIC,
@@ -8579,7 +8579,7 @@ xlog_redo(XLogReaderState *record)
 		 * local copies cannot be updated as long as crash recovery is
 		 * happening and we expect all the WAL to be replayed.
 		 */
-		if (InArchiveRecovery)
+		if (InArchiveRecovery())
 		{
 			LocalMinRecoveryPoint = ControlFile->minRecoveryPoint;
 			LocalMinRecoveryPointTLI = ControlFile->minRecoveryPointTLI;

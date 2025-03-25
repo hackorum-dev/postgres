@@ -68,7 +68,7 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 	 * Ignore restore_command when not in archive recovery (meaning we are in
 	 * crash recovery).
 	 */
-	if (!ArchiveRecoveryRequested)
+	if (!ArchiveRecoveryRequested())
 		goto not_available;
 
 	/* In standby mode, restore_command might not be supplied */
@@ -205,7 +205,7 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 				 * incorrectly conclude we've reached the end of WAL and we're
 				 * done recovering ...
 				 */
-				if (StandbyMode && stat_buf.st_size < expectedSize)
+				if (InStandbyMode() && stat_buf.st_size < expectedSize)
 					elevel = DEBUG1;
 				else
 					elevel = FATAL;
