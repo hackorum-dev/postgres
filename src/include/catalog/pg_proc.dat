@@ -6714,6 +6714,11 @@
   proname => 'pg_is_in_recovery', provolatile => 'v', prorettype => 'bool',
   proargtypes => '', prosrc => 'pg_is_in_recovery' },
 
+{ oid => '8439',
+  descr => 'return flags for recovery states',
+  proname => 'pg_get_recovery_flags', provolatile => 'v', prorettype => '_text',
+  proargtypes => '', prosrc => 'pg_get_recovery_flags' },
+
 { oid => '3820', descr => 'current wal flush location',
   proname => 'pg_last_wal_receive_lsn', provolatile => 'v',
   prorettype => 'pg_lsn', proargtypes => '',

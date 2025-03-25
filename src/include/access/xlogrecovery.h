@@ -172,6 +172,7 @@ extern TimestampTz GetLatestXTime(void);
 extern TimestampTz GetCurrentChunkReplayStartTime(void);
 extern XLogRecPtr GetCurrentReplayRecPtr(TimeLineID *replayEndTLI);
 
+extern bits32 GetXLogRecoveryFlags(void);
 extern bool PromoteIsTriggered(void);
 extern bool CheckPromoteSignal(void);
 extern void WakeupRecovery(void);

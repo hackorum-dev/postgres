@@ -30,6 +30,7 @@
 #include "storage/fd.h"
 #include "storage/latch.h"
 #include "storage/standby.h"
+#include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/pg_lsn.h"
@@ -747,4 +748,34 @@ pg_promote(PG_FUNCTION_ARGS)
 						   wait_seconds,
 						   wait_seconds)));
 	PG_RETURN_BOOL(false);
+}
+
+Datum
+pg_get_recovery_flags(PG_FUNCTION_ARGS)
+{
+/*
+ * Currently supported number of recovery flags is equal to two:
+ * {SX_PROMOTE_IS_TRIGGERED, SX_STANDBY_MODE_REQUESTED}.
+ * The SX_STANDBY_MODE_REQUESTED is valid only in the startup process.
+ */
+#define MAX_RECOVERY_FLAGS 2
+
+	bits32			recovery_flags;
+	int				cnt = 0;
+	Datum			flags[MAX_RECOVERY_FLAGS];
+	ArrayType	   *txt_arr;
+
+	recovery_flags = GetXLogRecoveryFlags();
+
+	if (recovery_flags & SX_PROMOTE_IS_TRIGGERED)
+		flags[cnt++] = CStringGetTextDatum("PROMOTE_IS_TRIGGERED");
+
+	if (recovery_flags & SX_STANDBY_MODE_REQUESTED)
+		flags[cnt++] = CStringGetTextDatum("STANDBY_MODE_REQUESTED");
+
+	Assert(cnt <= MAX_RECOVERY_FLAGS);
+
+	/* Returns bit array as Datum */
+	txt_arr = construct_array_builtin(flags, cnt, TEXTOID);
+	PG_RETURN_ARRAYTYPE_P(txt_arr);
 }

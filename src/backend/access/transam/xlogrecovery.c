@@ -4370,6 +4370,22 @@ StartupRequestWalReceiverRestart(void)
 	}
 }
 
+/*
+ * Return SX_PROMOTE_IS_TRIGGERED, SX_STANDBY_MODE_REQUESTED flags for
+ * recovery states.
+ */
+bits32 GetXLogRecoveryFlags(void)
+{
+	bits32		flags = 0;
+
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	flags = XLogRecoveryCtl->sharedRecoveryFlags;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+
+	flags |= (localRecoveryFlags & SX_STANDBY_MODE_REQUESTED);
+
+	return flags;
+}
 
 /*
  * Has a standby promotion already been triggered?
