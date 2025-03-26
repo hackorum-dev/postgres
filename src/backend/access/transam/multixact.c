@@ -416,6 +416,7 @@ MultiXactIdExpand(MultiXactId multi, TransactionId xid, MultiXactStatus status)
 	int			nmembers;
 	int			i;
 	int			j;
+	bool 		alreadyExists = false;
 
 	Assert(MultiXactIdIsValid(multi));
 	Assert(TransactionIdIsValid(xid));
@@ -464,8 +465,8 @@ MultiXactIdExpand(MultiXactId multi, TransactionId xid, MultiXactStatus status)
 		{
 			debug_elog4(DEBUG2, "Expand: %u is already a member of %u",
 						xid, multi);
-			pfree(members);
-			return multi;
+			alreadyExists = true;
+			break;
 		}
 	}
 
@@ -495,8 +496,11 @@ MultiXactIdExpand(MultiXactId multi, TransactionId xid, MultiXactStatus status)
 		}
 	}
 
-	newMembers[j].xid = xid;
-	newMembers[j++].status = status;
+	if (!alreadyExists)
+	{
+		newMembers[j].xid = xid;
+		newMembers[j++].status = status;
+	}
 	newMulti = MultiXactIdCreateFromMembers(j, newMembers);
 
 	pfree(members);
