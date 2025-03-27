@@ -150,14 +150,13 @@ get_index_stats_hook_type get_index_stats_hook = NULL;
 
 static double eqsel_internal(PG_FUNCTION_ARGS, bool negate);
 static double eqjoinsel_inner(Oid opfuncoid, Oid collation,
-							  VariableStatData *vardata1, VariableStatData *vardata2,
 							  double nd1, double nd2,
 							  bool isdefault1, bool isdefault2,
 							  AttStatsSlot *sslot1, AttStatsSlot *sslot2,
 							  Form_pg_statistic stats1, Form_pg_statistic stats2,
 							  bool have_mcvs1, bool have_mcvs2);
 static double eqjoinsel_semi(Oid opfuncoid, Oid collation,
-							 VariableStatData *vardata1, VariableStatData *vardata2,
+							 VariableStatData *rhs_vardata,
 							 double nd1, double nd2,
 							 bool isdefault1, bool isdefault2,
 							 AttStatsSlot *sslot1, AttStatsSlot *sslot2,
@@ -2348,7 +2347,6 @@ eqjoinsel(PG_FUNCTION_ARGS)
 
 	/* We need to compute the inner-join selectivity in all cases */
 	selec_inner = eqjoinsel_inner(opfuncoid, collation,
-								  &vardata1, &vardata2,
 								  nd1, nd2,
 								  isdefault1, isdefault2,
 								  &sslot1, &sslot2,
@@ -2375,7 +2373,7 @@ eqjoinsel(PG_FUNCTION_ARGS)
 
 			if (!join_is_reversed)
 				selec = eqjoinsel_semi(opfuncoid, collation,
-									   &vardata1, &vardata2,
+									   &vardata2,
 									   nd1, nd2,
 									   isdefault1, isdefault2,
 									   &sslot1, &sslot2,
@@ -2388,7 +2386,7 @@ eqjoinsel(PG_FUNCTION_ARGS)
 				Oid			commopfuncoid = OidIsValid(commop) ? get_opcode(commop) : InvalidOid;
 
 				selec = eqjoinsel_semi(commopfuncoid, collation,
-									   &vardata2, &vardata1,
+									   &vardata1,
 									   nd2, nd1,
 									   isdefault2, isdefault1,
 									   &sslot2, &sslot1,
@@ -2436,7 +2434,6 @@ eqjoinsel(PG_FUNCTION_ARGS)
  */
 static double
 eqjoinsel_inner(Oid opfuncoid, Oid collation,
-				VariableStatData *vardata1, VariableStatData *vardata2,
 				double nd1, double nd2,
 				bool isdefault1, bool isdefault2,
 				AttStatsSlot *sslot1, AttStatsSlot *sslot2,
@@ -2633,7 +2630,7 @@ eqjoinsel_inner(Oid opfuncoid, Oid collation,
  */
 static double
 eqjoinsel_semi(Oid opfuncoid, Oid collation,
-			   VariableStatData *vardata1, VariableStatData *vardata2,
+			   VariableStatData *rhs_vardata,
 			   double nd1, double nd2,
 			   bool isdefault1, bool isdefault2,
 			   AttStatsSlot *sslot1, AttStatsSlot *sslot2,
@@ -2662,11 +2659,11 @@ eqjoinsel_semi(Oid opfuncoid, Oid collation,
 	 * great, maybe, but it didn't come out of nowhere either.  This is most
 	 * helpful when the inner relation is empty and consequently has no stats.
 	 */
-	if (vardata2->rel)
+	if (rhs_vardata->rel)
 	{
-		if (nd2 >= vardata2->rel->rows)
+		if (nd2 >= rhs_vardata->rel->rows)
 		{
-			nd2 = vardata2->rel->rows;
+			nd2 = rhs_vardata->rel->rows;
 			isdefault2 = false;
 		}
 	}
