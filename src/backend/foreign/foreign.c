@@ -203,6 +203,7 @@ GetUserMapping(Oid userid, Oid serverid)
 	HeapTuple	tp;
 	bool		isnull;
 	UserMapping *um;
+	Form_pg_user_mapping form_um;
 
 	tp = SearchSysCache2(USERMAPPINGUSERSERVER,
 						 ObjectIdGetDatum(userid),
@@ -225,11 +226,13 @@ GetUserMapping(Oid userid, Oid serverid)
 				 errmsg("user mapping not found for user \"%s\", server \"%s\"",
 						MappingUserName(userid), server->servername)));
 	}
-
+	form_um = (Form_pg_user_mapping) GETSTRUCT(tp);
 	um = (UserMapping *) palloc(sizeof(UserMapping));
-	um->umid = ((Form_pg_user_mapping) GETSTRUCT(tp))->oid;
+	um->umid = (form_um)->oid;
 	um->userid = userid;
 	um->serverid = serverid;
+
+
 
 	/* Extract the umoptions */
 	datum = SysCacheGetAttr(USERMAPPINGUSERSERVER,
@@ -241,6 +244,12 @@ GetUserMapping(Oid userid, Oid serverid)
 	else
 		um->options = untransformRelOptions(datum);
 
+	if (OidIsValid(form_um->umhandler))
+	{
+		/* custom user mapping handler exist, override options */
+		Datum result = OidFunctionCall1(form_um->umhandler, PointerGetDatum(um));
+		um->options = (List *)result;
+	}
 	ReleaseSysCache(tp);
 
 	return um;

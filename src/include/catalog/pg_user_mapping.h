@@ -34,6 +34,7 @@ CATALOG(pg_user_mapping,1418,UserMappingRelationId)
 													 * wanted */
 	Oid			umserver BKI_LOOKUP(pg_foreign_server); /* server of this
 														 * mapping */
+	Oid			umhandler BKI_LOOKUP_OPT(pg_proc);	/* Id of the handler */
 
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	text		umoptions[1];	/* user mapping options */

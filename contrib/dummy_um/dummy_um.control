@@ -1,0 +1,4 @@
+# dummy_um.control file contents
+default_version = '1.0'
+module_pathname = '$libdir/dummy_um'
+relocatable = true

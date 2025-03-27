@@ -1,0 +1,35 @@
+CREATE EXTENSION dummy_um;
+CREATE EXTENSION postgres_fdw;
+CREATE USER dummy_test LOGIN PASSWORD '1234';
+CREATE SCHEMA AUTHORIZATION dummy_test;
+CREATE TABLE dummy_test.dummy_table (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL
+);
+INSERT INTO dummy_test.dummy_table (name) VALUES ('dummy');
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA dummy_test TO dummy_test;
+DO $d$
+    BEGIN
+        EXECUTE $$CREATE SERVER loopback FOREIGN DATA WRAPPER postgres_fdw
+            OPTIONS (dbname '$$||current_database()||$$',
+                     host '127.0.0.1',
+                     port '$$||current_setting('port')||$$'
+            )$$;
+    END;
+$d$;
+CREATE USER MAPPING FOR CURRENT_USER SERVER loopback
+USING dummy_user_mapping_handler
+OPTIONS (id 'xxx');
+CREATE FOREIGN TABLE dummy_table_fdw (
+    id int NOT NULL,
+    name VARCHAR(255) NOT NULL
+) SERVER loopback OPTIONS (schema_name 'dummy_test', table_name 'dummy_table');
+SELECT * FROM dummy_table_fdw;
+ id | name  
+----+-------
+  1 | dummy
+(1 row)
+
+DROP SCHEMA dummy_test CASCADE;
+NOTICE:  drop cascades to table dummy_test.dummy_table
+DROP USER dummy_test;

@@ -382,6 +382,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				access_method_clause attr_name
 				table_access_method_clause name cursor_name file_name
 				cluster_index_specification
+				user_mapping_handler
 
 %type <list>	func_name handler_name qual_Op qual_all_Op subquery_Op
 				opt_inline_handler opt_validator validator_clause
@@ -5812,13 +5813,14 @@ import_qualification:
  *
  *****************************************************************************/
 
-CreateUserMappingStmt: CREATE USER MAPPING FOR auth_ident SERVER name create_generic_options
+CreateUserMappingStmt: CREATE USER MAPPING FOR auth_ident SERVER name user_mapping_handler create_generic_options
 				{
 					CreateUserMappingStmt *n = makeNode(CreateUserMappingStmt);
 
 					n->user = $5;
 					n->servername = $7;
-					n->options = $8;
+					n->um_handler = $8;
+					n->options = $9;
 					n->if_not_exists = false;
 					$$ = (Node *) n;
 				}
@@ -5837,6 +5839,12 @@ CreateUserMappingStmt: CREATE USER MAPPING FOR auth_ident SERVER name create_gen
 /* User mapping authorization identifier */
 auth_ident: RoleSpec			{ $$ = $1; }
 			| USER				{ $$ = makeRoleSpec(ROLESPEC_CURRENT_USER, @1); }
+		;
+
+/* Custom user mapping handler */
+user_mapping_handler:
+			USING name								{ $$ = $2; }
+			| /*EMPTY*/								{ $$ = NULL; }
 		;
 
 /*****************************************************************************

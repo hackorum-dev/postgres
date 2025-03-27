@@ -1111,6 +1111,8 @@ CreateUserMapping(CreateUserMappingStmt *stmt)
 	ForeignServer *srv;
 	ForeignDataWrapper *fdw;
 	RoleSpec   *role = (RoleSpec *) stmt->user;
+	Oid			umHandler;
+	Oid			fdwvalidator;
 
 	rel = table_open(UserMappingRelationId, RowExclusiveLock);
 
@@ -1157,6 +1159,17 @@ CreateUserMapping(CreateUserMappingStmt *stmt)
 	}
 
 	fdw = GetForeignDataWrapper(srv->fdwid);
+	if (stmt->um_handler)
+	{
+		umHandler = DatumGetObjectId(DirectFunctionCall1(regprocin,
+			CStringGetDatum(stmt->um_handler)));
+		fdwvalidator = InvalidOid;
+	}
+	else
+	{
+		umHandler = InvalidOid;
+		fdwvalidator = fdw->fdwvalidator;
+	}
 
 	/*
 	 * Insert tuple into pg_user_mapping.
@@ -1169,12 +1182,13 @@ CreateUserMapping(CreateUserMappingStmt *stmt)
 	values[Anum_pg_user_mapping_oid - 1] = ObjectIdGetDatum(umId);
 	values[Anum_pg_user_mapping_umuser - 1] = ObjectIdGetDatum(useId);
 	values[Anum_pg_user_mapping_umserver - 1] = ObjectIdGetDatum(srv->serverid);
+	values[Anum_pg_user_mapping_umhandler - 1] = ObjectIdGetDatum(umHandler);
 
 	/* Add user options */
 	useoptions = transformGenericOptions(UserMappingRelationId,
 										 PointerGetDatum(NULL),
 										 stmt->options,
-										 fdw->fdwvalidator);
+										 fdwvalidator);
 
 	if (PointerIsValid(DatumGetPointer(useoptions)))
 		values[Anum_pg_user_mapping_umoptions - 1] = useoptions;
