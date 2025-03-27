@@ -125,6 +125,25 @@ pg_clock_gettime_ns(void)
 #define INSTR_TIME_GET_NANOSEC(t) \
 	((int64) (t).ticks)
 
+#ifdef CLOCK_MONOTONIC_COARSE
+/* helper for INSTR_TIME_SET_CURRENT_COARSE */
+static inline instr_time
+pg_clock_gettime_ns_coarse(void)
+{
+	instr_time	now;
+	struct timespec tmp;
+
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &tmp);
+	now.ticks = tmp.tv_sec * NS_PER_S + tmp.tv_nsec;
+
+	return now;
+}
+
+#define INSTR_TIME_SET_CURRENT_COARSE(t)	((t) = pg_clock_gettime_ns_coarse())
+#else
+#define INSTR_TIME_SET_CURRENT_COARSE(t)	INSTR_TIME_SET_CURRENT(t)
+#endif
+
 
 #else							/* WIN32 */
 
@@ -159,6 +178,8 @@ GetTimerFrequency(void)
 #define INSTR_TIME_GET_NANOSEC(t) \
 	((int64) ((t).ticks * ((double) NS_PER_S / GetTimerFrequency())))
 
+#define INSTR_TIME_SET_CURRENT_COARSE(t)	INSTR_TIME_SET_CURRENT(t)
+
 #endif							/* WIN32 */
 
 
@@ -172,7 +193,7 @@ GetTimerFrequency(void)
 #define INSTR_TIME_SET_ZERO(t)	((t).ticks = 0)
 
 #define INSTR_TIME_SET_CURRENT_LAZY(t) \
-	(INSTR_TIME_IS_ZERO(t) ? INSTR_TIME_SET_CURRENT(t), true : false)
+	(INSTR_TIME_IS_ZERO(t) ? INSTR_TIME_SET_CURRENT_COARSE(t), true : false)
 
 
 #define INSTR_TIME_ADD(x,y) \

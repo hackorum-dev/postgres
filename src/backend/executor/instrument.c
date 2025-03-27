@@ -95,7 +95,7 @@ InstrStopNode(Instrumentation *instr, double nTuples)
 		if (INSTR_TIME_IS_ZERO(instr->starttime))
 			elog(ERROR, "InstrStopNode called without start");
 
-		INSTR_TIME_SET_CURRENT(endtime);
+		INSTR_TIME_SET_CURRENT_COARSE(endtime);
 		INSTR_TIME_ACCUM_DIFF(instr->counter, endtime, instr->starttime);
 
 		INSTR_TIME_SET_ZERO(instr->starttime);
