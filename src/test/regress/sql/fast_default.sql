@@ -77,6 +77,8 @@ ALTER TABLE has_volatile ALTER COLUMN col1 SET DATA TYPE float8,
 -- stored generated columns need a rewrite
 ALTER TABLE has_volatile ADD col7 int GENERATED ALWAYS AS (55) stored;
 
+-- drop generation expression over virtual generated colum need rewrite
+ALTER TABLE has_volatile ALTER COLUMN col6 DROP EXPRESSION;
 
 
 -- Test a large sample of different datatypes

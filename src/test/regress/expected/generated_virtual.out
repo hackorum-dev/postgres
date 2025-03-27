@@ -1133,27 +1133,24 @@ SELECT * FROM gtest29;
  a      | integer |           |          | 
  b      | integer |           |          | generated always as (a * 3)
 
-ALTER TABLE gtest29 ALTER COLUMN b DROP EXPRESSION;  -- not supported
-ERROR:  ALTER TABLE / DROP EXPRESSION is not supported for virtual generated columns
-DETAIL:  Column "b" of relation "gtest29" is a virtual generated column.
+ALTER TABLE gtest29 ALTER COLUMN b DROP EXPRESSION;
 INSERT INTO gtest29 (a) VALUES (5);
 INSERT INTO gtest29 (a, b) VALUES (6, 66);
-ERROR:  cannot insert a non-DEFAULT value into column "b"
-DETAIL:  Column "b" is a generated column.
-SELECT * FROM gtest29;
+SELECT * FROM gtest29 ORDER BY a, b;
  a | b  
 ---+----
  3 |  9
  4 | 12
- 5 | 15
-(3 rows)
+ 5 |   
+ 6 | 66
+(4 rows)
 
 \d gtest29
-                Table "generated_virtual_tests.gtest29"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+      Table "generated_virtual_tests.gtest29"
+ Column |  Type   | Collation | Nullable | Default 
+--------+---------+-----------+----------+---------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 3)
+ b      | integer |           |          | 
 
 -- check that dependencies between columns have also been removed
 --ALTER TABLE gtest29 DROP COLUMN a;  -- should not drop b
@@ -1165,22 +1162,20 @@ CREATE TABLE gtest30 (
 );
 CREATE TABLE gtest30_1 () INHERITS (gtest30);
 ALTER TABLE gtest30 ALTER COLUMN b DROP EXPRESSION;
-ERROR:  ALTER TABLE / DROP EXPRESSION is not supported for virtual generated columns
-DETAIL:  Column "b" of relation "gtest30" is a virtual generated column.
 \d gtest30
-                Table "generated_virtual_tests.gtest30"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+      Table "generated_virtual_tests.gtest30"
+ Column |  Type   | Collation | Nullable | Default 
+--------+---------+-----------+----------+---------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 2)
+ b      | integer |           |          | 
 Number of child tables: 1 (Use \d+ to list them.)
 
 \d gtest30_1
-               Table "generated_virtual_tests.gtest30_1"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+     Table "generated_virtual_tests.gtest30_1"
+ Column |  Type   | Collation | Nullable | Default 
+--------+---------+-----------+----------+---------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 2)
+ b      | integer |           |          | 
 Inherits: gtest30
 
 DROP TABLE gtest30 CASCADE;
@@ -1210,6 +1205,48 @@ Inherits: gtest30
 
 ALTER TABLE gtest30_1 ALTER COLUMN b DROP EXPRESSION;  -- error
 ERROR:  cannot drop generation expression from inherited column
+-- alter table drop expression with partitioning
+CREATE TABLE gtest_pp (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWAYS AS (f2 * 2) VIRTUAL) PARTITION BY RANGE (f1);
+CREATE TABLE gtest_ch1 PARTITION OF gtest_pp
+  FOR VALUES FROM ('2016-07-01') TO ('2016-08-01');  -- inherits gen expr
+CREATE TABLE gtest_ch2 PARTITION OF gtest_pp (
+    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 22) VIRTUAL  -- overrides gen expr
+) FOR VALUES FROM ('2016-08-01') TO ('2016-09-01');
+INSERT INTO gtest_pp (f1, f2) VALUES ('2016-07-15', 1), ('2016-07-15', 2), ('2016-08-15', 3);
+ALTER TABLE ONLY gtest_pp ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
+ALTER TABLE gtest_ch1 ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10);
+SELECT tableoid::regclass, * FROM gtest_pp ORDER BY 1, 2, 3;
+ tableoid  |     f1     | f2 | f3 
+-----------+------------+----+----
+ gtest_ch1 | 07-15-2016 |  1 |  4
+ gtest_ch1 | 07-15-2016 |  2 |  8
+ gtest_ch2 | 08-15-2016 |  3 | 12
+(3 rows)
+
+ALTER TABLE gtest_ch1 ALTER COLUMN f3 DROP EXPRESSION; --error
+ERROR:  cannot drop generation expression from inherited column
+ALTER TABLE ONLY gtest_pp ALTER COLUMN f3 DROP EXPRESSION; --error
+ERROR:  ALTER TABLE / DROP EXPRESSION must be applied to child tables too
+ALTER TABLE gtest_pp ALTER COLUMN f3 DROP EXPRESSION; --ok
+SELECT tableoid::regclass, * FROM gtest_pp ORDER BY 1, 2, 3;
+ tableoid  |     f1     | f2 | f3 
+-----------+------------+----+----
+ gtest_ch1 | 07-15-2016 |  1 | 10
+ gtest_ch1 | 07-15-2016 |  2 | 20
+ gtest_ch2 | 08-15-2016 |  3 | 66
+(3 rows)
+
+\d gtest_pp
+Partitioned table "generated_virtual_tests.gtest_pp"
+ Column |  Type  | Collation | Nullable | Default 
+--------+--------+-----------+----------+---------
+ f1     | date   |           | not null | 
+ f2     | bigint |           |          | 
+ f3     | bigint |           |          | 
+Partition key: RANGE (f1)
+Number of partitions: 2 (Use \d+ to list them.)
+
+DROP TABLE gtest_pp;
 -- composite type dependencies
 CREATE TABLE gtest31_1 (a int, b text GENERATED ALWAYS AS ('hello') VIRTUAL, c text);
 CREATE TABLE gtest31_2 (x int, y gtest31_1);

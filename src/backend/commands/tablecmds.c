@@ -494,7 +494,8 @@ static ObjectAddress ATExecDropIdentity(Relation rel, const char *colName, bool 
 static ObjectAddress ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 										 Node *newExpr, LOCKMODE lockmode);
 static void ATPrepDropExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recursing, LOCKMODE lockmode);
-static ObjectAddress ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode);
+static ObjectAddress ATExecDropExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
+										  bool missing_ok, LOCKMODE lockmode);
 static ObjectAddress ATExecSetStatistics(Relation rel, const char *colName, int16 colNum,
 										 Node *newValue, LOCKMODE lockmode);
 static ObjectAddress ATExecSetOptions(Relation rel, const char *colName,
@@ -5381,7 +5382,7 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			address = ATExecSetExpression(tab, rel, cmd->name, cmd->def, lockmode);
 			break;
 		case AT_DropExpression:
-			address = ATExecDropExpression(rel, cmd->name, cmd->missing_ok, lockmode);
+			address = ATExecDropExpression(tab, rel, cmd->name, cmd->missing_ok, lockmode);
 			break;
 		case AT_SetStatistics:	/* ALTER COLUMN SET STATISTICS */
 			address = ATExecSetStatistics(rel, cmd->name, cmd->num, cmd->def, lockmode);
@@ -8658,7 +8659,8 @@ ATPrepDropExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recurs
  * Return the address of the affected column.
  */
 static ObjectAddress
-ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode)
+ATExecDropExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
+					 bool missing_ok, LOCKMODE lockmode)
 {
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
@@ -8684,19 +8686,6 @@ ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMOD
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
-	/*
-	 * TODO: This could be done, but it would need a table rewrite to
-	 * materialize the generated values.  Note that for the time being, we
-	 * still error with missing_ok, so that we don't silently leave the column
-	 * as generated.
-	 */
-	if (attTup->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("ALTER TABLE / DROP EXPRESSION is not supported for virtual generated columns"),
-				 errdetail("Column \"%s\" of relation \"%s\" is a virtual generated column.",
-						   colName, RelationGetRelationName(rel))));
-
 	if (!attTup->attgenerated)
 	{
 		if (!missing_ok)
@@ -8713,6 +8702,21 @@ ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMOD
 			table_close(attrelation, RowExclusiveLock);
 			return InvalidObjectAddress;
 		}
+	}
+
+	if (attTup->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+	{
+		NewColumnValue *newval;
+		Expr	   *defval;
+
+		newval = (NewColumnValue *) palloc0(sizeof(NewColumnValue));
+		newval->attnum = attnum;
+		defval = (Expr *) build_generation_expression(rel, attnum);
+		newval->expr = defval;
+		newval->is_generated = true;
+
+		tab->newvals = lappend(tab->newvals, newval);
+		tab->rewrite |= AT_REWRITE_DEFAULT_VAL;
 	}
 
 	/*

@@ -275,14 +275,12 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
     <term><literal>DROP EXPRESSION [ IF EXISTS ]</literal></term>
     <listitem>
      <para>
-      This form turns a stored generated column into a normal base column.
-      Existing data in the columns is retained, but future changes will no
-      longer apply the generation expression.
-     </para>
-
-     <para>
-      This form is currently only supported for stored generated columns (not
-      virtual ones).
+      This form turns a generated column into a normal base column.
+      For stored generated column, existing data in the columns is retained;
+      For virtual generated column, it will compute the generation expression and
+      store the value in the columns. For inheritance hierarchy or partition hierarchy,
+      the virtual generation expression is computed based on the child's own generation expression.
+      The future changes will no longer apply the generation expression.
      </para>
 
      <para>

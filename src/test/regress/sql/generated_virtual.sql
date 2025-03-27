@@ -562,10 +562,10 @@ ALTER TABLE gtest29 ALTER COLUMN b SET EXPRESSION AS (a * 3);
 SELECT * FROM gtest29;
 \d gtest29
 
-ALTER TABLE gtest29 ALTER COLUMN b DROP EXPRESSION;  -- not supported
+ALTER TABLE gtest29 ALTER COLUMN b DROP EXPRESSION;
 INSERT INTO gtest29 (a) VALUES (5);
 INSERT INTO gtest29 (a, b) VALUES (6, 66);
-SELECT * FROM gtest29;
+SELECT * FROM gtest29 ORDER BY a, b;
 \d gtest29
 
 -- check that dependencies between columns have also been removed
@@ -591,6 +591,28 @@ ALTER TABLE ONLY gtest30 ALTER COLUMN b DROP EXPRESSION;  -- error
 \d gtest30
 \d gtest30_1
 ALTER TABLE gtest30_1 ALTER COLUMN b DROP EXPRESSION;  -- error
+
+-- alter table drop expression with partitioning
+CREATE TABLE gtest_pp (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWAYS AS (f2 * 2) VIRTUAL) PARTITION BY RANGE (f1);
+CREATE TABLE gtest_ch1 PARTITION OF gtest_pp
+  FOR VALUES FROM ('2016-07-01') TO ('2016-08-01');  -- inherits gen expr
+CREATE TABLE gtest_ch2 PARTITION OF gtest_pp (
+    f3 WITH OPTIONS GENERATED ALWAYS AS (f2 * 22) VIRTUAL  -- overrides gen expr
+) FOR VALUES FROM ('2016-08-01') TO ('2016-09-01');
+INSERT INTO gtest_pp (f1, f2) VALUES ('2016-07-15', 1), ('2016-07-15', 2), ('2016-08-15', 3);
+
+ALTER TABLE ONLY gtest_pp ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
+ALTER TABLE gtest_ch1 ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10);
+
+SELECT tableoid::regclass, * FROM gtest_pp ORDER BY 1, 2, 3;
+
+ALTER TABLE gtest_ch1 ALTER COLUMN f3 DROP EXPRESSION; --error
+ALTER TABLE ONLY gtest_pp ALTER COLUMN f3 DROP EXPRESSION; --error
+
+ALTER TABLE gtest_pp ALTER COLUMN f3 DROP EXPRESSION; --ok
+SELECT tableoid::regclass, * FROM gtest_pp ORDER BY 1, 2, 3;
+\d gtest_pp
+DROP TABLE gtest_pp;
 
 -- composite type dependencies
 CREATE TABLE gtest31_1 (a int, b text GENERATED ALWAYS AS ('hello') VIRTUAL, c text);

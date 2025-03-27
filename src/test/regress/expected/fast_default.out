@@ -70,6 +70,9 @@ NOTICE:  rewriting table has_volatile for reason 4
 -- stored generated columns need a rewrite
 ALTER TABLE has_volatile ADD col7 int GENERATED ALWAYS AS (55) stored;
 NOTICE:  rewriting table has_volatile for reason 2
+-- drop generation expression over virtual generated colum need rewrite
+ALTER TABLE has_volatile ALTER COLUMN col6 DROP EXPRESSION;
+NOTICE:  rewriting table has_volatile for reason 2
 -- Test a large sample of different datatypes
 CREATE TABLE T(pk INT NOT NULL PRIMARY KEY, c_int INT DEFAULT 1);
 SELECT set('t');
