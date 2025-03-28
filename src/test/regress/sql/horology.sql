@@ -381,6 +381,58 @@ SELECT '2020-10-05'::timestamptz >= '4714-11-24 BC'::timestamp as t;
 RESET TimeZone;
 
 --
+-- Comparisons between date and timestamp types
+---
+
+SELECT '2025-03-28'::date = '2025-03-28 00:00:00'::timestamp as t;
+SELECT '2025-03-28'::date <> '2025-03-28 00:00:01'::timestamp as t;
+SELECT '2025-03-28'::date < '2025-03-28 00:00:01'::timestamp as t;
+SELECT '2025-03-28'::date <= '2025-03-28 00:00:00'::timestamp as t;
+SELECT '2025-03-28'::date > '2025-03-27 23:59:59'::timestamp as t;
+SELECT '2025-03-28'::date >= '2025-03-28 00:00:00'::timestamp as t;
+
+--
+-- Comparisons between timestamp and date types
+---
+
+SELECT '2025-03-28 00:00:00'::timestamp = '2025-03-28'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamp <> '2025-03-27'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamp < '2025-03-29'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamp <= '2025-03-28'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamp > '2025-03-27'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamp >= '2025-03-28'::date as t;
+
+--
+-- Comparisons between date and timestamptz types
+---
+
+SET TimeZone to 'UTC';
+
+SELECT '2025-03-28'::date = '2025-03-28 00:00:00'::timestamptz as t;
+SELECT '2025-03-28'::date <> '2025-03-28 00:00:01'::timestamptz as t;
+SELECT '2025-03-28'::date < '2025-03-28 00:00:01'::timestamptz as t;
+SELECT '2025-03-28'::date <= '2025-03-28 00:00:00'::timestamptz as t;
+SELECT '2025-03-28'::date > '2025-03-27 23:59:59'::timestamptz as t;
+SELECT '2025-03-28'::date >= '2025-03-28 00:00:00'::timestamptz as t;
+
+RESET TimeZone;
+
+--
+-- Comparisons between timestamptz and date types
+---
+
+SET TimeZone to 'UTC';
+
+SELECT '2025-03-28 00:00:00'::timestamptz = '2025-03-28'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamptz <> '2025-03-27'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamptz < '2025-03-29'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamptz <= '2025-03-28'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamptz > '2025-03-27'::date as t;
+SELECT '2025-03-28 00:00:00'::timestamptz >= '2025-03-28'::date as t;
+
+RESET TimeZone;
+
+--
 -- Tests for BETWEEN
 --
 
