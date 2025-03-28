@@ -166,6 +166,17 @@ ConditionVariableTimedSleep(ConditionVariable *cv, long timeout,
 		ResetLatch(MyLatch);
 
 		/*
+		 * First, check that we are still expected to wait on this variable.
+		 * If sleep target has changed, then we need to return spuriously to
+		 * allow caller to check the exit condition and invoke the wait
+		 * function again to properly prepare for the next sleep. Note, that
+		 * we don't need to change wait list in this case, as we should be
+		 * deleted from the list in case of cv_sleep_target change.
+		 */
+		if (cv != cv_sleep_target)
+			return false;
+
+		/*
 		 * If this process has been taken out of the wait list, then we know
 		 * that it has been signaled by ConditionVariableSignal (or
 		 * ConditionVariableBroadcast), so we should return to the caller. But
