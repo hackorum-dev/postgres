@@ -25,6 +25,8 @@ static WalUsage save_pgWalUsage;
 static void BufferUsageAdd(BufferUsage *dst, const BufferUsage *add);
 static void WalUsageAdd(WalUsage *dst, WalUsage *add);
 
+static void InstrEndLoopInternal(Instrumentation *instr, bool force);
+
 
 /* Allocate new instrumentation structure(s) */
 Instrumentation *
@@ -137,7 +139,7 @@ InstrUpdateTupleCount(Instrumentation *instr, double nTuples)
 
 /* Finish a run cycle for a plan node */
 void
-InstrEndLoop(Instrumentation *instr)
+InstrEndLoopInternal(Instrumentation *instr, bool force)
 {
 	double		totaltime;
 
@@ -145,7 +147,7 @@ InstrEndLoop(Instrumentation *instr)
 	if (!instr->running)
 		return;
 
-	if (!INSTR_TIME_IS_ZERO(instr->starttime))
+	if (!INSTR_TIME_IS_ZERO(instr->starttime) && !force)
 		elog(ERROR, "InstrEndLoop called on running node");
 
 	/* Accumulate per-cycle statistics into totals */
@@ -162,6 +164,20 @@ InstrEndLoop(Instrumentation *instr)
 	INSTR_TIME_SET_ZERO(instr->counter);
 	instr->firsttuple = 0;
 	instr->tuplecount = 0;
+}
+
+/* Safely finish a run cycle for a plan node */
+void
+InstrEndLoop(Instrumentation *instr)
+{
+	InstrEndLoopInternal(instr, false);
+}
+
+/* Forcibly finish a run cycle for a plan node */
+void
+InstrEndLoopForce(Instrumentation *instr)
+{
+	InstrEndLoopInternal(instr, true);
 }
 
 /* aggregate instrumentation information */

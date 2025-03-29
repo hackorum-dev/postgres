@@ -1169,6 +1169,103 @@ EXPLAIN ANALYZE SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000
    </para>
   </sect2>
 
+  <sect2 id="using-explain-progressive">
+   <title>Progressive <command>EXPLAIN</command></title>
+
+   <para>
+    The query plan created by the planner for any given active query can
+    be visualized by any session via <xref linkend="pg-stat-progress-explain-view"/>
+    view when <xref linkend="guc-progressive-explain"/> is enabled in the
+    client backend or parallel worker executing query and after min duration
+    specified by <xref linkend="guc-progressive-explain-min-duration"/> has
+    passed. Settings <xref linkend="guc-progressive-explain-timing"/>,
+    <xref linkend="guc-progressive-explain-buffers"/> and
+    <xref linkend="guc-progressive-explain-wal"/> control which additional
+    instrumentaton details are collected and included in the output while
+    <xref linkend="guc-progressive-explain-format"/>,
+    <xref linkend="guc-progressive-explain-verbose"/>,
+    <xref linkend="guc-progressive-explain-settings"/> and
+    <xref linkend="guc-progressive-explain-costs"/>
+    define how the plan is printed and which details are added there.
+   </para>
+
+   <para>
+    When <xref linkend="guc-progressive-explain"/> is set to <literal>explain</literal>
+    the plan will be printed once at the beginning of the query.
+   </para>
+
+   <para>
+<screen>
+SET progressive_explain = 'explain';
+SET
+
+SELECT * FROM test t1 INNER JOIN test t2 ON t1.c1=t2.c1;
+</screen>
+   </para>
+   <para>
+<screen>
+SELECT * FROM pg_stat_progress_explain;
+datid | datname  |  pid  |          last_update          |                                  query_plan
+-------+----------+-------+-------------------------------+------------------------------------------------------------------------------
+    5 | postgres | 73972 | 2025-03-13 23:41:01.606324-03 | Hash Join  (cost=327879.85..878413.95 rows=9999860 width=18)                +
+      |          |       |                               |   Hash Cond: (t1.c1 = t2.c1)                                                +
+      |          |       |                               |   ->  Seq Scan on test t1  (cost=0.00..154053.60 rows=9999860 width=9)      +
+      |          |       |                               |   ->  Hash  (cost=154053.60..154053.60 rows=9999860 width=9)                +
+      |          |       |                               |         ->  Seq Scan on test t2  (cost=0.00..154053.60 rows=9999860 width=9)+
+      |          |       |                               |
+(1 row)
+</screen>
+   </para>
+
+   <para>
+    Setting <xref linkend="guc-progressive-explain"/> to <literal>analyze</literal>
+    will enable instrumentation and the detailed plan is printed on a fixed interval
+    controlled by <xref linkend="guc-progressive-explain-interval"/>, including
+    per node accumulated row count and other statistics.
+   </para>
+
+   <para>
+    Progressive explains include additional information per node to help analyzing
+    execution progress:
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       current: the plan node currently being processed.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       never executed: a plan node not processed yet.
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+   <para>
+<screen>
+SET progressive_explain = 'analyze';
+SET
+
+SELECT * FROM test t1 INNER JOIN test t2 ON t1.c1=t2.c1;
+</screen>
+   </para>
+   <para>
+<screen>
+SELECT * FROM pg_stat_progress_explain;
+datid | datname  |  pid  |          last_update          |                                                              query_plan
+-------+----------+-------+-------------------------------+---------------------------------------------------------------------------------------------------------------------------------------
+    5 | postgres | 73972 | 2025-03-13 23:41:53.951884-03 | Hash Join  (cost=327879.85..878413.95 rows=9999860 width=18) (actual time=1581.469..2963.158 rows=64862.00 loops=1)                  +
+      |          |       |                               |   Hash Cond: (t1.c1 = t2.c1)                                                                                                         +
+      |          |       |                               |   ->  Seq Scan on test t1  (cost=0.00..154053.60 rows=9999860 width=9) (actual time=0.079..486.702 rows=8258962.00 loops=1) (current)+
+      |          |       |                               |   ->  Hash  (cost=154053.60..154053.60 rows=9999860 width=9) (actual time=1580.933..1580.933 rows=10000000.00 loops=1)               +
+      |          |       |                               |         ->  Seq Scan on test t2  (cost=0.00..154053.60 rows=9999860 width=9) (actual time=0.004..566.961 rows=10000000.00 loops=1)   +
+      |          |       |                               |
+(1 row)
+</screen>
+   </para>
+
+  </sect2>
+
  </sect1>
 
  <sect1 id="planner-stats">

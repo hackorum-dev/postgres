@@ -42,14 +42,6 @@ static int	auto_explain_log_level = LOG;
 static bool auto_explain_log_nested_statements = false;
 static double auto_explain_sample_rate = 1;
 
-static const struct config_enum_entry format_options[] = {
-	{"text", EXPLAIN_FORMAT_TEXT, false},
-	{"xml", EXPLAIN_FORMAT_XML, false},
-	{"json", EXPLAIN_FORMAT_JSON, false},
-	{"yaml", EXPLAIN_FORMAT_YAML, false},
-	{NULL, 0, false}
-};
-
 static const struct config_enum_entry loglevel_options[] = {
 	{"debug5", DEBUG5, false},
 	{"debug4", DEBUG4, false},
@@ -191,7 +183,7 @@ _PG_init(void)
 							 NULL,
 							 &auto_explain_log_format,
 							 EXPLAIN_FORMAT_TEXT,
-							 format_options,
+							 explain_format_options,
 							 PGC_SUSET,
 							 0,
 							 NULL,

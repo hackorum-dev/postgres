@@ -269,6 +269,9 @@ InitProcGlobal(void)
 			LWLockInitialize(&(proc->fpInfoLock), LWTRANCHE_LOCK_FASTPATH);
 		}
 
+		/* Per-backend progressive explain locking. */
+		LWLockInitialize(&(proc->peLock), LWTRANCHE_PROGRESSIVE_EXPLAIN);
+
 		/*
 		 * Newly created PGPROCs for normal backends, autovacuum workers,
 		 * special workers, bgworkers, and walsenders must be queued up on the
@@ -478,6 +481,9 @@ InitProcess(void)
 	MyProc->clogGroupMemberPage = -1;
 	MyProc->clogGroupMemberLsn = InvalidXLogRecPtr;
 	Assert(pg_atomic_read_u32(&MyProc->clogGroupNext) == INVALID_PROC_NUMBER);
+
+	/* Initialize progressive explain field. */
+	MyProc->peDSAPointer = (dsa_pointer) NULL;
 
 	/*
 	 * Acquire ownership of the PGPROC's latch, so that we can use WaitLatch

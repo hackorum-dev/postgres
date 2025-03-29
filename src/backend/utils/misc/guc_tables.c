@@ -41,6 +41,8 @@
 #include "commands/async.h"
 #include "commands/extension.h"
 #include "commands/event_trigger.h"
+#include "commands/explain_progressive.h"
+#include "commands/explain_state.h"
 #include "commands/tablespace.h"
 #include "commands/trigger.h"
 #include "commands/user.h"
@@ -533,6 +535,15 @@ int			log_parameter_max_length_on_error = 0;
 int			log_temp_files = -1;
 double		log_statement_sample_rate = 1.0;
 double		log_xact_sample_rate = 0;
+bool		progressive_explain = false;
+bool		progressive_explain_verbose = false;
+bool		progressive_explain_settings = false;
+bool		progressive_explain_timing = true;
+bool		progressive_explain_buffers = false;
+bool		progressive_explain_wal = false;
+bool		progressive_explain_costs = true;
+int			progressive_explain_interval = 0;
+int			progressive_explain_format = EXPLAIN_FORMAT_TEXT;
 char	   *backtrace_functions;
 
 int			temp_file_limit = -1;
@@ -2127,6 +2138,83 @@ struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Enables vacuum to truncate empty pages at the end of the table."),
 		},
 		&vacuum_truncate,
+		true,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"progressive_explain", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Enables progressive explains."),
+			gettext_noop("Explain output is visible via pg_stat_progress_explain."),
+			GUC_EXPLAIN
+		},
+		&progressive_explain,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"progressive_explain_verbose", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Controls whether verbose details are added to progressive explains."),
+			gettext_noop("Equivalent to the VERBOSE option of EXPLAIN."),
+			GUC_EXPLAIN
+		},
+		&progressive_explain_verbose,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"progressive_explain_settings", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Controls whether information on modified configuration is added to progressive explains."),
+			gettext_noop("Equivalent to the SETTINGS option of EXPLAIN."),
+			GUC_EXPLAIN
+		},
+		&progressive_explain_settings,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"progressive_explain_timing", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Controls whether information on per node timing is added to progressive explains."),
+			gettext_noop("Equivalent to the TIMING option of EXPLAIN."),
+			GUC_EXPLAIN
+		},
+		&progressive_explain_timing,
+		true,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"progressive_explain_buffers", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Controls whether information on buffer usage is added to progressive explains."),
+			gettext_noop("Equivalent to the BUFFERS option of EXPLAIN."),
+			GUC_EXPLAIN
+		},
+		&progressive_explain_buffers,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"progressive_explain_wal", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Controls whether information on WAL record generation is added to progressive explains."),
+			gettext_noop("Equivalent to the WAL option of EXPLAIN."),
+			GUC_EXPLAIN
+		},
+		&progressive_explain_wal,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"progressive_explain_costs", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Controls whether information on the estimated startup and total cost of each plan node is added to progressive explains."),
+			gettext_noop("Equivalent to the COSTS option of EXPLAIN."),
+			GUC_EXPLAIN
+		},
+		&progressive_explain_costs,
 		true,
 		NULL, NULL, NULL
 	},
@@ -3848,6 +3936,18 @@ struct config_int ConfigureNamesInt[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"progressive_explain_interval", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Sets the interval between instrumented progressive "
+						 "explains."),
+			NULL,
+			GUC_UNIT_MS
+		},
+		&progressive_explain_interval,
+		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, 0, 0, NULL, NULL, NULL
@@ -5394,6 +5494,16 @@ struct config_enum ConfigureNamesEnum[] =
 		&io_method,
 		DEFAULT_IO_METHOD, io_method_options,
 		NULL, assign_io_method, NULL
+	},
+
+	{
+		{"progressive_explain_format", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Selects the EXPLAIN output format to be used with progressive explains."),
+			gettext_noop("Equivalent to the FORMAT option of EXPLAIN.")
+		},
+		&progressive_explain_format,
+		EXPLAIN_FORMAT_TEXT, explain_format_options,
+		NULL, NULL, NULL
 	},
 
 	/* End-of-list marker */

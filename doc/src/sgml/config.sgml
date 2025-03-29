@@ -8689,6 +8689,162 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-progressive-explain" xreflabel="progressive_explain">
+      <term><varname>progressive_explain</varname> (<type>enum</type>)
+      <indexterm>
+       <primary><varname>progressive_explain</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Determines whether progressive explains are enabled and how
+        they are executed; see <xref linkend="using-explain-progressive"/>.
+        Possible values are <literal>off</literal>, <literal>explain</literal>
+        and <literal>analyze</literal>. The default is <literal>off</literal>.
+        When set to <literal>explain</literal> the plan will be printed only
+        once after <xref linkend="guc-progressive-explain-min-duration"/>. If
+        set to <literal>analyze</literal>, instrumentation flags are enabled,
+        causing the plan to be printed on a fixed interval controlled by
+        <xref linkend="guc-progressive-explain-interval"/> including all
+        instrumentation stats computed so far.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-progressive-explain-min-duration" xreflabel="progressive_explain_min_duration">
+      <term><varname>progressive_explain_min_duration</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>progressive_explain_min_duration</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Sets the threshold (in milliseconds) until progressive explain is
+        printed for the first time. The default is <literal>1s</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-progressive-explain-interval" xreflabel="progressive_explain_interval">
+      <term><varname>progressive_explain_interval</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>progressive_explain_interval</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Sets the interval (in milliseconds) between each instrumented
+        progressive explain. The default is <literal>1s</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-progressive-explain-buffers" xreflabel="progressive_explain_buffers">
+      <term><varname>progressive_explain_buffers</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>progressive_explain_buffers</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Controls whether information on buffer usage is added to
+        progressive explains. Equivalent to the BUFFERS option of
+        EXPLAIN. The default is <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-progressive-explain-timing" xreflabel="progressive_explain_timing">
+      <term><varname>progressive_explain_timing</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>progressive_explain_timing</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Controls whether information on per node timing is added
+        to progressive explains. Equivalent to the TIMING option of
+        EXPLAIN. The default is <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-progressive-explain-wal" xreflabel="progressive_explain_wal">
+      <term><varname>progressive_explain_wal</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>progressive_explain_wal</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Controls whether information on WAL record generation is
+        added to progressive explains. Equivalent to the WAL option of
+        EXPLAIN. The default is <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-progressive-explain-verbose" xreflabel="progressive_explain_verbose">
+      <term><varname>progressive_explain_verbose</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>progressive_explain_verbose</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Controls whether verbose details are added to progressive explains.
+        Equivalent to the VERBOSE option of EXPLAIN. The default is
+        <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-progressive-explain-settings" xreflabel="progressive_explain_settings">
+      <term><varname>progressive_explain_settings</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>progressive_explain_settings</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Controls whether information on modified configuration is added to
+        progressive explains. Equivalent to the SETTINGS option of EXPLAIN.
+        The default is <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-progressive-explain-costs" xreflabel="progressive_explain_costs">
+      <term><varname>progressive_explain_costs</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>progressive_explain_costs</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Controls whether information on the estimated startup and total cost of
+        each plan node is added to progressive explains. Equivalent to the COSTS
+        option of EXPLAIN.
+        The default is <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-progressive-explain-format" xreflabel="progressive_explain_format">
+      <term><varname>progressive_explain_format</varname> (<type>enum</type>)
+      <indexterm>
+       <primary><varname>progressive_explain_format</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Selects the EXPLAIN output format to be used with progressive
+        explains. Equivalent to the FORMAT option of EXPLAIN. The default
+        is <literal>text</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      </variablelist>
     </sect2>
 

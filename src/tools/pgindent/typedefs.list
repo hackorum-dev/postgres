@@ -2302,6 +2302,7 @@ ProcessUtilityContext
 ProcessUtility_hook_type
 ProcessingMode
 ProgressCommandType
+ProgressiveExplainData
 ProjectSet
 ProjectSetPath
 ProjectSetState

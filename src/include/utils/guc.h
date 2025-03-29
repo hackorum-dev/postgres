@@ -278,6 +278,15 @@ extern PGDLLIMPORT int log_min_duration_statement;
 extern PGDLLIMPORT int log_temp_files;
 extern PGDLLIMPORT double log_statement_sample_rate;
 extern PGDLLIMPORT double log_xact_sample_rate;
+extern PGDLLIMPORT bool progressive_explain;
+extern PGDLLIMPORT int progressive_explain_interval;
+extern PGDLLIMPORT int progressive_explain_format;
+extern PGDLLIMPORT bool progressive_explain_verbose;
+extern PGDLLIMPORT bool progressive_explain_settings;
+extern PGDLLIMPORT bool progressive_explain_timing;
+extern PGDLLIMPORT bool progressive_explain_buffers;
+extern PGDLLIMPORT bool progressive_explain_wal;
+extern PGDLLIMPORT bool progressive_explain_costs;
 extern PGDLLIMPORT char *backtrace_functions;
 
 extern PGDLLIMPORT int temp_file_limit;
@@ -322,6 +331,7 @@ extern PGDLLIMPORT const struct config_enum_entry io_method_options[];
 extern PGDLLIMPORT const struct config_enum_entry recovery_target_action_options[];
 extern PGDLLIMPORT const struct config_enum_entry wal_level_options[];
 extern PGDLLIMPORT const struct config_enum_entry wal_sync_method_options[];
+extern PGDLLIMPORT const struct config_enum_entry explain_format_options[];
 
 /*
  * Functions exported by guc.c

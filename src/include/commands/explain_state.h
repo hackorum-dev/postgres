@@ -16,6 +16,7 @@
 #include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
 #include "parser/parse_node.h"
+#include "utils/dsa.h"
 
 typedef enum ExplainSerializeOption
 {
@@ -74,6 +75,12 @@ typedef struct ExplainState
 	/* extensions */
 	void	  **extension_state;
 	int			extension_state_allocated;
+	/* set if tracking a progressive explain */
+	bool		progressive;
+	/* current plan node in progressive explains */
+	struct PlanState *pe_curr_node;
+	/* reusable instr object used in progressive explains */
+	struct Instrumentation *pe_local_instr;
 } ExplainState;
 
 typedef void (*ExplainOptionHandler) (ExplainState *, DefElem *, ParseState *);

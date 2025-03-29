@@ -670,6 +670,19 @@
 #log_executor_stats = off
 
 
+# - Progressive Explain -
+
+#progressive_explain = off
+#progressive_explain_interval = 0
+#progressive_explain_format = text
+#progressive_explain_settings = off
+#progressive_explain_verbose = off
+#progressive_explain_buffers = off
+#progressive_explain_wal = off
+#progressive_explain_timing = on
+#progressive_explain_costs = on
+
+
 #------------------------------------------------------------------------------
 # VACUUMING
 #------------------------------------------------------------------------------

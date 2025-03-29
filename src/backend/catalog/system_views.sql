@@ -1334,6 +1334,16 @@ CREATE VIEW pg_stat_progress_copy AS
     FROM pg_stat_get_progress_info('COPY') AS S
         LEFT JOIN pg_database D ON S.datid = D.oid;
 
+CREATE VIEW pg_stat_progress_explain AS
+    SELECT
+            S.datid AS datid,
+            D.datname AS datname,
+            S.pid,
+            S.last_update,
+            S.query_plan
+    FROM pg_stat_progress_explain() AS S
+        LEFT JOIN pg_database AS D ON (S.datid = D.oid);
+
 CREATE VIEW pg_user_mappings AS
     SELECT
         U.oid       AS umid,

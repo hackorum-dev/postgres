@@ -72,6 +72,7 @@
  */
 #include "postgres.h"
 
+#include "commands/explain_progressive.h"
 #include "executor/executor.h"
 #include "executor/nodeAgg.h"
 #include "executor/nodeAppend.h"
@@ -118,6 +119,7 @@
 #include "executor/nodeWorktablescan.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
+#include "utils/guc.h"
 
 static TupleTableSlot *ExecProcNodeFirst(PlanState *node);
 static TupleTableSlot *ExecProcNodeInstr(PlanState *node);
@@ -462,7 +464,19 @@ ExecProcNodeFirst(PlanState *node)
 	 * have ExecProcNode() directly call the relevant function from now on.
 	 */
 	if (node->instrument)
-		node->ExecProcNode = ExecProcNodeInstr;
+	{
+		/*
+		 * Use instrumented wrapper for progressive explains only if the
+		 * feature is enabled, is configured to update the plan more than once
+		 * and the node belongs to the currently tracked query descriptor.
+		 */
+		if (progressive_explain &&
+			progressive_explain_interval > 0 &&
+			ProgressiveExplainIsActive(node->state->query_desc))
+			node->ExecProcNode = ExecProcNodeInstrExplain;
+		else
+			node->ExecProcNode = ExecProcNodeInstr;
+	}
 	else
 		node->ExecProcNode = node->ExecProcNodeReal;
 

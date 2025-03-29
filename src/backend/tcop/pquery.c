@@ -102,6 +102,9 @@ CreateQueryDesc(PlannedStmt *plannedstmt,
 	/* not yet executed */
 	qd->already_executed = false;
 
+	/* null until set by progressive explains */
+	qd->pestate = NULL;
+
 	return qd;
 }
 

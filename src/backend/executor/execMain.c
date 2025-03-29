@@ -43,6 +43,7 @@
 #include "access/xact.h"
 #include "catalog/namespace.h"
 #include "catalog/partition.h"
+#include "commands/explain_progressive.h"
 #include "commands/matview.h"
 #include "commands/trigger.h"
 #include "executor/executor.h"
@@ -161,6 +162,12 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	Assert(GetActiveSnapshot() == queryDesc->snapshot);
 
 	/*
+	 * Setup progressive explain if enabled.
+	 */
+	if (progressive_explain)
+		ProgressiveExplainSetup(queryDesc);
+
+	/*
 	 * If the transaction is read-only, we need to check if any writes are
 	 * planned to non-temporary tables.  EXPLAIN is considered read-only.
 	 *
@@ -184,6 +191,11 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 */
 	estate = CreateExecutorState();
 	queryDesc->estate = estate;
+
+	/*
+	 * Adding back reference to QueryDesc
+	 */
+	estate->query_desc = queryDesc;
 
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
@@ -269,6 +281,12 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 * Initialize the plan state tree
 	 */
 	InitPlan(queryDesc, eflags);
+
+	/*
+	 * Start progressive explain if enabled.
+	 */
+	if (progressive_explain)
+		ProgressiveExplainStart(queryDesc);
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -518,6 +536,9 @@ standard_ExecutorFinish(QueryDesc *queryDesc)
 		InstrStopNode(queryDesc->totaltime, 0);
 
 	MemoryContextSwitchTo(oldcontext);
+
+	/* Finish progressive explain if enabled */
+	ProgressiveExplainFinish(queryDesc);
 
 	estate->es_finished = true;
 }

@@ -25,6 +25,7 @@
 #include "access/xlogprefetcher.h"
 #include "access/xlogrecovery.h"
 #include "commands/async.h"
+#include "commands/explain_progressive.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
@@ -150,6 +151,7 @@ CalculateShmemSize(int *num_semaphores)
 	size = add_size(size, InjectionPointShmemSize());
 	size = add_size(size, SlotSyncShmemSize());
 	size = add_size(size, AioShmemSize());
+	size = add_size(size, ProgressiveExplainShmemSize());
 
 	/* include additional requested shmem from preload libraries */
 	size = add_size(size, total_addin_request);
@@ -301,6 +303,11 @@ CreateOrAttachShmemStructs(void)
 	 * Set up predicate lock manager
 	 */
 	PredicateLockShmemInit();
+
+	/*
+	 * Set up instrumented explain hash table
+	 */
+	ProgressiveExplainShmemInit();
 
 	/*
 	 * Set up process table

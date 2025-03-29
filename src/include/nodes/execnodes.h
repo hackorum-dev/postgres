@@ -57,6 +57,7 @@ struct ExprState;
 struct ExprContext;
 struct RangeTblEntry;			/* avoid including parsenodes.h here */
 struct ExprEvalStep;			/* avoid including execExpr.h everywhere */
+struct QueryDesc;				/* avoid including execdesc.h here */
 struct CopyMultiInsertBuffer;
 struct LogicalTapeSet;
 
@@ -769,6 +770,9 @@ typedef struct EState
 	 */
 	List	   *es_insert_pending_result_relations;
 	List	   *es_insert_pending_modifytables;
+
+	/* Reference to query descriptor */
+	struct QueryDesc *query_desc;
 } EState;
 
 
@@ -1165,6 +1169,8 @@ typedef struct PlanState
 	ExecProcNodeMtd ExecProcNode;	/* function to return next tuple */
 	ExecProcNodeMtd ExecProcNodeReal;	/* actual function, if above is a
 										 * wrapper */
+	ExecProcNodeMtd ExecProcNodeOriginal;	/* pointer to original function
+											 * another wrapper was added */
 
 	Instrumentation *instrument;	/* Optional runtime stats for this node */
 	WorkerInstrumentation *worker_instrument;	/* per-worker instrumentation */

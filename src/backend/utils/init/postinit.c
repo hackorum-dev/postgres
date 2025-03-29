@@ -33,6 +33,7 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_db_role_setting.h"
 #include "catalog/pg_tablespace.h"
+#include "commands/explain_progressive.h"
 #include "libpq/auth.h"
 #include "libpq/libpq-be.h"
 #include "mb/pg_wchar.h"
@@ -82,6 +83,7 @@ static void TransactionTimeoutHandler(void);
 static void IdleSessionTimeoutHandler(void);
 static void IdleStatsUpdateTimeoutHandler(void);
 static void ClientCheckTimeoutHandler(void);
+static void ProgressiveExplainTimeoutHandler(void);
 static bool ThereIsAtLeastOneRole(void);
 static void process_startup_options(Port *port, bool am_superuser);
 static void process_settings(Oid databaseid, Oid roleid);
@@ -771,6 +773,8 @@ InitPostgres(const char *in_dbname, Oid dboid,
 		RegisterTimeout(CLIENT_CONNECTION_CHECK_TIMEOUT, ClientCheckTimeoutHandler);
 		RegisterTimeout(IDLE_STATS_UPDATE_TIMEOUT,
 						IdleStatsUpdateTimeoutHandler);
+		RegisterTimeout(PROGRESSIVE_EXPLAIN_TIMEOUT,
+						ProgressiveExplainTimeoutHandler);
 	}
 
 	/*
@@ -1430,6 +1434,12 @@ ClientCheckTimeoutHandler(void)
 	CheckClientConnectionPending = true;
 	InterruptPending = true;
 	SetLatch(MyLatch);
+}
+
+static void
+ProgressiveExplainTimeoutHandler(void)
+{
+	ProgressiveExplainPending = true;
 }
 
 /*

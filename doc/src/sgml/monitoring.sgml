@@ -6842,6 +6842,88 @@ FROM pg_stat_get_backend_idset() AS backendid;
 
  </sect2>
 
+<sect2 id="explain-progress-reporting">
+  <title>EXPLAIN Progress Reporting</title>
+
+  <indexterm>
+   <primary>pg_stat_progress_explain</primary>
+  </indexterm>
+
+  <para>
+   Whenever a client backend or parallel worker is running a query with
+   <xref linkend="guc-progressive-explain"/> enabled, the
+   <structname>pg_stat_progress_explain</structname> view  will contain a
+   corresponding row with query plan details; see
+   <xref linkend="using-explain-progressive"/>. The table below describe the
+   information that will be reported.
+  </para>
+
+  <table id="pg-stat-progress-explain-view" xreflabel="pg_stat_progress_explain">
+   <title><structname>pg_stat_progress_explain</structname> View</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>datid</structfield> <type>oid</type>
+      </para>
+      <para>
+       OID of the database this backend is connected to
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>datname</structfield> <type>name</type>
+      </para>
+      <para>
+       Name of the database this backend is connected to
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>pid</structfield> <type>integer</type>
+      </para>
+      <para>
+       Process ID of a client backend or parallel worker.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>last_update</structfield> <type>timestamp with time zone</type>
+      </para>
+      <para>
+       Timestamp when plan was last printed.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>query_plan</structfield> <type>text</type>
+      </para>
+      <para>
+       The progressive explain text.
+      </para></entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+ </sect2>
+
  </sect1>
 
  <sect1 id="dynamic-trace">

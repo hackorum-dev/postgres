@@ -36,6 +36,7 @@
 #include "catalog/pg_enum.h"
 #include "catalog/storage.h"
 #include "commands/async.h"
+#include "commands/explain_progressive.h"
 #include "commands/tablecmds.h"
 #include "commands/trigger.h"
 #include "common/pg_prng.h"
@@ -2424,6 +2425,12 @@ CommitTransaction(void)
 	AtEOXact_TypeCache();
 
 	/*
+	 * If progressive explain wasn't properly cleaned after query ended
+	 * perform the cleanup and warn about leaked resources.
+	 */
+	AtEOXact_ProgressiveExplain(true);
+
+	/*
 	 * Make catalog changes visible to all backends.  This has to happen after
 	 * relcache references are dropped (see comments for
 	 * AtEOXact_RelationCache), but before locks are released (if anyone is
@@ -2993,6 +3000,7 @@ AbortTransaction(void)
 		AtEOXact_PgStat(false, is_parallel_worker);
 		AtEOXact_ApplyLauncher(false);
 		AtEOXact_LogicalRepWorkers(false);
+		AtEOXact_ProgressiveExplain(false);
 		pgstat_report_xact_timestamp(0);
 	}
 
@@ -5194,6 +5202,12 @@ CommitSubTransaction(void)
 	AtSubCommit_Snapshot(s->nestingLevel);
 
 	/*
+	 * If progressive explain wasn't properly cleaned after subxact ended
+	 * perform the cleanup and warn about leaked resources.
+	 */
+	AtEOSubXact_ProgressiveExplain(true, s->nestingLevel);
+
+	/*
 	 * We need to restore the upper transaction's read-only state, in case the
 	 * upper is read-write while the child is read-only; GUC will incorrectly
 	 * think it should leave the child state in place.
@@ -5361,6 +5375,7 @@ AbortSubTransaction(void)
 		AtEOSubXact_HashTables(false, s->nestingLevel);
 		AtEOSubXact_PgStat(false, s->nestingLevel);
 		AtSubAbort_Snapshot(s->nestingLevel);
+		AtEOSubXact_ProgressiveExplain(false, s->nestingLevel);
 	}
 
 	/*

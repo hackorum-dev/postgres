@@ -22,6 +22,7 @@
 #include "storage/pg_sema.h"
 #include "storage/proclist_types.h"
 #include "storage/procnumber.h"
+#include "utils/dsa.h"
 
 /*
  * Each backend advertises up to PGPROC_MAX_CACHED_SUBXIDS TransactionIds
@@ -311,6 +312,10 @@ struct PGPROC
 	PGPROC	   *lockGroupLeader;	/* lock group leader, if I'm a member */
 	dlist_head	lockGroupMembers;	/* list of members, if I'm a leader */
 	dlist_node	lockGroupLink;	/* my member link, if I'm a member */
+
+	dsa_pointer peDSAPointer;	/* DSA pointer to progressive explain data */
+	/* Protects per-backend progressive explain data */
+	LWLock		peLock;
 };
 
 /* NOTE: "typedef struct PGPROC PGPROC" appears in storage/lock.h. */

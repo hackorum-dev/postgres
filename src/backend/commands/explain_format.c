@@ -16,6 +16,7 @@
 #include "commands/explain.h"
 #include "commands/explain_format.h"
 #include "commands/explain_state.h"
+#include "utils/guc_tables.h"
 #include "utils/json.h"
 #include "utils/xml.h"
 
@@ -24,6 +25,17 @@
 #define X_CLOSING 1
 #define X_CLOSE_IMMEDIATE 2
 #define X_NOWHITESPACE 4
+
+/*
+ * GUC support
+ */
+const struct config_enum_entry explain_format_options[] = {
+	{"text", EXPLAIN_FORMAT_TEXT, false},
+	{"xml", EXPLAIN_FORMAT_XML, false},
+	{"json", EXPLAIN_FORMAT_JSON, false},
+	{"yaml", EXPLAIN_FORMAT_YAML, false},
+	{NULL, 0, false}
+};
 
 static void ExplainJSONLineEnding(ExplainState *es);
 static void ExplainXMLTag(const char *tagname, int flags, ExplainState *es);
