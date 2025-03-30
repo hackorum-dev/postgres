@@ -3,7 +3,7 @@ Locking tuples
 
 Locking tuples is not as easy as locking tables or other database objects.
 The problem is that transactions might want to lock large numbers of tuples at
-any one time, so it's not possible to keep the locks objects in shared memory.
+any one time, so it's not possible to keep the lock objects in shared memory.
 To work around this limitation, we use a two-level mechanism.  The first level
 is implemented by storing locking information in the tuple header: a tuple is
 marked as locked by setting the current transaction's XID as its XMAX, and
@@ -20,8 +20,8 @@ tuple, potentially leading to indefinite starvation of some waiters.  The
 possibility of share-locking makes the problem much worse --- a steady stream
 of share-lockers can easily block an exclusive locker forever.  To provide
 more reliable semantics about who gets a tuple-level lock first, we use the
-standard lock manager, which implements the second level mentioned above.  The
-protocol for waiting for a tuple-level lock is really
+standard lock manager, which implements the second of the two-level mechanism
+mentioned above.  The protocol for waiting for a tuple-level lock is really
 
      LockTuple()
      XactLockTableWait()
@@ -39,7 +39,7 @@ conflict for a tuple, we don't incur any extra overhead.
 We make an exception to the above rule for those lockers that already hold
 some lock on a tuple and attempt to acquire a stronger one on it.  In that
 case, we skip the LockTuple() call even when there are conflicts, provided
-that the target tuple is being locked, updated or deleted by multiple sessions
+that the target tuple is being locked, updated, or deleted by multiple sessions
 concurrently.  Failing to skip the lock would risk a deadlock, e.g., between a
 session that was first to record its weaker lock in the tuple header and would
 be waiting on the LockTuple() call to upgrade to the stronger lock level, and
@@ -142,7 +142,7 @@ The following infomask bits are applicable:
 
 - HEAP_KEYS_UPDATED
   This bit lives in t_infomask2.  If set, indicates that the operation(s) done
-  by the XMAX compromise the tuple key, such as a SELECT FOR UPDATE, an UPDATE
+  by the XMAX modify the tuple key, such as a SELECT FOR UPDATE, an UPDATE
   that modifies the columns of the key, or a DELETE.  It's set regardless of
   whether the XMAX is a TransactionId or a MultiXactId.
 
