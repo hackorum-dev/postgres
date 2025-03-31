@@ -3861,55 +3861,15 @@ typedef struct AfterTriggerEventList
  *
  * query_stack[query_depth] is the per-query-level data, including these fields:
  *
- * events is a list of AFTER trigger events queued by the current query.
- * None of these are valid until the matching AfterTriggerEndQuery call
- * occurs.  At that point we fire immediate-mode triggers, and append any
- * deferred events to the main events list.
- *
- * fdw_tuplestore is a tuplestore containing the foreign-table tuples
- * needed by events queued by the current query.  (Note: we use just one
- * tuplestore even though more than one foreign table might be involved.
- * This is okay because tuplestores don't really care what's in the tuples
- * they store; but it's possible that someday it'd break.)
- *
- * tables is a List of AfterTriggersTableData structs for target tables
- * of the current query (see below).
- *
  * maxquerydepth is just the allocated length of query_stack.
  *
  * trans_stack holds per-subtransaction data, including these fields:
- *
- * state is NULL or a pointer to a saved copy of the SET CONSTRAINTS
- * state data.  Each subtransaction level that modifies that state first
- * saves a copy, which we use to restore the state if we abort.
- *
- * events is a copy of the events head/tail pointers,
- * which we use to restore those values during subtransaction abort.
- *
- * query_depth is the subtransaction-start-time value of query_depth,
- * which we similarly use to clean up at subtransaction abort.
- *
- * firing_counter is the subtransaction-start-time value of firing_counter.
- * We use this to recognize which deferred triggers were fired (or marked
- * for firing) within an aborted subtransaction.
  *
  * We use GetCurrentTransactionNestLevel() to determine the correct array
  * index in trans_stack.  maxtransdepth is the number of allocated entries in
  * trans_stack.  (By not keeping our own stack pointer, we can avoid trouble
  * in cases where errors during subxact abort cause multiple invocations
  * of AfterTriggerEndSubXact() at the same nesting depth.)
- *
- * We create an AfterTriggersTableData struct for each target table of the
- * current query, and each operation mode (INSERT/UPDATE/DELETE), that has
- * either transition tables or statement-level triggers.  This is used to
- * hold the relevant transition tables, as well as info tracking whether
- * we already queued the statement triggers.  (We use that info to prevent
- * firing the same statement triggers more than once per statement, or really
- * once per transition table set.)  These structs, along with the transition
- * table tuplestores, live in the (sub)transaction's CurTransactionContext.
- * That's sufficient lifespan because we don't allow transition tables to be
- * used by deferrable triggers, so they only need to survive until
- * AfterTriggerEndQuery.
  */
 typedef struct AfterTriggersQueryData AfterTriggersQueryData;
 typedef struct AfterTriggersTransData AfterTriggersTransData;
@@ -3944,6 +3904,23 @@ typedef struct AfterTriggersData
 	int			firing_depth;
 } AfterTriggersData;
 
+/*
+ * AfterTriggersQueryData has the following fields:
+ *
+ * events is a list of AFTER trigger events queued by the current query.
+ * None of these are valid until the matching AfterTriggerEndQuery call
+ * occurs.  At that point we fire immediate-mode triggers, and append any
+ * deferred events to the main events list.
+ *
+ * fdw_tuplestore is a tuplestore containing the foreign-table tuples
+ * needed by events queued by the current query.  (Note: we use just one
+ * tuplestore even though more than one foreign table might be involved.
+ * This is okay because tuplestores don't really care what's in the tuples
+ * they store; but it's possible that someday it'd break.)
+ *
+ * tables is a List of AfterTriggersTableData structs for target tables
+ * of the current query (see below).
+ */
 struct AfterTriggersQueryData
 {
 	AfterTriggerEventList events;	/* events pending from this query */
@@ -3952,6 +3929,23 @@ struct AfterTriggersQueryData
 	List	   *batch_callbacks;	/* List of AfterTriggerCallbackItem */
 };
 
+/*
+ * AfterTriggersTransData has the following fields:
+ *
+ * state is NULL or a pointer to a saved copy of the SET CONSTRAINTS
+ * state data.  Each subtransaction level that modifies that state first
+ * saves a copy, which we use to restore the state if we abort.
+ *
+ * events is a copy of the events head/tail pointers,
+ * which we use to restore those values during subtransaction abort.
+ *
+ * query_depth is the subtransaction-start-time value of query_depth,
+ * which we similarly use to clean up at subtransaction abort.
+ *
+ * firing_counter is the subtransaction-start-time value of firing_counter.
+ * We use this to recognize which deferred triggers were fired (or marked
+ * for firing) within an aborted subtransaction.
+ */
 struct AfterTriggersTransData
 {
 	/* these fields are just for resetting at subtrans abort: */
@@ -3963,6 +3957,19 @@ struct AfterTriggersTransData
 	CommandId	firing_counter; /* saved firing_counter */
 };
 
+/*
+ * We create an AfterTriggersTableData struct for each target table of the
+ * current query, and each operation mode (INSERT/UPDATE/DELETE), that has
+ * either transition tables or statement-level triggers.  This is used to
+ * hold the relevant transition tables, as well as info tracking whether
+ * we already queued the statement triggers.  (We use that info to prevent
+ * firing the same statement triggers more than once per statement, or really
+ * once per transition table set.)  These structs, along with the transition
+ * table tuplestores, live in the (sub)transaction's CurTransactionContext.
+ * That's sufficient lifespan because we don't allow transition tables to be
+ * used by deferrable triggers, so they only need to survive until
+ * AfterTriggerEndQuery.
+ */
 struct AfterTriggersTableData
 {
 	/* relid + cmdType form the lookup key for these structs: */
