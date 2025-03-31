@@ -1343,9 +1343,10 @@ CopyFrom(CopyFromState cstate)
 			}
 			else
 			{
-				/* Compute stored generated columns */
+				/* Compute generated columns */
 				if (resultRelInfo->ri_RelationDesc->rd_att->constr &&
-					resultRelInfo->ri_RelationDesc->rd_att->constr->has_generated_stored)
+					(resultRelInfo->ri_RelationDesc->rd_att->constr->has_generated_stored ||
+					 resultRelInfo->ri_RelationDesc->rd_att->constr->has_generated_virtual))
 					ExecComputeGenerated(resultRelInfo, estate, myslot,
 										 CMD_INSERT);
 

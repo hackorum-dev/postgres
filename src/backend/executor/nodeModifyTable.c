@@ -67,6 +67,7 @@
 #include "storage/lmgr.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
+#include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
@@ -395,7 +396,7 @@ ExecCheckTIDVisible(EState *estate,
  *
  * This fills the resultRelInfo's ri_GeneratedExprsI/ri_NumGeneratedNeededI or
  * ri_GeneratedExprsU/ri_NumGeneratedNeededU fields, depending on cmdtype.
- * This is used only for stored generated columns.
+ * This is used for stored and virtual generated columns.
  *
  * If cmdType == CMD_UPDATE, the ri_extraUpdatedCols field is filled too.
  * This is used by both stored and virtual generated columns.
@@ -477,6 +478,33 @@ ExecInitGenerated(ResultRelInfo *resultRelInfo,
 				ri_GeneratedExprs[i] = ExecPrepareExpr(expr, estate);
 				ri_NumGeneratedNeeded++;
 			}
+			else
+			{
+				/*
+				* Virtual generated column only need to be computed when the
+				* type is domain_with_constraint.  However,
+				* domain_with_constraint can be the element type of range,
+				* composite, or array.
+				*
+				* To determine whether the true element type is
+				* domain_with_constraint, multiple lookup_type_cache calls seems
+				* doable. However, this would add a lot of code.  So simplify
+				* it: only when the type is TYPTYPE_BASE and not an array type,
+				* computation is not needed.
+				*/
+				Oid		typelem	= InvalidOid;
+				Oid		atttypid = TupleDescAttr(tupdesc, i)->atttypid;
+				char	att_typtype = get_typtype(atttypid);
+
+				if (att_typtype == TYPTYPE_BASE)
+					typelem = get_element_type(atttypid);
+
+				if (att_typtype != TYPTYPE_BASE || OidIsValid(typelem))
+				{
+					ri_GeneratedExprs[i] = ExecPrepareExpr(expr, estate);
+					ri_NumGeneratedNeeded++;
+				}
+			}
 
 			/* If UPDATE, mark column in resultRelInfo->ri_extraUpdatedCols */
 			if (cmdtype == CMD_UPDATE)
@@ -518,7 +546,9 @@ ExecInitGenerated(ResultRelInfo *resultRelInfo,
 
 /*
  * Compute generated columns for a tuple.
- * we might support virtual generated column in future, currently not.
+ * Generally, we don't need to compute virtual generated column, except for
+ * column type is domain with constraint. Since virtual generated column don't
+ * have storage, we don't need to store it.
  */
 void
 ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
@@ -534,7 +564,8 @@ ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
 	bool	   *nulls;
 
 	/* We should not be called unless this is true */
-	Assert(tupdesc->constr && tupdesc->constr->has_generated_stored);
+	Assert(tupdesc->constr);
+	Assert(tupdesc->constr->has_generated_stored || tupdesc->constr->has_generated_virtual);
 
 	/*
 	 * Initialize the expressions if we didn't already, and check whether we
@@ -552,10 +583,13 @@ ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
 	{
 		if (resultRelInfo->ri_GeneratedExprsI == NULL)
 			ExecInitGenerated(resultRelInfo, estate, cmdtype);
-		/* Early exit is impossible given the prior Assert */
-		Assert(resultRelInfo->ri_NumGeneratedNeededI > 0);
+		if (resultRelInfo->ri_NumGeneratedNeededI == 0)
+			return;
 		ri_GeneratedExprs = resultRelInfo->ri_GeneratedExprsI;
 	}
+
+	if (ri_GeneratedExprs != NULL)
+		Assert(resultRelInfo->ri_NumGeneratedNeededU > 0 || resultRelInfo->ri_NumGeneratedNeededI > 0);
 
 	oldContext = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
 
@@ -567,28 +601,35 @@ ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
 
 	for (int i = 0; i < natts; i++)
 	{
-		CompactAttribute *attr = TupleDescCompactAttr(tupdesc, i);
+		Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
 
 		if (ri_GeneratedExprs[i])
 		{
 			Datum		val;
 			bool		isnull;
 
-			Assert(TupleDescAttr(tupdesc, i)->attgenerated == ATTRIBUTE_GENERATED_STORED);
-
 			econtext->ecxt_scantuple = slot;
 
 			val = ExecEvalExpr(ri_GeneratedExprs[i], econtext, &isnull);
 
-			/*
-			 * We must make a copy of val as we have no guarantees about where
-			 * memory for a pass-by-reference Datum is located.
-			 */
-			if (!isnull)
-				val = datumCopy(val, attr->attbyval, attr->attlen);
+			if (attr->attgenerated == ATTRIBUTE_GENERATED_STORED)
+			{
+				/*
+				 * We must make a copy of val as we have no guarantees about where
+				 * memory for a pass-by-reference Datum is located.
+				*/
+				if (!isnull)
+					val = datumCopy(val, attr->attbyval, attr->attlen);
 
-			values[i] = val;
-			nulls[i] = isnull;
+				values[i] = val;
+				nulls[i] = isnull;
+			}
+			else
+			{
+				Assert(attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL);
+				values[i] = (Datum) 0;
+				nulls[i] = true;
+			}
 		}
 		else
 		{
@@ -907,10 +948,11 @@ ExecInsert(ModifyTableContext *context,
 		slot->tts_tableOid = RelationGetRelid(resultRelInfo->ri_RelationDesc);
 
 		/*
-		 * Compute stored generated columns
+		 * Compute generated columns
 		 */
 		if (resultRelationDesc->rd_att->constr &&
-			resultRelationDesc->rd_att->constr->has_generated_stored)
+			(resultRelationDesc->rd_att->constr->has_generated_stored ||
+			 resultRelationDesc->rd_att->constr->has_generated_virtual))
 			ExecComputeGenerated(resultRelInfo, estate, slot,
 								 CMD_INSERT);
 
@@ -1034,10 +1076,11 @@ ExecInsert(ModifyTableContext *context,
 		slot->tts_tableOid = RelationGetRelid(resultRelationDesc);
 
 		/*
-		 * Compute stored generated columns
+		 * Compute generated columns
 		 */
 		if (resultRelationDesc->rd_att->constr &&
-			resultRelationDesc->rd_att->constr->has_generated_stored)
+			(resultRelationDesc->rd_att->constr->has_generated_stored ||
+			 resultRelationDesc->rd_att->constr->has_generated_virtual))
 			ExecComputeGenerated(resultRelInfo, estate, slot,
 								 CMD_INSERT);
 
@@ -2122,10 +2165,11 @@ ExecUpdatePrepareSlot(ResultRelInfo *resultRelInfo,
 	slot->tts_tableOid = RelationGetRelid(resultRelationDesc);
 
 	/*
-	 * Compute stored generated columns
+	 * Compute generated columns
 	 */
 	if (resultRelationDesc->rd_att->constr &&
-		resultRelationDesc->rd_att->constr->has_generated_stored)
+		(resultRelationDesc->rd_att->constr->has_generated_stored ||
+		 resultRelationDesc->rd_att->constr->has_generated_virtual))
 		ExecComputeGenerated(resultRelInfo, estate, slot,
 							 CMD_UPDATE);
 }

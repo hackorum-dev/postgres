@@ -77,6 +77,9 @@ ALTER TABLE has_volatile ALTER COLUMN col1 SET DATA TYPE float8,
 -- stored generated columns need a rewrite
 ALTER TABLE has_volatile ADD col7 int GENERATED ALWAYS AS (55) stored;
 
+-- virtual generated columns over volatile domain constraint don't need a rewrite
+CREATE DOMAIN d1 as INT CHECK(value < random(min=>12::int, max=>21));
+ALTER TABLE has_volatile ADD col8 int GENERATED ALWAYS AS (1 + id) VIRTUAL;
 
 
 -- Test a large sample of different datatypes
@@ -616,6 +619,7 @@ DROP FUNCTION set(name);
 DROP FUNCTION comp();
 DROP TABLE m;
 DROP TABLE has_volatile;
+DROP DOMAIN d1;
 DROP EVENT TRIGGER has_volatile_rewrite;
 DROP FUNCTION log_rewrite;
 DROP SCHEMA fast_default;

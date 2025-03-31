@@ -5989,7 +5989,7 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			 * rebuild data.
 			 */
 			if (tab->constraints != NIL || tab->verify_new_notnull ||
-				tab->partition_constraint != NULL)
+				tab->newvals || tab->partition_constraint != NULL)
 				ATRewriteTable(tab, InvalidOid);
 
 			/*
@@ -6109,6 +6109,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 	BulkInsertState bistate;
 	int			ti_options;
 	ExprState  *partqualstate = NULL;
+	List		*domain_virtual_attrs = NIL;
 
 	/*
 	 * Open the relation(s).  We have surely already locked the existing
@@ -6184,6 +6185,16 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 
 		/* expr already planned */
 		ex->exprstate = ExecInitExpr((Expr *) ex->expr, NULL);
+		if (tab->rewrite == 0 && ex->is_generated)
+		{
+			Form_pg_attribute attr = TupleDescAttr(newTupDesc, ex->attnum - 1);
+			if (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL &&
+				DomainHasConstraints(attr->atttypid))
+			{
+				Assert(!attr->attisdropped);
+				domain_virtual_attrs = lappend_int(domain_virtual_attrs, attr->attnum);
+			}
+		}
 	}
 
 	notnull_attrs = notnull_virtual_attrs = NIL;
@@ -6214,6 +6225,13 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 		if (notnull_attrs || notnull_virtual_attrs)
 			needscan = true;
 	}
+
+	/*
+	 * We need verify domain constraints on the virtual generated column are
+	 * satisfied, which requires table scan.
+	*/
+	if (domain_virtual_attrs != NIL)
+		needscan = true;
 
 	if (newrel || needscan)
 	{
@@ -6470,6 +6488,34 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 					default:
 						elog(ERROR, "unrecognized constraint type: %d",
 							 (int) con->contype);
+				}
+			}
+
+			/*
+			 * domain_virtual_attrs is list of newly added columns that is virtual
+			 * generated column over domain with constraints. we need to check
+			 * whether these domain constraints are satisfied.
+			*/
+			if (domain_virtual_attrs != NIL)
+			{
+				Assert(tab->rewrite == 0);
+
+				foreach(l, tab->newvals)
+				{
+					NewColumnValue *ex = lfirst(l);
+
+					if (!ex->is_generated)
+						continue;
+
+					if(list_member_int(domain_virtual_attrs, ex->attnum) &&
+					   !ExecCheck(ex->exprstate, econtext))
+					{
+						Form_pg_attribute attr = TupleDescAttr(newTupDesc, ex->attnum - 1);
+						ereport(ERROR,
+								errcode(ERRCODE_CHECK_VIOLATION),
+								errmsg("value for domain %s is violated by some row",
+								format_type_be(attr->atttypid)));
+					}
 				}
 			}
 

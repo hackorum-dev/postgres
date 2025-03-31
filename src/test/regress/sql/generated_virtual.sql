@@ -444,14 +444,47 @@ CREATE TABLE gtest23q (a int PRIMARY KEY, b int REFERENCES gtest23p (y));
 --INSERT INTO gtest23q VALUES (2, 5);  -- error
 
 -- domains
-CREATE DOMAIN gtestdomain1 AS int CHECK (VALUE < 10);
-CREATE TABLE gtest24 (a int PRIMARY KEY, b gtestdomain1 GENERATED ALWAYS AS (a * 2) VIRTUAL);
---INSERT INTO gtest24 (a) VALUES (4);  -- ok
---INSERT INTO gtest24 (a) VALUES (6);  -- error
+CREATE DOMAIN gtestdomain1 AS int CHECK (VALUE < 10) DEFAULT 12;
+CREATE TABLE gtest24 (a int UNIQUE, b gtestdomain1 GENERATED ALWAYS AS (a * 2) VIRTUAL);
+INSERT INTO gtest24 (a, b) VALUES (4, default);  -- ok
+INSERT INTO gtest24 (a) VALUES (3), (NULL);  -- ok
+INSERT INTO gtest24 (a) VALUES (6);  -- error
+UPDATE gtest24 SET a = 6;            -- error
+COPY gtest24 FROM stdin;  --error
+6
+\.
+
+SELECT * FROM gtest24;
+
+--ALTER TABLE ADD COLUM variant.
+ALTER TABLE gtest24 ADD COLUMN c gtestdomain1 GENERATED ALWAYS AS (a * 2) virtual not null; --error
+ALTER TABLE gtest24 ADD COLUMN c gtestdomain1 GENERATED ALWAYS AS (a * 3) virtual check (c < 10); --error
+ALTER TABLE gtest24 ADD COLUMN c gtestdomain1 GENERATED ALWAYS AS (a * 4) virtual; --table rewrite then error.
+ALTER TABLE gtest24 ADD COLUMN c gtestdomain1 GENERATED ALWAYS AS (a * 2) virtual; --ok
+
+--alter domain add constraint variant.
+ALTER DOMAIN gtestdomain1 ADD CHECK (value IS NULL);  --error
+ALTER DOMAIN gtestdomain1 ADD CHECK (value IS NOT NULL); --error
+ALTER DOMAIN gtestdomain1 ADD NOT NULL; --error
+DELETE FROM gtest24 WHERE a is NULL;
+ALTER DOMAIN gtestdomain1 ADD NOT NULL; --ok
+ALTER DOMAIN gtestdomain1 ADD CHECK (value IS NOT NULL);  --ok
+ALTER DOMAIN gtestdomain1 ADD CHECK (VALUE < 7); --error
+ALTER DOMAIN gtestdomain1 ADD CHECK (VALUE < 9); --ok
+
 CREATE TYPE gtestdomain1range AS range (subtype = gtestdomain1);
-CREATE TABLE gtest24r (a int PRIMARY KEY, b gtestdomain1range GENERATED ALWAYS AS (gtestdomain1range(a, a + 5)) VIRTUAL);
---INSERT INTO gtest24r (a) VALUES (4);  -- ok
---INSERT INTO gtest24r (a) VALUES (6);  -- error
+CREATE TABLE gtest24r (a int PRIMARY KEY, b gtestdomain1range GENERATED ALWAYS AS (gtestdomain1range(a, a + 4)) VIRTUAL);
+INSERT INTO gtest24r (a) VALUES (4);  -- ok
+INSERT INTO gtest24r (a) VALUES (6);  -- error
+INSERT INTO gtest24r (a) VALUES (5);  -- error
+
+CREATE TABLE gtest24v (
+  a jsonb,
+  b gtestdomain1[] GENERATED ALWAYS AS (JSON_QUERY(a, '$.a' returning gtestdomain1[] error on error)) VIRTUAL,
+  c gtestdomain1[] GENERATED ALWAYS AS (JSON_QUERY(a, '$.b' returning gtestdomain1[])) VIRTUAL not null);
+insert into gtest24v select jsonb '{"a":[6,10], "b":[6,2]}'; --error
+insert into gtest24v select jsonb '{"a":[6,-1], "b":[6,10]}'; --error
+insert into gtest24v select jsonb '{"a":[6,-1], "b":[6,2]}'; --ok
 
 -- typed tables (currently not supported)
 CREATE TYPE gtest_type AS (f1 integer, f2 text, f3 bigint);
