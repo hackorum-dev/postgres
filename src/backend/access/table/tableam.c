@@ -310,7 +310,7 @@ simple_table_tuple_insert(Relation rel, TupleTableSlot *slot)
  * This routine may be used to delete a tuple when concurrent updates of
  * the target tuple are not expected (for example, because we have a lock
  * on the relation associated with the tuple).  Any failure is reported
- * via ereport().
+ * via elog().
  */
 void
 simple_table_tuple_delete(Relation rel, ItemPointer tid, Snapshot snapshot)
@@ -355,7 +355,7 @@ simple_table_tuple_delete(Relation rel, ItemPointer tid, Snapshot snapshot)
  * This routine may be used to update a tuple when concurrent updates of
  * the target tuple are not expected (for example, because we have a lock
  * on the relation associated with the tuple).  Any failure is reported
- * via ereport().
+ * via elog().
  */
 void
 simple_table_tuple_update(Relation rel, ItemPointer otid,
