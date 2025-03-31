@@ -3230,7 +3230,7 @@ l1:
  * This routine may be used to delete a tuple when concurrent updates of
  * the target tuple are not expected (for example, because we have a lock
  * on the relation associated with the tuple).  Any failure is reported
- * via ereport().
+ * via elog().
  */
 void
 simple_heap_delete(Relation relation, const ItemPointerData *tid)
@@ -4667,7 +4667,7 @@ HeapDetermineColumnsInfo(Relation relation,
  * This routine may be used to update a tuple when concurrent updates of
  * the target tuple are not expected (for example, because we have a lock
  * on the relation associated with the tuple).  Any failure is reported
- * via ereport().
+ * via elog().
  */
 void
 simple_heap_update(Relation relation, const ItemPointerData *otid, HeapTuple tup,
