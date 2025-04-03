@@ -1031,6 +1031,7 @@ heapam_scan_analyze_next_tuple(TableScanDesc scan, TransactionId OldestXmin,
 							   TupleTableSlot *slot)
 {
 	HeapScanDesc hscan = (HeapScanDesc) scan;
+	HeapTuple	targtuple;
 	Page		targpage;
 	OffsetNumber maxoffset;
 	BufferHeapTupleTableSlot *hslot;
@@ -1038,14 +1039,18 @@ heapam_scan_analyze_next_tuple(TableScanDesc scan, TransactionId OldestXmin,
 	Assert(TTS_IS_BUFFERTUPLE(slot));
 
 	hslot = (BufferHeapTupleTableSlot *) slot;
+	targtuple = &hslot->base.tupdata;
 	targpage = BufferGetPage(hscan->rs_cbuf);
 	maxoffset = PageGetMaxOffsetNumber(targpage);
+
+	/* block and tableOid is the same for all tuples, set it once outside the loop */
+	ItemPointerSetBlockNumber(&targtuple->t_self, hscan->rs_cblock);
+	targtuple->t_tableOid = RelationGetRelid(scan->rs_rd);
 
 	/* Inner loop over all tuples on the selected page */
 	for (; hscan->rs_cindex <= maxoffset; hscan->rs_cindex++)
 	{
 		ItemId		itemid;
-		HeapTuple	targtuple = &hslot->base.tupdata;
 		bool		sample_it = false;
 
 		itemid = PageGetItemId(targpage, hscan->rs_cindex);
@@ -1063,11 +1068,9 @@ heapam_scan_analyze_next_tuple(TableScanDesc scan, TransactionId OldestXmin,
 			continue;
 		}
 
-		ItemPointerSet(&targtuple->t_self, hscan->rs_cblock, hscan->rs_cindex);
-
-		targtuple->t_tableOid = RelationGetRelid(scan->rs_rd);
 		targtuple->t_data = (HeapTupleHeader) PageGetItem(targpage, itemid);
 		targtuple->t_len = ItemIdGetLength(itemid);
+		ItemPointerSetOffsetNumber(&targtuple->t_self, hscan->rs_cindex);
 
 		switch (HeapTupleSatisfiesVacuum(targtuple, OldestXmin,
 										 hscan->rs_cbuf))
@@ -2291,6 +2294,7 @@ heapam_scan_sample_next_tuple(TableScanDesc scan, SampleScanState *scanstate,
 							  TupleTableSlot *slot)
 {
 	HeapScanDesc hscan = (HeapScanDesc) scan;
+	HeapTuple	tuple = &(hscan->rs_ctup);
 	TsmRoutine *tsm = scanstate->tsmroutine;
 	BlockNumber blockno = hscan->rs_cblock;
 	bool		pagemode = (scan->rs_flags & SO_ALLOW_PAGEMODE) != 0;
@@ -2311,6 +2315,9 @@ heapam_scan_sample_next_tuple(TableScanDesc scan, SampleScanState *scanstate,
 		!scan->rs_snapshot->takenDuringRecovery;
 	maxoffset = PageGetMaxOffsetNumber(page);
 
+	/* block is the same for all tuples, set it once outside the loop */
+	ItemPointerSetBlockNumber(&tuple->t_self, blockno);
+
 	for (;;)
 	{
 		OffsetNumber tupoffset;
@@ -2326,7 +2333,6 @@ heapam_scan_sample_next_tuple(TableScanDesc scan, SampleScanState *scanstate,
 		{
 			ItemId		itemid;
 			bool		visible;
-			HeapTuple	tuple = &(hscan->rs_ctup);
 
 			/* Skip invalid tuple pointers. */
 			itemid = PageGetItemId(page, tupoffset);
@@ -2335,8 +2341,7 @@ heapam_scan_sample_next_tuple(TableScanDesc scan, SampleScanState *scanstate,
 
 			tuple->t_data = (HeapTupleHeader) PageGetItem(page, itemid);
 			tuple->t_len = ItemIdGetLength(itemid);
-			ItemPointerSet(&(tuple->t_self), blockno, tupoffset);
-
+			ItemPointerSetOffsetNumber(&tuple->t_self, blockno);
 
 			if (all_visible)
 				visible = true;
@@ -2578,18 +2583,21 @@ BitmapHeapScanNextBlock(TableScanDesc scan,
 		 * tbmres; but we have to follow any HOT chain starting at each such
 		 * offset.
 		 */
+		ItemPointerData tid;
 		int			curslot;
 
 		/* We must have extracted the tuple offsets by now */
 		Assert(noffsets > -1);
 
+		/* block is the same for all tuples, set it once outside the loop */
+		ItemPointerSetBlockNumber(&tid, block);
+
 		for (curslot = 0; curslot < noffsets; curslot++)
 		{
 			OffsetNumber offnum = offsets[curslot];
-			ItemPointerData tid;
 			HeapTupleData heapTuple;
 
-			ItemPointerSet(&tid, block, offnum);
+			ItemPointerSetOffsetNumber(&tid, offnum);
 			if (heap_hot_search_buffer(&tid, scan->rs_rd, buffer, snapshot,
 									   &heapTuple, NULL, true))
 				hscan->rs_vistuples[ntup++] = ItemPointerGetOffsetNumber(&tid);
@@ -2604,11 +2612,15 @@ BitmapHeapScanNextBlock(TableScanDesc scan,
 		Page		page = BufferGetPage(buffer);
 		OffsetNumber maxoff = PageGetMaxOffsetNumber(page);
 		OffsetNumber offnum;
+		HeapTupleData loctup;
+
+		/* block and tableOid is the same for all tuples, set it once outside the loop */
+		ItemPointerSetBlockNumber(&loctup.t_self, block);
+		loctup.t_tableOid = scan->rs_rd->rd_id;
 
 		for (offnum = FirstOffsetNumber; offnum <= maxoff; offnum = OffsetNumberNext(offnum))
 		{
 			ItemId		lp;
-			HeapTupleData loctup;
 			bool		valid;
 
 			lp = PageGetItemId(page, offnum);
@@ -2616,8 +2628,8 @@ BitmapHeapScanNextBlock(TableScanDesc scan,
 				continue;
 			loctup.t_data = (HeapTupleHeader) PageGetItem(page, lp);
 			loctup.t_len = ItemIdGetLength(lp);
-			loctup.t_tableOid = scan->rs_rd->rd_id;
-			ItemPointerSet(&loctup.t_self, block, offnum);
+			ItemPointerSetOffsetNumber(&loctup.t_self, offnum);
+
 			valid = HeapTupleSatisfiesVisibility(&loctup, snapshot, buffer);
 			if (valid)
 			{
