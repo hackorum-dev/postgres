@@ -1422,9 +1422,19 @@ WHERE tgrelid IN (SELECT relid FROM pg_partition_tree('fk_partitioned_fk'::regcl
 				  UNION ALL SELECT 'fk_notpartitioned_pk'::regclass)
 ORDER BY tgrelid, tgtype;
 
+-- Detaching a partition should leave the constraint behind in a good state
+ALTER TABLE fk_partitioned_fk DETACH PARTITION fk_partitioned_fk_1;
+\d fk_partitioned_fk_1
+SELECT conname, tgrelid::regclass as tgrel, regexp_replace(tgname, '[0-9]+', 'N') as tgname, tgtype
+FROM pg_trigger t JOIN pg_constraint c ON (t.tgconstraint = c.oid)
+WHERE tgrelid = 'fk_partitioned_fk_1'::regclass
+ORDER BY tgrelid, tgtype;
+INSERT INTO fk_partitioned_fk_1 (a,b) VALUES (600, 601); --fails
+INSERT INTO fk_partitioned_fk_1 (a,b) VALUES (500, 501);
+
 ALTER TABLE fk_partitioned_fk DROP CONSTRAINT fk_partitioned_fk_a_b_fkey;
 -- done.
-DROP TABLE fk_notpartitioned_pk, fk_partitioned_fk;
+DROP TABLE fk_notpartitioned_pk, fk_partitioned_fk, fk_partitioned_fk_1;
 
 -- Altering a type referenced by a foreign key needs to drop/recreate the FK.
 -- Ensure that works.
