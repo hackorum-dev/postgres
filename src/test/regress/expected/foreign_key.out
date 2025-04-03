@@ -1887,7 +1887,7 @@ ORDER BY tgrelid, tgtype;
 
 -- Changing it back to ENFORCED will recreate the necessary triggers.
 ALTER TABLE fk_partitioned_fk ALTER CONSTRAINT fk_partitioned_fk_a_b_fkey ENFORCED;
--- Should be exactly the same number of triggers found as before
+-- Should be exactly the same triggers found as before
 SELECT conname, tgrelid::regclass as tgrel, regexp_replace(tgname, '[0-9]+', 'N') as tgname, tgtype
 FROM pg_trigger t JOIN pg_constraint c ON (t.tgconstraint = c.oid)
 WHERE tgrelid IN (SELECT relid FROM pg_partition_tree('fk_partitioned_fk'::regclass)
