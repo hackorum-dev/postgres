@@ -1911,9 +1911,34 @@ ORDER BY tgrelid, tgtype;
  fk_partitioned_fk_a_b_fkey | fk_partitioned_fk_3_1 | RI_ConstraintTrigger_c_N |     17
 (14 rows)
 
+-- Detaching a partition should leave the constraint behind in a good state
+ALTER TABLE fk_partitioned_fk DETACH PARTITION fk_partitioned_fk_1;
+\d fk_partitioned_fk_1
+        Table "public.fk_partitioned_fk_1"
+ Column |  Type   | Collation | Nullable | Default 
+--------+---------+-----------+----------+---------
+ a      | integer |           |          | 
+ b      | integer |           |          | 
+Foreign-key constraints:
+    "fk_partitioned_fk_a_b_fkey" FOREIGN KEY (a, b) REFERENCES fk_notpartitioned_pk(a, b)
+
+SELECT conname, tgrelid::regclass as tgrel, regexp_replace(tgname, '[0-9]+', 'N') as tgname, tgtype
+FROM pg_trigger t JOIN pg_constraint c ON (t.tgconstraint = c.oid)
+WHERE tgrelid = 'fk_partitioned_fk_1'::regclass
+ORDER BY tgrelid, tgtype;
+          conname           |        tgrel        |          tgname          | tgtype 
+----------------------------+---------------------+--------------------------+--------
+ fk_partitioned_fk_a_b_fkey | fk_partitioned_fk_1 | RI_ConstraintTrigger_c_N |      5
+ fk_partitioned_fk_a_b_fkey | fk_partitioned_fk_1 | RI_ConstraintTrigger_c_N |     17
+(2 rows)
+
+INSERT INTO fk_partitioned_fk_1 (a,b) VALUES (600, 601); --fails
+ERROR:  insert or update on table "fk_partitioned_fk_1" violates foreign key constraint "fk_partitioned_fk_a_b_fkey"
+DETAIL:  Key (a, b)=(600, 601) is not present in table "fk_notpartitioned_pk".
+INSERT INTO fk_partitioned_fk_1 (a,b) VALUES (500, 501);
 ALTER TABLE fk_partitioned_fk DROP CONSTRAINT fk_partitioned_fk_a_b_fkey;
 -- done.
-DROP TABLE fk_notpartitioned_pk, fk_partitioned_fk;
+DROP TABLE fk_notpartitioned_pk, fk_partitioned_fk, fk_partitioned_fk_1;
 -- Altering a type referenced by a foreign key needs to drop/recreate the FK.
 -- Ensure that works.
 CREATE TABLE fk_notpartitioned_pk (a INT, PRIMARY KEY(a), CHECK (a > 0));
