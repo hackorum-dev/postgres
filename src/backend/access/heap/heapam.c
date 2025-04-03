@@ -508,13 +508,17 @@ page_collect_tuples(HeapScanDesc scan, Snapshot snapshot,
 					BlockNumber block, int lines,
 					bool all_visible, bool check_serializable)
 {
+	HeapTupleData loctup;
 	int			ntup = 0;
 	OffsetNumber lineoff;
+
+	/* block and tableOid is the same for all tuples, set it once outside the loop */
+	ItemPointerSetBlockNumber(&loctup.t_self, block);
+	loctup.t_tableOid = RelationGetRelid(scan->rs_base.rs_rd);
 
 	for (lineoff = FirstOffsetNumber; lineoff <= lines; lineoff++)
 	{
 		ItemId		lpp = PageGetItemId(page, lineoff);
-		HeapTupleData loctup;
 		bool		valid;
 
 		if (!ItemIdIsNormal(lpp))
@@ -522,8 +526,7 @@ page_collect_tuples(HeapScanDesc scan, Snapshot snapshot,
 
 		loctup.t_data = (HeapTupleHeader) PageGetItem(page, lpp);
 		loctup.t_len = ItemIdGetLength(lpp);
-		loctup.t_tableOid = RelationGetRelid(scan->rs_base.rs_rd);
-		ItemPointerSet(&(loctup.t_self), block, lineoff);
+		ItemPointerSetOffsetNumber(&loctup.t_self, lineoff);
 
 		if (all_visible)
 			valid = true;
@@ -931,6 +934,10 @@ heapgettup(HeapScanDesc scan,
 
 		LockBuffer(scan->rs_cbuf, BUFFER_LOCK_SHARE);
 		page = heapgettup_start_page(scan, dir, &linesleft, &lineoff);
+
+		/* block is the same for all tuples, set it once outside the loop */
+		ItemPointerSetBlockNumber(&tuple->t_self, scan->rs_cblock);
+
 continue_page:
 
 		/*
@@ -950,7 +957,7 @@ continue_page:
 
 			tuple->t_data = (HeapTupleHeader) PageGetItem(page, lpp);
 			tuple->t_len = ItemIdGetLength(lpp);
-			ItemPointerSet(&(tuple->t_self), scan->rs_cblock, lineoff);
+			ItemPointerSetOffsetNumber(&tuple->t_self, lineoff);
 
 			visible = HeapTupleSatisfiesVisibility(tuple,
 												   scan->rs_base.rs_snapshot,
@@ -1766,6 +1773,10 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 	Assert(TransactionIdIsValid(RecentXmin));
 	Assert(BufferGetBlockNumber(buffer) == blkno);
 
+	/* block and tableOid is the same for all tuples, set it once outside the loop */
+	ItemPointerSetBlockNumber(&heapTuple->t_self, blkno);
+	heapTuple->t_tableOid = RelationGetRelid(relation);
+
 	/* Scan through possible multiple members of HOT-chain */
 	for (;;)
 	{
@@ -1800,8 +1811,7 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 		 */
 		heapTuple->t_data = (HeapTupleHeader) PageGetItem(page, lp);
 		heapTuple->t_len = ItemIdGetLength(lp);
-		heapTuple->t_tableOid = RelationGetRelid(relation);
-		ItemPointerSet(&heapTuple->t_self, blkno, offnum);
+		ItemPointerSetOffsetNumber(&heapTuple->t_self, offnum);
 
 		/*
 		 * Shouldn't see a HEAP_ONLY tuple at chain start.
