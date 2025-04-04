@@ -106,8 +106,8 @@ sub get_dump_for_comparison
 
 # Testing upgrades with an older version of PostgreSQL requires setting up
 # two environment variables, as of:
-# - "olddump", to point to a dump file that will be used to set up the old
-#   instance to upgrade from.
+# - "olddump", to point to a dump file, usually output of pg_dumpall, that will
+#    be used to set up the old instance to upgrade from.
 # - "oldinstall", to point to the installation path of the old cluster.
 if (   (defined($ENV{olddump}) && !defined($ENV{oldinstall}))
 	|| (!defined($ENV{olddump}) && defined($ENV{oldinstall})))
@@ -255,6 +255,10 @@ if (defined($ENV{olddump}))
 	$oldnode->command_ok(
 		[ 'psql', '--no-psqlrc', '--file' => $olddumpfile, 'postgres' ],
 		'loaded old dump file');
+
+	$result = $oldnode->safe_psql('postgres',
+		"SELECT count(*) FROM pg_database WHERE datname='regression'");
+	die "old dump must contain database regression" unless $result == 1;
 }
 else
 {
