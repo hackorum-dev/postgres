@@ -107,7 +107,10 @@ quote_literal_cstr(const char *rawstr)
 	int			newlen;
 
 	len = strlen(rawstr);
-	/* We make a worst-case result area; wasting a little space is OK */
+	/* Allocate memory for worst case result factoring in a. double the
+	length number of bytes, in case every character is a quote, b. two
+	bytes for two outer quotes c. extra byte for E' d. one byte for null
+	terminator. */
 	result = palloc(len * 2 + 3 + 1);
 
 	newlen = quote_literal_internal(result, rawstr, len);
