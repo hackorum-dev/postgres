@@ -44,6 +44,7 @@
 #include "common/int.h"
 #include "nodes/bitmapset.h"
 #include "nodes/tidbitmap.h"
+#include "port/pg_bitutils.h"
 #include "storage/bufmgr.h"
 #include "storage/lwlock.h"
 #include "utils/dsa.h"
@@ -78,8 +79,8 @@
 /*
  * The number of blocks to fetch at once when iterating through a shared
  * bitmap in a parallel query to reduce lock contention.  The number actually
- * fetched may be higher if trailing sequential neighbors are included to
- * encourage I/O combining.
+ * fetched may be lower during ramp-up/ramp-down, or higher if trailing
+ * sequential neighbors are included to encourage I/O combining.
  */
 #define TBM_SHARED_FETCH 8
 
@@ -200,6 +201,12 @@ typedef struct TBMSharedIteratorState
 	int			spageptr;		/* next spages index */
 	int			schunkptr;		/* next schunks index */
 	int			schunkbit;		/* next bit to check in current schunk */
+
+	int			backends;		/* expected number of backends */
+	int			log2_backends;	/* log2 for fast approximate division */
+	int			schunkpages;	/* number of pages left, -1 = not yet known */
+	int			schunkcounted;	/* index of the highest page counted */
+	int			schunksubtotal; /* counted so far */
 } TBMSharedIteratorState;
 
 /*
@@ -766,7 +773,7 @@ tbm_begin_private_iterate(TIDBitmap *tbm)
  * into pagetable array.
  */
 dsa_pointer
-tbm_prepare_shared_iterate(TIDBitmap *tbm)
+tbm_prepare_shared_iterate(TIDBitmap *tbm, int backends)
 {
 	dsa_pointer dp;
 	TBMSharedIteratorState *istate;
@@ -899,6 +906,13 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 	istate->schunkbit = 0;
 	istate->schunkptr = 0;
 	istate->spageptr = 0;
+
+	/* Initialize the ramp-down control state */
+	istate->backends = backends;
+	istate->log2_backends = pg_ceil_log2_32(backends);
+	istate->schunkpages = -1;
+	istate->schunksubtotal = 0;
+	istate->schunkcounted = istate->nchunks;
 
 	tbm->iterating = TBM_ITERATING_SHARED;
 
@@ -1090,6 +1104,100 @@ tbm_shared_iterate_include_block_p(TBMSharedIterator *iterator,
 }
 
 /*
+ * Count pages in one more tail chunk, until we have enough information to
+ * implement fair ramp-down.  How many it takes depends on their density and
+ * how many backends there are to ramp down.  Returns true when work is done.
+ */
+static bool
+tbm_shared_iterate_popcount(TBMSharedIterator *iterator)
+{
+	TBMSharedIteratorState *istate = iterator->state;
+	PagetableEntry *ptbase = iterator->ptbase->ptentry;
+	int		   *idxchunks;
+	int			ramp_down_pages;
+	int			exact_pages;
+
+	if (iterator->ptchunks == NULL)
+	{
+		istate->schunkpages = 0;	/* no chunks */
+		return true;
+	}
+	idxchunks = iterator->ptchunks->index;
+
+	Assert(LWLockHeldByMeInMode(&istate->lock, LW_EXCLUSIVE));
+	Assert(istate->schunkpages == -1);
+	Assert(istate->schunkbit == 0);
+
+	/* The number of pages needed to ramp down by halving. */
+	ramp_down_pages = pg_nextpower2_32(iterator->result_capacity) - 1;
+	ramp_down_pages *= 2;		/* double counting */
+	ramp_down_pages *= 1 << istate->log2_backends;	/* partial scan */
+
+	/* We always know the number of exact pages left to scan. */
+	exact_pages = istate->npages - istate->spageptr;
+
+	if (exact_pages >= ramp_down_pages ||
+		istate->schunkptr == istate->schunkcounted)
+	{
+		/*
+		 * If the remaining exact pages are already enough, or the scan has
+		 * caught up with the counting (low memory limit), we stop counting.
+		 * Note that we pessimistically assumed that every page might appear
+		 * in a chunk *and* a page entry.  The ramp-down will start too soon
+		 * and happen more gently as they get deduplicated by the scan if
+		 * that's really true, but that's OK.
+		 */
+		istate->schunkpages = istate->schunksubtotal;
+	}
+	else
+	{
+		int			chunk;
+
+		/* Count the pages in one more chunk. */
+		chunk = --istate->schunkcounted;
+		istate->schunksubtotal +=
+			pg_popcount((char *) ptbase[idxchunks[chunk]].words,
+						sizeof(ptbase[idxchunks[chunk]].words));
+
+		/* Have we counted enough pages yet? */
+		if (exact_pages + istate->schunksubtotal >= ramp_down_pages)
+			istate->schunkpages = istate->schunksubtotal;
+	}
+
+	if (istate->schunkpages != -1)
+		elog(DEBUG1, "tidbitmap counted %d bits in %d tail chunks",
+			 istate->schunkpages, istate->nchunks - istate->schunkcounted);
+
+	return istate->schunkpages != -1;
+}
+
+/*
+ * For two backends we want approximately ..., 4, 4, 2, 2, 1, 1 as we approach
+ * the end of the scan.  It doesn't matter what order they are really claimed
+ * in as the unfairness risk of being wrong decreases as we approach one.
+ */
+static inline BlockNumber
+tbm_shared_iterate_ramp_down(TBMSharedIteratorState *istate, int max_results)
+{
+	BlockNumber pages;
+	BlockNumber partial_pages;
+	BlockNumber clamp;
+
+	Assert(istate->schunkpages >= 0);
+	pages = (istate->npages - istate->spageptr) + istate->schunkpages;
+	partial_pages = pages >> istate->log2_backends;
+	clamp = partial_pages / 2;
+	if (clamp < 1)
+		clamp = 1;
+
+	if (max_results > clamp)
+		elog(DEBUG1, "pages = %d, partial_pages = %d, log2_backends = %d, clamped %d->%d", pages, partial_pages, istate->log2_backends, max_results, clamp);
+	Assert(pages > 0);
+
+	return Min(max_results, clamp);
+}
+
+/*
  *	tbm_shared_iterate - scan through next page of a TIDBitmap
  *
  *	As above, but this will iterate using an iterator which is shared
@@ -1139,6 +1247,13 @@ tbm_shared_iterate(TBMSharedIterator *iterator, TBMIterateResult *tbmres)
 	/* Acquire the LWLock before accessing the shared members */
 	LWLockAcquire(&istate->lock, LW_EXCLUSIVE);
 
+	/*
+	 * Ramp down at the end of scan for fair block distribution if we have
+	 * enough information.  Otherwise see below.
+	 */
+	if (istate->schunkpages != -1)
+		max_results = tbm_shared_iterate_ramp_down(istate, max_results);
+
 	do
 	{
 		/*
@@ -1160,6 +1275,14 @@ tbm_shared_iterate(TBMSharedIterator *iterator, TBMIterateResult *tbmres)
 			istate->schunkptr++;
 			istate->schunkbit = 0;
 		}
+
+		/*
+		 * When starting a new chunk, also popcount one more tail chunk, if we
+		 * haven't counted enough to implement fair ramp-down yet.
+		 */
+		if (istate->schunkbit == 0 && istate->schunkpages == -1)
+			if (tbm_shared_iterate_popcount(iterator))
+				max_results = tbm_shared_iterate_ramp_down(istate, max_results);
 
 		/*
 		 * If both chunk and per-page data remain, must output the numerically
@@ -1187,6 +1310,8 @@ tbm_shared_iterate(TBMSharedIterator *iterator, TBMIterateResult *tbmres)
 				result->recheck = true;
 				result->internal_page = NULL;
 				istate->schunkbit++;
+				if (istate->schunkpages > 0)
+					istate->schunkpages--;
 				result = &iterator->results[++iterator->result_count];
 				continue;
 			}
@@ -1214,6 +1339,7 @@ tbm_shared_iterate(TBMSharedIterator *iterator, TBMIterateResult *tbmres)
 		/* Nothing more in the bitmap. */
 		Assert(istate->spageptr == istate->npages);
 		Assert(istate->schunkptr == istate->nchunks);
+		Assert(istate->schunkpages == 0);
 		break;
 	}
 	while (iterator->result_count < max_results);
