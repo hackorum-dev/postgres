@@ -920,3 +920,20 @@ create_or_open_dir(const char *dirname)
 			pg_fatal("directory \"%s\" is not empty", dirname);
 	}
 }
+
+/*
+ * file_exists_in_directory
+ *
+ * Returns true if the file exists in the given directory.
+ */
+bool
+file_exists_in_directory(const char *dir, const char *filename)
+{
+	struct stat st;
+	char	buf[MAXPGPATH];
+
+	if (snprintf(buf, MAXPGPATH, "%s/%s", dir, filename) >= MAXPGPATH)
+		pg_fatal("directory name too long: \"%s\"", dir);
+
+	return (stat(buf, &st) == 0 && S_ISREG(st.st_mode));
+}

@@ -63,5 +63,6 @@ extern void makeAlterConfigCommand(PGconn *conn, const char *configitem,
 								   const char *type2, const char *name2,
 								   PQExpBuffer buf);
 extern void create_or_open_dir(const char *dirname);
+extern bool file_exists_in_directory(const char *dir, const char *filename);
 
 #endif							/* DUMPUTILS_H */

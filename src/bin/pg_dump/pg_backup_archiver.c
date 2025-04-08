@@ -2212,18 +2212,6 @@ ReadStr(ArchiveHandle *AH)
 	return buf;
 }
 
-static bool
-_fileExistsInDirectory(const char *dir, const char *filename)
-{
-	struct stat st;
-	char		buf[MAXPGPATH];
-
-	if (snprintf(buf, MAXPGPATH, "%s/%s", dir, filename) >= MAXPGPATH)
-		pg_fatal("directory name too long: \"%s\"", dir);
-
-	return (stat(buf, &st) == 0 && S_ISREG(st.st_mode));
-}
-
 static int
 _discoverArchiveFormat(ArchiveHandle *AH)
 {
@@ -2255,18 +2243,18 @@ _discoverArchiveFormat(ArchiveHandle *AH)
 		if (stat(AH->fSpec, &st) == 0 && S_ISDIR(st.st_mode))
 		{
 			AH->format = archDirectory;
-			if (_fileExistsInDirectory(AH->fSpec, "toc.dat"))
+			if (file_exists_in_directory(AH->fSpec, "toc.dat"))
 				return AH->format;
 #ifdef HAVE_LIBZ
-			if (_fileExistsInDirectory(AH->fSpec, "toc.dat.gz"))
+			if (file_exists_in_directory(AH->fSpec, "toc.dat.gz"))
 				return AH->format;
 #endif
 #ifdef USE_LZ4
-			if (_fileExistsInDirectory(AH->fSpec, "toc.dat.lz4"))
+			if (file_exists_in_directory(AH->fSpec, "toc.dat.lz4"))
 				return AH->format;
 #endif
 #ifdef USE_ZSTD
-			if (_fileExistsInDirectory(AH->fSpec, "toc.dat.zst"))
+			if (file_exists_in_directory(AH->fSpec, "toc.dat.zst"))
 				return AH->format;
 #endif
 			pg_fatal("directory \"%s\" does not appear to be a valid archive (\"toc.dat\" does not exist)",

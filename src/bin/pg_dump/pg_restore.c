@@ -48,6 +48,7 @@
 
 #include "common/string.h"
 #include "connectdb.h"
+#include "dumputils.h"
 #include "fe_utils/option_utils.h"
 #include "fe_utils/string_utils.h"
 #include "filter.h"
@@ -57,7 +58,6 @@
 
 static void usage(const char *progname);
 static void read_restore_filters(const char *filename, RestoreOptions *opts);
-static bool file_exists_in_directory(const char *dir, const char *filename);
 static int	restore_one_database(const char *inputFileSpec, RestoreOptions *opts,
 								 int numWorkers, bool append_data, int num);
 static int	read_one_statement(StringInfo inBuf, FILE *pfile);
@@ -821,23 +821,6 @@ read_restore_filters(const char *filename, RestoreOptions *opts)
 	}
 
 	filter_free(&fstate);
-}
-
-/*
- * file_exists_in_directory
- *
- * Returns true if the file exists in the given directory.
- */
-static bool
-file_exists_in_directory(const char *dir, const char *filename)
-{
-	struct stat st;
-	char		buf[MAXPGPATH];
-
-	if (snprintf(buf, MAXPGPATH, "%s/%s", dir, filename) >= MAXPGPATH)
-		pg_fatal("directory name too long: \"%s\"", dir);
-
-	return (stat(buf, &st) == 0 && S_ISREG(st.st_mode));
 }
 
 /*
