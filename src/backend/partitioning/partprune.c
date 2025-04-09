@@ -399,25 +399,27 @@ make_partition_pruneinfo(PlannerInfo *root, RelOptInfo *parentrel,
 static List *
 add_part_relids(List *allpartrelids, Bitmapset *partrelids)
 {
-	Index		targetpart;
-	ListCell   *lc;
+	int			targetpart;
 
 	/* We can easily get the lowest set bit this way: */
 	targetpart = bms_next_member(partrelids, -1);
-	Assert(targetpart > 0);
-
-	/* Look for a matching topmost parent */
-	foreach(lc, allpartrelids)
+	if (targetpart > 0)
 	{
-		Bitmapset  *currpartrelids = (Bitmapset *) lfirst(lc);
-		Index		currtarget = bms_next_member(currpartrelids, -1);
+		ListCell   *lc;
 
-		if (targetpart == currtarget)
+		/* Look for a matching topmost parent */
+		foreach(lc, allpartrelids)
 		{
-			/* Found a match, so add any new RT indexes to this hierarchy */
-			currpartrelids = bms_add_members(currpartrelids, partrelids);
-			lfirst(lc) = currpartrelids;
-			return allpartrelids;
+			Bitmapset  *currpartrelids = (Bitmapset *) lfirst(lc);
+			int			currtarget = bms_next_member(currpartrelids, -1);
+
+			if (targetpart == currtarget)
+			{
+				/* Found a match, so add any new RT indexes to this hierarchy */
+				currpartrelids = bms_add_members(currpartrelids, partrelids);
+				lfirst(lc) = currpartrelids;
+				return allpartrelids;
+			}
 		}
 	}
 	/* No match, so add the new partition hierarchy to the list */
