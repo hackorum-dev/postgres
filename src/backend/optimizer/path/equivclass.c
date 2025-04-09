@@ -2999,6 +2999,11 @@ add_child_join_rel_equivalences(PlannerInfo *root,
 				/* Yes, generate transformed child version */
 				Expr	   *child_expr;
 				Relids		new_relids;
+				int			i;
+
+				i = bms_next_member(child_joinrel->relids, -1);
+				if (i < 0)
+					continue;
 
 				if (parent_joinrel->reloptkind == RELOPT_JOINREL)
 				{
@@ -3057,7 +3062,7 @@ add_child_join_rel_equivalences(PlannerInfo *root,
 									cur_em->em_jdomain,
 									cur_em,
 									cur_em->em_datatype,
-									bms_next_member(child_joinrel->relids, -1));
+									i);
 			}
 		}
 	}
