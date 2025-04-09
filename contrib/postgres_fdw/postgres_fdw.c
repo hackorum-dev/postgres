@@ -1622,7 +1622,11 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	if (fsplan->scan.scanrelid > 0)
 		rtindex = fsplan->scan.scanrelid;
 	else
+	{
 		rtindex = bms_next_member(fsplan->fs_base_relids, -1);
+		if (rtindex < 0)
+			elog(ERROR, "could not find index relation");
+	}
 	rte = exec_rt_fetch(rtindex, estate);
 
 	/* Get info about foreign table. */
@@ -2962,6 +2966,8 @@ postgresExplainForeignScan(ForeignScanState *node, ExplainState *es)
 				ptr++;
 		}
 		rtoffset = bms_next_member(plan->fs_base_relids, -1) - minrti;
+		if (rtoffset < 0)
+			elog(ERROR, "could not find offset relation");
 
 		/* Now we can translate the string */
 		initStringInfo(&relations);
