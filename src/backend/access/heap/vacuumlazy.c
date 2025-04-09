@@ -263,6 +263,14 @@ typedef struct LVRelState
 	Relation   *indrels;
 	int			nindexes;
 
+	/*
+	 * indallsummarizing is true if nindexes == 0, or if all indexes are
+	 * summarizing (and thus don't need to be informed about tuple deletions).
+	 * This allows us to apply the single-heapscan vacuum optimization when
+	 * all indexes on the table are summarizing.
+	 */
+	bool		indallsummarizing;
+
 	/* Buffer access strategy and parallel vacuum state */
 	BufferAccessStrategy bstrategy;
 	ParallelVacuumState *pvs;
@@ -680,7 +688,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	/* Set up high level stuff about rel and its indexes */
 	vacrel->rel = rel;
 	vac_open_indexes(vacrel->rel, RowExclusiveLock, &vacrel->nindexes,
-					 &vacrel->indrels);
+					 &vacrel->indallsummarizing, &vacrel->indrels);
 	vacrel->bstrategy = bstrategy;
 	if (instrument && vacrel->nindexes > 0)
 	{
@@ -1460,7 +1468,7 @@ lazy_scan_heap(LVRelState *vacrel)
 		 * revisit this page. Since updating the FSM is desirable but not
 		 * absolutely required, that's OK.
 		 */
-		if (vacrel->nindexes == 0
+		if (vacrel->indallsummarizing
 			|| !vacrel->do_index_vacuuming
 			|| !has_lpdead_items)
 		{
@@ -1475,7 +1483,7 @@ lazy_scan_heap(LVRelState *vacrel)
 			 * table has indexes. There will only be newly-freed space if we
 			 * held the cleanup lock and lazy_scan_prune() was called.
 			 */
-			if (got_cleanup_lock && vacrel->nindexes == 0 && has_lpdead_items &&
+			if (got_cleanup_lock && vacrel->indallsummarizing && has_lpdead_items &&
 				blkno - next_fsm_block_to_vacuum >= VACUUM_FSM_EVERY_PAGES)
 			{
 				FreeSpaceMapVacuumRange(vacrel->rel, next_fsm_block_to_vacuum,
@@ -1960,8 +1968,8 @@ lazy_scan_prune(LVRelState *vacrel,
 	/*
 	 * Prune all HOT-update chains and potentially freeze tuples on this page.
 	 *
-	 * If the relation has no indexes, we can immediately mark would-be dead
-	 * items LP_UNUSED.
+	 * If the relation has no indexes, or only summarizing indexes, we can
+	 * immediately mark would-be dead items LP_UNUSED.
 	 *
 	 * The number of tuples removed from the page is returned in
 	 * presult.ndeleted.  It should not be confused with presult.lpdead_items;
@@ -1973,7 +1981,7 @@ lazy_scan_prune(LVRelState *vacrel,
 	 * all-visible.
 	 */
 	prune_options = HEAP_PAGE_PRUNE_FREEZE;
-	if (vacrel->nindexes == 0)
+	if (vacrel->indallsummarizing)
 		prune_options |= HEAP_PAGE_PRUNE_MARK_UNUSED_NOW;
 
 	heap_page_prune_and_freeze(rel, buf, vacrel->vistest, prune_options,
@@ -2381,7 +2389,7 @@ lazy_scan_noprune(LVRelState *vacrel,
 	vacrel->NewRelminMxid = NoFreezePageRelminMxid;
 
 	/* Save any LP_DEAD items found on the page in dead_items */
-	if (vacrel->nindexes == 0)
+	if (vacrel->indallsummarizing)
 	{
 		/* Using one-pass strategy (since table has no indexes) */
 		if (lpdead_items > 0)
@@ -2536,8 +2544,12 @@ lazy_vacuum(LVRelState *vacrel)
 		/*
 		 * We successfully completed a round of index vacuuming.  Do related
 		 * heap vacuuming now.
+		 *
+		 * If all valid indexes are summarizing, then the TIDs have already
+		 * been reclaimed, requiring us to skip that last phase.
 		 */
-		lazy_vacuum_heap_rel(vacrel);
+		if (!vacrel->indallsummarizing)
+			lazy_vacuum_heap_rel(vacrel);
 	}
 	else
 	{
@@ -3511,7 +3523,8 @@ dead_items_alloc(LVRelState *vacrel, int nworkers)
 		}
 		else
 			vacrel->pvs = parallel_vacuum_init(vacrel->rel, vacrel->indrels,
-											   vacrel->nindexes, nworkers,
+											   vacrel->nindexes,
+											   vacrel->indallsummarizing, nworkers,
 											   vac_work_mem,
 											   vacrel->verbose ? INFO : DEBUG2,
 											   vacrel->bstrategy);

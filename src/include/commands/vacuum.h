@@ -340,7 +340,8 @@ extern void vacuum(List *relations, VacuumParams *params,
 				   BufferAccessStrategy bstrategy, MemoryContext vac_context,
 				   bool isTopLevel);
 extern void vac_open_indexes(Relation relation, LOCKMODE lockmode,
-							 int *nindexes, Relation **Irel);
+							 int *nindexes, bool *allsumindexes,
+							 Relation **Irel);
 extern void vac_close_indexes(int nindexes, Relation *Irel, LOCKMODE lockmode);
 extern double vac_estimate_reltuples(Relation relation,
 									 BlockNumber total_pages,
@@ -379,10 +380,9 @@ extern void AutoVacuumUpdateCostLimit(void);
 extern void VacuumUpdateCosts(void);
 
 /* in commands/vacuumparallel.c */
-extern ParallelVacuumState *parallel_vacuum_init(Relation rel, Relation *indrels,
-												 int nindexes, int nrequested_workers,
-												 int vac_work_mem, int elevel,
-												 BufferAccessStrategy bstrategy);
+extern ParallelVacuumState *
+parallel_vacuum_init(Relation rel, Relation *indrels, int nindexes, bool indallsummarizing, int nrequested_workers,
+					 int vac_work_mem, int elevel, BufferAccessStrategy bstrategy);
 extern void parallel_vacuum_end(ParallelVacuumState *pvs, IndexBulkDeleteResult **istats);
 extern TidStore *parallel_vacuum_get_dead_items(ParallelVacuumState *pvs,
 												VacDeadItemsInfo **dead_items_info_p);

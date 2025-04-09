@@ -2336,11 +2336,13 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams *params,
  */
 void
 vac_open_indexes(Relation relation, LOCKMODE lockmode,
-				 int *nindexes, Relation **Irel)
+				 int *nindexes, bool *indallsummarizing,
+				 Relation **Irel)
 {
 	List	   *indexoidlist;
 	ListCell   *indexoidscan;
 	int			i;
+	bool		allsummarizing = true;
 
 	Assert(lockmode != NoLock);
 
@@ -2363,12 +2365,18 @@ vac_open_indexes(Relation relation, LOCKMODE lockmode,
 
 		indrel = index_open(indexoid, lockmode);
 		if (indrel->rd_index->indisready)
+		{
 			(*Irel)[i++] = indrel;
+			allsummarizing &= indrel->rd_indam->amsummarizing;
+		}
 		else
 			index_close(indrel, lockmode);
 	}
 
 	*nindexes = i;
+
+	if (indallsummarizing)
+		*indallsummarizing = allsummarizing;
 
 	list_free(indexoidlist);
 }

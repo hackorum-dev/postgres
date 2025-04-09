@@ -170,6 +170,7 @@ struct ParallelVacuumState
 	/* Target indexes */
 	Relation   *indrels;
 	int			nindexes;
+	bool		indallsummarizing;
 
 	/* Shared information among parallel vacuum workers */
 	PVShared   *shared;
@@ -241,8 +242,9 @@ static void parallel_vacuum_error_callback(void *arg);
  */
 ParallelVacuumState *
 parallel_vacuum_init(Relation rel, Relation *indrels, int nindexes,
-					 int nrequested_workers, int vac_work_mem,
-					 int elevel, BufferAccessStrategy bstrategy)
+					 bool indallsummarizing, int nrequested_workers,
+					 int vac_work_mem, int elevel,
+					 BufferAccessStrategy bstrategy)
 {
 	ParallelVacuumState *pvs;
 	ParallelContext *pcxt;
@@ -282,6 +284,7 @@ parallel_vacuum_init(Relation rel, Relation *indrels, int nindexes,
 	pvs = (ParallelVacuumState *) palloc0(sizeof(ParallelVacuumState));
 	pvs->indrels = indrels;
 	pvs->nindexes = nindexes;
+	pvs->indallsummarizing = nindexes;
 	pvs->will_parallel_vacuum = will_parallel_vacuum;
 	pvs->bstrategy = bstrategy;
 	pvs->heaprel = rel;
@@ -997,6 +1000,7 @@ parallel_vacuum_main(dsm_segment *seg, shm_toc *toc)
 	BufferUsage *buffer_usage;
 	WalUsage   *wal_usage;
 	int			nindexes;
+	bool		indallsummarizing;
 	char	   *sharedquery;
 	ErrorContextCallback errcallback;
 
@@ -1029,7 +1033,8 @@ parallel_vacuum_main(dsm_segment *seg, shm_toc *toc)
 	 * Open all indexes. indrels are sorted in order by OID, which should be
 	 * matched to the leader's one.
 	 */
-	vac_open_indexes(rel, RowExclusiveLock, &nindexes, &indrels);
+	vac_open_indexes(rel, RowExclusiveLock, &nindexes,
+					 &indallsummarizing, &indrels);
 	Assert(nindexes > 0);
 
 	/*
@@ -1061,6 +1066,7 @@ parallel_vacuum_main(dsm_segment *seg, shm_toc *toc)
 	/* Set parallel vacuum state */
 	pvs.indrels = indrels;
 	pvs.nindexes = nindexes;
+	pvs.indallsummarizing = indallsummarizing;
 	pvs.indstats = indstats;
 	pvs.shared = shared;
 	pvs.dead_items = dead_items;
