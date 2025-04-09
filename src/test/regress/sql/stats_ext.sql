@@ -20,8 +20,8 @@ begin
     loop
         if first_row then
             first_row := false;
-            tmp := regexp_match(ln, 'rows=(\d*) .* rows=(\d*)');
-            return query select tmp[1]::int, tmp[2]::int;
+            tmp := regexp_match(ln, 'rows=(\d+\.\d{2}) .* rows=(\d+\.\d{2})');
+            return query select round(tmp[1]::numeric)::int, round(tmp[2]::numeric)::int;
         end if;
     end loop;
 end;

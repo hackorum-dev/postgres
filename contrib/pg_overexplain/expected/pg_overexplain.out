@@ -25,9 +25,9 @@ ERROR:  unrecognized EXPLAIN option "debuff"
 LINE 1: EXPLAIN (DEBUFF) SELECT 1;
                  ^
 EXPLAIN (DEBUG) SELECT 1;
-                QUERY PLAN                
-------------------------------------------
- Result  (cost=0.00..0.01 rows=1 width=4)
+                 QUERY PLAN                  
+---------------------------------------------
+ Result  (cost=0.00..0.01 rows=1.00 width=4)
    Disabled Nodes: 0
    Parallel Safe: false
    Plan Node ID: 0
@@ -41,9 +41,9 @@ EXPLAIN (DEBUG) SELECT 1;
 (11 rows)
 
 EXPLAIN (RANGE_TABLE) SELECT 1;
-                QUERY PLAN                
-------------------------------------------
- Result  (cost=0.00..0.01 rows=1 width=4)
+                 QUERY PLAN                  
+---------------------------------------------
+ Result  (cost=0.00..0.01 rows=1.00 width=4)
  RTI 1 (result):
    Eref: "*RESULT*" ()
 (3 rows)

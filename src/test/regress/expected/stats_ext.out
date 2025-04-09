@@ -18,8 +18,8 @@ begin
     loop
         if first_row then
             first_row := false;
-            tmp := regexp_match(ln, 'rows=(\d*) .* rows=(\d*)');
-            return query select tmp[1]::int, tmp[2]::int;
+            tmp := regexp_match(ln, 'rows=(\d+\.\d{2}) .* rows=(\d+\.\d{2})');
+            return query select round(tmp[1]::numeric)::int, round(tmp[2]::numeric)::int;
         end if;
     end loop;
 end;
@@ -1345,13 +1345,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE (a = 1 OR a = 51) AND b = ''1''');
  estimated | actual 
 -----------+--------
-        99 |    100
+       100 |    100
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE (a = 1 OR a = 51) AND (b = ''1'' OR b = ''2'')');
  estimated | actual 
 -----------+--------
-        99 |    100
+       100 |    100
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE (a = 1 OR a = 2 OR a = 51 OR a = 52) AND (b = ''1'' OR b = ''2'')');
@@ -1687,13 +1687,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE ((a * 2) = 2 OR (a * 2) = 102) AND upper(b) = ''1''');
  estimated | actual 
 -----------+--------
-        99 |    100
+       100 |    100
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE ((a * 2) = 2 OR (a * 2) = 102) AND (upper(b) = ''1'' OR upper(b) = ''2'')');
  estimated | actual 
 -----------+--------
-        99 |    100
+       100 |    100
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM functional_dependencies WHERE ((a * 2) = 2 OR (a * 2) = 4 OR (a * 2) = 102 OR (a * 2) = 104) AND (upper(b) = ''1'' OR upper(b) = ''2'')');

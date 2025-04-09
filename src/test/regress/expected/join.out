@@ -2422,8 +2422,8 @@ from int4_tbl t1, int4_tbl t2
   left join int4_tbl t3 on t3.f1 > 0
   left join int4_tbl t4 on t3.f1 > 1
 where t4.f1 is null;
-                      QUERY PLAN                       
--------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  Nested Loop
    ->  Nested Loop Left Join
          Filter: (t4.f1 IS NULL)
@@ -2433,10 +2433,9 @@ where t4.f1 is null;
                      Join Filter: (t3.f1 > 1)
                      ->  Seq Scan on int4_tbl t3
                            Filter: (f1 > 0)
-                     ->  Materialize
-                           ->  Seq Scan on int4_tbl t4
+                     ->  Seq Scan on int4_tbl t4
    ->  Seq Scan on int4_tbl t1
-(12 rows)
+(11 rows)
 
 select t1.f1
 from int4_tbl t1, int4_tbl t2
@@ -2573,11 +2572,10 @@ where t1.f1 = coalesce(t2.f1, 1);
                ->  Materialize
                      ->  Seq Scan on int4_tbl t2
                            Filter: (f1 > 1)
-         ->  Materialize
-               ->  Seq Scan on int4_tbl t3
+         ->  Seq Scan on int4_tbl t3
    ->  Materialize
          ->  Seq Scan on int4_tbl t4
-(14 rows)
+(13 rows)
 
 explain (costs off)
 select * from int4_tbl t1
@@ -3740,10 +3738,9 @@ where i41.f1 > 0;
                ->  Seq Scan on int8_tbl i81
                ->  Materialize
                      ->  Seq Scan on int4_tbl i42
-   ->  Materialize
-         ->  Seq Scan on int4_tbl i43
-               Filter: (f1 > 1)
-(12 rows)
+   ->  Seq Scan on int4_tbl i43
+         Filter: (f1 > 1)
+(11 rows)
 
 select * from
   int4_tbl as i41,
@@ -4332,6 +4329,13 @@ select * from tenk1 a join tenk1 b on
 -------------------------------------------------------------------------------------------------
  Nested Loop
    Join Filter: (((a.unique1 = 1) AND (b.unique1 = 2)) OR ((a.unique2 = 3) AND (b.hundred = 4)))
+   ->  Bitmap Heap Scan on tenk1 a
+         Recheck Cond: ((unique1 = 1) OR (unique2 = 3))
+         ->  BitmapOr
+               ->  Bitmap Index Scan on tenk1_unique1
+                     Index Cond: (unique1 = 1)
+               ->  Bitmap Index Scan on tenk1_unique2
+                     Index Cond: (unique2 = 3)
    ->  Bitmap Heap Scan on tenk1 b
          Recheck Cond: ((unique1 = 2) OR (hundred = 4))
          ->  BitmapOr
@@ -4339,15 +4343,7 @@ select * from tenk1 a join tenk1 b on
                      Index Cond: (unique1 = 2)
                ->  Bitmap Index Scan on tenk1_hundred
                      Index Cond: (hundred = 4)
-   ->  Materialize
-         ->  Bitmap Heap Scan on tenk1 a
-               Recheck Cond: ((unique1 = 1) OR (unique2 = 3))
-               ->  BitmapOr
-                     ->  Bitmap Index Scan on tenk1_unique1
-                           Index Cond: (unique1 = 1)
-                     ->  Bitmap Index Scan on tenk1_unique2
-                           Index Cond: (unique2 = 3)
-(17 rows)
+(16 rows)
 
 explain (costs off)
 select * from tenk1 a join tenk1 b on
@@ -4356,17 +4352,16 @@ select * from tenk1 a join tenk1 b on
 ---------------------------------------------------------------------------------------------
  Nested Loop
    Join Filter: (((a.unique1 = 1) AND (b.unique1 = 2)) OR ((a.unique2 = 3) AND (b.ten = 4)))
+   ->  Bitmap Heap Scan on tenk1 a
+         Recheck Cond: ((unique1 = 1) OR (unique2 = 3))
+         ->  BitmapOr
+               ->  Bitmap Index Scan on tenk1_unique1
+                     Index Cond: (unique1 = 1)
+               ->  Bitmap Index Scan on tenk1_unique2
+                     Index Cond: (unique2 = 3)
    ->  Seq Scan on tenk1 b
          Filter: ((unique1 = 2) OR (ten = 4))
-   ->  Materialize
-         ->  Bitmap Heap Scan on tenk1 a
-               Recheck Cond: ((unique1 = 1) OR (unique2 = 3))
-               ->  BitmapOr
-                     ->  Bitmap Index Scan on tenk1_unique1
-                           Index Cond: (unique1 = 1)
-                     ->  Bitmap Index Scan on tenk1_unique2
-                           Index Cond: (unique2 = 3)
-(12 rows)
+(11 rows)
 
 explain (costs off)
 select * from tenk1 a join tenk1 b on
@@ -5110,13 +5105,12 @@ select 1 from
                      Join Filter: (i4.f1 IS NOT NULL)
                      ->  Seq Scan on int4_tbl i4
                            Filter: (2 < f1)
-                     ->  Materialize
-                           ->  Seq Scan on int8_tbl i8
+                     ->  Seq Scan on int8_tbl i8
                ->  Result
                      One-Time Filter: false
          ->  Materialize
                ->  Seq Scan on int4_tbl i42
-(16 rows)
+(15 rows)
 
 --
 -- test for appropriate join order in the presence of lateral references
@@ -6157,18 +6151,17 @@ FROM int4_tbl
      JOIN ((SELECT 42 AS x FROM int8_tbl LEFT JOIN innertab ON q1 = id) AS ss1
            RIGHT JOIN tenk1 ON NULL)
         ON tenk1.unique1 = ss1.x OR tenk1.unique2 = ss1.x;
-                                QUERY PLAN                                
---------------------------------------------------------------------------
+                             QUERY PLAN                             
+--------------------------------------------------------------------
  Nested Loop
+   ->  Nested Loop Left Join
+         Join Filter: NULL::boolean
+         Filter: ((tenk1.unique1 = (42)) OR (tenk1.unique2 = (42)))
+         ->  Seq Scan on tenk1
+         ->  Result
+               One-Time Filter: false
    ->  Seq Scan on int4_tbl
-   ->  Materialize
-         ->  Nested Loop Left Join
-               Join Filter: NULL::boolean
-               Filter: ((tenk1.unique1 = (42)) OR (tenk1.unique2 = (42)))
-               ->  Seq Scan on tenk1
-               ->  Result
-                     One-Time Filter: false
-(9 rows)
+(8 rows)
 
 rollback;
 -- another join removal bug: we must clean up correctly when removing a PHV
@@ -6566,28 +6559,26 @@ where t1.a = t2.a;
 explain (costs off)
 select * from sj x join sj y on x.a = y.a
 left join int8_tbl z on x.a = z.q1;
-             QUERY PLAN             
-------------------------------------
+           QUERY PLAN            
+---------------------------------
  Nested Loop Left Join
    Join Filter: (y.a = z.q1)
    ->  Seq Scan on sj y
          Filter: (a IS NOT NULL)
-   ->  Materialize
-         ->  Seq Scan on int8_tbl z
-(6 rows)
+   ->  Seq Scan on int8_tbl z
+(5 rows)
 
 explain (costs off)
 select * from sj x join sj y on x.a = y.a
 left join int8_tbl z on y.a = z.q1;
-             QUERY PLAN             
-------------------------------------
+           QUERY PLAN            
+---------------------------------
  Nested Loop Left Join
    Join Filter: (y.a = z.q1)
    ->  Seq Scan on sj y
          Filter: (a IS NOT NULL)
-   ->  Materialize
-         ->  Seq Scan on int8_tbl z
-(6 rows)
+   ->  Seq Scan on int8_tbl z
+(5 rows)
 
 explain (costs off)
 select * from (
@@ -6614,16 +6605,15 @@ left join (select coalesce(y.q1, 1) from int8_tbl y
 	right join sj j1 inner join sj j2 on j1.a = j2.a
 	on true) z
 on true;
-                QUERY PLAN                
-------------------------------------------
+              QUERY PLAN               
+---------------------------------------
  Nested Loop Left Join
    ->  Result
    ->  Nested Loop Left Join
          ->  Seq Scan on sj j2
                Filter: (a IS NOT NULL)
-         ->  Materialize
-               ->  Seq Scan on int8_tbl y
-(7 rows)
+         ->  Seq Scan on int8_tbl y
+(6 rows)
 
 -- Test that references to the removed rel in lateral subqueries are replaced
 -- correctly after join removal
@@ -6980,32 +6970,36 @@ select p.b from sj p join sj q on p.a = q.a group by p.b having sum(p.a) = 1;
 explain (verbose, costs off)
 select 1 from (select x.* from sj x, sj y where x.a = y.a) q,
   lateral generate_series(1, q.a) gs(i);
-                      QUERY PLAN                      
-------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Nested Loop
    Output: 1
    ->  Seq Scan on public.sj y
          Output: y.a, y.b, y.c
          Filter: (y.a IS NOT NULL)
-   ->  Function Scan on pg_catalog.generate_series gs
-         Output: gs.i
-         Function Call: generate_series(1, y.a)
-(8 rows)
+   ->  Memoize
+         Cache Key: y.a
+         Cache Mode: binary
+         ->  Function Scan on pg_catalog.generate_series gs
+               Function Call: generate_series(1, y.a)
+(10 rows)
 
 explain (verbose, costs off)
 select 1 from (select y.* from sj x, sj y where x.a = y.a) q,
   lateral generate_series(1, q.a) gs(i);
-                      QUERY PLAN                      
-------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Nested Loop
    Output: 1
    ->  Seq Scan on public.sj y
          Output: y.a, y.b, y.c
          Filter: (y.a IS NOT NULL)
-   ->  Function Scan on pg_catalog.generate_series gs
-         Output: gs.i
-         Function Call: generate_series(1, y.a)
-(8 rows)
+   ->  Memoize
+         Cache Key: y.a
+         Cache Mode: binary
+         ->  Function Scan on pg_catalog.generate_series gs
+               Function Call: generate_series(1, y.a)
+(10 rows)
 
 -- Test that a non-EC-derived join clause is processed correctly. Use an
 -- outer join so that we can't form an EC.

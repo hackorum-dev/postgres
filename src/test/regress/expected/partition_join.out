@@ -28,8 +28,8 @@ ANALYZE prt2;
 -- inner join
 EXPLAIN (COSTS OFF)
 SELECT t1.a, t1.c, t2.b, t2.c FROM prt1 t1, prt2 t2 WHERE t1.a = t2.b AND t1.b = 0 ORDER BY t1.a, t2.b;
-                    QUERY PLAN                    
---------------------------------------------------
+                          QUERY PLAN                           
+---------------------------------------------------------------
  Sort
    Sort Key: t1.a
    ->  Append
@@ -45,13 +45,12 @@ SELECT t1.a, t1.c, t2.b, t2.c FROM prt1 t1, prt2 t2 WHERE t1.a = t2.b AND t1.b =
                ->  Hash
                      ->  Seq Scan on prt1_p2 t1_2
                            Filter: (b = 0)
-         ->  Hash Join
-               Hash Cond: (t2_3.b = t1_3.a)
-               ->  Seq Scan on prt2_p3 t2_3
-               ->  Hash
-                     ->  Seq Scan on prt1_p3 t1_3
-                           Filter: (b = 0)
-(21 rows)
+         ->  Nested Loop
+               ->  Seq Scan on prt1_p3 t1_3
+                     Filter: (b = 0)
+               ->  Index Scan using iprt2_p3_b on prt2_p3 t2_3
+                     Index Cond: (b = t1_3.a)
+(20 rows)
 
 SELECT t1.a, t1.c, t2.b, t2.c FROM prt1 t1, prt2 t2 WHERE t1.a = t2.b AND t1.b = 0 ORDER BY t1.a, t2.b;
   a  |  c   |  b  |  c   
@@ -834,15 +833,14 @@ SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM prt1 t1, prt2 t2, prt1_e t
                      Index Cond: (((a + b) / 2) = t2_2.b)
          ->  Nested Loop
                Join Filter: (t1_3.a = ((t3_3.a + t3_3.b) / 2))
-               ->  Hash Join
-                     Hash Cond: (t2_3.b = t1_3.a)
-                     ->  Seq Scan on prt2_p3 t2_3
-                     ->  Hash
-                           ->  Seq Scan on prt1_p3 t1_3
-                                 Filter: (b = 0)
+               ->  Nested Loop
+                     ->  Seq Scan on prt1_p3 t1_3
+                           Filter: (b = 0)
+                     ->  Index Scan using iprt2_p3_b on prt2_p3 t2_3
+                           Index Cond: (b = t1_3.a)
                ->  Index Scan using iprt1_e_p3_ab2 on prt1_e_p3 t3_3
                      Index Cond: (((a + b) / 2) = t2_3.b)
-(33 rows)
+(32 rows)
 
 SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM prt1 t1, prt2 t2, prt1_e t3 WHERE t1.a = t2.b AND t1.a = (t3.a + t3.b)/2 AND t1.b = 0 ORDER BY t1.a, t2.b;
   a  |  c   |  b  |  c   | ?column? | c 
@@ -855,8 +853,8 @@ SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM prt1 t1, prt2 t2, prt1_e t
 
 EXPLAIN (COSTS OFF)
 SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM (prt1 t1 LEFT JOIN prt2 t2 ON t1.a = t2.b) LEFT JOIN prt1_e t3 ON (t1.a = (t3.a + t3.b)/2) WHERE t1.b = 0 ORDER BY t1.a, t2.b, t3.a + t3.b;
-                          QUERY PLAN                          
---------------------------------------------------------------
+                             QUERY PLAN                              
+---------------------------------------------------------------------
  Sort
    Sort Key: t1.a, t2.b, ((t3.a + t3.b))
    ->  Append
@@ -880,17 +878,15 @@ SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM (prt1 t1 LEFT JOIN prt2 t2
                            ->  Hash
                                  ->  Seq Scan on prt1_p2 t1_2
                                        Filter: (b = 0)
-         ->  Hash Right Join
-               Hash Cond: (((t3_3.a + t3_3.b) / 2) = t1_3.a)
-               ->  Seq Scan on prt1_e_p3 t3_3
-               ->  Hash
-                     ->  Hash Right Join
-                           Hash Cond: (t2_3.b = t1_3.a)
-                           ->  Seq Scan on prt2_p3 t2_3
-                           ->  Hash
-                                 ->  Seq Scan on prt1_p3 t1_3
-                                       Filter: (b = 0)
-(33 rows)
+         ->  Nested Loop Left Join
+               ->  Nested Loop Left Join
+                     ->  Seq Scan on prt1_p3 t1_3
+                           Filter: (b = 0)
+                     ->  Index Scan using iprt2_p3_b on prt2_p3 t2_3
+                           Index Cond: (b = t1_3.a)
+               ->  Index Scan using iprt1_e_p3_ab2 on prt1_e_p3 t3_3
+                     Index Cond: (((a + b) / 2) = t1_3.a)
+(31 rows)
 
 SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM (prt1 t1 LEFT JOIN prt2 t2 ON t1.a = t2.b) LEFT JOIN prt1_e t3 ON (t1.a = (t3.a + t3.b)/2) WHERE t1.b = 0 ORDER BY t1.a, t2.b, t3.a + t3.b;
   a  |  c   |  b  |  c   | ?column? | c 
@@ -911,8 +907,8 @@ SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM (prt1 t1 LEFT JOIN prt2 t2
 
 EXPLAIN (COSTS OFF)
 SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM (prt1 t1 LEFT JOIN prt2 t2 ON t1.a = t2.b) RIGHT JOIN prt1_e t3 ON (t1.a = (t3.a + t3.b)/2) WHERE t3.c = 0 ORDER BY t1.a, t2.b, t3.a + t3.b;
-                            QUERY PLAN                             
--------------------------------------------------------------------
+                             QUERY PLAN                              
+---------------------------------------------------------------------
  Sort
    Sort Key: t1.a, t2.b, ((t3.a + t3.b))
    ->  Append
@@ -935,15 +931,14 @@ SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM (prt1 t1 LEFT JOIN prt2 t2
                ->  Index Scan using iprt2_p2_b on prt2_p2 t2_2
                      Index Cond: (b = t1_2.a)
          ->  Nested Loop Left Join
-               ->  Hash Right Join
-                     Hash Cond: (t1_3.a = ((t3_3.a + t3_3.b) / 2))
-                     ->  Seq Scan on prt1_p3 t1_3
-                     ->  Hash
-                           ->  Seq Scan on prt1_e_p3 t3_3
-                                 Filter: (c = 0)
-               ->  Index Scan using iprt2_p3_b on prt2_p3 t2_3
-                     Index Cond: (b = t1_3.a)
-(30 rows)
+               ->  Seq Scan on prt1_e_p3 t3_3
+                     Filter: (c = 0)
+               ->  Nested Loop Left Join
+                     ->  Index Scan using iprt1_p3_a on prt1_p3 t1_3
+                           Index Cond: (a = ((t3_3.a + t3_3.b) / 2))
+                     ->  Index Scan using iprt2_p3_b on prt2_p3 t2_3
+                           Index Cond: (b = t1_3.a)
+(29 rows)
 
 SELECT t1.a, t1.c, t2.b, t2.c, t3.a + t3.b, t3.c FROM (prt1 t1 LEFT JOIN prt2 t2 ON t1.a = t2.b) RIGHT JOIN prt1_e t3 ON (t1.a = (t3.a + t3.b)/2) WHERE t3.c = 0 ORDER BY t1.a, t2.b, t3.a + t3.b;
   a  |  c   |  b  |  c   | ?column? | c 
@@ -1749,8 +1744,8 @@ ALTER TABLE prt2 ATTACH PARTITION prt2_p3 DEFAULT;
 ANALYZE prt2;
 EXPLAIN (COSTS OFF)
 SELECT t1.a, t1.c, t2.b, t2.c FROM prt1 t1, prt2 t2 WHERE t1.a = t2.b AND t1.b = 0 ORDER BY t1.a, t2.b;
-                    QUERY PLAN                    
---------------------------------------------------
+                          QUERY PLAN                           
+---------------------------------------------------------------
  Sort
    Sort Key: t1.a
    ->  Append
@@ -1766,13 +1761,12 @@ SELECT t1.a, t1.c, t2.b, t2.c FROM prt1 t1, prt2 t2 WHERE t1.a = t2.b AND t1.b =
                ->  Hash
                      ->  Seq Scan on prt1_p2 t1_2
                            Filter: (b = 0)
-         ->  Hash Join
-               Hash Cond: (t2_3.b = t1_3.a)
-               ->  Seq Scan on prt2_p3 t2_3
-               ->  Hash
-                     ->  Seq Scan on prt1_p3 t1_3
-                           Filter: (b = 0)
-(21 rows)
+         ->  Nested Loop
+               ->  Seq Scan on prt1_p3 t1_3
+                     Filter: (b = 0)
+               ->  Index Scan using iprt2_p3_b on prt2_p3 t2_3
+                     Index Cond: (b = t1_3.a)
+(20 rows)
 
 -- test default partition behavior for list
 ALTER TABLE plt1 DETACH PARTITION plt1_p3;
@@ -5175,20 +5169,18 @@ SELECT t1.*, t2.* FROM alpha t1 INNER JOIN beta t2 ON (t1.a = t2.a AND t1.b = t2
  Sort
    Sort Key: t1.a, t1.b
    ->  Append
-         ->  Hash Join
-               Hash Cond: ((t1_1.a = t2_1.a) AND (t1_1.b = t2_1.b) AND (t1_1.c = t2_1.c))
+         ->  Nested Loop
+               Join Filter: ((t1_1.a = t2_1.a) AND (t1_1.b = t2_1.b) AND (t1_1.c = t2_1.c))
                ->  Seq Scan on alpha_neg_p1 t1_1
                      Filter: ((c = ANY ('{0004,0009}'::text[])) AND (((b >= 100) AND (b < 110)) OR ((b >= 200) AND (b < 210))))
-               ->  Hash
-                     ->  Seq Scan on beta_neg_p1 t2_1
-                           Filter: (((b >= 100) AND (b < 110)) OR ((b >= 200) AND (b < 210)))
-         ->  Hash Join
-               Hash Cond: ((t1_2.a = t2_2.a) AND (t1_2.b = t2_2.b) AND (t1_2.c = t2_2.c))
+               ->  Seq Scan on beta_neg_p1 t2_1
+                     Filter: (((b >= 100) AND (b < 110)) OR ((b >= 200) AND (b < 210)))
+         ->  Nested Loop
+               Join Filter: ((t1_2.a = t2_2.a) AND (t1_2.b = t2_2.b) AND (t1_2.c = t2_2.c))
                ->  Seq Scan on alpha_neg_p2 t1_2
                      Filter: ((c = ANY ('{0004,0009}'::text[])) AND (((b >= 100) AND (b < 110)) OR ((b >= 200) AND (b < 210))))
-               ->  Hash
-                     ->  Seq Scan on beta_neg_p2 t2_2
-                           Filter: (((b >= 100) AND (b < 110)) OR ((b >= 200) AND (b < 210)))
+               ->  Seq Scan on beta_neg_p2 t2_2
+                     Filter: (((b >= 100) AND (b < 110)) OR ((b >= 200) AND (b < 210)))
          ->  Nested Loop
                Join Filter: ((t1_3.a = t2_3.a) AND (t1_3.b = t2_3.b) AND (t1_3.c = t2_3.c))
                ->  Seq Scan on alpha_pos_p2 t1_3
@@ -5201,7 +5193,7 @@ SELECT t1.*, t2.* FROM alpha t1 INNER JOIN beta t2 ON (t1.a = t2.a AND t1.b = t2
                      Filter: ((c = ANY ('{0004,0009}'::text[])) AND (((b >= 100) AND (b < 110)) OR ((b >= 200) AND (b < 210))))
                ->  Seq Scan on beta_pos_p3 t2_4
                      Filter: (((b >= 100) AND (b < 110)) OR ((b >= 200) AND (b < 210)))
-(29 rows)
+(27 rows)
 
 SELECT t1.*, t2.* FROM alpha t1 INNER JOIN beta t2 ON (t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c) WHERE ((t1.b >= 100 AND t1.b < 110) OR (t1.b >= 200 AND t1.b < 210)) AND ((t2.b >= 100 AND t2.b < 110) OR (t2.b >= 200 AND t2.b < 210)) AND t1.c IN ('0004', '0009') ORDER BY t1.a, t1.b;
  a  |  b  |  c   | a  |  b  |  c   
