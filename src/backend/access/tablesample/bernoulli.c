@@ -117,7 +117,7 @@ bernoulli_samplescangetsamplesize(PlannerInfo *root,
 	/* We'll visit all pages of the baserel */
 	*pages = baserel->pages;
 
-	*tuples = clamp_row_est(baserel->tuples * samplefract);
+	*tuples = clamp_tuple_est(baserel->tuples * samplefract);
 }
 
 /*

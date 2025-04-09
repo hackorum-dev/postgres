@@ -1808,7 +1808,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	{
 		if (es->format == EXPLAIN_FORMAT_TEXT)
 		{
-			appendStringInfo(es->str, "  (cost=%.2f..%.2f rows=%.0f width=%d)",
+			appendStringInfo(es->str, "  (cost=%.2f..%.2f rows=%.2f width=%d)",
 							 plan->startup_cost, plan->total_cost,
 							 plan->plan_rows, plan->plan_width);
 		}
@@ -1819,7 +1819,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			ExplainPropertyFloat("Total Cost", NULL, plan->total_cost,
 								 2, es);
 			ExplainPropertyFloat("Plan Rows", NULL, plan->plan_rows,
-								 0, es);
+								 2, es);
 			ExplainPropertyInteger("Plan Width", NULL, plan->plan_width,
 								   es);
 		}

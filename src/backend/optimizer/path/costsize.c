@@ -206,6 +206,29 @@ static double get_parallel_divisor(Path *path);
 
 
 /*
+ * clamp_tuple_est
+ *		Force a tuple-count estimate to a sane value.
+ */
+double
+clamp_tuple_est(double ntuples)
+{
+	/*
+	 * Avoid infinite and NaN tuple estimates.  Costs derived from such values
+	 * are going to be useless.  Also force the estimate to be at least one
+	 * tuple, to make explain output look better and to avoid possible
+	 * divide-by-zero when interpolating costs.  Make it an integer, too.
+	 */
+	if (ntuples > MAXIMUM_ROWCOUNT || isnan(ntuples))
+		ntuples = MAXIMUM_ROWCOUNT;
+	else if (ntuples <= 1.0)
+		ntuples = 1.0;
+	else
+		ntuples = rint(ntuples);
+
+	return ntuples;
+}
+
+/*
  * clamp_row_est
  *		Force a row-count estimate to a sane value.
  */
@@ -216,14 +239,12 @@ clamp_row_est(double nrows)
 	 * Avoid infinite and NaN row estimates.  Costs derived from such values
 	 * are going to be useless.  Also force the estimate to be at least one
 	 * row, to make explain output look better and to avoid possible
-	 * divide-by-zero when interpolating costs.  Make it an integer, too.
+	 * divide-by-zero when interpolating costs.
 	 */
 	if (nrows > MAXIMUM_ROWCOUNT || isnan(nrows))
 		nrows = MAXIMUM_ROWCOUNT;
 	else if (nrows <= 1.0)
 		nrows = 1.0;
-	else
-		nrows = rint(nrows);
 
 	return nrows;
 }
@@ -249,7 +270,7 @@ clamp_width_est(int64 tuple_width)
 		return (int32) MaxAllocSize;
 
 	/*
-	 * Unlike clamp_row_est, we just Assert that the value isn't negative,
+	 * Unlike clamp_tuple_est, we just Assert that the value isn't negative,
 	 * rather than masking such errors.
 	 */
 	Assert(tuple_width >= 0);
@@ -643,7 +664,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	run_cost += indexTotalCost - indexStartupCost;
 
 	/* estimate number of main-table tuples fetched */
-	tuples_fetched = clamp_row_est(indexSelectivity * baserel->tuples);
+	tuples_fetched = clamp_tuple_est(indexSelectivity * baserel->tuples);
 
 	/* fetch estimated page costs for tablespace containing table */
 	get_tablespace_page_costs(baserel->reltablespace,
@@ -901,7 +922,7 @@ extract_nonindex_conditions(List *qual_clauses, List *indexclauses)
  * computed for us by make_one_rel.
  *
  * Caller is expected to have ensured that tuples_fetched is greater than zero
- * and rounded to integer (see clamp_row_est).  The result will likewise be
+ * and rounded to integer (see clamp_tuple_est).  The result will likewise be
  * greater than zero and integral.
  */
 double
@@ -3084,7 +3105,7 @@ get_windowclause_startup_tuples(PlannerInfo *root, WindowClause *wc,
 	 * subnode.
 	 */
 
-	return clamp_row_est(return_tuples);
+	return clamp_tuple_est(return_tuples);
 }
 
 /*
@@ -3298,7 +3319,7 @@ initial_cost_nestloop(PlannerInfo *root, JoinCostWorkspace *workspace,
 	 */
 	startup_cost += outer_path->startup_cost + inner_path->startup_cost;
 	run_cost += outer_path->total_cost - outer_path->startup_cost;
-	if (outer_path_rows > 1)
+	if (outer_path_rows >= 2)
 		run_cost += (outer_path_rows - 1) * inner_rescan_start_cost;
 
 	inner_run_cost = inner_path->total_cost - inner_path->startup_cost;
@@ -3323,7 +3344,7 @@ initial_cost_nestloop(PlannerInfo *root, JoinCostWorkspace *workspace,
 	{
 		/* Normal case; we'll scan whole input rel for each outer row */
 		run_cost += inner_run_cost;
-		if (outer_path_rows > 1)
+		if (outer_path_rows >= 2)
 			run_cost += (outer_path_rows - 1) * inner_rescan_run_cost;
 	}
 
@@ -3656,8 +3677,8 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	 * Convert selectivities to row counts.  We force outer_rows and
 	 * inner_rows to be at least 1, but the skip_rows estimates can be zero.
 	 */
-	outer_skip_rows = rint(outer_path_rows * outerstartsel);
-	inner_skip_rows = rint(inner_path_rows * innerstartsel);
+	outer_skip_rows = outer_path_rows * outerstartsel;
+	inner_skip_rows = inner_path_rows * innerstartsel;
 	outer_rows = clamp_row_est(outer_path_rows * outerendsel);
 	inner_rows = clamp_row_est(inner_path_rows * innerendsel);
 
@@ -4415,7 +4436,7 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	 * that way, so it will be unable to drive the batch size below hash_mem
 	 * when this is true.)
 	 */
-	if (relation_byte_size(clamp_row_est(inner_path_rows * innermcvfreq),
+	if (relation_byte_size(clamp_tuple_est(inner_path_rows * innermcvfreq),
 						   inner_path->pathtarget->width) > get_hash_memory_limit())
 		startup_cost += disable_cost;
 
@@ -4449,7 +4470,7 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		 * to clamp inner_scan_frac to at most 1.0; but since match_count is
 		 * at least 1, no such clamp is needed now.)
 		 */
-		outer_matched_rows = rint(outer_path_rows * extra->semifactors.outer_match_frac);
+		outer_matched_rows = outer_path_rows * extra->semifactors.outer_match_frac;
 		inner_scan_frac = 2.0 / (extra->semifactors.match_count + 1.0);
 
 		startup_cost += hash_qual_cost.startup;
@@ -4573,7 +4594,7 @@ cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan)
 		if (subplan->subLinkType == EXISTS_SUBLINK)
 		{
 			/* we only need to fetch 1 tuple; clamp to avoid zero divide */
-			sp_cost.per_tuple += plan_run_cost / clamp_row_est(plan->plan_rows);
+			sp_cost.per_tuple += plan_run_cost / clamp_tuple_est(plan->plan_rows);
 		}
 		else if (subplan->subLinkType == ALL_SUBLINK ||
 				 subplan->subLinkType == ANY_SUBLINK)
@@ -6517,7 +6538,7 @@ compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel,
 	/*
 	 * Estimate number of main-table pages fetched.
 	 */
-	tuples_fetched = clamp_row_est(indexSelectivity * baserel->tuples);
+	tuples_fetched = clamp_tuple_est(indexSelectivity * baserel->tuples);
 
 	T = (baserel->pages > 1) ? (double) baserel->pages : 1.0;
 
@@ -6583,7 +6604,7 @@ compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel,
 		 */
 		if (lossy_pages > 0)
 			tuples_fetched =
-				clamp_row_est(indexSelectivity *
+				clamp_tuple_est(indexSelectivity *
 							  (exact_pages / heap_pages) * baserel->tuples +
 							  (lossy_pages / heap_pages) * baserel->tuples);
 	}

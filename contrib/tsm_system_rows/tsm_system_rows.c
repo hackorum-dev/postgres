@@ -135,7 +135,7 @@ system_rows_samplescangetsamplesize(PlannerInfo *root,
 	/* Clamp to the estimated relation size */
 	if (ntuples > baserel->tuples)
 		ntuples = (int64) baserel->tuples;
-	ntuples = clamp_row_est(ntuples);
+	ntuples = clamp_tuple_est(ntuples);
 
 	if (baserel->tuples > 0 && baserel->pages > 0)
 	{
@@ -151,7 +151,7 @@ system_rows_samplescangetsamplesize(PlannerInfo *root,
 	}
 
 	/* Clamp to sane value */
-	npages = clamp_row_est(Min((double) baserel->pages, npages));
+	npages = clamp_tuple_est(Min((double) baserel->pages, npages));
 
 	*pages = npages;
 	*tuples = ntuples;

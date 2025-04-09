@@ -1097,7 +1097,7 @@ estimate_size(PlannerInfo *root, RelOptInfo *baserel,
 		double		density;
 
 		density = baserel->tuples / (double) baserel->pages;
-		ntuples = clamp_row_est(density * (double) pages);
+		ntuples = clamp_tuple_est(density * (double) pages);
 	}
 	else
 	{
@@ -1113,7 +1113,7 @@ estimate_size(PlannerInfo *root, RelOptInfo *baserel,
 
 		tuple_width = MAXALIGN(baserel->reltarget->width) +
 			MAXALIGN(SizeofHeapTupleHeader);
-		ntuples = clamp_row_est((double) stat_buf.st_size /
+		ntuples = clamp_tuple_est((double) stat_buf.st_size /
 								(double) tuple_width);
 	}
 	fdw_private->ntuples = ntuples;

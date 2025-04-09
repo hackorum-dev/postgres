@@ -742,7 +742,7 @@ table_block_relation_estimate_size(Relation rel, int32 *attr_widths,
 		/* note: integer division is intentional here */
 		density = (usable_bytes_per_page * fillfactor / 100) / tuple_width;
 		/* There's at least one row on the page, even with low fillfactor. */
-		density = clamp_row_est(density);
+		density = clamp_tuple_est(density);
 	}
 	*tuples = rint(density * (double) curpages);
 

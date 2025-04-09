@@ -1687,7 +1687,7 @@ create_memoize_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->param_exprs = param_exprs;
 	pathnode->singlerow = singlerow;
 	pathnode->binary_mode = binary_mode;
-	pathnode->calls = clamp_row_est(calls);
+	pathnode->calls = clamp_tuple_est(calls);
 
 	/*
 	 * For now we set est_entries to 0.  cost_memoize_rescan() does all the
@@ -4049,7 +4049,7 @@ adjust_limit_rows_costs(double *rows,	/* in/out parameter */
 		if (offset_est > 0)
 			offset_rows = (double) offset_est;
 		else
-			offset_rows = clamp_row_est(input_rows * 0.10);
+			offset_rows = clamp_tuple_est(input_rows * 0.10);
 		if (offset_rows > *rows)
 			offset_rows = *rows;
 		if (input_rows > 0)

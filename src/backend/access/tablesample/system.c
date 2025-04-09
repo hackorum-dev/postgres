@@ -117,10 +117,10 @@ system_samplescangetsamplesize(PlannerInfo *root,
 	}
 
 	/* We'll visit a sample of the pages ... */
-	*pages = clamp_row_est(baserel->pages * samplefract);
+	*pages = clamp_tuple_est(baserel->pages * samplefract);
 
 	/* ... and hopefully get a representative number of tuples from them */
-	*tuples = clamp_row_est(baserel->tuples * samplefract);
+	*tuples = clamp_tuple_est(baserel->tuples * samplefract);
 }
 
 /*

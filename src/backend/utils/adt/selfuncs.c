@@ -2183,7 +2183,7 @@ estimate_array_length(PlannerInfo *root, Node *arrayexpr)
 								 ATTSTATSSLOT_NUMBERS))
 			{
 				if (sslot.nnumbers > 0)
-					nelem = clamp_row_est(sslot.numbers[sslot.nnumbers - 1]);
+					nelem = clamp_tuple_est(sslot.numbers[sslot.nnumbers - 1]);
 				free_attstatsslot(&sslot);
 			}
 		}
@@ -3462,7 +3462,7 @@ estimate_num_groups(PlannerInfo *root, List *groupExprs, double input_rows,
 	 * estimate is usually already at least 1, but clamp it just in case it
 	 * isn't.
 	 */
-	input_rows = clamp_row_est(input_rows);
+	input_rows = clamp_tuple_est(input_rows);
 
 	/*
 	 * If no grouping columns, there's exactly one group.  (This can't happen
@@ -3755,7 +3755,7 @@ estimate_num_groups(PlannerInfo *root, List *groupExprs, double input_rows,
 					(1 - pow((rel->tuples - rel->rows) / rel->tuples,
 							 rel->tuples / reldistinct));
 			}
-			reldistinct = clamp_row_est(reldistinct);
+			reldistinct = clamp_tuple_est(reldistinct);
 
 			/*
 			 * Update estimate of total distinct groups.
@@ -4071,7 +4071,7 @@ estimate_hash_bucket_stats(PlannerInfo *root, Node *hashkey, double nbuckets,
 	if (vardata.rel && vardata.rel->tuples > 0)
 	{
 		ndistinct *= vardata.rel->rows / vardata.rel->tuples;
-		ndistinct = clamp_row_est(ndistinct);
+		ndistinct = clamp_tuple_est(ndistinct);
 	}
 
 	/*
@@ -6168,7 +6168,7 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 * If we had an absolute estimate, use that.
 	 */
 	if (stadistinct > 0.0)
-		return clamp_row_est(stadistinct);
+		return clamp_tuple_est(stadistinct);
 
 	/*
 	 * Otherwise we need to get the relation size; punt if not available.
@@ -6189,7 +6189,7 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 * If we had a relative estimate, use that.
 	 */
 	if (stadistinct < 0.0)
-		return clamp_row_est(-stadistinct * ntuples);
+		return clamp_tuple_est(-stadistinct * ntuples);
 
 	/*
 	 * With no data, estimate ndistinct = ntuples if the table is small, else
@@ -6197,7 +6197,7 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 * that the behavior isn't discontinuous.
 	 */
 	if (ntuples < DEFAULT_NUM_DISTINCT)
-		return clamp_row_est(ntuples);
+		return clamp_tuple_est(ntuples);
 
 	*isdefault = true;
 	return DEFAULT_NUM_DISTINCT;
