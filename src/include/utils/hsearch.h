@@ -127,6 +127,21 @@ typedef struct
 } HASH_SEQ_STATUS;
 
 /*
+ * Redefine symbols to avoid clashes with OS.
+ *
+ * These routines were originally modeled after routines in some BSD operating
+ * systems.  They continue to exist at least in macOS (see strhash.h), but
+ * they are incompatible, and depending on link order or symbol lookup order,
+ * a dynamically-loaded module might end up calling the one in the OS and
+ * crash.  To avoid that, we rename the symbols known to clash, so that we can
+ * continue to use the existing API names.
+ */
+#define hash_create pg_hash_create
+#define hash_destroy pg_hash_destroy
+#define hash_search pg_hash_search
+#define hash_stats pg_hash_stats
+
+/*
  * prototypes for functions in dynahash.c
  */
 extern HTAB *hash_create(const char *tabname, long nelem,
