@@ -341,7 +341,7 @@ value that y will have in joined rows, where it might be NULL rather than
 equal to t1.x.
 
 Therefore, Var nodes are decorated with "varnullingrels", which are sets
-of the rangetable indexes of outer joins that potentially null the Var
+of the rangetable indexes that potentially null the Var
 at the point where it appears in the query.  (Using a set, not an ordered
 list, is fine since it doesn't matter which join forced the value to null;
 and that avoids having to change the representation when we consider
