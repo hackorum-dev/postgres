@@ -217,7 +217,7 @@ typedef struct Expr
  * row identity information during UPDATE/DELETE/MERGE.  This value should
  * never be seen outside the planner.
  *
- * varnullingrels is the set of RT indexes of outer joins that can force
+ * varnullingrels is the set of Range table entry's indexes that can force
  * the Var's value to null (at the point where it appears in the query).
  * See optimizer/README for discussion of that.
  *
@@ -282,7 +282,7 @@ typedef struct Var
 	Oid			varcollid pg_node_attr(query_jumble_ignore);
 
 	/*
-	 * RT indexes of outer joins that can replace the Var's value with null.
+	 * Range table entry's indexes that can replace the Var's value with null.
 	 * We can omit varnullingrels in the query jumble, because it's fully
 	 * determined by varno/varlevelsup plus the Var's query location.
 	 */
