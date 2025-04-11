@@ -105,6 +105,7 @@ typedef struct _restoreOptions
 									 * instead of OWNER TO */
 	char	   *superuser;		/* Username to use as superuser */
 	char	   *use_role;		/* Issue SET ROLE to this */
+	int			clean;
 	int			dropSchema;
 	int			disable_dollar_quoting;
 	int			dump_inserts;	/* 0 = COPY, otherwise rows per INSERT */

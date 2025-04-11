@@ -984,7 +984,12 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 					 * this run (so that we know it is empty) and we are not
 					 * restoring a load-via-partition-root data item then we
 					 * wrap the COPY in a transaction and precede it with a
-					 * TRUNCATE.  If wal_level is set to minimal this prevents
+					 * TRUNCATE.
+					 *
+					 * Likewise if the table was pre-existing and the data is
+					 * being restored with --clean.
+					 *
+					 * If wal_level is set to minimal this prevents
 					 * WAL-logging the COPY.  This obtains a speedup similar
 					 * to that from using single_txn mode in non-parallel
 					 * restores.
@@ -995,11 +1000,14 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 					 * loaded data.  (We assume that all partitions of a
 					 * partitioned table will be treated the same way.)
 					 */
-					use_truncate = is_parallel && te->created &&
+					use_truncate = ((is_parallel && te->created) || ropt->clean) &&
 						!is_load_via_partition_root(te);
 
 					if (use_truncate)
 					{
+						pg_log_debug("BEGIN transaction and TRUNCATE table \"%s.%s\"",
+									 te->namespace, te->tag);
+
 						/*
 						 * Parallel restore is always talking directly to a
 						 * server, so no need to see if we should issue BEGIN.

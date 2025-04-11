@@ -212,7 +212,7 @@ main(int argc, char **argv)
 				data_only = true;
 				break;
 			case 'c':			/* clean (i.e., drop) schema prior to create */
-				opts->dropSchema = 1;
+				opts->clean = 1;
 				break;
 			case 'C':
 				opts->createDB = 1;
@@ -425,9 +425,6 @@ main(int argc, char **argv)
 	if (with_statistics && no_statistics)
 		pg_fatal("options --with-statistics and --no-statistics cannot be used together");
 
-	if (data_only && opts->dropSchema)
-		pg_fatal("options -c/--clean and -a/--data-only cannot be used together");
-
 	if (opts->single_txn && opts->txn_size > 0)
 		pg_fatal("options -1/--single-transaction and --transaction-size cannot be used together");
 
@@ -455,6 +452,16 @@ main(int argc, char **argv)
 						(schema_only || with_schema)) && !no_schema;
 	opts->dumpStatistics = ((opts->dumpStatistics && !schema_only && !data_only) ||
 							(statistics_only || with_statistics)) && !no_statistics;
+
+	/*
+	 * If --clean has been issued and the SQL schema is being restored, then
+	 * clear the schema first and recreate it. No need to clear data.
+	 */
+	if (opts->clean && opts->dumpSchema)
+	{
+		opts->clean = 0;
+		opts->dropSchema = 1;
+	}
 
 	opts->disable_triggers = disable_triggers;
 	opts->enable_row_security = enable_row_security;

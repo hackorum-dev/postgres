@@ -127,6 +127,21 @@ PostgreSQL documentation
         ignorable error messages will be reported,
         unless <option>--if-exists</option> is also specified.
        </para>
+       <para>
+         If the schema is not restored but the data is restored (for example
+         using <option>--data-only</option>
+         or <option>--section=data</option>), then instead of DROP, a TRUNCATE
+         will be attempted before COPYing the data.  So if you want to
+         overwrite an existing database without re-defining the schema, then
+         issue <option>--data-only --clean</option>.
+       </para>
+       <para>
+         Together with <option>--parallel</option> it is a high performance
+         way to load the tables, as it avoids logging to the WAL (if the
+         server is configured with <option>wal_level=minimal</option>).
+         Warning: foreign key constraints might cause table truncation to
+         fail.
+       </para>
       </listitem>
      </varlistentry>
 
