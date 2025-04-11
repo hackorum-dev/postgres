@@ -29,6 +29,10 @@ extern bool view_has_instead_trigger(Relation view, CmdType event,
 									 List *mergeActionList);
 extern const char *view_query_is_auto_updatable(Query *viewquery,
 												bool check_cols);
+extern const char *view_cols_are_auto_updatable(Query *viewquery,
+												Bitmapset *required_cols,
+												Bitmapset **updatable_cols,
+												char **non_updatable_col);
 extern int	relation_is_updatable(Oid reloid,
 								  List *outer_reloids,
 								  bool include_triggers,
