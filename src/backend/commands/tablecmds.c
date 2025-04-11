@@ -83,6 +83,7 @@
 #include "parser/parse_relation.h"
 #include "parser/parse_type.h"
 #include "parser/parse_utilcmd.h"
+#include "parser/parsetree.h"
 #include "parser/parser.h"
 #include "partitioning/partbounds.h"
 #include "partitioning/partdesc.h"
@@ -8251,6 +8252,59 @@ ATExecColumnDefault(Relation rel, const char *colName,
 				 errhint("Use %s instead.", "ALTER TABLE ... ALTER COLUMN ... SET EXPRESSION") :
 				 (TupleDescAttr(tupdesc, attnum - 1)->attgenerated == ATTRIBUTE_GENERATED_STORED ?
 				  errhint("Use %s instead.", "ALTER TABLE ... ALTER COLUMN ... DROP EXPRESSION") : 0)));
+
+
+	/* Check if this is an automatically updatable view */
+	if (rel->rd_rel->relkind == RELKIND_VIEW && newDefault != NULL)
+	{
+		Query	   *viewquery = get_view_query(rel);
+
+		if (view_query_is_auto_updatable(viewquery, true) == NULL)
+		{
+			Bitmapset  *set_col	= NULL;
+
+			set_col = bms_add_member(set_col,
+									 attnum - FirstLowInvalidHeapAttributeNumber);
+
+			if (view_cols_are_auto_updatable(viewquery, set_col, NULL, NULL) == NULL)
+			{
+				RangeTblRef *rtr;
+				RangeTblEntry *base_rte;
+				Relation	base_rel;
+				TupleDesc	rel_tupdesc;
+				TargetEntry *tle;
+				AttrNumber	attno;
+
+				rtr = (RangeTblRef *) linitial(viewquery->jointree->fromlist);
+				base_rte = rt_fetch(rtr->rtindex, viewquery->rtable);
+				Assert(base_rte->rtekind == RTE_RELATION);
+
+				base_rel = table_open(base_rte->relid, AccessShareLock);
+				rel_tupdesc = RelationGetDescr(base_rel);
+
+
+				tle = (TargetEntry *) list_nth(viewquery->targetList, attnum - 1);
+				Assert(!tle->resjunk);
+				Assert(IsA(tle->expr, Var));
+
+				attno = ((Var *) tle->expr)->varattno;
+
+				if (TupleDescAttr(rel_tupdesc, attno - 1)->attgenerated)
+				{
+					Form_pg_attribute att = TupleDescAttr(tupdesc, attno - 1);
+
+					ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("cannot alter column \"%s\" default expression on view \"%s\"",
+									colName, RelationGetRelationName(rel)),
+							errdetail("Column \"%s\" on base relation \"%s\" is a generated column",
+									  NameStr(att->attname),
+									  RelationGetRelationName(base_rel)));
+				}
+				table_close(base_rel, AccessShareLock);
+			}
+		}
+	}
 
 	/*
 	 * Remove any old default for the column.  We use RESTRICT here for
