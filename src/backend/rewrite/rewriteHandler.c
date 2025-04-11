@@ -2870,7 +2870,7 @@ view_query_is_auto_updatable(Query *viewquery, bool check_cols)
  * We do not check whether the referenced columns of the base relation are
  * updatable.
  */
-static const char *
+const char *
 view_cols_are_auto_updatable(Query *viewquery,
 							 Bitmapset *required_cols,
 							 Bitmapset **updatable_cols,
