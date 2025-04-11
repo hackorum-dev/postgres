@@ -200,12 +200,19 @@ shimTriConsistentFn(GinScanKey key)
 		recheck |= key->recheckCurItem;
 
 		if (curResult != boolResult)
-			return GIN_MAYBE;
+		{
+			curResult = GIN_MAYBE;
+			break;
+		}
 	}
 
 	/* TRUE with recheck is taken to mean MAYBE */
 	if (curResult == GIN_TRUE && recheck)
 		curResult = GIN_MAYBE;
+
+	/* Restore the maybe entry state */
+	for (i = 0; i < nmaybe; i++)
+		key->entryRes[maybeEntries[i]] = GIN_MAYBE;
 
 	return curResult;
 }
