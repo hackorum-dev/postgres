@@ -2218,8 +2218,15 @@ _fileExistsInDirectory(const char *dir, const char *filename)
 	struct stat st;
 	char		buf[MAXPGPATH];
 
-	if (snprintf(buf, MAXPGPATH, "%s/%s", dir, filename) >= MAXPGPATH)
+	if (strlen(dir) >= MAXPGPATH)
 		pg_fatal("directory name too long: \"%s\"", dir);
+
+	if (strlen(filename) >= MAXPGPATH)
+		pg_fatal("file name too long: \"%s\"", filename);
+
+	/* Now check path length of dir/filename */
+	if (snprintf(buf, MAXPGPATH, "%s/%s", dir, filename) >= MAXPGPATH)
+		pg_fatal("combined name of directory:\"%s\" and file:\"%s\" is too long", filename, dir);
 
 	return (stat(buf, &st) == 0 && S_ISREG(st.st_mode));
 }

@@ -506,6 +506,9 @@ main(int argc, char *argv[])
 	if (statistics_only)
 		appendPQExpBufferStr(pgdumpopts, " --statistics-only");
 
+	if (filename && strlen(filename) >= MAXPGPATH)
+		pg_fatal("out file name:\"%s\" is too long", filename);
+
 	/*
 	 * Open the output file if required, otherwise use stdout.  If required,
 	 * then create new directory and global.dat file.
@@ -517,7 +520,8 @@ main(int argc, char *argv[])
 		/* Create new directory or accept the empty existing directory. */
 		create_or_open_dir(filename);
 
-		snprintf(global_path, MAXPGPATH, "%s/global.dat", filename);
+		if (snprintf(global_path, MAXPGPATH, "%s/global.dat", filename) >= MAXPGPATH)
+			 pg_fatal("combined name of out file:\"%s\" and global.dat is too long", filename);
 
 		OPF = fopen(global_path, PG_BINARY_W);
 		if (!OPF)
@@ -1650,6 +1654,7 @@ dumpDatabases(PGconn *conn, ArchiveFormat archDumpFormat)
 	{
 		char		map_file_path[MAXPGPATH];
 
+		/* No need to check path length as %s/global.dat was OK. */
 		snprintf(db_subdir, MAXPGPATH, "%s/databases", filename);
 
 		/* Create a subdirectory with 'databases' name under main directory. */
@@ -1689,11 +1694,20 @@ dumpDatabases(PGconn *conn, ArchiveFormat archDumpFormat)
 		if (archDumpFormat != archNull)
 		{
 			if (archDumpFormat == archCustom)
-				snprintf(dbfilepath, MAXPGPATH, "\"%s\"/\"%s\".dmp", db_subdir, oid);
+			{
+				if (snprintf(dbfilepath, MAXPGPATH, "\"%s\"/\"%s\".dmp", db_subdir, oid) >= MAXPGPATH)
+					pg_fatal("combined name of file:\"%s\" and \"%s\".dmp is too long", db_subdir, oid);
+			}
 			else if (archDumpFormat == archTar)
-				snprintf(dbfilepath, MAXPGPATH, "\"%s\"/\"%s\".tar", db_subdir, oid);
+			{
+				if (snprintf(dbfilepath, MAXPGPATH, "\"%s\"/\"%s\".tar", db_subdir, oid) >= MAXPGPATH)
+					pg_fatal("combined name of file:\"%s\" and \"%s\".tar is too long", db_subdir, oid);
+			}
 			else
-				snprintf(dbfilepath, MAXPGPATH, "\"%s\"/\"%s\"", db_subdir, oid);
+			{
+				if (snprintf(dbfilepath, MAXPGPATH, "\"%s\"/\"%s\"", db_subdir, oid) >= MAXPGPATH)
+					pg_fatal("combined name of file:\"%s\" and \"%s\" is too long", db_subdir, oid);
+			}
 
 			/* Put one line entry for dboid and dbname in map file. */
 			fprintf(map_file, "%s %s\n", oid, dbname);
