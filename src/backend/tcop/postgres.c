@@ -302,7 +302,7 @@ InteractiveBackend(StringInfo inBuf)
 	 */
 
 	/* Add '\0' to make it look the same as message case. */
-	appendStringInfoChar(inBuf, (char) '\0');
+	appendStringInfoChar(inBuf, '\0');
 
 	/*
 	 * if the query echo flag was given, print the query..

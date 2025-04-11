@@ -898,12 +898,12 @@ read_one_statement(StringInfo inBuf, FILE *pfile)
 
 		if (c == ';')
 		{
-			appendStringInfoChar(inBuf, (char) ';');
+			appendStringInfoChar(inBuf, ';');
 			break;
 		}
 
 		if (c == '\n')
-			appendStringInfoChar(inBuf, (char) '\n');
+			appendStringInfoChar(inBuf, '\n');
 	}
 
 	destroyStringInfo(&q);
