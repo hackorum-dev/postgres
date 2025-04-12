@@ -188,13 +188,13 @@ static void PublishMemoryContext(MemoryStatsEntry *memcxt_info,
 								 int curr_id, MemoryContext context,
 								 List *path,
 								 MemoryContextCounters stat,
-								 int num_contexts, dsa_area *area,
+								 int num_contexts, dsa_area *darea,
 								 int max_levels);
 static void compute_contexts_count_and_ids(List *contexts, HTAB *context_id_lookup,
 										   int *stats_count,
 										   bool summary);
 static List *compute_context_path(MemoryContext c, HTAB *context_id_lookup);
-static void free_memorycontextstate_dsa(dsa_area *area, int total_stats,
+static void free_memorycontextstate_dsa(dsa_area *darea, int total_stats,
 										dsa_pointer prev_dsa_pointer);
 static void end_memorycontext_reporting(void);
 
@@ -1790,7 +1790,7 @@ static void
 PublishMemoryContext(MemoryStatsEntry *memcxt_info, int curr_id,
 					 MemoryContext context, List *path,
 					 MemoryContextCounters stat, int num_contexts,
-					 dsa_area *area, int max_levels)
+					 dsa_area *darea, int max_levels)
 {
 	const char *ident = context->ident;
 	const char *name = context->name;
@@ -1815,8 +1815,8 @@ PublishMemoryContext(MemoryStatsEntry *memcxt_info, int curr_id,
 			namelen = pg_mbcliplen(name, namelen,
 								   MEMORY_CONTEXT_IDENT_SHMEM_SIZE - 1);
 
-		memcxt_info[curr_id].name = dsa_allocate(area, namelen + 1);
-		nameptr = (char *) dsa_get_address(area, memcxt_info[curr_id].name);
+		memcxt_info[curr_id].name = dsa_allocate(darea, namelen + 1);
+		nameptr = (char *) dsa_get_address(darea, memcxt_info[curr_id].name);
 		strlcpy(nameptr, name, namelen + 1);
 	}
 	else
@@ -1836,8 +1836,8 @@ PublishMemoryContext(MemoryStatsEntry *memcxt_info, int curr_id,
 			idlen = pg_mbcliplen(ident, idlen,
 								 MEMORY_CONTEXT_IDENT_SHMEM_SIZE - 1);
 
-		memcxt_info[curr_id].ident = dsa_allocate(area, idlen + 1);
-		identptr = (char *) dsa_get_address(area, memcxt_info[curr_id].ident);
+		memcxt_info[curr_id].ident = dsa_allocate(darea, idlen + 1);
+		identptr = (char *) dsa_get_address(darea, memcxt_info[curr_id].ident);
 		strlcpy(identptr, ident, idlen + 1);
 	}
 	else
@@ -1851,9 +1851,9 @@ PublishMemoryContext(MemoryStatsEntry *memcxt_info, int curr_id,
 		int			levels = Min(list_length(path), max_levels);
 
 		memcxt_info[curr_id].path_length = levels;
-		memcxt_info[curr_id].path = dsa_allocate0(area, levels * sizeof(int));
+		memcxt_info[curr_id].path = dsa_allocate0(darea, levels * sizeof(int));
 		memcxt_info[curr_id].levels = list_length(path);
-		path_list = (int *) dsa_get_address(area, memcxt_info[curr_id].path);
+		path_list = (int *) dsa_get_address(darea, memcxt_info[curr_id].path);
 
 		foreach_int(i, path)
 		{
@@ -1877,26 +1877,26 @@ PublishMemoryContext(MemoryStatsEntry *memcxt_info, int curr_id,
  * responsible for ensuring that the DSA pointer is valid.
  */
 static void
-free_memorycontextstate_dsa(dsa_area *area, int total_stats,
+free_memorycontextstate_dsa(dsa_area *darea, int total_stats,
 							dsa_pointer prev_dsa_pointer)
 {
 	MemoryStatsEntry *meminfo;
 
-	meminfo = (MemoryStatsEntry *) dsa_get_address(area, prev_dsa_pointer);
+	meminfo = (MemoryStatsEntry *) dsa_get_address(darea, prev_dsa_pointer);
 	Assert(meminfo != NULL);
 	for (int i = 0; i < total_stats; i++)
 	{
 		if (DsaPointerIsValid(meminfo[i].name))
-			dsa_free(area, meminfo[i].name);
+			dsa_free(darea, meminfo[i].name);
 
 		if (DsaPointerIsValid(meminfo[i].ident))
-			dsa_free(area, meminfo[i].ident);
+			dsa_free(darea, meminfo[i].ident);
 
 		if (DsaPointerIsValid(meminfo[i].path))
-			dsa_free(area, meminfo[i].path);
+			dsa_free(darea, meminfo[i].path);
 	}
 
-	dsa_free(area, memCxtState[MyProcNumber].memstats_dsa_pointer);
+	dsa_free(darea, memCxtState[MyProcNumber].memstats_dsa_pointer);
 	memCxtState[MyProcNumber].memstats_dsa_pointer = InvalidDsaPointer;
 }
 
