@@ -136,6 +136,12 @@ describeAggregates(const char *pattern, bool verbose, bool showSystem)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -210,6 +216,12 @@ describeAccessMethods(const char *pattern, bool verbose)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -271,6 +283,12 @@ describeTablespaces(const char *pattern, bool verbose)
 	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;
@@ -621,6 +639,12 @@ describeFunctions(const char *functypes, const char *func_pattern,
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (func_pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 
@@ -726,6 +750,12 @@ describeTypes(const char *pattern, bool verbose, bool showSystem)
 	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;
@@ -928,6 +958,12 @@ describeOperators(const char *oper_pattern,
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (oper_pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 
@@ -1036,6 +1072,12 @@ listAllDbs(const char *pattern, bool verbose)
 	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;
@@ -1269,6 +1311,13 @@ listDefaultACLs(const char *pattern)
 	myopt.n_translate_columns = lengthof(translate_columns);
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		termPQExpBuffer(&buf);
+		PQclear(res);
+		return false;
+	}
 
 	termPQExpBuffer(&buf);
 	PQclear(res);
@@ -1522,16 +1571,14 @@ describeTableDetails(const char *pattern, bool verbose, bool showSystem)
 
 	if (PQntuples(res) == 0)
 	{
-		if (!pset.quiet)
-		{
-			if (pattern)
-				pg_log_error("Did not find any relation named \"%s\".",
-							 pattern);
-			else
-				pg_log_error("Did not find any relations.");
-		}
 		PQclear(res);
-		return false;
+		/*
+		 * Print an empty table and return failure when no objects match
+		 */
+		if (pattern)
+			return listTables("tvmsE", pattern, verbose, showSystem);
+		else
+			return true;
 	}
 
 	for (i = 0; i < PQntuples(res); i++)
@@ -1719,14 +1766,6 @@ describeOneTableDetails(const char *schemaname,
 	res = PSQLexec(buf.data);
 	if (!res)
 		goto error_return;
-
-	/* Did we get anything? */
-	if (PQntuples(res) == 0)
-	{
-		if (!pset.quiet)
-			pg_log_error("Did not find any relation with OID %s.", oid);
-		goto error_return;
-	}
 
 	tableinfo.checks = atoi(PQgetvalue(res, 0, 0));
 	tableinfo.relkind = *(PQgetvalue(res, 0, 1));
@@ -3797,6 +3836,7 @@ describeRoles(const char *pattern, bool verbose, bool showSystem)
 		return false;
 
 	nrows = PQntuples(res);
+
 	attr = pg_malloc0((nrows + 1) * sizeof(*attr));
 
 	printTableInit(&cont, &myopt, _("List of roles"), ncols, nrows);
@@ -3873,6 +3913,12 @@ describeRoles(const char *pattern, bool verbose, bool showSystem)
 		free(attr[i]);
 	free(attr);
 
+	if (pattern && nrows == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -3921,29 +3967,15 @@ listDbRoleSettings(const char *pattern, const char *pattern2)
 	if (!res)
 		return false;
 
-	/*
-	 * Most functions in this file are content to print an empty table when
-	 * there are no matching objects.  We intentionally deviate from that
-	 * here, but only in !quiet mode, because of the possibility that the user
-	 * is confused about what the two pattern arguments mean.
-	 */
-	if (PQntuples(res) == 0 && !pset.quiet)
-	{
-		if (pattern && pattern2)
-			pg_log_error("Did not find any settings for role \"%s\" and database \"%s\".",
-						 pattern, pattern2);
-		else if (pattern)
-			pg_log_error("Did not find any settings for role \"%s\".",
-						 pattern);
-		else
-			pg_log_error("Did not find any settings.");
-	}
-	else
-	{
-		myopt.title = _("List of settings");
-		myopt.translate_header = true;
+	myopt.title = _("List of settings");
+	myopt.translate_header = true;
 
-		printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if ((pattern || pattern2) && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
 	}
 
 	PQclear(res);
@@ -4017,6 +4049,12 @@ describeRoleGrants(const char *pattern, bool showSystem)
 	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;
@@ -4201,76 +4239,25 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	if (!res)
 		return false;
 
-	/*
-	 * Most functions in this file are content to print an empty table when
-	 * there are no matching objects.  We intentionally deviate from that
-	 * here, but only in !quiet mode, for historical reasons.
-	 */
-	if (PQntuples(res) == 0 && !pset.quiet)
-	{
-		if (pattern)
-		{
-			if (ntypes != 1)
-				pg_log_error("Did not find any relations named \"%s\".",
-							 pattern);
-			else if (showTables)
-				pg_log_error("Did not find any tables named \"%s\".",
-							 pattern);
-			else if (showIndexes)
-				pg_log_error("Did not find any indexes named \"%s\".",
-							 pattern);
-			else if (showViews)
-				pg_log_error("Did not find any views named \"%s\".",
-							 pattern);
-			else if (showMatViews)
-				pg_log_error("Did not find any materialized views named \"%s\".",
-							 pattern);
-			else if (showSeq)
-				pg_log_error("Did not find any sequences named \"%s\".",
-							 pattern);
-			else if (showForeign)
-				pg_log_error("Did not find any foreign tables named \"%s\".",
-							 pattern);
-			else				/* should not get here */
-				pg_log_error_internal("Did not find any ??? named \"%s\".",
-									  pattern);
-		}
-		else
-		{
-			if (ntypes != 1)
-				pg_log_error("Did not find any relations.");
-			else if (showTables)
-				pg_log_error("Did not find any tables.");
-			else if (showIndexes)
-				pg_log_error("Did not find any indexes.");
-			else if (showViews)
-				pg_log_error("Did not find any views.");
-			else if (showMatViews)
-				pg_log_error("Did not find any materialized views.");
-			else if (showSeq)
-				pg_log_error("Did not find any sequences.");
-			else if (showForeign)
-				pg_log_error("Did not find any foreign tables.");
-			else				/* should not get here */
-				pg_log_error_internal("Did not find any ??? relations.");
-		}
-	}
-	else
-	{
-		myopt.title =
-			(ntypes != 1) ? _("List of relations") :
-			(showTables) ? _("List of tables") :
-			(showIndexes) ? _("List of indexes") :
-			(showViews) ? _("List of views") :
-			(showMatViews) ? _("List of materialized views") :
-			(showSeq) ? _("List of sequences") :
-			(showForeign) ? _("List of foreign tables") :
-			"List of ???";		/* should not get here */
-		myopt.translate_header = true;
-		myopt.translate_columns = translate_columns;
-		myopt.n_translate_columns = lengthof(translate_columns);
+	myopt.title =
+		(ntypes != 1) ? _("List of relations") :
+		(showTables) ? _("List of tables") :
+		(showIndexes) ? _("List of indexes") :
+		(showViews) ? _("List of views") :
+		(showMatViews) ? _("List of materialized views") :
+		(showSeq) ? _("List of sequences") :
+		(showForeign) ? _("List of foreign tables") :
+		"List of ???";			/* should not get here */
+	myopt.translate_header = true;
+	myopt.translate_columns = translate_columns;
+	myopt.n_translate_columns = lengthof(translate_columns);
 
-		printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
 	}
 
 	PQclear(res);
@@ -4568,6 +4555,12 @@ listLanguages(const char *pattern, bool verbose, bool showSystem)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -4652,6 +4645,12 @@ listDomains(const char *pattern, bool verbose, bool showSystem)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -4732,6 +4731,12 @@ listConversions(const char *pattern, bool verbose, bool showSystem)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -4799,6 +4804,12 @@ describeConfigurationParameters(const char *pattern, bool verbose,
 	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;
@@ -4879,6 +4890,12 @@ listEventTriggers(const char *pattern, bool verbose)
 	myopt.n_translate_columns = lengthof(translate_columns);
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;
@@ -4975,6 +4992,12 @@ listExtendedStats(const char *pattern)
 	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;
@@ -5223,6 +5246,12 @@ listCollations(const char *pattern, bool verbose, bool showSystem)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -5327,6 +5356,13 @@ listSchemas(const char *pattern, bool verbose, bool showSystem)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		termPQExpBuffer(&buf);
+		PQclear(res);
+		return false;
+	}
+
 	termPQExpBuffer(&buf);
 	PQclear(res);
 
@@ -5398,6 +5434,12 @@ listTSParsers(const char *pattern, bool verbose)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -5440,16 +5482,11 @@ listTSParsersVerbose(const char *pattern)
 
 	if (PQntuples(res) == 0)
 	{
-		if (!pset.quiet)
-		{
-			if (pattern)
-				pg_log_error("Did not find any text search parser named \"%s\".",
-							 pattern);
-			else
-				pg_log_error("Did not find any text search parsers.");
-		}
 		PQclear(res);
-		return false;
+		if (pattern)
+			return listTSParsers(pattern, false);
+		else
+			return true;
 	}
 
 	for (i = 0; i < PQntuples(res); i++)
@@ -5775,6 +5812,12 @@ listTSConfigs(const char *pattern, bool verbose)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -5818,16 +5861,11 @@ listTSConfigsVerbose(const char *pattern)
 
 	if (PQntuples(res) == 0)
 	{
-		if (!pset.quiet)
-		{
-			if (pattern)
-				pg_log_error("Did not find any text search configuration named \"%s\".",
-							 pattern);
-			else
-				pg_log_error("Did not find any text search configurations.");
-		}
 		PQclear(res);
-		return false;
+		if (pattern)
+			return listTSConfigs(pattern, false);
+		else
+			return true;
 	}
 
 	for (i = 0; i < PQntuples(res); i++)
@@ -5996,6 +6034,12 @@ listForeignDataWrappers(const char *pattern, bool verbose)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -6072,6 +6116,12 @@ listForeignServers(const char *pattern, bool verbose)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -6126,6 +6176,12 @@ listUserMappings(const char *pattern, bool verbose)
 	myopt.translate_header = true;
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;
@@ -6199,6 +6255,12 @@ listForeignTables(const char *pattern, bool verbose)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -6253,6 +6315,12 @@ listExtensions(const char *pattern)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 }
@@ -6293,16 +6361,11 @@ listExtensionContents(const char *pattern)
 
 	if (PQntuples(res) == 0)
 	{
-		if (!pset.quiet)
-		{
-			if (pattern)
-				pg_log_error("Did not find any extension named \"%s\".",
-							 pattern);
-			else
-				pg_log_error("Did not find any extensions.");
-		}
 		PQclear(res);
-		return false;
+		if (pattern)
+			return listExtensions(pattern);
+		else
+			return true;
 	}
 
 	for (i = 0; i < PQntuples(res); i++)
@@ -6510,6 +6573,12 @@ listPublications(const char *pattern)
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if (pattern && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 
 	return true;
@@ -6660,18 +6729,12 @@ describePublications(const char *pattern)
 
 	if (PQntuples(res) == 0)
 	{
-		if (!pset.quiet)
-		{
-			if (pattern)
-				pg_log_error("Did not find any publication named \"%s\".",
-							 pattern);
-			else
-				pg_log_error("Did not find any publications.");
-		}
-
 		termPQExpBuffer(&buf);
 		PQclear(res);
-		return false;
+		if (pattern)
+			return listPublications(pattern);
+		else
+			return true;
 	}
 
 	for (i = 0; i < PQntuples(res); i++)
@@ -7051,6 +7114,12 @@ listOperatorClasses(const char *access_method_pattern,
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if ((access_method_pattern || type_pattern) && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 
@@ -7138,6 +7207,12 @@ listOperatorFamilies(const char *access_method_pattern,
 	myopt.n_translate_columns = lengthof(translate_columns);
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if ((access_method_pattern || type_pattern) && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;
@@ -7246,6 +7321,12 @@ listOpFamilyOperators(const char *access_method_pattern,
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
+	if ((access_method_pattern || family_pattern) && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
+
 	PQclear(res);
 	return true;
 
@@ -7337,6 +7418,12 @@ listOpFamilyFunctions(const char *access_method_pattern,
 	myopt.n_translate_columns = lengthof(translate_columns);
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	if ((access_method_pattern || family_pattern) && PQntuples(res) == 0)
+	{
+		PQclear(res);
+		return false;
+	}
 
 	PQclear(res);
 	return true;

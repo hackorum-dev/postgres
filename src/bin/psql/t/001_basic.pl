@@ -537,4 +537,30 @@ psql_fails_like(
 	qr/backslash commands are restricted; only \\unrestrict is allowed/,
 	'meta-command in restrict mode fails');
 
+# Test that \d commands return exit code 1 when pattern matches nothing
+# and don't print "Did not find" error messages
+{
+	my ($ret, $stdout, $stderr);
+
+	($ret, $stdout, $stderr) = $node->psql('postgres', '\\d nonexistent_table');
+	isnt($ret, 0, '\\d with non-existent pattern: exit code not 0');
+	unlike($stderr, qr/Did not find/, '\\d with non-existent pattern: no error message');
+
+	($ret, $stdout, $stderr) = $node->psql('postgres', '\\dt nonexistent_table');
+	isnt($ret, 0, '\\dt with non-existent pattern: exit code not 0');
+	unlike($stderr, qr/Did not find/, '\\dt with non-existent pattern: no error message');
+
+	($ret, $stdout, $stderr) = $node->psql('postgres', '\\df nonexistent_func');
+	isnt($ret, 0, '\\df with non-existent pattern: exit code not 0');
+	unlike($stderr, qr/Did not find/, '\\df with non-existent pattern: no error message');
+
+	($ret, $stdout, $stderr) = $node->psql('postgres', '\\dx+ nonexistent_ext');
+	isnt($ret, 0, '\\dx+ with non-existent pattern: exit code not 0');
+	unlike($stderr, qr/Did not find/, '\\dx+ with non-existent pattern: no error message');
+
+	# Test that \d commands without patterns succeed even with no results
+	($ret, $stdout, $stderr) = $node->psql('postgres', '\\d');
+	is($ret, 0, '\\d without pattern: exit code 0');
+}
+
 done_testing();
