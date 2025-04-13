@@ -2867,14 +2867,11 @@ get_connect_string(const char *servername)
 	ForeignServer *foreign_server = NULL;
 	UserMapping *user_mapping;
 	ListCell   *cell;
-	StringInfoData buf;
 	ForeignDataWrapper *fdw;
 	AclResult	aclresult;
 	char	   *srvname;
 
 	static const PQconninfoOption *options = NULL;
-
-	initStringInfo(&buf);
 
 	/*
 	 * Get list of valid libpq options.
@@ -2900,6 +2897,7 @@ get_connect_string(const char *servername)
 
 	if (foreign_server)
 	{
+		StringInfoData buf;
 		Oid			serverid = foreign_server->serverid;
 		Oid			fdwid = foreign_server->fdwid;
 		Oid			userid = GetUserId();
@@ -2911,6 +2909,8 @@ get_connect_string(const char *servername)
 		aclresult = object_aclcheck(ForeignServerRelationId, serverid, userid, ACL_USAGE);
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, OBJECT_FOREIGN_SERVER, foreign_server->servername);
+
+		initStringInfo(&buf);
 
 		/*
 		 * First append hardcoded options needed for SCRAM pass-through, so if
