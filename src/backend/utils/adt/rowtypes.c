@@ -143,6 +143,8 @@ record_in(PG_FUNCTION_ARGS)
 	values = palloc_array(Datum, ncolumns);
 	nulls = palloc_array(bool, ncolumns);
 
+	initStringInfo(&buf);
+
 	/*
 	 * Scan the string.  We use "buf" to accumulate the de-quoted data for
 	 * each column, which is then fed to the appropriate input converter.
@@ -159,8 +161,6 @@ record_in(PG_FUNCTION_ARGS)
 				 errdetail("Missing left parenthesis.")));
 		goto fail;
 	}
-
-	initStringInfo(&buf);
 
 	for (i = 0; i < ncolumns; i++)
 	{
@@ -318,6 +318,9 @@ record_in(PG_FUNCTION_ARGS)
 
 	/* exit here once we've done lookup_rowtype_tupdesc */
 fail:
+	pfree(buf.data);
+	pfree(values);
+	pfree(nulls);
 	ReleaseTupleDesc(tupdesc);
 	PG_RETURN_NULL();
 }
