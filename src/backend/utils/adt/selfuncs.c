@@ -4148,7 +4148,7 @@ estimate_hashagg_tablesize(PlannerInfo *root, Path *path,
 /*
  * Find applicable ndistinct statistics for the given list of VarInfos (which
  * must all belong to the given rel), and update *ndistinct to the estimate of
- * the MVNDistinctItem that best matches.  If a match it found, *varinfos is
+ * the MVNDistinctItem that best matches.  If a match is found, *varinfos is
  * updated to remove the list of matched varinfos.
  *
  * Varinfos that aren't for simple Vars are ignored.
