@@ -2218,6 +2218,19 @@ fi
 # with the default compiler flags.
 PGAC_LOONGARCH_CRC32C_INTRINSICS()
 
+# Check for S390X Vector intrinsics to do CRC calculations.
+#
+# First check for the host cpu
+if test x"$host_cpu" = x"s390x" && test x"$ac_cv_func_getauxval" = x"yes"; then
+  # We need different CFLAGS per compiler:
+  # -fzvector for clang
+  # -mzarch for gcc
+  PGAC_S390X_VECTOR_VX_INTRINSICS([-fzvector], [-march=z13])
+  if test x"$pgac_s390x_vector_intrinsics__fzvector__march_z13" != x"yes"; then
+    PGAC_S390X_VECTOR_VX_INTRINSICS([-mzarch], [-march=z13])
+  fi
+fi
+
 AC_SUBST(CFLAGS_CRC)
 
 # Select CRC-32C implementation.
@@ -2270,9 +2283,15 @@ if test x"$USE_SLICING_BY_8_CRC32C" = x"" && test x"$USE_SSE42_CRC32C" = x"" && 
           if test x"$pgac_loongarch_crc32c_intrinsics" = x"yes"; then
             USE_LOONGARCH_CRC32C=1
           else
-            # fall back to slicing-by-8 algorithm, which doesn't require any
-            # special CPU support.
-            USE_SLICING_BY_8_CRC32C=1
+            # Use S390X vector extension with runtime check.
+            if test x"$pgac_s390x_vector_intrinsics__fzvector__march_z13" = x"yes" ||
+             test x"$pgac_s390x_vector_intrinsics__mzarch__march_z13" = x"yes"; then
+            USE_S390X_CRC32C_WITH_RUNTIME_CHECK=1
+            else
+              # fall back to slicing-by-8 algorithm, which doesn't require any
+              # special CPU support.
+              USE_SLICING_BY_8_CRC32C=1
+            fi
           fi
         fi
       fi
@@ -2307,9 +2326,15 @@ else
           PG_CRC32C_OBJS="pg_crc32c_loongarch.o"
           AC_MSG_RESULT(LoongArch CRCC instructions)
         else
-          AC_DEFINE(USE_SLICING_BY_8_CRC32C, 1, [Define to 1 to use software CRC-32C implementation (slicing-by-8).])
-          PG_CRC32C_OBJS="pg_crc32c_sb8.o"
-          AC_MSG_RESULT(slicing-by-8)
+          if test x"$USE_S390X_CRC32C_WITH_RUNTIME_CHECK" = x"1"; then
+            AC_DEFINE(USE_S390X_CRC32C_WITH_RUNTIME_CHECK, 1, [Define to 1 to use S390X Vector instructions with runtime check for CRC.])
+            PG_CRC32C_OBJS="pg_crc32c_s390x.o pg_crc32c_sb8.o"
+            AC_MSG_RESULT(S390X Vector instructions for CRC with runtime check)
+          else
+            AC_DEFINE(USE_SLICING_BY_8_CRC32C, 1, [Define to 1 to use software CRC-32C implementation (slicing-by-8).])
+            PG_CRC32C_OBJS="pg_crc32c_sb8.o"
+            AC_MSG_RESULT(slicing-by-8)
+          fi
         fi
       fi
     fi
