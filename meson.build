@@ -2794,6 +2794,35 @@ int main(void)
     have_optimized_crc = true
   endif
 
+elif host_cpu == 's390x' and cc.has_function('getauxval')
+  if cc.get_id() == 'clang'
+    VGFMAFLAG='-fzvector'
+  else
+    VGFMAFLAG='-mzarch'
+  endif
+
+  # compilation may fail with GCC 14.0.0 <= gcc_version < 14.3.0 and Clang 18.0.0 <= clang_version < 19.1.2
+  prog = '''
+#include <vecintrin.h>
+unsigned long long a __attribute__((vector_size(16))) = { 0 };
+unsigned long long b __attribute__((vector_size(16))) = { 0 };
+unsigned char c __attribute__((vector_size(16))) = { 0 };
+
+int main(void) {
+    // test for vector extension
+    // we can safely assume that if we have vec_gfmsum_accum_128
+    // we will have all needed builtins
+    c = vec_gfmsum_accum_128(a, b, c);
+    return c[0];
+}'''
+  if cc.links(prog, name: 's390x_vector_vx+march=z13', args: test_c_args + [VGFMAFLAG, '-march=z13'])
+    # Use S390X CRC Extension with runtime check
+    # extend CFLAGS to enabled the VX extension
+    cdata.set('USE_S390X_CRC32C_WITH_RUNTIME_CHECK',1)
+    cflags_crc += VGFMAFLAG
+    cflags_crc += '-march=z13'
+    have_optimized_crc = true
+  endif
 endif
 
 if not have_optimized_crc
