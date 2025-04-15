@@ -1077,7 +1077,10 @@ AlterTableSpaceOptions(AlterTableSpaceOptionsStmt *stmt)
 	if (newOptions != (Datum) 0)
 		repl_val[Anum_pg_tablespace_spcoptions - 1] = newOptions;
 	else
+	{
+		repl_val[Anum_pg_tablespace_spcoptions - 1] = (Datum) 0;
 		repl_null[Anum_pg_tablespace_spcoptions - 1] = true;
+	}
 	repl_repl[Anum_pg_tablespace_spcoptions - 1] = true;
 	newtuple = heap_modify_tuple(tup, RelationGetDescr(rel), repl_val,
 								 repl_null, repl_repl);
