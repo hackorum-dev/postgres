@@ -835,6 +835,45 @@ fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_LOONGARCH_CRC32C_INTRINSICS
 
+# PGAC_S390X_VECTOR_VX_INTRINSICS
+# --------------------------------
+# Check if the compiler supports the S390X vector intrinsics, using
+# __attribute__((vector_size(16))), vec_gfmsum_accum_128
+#
+# These instructions where introduced with -march=z13.
+# the test arg1 is mandatory and should be either:
+# '-fzvector' for clang
+# '-mzarch' for gcc
+#
+# compilation may fail with GCC 14.0.0 <= gcc_version < 14.3.0 and Clang 18.0.0 <= clang_version < 19.1.2
+#
+# If the intrinsics are supported, sets
+# pgac_s390x_vector_intrinsics, and CFLAGS_CRC.
+AC_DEFUN([PGAC_S390X_VECTOR_VX_INTRINSICS],
+[define([Ac_cachevar], [AS_TR_SH([pgac_cv_s390x_vector_intrinsics_$1_$2])])dnl
+AC_CACHE_CHECK([for __attribute__((vector_size(16))), vec_gfmsum_accum_128 with CFLAGS=$1 $2], [Ac_cachevar],
+[pgac_save_CFLAGS=$CFLAGS
+CFLAGS="$pgac_save_CFLAGS $1 $2"
+AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <vecintrin.h>
+    unsigned long long a __attribute__((vector_size(16))) = { 0 };
+    unsigned long long b __attribute__((vector_size(16))) = { 0 };
+    unsigned char c __attribute__((vector_size(16))) = { 0 };
+    static void vecint_gfmsum_accum_test(void){
+        c = vec_gfmsum_accum_128(a, b, c);
+    }],
+  [
+   vecint_gfmsum_accum_test();
+   return 0;])],
+  [Ac_cachevar=yes],
+  [Ac_cachevar=no])
+CFLAGS="$pgac_save_CFLAGS"])
+if test x"$Ac_cachevar" = x"yes"; then
+  CFLAGS_CRC="$1 $2"
+  AS_TR_SH([pgac_s390x_vector_intrinsics_$1_$2])=yes
+fi
+undefine([Ac_cachevar])dnl
+])# PGAC_S390X_VECTOR_VX_INTRINSICS
+
 # PGAC_XSAVE_INTRINSICS
 # ---------------------
 # Check if the compiler supports the XSAVE instructions using the _xgetbv
