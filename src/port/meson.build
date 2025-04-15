@@ -100,6 +100,10 @@ replace_funcs_pos = [
   # loongarch
   ['pg_crc32c_loongarch', 'USE_LOONGARCH_CRC32C'],
 
+  # s390x
+  ['pg_crc32c_s390x', 'USE_S390X_CRC32C_WITH_RUNTIME_CHECK', 'crc'],
+  ['pg_crc32c_sb8', 'USE_S390X_CRC32C_WITH_RUNTIME_CHECK'],
+
   # generic fallback
   ['pg_crc32c_sb8', 'USE_SLICING_BY_8_CRC32C'],
 ]
