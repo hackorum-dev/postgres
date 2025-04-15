@@ -9149,7 +9149,10 @@ ATExecSetStatistics(Relation rel, const char *colName, int16 colNum, Node *newVa
 	if (!newtarget_default)
 		repl_val[Anum_pg_attribute_attstattarget - 1] = Int16GetDatum(newtarget);
 	else
+	{
+		repl_val[Anum_pg_attribute_attstattarget - 1] = (Datum) 0;
 		repl_null[Anum_pg_attribute_attstattarget - 1] = true;
+	}
 	repl_repl[Anum_pg_attribute_attstattarget - 1] = true;
 	newtuple = heap_modify_tuple(tuple, RelationGetDescr(attrelation),
 								 repl_val, repl_null, repl_repl);
@@ -9223,7 +9226,10 @@ ATExecSetOptions(Relation rel, const char *colName, Node *options,
 	if (newOptions != (Datum) 0)
 		repl_val[Anum_pg_attribute_attoptions - 1] = newOptions;
 	else
+	{
+		repl_val[Anum_pg_attribute_attoptions - 1] = (Datum) 0;
 		repl_null[Anum_pg_attribute_attoptions - 1] = true;
+	}
 	repl_repl[Anum_pg_attribute_attoptions - 1] = true;
 	newtuple = heap_modify_tuple(tuple, RelationGetDescr(attrelation),
 								 repl_val, repl_null, repl_repl);
