@@ -221,7 +221,7 @@
 
   <para>
    Each subscription will receive changes via one replication slot (see
-   <xref linkend="streaming-replication-slots"/>).  Additional replication
+   <xref linkend="logicaldecoding-replication-slots"/>).  Additional replication
    slots may be required for the initial data synchronization of
    pre-existing table data and those will be dropped at the end of data
    synchronization.
