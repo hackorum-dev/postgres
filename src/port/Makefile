@@ -87,10 +87,13 @@ libpgport.a: $(OBJS)
 	rm -f $@
 	$(AR) $(AROPT) $@ $^
 
-# all versions of pg_crc32c_armv8.o need CFLAGS_CRC
+# all versions of pg_crc32c_armv8.o and pg_crc32c_s390x.o need CFLAGS_CRC
 pg_crc32c_armv8.o: CFLAGS+=$(CFLAGS_CRC)
 pg_crc32c_armv8_shlib.o: CFLAGS+=$(CFLAGS_CRC)
 pg_crc32c_armv8_srv.o: CFLAGS+=$(CFLAGS_CRC)
+pg_crc32c_s390x.o: CFLAGS+=$(CFLAGS_CRC)
+pg_crc32c_s390x_shlib.o: CFLAGS+=$(CFLAGS_CRC)
+pg_crc32c_s390x_srv.o: CFLAGS+=$(CFLAGS_CRC)
 
 #
 # Shared library versions of object files
