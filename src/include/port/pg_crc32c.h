@@ -166,6 +166,19 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
 extern pg_crc32c pg_comp_crc32c_pmull(pg_crc32c crc, const void *data, size_t len);
 #endif
 
+#elif defined(USE_S390X_CRC32C_WITH_RUNTIME_CHECK)
+/*
+ * Use S390X vector instructions only for buffers longer then 32 byte.
+ * For runtime check use pg_comp_crc32c.
+ */
+#define COMP_CRC32C(crc, data, len)							\
+	((crc) = (len) < 32 ? pg_comp_crc32c_sb8((crc),(data),(len)) : pg_comp_crc32c((crc), (data), (len)))
+#define FIN_CRC32C(crc) ((crc) = pg_bswap32(crc) ^ 0xFFFFFFFF)
+
+extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
+extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
+extern pg_crc32c pg_comp_crc32c_s390x(pg_crc32c crc, const void *data, size_t len);
+
 #else
 /*
  * Use slicing-by-8 algorithm.
