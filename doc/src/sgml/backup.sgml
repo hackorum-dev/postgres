@@ -354,124 +354,8 @@ pg_dump -j <replaceable class="parameter">num</replaceable> -F d -f <replaceable
   </sect2>
  </sect1>
 
- <sect1 id="backup-file">
-  <title>File System Level Backup</title>
-
-  <para>
-   An alternative backup strategy is to directly copy the files that
-   <productname>PostgreSQL</productname> uses to store the data in the database;
-   <xref linkend="creating-cluster"/> explains where these files
-   are located.  You can use whatever method you prefer
-   for doing file system backups; for example:
-
-<programlisting>
-tar -cf backup.tar /usr/local/pgsql/data
-</programlisting>
-  </para>
-
-  <para>
-   There are two restrictions, however, which make this method
-   impractical, or at least inferior to the <application>pg_dump</application>
-   method:
-
-   <orderedlist>
-    <listitem>
-     <para>
-      The database server <emphasis>must</emphasis> be shut down in order to
-      get a usable backup. Half-way measures such as disallowing all
-      connections will <emphasis>not</emphasis> work
-      (in part because <command>tar</command> and similar tools do not take
-      an atomic snapshot of the state of the file system,
-      but also because of internal buffering within the server).
-      Information about stopping the server can be found in
-      <xref linkend="server-shutdown"/>.  Needless to say, you
-      also need to shut down the server before restoring the data.
-     </para>
-    </listitem>
-
-    <listitem>
-     <para>
-      If you have dug into the details of the file system layout of the
-      database, you might be tempted to try to back up or restore only certain
-      individual tables or databases from their respective files or
-      directories. This will <emphasis>not</emphasis> work because the
-      information contained in these files is not usable without
-      the commit log files,
-      <filename>pg_xact/*</filename>, which contain the commit status of
-      all transactions. A table file is only usable with this
-      information. Of course it is also impossible to restore only a
-      table and the associated <filename>pg_xact</filename> data
-      because that would render all other tables in the database
-      cluster useless.  So file system backups only work for complete
-      backup and restoration of an entire database cluster.
-     </para>
-    </listitem>
-   </orderedlist>
-  </para>
-
-  <para>
-   An alternative file-system backup approach is to make a
-   <quote>consistent snapshot</quote> of the data directory, if the
-   file system supports that functionality (and you are willing to
-   trust that it is implemented correctly).  The typical procedure is
-   to make a <quote>frozen snapshot</quote> of the volume containing the
-   database, then copy the whole data directory (not just parts, see
-   above) from the snapshot to a backup device, then release the frozen
-   snapshot.  This will work even while the database server is running.
-   However, a backup created in this way saves
-   the database files in a state as if the database server was not
-   properly shut down; therefore, when you start the database server
-   on the backed-up data, it will think the previous server instance
-   crashed and will replay the WAL log.  This is not a problem; just
-   be aware of it (and be sure to include the WAL files in your backup).
-   You can perform a <command>CHECKPOINT</command> before taking the
-   snapshot to reduce recovery time.
-  </para>
-
-  <para>
-   If your database is spread across multiple file systems, there might not
-   be any way to obtain exactly-simultaneous frozen snapshots of all
-   the volumes.  For example, if your data files and WAL log are on different
-   disks, or if tablespaces are on different file systems, it might
-   not be possible to use snapshot backup because the snapshots
-   <emphasis>must</emphasis> be simultaneous.
-   Read your file system documentation very carefully before trusting
-   the consistent-snapshot technique in such situations.
-  </para>
-
-  <para>
-   If simultaneous snapshots are not possible, one option is to shut down
-   the database server long enough to establish all the frozen snapshots.
-   Another option is to perform a continuous archiving base backup (<xref
-   linkend="backup-base-backup"/>) because such backups are immune to file
-   system changes during the backup.  This requires enabling continuous
-   archiving just during the backup process; restore is done using
-   continuous archive recovery (<xref linkend="backup-pitr-recovery"/>).
-  </para>
-
-  <para>
-   Another option is to use <application>rsync</application> to perform a file
-   system backup.  This is done by first running <application>rsync</application>
-   while the database server is running, then shutting down the database
-   server long enough to do an <command>rsync --checksum</command>.
-   (<option>--checksum</option> is necessary because <command>rsync</command> only
-   has file modification-time granularity of one second.)  The
-   second <application>rsync</application> will be quicker than the first,
-   because it has relatively little data to transfer, and the end result
-   will be consistent because the server was down.  This method
-   allows a file system backup to be performed with minimal downtime.
-  </para>
-
-  <para>
-   Note that a file system backup will typically be larger
-   than an SQL dump. (<application>pg_dump</application> does not need to dump
-   the contents of indexes for example, just the commands to recreate
-   them.)  However, taking a file system backup might be faster.
-  </para>
- </sect1>
-
  <sect1 id="continuous-archiving">
-  <title>Continuous Archiving and Point-in-Time Recovery (PITR)</title>
+  <title>Physical Backups Using Continuous Archiving</title>
 
   <indexterm zone="backup">
    <primary>continuous archiving</primary>
@@ -568,6 +452,28 @@ tar -cf backup.tar /usr/local/pgsql/data
    first base backup.  Accordingly, we first discuss the mechanics of
    archiving WAL files.
   </para>
+
+  <sect2 id="backup-standalone">
+   <title>Built-In Standalone Backups</title>
+
+   <para>
+    If all you want is a standalone backup, it is possible to use <productname>
+    PostgreSQL</productname>'s backup facilities to produce standalone hot backups.
+    These are backups that cannot be used for point-in-time recovery, yet are
+    typically much faster to backup and restore than <application>pg_dump</application>
+    dumps. (They are also much larger than <application>pg_dump</application> dumps,
+    so in some cases the speed advantage might be negated.)
+   </para>
+
+   <para>
+    The easiest way to produce a standalone
+    hot backup is to use the <xref linkend="app-pgbasebackup"/>
+    tool. If you include the <literal>-X</literal> parameter when calling
+    it, all the write-ahead log required to use the backup will be
+    included in the backup automatically, and no special action is
+    required to restore the backup.
+   </para>
+  </sect2>
 
   <sect2 id="backup-archiving-wal">
    <title>Setting Up WAL Archiving</title>
@@ -1464,28 +1370,6 @@ restore_command = 'cp "/mnt/server/archivedir/%f" "%p"'
     Some tips for configuring continuous archiving are given here.
    </para>
 
-    <sect3 id="backup-standalone">
-     <title>Standalone Hot Backups</title>
-
-     <para>
-      It is possible to use <productname>PostgreSQL</productname>'s backup facilities to
-      produce standalone hot backups. These are backups that cannot be used
-      for point-in-time recovery, yet are typically much faster to backup and
-      restore than <application>pg_dump</application> dumps.  (They are also much larger
-      than <application>pg_dump</application> dumps, so in some cases the speed advantage
-      might be negated.)
-     </para>
-
-     <para>
-      As with base backups, the easiest way to produce a standalone
-      hot backup is to use the <xref linkend="app-pgbasebackup"/>
-      tool. If you include the <literal>-X</literal> parameter when calling
-      it, all the write-ahead log required to use the backup will be
-      included in the backup automatically, and no special action is
-      required to restore the backup.
-     </para>
-    </sect3>
-
     <sect3 id="compressed-archive-logs">
      <title>Compressed Archive Logs</title>
 
@@ -1615,6 +1499,122 @@ archive_command = 'local_backup_script.sh "%p" "%f"'
     interval parameters as much as feasible.
    </para>
   </sect2>
+ </sect1>
+
+ <sect1 id="backup-file">
+  <title>File System Level Backup</title>
+
+  <para>
+   An older and largely deprecated technique to take a backup is to directly copy
+   the files that <productname>PostgreSQL</productname> uses to store the data in
+   the database; <xref linkend="creating-cluster"/> explains where these files
+   are located. You can use whatever method you prefer for doing file system
+   backups; for example:
+
+<programlisting>
+tar -cf backup.tar /usr/local/pgsql/data
+</programlisting>
+  </para>
+
+  <para>
+   There are two restrictions, however, which make this method
+   impractical, or at least inferior to the <application>pg_dump</application>
+   method:
+
+   <orderedlist>
+    <listitem>
+     <para>
+      The database server <emphasis>must</emphasis> be shut down in order to
+      get a usable backup. Half-way measures such as disallowing all
+      connections will <emphasis>not</emphasis> work
+      (in part because <command>tar</command> and similar tools do not take
+      an atomic snapshot of the state of the file system,
+      but also because of internal buffering within the server).
+      Information about stopping the server can be found in
+      <xref linkend="server-shutdown"/>.  Needless to say, you
+      also need to shut down the server before restoring the data.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      If you have dug into the details of the file system layout of the
+      database, you might be tempted to try to back up or restore only certain
+      individual tables or databases from their respective files or
+      directories. This will <emphasis>not</emphasis> work because the
+      information contained in these files is not usable without
+      the commit log files,
+      <filename>pg_xact/*</filename>, which contain the commit status of
+      all transactions. A table file is only usable with this
+      information. Of course it is also impossible to restore only a
+      table and the associated <filename>pg_xact</filename> data
+      because that would render all other tables in the database
+      cluster useless.  So file system backups only work for complete
+      backup and restoration of an entire database cluster.
+     </para>
+    </listitem>
+   </orderedlist>
+  </para>
+
+  <para>
+   An alternative file-system backup approach is to make a
+   <quote>consistent snapshot</quote> of the data directory, if the
+   file system supports that functionality (and you are willing to
+   trust that it is implemented correctly).  The typical procedure is
+   to make a <quote>frozen snapshot</quote> of the volume containing the
+   database, then copy the whole data directory (not just parts, see
+   above) from the snapshot to a backup device, then release the frozen
+   snapshot.  This will work even while the database server is running.
+   However, a backup created in this way saves
+   the database files in a state as if the database server was not
+   properly shut down; therefore, when you start the database server
+   on the backed-up data, it will think the previous server instance
+   crashed and will replay the WAL log.  This is not a problem; just
+   be aware of it (and be sure to include the WAL files in your backup).
+   You can perform a <command>CHECKPOINT</command> before taking the
+   snapshot to reduce recovery time.
+  </para>
+
+  <para>
+   If your database is spread across multiple file systems, there might not
+   be any way to obtain exactly-simultaneous frozen snapshots of all
+   the volumes.  For example, if your data files and WAL log are on different
+   disks, or if tablespaces are on different file systems, it might
+   not be possible to use snapshot backup because the snapshots
+   <emphasis>must</emphasis> be simultaneous.
+   Read your file system documentation very carefully before trusting
+   the consistent-snapshot technique in such situations.
+  </para>
+
+  <para>
+   If simultaneous snapshots are not possible, one option is to shut down
+   the database server long enough to establish all the frozen snapshots.
+   Another option is to perform a continuous archiving base backup (<xref
+   linkend="backup-base-backup"/>) because such backups are immune to file
+   system changes during the backup.  This requires enabling continuous
+   archiving just during the backup process; restore is done using
+   continuous archive recovery (<xref linkend="backup-pitr-recovery"/>).
+  </para>
+
+  <para>
+   Another option is to use <application>rsync</application> to perform a file
+   system backup.  This is done by first running <application>rsync</application>
+   while the database server is running, then shutting down the database
+   server long enough to do an <command>rsync --checksum</command>.
+   (<option>--checksum</option> is necessary because <command>rsync</command> only
+   has file modification-time granularity of one second.)  The
+   second <application>rsync</application> will be quicker than the first,
+   because it has relatively little data to transfer, and the end result
+   will be consistent because the server was down.  This method
+   allows a file system backup to be performed with minimal downtime.
+  </para>
+
+  <para>
+   Note that a file system backup will typically be larger
+   than an SQL dump. (<application>pg_dump</application> does not need to dump
+   the contents of indexes for example, just the commands to recreate
+   them.)  However, taking a file system backup might be faster.
+  </para>
  </sect1>
 
 </chapter>
