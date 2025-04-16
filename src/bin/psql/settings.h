@@ -102,17 +102,23 @@ typedef struct _psqlSettings
 {
 	PGconn	   *db;				/* connection to backend */
 	int			encoding;		/* client_encoding */
-	FILE	   *queryFout;		/* where to send the query results */
-	bool		queryFoutPipe;	/* queryFout is from a popen() */
 
-	FILE	   *copyStream;		/* Stream to read/write for \copy command */
+	FILE	   *queryFout;		/* where to send the query results */
+	char	   *queryFName;		/* name of above Fout stream */
+	bool		queryFoutPipe;	/* queryFout is from a popen() */
 
 	PGresult   *last_error_result;	/* most recent error result, if any */
 
 	printQueryOpt popt;			/* The active print format settings */
-
-	char	   *gfname;			/* one-shot file output argument for \g */
 	printQueryOpt *gsavepopt;	/* if not null, saved print format settings */
+
+	char	   *gfname;			/* one-shot output argument for \g */
+	bool		g_pipe;			/* whether \g is to a pipe or file */
+	char	   *gi_fname;		/* one-shot input argument for \gi */
+	bool		gi_pipe;		/* whether \gi is from a pipe or file */
+
+	bool		copy_pstd;		/* \copy pstdout/pstdin vs stdout/stdin */
+	FILE	   *copyStream;		/* current \copy to/from file/pipe */
 
 	char	   *gset_prefix;	/* one-shot prefix argument for \gset */
 	bool		gdesc_flag;		/* one-shot request to describe query result */

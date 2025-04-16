@@ -481,4 +481,40 @@ psql_like($node, "copy (values ('foo'),('bar')) to stdout \\g | $pipe_cmd",
 my $c4 = slurp_file($g_file);
 like($c4, qr/foo.*bar/s);
 
+# Test \gi file
+my $gi_file = "$tempdir/gi_file.in";
+append_to_file($gi_file, "Susie\nCalvin\nHobbes\n");
+psql_like(
+	$node,
+	"CREATE TABLE gi_data(stuff TEXT);\n" .
+	"COPY gi_data(stuff) FROM STDIN \\gi '$gi_file'\n" .
+	"SELECT stuff FROM gi_data ORDER BY 1;\n",
+	qr/Calvin.*Hobbes.*Susie/s,
+	"COPY ... \\gi file");
+
+psql_like(
+	$node,
+	"COPY gi_data FROM STDIN \\gi '$perlbin -e \"print qq{Rosalyn\\n}\"|'\n" .
+	"SELECT * FROM gi_data WHERE stuff ILIKE '%sal%';",
+	qr/Rosalyn/,
+	"COPY ... \\gi command");
+
+psql_like(
+	$node,
+	"SELECT 'hello' \\gi '$gi_file'\n",
+	qr/hello/,
+	"SELECT ... \\gi file is simply executed");
+
+psql_fails_like(
+	$node,
+	"SELECT 'missing file' \\gi\n",
+	qr/\\gi expects a filename or pipe command/,
+	"missing file parameter to \\gi");
+
+psql_fails_like(
+	$node,
+	"COPY gi_data(stuff) FROM STDIN \\gi '$tempdir/no-such-file'\n",
+	qr/No such file or directory/,
+	"COPY ... \\gi no-such-file");
+
 done_testing();

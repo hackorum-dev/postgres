@@ -12,6 +12,7 @@
 #include <math.h>
 #include <pwd.h>
 #include <signal.h>
+#include <sys/stat.h>
 #ifndef WIN32
 #include <unistd.h>				/* for write() */
 #else
@@ -41,35 +42,53 @@ static int	ExecQueryAndProcessResults(const char *query,
 static bool command_no_begin(const char *query);
 
 
+/* make sure the file stream is not a directory */
+static bool
+badFileStream(FILE *file, const char *fname)
+{
+	struct stat	st;
+	int			result;
+	bool		bad;
+
+	if ((result = fstat(fileno(file), &st)) < 0)
+		pg_log_error("could not stat file \"%s\": %m",
+					 fname ? fname : "<?>");
+
+	if (result == 0 && S_ISDIR(st.st_mode))
+		pg_log_error("cannot copy from/to directory \"%s\"",
+					 fname ? fname : "<?>");
+
+	return result < 0 || S_ISDIR(st.st_mode);
+}
+
 /*
  * openQueryOutputFile --- attempt to open a query output file
  *
- * fname == NULL selects stdout, else an initial '|' selects a pipe,
- * else plain file.
- *
- * Returns output file pointer into *fout, and is-a-pipe flag into *is_pipe.
+ * Returns output file pointer into *fout.
  * Caller is responsible for adjusting SIGPIPE state if it's a pipe.
  *
  * On error, reports suitable error message and returns false.
  */
 bool
-openQueryOutputFile(const char *fname, FILE **fout, bool *is_pipe)
+openQueryOutputFile(const char *fname, bool is_pipe, FILE **fout)
 {
 	if (!fname || fname[0] == '\0')
-	{
 		*fout = stdout;
-		*is_pipe = false;
-	}
-	else if (*fname == '|')
+	else if (is_pipe)
 	{
 		fflush(NULL);
-		*fout = popen(fname + 1, "w");
-		*is_pipe = true;
+		*fout = popen(fname, PG_BINARY_W);
 	}
 	else
 	{
-		*fout = fopen(fname, "w");
-		*is_pipe = false;
+		*fout = fopen(fname, PG_BINARY_W);
+
+		if (*fout && badFileStream(*fout, fname))
+		{
+			fclose(*fout);
+			*fout = NULL;
+			return false;
+		}
 	}
 
 	if (*fout == NULL)
@@ -86,15 +105,15 @@ openQueryOutputFile(const char *fname, FILE **fout, bool *is_pipe)
  * open it and update the caller's gfile_fout and is_pipe state variables.
  * Return true if OK, false if an error occurred.
  */
-static bool
-SetupGOutput(FILE **gfile_fout, bool *is_pipe)
+bool
+SetupGOutput(FILE **gfile_fout)
 {
 	/* If there is a \g file or program, and it's not already open, open it */
 	if (pset.gfname != NULL && *gfile_fout == NULL)
 	{
-		if (openQueryOutputFile(pset.gfname, gfile_fout, is_pipe))
+		if (openQueryOutputFile(pset.gfname, pset.g_pipe, gfile_fout))
 		{
-			if (*is_pipe)
+			if (pset.g_pipe)
 				disable_sigpipe_trap();
 		}
 		else
@@ -104,21 +123,107 @@ SetupGOutput(FILE **gfile_fout, bool *is_pipe)
 }
 
 /*
- * Close the output stream for \g, if we opened it.
+ * Close file with user feedback on errors.
+ */
+static bool
+CloseFile(FILE *stream, const char *fname)
+{
+	if (fclose(stream) != 0)
+	{
+		pg_log_error("%s: %m", fname);
+		return false;
+	}
+	return true;
+}
+
+/*
+ * Close pipe with user feedback on errors.
+ */
+static bool
+ClosePipe(FILE *stream, const char *fname)
+{
+	int		 pclose_rc = pclose(stream);
+
+	if (pclose_rc != 0)
+	{
+		if (pclose_rc < 0)
+			pg_log_error("could not close pipe to/from external command: %m");
+		else
+		{
+			char	   *reason = wait_result_to_str(pclose_rc);
+
+			pg_log_error("%s: %s", fname ? fname: "<?>", reason ? reason : "");
+			free(reason);
+		}
+		return false;
+	}
+
+	SetShellResultVariables(pclose_rc);
+	restore_sigpipe_trap();
+	return true;
+}
+
+/*
+ * Close the input (\gi) or output (\g) stream, if we opened it.
  */
 static void
-CloseGOutput(FILE *gfile_fout, bool is_pipe)
+CloseStream(FILE *stream, const char *fname, bool is_pipe)
 {
-	if (gfile_fout)
+	if (fname && stream)
 	{
 		if (is_pipe)
+			(void) ClosePipe(stream, fname);
+		else
+			(void) CloseFile(stream, fname);
+	}
+}
+
+/*
+ * Open or use input stream, only under COPY_IN (COPY or \copy)
+ */
+bool
+SetupGInput(FILE **input_stream)
+{
+	if (pset.gi_fname != NULL && *input_stream == NULL)
+	{
+		FILE	*input = NULL;
+
+		if (pset.gi_pipe)
 		{
-			SetShellResultVariables(pclose(gfile_fout));
-			restore_sigpipe_trap();
+			fflush(NULL);
+			errno = 0;
+			input = popen(pset.gi_fname, PG_BINARY_R);
+			if (!input)
+			{
+				pg_log_error("could not execute command \"%s\": %m",
+							 pset.gi_fname);
+				return false;
+			}
+			disable_sigpipe_trap();
 		}
 		else
-			fclose(gfile_fout);
+		{
+			input = fopen(pset.gi_fname, PG_BINARY_R);
+			if (!input)
+			{
+				pg_log_error("could not open file \"%s\": %m", pset.gi_fname);
+				return false;
+			}
+			if (input && badFileStream(input, pset.gi_fname))
+			{
+				fclose(input);
+				return false;
+			}
+		}
+
+		*input_stream = input;
 	}
+	else if (pset.copy_pstd)
+		*input_stream = pset.cur_cmd_source;
+	else
+		*input_stream = stdin;
+
+	return true;
 }
 
 /*
@@ -141,25 +246,31 @@ pipelineReset(void)
  * On failure, returns false without changing pset state.
  */
 bool
-setQFout(const char *fname)
+setQFout(const char *fname, bool is_pipe)
 {
 	FILE	   *fout;
-	bool		is_pipe;
 
 	/* First make sure we can open the new output file/pipe */
-	if (!openQueryOutputFile(fname, &fout, &is_pipe))
+	if (!openQueryOutputFile(fname, is_pipe, &fout))
 		return false;
 
 	/* Close old file/pipe */
 	if (pset.queryFout && pset.queryFout != stdout && pset.queryFout != stderr)
 	{
 		if (pset.queryFoutPipe)
-			SetShellResultVariables(pclose(pset.queryFout));
+			ClosePipe(pset.queryFout, pset.queryFName);
 		else
-			fclose(pset.queryFout);
+			CloseFile(pset.queryFout, pset.queryFName);
+
+		if (pset.queryFName)
+		{
+			free(pset.queryFName);
+			pset.queryFName = NULL;
+		}
 	}
 
 	pset.queryFout = fout;
+	pset.queryFName = fname ? pg_strdup(fname) : NULL;
 	pset.queryFoutPipe = is_pipe;
 
 	/* Adjust SIGPIPE handling appropriately: ignore signal if is_pipe */
@@ -923,10 +1034,6 @@ loop_exit:
  * connection out of its COPY state, then call PQresultStatus()
  * once and report any error.  Return whether all was ok.
  *
- * For COPY OUT, direct the output to copystream, or discard if that's NULL.
- * For COPY IN, use pset.copyStream as data source if it's set,
- * otherwise cur_cmd_source.
- *
  * Update *resultp if further processing is necessary; set to NULL otherwise.
  * Return a result when queryFout can safely output a result status: on COPY
  * IN, or on COPY OUT if written to something other than pset.queryFout.
@@ -966,8 +1073,6 @@ HandleCopyResult(PGresult **resultp, FILE *copystream)
 	else
 	{
 		/* COPY IN */
-		/* Ignore the copystream argument passed to the function */
-		copystream = pset.copyStream ? pset.copyStream : pset.cur_cmd_source;
 		success = handleCopyIn(pset.db,
 							   copystream,
 							   PQbinaryTuples(*resultp),
@@ -1303,6 +1408,13 @@ sendquery_cleanup:
 		pset.gfname = NULL;
 	}
 
+	/* idem \gi */
+	if (pset.gi_fname)
+	{
+		free(pset.gi_fname);
+		pset.gi_fname = NULL;
+	}
+
 	/* restore print settings if \g changed them */
 	if (pset.gsavepopt)
 	{
@@ -1548,8 +1660,8 @@ ExecQueryAndProcessResults(const char *query,
 	instr_time	before,
 				after;
 	PGresult   *result;
-	FILE	   *gfile_fout = NULL;
-	bool		gfile_is_pipe = false;
+	FILE	   *gfile_fout = NULL,
+			   *gfile_fin = NULL;
 
 	if (timing)
 		INSTR_TIME_SET_CURRENT(before);
@@ -1852,9 +1964,8 @@ ExecQueryAndProcessResults(const char *query,
 
 			/*
 			 * For COPY OUT, direct the output to the default place (probably
-			 * a pager pipe) for \watch, or to pset.copyStream for \copy,
-			 * otherwise to pset.gfname if that's set, otherwise to
-			 * pset.queryFout.
+			 * a pager pipe) for \watch, or use to pset.gfname if that's set,
+			 * otherwise to pset.queryFout.
 			 */
 			if (result_status == PGRES_COPY_OUT)
 			{
@@ -1865,15 +1976,15 @@ ExecQueryAndProcessResults(const char *query,
 				}
 				else if (pset.copyStream)
 				{
-					/* invoked by \copy */
+					/* \copy ... to ... */
 					copy_stream = pset.copyStream;
 				}
 				else if (pset.gfname)
 				{
-					/* COPY followed by \g filename or \g |program */
-					success &= SetupGOutput(&gfile_fout, &gfile_is_pipe);
-					if (gfile_fout)
-						copy_stream = gfile_fout;
+					/* COPY with \g filename or \g |program */
+					if (!gfile_fout)
+						success &= SetupGOutput(&gfile_fout);
+					copy_stream = gfile_fout;
 				}
 				else
 				{
@@ -1881,10 +1992,25 @@ ExecQueryAndProcessResults(const char *query,
 					copy_stream = pset.queryFout;
 				}
 			}
+			else if (result_status == PGRES_COPY_IN)
+			{
+				if (pset.copyStream)
+				{
+					/* \copy ... from ... */
+					copy_stream = pset.copyStream;
+				}
+				else
+				{
+					/* COPY with or without \gi ... */
+					if (!gfile_fin)
+						success &= SetupGInput(&gfile_fin);
+					copy_stream = gfile_fin;
+				}
+			}
 
 			/*
-			 * Even if the output stream could not be opened, we call
-			 * HandleCopyResult() with a NULL output stream to collect and
+			 * Even if the input or output stream could not be opened, we call
+			 * HandleCopyResult() with a NULL stream to collect and
 			 * discard the COPY data.
 			 */
 			success &= HandleCopyResult(&result, copy_stream);
@@ -1905,7 +2031,7 @@ ExecQueryAndProcessResults(const char *query,
 			my_popt.topt.prior_records = 0;
 
 			/* open \g file if needed */
-			success &= SetupGOutput(&gfile_fout, &gfile_is_pipe);
+			success &= SetupGOutput(&gfile_fout);
 			if (gfile_fout)
 				tuples_fout = gfile_fout;
 
@@ -2094,7 +2220,7 @@ ExecQueryAndProcessResults(const char *query,
 			FILE	   *tuples_fout = printQueryFout;
 
 			if (PQresultStatus(result) == PGRES_TUPLES_OK)
-				success &= SetupGOutput(&gfile_fout, &gfile_is_pipe);
+				success &= SetupGOutput(&gfile_fout);
 			if (gfile_fout)
 				tuples_fout = gfile_fout;
 			if (success)
@@ -2124,8 +2250,9 @@ ExecQueryAndProcessResults(const char *query,
 		}
 	}
 
-	/* close \g file if we opened it */
-	CloseGOutput(gfile_fout, gfile_is_pipe);
+	/* close \g and \gi files if we opened one */
+	CloseStream(gfile_fout, pset.gfname, pset.g_pipe);
+	CloseStream(gfile_fin, pset.gi_fname, pset.gi_pipe);
 
 	if (end_pipeline)
 	{

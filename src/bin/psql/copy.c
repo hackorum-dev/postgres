@@ -8,7 +8,6 @@
 #include "postgres_fe.h"
 
 #include <signal.h>
-#include <sys/stat.h>
 #ifndef WIN32
 #include <unistd.h>				/* for isatty */
 #else
@@ -18,6 +17,7 @@
 #include "common.h"
 #include "common/logging.h"
 #include "copy.h"
+#include "common.h"
 #include "libpq-fe.h"
 #include "pqexpbuffer.h"
 #include "prompt.h"
@@ -268,7 +268,6 @@ bool
 do_copy(const char *args)
 {
 	PQExpBufferData query;
-	FILE	   *copystream;
 	struct copy_options *options;
 	bool		success;
 
@@ -282,81 +281,43 @@ do_copy(const char *args)
 	if (options->file && !options->program)
 		canonicalize_path_enc(options->file, pset.encoding);
 
+	/* \copy with pstdout/pstdin vs stdout/stdin */
+	pset.copy_pstd = options->psql_inout;
+
+	/*
+	 * Translate \copy destination as \g or source as \gi.
+	 *
+	 * The stream is opened to return early if there is some error,
+	 * which means that any error at this level does **not** break
+	 * the current transaction.
+	 * If okay, the stream is closed in SendQuery.
+	 */
 	if (options->from)
 	{
 		if (options->file)
 		{
-			if (options->program)
-			{
-				fflush(NULL);
-				errno = 0;
-				copystream = popen(options->file, PG_BINARY_R);
-			}
-			else
-				copystream = fopen(options->file, PG_BINARY_R);
+			pset.gi_fname = pg_strdup(options->file);
+			pset.gi_pipe = options->program;
 		}
-		else if (!options->psql_inout)
-			copystream = pset.cur_cmd_source;
-		else
-			copystream = stdin;
+		SetupGInput(&pset.copyStream);
+		if (!pset.copyStream)
+			return false;
 	}
 	else
 	{
 		if (options->file)
 		{
-			if (options->program)
-			{
-				fflush(NULL);
-				disable_sigpipe_trap();
-				errno = 0;
-				copystream = popen(options->file, PG_BINARY_W);
-			}
-			else
-				copystream = fopen(options->file, PG_BINARY_W);
+			pset.gfname = pg_strdup(options->file);
+			pset.g_pipe = options->program;
 		}
-		else if (!options->psql_inout)
-			copystream = pset.queryFout;
-		else
-			copystream = stdout;
-	}
-
-	if (!copystream)
-	{
-		if (options->program)
-			pg_log_error("could not execute command \"%s\": %m",
-						 options->file);
-		else
-			pg_log_error("%s: %m",
-						 options->file);
-		free_copy_options(options);
-		return false;
-	}
-
-	if (!options->program)
-	{
-		struct stat st;
-		int			result;
-
-		/* make sure the specified file is not a directory */
-		if ((result = fstat(fileno(copystream), &st)) < 0)
-			pg_log_error("could not stat file \"%s\": %m",
-						 options->file);
-
-		if (result == 0 && S_ISDIR(st.st_mode))
-			pg_log_error("%s: cannot copy from/to a directory",
-						 options->file);
-
-		if (result < 0 || S_ISDIR(st.st_mode))
-		{
-			fclose(copystream);
-			free_copy_options(options);
+		SetupGOutput(&pset.copyStream);
+		if (!pset.copyStream)
 			return false;
-		}
 	}
 
 	/* build the command we will send to the backend */
 	initPQExpBuffer(&query);
-	printfPQExpBuffer(&query, "COPY ");
+	appendPQExpBuffer(&query, "COPY ");
 	appendPQExpBufferStr(&query, options->before_tofrom);
 	if (options->from)
 		appendPQExpBufferStr(&query, " FROM STDIN ");
@@ -365,44 +326,11 @@ do_copy(const char *args)
 	if (options->after_tofrom)
 		appendPQExpBufferStr(&query, options->after_tofrom);
 
-	/* run it like a user command, but with copystream as data source/sink */
-	pset.copyStream = copystream;
+	/* run it like a user command */
 	success = SendQuery(query.data);
+
 	pset.copyStream = NULL;
 	termPQExpBuffer(&query);
-
-	if (options->file != NULL)
-	{
-		if (options->program)
-		{
-			int			pclose_rc = pclose(copystream);
-
-			if (pclose_rc != 0)
-			{
-				if (pclose_rc < 0)
-					pg_log_error("could not close pipe to external command: %m");
-				else
-				{
-					char	   *reason = wait_result_to_str(pclose_rc);
-
-					pg_log_error("%s: %s", options->file,
-								 reason ? reason : "");
-					free(reason);
-				}
-				success = false;
-			}
-			SetShellResultVariables(pclose_rc);
-			restore_sigpipe_trap();
-		}
-		else
-		{
-			if (fclose(copystream) != 0)
-			{
-				pg_log_error("%s: %m", options->file);
-				success = false;
-			}
-		}
-	}
 	free_copy_options(options);
 	return success;
 }
@@ -513,6 +441,13 @@ handleCopyIn(PGconn *conn, FILE *copystream, bool isbinary, PGresult **res)
 	bool		OK;
 	char		buf[COPYBUFSIZ];
 	bool		showprompt;
+
+	/* No input stream on COPY ... \gi 'non-such-file' */
+	if (copystream == NULL)
+	{
+		OK = false;
+		goto copyin_cleanup;
+	}
 
 	/*
 	 * Establish longjmp destination for exiting from wait-for-input. (This is
@@ -703,7 +638,8 @@ copyin_cleanup:
 	 * with feof(), some fread() implementations won't read more data if it's
 	 * set.  This also clears the error flag, but we already checked that.
 	 */
-	clearerr(copystream);
+	if (copystream)
+		clearerr(copystream);
 
 	/*
 	 * Check command status and return to normal libpq state.

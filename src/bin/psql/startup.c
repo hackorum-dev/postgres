@@ -474,7 +474,7 @@ error:
 		PQfinish(pset.db);
 	if (pset.dead_conn)
 		PQfinish(pset.dead_conn);
-	setQFout(NULL);
+	setQFout(NULL, false);
 
 	return successResult;
 }
@@ -591,9 +591,13 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 				options->no_readline = true;
 				break;
 			case 'o':
-				if (!setQFout(optarg))
-					exit(EXIT_FAILURE);
-				break;
+				{
+					bool is_pipe = *optarg == '|';
+
+					if (!setQFout(optarg + (is_pipe ? 1 : 0), is_pipe))
+						exit(EXIT_FAILURE);
+					break;
+				}
 			case 'p':
 				options->port = pg_strdup(optarg);
 				break;

@@ -1887,7 +1887,8 @@ psql_completion(const char *text, int start, int end)
 		"\\echo", "\\edit", "\\ef", "\\elif", "\\else", "\\encoding",
 		"\\endif", "\\endpipeline", "\\errverbose", "\\ev",
 		"\\f", "\\flush", "\\flushrequest",
-		"\\g", "\\gdesc", "\\getenv", "\\getresults", "\\gexec", "\\gset", "\\gx",
+		"\\g", "\\gdesc", "\\getenv", "\\getresults", "\\gexec", "\\gi",
+		"\\gset", "\\gx",
 		"\\help", "\\html",
 		"\\if", "\\include", "\\include_relative", "\\ir",
 		"\\list", "\\lo_import", "\\lo_export", "\\lo_list", "\\lo_unlink",
@@ -5440,7 +5441,7 @@ match_previous_words(int pattern_id,
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_routines);
 	else if (TailMatchesCS("\\sv*"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_views);
-	else if (TailMatchesCS("\\cd|\\e|\\edit|\\g|\\gx|\\i|\\include|"
+	else if (TailMatchesCS("\\cd|\\e|\\edit|\\g|\\gx|\\gi|\\i|\\include|"
 						   "\\ir|\\include_relative|\\o|\\out|"
 						   "\\s|\\w|\\write|\\lo_import"))
 	{

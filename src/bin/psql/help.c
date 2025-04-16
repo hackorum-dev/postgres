@@ -177,6 +177,7 @@ slashUsage(unsigned short int pager)
 	HELP0("  \\getresults [NUM_RES]  read NUM_RES pending results. All pending results are\n"
 		  "                         read if no argument is provided\n");
 	HELP0("  \\gexec                 execute query, then execute each value in its result\n");
+	HELP0("  \\gi FILE               execute query, reading from file or pipe| if needed\n");
 	HELP0("  \\gset [PREFIX]         execute query and store result in psql variables\n");
 	HELP0("  \\gx [(OPTIONS)] [FILE] as \\g, but forces expanded output mode\n");
 	HELP0("  \\parse STMT_NAME       create a prepared statement\n");

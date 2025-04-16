@@ -107,6 +107,7 @@ static backslashResult exec_command_getenv(PsqlScanState scan_state, bool active
 										   const char *cmd);
 static backslashResult exec_command_gexec(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_getresults(PsqlScanState scan_state, bool active_branch);
+static backslashResult exec_command_gi(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_gset(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_help(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_html(PsqlScanState scan_state, bool active_branch);
@@ -380,6 +381,8 @@ exec_command(const char *cmd,
 		status = exec_command_getresults(scan_state, active_branch);
 	else if (strcmp(cmd, "gexec") == 0)
 		status = exec_command_gexec(scan_state, active_branch);
+	else if (strcmp(cmd, "gi") == 0)
+		status = exec_command_gi(scan_state, active_branch);
 	else if (strcmp(cmd, "gset") == 0)
 		status = exec_command_gset(scan_state, active_branch);
 	else if (strcmp(cmd, "h") == 0 || strcmp(cmd, "help") == 0)
@@ -1750,7 +1753,8 @@ exec_command_g(PsqlScanState scan_state, bool active_branch, const char *cmd)
 		else
 		{
 			expand_tilde(&fname);
-			pset.gfname = pg_strdup(fname);
+			pset.g_pipe = fname[0] == '|';
+			pset.gfname = pg_strdup(fname + (pset.g_pipe ? 1 : 0));
 		}
 		if (strcmp(cmd, "gx") == 0)
 		{
@@ -1952,6 +1956,56 @@ exec_command_gexec(PsqlScanState scan_state, bool active_branch)
 		}
 		pset.gexec_flag = true;
 		status = PSQL_CMD_SEND;
+	}
+
+	return status;
+}
+
+/*
+ * \gi filename/shell-command
+ *
+ * Send the current query with a query input from the filename or pipe
+ * command.
+ */
+static backslashResult
+exec_command_gi(PsqlScanState scan_state, bool active_branch)
+{
+	backslashResult status = PSQL_CMD_SKIP_LINE;
+
+	if (active_branch)
+	{
+		char	   *fname;
+		int			last;
+
+		fname = psql_scan_slash_option(scan_state, OT_FILEPIPE, NULL, false);
+
+		if (fname == NULL)
+		{
+			pg_log_error("\\gi expects a filename or pipe command");
+			clean_extended_state();
+			free(fname);
+			return PSQL_CMD_ERROR;
+		}
+
+		/* check and truncate final pipe character */
+		last = strlen(fname) - 1;
+		pset.gi_pipe = last >= 0 && fname[last] == '|';
+		if (pset.gi_pipe)
+			fname[last] = '\0';
+
+		if (PQpipelineStatus(pset.db) != PQ_PIPELINE_OFF)
+		{
+			pg_log_error("\\gi not allowed in pipeline mode");
+			clean_extended_state();
+			free(fname);
+			return PSQL_CMD_ERROR;
+		}
+
+		expand_tilde(&fname);
+		pset.gi_fname = pg_strdup(fname);
+
+		status = PSQL_CMD_SEND;
+		free(fname);
 	}
 
 	return status;
@@ -2440,9 +2494,10 @@ exec_command_out(PsqlScanState scan_state, bool active_branch)
 	{
 		char	   *fname = psql_scan_slash_option(scan_state,
 												   OT_FILEPIPE, NULL, true);
+		bool		is_pipe = *fname == '|';
 
 		expand_tilde(&fname);
-		success = setQFout(fname);
+		success = setQFout(fname + (is_pipe ? 1 : 0), is_pipe);
 		free(fname);
 	}
 	else

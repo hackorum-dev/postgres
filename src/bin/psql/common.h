@@ -15,8 +15,10 @@
 #include "fe_utils/psqlscan.h"
 #include "libpq-fe.h"
 
-extern bool openQueryOutputFile(const char *fname, FILE **fout, bool *is_pipe);
-extern bool setQFout(const char *fname);
+extern bool openQueryOutputFile(const char *fname, bool is_pipe, FILE **fout);
+extern bool SetupGOutput(FILE **output);
+extern bool SetupGInput(FILE **input);
+extern bool setQFout(const char *fname, bool is_pipe);
 
 extern char *psql_get_variable(const char *varname, PsqlScanQuoteType quote,
 							   void *passthrough);
