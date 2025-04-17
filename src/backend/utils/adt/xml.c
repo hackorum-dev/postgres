@@ -2135,6 +2135,35 @@ xml_errsave(Node *escontext, PgXmlErrorContext *errcxt,
 			 detail ? errdetail_internal("%s", detail) : 0));
 }
 
+/*
+ * Generic error handler for libxml errors and warnings.
+ * This is not used by this module, but may be useful for
+ * libxml-based libraries like libxslt, which do not support
+ * structured error handlers.
+ */
+void
+xml_generic_error_handler(void *data, const char *msg,...)
+{
+	PgXmlErrorContext *xmlerrcxt = (PgXmlErrorContext *) data;
+	va_list		ap;
+
+	/*
+	 * Defend against someone passing us a bogus context struct.
+	 *
+	 * We force a backend exit if this check fails because longjmp'ing out of
+	 * libxslt would likely render it unsafe to use further.
+	 */
+	if (xmlerrcxt->magic != ERRCXT_MAGIC)
+		elog(FATAL, "xml_generic_error_handler called with invalid PgXmlErrorContext");
+
+	appendStringInfoLineSeparator(&xmlerrcxt->err_buf);
+	va_start(ap, msg);
+	appendStringInfoVA(&xmlerrcxt->err_buf, msg, ap);
+	va_end(ap);
+
+	/* Get rid of any trailing newlines in errorBuf */
+	chopStringInfoNewlines(&xmlerrcxt->err_buf);
+}
 
 /*
  * Error handler for libxml errors and warnings

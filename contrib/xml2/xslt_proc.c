@@ -60,6 +60,10 @@ xslt_process(PG_FUNCTION_ARGS)
 	volatile int resstat = -1;
 	xmlChar    *volatile resstr = NULL;
 
+	/* the previous libxslt error context */
+	xmlGenericErrorFunc saved_errfunc;
+	void	   *saved_errcxt;
+
 	if (fcinfo->nargs == 3)
 	{
 		paramstr = PG_GETARG_TEXT_PP(2);
@@ -73,7 +77,14 @@ xslt_process(PG_FUNCTION_ARGS)
 	}
 
 	/* Setup parser */
-	xmlerrcxt = pgxml_parser_init(PG_XML_STRICTNESS_LEGACY);
+	xmlerrcxt = pgxml_parser_init(PG_XML_STRICTNESS_ALL);
+
+	/*
+	 * Save the previous libxslt error context.
+	 */
+	saved_errfunc = xsltGenericError;
+	saved_errcxt = xsltGenericErrorContext;
+	xsltSetGenericErrorFunc(xmlerrcxt, xml_generic_error_handler);
 
 	PG_TRY();
 	{
@@ -81,9 +92,12 @@ xslt_process(PG_FUNCTION_ARGS)
 		bool		xslt_sec_prefs_error;
 		int			reslen = 0;
 
-		/* Parse document */
+		/*
+		 * Parse document. It's important to set an "URL", so libxslt includes
+		 * line numbers in error messages (cf. xsltPrintErrorContext()).
+		 */
 		doctree = xmlReadMemory((char *) VARDATA_ANY(doct),
-								VARSIZE_ANY_EXHDR(doct), NULL, NULL,
+								VARSIZE_ANY_EXHDR(doct), "SQL", NULL,
 								XML_PARSE_NOENT);
 
 		if (doctree == NULL || pg_xml_error_occurred(xmlerrcxt))
@@ -92,7 +106,7 @@ xslt_process(PG_FUNCTION_ARGS)
 
 		/* Same for stylesheet */
 		ssdoc = xmlReadMemory((char *) VARDATA_ANY(ssheet),
-							  VARSIZE_ANY_EXHDR(ssheet), NULL, NULL,
+							  VARSIZE_ANY_EXHDR(ssheet), "SQL", NULL,
 							  XML_PARSE_NOENT);
 
 		if (ssdoc == NULL || pg_xml_error_occurred(xmlerrcxt))
@@ -143,9 +157,10 @@ xslt_process(PG_FUNCTION_ARGS)
 
 		resstat = xsltSaveResultToString((xmlChar **) &resstr, &reslen,
 										 restree, stylesheet);
-
-		if (resstat >= 0)
-			result = cstring_to_text_with_len((char *) resstr, reslen);
+		if (resstat < 0 || pg_xml_error_occurred(xmlerrcxt))
+			xml_ereport(xmlerrcxt, ERROR, ERRCODE_INVALID_ARGUMENT_FOR_XQUERY,
+						"failed to save result to string");
+		result = cstring_to_text_with_len((char *) resstr, reslen);
 	}
 	PG_CATCH();
 	{
@@ -163,6 +178,7 @@ xslt_process(PG_FUNCTION_ARGS)
 			xmlFree(resstr);
 		xsltCleanupGlobals();
 
+		xsltSetGenericErrorFunc(saved_errcxt, saved_errfunc);
 		pg_xml_done(xmlerrcxt, true);
 
 		PG_RE_THROW();
@@ -179,11 +195,8 @@ xslt_process(PG_FUNCTION_ARGS)
 	if (resstr)
 		xmlFree(resstr);
 
+	xsltSetGenericErrorFunc(saved_errcxt, saved_errfunc);
 	pg_xml_done(xmlerrcxt, false);
-
-	/* XXX this is pretty dubious, really ought to throw error instead */
-	if (resstat < 0)
-		PG_RETURN_NULL();
 
 	PG_RETURN_TEXT_P(result);
 #else							/* !USE_LIBXSLT */

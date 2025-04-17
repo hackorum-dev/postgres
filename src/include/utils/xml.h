@@ -66,6 +66,8 @@ extern void pg_xml_init_library(void);
 extern PgXmlErrorContext *pg_xml_init(PgXmlStrictness strictness);
 extern void pg_xml_done(PgXmlErrorContext *errcxt, bool isError);
 extern bool pg_xml_error_occurred(PgXmlErrorContext *errcxt);
+extern void xml_generic_error_handler(void *data, const char *msg,...)
+			pg_attribute_printf(2, 3);
 extern void xml_ereport(PgXmlErrorContext *errcxt, int level, int sqlcode,
 						const char *msg);
 

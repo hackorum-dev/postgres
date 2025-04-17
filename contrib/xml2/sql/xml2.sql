@@ -153,3 +153,11 @@ $$<xsl:stylesheet version="1.0"
     </sax:output>
   </xsl:template>
 </xsl:stylesheet>$$);
+
+-- detecting missing stylesheet parameter
+SELECT xslt_process('<xml/>',
+$$<stylesheet version="1.0" xmlns="http://www.w3.org/1999/XSL/Transform">
+  <template match="/">
+    <value-of select="$n1"/>
+  </template>
+</stylesheet>$$)::xml;

@@ -261,3 +261,20 @@ $$<xsl:stylesheet version="1.0"
   </xsl:template>
 </xsl:stylesheet>$$);
 ERROR:  failed to apply stylesheet
+DETAIL:  runtime error: file SQL line 7 element output
+File write for 0wn3d.txt refused
+runtime error: file SQL line 7 element output
+xsltDocumentElem: write rights for 0wn3d.txt denied
+-- detecting missing stylesheet parameter
+SELECT xslt_process('<xml/>',
+$$<stylesheet version="1.0" xmlns="http://www.w3.org/1999/XSL/Transform">
+  <template match="/">
+    <value-of select="$n1"/>
+  </template>
+</stylesheet>$$)::xml;
+ERROR:  failed to apply stylesheet
+DETAIL:  runtime error: file SQL line 3 element value-of
+Variable 'n1' has not been declared.
+Undefined variable
+runtime error: file SQL line 3 element value-of
+XPath evaluation returned no result.
