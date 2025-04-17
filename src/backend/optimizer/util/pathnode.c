@@ -2605,6 +2605,9 @@ create_nestloop_path(PlannerInfo *root,
 
 	final_cost_nestloop(root, pathnode, workspace, extra);
 
+	pathnode->jpath.unmatch_frac = extra->sjinfo->ojrelid > 0 ?
+										extra->sjinfo->unmatched_frac : -1.0;
+
 	return pathnode;
 }
 
@@ -2673,6 +2676,9 @@ create_mergejoin_path(PlannerInfo *root,
 	/* pathnode->materialize_inner will be set by final_cost_mergejoin */
 
 	final_cost_mergejoin(root, pathnode, workspace, extra);
+
+	pathnode->jpath.unmatch_frac = extra->sjinfo->ojrelid > 0 ?
+										extra->sjinfo->unmatched_frac : -1.0;
 
 	return pathnode;
 }
@@ -2747,6 +2753,9 @@ create_hashjoin_path(PlannerInfo *root,
 	/* final_cost_hashjoin will fill in pathnode->num_batches */
 
 	final_cost_hashjoin(root, pathnode, workspace, extra);
+
+	pathnode->jpath.unmatch_frac = extra->sjinfo->ojrelid > 0 ?
+										extra->sjinfo->unmatched_frac : -1.0;
 
 	return pathnode;
 }

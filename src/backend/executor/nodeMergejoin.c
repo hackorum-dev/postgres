@@ -668,6 +668,7 @@ ExecMergeJoin(PlanState *pstate)
 							 */
 							TupleTableSlot *result;
 
+							node->js.unmatched_tuples++;
 							result = MJFillOuter(node);
 							if (result)
 								return result;
@@ -723,6 +724,7 @@ ExecMergeJoin(PlanState *pstate)
 							 */
 							TupleTableSlot *result;
 
+							node->js.unmatched_tuples++;
 							result = MJFillInner(node);
 							if (result)
 								return result;

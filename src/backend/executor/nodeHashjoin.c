@@ -615,7 +615,10 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 					econtext->ecxt_innertuple = node->hj_NullInnerTupleSlot;
 
 					if (otherqual == NULL || ExecQual(otherqual, econtext))
+					{
+						node->js.unmatched_tuples++;
 						return ExecProject(node->js.ps.ps_ProjInfo);
+					}
 					else
 						InstrCountFiltered2(node, 1);
 				}

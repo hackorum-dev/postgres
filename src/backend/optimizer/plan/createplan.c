@@ -1104,6 +1104,8 @@ create_join_plan(PlannerInfo *root, JoinPath *best_path)
 			break;
 	}
 
+	((Join *) plan)->unmatched_frac = best_path->unmatch_frac;
+
 	/*
 	 * If there are any pseudoconstant clauses attached to this node, insert a
 	 * gating Result node that evaluates the pseudoconstants as one-time

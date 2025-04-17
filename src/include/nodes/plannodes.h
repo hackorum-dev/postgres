@@ -929,6 +929,8 @@ typedef struct Join
 	bool		inner_unique;
 	/* JOIN quals (in addition to plan.qual) */
 	List	   *joinqual;
+
+	Selectivity	unmatched_frac;
 } Join;
 
 /* ----------------

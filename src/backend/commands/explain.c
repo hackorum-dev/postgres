@@ -2273,6 +2273,30 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 	}
 
+	if (nodeTag(plan) == T_NestLoop || nodeTag(plan) == T_MergeJoin ||
+		nodeTag(plan) == T_HashJoin)
+	{
+		JoinState *js = (JoinState *) planstate;
+		Join *join = (Join *) plan;
+
+		if (join->unmatched_frac >= 0.0)
+		{
+			/*
+			 * There are a probability of null tuples existed. Show how
+			 * precisely the planner have done its job.
+			 * XXX: The type of output value is debatable. Would it
+			 * be better to show relative values? For now, current format just
+			 * simpler.
+			 */
+			ExplainPropertyFloat("Planned unmatched rows", NULL,
+							join->unmatched_frac * join->plan.plan_rows, 0, es);
+
+			if (es->analyze)
+				ExplainPropertyFloat("Actual unmatched rows", NULL,
+												js->unmatched_tuples, 0, es);
+		}
+	}
+
 	/*
 	 * Prepare per-worker JIT instrumentation.  As with the overall JIT
 	 * summary, this is printed only if printing costs is enabled.

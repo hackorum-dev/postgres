@@ -2218,6 +2218,12 @@ typedef struct JoinPath
 	 * joinrestrictinfo is needed in JoinPath, and can't be merged into the
 	 * parent RelOptInfo.
 	 */
+
+	/*
+	 * Must be -1.0 'not initialized' for non-outer joins. In case of outer join
+	 * it contains fraction of not matched tuples.
+	 */
+	Selectivity unmatch_frac;
 } JoinPath;
 
 /*
@@ -3043,6 +3049,9 @@ struct SpecialJoinInfo
 	bool		semi_can_hash;	/* true if semi_operators are all hash */
 	List	   *semi_operators; /* OIDs of equality join operators */
 	List	   *semi_rhs_exprs; /* righthand-side expressions of these ops */
+
+	/* For outer join, fraction of rows without a match. */
+	Selectivity	unmatched_frac;
 };
 
 /*

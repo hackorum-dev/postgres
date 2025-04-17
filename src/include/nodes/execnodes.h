@@ -2155,6 +2155,7 @@ typedef struct JoinState
 	bool		single_match;	/* True if we should skip to next outer tuple
 								 * after finding one inner match */
 	ExprState  *joinqual;		/* JOIN quals (in addition to ps.qual) */
+	double		unmatched_tuples;
 } JoinState;
 
 /* ----------------

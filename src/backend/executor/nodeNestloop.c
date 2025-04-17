@@ -188,6 +188,7 @@ ExecNestLoop(PlanState *pstate)
 					 */
 					ENL1_printf("qualification succeeded, projecting tuple");
 
+					node->js.unmatched_tuples++;
 					return ExecProject(node->js.ps.ps_ProjInfo);
 				}
 				else
