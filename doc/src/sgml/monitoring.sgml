@@ -284,6 +284,10 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
   </para>
 
   <para>
+   An aborted transaction will also increment tuple-related counters, unless otherwise noted.
+  </para>
+
+  <para>
    Some of the information in the dynamic statistics views shown in <xref
    linkend="monitoring-stats-dynamic-views-table"/> is security restricted.
    Ordinary users can only see all the information about their own sessions
@@ -4637,7 +4641,8 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        <structfield>n_live_tup</structfield> <type>bigint</type>
       </para>
       <para>
-       Estimated number of live rows
+       Estimated number of live rows (updated by committed transactions, or by
+       <command>VACUUM</command> and <command>VACUUM FULL</command>)
       </para></entry>
      </row>
 
@@ -4646,7 +4651,8 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        <structfield>n_dead_tup</structfield> <type>bigint</type>
       </para>
       <para>
-       Estimated number of dead rows
+       Estimated number of dead rows (updated either by committed or aborted
+       transactions, or by <command>VACUUM</command> and <command>VACUUM FULL</command>)
       </para></entry>
      </row>
 
@@ -4655,7 +4661,8 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        <structfield>n_mod_since_analyze</structfield> <type>bigint</type>
       </para>
       <para>
-       Estimated number of rows modified since this table was last analyzed
+       Estimated number of rows modified (by committed transactions) since this table
+       was last analyzed
       </para></entry>
      </row>
 
