@@ -10727,6 +10727,11 @@
   proname => 'pg_extension_config_dump', provolatile => 'v', proparallel => 'u',
   prorettype => 'void', proargtypes => 'regclass text',
   prosrc => 'pg_extension_config_dump' },
+{ oid => '3814',
+  descr => 'determine if an extension is currently being created',
+  proname => 'pg_creating_extension', provolatile => 'v', proparallel => 'u',
+  prorettype => 'oid', proargtypes => '',
+  prosrc => 'pg_creating_extension' },
 
 # SQL-spec window functions
 { oid => '3100', descr => 'row number within partition',

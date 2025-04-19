@@ -3863,3 +3863,13 @@ new_ExtensionControlFile(const char *extname)
 
 	return control;
 }
+
+Datum
+pg_creating_extension(PG_FUNCTION_ARGS)
+{
+	if (creating_extension)
+	{
+		PG_RETURN_OID(CurrentExtensionObject);
+	}
+	PG_RETURN_NULL();
+}
