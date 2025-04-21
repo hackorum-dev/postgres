@@ -85,13 +85,6 @@ create event trigger regress_event_trigger2 on ddl_command_start
 -- OK
 comment on event trigger regress_event_trigger is 'test comment';
 
--- drop as non-superuser should fail
-create role regress_evt_user;
-set role regress_evt_user;
-create event trigger regress_event_trigger_noperms on ddl_command_start
-   execute procedure test_event_trigger();
-reset role;
-
 -- test enabling and disabling
 alter event trigger regress_event_trigger disable;
 -- fires _trigger2 and _trigger_end should fire, but not _trigger
@@ -139,12 +132,10 @@ revoke all on table event_trigger_fire1 from public;
 drop table event_trigger_fire1;
 create foreign data wrapper useless;
 create server useless_server foreign data wrapper useless;
+create role regress_evt_user;
 create user mapping for regress_evt_user server useless_server;
 alter default privileges for role regress_evt_user
  revoke delete on tables from regress_evt_user;
-
--- alter owner to non-superuser should fail
-alter event trigger regress_event_trigger owner to regress_evt_user;
 
 -- alter owner to superuser should work
 alter role regress_evt_user superuser;

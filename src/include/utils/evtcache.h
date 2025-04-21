@@ -31,6 +31,7 @@ typedef struct
 	Oid			fnoid;			/* function to be called */
 	char		enabled;		/* as SESSION_REPLICATION_ROLE_* */
 	Bitmapset  *tagset;			/* command tags, or NULL if empty */
+	Oid			owneroid;		/* owner of the event trigger */
 } EventTriggerCacheItem;
 
 extern List *EventCacheLookup(EventTriggerEvent event);

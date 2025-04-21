@@ -126,18 +126,6 @@ CreateEventTrigger(CreateEventTrigStmt *stmt)
 	ListCell   *lc;
 	List	   *tags = NULL;
 
-	/*
-	 * It would be nice to allow database owners or even regular users to do
-	 * this, but there are obvious privilege escalation risks which would have
-	 * to somehow be plugged first.
-	 */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to create event trigger \"%s\"",
-						stmt->trigname),
-				 errhint("Must be superuser to create an event trigger.")));
-
 	/* Validate event name. */
 	if (strcmp(stmt->eventname, "ddl_command_start") != 0 &&
 		strcmp(stmt->eventname, "ddl_command_end") != 0 &&
@@ -545,14 +533,6 @@ AlterEventTriggerOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_EVENT_TRIGGER,
 					   NameStr(form->evtname));
 
-	/* New owner must be a superuser */
-	if (!superuser_arg(newOwnerId))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to change owner of event trigger \"%s\"",
-						NameStr(form->evtname)),
-				 errhint("The owner of an event trigger must be a superuser.")));
-
 	form->evtowner = newOwnerId;
 	CatalogTupleUpdate(rel, &tup->t_self, tup);
 
@@ -698,7 +678,7 @@ EventTriggerCommonSetup(Node *parsetree,
 		if (unfiltered || filter_event_trigger(tag, item))
 		{
 			/* We must plan to fire this trigger. */
-			runlist = lappend_oid(runlist, item->fnoid);
+			runlist = lappend(runlist, item);
 		}
 	}
 
@@ -1084,11 +1064,16 @@ EventTriggerInvoke(List *fn_oid_list, EventTriggerData *trigdata)
 	foreach(lc, fn_oid_list)
 	{
 		LOCAL_FCINFO(fcinfo, 0);
-		Oid			fnoid = lfirst_oid(lc);
+		EventTriggerCacheItem *item = lfirst(lc);
 		FmgrInfo	flinfo;
 		PgStat_FunctionCallUsage fcusage;
+		Oid current_user = GetUserId();
 
-		elog(DEBUG1, "EventTriggerInvoke %u", fnoid);
+		if (!is_member_of_role_nosuper(current_user, item->owneroid)) {
+			continue;
+		}
+
+		elog(DEBUG1, "EventTriggerInvoke %u", item->fnoid);
 
 		/*
 		 * We want each event trigger to be able to see the results of the
@@ -1102,7 +1087,7 @@ EventTriggerInvoke(List *fn_oid_list, EventTriggerData *trigdata)
 			CommandCounterIncrement();
 
 		/* Look up the function */
-		fmgr_info(fnoid, &flinfo);
+		fmgr_info(item->fnoid, &flinfo);
 
 		/* Call the function, passing no arguments but setting a context. */
 		InitFunctionCallInfoData(*fcinfo, &flinfo, 0,

@@ -84,14 +84,6 @@ create event trigger regress_event_trigger2 on ddl_command_start
    execute procedure test_event_trigger();
 -- OK
 comment on event trigger regress_event_trigger is 'test comment';
--- drop as non-superuser should fail
-create role regress_evt_user;
-set role regress_evt_user;
-create event trigger regress_event_trigger_noperms on ddl_command_start
-   execute procedure test_event_trigger();
-ERROR:  permission denied to create event trigger "regress_event_trigger_noperms"
-HINT:  Must be superuser to create an event trigger.
-reset role;
 -- test enabling and disabling
 alter event trigger regress_event_trigger disable;
 -- fires _trigger2 and _trigger_end should fire, but not _trigger
@@ -168,15 +160,12 @@ create foreign data wrapper useless;
 NOTICE:  test_event_trigger: ddl_command_end CREATE FOREIGN DATA WRAPPER
 create server useless_server foreign data wrapper useless;
 NOTICE:  test_event_trigger: ddl_command_end CREATE SERVER
+create role regress_evt_user;
 create user mapping for regress_evt_user server useless_server;
 NOTICE:  test_event_trigger: ddl_command_end CREATE USER MAPPING
 alter default privileges for role regress_evt_user
  revoke delete on tables from regress_evt_user;
 NOTICE:  test_event_trigger: ddl_command_end ALTER DEFAULT PRIVILEGES
--- alter owner to non-superuser should fail
-alter event trigger regress_event_trigger owner to regress_evt_user;
-ERROR:  permission denied to change owner of event trigger "regress_event_trigger"
-HINT:  The owner of an event trigger must be a superuser.
 -- alter owner to superuser should work
 alter role regress_evt_user superuser;
 alter event trigger regress_event_trigger owner to regress_evt_user;
