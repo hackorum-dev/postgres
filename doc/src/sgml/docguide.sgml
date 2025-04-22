@@ -516,6 +516,19 @@ LOGLEVEL=-Dorg.apache.commons.logging.simplelog.defaultlog=WARN
         that is done below.  Instead, list the major components of the
         command line, such as where input and output files go.
        </para>
+
+       <para>
+        Below are some addtional recommendations for an application synopsis:
+        <itemizedlist>
+         <listitem>
+          <para>
+           Options that are common across multiple applications should also
+           have consistent argument names. For example,
+           <replaceable>datadir</replaceable> and <replaceable>filename</replaceable>.
+          </para>
+         </listitem>
+        </itemizedlist>
+       </para>
       </listitem>
      </varlistentry>
 
