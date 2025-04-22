@@ -109,6 +109,19 @@ PostgreSQL documentation
     </varlistentry>
 
     <varlistentry>
+     <term><option>-c</option></term>
+     <term><option>--create-standby</option></term>
+     <listitem>
+      <para>
+       Initializes the subscriber node as a physical standby using
+       <xref linkend="app-pgbasebackup"/>. This automates the process of taking
+       a base backup from the publisher server, configuring the standby server,
+       and preparing it for logical replication.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
      <term><option>-d <replaceable class="parameter">dbname</replaceable></option></term>
      <term><option>--database=<replaceable class="parameter">dbname</replaceable></option></term>
      <listitem>

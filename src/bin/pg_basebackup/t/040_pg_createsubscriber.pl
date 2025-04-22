@@ -8,6 +8,8 @@ use warnings FATAL => 'all';
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
+use File::Path qw(rmtree);
+use File::Copy;
 
 program_help_ok('pg_createsubscriber');
 program_version_ok('pg_createsubscriber');
@@ -536,6 +538,58 @@ my $sysid_p = $node_p->safe_psql('postgres',
 my $sysid_s = $node_s->safe_psql('postgres',
 	'SELECT system_identifier FROM pg_control_system()');
 ok($sysid_p != $sysid_s, 'system identifier was changed');
+
+$node_s->stop;
+
+my $tempdir = PostgreSQL::Test::Utils::tempdir;
+my $conf_file = $node_s->data_dir . '/' . 'postgresql.conf';
+
+copy("$conf_file", "$tempdir/postgresql.conf") or die "Copy failed: $!";
+
+# Remove an old directory.
+rmtree($node_s->data_dir);
+
+# Run pg_createsubscriber on node S with '--create-standby' option
+command_ok(
+	[
+		'pg_createsubscriber',
+		'--verbose', '--verbose',
+		'--recovery-timeout' => $PostgreSQL::Test::Utils::timeout_default,
+		'--pgdata' => $node_s->data_dir,
+		'--publisher-server' => $node_p->connstr($db1),
+		'--publication' => 'pub3',
+		'--publication' => 'pub4',
+		'--database' => $db1,
+		'--database' => $db2,
+		'--create-standby',
+	],
+	'run pg_createsubscriber on node S with --create-standby');
+
+# Insert a row on P
+$node_p->safe_psql($db1, "INSERT INTO tbl1 VALUES('fourth row')");
+
+my $port = $node_s->port;
+
+$node_s->append_conf(
+	'postgresql.conf', qq[
+hot_standby_feedback = on
+]);
+$node_s->append_conf(
+	'postgresql.auto.conf', qq[
+port = $port
+]);
+
+copy("$tempdir/postgresql.conf", "$conf_file") or die "Copy failed: $!";
+
+$node_s->start;
+
+# Check result in database $db1
+$result = $node_s->safe_psql($db1, 'SELECT * FROM tbl1');
+is( $result, qq(first row
+second row
+third row
+fourth row),
+	"logical replication works in database $db1");
 
 # clean up
 $node_p->teardown_node;
