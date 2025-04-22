@@ -22,6 +22,7 @@ PostgreSQL documentation
  <refsynopsisdiv>
   <cmdsynopsis>
    <command>pg_resetwal</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
    <group choice="opt">
     <arg choice="plain"><option>-f</option></arg>
     <arg choice="plain"><option>--force</option></arg>
@@ -30,7 +31,6 @@ PostgreSQL documentation
     <arg choice="plain"><option>-n</option></arg>
     <arg choice="plain"><option>--dry-run</option></arg>
    </group>
-   <arg rep="repeat"><replaceable>option</replaceable></arg>
    <group choice="plain">
     <group choice="opt">
      <arg choice="plain"><option>-D</option></arg>
