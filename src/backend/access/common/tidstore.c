@@ -416,20 +416,11 @@ TidStoreSetBlockOffsets(TidStore *ts, BlockNumber blkno, OffsetNumber *offsets,
 		local_ts_set(ts->tree.local, blkno, page);
 }
 
-/* Return true if the given TID is present in the TidStore */
-bool
-TidStoreIsMember(TidStore *ts, ItemPointer tid)
+static pg_attribute_always_inline int
+tidstore_is_member_page(BlocktableEntry *page, OffsetNumber off)
 {
 	int			wordnum;
 	int			bitnum;
-	BlocktableEntry *page;
-	BlockNumber blk = ItemPointerGetBlockNumber(tid);
-	OffsetNumber off = ItemPointerGetOffsetNumber(tid);
-
-	if (TidStoreIsShared(ts))
-		page = shared_ts_find(ts->tree.shared, blk);
-	else
-		page = local_ts_find(ts->tree.local, blk);
 
 	/* no entry for the blk */
 	if (page == NULL)
@@ -443,19 +434,54 @@ TidStoreIsMember(TidStore *ts, ItemPointer tid)
 			if (page->header.full_offsets[i] == off)
 				return true;
 		}
+
 		return false;
 	}
-	else
+
+	wordnum = WORDNUM(off);
+	bitnum = BITNUM(off);
+
+	/* no bitmap for the off */
+	if (wordnum >= page->header.nwords)
+		return false;
+
+	return (page->words[wordnum] & ((bitmapword) 1 << bitnum)) != 0;
+}
+
+/*
+ * Check if the given TIDs are present in the TidStore. Return the number
+ * of TIDs found in the TidStore. *ismember must have enough space for
+ * up to 'ntids' elements.
+ */
+int
+TidStoreIsMemberMulti(TidStore *ts, ItemPointer tids, int ntids, bool *ismembers)
+{
+	BlocktableEntry *page = NULL;
+	BlockNumber last_blk = InvalidBlockNumber;
+	int			nmembers = 0;
+
+	for (int i = 0; i < ntids; i++)
 	{
-		wordnum = WORDNUM(off);
-		bitnum = BITNUM(off);
+		ItemPointer tid = &(tids[i]);
+		BlockNumber blk = ItemPointerGetBlockNumber(tid);
+		OffsetNumber off = ItemPointerGetOffsetNumber(tid);
 
-		/* no bitmap for the off */
-		if (wordnum >= page->header.nwords)
-			return false;
+		if (blk != last_blk)
+		{
+			if (TidStoreIsShared(ts))
+				page = shared_ts_find(ts->tree.shared, blk);
+			else
+				page = local_ts_find(ts->tree.local, blk);
+		}
 
-		return (page->words[wordnum] & ((bitmapword) 1 << bitnum)) != 0;
+		ismembers[i] = tidstore_is_member_page(page, off);
+		if (ismembers[i])
+			nmembers++;
+
+		last_blk = blk;
 	}
+
+	return nmembers;
 }
 
 /*
