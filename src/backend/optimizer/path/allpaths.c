@@ -1849,17 +1849,18 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 		for (int i = first_index; i != end_index; i += direction)
 		{
 			RelOptInfo *childrel = list_nth_node(RelOptInfo, live_childrels, i);
-			Path	   *cheapest_startup,
+			Path	   *cheapest_startup = NULL,
 					   *cheapest_total,
 					   *cheapest_fractional = NULL;
 
 			/* Locate the right paths, if they are available. */
-			cheapest_startup =
-				get_cheapest_path_for_pathkeys(childrel->pathlist,
-											   pathkeys,
-											   NULL,
-											   STARTUP_COST,
-											   false);
+			if (rel->consider_startup)
+				cheapest_startup =
+					get_cheapest_path_for_pathkeys(childrel->pathlist,
+												   pathkeys,
+												   NULL,
+												   STARTUP_COST,
+												   false);
 			cheapest_total =
 				get_cheapest_path_for_pathkeys(childrel->pathlist,
 											   pathkeys,
@@ -1871,10 +1872,15 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 			 * If we can't find any paths with the right order just use the
 			 * cheapest-total path; we'll have to sort it later.
 			 */
-			if (cheapest_startup == NULL || cheapest_total == NULL)
+			if (cheapest_total == NULL)
 			{
-				cheapest_startup = cheapest_total =
-					childrel->cheapest_total_path;
+				Assert(cheapest_startup == NULL);
+
+				cheapest_total = childrel->cheapest_total_path;
+
+				if (rel->consider_startup)
+					cheapest_startup = cheapest_total;
+
 				/* Assert we do have an unparameterized path for this child */
 				Assert(cheapest_total->param_info == NULL);
 			}
@@ -1932,10 +1938,12 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 				 * just a single subpath (and hence aren't doing anything
 				 * useful).
 				 */
-				cheapest_startup = get_singleton_append_subpath(cheapest_startup);
+				if (cheapest_startup)
+				{
+					cheapest_startup = get_singleton_append_subpath(cheapest_startup);
+					startup_subpaths = lappend(startup_subpaths, cheapest_startup);
+				}
 				cheapest_total = get_singleton_append_subpath(cheapest_total);
-
-				startup_subpaths = lappend(startup_subpaths, cheapest_startup);
 				total_subpaths = lappend(total_subpaths, cheapest_total);
 
 				if (cheapest_fractional)
@@ -1950,8 +1958,10 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 				 * Otherwise, rely on accumulate_append_subpath to collect the
 				 * child paths for the MergeAppend.
 				 */
-				accumulate_append_subpath(cheapest_startup,
-										  &startup_subpaths, NULL);
+				if (cheapest_startup)
+					accumulate_append_subpath(cheapest_startup,
+											  &startup_subpaths, NULL);
+
 				accumulate_append_subpath(cheapest_total,
 										  &total_subpaths, NULL);
 
@@ -1965,15 +1975,16 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 		if (match_partition_order)
 		{
 			/* We only need Append */
-			add_path(rel, (Path *) create_append_path(root,
-													  rel,
-													  startup_subpaths,
-													  NIL,
-													  pathkeys,
-													  NULL,
-													  0,
-													  false,
-													  -1));
+			if (startup_subpaths)
+				add_path(rel, (Path *) create_append_path(root,
+														  rel,
+														  startup_subpaths,
+														  NIL,
+														  pathkeys,
+														  NULL,
+														  0,
+														  false,
+														  -1));
 			if (startup_neq_total)
 				add_path(rel, (Path *) create_append_path(root,
 														  rel,
@@ -1999,11 +2010,12 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 		else
 		{
 			/* We need MergeAppend */
-			add_path(rel, (Path *) create_merge_append_path(root,
-															rel,
-															startup_subpaths,
-															pathkeys,
-															NULL));
+			if (startup_subpaths)
+				add_path(rel, (Path *) create_merge_append_path(root,
+																rel,
+																startup_subpaths,
+																pathkeys,
+																NULL));
 			if (startup_neq_total)
 				add_path(rel, (Path *) create_merge_append_path(root,
 																rel,
@@ -2018,6 +2030,8 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 																pathkeys,
 																NULL));
 		}
+
+		Assert(!(!rel->consider_startup && startup_subpaths != NIL));
 	}
 }
 
