@@ -1662,7 +1662,10 @@ PerformWalRecovery(void)
 	 * archiver if necessary.
 	 */
 	if (IsUnderPostmaster)
+	{
+		pg_usleep(3000000);
 		SendPostmasterSignal(PMSIGNAL_RECOVERY_STARTED);
+	}
 
 	/*
 	 * Allow read-only connections immediately if we're consistent already.
