@@ -4341,10 +4341,7 @@ RelationCacheInitializePhase3(void)
 
 		/*
 		 * Re-load the row security policies if the relation has them, since
-		 * they are not preserved in the cache.  Note that we can never NOT
-		 * have a policy while relrowsecurity is true,
-		 * RelationBuildRowSecurity will create a single default-deny policy
-		 * if there is no policy defined in pg_policy.
+		 * they are not preserved in the cache.
 		 */
 		if (relation->rd_rel->relrowsecurity && relation->rd_rsdesc == NULL)
 		{
