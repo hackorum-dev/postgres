@@ -96,7 +96,7 @@ static void logicalrep_launcher_onexit(int code, Datum arg);
 static void logicalrep_worker_onexit(int code, Datum arg);
 static void logicalrep_worker_detach(void);
 static void logicalrep_worker_cleanup(LogicalRepWorker *worker);
-static int	logicalrep_pa_worker_count(Oid subid);
+static void logicalrep_worker_count(Oid subid, int *nsync, int *nparallelapply);
 static void logicalrep_launcher_attach_dshmem(void);
 static void ApplyLauncherSetWorkerStartTime(Oid subid, TimestampTz start_time);
 static TimestampTz ApplyLauncherGetWorkerStartTime(Oid subid);
@@ -350,16 +350,21 @@ retry:
 		}
 	}
 
-	nsyncworkers = logicalrep_sync_worker_count(subid);
+	logicalrep_worker_count(subid, &nsyncworkers, &nparallelapplyworkers);
 
 	now = GetCurrentTimestamp();
 
 	/*
-	 * If we didn't find a free slot, try to do garbage collection.  The
-	 * reason we do this is because if some worker failed to start up and its
-	 * parent has crashed while waiting, the in_use state was never cleared.
+	 * If we can't start a new logical replication background worker because
+	 * no free slot is available, or because the number of sync workers or
+	 * parallel apply workers has reached the limit per subscriptoin, try
+	 * running garbage collection. The reason we do this is because if some
+	 * workers failed to start up and their parent has crashed while waiting,
+	 * the in_use state was never cleared. By freeing up these stale worker
+	 * slots, we may be able to start a new worker.
 	 */
-	if (worker == NULL || nsyncworkers >= max_sync_workers_per_subscription)
+	if (worker == NULL || nsyncworkers >= max_sync_workers_per_subscription ||
+		nparallelapplyworkers >= max_parallel_apply_workers_per_subscription)
 	{
 		bool		did_cleanup = false;
 
@@ -398,8 +403,6 @@ retry:
 		LWLockRelease(LogicalRepWorkerLock);
 		return false;
 	}
-
-	nparallelapplyworkers = logicalrep_pa_worker_count(subid);
 
 	/*
 	 * Return false if the number of parallel apply workers reached the limit
@@ -844,48 +847,42 @@ logicalrep_worker_onexit(int code, Datum arg)
 int
 logicalrep_sync_worker_count(Oid subid)
 {
-	int			i;
 	int			res = 0;
 
-	Assert(LWLockHeldByMe(LogicalRepWorkerLock));
-
-	/* Search for attached worker for a given subscription id. */
-	for (i = 0; i < max_logical_replication_workers; i++)
-	{
-		LogicalRepWorker *w = &LogicalRepCtx->workers[i];
-
-		if (isTablesyncWorker(w) && w->subid == subid)
-			res++;
-	}
-
+	logicalrep_worker_count(subid, &res, NULL);
 	return res;
 }
 
 /*
- * Count the number of registered (but not necessarily running) parallel apply
- * workers for a subscription.
+ * Count the number of registered (but not necessarily running) sync workers
+ * and parallel apply workers for a subscription.
  */
-static int
-logicalrep_pa_worker_count(Oid subid)
+static void
+logicalrep_worker_count(Oid subid, int *nsync, int *nparallelapply)
 {
-	int			i;
-	int			res = 0;
-
 	Assert(LWLockHeldByMe(LogicalRepWorkerLock));
 
+	if (nsync != NULL)
+		*nsync = 0;
+	if (nparallelapply != NULL)
+		*nparallelapply = 0;
+
 	/*
-	 * Scan all attached parallel apply workers, only counting those which
-	 * have the given subscription id.
+	 * Scan all attached sync and parallel apply workers, only counting those
+	 * which have the given subscription id.
 	 */
-	for (i = 0; i < max_logical_replication_workers; i++)
+	for (int i = 0; i < max_logical_replication_workers; i++)
 	{
 		LogicalRepWorker *w = &LogicalRepCtx->workers[i];
 
-		if (isParallelApplyWorker(w) && w->subid == subid)
-			res++;
+		if (w->subid == subid)
+		{
+			if (nsync != NULL && isTablesyncWorker(w))
+				(*nsync)++;
+			if (nparallelapply != NULL && isParallelApplyWorker(w))
+				(*nparallelapply)++;
+		}
 	}
-
-	return res;
 }
 
 /*
