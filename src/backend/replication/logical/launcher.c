@@ -336,7 +336,6 @@ logicalrep_worker_launch(LogicalRepWorkerType wtype,
 	 */
 	LWLockAcquire(LogicalRepWorkerLock, LW_EXCLUSIVE);
 
-retry:
 	/* Find unused worker slot. */
 	for (i = 0; i < max_logical_replication_workers; i++)
 	{
@@ -386,11 +385,21 @@ retry:
 
 				logicalrep_worker_cleanup(w);
 				did_cleanup = true;
+
+				if (worker == NULL)
+				{
+					worker = w;
+					slot = i;
+				}
 			}
 		}
 
+		/*
+		 * Count the current number of sync and parallel apply workers again,
+		 * since garbage collection may have changed it.
+		 */
 		if (did_cleanup)
-			goto retry;
+			logicalrep_worker_count(subid, &nsyncworkers, &nparallelapplyworkers);
 	}
 
 	/*
