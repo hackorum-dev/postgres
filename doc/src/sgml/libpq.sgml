@@ -2760,6 +2760,26 @@ char *PQservice(const PGconn *conn);
      </listitem>
     </varlistentry>
 
+    <varlistentry id="libpq-PQapplicationname">
+     <term><function>PQapplicationname</function><indexterm><primary>PQapplicationname</primary></indexterm></term>
+
+     <listitem>
+      <para>
+       Returns the application_name of the active connection.
+
+<synopsis>
+char *PQapplicationname(const PGconn *conn);
+</synopsis>
+      </para>
+
+      <para>
+       <xref linkend="libpq-PQapplicationname"/> returns <symbol>NULL</symbol> if the
+       <parameter>conn</parameter> argument is <symbol>NULL</symbol>.
+       Otherwise, if there was no application_name provided, it returns an empty string.
+      </para>
+     </listitem>
+    </varlistentry>
+
     <varlistentry id="libpq-PQtty">
      <term><function>PQtty</function><indexterm><primary>PQtty</primary></indexterm></term>
 

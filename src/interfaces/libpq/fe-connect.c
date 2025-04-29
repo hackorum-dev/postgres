@@ -7460,6 +7460,14 @@ PQservice(const PGconn *conn)
 }
 
 char *
+PQapplicationname(const PGconn *conn)
+{
+	if (!conn)
+		return NULL;
+	return conn->appname;
+}
+
+char *
 PQuser(const PGconn *conn)
 {
 	if (!conn)
