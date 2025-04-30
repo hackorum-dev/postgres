@@ -378,7 +378,7 @@ static void ReorderBufferMemoryResetcallback(void *arg);
  * hash table search for each record, especially when most changes are not
  * filterable.
  */
-#define CHANGES_THRESHOLD_FOR_FILTER 100
+#define CHANGES_THRESHOLD_FOR_FILTER 0
 
 /*
  * Allocate a new ReorderBuffer and clean out any old serialized state from
@@ -5800,6 +5800,10 @@ ReorderBufferFilterByRelFileLocator(ReorderBuffer *rb, TransactionId xid,
 		entry->filterable = false;
 		rb->try_to_filter_change = rb->filter_change(rb, entry->relid, change_type,
 												  true, &cache_valid);
+		if (rb->try_to_filter_change)
+			elog(DEBUG1,"Filtering change for relation \"%s\"",
+						RelationGetRelationName(relation));
+
 		RelationClose(relation);
 	}
 	else
