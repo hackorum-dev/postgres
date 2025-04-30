@@ -176,6 +176,7 @@ typedef struct ReorderBufferChange
 #define RBTXN_SENT_PREPARE			0x0200
 #define RBTXN_IS_COMMITTED			0x0400
 #define RBTXN_IS_ABORTED			0x0800
+#define RBTXN_HAS_SNAPSHOT_CHANGES  0x1000
 
 #define RBTXN_PREPARE_STATUS_MASK	(RBTXN_IS_PREPARED | RBTXN_SKIPPED_PREPARE | RBTXN_SENT_PREPARE)
 
@@ -213,6 +214,12 @@ typedef struct ReorderBufferChange
 #define rbtxn_has_streamable_change(txn) \
 ( \
 	((txn)->txn_flags & RBTXN_HAS_STREAMABLE_CHANGE) != 0 \
+)
+
+/* Does this transaction make changes to the current snapshot? */
+#define rbtxn_has_snapshot_changes(txn) \
+( \
+	((txn)->txn_flags & RBTXN_HAS_SNAPSHOT_CHANGES) != 0 \
 )
 
 /*
@@ -641,6 +648,7 @@ struct ReorderBuffer
 	 * Private memory context.
 	 */
 	MemoryContext context;
+	MemoryContextCallback relfile_callback;
 
 	/*
 	 * Memory contexts for specific types objects
@@ -660,6 +668,12 @@ struct ReorderBuffer
 
 	/* Max-heap for sizes of all top-level and sub transactions */
 	pairingheap *txn_heap;
+
+	/* should we try to filter the change? */
+	bool		try_to_filter_change;
+
+	/* number of changes after a failed attempt at filtering */
+	int8		unfiltered_changes_count;
 
 	/*
 	 * Statistics about transactions spilled to disk.
@@ -763,5 +777,8 @@ extern uint32 ReorderBufferGetInvalidations(ReorderBuffer *rb,
 											SharedInvalidationMessage **msgs);
 
 extern void StartupReorderBuffer(void);
+
+extern bool ReorderBufferFilterByRelFileLocator(ReorderBuffer *rb, TransactionId xid,
+												XLogRecPtr lsn, RelFileLocator *rlocator);
 
 #endif

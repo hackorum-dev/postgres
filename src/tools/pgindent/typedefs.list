@@ -2509,6 +2509,8 @@ ReorderBufferIterTXNEntry
 ReorderBufferIterTXNState
 ReorderBufferMessageCB
 ReorderBufferPrepareCB
+ReorderBufferRelFileLocatorEnt
+ReorderBufferRelFileLocatorKey
 ReorderBufferRollbackPreparedCB
 ReorderBufferStreamAbortCB
 ReorderBufferStreamChangeCB

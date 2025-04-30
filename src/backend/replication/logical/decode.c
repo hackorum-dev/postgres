@@ -928,6 +928,11 @@ DecodeInsert(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
 		return;
 
+	if (ctx->reorder->try_to_filter_change &&
+			ReorderBufferFilterByRelFileLocator(ctx->reorder, XLogRecGetXid(r),
+												buf->origptr, &target_locator))
+		return;
+
 	change = ReorderBufferAllocChange(ctx->reorder);
 	if (!(xlrec->flags & XLH_INSERT_IS_SPECULATIVE))
 		change->action = REORDER_BUFFER_CHANGE_INSERT;
