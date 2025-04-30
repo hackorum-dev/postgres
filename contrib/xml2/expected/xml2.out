@@ -278,3 +278,16 @@ Variable 'n1' has not been declared.
 Undefined variable
 runtime error: file SQL line 3 element value-of
 XPath evaluation returned no result.
+-- xmltype and Array-based signature
+SELECT xslt_process(xmlelement(name xml),
+$$<stylesheet version="1.0" xmlns="http://www.w3.org/1999/XSL/Transform">
+  <template match="/">
+    <value-of select="$n1"/>
+  </template>
+</stylesheet>$$::xml, ARRAY['n1','"foo"']);
+ xslt_process 
+--------------
+ foo         +
+ 
+(1 row)
+

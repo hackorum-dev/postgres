@@ -10,6 +10,9 @@
 #include "fmgr.h"
 #include "utils/builtins.h"
 #include "utils/xml.h"
+#include "utils/array.h"
+#include "utils/memutils.h"
+#include "mb/pg_wchar.h"
 
 #ifdef USE_LIBXSLT
 
@@ -35,9 +38,18 @@
 extern PgXmlErrorContext *pgxml_parser_init(PgXmlStrictness strictness);
 
 /* local defs */
+static xmltype *xslt_process_internal(xmltype *doct, xmltype *ssheet, const char **params);
 static const char **parse_params(text *paramstr);
 #endif							/* USE_LIBXSLT */
 
+/*
+ * FIXME: This cannot easily be exposed in xml.h.
+ * Perhaps there should be an xml-internal.h?
+ */
+xmlDocPtr	xml_parse(text *data, XmlOptionType xmloption_arg,
+					  bool preserve_whitespace, int encoding,
+					  XmlOptionType *parsed_xmloptiontype, xmlNodePtr *parsed_nodes,
+					  Node *escontext);
 
 PG_FUNCTION_INFO_V1(xslt_process);
 
@@ -48,9 +60,103 @@ xslt_process(PG_FUNCTION_ARGS)
 
 	text	   *doct = PG_GETARG_TEXT_PP(0);
 	text	   *ssheet = PG_GETARG_TEXT_PP(1);
-	text	   *volatile result = NULL;
-	text	   *paramstr;
-	const char **params;
+	const char **params = NULL;
+	text	   *result;
+
+	if (fcinfo->nargs == 3)
+	{
+		text	   *paramstr = PG_GETARG_TEXT_PP(2);
+
+		params = parse_params(paramstr);
+	}
+
+	result = xslt_process_internal(doct, ssheet, params);
+
+	PG_RETURN_TEXT_P(result);
+
+#else							/* !USE_LIBXSLT */
+
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("xslt_process() is not available without libxslt")));
+	PG_RETURN_NULL();
+
+#endif							/* USE_LIBXSLT */
+}
+
+PG_FUNCTION_INFO_V1(xslt_process_xmltype);
+
+Datum
+xslt_process_xmltype(PG_FUNCTION_ARGS)
+{
+#ifdef USE_LIBXSLT
+
+	xmltype    *doct = PG_GETARG_XML_P(0);
+	xmltype    *ssheet = PG_GETARG_XML_P(1);
+	const char **params = NULL;
+	xmltype    *result;
+
+	/*
+	 * Parameters are key-value pairs. The values are XPath expressions, so
+	 * strings will have to be escaped with single or double quotes. Even
+	 * `xsltproc --stringparam` does nothing else than adding single or double
+	 * quotes and fails if the value contains both.
+	 */
+	if (fcinfo->nargs == 3)
+	{
+		ArrayType  *paramarray = PG_GETARG_ARRAYTYPE_P(2);
+		Datum	   *arr_datums;
+		bool	   *arr_nulls;
+		int			arr_count;
+		int			i,
+					j;
+
+		deconstruct_array_builtin(paramarray, TEXTOID, &arr_datums, &arr_nulls, &arr_count);
+
+		if ((arr_count % 2) != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_ARRAY_ELEMENT_ERROR),
+					 errmsg("number of stylesheet parameters (%d) must be a multiple of 2",
+							arr_count)));
+
+		params = palloc_array(const char *, arr_count + 1);
+
+		for (i = 0, j = 0; i < arr_count; i++)
+		{
+			char	   *cstr;
+
+			if (arr_nulls[i])
+				continue;
+
+			cstr = TextDatumGetCString(arr_datums[i]);
+			params[j++] = (char *) pg_do_encoding_conversion((unsigned char *) cstr,
+															 strlen(cstr),
+															 GetDatabaseEncoding(),
+															 PG_UTF8);
+		}
+		params[j] = NULL;
+	}
+
+	result = xslt_process_internal(doct, ssheet, params);
+
+	PG_RETURN_XML_P(result);
+
+#else							/* !USE_LIBXSLT */
+
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("xslt_process() is not available without libxslt")));
+	PG_RETURN_NULL();
+
+#endif							/* USE_LIBXSLT */
+}
+
+#ifdef USE_LIBXSLT
+
+static xmltype *
+xslt_process_internal(xmltype *doct, xmltype *ssheet, const char **params)
+{
+	text	   *volatile result;
 	PgXmlErrorContext *xmlerrcxt;
 	volatile xsltStylesheetPtr stylesheet = NULL;
 	volatile xmlDocPtr doctree = NULL;
@@ -63,18 +169,6 @@ xslt_process(PG_FUNCTION_ARGS)
 	/* the previous libxslt error context */
 	xmlGenericErrorFunc saved_errfunc;
 	void	   *saved_errcxt;
-
-	if (fcinfo->nargs == 3)
-	{
-		paramstr = PG_GETARG_TEXT_PP(2);
-		params = parse_params(paramstr);
-	}
-	else
-	{
-		/* No parameters */
-		params = (const char **) palloc(sizeof(char *));
-		params[0] = NULL;
-	}
 
 	/* Setup parser */
 	xmlerrcxt = pgxml_parser_init(PG_XML_STRICTNESS_ALL);
@@ -93,21 +187,18 @@ xslt_process(PG_FUNCTION_ARGS)
 		int			reslen = 0;
 
 		/*
-		 * Parse document. It's important to set an "URL", so libxslt includes
-		 * line numbers in error messages (cf. xsltPrintErrorContext()).
+		 * Parse document.
 		 */
-		doctree = xmlReadMemory((char *) VARDATA_ANY(doct),
-								VARSIZE_ANY_EXHDR(doct), "SQL", NULL,
-								XML_PARSE_NOENT);
+		doctree = xml_parse(doct, XMLOPTION_DOCUMENT, true,
+							GetDatabaseEncoding(), NULL, NULL, NULL);
 
 		if (doctree == NULL || pg_xml_error_occurred(xmlerrcxt))
 			xml_ereport(xmlerrcxt, ERROR, ERRCODE_INVALID_XML_DOCUMENT,
 						"error parsing XML document");
 
 		/* Same for stylesheet */
-		ssdoc = xmlReadMemory((char *) VARDATA_ANY(ssheet),
-							  VARSIZE_ANY_EXHDR(ssheet), "SQL", NULL,
-							  XML_PARSE_NOENT);
+		ssdoc = xml_parse(ssheet, XMLOPTION_DOCUMENT, true,
+						  GetDatabaseEncoding(), NULL, NULL, NULL);
 
 		if (ssdoc == NULL || pg_xml_error_occurred(xmlerrcxt))
 			xml_ereport(xmlerrcxt, ERROR, ERRCODE_INVALID_XML_DOCUMENT,
@@ -198,17 +289,8 @@ xslt_process(PG_FUNCTION_ARGS)
 	xsltSetGenericErrorFunc(saved_errcxt, saved_errfunc);
 	pg_xml_done(xmlerrcxt, false);
 
-	PG_RETURN_TEXT_P(result);
-#else							/* !USE_LIBXSLT */
-
-	ereport(ERROR,
-			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("xslt_process() is not available without libxslt")));
-	PG_RETURN_NULL();
-#endif							/* USE_LIBXSLT */
+	return result;
 }
-
-#ifdef USE_LIBXSLT
 
 static const char **
 parse_params(text *paramstr)

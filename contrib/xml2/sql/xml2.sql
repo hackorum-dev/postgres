@@ -161,3 +161,11 @@ $$<stylesheet version="1.0" xmlns="http://www.w3.org/1999/XSL/Transform">
     <value-of select="$n1"/>
   </template>
 </stylesheet>$$)::xml;
+
+-- xmltype and Array-based signature
+SELECT xslt_process(xmlelement(name xml),
+$$<stylesheet version="1.0" xmlns="http://www.w3.org/1999/XSL/Transform">
+  <template match="/">
+    <value-of select="$n1"/>
+  </template>
+</stylesheet>$$::xml, ARRAY['n1','"foo"']);

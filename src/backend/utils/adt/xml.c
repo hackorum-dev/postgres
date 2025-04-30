@@ -155,11 +155,11 @@ static int	parse_xml_decl(const xmlChar *str, size_t *lenp,
 static bool print_xml_decl(StringInfo buf, const xmlChar *version,
 						   pg_enc encoding, int standalone);
 static bool xml_doctype_in_content(const xmlChar *str);
-static xmlDocPtr xml_parse(text *data, XmlOptionType xmloption_arg,
-						   bool preserve_whitespace, int encoding,
-						   XmlOptionType *parsed_xmloptiontype,
-						   xmlNodePtr *parsed_nodes,
-						   Node *escontext);
+xmlDocPtr	xml_parse(text *data, XmlOptionType xmloption_arg,
+					  bool preserve_whitespace, int encoding,
+					  XmlOptionType *parsed_xmloptiontype,
+					  xmlNodePtr *parsed_nodes,
+					  Node *escontext);
 static text *xml_xmlnodetoxmltype(xmlNodePtr cur, PgXmlErrorContext *xmlerrcxt);
 static int	xml_xpathobjtoxmlarray(xmlXPathObjectPtr xpathobj,
 								   ArrayBuildState *astate,
@@ -1783,7 +1783,7 @@ xml_doctype_in_content(const xmlChar *str)
  * TODO maybe libxml2's xmlreader is better? (do not construct DOM,
  * yet do not use SAX - see xmlreader.c)
  */
-static xmlDocPtr
+xmlDocPtr
 xml_parse(text *data, XmlOptionType xmloption_arg,
 		  bool preserve_whitespace, int encoding,
 		  XmlOptionType *parsed_xmloptiontype, xmlNodePtr *parsed_nodes,
@@ -1879,8 +1879,13 @@ xml_parse(text *data, XmlOptionType xmloption_arg,
 				xml_ereport(xmlerrcxt, ERROR, ERRCODE_OUT_OF_MEMORY,
 							"could not allocate parser context");
 
+			/*
+			 * Setting a dummy "SQL" URL is important for the
+			 * xsltPrintErrorContext() when using the legacy text-based
+			 * xslt_process() variant.
+			 */
 			doc = xmlCtxtReadDoc(ctxt, utf8string,
-								 NULL,	/* no URL */
+								 "SQL",
 								 "UTF-8",
 								 options);
 

@@ -408,21 +408,28 @@ ORDER BY doc_num, line_num;
   </indexterm>
 
 <synopsis>
-xslt_process(text document, text stylesheet, text paramlist) returns text
+xslt_process(xml document, xml stylesheet, text[] paramlist) returns xml
 </synopsis>
 
    <para>
     This function applies the XSL stylesheet to the document and returns
-    the transformed result. The <literal>paramlist</literal> is a list of parameter
-    assignments to be used in the transformation, specified in the form
-    <literal>a=1,b=2</literal>. Note that the
-    parameter parsing is very simple-minded: parameter values cannot
-    contain commas!
+    the transformed result. The <literal>paramlist</literal> is an array of parameter
+    assignments to be used in the transformation, specified in pairs of
+    key and value strings (e.g. <literal>ARRAY['a','1', 'b','2']</literal>).
+    The length of the array must be even.
+    Note that the values are still interpreted as XPath expressions, so string values need to
+    be quoted in single or double quotes (e.g. <literal>ARRAY['a','"string"']</literal>).
    </para>
 
    <para>
     There is also a two-parameter version of <function>xslt_process</function> which
     does not pass any parameters to the transformation.
+   </para>
+
+   <para>
+    <emphasis>Deprecated</emphasis> variants of <function>xslt_process</function> accepting
+    text arguments and parameters encoded into single text strings
+    (e.g. <literal>a=1,b=2</literal>) are also still available.
    </para>
   </sect3>
  </sect2>

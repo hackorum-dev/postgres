@@ -71,3 +71,14 @@ CREATE FUNCTION xslt_process(text,text)
 RETURNS text
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT IMMUTABLE PARALLEL SAFE;
+
+CREATE FUNCTION xslt_process(xml,xml,text[])
+RETURNS xml
+AS 'MODULE_PATHNAME','xslt_process_xmltype'
+LANGUAGE C STRICT VOLATILE PARALLEL SAFE;
+
+-- the function checks for the correct argument count
+CREATE FUNCTION xslt_process(xml,xml)
+RETURNS xml
+AS 'MODULE_PATHNAME','xslt_process_xmltype'
+LANGUAGE C STRICT IMMUTABLE PARALLEL SAFE;
