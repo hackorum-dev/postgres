@@ -894,6 +894,18 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	UpdateDecodingStats(ctx);
 }
 
+/* Function to determine whether to filter the change */
+static inline bool
+FilterChange(LogicalDecodingContext *ctx, XLogRecPtr origptr, TransactionId xid,
+							RelFileLocator *target_locator, ReorderBufferChangeType change_type)
+{
+	return
+		(ctx->callbacks.filter_change_cb &&
+		 ctx->reorder->try_to_filter_change &&
+		 ReorderBufferFilterByRelFileLocator(ctx->reorder, xid, origptr, target_locator,
+											 change_type));
+}
+
 /*
  * Parse XLOG_HEAP_INSERT (not MULTI_INSERT!) records into tuplebufs.
  *
@@ -928,9 +940,9 @@ DecodeInsert(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
 		return;
 
-	if (ctx->reorder->try_to_filter_change &&
-			ReorderBufferFilterByRelFileLocator(ctx->reorder, XLogRecGetXid(r),
-												buf->origptr, &target_locator))
+	/* Can the relation associated with this change be skipped? */
+	if (FilterChange(ctx, buf->origptr, XLogRecGetXid(r), &target_locator,
+						REORDER_BUFFER_CHANGE_INSERT))
 		return;
 
 	change = ReorderBufferAllocChange(ctx->reorder);
@@ -981,6 +993,11 @@ DecodeUpdate(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 	/* output plugin doesn't look for this origin, no need to queue */
 	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
+		return;
+
+	/* Can the relation associated with this change be skipped? */
+	if (FilterChange(ctx, buf->origptr, XLogRecGetXid(r), &target_locator,
+					   REORDER_BUFFER_CHANGE_UPDATE))
 		return;
 
 	change = ReorderBufferAllocChange(ctx->reorder);
@@ -1047,6 +1064,11 @@ DecodeDelete(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 	/* output plugin doesn't look for this origin, no need to queue */
 	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
+		return;
+
+	/* Can the relation associated with this change be skipped? */
+	if (FilterChange(ctx, buf->origptr, XLogRecGetXid(r), &target_locator,
+					   REORDER_BUFFER_CHANGE_DELETE))
 		return;
 
 	change = ReorderBufferAllocChange(ctx->reorder);
@@ -1151,6 +1173,11 @@ DecodeMultiInsert(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
 		return;
 
+	/* Can the relation associated with this change be skipped? */
+	if (FilterChange(ctx, buf->origptr, XLogRecGetXid(r), &rlocator,
+					   REORDER_BUFFER_CHANGE_INSERT))
+		return;
+
 	/*
 	 * We know that this multi_insert isn't for a catalog, so the block should
 	 * always have data even if a full-page write of it is taken.
@@ -1240,6 +1267,11 @@ DecodeSpecConfirm(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 	/* output plugin doesn't look for this origin, no need to queue */
 	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
+		return;
+
+	/* Can the relation associated with this change be skipped? */
+	if (FilterChange(ctx, buf->origptr, XLogRecGetXid(r), &target_locator,
+						REORDER_BUFFER_CHANGE_INSERT))
 		return;
 
 	change = ReorderBufferAllocChange(ctx->reorder);

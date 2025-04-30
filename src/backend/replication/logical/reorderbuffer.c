@@ -5703,17 +5703,19 @@ ReorderBufferMemoryResetcallback(void *arg)
  * management, the results are cached in the 'RelFileLocatorFilterCache' hash
  * table.
  *
- * Returns true if the relation can be filtered; otherwise, false.
+ * Returns true if this change_type can be filtered; otherwise, false.
  */
 bool
 ReorderBufferFilterByRelFileLocator(ReorderBuffer *rb, TransactionId xid,
-									 XLogRecPtr lsn, RelFileLocator *rlocator)
+									XLogRecPtr lsn, RelFileLocator *rlocator,
+									ReorderBufferChangeType change_type)
 
 {
-	bool		found;
-	Relation	relation;
-	bool		using_subtxn;
-	Snapshot	snapshot_now;
+	bool        found;
+	bool		cache_valid;
+	Relation    relation;
+	bool        using_subtxn;
+	Snapshot    snapshot_now;
 	ReorderBufferTXN *txn,
 					 *toptxn;
 	ReorderBufferRelFileLocatorEnt *entry;
@@ -5724,7 +5726,6 @@ ReorderBufferFilterByRelFileLocator(ReorderBuffer *rb, TransactionId xid,
 	txn = ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
 	Assert(txn);
 	toptxn = rbtxn_get_toptxn(txn);
-	rb->try_to_filter_change = false;
 
 	/*
 	 * We cannot construct an accurate historical snapshot until all pending
@@ -5741,7 +5742,26 @@ ReorderBufferFilterByRelFileLocator(ReorderBuffer *rb, TransactionId xid,
 	if (found)
 	{
 		rb->try_to_filter_change = entry->filterable;
-		return entry->filterable;
+
+		/*
+		 * Quick return if we already know that the relation is not to be
+		 * decoded. This is for special relations that are unlogged and for
+		 * sequences and catalogs.
+		 */
+		if (entry->filterable)
+			return true;
+
+		/* Allow the output plugin to filter relations */
+		rb->try_to_filter_change = rb->filter_change(rb, entry->relid, change_type,
+													 false, &cache_valid);
+
+		/*
+		 * If plugin had the relation ready in cache, the response is valid,
+		 * else we'll need to call the plugin a second time within a
+		 * transaction.
+		 */
+		if (cache_valid)
+			return rb->try_to_filter_change;
 	}
 
 	/* constructs a temporary historical snapshot */
@@ -5765,17 +5785,28 @@ ReorderBufferFilterByRelFileLocator(ReorderBuffer *rb, TransactionId xid,
 
 	if (RelationIsValid(relation))
 	{
-		entry->relid = RelationGetRelid(relation);
+		if (IsToastRelation(relation))
+		{
+			char   *toast_name = RelationGetRelationName(relation);
+			int     n PG_USED_FOR_ASSERTS_ONLY;
+
+			n = sscanf(toast_name, "pg_toast_%u", &entry->relid);
+
+			Assert(n == 1);
+		}
+		else
+			entry->relid = RelationGetRelid(relation);
+
 		entry->filterable = false;
+		rb->try_to_filter_change = rb->filter_change(rb, entry->relid, change_type,
+												  true, &cache_valid);
 		RelationClose(relation);
 	}
 	else
 	{
 		entry->relid = InvalidOid;
-		entry->filterable = true;
+		rb->try_to_filter_change = entry->filterable = true;
 	}
-
-	rb->try_to_filter_change = entry->filterable;
 
 	ReorderBufferFreeSnap(rb, snapshot_now);
 
@@ -5792,7 +5823,7 @@ ReorderBufferFilterByRelFileLocator(ReorderBuffer *rb, TransactionId xid,
 	if (using_subtxn)
 		RollbackAndReleaseCurrentSubTransaction();
 
-	return entry->filterable;
+	return rb->try_to_filter_change;
 }
 
 /*
