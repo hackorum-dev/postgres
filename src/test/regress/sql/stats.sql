@@ -314,7 +314,7 @@ COMMIT;
 
 SELECT stats_reset IS NOT NULL AS has_stats_reset
   FROM pg_stat_all_tables WHERE relid = 'test_last_scan'::regclass;
-SELECT pg_stat_reset_single_table_counters('test_last_scan'::regclass);
+SELECT pg_stat_reset_single_table_counters('test_last_scan'::regclass) IS NOT NULL AS t;
 SELECT seq_scan, idx_scan, stats_reset IS NOT NULL AS has_stats_reset
   FROM pg_stat_all_tables WHERE relid = 'test_last_scan'::regclass;
 
@@ -391,7 +391,7 @@ SELECT idx_scan, :'test_last_idx' < last_idx_scan AS idx_ok,
   FROM pg_stat_all_indexes WHERE indexrelid = 'test_last_scan_pkey'::regclass;
 
 -- check that the stats in pg_stat_all_indexes are reset
-SELECT pg_stat_reset_single_table_counters('test_last_scan_pkey'::regclass);
+SELECT pg_stat_reset_single_table_counters('test_last_scan_pkey'::regclass) IS NOT NULL AS t;
 
 SELECT idx_scan, stats_reset IS NOT NULL AS has_stats_reset
   FROM pg_stat_all_indexes WHERE indexrelid = 'test_last_scan_pkey'::regclass;
@@ -416,7 +416,7 @@ COMMIT;
 -- check that the stats are reset.
 SELECT (n_tup_ins + n_tup_upd) > 0 AS has_data FROM pg_stat_all_tables
   WHERE relid = 'pg_shdescription'::regclass;
-SELECT pg_stat_reset_single_table_counters('pg_shdescription'::regclass);
+SELECT pg_stat_reset_single_table_counters('pg_shdescription'::regclass) IS NOT NULL AS t;
 SELECT (n_tup_ins + n_tup_upd) > 0 AS has_data FROM pg_stat_all_tables
   WHERE relid = 'pg_shdescription'::regclass;
 
