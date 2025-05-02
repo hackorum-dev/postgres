@@ -63,7 +63,7 @@ step s1_func_stats_reset_check {
         IS NOT NULL AS has_stats_reset;
 }
 step s1_func_stats_reset_nonexistent { SELECT pg_stat_reset_single_function_counters(12000); }
-step s1_reset { SELECT pg_stat_reset(); }
+step s1_reset { SELECT pg_stat_reset() IS NOT NULL AS t; }
 step s1_func_stats {
     SELECT
         tso.name,
