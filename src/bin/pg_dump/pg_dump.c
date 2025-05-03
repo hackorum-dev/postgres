@@ -188,6 +188,9 @@ static SimpleOidList extension_include_oids = {NULL, NULL};
 static SimpleStringList extension_exclude_patterns = {NULL, NULL};
 static SimpleOidList extension_exclude_oids = {NULL, NULL};
 
+static const char *on_conflict_target_columns = NULL;
+static const char *on_conflict_update_clause = NULL;
+
 static const CatalogId nilCatalogId = {0, 0};
 
 /* override for standard extra_float_digits setting */
@@ -525,6 +528,8 @@ main(int argc, char **argv)
 		{"no-unlogged-table-data", no_argument, &dopt.no_unlogged_table_data, 1},
 		{"no-sync", no_argument, NULL, 7},
 		{"on-conflict-do-nothing", no_argument, &dopt.do_nothing, 1},
+		{"on-conflict-target-columns", required_argument, NULL, 25},
+		{"on-conflict-update-clause", required_argument, NULL, 26},
 		{"rows-per-insert", required_argument, NULL, 10},
 		{"include-foreign-data", required_argument, NULL, 11},
 		{"table-and-children", required_argument, NULL, 12},
@@ -793,6 +798,13 @@ main(int argc, char **argv)
 
 			case 22:
 				with_statistics = true;
+
+			case 25:
+				on_conflict_target_columns = pg_strdup(optarg);
+				break;
+
+			case 26:
+				on_conflict_update_clause = pg_strdup(optarg);
 				break;
 
 			case 25:
@@ -885,6 +897,12 @@ main(int argc, char **argv)
 		pg_fatal("option %s requires option %s, %s, or %s",
 				 "--on-conflict-do-nothing",
 				 "--inserts", "--rows-per-insert", "--column-inserts");
+
+	if (dopt.do_nothing && (on_conflict_target_columns != NULL || on_conflict_update_clause != NULL))
+		pg_fatal("option --on-conflict-do-nothing cannot be used with --on-conflict-target-columns and --on-conflict-do-update-clause");
+
+	if ((on_conflict_target_columns != NULL) ^ (on_conflict_update_clause != NULL))
+		pg_fatal("option --on-conflict-target-columns and --on-conflict-update-clause must be provided together.");
 
 	/* Identify archive format to emit */
 	archiveFormat = parseArchiveFormat(format, &archiveMode);
@@ -1363,6 +1381,8 @@ help(const char *progname)
 	printf(_("  --no-toast-compression       do not dump TOAST compression methods\n"));
 	printf(_("  --no-unlogged-table-data     do not dump unlogged table data\n"));
 	printf(_("  --on-conflict-do-nothing     add ON CONFLICT DO NOTHING to INSERT commands\n"));
+	printf(_("  --on-conflict-target-columns add ON CONFLICT (target-columns) DO UPDATE ... to INSERT commands. A comma-separated list of columns\n"));
+	printf(_("  --on-conflict-update-clause  add the clause ON CONFLICT ... DO UPDATE (clause) to INSERT commands\n"));
 	printf(_("  --quote-all-identifiers      quote all identifiers, even if not key words\n"));
 	printf(_("  --restrict-key=RESTRICT_KEY  use provided string as psql \\restrict key\n"));
 	printf(_("  --rows-per-insert=NROWS      number of rows per INSERT; implies --inserts\n"));
@@ -2730,6 +2750,8 @@ dumpTableData_insert(Archive *fout, const void *dcontext)
 			{
 				if (dopt->do_nothing)
 					archputs(" ON CONFLICT DO NOTHING;\n", fout);
+				else if (on_conflict_target_columns != NULL && on_conflict_update_clause != NULL)
+					archprintf(fout, " ON CONFLICT (%s) DO UPDATE SET %s;\n", on_conflict_target_columns, on_conflict_update_clause);
 				else
 					archputs(";\n", fout);
 				/* Reset the row counter */
@@ -2750,6 +2772,8 @@ dumpTableData_insert(Archive *fout, const void *dcontext)
 	{
 		if (dopt->do_nothing)
 			archputs(" ON CONFLICT DO NOTHING;\n", fout);
+		else if (on_conflict_target_columns != NULL && on_conflict_update_clause != NULL)
+			archprintf(fout, " ON CONFLICT (%s) DO UPDATE SET %s;\n", on_conflict_target_columns, on_conflict_update_clause);
 		else
 			archputs(";\n", fout);
 	}

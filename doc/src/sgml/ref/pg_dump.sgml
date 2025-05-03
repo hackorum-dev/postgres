@@ -1213,6 +1213,32 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--on-conflict-target-columns</option></term>
+      <listitem>
+       <para>
+        Add <literal>ON CONFLICT (target-columns) DO UPDATE ...</literal> to
+        <command>INSERT</command> commands.
+        This option must be used with <option>--on-conflict-update-clause</option>, and with
+        <option>--inserts</option>, <option>--column-inserts</option> or <option>--rows-per-insert</option>.
+        The option cannot be used with <option>--on-conflict-do-nothing</option>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--on-conflict-update-clause</option></term>
+      <listitem>
+       <para>
+        Add <literal>ON CONFLICT ... DO UPDATE update-clause</literal> to
+        <command>INSERT</command> commands.
+        This option must be used with <option>--on-conflict-target-columns</option>, and with
+        <option>--inserts</option>, <option>--column-inserts</option> or <option>--rows-per-insert</option>.
+        The option cannot be used with <option>--on-conflict-do-nothing</option>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>--quote-all-identifiers</option></term>
       <listitem>
        <para>
