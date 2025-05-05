@@ -26,6 +26,7 @@ tests += {
   'tap': {
     'tests': [
       't/001_libpq_pipeline.pl',
+      't/002_tcp.pl',
     ],
     'deps': [libpq_pipeline],
   },
