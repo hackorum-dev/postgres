@@ -28,7 +28,6 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "statistics/stat_utils.h"
-#include "storage/lmgr.h"
 #include "utils/acl.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
