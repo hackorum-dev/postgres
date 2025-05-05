@@ -137,6 +137,8 @@ PQcancelCreate(PGconn *conn)
 		goto oom_error;
 
 	originalHost = conn->connhost[conn->whichhost];
+	cancelConn->connhost[0].type = originalHost.type;
+
 	if (originalHost.host)
 	{
 		cancelConn->connhost[0].host = strdup(originalHost.host);
