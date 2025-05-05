@@ -186,6 +186,8 @@ ConditionVariableTimedSleep(ConditionVariable *cv, long timeout,
 		if (!proclist_contains(&cv->wakeup, MyProcNumber, cvWaitLink))
 		{
 			done = true;
+			if (cv_sleep_target == NULL)
+				cv_sleep_target = cv;
 			proclist_push_tail(&cv->wakeup, MyProcNumber, cvWaitLink);
 		}
 		SpinLockRelease(&cv->mutex);
