@@ -3625,10 +3625,15 @@ heap_page_is_all_visible(LVRelState *vacrel, Buffer buf,
 	*visibility_cutoff_xid = InvalidTransactionId;
 	*all_frozen = true;
 
+	/*
+	 * Processing the items in reverse order (and thus the tuples in
+	 * increasing order) increases prefetching efficiency significantly /
+	 * decreases the number of cache misses.
+	 */
 	maxoff = PageGetMaxOffsetNumber(page);
-	for (offnum = FirstOffsetNumber;
-		 offnum <= maxoff && all_visible;
-		 offnum = OffsetNumberNext(offnum))
+	for (offnum = maxoff;
+		 offnum >= FirstOffsetNumber && all_visible;
+		 offnum = OffsetNumberPrev(offnum))
 	{
 		ItemId		itemid;
 		HeapTupleData tuple;
