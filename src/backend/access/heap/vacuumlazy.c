@@ -3606,10 +3606,10 @@ dead_items_cleanup(LVRelState *vacrel)
  * xmin amongst the visible tuples.  Set *all_frozen to true if every tuple
  * on this page is frozen.
  *
- * This is a stripped down version of lazy_scan_prune().  If you change
- * anything here, make sure that everything stays in sync.  Note that an
- * assertion calls us to verify that everybody still agrees.  Be sure to avoid
- * introducing new side-effects here.
+ * This is a stripped down version of heap_page_prune_and_freeze() called by
+ * lazy_scan_prune().  If you change anything here, make sure that everything
+ * stays in sync.  Note that an assertion calls us to verify that everybody
+ * still agrees.  Be sure to avoid introducing new side-effects here.
  */
 static bool
 heap_page_is_all_visible(LVRelState *vacrel, Buffer buf,
@@ -3670,7 +3670,7 @@ heap_page_is_all_visible(LVRelState *vacrel, Buffer buf,
 				{
 					TransactionId xmin;
 
-					/* Check comments in lazy_scan_prune. */
+					/* Check comments in heap_page_prune_and_freeze(). */
 					if (!HeapTupleHeaderXminCommitted(tuple.t_data))
 					{
 						all_visible = false;
