@@ -3649,8 +3649,6 @@ heap_page_is_all_visible(LVRelState *vacrel, Buffer buf,
 		if (!ItemIdIsUsed(itemid) || ItemIdIsRedirected(itemid))
 			continue;
 
-		ItemPointerSet(&(tuple.t_self), blockno, offnum);
-
 		/*
 		 * Dead line pointers can have index pointers pointing to them. So
 		 * they can't be treated as visible
@@ -3667,6 +3665,7 @@ heap_page_is_all_visible(LVRelState *vacrel, Buffer buf,
 		tuple.t_data = (HeapTupleHeader) PageGetItem(page, itemid);
 		tuple.t_len = ItemIdGetLength(itemid);
 		tuple.t_tableOid = RelationGetRelid(vacrel->rel);
+		ItemPointerSet(&(tuple.t_self), blockno, offnum);
 
 		switch (HeapTupleSatisfiesVacuum(&tuple, vacrel->cutoffs.OldestXmin,
 										 buf))
