@@ -1596,7 +1596,11 @@ getBackendKeyData(PGconn *conn, int msgLength)
 	if (pqGetInt(&(conn->be_pid), 4, conn))
 		return EOF;
 
-	cancel_key_len = 5 + msgLength - (conn->inCursor - conn->inStart);
+	/*
+	 * The pid consumed 4 bytes, and the cancellation key consumes the rest of
+	 * the message.
+	 */
+	cancel_key_len = msgLength - 4;
 
 	if (cancel_key_len != 4 && conn->pversion == PG_PROTOCOL(3, 0))
 	{
