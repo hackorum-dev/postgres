@@ -365,7 +365,7 @@ static pgssEntry *entry_alloc(pgssHashKey *key, Size query_offset, int query_len
 static void entry_dealloc(void);
 static bool qtext_store(const char *query, int query_len,
 						Size *query_offset, int *gc_count);
-static char *qtext_load_file(Size *buffer_size);
+static char *qtext_load_file(Size *buffer_size, bool fail_on_interrupts);
 static char *qtext_fetch(Size query_offset, int query_len,
 						 char *buffer, Size buffer_size);
 static bool need_gc_qtexts(void);
@@ -767,7 +767,7 @@ pgss_shmem_shutdown(int code, Datum arg)
 	if (fwrite(&num_entries, sizeof(int32), 1, file) != 1)
 		goto error;
 
-	qbuffer = qtext_load_file(&qbuffer_size);
+	qbuffer = qtext_load_file(&qbuffer_size, false /* fail_on_interrupts */ );
 	if (qbuffer == NULL)
 		goto error;
 
@@ -1767,7 +1767,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 
 		/* No point in loading file now if there are active writers */
 		if (n_writers == 0)
-			qbuffer = qtext_load_file(&qbuffer_size);
+			qbuffer = qtext_load_file(&qbuffer_size, true /* fail_on_interrupts */ );
 	}
 
 	/*
@@ -1800,7 +1800,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			pgss->gc_count != gc_count)
 		{
 			free(qbuffer);
-			qbuffer = qtext_load_file(&qbuffer_size);
+			qbuffer = qtext_load_file(&qbuffer_size, true /* fail_on_interrupts */ );
 		}
 	}
 
@@ -1818,6 +1818,12 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 
 		memset(values, 0, sizeof(values));
 		memset(nulls, 0, sizeof(nulls));
+
+		/* Can't process interrupts here - pgss-lock is acquired */
+		if (INTERRUPTS_PENDING_CONDITION())
+		{
+			break;
+		}
 
 		values[i++] = ObjectIdGetDatum(entry->key.userid);
 		values[i++] = ObjectIdGetDatum(entry->key.dbid);
@@ -2013,6 +2019,8 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	}
 
 	LWLockRelease(pgss->lock);
+
+	CHECK_FOR_INTERRUPTS();
 
 	free(qbuffer);
 }
@@ -2312,7 +2320,7 @@ error:
  * the caller is responsible for verifying that the result is sane.
  */
 static char *
-qtext_load_file(Size *buffer_size)
+qtext_load_file(Size *buffer_size, bool fail_on_interrupts)
 {
 	char	   *buf;
 	int			fd;
@@ -2365,7 +2373,14 @@ qtext_load_file(Size *buffer_size)
 	nread = 0;
 	while (nread < stat.st_size)
 	{
-		int			toread = Min(1024 * 1024 * 1024, stat.st_size - nread);
+		int			toread = Min(32 * 1024 * 1024, stat.st_size - nread);
+
+		if (fail_on_interrupts && INTERRUPTS_PENDING_CONDITION())
+		{
+			free(buf);
+			CloseTransientFile(fd);
+			return NULL;
+		}
 
 		/*
 		 * If we get a short read and errno doesn't get set, the reason is
@@ -2502,7 +2517,7 @@ gc_qtexts(void)
 	 * file is only going to get bigger; hoping for a future non-OOM result is
 	 * risky and can easily lead to complete denial of service.
 	 */
-	qbuffer = qtext_load_file(&qbuffer_size);
+	qbuffer = qtext_load_file(&qbuffer_size, false /* fail_on_interrupts */ );
 	if (qbuffer == NULL)
 		goto gc_fail;
 
