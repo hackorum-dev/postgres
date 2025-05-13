@@ -3619,7 +3619,7 @@ struct config_int ConfigureNamesInt[] =
 			GUC_EXPLAIN
 		},
 		&max_parallel_workers_per_gather,
-		2, 0, MAX_PARALLEL_WORKER_LIMIT,
+		0, 0, MAX_PARALLEL_WORKER_LIMIT,
 		NULL, NULL, NULL
 	},
 
