@@ -255,10 +255,14 @@ typedef int slock_t;
 static inline int
 tas(volatile slock_t *lock)
 {
+	__sync_synchronize();
 	return __sync_lock_test_and_set(lock, 1);
 }
 
-#define S_UNLOCK(lock) __sync_lock_release(lock)
+#define S_UNLOCK(lock) do { \
+	__sync_lock_release(lock); \
+	__sync_synchronize(); \
+} while(0)
 
 #if defined(__aarch64__)
 
@@ -535,10 +539,14 @@ typedef int slock_t;
 static inline int
 tas(volatile slock_t *lock)
 {
+	__sync_synchronize();
 	return __sync_lock_test_and_set(lock, 1);
 }
 
-#define S_UNLOCK(lock) __sync_lock_release(lock)
+#define S_UNLOCK(lock) do { \
+	__sync_lock_release(lock); \
+	__sync_synchronize(); \
+} while(0)
 
 #elif defined(HAVE_GCC__SYNC_CHAR_TAS)
 
@@ -549,10 +557,14 @@ typedef char slock_t;
 static inline int
 tas(volatile slock_t *lock)
 {
+	__sync_synchronize();
 	return __sync_lock_test_and_set(lock, 1);
 }
 
-#define S_UNLOCK(lock) __sync_lock_release(lock)
+#define S_UNLOCK(lock) do { \
+	__sync_lock_release(lock); \
+	__sync_synchronize(); \
+} while(0)
 
 #endif	 /* HAVE_GCC__SYNC_INT32_TAS */
 
