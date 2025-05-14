@@ -436,3 +436,15 @@ SELECT c~>(-2), c FROM test_cube ORDER BY c~>(-2) LIMIT 15; -- descending by rig
 SELECT c~>(-3), c FROM test_cube ORDER BY c~>(-3) LIMIT 15; -- descending by lower bound
 SELECT c~>(-4), c FROM test_cube ORDER BY c~>(-4) LIMIT 15; -- descending by upper bound
 RESET enable_indexscan;
+
+-- Test of binary operators
+SELECT '(-7,7)'::cube + '(-1,1)'::cube;
+SELECT '(-7,7)'::cube - '(-1,1)'::cube;
+SELECT '(-1,2)'::cube * 2;
+SELECT '(-2,4)'::cube / 2;
+SELECT 2 * '(-1,2)'::cube;
+SELECT '(-7,7),(2,9)'::cube + '(-1,1),(5,12)'::cube;
+SELECT '(-7,7),(2,9)'::cube - '(-1,1),(5,12)'::cube;
+SELECT '(-1,2),(2,9)'::cube * 2;
+SELECT '(-2,4),(3,7)'::cube / 2;
+SELECT 2 * '(-1,2),(2,9)'::cube;
