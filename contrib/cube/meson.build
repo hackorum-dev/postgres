@@ -40,6 +40,7 @@ install_data(
   'cube--1.2--1.3.sql',
   'cube--1.3--1.4.sql',
   'cube--1.4--1.5.sql',
+  'cube--1.5--1.6.sql',
   kwargs: contrib_data_args,
 )
 
