@@ -218,6 +218,56 @@
         Computes the Chebyshev (L-inf metric) distance between the two cubes.
        </para></entry>
       </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>cube</type> <literal>+</literal> <type>cube</type>
+        <returnvalue>cube</returnvalue>
+       </para>
+       <para>
+        Computes the coordinate-wise sum of two cubes.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>cube</type> <literal>-</literal> <type>cube</type>
+        <returnvalue>cube</returnvalue>
+       </para>
+       <para>
+        Computes the coordinate-wise difference of two cubes.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>cube</type> <literal>*</literal> <type>float8</type>
+        <returnvalue>cube</returnvalue>
+       </para>
+       <para>
+        Computes the coordinate-wise multiplication of a cube by a scalar value.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>float8</type> <literal>*</literal> <type>cube</type>
+        <returnvalue>cube</returnvalue>
+       </para>
+       <para>
+        Computes the coordinate-wise multiplication of a cube by a scalar value.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>cube</type> <literal>/</literal> <type>float8</type>
+        <returnvalue>cube</returnvalue>
+       </para>
+       <para>
+        Computes the coordinate-wise division of a cube by a scalar value.
+       </para></entry>
+      </row>
      </tbody>
    </tgroup>
   </table>
