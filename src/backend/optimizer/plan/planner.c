@@ -144,6 +144,7 @@ static List *extract_rollup_sets(List *groupingSets);
 static List *reorder_grouping_sets(List *groupingSets, List *sortclause);
 static void standard_qp_callback(PlannerInfo *root, void *extra);
 static double get_number_of_groups(PlannerInfo *root,
+								   Relids relids,
 								   double path_rows,
 								   grouping_sets_data *gd,
 								   List *target_list);
@@ -3599,7 +3600,7 @@ standard_qp_callback(PlannerInfo *root, void *extra)
  * determining whether some combination of them could be hashed instead.
  */
 static double
-get_number_of_groups(PlannerInfo *root,
+get_number_of_groups(PlannerInfo *root, Relids relids,
 					 double path_rows,
 					 grouping_sets_data *gd,
 					 List *target_list)
@@ -3639,7 +3640,8 @@ get_number_of_groups(PlannerInfo *root,
 																groupExprs,
 																path_rows,
 																&gset,
-																NULL);
+																NULL,
+																relids);
 
 					gs->numGroups = numGroups;
 					rollup->numGroups += numGroups;
@@ -3665,7 +3667,8 @@ get_number_of_groups(PlannerInfo *root,
 																groupExprs,
 																path_rows,
 																&gset,
-																NULL);
+																NULL,
+																relids);
 
 					gs->numGroups = numGroups;
 					gd->dNumHashGroups += numGroups;
@@ -3676,12 +3679,12 @@ get_number_of_groups(PlannerInfo *root,
 		}
 		else
 		{
-			/* Plain GROUP BY -- estimate based on optimized groupClause */
-			groupExprs = get_sortgrouplist_exprs(root->processed_groupClause,
-												 target_list);
+			List *pathkeys = list_copy_head(root->group_pathkeys,
+											root->num_groupby_pathkeys);
 
-			dNumGroups = estimate_num_groups(root, groupExprs, path_rows,
-											 NULL, NULL);
+			/* Plain GROUP BY -- estimate based on grouping pathkeys */
+			dNumGroups = estimate_num_groups(root, pathkeys, path_rows,
+											 NULL, NULL, relids);
 		}
 	}
 	else if (parse->groupingSets)
@@ -4071,7 +4074,7 @@ create_ordinary_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	/*
 	 * Estimate number of groups.
 	 */
-	dNumGroups = get_number_of_groups(root,
+	dNumGroups = get_number_of_groups(root, cheapest_path->parent->relids,
 									  cheapest_path->rows,
 									  gd,
 									  extra->targetList);
@@ -4843,7 +4846,7 @@ create_partial_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	/* estimate how many distinct rows we'll get from each worker */
 	numDistinctRows = estimate_num_groups(root, distinctExprs,
 										  cheapest_partial_path->rows,
-										  NULL, NULL);
+										  NULL, NULL, NULL);
 
 	/*
 	 * Try sorting the cheapest path and incrementally sorting any paths with
@@ -5014,7 +5017,7 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 												parse->targetList);
 		numDistinctRows = estimate_num_groups(root, distinctExprs,
 											  cheapest_input_path->rows,
-											  NULL, NULL);
+											  NULL, NULL, NULL);
 	}
 
 	/*
@@ -7355,13 +7358,13 @@ create_partial_grouping_paths(PlannerInfo *root,
 	/* Estimate number of partial groups. */
 	if (cheapest_total_path != NULL)
 		dNumPartialGroups =
-			get_number_of_groups(root,
+			get_number_of_groups(root, input_rel->relids,
 								 cheapest_total_path->rows,
 								 gd,
 								 extra->targetList);
 	if (cheapest_partial_path != NULL)
 		dNumPartialPartialGroups =
-			get_number_of_groups(root,
+			get_number_of_groups(root, input_rel->relids,
 								 cheapest_partial_path->rows,
 								 gd,
 								 extra->targetList);

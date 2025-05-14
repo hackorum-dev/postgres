@@ -925,4 +925,12 @@ SELECT * FROM check_estimated_rows('SELECT * FROM table_fillfactor');
 
 DROP TABLE table_fillfactor;
 
+-- The estimation of the number of groups is based on the equivalence class
+-- definition and shouldn't change if an alternative member of the same EC
+-- is chosen.
+SELECT * FROM check_estimated_rows('
+  SELECT count(*) FROM sort_ndist_t1 t1 WHERE t1.x=t1.y GROUP BY t1.x');
+SELECT * FROM check_estimated_rows('
+  SELECT count(*) FROM sort_ndist_t1 t1 WHERE t1.x=t1.y GROUP BY t1.y');
+
 -- End of Stats Test

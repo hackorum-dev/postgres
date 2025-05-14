@@ -1999,7 +1999,7 @@ cost_tuplesort(Cost *startup_cost, Cost *run_cost,
 void
 cost_incremental_sort(Path *path,
 					  PlannerInfo *root, List *pathkeys, int presorted_keys,
-					  int input_disabled_nodes,
+					  int input_disabled_nodes, Relids relids,
 					  Cost input_startup_cost, Cost input_total_cost,
 					  double input_tuples, int width, Cost comparison_cost, int sort_mem,
 					  double limit_tuples)
@@ -2012,9 +2012,6 @@ cost_incremental_sort(Path *path,
 	Cost		group_startup_cost,
 				group_run_cost,
 				group_input_run_cost;
-	List	   *presortedExprs = NIL;
-	ListCell   *l;
-	bool		unknown_varno = false;
 
 	Assert(presorted_keys > 0 && presorted_keys < list_length(pathkeys));
 
@@ -2025,58 +2022,10 @@ cost_incremental_sort(Path *path,
 	if (input_tuples < 2.0)
 		input_tuples = 2.0;
 
-	/* Default estimate of number of groups, capped to one group per row. */
-	input_groups = Min(input_tuples, DEFAULT_NUM_DISTINCT);
-
-	/*
-	 * Extract presorted keys as list of expressions.
-	 *
-	 * We need to be careful about Vars containing "varno 0" which might have
-	 * been introduced by generate_append_tlist, which would confuse
-	 * estimate_num_groups (in fact it'd fail for such expressions). See
-	 * recurse_set_operations which has to deal with the same issue.
-	 *
-	 * Unlike recurse_set_operations we can't access the original target list
-	 * here, and even if we could it's not very clear how useful would that be
-	 * for a set operation combining multiple tables. So we simply detect if
-	 * there are any expressions with "varno 0" and use the default
-	 * DEFAULT_NUM_DISTINCT in that case.
-	 *
-	 * We might also use either 1.0 (a single group) or input_tuples (each row
-	 * being a separate group), pretty much the worst and best case for
-	 * incremental sort. But those are extreme cases and using something in
-	 * between seems reasonable. Furthermore, generate_append_tlist is used
-	 * for set operations, which are likely to produce mostly unique output
-	 * anyway - from that standpoint the DEFAULT_NUM_DISTINCT is defensive
-	 * while maintaining lower startup cost.
-	 */
-	foreach(l, pathkeys)
-	{
-		PathKey    *key = (PathKey *) lfirst(l);
-		EquivalenceMember *member = (EquivalenceMember *)
-			linitial(key->pk_eclass->ec_members);
-
-		/*
-		 * Check if the expression contains Var with "varno 0" so that we
-		 * don't call estimate_num_groups in that case.
-		 */
-		if (bms_is_member(0, pull_varnos(root, (Node *) member->em_expr)))
-		{
-			unknown_varno = true;
-			break;
-		}
-
-		/* expression not containing any Vars with "varno 0" */
-		presortedExprs = lappend(presortedExprs, member->em_expr);
-
-		if (foreach_current_index(l) + 1 >= presorted_keys)
-			break;
-	}
-
 	/* Estimate the number of groups with equal presorted keys. */
-	if (!unknown_varno)
-		input_groups = estimate_num_groups(root, presortedExprs, input_tuples,
-										   NULL, NULL);
+	input_groups = estimate_num_groups(root,
+									   list_copy_head(pathkeys, presorted_keys),
+									   input_tuples, NULL, NULL, relids);
 
 	group_tuples = input_tuples / input_groups;
 	group_input_run_cost = input_run_cost / input_groups;
@@ -2579,7 +2528,7 @@ cost_memoize_rescan(PlannerInfo *root, MemoizePath *mpath,
 
 	/* estimate on the distinct number of parameter values */
 	ndistinct = estimate_num_groups(root, mpath->param_exprs, calls, NULL,
-									&estinfo);
+									&estinfo, NULL);
 
 	/*
 	 * When the estimation fell back on using a default value, it's a bit too
@@ -2900,7 +2849,7 @@ get_windowclause_startup_tuples(PlannerInfo *root, WindowClause *wc,
 														root->parse->targetList);
 
 		num_partitions = estimate_num_groups(root, partexprs, input_tuples,
-											 NULL, NULL);
+											 NULL, NULL, NULL);
 		list_free(partexprs);
 
 		partition_tuples = input_tuples / num_partitions;
@@ -2923,7 +2872,7 @@ get_windowclause_startup_tuples(PlannerInfo *root, WindowClause *wc,
 		/* estimate out how many peer groups there are in the partition */
 		num_groups = estimate_num_groups(root, orderexprs,
 										 partition_tuples, NULL,
-										 NULL);
+										 NULL, NULL);
 		list_free(orderexprs);
 		peer_tuples = partition_tuples / num_groups;
 	}
@@ -3703,6 +3652,7 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 								  outersortkeys,
 								  outer_presorted_keys,
 								  outer_path->disabled_nodes,
+								  outer_path->parent->relids,
 								  outer_path->startup_cost,
 								  outer_path->total_cost,
 								  outer_path_rows,
@@ -6613,4 +6563,68 @@ compute_gather_rows(Path *path)
 	Assert(path->parallel_workers > 0);
 
 	return clamp_row_est(path->rows * get_parallel_divisor(path));
+}
+
+/*
+ * Find suitable member of the equivalence class.
+ * Passing through the list of EC members find the member with minimum of
+ * distinct values. Cache estimated number of distincts in the em_ndistinct
+ * field of each member.
+ *
+ * Return NULL if no one proper member found (each member contains 0 relid).
+ */
+EquivalenceMember *
+identify_proper_ecmember(PlannerInfo *root, EquivalenceClass *ec, Relids relids)
+{
+	EquivalenceMember		   *candidate = NULL;
+	EquivalenceMember		   *em;
+	EquivalenceMemberIterator	it;
+
+	setup_eclass_member_iterator(&it, ec, relids);
+	while ((em = eclass_member_iterator_next(&it)) != NULL)
+	{
+		VariableStatData	vardata;
+
+		if (bms_is_member(0, em->em_relids))
+			continue;
+
+		if (em->em_is_const || bms_is_empty(em->em_relids))
+		{
+			/* Trivial case. Set up cache values and go further */
+			em->em_default_nd = false;
+			em->em_ndistinct = 1.0;
+		}
+		else if (relids && !bms_is_subset(em->em_relids, relids))
+			continue;
+
+		if (em->em_ndistinct < 0.)
+		{
+			/* Let's check candidate's ndistinct value */
+			examine_variable(root, (Node *) em->em_expr, 0, &vardata);
+			if (HeapTupleIsValid(vardata.statsTuple))
+				em->em_ndistinct =
+						get_variable_numdistinct(&vardata, &em->em_default_nd);
+			else
+			{
+				em->em_ndistinct = 0.0;
+				em->em_default_nd = true;
+			}
+			ReleaseVariableStats(vardata);
+		}
+
+		if (candidate == NULL)
+			candidate = em;
+
+		if (em->em_default_nd)
+			/* Nothing helpful */
+			continue;
+
+		Assert(em->em_ndistinct > 0.);
+
+		if (candidate->em_ndistinct == 0. ||
+			em->em_ndistinct < candidate->em_ndistinct)
+			candidate = em;
+	}
+
+	return candidate;
 }

@@ -114,7 +114,7 @@ extern void cost_sort(Path *path, PlannerInfo *root,
 					  double limit_tuples);
 extern void cost_incremental_sort(Path *path,
 								  PlannerInfo *root, List *pathkeys, int presorted_keys,
-								  int input_disabled_nodes,
+								  int input_disabled_nodes, Relids relids,
 								  Cost input_startup_cost, Cost input_total_cost,
 								  double input_tuples, int width, Cost comparison_cost, int sort_mem,
 								  double limit_tuples);
@@ -222,5 +222,8 @@ extern double compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel,
 								   Path *bitmapqual, double loop_count,
 								   Cost *cost_p, double *tuples_p);
 extern double compute_gather_rows(Path *path);
+extern EquivalenceMember *identify_proper_ecmember(PlannerInfo *root,
+												 EquivalenceClass *ec,
+												 Relids relids);
 
 #endif							/* COST_H */

@@ -2400,6 +2400,7 @@ adjust_rowcount_for_semijoins(PlannerInfo *root,
 										  sjinfo->semi_rhs_exprs,
 										  nraw,
 										  NULL,
+										  NULL,
 										  NULL);
 			if (rowcount > nunique)
 				rowcount = nunique;

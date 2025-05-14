@@ -216,7 +216,7 @@ extern void mergejoinscansel(PlannerInfo *root, Node *clause,
 
 extern double estimate_num_groups(PlannerInfo *root, List *groupExprs,
 								  double input_rows, List **pgset,
-								  EstimationInfo *estinfo);
+								  EstimationInfo *estinfo, Relids relids);
 
 extern List *estimate_multivariate_bucketsize(PlannerInfo *root,
 											  RelOptInfo *inner,

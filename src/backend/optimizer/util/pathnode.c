@@ -1858,6 +1858,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 											  sjinfo->semi_rhs_exprs,
 											  rel->rows,
 											  NULL,
+											  NULL,
 											  NULL);
 	numCols = list_length(sjinfo->semi_rhs_exprs);
 
@@ -3059,6 +3060,7 @@ create_incremental_sort_path(PlannerInfo *root,
 	cost_incremental_sort(&pathnode->path,
 						  root, pathkeys, presorted_keys,
 						  subpath->disabled_nodes,
+						  subpath->parent->relids,
 						  subpath->startup_cost,
 						  subpath->total_cost,
 						  subpath->rows,

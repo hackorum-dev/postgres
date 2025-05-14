@@ -298,3 +298,32 @@ explain (costs off)
 select * from
   (select * from tenk1 order by four) t1 join tenk1 t2 on t1.four = t2.four and t1.two = t2.two
 order by t1.four, t1.two limit 1;
+
+--
+-- Commuting of sides in an expression doesn't influence cost estimation
+--
+CREATE TABLE sort_ndist_t1 (x numeric, y numeric);
+CREATE TABLE sort_ndist_t2 (x numeric, y numeric);
+
+INSERT INTO sort_ndist_t1 (x,y)
+  SELECT gs%10, gs%1000 FROM generate_series(1,1E4) AS gs;
+INSERT INTO sort_ndist_t2 (x,y)
+  SELECT gs, gs FROM generate_series(1,1E4) AS gs;
+CREATE INDEX t1_idx ON sort_ndist_t1 (x);
+CREATE INDEX t2_idx ON sort_ndist_t2 (x);
+VACUUM ANALYZE sort_ndist_t1, sort_ndist_t2;
+
+SET enable_hashjoin = 'off';
+
+-- Having lots of duplicates after the join it is more effective to use plain
+-- Sort instead of incremental sort.
+EXPLAIN (COSTS OFF)
+SELECT t1.x, t1.y FROM sort_ndist_t1 t1, sort_ndist_t2 t2
+WHERE t1.x=t2.x
+ORDER BY t1.x,t1.y;
+EXPLAIN (COSTS OFF) -- the plan must be the same as above
+SELECT t1.x, t1.y FROM sort_ndist_t1 t1, sort_ndist_t2 t2
+WHERE t2.x=t1.x
+ORDER BY t1.x,t1.y;
+
+RESET enable_hashjoin;

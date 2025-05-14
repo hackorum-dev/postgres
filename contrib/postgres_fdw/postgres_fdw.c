@@ -3370,7 +3370,7 @@ estimate_path_cost_size(PlannerInfo *root,
 			numGroups = estimate_num_groups(root,
 											get_sortgrouplist_exprs(root->processed_groupClause,
 																	fpinfo->grouped_tlist),
-											input_rows, NULL, NULL);
+											input_rows, NULL, NULL, NULL);
 
 			/*
 			 * Get the retrieved_rows and rows estimates.  If there are HAVING

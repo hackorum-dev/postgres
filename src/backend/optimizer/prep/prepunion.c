@@ -665,6 +665,7 @@ build_setop_child_paths(PlannerInfo *root, RelOptInfo *rel,
 											  get_tlist_exprs(subroot->parse->targetList, false),
 											  rel->cheapest_total_path->rows,
 											  NULL,
+											  NULL,
 											  NULL);
 	}
 }

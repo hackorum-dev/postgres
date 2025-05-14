@@ -1501,6 +1501,8 @@ typedef struct EquivalenceClass
  * different when dealing with a binary-compatible opfamily; in particular
  * anyarray_ops would never work without this.  Use em_datatype when
  * looking up a specific btree operator to work with this expression.
+ * em_ndistinct caches statistical estimation of ndistinct value for specific
+ * expression. special values: 0 - no statistic available; -1 - not initialised.
  */
 typedef struct EquivalenceMember
 {
@@ -1516,6 +1518,9 @@ typedef struct EquivalenceMember
 	JoinDomain *em_jdomain;		/* join domain containing the source clause */
 	/* if em_is_child is true, this links to corresponding EM for top parent */
 	struct EquivalenceMember *em_parent pg_node_attr(read_write_ignore);
+
+	double		em_ndistinct;		/* cached ndistinct value */
+	bool		em_default_nd;
 } EquivalenceMember;
 
 /*

@@ -3444,7 +3444,7 @@ add_unique_group_var(PlannerInfo *root, List *varinfos,
  */
 double
 estimate_num_groups(PlannerInfo *root, List *groupExprs, double input_rows,
-					List **pgset, EstimationInfo *estinfo)
+					List **pgset, EstimationInfo *estinfo, Relids relids)
 {
 	List	   *varinfos = NIL;
 	double		srf_multiplier = 1.0;
@@ -3481,6 +3481,27 @@ estimate_num_groups(PlannerInfo *root, List *groupExprs, double input_rows,
 	 */
 	numdistinct = 1.0;
 
+	/*
+	 * We need to be careful about Vars containing "varno 0" which might have
+	 * been introduced by generate_append_tlist, which would confuse
+	 * estimate_num_groups (in fact it'd fail for such expressions). See
+	 * recurse_set_operations which has to deal with the same issue.
+	 *
+	 * Unlike recurse_set_operations we can't access the original target list
+	 * here, and even if we could it's not very clear how useful would that be
+	 * for a set operation combining multiple tables. So we simply detect if
+	 * there are any expressions with "varno 0" and use the default
+	 * DEFAULT_NUM_DISTINCT in that case.
+	 *
+	 * We might also use either 1.0 (a single group) or input_tuples (each row
+	 * being a separate group), pretty much the worst and best case for
+	 * incremental sort. But those are extreme cases and using something in
+	 * between seems reasonable. Furthermore, generate_append_tlist is used
+	 * for set operations, which are likely to produce mostly unique output
+	 * anyway - from that standpoint the DEFAULT_NUM_DISTINCT is defensive
+	 * while maintaining lower startup cost.
+	 */
+
 	i = 0;
 	foreach(l, groupExprs)
 	{
@@ -3493,6 +3514,24 @@ estimate_num_groups(PlannerInfo *root, List *groupExprs, double input_rows,
 		/* is expression in this grouping set? */
 		if (pgset && !list_member_int(*pgset, i++))
 			continue;
+
+		/*
+		 * PathKey doesn't provide an expression explicitly. With a sake of
+		 * estimation we may choose any one from the equvalence class which
+		 * provides least number of distinct values and evaluates under the
+		 * relids provided.
+		 */
+		if (IsA(groupexpr, PathKey))
+		{
+			PathKey			   *pathkey = (PathKey *) groupexpr;
+			EquivalenceMember  *em;
+
+			em = identify_proper_ecmember(root, pathkey->pk_eclass, relids);
+			if (em == NULL)
+				/*The case of varno 0 */
+				return Min(input_rows, DEFAULT_NUM_DISTINCT);
+			groupexpr = (Node *) em->em_expr;
+		}
 
 		/*
 		 * Set-returning functions in grouping columns are a bit problematic.
