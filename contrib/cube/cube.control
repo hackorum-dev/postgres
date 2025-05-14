@@ -1,6 +1,6 @@
 # cube extension
 comment = 'data type for multidimensional cubes'
-default_version = '1.5'
+default_version = '1.6'
 module_pathname = '$libdir/cube'
 relocatable = true
 trusted = true
