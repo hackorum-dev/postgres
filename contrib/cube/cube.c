@@ -91,6 +91,11 @@ PG_FUNCTION_INFO_V1(cube_distance);
 PG_FUNCTION_INFO_V1(distance_chebyshev);
 PG_FUNCTION_INFO_V1(cube_is_point);
 PG_FUNCTION_INFO_V1(cube_enlarge);
+PG_FUNCTION_INFO_V1(cube_add);
+PG_FUNCTION_INFO_V1(cube_sub);
+PG_FUNCTION_INFO_V1(cube_div);
+PG_FUNCTION_INFO_V1(cube_mul_cf);
+PG_FUNCTION_INFO_V1(cube_mul_fc);
 
 /*
  * For internal use only
@@ -109,6 +114,8 @@ bool		g_cube_internal_consistent(NDBOX *key, NDBOX *query, StrategyNumber strate
  */
 static double distance_1D(double a1, double a2, double b1, double b2);
 static bool cube_is_point_internal(NDBOX *cube);
+static NDBOX *cube_binop_helper(NDBOX *a, NDBOX *b);
+static NDBOX *cube_alloc_shape(NDBOX *a);
 
 
 /*****************************************************************************
@@ -1916,5 +1923,126 @@ cube_c_f8_f8(PG_FUNCTION_ARGS)
 	}
 
 	PG_FREE_IF_COPY(cube, 0);
+	PG_RETURN_NDBOX_P(result);
+}
+
+static NDBOX *
+cube_alloc_shape(NDBOX *a) {
+	NDBOX	   *result;
+	int			dim = DIM(a);
+	int			size;
+
+	if (IS_POINT(a)) {
+		size = POINT_SIZE(dim);
+		result = (NDBOX *) palloc0(size);
+		SET_POINT_BIT(result);
+	} else {
+		size = CUBE_SIZE(dim);
+		result = (NDBOX *) palloc0(size);
+	}
+
+	SET_VARSIZE(result, size);
+	SET_DIM(result, dim);
+
+	return result;
+}
+
+NDBOX *
+cube_binop_helper(NDBOX *a, NDBOX *b)
+{
+	if (DIM(a) != DIM(b))
+		ereport(ERROR,
+				(errcode(ERRCODE_CARDINALITY_VIOLATION),
+				 errmsg("cubes have different lengths: %d != %d", DIM(a), DIM(b))));
+
+	if (IS_POINT(a) != IS_POINT(b))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_EXCEPTION),
+				 errmsg("it's POINTless to add these cubes: %d != %d", IS_POINT(a), IS_POINT(b))));
+
+	return cube_alloc_shape(a);
+}
+
+/*
+ * Function returns coordinate-wise sum of cubes.
+ */
+Datum
+cube_add(PG_FUNCTION_ARGS)
+{
+	NDBOX	   *a = PG_GETARG_NDBOX_P(0);
+	NDBOX	   *b = PG_GETARG_NDBOX_P(1);
+	NDBOX	   *result = cube_binop_helper(a, b);
+	int			i;
+	int			n = DIM(a) * (IS_POINT(a) ? 1 : 2);
+
+	for (i = 0; i < n; i++)
+		result->x[i] = a->x[i] + b->x[i];
+
+	PG_RETURN_NDBOX_P(result);
+}
+
+/*
+ * Function returns coordinate-wise difference of cubes.
+ */
+Datum
+cube_sub(PG_FUNCTION_ARGS)
+{
+	NDBOX	   *a = PG_GETARG_NDBOX_P(0);
+	NDBOX	   *b = PG_GETARG_NDBOX_P(1);
+	NDBOX	   *result = cube_binop_helper(a, b);
+	int			i;
+	int			n = DIM(a) * (IS_POINT(a) ? 1 : 2);
+
+	for (i = 0; i < n; i++)
+		result->x[i] = a->x[i] - b->x[i];
+
+	PG_RETURN_NDBOX_P(result);
+}
+
+/*
+ * Functions return scaled cube.
+ */
+Datum
+cube_div(PG_FUNCTION_ARGS)
+{
+	NDBOX	   *a = PG_GETARG_NDBOX_P(0);
+	double		s = PG_GETARG_FLOAT8(1);
+	NDBOX	   *result = cube_alloc_shape(a);
+	int			i;
+	int			n = DIM(a) * (IS_POINT(a) ? 1 : 2);
+
+	for (i = 0; i < n; i++)
+		result->x[i] = a->x[i] / s;
+
+	PG_RETURN_NDBOX_P(result);
+}
+
+Datum
+cube_mul_cf(PG_FUNCTION_ARGS)
+{
+	NDBOX	   *a = PG_GETARG_NDBOX_P(0);
+	double		s = PG_GETARG_FLOAT8(1);
+	NDBOX	   *result = cube_alloc_shape(a);
+	int			i;
+	int			n = DIM(a) * (IS_POINT(a) ? 1 : 2);
+
+	for (i = 0; i < n; i++)
+		result->x[i] = a->x[i] * s;
+
+	PG_RETURN_NDBOX_P(result);
+}
+
+Datum
+cube_mul_fc(PG_FUNCTION_ARGS)
+{
+	double		s = PG_GETARG_FLOAT8(0);
+	NDBOX	   *a = PG_GETARG_NDBOX_P(1);
+	NDBOX	   *result = cube_alloc_shape(a);
+	int			i;
+	int			n = DIM(a) * (IS_POINT(a) ? 1 : 2);
+
+	for (i = 0; i < n; i++)
+		result->x[i] = a->x[i] * s;
+
 	PG_RETURN_NDBOX_P(result);
 }
