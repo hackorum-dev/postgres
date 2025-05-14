@@ -148,6 +148,7 @@ static PGconn *connect_pg_server(ForeignServer *server, UserMapping *user);
 static void disconnect_pg_server(ConnCacheEntry *entry);
 static void check_conn_params(const char **keywords, const char **values, UserMapping *user);
 static void configure_remote_session(PGconn *conn);
+static void reset_remote_session(PGconn *conn);
 static void do_sql_command_begin(PGconn *conn, const char *sql);
 static void do_sql_command_end(PGconn *conn, const char *sql,
 							   bool consume_input);
@@ -217,6 +218,7 @@ GetConnection(UserMapping *user, bool will_prep_stmt, PgFdwConnState **state)
 {
 	bool		found;
 	bool		retry = false;
+	bool		new_connection = false;
 	ConnCacheEntry *entry;
 	ConnCacheKey key;
 	MemoryContext ccxt = CurrentMemoryContext;
@@ -287,7 +289,10 @@ GetConnection(UserMapping *user, bool will_prep_stmt, PgFdwConnState **state)
 	 * will remain in a valid empty state, ie conn == NULL.)
 	 */
 	if (entry->conn == NULL)
+	{
 		make_new_connection(entry, user);
+		new_connection = true;
+	}
 
 	/*
 	 * We check the health of the cached connection here when using it.  In
@@ -296,6 +301,10 @@ GetConnection(UserMapping *user, bool will_prep_stmt, PgFdwConnState **state)
 	 */
 	PG_TRY();
 	{
+		/* Prepare the cached connection for use */
+		if (!new_connection)
+			configure_remote_session(entry->conn);
+
 		/* Process a pending asynchronous request if any. */
 		if (entry->state.pendingAreq)
 			process_pending_request(entry->state.pendingAreq);
@@ -842,6 +851,12 @@ configure_remote_session(PGconn *conn)
 		do_sql_command(conn, "SET extra_float_digits = 2");
 }
 
+static void
+reset_remote_session(PGconn *conn)
+{
+	do_sql_command(conn, "RESET search_path");
+}
+
 /*
  * Convenience subroutine to issue a non-data-returning SQL command to remote
  */
@@ -1025,6 +1040,8 @@ ReleaseConnection(PGconn *conn)
 	 * cleanup is managed on a transaction or subtransaction basis instead. So
 	 * there's nothing to do here.
 	 */
+
+	reset_remote_session(conn);
 }
 
 /*
