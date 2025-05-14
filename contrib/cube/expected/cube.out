@@ -1973,3 +1973,64 @@ SELECT c~>(-4), c FROM test_cube ORDER BY c~>(-4) LIMIT 15; -- descending by upp
 (15 rows)
 
 RESET enable_indexscan;
+-- Test of binary operators
+SELECT '(-7,7)'::cube + '(-1,1)'::cube;
+ ?column? 
+----------
+ (-8, 8)
+(1 row)
+
+SELECT '(-7,7)'::cube - '(-1,1)'::cube;
+ ?column? 
+----------
+ (-6, 6)
+(1 row)
+
+SELECT '(-1,2)'::cube * 2;
+ ?column? 
+----------
+ (-2, 4)
+(1 row)
+
+SELECT '(-2,4)'::cube / 2;
+ ?column? 
+----------
+ (-1, 2)
+(1 row)
+
+SELECT 2 * '(-1,2)'::cube;
+ ?column? 
+----------
+ (-2, 4)
+(1 row)
+
+SELECT '(-7,7),(2,9)'::cube + '(-1,1),(5,12)'::cube;
+    ?column?     
+-----------------
+ (-8, 8),(7, 21)
+(1 row)
+
+SELECT '(-7,7),(2,9)'::cube - '(-1,1),(5,12)'::cube;
+     ?column?     
+------------------
+ (-6, 6),(-3, -3)
+(1 row)
+
+SELECT '(-1,2),(2,9)'::cube * 2;
+    ?column?     
+-----------------
+ (-2, 4),(4, 18)
+(1 row)
+
+SELECT '(-2,4),(3,7)'::cube / 2;
+      ?column?      
+--------------------
+ (-1, 2),(1.5, 3.5)
+(1 row)
+
+SELECT 2 * '(-1,2),(2,9)'::cube;
+    ?column?     
+-----------------
+ (-2, 4),(4, 18)
+(1 row)
+
