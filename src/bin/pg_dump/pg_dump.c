@@ -219,11 +219,10 @@ static int	nsequences = 0;
 #define DUMP_DEFAULT_ROWS_PER_INSERT 1
 
 /*
- * Maximum number of large objects to group into a single ArchiveEntry.
- * At some point we might want to make this user-controllable, but for now
- * a hard-wired setting will suffice.
+ * Maximum number of group of large objects in a single ArchiveEntry when creating the dump of LOs.
+ * 50 would be an appropriate number for parallel dump & restore.
  */
-#define MAX_BLOBS_PER_ARCHIVE_ENTRY 1000
+static int batch_num = 50;
 
 /*
  * Macro for producing quoted, schema-qualified name of a dumpable object.
@@ -3827,18 +3826,26 @@ getLOs(Archive *fout)
 	int			i_lomowner;
 	int			i_lomacl;
 	int			i_acldefault;
+	int         i_batch;
 
 	pg_log_info("reading large objects");
 
 	/*
 	 * Fetch LO OIDs and owner/ACL data.  Order the data so that all the blobs
 	 * with the same owner/ACL appear together.
-	 */
-	appendPQExpBufferStr(loQry,
-						 "SELECT oid, lomowner, lomacl, "
-						 "acldefault('L', lomowner) AS acldefault "
-						 "FROM pg_largeobject_metadata "
-						 "ORDER BY lomowner, lomacl::pg_catalog.text, oid");
+	 * In the meanwhile, try to make batch_num of ArchiveEntry entries for each pair of owner/ACL data.
+	 * If for one owner/ACL pair, there are millions of rows, then there will be group into batch_num toc entries.
+	 * If there are limited rows for one owner/ACL pair, then there will be batch_num ArchiveEntry for this pair. 
+	 * This could increase the concurrency when performing dump & restore.
+	*/
+	appendPQExpBuffer(loQry,
+					  "with with_num as ("
+					  "SELECT oid, lomowner, lomacl, acldefault('L', lomowner) AS acldefault,"
+					  "row_number() over (PARTITION BY lomowner, lomacl::pg_catalog.text ORDER BY lomowner, lomacl::pg_catalog.text,oid) as row_num,"
+					  "count(*)  over (PARTITION BY lomowner, lomacl::pg_catalog.text) as total_count " 
+					  "FROM pg_largeobject_metadata ORDER BY lomowner, lomacl::pg_catalog.text,oid ) select *, "
+					  "row_num / (total_count / %d + 1) + 1 as batch from with_num;", 
+					  batch_num);
 
 	res = ExecuteSqlQuery(fout, loQry->data, PGRES_TUPLES_OK);
 
@@ -3846,7 +3853,7 @@ getLOs(Archive *fout)
 	i_lomowner = PQfnumber(res, "lomowner");
 	i_lomacl = PQfnumber(res, "lomacl");
 	i_acldefault = PQfnumber(res, "acldefault");
-
+	i_batch = PQfnumber(res, "batch");
 	ntups = PQntuples(res);
 
 	/*
@@ -3862,16 +3869,18 @@ getLOs(Archive *fout)
 		Oid			thisoid = atooid(PQgetvalue(res, i, i_oid));
 		char	   *thisowner = PQgetvalue(res, i, i_lomowner);
 		char	   *thisacl = PQgetvalue(res, i, i_lomacl);
+		char       *thisbatch = PQgetvalue(res, i, i_batch);
 		LoInfo	   *loinfo;
 		DumpableObject *lodata;
 		char		namebuf[64];
 
 		/* Scan to find first tuple not to be included in group */
 		n = 1;
-		while (n < MAX_BLOBS_PER_ARCHIVE_ENTRY && i + n < ntups)
+		while ( i + n < ntups)
 		{
 			if (strcmp(thisowner, PQgetvalue(res, i + n, i_lomowner)) != 0 ||
-				strcmp(thisacl, PQgetvalue(res, i + n, i_lomacl)) != 0)
+				strcmp(thisacl, PQgetvalue(res, i + n, i_lomacl)) != 0 ||
+				strcmp(thisbatch, PQgetvalue(res, i + n, i_batch))) 
 				break;
 			n++;
 		}
