@@ -8,6 +8,9 @@ use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
 
+my $stdout;
+my $stderr;
+
 # setup
 
 my $node_publisher = PostgreSQL::Test::Cluster->new('publisher');
@@ -889,5 +892,141 @@ $node_publisher->wait_for_catchup('sub2');
 $result = $node_subscriber2->safe_psql('postgres',
 	"SELECT a, b, c FROM tab5_1 ORDER BY 1");
 is($result, qq(4||1), 'updates of tab5 replicated correctly');
+
+# Test with partitioned table with foreign table as its partition.
+$node_publisher->safe_psql('postgres', "CREATE DATABASE db1");
+$node_publisher->safe_psql(
+	'db1',
+	q{CREATE EXTENSION IF NOT EXISTS postgres_fdw;
+	CREATE SERVER fdw FOREIGN DATA WRAPPER postgres_fdw;
+	CREATE USER MAPPING FOR CURRENT_USER SERVER fdw;});
+
+$node_publisher->safe_psql(
+	'db1',
+	q{CREATE SCHEMA sc1;
+	CREATE SCHEMA sc2;
+	CREATE TABLE sc1.tab6(id int) PARTITION BY RANGE(id);
+	CREATE TABLE sc1.tab6_1 PARTITION OF sc1.tab6 FOR VALUES FROM (0) TO (5);
+	CREATE TABLE sc1.tab6_2 PARTITION OF sc1.tab6 FOR VALUES FROM (5) TO (15) PARTITION BY RANGE(id);
+	CREATE FOREIGN TABLE sc1.tab6_2_1 PARTITION OF sc1.tab6_2 FOR VALUES FROM (10) TO (15) SERVER fdw;}
+);
+$node_publisher->safe_psql(
+	'db1',
+	q{CREATE PUBLICATION pub_foreign_1 FOR TABLE sc1.tab6 with (publish_via_partition_root);
+	CREATE PUBLICATION pub_foreign_2 FOR TABLES IN SCHEMA sc1 with (publish_via_partition_root);
+	CREATE PUBLICATION pub_foreign_3 FOR ALL TABLES with (publish_via_partition_root);
+	CREATE PUBLICATION pub_foreign_4 FOR TABLES IN SCHEMA sc2 with (publish_via_partition_root);
+	});
+
+$node_subscriber1->safe_psql('postgres', "CREATE DATABASE db1");
+$node_subscriber1->safe_psql(
+	'db1',
+	q{CREATE SCHEMA sc1;
+	CREATE SCHEMA sc2;
+	CREATE TABLE sc1.tab6(id int) PARTITION BY RANGE(id);
+	CREATE TABLE sc1.tab6_1 PARTITION OF sc1.tab6 FOR VALUES FROM (0) TO (5);
+	CREATE TABLE sc1.tab6_2 PARTITION OF sc1.tab6 FOR VALUES FROM (5) TO (15) PARTITION BY RANGE(id);
+	CREATE TABLE sc1.tab6_2_1 PARTITION OF sc1.tab6_2 FOR VALUES FROM (10) TO (15);}
+);
+
+$publisher_connstr = $node_publisher->connstr . ' dbname=db1';
+
+# Create subscription on publication which has partitioned table with foreign
+# table as its partition.
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"CREATE SUBSCRIPTION sub_foreign_1 CONNECTION '$publisher_connstr' PUBLICATION pub_foreign_1;"
+);
+like(
+	$stderr,
+	qr/ERROR:  subscription "sub_foreign_1" with copy_data = true cannot subscribe to a publication with publish_via_partition_root = true and publishes partitioned table with foreign table as partition/,
+	"Create subscription on a publication FOR TABLE on partitioned table with foreign table as its partition"
+);
+
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"CREATE SUBSCRIPTION sub_foreign_1 CONNECTION '$publisher_connstr' PUBLICATION pub_foreign_2;"
+);
+like(
+	$stderr,
+	qr/ERROR:  subscription "sub_foreign_1" with copy_data = true cannot subscribe to a publication with publish_via_partition_root = true and publishes partitioned table with foreign table as partition/,
+	"Create subscription on a publication FOR TABLES IN SCHEMA on partitioned table with foreign table as its partition"
+);
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"CREATE SUBSCRIPTION sub_foreign_1 CONNECTION '$publisher_connstr' PUBLICATION pub_foreign_3;"
+);
+like(
+	$stderr,
+	qr/ERROR:  subscription "sub_foreign_1" with copy_data = true cannot subscribe to a publication with publish_via_partition_root = true and publishes partitioned table with foreign table as partition/,
+	"Create subscription on a publication FOR ALL TABLES on partitioned table with foreign table as its partition"
+);
+
+# If publication is created with publish_via_partition_root = false, we can
+# create subscription on it. But replication of partitioned table with foreign
+# is skipped
+$node_publisher->safe_psql('db1',
+	"ALTER PUBLICATION pub_foreign_1 SET (publish_via_partition_root = false)"
+);
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"CREATE SUBSCRIPTION sub_foreign_1 CONNECTION '$publisher_connstr' PUBLICATION pub_foreign_1;"
+);
+$node_subscriber1->safe_psql('db1', 'DROP SUBSCRIPTION sub_foreign_1');
+
+# if subscription is created with copy_data=false, we can create subscription
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"CREATE SUBSCRIPTION sub_foreign_1 CONNECTION '$publisher_connstr' PUBLICATION pub_foreign_2 WITH (copy_data=false)"
+);
+$node_subscriber1->safe_psql('db1', 'DROP SUBSCRIPTION sub_foreign_1');
+
+# Alter subscription to include publisher which has partitioned table with
+# foreign table as its partition.
+$node_subscriber1->safe_psql('db1',
+	"CREATE SUBSCRIPTION sub_foreign_1 CONNECTION '$publisher_connstr' PUBLICATION pub_foreign_4;"
+);
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"ALTER SUBSCRIPTION sub_foreign_1 ADD PUBLICATION pub_foreign_2;");
+like(
+	$stderr,
+	qr/ERROR:  subscription "sub_foreign_1" with copy_data = true cannot subscribe to a publication with publish_via_partition_root = true and publishes partitioned table with foreign table as partition/,
+	"Add publication which has partitioned table with foreign table as its partition to subscription"
+);
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"ALTER SUBSCRIPTION sub_foreign_1 SET PUBLICATION pub_foreign_2;");
+like(
+	$stderr,
+	qr/ERROR:  subscription "sub_foreign_1" with copy_data = true cannot subscribe to a publication with publish_via_partition_root = true and publishes partitioned table with foreign table as partition/,
+	"set publication which has partitioned table with foreign table as its partition for subscription"
+);
+
+# Create foreign table as a partition of partitioned table already part of
+# publication.
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"CREATE FOREIGN TABLE sc1.tab6_2_1 PARTITION OF sc1.tab6_2 FOR VALUES FROM (10) TO (15) SERVER fdw;"
+);
+$node_publisher->safe_psql('db1', "DROP FOREIGN TABLE sc1.tab6_2_1");
+($result, $stdout, $stderr) = $node_publisher->psql('db1',
+	"CREATE FOREIGN TABLE sc1.tab6_2_1 PARTITION OF sc1.tab6_2 FOR VALUES FROM (10) TO (15) SERVER fdw"
+);
+like(
+	$stderr,
+	qr/ERROR:  cannot create foreign table "tab6_2_1" as a partition of "tab6_2"/,
+	"Create foreign table as a partition of partitioned table already part of publication"
+);
+
+# Attach foreign table as a partition of partitioned table already part of
+# publication.
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"CREATE FOREIGN TABLE sc1.tab6_2_1 (id int) SERVER fdw");
+($result, $stdout, $stderr) = $node_subscriber1->psql('db1',
+	"ALTER TABLE sc1.tab6_2 ATTACH PARTITION sc1.tab6_2_1 FOR VALUES FROM (10) TO (15)"
+);
+$node_publisher->safe_psql('db1',
+	"CREATE FOREIGN TABLE sc1.tab6_2_1 (id int) SERVER fdw");
+($result, $stdout, $stderr) = $node_publisher->psql('db1',
+	"ALTER TABLE sc1.tab6_2 ATTACH PARTITION sc1.tab6_2_1 FOR VALUES FROM (10) TO (15)"
+);
+like(
+	$stderr,
+	qr/ERROR:  cannot attach foreign table "tab6_2_1" to partition table "tab6_2"/,
+	"Attach foreign table as a partition of already published partitioned table"
+);
 
 done_testing();

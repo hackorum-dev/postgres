@@ -31,6 +31,7 @@ static void check_new_cluster_logical_replication_slots(void);
 static void check_new_cluster_subscription_configuration(void);
 static void check_old_cluster_for_valid_slots(void);
 static void check_old_cluster_subscription_state(void);
+static void check_for_valid_publication(ClusterInfo *cluster);
 
 /*
  * DataTypesUsageChecks - definitions of data type checks for the old cluster
@@ -633,6 +634,8 @@ check_and_dump_old_cluster(void)
 		get_subscription_count(&old_cluster);
 		check_old_cluster_subscription_state();
 	}
+
+	check_for_valid_publication(&old_cluster);
 
 	check_for_data_types_usage(&old_cluster);
 
@@ -2268,6 +2271,92 @@ check_old_cluster_subscription_state(void)
 		pg_fatal("Your installation contains subscriptions without origin or having relations not in i (initialize) or r (ready) state.\n"
 				 "You can allow the initial sync to finish for all relations and then restart the upgrade.\n"
 				 "A list of the problematic subscriptions is in the file:\n"
+				 "    %s", report.path);
+	}
+	else
+		check_ok();
+}
+
+/*
+ * Callback function for processing results of query for
+ * check_for_valid_publication()'s UpgradeTask.  If the query returned
+ * any rows (i.e., the check failed), write the details to the report file.
+ */
+static void
+process_pub_check(DbInfo *dbinfo, PGresult *res, void *arg)
+{
+	UpgradeTaskReport *report = (UpgradeTaskReport *) arg;
+	int			ntups = PQntuples(res);
+	int			i_puboid = PQfnumber(res, "oid");
+	int			i_pubviaroot = PQfnumber(res, "pubviaroot");
+	int			i_puballtables = PQfnumber(res, "puballtables");
+	int			i_ftrelid = PQfnumber(res, "ftrelid");
+
+	if (ntups == 0)
+		return;
+
+	if (report->file == NULL &&
+		(report->file = fopen_priv(report->path, "w")) == NULL)
+		pg_fatal("could not open file \"%s\": %m", report->path);
+
+	fprintf(report->file, "In database: %s\n", dbinfo->db_name);
+
+	for (int rowno = 0; rowno < ntups; rowno++)
+		fprintf(report->file, "The publication with oid: %s, has foreign table with oid: %s as partition of a published table. "
+				"Publication is published with publish_via_partition_root = %s and it is published %s.\n",
+				PQgetvalue(res, rowno, i_puboid),
+				PQgetvalue(res, rowno, i_ftrelid),
+				strcmp(PQgetvalue(res, rowno, i_pubviaroot), "f") ? "true" : "false",
+				strcmp(PQgetvalue(res, rowno, i_puballtables), "f") ? "FOR ALL TABLES" : "FOR TABLE/FOR TABLES IN SCHEMA");
+}
+
+/*
+ * check_for_valid_publication
+ *
+ * Verify if the publication has any published foreign table which are
+ * partitions of a table.
+ *
+ * For PG 18 and below foreign tables can be indirectly published when it is
+ * partition of a partitioned table. Avoid upgrading the cluster if it has a
+ * publication with publish_via_partition_root = true and has foreign table
+ * which is partition of a published table.
+ */
+static void
+check_for_valid_publication(ClusterInfo *cluster)
+{
+	UpgradeTaskReport report;
+	UpgradeTask *task;
+	const char *query;
+
+	if (GET_MAJOR_VERSION(cluster->major_version) >= 1900)
+		return;
+
+	prep_status("Checking for invalid publications");
+
+	report.file = NULL;
+	snprintf(report.path, sizeof(report.path), "%s/%s",
+			 log_opts.basedir,
+			 "pubs_invalid.txt");
+
+	query = "SELECT p.oid, p.pubviaroot, p.puballtables, ft.ftrelid "
+		"from pg_catalog.pg_publication p, LATERAL "
+		"pg_get_publication_tables(p.pubname) gpt, LATERAL "
+		"pg_partition_tree(gpt.relid) gt JOIN pg_catalog.pg_foreign_table ft ON "
+		"ft.ftrelid = gt.relid WHERE p.pubviaroot = true;";
+
+	task = upgrade_task_create();
+	upgrade_task_add_step(task, query,
+						  process_pub_check,
+						  true, &report);
+	upgrade_task_run(task, cluster);
+	upgrade_task_free(task);
+
+	if (report.file)
+	{
+		fclose(report.file);
+		pg_log(PG_REPORT, "fatal");
+		pg_fatal("Your installation contains publications where one or more partitioned tables have foreign tables as partitions.\n"
+				 "A list of potentially-affected publications is in the file:\n"
 				 "    %s", report.path);
 	}
 	else

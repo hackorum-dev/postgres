@@ -304,7 +304,7 @@ check_and_fetch_column_list(Publication *pub, Oid relid, MemoryContext mcxt,
 
 /*
  * Gets the relations based on the publication partition option for a specified
- * relation.
+ * relation. Foreign tables are not included.
  */
 List *
 GetPubPartitionOptionRelations(List *result, PublicationPartOpt pub_partopt,
@@ -313,25 +313,21 @@ GetPubPartitionOptionRelations(List *result, PublicationPartOpt pub_partopt,
 	if (get_rel_relkind(relid) == RELKIND_PARTITIONED_TABLE &&
 		pub_partopt != PUBLICATION_PART_ROOT)
 	{
-		List	   *all_parts = find_all_inheritors(relid, NoLock,
-													NULL);
+		List	   *all_parts = find_all_inheritors(relid, NoLock, NULL);
 
-		if (pub_partopt == PUBLICATION_PART_ALL)
-			result = list_concat(result, all_parts);
-		else if (pub_partopt == PUBLICATION_PART_LEAF)
+		foreach_oid(partOid, all_parts)
 		{
-			ListCell   *lc;
+			char		relkind = get_rel_relkind(partOid);
 
-			foreach(lc, all_parts)
-			{
-				Oid			partOid = lfirst_oid(lc);
+			if (relkind == RELKIND_FOREIGN_TABLE)
+				continue;
 
-				if (get_rel_relkind(partOid) != RELKIND_PARTITIONED_TABLE)
-					result = lappend_oid(result, partOid);
-			}
+			if (pub_partopt == PUBLICATION_PART_LEAF &&
+				relkind == RELKIND_PARTITIONED_TABLE)
+				continue;
+
+			result = lappend_oid(result, partOid);
 		}
-		else
-			Assert(false);
 	}
 	else
 		result = lappend_oid(result, relid);

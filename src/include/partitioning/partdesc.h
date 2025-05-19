@@ -71,5 +71,6 @@ extern PartitionDesc PartitionDirectoryLookup(PartitionDirectory, Relation);
 extern void DestroyPartitionDirectory(PartitionDirectory pdir);
 
 extern Oid	get_default_oid_from_partdesc(PartitionDesc partdesc);
+extern bool RelationHasForeignPartition(Relation rel);
 
 #endif							/* PARTDESC_H */

@@ -112,6 +112,9 @@ static List *merge_publications(List *oldpublist, List *newpublist, bool addpub,
 static void ReportSlotConnectionError(List *rstates, Oid subid, char *slotname, char *err);
 static void CheckAlterSubOption(Subscription *sub, const char *option,
 								bool slot_needs_update, bool isTopLevel);
+static void check_publications_foreign_parts(WalReceiverConn *wrconn,
+											 List *publications, bool copydata,
+											 char *subname);
 
 
 /*
@@ -723,6 +726,8 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 			check_publications(wrconn, publications);
 			check_publications_origin(wrconn, publications, opts.copy_data,
 									  opts.origin, NULL, 0, stmt->subname);
+			check_publications_foreign_parts(wrconn, publications,
+											 opts.copy_data, stmt->subname);
 
 			/*
 			 * Set sync state based on if we were asked to do data copy or
@@ -883,6 +888,8 @@ AlterSubscription_refresh(Subscription *sub, bool copy_data,
 		check_publications_origin(wrconn, sub->publications, copy_data,
 								  sub->origin, subrel_local_oids,
 								  subrel_count, sub->name);
+		check_publications_foreign_parts(wrconn, sub->publications, copy_data,
+										 sub->name);
 
 		/*
 		 * Rels that we want to remove from subscription and drop any slots
@@ -2506,4 +2513,97 @@ defGetStreamingMode(DefElem *def)
 			 errmsg("%s requires a Boolean value or \"parallel\"",
 					def->defname)));
 	return LOGICALREP_STREAM_OFF;	/* keep compiler quiet */
+}
+
+/*
+ * check_publications_foreign_parts
+ * Check if the publications, on which subscriber is subscribing, publishes any
+ * partitioned table that has a foreign table as its partition and has
+ * publish_via_partition_root set as true. The check is performed only if
+ * copy_data is set as true for the subscription.
+ *
+ * Although DML changes to foreign tables are excluded from publication, the
+ * tablesync worker will still attempt to copy data from foreign table
+ * partitions during initial table synchronization.  To avoid the
+ * inconsistencies that would result, we disallow foreign tables from being
+ * published generally.  However, it's possible for partitioned tables to have
+ * foreign tables as partitions, and we would like to allow publishing those
+ * partitioned tables so that the other partitions are replicated.
+ *
+ * This function is in charge of detecting if publisher with
+ * publish_via_partition_root=true publishes a partitioned table that has a
+ * foreign table as a partition and throw an error if found.
+ *
+ * When publish_via_partition_root is false, each partition published for
+ * replication is listed individually in pg_subscription_rel, and we
+ * don't add partitions that are foreign tables, so this function is not called
+ * for such tables.
+ */
+static void
+check_publications_foreign_parts(WalReceiverConn *wrconn, List *publications,
+								 bool copydata, char *subname)
+{
+	WalRcvExecResult *res;
+	StringInfoData cmd;
+	TupleTableSlot *slot;
+	Oid			tableRow[1] = {TEXTOID};
+	List	   *publist = NIL;
+	int			i;
+
+	if (!copydata)
+		return;
+
+	initStringInfo(&cmd);
+	appendStringInfoString(&cmd,
+						   "SELECT DISTINCT P.pubname AS pubname "
+						   "FROM pg_catalog.pg_publication p, LATERAL "
+						   "pg_get_publication_tables(p.pubname) gpt, LATERAL "
+						   "pg_partition_tree(gpt.relid) gt JOIN pg_catalog.pg_foreign_table ft ON "
+						   "ft.ftrelid = gt.relid WHERE p.pubviaroot = true AND  p.pubname IN (");
+
+	GetPublicationsStr(publications, &cmd, true);
+	appendStringInfoString(&cmd, ")\n");
+
+	res = walrcv_exec(wrconn, cmd.data, 1, tableRow);
+	pfree(cmd.data);
+
+	if (res->status != WALRCV_OK_TUPLES)
+		ereport(ERROR,
+				(errcode(ERRCODE_CONNECTION_FAILURE),
+				 errmsg("could not receive list of replicated tables from the publisher: %s",
+						res->err)));
+
+	/* Process tables. */
+	slot = MakeSingleTupleTableSlot(res->tupledesc, &TTSOpsMinimalTuple);
+	while (tuplestore_gettupleslot(res->tuplestore, true, false, slot))
+	{
+		char	   *pubname;
+		bool		isnull;
+
+		pubname = TextDatumGetCString(slot_getattr(slot, 1, &isnull));
+		Assert(!isnull);
+
+		ExecClearTuple(slot);
+		publist = list_append_unique(publist, makeString(pubname));
+	}
+
+	if (publist)
+	{
+		StringInfo	pubnames = makeStringInfo();
+
+		/* Prepare the list of publication(s) for warning message. */
+		GetPublicationsStr(publist, pubnames, false);
+		ereport(ERROR,
+				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				errmsg("subscription \"%s\" with copy_data = true cannot subscribe to a publication with publish_via_partition_root = true and publishes partitioned table with foreign table as partition",
+					   subname),
+				errdetail_plural("The subscription is for a publication (%s) with publish_via_partition_root = true, but one or more partitioned tables have foreign tables as partitions.",
+								 "The subscription is for publications (%s) with publish_via_partition_root = true but one or more partitioned tables have foreign tables as partitions.",
+								 list_length(publist), pubnames->data),
+				errhint("Drop the foreign table from the publication or set publish_via_partition_root = false on publication or set copy_data = false."));
+	}
+
+	ExecDropSingleTupleTableSlot(slot);
+
+	walrcv_clear_result(res);
 }

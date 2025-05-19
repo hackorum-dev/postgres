@@ -545,6 +545,13 @@ WHERE C.relnamespace = N.oid AND
       PT.pubname IN (&lt;pub-names&gt;);
 </programlisting></para>
 
+   <para>
+    When using the subscription parameter copy_data = true, corresponding
+    publications are checked if it has publish_via_partition_root = true and
+    has a partitioned table with a foreign table as its partition. If this
+    scenario is detected an ERROR is logged to the user.
+   </para>
+
  </refsect1>
 
  <refsect1>

@@ -506,3 +506,35 @@ get_default_oid_from_partdesc(PartitionDesc partdesc)
 
 	return InvalidOid;
 }
+
+/*
+ * Return true if the given partitioned table ultimately contains a
+ * partition that is a foreign table, false otherwise.
+ */
+bool
+RelationHasForeignPartition(Relation rel)
+{
+	PartitionDesc pd = RelationGetPartitionDesc(rel, true);
+
+	for (int i = 0; i < pd->nparts; i++)
+	{
+		if (pd->is_leaf[i])
+		{
+			if (get_rel_relkind(pd->oids[i]) == RELKIND_FOREIGN_TABLE)
+				return true;
+		}
+		else
+		{
+			Relation	part;
+			bool		ret;
+
+			part = table_open(pd->oids[i], NoLock);
+			ret = RelationHasForeignPartition(part);
+			table_close(part, NoLock);
+			if (ret)
+				return true;
+		}
+	}
+
+	return false;
+}

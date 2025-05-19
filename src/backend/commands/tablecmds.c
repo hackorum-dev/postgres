@@ -1134,6 +1134,52 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 							RelationGetRelationName(parent))));
 
 		/*
+		 * If we're creating a partition that's a foreign table, verify that
+		 * the parent table is not in a publication with
+		 * publish_via_partition_root enabled.
+		 */
+		if (rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+		{
+			Oid			schemaid;
+			List	   *puboids;
+			List	   *ancestors;
+
+			/* Start with publications of all tables */
+			puboids = GetAllTablesPublications();
+
+			/* capture all publications that include this relation directly */
+			puboids = list_concat(puboids, GetRelationPublications(parent->rd_id));
+			schemaid = RelationGetNamespace(parent);
+			puboids = list_concat(puboids, GetSchemaPublications(schemaid));
+
+			/* and do the same for its ancestors, if any */
+			ancestors = get_partition_ancestors(parent->rd_id);
+			foreach_oid(ancestor, ancestors)
+			{
+				puboids = list_concat(puboids, GetRelationPublications(ancestor));
+				schemaid = get_rel_namespace(ancestor);
+				puboids = list_concat(puboids, GetSchemaPublications(schemaid));
+			}
+
+			/* Check the publish_via_partition_root bit for each of those */
+			list_sort(puboids, list_oid_cmp);
+			list_deduplicate_oid(puboids);
+			foreach_oid(puboid, puboids)
+			{
+				Publication *pub = GetPublication(puboid);
+
+				if (pub->pubviaroot)
+					ereport(ERROR,
+							errcode(ERRCODE_WRONG_OBJECT_TYPE),
+							errmsg("cannot create foreign table \"%s\" as a partition of \"%s\"",
+								   RelationGetRelationName(rel), RelationGetRelationName(parent)),
+							errdetail("Partitioned table \"%s\" is published with option \"%s\" in publication \"%s\".",
+									  RelationGetRelationName(parent),
+									  "publish_via_partition_root", pub->name));
+			}
+		}
+
+		/*
 		 * The partition constraint of the default partition depends on the
 		 * partition bounds of every other partition. It is possible that
 		 * another backend might be about to execute a query on the default
@@ -20321,6 +20367,70 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd,
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("cannot attach temporary relation of another session as partition")));
+
+	/*
+	 * If the relation to attach is a foreign table, or a partitioned table
+	 * that contains a foreign table as partition, then verify that the parent
+	 * table is not in a publication with publish_via_partition_root enabled.
+	 */
+	if (attachrel->rd_rel->relkind == RELKIND_FOREIGN_TABLE ||
+		(attachrel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
+		 RelationHasForeignPartition(attachrel)))
+	{
+		Oid			schemaid;
+		List	   *puboids;
+		List	   *ancestors;
+
+		/* Start with publications of all tables */
+		puboids = GetAllTablesPublications();
+
+		/* capture all publications that include this relation directly */
+		puboids = list_concat(puboids, GetRelationPublications(rel->rd_id));
+		schemaid = RelationGetNamespace(rel);
+		puboids = list_concat(puboids, GetSchemaPublications(schemaid));
+
+		/* and do the same for its ancestors, if any */
+		ancestors = get_partition_ancestors(rel->rd_id);
+		foreach_oid(ancestor, ancestors)
+		{
+			puboids = list_concat(puboids, GetRelationPublications(ancestor));
+			schemaid = get_rel_namespace(ancestor);
+			puboids = list_concat(puboids, GetSchemaPublications(schemaid));
+		}
+
+		/* Now check the publish_via_partition_root bit for each of those */
+		list_sort(puboids, list_oid_cmp);
+		list_deduplicate_oid(puboids);
+		foreach_oid(puboid, puboids)
+		{
+			Publication *pub;
+
+			pub = GetPublication(puboid);
+			if (pub->pubviaroot)
+			{
+				if (attachrel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+					ereport(ERROR,
+							(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+							 errmsg("cannot attach foreign table \"%s\" to partition table \"%s\"",
+									RelationGetRelationName(attachrel),
+									RelationGetRelationName(rel)),
+							 errdetail("Partitioned table \"%s\" is published with option \"%s\" in publication \"%s\".",
+									   RelationGetRelationName(rel),
+									   "publish_via_partition_root",
+									   pub->name)));
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+							 errmsg("cannot attach table \"%s\" with a partition that's a foreign table to partition table \"%s\"",
+									RelationGetRelationName(attachrel),
+									RelationGetRelationName(rel)),
+							 errdetail("Partitioned table \"%s\" is published with option \"%s\" in publication \"%s\".",
+									   RelationGetRelationName(rel),
+									   "publish_via_partition_root",
+									   pub->name)));
+			}
+		}
+	}
 
 	/*
 	 * Check if attachrel has any identity columns or any columns that aren't

@@ -14,6 +14,7 @@ top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
 EXTRA_INSTALL = contrib/hstore
+EXTRA_INSTALL += contrib/postgres_fdw
 
 export with_icu
 
