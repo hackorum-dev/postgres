@@ -1863,26 +1863,38 @@ has_seq_scans(HTAB *hashp)
 void
 AtEOXact_HashTables(bool isCommit)
 {
+	int			i;
+	bool		out_of_xact_scan = false;
+
 	/*
 	 * During abort cleanup, open scans are expected; just silently clean 'em
 	 * out.  An open scan at commit means someone forgot a hash_seq_term()
 	 * call, so complain.
 	 *
+	 * However, it should also be noted that at the end of a transaction, scans
+	 * that were opened outside of it may still be active. If this is the case,
+	 * we cannot simply reset the counter.
+	 *
 	 * Note: it's tempting to try to print the tabname here, but refrain for
 	 * fear of touching deallocated memory.  This isn't a user-facing message
 	 * anyway, so it needn't be pretty.
 	 */
-	if (isCommit)
+	for (i = 0; i < num_seq_scans; i++)
 	{
-		int			i;
-
-		for (i = 0; i < num_seq_scans; i++)
+		if (seq_scan_level[i] == 0)
 		{
-			elog(WARNING, "leaked hash_seq_search scan for hash table %p",
-				 seq_scan_tables[i]);
+			if (!isCommit)
+				return;
+
+			out_of_xact_scan = true;
 		}
+		else if (isCommit)
+			elog(WARNING, "leaked hash_seq_search scan for hash table %p",
+						  seq_scan_tables[i]);
 	}
-	num_seq_scans = 0;
+
+	if (!out_of_xact_scan)
+		num_seq_scans = 0;
 }
 
 /* Clean up any open scans at end of subtransaction */
