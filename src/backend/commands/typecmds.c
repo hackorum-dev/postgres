@@ -65,6 +65,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
+#include "rewrite/rewriteHandler.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
@@ -127,6 +128,7 @@ static Oid	findRangeSubOpclass(List *opcname, Oid subtype);
 static Oid	findRangeCanonicalFunction(List *procname, Oid typeOid);
 static Oid	findRangeSubtypeDiffFunction(List *procname, Oid subtype);
 static void validateDomainCheckConstraint(Oid domainoid, const char *ccbin);
+static void DomainNotValidConstrOnVirtual(Oid domainoid, const char *domainName);
 static void validateDomainNotNullConstraint(Oid domainoid);
 static List *get_rels_with_domain(Oid domainOid, LOCKMODE lockmode);
 static void checkEnumOwner(HeapTuple tup);
@@ -142,6 +144,7 @@ static void domainAddNotNullConstraint(Oid domainOid, Oid domainNamespace, Oid b
 static void AlterTypeRecurse(Oid typeOid, bool isImplicitArray,
 							 HeapTuple tup, Relation catalog,
 							 AlterTypeRecurseParams *atparams);
+static bool HasDomainOverVirtualGenerated(RelToCheck *rtc);
 
 
 /*
@@ -2978,7 +2981,17 @@ AlterDomainAddConstraint(List *names, Node *newConstraint,
 		 * to.
 		 */
 		if (!constr->skip_validation)
+		{
+			/*
+			 * we need updated domain constraint catalog info for validate
+			 * domain check constraints.
+			 */
+			CommandCounterIncrement();
+
 			validateDomainCheckConstraint(domainoid, ccbin);
+		}
+		else
+			DomainNotValidConstrOnVirtual(domainoid, NameStr(typTup->typname));
 
 		/*
 		 * We must send out an sinval message for the domain, to ensure that
@@ -3001,7 +3014,15 @@ AlterDomainAddConstraint(List *names, Node *newConstraint,
 								   constr, NameStr(typTup->typname), constrAddr);
 
 		if (!constr->skip_validation)
+		{
+			/*
+			 * we need updated domain constraint catalog info for validate
+			 * domain not-null constraints.
+			*/
+			CommandCounterIncrement();
+
 			validateDomainNotNullConstraint(domainoid);
+		}
 
 		typTup->typnotnull = true;
 		CatalogTupleUpdate(typrel, &tup->t_self, tup);
@@ -3117,6 +3138,30 @@ AlterDomainValidateConstraint(List *names, const char *constrName)
 }
 
 /*
+ * HasDomainOverVirtualGenerated
+ * return true if any domain column is virtual generated column
+*/
+static bool
+HasDomainOverVirtualGenerated(RelToCheck *rtc)
+{
+	Relation	testrel = rtc->rel;
+	TupleDesc	tupdesc = RelationGetDescr(testrel);
+
+	if (tupdesc->constr && tupdesc->constr->has_generated_virtual)
+	{
+		for (int i = 0; i < rtc->natts; i++)
+		{
+			int			attnum = rtc->atts[i];
+			Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+
+			if (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+				return true;
+		}
+	}
+	return false;
+}
+
+/*
  * Verify that all columns currently using the domain are not null.
  */
 static void
@@ -3124,6 +3169,11 @@ validateDomainNotNullConstraint(Oid domainoid)
 {
 	List	   *rels;
 	ListCell   *rt;
+	EState	   *estate;
+	ExprContext *econtext;
+
+	estate = CreateExecutorState();
+	econtext = GetPerTupleExprContext(estate);
 
 	/* Fetch relation list with attributes based on this domain */
 	/* ShareLock is sufficient to prevent concurrent data changes */
@@ -3138,6 +3188,37 @@ validateDomainNotNullConstraint(Oid domainoid)
 		TupleTableSlot *slot;
 		TableScanDesc scan;
 		Snapshot	snapshot;
+		ExprState **ri_GeneratedExprs = NULL;
+
+		/* cacahe virtual generated columns handling */
+		if (HasDomainOverVirtualGenerated(rtc))
+		{
+			ri_GeneratedExprs = (ExprState **) palloc0(rtc->natts * sizeof(ExprState *));
+
+			/*
+			 * We implement this by building a NullTest node for each virtual
+			 * generated column, which we stored it in ri_GeneratedExprs, and
+			 * running those through ExecCheck().
+			*/
+			for (int i = 0; i < rtc->natts; i++)
+			{
+				int			attnum = rtc->atts[i];
+				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+
+				if (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+				{
+					NullTest   *nnulltest;
+
+					nnulltest = makeNode(NullTest);
+					nnulltest->arg = (Expr *) build_generation_expression(testrel, attnum);
+					nnulltest->nulltesttype = IS_NOT_NULL;
+					nnulltest->argisrow = false;
+					nnulltest->location = -1;
+
+					ri_GeneratedExprs[i] = ExecPrepareExpr((Expr *) nnulltest, estate);
+				}
+			}
+		}
 
 		/* Scan all tuples in this relation */
 		snapshot = RegisterSnapshot(GetLatestSnapshot());
@@ -3153,7 +3234,7 @@ validateDomainNotNullConstraint(Oid domainoid)
 				int			attnum = rtc->atts[i];
 				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
 
-				if (slot_attisnull(slot, attnum))
+				if (attr->attgenerated != ATTRIBUTE_GENERATED_VIRTUAL && slot_attisnull(slot, attnum))
 				{
 					/*
 					 * In principle the auxiliary information for this error
@@ -3169,7 +3250,22 @@ validateDomainNotNullConstraint(Oid domainoid)
 									RelationGetRelationName(testrel)),
 							 errtablecol(testrel, attnum)));
 				}
+
+				if (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+				{
+					econtext->ecxt_scantuple = slot;
+					Assert(ri_GeneratedExprs[i] != NULL);
+					if (!ExecCheck(ri_GeneratedExprs[i] , econtext))
+						ereport(ERROR,
+								errcode(ERRCODE_NOT_NULL_VIOLATION),
+								errmsg("column \"%s\" of table \"%s\" contains null values",
+										NameStr(attr->attname),
+										RelationGetRelationName(testrel)),
+								errtablecol(testrel, attnum));
+				}
 			}
+
+			ResetExprContext(econtext);
 		}
 		ExecDropSingleTupleTableSlot(slot);
 		table_endscan(scan);
@@ -3178,6 +3274,8 @@ validateDomainNotNullConstraint(Oid domainoid)
 		/* Close each rel after processing, but keep lock */
 		table_close(testrel, NoLock);
 	}
+
+	FreeExecutorState(estate);
 }
 
 /*
@@ -3214,6 +3312,33 @@ validateDomainCheckConstraint(Oid domainoid, const char *ccbin)
 		TupleTableSlot *slot;
 		TableScanDesc scan;
 		Snapshot	snapshot;
+		ExprState **ri_GeneratedExprs = NULL;
+
+		/* cacahe virtual generated columns handling */
+		if (HasDomainOverVirtualGenerated(rtc))
+		{
+			ri_GeneratedExprs = (ExprState **) palloc0(rtc->natts * sizeof(ExprState *));
+			for (int i = 0; i < rtc->natts; i++)
+			{
+				int			attnum = rtc->atts[i];
+
+				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+				if (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+				{
+					Expr	   *defexpr;
+
+					defexpr = (Expr *) build_generation_expression(testrel, attnum);
+
+					/*
+					 * we need evaluate generation expression error soft way,
+					 * otherwise evaulation failure error would be "value for
+					 * domain violate check constraints", which is not helpful
+					 * error message while validating table domain data.
+					*/
+					ri_GeneratedExprs[i] = ExecPrepareExprSafe(defexpr, estate);
+				}
+			}
+		}
 
 		/* Scan all tuples in this relation */
 		snapshot = RegisterSnapshot(GetLatestSnapshot());
@@ -3232,31 +3357,63 @@ validateDomainCheckConstraint(Oid domainoid, const char *ccbin)
 				Datum		conResult;
 				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
 
-				d = slot_getattr(slot, attnum, &isNull);
-
-				econtext->domainValue_datum = d;
-				econtext->domainValue_isNull = isNull;
-
-				conResult = ExecEvalExprSwitchContext(exprstate,
-													  econtext,
-													  &isNull);
-
-				if (!isNull && !DatumGetBool(conResult))
+				/*
+				 * compute the virtual generated column expression.
+				 */
+				if (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
 				{
 					/*
-					 * In principle the auxiliary information for this error
-					 * should be errdomainconstraint(), but errtablecol()
-					 * seems considerably more useful in practice.  Since this
-					 * code only executes in an ALTER DOMAIN command, the
-					 * client should already know which domain is in question,
-					 * and which constraint too.
-					 */
-					ereport(ERROR,
-							(errcode(ERRCODE_CHECK_VIOLATION),
-							 errmsg("column \"%s\" of table \"%s\" contains values that violate the new constraint",
-									NameStr(attr->attname),
-									RelationGetRelationName(testrel)),
-							 errtablecol(testrel, attnum)));
+					 * we'll use the EState's per-tuple context for evaluating
+					 * domain check constraint over virtual generated column
+					 * (creating it if it's not already there).
+					*/
+					econtext = GetPerTupleExprContext(estate);
+
+					/* Arrange for econtext's scan tuple to be the tuple under test */
+					econtext->ecxt_scantuple = slot;
+
+					conResult = ExecEvalExprSwitchContext(ri_GeneratedExprs[i],
+														  econtext,
+														  &isNull);
+					if (SOFT_ERROR_OCCURRED(ri_GeneratedExprs[i]->escontext))
+					{
+						isNull = true;
+						ereport(ERROR,
+								errcode(ERRCODE_CHECK_VIOLATION),
+								errmsg("column \"%s\" of table \"%s\" contains values that violate the new constraint",
+										NameStr(attr->attname),
+										RelationGetRelationName(testrel)),
+								errtablecol(testrel, attnum));
+					}
+				}
+				else
+				{
+					d = slot_getattr(slot, attnum, &isNull);
+
+					econtext->domainValue_datum = d;
+					econtext->domainValue_isNull = isNull;
+
+					conResult = ExecEvalExprSwitchContext(exprstate,
+														  econtext,
+														  &isNull);
+
+					if (!isNull && !DatumGetBool(conResult))
+					{
+						/*
+						 * In principle the auxiliary information for this error
+						 * should be errdomainconstraint(), but errtablecol()
+						 * seems considerably more useful in practice.  Since this
+						 * code only executes in an ALTER DOMAIN command, the
+						 * client should already know which domain is in question,
+						 * and which constraint too.
+						*/
+						ereport(ERROR,
+								(errcode(ERRCODE_CHECK_VIOLATION),
+								errmsg("column \"%s\" of table \"%s\" contains values that violate the new constraint",
+										NameStr(attr->attname),
+										RelationGetRelationName(testrel)),
+								errtablecol(testrel, attnum)));
+					}
 				}
 			}
 
@@ -3271,6 +3428,49 @@ validateDomainCheckConstraint(Oid domainoid, const char *ccbin)
 	}
 
 	FreeExecutorState(estate);
+}
+
+/*
+ * domain over virtual generated column will wrap the expanded generation
+ * expression with a CoerceToDomain node. Evaulation of CoerceToDomain will also
+ * evaluate any NOT VALID domain constraints (see load_domaintype_info and
+ * lookup_type_cache). As a result, any future SELECT statement on that virtual
+ * column will effectively validate all NOT VALID constraints on that domain.
+ * Therefore, NOT VALID domain constraints are not supported on virtual
+ * generated columns.
+*/
+static void
+DomainNotValidConstrOnVirtual(Oid domainoid, const char *domainName)
+{
+	List	   *rels;
+	ListCell   *rt;
+
+	/* Fetch relation list with attributes based on this domain */
+	/* ShareUpdateExclusiveLock is sufficient in here. */
+	rels = get_rels_with_domain(domainoid, ShareUpdateExclusiveLock);
+
+	foreach(rt, rels)
+	{
+		RelToCheck *rtc = (RelToCheck *) lfirst(rt);
+		Relation	testrel = rtc->rel;
+		TupleDesc	tupdesc = RelationGetDescr(testrel);
+
+		if (tupdesc->constr && tupdesc->constr->has_generated_virtual)
+		{
+			for (int i = 0; i < rtc->natts; i++)
+			{
+				int			attnum = rtc->atts[i];
+				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+
+				if (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+					ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("can not add NOT VALID constraint for domain \"%s\"", domainName),
+							errdetail("Domain with NOT VALID constraint over virtual generated column are not supported."));
+			}
+		}
+		table_close(testrel, ShareUpdateExclusiveLock);
+	}
 }
 
 /*

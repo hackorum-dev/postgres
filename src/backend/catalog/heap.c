@@ -584,17 +584,6 @@ CheckAttributeType(const char *attname,
 	else if (att_typtype == TYPTYPE_DOMAIN)
 	{
 		/*
-		 * Prevent virtual generated columns from having a domain type.  We
-		 * would have to enforce domain constraints when columns underlying
-		 * the generated column change.  This could possibly be implemented,
-		 * but it's not.
-		 */
-		if (flags & CHKATYPE_IS_VIRTUAL)
-			ereport(ERROR,
-					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					errmsg("virtual generated column \"%s\" cannot have a domain type", attname));
-
-		/*
 		 * If it's a domain, recurse to check its base type.
 		 */
 		CheckAttributeType(attname, getBaseType(atttypid), attcollation,
