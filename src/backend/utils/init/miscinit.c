@@ -1891,6 +1891,8 @@ load_libraries(const char *libraries, const char *gucname, bool restricted)
 			pfree(expanded);
 	}
 
+	WarnAndRemoveInvalidGUCs();
+	
 	list_free_deep(elemlist);
 	pfree(rawstring);
 }

@@ -390,6 +390,7 @@ extern void DefineCustomEnumVariable(const char *name,
 									 GucShowHook show_hook) pg_attribute_nonnull(1, 4);
 
 extern void MarkGUCPrefixReserved(const char *className);
+extern void WarnAndRemoveInvalidGUCs(void);
 
 /* old name for MarkGUCPrefixReserved, for backwards compatibility: */
 #define EmitWarningsOnPlaceholders(className) MarkGUCPrefixReserved(className)
