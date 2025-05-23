@@ -1017,7 +1017,7 @@ copy_table_data(Relation NewHeap, Relation OldHeap, Relation OldIndex, bool verb
 	relform = (Form_pg_class) GETSTRUCT(reltup);
 
 	relform->relpages = num_pages;
-	relform->reltuples = num_tuples;
+	relform->reltuples = num_tuples - tups_recently_dead;
 
 	/* Don't update the stats for pg_class.  See swap_relation_files. */
 	if (RelationGetRelid(OldHeap) != RelationRelationId)

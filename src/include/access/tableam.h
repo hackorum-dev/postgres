@@ -1631,6 +1631,7 @@ table_relation_copy_data(Relation rel, const RelFileLocator *newrlocator)
  * Output parameters:
  * - *xid_cutoff - rel's new relfrozenxid value, may be invalid
  * - *multi_cutoff - rel's new relminmxid value, may be invalid
+ * - *num_tuples - stats, non-removable tuples for logging
  * - *tups_vacuumed - stats, for logging, if appropriate for AM
  * - *tups_recently_dead - stats, for logging, if appropriate for AM
  */

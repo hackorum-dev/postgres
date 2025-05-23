@@ -1,0 +1,72 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s2_vac_full s2_reltuples s1_query s2_update s2_reltuples s2_vac_full s1_commit s2_reltuples
+step s2_vac_full: VACUUM FULL stats;
+step s2_reltuples: SELECT reltuples FROM pg_class WHERE relname = 'stats';
+reltuples
+---------
+       10
+(1 row)
+
+step s1_query: 
+	START TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+    SELECT 1;
+
+?column?
+--------
+       1
+(1 row)
+
+step s2_update: UPDATE stats SET a = 1 WHERE a > 6;
+step s2_reltuples: SELECT reltuples FROM pg_class WHERE relname = 'stats';
+reltuples
+---------
+       10
+(1 row)
+
+step s2_vac_full: VACUUM FULL stats;
+step s1_commit: 
+    COMMIT;
+
+step s2_reltuples: SELECT reltuples FROM pg_class WHERE relname = 'stats';
+reltuples
+---------
+       10
+(1 row)
+
+
+starting permutation: s2_create_index s2_vac_full s2_reltuples s1_query s2_update s2_reltuples s2_vac_full s1_commit s2_reltuples
+step s2_create_index: CREATE INDEX ON stats (a);
+step s2_vac_full: VACUUM FULL stats;
+step s2_reltuples: SELECT reltuples FROM pg_class WHERE relname = 'stats';
+reltuples
+---------
+       10
+(1 row)
+
+step s1_query: 
+	START TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+    SELECT 1;
+
+?column?
+--------
+       1
+(1 row)
+
+step s2_update: UPDATE stats SET a = 1 WHERE a > 6;
+step s2_reltuples: SELECT reltuples FROM pg_class WHERE relname = 'stats';
+reltuples
+---------
+       10
+(1 row)
+
+step s2_vac_full: VACUUM FULL stats;
+step s1_commit: 
+    COMMIT;
+
+step s2_reltuples: SELECT reltuples FROM pg_class WHERE relname = 'stats';
+reltuples
+---------
+       10
+(1 row)
+
