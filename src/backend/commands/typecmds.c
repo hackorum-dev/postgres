@@ -2623,6 +2623,13 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 	typename = makeTypeNameFromNameList(names);
 	domainoid = typenameTypeId(NULL, typename);
 
+	/*
+	 * Acquire a lock on the domain type, which we won't release until commit.
+	 * This ensures that two backends aren't concurrently modifying the same
+	 * domain type.
+	 */
+	LockDatabaseObject(TypeRelationId, domainoid, 0, AccessExclusiveLock);
+
 	/* Look up the domain in the type table */
 	rel = table_open(TypeRelationId, RowExclusiveLock);
 
@@ -2745,6 +2752,13 @@ AlterDomainNotNull(List *names, bool notNull)
 	typename = makeTypeNameFromNameList(names);
 	domainoid = typenameTypeId(NULL, typename);
 
+	/*
+	 * Acquire a lock on the domain type, which we won't release until commit.
+	 * This ensures that two backends aren't concurrently modifying the same
+	 * domain type.
+	 */
+	LockDatabaseObject(TypeRelationId, domainoid, 0, AccessExclusiveLock);
+
 	/* Look up the domain in the type table */
 	typrel = table_open(TypeRelationId, RowExclusiveLock);
 
@@ -2835,6 +2849,13 @@ AlterDomainDropConstraint(List *names, const char *constrName,
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
 	domainoid = typenameTypeId(NULL, typename);
+
+	/*
+	 * Acquire a lock on the domain type, which we won't release until commit.
+	 * This ensures that two backends aren't concurrently modifying the same
+	 * domain type.
+	 */
+	LockDatabaseObject(TypeRelationId, domainoid, 0, AccessExclusiveLock);
 
 	/* Look up the domain in the type table */
 	rel = table_open(TypeRelationId, RowExclusiveLock);
@@ -2940,6 +2961,13 @@ AlterDomainAddConstraint(List *names, Node *newConstraint,
 	typename = makeTypeNameFromNameList(names);
 	domainoid = typenameTypeId(NULL, typename);
 
+	/*
+	 * Acquire a lock on the domain type, which we won't release until commit.
+	 * This ensures that two backends aren't concurrently modifying the same
+	 * domain type.
+	 */
+	LockDatabaseObject(TypeRelationId, domainoid, 0, AccessExclusiveLock);
+
 	/* Look up the domain in the type table */
 	typrel = table_open(TypeRelationId, RowExclusiveLock);
 
@@ -3041,6 +3069,13 @@ AlterDomainValidateConstraint(List *names, const char *constrName)
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
 	domainoid = typenameTypeId(NULL, typename);
+
+	/*
+	 * Acquire a lock on the domain type, which we won't release until commit.
+	 * This ensures that two backends aren't concurrently modifying the same
+	 * domain type.
+	 */
+	LockDatabaseObject(TypeRelationId, domainoid, 0, AccessExclusiveLock);
 
 	/* Look up the domain in the type table */
 	typrel = table_open(TypeRelationId, AccessShareLock);

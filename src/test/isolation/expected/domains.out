@@ -1,0 +1,58 @@
+Parsed test spec with 2 sessions
+
+starting permutation: b1 b2 s_add s2_drop c1 c2
+step b1: BEGIN;
+step b2: BEGIN;
+step s_add: ALTER DOMAIN dd ADD CONSTRAINT dd_check1 CHECK(VALUE > 0);
+step s2_drop: DROP DOMAIN dd; <waiting ...>
+step c1: COMMIT;
+step s2_drop: <... completed>
+step c2: COMMIT;
+
+starting permutation: b1 b2 s_add s2_set c1 c2
+step b1: BEGIN;
+step b2: BEGIN;
+step s_add: ALTER DOMAIN dd ADD CONSTRAINT dd_check1 CHECK(VALUE > 0);
+step s2_set: ALTER DOMAIN dd SET DEFAULT 3; <waiting ...>
+step c1: COMMIT;
+step s2_set: <... completed>
+step c2: COMMIT;
+
+starting permutation: b1 b2 s1_set s1_drop s2_set c1 c2
+step b1: BEGIN;
+step b2: BEGIN;
+step s1_set: ALTER DOMAIN dd SET NOT NULL;
+step s1_drop: ALTER DOMAIN dd DROP DEFAULT;
+step s2_set: ALTER DOMAIN dd SET DEFAULT 3; <waiting ...>
+step c1: COMMIT;
+step s2_set: <... completed>
+step c2: COMMIT;
+
+starting permutation: b1 b2 s1_drop s2_set c1 c2
+step b1: BEGIN;
+step b2: BEGIN;
+step s1_drop: ALTER DOMAIN dd DROP DEFAULT;
+step s2_set: ALTER DOMAIN dd SET DEFAULT 3; <waiting ...>
+step c1: COMMIT;
+step s2_set: <... completed>
+step c2: COMMIT;
+
+starting permutation: b1 b2 s1_set s1_drop2 v2 c1 c2
+step b1: BEGIN;
+step b2: BEGIN;
+step s1_set: ALTER DOMAIN dd SET NOT NULL;
+step s1_drop2: ALTER DOMAIN dd DROP CONSTRAINT cc;
+step v2: ALTER DOMAIN dd VALIDATE CONSTRAINT cc; <waiting ...>
+step c1: COMMIT;
+step v2: <... completed>
+ERROR:  constraint "cc" of domain "dd" does not exist
+step c2: COMMIT;
+
+starting permutation: b1 b2 v2 s1_drop2 c2 c1
+step b1: BEGIN;
+step b2: BEGIN;
+step v2: ALTER DOMAIN dd VALIDATE CONSTRAINT cc;
+step s1_drop2: ALTER DOMAIN dd DROP CONSTRAINT cc; <waiting ...>
+step c2: COMMIT;
+step s1_drop2: <... completed>
+step c1: COMMIT;
