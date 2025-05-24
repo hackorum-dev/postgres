@@ -525,7 +525,7 @@ internal_get_result_type(Oid funcid,
 			{
 				result = TYPEFUNC_COMPOSITE;
 				if (resultTupleDesc)
-					*resultTupleDesc = rsinfo->expectedDesc;
+					*resultTupleDesc = CreateTupleDescCopyConstr(rsinfo->expectedDesc);
 				/* Assume no polymorphic columns here, either */
 			}
 			break;
