@@ -400,7 +400,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
      <row>
       <entry><structname>pg_stat_progress_cluster</structname><indexterm><primary>pg_stat_progress_cluster</primary></indexterm></entry>
       <entry>One row for each backend running
-       <command>CLUSTER</command> or <command>VACUUM FULL</command>, showing current progress.
+       <command>CLUSTER</command>, <command>VACUUM FULL</command> or <command>ALTER TABLE</command>, showing current progress.
        See <xref linkend="cluster-progress-reporting"/>.
       </entry>
      </row>
@@ -5494,7 +5494,7 @@ FROM pg_stat_get_backend_idset() AS backendid;
    <productname>PostgreSQL</productname> has the ability to report the progress of
    certain commands during command execution.  Currently, the only commands
    which support progress reporting are <command>ANALYZE</command>,
-   <command>CLUSTER</command>,
+   <command>CLUSTER</command>, <command>ALTER TABLE</command>,
    <command>CREATE INDEX</command>, <command>VACUUM</command>,
    <command>COPY</command>,
    and <xref linkend="protocol-replication-base-backup"/> (i.e., replication
@@ -5740,8 +5740,9 @@ FROM pg_stat_get_backend_idset() AS backendid;
   </indexterm>
 
   <para>
-   Whenever <command>CLUSTER</command> or <command>VACUUM FULL</command> is
-   running, the <structname>pg_stat_progress_cluster</structname> view will
+   Whenever <command>CLUSTER</command>, <command>VACUUM FULL</command>
+   or <command>ALTER TABLE</command> is running,
+   the <structname>pg_stat_progress_cluster</structname> view will
    contain a row for each backend that is currently running either command.
    The tables below describe the information that will be reported and
    provide information about how to interpret it.
@@ -5803,7 +5804,7 @@ FROM pg_stat_get_backend_idset() AS backendid;
        <structfield>command</structfield> <type>text</type>
       </para>
       <para>
-       The command that is running. Either <literal>CLUSTER</literal> or <literal>VACUUM FULL</literal>.
+       The command that is running. Either <literal>CLUSTER</literal>, <literal>VACUUM FULL</literal> or <literal>ALTER TABLE</literal>.
       </para></entry>
      </row>
 
@@ -5886,7 +5887,7 @@ FROM pg_stat_get_backend_idset() AS backendid;
   </table>
 
   <table id="cluster-phases">
-   <title>CLUSTER and VACUUM FULL Phases</title>
+   <title>CLUSTER, VACUUM FULL and ALTER TABLE Phases</title>
    <tgroup cols="2">
     <colspec colname="col1" colwidth="1*"/>
     <colspec colname="col2" colwidth="2*"/>

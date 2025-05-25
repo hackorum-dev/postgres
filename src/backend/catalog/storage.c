@@ -26,6 +26,7 @@
 #include "access/xlogutils.h"
 #include "catalog/storage.h"
 #include "catalog/storage_xlog.h"
+#include "commands/progress.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/bulk_write.h"
@@ -505,6 +506,9 @@ RelationCopyStorage(SMgrRelation src, SMgrRelation dst,
 
 	nblocks = smgrnblocks(src, forkNum);
 
+	/* Report expected number of block to copy */
+	pgstat_progress_update_param(PROGRESS_CLUSTER_TOTAL_HEAP_BLKS, nblocks);
+
 	for (blkno = 0; blkno < nblocks; blkno++)
 	{
 		BulkWriteBuffer buf;
@@ -556,6 +560,9 @@ RelationCopyStorage(SMgrRelation src, SMgrRelation dst,
 		 * page including any unused space.
 		 */
 		smgr_bulk_write(bulkstate, blkno, buf, false);
+
+		/* Update progress report */
+		pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_BLKS_SCANNED, blkno + 1);
 	}
 	smgr_bulk_finish(bulkstate);
 }

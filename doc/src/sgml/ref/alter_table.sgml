@@ -1860,6 +1860,16 @@ ALTER TABLE measurement
  </refsect1>
 
  <refsect1>
+  <title>Progress Reporting</title>
+  <para>
+    When an <command>ALTER TABLE</command> operation rewrites the table, progress
+    can be monitored via the <literal>pg_stat_progress_cluster</literal> system view,
+    similar to <command>CLUSTER</command> and <command>VACUUM FULL</command> commands.
+    The command type will be reported as <literal>'ALTER TABLE'</literal>.
+  </para>
+ </refsect1>
+
+ <refsect1>
   <title>See Also</title>
 
   <simplelist type="inline">

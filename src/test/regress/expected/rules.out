@@ -1986,6 +1986,7 @@ pg_stat_progress_cluster| SELECT s.pid,
         CASE s.param1
             WHEN 1 THEN 'CLUSTER'::text
             WHEN 2 THEN 'VACUUM FULL'::text
+            WHEN 3 THEN 'ALTER TABLE'::text
             ELSE NULL::text
         END AS command,
         CASE s.param2
@@ -1997,6 +1998,7 @@ pg_stat_progress_cluster| SELECT s.pid,
             WHEN 5 THEN 'swapping relation files'::text
             WHEN 6 THEN 'rebuilding index'::text
             WHEN 7 THEN 'performing final cleanup'::text
+            WHEN 8 THEN 'checking foreign key constraints'::text
             ELSE NULL::text
         END AS phase,
     (s.param3)::oid AS cluster_index_relid,

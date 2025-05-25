@@ -59,6 +59,7 @@
 #include "commands/comment.h"
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
+#include "commands/progress.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
@@ -5838,6 +5839,10 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 		if (!RELKIND_HAS_STORAGE(tab->relkind))
 			continue;
 
+		/* Start progress reporting */
+		pgstat_progress_start_command(PROGRESS_COMMAND_CLUSTER, tab->relid);
+		pgstat_progress_update_param(PROGRESS_CLUSTER_COMMAND, PROGRESS_CLUSTER_COMMAND_ALTER_TABLE);
+
 		/*
 		 * If we change column data types, the operation has to be propagated
 		 * to tables that use this table's rowtype as a column type.
@@ -5978,6 +5983,9 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			 */
 			ATRewriteTable(tab, OIDNewHeap);
 
+			/* Report that we are now swapping relation files */
+			pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE,
+										 PROGRESS_CLUSTER_PHASE_SWAP_REL_FILES);
 			/*
 			 * Swap the physical files of the old and new heaps, then rebuild
 			 * indexes and discard the old heap.  We can use RecentXmin for
@@ -6089,6 +6097,10 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			table_close(rel, NoLock);
 	}
 
+	/* Report that we are now doing clean up */
+	pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE,
+								 PROGRESS_CLUSTER_PHASE_FINAL_CLEANUP);
+
 	/* Finally, run any afterStmts that were queued up */
 	foreach(ltab, *wqueue)
 	{
@@ -6103,6 +6115,8 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			CommandCounterIncrement();
 		}
 	}
+
+	pgstat_progress_end_command();
 }
 
 /*
@@ -6128,6 +6142,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 	BulkInsertState bistate;
 	int			ti_options;
 	ExprState  *partqualstate = NULL;
+	int64		numTuples = 0;
 
 	/*
 	 * Open the relation(s).  We have surely already locked the existing
@@ -6136,6 +6151,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 	oldrel = table_open(tab->relid, NoLock);
 	oldTupDesc = tab->oldDesc;
 	newTupDesc = RelationGetDescr(oldrel);	/* includes all mods */
+
+	/* Update progress reporting - we are actually scanning and possibly rewriting the table */
+	pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE, PROGRESS_CLUSTER_PHASE_SEQ_SCAN_HEAP);
 
 	if (OidIsValid(OIDNewHeap))
 	{
@@ -6244,6 +6262,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 		TupleTableSlot *oldslot;
 		TupleTableSlot *newslot;
 		TableScanDesc scan;
+		HeapScanDesc heapScan;
 		MemoryContext oldCxt;
 		List	   *dropped_attrs = NIL;
 		ListCell   *lc;
@@ -6343,6 +6362,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 		 */
 		snapshot = RegisterSnapshot(GetLatestSnapshot());
 		scan = table_beginscan(oldrel, snapshot, 0, NULL);
+		heapScan = (HeapScanDesc) scan;
+		pgstat_progress_update_param(PROGRESS_CLUSTER_TOTAL_HEAP_BLKS,
+											 heapScan->rs_nblocks);
 
 		/*
 		 * Switch to per-tuple memory context and reset it for each tuple
@@ -6353,6 +6375,13 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 		while (table_scan_getnextslot(scan, ForwardScanDirection, oldslot))
 		{
 			TupleTableSlot *insertslot;
+			pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_BLKS_SCANNED,
+											(heapScan->rs_cblock +
+											 heapScan->rs_nblocks -
+											 heapScan->rs_startblock
+											 ) % heapScan->rs_nblocks + 1);
+			pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_TUPLES_SCANNED,
+											 ++numTuples);
 
 			if (tab->rewrite > 0)
 			{
@@ -6400,6 +6429,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 				}
 
 				ExecStoreVirtualTuple(newslot);
+
+				pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_TUPLES_WRITTEN,
+											 numTuples);
 
 				/*
 				 * Now, evaluate any expressions whose inputs come from the
@@ -6521,6 +6553,8 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 
 			CHECK_FOR_INTERRUPTS();
 		}
+		pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_BLKS_SCANNED,
+													 heapScan->rs_nblocks);
 
 		MemoryContextSwitchTo(oldCxt);
 		table_endscan(scan);
@@ -13664,10 +13698,12 @@ validateForeignKeyConstraint(char *conname,
 {
 	TupleTableSlot *slot;
 	TableScanDesc scan;
+	HeapScanDesc heapScan;
 	Trigger		trig = {0};
 	Snapshot	snapshot;
 	MemoryContext oldcxt;
 	MemoryContext perTupCxt;
+	int64		numTuples = 0;
 
 	ereport(DEBUG1,
 			(errmsg_internal("validating foreign key constraint \"%s\"", conname)));
@@ -13686,6 +13722,10 @@ validateForeignKeyConstraint(char *conname,
 	trig.tginitdeferred = false;
 	/* we needn't fill in remaining fields */
 
+	/* Report that we are now checking foreign keys */
+	pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE,
+								 PROGRESS_CLUSTER_PHASE_CHECK_FKEYS);
+
 	/*
 	 * See if we can do it with a single LEFT JOIN query.  A false result
 	 * indicates we must proceed with the fire-the-trigger method. We can't do
@@ -13703,6 +13743,7 @@ validateForeignKeyConstraint(char *conname,
 	snapshot = RegisterSnapshot(GetLatestSnapshot());
 	slot = table_slot_create(rel, NULL);
 	scan = table_beginscan(rel, snapshot, 0, NULL);
+	heapScan = (HeapScanDesc) scan;
 
 	perTupCxt = AllocSetContextCreate(CurrentMemoryContext,
 									  "validateForeignKeyConstraint",
@@ -13738,6 +13779,14 @@ validateForeignKeyConstraint(char *conname,
 		RI_FKey_check_ins(fcinfo);
 
 		MemoryContextReset(perTupCxt);
+
+		pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_BLKS_SCANNED,
+										(heapScan->rs_cblock +
+										 heapScan->rs_nblocks -
+										 heapScan->rs_startblock
+										 ) % heapScan->rs_nblocks + 1);
+		pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_TUPLES_SCANNED,
+										 ++numTuples);
 	}
 
 	MemoryContextSwitchTo(oldcxt);
@@ -16827,6 +16876,10 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
 	 * Need lock here in case we are recursing to toast table or index
 	 */
 	rel = relation_open(tableOid, lockmode);
+
+	/* Update progress reporting - we are copying the table */
+	pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE, PROGRESS_CLUSTER_PHASE_WRITE_NEW_HEAP);
+	pgstat_progress_update_param(PROGRESS_CLUSTER_TOTAL_HEAP_BLKS, RelationGetNumberOfBlocks(rel));
 
 	/* Check first if relation can be moved to new tablespace */
 	if (!CheckRelationTableSpaceMove(rel, newTableSpace))

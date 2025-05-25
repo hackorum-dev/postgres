@@ -1260,6 +1260,7 @@ CREATE VIEW pg_stat_progress_cluster AS
         S.relid AS relid,
         CASE S.param1 WHEN 1 THEN 'CLUSTER'
                       WHEN 2 THEN 'VACUUM FULL'
+                      WHEN 3 THEN 'ALTER TABLE'
                       END AS command,
         CASE S.param2 WHEN 0 THEN 'initializing'
                       WHEN 1 THEN 'seq scanning heap'
@@ -1269,6 +1270,7 @@ CREATE VIEW pg_stat_progress_cluster AS
                       WHEN 5 THEN 'swapping relation files'
                       WHEN 6 THEN 'rebuilding index'
                       WHEN 7 THEN 'performing final cleanup'
+                      WHEN 8 THEN 'checking foreign key constraints'
                       END AS phase,
         CAST(S.param3 AS oid) AS cluster_index_relid,
         S.param4 AS heap_tuples_scanned,
