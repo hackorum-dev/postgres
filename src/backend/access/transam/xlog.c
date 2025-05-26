@@ -5885,6 +5885,7 @@ StartupXLOG(void)
 	EndOfLogTLI = endOfRecoveryInfo->endOfLogTLI;
 	abortedRecPtr = endOfRecoveryInfo->abortedRecPtr;
 	missingContrecPtr = endOfRecoveryInfo->missingContrecPtr;
+	newTLI = endOfRecoveryInfo->lastRecTLI;
 
 	/*
 	 * Reset ps status display, so as no information related to recovery shows
@@ -5958,67 +5959,6 @@ StartupXLOG(void)
 	SetInstallXLogFileSegmentActive();
 
 	/*
-	 * Consider whether we need to assign a new timeline ID.
-	 *
-	 * If we did archive recovery, we always assign a new ID.  This handles a
-	 * couple of issues.  If we stopped short of the end of WAL during
-	 * recovery, then we are clearly generating a new timeline and must assign
-	 * it a unique new ID.  Even if we ran to the end, modifying the current
-	 * last segment is problematic because it may result in trying to
-	 * overwrite an already-archived copy of that segment, and we encourage
-	 * DBAs to make their archive_commands reject that.  We can dodge the
-	 * problem by making the new active segment have a new timeline ID.
-	 *
-	 * In a normal crash recovery, we can just extend the timeline we were in.
-	 */
-	newTLI = endOfRecoveryInfo->lastRecTLI;
-	if (ArchiveRecoveryRequested)
-	{
-		newTLI = findNewestTimeLine(recoveryTargetTLI) + 1;
-		ereport(LOG,
-				(errmsg("selected new timeline ID: %u", newTLI)));
-
-		/*
-		 * Make a writable copy of the last WAL segment.  (Note that we also
-		 * have a copy of the last block of the old WAL in
-		 * endOfRecovery->lastPage; we will use that below.)
-		 */
-		XLogInitNewTimeline(EndOfLogTLI, EndOfLog, newTLI);
-
-		/*
-		 * Remove the signal files out of the way, so that we don't
-		 * accidentally re-enter archive recovery mode in a subsequent crash.
-		 */
-		if (endOfRecoveryInfo->standby_signal_file_found)
-			durable_unlink(STANDBY_SIGNAL_FILE, FATAL);
-
-		if (endOfRecoveryInfo->recovery_signal_file_found)
-			durable_unlink(RECOVERY_SIGNAL_FILE, FATAL);
-
-		/*
-		 * Write the timeline history file, and have it archived. After this
-		 * point (or rather, as soon as the file is archived), the timeline
-		 * will appear as "taken" in the WAL archive and to any standby
-		 * servers.  If we crash before actually switching to the new
-		 * timeline, standby servers will nevertheless think that we switched
-		 * to the new timeline, and will try to connect to the new timeline.
-		 * To minimize the window for that, try to do as little as possible
-		 * between here and writing the end-of-recovery record.
-		 */
-		writeTimeLineHistory(newTLI, recoveryTargetTLI,
-							 EndOfLog, endOfRecoveryInfo->recoveryStopReason);
-
-		ereport(LOG,
-				(errmsg("archive recovery complete")));
-	}
-
-	/* Save the selected TimeLineID in shared memory, too */
-	SpinLockAcquire(&XLogCtl->info_lck);
-	XLogCtl->InsertTimeLineID = newTLI;
-	XLogCtl->PrevTimeLineID = endOfRecoveryInfo->lastRecTLI;
-	SpinLockRelease(&XLogCtl->info_lck);
-
-	/*
 	 * Actually, if WAL ended in an incomplete record, skip the parts that
 	 * made it through and start writing after the portion that persisted.
 	 * (It's critical to first write an OVERWRITE_CONTRECORD message, which
@@ -6026,15 +5966,9 @@ StartupXLOG(void)
 	 */
 	if (!XLogRecPtrIsInvalid(missingContrecPtr))
 	{
-		/*
-		 * We should only have a missingContrecPtr if we're not switching to a
-		 * new timeline. When a timeline switch occurs, WAL is copied from the
-		 * old timeline to the new only up to the end of the last complete
-		 * record, so there can't be an incomplete WAL record that we need to
-		 * disregard.
-		 */
 		Assert(newTLI == endOfRecoveryInfo->lastRecTLI);
 		Assert(!XLogRecPtrIsInvalid(abortedRecPtr));
+		Assert(EndOfLog == abortedRecPtr);
 		EndOfLog = missingContrecPtr;
 	}
 
@@ -6091,6 +6025,95 @@ StartupXLOG(void)
 	XLogCtl->LogwrtRqst.Write = EndOfLog;
 	XLogCtl->LogwrtRqst.Flush = EndOfLog;
 
+	/* Enable WAL writes for this backend only. */
+	LocalSetXLogInsertAllowed();
+
+	/* If necessary, write overwrite-contrecord before doing anything else */
+	if (!XLogRecPtrIsInvalid(abortedRecPtr))
+	{
+		Assert(!XLogRecPtrIsInvalid(missingContrecPtr));
+		Assert(EndOfLog == missingContrecPtr);
+
+		/*
+		 * Save the aborted record's TimeLineID in shared memory to ensure
+		 * correct writing of the overwrite-contrecord.
+		 *
+		 * These values will be incremented if timeline switch occurs.
+		 */
+		SpinLockAcquire(&XLogCtl->info_lck);
+		XLogCtl->InsertTimeLineID = newTLI;
+		XLogCtl->PrevTimeLineID = endOfRecoveryInfo->lastRecTLI;
+		SpinLockRelease(&XLogCtl->info_lck);
+
+		EndOfLog = CreateOverwriteContrecordRecord(abortedRecPtr, missingContrecPtr, newTLI);
+		/*
+		 * Ensure the next records will be written to the next timeline segment
+		 * by closing the current segment.
+		 */
+		if (openLogFile >= 0)
+			XLogFileClose();
+	}
+
+	/*
+	 * Consider whether we need to assign a new timeline ID.
+	 *
+	 * If we did archive recovery, we always assign a new ID.  This handles a
+	 * couple of issues.  If we stopped short of the end of WAL during
+	 * recovery, then we are clearly generating a new timeline and must assign
+	 * it a unique new ID.  Even if we ran to the end, modifying the current
+	 * last segment is problematic because it may result in trying to
+	 * overwrite an already-archived copy of that segment, and we encourage
+	 * DBAs to make their archive_commands reject that.  We can dodge the
+	 * problem by making the new active segment have a new timeline ID.
+	 *
+	 * In a normal crash recovery, we can just extend the timeline we were in.
+	 */
+	if (ArchiveRecoveryRequested)
+	{
+		newTLI = findNewestTimeLine(recoveryTargetTLI) + 1;
+		ereport(LOG,
+				(errmsg("selected new timeline ID: %u", newTLI)));
+
+		/*
+		 * Make a writable copy of the last WAL segment.  (Note that we also
+		 * have a copy of the last block of the old WAL in
+		 * endOfRecovery->lastPage; we will use that below.)
+		 */
+		XLogInitNewTimeline(EndOfLogTLI, EndOfLog, newTLI);
+
+		/*
+		 * Remove the signal files out of the way, so that we don't
+		 * accidentally re-enter archive recovery mode in a subsequent crash.
+		 */
+		if (endOfRecoveryInfo->standby_signal_file_found)
+			durable_unlink(STANDBY_SIGNAL_FILE, FATAL);
+
+		if (endOfRecoveryInfo->recovery_signal_file_found)
+			durable_unlink(RECOVERY_SIGNAL_FILE, FATAL);
+
+		/*
+		 * Write the timeline history file, and have it archived. After this
+		 * point (or rather, as soon as the file is archived), the timeline
+		 * will appear as "taken" in the WAL archive and to any standby
+		 * servers.  If we crash before actually switching to the new
+		 * timeline, standby servers will nevertheless think that we switched
+		 * to the new timeline, and will try to connect to the new timeline.
+		 * To minimize the window for that, try to do as little as possible
+		 * between here and writing the end-of-recovery record.
+		 */
+		writeTimeLineHistory(newTLI, recoveryTargetTLI,
+							 EndOfLog, endOfRecoveryInfo->recoveryStopReason);
+
+		ereport(LOG,
+				(errmsg("archive recovery complete")));
+	}
+
+	/* Save the selected TimeLineID in shared memory, too */
+	SpinLockAcquire(&XLogCtl->info_lck);
+	XLogCtl->InsertTimeLineID = newTLI;
+	XLogCtl->PrevTimeLineID = endOfRecoveryInfo->lastRecTLI;
+	SpinLockRelease(&XLogCtl->info_lck);
+
 	/*
 	 * Preallocate additional log files, if wanted.
 	 */
@@ -6133,16 +6156,6 @@ StartupXLOG(void)
 
 	/* Shut down xlogreader */
 	ShutdownWalRecovery();
-
-	/* Enable WAL writes for this backend only. */
-	LocalSetXLogInsertAllowed();
-
-	/* If necessary, write overwrite-contrecord before doing anything else */
-	if (!XLogRecPtrIsInvalid(abortedRecPtr))
-	{
-		Assert(!XLogRecPtrIsInvalid(missingContrecPtr));
-		CreateOverwriteContrecordRecord(abortedRecPtr, missingContrecPtr, newTLI);
-	}
 
 	/*
 	 * Update full_page_writes in shared memory and write an XLOG_FPW_CHANGE
