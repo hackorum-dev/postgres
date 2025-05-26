@@ -185,6 +185,8 @@ extern void UpdateDomainConstraintRef(DomainConstraintRef *ref);
 
 extern bool DomainHasConstraints(Oid type_id);
 
+extern void load_domaintype_info(TypeCacheEntry *typentry);
+
 extern TupleDesc lookup_rowtype_tupdesc(Oid type_id, int32 typmod);
 
 extern TupleDesc lookup_rowtype_tupdesc_noerror(Oid type_id, int32 typmod,

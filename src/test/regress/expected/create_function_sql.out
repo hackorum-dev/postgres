@@ -771,9 +771,51 @@ ERROR:  return type mismatch in function declared to return integer[]
 DETAIL:  Function's final statement must be SELECT or INSERT/UPDATE/DELETE/MERGE RETURNING.
 CONTEXT:  SQL function "test1" during startup
 RESET check_function_bodies;
+-- test check constraint function changes
+--
+create or replace function sqlcheck(int) returns bool as 'select $1 > 0' language sql;
+create or replace function sqlcheck1(int) returns bool as 'select $1 > 0' language sql;
+create or replace function plpgsql_check(int) returns bool AS $$ begin return $1 > 0; end; $$ language plpgsql immutable;
+create table t1(a int, b int default 1);
+alter table t1 add constraint cc check (sqlcheck(a));
+alter table t1 add constraint cc_a1 check (sqlcheck1(a)) not valid;
+alter table t1 add constraint cc_b check (plpgsql_check(b));
+insert into t1 values(1,2), (2,3);
+insert into t1(a) values(0);
+ERROR:  new row for relation "t1" violates check constraint "cc"
+DETAIL:  Failing row contains (0, 1).
+--test sql function change
+SET check_function_dependencies TO ON;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 0' language sql; --erorr
+ERROR:  new row for relation "t1" violates check constraint "cc"
+DETAIL:  Failing row contains (1, 2).
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 1' language sql; --erorr
+ERROR:  new row for relation "t1" violates check constraint "cc"
+DETAIL:  Failing row contains (2, 3).
+--ok. the function associated constraint is not validated
+create or replace function sqlcheck1(int) returns bool as 'select $1 <= 1' language sql;
+SET check_function_dependencies TO OFF;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 1' language sql; --ok
+SET check_function_dependencies TO ON;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 2' language sql; --ok
+ERROR:  new row for relation "t1" violates check constraint "cc_a1"
+DETAIL:  Failing row contains (2, 3).
+--test immuatble plpgsql function function change
+--ok
+SET check_function_dependencies TO OFF;
+create or replace function plpgsql_check(int) returns bool AS $$ begin return $1 > 2; end; $$ language plpgsql immutable;
+--error
+SET check_function_dependencies TO ON;
+create or replace function plpgsql_check(int) returns bool AS $$ begin return $1 > 2; end; $$ language plpgsql immutable;
+ERROR:  new row for relation "t1" violates check constraint "cc_b"
+DETAIL:  Failing row contains (1, 2).
+--ok
+create or replace function plpgsql_check(int) returns bool AS $$ begin return $1 > 1; end; $$ language plpgsql immutable;
+ERROR:  new row for relation "t1" violates check constraint "cc"
+DETAIL:  Failing row contains (2, 3).
 -- Cleanup
 DROP SCHEMA temp_func_test CASCADE;
-NOTICE:  drop cascades to 35 other objects
+NOTICE:  drop cascades to 39 other objects
 DETAIL:  drop cascades to function functest_a_1(text,date)
 drop cascades to function functest_a_2(text[])
 drop cascades to function functest_a_3()
@@ -809,5 +851,9 @@ drop cascades to table ddl_test
 drop cascades to function alter_and_insert()
 drop cascades to function double_append(anyarray,anyelement)
 drop cascades to function test1(anyelement)
+drop cascades to function sqlcheck(integer)
+drop cascades to function sqlcheck1(integer)
+drop cascades to function plpgsql_check(integer)
+drop cascades to table t1
 DROP USER regress_unpriv_user;
 RESET search_path;

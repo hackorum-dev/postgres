@@ -315,7 +315,6 @@ static uint64 tupledesc_id_counter = INVALID_TUPLEDESC_IDENTIFIER;
 static void load_typcache_tupdesc(TypeCacheEntry *typentry);
 static void load_rangetype_info(TypeCacheEntry *typentry);
 static void load_multirangetype_info(TypeCacheEntry *typentry);
-static void load_domaintype_info(TypeCacheEntry *typentry);
 static int	dcs_cmp(const void *a, const void *b);
 static void decr_dcc_refcount(DomainConstraintCache *dcc);
 static void dccref_deletion_callback(void *arg);
@@ -1079,7 +1078,7 @@ load_multirangetype_info(TypeCacheEntry *typentry)
  * CurrentMemoryContext, and reparent it under CacheMemoryContext when
  * complete.
  */
-static void
+void
 load_domaintype_info(TypeCacheEntry *typentry)
 {
 	Oid			typeOid = typentry->type_id;

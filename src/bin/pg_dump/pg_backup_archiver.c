@@ -3358,6 +3358,9 @@ _doSetFixedOutputState(ArchiveHandle *AH)
 	/* Make sure function checking is disabled */
 	ahprintf(AH, "SET check_function_bodies = false;\n");
 
+	/* Make sure function dependency checking is disabled */
+	ahprintf(AH, "SET check_function_dependencies = false;\n");
+
 	/* Ensure that all valid XML data will be accepted */
 	ahprintf(AH, "SET xmloption = content;\n");
 

@@ -76,6 +76,15 @@ CREATE [ OR REPLACE ] FUNCTION
    <literal>OUT</literal> parameters except by dropping the function.)
   </para>
 
+ <para>
+   If any existing domains or <literal>CHECK</literal> constraints rely on the
+   current function, and <varname>check_function_bodies</varname>  is set to
+   true, then using <command>CREATE OR REPLACE FUNCTION</command> will
+   effectively verify whether the new function definition satisfies with those
+   domains or <literal>CHECK</literal> constraints. If not, an error will be
+   raised.
+  </para>
+
   <para>
    When <command>CREATE OR REPLACE FUNCTION</command> is used to replace an
    existing function, the ownership and permissions of the function

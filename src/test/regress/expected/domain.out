@@ -671,6 +671,49 @@ table dcomptable;
 drop table dcomptable;
 drop type comptype cascade;
 NOTICE:  drop cascades to type dcomptype
+-- Test domain check constraint condition changes.
+--context: https://www.postgresql.org/message-id/12539.1544107316%40sss.pgh.pa.us
+SET check_function_dependencies = on;
+create or replace function sqlcheck(int) returns bool as 'select $1 > 0' language sql;
+create domain checkedint as int check(sqlcheck(value));
+select 1::checkedint;  -- ok
+ checkedint 
+------------
+          1
+(1 row)
+
+select 0::checkedint;  -- fail
+ERROR:  value for domain checkedint violates check constraint "checkedint_check"
+SET check_function_dependencies TO OFF;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 0' language sql;
+select 1::checkedint;  -- ok
+ checkedint 
+------------
+          1
+(1 row)
+
+select 0::checkedint;  -- fail
+ERROR:  value for domain checkedint violates check constraint "checkedint_check"
+SET check_function_dependencies TO ON;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 0' language sql;
+select 1::checkedint;  -- fail
+ERROR:  value for domain checkedint violates check constraint "checkedint_check"
+select 0::checkedint;  -- ok
+ checkedint 
+------------
+          0
+(1 row)
+
+create table t(a checkedint);
+insert into t values (0);
+SET check_function_dependencies TO ON;
+--fail. will do a validation check.
+create or replace function sqlcheck(int) returns bool as 'select $1 > 0' language sql;
+ERROR:  column "a" of table "t" contains values that violate the new constraint
+SET check_function_dependencies TO OFF;
+--now ok
+create or replace function sqlcheck(int) returns bool as 'select $1 > 0' language sql;
+RESET check_function_dependencies;
 -- Test not-null restrictions
 create domain dnotnull varchar(15) NOT NULL;
 create domain dnull    varchar(15);

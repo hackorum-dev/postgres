@@ -126,7 +126,6 @@ static Oid	findTypeSubscriptingFunction(List *procname, Oid typeOid);
 static Oid	findRangeSubOpclass(List *opcname, Oid subtype);
 static Oid	findRangeCanonicalFunction(List *procname, Oid typeOid);
 static Oid	findRangeSubtypeDiffFunction(List *procname, Oid subtype);
-static void validateDomainCheckConstraint(Oid domainoid, const char *ccbin);
 static void validateDomainNotNullConstraint(Oid domainoid);
 static List *get_rels_with_domain(Oid domainOid, LOCKMODE lockmode);
 static void checkEnumOwner(HeapTuple tup);
@@ -3184,7 +3183,7 @@ validateDomainNotNullConstraint(Oid domainoid)
  * Verify that all columns currently using the domain satisfy the given check
  * constraint expression.
  */
-static void
+void
 validateDomainCheckConstraint(Oid domainoid, const char *ccbin)
 {
 	Expr	   *expr = (Expr *) stringToNode(ccbin);

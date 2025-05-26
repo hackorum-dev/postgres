@@ -330,6 +330,36 @@ drop table dcomptable;
 drop type comptype cascade;
 
 
+-- Test domain check constraint condition changes.
+--context: https://www.postgresql.org/message-id/12539.1544107316%40sss.pgh.pa.us
+SET check_function_dependencies = on;
+create or replace function sqlcheck(int) returns bool as 'select $1 > 0' language sql;
+create domain checkedint as int check(sqlcheck(value));
+select 1::checkedint;  -- ok
+select 0::checkedint;  -- fail
+
+SET check_function_dependencies TO OFF;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 0' language sql;
+select 1::checkedint;  -- ok
+select 0::checkedint;  -- fail
+
+SET check_function_dependencies TO ON;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 0' language sql;
+select 1::checkedint;  -- fail
+select 0::checkedint;  -- ok
+
+create table t(a checkedint);
+insert into t values (0);
+
+SET check_function_dependencies TO ON;
+--fail. will do a validation check.
+create or replace function sqlcheck(int) returns bool as 'select $1 > 0' language sql;
+
+SET check_function_dependencies TO OFF;
+--now ok
+create or replace function sqlcheck(int) returns bool as 'select $1 > 0' language sql;
+RESET check_function_dependencies;
+
 -- Test not-null restrictions
 
 create domain dnotnull varchar(15) NOT NULL;

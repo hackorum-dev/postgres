@@ -9895,6 +9895,26 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-check-function-dependencies" xreflabel="check_function_dependencies">
+      <term><varname>check_function_dependencies</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>check_function_dependencies</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        This parameter is normally on. When set to <literal>off</literal>, it
+        disables validation of objects that depentent object on the routine during <xref
+        linkend="sql-createfunction"/>. Disabling validation avoids side
+        effects of the validation process, in particular valildating existing invalidated constraint.
+        Set this parameter
+        to <literal>off</literal> before loading functions on behalf of other
+        users; <application>pg_dump</application> does so automatically.
+        This parameter should be false if <varname>check_function_bodies</varname> is set to false.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-default-transaction-isolation" xreflabel="default_transaction_isolation">
       <term><varname>default_transaction_isolation</varname> (<type>enum</type>)
       <indexterm>

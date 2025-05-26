@@ -15,17 +15,20 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
+#include "access/heapam.h"
 #include "access/table.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
+#include "catalog/pg_constraint.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_transform.h"
 #include "catalog/pg_type.h"
+#include "commands/typecmds.h"
 #include "executor/functions.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
@@ -34,6 +37,7 @@
 #include "parser/parse_coerce.h"
 #include "pgstat.h"
 #include "rewrite/rewriteHandler.h"
+#include "storage/lmgr.h"
 #include "tcop/pquery.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -50,11 +54,45 @@ typedef struct
 	char	   *prosrc;
 } parse_error_callback_arg;
 
+typedef struct DomainFuncContext
+{
+	Oid		funcid;			/* OID of the view to be locked */
+} DomainFuncContext;
+
 static void sql_function_parse_error_callback(void *arg);
 static int	match_prosrc_to_query(const char *prosrc, const char *queryText,
 								  int cursorpos);
 static bool match_prosrc_to_literal(const char *prosrc, const char *literal,
 									int cursorpos, int *newcursorpos);
+
+
+static bool
+contain_thisfunc_walker(Node *node, DomainFuncContext *context)
+{
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, FuncExpr))
+	{
+		FuncExpr   *f = (FuncExpr *) node;
+
+		if (f->funcid == context->funcid)
+			return true;
+	}
+
+	return expression_tree_walker(node,
+								  contain_thisfunc_walker,
+								  context);
+}
+
+static bool
+contain_thisfunc(Node	*expr, Oid funcid)
+{
+	DomainFuncContext context;
+	context.funcid = funcid;
+
+	return contain_thisfunc_walker(expr, &context);
+}
 
 
 /* ----------------------------------------------------------------
@@ -405,6 +443,14 @@ ProcedureCreate(const char *procedureName,
 			aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_FUNCTION,
 						   procedureName);
 
+		/*
+		 * Acquire a lock on the existing function, which we won't release until
+		 * commit.  This ensures that two backends aren't concurrently modifying
+		 * the same function.  Since later we are going to validate functions
+		 * dependent (eg domains), so this is really necessary.
+		*/
+		LockDatabaseObject(ProcedureRelationId, oldproc->oid, 0, ExclusiveLock);
+
 		/* Not okay to change routine kind */
 		if (oldproc->prokind != prokind)
 			ereport(ERROR,
@@ -727,11 +773,167 @@ ProcedureCreate(const char *procedureName,
 			AtEOXact_GUC(true, save_nestlevel);
 	}
 
+	/* we may need to validate function's dependent */
+	if (is_update && prokind ==  PROKIND_FUNCTION)
+		validateFunctionDependent(retval);
+
 	/* ensure that stats are dropped if transaction aborts */
 	if (!is_update)
 		pgstat_create_function(retval);
 
 	return myself;
+}
+
+/*
+ * place_holder
+*/
+void
+validateFunctionDependent(Oid procoid)
+{
+	Relation	pg_constraint;
+	Relation	testrel;
+	TableScanDesc scan;
+	HeapTuple	tuple;
+	List		*domains = NIL;
+	List		*conbins = NIL;
+	List		*changedConstraintRelid = NIL;
+	ListCell   *lc,
+				*lc2;
+	EState	   *estate;
+
+	if (!check_function_dependencies)
+		return;
+
+	estate = CreateExecutorState();
+
+	pg_constraint = table_open(ConstraintRelationId, AccessShareLock);
+
+	scan = table_beginscan_catalog(pg_constraint, 0, NULL);
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		Datum		val;
+		bool		isnull;
+		char		*conbin;
+
+		Form_pg_constraint conForm = (Form_pg_constraint) GETSTRUCT(tuple);
+
+		if (conForm->connamespace == PG_CATALOG_NAMESPACE ||
+			conForm->connamespace == PG_TOAST_NAMESPACE)
+			continue;
+
+		if (conForm->contype != CONSTRAINT_CHECK)
+			continue;
+
+		val = fastgetattr(tuple,
+						  Anum_pg_constraint_conbin,
+						  pg_constraint->rd_att, &isnull);
+		if (isnull)
+			elog(ERROR, "null conbin for rel %s", get_rel_name(conForm->conrelid));
+
+		conbin = TextDatumGetCString(val);
+		if (!contain_thisfunc(stringToNode(conbin), procoid))
+			continue;
+
+		/*
+		 * we do not validating invalid constraint, so we should exit?
+		 * otherwise, we are in effect validating data.
+		 * TODO: XXX is this the right thing to do here?
+		*/
+		if (!conForm->convalidated)
+			break;
+
+		/* for domain check constraint */
+		if (OidIsValid(conForm->contypid))
+		{
+			if (list_member_oid(domains, conForm->contypid))
+				continue;
+
+			domains = lappend_oid(domains, conForm->contypid);
+
+			conbins = lappend(conbins, makeString(conbin));
+		}
+		else
+		{
+			/* for table check constraint */
+			if (list_member_oid(changedConstraintRelid, conForm->conrelid))
+				continue;
+
+			changedConstraintRelid = lappend_oid(changedConstraintRelid,
+												 conForm->conrelid);
+
+			/*
+			 * Acquire ShareUpdateExclusiveLock on relation for validating
+			 * domain value.
+			*/
+			LockRelationOid(conForm->conrelid, ShareUpdateExclusiveLock);
+		}
+	}
+	table_endscan(scan);
+	table_close(pg_constraint, AccessShareLock);
+
+	forboth(lc, domains, lc2, conbins)
+	{
+		DomainConstraintRef *constraint_ref;
+
+		Oid			domainoid  = lfirst_oid(lc);
+		String	   *conbin = lfirst_node(String, lc2);
+
+		constraint_ref = (DomainConstraintRef *)
+			palloc(sizeof(DomainConstraintRef));
+
+		InitDomainConstraintRef(domainoid,
+								constraint_ref,
+								CurrentMemoryContext,
+								false);
+
+		/*
+		 * Domain type info is already loaded, but it's constraint cache may be
+		 * staled, Since CREATE OR REPLACE FUNCTION will not update domain
+		 * constraint definition immediately.  We can call load_domaintype_info
+		 * manually, since calling it is harm less.  This is a hack, but do
+		 * refresh the domain constraint info.
+		*/
+		load_domaintype_info(constraint_ref->tcache);
+		UpdateDomainConstraintRef(constraint_ref);
+
+		validateDomainCheckConstraint(domainoid, strVal(conbin));
+	}
+
+	foreach_oid(relid, changedConstraintRelid)
+	{
+		ResultRelInfo *rInfo = NULL;
+		MemoryContext oldcontext;
+		TupleTableSlot *slot;
+		Snapshot	snapshot;
+
+		testrel = relation_open(relid, NoLock);
+
+		oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+		rInfo = makeNode(ResultRelInfo);
+		InitResultRelInfo(rInfo,
+						  testrel,
+						  0,	/* dummy rangetable index */
+						  NULL,
+						  estate->es_instrument);
+		MemoryContextSwitchTo(oldcontext);
+
+		Assert (testrel->rd_att->constr != NULL);
+		snapshot = RegisterSnapshot(GetLatestSnapshot());
+		scan = table_beginscan(testrel, snapshot, 0, NULL);
+		slot = table_slot_create(testrel, NULL);
+		while (table_scan_getnextslot(scan, ForwardScanDirection, slot))
+		{
+			ExecConstraints(rInfo, slot, estate);
+		}
+		ExecDropSingleTupleTableSlot(slot);
+		table_endscan(scan);
+		UnregisterSnapshot(snapshot);
+
+		/* Hold relation lock till commit (XXX bad for concurrency) */
+		table_close(testrel, NoLock);
+	}
+
+	FreeExecutorState(estate);
 }
 
 

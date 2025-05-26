@@ -459,6 +459,44 @@ CREATE FUNCTION test1 (anyelement) RETURNS anyarray LANGUAGE SQL
 SELECT test1(0);
 RESET check_function_bodies;
 
+-- test check constraint function changes
+--
+create or replace function sqlcheck(int) returns bool as 'select $1 > 0' language sql;
+create or replace function sqlcheck1(int) returns bool as 'select $1 > 0' language sql;
+create or replace function plpgsql_check(int) returns bool AS $$ begin return $1 > 0; end; $$ language plpgsql immutable;
+
+create table t1(a int, b int default 1);
+alter table t1 add constraint cc check (sqlcheck(a));
+alter table t1 add constraint cc_a1 check (sqlcheck1(a)) not valid;
+alter table t1 add constraint cc_b check (plpgsql_check(b));
+insert into t1 values(1,2), (2,3);
+insert into t1(a) values(0);
+
+--test sql function change
+SET check_function_dependencies TO ON;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 0' language sql; --erorr
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 1' language sql; --erorr
+--ok. the function associated constraint is not validated
+create or replace function sqlcheck1(int) returns bool as 'select $1 <= 1' language sql;
+
+SET check_function_dependencies TO OFF;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 1' language sql; --ok
+
+SET check_function_dependencies TO ON;
+create or replace function sqlcheck(int) returns bool as 'select $1 <= 2' language sql; --ok
+
+--test immuatble plpgsql function function change
+--ok
+SET check_function_dependencies TO OFF;
+create or replace function plpgsql_check(int) returns bool AS $$ begin return $1 > 2; end; $$ language plpgsql immutable;
+
+--error
+SET check_function_dependencies TO ON;
+create or replace function plpgsql_check(int) returns bool AS $$ begin return $1 > 2; end; $$ language plpgsql immutable;
+
+--ok
+create or replace function plpgsql_check(int) returns bool AS $$ begin return $1 > 1; end; $$ language plpgsql immutable;
+
 -- Cleanup
 DROP SCHEMA temp_func_test CASCADE;
 DROP USER regress_unpriv_user;
