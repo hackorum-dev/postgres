@@ -931,6 +931,8 @@ PostmasterMain(int argc, char *argv[])
 	 */
 	process_shared_preload_libraries();
 
+	WarnAndRemoveInvalidGUCs();
+
 	/*
 	 * Initialize SSL library, if specified.
 	 */

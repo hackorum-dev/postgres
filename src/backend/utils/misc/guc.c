@@ -50,6 +50,7 @@
 #include "utils/guc_tables.h"
 #include "utils/memutils.h"
 #include "utils/timestamp.h"
+#include "commands/extension.h"
 
 
 #define CONFIG_FILENAME "postgresql.conf"
@@ -254,6 +255,7 @@ static bool validate_option_array_item(const char *name, const char *value,
 static void write_auto_conf_file(int fd, const char *filename, ConfigVariable *head);
 static void replace_auto_config_value(ConfigVariable **head_p, ConfigVariable **tail_p,
 									  const char *name, const char *value);
+static bool has_valid_class_prefix(const char *name,bool check_for_preloaded);
 static bool valid_custom_variable_name(const char *name);
 static bool assignable_custom_variable_name(const char *name, bool skip_errors,
 											int elevel);
@@ -1063,6 +1065,61 @@ add_guc_variable(struct config_generic *var, int elevel)
 	Assert(!found);
 	hentry->gucvar = var;
 	return true;
+}
+
+/*
+ * Check if the given GUC name has a valid class prefix.
+ *
+ * A valid class prefix is defined as a known reserved prefix
+ * (e.g., "pg_stat_statements") and also ones which are built
+ * and not preloaded (e.g., "plpgsql").
+ *
+ * This function extracts the portion of the name before the
+ * first '.' and compares it against the list of reserved prefixes.
+ *
+ * Returns true if a valid prefix is found; false otherwise.
+ */
+static bool
+has_valid_class_prefix(const char *name,bool check_for_preloaded){
+	/* If there's no separator, it can't be a custom variable */
+	const char *sep = strchr(name, GUC_QUALIFIER_SEPARATOR);
+	size_t class_len;
+
+	if (sep == NULL)
+		return false;
+
+	class_len = sep - name;
+
+	if(check_for_preloaded)
+	{
+		ListCell *lc;
+
+		foreach(lc, reserved_class_prefix)
+		{
+			const char *rcprefix = lfirst(lc);
+
+			if (strlen(rcprefix) == class_len &&
+				strncmp(name, rcprefix, class_len) == 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+	else
+	{
+
+		char *prefix = palloc(class_len + 1);
+		bool exists;
+		memcpy(prefix, name, class_len);
+		prefix[class_len] = '\0';
+
+		exists = extension_file_exists(prefix);
+		pfree(prefix);
+
+		return exists;
+	}
+
 }
 
 /*
@@ -5269,13 +5326,22 @@ DefineCustomEnumVariable(const char *name,
 }
 
 /*
- * Mark the given GUC prefix as "reserved".
+ * remove_gucvar
  *
- * This deletes any existing placeholders matching the prefix,
- * and then prevents new ones from being created.
- * Extensions should call this after they've defined all of their custom
- * GUCs, to help catch misspelled config-file entries.
+ * Removes a GUC variable from the GUC hash table,
+ * and also from any associated internal lists.
  */
+static inline void remove_gucvar(struct config_generic *gucvar)
+{
+	/* Remove it from the hash table */
+	hash_search(guc_hashtab,
+				&gucvar->name,
+				HASH_REMOVE,
+				NULL);
+	/* Remove it from any lists it's in, too */
+	RemoveGUCFromLists(gucvar);
+}
+
 void
 MarkGUCPrefixReserved(const char *className)
 {
@@ -5305,13 +5371,7 @@ MarkGUCPrefixReserved(const char *className)
 							var->name),
 					 errdetail("\"%s\" is now a reserved prefix.",
 							   className)));
-			/* Remove it from the hash table */
-			hash_search(guc_hashtab,
-						&var->name,
-						HASH_REMOVE,
-						NULL);
-			/* Remove it from any lists it's in, too */
-			RemoveGUCFromLists(var);
+			remove_gucvar(var);
 		}
 	}
 
@@ -5319,6 +5379,55 @@ MarkGUCPrefixReserved(const char *className)
 	oldcontext = MemoryContextSwitchTo(GUCMemoryContext);
 	reserved_class_prefix = lappend(reserved_class_prefix, pstrdup(className));
 	MemoryContextSwitchTo(oldcontext);
+}
+
+/*
+ * WarnAndRemoveInvalidGUCs
+ *
+ * Iterates over the GUC hash table and identifies any custom placeholders
+ * (i.e., parameters not known at compile time) that do not follow the expected
+ * naming convention (i.e., do not have a valid reserved prefix) for both preloaded
+ * and the just built,not preloaded extension GUCs.
+ *
+ * For each such invalid GUC, a warning is emitted and the GUC is removed from
+ * the system. This helps catch configuration mistakes such as typos in
+ * extension-specific GUC names, which would otherwise be silently ignored.
+ */
+void WarnAndRemoveInvalidGUCs(){
+	HASH_SEQ_STATUS status;
+	GUCHashEntry *hentry;
+
+	/* Warn and remove invalid placeholders. */
+	hash_seq_init(&status, guc_hashtab);
+	while ((hentry = (GUCHashEntry *) hash_seq_search(&status)) != NULL)
+	{
+		struct config_generic *var = hentry->gucvar;
+
+		if((var->flags & GUC_CUSTOM_PLACEHOLDER) != 0){
+			bool is_valid_prefix =
+				has_valid_class_prefix(var->name, true) ||
+				has_valid_class_prefix(var->name, false);
+
+			if (!is_valid_prefix)
+			{
+				ereport(WARNING,
+						(errcode(ERRCODE_INVALID_NAME),
+						errmsg("invalid configuration parameter name \"%s\", removing it",
+								var->name),
+						errdetail("\"%s\" has a invalid prefix.", var->name)));
+			}
+			else
+			{
+				ereport(WARNING,
+						(errcode(ERRCODE_INVALID_NAME),
+						errmsg("invalid configuration parameter name \"%s\", removing it",
+								var->name),
+						errdetail("\"%s\" has a valid prefix.", var->name)));
+			}
+
+			remove_gucvar(var);
+		}
+	}
 }
 
 

@@ -152,6 +152,8 @@ ExecSetVariableStmt(VariableSetStmt *stmt, bool isTopLevel)
 			break;
 	}
 
+	WarnAndRemoveInvalidGUCs();
+
 	/* Invoke the post-alter hook for setting this GUC variable, by name. */
 	InvokeObjectPostAlterHookArgStr(ParameterAclRelationId, stmt->name,
 									ACL_SET, stmt->kind, false);
