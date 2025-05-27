@@ -19,7 +19,6 @@
 #include "funcapi.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
-#include "port/simd.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
@@ -1621,6 +1620,22 @@ escape_json(StringInfo buf, const char *str)
  */
 #define ESCAPE_JSON_FLUSH_AFTER 512
 
+static inline bool
+has_json_escapable_byte(const char *str)
+{
+	uint64		x;
+
+	memcpy(&x, str, sizeof(uint64));
+
+	uint64		is_ascii = 0x8080808080808080ULL & ~x;
+	uint64		xor2 = x ^ 0x0202020202020202ULL;
+	uint64		lt32_or_eq34 = xor2 - 0x2121212121212121ULL;
+	uint64		sub92 = x ^ 0x5C5C5C5C5C5C5C5CULL;
+	uint64		eq92 = (sub92 - 0x0101010101010101ULL);
+
+	return ((lt32_or_eq34 | eq92) & is_ascii) != 0;
+}
+
 /*
  * escape_json_with_len
  *		Produce a JSON string literal, properly escaping the possibly not
@@ -1645,7 +1660,7 @@ escape_json_with_len(StringInfo buf, const char *str, int len)
 	 * Figure out how many bytes to process using SIMD.  Round 'len' down to
 	 * the previous multiple of sizeof(Vector8), assuming that's a power-of-2.
 	 */
-	vlen = len & (int) (~(sizeof(Vector8) - 1));
+	vlen = len & (int) (~(sizeof(uint64) - 1));
 
 	appendStringInfoCharMacro(buf, '"');
 
@@ -1661,19 +1676,13 @@ escape_json_with_len(StringInfo buf, const char *str, int len)
 		 * string byte-by-byte.  This optimization assumes that most chunks of
 		 * sizeof(Vector8) bytes won't contain any special characters.
 		 */
-		for (; i < vlen; i += sizeof(Vector8))
+		for (; i < vlen; i += sizeof(uint64))
 		{
-			Vector8		chunk;
-
-			vector8_load(&chunk, (const uint8 *) &str[i]);
-
 			/*
 			 * Break on anything less than ' ' or if we find a '"' or '\\'.
 			 * Those need special handling.  That's done in the per-byte loop.
 			 */
-			if (vector8_has_le(chunk, (unsigned char) 0x1F) ||
-				vector8_has(chunk, (unsigned char) '"') ||
-				vector8_has(chunk, (unsigned char) '\\'))
+			if (has_json_escapable_byte(&str[i]))
 				break;
 
 #ifdef ESCAPE_JSON_FLUSH_AFTER
@@ -1706,7 +1715,7 @@ escape_json_with_len(StringInfo buf, const char *str, int len)
 		 * Per-byte loop for Vector8s containing special chars and for
 		 * processing the tail of the string.
 		 */
-		for (int b = 0; b < sizeof(Vector8); b++)
+		for (int b = 0; b < sizeof(uint64); b++)
 		{
 			/* check if we've finished */
 			if (i == len)

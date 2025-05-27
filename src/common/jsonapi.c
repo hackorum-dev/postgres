@@ -19,7 +19,6 @@
 
 #include "common/jsonapi.h"
 #include "mb/pg_wchar.h"
-#include "port/pg_lfind.h"
 
 #ifdef JSONAPI_USE_PQEXPBUFFER
 #include "pqexpbuffer.h"
@@ -1949,6 +1948,23 @@ json_lex(JsonLexContext *lex)
 		return JSON_SUCCESS;
 }
 
+static inline
+bool
+has_json_escapable_byte(const char *str)
+{
+	uint64		x;
+
+	memcpy(&x, str, sizeof(uint64));
+
+	uint64		is_ascii = 0x8080808080808080ULL & ~x;
+	uint64		xor2 = x ^ 0x0202020202020202ULL;
+	uint64		lt32_or_eq34 = xor2 - 0x2121212121212121ULL;
+	uint64		sub92 = x ^ 0x5C5C5C5C5C5C5C5CULL;
+	uint64		eq92 = (sub92 - 0x0101010101010101ULL);
+
+	return ((lt32_or_eq34 | eq92) & is_ascii) != 0;
+}
+
 /*
  * The next token in the input stream is known to be a string; lex it.
  *
@@ -2166,11 +2182,9 @@ json_lex_string(JsonLexContext *lex)
 			 * Skip to the first byte that requires special handling, so we
 			 * can batch calls to jsonapi_appendBinaryStringInfo.
 			 */
-			while (p < end - sizeof(Vector8) &&
-				   !pg_lfind8('\\', (uint8 *) p, sizeof(Vector8)) &&
-				   !pg_lfind8('"', (uint8 *) p, sizeof(Vector8)) &&
-				   !pg_lfind8_le(31, (uint8 *) p, sizeof(Vector8)))
-				p += sizeof(Vector8);
+			while (p < end - sizeof(uint64) &&
+				   !has_json_escapable_byte(p))
+				p += sizeof(uint64);
 
 			for (; p < end; p++)
 			{
