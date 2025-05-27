@@ -588,7 +588,8 @@ ExecSimpleRelationInsert(ResultRelInfo *resultRelInfo,
 		if (rel->rd_att->constr &&
 			rel->rd_att->constr->has_generated_stored)
 			ExecComputeGenerated(resultRelInfo, estate, slot,
-								 CMD_INSERT);
+								 CMD_INSERT,
+								 false);
 
 		/* Check the constraints of the tuple */
 		if (rel->rd_att->constr)
@@ -685,7 +686,8 @@ ExecSimpleRelationUpdate(ResultRelInfo *resultRelInfo,
 		if (rel->rd_att->constr &&
 			rel->rd_att->constr->has_generated_stored)
 			ExecComputeGenerated(resultRelInfo, estate, slot,
-								 CMD_UPDATE);
+								 CMD_UPDATE,
+								 false);
 
 		/* Check the constraints of the tuple */
 		if (rel->rd_att->constr)

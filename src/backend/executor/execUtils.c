@@ -1404,7 +1404,7 @@ ExecGetExtraUpdatedCols(ResultRelInfo *relinfo, EState *estate)
 {
 	/* Compute the info if we didn't already */
 	if (!relinfo->ri_extraUpdatedCols_valid)
-		ExecInitGenerated(relinfo, estate, CMD_UPDATE);
+		ExecInitGenerated(relinfo, estate, CMD_UPDATE, false);
 	return relinfo->ri_extraUpdatedCols;
 }
 

@@ -415,7 +415,8 @@ ExecCheckTIDVisible(EState *estate,
  *
  * This fills the resultRelInfo's ri_GeneratedExprsI/ri_NumGeneratedNeededI or
  * ri_GeneratedExprsU/ri_NumGeneratedNeededU fields, depending on cmdtype.
- * This is used only for stored generated columns.
+ * This is mainly used only for stored generated columns. However if
+ * compute_virtual is true, we do the same for virtual generated column.
  *
  * If cmdType == CMD_UPDATE, the ri_extraUpdatedCols field is filled too.
  * This is used by both stored and virtual generated columns.
@@ -428,7 +429,8 @@ ExecCheckTIDVisible(EState *estate,
 void
 ExecInitGenerated(ResultRelInfo *resultRelInfo,
 				  EState *estate,
-				  CmdType cmdtype)
+				  CmdType cmdtype,
+				  bool compute_virtual)
 {
 	Relation	rel = resultRelInfo->ri_RelationDesc;
 	TupleDesc	tupdesc = RelationGetDescr(rel);
@@ -472,10 +474,15 @@ ExecInitGenerated(ResultRelInfo *resultRelInfo,
 			Expr	   *expr;
 
 			/* Fetch the GENERATED AS expression tree */
-			expr = (Expr *) build_column_default(rel, i + 1);
-			if (expr == NULL)
-				elog(ERROR, "no generation expression found for column number %d of table \"%s\"",
-					 i + 1, RelationGetRelationName(rel));
+			if (attgenerated == ATTRIBUTE_GENERATED_STORED)
+			{
+				expr = (Expr *) build_column_default(rel, i + 1);
+				if (expr == NULL)
+					elog(ERROR, "no generation expression found for column number %d of table \"%s\"",
+						i + 1, RelationGetRelationName(rel));
+			}
+			else
+				expr = (Expr *) build_generation_expression(rel, i+1);
 
 			/*
 			 * If it's an update with a known set of update target columns,
@@ -493,6 +500,11 @@ ExecInitGenerated(ResultRelInfo *resultRelInfo,
 
 			/* No luck, so prepare the expression for execution */
 			if (attgenerated == ATTRIBUTE_GENERATED_STORED)
+			{
+				ri_GeneratedExprs[i] = ExecPrepareExpr(expr, estate);
+				ri_NumGeneratedNeeded++;
+			}
+			else if (compute_virtual)
 			{
 				ri_GeneratedExprs[i] = ExecPrepareExpr(expr, estate);
 				ri_NumGeneratedNeeded++;
@@ -538,11 +550,13 @@ ExecInitGenerated(ResultRelInfo *resultRelInfo,
 
 /*
  * Compute generated columns for a tuple.
- * we might support virtual generated column in future, currently not.
+ * If compute_virtual is true, we exclusively compute virtual generated columns.
+ * We do not compute stored and virtual generated columns simultaneously.
  */
 void
 ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
-					 TupleTableSlot *slot, CmdType cmdtype)
+					 TupleTableSlot *slot, CmdType cmdtype,
+					 bool compute_virtual)
 {
 	Relation	rel = resultRelInfo->ri_RelationDesc;
 	TupleDesc	tupdesc = RelationGetDescr(rel);
@@ -554,7 +568,9 @@ ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
 	bool	   *nulls;
 
 	/* We should not be called unless this is true */
-	Assert(tupdesc->constr && tupdesc->constr->has_generated_stored);
+	Assert(tupdesc->constr);
+	Assert(tupdesc->constr->has_generated_stored ||
+		   tupdesc->constr->has_generated_virtual);
 
 	/*
 	 * Initialize the expressions if we didn't already, and check whether we
@@ -563,7 +579,7 @@ ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
 	if (cmdtype == CMD_UPDATE)
 	{
 		if (resultRelInfo->ri_GeneratedExprsU == NULL)
-			ExecInitGenerated(resultRelInfo, estate, cmdtype);
+			ExecInitGenerated(resultRelInfo, estate, cmdtype, compute_virtual);
 		if (resultRelInfo->ri_NumGeneratedNeededU == 0)
 			return;
 		ri_GeneratedExprs = resultRelInfo->ri_GeneratedExprsU;
@@ -571,7 +587,7 @@ ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
 	else
 	{
 		if (resultRelInfo->ri_GeneratedExprsI == NULL)
-			ExecInitGenerated(resultRelInfo, estate, cmdtype);
+			ExecInitGenerated(resultRelInfo, estate, cmdtype, compute_virtual);
 		/* Early exit is impossible given the prior Assert */
 		Assert(resultRelInfo->ri_NumGeneratedNeededI > 0);
 		ri_GeneratedExprs = resultRelInfo->ri_GeneratedExprsI;
@@ -594,7 +610,7 @@ ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
 			Datum		val;
 			bool		isnull;
 
-			Assert(TupleDescAttr(tupdesc, i)->attgenerated == ATTRIBUTE_GENERATED_STORED);
+			Assert(TupleDescAttr(tupdesc, i)->attgenerated != '\0');
 
 			econtext->ecxt_scantuple = slot;
 
@@ -932,7 +948,8 @@ ExecInsert(ModifyTableContext *context,
 		if (resultRelationDesc->rd_att->constr &&
 			resultRelationDesc->rd_att->constr->has_generated_stored)
 			ExecComputeGenerated(resultRelInfo, estate, slot,
-								 CMD_INSERT);
+								 CMD_INSERT,
+								 false);
 
 		/*
 		 * If the FDW supports batching, and batching is requested, accumulate
@@ -1059,7 +1076,8 @@ ExecInsert(ModifyTableContext *context,
 		if (resultRelationDesc->rd_att->constr &&
 			resultRelationDesc->rd_att->constr->has_generated_stored)
 			ExecComputeGenerated(resultRelInfo, estate, slot,
-								 CMD_INSERT);
+								 CMD_INSERT,
+								 false);
 
 		/*
 		 * Check any RLS WITH CHECK policies.
@@ -2147,7 +2165,8 @@ ExecUpdatePrepareSlot(ResultRelInfo *resultRelInfo,
 	if (resultRelationDesc->rd_att->constr &&
 		resultRelationDesc->rd_att->constr->has_generated_stored)
 		ExecComputeGenerated(resultRelInfo, estate, slot,
-							 CMD_UPDATE);
+							 CMD_UPDATE,
+							 false);
 }
 
 /*

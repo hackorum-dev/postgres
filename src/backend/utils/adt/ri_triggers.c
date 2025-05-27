@@ -33,6 +33,7 @@
 #include "catalog/pg_proc.h"
 #include "commands/trigger.h"
 #include "executor/executor.h"
+#include "executor/nodeModifyTable.h"
 #include "executor/spi.h"
 #include "lib/ilist.h"
 #include "miscadmin.h"
@@ -283,6 +284,57 @@ RI_FKey_check(TriggerData *trigdata)
 	 */
 	fk_rel = trigdata->tg_relation;
 	pk_rel = table_open(riinfo->pk_relid, RowShareLock);
+
+	/*
+	 * If a foreign key includes virtual generated columns, their generation
+	 * expressions need to be computed first. This can guarantees ri_NullCheck
+	 * can return correct result.
+	*/
+	if (fk_rel->rd_att->constr &&
+		fk_rel->rd_att->constr->has_generated_virtual)
+	{
+		bool	compute_virtual = false;
+		TupleDesc tupdesc = RelationGetDescr(fk_rel);
+
+		for (int i = 0; i < riinfo->nkeys; i++)
+		{
+			Form_pg_attribute att = TupleDescAttr(tupdesc, riinfo->fk_attnums[i] - 1);
+			if (att->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+			{
+				compute_virtual = true;
+				break;
+			}
+		}
+
+		if (compute_virtual)
+		{
+			ResultRelInfo *rInfo = NULL;
+			EState	   *estate = NULL;
+			CmdType 	cmdtype;
+
+			if (TRIGGER_FIRED_BY_UPDATE(trigdata->tg_event))
+				cmdtype = CMD_UPDATE;
+			else
+				cmdtype = CMD_INSERT;
+
+			estate = CreateExecutorState();
+
+			rInfo = makeNode(ResultRelInfo);
+			InitResultRelInfo(rInfo,
+							  fk_rel,
+							  0,	/* dummy rangetable index */
+							  NULL,
+							  estate->es_instrument);
+
+			ExecComputeGenerated(rInfo,
+								 estate,
+								 newslot,
+								 cmdtype,
+								 true);
+
+			FreeExecutorState(estate);
+		}
+	}
 
 	switch (ri_NullCheck(RelationGetDescr(fk_rel), newslot, riinfo, false))
 	{
@@ -1420,6 +1472,8 @@ RI_FKey_fk_upd_check_required(Trigger *trigger, Relation fk_rel,
 {
 	const RI_ConstraintInfo *riinfo;
 	int			ri_nullcheck;
+	ResultRelInfo *rInfo = NULL;
+	EState	   *estate = NULL;
 
 	/*
 	 * AfterTriggerSaveEvent() handles things such that this function is never
@@ -1429,7 +1483,57 @@ RI_FKey_fk_upd_check_required(Trigger *trigger, Relation fk_rel,
 
 	riinfo = ri_FetchConstraintInfo(trigger, fk_rel, false);
 
+	/*
+	 * if foreighn key contains virtual generated column, we compute its value
+	 * for newslot and oldslot, after that using ri_KeysEqual to compare old and
+	 * new key values.
+	 */
+	if (fk_rel->rd_att->constr &&
+		fk_rel->rd_att->constr->has_generated_virtual)
+	{
+		bool	compute_virtual = false;
+		TupleDesc tupdesc = RelationGetDescr(fk_rel);
+
+		for (int i = 0; i < riinfo->nkeys; i++)
+		{
+			Form_pg_attribute att = TupleDescAttr(tupdesc, riinfo->fk_attnums[i] - 1);
+			if (att->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+			{
+				compute_virtual = true;
+				break;
+			}
+		}
+
+		if (compute_virtual)
+		{
+			MemoryContext oldcontext;
+
+			estate = CreateExecutorState();
+
+			oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+			rInfo = makeNode(ResultRelInfo);
+			InitResultRelInfo(rInfo,
+							  fk_rel,
+							  0,	/* dummy rangetable index */
+							  NULL,
+							  estate->es_instrument);
+			MemoryContextSwitchTo(oldcontext);
+
+			ExecComputeGenerated(rInfo,
+								 estate,
+								 newslot,
+								 CMD_UPDATE,
+								 true);
+		}
+	}
 	ri_nullcheck = ri_NullCheck(RelationGetDescr(fk_rel), newslot, riinfo, false);
+
+	/*
+	 * if ri_nullcheck is not RI_KEYS_NONE_NULL, we don't need fire the RI
+	 * trigger, free EState then.
+	 */
+	if (ri_nullcheck != RI_KEYS_NONE_NULL && estate != NULL)
+		FreeExecutorState(estate);
 
 	/*
 	 * If all new key values are NULL, the row satisfies the constraint, so no
@@ -1489,6 +1593,16 @@ RI_FKey_fk_upd_check_required(Trigger *trigger, Relation fk_rel,
 	 */
 	if (slot_is_current_xact_tuple(oldslot))
 		return true;
+
+	if (rInfo != NULL)
+	{
+		ExecComputeGenerated(rInfo,
+							 estate,
+							 oldslot,
+							 CMD_UPDATE,
+							 true);
+		FreeExecutorState(estate);
+	}
 
 	/* If all old and new key values are equal, no check is needed */
 	if (ri_KeysEqual(fk_rel, oldslot, newslot, riinfo, false))

@@ -17,10 +17,13 @@
 
 extern void ExecInitGenerated(ResultRelInfo *resultRelInfo,
 							  EState *estate,
-							  CmdType cmdtype);
+							  CmdType cmdtype,
+							  bool compute_virtual);
 
 extern void ExecComputeGenerated(ResultRelInfo *resultRelInfo, EState *estate,
-								 TupleTableSlot *slot,CmdType cmdtype);
+								 TupleTableSlot *slot,
+								 CmdType cmdtype,
+								 bool compute_virtual);
 
 extern ModifyTableState *ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags);
 extern void ExecEndModifyTable(ModifyTableState *node);

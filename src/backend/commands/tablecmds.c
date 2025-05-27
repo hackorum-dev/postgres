@@ -659,7 +659,7 @@ static void RebuildConstraintComment(AlteredTableInfo *tab, AlterTablePass pass,
 									 Oid objid, Relation rel, List *domname,
 									 const char *conname);
 static void TryReuseIndex(Oid oldId, IndexStmt *stmt);
-static void TryReuseForeignKey(Oid oldId, Constraint *con);
+static void TryReuseForeignKey(Oid oldId, Constraint *con, Oid oldRelId);
 static ObjectAddress ATExecAlterColumnGenericOptions(Relation rel, const char *colName,
 													 List *options, LOCKMODE lockmode);
 static void change_owner_fix_column_acls(Oid relationOid,
@@ -8642,17 +8642,17 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 		 * this renders them pointless.
 		 */
 		RelationClearMissing(rel);
-
-		/* make sure we don't conflict with later attribute modifications */
-		CommandCounterIncrement();
-
-		/*
-		 * Find everything that depends on the column (constraints, indexes,
-		 * etc), and record enough information to let us recreate the objects
-		 * after rewrite.
-		 */
-		RememberAllDependentForRebuilding(tab, AT_SetExpression, rel, attnum, colName);
 	}
+
+	/* make sure we don't conflict with later attribute modifications */
+	CommandCounterIncrement();
+
+	/*
+	 * Find everything that depends on the column (constraints, indexes,
+	 * etc), and record enough information to let us recreate the objects
+	 * after rewrite.
+	*/
+	RememberAllDependentForRebuilding(tab, AT_SetExpression, rel, attnum, colName);
 
 	/*
 	 * Drop the dependency records of the GENERATED expression, in particular
@@ -10222,19 +10222,6 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 						 errmsg("invalid %s action for foreign key constraint containing generated column",
 								"ON DELETE")));
 		}
-
-		/*
-		 * FKs on virtual columns are not supported.  This would require
-		 * various additional support in ri_triggers.c, including special
-		 * handling in ri_NullCheck(), ri_KeysEqual(),
-		 * RI_FKey_fk_upd_check_required() (since all virtual columns appear
-		 * as NULL there).  Also not really practical as long as you can't
-		 * index virtual columns.
-		 */
-		if (attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("foreign key constraints on virtual generated columns are not supported")));
 	}
 
 	/*
@@ -15665,7 +15652,7 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 					/* rewriting neither side of a FK */
 					if (con->contype == CONSTR_FOREIGN &&
 						!rewrite && tab->rewrite == 0)
-						TryReuseForeignKey(oldId, con);
+						TryReuseForeignKey(oldId, con, oldRelId);
 					con->reset_default_tblspc = true;
 					cmd->subtype = AT_ReAddConstraint;
 					tab->subcmds[AT_PASS_OLD_CONSTR] =
@@ -15822,16 +15809,23 @@ TryReuseIndex(Oid oldId, IndexStmt *stmt)
  * Stash the old P-F equality operator into the Constraint node, for possible
  * use by ATAddForeignKeyConstraint() in determining whether revalidation of
  * this constraint can be skipped.
+ *
+ * oldId is the old (previous) foreign key pg_constraint oid.
+ * oldRelId: the relation where this foreign key constraint is on.
+ * revalidation can not be skipped if any foreign key attribute is virtual
+ * generated column.
  */
 static void
-TryReuseForeignKey(Oid oldId, Constraint *con)
+TryReuseForeignKey(Oid oldId, Constraint *con, Oid oldRelId)
 {
 	HeapTuple	tup;
-	Datum		adatum;
-	ArrayType  *arr;
-	Oid		   *rawarr;
 	int			numkeys;
 	int			i;
+	Relation	rel;
+	Oid			conpfeqop[INDEX_MAX_KEYS];
+	AttrNumber	conkey[INDEX_MAX_KEYS];
+	AttrNumber	confkey[INDEX_MAX_KEYS];
+	bool		fkey_on_virtual_generated = false;
 
 	Assert(con->contype == CONSTR_FOREIGN);
 	Assert(con->old_conpfeqop == NIL);	/* already prepared this node */
@@ -15840,20 +15834,41 @@ TryReuseForeignKey(Oid oldId, Constraint *con)
 	if (!HeapTupleIsValid(tup)) /* should not happen */
 		elog(ERROR, "cache lookup failed for constraint %u", oldId);
 
-	adatum = SysCacheGetAttrNotNull(CONSTROID, tup,
-									Anum_pg_constraint_conpfeqop);
-	arr = DatumGetArrayTypeP(adatum);	/* ensure not toasted */
-	numkeys = ARR_DIMS(arr)[0];
-	/* test follows the one in ri_FetchConstraintInfo() */
-	if (ARR_NDIM(arr) != 1 ||
-		ARR_HASNULL(arr) ||
-		ARR_ELEMTYPE(arr) != OIDOID)
-		elog(ERROR, "conpfeqop is not a 1-D Oid array");
-	rawarr = (Oid *) ARR_DATA_PTR(arr);
+	DeconstructFkConstraintRow(tup,
+							   &numkeys,
+							   conkey,
+							   confkey,
+							   conpfeqop,
+							   NULL, 	/* pp_eq_oprs */
+							   NULL, 	/* ff_eq_oprs */
+							   NULL, 	/* num_fk_del_set_cols */
+							   NULL); 	/* fk_del_set_cols */
+
+	rel = table_open(oldRelId, NoLock);
+
+	if (rel->rd_att->constr &&
+		rel->rd_att->constr->has_generated_virtual)
+	{
+		TupleDesc	tupleDesc = RelationGetDescr(rel);
+
+		for (i = 0; i < numkeys; i++)
+		{
+			Form_pg_attribute attr = TupleDescAttr(tupleDesc, conkey[i] - 1);
+			if (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+			{
+				fkey_on_virtual_generated = true;
+				break;
+			}
+		}
+	}
+	table_close(rel, NoLock);
 
 	/* stash a List of the operator Oids in our Constraint node */
-	for (i = 0; i < numkeys; i++)
-		con->old_conpfeqop = lappend_oid(con->old_conpfeqop, rawarr[i]);
+	if (!fkey_on_virtual_generated)
+	{
+		for (i = 0; i < numkeys; i++)
+			con->old_conpfeqop = lappend_oid(con->old_conpfeqop, conpfeqop[i]);
+	}
 
 	ReleaseSysCache(tup);
 }

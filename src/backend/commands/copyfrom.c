@@ -1347,7 +1347,8 @@ CopyFrom(CopyFromState cstate)
 				if (resultRelInfo->ri_RelationDesc->rd_att->constr &&
 					resultRelInfo->ri_RelationDesc->rd_att->constr->has_generated_stored)
 					ExecComputeGenerated(resultRelInfo, estate, myslot,
-										 CMD_INSERT);
+										 CMD_INSERT,
+										 false);
 
 				/*
 				 * If the target is a plain table, check the constraints of

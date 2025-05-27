@@ -767,21 +767,68 @@ CREATE TABLE gtest22c (a int, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
 --RESET enable_seqscan;
 --RESET enable_bitmapscan;
 -- foreign keys
+CREATE TABLE PKTABLE ( ptest1 int, ptest2 int, PRIMARY KEY(ptest1, ptest2) );
+CREATE TABLE FKTABLE ( ftest1 int, ftest2 int GENERATED ALWAYS AS (nullif(ftest1, 1)));
+INSERT INTO PKTABLE VALUES (1, 2), (2, 2);
+INSERT INTO FKTABLE VALUES (1), (2);
+ALTER TABLE FKTABLE ADD FOREIGN KEY(ftest1, ftest2) REFERENCES PKTABLE MATCH FULL; --error
+ERROR:  insert or update on table "fktable" violates foreign key constraint "fktable_ftest1_ftest2_fkey"
+DETAIL:  MATCH FULL does not allow mixing of null and nonnull key values.
+ALTER TABLE FKTABLE ADD FOREIGN KEY(ftest1, ftest2) REFERENCES PKTABLE; --ok
+DELETE FROM FKTABLE WHERE ftest1 = 1;
+ALTER TABLE FKTABLE ADD FOREIGN KEY(ftest1, ftest2) REFERENCES PKTABLE MATCH FULL; --ok
+DROP TABLE FKTABLE;
+DROP TABLE PKTABLE;
 CREATE TABLE gtest23a (x int PRIMARY KEY, y int);
---INSERT INTO gtest23a VALUES (1, 11), (2, 22), (3, 33);
+INSERT INTO gtest23a VALUES (1, 11), (2, 22), (3, 33), (131072, 44);
 CREATE TABLE gtest23x (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL REFERENCES gtest23a (x) ON UPDATE CASCADE);  -- error
+ERROR:  invalid ON UPDATE action for foreign key constraint containing generated column
+CREATE TABLE gtest23x (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL REFERENCES gtest23a (x) ON UPDATE SET DEFAULT);  -- error
+ERROR:  invalid ON UPDATE action for foreign key constraint containing generated column
+CREATE TABLE gtest23x (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL REFERENCES gtest23a (x) ON UPDATE SET NULL);  -- error
 ERROR:  invalid ON UPDATE action for foreign key constraint containing generated column
 CREATE TABLE gtest23x (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL REFERENCES gtest23a (x) ON DELETE SET NULL);  -- error
 ERROR:  invalid ON DELETE action for foreign key constraint containing generated column
-CREATE TABLE gtest23b (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL REFERENCES gtest23a (x));
-ERROR:  foreign key constraints on virtual generated columns are not supported
---\d gtest23b
---INSERT INTO gtest23b VALUES (1);  -- ok
---INSERT INTO gtest23b VALUES (5);  -- error
---ALTER TABLE gtest23b ALTER COLUMN b SET EXPRESSION AS (a * 5); -- error
---ALTER TABLE gtest23b ALTER COLUMN b SET EXPRESSION AS (a * 1); -- ok
---DROP TABLE gtest23b;
---DROP TABLE gtest23a;
+CREATE TABLE gtest23x (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL REFERENCES gtest23a (x) ON DELETE SET DEFAULT);  -- error
+ERROR:  invalid ON DELETE action for foreign key constraint containing generated column
+CREATE TABLE gtest23b (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL REFERENCES gtest23a (x) ON DELETE CASCADE); --ok
+\d gtest23b
+               Table "generated_virtual_tests.gtest23b"
+ Column |  Type   | Collation | Nullable |           Default           
+--------+---------+-----------+----------+-----------------------------
+ a      | integer |           | not null | 
+ b      | integer |           |          | generated always as (a * 2)
+Indexes:
+    "gtest23b_pkey" PRIMARY KEY, btree (a)
+Foreign-key constraints:
+    "gtest23b_b_fkey" FOREIGN KEY (b) REFERENCES gtest23a(x) ON DELETE CASCADE
+
+INSERT INTO gtest23b VALUES (1);  -- ok
+INSERT INTO gtest23b VALUES (5);  -- error
+ERROR:  insert or update on table "gtest23b" violates foreign key constraint "gtest23b_b_fkey"
+DETAIL:  Key (b)=(10) is not present in table "gtest23a".
+ALTER TABLE gtest23b ALTER COLUMN b SET EXPRESSION AS (a * 5); -- error
+ERROR:  insert or update on table "gtest23b" violates foreign key constraint "gtest23b_b_fkey"
+DETAIL:  Key (b)=(5) is not present in table "gtest23a".
+ALTER TABLE gtest23b ALTER COLUMN b SET EXPRESSION AS (a * 1); -- ok
+INSERT INTO gtest23b VALUES (131072);
+\set SHOW_CONTEXT never
+ALTER TABLE gtest23b ALTER COLUMN b SET DATA TYPE smallint; -- error
+ERROR:  smallint out of range
+\set SHOW_CONTEXT errors
+ALTER TABLE gtest23b ALTER COLUMN b SET DATA TYPE bigint; --ok
+UPDATE gtest23b SET a = 5 WHERE a = 1; --error
+ERROR:  insert or update on table "gtest23b" violates foreign key constraint "gtest23b_b_fkey"
+DETAIL:  Key (b)=(5) is not present in table "gtest23a".
+DELETE FROM gtest23b WHERE a = 1; --ok
+SELECT * FROM gtest23b ORDER BY a, b;
+   a    |   b    
+--------+--------
+ 131072 | 131072
+(1 row)
+
+DROP TABLE gtest23b;
+DROP TABLE gtest23a;
 CREATE TABLE gtest23p (x int, y int GENERATED ALWAYS AS (x * 2) VIRTUAL, PRIMARY KEY (y));
 ERROR:  primary keys on virtual generated columns are not supported
 --INSERT INTO gtest23p VALUES (1), (2), (3);
