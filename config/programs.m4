@@ -364,14 +364,35 @@ AC_DEFUN([PGAC_CHECK_LIBCURL],
 
 # PGAC_CHECK_GSSAPI
 # ------------------
-# Check for a GSSAPI implementation.
+# Check for a GSSAPI implementation. pgac_found_gss is set to 'yes' if we find
+# MIT Kerberos, or 'framework' if we find GSS.framework on Mac.
 
 AC_DEFUN([PGAC_CHECK_GSSAPI],
 [
   if test "$PORTNAME" != "win32"; then
-    AC_SEARCH_LIBS(gss_store_cred_into, [gssapi_krb5 gss 'gssapi -lkrb5 -lcrypto'], [],
-                   [AC_MSG_ERROR([could not find function 'gss_store_cred_into' required for GSSAPI])])
+    pgac_found_gss=no
+
+    AC_SEARCH_LIBS(gss_store_cred_into, [gssapi_krb5 gss 'gssapi -lkrb5 -lcrypto'],
+                   [pgac_found_gss=yes])
+
+    # If an implementation with gss_store_cred_into() is unavailable, fall back
+    # to GSS.framework on macOS.
+    if test "$pgac_found_gss" = no -a "$PORTNAME" = "darwin"; then
+      CPPFLAGS="$CPPFLAGS -iwithsysroot /System/Library/Frameworks/GSS.framework/Headers"
+      LDFLAGS="$LDFLAGS -F$PG_SYSROOT/System/Library/Frameworks -framework GSS"
+
+      AC_SEARCH_LIBS(gss_init_sec_context, [],
+                     [pgac_found_gss=framework],
+                     [AC_MSG_ERROR([could not find GSS.framework required for GSSAPI])])
+    fi
+
+    if test "$pgac_found_gss" = no; then
+       AC_MSG_ERROR([could not find function 'gss_store_cred_into' required for GSSAPI])
+    fi
   else
     LIBS="$LIBS -lgssapi32"
   fi
+
+  # Track the availability of gss_store_cred_into() separately.
+  AC_CHECK_FUNCS(gss_store_cred_into)
 ])# PGAC_CHECK_GSSAPI

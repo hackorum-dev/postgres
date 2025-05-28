@@ -1063,8 +1063,14 @@ pg_GSS_recvauth(Port *port)
 
 		if (delegated_creds != GSS_C_NO_CREDENTIAL && gflags & GSS_C_DELEG_FLAG)
 		{
+#if HAVE_GSS_STORE_CRED_INTO
 			pg_store_delegated_credential(delegated_creds);
 			port->gss->delegated_creds = true;
+#else
+			/* XXX check WARNING pre-auth, release credentials */
+			ereport(WARNING,
+					errmsg("GSS implementation does not support credential delegation; ignoring delegation request"));
+#endif
 		}
 
 		if (port->gss->outbuf.length != 0)

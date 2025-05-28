@@ -93,6 +93,8 @@ pg_GSS_error(const char *errmsg,
 			 errdetail_internal("%s: %s", msg_major, msg_minor)));
 }
 
+#if HAVE_GSS_STORE_CRED_INTO
+
 /*
  * Store the credentials passed in into the memory cache for later usage.
  *
@@ -145,3 +147,5 @@ pg_store_delegated_credential(gss_cred_id_t cred)
 	 */
 	setenv("KRB5CCNAME", GSS_MEMORY_CACHE, 1);
 }
+
+#endif							/* HAVE_GSS_STORE_CRED_INTO */
