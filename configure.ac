@@ -1615,10 +1615,14 @@ if test "$with_zstd" = yes; then
 fi
 
 if test "$with_gssapi" = yes ; then
-  AC_CHECK_HEADERS(gssapi/gssapi.h, [],
-	[AC_CHECK_HEADERS(gssapi.h, [], [AC_MSG_ERROR([gssapi.h header file is required for GSSAPI])])])
-  AC_CHECK_HEADERS(gssapi/gssapi_ext.h, [],
-	[AC_CHECK_HEADERS(gssapi_ext.h, [], [AC_MSG_ERROR([gssapi_ext.h header file is required for GSSAPI])])])
+  if test "$pgac_found_gss" = framework; then
+    AC_CHECK_HEADERS(GSS/GSS.h, [], [AC_MSG_ERROR([GSS.h header file is required for GSSAPI])])
+  else
+    AC_CHECK_HEADERS(gssapi/gssapi.h, [],
+    [AC_CHECK_HEADERS(gssapi.h, [], [AC_MSG_ERROR([gssapi.h header file is required for GSSAPI])])])
+    AC_CHECK_HEADERS(gssapi/gssapi_ext.h, [],
+    [AC_CHECK_HEADERS(gssapi_ext.h, [], [AC_MSG_ERROR([gssapi_ext.h header file is required for GSSAPI])])])
+  fi
 fi
 
 PGAC_PATH_PROGS(OPENSSL, openssl)

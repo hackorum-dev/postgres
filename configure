@@ -12932,6 +12932,8 @@ fi
 if test "$with_gssapi" = yes ; then
 
   if test "$PORTNAME" != "win32"; then
+    pgac_found_gss=no
+
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing gss_store_cred_into" >&5
 $as_echo_n "checking for library containing gss_store_cred_into... " >&6; }
 if ${ac_cv_search_gss_store_cred_into+:} false; then :
@@ -12985,14 +12987,95 @@ $as_echo "$ac_cv_search_gss_store_cred_into" >&6; }
 ac_res=$ac_cv_search_gss_store_cred_into
 if test "$ac_res" != no; then :
   test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
-
-else
-  as_fn_error $? "could not find function 'gss_store_cred_into' required for GSSAPI" "$LINENO" 5
+  pgac_found_gss=yes
 fi
 
+
+	# If an implementation with gss_store_cred_into() is unavailable, fall back
+	# to GSS.framework on macOS.
+    if test "$pgac_found_gss" = no -a "$PORTNAME" = "darwin"; then
+      CPPFLAGS="$CPPFLAGS -iwithsysroot /System/Library/Frameworks/GSS.framework/Headers"
+      LDFLAGS="$LDFLAGS -F$PG_SYSROOT/System/Library/Frameworks -framework GSS"
+
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing gss_init_sec_context" >&5
+$as_echo_n "checking for library containing gss_init_sec_context... " >&6; }
+if ${ac_cv_search_gss_init_sec_context+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char gss_init_sec_context ();
+int
+main ()
+{
+return gss_init_sec_context ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' ; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_gss_init_sec_context=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_gss_init_sec_context+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_gss_init_sec_context+:} false; then :
+
+else
+  ac_cv_search_gss_init_sec_context=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_gss_init_sec_context" >&5
+$as_echo "$ac_cv_search_gss_init_sec_context" >&6; }
+ac_res=$ac_cv_search_gss_init_sec_context
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+  pgac_found_gss=framework
+else
+  as_fn_error $? "could not find GSS.framework required for GSSAPI" "$LINENO" 5
+fi
+
+    fi
+
+    if test "$pgac_found_gss" = no; then
+       as_fn_error $? "could not find function 'gss_store_cred_into' required for GSSAPI" "$LINENO" 5
+    fi
   else
     LIBS="$LIBS -lgssapi32"
   fi
+
+  # Track the availability of gss_store_cred_into() separately.
+  for ac_func in gss_store_cred_into
+do :
+  ac_fn_c_check_func "$LINENO" "gss_store_cred_into" "ac_cv_func_gss_store_cred_into"
+if test "x$ac_cv_func_gss_store_cred_into" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_GSS_STORE_CRED_INTO 1
+_ACEOF
+
+fi
+done
+
 
 fi
 
@@ -14163,7 +14246,23 @@ fi
 fi
 
 if test "$with_gssapi" = yes ; then
-  for ac_header in gssapi/gssapi.h
+  if test "$pgac_found_gss" = framework; then
+    for ac_header in GSS/GSS.h
+do :
+  ac_fn_c_check_header_mongrel "$LINENO" "GSS/GSS.h" "ac_cv_header_GSS_GSS_h" "$ac_includes_default"
+if test "x$ac_cv_header_GSS_GSS_h" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_GSS_GSS_H 1
+_ACEOF
+
+else
+  as_fn_error $? "GSS.h header file is required for GSSAPI" "$LINENO" 5
+fi
+
+done
+
+  else
+    for ac_header in gssapi/gssapi.h
 do :
   ac_fn_c_check_header_mongrel "$LINENO" "gssapi/gssapi.h" "ac_cv_header_gssapi_gssapi_h" "$ac_includes_default"
 if test "x$ac_cv_header_gssapi_gssapi_h" = xyes; then :
@@ -14190,7 +14289,7 @@ fi
 
 done
 
-  for ac_header in gssapi/gssapi_ext.h
+    for ac_header in gssapi/gssapi_ext.h
 do :
   ac_fn_c_check_header_mongrel "$LINENO" "gssapi/gssapi_ext.h" "ac_cv_header_gssapi_gssapi_ext_h" "$ac_includes_default"
 if test "x$ac_cv_header_gssapi_gssapi_ext_h" = xyes; then :
@@ -14217,6 +14316,7 @@ fi
 
 done
 
+  fi
 fi
 
 if test -z "$OPENSSL"; then
