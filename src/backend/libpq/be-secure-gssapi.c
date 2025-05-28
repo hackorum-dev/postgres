@@ -628,8 +628,14 @@ secure_open_gssapi(Port *port)
 
 		if (delegated_creds != GSS_C_NO_CREDENTIAL)
 		{
+#if HAVE_GSS_STORE_CRED_INTO
 			pg_store_delegated_credential(delegated_creds);
 			port->gss->delegated_creds = true;
+#else
+			/* XXX check WARNING pre-auth, release credentials */
+			ereport(WARNING,
+					errmsg("GSS implementation does not support credential delegation; ignoring delegation request"));
+#endif
 		}
 
 		/* Done handling the incoming packet, reset our buffer */
