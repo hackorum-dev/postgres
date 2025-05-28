@@ -360,3 +360,18 @@ AC_DEFUN([PGAC_CHECK_LIBCURL],
   LDFLAGS=$pgac_save_LDFLAGS
   LIBS=$pgac_save_LIBS
 ])# PGAC_CHECK_LIBCURL
+
+
+# PGAC_CHECK_GSSAPI
+# ------------------
+# Check for a GSSAPI implementation.
+
+AC_DEFUN([PGAC_CHECK_GSSAPI],
+[
+  if test "$PORTNAME" != "win32"; then
+    AC_SEARCH_LIBS(gss_store_cred_into, [gssapi_krb5 gss 'gssapi -lkrb5 -lcrypto'], [],
+                   [AC_MSG_ERROR([could not find function 'gss_store_cred_into' required for GSSAPI])])
+  else
+    LIBS="$LIBS -lgssapi32"
+  fi
+])# PGAC_CHECK_GSSAPI
