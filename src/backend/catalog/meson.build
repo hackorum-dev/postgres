@@ -33,6 +33,7 @@ backend_sources += files(
   'pg_subscription.c',
   'pg_tablespace.c',
   'pg_type.c',
+  'pg_variable.c',
   'storage.c',
   'toasting.c',
 )
