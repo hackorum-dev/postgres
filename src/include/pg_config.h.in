@@ -195,6 +195,12 @@
 /* Define to 1 if you have the <gssapi.h> header file. */
 #undef HAVE_GSSAPI_H
 
+/* Define to 1 if you have the <GSS/GSS.h> header file. */
+#undef HAVE_GSS_GSS_H
+
+/* Define to 1 if you have the `gss_store_cred_into' function. */
+#undef HAVE_GSS_STORE_CRED_INTO
+
 /* Define to 1 if you have the <history.h> header file. */
 #undef HAVE_HISTORY_H
 

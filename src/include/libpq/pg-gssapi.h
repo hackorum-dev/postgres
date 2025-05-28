@@ -17,7 +17,18 @@
 #ifdef ENABLE_GSS
 
 /* IWYU pragma: begin_exports */
-#if defined(HAVE_GSSAPI_H)
+#if defined(HAVE_GSS_GSS_H)
+/* XXX CoreFramework namespace pollution is extreme */
+#define CF_OPEN_SOURCE
+#define CF_EXCLUDE_CSTD_HEADERS
+#define Size MacSize___
+#define Boolean MacBoolean___
+#include <GSS/GSS.h>
+#undef Size
+#undef Boolean
+#undef CF_EXCLUDE_CSTD_HEADERS
+#undef CF_OPEN_SOURCE
+#elif defined(HAVE_GSSAPI_H)
 #include <gssapi.h>
 #include <gssapi_ext.h>
 #else
