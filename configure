@@ -12930,6 +12930,7 @@ $as_echo "$pgac_cv__libcurl_async_dns" >&6; }
 fi
 
 if test "$with_gssapi" = yes ; then
+
   if test "$PORTNAME" != "win32"; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing gss_store_cred_into" >&5
 $as_echo_n "checking for library containing gss_store_cred_into... " >&6; }
@@ -12992,6 +12993,7 @@ fi
   else
     LIBS="$LIBS -lgssapi32"
   fi
+
 fi
 
 #
