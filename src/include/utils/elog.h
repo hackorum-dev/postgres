@@ -390,7 +390,7 @@ extern PGDLLIMPORT ErrorContextCallback *error_context_stack;
 		sigjmp_buf *_save_exception_stack##__VA_ARGS__ = PG_exception_stack; \
 		ErrorContextCallback *_save_context_stack##__VA_ARGS__ = error_context_stack; \
 		sigjmp_buf _local_sigjmp_buf##__VA_ARGS__; \
-		bool _do_rethrow##__VA_ARGS__ = false; \
+		volatile bool _do_rethrow##__VA_ARGS__ = false; \
 		if (sigsetjmp(_local_sigjmp_buf##__VA_ARGS__, 0) == 0) \
 		{ \
 			PG_exception_stack = &_local_sigjmp_buf##__VA_ARGS__
