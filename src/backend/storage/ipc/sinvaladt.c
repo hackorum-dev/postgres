@@ -24,7 +24,7 @@
 #include "storage/procsignal.h"
 #include "storage/shmem.h"
 #include "storage/sinvaladt.h"
-#include "storage/spin.h"
+#include "storage/rwoptspin.h"
 
 /*
  * Conceptually, the shared cache invalidation messages are stored in an
@@ -171,7 +171,7 @@ typedef struct SISeg
 	int			maxMsgNum;		/* next message number to be assigned */
 	int			nextThreshold;	/* # of messages to call SICleanupQueue */
 
-	slock_t		msgnumLock;		/* spinlock protecting maxMsgNum */
+	RWOptSpin	msgnumLock;		/* spinlock protecting maxMsgNum */
 
 	/*
 	 * Circular buffer holding shared-inval messages
@@ -246,7 +246,7 @@ SharedInvalShmemInit(void)
 	shmInvalBuffer->minMsgNum = 0;
 	shmInvalBuffer->maxMsgNum = 0;
 	shmInvalBuffer->nextThreshold = CLEANUP_MIN;
-	SpinLockInit(&shmInvalBuffer->msgnumLock);
+	RWOptSpinInit(&shmInvalBuffer->msgnumLock);
 
 	/* The buffer[] array is initially all unused, so we need not fill it */
 
@@ -419,9 +419,9 @@ SIInsertDataEntries(const SharedInvalidationMessage *data, int n)
 		}
 
 		/* Update current value of maxMsgNum using spinlock */
-		SpinLockAcquire(&segP->msgnumLock);
+		RWOptSpinAcquire(&segP->msgnumLock);
 		segP->maxMsgNum = max;
-		SpinLockRelease(&segP->msgnumLock);
+		RWOptSpinRelease(&segP->msgnumLock);
 
 		/*
 		 * Now that the maxMsgNum change is globally visible, we give everyone
@@ -508,9 +508,9 @@ SIGetDataEntries(SharedInvalidationMessage *data, int datasize)
 	stateP->hasMessages = false;
 
 	/* Fetch current value of maxMsgNum using spinlock */
-	SpinLockAcquire(&segP->msgnumLock);
+	RWOptSpinReadDo(&segP->msgnumLock);
 	max = segP->maxMsgNum;
-	SpinLockRelease(&segP->msgnumLock);
+	RWOptSpinReadWhile(&segP->msgnumLock);
 
 	if (stateP->resetState)
 	{

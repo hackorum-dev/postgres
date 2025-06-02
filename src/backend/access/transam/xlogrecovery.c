@@ -56,7 +56,7 @@
 #include "storage/latch.h"
 #include "storage/pmsignal.h"
 #include "storage/procarray.h"
-#include "storage/spin.h"
+#include "storage/rwoptspin.h"
 #include "utils/datetime.h"
 #include "utils/fmgrprotos.h"
 #include "utils/guc_hooks.h"
@@ -364,7 +364,7 @@ typedef struct XLogRecoveryCtlData
 	RecoveryPauseState recoveryPauseState;
 	ConditionVariable recoveryNotPausedCV;
 
-	slock_t		info_lck;		/* locks shared variables shown above */
+	RWOptSpin	info_lck;		/* locks shared variables shown above */
 } XLogRecoveryCtlData;
 
 static XLogRecoveryCtlData *XLogRecoveryCtl = NULL;
@@ -471,7 +471,7 @@ XLogRecoveryShmemInit(void)
 		return;
 	memset(XLogRecoveryCtl, 0, sizeof(XLogRecoveryCtlData));
 
-	SpinLockInit(&XLogRecoveryCtl->info_lck);
+	RWOptSpinInit(&XLogRecoveryCtl->info_lck);
 	InitSharedLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
 	ConditionVariableInit(&XLogRecoveryCtl->recoveryNotPausedCV);
 }
@@ -1668,7 +1668,7 @@ PerformWalRecovery(void)
 	 * we had just replayed the record before the REDO location (or the
 	 * checkpoint record itself, if it's a shutdown checkpoint).
 	 */
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinAcquire(&XLogRecoveryCtl->info_lck);
 	if (RedoStartLSN < CheckPointLoc)
 	{
 		XLogRecoveryCtl->lastReplayedReadRecPtr = InvalidXLogRecPtr;
@@ -1686,7 +1686,7 @@ PerformWalRecovery(void)
 	XLogRecoveryCtl->recoveryLastXTime = 0;
 	XLogRecoveryCtl->currentChunkStartTime = 0;
 	XLogRecoveryCtl->recoveryPauseState = RECOVERY_NOT_PAUSED;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinRelease(&XLogRecoveryCtl->info_lck);
 
 	/* Also ensure XLogReceiptTime has a sane value */
 	XLogReceiptTime = GetCurrentTimestamp();
@@ -1977,10 +1977,10 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	 * Update shared replayEndRecPtr before replaying this record, so that
 	 * XLogFlush will update minRecoveryPoint correctly.
 	 */
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinAcquire(&XLogRecoveryCtl->info_lck);
 	XLogRecoveryCtl->replayEndRecPtr = xlogreader->EndRecPtr;
 	XLogRecoveryCtl->replayEndTLI = *replayTLI;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinRelease(&XLogRecoveryCtl->info_lck);
 
 	/*
 	 * If we are attempting to enter Hot Standby mode, process XIDs we see
@@ -2014,11 +2014,11 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	 * Update lastReplayedEndRecPtr after this record has been successfully
 	 * replayed.
 	 */
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinAcquire(&XLogRecoveryCtl->info_lck);
 	XLogRecoveryCtl->lastReplayedReadRecPtr = xlogreader->ReadRecPtr;
 	XLogRecoveryCtl->lastReplayedEndRecPtr = xlogreader->EndRecPtr;
 	XLogRecoveryCtl->lastReplayedTLI = *replayTLI;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinRelease(&XLogRecoveryCtl->info_lck);
 
 	/* ------
 	 * Wakeup walsenders:
@@ -2269,9 +2269,9 @@ CheckRecoveryConsistency(void)
 		reachedConsistency &&
 		IsUnderPostmaster)
 	{
-		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		RWOptSpinAcquire(&XLogRecoveryCtl->info_lck);
 		XLogRecoveryCtl->SharedHotStandbyActive = true;
-		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+		RWOptSpinRelease(&XLogRecoveryCtl->info_lck);
 
 		LocalHotStandbyActive = true;
 
@@ -3082,9 +3082,9 @@ GetRecoveryPauseState(void)
 {
 	RecoveryPauseState state;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadDo(&XLogRecoveryCtl->info_lck);
 	state = XLogRecoveryCtl->recoveryPauseState;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadWhile(&XLogRecoveryCtl->info_lck);
 
 	return state;
 }
@@ -3100,14 +3100,14 @@ GetRecoveryPauseState(void)
 void
 SetRecoveryPause(bool recoveryPause)
 {
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinAcquire(&XLogRecoveryCtl->info_lck);
 
 	if (!recoveryPause)
 		XLogRecoveryCtl->recoveryPauseState = RECOVERY_NOT_PAUSED;
 	else if (XLogRecoveryCtl->recoveryPauseState == RECOVERY_NOT_PAUSED)
 		XLogRecoveryCtl->recoveryPauseState = RECOVERY_PAUSE_REQUESTED;
 
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinRelease(&XLogRecoveryCtl->info_lck);
 
 	if (!recoveryPause)
 		ConditionVariableBroadcast(&XLogRecoveryCtl->recoveryNotPausedCV);
@@ -3121,10 +3121,10 @@ static void
 ConfirmRecoveryPaused(void)
 {
 	/* If recovery pause is requested then set it paused */
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinAcquire(&XLogRecoveryCtl->info_lck);
 	if (XLogRecoveryCtl->recoveryPauseState == RECOVERY_PAUSE_REQUESTED)
 		XLogRecoveryCtl->recoveryPauseState = RECOVERY_PAUSED;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinRelease(&XLogRecoveryCtl->info_lck);
 }
 
 
@@ -4421,9 +4421,9 @@ PromoteIsTriggered(void)
 	if (LocalPromoteIsTriggered)
 		return true;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadDo(&XLogRecoveryCtl->info_lck);
 	LocalPromoteIsTriggered = XLogRecoveryCtl->SharedPromoteIsTriggered;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadWhile(&XLogRecoveryCtl->info_lck);
 
 	return LocalPromoteIsTriggered;
 }
@@ -4431,9 +4431,9 @@ PromoteIsTriggered(void)
 static void
 SetPromoteIsTriggered(void)
 {
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinAcquire(&XLogRecoveryCtl->info_lck);
 	XLogRecoveryCtl->SharedPromoteIsTriggered = true;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinRelease(&XLogRecoveryCtl->info_lck);
 
 	/*
 	 * Mark the recovery pause state as 'not paused' because the paused state
@@ -4531,9 +4531,9 @@ HotStandbyActive(void)
 	else
 	{
 		/* spinlock is essential on machines with weak memory ordering! */
-		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		RWOptSpinReadDo(&XLogRecoveryCtl->info_lck);
 		LocalHotStandbyActive = XLogRecoveryCtl->SharedHotStandbyActive;
-		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+		RWOptSpinReadWhile(&XLogRecoveryCtl->info_lck);
 
 		return LocalHotStandbyActive;
 	}
@@ -4561,10 +4561,10 @@ GetXLogReplayRecPtr(TimeLineID *replayTLI)
 	XLogRecPtr	recptr;
 	TimeLineID	tli;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadDo(&XLogRecoveryCtl->info_lck);
 	recptr = XLogRecoveryCtl->lastReplayedEndRecPtr;
 	tli = XLogRecoveryCtl->lastReplayedTLI;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadWhile(&XLogRecoveryCtl->info_lck);
 
 	if (replayTLI)
 		*replayTLI = tli;
@@ -4584,10 +4584,10 @@ GetCurrentReplayRecPtr(TimeLineID *replayEndTLI)
 	XLogRecPtr	recptr;
 	TimeLineID	tli;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadDo(&XLogRecoveryCtl->info_lck);
 	recptr = XLogRecoveryCtl->replayEndRecPtr;
 	tli = XLogRecoveryCtl->replayEndTLI;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadWhile(&XLogRecoveryCtl->info_lck);
 
 	if (replayEndTLI)
 		*replayEndTLI = tli;
@@ -4604,9 +4604,9 @@ GetCurrentReplayRecPtr(TimeLineID *replayEndTLI)
 static void
 SetLatestXTime(TimestampTz xtime)
 {
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinAcquire(&XLogRecoveryCtl->info_lck);
 	XLogRecoveryCtl->recoveryLastXTime = xtime;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinRelease(&XLogRecoveryCtl->info_lck);
 }
 
 /*
@@ -4617,9 +4617,9 @@ GetLatestXTime(void)
 {
 	TimestampTz xtime;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadDo(&XLogRecoveryCtl->info_lck);
 	xtime = XLogRecoveryCtl->recoveryLastXTime;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadWhile(&XLogRecoveryCtl->info_lck);
 
 	return xtime;
 }
@@ -4633,9 +4633,9 @@ GetLatestXTime(void)
 static void
 SetCurrentChunkStartTime(TimestampTz xtime)
 {
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinAcquire(&XLogRecoveryCtl->info_lck);
 	XLogRecoveryCtl->currentChunkStartTime = xtime;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinRelease(&XLogRecoveryCtl->info_lck);
 }
 
 /*
@@ -4647,9 +4647,9 @@ GetCurrentChunkReplayStartTime(void)
 {
 	TimestampTz xtime;
 
-	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadDo(&XLogRecoveryCtl->info_lck);
 	xtime = XLogRecoveryCtl->currentChunkStartTime;
-	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	RWOptSpinReadWhile(&XLogRecoveryCtl->info_lck);
 
 	return xtime;
 }
