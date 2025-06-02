@@ -2965,6 +2965,15 @@ match_previous_words(int pattern_id,
 	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "COLUMN", MatchAny) ||
 			 Matches("ALTER", "TABLE", MatchAny, "ALTER", MatchAny))
 		COMPLETE_WITH("TYPE", "SET", "RESET", "RESTART", "ADD", "DROP");
+	/* ALTER TABLE ALTER CONSTRAINT <foo> */
+	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "CONSTRAINT", MatchAny))
+		COMPLETE_WITH("DEFERRABLE", "NOT DEFERRABLE", "INITIALLY DEFERRED", "INITIALLY IMMEDIATE", "ENFORCED", "NOT ENFORCED", "INHERIT", "NO INHERIT");
+	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "CONSTRAINT", MatchAny, "NO"))
+		COMPLETE_WITH("INHERIT");
+	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "CONSTRAINT", MatchAny, "NOT"))
+		COMPLETE_WITH("DEFERRABLE", "ENFORCED");
+	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "CONSTRAINT", MatchAny, "INITIALLY"))
+		COMPLETE_WITH("DEFERRED", "IMMEDIATE");
 	/* ALTER TABLE ALTER [COLUMN] <foo> ADD */
 	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "COLUMN", MatchAny, "ADD") ||
 			 Matches("ALTER", "TABLE", MatchAny, "ALTER", MatchAny, "ADD"))
