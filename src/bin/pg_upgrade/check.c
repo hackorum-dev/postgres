@@ -31,6 +31,7 @@ static void check_new_cluster_logical_replication_slots(void);
 static void check_new_cluster_subscription_configuration(void);
 static void check_old_cluster_for_valid_slots(void);
 static void check_old_cluster_subscription_state(void);
+static void check_for_md5_passwords(ClusterInfo *cluster);
 
 /*
  * DataTypesUsageChecks - definitions of data type checks for the old cluster
@@ -684,6 +685,12 @@ check_and_dump_old_cluster(void)
 	/* 9.5 and below should not have roles starting with pg_ */
 	if (GET_MAJOR_VERSION(old_cluster.major_version) <= 905)
 		check_for_pg_role_prefix(&old_cluster);
+
+	/*
+	 * MD5 password support is deprecated.  Warn if any roles have MD5
+	 * passwords.
+	 */
+	check_for_md5_passwords(&old_cluster);
 
 	/*
 	 * While not a check option, we do this now because this is the only time
@@ -2268,6 +2275,65 @@ check_old_cluster_subscription_state(void)
 				 "You can allow the initial sync to finish for all relations and then restart the upgrade.\n"
 				 "A list of the problematic subscriptions is in the file:\n"
 				 "    %s", report.path);
+	}
+	else
+		check_ok();
+}
+
+/*
+ * check_for_md5_passwords()
+ *
+ * As of v18, MD5 password support is marked as deprecated and to-be-removed in
+ * a future major release.
+ */
+static void
+check_for_md5_passwords(ClusterInfo *cluster)
+{
+	PGresult   *res;
+	PGconn	   *conn = connectToServer(cluster, "template1");
+	int			ntups;
+	int			i_roloid;
+	int			i_rolname;
+	FILE	   *script = NULL;
+	char		output_path[MAXPGPATH];
+
+	prep_status("Checking for roles with MD5 passwords");
+
+	snprintf(output_path, sizeof(output_path), "%s/%s",
+			 log_opts.basedir,
+			 "roles_with_md5_passwords.txt");
+
+	res = executeQueryOrDie(conn,
+							"SELECT oid AS roloid, rolname "
+							"FROM pg_catalog.pg_authid "
+							"WHERE rolpassword ~ '^md5'");
+
+	ntups = PQntuples(res);
+	i_roloid = PQfnumber(res, "roloid");
+	i_rolname = PQfnumber(res, "rolname");
+	for (int rowno = 0; rowno < ntups; rowno++)
+	{
+		if (script == NULL && (script = fopen_priv(output_path, "w")) == NULL)
+			pg_fatal("could not open file \"%s\": %m", output_path);
+		fprintf(script, "%s (oid=%s)\n",
+				PQgetvalue(res, rowno, i_rolname),
+				PQgetvalue(res, rowno, i_roloid));
+	}
+
+	PQclear(res);
+
+	PQfinish(conn);
+
+	if (script)
+	{
+		fclose(script);
+		report_status(PG_WARNING, "warning");
+		pg_log(PG_WARNING,
+			   "Your installation contains roles with MD5 passwords.\n"
+			   "Support for MD5-encrypted passwords is deprecated and will be\n"
+			   "removed in a future release of PostgreSQL.  A list of roles\n"
+			   "with MD5 passwords is in the file:\n"
+			   "    %s", output_path);
 	}
 	else
 		check_ok();
