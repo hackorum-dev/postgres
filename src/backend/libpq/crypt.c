@@ -27,6 +27,8 @@
 /* Enables deprecation warnings for MD5 passwords. */
 bool		md5_password_warnings = true;
 
+static bool used_md5_auth = false;
+
 /*
  * Fetch stored password for a user, for authentication.
  *
@@ -210,6 +212,8 @@ md5_crypt_verify(const char *role, const char *shadow_pass,
 
 	Assert(md5_salt_len > 0);
 
+	used_md5_auth = true;
+
 	if (get_password_type(shadow_pass) != PASSWORD_TYPE_MD5)
 	{
 		/* incompatible password hash format. */
@@ -240,6 +244,19 @@ md5_crypt_verify(const char *role, const char *shadow_pass,
 	}
 
 	return retval;
+}
+
+void
+warn_if_md5_auth(void)
+{
+	if (md5_password_warnings && used_md5_auth)
+		ereport(WARNING,
+				(errcode(ERRCODE_WARNING_DEPRECATED_FEATURE),
+				 errmsg("authenticated with an MD5-encrypted password"),
+				 errdetail("MD5 password support is deprecated and will be removed in a future release of PostgreSQL."),
+				 errhint("Refer to the PostgreSQL documentation for details about migrating to another password type.")));
+
+	used_md5_auth = false;
 }
 
 /*

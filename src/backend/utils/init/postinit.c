@@ -34,6 +34,7 @@
 #include "catalog/pg_db_role_setting.h"
 #include "catalog/pg_tablespace.h"
 #include "libpq/auth.h"
+#include "libpq/crypt.h"
 #include "libpq/libpq-be.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
@@ -1234,6 +1235,8 @@ InitPostgres(const char *in_dbname, Oid dboid,
 	/* close the transaction we started above */
 	if (!bootstrap)
 		CommitTransactionCommand();
+
+	warn_if_md5_auth();
 }
 
 /*

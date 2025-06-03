@@ -68,6 +68,7 @@ $node->init;
 $node->append_conf('postgresql.conf', "log_connections = on\n");
 # Needed to allow connect_fails to inspect postmaster log:
 $node->append_conf('postgresql.conf', "log_min_messages = debug2");
+$node->append_conf('postgresql.conf', "md5_password_warnings = off");
 $node->start;
 
 # Test behavior of log_connections GUC

@@ -53,6 +53,7 @@ extern char *get_role_password(const char *role, const char **logdetail);
 extern int	md5_crypt_verify(const char *role, const char *shadow_pass,
 							 const char *client_pass, const uint8 *md5_salt,
 							 int md5_salt_len, const char **logdetail);
+extern void warn_if_md5_auth(void);
 extern int	plain_crypt_verify(const char *role, const char *shadow_pass,
 							   const char *client_pass,
 							   const char **logdetail);
