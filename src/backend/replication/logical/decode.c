@@ -129,7 +129,7 @@ void
 xlog_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 {
 	SnapBuild  *builder = ctx->snapshot_builder;
-	uint8		info = XLogRecGetInfo(buf->record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(buf->record) & XLR_RMGR_INFO_MASK;
 
 	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(buf->record),
 							buf->origptr);
@@ -360,7 +360,7 @@ standby_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 {
 	SnapBuild  *builder = ctx->snapshot_builder;
 	XLogReaderState *r = buf->record;
-	uint8		info = XLogRecGetInfo(r) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(r) & XLR_RMGR_INFO_MASK;
 
 	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(r), buf->origptr);
 
@@ -597,7 +597,7 @@ logicalmsg_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	SnapBuild  *builder = ctx->snapshot_builder;
 	XLogReaderState *r = buf->record;
 	TransactionId xid = XLogRecGetXid(r);
-	uint8		info = XLogRecGetInfo(r) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(r) & XLR_RMGR_INFO_MASK;
 	RepOriginId origin_id = XLogRecGetOrigin(r);
 	Snapshot	snapshot = NULL;
 	xl_logical_message *message;

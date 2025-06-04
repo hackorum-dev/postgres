@@ -50,7 +50,7 @@ void
 multixact_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
 
 	if (info == XLOG_MULTIXACT_ZERO_OFF_PAGE ||
 		info == XLOG_MULTIXACT_ZERO_MEM_PAGE)
@@ -85,7 +85,7 @@ multixact_identify(uint8 info)
 {
 	const char *id = NULL;
 
-	switch (info & ~XLR_INFO_MASK)
+	switch (info & XLR_RMGR_INFO_MASK)
 	{
 		case XLOG_MULTIXACT_ZERO_OFF_PAGE:
 			id = "ZERO_OFF_PAGE";

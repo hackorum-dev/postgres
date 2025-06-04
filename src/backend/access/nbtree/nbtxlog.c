@@ -1017,7 +1017,7 @@ btree_xlog_reuse_page(XLogReaderState *record)
 void
 btree_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
 	MemoryContext oldCtx;
 
 	oldCtx = MemoryContextSwitchTo(opCtx);

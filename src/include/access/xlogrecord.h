@@ -59,7 +59,6 @@ typedef struct XLogRecord
  * XLR_SPECIAL_REL_UPDATE and XLR_CHECK_CONSISTENCY bits can be passed by
  * XLogInsert caller. The rest are set internally by XLogInsert.
  */
-#define XLR_INFO_MASK			0x0F
 #define XLR_RMGR_INFO_MASK		0xF0
 
 /*

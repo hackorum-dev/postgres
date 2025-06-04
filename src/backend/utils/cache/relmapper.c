@@ -1095,7 +1095,7 @@ perform_relmap_update(bool shared, const RelMapFile *updates)
 void
 relmap_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
 
 	/* Backup blocks are not used in relmap records */
 	Assert(!XLogRecHasAnyBlockRefs(record));

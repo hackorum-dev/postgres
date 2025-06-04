@@ -203,7 +203,7 @@ GetWALRecordInfo(XLogReaderState *record, Datum *values,
 	record_type = desc.rm_identify(XLogRecGetInfo(record));
 
 	if (record_type == NULL)
-		record_type = psprintf("UNKNOWN (%x)", XLogRecGetInfo(record) & ~XLR_INFO_MASK);
+		record_type = psprintf("UNKNOWN (%x)", XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK);
 
 	initStringInfo(&rec_desc);
 	desc.rm_desc(&rec_desc, record);
@@ -266,7 +266,7 @@ GetWALBlockInfo(FunctionCallInfo fcinfo, XLogReaderState *record,
 
 	if (record_type == NULL)
 		record_type = psprintf("UNKNOWN (%x)",
-							   XLogRecGetInfo(record) & ~XLR_INFO_MASK);
+							   XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK);
 
 	initStringInfo(&rec_desc);
 	desc.rm_desc(&rec_desc, record);

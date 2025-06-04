@@ -1106,7 +1106,7 @@ WriteTruncateXlogRec(int64 pageno, TransactionId oldestXact, Oid oldestXactDb)
 void
 clog_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
 
 	/* Backup blocks are not used in clog records */
 	Assert(!XLogRecHasAnyBlockRefs(record));

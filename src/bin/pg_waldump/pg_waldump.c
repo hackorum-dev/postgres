@@ -564,7 +564,7 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 
 	id = desc->rm_identify(info);
 	if (id == NULL)
-		printf("desc: UNKNOWN (%x) ", info & ~XLR_INFO_MASK);
+		printf("desc: UNKNOWN (%x) ", info & XLR_RMGR_INFO_MASK);
 	else
 		printf("desc: %s ", id);
 

@@ -766,7 +766,7 @@ XLogInsertRecord(XLogRecData *rdata,
 	pg_crc32c	rdata_crc;
 	bool		inserted;
 	XLogRecord *rechdr = (XLogRecord *) rdata->data;
-	uint8		info = rechdr->xl_info & ~XLR_INFO_MASK;
+	uint8		info = rechdr->xl_info & XLR_RMGR_INFO_MASK;
 	WalInsertClass class = WALINSERT_NORMAL;
 	XLogRecPtr	StartPos;
 	XLogRecPtr	EndPos;
@@ -8422,7 +8422,7 @@ UpdateFullPageWrites(void)
 void
 xlog_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
 	XLogRecPtr	lsn = record->EndRecPtr;
 
 	/*

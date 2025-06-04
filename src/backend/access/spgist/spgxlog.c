@@ -934,7 +934,7 @@ spgRedoVacuumRedirect(XLogReaderState *record)
 void
 spg_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
 	MemoryContext oldCxt;
 
 	oldCxt = MemoryContextSwitchTo(opCtx);

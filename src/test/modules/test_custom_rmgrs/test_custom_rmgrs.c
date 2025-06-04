@@ -81,7 +81,7 @@ _PG_init(void)
 void
 testcustomrmgrs_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
 
 	if (info != XLOG_TEST_CUSTOM_RMGRS_MESSAGE)
 		elog(PANIC, "testcustomrmgrs_redo: unknown op code %u", info);
@@ -91,7 +91,7 @@ void
 testcustomrmgrs_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
 
 	if (info == XLOG_TEST_CUSTOM_RMGRS_MESSAGE)
 	{
@@ -105,7 +105,7 @@ testcustomrmgrs_desc(StringInfo buf, XLogReaderState *record)
 const char *
 testcustomrmgrs_identify(uint8 info)
 {
-	if ((info & ~XLR_INFO_MASK) == XLOG_TEST_CUSTOM_RMGRS_MESSAGE)
+	if ((info & XLR_RMGR_INFO_MASK) == XLOG_TEST_CUSTOM_RMGRS_MESSAGE)
 		return "TEST_CUSTOM_RMGRS_MESSAGE";
 
 	return NULL;

@@ -1248,7 +1248,7 @@ SummarizeWAL(TimeLineID tli, XLogRecPtr start_lsn, bool exact,
 static void
 SummarizeDbaseRecord(XLogReaderState *xlogreader, BlockRefTable *brtab)
 {
-	uint8		info = XLogRecGetInfo(xlogreader) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(xlogreader) & XLR_RMGR_INFO_MASK;
 
 	/*
 	 * We use relfilenode zero for a given database OID and tablespace OID to
@@ -1317,7 +1317,7 @@ SummarizeDbaseRecord(XLogReaderState *xlogreader, BlockRefTable *brtab)
 static void
 SummarizeSmgrRecord(XLogReaderState *xlogreader, BlockRefTable *brtab)
 {
-	uint8		info = XLogRecGetInfo(xlogreader) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(xlogreader) & XLR_RMGR_INFO_MASK;
 
 	if (info == XLOG_SMGR_CREATE)
 	{
@@ -1366,7 +1366,7 @@ SummarizeSmgrRecord(XLogReaderState *xlogreader, BlockRefTable *brtab)
 static void
 SummarizeXactRecord(XLogReaderState *xlogreader, BlockRefTable *brtab)
 {
-	uint8		info = XLogRecGetInfo(xlogreader) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(xlogreader) & XLR_RMGR_INFO_MASK;
 	uint8		xact_info = info & XLOG_XACT_OPMASK;
 
 	if (xact_info == XLOG_XACT_COMMIT ||
@@ -1426,7 +1426,7 @@ SummarizeXactRecord(XLogReaderState *xlogreader, BlockRefTable *brtab)
 static bool
 SummarizeXlogRecord(XLogReaderState *xlogreader, bool *new_fast_forward)
 {
-	uint8		info = XLogRecGetInfo(xlogreader) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(xlogreader) & XLR_RMGR_INFO_MASK;
 	int			record_wal_level;
 
 	if (info == XLOG_CHECKPOINT_REDO)

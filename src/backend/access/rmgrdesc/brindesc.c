@@ -20,7 +20,7 @@ void
 brin_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
 
 	info &= XLOG_BRIN_OPMASK;
 	if (info == XLOG_BRIN_CREATE_INDEX)
@@ -75,7 +75,7 @@ brin_identify(uint8 info)
 {
 	const char *id = NULL;
 
-	switch (info & ~XLR_INFO_MASK)
+	switch (info & XLR_RMGR_INFO_MASK)
 	{
 		case XLOG_BRIN_CREATE_INDEX:
 			id = "CREATE_INDEX";
