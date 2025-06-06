@@ -207,14 +207,29 @@ RESET constraint_exclusion;
 
 -- table inheritance tests
 CREATE TABLE agg (a int2, b float4);
+INSERT INTO agg SELECT 5,0.1;
+INSERT INTO agg SELECT 6,0.2;
 ALTER FOREIGN TABLE agg_csv INHERIT agg;
 SELECT tableoid::regclass, * FROM agg;
 SELECT tableoid::regclass, * FROM agg_csv;
 SELECT tableoid::regclass, * FROM ONLY agg;
--- updates aren't supported
-UPDATE agg SET a = 1;
+-- updates on foreign tables are not supported
+UPDATE agg SET a = 10 WHERE b = 99.097::float4;
+UPDATE agg SET a = 10 WHERE a = 100;
+UPDATE agg SET a = 10;
+-- these updates should be allowed
+UPDATE agg SET a = 10 WHERE b = 0.1::float4;
+UPDATE agg SET a = 20 WHERE a = 10;
+SELECT tableoid::regclass, * FROM agg;
+-- deletes on foreign tables are not supported
+DELETE from agg WHERE b = 99.097::float4;
 DELETE FROM agg WHERE a = 100;
--- but this should be allowed
+DELETE FROM agg;
+-- these deletes should be allowed
+DELETE FROM agg WHERE b = 0.1::float4;
+DELETE FROM agg WHERE a = 6;
+SELECT tableoid::regclass, * FROM agg;
+-- this should be allowed
 SELECT tableoid::regclass, * FROM agg FOR UPDATE;
 ALTER FOREIGN TABLE agg_csv NO INHERIT agg;
 DROP TABLE agg;
@@ -285,6 +300,27 @@ SET ROLE regress_file_fdw_user;
 ALTER FOREIGN TABLE agg_text OPTIONS (SET format 'text');
 SET ROLE regress_file_fdw_superuser;
 
+-- Test UPDATE/DELETE on partition table with foreign partitions
+CREATE TABLE pt_root (a int2, b float4) PARTITION BY range (a);
+CREATE TABLE pt_child PARTITION OF pt_root FOR VALUES FROM (0) TO (10);
+INSERT INTO pt_root SELECT 5, 0.1;
+INSERT INTO pt_root SELECT 6, 0.2;
+ALTER TABLE pt_root ATTACH PARTITION agg_csv FOR VALUES FROM (10) TO (20);
+SELECT * FROM pt_root;
+-- delete on foreign tables are not supported
+DELETE FROM pt_root WHERE b = 99.097::float4;
+DELETE FROM pt_root;
+-- this delete should be allowed
+DELETE FROM pt_root WHERE b = 0.1::float4;
+SELECT * FROM pt_root;
+-- updates on foreign tables are not supported
+UPDATE pt_root SET b = 0.10 WHERE b = 99.097::float4;
+UPDATE pt_root SET b = 0.10;
+-- this update should be allowed
+UPDATE pt_root SET b = 0.6 WHERE b = 0.2::float4;
+SELECT * FROM pt_root;
+
+DROP TABLE pt_root;
 -- cleanup
 RESET ROLE;
 DROP EXTENSION file_fdw CASCADE;

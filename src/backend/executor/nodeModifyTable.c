@@ -1585,9 +1585,33 @@ ExecDelete(ModifyTableContext *context,
 	TupleTableSlot *slot = NULL;
 	TM_Result	result;
 	bool		saveOld;
+	FdwRoutine *fdwroutine;
 
 	if (tupleDeleted)
 		*tupleDeleted = false;
+
+	/*
+	 * For foreign partitions and inherited foreign tables, raise error
+	 * during DELETE if the FDW does not support it. This check is deferred
+	 * from ExecInitModifyTable to allow deletes on non-foreign tables to
+	 * proceed without error.
+	 */
+	if (resultRelationDesc->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+	{
+		fdwroutine = resultRelInfo->ri_FdwRoutine;
+		if (fdwroutine->ExecForeignDelete == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot delete from foreign table \"%s\"",
+							RelationGetRelationName(resultRelationDesc))));
+
+		if (fdwroutine->IsForeignRelUpdatable != NULL &&
+			(fdwroutine->IsForeignRelUpdatable(resultRelationDesc) & (1 << CMD_DELETE)) == 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					errmsg("foreign table \"%s\" does not allow deletes",
+							RelationGetRelationName(resultRelationDesc))));
+	}
 
 	/*
 	 * Prepare for the delete.  This includes BEFORE ROW triggers, so we're
@@ -2466,6 +2490,7 @@ ExecUpdate(ModifyTableContext *context, ResultRelInfo *resultRelInfo,
 	Relation	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 	UpdateContext updateCxt = {0};
 	TM_Result	result;
+	FdwRoutine *fdwroutine;
 
 	/*
 	 * abort the operation if not running transactions
@@ -2479,6 +2504,29 @@ ExecUpdate(ModifyTableContext *context, ResultRelInfo *resultRelInfo,
 	 */
 	if (!ExecUpdatePrologue(context, resultRelInfo, tupleid, oldtuple, slot, NULL))
 		return NULL;
+
+	/*
+	 * For foreign partitions and inherited foreign tables, raise error
+	 * during UPDATE if the FDW does not support it. This check is deferred
+	 * from ExecInitModifyTable to allow updates on non-foreign tables to
+	 * proceed without error.
+	 */
+	if (resultRelationDesc->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+	{
+		fdwroutine = resultRelInfo->ri_FdwRoutine;
+		if (fdwroutine->ExecForeignUpdate == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot update foreign table \"%s\"",
+							RelationGetRelationName(resultRelationDesc))));
+
+		if (fdwroutine->IsForeignRelUpdatable != NULL &&
+			(fdwroutine->IsForeignRelUpdatable(resultRelationDesc) & (1 << CMD_UPDATE)) == 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					errmsg("foreign table \"%s\" does not allow updates",
+							RelationGetRelationName(resultRelationDesc))));
+	}
 
 	/* INSTEAD OF ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
@@ -4786,6 +4834,7 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 	i = 0;
 	foreach(l, resultRelations)
 	{
+		bool 		skip_rel_check = false;
 		Index		resultRelation = lfirst_int(l);
 		List	   *mergeActions = NIL;
 
@@ -4810,10 +4859,22 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 			bms_is_member(i, node->fdwDirectModifyPlans);
 
 		/*
-		 * Verify result relation is a valid target for the current operation
+		 * Verify result relation is a valid target for the current operation.
+		 * Skip this verification only when:
+		 * - the relation is a foreign table,
+		 * - the operation is DELETE or UPDATE, and
+		 * - the query involves multiple result relations
+		 *
+		 * In such cases, the validation is deferred to ExecDelete or
+		 * ExecUpdate, where the specific foreign partition is processed.
 		 */
-		CheckValidResultRel(resultRelInfo, operation, node->onConflictAction,
-							mergeActions);
+		rel = resultRelInfo->ri_RelationDesc;
+		skip_rel_check = (rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE &&
+							(operation == CMD_DELETE || operation == CMD_UPDATE) &&
+							nrels > 1);
+		if (!skip_rel_check)
+			CheckValidResultRel(resultRelInfo, operation, node->onConflictAction,
+								mergeActions);
 
 		resultRelInfo++;
 		i++;

@@ -333,14 +333,18 @@ SELECT * FROM agg_csv WHERE a < 0;
 RESET constraint_exclusion;
 -- table inheritance tests
 CREATE TABLE agg (a int2, b float4);
+INSERT INTO agg SELECT 5,0.1;
+INSERT INTO agg SELECT 6,0.2;
 ALTER FOREIGN TABLE agg_csv INHERIT agg;
 SELECT tableoid::regclass, * FROM agg;
  tableoid |  a  |    b    
 ----------+-----+---------
+ agg      |   5 |     0.1
+ agg      |   6 |     0.2
  agg_csv  | 100 |  99.097
  agg_csv  |   0 | 0.09561
  agg_csv  |  42 |  324.78
-(3 rows)
+(5 rows)
 
 SELECT tableoid::regclass, * FROM agg_csv;
  tableoid |  a  |    b    
@@ -351,16 +355,51 @@ SELECT tableoid::regclass, * FROM agg_csv;
 (3 rows)
 
 SELECT tableoid::regclass, * FROM ONLY agg;
- tableoid | a | b 
-----------+---+---
-(0 rows)
+ tableoid | a |  b  
+----------+---+-----
+ agg      | 5 | 0.1
+ agg      | 6 | 0.2
+(2 rows)
 
--- updates aren't supported
-UPDATE agg SET a = 1;
+-- updates on foreign tables are not supported
+UPDATE agg SET a = 10 WHERE b = 99.097::float4;
 ERROR:  cannot update foreign table "agg_csv"
+UPDATE agg SET a = 10 WHERE a = 100;
+ERROR:  cannot update foreign table "agg_csv"
+UPDATE agg SET a = 10;
+ERROR:  cannot update foreign table "agg_csv"
+-- these updates should be allowed
+UPDATE agg SET a = 10 WHERE b = 0.1::float4;
+UPDATE agg SET a = 20 WHERE a = 10;
+SELECT tableoid::regclass, * FROM agg;
+ tableoid |  a  |    b    
+----------+-----+---------
+ agg      |   6 |     0.2
+ agg      |  20 |     0.1
+ agg_csv  | 100 |  99.097
+ agg_csv  |   0 | 0.09561
+ agg_csv  |  42 |  324.78
+(5 rows)
+
+-- deletes on foreign tables are not supported
+DELETE from agg WHERE b = 99.097::float4;
+ERROR:  cannot delete from foreign table "agg_csv"
 DELETE FROM agg WHERE a = 100;
 ERROR:  cannot delete from foreign table "agg_csv"
--- but this should be allowed
+DELETE FROM agg;
+ERROR:  cannot delete from foreign table "agg_csv"
+-- these deletes should be allowed
+DELETE FROM agg WHERE b = 0.1::float4;
+DELETE FROM agg WHERE a = 6;
+SELECT tableoid::regclass, * FROM agg;
+ tableoid |  a  |    b    
+----------+-----+---------
+ agg_csv  | 100 |  99.097
+ agg_csv  |   0 | 0.09561
+ agg_csv  |  42 |  324.78
+(3 rows)
+
+-- this should be allowed
 SELECT tableoid::regclass, * FROM agg FOR UPDATE;
  tableoid |  a  |    b    
 ----------+-----+---------
@@ -539,15 +578,63 @@ ALTER FOREIGN TABLE agg_text OPTIONS (SET format 'text');
 ERROR:  permission denied to set the "filename" option of a file_fdw foreign table
 DETAIL:  Only roles with privileges of the "pg_read_server_files" role may set this option.
 SET ROLE regress_file_fdw_superuser;
+-- Test UPDATE/DELETE on partition table with foreign partitions
+CREATE TABLE pt_root (a int2, b float4) PARTITION BY range (a);
+CREATE TABLE pt_child PARTITION OF pt_root FOR VALUES FROM (0) TO (10);
+INSERT INTO pt_root SELECT 5, 0.1;
+INSERT INTO pt_root SELECT 6, 0.2;
+ALTER TABLE pt_root ATTACH PARTITION agg_csv FOR VALUES FROM (10) TO (20);
+SELECT * FROM pt_root;
+  a  |    b    
+-----+---------
+   5 |     0.1
+   6 |     0.2
+ 100 |  99.097
+   0 | 0.09561
+  42 |  324.78
+(5 rows)
+
+-- delete on foreign tables are not supported
+DELETE FROM pt_root WHERE b = 99.097::float4;
+ERROR:  cannot delete from foreign table "agg_csv"
+DELETE FROM pt_root;
+ERROR:  cannot delete from foreign table "agg_csv"
+-- this delete should be allowed
+DELETE FROM pt_root WHERE b = 0.1::float4;
+SELECT * FROM pt_root;
+  a  |    b    
+-----+---------
+   6 |     0.2
+ 100 |  99.097
+   0 | 0.09561
+  42 |  324.78
+(4 rows)
+
+-- updates on foreign tables are not supported
+UPDATE pt_root SET b = 0.10 WHERE b = 99.097::float4;
+ERROR:  cannot update foreign table "agg_csv"
+UPDATE pt_root SET b = 0.10;
+ERROR:  cannot update foreign table "agg_csv"
+-- this update should be allowed
+UPDATE pt_root SET b = 0.6 WHERE b = 0.2::float4;
+SELECT * FROM pt_root;
+  a  |    b    
+-----+---------
+   6 |     0.6
+ 100 |  99.097
+   0 | 0.09561
+  42 |  324.78
+(4 rows)
+
+DROP TABLE pt_root;
 -- cleanup
 RESET ROLE;
 DROP EXTENSION file_fdw CASCADE;
-NOTICE:  drop cascades to 9 other objects
+NOTICE:  drop cascades to 8 other objects
 DETAIL:  drop cascades to server file_server
 drop cascades to user mapping for regress_file_fdw_superuser on server file_server
 drop cascades to user mapping for regress_no_priv_user on server file_server
 drop cascades to foreign table agg_text
-drop cascades to foreign table agg_csv
 drop cascades to foreign table agg_bad
 drop cascades to foreign table header_match
 drop cascades to foreign table header_doesnt_match
