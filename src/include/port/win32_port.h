@@ -16,6 +16,10 @@
 #ifndef PG_WIN32_PORT_H
 #define PG_WIN32_PORT_H
 
+#ifndef _UCRT
+#error "UCRT is required (MingGW's MSVCRT environment is not supported)."
+#endif
+
 /*
  * Always build with SSPI support. Keep it as a #define in case
  * we want a switch to disable it sometime in the future.
@@ -458,9 +462,7 @@ extern int	_pglstat64(const char *name, struct stat *buf);
 
 /*
  * Versions of libintl >= 0.18? try to replace setlocale() with a macro
- * to their own versions.  Remove the macro, if it exists, because it
- * ends up calling the wrong version when the backend and libintl use
- * different versions of msvcrt.
+ * to their own versions, which gets in the way of our own.
  */
 #if defined(setlocale)
 #undef setlocale
