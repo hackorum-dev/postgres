@@ -2986,9 +2986,13 @@ match_previous_words(int pattern_id,
 					  "STATISTICS", "STORAGE",
 		/* a subset of ALTER SEQUENCE options */
 					  "INCREMENT", "MINVALUE", "MAXVALUE", "START", "NO", "CACHE", "CYCLE");
-	/* ALTER TABLE ALTER [COLUMN] <foo> SET ( */
-	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "COLUMN", MatchAny, "SET", "(") ||
-			 Matches("ALTER", "TABLE", MatchAny, "ALTER", MatchAny, "SET", "("))
+	/* ALTER TABLE ALTER [COLUMN] <foo> RESET */
+	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "COLUMN", MatchAny, "RESET") ||
+			 Matches("ALTER", "TABLE", MatchAny, "ALTER", MatchAny, "RESET"))
+		COMPLETE_WITH("(");
+	/* ALTER TABLE ALTER [COLUMN] <foo> SET|RESET ( */
+	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "COLUMN", MatchAny, "SET|RESET", "(") ||
+			 Matches("ALTER", "TABLE", MatchAny, "ALTER", MatchAny, "SET|RESET", "("))
 		COMPLETE_WITH("n_distinct", "n_distinct_inherited");
 	/* ALTER TABLE ALTER [COLUMN] <foo> SET COMPRESSION */
 	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER", "COLUMN", MatchAny, "SET", "COMPRESSION") ||
