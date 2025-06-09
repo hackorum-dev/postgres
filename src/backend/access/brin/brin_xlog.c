@@ -308,7 +308,7 @@ brin_xlog_desummarize_page(XLogReaderState *record)
 void
 brin_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 
 	switch (info & XLOG_BRIN_OPMASK)
 	{

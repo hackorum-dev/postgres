@@ -2080,7 +2080,7 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 static void
 xlogrecovery_redo(XLogReaderState *record, TimeLineID replayTLI)
 {
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 	XLogRecPtr	lsn = record->EndRecPtr;
 
 	Assert(XLogRecGetRmid(record) == RM_XLOG_ID);
@@ -2436,7 +2436,7 @@ checkTimeLineSwitch(XLogRecPtr lsn, TimeLineID newTLI, TimeLineID prevTLI,
 static bool
 getRecordTimestamp(XLogReaderState *record, TimestampTz *recordXtime)
 {
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 	uint8		xact_info = info & XLOG_XACT_OPMASK;
 	uint8		rmid = XLogRecGetRmid(record);
 
@@ -2748,7 +2748,7 @@ recoveryStopsAfter(XLogReaderState *record)
 	if (!ArchiveRecoveryRequested)
 		return false;
 
-	info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	info = XLogRecGetRmgrInfo(record);
 	rmid = XLogRecGetRmid(record);
 
 	/*

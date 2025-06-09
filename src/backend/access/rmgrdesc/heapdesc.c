@@ -184,7 +184,7 @@ void
 heap_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 
 	info &= XLOG_HEAP_OPMASK;
 	if (info == XLOG_HEAP_INSERT)
@@ -264,7 +264,7 @@ void
 heap2_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 
 	info &= XLOG_HEAP_OPMASK;
 	if (info == XLOG_HEAP2_PRUNE_ON_ACCESS ||

@@ -1181,7 +1181,7 @@ heap_xlog_inplace(XLogReaderState *record)
 void
 heap_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 
 	/*
 	 * These operations don't overwrite MVCC data so no conflict processing is
@@ -1227,7 +1227,7 @@ heap_redo(XLogReaderState *record)
 void
 heap2_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 
 	switch (info & XLOG_HEAP_OPMASK)
 	{

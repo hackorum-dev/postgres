@@ -396,7 +396,7 @@ gistRedoPageReuse(XLogReaderState *record)
 void
 gist_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 	MemoryContext oldCxt;
 
 	/*

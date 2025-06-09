@@ -1510,7 +1510,7 @@ get_tablespace_name(Oid spc_oid)
 void
 tblspc_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 
 	/* Backup blocks are not used in tblspc records */
 	Assert(!XLogRecHasAnyBlockRefs(record));

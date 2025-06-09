@@ -1890,7 +1890,7 @@ void
 seq_redo(XLogReaderState *record)
 {
 	XLogRecPtr	lsn = record->EndRecPtr;
-	uint8		info = XLogRecGetInfo(record) & XLR_RMGR_INFO_MASK;
+	uint8		info = XLogRecGetRmgrInfo(record);
 	Buffer		buffer;
 	Page		page;
 	Page		localpage;
