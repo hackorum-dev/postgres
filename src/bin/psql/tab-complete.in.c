@@ -2481,6 +2481,10 @@ match_previous_words(int pattern_id,
 		COMPLETE_WITH("ADD", "ALTER", "DISABLE TRIGGER", "DROP", "ENABLE",
 					  "INHERIT", "NO INHERIT", "OPTIONS", "OWNER TO",
 					  "RENAME", "SET", "VALIDATE CONSTRAINT");
+	else if (Matches("ALTER", "FOREIGN", "TABLE", MatchAny, "SET"))
+		COMPLETE_WITH("SCHEMA");
+	else if (Matches("ALTER", "FOREIGN", "TABLE", MatchAny, "SET", "SCHEMA"))
+		COMPLETE_WITH_QUERY(Query_for_list_of_schemas);
 
 	/* ALTER INDEX */
 	else if (Matches("ALTER", "INDEX"))
