@@ -1007,23 +1007,18 @@ typedef BTScanPosData *BTScanPos;
 				!BufferIsValid((scanpos).buf)), \
 	BufferIsValid((scanpos).buf) \
 )
-#define BTScanPosUnpin(scanpos) \
-	do { \
-		ReleaseBuffer((scanpos).buf); \
-		(scanpos).buf = InvalidBuffer; \
-	} while (0)
-#define BTScanPosUnpinIfPinned(scanpos) \
-	do { \
-		if (BTScanPosIsPinned(scanpos)) \
-			BTScanPosUnpin(scanpos); \
-	} while (0)
-
 #define BTScanPosIsValid(scanpos) \
 ( \
 	AssertMacro(BlockNumberIsValid((scanpos).currPage) || \
 				!BufferIsValid((scanpos).buf)), \
 	BlockNumberIsValid((scanpos).currPage) \
 )
+
+#define BTScanPosUnpin(scanpos) \
+	do { \
+		ReleaseBuffer((scanpos).buf); \
+		(scanpos).buf = InvalidBuffer; \
+	} while (0)
 #define BTScanPosInvalidate(scanpos) \
 	do { \
 		(scanpos).buf = InvalidBuffer; \
