@@ -1201,6 +1201,11 @@ CREATE VIEW pg_stat_wal AS
         w.stats_reset
     FROM pg_stat_get_wal() w;
 
+CREATE VIEW pg_stat_multixact AS
+    SELECT
+        pg_stat_get_multixact_update_timestamp() AS update_timestamp,
+        pg_stat_get_multixact_members() AS members;
+
 CREATE VIEW pg_stat_progress_analyze AS
     SELECT
         S.pid AS pid, S.datid AS datid, D.datname AS datname,

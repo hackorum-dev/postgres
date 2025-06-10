@@ -1304,6 +1304,18 @@ pg_stat_get_buf_alloc(PG_FUNCTION_ARGS)
 	PG_RETURN_INT64(pgstat_fetch_stat_bgwriter()->buf_alloc);
 }
 
+Datum
+pg_stat_get_multixact_members(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(pgstat_fetch_stat_multixact()->num_members_used);
+}
+
+Datum
+pg_stat_get_multixact_update_timestamp(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_TIMESTAMPTZ(pgstat_fetch_stat_multixact()->stat_update_timestamp);
+}
+
 /*
 * When adding a new column to the pg_stat_io view and the
 * pg_stat_get_backend_io() function, add a new enum value here above
@@ -1883,6 +1895,7 @@ pg_stat_reset_shared(PG_FUNCTION_ARGS)
 		XLogPrefetchResetStats();
 		pgstat_reset_of_kind(PGSTAT_KIND_SLRU);
 		pgstat_reset_of_kind(PGSTAT_KIND_WAL);
+		pgstat_reset_of_kind(PGSTAT_KIND_MULTIXACT);
 
 		PG_RETURN_VOID();
 	}
@@ -1903,6 +1916,8 @@ pg_stat_reset_shared(PG_FUNCTION_ARGS)
 		pgstat_reset_of_kind(PGSTAT_KIND_SLRU);
 	else if (strcmp(target, "wal") == 0)
 		pgstat_reset_of_kind(PGSTAT_KIND_WAL);
+	else if (strcmp(target, "multixact") == 0)
+		pgstat_reset_of_kind(PGSTAT_KIND_MULTIXACT);
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),

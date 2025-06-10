@@ -278,8 +278,9 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
    shared memory statistics) in the views
    <structname>pg_stat_xact_all_tables</structname>,
    <structname>pg_stat_xact_sys_tables</structname>,
-   <structname>pg_stat_xact_user_tables</structname>, and
-   <structname>pg_stat_xact_user_functions</structname>.  These numbers do not act as
+   <structname>pg_stat_xact_user_tables</structname>,
+   <structname>pg_stat_xact_user_functions</structname> and
+   <structname>pg_stat_multixact</structname>.  These numbers do not act as
    stated above; instead they update continuously throughout the transaction.
   </para>
 
@@ -491,6 +492,14 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
        See <link linkend="monitoring-pg-stat-io-view">
        <structname>pg_stat_io</structname></link> for details.
      </entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_multixact</structname><indexterm><primary>pg_stat_multixact</primary></indexterm></entry>
+      <entry>One row only, showing statistics about multixact membership consumption. See
+       <link linkend="monitoring-pg-stat-multixact-view">
+       <structname>pg_stat_multixact</structname></link> for details.
+      </entry>
      </row>
 
      <row>
@@ -3241,6 +3250,56 @@ description | Waiting for a newly initialized WAL file to reach durable storage
    skipped restartpoints, while <structfield>restartpoints_done</structfield>
    tracks only the completed ones.
   </para>
+ </sect2>
+
+ <sect2 id="monitoring-pg-stat-multixact-view">
+   <title><structname>pg_stat_multixact</structname></title>
+
+   <indexterm>
+     <primary>pg_stat_multixact</primary>
+   </indexterm>
+
+   <para>
+     The <structname>pg_stat_multixact</structname> view will always have
+     a single row, containing data about multixact membership consumption
+     of the cluster.
+   </para>
+
+   <table id="pg-stat-multixact-view" xreflabel="pg_stat_multixact">
+     <title><structname>pg_stat_multixact</structname> View</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>update_timestamp</structfield> <type>timestamp with time zone</type>
+      </para>
+      <para>
+       Time at which the statistic was last updated.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>members</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of multixact members in use.
+      </para></entry>
+     </row>
+    </tbody>
+   </tgroup>
+   </table>
  </sect2>
 
  <sect2 id="monitoring-pg-stat-wal-view">

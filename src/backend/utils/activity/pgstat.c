@@ -479,6 +479,24 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 		.reset_all_cb = pgstat_wal_reset_all_cb,
 		.snapshot_cb = pgstat_wal_snapshot_cb,
 	},
+
+	[PGSTAT_KIND_MULTIXACT] = {
+		.name = "multixact",
+
+		.fixed_amount = true,
+		.write_to_file = true,
+
+		.snapshot_ctl_off = offsetof(PgStat_Snapshot, multixact),
+		.shared_ctl_off = offsetof(PgStat_ShmemControl, multixact),
+		.shared_data_off = offsetof(PgStatShared_MultiXact, stats),
+		.shared_data_len = sizeof(((PgStatShared_MultiXact *) 0)->stats),
+
+		.init_shmem_cb = pgstat_multixact_init_shmem_cb,
+		.flush_static_cb = pgstat_flush_multixact_cb,
+		.have_static_pending_cb = pgstat_multixact_have_pending_cb,
+		.reset_all_cb = pgstat_multixact_reset_all_cb,
+		.snapshot_cb = pgstat_multixact_snapshot_cb,
+	},
 };
 
 /*

@@ -1262,6 +1262,12 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 
 	MultiXactState->nextOffset += nmembers;
 
+	/*
+	 * Record multixact membership space telemetry while we have the lock. We
+	 * do not use the saved variables above because they are stale.
+	 */
+	pgstat_update_multixact_stats(MultiXactState->nextOffset - MultiXactState->oldestOffset);
+
 	LWLockRelease(MultiXactGenLock);
 
 	debug_elog4(DEBUG2, "GetNew: returning %u offset %u", result, *offset);
@@ -2986,6 +2992,9 @@ MultiXactMemberFreezeThreshold(void)
 	/* If we can't determine member space utilization, assume the worst. */
 	if (!ReadMultiXactCounts(&multixacts, &members))
 		return 0;
+
+	/* Record the number of multixact members. */
+	pgstat_update_multixact_stats(members);
 
 	/* If member space utilization is low, no special action is required. */
 	if (members <= MULTIXACT_MEMBER_SAFE_THRESHOLD)

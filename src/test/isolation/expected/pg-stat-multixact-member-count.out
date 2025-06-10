@@ -1,0 +1,50 @@
+Parsed test spec with 3 sessions
+
+starting permutation: s1_stat s1_lock s2_lock s2_stat s1_commit s2_commit s3_state s3_commit
+step s1_stat: 
+	INSERT INTO pg_stat_multixact_count_state VALUES (1, (SELECT members FROM pg_stat_multixact));
+
+step s1_lock: 
+	SELECT * FROM pg_stat_multixact_count_check FOR SHARE;
+
+value
+-----
+    1
+(1 row)
+
+step s2_lock: 
+	SELECT * FROM pg_stat_multixact_count_check FOR SHARE;
+
+value
+-----
+    1
+(1 row)
+
+step s2_stat: 
+	INSERT INTO pg_stat_multixact_count_state VALUES (2, (SELECT members FROM pg_stat_multixact));
+
+step s1_commit: 
+	COMMIT;
+
+step s2_commit: 
+	COMMIT;
+
+step s3_state: 
+	WITH session_1_count AS (
+		SELECT member_count FROM pg_stat_multixact_count_state WHERE session = 1
+	),
+	session_2_count AS (
+		SELECT member_count FROM pg_stat_multixact_count_state WHERE session = 2
+	)
+	SELECT s2.member_count - s1.member_count AS diff
+	FROM session_1_count s1
+	CROSS JOIN session_2_count s2;
+
+diff
+----
+   2
+(1 row)
+
+step s3_commit: 
+	COMMIT;
+

@@ -265,6 +265,19 @@ typedef struct PgStat_CheckpointerStats
 	TimestampTz stat_reset_timestamp;
 } PgStat_CheckpointerStats;
 
+/* --------
+ * PgStat_MultiXactStats		MultiXact stats
+ *
+ * This struct should contain only actual event counters, because we make use
+ * of pg_memory_is_all_zeros() to detect whether there are any stats updates
+ * to apply.
+ * ---------
+ */
+typedef struct PgStat_MultiXactStats
+{
+	PgStat_Counter num_members_used;
+	TimestampTz stat_update_timestamp;
+} PgStat_MultiXactStats;
 
 /*
  * Types related to counting IO operations
@@ -578,6 +591,12 @@ extern PgStat_BgWriterStats *pgstat_fetch_stat_bgwriter(void);
 extern void pgstat_report_checkpointer(void);
 extern PgStat_CheckpointerStats *pgstat_fetch_stat_checkpointer(void);
 
+
+/*
+ * Functions in pgstat_multixact.c
+ */
+extern PgStat_MultiXactStats *pgstat_fetch_stat_multixact(void);
+extern void pgstat_update_multixact_stats(uint32 nmembers);
 
 /*
  * Functions in pgstat_io.c

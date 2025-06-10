@@ -5991,6 +5991,14 @@
   proname => 'pg_stat_get_buf_alloc', provolatile => 's', proparallel => 'r',
   prorettype => 'int8', proargtypes => '', prosrc => 'pg_stat_get_buf_alloc' },
 
+{ oid => '9999', descr => 'statistics: number of multixact members in use',
+  proname => 'pg_stat_get_multixact_members', provolatile => 's', proparallel => 'r',
+  prorettype => 'int8', proargtypes => '', prosrc => 'pg_stat_get_multixact_members' },
+{ oid => '9998', descr => 'statistics: timestamp of the last time the multixact members count was updated',
+  proname => 'pg_stat_get_multixact_update_timestamp', provolatile => 's',
+  proparallel => 'r', prorettype => 'timestamptz', proargtypes => '',
+  prosrc => 'pg_stat_get_multixact_update_timestamp' },
+
 { oid => '6214', descr => 'statistics: per backend type IO statistics',
   proname => 'pg_stat_get_io', prorows => '30', proretset => 't',
   provolatile => 'v', proparallel => 'r', prorettype => 'record',

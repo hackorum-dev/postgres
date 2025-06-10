@@ -417,7 +417,12 @@ typedef struct PgStatShared_Wal
 	PgStat_WalStats stats;
 } PgStatShared_Wal;
 
-
+typedef struct PgStatShared_MultiXact
+{
+	/* lock protects ->stats */
+	LWLock		lock;
+	PgStat_MultiXactStats stats;
+} PgStatShared_MultiXact;
 
 /* ----------
  * Types and definitions for different kinds of variable-amount stats.
@@ -501,6 +506,7 @@ typedef struct PgStat_ShmemControl
 	PgStatShared_IO io;
 	PgStatShared_SLRU slru;
 	PgStatShared_Wal wal;
+	PgStatShared_MultiXact multixact;
 
 	/*
 	 * Custom stats data with fixed-numbered objects, indexed by (PgStat_Kind
@@ -534,6 +540,8 @@ typedef struct PgStat_Snapshot
 	PgStat_SLRUStats slru[SLRU_NUM_ELEMENTS];
 
 	PgStat_WalStats wal;
+
+	PgStat_MultiXactStats multixact;
 
 	/*
 	 * Data in snapshot for custom fixed-numbered statistics, indexed by
@@ -756,6 +764,15 @@ extern void pgstat_wal_init_shmem_cb(void *stats);
 extern void pgstat_wal_reset_all_cb(TimestampTz ts);
 extern void pgstat_wal_snapshot_cb(void);
 
+
+/*
+ * Functions in pgstat_multixact.c
+ */
+extern void pgstat_multixact_init_shmem_cb(void *stats);
+extern bool pgstat_multixact_have_pending_cb(void);
+extern void pgstat_multixact_snapshot_cb(void);
+extern void pgstat_multixact_reset_all_cb(TimestampTz ts);
+extern bool pgstat_flush_multixact_cb(bool nowait);
 
 /*
  * Functions in pgstat_subscription.c
