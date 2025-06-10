@@ -709,7 +709,7 @@ EstimateLibraryStateSpace(void)
 		 file_scanner = file_scanner->next)
 		size = add_size(size, strlen(file_scanner->filename) + 1);
 
-	return size;
+	return size + 1; /* Additional byte for final \0 byte */
 }
 
 /*
