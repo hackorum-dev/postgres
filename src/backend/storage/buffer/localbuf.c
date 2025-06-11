@@ -26,6 +26,7 @@
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
 #include "utils/resowner.h"
+#include "utils/syscache.h"
 
 
 /*#define LBDEBUG*/
@@ -225,6 +226,7 @@ GetLocalVictimBuffer(void)
 	int			victim_bufid;
 	int			trycounter;
 	BufferDesc *bufHdr;
+	MemoryContext old_mcxt = CurrentMemoryContext;
 
 	ResourceOwnerEnlarge(CurrentResourceOwner);
 
@@ -281,12 +283,88 @@ GetLocalVictimBuffer(void)
 		LocalBufHdrGetBlock(bufHdr) = GetLocalBufferStorage();
 	}
 
-	/*
-	 * this buffer is not referenced but it might still be dirty. if that's
-	 * the case, write it out before reusing it!
-	 */
-	if (pg_atomic_read_u32(&bufHdr->state) & BM_DIRTY)
-		FlushLocalBuffer(bufHdr, NULL);
+	PG_TRY();
+	{
+		/*
+		 * this buffer is not referenced but it might still be dirty. if that's
+		 * the case, write it out before reusing it!
+		 */
+		if (pg_atomic_read_u32(&bufHdr->state) & BM_DIRTY)
+			FlushLocalBuffer(bufHdr, NULL);
+	}
+	PG_CATCH();
+	{
+		MemoryContext	error_mctx;
+		ErrorData		*error;
+		bool			can_handle_error = false;
+
+		/* Switch to the original context & copy edata */
+		error_mctx = MemoryContextSwitchTo(old_mcxt);
+		error = CopyErrorData();
+
+		/*
+		 * If we failed during file access, there can be two cases :
+		 * 1) Buffer belongs to relation deleted from other session.
+		 * 2) Any other error.
+		 *
+		 * In first case we still can continue without throwing error - just
+		 * don't try to flush this buffer.
+		 */
+		errcode_for_file_access();
+		if (error->sqlerrcode == ERRCODE_UNDEFINED_FILE)
+		{
+			HeapTuple	tuple;
+			Oid			estimated_oid;
+
+			/*
+			 * Buffer tag contains only relfilenode, that don't necessary
+			 * matches relation's oid. For lack of other information, just
+			 * assume that oid == relfilenumber.
+			 */
+			estimated_oid = BufTagGetRelFileLocator(&bufHdr->tag).relNumber;
+
+			/*
+			 * Try to find relcache entry for relation. If we fail - that means
+			 * that relation was deleted (e.g. first case).
+			 */
+			tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(estimated_oid));
+			if (!HeapTupleIsValid(tuple))
+			{
+				uint32			buf_state;
+				RelPathStr		path;
+				SMgrRelation	reln;
+
+				can_handle_error = true;
+
+				reln = smgropen(BufTagGetRelFileLocator(&bufHdr->tag),
+								MyProcNumber);
+
+				path = relpath(reln->smgr_rlocator,
+							   BufTagGetForkNum(&bufHdr->tag));
+
+				ereport(WARNING,
+						(errmsg("encountered dirty local buffer that belongs to"
+								"to deleted relation \"%s\"", path.str),
+						 errhint("if this relation had not been deleted from "
+								 "other session, then local buffers are corrupted")));
+
+				buf_state = pg_atomic_read_u32(&bufHdr->state);
+				buf_state &= ~BM_IO_ERROR;
+				buf_state &= ~BM_DIRTY;
+				pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
+			}
+		}
+
+		if (!can_handle_error)
+		{
+			MemoryContextSwitchTo(error_mctx);
+			PG_RE_THROW();
+		}
+
+		FlushErrorState();
+		FreeErrorData(error);
+	}
+	PG_END_TRY();
 
 	/*
 	 * Remove the victim buffer from the hashtable and mark as invalid.
