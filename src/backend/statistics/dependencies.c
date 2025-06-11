@@ -219,6 +219,7 @@ dependency_degree(StatsBuildData *data, int k, AttrNumber *dependency)
 	MultiSortSupport mss;
 	SortItem   *items;
 	AttrNumber *attnums_dep;
+	VacAttrStats *last_col_stats;
 
 	/* counters valid within a group */
 	int			group_size = 0;
@@ -229,6 +230,17 @@ dependency_degree(StatsBuildData *data, int k, AttrNumber *dependency)
 
 	/* Make sure we have at least two input attributes. */
 	Assert(k >= 2);
+
+	/*
+	 * If the last column has only one distinct value,
+	 * or if it has as many distinct values as rows (implying a unique key),
+	 * the dependency degree is 1.0.
+	 */
+	last_col_stats = data->stats[dependency[k - 1]];
+	if (last_col_stats->stadistinct == 1.0 || last_col_stats->stadistinct == -1.0)
+	{
+		return 1.0;
+	}
 
 	/* sort info for all attributes columns */
 	mss = multi_sort_init(k);
