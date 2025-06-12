@@ -134,6 +134,7 @@ typedef struct
 extern EndOfWalRecoveryInfo *FinishWalRecovery(void);
 extern void ShutdownWalRecovery(void);
 extern void RemovePromoteSignalFiles(void);
+extern void RemoveDemoteSignalFiles(void);
 
 extern bool HotStandbyActive(void);
 extern XLogRecPtr GetXLogReplayRecPtr(TimeLineID *replayTLI);
@@ -146,6 +147,7 @@ extern XLogRecPtr GetCurrentReplayRecPtr(TimeLineID *replayEndTLI);
 
 extern bool PromoteIsTriggered(void);
 extern bool CheckPromoteSignal(void);
+extern bool CheckDemoteSignal(void);
 extern void WakeupRecovery(void);
 
 extern void StartupRequestWalReceiverRestart(void);

@@ -5628,6 +5628,7 @@ StartupXLOG(void)
 	XLogRecPtr	missingContrecPtr;
 	TransactionId oldestActiveXID;
 	bool		promoted = false;
+	bool		is_demoting = false;
 
 	/*
 	 * We should have an aux process resource owner to use, and we should not
@@ -5693,6 +5694,13 @@ StartupXLOG(void)
 							str_time(ControlFile->time))));
 			break;
 
+		case DB_DEMOTING:
+			ereport(LOG,
+					(errmsg("database system was demoted at %s",
+							str_time(ControlFile->time))));
+			is_demoting = true;
+			break;
+
 		default:
 			ereport(FATAL,
 					(errcode(ERRCODE_DATA_CORRUPTED),
@@ -5732,7 +5740,8 @@ StartupXLOG(void)
 	 *   persisted.  To avoid that, fsync the entire data directory.
 	 */
 	if (ControlFile->state != DB_SHUTDOWNED &&
-		ControlFile->state != DB_SHUTDOWNED_IN_RECOVERY)
+		ControlFile->state != DB_SHUTDOWNED_IN_RECOVERY &&
+		ControlFile->state != DB_DEMOTING)
 	{
 		RemoveTempXlogFiles();
 		SyncDataDirectory();
@@ -5822,26 +5831,55 @@ StartupXLOG(void)
 	 * control file. On recovery, all unlogged relations are blown away, so
 	 * the unlogged LSN counter can be reset too.
 	 */
-	if (ControlFile->state == DB_SHUTDOWNED)
+	if (ControlFile->state == DB_SHUTDOWNED ||
+		ControlFile->state == DB_DEMOTING)
 		pg_atomic_write_membarrier_u64(&XLogCtl->unloggedLSN,
 									   ControlFile->unloggedLSN);
 	else
 		pg_atomic_write_membarrier_u64(&XLogCtl->unloggedLSN,
 									   FirstNormalUnloggedLSN);
 
+	if (!is_demoting)
+	{
+		/*
+		 * Copy any missing timeline history files between 'now' and the
+		 * recovery target timeline from archive to pg_wal. While we don't need
+		 * those files ourselves - the history file of the recovery target
+		 * timeline covers all the previous timelines in the history too - a
+		 * cascading standby server might be interested in them. Or, if you
+		 * archive the WAL from this server to a different archive than the
+		 * primary, it'd be good for all the history files to get archived
+		 * there after failover, so that you can use one of the old timelines
+		 * as a PITR target. Timeline history files are small, so it's better
+		 * to copy them unnecessarily than not copy them and regret later.
+		 */
+		restoreTimeLineHistoryFiles(checkPoint.ThisTimeLineID, recoveryTargetTLI);
+	}
+
 	/*
-	 * Copy any missing timeline history files between 'now' and the recovery
-	 * target timeline from archive to pg_wal. While we don't need those files
-	 * ourselves - the history file of the recovery target timeline covers all
-	 * the previous timelines in the history too - a cascading standby server
-	 * might be interested in them. Or, if you archive the WAL from this
-	 * server to a different archive than the primary, it'd be good for all
-	 * the history files to get archived there after failover, so that you can
-	 * use one of the old timelines as a PITR target. Timeline history files
-	 * are small, so it's better to copy them unnecessarily than not copy them
-	 * and regret later.
+	 * Following restoreTwoPhaseData() needs RecoveryInProgress() to return
+	 * the appropriate state as it calls PrepareRedoAdd()
 	 */
-	restoreTimeLineHistoryFiles(checkPoint.ThisTimeLineID, recoveryTargetTLI);
+	if (InRecovery)
+	{
+		/* Initialize state for RecoveryInProgress() */
+		SpinLockAcquire(&XLogCtl->info_lck);
+		if (InArchiveRecovery)
+			XLogCtl->SharedRecoveryState = RECOVERY_STATE_ARCHIVE;
+		else
+			XLogCtl->SharedRecoveryState = RECOVERY_STATE_CRASH;
+		SpinLockRelease(&XLogCtl->info_lck);
+
+		/*
+		 * Update pg_control to show that we are recovering and to show the
+		 * selected checkpoint as the place we are starting from. We also mark
+		 * pg_control with any minimum recovery stop point obtained from a
+		 * backup history file.
+		 *
+		 * No need to hold ControlFileLock yet, we aren't up far enough.
+		 */
+		UpdateControlFile();
+	}
 
 	/*
 	 * Before running in recovery, scan pg_twophase and fill in its status to
@@ -5877,24 +5915,6 @@ StartupXLOG(void)
 	/* REDO */
 	if (InRecovery)
 	{
-		/* Initialize state for RecoveryInProgress() */
-		SpinLockAcquire(&XLogCtl->info_lck);
-		if (InArchiveRecovery)
-			XLogCtl->SharedRecoveryState = RECOVERY_STATE_ARCHIVE;
-		else
-			XLogCtl->SharedRecoveryState = RECOVERY_STATE_CRASH;
-		SpinLockRelease(&XLogCtl->info_lck);
-
-		/*
-		 * Update pg_control to show that we are recovering and to show the
-		 * selected checkpoint as the place we are starting from. We also mark
-		 * pg_control with any minimum recovery stop point obtained from a
-		 * backup history file.
-		 *
-		 * No need to hold ControlFileLock yet, we aren't up far enough.
-		 */
-		UpdateControlFile();
-
 		/*
 		 * If there was a backup label file, it's done its job and the info
 		 * has now been propagated into pg_control.  We must get rid of the
@@ -5976,7 +5996,7 @@ StartupXLOG(void)
 
 			InitRecoveryTransactionEnvironment();
 
-			if (wasShutdown)
+			if (wasShutdown || is_demoting)
 				oldestActiveXID = PrescanPreparedTransactions(&xids, &nxids);
 			else
 				oldestActiveXID = checkPoint.oldestActiveXid;
@@ -5998,7 +6018,7 @@ StartupXLOG(void)
 			 * empty running-xacts record and use that here and now. Recover
 			 * additional standby state for prepared transactions.
 			 */
-			if (wasShutdown)
+			if (wasShutdown || is_demoting)
 			{
 				RunningTransactionsData running;
 				TransactionId latestCompletedXid;
@@ -6207,40 +6227,47 @@ StartupXLOG(void)
 	Insert->CurrBytePos = XLogRecPtrToBytePos(EndOfLog);
 
 	/*
-	 * Tricky point here: lastPage contains the *last* block that the LastRec
-	 * record spans, not the one it starts in.  The last block is indeed the
-	 * one we want to use.
+	 * XLog buffers initialization vars are alreday set after a demote, no need
+	 * to deal with them in this situation
 	 */
-	if (EndOfLog % XLOG_BLCKSZ != 0)
-	{
-		char	   *page;
-		int			len;
-		int			firstIdx;
-
-		firstIdx = XLogRecPtrToBufIdx(EndOfLog);
-		len = EndOfLog - endOfRecoveryInfo->lastPageBeginPtr;
-		Assert(len < XLOG_BLCKSZ);
-
-		/* Copy the valid part of the last block, and zero the rest */
-		page = &XLogCtl->pages[firstIdx * XLOG_BLCKSZ];
-		memcpy(page, endOfRecoveryInfo->lastPage, len);
-		memset(page + len, 0, XLOG_BLCKSZ - len);
-
-		pg_atomic_write_u64(&XLogCtl->xlblocks[firstIdx], endOfRecoveryInfo->lastPageBeginPtr + XLOG_BLCKSZ);
-		pg_atomic_write_u64(&XLogCtl->InitializedUpTo, endOfRecoveryInfo->lastPageBeginPtr + XLOG_BLCKSZ);
-		XLogCtl->InitializedFrom = endOfRecoveryInfo->lastPageBeginPtr;
-	}
-	else
+	if (!is_demoting)
 	{
 		/*
-		 * There is no partial block to copy. Just set InitializedUpTo, and
-		 * let the first attempt to insert a log record to initialize the next
-		 * buffer.
+		 * Tricky point here: lastPage contains the *last* block that the LastRec
+		 * record spans, not the one it starts in.  The last block is indeed the
+		 * one we want to use.
 		 */
-		pg_atomic_write_u64(&XLogCtl->InitializedUpTo, EndOfLog);
-		XLogCtl->InitializedFrom = EndOfLog;
+		if (EndOfLog % XLOG_BLCKSZ != 0)
+		{
+			char	   *page;
+			int			len;
+			int			firstIdx;
+
+			firstIdx = XLogRecPtrToBufIdx(EndOfLog);
+			len = EndOfLog - endOfRecoveryInfo->lastPageBeginPtr;
+			Assert(len < XLOG_BLCKSZ);
+
+			/* Copy the valid part of the last block, and zero the rest */
+			page = &XLogCtl->pages[firstIdx * XLOG_BLCKSZ];
+			memcpy(page, endOfRecoveryInfo->lastPage, len);
+			memset(page + len, 0, XLOG_BLCKSZ - len);
+
+			pg_atomic_write_u64(&XLogCtl->xlblocks[firstIdx], endOfRecoveryInfo->lastPageBeginPtr + XLOG_BLCKSZ);
+			pg_atomic_write_u64(&XLogCtl->InitializedUpTo, endOfRecoveryInfo->lastPageBeginPtr + XLOG_BLCKSZ);
+			XLogCtl->InitializedFrom = endOfRecoveryInfo->lastPageBeginPtr;
+		}
+		else
+		{
+			/*
+			 * There is no partial block to copy. Just set InitializedUpTo, and
+			 * let the first attempt to insert a log record to initialize the next
+			 * buffer.
+			 */
+			pg_atomic_write_u64(&XLogCtl->InitializedUpTo, EndOfLog);
+			XLogCtl->InitializedFrom = EndOfLog;
+		}
+		pg_atomic_write_u64(&XLogCtl->InitializeReserved, pg_atomic_read_u64(&XLogCtl->InitializedUpTo));
 	}
-	pg_atomic_write_u64(&XLogCtl->InitializeReserved, pg_atomic_read_u64(&XLogCtl->InitializedUpTo));
 
 	/*
 	 * Update local and shared status.  This is OK to do without any locks
@@ -6522,30 +6549,20 @@ bool
 RecoveryInProgress(void)
 {
 	/*
-	 * We check shared state each time only until we leave recovery mode. We
-	 * can't re-enter recovery, so there's no need to keep checking after the
-	 * shared variable has once been seen false.
+	 * use volatile pointer to make sure we make a fresh read of the
+	 * shared variable.
 	 */
-	if (!LocalRecoveryInProgress)
-		return false;
-	else
-	{
-		/*
-		 * use volatile pointer to make sure we make a fresh read of the
-		 * shared variable.
-		 */
-		volatile XLogCtlData *xlogctl = XLogCtl;
+	volatile XLogCtlData *xlogctl = XLogCtl;
 
-		LocalRecoveryInProgress = (xlogctl->SharedRecoveryState != RECOVERY_STATE_DONE);
+	LocalRecoveryInProgress = (xlogctl->SharedRecoveryState != RECOVERY_STATE_DONE);
 
-		/*
-		 * Note: We don't need a memory barrier when we're still in recovery.
-		 * We might exit recovery immediately after return, so the caller
-		 * can't rely on 'true' meaning that we're still in recovery anyway.
-		 */
+	/*
+	 * Note: We don't need a memory barrier when we're still in recovery.
+	 * We might exit recovery immediately after return, so the caller
+	 * can't rely on 'true' meaning that we're still in recovery anyway.
+	 */
 
-		return LocalRecoveryInProgress;
-	}
+	return LocalRecoveryInProgress;
 }
 
 /*
@@ -6789,6 +6806,8 @@ GetLastSegSwitchData(XLogRecPtr *lastSwitchLSN)
 void
 ShutdownXLOG(int code, Datum arg)
 {
+	bool is_demoting = DatumGetBool(arg);
+
 	/*
 	 * We should have an aux process resource owner to use, and we should not
 	 * be in a transaction that's installed some other resowner.
@@ -6800,7 +6819,7 @@ ShutdownXLOG(int code, Datum arg)
 
 	/* Don't be chatty in standalone mode */
 	ereport(IsPostmasterEnvironment ? LOG : NOTICE,
-			(errmsg("shutting down")));
+			(is_demoting?errmsg("demoting"):errmsg("shutting down")));
 
 	/*
 	 * Signal walsenders to move to stopping state.
@@ -6826,7 +6845,21 @@ ShutdownXLOG(int code, Datum arg)
 		if (XLogArchivingActive())
 			RequestXLogSwitch(false);
 
-		CreateCheckPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
+		if (is_demoting)
+		{
+			/*
+			 * FIXME demote: avoiding checkpoint?
+			 * A checkpoint is probably running during a demote action. If
+			 * we don't want to wait for the checkpoint during the demote,
+			 * we might need to cancel it as it will not be able to write
+			 * to the WAL after the demote.
+			 */
+			CreateCheckPoint(CHECKPOINT_IS_DEMOTE | CHECKPOINT_IMMEDIATE);
+			ShutdownPreparedTransactions();
+			ShutdownMultiXact(); // FIXME: replace with MultiXactShmemInit()?
+		}
+		else
+			CreateCheckPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
 	}
 }
 
@@ -6851,8 +6884,9 @@ LogCheckpointStart(int flags, bool restartpoint)
 	else
 		ereport(LOG,
 		/* translator: the placeholders show checkpoint options */
-				(errmsg("checkpoint starting:%s%s%s%s%s%s%s%s",
+				(errmsg("checkpoint starting:%s%s%s%s%s%s%s%s%s",
 						(flags & CHECKPOINT_IS_SHUTDOWN) ? " shutdown" : "",
+						(flags & CHECKPOINT_IS_DEMOTE) ? " demote" : "",
 						(flags & CHECKPOINT_END_OF_RECOVERY) ? " end-of-recovery" : "",
 						(flags & CHECKPOINT_IMMEDIATE) ? " immediate" : "",
 						(flags & CHECKPOINT_FORCE) ? " force" : "",
@@ -7041,6 +7075,7 @@ update_checkpoint_display(int flags, bool restartpoint, bool reset)
  *
  * flags is a bitwise OR of the following:
  *	CHECKPOINT_IS_SHUTDOWN: checkpoint is for database shutdown.
+ *	CHECKPOINT_IS_DEMOTE: checkpoint is for demote.
  *	CHECKPOINT_END_OF_RECOVERY: checkpoint is for end of WAL recovery.
  *	CHECKPOINT_IMMEDIATE: finish the checkpoint ASAP,
  *		ignoring checkpoint_completion_target parameter.
@@ -7077,6 +7112,7 @@ bool
 CreateCheckPoint(int flags)
 {
 	bool		shutdown;
+	bool		demote;
 	CheckPoint	checkPoint;
 	XLogRecPtr	recptr;
 	XLogSegNo	_logSegNo;
@@ -7089,13 +7125,19 @@ CreateCheckPoint(int flags)
 	int			oldXLogAllowed = 0;
 
 	/*
-	 * An end-of-recovery checkpoint is really a shutdown checkpoint, just
-	 * issued at a different time.
+	 * An end-of-recovery checkpoint or demote is really a shutdown checkpoint,
+	 * just issued at a different time.
 	 */
-	if (flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY))
+	if (flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY |
+				 CHECKPOINT_IS_DEMOTE))
 		shutdown = true;
 	else
 		shutdown = false;
+
+	if (flags & CHECKPOINT_IS_DEMOTE)
+		demote = true;
+	else
+		demote = false;
 
 	/* sanity check */
 	if (RecoveryInProgress() && (flags & CHECKPOINT_END_OF_RECOVERY) == 0)
@@ -7127,7 +7169,7 @@ CreateCheckPoint(int flags)
 	if (shutdown)
 	{
 		LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
-		ControlFile->state = DB_SHUTDOWNING;
+		ControlFile->state = demote? DB_DEMOTING:DB_SHUTDOWNING;
 		UpdateControlFile();
 		LWLockRelease(ControlFileLock);
 	}
@@ -7158,7 +7200,7 @@ CreateCheckPoint(int flags)
 	 * avoid inserting duplicate checkpoints when the system is idle.
 	 */
 	if ((flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY |
-				  CHECKPOINT_FORCE)) == 0)
+				  CHECKPOINT_FORCE | CHECKPOINT_IS_DEMOTE)) == 0)
 	{
 		if (last_important_lsn == ControlFile->checkPoint)
 		{
@@ -7386,8 +7428,8 @@ CreateCheckPoint(int flags)
 	 * allows us to reconstruct the state of running transactions during
 	 * archive recovery, if required. Skip, if this info disabled.
 	 *
-	 * If we are shutting down, or Startup process is completing crash
-	 * recovery we don't need to write running xact data.
+	 * If we are shutting down, demoting or Startup process is completing
+	 * crash recovery we don't need to write running xact data.
 	 */
 	if (!shutdown && XLogStandbyInfoActive())
 		LogStandbySnapshot();
@@ -7399,18 +7441,21 @@ CreateCheckPoint(int flags)
 	 */
 	XLogBeginInsert();
 	XLogRegisterData(&checkPoint, sizeof(checkPoint));
-	recptr = XLogInsert(RM_XLOG_ID,
-						shutdown ? XLOG_CHECKPOINT_SHUTDOWN :
-						XLOG_CHECKPOINT_ONLINE);
+	if (demote)
+		recptr = XLogInsert(RM_XLOG_ID, XLOG_CHECKPOINT_DEMOTE);
+	else if (shutdown)
+		recptr = XLogInsert(RM_XLOG_ID, XLOG_CHECKPOINT_SHUTDOWN);
+	else
+		recptr = XLogInsert(RM_XLOG_ID, XLOG_CHECKPOINT_ONLINE);
 
 	XLogFlush(recptr);
 
 	/*
-	 * We mustn't write any new WAL after a shutdown checkpoint, or it will be
-	 * overwritten at next startup.  No-one should even try, this just allows
-	 * sanity-checking.  In the case of an end-of-recovery checkpoint, we want
-	 * to just temporarily disable writing until the system has exited
-	 * recovery.
+	 * We mustn't write any new WAL after a shutdown or demote checkpoint, or
+	 * it will be overwritten at next startup.  No-one should even try, this
+	 * just allows sanity-checking.  In the case of an end-of-recovery
+	 * checkpoint, we want to just temporarily disable writing until the system
+	 * has exited recovery.
 	 */
 	if (shutdown)
 	{
@@ -7426,7 +7471,8 @@ CreateCheckPoint(int flags)
 	 */
 	if (shutdown && checkPoint.redo != ProcLastRecPtr)
 		ereport(PANIC,
-				(errmsg("concurrent write-ahead log activity while database system is shutting down")));
+				(errmsg("concurrent write-ahead log activity while database system is %s",
+						demote? "demoting":"shutting down")));
 
 	/*
 	 * Remember the prior checkpoint's redo ptr for
@@ -7439,7 +7485,7 @@ CreateCheckPoint(int flags)
 	 */
 	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 	if (shutdown)
-		ControlFile->state = DB_SHUTDOWNED;
+		ControlFile->state = demote? DB_DEMOTING:DB_SHUTDOWNED;
 	ControlFile->checkPoint = ProcLastRecPtr;
 	ControlFile->checkPointCopy = checkPoint;
 	/* crash recovery should always recover to the end of WAL */

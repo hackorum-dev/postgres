@@ -4570,6 +4570,18 @@ lock_twophase_postabort(TransactionId xid, uint16 info,
 }
 
 /*
+ * 2PC shutdown from lock table.
+ *
+ * This is actually just the same as the COMMIT case.
+ */
+void
+lock_twophase_shutdown(TransactionId xid, uint16 info,
+					   void *recdata, uint32 len)
+{
+	lock_twophase_postcommit(xid, info, recdata, len);
+}
+
+/*
  *		VirtualXactLockTableInsert
  *
  *		Take vxid lock via the fast-path.  There can't be any pre-existing

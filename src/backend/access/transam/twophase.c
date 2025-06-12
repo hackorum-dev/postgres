@@ -1674,6 +1674,103 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 }
 
 /*
+ * ShutdownPreparedTransactions: clean prepared from sheared memory
+ *
+ * This is called during the demote process to clean the shared memory
+ * before the startup process load everything back in correctly
+ * for the standby mode.
+ *
+ * Note: this function assume all prepared transaction have been
+ * written to disk. In consequence, it must be called AFTER the demote
+ * shutdown checkpoint.
+ */
+void
+ShutdownPreparedTransactions(void)
+{
+	int i;
+
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		GlobalTransaction gxact;
+		PGPROC     *proc;
+		TransactionId xid;
+		char       *buf;
+		char       *bufptr;
+		TwoPhaseFileHeader *hdr;
+		TransactionId latestXid;
+		TransactionId *children;
+
+		gxact = TwoPhaseState->prepXacts[i];
+		proc = &ProcGlobal->allProcs[gxact->pgprocno];
+		xid = gxact->xid;
+
+		/* Read and validate 2PC state data */
+		Assert(gxact->ondisk);
+		buf = ReadTwoPhaseFile(xid, false);
+
+		/*
+		 * Disassemble the header area
+		 */
+		hdr = (TwoPhaseFileHeader *) buf;
+		Assert(TransactionIdEquals(hdr->xid, xid));
+		bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader))
+				 + MAXALIGN(hdr->gidlen);
+		children = (TransactionId *) bufptr;
+		bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId))
+				  + MAXALIGN(hdr->ncommitrels * sizeof(RelFileLocator))
+				  + MAXALIGN(hdr->nabortrels * sizeof(RelFileLocator))
+				  + MAXALIGN(hdr->ncommitstats * sizeof(xl_xact_stats_item))
+				  + MAXALIGN(hdr->nabortstats * sizeof(xl_xact_stats_item))
+				  + MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
+
+		/* compute latestXid among all children */
+		latestXid = TransactionIdLatest(xid, hdr->nsubxacts, children);
+
+		/* remove dummy proc associated to the gaxt */
+		ProcArrayRemove(proc, latestXid);
+
+		/*
+		 * FIXME: This lock is probably not needed during the demote process
+		 * as all backends are already gone.
+		 */
+		LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+
+		/* cleanup locks */
+		for (;;)
+		{
+			TwoPhaseRecordOnDisk *record = (TwoPhaseRecordOnDisk *) bufptr;
+
+			Assert(record->rmid <= TWOPHASE_RM_MAX_ID);
+			if (record->rmid == TWOPHASE_RM_END_ID)
+				break;
+
+			bufptr += MAXALIGN(sizeof(TwoPhaseRecordOnDisk));
+
+			if (record->rmid == TWOPHASE_RM_LOCK_ID)
+				lock_twophase_shutdown(xid, record->info,
+									   (void *) bufptr, record->len);
+
+			bufptr += MAXALIGN(record->len);
+		}
+
+		/* and put it back in the freelist */
+		gxact->next = TwoPhaseState->freeGXacts;
+		TwoPhaseState->freeGXacts = gxact;
+
+		/*
+		 * Release the lock as all callbacks are called and shared memory cleanup
+		 * is done.
+		 */
+		LWLockRelease(TwoPhaseStateLock);
+
+		pfree(buf);
+	}
+
+	TwoPhaseState->numPrepXacts -= i;
+	Assert(TwoPhaseState->numPrepXacts == 0);
+}
+
+/*
  * Scan 2PC state data in memory and call the indicated callbacks for each 2PC record.
  */
 static void

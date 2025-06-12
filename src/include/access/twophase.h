@@ -55,6 +55,7 @@ extern void RecoverPreparedTransactions(void);
 extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 
 extern void FinishPreparedTransaction(const char *gid, bool isCommit);
+void ShutdownPreparedTransactions(void); //FIXME: extern ?
 
 extern void PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
 						   XLogRecPtr end_lsn, RepOriginId origin_id);

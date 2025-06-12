@@ -66,20 +66,21 @@ typedef struct CheckPoint
 
 /* XLOG info values for XLOG rmgr */
 #define XLOG_CHECKPOINT_SHUTDOWN		0x00
-#define XLOG_CHECKPOINT_ONLINE			0x10
-#define XLOG_NOOP						0x20
-#define XLOG_NEXTOID					0x30
-#define XLOG_SWITCH						0x40
-#define XLOG_BACKUP_END					0x50
-#define XLOG_PARAMETER_CHANGE			0x60
-#define XLOG_RESTORE_POINT				0x70
-#define XLOG_FPW_CHANGE					0x80
-#define XLOG_END_OF_RECOVERY			0x90
-#define XLOG_FPI_FOR_HINT				0xA0
-#define XLOG_FPI						0xB0
+#define XLOG_CHECKPOINT_DEMOTE			0x10
+#define XLOG_CHECKPOINT_ONLINE			0x20
+#define XLOG_NOOP						0x30
+#define XLOG_NEXTOID					0x40
+#define XLOG_SWITCH						0x50
+#define XLOG_BACKUP_END					0x60
+#define XLOG_PARAMETER_CHANGE			0x70
+#define XLOG_RESTORE_POINT				0x80
+#define XLOG_FPW_CHANGE					0x90
+#define XLOG_END_OF_RECOVERY			0xA0
+#define XLOG_FPI_FOR_HINT				0xB0
+#define XLOG_FPI						0xD0
 /* 0xC0 is used in Postgres 9.5-11 */
-#define XLOG_OVERWRITE_CONTRECORD		0xD0
-#define XLOG_CHECKPOINT_REDO			0xE0
+#define XLOG_OVERWRITE_CONTRECORD		0xE0
+#define XLOG_CHECKPOINT_REDO			0xF0
 
 
 /*
@@ -91,6 +92,7 @@ typedef enum DBState
 	DB_STARTUP = 0,
 	DB_SHUTDOWNED,
 	DB_SHUTDOWNED_IN_RECOVERY,
+	DB_DEMOTING,
 	DB_SHUTDOWNING,
 	DB_IN_CRASH_RECOVERY,
 	DB_IN_ARCHIVE_RECOVERY,

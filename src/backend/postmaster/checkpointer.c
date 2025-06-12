@@ -155,6 +155,8 @@ static double ckpt_cached_elapsed;
 
 static pg_time_t last_checkpoint_time;
 static pg_time_t last_xlog_switch_time;
+// FIXME: shouldn't it be in postmaster.c with other pending signals?
+static volatile sig_atomic_t pending_demote_request = false;
 
 /* Prototypes for private functions */
 
@@ -659,6 +661,23 @@ ProcessCheckpointerInterrupts(void)
 		 */
 		UpdateSharedMemoryConfig();
 	}
+	if (pending_demote_request)
+	{
+		ereport(LOG, (errmsg("demote signal received by checkpointer")));
+		pending_demote_request = false;
+		/* Close down the database */
+		ShutdownXLOG(0, BoolGetDatum(true));
+		/*
+		 * Exit checkpointer. We could keep it around during demotion, but
+		 * exiting here has multiple benefices:
+		 * - to create a fresh process with clean local vars
+		 *   (eg. LocalRecoveryInProgress)
+		 * - to signal postmaster the demote shutdown checkpoint is done
+		 *   and keep going with next steps of the demotion
+		 */
+		cancel_before_shmem_exit(pgstat_before_server_shutdown, 0);
+		proc_exit(0);
+	}
 
 	/* Perform logging of memory contexts of this process */
 	if (LogMemoryContextPending)
@@ -782,6 +801,7 @@ CheckpointWriteDelay(int flags, double progress)
 		!ShutdownXLOGPending &&
 		!ShutdownRequestPending &&
 		!ImmediateCheckpointRequested() &&
+		!pending_demote_request &&
 		IsCheckpointOnSchedule(progress))
 	{
 		if (ConfigReloadPending)
@@ -912,6 +932,14 @@ IsCheckpointOnSchedule(double progress)
  *		signal handler routines
  * --------------------------------
  */
+
+/* SIGUSR1: set flag to demote */
+void
+ReqCheckpointDemoteHandler(SIGNAL_ARGS)
+{
+	pending_demote_request = true;
+	SetLatch(MyLatch);
+}
 
 /* SIGINT: set flag to trigger writing of shutdown checkpoint */
 static void

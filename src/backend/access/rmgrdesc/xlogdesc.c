@@ -60,8 +60,8 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 	char	   *rec = XLogRecGetData(record);
 	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
 
-	if (info == XLOG_CHECKPOINT_SHUTDOWN ||
-		info == XLOG_CHECKPOINT_ONLINE)
+	if (info == XLOG_CHECKPOINT_SHUTDOWN || info == XLOG_CHECKPOINT_ONLINE ||
+		info == XLOG_CHECKPOINT_DEMOTE)
 	{
 		CheckPoint *checkpoint = (CheckPoint *) rec;
 
@@ -87,7 +87,9 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 						 checkpoint->oldestCommitTsXid,
 						 checkpoint->newestCommitTsXid,
 						 checkpoint->oldestActiveXid,
-						 (info == XLOG_CHECKPOINT_SHUTDOWN) ? "shutdown" : "online");
+						 (info == XLOG_CHECKPOINT_SHUTDOWN) ? "shutdown" :
+							(info == XLOG_CHECKPOINT_DEMOTE) ? "demote" :
+								"online");
 	}
 	else if (info == XLOG_NEXTOID)
 	{
@@ -178,6 +180,9 @@ xlog_identify(uint8 info)
 	{
 		case XLOG_CHECKPOINT_SHUTDOWN:
 			id = "CHECKPOINT_SHUTDOWN";
+			break;
+		case XLOG_CHECKPOINT_DEMOTE:
+			id = "CHECKPOINT_DEMOTE";
 			break;
 		case XLOG_CHECKPOINT_ONLINE:
 			id = "CHECKPOINT_ONLINE";

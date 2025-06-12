@@ -527,8 +527,10 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	bool		haveBackupLabel = false;
 	CheckPoint	checkPoint;
 	bool		backupFromStandby = false;
+	bool		wasDemote = false;
 
 	dbstate_at_startup = ControlFile->state;
+	// wasDemote = (dbstate_at_startup == DB_DEMOTING);
 
 	/*
 	 * Initialize on the assumption we want to recover to the latest timeline
@@ -759,7 +761,8 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 			(ControlFile->minRecoveryPoint != InvalidXLogRecPtr ||
 			 ControlFile->backupEndRequired ||
 			 ControlFile->backupEndPoint != InvalidXLogRecPtr ||
-			 ControlFile->state == DB_SHUTDOWNED))
+			 ControlFile->state == DB_SHUTDOWNED ||
+			 ControlFile->state == DB_DEMOTING))
 		{
 			InArchiveRecovery = true;
 			if (StandbyModeRequested)
@@ -803,6 +806,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 		}
 		memcpy(&checkPoint, XLogRecGetData(xlogreader), sizeof(CheckPoint));
 		wasShutdown = ((record->xl_info & ~XLR_INFO_MASK) == XLOG_CHECKPOINT_SHUTDOWN);
+		wasDemote = ((record->xl_info & ~XLR_INFO_MASK) == XLOG_CHECKPOINT_DEMOTE);
 	}
 
 	if (ArchiveRecoveryRequested)
@@ -875,10 +879,18 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 						LSN_FORMAT_ARGS(ControlFile->minRecoveryPoint),
 						ControlFile->minRecoveryPointTLI)));
 
-	ereport(DEBUG1,
-			(errmsg_internal("redo record is at %X/%X; shutdown %s",
-							 LSN_FORMAT_ARGS(checkPoint.redo),
-							 wasShutdown ? "true" : "false")));
+	if (wasShutdown)
+		ereport(DEBUG1,
+			(errmsg_internal("redo record is at %X/%X; shutdown",
+							 LSN_FORMAT_ARGS(checkPoint.redo))));
+	else if (wasDemote)
+		ereport(DEBUG1,
+			(errmsg_internal("redo record is at %X/%X; demote",
+							 LSN_FORMAT_ARGS(checkPoint.redo))));
+	else
+		ereport(DEBUG1,
+			(errmsg_internal("redo record is at %X/%X;",
+							 LSN_FORMAT_ARGS(checkPoint.redo))));
 	ereport(DEBUG1,
 			(errmsg_internal("next transaction ID: " UINT64_FORMAT "; next OID: %u",
 							 U64FromFullTransactionId(checkPoint.nextXid),
@@ -938,7 +950,21 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	{
 		if (InArchiveRecovery)
 		{
-			ControlFile->state = DB_IN_ARCHIVE_RECOVERY;
+			if (wasDemote)
+			{
+				// FIXME: why not locking whatever the demoting or not?
+				//		  is ControlFileLock available or not when starting in
+				//		  recovery?
+				/*
+				 * Avoid concurrent access to the ControlFile datas
+				 * during demotion.
+				*/
+				LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
+				ControlFile->state = DB_IN_ARCHIVE_RECOVERY;
+				LWLockRelease(ControlFileLock);
+			}
+			else
+				ControlFile->state = DB_IN_ARCHIVE_RECOVERY;
 		}
 		else
 		{
@@ -4100,6 +4126,7 @@ ReadCheckpointRecord(XLogPrefetcher *xlogprefetcher, XLogRecPtr RecPtr,
 	}
 	info = record->xl_info & ~XLR_INFO_MASK;
 	if (info != XLOG_CHECKPOINT_SHUTDOWN &&
+		info != XLOG_CHECKPOINT_DEMOTE &&
 		info != XLOG_CHECKPOINT_ONLINE)
 	{
 		ereport(LOG,
@@ -4485,6 +4512,29 @@ CheckPromoteSignal(void)
 	struct stat stat_buf;
 
 	if (stat(PROMOTE_SIGNAL_FILE, &stat_buf) == 0)
+		return true;
+
+	return false;
+}
+
+/*
+ * Remove the file signaling a demote request.
+ */
+void
+RemoveDemoteSignalFiles(void)
+{
+	unlink(DEMOTE_SIGNAL_FILE);
+}
+
+/*
+ * Check if a demote request appeared.
+ */
+bool
+CheckDemoteSignal(void)
+{
+	struct stat stat_buf;
+
+	if (stat(DEMOTE_SIGNAL_FILE, &stat_buf) == 0)
 		return true;
 
 	return false;

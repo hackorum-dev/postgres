@@ -32,6 +32,7 @@
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"
 #include "utils/memutils.h"
+#include "postmaster/bgwriter.h"
 
 /*
  * The SIGUSR1 signal is multiplexed to support signaling multiple event
@@ -714,6 +715,10 @@ procsignal_sigusr1_handler(SIGNAL_ARGS)
 
 	if (CheckProcSignal(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN))
 		HandleRecoveryConflictInterrupt(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN);
+
+	/* signal checkpoint process to ignite a demote procedure */
+	if (CheckProcSignal(PROCSIG_CHECKPOINTER_DEMOTING))
+		ReqCheckpointDemoteHandler(PROCSIG_CHECKPOINTER_DEMOTING);
 
 	SetLatch(MyLatch);
 }

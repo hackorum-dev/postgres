@@ -33,7 +33,6 @@
 #include "pqexpbuffer.h"
 #endif
 
-
 typedef enum
 {
 	SMART_MODE,
@@ -58,6 +57,7 @@ typedef enum
 	RESTART_COMMAND,
 	RELOAD_COMMAND,
 	STATUS_COMMAND,
+	DEMOTE_COMMAND,
 	PROMOTE_COMMAND,
 	LOGROTATE_COMMAND,
 	KILL_COMMAND,
@@ -98,6 +98,7 @@ static char postopts_file[MAXPGPATH];
 static char version_file[MAXPGPATH];
 static char pid_file[MAXPGPATH];
 static char promote_file[MAXPGPATH];
+static char demote_file[MAXPGPATH];
 static char logrotate_file[MAXPGPATH];
 
 static volatile pid_t postmasterPID = -1;
@@ -125,6 +126,7 @@ static void do_restart(void);
 static void do_reload(void);
 static void do_status(void);
 static void do_promote(void);
+static void do_demote(void);
 static void do_logrotate(void);
 static void do_kill(pid_t pid);
 static void print_msg(const char *msg);
@@ -1260,6 +1262,109 @@ do_promote(void)
 }
 
 /*
+ * demote
+ */
+
+static void
+do_demote(void)
+{
+	int			cnt;
+	FILE		   *dmtfile;
+	pid_t		pid;
+	// FIXME struct stat	statbuf;
+
+	pid = get_pgpid(false);
+
+	if (pid == 0)			/* no pid file */
+	{
+		write_stderr(_("%s: PID file \"%s\" does not exist\n"), progname, pid_file);
+		write_stderr(_("Is server running?\n"));
+		exit(1);
+	}
+	else if (pid < 0)		/* standalone backend, not postmaster */
+	{
+		pid = -pid;
+		write_stderr(_("%s: cannot demote server; "
+					   "single-user server is running (PID: %d)\n"),
+					 progname, pid);
+		exit(1);
+	}
+
+	snprintf(demote_file, MAXPGPATH, "%s/demote", pg_data);
+
+	if ((dmtfile = fopen(demote_file, "w")) == NULL)
+	{
+		write_stderr(_("%s: could not create demote signal file \"%s\": %s\n"),
+					 progname, demote_file, strerror(errno));
+		exit(1);
+	}
+
+	if (fclose(dmtfile))
+	{
+		write_stderr(_("%s: could not write demote signal file \"%s\": %s\n"),
+					 progname, demote_file, strerror(errno));
+		exit(1);
+	}
+
+	sig = SIGUSR1;
+	if (kill((pid_t) pid, sig) != 0)
+	{
+		write_stderr(_("%s: could not send demote signal (PID: %d): %s\n"), progname, pid,
+					 strerror(errno));
+		exit(1);
+	}
+
+	if (!do_wait)
+	{
+		print_msg(_("server demoting\n"));
+		return;
+	}
+	else
+	{
+		// /*
+		//  * FIXME demote
+		//  * If backup_label exists, an online backup is running. Warn the user
+		//  * that smart demote will wait for it to finish. However, if the
+		//  * server is in archive recovery, we're recovering from an online
+		//  * backup instead of performing one.
+		//  */
+		// if (shutdown_mode == SMART_MODE &&
+		// 	stat(backup_file, &statbuf) == 0 &&
+		// 	get_control_dbstate() != DB_IN_ARCHIVE_RECOVERY)
+		// {
+		// 	print_msg(_("WARNING: online backup mode is active\n"
+		// 			    "Demote will not complete until pg_stop_backup() is called.\n\n"));
+		// }
+
+		print_msg(_("waiting for server to demote..."));
+
+		for (cnt = 0; cnt < wait_seconds * WAITS_PER_SEC; cnt++)
+		{
+			if (get_control_dbstate() == DB_IN_ARCHIVE_RECOVERY)
+				break;
+
+			if (cnt % WAITS_PER_SEC == 0)
+				print_msg(".");
+			pg_usleep(USEC_PER_SEC / WAITS_PER_SEC);
+		}
+
+		if (get_control_dbstate() != DB_IN_ARCHIVE_RECOVERY)
+		{
+			print_msg(_(" failed\n"));
+
+			write_stderr(_("%s: server does not demote\n"), progname);
+			if (shutdown_mode == SMART_MODE)
+				write_stderr(_("HINT: The \"-m fast\" option immediately disconnects sessions rather than\n"
+							   "waiting for session-initiated disconnection.\n"));
+			exit(1);
+		}
+		print_msg(_(" done\n"));
+
+		print_msg(_("server demoted\n"));
+	}
+}
+
+/*
  * log rotate
  */
 
@@ -2378,6 +2483,8 @@ main(int argc, char **argv)
 			ctl_command = STATUS_COMMAND;
 		else if (strcmp(argv[optind], "promote") == 0)
 			ctl_command = PROMOTE_COMMAND;
+		else if (strcmp(argv[optind], "demote") == 0)
+			ctl_command = DEMOTE_COMMAND;
 		else if (strcmp(argv[optind], "logrotate") == 0)
 			ctl_command = LOGROTATE_COMMAND;
 		else if (strcmp(argv[optind], "kill") == 0)
@@ -2490,6 +2597,9 @@ main(int argc, char **argv)
 			break;
 		case PROMOTE_COMMAND:
 			do_promote();
+			break;
+		case DEMOTE_COMMAND:
+			do_demote();
 			break;
 		case LOGROTATE_COMMAND:
 			do_logrotate();

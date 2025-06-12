@@ -290,8 +290,8 @@ static int	Shutdown = NoShutdown;
 static bool FatalError = false; /* T if recovering from backend crash */
 
 /*
- * We use a simple state machine to control startup, shutdown, and
- * crash recovery (which is rather like shutdown followed by startup).
+ * We use a simple state machine to control startup, shutdown, demote and
+ * crash recovery (both are rather like shutdown followed by startup).
  *
  * After doing all the postmaster initialization work, we enter PM_STARTUP
  * state and the startup process is launched. The startup process begins by
@@ -335,6 +335,7 @@ typedef enum
 {
 	PM_INIT,					/* postmaster starting */
 	PM_STARTUP,					/* waiting for startup subprocess */
+	PM_DEMOTING,				/* waiting for backends to stop */
 	PM_RECOVERY,				/* in archive recovery mode */
 	PM_HOT_STANDBY,				/* in hot standby mode */
 	PM_RUN,						/* normal "database is alive" state */
@@ -391,6 +392,7 @@ static bool HaveCrashedWorker = false;
 static volatile sig_atomic_t pending_pm_pmsignal;
 static volatile sig_atomic_t pending_pm_child_exit;
 static volatile sig_atomic_t pending_pm_reload_request;
+static volatile sig_atomic_t pending_pm_demote_request;
 static volatile sig_atomic_t pending_pm_shutdown_request;
 static volatile sig_atomic_t pending_pm_fast_shutdown_request;
 static volatile sig_atomic_t pending_pm_immediate_shutdown_request;
@@ -443,6 +445,9 @@ static void signal_child(PMChild *pmchild, int signal);
 static bool SignalChildren(int signal, BackendTypeMask targetMask);
 static void TerminateChildren(int signal);
 static int	CountChildren(BackendTypeMask targetMask);
+
+
+
 static void LaunchMissingBackgroundProcesses(void);
 static void maybe_start_bgworkers(void);
 static bool maybe_reap_io_worker(int pid);
@@ -1815,14 +1820,16 @@ canAcceptConnections(BackendType backend_type)
 	Assert(backend_type == B_BACKEND || backend_type == B_AUTOVAC_WORKER);
 
 	/*
-	 * Can't start backends when in startup/shutdown/inconsistent recovery
-	 * state.  We treat autovac workers the same as user backends for this
-	 * purpose.
+	 * Can't start backends when in startup/demote/shutdown/inconsistent
+	 * recovery state.  We treat autovac workers the same as user backends for
+	 * this purpose.
 	 */
 	if (pmState != PM_RUN && pmState != PM_HOT_STANDBY)
 	{
 		if (Shutdown > NoShutdown)
 			return CAC_SHUTDOWN;	/* shutdown is pending */
+		else if (pending_pm_demote_request)
+			return CAC_DEMOTE;		/* demote is pending */
 		else if (!FatalError && pmState == PM_STARTUP)
 			return CAC_STARTUP; /* normal startup */
 		else if (!FatalError && pmState == PM_RECOVERY)
@@ -1969,6 +1976,7 @@ InitProcessGlobals(void)
 /*
  * Child processes use SIGUSR1 to notify us of 'pmsignals'.  pg_ctl uses
  * SIGUSR1 to ask postmaster to check for logrotate and promote files.
+ * FIXME: and demote as well?
  */
 static void
 handle_pm_pmsignal_signal(SIGNAL_ARGS)
@@ -2377,7 +2385,23 @@ process_pm_child_exit(void)
 		{
 			ReleasePostmasterChildSlot(CheckpointerPMChild);
 			CheckpointerPMChild = NULL;
-			if (EXIT_STATUS_0(exitstatus) && pmState == PM_WAIT_CHECKPOINTER)
+			if (EXIT_STATUS_0(exitstatus) && pmState == PM_DEMOTING &&
+				pending_pm_demote_request)
+			{
+				/*
+				 * The checkpointer exit signals the demote checkpoint is done.
+				 * The startup recovery mode can be started from there.
+				 */
+				ereport(DEBUG1,
+						(errmsg_internal("checkpointer shutdown for demote")));
+
+				/*
+				 * FIXME: stop other subprocess we want to restart after demote
+				 *        here
+				 */
+				SignalChildren(SIGUSR2, btmask(B_WAL_SENDER));
+			}
+			else if (EXIT_STATUS_0(exitstatus) && pmState == PM_WAIT_CHECKPOINTER)
 			{
 				/*
 				 * OK, we saw normal exit of the checkpointer after it's been
@@ -2744,6 +2768,7 @@ HandleFatalError(QuitSignalReason reason, bool consider_sigabrt)
 			/* there might be more backends to wait for */
 			break;
 
+		case PM_DEMOTING:
 		case PM_WAIT_XLOG_SHUTDOWN:
 		case PM_WAIT_XLOG_ARCHIVAL:
 		case PM_WAIT_CHECKPOINTER:
@@ -2889,6 +2914,14 @@ PostmasterStateMachine(void)
 		}
 	}
 
+	// if (pmState == PM_DEMOTING)
+	// {
+	// 	/* FIXME: this was waiting for backend to finish their xact.
+	// 	 *
+	// 	 * should it be stop/force backend here?
+	// 	 */
+	// }
+
 	/*
 	 * In the PM_WAIT_BACKENDS state, wait for all the regular backends and
 	 * processes like autovacuum and background workers that are comparable to
@@ -3014,12 +3047,20 @@ PostmasterStateMachine(void)
 				 * entered FatalError state.
 				 */
 			}
+			else if (pending_pm_demote_request)
+			{
+				ereport(LOG, (errmsg("sending demote signal to checkpointer")));
+				SendProcSignal(CheckpointerPMChild->pid,
+							   PROCSIG_CHECKPOINTER_DEMOTING,
+							   INVALID_PROC_NUMBER);
+				UpdatePMState(PM_DEMOTING);
+			}
 			else
 			{
 				/*
 				 * If we get here, we are proceeding with normal shutdown. All
 				 * the regular children are gone, and it's time to tell the
-				 * checkpointer to do a shutdown checkpoint.
+				 * checkpointer to do a shutdown or demote checkpoint.
 				 */
 				Assert(Shutdown > NoShutdown);
 				/* Start the checkpointer if not running */
@@ -3188,6 +3229,20 @@ PostmasterStateMachine(void)
 		}
 	}
 
+	/* Demoting: start the Startup Process */
+	if (pending_pm_demote_request && pmState == PM_DEMOTING &&
+		CheckpointerPMChild == NULL)
+	{
+		/* stop archiver process if not required during standby */
+		if (!XLogArchivingAlways() && PgArchPMChild != NULL)
+			signal_child(PgArchPMChild, SIGQUIT);
+
+		StartupPMChild = StartChildProcess(B_STARTUP);
+		Assert(StartupPMChild != 0);
+		StartupStatus = STARTUP_RUNNING;
+		UpdatePMState(PM_STARTUP);
+	}
+
 	/*
 	 * If we need to recover from a crash, wait for all non-syslogger children
 	 * to exit, then reset shmem and start the startup process.
@@ -3236,6 +3291,7 @@ pmstate_name(PMState state)
 	{
 			PM_TOSTR_CASE(PM_INIT);
 			PM_TOSTR_CASE(PM_STARTUP);
+			PM_TOSTR_CASE(PM_DEMOTING);
 			PM_TOSTR_CASE(PM_RECOVERY);
 			PM_TOSTR_CASE(PM_HOT_STANDBY);
 			PM_TOSTR_CASE(PM_RUN);
@@ -3717,6 +3773,7 @@ process_pm_pmsignal(void)
 		if (!EnableHotStandby)
 		{
 			AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_STANDBY);
+			pending_pm_demote_request = false;
 #ifdef USE_SYSTEMD
 			sd_notify(0, "READY=1");
 #endif
@@ -3749,6 +3806,10 @@ process_pm_pmsignal(void)
 		/* Some workers may be scheduled to start now */
 		StartWorkerNeeded = true;
 	}
+
+	/* FIXME: better included in previous conditional block? */
+	if (pending_pm_demote_request)
+		pending_pm_demote_request = false;
 
 	/* Process background worker state changes. */
 	if (CheckPostmasterSignal(PMSIGNAL_BACKGROUND_WORKER_CHANGE))
@@ -3886,6 +3947,56 @@ process_pm_pmsignal(void)
 		 */
 		signal_child(StartupPMChild, SIGUSR2);
 	}
+
+	if (CheckDemoteSignal() && pmState != PM_RUN)
+	{
+		pending_pm_demote_request = false;
+		RemoveDemoteSignalFiles();
+		ereport(LOG,
+				(errmsg("ignoring demote signal because already in standby mode")));
+	}
+	/* received demote signal */
+	else if (CheckDemoteSignal())
+	{
+		FILE	   *standby_file;
+
+		ereport(LOG, (errmsg("received demote request")));
+
+		RemoveDemoteSignalFiles();
+
+		/* create the standby signal file */
+		standby_file = AllocateFile(STANDBY_SIGNAL_FILE, "w");
+		if (!standby_file)
+		{
+			ereport(ERROR, (errcode_for_file_access(),
+							errmsg("could not create file \"%s\": %m",
+								   STANDBY_SIGNAL_FILE)));
+			goto out;
+		}
+
+		if (FreeFile(standby_file))
+		{
+			ereport(ERROR, (errcode_for_file_access(),
+							errmsg("could not write file \"%s\": %m",
+								   STANDBY_SIGNAL_FILE)));
+			unlink(STANDBY_SIGNAL_FILE);
+			goto out;
+		}
+
+		pending_pm_demote_request = true;
+		connsAllowed = false;
+
+		/* Report status */
+		AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_DEMOTING);
+
+		UpdatePMState(PM_STOP_BACKENDS);
+		PostmasterStateMachine();
+
+		// UpdatePMState(PM_DEMOTING);
+	}
+
+out:
+
 }
 
 /*
@@ -3938,7 +4049,6 @@ CountChildren(BackendTypeMask targetMask)
 	}
 	return cnt;
 }
-
 
 /*
  * StartChildProcess -- start an auxiliary process for the postmaster
@@ -4186,6 +4296,7 @@ bgworker_should_start_now(BgWorkerStartTime start_time)
 		case PM_WAIT_IO_WORKERS:
 		case PM_WAIT_BACKENDS:
 		case PM_STOP_BACKENDS:
+		case PM_DEMOTING:
 			break;
 
 		case PM_RUN:

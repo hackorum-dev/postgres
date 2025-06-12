@@ -2172,6 +2172,22 @@ StartupMultiXact(void)
 }
 
 /*
+ * This must be called during demote.
+ */
+void
+ShutdownMultiXact(void)
+{
+	/* FIXME: This seems enough for now, but maybe it would be best to call
+	 * MultiXactShmemInit() instead of this half-backed reinit, hoping for
+	 * StartupXLOG to do the right thing from there?
+	 */
+	/* signal that we're officially down */
+	LWLockAcquire(MultiXactGenLock, LW_EXCLUSIVE);
+	MultiXactState->finishedStartup = false;
+	LWLockRelease(MultiXactGenLock);
+}
+
+/*
  * This must be called ONCE at the end of startup/recovery.
  */
 void
