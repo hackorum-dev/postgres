@@ -338,7 +338,7 @@ oauth_exchange(void *opaq, const char *input, int inputlen,
 	}
 
 	/* Don't let extra copies of the bearer token hang around. */
-	explicit_bzero(input_copy, inputlen);
+	explicit_bzero(input_copy, inputlen + 1);
 
 	return status;
 }
