@@ -1551,8 +1551,8 @@ summarizer_read_local_xlog_page(XLogReaderState *state,
 				if (private_data->tli == latest_tli)
 				{
 					/* Still the current timeline, update max LSN. */
-					Assert(latest_lsn >= private_data->read_upto);
-					private_data->read_upto = latest_lsn;
+					if (latest_lsn >= private_data->read_upto)
+						private_data->read_upto = latest_lsn;
 				}
 				else
 				{
