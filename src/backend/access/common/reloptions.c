@@ -1591,7 +1591,7 @@ extractRelOptions(HeapTuple tuple, TupleDesc tupdesc,
 		case RELKIND_RELATION:
 		case RELKIND_TOASTVALUE:
 		case RELKIND_MATVIEW:
-			options = heap_reloptions(classForm->relkind, datum, false);
+			options = heap_reloptions(amoptions, classForm->relkind, datum, false);
 			break;
 		case RELKIND_PARTITIONED_TABLE:
 			options = partitioned_table_reloptions(datum, false);
@@ -2238,7 +2238,7 @@ view_reloptions(Datum reloptions, bool validate)
  * Parse options for heaps, views and toast tables.
  */
 bytea *
-heap_reloptions(char relkind, Datum reloptions, bool validate)
+heap_reloptions(amoptions_function amoptions, char relkind, Datum reloptions, bool validate)
 {
 	StdRdOptions *rdopts;
 
@@ -2257,6 +2257,9 @@ heap_reloptions(char relkind, Datum reloptions, bool validate)
 			return (bytea *) rdopts;
 		case RELKIND_RELATION:
 		case RELKIND_MATVIEW:
+			if(amoptions)
+				return amoptions(reloptions, validate);
+
 			return default_reloptions(reloptions, validate, RELOPT_KIND_HEAP);
 		default:
 			/* other relkinds are not supported */

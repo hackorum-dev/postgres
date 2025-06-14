@@ -17,6 +17,7 @@
 #ifndef TABLEAM_H
 #define TABLEAM_H
 
+#include "access/amapi.h"
 #include "access/relscan.h"
 #include "access/sdir.h"
 #include "access/xact.h"
@@ -877,7 +878,7 @@ typedef struct TableAmRoutine
 	bool		(*scan_sample_next_tuple) (TableScanDesc scan,
 										   SampleScanState *scanstate,
 										   TupleTableSlot *slot);
-
+	amoptions_function amoptions;
 } TableAmRoutine;
 
 

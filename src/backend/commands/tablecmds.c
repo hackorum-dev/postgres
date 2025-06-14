@@ -997,7 +997,41 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 			(void) partitioned_table_reloptions(reloptions, true);
 			break;
 		default:
-			(void) heap_reloptions(relkind, reloptions, true);
+			TableAmRoutine *amroutine = NULL;
+
+			if (stmt->accessMethod != NULL)
+			{
+				Assert(RELKIND_HAS_TABLE_AM(relkind) || relkind == RELKIND_PARTITIONED_TABLE);
+				accessMethodId = get_table_am_oid(stmt->accessMethod, false);
+			}
+			else if (RELKIND_HAS_TABLE_AM(relkind) || relkind == RELKIND_PARTITIONED_TABLE)
+			{
+				if (stmt->partbound)
+				{
+					Assert(list_length(inheritOids) == 1);
+					accessMethodId = get_rel_relam(linitial_oid(inheritOids));
+				}
+
+				if (RELKIND_HAS_TABLE_AM(relkind) && !OidIsValid(accessMethodId))
+					accessMethodId = get_table_am_oid(default_table_access_method, false);
+			}
+
+			if(OidIsValid(accessMethodId) && accessMethodId != HEAP_TABLE_AM_OID)
+			{
+				HeapTuple	tup;
+
+				tup = SearchSysCache1(AMOID,
+										ObjectIdGetDatum(accessMethodId));
+				if (HeapTupleIsValid(tup))
+				{
+					Form_pg_am	amform = (Form_pg_am) GETSTRUCT(tup);
+
+					amroutine = unconstify(TableAmRoutine *, GetTableAmRoutine(amform->amhandler));
+
+					ReleaseSysCache(tup);
+				}
+			}
+			(void) heap_reloptions(amroutine ? amroutine->amoptions : NULL, relkind, reloptions, true);
 	}
 
 	if (stmt->ofTypename)
@@ -17433,7 +17467,7 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 	{
 		case RELKIND_RELATION:
 		case RELKIND_MATVIEW:
-			(void) heap_reloptions(rel->rd_rel->relkind, newOptions, true);
+			(void) heap_reloptions(rel->rd_tableam->amoptions, rel->rd_rel->relkind, newOptions, true);
 			break;
 		case RELKIND_PARTITIONED_TABLE:
 			(void) partitioned_table_reloptions(newOptions, true);
@@ -17551,7 +17585,10 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 		newOptions = transformRelOptions(datum, defList, "toast", validnsps,
 										 false, operation == AT_ResetRelOptions);
 
-		(void) heap_reloptions(RELKIND_TOASTVALUE, newOptions, true);
+		/* Probably we have to always set NULL custom reloptions to TOAST tables?
+		 * (void) heap_reloptions(NULL, RELKIND_TOASTVALUE, newOptions, true);
+		 */
+		(void) heap_reloptions(rel->rd_tableam->amoptions, RELKIND_TOASTVALUE, newOptions, true);
 
 		memset(repl_val, 0, sizeof(repl_val));
 		memset(repl_null, false, sizeof(repl_null));
