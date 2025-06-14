@@ -2711,7 +2711,8 @@ static const TableAmRoutine heapam_methods = {
 
 	.scan_bitmap_next_tuple = heapam_scan_bitmap_next_tuple,
 	.scan_sample_next_block = heapam_scan_sample_next_block,
-	.scan_sample_next_tuple = heapam_scan_sample_next_tuple
+	.scan_sample_next_tuple = heapam_scan_sample_next_tuple,
+	.amoptions = NULL
 };
 
 

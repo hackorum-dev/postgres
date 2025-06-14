@@ -127,7 +127,7 @@ create_ctas_internal(List *attrList, IntoClause *into)
 										validnsps,
 										true, false);
 
-	(void) heap_reloptions(RELKIND_TOASTVALUE, toast_options, true);
+	(void) heap_reloptions(NULL, RELKIND_TOASTVALUE, toast_options, true);
 
 	NewRelationCreateToastTable(intoRelationAddr.objectId, toast_options);
 
