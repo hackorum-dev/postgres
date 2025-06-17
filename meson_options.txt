@@ -70,6 +70,8 @@ option('darwin_sysroot', type: 'string', value: '',
 option('rpath', type: 'boolean', value: true,
   description: 'Embed shared library search path in executables')
 
+option('ldflags_sl', type: 'array', value: [],
+  description: 'Extra linker flags for linking shared libraries only')
 
 # External dependencies
 
