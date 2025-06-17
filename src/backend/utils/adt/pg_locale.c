@@ -910,7 +910,7 @@ search_locale_enum(LPWSTR pStr, DWORD dwFlags, LPARAM lparam)
 		{
 			if (_wcsicmp(argv[0], test_locale) == 0)
 			{
-				wcscpy(argv[1], pStr);
+				wcsncpy(argv[1], pStr, LOCALE_NAME_MAX_LENGTH);
 				*argv[2] = (wchar_t) 1;
 				return FALSE;
 			}
@@ -933,7 +933,7 @@ search_locale_enum(LPWSTR pStr, DWORD dwFlags, LPARAM lparam)
 			{
 				if (_wcsicmp(argv[0], test_locale) == 0)
 				{
-					wcscpy(argv[1], pStr);
+					wcsncpy(argv[1], pStr, LOCALE_NAME_MAX_LENGTH);
 					*argv[2] = (wchar_t) 1;
 					return FALSE;
 				}
