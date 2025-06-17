@@ -130,7 +130,7 @@ cxxflags_mod = []
 
 ldflags = []
 ldflags_be = []
-ldflags_sl = []
+ldflags_sl = get_option('ldflags_sl')
 ldflags_mod = []
 
 test_c_args = []
