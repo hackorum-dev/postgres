@@ -79,6 +79,7 @@
 #include "common/int.h"
 #include "common/unicode_case.h"
 #include "common/unicode_category.h"
+#include "common/unicode_norm.h"
 #include "mb/pg_wchar.h"
 #include "nodes/miscnodes.h"
 #include "parser/scansup.h"
@@ -1866,6 +1867,9 @@ str_casefold(const char *buff, size_t nbytes, Oid collid)
 		size_t		dstsize;
 		char	   *dst;
 		size_t		needed;
+		int mblen, i;
+		unsigned char *p;
+		pg_wchar   *decoded;
 
 		/* first try buffer of equal size plus terminating NUL */
 		dstsize = srclen + 1;
@@ -1882,7 +1886,54 @@ str_casefold(const char *buff, size_t nbytes, Oid collid)
 		}
 
 		Assert(dst[needed] == '\0');
-		result = dst;
+
+		/* convert to pg_wchar */
+		mblen = pg_mbstrlen_with_len(dst, needed);
+		decoded = palloc((mblen + 1) * sizeof(pg_wchar));
+		p = (unsigned char *) dst;
+		for (i = 0; i < mblen; i++)
+		{
+			decoded[i] = utf8_to_unicode(p);
+			p += pg_utf_mblen(p);
+		}
+		decoded[i] = (pg_wchar) '\0';
+
+		if (unicode_is_normalized_quickcheck(UNICODE_NFC, decoded) == UNICODE_NORM_QC_YES)
+		{
+			pfree(decoded);
+			result = dst;
+		}
+		else
+		{
+			pg_wchar *normalized;
+			unsigned char *normalized_utf8;
+
+			normalized = unicode_normalize(UNICODE_NFC, decoded);
+			pfree(decoded);
+
+			/* convert back to UTF-8 string */
+			mblen = 0;
+			for (pg_wchar *wp = normalized; *wp; wp++)
+			{
+				unsigned char buf[4];
+
+				unicode_to_utf8(*wp, buf);
+				mblen += pg_utf_mblen(buf);
+			}
+
+			normalized_utf8 = palloc(mblen + 1);
+
+			p = normalized_utf8;
+			for (pg_wchar *wp = normalized; *wp; wp++)
+			{
+				unicode_to_utf8(*wp, p);
+				p += pg_utf_mblen(p);
+			}
+			*p = '\0';
+			pfree(normalized);
+
+			result = (char *) normalized_utf8;
+		}
 	}
 
 	return result;
