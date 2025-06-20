@@ -2215,6 +2215,7 @@ PgStatShared_Relation
 PgStatShared_ReplSlot
 PgStatShared_SLRU
 PgStatShared_Subscription
+PgStatShared_WaitEvent
 PgStatShared_Wal
 PgStat_ArchiverStats
 PgStat_Backend
@@ -2235,6 +2236,7 @@ PgStat_KindInfo
 PgStat_LocalState
 PgStat_PendingDroppedStatsItem
 PgStat_PendingIO
+PgStat_PendingWaitevent
 PgStat_SLRUStats
 PgStat_ShmemControl
 PgStat_Snapshot
@@ -2250,6 +2252,7 @@ PgStat_SubXactStatus
 PgStat_TableCounts
 PgStat_TableStatus
 PgStat_TableXactStatus
+PgStat_WaitEvent
 PgStat_WalCounters
 PgStat_WalStats
 PgXmlErrorContext

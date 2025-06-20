@@ -339,6 +339,17 @@ typedef struct PgStat_IO
 	PgStat_BktypeIO stats[BACKEND_NUM_TYPES];
 } PgStat_IO;
 
+typedef struct PgStat_WaitEvent
+{
+	TimestampTz stat_reset_timestamp;
+	PgStat_Counter counts[NB_WAITCLASSTABLE_SIZE];
+} PgStat_WaitEvent;
+
+typedef struct PgStat_PendingWaitEvent
+{
+	PgStat_Counter counts[NB_WAITCLASSTABLE_SIZE];
+} PgStat_PendingWaitevent;
+
 typedef struct PgStat_StatDBEntry
 {
 	PgStat_Counter xact_commit;
@@ -782,6 +793,10 @@ struct xl_xact_stats_item;
 extern int	pgstat_get_transactional_drops(bool isCommit, struct xl_xact_stats_item **items);
 extern void pgstat_execute_transactional_drops(int ndrops, struct xl_xact_stats_item *items, bool is_redo);
 
+/*
+ * Functions in pgstat_waitevent.c
+ */
+extern PgStat_WaitEvent *pgstat_fetch_stat_wait_event(void);
 
 /*
  * Functions in pgstat_wal.c

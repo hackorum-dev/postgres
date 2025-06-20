@@ -87,9 +87,6 @@ typedef struct WaitEventCustomCounterData
 /* pointer to the shared memory */
 static WaitEventCustomCounterData *WaitEventCustomCounter;
 
-/* first event ID of custom wait events */
-#define WAIT_EVENT_CUSTOM_INITIAL_ID	1
-
 static uint32 WaitEventCustomNew(uint32 classId, const char *wait_event_name);
 static const char *GetWaitEventCustomIdentifier(uint32 wait_event_info);
 
