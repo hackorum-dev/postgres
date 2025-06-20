@@ -680,6 +680,19 @@ SnapBuildProcessChange(SnapBuild *builder, TransactionId xid, XLogRecPtr lsn)
 									 builder->snapshot);
 	}
 
+	/*
+	 * Forget snapshots built before the SNAPBUILD_CONSISTENT state,
+	 * so that we rebuild them when we become consistent.
+	 */
+	if (builder->state == SNAPBUILD_FULL_SNAPSHOT)
+	{
+		if (builder->snapshot)
+		{
+			SnapBuildSnapDecRefcount(builder->snapshot);
+			builder->snapshot = NULL;
+		}
+	}
+
 	return true;
 }
 
