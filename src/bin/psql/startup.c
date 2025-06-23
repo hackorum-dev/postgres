@@ -279,6 +279,9 @@ main(int argc, char *argv[])
 		pg_free(keywords);
 		pg_free(values);
 
+		if (!pset.db)
+			pg_fatal("could not connect to server");
+
 		if (PQstatus(pset.db) == CONNECTION_BAD &&
 			PQconnectionNeedsPassword(pset.db) &&
 			!password &&
