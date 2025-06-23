@@ -88,6 +88,14 @@ SECURITY LABEL [ FOR <replaceable class="parameter">provider</replaceable> ] ON
   <para>
    You must own the database object to use <command>SECURITY LABEL</command>.
   </para>
+
+  <para>
+   Security labels are not inherited through object inheritance, meaning labels
+   applied to a parent object, like a table or a role, are not automatically passed
+   down to its child objects. Each database object has its own independent set of
+   security labels, requiring administrators to explicitly declare labels to each
+   individual object rather than relying on automatic inheritance.
+  </para>
  </refsect1>
 
  <refsect1>
