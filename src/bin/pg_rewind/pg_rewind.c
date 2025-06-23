@@ -312,8 +312,15 @@ main(int argc, char **argv)
 	{
 		conn = PQconnectdb(connstr_source);
 
+		if (conn == NULL)
+			pg_fatal("could not connect to server");
+
 		if (PQstatus(conn) == CONNECTION_BAD)
-			pg_fatal("%s", PQerrorMessage(conn));
+		{
+			pg_log_error("%s", PQerrorMessage(conn));
+			PQfinish(conn);
+			pg_fatal("could not connect to server");
+		}
 
 		if (showprogress)
 			pg_log_info("connected to server");
