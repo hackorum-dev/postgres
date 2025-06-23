@@ -108,12 +108,13 @@ connectDatabase(const ConnParams *cparams, const char *progname,
 	/* check to see that the backend connection was successfully made */
 	if (PQstatus(conn) == CONNECTION_BAD)
 	{
+		pg_log_error("%s", PQerrorMessage(conn));
+		PQfinish(conn);
+
 		if (fail_ok)
-		{
-			PQfinish(conn);
 			return NULL;
-		}
-		pg_fatal("%s", PQerrorMessage(conn));
+
+		pg_fatal("could not connect to server");
 	}
 
 	/* Start strict; callers may override this. */
