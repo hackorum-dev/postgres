@@ -659,6 +659,12 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 	ecpg_free(conn_values);
 	ecpg_free(conn_keywords);
 
+	if (!this->connection)
+	{
+		ecpg_log("ECPGconnect: could not connect to server");
+		return false;
+	}
+
 	if (PQstatus(this->connection) == CONNECTION_BAD)
 	{
 		const char *errmsg = PQerrorMessage(this->connection);
