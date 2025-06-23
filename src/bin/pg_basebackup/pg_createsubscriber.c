@@ -589,6 +589,14 @@ connect_database(const char *conninfo, bool exit_on_error)
 	PGresult   *res;
 
 	conn = PQconnectdb(conninfo);
+	if (conn == NULL)
+	{
+		pg_log_error("could not connect to server");
+
+		if (exit_on_error)
+			exit(1);
+		return NULL;
+	}
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
 		pg_log_error("connection to database failed: %s",
