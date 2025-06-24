@@ -627,4 +627,8 @@ extern void VirtualXactLockTableInsert(VirtualTransactionId vxid);
 extern void VirtualXactLockTableCleanup(void);
 extern bool VirtualXactLock(VirtualTransactionId vxid, bool wait);
 
+/* Hook for plugins to handle lock acquire */
+typedef void (*LockAcquired_hook_type) ();
+extern PGDLLIMPORT LockAcquired_hook_type LockAcquired_hook;
+
 #endif							/* LOCK_H_ */

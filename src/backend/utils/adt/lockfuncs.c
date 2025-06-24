@@ -65,6 +65,8 @@ typedef struct
 /* Number of columns in pg_locks output */
 #define NUM_LOCK_STATUS_COLUMNS		16
 
+LockAcquired_hook_type LockAcquired_hook = NULL;
+
 /*
  * VXIDGetDatum - Construct a text representation of a VXID
  *

@@ -104,6 +104,7 @@ int			client_connection_check_interval = 0;
 /* flags for non-system relation kinds to restrict use */
 int			restrict_nonsystem_relation_kind;
 
+ParseComplete_hook_type ParseComplete_hook = NULL;
 ReadyForQuery_hook_type ReadyForQuery_hook = NULL;
 
 /* ----------------
@@ -1584,6 +1585,13 @@ exec_parse_message(const char *query_string,	/* string to execute */
 	 * in case something happened during parse/plan.
 	 */
 	CommandCounterIncrement();
+
+	/*
+	 * Notify extensions about parse complete
+	 */
+	if (ParseComplete_hook) {
+		ParseComplete_hook();
+	}
 
 	/*
 	 * Send ParseComplete.

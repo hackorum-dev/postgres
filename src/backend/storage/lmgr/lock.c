@@ -1265,6 +1265,10 @@ LockAcquireExtended(const LOCKTAG *locktag,
 							   locktag->locktag_field2);
 	}
 
+	if (LockAcquired_hook) {
+		LockAcquired_hook();
+	}
+
 	return LOCKACQUIRE_OK;
 }
 
