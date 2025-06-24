@@ -104,6 +104,8 @@ int			client_connection_check_interval = 0;
 /* flags for non-system relation kinds to restrict use */
 int			restrict_nonsystem_relation_kind;
 
+ReadyForQuery_hook_type ReadyForQuery_hook = NULL;
+
 /* ----------------
  *		private typedefs etc
  * ----------------
@@ -4678,6 +4680,10 @@ PostgresMain(const char *dbname, const char *username)
 							   (double) total_duration / NS_PER_US,
 							   (double) fork_duration / NS_PER_US,
 							   (double) auth_duration / NS_PER_US));
+			}
+
+			if (ReadyForQuery_hook) {
+				ReadyForQuery_hook(/* some arguments to determine connection state here */);
 			}
 
 			ReadyForQuery(whereToSendOutput);

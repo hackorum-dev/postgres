@@ -581,4 +581,8 @@ extern Datum Float8GetDatum(float8 X);
 #define NON_EXEC_STATIC static
 #endif
 
+/* Hook for plugins to catch RFQ sending */
+typedef void (*ReadyForQuery_hook_type) ();
+extern PGDLLIMPORT ReadyForQuery_hook_type ReadyForQuery_hook;
+
 #endif							/* POSTGRES_H */
