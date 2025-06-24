@@ -14,9 +14,19 @@
 #ifndef PG_NUMA_H
 #define PG_NUMA_H
 
+// JW: is this legal to be included here?
+#include <numa.h>
+#include <numaif.h>
+
+typedef struct bitmask pg_numa_bitmask_t;
+
 extern PGDLLIMPORT int pg_numa_init(void);
 extern PGDLLIMPORT int pg_numa_query_pages(int pid, unsigned long count, void **pages, int *status);
 extern PGDLLIMPORT int pg_numa_get_max_node(void);
+extern PGDLLIMPORT int pg_numa_interleave_memptr(void *ptr, size_t sz, pg_numa_bitmask_t *mask);
+extern PGDLLIMPORT pg_numa_bitmask_t *pg_numa_parse_nodestring(const char *string);
+extern PGDLLIMPORT void pg_numa_set_bind_policy(int strict);
+extern PGDLLIMPORT void pg_numa_bind(pg_numa_bitmask_t *nodemask);
 
 #ifdef USE_LIBNUMA
 
@@ -26,6 +36,9 @@ extern PGDLLIMPORT int pg_numa_get_max_node(void);
  */
 #define pg_numa_touch_mem_if_required(ro_volatile_var, ptr) \
 	ro_volatile_var = *(volatile uint64 *) ptr
+
+extern void numa_warn(int num, char *fmt,...) pg_attribute_printf(2, 3);
+extern void numa_error(char *where);
 
 #else
 

@@ -25,6 +25,7 @@
 #define PG_SHMEM_H
 
 #include "storage/dsm_impl.h"
+#include "port/pg_numa.h"
 
 typedef struct PGShmemHeader	/* standard header for all Postgres shmem */
 {
@@ -41,11 +42,17 @@ typedef struct PGShmemHeader	/* standard header for all Postgres shmem */
 #endif
 } PGShmemHeader;
 
+typedef struct NumaConfigData {
+	int				  setting;
+	pg_numa_bitmask_t *nodes;
+} NumaConfigData;
+
 /* GUC variables */
 extern PGDLLIMPORT int shared_memory_type;
 extern PGDLLIMPORT int huge_pages;
 extern PGDLLIMPORT int huge_page_size;
 extern PGDLLIMPORT int huge_pages_status;
+extern PGDLLIMPORT NumaConfigData *numa;
 
 /* Possible values for huge_pages and huge_pages_status */
 typedef enum
@@ -63,6 +70,18 @@ typedef enum
 	SHMEM_TYPE_SYSV,
 	SHMEM_TYPE_MMAP,
 }			PGShmemType;
+
+typedef enum
+{
+	NUMA_OFF,
+	NUMA_ALL,
+	NUMA_AUTO,
+	NUMA_PREFERRED,
+	NUMA_STRICT_ONLY,
+	NUMA_STRICT_ONLY_AND_CPU_TOO,
+}			NumaType;
+
+#define DEFAULT_NUMA NUMA_OFF
 
 #ifndef WIN32
 extern PGDLLIMPORT unsigned long UsedShmemSegID;

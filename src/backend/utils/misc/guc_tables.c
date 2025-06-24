@@ -491,6 +491,7 @@ static const struct config_enum_entry file_copy_method_options[] = {
 	{NULL, 0, false}
 };
 
+
 /*
  * Options for enum values stored in other modules
  */
@@ -580,6 +581,8 @@ int			huge_pages = HUGE_PAGES_TRY;
 int			huge_page_size;
 int			huge_pages_status = HUGE_PAGES_UNKNOWN;
 
+NumaConfigData *numa;
+
 /*
  * These variables are all dummies that don't do anything, except in some
  * cases provide the value for SHOW to display.  The real state is elsewhere
@@ -594,6 +597,7 @@ static char *server_version_string;
 static int	server_version_num;
 static char *debug_io_direct_string;
 static char *restrict_nonsystem_relation_kind_string;
+static char *numa_string;
 
 #ifdef HAVE_SYSLOG
 #define	DEFAULT_SYSLOG_FACILITY LOG_LOCAL0
@@ -4982,6 +4986,16 @@ struct config_string ConfigureNamesString[] =
 		&log_connections_string,
 		"",
 		check_log_connections, assign_log_connections, NULL
+	},
+
+	{
+		{"numa", PGC_POSTMASTER, RESOURCES_MEM,
+			gettext_noop("Whether to enable NUMA optimizations."),
+			NULL
+		},
+		&numa_string,
+		"",
+		check_numa, assign_numa, NULL
 	},
 
 

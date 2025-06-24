@@ -64,8 +64,10 @@
 #include "pgstat.h"
 #include "portability/mem.h"
 #include "postmaster/postmaster.h"
+#include "port/pg_numa.h"
 #include "storage/dsm_impl.h"
 #include "storage/fd.h"
+#include "storage/pg_shmem.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
 
@@ -334,6 +336,13 @@ dsm_impl_posix(dsm_op op, dsm_handle handle, Size request_size,
 	}
 	*mapped_address = address;
 	*mapped_size = request_size;
+
+	/* We interleave memory only at creation time. */
+	if (op == DSM_OP_CREATE && numa->setting > NUMA_OFF) {
+		elog(DEBUG1, "interleaving shm mem @ %p size=%zu", *mapped_address, *mapped_size);
+		pg_numa_interleave_memptr(*mapped_address, *mapped_size, numa->nodes);
+	}
+
 	close(fd);
 	ReleaseExternalFD();
 
@@ -587,6 +596,8 @@ dsm_impl_sysv(dsm_op op, dsm_handle handle, Size request_size,
 	}
 	*mapped_address = address;
 	*mapped_size = request_size;
+
+	/* As dynamic_shared_memory=sysv is a bit legacy, we do not peform NUMA interleave here */
 
 	return true;
 }
@@ -936,6 +947,8 @@ dsm_impl_mmap(dsm_op op, dsm_handle handle, Size request_size,
 	}
 	*mapped_address = address;
 	*mapped_size = request_size;
+
+	/* As dynamic_shared_memory=mmap is a bit legacy, we do not peform NUMA interleave here */
 
 	if (CloseTransientFile(fd) != 0)
 	{

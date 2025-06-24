@@ -29,6 +29,7 @@
 
 #include "miscadmin.h"
 #include "port/pg_bitutils.h"
+#include "port/pg_numa.h"
 #include "portability/mem.h"
 #include "storage/dsm.h"
 #include "storage/fd.h"
@@ -661,6 +662,27 @@ CreateAnonymousSegment(Size *size)
 						 "memory usage, perhaps by reducing \"shared_buffers\" or "
 						 "\"max_connections\".",
 						 allocsize) : 0));
+	}
+
+	if (numa->setting > NUMA_OFF)
+	{
+		/* In strict mode we want to ensure to not spill memory to another NUMA nodes */
+		int mem_bind_policy = numa->setting >= NUMA_STRICT_ONLY ? 1 : 0;
+
+		/* We do nothing in auto mode, if there is just one standard NUMA node */
+		if(numa->setting == NUMA_AUTO && pg_numa_get_max_node() <= 1) {
+			elog(DEBUG1, "no NUMA nodes found");
+		} else {
+			elog(LOG, "enabling NUMA shm interleaving");
+			pg_numa_interleave_memptr(ptr, allocsize, numa->nodes);
+
+			/* In NUMA_PREFERRED we can spill memory to other nodes, but not in STRICT modes */
+			pg_numa_set_bind_policy(mem_bind_policy);
+
+			/* We can also isolate CPUs to just isolated NUMA nodes */
+			if(numa->setting >= NUMA_STRICT_ONLY_AND_CPU_TOO)
+				pg_numa_bind(numa->nodes);
+		}
 	}
 
 	*size = allocsize;

@@ -100,6 +100,7 @@
 #include "pg_getopt.h"
 #include "pgstat.h"
 #include "port/pg_bswap.h"
+#include "port/pg_numa.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgworker_internals.h"
 #include "postmaster/pgarch.h"
@@ -113,6 +114,7 @@
 #include "storage/fd.h"
 #include "storage/io_worker.h"
 #include "storage/ipc.h"
+#include "storage/pg_shmem.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "tcop/backend_startup.h"
@@ -453,6 +455,7 @@ static void StartSysLogger(void);
 static void StartAutovacuumWorker(void);
 static bool StartBackgroundWorker(RegisteredBgWorker *rw);
 static void InitPostmasterDeathWatchHandle(void);
+static void InitNuma(void);
 
 #ifdef WIN32
 #define WNOHANG 0				/* ignored, so any integer value will do */
@@ -992,6 +995,9 @@ PostmasterMain(int argc, char *argv[])
 		puts(config_val ? config_val : "");
 		ExitPostmaster(0);
 	}
+
+	/* Initialize libnuma if necessary */
+	InitNuma();
 
 	/*
 	 * Set up shared memory and semaphores.
@@ -4615,4 +4621,15 @@ InitPostmasterDeathWatchHandle(void)
 				(errmsg_internal("could not duplicate postmaster handle: error code %lu",
 								 GetLastError())));
 #endif							/* WIN32 */
+}
+
+
+static void
+InitNuma(void)
+{
+	if(numa->setting > NUMA_OFF) {
+		if (pg_numa_init() == -1)
+			elog(ERROR, "libnuma initialization failed or NUMA is not supported on this platform");
+	}
+	return;
 }

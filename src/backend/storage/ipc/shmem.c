@@ -74,6 +74,10 @@
 #include "storage/shmem.h"
 #include "storage/spin.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
+#include "utils/guc_hooks.h"
+#include <ctype.h>
+#include <numa.h>
 
 static void *ShmemAllocRaw(Size size, Size *allocated_size);
 
@@ -764,4 +768,76 @@ Datum
 pg_numa_available(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_BOOL(pg_numa_init() != -1);
+}
+
+bool
+check_numa(char **newval, void **extra, GucSource source)
+{
+	bool		result = true;
+	NumaConfigData *n;
+	char	   *rawstring = *newval;
+
+	n = (NumaConfigData *) guc_malloc(LOG, sizeof(NumaConfigData));
+#ifndef USE_LIBNUMA
+	n->setting = NUMA_OFF;
+
+	if (!(strcmp(rawstring, "") == 0 || strcmp(rawstring, "off") == 0)) {
+
+		GUC_check_errdetail("\"%s\" is not supported on this platform.",
+							"numa");
+		result = false;
+	}
+#else
+
+	/* in case of just listing NUMA nodes it's list of preferred ones */
+	n->setting = NUMA_PREFERRED;
+
+	if (strcmp(rawstring, "") == 0)
+		n->setting = DEFAULT_NUMA;
+	else if (pg_strcasecmp(rawstring, "off") == 0)
+		n->setting = NUMA_OFF;
+	else if (pg_strcasecmp(rawstring, "all") == 0) {
+		n->setting = NUMA_ALL;
+		n->nodes = numa_all_nodes_ptr;
+	} else if (pg_strcasecmp(rawstring, "auto") == 0) {
+		n->setting = NUMA_AUTO;
+		n->nodes = numa_all_nodes_ptr;
+	} else if (isdigit(rawstring[0]))
+		n->setting = NUMA_PREFERRED;
+	else if (rawstring[0] == '=')
+		n->setting = NUMA_STRICT_ONLY;
+	else if (rawstring[0] == '@')
+		n->setting = NUMA_STRICT_ONLY_AND_CPU_TOO;
+	else {
+		GUC_check_errdetail("Invalid option \"%s\".", rawstring);
+		guc_free(n);
+		return false;
+	}
+
+	if(n->setting >= NUMA_PREFERRED) {
+		char *s = rawstring;
+
+		/* skip first character */
+		if(n->setting >= NUMA_STRICT_ONLY)
+			s++;
+
+		n->nodes = pg_numa_parse_nodestring(s);
+		if(n->nodes == 0) {
+			GUC_check_errdetail("Invalid list syntax in parameter \"%s\".",
+				"numa");
+			guc_free(n);
+			return false;
+		}
+	}
+
+#endif
+
+	*extra = n;
+	return result;
+}
+
+void
+assign_numa(const char *newval, void *extra)
+{
+	numa = (NumaConfigData *) extra;
 }

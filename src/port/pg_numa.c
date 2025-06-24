@@ -13,10 +13,17 @@
  *-------------------------------------------------------------------------
  */
 
-#include "c.h"
+//JW:is this legal to replace "c.h" with below:
+#ifndef FRONTEND
+#include "postgres.h"
+#else
+#include "postgres_fe.h"
+#endif
+
 #include <unistd.h>
 
 #include "port/pg_numa.h"
+#include "common/string.h"
 
 /*
  * At this point we provide support only for Linux thanks to libnuma, but in
@@ -55,6 +62,87 @@ pg_numa_get_max_node(void)
 	return numa_max_node();
 }
 
+int
+pg_numa_interleave_memptr(void *ptr, size_t sz, pg_numa_bitmask_t *mask)
+{
+	numa_interleave_memory(ptr, sz, mask);
+	return 0;
+}
+
+pg_numa_bitmask_t *
+pg_numa_parse_nodestring(const char *string)
+{
+	return numa_parse_nodestring(string);
+}
+
+void
+pg_numa_set_bind_policy(int strict)
+{
+	numa_set_bind_policy(strict);
+}
+
+void
+pg_numa_bind(pg_numa_bitmask_t *nodemask)
+{
+	numa_bind(nodemask);
+}
+
+#ifndef FRONTEND
+/*
+ * The standard libnuma built-in code can be seen here:
+ * https://github.com/numactl/numactl/blob/master/libnuma.c
+ *
+ */
+void
+numa_warn(int num, char *fmt,...)
+{
+	va_list		ap;
+	int			olde = errno;
+	int			needed;
+	StringInfoData msg;
+
+	initStringInfo(&msg);
+
+	va_start(ap, fmt);
+	needed = appendStringInfoVA(&msg, fmt, ap);
+	va_end(ap);
+	if (needed > 0)
+	{
+		enlargeStringInfo(&msg, needed);
+		va_start(ap, fmt);
+		appendStringInfoVA(&msg, fmt, ap);
+		va_end(ap);
+	}
+
+	/* chomp last newline character */
+	pg_strip_crlf(msg.data);
+
+	ereport(WARNING,
+			(errcode(ERRCODE_EXTERNAL_ROUTINE_EXCEPTION),
+			 errmsg_internal("libnuma: %s", msg.data)));
+
+	pfree(msg.data);
+
+	errno = olde;
+}
+
+void
+numa_error(char *where)
+{
+	int			olde = errno;
+
+	/* chomp last newline character */
+	pg_strip_crlf(where);
+
+	/*
+	 * XXX: for now we issue just WARNING, but long-term that might depend on
+	 * numa_set_strict() here.
+	 */
+	elog(WARNING, "libnuma: %s", where);
+	errno = olde;
+}
+#endif							/* FRONTEND */
+
 #else
 
 /* Empty wrappers */
@@ -75,6 +163,30 @@ int
 pg_numa_get_max_node(void)
 {
 	return 0;
+}
+
+int
+pg_numa_interleave_memptr(void *ptr, size_t sz, pg_numa_bitmask_t *mask)
+{
+	return 0;
+}
+
+pg_numa_bitmask_t *
+pg_numa_parse_nodestring(const char *string)
+{
+	return NULL;
+}
+
+void
+pg_numa_set_bind_policy(int strict)
+{
+	return;
+}
+
+void
+pg_numa_bind(pg_numa_bitmask_t *nodemask)
+{
+	return;
 }
 
 #endif

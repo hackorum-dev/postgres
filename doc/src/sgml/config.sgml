@@ -2329,6 +2329,32 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-numa" xreflabel="numa">
+      <term><varname>numa</varname> (<type>enum</type>)
+      <indexterm>
+       <primary><varname>numa</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies wheter to use NUMA interleaving policy for the shared memory
+        segment. Possible values are <literal>off</literal>,
+        <literal>all</literal> (interleaves shared memory across all available NUMA nodes),
+        <literal>auto</literal> (as previous, but only if number of available NUMA nodes is 2 or higher)
+        or <literal>[=@]comma-separated list of node numbers or node ranges</literal>
+
+        If comma-separated list of NUMA nodes is prefixed with <literal>=</literal> the memory allocations
+        are made strict to avoid spilling to other NUMA nodes.
+        If comma-separated list of NUMA nodes is prefixed with <literal>@</literal> the memory allocations
+        are made strict and also available CPUs are limited only to those of listed NUMA nodes.
+
+        This parameter is only effective on Linux. Parallel Query interleaving is
+        only supported with <literal>dynamic_shared_memory</literal>=<literal>posix</literal>
+        The default value is <literal>off</literal>. This parameter can only be
+        set at server start.
+       </para>
+      </listitem>
+     </varlistentry>
      </variablelist>
      </sect2>
 
