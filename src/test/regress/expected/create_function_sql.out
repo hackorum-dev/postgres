@@ -771,9 +771,22 @@ ERROR:  return type mismatch in function declared to return integer[]
 DETAIL:  Function's final statement must be SELECT or INSERT/UPDATE/DELETE/MERGE RETURNING.
 CONTEXT:  SQL function "test1" during startup
 RESET check_function_bodies;
+-- Test: prevent replacing an IMMUTABLE function used in index with a non-IMMUTABLE one
+CREATE OR REPLACE FUNCTION fidx(int) RETURNS int
+IMMUTABLE LANGUAGE SQL AS $$ SELECT $1 + 1 $$;
+-- Create a table and an index using that function
+CREATE TABLE test_idx(a int);
+CREATE INDEX idx_f ON test_idx((fidx(a)));
+-- This should be allowed
+CREATE OR REPLACE FUNCTION fidx(int) RETURNS int
+IMMUTABLE LANGUAGE SQL AS $$ SELECT $1 + 2 $$;
+-- Try to replace it with a STABLE function (should fail)
+CREATE OR REPLACE FUNCTION fidx(int) RETURNS int
+STABLE LANGUAGE SQL AS $$ SELECT $1 + 1 $$;
+ERROR:  cannot replace function "fidx" with a non-IMMUTABLE function because it is used by an index
 -- Cleanup
 DROP SCHEMA temp_func_test CASCADE;
-NOTICE:  drop cascades to 35 other objects
+NOTICE:  drop cascades to 37 other objects
 DETAIL:  drop cascades to function functest_a_1(text,date)
 drop cascades to function functest_a_2(text[])
 drop cascades to function functest_a_3()
@@ -809,5 +822,7 @@ drop cascades to table ddl_test
 drop cascades to function alter_and_insert()
 drop cascades to function double_append(anyarray,anyelement)
 drop cascades to function test1(anyelement)
+drop cascades to function fidx(integer)
+drop cascades to table test_idx
 DROP USER regress_unpriv_user;
 RESET search_path;

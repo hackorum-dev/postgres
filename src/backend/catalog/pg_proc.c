@@ -26,6 +26,8 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_transform.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_depend.h"
+#include "utils/fmgroids.h"
 #include "executor/functions.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
@@ -419,6 +421,61 @@ ProcedureCreate(const char *procedureName,
 					  oldproc->prokind == PROKIND_WINDOW ?
 					  errdetail("\"%s\" is a window function.", procedureName) :
 					  0)));
+
+		if (oldproc->prokind == PROKIND_FUNCTION &&
+			oldproc->provolatile == PROVOLATILE_IMMUTABLE &&
+			volatility != PROVOLATILE_IMMUTABLE)
+		{
+			Relation depRel = table_open(DependRelationId, AccessShareLock);
+			bool index_found = false;
+			SysScanDesc scan;
+			ScanKeyData key;
+			HeapTuple dtup;
+
+			/* refobjid = oldproc->oid */
+			ScanKeyInit(&key,
+						Anum_pg_depend_refobjid,
+						BTEqualStrategyNumber, F_OIDEQ,
+						ObjectIdGetDatum(oldproc->oid));
+
+			scan = systable_beginscan(depRel,
+									DependReferenceIndexId,
+									true,
+									NULL,
+									1, &key);
+
+			while (HeapTupleIsValid(dtup = systable_getnext(scan)))
+			{
+				Form_pg_depend d = (Form_pg_depend) GETSTRUCT(dtup);
+
+				if (d->classid == RelationRelationId && d->objsubid == 0)
+				{
+					/* query relkind */
+					HeapTuple reltup = SearchSysCache1(RELOID, ObjectIdGetDatum(d->objid));
+					if (HeapTupleIsValid(reltup))
+					{
+						Form_pg_class classForm = (Form_pg_class) GETSTRUCT(reltup);
+						if (classForm->relkind == RELKIND_INDEX)
+						{
+							index_found = true;
+							ReleaseSysCache(reltup);
+							break;
+						}
+						ReleaseSysCache(reltup);
+					}
+				}
+			}
+
+			systable_endscan(scan);
+			table_close(depRel, AccessShareLock);
+
+			if (index_found)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						errmsg("cannot replace function \"%s\" with a non-IMMUTABLE function because it is used by an index",
+								procedureName)));
+
+		}
 
 		dropcmd = (prokind == PROKIND_PROCEDURE ? "DROP PROCEDURE" :
 				   prokind == PROKIND_AGGREGATE ? "DROP AGGREGATE" :

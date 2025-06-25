@@ -459,6 +459,19 @@ CREATE FUNCTION test1 (anyelement) RETURNS anyarray LANGUAGE SQL
 SELECT test1(0);
 RESET check_function_bodies;
 
+-- Test: prevent replacing an IMMUTABLE function used in index with a non-IMMUTABLE one
+CREATE OR REPLACE FUNCTION fidx(int) RETURNS int
+IMMUTABLE LANGUAGE SQL AS $$ SELECT $1 + 1 $$;
+-- Create a table and an index using that function
+CREATE TABLE test_idx(a int);
+CREATE INDEX idx_f ON test_idx((fidx(a)));
+-- This should be allowed
+CREATE OR REPLACE FUNCTION fidx(int) RETURNS int
+IMMUTABLE LANGUAGE SQL AS $$ SELECT $1 + 2 $$;
+-- Try to replace it with a STABLE function (should fail)
+CREATE OR REPLACE FUNCTION fidx(int) RETURNS int
+STABLE LANGUAGE SQL AS $$ SELECT $1 + 1 $$;
+
 -- Cleanup
 DROP SCHEMA temp_func_test CASCADE;
 DROP USER regress_unpriv_user;
