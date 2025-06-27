@@ -375,6 +375,23 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 		.reset_timestamp_cb = pgstat_backend_reset_timestamp_cb,
 	},
 
+	[PGSTAT_KIND_WAIT_EVENT] = {
+		.name = "wait_event",
+
+		.fixed_amount = false,
+		.write_to_file = true,
+
+		.accessed_across_databases = true,
+
+		.shared_size = sizeof(PgStatShared_WaitEvent),
+		.shared_data_off = offsetof(PgStatShared_WaitEvent, stats),
+		.shared_data_len = sizeof(((PgStatShared_WaitEvent *) 0)->stats),
+
+		.have_static_pending_cb = pgstat_wait_event_have_pending_cb,
+		.flush_static_cb = pgstat_wait_event_flush_cb,
+		.reset_timestamp_cb = pgstat_wait_event_reset_timestamp_cb,
+	},
+
 	/* stats for fixed-numbered (mostly 1) objects */
 
 	[PGSTAT_KIND_ARCHIVER] = {
@@ -478,24 +495,6 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 		.init_shmem_cb = pgstat_wal_init_shmem_cb,
 		.reset_all_cb = pgstat_wal_reset_all_cb,
 		.snapshot_cb = pgstat_wal_snapshot_cb,
-	},
-
-	[PGSTAT_KIND_WAIT_EVENT] = {
-		.name = "wait_event",
-
-		.fixed_amount = true,
-		.write_to_file = true,
-
-		.snapshot_ctl_off = offsetof(PgStat_Snapshot, wait_event),
-		.shared_ctl_off = offsetof(PgStat_ShmemControl, wait_event),
-		.shared_data_off = offsetof(PgStatShared_WaitEvent, stats),
-		.shared_data_len = sizeof(((PgStatShared_WaitEvent *) 0)->stats),
-
-		.flush_static_cb = pgstat_wait_event_flush_cb,
-		.have_static_pending_cb = pgstat_wait_event_have_pending_cb,
-		.init_shmem_cb = pgstat_wait_event_init_shmem_cb,
-		.reset_all_cb = pgstat_wait_event_reset_all_cb,
-		.snapshot_cb = pgstat_wait_event_snapshot_cb,
 	},
 };
 

@@ -1757,9 +1757,6 @@ pg_stat_get_wait_event(PG_FUNCTION_ARGS)
 
 	InitMaterializedSRF(fcinfo, 0);
 
-	/* request wait event stats from the cumulative stats system */
-	stats = pgstat_fetch_stat_wait_event();
-
 	for (i = 0; i < NB_WAITCLASSTABLE_ENTRIES; i++)
 	{
 		/* for each row */
@@ -1773,15 +1770,19 @@ pg_stat_get_wait_event(PG_FUNCTION_ARGS)
 		for (j = 0; j < numWaitEvents; j++)
 		{
 			const char *name;
+			uint32		wait_event_info;
 
 			name = get_wait_event_name_from_index(class->offSet + j);
 
 			if (!name)
 				continue;
 
+			wait_event_info = ENCODE_WAIT_EVENT_INFO(i, j);
+			stats = pgstat_fetch_stat_wait_event(wait_event_info);
+
 			values[0] = PointerGetDatum(cstring_to_text(class->className));
 			values[1] = PointerGetDatum(cstring_to_text(name));
-			values[2] = Int64GetDatum(stats->counts[class->offSet + j]);
+			values[2] = Int64GetDatum(stats->counts);
 			values[3] = TimestampTzGetDatum(stats->stat_reset_timestamp);
 
 			tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);

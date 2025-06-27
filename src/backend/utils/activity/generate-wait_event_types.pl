@@ -241,13 +241,22 @@ if ($gen_code)
 
 ';
 
+	my $wait_event_class_shift = 0;
+	my $temp_mask = $wait_event_class_mask;
+	while (($temp_mask & 1) == 0 && $temp_mask != 0)
+	{
+		$wait_event_class_shift++;
+		$temp_mask >>= 1;
+	}
+
 	printf $h $header_comment, 'wait_event_types.h';
 	printf $h "#ifndef WAIT_EVENT_TYPES_H\n";
 	printf $h "#define WAIT_EVENT_TYPES_H\n\n";
 	printf $h "#define WAIT_EVENT_CLASS_MASK   0x%08X\n",
 	  $wait_event_class_mask;
-	printf $h "#define WAIT_EVENT_ID_MASK      0x%08X\n\n",
-	  $wait_event_id_mask;
+	printf $h "#define WAIT_EVENT_ID_MASK      0x%08X\n", $wait_event_id_mask;
+	printf $h "#define WAIT_EVENT_CLASS_SHIFT  %d\n\n",
+	  $wait_event_class_shift;
 	printf $h "#include \"utils/wait_classes.h\"\n\n";
 
 	printf $c $header_comment, 'pgstat_wait_event.c';
@@ -362,6 +371,10 @@ typedef struct DecodedWaitInfo
 #define WAIT_EVENT_INFO_DECODE(d, i) \\
     d.classId = ((i) & WAIT_EVENT_CLASS_MASK) / (WAIT_EVENT_CLASS_MASK & (-WAIT_EVENT_CLASS_MASK)), \\
     d.eventId = (i) & WAIT_EVENT_ID_MASK
+
+/* To encode wait_event_info from classId and eventId as integers */
+#define ENCODE_WAIT_EVENT_INFO(classId, eventId) \\
+	(((classId) << WAIT_EVENT_CLASS_SHIFT) | ((eventId) & WAIT_EVENT_ID_MASK))
 
 /* To map wait event classes into the WaitClassTable */
 typedef struct

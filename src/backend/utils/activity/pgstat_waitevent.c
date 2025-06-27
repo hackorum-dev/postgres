@@ -28,11 +28,14 @@ static PgStat_PendingWaitevent PendingWaitEventStats;
  * a pointer to the wait events statistics struct.
  */
 PgStat_WaitEvent *
-pgstat_fetch_stat_wait_event(void)
+pgstat_fetch_stat_wait_event(uint32 wait_event_info)
 {
-	pgstat_snapshot_fixed(PGSTAT_KIND_WAIT_EVENT);
+	PgStat_WaitEvent *wait_event_entry;
 
-	return &pgStatLocal.snapshot.wait_event;
+	wait_event_entry = (PgStat_WaitEvent *) pgstat_fetch_entry(PGSTAT_KIND_WAIT_EVENT,
+															   InvalidOid, (uint64) wait_event_info);
+
+	return wait_event_entry;
 }
 
 /*
@@ -131,95 +134,81 @@ get_wait_event_name_from_index(int index)
 /*
  * Flush out locally pending wait event statistics
  *
- * If no stats have been recorded, this function returns false.
- *
- * If nowait is true, this function returns true if the lock could not be
- * acquired. Otherwise, return false.
+ * Returns true if some statistics could not be flushed due to lock contention.
  */
+
 bool
 pgstat_wait_event_flush_cb(bool nowait)
 {
-	PgStatShared_WaitEvent *stats_shmem = &pgStatLocal.shmem->wait_event;
-	int			i;
+	PgStat_EntryRef *entry_ref;
+	bool		could_not_be_flushed = false;
 
 	if (!have_wait_event_stats)
 		return false;
 
-	if (!nowait)
-		LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
-	else if (!LWLockConditionalAcquire(&stats_shmem->lock, LW_EXCLUSIVE))
-		return true;
-
-	for (i = 0; i < NB_WAITCLASSTABLE_SIZE; i++)
+	for (int classIdx = 0; classIdx < NB_WAITCLASSTABLE_ENTRIES; classIdx++)
 	{
-		PgStat_WaitEvent *sharedent = &stats_shmem->stats;
+		WaitClassTableEntry *class;
+		int			classOffset;
+		int			classSize;
 
-		sharedent->counts[i] += PendingWaitEventStats.counts[i];
+		/* Skip empty entries */
+		if (WaitClassTable[classIdx].numberOfEvents == 0)
+			continue;
+
+		class = &WaitClassTable[classIdx];
+
+		classOffset = class->offSet;
+		classSize = class->numberOfEvents;
+
+		for (int eventId = 0; eventId < classSize; eventId++)
+		{
+			const char *name;
+			PgStatShared_WaitEvent *shwaiteventent;
+			PgStat_Counter *shstat;
+			PgStat_Counter pending_counter;
+			uint32		wait_event_info;
+
+			name = get_wait_event_name_from_index(classOffset + eventId);
+
+			if (!name)
+				continue;
+
+			/* Build the wait_event_info */
+			wait_event_info = ENCODE_WAIT_EVENT_INFO(classIdx, eventId);
+
+			entry_ref = pgstat_get_entry_ref_locked(PGSTAT_KIND_WAIT_EVENT,
+													InvalidOid, (uint64) wait_event_info, nowait);
+
+			if (!entry_ref)
+			{
+				could_not_be_flushed = true;
+				continue;
+			}
+
+			shwaiteventent = (PgStatShared_WaitEvent *) entry_ref->shared_stats;
+			shstat = &shwaiteventent->stats.counts;
+			pending_counter = PendingWaitEventStats.counts[classOffset + eventId];
+
+			*shstat += pending_counter;
+
+			pgstat_unlock_entry(entry_ref);
+		}
 	}
 
 	/* done, clear the pending entry */
 	MemSet(PendingWaitEventStats.counts, 0, sizeof(PendingWaitEventStats.counts));
 
-	LWLockRelease(&stats_shmem->lock);
+	if (!could_not_be_flushed)
+		have_wait_event_stats = false;
 
-	have_wait_event_stats = false;
-
-	return false;
+	return could_not_be_flushed;
 }
 
 void
-pgstat_wait_event_init_shmem_cb(void *stats)
+pgstat_wait_event_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts)
 {
-	PgStatShared_WaitEvent *stat_shmem = (PgStatShared_WaitEvent *) stats;
-
-	LWLockInitialize(&stat_shmem->lock, LWTRANCHE_PGSTATS_DATA);
-}
-
-void
-pgstat_wait_event_reset_all_cb(TimestampTz ts)
-{
-	for (int i = 0; i < NB_WAITCLASSTABLE_SIZE; i++)
-	{
-		LWLock	   *stats_lock = &pgStatLocal.shmem->wait_event.lock;
-		PgStat_Counter *counters = &pgStatLocal.shmem->wait_event.stats.counts[i];
-
-		LWLockAcquire(stats_lock, LW_EXCLUSIVE);
-
-		/*
-		 * Use the lock in the first wait event to protect the reset timestamp
-		 * as well.
-		 */
-		if (i == 0)
-			pgStatLocal.shmem->wait_event.stats.stat_reset_timestamp = ts;
-
-		memset(counters, 0, sizeof(*counters));
-		LWLockRelease(stats_lock);
-	}
-}
-
-void
-pgstat_wait_event_snapshot_cb(void)
-{
-	for (int i = 0; i < NB_WAITCLASSTABLE_SIZE; i++)
-	{
-		LWLock	   *stats_lock = &pgStatLocal.shmem->wait_event.lock;
-		PgStat_Counter *sh_counters = &pgStatLocal.shmem->wait_event.stats.counts[i];
-		PgStat_Counter *counters_snap = &pgStatLocal.snapshot.wait_event.counts[i];
-
-		LWLockAcquire(stats_lock, LW_SHARED);
-
-		/*
-		 * Use the lock in the first wait event to protect the reset timestamp
-		 * as well.
-		 */
-		if (i == 0)
-			pgStatLocal.snapshot.wait_event.stat_reset_timestamp =
-				pgStatLocal.shmem->wait_event.stats.stat_reset_timestamp;
-
-		/* using struct assignment due to better type safety */
-		*counters_snap = *sh_counters;
-		LWLockRelease(stats_lock);
-	}
+	((PgStatShared_WaitEvent *) header)->stats.stat_reset_timestamp = ts;
 }
 
 /*

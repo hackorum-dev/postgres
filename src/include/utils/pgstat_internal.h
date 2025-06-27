@@ -403,14 +403,6 @@ typedef struct PgStatShared_IO
 	PgStat_IO	stats;
 } PgStatShared_IO;
 
-/* Shared-memory ready PgStat_WaitEvent */
-typedef struct PgStatShared_WaitEvent
-{
-	/* lock protects ->stats */
-	LWLock		lock;
-	PgStat_WaitEvent stats;
-} PgStatShared_WaitEvent;
-
 typedef struct PgStatShared_SLRU
 {
 	/* lock protects ->stats */
@@ -471,6 +463,12 @@ typedef struct PgStatShared_Backend
 	PgStat_Backend stats;
 } PgStatShared_Backend;
 
+typedef struct PgStatShared_WaitEvent
+{
+	PgStatShared_Common header;
+	PgStat_WaitEvent stats;
+} PgStatShared_WaitEvent;
+
 /*
  * Central shared memory entry for the cumulative stats system.
  *
@@ -509,7 +507,6 @@ typedef struct PgStat_ShmemControl
 	PgStatShared_IO io;
 	PgStatShared_SLRU slru;
 	PgStatShared_Wal wal;
-	PgStatShared_WaitEvent wait_event;
 
 	/*
 	 * Custom stats data with fixed-numbered objects, indexed by (PgStat_Kind
@@ -543,8 +540,6 @@ typedef struct PgStat_Snapshot
 	PgStat_SLRUStats slru[SLRU_NUM_ELEMENTS];
 
 	PgStat_WalStats wal;
-
-	PgStat_WaitEvent wait_event;
 
 	/*
 	 * Data in snapshot for custom fixed-numbered statistics, indexed by
@@ -796,9 +791,8 @@ extern PGDLLIMPORT PgStat_LocalState pgStatLocal;
  */
 
 extern bool pgstat_wait_event_flush_cb(bool nowait);
-extern void pgstat_wait_event_init_shmem_cb(void *stats);
-extern void pgstat_wait_event_reset_all_cb(TimestampTz ts);
-extern void pgstat_wait_event_snapshot_cb(void);
+extern void pgstat_wait_event_reset_timestamp_cb(PgStatShared_Common *header,
+												 TimestampTz ts);
 extern bool pgstat_wait_event_have_pending_cb(void);
 
 /*
