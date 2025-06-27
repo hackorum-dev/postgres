@@ -3338,6 +3338,28 @@ lazy_truncate_heap(LVRelState *vacrel)
 	} while (new_rel_pages > vacrel->nonempty_pages && lock_waiter_detected);
 }
 
+typedef struct CountNonDeletablePagesScan
+{
+	BlockNumber	current_block;
+	BlockNumber	target_block;
+} CountNonDeletablePagesScan;
+
+static BlockNumber
+heap_backward_nondeletable_scan_next(ReadStream *stream,
+									 void *callback_private_data,
+									 void *per_buffer_data)
+{
+	CountNonDeletablePagesScan *scan =
+		(CountNonDeletablePagesScan *) callback_private_data;
+
+	scan->current_block--;
+
+	if (scan->current_block == scan->target_block)
+		return InvalidBlockNumber;
+
+	return scan->current_block;
+}
+
 /*
  * Rescan end pages to verify that they are (still) empty of tuples.
  *
@@ -3346,24 +3368,34 @@ lazy_truncate_heap(LVRelState *vacrel)
 static BlockNumber
 count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 {
-	BlockNumber blkno;
-	BlockNumber prefetchedUntil;
+	BlockNumber blkno = vacrel->rel_pages;
 	instr_time	starttime;
+	CountNonDeletablePagesScan scan;
+	ReadStream *stream;
+	int			iter = 0;
 
 	/* Initialize the starttime if we check for conflicting lock requests */
 	INSTR_TIME_SET_CURRENT(starttime);
 
 	/*
 	 * Start checking blocks at what we believe relation end to be and move
-	 * backwards.  (Strange coding of loop control is needed because blkno is
-	 * unsigned.)  To make the scan faster, we prefetch a few blocks at a time
-	 * in forward direction, so that OS-level readahead can kick in.
+	 * backwards.
 	 */
-	blkno = vacrel->rel_pages;
-	StaticAssertStmt((PREFETCH_SIZE & (PREFETCH_SIZE - 1)) == 0,
-					 "prefetch size must be power of 2");
-	prefetchedUntil = InvalidBlockNumber;
-	while (blkno > vacrel->nonempty_pages)
+	scan.current_block = vacrel->rel_pages;
+	scan.target_block = vacrel->nonempty_pages;
+
+	Assert(BlockNumberIsValid(scan.target_block));
+
+	/* start the read stream */
+	stream = read_stream_begin_relation(READ_STREAM_MAINTENANCE,
+										vacrel->bstrategy,
+										vacrel->rel,
+										MAIN_FORKNUM,
+										heap_backward_nondeletable_scan_next,
+										&scan,
+										0);
+
+	while (true)
 	{
 		Buffer		buf;
 		Page		page;
@@ -3378,8 +3410,14 @@ count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 		 * only check if that interval has elapsed once every 32 blocks to
 		 * keep the number of system calls and actual shared lock table
 		 * lookups to a minimum.
+		 *
+		 * A separate counter is used here, so that at least 31 blocks are
+		 * processed before lock contention can halt progress. If blckno was
+		 * used instead, a sufficiently contended scan could instead fail to
+		 * process any blocks by detecting its lock contention before
+		 * processing its first block.
 		 */
-		if ((blkno % 32) == 0)
+		if ((++iter % 32) == 0)
 		{
 			instr_time	currenttime;
 			instr_time	elapsed;
@@ -3397,6 +3435,8 @@ count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 									vacrel->relname)));
 
 					*lock_waiter_detected = true;
+
+					read_stream_end(stream);
 					return blkno;
 				}
 				starttime = currenttime;
@@ -3410,30 +3450,17 @@ count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 		 */
 		CHECK_FOR_INTERRUPTS();
 
-		blkno--;
+		buf = read_stream_next_buffer(stream, NULL);
 
-		/* If we haven't prefetched this lot yet, do so now. */
-		if (prefetchedUntil > blkno)
-		{
-			BlockNumber prefetchStart;
-			BlockNumber pblkno;
-
-			prefetchStart = blkno & ~(PREFETCH_SIZE - 1);
-			for (pblkno = prefetchStart; pblkno <= blkno; pblkno++)
-			{
-				PrefetchBuffer(vacrel->rel, MAIN_FORKNUM, pblkno);
-				CHECK_FOR_INTERRUPTS();
-			}
-			prefetchedUntil = prefetchStart;
-		}
-
-		buf = ReadBufferExtended(vacrel->rel, MAIN_FORKNUM, blkno, RBM_NORMAL,
-								 vacrel->bstrategy);
+		if (!BufferIsValid(buf))
+			break;
 
 		/* In this phase we only need shared access to the buffer */
 		LockBuffer(buf, BUFFER_LOCK_SHARE);
 
 		page = BufferGetPage(buf);
+		/* store for later use */
+		blkno = BufferGetBlockNumber(buf);
 
 		if (PageIsNew(page) || PageIsEmpty(page))
 		{
@@ -3467,7 +3494,10 @@ count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 
 		/* Done scanning if we found a tuple here */
 		if (hastup)
+		{
+			read_stream_end(stream);
 			return blkno + 1;
+		}
 	}
 
 	/*
@@ -3475,6 +3505,7 @@ count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 	 * pages still are; we need not bother to look at the last known-nonempty
 	 * page.
 	 */
+	read_stream_end(stream);
 	return vacrel->nonempty_pages;
 }
 
