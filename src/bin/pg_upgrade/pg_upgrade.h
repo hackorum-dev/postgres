@@ -115,6 +115,11 @@ extern char *output_files[];
 #define MULTIXACT_FORMATCHANGE_CAT_VER 201301231
 
 /*
+ * A page header was added to each SLRU page in 18.0.
+ */
+#define SLRU_PAGE_HEADER_CAT_VER 202506261
+
+/*
  * large object chunk size added to pg_controldata,
  * commit 5f93c37805e7485488480916b4585e098d3cc883
  */
@@ -425,6 +430,7 @@ void		rewriteVisibilityMap(const char *fromfile, const char *tofile,
 void		check_file_clone(void);
 void		check_copy_file_range(void);
 void		check_hard_link(transferMode transfer_mode);
+void		upgrade_xact_cache(const char *src_subdir, const char *dst_subdir);
 
 /* fopen_priv() is no longer different from fopen() */
 #define fopen_priv(path, mode)	fopen(path, mode)
