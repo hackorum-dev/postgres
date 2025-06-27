@@ -307,7 +307,7 @@ extern Path *reparameterize_path_by_child(PlannerInfo *root, Path *path,
 										  RelOptInfo *child_rel);
 extern bool path_is_reparameterizable_by_child(Path *path,
 											   RelOptInfo *child_rel);
-extern void free_path(Path *path);
+extern void free_path(Path *path, int level, bool recurse);
 
 static inline void
 link_path(Path **path_link, Path *path)
@@ -325,7 +325,7 @@ link_path(Path **path_link, Path *path)
 }
 
 static inline void
-unlink_path(Path **path_link)
+unlink_path(Path **path_link, int level, bool recurse, bool need_free)
 {
 	Path	   *path = *path_link;
 
@@ -341,8 +341,8 @@ unlink_path(Path **path_link)
 	*path_link = NULL;
 
 	/* Free path if none is referencing it. */
-	if (path->ref_count == 0)
-		free_path(path);
+	if (path->ref_count == 0 && need_free)
+		free_path(path, level, recurse);
 }
 
 /*

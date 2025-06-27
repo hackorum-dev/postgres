@@ -627,10 +627,10 @@ add_path(RelOptInfo *parent_rel, Path *new_path)
 														  p1);
 
 			/*
-			 * Delete the data pointed-to by the deleted cell, if possible
+			 * TODO: write a routine to unlink a path from the list node and
+			 * delete the list node
 			 */
-			if (!IsA(old_path, IndexPath))
-				pfree(old_path);
+			unlink_path(&old_path, 0, false, false);
 		}
 		else
 		{
@@ -658,12 +658,14 @@ add_path(RelOptInfo *parent_rel, Path *new_path)
 		/* Accept the new path: insert it at proper place in pathlist */
 		parent_rel->pathlist =
 			list_insert_nth(parent_rel->pathlist, insert_at, new_path);
+		new_path->ref_count++;
+		/* TODO: write a function to link_path in a List */
 	}
 	else
 	{
 		/* Reject and recycle the new path */
 		if (!IsA(new_path, IndexPath))
-			pfree(new_path);
+			free_path(new_path, 0, false);
 	}
 }
 
@@ -876,7 +878,8 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 		{
 			parent_rel->partial_pathlist =
 				foreach_delete_current(parent_rel->partial_pathlist, p1);
-			pfree(old_path);
+			/* TODO use routine to unlink a path from the linked list */
+			unlink_path(&old_path, 0, false, false);
 		}
 		else
 		{
@@ -899,11 +902,13 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 		/* Accept the new path: insert it at proper place */
 		parent_rel->partial_pathlist =
 			list_insert_nth(parent_rel->partial_pathlist, insert_at, new_path);
+		new_path->ref_count++;
+		/* TODO create a routine to link path in a list at a given place */
 	}
 	else
 	{
 		/* Reject and recycle the new path */
-		pfree(new_path);
+		free_path(new_path, 0, false);
 	}
 }
 
@@ -970,8 +975,13 @@ add_partial_path_precheck(RelOptInfo *parent_rel, int disabled_nodes,
 }
 
 void
-free_path(Path *path)
+free_path(Path *path, int level, bool recurse)
 {
+	if (!recurse && level > 0)
+		return;
+
+	level++;
+
 	/*
 	 * If the path is still referenced, freeing it would create a dangling
 	 * pointer.
@@ -979,11 +989,6 @@ free_path(Path *path)
 	/* TODO: it could just be an Assert? */
 	if (path->ref_count != 0)
 	{
-		ereport(WARNING,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errbacktrace(),
-				 errmsg("path node %p of type %d has reference count %d, can not be freed",
-						path, path->pathtype, path->ref_count)));
 		return;
 	}
 
@@ -995,11 +1000,6 @@ free_path(Path *path)
 	 */
 	if (list_member_ptr(path->parent->pathlist, path))
 	{
-		ereport(WARNING,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errbacktrace(),
-				 errmsg("path node %p of type %d has reference count %d but is linked in parent's pathlist, can not be freed",
-						path, path->pathtype, path->ref_count)));
 		return;
 	}
 
@@ -1018,8 +1018,8 @@ free_path(Path *path)
 			{
 				JoinPath   *jpath = (JoinPath *) path;
 
-				unlink_path(&(jpath->outerjoinpath));
-				unlink_path(&(jpath->innerjoinpath));
+				unlink_path(&(jpath->outerjoinpath), level, recurse, true);
+				unlink_path(&(jpath->innerjoinpath), level, recurse, true);
 			}
 			break;
 
@@ -1035,7 +1035,7 @@ free_path(Path *path)
 
 					/* TODO use a routine to unlink path from list. */
 					appath->subpaths = foreach_delete_current(appath->subpaths, lc);
-					unlink_path(&subpath);
+					unlink_path(&subpath, level, recurse, true);
 				}
 			}
 			break;
@@ -1044,7 +1044,7 @@ free_path(Path *path)
 			{
 				GatherPath *gpath = (GatherPath *) path;
 
-				unlink_path(&(gpath->subpath));
+				unlink_path(&(gpath->subpath), level, recurse, true);
 			}
 			break;
 
@@ -1052,7 +1052,7 @@ free_path(Path *path)
 			{
 				GatherMergePath *gmpath = (GatherMergePath *) path;
 
-				unlink_path(&gmpath->subpath);
+				unlink_path(&gmpath->subpath, level, recurse, true);
 			}
 			break;
 
@@ -1060,7 +1060,7 @@ free_path(Path *path)
 			{
 				BitmapHeapPath *bhpath = (BitmapHeapPath *) path;
 
-				unlink_path(&(bhpath->bitmapqual));
+				unlink_path(&(bhpath->bitmapqual), level, recurse, true);
 			}
 			break;
 
@@ -1068,7 +1068,7 @@ free_path(Path *path)
 			{
 				MaterialPath *mpath = (MaterialPath *) path;
 
-				unlink_path(&(mpath->subpath));
+				unlink_path(&(mpath->subpath), level, recurse, true);
 			}
 			break;
 
@@ -1076,7 +1076,7 @@ free_path(Path *path)
 			{
 				MemoizePath *mpath = (MemoizePath *) path;
 
-				unlink_path(&mpath->subpath);
+				unlink_path(&mpath->subpath, level, recurse, true);
 			}
 			break;
 
@@ -1090,16 +1090,64 @@ free_path(Path *path)
 				{
 					ProjectionPath *ppath = (ProjectionPath *) path;
 
-					unlink_path(&ppath->subpath);
+					unlink_path(&ppath->subpath, level, recurse, true);
 				}
 			}
 			break;
+		case T_Agg:
+		{
+			AggPath *apath = (AggPath *) path;
 
+			unlink_path(&apath->subpath, level, recurse, true);
+		}
+			break;
+		case T_IncrementalSort:
+		{
+			IncrementalSortPath *ipath = (IncrementalSortPath *) path;
+
+			unlink_path(&ipath->spath.subpath, level, recurse, true);
+		}
+			break;
+		case T_WindowAgg:
+		{
+			WindowAggPath *wpath = (WindowAggPath *) path;
+
+			unlink_path(&wpath->subpath, level, recurse, true);
+		}
+			break;
+		case T_SubqueryScan:
+		{
+			SubqueryScanPath *spath = (SubqueryScanPath *) path;
+
+			unlink_path(&spath->subpath, level, recurse, true);
+		}
+			break;
+		case T_Unique:
+		{
+			UniquePath *upath = (UniquePath *) path;
+
+			unlink_path(&upath->subpath, level, recurse, true);
+		}
+			break;
+		case T_Limit:
+		{
+			LimitPath *lpath = (LimitPath *) path;
+
+			unlink_path(&lpath->subpath, level, recurse, true);
+		}
+			break;
+		case T_Group:
+		{
+			GroupPath *gpath = (GroupPath *) path;
+
+			unlink_path(&gpath->subpath, level, recurse, true);
+		}
+			break;
 		default:
-			ereport(WARNING,
+			ereport(ERROR,
 					(errcode(ERRCODE_INTERNAL_ERROR),
 					 errbacktrace(),
-					 errmsg("unrecognized path type %d", path->pathtype)));
+					 errmsg("unrecognized path type1 %d", path->pathtype)));
 			break;
 	}
 
@@ -1256,7 +1304,7 @@ create_bitmap_heap_path(PlannerInfo *root,
 	pathnode->path.parallel_workers = parallel_degree;
 	pathnode->path.pathkeys = NIL;	/* always unordered */
 
-	pathnode->bitmapqual = bitmapqual;
+	link_path(&(pathnode->bitmapqual), bitmapqual);
 
 	cost_bitmap_heap_scan(&pathnode->path, root, rel,
 						  pathnode->path.param_info,
@@ -1291,6 +1339,8 @@ create_bitmap_and_path(PlannerInfo *root,
 	{
 		Path	   *bitmapqual = (Path *) lfirst(lc);
 
+		/* TODO: find a better way to link a path in a linked list */
+		bitmapqual->ref_count++;
 		required_outer = bms_add_members(required_outer,
 										 PATH_REQ_OUTER(bitmapqual));
 	}
@@ -1343,6 +1393,8 @@ create_bitmap_or_path(PlannerInfo *root,
 	{
 		Path	   *bitmapqual = (Path *) lfirst(lc);
 
+		/* TODO: find a better way to link a path in a linked list */
+		bitmapqual->ref_count++;
 		required_outer = bms_add_members(required_outer,
 										 PATH_REQ_OUTER(bitmapqual));
 	}
@@ -1516,6 +1568,8 @@ create_append_path(PlannerInfo *root,
 	{
 		Path	   *subpath = (Path *) lfirst(l);
 
+		/* TODO: we should use the routine to link path to list */
+		subpath->ref_count++;
 		pathnode->path.parallel_safe = pathnode->path.parallel_safe &&
 			subpath->parallel_safe;
 
@@ -1661,6 +1715,9 @@ create_merge_append_path(PlannerInfo *root,
 		/* All child paths should be unparameterized */
 		Assert(bms_is_empty(PATH_REQ_OUTER(subpath)));
 
+		/* TODO: use routine which links a path into a list */
+		subpath->ref_count++;
+
 		pathnode->path.rows += subpath->rows;
 		pathnode->path.parallel_safe = pathnode->path.parallel_safe &&
 			subpath->parallel_safe;
@@ -1789,7 +1846,7 @@ create_material_path(RelOptInfo *rel, Path *subpath)
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = subpath->pathkeys;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 
 	cost_material(&pathnode->path,
 				  subpath->disabled_nodes,
@@ -1824,7 +1881,7 @@ create_memoize_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = subpath->pathkeys;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 	pathnode->hash_operators = hash_operators;
 	pathnode->param_exprs = param_exprs;
 	pathnode->singlerow = singlerow;
@@ -1919,7 +1976,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	 */
 	pathnode->path.pathkeys = NIL;
 
-	pathnode->subpath = subpath;
+	link_path(&(pathnode->subpath), subpath);
 
 	/*
 	 * Under GEQO and when planning child joins, the sjinfo might be
@@ -1947,7 +2004,8 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		pathnode->path.total_cost = subpath->total_cost;
 		pathnode->path.pathkeys = subpath->pathkeys;
 
-		rel->cheapest_unique_path = (Path *) pathnode;
+		/* TODO: Do we need to make sure that cheapest_unique_path is NULL. */
+		link_path(&(rel->cheapest_unique_path), (Path *) pathnode);
 
 		MemoryContextSwitchTo(oldcontext);
 
@@ -1986,7 +2044,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 				pathnode->path.total_cost = subpath->total_cost;
 				pathnode->path.pathkeys = subpath->pathkeys;
 
-				rel->cheapest_unique_path = (Path *) pathnode;
+				link_path(&(rel->cheapest_unique_path), (Path *) pathnode);
 
 				MemoryContextSwitchTo(oldcontext);
 
@@ -2087,7 +2145,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		pathnode->path.total_cost = sort_path.total_cost;
 	}
 
-	rel->cheapest_unique_path = (Path *) pathnode;
+	link_path(&(rel->cheapest_unique_path), (Path *) pathnode);
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -2129,7 +2187,7 @@ create_gather_merge_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 	pathnode->num_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
 	pathnode->path.pathtarget = target ? target : rel->reltarget;
@@ -2200,7 +2258,7 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = NIL;	/* Gather has unordered result */
 
-	pathnode->subpath = subpath;
+	link_path(&(pathnode->subpath), subpath);
 	pathnode->num_workers = subpath->parallel_workers;
 	pathnode->single_copy = false;
 
@@ -2243,7 +2301,7 @@ create_subqueryscan_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 
 	cost_subqueryscan(pathnode, root, rel, pathnode->path.param_info,
 					  trivial_pathtarget);
@@ -2475,7 +2533,7 @@ create_foreignscan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.total_cost = total_cost;
 	pathnode->path.pathkeys = pathkeys;
 
-	pathnode->fdw_outerpath = fdw_outerpath;
+	link_path(&pathnode->fdw_outerpath, fdw_outerpath);
 	pathnode->fdw_restrictinfo = fdw_restrictinfo;
 	pathnode->fdw_private = fdw_private;
 
@@ -2529,7 +2587,7 @@ create_foreign_join_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.total_cost = total_cost;
 	pathnode->path.pathkeys = pathkeys;
 
-	pathnode->fdw_outerpath = fdw_outerpath;
+	link_path(&pathnode->fdw_outerpath, fdw_outerpath);
 	pathnode->fdw_restrictinfo = fdw_restrictinfo;
 	pathnode->fdw_private = fdw_private;
 
@@ -2578,7 +2636,7 @@ create_foreign_upper_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.total_cost = total_cost;
 	pathnode->path.pathkeys = pathkeys;
 
-	pathnode->fdw_outerpath = fdw_outerpath;
+	link_path(&pathnode->fdw_outerpath, fdw_outerpath);
 	pathnode->fdw_restrictinfo = fdw_restrictinfo;
 	pathnode->fdw_private = fdw_private;
 
@@ -2741,8 +2799,8 @@ create_nestloop_path(PlannerInfo *root,
 	pathnode->jpath.path.pathkeys = pathkeys;
 	pathnode->jpath.jointype = jointype;
 	pathnode->jpath.inner_unique = extra->inner_unique;
-	pathnode->jpath.outerjoinpath = outer_path;
-	pathnode->jpath.innerjoinpath = inner_path;
+	link_path(&(pathnode->jpath.outerjoinpath), outer_path);
+	link_path(&(pathnode->jpath.innerjoinpath), inner_path);
 	pathnode->jpath.joinrestrictinfo = restrict_clauses;
 
 	final_cost_nestloop(root, pathnode, workspace, extra);
@@ -2807,8 +2865,8 @@ create_mergejoin_path(PlannerInfo *root,
 	pathnode->jpath.path.pathkeys = pathkeys;
 	pathnode->jpath.jointype = jointype;
 	pathnode->jpath.inner_unique = extra->inner_unique;
-	pathnode->jpath.outerjoinpath = outer_path;
-	pathnode->jpath.innerjoinpath = inner_path;
+	link_path(&(pathnode->jpath.outerjoinpath), outer_path);
+	link_path(&(pathnode->jpath.innerjoinpath), inner_path);
 	pathnode->jpath.joinrestrictinfo = restrict_clauses;
 	pathnode->path_mergeclauses = mergeclauses;
 	pathnode->outersortkeys = outersortkeys;
@@ -2885,8 +2943,8 @@ create_hashjoin_path(PlannerInfo *root,
 	pathnode->jpath.path.pathkeys = NIL;
 	pathnode->jpath.jointype = jointype;
 	pathnode->jpath.inner_unique = extra->inner_unique;
-	pathnode->jpath.outerjoinpath = outer_path;
-	pathnode->jpath.innerjoinpath = inner_path;
+	link_path(&(pathnode->jpath.outerjoinpath), outer_path);
+	link_path(&(pathnode->jpath.innerjoinpath), inner_path);
 	pathnode->jpath.joinrestrictinfo = restrict_clauses;
 	pathnode->path_hashclauses = hashclauses;
 	/* final_cost_hashjoin will fill in pathnode->num_batches */
@@ -2927,6 +2985,9 @@ create_projection_path(PlannerInfo *root,
 		Assert(subpp->path.parent == rel);
 		subpath = subpp->subpath;
 		Assert(!IsA(subpath, ProjectionPath));
+
+		/* Free it if not used anywhere else. */
+		unlink_path((Path **) &subpp, 0, false, false);
 	}
 
 	pathnode->path.pathtype = T_Result;
@@ -2942,7 +3003,7 @@ create_projection_path(PlannerInfo *root,
 	/* Projection does not change the sort order */
 	pathnode->path.pathkeys = subpath->pathkeys;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 
 	/*
 	 * We might not need a separate Result node.  If the input plan node type
@@ -3063,21 +3124,21 @@ apply_projection_to_path(PlannerInfo *root,
 		{
 			GatherPath *gpath = (GatherPath *) path;
 
-			gpath->subpath = (Path *)
-				create_projection_path(root,
-									   gpath->subpath->parent,
-									   gpath->subpath,
-									   target);
+			link_path(&gpath->subpath,
+					  (Path *) create_projection_path(root,
+													  gpath->subpath->parent,
+													  gpath->subpath,
+													  target));
 		}
 		else
 		{
 			GatherMergePath *gmpath = (GatherMergePath *) path;
 
-			gmpath->subpath = (Path *)
-				create_projection_path(root,
-									   gmpath->subpath->parent,
-									   gmpath->subpath,
-									   target);
+			link_path(&gmpath->subpath,
+					  (Path *) create_projection_path(root,
+													  gmpath->subpath->parent,
+													  gmpath->subpath,
+													  target));
 		}
 	}
 	else if (path->parallel_safe &&
@@ -3126,7 +3187,7 @@ create_set_projection_path(PlannerInfo *root,
 	/* Projection does not change the sort order XXX? */
 	pathnode->path.pathkeys = subpath->pathkeys;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 
 	/*
 	 * Estimate number of rows produced by SRFs for each row of input; if
@@ -3196,7 +3257,7 @@ create_incremental_sort_path(PlannerInfo *root,
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 
 	cost_incremental_sort(&pathnode->path,
 						  root, pathkeys, presorted_keys,
@@ -3244,7 +3305,7 @@ create_sort_path(PlannerInfo *root,
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 
 	cost_sort(&pathnode->path, root, pathkeys,
 			  subpath->disabled_nodes,
@@ -3291,7 +3352,7 @@ create_group_path(PlannerInfo *root,
 	/* Group doesn't change sort ordering */
 	pathnode->path.pathkeys = subpath->pathkeys;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 
 	pathnode->groupClause = groupClause;
 	pathnode->qual = qual;
@@ -3350,7 +3411,7 @@ create_upper_unique_path(PlannerInfo *root,
 	/* Unique doesn't change the input ordering */
 	pathnode->path.pathkeys = subpath->pathkeys;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 	pathnode->numkeys = numCols;
 
 	/*
@@ -3424,7 +3485,7 @@ create_agg_path(PlannerInfo *root,
 	else
 		pathnode->path.pathkeys = NIL;	/* output is unordered */
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 
 	pathnode->aggstrategy = aggstrategy;
 	pathnode->aggsplit = aggsplit;
@@ -3488,7 +3549,7 @@ create_groupingsets_path(PlannerInfo *root,
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 
 	/*
 	 * Simplify callers by downgrading AGG_SORTED to AGG_PLAIN, and AGG_MIXED
@@ -3746,7 +3807,7 @@ create_windowagg_path(PlannerInfo *root,
 	/* WindowAgg preserves the input sort order */
 	pathnode->path.pathkeys = subpath->pathkeys;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 	pathnode->winclause = winclause;
 	pathnode->qual = qual;
 	pathnode->runCondition = runCondition;
@@ -3818,8 +3879,9 @@ create_setop_path(PlannerInfo *root,
 	pathnode->path.pathkeys =
 		(strategy == SETOP_SORTED) ? leftpath->pathkeys : NIL;
 
-	pathnode->leftpath = leftpath;
-	pathnode->rightpath = rightpath;
+	link_path(&pathnode->leftpath, leftpath);
+	link_path(&pathnode->rightpath, rightpath);
+
 	pathnode->cmd = cmd;
 	pathnode->strategy = strategy;
 	pathnode->groupList = groupList;
@@ -3934,8 +3996,8 @@ create_recursiveunion_path(PlannerInfo *root,
 	/* RecursiveUnion result is always unsorted */
 	pathnode->path.pathkeys = NIL;
 
-	pathnode->leftpath = leftpath;
-	pathnode->rightpath = rightpath;
+	link_path(&pathnode->leftpath, leftpath);
+	link_path(&pathnode->rightpath, rightpath);
 	pathnode->distinctList = distinctList;
 	pathnode->wtParam = wtParam;
 	pathnode->numGroups = numGroups;
@@ -3977,7 +4039,7 @@ create_lockrows_path(PlannerInfo *root, RelOptInfo *rel,
 	 */
 	pathnode->path.pathkeys = NIL;
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 	pathnode->rowMarks = rowMarks;
 	pathnode->epqParam = epqParam;
 
@@ -4084,7 +4146,7 @@ create_modifytable_path(PlannerInfo *root, RelOptInfo *rel,
 		pathnode->path.pathtarget->width = 0;
 	}
 
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 	pathnode->operation = operation;
 	pathnode->canSetTag = canSetTag;
 	pathnode->nominalRelation = nominalRelation;
@@ -4144,7 +4206,7 @@ create_limit_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.startup_cost = subpath->startup_cost;
 	pathnode->path.total_cost = subpath->total_cost;
 	pathnode->path.pathkeys = subpath->pathkeys;
-	pathnode->subpath = subpath;
+	link_path(&pathnode->subpath, subpath);
 	pathnode->limitOffset = limitOffset;
 	pathnode->limitCount = limitCount;
 	pathnode->limitOption = limitOption;
@@ -4430,6 +4492,7 @@ do { \
 	(path) = reparameterize_path_by_child(root, (path), child_rel); \
 	if ((path) == NULL) \
 		return NULL; \
+	link_path(&(path), (path)); \
 } while(0)
 
 #define REPARAMETERIZE_CHILD_PATH_LIST(pathlist) \
@@ -4852,11 +4915,14 @@ reparameterize_pathlist_by_child(PlannerInfo *root,
 
 		if (path == NULL)
 		{
+			/* TODO: unlink paths in the list */
 			list_free(result);
 			return NIL;
 		}
 
+		/* TODO: need a routine to link a path into a linked list */
 		result = lappend(result, path);
+		path->ref_count++;
 	}
 
 	return result;

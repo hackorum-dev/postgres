@@ -3432,11 +3432,11 @@ free_unused_paths_from_rel(RelOptInfo *rel)
 		Path	   *path = (Path *) lfirst(lc_path);
 
 		/* Free the path if none references it. */
-		if (path->ref_count == 1)
+		if (path->ref_count == 0)
 		{
 			/* TODO: use routine to unlink path from list */
 			rel->pathlist = foreach_delete_current(rel->pathlist, lc_path);
-			unlink_path(&path);
+			unlink_path(&path, 0, true, true);
 		}
 	}
 
@@ -3446,10 +3446,10 @@ free_unused_paths_from_rel(RelOptInfo *rel)
 		Path	   *path = (Path *) lfirst(lc_path);
 
 		/* Free the path if none references it. */
-		if (path->ref_count == 1)
+		if (path->ref_count == 0)
 		{
 			rel->partial_pathlist = foreach_delete_current(rel->partial_pathlist, lc_path);
-			unlink_path(&path);
+			unlink_path(&path, 0, true, true);
 		}
 	}
 
