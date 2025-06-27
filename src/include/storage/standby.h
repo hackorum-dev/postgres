@@ -25,6 +25,14 @@ extern PGDLLIMPORT int max_standby_archive_delay;
 extern PGDLLIMPORT int max_standby_streaming_delay;
 extern PGDLLIMPORT bool log_recovery_conflict_waits;
 
+/*
+ * After sending a PROCSIG_RECOVERY_CONFLICT_BUFFERPIN, we sleep for this long
+ * to give backends a chance to cancel before checking again if we can acquire
+ * the cleanup lock.
+ */
+#define BUFFERPIN_INITIAL_WAIT_US	1000;
+extern int bufferpin_wait_us;
+
 extern void InitRecoveryTransactionEnvironment(void);
 extern void ShutdownRecoveryTransactionEnvironment(void);
 

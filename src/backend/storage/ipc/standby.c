@@ -42,6 +42,12 @@ int			max_standby_streaming_delay = 30 * 1000;
 bool		log_recovery_conflict_waits = false;
 
 /*
+ * Sleep time after sending PROCSIG_RECOVERY_CONFLICT_BUFFERPIN. Reset in
+ * LockBufferForCleanup after successfully acquiring cleanup lock.
+ */
+int bufferpin_wait_us = BUFFERPIN_INITIAL_WAIT_US;
+
+/*
  * Keep track of all the exclusive locks owned by original transactions.
  * For each known exclusive lock, there is a RecoveryLockEntry in the
  * RecoveryLockHash hash table.  All RecoveryLockEntrys belonging to a
@@ -769,8 +775,8 @@ cleanup:
  * The ProcWaitForSignal() sleep normally done in LockBufferForCleanup()
  * (when not InHotStandby) is performed here, for code clarity.
  *
- * We either resolve conflicts immediately or set a timeout to wake us at
- * the limit of our patience.
+ * We set a timeout to wake us at the limit of our patience. This will trigger
+ * immediately if the deadline has already passed.
  *
  * Resolve conflicts by sending a PROCSIG signal to all backends to check if
  * they hold one of the buffer pins that is blocking Startup process. If so,
@@ -798,38 +804,31 @@ ResolveRecoveryConflictWithBufferPin(void)
 
 	ltime = GetStandbyLimitTime();
 
-	if (GetCurrentTimestamp() >= ltime && ltime != 0)
+	/*
+	 * Wake up at ltime, and check for deadlocks as well if we will be
+	 * waiting longer than deadlock_timeout
+	 */
+	EnableTimeoutParams timeouts[2];
+	int			cnt = 0;
+
+	if (ltime != 0)
 	{
-		/*
-		 * We're already behind, so clear a path as quickly as possible.
-		 */
-		SendRecoveryConflictWithBufferPin(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN);
+		timeouts[cnt].id = STANDBY_TIMEOUT;
+		timeouts[cnt].type = TMPARAM_AT;
+		timeouts[cnt].fin_time = ltime;
+		cnt++;
 	}
-	else
+
+	if (ltime == 0 || GetCurrentTimestamp() < ltime)
 	{
-		/*
-		 * Wake up at ltime, and check for deadlocks as well if we will be
-		 * waiting longer than deadlock_timeout
-		 */
-		EnableTimeoutParams timeouts[2];
-		int			cnt = 0;
-
-		if (ltime != 0)
-		{
-			timeouts[cnt].id = STANDBY_TIMEOUT;
-			timeouts[cnt].type = TMPARAM_AT;
-			timeouts[cnt].fin_time = ltime;
-			cnt++;
-		}
-
 		got_standby_deadlock_timeout = false;
 		timeouts[cnt].id = STANDBY_DEADLOCK_TIMEOUT;
 		timeouts[cnt].type = TMPARAM_AFTER;
 		timeouts[cnt].delay_ms = DeadlockTimeout;
 		cnt++;
-
-		enable_timeouts(timeouts, cnt);
 	}
+
+	enable_timeouts(timeouts, cnt);
 
 	/*
 	 * Wait to be signaled by UnpinBuffer() or for the wait to be interrupted
@@ -843,7 +842,24 @@ ResolveRecoveryConflictWithBufferPin(void)
 	ProcWaitForSignal(WAIT_EVENT_BUFFER_PIN);
 
 	if (got_standby_delay_timeout)
+	{
 		SendRecoveryConflictWithBufferPin(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN);
+
+		/*
+		 * Sleep a bit to avoid busy-waiting and repeatedly sending
+		 * PROCSIG_RECOVERY_CONFLICT_BUFFERPIN.
+		 */
+		pgstat_report_wait_start(WAIT_EVENT_BUFFER_PIN);
+		pg_usleep(bufferpin_wait_us);
+		pgstat_report_wait_end();
+
+		/*
+		 * Progressively increase the sleep time but to no more than 1 second.
+		 */
+		bufferpin_wait_us *= 2;
+		if (bufferpin_wait_us > 1000000)
+			bufferpin_wait_us = 1000000;
+	}
 	else if (got_standby_deadlock_timeout)
 	{
 		/*
@@ -857,7 +873,7 @@ ResolveRecoveryConflictWithBufferPin(void)
 		 * buffer is unpinned or ltime is reached. This would increase the
 		 * workload in the startup process and backends. In practice it may
 		 * not be so harmful because the period that the buffer is kept pinned
-		 * is basically no so long. But we should fix this?
+		 * is basically not so long. But we should fix this?
 		 */
 		SendRecoveryConflictWithBufferPin(PROCSIG_RECOVERY_CONFLICT_STARTUP_DEADLOCK);
 	}

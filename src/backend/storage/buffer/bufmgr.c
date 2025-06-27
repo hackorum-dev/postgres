@@ -5722,6 +5722,13 @@ LockBufferForCleanup(Buffer buffer)
 			UnlockBufHdr(bufHdr, buf_state);
 
 			/*
+			 * Reset sleep time after sending
+			 * PROCSIG_RECOVERY_CONFLICT_BUFFERPIN for the next buffer pin
+			 * conflict.
+			 */
+			bufferpin_wait_us = BUFFERPIN_INITIAL_WAIT_US;
+
+			/*
 			 * Emit the log message if recovery conflict on buffer pin was
 			 * resolved but the startup process waited longer than
 			 * deadlock_timeout for it.
