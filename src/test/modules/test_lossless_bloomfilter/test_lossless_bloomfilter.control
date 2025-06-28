@@ -1,0 +1,5 @@
+# test_lossless_bloomfilter extension
+comment = 'Test enhanced lossless bloom filter functionality'
+default_version = '1.0'
+module_pathname = '$libdir/test_lossless_bloomfilter'
+relocatable = true 
