@@ -92,6 +92,7 @@ typedef struct
 	char		max_hazard;		/* worst proparallel hazard found so far */
 	char		max_interesting;	/* worst proparallel hazard of interest */
 	List	   *safe_param_ids; /* PARAM_EXEC Param IDs to treat as safe */
+	bool		is_subplan;
 } max_parallel_hazard_context;
 
 static bool contain_agg_clause_walker(Node *node, void *context);
@@ -770,23 +771,26 @@ is_parallel_safe(PlannerInfo *root, Node *node)
 	context.max_hazard = PROPARALLEL_SAFE;
 	context.max_interesting = PROPARALLEL_RESTRICTED;
 	context.safe_param_ids = NIL;
+	context.is_subplan = root->isSubPlan;
 
-	/*
-	 * The params that refer to the same or parent query level are considered
-	 * parallel-safe.  The idea is that we compute such params at Gather or
-	 * Gather Merge node and pass their value to workers.
-	 */
-	for (proot = root; proot != NULL; proot = proot->parent_root)
+	if (!context.is_subplan)
 	{
-		foreach(l, proot->init_plans)
+		/*
+		 * The params that refer to the same or parent query level are
+		 * considered parallel-safe.  The idea is that we compute such params
+		 * at Gather or Gather Merge node and pass their value to workers.
+		 */
+		for (proot = root; proot != NULL; proot = proot->parent_root)
 		{
-			SubPlan    *initsubplan = (SubPlan *) lfirst(l);
+			foreach(l, proot->init_plans)
+			{
+				SubPlan    *initsubplan = (SubPlan *) lfirst(l);
 
-			context.safe_param_ids = list_concat(context.safe_param_ids,
-												 initsubplan->setParam);
+				context.safe_param_ids = list_concat(context.safe_param_ids,
+													 initsubplan->setParam);
+			}
 		}
 	}
-
 	return !max_parallel_hazard_walker(node, &context);
 }
 
@@ -936,6 +940,12 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 		if (param->paramkind == PARAM_EXTERN)
 			return false;
 
+		/*
+		 * Subplan is always non partial plan, so their parameter are always
+		 * computed by leader.
+		 */
+		if (context->is_subplan)
+			return false;
 		if (param->paramkind != PARAM_EXEC ||
 			!list_member_int(context->safe_param_ids, param->paramid))
 		{

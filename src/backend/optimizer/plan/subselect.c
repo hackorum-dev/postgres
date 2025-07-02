@@ -181,6 +181,8 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 	 */
 	subquery = copyObject(orig_subquery);
 
+	subquery->is_in_sublink = true;
+
 	/*
 	 * If it's an EXISTS subplan, we might be able to simplify it.
 	 */

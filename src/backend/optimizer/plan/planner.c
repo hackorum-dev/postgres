@@ -708,6 +708,8 @@ subquery_planner(PlannerGlobal *glob, Query *parse, PlannerInfo *parent_root,
 	 */
 	root->join_domains = list_make1(makeNode(JoinDomain));
 
+	root->isSubPlan = parse->is_in_sublink;
+
 	/*
 	 * If there is a WITH list, process each WITH query and either convert it
 	 * to RTE_SUBQUERY RTE(s) or build an initplan SubPlan structure for it.

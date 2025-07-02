@@ -583,6 +583,9 @@ struct PlannerInfo
 
 	/* PartitionPruneInfos added in this query's plan. */
 	List	   *partPruneInfos;
+
+	/* is building a subplan */
+	bool		isSubPlan;
 };
 
 

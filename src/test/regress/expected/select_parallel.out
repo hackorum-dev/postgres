@@ -148,8 +148,8 @@ create table part_pa_test_p2 partition of part_pa_test for values from (0) to (m
 explain (costs off)
 	select (select max((select pa1.b from part_pa_test pa1 where pa1.a = pa2.a)))
 	from part_pa_test pa2;
-                          QUERY PLAN                          
---------------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Aggregate
    ->  Gather
          Workers Planned: 3
@@ -159,12 +159,14 @@ explain (costs off)
    SubPlan 2
      ->  Result
    SubPlan 1
-     ->  Append
-           ->  Seq Scan on part_pa_test_p1 pa1_1
-                 Filter: (a = pa2.a)
-           ->  Seq Scan on part_pa_test_p2 pa1_2
-                 Filter: (a = pa2.a)
-(14 rows)
+     ->  Gather
+           Workers Planned: 3
+           ->  Parallel Append
+                 ->  Parallel Seq Scan on part_pa_test_p1 pa1_1
+                       Filter: (a = pa2.a)
+                 ->  Parallel Seq Scan on part_pa_test_p2 pa1_2
+                       Filter: (a = pa2.a)
+(16 rows)
 
 drop table part_pa_test;
 -- test with leader participation disabled
@@ -1339,9 +1341,11 @@ SELECT 1 FROM tenk1_vw_sec
          ->  Parallel Index Only Scan using tenk1_unique1 on tenk1
    SubPlan 1
      ->  Aggregate
-           ->  Seq Scan on int4_tbl
-                 Filter: (f1 < tenk1_vw_sec.unique1)
-(9 rows)
+           ->  Gather
+                 Workers Planned: 1
+                 ->  Parallel Seq Scan on int4_tbl
+                       Filter: (f1 < tenk1_vw_sec.unique1)
+(11 rows)
 
 rollback;
 -- test that a newly-created session role propagates to workers.

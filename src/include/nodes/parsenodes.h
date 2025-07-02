@@ -245,6 +245,15 @@ typedef struct Query
 	List	   *withCheckOptions pg_node_attr(query_jumble_ignore);
 
 	/*
+	 * XXX: looks currently we don't know where a Query comes from, e.g.
+	 * SubQuery or SubLink. Providing such information to planner might be
+	 * helpful sometimes. For now only SubLink case is interesting and it is
+	 * only set during make_subplan.  we can do it in parser if it worths the
+	 * trouble (there are many members in enum SubLinkType).
+	 */
+	bool		is_in_sublink;
+
+	/*
 	 * The following two fields identify the portion of the source text string
 	 * containing this query.  They are typically only populated in top-level
 	 * Queries, not in sub-queries.  When not set, they might both be zero, or
