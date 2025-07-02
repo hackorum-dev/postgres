@@ -3165,6 +3165,13 @@ Remove support for the HPPA/PA-RISC architecture (Tom Lane)
 </para>
 </listitem>
 
+<listitem>
+<para>
+pg_attribute_noreturn() was removed in favor of pg_noreturn (Peter Eisentraut)
+<ulink url="&commit_baseurl;3691edfab">&sect;</ulink>
+</para>
+</listitem>
+
     </itemizedlist>
 
    </sect3>
