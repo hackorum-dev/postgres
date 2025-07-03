@@ -400,8 +400,8 @@ lossless_bloom_create(bloom_config *config)
 	filter->blocks[0].size = filter->total_bits;
 	filter->blocks[0].offset = 0;
 	filter->blocks[0].k_rational = log(2.0) * filter->total_bits / config->total_elems;
-	filter->blocks[0].k_floor = Max(1, Min((int)rint(filter->blocks[0].k_rational), MAX_HASH_FUNCS));
-	filter->blocks[0].k_fractional = 0.0;  /* Disable fractional hashing for speed */
+	filter->blocks[0].k_floor = Max(1, Min((int)floor(filter->blocks[0].k_rational), MAX_HASH_FUNCS));
+	filter->blocks[0].k_fractional = filter->blocks[0].k_rational - filter->blocks[0].k_floor;  /* Enable fractional hashing */
 	
 	/* Allocate bitset */
 	bitset_bytes = (filter->total_bits + 7) / 8;
@@ -498,6 +498,17 @@ lossless_bloom_add_element(lossless_bloom_filter *filter, unsigned char *elem, s
 		hashes[i] = x;
 	}
 	
+	/* RATIONAL HASHING: Apply fractional hash function probabilistically */
+	if (filter->blocks[0].k_fractional > 0.0 && k_hash_funcs < MAX_HASH_FUNCS)
+	{
+		if (apply_rational_hashing(filter->blocks[0].k_fractional, base_hash))
+		{
+			x += y;
+			hashes[k_hash_funcs] = x;
+			k_hash_funcs++;
+		}
+	}
+	
 	/* OPTIMIZATION: Fast bit setting with bitwise operations */
 	for (i = 0; i < k_hash_funcs; i++)
 	{
@@ -549,6 +560,17 @@ lossless_bloom_contains_element(lossless_bloom_filter *filter, unsigned char *el
 	{
 		x += y;
 		hashes[i] = x;
+	}
+	
+	/* RATIONAL HASHING: Apply fractional hash function probabilistically */
+	if (filter->blocks[0].k_fractional > 0.0 && k_hash_funcs < MAX_HASH_FUNCS)
+	{
+		if (apply_rational_hashing(filter->blocks[0].k_fractional, base_hash))
+		{
+			x += y;
+			hashes[k_hash_funcs] = x;
+			k_hash_funcs++;
+		}
 	}
 	
 	/* OPTIMIZATION: Fast bit checking with bitwise operations */
