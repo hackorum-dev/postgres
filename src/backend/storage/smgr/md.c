@@ -1491,7 +1491,7 @@ mdimmedsync(SMgrRelation reln, ForkNumber forknum)
 }
 
 int
-mdfd(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, uint32 *off)
+mdfd(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, off_t *off)
 {
 	MdfdVec    *v = mdopenfork(reln, forknum, EXTENSION_FAIL);
 
