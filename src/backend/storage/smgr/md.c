@@ -1016,7 +1016,7 @@ mdstartreadv(PgAioHandle *ioh,
 							 false);
 	pgaio_io_register_callbacks(ioh, PGAIO_HCB_MD_READV, 0);
 
-	ret = FileStartReadV(ioh, v->mdfd_vfd, iovcnt, seekpos, WAIT_EVENT_DATA_FILE_READ);
+	ret = FileStartReadV(ioh, v->mdfd_vfd, iovcnt, seekpos);
 	if (ret != 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),

@@ -2216,8 +2216,7 @@ retry:
 
 int
 FileStartReadV(PgAioHandle *ioh, File file,
-			   int iovcnt, off_t offset,
-			   uint32 wait_event_info)
+			   int iovcnt, off_t offset)
 {
 	int			returnCode;
 	Vfd		   *vfdP;
