@@ -122,7 +122,7 @@ typedef struct f_smgr
 								  BlockNumber old_blocks, BlockNumber nblocks);
 	void		(*smgr_immedsync) (SMgrRelation reln, ForkNumber forknum);
 	void		(*smgr_registersync) (SMgrRelation reln, ForkNumber forknum);
-	int			(*smgr_fd) (SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, uint32 *off);
+	int			(*smgr_fd) (SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, off_t *off);
 } f_smgr;
 
 static const f_smgr smgrsw[] = {
@@ -986,7 +986,7 @@ smgrimmedsync(SMgrRelation reln, ForkNumber forknum)
  * process than where it was issued (e.g. in an IO worker).
  */
 static int
-smgrfd(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, uint32 *off)
+smgrfd(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum, off_t *off)
 {
 	int			fd;
 
@@ -1067,7 +1067,7 @@ smgr_aio_reopen(PgAioHandle *ioh)
 	PgAioOpData *od = pgaio_io_get_op_data(ioh);
 	SMgrRelation reln;
 	ProcNumber	procno;
-	uint32		off;
+	off_t		off;
 
 	/*
 	 * The caller needs to prevent interrupts from being processed, otherwise
