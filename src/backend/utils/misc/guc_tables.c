@@ -1089,7 +1089,8 @@ struct config_bool ConfigureNamesBool[] =
 	{
 		{"track_commit_timestamp", PGC_POSTMASTER, REPLICATION_SENDING,
 			gettext_noop("Collects transaction commit time."),
-			NULL
+			NULL,
+			GUC_NOT_IN_BOOTSTRAP
 		},
 		&track_commit_timestamp,
 		false,
@@ -1929,7 +1930,7 @@ struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Disables reading from system indexes."),
 			gettext_noop("It does not prevent updating the indexes, so it is safe "
 						 "to use.  The worst consequence is slowness."),
-			GUC_NOT_IN_SAMPLE
+			GUC_NOT_IN_SAMPLE | GUC_NOT_IN_BOOTSTRAP
 		},
 		&IgnoreSystemIndexes,
 		false,
@@ -2763,7 +2764,7 @@ struct config_int ConfigureNamesInt[] =
 		{"transaction_timeout", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Sets the maximum allowed duration of any transaction within a session (not a prepared transaction)."),
 			gettext_noop("0 disables the timeout."),
-			GUC_UNIT_MS
+			GUC_UNIT_MS | GUC_NOT_IN_BOOTSTRAP
 		},
 		&TransactionTimeout,
 		0, 0, INT_MAX,

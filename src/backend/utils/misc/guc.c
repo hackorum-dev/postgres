@@ -3465,6 +3465,15 @@ set_config_with_handle(const char *name, config_handle *handle,
 	}
 
 	/*
+	 * Certain GUCs aren't safe to enable during bootstrap mode.  Silently
+	 * ignore attempts to set them to non-default values.
+	 */
+	if (unlikely(IsBootstrapProcessingMode()) &&
+		(record->flags & GUC_NOT_IN_BOOTSTRAP) &&
+		source > PGC_S_DYNAMIC_DEFAULT)
+		changeVal = false;
+
+	/*
 	 * Check if the option can be set at this time. See guc.h for the precise
 	 * rules.
 	 */

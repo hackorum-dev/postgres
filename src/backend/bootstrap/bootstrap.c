@@ -213,6 +213,12 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	/* Set defaults, to be overridden by explicit options below */
 	InitializeGUCOptions();
 
+	/* Override ignore_system_indexes: we have no indexes during bootstrap */
+	IgnoreSystemIndexes = true;
+
+	/* Set bootstrap mode; note that this locks down values of some GUCs */
+	SetProcessingMode(BootstrapProcessing);
+
 	/* an initial --boot or --check should be present */
 	Assert(argc > 1
 		   && (strcmp(argv[1], "--boot") == 0
@@ -320,9 +326,6 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	ChangeToDataDir();
 
 	CreateDataDirLockFile(false);
-
-	SetProcessingMode(BootstrapProcessing);
-	IgnoreSystemIndexes = true;
 
 	InitializeMaxBackends();
 
