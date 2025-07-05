@@ -892,3 +892,30 @@ SELECT array_sort(a) FROM (VALUES ('[-1:0]={7,1}'::int[])) v(a);
 SELECT array_sort(a) FROM (VALUES ('[-2:0][20:21]={{1,2},{10,20},{1,-4}}'::int[])) v(a);
 SELECT array_sort(a [-1:0]) FROM (VALUES ('[-2:0][20:21]={{1,2},{10,20},{1,-4}}'::int[])) v(a);
 SELECT array_sort(a [-1:0][20:20]) FROM (VALUES ('[-2:0][20:21]={{1,2},{10,20},{1,-4}}'::int[])) v(a);
+
+--array_random error case
+SELECT array_random(1, 10, '{134217728}');
+SELECT array_random(2, 1, '{2}'::int[]);
+SELECT array_random(2, 1, '{-1}'::int[]);
+SELECT array_random(NULL, 1, NULL);
+SELECT array_random(1, 2, '{NULL}'::int[]);
+SELECT array_random(1, 2, '{{1},{1}}'::int[]);
+SELECT array_random('-infinity', 2.1, '{2,1}'::int[]);
+SELECT array_random('NaN', 2.1, '{2,1}'::int[]);
+SELECT array_random(1::numeric, 'infinity', '{2,1}'::int[]);
+SELECT array_random(1::numeric, 'NaN', '{2,1}'::int[]);
+SELECT array_random(1, 10, '{2}'::int[],'{NULL}');
+SELECT array_random(1, 10, '{2}'::int[],'{1,2}');
+SELECT array_random(1, 10, '{2}'::int[],'{{1},{2}}');
+
+--array_random ok case
+SELECT setseed(0.5);
+SELECT array_random(1, 10::int8, '{2}'::int[]);
+SELECT array_random(1, 6, array[2,5], array[2,4]);
+SELECT array_random(-2147483648, 2147483647, array[5,2], '{5,2}');
+SELECT array_random(-9223372036854775808, 9223372036854775807, '{5,2}', '{5,2}');
+\gdesc
+
+SELECT array_random(-1e30, -1e30, '{3,2}');
+SELECT array_random(-0.45, 0.45, '{2,2,3}', '{5,2,3}');
+SELECT array_random(0, 1 - 1e-30, '{2, 5}');

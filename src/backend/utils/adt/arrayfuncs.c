@@ -166,6 +166,7 @@ static int	width_bucket_array_variable(Datum operand,
 										Oid collation,
 										TypeCacheEntry *typentry);
 
+static Datum array_random_internal(FunctionCallInfo fcinfo, Oid elmtype);
 
 /*
  * array_in :
@@ -6061,6 +6062,263 @@ array_fill(PG_FUNCTION_ARGS)
 		elog(ERROR, "could not determine data type of input");
 
 	result = array_fill_internal(dims, NULL, value, isnull, elmtype, fcinfo);
+	PG_RETURN_ARRAYTYPE_P(result);
+}
+
+Datum
+int4array_random(PG_FUNCTION_ARGS)
+{
+	return array_random_internal(fcinfo, INT4OID);
+}
+
+Datum
+int8array_random(PG_FUNCTION_ARGS)
+{
+	return array_random_internal(fcinfo, INT8OID);
+}
+
+Datum
+numeric_array_random(PG_FUNCTION_ARGS)
+{
+	return array_random_internal(fcinfo, NUMERICOID);
+}
+
+/*
+ * array_random_internal:
+ *
+ * Create an array with the specified dimensions and lower bounds, and populate
+ * it with random values.
+ *
+ * helper function for:
+ * array_random(min int4, max int4, dims int[] [, lbounds int[]]) -> int[]
+ * array_random(min int8, max int8, dims int[] [, lbounds int[]]) -> int8[]
+ * array_random(min numeric, max numeric, dims int[] [, lbounds int[]]) -> numeric[]
+ */
+static Datum
+array_random_internal(FunctionCallInfo fcinfo, Oid elmtype)
+{
+	ArrayType  *result;
+	ArrayType 	*dims;
+	ArrayType 	*lbs;
+	int		   *dimv;
+	int		   *lbsv;
+	int			i;
+	int			ndims;
+	int			nitems;
+	int			deflbs[MAXDIM];
+	int16		elmlen;
+	bool		elmbyval;
+	char		elmalign;
+	Datum 		*values;
+	bool 		*nulls;
+	Oid			random_fn_oid = InvalidOid;
+
+	values = (Datum *) palloc(2 * sizeof(Datum));
+	nulls = (bool *) palloc(2 * sizeof(bool));
+	if (!PG_ARGISNULL(0))
+	{
+		values[0] = PG_GETARG_DATUM(0);
+		nulls[0] = false;
+	}
+	else
+	{
+		values[0] = 0;
+		nulls[0] = true;
+	}
+
+	if (!PG_ARGISNULL(1))
+	{
+		values[1] = PG_GETARG_DATUM(1);
+		nulls[1] = false;
+	}
+	else
+	{
+		values[1] = 0;
+		nulls[1] = true;
+	}
+
+	if (PG_ARGISNULL(2))
+		ereport(ERROR,
+				errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+				errmsg("dimension array cannot be null"));
+
+	dims = PG_GETARG_ARRAYTYPE_P(2);
+	if (ARR_NDIM(dims) > 1)
+		ereport(ERROR,
+				errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				errmsg("wrong number of array subscripts"),
+				errdetail("Dimension array must be one dimensional."));
+
+	if (array_contains_nulls(dims))
+		ereport(ERROR,
+				errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+				errmsg("dimension values cannot be null"));
+
+	dimv = (int *) ARR_DATA_PTR(dims);
+	ndims = (ARR_NDIM(dims) > 0) ? ARR_DIMS(dims)[0] : 0;
+
+	if (ndims < 0)				/* we do allow zero-dimension arrays */
+		ereport(ERROR,
+				errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				errmsg("invalid number of dimensions: %d", ndims));
+	if (ndims > MAXDIM)
+		ereport(ERROR,
+				errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				errmsg("number of array dimensions (%d) exceeds the maximum allowed (%d)",
+						ndims, MAXDIM));
+
+	if (!PG_ARGISNULL(3))
+	{
+		lbs = PG_GETARG_ARRAYTYPE_P(3);
+
+		if (ARR_NDIM(lbs) > 1)
+			ereport(ERROR,
+					errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+					errmsg("wrong number of array subscripts"),
+					errdetail("Low bound array must be one dimensional."));
+
+		if (array_contains_nulls(lbs))
+			ereport(ERROR,
+					errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+					errmsg("Low bound array can not contain null values"));
+
+		if (ndims != ((ARR_NDIM(lbs) > 0) ? ARR_DIMS(lbs)[0] : 0))
+			ereport(ERROR,
+					errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+					errmsg("wrong number of array subscripts"),
+					errdetail("Low bound array has different size than dimensions array."));
+
+		lbsv = (int *) ARR_DATA_PTR(lbs);
+	}
+	else
+	{
+		for (i = 0; i < MAXDIM; i++)
+			deflbs[i] = 1;
+
+		lbsv = deflbs;
+	}
+
+	/* random function for generating each array element for array_random */
+	switch (elmtype)
+	{
+		case INT4OID:
+			random_fn_oid = F_RANDOM_INT4_INT4;
+			break;
+		case INT8OID:
+			random_fn_oid = F_RANDOM_INT8_INT8;
+			break;
+		case NUMERICOID:
+			random_fn_oid = F_RANDOM_NUMERIC_NUMERIC;
+			break;
+		default:
+			elog(ERROR, "unsupported type %u for array_random function", elmtype);
+			break;
+	}
+
+	if (get_fn_expr_argtype(fcinfo->flinfo, 0) != elmtype)
+		elog(ERROR, "expected input data type as %u", elmtype);
+
+	/* This checks for overflow of the array dimensions */
+	nitems = ArrayGetNItems(ndims, dimv);
+	ArrayCheckBounds(ndims, dimv, lbsv);
+
+	/* fast track for empty array */
+	if (nitems <= 0)
+	{
+		/*
+		 * If nitems is zero, we just return an empty array, in that case, the
+		 * array_random min value maybe larger than max. XXX is this OK?
+		 */
+		result = construct_empty_array(elmtype);
+		PG_RETURN_ARRAYTYPE_P(result);
+	}
+
+	get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+
+	/*
+	 * For each array element call random(minval, maxval). minval is a type of
+	 * elmtype.
+	 */
+	if (!nulls[0] && !nulls[1])
+	{
+		int			nbytes = 0;
+		int			totbytes = 0;
+		Datum	   *out_datums;
+		bool	   *out_nulls;
+		FmgrInfo   *random_val_flinfo;
+		FunctionCallInfo random_val_fcinfo;
+
+		random_val_flinfo = (FmgrInfo *) palloc0(sizeof(FmgrInfo));
+		fmgr_info(random_fn_oid, random_val_flinfo);
+
+		random_val_fcinfo = (FunctionCallInfo) palloc0(SizeForFunctionCallInfo(2));
+		InitFunctionCallInfoData(*random_val_fcinfo, random_val_flinfo, 2,
+								 InvalidOid, NULL, NULL);
+
+		random_val_fcinfo->args[0].value = values[0];
+		random_val_fcinfo->args[0].isnull = false;
+		random_val_fcinfo->args[1].value = values[1];
+		random_val_fcinfo->args[1].isnull = false;
+
+		out_datums = palloc(sizeof(Datum) * nitems);
+		out_nulls = palloc0(sizeof(bool) * nitems);
+
+		for (i = 0; i < nitems; i++)
+		{
+			out_datums[i] = FunctionCallInvoke(random_val_fcinfo);
+			out_nulls[i] = false;
+
+			/* make sure data is not toasted */
+			if (elmlen == -1)
+				out_datums[i] = PointerGetDatum(PG_DETOAST_DATUM(out_datums[i]));
+
+			/* XXX TODO is this correct? */
+			if (i == 0)
+			{
+				nbytes = att_addlength_datum(0, elmlen, out_datums[i]);
+				nbytes = att_align_nominal(nbytes, elmalign);
+				Assert(nbytes > 0);
+
+				totbytes = nbytes * nitems;
+
+				/* check for overflow of multiplication or total request */
+				if (totbytes / nbytes != nitems ||
+					!AllocSizeIsValid(totbytes))
+					ereport(ERROR,
+							errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+							errmsg("array size exceeds the maximum allowed (%d)",
+									(int) MaxAllocSize));
+			}
+		}
+
+		result = construct_md_array(out_datums,
+									out_nulls,
+									ndims,
+									dimv,
+									lbsv,
+									elmtype,
+									elmlen,
+									elmbyval,
+									elmalign);
+	}
+	else
+	{
+		/*
+		 * if array_random specified lower bound or upper bound is null, then
+		 * return null. Here we can use create_array_envelope do the job
+		*/
+		int			nbytes;
+		int			dataoffset;
+
+		dataoffset = ARR_OVERHEAD_WITHNULLS(ndims, nitems);
+		nbytes = dataoffset;
+
+		result = create_array_envelope(ndims, dimv, lbsv, nbytes,
+									   elmtype, dataoffset);
+
+		/* create_array_envelope already zeroed the bitmap, so we're done */
+	}
+
 	PG_RETURN_ARRAYTYPE_P(result);
 }
 

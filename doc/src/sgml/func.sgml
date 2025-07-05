@@ -20657,6 +20657,40 @@ SELECT NULLIF(value, '(none)') ...
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
+         <primary>array_random</primary>
+        </indexterm>
+
+        <function>array_random</function> ( <parameter>min</parameter> <type>integer</type>, <parameter>max</parameter> <type>integer</type>,
+        <parameter>dims</parameter> <type>integer[]</type> <optional>, <parameter>lbounds</parameter> <type>integer[]</type></optional>)
+        <returnvalue>integer[]</returnvalue>
+       </para>
+       <para role="func_signature">
+        <function>array_random</function> ( <parameter>min</parameter> <type>bigint</type>, <parameter>max</parameter> <type>bigint</type>,
+        <parameter>dims</parameter> <type>integer[]</type> <optional>, <parameter>lbounds</parameter> <type>integer[]</type></optional>)
+        <returnvalue>bigint[]</returnvalue>
+       </para>
+       <para role="func_signature">
+        <function>array_random</function> ( <parameter>min</parameter> <type>numeric</type>, <parameter>max</parameter> <type>numeric</type>,
+        <parameter>dims</parameter> <type>integer[]</type>, <optional>, <parameter>lbounds</parameter> <type>integer[]</type></optional>)
+        <returnvalue>numeric[]</returnvalue>
+       </para>
+
+       <para>
+        Returns an array populated with random values, each value is in the range
+        <parameter>min</parameter> &lt;= x &lt;= <parameter>max</parameter>.
+        The array has dimensions specified by <parameter>dims</parameter>
+        The optional fourth argument (<parameter>lbounds</parameter>) supplies lower-bound values for each dimension (which default to all 1).
+        See <xref linkend="functions-math-random-table"/> also.
+       </para>
+       <para>
+        <literal>array_random(1, 10::bigint, '{2}'::int[])</literal>
+        <returnvalue>{3,3}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
          <primary>array_remove</primary>
         </indexterm>
         <function>array_remove</function> ( <type>anycompatiblearray</type>, <type>anycompatible</type> )

@@ -3002,3 +3002,88 @@ SELECT array_sort(a [-1:0][20:20]) FROM (VALUES ('[-2:0][20:21]={{1,2},{10,20},{
  {{1},{10}}
 (1 row)
 
+--array_random error case
+SELECT array_random(1, 10, '{134217728}');
+ERROR:  array size exceeds the maximum allowed (134217727)
+SELECT array_random(2, 1, '{2}'::int[]);
+ERROR:  lower bound must be less than or equal to upper bound
+SELECT array_random(2, 1, '{-1}'::int[]);
+ERROR:  array size exceeds the maximum allowed (134217727)
+SELECT array_random(NULL, 1, NULL);
+ERROR:  dimension array cannot be null
+SELECT array_random(1, 2, '{NULL}'::int[]);
+ERROR:  dimension values cannot be null
+SELECT array_random(1, 2, '{{1},{1}}'::int[]);
+ERROR:  wrong number of array subscripts
+DETAIL:  Dimension array must be one dimensional.
+SELECT array_random('-infinity', 2.1, '{2,1}'::int[]);
+ERROR:  lower bound cannot be infinity
+SELECT array_random('NaN', 2.1, '{2,1}'::int[]);
+ERROR:  lower bound cannot be NaN
+SELECT array_random(1::numeric, 'infinity', '{2,1}'::int[]);
+ERROR:  upper bound cannot be infinity
+SELECT array_random(1::numeric, 'NaN', '{2,1}'::int[]);
+ERROR:  upper bound cannot be NaN
+SELECT array_random(1, 10, '{2}'::int[],'{NULL}');
+ERROR:  Low bound array can not contain null values
+SELECT array_random(1, 10, '{2}'::int[],'{1,2}');
+ERROR:  wrong number of array subscripts
+DETAIL:  Low bound array has different size than dimensions array.
+SELECT array_random(1, 10, '{2}'::int[],'{{1},{2}}');
+ERROR:  wrong number of array subscripts
+DETAIL:  Low bound array must be one dimensional.
+--array_random ok case
+SELECT setseed(0.5);
+ setseed 
+---------
+ 
+(1 row)
+
+SELECT array_random(1, 10::int8, '{2}'::int[]);
+ array_random 
+--------------
+ {3,3}
+(1 row)
+
+SELECT array_random(1, 6, array[2,5], array[2,4]);
+             array_random             
+--------------------------------------
+ [2:3][4:8]={{6,2,2,5,4},{4,5,6,4,6}}
+(1 row)
+
+SELECT array_random(-2147483648, 2147483647, array[5,2], '{5,2}');
+                                                             array_random                                                              
+---------------------------------------------------------------------------------------------------------------------------------------
+ [5:9][2:3]={{358987948,1720494942},{1522989794,-1952561092},{-562516644,-1082313839},{1917063748,1470913398},{-1663900214,383076569}}
+(1 row)
+
+SELECT array_random(-9223372036854775808, 9223372036854775807, '{5,2}', '{5,2}');
+                                                                                                          array_random                                                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ [5:9][2:3]={{8946456079150312946,-5017870099771078560},{2119550555182341436,4426024215363564415},{108422942355035228,8010643357635886140},{7966634679525141473,-7256609373765379790},{1904816578321642612,2378596988253719677}}
+(1 row)
+
+\gdesc
+    Column    |   Type   
+--------------+----------
+ array_random | bigint[]
+(1 row)
+
+SELECT array_random(-1e30, -1e30, '{3,2}');
+                                                                                                 array_random                                                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {{-1000000000000000000000000000000,-1000000000000000000000000000000},{-1000000000000000000000000000000,-1000000000000000000000000000000},{-1000000000000000000000000000000,-1000000000000000000000000000000}}
+(1 row)
+
+SELECT array_random(-0.45, 0.45, '{2,2,3}', '{5,2,3}');
+                                           array_random                                           
+--------------------------------------------------------------------------------------------------
+ [5:6][2:3][3:5]={{{-0.31,0.17,-0.16},{-0.25,-0.33,-0.02}},{{0.26,-0.31,-0.16},{0.08,0.23,0.13}}}
+(1 row)
+
+SELECT array_random(0, 1 - 1e-30, '{2, 5}');
+                                                                                                                                                                  array_random                                                                                                                                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {{0.068990271742366814671825526682,0.865328382850933408408243093209,0.535285120767345535159068774920,0.550766856332365486462263124933,0.327167727807358961934200155904},{0.985749287984797224624803826994,0.475761851397322538460984536852,0.793479002749253814546091362589,0.164860958495312801172978594373,0.519707802923826482493035607188}}
+(1 row)
+

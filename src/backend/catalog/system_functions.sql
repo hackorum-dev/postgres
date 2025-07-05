@@ -73,6 +73,27 @@ CREATE OR REPLACE FUNCTION
  VOLATILE PARALLEL RESTRICTED STRICT COST 1
 AS 'drandom_normal';
 
+CREATE OR REPLACE FUNCTION
+ array_random(min integer, max integer, dims integer[], lbounds integer[] DEFAULT NULL)
+ RETURNS integer[]
+ LANGUAGE internal
+ VOLATILE PARALLEL RESTRICTED COST 1
+AS 'int4array_random';
+
+CREATE OR REPLACE FUNCTION
+ array_random (min bigint, max bigint, dims integer[], lbounds integer[] DEFAULT NULL)
+ RETURNS bigint[]
+ LANGUAGE internal
+ VOLATILE PARALLEL RESTRICTED COST 1
+AS 'int8array_random';
+
+CREATE OR REPLACE FUNCTION
+ array_random (min numeric, max numeric, dims integer[], lbounds integer[] DEFAULT NULL)
+ RETURNS numeric[]
+ LANGUAGE internal
+ VOLATILE PARALLEL RESTRICTED COST 1
+AS 'numeric_array_random';
+
 CREATE OR REPLACE FUNCTION log(numeric)
  RETURNS numeric
  LANGUAGE sql
