@@ -622,7 +622,7 @@ CREATE [ UNIQUE ] INDEX [ CONCURRENTLY ] [ [ IF NOT EXISTS ] <replaceable class=
     When this option is used,
     <productname>PostgreSQL</productname> must perform two scans of the table, and in
     addition it must wait for all existing transactions that could potentially
-    modify or use the index to terminate.  Thus
+    modify the indexed table to terminate.  Thus
     this method requires more total work than a standard index build and takes
     significantly longer to complete.  However, since it allows normal
     operations to continue while the index is built, this method is useful for
