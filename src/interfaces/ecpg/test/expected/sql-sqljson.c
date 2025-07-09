@@ -174,7 +174,7 @@ if (sqlca.sqlcode < 0) sqlprint();}
 if (sqlca.sqlcode < 0) sqlprint();}
 #line 33 "sqljson.pgc"
 
-  // error
+  /* error */
 
   { ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json_object ( 1 : 1 , '2' : null , 1 : '2' absent on null without unique keys )", ECPGt_EOIT, 
 	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
@@ -224,7 +224,7 @@ if (sqlca.sqlcode < 0) sqlprint();}
 if (sqlca.sqlcode < 0) sqlprint();}
 #line 48 "sqljson.pgc"
 
-  // error
+  /* error */
 
   { ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( '   1   ' :: jsonb )", ECPGt_EOIT, 
 	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
@@ -242,7 +242,7 @@ if (sqlca.sqlcode < 0) sqlprint();}
 if (sqlca.sqlcode < 0) sqlprint();}
 #line 54 "sqljson.pgc"
 
-  // error
+  /* error */
 
   { ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( '{\"a\": 1, \"a\": 2}' )", ECPGt_EOIT, 
 	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
@@ -262,7 +262,7 @@ if (sqlca.sqlcode < 0) sqlprint();}
 if (sqlca.sqlcode < 0) sqlprint();}
 #line 60 "sqljson.pgc"
 
-  // error
+  /* error */
 
   { ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json_scalar ( null )", ECPGt_EOIT, 
 	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
@@ -390,7 +390,7 @@ if (sqlca.sqlcode < 0) sqlprint();}
 if (sqlca.sqlcode < 0) sqlprint();}
 #line 99 "sqljson.pgc"
 
-  // error
+  /* error */
 
   { ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "with val ( js ) as ( values ( '{ \"a\": 1, \"b\": [{ \"a\": 1, \"b\": 0, \"a\": 2 }] }' ) ) select js is json \"IS JSON\" , js is not json \"IS NOT JSON\" , js is json value \"IS VALUE\" , js is json object \"IS OBJECT\" , js is json array \"IS ARRAY\" , js is json scalar \"IS SCALAR\" , js is json without unique keys \"WITHOUT UNIQUE\" , js is json with unique keys \"WITH UNIQUE\" from val", ECPGt_EOIT, 
 	ECPGt_bool,&(is_json[0]),(long)1,(long)1,sizeof(bool), 
@@ -417,11 +417,121 @@ if (sqlca.sqlcode < 0) sqlprint();}
 	  for (int i = 0; i < sizeof(is_json); i++)
 		  printf("Found is_json[%d]: %s\n", i, is_json[i] ? "true" : "false");
 
-  { ECPGdisconnect(__LINE__, "CURRENT");
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( ( '{\"a\": {\"b\": 1, \"c\": 2}}' :: jsonb ) . \"a\" )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
 #line 118 "sqljson.pgc"
 
 if (sqlca.sqlcode < 0) sqlprint();}
 #line 118 "sqljson.pgc"
+
+	printf("Found json=%s\n", json);
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( '{\"a\": {\"b\": 1, \"c\": 2}}' :: jsonb . \"a\" )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 121 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 121 "sqljson.pgc"
+
+	/* error */
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( ( '{\"a\": {\"b\": 1, \"c\": 2}}' :: jsonb ) . a )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 124 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 124 "sqljson.pgc"
+
+	printf("Found json=%s\n", json);
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( ( '{\"a\": {\"b\": 1, \"c\": 2}}' :: jsonb ) . a . b )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 127 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 127 "sqljson.pgc"
+
+	printf("Found json=%s\n", json);
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( coalesce ( json ( ( '{\"a\": {\"b\": 1, \"c\": 2}}' :: jsonb ) . c ) , 'null' ) )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 130 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 130 "sqljson.pgc"
+
+	printf("Found json=%s\n", json);
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( ( '{\"a\": {\"b\": 1, \"c\": 2}, \"b\": [{\"x\": 1}, {\"x\": [12, {\"y\":1}]}]}' :: jsonb ) . b [ 0 ] )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 133 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 133 "sqljson.pgc"
+
+	printf("Found json=%s\n", json);
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( ( '{\"a\": {\"b\": 1, \"c\": 2}, \"b\": [{\"x\": 1}, {\"x\": [12, {\"y\":1}]}]}' :: jsonb ) . b . x )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 136 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 136 "sqljson.pgc"
+
+	printf("Found json=%s\n", json);
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( ( '{\"a\": {\"b\": 1, \"c\": 2}, \"b\": [{\"x\": 1}, {\"x\": [12, {\"y\":1}]}]}' :: jsonb ) [ 'b' ] [ 0 ] )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 139 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 139 "sqljson.pgc"
+
+	printf("Found json=%s\n", json);
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( ( '{\"a\": {\"b\": 1, \"c\": 2}, \"b\": [{\"x\": 1}, {\"x\": [12, {\"y\":1}]}]}' :: jsonb ) . b [ 1 ] . x [ 0 : ] )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 142 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 142 "sqljson.pgc"
+
+	/* error */
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( ( '{\"a\": {\"b\": 1, \"c\": 2}, \"b\": [{\"x\": 1}, {\"x\": [12, {\"y\":1}]}]}' :: jsonb ) . * )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 145 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 145 "sqljson.pgc"
+
+	/* error */
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "select json ( ( '{\"a\": {\"b\": 1, \"c\": 2}, \"b\": [{\"x\": 1}, {\"x\": [12, {\"y\":1}]}]}' :: jsonb ) [ 'b' ] [ 0 : ] )", ECPGt_EOIT, 
+	ECPGt_char,(json),(long)1024,(long)1,(1024)*sizeof(char), 
+	ECPGt_NO_INDICATOR, NULL , 0L, 0L, 0L, ECPGt_EORT);
+#line 148 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 148 "sqljson.pgc"
+
+	/* error */
+
+  { ECPGdisconnect(__LINE__, "CURRENT");
+#line 151 "sqljson.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 151 "sqljson.pgc"
 
 
   return 0;

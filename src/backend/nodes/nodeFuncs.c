@@ -284,6 +284,15 @@ exprType(const Node *expr)
 		case T_PlaceHolderVar:
 			type = exprType((Node *) ((const PlaceHolderVar *) expr)->phexpr);
 			break;
+		case T_FieldAccessorExpr:
+
+			/*
+			 * FieldAccessorExpr is not evaluable. Treat it as TEXT for
+			 * collation, deparsing, and similar purposes, since it represents
+			 * a JSON field name.
+			 */
+			type = TEXTOID;
+			break;
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(expr));
 			type = InvalidOid;	/* keep compiler quiet */
@@ -1145,6 +1154,9 @@ exprSetCollation(Node *expr, Oid collation)
 			break;
 		case T_MergeSupportFunc:
 			((MergeSupportFunc *) expr)->msfcollid = collation;
+			break;
+		case T_FieldAccessorExpr:
+			((FieldAccessorExpr *) expr)->faecollid = collation;
 			break;
 		case T_SubscriptingRef:
 			((SubscriptingRef *) expr)->refcollid = collation;
@@ -2128,6 +2140,7 @@ expression_tree_walker_impl(Node *node,
 		case T_SortGroupClause:
 		case T_CTESearchClause:
 		case T_MergeSupportFunc:
+		case T_FieldAccessorExpr:
 			/* primitive node types with no expression subnodes */
 			break;
 		case T_WithCheckOption:
@@ -3007,6 +3020,7 @@ expression_tree_mutator_impl(Node *node,
 		case T_SortGroupClause:
 		case T_CTESearchClause:
 		case T_MergeSupportFunc:
+		case T_FieldAccessorExpr:
 			return copyObject(node);
 		case T_WithCheckOption:
 			{

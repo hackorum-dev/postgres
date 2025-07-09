@@ -3315,50 +3315,56 @@ ExecInitSubscriptingRef(ExprEvalStep *scratch, SubscriptingRef *sbsref,
 								   state->steps_len - 1);
 	}
 
-	/* Evaluate upper subscripts */
-	i = 0;
-	foreach(lc, sbsref->refupperindexpr)
+	/* Evaluate upper subscripts, unless the container type handles it */
+	if (!sbsref->refskipsubscripteval)
 	{
-		Expr	   *e = (Expr *) lfirst(lc);
+		i = 0;
+		foreach(lc, sbsref->refupperindexpr)
+		{
+			Expr	   *e = (Expr *) lfirst(lc);
 
-		/* When slicing, individual subscript bounds can be omitted */
-		if (!e)
-		{
-			sbsrefstate->upperprovided[i] = false;
-			sbsrefstate->upperindexnull[i] = true;
+			/* When slicing, individual subscript bounds can be omitted */
+			if (!e)
+			{
+				sbsrefstate->upperprovided[i] = false;
+				sbsrefstate->upperindexnull[i] = true;
+			}
+			else
+			{
+				sbsrefstate->upperprovided[i] = true;
+				/* Each subscript is evaluated into appropriate array entry */
+				ExecInitExprRec(e, state,
+								&sbsrefstate->upperindex[i],
+								&sbsrefstate->upperindexnull[i]);
+			}
+			i++;
 		}
-		else
-		{
-			sbsrefstate->upperprovided[i] = true;
-			/* Each subscript is evaluated into appropriate array entry */
-			ExecInitExprRec(e, state,
-							&sbsrefstate->upperindex[i],
-							&sbsrefstate->upperindexnull[i]);
-		}
-		i++;
 	}
 
 	/* Evaluate lower subscripts similarly */
-	i = 0;
-	foreach(lc, sbsref->reflowerindexpr)
+	if (!sbsref->refskipsubscripteval)
 	{
-		Expr	   *e = (Expr *) lfirst(lc);
+		i = 0;
+		foreach(lc, sbsref->reflowerindexpr)
+		{
+			Expr	   *e = (Expr *) lfirst(lc);
 
-		/* When slicing, individual subscript bounds can be omitted */
-		if (!e)
-		{
-			sbsrefstate->lowerprovided[i] = false;
-			sbsrefstate->lowerindexnull[i] = true;
+			/* When slicing, individual subscript bounds can be omitted */
+			if (!e)
+			{
+				sbsrefstate->lowerprovided[i] = false;
+				sbsrefstate->lowerindexnull[i] = true;
+			}
+			else
+			{
+				sbsrefstate->lowerprovided[i] = true;
+				/* Each subscript is evaluated into appropriate array entry */
+				ExecInitExprRec(e, state,
+								&sbsrefstate->lowerindex[i],
+								&sbsrefstate->lowerindexnull[i]);
+			}
+			i++;
 		}
-		else
-		{
-			sbsrefstate->lowerprovided[i] = true;
-			/* Each subscript is evaluated into appropriate array entry */
-			ExecInitExprRec(e, state,
-							&sbsrefstate->lowerindex[i],
-							&sbsrefstate->lowerindexnull[i]);
-		}
-		i++;
 	}
 
 	/* SBSREF_SUBSCRIPTS checks and converts all the subscripts at once */

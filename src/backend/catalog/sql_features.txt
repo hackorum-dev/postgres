@@ -568,8 +568,8 @@ T838	JSON_TABLE: PLAN DEFAULT clause			NO
 T839	Formatted cast of datetimes to/from character strings			NO	
 T840	Hex integer literals in SQL/JSON path language			YES	
 T851	SQL/JSON: optional keywords for default syntax			YES	
-T860	SQL/JSON simplified accessor: column reference only			NO	
-T861	SQL/JSON simplified accessor: case-sensitive JSON member accessor			NO	
+T860	SQL/JSON simplified accessor: column reference only			YES	
+T861	SQL/JSON simplified accessor: case-sensitive JSON member accessor			YES	
 T862	SQL/JSON simplified accessor: wildcard member accessor			NO	
 T863	SQL/JSON simplified accessor: single-quoted string literal as member accessor			NO	
 T864	SQL/JSON simplified accessor			NO	

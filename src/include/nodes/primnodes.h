@@ -721,18 +721,42 @@ typedef struct SubscriptingRef
 	int32		reftypmod pg_node_attr(query_jumble_ignore);
 	/* collation of result, or InvalidOid if none */
 	Oid			refcollid pg_node_attr(query_jumble_ignore);
-	/* expressions that evaluate to upper container indexes */
+
+	/*
+	 * expressions that evaluate to upper container indexes or expressions
+	 * that are collected but not evaluated when refprivate is set.
+	 */
 	List	   *refupperindexpr;
 
 	/*
-	 * expressions that evaluate to lower container indexes, or NIL for single
-	 * container element.
+	 * expressions that evaluate to lower container indexes, or NIL for a
+	 * single container element, or expressions that are collected but not
+	 * evaluated when refprivate is set.
 	 */
 	List	   *reflowerindexpr;
 	/* the expression that evaluates to a container value */
 	Expr	   *refexpr;
 	/* expression for the source value, or NULL if fetch */
 	Expr	   *refassgnexpr;
+
+	/*
+	 * Container-type-specific private data for subscripting. This field
+	 * allows subscripting implementations to store custom information needed
+	 * during execution, such as a JsonPath for jsonb dot notation. When set,
+	 * the container type's exec_setup callback is responsible for
+	 * interpreting this data. NULL for standard subscripting.
+	 */
+	Node	   *refprivate;
+
+	/*
+	 * If true, the executor will not evaluate refupperindexpr and
+	 * reflowerindexpr. The container type's execution callbacks are then
+	 * fully responsible for subscript handling. This is set by container
+	 * types that handle subscripting in a custom way (e.g., jsonb dot
+	 * notation uses a JsonPath stored in refprivate instead of evaluating
+	 * individual subscript expressions).
+	 */
+	bool		refskipsubscripteval;
 } SubscriptingRef;
 
 /*
@@ -2384,5 +2408,41 @@ typedef struct OnConflictExpr
 	int			exclRelIndex;	/* RT index of 'excluded' relation */
 	List	   *exclRelTlist;	/* tlist of the EXCLUDED pseudo relation */
 } OnConflictExpr;
+
+/*
+ * FieldAccessorExpr - represents a single object member access using dot-notation
+ *		in JSON simplified accessor syntax (e.g., jsonb_col.a).
+ *
+ * These nodes appear as list elements in SubscriptingRef.refupperindexpr to
+ * indicate JSON object key access. They are not evaluable expressions by
+ * themselves but serve as placeholders to preserve source-level syntax for
+ * rule rewriting and deparsing (e.g., in EXPLAIN and view definitions).
+ * Execution is handled by the enclosing SubscriptingRef.
+ *
+ * If dot-notation is used in a SubscriptingRef, the JSON path is represented
+ * as a flat list of FieldAccessorExpr nodes (for object field access), Const
+ * nodes (for array indexes), and NULLs (for omitted slice bounds), rather than
+ * through nested expression trees.
+ *
+ * Note: The flat representation avoids nested FieldAccessorExpr chains,
+ * simplifying evaluation and enabling standard-compliant behavior such as
+ * conditional array wrapping. This avoids the need for position-aware
+ * wrapping/unwrapping logic during execution.
+ *
+ * For example, in the expression:
+ *		('{"a": [{"b": 1}]}'::jsonb).a[0].b
+ * the SubscriptingRef will contain:
+ *		- refexpr: the base expression (the jsonb value)
+ *		- refupperindexpr: [FieldAccessorExpr("a"), Const(0),
+ *			FieldAccessorExpr("b")]
+ *		- reflowerindexpr: [NULL, NULL, NULL] (slice lower bounds not used here)
+ */
+typedef struct FieldAccessorExpr
+{
+	NodeTag		type;
+	char	   *fieldname;		/* name of the JSONB object field accessed via
+								 * dot notation */
+	Oid			faecollid pg_node_attr(query_jumble_ignore);
+} FieldAccessorExpr;
 
 #endif							/* PRIMNODES_H */

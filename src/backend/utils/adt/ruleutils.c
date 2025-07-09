@@ -9342,10 +9342,13 @@ get_rule_expr(Node *node, deparse_context *context,
 				 * Parenthesize the argument unless it's a simple Var or a
 				 * FieldSelect.  (In particular, if it's another
 				 * SubscriptingRef, we *must* parenthesize to avoid
-				 * confusion.)
+				 * confusion.) Always add parenthesis if JSON simplified
+				 * accessor is used, for now.
 				 */
-				need_parens = !IsA(sbsref->refexpr, Var) &&
-					!IsA(sbsref->refexpr, FieldSelect);
+				need_parens = (!IsA(sbsref->refexpr, Var) &&
+							   !IsA(sbsref->refexpr, FieldSelect)) ||
+					sbsref->refprivate;
+
 				if (need_parens)
 					appendStringInfoChar(buf, '(');
 				get_rule_expr((Node *) sbsref->refexpr, context, showimplicit);
@@ -13038,17 +13041,35 @@ printSubscripts(SubscriptingRef *sbsref, deparse_context *context)
 	lowlist_item = list_head(sbsref->reflowerindexpr);	/* could be NULL */
 	foreach(uplist_item, sbsref->refupperindexpr)
 	{
-		appendStringInfoChar(buf, '[');
-		if (lowlist_item)
+		Node	   *upper = (Node *) lfirst(uplist_item);
+
+		if (upper && IsA(upper, FieldAccessorExpr))
 		{
-			/* If subexpression is NULL, get_rule_expr prints nothing */
-			get_rule_expr((Node *) lfirst(lowlist_item), context, false);
-			appendStringInfoChar(buf, ':');
-			lowlist_item = lnext(sbsref->reflowerindexpr, lowlist_item);
+			FieldAccessorExpr *fae = (FieldAccessorExpr *) upper;
+
+			/* Use dot-notation for field access */
+			appendStringInfoChar(buf, '.');
+			appendStringInfoString(buf, quote_identifier(fae->fieldname));
+
+			/* Skip matching low index — field access doesn't use slices */
+			if (lowlist_item)
+				lowlist_item = lnext(sbsref->reflowerindexpr, lowlist_item);
 		}
-		/* If subexpression is NULL, get_rule_expr prints nothing */
-		get_rule_expr((Node *) lfirst(uplist_item), context, false);
-		appendStringInfoChar(buf, ']');
+		else
+		{
+			/* Use JSONB array subscripting */
+			appendStringInfoChar(buf, '[');
+			if (lowlist_item)
+			{
+				/* If subexpression is NULL, get_rule_expr prints nothing */
+				get_rule_expr((Node *) lfirst(lowlist_item), context, false);
+				appendStringInfoChar(buf, ':');
+				lowlist_item = lnext(sbsref->reflowerindexpr, lowlist_item);
+			}
+			/* If subexpression is NULL, get_rule_expr prints nothing */
+			get_rule_expr(upper, context, false);
+			appendStringInfoChar(buf, ']');
+		}
 	}
 }
 

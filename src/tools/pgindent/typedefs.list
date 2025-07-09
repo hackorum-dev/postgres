@@ -819,6 +819,7 @@ FdwRoutine
 FetchDirection
 FetchDirectionKeywords
 FetchStmt
+FieldAccessorExpr
 FieldSelect
 FieldStore
 File

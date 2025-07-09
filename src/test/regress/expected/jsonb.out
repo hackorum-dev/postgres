@@ -5021,6 +5021,12 @@ select ('123'::jsonb)['a'];
  
 (1 row)
 
+select ('123'::jsonb).a;
+ a 
+---
+ 
+(1 row)
+
 select ('123'::jsonb)[0];
  jsonb 
 -------
@@ -5033,9 +5039,21 @@ select ('123'::jsonb)[NULL];
  
 (1 row)
 
+select ('123'::jsonb).NULL;
+ null 
+------
+ 
+(1 row)
+
 select ('{"a": 1}'::jsonb)['a'];
  jsonb 
 -------
+ 1
+(1 row)
+
+select ('{"a": 1}'::jsonb).a;
+ a 
+---
  1
 (1 row)
 
@@ -5051,6 +5069,12 @@ select ('{"a": 1}'::jsonb)['not_exist'];
  
 (1 row)
 
+select ('{"a": 1}'::jsonb)."not_exist";
+ not_exist 
+-----------
+ 
+(1 row)
+
 select ('{"a": 1}'::jsonb)[NULL];
  jsonb 
 -------
@@ -5060,6 +5084,12 @@ select ('{"a": 1}'::jsonb)[NULL];
 select ('[1, "2", null]'::jsonb)['a'];
  jsonb 
 -------
+ 
+(1 row)
+
+select ('[1, "2", null]'::jsonb).a;
+ a 
+---
  
 (1 row)
 
@@ -5073,6 +5103,12 @@ select ('[1, "2", null]'::jsonb)['1'];
  jsonb 
 -------
  "2"
+(1 row)
+
+select ('[1, "2", null]'::jsonb)."1";
+ 1 
+---
+ 
 (1 row)
 
 select ('[1, "2", null]'::jsonb)[1.0];
@@ -5104,6 +5140,12 @@ select ('[1, "2", null]'::jsonb)[1]['a'];
  
 (1 row)
 
+select ('[1, "2", null]'::jsonb)[1].a;
+ a 
+---
+ 
+(1 row)
+
 select ('[1, "2", null]'::jsonb)[1][0];
  jsonb 
 -------
@@ -5116,8 +5158,20 @@ select ('{"a": 1, "b": "c", "d": [1, 2, 3]}'::jsonb)['b'];
  "c"
 (1 row)
 
+select ('{"a": 1, "b": "c", "d": [1, 2, 3]}'::jsonb).b;
+  b  
+-----
+ "c"
+(1 row)
+
 select ('{"a": 1, "b": "c", "d": [1, 2, 3]}'::jsonb)['d'];
    jsonb   
+-----------
+ [1, 2, 3]
+(1 row)
+
+select ('{"a": 1, "b": "c", "d": [1, 2, 3]}'::jsonb).d;
+     d     
 -----------
  [1, 2, 3]
 (1 row)
@@ -5128,14 +5182,50 @@ select ('{"a": 1, "b": "c", "d": [1, 2, 3]}'::jsonb)['d'][1];
  2
 (1 row)
 
+select ('{"a": 1, "b": "c", "d": [1, 2, 3]}'::jsonb).d[1];
+ d 
+---
+ 2
+(1 row)
+
 select ('{"a": 1, "b": "c", "d": [1, 2, 3]}'::jsonb)['d']['a'];
  jsonb 
 -------
  
 (1 row)
 
+select ('{"a": 1, "b": "c", "d": [1, 2, 3]}'::jsonb).d['a'];
+ d 
+---
+ 
+(1 row)
+
+select ('{"a": 1, "b": "c", "d": [1, 2, 3]}'::jsonb).d.a;
+ a 
+---
+ 
+(1 row)
+
+select ('{"a": 1, "b": "c", "d": {"a": [1, 2, 3]}}'::jsonb).d['a'][0];
+ d 
+---
+ 1
+(1 row)
+
+select ('{"a": 1, "b": "c", "d": {"a": [1, 2, 3]}}'::jsonb).d.a[0];
+ a 
+---
+ 1
+(1 row)
+
 select ('{"a": {"a1": {"a2": "aaa"}}, "b": "bbb", "c": "ccc"}'::jsonb)['a']['a1'];
      jsonb     
+---------------
+ {"a2": "aaa"}
+(1 row)
+
+select ('{"a": {"a1": {"a2": "aaa"}}, "b": "bbb", "c": "ccc"}'::jsonb).a.a1;
+      a1       
 ---------------
  {"a2": "aaa"}
 (1 row)
@@ -5146,9 +5236,21 @@ select ('{"a": {"a1": {"a2": "aaa"}}, "b": "bbb", "c": "ccc"}'::jsonb)['a']['a1'
  "aaa"
 (1 row)
 
+select ('{"a": {"a1": {"a2": "aaa"}}, "b": "bbb", "c": "ccc"}'::jsonb).a.a1.a2;
+  a2   
+-------
+ "aaa"
+(1 row)
+
 select ('{"a": {"a1": {"a2": "aaa"}}, "b": "bbb", "c": "ccc"}'::jsonb)['a']['a1']['a2']['a3'];
  jsonb 
 -------
+ 
+(1 row)
+
+select ('{"a": {"a1": {"a2": "aaa"}}, "b": "bbb", "c": "ccc"}'::jsonb).a.a1.a2.a3;
+ a3 
+----
  
 (1 row)
 
@@ -5158,8 +5260,20 @@ select ('{"a": ["a1", {"b1": ["aaa", "bbb", "ccc"]}], "b": "bb"}'::jsonb)['a'][1
  ["aaa", "bbb", "ccc"]
 (1 row)
 
+select ('{"a": ["a1", {"b1": ["aaa", "bbb", "ccc"]}], "b": "bb"}'::jsonb).a[1].b1;
+          b1           
+-----------------------
+ ["aaa", "bbb", "ccc"]
+(1 row)
+
 select ('{"a": ["a1", {"b1": ["aaa", "bbb", "ccc"]}], "b": "bb"}'::jsonb)['a'][1]['b1'][2];
  jsonb 
+-------
+ "ccc"
+(1 row)
+
+select ('{"a": ["a1", {"b1": ["aaa", "bbb", "ccc"]}], "b": "bb"}'::jsonb).a[1].b1[2];
+  b1   
 -------
  "ccc"
 (1 row)
@@ -5922,9 +6036,9 @@ select ('[{"name": "alice"}, {"name": "bob"}]'::jsonb)::name;
 (1 row)
 
 select ('[{"name": "alice"}, {"name": "bob"}]'::jsonb).name;
-                 name                 
---------------------------------------
- [{"name": "alice"}, {"name": "bob"}]
+       name       
+------------------
+ ["alice", "bob"]
 (1 row)
 
 select ('true'::jsonb)::bool;
@@ -5946,8 +6060,319 @@ select ('{"text": "hello"}'::jsonb)::text;
 (1 row)
 
 select ('{"text": "hello"}'::jsonb).text;
-       text        
--------------------
- {"text": "hello"}
+  text   
+---------
+ "hello"
 (1 row)
 
+-- dot notation
+CREATE TABLE test_jsonb_dot_notation AS
+SELECT '{"a": [1, 2, {"b": "c"}, {"b": "d", "e": "f", "x": {"y": "yyy", "z": "zzz"}}], "b": [3, 4, {"b": "g", "x": {"y": "YYY", "z": "ZZZ"}}]}'::jsonb jb;
+SELECT (jb).a FROM test_jsonb_dot_notation;
+                                    a                                    
+-------------------------------------------------------------------------
+ [1, 2, {"b": "c"}, {"b": "d", "e": "f", "x": {"y": "yyy", "z": "zzz"}}]
+(1 row)
+
+SELECT (jb)."a" FROM test_jsonb_dot_notation; -- double quote should work
+                                    a                                    
+-------------------------------------------------------------------------
+ [1, 2, {"b": "c"}, {"b": "d", "e": "f", "x": {"y": "yyy", "z": "zzz"}}]
+(1 row)
+
+SELECT (jb).'a' FROM test_jsonb_dot_notation; -- single quote should not work
+ERROR:  syntax error at or near "'a'"
+LINE 1: SELECT (jb).'a' FROM test_jsonb_dot_notation;
+                    ^
+select (jb)[0].a from test_jsonb_dot_notation; -- returns same result as (jb).a
+                                    a                                    
+-------------------------------------------------------------------------
+ [1, 2, {"b": "c"}, {"b": "d", "e": "f", "x": {"y": "yyy", "z": "zzz"}}]
+(1 row)
+
+select (jb)[0]['a'] from test_jsonb_dot_notation; -- returns NULL
+ jb 
+----
+ 
+(1 row)
+
+select (jb)[1].a from test_jsonb_dot_notation; -- returns NULL
+ a 
+---
+ 
+(1 row)
+
+SELECT (jb).b FROM test_jsonb_dot_notation;
+                         b                         
+---------------------------------------------------
+ [3, 4, {"b": "g", "x": {"y": "YYY", "z": "ZZZ"}}]
+(1 row)
+
+SELECT (jb).c FROM test_jsonb_dot_notation;
+ c 
+---
+ 
+(1 row)
+
+SELECT (jb).a.b FROM test_jsonb_dot_notation;
+     b      
+------------
+ ["c", "d"]
+(1 row)
+
+SELECT (jb).a[2].b FROM test_jsonb_dot_notation;
+  b  
+-----
+ "c"
+(1 row)
+
+SELECT (jb).a.x.y FROM test_jsonb_dot_notation;
+   y   
+-------
+ "yyy"
+(1 row)
+
+SELECT (jb).b.x.z FROM test_jsonb_dot_notation;
+   z   
+-------
+ "ZZZ"
+(1 row)
+
+SELECT (jb).a.b.c FROM test_jsonb_dot_notation;
+ c 
+---
+ 
+(1 row)
+
+SELECT ((jb).b)[:].x FROM test_jsonb_dot_notation t; -- fails
+ERROR:  jsonb subscript does not support slices
+SELECT (jb).a.* FROM test_jsonb_dot_notation; -- fails
+ERROR:  type jsonb is not composite
+-- assignment is not supported
+UPDATE test_jsonb_dot_notation SET jb.a = '1';
+ERROR:  cannot assign to field "a" of column "jb" because its type jsonb is not a composite type
+LINE 1: UPDATE test_jsonb_dot_notation SET jb.a = '1';
+                                           ^
+UPDATE test_jsonb_dot_notation SET (jb).a = '1';
+ERROR:  syntax error at or near "."
+LINE 1: UPDATE test_jsonb_dot_notation SET (jb).a = '1';
+                                               ^
+-- explains should work
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (t.jb).a FROM test_jsonb_dot_notation t;
+                  QUERY PLAN                  
+----------------------------------------------
+ Seq Scan on public.test_jsonb_dot_notation t
+   Output: (jb).a
+(2 rows)
+
+SELECT (t.jb).a FROM test_jsonb_dot_notation t;
+                                    a                                    
+-------------------------------------------------------------------------
+ [1, 2, {"b": "c"}, {"b": "d", "e": "f", "x": {"y": "yyy", "z": "zzz"}}]
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (jb).a[1] FROM test_jsonb_dot_notation;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on public.test_jsonb_dot_notation
+   Output: (jb).a[1]
+(2 rows)
+
+SELECT (jb).a[1] FROM test_jsonb_dot_notation;
+ a 
+---
+ 2
+(1 row)
+
+-- views should work
+CREATE VIEW test_jsonb_dot_notation_v1 AS SELECT (jb).a[3].x.y FROM test_jsonb_dot_notation;
+\sv test_jsonb_dot_notation_v1
+CREATE OR REPLACE VIEW public.test_jsonb_dot_notation_v1 AS
+ SELECT (jb).a[3].x.y AS y
+   FROM test_jsonb_dot_notation
+-- mixed syntax
+DROP VIEW test_jsonb_dot_notation_v1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (jb)['a'].b FROM test_jsonb_dot_notation;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on public.test_jsonb_dot_notation
+   Output: (jb['a'::text]).b
+(2 rows)
+
+SELECT (jb)['a'].b FROM test_jsonb_dot_notation; -- returns an array due to lax mode
+     b      
+------------
+ ["c", "d"]
+(1 row)
+
+CREATE VIEW public.test_jsonb_dot_notation_v1 AS
+SELECT (jb)['a'].b FROM test_jsonb_dot_notation;
+\sv test_jsonb_dot_notation_v1
+CREATE OR REPLACE VIEW public.test_jsonb_dot_notation_v1 AS
+ SELECT (jb['a'::text]).b AS b
+   FROM test_jsonb_dot_notation
+SELECT * from test_jsonb_dot_notation_v1;
+     b      
+------------
+ ["c", "d"]
+(1 row)
+
+DROP VIEW public.test_jsonb_dot_notation_v1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (jb).a['b'] FROM test_jsonb_dot_notation;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on public.test_jsonb_dot_notation
+   Output: ((jb).a)['b'::text]
+(2 rows)
+
+SELECT (jb).a['b'] FROM test_jsonb_dot_notation; -- returns NULL because ['b'] looks for strict match in an object
+ a 
+---
+ 
+(1 row)
+
+CREATE VIEW public.test_jsonb_dot_notation_v1 AS
+SELECT (jb).a['b'] FROM test_jsonb_dot_notation;
+\sv test_jsonb_dot_notation_v1
+CREATE OR REPLACE VIEW public.test_jsonb_dot_notation_v1 AS
+ SELECT ((jb).a)['b'::text] AS a
+   FROM test_jsonb_dot_notation
+SELECT * from test_jsonb_dot_notation_v1;
+ a 
+---
+ 
+(1 row)
+
+DROP VIEW public.test_jsonb_dot_notation_v1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (jb).b.x['z'] FROM test_jsonb_dot_notation;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on public.test_jsonb_dot_notation
+   Output: ((jb).b.x)['z'::text]
+(2 rows)
+
+SELECT (jb).b.x['z'] FROM test_jsonb_dot_notation; -- warnings
+   x   
+-------
+ "ZZZ"
+(1 row)
+
+CREATE VIEW public.test_jsonb_dot_notation_v1 AS
+SELECT (jb).b.x['z'] FROM test_jsonb_dot_notation;
+\sv test_jsonb_dot_notation_v1
+CREATE OR REPLACE VIEW public.test_jsonb_dot_notation_v1 AS
+ SELECT ((jb).b.x)['z'::text] AS x
+   FROM test_jsonb_dot_notation
+SELECT * from test_jsonb_dot_notation_v1;
+   x   
+-------
+ "ZZZ"
+(1 row)
+
+DROP VIEW public.test_jsonb_dot_notation_v1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (jb)['b'].x['z'] FROM test_jsonb_dot_notation;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on public.test_jsonb_dot_notation
+   Output: ((jb['b'::text]).x)['z'::text]
+(2 rows)
+
+SELECT (jb)['b'].x['z'] FROM test_jsonb_dot_notation;  -- warnings
+   x   
+-------
+ "ZZZ"
+(1 row)
+
+CREATE VIEW public.test_jsonb_dot_notation_v1 AS
+SELECT (jb)['b'].x['z'] FROM test_jsonb_dot_notation;
+\sv test_jsonb_dot_notation_v1
+CREATE OR REPLACE VIEW public.test_jsonb_dot_notation_v1 AS
+ SELECT ((jb['b'::text]).x)['z'::text] AS x
+   FROM test_jsonb_dot_notation
+SELECT * from test_jsonb_dot_notation_v1;
+   x   
+-------
+ "ZZZ"
+(1 row)
+
+DROP VIEW public.test_jsonb_dot_notation_v1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (jb).b['x'].z FROM test_jsonb_dot_notation;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on public.test_jsonb_dot_notation
+   Output: (((jb).b)['x'::text]).z
+(2 rows)
+
+SELECT (jb).b['x'].z FROM test_jsonb_dot_notation; -- returns NULL
+ z 
+---
+ 
+(1 row)
+
+CREATE VIEW public.test_jsonb_dot_notation_v1 AS
+SELECT (jb).b['x'].z FROM test_jsonb_dot_notation;
+\sv test_jsonb_dot_notation_v1
+CREATE OR REPLACE VIEW public.test_jsonb_dot_notation_v1 AS
+ SELECT (((jb).b)['x'::text]).z AS z
+   FROM test_jsonb_dot_notation
+SELECT * from test_jsonb_dot_notation_v1;
+ z 
+---
+ 
+(1 row)
+
+DROP VIEW public.test_jsonb_dot_notation_v1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (jb).b['x']['z'] FROM test_jsonb_dot_notation;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on public.test_jsonb_dot_notation
+   Output: ((jb).b)['x'::text]['z'::text]
+(2 rows)
+
+SELECT (jb).b['x']['z'] FROM test_jsonb_dot_notation; -- returns NULL
+ b 
+---
+ 
+(1 row)
+
+CREATE VIEW public.test_jsonb_dot_notation_v1 AS
+SELECT (jb).b['x']['z'] FROM test_jsonb_dot_notation;
+\sv test_jsonb_dot_notation_v1
+CREATE OR REPLACE VIEW public.test_jsonb_dot_notation_v1 AS
+ SELECT ((jb).b)['x'::text]['z'::text] AS b
+   FROM test_jsonb_dot_notation
+SELECT * from test_jsonb_dot_notation_v1;
+ b 
+---
+ 
+(1 row)
+
+DROP VIEW public.test_jsonb_dot_notation_v1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (jb)['b']['x'].z FROM test_jsonb_dot_notation;
+                 QUERY PLAN                 
+--------------------------------------------
+ Seq Scan on public.test_jsonb_dot_notation
+   Output: (jb['b'::text]['x'::text]).z
+(2 rows)
+
+SELECT (jb)['b']['x'].z FROM test_jsonb_dot_notation; -- returns NULL
+ z 
+---
+ 
+(1 row)
+
+CREATE VIEW public.test_jsonb_dot_notation_v1 AS
+SELECT (jb)['b']['x'].z FROM test_jsonb_dot_notation;
+\sv test_jsonb_dot_notation_v1
+CREATE OR REPLACE VIEW public.test_jsonb_dot_notation_v1 AS
+ SELECT (jb['b'::text]['x'::text]).z AS z
+   FROM test_jsonb_dot_notation
+SELECT * from test_jsonb_dot_notation_v1;
+ z 
+---
+ 
+(1 row)
+
+DROP VIEW public.test_jsonb_dot_notation_v1;
+-- clean up
+DROP TABLE test_jsonb_dot_notation;

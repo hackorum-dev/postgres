@@ -712,6 +712,307 @@ UPDATE table_name SET jsonb_field[1]['a'] = '1';
   </para>
  </sect2>
 
+ <sect2 id="jsonb-simplified-accessor">
+  <title>JSON Simplified Accessor</title>
+  <para>
+   PostgreSQL implements the JSON simplified accessor as specified in SQL:2023.
+   The SQL standard defines the simplified accessor as a chain of operations
+   that can include JSON member accessors (dot notation for object fields)
+   and JSON array accessors (integer subscripts for array elements).
+   This provides a standardized way to access JSON data that complements
+   PostgreSQL's pre-standard subscripting and operator-based access methods.
+  </para>
+
+  <para>
+   The SQL:2023 simplified accessor syntax includes:
+   <itemizedlist>
+    <listitem>
+     <para>
+      <emphasis>JSON member accessor:</emphasis> <literal>jsonb_column.field_name</literal>
+      for accessing object fields
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <emphasis>JSON array accessor:</emphasis> <literal>jsonb_column[index]</literal>
+      for accessing array elements by integer index
+     </para>
+    </listitem>
+   </itemizedlist>
+   These can be chained together: <literal>jsonb_column.field_name[0].nested_field</literal>.
+   When dot notation is present in the accessor chain, the entire chain follows
+   SQL:2023 semantics with lax mode behavior and conditional array wrapper.
+  </para>
+
+  <para>
+   The JSON simplified accessor is semantically equivalent to using
+   <function>JSON_QUERY</function> with the <literal>lax</literal> mode and
+   <literal>WITH CONDITIONAL ARRAY WRAPPER NULL ON EMPTY NULL ON ERROR</literal>
+   options. For example, <literal>json_col.field</literal> is equivalent to
+   <literal>JSON_QUERY(json_col, 'lax $.field' WITH CONDITIONAL ARRAY WRAPPER NULL ON EMPTY NULL ON ERROR)</literal>.
+   The conditional array wrapper wraps multiple results in an array
+   but leaves a single result as-is without wrapping.
+  </para>
+
+  <para>
+   Examples of JSON simplified accessor syntax:
+
+<programlisting>
+
+-- Basic field access
+SELECT ('{"color": "red", "rgb": [255, 0, 0]}'::jsonb).color;
+
+-- Nested field access
+SELECT ('{"user": {"profile": {"settings": {"theme": "dark"}}}}'::jsonb).user.profile.settings.theme;
+
+-- JSON member accessor followed by JSON array accessor (both part of simplified accessor)
+SELECT ('{"repertoire": [{"title": "Swan Lake"}, {"title": "The Nutcracker"}]}'::jsonb).repertoire[1].title;
+
+-- In WHERE clauses
+SELECT * FROM users WHERE profile.preferences.theme = '"dark"';
+
+-- Comparison with other access methods (NOT equivalent - different semantics):
+SELECT json_col['address']['city'];           -- Subscripting
+SELECT json_col->'address'->'city';           -- Operator
+SELECT json_col.address.city;                 -- Simplified accessor (different behavior)
+</programlisting>
+  </para>
+
+  <sect3 id="jsonb-access-method-comparison">
+   <title>Comparison of JSON Access Methods</title>
+   <para>
+    PostgreSQL provides three different approaches for accessing JSON data, each with
+    distinct semantics and behaviors:
+   </para>
+
+   <para>
+    <emphasis>SQL:2023 JSON Simplified Accessor:</emphasis>
+    <itemizedlist>
+     <listitem>
+      <para>
+       Syntax: <literal>json_col.field_name</literal> (member accessor) and
+       <literal>json_col[index]</literal> (array accessor when used with dot notation)
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Standard SQL:2023 behavior with <literal>lax</literal> mode semantics
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Automatic array wrapping/unwrapping as specified in the SQL standard
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       When accessing a field from an array, operates on each array element and wraps results in an array;
+       when accessing an array index from a non-array, wraps the value as an array first
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Triggered when dot notation is present anywhere in the accessor chain
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Read-only access
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
+   <para>
+    <emphasis>Pre-standard JSONB Subscripting:</emphasis>
+    <itemizedlist>
+     <listitem>
+      <para>
+       Syntax: <literal>json_col['field_name']</literal> (text-based) and
+       <literal>json_col[index]</literal> (integer-based when no dot notation present)
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       PostgreSQL's original JSONB subscripting behavior (available since version 14)
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Direct object field and array element access without array wrapping/unwrapping
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Supports both read and write operations
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
+   <para>
+    <emphasis>Arrow Operators:</emphasis>
+    <itemizedlist>
+     <listitem>
+      <para>
+       Syntax: <literal>json_col->'field_name'</literal> and <literal>json_col->>'field_name'</literal>
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       PostgreSQL's JSON operators that work with both <literal>json</literal> and <literal>jsonb</literal> types
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Direct object field and array element access without array wrapping/unwrapping
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <literal>-></literal> returns jsonb, <literal>->></literal> returns text
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Read-only access
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
+   <para>
+    <emphasis>Key Semantic Differences:</emphasis> The most important distinctions are
+    how these methods handle member access from arrays and array access from non-array values.
+   </para>
+
+   <para>
+    <emphasis>Member Access from Arrays:</emphasis>
+<programlisting>
+-- Setup data
+INSERT INTO test_table VALUES
+  ('{"brightness": 80}'),                      -- Object case
+  ('[{"brightness": 45}, {"brightness": 90}]'); -- Array case
+
+-- Different behaviors:
+SELECT data.brightness FROM test_table;         -- Simplified accessor
+-- Results: 80, [45, 90]  (array elements unwrapped, results wrapped)
+
+SELECT data['brightness'] FROM test_table;      -- Pre-standard subscripting
+-- Results: 80, NULL    (no array handling)
+
+SELECT data->'brightness' FROM test_table;      -- Arrow operator
+-- Results: 80, NULL    (no array handling)
+</programlisting>
+
+    In the array case, the simplified accessor applies the field access to each array element
+    (unwrapping) and conditionally wraps the results in an array, while subscripting and arrow operators
+    attempt direct field access on the array itself (which returns NULL since
+    arrays don't have named fields).
+   </para>
+
+   <para>
+    <emphasis>Array Access from Objects (Lax Mode Behavior):</emphasis>
+<programlisting>
+-- Setup data
+INSERT INTO test_table VALUES ('{"weather": "sunny", "temperature": "72F"}');
+
+-- Different behaviors when accessing [0] on a non-array value:
+SELECT data[0] FROM test_table;                 -- Simplified accessor (lax mode, if dots present elsewhere)
+-- Result: {"weather": "sunny", "temperature": "72F"}  (object wrapped as array, [0] returns entire object)
+
+SELECT data[0] FROM test_table;                 -- Pre-standard subscripting (strict mode, no dots)
+-- Result: NULL  (no wrapping, direct array access on object fails)
+
+SELECT data->0 FROM test_table;                 -- Arrow operator (strict mode)
+-- Result: NULL  (no wrapping, direct array access on object fails)
+</programlisting>
+
+    In lax mode (simplified accessor), when an array operation is performed on a non-array value,
+    the value is first wrapped in an array, then the operation proceeds. In strict mode
+    (pre-standard methods), the operation fails and returns NULL.
+   </para>
+
+   <para>
+    <emphasis>When to Use Each Method:</emphasis>
+    <itemizedlist>
+     <listitem>
+      <para>
+       Use <emphasis>SQL:2023 simplified accessor</emphasis> for standard compliance and when you want lax mode and conditional array wrapper
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Use <emphasis>pre-standard subscripting</emphasis> for write operations or when you need direct field access without array processing
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Use <emphasis>arrow operators</emphasis> when you need text output (<literal>->></literal>) or when working with both <literal>json</literal> and <literal>jsonb</literal> types
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+  </sect3>
+
+  <sect3 id="jsonb-accessor-best-practices">
+   <title>Best Practices: Avoid Mixing Access Methods</title>
+   <para>
+    <emphasis>Important:</emphasis> Do not mix SQL:2023 simplified accessor syntax
+    with pre-standard subscripting syntax in the same accessor chain. These
+    methods have subtly different semantics and are not interchangeable aliases.
+    Mixing them can lead to confusion and code that is difficult to understand.
+   </para>
+
+   <para>
+    <emphasis>Recommended - Consistent simplified accessor:</emphasis>
+<programlisting>
+-- All parts use simplified accessor (standard behavior)
+SELECT data.location.coordinates.latitude FROM table;  -- Good
+SELECT data.repertoire[0].title FROM table;           -- Good
+SELECT data.users[1].profile.email FROM table;        -- Good
+</programlisting>
+   </para>
+
+   <para>
+    <emphasis>Recommended - Consistent pre-standard subscripting:</emphasis>
+<programlisting>
+-- All parts use pre-standard subscripting
+SELECT data['location']['coordinates']['latitude'] FROM table; -- Good
+SELECT data[0]['title'] FROM table;                    -- Good (when no dots present)
+SELECT data['users'][1]['profile']['email'] FROM table; -- Good
+</programlisting>
+   </para>
+
+   <para>
+    <emphasis>Not recommended - Mixed syntax:</emphasis>
+<programlisting>
+-- Mixing simplified accessor with pre-standard subscripting
+SELECT data.location['latitude'] FROM table;       -- Avoid
+SELECT data['repertoire'][0].title FROM table;    -- Avoid
+</programlisting>
+    While these mixed forms work as designed, they can be very confusing
+    because the simplified accessor cannot handle text-based subscripts like `['field']`.
+    This forces a fallback to pre-standard semantics for those specific parts,
+    creating a chain that switches between lax mode (for dot notation) and
+    strict mode (for text subscripts) within the same accessor expression.
+   </para>
+
+   <para>
+    Choose one approach consistently throughout your accessor chain to ensure
+    predictable and maintainable code.
+   </para>
+
+   <para>
+    <emphasis>Current Implementation:</emphasis> The current implementation supports
+    JSON member accessors (dot notation) and JSON array accessors (integer subscripts)
+    as defined in the SQL:2023 simplified accessor specification.
+    Advanced features from the SQL:2023 specification, such as wildcard member
+    accessors and item method accessors, are not yet implemented.
+   </para>
+  </sect3>
+ </sect2>
+
  <sect2 id="datatype-json-transforms">
   <title>Transforms</title>
 
