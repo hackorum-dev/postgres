@@ -715,14 +715,15 @@ HINT:  To initiate replication, you must manually create the replication slot, e
    To allow subscriber nodes to continue replicating data from the publisher
    node even when the publisher node goes down, there must be a physical standby
    corresponding to the publisher node. The logical slots on the primary server
-   corresponding to the subscriptions can be synchronized to the standby server by
-   specifying <literal>failover = true</literal> when creating subscriptions. See
-   <xref linkend="logicaldecoding-replication-slots-synchronization"/> for details.
-   Enabling the
-   <link linkend="sql-createsubscription-params-with-failover"><literal>failover</literal></link>
-   parameter ensures a seamless transition of those subscriptions after the
-   standby is promoted. They can continue subscribing to publications on the
-   new primary server.
+   corresponding to the subscriptions can be synchronized to the standby server
+   by specifying <literal>failover = true</literal> when creating subscriptions
+   or when creating replication slots directly. See <link
+   linkend="sql-createsubscription"><command>CREATE
+   SUBSCRIPTION</command></link> and <xref
+   linkend="logicaldecoding-replication-slots-synchronization"/> for details.
+   This ensures a seamless transition of those subscriptions after the standby
+   is promoted. They can continue subscribing to publications on the new primary
+   server.
   </para>
 
   <para>
