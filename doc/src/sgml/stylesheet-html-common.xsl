@@ -33,7 +33,9 @@
   -->
 <xsl:template name="body.attributes">
   <xsl:attribute name="id">docContent</xsl:attribute>
-  <xsl:attribute name="class">container-fluid col-10</xsl:attribute>
+  <xsl:if test="$website.stylesheet != 0">
+    <xsl:attribute name="class">container-fluid col-10</xsl:attribute>
+  </xsl:if>
 </xsl:template>
 
 <!-- Change display of some elements -->
