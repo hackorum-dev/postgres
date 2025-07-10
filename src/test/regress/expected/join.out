@@ -2288,10 +2288,10 @@ order by 1, 2;
 -------------------------------------------
  Sort
    Sort Key: i1.q1, i1.q2
-   ->  Hash Left Join
-         Hash Cond: (i1.q2 = i2.q2)
+   ->  Nested Loop Left Join
+         Join Filter: (i1.q2 = i2.q2)
          ->  Seq Scan on int8_tbl i1
-         ->  Hash
+         ->  Materialize
                ->  Seq Scan on int8_tbl i2
                      Filter: (q1 = 123)
 (8 rows)
@@ -4457,11 +4457,11 @@ select unique1, x from tenk1 full join f_immutable_int4(1) x on unique1 = x;
                      QUERY PLAN                     
 ----------------------------------------------------
  Merge Full Join
-   Merge Cond: (tenk1.unique1 = (1))
-   ->  Index Only Scan using tenk1_unique1 on tenk1
+   Merge Cond: ((1) = tenk1.unique1)
    ->  Sort
          Sort Key: (1)
          ->  Result
+   ->  Index Only Scan using tenk1_unique1 on tenk1
 (6 rows)
 
 -- check that pullup of a const function allows further const-folding
@@ -6036,15 +6036,14 @@ select * from int8_tbl t1 left join
   (int8_tbl t2 inner join int8_tbl t3 on false
    left join int8_tbl t4 on t2.q2 = t4.q2)
 on t1.q1 = t2.q1;
-              QUERY PLAN              
---------------------------------------
- Hash Left Join
-   Hash Cond: (t1.q1 = q1)
+           QUERY PLAN           
+--------------------------------
+ Nested Loop Left Join
+   Join Filter: (t1.q1 = q1)
    ->  Seq Scan on int8_tbl t1
-   ->  Hash
-         ->  Result
-               One-Time Filter: false
-(6 rows)
+   ->  Result
+         One-Time Filter: false
+(5 rows)
 
 -- deduce constant-false from an EquivalenceClass
 explain (costs off)
@@ -6052,15 +6051,14 @@ select * from int8_tbl t1 left join
   (int8_tbl t2 inner join int8_tbl t3 on (t2.q1-t3.q2) = 0 and (t2.q1-t3.q2) = 1
    left join int8_tbl t4 on t2.q2 = t4.q2)
 on t1.q1 = t2.q1;
-              QUERY PLAN              
---------------------------------------
- Hash Left Join
-   Hash Cond: (t1.q1 = q1)
+           QUERY PLAN           
+--------------------------------
+ Nested Loop Left Join
+   Join Filter: (t1.q1 = q1)
    ->  Seq Scan on int8_tbl t1
-   ->  Hash
-         ->  Result
-               One-Time Filter: false
-(6 rows)
+   ->  Result
+         One-Time Filter: false
+(5 rows)
 
 -- pseudoconstant based on an outer-level Param
 explain (costs off)
@@ -8445,12 +8443,12 @@ select * from int4_tbl a,
    Output: a.f1, b.f1, c.q1, c.q2
    ->  Seq Scan on public.int4_tbl a
          Output: a.f1
-   ->  Hash Left Join
+   ->  Nested Loop Left Join
          Output: b.f1, c.q1, c.q2
-         Hash Cond: (b.f1 = c.q1)
+         Join Filter: (b.f1 = c.q1)
          ->  Seq Scan on public.int4_tbl b
                Output: b.f1
-         ->  Hash
+         ->  Materialize
                Output: c.q1, c.q2
                ->  Seq Scan on public.int8_tbl c
                      Output: c.q1, c.q2

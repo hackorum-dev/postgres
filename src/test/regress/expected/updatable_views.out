@@ -520,9 +520,9 @@ MERGE INTO rw_view1 t
  merge_action | a | b  |                  old                   |                  new                   | a |      b      |   c   |       d        | a |      b      |   c   |       d        | a |      b      |   c   |       d        
 --------------+---+----+----------------------------------------+----------------------------------------+---+-------------+-------+----------------+---+-------------+-------+----------------+---+-------------+-------+----------------
  UPDATE       | 1 | R1 | (1,"ROW 1",Const,"b: ROW 1")           | (1,R1,Const,"b: R1")                   | 1 | ROW 1       | Const | b: ROW 1       | 1 | R1          | Const | b: R1          | 1 | R1          | Const | b: R1
- DELETE       |   |    | (5,Unspecified,Const,"b: Unspecified") |                                        | 5 | Unspecified | Const | b: Unspecified |   |             |       |                | 5 | Unspecified | Const | b: Unspecified
  DELETE       | 2 | R2 | (2,Unspecified,Const,"b: Unspecified") |                                        | 2 | Unspecified | Const | b: Unspecified |   |             |       |                | 2 | Unspecified | Const | b: Unspecified
  INSERT       | 3 | R3 |                                        | (3,Unspecified,Const,"b: Unspecified") |   |             |       |                | 3 | Unspecified | Const | b: Unspecified | 3 | Unspecified | Const | b: Unspecified
+ DELETE       |   |    | (5,Unspecified,Const,"b: Unspecified") |                                        | 5 | Unspecified | Const | b: Unspecified |   |             |       |                | 5 | Unspecified | Const | b: Unspecified
 (4 rows)
 
 SELECT * FROM base_tbl ORDER BY a;
@@ -585,14 +585,14 @@ MERGE INTO rw_view1 t
                             QUERY PLAN                             
 -------------------------------------------------------------------
  Merge on base_tbl
-   ->  Hash Left Join
-         Hash Cond: (base_tbl.a = generate_series.generate_series)
-         ->  Bitmap Heap Scan on base_tbl
-               Recheck Cond: (a > 0)
-               ->  Bitmap Index Scan on base_tbl_pkey
-                     Index Cond: (a > 0)
+   ->  Hash Right Join
+         Hash Cond: (generate_series.generate_series = base_tbl.a)
+         ->  Function Scan on generate_series
          ->  Hash
-               ->  Function Scan on generate_series
+               ->  Bitmap Heap Scan on base_tbl
+                     Recheck Cond: (a > 0)
+                     ->  Bitmap Index Scan on base_tbl_pkey
+                           Index Cond: (a > 0)
 (9 rows)
 
 EXPLAIN (costs off)

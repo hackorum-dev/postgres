@@ -8698,26 +8698,28 @@ select foo.f1, loct1.f1 from foo join loct1 on (foo.f1 = loct1.f1) order by foo.
 -- list but no output change as compared to the previous query
 explain (verbose, costs off)
 	select foo.f1, loct1.f1 from foo left join loct1 on (foo.f1 = loct1.f1) order by foo.f2 offset 10 limit 10;
-                                            QUERY PLAN                                            
---------------------------------------------------------------------------------------------------
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
  Limit
    Output: foo.f1, loct1.f1, foo.f2
    ->  Sort
          Output: foo.f1, loct1.f1, foo.f2
          Sort Key: foo.f2
-         ->  Merge Left Join
+         ->  Merge Right Join
                Output: foo.f1, loct1.f1, foo.f2
-               Merge Cond: (foo.f1 = loct1.f1)
-               ->  Merge Append
-                     Sort Key: foo.f1
-                     ->  Index Scan using i_foo_f1 on public.foo foo_1
-                           Output: foo_1.f1, foo_1.f2
-                     ->  Foreign Scan on public.foo2 foo_2
-                           Output: foo_2.f1, foo_2.f2
-                           Remote SQL: SELECT f1, f2 FROM public.loct1 ORDER BY f1 ASC NULLS LAST
+               Merge Cond: (loct1.f1 = foo.f1)
                ->  Index Only Scan using i_loct1_f1 on public.loct1
                      Output: loct1.f1
-(17 rows)
+               ->  Materialize
+                     Output: foo.f1, foo.f2
+                     ->  Merge Append
+                           Sort Key: foo.f1
+                           ->  Index Scan using i_foo_f1 on public.foo foo_1
+                                 Output: foo_1.f1, foo_1.f2
+                           ->  Foreign Scan on public.foo2 foo_2
+                                 Output: foo_2.f1, foo_2.f2
+                                 Remote SQL: SELECT f1, f2 FROM public.loct1 ORDER BY f1 ASC NULLS LAST
+(19 rows)
 
 select foo.f1, loct1.f1 from foo left join loct1 on (foo.f1 = loct1.f1) order by foo.f2 offset 10 limit 10;
  f1 | f1 

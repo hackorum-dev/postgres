@@ -44,15 +44,15 @@ step merge2a:
 
 merge_action|old                           |new                                                         |key|val                                                   
 ------------+------------------------------+------------------------------------------------------------+---+------------------------------------------------------
-UPDATE      |(2,"setup1 updated by merge1")|(3,"setup1 updated by merge1 source not matched by merge2a")|  3|setup1 updated by merge1 source not matched by merge2a
 INSERT      |                              |(1,merge2a)                                                 |  1|merge2a                                               
+UPDATE      |(2,"setup1 updated by merge1")|(3,"setup1 updated by merge1 source not matched by merge2a")|  3|setup1 updated by merge1 source not matched by merge2a
 (2 rows)
 
 step select2: SELECT * FROM target;
 key|val                                                   
 ---+------------------------------------------------------
-  3|setup1 updated by merge1 source not matched by merge2a
   1|merge2a                                               
+  3|setup1 updated by merge1 source not matched by merge2a
 (2 rows)
 
 step c2: COMMIT;

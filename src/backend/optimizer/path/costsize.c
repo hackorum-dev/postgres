@@ -3934,8 +3934,14 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	/*
 	 * Get approx # tuples passing the mergequals.  We use approx_tuple_count
 	 * here because we need an estimate done with JOIN_INNER semantics.
+	 * However, if joinrestrictinfo consists only of those base hash/merge
+	 * clauses, we have already computed an equally (or more) accurate figure
+	 * in path->jpath.path.rows
 	 */
-	mergejointuples = approx_tuple_count(root, &path->jpath, mergeclauses);
+	if (list_length(path->jpath.joinrestrictinfo) > list_length(mergeclauses))
+		mergejointuples = approx_tuple_count(root, &path->jpath, mergeclauses);
+	else
+		mergejointuples = path->jpath.path.rows;
 
 	/*
 	 * When there are equal merge keys in the outer relation, the mergejoin
@@ -4525,9 +4531,14 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		/*
 		 * Get approx # tuples passing the hashquals.  We use
 		 * approx_tuple_count here because we need an estimate done with
-		 * JOIN_INNER semantics.
+		 * JOIN_INNER semantics. However, if joinrestrictinfo consists
+		 * only of those base hash/merge clauses, we have already computed
+		 * an equally (or more) accurate figure in path->jpath.path.rows
 		 */
-		hashjointuples = approx_tuple_count(root, &path->jpath, hashclauses);
+		if (list_length(path->jpath.joinrestrictinfo) > list_length(hashclauses))
+			hashjointuples = approx_tuple_count(root, &path->jpath, hashclauses);
+		else
+			hashjointuples = path->jpath.path.rows;
 	}
 
 	/*
