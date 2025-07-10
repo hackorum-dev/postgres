@@ -1611,6 +1611,13 @@ vac_update_relstats(Relation relation,
 								 RelationGetRelationName(relation))));
 }
 
+static inline bool
+need_update_datxid(TransactionId datxid, TransactionId newXid, TransactionId lastSaneXid)
+{
+	return datxid != newXid &&
+		(TransactionIdPrecedes(datxid, newXid) ||
+		 TransactionIdPrecedes(lastSaneXid, datxid));
+}
 
 /*
  *	vac_update_datfrozenxid() -- update pg_database.datfrozenxid for our DB
@@ -1642,6 +1649,8 @@ vac_update_datfrozenxid(void)
 	MultiXactId newMinMulti;
 	TransactionId lastSaneFrozenXid;
 	MultiXactId lastSaneMinMulti;
+	TransactionId prevDatfrozenxid;
+	TransactionId prevDatminmxid;
 	bool		bogus = false;
 	bool		dirty = false;
 	ScanKeyData key[1];
@@ -1767,61 +1776,80 @@ vac_update_datfrozenxid(void)
 	Assert(TransactionIdIsNormal(newFrozenXid));
 	Assert(MultiXactIdIsValid(newMinMulti));
 
-	/* Now fetch the pg_database tuple we need to update. */
-	relation = table_open(DatabaseRelationId, RowExclusiveLock);
-
 	/*
-	 * Fetch a copy of the tuple to scribble on.  We could check the syscache
-	 * tuple first.  If that concluded !dirty, we'd avoid waiting on
-	 * concurrent heap_update() and would avoid exclusive-locking the buffer.
-	 * For now, don't optimize that.
+	 * Update datfrozenxid and datminmxid. But we check the syscache tuple
+	 * first. If that conclude !dirty, we avoid waiting on concurrent
+	 * heap_update() and avoid exclusive-locking the buffer.
 	 */
-	ScanKeyInit(&key[0],
-				Anum_pg_database_oid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(MyDatabaseId));
+	prevDatfrozenxid = InvalidTransactionId;
+	prevDatminmxid = InvalidTransactionId;
 
-	systable_inplace_update_begin(relation, DatabaseOidIndexId, true,
-								  NULL, 1, key, &tuple, &inplace_state);
-
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "could not find tuple for database %u", MyDatabaseId);
-
-	dbform = (Form_pg_database) GETSTRUCT(tuple);
-
-	/*
-	 * As in vac_update_relstats(), we ordinarily don't want to let
-	 * datfrozenxid go backward; but if it's "in the future" then it must be
-	 * corrupt and it seems best to overwrite it.
-	 */
-	if (dbform->datfrozenxid != newFrozenXid &&
-		(TransactionIdPrecedes(dbform->datfrozenxid, newFrozenXid) ||
-		 TransactionIdPrecedes(lastSaneFrozenXid, dbform->datfrozenxid)))
+	tuple = SearchSysCache1(DATABASEOID, ObjectIdGetDatum(MyDatabaseId));
+	if (HeapTupleIsValid(tuple))
 	{
-		dbform->datfrozenxid = newFrozenXid;
-		dirty = true;
+		dbform = (Form_pg_database) GETSTRUCT(tuple);
+
+		prevDatfrozenxid = dbform->datfrozenxid;
+		prevDatminmxid = dbform->datminmxid;
+		ReleaseSysCache(tuple);
+	}
+
+	if (!TransactionIdIsValid(prevDatfrozenxid) ||
+		!TransactionIdIsValid(prevDatminmxid) ||
+		need_update_datxid(prevDatfrozenxid, newFrozenXid, lastSaneFrozenXid) ||
+		need_update_datxid(prevDatminmxid, newMinMulti, lastSaneMinMulti))
+	{
+		/* Now fetch the pg_database tuple we need to update. */
+		relation = table_open(DatabaseRelationId, RowExclusiveLock);
+
+		ScanKeyInit(&key[0],
+					Anum_pg_database_oid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(MyDatabaseId));
+
+		systable_inplace_update_begin(relation, DatabaseOidIndexId, true,
+									  NULL, 1, key, &tuple, &inplace_state);
+
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "could not find tuple for database %u", MyDatabaseId);
+
+		dbform = (Form_pg_database) GETSTRUCT(tuple);
+
+		/*
+		 * As in vac_update_relstats(), we ordinarily don't want to let
+		 * datfrozenxid go backward; but if it's "in the future" then it must
+		 * be corrupt and it seems best to overwrite it.
+		 */
+		if (need_update_datxid(dbform->datfrozenxid, newFrozenXid, lastSaneFrozenXid))
+		{
+			dbform->datfrozenxid = newFrozenXid;
+			dirty = true;
+		}
+		else
+			newFrozenXid = dbform->datfrozenxid;
+
+		/* Ditto for datminmxid */
+		if (need_update_datxid(dbform->datminmxid, newMinMulti, lastSaneMinMulti))
+		{
+			dbform->datminmxid = newMinMulti;
+			dirty = true;
+		}
+		else
+			newMinMulti = dbform->datminmxid;
+
+		if (dirty)
+			systable_inplace_update_finish(inplace_state, tuple);
+		else
+			systable_inplace_update_cancel(inplace_state);
+
+		heap_freetuple(tuple);
+		table_close(relation, RowExclusiveLock);
 	}
 	else
-		newFrozenXid = dbform->datfrozenxid;
-
-	/* Ditto for datminmxid */
-	if (dbform->datminmxid != newMinMulti &&
-		(MultiXactIdPrecedes(dbform->datminmxid, newMinMulti) ||
-		 MultiXactIdPrecedes(lastSaneMinMulti, dbform->datminmxid)))
 	{
-		dbform->datminmxid = newMinMulti;
-		dirty = true;
+		newFrozenXid = prevDatfrozenxid;
+		newMinMulti = prevDatminmxid;
 	}
-	else
-		newMinMulti = dbform->datminmxid;
-
-	if (dirty)
-		systable_inplace_update_finish(inplace_state, tuple);
-	else
-		systable_inplace_update_cancel(inplace_state);
-
-	heap_freetuple(tuple);
-	table_close(relation, RowExclusiveLock);
 
 	/*
 	 * If we were able to advance datfrozenxid or datminmxid, see if we can
