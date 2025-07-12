@@ -1104,6 +1104,24 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-cleartext-passwords-action" xreflabel="cleartext_passwords_action">
+      <term><varname>cleartext_passwords_action</varname> (<type>enum</type>)
+      <indexterm>
+       <primary><varname>cleartext_passwords_action</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Controls what action to take when a password is sent unencrypted
+        (i.e. in clear text) to the server via the <command>CREATE ROLE</command>
+        or <command>ALTER ROLE</command> command. Valid options are
+        <literal>allow</literal>, <literal>warn</literal>, or
+        <literal>disallow</literal>.
+        The default value is <literal>warn</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-password-encryption" xreflabel="password_encryption">
       <term><varname>password_encryption</varname> (<type>enum</type>)
       <indexterm>

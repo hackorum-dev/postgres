@@ -64,6 +64,9 @@ CREATE ROLE regress_login LOGIN;
 CREATE ROLE regress_inherit INHERIT;
 CREATE ROLE regress_connection_limit CONNECTION LIMIT 5;
 CREATE ROLE regress_encrypted_password ENCRYPTED PASSWORD 'foo';
+WARNING:  using a clear text password
+DETAIL:  Sending a password using plain text is deprecated and may be removed in a future release of PostgreSQL.
+HINT:  Use a client that can change the password without sending it in clear text
 CREATE ROLE regress_password_null PASSWORD NULL;
 -- ok, backwards compatible noise words should be ignored
 CREATE ROLE regress_noiseword SYSID 12345;

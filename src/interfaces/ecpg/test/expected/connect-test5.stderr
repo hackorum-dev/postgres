@@ -4,16 +4,24 @@
 [NO_PID]: sqlca: code: 0, state: 00000
 [NO_PID]: ecpg_execute on line 24: query: alter user regress_ecpg_user2 encrypted password 'insecure'; with 0 parameter(s) on connection main
 [NO_PID]: sqlca: code: 0, state: 00000
+[NO_PID]: ECPGnoticeReceiver: using a clear text password
+[NO_PID]: sqlca: code: 0, state: 00000
+[NO_PID]: raising sqlcode 0
+[NO_PID]: sqlca: code: 0, state: 01P01
 [NO_PID]: ecpg_execute on line 24: using PQexec
-[NO_PID]: sqlca: code: 0, state: 00000
+[NO_PID]: sqlca: code: 0, state: 01P01
 [NO_PID]: ecpg_process_output on line 24: OK: ALTER ROLE
-[NO_PID]: sqlca: code: 0, state: 00000
+[NO_PID]: sqlca: code: 0, state: 01P01
 [NO_PID]: ecpg_execute on line 25: query: alter user regress_ecpg_user1 encrypted password 'connectpw'; with 0 parameter(s) on connection main
 [NO_PID]: sqlca: code: 0, state: 00000
+[NO_PID]: ECPGnoticeReceiver: using a clear text password
+[NO_PID]: sqlca: code: 0, state: 00000
+[NO_PID]: raising sqlcode 0
+[NO_PID]: sqlca: code: 0, state: 01P01
 [NO_PID]: ecpg_execute on line 25: using PQexec
-[NO_PID]: sqlca: code: 0, state: 00000
+[NO_PID]: sqlca: code: 0, state: 01P01
 [NO_PID]: ecpg_process_output on line 25: OK: ALTER ROLE
-[NO_PID]: sqlca: code: 0, state: 00000
+[NO_PID]: sqlca: code: 0, state: 01P01
 [NO_PID]: ECPGtrans on line 26: action "commit"; connection "main"
 [NO_PID]: sqlca: code: 0, state: 00000
 [NO_PID]: ecpg_finish: connection main closed

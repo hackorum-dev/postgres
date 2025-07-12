@@ -28,6 +28,9 @@
 /* Enables deprecation warnings for MD5 passwords. */
 extern PGDLLIMPORT bool md5_password_warnings;
 
+/* Specifies action when clear text passwords are used. */
+extern PGDLLIMPORT int cleartext_passwords_action;
+
 /*
  * Types of password hashes or secrets.
  *
@@ -43,6 +46,22 @@ typedef enum PasswordType
 	PASSWORD_TYPE_MD5,
 	PASSWORD_TYPE_SCRAM_SHA_256,
 } PasswordType;
+
+/*
+ * Actions to take when clear text passwords are used.
+ *
+ * Passwords that are sent in clear text via the CREATE/ALTER USER
+ * command can cause a reaction by the server. We can either allow
+ * (the old behavior), warn (throw a warning and hint), or simply
+ * disallow (throws an exception).
+ */
+typedef enum CleartextAction
+{
+	CLEARTEXT_ACTION_ALLOW = 0,
+	CLEARTEXT_ACTION_WARN,
+	CLEARTEXT_ACTION_DISALLOW,
+}			CleartextAction;
+
 
 extern PasswordType get_password_type(const char *shadow_pass);
 extern char *encrypt_password(PasswordType target_type, const char *role,

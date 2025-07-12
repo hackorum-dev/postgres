@@ -417,6 +417,13 @@ static const struct config_enum_entry password_encryption_options[] = {
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry cleartext_action_options[] = {
+	{"allow", CLEARTEXT_ACTION_ALLOW, false},
+	{"warn", CLEARTEXT_ACTION_WARN, false},
+	{"disallow", CLEARTEXT_ACTION_DISALLOW, false},
+	{NULL, 0, false}
+};
+
 static const struct config_enum_entry ssl_protocol_versions_info[] = {
 	{"", PG_TLS_ANY, false},
 	{"TLSv1", PG_TLS1_VERSION, false},
@@ -5417,6 +5424,16 @@ struct config_enum ConfigureNamesEnum[] =
 		DEFAULT_IO_METHOD, io_method_options,
 		NULL, assign_io_method, NULL
 	},
+
+	{
+		{"cleartext_passwords_action", PGC_SIGHUP, CONN_AUTH_AUTH,
+			gettext_noop("Action to take when clear text passwords are used."),
+		},
+		&cleartext_passwords_action,
+		CLEARTEXT_ACTION_WARN, cleartext_action_options,
+		NULL, NULL, NULL
+	},
+
 
 	/* End-of-list marker */
 	{

@@ -21,11 +21,15 @@
 #include "libpq/crypt.h"
 #include "libpq/scram.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
 
 /* Enables deprecation warnings for MD5 passwords. */
 bool		md5_password_warnings = true;
+
+/* Action to take when clear text passwords are used. */
+int			cleartext_passwords_action = CLEARTEXT_ACTION_WARN;
 
 /*
  * Fetch stored password for a user, for authentication.
@@ -131,6 +135,36 @@ encrypt_password(PasswordType target_type, const char *role,
 	}
 	else
 	{
+
+		/*
+		 * We are sending clear text passwords to the server. What should we
+		 * do about that?
+		 */
+		if (cleartext_passwords_action == CLEARTEXT_ACTION_WARN)
+		{
+			ereport(WARNING,
+					(errcode(ERRCODE_WARNING_DEPRECATED_FEATURE),
+					 errmsg("using a clear text password"),
+					 errdetail("Sending a password using plain text is deprecated and may be removed in a future release of PostgreSQL."),
+					 strncmp(application_name, "psql", 5) == 0
+					 ? errhint("If using psql, you can set the password with \\password")
+					 : errhint("Use a client that can change the password without sending it in clear text")));
+		}
+		else if (cleartext_passwords_action == CLEARTEXT_ACTION_DISALLOW)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PASSWORD),
+					 errmsg("using a clear text password"),
+					 errdetail("Sending a password using plain text is not allowed."),
+					 strncmp(application_name, "psql", 5) == 0
+					 ? errhint("If using psql, you can change the password with \\password")
+					 : errhint("Use a client that can change the password without sending it in clear text")));
+		}
+		else
+		{
+			/* Silently accept this bad practice. */
+		}
+
 		switch (target_type)
 		{
 			case PASSWORD_TYPE_MD5:

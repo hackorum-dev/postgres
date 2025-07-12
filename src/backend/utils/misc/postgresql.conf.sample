@@ -97,6 +97,7 @@
 #password_encryption = scram-sha-256	# scram-sha-256 or md5
 #scram_iterations = 4096
 #md5_password_warnings = on
+#cleartext_passwords_action = warn      # can be allow, warn, or disallow
 #oauth_validator_libraries = ''	# comma-separated list of trusted validator modules
 
 # GSSAPI using Kerberos
