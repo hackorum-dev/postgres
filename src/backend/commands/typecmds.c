@@ -135,7 +135,8 @@ static void checkEnumOwner(HeapTuple tup);
 static char *domainAddCheckConstraint(Oid domainOid, Oid domainNamespace,
 									  Oid baseTypeOid,
 									  int typMod, Constraint *constr,
-									  const char *domainName, ObjectAddress *constrAddr);
+									  const char *domainName, Oid domaincoll,
+									  ObjectAddress *constrAddr);
 static Node *replace_domain_constraint_value(ParseState *pstate,
 											 ColumnRef *cref);
 static void domainAddNotNullConstraint(Oid domainOid, Oid domainNamespace, Oid baseTypeOid,
@@ -1147,7 +1148,7 @@ DefineDomain(ParseState *pstate, CreateDomainStmt *stmt)
 			case CONSTR_CHECK:
 				domainAddCheckConstraint(address.objectId, domainNamespace,
 										 basetypeoid, basetypeMod,
-										 constr, domainName, NULL);
+										 constr, domainName, domaincoll, NULL);
 				break;
 
 			case CONSTR_NOTNULL:
@@ -2968,6 +2969,7 @@ AlterDomainAddConstraint(List *names, Node *newConstraint,
 {
 	TypeName   *typename;
 	Oid			domainoid;
+	Oid			domaincoll;
 	Relation	typrel;
 	HeapTuple	tup;
 	Form_pg_type typTup;
@@ -2978,6 +2980,8 @@ AlterDomainAddConstraint(List *names, Node *newConstraint,
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
 	domainoid = typenameTypeId(NULL, typename);
+
+	domaincoll = get_typcollation(domainoid);
 
 	/* Look up the domain in the type table */
 	typrel = table_open(TypeRelationId, RowExclusiveLock);
@@ -3008,7 +3012,7 @@ AlterDomainAddConstraint(List *names, Node *newConstraint,
 
 		ccbin = domainAddCheckConstraint(domainoid, typTup->typnamespace,
 										 typTup->typbasetype, typTup->typtypmod,
-										 constr, NameStr(typTup->typname), constrAddr);
+										 constr, NameStr(typTup->typname), domaincoll, constrAddr);
 
 
 		/*
@@ -3544,7 +3548,8 @@ checkDomainOwner(HeapTuple tup)
 static char *
 domainAddCheckConstraint(Oid domainOid, Oid domainNamespace, Oid baseTypeOid,
 						 int typMod, Constraint *constr,
-						 const char *domainName, ObjectAddress *constrAddr)
+						 const char *domainName, Oid domaincoll,
+						 ObjectAddress *constrAddr)
 {
 	Node	   *expr;
 	char	   *ccbin;
@@ -3589,7 +3594,7 @@ domainAddCheckConstraint(Oid domainOid, Oid domainNamespace, Oid baseTypeOid,
 	domVal = makeNode(CoerceToDomainValue);
 	domVal->typeId = baseTypeOid;
 	domVal->typeMod = typMod;
-	domVal->collation = get_typcollation(baseTypeOid);
+	domVal->collation = domaincoll;
 	domVal->location = -1;		/* will be set when/if used */
 
 	pstate->p_pre_columnref_hook = replace_domain_constraint_value;
