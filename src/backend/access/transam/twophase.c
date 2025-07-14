@@ -2520,8 +2520,16 @@ PrepareRedoAdd(FullTransactionId fxid, char *buf,
 	 * duplicates in TwoPhaseState.  If a consistent state has been reached,
 	 * the record is added to TwoPhaseState and it should have no
 	 * corresponding file in pg_twophase.
+	 *
+	 * When there are many 2PC transactions, frequently accessing empty files
+	 * may lead to an increase in OS slab memory. In worse cases, this could
+	 * cause the reference count of the directory dentry to overflow,
+	 * potentially resulting in an OS crash. Therefore, this check is only
+	 * performed when a consistent state has not yet been reached. Once
+	 * consistency has been reached, if a duplicate 2PC transaction is added,
+	 * it will directly result in an error in the subsequent replay logic.
 	 */
-	if (!XLogRecPtrIsInvalid(start_lsn))
+	if (!XLogRecPtrIsInvalid(start_lsn) && !reachedConsistency)
 	{
 		char		path[MAXPGPATH];
 
@@ -2530,7 +2538,7 @@ PrepareRedoAdd(FullTransactionId fxid, char *buf,
 
 		if (access(path, F_OK) == 0)
 		{
-			ereport(reachedConsistency ? ERROR : WARNING,
+			ereport(WARNING,
 					(errmsg("could not recover two-phase state file for transaction %u",
 							hdr->xid),
 					 errdetail("Two-phase state file has been found in WAL record %X/%08X, but this transaction has already been restored from disk.",
