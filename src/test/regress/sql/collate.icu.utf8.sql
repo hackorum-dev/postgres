@@ -565,6 +565,16 @@ SELECT * FROM test6a WHERE b = ARRAY['äbc'] COLLATE ctest_nondet;
 CREATE COLLATION case_sensitive (provider = icu, locale = '');
 CREATE COLLATION case_insensitive (provider = icu, locale = '@colStrength=secondary', deterministic = false);
 
+--domain with check constraints
+CREATE DOMAIN d0 as text COLLATE "C" check (value <> 'a');
+CREATE DOMAIN d1 as d0 COLLATE case_insensitive check (value <> 'b');
+CREATE DOMAIN d2 as d0 COLLATE case_insensitive;
+SELECT 'A'::d1; --ok
+SELECT 'a'::d1; --error
+SELECT 'B'::d1; --error
+SELECT 'A'::d2; --ok
+DROP DOMAIN d0, d1, d2;
+
 SELECT 'abc' <= 'ABC' COLLATE case_sensitive, 'abc' >= 'ABC' COLLATE case_sensitive;
 SELECT 'abc' <= 'ABC' COLLATE case_insensitive, 'abc' >= 'ABC' COLLATE case_insensitive;
 

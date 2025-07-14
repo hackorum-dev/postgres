@@ -1469,6 +1469,27 @@ CREATE COLLATION case_sensitive (provider = icu, locale = '');
 NOTICE:  using standard form "und" for ICU locale ""
 CREATE COLLATION case_insensitive (provider = icu, locale = '@colStrength=secondary', deterministic = false);
 NOTICE:  using standard form "und-u-ks-level2" for ICU locale "@colStrength=secondary"
+--domain with check constraints
+CREATE DOMAIN d0 as text COLLATE "C" check (value <> 'a');
+CREATE DOMAIN d1 as d0 COLLATE case_insensitive check (value <> 'b');
+CREATE DOMAIN d2 as d0 COLLATE case_insensitive;
+SELECT 'A'::d1; --ok
+ d1 
+----
+ A
+(1 row)
+
+SELECT 'a'::d1; --error
+ERROR:  value for domain d1 violates check constraint "d0_check"
+SELECT 'B'::d1; --error
+ERROR:  value for domain d1 violates check constraint "d1_check"
+SELECT 'A'::d2; --ok
+ d2 
+----
+ A
+(1 row)
+
+DROP DOMAIN d0, d1, d2;
 SELECT 'abc' <= 'ABC' COLLATE case_sensitive, 'abc' >= 'ABC' COLLATE case_sensitive;
  ?column? | ?column? 
 ----------+----------
