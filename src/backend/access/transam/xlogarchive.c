@@ -67,9 +67,9 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 
 	/*
 	 * Ignore restore_command when not in archive recovery (meaning we are in
-	 * crash recovery).
+	 * crash recovery) and non-walsender processes.
 	 */
-	if (!ArchiveRecoveryRequested)
+	if (!ArchiveRecoveryRequested && !am_walsender)
 		goto not_available;
 
 	/* In standby mode, restore_command might not be supplied */
