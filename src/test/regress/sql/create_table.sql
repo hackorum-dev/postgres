@@ -64,9 +64,9 @@ CREATE TABLE withoid() WITH OIDS;
 CREATE TABLE withoid() WITH (oids);
 CREATE TABLE withoid() WITH (oids = true);
 
--- but explicitly not adding oids is still supported
-CREATE TEMP TABLE withoutoid() WITHOUT OIDS; DROP TABLE withoutoid;
-CREATE TEMP TABLE withoutoid() WITH (oids = false); DROP TABLE withoutoid;
+-- check that tables without oids cannot be created anymore
+CREATE TEMP TABLE withoutoid() WITHOUT OIDS;
+CREATE TEMP TABLE withoutoid() WITH (oids = false);
 
 -- check restriction with default expressions
 -- invalid use of column reference in default expressions

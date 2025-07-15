@@ -909,7 +909,7 @@ DefineIndex(Oid tableId,
 	 * Parse AM-specific options, convert to text array form, validate.
 	 */
 	reloptions = transformRelOptions((Datum) 0, stmt->options,
-									 NULL, NULL, false, false);
+									 NULL, NULL, false);
 
 	(void) index_reloptions(amoptions, reloptions, true);
 
@@ -2241,7 +2241,7 @@ ComputeIndexAttrs(IndexInfo *indexInfo,
 
 			opclassOptions[attn] =
 				transformRelOptions((Datum) 0, attribute->opclassopts,
-									NULL, NULL, false, false);
+									NULL, NULL, false);
 		}
 		else
 			opclassOptions[attn] = (Datum) 0;

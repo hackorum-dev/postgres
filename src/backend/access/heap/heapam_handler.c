@@ -2364,16 +2364,12 @@ heapam_scan_sample_next_tuple(TableScanDesc scan, SampleScanState *scanstate,
 /*
  * Reconstruct and rewrite the given tuple
  *
- * We cannot simply copy the tuple as-is, for several reasons:
+ * We cannot simply copy the tuple as-is, for one reason:
  *
- * 1. We'd like to squeeze out the values of any dropped columns, both
+ * We'd like to squeeze out the values of any dropped columns, both
  * to save space and to ensure we have no corner-case failures. (It's
  * possible for example that the new table hasn't got a TOAST table
  * and so is unable to store any large values of dropped cols.)
- *
- * 2. The tuple might not even be legal for the new table; this is
- * currently only known to happen as an after-effect of ALTER TABLE
- * SET WITHOUT OIDS.
  *
  * So, we must reconstruct the tuple from component Datums.
  */

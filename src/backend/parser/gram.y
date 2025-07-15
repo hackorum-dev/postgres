@@ -2735,14 +2735,6 @@ alter_table_cmd:
 					n->missing_ok = false;
 					$$ = (Node *) n;
 				}
-			/* ALTER TABLE <name> SET WITHOUT OIDS, for backward compat */
-			| SET WITHOUT OIDS
-				{
-					AlterTableCmd *n = makeNode(AlterTableCmd);
-
-					n->subtype = AT_DropOids;
-					$$ = (Node *) n;
-				}
 			/* ALTER TABLE <name> CLUSTER ON <indexname> */
 			| CLUSTER ON name
 				{
@@ -4671,10 +4663,8 @@ table_access_method_clause:
 			| /*EMPTY*/							{ $$ = NULL; }
 		;
 
-/* WITHOUT OIDS is legacy only */
 OptWith:
 			WITH reloptions				{ $$ = $2; }
-			| WITHOUT OIDS				{ $$ = NIL; }
 			| /*EMPTY*/					{ $$ = NIL; }
 		;
 

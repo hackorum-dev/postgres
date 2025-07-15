@@ -125,7 +125,7 @@ create_ctas_internal(List *attrList, IntoClause *into)
 										create->options,
 										"toast",
 										validnsps,
-										true, false);
+										false);
 
 	(void) heap_reloptions(RELKIND_TOASTVALUE, toast_options, true);
 

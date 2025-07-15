@@ -96,12 +96,16 @@ ERROR:  syntax error at or near "OIDS"
 LINE 1: CREATE TABLE withoid() WITH OIDS;
                                     ^
 CREATE TABLE withoid() WITH (oids);
-ERROR:  tables declared WITH OIDS are not supported
+ERROR:  unrecognized parameter "oids"
 CREATE TABLE withoid() WITH (oids = true);
-ERROR:  tables declared WITH OIDS are not supported
--- but explicitly not adding oids is still supported
-CREATE TEMP TABLE withoutoid() WITHOUT OIDS; DROP TABLE withoutoid;
-CREATE TEMP TABLE withoutoid() WITH (oids = false); DROP TABLE withoutoid;
+ERROR:  unrecognized parameter "oids"
+-- check that tables without oids cannot be created anymore
+CREATE TEMP TABLE withoutoid() WITHOUT OIDS;
+ERROR:  syntax error at or near "WITHOUT"
+LINE 1: CREATE TEMP TABLE withoutoid() WITHOUT OIDS;
+                                       ^
+CREATE TEMP TABLE withoutoid() WITH (oids = false);
+ERROR:  unrecognized parameter "oids"
 -- check restriction with default expressions
 -- invalid use of column reference in default expressions
 CREATE TABLE default_expr_column (id int DEFAULT (id));

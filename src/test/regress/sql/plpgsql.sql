@@ -4486,7 +4486,7 @@ CREATE TABLE transition_table_level1
       level1_no serial NOT NULL ,
       level1_node_name varchar(255),
        PRIMARY KEY (level1_no)
-) WITHOUT OIDS;
+);
 
 CREATE TABLE transition_table_level2
 (
@@ -4494,7 +4494,7 @@ CREATE TABLE transition_table_level2
       parent_no int NOT NULL,
       level1_node_name varchar(255),
        PRIMARY KEY (level2_no)
-) WITHOUT OIDS;
+);
 
 CREATE TABLE transition_table_status
 (
@@ -4502,7 +4502,7 @@ CREATE TABLE transition_table_status
       node_no int NOT NULL,
       status int,
        PRIMARY KEY (level, node_no)
-) WITHOUT OIDS;
+);
 
 CREATE FUNCTION transition_table_level1_ri_parent_del_func()
   RETURNS TRIGGER

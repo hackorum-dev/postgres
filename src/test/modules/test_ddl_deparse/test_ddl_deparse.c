@@ -203,9 +203,6 @@ get_altertable_subcmdinfo(PG_FUNCTION_ARGS)
 			case AT_SetUnLogged:
 				strtype = "SET UNLOGGED";
 				break;
-			case AT_DropOids:
-				strtype = "DROP OIDS";
-				break;
 			case AT_SetAccessMethod:
 				strtype = "SET ACCESS METHOD";
 				break;

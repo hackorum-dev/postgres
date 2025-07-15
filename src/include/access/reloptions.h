@@ -234,7 +234,7 @@ extern void add_local_string_reloption(local_relopts *relopts, const char *name,
 
 extern Datum transformRelOptions(Datum oldOptions, List *defList,
 								 const char *namspace, const char *const validnsps[],
-								 bool acceptOidsOff, bool isReset);
+								 bool isReset);
 extern List *untransformRelOptions(Datum options);
 extern bytea *extractRelOptions(HeapTuple tuple, TupleDesc tupdesc,
 								amoptions_function amoptions);

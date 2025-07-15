@@ -24,7 +24,7 @@ PostgreSQL documentation
 CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXISTS ] <replaceable>table_name</replaceable>
     [ (<replaceable>column_name</replaceable> [, ...] ) ]
     [ USING <replaceable class="parameter">method</replaceable> ]
-    [ WITH ( <replaceable class="parameter">storage_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] ) | WITHOUT OIDS ]
+    [ WITH ( <replaceable class="parameter">storage_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] ) ]
     [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
     [ TABLESPACE <replaceable class="parameter">tablespace_name</replaceable> ]
     AS <replaceable>query</replaceable>
@@ -150,17 +150,6 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
       clause for a table can also include <literal>OIDS=FALSE</literal> to
       specify that rows of the new table should contain no OIDs (object
       identifiers), <literal>OIDS=TRUE</literal> is not supported anymore.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>WITHOUT OIDS</literal></term>
-    <listitem>
-     <para>
-      This is backward-compatible syntax for declaring a table
-      <literal>WITHOUT OIDS</literal>, creating a table <literal>WITH
-      OIDS</literal> is not supported anymore.
      </para>
     </listitem>
    </varlistentry>

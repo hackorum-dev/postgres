@@ -930,7 +930,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 * Parse and validate reloptions, if any.
 	 */
 	reloptions = transformRelOptions((Datum) 0, stmt->options, NULL, validnsps,
-									 true, false);
+									 false);
 
 	switch (relkind)
 	{
@@ -4646,7 +4646,6 @@ AlterTableGetLockLevel(List *cmds)
 				 */
 			case AT_DropColumn: /* change visible to SELECT */
 			case AT_AddColumnToView:	/* CREATE VIEW */
-			case AT_DropOids:	/* used to equiv to DropColumn */
 			case AT_EnableAlwaysRule:	/* may change SELECT rules */
 			case AT_EnableReplicaRule:	/* may change SELECT rules */
 			case AT_EnableRule: /* may change SELECT rules */
@@ -5143,11 +5142,6 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			ATPrepChangePersistence(tab, rel, cmd->subtype == AT_SetLogged);
 			pass = AT_PASS_MISC;
 			break;
-		case AT_DropOids:		/* SET WITHOUT OIDS */
-			ATSimplePermissions(cmd->subtype, rel,
-								ATT_TABLE | ATT_PARTITIONED_TABLE | ATT_FOREIGN_TABLE);
-			pass = AT_PASS_DROP;
-			break;
 		case AT_SetAccessMethod:	/* SET ACCESS METHOD */
 			ATSimplePermissions(cmd->subtype, rel,
 								ATT_TABLE | ATT_PARTITIONED_TABLE | ATT_MATVIEW);
@@ -5513,9 +5507,6 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			break;
 		case AT_SetLogged:		/* SET LOGGED */
 		case AT_SetUnLogged:	/* SET UNLOGGED */
-			break;
-		case AT_DropOids:		/* SET WITHOUT OIDS */
-			/* nothing to do here, oid columns don't exist anymore */
 			break;
 		case AT_SetAccessMethod:	/* SET ACCESS METHOD */
 
@@ -6644,8 +6635,6 @@ alter_table_type_to_string(AlterTableType cmdtype)
 			return "SET LOGGED";
 		case AT_SetUnLogged:
 			return "SET UNLOGGED";
-		case AT_DropOids:
-			return "SET WITHOUT OIDS";
 		case AT_SetTableSpace:
 			return "SET TABLESPACE";
 		case AT_SetRelOptions:
@@ -9051,7 +9040,7 @@ ATExecSetOptions(Relation rel, const char *colName, Node *options,
 							&isnull);
 	newOptions = transformRelOptions(isnull ? (Datum) 0 : datum,
 									 castNode(List, options), NULL, NULL,
-									 false, isReset);
+									 isReset);
 	/* Validate new options */
 	(void) attribute_reloptions(newOptions, true);
 
@@ -16651,7 +16640,7 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 	}
 
 	/* Generate new proposed reloptions (text array) */
-	newOptions = transformRelOptions(datum, defList, NULL, validnsps, false,
+	newOptions = transformRelOptions(datum, defList, NULL, validnsps,
 									 operation == AT_ResetRelOptions);
 
 	/* Validate */
@@ -16775,7 +16764,7 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 		}
 
 		newOptions = transformRelOptions(datum, defList, "toast", validnsps,
-										 false, operation == AT_ResetRelOptions);
+										 operation == AT_ResetRelOptions);
 
 		(void) heap_reloptions(RELKIND_TOASTVALUE, newOptions, true);
 

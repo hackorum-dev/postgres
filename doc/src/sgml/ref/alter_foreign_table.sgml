@@ -50,7 +50,6 @@ ALTER FOREIGN TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceab
     ENABLE TRIGGER [ <replaceable class="parameter">trigger_name</replaceable> | ALL | USER ]
     ENABLE REPLICA TRIGGER <replaceable class="parameter">trigger_name</replaceable>
     ENABLE ALWAYS TRIGGER <replaceable class="parameter">trigger_name</replaceable>
-    SET WITHOUT OIDS
     INHERIT <replaceable class="parameter">parent_table</replaceable>
     NO INHERIT <replaceable class="parameter">parent_table</replaceable>
     OWNER TO { <replaceable class="parameter">new_owner</replaceable> | CURRENT_ROLE | CURRENT_USER | SESSION_USER }
@@ -220,17 +219,6 @@ ALTER FOREIGN TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceab
       These forms configure the firing of trigger(s) belonging to the foreign
       table.  See the similar form of <link linkend="sql-altertable"><command>ALTER TABLE</command></link> for more
       details.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>SET WITHOUT OIDS</literal></term>
-    <listitem>
-     <para>
-      Backward compatibility syntax for removing the <literal>oid</literal>
-      system column. As <literal>oid</literal> system columns cannot be added
-      anymore, this never has an effect.
      </para>
     </listitem>
    </varlistentry>

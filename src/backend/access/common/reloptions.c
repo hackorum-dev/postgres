@@ -1151,9 +1151,6 @@ add_local_string_reloption(local_relopts *relopts, const char *name,
  * reloptions value (possibly NULL), and we replace or remove entries
  * as needed.
  *
- * If acceptOidsOff is true, then we allow oids = false, but throw error when
- * on. This is solely needed for backwards compatibility.
- *
  * Note that this is not responsible for determining whether the options
  * are valid, but it does check that namespaces for all the options given are
  * listed in validnsps.  The NULL namespace is always valid and need not be
@@ -1165,7 +1162,7 @@ add_local_string_reloption(local_relopts *relopts, const char *name,
  */
 Datum
 transformRelOptions(Datum oldOptions, List *defList, const char *namspace,
-					const char *const validnsps[], bool acceptOidsOff, bool isReset)
+					const char *const validnsps[], bool isReset)
 {
 	Datum		result;
 	ArrayBuildState *astate;
@@ -1304,23 +1301,6 @@ transformRelOptions(Datum oldOptions, List *defList, const char *namspace,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("invalid option name \"%s\": must not contain \"=\"",
 								name)));
-
-			/*
-			 * This is not a great place for this test, but there's no other
-			 * convenient place to filter the option out. As WITH (oids =
-			 * false) will be removed someday, this seems like an acceptable
-			 * amount of ugly.
-			 */
-			if (acceptOidsOff && def->defnamespace == NULL &&
-				strcmp(name, "oids") == 0)
-			{
-				if (defGetBoolean(def))
-					ereport(ERROR,
-							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-							 errmsg("tables declared WITH OIDS are not supported")));
-				/* skip over option, reloptions machinery doesn't know it */
-				continue;
-			}
 
 			len = VARHDRSZ + strlen(name) + 1 + strlen(value);
 			/* +1 leaves room for sprintf's trailing null */
