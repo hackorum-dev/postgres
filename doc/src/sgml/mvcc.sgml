@@ -1117,6 +1117,14 @@ ERROR:  could not serialize access due to read/write dependencies among transact
        <command>SELECT</command> (without <option>FOR UPDATE/SHARE</option>)
        statement.
       </para>
+      <para>
+       <literal>ACCESS EXCLUSIVE</literal> is the only lock recorded in the WAL.
+       When replayed on standbys, the table will be locked by the recovery process.
+       Thus, tables locked with <literal>ACCESS EXCLUSIVE</literal> won't be readable
+       on standbys. This lasts until the blocking transaction ends (i.e., the
+       transaction's <command>COMMIT</command> or <command>ROLLBACK</command>
+       is replayed on the standby).
+      </para>
      </tip>
 
    <para>
