@@ -2220,18 +2220,138 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams params,
 	if (params.truncate == VACOPTVALUE_UNSPECIFIED)
 	{
 		StdRdOptions *opts = (StdRdOptions *) rel->rd_options;
+		bool is_toast = IsToastRelation(rel);
+
+		ereport(LOG,
+				(errmsg("VACUUM TRUNCATE DEBUG: relation \"%s\" (OID %u), is_toast=%s, autovacuum_worker=%s",
+						RelationGetRelationName(rel),
+						RelationGetRelid(rel),
+						is_toast ? "true" : "false",
+						AmAutoVacuumWorkerProcess() ? "true" : "false")));
 
 		if (opts && opts->vacuum_truncate_set)
 		{
+			ereport(LOG,
+					(errmsg("VACUUM TRUNCATE DEBUG: relation \"%s\" has explicit vacuum_truncate=%s",
+							RelationGetRelationName(rel),
+							opts->vacuum_truncate ? "true" : "false")));
 			if (opts->vacuum_truncate)
 				params.truncate = VACOPTVALUE_ENABLED;
 			else
 				params.truncate = VACOPTVALUE_DISABLED;
 		}
+		else if (is_toast)
+		{
+			/*
+			 * For TOAST tables without explicit settings, inherit from parent table.
+			 * This ensures that vacuum behavior is consistent between main tables
+			 * and their TOAST tables, which is important for operations like
+			 * truncation that can block queries.
+			 */
+			Relation	pgclass;
+			SysScanDesc scan;
+			ScanKeyData key;
+			HeapTuple	tuple;
+			Oid			parent_relid = InvalidOid;
+			bool		found_parent = false;
+			bool		parent_truncate_set = false;
+			bool		parent_truncate = false;
+
+			/* Find the parent table by scanning for reltoastrelid match */
+			pgclass = table_open(RelationRelationId, AccessShareLock);
+
+			ScanKeyInit(&key,
+						Anum_pg_class_reltoastrelid,
+						BTEqualStrategyNumber, F_OIDEQ,
+						ObjectIdGetDatum(RelationGetRelid(rel)));
+
+			scan = systable_beginscan(pgclass, InvalidOid, false,
+									  NULL, 1, &key);
+
+			while ((tuple = systable_getnext(scan)) != NULL)
+			{
+				Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
+				parent_relid = classForm->oid;
+				found_parent = true;
+				break;
+			}
+
+			systable_endscan(scan);
+			table_close(pgclass, AccessShareLock);
+
+			if (found_parent)
+			{
+				Relation parent_rel;
+				StdRdOptions *parent_opts;
+
+				/* Open parent relation to get its options */
+				parent_rel = table_open(parent_relid, AccessShareLock);
+				parent_opts = (StdRdOptions *) parent_rel->rd_options;
+
+				if (parent_opts && parent_opts->vacuum_truncate_set)
+				{
+					parent_truncate_set = true;
+					parent_truncate = parent_opts->vacuum_truncate;
+				}
+
+				table_close(parent_rel, AccessShareLock);
+
+				if (parent_truncate_set)
+				{
+					ereport(LOG,
+							(errmsg("VACUUM TRUNCATE DEBUG: relation \"%s\" inheriting vacuum_truncate=%s from parent OID %u",
+									RelationGetRelationName(rel),
+									parent_truncate ? "true" : "false",
+									parent_relid)));
+					if (parent_truncate)
+						params.truncate = VACOPTVALUE_ENABLED;
+					else
+						params.truncate = VACOPTVALUE_DISABLED;
+				}
+				else
+				{
+					ereport(LOG,
+							(errmsg("VACUUM TRUNCATE DEBUG: relation \"%s\" parent has no explicit setting, using global default vacuum_truncate=%s",
+									RelationGetRelationName(rel),
+									vacuum_truncate ? "true" : "false")));
+					if (vacuum_truncate)
+						params.truncate = VACOPTVALUE_ENABLED;
+					else
+						params.truncate = VACOPTVALUE_DISABLED;
+				}
+			}
+			else
+			{
+				ereport(LOG,
+						(errmsg("VACUUM TRUNCATE DEBUG: relation \"%s\" parent not found, using global default vacuum_truncate=%s",
+								RelationGetRelationName(rel),
+								vacuum_truncate ? "true" : "false")));
+				if (vacuum_truncate)
+					params.truncate = VACOPTVALUE_ENABLED;
+				else
+					params.truncate = VACOPTVALUE_DISABLED;
+			}
+		}
 		else if (vacuum_truncate)
+		{
+			ereport(LOG,
+					(errmsg("VACUUM TRUNCATE DEBUG: relation \"%s\" using global default vacuum_truncate=true",
+							RelationGetRelationName(rel))));
 			params.truncate = VACOPTVALUE_ENABLED;
+		}
 		else
+		{
+			ereport(LOG,
+					(errmsg("VACUUM TRUNCATE DEBUG: relation \"%s\" using global default vacuum_truncate=false",
+							RelationGetRelationName(rel))));
 			params.truncate = VACOPTVALUE_DISABLED;
+		}
+
+		ereport(LOG,
+				(errmsg("VACUUM TRUNCATE DEBUG: relation \"%s\" final decision: params.truncate=%s",
+						RelationGetRelationName(rel),
+						params.truncate == VACOPTVALUE_ENABLED ? "ENABLED" :
+						params.truncate == VACOPTVALUE_DISABLED ? "DISABLED" : "OTHER")));
 	}
 
 #ifdef USE_INJECTION_POINTS
@@ -2329,6 +2449,18 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams params,
 		 */
 		toast_vacuum_params.options |= VACOPT_PROCESS_MAIN;
 		toast_vacuum_params.toast_parent = relid;
+
+		/* Inherit the main table's final truncate decision */
+		toast_vacuum_params.truncate = params.truncate;
+
+		ereport(LOG,
+				(errmsg("VACUUM TRUNCATE DEBUG: calling vacuum_rel for TOAST table OID %u, parent \"%s\" (OID %u), inherited params.truncate=%s",
+						toast_relid,
+						RelationGetRelationName(rel),
+						relid,
+						toast_vacuum_params.truncate == VACOPTVALUE_ENABLED ? "ENABLED" :
+						toast_vacuum_params.truncate == VACOPTVALUE_DISABLED ? "DISABLED" :
+						toast_vacuum_params.truncate == VACOPTVALUE_UNSPECIFIED ? "UNSPECIFIED" : "OTHER")));
 
 		vacuum_rel(toast_relid, NULL, toast_vacuum_params, bstrategy);
 	}
