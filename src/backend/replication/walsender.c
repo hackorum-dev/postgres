@@ -56,6 +56,7 @@
 #include "access/twophase.h"
 #include "access/xact.h"
 #include "access/xlog_internal.h"
+#include "access/xlogarchive.h"
 #include "access/xlogreader.h"
 #include "access/xlogrecovery.h"
 #include "access/xlogutils.h"
@@ -3358,6 +3359,15 @@ WalSndSegmentOpen(XLogReaderState *state, XLogSegNo nextSegNo,
 		int			save_errno = errno;
 
 		XLogFileName(xlogfname, *tli_p, nextSegNo, wal_segment_size);
+
+		/* Restore WALs from archive if not found in XLOGDIR. */
+		if (RestoreArchivedFile(path, xlogfname, xlogfname, wal_segment_size, false))
+		{
+			state->seg.ws_file = BasicOpenFile(path, O_RDONLY | PG_BINARY);
+			if (state->seg.ws_file >= 0)
+				return;
+		}
+
 		errno = save_errno;
 		ereport(ERROR,
 				(errcode_for_file_access(),
