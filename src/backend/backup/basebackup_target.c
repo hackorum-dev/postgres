@@ -145,8 +145,8 @@ BaseBackupGetTargetHandle(char *target, char *target_detail)
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 			 errmsg("unrecognized target: \"%s\"", target)));
 
-	/* keep compiler quiet */
-	return NULL;
+	/* comment out for testing. Not for commit. */
+	/* return NULL; */
 }
 
 /*

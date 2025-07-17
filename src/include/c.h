@@ -333,6 +333,23 @@
 #endif
 
 /*
+ * Define a compiler-independent macro for determining if an expression is a
+ * compile-time const.  With MSVC using C11 and above, we can use a trick with
+ * _Generic to make this work.  We don't define this macro to return 0 when
+ * unsupported due to the risk of users of the macro misbehaving if we return
+ * 0 when the expression is a built-in constant.  Callers may check if this
+ * macro is defined by checking if HAVE_PG_BUILTIN_CONSTANT is defined.
+ */
+#if defined(HAVE__BUILTIN_CONSTANT_P)
+#define pg_builtin_constant(x) __builtin_constant_p(x)
+#define HAVE_PG_BUILTIN_CONSTANT
+#elif defined(_MSC_VER) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define pg_builtin_constant(x) \
+	_Generic((1 ? ((void *) ((x) * (uintptr_t) 0)) : &(int) {1}), int *: 1, void *: 0)
+#define HAVE_PG_BUILTIN_CONSTANT
+#endif
+
+/*
  * pg_assume(expr) states that we assume `expr` to evaluate to true. In assert
  * enabled builds pg_assume() is turned into an assertion, in optimized builds
  * we try to clue the compiler into the fact that `expr` is true.

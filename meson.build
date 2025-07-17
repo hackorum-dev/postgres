@@ -1704,6 +1704,18 @@ endif
 # Compiler tests
 ###############################################################
 
+# Test to see if the compiler supports C11
+c11_test = '''
+#if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
+#error "C11 not supported"
+#endif
+
+int main(int argc, char **argv)
+{
+  return 0;
+}
+'''
+
 # Do we need -std=c99 to compile C99 code? We don't want to add -std=c99
 # unnecessarily, because we optionally rely on newer features.
 c99_test = '''
@@ -1736,6 +1748,18 @@ int main(int argc, char **argv)
   return nit.a != 0;
 }
 '''
+
+# The current minimum version of MSVC we currently support supports at least
+# C11, so lets try to compile with C11.  Check if we need to actually pass the
+# /std:c11 flag for that to work.  If this test ends up adding the C11 flag,
+# then the C99 test below should always pass and never add the C99 flag.
+if cc.get_id() == 'msvc' and not cc.compiles(c11_test, name: 'c11', args: test_c_args)
+  if cc.compiles(c11_test, name: 'c11 with /std:c11',
+        args: test_c_args + ['/std:c11'])
+    test_c_args += '/std:c11'
+    cflags += '/std:c11'
+  endif
+endif
 
 if not cc.compiles(c99_test, name: 'c99', args: test_c_args)
   if cc.compiles(c99_test, name: 'c99 with -std=c99',

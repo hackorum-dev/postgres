@@ -137,15 +137,15 @@ struct Node;
  * prevents gcc from making the unreachability deduction at optlevel -O0.
  *----------
  */
-#ifdef HAVE__BUILTIN_CONSTANT_P
+#ifdef HAVE_PG_BUILTIN_CONSTANT
 #define ereport_domain(elevel, domain, ...)	\
 	do { \
 		pg_prevent_errno_in_scope(); \
-		if (__builtin_constant_p(elevel) && (elevel) >= ERROR ? \
+		if (pg_builtin_constant(elevel) && (elevel) >= ERROR ? \
 			errstart_cold(elevel, domain) : \
 			errstart(elevel, domain)) \
 			__VA_ARGS__, errfinish(__FILE__, __LINE__, __func__); \
-		if (__builtin_constant_p(elevel) && (elevel) >= ERROR) \
+		if (pg_builtin_constant(elevel) && (elevel) >= ERROR) \
 			pg_unreachable(); \
 	} while(0)
 #else							/* !HAVE__BUILTIN_CONSTANT_P */
