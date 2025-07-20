@@ -2943,25 +2943,42 @@ include_dir 'conf.d'
        </listitem>
       </varlistentry>
 
-      <varlistentry id="guc-parallel-leader-participation" xreflabel="parallel_leader_participation">
-       <term>
-       <varname>parallel_leader_participation</varname> (<type>boolean</type>)
+      <varlistentry id="guc-max-parallel-workers" xreflabel="max_parallel_workers">
+       <term><varname>max_parallel_workers</varname> (<type>integer</type>)
        <indexterm>
-        <primary><varname>parallel_leader_participation</varname> configuration parameter</primary>
+        <primary><varname>max_parallel_workers</varname> configuration parameter</primary>
        </indexterm>
        </term>
        <listitem>
         <para>
-         Allows the leader process to execute the query plan under
-         <literal>Gather</literal> and <literal>Gather Merge</literal> nodes
-         instead of waiting for worker processes.  The default is
-         <literal>on</literal>.  Setting this value to <literal>off</literal>
-         reduces the likelihood that workers will become blocked because the
-         leader is not reading tuples fast enough, but requires the leader
-         process to wait for worker processes to start up before the first
-         tuples can be produced.  The degree to which the leader can help or
-         hinder performance depends on the plan type, number of workers and
-         query duration.
+         Sets the maximum number of workers that the cluster can support for
+         parallel operations.  The default value is 8.  When increasing or
+         decreasing this value, consider also adjusting
+         <xref linkend="guc-max-parallel-maintenance-workers"/> and
+         <xref linkend="guc-max-parallel-workers-per-gather"/>.
+         Also, note that a setting for this value which is higher than
+         <xref linkend="guc-max-worker-processes"/> will have no effect,
+         since parallel workers are taken from the pool of worker processes
+         established by that setting.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry id="guc-parallel-worker-algorithm" xreflabel="parallel_worker_algorithm">
+       <term>
+       <varname>parallel_worker_algorithm</varname> (<type>enum</type>)
+       <indexterm>
+        <primary><varname>parallel_worker_algorithm</varname> configuration parameter</primary>
+       </indexterm>
+       </term>
+       <listitem>
+        <para>
+         Controls the number of parallel_wokers to be allocated. The default
+         algorithm <literal>log3</literal> uses the rounded up (to the nearest integer)
+         log base 3 of the ratio of the heap_buffer_threshold to the min_parallel_table_scan_size.
+         A similar calculation is done for the index pages.
+         Using a value of <literal>sqrt</literal> allocates more workers, based on
+         the rounded up sqrt of the ratio of the buffer sizes.
         </para>
        </listitem>
       </varlistentry>

@@ -80,6 +80,7 @@ bool		enable_geqo = false;	/* just in case GUC doesn't set it */
 int			geqo_threshold;
 int			min_parallel_table_scan_size;
 int			min_parallel_index_scan_size;
+int			parallel_worker_algorithm;
 
 /* Hook for plugins to get control in set_rel_pathlist() */
 set_rel_pathlist_hook_type set_rel_pathlist_hook = NULL;
@@ -4272,23 +4273,45 @@ compute_parallel_worker(RelOptInfo *rel, double heap_pages, double index_pages,
 			int			heap_parallel_threshold;
 			int			heap_parallel_workers = 1;
 
-			/*
-			 * Select the number of workers based on the log of the size of
-			 * the relation.  This probably needs to be a good deal more
-			 * sophisticated, but we need something here for now.  Note that
-			 * the upper limit of the min_parallel_table_scan_size GUC is
-			 * chosen to prevent overflow here.
-			 */
-			heap_parallel_threshold = Max(min_parallel_table_scan_size, 1);
-			while (heap_pages >= (BlockNumber) (heap_parallel_threshold * 3))
+			switch (parallel_worker_algorithm)
 			{
-				heap_parallel_workers++;
-				heap_parallel_threshold *= 3;
-				if (heap_parallel_threshold > INT_MAX / 3)
-					break;		/* avoid overflow */
+				case PARALLEL_WORKER_ALGORITHM_LOG3:
+					/*
+					 * Select the number of workers based on the log of the size of
+					 * the relation.  This probably needs to be a good deal more
+					 * sophisticated, but we need something here for now.  Note that
+					 * the upper limit of the min_parallel_table_scan_size GUC is
+					 * chosen to prevent overflow here.
+					 */
+					heap_parallel_threshold = Max(min_parallel_table_scan_size, 1);
+					while (heap_pages >= (BlockNumber) (heap_parallel_threshold * 3))
+					{
+						heap_parallel_workers++;
+						heap_parallel_threshold *= 3;
+						if (heap_parallel_threshold > INT_MAX / 3)
+							break;		/* avoid overflow */
+					}
+					break;
+				case PARALLEL_WORKER_ALGORITHM_SQRT:
+					/*
+					 * Select the number of workers based on the sqrt of the size of
+					 * the relation.  This probably needs to be a good deal more
+					 * sophisticated, but we need something here for now.  Note that
+					 * the upper limit of the min_parallel_table_scan_size GUC is
+					 * chosen to prevent overflow here.
+					 */
+					heap_parallel_threshold = Max(min_parallel_table_scan_size, 1);
+					while (heap_pages >= (BlockNumber) (heap_parallel_threshold * heap_parallel_workers*heap_parallel_workers))
+					{
+						heap_parallel_workers++;
+						if (heap_parallel_threshold * heap_parallel_workers*heap_parallel_workers > INT_MAX)
+							break;		/* avoid overflow */
+					}
+					break;
 			}
 
 			parallel_workers = heap_parallel_workers;
+
 		}
 
 		if (index_pages >= 0)
@@ -4296,16 +4319,30 @@ compute_parallel_worker(RelOptInfo *rel, double heap_pages, double index_pages,
 			int			index_parallel_workers = 1;
 			int			index_parallel_threshold;
 
-			/* same calculation as for heap_pages above */
-			index_parallel_threshold = Max(min_parallel_index_scan_size, 1);
-			while (index_pages >= (BlockNumber) (index_parallel_threshold * 3))
+			switch (parallel_worker_algorithm)
 			{
-				index_parallel_workers++;
-				index_parallel_threshold *= 3;
-				if (index_parallel_threshold > INT_MAX / 3)
-					break;		/* avoid overflow */
+				case PARALLEL_WORKER_ALGORITHM_LOG3:
+					/* same calculation as for heap_pages above */
+					index_parallel_threshold = Max(min_parallel_index_scan_size, 1);
+					while (index_pages >= (BlockNumber) (index_parallel_threshold * 3))
+					{
+						index_parallel_workers++;
+						index_parallel_threshold *= 3;
+						if (index_parallel_threshold > INT_MAX / 3)
+							break;		/* avoid overflow */
+					}
+					break;
+				case PARALLEL_WORKER_ALGORITHM_SQRT:
+					/* same calculation as for heap_pages above */
+					index_parallel_threshold = Max(min_parallel_index_scan_size, 1);
+					while (index_pages >= (BlockNumber) (index_parallel_threshold *index_parallel_workers*index_parallel_workers))
+					{
+						index_parallel_workers++;
+						if (index_parallel_threshold * index_parallel_workers*index_parallel_workers > INT_MAX)
+							break;		/* avoid overflow */
+					}
+					break;
 			}
-
 			if (parallel_workers > 0)
 				parallel_workers = Min(parallel_workers, index_parallel_workers);
 			else

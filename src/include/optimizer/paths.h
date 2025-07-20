@@ -20,11 +20,20 @@
 /*
  * allpaths.c
  */
+
+typedef enum
+{
+	PARALLEL_WORKER_ALGORITHM_LOG3,				/* use the long term default algorthm */
+	PARALLEL_WORKER_ALGORITHM_SQRT		/* use a new algorithm to allow more workers */
+} ParallelWorkerAlgorithm;
+
+
 extern PGDLLIMPORT bool enable_geqo;
 extern PGDLLIMPORT int geqo_threshold;
 extern PGDLLIMPORT int min_parallel_table_scan_size;
 extern PGDLLIMPORT int min_parallel_index_scan_size;
 extern PGDLLIMPORT bool enable_group_by_reordering;
+extern PGDLLIMPORT int parallel_worker_algorithm;
 
 /* Hook for plugins to get control in set_rel_pathlist() */
 typedef void (*set_rel_pathlist_hook_type) (PlannerInfo *root,

@@ -491,6 +491,14 @@ static const struct config_enum_entry file_copy_method_options[] = {
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry parallel_worker_algorithm_options[] = {
+	{"log3", PARALLEL_WORKER_ALGORITHM_LOG3, false},
+	{"sqrt", PARALLEL_WORKER_ALGORITHM_SQRT, false},
+	{NULL, 0, false}
+};
+
+
+
 /*
  * Options for enum values stored in other modules
  */
@@ -5416,6 +5424,16 @@ struct config_enum ConfigureNamesEnum[] =
 		&io_method,
 		DEFAULT_IO_METHOD, io_method_options,
 		NULL, assign_io_method, NULL
+	},
+
+	{
+		{"parallel_worker_algorithm", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("selects the algorithm for creating parallel_workers"),
+			NULL
+		},
+		&parallel_worker_algorithm,
+		PARALLEL_WORKER_ALGORITHM_LOG3, parallel_worker_algorithm_options,
+		NULL, NULL, NULL
 	},
 
 	/* End-of-list marker */

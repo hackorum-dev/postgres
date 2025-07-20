@@ -220,7 +220,8 @@
 #max_parallel_workers = 8		# number of max_worker_processes that
 					# can be used in parallel operations
 #parallel_leader_participation = on
-
+#parallel_worker_algorithm = log3	# old default
+					# change log3 to sqrt to allow additional parallel_workers
 
 #------------------------------------------------------------------------------
 # WRITE-AHEAD LOG
