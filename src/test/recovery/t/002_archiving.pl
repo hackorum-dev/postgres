@@ -13,6 +13,7 @@ use File::Copy;
 my $node_primary = PostgreSQL::Test::Cluster->new('primary');
 $node_primary->init(
 	has_archiving => 1,
+	is_multi => 1,
 	allows_streaming => 1);
 my $backup_name = 'my_backup';
 

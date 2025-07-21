@@ -16,6 +16,7 @@
  * The value of the archive_library GUC.
  */
 extern PGDLLIMPORT char *XLogArchiveLibrary;
+extern PGDLLIMPORT bool XLogArchiveMulti;
 
 typedef struct ArchiveModuleState
 {
@@ -40,11 +41,28 @@ typedef bool (*ArchiveCheckConfiguredCB) (ArchiveModuleState *state);
 typedef bool (*ArchiveFileCB) (ArchiveModuleState *state, const char *file, const char *path);
 typedef void (*ArchiveShutdownCB) (ArchiveModuleState *state);
 
+
+/*
+ * Optional callback for multi-file archiving.
+ *
+ * Called when multiple WAL segments should be archived at once.
+ * The `files` and `paths` arrays must have `n_files` elements each.
+ *
+ * Return true if all files were archived successfully.
+ */
+typedef bool (*ArchiveFilesCB) (ArchiveModuleState *state,
+								char **files,
+								char **paths,
+								int n_files);
+
+typedef void (*ArchiveShutdownCB) (ArchiveModuleState *state);
+
 typedef struct ArchiveModuleCallbacks
 {
 	ArchiveStartupCB startup_cb;
 	ArchiveCheckConfiguredCB check_configured_cb;
 	ArchiveFileCB archive_file_cb;
+	ArchiveFilesCB archive_files_cb; /* optional */
 	ArchiveShutdownCB shutdown_cb;
 } ArchiveModuleCallbacks;
 

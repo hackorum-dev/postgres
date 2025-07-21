@@ -46,6 +46,7 @@ static char *archive_directory = NULL;
 
 static bool basic_archive_configured(ArchiveModuleState *state);
 static bool basic_archive_file(ArchiveModuleState *state, const char *file, const char *path);
+static bool basic_archive_files(ArchiveModuleState *state, char **files, char **paths, int nfiles);
 static bool check_archive_directory(char **newval, void **extra, GucSource source);
 static bool compare_files(const char *file1, const char *file2);
 
@@ -53,6 +54,7 @@ static const ArchiveModuleCallbacks basic_archive_callbacks = {
 	.startup_cb = NULL,
 	.check_configured_cb = basic_archive_configured,
 	.archive_file_cb = basic_archive_file,
+	.archive_files_cb = basic_archive_files,
 	.shutdown_cb = NULL
 };
 
@@ -227,6 +229,26 @@ basic_archive_file(ArchiveModuleState *state, const char *file, const char *path
 			(errmsg("archived \"%s\" via basic_archive", file)));
 
 	return true;
+}
+
+/*
++ * Archive multiple files.
++ */
+static bool
+basic_archive_files(ArchiveModuleState *state, char **files, char **paths, int nfiles)
+{
+	bool result = true;
+
+	for (int i = 0; i < nfiles; i++)
+	{
+		if (!basic_archive_file(state, files[i], paths[i]))
+		{
+			ereport(WARNING, (errmsg("failed to archive file \"%s\"", files[i])));
+			result = false;
+		}
+	}
+
+	return result;
 }
 
 /*

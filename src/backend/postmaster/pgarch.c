@@ -93,6 +93,7 @@ typedef struct PgArchData
 } PgArchData;
 
 char	   *XLogArchiveLibrary = "";
+bool	    XLogArchiveMulti = false;
 char	   *arch_module_check_errdetail_string;
 
 
@@ -144,6 +145,7 @@ static volatile sig_atomic_t ready_to_stop = false;
 static void pgarch_waken_stop(SIGNAL_ARGS);
 static void pgarch_MainLoop(void);
 static void pgarch_ArchiverCopyLoop(void);
+static void pgarch_ArchiverCopyLoopMulti(void);
 static bool pgarch_archiveXlog(char *xlog);
 static bool pgarch_readyXlog(char *xlog);
 static void pgarch_archiveDone(char *xlog);
@@ -346,7 +348,10 @@ pgarch_MainLoop(void)
 		}
 
 		/* Do what we're here for */
-		pgarch_ArchiverCopyLoop();
+		if (XLogArchiveMulti)
+			pgarch_ArchiverCopyLoopMulti();
+		else
+			pgarch_ArchiverCopyLoop();
 
 		/*
 		 * Sleep until a signal is received, or until a poll is forced by
@@ -370,6 +375,167 @@ pgarch_MainLoop(void)
 		 * SIGUSR2.
 		 */
 	} while (!time_to_stop);
+}
+
+typedef bool (*ArchiveCallbackFn)(void *arg);
+
+static bool
+pgarch_safe_callback(ArchiveCallbackFn fn, void *arg)
+{
+	sigjmp_buf local_sigjmp_buf;
+	MemoryContext oldcontext;
+	bool ret;
+
+	oldcontext = MemoryContextSwitchTo(archive_context);
+
+	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
+	{
+		error_context_stack = NULL;
+		HOLD_INTERRUPTS();
+		EmitErrorReport();
+		disable_all_timeouts(false);
+		LWLockReleaseAll();
+		ConditionVariableCancelSleep();
+		pgstat_report_wait_end();
+		ReleaseAuxProcessResources(false);
+		AtEOXact_Files(false);
+		AtEOXact_HashTables(false);
+
+		MemoryContextSwitchTo(oldcontext);
+		FlushErrorState();
+		MemoryContextReset(archive_context);
+
+		PG_exception_stack = NULL;
+		RESUME_INTERRUPTS();
+
+		ret = false;
+	}
+	else
+	{
+		PG_exception_stack = &local_sigjmp_buf;
+		ret = fn(arg);
+		PG_exception_stack = NULL;
+
+		MemoryContextSwitchTo(oldcontext);
+		MemoryContextReset(archive_context);
+	}
+
+	return ret;
+}
+
+typedef struct {
+	char **filenames;
+	char **paths;
+	int    n;
+} ArchiveFilesArg;
+
+static bool
+archive_files_wrapper(void *arg)
+{
+	ArchiveFilesArg *a = (ArchiveFilesArg *) arg;
+	return ArchiveCallbacks->archive_files_cb(archive_module_state,
+											  a->filenames,
+											  a->paths,
+											  a->n);
+}
+
+/*
+ * pgarch_ArchiverCopyLoopMulti
+ *
+ * Archives multiple outstanding WAL files in one batch using archive_files_cb.
+ */
+static void
+pgarch_ArchiverCopyLoopMulti(void)
+{
+	char *filenames[NUM_FILES_PER_DIRECTORY_SCAN];
+	char *paths[NUM_FILES_PER_DIRECTORY_SCAN];
+	int   n;
+	bool  ret;
+	ArchiveFilesArg arg;
+
+
+	elog(DEBUG1, "Starting archiver copy(multi)");
+
+	Assert(XLogArchiveMulti);
+	Assert(ArchiveCallbacks->archive_files_cb != NULL);
+
+	while (1)
+	{
+		PgArchForceDirScan();
+		pgarch_readyXlog(NULL);
+		n = 0;
+
+		for (int i = 0; i < arch_files->arch_files_size; i++)
+		{
+			char	   *arch_file = arch_files->arch_files[i];
+			char		xlogpath[MAXPGPATH];
+			struct stat stat_buf;
+
+			snprintf(xlogpath, MAXPGPATH, XLOGDIR "/%s", arch_file);
+
+			if (stat(xlogpath, &stat_buf) != 0 && errno == ENOENT)
+			{
+				char xlogready[MAXPGPATH];
+
+				StatusFilePath(xlogready, arch_file, ".ready");
+				if (unlink(xlogready) == 0)
+				{
+					ereport(WARNING,
+							(errmsg("removed orphan archive status file \"%s\"", xlogready)));
+				}
+				else
+				{
+					ereport(WARNING,
+							(errmsg("could not remove orphan archive status file \"%s\": %m", xlogready)));
+				}
+				continue;
+			}
+
+			filenames[n] = arch_file;
+			paths[n] = psprintf(XLOGDIR "/%s", arch_file);
+			n++;
+		}
+
+		if (n == 0)
+			return;
+
+		if (ShutdownRequestPending || !PostmasterIsAlive())
+			return;
+
+		ProcessPgArchInterrupts();
+
+		if (ArchiveCallbacks->check_configured_cb != NULL &&
+			!ArchiveCallbacks->check_configured_cb(archive_module_state))
+		{
+			ereport(WARNING,
+					(errmsg("\"archive_mode\" enabled, yet archiving is not configured"),
+					 arch_module_check_errdetail_string ?
+					 errdetail_internal("%s", arch_module_check_errdetail_string) : 0));
+			return;
+		}
+
+		arg.filenames = filenames;
+		arg.paths = paths;
+		arg.n = n;
+
+		ret = pgarch_safe_callback(archive_files_wrapper, &arg);
+
+		if (!ret)
+		{
+			for (int i = 0; i < n; i++)
+				pgstat_report_archiver(filenames[i], 0);
+
+			ereport(WARNING,
+					(errmsg("archiving multiple WAL files failed")));
+			return;
+		}
+
+		for (int i = 0; i < n; i++)
+		{
+			pgarch_archiveDone(filenames[i]);
+			pgstat_report_archiver(filenames[i], 1);
+		}
+	}
 }
 
 /*
@@ -506,9 +672,19 @@ pgarch_ArchiverCopyLoop(void)
 	}
 }
 
+typedef struct {
+	const char *xlog;
+	const char *pathname;
+} ArchiveXlogArg;
+
+static bool
+archive_file_wrapper(void *arg)
+{
+	ArchiveXlogArg *a = (ArchiveXlogArg *) arg;
+	return ArchiveCallbacks->archive_file_cb(archive_module_state, a->xlog, a->pathname);
+}
+
 /*
- * pgarch_archiveXlog
- *
  * Invokes archive_file_cb to copy one archive file to wherever it should go
  *
  * Returns true if successful
@@ -516,104 +692,22 @@ pgarch_ArchiverCopyLoop(void)
 static bool
 pgarch_archiveXlog(char *xlog)
 {
-	sigjmp_buf	local_sigjmp_buf;
-	MemoryContext oldcontext;
-	char		pathname[MAXPGPATH];
-	char		activitymsg[MAXFNAMELEN + 16];
-	bool		ret;
+	char pathname[MAXPGPATH];
+	char activitymsg[MAXFNAMELEN + 16];
+	ArchiveXlogArg arg;
+	bool ret;
 
 	snprintf(pathname, MAXPGPATH, XLOGDIR "/%s", xlog);
-
-	/* Report archive activity in PS display */
 	snprintf(activitymsg, sizeof(activitymsg), "archiving %s", xlog);
 	set_ps_display(activitymsg);
 
-	oldcontext = MemoryContextSwitchTo(archive_context);
+	arg.xlog = xlog;
+	arg.pathname = pathname;
 
-	/*
-	 * Since the archiver operates at the bottom of the exception stack,
-	 * ERRORs turn into FATALs and cause the archiver process to restart.
-	 * However, using ereport(ERROR, ...) when there are problems is easy to
-	 * code and maintain.  Therefore, we create our own exception handler to
-	 * catch ERRORs and return false instead of restarting the archiver
-	 * whenever there is a failure.
-	 *
-	 * We assume ERRORs from the archiving callback are the most common
-	 * exceptions experienced by the archiver, so we opt to handle exceptions
-	 * here instead of PgArchiverMain() to avoid reinitializing the archiver
-	 * too frequently.  We could instead add a sigsetjmp() block to
-	 * PgArchiverMain() and use PG_TRY/PG_CATCH here, but the extra code to
-	 * avoid the odd archiver restart doesn't seem worth it.
-	 */
-	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
-	{
-		/* Since not using PG_TRY, must reset error stack by hand */
-		error_context_stack = NULL;
+	ret = pgarch_safe_callback(archive_file_wrapper, &arg);
 
-		/* Prevent interrupts while cleaning up */
-		HOLD_INTERRUPTS();
-
-		/* Report the error to the server log. */
-		EmitErrorReport();
-
-		/*
-		 * Try to clean up anything the archive module left behind.  We try to
-		 * cover anything that an archive module could conceivably have left
-		 * behind, but it is of course possible that modules could be doing
-		 * unexpected things that require additional cleanup.  Module authors
-		 * should be sure to do any extra required cleanup in a PG_CATCH block
-		 * within the archiving callback, and they are encouraged to notify
-		 * the pgsql-hackers mailing list so that we can add it here.
-		 */
-		disable_all_timeouts(false);
-		LWLockReleaseAll();
-		ConditionVariableCancelSleep();
-		pgstat_report_wait_end();
-		pgaio_error_cleanup();
-		ReleaseAuxProcessResources(false);
-		AtEOXact_Files(false);
-		AtEOXact_HashTables(false);
-
-		/*
-		 * Return to the original memory context and clear ErrorContext for
-		 * next time.
-		 */
-		MemoryContextSwitchTo(oldcontext);
-		FlushErrorState();
-
-		/* Flush any leaked data */
-		MemoryContextReset(archive_context);
-
-		/* Remove our exception handler */
-		PG_exception_stack = NULL;
-
-		/* Now we can allow interrupts again */
-		RESUME_INTERRUPTS();
-
-		/* Report failure so that the archiver retries this file */
-		ret = false;
-	}
-	else
-	{
-		/* Enable our exception handler */
-		PG_exception_stack = &local_sigjmp_buf;
-
-		/* Archive the file! */
-		ret = ArchiveCallbacks->archive_file_cb(archive_module_state,
-												xlog, pathname);
-
-		/* Remove our exception handler */
-		PG_exception_stack = NULL;
-
-		/* Reset our memory context and switch back to the original one */
-		MemoryContextSwitchTo(oldcontext);
-		MemoryContextReset(archive_context);
-	}
-
-	if (ret)
-		snprintf(activitymsg, sizeof(activitymsg), "last was %s", xlog);
-	else
-		snprintf(activitymsg, sizeof(activitymsg), "failed on %s", xlog);
+	snprintf(activitymsg, sizeof(activitymsg),
+			 ret ? "last was %s" : "failed on %s", xlog);
 	set_ps_display(activitymsg);
 
 	return ret;
@@ -673,7 +767,10 @@ pgarch_readyXlog(char *xlog)
 
 		if (stat(status_file, &st) == 0)
 		{
-			strcpy(xlog, arch_file);
+			if (xlog)
+				strcpy(xlog, arch_file);
+			else
+				arch_files->arch_files_size++;
 			return true;
 		}
 		else if (errno != ENOENT)
@@ -763,8 +860,11 @@ pgarch_readyXlog(char *xlog)
 		arch_files->arch_files[i] = DatumGetCString(binaryheap_remove_first(arch_files->arch_heap));
 
 	/* Return the highest priority file. */
-	arch_files->arch_files_size--;
-	strcpy(xlog, arch_files->arch_files[arch_files->arch_files_size]);
+	if (xlog)
+	{
+		arch_files->arch_files_size--;
+		strcpy(xlog, arch_files->arch_files[arch_files->arch_files_size]);
+	}
 
 	return true;
 }
@@ -936,6 +1036,12 @@ LoadArchiveLibrary(void)
 				(errmsg("archive modules have to define the symbol %s", "_PG_archive_module_init")));
 
 	ArchiveCallbacks = (*archive_init) ();
+
+	if (XLogArchiveMulti && !ArchiveCallbacks->archive_files_cb)
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			errmsg("archive module does not support multi-file archiving"),
+			errdetail("The parameter \"archive_multi\" is enabled, but the archive module does not define archive_files_cb.")));
 
 	if (ArchiveCallbacks->archive_file_cb == NULL)
 		ereport(ERROR,

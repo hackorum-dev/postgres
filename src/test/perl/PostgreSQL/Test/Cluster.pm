@@ -637,6 +637,7 @@ sub init
 	$params{allows_streaming} = 0 unless defined $params{allows_streaming};
 	$params{force_initdb} = 0 unless defined $params{force_initdb};
 	$params{has_archiving} = 0 unless defined $params{has_archiving};
+	$params{is_multi} = 0 unless defined $params{is_multi};
 
 	my $initdb_extra_opts_env = $ENV{PG_TEST_INITDB_EXTRA_OPTS};
 	if (defined $initdb_extra_opts_env)
@@ -766,7 +767,7 @@ sub init
 	  or die("unable to set permissions for $pgdata/postgresql.conf");
 
 	$self->set_replication_conf if $params{allows_streaming};
-	$self->enable_archiving if $params{has_archiving};
+	$self->enable_archiving(is_multi => $params{is_multi}) if $params{has_archiving};
 	return;
 }
 
@@ -1481,30 +1482,48 @@ sub set_standby_mode
 # Internal routine to enable archiving
 sub enable_archiving
 {
-	my ($self) = @_;
+	my ($self, %opts) = @_;
+	my $is_multi = $opts{is_multi} // 0;
 	my $path = $self->archive_dir;
 	my $name = $self->name;
 
 	print "### Enabling WAL archiving for node \"$name\"\n";
 
-	# On Windows, the path specified in the restore command needs to use
-	# double back-slashes to work properly and to be able to detect properly
-	# the file targeted by the copy command, so the directory value used
-	# in this routine, using only one back-slash, need to be properly changed
-	# first. Paths also need to be double-quoted to prevent failures where
-	# the path contains spaces.
-	$path =~ s{\\}{\\\\}g if ($PostgreSQL::Test::Utils::windows_os);
-	my $copy_command =
-	  $PostgreSQL::Test::Utils::windows_os
-	  ? qq{copy "%p" "$path\\\\%f"}
-	  : qq{cp "%p" "$path/%f"};
+	# On Windows, adjust slashes and quoting
+	if ($PostgreSQL::Test::Utils::windows_os)
+	{
+		$path =~ s{\\}{\\\\}g;
+	}
 
-	# Enable archive_mode and archive_command on node
+	my ($copy_command);
+
+	if ($PostgreSQL::Test::Utils::windows_os)
+	{
+		if ($is_multi) {
+			$copy_command = qq{copy %P "$path"};
+		} else {
+			$copy_command = qq{copy %p "$path\\\\%f"};
+		}
+	}
+	else
+	{
+		if ($is_multi) {
+			$copy_command = qq{cp %P "$path"};
+		} else {
+			$copy_command = qq{cp %p "$path/%f"};
+		}
+	}
+
+	my $archive_multi_conf = $is_multi ? "archive_multi = true\n" : "";
+
+	# Enable archive_mode, archive_command, and optionally archive_multi on node
 	$self->append_conf(
 		'postgresql.conf', qq(
 archive_mode = on
 archive_command = '$copy_command'
+$archive_multi_conf
 ));
+
 	return;
 }
 

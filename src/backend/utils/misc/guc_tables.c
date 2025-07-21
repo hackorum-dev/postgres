@@ -800,6 +800,15 @@ struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
+		{"archive_multi", PGC_SIGHUP, WAL_ARCHIVING,
+			gettext_noop("Enables support for archiving multiple WAL files at once."),
+			NULL
+		},
+		&XLogArchiveMulti,
+		false,
+		NULL, NULL, NULL
+	},
+	{
 		{"enable_indexscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of index-scan plans."),
 			NULL,

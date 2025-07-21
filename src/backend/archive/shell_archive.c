@@ -27,12 +27,17 @@ static bool shell_archive_configured(ArchiveModuleState *state);
 static bool shell_archive_file(ArchiveModuleState *state,
 							   const char *file,
 							   const char *path);
+static bool shell_archive_files(ArchiveModuleState *state,
+							   char **files,
+							   char **paths,
+							   int nfiles);
 static void shell_archive_shutdown(ArchiveModuleState *state);
 
 static const ArchiveModuleCallbacks shell_archive_callbacks = {
 	.startup_cb = NULL,
 	.check_configured_cb = shell_archive_configured,
 	.archive_file_cb = shell_archive_file,
+	.archive_files_cb = shell_archive_files,
 	.shutdown_cb = shell_archive_shutdown
 };
 
@@ -54,26 +59,10 @@ shell_archive_configured(ArchiveModuleState *state)
 }
 
 static bool
-shell_archive_file(ArchiveModuleState *state, const char *file,
-				   const char *path)
+run_archive_command(const char *xlogarchcmd, const char *context_info, int nfiles)
 {
-	char	   *xlogarchcmd;
-	char	   *nativePath = NULL;
-	int			rc;
-
-	if (path)
-	{
-		nativePath = pstrdup(path);
-		make_native_path(nativePath);
-	}
-
-	xlogarchcmd = replace_percent_placeholders(XLogArchiveCommand,
-											   "archive_command", "fp",
-											   file, nativePath);
-
-	ereport(DEBUG3,
-			(errmsg_internal("executing archive command \"%s\"",
-							 xlogarchcmd)));
+	int rc;
+	TimestampTz start_time = GetCurrentTimestamp();
 
 	fflush(NULL);
 	pgstat_report_wait_start(WAIT_EVENT_ARCHIVE_COMMAND);
@@ -82,57 +71,129 @@ shell_archive_file(ArchiveModuleState *state, const char *file,
 
 	if (rc != 0)
 	{
-		/*
-		 * If either the shell itself, or a called command, died on a signal,
-		 * abort the archiver.  We do this because system() ignores SIGINT and
-		 * SIGQUIT while waiting; so a signal is very likely something that
-		 * should have interrupted us too.  Also die if the shell got a hard
-		 * "command not found" type of error.  If we overreact it's no big
-		 * deal, the postmaster will just start the archiver again.
-		 */
-		int			lev = wait_result_is_any_signal(rc, true) ? FATAL : LOG;
+		int lev = wait_result_is_any_signal(rc, true) ? FATAL : LOG;
 
 		if (WIFEXITED(rc))
 		{
 			ereport(lev,
-					(errmsg("archive command failed with exit code %d",
-							WEXITSTATUS(rc)),
-					 errdetail("The failed archive command was: %s",
-							   xlogarchcmd)));
+				(errmsg("archive command failed with exit code %d", WEXITSTATUS(rc)),
+				 errdetail("The failed archive command was: %s", xlogarchcmd),
+				 context_info ? errhint("%s", context_info) : 0));
 		}
 		else if (WIFSIGNALED(rc))
 		{
 #if defined(WIN32)
 			ereport(lev,
-					(errmsg("archive command was terminated by exception 0x%X",
-							WTERMSIG(rc)),
-					 errhint("See C include file \"ntstatus.h\" for a description of the hexadecimal value."),
-					 errdetail("The failed archive command was: %s",
-							   xlogarchcmd)));
+				(errmsg("archive command was terminated by exception 0x%X", WTERMSIG(rc)),
+				 errhint("See C include file \"ntstatus.h\" for a description of the hexadecimal value."),
+				 errdetail("The failed archive command was: %s", xlogarchcmd),
+				 context_info ? errhint("%s", context_info) : 0));
 #else
 			ereport(lev,
-					(errmsg("archive command was terminated by signal %d: %s",
-							WTERMSIG(rc), pg_strsignal(WTERMSIG(rc))),
-					 errdetail("The failed archive command was: %s",
-							   xlogarchcmd)));
+				(errmsg("archive command was terminated by signal %d: %s",
+						WTERMSIG(rc), pg_strsignal(WTERMSIG(rc))),
+				 errdetail("The failed archive command was: %s", xlogarchcmd),
+				 context_info ? errhint("%s", context_info) : 0));
 #endif
 		}
 		else
 		{
 			ereport(lev,
-					(errmsg("archive command exited with unrecognized status %d",
-							rc),
-					 errdetail("The failed archive command was: %s",
-							   xlogarchcmd)));
+				(errmsg("archive command exited with unrecognized status %d", rc),
+				 errdetail("The failed archive command was: %s", xlogarchcmd),
+				 context_info ? errhint("%s", context_info) : 0));
 		}
-		pfree(xlogarchcmd);
-
 		return false;
 	}
-	pfree(xlogarchcmd);
 
-	elog(DEBUG1, "archived write-ahead log file \"%s\"", file);
 	return true;
+}
+
+static bool
+shell_archive_file(ArchiveModuleState *state, const char *file, const char *path)
+{
+	char	   *xlogarchcmd;
+	char	   *nativePath = NULL;
+	bool	    success;
+
+	if (path)
+	{
+		nativePath = pstrdup(path);
+		make_native_path(nativePath);
+	}
+
+	xlogarchcmd = replace_percent_placeholders(XLogArchiveCommand,
+												"archive_command", "fp",
+												file, nativePath);
+
+	ereport(DEBUG3,
+			(errmsg_internal("executing archive command \"%s\"", xlogarchcmd)));
+
+	success = run_archive_command(xlogarchcmd, file, 1);
+
+	if (success)
+		elog(DEBUG1, "archived write-ahead log file \"%s\"", file);
+
+	pfree(xlogarchcmd);
+	if (nativePath)
+		pfree(nativePath);
+
+	return success;
+}
+
+
+static bool
+shell_archive_files(ArchiveModuleState *state, char **files, char **paths, int nfiles)
+{
+	StringInfoData filebuf;
+	StringInfoData pathbuf;
+	char nfiles_str[16];
+	char *xlogarchcmd;
+	bool  success;
+
+	initStringInfo(&filebuf);
+	for (int i = 0; i < nfiles; i++)
+	{
+		if (i > 0)
+			appendStringInfoChar(&filebuf, ' ');
+		appendStringInfoString(&filebuf, files[i]);
+	}
+
+	initStringInfo(&pathbuf);
+	for (int i = 0; i < nfiles; i++)
+	{
+		char *nativePath = pstrdup(paths[i]);
+		make_native_path(nativePath);
+
+		if (i > 0)
+			appendStringInfoChar(&pathbuf, ' ');
+		appendStringInfoString(&pathbuf, nativePath);
+
+		pfree(nativePath);
+	}
+
+	snprintf(nfiles_str, sizeof(nfiles_str), "%d", nfiles);
+
+	xlogarchcmd = replace_percent_placeholders(XLogArchiveCommand,
+											   "archive_command", "FPN",
+											   filebuf.data, pathbuf.data, nfiles_str);
+
+	ereport(DEBUG3,
+			(errmsg_internal("executing multi-file archive command: %s", xlogarchcmd)));
+
+	success = run_archive_command(xlogarchcmd, filebuf.data, nfiles);
+
+	if (success)
+	{
+		for (int i = 0; i < nfiles; i++)
+			elog(DEBUG1, "archived write-ahead log file \"%s\"", files[i]);
+	}
+
+	pfree(xlogarchcmd);
+	pfree(filebuf.data);
+	pfree(pathbuf.data);
+
+	return success;
 }
 
 static void
