@@ -6,6 +6,7 @@ OBJS = \
 	dblink.o
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK_INTERNAL = $(libpq)
+SHLIB_LINK = $(filter -lintl, $(LIBS))
 
 EXTENSION = dblink
 DATA = dblink--1.2.sql dblink--1.1--1.2.sql dblink--1.0--1.1.sql
