@@ -4799,6 +4799,13 @@ planstate_tree_walker_impl(PlanState *planstate,
 					return true;
 			}
 			break;
+		case T_CustomJoin:
+			foreach(lc, ((CustomJoinState *) planstate)->custom_ps)
+			{
+				if (PSWALK(lfirst(lc)))
+					return true;
+			}
+			break;
 		default:
 			break;
 	}
