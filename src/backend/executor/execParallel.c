@@ -307,6 +307,11 @@ ExecParallelEstimate(PlanState *planstate, ExecParallelEstimateContext *e)
 				ExecCustomScanEstimate((CustomScanState *) planstate,
 									   e->pcxt);
 			break;
+		case T_CustomJoinState:
+			if (planstate->plan->parallel_aware)
+				ExecCustomJoinEstimate((CustomJoinState *) planstate,
+									   e->pcxt);
+			break;
 		case T_BitmapHeapScanState:
 			if (planstate->plan->parallel_aware)
 				ExecBitmapHeapEstimate((BitmapHeapScanState *) planstate,
@@ -561,6 +566,11 @@ ExecParallelInitializeDSM(PlanState *planstate,
 		case T_CustomScanState:
 			if (planstate->plan->parallel_aware)
 				ExecCustomScanInitializeDSM((CustomScanState *) planstate,
+											d->pcxt);
+			break;
+		case T_CustomJoinState:
+			if (planstate->plan->parallel_aware)
+				ExecCustomJoinInitializeDSM((CustomJoinState *) planstate,
 											d->pcxt);
 			break;
 		case T_BitmapHeapScanState:
@@ -1078,6 +1088,11 @@ ExecParallelReInitializeDSM(PlanState *planstate,
 				ExecCustomScanReInitializeDSM((CustomScanState *) planstate,
 											  pcxt);
 			break;
+		case T_CustomJoinState:
+			if (planstate->plan->parallel_aware)
+				ExecCustomJoinReInitializeDSM((CustomJoinState *) planstate,
+											  pcxt);
+			break;
 		case T_BitmapHeapScanState:
 			if (planstate->plan->parallel_aware)
 				ExecBitmapHeapReInitializeDSM((BitmapHeapScanState *) planstate,
@@ -1475,6 +1490,11 @@ ExecParallelInitializeWorker(PlanState *planstate, ParallelWorkerContext *pwcxt)
 		case T_CustomScanState:
 			if (planstate->plan->parallel_aware)
 				ExecCustomScanInitializeWorker((CustomScanState *) planstate,
+											   pwcxt);
+			break;
+		case T_CustomJoinState:
+			if (planstate->plan->parallel_aware)
+				ExecCustomJoinInitializeWorker((CustomJoinState *) planstate,
 											   pwcxt);
 			break;
 		case T_BitmapHeapScanState:
