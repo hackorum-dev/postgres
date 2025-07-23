@@ -2553,6 +2553,34 @@ verifyBackupPageConsistency(XLogReaderState *record)
 }
 
 /*
+ * Support function for recoveryStopsBefore and recoveryStopsAfter. Returns
+ * true if we have already reached the recovery target LSN, otherwise returns
+ * false.
+ */
+static inline bool
+TargetLSNIsReached(XLogReaderState *record, bool is_before)
+{
+	XLogRecPtr	targetLsn;
+
+	Assert(recoveryTarget == RECOVERY_TARGET_LSN);
+
+	if (is_before)
+	{
+		if (recoveryTargetInclusive)
+			return false;
+
+		targetLsn = record->ReadRecPtr;
+	}
+	else
+	{
+		targetLsn = recoveryTargetInclusive ?
+			record->ReadRecPtr : record->EndRecPtr;
+	}
+
+	return targetLsn >= recoveryTargetLSN;
+}
+
+/*
  * For point-in-time recovery, this function decides whether we want to
  * stop applying the XLOG before the current record.
  *
@@ -2592,8 +2620,7 @@ recoveryStopsBefore(XLogReaderState *record)
 
 	/* Check if target LSN has been reached */
 	if (recoveryTarget == RECOVERY_TARGET_LSN &&
-		!recoveryTargetInclusive &&
-		record->ReadRecPtr >= recoveryTargetLSN)
+		TargetLSNIsReached(record, true))
 	{
 		recoveryStopAfter = false;
 		recoveryStopXid = InvalidTransactionId;
@@ -2760,12 +2787,11 @@ recoveryStopsAfter(XLogReaderState *record)
 
 	/* Check if the target LSN has been reached */
 	if (recoveryTarget == RECOVERY_TARGET_LSN &&
-		recoveryTargetInclusive &&
-		record->ReadRecPtr >= recoveryTargetLSN)
+		TargetLSNIsReached(record, false))
 	{
 		recoveryStopAfter = true;
 		recoveryStopXid = InvalidTransactionId;
-		recoveryStopLSN = record->ReadRecPtr;
+		recoveryStopLSN = recoveryTargetInclusive ? record->ReadRecPtr : record->EndRecPtr;
 		recoveryStopTime = 0;
 		recoveryStopName[0] = '\0';
 		ereport(LOG,
