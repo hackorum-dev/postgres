@@ -114,7 +114,8 @@ InstrStopNode(Instrumentation *instr, double nTuples)
 	if (!instr->running)
 	{
 		instr->running = true;
-		instr->firsttuple = INSTR_TIME_GET_DOUBLE(instr->counter);
+		if (instr->need_timer)
+			instr->firsttuple = INSTR_TIME_GET_DOUBLE(instr->counter);
 	}
 	else
 	{
@@ -122,7 +123,7 @@ InstrStopNode(Instrumentation *instr, double nTuples)
 		 * In async mode, if the plan node hadn't emitted any tuples before,
 		 * this might be the first tuple
 		 */
-		if (instr->async_mode && save_tuplecount < 1.0)
+		if (instr->need_timer && instr->async_mode && save_tuplecount < 1.0)
 			instr->firsttuple = INSTR_TIME_GET_DOUBLE(instr->counter);
 	}
 }
@@ -149,18 +150,24 @@ InstrEndLoop(Instrumentation *instr)
 		elog(ERROR, "InstrEndLoop called on running node");
 
 	/* Accumulate per-cycle statistics into totals */
-	totaltime = INSTR_TIME_GET_DOUBLE(instr->counter);
+	if (instr->need_timer)
+	{
+		totaltime = INSTR_TIME_GET_DOUBLE(instr->counter);
 
-	instr->startup += instr->firsttuple;
-	instr->total += totaltime;
+		instr->startup += instr->firsttuple;
+		instr->total += totaltime;
+	}
 	instr->ntuples += instr->tuplecount;
 	instr->nloops += 1;
 
 	/* Reset for next cycle (if any) */
 	instr->running = false;
-	INSTR_TIME_SET_ZERO(instr->starttime);
-	INSTR_TIME_SET_ZERO(instr->counter);
-	instr->firsttuple = 0;
+	if (instr->need_timer)
+	{
+		INSTR_TIME_SET_ZERO(instr->starttime);
+		INSTR_TIME_SET_ZERO(instr->counter);
+		instr->firsttuple = 0;
+	}
 	instr->tuplecount = 0;
 }
 
@@ -171,16 +178,21 @@ InstrAggNode(Instrumentation *dst, Instrumentation *add)
 	if (!dst->running && add->running)
 	{
 		dst->running = true;
-		dst->firsttuple = add->firsttuple;
+		if (dst->need_timer && add->need_timer)
+			dst->firsttuple = add->firsttuple;
 	}
-	else if (dst->running && add->running && dst->firsttuple > add->firsttuple)
+	else if (dst->need_timer && add->need_timer && dst->running && add->running
+			 && dst->firsttuple > add->firsttuple)
 		dst->firsttuple = add->firsttuple;
 
-	INSTR_TIME_ADD(dst->counter, add->counter);
+	if (dst->need_timer && add->need_timer)
+	{
+		INSTR_TIME_ADD(dst->counter, add->counter);
 
+		dst->startup += add->startup;
+		dst->total += add->total;
+	}
 	dst->tuplecount += add->tuplecount;
-	dst->startup += add->startup;
-	dst->total += add->total;
 	dst->ntuples += add->ntuples;
 	dst->ntuples2 += add->ntuples2;
 	dst->nloops += add->nloops;
