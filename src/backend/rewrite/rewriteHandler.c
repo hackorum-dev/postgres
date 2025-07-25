@@ -97,7 +97,7 @@ static List *matchLocks(CmdType event, Relation relation,
 static Query *fireRIRrules(Query *parsetree, List *activeRIRs);
 static Bitmapset *adjust_view_column_set(Bitmapset *cols, List *targetlist);
 static Node *expand_generated_columns_internal(Node *node, Relation rel, int rt_index,
-											   RangeTblEntry *rte, int result_relation);
+											   RangeTblEntry *rte);
 
 
 /*
@@ -643,7 +643,7 @@ rewriteRuleAction(Query *parsetree,
 									  0,
 									  rt_fetch(new_varno, sub_action->rtable),
 									  parsetree->targetList,
-									  sub_action->resultRelation,
+									  0,
 									  (event == CMD_UPDATE) ?
 									  REPLACEVARS_CHANGE_VARNO :
 									  REPLACEVARS_SUBSTITUTE_NULL,
@@ -2346,7 +2346,7 @@ CopyAndAddInvertedQual(Query *parsetree,
 											 rt_fetch(rt_index,
 													  parsetree->rtable),
 											 parsetree->targetList,
-											 parsetree->resultRelation,
+											 0,
 											 (event == CMD_UPDATE) ?
 											 REPLACEVARS_CHANGE_VARNO :
 											 REPLACEVARS_SUBSTITUTE_NULL,
@@ -3705,12 +3705,12 @@ rewriteTargetView(Query *parsetree, Relation view)
 			BuildOnConflictExcludedTargetlist(base_rel, new_exclRelIndex);
 
 		/*
-		 * Update all Vars in the ON CONFLICT clause that refer to the old
-		 * EXCLUDED pseudo-relation.  We want to use the column mappings
-		 * defined in the view targetlist, but we need the outputs to refer to
-		 * the new EXCLUDED pseudo-relation rather than the new target RTE.
-		 * Also notice that "EXCLUDED.*" will be expanded using the view's
-		 * rowtype, which seems correct.
+		 * Update all Vars in the ON CONFLICT clause and RETURNING list that
+		 * refer to the old EXCLUDED pseudo-relation.  We want to use the
+		 * column mappings defined in the view targetlist, but we need the
+		 * outputs to refer to the new EXCLUDED pseudo-relation rather than
+		 * the new target RTE.  Also notice that "EXCLUDED.*" will be expanded
+		 * using the view's rowtype, which seems correct.
 		 */
 		tmp_tlist = copyObject(view_targetlist);
 
@@ -3723,7 +3723,18 @@ rewriteTargetView(Query *parsetree, Relation view)
 									  0,
 									  view_rte,
 									  tmp_tlist,
-									  new_rt_index,
+									  0,
+									  REPLACEVARS_REPORT_ERROR,
+									  0,
+									  &parsetree->hasSubLinks);
+
+		parsetree->returningList = (List *)
+			ReplaceVarsFromTargetList((Node *) parsetree->returningList,
+									  old_exclRelIndex,
+									  0,
+									  view_rte,
+									  tmp_tlist,
+									  new_exclRelIndex,
 									  REPLACEVARS_REPORT_ERROR,
 									  0,
 									  &parsetree->hasSubLinks);
@@ -4421,13 +4432,11 @@ RewriteQuery(Query *parsetree, List *rewrite_events, int orig_rt_length)
  * virtual generated column expressions from rel, if there are any.
  *
  * The caller must also provide rte, the RTE describing the target relation,
- * in order to handle any whole-row Vars referencing the target, and
- * result_relation, the index of the result relation, if this is part of an
- * INSERT/UPDATE/DELETE/MERGE query.
+ * in order to handle any whole-row Vars referencing the target.
  */
 static Node *
 expand_generated_columns_internal(Node *node, Relation rel, int rt_index,
-								  RangeTblEntry *rte, int result_relation)
+								  RangeTblEntry *rte)
 {
 	TupleDesc	tupdesc;
 
@@ -4455,8 +4464,7 @@ expand_generated_columns_internal(Node *node, Relation rel, int rt_index,
 
 		Assert(list_length(tlist) > 0);
 
-		node = ReplaceVarsFromTargetList(node, rt_index, 0, rte, tlist,
-										 result_relation,
+		node = ReplaceVarsFromTargetList(node, rt_index, 0, rte, tlist, 0,
 										 REPLACEVARS_CHANGE_VARNO, rt_index,
 										 NULL);
 	}
@@ -4485,7 +4493,7 @@ expand_generated_columns_in_expr(Node *node, Relation rel, int rt_index)
 		rte->rtekind = RTE_RELATION;
 		rte->relid = RelationGetRelid(rel);
 
-		node = expand_generated_columns_internal(node, rel, rt_index, rte, 0);
+		node = expand_generated_columns_internal(node, rel, rt_index, rte);
 	}
 
 	return node;
