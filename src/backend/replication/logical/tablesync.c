@@ -681,6 +681,9 @@ process_syncing_tables(XLogRecPtr current_lsn)
 			 */
 			break;
 
+		case WORKERTYPE_PARALLEL_PREFETCH:
+			break;
+
 		case WORKERTYPE_TABLESYNC:
 			process_syncing_tables_for_sync(current_lsn);
 			break;

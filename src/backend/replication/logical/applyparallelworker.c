@@ -397,6 +397,57 @@ pa_setup_dsm(ParallelApplyWorkerInfo *winfo)
 }
 
 /*
+ * Try to get a parallel prefetch worker.
+ */
+ParallelApplyWorkerInfo *
+pa_launch_prefetch_worker(void)
+{
+	MemoryContext oldcontext;
+	bool		launched;
+	ParallelApplyWorkerInfo *winfo;
+
+	/*
+	 * Start a new parallel prefetch worker.
+	 *
+	 * The worker info can be used for the lifetime of the worker process, so
+	 * create it in a permanent context.
+	 */
+	oldcontext = MemoryContextSwitchTo(ApplyContext);
+
+	winfo = (ParallelApplyWorkerInfo *) palloc0(sizeof(ParallelApplyWorkerInfo));
+
+	/* Setup shared memory. */
+	if (!pa_setup_dsm(winfo))
+	{
+		MemoryContextSwitchTo(oldcontext);
+		pfree(winfo);
+		return NULL;
+	}
+
+	launched = logicalrep_worker_launch(WORKERTYPE_PARALLEL_PREFETCH,
+										MyLogicalRepWorker->dbid,
+										MySubscription->oid,
+										MySubscription->name,
+										MyLogicalRepWorker->userid,
+										InvalidOid,
+										dsm_segment_handle(winfo->dsm_seg));
+
+	if (launched)
+	{
+		winfo->do_prefetch = true;
+	}
+	else
+	{
+		pa_free_worker_info(winfo);
+		winfo = NULL;
+	}
+
+	MemoryContextSwitchTo(oldcontext);
+
+	return winfo;
+}
+
+/*
  * Try to get a parallel apply worker from the pool. If none is available then
  * start a new one.
  */
@@ -943,20 +994,22 @@ ParallelApplyWorkerMain(Datum main_arg)
 
 	InitializingApplyWorker = false;
 
-	/* Setup replication origin tracking. */
-	StartTransactionCommand();
-	ReplicationOriginNameForLogicalRep(MySubscription->oid, InvalidOid,
+	if (am_parallel_apply_worker())
+	{
+		/* Setup replication origin tracking. */
+		StartTransactionCommand();
+		ReplicationOriginNameForLogicalRep(MySubscription->oid, InvalidOid,
 									   originname, sizeof(originname));
-	originid = replorigin_by_name(originname, false);
+		originid = replorigin_by_name(originname, false);
 
-	/*
-	 * The parallel apply worker doesn't need to monopolize this replication
-	 * origin which was already acquired by its leader process.
-	 */
-	replorigin_session_setup(originid, MyLogicalRepWorker->leader_pid);
-	replorigin_session_origin = originid;
-	CommitTransactionCommand();
-
+		/*
+		 * The parallel apply worker doesn't need to monopolize this replication
+		 * origin which was already acquired by its leader process.
+		 */
+		replorigin_session_setup(originid, MyLogicalRepWorker->leader_pid);
+		replorigin_session_origin = originid;
+		CommitTransactionCommand();
+	}
 	/*
 	 * Setup callback for syscache so that we know when something changes in
 	 * the subscription relation state.
@@ -1149,8 +1202,11 @@ pa_send_data(ParallelApplyWorkerInfo *winfo, Size nbytes, const void *data)
 	shm_mq_result result;
 	TimestampTz startTime = 0;
 
-	Assert(!IsTransactionState());
-	Assert(!winfo->serialize_changes);
+	if (!winfo->do_prefetch)
+	{
+		Assert(!IsTransactionState());
+		Assert(!winfo->serialize_changes);
+	}
 
 	/*
 	 * We don't try to send data to parallel worker for 'immediate' mode. This
@@ -1518,6 +1574,9 @@ static PartialFileSetState
 pa_get_fileset_state(void)
 {
 	PartialFileSetState fileset_state;
+
+	if (am_parallel_prefetch_worker())
+		return FS_EMPTY;
 
 	Assert(am_parallel_apply_worker());
 

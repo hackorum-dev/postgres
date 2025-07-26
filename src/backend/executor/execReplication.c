@@ -276,6 +276,47 @@ retry:
 }
 
 /*
+ * Search the relation 'rel' for tuple using the index.
+ * Returns true if tuple is found.
+ */
+bool
+RelationPrefetchIndex(Relation rel, Oid idxoid, TupleTableSlot *searchslot,
+					  TupleTableSlot *outslot)
+{
+	ScanKeyData skey[INDEX_MAX_KEYS];
+	int			skey_attoff;
+	IndexScanDesc scan;
+	SnapshotData snap;
+	Relation	idxrel;
+	bool		found;
+
+	/* Do not do prefetch when there is no index */
+	if (!OidIsValid(idxoid))
+		return false;
+
+	/* Open the index. */
+	idxrel = index_open(idxoid, AccessShareLock);
+
+	InitDirtySnapshot(snap);
+
+	/* Build scan key. */
+	skey_attoff = build_replindex_scan_key(skey, rel, idxrel, searchslot);
+
+	/* Start an index scan. */
+	scan = index_beginscan(rel, idxrel, &snap, NULL, skey_attoff, 0);
+	index_rescan(scan, skey, skey_attoff, NULL, 0);
+
+	/* Try to find the tuple */
+	found = index_getnext_slot(scan, ForwardScanDirection, outslot);
+
+	/* Cleanup */
+	index_endscan(scan);
+	index_close(idxrel, AccessShareLock);
+
+	return found;
+}
+
+/*
  * Compare the tuples in the slots by checking if they have equal values.
  */
 static bool

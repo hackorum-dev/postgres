@@ -50,6 +50,7 @@
 int			max_logical_replication_workers = 4;
 int			max_sync_workers_per_subscription = 2;
 int			max_parallel_apply_workers_per_subscription = 2;
+int			max_parallel_prefetch_workers_per_subscription = 2;
 
 LogicalRepWorker *MyLogicalRepWorker = NULL;
 
@@ -257,7 +258,7 @@ logicalrep_worker_find(Oid subid, Oid relid, bool only_running)
 		LogicalRepWorker *w = &LogicalRepCtx->workers[i];
 
 		/* Skip parallel apply workers. */
-		if (isParallelApplyWorker(w))
+		if (isParallelApplyWorker(w) || isParallelPrefetchWorker(w))
 			continue;
 
 		if (w->in_use && w->subid == subid && w->relid == relid &&
@@ -322,6 +323,7 @@ logicalrep_worker_launch(LogicalRepWorkerType wtype,
 	TimestampTz now;
 	bool		is_tablesync_worker = (wtype == WORKERTYPE_TABLESYNC);
 	bool		is_parallel_apply_worker = (wtype == WORKERTYPE_PARALLEL_APPLY);
+	bool		is_parallel_prefetch_worker = (wtype == WORKERTYPE_PARALLEL_PREFETCH);
 
 	/*----------
 	 * Sanity checks:
@@ -331,7 +333,7 @@ logicalrep_worker_launch(LogicalRepWorkerType wtype,
 	 */
 	Assert(wtype != WORKERTYPE_UNKNOWN);
 	Assert(is_tablesync_worker == OidIsValid(relid));
-	Assert(is_parallel_apply_worker == (subworker_dsm != DSM_HANDLE_INVALID));
+	Assert((is_parallel_apply_worker|is_parallel_prefetch_worker) == (subworker_dsm != DSM_HANDLE_INVALID));
 
 	ereport(DEBUG1,
 			(errmsg_internal("starting logical replication worker for subscription \"%s\"",
@@ -452,8 +454,8 @@ retry:
 	worker->relstate = SUBREL_STATE_UNKNOWN;
 	worker->relstate_lsn = InvalidXLogRecPtr;
 	worker->stream_fileset = NULL;
-	worker->leader_pid = is_parallel_apply_worker ? MyProcPid : InvalidPid;
-	worker->parallel_apply = is_parallel_apply_worker;
+	worker->leader_pid = (is_parallel_apply_worker|is_parallel_prefetch_worker) ? MyProcPid : InvalidPid;
+	worker->parallel_apply = is_parallel_apply_worker|is_parallel_prefetch_worker;
 	worker->last_lsn = InvalidXLogRecPtr;
 	TIMESTAMP_NOBEGIN(worker->last_send_time);
 	TIMESTAMP_NOBEGIN(worker->last_recv_time);
@@ -486,6 +488,16 @@ retry:
 			snprintf(bgw.bgw_function_name, BGW_MAXLEN, "ParallelApplyWorkerMain");
 			snprintf(bgw.bgw_name, BGW_MAXLEN,
 					 "logical replication parallel apply worker for subscription %u",
+					 subid);
+			snprintf(bgw.bgw_type, BGW_MAXLEN, "logical replication parallel worker");
+
+			memcpy(bgw.bgw_extra, &subworker_dsm, sizeof(dsm_handle));
+			break;
+
+		case WORKERTYPE_PARALLEL_PREFETCH:
+			snprintf(bgw.bgw_function_name, BGW_MAXLEN, "ParallelApplyWorkerMain");
+			snprintf(bgw.bgw_name, BGW_MAXLEN,
+					 "logical replication parallel prefetch worker for subscription %u",
 					 subid);
 			snprintf(bgw.bgw_type, BGW_MAXLEN, "logical replication parallel worker");
 
@@ -626,7 +638,7 @@ logicalrep_worker_stop(Oid subid, Oid relid)
 
 	if (worker)
 	{
-		Assert(!isParallelApplyWorker(worker));
+		Assert(!isParallelApplyWorker(worker) && !isParallelPrefetchWorker(worker));
 		logicalrep_worker_stop_internal(worker, SIGTERM);
 	}
 
@@ -774,7 +786,7 @@ logicalrep_worker_detach(void)
 		{
 			LogicalRepWorker *w = (LogicalRepWorker *) lfirst(lc);
 
-			if (isParallelApplyWorker(w))
+			if (isParallelApplyWorker(w) || isParallelPrefetchWorker(w))
 				logicalrep_worker_stop_internal(w, SIGTERM);
 		}
 
@@ -1368,6 +1380,9 @@ pg_stat_get_subscription(PG_FUNCTION_ARGS)
 				break;
 			case WORKERTYPE_PARALLEL_APPLY:
 				values[9] = CStringGetTextDatum("parallel apply");
+				break;
+			case WORKERTYPE_PARALLEL_PREFETCH:
+				values[9] = CStringGetTextDatum("parallel prefetch");
 				break;
 			case WORKERTYPE_TABLESYNC:
 				values[9] = CStringGetTextDatum("table synchronization");

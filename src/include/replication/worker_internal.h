@@ -32,6 +32,7 @@ typedef enum LogicalRepWorkerType
 	WORKERTYPE_TABLESYNC,
 	WORKERTYPE_APPLY,
 	WORKERTYPE_PARALLEL_APPLY,
+	WORKERTYPE_PARALLEL_PREFETCH,
 } LogicalRepWorkerType;
 
 typedef struct LogicalRepWorker
@@ -214,6 +215,12 @@ typedef struct ParallelApplyWorkerInfo
 	 */
 	bool		in_use;
 
+
+	/*
+	 * Performing prefetch of pages accessed by LR operations
+	 */
+	bool		do_prefetch;
+
 	ParallelApplyWorkerShared *shared;
 } ParallelApplyWorkerInfo;
 
@@ -236,6 +243,14 @@ extern PGDLLIMPORT LogicalRepWorker *MyLogicalRepWorker;
 extern PGDLLIMPORT bool in_remote_transaction;
 
 extern PGDLLIMPORT bool InitializingApplyWorker;
+
+#define MAX_LR_PREFETCH_WORKERS 128
+extern PGDLLIMPORT size_t lr_prefetch_hits;
+extern PGDLLIMPORT size_t lr_prefetch_misses;
+extern PGDLLIMPORT size_t lr_prefetch_errors;
+extern PGDLLIMPORT size_t lr_prefetch_inserts;
+
+extern bool prefetch_replica_identity_only;
 
 extern void logicalrep_worker_attach(int slot);
 extern LogicalRepWorker *logicalrep_worker_find(Oid subid, Oid relid,
@@ -326,10 +341,13 @@ extern void pa_decr_and_wait_stream_block(void);
 extern void pa_xact_finish(ParallelApplyWorkerInfo *winfo,
 						   XLogRecPtr remote_lsn);
 
-#define isParallelApplyWorker(worker) ((worker)->in_use && \
+#define isParallelApplyWorker(worker) ((worker)->in_use &&			\
 									   (worker)->type == WORKERTYPE_PARALLEL_APPLY)
+#define isParallelPrefetchWorker(worker) ((worker)->in_use &&			\
+										  (worker)->type == WORKERTYPE_PARALLEL_PREFETCH)
 #define isTablesyncWorker(worker) ((worker)->in_use && \
 								   (worker)->type == WORKERTYPE_TABLESYNC)
+extern ParallelApplyWorkerInfo* pa_launch_prefetch_worker(void);
 
 static inline bool
 am_tablesync_worker(void)
@@ -349,6 +367,13 @@ am_parallel_apply_worker(void)
 {
 	Assert(MyLogicalRepWorker->in_use);
 	return isParallelApplyWorker(MyLogicalRepWorker);
+}
+
+static inline bool
+am_parallel_prefetch_worker(void)
+{
+	Assert(MyLogicalRepWorker->in_use);
+	return isParallelPrefetchWorker(MyLogicalRepWorker);
 }
 
 #endif							/* WORKER_INTERNAL_H */

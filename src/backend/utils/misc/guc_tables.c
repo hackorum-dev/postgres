@@ -76,6 +76,7 @@
 #include "replication/slot.h"
 #include "replication/slotsync.h"
 #include "replication/syncrep.h"
+#include "replication/worker_internal.h"
 #include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/bufpage.h"
@@ -2143,6 +2144,18 @@ struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"prefetch_replica_identity_only",
+			PGC_SIGHUP,
+			REPLICATION_SUBSCRIBERS,
+			gettext_noop("Whether LR prefetch work should prefetch only replica identity index or all other indexes too."),
+			NULL,
+		},
+		&prefetch_replica_identity_only,
+		false,
+		NULL, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL
@@ -3373,6 +3386,18 @@ struct config_int ConfigureNamesInt[] =
 		},
 		&max_parallel_apply_workers_per_subscription,
 		2, 0, MAX_PARALLEL_WORKER_LIMIT,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"max_parallel_prefetch_workers_per_subscription",
+			PGC_SIGHUP,
+			REPLICATION_SUBSCRIBERS,
+			gettext_noop("Maximum number of parallel prefetch workers per subscription."),
+			NULL,
+		},
+		&max_parallel_prefetch_workers_per_subscription,
+		2, 0, MAX_LR_PREFETCH_WORKERS,
 		NULL, NULL, NULL
 	},
 
