@@ -267,7 +267,6 @@ heap2_desc(StringInfo buf, XLogReaderState *record)
 	char	   *rec = XLogRecGetData(record);
 	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
 
-	info &= XLOG_HEAP_OPMASK;
 	if (info == XLOG_HEAP2_PRUNE_ON_ACCESS ||
 		info == XLOG_HEAP2_PRUNE_VACUUM_SCAN ||
 		info == XLOG_HEAP2_PRUNE_VACUUM_CLEANUP)
