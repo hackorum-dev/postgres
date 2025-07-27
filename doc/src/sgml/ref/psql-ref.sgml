@@ -1645,6 +1645,7 @@ SELECT $1 \parse stmt1
         <term><literal>\dE[Sx+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
         <term><literal>\di[Sx+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
         <term><literal>\dm[Sx+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
+        <term><literal>\dN[Sx+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
         <term><literal>\ds[Sx+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
         <term><literal>\dt[Sx+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
         <term><literal>\dv[Sx+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
@@ -1652,15 +1653,16 @@ SELECT $1 \parse stmt1
         <listitem>
         <para>
         In this group of commands, the letters <literal>E</literal>,
-        <literal>i</literal>, <literal>m</literal>, <literal>s</literal>,
-        <literal>t</literal>, and <literal>v</literal>
-        stand for foreign table, index, materialized view,
+        <literal>i</literal>, <literal>m</literal>, <literal>N</literal>,
+        <literal>s</literal>, <literal>t</literal>, and <literal>v</literal>
+        stand for foreign table, index, materialized view, no partitions,
         sequence, table, and view,
         respectively.
         You can specify any or all of
         these letters, in any order, to obtain a listing of objects
         of these types.  For example, <literal>\dti</literal> lists
-        tables and indexes.
+        tables and indexes, and <literal>\dNt</literal> lists
+        tables that are not partitions of any other relation.
         If <literal>x</literal> is appended to the command name, the results
         are displayed in expanded mode.
         If <literal>+</literal> is

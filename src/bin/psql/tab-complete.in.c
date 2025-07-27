@@ -703,6 +703,17 @@ static const SchemaQuery Query_for_list_of_tables = {
 	.result = "c.relname",
 };
 
+/* All tables EXCEPT those marked as relispartition = true */
+static const SchemaQuery Query_for_list_of_not_relispartition_tables = {
+	.catname = "pg_catalog.pg_class c",
+	.selcondition = "c.relispartition = false AND "
+	"c.relkind IN (" CppAsString2(RELKIND_RELATION) ", "
+	CppAsString2(RELKIND_PARTITIONED_TABLE) ")",
+	.viscondition = "pg_catalog.pg_table_is_visible(c.oid)",
+	.namespace = "c.relnamespace",
+	.result = "c.relname",
+};
+
 static const SchemaQuery Query_for_list_of_partitioned_tables = {
 	.catname = "pg_catalog.pg_class c",
 	.selcondition = "c.relkind IN (" CppAsString2(RELKIND_PARTITIONED_TABLE) ")",
@@ -807,6 +818,17 @@ static const SchemaQuery Query_for_list_of_indexes = {
 	.result = "c.relname",
 };
 
+/* All indexes EXCEPT those marked as relispartition = true */
+static const SchemaQuery Query_for_list_of_not_relispartition_indexes = {
+	.catname = "pg_catalog.pg_class c",
+	.selcondition = "c.relispartition = false AND "
+	"c.relkind IN (" CppAsString2(RELKIND_INDEX) ", "
+	CppAsString2(RELKIND_PARTITIONED_INDEX) ")",
+	.viscondition = "pg_catalog.pg_table_is_visible(c.oid)",
+	.namespace = "c.relnamespace",
+	.result = "c.relname",
+};
+
 static const SchemaQuery Query_for_list_of_partitioned_indexes = {
 	.catname = "pg_catalog.pg_class c",
 	.selcondition = "c.relkind = " CppAsString2(RELKIND_PARTITIONED_INDEX),
@@ -819,6 +841,19 @@ static const SchemaQuery Query_for_list_of_partitioned_indexes = {
 /* All relations */
 static const SchemaQuery Query_for_list_of_relations = {
 	.catname = "pg_catalog.pg_class c",
+	.viscondition = "pg_catalog.pg_table_is_visible(c.oid)",
+	.namespace = "c.relnamespace",
+	.result = "c.relname",
+};
+
+/* All relations EXCEPT those marked as relispartition = true */
+static const SchemaQuery Query_for_list_of_not_relispartition_relations = {
+	.catname = "pg_catalog.pg_class c",
+	.selcondition = "c.relispartition = false AND "
+	"c.relkind IN (" CppAsString2(RELKIND_RELATION) ", "
+	CppAsString2(RELKIND_PARTITIONED_TABLE) ", "
+	CppAsString2(RELKIND_INDEX) ", "
+	CppAsString2(RELKIND_PARTITIONED_INDEX) ")",
 	.viscondition = "pg_catalog.pg_table_is_visible(c.oid)",
 	.namespace = "c.relnamespace",
 	.result = "c.relname",
@@ -1928,7 +1963,7 @@ psql_completion(const char *text, int start, int end)
 		"\\db", "\\dc", "\\dconfig", "\\dC", "\\dd", "\\ddp", "\\dD",
 		"\\des", "\\det", "\\deu", "\\dew", "\\dE", "\\df",
 		"\\dF", "\\dFd", "\\dFp", "\\dFt", "\\dg", "\\di", "\\dl", "\\dL",
-		"\\dm", "\\dn", "\\do", "\\dO", "\\dp", "\\dP", "\\dPi", "\\dPt",
+		"\\dm", "\\dn", "\\dN", "\\do", "\\dO", "\\dp", "\\dP", "\\dPi", "\\dPt",
 		"\\drds", "\\drg", "\\dRs", "\\dRp", "\\ds",
 		"\\dt", "\\dT", "\\dv", "\\du", "\\dx", "\\dX", "\\dy",
 		"\\echo", "\\edit", "\\ef", "\\elif", "\\else", "\\encoding",
@@ -5456,6 +5491,8 @@ match_previous_words(int pattern_id,
 	else if (TailMatchesCS("\\dF*"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_ts_configurations);
 
+	else if (TailMatchesCS("\\diN*") || TailMatchesCS("\\dNi*"))
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_not_relispartition_indexes);
 	else if (TailMatchesCS("\\di*"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexes);
 	else if (TailMatchesCS("\\dL*"))
@@ -5479,6 +5516,8 @@ match_previous_words(int pattern_id,
 		COMPLETE_WITH_VERSIONED_QUERY(Query_for_list_of_subscriptions);
 	else if (TailMatchesCS("\\ds*"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_sequences);
+	else if (TailMatchesCS("\\dtN*") || TailMatchesCS("\\dNt*"))
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_not_relispartition_tables);
 	else if (TailMatchesCS("\\dt*"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tables);
 	else if (TailMatchesCS("\\dT*"))
@@ -5501,6 +5540,8 @@ match_previous_words(int pattern_id,
 		COMPLETE_WITH_QUERY(Query_for_list_of_event_triggers);
 
 	/* must be at end of \d alternatives: */
+	else if (TailMatchesCS("\\dN*"))
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_not_relispartition_relations);
 	else if (TailMatchesCS("\\d*"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_relations);
 

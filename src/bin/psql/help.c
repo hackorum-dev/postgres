@@ -251,6 +251,7 @@ slashUsage(unsigned short int pager)
 	HELP0("  \\dL[Sx+] [PATTERN]     list procedural languages\n");
 	HELP0("  \\dm[Sx+] [PATTERN]     list materialized views\n");
 	HELP0("  \\dn[Sx+] [PATTERN]     list schemas\n");
+	HELP0("  \\dN[Sx+] [PATTERN]     list tables and indexes (no partitions)\n");
 	HELP0("  \\do[Sx+] [OPPTRN [TYPEPTRN [TYPEPTRN]]]\n"
 		  "                         list operators\n");
 	HELP0("  \\dO[Sx+] [PATTERN]     list collations\n");

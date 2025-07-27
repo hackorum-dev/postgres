@@ -4031,6 +4031,7 @@ describeRoleGrants(const char *pattern, bool showSystem)
  * tabtypes is an array of characters, specifying what info is desired:
  * t - tables
  * i - indexes
+ * N - no partitions (only applies to tables and indexes)
  * v - views
  * m - materialized views
  * s - sequences
@@ -4046,6 +4047,7 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	bool		showMatViews = strchr(tabtypes, 'm') != NULL;
 	bool		showSeq = strchr(tabtypes, 's') != NULL;
 	bool		showForeign = strchr(tabtypes, 'E') != NULL;
+	bool		showNoPartitions = strchr(tabtypes, 'N') != NULL;
 
 	int			ntypes;
 	PQExpBufferData buf;
@@ -4054,12 +4056,26 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	int			cols_so_far;
 	bool		translate_columns[] = {false, false, true, false, false, false, false, false, false};
 
+	/*
+	 * Note: Declarative table partitioning is only supported as of Pg 10.0.
+	 */
+	if (showNoPartitions && pset.sversion < 100000)
+	{
+		showNoPartitions = false;
+	}
+
 	/* Count the number of explicitly-requested relation types */
 	ntypes = showTables + showIndexes + showViews + showMatViews +
 		showSeq + showForeign;
-	/* If none, we default to \dtvmsE (but see also command.c) */
+
 	if (ntypes == 0)
-		showTables = showViews = showMatViews = showSeq = showForeign = true;
+	{
+		if (showNoPartitions)
+			showTables = showIndexes = true;
+		else
+			/* If none, we default to \dtvmsE (but see also command.c) */
+			showTables = showViews = showMatViews = showSeq = showForeign = true;
+	}
 
 	initPQExpBuffer(&buf);
 
@@ -4185,6 +4201,9 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 							 "      AND n.nspname !~ '^pg_toast'\n"
 							 "      AND n.nspname <> 'information_schema'\n");
 
+	if (showNoPartitions)
+		appendPQExpBufferStr(&buf, " AND NOT c.relispartition\n");
+
 	if (!validateSQLNamePattern(&buf, pattern, true, false,
 								"n.nspname", "c.relname", NULL,
 								"pg_catalog.pg_table_is_visible(c.oid)",
@@ -4258,8 +4277,11 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	else
 	{
 		myopt.title =
+			(ntypes != 1 && showNoPartitions) ? _("List of relations (no partitions)") :
 			(ntypes != 1) ? _("List of relations") :
+			(showTables && showNoPartitions) ? _("List of tables (no partitions)") :
 			(showTables) ? _("List of tables") :
+			(showIndexes && showNoPartitions) ? _("List of indexes (no partitions)") :
 			(showIndexes) ? _("List of indexes") :
 			(showViews) ? _("List of views") :
 			(showMatViews) ? _("List of materialized views") :

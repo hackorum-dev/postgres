@@ -1190,6 +1190,7 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 			case 'i':
 			case 's':
 			case 'E':
+			case 'N':
 				success = listTables(&cmd[1], pattern, show_verbose, show_system);
 				break;
 			case 'r':

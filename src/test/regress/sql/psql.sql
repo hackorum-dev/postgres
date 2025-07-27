@@ -1276,6 +1276,12 @@ create index testpart_orange_index on testpart_orange(logdate);
 \dPt test*apple*
 \dPi test*apple*
 
+-- only non-partition relations should be displayed
+\dN
+\dN test*apple*
+\dNt test*apple*
+\dNi test*apple*
+
 drop table testtable_apple;
 drop table testtable_orange;
 drop table testpart_apple;
@@ -1299,6 +1305,7 @@ create table child_35_40 partition of child_30_40
    for values from (35) to (40);
 insert into parent_tab values (generate_series(30,39));
 
+-- only partition related object should be displayed
 \dPt
 \dPi
 
@@ -1309,6 +1316,14 @@ insert into parent_tab values (generate_series(30,39));
 \dPin
 \dPn
 \dPn testpart.*
+
+-- only non-partition relations should be displayed
+\dNt
+\dNi
+\dNit
+\dN
+
+\dN testpart.*
 
 drop table parent_tab cascade;
 

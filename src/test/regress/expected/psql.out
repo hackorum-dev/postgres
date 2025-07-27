@@ -5052,6 +5052,47 @@ create index testpart_orange_index on testpart_orange(logdate);
  testpart | testpart_apple_index | regress_partitioning_role |             | testpart_apple
 (1 row)
 
+-- only non-partition relations should be displayed
+\dN
+                                  List of relations (no partitions)
+  Schema  |          Name          |       Type        |           Owner           |      Table       
+----------+------------------------+-------------------+---------------------------+------------------
+ testpart | testpart_apple         | partitioned table | regress_partitioning_role | 
+ testpart | testpart_apple_index   | partitioned index | regress_partitioning_role | testpart_apple
+ testpart | testpart_orange        | partitioned table | regress_partitioning_role | 
+ testpart | testpart_orange_index  | partitioned index | regress_partitioning_role | testpart_orange
+ testpart | testtable_apple        | table             | regress_partitioning_role | 
+ testpart | testtable_apple_index  | index             | regress_partitioning_role | testtable_apple
+ testpart | testtable_orange       | table             | regress_partitioning_role | 
+ testpart | testtable_orange_index | index             | regress_partitioning_role | testtable_orange
+(8 rows)
+
+\dN test*apple*
+                                 List of relations (no partitions)
+  Schema  |         Name          |       Type        |           Owner           |      Table      
+----------+-----------------------+-------------------+---------------------------+-----------------
+ testpart | testpart_apple        | partitioned table | regress_partitioning_role | 
+ testpart | testpart_apple_index  | partitioned index | regress_partitioning_role | testpart_apple
+ testpart | testtable_apple       | table             | regress_partitioning_role | 
+ testpart | testtable_apple_index | index             | regress_partitioning_role | testtable_apple
+(4 rows)
+
+\dNt test*apple*
+                       List of tables (no partitions)
+  Schema  |      Name       |       Type        |           Owner           
+----------+-----------------+-------------------+---------------------------
+ testpart | testpart_apple  | partitioned table | regress_partitioning_role
+ testpart | testtable_apple | table             | regress_partitioning_role
+(2 rows)
+
+\dNi test*apple*
+                                  List of indexes (no partitions)
+  Schema  |         Name          |       Type        |           Owner           |      Table      
+----------+-----------------------+-------------------+---------------------------+-----------------
+ testpart | testpart_apple_index  | partitioned index | regress_partitioning_role | testpart_apple
+ testpart | testtable_apple_index | index             | regress_partitioning_role | testtable_apple
+(2 rows)
+
 drop table testtable_apple;
 drop table testtable_orange;
 drop table testpart_apple;
@@ -5073,6 +5114,7 @@ create table child_30_35 partition of child_30_40
 create table child_35_40 partition of child_30_40
    for values from (35) to (40);
 insert into parent_tab values (generate_series(30,39));
+-- only partition related object should be displayed
 \dPt
             List of partitioned tables
   Schema  |    Name    |           Owner           
@@ -5140,6 +5182,45 @@ insert into parent_tab values (generate_series(30,39));
  testpart | parent_index       | regress_partitioning_role | partitioned index |              | parent_tab
  testpart | child_30_40_id_idx | regress_partitioning_role | partitioned index | parent_index | child_30_40
 (4 rows)
+
+-- only non-partition relations should be displayed
+\dNt
+                    List of tables (no partitions)
+  Schema  |    Name    |       Type        |           Owner           
+----------+------------+-------------------+---------------------------
+ testpart | parent_tab | partitioned table | regress_partitioning_role
+(1 row)
+
+\dNi
+                           List of indexes (no partitions)
+  Schema  |     Name     |       Type        |           Owner           |   Table    
+----------+--------------+-------------------+---------------------------+------------
+ testpart | parent_index | partitioned index | regress_partitioning_role | parent_tab
+(1 row)
+
+\dNit
+                          List of relations (no partitions)
+  Schema  |     Name     |       Type        |           Owner           |   Table    
+----------+--------------+-------------------+---------------------------+------------
+ testpart | parent_index | partitioned index | regress_partitioning_role | parent_tab
+ testpart | parent_tab   | partitioned table | regress_partitioning_role | 
+(2 rows)
+
+\dN
+                          List of relations (no partitions)
+  Schema  |     Name     |       Type        |           Owner           |   Table    
+----------+--------------+-------------------+---------------------------+------------
+ testpart | parent_index | partitioned index | regress_partitioning_role | parent_tab
+ testpart | parent_tab   | partitioned table | regress_partitioning_role | 
+(2 rows)
+
+\dN testpart.*
+                          List of relations (no partitions)
+  Schema  |     Name     |       Type        |           Owner           |   Table    
+----------+--------------+-------------------+---------------------------+------------
+ testpart | parent_index | partitioned index | regress_partitioning_role | parent_tab
+ testpart | parent_tab   | partitioned table | regress_partitioning_role | 
+(2 rows)
 
 drop table parent_tab cascade;
 drop schema testpart;
