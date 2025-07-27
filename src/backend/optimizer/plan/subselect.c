@@ -1255,17 +1255,20 @@ convert_VALUES_to_ANY(PlannerInfo *root, Node *testexpr, Query *values)
 
 	/*
 	 * Also, check that only RTE corresponds to VALUES; the list of values has
-	 * at least two items and no volatile functions.
+	 * at least two items.
 	 */
 	if (rte->rtekind != RTE_VALUES ||
-		list_length(rte->values_lists) < 2 ||
-		contain_volatile_functions((Node *) rte->values_lists))
+		list_length(rte->values_lists) < 2)
 		return NULL;
 
 	foreach(lc, rte->values_lists)
 	{
 		List	   *elem = lfirst(lc);
 		Node	   *value = linitial(elem);
+
+		/* Must have no volatile functions */
+		if (contain_volatile_functions(value))
+			return NULL;
 
 		/*
 		 * Prepare an evaluation of the right side of the operator with
