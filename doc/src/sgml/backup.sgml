@@ -1308,9 +1308,9 @@ restore_command = 'cp "/mnt/server/archivedir/%f" "%p"'
     present in the archive; it must return nonzero when so asked.  This is not
     an error condition.  An exception is that if the command was terminated by
     a signal (other than <systemitem>SIGTERM</systemitem>, which is used as
-    part of a database server shutdown) or an error by the shell (such as
-    command not found), then recovery will abort and the server will not start
-    up.
+    part of a database server shutdown) or an error by the shell with an exit
+    status greater than 125  (such as command not found), then recovery will
+    abort and the server will not start up.
    </para>
 
    <para>
