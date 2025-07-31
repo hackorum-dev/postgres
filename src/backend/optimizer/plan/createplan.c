@@ -18,6 +18,7 @@
 
 #include <math.h>
 
+#include "access/nbtree.h"
 #include "access/sysattr.h"
 #include "catalog/pg_class.h"
 #include "foreign/fdwapi.h"
@@ -5280,11 +5281,29 @@ fix_indexqual_clause(PlannerInfo *root, IndexOptInfo *index, int indexcol,
 	else if (IsA(clause, ScalarArrayOpExpr))
 	{
 		ScalarArrayOpExpr *saop = (ScalarArrayOpExpr *) clause;
+		Expr	   *arrayarg;
+		Const	   *arrayargconst = NULL;
 
 		/* Replace the indexkey expression with an index Var. */
 		linitial(saop->args) = fix_indexqual_operand(linitial(saop->args),
 													 index,
 													 indexcol);
+
+		/*
+		 * amsearcharray index AMs generally work with a sorted array at
+		 * runtime.  If a SAOP array argument is a Const, we presort here.
+		 * This avoids repeating sorting/deduplicating work across rescans.
+		 */
+		Assert(list_length(saop->args) == 2);
+		arrayarg = (Expr *) lsecond(saop->args);
+		if (index->amsearcharray && IsA(arrayarg, Const))
+			arrayargconst = (Const *) arrayarg;
+		if (arrayargconst && !arrayargconst->constisnull)
+			arrayargconst->constvalue =
+				_bt_presort_const_array(arrayargconst->constvalue,
+										saop->opno, index->opfamily[indexcol],
+										index->indexcollations[indexcol],
+										index->reverse_sort[indexcol]);
 	}
 	else if (IsA(clause, NullTest))
 	{

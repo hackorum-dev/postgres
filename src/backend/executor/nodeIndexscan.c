@@ -1510,6 +1510,12 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 					scanvalue = ((Const *) rightop)->constvalue;
 					if (((Const *) rightop)->constisnull)
 						flags |= SK_ISNULL;
+
+					/*
+					 * Const SAOP arrays are presorted during planning (with
+					 * indexes whose index AM is amsearcharray)
+					 */
+					flags |= SK_PRESORTED;
 				}
 				else
 				{
