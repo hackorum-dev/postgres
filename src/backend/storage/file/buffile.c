@@ -53,6 +53,12 @@
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "utils/resowner.h"
+#include "utils/memutils.h"
+#include "common/pg_lzcompress.h"
+
+#ifdef USE_LZ4
+#include <lz4.h>
+#endif
 
 /*
  * We break BufFiles into gigabyte-sized segments, regardless of RELSEG_SIZE.
@@ -61,6 +67,11 @@
  */
 #define MAX_PHYSICAL_FILESIZE	0x40000000
 #define BUFFILE_SEG_SIZE		(MAX_PHYSICAL_FILESIZE / BLCKSZ)
+
+/*
+ * Optional transparent compression of temporary files. Disabled by default.
+ */
+int			temp_file_compression = TEMP_NONE_COMPRESSION;
 
 /*
  * This data structure represents a buffered file that consists of one or
@@ -101,7 +112,27 @@ struct BufFile
 	 * wasting per-file alignment padding when some users create many files.
 	 */
 	PGAlignedBlock buffer;
+
+	int			compress;		/* enabled compression for the file */
+	char	   *cBuffer;		/* compression buffer */
 };
+
+/*
+ * Header written right before each chunk of data with compression enabled.
+ * The 'len' is the length of the data buffer written right after the header,
+ * and 'raw_len' is the length of uncompressed data. If the data ends up not
+ * being compressed (e.g. when pglz does not reach the compression ratio),
+ * the raw_len is set to -1 and the len is the raw (uncompressed) length.
+ *
+ * To make things simpler, we write these headers even for methods that do
+ * not fail (or rather when they fail, it's a proper error). The space for
+ * an extra integer seems negligible.
+ */
+typedef struct CompressHeader
+{
+	int			len;			/* data length (compressed, excluding header) */
+	int			raw_len;		/* raw length (-1: not compressed) */
+}			CompressHeader;
 
 static BufFile *makeBufFileCommon(int nfiles);
 static BufFile *makeBufFile(File firstfile);
@@ -127,6 +158,8 @@ makeBufFileCommon(int nfiles)
 	file->curOffset = 0;
 	file->pos = 0;
 	file->nbytes = 0;
+	file->compress = TEMP_NONE_COMPRESSION;
+	file->cBuffer = NULL;
 
 	return file;
 }
@@ -211,6 +244,63 @@ BufFileCreateTemp(bool interXact)
 
 	file = makeBufFile(pfile);
 	file->isInterXact = interXact;
+
+	return file;
+}
+
+/*
+ * BufFileCreateCompressTemp
+ *		Create a temporary file with transparent compression.
+ *
+ * The temporary files will use compression, depending on the current value of
+ * temp_file_compression GUC.
+ *
+ * Note: Compressed files do not support random access. A seek operation other
+ * than seek to the beginning of the buffile will corrupt data.
+ *
+ * Note: The compression algorithm is determined by temp_file_compression GUC.
+ * If set to "none" (TEMP_NONE_COMPRESSION), the file is not compressed.
+ *
+ */
+BufFile *
+BufFileCreateCompressTemp(bool interXact)
+{
+	BufFile    *file = BufFileCreateTemp(interXact);
+
+	if (temp_file_compression != TEMP_NONE_COMPRESSION)
+	{
+		int			size = 0;
+
+		switch (temp_file_compression)
+		{
+			case TEMP_LZ4_COMPRESSION:
+#ifdef USE_LZ4
+				size = LZ4_compressBound(BLCKSZ) + sizeof(CompressHeader);
+#else
+				elog(ERROR, "LZ4 is not supported by this build");
+#endif
+				break;
+			case TEMP_PGLZ_COMPRESSION:
+				size = pglz_maximum_compressed_size(BLCKSZ, BLCKSZ) + sizeof(CompressHeader);
+				break;
+			case TEMP_NONE_COMPRESSION:
+				/* no compression, nothing to do */
+				break;
+			default:
+				elog(ERROR, "unknown compression method: %d", temp_file_compression);
+				break;
+		}
+
+		if (size > 0)
+		{
+			file->compress = temp_file_compression;
+			file->cBuffer = palloc(size);
+		}
+	}
+
+	/* compression with buffer, or no compression and no buffer */
+	Assert((!file->compress && file->cBuffer == NULL) ||
+		   (file->compress && file->cBuffer != NULL));
 
 	return file;
 }
@@ -415,9 +505,15 @@ BufFileClose(BufFile *file)
 
 	/* flush any unwritten data */
 	BufFileFlush(file);
+
 	/* close and delete the underlying file(s) */
 	for (i = 0; i < file->numFiles; i++)
 		FileClose(file->files[i]);
+
+	/* release compression buffer if allocated */
+	if (file->cBuffer)
+		pfree(file->cBuffer);
+
 	/* release the buffer space */
 	pfree(file->files);
 	pfree(file);
@@ -454,21 +550,145 @@ BufFileLoadBuffer(BufFile *file)
 	else
 		INSTR_TIME_SET_ZERO(io_start);
 
-	/*
-	 * Read whatever we can get, up to a full bufferload.
-	 */
-	file->nbytes = FileRead(thisfile,
-							file->buffer.data,
-							sizeof(file->buffer.data),
-							file->curOffset,
-							WAIT_EVENT_BUFFILE_READ);
-	if (file->nbytes < 0)
+	if (file->compress == TEMP_NONE_COMPRESSION)
 	{
-		file->nbytes = 0;
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not read file \"%s\": %m",
-						FilePathName(thisfile))));
+		/*
+		 * Read whatever we can get, up to a full bufferload.
+		 */
+		file->nbytes = FileRead(thisfile,
+								file->buffer.data,
+								sizeof(file->buffer),
+								file->curOffset,
+								WAIT_EVENT_BUFFILE_READ);
+		if (file->nbytes < 0)
+		{
+			file->nbytes = 0;
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not read file \"%s\": %m",
+							FilePathName(thisfile))));
+		}
+	}
+	else
+	{
+		/*
+		 * Read and decompress data from a temporary file. We first read the
+		 * header with compressed/raw lengths, and then the compressed data.
+		 */
+		int			nread;
+		CompressHeader header;
+
+		nread = FileRead(thisfile,
+						 &header,
+						 sizeof(header),
+						 file->curOffset,
+						 WAIT_EVENT_BUFFILE_READ);
+
+		/* did we read the length of the next buffer? */
+		if (nread == 0)
+		{
+			/* eof, nothing to do */
+		}
+		else if (nread != sizeof(header))
+		{
+			/* unexpected number of bytes, also covers (nread < 0) */
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not read file \"%s\": %m",
+							FilePathName(thisfile))));
+		}
+		else
+		{
+			/* read length of compressed data, read (and decompress) data */
+			char	   *buff = file->cBuffer;
+
+			Assert(file->cBuffer != NULL);
+
+			/* advance past the length field */
+			file->curOffset += sizeof(header);
+
+			/*
+			 * raw_len==-1 means the data was not compressed after all, which
+			 * can happen e.g. for non-compressible data with pglz. In that
+			 * case just copy the data in place. Otherwise do the
+			 * decompression.
+			 *
+			 * XXX Maybe we should just do the FileRead first, and then either
+			 * decompress or memcpy() for raw_len=-1. That'd be an extra
+			 * memcpy, but it'd make the code simpler (this ways we do the
+			 * error checks twice, for each branch).
+			 */
+			if (header.raw_len == -1)
+			{
+				nread = FileRead(thisfile,
+								 file->buffer.data,
+								 header.len,
+								 file->curOffset,
+								 WAIT_EVENT_BUFFILE_READ);
+				if (nread != header.len)
+				{
+					ereport(ERROR,
+							(errcode_for_file_access(),
+							 errmsg("could not read file \"%s\": %m",
+									FilePathName(thisfile))));
+				}
+
+				file->nbytes = nread;
+				file->curOffset += nread;
+			}
+			else
+			{
+				/*
+				 * Read compressed data into the separate buffer, and then
+				 * decompress into the target file buffer.
+				 */
+				nread = FileRead(thisfile,
+								 buff,
+								 header.len,
+								 file->curOffset,
+								 WAIT_EVENT_BUFFILE_READ);
+				if (nread != header.len)
+				{
+					ereport(ERROR,
+							(errcode_for_file_access(),
+							 errmsg("could not read file \"%s\": %m",
+									FilePathName(thisfile))));
+				}
+
+				switch (file->compress)
+				{
+					case TEMP_LZ4_COMPRESSION:
+#ifdef USE_LZ4
+						file->nbytes = LZ4_decompress_safe(buff,
+														   file->buffer.data, header.len,
+														   sizeof(file->buffer));
+#else
+						elog(ERROR, "LZ4 is not supported by this build");
+#endif
+						break;
+
+					case TEMP_PGLZ_COMPRESSION:
+						file->nbytes = pglz_decompress(buff, header.len,
+													   file->buffer.data, header.raw_len, false);
+						break;
+					case TEMP_NONE_COMPRESSION:
+						/* no compression, nothing to do */
+						break;
+					default:
+						elog(ERROR, "unknown compression method: %d", file->compress);
+						break;
+				}
+				file->curOffset += nread;
+
+				if (file->nbytes < 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_DATA_CORRUPTED),
+							 errmsg_internal("compressed data is corrupt")));
+
+				/* should have got the expected length */
+				Assert(file->nbytes == header.raw_len);
+			}
+		}
 	}
 
 	if (track_io_timing)
@@ -494,8 +714,101 @@ static void
 BufFileDumpBuffer(BufFile *file)
 {
 	int64		wpos = 0;
-	int64		bytestowrite;
+	int64		bytestowrite = 0;
 	File		thisfile;
+	char	   *DataToWrite = file->buffer.data;
+	int			nbytesOriginal = file->nbytes;
+
+	/*
+	 * Compress the data if requested for this temporary file (and if enabled
+	 * by the temp_file_compression GUC).
+	 *
+	 * The compressed data is written to the one shared compression buffer.
+	 * There's only a single compression operation at any given time, so one
+	 * buffer is enough.
+	 *
+	 * Then we simply point the "DataToWrite" buffer at the compressed buffer.
+	 */
+	if (file->compress != TEMP_NONE_COMPRESSION)
+	{
+		char	   *cData;
+		int			cSize = 0;
+		CompressHeader header;
+
+		Assert(file->cBuffer != NULL);
+		cData = file->cBuffer;
+
+		/* initialize the header for compression */
+		header.len = -1;
+		header.raw_len = nbytesOriginal;
+
+		switch (file->compress)
+		{
+		case TEMP_LZ4_COMPRESSION:
+			{
+#ifdef USE_LZ4
+				int			cBufferSize = LZ4_compressBound(file->nbytes);
+
+				/*
+				 * XXX We might use lz4 stream compression here. Depending
+				 * on the data, that might improve the compression ratio.
+				 * The length is stored at the beginning, we'll fill it in
+				 * at the end.
+				 */
+				cSize = LZ4_compress_default(file->buffer.data,
+											 cData + sizeof(CompressHeader),
+											 file->nbytes, cBufferSize);
+				if (cSize == 0)
+				{
+					ereport(ERROR,
+							(errcode(ERRCODE_DATA_CORRUPTED),
+							 errmsg_internal("compression failed, compressed size %d, original size %d",
+											 cSize, nbytesOriginal)));
+				}
+#else
+				elog(ERROR, "LZ4 is not supported by this build");
+#endif
+				break;
+			}
+			case TEMP_PGLZ_COMPRESSION:
+				cSize = pglz_compress(file->buffer.data, file->nbytes,
+									  cData + sizeof(CompressHeader),
+									  PGLZ_strategy_always);
+
+				/*
+				 * pglz returns -1 for non-compressible data. In that case
+				 * just copy the raw data into the output buffer.
+				 */
+				if (cSize == -1)
+				{
+					memcpy(cData + sizeof(CompressHeader), file->buffer.data,
+						   header.raw_len);
+
+					cSize = header.raw_len;
+					header.raw_len = -1;
+				}
+				break;
+			case TEMP_NONE_COMPRESSION:
+				/* no compression, nothing to do */
+				break;
+			default:
+				elog(ERROR, "unknown compression method: %d", file->compress);
+				break;
+		}
+
+		Assert(cSize != -1);
+		header.len = cSize;
+
+		/*
+		 * Write the header with compressed length at the beginning of the
+		 * buffer. We store both the compressed and raw lengths, and use
+		 * raw_len=-1 when the data was not compressed after all.
+		 */
+		memcpy(cData, &header, sizeof(CompressHeader));
+		file->nbytes = header.len + sizeof(CompressHeader);
+
+		DataToWrite = cData;
+	}
 
 	/*
 	 * Unlike BufFileLoadBuffer, we must dump the whole buffer even if it
@@ -535,7 +848,7 @@ BufFileDumpBuffer(BufFile *file)
 			INSTR_TIME_SET_ZERO(io_start);
 
 		bytestowrite = FileWrite(thisfile,
-								 file->buffer.data + wpos,
+								 DataToWrite + wpos,
 								 bytestowrite,
 								 file->curOffset,
 								 WAIT_EVENT_BUFFILE_WRITE);
@@ -564,7 +877,17 @@ BufFileDumpBuffer(BufFile *file)
 	 * logical file position, ie, original value + pos, in case that is less
 	 * (as could happen due to a small backwards seek in a dirty buffer!)
 	 */
-	file->curOffset -= (file->nbytes - file->pos);
+	if (!file->compress)
+		file->curOffset -= (file->nbytes - file->pos);
+	else if (nbytesOriginal - file->pos != 0)
+	{
+		/*
+		 * curOffset must be corrected also if compression is enabled, nbytes
+		 * was changed by compression but we have to use the original value of
+		 * nbytes
+		 */
+		file->curOffset -= bytestowrite;
+	}
 	if (file->curOffset < 0)	/* handle possible segment crossing */
 	{
 		file->curFile--;
@@ -602,8 +925,14 @@ BufFileReadCommon(BufFile *file, void *ptr, size_t size, bool exact, bool eofOK)
 	{
 		if (file->pos >= file->nbytes)
 		{
-			/* Try to load more data into buffer. */
-			file->curOffset += file->pos;
+			/*
+			 * Try to load more data into buffer.
+			 *
+			 * curOffset is moved within BufFileLoadBuffer because stored data
+			 * size differs from loaded/ decompressed size
+			 */
+			if (!file->compress)
+				file->curOffset += file->pos;
 			file->pos = 0;
 			file->nbytes = 0;
 			BufFileLoadBuffer(file);
@@ -742,6 +1071,10 @@ BufFileSeek(BufFile *file, int fileno, pgoff_t offset, int whence)
 	int			newFile;
 	pgoff_t		newOffset;
 
+	/* Compressed files only support seek to the beginning */
+	Assert(file->compress == TEMP_NONE_COMPRESSION ||
+		   (whence == SEEK_SET && fileno == 0 && offset == 0));
+
 	switch (whence)
 	{
 		case SEEK_SET:
@@ -831,6 +1164,9 @@ BufFileSeek(BufFile *file, int fileno, pgoff_t offset, int whence)
 void
 BufFileTell(BufFile *file, int *fileno, pgoff_t *offset)
 {
+	/* Tell doesn't work correctly for compressed files */
+	Assert(file->compress == TEMP_NONE_COMPRESSION);
+
 	*fileno = file->curFile;
 	*offset = file->curOffset + file->pos;
 }

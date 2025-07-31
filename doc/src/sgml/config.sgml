@@ -1955,6 +1955,26 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+    <varlistentry id="guc-temp-file-compression">
+     <term><varname>temp_file_compression</varname> (<type>enum</type>)</term>
+     <listitem>
+     <para>
+      Enables transparent compression of temporary files used by query execution.
+      Supported values are <literal>no</literal>, <literal>lz4</literal>, and
+     <literal>pglz</literal>.
+     </para>
+
+     <para>
+     The effectiveness of temporary file compression depends on the workload.
+     For example, temporary files created by hash join spills use fixed-size
+     chunks, so on-disk file sizes may not visibly shrink even when compression
+     is enabled. Statistics such as <literal>temp_bytes</literal> report logical
+     bytes written before compression.
+     </para>
+     </listitem>
+     </varlistentry>
+
+
      <varlistentry id="guc-hash-mem-multiplier" xreflabel="hash_mem_multiplier">
       <term><varname>hash_mem_multiplier</varname> (<type>floating point</type>)
       <indexterm>

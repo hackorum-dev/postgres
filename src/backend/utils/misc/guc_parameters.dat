@@ -2931,6 +2931,14 @@
   check_hook => 'check_temp_buffers',
 },
 
+{ name => 'temp_file_compression', type => 'enum', context => 'PGC_USERSET', group => 'CLIENT_CONN_STATEMENT',
+  short_desc => 'Sets the default compression method for temporary files.',
+  long_desc => 'Compression is applied transparently to temporary files used by hash joins. Note that the logged file sizes may appear the same regardless of compression method due to fixed-size chunking; actual disk space savings depend on data compressibility.',
+  variable => 'temp_file_compression',
+  boot_val => 'TEMP_NONE_COMPRESSION',
+  options => 'temp_file_compression_options',
+},
+
 { name => 'temp_file_limit', type => 'int', context => 'PGC_SUSET', group => 'RESOURCES_DISK',
   short_desc => 'Limits the total size of all temporary files used by each process.',
   long_desc => '-1 means no limit.',
