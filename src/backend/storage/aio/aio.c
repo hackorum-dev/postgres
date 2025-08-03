@@ -610,6 +610,23 @@ pgaio_io_wait(PgAioHandle *ioh, uint64 ref_generation)
 				elog(ERROR, "IO in wrong state: %d", state);
 				break;
 
+			case PGAIO_HS_DEFINED:
+			case PGAIO_HS_STAGED:
+
+				/*
+				 * The owner hasn't submitted the IO yet. Wait for it to do
+				 * so. Only then can this backend wait via the IO method if
+				 * required, or otherwise ioh->cv.
+				 */
+				ConditionVariablePrepareToSleep(&pgaio_ctl->backend_state[ioh->owner_procno].submit_cv);
+				while (!pgaio_io_was_recycled(ioh, ref_generation, &state) &&
+					   (state == PGAIO_HS_DEFINED ||
+						state == PGAIO_HS_STAGED))
+					ConditionVariableSleep(&pgaio_ctl->backend_state[ioh->owner_procno].submit_cv,
+										   WAIT_EVENT_AIO_IO_SUBMIT);
+				ConditionVariableCancelSleep();
+				continue;
+
 			case PGAIO_HS_SUBMITTED:
 
 				/*
@@ -624,9 +641,6 @@ pgaio_io_wait(PgAioHandle *ioh, uint64 ref_generation)
 				}
 				pg_fallthrough;
 
-				/* waiting for owner to submit */
-			case PGAIO_HS_DEFINED:
-			case PGAIO_HS_STAGED:
 				/* waiting for reaper to complete */
 				/* fallthrough */
 			case PGAIO_HS_COMPLETED_IO:
@@ -1151,6 +1165,12 @@ pgaio_submit_staged(void)
 	Assert(total_submitted == did_submit);
 
 	pgaio_my_backend->num_staged_ios = 0;
+
+	/*
+	 * Wake any backend that started waiting for any of these IOs before
+	 * submission, so that it can call ->wait_one() if necessary.
+	 */
+	ConditionVariableBroadcast(&pgaio_my_backend->submit_cv);
 
 	pgaio_debug(DEBUG4,
 				"aio: submitted %d IOs",
