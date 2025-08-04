@@ -523,6 +523,8 @@ typedef struct PgStat_Backend
 	TimestampTz stat_reset_timestamp;
 	PgStat_BktypeIO io_stats;
 	PgStat_WalCounters wal_counters;
+	PgStat_Counter xact_commit;
+	PgStat_Counter xact_rollback;
 } PgStat_Backend;
 
 /* ---------
@@ -535,6 +537,12 @@ typedef struct PgStat_BackendPending
 	 * Backend statistics store the same amount of IO data as PGSTAT_KIND_IO.
 	 */
 	PgStat_PendingIO pending_io;
+
+	/*
+	 * Transaction statistics pending flush.
+	 */
+	PgStat_Counter pending_xact_commit;
+	PgStat_Counter pending_xact_rollback;
 } PgStat_BackendPending;
 
 /*
@@ -843,6 +851,13 @@ extern PGDLLIMPORT bool pgstat_track_counts;
 extern PGDLLIMPORT int pgstat_track_functions;
 extern PGDLLIMPORT int pgstat_fetch_consistency;
 
+
+/*
+ * Variables in pgstat_backend.c
+ */
+
+extern PGDLLIMPORT PgStat_BackendPending PendingBackendStats;
+extern PGDLLIMPORT bool backend_has_xactstats;
 
 /*
  * Variables in pgstat_bgwriter.c

@@ -352,6 +352,13 @@ pgstat_update_dbstats(TimestampTz ts)
 	dbentry->blk_read_time += pgStatBlockReadTime;
 	dbentry->blk_write_time += pgStatBlockWriteTime;
 
+	/* Do the same for backend stats */
+	PendingBackendStats.pending_xact_commit += pgStatXactCommit;
+	PendingBackendStats.pending_xact_rollback += pgStatXactRollback;
+
+	backend_has_xactstats = true;
+	pgstat_report_fixed = true;
+
 	if (pgstat_should_report_connstat())
 	{
 		long		secs;

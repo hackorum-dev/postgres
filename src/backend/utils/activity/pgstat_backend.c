@@ -37,7 +37,7 @@
  * reported within critical sections so we use static memory in order to avoid
  * memory allocation.
  */
-static PgStat_BackendPending PendingBackendStats;
+PgStat_BackendPending PendingBackendStats;
 static bool backend_has_iostats = false;
 
 /*
@@ -47,6 +47,11 @@ static bool backend_has_iostats = false;
  * previous counters from the current ones.
  */
 static WalUsage prevBackendWalUsage;
+
+/*
+ * For backend commit and rollback statistics.
+ */
+bool		backend_has_xactstats = false;
 
 /*
  * Utility routines to report I/O stats for backends, kept here to avoid
@@ -262,6 +267,34 @@ pgstat_flush_backend_entry_wal(PgStat_EntryRef *entry_ref)
 }
 
 /*
+ * Flush out locally pending backend transaction statistics.  Locking is managed
+ * by the caller.
+ */
+static void
+pgstat_flush_backend_entry_xact(PgStat_EntryRef *entry_ref)
+{
+	PgStatShared_Backend *shbackendent;
+
+	/*
+	 * This function can be called even if nothing at all has happened for
+	 * transaction statistics.  In this case, avoid unnecessarily modifying
+	 * the stats entry.
+	 */
+	if (!backend_has_xactstats)
+		return;
+
+	shbackendent = (PgStatShared_Backend *) entry_ref->shared_stats;
+
+	shbackendent->stats.xact_commit += PendingBackendStats.pending_xact_commit;
+	shbackendent->stats.xact_rollback += PendingBackendStats.pending_xact_rollback;
+
+	PendingBackendStats.pending_xact_commit = 0;
+	PendingBackendStats.pending_xact_rollback = 0;
+
+	backend_has_xactstats = false;
+}
+
+/*
  * Flush out locally pending backend statistics
  *
  * "flags" parameter controls which statistics to flush.  Returns true
@@ -285,6 +318,10 @@ pgstat_flush_backend(bool nowait, uint32 flags)
 		pgstat_backend_wal_have_pending())
 		has_pending_data = true;
 
+	/* Some transaction data pending? */
+	if ((flags & PGSTAT_BACKEND_FLUSH_XACT) && backend_has_xactstats)
+		has_pending_data = true;
+
 	if (!has_pending_data)
 		return false;
 
@@ -299,6 +336,9 @@ pgstat_flush_backend(bool nowait, uint32 flags)
 
 	if (flags & PGSTAT_BACKEND_FLUSH_WAL)
 		pgstat_flush_backend_entry_wal(entry_ref);
+
+	if (flags & PGSTAT_BACKEND_FLUSH_XACT)
+		pgstat_flush_backend_entry_xact(entry_ref);
 
 	pgstat_unlock_entry(entry_ref);
 
