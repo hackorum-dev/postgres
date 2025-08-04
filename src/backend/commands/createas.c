@@ -24,7 +24,6 @@
  */
 #include "postgres.h"
 
-#include "miscadmin.h"
 #include "access/heapam.h"
 #include "access/reloptions.h"
 #include "access/tableam.h"
@@ -35,7 +34,6 @@
 #include "commands/matview.h"
 #include "commands/prepare.h"
 #include "commands/tablecmds.h"
-#include "commands/tablespace.h"
 #include "commands/view.h"
 #include "executor/execdesc.h"
 #include "executor/executor.h"
@@ -160,23 +158,8 @@ create_ctas_internal(List *attrList, IntoClause *into)
 		/* tablespace */
 		atcmd = makeNode(AlterTableCmd);
 		atcmd->subtype = AT_SetTableSpace;
-		if (into->tableSpaceName != NULL)
-			atcmd->name = into->tableSpaceName;
-		else
-		{
-			Oid spcid;
-
-			/*
-			 * Resolve the name of the default or database tablespace because
-			 * we need to specify the tablespace by name.
-			 *
-			 * TODO: Move that to ATPrepSetTableSpace? Must allow AlterTableCmd.name to be NULL then.
-			 */
-			spcid = GetDefaultTablespace(RELPERSISTENCE_PERMANENT, false);
-			if (!OidIsValid(spcid))
-				spcid = MyDatabaseTableSpace;
-			atcmd->name = get_tablespace_name(spcid);
-		}
+		/* use empty string to specify default tablespace */
+		atcmd->name = into->tableSpaceName ? into->tableSpaceName : "";
 		atcmds = lappend(atcmds, atcmd);
 
 		/* storage options */

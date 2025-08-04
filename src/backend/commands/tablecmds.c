@@ -17322,8 +17322,18 @@ ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel, const char *tablespacen
 {
 	Oid			tablespaceId;
 
-	/* Check that the tablespace exists */
-	tablespaceId = get_tablespace_oid(tablespacename, false);
+	if (tablespacename != NULL && tablespacename[0] == '\0')
+	{
+		/* Use default tablespace if name is empty string */
+		tablespaceId = GetDefaultTablespace(rel->rd_rel->relpersistence, rel->rd_rel->relispartition);
+		if (!OidIsValid(tablespaceId))
+			tablespaceId = MyDatabaseTableSpace;
+	}
+	else
+	{
+		/* Check that the tablespace exists */
+		tablespaceId = get_tablespace_oid(tablespacename, false);
+	}
 
 	/* Check permissions except when moving to database's default */
 	if (OidIsValid(tablespaceId) && tablespaceId != MyDatabaseTableSpace)
