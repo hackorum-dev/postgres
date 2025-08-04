@@ -898,6 +898,13 @@ pgstat_relation_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 	dbentry->blocks_fetched += lstats->counts.blocks_fetched;
 	dbentry->blocks_hit += lstats->counts.blocks_hit;
 
+	/* Do the same for backend stats */
+	if (lstats->relation && lstats->relation->rd_rel->relkind == RELKIND_RELATION)
+		PendingBackendStats.pending_backendrel.heap_scan += lstats->counts.numscans;
+
+	backend_has_relstats = true;
+	pgstat_report_fixed = true;
+
 	return true;
 }
 

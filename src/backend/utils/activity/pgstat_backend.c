@@ -36,7 +36,7 @@
  * reported within critical sections so we use static memory in order to avoid
  * memory allocation.
  */
-static PgStat_BackendPending PendingBackendStats;
+PgStat_BackendPending PendingBackendStats;
 static bool backend_has_iostats = false;
 
 /*
@@ -46,6 +46,11 @@ static bool backend_has_iostats = false;
  * counters from the current ones.
  */
 static WalUsage prevBackendWalUsage;
+
+/*
+ * For backend relations's related statistics.
+ */
+bool		backend_has_relstats = false;
 
 /*
  * Utility routines to report I/O stats for backends, kept here to avoid
@@ -260,6 +265,39 @@ pgstat_flush_backend_entry_wal(PgStat_EntryRef *entry_ref)
 }
 
 /*
+ * Flush out locally pending backend relations's related statistics.  Locking is
+ * managed by the caller.
+ */
+static void
+pgstat_flush_backend_entry_rel(PgStat_EntryRef *entry_ref)
+{
+	PgStatShared_Backend *shbackendent;
+
+	/*
+	 * This function can be called even if nothing at all has happened for
+	 * relations's related statistics.  In this case, avoid unnecessarily
+	 * modifying the stats entry.
+	 */
+	if (!backend_has_relstats)
+		return;
+
+	shbackendent = (PgStatShared_Backend *) entry_ref->shared_stats;
+
+#define BACKENDREL_ACC(stat) \
+	(shbackendent->stats.stat += PendingBackendStats.pending_backendrel.stat)
+
+	BACKENDREL_ACC(heap_scan);
+#undef BACKENDREL_ACC
+
+	/*
+	 * Clear out the statistics buffer, so it can be re-used.
+	 */
+	MemSet(&PendingBackendStats.pending_backendrel, 0, sizeof(PgStat_BackendRelPending));
+
+	backend_has_relstats = false;
+}
+
+/*
  * Flush out locally pending backend statistics
  *
  * "flags" parameter controls which statistics to flush.  Returns true
@@ -283,6 +321,10 @@ pgstat_flush_backend(bool nowait, bits32 flags)
 		pgstat_backend_wal_have_pending())
 		has_pending_data = true;
 
+	/* Some relations related data pending? */
+	if ((flags & PGSTAT_BACKEND_FLUSH_REL) && backend_has_relstats)
+		has_pending_data = true;
+
 	if (!has_pending_data)
 		return false;
 
@@ -297,6 +339,9 @@ pgstat_flush_backend(bool nowait, bits32 flags)
 
 	if (flags & PGSTAT_BACKEND_FLUSH_WAL)
 		pgstat_flush_backend_entry_wal(entry_ref);
+
+	if (flags & PGSTAT_BACKEND_FLUSH_REL)
+		pgstat_flush_backend_entry_rel(entry_ref);
 
 	pgstat_unlock_entry(entry_ref);
 
