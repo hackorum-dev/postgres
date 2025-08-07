@@ -337,7 +337,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <ival>	add_drop opt_asc_desc opt_nulls_order
 
 %type <node>	alter_table_cmd alter_type_cmd opt_collate_clause
-	   replica_identity partition_cmd index_partition_cmd
+	   replica_identity opt_replica_identity partition_cmd index_partition_cmd
 %type <list>	alter_table_cmds alter_type_cmds
 %type <list>    alter_identity_column_option_list
 %type <defelt>  alter_identity_column_option
@@ -3240,6 +3240,11 @@ replica_identity:
 				}
 ;
 
+
+opt_replica_identity: REPLICA IDENTITY_P replica_identity 	{ $$ = $3; }
+			  | /* EMPTY */									{ $$ = NIL; }
+		;
+
 reloptions:
 			'(' reloption_list ')'					{ $$ = $2; }
 		;
@@ -3794,8 +3799,8 @@ copy_generic_opt_arg_list_item:
  *****************************************************************************/
 
 CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
-			OptInherit OptPartitionSpec table_access_method_clause OptWith
-			OnCommitOption OptTableSpace
+			OptInherit OptPartitionSpec table_access_method_clause opt_replica_identity
+			OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 
@@ -3807,15 +3812,16 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->ofTypename = NULL;
 					n->constraints = NIL;
 					n->accessMethod = $10;
-					n->options = $11;
-					n->oncommit = $12;
-					n->tablespacename = $13;
+					n->replicaIdentity = $11;
+					n->options = $12;
+					n->oncommit = $13;
+					n->tablespacename = $14;
 					n->if_not_exists = false;
 					$$ = (Node *) n;
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name '('
 			OptTableElementList ')' OptInherit OptPartitionSpec table_access_method_clause
-			OptWith OnCommitOption OptTableSpace
+			opt_replica_identity OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 
@@ -3827,15 +3833,16 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->ofTypename = NULL;
 					n->constraints = NIL;
 					n->accessMethod = $13;
-					n->options = $14;
-					n->oncommit = $15;
-					n->tablespacename = $16;
+					n->replicaIdentity = (ReplicaIdentityStmt *) $14;
+					n->options = $15;
+					n->oncommit = $16;
+					n->tablespacename = $17;
 					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF any_name
 			OptTypedTableElementList OptPartitionSpec table_access_method_clause
-			OptWith OnCommitOption OptTableSpace
+			opt_replica_identity OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 
@@ -3848,15 +3855,16 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->ofTypename->location = @6;
 					n->constraints = NIL;
 					n->accessMethod = $9;
-					n->options = $10;
-					n->oncommit = $11;
-					n->tablespacename = $12;
+					n->replicaIdentity = (ReplicaIdentityStmt *) $10;
+					n->options = $11;
+					n->oncommit = $12;
+					n->tablespacename = $13;
 					n->if_not_exists = false;
 					$$ = (Node *) n;
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name OF any_name
 			OptTypedTableElementList OptPartitionSpec table_access_method_clause
-			OptWith OnCommitOption OptTableSpace
+			opt_replica_identity OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 
@@ -3869,15 +3877,16 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->ofTypename->location = @9;
 					n->constraints = NIL;
 					n->accessMethod = $12;
-					n->options = $13;
-					n->oncommit = $14;
-					n->tablespacename = $15;
+					n->replicaIdentity = (ReplicaIdentityStmt *) $13;
+					n->options = $14;
+					n->oncommit = $15;
+					n->tablespacename = $16;
 					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
 		| CREATE OptTemp TABLE qualified_name PARTITION OF qualified_name
 			OptTypedTableElementList PartitionBoundSpec OptPartitionSpec
-			table_access_method_clause OptWith OnCommitOption OptTableSpace
+			table_access_method_clause opt_replica_identity OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 
@@ -3890,15 +3899,16 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->ofTypename = NULL;
 					n->constraints = NIL;
 					n->accessMethod = $11;
-					n->options = $12;
-					n->oncommit = $13;
-					n->tablespacename = $14;
+					n->replicaIdentity = (ReplicaIdentityStmt *) $12;
+					n->options = $13;
+					n->oncommit = $14;
+					n->tablespacename = $15;
 					n->if_not_exists = false;
 					$$ = (Node *) n;
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name PARTITION OF
 			qualified_name OptTypedTableElementList PartitionBoundSpec OptPartitionSpec
-			table_access_method_clause OptWith OnCommitOption OptTableSpace
+			table_access_method_clause opt_replica_identity OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 
@@ -3911,9 +3921,10 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->ofTypename = NULL;
 					n->constraints = NIL;
 					n->accessMethod = $14;
-					n->options = $15;
-					n->oncommit = $16;
-					n->tablespacename = $17;
+					n->replicaIdentity = (ReplicaIdentityStmt *) $15;
+					n->options = $16;
+					n->oncommit = $17;
+					n->tablespacename = $18;
 					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
