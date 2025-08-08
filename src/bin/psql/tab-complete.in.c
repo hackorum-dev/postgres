@@ -305,6 +305,23 @@ do { \
 	COMPLETE_WITH_VERSIONED_QUERY_LIST(query, list); \
 } while (0)
 
+#define COMPLETE_WITH_VERSIONED_QUERY_VERBATIM(query) \
+	COMPLETE_WITH_VERSIONED_QUERY_VERBATIM_LIST(query, NULL)
+
+#define COMPLETE_WITH_VERSIONED_QUERY_VERBATIM_LIST(query, list) \
+do { \
+	completion_vquery = query; \
+	completion_charpp = list; \
+	completion_verbatim = true; \
+	matches = rl_completion_matches(text, complete_from_versioned_query); \
+} while (0)
+
+#define COMPLETE_WITH_VERSIONED_QUERY_VERBATIM_PLUS(query, ...) \
+do { \
+	static const char *const list[] = { __VA_ARGS__, NULL }; \
+	COMPLETE_WITH_VERSIONED_QUERY_VERBATIM_LIST(query, list); \
+} while (0)
+
 #define COMPLETE_WITH_SCHEMA_QUERY(query) \
 	COMPLETE_WITH_SCHEMA_QUERY_LIST(query, NULL)
 
@@ -1075,6 +1092,19 @@ static const SchemaQuery Query_for_trigger_of_table = {
 "SELECT pg_catalog.lower(name) FROM pg_catalog.pg_settings " \
 " WHERE sourcefile ~ '[\\\\/]postgresql\\.auto\\.conf$' " \
 "   AND pg_catalog.lower(name) LIKE pg_catalog.lower('%s')"
+
+static const VersionedQuery Query_for_list_of_alter_system_granted_vars[] = {
+	{150000,
+		"SELECT pg_catalog.lower(parname) FROM pg_catalog.pg_parameter_acl "
+		" WHERE EXISTS (SELECT FROM pg_catalog.aclexplode(paracl) "
+		"                WHERE pg_has_role(current_role, grantee, 'usage') "
+		"                  AND privilege_type = 'ALTER SYSTEM') "
+		"   AND pg_catalog.lower(parname) LIKE pg_catalog.lower('%s')",
+	},
+	/* this is only used for non-superusers, who can't ALTER SYSTEM before 15,
+	 * so no point in any fallback*/
+	{0, NULL},
+};
 
 #define Query_for_list_of_set_vars \
 "SELECT pg_catalog.lower(name) FROM pg_catalog.pg_settings "\
@@ -2688,10 +2718,20 @@ match_previous_words(int pattern_id,
 	else if (Matches("ALTER", "SYSTEM"))
 		COMPLETE_WITH("SET", "RESET");
 	else if (Matches("ALTER", "SYSTEM", "SET"))
-		COMPLETE_WITH_QUERY_VERBATIM(Query_for_list_of_alter_system_set_vars);
+	{
+		if (is_superuser())
+			COMPLETE_WITH_QUERY_VERBATIM(Query_for_list_of_alter_system_set_vars);
+		else
+			COMPLETE_WITH_VERSIONED_QUERY_VERBATIM(Query_for_list_of_alter_system_granted_vars);
+	}
 	else if (Matches("ALTER", "SYSTEM", "RESET"))
-		COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_alter_system_reset_vars,
-										  "ALL");
+	{
+		if (is_superuser())
+			COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_alter_system_reset_vars,
+											  "ALL");
+		else
+			COMPLETE_WITH_VERSIONED_QUERY_VERBATIM(Query_for_list_of_alter_system_granted_vars);
+	}
 	else if (Matches("ALTER", "SYSTEM", "SET", MatchAny))
 		COMPLETE_WITH("TO");
 	/* ALTER VIEW <name> */
