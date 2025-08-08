@@ -1071,6 +1071,11 @@ static const SchemaQuery Query_for_trigger_of_table = {
 " WHERE context != 'internal' "\
 "   AND pg_catalog.lower(name) LIKE pg_catalog.lower('%s')"
 
+#define Query_for_list_of_alter_system_reset_vars \
+"SELECT pg_catalog.lower(name) FROM pg_catalog.pg_settings " \
+" WHERE sourcefile ~ '[\\\\/]postgresql\\.auto\\.conf$' " \
+"   AND pg_catalog.lower(name) LIKE pg_catalog.lower('%s')"
+
 #define Query_for_list_of_set_vars \
 "SELECT pg_catalog.lower(name) FROM pg_catalog.pg_settings "\
 " WHERE context IN ('user', 'superuser') "\
@@ -2682,8 +2687,10 @@ match_previous_words(int pattern_id,
 	/* ALTER SYSTEM SET, RESET, RESET ALL */
 	else if (Matches("ALTER", "SYSTEM"))
 		COMPLETE_WITH("SET", "RESET");
-	else if (Matches("ALTER", "SYSTEM", "SET|RESET"))
-		COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_alter_system_set_vars,
+	else if (Matches("ALTER", "SYSTEM", "SET"))
+		COMPLETE_WITH_QUERY_VERBATIM(Query_for_list_of_alter_system_set_vars);
+	else if (Matches("ALTER", "SYSTEM", "RESET"))
+		COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_alter_system_reset_vars,
 										  "ALL");
 	else if (Matches("ALTER", "SYSTEM", "SET", MatchAny))
 		COMPLETE_WITH("TO");
