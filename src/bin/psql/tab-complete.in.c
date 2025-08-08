@@ -1076,6 +1076,11 @@ static const SchemaQuery Query_for_trigger_of_table = {
 " WHERE context IN ('user', 'superuser') "\
 "   AND pg_catalog.lower(name) LIKE pg_catalog.lower('%s')"
 
+#define Query_for_list_of_session_vars \
+"SELECT pg_catalog.lower(name) FROM pg_catalog.pg_settings "\
+" WHERE source = 'session' "\
+"   AND pg_catalog.lower(name) LIKE pg_catalog.lower('%s')"
+
 #define Query_for_list_of_show_vars \
 "SELECT pg_catalog.lower(name) FROM pg_catalog.pg_settings "\
 " WHERE pg_catalog.lower(name) LIKE pg_catalog.lower('%s')"
@@ -5279,16 +5284,19 @@ match_previous_words(int pattern_id,
 
 /* SET, RESET, SHOW */
 	/* Complete with a variable name */
-	else if (TailMatches("SET|RESET") &&
-			 !TailMatches("UPDATE", MatchAny, "SET") &&
-			 !TailMatches("ALTER", "DATABASE|USER|ROLE", MatchAny, "RESET"))
+	else if (TailMatches("SET") &&
+			 !TailMatches("UPDATE", MatchAny, "SET"))
 		COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_set_vars,
 										  "CONSTRAINTS",
 										  "TRANSACTION",
 										  "SESSION",
+										  "ROLE");
+	/* Complete with variables set in the current session */
+	else if (Matches("RESET"))
+		COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_session_vars,
+										  "ALL",
 										  "ROLE",
-										  "TABLESPACE",
-										  "ALL");
+										  "SESSION");
 	else if (Matches("SHOW"))
 		COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_show_vars,
 										  "SESSION AUTHORIZATION",
