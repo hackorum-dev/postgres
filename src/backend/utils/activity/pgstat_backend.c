@@ -287,9 +287,11 @@ pgstat_flush_backend_entry_xact(PgStat_EntryRef *entry_ref)
 
 	shbackendent->stats.xact_commit += PendingBackendStats.pending_xact_commit;
 	shbackendent->stats.xact_rollback += PendingBackendStats.pending_xact_rollback;
+	shbackendent->stats.xid_count += PendingBackendStats.pending_xid_count;
 
 	PendingBackendStats.pending_xact_commit = 0;
 	PendingBackendStats.pending_xact_rollback = 0;
+	PendingBackendStats.pending_xid_count = 0;
 
 	backend_has_xactstats = false;
 }

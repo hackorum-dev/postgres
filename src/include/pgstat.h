@@ -525,6 +525,7 @@ typedef struct PgStat_Backend
 	PgStat_WalCounters wal_counters;
 	PgStat_Counter xact_commit;
 	PgStat_Counter xact_rollback;
+	PgStat_Counter xid_count;
 } PgStat_Backend;
 
 /* ---------
@@ -543,6 +544,7 @@ typedef struct PgStat_BackendPending
 	 */
 	PgStat_Counter pending_xact_commit;
 	PgStat_Counter pending_xact_rollback;
+	PgStat_Counter pending_xid_count;
 } PgStat_BackendPending;
 
 /*

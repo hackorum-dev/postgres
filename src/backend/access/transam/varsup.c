@@ -24,6 +24,7 @@
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "utils/lsyscache.h"
+#include "utils/pgstat_internal.h"
 #include "utils/syscache.h"
 
 
@@ -261,6 +262,9 @@ GetNewTransactionId(bool isSubXact)
 		/* LWLockRelease acts as barrier */
 		MyProc->xid = xid;
 		ProcGlobal->xids[MyProc->pgxactoff] = xid;
+		PendingBackendStats.pending_xid_count++;
+		backend_has_xactstats = true;
+		pgstat_report_fixed = true;
 	}
 	else
 	{
