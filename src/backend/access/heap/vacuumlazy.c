@@ -460,7 +460,9 @@ static IndexBulkDeleteResult *lazy_cleanup_one_index(Relation indrel,
 static bool should_attempt_truncation(LVRelState *vacrel);
 static void lazy_truncate_heap(LVRelState *vacrel);
 static BlockNumber count_nondeletable_pages(LVRelState *vacrel,
-											bool *lock_waiter_detected);
+											bool *lock_waiter_detected,
+											int suspension_count,
+											instr_time *truncate_start_time);
 static void dead_items_alloc(LVRelState *vacrel, int nworkers);
 static void dead_items_add(LVRelState *vacrel, BlockNumber blkno, OffsetNumber *offsets,
 						   int num_offsets);
@@ -3169,6 +3171,8 @@ lazy_truncate_heap(LVRelState *vacrel)
 	BlockNumber new_rel_pages;
 	bool		lock_waiter_detected;
 	int			lock_retry;
+	int			truncate_suspension_count = 0;
+	instr_time	truncate_start_time;
 
 	/* Report that we are now truncating */
 	pgstat_progress_update_param(PROGRESS_VACUUM_PHASE,
@@ -3177,6 +3181,9 @@ lazy_truncate_heap(LVRelState *vacrel)
 	/* Update error traceback information one last time */
 	update_vacuum_error_info(vacrel, NULL, VACUUM_ERRCB_PHASE_TRUNCATE,
 							 vacrel->nonempty_pages, InvalidOffsetNumber);
+
+	/* Record start time for truncation phase */
+	INSTR_TIME_SET_CURRENT(truncate_start_time);
 
 	/*
 	 * Loop until no more truncating can be done.
@@ -3248,7 +3255,7 @@ lazy_truncate_heap(LVRelState *vacrel)
 		 * other backends could have added tuples to these pages whilst we
 		 * were vacuuming.
 		 */
-		new_rel_pages = count_nondeletable_pages(vacrel, &lock_waiter_detected);
+		new_rel_pages = count_nondeletable_pages(vacrel, &lock_waiter_detected, truncate_suspension_count, &truncate_start_time);
 		vacrel->blkno = new_rel_pages;
 
 		if (new_rel_pages >= orig_rel_pages)
@@ -3257,6 +3264,10 @@ lazy_truncate_heap(LVRelState *vacrel)
 			UnlockRelation(vacrel->rel, AccessExclusiveLock);
 			return;
 		}
+
+		/* Count this suspension if lock waiters were detected */
+		if (lock_waiter_detected)
+			truncate_suspension_count++;
 
 		/*
 		 * Okay to truncate.
@@ -3286,6 +3297,23 @@ lazy_truncate_heap(LVRelState *vacrel)
 						orig_rel_pages, new_rel_pages)));
 		orig_rel_pages = new_rel_pages;
 	} while (new_rel_pages > vacrel->nonempty_pages && lock_waiter_detected);
+
+	/* Report truncation suspension statistics in verbose mode */
+	if (vacrel->verbose && truncate_suspension_count > 0)
+	{
+		instr_time	truncate_end_time;
+		instr_time	truncate_elapsed;
+
+		INSTR_TIME_SET_CURRENT(truncate_end_time);
+		truncate_elapsed = truncate_end_time;
+		INSTR_TIME_SUBTRACT(truncate_elapsed, truncate_start_time);
+
+		ereport(INFO,
+				(errmsg("table \"%s\": truncation completed after %d suspension(s), total elapsed: %.3f s",
+						vacrel->relname,
+						truncate_suspension_count,
+						INSTR_TIME_GET_DOUBLE(truncate_elapsed))));
+	}
 }
 
 /*
@@ -3294,7 +3322,7 @@ lazy_truncate_heap(LVRelState *vacrel)
  * Returns number of nondeletable pages (last nonempty page + 1).
  */
 static BlockNumber
-count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
+count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected, int suspension_count, instr_time *truncate_start_time)
 {
 	StaticAssertDecl((PREFETCH_SIZE & (PREFETCH_SIZE - 1)) == 0,
 					 "prefetch size must be power of 2");
@@ -3343,9 +3371,24 @@ count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 			{
 				if (LockHasWaitersRelation(vacrel->rel, AccessExclusiveLock))
 				{
-					ereport(vacrel->verbose ? INFO : DEBUG2,
-							(errmsg("table \"%s\": suspending truncate due to conflicting lock request",
-									vacrel->relname)));
+					if (vacrel->verbose)
+					{
+						instr_time	elapsed_so_far;
+
+						elapsed_so_far = currenttime;
+						INSTR_TIME_SUBTRACT(elapsed_so_far, *truncate_start_time);
+
+						ereport(INFO,
+								(errmsg("table \"%s\": suspending truncate due to conflicting lock request (attempt %d, elapsed: %.3f s)",
+										vacrel->relname, suspension_count + 1,
+										INSTR_TIME_GET_DOUBLE(elapsed_so_far))));
+					}
+					else
+					{
+						ereport(DEBUG2,
+								(errmsg("table \"%s\": suspending truncate due to conflicting lock request",
+										vacrel->relname)));
+					}
 
 					*lock_waiter_detected = true;
 					return blkno;
