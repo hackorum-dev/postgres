@@ -708,6 +708,71 @@ pg_stat_get_activity(PG_FUNCTION_ARGS)
 	return (Datum) 0;
 }
 
+/*
+ * Returns transactions statistics of PG backends.
+ */
+Datum
+pg_stat_get_backend_transactions(PG_FUNCTION_ARGS)
+{
+#define PG_STAT_GET_BACKEND_STATS_COLS	5
+	int			num_backends = pgstat_fetch_stat_numbackends();
+	int			curr_backend;
+	int			pid = PG_ARGISNULL(0) ? -1 : PG_GETARG_INT32(0);
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+
+	InitMaterializedSRF(fcinfo, 0);
+
+	/* 1-based index */
+	for (curr_backend = 1; curr_backend <= num_backends; curr_backend++)
+	{
+		/* for each row */
+		Datum		values[PG_STAT_GET_BACKEND_STATS_COLS] = {0};
+		bool		nulls[PG_STAT_GET_BACKEND_STATS_COLS] = {0};
+		LocalPgBackendStatus *local_beentry;
+		PgBackendStatus *beentry;
+		PgStat_Backend *backend_stats;
+
+		/* Get the next one in the list */
+		local_beentry = pgstat_get_local_beentry_by_index(curr_backend);
+		beentry = &local_beentry->backendStatus;
+
+		/* If looking for specific PID, ignore all the others */
+		if (pid != -1 && beentry->st_procpid != pid)
+			continue;
+
+		/* check if the backend type tracks statistics */
+		if (!pgstat_tracks_backend_bktype(beentry->st_backendType))
+			continue;
+
+		/*
+		 * Don't use pgstat_fetch_stat_backend_by_pid() to avoid holding the
+		 * ProcArrayLock during each iteration.
+		 */
+		backend_stats = pgstat_fetch_stat_backend(local_beentry->proc_number);
+
+		values[0] = Int32GetDatum(beentry->st_procpid);
+
+		if (!backend_stats)
+			continue;
+
+		values[1] = Int64GetDatum(backend_stats->xid_count);
+		values[2] = Int64GetDatum(backend_stats->xact_commit);
+		values[3] = Int64GetDatum(backend_stats->xact_rollback);
+
+		if (backend_stats->stat_reset_timestamp != 0)
+			values[4] = TimestampTzGetDatum(backend_stats->stat_reset_timestamp);
+		else
+			nulls[4] = true;
+
+		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
+
+		/* If only a single backend was requested, and we found it, break. */
+		if (pid != -1)
+			break;
+	}
+
+	return (Datum) 0;
+}
 
 Datum
 pg_backend_pid(PG_FUNCTION_ARGS)

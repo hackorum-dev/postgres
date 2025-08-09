@@ -1860,6 +1860,12 @@ pg_stat_archiver| SELECT archived_count,
     last_failed_time,
     stats_reset
    FROM pg_stat_get_archiver() s(archived_count, last_archived_wal, last_archived_time, failed_count, last_failed_wal, last_failed_time, stats_reset);
+pg_stat_backend_transaction| SELECT pid,
+    xid_count,
+    xact_commit,
+    xact_rollback,
+    stats_reset
+   FROM pg_stat_get_backend_transactions(NULL::integer) s(pid, xid_count, xact_commit, xact_rollback, stats_reset);
 pg_stat_bgwriter| SELECT pg_stat_get_bgwriter_buf_written_clean() AS buffers_clean,
     pg_stat_get_bgwriter_maxwritten_clean() AS maxwritten_clean,
     pg_stat_get_buf_alloc() AS buffers_alloc,

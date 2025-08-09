@@ -946,6 +946,15 @@ CREATE VIEW pg_stat_activity AS
         LEFT JOIN pg_database AS D ON (S.datid = D.oid)
         LEFT JOIN pg_authid AS U ON (S.usesysid = U.oid);
 
+CREATE VIEW pg_stat_backend_transaction AS
+    SELECT
+            S.pid,
+            S.xid_count,
+            S.xact_commit,
+            S.xact_rollback,
+            S.stats_reset
+    FROM pg_stat_get_backend_transactions(NULL) AS S;
+
 CREATE VIEW pg_stat_replication AS
     SELECT
             S.pid,

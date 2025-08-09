@@ -58,11 +58,21 @@ INSERT INTO trunc_stats_test1 DEFAULT VALUES;
 UPDATE trunc_stats_test1 SET id = id + 10 WHERE id IN (1, 2);
 DELETE FROM trunc_stats_test1 WHERE id = 3;
 
+-- in passing, check that backend's commit is incrementing
+SELECT xact_commit AS xact_commit_before
+  FROM pg_stat_backend_transaction WHERE pid = pg_backend_pid() \gset
+
 BEGIN;
 UPDATE trunc_stats_test1 SET id = id + 100;
 TRUNCATE trunc_stats_test1;
 INSERT INTO trunc_stats_test1 DEFAULT VALUES;
 COMMIT;
+
+SELECT pg_stat_force_next_flush();
+SELECT xact_commit AS xact_commit_after
+  FROM pg_stat_backend_transaction WHERE pid = pg_backend_pid() \gset
+
+SELECT :xact_commit_after > :xact_commit_before;
 
 -- use a savepoint: 1 insert, 1 live
 BEGIN;
