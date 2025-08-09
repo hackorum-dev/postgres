@@ -685,6 +685,61 @@ pg_stat_get_activity(PG_FUNCTION_ARGS)
 	return (Datum) 0;
 }
 
+/*
+ * Returns statistics of PG backends.
+ */
+Datum
+pg_stat_get_backend_relations(PG_FUNCTION_ARGS)
+{
+#define PG_STAT_GET_BACKEND_STATS_COLS	3
+	int			num_backends = pgstat_fetch_stat_numbackends();
+	int			curr_backend;
+	int			pid = PG_ARGISNULL(0) ? -1 : PG_GETARG_INT32(0);
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+
+	InitMaterializedSRF(fcinfo, 0);
+
+	/* 1-based index */
+	for (curr_backend = 1; curr_backend <= num_backends; curr_backend++)
+	{
+		/* for each row */
+		Datum		values[PG_STAT_GET_BACKEND_STATS_COLS] = {0};
+		bool		nulls[PG_STAT_GET_BACKEND_STATS_COLS] = {0};
+		LocalPgBackendStatus *local_beentry;
+		PgBackendStatus *beentry;
+		PgStat_Backend *backend_stats;
+
+		/* Get the next one in the list */
+		local_beentry = pgstat_get_local_beentry_by_index(curr_backend);
+		beentry = &local_beentry->backendStatus;
+
+		/* If looking for specific PID, ignore all the others */
+		if (pid != -1 && beentry->st_procpid != pid)
+			continue;
+
+		backend_stats = pgstat_fetch_stat_backend_by_pid(beentry->st_procpid, NULL);
+
+		values[0] = Int32GetDatum(beentry->st_procpid);
+
+		if (!backend_stats)
+			continue;
+
+		values[1] = Int64GetDatum(backend_stats->heap_scan);
+
+		if (backend_stats->stat_reset_timestamp != 0)
+			values[2] = TimestampTzGetDatum(backend_stats->stat_reset_timestamp);
+		else
+			nulls[2] = true;
+
+		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
+
+		/* If only a single backend was requested, and we found it, break. */
+		if (pid != -1)
+			break;
+	}
+
+	return (Datum) 0;
+}
 
 Datum
 pg_backend_pid(PG_FUNCTION_ARGS)

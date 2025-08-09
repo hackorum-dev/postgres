@@ -118,6 +118,8 @@ SELECT t.seq_scan, t.seq_tup_read, t.idx_scan, t.idx_tup_fetch,
        pg_catalog.pg_statio_user_tables AS b
  WHERE t.relname='tenk2' AND b.relname='tenk2';
 COMMIT;
+SELECT seq_scan AS seq_scan_before
+  FROM pg_stat_backend_relation WHERE pid = pg_backend_pid() \gset
 -- test effects of TRUNCATE on n_live_tup/n_dead_tup counters
 CREATE TABLE trunc_stats_test(id serial);
 CREATE TABLE trunc_stats_test1(id serial, stuff text);
@@ -236,6 +238,14 @@ FROM prevstats AS pr;
 (1 row)
 
 COMMIT;
+SELECT seq_scan AS seq_scan_after
+  FROM pg_stat_backend_relation WHERE pid = pg_backend_pid() \gset
+SELECT :seq_scan_after > :seq_scan_before;
+ ?column? 
+----------
+ t
+(1 row)
+
 ----
 -- Basic tests for track_functions
 ---

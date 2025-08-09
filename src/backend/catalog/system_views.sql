@@ -911,6 +911,13 @@ CREATE VIEW pg_stat_activity AS
         LEFT JOIN pg_database AS D ON (S.datid = D.oid)
         LEFT JOIN pg_authid AS U ON (S.usesysid = U.oid);
 
+CREATE VIEW pg_stat_backend_relation AS
+    SELECT
+            S.pid,
+            S.seq_scan,
+            S.stats_reset
+    FROM pg_stat_get_backend_relations(NULL) AS S;
+
 CREATE VIEW pg_stat_replication AS
     SELECT
             S.pid,
