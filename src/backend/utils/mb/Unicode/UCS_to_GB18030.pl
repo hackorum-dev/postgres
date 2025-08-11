@@ -4,14 +4,18 @@
 #
 # src/backend/utils/mb/Unicode/UCS_to_GB18030.pl
 #
+
 # Generate UTF-8 <--> GB18030 code conversion tables from
-# "gb-18030-2000.xml", obtained from
-# http://source.icu-project.org/repos/icu/data/trunk/charset/data/xml/
+# "gb-18030-2000.ucm", a Unicode Character Mapping file (UCM) from ICU,
+# obtained from https://github.com/unicode-org/icu-data/blob/d9d3a6ed27bb98a7106763e940258f0be8cd995b/charset/data/ucm/gb-18030-2000.ucm
 #
-# The lines we care about in the source file look like
-#    <a u="009A" b="81 30 83 36"/>
-# where the "u" field is the Unicode code point in hex,
-# and the "b" field is the hex byte sequence for GB18030
+# The lines we care about in the source file look like:
+#   <UXXXX> \xYY[\xYY...] |n
+# where <UXXXX> is the Unicode code point in hex,
+# and the \xYY... is the hex byte sequence for GB18030,
+# and n is a flag indicating the type of mapping having
+# a single value of 0.
+#
 
 use strict;
 use warnings FATAL => 'all';
@@ -22,29 +26,46 @@ my $this_script = 'src/backend/utils/mb/Unicode/UCS_to_GB18030.pl';
 
 # Read the input
 
-my $in_file = "gb-18030-2000.xml";
-
+my $in_file = "gb-18030-2000.ucm";
 open(my $in, '<', $in_file) || die("cannot open $in_file");
 
 my @mapping;
+my $in_charmap = 0;
 
-while (<$in>)
-{
-	next if (!m/<a u="([0-9A-F]+)" b="([0-9A-F ]+)"/);
-	my ($u, $c) = ($1, $2);
-	$c =~ s/ //g;
-	my $ucs = hex($u);
-	my $code = hex($c);
-	if ($code >= 0x80 && $ucs >= 0x0080)
-	{
-		push @mapping,
-		  {
-			ucs => $ucs,
-			code => $code,
-			direction => BOTH,
-			f => $in_file,
-			l => $.
-		  };
+while (<$in>) {
+	chomp;
+	# Enter CHARMAP section
+	if (/^CHARMAP/) {
+		$in_charmap = 1;
+		next;
+	}
+	# Exit CHARMAP section
+	if (/^END CHARMAP/) {
+		$in_charmap = 0;
+		last;
+	}
+	next unless $in_charmap;
+	# Skip comments and empty lines
+	next if /^#/ || /^$/;
+
+	# Match lines like: <UXXXX> \xYY[\xYY...] |n, and use only (|0) mappings
+	if (/^<U([0-9A-Fa-f]+)>\s+((?:\\x[0-9A-Fa-f]{2})+)\s*\|(\d+)/) {
+		my ($u, $c, $flag) = ($1, $2, $3);
+		next if ($flag ne '0'); # non-0 flags
+		my $ucs = hex($u);
+		# Remove \x and concatenate bytes
+		my $c_hex = $c;
+		$c_hex =~ s/\\x//g;
+		my $code = hex($c_hex);
+		if ($code >= 0x80 && $ucs >= 0x0080) {
+			push @mapping, {
+				ucs => $ucs,
+				code => $code,
+				direction => BOTH,
+				f => $in_file,
+				l => $.
+			};
+		}
 	}
 }
 close($in);
