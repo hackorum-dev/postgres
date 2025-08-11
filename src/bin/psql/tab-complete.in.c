@@ -2955,6 +2955,22 @@ match_previous_words(int pattern_id,
 		set_completion_reference(prev3_wd);
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_constraint_of_table);
 	}
+	/* if we have ALTER TABLE <sth> ALTER|DROP|RENAME CONSTRAINT <constraint>, provide possible patterns  */
+	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER|DROP|RENAME", "CONSTRAINT", MatchAny))
+	{
+		COMPLETE_WITH("ENFORCED", "NOT ENFORCED", "NO INHERIT", "INHERIT", "DEFERRABLE",
+					  "NOT DEFERRABLE", "INITIALLY IMMEDIATE", "INITIALLY DEFERRED");
+	}
+	/* if we have ALTER TABLE <sth> ALTER|DROP|RENAME CONSTRAINT <constraint> NO, provide INHERIT  */
+	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER|DROP|RENAME", "CONSTRAINT", MatchAny, "NO"))
+	{
+		COMPLETE_WITH("INHERIT");
+	}
+	/* if we have ALTER TABLE <sth> ALTER|DROP|RENAME CONSTRAINT <constraint> NOT, provide DEFERRABLE or ENFORCED */
+	else if (Matches("ALTER", "TABLE", MatchAny, "ALTER|DROP|RENAME", "CONSTRAINT", MatchAny, "NOT"))
+	{
+		COMPLETE_WITH("DEFERRABLE", "ENFORCED");
+	}
 	/* ALTER TABLE <sth> VALIDATE CONSTRAINT <non-validated constraint> */
 	else if (Matches("ALTER", "TABLE", MatchAny, "VALIDATE", "CONSTRAINT"))
 	{
