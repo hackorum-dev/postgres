@@ -870,6 +870,13 @@ OPTIONS (ADD password_required 'false');
          </listitem>
         </itemizedlist>
        </para>
+
+      <para>
+       If the incoming connection to the FDW instance does not use SCRAM,
+       <literal>use_scram_passthrough</literal> is ignored and authentication
+       will instead use the password from the user mapping, if one is provided.
+      </para>
+
       </listitem>
      </varlistentry>
 
