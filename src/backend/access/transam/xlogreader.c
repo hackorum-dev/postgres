@@ -2106,8 +2106,9 @@ RestoreBlockImage(XLogReaderState *record, uint8 block_id, char *page)
 
 		if ((bkpb->bimg_info & BKPIMAGE_COMPRESS_PGLZ) != 0)
 		{
-			if (pglz_decompress(ptr, bkpb->bimg_len, tmp.data,
-								BLCKSZ - bkpb->hole_length, true) < 0)
+			int32 slen = bkpb->bimg_len;
+			if (pglz_decompress_ext(ptr, &slen, tmp.data,
+								BLCKSZ - bkpb->hole_length, true, true, false, NULL) < 0)
 				decomp_success = false;
 		}
 		else if ((bkpb->bimg_info & BKPIMAGE_COMPRESS_LZ4) != 0)

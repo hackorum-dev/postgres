@@ -78,6 +78,8 @@ typedef struct
 	 */
 	char	   *refpoint;		/* pointer within original haystack string */
 	int			refpos;			/* 0-based character offset of the same point */
+
+	DetoastIterator iter;
 } TextPositionState;
 
 typedef struct
@@ -134,7 +136,7 @@ static text *text_substring(Datum str,
 							int32 length,
 							bool length_not_specified);
 static text *text_overlay(text *t1, text *t2, int sp, int sl);
-static int	text_position(text *t1, text *t2, Oid collid);
+static int	text_position(text *t1, text *t2, Oid collid, DetoastIterator iter);
 static void text_position_setup(text *t1, text *t2, Oid collid, TextPositionState *state);
 static bool text_position_next(TextPositionState *state);
 static char *text_position_next_internal(char *start_ptr, TextPositionState *state);
@@ -847,10 +849,18 @@ text_overlay(text *t1, text *t2, int sp, int sl)
 Datum
 textpos(PG_FUNCTION_ARGS)
 {
-	text	   *str = PG_GETARG_TEXT_PP(0);
+	text	   *str; // = PG_GETARG_TEXT_PP(0);
 	text	   *search_str = PG_GETARG_TEXT_PP(1);
+	struct varlena *attr = (struct varlena *)
+								DatumGetPointer(PG_GETARG_DATUM(0));
+	DetoastIterator iter = create_detoast_iterator(attr);
 
-	PG_RETURN_INT32((int32) text_position(str, search_str, PG_GET_COLLATION()));
+	if (iter != NULL)
+		str = (text *) iter->buf->buf;
+	else
+		str = PG_GETARG_TEXT_PP(0);
+
+	PG_RETURN_INT32((int32) text_position(str, search_str, PG_GET_COLLATION(), iter));
 }
 
 /*
@@ -868,7 +878,7 @@ textpos(PG_FUNCTION_ARGS)
  *	functions.
  */
 static int
-text_position(text *t1, text *t2, Oid collid)
+text_position(text *t1, text *t2, Oid collid, DetoastIterator iter)
 {
 	TextPositionState state;
 	int			result;
@@ -885,6 +895,7 @@ text_position(text *t1, text *t2, Oid collid)
 		return 0;
 
 	text_position_setup(t1, t2, collid, &state);
+	state.iter = iter;
 	/* don't need greedy mode here */
 	state.greedy = false;
 
@@ -954,6 +965,7 @@ text_position_setup(text *t1, text *t2, Oid collid, TextPositionState *state)
 	state->last_match = NULL;
 	state->refpoint = state->str1;
 	state->refpos = 0;
+	state->iter = NULL;
 
 	/*
 	 * Prepare the skip table for Boyer-Moore-Horspool searching.  In these
@@ -1136,6 +1148,9 @@ text_position_next_internal(char *start_ptr, TextPositionState *state)
 		hptr = start_ptr;
 		while (hptr < haystack_end)
 		{
+			if (state->iter != NULL)
+				PG_DETOAST_ITERATE(state->iter, hptr);
+
 			/*
 			 * First check the common case that there is a match in the
 			 * haystack of exactly the length of the needle.
@@ -1175,6 +1190,9 @@ text_position_next_internal(char *start_ptr, TextPositionState *state)
 		hptr = start_ptr;
 		while (hptr < haystack_end)
 		{
+			if (state->iter != NULL)
+				PG_DETOAST_ITERATE(state->iter, hptr);
+
 			if (*hptr == nchar)
 				return (char *) hptr;
 			hptr++;
@@ -1191,6 +1209,9 @@ text_position_next_internal(char *start_ptr, TextPositionState *state)
 			/* Match the needle scanning *backward* */
 			const char *nptr;
 			const char *p;
+
+			if (state->iter != NULL)
+				PG_DETOAST_ITERATE(state->iter, hptr);
 
 			nptr = needle_last;
 			p = hptr;
@@ -1260,6 +1281,7 @@ text_position_reset(TextPositionState *state)
 static void
 text_position_cleanup(TextPositionState *state)
 {
+	free_detoast_iterator(state->iter);
 	/* no cleanup needed */
 }
 
