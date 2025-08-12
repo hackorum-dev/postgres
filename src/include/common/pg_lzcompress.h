@@ -89,5 +89,13 @@ extern int32 pglz_decompress(const char *source, int32 slen, char *dest,
 							 int32 rawsize, bool check_complete);
 extern int32 pglz_maximum_compressed_size(int32 rawsize,
 										  int32 total_compressed_size);
+extern int32
+pglz_decompress_state(const char *source, int32 *slen, char *dest,
+					  int32 dlen, bool check_complete, bool last_source_chunk,
+					  void **pstate);
+int32
+pglz_decompress_ext(const char *source, int32 *slen, char *dest,
+					  int32 rawsize, bool check_complete, bool last_source_chunk,
+					  bool is_iter, void **pstate);
 
 #endif							/* _PG_LZCOMPRESS_H_ */

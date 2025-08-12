@@ -12,6 +12,11 @@
 #ifndef DETOAST_H
 #define DETOAST_H
 
+#include "postgres.h"
+#include "access/genam.h"
+#include "access/toast_compression.h"
+#include "utils/relcache.h"
+
 /*
  * Macro to fetch the possibly-unaligned contents of an EXTERNAL datum
  * into a local "struct varatt_external" toast pointer.  This should be
@@ -32,6 +37,70 @@ do { \
 
 /* Size of an EXTERNAL datum that contains an indirection pointer */
 #define INDIRECT_POINTER_SIZE (VARHDRSZ_EXTERNAL + sizeof(varatt_indirect))
+
+/*
+ * TOAST buffer is a producer consumer buffer.
+ *
+ *    +--+--+--+--+--+--+--+--+--+--+--+--+--+
+ *    |  |  |  |  |  |  |  |  |  |  |  |  |  |
+ *    +--+--+--+--+--+--+--+--+--+--+--+--+--+
+ *    ^           ^           ^              ^
+ *   buf      position      limit         capacity
+ *
+ * buf: point to the start of buffer.
+ * position: point to the next char to be consumed.
+ * limit: point to the next char to be produced.
+ * capacity: point to the end of buffer.
+ *
+ * Constraints that need to be satisfied:
+ * buf <= position <= limit <= capacity
+ */
+typedef struct ToastBuffer
+{
+	char	*buf;
+	char	*position;
+	char		*limit;
+	char	*capacity;
+} ToastBuffer;
+
+typedef struct FetchDatumIteratorData
+{
+	ToastBuffer	*buf;
+	Relation	toastrel;
+	Relation	*toastidxs;
+	MemoryContext mcxt;
+	SysScanDesc	toastscan;
+	ScanKeyData	toastkey;
+	SnapshotData			snapshot;
+	struct varatt_external toast_pointer;
+	int32		ressize;
+	int32		nextidx;
+	int32		numchunks;
+	int			num_indexes;
+	bool		done;
+} FetchDatumIteratorData;
+
+typedef struct FetchDatumIteratorData *FetchDatumIterator;
+
+typedef struct DetoastIteratorData *DetoastIterator;
+
+typedef struct DetoastIteratorData
+{
+	ToastBuffer 		*buf;
+	FetchDatumIterator	fetch_datum_iterator;
+	DetoastIterator	   *self_ptr;
+	int					nrefs;
+	void			   *decompression_state;
+	ToastCompressionId	compression_method;
+	bool				compressed;		/* toast value is compressed? */
+	bool				done;
+} DetoastIteratorData;
+
+extern FetchDatumIterator create_fetch_datum_iterator(struct varlena *attr);
+extern void free_fetch_datum_iterator(FetchDatumIterator iter);
+extern void fetch_datum_iterate(FetchDatumIterator iter);
+extern ToastBuffer *create_toast_buffer(int32 size, bool compressed);
+extern void free_toast_buffer(ToastBuffer *buf);
 
 /* ----------
  * detoast_external_attr() -
@@ -78,5 +147,35 @@ extern Size toast_raw_datum_size(Datum value);
  * ----------
  */
 extern Size toast_datum_size(Datum value);
+
+/* ----------
+ * create_detoast_iterator -
+ *
+ * It only makes sense to initialize a de-TOAST iterator for external on-disk values.
+ *
+ * ----------
+ */
+extern DetoastIterator create_detoast_iterator(struct varlena *attr);
+
+/* ----------
+ * free_detoast_iterator -
+ *
+ * Free memory used by the de-TOAST iterator, including buffers and
+ * fetch datum iterator.
+ * ----------
+ */
+extern void free_detoast_iterator(DetoastIterator iter);
+
+/* ----------
+ * detoast_iterate -
+ *
+ * Iterate through the toasted value referenced by iterator.
+ *
+ * As long as there is another data chunk in external storage,
+ * de-TOAST it into iterator's toast buffer.
+ * ----------
+ */
+extern void
+detoast_iterate(DetoastIterator detoast_iter, const char *destend);
 
 #endif							/* DETOAST_H */

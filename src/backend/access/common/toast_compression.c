@@ -83,15 +83,17 @@ pglz_decompress_datum(const struct varlena *value)
 {
 	struct varlena *result;
 	int32		rawsize;
+	int32		slen;
 
 	/* allocate memory for the uncompressed data */
 	result = (struct varlena *) palloc(VARDATA_COMPRESSED_GET_EXTSIZE(value) + VARHDRSZ);
 
 	/* decompress the data */
-	rawsize = pglz_decompress((char *) value + VARHDRSZ_COMPRESSED,
-							  VARSIZE(value) - VARHDRSZ_COMPRESSED,
+	slen = VARSIZE(value) - VARHDRSZ_COMPRESSED;
+	rawsize = pglz_decompress_ext((char *) value + VARHDRSZ_COMPRESSED,
+							  &slen,
 							  VARDATA(result),
-							  VARDATA_COMPRESSED_GET_EXTSIZE(value), true);
+							  VARDATA_COMPRESSED_GET_EXTSIZE(value), true, true, false, NULL);
 	if (rawsize < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -111,15 +113,17 @@ pglz_decompress_datum_slice(const struct varlena *value,
 {
 	struct varlena *result;
 	int32		rawsize;
+	int32		slen;
 
 	/* allocate memory for the uncompressed data */
 	result = (struct varlena *) palloc(slicelength + VARHDRSZ);
 
 	/* decompress the data */
-	rawsize = pglz_decompress((char *) value + VARHDRSZ_COMPRESSED,
-							  VARSIZE(value) - VARHDRSZ_COMPRESSED,
+	slen = VARSIZE(value) - VARHDRSZ_COMPRESSED;
+	rawsize = pglz_decompress_ext((char *) value + VARHDRSZ_COMPRESSED,
+							  &slen,
 							  VARDATA(result),
-							  slicelength, false);
+							  slicelength, false, true, false, NULL);
 	if (rawsize < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),

@@ -17,6 +17,7 @@
 #include "access/table.h"
 #include "access/tableam.h"
 #include "access/toast_internals.h"
+#include "access/toast_compression.h"
 #include "common/int.h"
 #include "common/pg_lzcompress.h"
 #include "utils/expandeddatum.h"
@@ -28,6 +29,52 @@ static struct varlena *toast_fetch_datum_slice(struct varlena *attr,
 											   int32 slicelength);
 static struct varlena *toast_decompress_datum(struct varlena *attr);
 static struct varlena *toast_decompress_datum_slice(struct varlena *attr, int32 slicelength);
+static void toast_decompress_iterate(ToastBuffer *source, ToastBuffer *dest,
+						 ToastCompressionId compression_method,
+						 void **decompression_state,
+						 const char *destend);
+static void free_detoast_iterator_resources(DetoastIterator iter);
+
+
+void detoast_iterate(DetoastIterator detoast_iter, const char *destend)
+{
+	FetchDatumIterator fetch_iter = detoast_iter->fetch_datum_iterator;
+
+	Assert(detoast_iter != NULL && !detoast_iter->done);
+
+	if (!detoast_iter->compressed)
+		destend = NULL;
+
+	if (1 && destend)
+	{
+		const char *srcend = (const char *)
+			(fetch_iter->buf->limit == fetch_iter->buf->capacity ?
+			fetch_iter->buf->limit : fetch_iter->buf->limit - 4);
+
+		if (fetch_iter->buf->position >= srcend && !fetch_iter->done)
+			fetch_datum_iterate(fetch_iter);
+	}
+	else if (!fetch_iter->done)
+		fetch_datum_iterate(fetch_iter);
+
+	if (detoast_iter->compressed)
+		toast_decompress_iterate(fetch_iter->buf, detoast_iter->buf,
+								 detoast_iter->compression_method,
+								 &detoast_iter->decompression_state,
+								 destend);
+
+	if (detoast_iter->buf->limit == detoast_iter->buf->capacity)
+	{
+		detoast_iter->done = true;
+#if 0
+		if (detoast_iter->buf == fetch_iter->buf)
+			fetch_iter->buf = NULL;
+		free_fetch_datum_iterator(fetch_iter);
+		detoast_iter->fetch_datum_iterator = NULL;
+#endif
+	}
+}
+
 
 /* ----------
  * detoast_external_attr -
@@ -643,4 +690,203 @@ toast_datum_size(Datum value)
 		result = VARSIZE(attr);
 	}
 	return result;
+}
+
+void
+free_detoast_iterator_resources(DetoastIterator iter)
+{
+	if (iter->compressed && iter->buf)
+	{
+		free_toast_buffer(iter->buf);
+		iter->buf = NULL;
+	}
+
+	if (iter->fetch_datum_iterator)
+		free_fetch_datum_iterator(iter->fetch_datum_iterator);
+	iter->fetch_datum_iterator = NULL;
+
+	if (iter->self_ptr)
+		*iter->self_ptr = NULL;
+}
+
+/* ----------
+ * create_detoast_iterator -
+ *
+ * It only makes sense to initialize a de-TOAST iterator for external on-disk values.
+ *
+ * ----------
+ */
+DetoastIterator
+create_detoast_iterator(struct varlena *attr)
+{
+	struct varatt_external toast_pointer;
+	DetoastIterator iter;
+	if (VARATT_IS_EXTERNAL_ONDISK(attr))
+	{
+		FetchDatumIterator fetch_iter;
+
+		iter = (DetoastIterator) palloc0(sizeof(DetoastIteratorData));
+		iter->done = false;
+		iter->nrefs = 1;
+
+		/* This is an externally stored datum --- initialize fetch datum iterator */
+		iter->fetch_datum_iterator = fetch_iter = create_fetch_datum_iterator(attr);
+		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
+		if (VARATT_EXTERNAL_IS_COMPRESSED(toast_pointer))
+		{
+			iter->compressed = true;
+			iter->compression_method = VARATT_EXTERNAL_GET_COMPRESS_METHOD(toast_pointer);
+
+			/* prepare buffer to received decompressed data */
+			iter->buf = create_toast_buffer(toast_pointer.va_rawsize, false);
+		}
+		else
+		{
+			iter->compressed = false;
+			iter->compression_method = TOAST_INVALID_COMPRESSION_ID;
+
+			/* point the buffer directly at the raw data */
+			iter->buf = fetch_iter->buf;
+		}
+		return iter;
+	}
+	else if (VARATT_IS_EXTERNAL_INDIRECT(attr))
+	{
+		/* indirect pointer --- dereference it */
+		struct varatt_indirect redirect;
+
+		VARATT_EXTERNAL_GET_POINTER(redirect, attr);
+		attr = (struct varlena *) redirect.pointer;
+
+		/* nested indirect Datums aren't allowed */
+		Assert(!VARATT_IS_EXTERNAL_INDIRECT(attr));
+
+		/* recurse in case value is still extended in some other way */
+		return create_detoast_iterator(attr);
+
+	}
+	else if (1 && VARATT_IS_COMPRESSED(attr))
+	{
+		ToastBuffer *buf;
+
+		iter = (DetoastIterator) palloc0(sizeof(DetoastIteratorData));
+		iter->done = false;
+		iter->nrefs = 1;
+
+		iter->fetch_datum_iterator = palloc0(sizeof(*iter->fetch_datum_iterator));
+		iter->fetch_datum_iterator->buf = buf = create_toast_buffer(VARSIZE_ANY(attr), true);
+		iter->fetch_datum_iterator->done = true;
+		iter->compressed = true;
+		iter->compression_method = VARDATA_COMPRESSED_GET_COMPRESS_METHOD(attr);
+
+		memcpy((void *) buf->buf, attr, VARSIZE_ANY(attr));
+		buf->limit = (char *) buf->capacity;
+
+		/* prepare buffer to received decompressed data */
+		iter->buf = create_toast_buffer(TOAST_COMPRESS_EXTSIZE(attr) + VARHDRSZ, false);
+
+		return iter;
+	}
+	else
+		/* in-line value -- no iteration used, even if it's compressed */
+		return NULL;
+}
+
+/* ----------
+ * free_detoast_iterator -
+ *
+ * Free memory used by the de-TOAST iterator, including buffers and
+ * fetch datum iterator.
+ * ----------
+ */
+void
+free_detoast_iterator(DetoastIterator iter)
+{
+	if (iter == NULL)
+		return;
+
+	if (--iter->nrefs > 0)
+		return;
+
+	free_detoast_iterator_resources(iter);
+
+	pfree(iter);
+}
+
+static void
+toast_decompress_iterate(ToastBuffer *source, ToastBuffer *dest,
+						 ToastCompressionId compression_method,
+						 void **decompression_state,
+						 const char *destend)
+{
+	const char *sp;
+	const char *srcend;
+	char	   *dp;
+	int32		dlen;
+	int32		slen;
+	bool		last_source_chunk;
+
+	/*
+	 * In the while loop, sp may be incremented such that it points beyond
+	 * srcend. To guard against reading beyond the end of the current chunk,
+	 * we set srcend such that we exit the loop when we are within four bytes
+	 * of the end of the current chunk. When source->limit reaches
+	 * source->capacity, we are decompressing the last chunk, so we can (and
+	 * need to) read every byte.
+	 */
+	last_source_chunk = source->limit == source->capacity;
+	srcend = last_source_chunk ? source->limit : source->limit - 4;
+	sp = source->position;
+	dp = dest->limit;
+	if (destend > dest->capacity)
+		destend = dest->capacity;
+
+	slen = srcend - source->position;
+
+	/*
+	 * Decompress the data using the appropriate decompression routine.
+	 */
+	switch (compression_method)
+	{
+		case TOAST_PGLZ_COMPRESSION_ID:
+			dlen = pglz_decompress_ext(sp, &slen, dp, destend - dp,
+										 last_source_chunk && destend == dest->capacity,
+										 last_source_chunk,
+										 true, decompression_state);
+			break;
+		case TOAST_LZ4_COMPRESSION_ID:
+			if (source->limit < source->capacity)
+				dlen = 0;	/* LZ4 needs need full data to decompress */
+			else
+			{
+				/* decompress the data */
+#ifndef USE_LZ4
+				NO_LZ4_SUPPORT();
+				dlen = 0;
+#else
+				dlen = LZ4_decompress_safe(source->buf + VARHDRSZ_COMPRESSED,
+										   VARDATA(dest->buf),
+										   VARSIZE(source->buf) - VARHDRSZ_COMPRESSED,
+										   VARDATA_COMPRESSED_GET_EXTSIZE(source->buf));
+
+				if (dlen < 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_DATA_CORRUPTED),
+							 errmsg_internal("compressed lz4 data is corrupt")));
+#endif
+				slen = 0;
+			}
+			break;
+		default:
+			elog(ERROR, "invalid compression method id %d", compression_method);
+			return;		/* keep compiler quiet */
+	}
+
+	if (dlen < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg_internal("compressed data is corrupt")));
+
+	source->position += slen;
+	dest->limit += dlen;
 }

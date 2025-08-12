@@ -237,6 +237,19 @@ extern struct varlena *pg_detoast_datum_slice(struct varlena *datum,
 											  int32 first, int32 count);
 extern struct varlena *pg_detoast_datum_packed(struct varlena *datum);
 
+/*
+ * Support for de-TOASTing toasted value iteratively. "need" is a pointer
+ * between the beginning and end of iterator's ToastBuffer. The marco
+ * de-TOAST all bytes before "need" into iterator's ToastBuffer.
+ */
+#define PG_DETOAST_ITERATE(iter, need)											\
+	do {																		\
+		Assert((need) >= (iter)->buf->buf && (need) <= (iter)->buf->capacity);	\
+		while (!(iter)->done && (need) > (iter)->buf->limit) { 					\
+			detoast_iterate(iter, need);										\
+		}																		\
+	} while (0)
+
 #define PG_DETOAST_DATUM(datum) \
 	pg_detoast_datum((struct varlena *) DatumGetPointer(datum))
 #define PG_DETOAST_DATUM_COPY(datum) \

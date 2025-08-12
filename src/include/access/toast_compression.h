@@ -52,6 +52,11 @@ typedef enum ToastCompressionId
 
 #define CompressionMethodIsValid(cm)  ((cm) != InvalidCompressionMethod)
 
+#define NO_LZ4_SUPPORT() \
+	ereport(ERROR, \
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED), \
+			 errmsg("compression method lz4 not supported"), \
+			 errdetail("This functionality requires the server to be built with lz4 support.")))
 
 /* pglz compression/decompression routines */
 extern struct varlena *pglz_compress_datum(const struct varlena *value);

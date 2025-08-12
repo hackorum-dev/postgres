@@ -28,6 +28,7 @@
 
 static bool toastrel_valueid_exists(Relation toastrel, Oid valueid);
 static bool toastid_valueid_exists(Oid toastrelid, Oid valueid);
+void init_toast_snapshot(Snapshot toast_snapshot);
 
 /* ----------
  * toast_compress_datum -
@@ -653,4 +654,277 @@ get_toast_snapshot(void)
 		elog(ERROR, "cannot fetch toast data without an active snapshot");
 
 	return &SnapshotToastData;
+}
+
+/* ----------
+ * init_toast_snapshot
+ *
+ *	Initialize an appropriate TOAST snapshot.  We must use an MVCC snapshot
+ *	to initialize the TOAST snapshot; since we don't know which one to use,
+ *	just use the oldest one.  This is safe: at worst, we will get a "snapshot
+ *	too old" error that might have been avoided otherwise.
+ */
+void
+init_toast_snapshot(Snapshot toast_snapshot)
+{
+	Snapshot	snapshot = GetTransactionSnapshot();
+
+	if (snapshot == NULL)
+		elog(ERROR, "cannot fetch toast data without an active snapshot");
+	toast_snapshot->snapshot_type = SNAPSHOT_TOAST;
+}
+
+static void
+create_fetch_datum_iterator_scan(FetchDatumIterator iter)
+{
+	int			validIndex;
+
+	MemoryContext oldcxt = MemoryContextSwitchTo(iter->mcxt);
+
+	/*
+	 * Open the toast relation and its indexes
+	 */
+	iter->toastrel = table_open(iter->toast_pointer.va_toastrelid, AccessShareLock);
+
+	/* Look for the valid index of the toast relation */
+	validIndex = toast_open_indexes(iter->toastrel,
+									AccessShareLock,
+									&iter->toastidxs,
+									&iter->num_indexes);
+
+	/*
+	 * Setup a scan key to fetch from the index by va_valueid
+	 */
+	ScanKeyInit(&iter->toastkey,
+				(AttrNumber) 1,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(iter->toast_pointer.va_valueid));
+
+	/*
+	 * Read the chunks by index
+	 *
+	 * Note that because the index is actually on (valueid, chunkidx) we will
+	 * see the chunks in chunkidx order, even though we didn't explicitly ask
+	 * for it.
+	 */
+
+	init_toast_snapshot(&iter->snapshot);
+	iter->toastscan = systable_beginscan_ordered(iter->toastrel, iter->toastidxs[validIndex],
+												 &iter->snapshot, 1, &iter->toastkey);
+
+	MemoryContextSwitchTo(oldcxt);
+}
+
+/* ----------
+ * create_fetch_datum_iterator -
+ *
+ * Initialize fetch datum iterator.
+ * ----------
+ */
+FetchDatumIterator
+create_fetch_datum_iterator(struct varlena *attr)
+{
+	FetchDatumIterator iter;
+
+	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
+		elog(ERROR, "create_fetch_datum_iterator shouldn't be called for non-ondisk datums");
+
+	iter = (FetchDatumIterator) palloc0(sizeof(FetchDatumIteratorData));
+
+	iter->mcxt = CurrentMemoryContext;
+
+	/* Must copy to access aligned fields */
+	VARATT_EXTERNAL_GET_POINTER(iter->toast_pointer, attr);
+
+	iter->ressize = VARATT_EXTERNAL_GET_EXTSIZE(iter->toast_pointer);
+	iter->numchunks = ((iter->ressize - 1) / TOAST_MAX_CHUNK_SIZE) + 1;
+
+	iter->buf = create_toast_buffer(iter->ressize + VARHDRSZ,
+									VARATT_EXTERNAL_IS_COMPRESSED(iter->toast_pointer));
+
+	iter->nextidx = 0;
+	iter->done = false;
+
+	return iter;
+}
+
+void
+free_fetch_datum_iterator(FetchDatumIterator iter)
+{
+	if (iter == NULL)
+		return;
+
+	if (!iter->done && iter->toastscan)
+	{
+		systable_endscan_ordered(iter->toastscan);
+		toast_close_indexes(iter->toastidxs, iter->num_indexes, AccessShareLock);
+		table_close(iter->toastrel, AccessShareLock);
+	}
+	free_toast_buffer(iter->buf);
+	pfree(iter);
+}
+
+/* ----------
+ * fetch_datum_iterate -
+ *
+ * Iterate through the toasted value referenced by iterator.
+ *
+ * As long as there is another chunk data in external storage,
+ * fetch it into iterator's toast buffer.
+ * ----------
+ */
+void
+fetch_datum_iterate(FetchDatumIterator iter)
+{
+	HeapTuple	ttup;
+	TupleDesc	toasttupDesc;
+	int32		residx;
+	Pointer		chunk;
+	bool		isnull;
+	char		*chunkdata;
+	int32		chunksize;
+
+	Assert(iter != NULL && !iter->done);
+
+	if (!iter->toastscan)
+		create_fetch_datum_iterator_scan(iter);
+
+	ttup = systable_getnext_ordered(iter->toastscan, ForwardScanDirection);
+	if (ttup == NULL)
+	{
+		/*
+		 * Final checks that we successfully fetched the datum
+		 */
+		if (iter->nextidx != iter->numchunks)
+			elog(ERROR, "missing chunk number %d for toast value %u in %s",
+				 iter->nextidx,
+				 iter->toast_pointer.va_valueid,
+				 RelationGetRelationName(iter->toastrel));
+
+		/*
+		 * End scan and close relations
+		 */
+		systable_endscan_ordered(iter->toastscan);
+		toast_close_indexes(iter->toastidxs, iter->num_indexes, AccessShareLock);
+		table_close(iter->toastrel, AccessShareLock);
+
+		iter->done = true;
+		return;
+	}
+
+	/*
+	 * Have a chunk, extract the sequence number and the data
+	 */
+	toasttupDesc = iter->toastrel->rd_att;
+	residx = DatumGetInt32(fastgetattr(ttup, 2, toasttupDesc, &isnull));
+	Assert(!isnull);
+	chunk = DatumGetPointer(fastgetattr(ttup, 3, toasttupDesc, &isnull));
+	Assert(!isnull);
+	if (!VARATT_IS_EXTENDED(chunk))
+	{
+		chunksize = VARSIZE(chunk) - VARHDRSZ;
+		chunkdata = VARDATA(chunk);
+	}
+	else if (VARATT_IS_SHORT(chunk))
+	{
+		/* could happen due to heap_form_tuple doing its thing */
+		chunksize = VARSIZE_SHORT(chunk) - VARHDRSZ_SHORT;
+		chunkdata = VARDATA_SHORT(chunk);
+	}
+	else
+	{
+		/* should never happen */
+		elog(ERROR, "found toasted toast chunk for toast value %u in %s",
+			 iter->toast_pointer.va_valueid,
+			 RelationGetRelationName(iter->toastrel));
+		chunksize = 0;		/* keep compiler quiet */
+		chunkdata = NULL;
+	}
+
+	/*
+	 * Some checks on the data we've found
+	 */
+	if (residx != iter->nextidx)
+		elog(ERROR, "unexpected chunk number %d (expected %d) for toast value %u in %s",
+			 residx, iter->nextidx,
+			 iter->toast_pointer.va_valueid,
+			 RelationGetRelationName(iter->toastrel));
+	if (residx < iter->numchunks - 1)
+	{
+		if (chunksize != TOAST_MAX_CHUNK_SIZE)
+			elog(ERROR, "unexpected chunk size %d (expected %d) in chunk %d of %d for toast value %u in %s",
+				 chunksize, (int) TOAST_MAX_CHUNK_SIZE,
+				 residx, iter->numchunks,
+				 iter->toast_pointer.va_valueid,
+				 RelationGetRelationName(iter->toastrel));
+	}
+	else if (residx == iter->numchunks - 1)
+	{
+		if ((residx * TOAST_MAX_CHUNK_SIZE + chunksize) != iter->ressize)
+			elog(ERROR, "unexpected chunk size %d (expected %d) in final chunk %d for toast value %u in %s",
+				 chunksize,
+				 (int) (iter->ressize - residx * TOAST_MAX_CHUNK_SIZE),
+				 residx,
+				 iter->toast_pointer.va_valueid,
+				 RelationGetRelationName(iter->toastrel));
+	}
+	else
+		elog(ERROR, "unexpected chunk number %d (out of range %d..%d) for toast value %u in %s",
+			 residx,
+			 0, iter->numchunks - 1,
+			 iter->toast_pointer.va_valueid,
+			 RelationGetRelationName(iter->toastrel));
+
+	/*
+	 * Copy the data into proper place in our iterator buffer
+	 */
+	memcpy(iter->buf->limit, chunkdata, chunksize);
+	iter->buf->limit += chunksize;
+
+	iter->nextidx++;
+}
+
+/* ----------
+ * create_toast_buffer -
+ *
+ * Create and initialize a TOAST buffer.
+ *
+ * size: buffer size include header
+ * compressed: whether TOAST value is compressed
+ * ----------
+ */
+ToastBuffer *
+create_toast_buffer(int32 size, bool compressed)
+{
+	ToastBuffer *buf = (ToastBuffer *) palloc0(sizeof(ToastBuffer));
+	buf->buf = (const char *) palloc(size);
+	if (compressed)
+	{
+		SET_VARSIZE_COMPRESSED(buf->buf, size);
+		/*
+		 * Note the constraint buf->position <= buf->limit may be broken
+		 * at initialization. Make sure that the constraint is satisfied
+		 * when consuming chars.
+		 */
+		buf->position = VARDATA_4B_C(buf->buf);
+	}
+	else
+	{
+		SET_VARSIZE(buf->buf, size);
+		buf->position = VARDATA_4B(buf->buf);
+	}
+	buf->limit = VARDATA(buf->buf);
+	buf->capacity = buf->buf + size;
+
+	return buf;
+}
+
+void
+free_toast_buffer(ToastBuffer *buf)
+{
+	if (buf == NULL)
+		return;
+
+	pfree((void *)buf->buf);
+	pfree(buf);
 }
