@@ -103,6 +103,17 @@
   </fo:block>
 </xsl:template>
 
+<xsl:param name="shade.verbatim">1</xsl:param>
+<xsl:attribute-set name="shade.verbatim.style">
+  <xsl:attribute name="border">0.2pt solid black</xsl:attribute>
+  <xsl:attribute name="margin-left">0</xsl:attribute>
+  <xsl:attribute name="margin-right">0</xsl:attribute>
+  <xsl:attribute name="background-color">#FAFAFA</xsl:attribute>
+  <xsl:attribute name="padding">5pt</xsl:attribute>
+  <xsl:attribute name="padding-bottom">10pt</xsl:attribute>
+  <xsl:attribute name="padding-top">0pt</xsl:attribute>
+</xsl:attribute-set>
+
 <!-- overrides stylesheet-common.xsl -->
 <!-- FOP needs us to be explicit about the font to use for right arrow -->
 <xsl:template match="returnvalue">
