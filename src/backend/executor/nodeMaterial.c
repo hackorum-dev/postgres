@@ -61,7 +61,12 @@ ExecMaterial(PlanState *pstate)
 	 */
 	if (tuplestorestate == NULL && node->eflags != 0)
 	{
+		MemoryContext oldcontext = MemoryContextSwitchTo(GetWorkMem(pstate));
+
 		tuplestorestate = tuplestore_begin_heap(true, false, work_mem);
+
+		MemoryContextSwitchTo(oldcontext);
+
 		tuplestore_set_eflags(tuplestorestate, node->eflags);
 		if (node->eflags & EXEC_FLAG_MARK)
 		{

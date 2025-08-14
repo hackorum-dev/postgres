@@ -301,6 +301,9 @@ switchToPresortedPrefixMode(PlanState *pstate)
 	{
 		Tuplesortstate *prefixsort_state;
 		int			nPresortedCols = plannode->nPresortedCols;
+		MemoryContext oldcontext;
+
+		oldcontext = MemoryContextSwitchTo(GetWorkMem(pstate));
 
 		/*
 		 * Optimize the sort by assuming the prefix columns are all equal and
@@ -315,6 +318,9 @@ switchToPresortedPrefixMode(PlanState *pstate)
 												work_mem,
 												NULL,
 												node->bounded ? TUPLESORT_ALLOWBOUNDED : TUPLESORT_NONE);
+
+		MemoryContextSwitchTo(oldcontext);
+
 		node->prefixsort_state = prefixsort_state;
 	}
 	else
@@ -591,6 +597,8 @@ ExecIncrementalSort(PlanState *pstate)
 		 */
 		if (fullsort_state == NULL)
 		{
+			MemoryContext oldcontext;
+
 			/*
 			 * Initialize presorted column support structures for
 			 * isCurrentGroup(). It's correct to do this along with the
@@ -599,6 +607,8 @@ ExecIncrementalSort(PlanState *pstate)
 			 * first.
 			 */
 			preparePresortedCols(node);
+
+			oldcontext = MemoryContextSwitchTo(GetWorkMem(pstate));
 
 			/*
 			 * Since we optimize small prefix key groups by accumulating a
@@ -618,6 +628,9 @@ ExecIncrementalSort(PlanState *pstate)
 												  node->bounded ?
 												  TUPLESORT_ALLOWBOUNDED :
 												  TUPLESORT_NONE);
+
+			MemoryContextSwitchTo(oldcontext);
+
 			node->fullsort_state = fullsort_state;
 		}
 		else

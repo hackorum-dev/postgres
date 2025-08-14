@@ -1199,6 +1199,8 @@ typedef struct PlanState
 	TupleDesc	ps_ResultTupleDesc; /* node's return type */
 	TupleTableSlot *ps_ResultTupleSlot; /* slot for my result tuples */
 	ExprContext *ps_ExprContext;	/* node's expression-evaluation context */
+	MemoryContext	ps_WorkMem;	/* parent context for all workmem allocations */
+	size_t			ps_WorkMemLimit; /* enforceable work_mem limit in bytes */
 	ProjectionInfo *ps_ProjInfo;	/* info for doing tuple projection */
 
 	bool		async_capable;	/* true if node is async-capable */
@@ -2580,7 +2582,6 @@ typedef struct AggState
 	bool		hash_ever_spilled;	/* ever spilled during this execution? */
 	bool		hash_spill_mode;	/* we hit a limit during the current batch
 									 * and we must not create new groups */
-	Size		hash_mem_limit; /* limit before spilling hash table */
 	uint64		hash_ngroups_limit; /* limit before spilling hash table */
 	int			hash_planned_partitions;	/* number of partitions planned
 											 * for first pass */

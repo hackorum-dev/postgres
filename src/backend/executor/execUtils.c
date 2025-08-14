@@ -229,13 +229,21 @@ FreeExecutorState(EState *estate)
 	MemoryContextDelete(estate->es_query_cxt);
 }
 
-/*
- * Internal implementation for CreateExprContext() and CreateWorkExprContext()
- * that allows control over the AllocSet parameters.
+/* ----------------
+ *		CreateExprContext
+ *
+ *		Create a context for expression evaluation within an EState.
+ *
+ * An executor run may require multiple ExprContexts (we usually make one
+ * for each Plan node, and a separate one for per-output-tuple processing
+ * such as constraint checking).  Each ExprContext has its own "per-tuple"
+ * memory context.
+ *
+ * Note we make no assumption about the caller's memory context.
+ * ----------------
  */
-static ExprContext *
-CreateExprContextInternal(EState *estate, Size minContextSize,
-						  Size initBlockSize, Size maxBlockSize)
+ExprContext *
+CreateExprContext(EState *estate)
 {
 	ExprContext *econtext;
 	MemoryContext oldcontext;
@@ -258,9 +266,7 @@ CreateExprContextInternal(EState *estate, Size minContextSize,
 	econtext->ecxt_per_tuple_memory =
 		AllocSetContextCreate(estate->es_query_cxt,
 							  "ExprContext",
-							  minContextSize,
-							  initBlockSize,
-							  maxBlockSize);
+							  ALLOCSET_DEFAULT_SIZES);
 
 	econtext->ecxt_param_exec_vals = estate->es_param_exec_vals;
 	econtext->ecxt_param_list_info = estate->es_param_list_info;
@@ -290,49 +296,228 @@ CreateExprContextInternal(EState *estate, Size minContextSize,
 	return econtext;
 }
 
-/* ----------------
- *		CreateExprContext
- *
- *		Create a context for expression evaluation within an EState.
- *
- * An executor run may require multiple ExprContexts (we usually make one
- * for each Plan node, and a separate one for per-output-tuple processing
- * such as constraint checking).  Each ExprContext has its own "per-tuple"
- * memory context.
- *
- * Note we make no assumption about the caller's memory context.
- * ----------------
+/*
+ * Based on the working memory limit, compute a reasonable maximum block size
+ * for a memory context.  The size should be small enough that a small
+ * allocation that requires a new block does not cause the allocated working
+ * memory limit to be dramatically exceeded.
  */
-ExprContext *
-CreateExprContext(EState *estate)
+static size_t
+WorkMemClampBlockSize(PlanState *ps, size_t size)
 {
-	return CreateExprContextInternal(estate, ALLOCSET_DEFAULT_SIZES);
+	size_t maxBlockSize = pg_prevpower2_size_t(ps->ps_WorkMemLimit / 16);
+
+	return Min(maxBlockSize, size);
 }
 
+static MemoryContext
+ValidateWorkMemParent(PlanState *ps, MemoryContext parent)
+{
+	if (parent != NULL)
+	{
+#ifdef USE_ASSERT_CHECKING
+		MemoryContext cur = parent;
+		MemoryContext workmem = GetWorkMem(ps);
+		while (cur != NULL && cur != workmem)
+			cur = MemoryContextGetParent(cur);
+		/* parent must be a subcontext of the working memory context */
+		Assert(cur == workmem);
+#endif
+		return parent;
+	}
+	else
+		return GetWorkMem(ps);
+}
+
+/*
+ * Set limit for working memory in bytes.  Caller must use CheckWorkMemLimit()
+ * to test and enforce the limit.
+ */
+size_t
+GetWorkMemLimit(PlanState *ps)
+{
+	return ps->ps_WorkMemLimit;
+}
+
+/*
+ * Set limit for working memory in bytes.  Caller must use CheckWorkMemLimit()
+ * to test and enforce the limit.
+ */
+void
+SetWorkMemLimit(PlanState *ps, size_t limit)
+{
+	ps->ps_WorkMemLimit = limit;
+}
+
+/*
+ * Return false if working memory limit has been exceeded.
+ */
+bool
+CheckWorkMemLimit(PlanState *ps)
+{
+	size_t allocated = MemoryContextMemAllocated(GetWorkMem(ps), true);
+	return allocated <= ps->ps_WorkMemLimit;
+}
+
+MemoryContext
+GetWorkMem(PlanState *ps)
+{
+	if (ps->ps_WorkMem == NULL)
+	{
+		const char *name;
+
+		switch (nodeTag(ps))
+		{
+			case T_AggState:
+				name = "Aggregate WorkMem";
+				break;
+			case T_HashJoinState:
+				name = "HashJoin WorkMem";
+				break;
+			case T_HashState:
+				name = "Hash WorkMem";
+				break;
+			case T_SortState:
+				name = "Sort WorkMem";
+				break;
+			default:
+				name = "WorkMem";
+				break;
+		}
+
+		/*
+		 * We are sure that "name" points to a compile-time constant, so we
+		 * can call the internal version.
+		 */
+		ps->ps_WorkMem = AllocSetContextCreateInternal(
+			ps->state->es_query_cxt,
+			name,
+			WorkMemClampBlockSize(ps, ALLOCSET_DEFAULT_MINSIZE),
+			WorkMemClampBlockSize(ps, ALLOCSET_DEFAULT_MAXSIZE),
+			WorkMemClampBlockSize(ps, ALLOCSET_DEFAULT_MAXSIZE));
+	}
+
+	return ps->ps_WorkMem;
+}
+
+MemoryContext
+CreateWorkMemAllocSet_Internal(PlanState *ps, MemoryContext parent, const char *name,
+							   size_t minContextSize, size_t initBlockSize,
+							   size_t maxBlockSize)
+{
+	MemoryContext context;
+
+	parent = ValidateWorkMemParent(ps, parent);
+
+	/*
+	 * CreateWorkMemAllocSet() macro ensures that "name" points to a
+	 * compile-time constant, so we can call the internal version.
+	 */
+	context = AllocSetContextCreateInternal(parent,
+											name,
+											WorkMemClampBlockSize(ps, minContextSize),
+											WorkMemClampBlockSize(ps, initBlockSize),
+											WorkMemClampBlockSize(ps, maxBlockSize));
+
+	return context;
+}
+
+MemoryContext
+CreateWorkMemBump(PlanState *ps, MemoryContext parent, const char *name,
+				  size_t minContextSize, size_t initBlockSize,
+				  size_t maxBlockSize)
+{
+	MemoryContext context;
+
+	parent = ValidateWorkMemParent(ps, parent);
+
+	/*
+	 * CreateWorkMemAllocSet() macro ensures that "name" points to a
+	 * compile-time constant, so we can call the internal version.
+	 */
+	context = BumpContextCreate(ValidateWorkMemParent(ps, parent),
+								name,
+								WorkMemClampBlockSize(ps, minContextSize),
+								WorkMemClampBlockSize(ps, initBlockSize),
+								WorkMemClampBlockSize(ps, maxBlockSize));
+
+	return context;
+}
+
+/*
+ * Release all working memory including subcontexts.
+ */
+void
+DestroyWorkMem(PlanState *ps)
+{
+	if (ps->ps_WorkMem != NULL)
+	{
+		MemoryContextDelete(ps->ps_WorkMem);
+		ps->ps_WorkMem = NULL;
+	}
+}
 
 /* ----------------
  *		CreateWorkExprContext
  *
- * Like CreateExprContext, but specifies the AllocSet sizes to be reasonable
- * in proportion to work_mem. If the maximum block allocation size is too
- * large, it's easy to skip right past work_mem with a single allocation.
+ * Like CreateExprContext, but intended for operations where work_mem should
+ * be enforced for ecxt_per_tuple_memory.  The caller is responsible for
+ * calling ReScanExprContext() when necessary.
+ *
  * ----------------
  */
 ExprContext *
-CreateWorkExprContext(EState *estate)
+CreateWorkExprContext(PlanState *ps)
 {
-	Size		maxBlockSize = ALLOCSET_DEFAULT_MAXSIZE;
+	ExprContext		*econtext;
+	EState			*estate = ps->state;
+	MemoryContext	 oldcontext;
 
-	maxBlockSize = pg_prevpower2_size_t(work_mem * (Size) 1024 / 16);
+	/* Create the ExprContext node within the per-query memory context */
+	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
-	/* But no bigger than ALLOCSET_DEFAULT_MAXSIZE */
-	maxBlockSize = Min(maxBlockSize, ALLOCSET_DEFAULT_MAXSIZE);
+	econtext = makeNode(ExprContext);
 
-	/* and no smaller than ALLOCSET_DEFAULT_INITSIZE */
-	maxBlockSize = Max(maxBlockSize, ALLOCSET_DEFAULT_INITSIZE);
+	/* Initialize fields of ExprContext */
+	econtext->ecxt_scantuple = NULL;
+	econtext->ecxt_innertuple = NULL;
+	econtext->ecxt_outertuple = NULL;
 
-	return CreateExprContextInternal(estate, ALLOCSET_DEFAULT_MINSIZE,
-									 ALLOCSET_DEFAULT_INITSIZE, maxBlockSize);
+	econtext->ecxt_per_query_memory = estate->es_query_cxt;
+
+	/*
+	 * Create working memory for expression evaluation in this context.
+	 */
+	econtext->ecxt_per_tuple_memory = CreateWorkMemAllocSet(ps, NULL,
+															"WorkExprContext",
+															ALLOCSET_DEFAULT_SIZES);
+
+	econtext->ecxt_param_exec_vals = estate->es_param_exec_vals;
+	econtext->ecxt_param_list_info = estate->es_param_list_info;
+
+	econtext->ecxt_aggvalues = NULL;
+	econtext->ecxt_aggnulls = NULL;
+
+	econtext->caseValue_datum = (Datum) 0;
+	econtext->caseValue_isNull = true;
+
+	econtext->domainValue_datum = (Datum) 0;
+	econtext->domainValue_isNull = true;
+
+	econtext->ecxt_estate = estate;
+
+	econtext->ecxt_callbacks = NULL;
+
+	/*
+	 * Link the ExprContext into the EState to ensure it is shut down when the
+	 * EState is freed.  Because we use lcons(), shutdowns will occur in
+	 * reverse order of creation, which may not be essential but can't hurt.
+	 */
+	estate->es_exprcontexts = lcons(econtext, estate->es_exprcontexts);
+
+	MemoryContextSwitchTo(oldcontext);
+
+	return econtext;
 }
 
 /* ----------------

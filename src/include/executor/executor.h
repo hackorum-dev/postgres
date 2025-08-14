@@ -638,7 +638,18 @@ extern void end_tup_output(TupOutputState *tstate);
 extern EState *CreateExecutorState(void);
 extern void FreeExecutorState(EState *estate);
 extern ExprContext *CreateExprContext(EState *estate);
-extern ExprContext *CreateWorkExprContext(EState *estate);
+extern MemoryContext GetWorkMem(PlanState *ps);
+extern void DestroyWorkMem(PlanState *ps);
+extern size_t GetWorkMemLimit(PlanState *ps);
+extern void SetWorkMemLimit(PlanState *ps, size_t limit);
+extern bool CheckWorkMemLimit(PlanState *ps);
+extern MemoryContext CreateWorkMemAllocSet_Internal(PlanState *ps, MemoryContext parent,
+													const char *name, size_t minContextSize,
+													size_t initBlockSize, size_t maxBlockSize);
+extern MemoryContext CreateWorkMemBump(PlanState *ps, MemoryContext parent,
+									   const char *name, size_t minContextSize,
+									   size_t initBlockSize, size_t maxBlockSize);
+extern ExprContext *CreateWorkExprContext(PlanState *ps);
 extern ExprContext *CreateStandaloneExprContext(void);
 extern void FreeExprContext(ExprContext *econtext, bool isCommit);
 extern void ReScanExprContext(ExprContext *econtext);
@@ -663,6 +674,21 @@ extern ExprContext *MakePerTupleExprContext(EState *estate);
 		if ((estate)->es_per_tuple_exprcontext) \
 			ResetExprContext((estate)->es_per_tuple_exprcontext); \
 	} while (0)
+
+/*
+ * This wrapper macro exists to check for non-constant strings used as context
+ * names; that's no longer supported.  (Use MemoryContextSetIdentifier if you
+ * want to provide a variable identifier.)
+ */
+#ifdef HAVE__BUILTIN_CONSTANT_P
+#define CreateWorkMemAllocSet(ps, parent, name, ...) \
+	(StaticAssertExpr(__builtin_constant_p(name), \
+					  "memory context names must be constant strings"), \
+	 CreateWorkMemAllocSet_Internal(ps, parent, name, __VA_ARGS__))
+#else
+#define AllocSetContextCreate \
+	AllocSetContextCreateInternal
+#endif
 
 extern void ExecAssignExprContext(EState *estate, PlanState *planstate);
 extern TupleDesc ExecGetResultType(PlanState *planstate);

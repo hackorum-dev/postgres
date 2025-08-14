@@ -388,6 +388,9 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			break;
 	}
 
+	if (GetWorkMemLimit(result) == 0)
+		SetWorkMemLimit(result, work_mem * 1024L);
+
 	ExecSetExecProcNode(result, result->ExecProcNode);
 
 	/*
@@ -579,6 +582,9 @@ ExecEndNode(PlanState *node)
 		bms_free(node->chgParam);
 		node->chgParam = NULL;
 	}
+
+	if (node->ps_WorkMem != NULL)
+		MemoryContextStats(node->ps_WorkMem);
 
 	switch (nodeTag(node))
 	{

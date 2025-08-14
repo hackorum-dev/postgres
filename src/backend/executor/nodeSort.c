@@ -78,6 +78,7 @@ ExecSort(PlanState *pstate)
 		PlanState  *outerNode;
 		TupleDesc	tupDesc;
 		int			tuplesortopts = TUPLESORT_NONE;
+		MemoryContext oldcontext;
 
 		SO1_printf("ExecSort: %s\n",
 				   "sorting subplan");
@@ -102,6 +103,8 @@ ExecSort(PlanState *pstate)
 		if (node->bounded)
 			tuplesortopts |= TUPLESORT_ALLOWBOUNDED;
 
+		oldcontext = MemoryContextSwitchTo(GetWorkMem(pstate));
+
 		if (node->datumSort)
 			tuplesortstate = tuplesort_begin_datum(TupleDescAttr(tupDesc, 0)->atttypid,
 												   plannode->sortOperators[0],
@@ -120,6 +123,9 @@ ExecSort(PlanState *pstate)
 												  work_mem,
 												  NULL,
 												  tuplesortopts);
+
+		MemoryContextSwitchTo(oldcontext);
+
 		if (node->bounded)
 			tuplesort_set_bound(tuplesortstate, node->bound);
 		node->tuplesortstate = tuplesortstate;
@@ -179,6 +185,7 @@ ExecSort(PlanState *pstate)
 			si = &node->shared_info->sinstrument[ParallelWorkerNumber];
 			tuplesort_get_stats(tuplesortstate, si);
 		}
+
 		SO1_printf("ExecSort: %s\n", "sorting done");
 	}
 
@@ -253,6 +260,8 @@ ExecInitSort(Sort *node, EState *estate, int eflags)
 	 * Sort nodes don't initialize their ExprContexts because they never call
 	 * ExecQual or ExecProject.
 	 */
+
+	SetWorkMemLimit(&sortstate->ss.ps, work_mem * 1024L);
 
 	/*
 	 * initialize child nodes

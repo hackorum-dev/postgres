@@ -522,6 +522,9 @@ initialize_phase(AggState *aggstate, int newphase)
 		Sort	   *sortnode = aggstate->phases[newphase + 1].sortnode;
 		PlanState  *outerNode = outerPlanState(aggstate);
 		TupleDesc	tupDesc = ExecGetResultType(outerNode);
+		MemoryContext oldcontext;
+
+		oldcontext = MemoryContextSwitchTo(GetWorkMem(&aggstate->ss.ps));
 
 		aggstate->sort_out = tuplesort_begin_heap(tupDesc,
 												  sortnode->numCols,
@@ -531,6 +534,8 @@ initialize_phase(AggState *aggstate, int newphase)
 												  sortnode->nullsFirst,
 												  work_mem,
 												  NULL, TUPLESORT_NONE);
+
+		MemoryContextSwitchTo(oldcontext);
 	}
 
 	aggstate->current_phase = newphase;
@@ -585,6 +590,8 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
 	 */
 	if (pertrans->aggsortrequired)
 	{
+		MemoryContext oldcontext;
+
 		/*
 		 * In case of rescan, maybe there could be an uncompleted sort
 		 * operation?  Clean it up if so.
@@ -592,6 +599,7 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
 		if (pertrans->sortstates[aggstate->current_set])
 			tuplesort_end(pertrans->sortstates[aggstate->current_set]);
 
+		oldcontext = MemoryContextSwitchTo(GetWorkMem(&aggstate->ss.ps));
 
 		/*
 		 * We use a plain Datum sorter when there's a single input column;
@@ -618,6 +626,8 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
 									 pertrans->sortCollations,
 									 pertrans->sortNullsFirst,
 									 work_mem, NULL, TUPLESORT_NONE);
+
+		MemoryContextSwitchTo(oldcontext);
 	}
 
 	/*
@@ -1481,7 +1491,7 @@ build_hash_tables(AggState *aggstate)
 
 		Assert(perhash->aggnode->numGroups > 0);
 
-		memory = aggstate->hash_mem_limit / aggstate->num_hashes;
+		memory = GetWorkMemLimit(&aggstate->ss.ps) / aggstate->num_hashes;
 
 		/* choose reasonable number of buckets per hashtable */
 		nbuckets = hash_choose_num_buckets(aggstate->hashentrysize,
@@ -1867,13 +1877,6 @@ static void
 hash_agg_check_limits(AggState *aggstate)
 {
 	uint64		ngroups = aggstate->hash_ngroups_current;
-	Size		meta_mem = MemoryContextMemAllocated(aggstate->hash_metacxt,
-													 true);
-	Size		entry_mem = MemoryContextMemAllocated(aggstate->hash_tablecxt,
-													  true);
-	Size		tval_mem = MemoryContextMemAllocated(aggstate->hashcontext->ecxt_per_tuple_memory,
-													 true);
-	Size		total_mem = meta_mem + entry_mem + tval_mem;
 	bool		do_spill = false;
 
 #ifdef USE_INJECTION_POINTS
@@ -1892,7 +1895,7 @@ hash_agg_check_limits(AggState *aggstate)
 	 * can be sure to make progress even in edge cases.
 	 */
 	if (aggstate->hash_ngroups_current > 0 &&
-		(total_mem > aggstate->hash_mem_limit ||
+		(!CheckWorkMemLimit(&aggstate->ss.ps) ||
 		 ngroups > aggstate->hash_ngroups_limit))
 	{
 		do_spill = true;
@@ -1999,13 +2002,11 @@ hash_agg_update_metrics(AggState *aggstate, bool from_tape, int npartitions)
 static void
 hash_create_memory(AggState *aggstate)
 {
-	Size		maxBlockSize = ALLOCSET_DEFAULT_MAXSIZE;
-
 	/*
 	 * The hashcontext's per-tuple memory will be used for byref transition
 	 * values and returned by AggCheckCallContext().
 	 */
-	aggstate->hashcontext = CreateWorkExprContext(aggstate->ss.ps.state);
+	aggstate->hashcontext = CreateWorkExprContext(&aggstate->ss.ps);
 
 	/*
 	 * The meta context will be used for the bucket array of
@@ -2015,7 +2016,7 @@ hash_create_memory(AggState *aggstate)
 	 * the large allocation path will be used, so it's not worth worrying
 	 * about wasting space due to power-of-two allocations.
 	 */
-	aggstate->hash_metacxt = AllocSetContextCreate(aggstate->ss.ps.state->es_query_cxt,
+	aggstate->hash_metacxt = CreateWorkMemAllocSet(&aggstate->ss.ps, NULL,
 												   "HashAgg meta context",
 												   ALLOCSET_DEFAULT_SIZES);
 
@@ -2030,25 +2031,9 @@ hash_create_memory(AggState *aggstate)
 	 * Like CreateWorkExprContext(), use smaller sizings for smaller work_mem,
 	 * to avoid large jumps in memory usage.
 	 */
-
-	/*
-	 * Like CreateWorkExprContext(), use smaller sizings for smaller work_mem,
-	 * to avoid large jumps in memory usage.
-	 */
-	maxBlockSize = pg_prevpower2_size_t(work_mem * (Size) 1024 / 16);
-
-	/* But no bigger than ALLOCSET_DEFAULT_MAXSIZE */
-	maxBlockSize = Min(maxBlockSize, ALLOCSET_DEFAULT_MAXSIZE);
-
-	/* and no smaller than ALLOCSET_DEFAULT_INITSIZE */
-	maxBlockSize = Max(maxBlockSize, ALLOCSET_DEFAULT_INITSIZE);
-
-	aggstate->hash_tablecxt = BumpContextCreate(aggstate->ss.ps.state->es_query_cxt,
+	aggstate->hash_tablecxt = CreateWorkMemBump(&aggstate->ss.ps, NULL,
 												"HashAgg table context",
-												ALLOCSET_DEFAULT_MINSIZE,
-												ALLOCSET_DEFAULT_INITSIZE,
-												maxBlockSize);
-
+												ALLOCSET_DEFAULT_SIZES);
 }
 
 /*
@@ -2684,6 +2669,7 @@ agg_refill_hash_table(AggState *aggstate)
 	HashAggSpill spill;
 	LogicalTapeSet *tapeset = aggstate->hash_tapeset;
 	bool		spill_initialized = false;
+	size_t		mem_limit;
 
 	if (aggstate->hash_batches == NIL)
 		return false;
@@ -2693,8 +2679,9 @@ agg_refill_hash_table(AggState *aggstate)
 	aggstate->hash_batches = list_delete_last(aggstate->hash_batches);
 
 	hash_agg_set_limits(aggstate->hashentrysize, batch->input_card,
-						batch->used_bits, &aggstate->hash_mem_limit,
+						batch->used_bits, &mem_limit,
 						&aggstate->hash_ngroups_limit, NULL);
+	SetWorkMemLimit(&aggstate->ss.ps, mem_limit);
 
 	/*
 	 * Each batch only processes one grouping set; set the rest to NULL so
@@ -3371,6 +3358,8 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	aggstate->aggcontexts = (ExprContext **)
 		palloc0(sizeof(ExprContext *) * numGroupingSets);
 
+	SetWorkMemLimit(&aggstate->ss.ps, get_hash_memory_limit());
+
 	/*
 	 * Create expression contexts.  We need three or more, one for
 	 * per-input-tuple processing, one for per-output-tuple processing, one
@@ -3689,6 +3678,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	{
 		Plan	   *outerplan = outerPlan(node);
 		uint64		totalGroups = 0;
+		size_t		mem_limit;
 
 		aggstate->hash_spill_rslot = ExecInitExtraTupleSlot(estate, scanDesc,
 															&TTSOpsMinimalTuple);
@@ -3712,9 +3702,11 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 			totalGroups += aggstate->perhash[k].aggnode->numGroups;
 
 		hash_agg_set_limits(aggstate->hashentrysize, totalGroups, 0,
-							&aggstate->hash_mem_limit,
+							&mem_limit,
 							&aggstate->hash_ngroups_limit,
 							&aggstate->hash_planned_partitions);
+		SetWorkMemLimit(&aggstate->ss.ps, mem_limit);
+
 		find_hash_columns(aggstate);
 
 		/* Skip massive memory allocation if we are just doing EXPLAIN */

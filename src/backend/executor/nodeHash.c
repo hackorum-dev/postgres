@@ -533,15 +533,15 @@ ExecHashTableCreate(HashState *state)
 	 * Create temporary memory contexts in which to keep the hashtable working
 	 * storage.  See notes in executor/hashjoin.h.
 	 */
-	hashtable->hashCxt = AllocSetContextCreate(CurrentMemoryContext,
+	hashtable->hashCxt = CreateWorkMemAllocSet(&state->ps, NULL,
 											   "HashTableContext",
 											   ALLOCSET_DEFAULT_SIZES);
 
-	hashtable->batchCxt = AllocSetContextCreate(hashtable->hashCxt,
+	hashtable->batchCxt = CreateWorkMemAllocSet(&state->ps, hashtable->hashCxt,
 												"HashBatchContext",
 												ALLOCSET_DEFAULT_SIZES);
 
-	hashtable->spillCxt = AllocSetContextCreate(hashtable->hashCxt,
+	hashtable->spillCxt = CreateWorkMemAllocSet(&state->ps, hashtable->hashCxt,
 												"HashSpillContext",
 												ALLOCSET_DEFAULT_SIZES);
 
