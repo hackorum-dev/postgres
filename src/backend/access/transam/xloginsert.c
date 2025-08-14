@@ -1053,6 +1053,26 @@ XLogCheckBufferNeedsBackup(Buffer buffer)
 }
 
 /*
+ * Ensure that the XLogRecord is not too large.
+ *
+ * XLogReader machinery is only able to handle records up to a certain
+ * size (ignoring machine resource limitations), so make sure that we will
+ * not emit records larger than the sizes advertised to be supported.
+ */
+void
+XLogPreCheckSize(uint32 data_len)
+{
+	if (data_len > XLogRecordMaxSize)
+	{
+		ereport(ERROR,
+				(errmsg_internal("oversized WAL record"),
+				 errdetail_internal("WAL record would be %" PRIu32
+									" bytes (of maximum %u bytes).",
+									data_len, XLogRecordMaxSize)));
+	}
+}
+
+/*
  * Write a backup block if needed when we are setting a hint. Note that
  * this may be called for a variety of page types, not just heaps.
  *
