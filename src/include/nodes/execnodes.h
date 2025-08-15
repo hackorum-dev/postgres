@@ -1244,6 +1244,8 @@ typedef struct PlanState
 
 	bool		async_capable;	/* true if node is async-capable */
 
+	bool		shutdown;		/* ExecShutdownNode() called */
+
 	/*
 	 * Scanslot's descriptor if known. This is a bit of a hack, but otherwise
 	 * it's hard for expression compilation to optimize based on the
