@@ -169,7 +169,10 @@ MultiExecPrivateHash(HashState *node)
 
 		slot = ExecProcNode(outerNode);
 		if (TupIsNull(slot))
+		{
+			ExecShutdownNode(outerNode);
 			break;
+		}
 		/* We have to compute the hash value */
 		econtext->ecxt_outertuple = slot;
 
