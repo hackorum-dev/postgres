@@ -1775,6 +1775,9 @@ ExecShutdownHashJoin(HashJoinState *node)
 		 */
 		ExecHashTableDetachBatch(node->hj_HashTable);
 		ExecHashTableDetach(node->hj_HashTable);
+
+		ExecHashTableDestroy(node->hj_HashTable);
+		node->hj_HashTable = NULL;
 	}
 }
 

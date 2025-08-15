@@ -758,7 +758,7 @@ ExecShutdownNode(PlanState *node)
 static bool
 ExecShutdownNode_walker(PlanState *node, void *context)
 {
-	if (node == NULL)
+	if (node == NULL || node->shutdown)
 		return false;
 
 	check_stack_depth();
@@ -805,6 +805,8 @@ ExecShutdownNode_walker(PlanState *node, void *context)
 	/* Stop the node if we started it above, reporting 0 tuples. */
 	if (node->instrument && node->instrument->running)
 		InstrStopNode(node->instrument, 0);
+
+	node->shutdown = true;
 
 	return false;
 }
