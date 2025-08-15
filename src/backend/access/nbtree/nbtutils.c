@@ -2432,9 +2432,12 @@ _bt_set_startikey(IndexScanDesc scan, BTReadPageState *pstate)
 		int32		result;
 
 		/*
-		 * Determine if it's safe to set pstate.startikey to an offset to a
-		 * key that comes after this key, by examining this key
-		 */
+		* Determine whether we can set pstate.startikey to a later key offset,
+		* ensuring that all earlier scan keys are satisfied by every tuple on
+		* the current page. This is done by comparing the key against the first
+		* and last tuples on the page.
+		*/
+
 		if (!(key->sk_flags & (SK_BT_REQFWD | SK_BT_REQBKWD)))
 		{
 			/* Scan key isn't marked required (corner case) */
