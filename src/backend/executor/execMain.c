@@ -1724,6 +1724,8 @@ ExecutePlan(QueryDesc *queryDesc,
 	bool		use_parallel_mode;
 	TupleTableSlot *slot;
 	uint64		current_tuple_count;
+	size_t		mem_current = 0;
+	size_t		mem_hwm = 0;
 
 	/*
 	 * initialize local variables
@@ -1764,6 +1766,10 @@ ExecutePlan(QueryDesc *queryDesc,
 		 * Execute the plan and obtain a tuple
 		 */
 		slot = ExecProcNode(planstate);
+
+		mem_current = MemoryContextMemAllocated(TopMemoryContext, true);
+		if (mem_current > mem_hwm)
+			mem_hwm = mem_current;
 
 		/*
 		 * if the tuple is null, then we assume there is nothing more to
@@ -1825,6 +1831,13 @@ ExecutePlan(QueryDesc *queryDesc,
 
 	if (use_parallel_mode)
 		ExitParallelMode();
+
+	mem_current = MemoryContextMemAllocated(TopMemoryContext, true);
+	if (mem_current > mem_hwm)
+		mem_hwm = mem_current;
+
+	MemoryContextStats(TopMemoryContext);
+	elog(NOTICE, "mem_hwm: %zu", mem_hwm);
 }
 
 
