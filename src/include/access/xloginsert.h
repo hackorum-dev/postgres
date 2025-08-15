@@ -54,6 +54,7 @@ extern void XLogRegisterBlock(uint8 block_id, RelFileLocator *rlocator,
 extern void XLogRegisterBufData(uint8 block_id, const void *data, uint32 len);
 extern void XLogResetInsertion(void);
 extern bool XLogCheckBufferNeedsBackup(Buffer buffer);
+extern void XLogPreCheckSize(uint32 size);
 
 extern XLogRecPtr log_newpage(RelFileLocator *rlocator, ForkNumber forknum,
 							  BlockNumber blkno, Page page, bool page_std);

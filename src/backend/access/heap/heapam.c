@@ -61,6 +61,7 @@ static XLogRecPtr log_heap_update(Relation reln, Buffer oldbuf,
 								  Buffer newbuf, HeapTuple oldtup,
 								  HeapTuple newtup, HeapTuple old_key_tuple,
 								  bool all_visible_cleared, bool new_all_visible_cleared);
+static void log_heap_precheck(Relation reln, HeapTuple tp);
 #ifdef USE_ASSERT_CHECKING
 static void check_lock_if_inplace_updateable_rel(Relation relation,
 												 ItemPointer otid,
@@ -9062,6 +9063,34 @@ log_heap_update(Relation reln, Buffer oldbuf,
 }
 
 /*
+ * Pre-check potential XLogRecord oversize. XLogRecord will be created
+ * later, and it's size will be checked. However, this operation will
+ * occur within a critical section, and in the event of failure, a core
+ * dump will be generated.
+ * It does't seem good, so to avoid this, we can calculate the approximate
+ * xlog record size here and check it.
+
+ * Size prediction is based on xlog update and xlog delete logic, and can
+ * be revised if it changes. For now, the buf size is limited by
+ * UINT16_MAX (Assert(regbuf->rdata_len <= UINT16_MAX) in xloginsert).
+
+ * Anyway, to accommodate some overhead, 1M is subtracted from the predicted
+ * value. It seems like that's enough for now.
+ */
+static void
+log_heap_precheck(Relation reln, HeapTuple tp)
+{
+#define XLogRecordMaxOverhead ((uint32) (1024 * 1024))
+
+	if (tp && RelationIsLogicallyLogged(reln))
+	{
+		uint32		data_len = tp->t_len - SizeofHeapTupleHeader;
+
+		XLogPreCheckSize(data_len + XLogRecordMaxOverhead);
+	}
+}
+
+/*
  * Perform XLogInsert of an XLOG_HEAP2_NEW_CID record
  *
  * This is only used in wal_level >= WAL_LEVEL_LOGICAL, and only for catalog
@@ -9178,6 +9207,7 @@ ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
 			*copy = true;
 			tp = toast_flatten_tuple(tp, desc);
 		}
+		log_heap_precheck(relation, tp);
 		return tp;
 	}
 
@@ -9234,6 +9264,7 @@ ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
 		heap_freetuple(oldtup);
 	}
 
+	log_heap_precheck(relation, key_tuple);
 	return key_tuple;
 }
 
