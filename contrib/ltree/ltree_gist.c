@@ -11,6 +11,7 @@
 #include "crc32.h"
 #include "ltree.h"
 #include "utils/array.h"
+#include "utils/rel.h"
 
 #define NEXTVAL(x) ( (lquery*)( (char*)(x) + INTALIGN( VARSIZE(x) ) ) )
 #define ISEQ(a,b)	( (a)->numlevel == (b)->numlevel && ltree_compare(a,b)==0 )
@@ -100,6 +101,18 @@ ltree_compress(PG_FUNCTION_ARGS)
 	{							/* ltree */
 		ltree	   *val = DatumGetLtreeP(entry->key);
 		ltree_gist *key = ltree_gist_alloc(false, NULL, 0, val, 0);
+		int			siglen = LTREE_GET_SIGLEN();
+
+		if (siglen + VARSIZE(val) * 2 > GISTMaxIndexKeySize)
+		{
+			Size		max_size = (GISTMaxIndexKeySize - siglen) / 2;
+
+			ereport(ERROR,
+					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+					 errmsg("index key size %zu exceeds maximum %zu for index \"%s\"",
+							VARSIZE(val), max_size,
+							RelationGetRelationName(entry->rel))));
+		}
 
 		retval = palloc_object(GISTENTRY);
 		gistentryinit(*retval, PointerGetDatum(key),
