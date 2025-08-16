@@ -35,6 +35,7 @@
 #include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
 #include "miscadmin.h"
+#include "optimizer/cost.h"
 #include "port/pg_bitutils.h"
 #include "utils/dynahash.h"
 #include "utils/lsyscache.h"
@@ -667,7 +668,9 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 	double		inner_rel_bytes;
 	size_t		hash_table_bytes;
 	size_t		bucket_bytes;
+	size_t		max_alloc_pointers;
 	size_t		max_pointers;
+	size_t		max_batches;
 	int			nbatch = 1;
 	int			nbuckets;
 	double		dbuckets;
@@ -771,9 +774,21 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 	 * ExecHashGetBucketAndBatch fast.
 	 */
 	max_pointers = hash_table_bytes / sizeof(HashJoinTuple);
-	max_pointers = Min(max_pointers, MaxAllocSize / sizeof(HashJoinTuple));
+	max_alloc_pointers = MaxAllocSize / sizeof(HashJoinTuple);
+	max_pointers = Min(max_pointers, macx_alloca_pointers);
 	/* If max_pointers isn't a power of 2, must round it down to one */
 	max_pointers = pg_prevpower2_size_t(max_pointers);
+
+	/*
+	 * Prevent DSA overflow. This is expanded definition of EstimateParallelHashJoinBatch function
+	 * used in ExecParallelHashJoinSetUpBatches:
+	 *     dsa_allocate0(hashtable->area,
+	 *                   EstimateParallelHashJoinBatch(hashtable) * nbatch)
+	 */
+	max_batches = MaxAllocSize / (MAXALIGN(sizeof(ParallelHashJoinBatch)) +
+								  MAXALIGN(sts_estimate(max_parallel_workers_per_gather + 1) * 2));
+	max_batches = Min(max_batches, MaxAllocSize / sizeof(ParallelHashJoinBatchAccessor));
+	max_batches = pg_prevpower2_size_t(max_batches);
 
 	/* Also ensure we avoid integer overflow in nbatch and nbuckets */
 	/* (this step is redundant given the current value of MaxAllocSize) */
@@ -844,6 +859,7 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 		/* Calculate required number of batches. */
 		dbatch = ceil(inner_rel_bytes / (hash_table_bytes - bucket_bytes));
 		dbatch = Min(dbatch, max_pointers);
+		dbatch = Min(dbatch, max_batches);
 		minbatch = (int) dbatch;
 		nbatch = pg_nextpower2_32(Max(2, minbatch));
 	}
@@ -910,7 +926,8 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 	 * this during the initial sizing - once we start building the hash,
 	 * nbucket is fixed.
 	 */
-	while (nbatch > 0)
+	while (nbatch > 0 &&
+		   nbuckets * 2 <= max_alloc_pointers) /* prevent allocation limit overflow */
 	{
 		/* how much memory are we using with current nbatch value */
 		size_t		current_space = hash_table_bytes + (2 * nbatch * BLCKSZ);
