@@ -1329,7 +1329,7 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 			 */
 			if (HeapTupleIsValid(rftuple))
 			{
-				bool		isnull = true;
+				bool		isnull;
 				Datum		whereClauseDatum;
 				Datum		columnListDatum;
 
