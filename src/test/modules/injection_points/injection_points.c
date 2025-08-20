@@ -87,8 +87,6 @@ typedef struct InjectionPointSharedState
 	/* Names of injection points attached to wait counters */
 	char		name[INJ_MAX_WAIT][INJ_NAME_MAXLEN];
 
-	/* Condition variable used for waits and wakeups */
-	ConditionVariable wait_point;
 } InjectionPointSharedState;
 
 /* Pointer to shared-memory state. */
@@ -132,7 +130,6 @@ injection_point_init_state(void *ptr)
 	SpinLockInit(&state->lock);
 	memset(state->wait_counts, 0, sizeof(state->wait_counts));
 	memset(state->name, 0, sizeof(state->name));
-	ConditionVariableInit(&state->wait_point);
 }
 
 /* Shared memory initialization when loading module */
@@ -323,7 +320,6 @@ injection_wait(const char *name, const void *private_data, void *arg)
 			 name);
 
 	/* And sleep.. */
-	ConditionVariablePrepareToSleep(&inj_state->wait_point);
 	for (;;)
 	{
 		uint32		new_wait_counts;
@@ -334,9 +330,11 @@ injection_wait(const char *name, const void *private_data, void *arg)
 
 		if (old_wait_counts != new_wait_counts)
 			break;
-		ConditionVariableSleep(&inj_state->wait_point, injection_wait_event);
+
+		pgstat_report_wait_start(injection_wait_event);
+#define DEFAULT_INJ_POINT_SLEEP_MICROSEC 50000L /* 50 milliseconds */
+		pg_usleep(DEFAULT_INJ_POINT_SLEEP_MICROSEC);
 	}
-	ConditionVariableCancelSleep();
 
 	/* Remove this injection point from the waiters. */
 	SpinLockAcquire(&inj_state->lock);
@@ -486,8 +484,6 @@ injection_points_wakeup(PG_FUNCTION_ARGS)
 	inj_state->wait_counts[index]++;
 	SpinLockRelease(&inj_state->lock);
 
-	/* And broadcast the change to the waiters */
-	ConditionVariableBroadcast(&inj_state->wait_point);
 	PG_RETURN_VOID();
 }
 
