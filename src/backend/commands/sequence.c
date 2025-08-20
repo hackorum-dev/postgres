@@ -1836,7 +1836,11 @@ pg_get_sequence_data(PG_FUNCTION_ARGS)
 
 		seq = read_seq_tuple(seqrel, &buf, &seqtuple);
 
-		values[0] = Int64GetDatum(seq->last_value);
+		if (seq->is_called)
+			values[0] = Int64GetDatum(seq->last_value);
+		else
+			isnull[0] = true;
+
 		values[1] = BoolGetDatum(seq->is_called);
 
 		UnlockReleaseBuffer(buf);

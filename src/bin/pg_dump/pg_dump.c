@@ -19175,8 +19175,8 @@ dumpSequenceData(Archive *fout, const TableDataInfo *tdinfo)
 		entry = bsearch(&key, sequences, nsequences,
 						sizeof(SequenceItem), SequenceItemCmp);
 
-		last = entry->last_value;
 		called = entry->is_called;
+		last = called ? entry->last_value : entry->startv;
 	}
 
 	resetPQExpBuffer(query);
