@@ -730,6 +730,32 @@ adjustJoinTreeList(Query *parsetree, bool removert, int rt_index)
 }
 
 
+static Node *
+ConvertVarToCoerceToDomain(Var *var)
+{
+	Oid			baseTypeId;
+	int32		baseTypeMod;
+	Node	   *result;
+
+	baseTypeMod = var->vartypmod;
+	baseTypeId = getBaseTypeAndTypmod(var->vartype, &baseTypeMod);
+	if (baseTypeId != var->vartype &&
+		DomainHasInvalidConstraints(var->vartype))
+	{
+		result = coerce_to_domain((Node *) var,
+								  baseTypeId, baseTypeMod,
+								  var->vartype,
+								  COERCION_IMPLICIT,
+								  COERCE_IMPLICIT_CAST,
+								  -1,
+								  false);
+	}
+	else
+		result = (Node *) var;
+
+	return result;
+}
+
 /*
  * rewriteTargetListIU - rewrite INSERT/UPDATE targetlist into standard form
  *
@@ -806,6 +832,7 @@ rewriteTargetListIU(List *targetList,
 
 		if (!old_tle->resjunk)
 		{
+			Node	   *node = (Node *) old_tle->expr;
 			/* Normal attr: stash it into new_tles[] */
 			attrno = old_tle->resno;
 			if (attrno < 1 || attrno > numattrs)
@@ -816,6 +843,13 @@ rewriteTargetListIU(List *targetList,
 			if (att_tup->attisdropped)
 				continue;
 
+			if (IsA(node, Var))
+			{
+				Node 	*result;
+				result = ConvertVarToCoerceToDomain((Var *) node);
+
+				old_tle->expr = (Expr *) result;
+			}
 			/* Merge with any prior assignment to same attribute */
 			new_tles[attrno - 1] =
 				process_matched_tle(old_tle,
@@ -984,6 +1018,21 @@ rewriteTargetListIU(List *targetList,
 								NameStr(att_tup->attname)),
 						 errdetail("Column \"%s\" is a generated column.",
 								   NameStr(att_tup->attname))));
+			if (!new_tle && !att_tup->attgenerated && !apply_default)
+			{
+				Node 	*result;
+				Var		   *var;
+
+				var = makeVar(1, att_tup->attnum, att_tup->atttypid,
+							  att_tup->atttypmod, att_tup->attcollation, 0);
+
+				result = ConvertVarToCoerceToDomain(var);
+				if (IsA(result, CoerceToDomain))
+					new_tle = makeTargetEntry((Expr *) result,
+											  att_tup->attnum,
+											  NameStr(att_tup->attname),
+											  true);
+			}
 		}
 
 		if (att_tup->attgenerated)

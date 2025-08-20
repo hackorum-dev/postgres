@@ -537,6 +537,24 @@ ALTER DOMAIN things VALIDATE CONSTRAINT meow;
 UPDATE thethings SET stuff = 10;
 ALTER DOMAIN things VALIDATE CONSTRAINT meow;
 
+create domain d1 as int;
+create table dt1(i int, c d1, d int);
+insert into dt1 values(1,2);
+alter domain d1 add constraint cc check(value <> 2) not valid;
+explain (verbose, costs off) update dt1 set i = i + 1;
+
+update dt1 set i = i + 1; --error
+update dt1 set i = i + 1, c = c; --error
+update dt1 set i = i + 1, c = c::d1; --error
+update dt1 set i = i + 1, c = 2; --error
+
+truncate dt1;
+insert into dt1 values(1,3);
+update dt1 set i = i + 1; --ok
+
+drop table dt1;
+drop domain d1;
+
 -- Confirm ALTER DOMAIN with RULES.
 create table domtab (col1 integer);
 create domain dom as integer;

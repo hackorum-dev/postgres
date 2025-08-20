@@ -121,6 +121,8 @@ typedef struct TypeCacheEntry
 	 */
 	DomainConstraintCache *domainData;
 
+	bool		invalidDomainConstr;
+
 	/* Private data, for internal use of typcache.c only */
 	int			flags;			/* flags about what we've computed */
 
@@ -184,6 +186,7 @@ extern void InitDomainConstraintRef(Oid type_id, DomainConstraintRef *ref,
 extern void UpdateDomainConstraintRef(DomainConstraintRef *ref);
 
 extern bool DomainHasConstraints(Oid type_id);
+extern bool DomainHasInvalidConstraints(Oid type_id);
 
 extern TupleDesc lookup_rowtype_tupdesc(Oid type_id, int32 typmod);
 

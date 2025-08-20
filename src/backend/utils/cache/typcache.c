@@ -510,6 +510,7 @@ lookup_type_cache(Oid type_id, int flags)
 			firstDomainTypeEntry = typentry;
 		}
 
+		typentry->invalidDomainConstr = false;
 		ReleaseSysCache(tp);
 	}
 	else if (!(typentry->flags & TCFLAGS_HAVE_PG_TYPE_DATA))
@@ -1164,6 +1165,9 @@ load_domaintype_info(TypeCacheEntry *typentry)
 			if (c->contype != CONSTRAINT_CHECK)
 				continue;
 
+			if (!c->convalidated)
+				typentry->invalidDomainConstr = true;
+
 			/* Not expecting conbin to be NULL, but we'll test for it anyway */
 			val = fastgetattr(conTup, Anum_pg_constraint_conbin,
 							  conRel->rd_att, &isNull);
@@ -1496,6 +1500,21 @@ DomainHasConstraints(Oid type_id)
 	typentry = lookup_type_cache(type_id, TYPECACHE_DOMAIN_CONSTR_INFO);
 
 	return (typentry->domainData != NULL);
+}
+
+
+bool
+DomainHasInvalidConstraints(Oid type_id)
+{
+	TypeCacheEntry *typentry;
+
+	/*
+	 * Note: a side effect is to cause the typcache's domain data to become
+	 * valid.  This is fine since we'll likely need it soon if there is any.
+	 */
+	typentry = lookup_type_cache(type_id, TYPECACHE_DOMAIN_CONSTR_INFO);
+
+	return typentry->invalidDomainConstr;
 }
 
 
