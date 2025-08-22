@@ -17,6 +17,11 @@
 #include <ctype.h>
 
 #include "access/attnum.h"
+#include "catalog/objectaddress.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_operator.h"
+#include "catalog/pg_proc.h"
+#include "catalog/pg_type.h"
 #include "common/shortest_dec.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
@@ -30,6 +35,8 @@ static bool write_location_fields = false;
 
 static void outChar(StringInfo str, char c);
 static void outDouble(StringInfo str, double d);
+static char *oidToString(const char *attName, Oid oid);
+static char *oidArrayToString(const char *attName, const Oid *oids, int len);
 
 
 /*
@@ -64,7 +71,12 @@ static void outDouble(StringInfo str, double d);
 
 /* Write an OID field (don't hard-wire assumption that OID is same as uint) */
 #define WRITE_OID_FIELD(fldname) \
-	appendStringInfo(str, " :" CppAsString(fldname) " %u", node->fldname)
+	{ \
+		char * s = oidToString(CppAsString(fldname), node->fldname); \
+		appendStringInfo(str, " :" CppAsString(fldname) " %u", node->fldname); \
+		if (s != NULL) \
+			appendStringInfo(str, " # %s", s); \
+	}
 
 /* Write a long-integer field */
 #define WRITE_LONG_FIELD(fldname) \
@@ -121,8 +133,12 @@ static void outDouble(StringInfo str, double d);
 
 /* Write a variable-length array of Oid */
 #define WRITE_OID_ARRAY(fldname, len) \
-	(appendStringInfoString(str, " :" CppAsString(fldname) " "), \
-	 writeOidCols(str, node->fldname, len))
+	{ \
+		char *s = oidArrayToString(CppAsString(fldname), node->fldname, len); \
+		appendStringInfoString(str, " :" CppAsString(fldname) " "); \
+	 	writeOidCols(str, node->fldname, len); \
+		if (s != NULL) appendStringInfo(str, " # %s", s); \
+	}
 
 /* Write a variable-length array of Index */
 #define WRITE_INDEX_ARRAY(fldname, len) \
@@ -222,6 +238,69 @@ outDouble(StringInfo str, double d)
 	appendStringInfoString(str, buf);
 }
 
+static char *
+oidToString(const char *attName, Oid oid)
+{
+	ObjectAddress ob;
+
+	ob.objectId = oid;
+	ob.objectSubId = 0;
+	if ((strncmp(attName, "opno", 5) == 0) ||
+		(strncmp(attName, "eqop", 5) == 0) ||
+		(strncmp(attName, "sortop", 7) == 0) ||
+		(strncmp(attName, "sort.sortOperators", 19) == 0))
+	{
+		ob.classId = OperatorRelationId;
+	}
+	else if ((strncmp(attName, "opfuncid", 9) == 0) ||
+			 (strncmp(attName, "funcid", 7) == 0))
+	{
+		ob.classId = ProcedureRelationId;
+	}
+	else if ((strncmp(attName, "opresulttype", 13) == 0) ||
+			 (strncmp(attName, "vartype", 8) == 0) ||
+			 (strncmp(attName, "consttype", 10) == 0) ||
+			 (strncmp(attName, "funcresulttype", 15) == 0))
+	{
+		ob.classId = TypeRelationId;
+	}
+	else if ((strncmp(attName, "relid", 5) == 0) ||
+			 (strncmp(attName, "indexid", 8) == 0))
+	{
+		ob.classId = RelationRelationId;
+	}
+	else
+	{
+		return NULL;
+	}
+	return getObjectDescription(&ob, true);
+}
+
+static char *
+oidArrayToString(const char *attName, const Oid *oids, int len)
+{
+	StringInfoData str;
+	int			i;
+	char	   *desc;
+
+	initStringInfo(&str);
+	for (i = 0; i < len; i++)
+	{
+		desc = oidToString(attName, oids[i]);
+		if (desc != NULL)
+		{
+			if (i > 0)
+				appendStringInfoString(&str, ", ");
+			appendStringInfo(&str, "%s", desc);
+		}
+		else
+		{
+			return NULL;
+		}
+	}
+	return str.data;
+}
+
 /*
  * common implementation for scalar-array-writing functions
  *
@@ -238,18 +317,22 @@ fnname(StringInfo str, const datatype *arr, int len) \
 	{ \
 		appendStringInfoChar(str, '('); \
 		for (int i = 0; i < len; i++) \
+		{ \
 			appendStringInfo(str, fmtstr, convfunc(arr[i])); \
+			if (i < len - 1) \
+				appendStringInfoChar(str, ' '); \
+		} \
 		appendStringInfoChar(str, ')'); \
 	} \
 	else \
 		appendStringInfoString(str, "<>"); \
 }
 
-WRITE_SCALAR_ARRAY(writeAttrNumberCols, AttrNumber, " %d",)
-WRITE_SCALAR_ARRAY(writeOidCols, Oid, " %u",)
-WRITE_SCALAR_ARRAY(writeIndexCols, Index, " %u",)
-WRITE_SCALAR_ARRAY(writeIntCols, int, " %d",)
-WRITE_SCALAR_ARRAY(writeBoolCols, bool, " %s", booltostr)
+WRITE_SCALAR_ARRAY(writeAttrNumberCols, AttrNumber, "%d",)
+WRITE_SCALAR_ARRAY(writeOidCols, Oid, "%u",)
+WRITE_SCALAR_ARRAY(writeIndexCols, Index, "%u",)
+WRITE_SCALAR_ARRAY(writeIntCols, int, "%d",)
+WRITE_SCALAR_ARRAY(writeBoolCols, bool, "%s", booltostr)
 
 /*
  * Print an array (not a List) of Node pointers.
