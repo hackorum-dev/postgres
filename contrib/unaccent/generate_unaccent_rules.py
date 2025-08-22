@@ -49,10 +49,22 @@ PLAIN_LETTER_RANGES = ((ord('a'), ord('z')),  # Latin lower case
 # combining (Mc). We identify the ranges of marks we feel safe removing.
 # References:
 #   https://en.wikipedia.org/wiki/Combining_character
-#   https://www.unicode.org/charts/PDF/U0300.pdf
-#   https://www.unicode.org/charts/PDF/U20D0.pdf
+#   https://www.unicode.org/charts/PDF/U0300.pdf   (Combining Diacritical Marks)
+#   https://www.unicode.org/charts/PDF/U20D0.pdf   (Combining Diacritical Marks for Symbols)
+#   https://www.unicode.org/charts/PDF/U0590.pdf   (Hebrew block)
+#   https://www.unicode.org/charts/PDF/U0600.pdf   (Arabic block)
 COMBINING_MARK_RANGES = ((0x0300, 0x0362),   # Mn: Accents, IPA
-                         (0x20dd, 0x20E0),   # Me: Symbols
+                         (0x0591, 0x05bd),   # Mn: Hebrew points, accents
+                         (0x05bf, 0x05c2),   # Mn: Hebrew rafe, shin/sin dots
+                         (0x05c4, 0x05c5),   # Mn: Hebrew marks
+                         (0x05c7, 0x05c7),   # Mn: Hebrew qamats qatan
+                         (0x0610, 0x061a),   # Mn: Arabic signs
+                         (0x064b, 0x065f),   # Mn: Arabic vowel marks
+                         (0x0670, 0x0670),   # Mn: Arabic superscript alef
+                         (0x06d6, 0x06e4),   # Mn: Arabic small signs
+                         (0x06e7, 0x06e8),   # Mn: Arabic small signs
+                         (0x06ea, 0x06ed),   # Mn: Arabic small signs
+                         (0x20dd, 0x20e0),   # Me: Symbols
                          (0x20e2, 0x20e4),)  # Me: Screen, keycap, triangle
 
 
