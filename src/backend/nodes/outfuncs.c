@@ -238,18 +238,22 @@ fnname(StringInfo str, const datatype *arr, int len) \
 	{ \
 		appendStringInfoChar(str, '('); \
 		for (int i = 0; i < len; i++) \
+		{ \
 			appendStringInfo(str, fmtstr, convfunc(arr[i])); \
+			if (i < len - 1) \
+				appendStringInfoChar(str, ' '); \
+		} \
 		appendStringInfoChar(str, ')'); \
 	} \
 	else \
 		appendStringInfoString(str, "<>"); \
 }
 
-WRITE_SCALAR_ARRAY(writeAttrNumberCols, AttrNumber, " %d",)
-WRITE_SCALAR_ARRAY(writeOidCols, Oid, " %u",)
-WRITE_SCALAR_ARRAY(writeIndexCols, Index, " %u",)
-WRITE_SCALAR_ARRAY(writeIntCols, int, " %d",)
-WRITE_SCALAR_ARRAY(writeBoolCols, bool, " %s", booltostr)
+WRITE_SCALAR_ARRAY(writeAttrNumberCols, AttrNumber, "%d",)
+WRITE_SCALAR_ARRAY(writeOidCols, Oid, "%u",)
+WRITE_SCALAR_ARRAY(writeIndexCols, Index, "%u",)
+WRITE_SCALAR_ARRAY(writeIntCols, int, "%d",)
+WRITE_SCALAR_ARRAY(writeBoolCols, bool, "%s", booltostr)
 
 /*
  * Print an array (not a List) of Node pointers.
