@@ -3311,8 +3311,8 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
  * This allows us to do incremental sort on top of an index scan under a gather
  * merge node, i.e. parallelized.
  *
- * If the require_parallel_safe is true, we also require the expressions to
- * be parallel safe (which allows pushing the sort below Gather Merge).
+ * Require the expressions to be parallel safe (which allows pushing the sort
+ * below Gather Merge).
  *
  * XXX At the moment this can only ever return a list with a single element,
  * because it looks at query_pathkeys only. So we might return the pathkeys
@@ -3321,8 +3321,7 @@ generate_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_rows)
  * merge joins.
  */
 static List *
-get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel,
-								 bool require_parallel_safe)
+get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel)
 {
 	List	   *useful_pathkeys_list = NIL;
 
@@ -3352,10 +3351,9 @@ get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel,
 			 * that meets this requirement, as we may be able to do an
 			 * incremental sort.
 			 *
-			 * If requested, ensure the sort expression is parallel-safe too.
+			 * Ensure the sort expression is parallel-safe.
 			 */
-			if (!relation_can_be_sorted_early(root, rel, pathkey_ec,
-											  require_parallel_safe))
+			if (!relation_can_be_sorted_early(root, rel, pathkey_ec, true))
 				break;
 
 			npathkeys++;
@@ -3409,7 +3407,7 @@ generate_useful_gather_paths(PlannerInfo *root, RelOptInfo *rel, bool override_r
 	generate_gather_paths(root, rel, override_rows);
 
 	/* consider incremental sort for interesting orderings */
-	useful_pathkeys_list = get_useful_pathkeys_for_relation(root, rel, true);
+	useful_pathkeys_list = get_useful_pathkeys_for_relation(root, rel);
 
 	/* used for explicit (full) sort paths */
 	cheapest_partial_path = linitial(rel->partial_pathlist);
