@@ -152,12 +152,12 @@ JsonbContainerTypeName(JsonbContainer *jbc)
 {
 	JsonbValue	scalar;
 
-	if (JsonbExtractScalar(jbc, &scalar))
-		return JsonbTypeName(&scalar);
-	else if (JsonContainerIsArray(jbc))
-		return "array";
-	else if (JsonContainerIsObject(jbc))
+	if (JsonContainerIsObject(jbc))
 		return "object";
+	else if (!JsonContainerIsScalar(jbc) && JsonContainerIsArray(jbc))
+		return "array";
+	else if (JsonbExtractScalar(jbc, &scalar))
+		return JsonbTypeName(&scalar);
 	else
 	{
 		elog(ERROR, "invalid jsonb container type: 0x%08x", jbc->header);
