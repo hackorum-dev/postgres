@@ -968,11 +968,12 @@ char *
 generate_restrict_key(void)
 {
 	uint8		buf[64];
-	char	   *ret = palloc(sizeof(buf));
+	char	   *ret = NULL;
 
 	if (!pg_strong_random(buf, sizeof(buf)))
 		return NULL;
 
+	ret = palloc(sizeof(buf));
 	for (int i = 0; i < sizeof(buf) - 1; i++)
 	{
 		uint8		idx = buf[i] % strlen(restrict_chars);
