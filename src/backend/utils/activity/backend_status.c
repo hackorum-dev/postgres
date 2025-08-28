@@ -320,6 +320,7 @@ pgstat_bestart_initial(void)
 	lbeentry.st_state = STATE_STARTING;
 	lbeentry.st_progress_command = PROGRESS_COMMAND_INVALID;
 	lbeentry.st_progress_command_target = InvalidOid;
+	lbeentry.prev_st_query_id = INT64CONST(0);
 	lbeentry.st_query_id = INT64CONST(0);
 	lbeentry.st_plan_id = INT64CONST(0);
 
@@ -662,6 +663,7 @@ pgstat_report_activity(BackendState state, const char *cmd_str)
 	 */
 	if (state == STATE_RUNNING)
 	{
+		beentry->prev_st_query_id = beentry->st_query_id;
 		beentry->st_query_id = INT64CONST(0);
 		beentry->st_plan_id = INT64CONST(0);
 	}

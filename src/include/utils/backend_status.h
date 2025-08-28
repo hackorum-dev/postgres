@@ -170,6 +170,7 @@ typedef struct PgBackendStatus
 	int64		st_progress_param[PGSTAT_NUM_PROGRESS_PARAM];
 
 	/* query identifier, optionally computed using post_parse_analyze_hook */
+	int64		prev_st_query_id;
 	int64		st_query_id;
 
 	/* plan identifier, optionally computed using planner_hook */

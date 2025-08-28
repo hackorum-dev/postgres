@@ -31,6 +31,7 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
+#include "nodes/queryjumble.h"
 
 #define UINT32_ACCESS_ONCE(var)		 ((uint32)(*((volatile uint32 *)&(var))))
 
@@ -641,7 +642,12 @@ pg_stat_get_activity(PG_FUNCTION_ARGS)
 													 * delegated */
 			}
 			if (beentry->st_query_id == INT64CONST(0))
-				nulls[30] = true;
+			{
+				if(!IsQueryIdEnabled())
+					nulls[30] = true;
+				else
+					values[30] = Int64GetDatum(beentry->prev_st_query_id);
+			}
 			else
 				values[30] = Int64GetDatum(beentry->st_query_id);
 		}
