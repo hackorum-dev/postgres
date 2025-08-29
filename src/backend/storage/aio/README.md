@@ -4,27 +4,38 @@
 
 ### Why Asynchronous IO
 
-Until the introduction of asynchronous IO postgres relied on the operating
-system to hide the cost of synchronous IO from postgres. While this worked
-surprisingly well in a lot of workloads, it does not do as good a job on
-prefetching and controlled writeback as we would like.
+Postgres depends on IO operations happening asynchronously for reasonable
+performance: for instance, a sequential scan would be far slower without the
+benefit of readahead. Historically, Postgres only used synchronous APIs for
+IO, while assuming that the operating system would use the kernel buffer cache
+to make those operations asynchronous in most cases (aside from, e.g.,
+`fdatasync()`).
 
-There are important expensive operations like `fdatasync()` where the operating
-system cannot hide the storage latency. This is particularly important for WAL
-writes, where the ability to asynchronously issue `fdatasync()` or O_DSYNC
-writes can yield significantly higher throughput.
+The asynchronous IO APIs described here do not depend on that
+assumption. Instead, they allow different low-level IO methods, which are
+given more control and therefore rely less on the kernel's
+behavior. Currently, only async read operations are supported, but the
+infrastructure is designed to support async write operations in the future.
 
+AIO is a practical prerequisite for Direct IO, which enables many efficiencies
+(see below). But even without using direct IO, AIO offers benefits: the kernel
+only performs readahead into its buffer cache; whereas an AIO worker is able
+to perform readahead directly into Postgres shared buffers. That means that a
+sequential scan doesn't need to wait for synchronous memory copies from the
+kernel buffers to Postgres shared buffers for each new block. (Without direct
+IO, the memory copy still needs to happen, but it can happen ahead of time in
+the AIO worker process.)
 
 ### Why Direct / unbuffered IO
 
 The main reasons to want to use Direct IO are:
 
-- Lower CPU usage / higher throughput. Particularly on modern storage buffered
-  writes are bottlenecked by the operating system having to copy data from the
-  kernel's page cache to postgres buffer pool using the CPU. Whereas direct IO
-  can often move the data directly between the storage devices and postgres'
-  buffer cache, using DMA. While that transfer is ongoing, the CPU is free to
-  perform other work.
+- Avoid extra memory copies between the kernel buffer cache and Postgres
+  shared buffers. These memory copies can become the bottleneck when the
+  underlying storage has high enough throughput, which is common for
+  solid-state drives or fast network block devices. Instead, direct IO can
+  often move the data directly between the Postgres buffer cache and the
+  device by using DMA, leaving the CPU free to perform other work.
 - Reduced latency - Direct IO can have substantially lower latency than
   buffered IO, which can be impactful for OLTP workloads bottlenecked by WAL
   write latency.
@@ -37,11 +48,24 @@ The main reasons *not* to use Direct IO are:
 
 - Without AIO, Direct IO is unusably slow for most purposes.
 - Even with AIO, many parts of postgres need to be modified to perform
-  explicit prefetching.
+  explicit prefetching (see read_stream.c).
 - In situations where shared_buffers cannot be set appropriately large,
   e.g. because there are many different postgres instances hosted on shared
   hardware, performance will often be worse than when using buffered IO.
 
+### Writing WAL
+
+Using AIO and Direct IO can reduce the overhead of WAL logging
+substantially:
+
+- AIO allows to start WAL writes eagerly, so they complete before needing to
+  wait
+- AIO allows to have multiple WAL flushes in progress at the same time
+- Direct IO can reduce the number of roundtrips to storage on some OSs
+  and storage HW (buffered IO and direct IO without O_DSYNC needs to
+  issue a write and after the write's completion a cache flush,
+  whereas O\_DIRECT + O\_DSYNC can use a single Force Unit Access
+  (FUA) write).
 
 ## AIO Usage Example
 
@@ -196,25 +220,15 @@ processing to the AIO workers).
 
 ### IO can be started in critical sections
 
-Using AIO for WAL writes can reduce the overhead of WAL logging substantially:
 
-- AIO allows to start WAL writes eagerly, so they complete before needing to
-  wait
-- AIO allows to have multiple WAL flushes in progress at the same time
-- AIO makes it more realistic to use O\_DIRECT + O\_DSYNC, which can reduce
-  the number of roundtrips to storage on some OSs and storage HW (buffered IO
-  and direct IO without O_DSYNC needs to issue a write and after the write's
-  completion a cache flush, whereas O\_DIRECT + O\_DSYNC can use a single
-  Force Unit Access (FUA) write).
-
-The need to be able to execute IO in critical sections has substantial design
-implication on the AIO subsystem. Mainly because completing IOs (see prior
-section) needs to be possible within a critical section, even if the
-to-be-completed IO itself was not issued in a critical section. Consider
-e.g. the case of a backend first starting a number of writes from shared
-buffers and then starting to flush the WAL. Because only a limited amount of
-IO can be in-progress at the same time, initiating IO for flushing the WAL may
-require to first complete IO that was started earlier.
+To be able to use AIO for WAL, it must be possible to use inside a critical
+section, which has substantial design implications. Mainly because completing
+IOs (see prior section) needs to be possible within a critical section, even
+if the to-be-completed IO itself was not issued in a critical
+section. Consider e.g. the case of a backend first starting a number of writes
+from shared buffers and then starting to flush the WAL. Because only a limited
+amount of IO can be in-progress at the same time, initiating IO for flushing
+the WAL may require to first complete IO that was started earlier.
 
 
 ### State for AIO needs to live in shared memory
