@@ -5418,10 +5418,6 @@ RelationCopyStorageUsingBuffer(RelFileLocator srclocator,
 	p.last_exclusive = nblocks;
 	src_smgr = smgropen(srclocator, INVALID_PROC_NUMBER);
 
-	/*
-	 * It is safe to use batchmode as block_range_read_stream_cb takes no
-	 * locks.
-	 */
 	src_stream = read_stream_begin_smgr_relation(READ_STREAM_FULL |
 												 READ_STREAM_USE_BATCHING,
 												 bstrategy_src,
