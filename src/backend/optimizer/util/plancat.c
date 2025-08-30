@@ -1407,6 +1407,14 @@ get_relation_constraints(PlannerInfo *root,
 			cexpr = stringToNode(constr->check[i].ccbin);
 
 			/*
+			 * Fix Vars to have the desired varno.  Must do this before
+			 * eval_const_expressions(), which might access the corresponding
+			 * RTEs.
+			 */
+			if (varno != 1)
+				ChangeVarNodes(cexpr, 1, varno, 0);
+
+			/*
 			 * Run each expression through const-simplification and
 			 * canonicalization.  This is not just an optimization, but is
 			 * necessary, because we will be comparing it to
@@ -1419,10 +1427,6 @@ get_relation_constraints(PlannerInfo *root,
 			cexpr = eval_const_expressions(root, cexpr);
 
 			cexpr = (Node *) canonicalize_qual((Expr *) cexpr, true);
-
-			/* Fix Vars to have the desired varno */
-			if (varno != 1)
-				ChangeVarNodes(cexpr, 1, varno, 0);
 
 			/*
 			 * Finally, convert to implicit-AND format (that is, a List) and
