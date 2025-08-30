@@ -177,7 +177,8 @@ get_per_buffer_data(ReadStream *stream, int16 buffer_index)
 
 /*
  * General-use ReadStreamBlockNumberCB for block range scans.  Loops over the
- * blocks [current_blocknum, last_exclusive).
+ * blocks [current_blocknum, last_exclusive). It is safe to use batchmode with
+ * block_range_read_stream_cb as it takes no locks.
  */
 BlockNumber
 block_range_read_stream_cb(ReadStream *stream,
