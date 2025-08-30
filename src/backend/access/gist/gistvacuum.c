@@ -211,10 +211,6 @@ gistvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 
 	p.current_blocknum = GIST_ROOT_BLKNO;
 
-	/*
-	 * It is safe to use batchmode as block_range_read_stream_cb takes no
-	 * locks.
-	 */
 	stream = read_stream_begin_relation(READ_STREAM_MAINTENANCE |
 										READ_STREAM_FULL |
 										READ_STREAM_USE_BATCHING,
