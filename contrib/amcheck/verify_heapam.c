@@ -449,10 +449,6 @@ verify_heapam(PG_FUNCTION_ARGS)
 
 	if (skip_option == SKIP_PAGES_NONE)
 	{
-		/*
-		 * It is safe to use batchmode as block_range_read_stream_cb takes no
-		 * locks.
-		 */
 		stream_cb = block_range_read_stream_cb;
 		stream_flags = READ_STREAM_SEQUENTIAL |
 			READ_STREAM_FULL |
