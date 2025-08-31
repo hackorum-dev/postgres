@@ -1413,7 +1413,7 @@ gen_prune_steps_from_opexps(GeneratePruningStepsContext *context,
 {
 	PartitionScheme part_scheme = context->rel->part_scheme;
 	List	   *opsteps = NIL;
-	List	   *btree_clauses[BTMaxStrategyNumber + 1],
+	List	   *btree_clauses[BTNumOfStrategies],
 			   *hash_clauses[HTMaxStrategyNumber + 1];
 	int			i;
 	ListCell   *lc;
@@ -1508,11 +1508,22 @@ gen_prune_steps_from_opexps(GeneratePruningStepsContext *context,
 		case PARTITION_STRATEGY_LIST:
 		case PARTITION_STRATEGY_RANGE:
 			{
-				List	   *eq_clauses = btree_clauses[BTEqualStrategyNumber];
-				List	   *le_clauses = btree_clauses[BTLessEqualStrategyNumber];
-				List	   *ge_clauses = btree_clauses[BTGreaterEqualStrategyNumber];
+				List	   *eq_clauses = btree_clauses[BTEqualStrategy];
+				List	   *le_clauses = btree_clauses[BTLessEqualStrategy];
+				List	   *ge_clauses = btree_clauses[BTGreaterEqualStrategy];
 				int			strat;
+/*
+typedef enum
+{
+	BTInvalidStrategy,
+	BTLessStrategy,
+	BTLessEqualStrategy,
+	BTEqualStrategy,
+	BTGreaterEqualStrategy,
+	BTGreaterStrategy
+} BTStrategy;
 
+*/
 				/*
 				 * For each clause under consideration for a given strategy,
 				 * we collect expressions from clauses for earlier keys, whose
@@ -1525,7 +1536,7 @@ gen_prune_steps_from_opexps(GeneratePruningStepsContext *context,
 				 * combinations of expressions of different keys, which
 				 * get_steps_using_prefix takes care of for us.
 				 */
-				for (strat = 1; strat <= BTMaxStrategyNumber; strat++)
+				for (strat = BTLessStrategy; strat < BTNumOfStrategies; strat++)
 				{
 					foreach(lc, btree_clauses[strat])
 					{
