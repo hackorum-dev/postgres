@@ -23,6 +23,39 @@ typedef uint16 StrategyNumber;
 
 #define InvalidStrategy ((StrategyNumber) 0)
 
+typedef enum BTStrategy
+{
+	BTInvalidStrategy,
+	BTLessStrategy,
+	BTLessEqualStrategy,
+	BTEqualStrategy,
+	BTGreaterEqualStrategy,
+	BTGreaterStrategy,
+	BTNumOfStrategies
+} BTStrategy;
+
+/* Macro check, like most such checks in Pg */
+#define BTStrategyIsValid(strat) \
+	((bool) (strat == BTLessStrategy || strat == BTLessEqualStrategy || strat == BTEqualStrategy || strat == BTGreaterEqualStrategy || strat == BTGreaterStrategy))
+
+/* Static inline function check */
+static inline bool BTStrategyIsValidFunc(uint16 strat)
+{
+	switch(strat)
+	{
+		case BTLessStrategy:
+		case BTLessEqualStrategy:
+		case BTEqualStrategy:
+		case BTGreaterEqualStrategy:
+		case BTGreaterStrategy:
+			return true;
+		case BTInvalidStrategy:
+		case BTNumOfStrategies:
+		default:
+			return false;
+	}
+}
+
 /*
  * Strategy numbers for B-tree indexes.
  */
