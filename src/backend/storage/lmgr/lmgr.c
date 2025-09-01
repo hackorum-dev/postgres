@@ -668,6 +668,8 @@ XactLockTableWait(TransactionId xid, Relation rel, const ItemPointerData *ctid,
 	ErrorContextCallback callback;
 	bool		first = true;
 
+	Assert(!RecoveryInProgress());
+
 	/*
 	 * If an operation is specified, set up our verbose error context
 	 * callback.
@@ -718,7 +720,6 @@ XactLockTableWait(TransactionId xid, Relation rel, const ItemPointerData *ctid,
 		 */
 		if (!first)
 		{
-			CHECK_FOR_INTERRUPTS();
 			pg_usleep(1000L);
 		}
 		first = false;
@@ -741,6 +742,8 @@ ConditionalXactLockTableWait(TransactionId xid, bool logLockFailure)
 	LOCKTAG		tag;
 	bool		first = true;
 
+	Assert(!RecoveryInProgress());
+
 	for (;;)
 	{
 		Assert(TransactionIdIsValid(xid));
@@ -761,7 +764,6 @@ ConditionalXactLockTableWait(TransactionId xid, bool logLockFailure)
 		/* See XactLockTableWait about this case */
 		if (!first)
 		{
-			CHECK_FOR_INTERRUPTS();
 			pg_usleep(1000L);
 		}
 		first = false;

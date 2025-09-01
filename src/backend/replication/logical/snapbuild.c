@@ -1451,7 +1451,15 @@ SnapBuildWaitSnapshot(xl_running_xacts *running, TransactionId cutoff)
 		if (TransactionIdFollows(xid, cutoff))
 			continue;
 
-		XactLockTableWait(xid, NULL, NULL, XLTW_None);
+		/*
+		 * In primary, we use XactLockTableWait to wait for the transaction to finish.
+		 * In standby, since xact lock table is not maintained, we use XidWaitOnStandby
+		 * to accomplish the same.
+		 */
+		if (!RecoveryInProgress())
+			XactLockTableWait(xid, NULL, NULL, XLTW_None);
+		else
+			XidWaitOnStandby(xid);
 	}
 
 	/*

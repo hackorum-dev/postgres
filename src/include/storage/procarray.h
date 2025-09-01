@@ -100,4 +100,6 @@ extern void ProcArraySetReplicationSlotXmin(TransactionId xmin,
 extern void ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
 											TransactionId *catalog_xmin);
 
+extern void XidWaitOnStandby(TransactionId xid);
+
 #endif							/* PROCARRAY_H */
