@@ -36,8 +36,8 @@
  * reported within critical sections so we use static memory in order to avoid
  * memory allocation.
  */
-static PgStat_BackendPending PendingBackendStats;
-static bool backend_has_iostats = false;
+PgStat_BackendPending PendingBackendStats;
+bool		backend_has_iostats = false;
 
 /*
  * WAL usage counters saved from pgWalUsage at the previous call to
@@ -46,44 +46,6 @@ static bool backend_has_iostats = false;
  * previous counters from the current ones.
  */
 static WalUsage prevBackendWalUsage;
-
-/*
- * Utility routines to report I/O stats for backends, kept here to avoid
- * exposing PendingBackendStats to the outside world.
- */
-void
-pgstat_count_backend_io_op_time(IOObject io_object, IOContext io_context,
-								IOOp io_op, instr_time io_time)
-{
-	Assert(track_io_timing || track_wal_io_timing);
-
-	if (!pgstat_tracks_backend_bktype(MyBackendType))
-		return;
-
-	Assert(pgstat_tracks_io_op(MyBackendType, io_object, io_context, io_op));
-
-	INSTR_TIME_ADD(PendingBackendStats.pending_io.pending_times[io_object][io_context][io_op],
-				   io_time);
-
-	backend_has_iostats = true;
-	pgstat_report_fixed = true;
-}
-
-void
-pgstat_count_backend_io_op(IOObject io_object, IOContext io_context,
-						   IOOp io_op, uint32 cnt, uint64 bytes)
-{
-	if (!pgstat_tracks_backend_bktype(MyBackendType))
-		return;
-
-	Assert(pgstat_tracks_io_op(MyBackendType, io_object, io_context, io_op));
-
-	PendingBackendStats.pending_io.counts[io_object][io_context][io_op] += cnt;
-	PendingBackendStats.pending_io.bytes[io_object][io_context][io_op] += bytes;
-
-	backend_has_iostats = true;
-	pgstat_report_fixed = true;
-}
 
 /*
  * Returns statistics of a backend by proc number.

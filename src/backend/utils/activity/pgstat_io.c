@@ -76,9 +76,6 @@ pgstat_count_io_op(IOObject io_object, IOContext io_context, IOOp io_op,
 	PendingIOStats.counts[io_object][io_context][io_op] += cnt;
 	PendingIOStats.bytes[io_object][io_context][io_op] += bytes;
 
-	/* Add the per-backend counts */
-	pgstat_count_backend_io_op(io_object, io_context, io_op, cnt, bytes);
-
 	have_iostats = true;
 	pgstat_report_fixed = true;
 }
@@ -151,10 +148,6 @@ pgstat_count_io_op_time(IOObject io_object, IOContext io_context, IOOp io_op,
 
 		INSTR_TIME_ADD(PendingIOStats.pending_times[io_object][io_context][io_op],
 					   io_time);
-
-		/* Add the per-backend count */
-		pgstat_count_backend_io_op_time(io_object, io_context, io_op,
-										io_time);
 	}
 
 	pgstat_count_io_op(io_object, io_context, io_op, cnt, bytes);
@@ -184,6 +177,9 @@ pgstat_flush_io(bool nowait)
  *
  * If nowait is true, this function returns true if the lock could not be
  * acquired. Otherwise, return false.
+ *
+ * The stats are copied to the corresponding pending backend stats when
+ * successfully flushing.
  */
 bool
 pgstat_io_flush_cb(bool nowait)
@@ -226,6 +222,14 @@ pgstat_io_flush_cb(bool nowait)
 	}
 
 	Assert(pgstat_bktype_io_stats_valid(bktype_shstats, MyBackendType));
+
+	/* Do the same for the backend stats */
+	if (pgstat_tracks_backend_bktype(MyBackendType))
+	{
+		PendingBackendStats.pending_io = PendingIOStats;
+		backend_has_iostats = true;
+		pgstat_report_fixed = true;
+	}
 
 	LWLockRelease(bktype_lock);
 

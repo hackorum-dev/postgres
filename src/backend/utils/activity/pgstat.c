@@ -768,10 +768,15 @@ pgstat_report_stat(bool force)
 	/* flush of other stats kinds */
 	if (pgstat_report_fixed)
 	{
+		const PgStat_KindInfo *kind_info;
+
 		for (PgStat_Kind kind = PGSTAT_KIND_MIN; kind <= PGSTAT_KIND_MAX; kind++)
 		{
-			const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
 
+			kind_info = pgstat_get_kind_info(kind);
+
+			if (kind == PGSTAT_KIND_BACKEND)
+				continue;
 			if (!kind_info)
 				continue;
 			if (!kind_info->flush_static_cb)
@@ -779,6 +784,13 @@ pgstat_report_stat(bool force)
 
 			partial_flush |= kind_info->flush_static_cb(nowait);
 		}
+
+		/*
+		 * Do per-backend last as some of their pending stats are populated
+		 * during the flush of other stats kinds.
+		 */
+		kind_info = pgstat_get_kind_info(PGSTAT_KIND_BACKEND);
+		partial_flush |= kind_info->flush_static_cb(nowait);
 	}
 
 	last_flush = now;
