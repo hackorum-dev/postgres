@@ -725,7 +725,7 @@ plperl_init_interp(void)
 	 */
 #if defined(PERL_SYS_INIT3) && !defined(MYMALLOC)
 	{
-		static int	perl_sys_init_done;
+		static bool	perl_sys_init_done = false;
 
 		/* only call this the first time through, as per perlembed man page */
 		if (!perl_sys_init_done)
@@ -745,7 +745,7 @@ plperl_init_interp(void)
 			 */
 			pqsignal(SIGFPE, FloatExceptionHandler);
 
-			perl_sys_init_done = 1;
+			perl_sys_init_done = true;
 			/* quiet warning if PERL_SYS_INIT3 doesn't use the third argument */
 			dummy_env[0] = NULL;
 		}
