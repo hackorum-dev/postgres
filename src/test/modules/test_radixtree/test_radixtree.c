@@ -150,6 +150,10 @@ test_empty(void)
 	EXPECT_TRUE(rt_iterate_next(iter, &key) == NULL);
 	rt_end_iterate(iter);
 
+	iter = rt_begin_iterate_at(radixtree, 17);
+	EXPECT_TRUE(rt_iterate_next(iter, &key) == NULL);
+	rt_end_iterate(iter);
+
 	rt_free(radixtree);
 
 #ifdef TEST_SHARED_RT
@@ -157,7 +161,7 @@ test_empty(void)
 #endif
 }
 
-/* Basic set, find, and delete tests */
+/* Basic set, find, delete, and iteration tests */
 static void
 test_basic(rt_node_class_test_elem *test_info, int shift, bool asc)
 {
@@ -265,13 +269,58 @@ test_basic(rt_node_class_test_elem *test_info, int shift, bool asc)
 
 	rt_end_iterate(iter);
 
+	/* test iteration beginning at the largest key */
+	{
+		uint64		largest;
+		uint64		iterkey;
+		TestValueType *iterval;
+		uint64 maxkey = ~UINT64CONST(0);
+
+		/* iteration is ordered by key, so adjust expected value accordingly */
+		if (asc)
+			largest = keys[children - 1];
+		else
+			largest = keys[0];
+
+		iter = rt_begin_iterate_at(radixtree, largest);
+
+		/* expect the value we started at */
+		iterval = rt_iterate_next(iter, &iterkey);
+		EXPECT_TRUE(iterval != NULL);
+		EXPECT_EQ_U64(iterkey, largest);
+		EXPECT_EQ_U64(*iterval, largest);
+
+		/* ...and no more */
+		iterval = rt_iterate_next(iter, &iterkey);
+		EXPECT_TRUE(iterval == NULL);
+
+		rt_end_iterate(iter);
+
+		/* insert maximum key */
+		EXPECT_FALSE(rt_set(radixtree, maxkey, (TestValueType *) &maxkey));
+		/* begin between orginal largest and max we just inserted */
+		Assert(largest + 1 < maxkey);
+		iter = rt_begin_iterate_at(radixtree, largest + 1);
+		iterval = rt_iterate_next(iter, &iterkey);
+		EXPECT_TRUE(iterval != NULL);
+		EXPECT_EQ_U64(iterkey, maxkey);
+		EXPECT_EQ_U64(*iterval, maxkey);
+		rt_end_iterate(iter);
+
+		/* delete maximum key */
+		EXPECT_TRUE(rt_delete(radixtree, maxkey));
+		iter = rt_begin_iterate_at(radixtree, largest + 1);
+		iterval = rt_iterate_next(iter, &iterkey);
+		EXPECT_TRUE(iterval == NULL);
+		rt_end_iterate(iter);
+	}
+
 	/* delete all keys again */
 	for (int i = 0; i < children; i++)
 		EXPECT_TRUE(rt_delete(radixtree, keys[i]));
 
 	/* test that all keys were deleted */
-	for (int i = 0; i < children; i++)
-		EXPECT_TRUE(rt_find(radixtree, keys[i]) == NULL);
+	EXPECT_TRUE(rt_num_entries(radixtree) == 0);
 
 	rt_stats(radixtree);
 

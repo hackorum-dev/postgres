@@ -182,6 +182,7 @@
 #define RT_SET_SLOT RT_MAKE_NAME (set_slot)
 #define RT_SET RT_MAKE_NAME(set)
 #define RT_BEGIN_ITERATE RT_MAKE_NAME(begin_iterate)
+#define RT_BEGIN_ITERATE_AT RT_MAKE_NAME(begin_iterate_at)
 #define RT_ITERATE_NEXT RT_MAKE_NAME(iterate_next)
 #define RT_END_ITERATE RT_MAKE_NAME(end_iterate)
 #define RT_DELETE RT_MAKE_NAME(delete)
@@ -290,6 +291,7 @@ RT_SCOPE bool RT_SET(RT_RADIX_TREE * tree, uint64 key, RT_VALUE_TYPE * value_p);
 RT_SCOPE bool RT_DELETE(RT_RADIX_TREE * tree, uint64 key);
 
 RT_SCOPE	RT_ITER *RT_BEGIN_ITERATE(RT_RADIX_TREE * tree);
+RT_SCOPE	RT_ITER *RT_BEGIN_ITERATE_AT(RT_RADIX_TREE * tree, uint64 key);
 RT_SCOPE	RT_VALUE_TYPE *RT_ITERATE_NEXT(RT_ITER * iter, uint64 *key_p);
 RT_SCOPE void RT_END_ITERATE(RT_ITER * iter);
 
@@ -726,11 +728,7 @@ typedef struct RT_NODE_ITER
 {
 	RT_CHILD_PTR node;
 
-	/*
-	 * The next index of the chunk array in RT_NODE_KIND_4 and RT_NODE_KIND_16
-	 * nodes, or the next chunk in RT_NODE_KIND_48 and RT_NODE_KIND_256 nodes.
-	 * 0 for the initial value.
-	 */
+	// TODO: add next_chunk so idx can just save the last index
 	int			idx;
 }			RT_NODE_ITER;
 
@@ -2086,6 +2084,12 @@ RT_FREE(RT_RADIX_TREE * tree)
 RT_SCOPE	RT_ITER *
 RT_BEGIN_ITERATE(RT_RADIX_TREE * tree)
 {
+	return RT_BEGIN_ITERATE_AT(tree, 0);
+}
+
+RT_SCOPE	RT_ITER *
+RT_BEGIN_ITERATE_AT(RT_RADIX_TREE * tree, uint64 key)
+{
 	RT_ITER    *iter;
 	RT_CHILD_PTR root;
 
@@ -2101,7 +2105,12 @@ RT_BEGIN_ITERATE(RT_RADIX_TREE * tree)
 	/* Set the root to start */
 	iter->cur_level = iter->top_level;
 	iter->node_iters[iter->cur_level].node = root;
-	iter->node_iters[iter->cur_level].idx = 0;
+
+	/* pre-fill iter stack for first key */
+	for (int level = 0; level <= iter->top_level; level++)
+	{
+		iter->node_iters[level].idx = RT_GET_KEY_CHUNK(key, level * RT_SPAN);
+	}
 
 	return iter;
 }
@@ -2133,25 +2142,35 @@ RT_NODE_ITERATE_NEXT(RT_ITER * iter, int level)
 			{
 				RT_NODE_4  *n4 = (RT_NODE_4 *) (node.local);
 
-				if (node_iter->idx >= n4->base.count)
-					return NULL;
+				for (int i = 0; i < n4->base.count; i++)
+				{
+					if (n4->chunks[i] >= node_iter->idx)
+					{
+						slot = &n4->children[i];
+						key_chunk = n4->chunks[i];
+						node_iter->idx = key_chunk + 1;
+						goto update;
+					}
+				}
 
-				slot = &n4->children[node_iter->idx];
-				key_chunk = n4->chunks[node_iter->idx];
-				node_iter->idx++;
-				break;
+				return NULL;
 			}
 		case RT_NODE_KIND_16:
 			{
 				RT_NODE_16 *n16 = (RT_NODE_16 *) (node.local);
 
-				if (node_iter->idx >= n16->base.count)
-					return NULL;
+				for (int i = 0; i < n16->base.count; i++)
+				{
+					if (n16->chunks[i] >= node_iter->idx)
+					{
+						slot = &n16->children[i];
+						key_chunk = n16->chunks[i];
+						node_iter->idx = key_chunk + 1;
+						goto update;
+					}
+				}
 
-				slot = &n16->children[node_iter->idx];
-				key_chunk = n16->chunks[node_iter->idx];
-				node_iter->idx++;
-				break;
+				return NULL;
 			}
 		case RT_NODE_KIND_48:
 			{
@@ -2195,6 +2214,7 @@ RT_NODE_ITERATE_NEXT(RT_ITER * iter, int level)
 			}
 	}
 
+update:
 	/* Update the key */
 	iter->key &= ~(((uint64) RT_CHUNK_MASK) << (level * RT_SPAN));
 	iter->key |= (((uint64) key_chunk) << (level * RT_SPAN));
@@ -2240,11 +2260,11 @@ RT_ITERATE_NEXT(RT_ITER * iter, uint64 *key_p)
 
 			iter->cur_level--;
 			iter->node_iters[iter->cur_level].node = node;
-			iter->node_iters[iter->cur_level].idx = 0;
 		}
 		else
 		{
 			/* Not found the child slot, move up the tree */
+			iter->node_iters[iter->cur_level].idx = 0;
 			iter->cur_level++;
 		}
 	}
@@ -2998,6 +3018,7 @@ RT_DUMP_NODE(RT_NODE * node)
 #undef RT_SET_SLOT
 #undef RT_SET
 #undef RT_BEGIN_ITERATE
+#undef RT_BEGIN_ITERATE_AT
 #undef RT_ITERATE_NEXT
 #undef RT_END_ITERATE
 #undef RT_DELETE
