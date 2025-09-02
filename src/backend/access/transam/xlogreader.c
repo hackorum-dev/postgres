@@ -653,6 +653,15 @@ restart:
 	total_len = record->xl_tot_len;
 
 	/*
+	 * When xl_tot_len is zero, we must reach the end of WAL.  Let's fail
+	 * without setting a error message.
+	*/
+	if (total_len == 0)
+	{
+		goto err;
+	}
+
+	/*
 	 * If the whole record header is on this page, validate it immediately.
 	 * Otherwise do just a basic sanity check on xl_tot_len, and validate the
 	 * rest of the header after reading it from the next page.  The xl_tot_len
