@@ -255,16 +255,14 @@ typedef void (*PQnoticeReceiver) (void *arg, const PGresult *res);
 typedef void (*PQnoticeProcessor) (void *arg, const char *message);
 
 /* Print options for PQprint() */
-typedef char pqbool;
-
 typedef struct _PQprintOpt
 {
-	pqbool		header;			/* print output field headings and row count */
-	pqbool		align;			/* fill align the fields */
-	pqbool		standard;		/* old brain dead format */
-	pqbool		html3;			/* output html tables */
-	pqbool		expanded;		/* expand tables */
-	pqbool		pager;			/* use pager for output if needed */
+	bool		header;			/* print output field headings and row count */
+	bool		align;			/* fill align the fields */
+	bool		standard;		/* old brain dead format */
+	bool		html3;			/* output html tables */
+	bool		expanded;		/* expand tables */
+	bool		pager;			/* use pager for output if needed */
 	char	   *fieldSep;		/* field separator */
 	char	   *tableOpt;		/* insert to HTML <table ...> */
 	char	   *caption;		/* HTML <caption> */
