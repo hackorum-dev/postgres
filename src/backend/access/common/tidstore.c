@@ -88,7 +88,7 @@ typedef struct BlocktableEntry
 		(sizeof(bitmapword) * WORDS_PER_PAGE(MAX_OFFSET_IN_BITMAP))
 
 #define RT_PREFIX local_ts
-#define RT_SCOPE static
+#define RT_SCOPE static pg_attribute_unused()
 #define RT_DECLARE
 #define RT_DEFINE
 #define RT_VALUE_TYPE BlocktableEntry
@@ -100,7 +100,7 @@ typedef struct BlocktableEntry
 
 #define RT_PREFIX shared_ts
 #define RT_SHMEM
-#define RT_SCOPE static
+#define RT_SCOPE static pg_attribute_unused()
 #define RT_DECLARE
 #define RT_DEFINE
 #define RT_VALUE_TYPE BlocktableEntry

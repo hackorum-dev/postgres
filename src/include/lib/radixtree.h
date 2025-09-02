@@ -137,11 +137,6 @@
  * RT_UNLOCK		- Unlock the radix tree
  * RT_GET_HANDLE	- Return the handle of the radix tree
  *
- * Optional Interface
- * ---------
- *
- * RT_DELETE		- Delete a key-value pair. Declared/defined if RT_USE_DELETE is defined
- *
  *
  * Copyright (c) 2024-2025, PostgreSQL Global Development Group
  *
@@ -189,9 +184,7 @@
 #define RT_BEGIN_ITERATE RT_MAKE_NAME(begin_iterate)
 #define RT_ITERATE_NEXT RT_MAKE_NAME(iterate_next)
 #define RT_END_ITERATE RT_MAKE_NAME(end_iterate)
-#ifdef RT_USE_DELETE
 #define RT_DELETE RT_MAKE_NAME(delete)
-#endif
 #define RT_MEMORY_USAGE RT_MAKE_NAME(memory_usage)
 #define RT_DUMP_NODE RT_MAKE_NAME(dump_node)
 #define RT_STATS RT_MAKE_NAME(stats)
@@ -294,10 +287,7 @@ RT_SCOPE	RT_VALUE_TYPE *RT_FIND(RT_RADIX_TREE * tree, uint64 key);
 RT_SCOPE void* RT_GET_SLOT(RT_RADIX_TREE * tree, uint64 key, bool* found);
 RT_SCOPE bool RT_SET_SLOT(RT_RADIX_TREE * tree, void* slot_v, RT_VALUE_TYPE * value_p, bool found);
 RT_SCOPE bool RT_SET(RT_RADIX_TREE * tree, uint64 key, RT_VALUE_TYPE * value_p);
-
-#ifdef RT_USE_DELETE
 RT_SCOPE bool RT_DELETE(RT_RADIX_TREE * tree, uint64 key);
-#endif
 
 RT_SCOPE	RT_ITER *RT_BEGIN_ITERATE(RT_RADIX_TREE * tree);
 RT_SCOPE	RT_VALUE_TYPE *RT_ITERATE_NEXT(RT_ITER * iter, uint64 *key_p);
@@ -2274,8 +2264,6 @@ RT_END_ITERATE(RT_ITER * iter)
 
 /***************** DELETION *****************/
 
-#ifdef RT_USE_DELETE
-
 /* Delete the element at "deletepos" */
 static inline void
 RT_SHIFT_ARRAYS_AND_DELETE(uint8 *chunks, RT_PTR_ALLOC * children, int count, int deletepos)
@@ -2676,8 +2664,6 @@ RT_DELETE(RT_RADIX_TREE * tree, uint64 key)
 	return deleted;
 }
 
-#endif							/* RT_USE_DELETE */
-
 /***************** UTILITY FUNCTIONS *****************/
 
 /*
@@ -2939,7 +2925,6 @@ RT_DUMP_NODE(RT_NODE * node)
 #undef RT_VARLEN_VALUE_SIZE
 #undef RT_RUNTIME_EMBEDDABLE_VALUE
 #undef RT_SHMEM
-#undef RT_USE_DELETE
 #undef RT_DEBUG
 
 /* locally declared macros */
