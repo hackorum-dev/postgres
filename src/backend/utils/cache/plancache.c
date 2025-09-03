@@ -1186,13 +1186,15 @@ choose_custom_plan(CachedPlanSource *plansource, ParamListInfo boundParams)
 		return false;
 
 	/* Let settings force the decision */
-	if (plan_cache_mode == PLAN_CACHE_MODE_FORCE_GENERIC_PLAN)
+	if (plan_cache_mode == PLAN_CACHE_MODE_FORCE_GENERIC_PLAN ||
+		plan_cache_mode == PLAN_CACHE_MODE_FORCE_REF_GENERIC_PLAN)
 		return false;
 	if (plan_cache_mode == PLAN_CACHE_MODE_FORCE_CUSTOM_PLAN)
 		return true;
 
 	/* See if caller wants to force the decision */
-	if (plansource->cursor_options & CURSOR_OPT_GENERIC_PLAN)
+	if (plansource->cursor_options & CURSOR_OPT_GENERIC_PLAN ||
+		plansource->cursor_options & CURSOR_OPT_REF_GENERIC_PLAN)
 		return false;
 	if (plansource->cursor_options & CURSOR_OPT_CUSTOM_PLAN)
 		return true;
@@ -1324,7 +1326,21 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
 		else
 		{
 			/* Build a new generic plan */
-			plan = BuildCachedPlan(plansource, qlist, NULL, queryEnv);
+			if (boundParams &&
+				((plansource->cursor_options & CURSOR_OPT_REF_GENERIC_PLAN) ||
+					plan_cache_mode == PLAN_CACHE_MODE_FORCE_REF_GENERIC_PLAN ||
+					plan_cache_mode == PLAN_CACHE_MODE_REF_AUTO))
+			{
+				ParamListInfo pli = copyParamList(boundParams);
+				if (pli)
+					for (int i = 0; i < pli->numParams; i++)
+						pli->params[i].pflags |= PARAM_FLAG_REFVALUE;
+				plan = BuildCachedPlan(plansource, qlist, pli, queryEnv);
+			}
+			else
+			{
+				plan = BuildCachedPlan(plansource, qlist, NULL, queryEnv);
+			}
 			/* Just make real sure plansource->gplan is clear */
 			ReleaseGenericPlan(plansource);
 			/* Link the new generic plan into the plansource */
@@ -1355,7 +1371,11 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
 			 * find it's a loser, but we don't want to actually execute that
 			 * plan.
 			 */
-			customplan = choose_custom_plan(plansource, boundParams);
+			if (plan_cache_mode == PLAN_CACHE_MODE_FORCE_GENERIC_PLAN ||
+				plan_cache_mode == PLAN_CACHE_MODE_FORCE_REF_GENERIC_PLAN)
+				customplan = false;
+			else
+				customplan = choose_custom_plan(plansource, boundParams);
 
 			/*
 			 * If we choose to plan again, we need to re-copy the query_list,
@@ -1368,8 +1388,19 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
 
 	if (customplan)
 	{
-		/* Build a custom plan */
-		plan = BuildCachedPlan(plansource, qlist, boundParams, queryEnv);
+		/* Build a custom plan: inline params as Consts, purge REFVALUE */
+		ParamListInfo pli = boundParams;
+		if (pli)
+		{
+			pli = copyParamList(pli);
+			for (int i = 0; i < pli->numParams; i++)
+			{
+				pli->params[i].pflags |= PARAM_FLAG_CONST;
+				pli->params[i].pflags &= ~PARAM_FLAG_REFVALUE;
+			}
+		}
+		plan = BuildCachedPlan(plansource, qlist, pli, queryEnv);
+
 		/* Accumulate total costs of custom plans */
 		plansource->total_custom_cost += cached_plan_cost(plan, true);
 

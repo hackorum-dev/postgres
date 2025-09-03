@@ -86,6 +86,7 @@ struct ParseState;
  */
 
 #define PARAM_FLAG_CONST	0x0001	/* parameter is constant */
+#define PARAM_FLAG_REFVALUE 0x0002
 
 typedef struct ParamExternData
 {

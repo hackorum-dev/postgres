@@ -220,8 +220,12 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt,
 		/* Explain every plan */
 		foreach(l, rewritten)
 		{
+			int cursor_opts = CURSOR_OPT_PARALLEL_OK;
+			if (es->ref_generic)
+				cursor_opts |= CURSOR_OPT_REF_GENERIC_PLAN;
+
 			ExplainOneQuery(lfirst_node(Query, l),
-							CURSOR_OPT_PARALLEL_OK, NULL, es,
+							cursor_opts, NULL, es,
 							pstate, params);
 
 			/* Separate plans with an appropriate separator */
@@ -329,6 +333,23 @@ standard_ExplainOneQuery(Query *query, int cursorOptions,
 	MemoryContext planner_ctx = NULL;
 	MemoryContext saved_ctx = NULL;
 
+	ParamListInfo paramLI = params; 
+
+	if (es->generic)
+	{
+		if (es->ref_generic && params)
+		{
+			ParamListInfo ref = copyParamList(params);
+			for (int i = 0; ref && i < ref->numParams; i++)
+				ref->params[i].pflags |= PARAM_FLAG_REFVALUE;
+			paramLI = ref;
+		}
+		else
+		{
+			paramLI = NULL;
+		}
+	}
+
 	if (es->memory)
 	{
 		/*
@@ -350,7 +371,7 @@ standard_ExplainOneQuery(Query *query, int cursorOptions,
 	INSTR_TIME_SET_CURRENT(planstart);
 
 	/* plan the query */
-	plan = pg_plan_query(query, queryString, cursorOptions, params);
+	plan = pg_plan_query(query, queryString, cursorOptions, paramLI);
 
 	INSTR_TIME_SET_CURRENT(planduration);
 	INSTR_TIME_SUBTRACT(planduration, planstart);

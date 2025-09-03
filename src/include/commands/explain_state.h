@@ -62,6 +62,7 @@ typedef struct ExplainState
 	List	   *grouping_stack; /* format-specific grouping state */
 	/* state related to the current plan tree (filled by ExplainPrintPlan) */
 	PlannedStmt *pstmt;			/* top of plan */
+	bool ref_generic;			/* show reference-based generic plan */
 	List	   *rtable;			/* range table */
 	List	   *rtable_names;	/* alias names for RTEs */
 	List	   *deparse_cxt;	/* context list for deparsing expressions */

@@ -62,6 +62,7 @@ NewExplainState(void)
 {
 	ExplainState *es = (ExplainState *) palloc0(sizeof(ExplainState));
 
+	es->ref_generic = false;
 	/* Set default options (most fields can be left as zeroes). */
 	es->costs = true;
 	/* Prepare output buffer. */
@@ -103,6 +104,8 @@ ParseExplainOptionList(ExplainState *es, List *options, ParseState *pstate)
 			es->settings = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "generic_plan") == 0)
 			es->generic = defGetBoolean(opt);
+		else if (strcmp(opt->defname, "ref_generic_plan") == 0)
+			es->ref_generic = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "timing") == 0)
 		{
 			timing_set = true;
@@ -196,6 +199,12 @@ ParseExplainOptionList(ExplainState *es, List *options, ParseState *pstate)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("EXPLAIN options ANALYZE and GENERIC_PLAN cannot be used together")));
+
+	/* check that REF_GENERIC_PLAN is not used with EXPLAIN ANALYZE */
+	if (es->ref_generic && es->analyze)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("EXPLAIN options ANALYZE and REF_GENERIC_PLAN cannot be used together")));
 
 	/* if the summary was not set explicitly, set default value */
 	es->summary = (summary_set) ? es->summary : es->analyze;

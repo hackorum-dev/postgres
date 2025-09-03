@@ -2488,6 +2488,12 @@ eval_const_expressions_mutator(Node *node,
 					if (OidIsValid(prm->ptype) &&
 						prm->ptype == param->paramtype)
 					{
+						if (!context->estimate &&
+						(prm->pflags & PARAM_FLAG_REFVALUE))
+						{
+							/* Keep as Param */
+							return (Node *) copyObject(param);
+						}
 						/* OK to substitute parameter value? */
 						if (context->estimate ||
 							(prm->pflags & PARAM_FLAG_CONST))

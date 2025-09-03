@@ -82,3 +82,34 @@ SELECT name, statement, parameter_types, result_types FROM pg_prepared_statement
 DEALLOCATE ALL;
 SELECT name, statement, parameter_types FROM pg_prepared_statements
     ORDER BY name;
+
+CREATE TABLE rg_test (x int, y int);
+INSERT INTO rg_test SELECT g, g FROM generate_series(1,1000) g;
+CREATE INDEX rg_test_x_idx ON rg_test(x);
+VACUUM ANALYZE rg_test;
+
+SET plan_cache_mode = 'force_ref_generic_plan';
+SET enable_seqscan = off;
+SET enable_indexonlyscan = off;
+
+PREPARE rgq(int) AS
+  SELECT * FROM rg_test WHERE x < $1;
+
+EXPLAIN (COSTS OFF, GENERIC_PLAN, REF_GENERIC_PLAN true)
+EXECUTE rgq(10);
+
+DEALLOCATE rgq;
+
+PREPARE rgq2(int) AS
+  SELECT * FROM rg_test WHERE x > $1;
+
+EXPLAIN (ANALYZE, REF_GENERIC_PLAN true)
+EXECUTE rgq2(500);
+
+DEALLOCATE rgq2;
+
+RESET enable_seqscan;
+RESET enable_indexonlyscan;
+RESET plan_cache_mode;
+DROP TABLE rg_test;
+
