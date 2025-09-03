@@ -364,7 +364,10 @@ static void pgss_store(const char *query, int64 queryId,
 					   PlannedStmtOrigin planOrigin);
 static void pg_stat_statements_internal(FunctionCallInfo fcinfo,
 										pgssVersion api_version,
-										bool showtext);
+										bool showtext,
+										Oid userid,
+										Oid dbid,
+										int64 queryid);
 static Size pgss_memsize(void);
 static pgssEntry *entry_alloc(pgssHashKey *key, Size query_offset, int query_len,
 							  int encoding, bool sticky);
@@ -1597,8 +1600,12 @@ Datum
 pg_stat_statements_1_13(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
+	Oid			userid = PG_GETARG_OID(1);
+	Oid			dbid = PG_GETARG_OID(2);
+	int64		queryid = PG_GETARG_INT64(3);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_13, showtext);
+	pg_stat_statements_internal(fcinfo, PGSS_V1_13, showtext,
+								userid, dbid, queryid);
 
 	return (Datum) 0;
 }
@@ -1608,7 +1615,7 @@ pg_stat_statements_1_12(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_12, showtext);
+	pg_stat_statements_internal(fcinfo, PGSS_V1_12, showtext, 0, 0, 0);
 
 	return (Datum) 0;
 }
@@ -1618,7 +1625,7 @@ pg_stat_statements_1_11(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_11, showtext);
+	pg_stat_statements_internal(fcinfo, PGSS_V1_11, showtext, 0, 0, 0);
 
 	return (Datum) 0;
 }
@@ -1628,7 +1635,7 @@ pg_stat_statements_1_10(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_10, showtext);
+	pg_stat_statements_internal(fcinfo, PGSS_V1_10, showtext, 0, 0, 0);
 
 	return (Datum) 0;
 }
@@ -1638,7 +1645,7 @@ pg_stat_statements_1_9(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_9, showtext);
+	pg_stat_statements_internal(fcinfo, PGSS_V1_9, showtext, 0, 0, 0);
 
 	return (Datum) 0;
 }
@@ -1648,7 +1655,7 @@ pg_stat_statements_1_8(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_8, showtext);
+	pg_stat_statements_internal(fcinfo, PGSS_V1_8, showtext, 0, 0, 0);
 
 	return (Datum) 0;
 }
@@ -1658,7 +1665,7 @@ pg_stat_statements_1_3(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_3, showtext);
+	pg_stat_statements_internal(fcinfo, PGSS_V1_3, showtext, 0, 0, 0);
 
 	return (Datum) 0;
 }
@@ -1668,7 +1675,7 @@ pg_stat_statements_1_2(PG_FUNCTION_ARGS)
 {
 	bool		showtext = PG_GETARG_BOOL(0);
 
-	pg_stat_statements_internal(fcinfo, PGSS_V1_2, showtext);
+	pg_stat_statements_internal(fcinfo, PGSS_V1_2, showtext, 0, 0, 0);
 
 	return (Datum) 0;
 }
@@ -1681,19 +1688,243 @@ Datum
 pg_stat_statements(PG_FUNCTION_ARGS)
 {
 	/* If it's really API 1.1, we'll figure that out below */
-	pg_stat_statements_internal(fcinfo, PGSS_V1_0, true);
+	pg_stat_statements_internal(fcinfo, PGSS_V1_0, true, 0, 0, 0);
 
 	return (Datum) 0;
+}
+
+static void
+pg_stat_statements_handle_entry(const ReturnSetInfo *rsinfo,
+								pgssEntry *entry,
+								bool showtext,
+								bool is_allowed_role,
+								Oid userid,
+								char *qbuffer,
+								Size qbuffer_size,
+								pgssVersion api_version)
+{
+	Datum		values[PG_STAT_STATEMENTS_COLS];
+	bool		nulls[PG_STAT_STATEMENTS_COLS];
+	int			i = 0;
+	Counters	tmp;
+	double		stddev;
+	int64		queryid = entry->key.queryid;
+	TimestampTz stats_since;
+	TimestampTz minmax_stats_since;
+
+	memset(values, 0, sizeof(values));
+	memset(nulls, 0, sizeof(nulls));
+
+	values[i++] = ObjectIdGetDatum(entry->key.userid);
+	values[i++] = ObjectIdGetDatum(entry->key.dbid);
+	if (api_version >= PGSS_V1_9)
+		values[i++] = BoolGetDatum(entry->key.toplevel);
+
+	if (is_allowed_role || entry->key.userid == userid)
+	{
+		if (api_version >= PGSS_V1_2)
+			values[i++] = Int64GetDatumFast(queryid);
+
+		if (showtext)
+		{
+			char	   *qstr = qtext_fetch(entry->query_offset,
+										   entry->query_len,
+										   qbuffer,
+										   qbuffer_size);
+
+			if (qstr)
+			{
+				char	   *enc;
+
+				enc = pg_any_to_server(qstr,
+									   entry->query_len,
+									   entry->encoding);
+
+				values[i++] = CStringGetTextDatum(enc);
+
+				if (enc != qstr)
+					pfree(enc);
+			}
+			else
+			{
+				/* Just return a null if we fail to find the text */
+				nulls[i++] = true;
+			}
+		}
+		else
+		{
+			/* Query text not requested */
+			nulls[i++] = true;
+		}
+	}
+	else
+	{
+		/* Don't show queryid */
+		if (api_version >= PGSS_V1_2)
+			nulls[i++] = true;
+
+		/*
+		 * Don't show query text, but hint as to the reason for not doing
+		 * so if it was requested
+		 */
+		if (showtext)
+			values[i++] = CStringGetTextDatum("<insufficient privilege>");
+		else
+			nulls[i++] = true;
+	}
+
+	/* copy counters to a local variable to keep locking time short */
+	SpinLockAcquire(&entry->mutex);
+	tmp = entry->counters;
+	SpinLockRelease(&entry->mutex);
+
+	/*
+	 * The spinlock is not required when reading these two as they are
+	 * always updated when holding pgss->lock exclusively.
+	 */
+	stats_since = entry->stats_since;
+	minmax_stats_since = entry->minmax_stats_since;
+
+	/* Skip entry if unexecuted (ie, it's a pending "sticky" entry) */
+	if (IS_STICKY(tmp))
+		return;
+
+	/* Note that we rely on PGSS_PLAN being 0 and PGSS_EXEC being 1. */
+	for (int kind = 0; kind < PGSS_NUMKIND; kind++)
+	{
+		if (kind == PGSS_EXEC || api_version >= PGSS_V1_8)
+		{
+			values[i++] = Int64GetDatumFast(tmp.calls[kind]);
+			values[i++] = Float8GetDatumFast(tmp.total_time[kind]);
+		}
+
+		if ((kind == PGSS_EXEC && api_version >= PGSS_V1_3) ||
+			api_version >= PGSS_V1_8)
+		{
+			values[i++] = Float8GetDatumFast(tmp.min_time[kind]);
+			values[i++] = Float8GetDatumFast(tmp.max_time[kind]);
+			values[i++] = Float8GetDatumFast(tmp.mean_time[kind]);
+
+			/*
+			 * Note we are calculating the population variance here, not
+			 * the sample variance, as we have data for the whole
+			 * population, so Bessel's correction is not used, and we
+			 * don't divide by tmp.calls - 1.
+			 */
+			if (tmp.calls[kind] > 1)
+				stddev = sqrt(tmp.sum_var_time[kind] / tmp.calls[kind]);
+			else
+				stddev = 0.0;
+			values[i++] = Float8GetDatumFast(stddev);
+		}
+	}
+	values[i++] = Int64GetDatumFast(tmp.rows);
+	values[i++] = Int64GetDatumFast(tmp.shared_blks_hit);
+	values[i++] = Int64GetDatumFast(tmp.shared_blks_read);
+	if (api_version >= PGSS_V1_1)
+		values[i++] = Int64GetDatumFast(tmp.shared_blks_dirtied);
+	values[i++] = Int64GetDatumFast(tmp.shared_blks_written);
+	values[i++] = Int64GetDatumFast(tmp.local_blks_hit);
+	values[i++] = Int64GetDatumFast(tmp.local_blks_read);
+	if (api_version >= PGSS_V1_1)
+		values[i++] = Int64GetDatumFast(tmp.local_blks_dirtied);
+	values[i++] = Int64GetDatumFast(tmp.local_blks_written);
+	values[i++] = Int64GetDatumFast(tmp.temp_blks_read);
+	values[i++] = Int64GetDatumFast(tmp.temp_blks_written);
+	if (api_version >= PGSS_V1_1)
+	{
+		values[i++] = Float8GetDatumFast(tmp.shared_blk_read_time);
+		values[i++] = Float8GetDatumFast(tmp.shared_blk_write_time);
+	}
+	if (api_version >= PGSS_V1_11)
+	{
+		values[i++] = Float8GetDatumFast(tmp.local_blk_read_time);
+		values[i++] = Float8GetDatumFast(tmp.local_blk_write_time);
+	}
+	if (api_version >= PGSS_V1_10)
+	{
+		values[i++] = Float8GetDatumFast(tmp.temp_blk_read_time);
+		values[i++] = Float8GetDatumFast(tmp.temp_blk_write_time);
+	}
+	if (api_version >= PGSS_V1_8)
+	{
+		char		buf[256];
+		Datum		wal_bytes;
+
+		values[i++] = Int64GetDatumFast(tmp.wal_records);
+		values[i++] = Int64GetDatumFast(tmp.wal_fpi);
+
+		snprintf(buf, sizeof buf, UINT64_FORMAT, tmp.wal_bytes);
+
+		/* Convert to numeric. */
+		wal_bytes = DirectFunctionCall3(numeric_in,
+										CStringGetDatum(buf),
+										ObjectIdGetDatum(0),
+										Int32GetDatum(-1));
+		values[i++] = wal_bytes;
+	}
+	if (api_version >= PGSS_V1_12)
+	{
+		values[i++] = Int64GetDatumFast(tmp.wal_buffers_full);
+	}
+	if (api_version >= PGSS_V1_10)
+	{
+		values[i++] = Int64GetDatumFast(tmp.jit_functions);
+		values[i++] = Float8GetDatumFast(tmp.jit_generation_time);
+		values[i++] = Int64GetDatumFast(tmp.jit_inlining_count);
+		values[i++] = Float8GetDatumFast(tmp.jit_inlining_time);
+		values[i++] = Int64GetDatumFast(tmp.jit_optimization_count);
+		values[i++] = Float8GetDatumFast(tmp.jit_optimization_time);
+		values[i++] = Int64GetDatumFast(tmp.jit_emission_count);
+		values[i++] = Float8GetDatumFast(tmp.jit_emission_time);
+	}
+	if (api_version >= PGSS_V1_11)
+	{
+		values[i++] = Int64GetDatumFast(tmp.jit_deform_count);
+		values[i++] = Float8GetDatumFast(tmp.jit_deform_time);
+	}
+	if (api_version >= PGSS_V1_12)
+	{
+		values[i++] = Int64GetDatumFast(tmp.parallel_workers_to_launch);
+		values[i++] = Int64GetDatumFast(tmp.parallel_workers_launched);
+	}
+	if (api_version >= PGSS_V1_13)
+	{
+		values[i++] = Int64GetDatumFast(tmp.generic_plan_calls);
+		values[i++] = Int64GetDatumFast(tmp.custom_plan_calls);
+	}
+	if (api_version >= PGSS_V1_11)
+	{
+		values[i++] = TimestampTzGetDatum(stats_since);
+		values[i++] = TimestampTzGetDatum(minmax_stats_since);
+	}
+
+	Assert(i == (api_version == PGSS_V1_0 ? PG_STAT_STATEMENTS_COLS_V1_0 :
+				 api_version == PGSS_V1_1 ? PG_STAT_STATEMENTS_COLS_V1_1 :
+				 api_version == PGSS_V1_2 ? PG_STAT_STATEMENTS_COLS_V1_2 :
+				 api_version == PGSS_V1_3 ? PG_STAT_STATEMENTS_COLS_V1_3 :
+				 api_version == PGSS_V1_8 ? PG_STAT_STATEMENTS_COLS_V1_8 :
+				 api_version == PGSS_V1_9 ? PG_STAT_STATEMENTS_COLS_V1_9 :
+				 api_version == PGSS_V1_10 ? PG_STAT_STATEMENTS_COLS_V1_10 :
+				 api_version == PGSS_V1_11 ? PG_STAT_STATEMENTS_COLS_V1_11 :
+				 api_version == PGSS_V1_12 ? PG_STAT_STATEMENTS_COLS_V1_12 :
+				 api_version == PGSS_V1_13 ? PG_STAT_STATEMENTS_COLS_V1_13 :
+				 -1 /* fail if you forget to update this assert */ ));
+
+	tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 }
 
 /* Common code for all versions of pg_stat_statements() */
 static void
 pg_stat_statements_internal(FunctionCallInfo fcinfo,
 							pgssVersion api_version,
-							bool showtext)
+							bool showtext,
+							Oid userid,
+							Oid dbid,
+							int64 queryid)
 {
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
-	Oid			userid = GetUserId();
+	Oid			current_userid = GetUserId();
 	bool		is_allowed_role = false;
 	char	   *qbuffer = NULL;
 	Size		qbuffer_size = 0;
@@ -1706,7 +1937,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	 * Superusers or roles with the privileges of pg_read_all_stats members
 	 * are allowed
 	 */
-	is_allowed_role = has_privs_of_role(userid, ROLE_PG_READ_ALL_STATS);
+	is_allowed_role = has_privs_of_role(current_userid, ROLE_PG_READ_ALL_STATS);
 
 	/* hash table must exist already */
 	if (!pgss || !pgss_hash)
@@ -1829,218 +2060,59 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 		}
 	}
 
-	hash_seq_init(&hash_seq, pgss_hash);
-	while ((entry = hash_seq_search(&hash_seq)) != NULL)
+	if (userid != 0 && dbid != 0 && queryid != INT64CONST(0))
 	{
-		Datum		values[PG_STAT_STATEMENTS_COLS];
-		bool		nulls[PG_STAT_STATEMENTS_COLS];
-		int			i = 0;
-		Counters	tmp;
-		double		stddev;
-		int64		queryid = entry->key.queryid;
-		TimestampTz stats_since;
-		TimestampTz minmax_stats_since;
+		/* If all the parameters are available, use the fast path. */
+		pgssHashKey key;
+		memset(&key, 0, sizeof(pgssHashKey));
+		key.userid = userid;
+		key.dbid = dbid;
+		key.queryid = queryid;
 
-		memset(values, 0, sizeof(values));
-		memset(nulls, 0, sizeof(nulls));
+		/* Find the non-top-level entry. */
+		key.toplevel = false;
+		entry = (pgssEntry *) hash_search(pgss_hash, &key, HASH_FIND, NULL);
 
-		values[i++] = ObjectIdGetDatum(entry->key.userid);
-		values[i++] = ObjectIdGetDatum(entry->key.dbid);
-		if (api_version >= PGSS_V1_9)
-			values[i++] = BoolGetDatum(entry->key.toplevel);
+		if (entry)
+			pg_stat_statements_handle_entry(rsinfo, entry, showtext,
+											is_allowed_role, current_userid,
+											qbuffer, qbuffer_size,
+											api_version);
 
-		if (is_allowed_role || entry->key.userid == userid)
+		/* Also find the top-level entry. */
+		key.toplevel = true;
+		entry = (pgssEntry *) hash_search(pgss_hash, &key, HASH_FIND, NULL);
+
+		if (entry)
+			pg_stat_statements_handle_entry(rsinfo, entry, showtext,
+											is_allowed_role, current_userid,
+											qbuffer, qbuffer_size,
+											api_version);
+	}
+	else if (userid != 0 || dbid != 0 || queryid != INT64CONST(0))
+	{
+		hash_seq_init(&hash_seq, pgss_hash);
+		while ((entry = hash_seq_search(&hash_seq)) != NULL)
 		{
-			if (api_version >= PGSS_V1_2)
-				values[i++] = Int64GetDatumFast(queryid);
-
-			if (showtext)
+			if ((!userid || entry->key.userid == userid) &&
+				(!dbid || entry->key.dbid == dbid) &&
+				(!queryid || entry->key.queryid == queryid))
 			{
-				char	   *qstr = qtext_fetch(entry->query_offset,
-											   entry->query_len,
-											   qbuffer,
-											   qbuffer_size);
-
-				if (qstr)
-				{
-					char	   *enc;
-
-					enc = pg_any_to_server(qstr,
-										   entry->query_len,
-										   entry->encoding);
-
-					values[i++] = CStringGetTextDatum(enc);
-
-					if (enc != qstr)
-						pfree(enc);
-				}
-				else
-				{
-					/* Just return a null if we fail to find the text */
-					nulls[i++] = true;
-				}
-			}
-			else
-			{
-				/* Query text not requested */
-				nulls[i++] = true;
+				pg_stat_statements_handle_entry(rsinfo, entry, showtext,
+												is_allowed_role, current_userid,
+												qbuffer, qbuffer_size,
+												api_version);
 			}
 		}
-		else
-		{
-			/* Don't show queryid */
-			if (api_version >= PGSS_V1_2)
-				nulls[i++] = true;
-
-			/*
-			 * Don't show query text, but hint as to the reason for not doing
-			 * so if it was requested
-			 */
-			if (showtext)
-				values[i++] = CStringGetTextDatum("<insufficient privilege>");
-			else
-				nulls[i++] = true;
-		}
-
-		/* copy counters to a local variable to keep locking time short */
-		SpinLockAcquire(&entry->mutex);
-		tmp = entry->counters;
-		SpinLockRelease(&entry->mutex);
-
-		/*
-		 * The spinlock is not required when reading these two as they are
-		 * always updated when holding pgss->lock exclusively.
-		 */
-		stats_since = entry->stats_since;
-		minmax_stats_since = entry->minmax_stats_since;
-
-		/* Skip entry if unexecuted (ie, it's a pending "sticky" entry) */
-		if (IS_STICKY(tmp))
-			continue;
-
-		/* Note that we rely on PGSS_PLAN being 0 and PGSS_EXEC being 1. */
-		for (int kind = 0; kind < PGSS_NUMKIND; kind++)
-		{
-			if (kind == PGSS_EXEC || api_version >= PGSS_V1_8)
-			{
-				values[i++] = Int64GetDatumFast(tmp.calls[kind]);
-				values[i++] = Float8GetDatumFast(tmp.total_time[kind]);
-			}
-
-			if ((kind == PGSS_EXEC && api_version >= PGSS_V1_3) ||
-				api_version >= PGSS_V1_8)
-			{
-				values[i++] = Float8GetDatumFast(tmp.min_time[kind]);
-				values[i++] = Float8GetDatumFast(tmp.max_time[kind]);
-				values[i++] = Float8GetDatumFast(tmp.mean_time[kind]);
-
-				/*
-				 * Note we are calculating the population variance here, not
-				 * the sample variance, as we have data for the whole
-				 * population, so Bessel's correction is not used, and we
-				 * don't divide by tmp.calls - 1.
-				 */
-				if (tmp.calls[kind] > 1)
-					stddev = sqrt(tmp.sum_var_time[kind] / tmp.calls[kind]);
-				else
-					stddev = 0.0;
-				values[i++] = Float8GetDatumFast(stddev);
-			}
-		}
-		values[i++] = Int64GetDatumFast(tmp.rows);
-		values[i++] = Int64GetDatumFast(tmp.shared_blks_hit);
-		values[i++] = Int64GetDatumFast(tmp.shared_blks_read);
-		if (api_version >= PGSS_V1_1)
-			values[i++] = Int64GetDatumFast(tmp.shared_blks_dirtied);
-		values[i++] = Int64GetDatumFast(tmp.shared_blks_written);
-		values[i++] = Int64GetDatumFast(tmp.local_blks_hit);
-		values[i++] = Int64GetDatumFast(tmp.local_blks_read);
-		if (api_version >= PGSS_V1_1)
-			values[i++] = Int64GetDatumFast(tmp.local_blks_dirtied);
-		values[i++] = Int64GetDatumFast(tmp.local_blks_written);
-		values[i++] = Int64GetDatumFast(tmp.temp_blks_read);
-		values[i++] = Int64GetDatumFast(tmp.temp_blks_written);
-		if (api_version >= PGSS_V1_1)
-		{
-			values[i++] = Float8GetDatumFast(tmp.shared_blk_read_time);
-			values[i++] = Float8GetDatumFast(tmp.shared_blk_write_time);
-		}
-		if (api_version >= PGSS_V1_11)
-		{
-			values[i++] = Float8GetDatumFast(tmp.local_blk_read_time);
-			values[i++] = Float8GetDatumFast(tmp.local_blk_write_time);
-		}
-		if (api_version >= PGSS_V1_10)
-		{
-			values[i++] = Float8GetDatumFast(tmp.temp_blk_read_time);
-			values[i++] = Float8GetDatumFast(tmp.temp_blk_write_time);
-		}
-		if (api_version >= PGSS_V1_8)
-		{
-			char		buf[256];
-			Datum		wal_bytes;
-
-			values[i++] = Int64GetDatumFast(tmp.wal_records);
-			values[i++] = Int64GetDatumFast(tmp.wal_fpi);
-
-			snprintf(buf, sizeof buf, UINT64_FORMAT, tmp.wal_bytes);
-
-			/* Convert to numeric. */
-			wal_bytes = DirectFunctionCall3(numeric_in,
-											CStringGetDatum(buf),
-											ObjectIdGetDatum(0),
-											Int32GetDatum(-1));
-			values[i++] = wal_bytes;
-		}
-		if (api_version >= PGSS_V1_12)
-		{
-			values[i++] = Int64GetDatumFast(tmp.wal_buffers_full);
-		}
-		if (api_version >= PGSS_V1_10)
-		{
-			values[i++] = Int64GetDatumFast(tmp.jit_functions);
-			values[i++] = Float8GetDatumFast(tmp.jit_generation_time);
-			values[i++] = Int64GetDatumFast(tmp.jit_inlining_count);
-			values[i++] = Float8GetDatumFast(tmp.jit_inlining_time);
-			values[i++] = Int64GetDatumFast(tmp.jit_optimization_count);
-			values[i++] = Float8GetDatumFast(tmp.jit_optimization_time);
-			values[i++] = Int64GetDatumFast(tmp.jit_emission_count);
-			values[i++] = Float8GetDatumFast(tmp.jit_emission_time);
-		}
-		if (api_version >= PGSS_V1_11)
-		{
-			values[i++] = Int64GetDatumFast(tmp.jit_deform_count);
-			values[i++] = Float8GetDatumFast(tmp.jit_deform_time);
-		}
-		if (api_version >= PGSS_V1_12)
-		{
-			values[i++] = Int64GetDatumFast(tmp.parallel_workers_to_launch);
-			values[i++] = Int64GetDatumFast(tmp.parallel_workers_launched);
-		}
-		if (api_version >= PGSS_V1_13)
-		{
-			values[i++] = Int64GetDatumFast(tmp.generic_plan_calls);
-			values[i++] = Int64GetDatumFast(tmp.custom_plan_calls);
-		}
-		if (api_version >= PGSS_V1_11)
-		{
-			values[i++] = TimestampTzGetDatum(stats_since);
-			values[i++] = TimestampTzGetDatum(minmax_stats_since);
-		}
-
-		Assert(i == (api_version == PGSS_V1_0 ? PG_STAT_STATEMENTS_COLS_V1_0 :
-					 api_version == PGSS_V1_1 ? PG_STAT_STATEMENTS_COLS_V1_1 :
-					 api_version == PGSS_V1_2 ? PG_STAT_STATEMENTS_COLS_V1_2 :
-					 api_version == PGSS_V1_3 ? PG_STAT_STATEMENTS_COLS_V1_3 :
-					 api_version == PGSS_V1_8 ? PG_STAT_STATEMENTS_COLS_V1_8 :
-					 api_version == PGSS_V1_9 ? PG_STAT_STATEMENTS_COLS_V1_9 :
-					 api_version == PGSS_V1_10 ? PG_STAT_STATEMENTS_COLS_V1_10 :
-					 api_version == PGSS_V1_11 ? PG_STAT_STATEMENTS_COLS_V1_11 :
-					 api_version == PGSS_V1_12 ? PG_STAT_STATEMENTS_COLS_V1_12 :
-					 api_version == PGSS_V1_13 ? PG_STAT_STATEMENTS_COLS_V1_13 :
-					 -1 /* fail if you forget to update this assert */ ));
-
-		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
+	}
+	else
+	{
+		hash_seq_init(&hash_seq, pgss_hash);
+		while ((entry = hash_seq_search(&hash_seq)) != NULL)
+			pg_stat_statements_handle_entry(rsinfo, entry, showtext,
+											is_allowed_role, current_userid,
+											qbuffer, qbuffer_size,
+											api_version);
 	}
 
 	LWLockRelease(pgss->lock);

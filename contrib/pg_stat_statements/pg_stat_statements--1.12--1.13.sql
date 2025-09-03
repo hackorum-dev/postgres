@@ -13,6 +13,9 @@ DROP FUNCTION pg_stat_statements(boolean);
 
 /* Now redefine */
 CREATE FUNCTION pg_stat_statements(IN showtext boolean,
+    IN userid oid DEFAULT 0,
+    IN dbid oid DEFAULT 0,
+    IN queryid bigint DEFAULT 0,
     OUT userid oid,
     OUT dbid oid,
     OUT toplevel bool,
