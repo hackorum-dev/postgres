@@ -184,6 +184,7 @@
 #define RT_BEGIN_ITERATE RT_MAKE_NAME(begin_iterate)
 #define RT_BEGIN_ITERATE_AT RT_MAKE_NAME(begin_iterate_at)
 #define RT_ITERATE_NEXT RT_MAKE_NAME(iterate_next)
+#define RT_ITER_STAGE_DELETE RT_MAKE_NAME(iter_stage_delete)
 #define RT_END_ITERATE RT_MAKE_NAME(end_iterate)
 #define RT_DELETE RT_MAKE_NAME(delete)
 #define RT_MEMORY_USAGE RT_MAKE_NAME(memory_usage)
@@ -293,6 +294,7 @@ RT_SCOPE bool RT_DELETE(RT_RADIX_TREE * tree, uint64 key);
 RT_SCOPE	RT_ITER *RT_BEGIN_ITERATE(RT_RADIX_TREE * tree);
 RT_SCOPE	RT_ITER *RT_BEGIN_ITERATE_AT(RT_RADIX_TREE * tree, uint64 key);
 RT_SCOPE	RT_VALUE_TYPE *RT_ITERATE_NEXT(RT_ITER * iter, uint64 *key_p);
+RT_SCOPE void RT_ITER_STAGE_DELETE(RT_ITER * iter);
 RT_SCOPE void RT_END_ITERATE(RT_ITER * iter);
 
 RT_SCOPE uint64 RT_MEMORY_USAGE(RT_RADIX_TREE * tree);
@@ -747,6 +749,10 @@ struct RT_ITER
 
 	/* The key constructed during iteration */
 	uint64		key;
+
+	/* state for deletion that happens during iteration */
+	uint64		to_delete[RT_NODE_MAX_SLOTS];
+	int			num_to_delete;
 };
 
 
@@ -2112,6 +2118,7 @@ RT_BEGIN_ITERATE_AT(RT_RADIX_TREE * tree, uint64 key)
 		iter->node_iters[level].idx = RT_GET_KEY_CHUNK(key, level * RT_SPAN);
 	}
 
+	iter->key = key;
 	return iter;
 }
 
@@ -2230,6 +2237,10 @@ RT_SCOPE	RT_VALUE_TYPE *
 RT_ITERATE_NEXT(RT_ITER * iter, uint64 *key_p)
 {
 	RT_PTR_ALLOC *slot = NULL;
+restart:
+	/* guard against starting iteration larger than max val */
+	if (iter->key > iter->tree->ctl->max_val)
+		return NULL;
 
 	while (iter->cur_level <= iter->top_level)
 	{
@@ -2261,6 +2272,23 @@ RT_ITERATE_NEXT(RT_ITER * iter, uint64 *key_p)
 			iter->cur_level--;
 			iter->node_iters[iter->cur_level].node = node;
 		}
+		else if (iter->num_to_delete > 0)
+		{
+			// WIP test overflow
+			/* zero out lowest byte */
+			uint64 leaf_min_key = iter->key & ~((uint64) RT_CHUNK_MASK);
+			RT_RADIX_TREE *save_tree = iter->tree;
+
+			Assert(iter->cur_level == 0);
+
+			RT_END_ITERATE(iter);
+			if (leaf_min_key < (PG_UINT64_MAX & ~((uint64) RT_CHUNK_MASK)))
+			{
+				/* restart at lowest possible key for next iteration */
+				iter = RT_BEGIN_ITERATE_AT(save_tree, leaf_min_key + RT_NODE_MAX_SLOTS);
+				goto restart;
+			}
+		}
 		else
 		{
 			/* Not found the child slot, move up the tree */
@@ -2273,12 +2301,24 @@ RT_ITERATE_NEXT(RT_ITER * iter, uint64 *key_p)
 	return NULL;
 }
 
+RT_SCOPE void
+RT_ITER_STAGE_DELETE(RT_ITER * iter)
+{
+	iter->to_delete[iter->num_to_delete++] = iter->key;
+}
+
 /*
  * Terminate the iteration. The caller is responsible for releasing any locks.
  */
 RT_SCOPE void
 RT_END_ITERATE(RT_ITER * iter)
 {
+	for (int i = 0; i < iter->num_to_delete; i++)
+	{
+		bool deleted = RT_DELETE(iter->tree, iter->to_delete[i]);
+		Assert(deleted);
+	}
+
 	pfree(iter);
 }
 
@@ -3020,6 +3060,7 @@ RT_DUMP_NODE(RT_NODE * node)
 #undef RT_BEGIN_ITERATE
 #undef RT_BEGIN_ITERATE_AT
 #undef RT_ITERATE_NEXT
+#undef RT_ITER_STAGE_DELETE
 #undef RT_END_ITERATE
 #undef RT_DELETE
 #undef RT_MEMORY_USAGE

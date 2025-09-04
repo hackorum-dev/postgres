@@ -332,6 +332,101 @@ test_basic(rt_node_class_test_elem *test_info, int shift, bool asc)
 #endif
 }
 
+static void
+test_iter_delete(int shift)
+{
+	rt_radix_tree *radixtree;
+	rt_iter    *iter;
+	uint64		iterkey;
+	TestValueType *iterval;
+
+	/* limit memory usage by limiting the key space */
+	//int			num_keys = 2;
+	uint64	   keys[2] = {7 << shift, 17 << shift};
+#ifdef TEST_SHARED_RT
+	int			tranche_id = LWLockNewTrancheId("test_radix_tree");
+	dsa_area   *dsa;
+
+	dsa = dsa_create(tranche_id);
+	radixtree = rt_create(dsa, tranche_id);
+#else
+	MemoryContext radixtree_ctx;
+
+	radixtree_ctx = SlabContextCreate(CurrentMemoryContext,
+									  "test_radix_tree",
+									  SLAB_DEFAULT_BLOCK_SIZE,
+									  sizeof(TestValueType));
+	radixtree = rt_create(radixtree_ctx);
+#endif
+
+	elog(NOTICE, "testing iteration with delete at shift %d",
+		 shift);
+
+	rt_set(radixtree, keys[0], &keys[0]);
+	rt_set(radixtree, keys[1], &keys[1]);
+	rt_stats(radixtree);
+
+	/* begin at last key */
+	iter = rt_begin_iterate_at(radixtree, keys[1]);
+
+	/* expect the value we started at */
+	iterval = rt_iterate_next(iter, &iterkey);
+	EXPECT_TRUE(iterval != NULL);
+	EXPECT_EQ_U64(iterkey, keys[1]);
+	EXPECT_EQ_U64(*iterval, keys[1]);
+
+	/* ...and no more */
+	iterval = rt_iterate_next(iter, &iterkey);
+	EXPECT_TRUE(iterval == NULL);
+
+	/* begin lower than first key */
+	Assert(keys[0] > 0);
+	iter = rt_begin_iterate_at(radixtree, 0);
+
+	/* advance to first key */
+	iterval = rt_iterate_next(iter, &iterkey);
+	EXPECT_TRUE(iterval != NULL);
+	EXPECT_EQ_U64(iterkey, keys[0]);
+	EXPECT_EQ_U64(*iterval, keys[0]);
+
+	/* stage it for deletion */
+	rt_iter_stage_delete(iter);
+
+	/* get next key/value, should be the last one */
+	iterval = rt_iterate_next(iter, &iterkey);
+	EXPECT_TRUE(iterval != NULL);
+	EXPECT_EQ_U64(iterkey, keys[1]);
+	EXPECT_EQ_U64(*iterval, keys[1]);
+
+	/* commit deletion */
+	rt_end_iterate(iter);
+	EXPECT_TRUE(rt_num_entries(radixtree) == 1);
+
+	rt_stats(radixtree);
+
+	/* begin after last key, making sure root node has lowest possible chunk */
+
+	Assert(keys[1] < 65536 + 1);
+	rt_begin_iterate_at(radixtree, 65536 + 1);
+	/* should find nothing */
+	iterval = rt_iterate_next(iter, &iterkey);
+	EXPECT_TRUE(iterval == NULL);
+
+	/* delete everything through the iterator */
+
+	for (TestValueType i = 1000; i< 2000; i++)
+		rt_set(radixtree, i, &i);
+
+	iter = rt_begin_iterate(radixtree);
+	while ((iterval = rt_iterate_next(iter, &iterkey)) != NULL)
+	{
+		Assert (*iterval = iterkey);
+		rt_iter_stage_delete(iter);
+	}
+	rt_end_iterate(iter);
+	EXPECT_TRUE(rt_num_entries(radixtree) == 0);
+}
+
 static int
 key_cmp(const void *a, const void *b)
 {
@@ -502,6 +597,9 @@ test_radixtree(PG_FUNCTION_ARGS)
 	}
 
 	test_random();
+
+	test_iter_delete(0);
+	test_iter_delete(8);
 
 	PG_RETURN_VOID();
 }

@@ -34,6 +34,8 @@ NOTICE:  testing node node-256 with shift 8 and ascending keys
 NOTICE:  testing node node-256 with shift 8 and descending keys
 NOTICE:  testing node node-256 with shift 56 and ascending keys
 NOTICE:  testing node node-256 with shift 56 and descending keys
+NOTICE:  testing iteration with delete at shift 0
+NOTICE:  testing iteration with delete at shift 8
  test_radixtree 
 ----------------
  
