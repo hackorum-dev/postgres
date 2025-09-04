@@ -527,9 +527,8 @@ protocol to make nodes agree on a serializable transactional order.
   </para>
 
   <para>
-   It should be noted that log shipping is asynchronous, i.e., the WAL
-   records are shipped after transaction commit. As a result, there is a
-   window for data loss should the primary server suffer a catastrophic
+   It should be noted that log shipping is asynchronous. As a result, there
+   is a window for data loss should the primary server suffer a catastrophic
    failure; transactions not yet shipped will be lost.  The size of the
    data loss window in file-based log shipping can be limited by use of the
    <varname>archive_timeout</varname> parameter, which can be set as low
