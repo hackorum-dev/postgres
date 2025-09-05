@@ -4593,6 +4593,10 @@ LINE 4:   return 'foo\\bar\041baz';
                  ^
 HINT:  Use the escape string syntax for backslashes, e.g., E'\\'.
 select strtest();
+WARNING:  nonstandard use of \\ in a string literal
+HINT:  Use the escape string syntax for backslashes, e.g., E'\\'.
+WARNING:  nonstandard use of \\ in a string literal
+HINT:  Use the escape string syntax for backslashes, e.g., E'\\'.
 NOTICE:  foo\bar!baz
 WARNING:  nonstandard use of \\ in a string literal
 LINE 1: 'foo\\bar\041baz'

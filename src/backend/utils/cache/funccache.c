@@ -30,6 +30,7 @@
 #include "funcapi.h"
 #include "utils/funccache.h"
 #include "utils/hsearch.h"
+#include "utils/inval.h"
 #include "utils/syscache.h"
 
 
@@ -37,6 +38,9 @@
  * Hash table for cached functions
  */
 static HTAB *cfunc_hashtable = NULL;
+static HTAB *cfunc_key_hashtable = NULL;
+
+static bool	funccache_inval_registed = false;
 
 typedef struct CachedFunctionHashEntry
 {
@@ -44,11 +48,18 @@ typedef struct CachedFunctionHashEntry
 	CachedFunction *function;	/* points to data of language-specific size */
 } CachedFunctionHashEntry;
 
+typedef struct CachedFunctionKeyEntry
+{
+	uint32	keyhash;
+	CachedFunctionHashKey *key;
+} CachedFunctionKeyEntry;
+
 #define FUNCS_PER_USER		128 /* initial table size */
 
 static uint32 cfunc_hash(const void *key, Size keysize);
 static int	cfunc_match(const void *key1, const void *key2, Size keysize);
-
+static uint32 cfuncoid_hash(Oid funcoid);
+static void InvalidateFuncPlanCacheCallback(Datum arg, int cacheid, uint32 hashvalue);
 
 /*
  * Initialize the hash table on first use.
@@ -67,10 +78,27 @@ cfunc_hashtable_init(void)
 	ctl.entrysize = sizeof(CachedFunctionHashEntry);
 	ctl.hash = cfunc_hash;
 	ctl.match = cfunc_match;
+	ctl.hcxt = CacheMemoryContext;
 	cfunc_hashtable = hash_create("Cached function hash",
 								  FUNCS_PER_USER,
 								  &ctl,
-								  HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
+								  HASH_ELEM | HASH_FUNCTION | HASH_COMPARE | HASH_CONTEXT);
+}
+
+static void
+cfunc_key_hashtable_init(void)
+{
+	HASHCTL 	ctl2;
+
+	Assert(cfunc_key_hashtable == NULL);
+
+	ctl2.keysize = sizeof(uint32);
+	ctl2.entrysize = sizeof(CachedFunctionKeyEntry);
+	ctl2.hcxt = CacheMemoryContext;
+	cfunc_key_hashtable = hash_create("Cached function hash",
+									  FUNCS_PER_USER,
+									  &ctl2,
+									  HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 }
 
 /*
@@ -168,7 +196,9 @@ cfunc_hashtable_insert(CachedFunction *function,
 					   CachedFunctionHashKey *func_key)
 {
 	CachedFunctionHashEntry *hentry;
+	CachedFunctionKeyEntry *kentry;
 	bool		found;
+	uint32		keyhash;
 
 	if (cfunc_hashtable == NULL)
 		cfunc_hashtable_init();
@@ -198,6 +228,16 @@ cfunc_hashtable_insert(CachedFunction *function,
 
 	/* Set back-link from function to hashtable key */
 	function->fn_hashkey = &hentry->key;
+
+	/* Insert function key entry */
+	if (cfunc_key_hashtable == NULL)
+		cfunc_key_hashtable_init();
+
+	keyhash = cfuncoid_hash(function->fn_hashkey->funcOid);
+	kentry = (CachedFunctionKeyEntry *) hash_search(cfunc_key_hashtable,
+												   &keyhash,
+												   HASH_ENTER, NULL);
+	kentry->key = function->fn_hashkey;
 }
 
 /*
@@ -208,10 +248,15 @@ cfunc_hashtable_delete(CachedFunction *function)
 {
 	CachedFunctionHashEntry *hentry;
 	TupleDesc	tupdesc;
+	uint32 		keyhash;
 
 	/* do nothing if not in table */
 	if (function->fn_hashkey == NULL)
 		return;
+
+	/* Release key hash table entry */
+	keyhash = cfuncoid_hash(function->fn_hashkey->funcOid);
+	hash_search(cfunc_key_hashtable, &keyhash, HASH_REMOVE, NULL);
 
 	/*
 	 * We need to free the callResultType if present, which is slightly tricky
@@ -330,6 +375,18 @@ compute_function_hashkey(FunctionCallInfo fcinfo,
 				break;
 		}
 	}
+}
+
+static uint32
+cfuncoid_hash(Oid funcoid)
+{
+	uint32		hashValue = 0;
+	uint32		oneHash;
+
+	oneHash = murmurhash32((uint32) funcoid);
+	hashValue ^= oneHash;
+
+	return hashValue;
 }
 
 /*
@@ -494,6 +551,16 @@ cached_function_compile(FunctionCallInfo fcinfo,
 	bool		new_function = false;
 
 	/*
+	 * Register catalog invalidate callback
+	 */
+	if (!funccache_inval_registed)
+	{
+		funccache_inval_registed = true;
+
+		CacheRegisterSyscacheCallback(PROCOID, InvalidateFuncPlanCacheCallback, (Datum) 0);
+	}
+
+	/*
 	 * Lookup the pg_proc tuple by Oid; we'll need it in any case
 	 */
 	procTup = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcOid));
@@ -631,4 +698,49 @@ recheck:
 	 * Finally return the compiled function
 	 */
 	return function;
+}
+
+
+/*
+ * Try to delete and release the plan cache from the hash table.
+ */
+static void
+InvalidateFuncPlanCacheCallback(Datum arg, int cacheid, uint32 hashvalue)
+{
+	Assert(cacheid == PROCOID);
+
+	if (cfunc_hashtable == NULL || cfunc_key_hashtable == NULL)
+		return;
+
+	if (hashvalue == 0)
+	{
+		HASH_SEQ_STATUS scan;
+		CachedFunctionHashEntry *hentry;
+
+		hash_seq_init(&scan, cfunc_hashtable);
+		while ((hentry = (CachedFunctionHashEntry *) hash_seq_search(&scan)))
+		{
+			if (hentry->function == NULL)
+				continue;
+
+			/* ... and free */
+			delete_function(hentry->function);
+		}
+	}
+	else
+	{
+		CachedFunctionKeyEntry *kentry;
+		CachedFunction *function;
+		bool		found;
+
+		kentry = (CachedFunctionKeyEntry *) hash_search(cfunc_key_hashtable,
+														&hashvalue, HASH_FIND, &found);
+		if (found)
+		{
+			function = cfunc_hashtable_lookup(kentry->key);
+
+			if (function)
+				delete_function(function);
+		}
+	}
 }
