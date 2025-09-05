@@ -37,6 +37,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "pgstat.h"
+#include "replication/logical.h"
 #include "replication/logicallauncher.h"
 #include "replication/logicalworker.h"
 #include "replication/origin.h"
@@ -75,6 +76,7 @@
 #define SUBOPT_MAX_RETENTION_DURATION	0x00008000
 #define SUBOPT_LSN					0x00010000
 #define SUBOPT_ORIGIN				0x00020000
+#define SUBOPT_LOCAL				0x00040000
 
 /* check if the 'val' has 'bits' set */
 #define IsSet(val, bits)  (((val) & (bits)) == (bits))
@@ -101,6 +103,7 @@ typedef struct SubOpts
 	bool		runasowner;
 	bool		failover;
 	bool		retaindeadtuples;
+	bool		local;
 	int32		maxretention;
 	char	   *origin;
 	XLogRecPtr	lsn;
@@ -118,7 +121,7 @@ static List *merge_publications(List *oldpublist, List *newpublist, bool addpub,
 static void ReportSlotConnectionError(List *rstates, Oid subid, char *slotname, char *err);
 static void CheckAlterSubOption(Subscription *sub, const char *option,
 								bool slot_needs_update, bool isTopLevel);
-
+static void mark_local_subscription_creation(bool set);
 
 /*
  * Common option parsing function for CREATE and ALTER SUBSCRIPTION commands.
@@ -170,6 +173,8 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 		opts->failover = false;
 	if (IsSet(supported_opts, SUBOPT_RETAIN_DEAD_TUPLES))
 		opts->retaindeadtuples = false;
+	if (IsSet(supported_opts, SUBOPT_LOCAL))
+		opts->local = false;
 	if (IsSet(supported_opts, SUBOPT_MAX_RETENTION_DURATION))
 		opts->maxretention = 0;
 	if (IsSet(supported_opts, SUBOPT_ORIGIN))
@@ -385,6 +390,15 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 			opts->specified_opts |= SUBOPT_LSN;
 			opts->lsn = lsn;
 		}
+		else if (IsSet(supported_opts, SUBOPT_LOCAL) &&
+				 strcmp(defel->defname, "local") == 0)
+		{
+			if (IsSet(opts->specified_opts, SUBOPT_LOCAL))
+				errorConflictingDefElem(defel, pstate);
+
+			opts->specified_opts |= SUBOPT_LOCAL;
+			opts->local = defGetBoolean(defel);
+		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
@@ -593,7 +607,8 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 					  SUBOPT_DISABLE_ON_ERR | SUBOPT_PASSWORD_REQUIRED |
 					  SUBOPT_RUN_AS_OWNER | SUBOPT_FAILOVER |
 					  SUBOPT_RETAIN_DEAD_TUPLES |
-					  SUBOPT_MAX_RETENTION_DURATION | SUBOPT_ORIGIN);
+					  SUBOPT_MAX_RETENTION_DURATION | SUBOPT_ORIGIN |
+					  SUBOPT_LOCAL);
 	parse_subscription_options(pstate, stmt->options, supported_opts, &opts);
 
 	/*
@@ -828,8 +843,14 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 				if (opts.twophase && !opts.copy_data && tables != NIL)
 					twophase_enabled = true;
 
+				if (opts.local)
+					mark_local_subscription_creation(true);
+
 				walrcv_create_slot(wrconn, opts.slot_name, false, twophase_enabled,
 								   opts.failover, CRS_NOEXPORT_SNAPSHOT, NULL);
+
+				if (opts.local)
+					mark_local_subscription_creation(false);
 
 				if (twophase_enabled)
 					UpdateTwoPhaseState(subid, LOGICALREP_TWOPHASE_STATE_ENABLED);
@@ -2892,4 +2913,30 @@ defGetStreamingMode(DefElem *def)
 			 errmsg("%s requires a Boolean value or \"parallel\"",
 					def->defname)));
 	return LOGICALREP_STREAM_OFF;	/* keep compiler quiet */
+}
+
+static void
+mark_local_subscription_creation(bool set)
+{
+	bool	found;
+	LogicalLocalCreateSubscriptioinXactInfo *plx;
+	plx = ShmemInitStruct("pg_command_subscription_local",
+						   sizeof(LogicalLocalCreateSubscriptioinXactInfo),
+						   &found);
+
+	/* when unset, the memory must be found */
+	Assert(!set && !found);
+
+	if (set)
+	{
+		plx->backend_proc = MyProcNumber;
+		plx->xid = GetCurrentTransactionId();
+		ereport(LOG,
+				(errmsg("marked local subscription creation xid %d", plx->xid)));
+	}
+	else
+	{
+		plx->backend_proc = INVALID_PROC_NUMBER;
+		plx->xid = InvalidTransactionId;
+	}
 }

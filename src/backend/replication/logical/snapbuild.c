@@ -175,6 +175,9 @@ static void SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn);
 static bool SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn);
 static void SnapBuildRestoreContents(int fd, void *dest, Size size, const char *path);
 
+static bool is_xact_local_subscription_creation(TransactionId xid);
+static bool is_xact_local_subscription_creation_only_running(TransactionId oldestRunningXid, TransactionId nextXid);
+
 /*
  * Allocate a new snapshot builder.
  *
@@ -1291,7 +1294,8 @@ SnapBuildFindSnapshot(SnapBuild *builder, XLogRecPtr lsn, xl_running_xacts *runn
 	 * NB: We might have already started to incrementally assemble a snapshot,
 	 * so we need to be careful to deal with that.
 	 */
-	if (running->oldestRunningXid == running->nextXid)
+	if (running->oldestRunningXid == running->nextXid ||
+	    is_xact_local_subscription_creation_only_running(running->oldestRunningXid, running->nextXid))
 	{
 		if (builder->start_decoding_at == InvalidXLogRecPtr ||
 			builder->start_decoding_at <= lsn)
@@ -1299,7 +1303,7 @@ SnapBuildFindSnapshot(SnapBuild *builder, XLogRecPtr lsn, xl_running_xacts *runn
 			builder->start_decoding_at = lsn + 1;
 
 		/* As no transactions were running xmin/xmax can be trivially set. */
-		builder->xmin = running->nextXid;	/* < are finished */
+		builder->xmin = running->oldestRunningXid;	/* < are finished */
 		builder->xmax = running->nextXid;	/* >= are running */
 
 		/* so we can safely use the faster comparisons */
@@ -1447,6 +1451,9 @@ SnapBuildWaitSnapshot(xl_running_xacts *running, TransactionId cutoff)
 		 */
 		if (TransactionIdIsCurrentTransactionId(xid))
 			elog(ERROR, "waiting for ourselves");
+
+		if (is_xact_local_subscription_creation(xid))
+			continue;
 
 		if (TransactionIdFollows(xid, cutoff))
 			continue;
@@ -2073,4 +2080,47 @@ SnapBuildSnapshotExists(XLogRecPtr lsn)
 				 errmsg("could not stat file \"%s\": %m", path)));
 
 	return ret == 0;
+}
+
+/*
+ * Check if the transaction with id 'xid' is a local subscription creation
+ * transaction.
+ */
+static bool
+is_xact_local_subscription_creation(TransactionId xid)
+{
+	bool			found;
+	PgBackendStatus 	*backendState;
+	LogicalLocalCreateSubscriptioinXactInfo *plx;
+
+	plx = ShmemInitStruct("pg_command_subscription_local",
+						   sizeof(LogicalLocalCreateSubscriptioinXactInfo),
+						   &found);
+	if (!found) {
+		return false;
+	}
+
+	if (plx->xid != xid) {
+		return true;
+	}
+
+	backendState = pgstat_get_beentry_by_proc_number(plx->backend_proc);
+	if (backendState != NULL && backendState->st_state == STATE_RUNNING) {
+		return true;
+	}
+
+	return false;
+}
+
+/*
+ * Check if the only running transaction is a local subscription creation
+ * transaction.
+ */
+static bool
+is_xact_local_subscription_creation_only_running(TransactionId oldestRunningXid, TransactionId nextXid)
+{
+	if (oldestRunningXid + 1 != nextXid) {
+		return false;
+	}
+	return is_xact_local_subscription_creation(oldestRunningXid);
 }

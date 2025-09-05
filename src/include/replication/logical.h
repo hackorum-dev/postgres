@@ -114,6 +114,11 @@ typedef struct LogicalDecodingContext
 	bool		processing_required;
 } LogicalDecodingContext;
 
+typedef struct LogicalLocalCreateSubscriptioinXactInfo
+{
+	TransactionId xid;
+	ProcNumber	backend_proc;
+} LogicalLocalCreateSubscriptioinXactInfo;
 
 extern void CheckLogicalDecodingRequirements(void);
 
