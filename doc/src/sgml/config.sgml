@@ -11683,6 +11683,12 @@ extension_control_path = '/usr/local/share/postgresql:$system'
 dynamic_library_path = '/usr/local/lib/postgresql:$libdir'
 </programlisting>
        </para>
+
+	<para>
+        This variable specifies the order in which extensions are searched when created.
+        If an extension is present in multiple paths, only the first path that contains
+        extension's files will be used.
+       </para>
       </listitem>
      </varlistentry>
 
