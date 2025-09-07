@@ -970,19 +970,6 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 	total_len += hdr_rdt.len;
 
 	/*
-	 * Calculate CRC of the data
-	 *
-	 * Note that the record header isn't added into the CRC initially since we
-	 * don't know the prev-link yet.  Thus, the CRC will represent the CRC of
-	 * the whole record in the order: rdata, then backup blocks, then record
-	 * header.
-	 */
-	INIT_CRC32C(rdata_crc);
-	COMP_CRC32C(rdata_crc, hdr_scratch + SizeOfXLogRecord, hdr_rdt.len - SizeOfXLogRecord);
-	for (rdt = hdr_rdt.next; rdt != NULL; rdt = rdt->next)
-		COMP_CRC32C(rdata_crc, rdt->data, rdt->len);
-
-	/*
 	 * Ensure that the XLogRecord is not too large.
 	 *
 	 * XLogReader machinery is only able to handle records up to a certain
@@ -994,6 +981,19 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 				(errmsg_internal("oversized WAL record"),
 				 errdetail_internal("WAL record would be %" PRIu64 " bytes (of maximum %u bytes); rmid %u flags %u.",
 									total_len, XLogRecordMaxSize, rmid, info)));
+
+	/*
+	 * Calculate CRC of the data
+	 *
+	 * Note that the record header isn't added into the CRC initially since we
+	 * don't know the prev-link yet.  Thus, the CRC will represent the CRC of
+	 * the whole record in the order: rdata, then backup blocks, then record
+	 * header.
+	 */
+	INIT_CRC32C(rdata_crc);
+	COMP_CRC32C(rdata_crc, hdr_scratch + SizeOfXLogRecord, hdr_rdt.len - SizeOfXLogRecord);
+	for (rdt = hdr_rdt.next; rdt != NULL; rdt = rdt->next)
+		COMP_CRC32C(rdata_crc, rdt->data, rdt->len);
 
 	/*
 	 * Fill in the fields in the record header. Prev-link is filled in later,
