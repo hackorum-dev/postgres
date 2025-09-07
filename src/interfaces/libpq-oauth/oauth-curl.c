@@ -2391,11 +2391,12 @@ add_client_identification(struct async_ctx *actx, PQExpBuffer reqbody, PGconn *c
 		 * If we're not otherwise authenticating, client_id is REQUIRED in the
 		 * request body.
 		 */
-		build_urlencoded(reqbody, "client_id", oauth_client_id);
 
 		CHECK_SETOPT(actx, CURLOPT_HTTPAUTH, CURLAUTH_NONE, goto cleanup);
 		actx->used_basic_auth = false;
 	}
+
+	build_urlencoded(reqbody, "client_id", oauth_client_id);
 
 	success = true;
 
@@ -2559,7 +2560,7 @@ finish_token_request(struct async_ctx *actx, struct token *tok)
 	 * return which would violate the specification. For now we stick to the
 	 * specification but we might have to revisit this.
 	 */
-	if (response_code == 400 || response_code == 401)
+	if (response_code == 400 || response_code == 401 || response_code == 428)
 	{
 		if (!parse_token_error(actx, &tok->err))
 			return false;
