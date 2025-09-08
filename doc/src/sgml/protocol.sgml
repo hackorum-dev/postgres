@@ -5447,11 +5447,22 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
       </varlistentry>
 
       <varlistentry>
-       <term>Int32</term>
+       <term>Int16</term>
        <listitem>
         <para>
-         Newest minor protocol version supported by the server
-         for the major protocol version requested by the client.
+         The major protocol version used for this connection. Given that the
+         NegotiateProtocolVersion message was introduced in protocol version 3,
+         this will be 3 or greater.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>Int16</term>
+       <listitem>
+        <para>
+         Newest minor protocol version supported by the server for the major
+         protocol version requested by the client.
         </para>
        </listitem>
       </varlistentry>
@@ -5467,7 +5478,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
      </variablelist>
 
      <para>
-      Then, for protocol option not recognized by the server, there
+      Then, for each protocol option not recognized by the server, there
       is the following:
      </para>
 
