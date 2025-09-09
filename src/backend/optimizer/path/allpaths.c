@@ -1523,7 +1523,7 @@ add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
 	 * if we have zero or one live subpath due to constraint exclusion.)
 	 */
 	if (subpaths_valid)
-		add_path(rel, (Path *) create_append_path(root, rel, subpaths, NIL,
+		add_path(rel, (Path *) create_append_path(root, rel, list_reverse(subpaths), NIL,
 												  NIL, NULL, 0, false,
 												  -1));
 

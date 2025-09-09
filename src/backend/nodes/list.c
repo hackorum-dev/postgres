@@ -1656,6 +1656,37 @@ list_copy_deep(const List *oldlist)
 }
 
 /*
+ * Reverses the order of 'list' elements in place and returns the input list
+ */
+List *
+list_reverse(List *list)
+{
+	ListCell	   *head;
+	ListCell	   *tail;
+
+	if (list == NIL)
+		return NIL;
+
+	head = &list->elements[0];
+	tail = &list->elements[list->length - 1];
+
+	while (head < tail)
+	{
+		ListCell tmp;
+
+		/* Swap data at the head and tail position */
+		memcpy(&tmp, head, sizeof(ListCell));
+		memcpy(head, tail, sizeof(ListCell));
+		memcpy(tail, &tmp, sizeof(ListCell));
+
+		head++;
+		tail--;
+	}
+
+	return list;
+}
+
+/*
  * Sort a list according to the specified comparator function.
  *
  * The list is sorted in-place.
