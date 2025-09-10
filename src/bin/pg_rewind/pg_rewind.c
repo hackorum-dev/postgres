@@ -140,6 +140,7 @@ main(int argc, char **argv)
 	int			option_index;
 	int			c;
 	XLogRecPtr	divergerec;
+	XLogRecPtr	checkpoint_search_startrec;
 	int			lastcommontliIndex;
 	XLogRecPtr	chkptrec;
 	TimeLineID	chkpttli;
@@ -459,8 +460,21 @@ main(int argc, char **argv)
 	/* Initialize hashtable that tracks WAL files protected from removal */
 	keepwal_init();
 
-	findLastCheckpoint(datadir_target, divergerec, lastcommontliIndex,
-					   &chkptrec, &chkpttli, &chkptredo, restore_command);
+	/*
+	 * If the last common timeline is incomplete on the target, a divergence
+	 * point from the source's finished timeline may not exist in the target's
+	 * WAL. Therefore, start searching for a checkpoint preceding the divergence
+	 * point from the last checkpoint on the target server to find a safe common
+	 * point.
+	 */
+	if (targetHistory[lastcommontliIndex].end == InvalidXLogRecPtr)
+		checkpoint_search_startrec = ControlFile_target.checkPoint;
+	else
+		checkpoint_search_startrec = divergerec;
+
+	findLastCheckpoint(datadir_target, checkpoint_search_startrec, divergerec,
+					   lastcommontliIndex, &chkptrec, &chkpttli, &chkptredo,
+					   restore_command);
 	pg_log_info("rewinding from last common checkpoint at %X/%08X on timeline %u",
 				LSN_FORMAT_ARGS(chkptrec), chkpttli);
 

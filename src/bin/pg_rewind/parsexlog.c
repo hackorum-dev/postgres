@@ -165,9 +165,10 @@ readOneRecord(const char *datadir, XLogRecPtr ptr, int tliIndex,
  * Find the previous checkpoint preceding given WAL location.
  */
 void
-findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
-				   XLogRecPtr *lastchkptrec, TimeLineID *lastchkpttli,
-				   XLogRecPtr *lastchkptredo, const char *restoreCommand)
+findLastCheckpoint(const char *datadir, XLogRecPtr startptr, XLogRecPtr forkptr,
+				   int tliIndex, XLogRecPtr *lastchkptrec,
+				   TimeLineID *lastchkpttli, XLogRecPtr *lastchkptredo,
+				   const char *restoreCommand)
 {
 	/* Walk backwards, starting from the given record */
 	XLogRecord *record;
@@ -179,17 +180,17 @@ findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
 	TimeLineID	current_tli = 0;
 
 	/*
-	 * The given fork pointer points to the end of the last common record,
-	 * which is not necessarily the beginning of the next record, if the
-	 * previous record happens to end at a page boundary. Skip over the page
-	 * header in that case to find the next record.
+	 * The given start pointer may point to a page boundary if the startptr is
+	 * the end of the last common record which is not necessarily the beginning
+	 * of the next record. Skip over the page header in that case to find the
+	 * next record.
 	 */
-	if (forkptr % XLOG_BLCKSZ == 0)
+	if (startptr % XLOG_BLCKSZ == 0)
 	{
-		if (XLogSegmentOffset(forkptr, WalSegSz) == 0)
-			forkptr += SizeOfXLogLongPHD;
+		if (XLogSegmentOffset(startptr, WalSegSz) == 0)
+			startptr += SizeOfXLogLongPHD;
 		else
-			forkptr += SizeOfXLogShortPHD;
+			startptr += SizeOfXLogShortPHD;
 	}
 
 	private.tliIndex = tliIndex;
@@ -200,7 +201,7 @@ findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
 	if (xlogreader == NULL)
 		pg_fatal("out of memory while allocating a WAL reading processor");
 
-	searchptr = forkptr;
+	searchptr = startptr;
 	for (;;)
 	{
 		uint8		info;

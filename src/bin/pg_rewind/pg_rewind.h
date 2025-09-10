@@ -35,9 +35,10 @@ extern uint64 fetch_done;
 extern void extractPageMap(const char *datadir, XLogRecPtr startpoint,
 						   int tliIndex, XLogRecPtr endpoint,
 						   const char *restoreCommand);
-extern void findLastCheckpoint(const char *datadir, XLogRecPtr forkptr,
-							   int tliIndex,
-							   XLogRecPtr *lastchkptrec, TimeLineID *lastchkpttli,
+extern void findLastCheckpoint(const char *datadir, XLogRecPtr startptr,
+							   XLogRecPtr forkptr, int tliIndex,
+							   XLogRecPtr *lastchkptrec,
+							   TimeLineID *lastchkpttli,
 							   XLogRecPtr *lastchkptredo,
 							   const char *restoreCommand);
 extern XLogRecPtr readOneRecord(const char *datadir, XLogRecPtr ptr,
