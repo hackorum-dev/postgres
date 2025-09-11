@@ -722,7 +722,11 @@ docs_opt = get_option('docs')
 docs_dep = not_found_dep
 if not docs_opt.disabled()
   if xmllint_bin.found() and xsltproc_bin.found()
-    docs_dep = declare_dependency()
+    if run_command(xmllint_bin, '--nonet', '--valid', '--noout', 'doc/build/check-dtd.xml', check: false).returncode() != 0
+      error('missing required DocBook XML DTD (probably missing package docbook-xsl)')
+    else
+      docs_dep = declare_dependency()
+    endif
   elif docs_opt.enabled()
     error('missing required tools (xmllint and xsltproc needed) for docs in HTML / man page format')
   endif
