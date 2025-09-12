@@ -135,6 +135,7 @@ test_basic(int size)
 
 	if (!binaryheap_empty(heap))
 		elog(ERROR, "heap not empty after removing all nodes");
+	binaryheap_free(heap);
 }
 
 /*
@@ -154,6 +155,7 @@ test_build(int size)
 
 	binaryheap_build(heap);
 	verify_heap_property(heap);
+	binaryheap_free(heap);
 }
 
 /*
@@ -181,6 +183,7 @@ test_remove_node(int size)
 
 	if (binaryheap_size(heap) != size - remove_count)
 		elog(ERROR, "wrong size after removing nodes");
+	binaryheap_free(heap);
 }
 
 /*
@@ -211,6 +214,7 @@ test_replace_first(int size)
 	 */
 	binaryheap_replace_first(heap, Int32GetDatum(size + 1));
 	verify_heap_property(heap);
+	binaryheap_free(heap);
 }
 
 /*
@@ -230,6 +234,7 @@ test_duplicates(int size)
 		if (DatumGetInt32(binaryheap_remove_first(heap)) != dup)
 			elog(ERROR, "unexpected value in heap with duplicates");
 	}
+	binaryheap_free(heap);
 }
 
 /*
@@ -247,6 +252,7 @@ test_reset(int size)
 
 	if (!binaryheap_empty(heap))
 		elog(ERROR, "heap not empty after resetting");
+	binaryheap_free(heap);
 }
 
 /*
