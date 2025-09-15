@@ -457,10 +457,19 @@ ExecTidScan(PlanState *pstate)
 void
 ExecReScanTidScan(TidScanState *node)
 {
-	if (node->tss_TidList)
-		pfree(node->tss_TidList);
-	node->tss_TidList = NULL;
-	node->tss_NumTids = 0;
+	/*
+	 * Set the TidList to be recalculated when any parameters that might
+	 * effect the computed list has changed.
+	 */
+	if (bms_overlap(node->ss.ps.chgParam,
+					 ((TidScan *) node->ss.ps.plan)->tidparamids))
+	{
+		if (node->tss_TidList)
+			pfree(node->tss_TidList);
+		node->tss_TidList = NULL;
+		node->tss_NumTids = 0;
+	}
+
 	node->tss_TidPtr = -1;
 
 	/* not really necessary, but seems good form */

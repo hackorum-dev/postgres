@@ -201,9 +201,10 @@ static BitmapHeapScan *make_bitmap_heapscan(List *qptlist,
 											List *bitmapqualorig,
 											Index scanrelid);
 static TidScan *make_tidscan(List *qptlist, List *qpqual, Index scanrelid,
-							 List *tidquals);
+							 List *tidquals, Bitmapset *paramids);
 static TidRangeScan *make_tidrangescan(List *qptlist, List *qpqual,
-									   Index scanrelid, List *tidrangequals);
+									   Index scanrelid, List *tidrangequals,
+									   Bitmapset *paramids);
 static SubqueryScan *make_subqueryscan(List *qptlist,
 									   List *qpqual,
 									   Index scanrelid,
@@ -3384,6 +3385,7 @@ create_tidscan_plan(PlannerInfo *root, TidPath *best_path,
 	TidScan    *scan_plan;
 	Index		scan_relid = best_path->path.parent->relid;
 	List	   *tidquals = best_path->tidquals;
+	Bitmapset  *paramids;
 
 	/* it should be a base rel... */
 	Assert(scan_relid > 0);
@@ -3459,10 +3461,13 @@ create_tidscan_plan(PlannerInfo *root, TidPath *best_path,
 			replace_nestloop_params(root, (Node *) scan_clauses);
 	}
 
+	paramids = pull_paramids((Expr *) tidquals);
+
 	scan_plan = make_tidscan(tlist,
 							 scan_clauses,
 							 scan_relid,
-							 tidquals);
+							 tidquals,
+							 paramids);
 
 	copy_generic_path_info(&scan_plan->scan.plan, &best_path->path);
 
@@ -3481,6 +3486,7 @@ create_tidrangescan_plan(PlannerInfo *root, TidRangePath *best_path,
 	TidRangeScan *scan_plan;
 	Index		scan_relid = best_path->path.parent->relid;
 	List	   *tidrangequals = best_path->tidrangequals;
+	Bitmapset  *paramids;
 
 	/* it should be a base rel... */
 	Assert(scan_relid > 0);
@@ -3524,10 +3530,13 @@ create_tidrangescan_plan(PlannerInfo *root, TidRangePath *best_path,
 			replace_nestloop_params(root, (Node *) scan_clauses);
 	}
 
+	paramids = pull_paramids((Expr *) tidrangequals);
+
 	scan_plan = make_tidrangescan(tlist,
 								  scan_clauses,
 								  scan_relid,
-								  tidrangequals);
+								  tidrangequals,
+								  paramids);
 
 	copy_generic_path_info(&scan_plan->scan.plan, &best_path->path);
 
@@ -5622,7 +5631,8 @@ static TidScan *
 make_tidscan(List *qptlist,
 			 List *qpqual,
 			 Index scanrelid,
-			 List *tidquals)
+			 List *tidquals,
+			 Bitmapset *paramids)
 {
 	TidScan    *node = makeNode(TidScan);
 	Plan	   *plan = &node->scan.plan;
@@ -5633,6 +5643,7 @@ make_tidscan(List *qptlist,
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
 	node->tidquals = tidquals;
+	node->tidparamids = paramids;
 
 	return node;
 }
@@ -5641,7 +5652,8 @@ static TidRangeScan *
 make_tidrangescan(List *qptlist,
 				  List *qpqual,
 				  Index scanrelid,
-				  List *tidrangequals)
+				  List *tidrangequals,
+				  Bitmapset *paramids)
 {
 	TidRangeScan *node = makeNode(TidRangeScan);
 	Plan	   *plan = &node->scan.plan;
@@ -5652,6 +5664,7 @@ make_tidrangescan(List *qptlist,
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
 	node->tidrangequals = tidrangequals;
+	node->tidparamids = paramids;
 
 	return node;
 }

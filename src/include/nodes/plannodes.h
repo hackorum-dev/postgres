@@ -677,6 +677,8 @@ typedef struct TidScan
 	Scan		scan;
 	/* qual(s) involving CTID = something */
 	List	   *tidquals;
+	/* Set of ParamIds mentioned in tidquals */
+	Bitmapset  *tidparamids;
 } TidScan;
 
 /* ----------------
@@ -691,6 +693,8 @@ typedef struct TidRangeScan
 	Scan		scan;
 	/* qual(s) involving CTID op something */
 	List	   *tidrangequals;
+	/* Set of ParamIds mentioned in tidrangequals */
+	Bitmapset *tidparamids;
 } TidRangeScan;
 
 /* ----------------
