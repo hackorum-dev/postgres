@@ -4225,6 +4225,7 @@ InitControlFile(uint64 sysidentifier, uint32 data_checksum_version)
 	ControlFile->max_wal_senders = max_wal_senders;
 	ControlFile->max_prepared_xacts = max_prepared_xacts;
 	ControlFile->max_locks_per_xact = max_locks_per_xact;
+	ControlFile->max_active_replication_origins = max_active_replication_origins;
 	ControlFile->wal_level = wal_level;
 	ControlFile->wal_log_hints = wal_log_hints;
 	ControlFile->track_commit_timestamp = track_commit_timestamp;
@@ -5439,6 +5440,9 @@ CheckRequiredParameterValues(void)
 		RecoveryRequiresIntParameter("max_locks_per_transaction",
 									 max_locks_per_xact,
 									 ControlFile->max_locks_per_xact);
+		RecoveryRequiresIntParameter("max_active_replication_origins",
+									 max_active_replication_origins,
+									 ControlFile->max_active_replication_origins);
 	}
 }
 
@@ -8141,6 +8145,7 @@ XLogReportParameters(void)
 		max_wal_senders != ControlFile->max_wal_senders ||
 		max_prepared_xacts != ControlFile->max_prepared_xacts ||
 		max_locks_per_xact != ControlFile->max_locks_per_xact ||
+		max_active_replication_origins != ControlFile->max_active_replication_origins ||
 		track_commit_timestamp != ControlFile->track_commit_timestamp)
 	{
 		/*
@@ -8160,6 +8165,7 @@ XLogReportParameters(void)
 			xlrec.max_wal_senders = max_wal_senders;
 			xlrec.max_prepared_xacts = max_prepared_xacts;
 			xlrec.max_locks_per_xact = max_locks_per_xact;
+			xlrec.max_active_replication_origins = max_active_replication_origins;
 			xlrec.wal_level = wal_level;
 			xlrec.wal_log_hints = wal_log_hints;
 			xlrec.track_commit_timestamp = track_commit_timestamp;
@@ -8178,6 +8184,7 @@ XLogReportParameters(void)
 		ControlFile->max_wal_senders = max_wal_senders;
 		ControlFile->max_prepared_xacts = max_prepared_xacts;
 		ControlFile->max_locks_per_xact = max_locks_per_xact;
+		ControlFile->max_active_replication_origins = max_active_replication_origins;
 		ControlFile->wal_level = wal_level;
 		ControlFile->wal_log_hints = wal_log_hints;
 		ControlFile->track_commit_timestamp = track_commit_timestamp;
@@ -8560,6 +8567,7 @@ xlog_redo(XLogReaderState *record)
 		ControlFile->max_wal_senders = xlrec.max_wal_senders;
 		ControlFile->max_prepared_xacts = xlrec.max_prepared_xacts;
 		ControlFile->max_locks_per_xact = xlrec.max_locks_per_xact;
+		ControlFile->max_active_replication_origins = xlrec.max_active_replication_origins;
 		ControlFile->wal_level = xlrec.wal_level;
 		ControlFile->wal_log_hints = xlrec.wal_log_hints;
 

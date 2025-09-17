@@ -308,6 +308,8 @@ main(int argc, char *argv[])
 		   ControlFile->max_prepared_xacts);
 	printf(_("max_locks_per_xact setting:           %d\n"),
 		   ControlFile->max_locks_per_xact);
+	printf(_("max_active_replication_origins setting:%d\n"),
+		   ControlFile->max_active_replication_origins);
 	printf(_("track_commit_timestamp setting:       %s\n"),
 		   ControlFile->track_commit_timestamp ? _("on") : _("off"));
 	printf(_("Maximum data alignment:               %u\n"),

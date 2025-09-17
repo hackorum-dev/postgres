@@ -124,6 +124,7 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 		appendStringInfo(buf, "max_connections=%d max_worker_processes=%d "
 						 "max_wal_senders=%d max_prepared_xacts=%d "
 						 "max_locks_per_xact=%d wal_level=%s "
+						 "max_active_replication_origins=%d "
 						 "wal_log_hints=%s track_commit_timestamp=%s",
 						 xlrec.MaxConnections,
 						 xlrec.max_worker_processes,
@@ -131,6 +132,7 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 						 xlrec.max_prepared_xacts,
 						 xlrec.max_locks_per_xact,
 						 wal_level_str,
+						 xlrec.max_active_replication_origins,
 						 xlrec.wal_log_hints ? "on" : "off",
 						 xlrec.track_commit_timestamp ? "on" : "off");
 	}

@@ -22,7 +22,7 @@
 
 
 /* Version identifier for this pg_control format */
-#define PG_CONTROL_VERSION	1800
+#define PG_CONTROL_VERSION	1801
 
 /* Nonce key length, see below */
 #define MOCK_AUTH_NONCE_LEN		32
@@ -182,6 +182,7 @@ typedef struct ControlFileData
 	int			max_wal_senders;
 	int			max_prepared_xacts;
 	int			max_locks_per_xact;
+	int			max_active_replication_origins;
 	bool		track_commit_timestamp;
 
 	/*

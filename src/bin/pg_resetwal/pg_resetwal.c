@@ -708,6 +708,7 @@ GuessControlValues(void)
 	ControlFile.max_worker_processes = 8;
 	ControlFile.max_prepared_xacts = 0;
 	ControlFile.max_locks_per_xact = 64;
+	ControlFile.max_active_replication_origins = 10;
 
 	ControlFile.maxAlign = MAXIMUM_ALIGNOF;
 	ControlFile.floatFormat = FLOATFORMAT_VALUE;
@@ -913,6 +914,7 @@ RewriteControlFile(void)
 	ControlFile.max_worker_processes = 8;
 	ControlFile.max_prepared_xacts = 0;
 	ControlFile.max_locks_per_xact = 64;
+	ControlFile.max_active_replication_origins = 10;
 
 	/* The control file gets flushed here. */
 	update_controlfile(".", &ControlFile, true);

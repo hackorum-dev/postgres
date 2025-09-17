@@ -5322,6 +5322,11 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         number of subscriptions that will be added to the subscriber, plus some
         reserve for table synchronization.
        </para>
+       <para>
+        When running a standby server, you must set this parameter to the same
+        or higher value than on the primary server.  Otherwise, queries will
+        not be allowed in the standby server.
+       </para>
       </listitem>
      </varlistentry>
 

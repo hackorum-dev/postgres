@@ -2028,6 +2028,11 @@ LOG:  database system is ready to accept read-only connections
        </listitem>
        <listitem>
         <para>
+         <varname>max_active_replication_origins</varname>
+        </para>
+       </listitem>
+       <listitem>
+        <para>
          <varname>max_wal_senders</varname>
         </para>
        </listitem>
