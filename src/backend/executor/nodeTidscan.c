@@ -157,8 +157,17 @@ TidListEval(TidScanState *tidstate)
 	 * ScalarArrayOpExprs, we may have to enlarge the array.
 	 */
 	numAllocTids = list_length(tidstate->tss_tidexprs);
-	tidList = (ItemPointerData *)
-		palloc(numAllocTids * sizeof(ItemPointerData));
+	if (numAllocTids > tidstate->tss_MaxNumTids)
+	{
+		if (tidstate->tss_TidList != NULL)
+			tidstate->tss_TidList = (ItemPointerData *)
+				repalloc(tidstate->tss_TidList, numAllocTids * sizeof(ItemPointerData));
+		else
+			tidstate->tss_TidList = (ItemPointerData *)
+				palloc(numAllocTids * sizeof(ItemPointerData));
+		tidstate->tss_MaxNumTids = numAllocTids;
+	}
+	tidList = tidstate->tss_TidList;
 	numTids = 0;
 
 	foreach(l, tidstate->tss_tidexprs)
@@ -186,12 +195,13 @@ TidListEval(TidScanState *tidstate)
 			if (!table_tuple_tid_valid(scan, itemptr))
 				continue;
 
-			if (numTids >= numAllocTids)
+			if (numTids >= tidstate->tss_MaxNumTids)
 			{
-				numAllocTids *= 2;
-				tidList = (ItemPointerData *)
-					repalloc(tidList,
-							 numAllocTids * sizeof(ItemPointerData));
+				tidstate->tss_MaxNumTids <<= 1;
+				tidstate->tss_TidList = (ItemPointerData *)
+					repalloc(tidstate->tss_TidList,
+							 tidstate->tss_MaxNumTids * sizeof(ItemPointerData));
+				tidList = tidstate->tss_TidList;
 			}
 			tidList[numTids++] = *itemptr;
 		}
@@ -211,12 +221,12 @@ TidListEval(TidScanState *tidstate)
 				continue;
 			itemarray = DatumGetArrayTypeP(arraydatum);
 			deconstruct_array_builtin(itemarray, TIDOID, &ipdatums, &ipnulls, &ndatums);
-			if (numTids + ndatums > numAllocTids)
+			if (numTids + ndatums >= tidstate->tss_MaxNumTids)
 			{
-				numAllocTids = numTids + ndatums;
-				tidList = (ItemPointerData *)
-					repalloc(tidList,
-							 numAllocTids * sizeof(ItemPointerData));
+				tidstate->tss_MaxNumTids = numTids + ndatums;
+				tidstate->tss_TidList = (ItemPointerData *)
+					repalloc(tidstate->tss_TidList, tidstate->tss_MaxNumTids * sizeof(ItemPointerData));
+				tidList = tidstate->tss_TidList;
 			}
 			for (i = 0; i < ndatums; i++)
 			{
@@ -242,12 +252,12 @@ TidListEval(TidScanState *tidstate)
 							  RelationGetRelid(tidstate->ss.ss_currentRelation),
 							  &cursor_tid))
 			{
-				if (numTids >= numAllocTids)
+				if (numTids >= tidstate->tss_MaxNumTids)
 				{
-					numAllocTids *= 2;
+					tidstate->tss_MaxNumTids <<= 1;
 					tidList = (ItemPointerData *)
 						repalloc(tidList,
-								 numAllocTids * sizeof(ItemPointerData));
+								 tidstate->tss_MaxNumTids * sizeof(ItemPointerData));
 				}
 				tidList[numTids++] = cursor_tid;
 			}
@@ -271,7 +281,6 @@ TidListEval(TidScanState *tidstate)
 						  itemptr_comparator);
 	}
 
-	tidstate->tss_TidList = tidList;
 	tidstate->tss_NumTids = numTids;
 	tidstate->tss_TidPtr = -1;
 }
@@ -333,7 +342,7 @@ TidNext(TidScanState *node)
 	/*
 	 * First time through, compute the list of TIDs to be visited
 	 */
-	if (node->tss_TidList == NULL)
+	if (node->tss_NumTids < 0)
 		TidListEval(node);
 
 	scan = node->ss.ss_currentScanDesc;
@@ -408,7 +417,7 @@ TidRecheck(TidScanState *node, TupleTableSlot *slot)
 	if (node->tss_isCurrentOf)
 		return true;
 
-	if (node->tss_TidList == NULL)
+	if (node->tss_NumTids == 0)
 		TidListEval(node);
 
 	/*
@@ -464,10 +473,8 @@ ExecReScanTidScan(TidScanState *node)
 	if (bms_overlap(node->ss.ps.chgParam,
 					 ((TidScan *) node->ss.ps.plan)->tidparamids))
 	{
-		if (node->tss_TidList)
-			pfree(node->tss_TidList);
-		node->tss_TidList = NULL;
-		node->tss_NumTids = 0;
+		/* indicate that the TidList must be recalculated */
+		node->tss_NumTids = -1;
 	}
 
 	node->tss_TidPtr = -1;
@@ -529,7 +536,7 @@ ExecInitTidScan(TidScan *node, EState *estate, int eflags)
 	 * mark tid list as not computed yet
 	 */
 	tidstate->tss_TidList = NULL;
-	tidstate->tss_NumTids = 0;
+	tidstate->tss_NumTids = -1;
 	tidstate->tss_TidPtr = -1;
 
 	/*

@@ -1913,6 +1913,7 @@ typedef struct TidScanState
 	List	   *tss_tidexprs;
 	bool		tss_isCurrentOf;
 	int			tss_NumTids;
+	int			tss_MaxNumTids;	/* allocated size of TidList */
 	int			tss_TidPtr;
 	ItemPointerData *tss_TidList;
 } TidScanState;
