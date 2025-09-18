@@ -2331,8 +2331,13 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 				case REORDER_BUFFER_CHANGE_DELETE:
 					Assert(snapshot_now);
 
+					/*
+					 * Cache negative entries in case we end up looking up a
+					 * non-existent mapping again and again.
+					 */
 					reloid = RelidByRelfilenumber(change->data.tp.rlocator.spcOid,
-												  change->data.tp.rlocator.relNumber);
+												  change->data.tp.rlocator.relNumber,
+												  true);
 
 					/*
 					 * Mapped catalog tuple without data, emitted while

@@ -955,7 +955,11 @@ pg_filenode_relation(PG_FUNCTION_ARGS)
 	if (!RelFileNumberIsValid(relfilenumber))
 		PG_RETURN_NULL();
 
-	heaprel = RelidByRelfilenumber(reltablespace, relfilenumber);
+	/*
+	 * A malicious user invoke the SQL function with negative entries many
+	 * times to consume memory as a DoS attach. Avoid that.
+	 */
+	heaprel = RelidByRelfilenumber(reltablespace, relfilenumber, false);
 
 	if (!OidIsValid(heaprel))
 		PG_RETURN_NULL();
