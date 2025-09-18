@@ -94,6 +94,11 @@
 	((pretty) ? (PRETTYFLAG_PAREN | PRETTYFLAG_INDENT | PRETTYFLAG_SCHEMA) \
 	 : PRETTYFLAG_INDENT)
 
+/* Conversion of "bool pretty" option for DDL statements (0 when false) */
+#define GET_DDL_PRETTY_FLAGS(pretty) \
+	((pretty) ? (PRETTYFLAG_PAREN | PRETTYFLAG_INDENT | PRETTYFLAG_SCHEMA) \
+	 : 0)
+
 /* Default line length for pretty-print wrapping: 0 means wrap always */
 #define WRAP_COLUMN_DEFAULT		0
 
@@ -547,6 +552,11 @@ static void get_json_table_nested_columns(TableFunc *tf, JsonTablePlan *plan,
 										  deparse_context *context,
 										  bool showimplicit,
 										  bool needcomma);
+static void get_formatted_string(StringInfo buf,
+								 int prettyFlags,
+								 int noOfTabChars,
+								 const char *fmt,...) pg_attribute_printf(4, 5);
+static char *pg_get_domain_ddl_worker(Oid domain_oid, int prettyFlags);
 
 #define only_marker(rte)  ((rte)->inh ? "" : "ONLY ")
 
@@ -13757,6 +13767,256 @@ get_range_partbound_string(List *bound_datums)
 		sep = ", ";
 	}
 	appendStringInfoChar(&buf, ')');
+
+	return buf.data;
+}
+
+/*
+ * get_formatted_string
+ *
+ * Return a formatted version of the string.
+ *
+ * prettyFlags - If pretty is true, the output includes tabs (\t) and newlines (\n).
+ * noOfTabChars - indent with specified no of tabs.
+ * fmt - printf-style format string used by appendStringInfoVA.
+ */
+static void
+get_formatted_string(StringInfo buf, int prettyFlags, int noOfTabChars, const char *fmt,...)
+{
+	int			save_errno = errno;
+
+	if (prettyFlags & PRETTYFLAG_INDENT)
+	{
+		appendStringInfoChar(buf, '\n');
+		/* Indent with tabs */
+		for (int i = 0; i < noOfTabChars; i++)
+		{
+			appendStringInfoChar(buf, '\t');
+		}
+	}
+	else
+		appendStringInfoChar(buf, ' ');
+
+	for (;;)
+	{
+		va_list		args;
+		int			needed;
+
+		errno = save_errno;
+		va_start(args, fmt);
+		needed = appendStringInfoVA(buf, fmt, args);
+		va_end(args);
+
+		if (needed == 0)
+			break;
+
+		enlargeStringInfo(buf, needed);
+	}
+}
+
+
+/*
+ * Helper function to scan domain constraints
+ */
+static void
+scan_domain_constraints(Oid domain_oid, List **validcons, List **invalidcons)
+{
+	Relation	constraintRel;
+	SysScanDesc sscan;
+	ScanKeyData skey;
+	HeapTuple	constraintTup;
+
+	*validcons = NIL;
+	*invalidcons = NIL;
+
+	constraintRel = table_open(ConstraintRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				Anum_pg_constraint_contypid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(domain_oid));
+
+	sscan = systable_beginscan(constraintRel,
+							   ConstraintTypidIndexId,
+							   true,
+							   NULL,
+							   1,
+							   &skey);
+
+	while (HeapTupleIsValid(constraintTup = systable_getnext(sscan)))
+	{
+		Form_pg_constraint con = (Form_pg_constraint) GETSTRUCT(constraintTup);
+
+		if (con->convalidated)
+			*validcons = lappend_oid(*validcons, con->oid);
+		else
+			*invalidcons = lappend_oid(*invalidcons, con->oid);
+	}
+
+	systable_endscan(sscan);
+	table_close(constraintRel, AccessShareLock);
+
+	/* Sort constraints by OID for stable output */
+	if (list_length(*validcons) > 1)
+		list_sort(*validcons, list_oid_cmp);
+	if (list_length(*invalidcons) > 1)
+		list_sort(*invalidcons, list_oid_cmp);
+}
+
+/*
+ * Helper function to build CREATE DOMAIN statement
+ */
+static void
+build_create_domain_statement(StringInfo buf, Form_pg_type typForm,
+							  Node *defaultExpr, List *validConstraints, int prettyFlags)
+{
+	HeapTuple	baseTypeTuple;
+	Form_pg_type baseTypeForm;
+	Oid			baseCollation = InvalidOid;
+	ListCell   *lc;
+
+	appendStringInfo(buf, "CREATE DOMAIN %s AS %s",
+					 generate_qualified_type_name(typForm->oid),
+					 format_type_extended(typForm->typbasetype,
+										  typForm->typtypmod,
+										  FORMAT_TYPE_TYPEMOD_GIVEN |
+										  FORMAT_TYPE_FORCE_QUALIFY));
+
+	/* Add collation if it differs from base type's collation */
+	if (OidIsValid(typForm->typcollation))
+	{
+		/* Get base type's collation for comparison */
+		baseTypeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typForm->typbasetype));
+		if (HeapTupleIsValid(baseTypeTuple))
+		{
+			baseTypeForm = (Form_pg_type) GETSTRUCT(baseTypeTuple);
+			baseCollation = baseTypeForm->typcollation;
+			ReleaseSysCache(baseTypeTuple);
+		}
+
+		/* Only add COLLATE if domain's collation differs from base type's */
+		if (typForm->typcollation != baseCollation)
+		{
+			get_formatted_string(buf, prettyFlags, 1, "COLLATE %s",
+								 generate_collation_name(typForm->typcollation));
+		}
+	}
+
+	/* Add default value if present */
+	if (defaultExpr != NULL)
+	{
+		char	   *defaultValue = deparse_expression_pretty(defaultExpr, NIL, false, false, prettyFlags, 0);
+
+		get_formatted_string(buf, prettyFlags, 1, "DEFAULT %s", defaultValue);
+	}
+
+	/* Add valid constraints */
+	foreach(lc, validConstraints)
+	{
+		Oid			constraintOid = lfirst_oid(lc);
+		HeapTuple	constraintTup;
+		Form_pg_constraint con;
+		char	   *constraintDef;
+
+		/* Look up the constraint info */
+		constraintTup = SearchSysCache1(CONSTROID, ObjectIdGetDatum(constraintOid));
+		if (!HeapTupleIsValid(constraintTup))
+			continue;			/* constraint was dropped concurrently */
+
+		con = (Form_pg_constraint) GETSTRUCT(constraintTup);
+		constraintDef = pg_get_constraintdef_worker(constraintOid, false, prettyFlags, true);
+
+		get_formatted_string(buf, prettyFlags, 1, "CONSTRAINT %s",
+							 quote_identifier(NameStr(con->conname)));
+		get_formatted_string(buf, prettyFlags, 2, "%s", constraintDef);
+
+		ReleaseSysCache(constraintTup);
+	}
+
+	appendStringInfoChar(buf, ';');
+}
+
+/*
+ * Helper function to add ALTER DOMAIN statements for invalid constraints
+ */
+static void
+add_alter_domain_statements(StringInfo buf, List *invalidConstraints, int prettyFlags)
+{
+	ListCell   *lc;
+
+	foreach(lc, invalidConstraints)
+	{
+		Oid			constraintOid = lfirst_oid(lc);
+		char	   *alterStmt = pg_get_constraintdef_worker(constraintOid, true, prettyFlags, true);
+
+		if (alterStmt)
+			appendStringInfo(buf, "\n%s;", alterStmt);
+	}
+}
+
+/*
+ * pg_get_domain_ddl_ext - Get CREATE DOMAIN statement for a domain with pretty-print option
+ */
+Datum
+pg_get_domain_ddl_ext(PG_FUNCTION_ARGS)
+{
+	Oid			domain_oid = PG_GETARG_OID(0);
+	bool		pretty = PG_GETARG_BOOL(1);
+	char	   *res;
+	int			prettyFlags;
+
+	prettyFlags = GET_DDL_PRETTY_FLAGS(pretty);
+
+	res = pg_get_domain_ddl_worker(domain_oid, prettyFlags);
+	if (res == NULL)
+		PG_RETURN_NULL();
+	PG_RETURN_TEXT_P(string_to_text(res));
+}
+
+
+
+static char *
+pg_get_domain_ddl_worker(Oid domain_oid, int prettyFlags)
+{
+	StringInfoData buf;
+	HeapTuple	typeTuple;
+	Form_pg_type typForm;
+	Node	   *defaultExpr;
+	List	   *validConstraints;
+	List	   *invalidConstraints;
+
+	/* Look up the domain in pg_type */
+	typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(domain_oid));
+	if (!HeapTupleIsValid(typeTuple))
+		return NULL;
+
+	typForm = (Form_pg_type) GETSTRUCT(typeTuple);
+
+	/* Check that this is actually a domain */
+	if (typForm->typtype != TYPTYPE_DOMAIN)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a domain", format_type_be(domain_oid)),
+				 errhint("Use a schema-qualified name if the domain name conflicts with a built-in name.")));
+
+	/* Get default expression */
+	defaultExpr = get_typdefault(domain_oid);
+
+	/* Scan for valid and invalid constraints */
+	scan_domain_constraints(domain_oid, &validConstraints, &invalidConstraints);
+
+	/* Build the DDL statement */
+	initStringInfo(&buf);
+	build_create_domain_statement(&buf, typForm, defaultExpr, validConstraints, prettyFlags);
+
+	/* Add ALTER DOMAIN statements for invalid constraints */
+	if (list_length(invalidConstraints) > 0)
+		add_alter_domain_statements(&buf, invalidConstraints, prettyFlags);
+
+	/* Cleanup */
+	list_free(validConstraints);
+	list_free(invalidConstraints);
+	ReleaseSysCache(typeTuple);
 
 	return buf.data;
 }

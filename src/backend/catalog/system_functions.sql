@@ -372,3 +372,10 @@ CREATE OR REPLACE FUNCTION ts_debug(document text,
 BEGIN ATOMIC
     SELECT * FROM ts_debug(get_current_ts_config(), $1);
 END;
+
+CREATE OR REPLACE FUNCTION
+ pg_get_domain_ddl(domain_name regtype, pretty bool DEFAULT false)
+ RETURNS text
+ LANGUAGE internal
+ STABLE PARALLEL SAFE
+AS 'pg_get_domain_ddl_ext';
