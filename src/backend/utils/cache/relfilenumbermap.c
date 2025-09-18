@@ -135,10 +135,13 @@ InitializeRelfilenumberMap(void)
  * identify a temporary relation would require a backend's proc number, which
  * we do not know about.  Hence, this function ignores this case.
  *
+ * If cache_negative is true, negative cache entries (mapping to InvalidOid)
+ * will be stored in the cache. If false, they won't be cached.
+ *
  * Returns InvalidOid if no relation matching the criteria could be found.
  */
 Oid
-RelidByRelfilenumber(Oid reltablespace, RelFileNumber relfilenumber)
+RelidByRelfilenumber(Oid reltablespace, RelFileNumber relfilenumber, bool cache_negative)
 {
 	RelfilenumberMapKey key;
 	RelfilenumberMapEntry *entry;
@@ -239,11 +242,16 @@ RelidByRelfilenumber(Oid reltablespace, RelFileNumber relfilenumber)
 	 * Only enter entry into cache now, our opening of pg_class could have
 	 * caused cache invalidations to be executed which would have deleted a
 	 * new entry if we had entered it above.
+	 *
+	 * Cache valid entries always, and negative entries only if requested.
 	 */
-	entry = hash_search(RelfilenumberMapHash, &key, HASH_ENTER, &found);
-	if (found)
-		elog(ERROR, "corrupted hashtable");
-	entry->relid = relid;
+	if (OidIsValid(relid) || cache_negative)
+	{
+		entry = hash_search(RelfilenumberMapHash, &key, HASH_ENTER, &found);
+		if (found)
+			elog(ERROR, "corrupted hashtable");
+		entry->relid = relid;
+	}
 
 	return relid;
 }
