@@ -16,6 +16,7 @@
 #include "common/relpath.h"
 
 extern Oid	RelidByRelfilenumber(Oid reltablespace,
-								 RelFileNumber relfilenumber);
+								 RelFileNumber relfilenumber,
+								 bool cache_negative);
 
 #endif							/* RELFILENUMBERMAP_H */
