@@ -541,7 +541,11 @@ autoprewarm_database_main(Datum main_arg)
 
 		StartTransactionCommand();
 
-		reloid = RelidByRelfilenumber(blk.tablespace, blk.filenumber);
+		/*
+		 * Cache negative entries in case we end up looking up a non-existent
+		 * mapping again and again.
+		 */
+		reloid = RelidByRelfilenumber(blk.tablespace, blk.filenumber, true);
 		if (!OidIsValid(reloid) ||
 			(rel = try_relation_open(reloid, AccessShareLock)) == NULL)
 		{
