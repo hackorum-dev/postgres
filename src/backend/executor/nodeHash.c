@@ -925,10 +925,10 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 		 * It's better to use half the batches, so do that and adjust the
 		 * nbucket in the opposite direction, and double the allowance.
 		 */
-		nbatch /= 2;
-		nbuckets *= 2;
+		nbatch >>= 1;
+		nbuckets <<= 1;
 
-		*space_allowed = (*space_allowed) * 2;
+		*space_allowed = (*space_allowed) << 1;
 	}
 
 	Assert(nbuckets > 0);
@@ -1791,10 +1791,10 @@ ExecHashTableInsert(HashJoinTable hashtable,
 			ntuples > (hashtable->nbuckets_optimal * NTUP_PER_BUCKET))
 		{
 			/* Guard against integer overflow and alloc size overflow */
-			if (hashtable->nbuckets_optimal <= INT_MAX / 2 &&
-				hashtable->nbuckets_optimal * 2 <= MaxAllocSize / sizeof(HashJoinTuple))
+			if (hashtable->nbuckets_optimal <= INT_MAX >> 1 &&
+				hashtable->nbuckets_optimal << 1 <= MaxAllocSize / sizeof(HashJoinTuple))
 			{
-				hashtable->nbuckets_optimal *= 2;
+				hashtable->nbuckets_optimal <<= 1;
 				hashtable->log2_nbuckets_optimal += 1;
 			}
 		}

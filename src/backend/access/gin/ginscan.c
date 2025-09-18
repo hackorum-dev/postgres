@@ -122,7 +122,7 @@ ginFillScanEntry(GinScanOpaque so, OffsetNumber attnum,
 	/* Add it to so's array */
 	if (so->totalentries >= so->allocentries)
 	{
-		so->allocentries *= 2;
+		so->allocentries <<= 1;
 		so->entries = (GinScanEntry *)
 			repalloc(so->entries, so->allocentries * sizeof(GinScanEntry));
 	}

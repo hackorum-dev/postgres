@@ -45,7 +45,7 @@ ginCombineData(RBTNode *existing, const RBTNode *newdata, void *arg)
 					 errhint("Reduce \"maintenance_work_mem\".")));
 
 		accum->allocatedMemory -= GetMemoryChunkSpace(eo->list);
-		eo->maxcount *= 2;
+		eo->maxcount <<= 1;
 		eo->list = (ItemPointerData *)
 			repalloc_huge(eo->list, sizeof(ItemPointerData) * eo->maxcount);
 		accum->allocatedMemory += GetMemoryChunkSpace(eo->list);

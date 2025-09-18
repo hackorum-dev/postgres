@@ -686,7 +686,7 @@ addDatum(KeyArray *keys, Datum datum, GinNullCategory category)
 {
 	if (keys->nvalues >= keys->maxvalues)
 	{
-		keys->maxvalues *= 2;
+		keys->maxvalues <<= 1;
 		keys->keys = repalloc_array(keys->keys, Datum, keys->maxvalues);
 		keys->categories = repalloc_array(keys->categories, GinNullCategory, keys->maxvalues);
 	}

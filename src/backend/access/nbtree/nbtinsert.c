@@ -2972,7 +2972,7 @@ _bt_deadblocks(Page page, OffsetNumber *deletable, int ndeletable,
 		{
 			if (ntids + 1 > spacentids)
 			{
-				spacentids *= 2;
+				spacentids <<= 1;
 				tidblocks = (BlockNumber *)
 					repalloc(tidblocks, sizeof(BlockNumber) * spacentids);
 			}

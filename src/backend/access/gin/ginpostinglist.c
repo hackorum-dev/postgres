@@ -316,7 +316,7 @@ ginPostingListDecodeAllSegments(GinPostingList *segment, int len, int *ndecoded_
 		/* enlarge output array if needed */
 		if (ndecoded >= nallocated)
 		{
-			nallocated *= 2;
+			nallocated <<= 1;
 			result = repalloc(result, nallocated * sizeof(ItemPointerData));
 		}
 
@@ -334,7 +334,7 @@ ginPostingListDecodeAllSegments(GinPostingList *segment, int len, int *ndecoded_
 			/* enlarge output array if needed */
 			if (ndecoded >= nallocated)
 			{
-				nallocated *= 2;
+				nallocated <<= 1;
 				result = repalloc(result, nallocated * sizeof(ItemPointerData));
 			}
 
