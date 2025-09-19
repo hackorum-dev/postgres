@@ -34,7 +34,7 @@ typedef struct JsonbAggState
 	Oid			val_output_func;
 } JsonbAggState;
 
-static inline Datum jsonb_from_cstring(char *json, int len, bool unique_keys,
+static inline Datum jsonb_from_cstring(const char *json, size_t len, bool unique_keys,
 									   Node *escontext);
 static bool checkStringLen(size_t len, Node *escontext);
 static JsonParseErrorType jsonb_in_object_start(void *pstate);
@@ -237,7 +237,7 @@ jsonb_typeof(PG_FUNCTION_ARGS)
  * instead of being thrown.
  */
 static inline Datum
-jsonb_from_cstring(char *json, int len, bool unique_keys, Node *escontext)
+jsonb_from_cstring(const char *json, size_t len, bool unique_keys, Node *escontext)
 {
 	JsonLexContext lex;
 	JsonbInState state;
