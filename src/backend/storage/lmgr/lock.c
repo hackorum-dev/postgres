@@ -2029,6 +2029,8 @@ waitonlock_error_callback(void *arg)
 	errcontext("waiting for %s on %s",
 			   GetLockmodeName(tag->locktag_lockmethodid, mode),
 			   locktagbuf.data);
+
+	pfree(locktagbuf.data);
 }
 
 /*
