@@ -209,6 +209,7 @@
 #define RT_EXTEND_UP RT_MAKE_NAME(extend_up)
 #define RT_EXTEND_DOWN RT_MAKE_NAME(extend_down)
 #define RT_COPY_COMMON RT_MAKE_NAME(copy_common)
+#define RT_PTR_GET_LOCAL RT_MAKE_NAME(ptr_get_local)
 #define RT_PTR_SET_LOCAL RT_MAKE_NAME(ptr_set_local)
 #define RT_NODE_16_SEARCH_EQ RT_MAKE_NAME(node_16_search_eq)
 #define RT_NODE_4_GET_INSERTPOS RT_MAKE_NAME(node_4_get_insertpos)
@@ -405,7 +406,7 @@ typedef struct RT_NODE
 #define RT_INVALID_PTR_ALLOC InvalidDsaPointer
 #define RT_PTR_ALLOC_IS_VALID(ptr) DsaPointerIsValid(ptr)
 #else
-#define RT_PTR_ALLOC RT_NODE *
+#define RT_PTR_ALLOC void *
 #define RT_INVALID_PTR_ALLOC NULL
 #define RT_PTR_ALLOC_IS_VALID(ptr) PointerIsValid(ptr)
 #endif
@@ -772,6 +773,16 @@ RT_PTR_SET_LOCAL(RT_RADIX_TREE * tree, RT_CHILD_PTR * node)
 #endif
 }
 
+static inline void *
+RT_PTR_GET_LOCAL(RT_RADIX_TREE * tree, RT_PTR_ALLOC nodealloc)
+{
+#ifdef RT_SHMEM
+	return dsa_get_address(tree->dsa, nodealloc);
+#else
+	return nodealloc;
+#endif
+}
+
 /* Convenience functions for node48 and node256 */
 
 /* Return true if there is an entry for "chunk" */
@@ -894,23 +905,22 @@ RT_ALLOC_NODE(RT_RADIX_TREE * tree, const uint8 kind, const RT_SIZE_CLASS size_c
 /*
  * Allocate a new leaf.
  */
-static RT_CHILD_PTR
+static RT_PTR_ALLOC
 RT_ALLOC_LEAF(RT_RADIX_TREE * tree, size_t allocsize)
 {
-	RT_CHILD_PTR leaf;
+	RT_PTR_ALLOC leafalloc;
 
 #ifdef RT_SHMEM
-	leaf.alloc = dsa_allocate(tree->dsa, allocsize);
-	RT_PTR_SET_LOCAL(tree, &leaf);
+	leafalloc = dsa_allocate(tree->dsa, allocsize);
 #else
-	leaf.alloc = (RT_PTR_ALLOC) MemoryContextAlloc(tree->leaf_context, allocsize);
+	leafalloc = (RT_PTR_ALLOC) MemoryContextAlloc(tree->leaf_context, allocsize);
 #endif
 
 #ifdef RT_DEBUG
 	tree->ctl->num_leaves++;
 #endif
 
-	return leaf;
+	return leafalloc;
 }
 
 /*
@@ -1784,33 +1794,36 @@ RT_SET_SLOT(RT_RADIX_TREE * tree, void * slot_v, RT_VALUE_TYPE * value_p, bool f
 	}
 	else
 	{
-		RT_CHILD_PTR leaf;
+		RT_PTR_ALLOC leafalloc;
+		RT_VALUE_TYPE *leaf;
 
 		if (found && !RT_CHILDPTR_IS_VALUE(*slot))
 		{
 			Assert(RT_PTR_ALLOC_IS_VALID(*slot));
-			leaf.alloc = *slot;
-			RT_PTR_SET_LOCAL(tree, &leaf);
+			leafalloc = *slot;
+			leaf = (RT_VALUE_TYPE *) RT_PTR_GET_LOCAL(tree, leafalloc);
 
-			if (RT_GET_VALUE_SIZE((RT_VALUE_TYPE *) leaf.local) != value_sz)
+			if (RT_GET_VALUE_SIZE(leaf) != value_sz)
 			{
 				/*
 				 * different sizes, so first free the existing leaf before
 				 * allocating a new one
 				 */
 				RT_FREE_LEAF(tree, *slot);
-				leaf = RT_ALLOC_LEAF(tree, value_sz);
-				*slot = leaf.alloc;
+				leafalloc = RT_ALLOC_LEAF(tree, value_sz);
+				*slot = leafalloc;
+				leaf = (RT_VALUE_TYPE *) RT_PTR_GET_LOCAL(tree, leafalloc);
 			}
 		}
 		else
 		{
 			/* allocate new leaf and store it in the child array */
-			leaf = RT_ALLOC_LEAF(tree, value_sz);
-			*slot = leaf.alloc;
+			leafalloc = RT_ALLOC_LEAF(tree, value_sz);
+			*slot = leafalloc;
+			leaf = (RT_VALUE_TYPE *) RT_PTR_GET_LOCAL(tree, leafalloc);
 		}
 
-		memcpy(leaf.local, value_p, value_sz);
+		memcpy(leaf, value_p, value_sz);
 	}
 
 	return found;
@@ -3021,6 +3034,7 @@ RT_DUMP_NODE(RT_NODE * node)
 #undef RT_EXTEND_UP
 #undef RT_EXTEND_DOWN
 #undef RT_COPY_COMMON
+#undef RT_PTR_GET_LOCAL
 #undef RT_PTR_SET_LOCAL
 #undef RT_PTR_ALLOC_IS_VALID
 #undef RT_NODE_16_SEARCH_EQ
