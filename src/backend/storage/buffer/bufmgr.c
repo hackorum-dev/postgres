@@ -655,7 +655,7 @@ PrefetchBuffer(Relation reln, ForkNumber forkNum, BlockNumber blockNum)
 
 	if (RelationUsesLocalBuffers(reln))
 	{
-		/* see comments in ReadBufferExtended */
+		/* see comments in PinBufferForBlock */
 		if (RELATION_IS_OTHER_TEMP(reln))
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -806,16 +806,6 @@ ReadBufferExtended(Relation reln, ForkNumber forkNum, BlockNumber blockNum,
 				   ReadBufferMode mode, BufferAccessStrategy strategy)
 {
 	Buffer		buf;
-
-	/*
-	 * Reject attempts to read non-local temporary relations; we would be
-	 * likely to get wrong data since we have no visibility into the owning
-	 * session's local buffers.
-	 */
-	if (RELATION_IS_OTHER_TEMP(reln))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot access temporary tables of other sessions")));
 
 	/*
 	 * Read the buffer, and update pgstat counters to reflect a cache hit or
@@ -1128,6 +1118,18 @@ PinBufferForBlock(Relation rel,
 
 	if (persistence == RELPERSISTENCE_TEMP)
 	{
+		/*
+		 * Reject attempts to read non-local temporary relations; we would be
+		 * likely to get wrong data since we have no visibility into the
+		 * owning session's local buffers.  We don't expect to get here
+		 * without a relcache entry (see ReadBufferWithoutRelcache).
+		 */
+		Assert(rel);
+		if (RELATION_IS_OTHER_TEMP(rel))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("cannot access temporary tables of other sessions")));
+
 		io_context = IOCONTEXT_NORMAL;
 		io_object = IOOBJECT_TEMP_RELATION;
 	}
