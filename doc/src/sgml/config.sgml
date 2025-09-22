@@ -2952,6 +2952,12 @@ include_dir 'conf.d'
         <para>
          This parameter can only be set at server start.
         </para>
+        <para>
+         Note that for optimum performance with <literal>io_uring</literal>
+         Linux kernel version >= 6.5 is recommended. Older Linux versions,
+         high values of <xref linkend="guc-max-connections"/> will slow down connection
+         establishment and termination.
+        </para>
        </listitem>
       </varlistentry>
 
