@@ -211,8 +211,9 @@ pgaio_uring_check_capabilities(void)
 			 * pgaio_uring_shmem_init().
 			 */
 			errno = -ret;
-			elog(DEBUG1,
-				 "cannot use combined memory mapping for io_uring, ring creation failed: %m");
+			ereport(WARNING,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("io_uring combined memory mapping creation failed: %m. Upgrade kernel to 6.5+ for improved performance")));
 
 		}
 
@@ -221,8 +222,9 @@ pgaio_uring_check_capabilities(void)
 	}
 #else
 	{
-		elog(DEBUG1,
-			 "can't use combined memory mapping for io_uring, kernel or liburing too old");
+		ereport(WARNING,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("io_uring combined memory mapping creation failed: %m. Upgrade kernel to 6.5+ for improved performance")));
 	}
 #endif
 
