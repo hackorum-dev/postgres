@@ -1,5 +1,5 @@
 /*
- * rewrite/rowsecurity.c
+ * rowsecurity.c
  *	  Routines to support policies for row-level security (aka RLS).
  *
  * Policies in PostgreSQL provide a mechanism to limit what records are
@@ -31,6 +31,9 @@
  *
  * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
+ *
+ * IDENTIFICATION
+ *    src/backend/rewrite/rowsecurity.c
  */
 #include "postgres.h"
 
