@@ -673,6 +673,63 @@ sub test_complete_foreign
 	$psql_b->quit();
 }
 
+# 1. Backend A stages an IO
+# 2. Backend B blocks waiting on it
+# 3. Backend A submits the IO, but does not wait for it to complete
+# 4. Backend B should complete the IO
+sub test_wait_staged
+{
+	my $io_method = shift;
+	my $node = shift;
+	my ($ret, $output);
+
+	my $psql_a = $node->background_psql('postgres', on_error_stop => 0);
+	# 10 s timeout to make the test faster if backend B gets stuck waiting for IO
+	my $psql_b = $node->background_psql('postgres', on_error_stop => 0, timeout => 10);
+
+	# To warm the catalog caches
+	$psql_a->query_safe(
+		qq(SELECT read_rel_block_ll('tbl_ok', 2, wait_complete=>true);));
+
+	# Start a new batch
+	$psql_a->query_safe(
+		qq(begin));
+	$psql_a->query_safe(
+		qq(SELECT WHERE batch_start() IS NULL));
+
+	# Stage IO without submitting it yet
+	$psql_a->query_safe(
+		qq(SELECT read_rel_block_ll('tbl_ok', 1, batchmode_enter=>false, wait_complete=>false);));
+
+	# Start reading the same block in another backend. It sees the IO as "staged" by backend
+	# A, and blocks waiting on it.
+	$psql_b->query_until(
+		qr/start/, q{
+	\echo start
+    BEGIN;
+    SELECT read_rel_block_ll('tbl_ok', 1, wait_complete=>true);
+    SELECT 'SUCCESS';
+    COMMIT;
+});
+
+	# make sure psql_b has blocked on the IO
+	sleep(1);
+
+	# Cause the IO we staged in backend A to be submitted, but don't wait for its completion
+	$psql_a->query_safe(
+		qq(rollback));
+
+	# Wait for the IO on backend B to complete.
+	pump_until(
+			$psql_b->{run}, $psql_b->{timeout},
+		\$psql_b->{stdout}, qr/SUCCESS/);
+#	$psql_b->{stderr} = '';
+    ok(1, "$io_method: backend B sees the io staged and later submitted by backend A as completed");
+
+	$psql_a->quit();
+	$psql_b->quit();
+}
+
 # Test that we deal correctly with FDs being closed while IO is in progress
 sub test_close_fd
 {
@@ -1525,6 +1582,7 @@ CHECKPOINT;
 	test_checksum($io_method, $node);
 	test_ignore_checksum($io_method, $node);
 	test_checksum_createdb($io_method, $node);
+	test_wait_staged($io_method, $node);
 
   SKIP:
 	{

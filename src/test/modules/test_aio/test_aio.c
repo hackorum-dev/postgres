@@ -374,11 +374,18 @@ read_rel_block_ll(PG_FUNCTION_ARGS)
 	PgAioHandle *ioh;
 	PgAioWaitRef iow;
 	SMgrRelation smgr;
+	ResourceOwner save_resowner = CurrentResourceOwner;
+
+	/*
+	 * Associate the IO with top-transaction owner, so that if you call
+	 * batch_start() before this, the IO gets staged in the batch.
+	 */
+	CurrentResourceOwner = TopTransactionResourceOwner;
 
 	if (nblocks <= 0 || nblocks > PG_IOV_MAX)
 		elog(ERROR, "nblocks is out of range");
 
-	rel = relation_open(relid, AccessExclusiveLock);
+	rel = relation_open(relid, AccessShareLock);
 
 	for (int i = 0; i < nblocks; i++)
 	{
@@ -448,6 +455,8 @@ read_rel_block_ll(PG_FUNCTION_ARGS)
 	}
 
 	relation_close(rel, NoLock);
+
+	CurrentResourceOwner = save_resowner;
 
 	PG_RETURN_VOID();
 }
