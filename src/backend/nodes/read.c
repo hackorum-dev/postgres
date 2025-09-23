@@ -38,7 +38,7 @@ bool		restore_location_fields = false;
 
 
 /*
- * stringToNode -
+ * stringToNodeInternal -
  *	  builds a Node tree from its string representation (assumed valid)
  *
  * restore_loc_fields instructs readfuncs.c whether to restore location
