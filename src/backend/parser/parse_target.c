@@ -26,6 +26,7 @@
 #include "parser/parse_target.h"
 #include "parser/parse_type.h"
 #include "parser/parsetree.h"
+#include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -1794,11 +1795,66 @@ FigureColnameInternal(Node *node, char **name)
 			*name = strVal(llast(((FuncCall *) node)->funcname));
 			return 2;
 		case T_A_Expr:
-			if (((A_Expr *) node)->kind == AEXPR_NULLIF)
+			A_Expr	*i = (A_Expr *) node;
+			if (i->kind == AEXPR_NULLIF)
 			{
 				/* make nullif() act like a regular function */
 				*name = "nullif";
 				return 2;
+			}
+			else if (i->kind == AEXPR_OP &&
+			         list_length(i->name) == 1)
+			{
+				/* For json/jsonb operators, use the last part of the name.
+				 * The last part should be a Const or A_ArrayExpr node in rexpr.
+				 */
+				const char	*opname = strVal(linitial(i->name));
+				if ((strncmp(opname, "->", 2) == 0 ||
+					 strncmp(opname, "->>", 3) == 0) &&
+					IsA(i->rexpr, A_Const))
+				{
+					A_Const *c = (A_Const *) i->rexpr;
+					if (IsA(&c->val, String))
+					{
+						*name = strVal(&c->val);
+						return 2;
+					}
+				}
+				else if ((strncmp(opname, "#>", 2) == 0 ||
+				          strncmp(opname, "#>>", 3) == 0) &&
+						 (IsA(i->rexpr, A_Const) ||
+						  IsA(i->rexpr, A_ArrayExpr)))
+				{
+					if (IsA(i->rexpr, A_Const))
+					{
+						A_Const *c = (A_Const *) i->rexpr;
+						if (IsA(&c->val, String))
+						{
+							/* XXX: json/jsonb access path is a string like "{a, b, c}",
+							 * I don't have an existing function to parse it,
+							 * and I am not sure if I should do it here, so leave
+							 * it for now.
+							 */
+						}
+					}
+					else if (IsA(i->rexpr, A_ArrayExpr))
+					{
+						A_ArrayExpr *ae = (A_ArrayExpr *) i->rexpr;
+						if (list_length(ae->elements) > 0)
+						{
+							Node *last = (Node *) llast(ae->elements);
+							if (IsA(last, A_Const))
+							{
+								A_Const *c = (A_Const *) last;
+								if (IsA(&c->val, String))
+								{
+									*name = strVal(&c->val);
+									return 2;
+								}
+							}
+						}
+					}
+				}
 			}
 			break;
 		case T_TypeCast:
