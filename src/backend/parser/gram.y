@@ -268,6 +268,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	struct KeyAction *keyaction;
 	ReturningClause *retclause;
 	ReturningOptionKind retoptionkind;
+	struct { bool given; bool val; } bypassopt;
 }
 
 %type <node>	stmt toplevel_stmt schema_stmt routine_body_stmt
@@ -395,6 +396,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <boolean> RowSecurityDefaultPermissive
 %type <node>	RowSecurityOptionalWithCheck RowSecurityOptionalExpr
 %type <list>	RowSecurityDefaultToRole RowSecurityOptionalToRole
+%type <bypassopt>	RowSecurityOptionalBypassleakproof
 
 %type <str>		iso_level opt_encoding
 %type <rolespec> grantee
@@ -702,7 +704,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	ASENSITIVE ASSERTION ASSIGNMENT ASYMMETRIC ATOMIC AT ATTACH ATTRIBUTE AUTHORIZATION
 
 	BACKWARD BEFORE BEGIN_P BETWEEN BIGINT BINARY BIT
-	BOOLEAN_P BOTH BREADTH BY
+	BOOLEAN_P BOTH BREADTH BY BYPASSLEAKPROOF
 
 	CACHE CALL CALLED CASCADE CASCADED CASE CAST CATALOG_P CHAIN CHAR_P
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
@@ -747,6 +749,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	MINUTE_P MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NESTED NEW NEXT NFC NFD NFKC NFKD NO
+	NOBYPASSLEAKPROOF
 	NONE NORMALIZE NORMALIZED
 	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
 	NULLS_P NUMERIC
@@ -5929,8 +5932,10 @@ AlterUserMappingStmt: ALTER USER MAPPING FOR auth_ident SERVER name alter_generi
  *					[FOR { SELECT | INSERT | UPDATE | DELETE } ]
  *					[TO role, ...]
  *					[USING (qual)] [WITH CHECK (with check qual)]
+ *					[{ BYPASSLEAKPROOF | NOBYPASSLEAKPROOF }]
  *				ALTER POLICY name ON table [TO role, ...]
  *					[USING (qual)] [WITH CHECK (with check qual)]
+ *					[{ BYPASSLEAKPROOF | NOBYPASSLEAKPROOF }]
  *
  *****************************************************************************/
 
@@ -5938,6 +5943,7 @@ CreatePolicyStmt:
 			CREATE POLICY name ON qualified_name RowSecurityDefaultPermissive
 				RowSecurityDefaultForCmd RowSecurityDefaultToRole
 				RowSecurityOptionalExpr RowSecurityOptionalWithCheck
+				RowSecurityOptionalBypassleakproof
 				{
 					CreatePolicyStmt *n = makeNode(CreatePolicyStmt);
 
@@ -5948,6 +5954,8 @@ CreatePolicyStmt:
 					n->roles = $8;
 					n->qual = $9;
 					n->with_check = $10;
+					n->bypassleakproof = $11.val;
+					n->bypassleakproof_given = $11.given;
 					$$ = (Node *) n;
 				}
 		;
@@ -5955,6 +5963,7 @@ CreatePolicyStmt:
 AlterPolicyStmt:
 			ALTER POLICY name ON qualified_name RowSecurityOptionalToRole
 				RowSecurityOptionalExpr RowSecurityOptionalWithCheck
+				RowSecurityOptionalBypassleakproof
 				{
 					AlterPolicyStmt *n = makeNode(AlterPolicyStmt);
 
@@ -5963,6 +5972,8 @@ AlterPolicyStmt:
 					n->roles = $6;
 					n->qual = $7;
 					n->with_check = $8;
+					n->bypassleakproof = $9.val;
+					n->bypassleakproof_given = $9.given;
 					$$ = (Node *) n;
 				}
 		;
@@ -6003,6 +6014,24 @@ RowSecurityDefaultPermissive:
 
 				}
 			| /* EMPTY */			{ $$ = true; }
+		;
+
+RowSecurityOptionalBypassleakproof:
+			BYPASSLEAKPROOF
+				{
+					$$.given = true;
+					$$.val = true;
+				}
+			| NOBYPASSLEAKPROOF
+				{
+					$$.given = true;
+					$$.val = false;
+				}
+			| /* EMPTY */
+				{
+					$$.given = false;
+					$$.val = false;
+				}
 		;
 
 RowSecurityDefaultForCmd:
@@ -17755,6 +17784,7 @@ unreserved_keyword:
 			| BEGIN_P
 			| BREADTH
 			| BY
+			| BYPASSLEAKPROOF
 			| CACHE
 			| CALL
 			| CALLED
@@ -17904,6 +17934,7 @@ unreserved_keyword:
 			| NFKC
 			| NFKD
 			| NO
+			| NOBYPASSLEAKPROOF
 			| NORMALIZED
 			| NOTHING
 			| NOTIFY
@@ -18310,6 +18341,7 @@ bare_label_keyword:
 			| BOTH
 			| BREADTH
 			| BY
+			| BYPASSLEAKPROOF
 			| CACHE
 			| CALL
 			| CALLED
@@ -18521,6 +18553,7 @@ bare_label_keyword:
 			| NFKC
 			| NFKD
 			| NO
+			| NOBYPASSLEAKPROOF
 			| NONE
 			| NORMALIZE
 			| NORMALIZED

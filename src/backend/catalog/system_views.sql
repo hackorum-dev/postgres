@@ -100,7 +100,8 @@ CREATE VIEW pg_policies AS
             WHEN '*' THEN 'ALL'
         END AS cmd,
         pg_catalog.pg_get_expr(pol.polqual, pol.polrelid) AS qual,
-        pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid) AS with_check
+        pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid) AS with_check,
+        pol.polbypassleakproof AS bypassleakproof
     FROM pg_catalog.pg_policy pol
     JOIN pg_catalog.pg_class C ON (C.oid = pol.polrelid)
     LEFT JOIN pg_catalog.pg_namespace N ON (N.oid = C.relnamespace);

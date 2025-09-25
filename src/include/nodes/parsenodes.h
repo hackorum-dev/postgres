@@ -3068,6 +3068,11 @@ typedef struct CreatePolicyStmt
 	List	   *roles;			/* the roles associated with the policy */
 	Node	   *qual;			/* the policy's condition */
 	Node	   *with_check;		/* the policy's WITH CHECK condition. */
+	bool		bypassleakproof;	/* does the policy bypass the leakproof
+									 * requirement for functions? */
+	bool		bypassleakproof_given;	/* whether
+										 * BYPASSLEAKPROOF/NOBYPASSLEAKPROOF
+										 * appeared */
 } CreatePolicyStmt;
 
 /*----------------------
@@ -3082,6 +3087,11 @@ typedef struct AlterPolicyStmt
 	List	   *roles;			/* the roles associated with the policy */
 	Node	   *qual;			/* the policy's condition */
 	Node	   *with_check;		/* the policy's WITH CHECK condition. */
+	bool		bypassleakproof;	/* does the policy bypass the leakproof
+									 * requirement for functions? */
+	bool		bypassleakproof_given;	/* whether
+										 * BYPASSLEAKPROOF/NOBYPASSLEAKPROOF
+										 * appeared */
 } AlterPolicyStmt;
 
 /*----------------------

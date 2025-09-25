@@ -656,6 +656,7 @@ typedef struct _policyInfo
 	char	   *polname;		/* null indicates RLS is enabled on rel */
 	char		polcmd;
 	bool		polpermissive;
+	bool		polbypassleakproof;
 	char	   *polroles;
 	char	   *polqual;
 	char	   *polwithcheck;

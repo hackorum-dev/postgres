@@ -34,6 +34,8 @@ CATALOG(pg_policy,3256,PolicyRelationId)
 												 * policy. */
 	char		polcmd;			/* One of ACL_*_CHR, or '*' for all */
 	bool		polpermissive;	/* restrictive or permissive policy */
+	bool		polbypassleakproof; /* does the policy bypass the leakproof
+									 * requirement for functions? */
 
 #ifdef CATALOG_VARLEN
 	/* Roles to which the policy is applied; zero means PUBLIC */

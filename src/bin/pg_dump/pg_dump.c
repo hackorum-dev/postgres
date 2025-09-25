@@ -4243,6 +4243,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 	int			i_polname;
 	int			i_polcmd;
 	int			i_polpermissive;
+	int			i_polbypassleakproof;
 	int			i_polroles;
 	int			i_polqual;
 	int			i_polwithcheck;
@@ -4306,6 +4307,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 			polinfo->polname = NULL;
 			polinfo->polcmd = '\0';
 			polinfo->polpermissive = 0;
+			polinfo->polbypassleakproof = 0;
 			polinfo->polroles = NULL;
 			polinfo->polqual = NULL;
 			polinfo->polwithcheck = NULL;
@@ -4327,6 +4329,10 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 		appendPQExpBufferStr(query, "pol.polpermissive, ");
 	else
 		appendPQExpBufferStr(query, "'t' as polpermissive, ");
+	if (fout->remoteVersion >= 190000)	/* polbypassleakproof added in v19 */
+		appendPQExpBufferStr(query, "pol.polbypassleakproof, ");
+	else
+		appendPQExpBufferStr(query, "'f' as polbypassleakproof, ");
 	appendPQExpBuffer(query,
 					  "CASE WHEN pol.polroles = '{0}' THEN NULL ELSE "
 					  "   pg_catalog.array_to_string(ARRAY(SELECT pg_catalog.quote_ident(rolname) from pg_catalog.pg_roles WHERE oid = ANY(pol.polroles)), ', ') END AS polroles, "
@@ -4347,6 +4353,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 		i_polname = PQfnumber(res, "polname");
 		i_polcmd = PQfnumber(res, "polcmd");
 		i_polpermissive = PQfnumber(res, "polpermissive");
+		i_polbypassleakproof = PQfnumber(res, "polbypassleakproof");
 		i_polroles = PQfnumber(res, "polroles");
 		i_polqual = PQfnumber(res, "polqual");
 		i_polwithcheck = PQfnumber(res, "polwithcheck");
@@ -4372,6 +4379,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 
 			polinfo[j].polcmd = *(PQgetvalue(res, j, i_polcmd));
 			polinfo[j].polpermissive = *(PQgetvalue(res, j, i_polpermissive)) == 't';
+			polinfo[j].polbypassleakproof = *(PQgetvalue(res, j, i_polbypassleakproof)) == 't';
 
 			if (PQgetisnull(res, j, i_polroles))
 				polinfo[j].polroles = NULL;
@@ -4482,6 +4490,9 @@ dumpPolicy(Archive *fout, const PolicyInfo *polinfo)
 
 	if (polinfo->polwithcheck != NULL)
 		appendPQExpBuffer(query, " WITH CHECK (%s)", polinfo->polwithcheck);
+
+	if (polinfo->polbypassleakproof)
+		appendPQExpBufferStr(query, " BYPASSLEAKPROOF");
 
 	appendPQExpBufferStr(query, ";\n");
 

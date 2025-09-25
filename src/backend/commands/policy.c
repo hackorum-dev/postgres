@@ -694,6 +694,7 @@ CreatePolicy(CreatePolicyStmt *stmt)
 															 CStringGetDatum(stmt->policy_name));
 	values[Anum_pg_policy_polcmd - 1] = CharGetDatum(polcmd);
 	values[Anum_pg_policy_polpermissive - 1] = BoolGetDatum(stmt->permissive);
+	values[Anum_pg_policy_polbypassleakproof - 1] = BoolGetDatum(stmt->bypassleakproof);
 	values[Anum_pg_policy_polroles - 1] = PointerGetDatum(role_ids);
 
 	/* Add qual if present. */
@@ -1034,6 +1035,13 @@ AlterPolicy(AlterPolicyStmt *stmt)
 			with_check_parse_rtable = with_check_pstate->p_rtable;
 			free_parsestate(with_check_pstate);
 		}
+	}
+
+	/* Only update bypassleakproof if the clause was specified */
+	if (stmt->bypassleakproof_given)
+	{
+		replaces[Anum_pg_policy_polbypassleakproof - 1] = true;
+		values[Anum_pg_policy_polbypassleakproof - 1] = BoolGetDatum(stmt->bypassleakproof);
 	}
 
 	new_tuple = heap_modify_tuple(policy_tuple,
