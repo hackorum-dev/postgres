@@ -982,6 +982,10 @@ equalPolicy(RowSecurityPolicy *policy1, RowSecurityPolicy *policy2)
 
 		if (policy1->polcmd != policy2->polcmd)
 			return false;
+		if (policy1->permissive != policy2->permissive)
+			return false;
+		if (policy1->bypassleakproof != policy2->bypassleakproof)
+			return false;
 		if (policy1->hassublinks != policy2->hassublinks)
 			return false;
 		if (strcmp(policy1->policy_name, policy2->policy_name) != 0)

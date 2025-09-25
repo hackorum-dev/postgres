@@ -253,6 +253,9 @@ RelationBuildRowSecurity(Relation relation)
 		/* Get policy, permissive or restrictive */
 		policy->permissive = policy_form->polpermissive;
 
+		/* Get policy bypassleakproof flag */
+		policy->bypassleakproof = policy_form->polbypassleakproof;
+
 		/* Get policy name */
 		policy->policy_name =
 			MemoryContextStrdup(rscxt, NameStr(policy_form->polname));

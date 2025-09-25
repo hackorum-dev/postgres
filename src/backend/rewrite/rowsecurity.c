@@ -61,6 +61,7 @@ static void add_security_quals(int rt_index,
 							   List *permissive_policies,
 							   List *restrictive_policies,
 							   List **securityQuals,
+							   List **normalQuals,
 							   bool *hasSubLinks);
 
 static void add_with_check_options(Relation rel,
@@ -93,10 +94,14 @@ row_security_policy_hook_type row_security_policy_hook_restrictive = NULL;
  * In addition, hasRowSecurity is set to true if row-level security is enabled
  * (even if this RTE doesn't have any row security quals), and hasSubLinks is
  * set to true if any of the quals returned contain sublinks.
+ *
+ * normalQuals receives quals from policies marked BYPASSLEAKPROOF, which
+ * should be treated as regular WHERE clauses rather than security barriers.
  */
 void
 get_row_security_policies(Query *root, RangeTblEntry *rte, int rt_index,
 						  List **securityQuals, List **withCheckOptions,
+						  List **normalQuals,
 						  bool *hasRowSecurity, bool *hasSubLinks)
 {
 	Oid			user_id;
@@ -110,6 +115,7 @@ get_row_security_policies(Query *root, RangeTblEntry *rte, int rt_index,
 	/* Defaults for the return values */
 	*securityQuals = NIL;
 	*withCheckOptions = NIL;
+	*normalQuals = NIL;
 	*hasRowSecurity = false;
 	*hasSubLinks = false;
 
@@ -205,6 +211,7 @@ get_row_security_policies(Query *root, RangeTblEntry *rte, int rt_index,
 						   update_permissive_policies,
 						   update_restrictive_policies,
 						   securityQuals,
+						   normalQuals,
 						   hasSubLinks);
 	}
 
@@ -225,6 +232,7 @@ get_row_security_policies(Query *root, RangeTblEntry *rte, int rt_index,
 						   permissive_policies,
 						   restrictive_policies,
 						   securityQuals,
+						   normalQuals,
 						   hasSubLinks);
 
 	/*
@@ -252,6 +260,7 @@ get_row_security_policies(Query *root, RangeTblEntry *rte, int rt_index,
 						   select_permissive_policies,
 						   select_restrictive_policies,
 						   securityQuals,
+						   normalQuals,
 						   hasSubLinks);
 	}
 
@@ -693,23 +702,30 @@ row_security_policy_cmp(const ListCell *a, const ListCell *b)
  * access to the table, then all access is prohibited --- i.e., an implicit
  * default-deny policy is used.
  *
- * New security quals are added to securityQuals, and hasSubLinks is set to
- * true if any of the quals added contain sublink subqueries.
+ * New security quals are added to securityQuals or normalQuals based on
+ * the bypassleakproof flag of policies. Quals from BYPASSLEAKPROOF policies
+ * go to normalQuals to be treated as regular WHERE clauses.
+ * hasSubLinks is set to true if any of the quals added contain sublink subqueries.
  */
 static void
 add_security_quals(int rt_index,
 				   List *permissive_policies,
 				   List *restrictive_policies,
 				   List **securityQuals,
+				   List **normalQuals,
 				   bool *hasSubLinks)
 {
 	ListCell   *item;
 	List	   *permissive_quals = NIL;
+	List	   *bypass_permissive_quals = NIL;
+	bool		all_permissive_bypass = true;
+	bool		has_permissive_policies = false;
 	Expr	   *rowsec_expr;
 
 	/*
-	 * First collect up the permissive quals.  If we do not find any
-	 * permissive policies then no rows are visible (this is handled below).
+	 * First collect up the permissive quals, separating BYPASSLEAKPROOF
+	 * policies from regular ones. If we do not find any permissive policies
+	 * then no rows are visible (this is handled below).
 	 */
 	foreach(item, permissive_policies)
 	{
@@ -717,8 +733,18 @@ add_security_quals(int rt_index,
 
 		if (policy->qual != NULL)
 		{
-			permissive_quals = lappend(permissive_quals,
-									   copyObject(policy->qual));
+			has_permissive_policies = true;
+			if (policy->bypassleakproof)
+			{
+				bypass_permissive_quals = lappend(bypass_permissive_quals,
+												  copyObject(policy->qual));
+			}
+			else
+			{
+				permissive_quals = lappend(permissive_quals,
+										   copyObject(policy->qual));
+				all_permissive_bypass = false;
+			}
 			*hasSubLinks |= policy->hassublinks;
 		}
 	}
@@ -729,13 +755,11 @@ add_security_quals(int rt_index,
 	 * If we do not, then we simply return a single 'false' qual which results
 	 * in no rows being visible.
 	 */
-	if (permissive_quals != NIL)
+	if (has_permissive_policies)
 	{
 		/*
-		 * We now know that permissive policies exist, so we can now add
-		 * security quals based on the USING clauses from the restrictive
-		 * policies.  Since these need to be combined together using AND, we
-		 * can just add them one at a time.
+		 * Handle restrictive policies - each goes to the appropriate list
+		 * based on its bypassleakproof flag.
 		 */
 		foreach(item, restrictive_policies)
 		{
@@ -747,25 +771,55 @@ add_security_quals(int rt_index,
 				qual = copyObject(policy->qual);
 				ChangeVarNodes((Node *) qual, 1, rt_index, 0);
 
-				*securityQuals = list_append_unique(*securityQuals, qual);
+				if (policy->bypassleakproof)
+					*normalQuals = lappend(*normalQuals, qual);
+				else
+
+					/*
+					 * list_append_unique deduplicates based on pointer
+					 * equality, which is harmless here
+					 */
+					*securityQuals = list_append_unique(*securityQuals, qual);
 				*hasSubLinks |= policy->hassublinks;
 			}
 		}
 
 		/*
-		 * Then add a single security qual combining together the USING
-		 * clauses from all the permissive policies using OR.
+		 * Handle the combined permissive qual. If all permissive policies are
+		 * BYPASSLEAKPROOF, add the combined qual to normalQuals. Otherwise,
+		 * combine all permissive quals (both bypass and regular) and add to
+		 * securityQuals.
 		 */
-		if (list_length(permissive_quals) == 1)
-			rowsec_expr = (Expr *) linitial(permissive_quals);
-		else
-			rowsec_expr = makeBoolExpr(OR_EXPR, permissive_quals, -1);
+		if (all_permissive_bypass && bypass_permissive_quals != NIL)
+		{
+			/* All permissive policies bypass - add to normal quals */
+			if (list_length(bypass_permissive_quals) == 1)
+				rowsec_expr = (Expr *) linitial(bypass_permissive_quals);
+			else
+				rowsec_expr = makeBoolExpr(OR_EXPR, bypass_permissive_quals, -1);
 
-		ChangeVarNodes((Node *) rowsec_expr, 1, rt_index, 0);
-		*securityQuals = list_append_unique(*securityQuals, rowsec_expr);
+			ChangeVarNodes((Node *) rowsec_expr, 1, rt_index, 0);
+			*normalQuals = lappend(*normalQuals, rowsec_expr);
+		}
+		else
+		{
+			/*
+			 * Some non-bypass policies exist - combine all and add to
+			 * security quals
+			 */
+			List	   *all_permissive_quals = list_concat(permissive_quals, bypass_permissive_quals);
+
+			if (list_length(all_permissive_quals) == 1)
+				rowsec_expr = (Expr *) linitial(all_permissive_quals);
+			else
+				rowsec_expr = makeBoolExpr(OR_EXPR, all_permissive_quals, -1);
+
+			ChangeVarNodes((Node *) rowsec_expr, 1, rt_index, 0);
+			*securityQuals = list_append_unique(*securityQuals, rowsec_expr);
+		}
 	}
 	else
-
+	{
 		/*
 		 * A permissive policy must exist for rows to be visible at all.
 		 * Therefore, if there were no permissive policies found, return a
@@ -775,6 +829,7 @@ add_security_quals(int rt_index,
 								 makeConst(BOOLOID, -1, InvalidOid,
 										   sizeof(bool), BoolGetDatum(false),
 										   false, true));
+	}
 }
 
 /*

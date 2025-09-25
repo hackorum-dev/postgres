@@ -2199,6 +2199,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 		Relation	rel;
 		List	   *securityQuals;
 		List	   *withCheckOptions;
+		List	   *normalQuals;
 		bool		hasRowSecurity;
 		bool		hasSubLinks;
 
@@ -2217,9 +2218,10 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 		 */
 		get_row_security_policies(parsetree, rte, rt_index,
 								  &securityQuals, &withCheckOptions,
+								  &normalQuals,
 								  &hasRowSecurity, &hasSubLinks);
 
-		if (securityQuals != NIL || withCheckOptions != NIL)
+		if (securityQuals != NIL || withCheckOptions != NIL || normalQuals != NIL)
 		{
 			if (hasSubLinks)
 			{
@@ -2239,17 +2241,19 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 				activeRIRs = lappend_oid(activeRIRs, RelationGetRelid(rel));
 
 				/*
-				 * get_row_security_policies just passed back securityQuals
-				 * and/or withCheckOptions, and there were SubLinks, make sure
-				 * we lock any relations which are referenced.
+				 * get_row_security_policies just passed back securityQuals,
+				 * withCheckOptions, and/or normalQuals, and there were
+				 * SubLinks, make sure we lock any relations which are
+				 * referenced.
 				 *
 				 * These locks would normally be acquired by the parser, but
-				 * securityQuals and withCheckOptions are added post-parsing.
+				 * these quals are added post-parsing.
 				 */
 				context.for_execute = true;
 				(void) acquireLocksOnSubLinks((Node *) securityQuals, &context);
 				(void) acquireLocksOnSubLinks((Node *) withCheckOptions,
 											  &context);
+				(void) acquireLocksOnSubLinks((Node *) normalQuals, &context);
 
 				/*
 				 * Now that we have the locks on anything added by
@@ -2262,6 +2266,9 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 									   fireRIRonSubLink, &fire_context);
 
 				expression_tree_walker((Node *) withCheckOptions,
+									   fireRIRonSubLink, &fire_context);
+
+				expression_tree_walker((Node *) normalQuals,
 									   fireRIRonSubLink, &fire_context);
 
 				/*
@@ -2285,6 +2292,31 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 
 			parsetree->withCheckOptions = list_concat(withCheckOptions,
 													  parsetree->withCheckOptions);
+
+			/*
+			 * Add normalQuals from BYPASSLEAKPROOF policies to the query's
+			 * WHERE clause. These are treated as regular quals rather than
+			 * security barriers.
+			 */
+			if (normalQuals != NIL)
+			{
+				Node	   *whereClause;
+				Node	   *newQual;
+
+				/* Build a combined qual from all normalQuals */
+				if (list_length(normalQuals) == 1)
+					newQual = (Node *) linitial(normalQuals);
+				else
+					newQual = (Node *) make_ands_explicit(normalQuals);
+
+				/* Add to existing WHERE clause */
+				whereClause = parsetree->jointree->quals;
+				if (whereClause)
+					parsetree->jointree->quals = (Node *) make_and_qual((Expr *) whereClause,
+																		(Expr *) newQual);
+				else
+					parsetree->jointree->quals = newQual;
+			}
 		}
 
 		/*

@@ -23,6 +23,7 @@ typedef struct RowSecurityPolicy
 	char		polcmd;			/* Type of command policy is for */
 	ArrayType  *roles;			/* Array of roles policy is for */
 	bool		permissive;		/* restrictive or permissive policy */
+	bool		bypassleakproof;
 	Expr	   *qual;			/* Expression to filter rows */
 	Expr	   *with_check_qual;	/* Expression to limit rows allowed */
 	bool		hassublinks;	/* If either expression has sublinks */
@@ -44,6 +45,7 @@ extern PGDLLIMPORT row_security_policy_hook_type row_security_policy_hook_restri
 extern void get_row_security_policies(Query *root,
 									  RangeTblEntry *rte, int rt_index,
 									  List **securityQuals, List **withCheckOptions,
+									  List **normalQuals,
 									  bool *hasRowSecurity, bool *hasSubLinks);
 
 #endif							/* ROWSECURITY_H */
