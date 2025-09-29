@@ -81,6 +81,7 @@ extern bool check_log_stats(bool *newval, void **extra, GucSource source);
 extern bool check_log_timezone(char **newval, void **extra, GucSource source);
 extern void assign_log_timezone(const char *newval, void *extra);
 extern const char *show_log_timezone(void);
+extern void assign_listen_addresses(const char *newval, void *extra);
 extern void assign_maintenance_io_concurrency(int newval, void *extra);
 extern void assign_io_max_combine_limit(int newval, void *extra);
 extern void assign_io_combine_limit(int newval, void *extra);

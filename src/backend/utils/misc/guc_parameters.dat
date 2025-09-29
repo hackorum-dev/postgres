@@ -2943,11 +2943,12 @@
   boot_val => 'DEFAULT_PGSOCKET_DIR',
 },
 
-{ name => 'listen_addresses', type => 'string', context => 'PGC_POSTMASTER', group => 'CONN_AUTH_SETTINGS',
+{ name => 'listen_addresses', type => 'string', context => 'PGC_SIGHUP', group => 'CONN_AUTH_SETTINGS',
   short_desc => 'Sets the host name or IP address(es) to listen to.',
   flags => 'GUC_LIST_INPUT',
   variable => 'ListenAddresses',
   boot_val => '"localhost"',
+  assign_hook => 'assign_listen_addresses',
 },
 
 # Can't be set by ALTER SYSTEM as it can lead to recursive definition

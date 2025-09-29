@@ -72,6 +72,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <sys/param.h>
 #include <netdb.h>
@@ -94,6 +95,7 @@
 #include "access/xlogrecovery.h"
 #include "common/file_perm.h"
 #include "common/pg_prng.h"
+#include "common/ip.h"
 #include "lib/ilist.h"
 #include "libpq/libpq.h"
 #include "libpq/pqsignal.h"
@@ -122,6 +124,7 @@
 #include "utils/pidfile.h"
 #include "utils/timestamp.h"
 #include "utils/varlena.h"
+#include "utils/guc_hooks.h"
 
 #ifdef EXEC_BACKEND
 #include "common/file_utils.h"
@@ -418,6 +421,7 @@ static void CloseServerPorts(int status, Datum arg);
 static void unlink_external_pid_file(int status, Datum arg);
 static void getInstallationPaths(const char *argv0);
 static void checkControlFile(void);
+static void ConfigurePostmasterWaitSet(bool accept_connections);
 static void handle_pm_pmsignal_signal(SIGNAL_ARGS);
 static void handle_pm_child_exit_signal(SIGNAL_ARGS);
 static void handle_pm_reload_request_signal(SIGNAL_ARGS);
@@ -1443,6 +1447,190 @@ CloseServerPorts(int status, Datum arg)
 	 * We don't do anything about socket lock files here; those will be
 	 * removed in a later on_proc_exit callback.
 	 */
+}
+
+/*
+ * Attempt bind to all the hostnames in *newval,
+ * then determine which ones should be closed and close them.
+ */
+void
+assign_listen_addresses(const char *newval, void *extra)
+{
+	int 		status;
+	int 		n_bound, n_closed;
+	char		*rawstring;
+	List		*elemlist;
+	ListCell	*l;
+
+	char portNumberStr[32];
+	int retval;
+	int i, j;
+	struct addrinfo *addrs = NULL, *addr;
+	struct addrinfo hint;
+	struct sockaddr_storage sock_addr;
+	socklen_t sock_addr_len = sizeof(sock_addr);
+	/* Marks which interfaces we should remain bound to. */
+	bool remain_bound[MAXLISTEN];
+
+	char ip_str[INET6_ADDRSTRLEN];
+
+	/* Is there a better test? */
+	if (ListenSockets == NULL)
+		return; /* Not postmaster process. */
+
+	/* Need a modifiable copy of ListenAddresses. */
+	rawstring = pstrdup(newval);
+
+	/* Parse the string into a list of hostnames. */
+	if (!SplitGUCList(rawstring, ',', &elemlist))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid list syntax in parameter \"%s\"",
+						"listen_addresses")));
+	}
+	/* Bind to each hostname individually. */
+	n_bound = 0;
+	foreach(l, elemlist)
+	{
+		/* This foreach() is very similar to one within PostmasterMain().
+		 * Should it be taken out into a common function call?
+		 * I doubt it since the code snippets are not identical. */
+		char	   *curhost = (char *) lfirst(l);
+
+		if (strcmp(curhost, "*") == 0)
+		{
+			status = ListenServerPort(AF_UNSPEC, NULL,
+									  (unsigned short) PostPortNumber,
+									  NULL,
+									  ListenSockets,
+									  &NumListenSockets,
+									  MAXLISTEN);
+		}
+		else
+		{
+			status = ListenServerPort(AF_UNSPEC, curhost,
+									  (unsigned short) PostPortNumber,
+									  NULL,
+									  ListenSockets,
+									  &NumListenSockets,
+									  MAXLISTEN);
+		}
+
+		if (status == STATUS_OK)
+		{
+			n_bound++;
+			/* Should it be like that? The comment atop the function says
+			 * it may be dangerous to overwrite the string with a shorter
+			 * one. */
+			if (n_bound == 1)
+				AddToDataDirLockFile(LOCK_FILE_LINE_LISTEN_ADDR, curhost);
+		}
+	}
+
+	/* Done binding, now drop the no longer needed sockets... */
+
+	MemSet(&hint, 0, sizeof(hint));
+	hint.ai_family = AF_UNSPEC; /* Empty search condition for getaddrinfo().*/
+
+	for (i = 0; i < MAXLISTEN; i++)
+		remain_bound[i] = false; /* Reset. */
+
+	/* Should port number be mutable too? */
+	snprintf(portNumberStr, sizeof(portNumberStr), "%d", PostPortNumber);
+	/* The following foreach(){} determines which sockets are to be closed.
+	 * We resolve hosts twice: once to bind, and once to close them. Ugly? */
+	foreach(l, elemlist) /* Iterate through hostnames. */
+	{
+		char	   *curhost = (char *) lfirst(l);
+
+		retval = pg_getaddrinfo_all(curhost, portNumberStr, &hint, &addrs);
+		if (retval != 0)
+		{
+			ereport(ERROR,
+					(errmsg("could not translate host name \"%s\", service \"%s\" to address: %s",
+							curhost, portNumberStr, gai_strerror(retval))));
+		}
+
+		/* Iterate through resolved addresses. */
+		for (addr = addrs; addr; addr = addr->ai_next)
+		{
+			/* Iterate through bound addresses. */
+			for (i = 0; i < NumListenSockets; i++)
+			{
+				/* Is it portable? */
+				getsockname(ListenSockets[i], (struct sockaddr *)&sock_addr,
+							&sock_addr_len);
+
+				/* Ignore UNIX sockets. */
+				if (sock_addr.ss_family == AF_UNIX)
+				{
+					remain_bound[i] = true;
+					continue;
+				}
+
+				/* If whatever we are bound to matches with the requested
+				 * address/hostname, then stay bound to it. */
+				if ( ((struct sockaddr_in *)&sock_addr)->sin_addr.s_addr ==
+				     ((struct sockaddr_in *)addr->ai_addr)->sin_addr.s_addr )
+					remain_bound[i] = true;
+
+				/* IPv6 not handled? */
+			}
+		}
+
+		/* Needed or should be delegated to memory contexts? */
+		pg_freeaddrinfo_all(hint.ai_family, addrs);
+	}
+
+	/* Close whatever sockets should be closed.
+	 * There could be a better algorithm. */
+	n_closed = 0;
+	/* Iterate through and close... */
+	for (i = 0; i < NumListenSockets; i++)
+	{
+		if (remain_bound[i] == true)
+			continue;
+
+		///* Get human-readable IP address for the log entry. */
+		//if (getsockname(ListenSockets[i], (struct sockaddr*)&sock_addr, &sock_addr_len) == -1) {
+		//	ereport(ERROR, (errmsg("getsockname()")) );
+		//}
+		//
+		//if (sock_addr.ss_family == AF_INET) { /* IPv4 */
+		//	struct sockaddr_in *s = (struct sockaddr_in *)&addr;
+		//	inet_ntop(AF_INET, &s->sin_addr, ip_str, sizeof(ip_str));
+		//}
+		//else
+		//{ /* IPv6 */
+		//	struct sockaddr_in6 *s6 = (struct sockaddr_in6 *)&addr;
+		//	inet_ntop(AF_INET6, &s6->sin6_addr, ip_str, sizeof(ip_str));
+		//} /* We know we will not encounter UNIX sockets. */
+		///* Any IPv4 interface is 0.0.0.0 on my machine. Why? */
+		//ereport(LOG, (errmsg("closing %s", ip_str)) );
+
+		closesocket(ListenSockets[i]);
+		ListenSockets[i] = -1;
+		n_closed++;
+	}
+	/* Having closed the sockets we created empty slots in between the array
+	 * elements, get rid of them... */
+	j = 0;
+	for (i = 0; i < NumListenSockets; i++)
+	{
+		if (ListenSockets[i] != -1)
+			ListenSockets[j++] = ListenSockets[i];
+	}
+	NumListenSockets = j;
+
+	/* Resubscribe to socket updates. */
+	/* Is the if statement needed? */
+	if (n_bound > 0 || n_closed > 0)
+		ConfigurePostmasterWaitSet(true);
+
+	/* Should memory be handled by memory contexts? */
+	list_free(elemlist);
+	pfree(rawstring);
 }
 
 /*
