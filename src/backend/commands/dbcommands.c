@@ -630,8 +630,8 @@ CreateDatabaseUsingFileCopy(Oid src_dboid, Oid dst_dboid, Oid src_tsid,
 			XLogRegisterData(&xlrec,
 							 sizeof(xl_dbase_create_file_copy_rec));
 
-			(void) XLogInsert(RM_DBASE_ID,
-							  XLOG_DBASE_CREATE_FILE_COPY | XLR_SPECIAL_REL_UPDATE);
+			(void) XLogInsertExtended(RM_DBASE_ID,
+									  XLOG_DBASE_CREATE_FILE_COPY, XLR_SPECIAL_REL_UPDATE);
 		}
 		pfree(srcpath);
 		pfree(dstpath);
@@ -2213,8 +2213,8 @@ movedb(const char *dbname, const char *tblspcname)
 			XLogRegisterData(&xlrec,
 							 sizeof(xl_dbase_create_file_copy_rec));
 
-			(void) XLogInsert(RM_DBASE_ID,
-							  XLOG_DBASE_CREATE_FILE_COPY | XLR_SPECIAL_REL_UPDATE);
+			(void) XLogInsertExtended(RM_DBASE_ID,
+									  XLOG_DBASE_CREATE_FILE_COPY, XLR_SPECIAL_REL_UPDATE);
 		}
 
 		/*
@@ -2309,8 +2309,8 @@ movedb(const char *dbname, const char *tblspcname)
 		XLogRegisterData(&xlrec, sizeof(xl_dbase_drop_rec));
 		XLogRegisterData(&src_tblspcoid, sizeof(Oid));
 
-		(void) XLogInsert(RM_DBASE_ID,
-						  XLOG_DBASE_DROP | XLR_SPECIAL_REL_UPDATE);
+		(void) XLogInsertExtended(RM_DBASE_ID,
+								  XLOG_DBASE_DROP, XLR_SPECIAL_REL_UPDATE);
 	}
 
 	/* Now it's safe to release the database lock */
@@ -3067,8 +3067,8 @@ remove_dbtablespaces(Oid db_id)
 		XLogRegisterData(&xlrec, MinSizeOfDbaseDropRec);
 		XLogRegisterData(tablespace_ids, ntblspc * sizeof(Oid));
 
-		(void) XLogInsert(RM_DBASE_ID,
-						  XLOG_DBASE_DROP | XLR_SPECIAL_REL_UPDATE);
+		(void) XLogInsertExtended(RM_DBASE_ID,
+								  XLOG_DBASE_DROP, XLR_SPECIAL_REL_UPDATE);
 	}
 
 	list_free(ltblspc);

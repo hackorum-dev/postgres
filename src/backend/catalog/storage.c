@@ -196,7 +196,7 @@ log_smgrcreate(const RelFileLocator *rlocator, ForkNumber forkNum)
 
 	XLogBeginInsert();
 	XLogRegisterData(&xlrec, sizeof(xlrec));
-	XLogInsert(RM_SMGR_ID, XLOG_SMGR_CREATE | XLR_SPECIAL_REL_UPDATE);
+	XLogInsertExtended(RM_SMGR_ID, XLOG_SMGR_CREATE, XLR_SPECIAL_REL_UPDATE);
 }
 
 /*
@@ -400,8 +400,8 @@ RelationTruncate(Relation rel, BlockNumber nblocks)
 		XLogBeginInsert();
 		XLogRegisterData(&xlrec, sizeof(xlrec));
 
-		lsn = XLogInsert(RM_SMGR_ID,
-						 XLOG_SMGR_TRUNCATE | XLR_SPECIAL_REL_UPDATE);
+		lsn = XLogInsertExtended(RM_SMGR_ID,
+								 XLOG_SMGR_TRUNCATE, XLR_SPECIAL_REL_UPDATE);
 
 		/*
 		 * Flush, because otherwise the truncation of the main relation might

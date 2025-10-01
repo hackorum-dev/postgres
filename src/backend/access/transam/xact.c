@@ -5842,6 +5842,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	xl_xact_twophase xl_twophase;
 	xl_xact_origin xl_origin;
 	uint8		info;
+	uint8		geninfo = 0;
 
 	Assert(CritSectionCount > 0);
 
@@ -5892,7 +5893,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILELOCATORS;
 		xl_relfilelocators.nrels = nrels;
-		info |= XLR_SPECIAL_REL_UPDATE;
+		geninfo |= XLR_SPECIAL_REL_UPDATE;
 	}
 
 	if (ndroppedstats > 0)
@@ -5985,7 +5986,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	/* we allow filtering by xacts */
 	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-	return XLogInsert(RM_XACT_ID, info);
+	return XLogInsertExtended(RM_XACT_ID, info, geninfo);
 }
 
 /*
@@ -6012,6 +6013,7 @@ XactLogAbortRecord(TimestampTz abort_time,
 	xl_xact_origin xl_origin;
 
 	uint8		info;
+	uint8		geninfo = 0;
 
 	Assert(CritSectionCount > 0);
 
@@ -6041,7 +6043,7 @@ XactLogAbortRecord(TimestampTz abort_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILELOCATORS;
 		xl_relfilelocators.nrels = nrels;
-		info |= XLR_SPECIAL_REL_UPDATE;
+		geninfo |= XLR_SPECIAL_REL_UPDATE;
 	}
 
 	if (ndroppedstats > 0)
@@ -6131,7 +6133,7 @@ XactLogAbortRecord(TimestampTz abort_time,
 	/* Include the replication origin */
 	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-	return XLogInsert(RM_XACT_ID, info);
+	return XLogInsertExtended(RM_XACT_ID, info, geninfo);
 }
 
 /*

@@ -429,8 +429,8 @@ pg_truncate_visibility_map(PG_FUNCTION_ARGS)
 		XLogBeginInsert();
 		XLogRegisterData(&xlrec, sizeof(xlrec));
 
-		lsn = XLogInsert(RM_SMGR_ID,
-						 XLOG_SMGR_TRUNCATE | XLR_SPECIAL_REL_UPDATE);
+		lsn = XLogInsertExtended(RM_SMGR_ID,
+								 XLOG_SMGR_TRUNCATE, XLR_SPECIAL_REL_UPDATE);
 		XLogFlush(lsn);
 	}
 

@@ -134,7 +134,7 @@ static bool begininsert_called = false;
 /* Memory context to hold the registered buffer and data references. */
 static MemoryContext xloginsert_cxt;
 
-static XLogRecData *XLogRecordAssemble(RmgrId rmid, uint8 info,
+static XLogRecData *XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 geninfo,
 									   XLogRecPtr RedoRecPtr, bool doPageWrites,
 									   XLogRecPtr *fpw_lsn, int *num_fpi,
 									   bool *topxid_included);
@@ -472,7 +472,7 @@ XLogSetRecordFlags(uint8 flags)
  * WAL rule "write the log before the data".)
  */
 XLogRecPtr
-XLogInsert(RmgrId rmid, uint8 info)
+XLogInsertExtended(RmgrId rmid, uint8 info, uint8 geninfo)
 {
 	XLogRecPtr	EndPos;
 
@@ -481,14 +481,14 @@ XLogInsert(RmgrId rmid, uint8 info)
 		elog(ERROR, "XLogBeginInsert was not called");
 
 	/*
-	 * The caller can set rmgr bits, XLR_SPECIAL_REL_UPDATE and
-	 * XLR_CHECK_CONSISTENCY; the rest are reserved for use by me.
+	 * The caller can set XLR_SPECIAL_REL_UPDATE and XLR_CHECK_CONSISTENCY;
+	 * the rest are reserved for use by me.
 	 */
-	if ((info & ~(XLR_RMGR_INFO_MASK |
-				  XLR_SPECIAL_REL_UPDATE |
-				  XLR_CHECK_CONSISTENCY)) != 0)
-		elog(PANIC, "invalid xlog info mask %02X", info);
+	if ((geninfo & ~(XLR_SPECIAL_REL_UPDATE |
+					 XLR_CHECK_CONSISTENCY)) != 0)
+		elog(PANIC, "invalid xlog geninfo mask %02X", geninfo);
 
+	/* WIP: need geninfo here? */
 	TRACE_POSTGRESQL_WAL_INSERT(rmid, info);
 
 	/*
@@ -518,7 +518,7 @@ XLogInsert(RmgrId rmid, uint8 info)
 		 */
 		GetFullPageWriteInfo(&RedoRecPtr, &doPageWrites);
 
-		rdt = XLogRecordAssemble(rmid, info, RedoRecPtr, doPageWrites,
+		rdt = XLogRecordAssemble(rmid, info, geninfo, RedoRecPtr, doPageWrites,
 								 &fpw_lsn, &num_fpi, &topxid_included);
 
 		EndPos = XLogInsertRecord(rdt, fpw_lsn, curinsert_flags, num_fpi,
@@ -529,6 +529,15 @@ XLogInsert(RmgrId rmid, uint8 info)
 
 	return EndPos;
 }
+
+/* Convenience wrapper for callers that don't pass "geninfo" */
+/*  WIP: should this be an inline function in xloginsert.h? */
+XLogRecPtr
+XLogInsert(RmgrId rmid, uint8 info)
+{
+	return XLogInsertExtended(rmid, info, 0);
+}
+
 
 /*
  * Simple wrapper to XLogInsert to insert a WAL record with elementary
@@ -558,7 +567,7 @@ XLogSimpleInsertInt64(RmgrId rmid, uint8 info, int64 value)
  * current subtransaction.
  */
 static XLogRecData *
-XLogRecordAssemble(RmgrId rmid, uint8 info,
+XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 geninfo,
 				   XLogRecPtr RedoRecPtr, bool doPageWrites,
 				   XLogRecPtr *fpw_lsn, int *num_fpi, bool *topxid_included)
 {
@@ -591,7 +600,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 	 * a record.
 	 */
 	if (wal_consistency_checking[rmid])
-		info |= XLR_CHECK_CONSISTENCY;
+		geninfo |= XLR_CHECK_CONSISTENCY;
 
 	/*
 	 * Make an rdata chain containing all the data portions of all block
@@ -657,7 +666,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 		 * If needs_backup is true or WAL checking is enabled for current
 		 * resource manager, log a full-page write for the current block.
 		 */
-		include_image = needs_backup || (info & XLR_CHECK_CONSISTENCY) != 0;
+		include_image = needs_backup || (geninfo & XLR_CHECK_CONSISTENCY) != 0;
 
 		if (include_image)
 		{
@@ -939,6 +948,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 	rechdr->xl_xid = GetCurrentTransactionIdIfAny();
 	rechdr->xl_tot_len = (uint32) total_len;
 	rechdr->xl_info = info;
+	rechdr->xl_geninfo = geninfo;
 	rechdr->xl_rmid = rmid;
 	rechdr->xl_prev = InvalidXLogRecPtr;
 	rechdr->xl_crc = rdata_crc;

@@ -164,7 +164,7 @@ typedef struct SavedTransactionCharacteristics
  */
 
 /*
- * XLOG allows to store some information in high 4 bits of log record xl_info
+ * XLOG allows storing some information in the log record's xl_info
  * field. We use 3 for the opcode, and one about an optional flag variable.
  */
 #define XLOG_XACT_COMMIT			0x00

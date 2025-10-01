@@ -392,6 +392,7 @@ extractPageInfo(XLogReaderState *record)
 	RmgrId		rmid = XLogRecGetRmid(record);
 	uint8		info = XLogRecGetInfo(record);
 	uint8		rminfo = info & ~XLR_INFO_MASK;
+	uint8		geninfo = XLogRecGetGeninfo(record);
 
 	/* Is this a special record type that I recognize? */
 
@@ -451,7 +452,7 @@ extractPageInfo(XLogReaderState *record)
 		 * source.
 		 */
 	}
-	else if (info & XLR_SPECIAL_REL_UPDATE)
+	else if (geninfo & XLR_SPECIAL_REL_UPDATE)
 	{
 		/*
 		 * This record type modifies a relation file in some special way, but
@@ -459,9 +460,9 @@ extractPageInfo(XLogReaderState *record)
 		 * track that change.
 		 */
 		pg_fatal("WAL record modifies a relation, but record type is not recognized:\n"
-				 "lsn: %X/%08X, rmid: %d, rmgr: %s, info: %02X",
+				 "lsn: %X/%08X, rmid: %d, rmgr: %s, info: %02X, geninfo: %02X",
 				 LSN_FORMAT_ARGS(record->ReadRecPtr),
-				 rmid, RmgrName(rmid), info);
+				 rmid, RmgrName(rmid), rminfo, geninfo);
 	}
 
 	for (block_id = 0; block_id <= XLogRecMaxBlockId(record); block_id++)

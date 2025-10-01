@@ -43,9 +43,10 @@ typedef struct XLogRecord
 	uint32		xl_tot_len;		/* total len of entire record */
 	TransactionId xl_xid;		/* xact id */
 	XLogRecPtr	xl_prev;		/* ptr to previous record in log */
-	uint8		xl_info;		/* flag bits, see below */
+	uint8		xl_info;		/* RMGR-specific info */
 	RmgrId		xl_rmid;		/* resource manager for this record */
-	/* 2 bytes of padding here, initialize to zero */
+	uint8		xl_geninfo;		/* flag bits, see below */
+	/* 1 byte of padding here, initialize to zero */
 	pg_crc32c	xl_crc;			/* CRC for this record */
 
 	/* XLogRecordBlockHeaders and XLogRecordDataHeader follow, no padding */
@@ -54,13 +55,7 @@ typedef struct XLogRecord
 
 #define SizeOfXLogRecord	(offsetof(XLogRecord, xl_crc) + sizeof(pg_crc32c))
 
-/*
- * The high 4 bits in xl_info may be used freely by rmgr. The
- * XLR_SPECIAL_REL_UPDATE and XLR_CHECK_CONSISTENCY bits can be passed by
- * XLogInsert caller. The rest are set internally by XLogInsert.
- */
 #define XLR_INFO_MASK			0x0F
-#define XLR_RMGR_INFO_MASK		0xF0
 
 /*
  * XLogReader needs to allocate all the data of a WAL record in a single
@@ -72,6 +67,12 @@ typedef struct XLogRecord
  * infrastructure expects as extra.
  */
 #define XLogRecordMaxSize	(1020 * 1024 * 1024)
+
+/*
+ * The XLR_SPECIAL_REL_UPDATE and XLR_CHECK_CONSISTENCY bits destined for
+ * xl_geninfo can be passed to XLogInsertExtended. The rest are set
+ * internally by XLogInsertExtended.
+ */
 
 /*
  * If a WAL record modifies any relation files, in ways not covered by the

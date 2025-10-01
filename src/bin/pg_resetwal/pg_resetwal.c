@@ -1132,6 +1132,7 @@ WriteEmptyXLOG(void)
 	record->xl_xid = InvalidTransactionId;
 	record->xl_tot_len = SizeOfXLogRecord + SizeOfXLogRecordDataHeaderShort + sizeof(CheckPoint);
 	record->xl_info = XLOG_CHECKPOINT_SHUTDOWN;
+	record->xl_geninfo = 0;
 	record->xl_rmid = RM_XLOG_ID;
 
 	recptr += SizeOfXLogRecord;

@@ -2006,7 +2006,7 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	 * record are consistent with the existing pages. This check is done only
 	 * if consistency check is enabled for this record.
 	 */
-	if ((record->xl_info & XLR_CHECK_CONSISTENCY) != 0)
+	if ((record->xl_geninfo & XLR_CHECK_CONSISTENCY) != 0)
 		verifyBackupPageConsistency(xlogreader);
 
 	/* Pop the error context stack */
@@ -2483,7 +2483,7 @@ verifyBackupPageConsistency(XLogReaderState *record)
 	if (!XLogRecHasAnyBlockRefs(record))
 		return;
 
-	Assert((XLogRecGetInfo(record) & XLR_CHECK_CONSISTENCY) != 0);
+	Assert((XLogRecGetGeninfo(record) & XLR_CHECK_CONSISTENCY) != 0);
 
 	for (block_id = 0; block_id <= XLogRecMaxBlockId(record); block_id++)
 	{
