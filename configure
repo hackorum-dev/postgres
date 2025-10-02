@@ -15364,6 +15364,13 @@ _ACEOF
 fi
 
 
+# AArch64 is bi-endian, but we require little
+if test x"$host_cpu" = x"aarch64"; then
+  if test x"$ac_cv_c_bigendian" = x"yes"; then
+    as_fn_error $? "big endian is not supported for aarch64" "$LINENO" 5
+  fi
+fi
+
 # MSVC doesn't cope well with defining restrict to __restrict, the
 # spelling it understands, because it conflicts with
 # __declspec(restrict) in C++ mode. Therefore we define pg_restrict to
