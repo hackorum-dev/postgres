@@ -1856,6 +1856,10 @@ endif
 ###############################################################
 
 if host_machine.endian() == 'big'
+  # AArch64 is bi-endian, but we require little
+  if host_cpu == 'aarch64'
+    error('big endian is not supported for aarch64')
+  endif
   cdata.set('WORDS_BIGENDIAN', 1)
 endif
 

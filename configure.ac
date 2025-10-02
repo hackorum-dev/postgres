@@ -1736,6 +1736,13 @@ PGAC_UNION_SEMUN
 AC_CHECK_TYPES(socklen_t, [], [], [#include <sys/socket.h>])
 PGAC_STRUCT_SOCKADDR_SA_LEN
 
+# AArch64 is bi-endian, but we require little
+if test x"$host_cpu" = x"aarch64"; then
+  if test x"$ac_cv_c_bigendian" = x"yes"; then
+    AC_MSG_ERROR([big endian is not supported for aarch64])
+  fi
+fi
+
 # MSVC doesn't cope well with defining restrict to __restrict, the
 # spelling it understands, because it conflicts with
 # __declspec(restrict) in C++ mode. Therefore we define pg_restrict to
