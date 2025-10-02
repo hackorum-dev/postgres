@@ -15,11 +15,33 @@
 #include "postgres.h"
 
 #include "access/gistxlog.h"
+#include "access/xlogreader.h"
 #include "lib/stringinfo.h"
 
 static void
-out_gistxlogPageUpdate(StringInfo buf, gistxlogPageUpdate *xlrec)
+out_gistxlogPageUpdate(StringInfo buf, XLogReaderState *record, gistxlogPageUpdate *xlrec)
 {
+	appendStringInfo(buf, "ntodelete %u ntoinsert %u",
+				xlrec->ntodelete, xlrec->ntoinsert);
+
+	if (XLogRecHasBlockData(record, 0)) {
+		char* payload = XLogRecGetBlockData(record, 0, NULL);
+		OffsetNumber *todelete = (OffsetNumber *) payload;
+		uint16 i;
+
+		if (xlrec->ntodelete) {
+			appendStringInfo(buf, " delete offsets: ");
+
+			for (i = 0; i < xlrec->ntodelete; ++i) {
+				if (i + 1 != xlrec->ntodelete)
+					appendStringInfo(buf, "%d, ", todelete[i]);
+				else
+					appendStringInfo(buf, "%d", todelete[i]);
+			}
+
+			payload += sizeof(OffsetNumber) * xlrec->ntodelete;
+		}
+	}
 }
 
 static void
@@ -42,10 +64,23 @@ out_gistxlogDelete(StringInfo buf, gistxlogDelete *xlrec)
 }
 
 static void
-out_gistxlogPageSplit(StringInfo buf, gistxlogPageSplit *xlrec)
+out_gistxlogPageSplit(StringInfo buf, XLogReaderState *record, gistxlogPageSplit *xlrec)
 {
-	appendStringInfo(buf, "page_split: splits to %d pages",
-					 xlrec->npage);
+	int i;
+	appendStringInfo(buf, "page_split: splits to %d pages, origrlink %d, origleaf %c, orignsn: %ld, markfollowright: %c",
+					 xlrec->npage, xlrec->origrlink,
+					 xlrec->origleaf ? 'T' : 'F', xlrec->orignsn,
+					 xlrec->markfollowright ? 'T' : 'F');
+
+	for (i = 1; i <= xlrec->npage; ++ i)
+	{
+		int n;
+
+		/* extract the number of tuples */
+		memcpy(&n, XLogRecGetBlockData(record, i, NULL), sizeof(int));
+		appendStringInfo(buf, ", blk data %d: adds %d tuples",
+					 i, n);
+	}
 }
 
 static void
@@ -66,7 +101,7 @@ gist_desc(StringInfo buf, XLogReaderState *record)
 	switch (info)
 	{
 		case XLOG_GIST_PAGE_UPDATE:
-			out_gistxlogPageUpdate(buf, (gistxlogPageUpdate *) rec);
+			out_gistxlogPageUpdate(buf, record, (gistxlogPageUpdate *) rec);
 			break;
 		case XLOG_GIST_PAGE_REUSE:
 			out_gistxlogPageReuse(buf, (gistxlogPageReuse *) rec);
@@ -75,7 +110,7 @@ gist_desc(StringInfo buf, XLogReaderState *record)
 			out_gistxlogDelete(buf, (gistxlogDelete *) rec);
 			break;
 		case XLOG_GIST_PAGE_SPLIT:
-			out_gistxlogPageSplit(buf, (gistxlogPageSplit *) rec);
+			out_gistxlogPageSplit(buf, record, (gistxlogPageSplit *) rec);
 			break;
 		case XLOG_GIST_PAGE_DELETE:
 			out_gistxlogPageDelete(buf, (gistxlogPageDelete *) rec);
