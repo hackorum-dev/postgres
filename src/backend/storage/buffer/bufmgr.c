@@ -50,6 +50,8 @@
 #include "miscadmin.h"
 #include "pg_trace.h"
 #include "pgstat.h"
+#include "port/pg_bitutils.h"
+#include "port/simd.h"
 #include "postmaster/bgwriter.h"
 #include "storage/aio.h"
 #include "storage/buf_internals.h"
@@ -358,11 +360,54 @@ GetPrivateRefCountEntry(Buffer buffer, bool do_move)
 	 * First search for references in the array, that'll be sufficient in the
 	 * majority of cases.
 	 */
+#ifndef USE_NO_SIMD
+
+	{
+		const Vector32 keys = vector32_broadcast(buffer);
+		Vector32	bufs1;
+		Vector32	bufs2;
+		Vector32	res1;
+		Vector32	res2;
+		Vector32	res;
+		uint32		msk;
+
+#ifdef USE_ASSERT_CHECKING
+		PrivateRefCountEntry *ret = NULL;
+
+		for (int i = 0; i < REFCOUNT_ARRAY_ENTRIES; i++)
+		{
+			if (PrivateRefCountArrayBuffers[i] == buffer)
+			{
+				ret = &PrivateRefCountArray[i];
+				break;
+			}
+		}
+#endif
+
+		vector32_load(&bufs1, (uint32 *) &PrivateRefCountArrayBuffers[0]);
+		vector32_load(&bufs2, (uint32 *) &PrivateRefCountArrayBuffers[sizeof(Vector32) / sizeof(int)]);
+
+		res1 = vector32_eq(bufs1, keys);
+		res2 = vector32_eq(bufs2, keys);
+		res = vector32_pack_32(res1, res2);
+
+		msk = vector32_highbit_mask(res);
+		if (likely(msk))
+		{
+			Assert(ret == &PrivateRefCountArray[pg_rightmost_one_pos32(msk) / 2]);
+			return &PrivateRefCountArray[pg_rightmost_one_pos32(msk) / 2];
+		}
+		else
+			Assert(ret == NULL);
+	}
+
+#else
 	for (int i = 0; i < REFCOUNT_ARRAY_ENTRIES; i++)
 	{
 		if (PrivateRefCountArrayBuffers[i] == buffer)
 			return &PrivateRefCountArray[i];
 	}
+#endif
 
 	/*
 	 * By here we know that the buffer, if already pinned, isn't residing in

@@ -332,6 +332,18 @@ vector8_highbit_mask(const Vector8 v)
 }
 #endif							/* ! USE_NO_SIMD */
 
+#ifndef USE_NO_SIMD
+static inline uint32
+vector32_highbit_mask(const Vector32 v)
+{
+#ifdef USE_NEON
+	return vector8_highbit_mask((Vector8) v);
+#else
+	return vector8_highbit_mask(v);
+#endif
+}
+#endif							/* ! USE_NO_SIMD */
+
 /*
  * Return the bitwise OR of the inputs
  */
@@ -398,6 +410,19 @@ vector8_min(const Vector8 v1, const Vector8 v2)
 	return _mm_min_epu8(v1, v2);
 #elif defined(USE_NEON)
 	return vminq_u8(v1, v2);
+#endif
+}
+#endif							/* ! USE_NO_SIMD */
+
+
+#ifndef USE_NO_SIMD
+static inline Vector32
+vector32_pack_32(const Vector32 v1, const Vector32 v2)
+{
+#ifdef USE_SSE2
+	return _mm_packs_epi32(v1, v2);
+#elif defined(USE_NEON)
+	return (Vector32) vuzp1q_u16((uint16x8_t) v1, (uint16x8_t) v2);
 #endif
 }
 #endif							/* ! USE_NO_SIMD */
