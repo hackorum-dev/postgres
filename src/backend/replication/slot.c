@@ -853,6 +853,59 @@ restart:
 }
 
 /*
+ * ResetSyncedSlots()
+ *
+ * Reset the synced flag to false for all replication slots where it is
+ * currently true. Currently this function is only invoked during promotion.
+ */
+void
+ResetSyncedSlots(void)
+{
+	int			i;
+
+	/*
+	 * Iterate through all replication slot entries and reset synced ones
+	 */
+	for (i = 0; i < max_replication_slots; i++)
+	{
+		ReplicationSlot *s = &ReplicationSlotCtl->replication_slots[i];
+
+		/* Skip inactive/unused slots */
+		if (!s->in_use)
+			continue;
+
+		/* we're only interested in logical slots */
+		if (!SlotIsLogical(s))
+			continue;
+
+		/* Check if this slot was marked as synced */
+		if (s->data.synced)
+		{
+			/* Acquire the slot */
+			ReplicationSlotAcquire(NameStr(s->data.name), false, true);
+
+			/* Reset the synced flag under spinlock protection */
+			SpinLockAcquire(&s->mutex);
+			s->data.synced = false;
+			SpinLockRelease(&s->mutex);
+
+			/* Mark dirty and save outside the spinlock */
+			ReplicationSlotMarkDirty();
+			ReplicationSlotSave();
+
+			ereport(DEBUG1,
+				(errmsg("synced flag reset for replication slot \"%s\""
+						" during promotion",
+						NameStr(s->data.name))));
+
+			/* Release the slot */
+			ReplicationSlotRelease();
+		}
+	}
+
+}
+
+/*
  * Permanently drop replication slot identified by the passed in name.
  */
 void
@@ -2690,6 +2743,25 @@ RestoreSlotFromDisk(const char *name)
 		ReplicationSlotSetInactiveSince(slot, now, false);
 
 		restored = true;
+
+		/*
+		 * A primary should never have a slot with the 'synced' flag set.
+		 * Even if this server was previously a standby, the flag should
+		 * have been cleared during promotion. The only case it may still
+		 * be set is if the server crashed or failed during promotion before
+		 * the flag could be reset.
+		 * In that case, reset it now and mark the slot dirty.
+		 */
+		if (!StandbyMode && slot->data.synced)
+		{
+			slot->data.synced = false;
+			slot->just_dirtied = true;
+			slot->dirty = true;
+			ereport(DEBUG1,
+					(errmsg("synced flag reset for replication slot \"%s\"",
+						NameStr(slot->data.name))));
+		}
+
 		break;
 	}
 

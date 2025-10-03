@@ -5642,7 +5642,8 @@ StartupXLOG(void)
 
 	/*
 	 * Initialize replication slots, before there's a chance to remove
-	 * required resources.
+	 * required resources. Clear any leftover 'synced' flags on replication
+	 * slots when on the primary.
 	 */
 	StartupReplicationSlots();
 
@@ -6244,13 +6245,21 @@ StartupXLOG(void)
 	WalSndWakeup(true, true);
 
 	/*
-	 * If this was a promotion, request an (online) checkpoint now. This isn't
-	 * required for consistency, but the last restartpoint might be far back,
-	 * and in case of a crash, recovering from it might take a longer than is
-	 * appropriate now that we're not in standby mode anymore.
+	 * If this was a promotion, first reset the synced flag for any logical
+	 * slots if it's set. Although the synced flag for logical slots is reset
+	 * on every primary restart, we also need to handle it during promotion
+	 * since existing backend sessions remain active even after promotion,
+	 * and a restart may not happen for some time.
+	 * Then request an (online) checkpoint. The checkpoint isn't required for
+	 * consistency, but the last restartpoint might be far back, and in case
+	 * of a crash, recovery could take longer than desirable now that we're not
+	 * in standby mode anymore.
 	 */
 	if (promoted)
+	{
+		ResetSyncedSlots();
 		RequestCheckpoint(CHECKPOINT_FORCE);
+	}
 }
 
 /*
