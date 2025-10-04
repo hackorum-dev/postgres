@@ -562,6 +562,18 @@ add_path(RelOptInfo *parent_rel, Path *new_path)
 									remove_old = true;	/* new dominates old */
 								else if (new_path->rows > old_path->rows)
 									accept_new = false; /* old dominates new */
+								else if (IsA(new_path, IndexPath) && IsA(old_path, IndexPath) &&
+										((IndexPath *) new_path)->indexinfo->unique == true &&
+										((IndexPath *) old_path)->indexinfo->unique == false)
+								{
+									remove_old = true;
+								}
+								else if (IsA(new_path, IndexPath) && IsA(old_path, IndexPath) &&
+										((IndexPath *) new_path)->indexinfo->unique == false &&
+										((IndexPath *) old_path)->indexinfo->unique == true)
+								{
+									accept_new = false;
+								}
 								else if (compare_path_costs_fuzzily(new_path,
 																	old_path,
 																	1.0000000001) == COSTS_BETTER1)
