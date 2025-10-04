@@ -767,6 +767,8 @@ check_new_cluster(void)
 	check_new_cluster_replication_slots();
 
 	check_new_cluster_subscription_configuration();
+
+	check_track_commit_timestamp_parameter(&new_cluster);
 }
 
 

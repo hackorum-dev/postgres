@@ -208,7 +208,11 @@ get_control_data(ClusterInfo *cluster)
 		cluster->controldata.data_checksum_version = 0;
 		got_data_checksum_version = true;
 	}
-
+	if (GET_MAJOR_VERSION(cluster->major_version) < 905)
+	{
+		cluster->controldata.chkpnt_oldstCommitTsxid = 0;
+		cluster->controldata.chkpnt_newstCommitTsxid = 0;
+	}
 	/* we have the result of cmd in "output". so parse it line by line now */
 	while (fgets(bufin, sizeof(bufin), output))
 	{
@@ -320,6 +324,26 @@ get_control_data(ClusterInfo *cluster)
 			p++;				/* remove ':' char */
 			cluster->controldata.chkpnt_nxtmulti = str2uint(p);
 			got_multi = true;
+		}
+		else if ((p = strstr(bufin, "Latest checkpoint's oldestCommitTsXid:")) != NULL)
+		{
+			p = strchr(p, ':');
+
+			if (p == NULL || strlen(p) <= 1)
+				pg_fatal("%d: controldata retrieval problem", __LINE__);
+
+			p++;				/* remove ':' char */
+			cluster->controldata.chkpnt_oldstCommitTsxid = str2uint(p);
+		}
+		else if ((p = strstr(bufin, "Latest checkpoint's newestCommitTsXid:")) != NULL)
+		{
+			p = strchr(p, ':');
+
+			if (p == NULL || strlen(p) <= 1)
+				pg_fatal("%d: controldata retrieval problem", __LINE__);
+
+			p++;				/* remove ':' char */
+			cluster->controldata.chkpnt_newstCommitTsxid = str2uint(p);
 		}
 		else if ((p = strstr(bufin, "Latest checkpoint's oldestXID:")) != NULL)
 		{

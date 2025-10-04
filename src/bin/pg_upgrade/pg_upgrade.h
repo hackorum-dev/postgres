@@ -238,6 +238,8 @@ typedef struct
 	uint32		chkpnt_nxtmxoff;
 	uint32		chkpnt_oldstMulti;
 	uint32		chkpnt_oldstxid;
+	uint32		chkpnt_oldstCommitTsxid;
+	uint32		chkpnt_newstCommitTsxid;
 	uint32		align;
 	uint32		blocksz;
 	uint32		largesz;
@@ -306,6 +308,8 @@ typedef struct
 	int			nsubs;			/* number of subscriptions */
 	bool		sub_retain_dead_tuples; /* whether a subscription enables
 										 * retain_dead_tuples. */
+	bool		track_commit_timestamp_on;	/* track_commit_timestamp for
+										 * new cluster */
 } ClusterInfo;
 
 
@@ -444,6 +448,7 @@ FileNameMap *gen_db_file_maps(DbInfo *old_db,
 void		get_db_rel_and_slot_infos(ClusterInfo *cluster);
 int			count_old_cluster_logical_slots(void);
 void		get_subscription_info(ClusterInfo *cluster);
+void		check_track_commit_timestamp_parameter(ClusterInfo *cluster);
 
 /* option.c */
 

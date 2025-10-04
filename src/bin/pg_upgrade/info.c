@@ -819,6 +819,27 @@ get_subscription_info(ClusterInfo *cluster)
 	PQfinish(conn);
 }
 
+/*
+ * check_track_commit_timestamp_parameter(ClusterInfo *cluster)
+ *
+ * Gets track_commit_timestamp parameter in the cluster.
+ */
+void
+check_track_commit_timestamp_parameter(ClusterInfo *cluster)
+{
+	PGconn	   *conn;
+	PGresult   *res;
+	int			is_set;
+
+	conn = connectToServer(cluster, "template1");
+	res = executeQueryOrDie(conn, "SELECT count(*) AS is_set "
+							"FROM pg_settings WHERE name = 'track_commit_timestamp' and setting = 'on'");
+	is_set = PQfnumber(res, "is_set");
+	cluster->track_commit_timestamp_on = atoi(PQgetvalue(res, 0, is_set)) == 1;
+
+	PQclear(res);
+	PQfinish(conn);
+}
 static void
 free_db_and_rel_infos(DbInfoArr *db_arr)
 {
