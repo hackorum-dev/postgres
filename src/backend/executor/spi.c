@@ -2773,7 +2773,6 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 			if (canSetTag)
 			{
 				my_processed = _SPI_current->processed;
-				SPI_freetuptable(my_tuptable);
 				my_tuptable = _SPI_current->tuptable;
 				my_res = res;
 			}
