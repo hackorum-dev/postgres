@@ -1502,7 +1502,8 @@ row_is_in_frame(WindowObject winobj, int64 pos, TupleTableSlot *slot,
 			if (pos > winstate->currentpos)
 			{
 				if (fetch_tuple)
-					window_gettupleslot(winobj, pos, slot);
+					if (!window_gettupleslot(winobj, pos, slot))
+						return -1;
 				if (!are_peers(winstate, slot, winstate->ss.ss_ScanTupleSlot))
 					return -1;
 			}
