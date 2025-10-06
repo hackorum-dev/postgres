@@ -22,6 +22,7 @@
 #include "storage/buffile.h"
 #include "utils/hsearch.h"
 #include "access/genam.h"
+#include "access/xlogrecord.h"
 
 /*
  * Maximum number of "halves" a page can be split into in one operation.
@@ -36,7 +37,14 @@
  * so if you raise this higher than that limit, you'll just get a different
  * error.
  */
-#define GIST_MAX_SPLIT_PAGES		75
+#define GIST_MAX_SPLIT_PAGES		25
+
+/* Enforce the size rule given in the comment above. +1 because zeroth backup block
+* it used for clearing follow-right pointer, blocks 1...GIST_MAX_SPLIT_PAGES for 
+* split pages */
+StaticAssertDecl(GIST_MAX_SPLIT_PAGES + 1 <= XLR_MAX_BLOCK_ID,
+				 "GIST_MAX_SPLIT_PAGES exceeds maximum allowed number of backup blocks");
+
 
 /* Buffer lock modes */
 #define GIST_SHARE	BUFFER_LOCK_SHARE
