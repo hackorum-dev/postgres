@@ -565,8 +565,7 @@ gistXLogPageDelete(Buffer buffer, FullTransactionId xid,
  * Write XLOG record about reuse of a deleted page.
  */
 void
-gistXLogPageReuse(Relation rel, Relation heaprel,
-				  BlockNumber blkno, FullTransactionId deleteXid)
+gistXLogPageReuse(Relation rel, Relation heaprel, FullTransactionId deleteXid)
 {
 	gistxlogPageReuse xlrec_reuse;
 
@@ -579,7 +578,6 @@ gistXLogPageReuse(Relation rel, Relation heaprel,
 	/* XLOG stuff */
 	xlrec_reuse.isCatalogRel = RelationIsAccessibleInLogicalDecoding(heaprel);
 	xlrec_reuse.locator = rel->rd_locator;
-	xlrec_reuse.block = blkno;
 	xlrec_reuse.snapshotConflictHorizon = deleteXid;
 
 	XLogBeginInsert();

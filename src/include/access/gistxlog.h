@@ -99,7 +99,6 @@ typedef struct gistxlogPageDelete
 typedef struct gistxlogPageReuse
 {
 	RelFileLocator locator;
-	BlockNumber block;
 	FullTransactionId snapshotConflictHorizon;
 	bool		isCatalogRel;	/* to handle recovery conflict during logical
 								 * decoding on standby */

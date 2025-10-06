@@ -864,7 +864,7 @@ gistNewBuffer(Relation r, Relation heaprel)
 				 * page's deleteXid.
 				 */
 				if (XLogStandbyInfoActive() && RelationNeedsWAL(r))
-					gistXLogPageReuse(r, heaprel, blkno, GistPageGetDeleteXid(page));
+					gistXLogPageReuse(r, heaprel, GistPageGetDeleteXid(page));
 
 				return buffer;
 			}
