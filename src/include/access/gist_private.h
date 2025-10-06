@@ -440,7 +440,7 @@ extern XLogRecPtr gistXLogPageDelete(Buffer buffer,
 									 FullTransactionId xid, Buffer parentBuffer,
 									 OffsetNumber downlinkOffset);
 
-extern void gistXLogPageReuse(Relation rel, Relation heaprel, BlockNumber blkno,
+extern void gistXLogPageReuse(Relation rel, Relation heaprel,
 							  FullTransactionId deleteXid);
 
 extern XLogRecPtr gistXLogUpdate(Buffer buffer,
