@@ -118,6 +118,99 @@ local $ENV{PGSERVICEFILE} = "$srvfile_empty";
 		  qr/definition of service "undefined-service" not found/);
 }
 
+{
+	# Check handling of the defaults section.
+	#
+	# pg_service_defaults.conf contains the same parameters as srvfile_valid,
+	# but it uses a default section to select the service automatically. (Use of
+	# a service remains necessary, to take precedence over Test::Cluster's
+	# automatic envvars.)
+	my $srvfile_defaults = "$td/pg_service_defaults.conf";
+	append_to_file(
+		$srvfile_defaults, qq{
+# Settings before the default section must be ignored.
+host=256.256.256.256
+port=1
+unknown-setting=1
+
+[default]
++=defaults
+service=my_srv
+options=-O
+
+[my_srv]
+});
+	foreach my $param (split(/\s+/, $node->connstr))
+	{
+		append_to_file($srvfile_defaults, $param . "\n");
+	}
+
+	local $ENV{PGSERVICEFILE} = $srvfile_defaults;
+	$dummy_node->connect_ok(
+		'',
+		'connection with dynamic defaults in PGSERVICEFILE',
+		sql => 'SHOW allow_system_table_mods',
+		expected_stdout => qr/on/);
+
+	# TODO is it really okay that postgres:// means whatever the environment
+	# says it means...?
+	$dummy_node->connect_ok(
+		'postgres://',
+		'connection with empty URI, dynamic defaults, and PGSERVICEFILE',
+		sql => 'SHOW allow_system_table_mods',
+		expected_stdout => qr/on/);
+
+	$dummy_node->connect_fails(
+		'service=default',
+		'default sections may not be selected via connection parameter',
+		expected_stderr =>
+		  qr/default section \[default\] may not be named as a service/);
+
+	{
+		local $ENV{PGSERVICE} = 'default';
+		$dummy_node->connect_fails(
+			'',
+			'default sections may not be selected via PGSERVICE',
+			expected_stderr =>
+			  qr/default section \[default\] may not be named as a service/);
+	}
+
+	# A file containing more than one default section is rejected.
+	my $srvfile_too_many_defaults = "$td/pg_service_too_many_defaults.conf";
+	copy($srvfile_defaults, $srvfile_too_many_defaults)
+	  or die
+	  "Could not copy $srvfile_defaults to $srvfile_too_many_defaults: $!";
+	append_to_file(
+		$srvfile_too_many_defaults, qq{
+[default]
++=defaults
+});
+
+	local $ENV{PGSERVICEFILE} = $srvfile_too_many_defaults;
+	$dummy_node->connect_fails(
+		'',
+		'service files may not contain more than one default section',
+		expected_stderr => qr/only the first section may be marked default/);
+
+	# A default section may not come after the first service section.
+	my $srvfile_defaults_after_service =
+	  "$td/pg_service_defaults_after_service.conf";
+	copy($srvfile_valid, $srvfile_defaults_after_service)
+	  or die
+	  "Could not copy $srvfile_valid to $srvfile_defaults_after_service: $!";
+	append_to_file(
+		$srvfile_defaults_after_service, qq{
+[default]
++=defaults
+});
+
+	local $ENV{PGSERVICEFILE} = $srvfile_defaults_after_service;
+	$dummy_node->connect_fails(
+		'',
+		'defaults section must be first in the file',
+		expected_stderr => qr/only the first section may be marked default/);
+}
+
 # Checks case of incorrect service file.
 {
 	local $ENV{PGSERVICEFILE} = $srvfile_missing;

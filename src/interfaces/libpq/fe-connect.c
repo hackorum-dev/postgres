@@ -493,7 +493,8 @@ static PQconninfoOption *conninfo_find(PQconninfoOption *connOptions,
 									   const char *keyword);
 static void defaultNoticeReceiver(void *arg, const PGresult *res);
 static void defaultNoticeProcessor(void *arg, const char *message);
-static int	parseServiceInfo(PQconninfoOption *options,
+static int	parseServiceInfo(PQconninfoOption *defaults,
+							 PQconninfoOption *options,
 							 PQExpBuffer errorMessage);
 static int	parseServiceFile(const char *serviceFile,
 							 const char *service,
@@ -5916,7 +5917,8 @@ ldapServiceLookup(const char *purl, PQconninfoOption *options,
 #endif							/* USE_LDAP */
 
 /*
- * parseServiceInfo: if a service name has been given, look it up and absorb
+ * parseServiceInfo: Parse any dynamic defaults from the service files.
+ * Additionally, if a service name has been given, look it up and absorb
  * connection options from it into *options.
  *
  * Returns 0 on success, nonzero on failure.  On failure, if errorMessage
@@ -5926,11 +5928,15 @@ ldapServiceLookup(const char *purl, PQconninfoOption *options,
  * a null PQExpBuffer pointer.)
  */
 static int
-parseServiceInfo(PQconninfoOption *options, PQExpBuffer errorMessage)
+parseServiceInfo(PQconninfoOption *defaults, PQconninfoOption *options,
+				 PQExpBuffer errorMessage)
 {
 	const char *service = conninfo_getval(options, "service");
 	const char *service_fname = conninfo_getval(options, "servicefile");
-	char		serviceFile[MAXPGPATH];
+	char		userServiceFile[MAXPGPATH];
+	char		systemServiceFile[MAXPGPATH];
+	bool		have_user_file = false;
+	bool		have_system_file = false;
 	char	   *env;
 	bool		group_found = false;
 	int			status;
@@ -5939,14 +5945,11 @@ parseServiceInfo(PQconninfoOption *options, PQExpBuffer errorMessage)
 	/*
 	 * We have to special-case the environment variable PGSERVICE here, since
 	 * this is and should be called before inserting environment defaults for
-	 * other connection options.
+	 * other connection options, and it takes precedence over any default
+	 * service defined in the files.
 	 */
 	if (service == NULL)
 		service = getenv("PGSERVICE");
-
-	/* If no service name given, nothing to do */
-	if (service == NULL)
-		return 0;
 
 	/*
 	 * First, try the "servicefile" option in connection string.  Then, try
@@ -5954,23 +5957,29 @@ parseServiceInfo(PQconninfoOption *options, PQExpBuffer errorMessage)
 	 * ~/.pg_service.conf (if that exists).
 	 */
 	if (service_fname != NULL)
-		strlcpy(serviceFile, service_fname, sizeof(serviceFile));
+		strlcpy(userServiceFile, service_fname, sizeof(userServiceFile));
 	else if ((env = getenv("PGSERVICEFILE")) != NULL)
-		strlcpy(serviceFile, env, sizeof(serviceFile));
+		strlcpy(userServiceFile, env, sizeof(userServiceFile));
 	else
 	{
 		char		homedir[MAXPGPATH];
 
 		if (!pqGetHomeDirectory(homedir, sizeof(homedir)))
 			goto next_file;
-		snprintf(serviceFile, MAXPGPATH, "%s/%s", homedir, ".pg_service.conf");
-		if (stat(serviceFile, &stat_buf) != 0)
+		snprintf(userServiceFile, MAXPGPATH, "%s/%s", homedir, ".pg_service.conf");
+		if (stat(userServiceFile, &stat_buf) != 0)
 			goto next_file;
 	}
 
-	status = parseServiceFile(serviceFile, service, options, errorMessage, &group_found);
-	if (group_found || status != 0)
+	/*
+	 * Pull defaults out of the user file first, if one exists. They take
+	 * precedence over any defaults in the system file.
+	 */
+	status = parseServiceFile(userServiceFile, NULL, defaults, errorMessage, &group_found);
+	if (status != 0)
 		return status;
+
+	have_user_file = true;
 
 next_file:
 
@@ -5978,25 +5987,72 @@ next_file:
 	 * This could be used by any application so we can't use the binary
 	 * location to find our config files.
 	 */
-	snprintf(serviceFile, MAXPGPATH, "%s/pg_service.conf",
+	snprintf(systemServiceFile, MAXPGPATH, "%s/pg_service.conf",
 			 getenv("PGSYSCONFDIR") ? getenv("PGSYSCONFDIR") : SYSCONFDIR);
-	if (stat(serviceFile, &stat_buf) != 0)
+	if (stat(systemServiceFile, &stat_buf) != 0)
 		goto last_file;
 
-	status = parseServiceFile(serviceFile, service, options, errorMessage, &group_found);
+	/* Fill in system defaults for any options not given in the user file. */
+	status = parseServiceFile(systemServiceFile, NULL, defaults, errorMessage, &group_found);
 	if (status != 0)
 		return status;
 
+	have_system_file = true;
+
 last_file:
-	if (!group_found)
+
+	/*
+	 * At this point, we've filled in any dynamic defaults. We can make one
+	 * last attempt at a service name if none was given so far.
+	 */
+	if (service == NULL)
 	{
-		libpq_append_error(errorMessage, "definition of service \"%s\" not found", service);
-		return 3;
+		service = conninfo_getval(defaults, "service");
+		if (service == NULL)
+			return 0;			/* nothing left to do */
 	}
 
-	return 0;
+	/*
+	 * We have a service name. Try to find it first in the user file, then in
+	 * the system file.
+	 *
+	 * Note the difference when compared to defaults! The default sections in
+	 * the user and system files are *merged*, with the user file taking
+	 * precedence. But if a named user service is found, any identically named
+	 * system service is *ignored*.
+	 */
+	if (have_user_file)
+	{
+		status = parseServiceFile(userServiceFile, service, options, errorMessage, &group_found);
+		if (group_found || status != 0)
+			return status;
+	}
+
+	if (have_system_file)
+	{
+		status = parseServiceFile(systemServiceFile, service, options, errorMessage, &group_found);
+		if (group_found || status != 0)
+			return status;
+	}
+
+	libpq_append_error(errorMessage, "definition of service \"%s\" not found", service);
+	return 3;
 }
 
+/*
+ * Fills in option fallback values from a service file.
+ *
+ * When service is not NULL: The file is searched for the named service section.
+ * If one is found, we make sure it's not marked as the default section (which
+ * is an error) and then parse it.
+ *
+ * When service is NULL: The default section is parsed if one exists at the
+ * start of the file. Later sections are also checked to ensure that they are
+ * not incorrectly marked as defaults.
+ *
+ * Already-set options are never overwritten. *group_found is set to true if a
+ * matching section was found, and false otherwise.
+ */
 static int
 parseServiceFile(const char *serviceFile,
 				 const char *service,
@@ -6010,6 +6066,8 @@ parseServiceFile(const char *serviceFile,
 	FILE	   *f;
 	char	   *line;
 	char		buf[1024];
+	unsigned int section_num = 0;
+	unsigned int option_num = 0;
 
 	*group_found = false;
 
@@ -6052,13 +6110,17 @@ parseServiceFile(const char *serviceFile,
 		/* Check for right groupname */
 		if (line[0] == '[')
 		{
-			if (*group_found)
+			if (service != NULL && *group_found)
 			{
 				/* end of desired group reached; return success */
 				goto exit;
 			}
 
-			if (strncmp(line + 1, service, strlen(service)) == 0 &&
+			section_num++;
+			option_num = 0;
+
+			if (service != NULL &&
+				strncmp(line + 1, service, strlen(service)) == 0 &&
 				line[strlen(service) + 1] == ']')
 				*group_found = true;
 			else
@@ -6066,6 +6128,8 @@ parseServiceFile(const char *serviceFile,
 		}
 		else
 		{
+			option_num++;
+
 			if (*group_found)
 			{
 				/*
@@ -6076,7 +6140,12 @@ parseServiceFile(const char *serviceFile,
 				bool		found_keyword;
 
 #ifdef USE_LDAP
-				if (strncmp(line, "ldap", 4) == 0)
+
+				/*
+				 * LDAP lookup is allowed only in service definitions, not the
+				 * defaults section.
+				 */
+				if (service != NULL && strncmp(line, "ldap", 4) == 0)
 				{
 					int			rc = ldapServiceLookup(line, options, errorMessage);
 
@@ -6108,7 +6177,11 @@ parseServiceFile(const char *serviceFile,
 				}
 				*val++ = '\0';
 
-				if (strcmp(key, "service") == 0)
+				/*
+				 * A default service setting may be specified, but they're not
+				 * allowed to be nested inside other services.
+				 */
+				if (service != NULL && strcmp(key, "service") == 0)
 				{
 					libpq_append_error(errorMessage,
 									   "nested \"service\" specifications not supported in service file \"%s\", line %d",
@@ -6118,6 +6191,7 @@ parseServiceFile(const char *serviceFile,
 					goto exit;
 				}
 
+				/* Nested servicefile settings are never allowed. */
 				if (strcmp(key, "servicefile") == 0)
 				{
 					libpq_append_error(errorMessage,
@@ -6152,14 +6226,63 @@ parseServiceFile(const char *serviceFile,
 
 				if (!found_keyword)
 				{
+					/*
+					 * "unknown keyword" is unhelpful, if the actual problem
+					 * is that the user has tried to select the default
+					 * section.
+					 */
+					if (service != NULL
+						&& strcmp(key, "+") == 0
+						&& strcmp(val, "defaults") == 0)
+						libpq_append_error(errorMessage,
+										   "default section [%s] may not be named as a service in file \"%s\", line %d",
+										   service,
+										   serviceFile,
+										   linenr);
+					else
+						libpq_append_error(errorMessage,
+										   "unknown keyword \"%s\" in service file \"%s\", line %d",
+										   key,
+										   serviceFile,
+										   linenr);
+					result = 3;
+					goto exit;
+				}
+			}
+			else if (section_num > 0 && option_num == 1)
+			{
+				/*
+				 * Check for the default marker. We allow only the first
+				 * section in the file to be the default section, and it must
+				 * contain the marker "+=defaults" as its first key/value
+				 * pair.
+				 *
+				 * We don't currently allow whitespace around keys and values,
+				 * so we can perform a single strcmp().
+				 */
+				if (strcmp(line, "+=defaults") != 0)
+					continue;
+
+				/*
+				 * Avoid user confusion and complain if the default marker is
+				 * anywhere other than the first section.
+				 */
+				if (section_num != 1)
+				{
 					libpq_append_error(errorMessage,
-									   "unknown keyword \"%s\" in service file \"%s\", line %d",
-									   key,
+									   "only the first section may be marked default in service file \"%s\", line %d",
 									   serviceFile,
 									   linenr);
 					result = 3;
 					goto exit;
 				}
+
+				/*
+				 * If we're not looking for a service, parse this defaults
+				 * section.
+				 */
+				if (service == NULL)
+					*group_found = true;
 			}
 		}
 	}
@@ -6171,7 +6294,7 @@ exit:
 	 * if not already set.  This matters when we use a default service file or
 	 * PGSERVICEFILE, where we want to be able track the value.
 	 */
-	if (*group_found && result == 0)
+	if (service != NULL && *group_found && result == 0)
 	{
 		for (i = 0; options[i].keyword; i++)
 		{
@@ -6666,23 +6789,40 @@ static bool
 conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 {
 	PQconninfoOption *option;
+	PQconninfoOption *defaults;
+	PQconninfoOption *defopt;
+	PQExpBufferData unused = {0};
 	PQconninfoOption *sslmode_default = NULL,
 			   *sslrootcert = NULL;
 	char	   *tmp;
+	bool		success = false;
 
 	/*
-	 * If there's a service spec, use it to obtain any not-explicitly-given
-	 * parameters.  Ignore error if no error message buffer is passed because
-	 * there is no way to pass back the failure message.
+	 * Create a parallel set of options to hold dynamic defaults.
+	 * Unfortunately this requires constructing a throwaway error buffer if
+	 * the caller didn't provide one.
 	 */
-	if (parseServiceInfo(options, errorMessage) != 0 && errorMessage)
+	if (errorMessage == NULL)
+		termPQExpBuffer(&unused);	/* make buffer operations no-ops */
+
+	defaults = conninfo_init(errorMessage ? errorMessage : &unused);
+	if (defaults == NULL)
 		return false;
+
+	/*
+	 * Fill in any dynamic defaults, and if there's a service spec, use it to
+	 * obtain any not-explicitly-given parameters. Ignore error if no error
+	 * message buffer is passed because there is no way to pass back the
+	 * failure message.
+	 */
+	if (parseServiceInfo(defaults, options, errorMessage) != 0 && errorMessage)
+		goto cleanup;
 
 	/*
 	 * Get the fallback resources for parameters not specified in the conninfo
 	 * string nor the service.
 	 */
-	for (option = options; option->keyword != NULL; option++)
+	for (option = options, defopt = defaults; option->keyword != NULL; option++, defopt++)
 	{
 		if (strcmp(option->keyword, "sslrootcert") == 0)
 			sslrootcert = option;	/* save for later */
@@ -6702,7 +6842,7 @@ conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 				{
 					if (errorMessage)
 						libpq_append_error(errorMessage, "out of memory");
-					return false;
+					goto cleanup;
 				}
 				continue;
 			}
@@ -6725,7 +6865,7 @@ conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 				{
 					if (errorMessage)
 						libpq_append_error(errorMessage, "out of memory");
-					return false;
+					goto cleanup;
 				}
 				continue;
 			}
@@ -6739,8 +6879,33 @@ conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 		}
 
 		/*
-		 * No environment variable specified or the variable isn't set - try
-		 * compiled-in default
+		 * No environment variable specified or the variable isn't set. First
+		 * try a dynamic default from pg_service.
+		 *
+		 * We iterate over the defaults array in lockstep to avoid a lookup
+		 * here, so check that the option order has remained static.
+		 */
+		if (option->keyword != defopt->keyword)
+		{
+			if (errorMessage)
+				libpq_append_error(errorMessage,
+								   "defaults array is out of order");
+			goto cleanup;
+		}
+		else if (defopt->val != NULL)
+		{
+			option->val = strdup(defopt->val);
+			if (!option->val)
+			{
+				if (errorMessage)
+					libpq_append_error(errorMessage, "out of memory");
+				goto cleanup;
+			}
+			continue;
+		}
+
+		/*
+		 * Fall back to the compiled-in default.
 		 */
 		if (option->compiled != NULL)
 		{
@@ -6749,7 +6914,7 @@ conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 			{
 				if (errorMessage)
 					libpq_append_error(errorMessage, "out of memory");
-				return false;
+				goto cleanup;
 			}
 			continue;
 		}
@@ -6784,12 +6949,16 @@ conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 			{
 				if (errorMessage)
 					libpq_append_error(errorMessage, "out of memory");
-				return false;
+				goto cleanup;
 			}
 		}
 	}
 
-	return true;
+	success = true;
+
+cleanup:
+	PQconninfoFree(defaults);
+	return success;
 }
 
 /*
