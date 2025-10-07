@@ -26,7 +26,15 @@ my $td = PostgreSQL::Test::Utils::tempdir;
 # File that includes a valid service name, and uses a decomposed connection
 # string for its contents, split on spaces.
 my $srvfile_valid = "$td/pg_service_valid.conf";
-append_to_file($srvfile_valid, "[my_srv]\n");
+append_to_file(
+	$srvfile_valid, qq{
+# Settings without a section are, historically, ignored.
+host=256.256.256.256
+port=1
+unknown-setting=1
+
+[my_srv]
+});
 foreach my $param (split(/\s+/, $node->connstr))
 {
 	append_to_file($srvfile_valid, $param . "\n");
