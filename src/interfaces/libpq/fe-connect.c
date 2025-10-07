@@ -6153,7 +6153,8 @@ parseServiceFile(const char *serviceFile,
 				if (!found_keyword)
 				{
 					libpq_append_error(errorMessage,
-									   "syntax error in service file \"%s\", line %d",
+									   "unknown keyword \"%s\" in service file \"%s\", line %d",
+									   key,
 									   serviceFile,
 									   linenr);
 					result = 3;

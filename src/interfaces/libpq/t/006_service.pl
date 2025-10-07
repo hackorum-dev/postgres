@@ -57,6 +57,14 @@ copy($srvfile_valid, $srvfile_nested)
   or die "Could not copy $srvfile_valid to $srvfile_nested: $!";
 append_to_file($srvfile_nested, "service=invalid_srv\n");
 
+# File with an unknown setting.
+my $srvfile_bad_keyword = "$td/pg_service_bad_keyword.conf";
+append_to_file(
+	$srvfile_bad_keyword, qq{
+[my_srv]
+bad-unknown-setting=1
+});
+
 # Service file with nested "servicefile" defined.
 my $srvfile_nested_2 = "$td/pg_service_nested_2.conf";
 copy($srvfile_valid, $srvfile_nested_2)
@@ -180,6 +188,17 @@ local $ENV{PGSERVICEFILE} = "$srvfile_empty";
 		expected_stderr =>
 		  qr/nested "servicefile" specifications not supported in service file/
 	);
+}
+
+# Check behavior with unknown keywords.
+{
+	local $ENV{PGSERVICEFILE} = $srvfile_bad_keyword;
+
+	$dummy_node->connect_fails(
+		'service=my_srv',
+		'connection with unknown connection option in service',
+		expected_stderr =>
+		  qr/unknown keyword "bad-unknown-setting" in service file/);
 }
 
 # Properly escape backslashes in the path, to ensure the generation of
