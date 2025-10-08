@@ -3727,12 +3727,13 @@ WinGetFuncArgInPartition(WindowObject winobj, int argno,
 	Assert(WindowObjectIsValid(winobj));
 	winstate = winobj->winstate;
 
-	if (winobj->ignore_nulls == IGNORE_NULLS && relpos != 0)
+	/* prepare thing if IGNORE NULLS */
+	if (winobj->ignore_nulls == IGNORE_NULLS)
 	{
-		null_treatment = true;
-		notnull_offset = 0;
-		notnull_relpos = abs(relpos);
-		forward = relpos > 0 ? 1 : -1;
+		null_treatment = true;	/* we need to consider IGNORE NULLS */
+		notnull_offset = 0;		/* last NOT NULL row offset */
+		notnull_relpos = abs(relpos);	/* NOT NULL row absolute pos */
+		forward = relpos >= 0 ? 1 : -1; /* 1: move forward, -1: otherwise */
 	}
 
 	switch (seektype)
@@ -3778,18 +3779,18 @@ WinGetFuncArgInPartition(WindowObject winobj, int argno,
 	 * Get the next nonnull value in the partition, moving forward or backward
 	 * until we find a value or reach the partition's end.
 	 */
-	do
+	for (; abs_pos >= 0; abs_pos += forward)
 	{
 		int			nn_info;	/* NOT NULL info */
-
-		abs_pos += forward;
-		if (abs_pos < 0)		/* apparently out of partition */
-			break;
 
 		/* check NOT NULL cached info */
 		nn_info = get_notnull_info(winobj, abs_pos);
 		if (nn_info == NN_NOTNULL)	/* this row is known to be NOT NULL */
+		{
 			notnull_offset++;
+			if (notnull_offset > notnull_relpos)
+				break;			/* target row found */
+		}
 
 		else if (nn_info == NN_NULL)	/* this row is known to be NULL */
 			continue;			/* keep on moving forward or backward */
@@ -3802,11 +3803,15 @@ WinGetFuncArgInPartition(WindowObject winobj, int argno,
 			if (myisout)		/* out of partition? */
 				break;
 			if (!*isnull)
+			{
 				notnull_offset++;
+				if (notnull_offset > notnull_relpos)
+					break;		/* target row found */
+			}
 			/* record the row status */
 			put_notnull_info(winobj, abs_pos, *isnull);
 		}
-	} while (notnull_offset < notnull_relpos);
+	}
 
 	/* get tupple and evaluate in a partition */
 	datum = gettuple_eval_partition(winobj, argno,
