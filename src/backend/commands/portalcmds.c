@@ -36,6 +36,19 @@
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 
+/*
+ * Check that cursor name is not empty, which would conflict with protocol-level
+ * unnamed portal.
+ */
+static void
+check_cursor_name(const char *name)
+{
+	if (!name || name[0] == '\0')
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_CURSOR_NAME),
+				 errmsg("invalid cursor name: must not be empty")));
+}
+
 
 /*
  * PerformCursorOpen
@@ -53,14 +66,7 @@ PerformCursorOpen(ParseState *pstate, DeclareCursorStmt *cstmt, ParamListInfo pa
 	MemoryContext oldContext;
 	char	   *queryString;
 
-	/*
-	 * Disallow empty-string cursor name (conflicts with protocol-level
-	 * unnamed portal).
-	 */
-	if (!cstmt->portalname || cstmt->portalname[0] == '\0')
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_CURSOR_NAME),
-				 errmsg("invalid cursor name: must not be empty")));
+	check_cursor_name(cstmt->portalname);
 
 	/*
 	 * If this is a non-holdable cursor, we require that this statement has
@@ -182,14 +188,7 @@ PerformPortalFetch(FetchStmt *stmt,
 	Portal		portal;
 	uint64		nprocessed;
 
-	/*
-	 * Disallow empty-string cursor name (conflicts with protocol-level
-	 * unnamed portal).
-	 */
-	if (!stmt->portalname || stmt->portalname[0] == '\0')
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_CURSOR_NAME),
-				 errmsg("invalid cursor name: must not be empty")));
+	check_cursor_name(stmt->portalname);
 
 	/* get the portal from the portal name */
 	portal = GetPortalByName(stmt->portalname);
@@ -233,14 +232,7 @@ PerformPortalClose(const char *name)
 		return;
 	}
 
-	/*
-	 * Disallow empty-string cursor name (conflicts with protocol-level
-	 * unnamed portal).
-	 */
-	if (name[0] == '\0')
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_CURSOR_NAME),
-				 errmsg("invalid cursor name: must not be empty")));
+	check_cursor_name(name);
 
 	/*
 	 * get the portal from the portal name
