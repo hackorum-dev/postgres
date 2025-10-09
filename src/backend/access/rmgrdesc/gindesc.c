@@ -130,9 +130,6 @@ gin_desc(StringInfo buf, XLogReaderState *record)
 				appendStringInfo(buf, " isdata: %c isleaf: %c",
 								 (xlrec->flags & GIN_INSERT_ISDATA) ? 'T' : 'F',
 								 (xlrec->flags & GIN_INSERT_ISLEAF) ? 'T' : 'F');
-				if (xlrec->leftChildBlkno != InvalidBlockNumber)
-					appendStringInfo(buf, " children: %u/%u",
-									 xlrec->leftChildBlkno, xlrec->rightChildBlkno);
 			}
 			break;
 		case XLOG_GIN_VACUUM_PAGE:
