@@ -110,11 +110,6 @@ typedef struct
 
 typedef struct ginxlogSplit
 {
-	RelFileLocator locator;
-	BlockNumber rrlink;			/* right link, or root's blocknumber if root
-								 * split */
-	BlockNumber leftChildBlkno; /* valid on a non-leaf split */
-	BlockNumber rightChildBlkno;
 	uint16		flags;			/* see below */
 } ginxlogSplit;
 
