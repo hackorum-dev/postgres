@@ -476,15 +476,7 @@ ginPlaceToPage(GinBtree btree, GinBtreeStack *stack,
 		savedRightLink = GinPageGetOpaque(page)->rightlink;
 
 		/* Begin setting up WAL record */
-		data.locator = btree->index->rd_locator;
 		data.flags = xlflags;
-		if (BufferIsValid(childbuf))
-		{
-			data.leftChildBlkno = BufferGetBlockNumber(childbuf);
-			data.rightChildBlkno = GinPageGetOpaque(childpage)->rightlink;
-		}
-		else
-			data.leftChildBlkno = data.rightChildBlkno = InvalidBlockNumber;
 
 		if (stack->parent == NULL)
 		{
@@ -503,7 +495,6 @@ ginPlaceToPage(GinBtree btree, GinBtreeStack *stack,
 					buildStats->nEntryPages++;
 			}
 
-			data.rrlink = InvalidBlockNumber;
 			data.flags |= GIN_SPLIT_ROOT;
 
 			GinPageGetOpaque(newrpage)->rightlink = InvalidBlockNumber;
@@ -537,7 +528,6 @@ ginPlaceToPage(GinBtree btree, GinBtreeStack *stack,
 		else
 		{
 			/* splitting a non-root page */
-			data.rrlink = savedRightLink;
 
 			GinPageGetOpaque(newrpage)->rightlink = savedRightLink;
 			GinPageGetOpaque(newlpage)->flags |= GIN_INCOMPLETE_SPLIT;
