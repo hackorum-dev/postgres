@@ -3731,7 +3731,6 @@ WinGetFuncArgInPartition(WindowObject winobj, int argno,
 	{
 		null_treatment = true;
 		notnull_offset = 0;
-		notnull_relpos = abs(relpos);
 		forward = relpos > 0 ? 1 : -1;
 	}
 
@@ -3771,6 +3770,7 @@ WinGetFuncArgInPartition(WindowObject winobj, int argno,
 		return datum;
 	}
 
+	notnull_relpos = abs(relpos);
 	myisout = false;
 	datum = 0;
 
