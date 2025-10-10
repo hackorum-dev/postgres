@@ -6138,6 +6138,7 @@ parseServiceFile(const char *serviceFile,
 				char	   *key,
 						   *val;
 				bool		found_keyword;
+				bool		skip_unknown = false;
 
 #ifdef USE_LDAP
 
@@ -6176,6 +6177,16 @@ parseServiceFile(const char *serviceFile,
 					goto exit;
 				}
 				*val++ = '\0';
+
+				/*
+				 * Inside a defaults section, unknown options may be marked as
+				 * skippable by the user for forwards compatibility purposes.
+				 */
+				if (service == NULL && key[0] == '?')
+				{
+					skip_unknown = true;
+					key++;
+				}
 
 				/*
 				 * A default service setting may be specified, but they're not
@@ -6224,7 +6235,7 @@ parseServiceFile(const char *serviceFile,
 					}
 				}
 
-				if (!found_keyword)
+				if (!found_keyword && !skip_unknown)
 				{
 					/*
 					 * "unknown keyword" is unhelpful, if the actual problem

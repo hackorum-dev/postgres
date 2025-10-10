@@ -137,6 +137,7 @@ unknown-setting=1
 +=defaults
 service=my_srv
 options=-O
+?unknown-setting=1  # should be ignored
 
 [my_srv]
 });
