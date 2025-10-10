@@ -82,6 +82,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 
+#define DEFAULT_LOCALE_PROVIDER		COLLPROVIDER_LIBC
 #define DEFAULT_BUILTIN_LOCALE		"C.UTF-8"
 #define DEFAULT_ICU_LOCALE			"und"
 
@@ -146,7 +147,7 @@ static char *lc_monetary = NULL;
 static char *lc_numeric = NULL;
 static char *lc_time = NULL;
 static char *lc_messages = NULL;
-static char locale_provider = COLLPROVIDER_LIBC;
+static char locale_provider = '\0';
 static bool builtin_locale_specified = false;
 static char *datlocale = NULL;
 static bool icu_locale_specified = false;
@@ -3515,6 +3516,22 @@ main(int argc, char *argv[])
 					 argv[optind]);
 		pg_log_error_hint("Try \"%s --help\" for more information.", progname);
 		exit(1);
+	}
+
+	if (locale_provider == '\0')
+	{
+		char	   *provider_name = getenv("PG_LOCALE_PROVIDER");
+
+		if (!provider_name)
+			locale_provider = DEFAULT_LOCALE_PROVIDER;
+		else if (strcmp(provider_name, "builtin") == 0)
+			locale_provider = COLLPROVIDER_BUILTIN;
+		else if (strcmp(provider_name, "icu") == 0)
+			locale_provider = COLLPROVIDER_ICU;
+		else if (strcmp(provider_name, "libc") == 0)
+			locale_provider = COLLPROVIDER_LIBC;
+		else
+			pg_fatal("unrecognized locale provider: %s", provider_name);
 	}
 
 	if (builtin_locale_specified && locale_provider != COLLPROVIDER_BUILTIN)
