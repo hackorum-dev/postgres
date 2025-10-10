@@ -266,6 +266,25 @@ static const unicodeStyleFormat unicode_style = {
 
 /* Local functions */
 static int	strlen_max_width(unsigned char *str, int *target_width, int encoding);
+/* >>> INSERT helper function here <<< */
+static int
+linecount(const char *s)
+{
+    int count = 0;
+
+    if (s == NULL || *s == '\0')
+        return 0;
+
+    while (*s)
+    {
+        if (*s == '\n')
+            count++;
+        s++;
+    }
+    return count + 1;
+}
+
+
 static void IsPagerNeeded(const printTableContent *cont, int extra_lines, bool expanded,
 						  FILE **fout, bool *is_pager);
 
@@ -3421,7 +3440,8 @@ IsPagerNeeded(const printTableContent *cont, int extra_lines, bool expanded,
 			 * footers, not the number of lines in them.
 			 */
 			for (f = cont->footers; f; f = f->next)
-				lines++;
+				lines += linecount(f->data);
+
 		}
 
 		*fout = PageOutput(lines + extra_lines, cont->opt);
