@@ -729,6 +729,15 @@ initialize_environment(void)
 	setenv("PGAPPNAME", "pg_regress", 1);
 
 	/*
+	 * Disable any defaults coming from pg_service.conf, which would thwart our
+	 * unsetenv()s below.
+	 *
+	 * TODO this would need to be documented for installcheck: only environment
+	 * variables can be used to point to the system under test
+	 */
+	setenv("PGNODEFAULTS", "1", 1);
+
+	/*
 	 * Set variables that the test scripts may need to refer to.
 	 */
 	setenv("PG_ABS_SRCDIR", inputdir, 1);

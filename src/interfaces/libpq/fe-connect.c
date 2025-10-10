@@ -5935,6 +5935,7 @@ parseServiceInfo(PQconninfoOption *defaults, PQconninfoOption *options,
 	const char *service_fname = conninfo_getval(options, "servicefile");
 	char		userServiceFile[MAXPGPATH];
 	char		systemServiceFile[MAXPGPATH];
+	bool		load_defaults = true;
 	bool		have_user_file = false;
 	bool		have_system_file = false;
 	char	   *env;
@@ -5950,6 +5951,10 @@ parseServiceInfo(PQconninfoOption *defaults, PQconninfoOption *options,
 	 */
 	if (service == NULL)
 		service = getenv("PGSERVICE");
+
+	/* PGNODEFAULTS=1 disables the use of defaults sections. */
+	if ((env = getenv("PGNODEFAULTS")) != NULL && strcmp(env, "1") == 0)
+		load_defaults = false;
 
 	/*
 	 * First, try the "servicefile" option in connection string.  Then, try
@@ -5971,13 +5976,16 @@ parseServiceInfo(PQconninfoOption *defaults, PQconninfoOption *options,
 			goto next_file;
 	}
 
-	/*
-	 * Pull defaults out of the user file first, if one exists. They take
-	 * precedence over any defaults in the system file.
-	 */
-	status = parseServiceFile(userServiceFile, NULL, defaults, errorMessage, &group_found);
-	if (status != 0)
-		return status;
+	if (load_defaults)
+	{
+		/*
+		 * Pull defaults out of the user file first, if one exists. They take
+		 * precedence over any defaults in the system file.
+		 */
+		status = parseServiceFile(userServiceFile, NULL, defaults, errorMessage, &group_found);
+		if (status != 0)
+			return status;
+	}
 
 	have_user_file = true;
 
@@ -5992,10 +6000,13 @@ next_file:
 	if (stat(systemServiceFile, &stat_buf) != 0)
 		goto last_file;
 
-	/* Fill in system defaults for any options not given in the user file. */
-	status = parseServiceFile(systemServiceFile, NULL, defaults, errorMessage, &group_found);
-	if (status != 0)
-		return status;
+	if (load_defaults)
+	{
+		/* Fill in system defaults for any options not given in the user file. */
+		status = parseServiceFile(systemServiceFile, NULL, defaults, errorMessage, &group_found);
+		if (status != 0)
+			return status;
+	}
 
 	have_system_file = true;
 

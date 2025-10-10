@@ -111,6 +111,9 @@ BEGIN
 	$ENV{LC_NUMERIC} = 'C';
 	setlocale(LC_ALL, "");
 
+	# Disable any defaults coming from pg_service.conf.
+	$ENV{PGNODEFAULTS} = "1";
+
 	# This list should be kept in sync with pg_regress.c.
 	my @envkeys = qw (
 	  PGCHANNELBINDING

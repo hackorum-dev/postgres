@@ -146,6 +146,8 @@ options=-O
 		append_to_file($srvfile_defaults, $param . "\n");
 	}
 
+	# Test::Utils will have disabled dynamic defaults.
+	local $ENV{PGNODEFAULTS} = "0";
 	local $ENV{PGSERVICEFILE} = $srvfile_defaults;
 	$dummy_node->connect_ok(
 		'',
@@ -210,6 +212,14 @@ options=-O
 		'',
 		'defaults section must be first in the file',
 		expected_stderr => qr/only the first section may be marked default/);
+
+	{
+		# Re-enable PGNODEFAULTS and check that we can continue using the
+		# working service, even though the defaults section is broken.
+		local $ENV{PGNODEFAULTS} = "1";
+		$dummy_node->connect_ok('service=my_srv',
+			'connection with bad defaults section, but PGNODEFAULTS=1');
+	}
 }
 
 # Checks case of incorrect service file.
