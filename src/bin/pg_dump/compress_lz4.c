@@ -323,7 +323,7 @@ InitCompressorLZ4(CompressorState *cs, const pg_compress_specification compressi
 
 
 /*
- * LZ4 equivalent to feof() or gzeof().  Return true iff there is no
+ * LZ4 equivalent to feof() or gzeof().  Return true if there is no
  * more buffered data and the end of the input file has been reached.
  */
 static bool
