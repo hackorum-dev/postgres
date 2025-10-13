@@ -55,8 +55,6 @@ typedef struct XLogRecord
 
 #define SizeOfXLogRecord	(offsetof(XLogRecord, xl_crc) + sizeof(pg_crc32c))
 
-#define XLR_INFO_MASK			0x0F
-
 /*
  * XLogReader needs to allocate all the data of a WAL record in a single
  * chunk.  This means that a single XLogRecord cannot exceed MaxAllocSize

@@ -72,7 +72,7 @@ void
 gin_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record);
 
 	switch (info)
 	{
@@ -187,7 +187,7 @@ gin_identify(uint8 info)
 {
 	const char *id = NULL;
 
-	switch (info & ~XLR_INFO_MASK)
+	switch (info)
 	{
 		case XLOG_GIN_CREATE_PTREE:
 			id = "CREATE_PTREE";

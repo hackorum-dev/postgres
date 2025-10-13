@@ -19,7 +19,7 @@ void
 logicalmsg_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record);
 
 	if (info == XLOG_LOGICAL_MESSAGE)
 	{
@@ -45,7 +45,7 @@ logicalmsg_desc(StringInfo buf, XLogReaderState *record)
 const char *
 logicalmsg_identify(uint8 info)
 {
-	if ((info & ~XLR_INFO_MASK) == XLOG_LOGICAL_MESSAGE)
+	if (info == XLOG_LOGICAL_MESSAGE)
 		return "MESSAGE";
 
 	return NULL;

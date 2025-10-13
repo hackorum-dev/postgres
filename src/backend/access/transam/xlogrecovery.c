@@ -635,7 +635,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 		if (record != NULL)
 		{
 			memcpy(&checkPoint, XLogRecGetData(xlogreader), sizeof(CheckPoint));
-			wasShutdown = ((record->xl_info & ~XLR_INFO_MASK) == XLOG_CHECKPOINT_SHUTDOWN);
+			wasShutdown = (record->xl_info == XLOG_CHECKPOINT_SHUTDOWN);
 			ereport(DEBUG1,
 					errmsg_internal("checkpoint record is at %X/%08X",
 									LSN_FORMAT_ARGS(CheckPointLoc)));
@@ -803,7 +803,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 						   LSN_FORMAT_ARGS(CheckPointLoc)));
 		}
 		memcpy(&checkPoint, XLogRecGetData(xlogreader), sizeof(CheckPoint));
-		wasShutdown = ((record->xl_info & ~XLR_INFO_MASK) == XLOG_CHECKPOINT_SHUTDOWN);
+		wasShutdown = (record->xl_info == XLOG_CHECKPOINT_SHUTDOWN);
 	}
 
 	if (ArchiveRecoveryRequested)
@@ -1722,7 +1722,7 @@ PerformWalRecovery(void)
 		 * record.
 		 */
 		if (record->xl_rmid != RM_XLOG_ID ||
-			(record->xl_info & ~XLR_INFO_MASK) != XLOG_CHECKPOINT_REDO)
+			record->xl_info != XLOG_CHECKPOINT_REDO)
 			ereport(FATAL,
 					errmsg("unexpected record type found at redo point %X/%08X",
 						   LSN_FORMAT_ARGS(xlogreader->ReadRecPtr)));
@@ -1944,7 +1944,7 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	{
 		TimeLineID	newReplayTLI = *replayTLI;
 		TimeLineID	prevReplayTLI = *replayTLI;
-		uint8		info = record->xl_info & ~XLR_INFO_MASK;
+		uint8		info = record->xl_info;
 
 		if (info == XLOG_CHECKPOINT_SHUTDOWN)
 		{
@@ -2082,7 +2082,7 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 static void
 xlogrecovery_redo(XLogReaderState *record, TimeLineID replayTLI)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record);
 	XLogRecPtr	lsn = record->EndRecPtr;
 
 	Assert(XLogRecGetRmid(record) == RM_XLOG_ID);
@@ -2318,7 +2318,7 @@ xlog_outdesc(StringInfo buf, XLogReaderState *record)
 
 	id = rmgr.rm_identify(info);
 	if (id == NULL)
-		appendStringInfo(buf, "UNKNOWN (%X): ", info & ~XLR_INFO_MASK);
+		appendStringInfo(buf, "UNKNOWN (%X): ", info);
 	else
 		appendStringInfo(buf, "%s: ", id);
 
@@ -2438,7 +2438,7 @@ checkTimeLineSwitch(XLogRecPtr lsn, TimeLineID newTLI, TimeLineID prevTLI,
 static bool
 getRecordTimestamp(XLogReaderState *record, TimestampTz *recordXtime)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record);
 	uint8		xact_info = info & XLOG_XACT_OPMASK;
 	uint8		rmid = XLogRecGetRmid(record);
 
@@ -2750,7 +2750,7 @@ recoveryStopsAfter(XLogReaderState *record)
 	if (!ArchiveRecoveryRequested)
 		return false;
 
-	info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	info = XLogRecGetInfo(record);
 	rmid = XLogRecGetRmid(record);
 
 	/*
@@ -4100,7 +4100,7 @@ ReadCheckpointRecord(XLogPrefetcher *xlogprefetcher, XLogRecPtr RecPtr,
 				(errmsg("invalid resource manager ID in checkpoint record")));
 		return NULL;
 	}
-	info = record->xl_info & ~XLR_INFO_MASK;
+	info = record->xl_info;
 	if (info != XLOG_CHECKPOINT_SHUTDOWN &&
 		info != XLOG_CHECKPOINT_ONLINE)
 	{

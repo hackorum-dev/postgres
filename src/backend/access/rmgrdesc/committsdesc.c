@@ -21,7 +21,7 @@ void
 commit_ts_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record);
 
 	if (info == COMMIT_TS_ZEROPAGE)
 	{

@@ -1066,7 +1066,7 @@ hash_xlog_vacuum_one_page(XLogReaderState *record)
 void
 hash_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record);
 
 	switch (info)
 	{

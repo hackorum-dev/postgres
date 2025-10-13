@@ -849,7 +849,7 @@ StartupReplicationOrigin(void)
 void
 replorigin_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record);
 
 	switch (info)
 	{

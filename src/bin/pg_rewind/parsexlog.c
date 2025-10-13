@@ -243,7 +243,7 @@ findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
 		 * be the latest checkpoint before WAL forked and not the checkpoint
 		 * where the primary has been stopped to be rewound.
 		 */
-		info = XLogRecGetInfo(xlogreader) & ~XLR_INFO_MASK;
+		info = XLogRecGetInfo(xlogreader);
 		if (searchptr < forkptr &&
 			XLogRecGetRmid(xlogreader) == RM_XLOG_ID &&
 			(info == XLOG_CHECKPOINT_SHUTDOWN ||
@@ -390,8 +390,7 @@ extractPageInfo(XLogReaderState *record)
 {
 	int			block_id;
 	RmgrId		rmid = XLogRecGetRmid(record);
-	uint8		info = XLogRecGetInfo(record);
-	uint8		rminfo = info & ~XLR_INFO_MASK;
+	uint8		rminfo = XLogRecGetInfo(record);
 	uint8		geninfo = XLogRecGetGeninfo(record);
 
 	/* Is this a special record type that I recognize? */

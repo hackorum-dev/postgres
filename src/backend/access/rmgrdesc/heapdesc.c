@@ -185,7 +185,7 @@ void
 heap_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record);
 
 	info &= XLOG_HEAP_OPMASK;
 	if (info == XLOG_HEAP_INSERT)
@@ -265,7 +265,7 @@ void
 heap2_desc(StringInfo buf, XLogReaderState *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record);
 
 	info &= XLOG_HEAP_OPMASK;
 	if (info == XLOG_HEAP2_PRUNE_ON_ACCESS ||
@@ -405,7 +405,7 @@ heap_identify(uint8 info)
 {
 	const char *id = NULL;
 
-	switch (info & ~XLR_INFO_MASK)
+	switch (info)
 	{
 		case XLOG_HEAP_INSERT:
 			id = "INSERT";
@@ -450,7 +450,7 @@ heap2_identify(uint8 info)
 {
 	const char *id = NULL;
 
-	switch (info & ~XLR_INFO_MASK)
+	switch (info)
 	{
 		case XLOG_HEAP2_PRUNE_ON_ACCESS:
 			id = "PRUNE_ON_ACCESS";
