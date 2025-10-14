@@ -19,6 +19,7 @@
 #include "access/relation.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
+#include "commands/tablecmds.h"
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "pageinspect.h"
@@ -145,18 +146,21 @@ static bytea *
 get_raw_page_internal(text *relname, ForkNumber forknum, BlockNumber blkno)
 {
 	bytea	   *raw_page;
+	Oid			relid;
 	RangeVar   *relrv;
 	Relation	rel;
 	char	   *raw_page_data;
 	Buffer		buf;
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to use raw page functions")));
-
 	relrv = makeRangeVarFromNameList(textToQualifiedNameList(relname));
-	rel = relation_openrv(relrv, AccessShareLock);
+
+	/* Open and lock sequence, and check for ownership along the way. */
+	relid = RangeVarGetRelidExtended(relrv,
+									 AccessShareLock,
+									 0,
+									 RangeVarCallbackOwnsRelation,
+									 NULL);
+	rel = relation_open(relid, NoLock);
 
 	if (!RELKIND_HAS_STORAGE(rel->rd_rel->relkind))
 		ereport(ERROR,
@@ -195,7 +199,7 @@ get_raw_page_internal(text *relname, ForkNumber forknum, BlockNumber blkno)
 
 	UnlockReleaseBuffer(buf);
 
-	relation_close(rel, AccessShareLock);
+	relation_close(rel, NoLock);
 
 	return raw_page;
 }
