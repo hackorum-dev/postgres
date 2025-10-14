@@ -45,6 +45,9 @@ struct replication_yy_extra_type
 
 	/* Work area for collecting literals */
 	StringInfoData litbuf;
+
+	/* Depth of nesting in slash-star comments */
+	int         xcdepth;
 };
 
 static void startlit(yyscan_t yyscanner);
@@ -75,14 +78,43 @@ static void addlitchar(unsigned char ychar, yyscan_t yyscanner);
  * Exclusive states:
  *  <xd> delimited identifiers (double-quoted identifiers)
  *  <xq> standard single-quoted strings
+ *  <xc> extended C-style comments
  */
 %x xd
 %x xq
+%x xc
 
 space			[ \t\n\r\f\v]
+op_chars		[\~\!\@\#\^\&\|\`\?\+\-\*\/\%\<\>\=]
+non_newline     [^\n\r]
+comment         ("--"{non_newline}*)
+whitespace      ({space}+|{comment})
 
 quote			'
 quotestop		{quote}
+
+/* C-style comments
+ *
+ * The "extended comment" syntax closely resembles allowable operator syntax.
+ * The tricky part here is to get lex to recognize a string starting with
+ * slash-star as a comment, when interpreting it as an operator would produce
+ * a longer match --- remember lex will prefer a longer match!  Also, if we
+ * have something like plus-slash-star, lex will think this is a 3-character
+ * operator whereas we want to see it as a + operator and a comment start.
+ * The solution is two-fold:
+ * 1. append {op_chars}* to xcstart so that it matches as much text as
+ *    {operator} would. Then the tie-breaker (first matching rule of same
+ *    length) ensures xcstart wins.  We put back the extra stuff with yyless()
+ *    in case it contains a star-slash that should terminate the comment.
+ * 2. In the operator rule, check for slash-star within the operator, and
+ *    if found throw it back with yyless().  This handles the plus-slash-star
+ *    problem.
+ * Dash-dash comments have similar interactions with the operator rule.
+ */
+xcstart			\/\*{op_chars}*
+xcstop			\*+\/
+xcinside		[^*/]+
+
 
 /* Extended quote
  * xqdouble implements embedded quote, ''''
@@ -145,7 +177,44 @@ USE_SNAPSHOT		{ return K_USE_SNAPSHOT; }
 WAIT				{ return K_WAIT; }
 UPLOAD_MANIFEST		{ return K_UPLOAD_MANIFEST; }
 
-{space}+		{ /* do nothing */ }
+{whitespace}	{ /* do nothing */ }
+{xcstart}		{
+					yyextra->xcdepth = 0;
+					BEGIN(xc);
+					/* Put back any characters past slash-star; see above */
+					yyless(2);
+				}
+
+<xc>{
+{xcstart}		{
+					(yyextra->xcdepth)++;
+					/* Put back any characters past slash-star; see above */
+					yyless(2);
+				}
+
+{xcstop}		{
+					if (yyextra->xcdepth <= 0)
+						BEGIN(INITIAL);
+					else
+						(yyextra->xcdepth)--;
+				}
+
+{xcinside}		{
+					/* ignore */
+				}
+{op_chars}		{
+					/* ignore */
+				}
+
+\*+				{
+					/* ignore */
+				}
+
+<<EOF>>			{
+					replication_yyerror(NULL, yyscanner, "unterminated /* comment");
+				}
+} /* <xc> */
+
 
 {digit}+		{
 					yylval->uintval = strtoul(yytext, NULL, 10);
