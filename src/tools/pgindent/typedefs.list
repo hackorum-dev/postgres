@@ -361,6 +361,7 @@ BufferStrategyControl
 BufferTag
 BufferUsage
 BufferUsageCountChange
+BufferWriteBatch
 BuildAccumulator
 BuiltinScript
 BulkInsertState

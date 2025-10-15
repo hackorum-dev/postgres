@@ -1546,3 +1546,23 @@ PageSetChecksumInplace(Page page, BlockNumber blkno)
 
 	((PageHeader) page)->pd_checksum = pg_checksum_page(page, blkno);
 }
+
+/*
+ * A helper to set multiple blocks' checksums
+ */
+void
+PageSetBatchChecksumInplace(Page *pages, const BlockNumber *blknos, uint32 length)
+{
+	/* If we don't need a checksum, just return */
+	if (!DataChecksumsEnabled())
+		return;
+
+	for (uint32 i = 0; i < length; i++)
+	{
+		Page		page = pages[i];
+
+		if (PageIsNew(page))
+			continue;
+		((PageHeader) page)->pd_checksum = pg_checksum_page(page, blknos[i]);
+	}
+}
