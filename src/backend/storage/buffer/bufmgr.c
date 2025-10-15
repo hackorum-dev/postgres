@@ -68,10 +68,6 @@
 #include "utils/timestamp.h"
 
 
-/* Note: these two macros only work on shared buffers, not local ones! */
-#define BufHdrGetBlock(bufHdr)	((Block) (BufferBlocks + ((Size) (bufHdr)->buf_id) * BLCKSZ))
-#define BufferGetLSN(bufHdr)	(PageGetLSN(BufHdrGetBlock(bufHdr)))
-
 /* Note: this macro only works on local buffers, not shared ones! */
 #define LocalBufHdrGetBlock(bufHdr) \
 	LocalBufferBlockPointers[-((bufHdr)->buf_id + 2)]
@@ -2331,125 +2327,116 @@ GetVictimBuffer(BufferAccessStrategy strategy, IOContext io_context)
 	ReservePrivateRefCountEntry();
 	ResourceOwnerEnlarge(CurrentResourceOwner);
 
-	/* we return here if a prospective victim buffer gets used concurrently */
-again:
-
-	/*
-	 * Select a victim buffer.  The buffer is returned pinned and owned by
-	 * this backend.
-	 */
-	buf_hdr = StrategyGetBuffer(strategy, &buf_state, &from_ring);
-	buf = BufferDescriptorGetBuffer(buf_hdr);
-
-	/*
-	 * We shouldn't have any other pins for this buffer.
-	 */
-	CheckBufferIsPinnedOnce(buf);
-
-	/*
-	 * If the buffer was dirty, try to write it out.  There is a race
-	 * condition here, in that someone might dirty it after we released the
-	 * buffer header lock above, or even while we are writing it out (since
-	 * our share-lock won't prevent hint-bit updates).  We will recheck the
-	 * dirty bit after re-locking the buffer header.
-	 */
-	if (buf_state & BM_DIRTY)
+	/* Select a victim buffer using an optimistic locking scheme. */
+	for (;;)
 	{
-		LWLock	   *content_lock;
 
-		Assert(buf_state & BM_TAG_VALID);
-		Assert(buf_state & BM_VALID);
+		/* Attempt to claim a victim buffer. Buffer is returned pinned. */
+		buf_hdr = StrategyGetBuffer(strategy, &buf_state, &from_ring);
+		buf = BufferDescriptorGetBuffer(buf_hdr);
 
 		/*
-		 * We need a share-lock on the buffer contents to write it out (else
-		 * we might write invalid data, eg because someone else is compacting
-		 * the page contents while we write).  We must use a conditional lock
-		 * acquisition here to avoid deadlock.  Even though the buffer was not
-		 * pinned (and therefore surely not locked) when StrategyGetBuffer
-		 * returned it, someone else could have pinned and exclusive-locked it
-		 * by the time we get here. If we try to get the lock unconditionally,
-		 * we'd block waiting for them; if they later block waiting for us,
-		 * deadlock ensues. (This has been observed to happen when two
-		 * backends are both trying to split btree index pages, and the second
-		 * one just happens to be trying to split the page the first one got
-		 * from StrategyGetBuffer.)
+		 * We shouldn't have any other pins for this buffer.
 		 */
-		content_lock = BufferDescriptorGetContentLock(buf_hdr);
-		if (!LWLockConditionalAcquire(content_lock, LW_SHARED))
+		CheckBufferIsPinnedOnce(buf);
+
+		/*
+		 * If the buffer was dirty, try to write it out.  There is a race
+		 * condition here, in that someone might dirty it after we released
+		 * the buffer header lock above, or even while we are writing it out
+		 * (since our share-lock won't prevent hint-bit updates).  We will
+		 * recheck the dirty bit after re-locking the buffer header.
+		 */
+		if (buf_state & BM_DIRTY)
 		{
+			LWLock	   *content_lock;
+
+			Assert(buf_state & BM_TAG_VALID);
+			Assert(buf_state & BM_VALID);
+
 			/*
-			 * Someone else has locked the buffer, so give it up and loop back
-			 * to get another one.
+			 * We need a share-lock on the buffer contents to write it out
+			 * (else we might write invalid data, eg because someone else is
+			 * compacting the page contents while we write).  We must use a
+			 * conditional lock acquisition here to avoid deadlock.  Even
+			 * though the buffer was not pinned (and therefore surely not
+			 * locked) when StrategyGetBuffer returned it, someone else could
+			 * have pinned and exclusive-locked it by the time we get here. If
+			 * we try to get the lock unconditionally, we'd block waiting for
+			 * them; if they later block waiting for us, deadlock ensues.
+			 * (This has been observed to happen when two backends are both
+			 * trying to split btree index pages, and the second one just
+			 * happens to be trying to split the page the first one got from
+			 * StrategyGetBuffer.)
 			 */
-			UnpinBuffer(buf_hdr);
-			goto again;
-		}
+			content_lock = BufferDescriptorGetContentLock(buf_hdr);
+			if (!LWLockConditionalAcquire(content_lock, LW_SHARED))
+			{
+				/*
+				 * Someone else has locked the buffer, so give it up and loop
+				 * back to get another one.
+				 */
+				UnpinBuffer(buf_hdr);
+				continue;
+			}
 
-		/*
-		 * If using a nondefault strategy, and writing the buffer would
-		 * require a WAL flush, let the strategy decide whether to go ahead
-		 * and write/reuse the buffer or to choose another victim.  We need a
-		 * lock to inspect the page LSN, so this can't be done inside
-		 * StrategyGetBuffer.
-		 */
-		if (strategy != NULL)
-		{
-			XLogRecPtr	lsn;
-
-			/* Read the LSN while holding buffer header lock */
-			buf_state = LockBufHdr(buf_hdr);
-			lsn = BufferGetLSN(buf_hdr);
-			UnlockBufHdr(buf_hdr);
-
-			if (XLogNeedsFlush(lsn)
-				&& StrategyRejectBuffer(strategy, buf_hdr, from_ring))
+			/*
+			 * If using a nondefault strategy, and writing the buffer would
+			 * require a WAL flush, let the strategy decide whether to go
+			 * ahead and write/reuse the buffer or to choose another victim.
+			 * We need the content lock to inspect the page LSN, so this can't
+			 * be done inside StrategyGetBuffer.
+			 */
+			if (StrategyRejectBuffer(strategy, buf_hdr, from_ring))
 			{
 				LWLockRelease(content_lock);
 				UnpinBuffer(buf_hdr);
-				goto again;
+				continue;
 			}
+
+			/* OK, do the I/O */
+			FlushBuffer(buf_hdr, NULL, IOOBJECT_RELATION, io_context);
+			LWLockRelease(content_lock);
+
+			ScheduleBufferTagForWriteback(&BackendWritebackContext, io_context,
+										  &buf_hdr->tag);
 		}
 
-		/* OK, do the I/O */
-		FlushBuffer(buf_hdr, NULL, IOOBJECT_RELATION, io_context);
-		LWLockRelease(content_lock);
 
-		ScheduleBufferTagForWriteback(&BackendWritebackContext, io_context,
-									  &buf_hdr->tag);
-	}
+		if (buf_state & BM_VALID)
+		{
+			/*
+			 * When a BufferAccessStrategy is in use, blocks evicted from
+			 * shared buffers are counted as IOOP_EVICT in the corresponding
+			 * context (e.g. IOCONTEXT_BULKWRITE). Shared buffers are evicted
+			 * by a strategy in two cases: 1) while initially claiming buffers
+			 * for the strategy ring 2) to replace an existing strategy ring
+			 * buffer because it is pinned or in use and cannot be reused.
+			 *
+			 * Blocks evicted from buffers already in the strategy ring are
+			 * counted as IOOP_REUSE in the corresponding strategy context.
+			 *
+			 * At this point, we can accurately count evictions and reuses,
+			 * because we have successfully claimed the valid buffer.
+			 * Previously, we may have been forced to release the buffer due
+			 * to concurrent pinners or erroring out.
+			 */
+			pgstat_count_io_op(IOOBJECT_RELATION, io_context,
+							   from_ring ? IOOP_REUSE : IOOP_EVICT, 1, 0);
+		}
 
-
-	if (buf_state & BM_VALID)
-	{
 		/*
-		 * When a BufferAccessStrategy is in use, blocks evicted from shared
-		 * buffers are counted as IOOP_EVICT in the corresponding context
-		 * (e.g. IOCONTEXT_BULKWRITE). Shared buffers are evicted by a
-		 * strategy in two cases: 1) while initially claiming buffers for the
-		 * strategy ring 2) to replace an existing strategy ring buffer
-		 * because it is pinned or in use and cannot be reused.
-		 *
-		 * Blocks evicted from buffers already in the strategy ring are
-		 * counted as IOOP_REUSE in the corresponding strategy context.
-		 *
-		 * At this point, we can accurately count evictions and reuses,
-		 * because we have successfully claimed the valid buffer. Previously,
-		 * we may have been forced to release the buffer due to concurrent
-		 * pinners or erroring out.
+		 * If the buffer has an entry in the buffer mapping table, delete it.
+		 * This can fail because another backend could have pinned or dirtied
+		 * the buffer.
 		 */
-		pgstat_count_io_op(IOOBJECT_RELATION, io_context,
-						   from_ring ? IOOP_REUSE : IOOP_EVICT, 1, 0);
-	}
+		if ((buf_state & BM_TAG_VALID) && !InvalidateVictimBuffer(buf_hdr))
+		{
+			UnpinBuffer(buf_hdr);
+			continue;
+		}
 
-	/*
-	 * If the buffer has an entry in the buffer mapping table, delete it. This
-	 * can fail because another backend could have pinned or dirtied the
-	 * buffer.
-	 */
-	if ((buf_state & BM_TAG_VALID) && !InvalidateVictimBuffer(buf_hdr))
-	{
-		UnpinBuffer(buf_hdr);
-		goto again;
+		break;
 	}
 
 	/* a final set of sanity checks */

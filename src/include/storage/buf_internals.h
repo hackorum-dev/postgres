@@ -486,6 +486,11 @@ ResourceOwnerForgetBufferIO(ResourceOwner owner, Buffer buffer)
 /*
  * Internal buffer management routines
  */
+
+/* Note: these two macros only work on shared buffers, not local ones! */
+#define BufHdrGetBlock(bufHdr)	((Block) (BufferBlocks + ((Size) (bufHdr)->buf_id) * BLCKSZ))
+#define BufferGetLSN(bufHdr)	(PageGetLSN(BufHdrGetBlock(bufHdr)))
+
 /* bufmgr.c */
 extern void WritebackContextInit(WritebackContext *context, int *max_pending);
 extern void IssuePendingWritebacks(WritebackContext *wb_context, IOContext io_context);

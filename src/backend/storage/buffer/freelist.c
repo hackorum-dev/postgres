@@ -15,6 +15,7 @@
  */
 #include "postgres.h"
 
+#include "access/xlog.h"
 #include "pgstat.h"
 #include "port/atomics.h"
 #include "storage/buf_internals.h"
@@ -780,12 +781,20 @@ IOContextForStrategy(BufferAccessStrategy strategy)
  * be written out and doing so would require flushing WAL too.  This gives us
  * a chance to choose a different victim.
  *
+ * The buffer must be pinned and content locked and the buffer header spinlock
+ * must not be held. We must hold the content lock to examine the LSN.
+ *
  * Returns true if buffer manager should ask for a new victim, and false
  * if this buffer should be written and re-used.
  */
 bool
 StrategyRejectBuffer(BufferAccessStrategy strategy, BufferDesc *buf, bool from_ring)
 {
+	XLogRecPtr	lsn;
+
+	if (!strategy)
+		return false;
+
 	/* We only do this in bulkread mode */
 	if (strategy->btype != BAS_BULKREAD)
 		return false;
@@ -795,11 +804,17 @@ StrategyRejectBuffer(BufferAccessStrategy strategy, BufferDesc *buf, bool from_r
 		strategy->buffers[strategy->current] != BufferDescriptorGetBuffer(buf))
 		return false;
 
+	LockBufHdr(buf);
+	lsn = BufferGetLSN(buf);
+	UnlockBufHdr(buf);
+
+	if (!XLogNeedsFlush(lsn))
+		return false;
+
 	/*
-	 * Remove the dirty buffer from the ring; necessary to prevent infinite
+	 * Remove the dirty buffer from the ring; necessary to prevent an infinite
 	 * loop if all ring members are dirty.
 	 */
 	strategy->buffers[strategy->current] = InvalidBuffer;
-
 	return true;
 }
