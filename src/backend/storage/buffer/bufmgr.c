@@ -531,14 +531,25 @@ static void CheckReadBuffersOperation(ReadBuffersOperation *operation, bool is_c
 static Buffer GetVictimBuffer(BufferAccessStrategy strategy, IOContext io_context);
 static void FlushUnlockedBuffer(BufferDesc *buf, SMgrRelation reln,
 								IOObject io_object, IOContext io_context);
+
 static void FlushBuffer(BufferDesc *buf, SMgrRelation reln,
 						IOObject io_object, IOContext io_context);
-static bool PrepareFlushBuffer(BufferDesc *bufdesc, XLogRecPtr *lsn);
+static BufferDesc *NextStrategyBufToFlush(BufferAccessStrategy strategy,
+										  Buffer sweep_end,
+										  XLogRecPtr *lsn, int *sweep_cursor);
+
+static bool BufferNeedsWALFlush(BufferDesc *bufdesc, XLogRecPtr *lsn);
+static BufferDesc *PrepareOrRejectEagerFlushBuffer(Buffer bufnum, BlockNumber require,
+												   RelFileLocator *rlocator, bool skip_pinned,
+												   XLogRecPtr *max_lsn);
+static bool PrepareFlushBuffer(BufferDesc *bufdesc,
+							   XLogRecPtr *lsn);
 static void DoFlushBuffer(BufferDesc *buf, SMgrRelation reln,
 						  IOObject io_object, IOContext io_context,
 						  XLogRecPtr buffer_lsn);
-static void CleanVictimBuffer(BufferDesc *bufdesc, bool from_ring,
-							  IOContext io_context);
+static void CleanVictimBuffer(BufferAccessStrategy strategy,
+							  BufferDesc *bufdesc,
+							  bool from_ring, IOContext io_context);
 static void FindAndDropRelationBuffers(RelFileLocator rlocator,
 									   ForkNumber forkNum,
 									   BlockNumber nForkBlock,
@@ -2401,7 +2412,7 @@ GetVictimBuffer(BufferAccessStrategy strategy, IOContext io_context)
 			}
 
 			/* Content lock is released inside CleanVictimBuffer */
-			CleanVictimBuffer(buf_hdr, from_ring, io_context);
+			CleanVictimBuffer(strategy, buf_hdr, from_ring, io_context);
 		}
 
 
@@ -4279,6 +4290,69 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln, IOObject io_object,
 }
 
 /*
+ * Returns true if the buffer needs WAL flushed before it can be written out.
+ * Caller must not already hold the buffer header spinlock. If the buffer is
+ * unlogged, *lsn shouldn't be used by the caller and is set to
+ * InvalidXLogRecPtr.
+ */
+static bool
+BufferNeedsWALFlush(BufferDesc *bufdesc, XLogRecPtr *lsn)
+{
+	uint32		buf_state;
+
+	buf_state = LockBufHdr(bufdesc);
+	*lsn = BufferGetLSN(bufdesc);
+	UnlockBufHdr(bufdesc);
+
+	/*
+	 * See buffer flushing code for more details on why we condition this on
+	 * the relation being logged.
+	 */
+	if (!(buf_state & BM_PERMANENT))
+	{
+		*lsn = InvalidXLogRecPtr;
+		return false;
+	}
+
+	return XLogNeedsFlush(*lsn);
+}
+
+
+/*
+ * Returns the buffer descriptor of the buffer containing the next block we
+ * should eagerly flush or NULL when there are no further buffers to consider
+ * writing out.
+ */
+static BufferDesc *
+NextStrategyBufToFlush(BufferAccessStrategy strategy,
+					   Buffer sweep_end,
+					   XLogRecPtr *lsn, int *sweep_cursor)
+{
+	Buffer		bufnum;
+	BufferDesc *bufdesc;
+
+	while ((bufnum =
+			StrategyNextBuffer(strategy, sweep_cursor)) != sweep_end)
+	{
+		/*
+		 * For BAS_BULKWRITE, once you hit an InvalidBuffer, the remaining
+		 * buffers in the ring will be invalid.
+		 */
+		if (!BufferIsValid(bufnum))
+			break;
+
+		if ((bufdesc = PrepareOrRejectEagerFlushBuffer(bufnum,
+													   InvalidBlockNumber,
+													   NULL,
+													   true,
+													   lsn)) != NULL)
+			return bufdesc;
+	}
+
+	return NULL;
+}
+
+/*
  * Prepare and write out a dirty victim buffer.
  *
  * Buffer must be pinned, the content lock must be held, and the buffer header
@@ -4288,10 +4362,12 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln, IOObject io_object,
  * bufdesc may be modified.
  */
 static void
-CleanVictimBuffer(BufferDesc *bufdesc,
+CleanVictimBuffer(BufferAccessStrategy strategy,
+				  BufferDesc *bufdesc,
 				  bool from_ring, IOContext io_context)
 {
 	XLogRecPtr	max_lsn = InvalidXLogRecPtr;
+	bool		first_buffer = true;
 
 	/* Set up this victim buffer to be flushed */
 	if (!PrepareFlushBuffer(bufdesc, &max_lsn))
@@ -4300,10 +4376,162 @@ CleanVictimBuffer(BufferDesc *bufdesc,
 		return;
 	}
 
-	DoFlushBuffer(bufdesc, NULL, IOOBJECT_RELATION, io_context, max_lsn);
-	LWLockRelease(BufferDescriptorGetContentLock(bufdesc));
-	ScheduleBufferTagForWriteback(&BackendWritebackContext, io_context,
-								  &bufdesc->tag);
+	if (from_ring && StrategySupportsEagerFlush(strategy))
+	{
+		Buffer		sweep_end = BufferDescriptorGetBuffer(bufdesc);
+		int			cursor = StrategyGetCurrentIndex(strategy);
+
+		/* Clean victim buffer and find more to flush opportunistically */
+		do
+		{
+			DoFlushBuffer(bufdesc, NULL, IOOBJECT_RELATION, io_context, max_lsn);
+			LWLockRelease(BufferDescriptorGetContentLock(bufdesc));
+			ScheduleBufferTagForWriteback(&BackendWritebackContext, io_context,
+										  &bufdesc->tag);
+			/* We leave the first buffer pinned for the caller */
+			if (!first_buffer)
+				UnpinBuffer(bufdesc);
+			first_buffer = false;
+		} while ((bufdesc = NextStrategyBufToFlush(strategy, sweep_end,
+												   &max_lsn, &cursor)) != NULL);
+	}
+	else
+	{
+		DoFlushBuffer(bufdesc, NULL, IOOBJECT_RELATION, io_context, max_lsn);
+		LWLockRelease(BufferDescriptorGetContentLock(bufdesc));
+		ScheduleBufferTagForWriteback(&BackendWritebackContext, io_context,
+									  &bufdesc->tag);
+	}
+}
+
+/*
+ * Prepare bufdesc for eager flushing.
+ *
+ * Given bufnum, return the buffer descriptor of the buffer to eagerly flush,
+ * pinned and locked, or NULL if this buffer does not contain a block that
+ * should be flushed.
+ *
+ * require is the BlockNumber required by the caller. Some callers may require
+ * a specific BlockNumber to be in bufnum because they are assembling a
+ * contiguous run of blocks.
+ *
+ * If the caller needs the block to be from a specific relation, rlocator will
+ * be provided.
+ */
+static BufferDesc *
+PrepareOrRejectEagerFlushBuffer(Buffer bufnum, BlockNumber require,
+								RelFileLocator *rlocator, bool skip_pinned,
+								XLogRecPtr *max_lsn)
+{
+	BufferDesc *bufdesc;
+	uint32		old_buf_state;
+	uint32		buf_state;
+	XLogRecPtr	lsn;
+	BlockNumber blknum;
+	LWLock	   *content_lock;
+
+	if (!BufferIsValid(bufnum))
+		return NULL;
+
+	Assert(!BufferIsLocal(bufnum));
+
+	bufdesc = GetBufferDescriptor(bufnum - 1);
+
+	/* Block may need to be in a specific relation */
+	if (rlocator &&
+		!RelFileLocatorEquals(BufTagGetRelFileLocator(&bufdesc->tag),
+							  *rlocator))
+		return NULL;
+
+	/*
+	 * Ensure that theres a free refcount entry and resource owner slot for
+	 * the pin before pinning the buffer. While this may leake a refcount and
+	 * slot if we return without a buffer, we should use that slot the next
+	 * time we try and reserve a spot.
+	 */
+	ResourceOwnerEnlarge(CurrentResourceOwner);
+	ReservePrivateRefCountEntry();
+
+	/*
+	 * Check whether the buffer can be used and pin it if so. Do this using a
+	 * CAS loop, to avoid having to lock the buffer header. We have to lock
+	 * the buffer header later if we succeed in pinning the buffer here, but
+	 * avoiding locking the buffer header if the buffer is in use is worth it.
+	 */
+	old_buf_state = pg_atomic_read_u32(&bufdesc->state);
+
+	for (;;)
+	{
+		buf_state = old_buf_state;
+
+		if (!(buf_state & BM_DIRTY) || !(buf_state & BM_VALID))
+			return NULL;
+
+		/* We don't eagerly flush buffers used by others */
+		if (skip_pinned &&
+			(BUF_STATE_GET_REFCOUNT(buf_state) > 0 ||
+			 BUF_STATE_GET_USAGECOUNT(buf_state) > 1))
+			return NULL;
+
+		if (unlikely(buf_state & BM_LOCKED))
+		{
+			old_buf_state = WaitBufHdrUnlocked(bufdesc);
+			continue;
+		}
+
+		/* pin the buffer if the CAS succeeds */
+		buf_state += BUF_REFCOUNT_ONE;
+
+		if (pg_atomic_compare_exchange_u32(&bufdesc->state, &old_buf_state,
+										   buf_state))
+		{
+			TrackNewBufferPin(BufferDescriptorGetBuffer(bufdesc));
+			break;
+		}
+	}
+
+	CheckBufferIsPinnedOnce(bufnum);
+
+	blknum = BufferGetBlockNumber(bufnum);
+	Assert(BlockNumberIsValid(blknum));
+
+	/* We only include contiguous blocks in the run */
+	if (BlockNumberIsValid(require) && blknum != require)
+		goto except_unpin_buffer;
+
+	/* Don't eagerly flush buffers requiring WAL flush */
+	if (BufferNeedsWALFlush(bufdesc, &lsn))
+		goto except_unpin_buffer;
+
+	content_lock = BufferDescriptorGetContentLock(bufdesc);
+	if (!LWLockConditionalAcquire(content_lock, LW_SHARED))
+		goto except_unpin_buffer;
+
+	/*
+	 * Now that we have the content lock, we need to recheck if we need to
+	 * flush WAL.
+	 */
+	if (BufferNeedsWALFlush(bufdesc, &lsn))
+		goto except_unpin_buffer;
+
+	/* Try to start an I/O operation */
+	if (!StartBufferIO(bufdesc, false, true))
+		goto except_unlock_content;
+
+	if (lsn > *max_lsn)
+		*max_lsn = lsn;
+
+	buf_state = LockBufHdr(bufdesc);
+	UnlockBufHdrExt(bufdesc, buf_state, 0, BM_JUST_DIRTIED, 0);
+
+	return bufdesc;
+
+except_unlock_content:
+	LWLockRelease(content_lock);
+
+except_unpin_buffer:
+	UnpinBuffer(bufdesc);
+	return NULL;
 }
 
 /*
@@ -4387,7 +4615,10 @@ DoFlushBuffer(BufferDesc *buf, SMgrRelation reln, IOObject io_object,
 
 	/* Force XLOG flush up to buffer's LSN */
 	if (XLogRecPtrIsValid(buffer_lsn))
+	{
+		Assert(pg_atomic_read_u32(&buf->state) & BM_PERMANENT);
 		XLogFlush(buffer_lsn);
+	}
 
 	/*
 	 * Now it's safe to write the buffer to disk. Note that no one else should
