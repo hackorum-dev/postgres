@@ -23,6 +23,9 @@
 #define PG_LOGICAL_MAPPINGS_DIR		PG_LOGICAL_DIR "/mappings"
 #define PG_LOGICAL_SNAPSHOTS_DIR	PG_LOGICAL_DIR "/snapshots"
 
+/* name pattern of snapshot spillfiles; always used with LSN_FORMAT_ARGS */
+#define PG_LOGICAL_SNAPFILE_PATTERN "%X-%08X.snap"
+
 /* GUC variables */
 extern PGDLLIMPORT int logical_decoding_work_mem;
 extern PGDLLIMPORT int debug_logical_replication_streaming;
