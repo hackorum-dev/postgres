@@ -7904,56 +7904,30 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 		appendPQExpBufferStr(query, "0 AS relallfrozen, ");
 
 	appendPQExpBufferStr(query,
-						 "pg_catalog.pg_get_indexdef(i.indexrelid) AS indexdef, "
+						 "CASE WHEN c.conrelid IS NULL THEN pg_catalog.pg_get_indexdef(i.indexrelid) END AS indexdef, "
 						 "i.indkey, i.indisclustered, "
 						 "c.contype, c.conname, "
 						 "c.condeferrable, c.condeferred, "
 						 "c.tableoid AS contableoid, "
 						 "c.oid AS conoid, "
-						 "pg_catalog.pg_get_constraintdef(c.oid, false) AS condef, "
-						 "CASE WHEN i.indexprs IS NOT NULL THEN "
-						 "(SELECT pg_catalog.array_agg(attname ORDER BY attnum)"
-						 "  FROM pg_catalog.pg_attribute "
-						 "  WHERE attrelid = i.indexrelid) "
-						 "ELSE NULL END AS indattnames, "
-						 "(SELECT spcname FROM pg_catalog.pg_tablespace s WHERE s.oid = t.reltablespace) AS tablespace, "
-						 "t.reloptions AS indreloptions, ");
-
-
-	if (fout->remoteVersion >= 90400)
-		appendPQExpBufferStr(query,
-							 "i.indisreplident, ");
-	else
-		appendPQExpBufferStr(query,
-							 "false AS indisreplident, ");
+						 "CASE WHEN c.contype = 'x' THEN pg_catalog.pg_get_constraintdef(c.oid, false) ELSE '' END AS condef, "
+						 "i.indattnames, "
+						 "s.spcname AS tablespace, "
+						 "t.reloptions AS indreloptions, "
+						 "i.indisreplident, ");
 
 	if (fout->remoteVersion >= 110000)
-		appendPQExpBufferStr(query,
-							 "inh.inhparent AS parentidx, "
-							 "i.indnkeyatts AS indnkeyatts, "
-							 "i.indnatts AS indnatts, "
-							 "(SELECT pg_catalog.array_agg(attnum ORDER BY attnum) "
-							 "  FROM pg_catalog.pg_attribute "
-							 "  WHERE attrelid = i.indexrelid AND "
-							 "    attstattarget >= 0) AS indstatcols, "
-							 "(SELECT pg_catalog.array_agg(attstattarget ORDER BY attnum) "
-							 "  FROM pg_catalog.pg_attribute "
-							 "  WHERE attrelid = i.indexrelid AND "
-							 "    attstattarget >= 0) AS indstatvals, ");
+		appendPQExpBufferStr(query, "inh.inhparent AS parentidx, ");
 	else
-		appendPQExpBufferStr(query,
-							 "0 AS parentidx, "
-							 "i.indnatts AS indnkeyatts, "
-							 "i.indnatts AS indnatts, "
-							 "'' AS indstatcols, "
-							 "'' AS indstatvals, ");
+		appendPQExpBufferStr(query, "0 AS parentidx, ");
 
-	if (fout->remoteVersion >= 150000)
-		appendPQExpBufferStr(query,
-							 "i.indnullsnotdistinct, ");
-	else
-		appendPQExpBufferStr(query,
-							 "false AS indnullsnotdistinct, ");
+	appendPQExpBufferStr(query,
+							"i.indnkeyatts AS indnkeyatts, "
+							"i.indnatts AS indnatts, "
+							"i.indstatcols, "
+							"i.indstatvals, "
+							"i.indnullsnotdistinct, ");
+
 
 	if (fout->remoteVersion >= 180000)
 		appendPQExpBufferStr(query,
@@ -7974,19 +7948,37 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 	if (fout->remoteVersion >= 110000)
 	{
 		appendPQExpBuffer(query,
-						  "FROM unnest('%s'::pg_catalog.oid[]) AS src(tbloid)\n"
-						  "JOIN pg_catalog.pg_index i ON (src.tbloid = i.indrelid) "
-						  "JOIN pg_catalog.pg_class t ON (t.oid = i.indexrelid) "
-						  "JOIN pg_catalog.pg_class t2 ON (t2.oid = i.indrelid) "
-						  "LEFT JOIN pg_catalog.pg_constraint c "
-						  "ON (i.indrelid = c.conrelid AND "
-						  "i.indexrelid = c.conindid AND "
-						  "c.contype IN ('p','u','x')) "
-						  "LEFT JOIN pg_catalog.pg_inherits inh "
-						  "ON (inh.inhrelid = indexrelid) "
-						  "WHERE (i.indisvalid OR t2.relkind = 'p') "
-						  "AND i.indisready "
+						  "FROM (SELECT i.indexrelid,\n"
+						  "             i.indrelid,\n"
+						  "             i.indkey,\n"
+						  "             i.indisclustered,\n"
+						  "             pg_catalog.array_agg(a.attnum ORDER BY a.attnum) FILTER (WHERE a.attstattarget >= 0) AS indstatcols,\n"
+						  "             pg_catalog.array_agg(a.attstattarget ORDER BY a.attnum) FILTER (WHERE a.attstattarget >= 0) AS indstatvals,\n"
+						  "             CASE\n"
+						  "               WHEN i.indexprs IS NOT NULL THEN\n"
+						  "                       pg_catalog.array_agg(a.attname ORDER BY a.attnum)\n"
+						  "               ELSE NULL\n"
+						  "             END AS indattnames,\n"
+						  "             i.indisreplident,\n"
+						  "             i.indnkeyatts AS indnkeyatts,\n"
+						  "             i.indnatts AS indnatts,\n"
+						  "             i.indisvalid,\n"
+						  "             %s AS indnullsnotdistinct\n"
+						  "      FROM unnest('%s'::pg_catalog.oid[]) AS src(tbloid)\n"
+						  "      INNER JOIN pg_catalog.pg_index i ON (src.tbloid = i.indrelid)\n"
+						  "      INNER JOIN pg_catalog.pg_class t2 ON (t2.oid = i.indrelid)\n"
+						  "      LEFT JOIN pg_catalog.pg_attribute a ON (a.attrelid = i.indexrelid)\n"
+						  "      WHERE (i.indisvalid OR t2.relkind = 'p') AND i.indisready\n"
+						  "      GROUP BY i.indexrelid,i.indrelid,i.indisclustered,i.indisreplident,\n"
+						  "               i.indnkeyatts,i.indnatts,i.indisvalid,i.indkey,i.indexprs,indnullsnotdistinct) i\n"
+						  "JOIN pg_catalog.pg_class t ON (t.oid = i.indexrelid)\n"
+						  "LEFT JOIN pg_catalog.pg_tablespace s ON (s.oid = t.reltablespace)\n"
+						  "LEFT JOIN pg_catalog.pg_constraint c ON (i.indrelid = c.conrelid\n"
+						  "                                         AND i.indexrelid = c.conindid\n"
+						  "                                         AND c.contype IN ('p','u','x'))\n"
+						  "LEFT JOIN pg_catalog.pg_inherits inh ON (inh.inhrelid = indexrelid)\n"
 						  "ORDER BY i.indrelid, indexname",
+						  fout->remoteVersion >= 150000 ? "i.indnullsnotdistinct" : "false",
 						  tbloids->data);
 	}
 	else
@@ -7996,15 +7988,35 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 		 * earlier/later versions
 		 */
 		appendPQExpBuffer(query,
-						  "FROM unnest('%s'::pg_catalog.oid[]) AS src(tbloid)\n"
-						  "JOIN pg_catalog.pg_index i ON (src.tbloid = i.indrelid) "
-						  "JOIN pg_catalog.pg_class t ON (t.oid = i.indexrelid) "
-						  "LEFT JOIN pg_catalog.pg_constraint c "
-						  "ON (i.indrelid = c.conrelid AND "
-						  "i.indexrelid = c.conindid AND "
-						  "c.contype IN ('p','u','x')) "
-						  "WHERE i.indisvalid AND i.indisready "
+						  "FROM (SELECT i.indexrelid,\n"
+						  "             i.indrelid,\n"
+						  "             i.indkey,\n"
+						  "             i.indisclustered,\n"
+						  "             '' AS indstatcols,\n"
+						  "             '' AS indstatvals,\n"
+						  "             CASE\n"
+						  "               WHEN i.indexprs IS NOT NULL THEN\n"
+						  "                       pg_catalog.array_agg(a.attname ORDER BY a.attnum)\n"
+						  "               ELSE NULL\n"
+						  "             END AS indattnames,\n"
+						  "             %s AS indisreplident,\n"
+						  "             i.indnatts AS indnkeyatts,\n"
+						  "             i.indnatts AS indnatts,\n"
+						  "             i.indisvalid,\n"
+						  "             false AS indnullsnotdistinct\n"
+						  "      FROM unnest('%s'::pg_catalog.oid[]) AS src(tbloid)\n"
+						  "      INNER JOIN pg_catalog.pg_index i ON (src.tbloid = i.indrelid)\n"
+						  "      LEFT JOIN pg_catalog.pg_attribute a ON (a.attrelid = i.indexrelid)\n"
+						  "      WHERE i.indisvalid AND i.indisready\n"
+						  "      GROUP BY i.indexrelid,i.indrelid,i.indisclustered,indisreplident,\n"
+						  "               i.indnatts,i.indisvalid,i.indkey,i.indexprs) i\n"
+						  "JOIN pg_catalog.pg_class t ON (t.oid = i.indexrelid)\n"
+						  "LEFT JOIN pg_catalog.pg_tablespace s ON (s.oid = t.reltablespace)\n"
+						  "LEFT JOIN pg_catalog.pg_constraint c ON (i.indrelid = c.conrelid\n"
+						  "                                         AND i.indexrelid = c.conindid\n"
+						  "                                         AND c.contype IN ('p','u','x'))\n"
 						  "ORDER BY i.indrelid, indexname",
+						  fout->remoteVersion >= 90400 ? "i.indisreplident" : "false",
 						  tbloids->data);
 	}
 
@@ -8101,7 +8113,10 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 			indxinfo[j].dobj.name = pg_strdup(PQgetvalue(res, j, i_indexname));
 			indxinfo[j].dobj.namespace = tbinfo->dobj.namespace;
 			indxinfo[j].indextable = tbinfo;
-			indxinfo[j].indexdef = pg_strdup(PQgetvalue(res, j, i_indexdef));
+			if (PQgetisnull(res, j, i_indexdef))
+				indxinfo[j].indexdef = NULL;
+			else
+				indxinfo[j].indexdef =  pg_strdup(PQgetvalue(res, j, i_indexdef));
 			indxinfo[j].indnkeyattrs = atoi(PQgetvalue(res, j, i_indnkeyatts));
 			indxinfo[j].indnattrs = atoi(PQgetvalue(res, j, i_indnatts));
 			indxinfo[j].tablespace = pg_strdup(PQgetvalue(res, j, i_tablespace));
