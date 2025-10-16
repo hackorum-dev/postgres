@@ -2195,6 +2195,24 @@ typedef struct NestLoopState
  *		InnerEContext	   workspace for computing inner tuple's join values
  * ----------------
  */
+
+/*
+ * States of the ExecMergeJoin state machine
+ */
+typedef enum MJ_ExecState {
+	EXEC_MJ_INITIALIZE_OUTER = 1,
+	EXEC_MJ_INITIALIZE_INNER,
+	EXEC_MJ_JOINTUPLES,
+	EXEC_MJ_NEXTOUTER,
+	EXEC_MJ_TESTOUTER,
+	EXEC_MJ_NEXTINNER,
+	EXEC_MJ_SKIP_TEST,
+	EXEC_MJ_SKIPOUTER_ADVANCE,
+	EXEC_MJ_SKIPINNER_ADVANCE,
+	EXEC_MJ_ENDOUTER,
+	EXEC_MJ_ENDINNER
+} MJ_ExecState;
+
 /* private in nodeMergejoin.c: */
 typedef struct MergeJoinClauseData *MergeJoinClause;
 
@@ -2203,7 +2221,7 @@ typedef struct MergeJoinState
 	JoinState	js;				/* its first field is NodeTag */
 	int			mj_NumClauses;
 	MergeJoinClause mj_Clauses; /* array of length mj_NumClauses */
-	int			mj_JoinState;
+	MJ_ExecState	mj_JoinState;
 	bool		mj_SkipMarkRestore;
 	bool		mj_ExtraMarks;
 	bool		mj_ConstFalseJoin;
@@ -2246,6 +2264,18 @@ typedef struct MergeJoinState
  * ----------------
  */
 
+/*
+ * States of the ExecHashJoin state machine
+ */
+typedef enum HJ_ExecState {
+	HJ_BUILD_HASHTABLE = 1,
+	HJ_NEED_NEW_OUTER,
+	HJ_SCAN_BUCKET,
+	HJ_FILL_OUTER_TUPLE,
+	HJ_FILL_INNER_TUPLES,
+	HJ_NEED_NEW_BATCH
+} HJ_ExecState;
+
 /* these structs are defined in executor/hashjoin.h: */
 typedef struct HashJoinTupleData *HashJoinTuple;
 typedef struct HashJoinTableData *HashJoinTable;
@@ -2265,7 +2295,7 @@ typedef struct HashJoinState
 	TupleTableSlot *hj_NullOuterTupleSlot;
 	TupleTableSlot *hj_NullInnerTupleSlot;
 	TupleTableSlot *hj_FirstOuterTupleSlot;
-	int			hj_JoinState;
+	HJ_ExecState	hj_JoinState;
 	bool		hj_MatchedOuter;
 	bool		hj_OuterNotEmpty;
 } HashJoinState;

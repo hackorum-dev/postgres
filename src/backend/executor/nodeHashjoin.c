@@ -174,15 +174,6 @@
 #include "utils/wait_event.h"
 
 
-/*
- * States of the ExecHashJoin state machine
- */
-#define HJ_BUILD_HASHTABLE		1
-#define HJ_NEED_NEW_OUTER		2
-#define HJ_SCAN_BUCKET			3
-#define HJ_FILL_OUTER_TUPLE		4
-#define HJ_FILL_INNER_TUPLES	5
-#define HJ_NEED_NEW_BATCH		6
 
 /* Returns true if doing null-fill on outer relation */
 #define HJ_FILL_OUTER(hjstate)	((hjstate)->hj_NullInnerTupleSlot != NULL)
@@ -669,7 +660,7 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 
 			default:
 				elog(ERROR, "unrecognized hashjoin state: %d",
-					 (int) node->hj_JoinState);
+					 node->hj_JoinState);
 		}
 	}
 }
