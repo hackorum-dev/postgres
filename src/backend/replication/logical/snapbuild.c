@@ -1535,7 +1535,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 	 * unless the user used pg_resetwal or similar. If a user did so, there's
 	 * no hope continuing to decode anyway.
 	 */
-	sprintf(path, "%s/%X-%X.snap",
+	sprintf(path, "%s/" PG_LOGICAL_SNAPFILE_PATTERN,
 			PG_LOGICAL_SNAPSHOTS_DIR,
 			LSN_FORMAT_ARGS(lsn));
 
@@ -1579,7 +1579,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 	elog(DEBUG1, "serializing snapshot to %s", path);
 
 	/* to make sure only we will write to this tempfile, include pid */
-	sprintf(tmppath, "%s/%X-%X.snap.%d.tmp",
+	sprintf(tmppath, "%s/" PG_LOGICAL_SNAPFILE_PATTERN ".%d.tmp",
 			PG_LOGICAL_SNAPSHOTS_DIR,
 			LSN_FORMAT_ARGS(lsn), MyProcPid);
 
@@ -1753,7 +1753,7 @@ SnapBuildRestoreSnapshot(SnapBuildOnDisk *ondisk, XLogRecPtr lsn,
 	Size		sz;
 	char		path[MAXPGPATH];
 
-	sprintf(path, "%s/%X-%X.snap",
+	sprintf(path, "%s/" PG_LOGICAL_SNAPFILE_PATTERN,
 			PG_LOGICAL_SNAPSHOTS_DIR,
 			LSN_FORMAT_ARGS(lsn));
 
@@ -2025,7 +2025,7 @@ CheckPointSnapBuild(void)
 		 * We just log a message if a file doesn't fit the pattern, it's
 		 * probably some editors lock/state file or similar...
 		 */
-		if (sscanf(snap_de->d_name, "%X-%X.snap", &hi, &lo) != 2)
+		if (sscanf(snap_de->d_name, PG_LOGICAL_SNAPFILE_PATTERN, &hi, &lo) != 2)
 		{
 			ereport(LOG,
 					(errmsg("could not parse file name \"%s\"", path)));
@@ -2067,7 +2067,7 @@ SnapBuildSnapshotExists(XLogRecPtr lsn)
 	int			ret;
 	struct stat stat_buf;
 
-	sprintf(path, "%s/%X-%X.snap",
+	sprintf(path, "%s/" PG_LOGICAL_SNAPFILE_PATTERN,
 			PG_LOGICAL_SNAPSHOTS_DIR,
 			LSN_FORMAT_ARGS(lsn));
 
