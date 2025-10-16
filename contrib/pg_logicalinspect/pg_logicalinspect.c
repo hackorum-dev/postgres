@@ -69,7 +69,7 @@ parse_snapshot_filename(const char *filename)
 	 * check including the suffix. The subsequent check validates if the given
 	 * filename has the expected suffix.
 	 */
-	if (sscanf(filename, "%X-%X.snap", &hi, &lo) != 2)
+	if (sscanf(filename, PG_LOGICAL_SNAPFILE_PATTERN, &hi, &lo) != 2)
 		goto parse_error;
 
 	/*
@@ -77,7 +77,7 @@ parse_snapshot_filename(const char *filename)
 	 * to the given filename. This check strictly checks if the given filename
 	 * follows the format of the snapshot filename.
 	 */
-	sprintf(tmpfname, "%X-%X.snap", hi, lo);
+	sprintf(tmpfname, PG_LOGICAL_SNAPFILE_PATTERN, hi, lo);
 	if (strcmp(tmpfname, filename) != 0)
 		goto parse_error;
 
