@@ -50,7 +50,8 @@ typedef struct WalSnd
 	/*
 	 * The xlog locations that have been written, flushed, and applied by
 	 * standby-side. These may be invalid if the standby-side has not offered
-	 * values yet.
+	 * values yet. If walsender is synchronous this locations will be contains
+	 * minimum (oldest) of the synchronous standbys among the entire subtree.
 	 */
 	XLogRecPtr	write;
 	XLogRecPtr	flush;

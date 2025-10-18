@@ -29,6 +29,14 @@ typedef uint64 XLogRecPtr;
 #define XLogRecPtrIsInvalid(r)	((r) == InvalidXLogRecPtr)
 
 /*
+ * The default value for sending from a cascade synchronous standby to another
+ * cascade synchronous standby or to the primary, used when the sending LSN
+ * cannot be calculated (for example, when the number of synchronous standbys
+ * is less than required).
+ */
+#define DefaultSendingLSN   ((XLogRecPtr) 2)
+
+/*
  * First LSN to use for "fake" LSNs.
  *
  * Values smaller than this can be used for special per-AM purposes.

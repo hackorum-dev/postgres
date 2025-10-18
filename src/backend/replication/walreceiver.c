@@ -66,6 +66,7 @@
 #include "postmaster/auxprocess.h"
 #include "postmaster/interrupt.h"
 #include "replication/walreceiver.h"
+#include "replication/syncrep.h"
 #include "replication/walsender.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -529,10 +530,11 @@ WalReceiverMain(const void *startup_data, size_t startup_data_len)
 					if (walrcv->force_reply)
 					{
 						/*
-						 * The recovery process has asked us to send apply
-						 * feedback now.  Make sure the flag is really set to
-						 * false in shared memory before sending the reply, so
-						 * we don't miss a new request for a reply.
+						 * The recovery or one of walsender processes has
+						 * asked us to send apply feedback now.  Make sure the
+						 * flag is really set to false in shared memory before
+						 * sending the reply, so we don't miss a new request
+						 * for a reply.
 						 */
 						walrcv->force_reply = false;
 						pg_memory_barrier();
@@ -1077,7 +1079,10 @@ XLogWalRcvClose(XLogRecPtr recptr, TimeLineID tli)
 
 /*
  * Send reply message to primary, indicating our current WAL locations, oldest
- * xmin and the current time.
+ * xmin and the current time. When synchronous replication is enabled, transmit
+ * the oldest write, flush, and apply positions from the current node and its
+ * standbys to the primary. If position calculation fails, fall back to
+ * DefaultSendingLSN.
  *
  * If 'force' is not set, the message is only sent if enough time has
  * passed since last status update to reach wal_receiver_status_interval.
@@ -1125,9 +1130,15 @@ XLogWalRcvSendReply(bool force, bool requestReply)
 	WalRcvComputeNextWakeup(WALRCV_WAKEUP_REPLY, now);
 
 	/* Construct a new message */
-	writePtr = LogstreamResult.Write;
-	flushPtr = LogstreamResult.Flush;
-	applyPtr = GetXLogReplayRecPtr(NULL);
+	if (SyncRepRequested())
+		SyncRepGetSendingSyncRecPtr(&writePtr, &flushPtr, &applyPtr,
+									LogstreamResult.Write, LogstreamResult.Flush, GetXLogReplayRecPtr(NULL));
+	else
+	{
+		writePtr = LogstreamResult.Write;
+		flushPtr = LogstreamResult.Flush;
+		applyPtr = GetXLogReplayRecPtr(NULL);
+	}
 
 	resetStringInfo(&reply_message);
 	pq_sendbyte(&reply_message, PqReplMsg_StandbyStatusUpdate);

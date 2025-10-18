@@ -105,6 +105,11 @@ static bool SyncRepGetSyncRecPtr(XLogRecPtr *writePtr,
 								 XLogRecPtr *flushPtr,
 								 XLogRecPtr *applyPtr,
 								 bool *am_sync);
+static bool SyncRepGetSyncRecPtrBySyncRepMethod(XLogRecPtr *writePtr,
+												XLogRecPtr *flushPtr,
+												XLogRecPtr *applyPtr,
+												SyncRepStandbyData *sync_standbys,
+												int num_standbys);
 static void SyncRepGetOldestSyncRecPtr(XLogRecPtr *writePtr,
 									   XLogRecPtr *flushPtr,
 									   XLogRecPtr *applyPtr,
@@ -624,29 +629,11 @@ SyncRepGetSyncRecPtr(XLogRecPtr *writePtr, XLogRecPtr *flushPtr,
 		return false;
 	}
 
-	/*
-	 * In a priority-based sync replication, the synced positions are the
-	 * oldest ones among sync standbys. In a quorum-based, they are the Nth
-	 * latest ones.
-	 *
-	 * SyncRepGetNthLatestSyncRecPtr() also can calculate the oldest
-	 * positions. But we use SyncRepGetOldestSyncRecPtr() for that calculation
-	 * because it's a bit more efficient.
-	 *
-	 * XXX If the numbers of current and requested sync standbys are the same,
-	 * we can use SyncRepGetOldestSyncRecPtr() to calculate the synced
-	 * positions even in a quorum-based sync replication.
-	 */
-	if (SyncRepConfig->syncrep_method == SYNC_REP_PRIORITY)
+	/* Try calculate sync Write, Flush and Apply positions */
+	if (!SyncRepGetSyncRecPtrBySyncRepMethod(writePtr, flushPtr, applyPtr, sync_standbys, num_standbys))
 	{
-		SyncRepGetOldestSyncRecPtr(writePtr, flushPtr, applyPtr,
-								   sync_standbys, num_standbys);
-	}
-	else
-	{
-		SyncRepGetNthLatestSyncRecPtr(writePtr, flushPtr, applyPtr,
-									  sync_standbys, num_standbys,
-									  SyncRepConfig->num_sync);
+		pfree(sync_standbys);
+		return false;
 	}
 
 	pfree(sync_standbys);
@@ -867,8 +854,6 @@ SyncRepGetStandbyPriority(void)
 	 * Since synchronous cascade replication is not allowed, we always set the
 	 * priority of cascading walsender to zero.
 	 */
-	if (am_cascading_walsender)
-		return 0;
 
 	if (!SyncStandbysDefined() || SyncRepConfig == NULL)
 		return 0;
@@ -1047,6 +1032,134 @@ SyncRepQueueIsOrderedByLSN(int mode)
 	return true;
 }
 #endif
+
+/*
+ * ===========================================================
+ * Synchronous Replication functions for wal receiver processes
+ * ===========================================================
+ */
+
+/*
+ * Calculate sync Write, Flush and Apply positions for sending to replication source.
+ * If synchronous replication not configured return myWritePtr, myFlushPtr and myApplyPtr.
+ */
+void
+SyncRepGetSendingSyncRecPtr(XLogRecPtr *writePtr, XLogRecPtr *flushPtr, XLogRecPtr *applyPtr,
+							XLogRecPtr myWritePtr, XLogRecPtr myFlushPtr, XLogRecPtr myApplyPtr)
+{
+	SyncRepStandbyData *sync_standbys;
+	int			num_standbys;
+
+	/*
+	 * Initialize default results. We use InvalidXLogRecPtr instead of
+	 * DefaultSendingLSN to ensure the correct operation of the algorithm
+	 * under priority-based sync replication
+	 */
+	*writePtr = InvalidXLogRecPtr;
+	*flushPtr = InvalidXLogRecPtr;
+	*applyPtr = InvalidXLogRecPtr;
+
+	/*
+	 * Returns the standby's Write, Flush, and Apply positions even if it is
+	 * not configured as a synchronous standby, or if there are no synchronous
+	 * replicas configured.
+	 */
+	if (SyncRepConfig == NULL || SyncRepConfig->num_sync == 0)
+	{
+		*writePtr = myWritePtr;
+		*flushPtr = myFlushPtr;
+		*applyPtr = myApplyPtr;
+		return;
+	}
+
+	/* Get standbys that are considered as synchronous at this moment */
+	num_standbys = SyncRepGetCandidateStandbys(&sync_standbys);
+
+	/*
+	 * Nothing more to do if there are not enough synchronous standbys.
+	 */
+	if (num_standbys < SyncRepConfig->num_sync)
+	{
+		*writePtr = DefaultSendingLSN;
+		*flushPtr = DefaultSendingLSN;
+		*applyPtr = DefaultSendingLSN;
+
+		elog(DEBUG3, "waiting %d standbys, but only %d is connecting", SyncRepConfig->num_sync, num_standbys);
+		pfree(sync_standbys);
+		return;
+	}
+
+	/*
+	 * Try calculate sync Write, Flush and Apply positions. If return false
+	 * writePtr et al not be changed.
+	 */
+	if (!SyncRepGetSyncRecPtrBySyncRepMethod(writePtr, flushPtr, applyPtr, sync_standbys, num_standbys))
+	{
+		*writePtr = DefaultSendingLSN;
+		*flushPtr = DefaultSendingLSN;
+		*applyPtr = DefaultSendingLSN;
+
+		elog(DEBUG3, "something went wrong then trying calculate sync write, flush and apply positions");
+		pfree(sync_standbys);
+		return;
+	}
+
+	*writePtr = Min(myWritePtr, *writePtr);
+	*flushPtr = Min(myFlushPtr, *flushPtr);
+	*applyPtr = Min(myApplyPtr, *applyPtr);
+
+	pfree(sync_standbys);
+}
+
+/*
+ * ===========================================================
+ * Synchronous Replication functions for wal receiver and wal sender processes
+ * ===========================================================
+ */
+
+/*
+ * Calculates the Write, Flush, and Apply positions for synchronous
+ * standbys using the synchronous replication method. Returns true if the calculation is successful,
+ * otherwise false.
+ */
+static bool
+SyncRepGetSyncRecPtrBySyncRepMethod(XLogRecPtr *writePtr,
+									XLogRecPtr *flushPtr,
+									XLogRecPtr *applyPtr,
+									SyncRepStandbyData *sync_standbys,
+									int num_standbys)
+{
+	/* Quick out if not even configured to be synchronous */
+	if (SyncRepConfig == NULL)
+		return false;
+
+	/*
+	 * In a priority-based sync replication, the synced positions are the
+	 * oldest ones among sync standbys. In a quorum-based, they are the Nth
+	 * latest ones.
+	 *
+	 * SyncRepGetNthLatestSyncRecPtr() also can calculate the oldest
+	 * positions. But we use SyncRepGetOldestSyncRecPtr() for that calculation
+	 * because it's a bit more efficient.
+	 *
+	 * XXX If the numbers of current and requested sync standbys are the same,
+	 * we can use SyncRepGetOldestSyncRecPtr() to calculate the synced
+	 * positions even in a quorum-based sync replication.
+	 */
+	if (SyncRepConfig->syncrep_method == SYNC_REP_PRIORITY)
+	{
+		SyncRepGetOldestSyncRecPtr(writePtr, flushPtr, applyPtr,
+								   sync_standbys, num_standbys);
+	}
+	else
+	{
+		SyncRepGetNthLatestSyncRecPtr(writePtr, flushPtr, applyPtr,
+									  sync_standbys, num_standbys,
+									  SyncRepConfig->num_sync);
+	}
+
+	return true;
+}
 
 /*
  * ===========================================================
