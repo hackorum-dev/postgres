@@ -1578,6 +1578,7 @@ pgstat_write_statsfile(void)
 	const char *statfile = PGSTAT_STAT_PERMANENT_FILENAME;
 	dshash_seq_status hstat;
 	PgStatShared_HashEntry *ps;
+	size_t		kind_lengths[PGSTAT_KIND_MAX] = {0};
 
 	pgstat_assert_is_up();
 
@@ -1607,6 +1608,20 @@ pgstat_write_statsfile(void)
 	 */
 	format_id = PGSTAT_FILE_FORMAT_ID;
 	write_chunk_s(fpout, &format_id);
+
+	/* Write the lengths of all stats kinds */
+	for (PgStat_Kind kind = PGSTAT_KIND_MIN; kind <= PGSTAT_KIND_MAX; kind++)
+	{
+		size_t		kind_len = 0;
+
+		const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
+
+		if (kind_info)
+			kind_len = pgstat_get_entry_len(kind);
+
+		kind_lengths[kind - 1] = kind_len;
+		write_chunk_s(fpout, &kind_len);
+	}
 
 	/* Write various stats structs for fixed number of objects */
 	for (PgStat_Kind kind = PGSTAT_KIND_MIN; kind <= PGSTAT_KIND_MAX; kind++)
@@ -1703,7 +1718,7 @@ pgstat_write_statsfile(void)
 		/* Write except the header part of the entry */
 		write_chunk(fpout,
 					pgstat_get_entry_data(ps->key.kind, shstats),
-					pgstat_get_entry_len(ps->key.kind));
+					kind_lengths[ps->key.kind - 1]);
 	}
 	dshash_seq_term(&hstat);
 
@@ -1761,6 +1776,8 @@ pgstat_read_statsfile(void)
 	bool		found;
 	const char *statfile = PGSTAT_STAT_PERMANENT_FILENAME;
 	PgStat_ShmemControl *shmem = pgStatLocal.shmem;
+	size_t		kind_lengths[PGSTAT_KIND_MAX] = {0};
+	bool		kind_warnings[PGSTAT_KIND_MAX] = {false};
 
 	/* shouldn't be called from postmaster */
 	Assert(IsUnderPostmaster || !IsPostmasterEnvironment);
@@ -1803,6 +1820,17 @@ pgstat_read_statsfile(void)
 		goto error;
 	}
 
+	for (PgStat_Kind kind = PGSTAT_KIND_MIN; kind <= PGSTAT_KIND_MAX; kind++)
+	{
+		size_t	   *kind_length = &kind_lengths[kind - 1];
+
+		if (!read_chunk_s(fpin, kind_length))
+		{
+			elog(WARNING, "could not read kind lengths");
+			goto error;
+		}
+	}
+
 	/*
 	 * We found an existing statistics file. Read it and put all the stats
 	 * data into place.
@@ -1836,9 +1864,34 @@ pgstat_read_statsfile(void)
 					info = pgstat_get_kind_info(kind);
 					if (!info)
 					{
-						elog(WARNING, "could not find information of kind %u for entry of type %c",
-							 kind, t);
-						goto error;
+						if (pgstat_is_kind_custom(kind))
+						{
+							size_t		kind_length = kind_lengths[kind - 1];
+
+							if (!kind_warnings[kind - 1])
+							{
+
+								kind_warnings[kind - 1] = true;
+
+								elog(WARNING, "found unregistered custom stats kind %u for entry of type %c, skipping",
+									 kind, t);
+							}
+
+							if (fseek(fpin, kind_lengths[kind - 1], SEEK_CUR) != 0)
+							{
+								elog(WARNING, "could not seek %lu bytes of stats kind %u for entry of type %c",
+									 (unsigned long) kind_length, kind, t);
+								goto error;
+							}
+
+							continue;
+						}
+						else
+						{
+							elog(WARNING, "could not find information of kind %u for entry of type %c",
+								 kind, t);
+							goto error;
+						}
 					}
 
 					if (!info->fixed_amount)
@@ -1875,6 +1928,7 @@ pgstat_read_statsfile(void)
 					PgStat_HashKey key;
 					PgStatShared_HashEntry *p;
 					PgStatShared_Common *header;
+					const PgStat_KindInfo *info;
 
 					CHECK_FOR_INTERRUPTS();
 
@@ -1895,12 +1949,39 @@ pgstat_read_statsfile(void)
 							goto error;
 						}
 
-						if (!pgstat_get_kind_info(key.kind))
+						info = pgstat_get_kind_info(key.kind);
+						if (!info)
 						{
-							elog(WARNING, "could not find information of kind for entry %u/%u/%" PRIu64 " of type %c",
-								 key.kind, key.dboid,
-								 key.objid, t);
-							goto error;
+							if (pgstat_is_kind_custom(key.kind))
+							{
+								size_t		kind_length = kind_lengths[key.kind - 1];
+
+
+								if (!kind_warnings[key.kind - 1])
+								{
+
+									kind_warnings[key.kind - 1] = true;
+									elog(WARNING, "invalid custom stats kind %u for entry of type %c, skipping",
+										 key.kind, t);
+								}
+
+								if (fseek(fpin, kind_lengths[key.kind - 1], SEEK_CUR) != 0)
+								{
+									elog(WARNING, "could not seek %lu bytes of stats kind %u for entry of type %c",
+										 (unsigned long) kind_length, key.kind, t);
+									goto error;
+								}
+
+								continue;
+							}
+							else
+							{
+
+								elog(WARNING, "could not find information of kind for entry %u/%u/%" PRIu64 " of type %c",
+									 key.kind, key.dboid,
+									 key.objid, t);
+								goto error;
+							}
 						}
 					}
 					else
@@ -1946,7 +2027,7 @@ pgstat_read_statsfile(void)
 						if (!kind_info->from_serialized_name(&name, &key))
 						{
 							/* skip over data for entry we don't care about */
-							if (fseek(fpin, pgstat_get_entry_len(kind), SEEK_CUR) != 0)
+							if (fseek(fpin, kind_lengths[kind - 1], SEEK_CUR) != 0)
 							{
 								elog(WARNING, "could not seek \"%s\" of stats kind %u for entry of type %c",
 									 NameStr(name), kind, t);
@@ -1992,7 +2073,7 @@ pgstat_read_statsfile(void)
 
 					if (!read_chunk(fpin,
 									pgstat_get_entry_data(key.kind, header),
-									pgstat_get_entry_len(key.kind)))
+									kind_lengths[key.kind - 1]))
 					{
 						elog(WARNING, "could not read data for entry %u/%u/%" PRIu64 " of type %c",
 							 key.kind, key.dboid,
