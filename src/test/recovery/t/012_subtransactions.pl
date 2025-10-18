@@ -121,6 +121,7 @@ is($psql_out, '8128', "Visible");
 # restore state
 ($node_primary, $node_standby) = ($node_standby, $node_primary);
 $node_standby->enable_streaming($node_primary);
+$node_standby->disable_waiting_standbys();
 $node_standby->start;
 $node_standby->psql(
 	'postgres',
@@ -166,6 +167,9 @@ is($psql_out, '-1', "Not visible");
 
 # restore state
 ($node_primary, $node_standby) = ($node_standby, $node_primary);
+$node_primary->enable_waiting_standbys();
+$node_primary->restart();
+
 $node_standby->enable_streaming($node_primary);
 $node_standby->start;
 $psql_rc = $node_primary->psql('postgres', "COMMIT PREPARED 'xact_012_1'");
@@ -203,6 +207,7 @@ is($psql_out, '-1', "Not visible");
 # restore state
 ($node_primary, $node_standby) = ($node_standby, $node_primary);
 $node_standby->enable_streaming($node_primary);
+$node_standby->disable_waiting_standbys();
 $node_standby->start;
 $psql_rc = $node_primary->psql('postgres', "ROLLBACK PREPARED 'xact_012_1'");
 is($psql_rc, '0',

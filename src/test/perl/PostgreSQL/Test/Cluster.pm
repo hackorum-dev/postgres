@@ -1409,6 +1409,36 @@ primary_conninfo='$root_connstr'
 	return;
 }
 
+# Internal routine to enable waiting synchronous standbys
+# on primary node
+sub enable_waiting_standbys
+{
+	my ($self) = @_;
+	my $name = $self->name;
+
+	print "### Enabling waiting standbys for node \"$name\"\n";
+	$self->append_conf(
+		'postgresql.conf', qq(
+		synchronous_commit=on
+	));
+	return;
+}
+
+# Internal routine to ignore synchronous_standby_names
+# on standby node
+sub disable_waiting_standbys
+{
+	my ($self) = @_;
+	my $name = $self->name;
+
+	print "### Now ignore synchronous_standby_names for node \"$name\"\n";
+	$self->append_conf(
+		'postgresql.conf', qq(
+		synchronous_commit=local
+	));
+	return;
+}
+
 # Internal routine to enable archive recovery command on a standby node
 sub enable_restoring
 {

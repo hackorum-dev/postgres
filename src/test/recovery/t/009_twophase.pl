@@ -45,10 +45,12 @@ $node_london->backup('london_backup');
 my $node_paris = PostgreSQL::Test::Cluster->new('paris');
 $node_paris->init_from_backup($node_london, 'london_backup',
 	has_streaming => 1);
+# Configure paris node for non waiting because it initially will be synchronous standby
 $node_paris->append_conf(
 	'postgresql.conf', qq(
 	subtransaction_buffers = 32
 ));
+$node_paris->disable_waiting_standbys();
 $node_paris->start;
 
 # Switch to synchronous replication in both directions
@@ -230,14 +232,14 @@ note "Now paris is primary and london is standby";
 ($cur_primary, $cur_standby) = ($node_paris, $node_london);
 $cur_primary_name = $cur_primary->name;
 
-# because london is not running at this point, we can't use syncrep commit
-# on this command
-$psql_rc = $cur_primary->psql('postgres',
-	"SET synchronous_commit = off; COMMIT PREPARED 'xact_009_10'");
+# we already configure paris node for non wait, so even if london node
+# isn`t running at this point we can prepare commit
+$psql_rc = $cur_primary->psql('postgres', "COMMIT PREPARED 'xact_009_10'");
 is($psql_rc, '0', "Restore of prepared transaction on promoted standby");
 
 # restart old primary as new standby
 $cur_standby->enable_streaming($cur_primary);
+$cur_standby->disable_waiting_standbys();
 $cur_standby->start;
 
 ###############################################################################
@@ -247,14 +249,20 @@ $cur_standby->start;
 # consistent.
 ###############################################################################
 
+# here we need to enable sycnrep commit because current primary has been configured
+# for non waiting
 $cur_primary->psql(
 	'postgres', "
 	BEGIN;
+	SET synchronous_commit = on;
 	INSERT INTO t_009_tbl VALUES (23, 'issued to ${cur_primary_name}');
 	SAVEPOINT s1;
 	INSERT INTO t_009_tbl VALUES (24, 'issued to ${cur_primary_name}');
 	PREPARE TRANSACTION 'xact_009_11';");
 $cur_primary->stop;
+
+# configure cur standby to be primary
+$cur_standby->enable_waiting_standbys();
 $cur_standby->restart;
 $cur_standby->promote;
 
@@ -297,6 +305,8 @@ $cur_standby->promote;
 # change roles
 note "Now paris is primary and london is standby";
 ($cur_primary, $cur_standby) = ($node_paris, $node_london);
+$cur_primary->enable_waiting_standbys();
+$cur_primary->restart;
 $cur_primary_name = $cur_primary->name;
 
 $cur_primary->psql(
@@ -308,6 +318,7 @@ is($psql_out, '1',
 
 # restart old primary as new standby
 $cur_standby->enable_streaming($cur_primary);
+$cur_standby->disable_waiting_standbys();
 $cur_standby->start;
 
 $cur_primary->psql('postgres', "COMMIT PREPARED 'xact_009_12'");
