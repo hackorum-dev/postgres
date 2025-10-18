@@ -4099,12 +4099,24 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 			 * be switched to "potential" ones at the next moment. So, it's
 			 * basically useless to report "sync" or "potential" as their sync
 			 * states. We report just "quorum" for them.
+			 *
+			 * A question mark at the end of the role name indicates that the
+			 * sending LSN cannot be calculated on this synchronous standby or
+			 * on its standbys.
 			 */
 			if (priority == 0)
 				values[10] = CStringGetTextDatum("async");
 			else if (is_sync_standby)
-				values[10] = SyncRepConfig->syncrep_method == SYNC_REP_PRIORITY ?
-					CStringGetTextDatum("sync") : CStringGetTextDatum("quorum");
+			{
+				if (XLogRecPtrIsDefaultSending(flush))
+					values[10] = SyncRepConfig->syncrep_method == SYNC_REP_PRIORITY ?
+						CStringGetTextDatum("sync?") : CStringGetTextDatum("quorum?");
+				else
+					values[10] = SyncRepConfig->syncrep_method == SYNC_REP_PRIORITY ?
+						CStringGetTextDatum("sync") : CStringGetTextDatum("quorum");
+			}
+			else if (XLogRecPtrIsDefaultSending(flush))
+				values[10] = CStringGetTextDatum("potential?");
 			else
 				values[10] = CStringGetTextDatum("potential");
 
