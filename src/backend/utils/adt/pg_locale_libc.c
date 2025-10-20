@@ -250,7 +250,9 @@ static char
 char_tolower_libc(unsigned char ch, pg_locale_t locale)
 {
 	Assert(pg_database_encoding_max_length() == 1);
-	return tolower_l(ch, locale->lt);
+	if (isupper_l(ch, locale->lt))
+		return tolower_l(ch, locale->lt);
+	return ch;
 }
 
 static bool
@@ -448,7 +450,12 @@ strlower_libc_sb(char *dest, size_t destsize, const char *src, ssize_t srclen,
 		for (p = dest; *p; p++)
 		{
 			if (locale->is_default)
-				*p = pg_tolower((unsigned char) *p);
+			{
+				if (*p >= 'A' && *p <= 'Z')
+					*p += 'a' - 'A';
+				else if (IS_HIGHBIT_SET(*p) && isupper_l(*p, loc))
+					*p = tolower_l((unsigned char) *p, loc);
+			}
 			else
 				*p = tolower_l((unsigned char) *p, loc);
 		}
@@ -533,9 +540,19 @@ strtitle_libc_sb(char *dest, size_t destsize, const char *src, ssize_t srclen,
 			if (locale->is_default)
 			{
 				if (wasalnum)
-					*p = pg_tolower((unsigned char) *p);
+				{
+					if (*p >= 'A' && *p <= 'Z')
+						*p += 'a' - 'A';
+					else if (IS_HIGHBIT_SET(*p) && isupper_l(*p, loc))
+						*p = tolower_l((unsigned char) *p, loc);
+				}
 				else
-					*p = pg_toupper((unsigned char) *p);
+				{
+					if (*p >= 'a' && *p <= 'z')
+						*p += 'A' - 'a';
+					else if (IS_HIGHBIT_SET(*p) && islower_l(*p, loc))
+						*p = toupper_l((unsigned char) *p, loc);
+				}
 			}
 			else
 			{
@@ -631,7 +648,12 @@ strupper_libc_sb(char *dest, size_t destsize, const char *src, ssize_t srclen,
 		for (p = dest; *p; p++)
 		{
 			if (locale->is_default)
-				*p = pg_toupper((unsigned char) *p);
+			{
+				if (*p >= 'a' && *p <= 'z')
+					*p += 'A' - 'a';
+				else if (IS_HIGHBIT_SET(*p) && islower_l(*p, loc))
+					*p = toupper_l((unsigned char) *p, loc);
+			}
 			else
 				*p = toupper_l((unsigned char) *p, loc);
 		}

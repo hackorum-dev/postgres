@@ -1,22 +1,15 @@
 /*-------------------------------------------------------------------------
  *
  * pgstrcasecmp.c
- *	   Portable SQL-like case-independent comparisons and conversions.
+ *	   Portable case-independent comparisons and conversions.
  *
- * SQL99 specifies Unicode-aware case normalization, which we don't yet
- * have the infrastructure for.  Instead we use tolower() to provide a
- * locale-aware translation.  However, there are some locales where this
- * is not right either (eg, Turkish may do strange things with 'i' and
- * 'I').  Our current compromise is to use tolower() for characters with
- * the high bit set, and use an ASCII-only downcasing for 7-bit
- * characters.
+ * SQL99 specifies Unicode-aware case normalization, but for historical
+ * reasons this was never fully supported. Just uses ASCII-only case
+ * conversion.
  *
- * NB: this code should match downcase_truncate_identifier() in scansup.c.
- *
- * We also provide strict ASCII-only case conversion functions, which can
+ * We also provide explcit ASCII-only case conversion functions, which can
  * be used to implement C/POSIX case folding semantics no matter what the
  * C library thinks the locale is.
- *
  *
  * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  *
@@ -44,13 +37,9 @@ pg_strcasecmp(const char *s1, const char *s2)
 		{
 			if (ch1 >= 'A' && ch1 <= 'Z')
 				ch1 += 'a' - 'A';
-			else if (IS_HIGHBIT_SET(ch1) && isupper(ch1))
-				ch1 = tolower(ch1);
 
 			if (ch2 >= 'A' && ch2 <= 'Z')
 				ch2 += 'a' - 'A';
-			else if (IS_HIGHBIT_SET(ch2) && isupper(ch2))
-				ch2 = tolower(ch2);
 
 			if (ch1 != ch2)
 				return (int) ch1 - (int) ch2;
@@ -77,13 +66,9 @@ pg_strncasecmp(const char *s1, const char *s2, size_t n)
 		{
 			if (ch1 >= 'A' && ch1 <= 'Z')
 				ch1 += 'a' - 'A';
-			else if (IS_HIGHBIT_SET(ch1) && isupper(ch1))
-				ch1 = tolower(ch1);
 
 			if (ch2 >= 'A' && ch2 <= 'Z')
 				ch2 += 'a' - 'A';
-			else if (IS_HIGHBIT_SET(ch2) && isupper(ch2))
-				ch2 = tolower(ch2);
 
 			if (ch1 != ch2)
 				return (int) ch1 - (int) ch2;
@@ -98,16 +83,13 @@ pg_strncasecmp(const char *s1, const char *s2, size_t n)
  * Fold a character to upper case.
  *
  * Unlike some versions of toupper(), this is safe to apply to characters
- * that aren't lower case letters.  Note however that the whole thing is
- * a bit bogus for multibyte character sets.
+ * that aren't lower case letters.
  */
 unsigned char
 pg_toupper(unsigned char ch)
 {
 	if (ch >= 'a' && ch <= 'z')
 		ch += 'A' - 'a';
-	else if (IS_HIGHBIT_SET(ch) && islower(ch))
-		ch = toupper(ch);
 	return ch;
 }
 
@@ -115,16 +97,13 @@ pg_toupper(unsigned char ch)
  * Fold a character to lower case.
  *
  * Unlike some versions of tolower(), this is safe to apply to characters
- * that aren't upper case letters.  Note however that the whole thing is
- * a bit bogus for multibyte character sets.
+ * that aren't upper case letters.
  */
 unsigned char
 pg_tolower(unsigned char ch)
 {
 	if (ch >= 'A' && ch <= 'Z')
 		ch += 'a' - 'A';
-	else if (IS_HIGHBIT_SET(ch) && isupper(ch))
-		ch = tolower(ch);
 	return ch;
 }
 
