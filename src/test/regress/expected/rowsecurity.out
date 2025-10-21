@@ -417,6 +417,10 @@ ALTER TABLE document ENABLE ROW LEVEL SECURITY;
 -- user's security level must be higher than or equal to document's
 CREATE POLICY p1 ON document AS PERMISSIVE
     USING (dlevel <= (SELECT seclv FROM uaccount WHERE pguser = current_user));
+CREATE POLICY p1 ON document AS PERMISSIVE USING (true); --error
+ERROR:  policy "p1" for table "document" already exists
+CREATE POLICY IF NOT EXISTS p1 ON document AS PERMISSIVE USING (true); --notice, no-op
+NOTICE:  policy "p1" for table "document" already exists
 -- try to create a policy of bogus type
 CREATE POLICY p1 ON document AS UGLY
     USING (dlevel <= (SELECT seclv FROM uaccount WHERE pguser = current_user));

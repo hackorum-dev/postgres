@@ -278,6 +278,9 @@ ALTER TABLE document ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p1 ON document AS PERMISSIVE
     USING (dlevel <= (SELECT seclv FROM uaccount WHERE pguser = current_user));
 
+CREATE POLICY p1 ON document AS PERMISSIVE USING (true); --error
+CREATE POLICY IF NOT EXISTS p1 ON document AS PERMISSIVE USING (true); --notice, no-op
+
 -- try to create a policy of bogus type
 CREATE POLICY p1 ON document AS UGLY
     USING (dlevel <= (SELECT seclv FROM uaccount WHERE pguser = current_user));
