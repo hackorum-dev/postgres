@@ -22,25 +22,12 @@ print <<EOS;
 #include "common/unicode_norm.h"
 
 /*
- * Normalization quick check entry for codepoint.  We use a bit field
- * here to save space.
+ * Normalization quick check entry for codepoint.
  */
-typedef struct
+enum
 {
-	unsigned int codepoint:21;
-	signed int	quickcheck:4;	/* really UnicodeNormalizationQC */
-} pg_unicode_normprops;
-
-/* Typedef for hash function on quick check table */
-typedef int (*qc_hash_func) (const void *key);
-
-/* Information for quick check lookup with perfect hash function */
-typedef struct
-{
-	const pg_unicode_normprops *normprops;
-	qc_hash_func	hash;
-	int		num_normprops;
-} pg_unicode_norminfo;
+	UNICODE_QC_MAYBE = 0x03
+};
 EOS
 
 foreach my $line (<ARGV>)
@@ -77,49 +64,92 @@ foreach my $prop (sort keys %data)
 	# big.  See also unicode_is_normalized_quickcheck().
 	next if $prop eq "NFD_QC" || $prop eq "NFKD_QC";
 
-	print "\n";
-	print
-	  "static const pg_unicode_normprops UnicodeNormProps_${prop}[] = {\n";
-
 	my %subdata = %{ $data{$prop} };
 	my @cp_packed;
-	foreach my $cp (sort { $a <=> $b } keys %subdata)
+	my @uint8;
+	my @codepoints = sort { $a <=> $b } keys %subdata;
+	foreach my $cp (@codepoints)
 	{
 		my $qc;
 		if ($subdata{$cp} eq 'N')
 		{
-			$qc = 'UNICODE_NORM_QC_NO';
+			# According to the specification, NO = 0.
+			# Temporarily set NO to 0x01. According to the code, this will be
+			# converted to 0x00.
+			$qc = 0x01;
 		}
 		elsif ($subdata{$cp} eq 'M')
 		{
-			$qc = 'UNICODE_NORM_QC_MAYBE';
+			# According to the specification, MAYBE should be equal to -1.
+			# We cannot store this value in the first two bits. Therefore,
+			# in our table, MAYBE = 0x03 (the first two bits are raised).
+			$qc = 0x03;
 		}
 		else
 		{
 			die;
 		}
-		printf "\t{0x%04X, %s},\n", $cp, $qc;
 
-		# Save the bytes as a string in network order.
-		push @cp_packed, pack('N', $cp);
+		# Determine the byte index and bit position in that byte.
+		# Each code point occupies 2 bits, as there are only two possible
+		# values ('N' and 'M').
+		my $index = ($cp * 2) / 8;
+		my $bit = ($cp * 2) % 8;
+
+		# Set the required 2 bits to the desired position.
+		$uint8[$index] = 0 unless exists $uint8[$index];
+		$uint8[$index] |= $qc << $bit;
+	}
+
+	my $length = scalar @uint8;
+	my $min = sprintf("0x%06X", $codepoints[0]);
+	my $max = sprintf("0x%06X", $codepoints[-1]);
+
+	# Print an enum declaration defining the range boundaries for each forms.
+	print "\nenum\n";
+	print "{\n";
+	print "	UNICODE_${prop}_MIN = $min,\n";
+	print "	UNICODE_${prop}_MAX = $max\n";
+	print "};\n";
+
+	print "\n";
+	print "static const uint8 UnicodeNormProps_${prop}[$length] = {\n\t";
+
+	foreach my $idx (0 .. $#uint8)
+	{
+		my $value = $uint8[$idx];
+		$value = 0x00 unless defined $value;
+
+		# If the value is not shown in the table, it is equal to YES = 1.
+		# We go through the even bits (4 in total in each value) and change
+		# 0x00 to 0x01 (YES), 0x01 to 0x00 (NO).
+		foreach my $pos (0 .. 3)
+		{
+			my $bit = $pos * 2;
+			my $val = $value >> $bit;
+
+			$val &= ~(((2**8) - 1) << 2);
+
+			if ($val == 0x00)
+			{
+				$value |= 1 << $bit;
+			}
+			elsif ($val == 0x01)
+			{
+				$value &= ~(1 << $bit);
+			}
+		}
+
+		print $value;
+
+		if ($idx == $#uint8)
+		{
+			print "\n";
+			last;
+		}
+
+		print(($idx + 1) % 15 ? ", " : ",\n\t");
 	}
 
 	print "};\n";
-
-	# Emit the definition of the perfect hash function.
-	my $funcname = $prop . '_hash_func';
-	my $f = PerfectHash::generate_hash_function(\@cp_packed, $funcname,
-		fixed_key_length => 4);
-	printf "\n/* Perfect hash function for %s */", $prop;
-	print "\nstatic $f\n";
-
-	# Emit the structure that wraps the hash lookup information into
-	# one variable.
-	printf "/* Hash lookup information for %s */", $prop;
-	printf "\nstatic const pg_unicode_norminfo ";
-	printf "UnicodeNormInfo_%s = {\n", $prop;
-	printf "\tUnicodeNormProps_%s,\n", $prop;
-	printf "\t%s,\n", $funcname;
-	printf "\t%d\n", scalar @cp_packed;
-	printf "};\n";
 }

@@ -539,59 +539,61 @@ unicode_normalize(UnicodeNormalizationForm form, const char32_t *input)
 /* We only need this in the backend. */
 #ifndef FRONTEND
 
-static const pg_unicode_normprops *
-qc_hash_lookup(char32_t ch, const pg_unicode_norminfo *norminfo)
-{
-	int			h;
-	uint32		hashkey;
-
-	/*
-	 * Compute the hash function. The hash key is the codepoint with the bytes
-	 * in network order.
-	 */
-	hashkey = pg_hton32(ch);
-	h = norminfo->hash(&hashkey);
-
-	/* An out-of-range result implies no match */
-	if (h < 0 || h >= norminfo->num_normprops)
-		return NULL;
-
-	/*
-	 * Since it's a perfect hash, we need only match to the specific codepoint
-	 * it identifies.
-	 */
-	if (ch != norminfo->normprops[h].codepoint)
-		return NULL;
-
-	/* Success! */
-	return &norminfo->normprops[h];
-}
-
 /*
  * Look up the normalization quick check character property
  */
 static UnicodeNormalizationQC
 qc_is_allowed(UnicodeNormalizationForm form, char32_t ch)
 {
-	const pg_unicode_normprops *found = NULL;
+	uint8		found;
+	uint32		uc;
+
+	/*
+	 * Multiply the code point by 2, since each character is represented by
+	 * two bits in the bit table (to encode three states: YES, NO, MAYBE).
+	 */
+	uc = ch * 2;
 
 	switch (form)
 	{
 		case UNICODE_NFC:
-			found = qc_hash_lookup(ch, &UnicodeNormInfo_NFC_QC);
+			if (ch < UNICODE_NFC_QC_MIN || ch > UNICODE_NFC_QC_MAX)
+			{
+				return UNICODE_NORM_QC_YES;
+			}
+			found = UnicodeNormProps_NFC_QC[uc / 8];
 			break;
 		case UNICODE_NFKC:
-			found = qc_hash_lookup(ch, &UnicodeNormInfo_NFKC_QC);
+			if (ch < UNICODE_NFKC_QC_MIN || ch > UNICODE_NFKC_QC_MAX)
+			{
+				return UNICODE_NORM_QC_YES;
+			}
+			found = UnicodeNormProps_NFKC_QC[uc / 8];
 			break;
 		default:
+			found = 0;
 			Assert(false);
 			break;
 	}
 
-	if (found)
-		return found->quickcheck;
-	else
-		return UNICODE_NORM_QC_YES;
+	/*
+	 * Shift the bits to the lower bits to extract a 2-bit value for a
+	 * specific character (uc % 8 gives the position of the bit within the
+	 * byte).
+	 */
+	found >>= uc % 8;
+	/* Extract the two bits we need, which are the QC value. */
+	found &= ~(PG_UINT8_MAX << 2);
+
+	/*
+	 * According to the specification, MAYBE should be equal to -1. We cannot
+	 * store this value in the first two bits. Therefore, in our table, MAYBE
+	 * = 0x03 (the first two bits are raised).
+	 */
+	if (found == UNICODE_QC_MAYBE)
+		return UNICODE_NORM_QC_MAYBE;
+
+	return found;
 }
 
 UnicodeNormalizationQC
