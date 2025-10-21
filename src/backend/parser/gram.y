@@ -6073,7 +6073,7 @@ AlterUserMappingStmt: ALTER USER MAPPING FOR auth_ident SERVER name alter_generi
 /*****************************************************************************
  *
  *		QUERIES:
- *				CREATE POLICY name ON table
+ *				CREATE POLICY [IF NOT EXISTS] name ON table
  *					[AS { PERMISSIVE | RESTRICTIVE } ]
  *					[FOR { SELECT | INSERT | UPDATE | DELETE } ]
  *					[TO role, ...]
@@ -6091,12 +6091,29 @@ CreatePolicyStmt:
 					CreatePolicyStmt *n = makeNode(CreatePolicyStmt);
 
 					n->policy_name = $3;
+					n->if_not_exists = false;
 					n->table = $5;
 					n->permissive = $6;
 					n->cmd_name = $7;
 					n->roles = $8;
 					n->qual = $9;
 					n->with_check = $10;
+					$$ = (Node *) n;
+				}
+		|	CREATE POLICY IF_P NOT EXISTS name ON qualified_name RowSecurityDefaultPermissive
+				RowSecurityDefaultForCmd RowSecurityDefaultToRole
+				RowSecurityOptionalExpr RowSecurityOptionalWithCheck
+				{
+					CreatePolicyStmt *n = makeNode(CreatePolicyStmt);
+
+					n->policy_name = $6;
+					n->if_not_exists = true;
+					n->table = $8;
+					n->permissive = $9;
+					n->cmd_name = $10;
+					n->roles = $11;
+					n->qual = $12;
+					n->with_check = $13;
 					$$ = (Node *) n;
 				}
 		;
