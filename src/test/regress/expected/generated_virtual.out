@@ -1159,12 +1159,12 @@ ALTER TABLE gtest27
  b      | bigint |           |          | 
  x      | bigint |           |          | generated always as ((a + b) * 2)
 
--- Ideally you could just do this, but not today (and should x change type?):
+-- Also possible this way:
 ALTER TABLE gtest27
-  ALTER COLUMN a TYPE float8,
-  ALTER COLUMN b TYPE float8;  -- error
-ERROR:  cannot alter type of a column used by a generated column
-DETAIL:  Column "a" is used by generated column "x".
+  ALTER COLUMN a TYPE bigint,
+  ALTER COLUMN b TYPE bigint,
+  ALTER COLUMN x TYPE bigint,
+  ALTER COLUMN x SET EXPRESSION AS ((a + b) * 2);
 \d gtest27
                   Table "generated_virtual_tests.gtest27"
  Column |  Type  | Collation | Nullable |              Default              
@@ -1172,6 +1172,33 @@ DETAIL:  Column "a" is used by generated column "x".
  a      | bigint |           |          | 
  b      | bigint |           |          | 
  x      | bigint |           |          | generated always as ((a + b) * 2)
+
+-- So, you can change a column's type as long as any dependent generated
+-- column already has a set expression defined:
+ALTER TABLE gtest27
+  ALTER COLUMN a TYPE float8,
+  ALTER COLUMN x SET EXPRESSION AS ((a::int + b) * 2);
+\d gtest27
+                            Table "generated_virtual_tests.gtest27"
+ Column |       Type       | Collation | Nullable |                  Default                   
+--------+------------------+-----------+----------+--------------------------------------------
+ a      | double precision |           |          | 
+ b      | bigint           |           |          | 
+ x      | bigint           |           |          | generated always as ((a::integer + b) * 2)
+
+-- Ideally you could just do this, but not today (and should x change type?):
+ALTER TABLE gtest27
+  ALTER COLUMN a TYPE float8,
+  ALTER COLUMN b TYPE float8;  -- error
+ERROR:  cannot alter type of a column used by a generated column
+DETAIL:  Column "a" is used by generated column "x".
+\d gtest27
+                            Table "generated_virtual_tests.gtest27"
+ Column |       Type       | Collation | Nullable |                  Default                   
+--------+------------------+-----------+----------+--------------------------------------------
+ a      | double precision |           |          | 
+ b      | bigint           |           |          | 
+ x      | bigint           |           |          | generated always as ((a::integer + b) * 2)
 
 SELECT * FROM gtest27;
  a | b  | x  

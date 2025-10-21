@@ -739,7 +739,7 @@ static List *GetParentedForeignKeyRefs(Relation partition);
 static void ATDetachCheckNoForeignKeyRefs(Relation partition);
 static char GetAttributeCompression(Oid atttypid, const char *compression);
 static char GetAttributeStorage(Oid atttypid, const char *storagemode);
-
+static bool ColumnHasSetExpression(const AlteredTableInfo *tab, const char *colname);
 
 /* ----------------------------------------------------------------
  *		DefineRelation
@@ -15197,18 +15197,27 @@ RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
 						 * generated column elsewhere in the same table.
 						 * Changing the type/generated expression of a column
 						 * that is used by a generated column is not allowed
-						 * by SQL standard, so just punt for now.  It might be
-						 * doable with some thinking and effort.
+						 * by SQL standard, so just punt for now. However, if
+						 * the generated column has a SET EXPRESSION, then we
+						 * can allow the column type change.
 						 */
 						if (subtype == AT_AlterColumnType)
-							ereport(ERROR,
-									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-									 errmsg("cannot alter type of a column used by a generated column"),
-									 errdetail("Column \"%s\" is used by generated column \"%s\".",
-											   colName,
-											   get_attname(col.objectId,
-														   col.objectSubId,
-														   false))));
+						{
+							const char *genColName;
+
+							Assert(rel->rd_rel->oid == col.objectId);
+							genColName = get_attname(col.objectId,
+													 col.objectSubId,
+													 false);
+
+							if (!ColumnHasSetExpression(tab, genColName))
+								ereport(ERROR,
+										(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+										 errmsg("cannot alter type of a column used by a generated column"),
+										 errdetail("Column \"%s\" is used by generated column \"%s\".",
+												   colName,
+												   genColName)));
+						}
 					}
 					break;
 				}
@@ -22046,4 +22055,24 @@ GetAttributeStorage(Oid atttypid, const char *storagemode)
 						format_type_be(atttypid))));
 
 	return cstorage;
+}
+
+/*
+ * Check if column has set expression in the ALTER TABLE command.
+ */
+static bool
+ColumnHasSetExpression(const AlteredTableInfo *tab, const char *colname)
+{
+	ListCell   *lc;
+
+	foreach(lc, tab->subcmds[AT_PASS_SET_EXPRESSION])
+	{
+		AlterTableCmd *cmd = (AlterTableCmd *) lfirst(lc);
+
+		if (strcmp(cmd->name, colname) == 0)
+		{
+			return true;
+		}
+	}
+	return false;
 }

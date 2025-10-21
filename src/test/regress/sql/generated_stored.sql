@@ -544,6 +544,19 @@ ALTER TABLE gtest27
   ALTER COLUMN b TYPE bigint,
   ADD COLUMN x bigint GENERATED ALWAYS AS ((a + b) * 2) STORED;
 \d gtest27
+-- Also possible this way:
+ALTER TABLE gtest27
+  ALTER COLUMN a TYPE bigint,
+  ALTER COLUMN b TYPE bigint,
+  ALTER COLUMN x TYPE bigint,
+  ALTER COLUMN x SET EXPRESSION AS ((a + b) * 2);
+\d gtest27
+-- So, you can change a column's type as long as any dependent generated
+-- column already has a set expression defined:
+ALTER TABLE gtest27
+  ALTER COLUMN a TYPE float8,
+  ALTER COLUMN x SET EXPRESSION AS ((a::int + b) * 2);
+\d gtest27
 -- Ideally you could just do this, but not today (and should x change type?):
 ALTER TABLE gtest27
   ALTER COLUMN a TYPE float8,
