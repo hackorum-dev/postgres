@@ -50,7 +50,7 @@
 
 
 
-#ifdef USE_OPENSSL
+#ifdef STRONG_RANDOM_SOURCE_OPENSSL
 
 #include <openssl/rand.h>
 
@@ -92,7 +92,7 @@ pg_strong_random(void *buf, size_t len)
 	return false;
 }
 
-#elif WIN32
+#elif WIN32						/* STRONG_RANDOM_SOURCE_SYSTEM and WIN32 */
 
 #include <wincrypt.h>
 /*
@@ -134,7 +134,7 @@ pg_strong_random(void *buf, size_t len)
 	return false;
 }
 
-#else							/* not USE_OPENSSL or WIN32 */
+#else							/* STRONG_RANDOM_SOURCE_SYSTEM and not WIN32 */
 
 /*
  * Without OpenSSL or Win32 support, just read /dev/urandom ourselves.

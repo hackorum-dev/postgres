@@ -1531,6 +1531,26 @@ build-postgresql:
        </listitem>
       </varlistentry>
 
+      <varlistentry id="configure-option-with-strong-random">
+       <term><option>--with-strong-random=<replaceable>NAME</replaceable></option></term>
+       <listitem>
+        <para>
+         Specifies the imlementation used to generate cryptographically secure random
+         data. Valid values are <literal>system</literal> and <literal>openssl</literal>.
+        </para>
+        <para>
+         <productname>PostgreSQL</productname> relies on strong random numbers in
+         security-sensitive operations. For example, random values are used when generating
+         salts for <literal>SCRAM-SHA-256</literal> password storage and when creating
+         UUIDs. By default, the implementation is chosen based on the
+         <option>--with-ssl</option> option: if <productname>PostgreSQL</productname>
+         is built with <productname>OpenSSL</productname> support,
+         <productname>OpenSSL</productname>'s random generator is used; otherwise, the
+         operating system native secure random facility is used. This option overrides
+         that behavior and forces use of the specified source.
+        </para>
+       </listitem>
+      </varlistentry>
      </variablelist>
 
    </sect3>
@@ -3053,6 +3073,26 @@ ninja install
         The value must be a power of 2 between 1 and 64 (kilobytes).
        </para>
       </listitem>
+     </varlistentry>
+
+     <varlistentry id="configure-strong-random-meson">
+      <term><option>-Dstrong_random={ auto | system | openssl }</option></term>
+       <listitem>
+        <para>
+         Specifies the imlementation used to generate cryptographically secure random
+         data.
+        </para>
+        <para>
+         <productname>PostgreSQL</productname> relies on strong random numbers in
+         security-sensitive operations. For example, random values are used when generating
+         salts for <literal>SCRAM-SHA-256</literal> password storage and when creating
+         UUIDs. Default to auto and the implementation will be chosen based on the
+         <option>-Dssl</option> option: if <productname>PostgreSQL</productname>
+         is built with <productname>OpenSSL</productname> support,
+         <productname>OpenSSL</productname>'s random generator is used; otherwise, the
+         operating system native secure random facility is used.
+        </para>
+       </listitem>
      </varlistentry>
     </variablelist>
    </sect3>

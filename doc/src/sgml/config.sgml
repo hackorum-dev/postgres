@@ -12124,6 +12124,25 @@ dynamic_library_path = '/usr/local/lib/postgresql:$libdir'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-strong-random-source" xreflabel="strong_random_source">
+      <term><varname>strong_random_source</varname> (<type>string</type>)
+      <indexterm>
+       <primary><varname>strong_random_source</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Reports the name of implementation used to generate cryptographically secure
+        random data: <literal>system</literal> or <literal>openssl</literal>. It
+        is determined when building the server. See more information see
+        <link linkend="configure-option-with-strong-random"><option>--with-strong-random
+        </option></link> for installation with Autoconf or
+        <link linkend="configure-strong-random-meson"><option>-Dstrong_random</option>
+        </link> for installation with Meson.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-wal-block-size" xreflabel="wal_block_size">
       <term><varname>wal_block_size</varname> (<type>integer</type>)
       <indexterm>

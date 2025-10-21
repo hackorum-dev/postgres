@@ -2784,6 +2784,13 @@
   assign_hook => 'assign_stats_fetch_consistency',
 },
 
+{ name => 'strong_random_source', type => 'string', context => 'PGC_INTERNAL', group => 'PRESET_OPTIONS',
+  short_desc => 'Shows implementation used for generating strong random number.',
+  flags => 'GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE',
+  variable => 'strong_random_source',
+  boot_val => 'DEFAULT_STRONG_RANDOM_SOURCE',
+},
+
 { name => 'subtransaction_buffers', type => 'int', context => 'PGC_POSTMASTER', group => 'RESOURCES_MEM',
   short_desc => 'Sets the size of the dedicated buffer pool used for the subtransaction cache.',
   long_desc => '0 means use a fraction of "shared_buffers".',

@@ -621,6 +621,13 @@ static int	effective_wal_level = WAL_LEVEL_REPLICA;
 static bool data_checksums;
 static bool integer_datetimes;
 
+#ifdef STRONG_RANDOM_SOURCE_OPENSSL
+#define DEFAULT_STRONG_RANDOM_SOURCE "openssl"
+#else
+#define DEFAULT_STRONG_RANDOM_SOURCE "system"
+#endif
+static char *strong_random_source = DEFAULT_STRONG_RANDOM_SOURCE;
+
 #ifdef USE_ASSERT_CHECKING
 #define DEFAULT_ASSERT_ENABLED true
 #else

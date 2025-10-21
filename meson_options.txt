@@ -142,6 +142,10 @@ option('pltcl', type: 'feature', value: 'auto',
 option('tcl_version', type: 'string', value: 'tcl',
   description: 'Tcl version')
 
+option('strong_random', type: 'combo', choices: ['auto', 'system', 'openssl'],
+  value: 'auto',
+  description: 'Select strong random number source')
+
 option('readline', type: 'feature', value: 'auto',
   description: 'Use GNU Readline or BSD Libedit for editing')
 

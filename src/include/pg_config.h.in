@@ -660,6 +660,12 @@
 /* Define to 1 if strerror_r() returns int. */
 #undef STRERROR_R_INT
 
+/* Define to 1 to use system's native source for strong random number generation  */
+#undef STRONG_RANDOM_SOURCE_SYSTEM
+
+/* Define to 1 to use OpenSSL libary for strong random number generation */
+#undef STRONG_RANDOM_SOURCE_OPENSSL
+
 /* Define to 1 to use ARMv8 CRC Extension. */
 #undef USE_ARMV8_CRC32C
 

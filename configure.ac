@@ -2287,25 +2287,51 @@ else
   SHMEM_IMPLEMENTATION="src/backend/port/win32_shmem.c"
 fi
 
-# Select random number source. If a TLS library is used then it will be the
-# first choice, else the native platform sources (Windows API or /dev/urandom)
-# will be used.
-AC_MSG_CHECKING([which random number source to use])
-if test x"$with_ssl" = x"openssl" ; then
-  AC_MSG_RESULT([OpenSSL])
-elif test x"$PORTNAME" = x"win32" ; then
-  AC_MSG_RESULT([Windows native])
-elif test x"$cross_compiling" = x"yes"; then
-  AC_MSG_RESULT([assuming /dev/urandom])
-else
-  AC_MSG_RESULT([/dev/urandom])
-  AC_CHECK_FILE([/dev/urandom], [], [])
+#
+# Select strong random number source.
+#
 
-  if test x"$ac_cv_file__dev_urandom" = x"no" ; then
-    AC_MSG_ERROR([
+PGAC_ARG_REQ(with, strong-random, [NAME], [set strong random number source (system,openssl)],
+             [strong_random=$withval])
+
+# If nothing is specified to --with-strong-random, the default value is chosen depends
+# on OpenSSL availability.
+if test x"$strong_random" = x"" ; then
+  if test x"$with_ssl" = x"openssl" ; then
+    strong_random=openssl
+  else
+    strong_random=system
+  fi
+elif test x"$strong_random" != x"openssl" -a x"$strong_random" != x"system" ; then
+  AC_MSG_ERROR([--with-strong-random must sepcify one of system or openssl])
+fi
+
+if test "$strong_random" = openssl -a x"$with_ssl" != x"openssl" ; then
+  AC_MSG_ERROR([OpenSSL library is required for random number generation])
+fi
+
+AC_MSG_CHECKING([which random number source to use])
+if test "$strong_random" = openssl ; then
+  AC_MSG_RESULT([OpenSSL])
+  AC_DEFINE([STRONG_RANDOM_SOURCE_OPENSSL], 1, [Define to 1 to use OpenSSL libary for strong random number generation])
+else
+  # Select native platform source sources (Windows API or /dev/urandom) will
+  # be used.
+  if test x"$PORTNAME" = x"win32" ; then
+    AC_MSG_RESULT([Windows native])
+  elif test x"$cross_compiling" = x"yes"; then
+    AC_MSG_RESULT([assuming /dev/urandom])
+  else
+    AC_MSG_RESULT([/dev/urandom])
+    AC_CHECK_FILE([/dev/urandom], [], [])
+
+    if test x"$ac_cv_file__dev_urandom" = x"no" ; then
+      AC_MSG_ERROR([
 no source of strong random numbers was found
 PostgreSQL can use OpenSSL, native Windows API or /dev/urandom as a source of random numbers.])
+    fi
   fi
+  AC_DEFINE([STRONG_RANDOM_SOURCE_SYSTEM], 1, [Define to 1 to use system native source for strong random number generation])
 fi
 
 # If not set in template file, set bytes to use libc memset()

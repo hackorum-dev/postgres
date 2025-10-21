@@ -2576,7 +2576,29 @@ if not have_optimized_crc
   cdata.set('USE_SLICING_BY_8_CRC32C', 1)
 endif
 
+###############################################################
+# Select strong random number source.
+###############################################################
+rand_src_opt = get_option('strong_random')
+if rand_src_opt == 'auto'
+  if ssl.found()
+    rand_src_opt = 'openssl'
+  else
+    rand_src_opt = 'system'
+  endif
+endif
 
+if rand_src_opt == 'openssl' and not ssl.found()
+  error('OpenSSL library must be enabled for strong random number generation')
+endif
+
+if rand_src_opt == 'system'
+  cdata.set('STRONG_RANDOM_SOURCE_SYSTEM', 1,
+            description: 'Define to 1 to use system native source for strong random number generation')
+else
+  cdata.set('STRONG_RANDOM_SOURCE_OPENSSL', 1,
+            description: 'Define to 1 to use OpenSSL libary for strong random number generation')
+endif
 
 ###############################################################
 # Other CPU specific stuff

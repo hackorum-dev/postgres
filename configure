@@ -887,6 +887,7 @@ with_zstd
 with_ssl
 with_openssl
 enable_largefile
+with_strong_random
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1606,6 +1607,8 @@ Optional Packages:
   --with-zstd             build with ZSTD support
   --with-ssl=LIB          use LIB for SSL/TLS support (openssl)
   --with-openssl          obsolete spelling of --with-ssl=openssl
+  --with-strong-random=NAME
+                          set strong random number source (system,openssl)
 
 Some influential environment variables:
   PG_TEST_EXTRA
@@ -18400,24 +18403,69 @@ $as_echo "#define USE_WIN32_SHARED_MEMORY 1" >>confdefs.h
   SHMEM_IMPLEMENTATION="src/backend/port/win32_shmem.c"
 fi
 
-# Select random number source. If a TLS library is used then it will be the
-# first choice, else the native platform sources (Windows API or /dev/urandom)
-# will be used.
+#
+# Select strong random number source.
+#
+
+
+
+
+# Check whether --with-strong-random was given.
+if test "${with_strong_random+set}" = set; then :
+  withval=$with_strong_random;
+  case $withval in
+    yes)
+      as_fn_error $? "argument required for --with-strong-random option" "$LINENO" 5
+      ;;
+    no)
+      as_fn_error $? "argument required for --with-strong-random option" "$LINENO" 5
+      ;;
+    *)
+      strong_random=$withval
+      ;;
+  esac
+
+fi
+
+
+
+# If nothing is specified to --with-strong-random, the default value is chosen depends
+# on OpenSSL availability.
+if test x"$strong_random" = x"" ; then
+  if test x"$with_ssl" = x"openssl" ; then
+    strong_random=openssl
+  else
+    strong_random=system
+  fi
+elif test x"$strong_random" != x"openssl" -a x"$strong_random" != x"system" ; then
+  as_fn_error $? "--with-strong-random must sepcify one of system or openssl" "$LINENO" 5
+fi
+
+if test "$strong_random" = openssl -a x"$with_ssl" != x"openssl" ; then
+  as_fn_error $? "OpenSSL library is required for random number generation" "$LINENO" 5
+fi
+
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking which random number source to use" >&5
 $as_echo_n "checking which random number source to use... " >&6; }
-if test x"$with_ssl" = x"openssl" ; then
+if test "$strong_random" = openssl ; then
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: OpenSSL" >&5
 $as_echo "OpenSSL" >&6; }
-elif test x"$PORTNAME" = x"win32" ; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: Windows native" >&5
-$as_echo "Windows native" >&6; }
-elif test x"$cross_compiling" = x"yes"; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: assuming /dev/urandom" >&5
-$as_echo "assuming /dev/urandom" >&6; }
+
+$as_echo "#define STRONG_RANDOM_SOURCE_OPENSSL 1" >>confdefs.h
+
 else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: /dev/urandom" >&5
+  # Select native platform source sources (Windows API or /dev/urandom) will
+  # be used.
+  if test x"$PORTNAME" = x"win32" ; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: Windows native" >&5
+$as_echo "Windows native" >&6; }
+  elif test x"$cross_compiling" = x"yes"; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: assuming /dev/urandom" >&5
+$as_echo "assuming /dev/urandom" >&6; }
+  else
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: /dev/urandom" >&5
 $as_echo "/dev/urandom" >&6; }
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for /dev/urandom" >&5
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for /dev/urandom" >&5
 $as_echo_n "checking for /dev/urandom... " >&6; }
 if ${ac_cv_file__dev_urandom+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -18437,11 +18485,15 @@ if test "x$ac_cv_file__dev_urandom" = xyes; then :
 fi
 
 
-  if test x"$ac_cv_file__dev_urandom" = x"no" ; then
-    as_fn_error $? "
+    if test x"$ac_cv_file__dev_urandom" = x"no" ; then
+      as_fn_error $? "
 no source of strong random numbers was found
 PostgreSQL can use OpenSSL, native Windows API or /dev/urandom as a source of random numbers." "$LINENO" 5
+    fi
   fi
+
+$as_echo "#define STRONG_RANDOM_SOURCE_SYSTEM 1" >>confdefs.h
+
 fi
 
 # If not set in template file, set bytes to use libc memset()
