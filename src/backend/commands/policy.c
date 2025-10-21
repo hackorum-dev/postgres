@@ -641,6 +641,57 @@ CreatePolicy(CreatePolicyStmt *stmt)
 										RangeVarCallbackForPolicy,
 										stmt);
 
+	/* Open pg_policy catalog */
+	pg_policy_rel = table_open(PolicyRelationId, RowExclusiveLock);
+
+	/* Set key - policy's relation id. */
+	ScanKeyInit(&skey[0],
+				Anum_pg_policy_polrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(table_id));
+
+	/* Set key - policy's name. */
+	ScanKeyInit(&skey[1],
+				Anum_pg_policy_polname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(stmt->policy_name));
+
+	sscan = systable_beginscan(pg_policy_rel,
+							   PolicyPolrelidPolnameIndexId, true, NULL, 2,
+							   skey);
+
+	policy_tuple = systable_getnext(sscan);
+
+	/* Complain or bail out if the policy name already exists for the table */
+	if (HeapTupleIsValid(policy_tuple))
+	{
+		/*
+		 * If the policy already exists and the user specified "IF NOT EXISTS",
+		 * bail out with a NOTICE.
+		 */
+		if (stmt->if_not_exists)
+		{
+			/*
+			 * Since policy objects aren't members of extensions no need for
+			 * checkMembershipInCurrentExtension here.
+			 */
+			ereport(NOTICE,
+					errcode(ERRCODE_DUPLICATE_OBJECT),
+					errmsg("policy \"%s\" for table \"%s\" already exists",
+						   stmt->policy_name, get_rel_name(table_id)));
+
+			systable_endscan(sscan);
+			table_close(pg_policy_rel, RowExclusiveLock);
+
+			return InvalidObjectAddress;
+		}
+		else
+			ereport(ERROR,
+					errcode(ERRCODE_DUPLICATE_OBJECT),
+					errmsg("policy \"%s\" for table \"%s\" already exists",
+						   stmt->policy_name, get_rel_name(table_id)));
+	}
+
 	/* Open target_table to build quals. No additional lock is necessary. */
 	target_table = relation_open(table_id, NoLock);
 
@@ -669,34 +720,6 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	/* Fix up collation information */
 	assign_expr_collations(qual_pstate, qual);
 	assign_expr_collations(with_check_pstate, with_check_qual);
-
-	/* Open pg_policy catalog */
-	pg_policy_rel = table_open(PolicyRelationId, RowExclusiveLock);
-
-	/* Set key - policy's relation id. */
-	ScanKeyInit(&skey[0],
-				Anum_pg_policy_polrelid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(table_id));
-
-	/* Set key - policy's name. */
-	ScanKeyInit(&skey[1],
-				Anum_pg_policy_polname,
-				BTEqualStrategyNumber, F_NAMEEQ,
-				CStringGetDatum(stmt->policy_name));
-
-	sscan = systable_beginscan(pg_policy_rel,
-							   PolicyPolrelidPolnameIndexId, true, NULL, 2,
-							   skey);
-
-	policy_tuple = systable_getnext(sscan);
-
-	/* Complain if the policy name already exists for the table */
-	if (HeapTupleIsValid(policy_tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("policy \"%s\" for table \"%s\" already exists",
-						stmt->policy_name, RelationGetRelationName(target_table))));
 
 	policy_id = GetNewOidWithIndex(pg_policy_rel, PolicyOidIndexId,
 								   Anum_pg_policy_oid);

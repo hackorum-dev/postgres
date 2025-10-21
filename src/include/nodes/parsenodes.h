@@ -3213,6 +3213,7 @@ typedef struct CreatePolicyStmt
 {
 	NodeTag		type;
 	char	   *policy_name;	/* Policy's name */
+	bool		if_not_exists;	/* just do nothing if it already exists? */
 	RangeVar   *table;			/* the table name the policy applies to */
 	char	   *cmd_name;		/* the command name the policy applies to */
 	bool		permissive;		/* restrictive or permissive policy */
