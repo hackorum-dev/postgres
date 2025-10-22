@@ -40,14 +40,16 @@ CLIENTS := client client-dn client-revoked client_ext client-long \
 # To add a new non-standard certificate, add it to SPECIAL_CERTS and then add
 # a recipe for creating it to the "Special-case certificates" section below.
 #
-SPECIAL_CERTS := ssl/server-rsapss.crt
+SPECIAL_CERTS := ssl/server-rsapss.crt \
+	ssl/server-mldsa65.crt
 
 # Likewise for non-standard keys
 SPECIAL_KEYS := ssl/server-password.key \
 	ssl/client-der.key \
 	ssl/client-encrypted-pem.key \
 	ssl/client-encrypted-der.key \
-	ssl/server-rsapss.key
+	ssl/server-rsapss.key \
+	ssl/server-mldsa65.key
 
 #
 # These files are just concatenations of other files. You can add new ones to
@@ -101,6 +103,10 @@ ssl/root_ca.crt: ssl/root_ca.key conf/root_ca.config
 ssl/server-rsapss.crt: ssl/server-rsapss.key conf/server-rsapss.config
 	$(OPENSSL) req -new -x509 -config conf/server-rsapss.config -key $< -out $@
 
+# Certificate using ML-DSA-65 algorithm. Also self-signed.
+ssl/server-mldsa65.crt: ssl/server-mldsa65.key conf/server-mldsa65.config
+	$(OPENSSL) req -new -x509 -config conf/server-mldsa65.config -key $< -out $@
+
 #
 # Special-case keys
 #
@@ -114,6 +120,10 @@ ssl/server-password.key: ssl/server-cn-only.key
 # Key that uses the RSA-PSS algorithm
 ssl/server-rsapss.key:
 	$(OPENSSL) genpkey -algorithm rsa-pss -out $@
+
+# Key that uses the ML-DSA-65 algorithm
+ssl/server-mldsa65.key:
+	$(OPENSSL) genpkey -algorithm ML-DSA-65 -out $@
 
 # DER-encoded version of client.key
 ssl/client-der.key: ssl/client.key

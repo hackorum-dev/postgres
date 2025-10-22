@@ -171,4 +171,22 @@ if ($supports_rsapss_certs)
 			qr/connection authenticated: identity="ssltestuser" method=scram-sha-256/
 		]);
 }
+
+# Now test with a server certificate that uses the ML-DSA-65 algorithm.
+# This tests post-quantum cryptography support for channel binding.
+# Requires OpenSSL 3.5+.
+my $supports_mldsa_certs =
+  check_pg_config("#define HAVE_ML_DSA_SUPPORT 1");
+
+if ($supports_mldsa_certs)
+{
+	switch_server_cert($node, certfile => 'server-mldsa65');
+	$node->connect_ok(
+		"$common_connstr user=ssltestuser channel_binding=require",
+		"SCRAM with SSL and channel_binding=require, server certificate uses 'ML-DSA-65'",
+		log_like => [
+			qr/connection authenticated: identity="ssltestuser" method=scram-sha-256/
+		]);
+}
+
 done_testing();

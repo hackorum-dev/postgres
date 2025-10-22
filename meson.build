@@ -1575,6 +1575,15 @@ if sslopt in ['auto', 'openssl']
                 description: 'Define to 1 to build with OpenSSL support. (-Dssl=openssl)')
       cdata.set('OPENSSL_API_COMPAT', '0x10101000L',
                 description: 'Define to the OpenSSL API version in use. This avoids deprecation warnings from newer OpenSSL versions.')
+      
+      # Check for ML-DSA support (OpenSSL 3.5+)
+      if cc.has_header_symbol('openssl/obj_mac.h', 'NID_ML_DSA_65',
+                              args: test_c_args,
+                              dependencies: ssl_int)
+        cdata.set('HAVE_ML_DSA_SUPPORT', 1,
+                  description: 'Define if OpenSSL supports ML-DSA')
+      endif
+      
       ssl_library = 'openssl'
     else
       ssl = not_found_dep

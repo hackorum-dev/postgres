@@ -1394,6 +1394,11 @@ if test "$with_ssl" = openssl ; then
   AC_CHECK_FUNCS([SSL_CTX_set_cert_cb])
   # Function introduced in OpenSSL 1.1.1, not in LibreSSL.
   AC_CHECK_FUNCS([X509_get_signature_info SSL_CTX_set_num_tickets SSL_CTX_set_keylog_callback])
+  # Check for ML-DSA support (OpenSSL 3.5+)
+  AC_CHECK_DECL([NID_ML_DSA_65],
+    [AC_DEFINE([HAVE_ML_DSA_SUPPORT], 1, [Define if OpenSSL supports ML-DSA])],
+    [],
+    [#include <openssl/obj_mac.h>])
   AC_DEFINE([USE_OPENSSL], 1, [Define to 1 to build with OpenSSL support. (--with-ssl=openssl)])
 elif test "$with_ssl" != no ; then
   AC_MSG_ERROR([--with-ssl must specify openssl])
