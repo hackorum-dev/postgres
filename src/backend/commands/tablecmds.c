@@ -8896,12 +8896,12 @@ ATPrepDropExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recurs
 	 * tables, somewhat similar to how DROP COLUMN does it, so that the
 	 * resulting state can be properly dumped and restored.
 	 */
-	if (!recurse &&
-		find_inheritance_children(RelationGetRelid(rel), lockmode))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("ALTER TABLE / DROP EXPRESSION must be applied to child tables too")));
-
+	if (!recurse && !recursing &&
+    find_inheritance_children(RelationGetRelid(rel), lockmode))
+    ereport(ERROR,
+            (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+             errmsg("ALTER TABLE / DROP EXPRESSION must be applied to child tables too"),
+             errhint("Do not specify the ONLY keyword.")));
 	/*
 	 * Cannot drop generation expression from inherited columns.
 	 */
