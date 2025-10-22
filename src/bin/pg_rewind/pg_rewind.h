@@ -35,13 +35,23 @@ extern uint64 fetch_done;
 extern void extractPageMap(const char *datadir, XLogRecPtr startpoint,
 						   int tliIndex, XLogRecPtr endpoint,
 						   const char *restoreCommand);
-extern void findLastCheckpoint(const char *datadir, XLogRecPtr forkptr,
+
+typedef enum WalEndStat
+{
+    WAL_END_MEANINGFUL,
+    WAL_END_SHUTDOWN_ONLY,
+	WAL_END_EMPTY
+} WalEndStat;
+
+extern WalEndStat findLastCheckpoint(const char *datadir, XLogRecPtr forkptr,
 							   int tliIndex,
 							   XLogRecPtr *lastchkptrec, TimeLineID *lastchkpttli,
 							   XLogRecPtr *lastchkptredo,
 							   const char *restoreCommand);
 extern XLogRecPtr readOneRecord(const char *datadir, XLogRecPtr ptr,
 								int tliIndex, const char *restoreCommand);
+
+bool control_diff_is_benign(void *src, void *tgt);
 
 /* in pg_rewind.c */
 extern void progress_report(bool finished);

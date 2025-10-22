@@ -23,6 +23,7 @@
 #include "fe_utils/archive.h"
 #include "filemap.h"
 #include "pg_rewind.h"
+#include "storage/standbydefs.h"
 
 /*
  * RmgrNames is an array of the built-in resource manager names, to make error
@@ -49,6 +50,10 @@ typedef struct XLogPageReadPrivate
 	const char *restoreCommand;
 	int			tliIndex;
 } XLogPageReadPrivate;
+
+static ControlFileData ControlFile_target;
+static ControlFileData ControlFile_source;
+
 
 static int	SimpleXLogPageRead(XLogReaderState *xlogreader,
 							   XLogRecPtr targetPagePtr,
@@ -162,9 +167,70 @@ readOneRecord(const char *datadir, XLogRecPtr ptr, int tliIndex,
 }
 
 /*
+ * is_shutdown_only_sequence(xlogreader, endptr)
+ *
+ * An XLogReaderState positioned at the end-of-wal (endptr),
+ * walk backwards a small number of records to determine whether the
+ * tail consists solely of zero-or-more RUNNING_XACTS (RM_STANDBY_ID)
+ * optionally followed by a single CHECKPOINT_SHUTDOWN (RM_XLOG_ID).
+ *
+ * Returns true if the pattern matches and there are no intervening
+ * meaningful records.
+ */
+
+static bool
+is_shutdown_only_sequence(XLogReaderState *xlogreader, XLogRecPtr endptr)
+{
+    XLogRecPtr  searchptr = endptr;
+    int         seen_running_xacts = 0;
+    int         max_steps = 8;
+
+    while (max_steps-- > 0)
+    {
+        char       *errormsg;
+        XLogRecord *record;
+
+        XLogBeginRead(xlogreader, searchptr);
+        record = XLogReadRecord(xlogreader, &errormsg);
+
+        if (record == NULL)
+            return false;
+
+        /* fetch RMID and info */
+		uint8 rmid;
+		uint8 info;
+        rmid = XLogRecGetRmid(xlogreader);
+        info = XLogRecGetInfo(xlogreader) & ~XLR_INFO_MASK;
+
+        if (rmid == RM_STANDBY_ID && info == XLOG_RUNNING_XACTS)
+        {
+            seen_running_xacts++;
+            searchptr = record->xl_prev;
+            continue;
+        }
+
+        if (rmid == RM_XLOG_ID &&
+            (info == XLOG_CHECKPOINT_SHUTDOWN || info == XLOG_CHECKPOINT_ONLINE))
+        {
+            /* Only shutdown checkpoints with preceding RUNNING_XACTS allowed */
+            if (info == XLOG_CHECKPOINT_SHUTDOWN)
+                return true;
+            else
+                return false; /* online checkpoint → meaningful */
+        }
+
+        /* any other record type means there were changes */
+        return false;
+    }
+
+    /* we hit step cap without decisive answer → play safe */
+    return false;
+}
+
+/*
  * Find the previous checkpoint preceding given WAL location.
  */
-void
+WalEndStat
 findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
 				   XLogRecPtr *lastchkptrec, TimeLineID *lastchkpttli,
 				   XLogRecPtr *lastchkptredo, const char *restoreCommand)
@@ -210,13 +276,18 @@ findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
 
 		if (record == NULL)
 		{
-			if (errormsg)
-				pg_fatal("could not find previous WAL record at %X/%08X: %s",
-						 LSN_FORMAT_ARGS(searchptr),
-						 errormsg);
-			else
-				pg_fatal("could not find previous WAL record at %X/%08X",
-						 LSN_FORMAT_ARGS(searchptr));
+    		/* Check for benign shutdown checkpoint difference */
+    		if (control_diff_is_benign(&ControlFile_source, &ControlFile_target))
+    		{
+        		fprintf(stderr,
+                		"pg_rewind: benign shutdown checkpoint difference detected, skipping rewind\n");
+        		return InvalidXLogRecPtr;  /* or other appropriate return to skip rewind */
+    		}
+
+    		/* Otherwise, fatal error */
+    		pg_fatal("could not find previous WAL record at %X/%X: %s",
+             LSN_FORMAT_ARGS(searchptr),
+             errormsg ? errormsg : "unknown error");
 		}
 
 		/* Detect if a new WAL file has been opened */
