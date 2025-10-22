@@ -302,6 +302,7 @@ extern void errsave_finish(struct Node *context,
 
 extern void pre_format_elog_string(int errnumber, const char *domain);
 extern char *format_elog_string(const char *fmt,...) pg_attribute_printf(1, 2);
+extern char *format_elog_string_internal(const char *fmt,...) pg_attribute_printf(1, 2);
 
 
 /* Support for attaching context information to error reports */

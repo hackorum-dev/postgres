@@ -1692,6 +1692,37 @@ format_elog_string(const char *fmt,...)
 	return edata->message;
 }
 
+/*
+ * This is exactly like format_elog_string() except that strings passed to
+ * format_elog_string_internal are not translated, and are customarily left
+ * out of the internationalization message dictionary. This should be used
+ * when the passed strings have already been translated.
+ */
+char *
+format_elog_string_internal(const char *fmt,...)
+{
+	ErrorData	errdata;
+	ErrorData  *edata;
+	MemoryContext oldcontext;
+
+	/* Initialize a mostly-dummy error frame */
+	edata = &errdata;
+	MemSet(edata, 0, sizeof(ErrorData));
+	/* the default text domain is the backend's */
+	edata->domain = save_format_domain ? save_format_domain : PG_TEXTDOMAIN("postgres");
+	/* set the errno to be used to interpret %m */
+	edata->saved_errno = save_format_errnumber;
+
+	oldcontext = MemoryContextSwitchTo(ErrorContext);
+
+	edata->message_id = fmt;
+	EVALUATE_MESSAGE(edata->domain, message, false, false);
+
+	MemoryContextSwitchTo(oldcontext);
+
+	return edata->message;
+}
+
 
 /*
  * Actual output of the top-of-stack error message

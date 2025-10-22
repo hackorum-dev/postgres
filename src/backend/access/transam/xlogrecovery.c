@@ -4769,10 +4769,16 @@ check_primary_slot_name(char **newval, void **extra, GucSource source)
 		!ReplicationSlotValidateNameInternal(*newval, false, &err_code,
 											 &err_msg, &err_hint))
 	{
+		/*
+		 * Use GUC_check_errdetail_internal() and GUC_check_errhint_internal()
+		 * instead of GUC_check_errdetail() and GUC_check_errhint(), since the
+		 * messages from ReplicationSlotValidateNameInternal() are already
+		 * translated. This avoids double translation.
+		 */
 		GUC_check_errcode(err_code);
-		GUC_check_errdetail("%s", err_msg);
+		GUC_check_errdetail_internal("%s", err_msg);
 		if (err_hint != NULL)
-			GUC_check_errhint("%s", err_hint);
+			GUC_check_errhint_internal("%s", err_hint);
 		return false;
 	}
 

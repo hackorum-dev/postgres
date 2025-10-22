@@ -510,4 +510,22 @@ extern void GUC_check_errcode(int sqlerrcode);
 	pre_format_elog_string(errno, TEXTDOMAIN), \
 	GUC_check_errhint_string = format_elog_string
 
+/*
+ * These are exactly like GUC_check_errmsg/errdtail/errhint except that
+ * strings passed to them are not translated, and are customarily left
+ * out of the internationalization message dictionary. This should be used
+ * when the passed strings have already been translated.
+ */
+#define GUC_check_errmsg_internal \
+	pre_format_elog_string(errno, TEXTDOMAIN), \
+	GUC_check_errmsg_string = format_elog_string_internal
+
+#define GUC_check_errdetail_internal \
+	pre_format_elog_string(errno, TEXTDOMAIN), \
+	GUC_check_errdetail_string = format_elog_string_internal
+
+#define GUC_check_errhint_internal \
+	pre_format_elog_string(errno, TEXTDOMAIN), \
+	GUC_check_errhint_string = format_elog_string_internal
+
 #endif							/* GUC_H */
