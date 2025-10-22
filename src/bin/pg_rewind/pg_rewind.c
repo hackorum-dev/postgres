@@ -116,6 +116,44 @@ usage(const char *progname)
 	printf(_("%s home page: <%s>\n"), PACKAGE_NAME, PACKAGE_URL);
 }
 
+/*
+ * Compare two ControlFileData structs.
+ * Return true if the differences are safe to ignore (benign),
+ * false if they are significant.
+ *
+ */
+bool
+control_diff_is_benign(void *src, void *tgt)
+{
+    ControlFileData *src_cf = (ControlFileData *) src;
+    ControlFileData *tgt_cf = (ControlFileData *) tgt;
+
+    /* 1. Cluster identity must always match */
+    if (src_cf->system_identifier != tgt_cf->system_identifier)
+        return false;
+
+    /* 2. Check timeline consistency */
+    if (src_cf->checkPointCopy.ThisTimeLineID != tgt_cf->checkPointCopy.ThisTimeLineID)
+        return false;
+
+    /* 3. Transaction ID progression */
+    if (src_cf->checkPointCopy.nextXid.value != tgt_cf->checkPointCopy.nextXid.value)
+        return false;
+
+    /* 4. OID progression */
+    if (src_cf->checkPointCopy.nextOid != tgt_cf->checkPointCopy.nextOid)
+        return false;
+
+    /* 5. MultiXact progression */
+    if (src_cf->checkPointCopy.nextMulti != tgt_cf->checkPointCopy.nextMulti)
+        return false;
+
+    /* 6. Checkpoint LSN should not go backwards */
+    if (src_cf->checkPoint < tgt_cf->checkPoint)
+        return false;
+
+    return true;
+}
 
 int
 main(int argc, char **argv)
@@ -440,21 +478,71 @@ main(int argc, char **argv)
 		}
 
 		/*
-		 * Check for the possibility that the target is in fact a direct
-		 * ancestor of the source. In that case, there is no divergent history
-		 * in the target that needs rewinding.
-		 */
-		if (target_wal_endrec > divergerec)
-		{
-			rewind_needed = true;
-		}
-		else
-		{
-			/* the last common checkpoint record must be part of target WAL */
-			Assert(target_wal_endrec == divergerec);
+      	 * Conservative check: determine whether we can safely skip rewind
+    	 * when the target's WAL tail only contains shutdown-only records.
+     	 */
+		
+    	WalEndStat end_status;
+		end_status = findLastCheckpoint(datadir_target, target_wal_endrec, lastcommontliIndex,
+                                    &chkptrec, &chkpttli, &chkptredo,
+                                    restore_command);
 
-			rewind_needed = false;
-		}
+    	/* Initialize safety flags and controlfile pointers */
+    	bool src_crc_ok = false;
+    	bool tgt_crc_ok = false;
+    	ControlFileData *src_ctrl = NULL;
+    	ControlFileData *tgt_ctrl = NULL;
+
+    	if (end_status == WAL_END_SHUTDOWN_ONLY)
+    	{
+        	pg_log_info("benign control file difference detected; skipping rewind");
+    		exit(0);
+
+#ifdef USE_LIBPQ
+        	if (connstr_source)
+        	{
+            	/* If fetching remotely (pg_rewind --source-server=...) */
+            	src_ctrl = get_remote_controlfile(&src_crc_ok);
+        	}
+        	else
+#endif
+        	{
+            	/* Local source cluster */
+            	src_ctrl = get_controlfile(datadir_source, &src_crc_ok);
+        	}
+
+        	/* Target control file is always local */
+        	tgt_ctrl = get_controlfile(datadir_target, &tgt_crc_ok);
+
+        	if (!src_ctrl || !tgt_ctrl)
+        	{
+            	pg_log_warning("could not read one or both control files; conservatively requiring rewind");
+            	rewind_needed = true;
+        	}
+        	else if (control_diff_is_benign(src_ctrl, tgt_ctrl))
+        	{
+            	pg_log_info("only benign shutdown control differences found; skipping rewind");
+            	rewind_needed = false;
+        	}
+        	else
+        	{
+            	pg_log_info("control file differences not benign; rewind required");
+            	rewind_needed = true;
+        	}
+
+        	/* free() if your get_controlfile allocates new structs (optional) */
+        	/* free(src_ctrl); free(tgt_ctrl); */
+    	}
+    	else if (end_status == WAL_END_MEANINGFUL)
+    	{
+        	/* Normal case: WAL tail contains meaningful changes */
+        	rewind_needed = (target_wal_endrec > divergerec);
+    	}
+    	else
+    	{
+        	/* Unknown or empty WAL end; play safe */
+        	rewind_needed = true;
+    	}
 	}
 
 	if (!rewind_needed)
