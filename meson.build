@@ -2911,6 +2911,7 @@ func_checks = [
   ['getopt_long', {'dependencies': [getopt_dep, gnugetopt_dep], 'skip': always_replace_getopt_long}],
   ['getpeereid'],
   ['getpeerucred'],
+  ['getrandom'],
   ['inet_aton'],
   ['inet_pton'],
   ['kqueue'],

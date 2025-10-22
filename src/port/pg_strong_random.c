@@ -40,7 +40,8 @@
  *
  * 1. OpenSSL's RAND_bytes()
  * 2. Windows' CryptGenRandom() function
- * 3. /dev/urandom
+ * 3. glibc's getrandom() function
+ * 4. /dev/urandom
  *
  * Returns true on success, and false if none of the sources
  * were available. NB: It is important to check the return value!
@@ -134,12 +135,42 @@ pg_strong_random(void *buf, size_t len)
 	return false;
 }
 
-#else							/* STRONG_RANDOM_SOURCE_SYSTEM and not WIN32 */
+#elif HAVE_GETRANDOM			/* STRONG_RANDOM_SOURCE_SYSTEM and
+								 * HAVE_GETRANDOM */
+#include <sys/random.h>
 
-/*
- * Without OpenSSL or Win32 support, just read /dev/urandom ourselves.
- */
+void
+pg_strong_random_init(void)
+{
+	/* No initialization needed */
+}
 
+bool
+pg_strong_random(void *buf, size_t len)
+{
+	char	   *p = buf;
+	ssize_t		res;
+
+	while (len)
+	{
+		/* Get random data from the urandom source in blocking mode */
+		res = getrandom(p, len, 0);
+		if (res <= 0)
+		{
+			if (errno == EINTR)
+				continue;		/* interrupted by signal, just retry */
+
+			return false;
+		}
+
+		p += res;
+		len -= res;
+	}
+
+	return true;
+}
+
+#else							/* not OpenSSL, WIN32, or HAVE_GETRANDOM */
 void
 pg_strong_random_init(void)
 {

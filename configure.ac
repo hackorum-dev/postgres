@@ -1781,6 +1781,7 @@ AC_CHECK_FUNCS(m4_normalize([
 	getauxval
 	getifaddrs
 	getpeerucred
+	getrandom
 	inet_pton
 	kqueue
 	localeconv_l
@@ -2319,6 +2320,8 @@ else
   # be used.
   if test x"$PORTNAME" = x"win32" ; then
     AC_MSG_RESULT([Windows native])
+  elif test x"$ac_cv_func_getrandom" = x"yes" ; then
+    AC_MSG_RESULT(getrandom)
   elif test x"$cross_compiling" = x"yes"; then
     AC_MSG_RESULT([assuming /dev/urandom])
   else
@@ -2328,7 +2331,7 @@ else
     if test x"$ac_cv_file__dev_urandom" = x"no" ; then
       AC_MSG_ERROR([
 no source of strong random numbers was found
-PostgreSQL can use OpenSSL, native Windows API or /dev/urandom as a source of random numbers.])
+PostgreSQL can use OpenSSL, native Windows API, getrandom, or /dev/urandom as a source of random numbers.])
     fi
   fi
   AC_DEFINE([STRONG_RANDOM_SOURCE_SYSTEM], 1, [Define to 1 to use system native source for strong random number generation])
