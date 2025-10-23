@@ -2043,7 +2043,6 @@ parseInput(PGconn *conn)
  * PQisBusy
  *	 Return true if PQgetResult would block waiting for input.
  */
-
 int
 PQisBusy(PGconn *conn)
 {
