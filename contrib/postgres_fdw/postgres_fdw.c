@@ -76,6 +76,8 @@ enum FdwScanPrivateIndex
 	FdwScanPrivateSelectSql,
 	/* Integer list of attribute numbers retrieved by the SELECT */
 	FdwScanPrivateRetrievedAttrs,
+	/* Param ID for remote table OID for target rel (-1 if none) */
+	FdwScanPrivateTableOidParamId,
 	/* Integer representing the desired fetch_size */
 	FdwScanPrivateFetchSize,
 
@@ -174,6 +176,9 @@ typedef struct PgFdwScanState
 	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
 
 	int			fetch_size;		/* number of tuples per fetch */
+
+	int			tableoid_param_id;	/* Param ID for remote table OID */
+	bool		set_tableoid_param; /* Do we need to set the Param? */
 } PgFdwScanState;
 
 /*
@@ -200,6 +205,7 @@ typedef struct PgFdwModifyState
 
 	/* info about parameters for prepared statement */
 	AttrNumber	ctidAttno;		/* attnum of input resjunk ctid column */
+	AttrNumber	tableoidAttno;	/* attnum of input resjunk tableoid column */
 	int			p_nums;			/* number of parameters to transmit */
 	FmgrInfo   *p_flinfo;		/* output conversion functions for them */
 
@@ -473,6 +479,7 @@ static TupleTableSlot **execute_foreign_modify(EState *estate,
 static void prepare_foreign_modify(PgFdwModifyState *fmstate);
 static const char **convert_prep_stmt_params(PgFdwModifyState *fmstate,
 											 ItemPointer tupleid,
+											 Oid tableoid,
 											 TupleTableSlot **slots,
 											 int numSlots);
 static void store_returning_result(PgFdwModifyState *fmstate,
@@ -787,6 +794,23 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	fpinfo->hidden_subquery_rels = NULL;
 	/* Set the relation index. */
 	fpinfo->relation_index = baserel->relid;
+	fpinfo->tableoid_param = NULL;
+
+	/*
+	 * If the table is an UPDATE/DELETE target, the table's reltarget would
+	 * have contained a Param representing the remote table OID of the target;
+	 * get the Param and save a copy of it in fpinfo for use later.
+	 */
+	foreach(lc, baserel->reltarget->exprs)
+	{
+		Param	   *param = (Param *) lfirst(lc);
+		if (IsA(param, Param))
+		{
+			Assert(IS_FOREIGN_PARAM(root, param));
+			fpinfo->tableoid_param = (Param *) copyObject(param);
+			break;
+		}
+	}
 }
 
 /*
@@ -1248,6 +1272,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 	bool		has_final_sort = false;
 	bool		has_limit = false;
 	ListCell   *lc;
+	int			tableoid_param_id = -1;
 
 	/*
 	 * Get FDW private data created by postgresGetForeignUpperPaths(), if any.
@@ -1412,12 +1437,16 @@ postgresGetForeignPlan(PlannerInfo *root,
 	/* Remember remote_exprs for possible use by postgresPlanDirectModify */
 	fpinfo->final_remote_exprs = remote_exprs;
 
+	if (fpinfo->tableoid_param)
+		tableoid_param_id = fpinfo->tableoid_param->paramid;
+
 	/*
 	 * Build the fdw_private list that will be available to the executor.
 	 * Items in the list must match order in enum FdwScanPrivateIndex.
 	 */
-	fdw_private = list_make3(makeString(sql.data),
+	fdw_private = list_make4(makeString(sql.data),
 							 retrieved_attrs,
+							 makeInteger(tableoid_param_id),
 							 makeInteger(fpinfo->fetch_size));
 	if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel))
 		fdw_private = lappend(fdw_private,
@@ -1550,6 +1579,8 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 									 FdwScanPrivateSelectSql));
 	fsstate->retrieved_attrs = (List *) list_nth(fsplan->fdw_private,
 												 FdwScanPrivateRetrievedAttrs);
+	fsstate->tableoid_param_id = intVal(list_nth(fsplan->fdw_private,
+										FdwScanPrivateTableOidParamId));
 	fsstate->fetch_size = intVal(list_nth(fsplan->fdw_private,
 										  FdwScanPrivateFetchSize));
 
@@ -1569,11 +1600,13 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	{
 		fsstate->rel = node->ss.ss_currentRelation;
 		fsstate->tupdesc = RelationGetDescr(fsstate->rel);
+		fsstate->set_tableoid_param = (fsstate->tableoid_param_id >= 0);
 	}
 	else
 	{
 		fsstate->rel = NULL;
 		fsstate->tupdesc = get_tupdesc_for_join_scan_tuples(node);
+		fsstate->set_tableoid_param = false;
 	}
 
 	fsstate->attinmeta = TupleDescGetAttInMetadata(fsstate->tupdesc);
@@ -1605,6 +1638,7 @@ postgresIterateForeignScan(ForeignScanState *node)
 {
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
+	HeapTuple		tuple;
 
 	/*
 	 * In sync mode, if this is the first call after Begin or ReScan, we need
@@ -1631,12 +1665,22 @@ postgresIterateForeignScan(ForeignScanState *node)
 			return ExecClearTuple(slot);
 	}
 
+	tuple = fsstate->tuples[fsstate->next_tuple++];
+
+	if (fsstate->set_tableoid_param)
+	{
+		ExprContext *econtext = node->ss.ps.ps_ExprContext;
+		ParamExecData *prm = &(econtext->ecxt_param_exec_vals[fsstate->tableoid_param_id]);
+
+		prm->execPlan = NULL;
+		prm->value = ObjectIdGetDatum(tuple->t_tableOid);
+		prm->isnull = false;
+	}
+
 	/*
 	 * Return the next tuple.
 	 */
-	ExecStoreHeapTuple(fsstate->tuples[fsstate->next_tuple++],
-					   slot,
-					   false);
+	ExecStoreHeapTuple(tuple, slot, false);
 
 	return slot;
 }
@@ -1751,6 +1795,9 @@ postgresAddForeignUpdateTargets(PlannerInfo *root,
 								Relation target_relation)
 {
 	Var		   *var;
+	Param	   *param;
+	const char *attrname;
+	TargetEntry *tle;
 
 	/*
 	 * In postgres_fdw, what we need is the ctid, same as for a regular table.
@@ -1766,6 +1813,27 @@ postgresAddForeignUpdateTargets(PlannerInfo *root,
 
 	/* Register it as a row-identity column needed by this target rel */
 	add_row_identity_var(root, var, rtindex, "ctid");
+
+	/* Make a Param representing the tableoid value */
+	param = makeNode(Param);
+	param->paramkind = PARAM_EXEC;
+	param->paramtype = OIDOID;
+	param->paramtypmod = -1;
+	param->paramcollid = InvalidOid;
+	param->location = -1;
+	/* paramid will be filled in by fix_foreign_params */
+	param->paramid = -1;
+	param->target_rte = rtindex;
+
+	/* Wrap it in a resjunk TLE with the right name ... */
+	attrname = "remote_tableoid";
+
+	tle = makeTargetEntry((Expr *) param,
+						  list_length(root->processed_tlist) + 1,
+						  pstrdup(attrname),
+						  true);
+	/* ... and add it to the query's targetlist */
+	root->processed_tlist = lappend(root->processed_tlist, tle);
 }
 
 /*
@@ -4013,7 +4081,7 @@ create_foreign_modify(EState *estate,
 		fmstate->attinmeta = TupleDescGetAttInMetadata(tupdesc);
 
 	/* Prepare for output conversion of parameters used in prepared stmt. */
-	n_params = list_length(fmstate->target_attrs) + 1;
+	n_params = list_length(fmstate->target_attrs) + 2;
 	fmstate->p_flinfo = (FmgrInfo *) palloc0(sizeof(FmgrInfo) * n_params);
 	fmstate->p_nums = 0;
 
@@ -4029,6 +4097,20 @@ create_foreign_modify(EState *estate,
 
 		/* First transmittable parameter will be ctid */
 		getTypeOutputInfo(TIDOID, &typefnoid, &isvarlena);
+		fmgr_info(typefnoid, &fmstate->p_flinfo[fmstate->p_nums]);
+		fmstate->p_nums++;
+
+		/* Find the tableoid resjunk column in the subplan's result */
+		fmstate->tableoidAttno = ExecFindJunkAttributeInTlist(subplan->targetlist,
+															  "remote_tableoid");
+
+		if (!AttributeNumberIsValid(fmstate->tableoidAttno))
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 errmsg("could not find junk tableoid column")));
+
+		/* Second transmittable parameter will be tableoid */
+		getTypeOutputInfo(OIDOID, &typefnoid, &isvarlena);
 		fmgr_info(typefnoid, &fmstate->p_flinfo[fmstate->p_nums]);
 		fmstate->p_nums++;
 	}
@@ -4083,6 +4165,7 @@ execute_foreign_modify(EState *estate,
 {
 	PgFdwModifyState *fmstate = (PgFdwModifyState *) resultRelInfo->ri_FdwState;
 	ItemPointer ctid = NULL;
+	Oid			tableoid = InvalidOid;
 	const char **p_values;
 	PGresult   *res;
 	int			n_rows;
@@ -4128,6 +4211,7 @@ execute_foreign_modify(EState *estate,
 	if (operation == CMD_UPDATE || operation == CMD_DELETE)
 	{
 		Datum		datum;
+		Datum		datum2;
 		bool		isNull;
 
 		datum = ExecGetJunkAttribute(planSlots[0],
@@ -4137,10 +4221,22 @@ execute_foreign_modify(EState *estate,
 		if (isNull)
 			elog(ERROR, "ctid is NULL");
 		ctid = (ItemPointer) DatumGetPointer(datum);
+
+		/* Get the tableoid that was passed up as a resjunk column */
+		datum2 = ExecGetJunkAttribute(planSlots[0],
+									  fmstate->tableoidAttno,
+									  &isNull);
+		/* shouldn't ever get a null result... */
+		if (isNull)
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 errmsg("tableoid is NULL")));
+
+		tableoid = DatumGetObjectId(datum2);
 	}
 
 	/* Convert parameters needed by prepared statement to text form */
-	p_values = convert_prep_stmt_params(fmstate, ctid, slots, *numSlots);
+	p_values = convert_prep_stmt_params(fmstate, ctid, tableoid, slots, *numSlots);
 
 	/*
 	 * Execute the prepared statement.
@@ -4245,6 +4341,7 @@ prepare_foreign_modify(PgFdwModifyState *fmstate)
 static const char **
 convert_prep_stmt_params(PgFdwModifyState *fmstate,
 						 ItemPointer tupleid,
+						 Oid tableoid,
 						 TupleTableSlot **slots,
 						 int numSlots)
 {
@@ -4271,6 +4368,16 @@ convert_prep_stmt_params(PgFdwModifyState *fmstate,
 		pindex++;
 	}
 
+	/* 2nd parameter should be tableoid, if it's in use */
+	if (OidIsValid(tableoid))
+	{
+		Assert(tupleid != NULL);
+		/* don't need set_transmission_modes for OID output */
+		p_values[pindex] = OutputFunctionCall(&fmstate->p_flinfo[pindex],
+											  ObjectIdGetDatum(tableoid));
+		pindex++;
+	}
+
 	/* get following parameters from slots */
 	if (slots != NULL && fmstate->target_attrs != NIL)
 	{
@@ -4282,7 +4389,7 @@ convert_prep_stmt_params(PgFdwModifyState *fmstate,
 
 		for (i = 0; i < numSlots; i++)
 		{
-			j = (tupleid != NULL) ? 1 : 0;
+			j = (tupleid != NULL) ? 2 : 0;
 			foreach(lc, fmstate->target_attrs)
 			{
 				int			attnum = lfirst_int(lc);
@@ -4660,6 +4767,17 @@ init_returning_filter(PgFdwDirectModifyState *dmstate,
 	{
 		TargetEntry *tle = (TargetEntry *) lfirst(lc);
 		Var		   *var = (Var *) tle->expr;
+
+		/*
+		 * No need to set the Param for the remote table OID; ignore it.
+		 */
+		if (IsA(var, Param))
+		{
+			/* We would not retrieve the remote table OID anymore. */
+			Assert(!list_member_int(dmstate->retrieved_attrs, i));
+			i++;
+			continue;
+		}
 
 		Assert(IsA(var, Var));
 
@@ -5971,6 +6089,38 @@ foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
 
 	/* Mark that this join can be pushed down safely */
 	fpinfo->pushdown_safe = true;
+
+	/*
+	 * If the join relation contains an UPDATE/DELETE target, either of the
+	 * input relations would have saved the Param representing the remote
+	 * table OID of the target; get the Param and remember it in fpinfo for
+	 * use later.
+	 */
+	if ((root->parse->commandType == CMD_UPDATE ||
+		 root->parse->commandType == CMD_DELETE) &&
+		bms_is_member(root->parse->resultRelation, joinrel->relids))
+	{
+		if (bms_is_member(root->parse->resultRelation,
+						  outerrel->relids))
+		{
+			Assert(fpinfo_o->tableoid_param);
+			fpinfo->tableoid_param = fpinfo_o->tableoid_param;
+		}
+		else
+		{
+			Assert(bms_is_member(root->parse->resultRelation,
+								 innerrel->relids));
+			Assert(fpinfo_i->tableoid_param);
+			fpinfo->tableoid_param = fpinfo_i->tableoid_param;
+		}
+		/*
+		 * Core code should have contained the Param in the join relation's
+		 * reltarget.
+		 */
+		Assert(list_member(joinrel->reltarget->exprs, fpinfo->tableoid_param));
+	}
+	else
+		fpinfo->tableoid_param = NULL;
 
 	/* Get user mapping */
 	if (fpinfo->use_remote_estimate)
@@ -7505,6 +7655,7 @@ make_tuple_from_result_row(PGresult *res,
 	ErrorContextCallback errcallback;
 	MemoryContext oldcontext;
 	ListCell   *lc;
+	Oid tableoid = InvalidOid;
 	int			j;
 
 	Assert(row < PQntuples(res));
@@ -7587,6 +7738,17 @@ make_tuple_from_result_row(PGresult *res,
 				ctid = (ItemPointer) DatumGetPointer(datum);
 			}
 		}
+		else if (i == TableOidAttributeNumber)
+		{
+			/* tableoid */
+			if (valstr != NULL)
+			{
+				Datum		datum;
+
+				datum = DirectFunctionCall1(oidin, CStringGetDatum(valstr));
+				tableoid = DatumGetObjectId(datum);
+			}
+		}
 		errpos.cur_attno = 0;
 
 		j++;
@@ -7617,6 +7779,9 @@ make_tuple_from_result_row(PGresult *res,
 	 */
 	if (ctid)
 		tuple->t_self = tuple->t_data->t_ctid = *ctid;
+
+	if (OidIsValid(tableoid))
+		tuple->t_tableOid = tableoid;
 
 	/*
 	 * Stomp on the xmin, xmax, and cmin fields from the tuple created by
