@@ -1049,7 +1049,7 @@ config_sspi_auth(const char *pgdata, const char *superuser_name)
 	 * ::1 (IPv6 loopback) as a numeric host address string.
 	 */
 	{
-		struct addrinfo *gai_result;
+		struct addrinfo *gai_result = NULL;
 		struct addrinfo hints;
 		WSADATA		wsaData;
 
@@ -1064,6 +1064,9 @@ config_sspi_auth(const char *pgdata, const char *superuser_name)
 
 		have_ipv6 = (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0 &&
 					 getaddrinfo("::1", NULL, &hints, &gai_result) == 0);
+
+		if (gai_result)
+			freeaddrinfo(gai_result);
 	}
 
 	/* Check a Write outcome and report any error. */
