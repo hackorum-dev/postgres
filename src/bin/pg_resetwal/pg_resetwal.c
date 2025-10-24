@@ -650,6 +650,8 @@ read_controlfile(void)
 
 		memcpy(&ControlFile, buffer, sizeof(ControlFile));
 
+		pg_free(buffer);
+
 		/* return false if WAL segment size is not valid */
 		if (!IsValidWalSegSize(ControlFile.xlog_seg_size))
 		{
@@ -662,6 +664,7 @@ read_controlfile(void)
 
 		return true;
 	}
+	pg_free(buffer);
 
 	/* Looks like it's a mess. */
 	pg_log_warning("pg_control exists but is broken or wrong version; ignoring it");
