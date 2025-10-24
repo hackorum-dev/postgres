@@ -1811,14 +1811,19 @@ CreateRestrictedProcess(char *cmd, PROCESS_INFORMATION *processInfo, bool as_ser
 	{
 		write_stderr(_("%s: could not allocate SIDs: error code %lu\n"),
 					 progname, (unsigned long) GetLastError());
+		CloseHandle(origToken);
 		return 0;
 	}
 
 	/* Get list of privileges to remove */
 	delPrivs = GetPrivilegesToDelete(origToken);
 	if (delPrivs == NULL)
+	{
+		CloseHandle(origToken);
+
 		/* Error message already printed */
 		return 0;
+	}
 
 	b = CreateRestrictedToken(origToken,
 							  0,
