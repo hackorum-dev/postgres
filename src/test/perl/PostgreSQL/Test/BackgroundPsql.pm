@@ -272,7 +272,7 @@ sub query
 		\$self->{stdout}, qr/$banner_match/);
 	pump_until(
 		$self->{run}, $self->{timeout},
-		\$self->{stderr}, qr/$banner_match/);
+		\$self->{stderr}, qr/$banner_match/) if $self->{run}->pumpable;
 
 	die "psql query timed out" if $self->{timeout}->is_expired;
 
