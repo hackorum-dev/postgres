@@ -79,6 +79,7 @@
 /* Stores multi-insert data related to a single relation in CopyFrom. */
 typedef struct CopyMultiInsertBuffer
 {
+	TupleTableSlotBatch *batch;
 	TupleTableSlot *slots[MAX_BUFFERED_TUPLES]; /* Array to store tuples */
 	ResultRelInfo *resultRelInfo;	/* ResultRelInfo for 'relid' */
 	BulkInsertState bistate;	/* BulkInsertState for this rel if plain
@@ -371,6 +372,7 @@ CopyMultiInsertBufferInit(ResultRelInfo *rri)
 	buffer->resultRelInfo = rri;
 	buffer->bistate = (rri->ri_FdwRoutine == NULL) ? GetBulkInsertState() : NULL;
 	buffer->nused = 0;
+	buffer->batch = NULL;
 
 	return buffer;
 }
@@ -623,7 +625,7 @@ CopyMultiInsertBufferCleanup(CopyMultiInsertInfo *miinfo,
 							 CopyMultiInsertBuffer *buffer)
 {
 	ResultRelInfo *resultRelInfo = buffer->resultRelInfo;
-	int			i;
+	// int			i;
 
 	/* Ensure buffer was flushed */
 	Assert(buffer->nused == 0);
@@ -640,8 +642,10 @@ CopyMultiInsertBufferCleanup(CopyMultiInsertInfo *miinfo,
 		Assert(buffer->bistate == NULL);
 
 	/* Since we only create slots on demand, just drop the non-null ones. */
-	for (i = 0; i < MAX_BUFFERED_TUPLES && buffer->slots[i] != NULL; i++)
-		ExecDropSingleTupleTableSlot(buffer->slots[i]);
+	// for (i = 0; i < MAX_BUFFERED_TUPLES && buffer->slots[i] != NULL; i++)
+	//	ExecDropSingleTupleTableSlot(buffer->slots[i]);
+	if (buffer->batch != NULL)
+		ExecDropTupleTableSlotBatch(buffer->batch);
 
 	if (resultRelInfo->ri_FdwRoutine == NULL)
 		table_finish_bulk_insert(resultRelInfo->ri_RelationDesc,
@@ -745,8 +749,11 @@ CopyMultiInsertInfoNextFreeSlot(CopyMultiInsertInfo *miinfo,
 
 	nused = buffer->nused;
 
+	if (buffer->batch == NULL)
+		buffer->batch = table_slot_batch_create(rri->ri_RelationDesc, MAX_BUFFERED_TUPLES);
+
 	if (buffer->slots[nused] == NULL)
-		buffer->slots[nused] = table_slot_create(rri->ri_RelationDesc, NULL);
+		buffer->slots[nused] = table_slot_batch_next(buffer->batch);
 	return buffer->slots[nused];
 }
 
