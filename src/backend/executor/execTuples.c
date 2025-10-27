@@ -1437,6 +1437,57 @@ MakeTupleTableSlot(TupleDesc tupleDesc,
 	return slot;
 }
 
+TupleTableSlot *
+MakeTupleTableSlotBatch(TupleDesc tupleDesc,
+						const TupleTableSlotOps *tts_ops)
+{
+	Size		basesz,
+				allocsz;
+	TupleTableSlot *slot;
+
+	basesz = tts_ops->base_slot_size;
+
+	/*
+	 * When a fixed descriptor is specified, we can reduce overhead by
+	 * allocating the entire slot in one go.
+	 */
+	if (tupleDesc)
+		allocsz = MAXALIGN(basesz) +
+			MAXALIGN(tupleDesc->natts * sizeof(Datum)) +
+			MAXALIGN(tupleDesc->natts * sizeof(bool));
+	else
+		allocsz = basesz;
+
+	slot = palloc0(allocsz);
+	/* const for optimization purposes, OK to modify at allocation time */
+	*((const TupleTableSlotOps **) &slot->tts_ops) = tts_ops;
+	slot->type = T_TupleTableSlot;
+	slot->tts_flags |= TTS_FLAG_EMPTY;
+	if (tupleDesc != NULL)
+		slot->tts_flags |= TTS_FLAG_FIXED;
+	slot->tts_tupleDescriptor = tupleDesc;
+	slot->tts_mcxt = CurrentMemoryContext;
+	slot->tts_nvalid = 0;
+
+	if (tupleDesc != NULL)
+	{
+		slot->tts_values = (Datum *)
+			(((char *) slot)
+			 + MAXALIGN(basesz));
+		slot->tts_isnull = (bool *)
+			(((char *) slot)
+			 + MAXALIGN(basesz)
+			 + MAXALIGN(tupleDesc->natts * sizeof(Datum)));
+	}
+
+	/*
+	 * And allow slot type specific initialization.
+	 */
+	slot->tts_ops->init(slot);
+
+	return slot;
+}
+
 /* --------------------------------
  *		ExecAllocTableSlot
  *
@@ -1543,6 +1594,39 @@ ExecDropSingleTupleTableSlot(TupleTableSlot *slot)
 			pfree(slot->tts_isnull);
 	}
 	pfree(slot);
+}
+
+TupleTableSlot *
+MakeSingleTupleTableSlotBatch(TupleDesc tupdesc,
+							  const TupleTableSlotOps *tts_ops)
+{
+	TupleTableSlot *slot = MakeTupleTableSlotBatch(tupdesc, tts_ops);
+
+	return slot;
+}
+
+/* FIXME Does this need to match ExecResetTupleTable's processing of one slot? */
+void
+ExecDropTupleTableSlotBatch(TupleTableSlotBatch *batch)
+{
+	for (int i = 0; i < batch->ttsb_nslots; i++)
+	{
+		TupleTableSlot *slot = batch->ttsb_slots[i];
+
+		Assert(IsA(slot, TupleTableSlot));
+		ExecClearTuple(slot);
+		slot->tts_ops->release(slot);
+		if (!TTS_FIXED(slot))
+		{
+			if (slot->tts_values)
+				pfree(slot->tts_values);
+			if (slot->tts_isnull)
+				pfree(slot->tts_isnull);
+		}
+		pfree(slot);
+	}
+
+	ReleaseTupleDesc(batch->ttsb_tupleDescriptor);
 }
 
 
