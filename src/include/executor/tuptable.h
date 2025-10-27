@@ -241,6 +241,17 @@ struct TupleTableSlotOps
 	MinimalTuple (*copy_minimal_tuple) (TupleTableSlot *slot, Size extra);
 };
 
+/* a batch of tuple table slots */
+typedef struct TupleTableSlotBatch
+{
+	NodeTag		type;
+	int			ttsb_maxslots;
+	int			ttsb_nslots;
+	const TupleTableSlotOps *const ttsb_ops; /* implementation of slot */
+	TupleDesc		ttsb_tupleDescriptor;	/* slot's tuple descriptor */
+	TupleTableSlot *ttsb_slots[FLEXIBLE_ARRAY_MEMBER];
+} TupleTableSlotBatch;
+
 /*
  * Predefined TupleTableSlotOps for various types of TupleTableSlotOps. The
  * same are used to identify the type of a given slot.
@@ -365,6 +376,11 @@ extern void slot_getmissingattrs(TupleTableSlot *slot, int startAttNum,
 								 int lastAttNum);
 extern void slot_getsomeattrs_int(TupleTableSlot *slot, int attnum);
 
+extern TupleTableSlot *MakeTupleTableSlotBatch(TupleDesc tupleDesc,
+											   const TupleTableSlotOps *tts_ops);
+extern TupleTableSlot *MakeSingleTupleTableSlotBatch(TupleDesc tupleDesc,
+													 const TupleTableSlotOps *tts_ops);
+extern void ExecDropTupleTableSlotBatch(TupleTableSlotBatch *batch);
 
 #ifndef FRONTEND
 
