@@ -899,6 +899,9 @@ extern const TupleTableSlotOps *table_slot_callbacks(Relation relation);
  */
 extern TupleTableSlot *table_slot_create(Relation relation, List **reglist);
 
+extern TupleTableSlotBatch *table_slot_batch_create(Relation relation, int maxslots);
+extern TupleTableSlot *table_slot_batch_next(TupleTableSlotBatch *batch);
+
 
 /* ----------------------------------------------------------------------------
  * Table scan functions.
