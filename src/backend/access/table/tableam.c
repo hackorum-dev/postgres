@@ -103,6 +103,42 @@ table_slot_create(Relation relation, List **reglist)
 	return slot;
 }
 
+TupleTableSlotBatch *
+table_slot_batch_create(Relation relation, int maxslots)
+{
+	TupleTableSlotBatch *batch;
+
+	batch = palloc0(offsetof(TupleTableSlotBatch, ttsb_slots) +
+					maxslots * sizeof(TupleTableSlot *));
+
+	batch->ttsb_maxslots = maxslots;
+	batch->ttsb_nslots = 0;
+
+	/* const for optimization purposes, OK to modify at allocation time */
+	*((const TupleTableSlotOps **) &batch->ttsb_ops) = table_slot_callbacks(relation);
+	batch->ttsb_tupleDescriptor = RelationGetDescr(relation);
+
+	PinTupleDesc(batch->ttsb_tupleDescriptor);
+
+	return batch;
+}
+
+TupleTableSlot *
+table_slot_batch_next(TupleTableSlotBatch *batch)
+{
+	TupleTableSlot *slot;
+
+	if (batch->ttsb_nslots == batch->ttsb_maxslots)
+		elog(ERROR, "not enough slots in the batch");
+
+	slot = MakeSingleTupleTableSlotBatch(batch->ttsb_tupleDescriptor,
+										 batch->ttsb_ops);
+
+	batch->ttsb_slots[batch->ttsb_nslots++] = slot;
+
+	return slot;
+}
+
 
 /* ----------------------------------------------------------------------------
  * Table scan functions.
