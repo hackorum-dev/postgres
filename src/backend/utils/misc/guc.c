@@ -83,6 +83,18 @@ char	   *GUC_check_errmsg_string;
 char	   *GUC_check_errdetail_string;
 char	   *GUC_check_errhint_string;
 
+/*
+ * Ratio-based limits for predicate lock promotion.
+ *
+ * These GUCs enable dynamic calculation of predicate lock limits based
+ * on relation size estimates. A value of 0.0 disables ratio limits,
+ * falling back to the static max_predicate_locks_per_relation and
+ * max_predicate_locks_per_page settings.
+ *
+ * When enabled, the effective limit is MIN(static_limit, size * ratio).
+ */
+double max_predicate_locks_per_relation_ratio = 0.0;
+double max_predicate_locks_per_page_ratio = 0.0;
 
 /*
  * Unit conversion tables.
@@ -194,7 +206,6 @@ static const char *const map_old_guc_names[] = {
 	"ssl_ecdh_curve", "ssl_groups",
 	NULL
 };
-
 
 /* Memory context holding all GUC-related data */
 static MemoryContext GUCMemoryContext;

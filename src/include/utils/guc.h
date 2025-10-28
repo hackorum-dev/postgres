@@ -304,6 +304,9 @@ extern PGDLLIMPORT double log_statement_sample_rate;
 extern PGDLLIMPORT double log_xact_sample_rate;
 extern PGDLLIMPORT char *backtrace_functions;
 
+extern PGDLLIMPORT double max_predicate_locks_per_relation_ratio;
+extern PGDLLIMPORT double max_predicate_locks_per_page_ratio;
+
 extern PGDLLIMPORT int temp_file_limit;
 
 extern PGDLLIMPORT int num_temp_buffers;

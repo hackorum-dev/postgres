@@ -200,6 +200,8 @@
 #include "access/parallel.h"
 #include "access/slru.h"
 #include "access/transam.h"
+#include "access/relscan.h"
+#include "access/table.h"
 #include "access/twophase.h"
 #include "access/twophase_rmgr.h"
 #include "access/xact.h"
@@ -382,6 +384,10 @@ int			max_predicate_locks_per_page;	/* in guc_tables.c */
  * fixed upon creation.
  */
 static PredXactList PredXact;
+
+/* GUC variables for predicate lock ratios */
+extern double max_predicate_locks_per_relation_ratio;
+extern double max_predicate_locks_per_page_ratio;
 
 /*
  * This provides a pool of RWConflict data elements to use in conflict lists
@@ -2269,6 +2275,31 @@ DeleteChildTargetLocks(const PREDICATELOCKTARGETTAG *newtargettag)
 }
 
 /*
+ * Get number of blocks for a relation, handling cases where
+ * the relation might not exist or be accessible
+ */
+static BlockNumber 
+RelationGetNumberOfBlocks(Oid relid)
+{
+            Relation rel;
+            BlockNumber nblocks = 0;
+
+            /* Quick exit for invalid relid */
+            if (!OidIsValid(relid))
+                    return 0;
+
+            /* Try to open the relation */
+            rel = relation_open(relid, AccessShareLock);
+            if (rel == NULL)
+                    return 0;
+
+            nblocks = RelationGetNumberOfBlocks(rel);
+            relation_close(rel, AccessShareLock);
+
+            return nblocks;
+}
+
+/*
  * Returns the promotion limit for a given predicate lock target.  This is the
  * max number of descendant locks allowed before promoting to the specified
  * tag. Note that the limit includes non-direct descendants (e.g., both tuples
@@ -2291,13 +2322,43 @@ MaxPredicateChildLocks(const PREDICATELOCKTARGETTAG *tag)
 	switch (GET_PREDICATELOCKTARGETTAG_TYPE(*tag))
 	{
 		case PREDLOCKTAG_RELATION:
-			return max_predicate_locks_per_relation < 0
+                {
+			            int base_limit = max_predicate_locks_per_relation < 0
 				? (max_predicate_locks_per_xact
 				   / (-max_predicate_locks_per_relation)) - 1
 				: max_predicate_locks_per_relation;
+                         
+                         /* Apply ratio limit if configured */
+                         if (max_predicate_locks_per_relation_ratio > 0.0) 
+                         {
+                                 Oid relid = GET_PREDICATELOCKTARGETTAG_RELATION(*tag);
+                                 BlockNumber nblocks = RelationGetNumberOfBlocks(relid);
+
+                                 if (nblocks > 0)
+                                 {
+                                         int ratio_limit = (int) (nblocks * max_predicate_locks_per_relation_ratio);
+                                         return Min(base_limit, ratio_limit);
+                                 }
+                         }
+
+                         return base_limit;
+                }
 
 		case PREDLOCKTAG_PAGE:
-			return max_predicate_locks_per_page;
+                {
+                        int base_limit = max_predicate_locks_per_page;
+
+                        /* Apply ratio limit if configured */
+                        if (max_predicate_locks_per_page_ratio > 0.0)
+                        {
+                                /* For pages, use a conservative estimate */
+                                int estimated_tuples_per_page = 100; /* reasonable default */
+                                int ratio_limit = (int) (estimated_tuples_per_page * max_predicate_locks_per_page_ratio);
+                                return Min(base_limit, ratio_limit);
+                        }
+
+                        return base_limit;
+                }
 
 		case PREDLOCKTAG_TUPLE:
 
@@ -2316,6 +2377,7 @@ MaxPredicateChildLocks(const PREDICATELOCKTARGETTAG *tag)
 
 /*
  * For all ancestors of a newly-acquired predicate lock, increment
+ *
  * their child count in the parent hash table. If any of them have
  * more descendants than their promotion threshold, acquire the
  * coarsest such lock.
