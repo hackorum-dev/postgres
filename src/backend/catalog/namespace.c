@@ -3536,6 +3536,17 @@ CheckSetNamespace(Oid oldNspOid, Oid nspOid)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot move objects into or out of temporary schemas")));
 
+
+	if (!allowSystemTableMods &&
+		((IsCatalogNamespace(nspOid)) ||
+		 IsToastNamespace(nspOid)) &&
+		IsNormalProcessingMode())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied to alter schema to \"%s\"",
+						get_namespace_name(nspOid)),
+				 errdetail("System catalog modifications are currently disallowed.")));
+
 	/* same for TOAST schema */
 	if (nspOid == PG_TOAST_NAMESPACE || oldNspOid == PG_TOAST_NAMESPACE)
 		ereport(ERROR,
