@@ -5,9 +5,9 @@
 -- planning time is needed during tests
 SET pg_stat_statements.track_planning = TRUE;
 
-SELECT 1 AS "STMTTS1";
+SELECT pg_sleep(1e-6), 1 AS "STMTTS1" FROM pg_database GROUP BY "STMTTS1" ORDER BY "STMTTS1";
 SELECT now() AS ref_ts \gset
-SELECT 1,2 AS "STMTTS2";
+SELECT pg_sleep(1e-6), 1, 2 AS "STMTTS2" FROM pg_database GROUP BY "STMTTS2" ORDER BY "STMTTS2";
 SELECT stats_since >= :'ref_ts', count(*) FROM pg_stat_statements
 WHERE query LIKE '%STMTTS%'
 GROUP BY stats_since >= :'ref_ts'
@@ -91,7 +91,7 @@ FROM pg_stat_statements
 WHERE query LIKE '%STMTTS%';
 
 -- Execute first query once more to check stats update
-SELECT 1 AS "STMTTS1";
+SELECT pg_sleep(1e-6), 1 AS "STMTTS1" FROM pg_database GROUP BY "STMTTS1" ORDER BY "STMTTS1";
 
 -- check
 -- we don't check planing times here to be independent of
