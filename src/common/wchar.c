@@ -17,6 +17,9 @@
 #include "mb/pg_wchar.h"
 #include "utils/ascii.h"
 
+#ifdef __x86_64__
+#include "wchar_x86.h"
+#endif
 
 /*
  * In today's multibyte encodings other than UTF8, this two-byte sequence
@@ -1688,6 +1691,22 @@ utf8_advance(const unsigned char *s, uint32 *state, int len)
 	*state &= 31;
 }
 
+static inline bool is_valid_ascii_dispatch(const unsigned char *s, int len) {
+#ifdef __x86_64__
+	return is_valid_ascii_x86(s, len);
+#else
+	return is_valid_ascii(s, len);
+#endif
+}
+
+static inline void is_valid_ascii_small_dispatch(const unsigned char **s, int *len, int orig_len) {
+#ifdef __x86_64__
+	is_valid_ascii_small_x86(s, len, orig_len);
+#else
+	/* Intentionally empty */
+#endif
+}
+
 static int
 pg_utf8_verifystr(const unsigned char *s, int len)
 {
@@ -1700,7 +1719,7 @@ pg_utf8_verifystr(const unsigned char *s, int len)
  * the compiler can unroll a longer loop, it's not worth it because we
  * must fall back to the byte-wise algorithm if we find any non-ASCII.
  */
-#define STRIDE_LENGTH (2 * sizeof(Vector8))
+#define STRIDE_LENGTH 64
 
 	if (len >= STRIDE_LENGTH)
 	{
@@ -1711,7 +1730,7 @@ pg_utf8_verifystr(const unsigned char *s, int len)
 			 * but we must first check for a non-END state, which means the
 			 * previous chunk ended in the middle of a multibyte sequence.
 			 */
-			if (state != END || !is_valid_ascii(s, STRIDE_LENGTH))
+			if (state != END || !is_valid_ascii_dispatch(s, STRIDE_LENGTH))
 				utf8_advance(s, &state, STRIDE_LENGTH);
 
 			s += STRIDE_LENGTH;
@@ -1745,6 +1764,12 @@ pg_utf8_verifystr(const unsigned char *s, int len)
 				Assert(IS_HIGHBIT_SET(*s));
 			} while (pg_utf_mblen(s) <= 1);
 		}
+	}
+
+	/* Try to use a faster path to handle the last bytes if possible */
+	if (state == END && len > 0)
+	{
+		is_valid_ascii_small_dispatch(&s, &len, orig_len);
 	}
 
 	/* check remaining bytes */
