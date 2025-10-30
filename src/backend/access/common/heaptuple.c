@@ -1071,7 +1071,7 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	 * Allocate and zero the space needed.  Note that the tuple body and
 	 * HeapTupleData management structure are allocated in one chunk.
 	 */
-	tuple = (HeapTuple) palloc0(HEAPTUPLESIZE + len);
+	tuple = (HeapTuple) palloc_extended(HEAPTUPLESIZE + len, MCXT_ALLOC_HUGE | MCXT_ALLOC_ZERO);
 	tuple->t_data = td = (HeapTupleHeader) ((char *) tuple + HEAPTUPLESIZE);
 
 	/*
