@@ -1,0 +1,4 @@
+comment = 'utf8 validation benchmark'
+default_version = '1.0'
+module_pathname = '$libdir/test_utf8_validate'
+relocatable = true
