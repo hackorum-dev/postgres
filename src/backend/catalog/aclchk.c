@@ -123,7 +123,7 @@ static void SetDefaultACL(InternalDefaultACL *iacls);
 static List *objectNamesToOids(ObjectType objtype, List *objnames,
 							   bool is_grant);
 static List *objectsInSchemaToOids(ObjectType objtype, List *nspnames);
-static List *getRelationsInNamespace(Oid namespaceId, char relkind);
+static List *getRelationsInNamespace(Oid namespaceId, Relkind relkind);
 static void expand_col_privileges(List *colnames, Oid table_oid,
 								  AclMode this_privileges,
 								  AclMode *col_privileges,
@@ -875,7 +875,7 @@ objectsInSchemaToOids(ObjectType objtype, List *nspnames)
  * Return Oid list of relations in given namespace filtered by relation kind
  */
 static List *
-getRelationsInNamespace(Oid namespaceId, char relkind)
+getRelationsInNamespace(Oid namespaceId, Relkind relkind)
 {
 	List	   *relations = NIL;
 	ScanKeyData key[2];
@@ -890,7 +890,7 @@ getRelationsInNamespace(Oid namespaceId, char relkind)
 	ScanKeyInit(&key[1],
 				Anum_pg_class_relkind,
 				BTEqualStrategyNumber, F_CHAREQ,
-				CharGetDatum(relkind));
+				CharGetDatum((char) relkind));
 
 	rel = table_open(RelationRelationId, AccessShareLock);
 	scan = table_beginscan_catalog(rel, 2, key);

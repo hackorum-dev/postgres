@@ -1060,7 +1060,7 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	if (!isnull)
 	{
 		Node	   *qual;
-		char		relkind;
+		Relkind		relkind;
 		deparse_context context;
 		deparse_namespace dpns;
 		RangeTblEntry *oldrte;

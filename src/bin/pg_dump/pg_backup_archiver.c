@@ -2687,7 +2687,7 @@ WriteToc(ArchiveHandle *AH)
 		WriteStr(AH, te->namespace);
 		WriteStr(AH, te->tablespace);
 		WriteStr(AH, te->tableam);
-		WriteInt(AH, te->relkind);
+		WriteInt(AH, (char) te->relkind);
 		WriteStr(AH, te->owner);
 		WriteStr(AH, "false");
 

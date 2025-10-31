@@ -88,6 +88,6 @@ extern char *getObjectIdentityParts(const ObjectAddress *object,
 									bool missing_ok);
 extern struct ArrayType *strlist_to_textarray(List *list);
 
-extern ObjectType get_relkind_objtype(char relkind);
+extern ObjectType get_relkind_objtype(Relkind relkind);
 
 #endif							/* OBJECTADDRESS_H */

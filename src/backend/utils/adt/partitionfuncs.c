@@ -33,7 +33,7 @@
 static bool
 check_rel_can_be_partition(Oid relid)
 {
-	char		relkind;
+	Relkind		relkind;
 	bool		relispartition;
 
 	/* Check if relation exists */
@@ -109,7 +109,7 @@ pg_partition_tree(PG_FUNCTION_ARGS)
 		HeapTuple	tuple;
 		Oid			parentid = InvalidOid;
 		Oid			relid = list_nth_oid(partitions, funcctx->call_cntr);
-		char		relkind = get_rel_relkind(relid);
+		Relkind		relkind = get_rel_relkind(relid);
 		int			level = 0;
 		List	   *ancestors = get_partition_ancestors(relid);
 		ListCell   *lc;

@@ -73,7 +73,7 @@ pg_prewarm(PG_FUNCTION_ARGS)
 	char	   *ttype;
 	PrewarmType ptype;
 	AclResult	aclresult;
-	char		relkind;
+	Relkind		relkind;
 	Oid			privOid;
 
 	/* Basic sanity checking. */

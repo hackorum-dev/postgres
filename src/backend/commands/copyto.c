@@ -694,7 +694,7 @@ BeginCopyTo(ParseState *pstate,
 
 			foreach_oid(child, children)
 			{
-				char		relkind = get_rel_relkind(child);
+				Relkind		relkind = get_rel_relkind(child);
 
 				if (relkind == RELKIND_FOREIGN_TABLE)
 				{

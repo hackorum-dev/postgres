@@ -16,6 +16,7 @@
 #include "access/attnum.h"
 #include "access/cmptype.h"
 #include "access/htup.h"
+#include "catalog/pg_class.h"
 #include "nodes/pg_list.h"
 
 /* avoid including subscripting.h here */
@@ -142,7 +143,7 @@ extern Oid	get_relname_relid(const char *relname, Oid relnamespace);
 extern char *get_rel_name(Oid relid);
 extern Oid	get_rel_namespace(Oid relid);
 extern Oid	get_rel_type_id(Oid relid);
-extern char get_rel_relkind(Oid relid);
+extern Relkind get_rel_relkind(Oid relid);
 extern bool get_rel_relispartition(Oid relid);
 extern Oid	get_rel_tablespace(Oid relid);
 extern char get_rel_persistence(Oid relid);

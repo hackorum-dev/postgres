@@ -113,7 +113,7 @@ typedef struct SubOpts
 typedef struct PublicationRelKind
 {
 	RangeVar   *rv;
-	char		relkind;
+	Relkind		relkind;
 } PublicationRelKind;
 
 static List *fetch_relation_list(WalReceiverConn *wrconn, List *publications);
@@ -821,7 +821,7 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 			foreach_ptr(PublicationRelKind, pubrelinfo, pubrels)
 			{
 				Oid			relid;
-				char		relkind;
+				Relkind		relkind;
 				RangeVar   *rv = pubrelinfo->rv;
 
 				relid = RangeVarGetRelid(rv, AccessShareLock, false);
@@ -1014,7 +1014,7 @@ AlterSubscription_refresh(Subscription *sub, bool copy_data,
 		{
 			RangeVar   *rv = pubrelinfo->rv;
 			Oid			relid;
-			char		relkind;
+			Relkind		relkind;
 
 			relid = RangeVarGetRelid(rv, AccessShareLock, false);
 			relkind = get_rel_relkind(relid);
@@ -2958,7 +2958,7 @@ fetch_relation_list(WalReceiverConn *wrconn, List *publications)
 		char	   *nspname;
 		char	   *relname;
 		bool		isnull;
-		char		relkind;
+		Relkind		relkind;
 		PublicationRelKind *relinfo = palloc_object(PublicationRelKind);
 
 		nspname = TextDatumGetCString(slot_getattr(slot, 1, &isnull));

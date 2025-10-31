@@ -757,7 +757,7 @@ index_create(Relation heapRelation,
 	bool		invalid = (flags & INDEX_CREATE_INVALID) != 0;
 	bool		concurrent = (flags & INDEX_CREATE_CONCURRENT) != 0;
 	bool		partitioned = (flags & INDEX_CREATE_PARTITIONED) != 0;
-	char		relkind;
+	Relkind		relkind;
 	TransactionId relfrozenxid;
 	MultiXactId relminmxid;
 	bool		create_storage = !RelFileNumberIsValid(relFileNumber);

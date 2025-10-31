@@ -72,7 +72,7 @@ RangeVarCallbackForLockTable(const RangeVar *rv, Oid relid, Oid oldrelid,
 							 void *arg)
 {
 	LOCKMODE	lockmode = *(LOCKMODE *) arg;
-	char		relkind;
+	Relkind		relkind;
 	char		relpersistence;
 	AclResult	aclresult;
 
@@ -190,7 +190,7 @@ LockViewRecurse_walker(Node *node, LockViewRecurse_context *context)
 			AclResult	aclresult;
 
 			Oid			relid = rte->relid;
-			char		relkind = rte->relkind;
+			Relkind		relkind = rte->relkind;
 			char	   *relname = get_rel_name(relid);
 
 			/* Currently, we only allow plain tables or views to be locked. */

@@ -66,7 +66,7 @@ RangeVarCallbackForPolicy(const RangeVar *rv, Oid relid, Oid oldrelid,
 {
 	HeapTuple	tuple;
 	Form_pg_class classform;
-	char		relkind;
+	Relkind		relkind;
 
 	tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(tuple))

@@ -148,7 +148,7 @@ RangeVarCallbackForStats(const RangeVar *relation,
 	Oid			table_oid = relId;
 	HeapTuple	tuple;
 	Form_pg_class form;
-	char		relkind;
+	Relkind		relkind;
 
 	/*
 	 * If we previously locked some other index's heap, and the name we're

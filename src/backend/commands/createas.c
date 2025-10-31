@@ -83,7 +83,7 @@ create_ctas_internal(List *attrList, IntoClause *into)
 {
 	CreateStmt *create = makeNode(CreateStmt);
 	bool		is_matview;
-	char		relkind;
+	Relkind		relkind;
 	Datum		toast_options;
 	const char *const validnsps[] = HEAP_RELOPT_NAMESPACES;
 	ObjectAddress intoRelationAddr;

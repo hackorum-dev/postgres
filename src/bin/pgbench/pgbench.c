@@ -862,7 +862,7 @@ get_table_relkind(PGconn *con, const char *table)
 {
 	PGresult   *res;
 	char	   *val;
-	char		relkind;
+	Relkind		relkind;
 	const char *params[1] = {table};
 	const char *sql =
 		"SELECT relkind FROM pg_catalog.pg_class WHERE oid=$1::pg_catalog.regclass";

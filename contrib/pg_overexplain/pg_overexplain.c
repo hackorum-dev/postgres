@@ -534,10 +534,8 @@ overexplain_range_table(PlannedStmt *plannedstmt, ExplainState *es)
 			case RELKIND_PARTITIONED_INDEX:
 				relkind = "partitioned_index";
 				break;
-			case '\0':
-				relkind = NULL;
-				break;
 			default:
+				pg_unreachable();
 				relkind = psprintf("%c", rte->relkind);
 				break;
 		}

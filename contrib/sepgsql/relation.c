@@ -52,7 +52,7 @@ sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum)
 	ObjectAddress object;
 	Form_pg_attribute attForm;
 	StringInfoData audit_name;
-	char		relkind = get_rel_relkind(relOid);
+	Relkind		relkind = get_rel_relkind(relOid);
 
 	/*
 	 * Only attributes within regular relations or partition relations have
@@ -134,7 +134,7 @@ sepgsql_attribute_drop(Oid relOid, AttrNumber attnum)
 {
 	ObjectAddress object;
 	char	   *audit_name;
-	char		relkind = get_rel_relkind(relOid);
+	Relkind		relkind = get_rel_relkind(relOid);
 
 	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE)
 		return;
@@ -167,7 +167,7 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum,
 {
 	ObjectAddress object;
 	char	   *audit_name;
-	char		relkind = get_rel_relkind(relOid);
+	Relkind		relkind = get_rel_relkind(relOid);
 
 	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE)
 		ereport(ERROR,
@@ -210,7 +210,7 @@ sepgsql_attribute_setattr(Oid relOid, AttrNumber attnum)
 {
 	ObjectAddress object;
 	char	   *audit_name;
-	char		relkind = get_rel_relkind(relOid);
+	Relkind		relkind = get_rel_relkind(relOid);
 
 	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE)
 		return;
@@ -418,7 +418,7 @@ sepgsql_relation_drop(Oid relOid)
 	ObjectAddress object;
 	char	   *audit_name;
 	uint16_t	tclass = 0;
-	char		relkind = get_rel_relkind(relOid);
+	Relkind		relkind = get_rel_relkind(relOid);
 
 	switch (relkind)
 	{
@@ -526,7 +526,7 @@ sepgsql_relation_truncate(Oid relOid)
 	ObjectAddress object;
 	char	   *audit_name;
 	uint16_t	tclass = 0;
-	char		relkind = get_rel_relkind(relOid);
+	Relkind		relkind = get_rel_relkind(relOid);
 
 	switch (relkind)
 	{
@@ -565,7 +565,7 @@ sepgsql_relation_relabel(Oid relOid, const char *seclabel)
 {
 	ObjectAddress object;
 	char	   *audit_name;
-	char		relkind = get_rel_relkind(relOid);
+	Relkind		relkind = get_rel_relkind(relOid);
 	uint16_t	tclass = 0;
 
 	if (relkind == RELKIND_RELATION || relkind == RELKIND_PARTITIONED_TABLE)

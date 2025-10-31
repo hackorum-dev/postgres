@@ -2149,7 +2149,7 @@ get_rel_type_id(Oid relid)
  *
  *		Returns the relkind associated with a given relation.
  */
-char
+Relkind
 get_rel_relkind(Oid relid)
 {
 	HeapTuple	tp;
@@ -2158,9 +2158,9 @@ get_rel_relkind(Oid relid)
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
-		char		result;
+		Relkind		result;
 
-		result = reltup->relkind;
+		result = (Relkind) reltup->relkind;
 		ReleaseSysCache(tp);
 		return result;
 	}

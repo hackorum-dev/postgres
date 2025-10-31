@@ -15,6 +15,7 @@
 #define RELCACHE_H
 
 #include "access/tupdesc.h"
+#include "catalog/pg_class.h"
 #include "common/relpath.h"
 #include "nodes/bitmapset.h"
 
@@ -120,7 +121,7 @@ extern Relation RelationBuildLocalRelation(const char *relname,
 										   bool shared_relation,
 										   bool mapped_relation,
 										   char relpersistence,
-										   char relkind);
+										   Relkind relkind);
 
 /*
  * Routines to manage assignment of new relfilenumber to a relation

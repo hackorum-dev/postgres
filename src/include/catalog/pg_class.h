@@ -164,16 +164,19 @@ MAKE_SYSCACHE(RELNAMENSP, pg_class_relname_nsp_index, 128);
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 
-#define		  RELKIND_RELATION		  'r'	/* ordinary table */
-#define		  RELKIND_INDEX			  'i'	/* secondary index */
-#define		  RELKIND_SEQUENCE		  'S'	/* sequence object */
-#define		  RELKIND_TOASTVALUE	  't'	/* for out-of-line values */
-#define		  RELKIND_VIEW			  'v'	/* view */
-#define		  RELKIND_MATVIEW		  'm'	/* materialized view */
-#define		  RELKIND_COMPOSITE_TYPE  'c'	/* composite type */
-#define		  RELKIND_FOREIGN_TABLE   'f'	/* foreign table */
-#define		  RELKIND_PARTITIONED_TABLE 'p' /* partitioned table */
-#define		  RELKIND_PARTITIONED_INDEX 'I' /* partitioned index */
+typedef enum
+{
+	RELKIND_RELATION = 'r',		/* ordinary table */
+	RELKIND_INDEX = 'i',		/* secondary index */
+	RELKIND_SEQUENCE = 'S',		/* sequence object */
+	RELKIND_TOASTVALUE = 't',	/* for out-of-line values */
+	RELKIND_VIEW = 'v',			/* view */
+	RELKIND_MATVIEW = 'm',		/* materialized view */
+	RELKIND_COMPOSITE_TYPE = 'c',	/* composite type */
+	RELKIND_FOREIGN_TABLE = 'f',	/* foreign table */
+	RELKIND_PARTITIONED_TABLE = 'p',	/* partitioned table */
+	RELKIND_PARTITIONED_INDEX = 'I',	/* partitioned index */
+}			Relkind;
 
 /* annoying defines for client-side C string construction */
 #define RELKIND_RELATION_STR			"'r'"
@@ -246,6 +249,6 @@ MAKE_SYSCACHE(RELNAMENSP, pg_class_relname_nsp_index, 128);
 
 #endif							/* EXPOSE_TO_CLIENT_CODE */
 
-extern int	errdetail_relkind_not_supported(char relkind);
+extern int	errdetail_relkind_not_supported(Relkind relkind);
 
 #endif							/* PG_CLASS_H */

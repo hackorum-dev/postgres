@@ -956,7 +956,7 @@ add_row_identity_columns(PlannerInfo *root, Index rtindex,
 						 Relation target_relation)
 {
 	CmdType		commandType = root->parse->commandType;
-	char		relkind = target_relation->rd_rel->relkind;
+	Relkind		relkind = target_relation->rd_rel->relkind;
 	Var		   *var;
 
 	Assert(commandType == CMD_UPDATE || commandType == CMD_DELETE || commandType == CMD_MERGE);

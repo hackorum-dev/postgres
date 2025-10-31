@@ -4951,7 +4951,7 @@ postgresGetAnalyzeInfoForForeignTable(Relation relation, bool *can_tablesample)
 	StringInfoData sql;
 	PGresult   *res;
 	double		reltuples;
-	char		relkind;
+	Relkind		relkind;
 
 	/* assume the remote relation does not support TABLESAMPLE */
 	*can_tablesample = false;

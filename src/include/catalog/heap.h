@@ -16,6 +16,7 @@
 
 #include "catalog/indexing.h"
 #include "catalog/objectaddress.h"
+#include "catalog/pg_class.h"
 #include "parser/parse_node.h"
 
 
@@ -55,7 +56,7 @@ extern Relation heap_create(const char *relname,
 							RelFileNumber relfilenumber,
 							Oid accessmtd,
 							TupleDesc tupDesc,
-							char relkind,
+							Relkind relkind,
 							char relpersistence,
 							bool shared_relation,
 							bool mapped_relation,
@@ -74,7 +75,7 @@ extern Oid	heap_create_with_catalog(const char *relname,
 									 Oid accessmtd,
 									 TupleDesc tupdesc,
 									 List *cooked_constraints,
-									 char relkind,
+									 Relkind relkind,
 									 char relpersistence,
 									 bool shared_relation,
 									 bool mapped_relation,
@@ -144,7 +145,7 @@ extern const FormData_pg_attribute *SystemAttributeDefinition(AttrNumber attno);
 
 extern const FormData_pg_attribute *SystemAttributeByName(const char *attname);
 
-extern void CheckAttributeNamesTypes(TupleDesc tupdesc, char relkind,
+extern void CheckAttributeNamesTypes(TupleDesc tupdesc, Relkind relkind,
 									 int flags);
 
 extern void CheckAttributeType(const char *attname,

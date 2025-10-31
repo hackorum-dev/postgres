@@ -26,6 +26,7 @@
 
 #include <time.h>
 
+#include "catalog/pg_class.h"
 #include "libpq-fe.h"
 #include "pg_backup.h"
 #include "pqexpbuffer.h"
@@ -359,7 +360,7 @@ struct _tocEntry
 	char	   *tablespace;		/* null if not in a tablespace; empty string
 								 * means use database default */
 	char	   *tableam;		/* table access method, only for TABLE tags */
-	char		relkind;		/* relation kind, only for TABLE tags */
+	Relkind		relkind;		/* relation kind, only for TABLE tags */
 	char	   *owner;
 	char	   *desc;
 	char	   *defn;
@@ -404,7 +405,7 @@ typedef struct _archiveOpts
 	const char *namespace;
 	const char *tablespace;
 	const char *tableam;
-	char		relkind;
+	Relkind		relkind;
 	const char *owner;
 	const char *description;
 	teSection	section;

@@ -136,7 +136,8 @@ my @nodetag_only;
 # types that are copied by straight assignment
 my @scalar_types = qw(
   bits32 bool char double int int8 int16 int32 int64 long uint8 uint16 uint32 uint64
-  AclMode AttrNumber Cardinality Cost Index Oid RelFileNumber Selectivity Size StrategyNumber SubTransactionId TimeLineID XLogRecPtr
+  AclMode AttrNumber Cardinality Cost Index Oid RelFileNumber Relkind
+  Selectivity Size StrategyNumber SubTransactionId TimeLineID XLogRecPtr
 );
 
 # collect enum types

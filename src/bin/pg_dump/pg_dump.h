@@ -215,7 +215,7 @@ typedef struct _typeInfo
 	Oid			typelem;
 	Oid			typrelid;
 	Oid			typarray;
-	char		typrelkind;		/* 'r', 'v', 'c', etc */
+	Relkind		typrelkind;		/* 'r', 'v', 'c', etc */
 	char		typtype;		/* 'b', 'c', etc */
 	bool		isArray;		/* true if auto-generated array type */
 	bool		isMultirange;	/* true if auto-generated multirange type */
@@ -307,7 +307,7 @@ typedef struct _tableInfo
 	DumpableObject dobj;
 	DumpableAcl dacl;
 	const char *rolname;
-	char		relkind;
+	Relkind		relkind;
 	char		relpersistence; /* relation persistence */
 	bool		relispopulated; /* relation is populated */
 	char		relreplident;	/* replica identifier */
@@ -452,7 +452,7 @@ typedef struct _relStatsInfo
 	char	   *reltuples;
 	int32		relallvisible;
 	int32		relallfrozen;
-	char		relkind;		/* 'r', 'm', 'i', etc */
+	Relkind		relkind;		/* 'r', 'm', 'i', etc */
 
 	/*
 	 * indAttNames/nindAttNames are populated only if the relation is an index

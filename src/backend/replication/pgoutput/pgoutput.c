@@ -2100,7 +2100,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 		Oid			publish_as_relid = relid;
 		int			publish_ancestor_level = 0;
 		bool		am_partition = get_rel_relispartition(relid);
-		char		relkind = get_rel_relkind(relid);
+		Relkind		relkind = get_rel_relkind(relid);
 		List	   *rel_publications = NIL;
 
 		/* Reload publications if needed before use. */

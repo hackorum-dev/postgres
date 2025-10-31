@@ -4351,7 +4351,7 @@ ExecModifyTable(PlanState *pstate)
 		if (operation == CMD_UPDATE || operation == CMD_DELETE ||
 			operation == CMD_MERGE)
 		{
-			char		relkind;
+			Relkind		relkind;
 			Datum		datum;
 			bool		isNull;
 
@@ -4869,7 +4869,7 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 		if (operation == CMD_UPDATE || operation == CMD_DELETE ||
 			operation == CMD_MERGE)
 		{
-			char		relkind;
+			Relkind		relkind;
 
 			relkind = resultRelInfo->ri_RelationDesc->rd_rel->relkind;
 			if (relkind == RELKIND_RELATION ||

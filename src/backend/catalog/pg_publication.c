@@ -866,7 +866,7 @@ GetAllTablesPublications(void)
  * publication.
  */
 List *
-GetAllPublicationRelations(char relkind, bool pubviaroot)
+GetAllPublicationRelations(Relkind relkind, bool pubviaroot)
 {
 	Relation	classRel;
 	ScanKeyData key[1];
@@ -881,7 +881,7 @@ GetAllPublicationRelations(char relkind, bool pubviaroot)
 	ScanKeyInit(&key[0],
 				Anum_pg_class_relkind,
 				BTEqualStrategyNumber, F_CHAREQ,
-				CharGetDatum(relkind));
+				CharGetDatum((char) relkind));
 
 	scan = table_beginscan_catalog(classRel, 1, key);
 
@@ -1016,7 +1016,7 @@ GetSchemaPublicationRelations(Oid schemaid, PublicationPartOpt pub_partopt)
 	{
 		Form_pg_class relForm = (Form_pg_class) GETSTRUCT(tuple);
 		Oid			relid = relForm->oid;
-		char		relkind;
+		Relkind		relkind;
 
 		if (!is_publishable_class(relid, relForm))
 			continue;

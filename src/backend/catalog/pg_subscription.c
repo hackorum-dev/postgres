@@ -537,7 +537,7 @@ HasSubscriptionTables(Oid subid)
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
 		Form_pg_subscription_rel subrel;
-		char		relkind;
+		Relkind		relkind;
 
 		subrel = (Form_pg_subscription_rel) GETSTRUCT(tup);
 		relkind = get_rel_relkind(subrel->srrelid);
@@ -600,7 +600,7 @@ GetSubscriptionRelations(Oid subid, bool tables, bool sequences,
 		SubscriptionRelState *relstate;
 		Datum		d;
 		bool		isnull;
-		char		relkind;
+		Relkind		relkind;
 
 		subrel = (Form_pg_subscription_rel) GETSTRUCT(tup);
 

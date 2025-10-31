@@ -22,6 +22,7 @@
 #include "access/amapi.h"
 #include "access/htup.h"
 #include "access/tupdesc.h"
+#include "catalog/pg_class.h"
 #include "nodes/pg_list.h"
 #include "storage/lock.h"
 
@@ -248,7 +249,7 @@ extern void *build_local_reloptions(local_relopts *relopts, Datum options,
 
 extern bytea *default_reloptions(Datum reloptions, bool validate,
 								 relopt_kind kind);
-extern bytea *heap_reloptions(char relkind, Datum reloptions, bool validate);
+extern bytea *heap_reloptions(Relkind relkind, Datum reloptions, bool validate);
 extern bytea *view_reloptions(Datum reloptions, bool validate);
 extern bytea *partitioned_table_reloptions(Datum reloptions, bool validate);
 extern bytea *index_reloptions(amoptions_function amoptions, Datum reloptions,

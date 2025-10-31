@@ -6182,7 +6182,7 @@ strlist_to_textarray(List *list)
  * message saying "table" than fail entirely.
  */
 ObjectType
-get_relkind_objtype(char relkind)
+get_relkind_objtype(Relkind relkind)
 {
 	switch (relkind)
 	{

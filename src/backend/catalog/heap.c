@@ -89,7 +89,7 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 								Oid new_type_oid,
 								Oid reloftype,
 								Oid relowner,
-								char relkind,
+								Relkind relkind,
 								TransactionId relfrozenxid,
 								TransactionId relminmxid,
 								Datum relacl,
@@ -289,7 +289,7 @@ heap_create(const char *relname,
 			RelFileNumber relfilenumber,
 			Oid accessmtd,
 			TupleDesc tupDesc,
-			char relkind,
+			Relkind relkind,
 			char relpersistence,
 			bool shared_relation,
 			bool mapped_relation,
@@ -449,7 +449,7 @@ heap_create(const char *relname,
  * --------------------------------
  */
 void
-CheckAttributeNamesTypes(TupleDesc tupdesc, char relkind,
+CheckAttributeNamesTypes(TupleDesc tupdesc, Relkind relkind,
 						 int flags)
 {
 	int			i;
@@ -833,7 +833,7 @@ InsertPgAttributeTuples(Relation pg_attribute_rel,
 static void
 AddNewAttributeTuples(Oid new_rel_oid,
 					  TupleDesc tupdesc,
-					  char relkind)
+					  Relkind relkind)
 {
 	Relation	rel;
 	CatalogIndexState indstate;
@@ -939,7 +939,7 @@ InsertPgClassTuple(Relation pg_class_desc,
 	values[Anum_pg_class_relhasindex - 1] = BoolGetDatum(rd_rel->relhasindex);
 	values[Anum_pg_class_relisshared - 1] = BoolGetDatum(rd_rel->relisshared);
 	values[Anum_pg_class_relpersistence - 1] = CharGetDatum(rd_rel->relpersistence);
-	values[Anum_pg_class_relkind - 1] = CharGetDatum(rd_rel->relkind);
+	values[Anum_pg_class_relkind - 1] = CharGetDatum((char) rd_rel->relkind);
 	values[Anum_pg_class_relnatts - 1] = Int16GetDatum(rd_rel->relnatts);
 	values[Anum_pg_class_relchecks - 1] = Int16GetDatum(rd_rel->relchecks);
 	values[Anum_pg_class_relhasrules - 1] = BoolGetDatum(rd_rel->relhasrules);
@@ -987,7 +987,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 					Oid new_type_oid,
 					Oid reloftype,
 					Oid relowner,
-					char relkind,
+					Relkind relkind,
 					TransactionId relfrozenxid,
 					TransactionId relminmxid,
 					Datum relacl,
@@ -1129,7 +1129,7 @@ heap_create_with_catalog(const char *relname,
 						 Oid accessmtd,
 						 TupleDesc tupdesc,
 						 List *cooked_constraints,
-						 char relkind,
+						 Relkind relkind,
 						 char relpersistence,
 						 bool shared_relation,
 						 bool mapped_relation,

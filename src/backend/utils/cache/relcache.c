@@ -3517,7 +3517,7 @@ RelationBuildLocalRelation(const char *relname,
 						   bool shared_relation,
 						   bool mapped_relation,
 						   char relpersistence,
-						   char relkind)
+						   Relkind relkind)
 {
 	Relation	rel;
 	MemoryContext oldcxt;

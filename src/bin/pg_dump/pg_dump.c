@@ -100,7 +100,7 @@ typedef struct
 typedef struct
 {
 	Oid			oid;			/* object OID */
-	char		relkind;		/* object kind */
+	Relkind		relkind;		/* object kind */
 	RelFileNumber relfilenumber;	/* object filenode */
 	Oid			toast_oid;		/* toast table OID */
 	RelFileNumber toast_relfilenumber;	/* toast table filenode */
@@ -356,7 +356,7 @@ static void addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 
 static void addConstrChildIdxDeps(DumpableObject *dobj, const IndxInfo *refidx);
 static void getDomainConstraints(Archive *fout, TypeInfo *tyinfo);
-static void getTableData(DumpOptions *dopt, TableInfo *tblinfo, int numTables, char relkind);
+static void getTableData(DumpOptions *dopt, TableInfo *tblinfo, int numTables, Relkind relkind);
 static void makeTableDataInfo(DumpOptions *dopt, TableInfo *tbinfo);
 static void buildMatViewRefreshDependencies(Archive *fout);
 static void getTableDataFKConstraints(void);
@@ -3031,7 +3031,7 @@ refreshMatViewData(Archive *fout, const TableDataInfo *tdinfo)
  *	  set up dumpable objects representing the contents of tables
  */
 static void
-getTableData(DumpOptions *dopt, TableInfo *tblinfo, int numTables, char relkind)
+getTableData(DumpOptions *dopt, TableInfo *tblinfo, int numTables, Relkind relkind)
 {
 	int			i;
 
@@ -5856,7 +5856,7 @@ collectBinaryUpgradeClassOids(Archive *fout)
 	for (int i = 0; i < nbinaryUpgradeClassOids; i++)
 	{
 		binaryUpgradeClassOids[i].oid = atooid(PQgetvalue(res, i, 0));
-		binaryUpgradeClassOids[i].relkind = *PQgetvalue(res, i, 1);
+		binaryUpgradeClassOids[i].relkind = (Relkind) * PQgetvalue(res, i, 1);
 		binaryUpgradeClassOids[i].relfilenumber = atooid(PQgetvalue(res, i, 2));
 		binaryUpgradeClassOids[i].toast_oid = atooid(PQgetvalue(res, i, 3));
 		binaryUpgradeClassOids[i].toast_relfilenumber = atooid(PQgetvalue(res, i, 4));
@@ -7121,7 +7121,7 @@ getFuncs(Archive *fout)
 static RelStatsInfo *
 getRelationStatistics(Archive *fout, DumpableObject *rel, int32 relpages,
 					  char *reltuples, int32 relallvisible,
-					  int32 relallfrozen, char relkind,
+					  int32 relallfrozen, Relkind relkind,
 					  char **indAttNames, int nindAttNames)
 {
 	if (!fout->dopt->dumpStatistics)

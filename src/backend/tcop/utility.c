@@ -1501,7 +1501,7 @@ ProcessUtilitySlow(ParseState *pstate,
 						foreach(lc, inheritors)
 						{
 							Oid			partrelid = lfirst_oid(lc);
-							char		relkind = get_rel_relkind(partrelid);
+							Relkind		relkind = get_rel_relkind(partrelid);
 
 							if (relkind != RELKIND_RELATION &&
 								relkind != RELKIND_MATVIEW &&

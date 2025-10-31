@@ -2149,7 +2149,7 @@ view_reloptions(Datum reloptions, bool validate)
  * Parse options for heaps, views and toast tables.
  */
 bytea *
-heap_reloptions(char relkind, Datum reloptions, bool validate)
+heap_reloptions(Relkind relkind, Datum reloptions, bool validate)
 {
 	StdRdOptions *rdopts;
 

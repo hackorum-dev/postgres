@@ -2170,7 +2170,7 @@ has_sequence_privilege_name_id(PG_FUNCTION_ARGS)
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
-	char		relkind;
+	Relkind		relkind;
 	bool		is_missing = false;
 
 	roleid = get_role_oid_or_public(NameStr(*username));
@@ -2206,7 +2206,7 @@ has_sequence_privilege_id(PG_FUNCTION_ARGS)
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
-	char		relkind;
+	Relkind		relkind;
 	bool		is_missing = false;
 
 	roleid = GetUserId();
@@ -2269,7 +2269,7 @@ has_sequence_privilege_id_id(PG_FUNCTION_ARGS)
 	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
-	char		relkind;
+	Relkind		relkind;
 	bool		is_missing = false;
 
 	mode = convert_sequence_priv_string(priv_type_text);

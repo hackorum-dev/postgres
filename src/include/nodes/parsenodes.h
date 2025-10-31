@@ -22,6 +22,7 @@
 #ifndef PARSENODES_H
 #define PARSENODES_H
 
+#include "catalog/pg_class.h"
 #include "common/relpath.h"
 #include "nodes/bitmapset.h"
 #include "nodes/lockoptions.h"
@@ -1147,7 +1148,7 @@ typedef struct RangeTblEntry
 	/* inheritance requested? */
 	bool		inh;
 	/* relation kind (see pg_class.relkind) */
-	char		relkind pg_node_attr(query_jumble_ignore);
+	Relkind		relkind pg_node_attr(query_jumble_ignore);
 	/* lock level that query requires on the rel */
 	int			rellockmode pg_node_attr(query_jumble_ignore);
 	/* index of RTEPermissionInfo entry, or 0 */

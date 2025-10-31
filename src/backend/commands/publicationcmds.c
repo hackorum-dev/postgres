@@ -1057,7 +1057,7 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 		{
 			Oid			relid = lfirst_oid(lc);
 			HeapTuple	rftuple;
-			char		relkind;
+			Relkind		relkind;
 			char	   *relname;
 			bool		has_rowfilter;
 			bool		has_collist;

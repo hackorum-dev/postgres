@@ -6178,7 +6178,7 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 	AfterTriggerEventData new_event;
 	AfterTriggerSharedData new_shared;
-	char		relkind = rel->rd_rel->relkind;
+	Relkind		relkind = rel->rd_rel->relkind;
 	int			tgtype_event;
 	int			tgtype_level;
 	int			i;

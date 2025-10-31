@@ -25,7 +25,7 @@ typedef struct AlterTableUtilityContext AlterTableUtilityContext;	/* avoid inclu
 																	 * tcop/utility.h here */
 
 
-extern ObjectAddress DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
+extern ObjectAddress DefineRelation(CreateStmt *stmt, Relkind relkind, Oid ownerId,
 									ObjectAddress *typaddress, const char *queryString);
 
 extern TupleDesc BuildDescForRelation(const List *columns);

@@ -90,7 +90,7 @@ pgstat_copy_relation_stats(Relation dst, Relation src)
 void
 pgstat_init_relation(Relation rel)
 {
-	char		relkind = rel->rd_rel->relkind;
+	Relkind		relkind = rel->rd_rel->relkind;
 
 	/*
 	 * We only count stats for relations with storage and partitioned tables

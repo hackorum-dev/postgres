@@ -133,7 +133,7 @@ typedef struct ReindexErrorInfo
 {
 	char	   *relname;
 	char	   *relnamespace;
-	char		relkind;
+	Relkind		relkind;
 } ReindexErrorInfo;
 
 /*
@@ -2947,7 +2947,7 @@ ReindexIndex(const ReindexStmt *stmt, const ReindexParams *params, bool isTopLev
 	struct ReindexIndexCallbackState state;
 	Oid			indOid;
 	char		persistence;
-	char		relkind;
+	Relkind		relkind;
 
 	/*
 	 * Find and lock index, and check permissions on table; use callback to
@@ -2998,7 +2998,7 @@ static void
 RangeVarCallbackForReindexIndex(const RangeVar *relation,
 								Oid relId, Oid oldRelId, void *arg)
 {
-	char		relkind;
+	Relkind		relkind;
 	struct ReindexIndexCallbackState *state = arg;
 	LOCKMODE	table_lockmode;
 	Oid			table_oid;
@@ -3373,7 +3373,7 @@ static void
 ReindexPartitions(const ReindexStmt *stmt, Oid relid, const ReindexParams *params, bool isTopLevel)
 {
 	List	   *partitions = NIL;
-	char		relkind = get_rel_relkind(relid);
+	Relkind		relkind = get_rel_relkind(relid);
 	char	   *relname = get_rel_name(relid);
 	char	   *relnamespace = get_namespace_name(get_rel_namespace(relid));
 	MemoryContext reindex_context;
@@ -3474,7 +3474,7 @@ ReindexMultipleInternal(const ReindexStmt *stmt, const List *relids, const Reind
 	foreach(l, relids)
 	{
 		Oid			relid = lfirst_oid(l);
-		char		relkind;
+		Relkind		relkind;
 		char		relpersistence;
 
 		StartTransactionCommand();
@@ -3608,7 +3608,7 @@ ReindexRelationConcurrently(const ReindexStmt *stmt, Oid relationOid, const Rein
 			   *lc2;
 	MemoryContext private_context;
 	MemoryContext oldcontext;
-	char		relkind;
+	Relkind		relkind;
 	char	   *relationName = NULL;
 	char	   *relationNamespace = NULL;
 	PGRUsage	ru0;

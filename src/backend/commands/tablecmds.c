@@ -170,7 +170,7 @@ typedef struct AlteredTableInfo
 {
 	/* Information saved before any work commences: */
 	Oid			relid;			/* Relation to work on */
-	char		relkind;		/* Its relkind */
+	Relkind		relkind;		/* Its relkind */
 	TupleDesc	oldDesc;		/* Pre-modification tuple descriptor */
 
 	/*
@@ -766,7 +766,7 @@ static void ATExecSplitPartition(List **wqueue, AlteredTableInfo *tab,
  * ----------------------------------------------------------------
  */
 ObjectAddress
-DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
+DefineRelation(CreateStmt *stmt, Relkind relkind, Oid ownerId,
 			   ObjectAddress *typaddress, const char *queryString)
 {
 	char		relname[NAMEDATALEN];
@@ -1534,7 +1534,7 @@ void
 RemoveRelations(DropStmt *drop)
 {
 	ObjectAddresses *objects;
-	char		relkind;
+	Relkind		relkind;
 	ListCell   *cell;
 	int			flags = 0;
 	LOCKMODE	lockmode = AccessExclusiveLock;
@@ -3792,7 +3792,7 @@ SetRelationTableSpace(Relation rel,
 static void
 renameatt_check(Oid myrelid, Form_pg_class classform, bool recursing)
 {
-	char		relkind = classform->relkind;
+	Relkind		relkind = classform->relkind;
 
 	if (classform->reloftype && !recursing)
 		ereport(ERROR,
@@ -4219,7 +4219,7 @@ RenameRelation(RenameStmt *stmt)
 	for (;;)
 	{
 		LOCKMODE	lockmode;
-		char		relkind;
+		Relkind		relkind;
 		bool		obj_is_index;
 
 		lockmode = is_index_stmt ? ShareUpdateExclusiveLock : AccessExclusiveLock;
@@ -7257,7 +7257,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	Form_pg_class relform;
 	Form_pg_attribute attribute;
 	int			newattnum;
-	char		relkind;
+	Relkind		relkind;
 	Expr	   *defval;
 	List	   *children;
 	ListCell   *child;
@@ -19522,7 +19522,7 @@ void
 RangeVarCallbackMaintainsTable(const RangeVar *relation,
 							   Oid relId, Oid oldRelId, void *arg)
 {
-	char		relkind;
+	Relkind		relkind;
 	AclResult	aclresult;
 
 	/* Nothing to do if the relation was not found. */
@@ -19619,7 +19619,7 @@ RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid, Oid oldrelid,
 	HeapTuple	tuple;
 	Form_pg_class classform;
 	AclResult	aclresult;
-	char		relkind;
+	Relkind		relkind;
 
 	tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(tuple))

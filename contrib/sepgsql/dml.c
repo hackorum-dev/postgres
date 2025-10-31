@@ -150,7 +150,7 @@ check_relation_privileges(Oid relOid,
 	char	   *audit_name;
 	Bitmapset  *columns;
 	int			index;
-	char		relkind = get_rel_relkind(relOid);
+	Relkind		relkind = get_rel_relkind(relOid);
 	bool		result = true;
 
 	/*
