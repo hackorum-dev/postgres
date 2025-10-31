@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+
+# In meson build, wildcards can't be used at "configure" time; since wildcards
+# do not allow reliable detection of when re-configure is needed. This script
+# checks if meson build misses any TAP tests, if there is then test fails.
+
+import argparse
+import subprocess
+import os
+import sys
+import glob
+import json
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--rootdir', help='root directory of Postgres', type=str)
+args = parser.parse_args()
+root_dir = args.rootdir
+
+if not os.path.isdir(root_dir):
+    print(f"Error: directory '{root_dir}' not found", file=sys.stderr)
+    sys.exit(1)
+
+def get_test_files(root_dir):
+    test_files = []
+
+    test_files_temp = glob.glob(os.path.join(root_dir, "**", "t", "*.pl"), recursive=True)
+    for f in test_files_temp:
+        test_files.append(f)
+    return test_files
+
+def get_meson_tests():
+    res = subprocess.run(['meson', 'introspect', '.', '--tests'], stdout=subprocess.PIPE, text=True)
+    if res.returncode != 0:
+        sys.exit(res.returncode)
+
+    tap_tests = []
+    json_data = json.loads(res.stdout)
+    for elem in json_data:
+        if "cmd" in elem and elem["cmd"][-1].endswith(".pl"):
+            tap_tests.append(elem["cmd"][-1])
+
+    return tap_tests
+
+test_files = get_test_files(root_dir)
+meson_tests = get_meson_tests()
+test_diff = list(set(test_files) - set(meson_tests))
+
+if len(test_diff):
+    print(f"Following TAP tests are not registered in the meson build: {test_diff}")
+    sys.exit(1)
