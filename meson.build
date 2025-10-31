@@ -3872,6 +3872,18 @@ test('install_test_files',
     is_parallel: false,
     suite: ['setup'])
 
+meson_tap_test_check = files('src/tools/meson_tap_test_check')
+test('meson_tap_test_check',
+    python,
+    args: [
+      meson_tap_test_check,
+      '--rootdir', meson.current_source_dir()
+    ],
+    # Since this test checks if all of the TAP tests are registered, run this
+    # test before setup tests.
+    priority: setup_tests_priority + 1,
+    suite: ['setup'])
+
 test_result_dir = meson.project_build_root() / 'testrun'
 
 
