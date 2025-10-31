@@ -617,7 +617,7 @@ SET SESSION AUTHORIZATION regress_range_parted_user;
 -- This should fail with RLS violation error while moving row from
 -- part_a_10_a_20 to part_d_1_15, because we are setting 'c' to an odd number.
 UPDATE range_parted set a = 'b', c = 151 WHERE a = 'a' and c = 200;
-ERROR:  new row violates row-level security policy for table "range_parted"
+ERROR:  new row violates row-level security policy "policy_range_parted" for table "range_parted"
 RESET SESSION AUTHORIZATION;
 -- Create a trigger on part_d_1_15
 CREATE FUNCTION func_d_1_15() RETURNS trigger AS $$
@@ -640,7 +640,7 @@ SET SESSION AUTHORIZATION regress_range_parted_user;
 -- 'c' to an even number, the trigger at the destination partition again makes
 -- it an odd number.
 UPDATE range_parted set a = 'b', c = 150 WHERE a = 'a' and c = 200;
-ERROR:  new row violates row-level security policy for table "range_parted"
+ERROR:  new row violates row-level security policy "policy_range_parted" for table "range_parted"
 -- Cleanup
 RESET SESSION AUTHORIZATION;
 DROP TRIGGER trig_d_1_15 ON part_d_1_15;
