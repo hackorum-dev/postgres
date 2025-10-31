@@ -881,6 +881,10 @@ add_with_check_options(Relation rel,
 		 * since if the check fails it means that no policy granted permission
 		 * to perform the update, rather than any particular policy being
 		 * violated.
+		 *
+		 * However, if there is only a single permissive policy clause, we can
+		 * include that specific policy’s name in error reports when the policy
+		 * is violated.
 		 */
 		WithCheckOption *wco;
 
@@ -891,7 +895,12 @@ add_with_check_options(Relation rel,
 		wco->cascaded = false;
 
 		if (list_length(permissive_quals) == 1)
+		{
+			RowSecurityPolicy *policy = (RowSecurityPolicy *) linitial(permissive_policies);
+
 			wco->qual = (Node *) linitial(permissive_quals);
+			wco->polname = pstrdup(policy->policy_name);
+		}
 		else
 			wco->qual = (Node *) makeBoolExpr(OR_EXPR, permissive_quals, -1);
 
