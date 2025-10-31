@@ -2306,7 +2306,7 @@ MERGE INTO pa_target t
   ON t.tid = s.sid AND t.tid IN (1,2,3,4)
   WHEN MATCHED THEN
     UPDATE SET tid = tid - 1;
-ERROR:  new row violates row-level security policy for table "pa_target"
+ERROR:  new row violates row-level security policy "pa_target_pol" for table "pa_target"
 ROLLBACK;
 DROP TABLE pa_source;
 DROP TABLE pa_target CASCADE;
@@ -2747,7 +2747,7 @@ MERGE INTO measurement m
 WHEN NOT MATCHED THEN INSERT
      (city_id, logdate, peaktemp, unitsales)
    VALUES (city_id - 1, logdate, NULL, 100); -- should fail
-ERROR:  new row violates row-level security policy for table "measurement"
+ERROR:  new row violates row-level security policy "measurement_p" for table "measurement"
 MERGE INTO measurement m
  USING (VALUES (1, '01-17-2007'::date)) nm(city_id, logdate) ON
       (m.city_id = nm.city_id and m.logdate=nm.logdate)
