@@ -5988,8 +5988,11 @@ NUM_processor(FormatNode *node, NUMDesc *Num, char *inout,
 							{
 								/* just in case there are MB chars */
 								pattern_len = pg_mbstrlen(pattern);
-								memset(Np->inout_p, ' ', pattern_len);
-								Np->inout_p += pattern_len - 1;
+								if (pattern_len > 0)
+								{
+									memset(Np->inout_p, ' ', pattern_len);
+									Np->inout_p += pattern_len - 1;
+								}
 							}
 						}
 						else
