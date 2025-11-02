@@ -1401,12 +1401,25 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 		tuple_fraction = preprocess_limit(root, tuple_fraction,
 										  &offset_est, &count_est);
 
-		/*
-		 * If we have a known LIMIT, and don't have an unknown OFFSET, we can
-		 * estimate the effects of using a bounded sort.
-		 */
-		if (count_est > 0 && offset_est >= 0)
-			limit_tuples = (double) count_est + (double) offset_est;
+		if (enable_limit_adjust_cost)
+		{
+			/*
+			 * If we have a known LIMIT, and don't have an unknown OFFSET, we
+			 * can estimate the effects of using a bounded sort.
+			 */
+			if (count_est > 0 && offset_est >= 0)
+				limit_tuples = (double) count_est + (double) offset_est;
+		}
+		else
+		{
+			/*
+			 * Disable limit clause adjust cost, retrival all tuples.
+			 * offset_est and count_est are needed to adjust estimated rows of
+			 * limit path. Thus, we should do this after calling
+			 * preprocess_limit().
+			 */
+			tuple_fraction = 0.0;
+		}
 	}
 
 	/* Make tuple_fraction accessible to lower-level routines */

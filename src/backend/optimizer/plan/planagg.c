@@ -412,12 +412,20 @@ build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
 										   Int64GetDatum(1), false,
 										   FLOAT8PASSBYVAL);
 
-	/*
-	 * Generate the best paths for this query, telling query_planner that we
-	 * have LIMIT 1.
-	 */
-	subroot->tuple_fraction = 1.0;
-	subroot->limit_tuples = 1.0;
+	if (enable_limit_adjust_cost)
+	{
+		/*
+		 * Generate the best paths for this query, telling query_planner that
+		 * we have LIMIT 1.
+		 */
+		subroot->tuple_fraction = 1.0;
+		subroot->limit_tuples = 1.0;
+	}
+	else
+	{
+		subroot->tuple_fraction = 0.0;
+		subroot->limit_tuples = -1.0;
+	}
 
 	final_rel = query_planner(subroot, minmax_qp_callback, NULL);
 
@@ -432,9 +440,11 @@ build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
 
 	/*
 	 * Get the best presorted path, that being the one that's cheapest for
-	 * fetching just one row.  If there's no such path, fail.
+	 * fetching just one row.  If there's no such path, fail.  If the
+	 * adjustance of path cost is disabled, we will also set path_fraction
+	 * to 1.0.
 	 */
-	if (final_rel->rows > 1.0)
+	if (enable_limit_adjust_cost && final_rel->rows > 1.0)
 		path_fraction = 1.0 / final_rel->rows;
 	else
 		path_fraction = 1.0;

@@ -1037,6 +1037,16 @@ struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
+		{"enable_limit_adjust_cost", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enable the planner's use of limit information adjust cost."),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&enable_limit_adjust_cost,
+		true,
+		NULL, NULL, NULL
+	},
+	{
 		{"geqo", PGC_USERSET, QUERY_TUNING_GEQO,
 			gettext_noop("Enables genetic query optimization."),
 			gettext_noop("This algorithm attempts to do planning without "

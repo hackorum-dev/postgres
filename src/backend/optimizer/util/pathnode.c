@@ -4079,6 +4079,13 @@ adjust_limit_rows_costs(double *rows,	/* in/out parameter */
 		if (*rows < 1)
 			*rows = 1;
 	}
+
+	/* disable cost modification */
+	if (!enable_limit_adjust_cost)
+	{
+		*startup_cost = input_startup_cost;
+		*total_cost = input_total_cost;
+	}
 }
 
 
