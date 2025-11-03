@@ -1,0 +1,5 @@
+# tcpinfo.control
+comment = 'Provides pg_stat_tcpinfo to show detailed TCP connection info on Linux.'
+default_version = '1.0'
+module_pathname = '$libdir/pg_stat_tcpinfo'
+relocatable = true
