@@ -38,6 +38,7 @@ SUBDIRS = \
 		pg_prewarm	\
 		pg_stash_advice	\
 		pg_stat_statements \
+		pg_stat_tcpinfo \
 		pg_surgery	\
 		pg_trgm		\
 		pgrowlocks	\
