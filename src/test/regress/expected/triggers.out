@@ -299,9 +299,13 @@ SELECT * FROM main_table ORDER BY a, b;
 (8 rows)
 
 SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'modified_a';
-                                                             pg_get_triggerdef                                                             
--------------------------------------------------------------------------------------------------------------------------------------------
- CREATE TRIGGER modified_a BEFORE UPDATE OF a ON main_table FOR EACH ROW WHEN (old.a <> new.a) EXECUTE FUNCTION trigger_func('modified_a')
+                pg_get_triggerdef                
+-------------------------------------------------
+ CREATE TRIGGER modified_a BEFORE UPDATE OF a   +
+     ON main_table                              +
+     FOR EACH ROW                               +
+     WHEN (old.a <> new.a)                      +
+     EXECUTE FUNCTION trigger_func('modified_a')
 (1 row)
 
 SELECT pg_get_triggerdef(oid, false) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'modified_a';
@@ -311,9 +315,13 @@ SELECT pg_get_triggerdef(oid, false) FROM pg_trigger WHERE tgrelid = 'main_table
 (1 row)
 
 SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'modified_any';
-                                                                      pg_get_triggerdef                                                                      
--------------------------------------------------------------------------------------------------------------------------------------------------------------
- CREATE TRIGGER modified_any BEFORE UPDATE OF a ON main_table FOR EACH ROW WHEN (old.* IS DISTINCT FROM new.*) EXECUTE FUNCTION trigger_func('modified_any')
+                 pg_get_triggerdef                 
+---------------------------------------------------
+ CREATE TRIGGER modified_any BEFORE UPDATE OF a   +
+     ON main_table                                +
+     FOR EACH ROW                                 +
+     WHEN (old.* IS DISTINCT FROM new.*)          +
+     EXECUTE FUNCTION trigger_func('modified_any')
 (1 row)
 
 -- Test RENAME TRIGGER
@@ -362,6 +370,15 @@ SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid = 'main_table'::regc
                                                                 pg_get_triggerdef                                                                
 -------------------------------------------------------------------------------------------------------------------------------------------------
  CREATE TRIGGER after_upd_a_b_row_trig AFTER UPDATE OF a, b ON public.main_table FOR EACH ROW EXECUTE FUNCTION trigger_func('after_upd_a_b_row')
+(1 row)
+
+SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'after_upd_a_b_row_trig';
+                     pg_get_triggerdef                      
+------------------------------------------------------------
+ CREATE TRIGGER after_upd_a_b_row_trig AFTER UPDATE OF a, b+
+     ON main_table                                         +
+     FOR EACH ROW                                          +
+     EXECUTE FUNCTION trigger_func('after_upd_a_b_row')
 (1 row)
 
 UPDATE main_table SET a = 50;
@@ -2318,6 +2335,24 @@ create constraint trigger parted_trig_two after insert on parted_constr
   deferrable initially deferred enforced
   for each row when (bark(new.b) AND new.a % 2 = 1)
   execute procedure trigger_notice_ab();
+-- Test that the constraint trigger is formatted correctly
+SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'parted_constr'::regclass and tgname = 'parted_trig_two';
+                   pg_get_triggerdef                    
+--------------------------------------------------------
+ CREATE CONSTRAINT TRIGGER parted_trig_two AFTER INSERT+
+     ON parted_constr                                  +
+     DEFERRABLE INITIALLY DEFERRED                     +
+     FOR EACH ROW                                      +
+     WHEN (bark(new.b) AND (new.a % 2) = 1)            +
+     EXECUTE FUNCTION trigger_notice_ab()
+(1 row)
+
+SELECT pg_get_triggerdef(oid, false) FROM pg_trigger WHERE tgrelid = 'parted_constr'::regclass and tgname = 'parted_trig_two';
+                                                                                             pg_get_triggerdef                                                                                             
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ CREATE CONSTRAINT TRIGGER parted_trig_two AFTER INSERT ON public.parted_constr DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((bark(new.b) AND ((new.a % 2) = 1))) EXECUTE FUNCTION trigger_notice_ab()
+(1 row)
+
 -- The immediate constraint is fired immediately; the WHEN clause of the
 -- deferred constraint is also called immediately.  The deferred constraint
 -- is fired at commit time.
@@ -2738,6 +2773,17 @@ SELECT trigger_name, event_manipulation, event_object_schema, event_object_table
  parent_insert_trig | INSERT             | public              | parent             |            1 |                  | STATEMENT          | AFTER         |                            | new_table
  parent_update_trig | UPDATE             | public              | parent             |            1 |                  | STATEMENT          | AFTER         | old_table                  | new_table
 (12 rows)
+
+-- Test that the trigger is formatted correctly
+SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'child3'::regclass AND tgname = 'child3_insert_trig';
+               pg_get_triggerdef                
+------------------------------------------------
+ CREATE TRIGGER child3_insert_trig AFTER INSERT+
+     ON child3                                 +
+     REFERENCING NEW TABLE AS new_table        +
+     FOR EACH STATEMENT                        +
+     EXECUTE FUNCTION dump_insert()
+(1 row)
 
 -- insert directly into children sees respective child-format tuples
 insert into child1 values ('AAA', 42);

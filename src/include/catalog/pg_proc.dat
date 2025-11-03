@@ -8555,6 +8555,9 @@
 { oid => '2730', descr => 'trigger description with pretty-print option',
   proname => 'pg_get_triggerdef', provolatile => 's', prorettype => 'text',
   proargtypes => 'oid bool', prosrc => 'pg_get_triggerdef_ext' },
+{ oid => '9750', descr => 'trigger description as a single-line string',
+  proname => 'pg_get_triggerdef_string', provolatile => 's', prorettype => 'text',
+  proargtypes => 'oid', prosrc => 'pg_get_triggerdef_string' },
 
 # asynchronous notifications
 { oid => '3035',

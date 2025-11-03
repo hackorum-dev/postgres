@@ -230,6 +230,7 @@ CREATE TRIGGER after_upd_b_stmt_trig AFTER UPDATE OF b ON main_table
 FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func('after_upd_b_stmt');
 
 SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'after_upd_a_b_row_trig';
+SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'after_upd_a_b_row_trig';
 
 UPDATE main_table SET a = 50;
 UPDATE main_table SET b = 10;
@@ -1608,6 +1609,10 @@ create constraint trigger parted_trig_two after insert on parted_constr
   for each row when (bark(new.b) AND new.a % 2 = 1)
   execute procedure trigger_notice_ab();
 
+-- Test that the constraint trigger is formatted correctly
+SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'parted_constr'::regclass and tgname = 'parted_trig_two';
+SELECT pg_get_triggerdef(oid, false) FROM pg_trigger WHERE tgrelid = 'parted_constr'::regclass and tgname = 'parted_trig_two';
+
 -- The immediate constraint is fired immediately; the WHEN clause of the
 -- deferred constraint is also called immediately.  The deferred constraint
 -- is fired at commit time.
@@ -1906,6 +1911,9 @@ SELECT trigger_name, event_manipulation, event_object_schema, event_object_table
   FROM information_schema.triggers
   WHERE event_object_table IN ('parent', 'child1', 'child2', 'child3')
   ORDER BY trigger_name COLLATE "C", 2;
+
+-- Test that the trigger is formatted correctly
+SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'child3'::regclass AND tgname = 'child3_insert_trig';
 
 -- insert directly into children sees respective child-format tuples
 insert into child1 values ('AAA', 42);

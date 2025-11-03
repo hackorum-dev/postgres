@@ -3251,7 +3251,7 @@ describeOneTableDetails(const char *schemaname,
 
 		printfPQExpBuffer(&buf,
 						  "SELECT t.tgname, "
-						  "pg_catalog.pg_get_triggerdef(t.oid, true), "
+						  "pg_catalog.pg_get_triggerdef_string(t.oid), "
 						  "t.tgenabled, t.tgisinternal,\n");
 
 		/*

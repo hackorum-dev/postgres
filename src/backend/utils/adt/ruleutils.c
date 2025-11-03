@@ -352,7 +352,7 @@ static char *deparse_expression_pretty(Node *expr, List *dpcontext,
 									   int prettyFlags, int startIndent);
 static char *pg_get_viewdef_worker(Oid viewoid,
 								   int prettyFlags, int wrapColumn);
-static char *pg_get_triggerdef_worker(Oid trigid, bool pretty);
+static char *pg_get_triggerdef_worker(Oid trigid, int prettyFlags);
 static int	decompile_column_index_array(Datum column_index_array, Oid relId,
 										 bool withPeriod, StringInfo buf);
 static char *pg_get_ruledef_worker(Oid ruleoid, int prettyFlags);
@@ -873,7 +873,7 @@ pg_get_triggerdef(PG_FUNCTION_ARGS)
 	Oid			trigid = PG_GETARG_OID(0);
 	char	   *res;
 
-	res = pg_get_triggerdef_worker(trigid, false);
+	res = pg_get_triggerdef_worker(trigid, 0);
 
 	if (res == NULL)
 		PG_RETURN_NULL();
@@ -886,9 +886,34 @@ pg_get_triggerdef_ext(PG_FUNCTION_ARGS)
 {
 	Oid			trigid = PG_GETARG_OID(0);
 	bool		pretty = PG_GETARG_BOOL(1);
+	int			prettyFlags;
 	char	   *res;
 
-	res = pg_get_triggerdef_worker(trigid, pretty);
+	prettyFlags = pretty ? GET_PRETTY_FLAGS(pretty) : 0;
+
+	res = pg_get_triggerdef_worker(trigid, prettyFlags);
+
+	if (res == NULL)
+		PG_RETURN_NULL();
+
+	PG_RETURN_TEXT_P(string_to_text(res));
+}
+
+/*
+ * pg_get_triggerdef_string
+ *		Returns trigger definition as a string formatted as a single-line
+ *		without schema qualification designed for the psql \d command.
+ */
+Datum
+pg_get_triggerdef_string(PG_FUNCTION_ARGS)
+{
+	Oid			trigid = PG_GETARG_OID(0);
+	int			prettyFlags;
+	char	   *res;
+
+	prettyFlags = PRETTYFLAG_SCHEMA;
+
+	res = pg_get_triggerdef_worker(trigid, prettyFlags);
 
 	if (res == NULL)
 		PG_RETURN_NULL();
@@ -897,11 +922,12 @@ pg_get_triggerdef_ext(PG_FUNCTION_ARGS)
 }
 
 static char *
-pg_get_triggerdef_worker(Oid trigid, bool pretty)
+pg_get_triggerdef_worker(Oid trigid, int prettyFlags)
 {
 	HeapTuple	ht_trig;
 	Form_pg_trigger trigrec;
 	StringInfoData buf;
+	deparse_context context;
 	Relation	tgrel;
 	ScanKeyData skey[1];
 	SysScanDesc tgscan;
@@ -941,6 +967,12 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	 * be schema-qualified, but the trigger rel's name may be.
 	 */
 	initStringInfo(&buf);
+
+	context.buf = &buf;
+	context.prettyFlags = prettyFlags;
+	context.wrapColumn = WRAP_COLUMN_DEFAULT;
+	context.indentLevel = 0;
+	context.colNamesVisible = true;
 
 	tgname = NameStr(trigrec->tgname);
 	appendStringInfo(&buf, "CREATE %sTRIGGER %s ",
@@ -1007,23 +1039,27 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	 * In non-pretty mode, always schema-qualify the target table name for
 	 * safety.  In pretty mode, schema-qualify only if not visible.
 	 */
-	appendStringInfo(&buf, " ON %s ",
-					 pretty ?
+	appendContextKeyword(&context, " ON ", 0, 0, PRETTYINDENT_VAR - 1);
+	appendStringInfo(&buf, "%s",
+					 (prettyFlags & PRETTYFLAG_SCHEMA) ?
 					 generate_relation_name(trigrec->tgrelid, NIL) :
 					 generate_qualified_relation_name(trigrec->tgrelid));
 
 	if (OidIsValid(trigrec->tgconstraint))
 	{
 		if (OidIsValid(trigrec->tgconstrrelid))
-			appendStringInfo(&buf, "FROM %s ",
-							 generate_relation_name(trigrec->tgconstrrelid, NIL));
+		{
+			appendContextKeyword(&context, " FROM ", 0, 0, PRETTYINDENT_VAR - 1);
+			appendStringInfoString(&buf, generate_relation_name(trigrec->tgconstrrelid, NIL));
+		}
 		if (!trigrec->tgdeferrable)
-			appendStringInfoString(&buf, "NOT ");
-		appendStringInfoString(&buf, "DEFERRABLE INITIALLY ");
-		if (trigrec->tginitdeferred)
-			appendStringInfoString(&buf, "DEFERRED ");
+			appendContextKeyword(&context, " NOT DEFERRABLE INITIALLY ", 0, 0, PRETTYINDENT_VAR - 1);
 		else
-			appendStringInfoString(&buf, "IMMEDIATE ");
+			appendContextKeyword(&context, " DEFERRABLE INITIALLY ", 0, 0, PRETTYINDENT_VAR - 1);
+		if (trigrec->tginitdeferred)
+			appendStringInfoString(&buf, "DEFERRED");
+		else
+			appendStringInfoString(&buf, "IMMEDIATE");
 	}
 
 	value = fastgetattr(ht_trig, Anum_pg_trigger_tgoldtable,
@@ -1040,19 +1076,21 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 		tgnewtable = NULL;
 	if (tgoldtable != NULL || tgnewtable != NULL)
 	{
-		appendStringInfoString(&buf, "REFERENCING ");
+		appendContextKeyword(&context, " REFERENCING", 0, 0, PRETTYINDENT_VAR - 1);
 		if (tgoldtable != NULL)
-			appendStringInfo(&buf, "OLD TABLE AS %s ",
+			appendStringInfo(&buf, " OLD TABLE AS %s",
 							 quote_identifier(tgoldtable));
 		if (tgnewtable != NULL)
-			appendStringInfo(&buf, "NEW TABLE AS %s ",
+			appendStringInfo(&buf, " NEW TABLE AS %s",
 							 quote_identifier(tgnewtable));
 	}
 
+	appendContextKeyword(&context, " FOR EACH ", 0, 0, PRETTYINDENT_VAR - 1);
+
 	if (TRIGGER_FOR_ROW(trigrec->tgtype))
-		appendStringInfoString(&buf, "FOR EACH ROW ");
+		appendStringInfoString(&buf, "ROW");
 	else
-		appendStringInfoString(&buf, "FOR EACH STATEMENT ");
+		appendStringInfoString(&buf, "STATEMENT");
 
 	/* If the trigger has a WHEN qualification, add that */
 	value = fastgetattr(ht_trig, Anum_pg_trigger_tgqual,
@@ -1061,12 +1099,12 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	{
 		Node	   *qual;
 		char		relkind;
-		deparse_context context;
+		deparse_context whenContext;
 		deparse_namespace dpns;
 		RangeTblEntry *oldrte;
 		RangeTblEntry *newrte;
 
-		appendStringInfoString(&buf, "WHEN (");
+		appendContextKeyword(&context, " WHEN (", 0, 0, PRETTYINDENT_VAR - 1);
 
 		qual = stringToNode(TextDatumGetCString(value));
 
@@ -1105,26 +1143,27 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 		set_simple_column_names(&dpns);
 
 		/* Set up context with one-deep namespace stack */
-		context.buf = &buf;
-		context.namespaces = list_make1(&dpns);
-		context.resultDesc = NULL;
-		context.targetList = NIL;
-		context.windowClause = NIL;
-		context.varprefix = true;
-		context.prettyFlags = GET_PRETTY_FLAGS(pretty);
-		context.wrapColumn = WRAP_COLUMN_DEFAULT;
-		context.indentLevel = PRETTYINDENT_STD;
-		context.colNamesVisible = true;
-		context.inGroupBy = false;
-		context.varInOrderBy = false;
-		context.appendparents = NULL;
+		whenContext.buf = &buf;
+		whenContext.namespaces = list_make1(&dpns);
+		whenContext.resultDesc = NULL;
+		whenContext.targetList = NIL;
+		whenContext.windowClause = NIL;
+		whenContext.varprefix = true;
+		whenContext.prettyFlags = prettyFlags;
+		whenContext.wrapColumn = WRAP_COLUMN_DEFAULT;
+		whenContext.indentLevel = PRETTYINDENT_STD;
+		whenContext.colNamesVisible = true;
+		whenContext.inGroupBy = false;
+		whenContext.varInOrderBy = false;
+		whenContext.appendparents = NULL;
 
-		get_rule_expr(qual, &context, false);
+		get_rule_expr(qual, &whenContext, false);
 
-		appendStringInfoString(&buf, ") ");
+		appendStringInfoChar(&buf, ')');
 	}
 
-	appendStringInfo(&buf, "EXECUTE FUNCTION %s(",
+	appendContextKeyword(&context, " EXECUTE FUNCTION ", 0, 0, PRETTYINDENT_VAR - 1);
+	appendStringInfo(&buf, "%s(",
 					 generate_function_name(trigrec->tgfoid, 0,
 											NIL, NULL,
 											false, NULL, false));
