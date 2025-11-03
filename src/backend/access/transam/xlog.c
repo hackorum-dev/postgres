@@ -56,6 +56,7 @@
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"
+#include "access/xlog.h"
 #include "access/xlog_internal.h"
 #include "access/xlogarchive.h"
 #include "access/xloginsert.h"
@@ -6750,7 +6751,7 @@ LogCheckpointStart(int flags, bool restartpoint)
  * Log end of a checkpoint.
  */
 static void
-LogCheckpointEnd(bool restartpoint)
+LogCheckpointEnd(bool restartpoint, int flags)
 {
 	long		write_msecs,
 				sync_msecs,
@@ -6758,6 +6759,17 @@ LogCheckpointEnd(bool restartpoint)
 				longest_msecs,
 				average_msecs;
 	uint64		average_sync_time;
+	const char *ckpt_reason = "timed";
+
+	/* Determine checkpoint reason */
+	if (flags & CHECKPOINT_IS_SHUTDOWN)
+		ckpt_reason = "shutdown";
+	else if (flags & CHECKPOINT_END_OF_RECOVERY)
+		ckpt_reason = "end-of-recovery";
+	else if (flags & CHECKPOINT_FAST)
+		ckpt_reason = "immediate";
+	else if (flags & CHECKPOINT_FORCE)
+		ckpt_reason = "forced";
 
 	CheckpointStats.ckpt_end_t = GetCurrentTimestamp();
 
@@ -6809,12 +6821,13 @@ LogCheckpointEnd(bool restartpoint)
 	 */
 	if (restartpoint)
 		ereport(LOG,
-				(errmsg("restartpoint complete: wrote %d buffers (%.1f%%), "
+				(errmsg("restartpoint complete (%s): wrote %d buffers (%.1f%%), "
 						"wrote %d SLRU buffers; %d WAL file(s) added, "
 						"%d removed, %d recycled; write=%ld.%03d s, "
 						"sync=%ld.%03d s, total=%ld.%03d s; sync files=%d, "
 						"longest=%ld.%03d s, average=%ld.%03d s; distance=%d kB, "
 						"estimate=%d kB; lsn=%X/%08X, redo lsn=%X/%08X",
+						ckpt_reason,
 						CheckpointStats.ckpt_bufs_written,
 						(double) CheckpointStats.ckpt_bufs_written * 100 / NBuffers,
 						CheckpointStats.ckpt_slru_written,
@@ -6833,12 +6846,13 @@ LogCheckpointEnd(bool restartpoint)
 						LSN_FORMAT_ARGS(ControlFile->checkPointCopy.redo))));
 	else
 		ereport(LOG,
-				(errmsg("checkpoint complete: wrote %d buffers (%.1f%%), "
+				(errmsg("checkpoint complete (%s): wrote %d buffers (%.1f%%), "
 						"wrote %d SLRU buffers; %d WAL file(s) added, "
 						"%d removed, %d recycled; write=%ld.%03d s, "
 						"sync=%ld.%03d s, total=%ld.%03d s; sync files=%d, "
 						"longest=%ld.%03d s, average=%ld.%03d s; distance=%d kB, "
 						"estimate=%d kB; lsn=%X/%08X, redo lsn=%X/%08X",
+						ckpt_reason,
 						CheckpointStats.ckpt_bufs_written,
 						(double) CheckpointStats.ckpt_bufs_written * 100 / NBuffers,
 						CheckpointStats.ckpt_slru_written,
@@ -7427,7 +7441,7 @@ CreateCheckPoint(int flags)
 		TruncateSUBTRANS(GetOldestTransactionIdConsideredRunning());
 
 	/* Real work is done; log and update stats. */
-	LogCheckpointEnd(false);
+	LogCheckpointEnd(false, flags);
 
 	/* Reset the process title */
 	update_checkpoint_display(flags, false, true);
@@ -7895,7 +7909,7 @@ CreateRestartPoint(int flags)
 		TruncateSUBTRANS(GetOldestTransactionIdConsideredRunning());
 
 	/* Real work is done; log and update stats. */
-	LogCheckpointEnd(true);
+	LogCheckpointEnd(true, flags);
 
 	/* Reset the process title */
 	update_checkpoint_display(flags, true, true);
