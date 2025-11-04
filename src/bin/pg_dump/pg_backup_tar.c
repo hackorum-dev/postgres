@@ -341,7 +341,7 @@ tarOpen(ArchiveHandle *AH, const char *filename, char mode)
 		 * might retain the data but forget tmpfile()'s unlink().  If so, the
 		 * file mode protects confidentiality of the data written.
 		 */
-		old_umask = umask(S_IRWXG | S_IRWXO);
+		old_umask = umask(S_IRWXU | S_IRWXG | S_IRWXO);
 
 #ifndef WIN32
 		tm->tmpFH = tmpfile();
