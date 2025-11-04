@@ -168,7 +168,7 @@ check_ssl_key_file_permissions(const char *ssl_key_file, bool isServerStart)
 		return false;
 	}
 
-	if ((buf.st_uid == geteuid() && buf.st_mode & (S_IRWXG | S_IRWXO)) ||
+	if ((buf.st_uid == geteuid() && buf.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO)) ||
 		(buf.st_uid == 0 && buf.st_mode & (S_IWGRP | S_IXGRP | S_IRWXO)))
 	{
 		ereport(loglevel,
