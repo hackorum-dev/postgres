@@ -8082,7 +8082,7 @@ passwordFromFile(const char *hostname, const char *port,
 	}
 
 	/* If password file is insecure, alert the user and ignore it. */
-	if (stat_buf.st_mode & (S_IRWXG | S_IRWXO))
+	if (stat_buf.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
 	{
 		fprintf(stderr,
 				libpq_gettext("WARNING: password file \"%s\" has group or world access; permissions should be u=rw (0600) or less\n"),
