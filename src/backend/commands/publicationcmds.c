@@ -975,11 +975,11 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 
 	InvokeObjectPostCreateHook(PublicationRelationId, puboid, 0);
 
-	if (wal_level != WAL_LEVEL_LOGICAL)
+	if (wal_level < WAL_LEVEL_LOGICAL)
 		ereport(WARNING,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("\"wal_level\" is insufficient to publish logical changes"),
-				 errhint("Set \"wal_level\" to \"logical\" before creating subscriptions.")));
+				 errhint("Set \"wal_level\" >= \"logical\" before creating subscriptions.")));
 
 	return myself;
 }
