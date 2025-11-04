@@ -1334,7 +1334,7 @@ initialize_SSL(PGconn *conn)
 #if !defined(WIN32) && !defined(__CYGWIN__)
 		if (buf.st_uid == 0 ?
 			buf.st_mode & (S_IWGRP | S_IXGRP | S_IRWXO) :
-			buf.st_mode & (S_IRWXG | S_IRWXO))
+			buf.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
 		{
 			libpq_append_conn_error(conn,
 									"private key file \"%s\" has group or world access; file must have permissions u=rw (0600) or less if owned by the current user, or permissions u=rw,g=r (0640) or less if owned by root",
