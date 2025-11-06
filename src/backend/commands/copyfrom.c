@@ -1180,15 +1180,16 @@ CopyFrom(CopyFromState cstate)
 		ExecStoreVirtualTuple(myslot);
 
 		/*
-		 * Constraints and where clause might reference the tableoid column,
-		 * so (re-)initialize tts_tableOid before evaluating them.
+		 * where clause might reference the tableoid column, so (re-)initialize
+		 * tts_tableOid before evaluating them. It may change later if we are
+		 * COPY INTO partitioned table.
 		 */
 		myslot->tts_tableOid = RelationGetRelid(target_resultRelInfo->ri_RelationDesc);
 
 		/* Triggers and stuff need to be invoked in query context. */
 		MemoryContextSwitchTo(oldcontext);
 
-		if (cstate->whereClause)
+		if (proute == NULL && cstate->whereClause)
 		{
 			econtext->ecxt_scantuple = myslot;
 			/* Skip items that don't match COPY's WHERE clause */
@@ -1216,6 +1217,24 @@ CopyFrom(CopyFromState cstate)
 			 */
 			resultRelInfo = ExecFindPartition(mtstate, target_resultRelInfo,
 											  proute, myslot, estate);
+
+			myslot->tts_tableOid = RelationGetRelid(resultRelInfo->ri_RelationDesc);
+
+			if (cstate->whereClause)
+			{
+				econtext->ecxt_scantuple = myslot;
+				/* Skip items that don't match COPY's WHERE clause */
+				if (!ExecQual(cstate->qualexpr, econtext))
+				{
+					/*
+					 * Report that this tuple was filtered out by the WHERE
+					 * clause.
+					 */
+					pgstat_progress_update_param(PROGRESS_COPY_TUPLES_EXCLUDED,
+												++excluded);
+					continue;
+				}
+			}
 
 			if (prevResultRelInfo != resultRelInfo)
 			{
@@ -1345,6 +1364,13 @@ CopyFrom(CopyFromState cstate)
 			}
 			else
 			{
+				/*
+				 * Constraints and GENERATED expressions might reference the
+				 * tableoid column, so (re-)initialize tts_tableOid before
+				 * evaluating them.
+				 */
+				myslot->tts_tableOid = RelationGetRelid(resultRelInfo->ri_RelationDesc);
+
 				/* Compute stored generated columns */
 				if (resultRelInfo->ri_RelationDesc->rd_att->constr &&
 					resultRelInfo->ri_RelationDesc->rd_att->constr->has_generated_stored)
