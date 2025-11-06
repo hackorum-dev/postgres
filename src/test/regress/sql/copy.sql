@@ -273,6 +273,20 @@ copy (select * from parted_copytest order by a) to :'filename';
 
 truncate parted_copytest;
 
+COPY parted_copytest FROM STDIN WHERE (tableoid in ('parted_copytest'::regclass, 'parted_copytest_a1'::regclass));
+1	1	a
+2	2	b
+\.
+
+SELECT * FROM parted_copytest; --expect one row
+COPY parted_copytest FROM STDIN WHERE (tableoid in ('parted_copytest_a2'::regclass));
+2	2	b
+1	1	a
+\.
+SELECT * FROM parted_copytest; --expect two row
+truncate parted_copytest;
+
+
 copy parted_copytest from :'filename';
 
 -- Ensure COPY FREEZE errors for partitioned tables.
