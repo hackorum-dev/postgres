@@ -332,6 +332,22 @@ insert into parted_copytest select x,1,'One' from generate_series(1011,1020) x;
 \set filename :abs_builddir '/results/parted_copytest.csv'
 copy (select * from parted_copytest order by a) to :'filename';
 truncate parted_copytest;
+COPY parted_copytest FROM STDIN WHERE (tableoid in ('parted_copytest'::regclass, 'parted_copytest_a1'::regclass));
+SELECT * FROM parted_copytest; --expect one row
+ a | b | c 
+---+---+---
+ 1 | 1 | a
+(1 row)
+
+COPY parted_copytest FROM STDIN WHERE (tableoid in ('parted_copytest_a2'::regclass));
+SELECT * FROM parted_copytest; --expect two row
+ a | b | c 
+---+---+---
+ 1 | 1 | a
+ 2 | 2 | b
+(2 rows)
+
+truncate parted_copytest;
 copy parted_copytest from :'filename';
 -- Ensure COPY FREEZE errors for partitioned tables.
 begin;
