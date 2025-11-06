@@ -5287,6 +5287,66 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
        </para>
       </listitem>
      </varlistentry>
+
+     <varlistentry id="guc-cascade-replication-batch-size" xreflabel="cascade_replication_batch_size">
+      <term><varname>cascade_replication_batch_size</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cascade_replication_batch_size</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        The number of applied WAL records after which the standby server will
+        notify connected logical replication clients.
+       </para>
+       <para>
+        By default, the standby server notifies each connected logical
+        replication client after applying each WAL record. In there is a large
+        number of such clients (100+), this can slow down the WAL application
+        process. In this case, a batching mode can be used, so server will
+        notify clients only after applying the specified number of records. This
+        improves efficiency of notification process, but may cause delays for
+        delivery of changes to downstream servers if new WAL records arrives on
+        current server with large intervals (e.g. during low load periods).
+        Parameter <varname>cascade_replication_batch_delay</varname> could be
+        used to control the maximum notification delay for such cases.
+       </para>
+       <para>
+        Default value is 1, which disables batching mode for such notifications.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cascade-replication-batch-delay" xreflabel="cascade_replication_batch_delay">
+      <term><varname>cascade_replication_batch_delay</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cascade_replication_batch_delay</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies the maximum notification delay for logical replication clients
+        on the standby server if the
+        <varname>cascade_replication_batch_size</varname> parameter is set to a
+        value greater than 1. The time is calculated from the completion of
+        applying the first WAL record in the batch. Connected clients will
+        be notified either after applying the configured  number of records or
+        after the specified time interval, whichever comes first.
+       </para>
+       <para>
+        The default value is 500ms. Setting value to 0 disables time-based
+        notifications for batch mode. Therefore, logical replication clients
+        will notice the presence of a new available WAL record after configured
+        number of records is applied or after the sender wakes up for other
+        reasons.
+       </para>
+       <para>
+        If batching mode is not enabled for logical replication notifications
+        (i.e. value of <varname>cascade_replication_batch_size</varname> is set
+        to 1), then this parameter is ignored.
+       </para>
+      </listitem>
+     </varlistentry>
      </variablelist>
     </sect2>
 

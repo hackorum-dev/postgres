@@ -376,6 +376,13 @@
 					# is not set
 #wal_receiver_status_interval = 10s	# send replies at least this often
 					# 0 disables
+#cascade_replication_batch_size = 1	# maximum number of applied WAL records
+					# before cascade logical walsenders are notified on standby
+					# 1 disables records batching in cascade replication
+#cascade_replication_batch_delay = 500ms # maximum time before cascade walsenders
+					# are notified about applied records if batching is enabled
+					# (i.e. if cascade_replication_batch_size is greater than 1)
+					# 0 disables timed notifications during batching
 #hot_standby_feedback = off		# send info from standby to prevent
 					# query conflicts
 #wal_receiver_timeout = 60s		# time that receiver waits for
