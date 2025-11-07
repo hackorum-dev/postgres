@@ -170,20 +170,17 @@ ExecScanExtended(ScanState *node,
 	/* interrupt checks are in ExecScanFetch */
 
 	/*
-	 * If we have neither a qual to check nor a projection to do, just skip
-	 * all the overhead and return the raw scan tuple.
-	 */
-	if (!qual && !projInfo)
-	{
-		ResetExprContext(econtext);
-		return ExecScanFetch(node, epqstate, accessMtd, recheckMtd);
-	}
-
-	/*
 	 * Reset per-tuple memory context to free any expression evaluation
 	 * storage allocated in the previous tuple cycle.
 	 */
 	ResetExprContext(econtext);
+
+	/*
+	 * If we have neither a qual to check nor a projection to do, just skip
+	 * all the overhead and return the raw scan tuple.
+	 */
+	if (!qual && !projInfo)
+		return ExecScanFetch(node, epqstate, accessMtd, recheckMtd);
 
 	/*
 	 * get a tuple from the access method.  Loop until we obtain a tuple that
