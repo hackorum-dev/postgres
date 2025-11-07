@@ -356,7 +356,7 @@ static inline void
 XLogPrefetchIncrement(pg_atomic_uint64 *counter)
 {
 	Assert(AmStartupProcess() || !IsUnderPostmaster);
-	pg_atomic_write_u64(counter, pg_atomic_read_u64(counter) + 1);
+	pg_atomic_fetch_add_u64(counter, 1);
 }
 
 /*
