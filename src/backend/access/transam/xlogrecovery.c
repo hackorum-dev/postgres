@@ -1984,6 +1984,10 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	XLogRecoveryCtl->replayEndTLI = *replayTLI;
 	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
+    extern ConditionVariable WalReadersConditionVariable;
+    /* Signal WAL readers that recovery has advanced */
+    ConditionVariableBroadcast(&WalReadersConditionVariable);
+
 	/*
 	 * If we are attempting to enter Hot Standby mode, process XIDs we see
 	 */

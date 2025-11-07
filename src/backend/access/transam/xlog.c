@@ -93,6 +93,7 @@
 #include "storage/reinit.h"
 #include "storage/spin.h"
 #include "storage/sync.h"
+#include "storage/condition_variable.h"
 #include "utils/guc_hooks.h"
 #include "utils/guc_tables.h"
 #include "utils/injection_point.h"
@@ -136,6 +137,8 @@ int			wal_retrieve_retry_interval = 5000;
 int			max_slot_wal_keep_size_mb = -1;
 int			wal_decode_buffer_size = 512 * 1024;
 bool		track_wal_io_timing = false;
+
+extern ConditionVariable WalReadersConditionVariable;
 
 #ifdef WAL_DEBUG
 bool		XLOG_DEBUG = false;
@@ -2912,6 +2915,9 @@ XLogFlush(XLogRecPtr record)
 	/* wake up walsenders now that we've released heavily contended locks */
 	WalSndWakeupProcessRequests(true, !RecoveryInProgress());
 
+    /* wake up WAL readers waiting for new WAL */
+    ConditionVariableBroadcast(&WalReadersConditionVariable);
+
 	/*
 	 * If we still haven't flushed to the request point then we have a
 	 * problem; most likely, the requested flush point is past end of XLOG.
@@ -4981,7 +4987,7 @@ XLOGShmemInit(void)
 	}
 #endif
 
-
+    ConditionVariableInit(&WalReadersConditionVariable);
 	XLogCtl = (XLogCtlData *)
 		ShmemInitStruct("XLOG Ctl", XLOGShmemSize(), &foundXLog);
 

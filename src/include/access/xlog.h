@@ -17,7 +17,6 @@
 #include "lib/stringinfo.h"
 #include "nodes/pg_list.h"
 
-
 /* Sync methods */
 enum WalSyncMethod
 {

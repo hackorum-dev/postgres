@@ -23,12 +23,13 @@
 #include "access/xlogrecovery.h"
 #include "access/xlog_internal.h"
 #include "access/xlogutils.h"
+#include "storage/condition_variable.h"
 #include "miscadmin.h"
 #include "storage/fd.h"
 #include "storage/smgr.h"
 #include "utils/hsearch.h"
 #include "utils/rel.h"
-
+#include "utils/wait_event_types.h"
 
 /* GUC variable */
 bool		ignore_invalid_pages = false;
@@ -51,6 +52,9 @@ bool		InRecovery = false;
 
 /* Are we in Hot Standby mode? Only valid in startup process, see xlogutils.h */
 HotStandbyState standbyState = STANDBY_DISABLED;
+
+/* Global condition variable for WAL readers */
+ConditionVariable WalReadersConditionVariable = {0};
 
 /*
  * During XLOG replay, we may see XLOG records for incremental updates of
@@ -845,6 +849,8 @@ int
 read_local_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr,
 					 int reqLen, XLogRecPtr targetRecPtr, char *cur_page)
 {
+    ereport(LOG, (errmsg("OLD_FUNC: read_local_xlog_page_guts called")));
+
 	return read_local_xlog_page_guts(state, targetPagePtr, reqLen,
 									 targetRecPtr, cur_page, true);
 }
@@ -869,7 +875,7 @@ static int
 read_local_xlog_page_guts(XLogReaderState *state, XLogRecPtr targetPagePtr,
 						  int reqLen, XLogRecPtr targetRecPtr,
 						  char *cur_page, bool wait_for_wal)
-{
+{ 
 	XLogRecPtr	read_upto,
 				loc;
 	TimeLineID	tli;
@@ -877,7 +883,10 @@ read_local_xlog_page_guts(XLogReaderState *state, XLogRecPtr targetPagePtr,
 	WALReadError errinfo;
 	TimeLineID	currTLI;
 
-	loc = targetPagePtr + reqLen;
+    ereport(LOG, (errmsg("WAL READER DEBUG: read_local_xlog_page_guts CALLED")));
+    ereport(LOG, (errmsg("targetPagePtr wait_for_wal=%d", wait_for_wal))); 
+
+    loc = targetPagePtr + reqLen;
 
 	/*
 	 * Loop waiting for xlog to be available if necessary
@@ -898,6 +907,8 @@ read_local_xlog_page_guts(XLogReaderState *state, XLogRecPtr targetPagePtr,
 		else
 			read_upto = GetXLogReplayRecPtr(&currTLI);
 		tli = currTLI;
+
+        ereport(LOG, (errmsg("DEBUG: currTLI=%u, state->currTLI=%u", currTLI, state->currTLI)));
 
 		/*
 		 * Check which timeline to get the record from.
@@ -928,14 +939,18 @@ read_local_xlog_page_guts(XLogReaderState *state, XLogRecPtr targetPagePtr,
 		if (state->currTLI == currTLI)
 		{
 
-			if (loc <= read_upto)
-				break;
+			if (loc <= read_upto) 
+            {
+                ereport(LOG, (errmsg("DEBUG: currTLI=%u, state->currTLI=%u", currTLI, state->currTLI))); 
+    			break;
+            }
 
 			/* If asked, let's not wait for future WAL. */
 			if (!wait_for_wal)
 			{
 				ReadLocalXLogPageNoWaitPrivate *private_data;
 
+                ereport(LOG, (errmsg("DEBUG: Breaking loop - WAL available")));
 				/*
 				 * Inform the caller of read_local_xlog_page_no_wait that the
 				 * end of WAL has been reached.
@@ -947,8 +962,15 @@ read_local_xlog_page_guts(XLogReaderState *state, XLogRecPtr targetPagePtr,
 			}
 
 			CHECK_FOR_INTERRUPTS();
-			pg_usleep(1000L);
-		}
+
+            ereport(LOG, (errmsg("DEBUG: About to wait for WAL - NEED LSN %X/%X, HAVE %X/%X", 
+                (uint32)(loc >> 32), (uint32)loc,
+                (uint32)(read_upto >> 32), (uint32)read_upto)));  
+
+            /* Replace pg_usleep with condition variable wait */
+            ConditionVariableSleep(&WalReadersConditionVariable, WAIT_EVENT_WAL_READ);
+            ereport(LOG, (errmsg("DEBUG: Returned from ConditionVariableSleep")));
+        }
 		else
 		{
 			/*
@@ -959,6 +981,7 @@ read_local_xlog_page_guts(XLogReaderState *state, XLogRecPtr targetPagePtr,
 			 * about the new timeline, so we must've received past the end of
 			 * it.
 			 */
+            elog(LOG, "DEBUG: WAL NOT available - loc > read_upto, should wait");
 			read_upto = state->currTLIValidUntil;
 
 			/*
@@ -975,6 +998,10 @@ read_local_xlog_page_guts(XLogReaderState *state, XLogRecPtr targetPagePtr,
 			break;
 		}
 	}
+
+    /* Wake up after the loop if we used condition variable */
+    if (wait_for_wal && state->currTLI == currTLI)
+        ConditionVariableCancelSleep();
 
 	if (targetPagePtr + XLOG_BLCKSZ <= read_upto)
 	{

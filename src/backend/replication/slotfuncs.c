@@ -146,7 +146,7 @@ create_logical_replication_slot(char *name, char *plugin,
 	ctx = CreateInitDecodingContext(plugin, NIL,
 									false,	/* just catalogs is OK */
 									restart_lsn,
-									XL_ROUTINE(.page_read = read_local_xlog_page,
+									XL_ROUTINE(.page_read = logical_read_xlog_page_cv,
 											   .segment_open = wal_segment_open,
 											   .segment_close = wal_segment_close),
 									NULL, NULL, NULL);

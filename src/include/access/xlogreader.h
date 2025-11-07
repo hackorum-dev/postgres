@@ -215,7 +215,6 @@ struct XLogReaderState
 	/* Set when XLP_FIRST_IS_OVERWRITE_CONTRECORD is found */
 	XLogRecPtr	overwrittenRecPtr;
 
-
 	/* ----------------------------------------
 	 * Decoded representation of current record
 	 *

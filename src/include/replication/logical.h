@@ -152,4 +152,12 @@ extern bool LogicalReplicationSlotHasPendingWal(XLogRecPtr end_of_wal);
 extern XLogRecPtr LogicalSlotAdvanceAndCheckSnapState(XLogRecPtr moveto,
 													  bool *found_consistent_snapshot);
 
+extern XLogRecPtr LogicalWaitForWal(XLogRecPtr targetLSN);
+
+extern int logical_read_xlog_page_cv(XLogReaderState *state, 
+                                     XLogRecPtr targetPagePtr, 
+                                     int reqLen,
+                                     XLogRecPtr targetRecPtr, 
+                                     char *cur_page);
+
 #endif

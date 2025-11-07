@@ -19,6 +19,8 @@
 
 #include "access/xlogrecovery.h"
 #include "access/xlogutils.h"
+#include "access/xlog_internal.h"
+#include "access/xlog.h"
 #include "catalog/pg_type.h"
 #include "fmgr.h"
 #include "funcapi.h"
@@ -28,6 +30,7 @@
 #include "replication/decode.h"
 #include "replication/logical.h"
 #include "replication/message.h"
+#include "utils/wait_event_types.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
@@ -205,7 +208,7 @@ pg_logical_slot_get_changes_guts(FunctionCallInfo fcinfo, bool confirm, bool bin
 		ctx = CreateDecodingContext(InvalidXLogRecPtr,
 									options,
 									false,
-									XL_ROUTINE(.page_read = read_local_xlog_page,
+									XL_ROUTINE(.page_read = logical_read_xlog_page_cv,
 											   .segment_open = wal_segment_open,
 											   .segment_close = wal_segment_close),
 									LogicalOutputPrepareWrite,

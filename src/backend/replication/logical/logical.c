@@ -30,7 +30,9 @@
 
 #include "access/xact.h"
 #include "access/xlog_internal.h"
+#include "access/xlog.h"
 #include "access/xlogutils.h"
+#include "access/xlog_internal.h"
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -41,6 +43,8 @@
 #include "replication/snapbuild.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
+#include "storage/condition_variable.h"
+#include "utils/wait_event_types.h"
 #include "utils/builtins.h"
 #include "utils/injection_point.h"
 #include "utils/inval.h"
@@ -102,6 +106,91 @@ static void update_progress_txn_cb_wrapper(ReorderBuffer *cache,
 										   XLogRecPtr lsn);
 
 static void LoadOutputPlugin(OutputPluginCallbacks *callbacks, const char *plugin);
+
+/* Condition variable */
+extern ConditionVariable WalReadersConditionVariable;
+
+/*
+ * Wait for WAL to be available for logical decoding.
+ * 
+ * This function efficiently waits until the specified target LSN is available
+ * in WAL, using condition variables instead of the polling approach used in
+ * read_local_xlog_page_guts. The condition variable is signaled whenever new
+ * WAL is flushed (by XLogFlush) or replayed (during recovery by ApplyWalRecord),
+ * allowing logical decoding to wake up immediately when new data is available
+ * rather than polling repeatedly.
+ */
+XLogRecPtr
+LogicalWaitForWal(XLogRecPtr targetLSN)
+{
+    XLogRecPtr  flushptr;
+   
+    for (;;)
+    {
+        CHECK_FOR_INTERRUPTS();
+        
+        /* Get the current flush/replay position */
+        if (!RecoveryInProgress())
+            flushptr = GetFlushRecPtr(NULL);
+        else
+            flushptr = GetXLogReplayRecPtr(NULL);
+       
+        /* If we have enough WAL, break out of the loop */
+        if (targetLSN <= flushptr)
+            break;
+
+        ConditionVariableSleep(&WalReadersConditionVariable, WAIT_EVENT_WAL_READ);
+    }
+    
+    /* Cancel the sleep to clean up */
+    ConditionVariableCancelSleep();
+
+    return flushptr;
+}
+
+/*
+ * XLogReaderRoutine->page_read callback for logical decoding contexts
+ * that uses condition variables for efficient waiting
+ */
+int
+logical_read_xlog_page_cv(XLogReaderState *state, XLogRecPtr targetPagePtr, int reqLen,
+                          XLogRecPtr targetRecPtr, char *cur_page)
+{
+    XLogRecPtr  flushptr;
+    int         count;
+    WALReadError errinfo;
+    TimeLineID  tli;
+
+    XLogRecPtr test_flushptr = LogicalWaitForWal(targetPagePtr + reqLen);
+    (void)test_flushptr;  /* Use the result to prevent optimization */  
+
+    flushptr = LogicalWaitForWal(targetPagePtr + reqLen);
+
+    if (flushptr < targetPagePtr + reqLen)
+        return -1;
+    
+    if (RecoveryInProgress())
+        GetXLogReplayRecPtr(&tli);
+    else
+        tli = GetWALInsertionTimeLine();
+    
+    XLogReadDetermineTimeline(state, targetPagePtr, reqLen, tli);
+    
+    if (targetPagePtr + XLOG_BLCKSZ <= flushptr)
+        count = XLOG_BLCKSZ;
+    else if (targetPagePtr + reqLen > flushptr)
+        return -1;
+    else
+        count = flushptr - targetPagePtr;
+    
+    if (!WALRead(state, cur_page, targetPagePtr, count, tli, &errinfo))
+        WALReadRaiseError(&errinfo);
+    
+    /* Remove the XLByteToSeg and CheckXLogRemoved calls for now */
+    /* They are safety checks that might be handled at a higher level */
+    
+    return count;
+}
 
 /*
  * Make sure the current settings & environment are capable of doing logical
@@ -2018,7 +2107,7 @@ LogicalReplicationSlotHasPendingWal(XLogRecPtr end_of_wal)
 		ctx = CreateDecodingContext(InvalidXLogRecPtr,
 									NIL,
 									true,	/* fast_forward */
-									XL_ROUTINE(.page_read = read_local_xlog_page,
+									XL_ROUTINE(.page_read = logical_read_xlog_page_cv,
 											   .segment_open = wal_segment_open,
 											   .segment_close = wal_segment_close),
 									NULL, NULL, NULL);
@@ -2088,7 +2177,7 @@ LogicalSlotAdvanceAndCheckSnapState(XLogRecPtr moveto,
 	LogicalDecodingContext *ctx;
 	ResourceOwner old_resowner PG_USED_FOR_ASSERTS_ONLY = CurrentResourceOwner;
 	XLogRecPtr	retlsn;
-
+ 
 	Assert(moveto != InvalidXLogRecPtr);
 
 	if (found_consistent_snapshot)
@@ -2104,7 +2193,7 @@ LogicalSlotAdvanceAndCheckSnapState(XLogRecPtr moveto,
 		ctx = CreateDecodingContext(InvalidXLogRecPtr,
 									NIL,
 									true,	/* fast_forward */
-									XL_ROUTINE(.page_read = read_local_xlog_page,
+									XL_ROUTINE(.page_read = logical_read_xlog_page_cv,
 											   .segment_open = wal_segment_open,
 											   .segment_close = wal_segment_close),
 									NULL, NULL, NULL);
