@@ -341,7 +341,7 @@ update_local_synced_slot(RemoteSlot *remote_slot, Oid remote_dbid,
 }
 
 /*
- * Get the list of local logical slots that are synchronized from the
+ * Get the list of local logical slots that are synchronized or not with the
  * primary server.
  */
 static List *
@@ -356,7 +356,7 @@ get_local_synced_slots(void)
 		ReplicationSlot *s = &ReplicationSlotCtl->replication_slots[i];
 
 		/* Check if it is a synchronized slot */
-		if (s->in_use && s->data.synced)
+		if (s->in_use && (s->data.synced || s->data.failover))
 		{
 			Assert(SlotIsLogical(s));
 			local_slots = lappend(local_slots, s);
@@ -380,6 +380,7 @@ local_sync_slot_required(ReplicationSlot *local_slot, List *remote_slots)
 {
 	bool		remote_exists = false;
 	bool		locally_invalidated = false;
+	bool		synced_slot = false;
 
 	foreach_ptr(RemoteSlot, remote_slot, remote_slots)
 	{
@@ -395,13 +396,14 @@ local_sync_slot_required(ReplicationSlot *local_slot, List *remote_slots)
 			locally_invalidated =
 				(remote_slot->invalidated == RS_INVAL_NONE) &&
 				(local_slot->data.invalidated != RS_INVAL_NONE);
+			synced_slot = local_slot->data.synced;
 			SpinLockRelease(&local_slot->mutex);
 
 			break;
 		}
 	}
 
-	return (remote_exists && !locally_invalidated);
+	return (remote_exists && !locally_invalidated && synced_slot);
 }
 
 /*
@@ -455,10 +457,12 @@ drop_local_obsolete_slots(List *remote_slot_list)
 			 * slot by the user. This new user-created slot may end up using
 			 * the same shared memory as that of 'local_slot'. Thus check if
 			 * local_slot is still the synced one before performing actual
-			 * drop.
+			 * drop. Yes, we actually check 'failover', not 'synced', because
+			 * it could have been created on primary which is now a standby.
 			 */
+
 			SpinLockAcquire(&local_slot->mutex);
-			synced_slot = local_slot->in_use && local_slot->data.synced;
+			synced_slot = local_slot->in_use && (local_slot->data.failover || local_slot->data.synced);
 			SpinLockRelease(&local_slot->mutex);
 
 			if (synced_slot)
