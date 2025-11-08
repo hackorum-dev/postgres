@@ -512,7 +512,7 @@ pqsecure_open_gss(PGconn *conn)
 		PqGSSResultBuffer = malloc(PQ_GSS_AUTH_BUFFER_SIZE);
 		if (!PqGSSSendBuffer || !PqGSSRecvBuffer || !PqGSSResultBuffer)
 		{
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 			return PGRES_POLLING_FAILED;
 		}
 		PqGSSSendLength = PqGSSSendNext = PqGSSSendConsumed = 0;
@@ -703,7 +703,7 @@ pqsecure_open_gss(PGconn *conn)
 		PqGSSResultBuffer = malloc(PQ_GSS_MAX_PACKET_SIZE);
 		if (!PqGSSSendBuffer || !PqGSSRecvBuffer || !PqGSSResultBuffer)
 		{
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 			return PGRES_POLLING_FAILED;
 		}
 		PqGSSSendLength = PqGSSSendNext = PqGSSSendConsumed = 0;
