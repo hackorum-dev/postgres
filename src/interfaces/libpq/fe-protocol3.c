@@ -211,7 +211,7 @@ pqParseInput3(PGconn *conn)
 														   PGRES_COMMAND_OK);
 						if (!conn->result)
 						{
-							libpq_append_conn_error(conn, "out of memory");
+							libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 							pqSaveErrorResult(conn);
 						}
 					}
@@ -234,7 +234,7 @@ pqParseInput3(PGconn *conn)
 														   PGRES_PIPELINE_SYNC);
 						if (!conn->result)
 						{
-							libpq_append_conn_error(conn, "out of memory");
+							libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 							pqSaveErrorResult(conn);
 						}
 						else
@@ -257,7 +257,7 @@ pqParseInput3(PGconn *conn)
 														   PGRES_EMPTY_QUERY);
 						if (!conn->result)
 						{
-							libpq_append_conn_error(conn, "out of memory");
+							libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 							pqSaveErrorResult(conn);
 						}
 					}
@@ -274,7 +274,7 @@ pqParseInput3(PGconn *conn)
 															   PGRES_COMMAND_OK);
 							if (!conn->result)
 							{
-								libpq_append_conn_error(conn, "out of memory");
+								libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 								pqSaveErrorResult(conn);
 							}
 						}
@@ -295,7 +295,7 @@ pqParseInput3(PGconn *conn)
 															   PGRES_COMMAND_OK);
 							if (!conn->result)
 							{
-								libpq_append_conn_error(conn, "out of memory");
+								libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 								pqSaveErrorResult(conn);
 							}
 						}
@@ -369,7 +369,7 @@ pqParseInput3(PGconn *conn)
 															   PGRES_COMMAND_OK);
 							if (!conn->result)
 							{
-								libpq_append_conn_error(conn, "out of memory");
+								libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 								pqSaveErrorResult(conn);
 							}
 						}
@@ -990,7 +990,7 @@ pqGetErrorNotice3(PGconn *conn, bool isError)
 		}
 
 		if (PQExpBufferDataBroken(workBuf))
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		else
 			appendPQExpBufferStr(&conn->errorMessage, workBuf.data);
 	}
@@ -1605,7 +1605,7 @@ getParameterStatus(PGconn *conn)
 	/* And save it */
 	if (!pqSaveParameterStatus(conn, conn->workBuffer.data, valueBuf.data))
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		handleFatalError(conn);
 	}
 	termPQExpBuffer(&valueBuf);
@@ -1659,7 +1659,7 @@ getBackendKeyData(PGconn *conn, int msgLength)
 	conn->be_cancel_key = malloc(cancel_key_len);
 	if (conn->be_cancel_key == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		handleFatalError(conn);
 		return 0;
 	}
@@ -1705,7 +1705,7 @@ getNotify(PGconn *conn)
 		 * "async error", so the best we can do is drop the connection.  That
 		 * seems better than silently ignoring the notification.
 		 */
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		handleFatalError(conn);
 		return 0;
 	}
@@ -1726,7 +1726,7 @@ getNotify(PGconn *conn)
 	if (!newNotify)
 	{
 		free(svname);
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		handleFatalError(conn);
 		return 0;
 	}
@@ -1990,7 +1990,7 @@ pqGetCopyData3(PGconn *conn, char **buffer, int async)
 			*buffer = (char *) malloc(msgLength + 1);
 			if (*buffer == NULL)
 			{
-				libpq_append_conn_error(conn, "out of memory");
+				libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 				return -2;
 			}
 			memcpy(*buffer, &conn->inBuffer[conn->inCursor], msgLength);
@@ -2402,7 +2402,7 @@ pqFunctionCall3(PGconn *conn, Oid fnid,
 						conn->result = PQmakeEmptyPGresult(conn, status);
 						if (!conn->result)
 						{
-							libpq_append_conn_error(conn, "out of memory");
+							libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 							pqSaveErrorResult(conn);
 						}
 					}
