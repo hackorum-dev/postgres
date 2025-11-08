@@ -1019,7 +1019,7 @@ fillPGconn(PGconn *conn, PQconninfoOption *connOptions)
 				*connmember = strdup(tmp);
 				if (*connmember == NULL)
 				{
-					libpq_append_conn_error(conn, "out of memory");
+					libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 					return false;
 				}
 			}
@@ -1059,7 +1059,7 @@ pqCopyPGconn(PGconn *srcConn, PGconn *dstConn)
 				*dstConnmember = strdup(*tmp);
 				if (*dstConnmember == NULL)
 				{
-					libpq_append_conn_error(dstConn, "out of memory");
+					libpq_append_conn_error(dstConn, libpq_gettext("out of memory"));
 					return false;
 				}
 			}
@@ -2189,7 +2189,7 @@ pqConnectOptions2(PGconn *conn)
 
 oom_error:
 	conn->status = CONNECTION_BAD;
-	libpq_append_conn_error(conn, "out of memory");
+	libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 	return false;
 }
 
@@ -2351,7 +2351,7 @@ PQsetdbLogin(const char *pghost, const char *pgport, const char *pgoptions,
 
 oom_error:
 	conn->status = CONNECTION_BAD;
-	libpq_append_conn_error(conn, "out of memory");
+	libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 	return conn;
 }
 
@@ -3744,7 +3744,7 @@ keep_going:						/* We will come back to here until there is
 													EnvironmentOptions);
 				if (!startpacket)
 				{
-					libpq_append_conn_error(conn, "out of memory");
+					libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 					goto error_return;
 				}
 
@@ -5236,7 +5236,7 @@ store_conn_addrinfo(PGconn *conn, struct addrinfo *addrlist)
 	conn->addr = calloc(conn->naddr, sizeof(AddrInfo));
 	if (conn->addr == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return 1;
 	}
 
@@ -5550,7 +5550,7 @@ ldapServiceLookup(const char *purl, PQconninfoOption *options,
 
 	if ((url = strdup(purl)) == NULL)
 	{
-		libpq_append_error(errorMessage, "out of memory");
+		libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 		return 3;
 	}
 
@@ -5828,7 +5828,7 @@ ldapServiceLookup(const char *purl, PQconninfoOption *options,
 
 	if ((result = malloc(size)) == NULL)
 	{
-		libpq_append_error(errorMessage, "out of memory");
+		libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 		ldap_value_free_len(values);
 		ldap_unbind(ld);
 		return 3;
@@ -5946,7 +5946,7 @@ ldapServiceLookup(const char *purl, PQconninfoOption *options,
 						options[i].val = strdup(optval);
 						if (!options[i].val)
 						{
-							libpq_append_error(errorMessage, "out of memory");
+							libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 							free(result);
 							return 3;
 						}
@@ -6219,7 +6219,7 @@ parseServiceFile(const char *serviceFile,
 							options[i].val = strdup(val);
 						if (!options[i].val)
 						{
-							libpq_append_error(errorMessage, "out of memory");
+							libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 							result = 3;
 							goto exit;
 						}
@@ -6262,7 +6262,7 @@ exit:
 			options[i].val = strdup(serviceFile);
 			if (options[i].val == NULL)
 			{
-				libpq_append_error(errorMessage, "out of memory");
+				libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 				result = 3;
 			}
 			break;
@@ -6326,7 +6326,7 @@ conninfo_init(PQExpBuffer errorMessage)
 	options = (PQconninfoOption *) malloc(sizeof(PQconninfoOption) * sizeof(PQconninfoOptions) / sizeof(PQconninfoOptions[0]));
 	if (options == NULL)
 	{
-		libpq_append_error(errorMessage, "out of memory");
+		libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 		return NULL;
 	}
 	opt_dest = options;
@@ -6424,7 +6424,7 @@ conninfo_parse(const char *conninfo, PQExpBuffer errorMessage,
 	/* Need a modifiable copy of the input string */
 	if ((buf = strdup(conninfo)) == NULL)
 	{
-		libpq_append_error(errorMessage, "out of memory");
+		libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 		PQconninfoFree(options);
 		return NULL;
 	}
@@ -6675,7 +6675,7 @@ conninfo_array_parse(const char *const *keywords, const char *const *values,
 								options[k].val = strdup(str_option->val);
 								if (!options[k].val)
 								{
-									libpq_append_error(errorMessage, "out of memory");
+									libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 									PQconninfoFree(options);
 									PQconninfoFree(dbname_options);
 									return NULL;
@@ -6702,7 +6702,7 @@ conninfo_array_parse(const char *const *keywords, const char *const *values,
 				option->val = strdup(pvalue);
 				if (!option->val)
 				{
-					libpq_append_error(errorMessage, "out of memory");
+					libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 					PQconninfoFree(options);
 					PQconninfoFree(dbname_options);
 					return NULL;
@@ -6778,7 +6778,7 @@ conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 				if (!option->val)
 				{
 					if (errorMessage)
-						libpq_append_error(errorMessage, "out of memory");
+						libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 					return false;
 				}
 				continue;
@@ -6801,7 +6801,7 @@ conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 				if (!option->val)
 				{
 					if (errorMessage)
-						libpq_append_error(errorMessage, "out of memory");
+						libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 					return false;
 				}
 				continue;
@@ -6825,7 +6825,7 @@ conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 			if (!option->val)
 			{
 				if (errorMessage)
-					libpq_append_error(errorMessage, "out of memory");
+					libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 				return false;
 			}
 			continue;
@@ -6860,7 +6860,7 @@ conninfo_add_defaults(PQconninfoOption *options, PQExpBuffer errorMessage)
 			if (!sslmode_default->val)
 			{
 				if (errorMessage)
-					libpq_append_error(errorMessage, "out of memory");
+					libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 				return false;
 			}
 		}
@@ -6946,7 +6946,7 @@ conninfo_uri_parse_options(PQconninfoOption *options, const char *uri,
 	initPQExpBuffer(&portbuf);
 	if (PQExpBufferDataBroken(hostbuf) || PQExpBufferDataBroken(portbuf))
 	{
-		libpq_append_error(errorMessage, "out of memory");
+		libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 		goto cleanup;
 	}
 
@@ -6954,7 +6954,7 @@ conninfo_uri_parse_options(PQconninfoOption *options, const char *uri,
 	buf = strdup(uri);
 	if (buf == NULL)
 	{
-		libpq_append_error(errorMessage, "out of memory");
+		libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 		goto cleanup;
 	}
 	start = buf;
@@ -7311,7 +7311,7 @@ conninfo_uri_decode(const char *str, PQExpBuffer errorMessage)
 	buf = malloc(strlen(str) + 1);
 	if (buf == NULL)
 	{
-		libpq_append_error(errorMessage, "out of memory");
+		libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 		return NULL;
 	}
 	p = buf;
@@ -7493,7 +7493,7 @@ conninfo_storeval(PQconninfoOption *connOptions,
 		value_copy = strdup(value);
 		if (value_copy == NULL)
 		{
-			libpq_append_error(errorMessage, "out of memory");
+			libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 			return NULL;
 		}
 	}

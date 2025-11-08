@@ -150,7 +150,7 @@ client_initial_response(PGconn *conn, bool discover)
 	termPQExpBuffer(&buf);
 
 	if (!response)
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 
 	return response;
 }
@@ -493,7 +493,7 @@ issuer_from_well_known_uri(PGconn *conn, const char *wkuri)
 	issuer = strdup(wkuri);
 	if (!issuer)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return NULL;
 	}
 
@@ -773,7 +773,7 @@ run_oauth_flow(PGconn *conn)
 		conn->oauth_token = strdup(request->v1.token);
 		if (!conn->oauth_token)
 		{
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 			return PGRES_POLLING_FAILED;
 		}
 
@@ -1062,7 +1062,7 @@ setup_token_request(PGconn *conn, fe_oauth_state *state)
 			conn->oauth_token = strdup(request.v1.token);
 			if (!conn->oauth_token)
 			{
-				libpq_append_conn_error(conn, "out of memory");
+				libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 				goto fail;
 			}
 
@@ -1074,7 +1074,7 @@ setup_token_request(PGconn *conn, fe_oauth_state *state)
 		request_copy = malloc(sizeof(*request_copy));
 		if (!request_copy)
 		{
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 			goto fail;
 		}
 
@@ -1160,7 +1160,7 @@ setup_oauth_parameters(PGconn *conn)
 		conn->oauth_discovery_uri = strdup(conn->oauth_issuer);
 		if (!conn->oauth_discovery_uri)
 		{
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 			return false;
 		}
 	}
@@ -1173,7 +1173,7 @@ setup_oauth_parameters(PGconn *conn)
 		conn->oauth_issuer_id = strdup(conn->oauth_issuer);
 		if (!conn->oauth_issuer_id)
 		{
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 			return false;
 		}
 	}
@@ -1309,7 +1309,7 @@ oauth_exchange(void *opaq, bool final,
 			*output = strdup(kvsep);
 			if (unlikely(!*output))
 			{
-				libpq_append_conn_error(conn, "out of memory");
+				libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 				return SASL_FAILED;
 			}
 			*outputlen = strlen(*output);	/* == 1 */
