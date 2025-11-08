@@ -737,22 +737,11 @@ RelationInvalidatesSnapshotsOnly(Oid relid)
 bool
 RelationHasSysCache(Oid relid)
 {
-	int			low = 0,
-				high = SysCacheRelationOidSize - 1;
-
-	while (low <= high)
-	{
-		int			middle = low + (high - low) / 2;
-
-		if (SysCacheRelationOid[middle] == relid)
-			return true;
-		if (SysCacheRelationOid[middle] < relid)
-			low = middle + 1;
-		else
-			high = middle - 1;
-	}
-
-	return false;
+	return bsearch(&relid,
+				   SysCacheRelationOid,
+				   SysCacheRelationOidSize,
+				   sizeof(Oid),
+				   oid_compare) != NULL;
 }
 
 /*
@@ -762,22 +751,11 @@ RelationHasSysCache(Oid relid)
 bool
 RelationSupportsSysCache(Oid relid)
 {
-	int			low = 0,
-				high = SysCacheSupportingRelOidSize - 1;
-
-	while (low <= high)
-	{
-		int			middle = low + (high - low) / 2;
-
-		if (SysCacheSupportingRelOid[middle] == relid)
-			return true;
-		if (SysCacheSupportingRelOid[middle] < relid)
-			low = middle + 1;
-		else
-			high = middle - 1;
-	}
-
-	return false;
+	return bsearch(&relid,
+				   SysCacheSupportingRelOid,
+				   SysCacheSupportingRelOidSize,
+				   sizeof(Oid),
+				   oid_compare) != NULL;
 }
 
 
