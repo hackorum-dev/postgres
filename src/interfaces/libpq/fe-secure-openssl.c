@@ -471,7 +471,7 @@ pgtls_get_peer_certificate_hash(PGconn *conn, size_t *len)
 	cert_hash = malloc(hash_size);
 	if (cert_hash == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return NULL;
 	}
 	memcpy(cert_hash, hash, hash_size);
@@ -1202,7 +1202,7 @@ initialize_SSL(PGconn *conn)
 
 			if (engine_str == NULL)
 			{
-				libpq_append_conn_error(conn, "out of memory");
+				libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 				return -1;
 			}
 
