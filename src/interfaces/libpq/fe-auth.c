@@ -77,7 +77,7 @@ pg_GSS_continue(PGconn *conn, int payloadlen)
 		ginbuf.value = malloc(payloadlen);
 		if (!ginbuf.value)
 		{
-			libpq_append_conn_error(conn, "out of memory allocating GSSAPI buffer (%d)",
+			libpq_append_conn_error(conn, libpq_gettext("out of memory allocating GSSAPI buffer (%d)"),
 									payloadlen);
 			return STATUS_ERROR;
 		}
@@ -243,7 +243,7 @@ pg_SSPI_continue(PGconn *conn, int payloadlen)
 		inputbuf = malloc(payloadlen);
 		if (!inputbuf)
 		{
-			libpq_append_conn_error(conn, "out of memory allocating SSPI buffer (%d)",
+			libpq_append_conn_error(conn, libpq_gettext("out of memory allocating SSPI buffer (%d)"),
 									payloadlen);
 			return STATUS_ERROR;
 		}
@@ -305,7 +305,7 @@ pg_SSPI_continue(PGconn *conn, int payloadlen)
 		conn->sspictx = malloc(sizeof(CtxtHandle));
 		if (conn->sspictx == NULL)
 		{
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 			return STATUS_ERROR;
 		}
 		memcpy(conn->sspictx, &newContext, sizeof(CtxtHandle));
@@ -379,7 +379,7 @@ pg_SSPI_startup(PGconn *conn, int use_negotiate, int payloadlen)
 	conn->sspicred = malloc(sizeof(CredHandle));
 	if (conn->sspicred == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return STATUS_ERROR;
 	}
 
@@ -413,7 +413,7 @@ pg_SSPI_startup(PGconn *conn, int use_negotiate, int payloadlen)
 	conn->sspitarget = malloc(strlen(conn->krbsrvname) + strlen(host) + 2);
 	if (!conn->sspitarget)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return STATUS_ERROR;
 	}
 	sprintf(conn->sspitarget, "%s/%s", conn->krbsrvname, host);
@@ -691,7 +691,7 @@ error:
 oom_error:
 	termPQExpBuffer(&mechanism_buf);
 	free(initialresponse);
-	libpq_append_conn_error(conn, "out of memory");
+	libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 	return STATUS_ERROR;
 }
 
@@ -713,7 +713,7 @@ pg_SASL_continue(PGconn *conn, int payloadlen, bool final, bool *async)
 	challenge = malloc(payloadlen + 1);
 	if (!challenge)
 	{
-		libpq_append_conn_error(conn, "out of memory allocating SASL buffer (%d)",
+		libpq_append_conn_error(conn, libpq_gettext("out of memory allocating SASL buffer (%d)"),
 								payloadlen);
 		return STATUS_ERROR;
 	}
@@ -824,7 +824,7 @@ pg_password_sendauth(PGconn *conn, const char *password, AuthRequest areq)
 				crypt_pwd = malloc(2 * (MD5_PASSWD_LEN + 1));
 				if (!crypt_pwd)
 				{
-					libpq_append_conn_error(conn, "out of memory");
+					libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 					return STATUS_ERROR;
 				}
 
@@ -1327,7 +1327,7 @@ pg_fe_getusername(uid_t user_id, PQExpBuffer errorMessage)
 	{
 		result = strdup(name);
 		if (result == NULL && errorMessage)
-			libpq_append_error(errorMessage, "out of memory");
+			libpq_append_error(errorMessage, libpq_gettext("out of memory"));
 	}
 
 	return result;
@@ -1490,7 +1490,7 @@ PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user,
 			}
 		}
 		else
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 	}
 	else
 	{

@@ -866,7 +866,7 @@ lo_initialize(PGconn *conn)
 	lobjfuncs = (PGlobjfuncs *) malloc(sizeof(PGlobjfuncs));
 	if (lobjfuncs == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return -1;
 	}
 	MemSet(lobjfuncs, 0, sizeof(PGlobjfuncs));
