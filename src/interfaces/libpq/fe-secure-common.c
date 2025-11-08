@@ -107,7 +107,7 @@ pq_verify_peer_name_matches_certificate_name(PGconn *conn,
 	name = malloc(namelen + 1);
 	if (name == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return -1;
 	}
 	memcpy(name, namedata, namelen);

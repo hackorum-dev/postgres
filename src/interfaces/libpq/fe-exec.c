@@ -1329,7 +1329,7 @@ pqAllocCmdQueueEntry(PGconn *conn)
 		entry = (PGcmdQueueEntry *) malloc(sizeof(PGcmdQueueEntry));
 		if (entry == NULL)
 		{
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 			return NULL;
 		}
 	}
@@ -3319,7 +3319,7 @@ pqPipelineProcessQueue(PGconn *conn)
 		conn->result = PQmakeEmptyPGresult(conn, PGRES_PIPELINE_ABORTED);
 		if (!conn->result)
 		{
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 			pqSaveErrorResult(conn);
 			return;
 		}
@@ -4374,7 +4374,7 @@ PQescapeInternal(PGconn *conn, const char *str, size_t len, bool as_ident)
 	result = rp = (char *) malloc(result_size);
 	if (rp == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return NULL;
 	}
 
@@ -4567,7 +4567,7 @@ PQescapeByteaInternal(PGconn *conn,
 	if (rp == NULL)
 	{
 		if (conn)
-			libpq_append_conn_error(conn, "out of memory");
+			libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return NULL;
 	}
 

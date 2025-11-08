@@ -175,7 +175,7 @@ PQcancelCreate(PGconn *conn)
 
 oom_error:
 	cancelConn->status = CONNECTION_BAD;
-	libpq_append_conn_error(cancelConn, "out of memory");
+	libpq_append_conn_error(cancelConn, libpq_gettext("out of memory"));
 	return (PGcancelConn *) cancelConn;
 }
 
@@ -778,7 +778,7 @@ PQrequestCancel(PGconn *conn)
 	}
 	else
 	{
-		strlcpy(conn->errorMessage.data, "out of memory",
+		strlcpy(conn->errorMessage.data, libpq_gettext("out of memory"),
 				conn->errorMessage.maxlen);
 		r = false;
 	}
