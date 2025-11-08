@@ -371,7 +371,7 @@ build_client_first_message(fe_scram_state *state)
 	state->client_nonce = malloc(encoded_len + 1);
 	if (state->client_nonce == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return NULL;
 	}
 	encoded_len = pg_b64_encode(raw_nonce, SCRAM_RAW_NONCE_LEN,
@@ -444,7 +444,7 @@ build_client_first_message(fe_scram_state *state)
 
 oom_error:
 	termPQExpBuffer(&buf);
-	libpq_append_conn_error(conn, "out of memory");
+	libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 	return NULL;
 }
 
@@ -596,7 +596,7 @@ build_client_final_message(fe_scram_state *state)
 
 oom_error:
 	termPQExpBuffer(&buf);
-	libpq_append_conn_error(conn, "out of memory");
+	libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 	return NULL;
 }
 
@@ -616,7 +616,7 @@ read_server_first_message(fe_scram_state *state, char *input)
 	state->server_first_message = strdup(input);
 	if (state->server_first_message == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return false;
 	}
 
@@ -640,7 +640,7 @@ read_server_first_message(fe_scram_state *state, char *input)
 	state->nonce = strdup(nonce);
 	if (state->nonce == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return false;
 	}
 
@@ -654,7 +654,7 @@ read_server_first_message(fe_scram_state *state, char *input)
 	state->salt = malloc(decoded_salt_len);
 	if (state->salt == NULL)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return false;
 	}
 	state->saltlen = pg_b64_decode(encoded_salt,
@@ -700,7 +700,7 @@ read_server_final_message(fe_scram_state *state, char *input)
 	state->server_final_message = strdup(input);
 	if (!state->server_final_message)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return false;
 	}
 
@@ -736,7 +736,7 @@ read_server_final_message(fe_scram_state *state, char *input)
 	decoded_server_signature = malloc(server_signature_len);
 	if (!decoded_server_signature)
 	{
-		libpq_append_conn_error(conn, "out of memory");
+		libpq_append_conn_error(conn, libpq_gettext("out of memory"));
 		return false;
 	}
 
