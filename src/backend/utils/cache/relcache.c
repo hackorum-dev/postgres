@@ -1276,9 +1276,6 @@ retry:
 	 */
 	RelationInitPhysicalAddr(relation);
 
-	/* make sure relation is marked as having no open file yet */
-	relation->rd_smgr = NULL;
-
 	/*
 	 * now we can free the memory allocated for pg_class_tuple
 	 */
