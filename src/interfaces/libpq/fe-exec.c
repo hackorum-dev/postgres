@@ -911,6 +911,10 @@ pqPrepareAsyncResult(PGconn *conn)
 			 */
 			res = unconstify(PGresult *, &OOM_result);
 
+			pqDropConnection(conn, true);
+			conn->status = CONNECTION_BAD;	/* No more connection to backend */
+			conn->asyncStatus = PGASYNC_IDLE;
+
 			/*
 			 * Don't advance errorReported.  Perhaps we'll be able to report
 			 * the text later.
@@ -2067,8 +2071,7 @@ PQisBusy(PGconn *conn)
 /*
  * PQgetResult
  *	  Get the next PGresult produced by a query.  Returns NULL if no
- *	  query work remains or an error has occurred (e.g. out of
- *	  memory).
+ *	  query work remains.
  *
  *	  In pipeline mode, once all the result of a query have been returned,
  *	  PQgetResult returns NULL to let the user know that the next
@@ -2176,7 +2179,12 @@ PQgetResult(PGconn *conn)
 			pqCommandQueueAdvance(conn, false,
 								  res->resultStatus == PGRES_PIPELINE_SYNC);
 
-			if (conn->pipelineStatus != PQ_PIPELINE_OFF)
+			if ((const PGresult *) res == &OOM_result)
+			{
+				/* In the OOM case, set the state to IDLE */
+				conn->asyncStatus = PGASYNC_IDLE;
+			}
+			else if (conn->pipelineStatus != PQ_PIPELINE_OFF)
 			{
 				/*
 				 * We're about to send the results of the current query.  Set
@@ -2206,8 +2214,16 @@ PQgetResult(PGconn *conn)
 			break;
 		case PGASYNC_READY_MORE:
 			res = pqPrepareAsyncResult(conn);
-			/* Set the state back to BUSY, allowing parsing to proceed. */
-			conn->asyncStatus = PGASYNC_BUSY;
+			if ((const PGresult *) res == &OOM_result)
+			{
+				/* In the OOM case, set the state to IDLE */
+				conn->asyncStatus = PGASYNC_IDLE;
+			}
+			else
+			{
+				/* Set the state back to BUSY, allowing parsing to proceed. */
+				conn->asyncStatus = PGASYNC_BUSY;
+			}
 			break;
 		case PGASYNC_COPY_IN:
 			res = getCopyResult(conn, PGRES_COPY_IN);
@@ -2240,6 +2256,8 @@ PQgetResult(PGconn *conn)
 static PGresult *
 getCopyResult(PGconn *conn, ExecStatusType copytype)
 {
+	PGresult   *res;
+
 	/*
 	 * If the server connection has been lost, don't pretend everything is
 	 * hunky-dory; instead return a PGRES_FATAL_ERROR result, and reset the
@@ -2260,7 +2278,22 @@ getCopyResult(PGconn *conn, ExecStatusType copytype)
 		return pqPrepareAsyncResult(conn);
 
 	/* Otherwise, invent a suitable PGresult */
-	return PQmakeEmptyPGresult(conn, copytype);
+	res = PQmakeEmptyPGresult(conn, copytype);
+
+	/*
+	 * Return the static OOM_result if out-of-memory. See the comments
+	 * in pqPrepareAsyncResult().
+	 */
+	if (!res)
+	{
+		res = unconstify(PGresult *, &OOM_result);
+
+		pqDropConnection(conn, true);
+		conn->status = CONNECTION_BAD;	/* No more connection to backend */
+		conn->asyncStatus = PGASYNC_IDLE;
+	}
+
+	return res;
 }
 
 
