@@ -1190,7 +1190,9 @@ CREATE VIEW pg_stat_checkpointer AS
         pg_stat_get_checkpointer_sync_time() AS sync_time,
         pg_stat_get_checkpointer_buffers_written() AS buffers_written,
         pg_stat_get_checkpointer_slru_written() AS slru_written,
-        pg_stat_get_checkpointer_stat_reset_time() AS stats_reset;
+        pg_stat_get_checkpointer_stat_reset_time() AS stats_reset,
+        pg_stat_get_checkpointer_checkpoint_total_time() AS checkpoint_total_time,
+        pg_stat_get_checkpointer_last_checkpoint_time() AS last_checkpoint_time;
 
 CREATE VIEW pg_stat_io AS
 SELECT

@@ -6767,6 +6767,7 @@ LogCheckpointEnd(bool restartpoint)
 	sync_msecs = TimestampDifferenceMilliseconds(CheckpointStats.ckpt_sync_t,
 												 CheckpointStats.ckpt_sync_end_t);
 
+
 	/* Accumulate checkpoint timing summary data, in milliseconds. */
 	PendingCheckpointerStats.write_time += write_msecs;
 	PendingCheckpointerStats.sync_time += sync_msecs;
@@ -6780,7 +6781,15 @@ LogCheckpointEnd(bool restartpoint)
 
 	total_msecs = TimestampDifferenceMilliseconds(CheckpointStats.ckpt_start_t,
 												  CheckpointStats.ckpt_end_t);
+												
+	
+	/* Store in PendingCheckpointerStats */
+	PendingCheckpointerStats.checkpoint_total_time += (double) total_msecs;
+	PendingCheckpointerStats.last_checkpoint_time = CheckpointStats.ckpt_end_t;
 
+	/* Publishing it */
+	pgstat_report_checkpointer();
+	
 	/*
 	 * Timing values returned from CheckpointStats are in microseconds.
 	 * Convert to milliseconds for consistent printing.

@@ -2297,3 +2297,24 @@ pg_stat_have_stats(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(pgstat_have_entry(kind, dboid, objid));
 }
+
+PG_FUNCTION_INFO_V1(pg_stat_get_checkpointer_checkpoint_total_time);
+
+Datum
+pg_stat_get_checkpointer_checkpoint_total_time(PG_FUNCTION_ARGS)
+{
+    PgStat_CheckpointerStats *stats = pgstat_fetch_stat_checkpointer();
+    PG_RETURN_FLOAT8(stats->checkpoint_total_time);
+}
+
+PG_FUNCTION_INFO_V1(pg_stat_get_checkpointer_last_checkpoint_time);
+
+Datum
+pg_stat_get_checkpointer_last_checkpoint_time(PG_FUNCTION_ARGS)
+{
+   
+    PgStat_CheckpointerStats *stats = pgstat_fetch_stat_checkpointer();
+	if (!stats) PG_RETURN_NULL();
+	PG_RETURN_TIMESTAMPTZ(stats->last_checkpoint_time);
+
+}

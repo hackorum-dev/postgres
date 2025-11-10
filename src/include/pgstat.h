@@ -265,7 +265,9 @@ typedef struct PgStat_CheckpointerStats
 	PgStat_Counter sync_time;
 	PgStat_Counter buffers_written;
 	PgStat_Counter slru_written;
-	TimestampTz stat_reset_timestamp;
+	PgStat_Counter checkpoint_total_time;  /* new: total ms of last checkpoint */
+	TimestampTz    last_checkpoint_time;   /* new: end time of last checkpoint */
+	TimestampTz    stat_reset_timestamp;
 } PgStat_CheckpointerStats;
 
 
@@ -586,6 +588,7 @@ extern PgStat_BgWriterStats *pgstat_fetch_stat_bgwriter(void);
 
 extern void pgstat_report_checkpointer(void);
 extern PgStat_CheckpointerStats *pgstat_fetch_stat_checkpointer(void);
+extern void pgstat_report_checkpointer_extended(long total_msecs, TimestampTz end_time);
 
 
 /*

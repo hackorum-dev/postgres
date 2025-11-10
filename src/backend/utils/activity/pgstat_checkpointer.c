@@ -56,8 +56,14 @@ pgstat_report_checkpointer(void)
 	CHECKPOINTER_ACC(sync_time);
 	CHECKPOINTER_ACC(buffers_written);
 	CHECKPOINTER_ACC(slru_written);
+	CHECKPOINTER_ACC(checkpoint_total_time);
 #undef CHECKPOINTER_ACC
 
+	/* only overwrite if we actually have a new timestamp */
+	if (PendingCheckpointerStats.last_checkpoint_time != 0)
+    	stats_shmem->stats.last_checkpoint_time =
+        	PendingCheckpointerStats.last_checkpoint_time;
+	
 	pgstat_end_changecount_write(&stats_shmem->changecount);
 
 	/*
@@ -70,6 +76,28 @@ pgstat_report_checkpointer(void)
 	 */
 	pgstat_flush_io(false);
 }
+
+/* ------------------------------------------------------------
+ * Extended checkpointer stats reporting function
+ * ------------------------------------------------------------
+ */
+void
+pgstat_report_checkpointer_extended(long total_msecs, TimestampTz end_time)
+{
+    
+	PgStat_CheckpointerStats *checkpointer_stats;
+
+
+   checkpointer_stats = pgstat_fetch_stat_checkpointer();
+   if (!checkpointer_stats)
+       return;
+
+
+   checkpointer_stats->checkpoint_total_time += total_msecs;
+   checkpointer_stats->last_checkpoint_time = end_time;
+
+}
+
 
 /*
  * pgstat_fetch_stat_checkpointer() -
@@ -136,5 +164,11 @@ pgstat_checkpointer_snapshot_cb(void)
 	CHECKPOINTER_COMP(sync_time);
 	CHECKPOINTER_COMP(buffers_written);
 	CHECKPOINTER_COMP(slru_written);
+	CHECKPOINTER_COMP(checkpoint_total_time);
 #undef CHECKPOINTER_COMP
+
+	pgStatLocal.snapshot.checkpointer.last_checkpoint_time = stats_shmem->stats.last_checkpoint_time;
+
+	elog(LOG, "DBG snapshot_cb: copied last_checkpoint_time=%ld",
+    	(long) pgStatLocal.snapshot.checkpointer.last_checkpoint_time);
 }
