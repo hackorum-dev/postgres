@@ -1238,6 +1238,14 @@ HoldPinnedPortals(void)
 			HoldPortal(portal);
 			portal->autoHeld = true;
 		}
+		else if ((portal->cursorOptions & CURSOR_OPT_HOLD) &&
+				  portal->createSubid != InvalidSubTransactionId &&
+				  portal->status == PORTAL_READY)
+		{
+			/* Is it a holdable portal created in the current xact? */
+			HoldPortal(portal);
+			portal->autoHeld = true;
+		}
 	}
 }
 

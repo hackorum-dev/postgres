@@ -114,3 +114,36 @@ begin
  fetch p_CurData into val;
  raise notice 'val = %', val;
 end; $$;
+
+-- Verify whether the behavior of the hold cursor is consistent during commit and rollback
+do $$
+declare
+  p_CurData refcursor := 'hold_cursor';
+  val int;
+begin
+  execute 'DECLARE hold_cursor CURSOR WITH HOLD FOR SELECT 42';
+  loop
+    fetch p_CurData into val;
+    exit when val is null;
+    raise notice 'val = %', val;
+    commit;
+  end loop;
+  close p_CurData;
+end; $$;
+
+do $$
+declare
+  p_CurData refcursor := 'hold_cursor';
+  val int;
+begin
+  execute 'DECLARE hold_cursor CURSOR WITH HOLD FOR SELECT 42';
+  loop
+    fetch p_CurData into val;
+    exit when val is null;
+    raise notice 'val = %', val;
+    rollback;
+  end loop;
+  close p_CurData;
+end; $$;
+
+select * from pg_cursors;
