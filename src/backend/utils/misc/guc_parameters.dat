@@ -2395,6 +2395,16 @@
   max => 'INT_MAX / 1000000',
 },
 
+{ name => 'pq_recv_buffer_size', type => 'int', context => 'PGC_BACKEND', group => 'RESOURCES_MEM',
+  short_desc => 'Sets the size of the network receive buffer for each backend.',
+  long_desc => 'Larger values can improve performance when receiving large messages, but consume more memory per connection.',
+  flags => 'GUC_UNIT_KB',
+  variable => 'pq_recv_buffer_size',
+  boot_val => '8',
+  min => '8',
+  max => 'MAX_KILOBYTES',
+},
+
 # Not for general use
 { name => 'pre_auth_delay', type => 'int', context => 'PGC_SIGHUP', group => 'DEVELOPER_OPTIONS',
   short_desc => 'Sets the amount of time to wait before authentication on connection startup.',

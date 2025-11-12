@@ -113,19 +113,21 @@ static List *sock_paths = NIL;
 /*
  * Buffers for low-level I/O.
  *
- * The receive buffer is fixed size. Send buffer is usually 8k, but can be
- * enlarged by pq_putmessage_noblock() if the message doesn't fit otherwise.
+ * Both send and receive buffers are dynamically allocated. Send buffer is
+ * usually 8k, but can be enlarged by pq_putmessage_noblock() if the message
+ * doesn't fit otherwise. Receive buffer size is configurable via the
+ * pq_recv_buffer_size GUC parameter.
  */
 
 #define PQ_SEND_BUFFER_SIZE 8192
-#define PQ_RECV_BUFFER_SIZE 8192
 
 static char *PqSendBuffer;
 static int	PqSendBufferSize;	/* Size send buffer */
 static size_t PqSendPointer;	/* Next index to store a byte in PqSendBuffer */
 static size_t PqSendStart;		/* Next index to send a byte in PqSendBuffer */
 
-static char PqRecvBuffer[PQ_RECV_BUFFER_SIZE];
+static char *PqRecvBuffer;		/* Dynamically allocated receive buffer */
+static int	PqRecvBufferSize;	/* Size of receive buffer */
 static int	PqRecvPointer;		/* Next index to read a byte from PqRecvBuffer */
 static int	PqRecvLength;		/* End of data available in PqRecvBuffer */
 
@@ -279,6 +281,8 @@ pq_init(ClientSocket *client_sock)
 	/* initialize state variables */
 	PqSendBufferSize = PQ_SEND_BUFFER_SIZE;
 	PqSendBuffer = MemoryContextAlloc(TopMemoryContext, PqSendBufferSize);
+	PqRecvBufferSize = pq_recv_buffer_size * 1024;	/* GUC is in KB */
+	PqRecvBuffer = MemoryContextAlloc(TopMemoryContext, PqRecvBufferSize);
 	PqSendPointer = PqSendStart = PqRecvPointer = PqRecvLength = 0;
 	PqCommBusy = false;
 	PqCommReadingMsg = false;
@@ -922,7 +926,7 @@ pq_recvbuf(void)
 		errno = 0;
 
 		r = secure_read(MyProcPort, PqRecvBuffer + PqRecvLength,
-						PQ_RECV_BUFFER_SIZE - PqRecvLength);
+						PqRecvBufferSize - PqRecvLength);
 
 		if (r < 0)
 		{
