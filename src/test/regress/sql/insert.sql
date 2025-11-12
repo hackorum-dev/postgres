@@ -60,6 +60,20 @@ INSERT INTO large_tuple_test (select 4, repeat('a', 8126));
 DROP TABLE large_tuple_test;
 
 --
+-- test maximum tuple size
+--
+CREATE TABLE max_tuple_test (a int, b text);
+ALTER TABLE max_tuple_test ALTER COLUMN b SET STORAGE plain;
+
+-- should succeed
+INSERT INTO max_tuple_test VALUES (1, repeat('x', 8128));
+
+-- should fail
+INSERT INTO max_tuple_test VALUES (2, repeat('x', 8129));
+
+DROP TABLE max_tuple_test;
+
+--
 -- check indirection (field/array assignment), cf bug #14265
 --
 -- these tests are aware that transformInsertStmt has 3 separate code paths
