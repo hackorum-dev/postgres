@@ -140,6 +140,7 @@
 #huge_page_size = 0                     # zero for system default
                                         # (change requires restart)
 #temp_buffers = 8MB                     # min 800kB
+#pq_recv_buffer_size = 8kB              # min 8kB
 #max_prepared_transactions = 0          # zero disables the feature
                                         # (change requires restart)
 # Caution: it is not advisable to set max_prepared_transactions nonzero unless

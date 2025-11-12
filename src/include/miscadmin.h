@@ -189,6 +189,7 @@ extern PGDLLIMPORT int notify_buffers;
 extern PGDLLIMPORT int serializable_buffers;
 extern PGDLLIMPORT int subtransaction_buffers;
 extern PGDLLIMPORT int transaction_buffers;
+extern PGDLLIMPORT int pq_recv_buffer_size;
 
 extern PGDLLIMPORT int MyProcPid;
 extern PGDLLIMPORT pg_time_t MyStartTime;
