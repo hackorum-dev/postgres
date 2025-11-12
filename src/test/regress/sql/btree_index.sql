@@ -523,3 +523,13 @@ CREATE TABLE btree_part (id int4) PARTITION BY RANGE (id);
 CREATE INDEX btree_part_idx ON btree_part(id);
 ALTER INDEX btree_part_idx ALTER COLUMN id SET (n_distinct=100);
 DROP TABLE btree_part;
+
+-- Test B-tree index maximum entry size boundary
+CREATE TABLE btree_max_entry_test (i INT PRIMARY KEY, t TEXT);
+CREATE INDEX btree_max_entry_idx ON btree_max_entry_test(t);
+ALTER TABLE btree_max_entry_test ALTER COLUMN t SET STORAGE EXTERNAL;
+-- should succeed
+INSERT INTO btree_max_entry_test VALUES (1, repeat('a', 2692));
+-- should fail
+INSERT INTO btree_max_entry_test VALUES (2, repeat('a', 2693));
+DROP TABLE btree_max_entry_test;
