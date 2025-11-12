@@ -146,10 +146,13 @@ SELECT count(*) FROM test_tsvector WHERE a @@ '!wd:D';
 -- Test siglen parameter of GiST tsvector_ops
 CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(foo=1));
 CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=0));
-CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=2048));
+-- should fail
+CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=2025));
+-- should succeed
+CREATE INDEX wowidx2 ON test_tsvector USING gist (a tsvector_ops(siglen=2024));
+DROP INDEX wowidx2;
 CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=100,foo='bar'));
 CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=100, siglen = 200));
-
 CREATE INDEX wowidx2 ON test_tsvector USING gist (a tsvector_ops(siglen=1));
 
 \d test_tsvector
