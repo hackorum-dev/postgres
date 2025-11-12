@@ -528,9 +528,13 @@ ERROR:  unrecognized parameter "foo"
 CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=0));
 ERROR:  value 0 out of bounds for option "siglen"
 DETAIL:  Valid values are between "1" and "2024".
-CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=2048));
-ERROR:  value 2048 out of bounds for option "siglen"
+-- should fail
+CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=2025));
+ERROR:  value 2025 out of bounds for option "siglen"
 DETAIL:  Valid values are between "1" and "2024".
+-- should succeed
+CREATE INDEX wowidx2 ON test_tsvector USING gist (a tsvector_ops(siglen=2024));
+DROP INDEX wowidx2;
 CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=100,foo='bar'));
 ERROR:  unrecognized parameter "foo"
 CREATE INDEX wowidx1 ON test_tsvector USING gist (a tsvector_ops(siglen=100, siglen = 200));
