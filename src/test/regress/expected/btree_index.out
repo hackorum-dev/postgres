@@ -893,3 +893,16 @@ ALTER INDEX btree_part_idx ALTER COLUMN id SET (n_distinct=100);
 ERROR:  ALTER action ALTER COLUMN ... SET cannot be performed on relation "btree_part_idx"
 DETAIL:  This operation is not supported for partitioned indexes.
 DROP TABLE btree_part;
+-- Test B-tree index maximum entry size boundary
+CREATE TABLE btree_max_entry_test (i INT PRIMARY KEY, t TEXT);
+CREATE INDEX btree_max_entry_idx ON btree_max_entry_test(t);
+ALTER TABLE btree_max_entry_test ALTER COLUMN t SET STORAGE EXTERNAL;
+-- should succeed
+INSERT INTO btree_max_entry_test VALUES (1, repeat('a', 2692));
+-- should fail
+INSERT INTO btree_max_entry_test VALUES (2, repeat('a', 2693));
+ERROR:  index row size 2712 exceeds btree version 4 maximum 2704 for index "btree_max_entry_idx"
+DETAIL:  Index row references tuple (0,2) in relation "btree_max_entry_test".
+HINT:  Values larger than 1/3 of a buffer page cannot be indexed.
+Consider a function index of an MD5 hash of the value, or use full text indexing.
+DROP TABLE btree_max_entry_test;
