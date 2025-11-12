@@ -2335,7 +2335,7 @@ msgid ""
 "%s controls PostgreSQL logical decoding streams.\n"
 "\n"
 msgstr ""
-"%s 프로그램은 논리 디코딩 스트림을 제어하는 도구입니다.\n"
+"%s 프로그램은 PostgreSQL 논리 디코딩 스트림을 제어하는 도구입니다.\n"
 "\n"
 
 #: pg_recvlogical.c:87
