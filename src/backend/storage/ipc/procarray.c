@@ -5227,3 +5227,17 @@ KnownAssignedXidsReset(void)
 
 	LWLockRelease(ProcArrayLock);
 }
+
+/*
+ * GetNumProcs
+ *		Returns the number of currently active procs according to the proc array.
+ */
+int GetNumProcs(void)
+{
+	int			n;
+
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+	n = procArray->numProcs;
+	LWLockRelease(ProcArrayLock);
+	return n;
+}

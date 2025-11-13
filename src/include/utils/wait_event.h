@@ -12,6 +12,7 @@
 
 /* enums for wait events */
 #include "utils/wait_event_types.h"
+#include "postmaster/autovacuum.h"
 
 extern const char *pgstat_get_wait_event(uint32 wait_event_info);
 extern const char *pgstat_get_wait_event_type(uint32 wait_event_info);
@@ -73,6 +74,10 @@ pgstat_report_wait_start(uint32 wait_event_info)
 	 * four-bytes, updates are atomic.
 	 */
 	*(volatile uint32 *) my_wait_event_info = wait_event_info;
+	/* for adaptive autovacuum delay based on io wait */
+	if (debug_autovacuum_adaptive_cost_delay && 
+		(wait_event_info & 0xFF000000) == PG_WAIT_IO)
+		AutoVacuumUpdateIOWaitStats(wait_event_info, true);
 }
 
 /* ----------
@@ -84,8 +89,15 @@ pgstat_report_wait_start(uint32 wait_event_info)
 static inline void
 pgstat_report_wait_end(void)
 {
+	uint32		wait_event_info = *(volatile uint32 *) my_wait_event_info;
+
 	/* see pgstat_report_wait_start() */
 	*(volatile uint32 *) my_wait_event_info = 0;
+
+	/* for adaptive autovacuum based on io wait */
+	if (debug_autovacuum_adaptive_cost_delay && 
+		(wait_event_info & 0xFF000000) == PG_WAIT_IO)
+		AutoVacuumUpdateIOWaitStats(wait_event_info, false);
 }
 
 

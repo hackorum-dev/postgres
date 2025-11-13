@@ -134,6 +134,7 @@ int			autovacuum_vac_cost_limit;
 
 int			Log_autovacuum_min_duration = 600000;
 int			Log_autoanalyze_min_duration = 600000;
+int			debug_autovacuum_adaptive_cost_delay = false;
 
 /* the minimum allowed time between two awakenings of the launcher */
 #define MIN_AUTOVAC_SLEEPTIME 100.0 /* milliseconds */
@@ -299,6 +300,7 @@ typedef struct
 	WorkerInfo	av_startingWorker;
 	AutoVacuumWorkItem av_workItems[NUM_WORKITEMS];
 	pg_atomic_uint32 av_nworkersForBalance;
+	pg_atomic_uint32 av_io_wait_count;
 } AutoVacuumShmemStruct;
 
 static AutoVacuumShmemStruct *AutoVacuumShmem;
@@ -364,6 +366,7 @@ static void autovac_report_workitem(AutoVacuumWorkItem *workitem,
 static void avl_sigusr2_handler(SIGNAL_ARGS);
 static bool av_worker_available(void);
 static void check_av_worker_gucs(void);
+static void io_wait_count_update(bool increment);
 
 
 
@@ -3436,6 +3439,7 @@ AutoVacuumShmemInit(void)
 		}
 
 		pg_atomic_init_u32(&AutoVacuumShmem->av_nworkersForBalance, 0);
+		pg_atomic_init_u32(&AutoVacuumShmem->av_io_wait_count, 0);
 
 	}
 	else
@@ -3498,4 +3502,83 @@ check_av_worker_gucs(void)
 						autovacuum_max_workers, autovacuum_worker_slots),
 				 errdetail("The server will only start up to \"autovacuum_worker_slots\" (%d) autovacuum workers at a given time.",
 						   autovacuum_worker_slots)));
+}
+
+/*
+ * The IO wait events are counted at all wait event reporting points.
+ * Events that occur before shared memory initialization are excluded,
+ * e.g. WAIT_EVENT_DSM_ALLOCATE,WAIT_EVENT_CONTROL_FILE_READ,
+ * WAIT_EVENT_LOCK_FILE_CREATE_WRITE and other startup-related events.
+ */
+void 
+AutoVacuumUpdateIOWaitStats(uint32 wait_event_info, bool increment)
+{
+	switch (wait_event_info)
+		{
+			case WAIT_EVENT_CONTROL_FILE_READ:
+			case WAIT_EVENT_DSM_ALLOCATE:
+			case WAIT_EVENT_DSM_FILL_ZERO_WRITE:
+			case WAIT_EVENT_LOCK_FILE_ADDTODATADIR_READ:
+			case WAIT_EVENT_LOCK_FILE_ADDTODATADIR_SYNC:
+			case WAIT_EVENT_LOCK_FILE_ADDTODATADIR_WRITE:
+			case WAIT_EVENT_LOCK_FILE_CREATE_READ:
+			case WAIT_EVENT_LOCK_FILE_CREATE_SYNC:
+			case WAIT_EVENT_LOCK_FILE_CREATE_WRITE:
+			case WAIT_EVENT_LOCK_FILE_RECHECKDATADIR_READ:
+			case WAIT_EVENT_SNAPBUILD_SYNC:
+			case WAIT_EVENT_WAL_READ:
+				break;
+			default:
+				io_wait_count_update(increment);
+				break;
+		}
+}
+
+uint32 
+AutoVacuumGetIOWaitStats(void)
+{
+	return pg_atomic_read_u32(&AutoVacuumShmem->av_io_wait_count);
+}
+
+/*
+ * io_wait_count_update
+ * Count IO wait events based on BackendType to adjust autovacuum behavior.
+ * Categorize backends into three types to ensure user applications
+ * are not significantly impacted by autovacuum worker IO:
+ *
+ * 1. IO-sensitive backends (e.g. checkpointer, standalone backend):
+ * 	Their IO waits are counted with higher weight as they have
+ * 	significant impact on performance.
+ *
+ * 2. Normal backends:
+ * 	Regular backend processes that have normal IO sensitivity.
+ * 	Their IO waits are counted with normal weight (increment by 1).
+ *
+ * 3. Autovacuum workers:
+ * 	Their IO waits are not counted since we want to adjust their
+ * 	behavior based on other processes' IO load.
+ *
+ * The goal is to dynamically adjust autovacuum aggressive level
+ * based on system IO load to minimize its impact on user queries.
+ */
+static void
+io_wait_count_update(bool increment)
+{
+	if (MyBackendType == B_BG_WRITER ||
+		MyBackendType == B_CHECKPOINTER ||
+		MyBackendType == B_STANDALONE_BACKEND ||
+		MyBackendType == B_BACKEND)
+	{
+		if (increment)
+			pg_atomic_fetch_add_u32(&AutoVacuumShmem->av_io_wait_count, 3);
+		else
+			pg_atomic_fetch_sub_u32(&AutoVacuumShmem->av_io_wait_count, 3);
+	}
+	else if (MyBackendType != B_AUTOVAC_WORKER)
+	{
+		if (increment)
+			pg_atomic_fetch_add_u32(&AutoVacuumShmem->av_io_wait_count, 1);
+		else
+			pg_atomic_fetch_sub_u32(&AutoVacuumShmem->av_io_wait_count, 1);
+	}
 }

@@ -591,6 +591,14 @@
   boot_val => 'DEFAULT_ASSERT_ENABLED',
 },
 
+{ name => 'debug_autovacuum_adaptive_cost_delay', type => 'bool', context => 'PGC_USERSET', group => 'DEVELOPER_OPTIONS',
+  short_desc => 'Enables/Disables the autovacuum adaptive ajust of cost-based delay.',
+  long_desc => 'This can be useful for testing the effect of adaptive ajust of cost-based delay in autovacuum.',
+  flags => 'GUC_NOT_IN_SAMPLE | GUC_EXPLAIN',
+  variable => 'debug_autovacuum_adaptive_cost_delay',
+  boot_val => 'false',
+},
+
 { name => 'debug_copy_parse_plan_trees', type => 'bool', context => 'PGC_SUSET', group => 'DEVELOPER_OPTIONS',
   short_desc => 'Set this to force all parse and plan trees to be passed through copyObject(), to facilitate catching errors and omissions in copyObject().',
   flags => 'GUC_NOT_IN_SAMPLE',

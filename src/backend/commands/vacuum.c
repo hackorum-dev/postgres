@@ -117,6 +117,13 @@ pg_atomic_uint32 *VacuumSharedCostBalance = NULL;
 pg_atomic_uint32 *VacuumActiveNWorkers = NULL;
 int			VacuumCostBalanceLocal = 0;
 
+typedef enum AutoVacuumMode
+{
+	AUTOVACUUM_MODE_NORMAL = 0,
+	AUTOVACUUM_MODE_FAST,
+	AUTOVACUUM_MODE_SLOW
+} AutoVacuumMode;
+
 /* non-export function prototypes */
 static List *expand_vacuum_rel(VacuumRelation *vrel,
 							   MemoryContext vac_context, int options);
@@ -130,6 +137,7 @@ static bool vacuum_rel(Oid relid, RangeVar *relation, VacuumParams params,
 static double compute_parallel_delay(void);
 static VacOptValue get_vacoptval_from_boolean(DefElem *def);
 static bool vac_tid_reaped(ItemPointer itemptr, void *state);
+static AutoVacuumMode get_autovacuum_mode_by_io_load(void);
 
 /*
  * GUC check function to ensure GUC value specified is within the allowable
@@ -2425,6 +2433,9 @@ vacuum_delay_point(bool is_analyze)
 {
 	double		msec = 0;
 
+	/* flag for autovacuum mode */
+	AutoVacuumMode mode = AUTOVACUUM_MODE_NORMAL;
+
 	/* Always check for interrupts */
 	CHECK_FOR_INTERRUPTS();
 
@@ -2461,10 +2472,21 @@ vacuum_delay_point(bool is_analyze)
 	else if (VacuumCostBalance >= vacuum_cost_limit)
 		msec = vacuum_cost_delay * VacuumCostBalance / vacuum_cost_limit;
 
+	if (debug_autovacuum_adaptive_cost_delay && AmAutoVacuumWorkerProcess())
+		{
+			mode = get_autovacuum_mode_by_io_load();
+			if (mode == AUTOVACUUM_MODE_FAST)
+				msec = 0;
+		}
+
 	/* Nap if appropriate */
 	if (msec > 0)
 	{
 		instr_time	delay_start;
+
+		if (debug_autovacuum_adaptive_cost_delay && 
+			mode == AUTOVACUUM_MODE_SLOW)
+			msec = msec + AUTOVACUUM_EXTRA_DELAY;
 
 		if (msec > vacuum_cost_delay * 4)
 			msec = vacuum_cost_delay * 4;
@@ -2680,4 +2702,36 @@ vac_tid_reaped(ItemPointer itemptr, void *state)
 	TidStore   *dead_items = (TidStore *) state;
 
 	return TidStoreIsMember(dead_items, itemptr);
+}
+
+
+/*
+ * get_autovacuum_mode_by_io_load
+ * 		set autovacuum mode based on current IO load.
+ */
+static AutoVacuumMode get_autovacuum_mode_by_io_load(void)
+{
+	int			backend_num;
+	uint32		io_wait_count;
+	uint32		upper_threshNum;
+	uint32		lower_threshNum;
+	AutoVacuumMode mode;
+
+	backend_num = GetNumProcs();
+
+	/*
+	 * Upper threshold: when more than 80% of processes are in IO wait.
+	 * Lower threshold: when less than 10% of processes are in IO wait.
+	 */
+	upper_threshNum = Max((backend_num * 8) / 10, 3);
+	lower_threshNum = Max((backend_num * 1) / 10, 1);
+	io_wait_count = AutoVacuumGetIOWaitStats();
+
+	if (io_wait_count > upper_threshNum)
+		mode = AUTOVACUUM_MODE_SLOW;
+	else if (io_wait_count < lower_threshNum)
+		mode = AUTOVACUUM_MODE_FAST;
+	else
+		mode = AUTOVACUUM_MODE_NORMAL;
+	return mode;
 }

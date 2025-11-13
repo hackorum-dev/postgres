@@ -16,6 +16,8 @@
 
 #include "storage/block.h"
 
+#define  AUTOVACUUM_EXTRA_DELAY 1
+
 /*
  * Other processes can request specific work from autovacuum, identified by
  * AutoVacuumWorkItem elements.
@@ -43,6 +45,7 @@ extern PGDLLIMPORT int autovacuum_freeze_max_age;
 extern PGDLLIMPORT int autovacuum_multixact_freeze_max_age;
 extern PGDLLIMPORT double autovacuum_vac_cost_delay;
 extern PGDLLIMPORT int autovacuum_vac_cost_limit;
+extern PGDLLIMPORT int debug_autovacuum_adaptive_cost_delay;
 
 /* autovacuum launcher PID, only valid when worker is shutting down */
 extern PGDLLIMPORT int AutovacuumLauncherPid;
@@ -69,4 +72,6 @@ extern bool AutoVacuumRequestWork(AutoVacuumWorkItemType type,
 extern Size AutoVacuumShmemSize(void);
 extern void AutoVacuumShmemInit(void);
 
+extern void AutoVacuumUpdateIOWaitStats(uint32 wait_event_info, bool increment);
+extern uint32 AutoVacuumGetIOWaitStats(void);
 #endif							/* AUTOVACUUM_H */

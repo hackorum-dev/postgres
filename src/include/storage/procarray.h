@@ -99,5 +99,6 @@ extern void ProcArraySetReplicationSlotXmin(TransactionId xmin,
 
 extern void ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
 											TransactionId *catalog_xmin);
+extern int GetNumProcs(void);
 
 #endif							/* PROCARRAY_H */
