@@ -440,6 +440,10 @@ PGSharedMemoryReAttach(void)
 		elog(FATAL, "failed to release reserved memory region (addr=%p): error code %lu",
 			 UsedShmemSegAddr, GetLastError());
 
+	/*
+	 * If this fails on Linux, set sysctl kernel.randomize_va_space = 0
+	 * See comment in SubPostmasterMain().
+	 */
 	hdr = (PGShmemHeader *) MapViewOfFileEx(UsedShmemSegID, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0, UsedShmemSegAddr);
 	if (!hdr)
 		elog(FATAL, "could not reattach to shared memory (key=%p, addr=%p): error code %lu",
