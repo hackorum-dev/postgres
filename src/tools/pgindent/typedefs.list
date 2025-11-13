@@ -431,6 +431,7 @@ ChangeContext
 ChangeVarNodes_context
 ChannelName
 CheckPoint
+Checkpoint_hook_type
 CheckPointStmt
 CheckpointStatsData
 CheckpointerRequest
