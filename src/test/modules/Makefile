@@ -35,6 +35,7 @@ SUBDIRS = \
 		  test_int128 \
 		  test_integerset \
 		  test_json_parser \
+		  test_large_files \
 		  test_lfind \
 		  test_lwlock_tranches \
 		  test_misc \
