@@ -35,6 +35,7 @@
 #include "catalog/pg_partitioned_table.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_statistic_ext.h"
+#include "catalog/pg_tablespace.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
@@ -13742,4 +13743,40 @@ get_range_partbound_string(List *bound_datums)
 	appendStringInfoChar(&buf, ')');
 
 	return buf.data;
+}
+
+/*
+ * pg_get_tablespace_ddl_name - Get CREATE TABLESPACE statement for a
+ * tablespace. This takes name as parameter for pg_get_tablespace_ddl().
+ */
+Datum
+pg_get_tablespace_ddl_name(PG_FUNCTION_ARGS)
+{
+	Name		tspname = PG_GETARG_NAME(0);
+	Oid			tspaceoid;
+	char	   *ddl_stmt;
+
+	/* Get the OID of the tablespace from its name */
+	tspaceoid = get_tablespace_oid(NameStr(*tspname), false);
+
+	/* Get the CREATE TABLESPACE DDL statement from its OID */
+	ddl_stmt = build_tablespace_ddl_string(tspaceoid);
+
+	PG_RETURN_TEXT_P(string_to_text(ddl_stmt));
+}
+
+/*
+ * pg_get_tablespace_ddl_oid - Get CREATE TABLESPACE statement for a
+ * tablespace. This takes oid as parameter for pg_get_tablespace_ddl().
+ */
+Datum
+pg_get_tablespace_ddl_oid(PG_FUNCTION_ARGS)
+{
+	Oid			tspaceoid = PG_GETARG_OID(0);
+	char	   *ddl_stmt;
+
+	/* Get the CREATE TABLESPACE DDL statement from its OID */
+	ddl_stmt = build_tablespace_ddl_string(tspaceoid);
+
+	PG_RETURN_TEXT_P(string_to_text(ddl_stmt));
 }
