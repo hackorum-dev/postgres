@@ -633,27 +633,24 @@ statatt_build_stavalues(const char *staname, FmgrInfo *array_in, Datum d, Oid ty
  * The value/null pairs for stanumbers and stavalues should be calculated
  * based on the stakind, using statatt_build_stavalues() or constructed arrays.
  */
-void
-statatt_set_slot(Datum *values, bool *nulls, bool *replaces,
+Bitmapset *
+statatt_set_slot(Datum *values, bool *nulls, Bitmapset *updated,
 				 int16 stakind, Oid staop, Oid stacoll,
 				 Datum stanumbers, bool stanumbers_isnull,
 				 Datum stavalues, bool stavalues_isnull)
 {
 	int			slotidx;
 	int			first_empty = -1;
-	AttrNumber	stakind_attnum;
-	AttrNumber	staop_attnum;
-	AttrNumber	stacoll_attnum;
 
 	/* find existing slot with given stakind */
 	for (slotidx = 0; slotidx < STATISTIC_NUM_SLOTS; slotidx++)
 	{
-		stakind_attnum = Anum_pg_statistic_stakind1 - 1 + slotidx;
+		Datum		d = HeapTupleValue(pg_statistic, stakind1 + slotidx, values);
+		int16		v = DatumGetInt16(d);
 
-		if (first_empty < 0 &&
-			DatumGetInt16(values[stakind_attnum]) == 0)
+		if (first_empty < 0 && v == 0)
 			first_empty = slotidx;
-		if (DatumGetInt16(values[stakind_attnum]) == stakind)
+		if (v == stakind)
 			break;
 	}
 
@@ -665,37 +662,22 @@ statatt_set_slot(Datum *values, bool *nulls, bool *replaces,
 				(errmsg("maximum number of statistics slots exceeded: %d",
 						slotidx + 1)));
 
-	stakind_attnum = Anum_pg_statistic_stakind1 - 1 + slotidx;
-	staop_attnum = Anum_pg_statistic_staop1 - 1 + slotidx;
-	stacoll_attnum = Anum_pg_statistic_stacoll1 - 1 + slotidx;
+	if (DatumGetInt16(HeapTupleValue(pg_statistic, stakind1 + slotidx, values)) != stakind)
+		HeapTupleUpdateValue(pg_statistic, stakind1 + slotidx, Int16GetDatum(stakind), values, nulls, updated);
 
-	if (DatumGetInt16(values[stakind_attnum]) != stakind)
-	{
-		values[stakind_attnum] = Int16GetDatum(stakind);
-		replaces[stakind_attnum] = true;
-	}
-	if (DatumGetObjectId(values[staop_attnum]) != staop)
-	{
-		values[staop_attnum] = ObjectIdGetDatum(staop);
-		replaces[staop_attnum] = true;
-	}
-	if (DatumGetObjectId(values[stacoll_attnum]) != stacoll)
-	{
-		values[stacoll_attnum] = ObjectIdGetDatum(stacoll);
-		replaces[stacoll_attnum] = true;
-	}
+	if (DatumGetInt16(HeapTupleValue(pg_statistic, staop1 + slotidx, values)) != staop)
+		HeapTupleUpdateValue(pg_statistic, staop1 + slotidx, ObjectIdGetDatum(staop), values, nulls, updated);
+
+	if (DatumGetInt16(HeapTupleValue(pg_statistic, stacoll1 + slotidx, values)) != stacoll)
+		HeapTupleUpdateValue(pg_statistic, stacoll1 + slotidx, ObjectIdGetDatum(stacoll), values, nulls, updated);
+
 	if (!stanumbers_isnull)
-	{
-		values[Anum_pg_statistic_stanumbers1 - 1 + slotidx] = stanumbers;
-		nulls[Anum_pg_statistic_stanumbers1 - 1 + slotidx] = false;
-		replaces[Anum_pg_statistic_stanumbers1 - 1 + slotidx] = true;
-	}
+		HeapTupleUpdateValue(pg_statistic, stanumbers1 + slotidx, stanumbers, values, nulls, updated);
+
 	if (!stavalues_isnull)
-	{
-		values[Anum_pg_statistic_stavalues1 - 1 + slotidx] = stavalues;
-		nulls[Anum_pg_statistic_stavalues1 - 1 + slotidx] = false;
-		replaces[Anum_pg_statistic_stavalues1 - 1 + slotidx] = true;
-	}
+		HeapTupleUpdateValue(pg_statistic, stavalues1 + slotidx, stavalues, values, nulls, updated);
+
+	return updated;
 }
 
 /*
@@ -711,36 +693,29 @@ statatt_set_slot(Datum *values, bool *nulls, bool *replaces,
  * array inserted into pg_statistic_ext_data, reloid, attnum and inherited
  * should be respectively set to InvalidOid, InvalidAttrNumber and false.
  */
-void
+Bitmapset *
 statatt_init_empty_tuple(Oid reloid, int16 attnum, bool inherited,
-						 Datum *values, bool *nulls, bool *replaces)
+						 Datum *values, bool *nulls, Bitmapset *updated)
 {
 	memset(nulls, true, sizeof(bool) * Natts_pg_statistic);
-	memset(replaces, true, sizeof(bool) * Natts_pg_statistic);
+	HeapTupleUpdateSetAllColumnsUpdated(pg_statistic, updated);
 
-	/* This must initialize non-NULL attributes */
-	values[Anum_pg_statistic_starelid - 1] = ObjectIdGetDatum(reloid);
-	nulls[Anum_pg_statistic_starelid - 1] = false;
-	values[Anum_pg_statistic_staattnum - 1] = Int16GetDatum(attnum);
-	nulls[Anum_pg_statistic_staattnum - 1] = false;
-	values[Anum_pg_statistic_stainherit - 1] = BoolGetDatum(inherited);
-	nulls[Anum_pg_statistic_stainherit - 1] = false;
+	/* must initialize non-NULL attributes */
+	HeapTupleUpdateValue(pg_statistic, starelid, ObjectIdGetDatum(reloid), values, nulls, updated);
+	HeapTupleUpdateValue(pg_statistic, staattnum, Int16GetDatum(attnum), values, nulls, updated);
+	HeapTupleUpdateValue(pg_statistic, stainherit, BoolGetDatum(inherited), values, nulls, updated);
 
-	values[Anum_pg_statistic_stanullfrac - 1] = DEFAULT_STATATT_NULL_FRAC;
-	nulls[Anum_pg_statistic_stanullfrac - 1] = false;
-	values[Anum_pg_statistic_stawidth - 1] = DEFAULT_STATATT_AVG_WIDTH;
-	nulls[Anum_pg_statistic_stawidth - 1] = false;
-	values[Anum_pg_statistic_stadistinct - 1] = DEFAULT_STATATT_N_DISTINCT;
-	nulls[Anum_pg_statistic_stadistinct - 1] = false;
+	HeapTupleUpdateValue(pg_statistic, stanullfrac, DEFAULT_STATATT_NULL_FRAC, values, nulls, updated);
+	HeapTupleUpdateValue(pg_statistic, stawidth, DEFAULT_STATATT_AVG_WIDTH, values, nulls, updated);
+	HeapTupleUpdateValue(pg_statistic, stadistinct, DEFAULT_STATATT_N_DISTINCT, values, nulls, updated);
 
 	/* initialize stakind, staop, and stacoll slots */
-	for (int slotnum = 0; slotnum < STATISTIC_NUM_SLOTS; slotnum++)
+	for (int i = 0; i < STATISTIC_NUM_SLOTS; i++)
 	{
-		values[Anum_pg_statistic_stakind1 + slotnum - 1] = (Datum) 0;
-		nulls[Anum_pg_statistic_stakind1 + slotnum - 1] = false;
-		values[Anum_pg_statistic_staop1 + slotnum - 1] = ObjectIdGetDatum(InvalidOid);
-		nulls[Anum_pg_statistic_staop1 + slotnum - 1] = false;
-		values[Anum_pg_statistic_stacoll1 + slotnum - 1] = ObjectIdGetDatum(InvalidOid);
-		nulls[Anum_pg_statistic_stacoll1 + slotnum - 1] = false;
+		HeapTupleUpdateValue(pg_statistic, stakind1 + i, (Datum) 0, values, nulls, updated);
+		HeapTupleUpdateValue(pg_statistic, staop1 + i, ObjectIdGetDatum(InvalidOid), values, nulls, updated);
+		HeapTupleUpdateValue(pg_statistic, stacoll1 + i, ObjectIdGetDatum(InvalidOid), values, nulls, updated);
 	}
+
+	return updated;
 }

@@ -18,6 +18,7 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/htup.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_operator.h"
@@ -106,7 +107,7 @@ static struct StatsArgInfo cleararginfo[] =
 
 static bool attribute_statistics_update(FunctionCallInfo fcinfo);
 static void upsert_pg_statistic(Relation starel, HeapTuple oldtup,
-								const Datum *values, const bool *nulls, const bool *replaces);
+								const Datum *values, const bool *nulls, const Bitmapset *updated);
 static bool delete_pg_statistic(Oid reloid, AttrNumber attnum, bool stainherit);
 
 /*
@@ -163,9 +164,8 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 		!PG_ARGISNULL(RANGE_EMPTY_FRAC_ARG);
 
 	Datum		values[Natts_pg_statistic] = {0};
-	bool		nulls[Natts_pg_statistic] = {0};
-	bool		replaces[Natts_pg_statistic] = {0};
-
+	bool		nulls[Natts_pg_statistic] = {false};
+	Bitmapset  *updated = NULL;
 	bool		result = true;
 
 	stats_check_required_arg(fcinfo, attarginfo, ATTRELSCHEMA_ARG);
@@ -340,25 +340,18 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 	if (HeapTupleIsValid(statup))
 		heap_deform_tuple(statup, RelationGetDescr(starel), values, nulls);
 	else
-		statatt_init_empty_tuple(reloid, attnum, inherited, values, nulls,
-								 replaces);
+		updated = statatt_init_empty_tuple(reloid, attnum, inherited, values, nulls,
+										   updated);
 
 	/* if specified, set to argument values */
 	if (!PG_ARGISNULL(NULL_FRAC_ARG))
-	{
-		values[Anum_pg_statistic_stanullfrac - 1] = PG_GETARG_DATUM(NULL_FRAC_ARG);
-		replaces[Anum_pg_statistic_stanullfrac - 1] = true;
-	}
+		HeapTupleUpdateValue(pg_statistic, stanullfrac, PG_GETARG_DATUM(NULL_FRAC_ARG), values, nulls, updated);
+
 	if (!PG_ARGISNULL(AVG_WIDTH_ARG))
-	{
-		values[Anum_pg_statistic_stawidth - 1] = PG_GETARG_DATUM(AVG_WIDTH_ARG);
-		replaces[Anum_pg_statistic_stawidth - 1] = true;
-	}
+		HeapTupleUpdateValue(pg_statistic, stawidth, PG_GETARG_DATUM(AVG_WIDTH_ARG), values, nulls, updated);
+
 	if (!PG_ARGISNULL(N_DISTINCT_ARG))
-	{
-		values[Anum_pg_statistic_stadistinct - 1] = PG_GETARG_DATUM(N_DISTINCT_ARG);
-		replaces[Anum_pg_statistic_stadistinct - 1] = true;
-	}
+		HeapTupleUpdateValue(pg_statistic, stadistinct, PG_GETARG_DATUM(N_DISTINCT_ARG), values, nulls, updated);
 
 	/* STATISTIC_KIND_MCV */
 	if (do_mcv)
@@ -373,10 +366,10 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 
 		if (converted)
 		{
-			statatt_set_slot(values, nulls, replaces,
-							 STATISTIC_KIND_MCV,
-							 eq_opr, atttypcoll,
-							 stanumbers, false, stavalues, false);
+			updated = statatt_set_slot(values, nulls, updated,
+									   STATISTIC_KIND_MCV,
+									   eq_opr, atttypcoll,
+									   stanumbers, false, stavalues, false);
 		}
 		else
 			result = false;
@@ -396,10 +389,10 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 
 		if (converted)
 		{
-			statatt_set_slot(values, nulls, replaces,
-							 STATISTIC_KIND_HISTOGRAM,
-							 lt_opr, atttypcoll,
-							 0, true, stavalues, false);
+			updated = statatt_set_slot(values, nulls, updated,
+									   STATISTIC_KIND_HISTOGRAM,
+									   lt_opr, atttypcoll,
+									   0, true, stavalues, false);
 		}
 		else
 			result = false;
@@ -412,10 +405,10 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 		ArrayType  *arry = construct_array_builtin(elems, 1, FLOAT4OID);
 		Datum		stanumbers = PointerGetDatum(arry);
 
-		statatt_set_slot(values, nulls, replaces,
-						 STATISTIC_KIND_CORRELATION,
-						 lt_opr, atttypcoll,
-						 stanumbers, false, 0, true);
+		updated = statatt_set_slot(values, nulls, updated,
+								   STATISTIC_KIND_CORRELATION,
+								   lt_opr, atttypcoll,
+								   stanumbers, false, 0, true);
 	}
 
 	/* STATISTIC_KIND_MCELEM */
@@ -433,10 +426,10 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 
 		if (converted)
 		{
-			statatt_set_slot(values, nulls, replaces,
-							 STATISTIC_KIND_MCELEM,
-							 elem_eq_opr, atttypcoll,
-							 stanumbers, false, stavalues, false);
+			updated = statatt_set_slot(values, nulls, updated,
+									   STATISTIC_KIND_MCELEM,
+									   elem_eq_opr, atttypcoll,
+									   stanumbers, false, stavalues, false);
 		}
 		else
 			result = false;
@@ -447,10 +440,10 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 	{
 		Datum		stanumbers = PG_GETARG_DATUM(ELEM_COUNT_HISTOGRAM_ARG);
 
-		statatt_set_slot(values, nulls, replaces,
-						 STATISTIC_KIND_DECHIST,
-						 elem_eq_opr, atttypcoll,
-						 stanumbers, false, 0, true);
+		updated = statatt_set_slot(values, nulls, updated,
+								   STATISTIC_KIND_DECHIST,
+								   elem_eq_opr, atttypcoll,
+								   stanumbers, false, 0, true);
 	}
 
 	/*
@@ -473,10 +466,10 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 
 		if (converted)
 		{
-			statatt_set_slot(values, nulls, replaces,
-							 STATISTIC_KIND_BOUNDS_HISTOGRAM,
-							 InvalidOid, InvalidOid,
-							 0, true, stavalues, false);
+			updated = statatt_set_slot(values, nulls, updated,
+									   STATISTIC_KIND_BOUNDS_HISTOGRAM,
+									   InvalidOid, InvalidOid,
+									   0, true, stavalues, false);
 		}
 		else
 			result = false;
@@ -500,20 +493,21 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 
 		if (converted)
 		{
-			statatt_set_slot(values, nulls, replaces,
-							 STATISTIC_KIND_RANGE_LENGTH_HISTOGRAM,
-							 Float8LessOperator, InvalidOid,
-							 stanumbers, false, stavalues, false);
+			updated = statatt_set_slot(values, nulls, updated,
+									   STATISTIC_KIND_RANGE_LENGTH_HISTOGRAM,
+									   Float8LessOperator, InvalidOid,
+									   stanumbers, false, stavalues, false);
 		}
 		else
 			result = false;
 	}
 
-	upsert_pg_statistic(starel, statup, values, nulls, replaces);
+	upsert_pg_statistic(starel, statup, values, nulls, updated);
 
 	if (HeapTupleIsValid(statup))
 		ReleaseSysCache(statup);
 	table_close(starel, RowExclusiveLock);
+	bms_free(updated);
 
 	return result;
 }
@@ -523,20 +517,21 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
  */
 static void
 upsert_pg_statistic(Relation starel, HeapTuple oldtup,
-					const Datum *values, const bool *nulls, const bool *replaces)
+					const Datum *values, const bool *nulls, const Bitmapset *updated)
 {
 	HeapTuple	newtup;
 
 	if (HeapTupleIsValid(oldtup))
 	{
-		newtup = heap_modify_tuple(oldtup, RelationGetDescr(starel),
-								   values, nulls, replaces);
-		CatalogTupleUpdate(starel, &newtup->t_self, newtup);
+		TupleDesc	tupdesc = RelationGetDescr(starel);
+
+		newtup = heap_update_tuple(oldtup, tupdesc, values, nulls, updated);
+		CatalogTupleUpdate(starel, &newtup->t_self, newtup, updated, NULL);
 	}
 	else
 	{
 		newtup = heap_form_tuple(RelationGetDescr(starel), values, nulls);
-		CatalogTupleInsert(starel, newtup);
+		CatalogTupleInsert(starel, newtup, NULL);
 	}
 
 	heap_freetuple(newtup);

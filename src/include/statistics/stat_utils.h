@@ -19,6 +19,9 @@
 /* avoid including primnodes.h here */
 typedef struct RangeVar RangeVar;
 
+/* avoid including bitmapset.h */
+typedef struct Bitmapset Bitmapset;
+
 struct StatsArgInfo
 {
 	const char *argname;
@@ -45,13 +48,13 @@ extern void statatt_get_type(Oid reloid, AttrNumber attnum,
 							 Oid *atttypid, int32 *atttypmod,
 							 char *atttyptype, Oid *atttypcoll,
 							 Oid *eq_opr, Oid *lt_opr);
-extern void statatt_init_empty_tuple(Oid reloid, int16 attnum, bool inherited,
-									 Datum *values, bool *nulls, bool *replaces);
+extern Bitmapset *statatt_init_empty_tuple(Oid reloid, int16 attnum, bool inherited,
+										   Datum *values, bool *nulls, Bitmapset *updated);
 
-extern void statatt_set_slot(Datum *values, bool *nulls, bool *replaces,
-							 int16 stakind, Oid staop, Oid stacoll,
-							 Datum stanumbers, bool stanumbers_isnull,
-							 Datum stavalues, bool stavalues_isnull);
+extern Bitmapset *statatt_set_slot(Datum *values, bool *nulls, Bitmapset *updated,
+								   int16 stakind, Oid staop, Oid stacoll,
+								   Datum stanumbers, bool stanumbers_isnull,
+								   Datum stavalues, bool stavalues_isnull);
 
 extern Datum statatt_build_stavalues(const char *staname, FmgrInfo *array_in, Datum d,
 									 Oid typid, int32 typmod, bool *ok);
