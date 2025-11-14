@@ -57,6 +57,7 @@
 #include "fe_utils/option_utils.h"
 #include "fe_utils/version.h"
 #include "getopt_long.h"
+#include "mb/pg_wchar.h"
 #include "pg_getopt.h"
 #include "storage/large_object.h"
 
@@ -114,6 +115,7 @@ static void KillExistingArchiveStatus(void);
 static void KillExistingWALSummaries(void);
 static void WriteEmptyXLOG(void);
 static void usage(void);
+static int	internal_wcswidth(const char *pwcs, size_t len, int encoding);
 static uint32 strtouint32_strict(const char *restrict s, char **restrict endptr, int base);
 static uint64 strtouint64_strict(const char *restrict s, char **restrict endptr, int base);
 
@@ -753,74 +755,48 @@ GuessControlValues(void)
 static void
 PrintControlValues(bool guessed)
 {
+	int			encoding = pg_get_encoding_from_locale(NULL, true);
+	int			maxlen = 0;
+	int			thislen;
+
 	if (guessed)
 		printf(_("Guessed pg_control values:\n\n"));
 	else
 		printf(_("Current pg_control values:\n\n"));
 
-	printf(_("pg_control version number:            %u\n"),
-		   ControlFile.pg_control_version);
-	printf(_("Catalog version number:               %u\n"),
-		   ControlFile.catalog_version_no);
-	printf(_("Database system identifier:           %" PRIu64 "\n"),
-		   ControlFile.system_identifier);
-	printf(_("Latest checkpoint's TimeLineID:       %u\n"),
-		   ControlFile.checkPointCopy.ThisTimeLineID);
-	printf(_("Latest checkpoint's full_page_writes: %s\n"),
-		   ControlFile.checkPointCopy.fullPageWrites ? _("on") : _("off"));
-	printf(_("Latest checkpoint's NextXID:          %u:%u\n"),
-		   EpochFromFullTransactionId(ControlFile.checkPointCopy.nextXid),
-		   XidFromFullTransactionId(ControlFile.checkPointCopy.nextXid));
-	printf(_("Latest checkpoint's NextOID:          %u\n"),
-		   ControlFile.checkPointCopy.nextOid);
-	printf(_("Latest checkpoint's NextMultiXactId:  %u\n"),
-		   ControlFile.checkPointCopy.nextMulti);
-	printf(_("Latest checkpoint's NextMultiOffset:  %" PRIu64 "\n"),
-		   ControlFile.checkPointCopy.nextMultiOffset);
-	printf(_("Latest checkpoint's oldestXID:        %u\n"),
-		   ControlFile.checkPointCopy.oldestXid);
-	printf(_("Latest checkpoint's oldestXID's DB:   %u\n"),
-		   ControlFile.checkPointCopy.oldestXidDB);
-	printf(_("Latest checkpoint's oldestActiveXID:  %u\n"),
-		   ControlFile.checkPointCopy.oldestActiveXid);
-	printf(_("Latest checkpoint's oldestMultiXid:   %u\n"),
-		   ControlFile.checkPointCopy.oldestMulti);
-	printf(_("Latest checkpoint's oldestMulti's DB: %u\n"),
-		   ControlFile.checkPointCopy.oldestMultiDB);
-	printf(_("Latest checkpoint's oldestCommitTsXid:%u\n"),
-		   ControlFile.checkPointCopy.oldestCommitTsXid);
-	printf(_("Latest checkpoint's newestCommitTsXid:%u\n"),
-		   ControlFile.checkPointCopy.newestCommitTsXid);
-	printf(_("Maximum data alignment:               %u\n"),
-		   ControlFile.maxAlign);
-	/* we don't print floatFormat since can't say much useful about it */
-	printf(_("Database block size:                  %u\n"),
-		   ControlFile.blcksz);
-	printf(_("Blocks per segment of large relation: %u\n"),
-		   ControlFile.relseg_size);
-	printf(_("Pages per SLRU segment:               %u\n"),
-		   ControlFile.slru_pages_per_segment);
-	printf(_("WAL block size:                       %u\n"),
-		   ControlFile.xlog_blcksz);
-	printf(_("Bytes per WAL segment:                %u\n"),
-		   ControlFile.xlog_seg_size);
-	printf(_("Maximum length of identifiers:        %u\n"),
-		   ControlFile.nameDataLen);
-	printf(_("Maximum columns in an index:          %u\n"),
-		   ControlFile.indexMaxKeys);
-	printf(_("Maximum size of a TOAST chunk:        %u\n"),
-		   ControlFile.toast_max_chunk_size);
-	printf(_("Size of a large-object chunk:         %u\n"),
-		   ControlFile.loblksize);
-	/* This is no longer configurable, but users may still expect to see it: */
-	printf(_("Date/time type storage:               %s\n"),
-		   _("64-bit integers"));
-	printf(_("Float8 argument passing:              %s\n"),
-		   (ControlFile.float8ByVal ? _("by value") : _("by reference")));
-	printf(_("Data page checksum version:           %u\n"),
-		   ControlFile.data_checksum_version);
-	printf(_("Default char data signedness:         %s\n"),
-		   (ControlFile.default_char_signedness ? _("signed") : _("unsigned")));
+	/*
+	 * First, determine the maximum length of the description of all entries,
+	 * some or all of which might be translated.
+	 */
+#define CONTROLDATA_LINE(description, fmt, ...)			\
+	thislen = internal_wcswidth(_(description),			\
+								strlen(_(description)),	\
+								encoding);				\
+	if (thislen > maxlen)								\
+		maxlen = thislen;
+#include "entries.h"
+#undef CONTROLDATA_LINE
+
+	/*
+	 * Print each line: the possibly-translated description, then some padding
+	 * spaces according to its display width, then the value.
+	 */
+#define CONTROLDATA_LINE(description, fmt, ...)			\
+	{													\
+		int		thisstrlen;								\
+														\
+		thisstrlen = strlen(_(description));			\
+		thislen = internal_wcswidth(_(description),		\
+									thisstrlen,			\
+									encoding);			\
+		printf("%s:%*s" fmt "\n",						\
+			   _(description),							\
+			   maxlen - thislen + 2,					\
+			   " ",										\
+			   __VA_ARGS__);							\
+	}
+#include "entries.h"
+#undef CONTROLDATA_LINE
 }
 
 
@@ -1237,6 +1213,36 @@ usage(void)
 	printf(_("\nReport bugs to <%s>.\n"), PACKAGE_BUGREPORT);
 	printf(_("%s home page: <%s>\n"), PACKAGE_NAME, PACKAGE_URL);
 }
+
+/*
+ * Measure the display length of a single-line string in the given encoding.
+ *
+ * Similar to pg_wcswidth, written without dependency on libpq.
+ */
+static int
+internal_wcswidth(const char *pwcs, size_t len, int encoding)
+{
+	int			width = 0;
+
+	while (len > 0)
+	{
+		int			chlen,
+					chwidth;
+
+		chlen = pg_encoding_mblen(encoding, pwcs);
+		if (len < (size_t) chlen)
+			break;				/* Invalid string */
+
+		chwidth = pg_encoding_dsplen(encoding, pwcs);
+		if (chwidth > 0)
+			width += chwidth;
+
+		pwcs += chlen;
+		len -= chlen;
+	}
+	return width;
+}
+
 
 /*
  * strtouint32_strict -- like strtoul(), but returns uint32 and doesn't accept
