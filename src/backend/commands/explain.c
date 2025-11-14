@@ -1712,8 +1712,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					explain_get_index_name(bitmapindexscan->indexid);
 
 				if (es->format == EXPLAIN_FORMAT_TEXT)
-					appendStringInfo(es->str, " on %s",
-									 quote_identifier(indexname));
+					appendStringInfoIdentifier(es->str,	" on ", indexname, NULL);
 				else
 					ExplainPropertyText("Index Name", indexname, es);
 			}
