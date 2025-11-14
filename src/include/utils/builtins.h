@@ -85,6 +85,12 @@ extern void generate_operator_clause(StringInfo buf,
 									 const char *leftop, Oid leftoptype,
 									 Oid opoid,
 									 const char *rightop, Oid rightoptype);
+extern void appendStringInfoIdentifier(StringInfo str, const char *prefix, const char *ident, const char *suffix);
+extern void appendStringInfoQualifiedIdentifier(StringInfo str,
+												const char *prefix,
+												const char *qualifier,
+												const char *ident,
+												const char *suffix);
 
 /* varchar.c */
 extern int	bpchartruelen(char *s, int len);
