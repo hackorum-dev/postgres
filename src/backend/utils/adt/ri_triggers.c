@@ -595,7 +595,6 @@ RI_FKey_check(TriggerData *trigdata)
 		{
 			quoteOneName(attname,
 						 RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]));
-
 			appendStringInfo(&querybuf,
 							 "SELECT 1 FROM (SELECT %s AS r FROM %s%s x",
 							 attname, pk_only, pkrelname);
@@ -2295,7 +2294,6 @@ ri_GenerateQualCollation(StringInfo buf, Oid collation)
 	HeapTuple	tp;
 	Form_pg_collation colltup;
 	char	   *collname;
-	char		onename[MAX_QUOTED_NAME_LEN];
 
 	/* Nothing to do if it's a noncollatable data type */
 	if (!OidIsValid(collation))
@@ -2311,10 +2309,8 @@ ri_GenerateQualCollation(StringInfo buf, Oid collation)
 	 * We qualify the name always, for simplicity and to ensure the query is
 	 * not search-path-dependent.
 	 */
-	quoteOneName(onename, get_namespace_name(colltup->collnamespace));
-	appendStringInfo(buf, " COLLATE %s", onename);
-	quoteOneName(onename, collname);
-	appendStringInfo(buf, ".%s", onename);
+	appendStringInfoIdentifier(buf, " COLLATE ", get_namespace_name(colltup->collnamespace), NULL);
+	appendStringInfoIdentifier(buf, ".", collname, NULL);
 
 	ReleaseSysCache(tp);
 }

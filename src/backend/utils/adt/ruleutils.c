@@ -10683,8 +10683,8 @@ get_rule_expr(Node *node, deparse_context *context,
 				}
 				if (xexpr->name)
 				{
-					appendStringInfo(buf, "NAME %s",
-									 quote_identifier(map_xml_name_to_sql_identifier(xexpr->name)));
+					appendStringInfoIdentifier(buf, "NAME ",
+											   map_xml_name_to_sql_identifier(xexpr->name), NULL);
 					needcomma = true;
 				}
 				if (xexpr->named_args)
@@ -10704,8 +10704,8 @@ get_rule_expr(Node *node, deparse_context *context,
 						if (needcomma)
 							appendStringInfoString(buf, ", ");
 						get_rule_expr(e, context, true);
-						appendStringInfo(buf, " AS %s",
-										 quote_identifier(map_xml_name_to_sql_identifier(argname)));
+						appendStringInfoIdentifier(buf, " AS ",
+												   map_xml_name_to_sql_identifier(argname), NULL);
 						needcomma = true;
 					}
 					if (xexpr->op != IS_XMLFOREST)
@@ -13815,25 +13815,17 @@ printSubscripts(SubscriptingRef *sbsref, deparse_context *context)
 	}
 }
 
-/*
- * quote_identifier			- Quote an identifier only if needed
- *
- * When quotes are needed, we palloc the required space; slightly
- * space-wasteful but well worth it for notational simplicity.
- */
-const char *
-quote_identifier(const char *ident)
+static inline bool
+is_identifier_safe(const char *ident, int *nquotes)
 {
 	/*
 	 * Can avoid quoting if ident starts with a lowercase letter or underscore
 	 * and contains only lowercase letters, digits, and underscores, *and* is
 	 * not any SQL keyword.  Otherwise, supply quotes.
 	 */
-	int			nquotes = 0;
 	bool		safe;
-	const char *ptr;
-	char	   *result;
-	char	   *optr;
+
+	*nquotes = 0;
 
 	/*
 	 * would like to use <ctype.h> macros here, but they might yield unwanted
@@ -13841,7 +13833,7 @@ quote_identifier(const char *ident)
 	 */
 	safe = ((ident[0] >= 'a' && ident[0] <= 'z') || ident[0] == '_');
 
-	for (ptr = ident; *ptr; ptr++)
+	for (const char *ptr = ident; *ptr; ptr++)
 	{
 		char		ch = *ptr;
 
@@ -13855,7 +13847,7 @@ quote_identifier(const char *ident)
 		{
 			safe = false;
 			if (ch == '"')
-				nquotes++;
+				(*nquotes)++;
 		}
 	}
 
@@ -13878,14 +13870,20 @@ quote_identifier(const char *ident)
 			safe = false;
 	}
 
-	if (safe)
-		return ident;			/* no change needed */
+	return safe;
+}
 
-	result = (char *) palloc(strlen(ident) + nquotes + 2 + 1);
+static inline const char *
+quote_identifier_internal(const char *ident, int nquotes, char **result)
+{
+	char	   *optr;
 
-	optr = result;
+	if (*result == NULL)
+		*result = (char *) palloc(strlen(ident) + nquotes + 2 + 1);
+
+	optr = *result;
 	*optr++ = '"';
-	for (ptr = ident; *ptr; ptr++)
+	for (const char *ptr = ident; *ptr; ptr++)
 	{
 		char		ch = *ptr;
 
@@ -13896,7 +13894,107 @@ quote_identifier(const char *ident)
 	*optr++ = '"';
 	*optr = '\0';
 
-	return result;
+	return *result;
+}
+
+/*
+ * quote_identifier			- Quote an identifier only if needed
+ *
+ * When quotes are needed, we palloc the required space; slightly
+ * space-wasteful but well worth it for notational simplicity.
+ */
+const char *
+quote_identifier(const char *ident)
+{
+	int			nquotes;
+	bool		safe;
+	char	   *result = NULL;
+
+	safe = is_identifier_safe(ident, &nquotes);
+	if (safe)
+		return ident;			/* no change needed */
+
+	return quote_identifier_internal(ident, nquotes, &result);
+}
+
+/*
+ * appendStringInfoIdentifier
+ *      Append an SQL identifier to a StringInfo, quoting if required.
+ *
+ * This behaves like writing prefix + quote_identifier(ident) + suffix into
+ * the StringInfo, but emits the identifier directly into the buffer to avoid
+ * an intermediate palloc.  prefix and suffix may be NULL.
+ *
+ * The identifier is copied verbatim if it is safe to leave unquoted; otherwise
+ * it is written with double quotes and embedded double quotes are doubled.
+ * Quoting rules are local to ruleutils, so this helper is defined here rather
+ * than in stringinfo.c.
+ */
+
+void
+appendStringInfoIdentifier(StringInfo str, const char *prefix,
+						   const char *ident, const char *suffix)
+{
+	int			nquotes;
+	bool		safe;
+	int			ident_len;
+	int			prefix_len = 0;
+	int			suffix_len = 0;
+
+	safe = is_identifier_safe(ident, &nquotes);
+	if (safe)
+		ident_len = strlen(ident);
+	else
+		ident_len = strlen(ident) + nquotes + 2;	/* quotes + possible
+													 * escapes */
+
+	if (prefix != NULL)
+		prefix_len = strlen(prefix);
+
+	if (suffix != NULL)
+		suffix_len = strlen(suffix);
+
+	enlargeStringInfo(str, ident_len + prefix_len + suffix_len);
+
+	if (prefix != NULL)
+		appendBinaryStringInfo(str, prefix, prefix_len);
+
+	if (safe)
+		appendBinaryStringInfo(str, ident, ident_len);
+	else
+	{
+		char	   *result = str->data + str->len;
+
+		(void) quote_identifier_internal(ident, nquotes, &result);
+		str->len += ident_len;
+		str->data[str->len] = '\0';
+	}
+
+	if (suffix != NULL)
+		appendBinaryStringInfo(str, suffix, suffix_len);
+}
+
+/*
+ * appendStringInfoQualifiedIdentifier
+ *      Append a (possibly) qualified SQL identifier to a StringInfo.
+ *
+ * Writes prefix + qualifier + '.' + ident + suffix, quoting each identifier
+ * component if needed.  If no qualifier is given, only ident (plus optional
+ * prefix/suffix) is appended.  prefix and suffix may be NULL.
+ *
+ * This is a convenience wrapper around appendStringInfoIdentifier().
+ */
+void
+appendStringInfoQualifiedIdentifier(StringInfo str, const char *prefix,
+									const char *qualifier, const char *ident,
+									const char *suffix)
+{
+	if (qualifier)
+	{
+		appendStringInfoIdentifier(str, prefix, qualifier, ".");
+		prefix = NULL;
+	}
+	appendStringInfoIdentifier(str, prefix, ident, suffix);
 }
 
 /*
@@ -13913,8 +14011,8 @@ quote_qualified_identifier(const char *qualifier,
 
 	initStringInfo(&buf);
 	if (qualifier)
-		appendStringInfo(&buf, "%s.", quote_identifier(qualifier));
-	appendStringInfoString(&buf, quote_identifier(ident));
+		appendStringInfoIdentifier(&buf, NULL, qualifier, ".");
+	appendStringInfoIdentifier(&buf, NULL, ident, NULL);
 	return buf.data;
 }
 
