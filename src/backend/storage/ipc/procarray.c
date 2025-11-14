@@ -3212,7 +3212,7 @@ BackendPidGetProcWithLock(int pid)
  * Beware that not every xact has an XID assigned.  However, as long as you
  * only call this using an XID found on disk, you're safe.
  */
-int
+pid_t
 BackendXidGetPid(TransactionId xid)
 {
 	int			result = 0;
