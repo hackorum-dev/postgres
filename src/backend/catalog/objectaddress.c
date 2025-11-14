@@ -5156,8 +5156,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 
 				if (attr)
 				{
-					appendStringInfo(&buffer, ".%s",
-									 quote_identifier(attr));
+					appendStringInfoIdentifier(&buffer, ".", attr, NULL);
 					if (objname)
 						*objname = lappend(*objname, attr);
 				}
@@ -5668,8 +5667,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 							 object->objectId);
 					break;
 				}
-				appendStringInfoString(&buffer,
-									   quote_identifier(nspname));
+				appendStringInfoIdentifier(&buffer, NULL, nspname, NULL);
 				if (objname)
 					*objname = list_make1(nspname);
 				break;
@@ -6012,16 +6010,12 @@ getObjectIdentityParts(const ObjectAddress *object,
 				defacl = (Form_pg_default_acl) GETSTRUCT(tup);
 
 				username = GetUserNameFromId(defacl->defaclrole, false);
-				appendStringInfo(&buffer,
-								 "for role %s",
-								 quote_identifier(username));
+				appendStringInfoIdentifier(&buffer, "for role ", username, NULL);
 
 				if (OidIsValid(defacl->defaclnamespace))
 				{
 					schema = get_namespace_name_or_temp(defacl->defaclnamespace);
-					appendStringInfo(&buffer,
-									 " in schema %s",
-									 quote_identifier(schema));
+					appendStringInfoIdentifier(&buffer, " in schema ", schema, NULL);
 				}
 				else
 					schema = NULL;
