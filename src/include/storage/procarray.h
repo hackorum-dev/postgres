@@ -67,7 +67,7 @@ extern void ProcNumberGetTransactionIds(int procNumber, TransactionId *xid,
 										bool *overflowed);
 extern PGPROC *BackendPidGetProc(int pid);
 extern PGPROC *BackendPidGetProcWithLock(int pid);
-extern int	BackendXidGetPid(TransactionId xid);
+extern pid_t BackendXidGetPid(TransactionId xid);
 extern bool IsBackendPid(int pid);
 
 extern VirtualTransactionId *GetCurrentVirtualXIDs(TransactionId limitXmin,
