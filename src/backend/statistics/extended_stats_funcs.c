@@ -94,7 +94,7 @@ typedef struct
 static void expand_stxkind(HeapTuple tup, StakindFlags *enabled);
 static void upsert_pg_statistic_ext_data(const Datum *values,
 										 const bool *nulls,
-										 const bool *replaces);
+										 const Bitmapset *updated);
 
 static bool check_mcvlist_array(const ArrayType *arr, int argindex,
 								int required_ndims, int mcv_length);
@@ -201,7 +201,7 @@ expand_stxkind(HeapTuple tup, StakindFlags *enabled)
  */
 static void
 upsert_pg_statistic_ext_data(const Datum *values, const bool *nulls,
-							 const bool *replaces)
+							 const Bitmapset *updated)
 {
 	Relation	pg_stextdata;
 	HeapTuple	stxdtup;
@@ -215,18 +215,18 @@ upsert_pg_statistic_ext_data(const Datum *values, const bool *nulls,
 
 	if (HeapTupleIsValid(stxdtup))
 	{
-		newtup = heap_modify_tuple(stxdtup,
+		newtup = heap_update_tuple(stxdtup,
 								   RelationGetDescr(pg_stextdata),
 								   values,
 								   nulls,
-								   replaces);
-		CatalogTupleUpdate(pg_stextdata, &newtup->t_self, newtup);
+								   updated);
+		CatalogTupleUpdate(pg_stextdata, &newtup->t_self, newtup, updated, NULL);
 		ReleaseSysCache(stxdtup);
 	}
 	else
 	{
 		newtup = heap_form_tuple(RelationGetDescr(pg_stextdata), values, nulls);
-		CatalogTupleInsert(pg_stextdata, newtup);
+		CatalogTupleInsert(pg_stextdata, newtup, NULL);
 	}
 
 	heap_freetuple(newtup);
@@ -263,8 +263,8 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 	Form_pg_statistic_ext stxform;
 
 	Datum		values[Natts_pg_statistic_ext_data] = {0};
-	bool		nulls[Natts_pg_statistic_ext_data] = {0};
-	bool		replaces[Natts_pg_statistic_ext_data] = {0};
+	bool		nulls[Natts_pg_statistic_ext_data] = {false};
+	Bitmapset  *updated = NULL;
 	bool		success = true;
 	Datum		exprdatum;
 	bool		isnull;
@@ -559,16 +559,14 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 	 */
 
 	/* Primary Key: cannot be NULL or replaced. */
-	values[Anum_pg_statistic_ext_data_stxoid - 1] = ObjectIdGetDatum(stxform->oid);
-	nulls[Anum_pg_statistic_ext_data_stxoid - 1] = false;
-	values[Anum_pg_statistic_ext_data_stxdinherit - 1] = BoolGetDatum(inherited);
-	nulls[Anum_pg_statistic_ext_data_stxdinherit - 1] = false;
+	HeapTupleUpdateValue(pg_statistic, ext_data_stxoid, ObjectIdGetDatum(stxform->oid), values, nulls, updated);
+	HeapTupleUpdateValue(pg_statistic, ext_data_stxdinherit, BoolGetDatum(inherited), values, nulls, updated);
 
 	/* All unspecified parameters will be left unmodified */
-	nulls[Anum_pg_statistic_ext_data_stxdndistinct - 1] = true;
-	nulls[Anum_pg_statistic_ext_data_stxddependencies - 1] = true;
-	nulls[Anum_pg_statistic_ext_data_stxdmcv - 1] = true;
-	nulls[Anum_pg_statistic_ext_data_stxdexpr - 1] = true;
+	HeapTupleUpdateValueNull(pg_statistic, ext_data_stxdndistinct, values, nulls, updated);
+	HeapTupleUpdateValueNull(pg_statistic, ext_data_stxddependencies, values, nulls, updated);
+	HeapTupleUpdateValueNull(pg_statistic, ext_data_stxdmcv, values, nulls, updated);
+	HeapTupleUpdateValueNull(pg_statistic, ext_data_stxdexpr, values, nulls, updated);
 
 	/*
 	 * For each stats kind, deserialize the data at hand and perform a round
@@ -584,11 +582,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 
 		if (statext_ndistinct_validate(ndistinct, &stxform->stxkeys,
 									   numexprs, WARNING))
-		{
-			values[Anum_pg_statistic_ext_data_stxdndistinct - 1] = ndistinct_datum;
-			nulls[Anum_pg_statistic_ext_data_stxdndistinct - 1] = false;
-			replaces[Anum_pg_statistic_ext_data_stxdndistinct - 1] = true;
-		}
+			HeapTupleUpdateValue(pg_statistic, ext_data_stxdndistinct, ndistinct_datum, values, nulls, updated);
 		else
 			success = false;
 
@@ -603,11 +597,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 
 		if (statext_dependencies_validate(dependencies, &stxform->stxkeys,
 										  numexprs, WARNING))
-		{
-			values[Anum_pg_statistic_ext_data_stxddependencies - 1] = dependencies_datum;
-			nulls[Anum_pg_statistic_ext_data_stxddependencies - 1] = false;
-			replaces[Anum_pg_statistic_ext_data_stxddependencies - 1] = true;
-		}
+			HeapTupleUpdateValue(pg_statistic, ext_data_stxddependencies, dependencies_datum, values, nulls, updated);
 		else
 			success = false;
 
@@ -628,17 +618,16 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 		if (val_ok)
 		{
 			Assert(datum != (Datum) 0);
-			values[Anum_pg_statistic_ext_data_stxdmcv - 1] = datum;
-			nulls[Anum_pg_statistic_ext_data_stxdmcv - 1] = false;
-			replaces[Anum_pg_statistic_ext_data_stxdmcv - 1] = true;
+			HeapTupleUpdateValue(pg_statistic, ext_data_stxdmcv, datum, values, nulls, updated);
 		}
 		else
 			success = false;
 	}
 
-	upsert_pg_statistic_ext_data(values, nulls, replaces);
+	upsert_pg_statistic_ext_data(values, nulls, updated);
 
 cleanup:
+	bms_free(updated);
 	if (HeapTupleIsValid(tup))
 		heap_freetuple(tup);
 	if (pg_stext != NULL)

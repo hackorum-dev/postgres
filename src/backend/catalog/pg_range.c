@@ -40,8 +40,8 @@ RangeCreate(Oid rangeTypeOid, Oid rangeSubType, Oid rangeCollation,
 			RegProcedure mltrngConstruct0, RegProcedure mltrngConstruct1, RegProcedure mltrngConstruct2)
 {
 	Relation	pg_range;
-	Datum		values[Natts_pg_range];
-	bool		nulls[Natts_pg_range];
+	Datum		values[Natts_pg_range] = {0};
+	bool		nulls[Natts_pg_range] = {false};
 	HeapTuple	tup;
 	ObjectAddress myself;
 	ObjectAddress referenced;
@@ -52,22 +52,22 @@ RangeCreate(Oid rangeTypeOid, Oid rangeSubType, Oid rangeCollation,
 
 	memset(nulls, 0, sizeof(nulls));
 
-	values[Anum_pg_range_rngtypid - 1] = ObjectIdGetDatum(rangeTypeOid);
-	values[Anum_pg_range_rngsubtype - 1] = ObjectIdGetDatum(rangeSubType);
-	values[Anum_pg_range_rngcollation - 1] = ObjectIdGetDatum(rangeCollation);
-	values[Anum_pg_range_rngsubopc - 1] = ObjectIdGetDatum(rangeSubOpclass);
-	values[Anum_pg_range_rngcanonical - 1] = ObjectIdGetDatum(rangeCanonical);
-	values[Anum_pg_range_rngsubdiff - 1] = ObjectIdGetDatum(rangeSubDiff);
-	values[Anum_pg_range_rngmultitypid - 1] = ObjectIdGetDatum(multirangeTypeOid);
-	values[Anum_pg_range_rngconstruct2 - 1] = ObjectIdGetDatum(rangeConstruct2);
-	values[Anum_pg_range_rngconstruct3 - 1] = ObjectIdGetDatum(rangeConstruct3);
-	values[Anum_pg_range_rngmltconstruct0 - 1] = ObjectIdGetDatum(mltrngConstruct0);
-	values[Anum_pg_range_rngmltconstruct1 - 1] = ObjectIdGetDatum(mltrngConstruct1);
-	values[Anum_pg_range_rngmltconstruct2 - 1] = ObjectIdGetDatum(mltrngConstruct2);
+	HeapTupleSetValue(pg_range, rngtypid, ObjectIdGetDatum(rangeTypeOid), values);
+	HeapTupleSetValue(pg_range, rngsubtype, ObjectIdGetDatum(rangeSubType), values);
+	HeapTupleSetValue(pg_range, rngcollation, ObjectIdGetDatum(rangeCollation), values);
+	HeapTupleSetValue(pg_range, rngsubopc, ObjectIdGetDatum(rangeSubOpclass), values);
+	HeapTupleSetValue(pg_range, rngcanonical, ObjectIdGetDatum(rangeCanonical), values);
+	HeapTupleSetValue(pg_range, rngsubdiff, ObjectIdGetDatum(rangeSubDiff), values);
+	HeapTupleSetValue(pg_range, rngmultitypid, ObjectIdGetDatum(multirangeTypeOid), values);
+	HeapTupleSetValue(pg_range, rngconstruct2, ObjectIdGetDatum(rangeConstruct2), values);
+	HeapTupleSetValue(pg_range, rngconstruct3, ObjectIdGetDatum(rangeConstruct3), values);
+	HeapTupleSetValue(pg_range, rngmltconstruct0, ObjectIdGetDatum(mltrngConstruct0), values);
+	HeapTupleSetValue(pg_range, rngmltconstruct1, ObjectIdGetDatum(mltrngConstruct1), values);
+	HeapTupleSetValue(pg_range, rngmltconstruct2, ObjectIdGetDatum(mltrngConstruct2), values);
 
 	tup = heap_form_tuple(RelationGetDescr(pg_range), values, nulls);
 
-	CatalogTupleInsert(pg_range, tup);
+	CatalogTupleInsert(pg_range, tup, NULL);
 	heap_freetuple(tup);
 
 	/* record type's dependencies on range-related items */
