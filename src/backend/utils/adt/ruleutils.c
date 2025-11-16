@@ -1418,7 +1418,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 			appendStringInfoString(&buf, sep);
 		sep = ", ";
 
-		if (attnum != 0)
+		if (AttributeNumberIsValid(attnum))
 		{
 			/* Simple index column */
 			char	   *attname;

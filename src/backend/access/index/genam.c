@@ -225,7 +225,7 @@ BuildIndexValueDescription(Relation indexRelation,
 			 * to figure out what column(s) the expression includes and if the
 			 * user has SELECT rights on them.
 			 */
-			if (attnum == InvalidAttrNumber ||
+			if (!AttributeNumberIsValid(attnum) ||
 				pg_attribute_aclcheck(indrelid, attnum, GetUserId(),
 									  ACL_SELECT) != ACLCHECK_OK)
 			{

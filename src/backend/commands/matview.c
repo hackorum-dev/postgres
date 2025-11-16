@@ -928,7 +928,7 @@ is_usable_unique_index(Relation indexRel)
 		{
 			int			attnum = indexStruct->indkey.values[i];
 
-			if (attnum <= 0)
+			if (!AttributeNumberIsValid(attnum) || attnum < 0)
 				return false;
 		}
 		return true;

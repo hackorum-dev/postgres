@@ -5440,7 +5440,7 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 
 			for (pos = 0; pos < index->ncolumns; pos++)
 			{
-				if (index->indexkeys[pos] == 0)
+				if (!AttributeNumberIsValid(index->indexkeys[pos]))
 				{
 					Node	   *indexkey;
 
@@ -6109,7 +6109,7 @@ examine_indexcol_variable(PlannerInfo *root, IndexOptInfo *index,
 	AttrNumber	colnum;
 	Oid			relid;
 
-	if (index->indexkeys[indexcol] != 0)
+	if (AttributeNumberIsValid(index->indexkeys[indexcol]))
 	{
 		/* Simple variable --- look to stats for the underlying table */
 		RangeTblEntry *rte = planner_rt_fetch(index->rel->relid, root);
@@ -8671,7 +8671,7 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 		AttrNumber	attnum = index->indexkeys[iclause->indexcol];
 
 		/* attempt to lookup stats in relation for this index column */
-		if (attnum != 0)
+		if (AttributeNumberIsValid(attnum))
 		{
 			/* Simple variable -- look to stats for the underlying table */
 			if (get_relation_stats_hook &&

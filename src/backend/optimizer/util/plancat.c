@@ -961,7 +961,7 @@ infer_arbiter_indexes(PlannerInfo *root)
 		{
 			int			attno = idxRel->rd_index->indkey.values[natt];
 
-			if (attno != 0)
+			if (AttributeNumberIsValid(attno))
 				indexedAttrs = bms_add_member(indexedAttrs,
 											  attno - FirstLowInvalidHeapAttributeNumber);
 		}
@@ -1107,7 +1107,7 @@ infer_collation_opclass_match(InferenceElem *elem, Relation idxRel,
 		Oid			collation = idxRel->rd_indcollation[natt - 1];
 		int			attno = idxRel->rd_index->indkey.values[natt - 1];
 
-		if (attno != 0)
+		if (AttributeNumberIsValid(attno))
 			nplain++;
 
 		if (elem->inferopclass != InvalidOid &&
@@ -1130,7 +1130,7 @@ infer_collation_opclass_match(InferenceElem *elem, Relation idxRel,
 			if (((Var *) elem->expr)->varattno == attno)
 				return true;
 		}
-		else if (attno == 0)
+		else if (!AttributeNumberIsValid(attno))
 		{
 			Node	   *nattExpr = list_nth(idxExprs, (natt - 1) - nplain);
 
@@ -2027,7 +2027,7 @@ build_index_tlist(PlannerInfo *root, IndexOptInfo *index,
 		int			indexkey = index->indexkeys[i];
 		Expr	   *indexvar;
 
-		if (indexkey != 0)
+		if (AttributeNumberIsValid(indexkey))
 		{
 			/* simple column */
 			const FormData_pg_attribute *att_tup;

@@ -18582,10 +18582,10 @@ dumpConstraint(Archive *fout, const ConstraintInfo *coninfo)
 			appendPQExpBufferStr(q, " (");
 			for (k = 0; k < indxinfo->indnkeyattrs; k++)
 			{
-				int			indkey = (int) indxinfo->indkeys[k];
+				AttrNumber	indkey = (AttrNumber) indxinfo->indkeys[k];
 				const char *attname;
 
-				if (indkey == InvalidAttrNumber)
+				if (!AttributeNumberIsValid(indkey))
 					break;
 				attname = getAttrName(indkey, tbinfo);
 
@@ -18601,10 +18601,10 @@ dumpConstraint(Archive *fout, const ConstraintInfo *coninfo)
 
 			for (k = indxinfo->indnkeyattrs; k < indxinfo->indnattrs; k++)
 			{
-				int			indkey = (int) indxinfo->indkeys[k];
+				AttrNumber	indkey = (AttrNumber) indxinfo->indkeys[k];
 				const char *attname;
 
-				if (indkey == InvalidAttrNumber)
+				if (!AttributeNumberIsValid(indkey))
 					break;
 				attname = getAttrName(indkey, tbinfo);
 

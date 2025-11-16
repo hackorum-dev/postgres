@@ -566,13 +566,13 @@ get_attr_expr(Relation rel, int attnum)
 	 * The index attnum points directly to a relation attnum, then it's not an
 	 * expression attribute.
 	 */
-	if (rel->rd_index->indkey.values[attnum - 1] != 0)
+	if (AttributeNumberIsValid(rel->rd_index->indkey.values[attnum - 1]))
 		return NULL;
 
 	indexpr_item = list_head(rel->rd_indexprs);
 
 	for (int i = 0; i < attnum - 1; i++)
-		if (rel->rd_index->indkey.values[i] == 0)
+		if (!AttributeNumberIsValid(rel->rd_index->indkey.values[i] == 0))
 			indexpr_item = lnext(rel->rd_indexprs, indexpr_item);
 
 	if (indexpr_item == NULL)	/* shouldn't happen */

@@ -5436,7 +5436,7 @@ restart:
 		/* Collect simple attribute references */
 		for (i = 0; i < indexDesc->rd_index->indnatts; i++)
 		{
-			int			attrnum = indexDesc->rd_index->indkey.values[i];
+			AttrNumber	attrnum = indexDesc->rd_index->indkey.values[i];
 
 			/*
 			 * Since we have covering indexes with non-key columns, we must
@@ -5452,7 +5452,7 @@ restart:
 			 * key or identity key. Hence we do not include them into
 			 * uindexattrs, pkindexattrs and idindexattrs bitmaps.
 			 */
-			if (attrnum != 0)
+			if (AttributeNumberIsValid(attrnum))
 			{
 				*attrs = bms_add_member(*attrs,
 										attrnum - FirstLowInvalidHeapAttributeNumber);
@@ -5614,7 +5614,7 @@ RelationGetIdentityKeyBitmap(Relation relation)
 		 * We don't include non-key columns into idindexattrs bitmaps. See
 		 * RelationGetIndexAttrBitmap.
 		 */
-		if (attrnum != 0)
+		if (AttributeNumberIsValid(attrnum))
 		{
 			if (i < indexDesc->rd_index->indnkeyatts)
 				idindexattrs = bms_add_member(idindexattrs,

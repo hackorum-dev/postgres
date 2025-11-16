@@ -2279,7 +2279,7 @@ check_index_only(RelOptInfo *rel, IndexOptInfo *index)
 		 * For the moment, we just ignore index expressions.  It might be nice
 		 * to do something with them, later.
 		 */
-		if (attno == 0)
+		if (!AttributeNumberIsValid(attno))
 			continue;
 
 		if (index->canreturn[i])
@@ -4383,7 +4383,7 @@ match_index_to_operand(Node *operand,
 		operand = (Node *) ((RelabelType *) operand)->arg;
 
 	indkey = index->indexkeys[indexcol];
-	if (indkey != 0)
+	if (AttributeNumberIsValid(indkey))
 	{
 		/*
 		 * Simple index column; operand must be a matching Var.
@@ -4408,7 +4408,7 @@ match_index_to_operand(Node *operand,
 		indexpr_item = list_head(index->indexprs);
 		for (i = 0; i < indexcol; i++)
 		{
-			if (index->indexkeys[i] == 0)
+			if (!AttributeNumberIsValid(index->indexkeys[i]))
 			{
 				if (indexpr_item == NULL)
 					elog(ERROR, "wrong number of index expressions");

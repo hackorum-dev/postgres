@@ -131,7 +131,7 @@ GetIndexInputType(Relation index, AttrNumber indexcol)
 	if (!IsPolymorphicType(opcintype))
 		return opcintype;
 	heapcol = index->rd_index->indkey.values[indexcol - 1];
-	if (heapcol != 0)			/* Simple index column? */
+	if (AttributeNumberIsValid(heapcol))	/* Simple index column? */
 		return getBaseType(get_atttype(index->rd_index->indrelid, heapcol));
 
 	/*
@@ -147,7 +147,7 @@ GetIndexInputType(Relation index, AttrNumber indexcol)
 	indexpr_item = list_head(indexprs);
 	for (int i = 1; i <= index->rd_index->indnkeyatts; i++)
 	{
-		if (index->rd_index->indkey.values[i - 1] == 0)
+		if (!AttributeNumberIsValid(index->rd_index->indkey.values[i - 1]))
 		{
 			/* expression column */
 			if (indexpr_item == NULL)

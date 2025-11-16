@@ -9001,7 +9001,7 @@ ATExecSetStatistics(Relation rel, const char *colName, int16 colNum, Node *newVa
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("cannot alter statistics on included column \"%s\" of index \"%s\"",
 							NameStr(attrtuple->attname), RelationGetRelationName(rel))));
-		else if (rel->rd_index->indkey.values[attnum - 1] != 0)
+		else if (AttributeNumberIsValid(rel->rd_index->indkey.values[attnum - 1]))
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("cannot alter statistics on non-expression column \"%s\" of index \"%s\"",

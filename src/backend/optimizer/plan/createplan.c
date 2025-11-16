@@ -5117,7 +5117,7 @@ fix_indexqual_operand(Node *node, IndexOptInfo *index, int indexcol)
 
 	Assert(indexcol >= 0 && indexcol < index->ncolumns);
 
-	if (index->indexkeys[indexcol] != 0)
+	if (AttributeNumberIsValid(index->indexkeys[indexcol]))
 	{
 		/* It's a simple index column */
 		if (IsA(node, Var) &&
@@ -5137,7 +5137,7 @@ fix_indexqual_operand(Node *node, IndexOptInfo *index, int indexcol)
 	indexpr_item = list_head(index->indexprs);
 	for (pos = 0; pos < index->ncolumns; pos++)
 	{
-		if (index->indexkeys[pos] == 0)
+		if (!AttributeNumberIsValid(index->indexkeys[pos]))
 		{
 			if (indexpr_item == NULL)
 				elog(ERROR, "too few entries in indexprs list");
