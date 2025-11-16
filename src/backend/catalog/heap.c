@@ -3981,7 +3981,7 @@ StorePartitionKey(Relation rel,
 	 */
 	for (i = 0; i < partnatts; i++)
 	{
-		if (partattrs[i] == 0)
+		if (!AttributeNumberIsValid(partattrs[i]))
 			continue;			/* ignore expressions here */
 
 		ObjectAddressSubSet(referenced, RelationRelationId,

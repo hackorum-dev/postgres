@@ -226,7 +226,7 @@ RelationBuildPartitionKey(Relation relation)
 		key->partcollation[i] = collation->values[i];
 
 		/* Collect type information */
-		if (attno != 0)
+		if (AttributeNumberIsValid(attno))
 		{
 			Form_pg_attribute att = TupleDescAttr(relation->rd_att, attno - 1);
 

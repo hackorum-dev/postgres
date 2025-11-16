@@ -1012,7 +1012,7 @@ DefineIndex(Oid tableId,
 			 * It may be possible to support UNIQUE constraints when partition
 			 * keys are expressions, but is it worth it?  Give up for now.
 			 */
-			if (key->partattrs[i] == 0)
+			if (!AttributeNumberIsValid(key->partattrs[i]))
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("unsupported %s constraint with partition key definition",

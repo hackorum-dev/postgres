@@ -2031,7 +2031,7 @@ pg_get_partkeydef_worker(Oid relid, int prettyFlags,
 
 		appendStringInfoString(&buf, sep);
 		sep = ", ";
-		if (attnum != 0)
+		if (AttributeNumberIsValid(attnum))
 		{
 			/* Simple attribute reference */
 			char	   *attname;

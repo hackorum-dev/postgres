@@ -4345,7 +4345,7 @@ transformPartitionBound(ParseState *pstate, Relation parent,
 					 parser_errposition(pstate, exprLocation((Node *) spec))));
 
 		/* Get the only column's name in case we need to output an error */
-		if (key->partattrs[0] != 0)
+		if (AttributeNumberIsValid(key->partattrs[0]))
 			colname = get_attname(RelationGetRelid(parent),
 								  key->partattrs[0], false);
 		else
@@ -4494,7 +4494,7 @@ transformPartitionRangeBounds(ParseState *pstate, List *blist,
 			Const	   *value;
 
 			/* Get the column's name in case we need to output an error */
-			if (key->partattrs[i] != 0)
+			if (AttributeNumberIsValid(key->partattrs[i]))
 				colname = get_attname(RelationGetRelid(parent),
 									  key->partattrs[i], false);
 			else

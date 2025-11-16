@@ -19920,7 +19920,7 @@ ComputePartitionAttrs(ParseState *pstate, Relation rel, List *partParams, AttrNu
 			}
 			else
 			{
-				partattrs[attn] = 0;	/* marks the column as expression */
+				partattrs[attn] = InvalidAttrNumber;	/* marks the column as expression */
 				*partexprs = lappend(*partexprs, expr);
 
 				/*

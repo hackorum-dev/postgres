@@ -4026,7 +4026,7 @@ get_qual_for_hash(Relation parent, PartitionBoundSpec *spec)
 		Node	   *keyCol;
 
 		/* Left operand */
-		if (key->partattrs[i] != 0)
+		if (AttributeNumberIsValid(key->partattrs[i]))
 		{
 			keyCol = (Node *) makeVar(1,
 									  key->partattrs[i],
@@ -4082,7 +4082,7 @@ get_qual_for_list(Relation parent, PartitionBoundSpec *spec)
 	Assert(key->partnatts == 1);
 
 	/* Construct Var or expression representing the partition column */
-	if (key->partattrs[0] != 0)
+	if (AttributeNumberIsValid(key->partattrs[0]))
 		keyCol = (Expr *) makeVar(1,
 								  key->partattrs[0],
 								  key->parttypid[0],
@@ -4638,7 +4638,7 @@ get_range_key_properties(PartitionKey key, int keynum,
 						 Const **lower_val, Const **upper_val)
 {
 	/* Get partition key expression for this column */
-	if (key->partattrs[keynum] != 0)
+	if (AttributeNumberIsValid(key->partattrs[keynum]))
 	{
 		*keyCol = (Expr *) makeVar(1,
 								   key->partattrs[keynum],
@@ -4686,7 +4686,7 @@ get_range_nulltest(PartitionKey key)
 	{
 		Expr	   *keyCol;
 
-		if (key->partattrs[i] != 0)
+		if (AttributeNumberIsValid(key->partattrs[i]))
 		{
 			keyCol = (Expr *) makeVar(1,
 									  key->partattrs[i],
