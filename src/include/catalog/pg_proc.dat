@@ -12604,4 +12604,10 @@
   proargnames => '{pid,io_id,io_generation,state,operation,off,length,target,handle_data_len,raw_result,result,target_desc,f_sync,f_localmem,f_buffered}',
   prosrc => 'pg_get_aios' },
 
+{ oid => '9432', descr => 'describe system verions',
+  proname => 'pg_get_system_versions', procost => '10', prorows => '10',
+  proretset => 't', provolatile => 'v', prorettype => 'record',
+  proargtypes => '', proallargtypes => '{text,text,int8}',
+  proargmodes => '{o,o,o}', proargnames => '{name,version,type}',
+  prosrc => 'pg_get_system_versions' },
 ]
