@@ -243,9 +243,9 @@ static void quoteOneName(char *buffer, const char *name);
 static void quoteRelationName(char *buffer, Relation rel);
 static void ri_GenerateQual(StringInfo buf,
 							const char *sep,
-							const char *leftop, Oid leftoptype,
+							const char *leftopprefix, const char *leftop, Oid leftoptype, bool quoteleftop,
 							Oid opoid,
-							const char *rightop, Oid rightoptype);
+							const char *rightopprefix, const char *rightop, Oid rightoptype, bool quoterightop);
 static void ri_GenerateQualCollation(StringInfo buf, Oid collation);
 static int	ri_NullCheck(TupleDesc tupDesc, TupleTableSlot *slot,
 						 const RI_ConstraintInfo *riinfo, bool rel_is_pk);
@@ -443,7 +443,7 @@ RI_FKey_check(TriggerData *trigdata)
 	{
 		StringInfoData querybuf;
 		char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
-		char		attname[MAX_QUOTED_NAME_LEN];
+		const char *attname;
 		char		paramname[16];
 		const char *querysep;
 		Oid			queryoids[RI_MAX_NUMKEYS];
@@ -478,11 +478,11 @@ RI_FKey_check(TriggerData *trigdata)
 		quoteRelationName(pkrelname, pk_rel);
 		if (riinfo->hasperiod)
 		{
-			quoteOneName(attname,
-						 RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]));
+			attname = RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]);
+			appendStringInfoIdentifier(&querybuf, "SELECT 1 FROM (SELECT ", attname, " AS r FROM ");
 			appendStringInfo(&querybuf,
-							 "SELECT 1 FROM (SELECT %s AS r FROM %s%s x",
-							 attname, pk_only, pkrelname);
+							 "%s%s x",
+							 pk_only, pkrelname);
 		}
 		else
 		{
@@ -495,13 +495,12 @@ RI_FKey_check(TriggerData *trigdata)
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
 
-			quoteOneName(attname,
-						 RIAttName(pk_rel, riinfo->pk_attnums[i]));
+			attname = RIAttName(pk_rel, riinfo->pk_attnums[i]);
 			sprintf(paramname, "$%d", i + 1);
 			ri_GenerateQual(&querybuf, querysep,
-							attname, pk_type,
+							NULL, attname, pk_type, true,
 							riinfo->pf_eq_oprs[i],
-							paramname, fk_type);
+							NULL, paramname, fk_type, false);
 			querysep = "AND";
 			queryoids[i] = fk_type;
 		}
@@ -513,9 +512,9 @@ RI_FKey_check(TriggerData *trigdata)
 			appendStringInfoString(&querybuf, ") x1 HAVING ");
 			sprintf(paramname, "$%d", riinfo->nkeys);
 			ri_GenerateQual(&querybuf, "",
-							paramname, fk_type,
+							NULL, paramname, fk_type, false,
 							riinfo->agged_period_contained_by_oper,
-							"pg_catalog.range_agg", ANYMULTIRANGEOID);
+							NULL, "pg_catalog.range_agg", ANYMULTIRANGEOID, false);
 			appendStringInfoString(&querybuf, "(x1.r)");
 		}
 
@@ -613,7 +612,7 @@ ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 	{
 		StringInfoData querybuf;
 		char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
-		char		attname[MAX_QUOTED_NAME_LEN];
+		const char *attname;
 		char		paramname[16];
 		const char *querysep;
 		const char *pk_only;
@@ -648,11 +647,11 @@ ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 		quoteRelationName(pkrelname, pk_rel);
 		if (riinfo->hasperiod)
 		{
-			quoteOneName(attname, RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]));
-
+			attname = RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]);
+			appendStringInfoIdentifier(&querybuf, "SELECT 1 FROM (SELECT ", attname, " AS r FROM ");
 			appendStringInfo(&querybuf,
-							 "SELECT 1 FROM (SELECT %s AS r FROM %s%s x",
-							 attname, pk_only, pkrelname);
+							 "%s%s x",
+							 pk_only, pkrelname);
 		}
 		else
 		{
@@ -664,13 +663,12 @@ ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 		{
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 
-			quoteOneName(attname,
-						 RIAttName(pk_rel, riinfo->pk_attnums[i]));
+			attname = RIAttName(pk_rel, riinfo->pk_attnums[i]);
 			sprintf(paramname, "$%d", i + 1);
 			ri_GenerateQual(&querybuf, querysep,
-							attname, pk_type,
+							NULL, attname, pk_type, true,
 							riinfo->pp_eq_oprs[i],
-							paramname, pk_type);
+							NULL, paramname, pk_type, false);
 			querysep = "AND";
 			queryoids[i] = pk_type;
 		}
@@ -682,9 +680,9 @@ ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 			appendStringInfoString(&querybuf, ") x1 HAVING ");
 			sprintf(paramname, "$%d", riinfo->nkeys);
 			ri_GenerateQual(&querybuf, "",
-							paramname, fk_type,
+							NULL, paramname, fk_type, false,
 							riinfo->agged_period_contained_by_oper,
-							"pg_catalog.range_agg", ANYMULTIRANGEOID);
+							NULL, "pg_catalog.range_agg", ANYMULTIRANGEOID, false);
 			appendStringInfoString(&querybuf, "(x1.r)");
 		}
 
@@ -842,7 +840,7 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 		StringInfoData querybuf;
 		char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
 		char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
-		char		attname[MAX_QUOTED_NAME_LEN];
+		const char *attname;
 		char		periodattname[MAX_QUOTED_NAME_LEN];
 		char		paramname[16];
 		const char *querysep;
@@ -869,13 +867,12 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
 
-			quoteOneName(attname,
-						 RIAttName(fk_rel, riinfo->fk_attnums[i]));
+			attname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
 			sprintf(paramname, "$%d", i + 1);
 			ri_GenerateQual(&querybuf, querysep,
-							paramname, pk_type,
+							NULL, paramname, pk_type, false,
 							riinfo->pf_eq_oprs[i],
-							attname, fk_type);
+							NULL, attname, fk_type, true);
 			querysep = "AND";
 			queryoids[i] = pk_type;
 		}
@@ -913,7 +910,7 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 			char	   *pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 				"" : "ONLY ";
 
-			quoteOneName(attname, RIAttName(fk_rel, riinfo->fk_attnums[riinfo->nkeys - 1]));
+			attname = RIAttName(fk_rel, riinfo->fk_attnums[riinfo->nkeys - 1]);
 			sprintf(paramname, "$%d", riinfo->nkeys);
 
 			appendStringInfoString(&querybuf, " AND NOT coalesce(");
@@ -922,9 +919,9 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 			initStringInfo(&intersectbuf);
 			appendStringInfoChar(&intersectbuf, '(');
 			ri_GenerateQual(&intersectbuf, "",
-							attname, fk_period_type,
+							NULL, attname, fk_period_type, true,
 							riinfo->period_intersect_oper,
-							paramname, pk_period_type);
+							NULL, paramname, pk_period_type, false);
 			appendStringInfoChar(&intersectbuf, ')');
 
 			/* Find the remaining history */
@@ -942,22 +939,21 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 			{
 				Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 
-				quoteOneName(attname,
-							 RIAttName(pk_rel, riinfo->pk_attnums[i]));
+				attname = RIAttName(pk_rel, riinfo->pk_attnums[i]);
 				sprintf(paramname, "$%d", i + 1);
 				ri_GenerateQual(&replacementsbuf, querysep,
-								paramname, pk_type,
+								NULL, paramname, pk_type, false,
 								riinfo->pp_eq_oprs[i],
-								attname, pk_type);
+								NULL, attname, pk_type, true);
 				querysep = "AND";
 				queryoids[i] = pk_type;
 			}
 			appendStringInfoString(&replacementsbuf, " FOR KEY SHARE OF y) y2)");
 
 			ri_GenerateQual(&querybuf, "",
-							intersectbuf.data, fk_period_type,
+							NULL, intersectbuf.data, fk_period_type, false,
 							riinfo->agged_period_contained_by_oper,
-							replacementsbuf.data, ANYMULTIRANGEOID);
+							NULL, replacementsbuf.data, ANYMULTIRANGEOID, false);
 			/* end of coalesce: */
 			appendStringInfoString(&querybuf, ", false)");
 		}
@@ -1029,7 +1025,7 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 	{
 		StringInfoData querybuf;
 		char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
-		char		attname[MAX_QUOTED_NAME_LEN];
+		const char *attname;
 		char		paramname[16];
 		const char *querysep;
 		Oid			queryoids[RI_MAX_NUMKEYS];
@@ -1054,13 +1050,12 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
 
-			quoteOneName(attname,
-						 RIAttName(fk_rel, riinfo->fk_attnums[i]));
+			attname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
 			sprintf(paramname, "$%d", i + 1);
 			ri_GenerateQual(&querybuf, querysep,
-							paramname, pk_type,
+							NULL, paramname, pk_type, false,
 							riinfo->pf_eq_oprs[i],
-							attname, fk_type);
+							NULL, attname, fk_type, true);
 			querysep = "AND";
 			queryoids[i] = pk_type;
 		}
@@ -1135,7 +1130,7 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 		StringInfoData querybuf;
 		StringInfoData qualbuf;
 		char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
-		char		attname[MAX_QUOTED_NAME_LEN];
+		const char *attname;
 		char		paramname[16];
 		const char *querysep;
 		const char *qualsep;
@@ -1166,16 +1161,15 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
 
-			quoteOneName(attname,
-						 RIAttName(fk_rel, riinfo->fk_attnums[i]));
-			appendStringInfo(&querybuf,
-							 "%s %s = $%d",
-							 querysep, attname, i + 1);
+			attname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
+			appendStringInfoString(&querybuf, querysep);
+			appendStringInfoIdentifier(&querybuf, " ", attname, " = ");
+			appendStringInfo(&querybuf, "$%d", i + 1);
 			sprintf(paramname, "$%d", j + 1);
 			ri_GenerateQual(&qualbuf, qualsep,
-							paramname, pk_type,
+							NULL, paramname, pk_type, false,
 							riinfo->pf_eq_oprs[i],
-							attname, fk_type);
+							NULL, attname, fk_type, true);
 			querysep = ",";
 			qualsep = "AND";
 			queryoids[i] = pk_type;
@@ -1324,7 +1318,7 @@ ri_set(TriggerData *trigdata, bool is_set_null, int tgkind)
 	{
 		StringInfoData querybuf;
 		char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
-		char		attname[MAX_QUOTED_NAME_LEN];
+		const char *attname;
 		char		paramname[16];
 		const char *querysep;
 		const char *qualsep;
@@ -1382,11 +1376,10 @@ ri_set(TriggerData *trigdata, bool is_set_null, int tgkind)
 		querysep = "";
 		for (int i = 0; i < num_cols_to_set; i++)
 		{
-			quoteOneName(attname, RIAttName(fk_rel, set_cols[i]));
-			appendStringInfo(&querybuf,
-							 "%s %s = %s",
-							 querysep, attname,
-							 is_set_null ? "NULL" : "DEFAULT");
+			attname = RIAttName(fk_rel, set_cols[i]);
+			appendStringInfoString(&querybuf, querysep);
+			appendStringInfoIdentifier(&querybuf, " ", attname, " = ");
+			appendStringInfoString(&querybuf, is_set_null ? "NULL" : "DEFAULT");
 			querysep = ",";
 		}
 
@@ -1399,14 +1392,13 @@ ri_set(TriggerData *trigdata, bool is_set_null, int tgkind)
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
 
-			quoteOneName(attname,
-						 RIAttName(fk_rel, riinfo->fk_attnums[i]));
+			attname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
 
 			sprintf(paramname, "$%d", i + 1);
 			ri_GenerateQual(&querybuf, qualsep,
-							paramname, pk_type,
+							NULL, paramname, pk_type, false,
 							riinfo->pf_eq_oprs[i],
-							attname, fk_type);
+							NULL, attname, fk_type, true);
 			qualsep = "AND";
 			queryoids[i] = pk_type;
 		}
@@ -1604,8 +1596,8 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	StringInfoData querybuf;
 	char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
 	char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
-	char		pkattname[MAX_QUOTED_NAME_LEN + 3];
-	char		fkattname[MAX_QUOTED_NAME_LEN + 3];
+	const char *pkattname;
+	const char *fkattname;
 	RangeTblEntry *rte;
 	RTEPermissionInfo *pk_perminfo;
 	RTEPermissionInfo *fk_perminfo;
@@ -1700,9 +1692,9 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	sep = "";
 	for (int i = 0; i < riinfo->nkeys; i++)
 	{
-		quoteOneName(fkattname,
-					 RIAttName(fk_rel, riinfo->fk_attnums[i]));
-		appendStringInfo(&querybuf, "%sfk.%s", sep, fkattname);
+		fkattname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
+		appendStringInfoString(&querybuf, sep);
+		appendStringInfoIdentifier(&querybuf, "fk.", fkattname, NULL);
 		sep = ", ";
 	}
 
@@ -1716,8 +1708,6 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 					 " FROM %s%s fk LEFT OUTER JOIN %s%s pk ON",
 					 fk_only, fkrelname, pk_only, pkrelname);
 
-	strcpy(pkattname, "pk.");
-	strcpy(fkattname, "fk.");
 	sep = "(";
 	for (int i = 0; i < riinfo->nkeys; i++)
 	{
@@ -1726,14 +1716,12 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 		Oid			pk_coll = RIAttCollation(pk_rel, riinfo->pk_attnums[i]);
 		Oid			fk_coll = RIAttCollation(fk_rel, riinfo->fk_attnums[i]);
 
-		quoteOneName(pkattname + 3,
-					 RIAttName(pk_rel, riinfo->pk_attnums[i]));
-		quoteOneName(fkattname + 3,
-					 RIAttName(fk_rel, riinfo->fk_attnums[i]));
+		pkattname = RIAttName(pk_rel, riinfo->pk_attnums[i]);
+		fkattname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
 		ri_GenerateQual(&querybuf, sep,
-						pkattname, pk_type,
+						"pk.", pkattname, pk_type, true,
 						riinfo->pf_eq_oprs[i],
-						fkattname, fk_type);
+						"fk.", fkattname, fk_type, true);
 		if (pk_coll != fk_coll)
 			ri_GenerateQualCollation(&querybuf, pk_coll);
 		sep = "AND";
@@ -1743,16 +1731,15 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	 * It's sufficient to test any one pk attribute for null to detect a join
 	 * failure.
 	 */
-	quoteOneName(pkattname, RIAttName(pk_rel, riinfo->pk_attnums[0]));
-	appendStringInfo(&querybuf, ") WHERE pk.%s IS NULL AND (", pkattname);
+	pkattname = RIAttName(pk_rel, riinfo->pk_attnums[0]);
+	appendStringInfoIdentifier(&querybuf, ") WHERE pk.", pkattname, " IS NULL AND (");
 
 	sep = "";
 	for (int i = 0; i < riinfo->nkeys; i++)
 	{
-		quoteOneName(fkattname, RIAttName(fk_rel, riinfo->fk_attnums[i]));
-		appendStringInfo(&querybuf,
-						 "%sfk.%s IS NOT NULL",
-						 sep, fkattname);
+		fkattname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
+		appendStringInfoString(&querybuf, sep);
+		appendStringInfoIdentifier(&querybuf, "fk.", fkattname, " IS NOT NULL");
 		switch (riinfo->confmatchtype)
 		{
 			case FKCONSTR_MATCH_SIMPLE:
@@ -1899,8 +1886,8 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	char	   *constraintDef;
 	char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
 	char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
-	char		pkattname[MAX_QUOTED_NAME_LEN + 3];
-	char		fkattname[MAX_QUOTED_NAME_LEN + 3];
+	const char *pkattname;
+	const char *fkattname;
 	const char *sep;
 	const char *fk_only;
 	int			save_nestlevel;
@@ -1937,9 +1924,9 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	sep = "";
 	for (i = 0; i < riinfo->nkeys; i++)
 	{
-		quoteOneName(fkattname,
-					 RIAttName(fk_rel, riinfo->fk_attnums[i]));
-		appendStringInfo(&querybuf, "%sfk.%s", sep, fkattname);
+		fkattname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
+		appendStringInfoString(&querybuf, sep);
+		appendStringInfoIdentifier(&querybuf, "fk.", fkattname, NULL);
 		sep = ", ";
 	}
 
@@ -1950,8 +1937,8 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	appendStringInfo(&querybuf,
 					 " FROM %s%s fk JOIN %s pk ON",
 					 fk_only, fkrelname, pkrelname);
-	strcpy(pkattname, "pk.");
-	strcpy(fkattname, "fk.");
+	/* strcpy(pkattname, "pk."); */
+	/* strcpy(fkattname, "fk."); */
 	sep = "(";
 	for (i = 0; i < riinfo->nkeys; i++)
 	{
@@ -1960,14 +1947,12 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 		Oid			pk_coll = RIAttCollation(pk_rel, riinfo->pk_attnums[i]);
 		Oid			fk_coll = RIAttCollation(fk_rel, riinfo->fk_attnums[i]);
 
-		quoteOneName(pkattname + 3,
-					 RIAttName(pk_rel, riinfo->pk_attnums[i]));
-		quoteOneName(fkattname + 3,
-					 RIAttName(fk_rel, riinfo->fk_attnums[i]));
+		pkattname = RIAttName(pk_rel, riinfo->pk_attnums[i]);
+		fkattname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
 		ri_GenerateQual(&querybuf, sep,
-						pkattname, pk_type,
+						"pk.", pkattname, pk_type, true,
 						riinfo->pf_eq_oprs[i],
-						fkattname, fk_type);
+						"fk.", fkattname, fk_type, true);
 		if (pk_coll != fk_coll)
 			ri_GenerateQualCollation(&querybuf, pk_coll);
 		sep = "AND";
@@ -1988,10 +1973,9 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	sep = "";
 	for (i = 0; i < riinfo->nkeys; i++)
 	{
-		quoteOneName(fkattname, RIAttName(fk_rel, riinfo->fk_attnums[i]));
-		appendStringInfo(&querybuf,
-						 "%sfk.%s IS NOT NULL",
-						 sep, fkattname);
+		fkattname = RIAttName(fk_rel, riinfo->fk_attnums[i]);
+		appendStringInfoString(&querybuf, sep);
+		appendStringInfoIdentifier(&querybuf, "fk.", fkattname, " IS NOT NULL");
 		switch (riinfo->confmatchtype)
 		{
 			case FKCONSTR_MATCH_SIMPLE:
@@ -2149,13 +2133,15 @@ quoteRelationName(char *buffer, Relation rel)
 static void
 ri_GenerateQual(StringInfo buf,
 				const char *sep,
-				const char *leftop, Oid leftoptype,
+				const char *leftopprefix, const char *leftop, Oid leftoptype, bool quoteleftop,
 				Oid opoid,
-				const char *rightop, Oid rightoptype)
+				const char *rightopprefix, const char *rightop, Oid rightoptype, bool quoterightop)
 {
 	appendStringInfo(buf, " %s ", sep);
-	generate_operator_clause(buf, leftop, leftoptype, opoid,
-							 rightop, rightoptype);
+	generate_operator_clause(buf,
+							 leftopprefix, leftop, leftoptype, quoteleftop,
+							 opoid,
+							 rightopprefix, rightop, rightoptype, quoterightop);
 }
 
 /*
