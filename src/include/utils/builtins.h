@@ -82,9 +82,9 @@ extern const char *quote_identifier(const char *ident);
 extern char *quote_qualified_identifier(const char *qualifier,
 										const char *ident);
 extern void generate_operator_clause(StringInfo buf,
-									 const char *leftop, Oid leftoptype,
+									 const char *leftopprefix, const char *leftop, Oid leftoptype, bool quoteleftop,
 									 Oid opoid,
-									 const char *rightop, Oid rightoptype);
+									 const char *rightopprefix, const char *rightop, Oid rightoptype, bool quoterightop);
 extern void appendStringInfoIdentifier(StringInfo str, const char *prefix, const char *ident, const char *suffix);
 extern void appendStringInfoQualifiedIdentifier(StringInfo str,
 												const char *prefix,
