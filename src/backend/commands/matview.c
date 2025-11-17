@@ -798,9 +798,9 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid, Oid relowner,
 													 NameStr(attr->attname));
 
 				generate_operator_clause(&querybuf,
-										 leftop, attrtype,
+										 NULL, leftop, attrtype, false,
 										 op,
-										 rightop, attrtype);
+										 NULL, rightop, attrtype, false);
 
 				foundUniqueIndex = true;
 			}
