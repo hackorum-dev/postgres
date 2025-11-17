@@ -14325,9 +14325,9 @@ generate_operator_name(Oid operid, Oid arg1, Oid arg2)
  */
 void
 generate_operator_clause(StringInfo buf,
-						 const char *leftop, Oid leftoptype,
+						 const char *leftopprefix, const char *leftop, Oid leftoptype, bool quoteleftop,
 						 Oid opoid,
-						 const char *rightop, Oid rightoptype)
+						 const char *rightopprefix, const char *rightop, Oid rightoptype, bool quoterightop)
 {
 	HeapTuple	opertup;
 	Form_pg_operator operform;
@@ -14340,15 +14340,32 @@ generate_operator_clause(StringInfo buf,
 	operform = (Form_pg_operator) GETSTRUCT(opertup);
 	Assert(operform->oprkind == 'b');
 	oprname = NameStr(operform->oprname);
-
 	nspname = get_namespace_name(operform->oprnamespace);
 
-	appendStringInfoString(buf, leftop);
+	if (quoteleftop)
+		appendStringInfoIdentifier(buf, leftopprefix, leftop, NULL);
+	else
+	{
+		if (leftopprefix)
+			appendStringInfoString(buf, leftopprefix);
+		appendStringInfoString(buf, leftop);
+	}
+
 	if (leftoptype != operform->oprleft)
 		add_cast_to(buf, operform->oprleft);
-	appendStringInfo(buf, " OPERATOR(%s.", quote_identifier(nspname));
-	appendStringInfoString(buf, oprname);
-	appendStringInfo(buf, ") %s", rightop);
+
+	appendStringInfoIdentifier(buf, " OPERATOR(", nspname, ".");
+	appendStringInfo(buf, "%s) ", oprname);
+
+	if (quoterightop)
+		appendStringInfoIdentifier(buf, rightopprefix, rightop, NULL);
+	else
+	{
+		if (rightopprefix)
+			appendStringInfoString(buf, rightopprefix);
+		appendStringInfoString(buf, rightop);
+	}
+
 	if (rightoptype != operform->oprright)
 		add_cast_to(buf, operform->oprright);
 
