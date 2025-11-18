@@ -372,9 +372,9 @@ typedef enum BackendType
 	 * entry.
 	 */
 	B_LOGGER,
-} BackendType;
 
 #define BACKEND_NUM_TYPES (B_LOGGER + 1)
+} BackendType;
 
 extern PGDLLIMPORT BackendType MyBackendType;
 

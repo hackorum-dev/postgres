@@ -2021,9 +2021,9 @@ typedef enum MergeMatchKind
 	MERGE_WHEN_MATCHED,
 	MERGE_WHEN_NOT_MATCHED_BY_SOURCE,
 	MERGE_WHEN_NOT_MATCHED_BY_TARGET
-} MergeMatchKind;
 
 #define NUM_MERGE_MATCH_KINDS (MERGE_WHEN_NOT_MATCHED_BY_TARGET + 1)
+} MergeMatchKind;
 
 typedef struct MergeAction
 {

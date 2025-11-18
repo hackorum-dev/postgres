@@ -75,9 +75,9 @@ enum _dumpPreparedQueries
 	PREPQUERY_GETATTRIBUTESTATS,
 	PREPQUERY_GETCOLUMNACLS,
 	PREPQUERY_GETDOMAINCONSTRAINTS,
-};
 
 #define NUM_PREP_QUERIES (PREPQUERY_GETDOMAINCONSTRAINTS + 1)
+};
 
 /* Parameters needed by ConnectDatabase; same for dump and restore */
 typedef struct _connParams
