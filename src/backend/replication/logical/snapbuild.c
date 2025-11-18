@@ -581,8 +581,6 @@ SnapBuildExportSnapshot(SnapBuild *builder)
 Snapshot
 SnapBuildGetOrBuildSnapshot(SnapBuild *builder)
 {
-	Assert(builder->state == SNAPBUILD_CONSISTENT);
-
 	/* only build a new snapshot if we don't have a prebuilt one */
 	if (builder->snapshot == NULL)
 	{
@@ -663,21 +661,15 @@ SnapBuildProcessChange(SnapBuild *builder, TransactionId xid, XLogRecPtr lsn)
 	 */
 	if (!ReorderBufferXidHasBaseSnapshot(builder->reorder, xid))
 	{
-		/* only build a new snapshot if we don't have a prebuilt one */
-		if (builder->snapshot == NULL)
-		{
-			builder->snapshot = SnapBuildBuildSnapshot(builder);
-			/* increase refcount for the snapshot builder */
-			SnapBuildSnapIncRefcount(builder->snapshot);
-		}
+		Snapshot snapshot =  SnapBuildGetOrBuildSnapshot(builder);
 
 		/*
 		 * Increase refcount for the transaction we're handing the snapshot
 		 * out to.
 		 */
-		SnapBuildSnapIncRefcount(builder->snapshot);
+		SnapBuildSnapIncRefcount(snapshot);
 		ReorderBufferSetBaseSnapshot(builder->reorder, xid, lsn,
-									 builder->snapshot);
+									 snapshot);
 	}
 
 	return true;
