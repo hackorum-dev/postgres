@@ -92,9 +92,6 @@
 #define RI_PLAN_SETDEFAULT_ONDELETE		9
 #define RI_PLAN_SETDEFAULT_ONUPDATE		10
 
-#define MAX_QUOTED_NAME_LEN  (NAMEDATALEN*2+3)
-#define MAX_QUOTED_REL_NAME_LEN  (MAX_QUOTED_NAME_LEN*2)
-
 #define RIAttName(rel, attnum)	NameStr(*attnumAttName(rel, attnum))
 #define RIAttType(rel, attnum)	attnumTypeId(rel, attnum)
 #define RIAttCollation(rel, attnum) attnumCollationId(rel, attnum)
@@ -255,8 +252,7 @@ static bool ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 							  const RI_ConstraintInfo *riinfo);
 static Datum ri_restrict(TriggerData *trigdata, bool is_no_action);
 static Datum ri_set(TriggerData *trigdata, bool is_set_null, int tgkind);
-static void quoteOneName(char *buffer, const char *name);
-static void quoteRelationName(char *buffer, Relation rel);
+static void appendRelationName(StringInfo buffer, Relation rel, const char *prefix, const char *suffix);
 static void ri_GenerateQual(StringInfo buf,
 							const char *sep,
 							const char *leftopprefix, const char *leftop, Oid leftoptype, bool quoteleftop,
@@ -456,7 +452,6 @@ RI_FKey_check(TriggerData *trigdata)
 	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
 	{
 		StringInfoData querybuf;
-		char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
 		const char *attname;
 		char		paramname[16];
 		const char *querysep;
@@ -489,19 +484,16 @@ RI_FKey_check(TriggerData *trigdata)
 		initStringInfo(&querybuf);
 		pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 			"" : "ONLY ";
-		quoteRelationName(pkrelname, pk_rel);
 		if (riinfo->hasperiod)
 		{
 			attname = RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]);
 			appendStringInfoIdentifier(&querybuf, "SELECT 1 FROM (SELECT ", attname, " AS r FROM ");
-			appendStringInfo(&querybuf,
-							 "%s%s x",
-							 pk_only, pkrelname);
+			appendRelationName(&querybuf, pk_rel, pk_only, " x");
 		}
 		else
 		{
-			appendStringInfo(&querybuf, "SELECT 1 FROM %s%s x",
-							 pk_only, pkrelname);
+			appendStringInfoString(&querybuf, "SELECT 1 FROM ");
+			appendRelationName(&querybuf, pk_rel, pk_only, " x");
 		}
 		querysep = "WHERE";
 		for (int i = 0; i < riinfo->nkeys; i++)
@@ -625,7 +617,6 @@ ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
 	{
 		StringInfoData querybuf;
-		char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
 		const char *attname;
 		char		paramname[16];
 		const char *querysep;
@@ -658,19 +649,16 @@ ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 		initStringInfo(&querybuf);
 		pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 			"" : "ONLY ";
-		quoteRelationName(pkrelname, pk_rel);
 		if (riinfo->hasperiod)
 		{
 			attname = RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]);
 			appendStringInfoIdentifier(&querybuf, "SELECT 1 FROM (SELECT ", attname, " AS r FROM ");
-			appendStringInfo(&querybuf,
-							 "%s%s x",
-							 pk_only, pkrelname);
+			appendRelationName(&querybuf, pk_rel, pk_only, " x");
 		}
 		else
 		{
-			appendStringInfo(&querybuf, "SELECT 1 FROM %s%s x",
-							 pk_only, pkrelname);
+			appendStringInfoString(&querybuf, "SELECT 1 FROM ");
+			appendRelationName(&querybuf, pk_rel, pk_only, " x");
 		}
 		querysep = "WHERE";
 		for (int i = 0; i < riinfo->nkeys; i++)
@@ -852,10 +840,7 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
 	{
 		StringInfoData querybuf;
-		char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
-		char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
 		const char *attname;
-		char		periodattname[MAX_QUOTED_NAME_LEN];
 		char		paramname[16];
 		const char *querysep;
 		Oid			queryoids[RI_MAX_NUMKEYS];
@@ -872,9 +857,8 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 		initStringInfo(&querybuf);
 		fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 			"" : "ONLY ";
-		quoteRelationName(fkrelname, fk_rel);
-		appendStringInfo(&querybuf, "SELECT 1 FROM %s%s x",
-						 fk_only, fkrelname);
+		appendStringInfoString(&querybuf, "SELECT 1 FROM ");
+		appendRelationName(&querybuf, fk_rel, fk_only, " x");
 		querysep = "WHERE";
 		for (int i = 0; i < riinfo->nkeys; i++)
 		{
@@ -942,10 +926,8 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 			initStringInfo(&replacementsbuf);
 			appendStringInfoString(&replacementsbuf, "(SELECT pg_catalog.range_agg(r) FROM ");
 
-			quoteOneName(periodattname, RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]));
-			quoteRelationName(pkrelname, pk_rel);
-			appendStringInfo(&replacementsbuf, "(SELECT y.%s r FROM %s%s y",
-							 periodattname, pk_only, pkrelname);
+			appendStringInfoIdentifier(&replacementsbuf, "(SELECT y.", RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]), " r FROM ");
+			appendRelationName(&replacementsbuf, pk_rel, pk_only, " y");
 
 			/* Restrict pk rows to what matches */
 			querysep = "WHERE";
@@ -1038,7 +1020,6 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
 	{
 		StringInfoData querybuf;
-		char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
 		const char *attname;
 		char		paramname[16];
 		const char *querysep;
@@ -1055,9 +1036,8 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 		initStringInfo(&querybuf);
 		fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 			"" : "ONLY ";
-		quoteRelationName(fkrelname, fk_rel);
-		appendStringInfo(&querybuf, "DELETE FROM %s%s",
-						 fk_only, fkrelname);
+		appendStringInfoString(&querybuf, "DELETE FROM ");
+		appendRelationName(&querybuf, fk_rel, fk_only, NULL);
 		querysep = "WHERE";
 		for (int i = 0; i < riinfo->nkeys; i++)
 		{
@@ -1143,7 +1123,6 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 	{
 		StringInfoData querybuf;
 		StringInfoData qualbuf;
-		char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
 		const char *attname;
 		char		paramname[16];
 		const char *querysep;
@@ -1165,9 +1144,8 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 		initStringInfo(&qualbuf);
 		fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 			"" : "ONLY ";
-		quoteRelationName(fkrelname, fk_rel);
-		appendStringInfo(&querybuf, "UPDATE %s%s SET",
-						 fk_only, fkrelname);
+		appendStringInfoString(&querybuf, "UPDATE ");
+		appendRelationName(&querybuf, fk_rel, fk_only, " SET");
 		querysep = "";
 		qualsep = "WHERE";
 		for (int i = 0, j = riinfo->nkeys; i < riinfo->nkeys; i++, j++)
@@ -1331,7 +1309,6 @@ ri_set(TriggerData *trigdata, bool is_set_null, int tgkind)
 	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
 	{
 		StringInfoData querybuf;
-		char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
 		const char *attname;
 		char		paramname[16];
 		const char *querysep;
@@ -1380,9 +1357,8 @@ ri_set(TriggerData *trigdata, bool is_set_null, int tgkind)
 		initStringInfo(&querybuf);
 		fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 			"" : "ONLY ";
-		quoteRelationName(fkrelname, fk_rel);
-		appendStringInfo(&querybuf, "UPDATE %s%s SET",
-						 fk_only, fkrelname);
+		appendStringInfo(&querybuf, "UPDATE ");
+		appendRelationName(&querybuf, fk_rel, fk_only, " SET");
 
 		/*
 		 * Add assignment clauses
@@ -1608,8 +1584,6 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 {
 	const RI_ConstraintInfo *riinfo;
 	StringInfoData querybuf;
-	char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
-	char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
 	const char *pkattname;
 	const char *fkattname;
 	RangeTblEntry *rte;
@@ -1712,15 +1686,13 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 		sep = ", ";
 	}
 
-	quoteRelationName(pkrelname, pk_rel);
-	quoteRelationName(fkrelname, fk_rel);
 	fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 		"" : "ONLY ";
 	pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 		"" : "ONLY ";
-	appendStringInfo(&querybuf,
-					 " FROM %s%s fk LEFT OUTER JOIN %s%s pk ON",
-					 fk_only, fkrelname, pk_only, pkrelname);
+	appendStringInfoString(&querybuf, " FROM ");
+	appendRelationName(&querybuf, fk_rel, fk_only, " fk LEFT OUTER JOIN ");
+	appendRelationName(&querybuf, pk_rel, pk_only, " pk ON");
 
 	sep = "(";
 	for (int i = 0; i < riinfo->nkeys; i++)
@@ -1898,8 +1870,6 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	const RI_ConstraintInfo *riinfo;
 	StringInfoData querybuf;
 	char	   *constraintDef;
-	char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
-	char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
 	const char *pkattname;
 	const char *fkattname;
 	const char *sep;
@@ -1944,13 +1914,12 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 		sep = ", ";
 	}
 
-	quoteRelationName(pkrelname, pk_rel);
-	quoteRelationName(fkrelname, fk_rel);
 	fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
 		"" : "ONLY ";
-	appendStringInfo(&querybuf,
-					 " FROM %s%s fk JOIN %s pk ON",
-					 fk_only, fkrelname, pkrelname);
+	appendStringInfoString(&querybuf, " FROM ");
+	appendRelationName(&querybuf, fk_rel, fk_only, " fk JOIN ");
+	appendRelationName(&querybuf, pk_rel, NULL, " pk ON");
+
 	/* strcpy(pkattname, "pk."); */
 	/* strcpy(fkattname, "fk."); */
 	sep = "(";
@@ -2103,37 +2072,16 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 
 
 /*
- * quoteOneName --- safely quote a single SQL name
- *
- * buffer must be MAX_QUOTED_NAME_LEN long (includes room for \0)
- */
-static void
-quoteOneName(char *buffer, const char *name)
-{
-	/* Rather than trying to be smart, just always quote it. */
-	*buffer++ = '"';
-	while (*name)
-	{
-		if (*name == '"')
-			*buffer++ = '"';
-		*buffer++ = *name++;
-	}
-	*buffer++ = '"';
-	*buffer = '\0';
-}
+ * appendRelationName --- safely append a quoted fully qualified relation name
 
-/*
- * quoteRelationName --- safely quote a fully qualified relation name
- *
- * buffer must be MAX_QUOTED_REL_NAME_LEN long (includes room for \0)
  */
 static void
-quoteRelationName(char *buffer, Relation rel)
+appendRelationName(StringInfo buffer, Relation rel,
+				   const char *prefix, const char *suffix)
 {
-	quoteOneName(buffer, get_namespace_name(RelationGetNamespace(rel)));
-	buffer += strlen(buffer);
-	*buffer++ = '.';
-	quoteOneName(buffer, RelationGetRelationName(rel));
+	appendStringInfoQualifiedIdentifier(buffer, prefix,
+										get_namespace_name(RelationGetNamespace(rel)),
+										RelationGetRelationName(rel), suffix);
 }
 
 /*
