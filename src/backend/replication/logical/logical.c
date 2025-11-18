@@ -188,7 +188,7 @@ StartupDecodingContext(List *output_plugin_options,
 	{
 		LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 		MyProc->statusFlags |= PROC_IN_LOGICAL_DECODING;
-		ProcGlobal->statusFlags[MyProc->pgxactoff] = MyProc->statusFlags;
+		ProcGlobal->statusFlags[GetMyXactOffPGProc()] = MyProc->statusFlags;
 		LWLockRelease(ProcArrayLock);
 	}
 

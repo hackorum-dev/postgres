@@ -2059,7 +2059,7 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams params,
 		MyProc->statusFlags |= PROC_IN_VACUUM;
 		if (params.is_wraparound)
 			MyProc->statusFlags |= PROC_VACUUM_FOR_WRAPAROUND;
-		ProcGlobal->statusFlags[MyProc->pgxactoff] = MyProc->statusFlags;
+		ProcGlobal->statusFlags[GetMyXactOffPGProc()] = MyProc->statusFlags;
 		LWLockRelease(ProcArrayLock);
 	}
 
