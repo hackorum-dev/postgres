@@ -894,10 +894,15 @@
         parsed as JSON, possibly of a specified type.
         If <literal>SCALAR</literal> or <literal>ARRAY</literal> or
         <literal>OBJECT</literal> is specified, the
-        test is whether or not the JSON is of that particular type. If
-        <literal>WITH UNIQUE KEYS</literal> is specified, then any object in the
-        <replaceable>expression</replaceable> is also tested to see if it
-        has duplicate keys.
+        test is whether or not the JSON is of that particular type.
+        The optional <literal>WITH</literal> or <literal>WITHOUT</literal>
+        <literal>UNIQUE KEYS</literal> clause controls an additional test
+        on duplicate object keys.  Specifying <literal>WITH UNIQUE KEYS</literal>
+        requires that no object contained in the
+        <replaceable>expression</replaceable> (recursively) have duplicate keys.
+        Specifying <literal>WITHOUT UNIQUE KEYS</literal>, which is also the
+        default, disables this additional test; it does not require duplicate
+        keys to be present.
        </para>
        <para>
 <programlisting>
