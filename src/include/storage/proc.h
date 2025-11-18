@@ -210,9 +210,6 @@ typedef struct PGPROC
 	Oid			tempNamespaceId;	/* OID of temp schema this backend is
 									 * using */
 
-	int			pgxactoff;		/* offset into various ProcGlobal->arrays with
-								 * data mirrored from this PGPROC */
-
 	uint8		statusFlags;	/* this backend's status flags, see PROC_*
 								 * above. mirrored in
 								 * ProcGlobal->statusFlags[pgxactoff] */
@@ -445,6 +442,7 @@ typedef struct PROC_HDR
 {
 	/* Array of PGPROC structures (not including dummies for prepared txns) */
 	PGPROC	   *allProcs;
+	int		   *pgxactoffs;
 
 	/* Array mirroring PGPROC.xid for each PGPROC currently in the procarray */
 	TransactionId *xids;
@@ -511,6 +509,8 @@ extern PGDLLIMPORT PGPROC *PreparedXactProcs;
  */
 #define GetPGProcByNumber(n) (&ProcGlobal->allProcs[(n)])
 #define GetNumberFromPGProc(proc) ((proc) - &ProcGlobal->allProcs[0])
+#define ProcGetXactOff(procno) (ProcGlobal->pgxactoffs[(procno)])
+#define ProcGetMyXactOff() (ProcGetXactOff(GetNumberFromPGProc(MyProc)))
 
 /*
  * We set aside some extra PGPROC structures for "special worker" processes,

@@ -283,6 +283,7 @@ typedef enum KAXCompressReason
 } KAXCompressReason;
 
 static PGPROC *allProcs;
+static int *pgxactoffs;
 
 /*
  * Cache to reduce overhead of repeated calls to TransactionIdIsInProgress()
@@ -449,6 +450,7 @@ ProcArrayShmemInit(void *arg)
 	TransamVariables->xactCompletionCount = 1;
 
 	allProcs = ProcGlobal->allProcs;
+	pgxactoffs = ProcGlobal->pgxactoffs;
 }
 
 static void
@@ -498,7 +500,7 @@ ProcArrayAdd(PGPROC *proc)
 		int			this_procno = arrayP->pgprocnos[index];
 
 		Assert(this_procno >= 0 && this_procno < (arrayP->maxProcs + NUM_AUXILIARY_PROCS));
-		Assert(allProcs[this_procno].pgxactoff == index);
+		Assert(pgxactoffs[this_procno] == index);
 
 		/* If we have found our right position in the array, break */
 		if (this_procno > pgprocno)
@@ -520,7 +522,7 @@ ProcArrayAdd(PGPROC *proc)
 			movecount * sizeof(*ProcGlobal->statusFlags));
 
 	arrayP->pgprocnos[index] = GetNumberFromPGProc(proc);
-	proc->pgxactoff = index;
+	pgxactoffs[arrayP->pgprocnos[index]] = index;
 	ProcGlobal->xids[index] = proc->xid;
 	ProcGlobal->subxidStates[index] = proc->subxidStatus;
 	ProcGlobal->statusFlags[index] = proc->statusFlags;
@@ -534,9 +536,9 @@ ProcArrayAdd(PGPROC *proc)
 		int			procno = arrayP->pgprocnos[index];
 
 		Assert(procno >= 0 && procno < (arrayP->maxProcs + NUM_AUXILIARY_PROCS));
-		Assert(allProcs[procno].pgxactoff == index - 1);
+		Assert(pgxactoffs[procno] == index - 1);
 
-		allProcs[procno].pgxactoff = index;
+		pgxactoffs[procno] = index;
 	}
 
 	/*
@@ -574,10 +576,10 @@ ProcArrayRemove(PGPROC *proc, TransactionId latestXid)
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
 
-	myoff = proc->pgxactoff;
+	myoff = ProcGetXactOff(GetNumberFromPGProc(proc));
 
 	Assert(myoff >= 0 && myoff < arrayP->numProcs);
-	Assert(ProcGlobal->allProcs[arrayP->pgprocnos[myoff]].pgxactoff == myoff);
+	Assert(ProcGlobal->pgxactoffs[arrayP->pgprocnos[myoff]] == myoff);
 
 	if (TransactionIdIsValid(latestXid))
 	{
@@ -632,9 +634,9 @@ ProcArrayRemove(PGPROC *proc, TransactionId latestXid)
 		int			procno = arrayP->pgprocnos[index];
 
 		Assert(procno >= 0 && procno < (arrayP->maxProcs + NUM_AUXILIARY_PROCS));
-		Assert(allProcs[procno].pgxactoff - 1 == index);
+		Assert(pgxactoffs[procno] - 1 == index);
 
-		allProcs[procno].pgxactoff = index;
+		pgxactoffs[procno] = index;
 	}
 
 	/*
@@ -706,11 +708,13 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid)
 		/* avoid unnecessarily dirtying shared cachelines */
 		if (proc->statusFlags & PROC_VACUUM_STATE_MASK)
 		{
+			int pgxactoff = ProcGetXactOff(GetNumberFromPGProc(proc));
+
 			Assert(!LWLockHeldByMe(ProcArrayLock));
 			LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
-			Assert(proc->statusFlags == ProcGlobal->statusFlags[proc->pgxactoff]);
+			Assert(proc->statusFlags == ProcGlobal->statusFlags[pgxactoff]);
 			proc->statusFlags &= ~PROC_VACUUM_STATE_MASK;
-			ProcGlobal->statusFlags[proc->pgxactoff] = proc->statusFlags;
+			ProcGlobal->statusFlags[pgxactoff] = proc->statusFlags;
 			LWLockRelease(ProcArrayLock);
 		}
 	}
@@ -724,7 +728,7 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid)
 static inline void
 ProcArrayEndTransactionInternal(PGPROC *proc, TransactionId latestXid)
 {
-	int			pgxactoff = proc->pgxactoff;
+	int			pgxactoff = ProcGetXactOff(GetNumberFromPGProc(proc));
 
 	/*
 	 * Note: we need exclusive lock here because we're going to change other
@@ -747,7 +751,7 @@ ProcArrayEndTransactionInternal(PGPROC *proc, TransactionId latestXid)
 	if (proc->statusFlags & PROC_VACUUM_STATE_MASK)
 	{
 		proc->statusFlags &= ~PROC_VACUUM_STATE_MASK;
-		ProcGlobal->statusFlags[proc->pgxactoff] = proc->statusFlags;
+		ProcGlobal->statusFlags[pgxactoff] = proc->statusFlags;
 	}
 
 	/* Clear the subtransaction-XID cache too while holding the lock */
@@ -916,7 +920,7 @@ ProcArrayClearTransaction(PGPROC *proc)
 	 */
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 
-	pgxactoff = proc->pgxactoff;
+	pgxactoff = ProcGetXactOff(GetNumberFromPGProc(proc));
 
 	ProcGlobal->xids[pgxactoff] = InvalidTransactionId;
 	proc->xid = InvalidTransactionId;
@@ -1475,7 +1479,7 @@ TransactionIdIsInProgress(TransactionId xid)
 	}
 
 	/* No shortcuts, gotta grovel through the array */
-	mypgxactoff = MyProc->pgxactoff;
+	mypgxactoff = ProcGetMyXactOff();
 	numProcs = arrayP->numProcs;
 	for (int pgxactoff = 0; pgxactoff < numProcs; pgxactoff++)
 	{
@@ -2184,7 +2188,7 @@ GetSnapshotData(Snapshot snapshot)
 	}
 
 	latest_completed = TransamVariables->latestCompletedXid;
-	mypgxactoff = MyProc->pgxactoff;
+	mypgxactoff = ProcGetMyXactOff();
 	myxid = other_xids[mypgxactoff];
 	Assert(myxid == MyProc->xid);
 
@@ -2223,7 +2227,7 @@ GetSnapshotData(Snapshot snapshot)
 			TransactionId xid = UINT32_ACCESS_ONCE(other_xids[pgxactoff]);
 			uint8		statusFlags;
 
-			Assert(allProcs[arrayP->pgprocnos[pgxactoff]].pgxactoff == pgxactoff);
+			Assert(pgxactoffs[arrayP->pgprocnos[pgxactoff]] == pgxactoff);
 
 			/*
 			 * If the transaction has no XID assigned, we can skip it; it
@@ -2591,7 +2595,7 @@ ProcArrayInstallRestoredXmin(TransactionId xmin, PGPROC *proc)
 		MyProc->xmin = TransactionXmin = xmin;
 		MyProc->statusFlags = (MyProc->statusFlags & ~PROC_XMIN_FLAGS) |
 			(proc->statusFlags & PROC_XMIN_FLAGS);
-		ProcGlobal->statusFlags[MyProc->pgxactoff] = MyProc->statusFlags;
+		ProcGlobal->statusFlags[ProcGetMyXactOff()] = MyProc->statusFlags;
 
 		result = true;
 	}
@@ -4019,7 +4023,7 @@ XidCacheRemoveRunningXids(TransactionId xid,
 	 */
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 
-	mysubxidstat = &ProcGlobal->subxidStates[MyProc->pgxactoff];
+	mysubxidstat = &ProcGlobal->subxidStates[ProcGetMyXactOff()];
 
 	/*
 	 * Under normal circumstances xid and xids[] will be in increasing order,
