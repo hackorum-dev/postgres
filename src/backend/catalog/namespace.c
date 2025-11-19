@@ -3701,14 +3701,14 @@ NameListToQuotedString(const List *names)
 {
 	StringInfoData string;
 	ListCell   *l;
+	const char *sep = "";
 
 	initStringInfo(&string);
 
 	foreach(l, names)
 	{
-		if (l != list_head(names))
-			appendStringInfoChar(&string, '.');
-		appendStringInfoString(&string, quote_identifier(strVal(lfirst(l))));
+		appendStringInfoIdentifier(&string, sep, strVal(lfirst(l)), NULL);
+		sep = ".";
 	}
 
 	return string.data;
