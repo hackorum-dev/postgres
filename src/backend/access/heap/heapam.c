@@ -39,6 +39,7 @@
 #include "access/syncscan.h"
 #include "access/valid.h"
 #include "access/visibilitymap.h"
+#include "executor/execParallel.h"
 #include "access/xloginsert.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_database_d.h"
@@ -935,6 +936,9 @@ heapgettup(HeapScanDesc scan,
 	 */
 	while (true)
 	{
+		if (scan->rs_base.rs_stop_flag != NULL && !pg_atomic_unlocked_test_flag(scan->rs_base.rs_stop_flag))
+			break;
+
 		heap_fetch_next_buffer(scan, dir);
 
 		/* did we run out of blocks to scan? */
@@ -1052,6 +1056,9 @@ heapgettup_pagemode(HeapScanDesc scan,
 	 */
 	while (true)
 	{
+		if (scan->rs_base.rs_stop_flag != NULL && !pg_atomic_unlocked_test_flag(scan->rs_base.rs_stop_flag))
+			break;
+
 		heap_fetch_next_buffer(scan, dir);
 
 		/* did we run out of blocks to scan? */
@@ -1153,6 +1160,7 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 	scan->rs_base.rs_flags = flags;
 	scan->rs_base.rs_parallel = parallel_scan;
 	scan->rs_strategy = NULL;	/* set in initscan */
+	scan->rs_base.rs_stop_flag = NULL;
 	scan->rs_cbuf = InvalidBuffer;
 
 	/*

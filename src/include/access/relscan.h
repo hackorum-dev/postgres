@@ -63,6 +63,12 @@ typedef struct TableScanDescData
 	 */
 	uint32		rs_flags;
 
+	/*
+	 * Flag used to indicate if the parallel workers participating in the scan
+	 * should bail out and stop scanning.
+	 */
+	pg_atomic_flag *rs_stop_flag;
+
 	struct ParallelTableScanDescData *rs_parallel;	/* parallel scan
 													 * information */
 } TableScanDescData;

@@ -74,10 +74,11 @@
  */
 typedef struct FixedParallelExecutorState
 {
-	int64		tuples_needed;	/* tuple bound, see ExecSetTupleBound */
-	dsa_pointer param_exec;
-	int			eflags;
-	int			jit_flags;
+	int64			tuples_needed;	/* tuple bound, see ExecSetTupleBound */
+	dsa_pointer		param_exec;
+	int				eflags;
+	int				jit_flags;
+	pg_atomic_flag	stop_flag;
 } FixedParallelExecutorState;
 
 /*
@@ -604,6 +605,20 @@ ExecParallelSetupTupleQueues(ParallelContext *pcxt, bool reinitialize)
 }
 
 /*
+ * Propagate the terminate flag pointer to all nodes in the plan tree.
+ * This ensures that all nodes can check for termination requests from the leader.
+ */
+static bool
+ExecParallelPropagateTerminateFlag(PlanState *planstate, pg_atomic_flag *stop_flag)
+{
+	if (planstate == NULL)
+		return false;
+
+	planstate->parallel_stop_flag = stop_flag;
+	return planstate_tree_walker(planstate, ExecParallelPropagateTerminateFlag, stop_flag);
+}
+
+/*
  * Sets up the required infrastructure for backend workers to perform
  * execution and return results to the main backend.
  */
@@ -768,6 +783,7 @@ ExecInitParallelPlan(PlanState *planstate, EState *estate,
 	fpes->param_exec = InvalidDsaPointer;
 	fpes->eflags = estate->es_top_eflags;
 	fpes->jit_flags = estate->es_jit_flags;
+	pg_atomic_init_flag(&fpes->stop_flag);
 	shm_toc_insert(pcxt->toc, PARALLEL_KEY_EXECUTOR_FIXED, fpes);
 
 	/* Store query string */
@@ -802,6 +818,8 @@ ExecInitParallelPlan(PlanState *planstate, EState *estate,
 
 	/* We don't need the TupleQueueReaders yet, though. */
 	pei->reader = NULL;
+
+	pei->stop_flag = &fpes->stop_flag;
 
 	/*
 	 * If instrumentation options were supplied, allocate space for the data.
@@ -887,6 +905,9 @@ ExecInitParallelPlan(PlanState *planstate, EState *estate,
 	 */
 	if (e.nnodes != d.nnodes)
 		elog(ERROR, "inconsistent count of PlanState nodes");
+
+ 	/* Set up pointer to the shared terminate flag */
+ 	pei->stop_flag = &fpes->stop_flag;
 
 	/* OK, we're ready to rock and roll. */
 	return pei;
@@ -1163,6 +1184,16 @@ ExecParallelRetrieveJitInstrumentation(PlanState *planstate,
 		MemoryContextAlloc(planstate->state->es_query_cxt, ibytes);
 
 	memcpy(planstate->worker_jit_instrument, shared_jit, ibytes);
+}
+
+/*
+ * Signal all parallel workers to terminate execution by setting the shared
+ * terminate flag. This causes ExecProcNode() to return NULL in all workers.
+ */
+void
+ExecParallelTerminate(ParallelExecutorInfo *pei)
+{
+	pg_atomic_test_set_flag(pei->stop_flag);
 }
 
 /*
@@ -1487,6 +1518,9 @@ ParallelQueryMain(dsm_segment *seg, shm_toc *toc)
 	/* Start up the executor */
 	queryDesc->plannedstmt->jitFlags = fpes->jit_flags;
 	ExecutorStart(queryDesc, fpes->eflags);
+
+	/* Propagate the terminate flag pointer to all nodes in the worker's plan tree */
+	ExecParallelPropagateTerminateFlag(queryDesc->planstate, &fpes->stop_flag);
 
 	/* Special executor initialization steps for parallel workers */
 	queryDesc->planstate->state->es_query_dsa = area;

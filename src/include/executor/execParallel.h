@@ -32,6 +32,7 @@ typedef struct ParallelExecutorInfo
 	dsa_area   *area;			/* points to DSA area in DSM */
 	dsa_pointer param_exec;		/* serialized PARAM_EXEC parameters */
 	bool		finished;		/* set true by ExecParallelFinish */
+	pg_atomic_flag	*stop_flag;	/* pointer to shared terminate flag */
 	/* These two arrays have pcxt->nworkers_launched entries: */
 	shm_mq_handle **tqueue;		/* tuple queues for worker output */
 	struct TupleQueueReader **reader;	/* tuple reader/writer support */
@@ -41,6 +42,7 @@ extern ParallelExecutorInfo *ExecInitParallelPlan(PlanState *planstate,
 												  EState *estate, Bitmapset *sendParams, int nworkers,
 												  int64 tuples_needed);
 extern void ExecParallelCreateReaders(ParallelExecutorInfo *pei);
+extern void ExecParallelTerminate(ParallelExecutorInfo *pei);
 extern void ExecParallelFinish(ParallelExecutorInfo *pei);
 extern void ExecParallelCleanup(ParallelExecutorInfo *pei);
 extern void ExecParallelReinitialize(PlanState *planstate,

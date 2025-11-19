@@ -1248,6 +1248,7 @@ typedef struct PlanState
 	bool		outeropsset;
 	bool		inneropsset;
 	bool		resultopsset;
+	pg_atomic_flag	*parallel_stop_flag;
 } PlanState;
 
 /* ----------------

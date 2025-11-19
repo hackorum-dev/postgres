@@ -417,6 +417,9 @@ ExecShutdownGatherWorkers(GatherState *node)
 void
 ExecShutdownGather(GatherState *node)
 {
+	if (node->pei != NULL)
+		ExecParallelTerminate(node->pei);
+
 	ExecShutdownGatherWorkers(node);
 
 	/* Now destroy the parallel context. */
