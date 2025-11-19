@@ -5095,8 +5095,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 
 				if (OidIsValid(con->conrelid))
 				{
-					appendStringInfo(&buffer, "%s on ",
-									 quote_identifier(NameStr(con->conname)));
+					appendStringInfoIdentifier(&buffer, NULL, NameStr(con->conname), " on ");
 					getRelationIdentity(&buffer, con->conrelid, objname,
 										false);
 					if (objname)
@@ -5111,10 +5110,10 @@ getObjectIdentityParts(const ObjectAddress *object,
 					domain.objectId = con->contypid;
 					domain.objectSubId = 0;
 
-					appendStringInfo(&buffer, "%s on %s",
-									 quote_identifier(NameStr(con->conname)),
-									 getObjectIdentityParts(&domain, objname,
-															objargs, false));
+					appendStringInfoIdentifier(&buffer, NULL, NameStr(con->conname), " on ");
+					appendStringInfoString(&buffer,
+										   getObjectIdentityParts(&domain, objname,
+																  objargs, false));
 
 					if (objname)
 						*objargs = lappend(*objargs, pstrdup(NameStr(con->conname)));
@@ -5187,8 +5186,8 @@ getObjectIdentityParts(const ObjectAddress *object,
 					break;
 				}
 				langForm = (Form_pg_language) GETSTRUCT(langTup);
-				appendStringInfoString(&buffer,
-									   quote_identifier(NameStr(langForm->lanname)));
+				appendStringInfoIdentifier(&buffer, NULL,
+										   NameStr(langForm->lanname), NULL);
 				if (objname)
 					*objname = list_make1(pstrdup(NameStr(langForm->lanname)));
 				ReleaseSysCache(langTup);
@@ -5246,10 +5245,11 @@ getObjectIdentityParts(const ObjectAddress *object,
 						 opcForm->opcmethod);
 				amForm = (Form_pg_am) GETSTRUCT(amTup);
 
-				appendStringInfo(&buffer, "%s USING %s",
-								 quote_qualified_identifier(schema,
-															NameStr(opcForm->opcname)),
-								 quote_identifier(NameStr(amForm->amname)));
+				appendStringInfoQualifiedIdentifier(&buffer, NULL,
+													schema, NameStr(opcForm->opcname),
+													" USING ");
+				appendStringInfoIdentifier(&buffer, NULL,
+										   NameStr(amForm->amname), NULL);
 				if (objname)
 					*objname = list_make3(pstrdup(NameStr(amForm->amname)),
 										  schema,
@@ -5277,7 +5277,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 							 object->objectId);
 					break;
 				}
-				appendStringInfoString(&buffer, quote_identifier(amname));
+				appendStringInfoIdentifier(&buffer, NULL, amname, NULL);
 				if (objname)
 					*objname = list_make1(amname);
 			}
@@ -5430,8 +5430,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 
 				rule = (Form_pg_rewrite) GETSTRUCT(tup);
 
-				appendStringInfo(&buffer, "%s on ",
-								 quote_identifier(NameStr(rule->rulename)));
+				appendStringInfoIdentifier(&buffer, NULL, NameStr(rule->rulename), " on ");
 				getRelationIdentity(&buffer, rule->ev_class, objname, false);
 				if (objname)
 					*objname = lappend(*objname, pstrdup(NameStr(rule->rulename)));
@@ -5463,8 +5462,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 
 				trig = (Form_pg_trigger) GETSTRUCT(tup);
 
-				appendStringInfo(&buffer, "%s on ",
-								 quote_identifier(NameStr(trig->tgname)));
+				appendStringInfoIdentifier(&buffer, NULL, NameStr(trig->tgname), " on ");
 				getRelationIdentity(&buffer, trig->tgrelid, objname, false);
 				if (objname)
 					*objname = lappend(*objname, pstrdup(NameStr(trig->tgname)));
@@ -5635,8 +5633,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 					break;
 				if (objname)
 					*objname = list_make1(username);
-				appendStringInfoString(&buffer,
-									   quote_identifier(username));
+				appendStringInfoIdentifier(&buffer, NULL, username, NULL);
 				break;
 			}
 
@@ -5697,8 +5694,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 				}
 				if (objname)
 					*objname = list_make1(datname);
-				appendStringInfoString(&buffer,
-									   quote_identifier(datname));
+				appendStringInfoIdentifier(&buffer, NULL, datname, NULL);
 				break;
 			}
 
@@ -5716,8 +5712,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 				}
 				if (objname)
 					*objname = list_make1(tblspace);
-				appendStringInfoString(&buffer,
-									   quote_identifier(tblspace));
+				appendStringInfoIdentifier(&buffer, NULL, tblspace, NULL);
 				break;
 			}
 
@@ -5729,7 +5724,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 													missing_ok);
 				if (fdw)
 				{
-					appendStringInfoString(&buffer, quote_identifier(fdw->fdwname));
+					appendStringInfoIdentifier(&buffer, NULL, fdw->fdwname, NULL);
 					if (objname)
 						*objname = list_make1(pstrdup(fdw->fdwname));
 				}
@@ -5744,8 +5739,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 											   missing_ok);
 				if (srv)
 				{
-					appendStringInfoString(&buffer,
-										   quote_identifier(srv->servername));
+					appendStringInfoIdentifier(&buffer, NULL, srv->servername, NULL);
 					if (objname)
 						*objname = list_make1(pstrdup(srv->servername));
 				}
@@ -5786,9 +5780,8 @@ getObjectIdentityParts(const ObjectAddress *object,
 					*objargs = list_make1(pstrdup(srv->servername));
 				}
 
-				appendStringInfo(&buffer, "%s on server %s",
-								 quote_identifier(usename),
-								 srv->servername);
+				appendStringInfoIdentifier(&buffer, NULL, usename, " on server ");
+				appendStringInfoString(&buffer, srv->servername);
 				break;
 			}
 
@@ -5891,7 +5884,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 							 object->objectId);
 					break;
 				}
-				appendStringInfoString(&buffer, quote_identifier(extname));
+				appendStringInfoIdentifier(&buffer, NULL, extname, NULL);
 				if (objname)
 					*objname = list_make1(extname);
 				break;
@@ -5914,7 +5907,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 				}
 				trigForm = (Form_pg_event_trigger) GETSTRUCT(tup);
 				evtname = pstrdup(NameStr(trigForm->evtname));
-				appendStringInfoString(&buffer, quote_identifier(evtname));
+				appendStringInfoIdentifier(&buffer, NULL, evtname, NULL);
 				if (objname)
 					*objname = list_make1(evtname);
 				ReleaseSysCache(tup);
@@ -5969,8 +5962,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 
 				policy = (Form_pg_policy) GETSTRUCT(tup);
 
-				appendStringInfo(&buffer, "%s on ",
-								 quote_identifier(NameStr(policy->polname)));
+				appendStringInfoIdentifier(&buffer, NULL, NameStr(policy->polname), " on ");
 				getRelationIdentity(&buffer, policy->polrelid, objname, false);
 				if (objname)
 					*objname = lappend(*objname, pstrdup(NameStr(policy->polname)));
@@ -5986,8 +5978,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 				pubname = get_publication_name(object->objectId, missing_ok);
 				if (pubname)
 				{
-					appendStringInfoString(&buffer,
-										   quote_identifier(pubname));
+					appendStringInfoIdentifier(&buffer, NULL, pubname, NULL);
 					if (objname)
 						*objname = list_make1(pubname);
 				}
@@ -6058,8 +6049,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 				subname = get_subscription_name(object->objectId, missing_ok);
 				if (subname)
 				{
-					appendStringInfoString(&buffer,
-										   quote_identifier(subname));
+					appendStringInfoIdentifier(&buffer, NULL, subname, NULL);
 					if (objname)
 						*objname = list_make1(subname);
 				}
