@@ -4127,6 +4127,10 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 						timestamp = pq_getmsgint64(&s);
 						reply_requested = pq_getmsgbyte(&s);
 
+						elog(LOG, "received keepalive with end_lsn %X/%08X (reply %d)",
+							LSN_FORMAT_ARGS(end_lsn),
+							reply_requested);
+
 						if (last_received < end_lsn)
 							last_received = end_lsn;
 
