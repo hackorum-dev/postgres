@@ -983,9 +983,11 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 
 			/* Find the remaining history */
 			initStringInfo(&replacementsbuf);
-			appendStringInfoString(&replacementsbuf, "(SELECT pg_catalog.range_agg(r) FROM ");
 
-			appendStringInfoIdentifier(&replacementsbuf, "(SELECT y.", RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]), " r FROM ");
+			appendStringInfoIdentifier(&replacementsbuf,
+									   "(SELECT pg_catalog.range_agg(r) FROM (SELECT y.",
+									   RIAttName(pk_rel, riinfo->pk_attnums[riinfo->nkeys - 1]),
+									   " r FROM ");
 			appendRelationName(&replacementsbuf, pk_rel, pk_only, " y");
 
 			/* Restrict pk rows to what matches */
@@ -1979,8 +1981,6 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	appendRelationName(&querybuf, fk_rel, fk_only, " fk JOIN ");
 	appendRelationName(&querybuf, pk_rel, NULL, " pk ON");
 
-	/* strcpy(pkattname, "pk."); */
-	/* strcpy(fkattname, "fk."); */
 	sep = "(";
 	for (i = 0; i < riinfo->nkeys; i++)
 	{

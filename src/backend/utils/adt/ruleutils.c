@@ -993,18 +993,17 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 		/* tgattr is first var-width field, so OK to access directly */
 		if (trigrec->tgattr.dim1 > 0)
 		{
-			int			i;
+			const char *sep = "";
 
 			appendStringInfoString(&buf, " OF ");
-			for (i = 0; i < trigrec->tgattr.dim1; i++)
+			for (int i = 0; i < trigrec->tgattr.dim1; i++)
 			{
 				char	   *attname;
 
-				if (i > 0)
-					appendStringInfoString(&buf, ", ");
 				attname = get_attname(trigrec->tgrelid,
 									  trigrec->tgattr.values[i], false);
-				appendStringInfoString(&buf, quote_identifier(attname));
+				appendStringInfoIdentifier(&buf, sep, attname, NULL);
+				sep = ", ";
 			}
 		}
 	}
@@ -1056,11 +1055,9 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	{
 		appendStringInfoString(&buf, "REFERENCING ");
 		if (tgoldtable != NULL)
-			appendStringInfo(&buf, "OLD TABLE AS %s ",
-							 quote_identifier(tgoldtable));
+			appendStringInfoIdentifier(&buf, "OLD TABLE AS ", tgoldtable, " ");
 		if (tgnewtable != NULL)
-			appendStringInfo(&buf, "NEW TABLE AS %s ",
-							 quote_identifier(tgnewtable));
+			appendStringInfoIdentifier(&buf, "NEW TABLE AS ", tgnewtable, " ");
 	}
 
 	if (TRIGGER_FOR_ROW(trigrec->tgtype))
@@ -1401,8 +1398,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 							 generate_qualified_relation_name(indrelid),
 							 quote_identifier(NameStr(amrec->amname)));
 		else					/* currently, must be EXCLUDE constraint */
-			appendStringInfo(&buf, "EXCLUDE USING %s (",
-							 quote_identifier(NameStr(amrec->amname)));
+			appendStringInfoIdentifier(&buf, "EXCLUDE USING ", NameStr(amrec->amname), " (");
 	}
 
 	/*
@@ -1440,7 +1436,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 
 			attname = get_attname(indrelid, attnum, false);
 			if (!colno || colno == keyno + 1)
-				appendStringInfoString(&buf, quote_identifier(attname));
+				appendStringInfoIdentifier(&buf, NULL, attname, NULL);
 			get_atttypetypmodcoll(indrelid, attnum,
 								  &keycoltype, &keycoltypmod,
 								  &keycolcollation);
@@ -1550,8 +1546,8 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 			{
 				if (isConstraint)
 					appendStringInfoString(&buf, " USING INDEX");
-				appendStringInfo(&buf, " TABLESPACE %s",
-								 quote_identifier(get_tablespace_name(tblspc)));
+				appendStringInfoIdentifier(&buf, " TABLESPACE ",
+										   get_tablespace_name(tblspc), NULL);
 			}
 		}
 
@@ -2156,7 +2152,7 @@ pg_get_statisticsobj_worker(Oid statextid, bool columns_only, bool missing_ok)
 
 		attname = get_attname(statextrec->stxrelid, attnum, false);
 
-		appendStringInfoString(&buf, quote_identifier(attname));
+		appendStringInfoIdentifier(&buf, NULL, attname, NULL);
 	}
 
 	context = deparse_context_for(get_relation_name(statextrec->stxrelid),
@@ -2400,7 +2396,7 @@ pg_get_partkeydef_worker(Oid relid, int prettyFlags,
 			int32		keycoltypmod;
 
 			attname = get_attname(relid, attnum, false);
-			appendStringInfoString(&buf, quote_identifier(attname));
+			appendStringInfoIdentifier(&buf, NULL, attname, NULL);
 			get_atttypetypmodcoll(relid, attnum,
 								  &keycoltype, &keycoltypmod,
 								  &keycolcollation);
@@ -2608,17 +2604,19 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 			 * we might need to let callers specify whether to put ONLY in the
 			 * command.
 			 */
-			appendStringInfo(&buf, "ALTER TABLE %s ADD CONSTRAINT %s ",
-							 generate_qualified_relation_name(conForm->conrelid),
-							 quote_identifier(NameStr(conForm->conname)));
+			appendStringInfo(&buf, "ALTER TABLE %s ",
+							 generate_qualified_relation_name(conForm->conrelid));
+			appendStringInfoIdentifier(&buf, "ADD CONSTRAINT ",
+									   NameStr(conForm->conname), " ");
 		}
 		else
 		{
 			/* Must be a domain constraint */
 			Assert(OidIsValid(conForm->contypid));
-			appendStringInfo(&buf, "ALTER DOMAIN %s ADD CONSTRAINT %s ",
-							 generate_qualified_type_name(conForm->contypid),
-							 quote_identifier(NameStr(conForm->conname)));
+			appendStringInfo(&buf, "ALTER DOMAIN %s ",
+							 generate_qualified_type_name(conForm->contypid));
+			appendStringInfoIdentifier(&buf, "ADD CONSTRAINT ",
+									   NameStr(conForm->conname), " ");
 		}
 	}
 
@@ -2785,6 +2783,7 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 					Datum	   *keys;
 					int			nKeys;
 					int			j;
+					const char *sep = "";
 
 					appendStringInfoString(&buf, " INCLUDE (");
 
@@ -2800,9 +2799,8 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 
 						colName = get_attname(conForm->conrelid,
 											  DatumGetInt16(keys[j]), false);
-						if (j > keyatts)
-							appendStringInfoString(&buf, ", ");
-						appendStringInfoString(&buf, quote_identifier(colName));
+						appendStringInfoIdentifier(&buf, sep, colName, NULL);
+						sep = ", ";
 					}
 
 					appendStringInfoChar(&buf, ')');
@@ -2829,8 +2827,8 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 					 */
 					tblspc = get_rel_tablespace(indexId);
 					if (OidIsValid(tblspc))
-						appendStringInfo(&buf, " USING INDEX TABLESPACE %s",
-										 quote_identifier(get_tablespace_name(tblspc)));
+						appendStringInfoIdentifier(&buf, " USING INDEX TABLESPACE ",
+												   get_tablespace_name(tblspc), NULL);
 				}
 
 				break;
@@ -2891,9 +2889,9 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 
 					attnum = extractNotNullColumn(tup);
 
-					appendStringInfo(&buf, "NOT NULL %s",
-									 quote_identifier(get_attname(conForm->conrelid,
-																  attnum, false)));
+					appendStringInfoIdentifier(&buf, "NOT NULL ",
+											   get_attname(conForm->conrelid,
+														   attnum, false), NULL);
 					if (((Form_pg_constraint) GETSTRUCT(tup))->connoinherit)
 						appendStringInfoString(&buf, " NO INHERIT");
 				}
@@ -2997,11 +2995,14 @@ decompile_column_index_array(Datum column_index_array, Oid relId,
 		colName = get_attname(relId, DatumGetInt16(keys[j]), false);
 
 		if (j == 0)
-			appendStringInfoString(buf, quote_identifier(colName));
+			appendStringInfoIdentifier(buf, NULL, colName, NULL);
 		else
-			appendStringInfo(buf, ", %s%s",
-							 (withPeriod && j == nKeys - 1) ? "PERIOD " : "",
-							 quote_identifier(colName));
+		{
+			appendStringInfoString(buf, ", ");
+			appendStringInfoIdentifier(buf,
+									   (withPeriod && j == nKeys - 1) ? "PERIOD " : "",
+									   colName, NULL);
+		}
 	}
 
 	return nKeys;
@@ -3337,8 +3338,8 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 
 	print_function_trftypes(&buf, proctup);
 
-	appendStringInfo(&buf, " LANGUAGE %s\n",
-					 quote_identifier(get_language_name(proc->prolang, false)));
+	appendStringInfoIdentifier(&buf, " LANGUAGE ",
+							   get_language_name(proc->prolang, false), "\n");
 
 	/* Emit some miscellaneous options on one line */
 	oldlen = buf.len;
@@ -3437,8 +3438,7 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 					continue;
 				*pos++ = '\0';
 
-				appendStringInfo(&buf, " SET %s TO ",
-								 quote_identifier(configitem));
+				appendStringInfoIdentifier(&buf, " SET ", configitem, " TO ");
 
 				/*
 				 * Variables that are marked GUC_LIST_QUOTE were already fully
@@ -3780,7 +3780,7 @@ print_function_arguments(StringInfo buf, HeapTuple proctup,
 
 		appendStringInfoString(buf, modename);
 		if (argname && argname[0])
-			appendStringInfo(buf, "%s ", quote_identifier(argname));
+			appendStringInfoIdentifier(buf, NULL, argname, " ");
 		appendStringInfoString(buf, format_type_be(argtype));
 		if (print_defaults && isinput && inputargno > nlackdefaults)
 		{
@@ -5764,8 +5764,7 @@ make_ruledef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 	/*
 	 * Build the rules definition text
 	 */
-	appendStringInfo(buf, "CREATE RULE %s AS",
-					 quote_identifier(rulename));
+	appendStringInfoIdentifier(buf, "CREATE RULE ", rulename, " AS");
 
 	if (prettyFlags & PRETTYFLAG_INDENT)
 		appendStringInfoString(buf, "\n    ON ");
@@ -6156,21 +6155,18 @@ get_with_clause(Query *query, deparse_context *context)
 		CommonTableExpr *cte = (CommonTableExpr *) lfirst(l);
 
 		appendStringInfoString(buf, sep);
-		appendStringInfoString(buf, quote_identifier(cte->ctename));
+		appendStringInfoIdentifier(buf, NULL, cte->ctename, NULL);
 		if (cte->aliascolnames)
 		{
-			bool		first = true;
 			ListCell   *col;
+			const char *colsep = "";
 
 			appendStringInfoChar(buf, '(');
 			foreach(col, cte->aliascolnames)
 			{
-				if (first)
-					first = false;
-				else
-					appendStringInfoString(buf, ", ");
-				appendStringInfoString(buf,
-									   quote_identifier(strVal(lfirst(col))));
+				appendStringInfoIdentifier(buf, colsep,
+										   strVal(lfirst(col)), NULL);
+				colsep = ", ";
 			}
 			appendStringInfoChar(buf, ')');
 		}
@@ -6199,43 +6195,35 @@ get_with_clause(Query *query, deparse_context *context)
 
 		if (cte->search_clause)
 		{
-			bool		first = true;
 			ListCell   *lc;
+			const char *colsep = "";
 
 			appendStringInfo(buf, " SEARCH %s FIRST BY ",
 							 cte->search_clause->search_breadth_first ? "BREADTH" : "DEPTH");
 
 			foreach(lc, cte->search_clause->search_col_list)
 			{
-				if (first)
-					first = false;
-				else
-					appendStringInfoString(buf, ", ");
-				appendStringInfoString(buf,
-									   quote_identifier(strVal(lfirst(lc))));
+				appendStringInfoIdentifier(buf, colsep, strVal(lfirst(lc)), NULL);
+				colsep = ", ";
 			}
 
-			appendStringInfo(buf, " SET %s", quote_identifier(cte->search_clause->search_seq_column));
+			appendStringInfoIdentifier(buf, " SET ", cte->search_clause->search_seq_column, NULL);
 		}
 
 		if (cte->cycle_clause)
 		{
-			bool		first = true;
 			ListCell   *lc;
+			const char *colsep = "";
 
 			appendStringInfoString(buf, " CYCLE ");
 
 			foreach(lc, cte->cycle_clause->cycle_col_list)
 			{
-				if (first)
-					first = false;
-				else
-					appendStringInfoString(buf, ", ");
-				appendStringInfoString(buf,
-									   quote_identifier(strVal(lfirst(lc))));
+				appendStringInfoIdentifier(buf, colsep, strVal(lfirst(lc)), NULL);
+				colsep = ", ";
 			}
 
-			appendStringInfo(buf, " SET %s", quote_identifier(cte->cycle_clause->cycle_mark_column));
+			appendStringInfoIdentifier(buf, " SET ", cte->cycle_clause->cycle_mark_column, NULL);
 
 			{
 				Const	   *cmv = castNode(Const, cte->cycle_clause->cycle_mark_value);
@@ -6251,7 +6239,7 @@ get_with_clause(Query *query, deparse_context *context)
 				}
 			}
 
-			appendStringInfo(buf, " USING %s", quote_identifier(cte->cycle_clause->cycle_path_column));
+			appendStringInfoIdentifier(buf, " USING ", cte->cycle_clause->cycle_path_column, NULL);
 		}
 
 		sep = ", ";
@@ -6366,9 +6354,7 @@ get_select_query_def(Query *query, deparse_context *context)
 								 get_lock_clause_strength(rc->strength),
 								 -PRETTYINDENT_STD, PRETTYINDENT_STD, 0);
 
-			appendStringInfo(buf, " OF %s",
-							 quote_identifier(get_rtable_name(rc->rti,
-															  context)));
+			appendStringInfoIdentifier(buf, " OF ", get_rtable_name(rc->rti, context), NULL);
 			if (rc->waitPolicy == LockWaitError)
 				appendStringInfoString(buf, " NOWAIT");
 			else if (rc->waitPolicy == LockWaitSkip)
@@ -6681,7 +6667,7 @@ get_target_list(List *targetList, deparse_context *context)
 		if (colname)			/* resname could be NULL */
 		{
 			if (attname == NULL || strcmp(attname, colname) != 0)
-				appendStringInfo(&targetbuf, " AS %s", quote_identifier(colname));
+				appendStringInfoIdentifier(&targetbuf, " AS ", colname, NULL);
 		}
 
 		/* Restore context's output buffer */
@@ -6755,19 +6741,16 @@ get_returning_clause(Query *query, deparse_context *context)
 		/* Add WITH (OLD/NEW) options, if they're not the defaults */
 		if (query->returningOldAlias && strcmp(query->returningOldAlias, "old") != 0)
 		{
-			appendStringInfo(buf, " WITH (OLD AS %s",
-							 quote_identifier(query->returningOldAlias));
+			appendStringInfoIdentifier(buf, " WITH (OLD AS ", query->returningOldAlias, NULL);
 			have_with = true;
 		}
 		if (query->returningNewAlias && strcmp(query->returningNewAlias, "new") != 0)
 		{
 			if (have_with)
-				appendStringInfo(buf, ", NEW AS %s",
-								 quote_identifier(query->returningNewAlias));
+				appendStringInfoIdentifier(buf, ", NEW AS ", query->returningNewAlias, NULL);
 			else
 			{
-				appendStringInfo(buf, " WITH (NEW AS %s",
-								 quote_identifier(query->returningNewAlias));
+				appendStringInfoIdentifier(buf, " WITH (NEW AS ", query->returningNewAlias, NULL);
 				have_with = true;
 			}
 		}
@@ -7135,7 +7118,7 @@ get_rule_windowclause(Query *query, deparse_context *context)
 		else
 			appendStringInfoString(buf, sep);
 
-		appendStringInfo(buf, "%s AS ", quote_identifier(wc->name));
+		appendStringInfoIdentifier(buf, NULL, wc->name, " AS ");
 
 		get_rule_windowspec(wc, query->targetList, context);
 
@@ -7158,7 +7141,7 @@ get_rule_windowspec(WindowClause *wc, List *targetList,
 	appendStringInfoChar(buf, '(');
 	if (wc->refname)
 	{
-		appendStringInfoString(buf, quote_identifier(wc->refname));
+		appendStringInfoIdentifier(buf, NULL, wc->refname, NULL);
 		needspace = true;
 	}
 	/* partition clauses are always inherited, so only print if no refname */
@@ -7385,10 +7368,8 @@ get_insert_query_def(Query *query, deparse_context *context)
 		 * Put out name of target column; look in the catalogs, not at
 		 * tle->resname, since resname will fail to track RENAME.
 		 */
-		appendStringInfoString(buf,
-							   quote_identifier(get_attname(rte->relid,
-															tle->resno,
-															false)));
+		appendStringInfoIdentifier(buf, NULL,
+								   get_attname(rte->relid, tle->resno, false), NULL);
 
 		/*
 		 * Print any indirection needed (subfields or subscripts), and strip
@@ -7481,8 +7462,7 @@ get_insert_query_def(Query *query, deparse_context *context)
 			if (!constraint)
 				elog(ERROR, "cache lookup failed for constraint %u",
 					 confl->constraint);
-			appendStringInfo(buf, " ON CONSTRAINT %s",
-							 quote_identifier(constraint));
+			appendStringInfoIdentifier(buf, " ON CONSTRAINT ", constraint, NULL);
 		}
 
 		if (confl->action == ONCONFLICT_NOTHING)
@@ -7704,10 +7684,7 @@ get_update_query_targetlist_def(Query *query, List *targetList,
 		 * Put out name of target column; look in the catalogs, not at
 		 * tle->resname, since resname will fail to track RENAME.
 		 */
-		appendStringInfoString(buf,
-							   quote_identifier(get_attname(rte->relid,
-															tle->resno,
-															false)));
+		appendStringInfoIdentifier(buf, NULL, get_attname(rte->relid, tle->resno, false), NULL);
 
 		/*
 		 * Print any indirection needed (subfields or subscripts), and strip
@@ -7898,10 +7875,10 @@ get_merge_query_def(Query *query, deparse_context *context)
 				appendStringInfoString(buf, sep);
 				sep = ", ";
 
-				appendStringInfoString(buf,
-									   quote_identifier(get_attname(rte->relid,
-																	tle->resno,
-																	false)));
+				appendStringInfoIdentifier(buf, NULL,
+										   get_attname(rte->relid,
+													   tle->resno,
+													   false), NULL);
 				strippedexprs = lappend(strippedexprs,
 										processIndirection((Node *) tle->expr,
 														   context));
@@ -7960,8 +7937,8 @@ get_utility_query_def(Query *query, deparse_context *context)
 
 		appendContextKeyword(context, "",
 							 0, PRETTYINDENT_STD, 1);
-		appendStringInfo(buf, "NOTIFY %s",
-						 quote_identifier(stmt->conditionname));
+		appendStringInfoIdentifier(buf, "NOTIFY ",
+								   stmt->conditionname, NULL);
 		if (stmt->payload)
 		{
 			appendStringInfoString(buf, ", ");
@@ -8417,11 +8394,11 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 
 	if (refname && need_prefix)
 	{
-		appendStringInfoString(buf, quote_identifier(refname));
+		appendStringInfoIdentifier(buf, NULL, refname, NULL);
 		appendStringInfoChar(buf, '.');
 	}
 	if (attname)
-		appendStringInfoString(buf, quote_identifier(attname));
+		appendStringInfoIdentifier(buf, NULL, attname, NULL);
 	else
 	{
 		appendStringInfoChar(buf, '*');
@@ -9359,11 +9336,10 @@ get_parameter(Param *param, deparse_context *context)
 				}
 				if (should_qualify)
 				{
-					appendStringInfoString(context->buf, quote_identifier(dpns->funcname));
-					appendStringInfoChar(context->buf, '.');
+					appendStringInfoIdentifier(context->buf, NULL, dpns->funcname, ".");
 				}
 
-				appendStringInfoString(context->buf, quote_identifier(argname));
+				appendStringInfoIdentifier(context->buf, NULL, argname, NULL);
 				return;
 			}
 		}
@@ -9944,7 +9920,7 @@ get_rule_expr(Node *node, deparse_context *context,
 			{
 				NamedArgExpr *na = (NamedArgExpr *) node;
 
-				appendStringInfo(buf, "%s => ", quote_identifier(na->name));
+				appendStringInfoIdentifier(buf, NULL, na->name, " => ");
 				get_rule_expr((Node *) na->arg, context, showimplicit);
 			}
 			break;
@@ -10232,7 +10208,7 @@ get_rule_expr(Node *node, deparse_context *context,
 				 */
 				fieldname = get_name_for_var_field((Var *) arg, fno,
 												   0, context);
-				appendStringInfo(buf, ".%s", quote_identifier(fieldname));
+				appendStringInfoIdentifier(buf, ".", fieldname, NULL);
 			}
 			break;
 
@@ -10922,8 +10898,8 @@ get_rule_expr(Node *node, deparse_context *context,
 				CurrentOfExpr *cexpr = (CurrentOfExpr *) node;
 
 				if (cexpr->cursor_name)
-					appendStringInfo(buf, "CURRENT OF %s",
-									 quote_identifier(cexpr->cursor_name));
+					appendStringInfoIdentifier(buf, "CURRENT OF ",
+											   cexpr->cursor_name, NULL);
 				else
 					appendStringInfo(buf, "CURRENT OF $%d",
 									 cexpr->cursor_param);
@@ -11157,8 +11133,8 @@ get_rule_expr(Node *node, deparse_context *context,
 						needcomma = true;
 
 						get_rule_expr((Node *) lfirst(lc2), context, showimplicit);
-						appendStringInfo(buf, " AS %s",
-										 quote_identifier(lfirst_node(String, lc1)->sval));
+						appendStringInfoIdentifier(buf, " AS ",
+												   lfirst_node(String, lc1)->sval, NULL);
 					}
 				}
 
@@ -11696,7 +11672,7 @@ get_windowfunc_expr_helper(WindowFunc *wfunc, deparse_context *context,
 			if (wc->winref == wfunc->winref)
 			{
 				if (wc->name)
-					appendStringInfoString(buf, quote_identifier(wc->name));
+					appendStringInfoIdentifier(buf, NULL, wc->name, NULL);
 				else
 					get_rule_windowspec(wc, context->targetList, context);
 				break;
@@ -11722,7 +11698,7 @@ get_windowfunc_expr_helper(WindowFunc *wfunc, deparse_context *context,
 
 				if (wagg->winref == wfunc->winref)
 				{
-					appendStringInfoString(buf, quote_identifier(wagg->winname));
+					appendStringInfoIdentifier(buf, NULL, wagg->winname, NULL);
 					break;
 				}
 			}
@@ -12606,8 +12582,8 @@ get_xmltable(TableFunc *tf, deparse_context *context, bool showimplicit)
 			if (ns_node != NULL)
 			{
 				get_rule_expr(expr, context, showimplicit);
-				appendStringInfo(buf, " AS %s",
-								 quote_identifier(strVal(ns_node)));
+				appendStringInfoIdentifier(buf, " AS ",
+										   strVal(ns_node), NULL);
 			}
 			else
 			{
@@ -12693,7 +12669,7 @@ get_json_table_nested_columns(TableFunc *tf, JsonTablePlan *plan,
 		appendStringInfoChar(context->buf, ' ');
 		appendContextKeyword(context, "NESTED PATH ", 0, 0, 0);
 		get_const_expr(scan->path->value, context, -1);
-		appendStringInfo(context->buf, " AS %s", quote_identifier(scan->path->name));
+		appendStringInfoIdentifier(context->buf, " AS ", scan->path->name, NULL);
 		get_json_table_columns(tf, scan, context, showimplicit);
 	}
 	else if (IsA(plan, JsonTableSiblingJoin))
@@ -12920,7 +12896,7 @@ get_json_table(TableFunc *tf, deparse_context *context, bool showimplicit)
 
 	get_const_expr(root->path->value, context, -1);
 
-	appendStringInfo(buf, " AS %s", quote_identifier(root->path->name));
+	appendStringInfoIdentifier(buf, " AS ", root->path->name, NULL);
 
 	if (jexpr->passing_values)
 	{
@@ -12944,9 +12920,7 @@ get_json_table(TableFunc *tf, deparse_context *context, bool showimplicit)
 			appendContextKeyword(context, "", 0, 0, 0);
 
 			get_rule_expr((Node *) lfirst(lc2), context, false);
-			appendStringInfo(buf, " AS %s",
-							 quote_identifier((lfirst_node(String, lc1))->sval)
-				);
+			appendStringInfoIdentifier(buf, " AS ", lfirst_node(String, lc1)->sval, NULL);
 		}
 
 		if (PRETTY_INDENT(context))
@@ -13257,7 +13231,7 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 				appendStringInfoChar(buf, ')');
 				break;
 			case RTE_CTE:
-				appendStringInfoString(buf, quote_identifier(rte->ctename));
+				appendStringInfoIdentifier(buf, NULL, rte->ctename, NULL);
 				break;
 			default:
 				elog(ERROR, "unrecognized RTE kind: %d", (int) rte->rtekind);
@@ -13344,7 +13318,7 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 		if (j->usingClause)
 		{
 			ListCell   *lc;
-			bool		first = true;
+			const char *sep = "";
 
 			appendStringInfoString(buf, " USING (");
 			/* Use the assigned names, not what's in usingClause */
@@ -13352,17 +13326,13 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 			{
 				char	   *colname = (char *) lfirst(lc);
 
-				if (first)
-					first = false;
-				else
-					appendStringInfoString(buf, ", ");
-				appendStringInfoString(buf, quote_identifier(colname));
+				appendStringInfoIdentifier(buf, sep, colname, NULL);
+				sep = ", ";
 			}
 			appendStringInfoChar(buf, ')');
 
 			if (j->join_using_alias)
-				appendStringInfo(buf, " AS %s",
-								 quote_identifier(j->join_using_alias->aliasname));
+				appendStringInfoIdentifier(buf, " AS ", j->join_using_alias->aliasname, NULL);
 		}
 		else if (j->quals)
 		{
@@ -13392,9 +13362,9 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 			 * subtleties we don't want.  However, we might print a different
 			 * alias name than was there originally.
 			 */
-			appendStringInfo(buf, " %s",
-							 quote_identifier(get_rtable_name(j->rtindex,
-															  context)));
+			appendStringInfoIdentifier(buf, " ",
+									   get_rtable_name(j->rtindex,
+													   context), NULL);
 			get_column_alias_list(colinfo, context);
 		}
 	}
@@ -13469,9 +13439,9 @@ get_rte_alias(RangeTblEntry *rte, int varno, bool use_as,
 	}
 
 	if (printalias)
-		appendStringInfo(context->buf, "%s%s",
-						 use_as ? " AS " : " ",
-						 quote_identifier(refname));
+		appendStringInfoIdentifier(context->buf,
+								   use_as ? " AS " : " ",
+								   refname, NULL);
 }
 
 /*
@@ -13540,7 +13510,7 @@ get_column_alias_list(deparse_columns *colinfo, deparse_context *context)
 		}
 		else
 			appendStringInfoString(buf, ", ");
-		appendStringInfoString(buf, quote_identifier(colname));
+		appendStringInfoIdentifier(buf, NULL, colname, NULL);
 	}
 	if (!first)
 		appendStringInfoChar(buf, ')');
@@ -13673,13 +13643,11 @@ get_opclass_name(Oid opclass, Oid actual_datatype,
 		/* Okay, we need the opclass name.  Do we need to qualify it? */
 		opcname = NameStr(opcrec->opcname);
 		if (OpclassIsVisible(opclass))
-			appendStringInfo(buf, " %s", quote_identifier(opcname));
+			appendStringInfoIdentifier(buf, " ", opcname, NULL);
 		else
 		{
 			nspname = get_namespace_name_or_temp(opcrec->opcnamespace);
-			appendStringInfo(buf, " %s.%s",
-							 quote_identifier(nspname),
-							 quote_identifier(opcname));
+			appendStringInfoQualifiedIdentifier(buf, NULL, nspname, opcname, NULL);
 		}
 	}
 	ReleaseSysCache(ht_opc);
@@ -13743,7 +13711,7 @@ processIndirection(Node *node, deparse_context *context)
 			Assert(list_length(fstore->fieldnums) == 1);
 			fieldname = get_attname(typrelid,
 									linitial_int(fstore->fieldnums), false);
-			appendStringInfo(buf, ".%s", quote_identifier(fieldname));
+			appendStringInfoIdentifier(buf, ".", fieldname, NULL);
 
 			/*
 			 * We ignore arg since it should be an uninteresting reference to
@@ -14290,7 +14258,7 @@ generate_operator_name(Oid operid, Oid arg1, Oid arg2)
 	else
 	{
 		nspname = get_namespace_name_or_temp(operform->oprnamespace);
-		appendStringInfo(&buf, "OPERATOR(%s.", quote_identifier(nspname));
+		appendStringInfoIdentifier(&buf, "OPERATOR(", nspname, ".");
 	}
 
 	appendStringInfoString(&buf, oprname);
@@ -14396,8 +14364,7 @@ add_cast_to(StringInfo buf, Oid typid)
 	typname = NameStr(typform->typname);
 	nspname = get_namespace_name_or_temp(typform->typnamespace);
 
-	appendStringInfo(buf, "::%s.%s",
-					 quote_identifier(nspname), quote_identifier(typname));
+	appendStringInfoQualifiedIdentifier(buf, "::", nspname, typname, NULL);
 
 	ReleaseSysCache(typetup);
 }
@@ -14494,12 +14461,12 @@ get_reloptions(StringInfo buf, Datum reloptions)
 {
 	Datum	   *options;
 	int			noptions;
-	int			i;
+	const char *sep = "";
 
 	deconstruct_array_builtin(DatumGetArrayTypeP(reloptions), TEXTOID,
 							  &options, NULL, &noptions);
 
-	for (i = 0; i < noptions; i++)
+	for (int i = 0; i < noptions; i++)
 	{
 		char	   *option = TextDatumGetCString(options[i]);
 		char	   *name;
@@ -14520,9 +14487,8 @@ get_reloptions(StringInfo buf, Datum reloptions)
 		else
 			value = "";
 
-		if (i > 0)
-			appendStringInfoString(buf, ", ");
-		appendStringInfo(buf, "%s=", quote_identifier(name));
+		appendStringInfoIdentifier(buf, sep, name, "=");
+		sep = ", ";
 
 		/*
 		 * In general we need to quote the value; but to avoid unnecessary
