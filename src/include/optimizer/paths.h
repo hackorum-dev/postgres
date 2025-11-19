@@ -76,6 +76,14 @@ extern void create_index_paths(PlannerInfo *root, RelOptInfo *rel);
 extern bool relation_has_unique_index_for(PlannerInfo *root, RelOptInfo *rel,
 										  List *restrictlist,
 										  List **extra_clauses);
+extern bool relation_has_unique_index_for_exprs(PlannerInfo *root,
+												RelOptInfo *rel,
+												List *exprs,
+												List *restrictlist,
+												List **extra_clauses);
+extern bool index_is_unique_for_exprs(PlannerInfo *root, IndexOptInfo *index,
+									  List *exprs, List *restrictlist,
+									  List **extra_clauses_p);
 extern bool indexcol_is_bool_constant_for_query(PlannerInfo *root,
 												IndexOptInfo *index,
 												int indexcol);

@@ -208,6 +208,7 @@ static RelOptInfo *create_final_distinct_paths(PlannerInfo *root,
 static List *get_useful_pathkeys_for_distinct(PlannerInfo *root,
 											  List *needed_pathkeys,
 											  List *path_pathkeys);
+static bool path_is_distinct_for(Path *path, List *exprs);
 static RelOptInfo *create_ordered_paths(PlannerInfo *root,
 										RelOptInfo *input_rel,
 										PathTarget *target,
@@ -5066,6 +5067,11 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	Path	   *cheapest_input_path = input_rel->cheapest_total_path;
 	double		numDistinctRows;
 	bool		allow_hash;
+	List	   *distinctExprs;
+	ListCell	*lc;
+
+	distinctExprs = get_sortgrouplist_exprs(root->processed_distinctClause,
+											parse->targetList);
 
 	/* Estimate number of distinct rows there will be */
 	if (parse->groupClause || parse->groupingSets || parse->hasAggs ||
@@ -5083,10 +5089,6 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 		/*
 		 * Otherwise, the UNIQUE filter has effects comparable to GROUP BY.
 		 */
-		List	   *distinctExprs;
-
-		distinctExprs = get_sortgrouplist_exprs(root->processed_distinctClause,
-												parse->targetList);
 		numDistinctRows = estimate_num_groups(root, distinctExprs,
 											  cheapest_input_path->rows,
 											  NULL, NULL);
@@ -5099,7 +5101,7 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	{
 		/*
 		 * Firstly, if we have any adequately-presorted paths, just stick a
-		 * Unique node on those.  We also, consider doing an explicit sort of
+		 * Unique node on those.  We also consider doing an explicit sort of
 		 * the cheapest input path and Unique'ing that.  If any paths have
 		 * presorted keys then we'll create an incremental sort atop of those
 		 * before adding a unique node on the top.  We'll also attempt to
@@ -5114,7 +5116,6 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 		 * the other.)
 		 */
 		List	   *needed_pathkeys;
-		ListCell   *lc;
 		double		limittuples = root->distinct_pathkeys == NIL ? 1.0 : -1.0;
 
 		if (parse->hasDistinctOn &&
@@ -5129,6 +5130,13 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 			Path	   *input_path = (Path *) lfirst(lc);
 			Path	   *sorted_path;
 			List	   *useful_pathkeys_list = NIL;
+
+			/* Does the path already produce distinct rows? */
+			if (path_is_distinct_for(input_path, distinctExprs))
+			{
+				add_path(distinct_rel, input_path);
+				continue;
+			}
 
 			useful_pathkeys_list =
 				get_useful_pathkeys_for_distinct(root,
@@ -5191,6 +5199,10 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 			}
 		}
 	}
+
+	/* Below we process cheapest_input_path, so check if it's necessary. */
+	if (path_is_distinct_for(cheapest_input_path, distinctExprs))
+		return distinct_rel;
 
 	/*
 	 * Consider hash-based implementations of DISTINCT, if possible.
@@ -5304,6 +5316,223 @@ get_useful_pathkeys_for_distinct(PlannerInfo *root, List *needed_pathkeys,
 								   useful_pathkeys);
 
 	return useful_pathkeys_list;
+}
+
+/*
+ * Does the path generate rows such that each row has a distinct values of
+ * expressions 'exprs'?
+ *
+ * For index path, we check if the index is unique and if it its key
+ * expressions are a subset of the DISTINCT expressions - see the header
+ * comment of index_is_unique_for_exprs() for details.
+ *
+ * For sequential scan, we check if at least one (unique) index that
+ * guarantees the distinctness exists - see
+ * relation_has_unique_index_for_exprs().
+ *
+ * For both sequential and index path we require that all attributes appearing
+ * in 'exprs' are NOT NULL.
+ *
+ * UniquePath is considered similar to the unique index: the output is
+ * considered distinct if the path keys are a subset of the expressions that
+ * form the output row.
+ *
+ * For joins, the theory is that the rows of 'exprs' are distinct if 1) the
+ * rows of expressions belonging to the outer path are unique and 2) there is
+ * at most one inner row per outer row, ie the inner path does not duplicate
+ * the outer rows. The latter assumes that all the join/restriction clauses
+ * are strict, otherwise two inner rows could match a single outer row: one
+ * with NULL in a join column and the other with NOT NULL.
+ *
+ * Other paths that we accept here do not affect the distinctness, so we only
+ * recurse into their input paths.
+ */
+static bool
+path_is_distinct_for(Path *path, List *exprs)
+{
+	ListCell	*lc;
+	Path	*subpath = NULL;
+
+	/* No distinct rows if the row is not defined. */
+	if (exprs == NIL)
+		return false;
+
+	/* Does any expression reference a nullable attribute? */
+	if (IsA(path, Path) || IsA(path, IndexPath))
+	{
+		Bitmapset	*attrs = NULL;
+		RelOptInfo	*rel = path->parent;
+		int		prev;
+
+		/*
+		 * If all attributes are nullable, it makes no sense to check the
+		 * expressions.
+		 */
+		if (bms_is_empty(rel->notnullattnums))
+			return false;
+
+		pull_varattnos((Node *) exprs, rel->relid, &attrs);
+		prev = -1;
+		while ((prev = bms_next_member(attrs, prev)) >= 0)
+		{
+			int		attnum = prev + FirstLowInvalidHeapAttributeNumber;
+
+			/*
+			 * A single nullable attribute is the reason to reject the path.
+			 */
+			if (!bms_is_member(attnum, rel->notnullattnums))
+				return false;
+		}
+	}
+
+	/* First, handle paths that do not affect distinctness. */
+	/*
+	 * TODO Consider other paths that can be created in the scan/join
+	 * planning.
+	 */
+	if (IsA(path, SortPath))
+	{
+		subpath = castNode(SortPath, path)->subpath;
+	}
+	else if (IsA(path, IncrementalSortPath))
+	{
+		subpath = castNode(IncrementalSortPath, path)->spath.subpath;
+	}
+	else if (IsA(path, ProjectionPath))
+	{
+		subpath = castNode(ProjectionPath, path)->subpath;
+	}
+	else if (IsA(path, GatherPath))
+	{
+		subpath = castNode(GatherPath, path)->subpath;
+	}
+	else if (IsA(path, GatherMergePath))
+	{
+		subpath = castNode(GatherMergePath, path)->subpath;
+	}
+	else if (IsA(path, MaterialPath))
+	{
+		subpath = castNode(MaterialPath, path)->subpath;
+	}
+	/* The following paths are handled below. */
+	else if (!(IsA(path, Path) || IsA(path, IndexPath) ||
+			   IsA(path, NestPath) || IsA(path, HashPath) ||
+			   IsA(path, MergePath) || IsA(path, UniquePath)))
+	{
+		/* Check not implemented. */
+		return false;
+	}
+
+	if (subpath)
+		return path_is_distinct_for(subpath, exprs);
+
+	if (IsA(path, Path))
+	{
+		if (relation_has_unique_index_for_exprs(NULL, path->parent, exprs,
+												NIL, NULL))
+			return true;
+	}
+	else if (IsA(path, IndexPath))
+	{
+		IndexPath	*ipath = castNode(IndexPath, path);
+
+		if (index_is_unique_for_exprs(NULL, ipath->indexinfo, exprs, NIL,
+									  NULL))
+			return true;
+	}
+	/*
+	 * For join to generate unique rows (containing only the expressions
+	 * passed in 'exprs'), two conditions need to be met: 1) the outer side
+	 * generates unique rows of the corresponding expressions, 2) outer tuple
+	 * matches no more than one inner tuple.
+	 */
+	else if (IsA(path, NestPath) || IsA(path, HashPath) ||
+			 IsA(path, MergePath))
+	{
+		JoinPath	*jpath = (JoinPath *) path;
+		List	*exprs_outer = NIL;
+
+		/* The join must not duplicate rows. */
+		if (!jpath->inner_unique)
+			return false;
+
+		/*
+		 * Retrieve expressions belonging to the outer path.
+		 */
+		foreach(lc, exprs)
+		{
+			Expr	*expr = (Expr *) lfirst(lc);
+			ListCell	*lc2;
+
+			foreach(lc2, jpath->outerjoinpath->pathtarget->exprs)
+			{
+				Expr	*texpr = (Expr *) lfirst(lc2);
+
+				if (equal(expr, texpr))
+				{
+					exprs_outer = lappend(exprs_outer, texpr);
+					break;
+				}
+			}
+		}
+
+		/*
+		 * Since ->inner_unique assumes that all the join/restrict clauses are
+		 * strict, we don't have to worry about NULL-extended rows. Therefore
+		 * we don't bother to check JoinType.
+		 */
+
+		/* Finally, check distinctness of the outer side. */
+		return path_is_distinct_for(jpath->outerjoinpath, exprs_outer);
+	}
+
+	if (IsA(path, UniquePath))
+	{
+		UniquePath	*upath = (UniquePath *) path;
+		int		keyno = 0;
+
+		/*
+		 * Check that the set of unique expressions generated by the path is a
+		 * subset of 'exprs', otherwise values of 'exprs' could repeat.
+		 */
+		foreach(lc, upath->path.pathkeys)
+		{
+			PathKey    *pathkey = (PathKey *) lfirst(lc);
+			EquivalenceClass *ec = pathkey->pk_eclass;
+			ListCell	*lc2;
+
+			if (keyno >= upath->numkeys)
+				break;
+
+			/*
+			 * TODO Can we do more? According to make_unique_from_pathkeys(),
+			 * the EC is specific to one particular targetlist entry, however
+			 * we can't easily check where the items of 'exprs' come from. At
+			 * least elaborate this comment.
+			 */
+			if (ec->ec_has_volatile)
+				return false;
+
+			foreach(lc2, exprs)
+			{
+				Expr	*expr = (Expr *) lfirst(lc2);
+				EquivalenceMember	*em;
+
+				em = find_ec_member_matching_expr(ec, expr, NULL);
+				if (em == NULL)
+					/*
+					 * The unique expressions are not a subset of 'exprs'. In
+					 * other words, rows which differ in this expression can
+					 * have identical set of 'exprs'.
+					 */
+					return false;
+			}
+
+			keyno++;
+		}
+	}
+
+	return false;
 }
 
 /*

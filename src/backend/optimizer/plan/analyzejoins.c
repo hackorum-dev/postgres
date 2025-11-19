@@ -24,6 +24,7 @@
 
 #include "catalog/pg_class.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/clauses.h"
 #include "optimizer/joininfo.h"
 #include "optimizer/optimizer.h"
 #include "optimizer/pathnode.h"
@@ -980,6 +981,24 @@ static bool
 rel_is_distinct_for(PlannerInfo *root, RelOptInfo *rel, List *clause_list,
 					List **extra_clauses)
 {
+	List *clause_list_new = NIL;
+	ListCell	*lc;
+
+	/*
+	 * Do not use non-strict clauses - those would allow for two inner rows to
+	 * match a single outer row: one with NULL in the join column and one with
+	 * NOT NULL.
+	 */
+	foreach(lc, clause_list)
+	{
+		RestrictInfo	*ri = lfirst_node(RestrictInfo, lc);
+
+		if (contain_nonstrict_functions((Node *) ri->clause))
+			continue;
+		clause_list_new = lappend(clause_list_new, ri);
+	}
+	clause_list = clause_list_new;
+
 	/*
 	 * We could skip a couple of tests here if we assume all callers checked
 	 * rel_supports_distinctness first, but it doesn't seem worth taking any

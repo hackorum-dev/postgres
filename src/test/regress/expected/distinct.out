@@ -1,0 +1,117 @@
+begin;
+create schema test_distinct;
+set search_path to test_distinct;
+-- Single relation.
+create table a (
+  i integer primary key,
+  j integer
+);
+explain (verbose on, costs off)
+select distinct i from a;
+         QUERY PLAN          
+-----------------------------
+ Seq Scan on test_distinct.a
+   Output: i
+(2 rows)
+
+-- Explicit unique-ification is needed if there's no unique index on the
+-- "j" column.
+explain (verbose on, costs off)
+select distinct j from a;
+            QUERY PLAN             
+-----------------------------------
+ HashAggregate
+   Output: j
+   Group Key: a.j
+   ->  Seq Scan on test_distinct.a
+         Output: i, j
+(5 rows)
+
+create unique index on a(j);
+-- The unique index alone is not sufficient if the column is nullable.
+explain (verbose on, costs off)
+select distinct j from a;
+            QUERY PLAN             
+-----------------------------------
+ HashAggregate
+   Output: j
+   Group Key: a.j
+   ->  Seq Scan on test_distinct.a
+         Output: i, j
+(5 rows)
+
+alter table a alter column j set not null;
+-- Now we only need sequential scan.
+explain (verbose on, costs off)
+select distinct j from a;
+         QUERY PLAN          
+-----------------------------
+ Seq Scan on test_distinct.a
+   Output: j
+(2 rows)
+
+-- Joins.
+create table b (
+  k integer,
+  l integer
+);
+explain (verbose on, costs off)
+select distinct i, l from a join b on i = k;
+                  QUERY PLAN                   
+-----------------------------------------------
+ HashAggregate
+   Output: a.i, b.l
+   Group Key: a.i, b.l
+   ->  Hash Join
+         Output: a.i, b.l
+         Inner Unique: true
+         Hash Cond: (b.k = a.i)
+         ->  Seq Scan on test_distinct.b
+               Output: b.k, b.l
+         ->  Hash
+               Output: a.i
+               ->  Seq Scan on test_distinct.a
+                     Output: a.i
+(13 rows)
+
+-- "Inner Unique" is essential to prove that the join output is distinct,
+-- but to set it the planner needs an unique index on the inner table.
+create unique index on b(k);
+-- No explicit unique-ification is needed now.
+explain (verbose on, costs off)
+select distinct i, l from a join b on i = k;
+               QUERY PLAN                
+-----------------------------------------
+ Hash Join
+   Output: a.i, b.l
+   Inner Unique: true
+   Hash Cond: (a.i = b.k)
+   ->  Seq Scan on test_distinct.a
+         Output: a.i, a.j
+   ->  Hash
+         Output: b.l, b.k
+         ->  Seq Scan on test_distinct.b
+               Output: b.l, b.k
+(10 rows)
+
+-- Non-strict join clause prevents the planner from setting "Inner Unique",
+-- so explicit unique-ification cannot be skipped.
+explain (verbose on, costs off)
+select distinct i, l from a join b on i = coalesce(k, 0);
+                  QUERY PLAN                   
+-----------------------------------------------
+ HashAggregate
+   Output: a.i, b.l
+   Group Key: a.i, b.l
+   ->  Hash Join
+         Output: a.i, b.l
+         Hash Cond: (COALESCE(b.k, 0) = a.i)
+         ->  Seq Scan on test_distinct.b
+               Output: b.k, b.l
+         ->  Hash
+               Output: a.i
+               ->  Seq Scan on test_distinct.a
+                     Output: a.i
+(12 rows)
+
+rollback;

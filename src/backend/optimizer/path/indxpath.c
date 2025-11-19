@@ -28,6 +28,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/supportnodes.h"
+#include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/optimizer.h"
 #include "optimizer/pathnode.h"
@@ -4137,10 +4138,28 @@ relation_has_unique_index_for(PlannerInfo *root, RelOptInfo *rel,
 							  List *restrictlist, List **extra_clauses)
 {
 	ListCell   *ic;
+	List	*exprs = NIL;
 
 	/* Short-circuit if no indexes... */
 	if (rel->indexlist == NIL)
 		return false;
+
+	/*
+	 * Retrieve expressions from the join clauses. ->outer_is_left should
+	 * already be set for these.
+	 */
+	foreach(ic, restrictlist)
+	{
+		RestrictInfo *restrictinfo = (RestrictInfo *) lfirst(ic);
+		Node	*expr;
+
+		/* Pick the expression we'll try to match to index. */
+		if (restrictinfo->outer_is_left)
+			expr = get_rightop(restrictinfo->clause);
+		else
+			expr = get_leftop(restrictinfo->clause);
+		exprs = lappend(exprs, expr);
+	}
 
 	/*
 	 * Examine the rel's restriction clauses for usable var = const clauses
@@ -4149,6 +4168,7 @@ relation_has_unique_index_for(PlannerInfo *root, RelOptInfo *rel,
 	foreach(ic, rel->baserestrictinfo)
 	{
 		RestrictInfo *restrictinfo = (RestrictInfo *) lfirst(ic);
+		Node	   *expr = NULL;
 
 		/*
 		 * Note: can_join won't be set for a restriction clause, but
@@ -4165,18 +4185,28 @@ relation_has_unique_index_for(PlannerInfo *root, RelOptInfo *rel,
 		if (bms_is_empty(restrictinfo->left_relids))
 		{
 			/* righthand side is inner */
-			restrictinfo->outer_is_left = true;
+			expr = get_rightop(restrictinfo->clause);
 		}
 		else if (bms_is_empty(restrictinfo->right_relids))
 		{
 			/* lefthand side is inner */
-			restrictinfo->outer_is_left = false;
+			expr = get_leftop(restrictinfo->clause);
 		}
 		else
 			continue;
 
-		/* OK, add to list */
+		/*
+		 * Do not use non-strict clauses - those would allow for two inner
+		 * rows to match a single outer row: one with NULL in the join column
+		 * and one with NOT NULL.
+		 */
+		if (contain_nonstrict_functions((Node *) restrictinfo->clause))
+			continue;
+
+		/* Add the clause to the list. */
 		restrictlist = lappend(restrictlist, restrictinfo);
+		/* This is the expression that we'll try to match to the indexes. */
+		exprs = lappend(exprs, expr);
 	}
 
 	/* Short-circuit the easy case */
@@ -4187,91 +4217,163 @@ relation_has_unique_index_for(PlannerInfo *root, RelOptInfo *rel,
 	foreach(ic, rel->indexlist)
 	{
 		IndexOptInfo *ind = (IndexOptInfo *) lfirst(ic);
-		int			c;
-		List	   *exprs = NIL;
 
-		/*
-		 * If the index is not unique, or not immediately enforced, or if it's
-		 * a partial index, it's useless here.  We're unable to make use of
-		 * predOK partial unique indexes due to the fact that
-		 * check_index_predicates() also makes use of join predicates to
-		 * determine if the partial index is usable. Here we need proofs that
-		 * hold true before any joins are evaluated.
-		 */
-		if (!ind->unique || !ind->immediate || ind->indpred != NIL)
-			continue;
-
-		/*
-		 * Try to find each index column in the list of conditions.  This is
-		 * O(N^2) or worse, but we expect all the lists to be short.
-		 */
-		for (c = 0; c < ind->nkeycolumns; c++)
-		{
-			ListCell   *lc;
-
-			foreach(lc, restrictlist)
-			{
-				RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-				Node	   *rexpr;
-
-				/*
-				 * The condition's equality operator must be a member of the
-				 * index opfamily, else it is not asserting the right kind of
-				 * equality behavior for this index.  We check this first
-				 * since it's probably cheaper than match_index_to_operand().
-				 */
-				if (!list_member_oid(rinfo->mergeopfamilies, ind->opfamily[c]))
-					continue;
-
-				/*
-				 * XXX at some point we may need to check collations here too.
-				 * For the moment we assume all collations reduce to the same
-				 * notion of equality.
-				 */
-
-				/* OK, see if the condition operand matches the index key */
-				if (rinfo->outer_is_left)
-					rexpr = get_rightop(rinfo->clause);
-				else
-					rexpr = get_leftop(rinfo->clause);
-
-				if (match_index_to_operand(rexpr, c, ind))
-				{
-					if (bms_membership(rinfo->clause_relids) == BMS_SINGLETON)
-					{
-						MemoryContext oldMemCtx =
-							MemoryContextSwitchTo(root->planner_cxt);
-
-						/*
-						 * Add filter clause into a list allowing caller to
-						 * know if uniqueness have made not only by join
-						 * clauses.
-						 */
-						Assert(bms_is_empty(rinfo->left_relids) ||
-							   bms_is_empty(rinfo->right_relids));
-						if (extra_clauses)
-							exprs = lappend(exprs, rinfo);
-						MemoryContextSwitchTo(oldMemCtx);
-					}
-
-					break;		/* found a match; column is unique */
-				}
-			}
-
-			if (lc == NULL)
-				break;			/* no match; this index doesn't help us */
-		}
-
-		/* Matched all key columns of this index? */
-		if (c == ind->nkeycolumns)
-		{
-			if (extra_clauses)
-				*extra_clauses = exprs;
+		if (index_is_unique_for_exprs(root, ind, exprs, restrictlist,
+									  extra_clauses))
 			return true;
-		}
+	}
+	return false;
+}
+
+/*
+ * relation_has_unique_index_for_exprs
+ *	  Like relation_has_unique_index_for() but receives the list of
+ *	  expressions to match against the indexes.
+ *
+ * 'restrictlist' is needed when the expressions come from join clauses - in
+ * that case i-th item of 'restrictlist' corresponds to i-th element of
+ * 'exprs'. We need it to check operator families of those clauses.
+ */
+bool
+relation_has_unique_index_for_exprs(PlannerInfo *root, RelOptInfo *rel,
+									List *exprs, List *restrictlist,
+									List **extra_clauses)
+{
+	ListCell   *ic;
+
+	/* Short-circuit if no indexes... */
+	if (rel->indexlist == NIL)
+		return false;
+
+	/* Examine each index of the relation ... */
+	foreach(ic, rel->indexlist)
+	{
+		IndexOptInfo *ind = lfirst_node(IndexOptInfo, ic);
+
+		if (index_is_unique_for_exprs(root, ind, exprs, restrictlist,
+									  extra_clauses))
+			return true;
 	}
 
 	return false;
+}
+
+/*
+ * Does scan of this index generate rows such that each row as a distinct
+ * values of expressions 'exprs'?
+ *
+ * We check if the index is unique and if its target expressions are a subset
+ * of 'exprs'. For example, if 'exprs' is {x, y} and the index key is 'x', the
+ * rows {x, y} must be distinct because each has a distinct value of 'x'. In
+ * contrast, if the index keys are {x, y, z}, the index scan can emit many
+ * identical rows {x, y} - each with a different value of 'z'. (Obviously, if
+ * the index keys are {x, z}, many identical rows {x, y} can be emitted
+ * because 'y' does not restrict the index search at all. Thus for given value
+ * of 'y', multiple rows of the index can have the same value of 'x' - each
+ * with different value of 'z'.)
+ *
+ * 'root' is only needed if 'extra_clauses_p' is a valid pointer.
+ *
+ * See relation_has_unique_index_for_exprs() for comments on 'restrictlist'.
+ */
+bool
+index_is_unique_for_exprs(PlannerInfo *root, IndexOptInfo *index, List *exprs,
+						  List *restrictlist, List **extra_clauses_p)
+{
+	int			c;
+	List	   *extra_clauses = NIL;
+
+	/*
+	 * If the index is not unique, or not immediately enforced, or if it's a
+	 * partial index, it's useless here.  We're unable to make use of predOK
+	 * partial unique indexes due to the fact that check_index_predicates()
+	 * also makes use of join predicates to determine if the partial index is
+	 * usable. Here we need proofs that hold true before any joins are
+	 * evaluated.
+	 */
+	if (!index->unique || !index->immediate || index->indpred != NIL)
+		return false;
+
+	/* No RestrictInfo's or one per expression. */
+	Assert(restrictlist == NIL ||
+		   list_length(exprs) == list_length(restrictlist));
+
+	/*
+	 * Try to find each index column in the list of expressions. This is
+	 * O(N^2) or worse, but we expect all the lists to be short.
+	 */
+	for (c = 0; c < index->nkeycolumns; c++)
+	{
+		ListCell   *lce, *lcri = NULL;
+
+		if (restrictlist)
+			lcri = list_head(restrictlist);
+
+		foreach(lce, exprs)
+		{
+			Node	   *expr = (Node *) lfirst(lce);
+			RestrictInfo	*rinfo = NULL;
+
+			/*
+			 * The condition's equality operator must be a member of the index
+			 * opfamily, else it is not asserting the right kind of equality
+			 * behavior for this index.  We check this first since it's
+			 * probably cheaper than match_index_to_operand().
+			 */
+			if (restrictlist)
+			{
+				rinfo = lfirst_node(RestrictInfo, lcri);
+
+				/*
+				 * Now that we have 'rinfo', advance 'lcri' so that we're
+				 * ready for the next iteration.
+				 */
+				lcri = lnext(restrictlist, lcri);
+
+				if (!list_member_oid(rinfo->mergeopfamilies,
+									 index->opfamily[c]))
+					continue;
+			}
+
+			/*
+			 * XXX at some point we may need to check collations here too.
+			 * For the moment we assume all collations reduce to the same
+			 * notion of equality.
+			 */
+
+			if (match_index_to_operand(expr, c, index))
+			{
+				if (extra_clauses_p &&
+					bms_membership(rinfo->clause_relids) == BMS_SINGLETON)
+				{
+					MemoryContext oldMemCtx =
+						MemoryContextSwitchTo(root->planner_cxt);
+
+					/*
+					 * Add filter clause into a list allowing caller to know
+					 * if uniqueness have made not only by join clauses.
+					 *
+					 * Callers that pass 'extra_clauses_p' currently also pass
+					 * 'restrictlist'.
+					 */
+					Assert(bms_is_empty(rinfo->left_relids) ||
+						   bms_is_empty(rinfo->right_relids));
+					extra_clauses = lappend(extra_clauses, rinfo);
+					MemoryContextSwitchTo(oldMemCtx);
+				}
+
+				break;		/* found a match; column is unique */
+			}
+		}
+
+		if (lce == NULL)
+			return false;		/* no match; this index doesn't help us */
+	}
+
+	/* Matched all key columns of this index. */
+	if (extra_clauses_p)
+		*extra_clauses_p = extra_clauses;
+	return true;
 }
 
 /*
