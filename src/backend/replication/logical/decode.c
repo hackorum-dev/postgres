@@ -206,10 +206,11 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	uint8		info = XLogRecGetInfo(r) & XLOG_XACT_OPMASK;
 
 	/*
-	 * If the snapshot isn't yet fully built, we cannot decode anything, so
-	 * bail out.
+	 * Before BUILDING_SNAPSHOT, we cannot decode anything because we don't
+	 * have snapshot and the transaction will not be tracked by snapshot
+	 * anyway(see SnapBuildCommitTxn() for details), so bail out.
 	 */
-	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
+	if (SnapBuildCurrentState(builder) < SNAPBUILD_BUILDING_SNAPSHOT)
 		return;
 
 	switch (info)
@@ -414,7 +415,7 @@ heap2_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	 * If we don't have snapshot or we are just fast-forwarding, there is no
 	 * point in decoding changes.
 	 */
-	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT ||
+	if (SnapBuildCurrentState(builder) < SNAPBUILD_BUILDING_SNAPSHOT ||
 		ctx->fast_forward)
 		return;
 
