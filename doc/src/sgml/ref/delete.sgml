@@ -417,15 +417,15 @@ DELETE FROM products
    documentation of <command>UPDATE</command></link>:
 <programlisting>
 WITH delete_batch AS (
-  SELECT l.ctid FROM user_logs AS l
-    WHERE l.status = 'archived'
-    ORDER BY l.creation_date
+  SELECT a.id FROM accounts AS a
+    WHERE a.status = 'archived'
+    ORDER BY a.id
     FOR UPDATE
     LIMIT 10000
 )
-DELETE FROM user_logs AS dl
+DELETE FROM accounts AS dl
   USING delete_batch AS del
-  WHERE dl.ctid = del.ctid;
+  WHERE dl.id = del.id;
 </programlisting>
    This use of <structfield>ctid</structfield> is only safe because
    the query is repeatedly run, avoiding the problem of changed

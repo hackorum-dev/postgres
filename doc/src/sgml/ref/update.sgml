@@ -594,13 +594,10 @@ UPDATE products
    no <literal>LIMIT</literal> clause for <command>UPDATE</command>, it is
    possible to get a similar effect through the use of
    a <link linkend="queries-with">Common Table Expression</link> and a
-   self-join.  With the standard <productname>PostgreSQL</productname>
-   table access method, a self-join on the system
-   column <link linkend="ddl-system-columns-ctid">ctid</link> is very
-   efficient:
+   self-join:
 <programlisting>
 WITH exceeded_max_retries AS (
-  SELECT w.ctid FROM work_item AS w
+  SELECT w.id FROM work_item AS w
     WHERE w.status = 'active' AND w.num_retries &gt; 10
     ORDER BY w.retry_timestamp
     FOR UPDATE
@@ -608,7 +605,7 @@ WITH exceeded_max_retries AS (
 )
 UPDATE work_item SET status = 'failed'
   FROM exceeded_max_retries AS emr
-  WHERE work_item.ctid = emr.ctid;
+  WHERE work_item.id = emr.id;
 </programlisting>
    This command will need to be repeated until no rows remain to be updated.
    (This use of <structfield>ctid</structfield> is only safe because
