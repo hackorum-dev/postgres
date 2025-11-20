@@ -13954,6 +13954,11 @@ pg_get_domain_ddl_worker(Oid domain_oid, int prettyFlags)
 		return NULL;
 
 	typForm = (Form_pg_type) GETSTRUCT(typeTuple);
+	if (typForm->typtype != TYPTYPE_DOMAIN)
+	{
+		ReleaseSysCache(typeTuple);
+		return NULL;
+	}
 
 	/* Get default expression */
 	defaultExpr = get_typdefault(domain_oid);

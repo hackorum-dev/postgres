@@ -306,6 +306,20 @@ SELECT pg_get_domain_ddl('regress_domain_with_collate', pretty => true);
          COLLATE "C";
 (1 row)
 
+-- Test input is not DOMAIN
+CREATE TABLE domain_test (a int, b int);
+SELECT pg_get_domain_ddl('domain_test');
+ pg_get_domain_ddl 
+-------------------
+ 
+(1 row)
+
+SELECT pg_get_domain_ddl('domain_test', pretty => true);
+ pg_get_domain_ddl 
+-------------------
+ 
+(1 row)
+
 -- Cleanup
 DROP DOMAIN regress_us_postal_code;
 DROP DOMAIN regress_domain_not_null;
@@ -326,3 +340,4 @@ DROP DOMAIN regress_simple_domain;
 DROP DOMAIN regress_domain_not_valid;
 DROP DOMAIN regress_domain_mixed;
 DROP DOMAIN regress_domain_with_collate;
+DROP TABLE domain_test;
