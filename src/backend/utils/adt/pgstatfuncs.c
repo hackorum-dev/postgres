@@ -67,6 +67,9 @@ PG_STAT_GET_RELENTRY_INT64(blocks_fetched)
 /* pg_stat_get_blocks_hit */
 PG_STAT_GET_RELENTRY_INT64(blocks_hit)
 
+/* pg_stat_get_metadata_blocks */
+PG_STAT_GET_RELENTRY_INT64(idx_metadata_blocks)
+
 /* pg_stat_get_dead_tuples */
 PG_STAT_GET_RELENTRY_INT64(dead_tuples)
 
@@ -1054,6 +1057,9 @@ PG_STAT_GET_DBENTRY_INT64(blocks_fetched)
 
 /* pg_stat_get_db_blocks_hit */
 PG_STAT_GET_DBENTRY_INT64(blocks_hit)
+
+/* pg_stat_get_db_metadata_blocks */
+PG_STAT_GET_DBENTRY_INT64(idx_metadata_blocks)
 
 /* pg_stat_get_db_conflict_bufferpin */
 PG_STAT_GET_DBENTRY_INT64(conflict_bufferpin)

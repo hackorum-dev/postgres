@@ -880,6 +880,7 @@ pgstat_relation_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 
 	tabentry->blocks_fetched += lstats->counts.blocks_fetched;
 	tabentry->blocks_hit += lstats->counts.blocks_hit;
+	tabentry->idx_metadata_blocks += lstats->counts.idx_metadata_blocks;
 
 	/* Clamp live_tuples in case of negative delta_live_tuples */
 	tabentry->live_tuples = Max(tabentry->live_tuples, 0);
@@ -897,6 +898,7 @@ pgstat_relation_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 	dbentry->tuples_deleted += lstats->counts.tuples_deleted;
 	dbentry->blocks_fetched += lstats->counts.blocks_fetched;
 	dbentry->blocks_hit += lstats->counts.blocks_hit;
+	dbentry->idx_metadata_blocks += lstats->counts.idx_metadata_blocks;
 
 	return true;
 }

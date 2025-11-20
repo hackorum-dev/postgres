@@ -30,6 +30,7 @@
 #include "access/xloginsert.h"
 #include "common/int.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "storage/indexfsm.h"
 #include "storage/predicate.h"
 #include "storage/procarray.h"
@@ -190,6 +191,7 @@ _bt_vacuum_needs_cleanup(Relation rel)
 	 * Note that we deliberately avoid using cached version of metapage here.
 	 */
 	metabuf = _bt_getbuf(rel, BTREE_METAPAGE, BT_READ);
+	pgstat_count_metadata_buffer(rel);
 	metapg = BufferGetPage(metabuf);
 	metad = BTPageGetMeta(metapg);
 	btm_version = metad->btm_version;
@@ -254,6 +256,7 @@ _bt_set_cleanup_info(Relation rel, BlockNumber num_delpages)
 	 * to be consistent.
 	 */
 	metabuf = _bt_getbuf(rel, BTREE_METAPAGE, BT_READ);
+	pgstat_count_metadata_buffer(rel);
 	metapg = BufferGetPage(metabuf);
 	metad = BTPageGetMeta(metapg);
 
@@ -374,6 +377,7 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 		rootlevel = metad->btm_fastlevel;
 
 		rootbuf = _bt_getbuf(rel, rootblkno, BT_READ);
+		pgstat_count_metadata_buffer_if(rootlevel > 0, rel);
 		rootpage = BufferGetPage(rootbuf);
 		rootopaque = BTPageGetOpaque(rootpage);
 
@@ -400,6 +404,7 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 	}
 
 	metabuf = _bt_getbuf(rel, BTREE_METAPAGE, BT_READ);
+	pgstat_count_metadata_buffer(rel);
 	metad = _bt_getmeta(rel, metabuf);
 
 	/* if no root page initialized yet, do it */
@@ -536,6 +541,7 @@ _bt_getroot(Relation rel, Relation heaprel, int access)
 		for (;;)
 		{
 			rootbuf = _bt_relandgetbuf(rel, rootbuf, rootblkno, BT_READ);
+			pgstat_count_metadata_buffer_if(rootlevel > 0, rel);
 			rootpage = BufferGetPage(rootbuf);
 			rootopaque = BTPageGetOpaque(rootpage);
 
@@ -600,6 +606,7 @@ _bt_gettrueroot(Relation rel)
 	rel->rd_amcache = NULL;
 
 	metabuf = _bt_getbuf(rel, BTREE_METAPAGE, BT_READ);
+	pgstat_count_metadata_buffer(rel);
 	metapg = BufferGetPage(metabuf);
 	metaopaque = BTPageGetOpaque(metapg);
 	metad = BTPageGetMeta(metapg);
@@ -639,6 +646,7 @@ _bt_gettrueroot(Relation rel)
 	for (;;)
 	{
 		rootbuf = _bt_relandgetbuf(rel, rootbuf, rootblkno, BT_READ);
+		pgstat_count_metadata_buffer_if(rootlevel > 0, rel);
 		rootpage = BufferGetPage(rootbuf);
 		rootopaque = BTPageGetOpaque(rootpage);
 
@@ -681,6 +689,7 @@ _bt_getrootheight(Relation rel)
 		Buffer		metabuf;
 
 		metabuf = _bt_getbuf(rel, BTREE_METAPAGE, BT_READ);
+		pgstat_count_metadata_buffer(rel);
 		metad = _bt_getmeta(rel, metabuf);
 
 		/*
@@ -745,6 +754,7 @@ _bt_metaversion(Relation rel, bool *heapkeyspace, bool *allequalimage)
 		Buffer		metabuf;
 
 		metabuf = _bt_getbuf(rel, BTREE_METAPAGE, BT_READ);
+		pgstat_count_metadata_buffer(rel);
 		metad = _bt_getmeta(rel, metabuf);
 
 		/*
@@ -2372,6 +2382,7 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, BlockNumber scanblkno,
 
 		/* Fetch the block number of the target's left sibling */
 		buf = _bt_getbuf(rel, target, BT_READ);
+		pgstat_count_metadata_buffer(rel);
 		page = BufferGetPage(buf);
 		opaque = BTPageGetOpaque(page);
 		leftsib = opaque->btpo_prev;
@@ -2567,6 +2578,7 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, BlockNumber scanblkno,
 		{
 			/* rightsib will be the only one left on the level */
 			metabuf = _bt_getbuf(rel, BTREE_METAPAGE, BT_WRITE);
+			pgstat_count_metadata_buffer(rel);
 			metapg = BufferGetPage(metabuf);
 			metad = BTPageGetMeta(metapg);
 

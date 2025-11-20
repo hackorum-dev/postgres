@@ -897,6 +897,8 @@ redirect:
 				SpGistInnerTuple innerTuple = (SpGistInnerTuple)
 					PageGetItem(page, PageGetItemId(page, offset));
 
+				pgstat_count_metadata_buffer(index);
+
 				if (innerTuple->tupstate != SPGIST_LIVE)
 				{
 					if (innerTuple->tupstate == SPGIST_REDIRECT)

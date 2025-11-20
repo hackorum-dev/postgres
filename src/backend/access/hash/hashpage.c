@@ -32,6 +32,7 @@
 #include "access/hash_xlog.h"
 #include "access/xloginsert.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "port/pg_bitutils.h"
 #include "storage/predicate.h"
 #include "storage/smgr.h"
@@ -76,6 +77,8 @@ _hash_getbuf(Relation rel, BlockNumber blkno, int access, int flags)
 
 	buf = ReadBuffer(rel, blkno);
 
+	pgstat_count_metadata_buffer_if(flags == LH_META_PAGE || flags == LH_BITMAP_PAGE, rel);
+
 	if (access != HASH_NOLOCK)
 		LockBuffer(buf, access);
 
@@ -101,6 +104,8 @@ _hash_getbuf_with_condlock_cleanup(Relation rel, BlockNumber blkno, int flags)
 		elog(ERROR, "hash AM does not use P_NEW");
 
 	buf = ReadBuffer(rel, blkno);
+
+	pgstat_count_metadata_buffer_if(flags == LH_META_PAGE || flags == LH_BITMAP_PAGE, rel);
 
 	if (!ConditionalLockBufferForCleanup(buf))
 	{
@@ -246,6 +251,8 @@ _hash_getbuf_with_strategy(Relation rel, BlockNumber blkno,
 		elog(ERROR, "hash AM does not use P_NEW");
 
 	buf = ReadBufferExtended(rel, MAIN_FORKNUM, blkno, RBM_NORMAL, bstrategy);
+
+	pgstat_count_metadata_buffer_if(flags == LH_META_PAGE || flags == LH_BITMAP_PAGE, rel);
 
 	if (access != HASH_NOLOCK)
 		LockBuffer(buf, access);

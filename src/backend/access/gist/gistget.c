@@ -346,6 +346,8 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem,
 	gistcheckpage(scan->indexRelation, buffer);
 	page = BufferGetPage(buffer);
 	opaque = GistPageGetOpaque(page);
+	pgstat_count_metadata_buffer_if(!GistPageIsLeaf((Page) page),
+									scan->indexRelation);
 
 	/*
 	 * Check if we need to follow the rightlink. We need to follow it if the

@@ -25,6 +25,7 @@
 #include "catalog/pg_am.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "port/pg_bitutils.h"
 #include "postmaster/autovacuum.h"
 #include "storage/indexfsm.h"
@@ -240,6 +241,7 @@ ginHeapTupleFastInsert(GinState *ginstate, GinTupleCollector *collector)
 	data.newRightlink = data.prevTail = InvalidBlockNumber;
 
 	metabuffer = ReadBuffer(index, GIN_METAPAGE_BLKNO);
+	pgstat_count_metadata_buffer(index);
 	metapage = BufferGetPage(metabuffer);
 
 	/*
@@ -828,6 +830,7 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 	}
 
 	metabuffer = ReadBuffer(index, GIN_METAPAGE_BLKNO);
+	pgstat_count_metadata_buffer(index);
 	LockBuffer(metabuffer, GIN_SHARE);
 	metapage = BufferGetPage(metabuffer);
 	metadata = GinPageGetMeta(metapage);

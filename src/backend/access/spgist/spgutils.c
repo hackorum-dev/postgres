@@ -26,6 +26,7 @@
 #include "commands/vacuum.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/parse_coerce.h"
+#include "pgstat.h"
 #include "storage/bufmgr.h"
 #include "storage/indexfsm.h"
 #include "utils/catcache.h"
@@ -271,6 +272,7 @@ spgGetCache(Relation index)
 			SpGistMetaPageData *metadata;
 
 			metabuffer = ReadBuffer(index, SPGIST_METAPAGE_BLKNO);
+			pgstat_count_metadata_buffer(index);
 			LockBuffer(metabuffer, BUFFER_LOCK_SHARE);
 
 			metadata = SpGistPageGetMeta(BufferGetPage(metabuffer));
@@ -456,6 +458,7 @@ SpGistUpdateMetaPage(Relation index)
 		Buffer		metabuffer;
 
 		metabuffer = ReadBuffer(index, SPGIST_METAPAGE_BLKNO);
+		pgstat_count_metadata_buffer(index);
 
 		if (ConditionalLockBuffer(metabuffer))
 		{
@@ -650,6 +653,8 @@ SpGistGetBuffer(Relation index, int flags, int needSpace, bool *isNew)
 				return buffer;
 			}
 		}
+		else if (!SpGistPageIsLeaf(page))
+			pgstat_count_metadata_buffer(index);
 
 		/*
 		 * fallback to allocation of new buffer

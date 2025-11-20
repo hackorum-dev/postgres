@@ -785,6 +785,7 @@ CREATE VIEW pg_statio_all_tables AS
             pg_stat_get_blocks_hit(C.oid) AS heap_blks_hit,
             I.idx_blks_read AS idx_blks_read,
             I.idx_blks_hit AS idx_blks_hit,
+            I.idx_metadata_blks AS idx_metadata_blks,
             pg_stat_get_blocks_fetched(T.oid) -
                     pg_stat_get_blocks_hit(T.oid) AS toast_blks_read,
             pg_stat_get_blocks_hit(T.oid) AS toast_blks_hit,
@@ -799,7 +800,9 @@ CREATE VIEW pg_statio_all_tables AS
                          pg_stat_get_blocks_hit(indexrelid))::bigint
                      AS idx_blks_read,
                      sum(pg_stat_get_blocks_hit(indexrelid))::bigint
-                     AS idx_blks_hit
+                     AS idx_blks_hit,
+                     sum(pg_stat_get_idx_metadata_blocks(indexrelid))::bigint
+                     AS idx_metadata_blks
               FROM pg_index WHERE indrelid = C.oid ) I ON true
             LEFT JOIN LATERAL (
               SELECT sum(pg_stat_get_blocks_fetched(indexrelid) -
@@ -858,6 +861,7 @@ CREATE VIEW pg_statio_all_indexes AS
             pg_stat_get_blocks_fetched(I.oid) -
                     pg_stat_get_blocks_hit(I.oid) AS idx_blks_read,
             pg_stat_get_blocks_hit(I.oid) AS idx_blks_hit,
+            pg_stat_get_idx_metadata_blocks(I.oid) AS idx_metadata_blks,
             pg_stat_get_stat_reset_time(I.oid) AS stats_reset
     FROM pg_class C JOIN
             pg_index X ON C.oid = X.indrelid JOIN
@@ -1094,6 +1098,7 @@ CREATE VIEW pg_stat_database AS
             pg_stat_get_db_blocks_fetched(D.oid) -
                     pg_stat_get_db_blocks_hit(D.oid) AS blks_read,
             pg_stat_get_db_blocks_hit(D.oid) AS blks_hit,
+            pg_stat_get_db_idx_metadata_blocks(D.oid) AS idx_metadata_blks,
             pg_stat_get_db_tuples_returned(D.oid) AS tup_returned,
             pg_stat_get_db_tuples_fetched(D.oid) AS tup_fetched,
             pg_stat_get_db_tuples_inserted(D.oid) AS tup_inserted,

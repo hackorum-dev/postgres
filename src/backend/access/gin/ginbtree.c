@@ -18,6 +18,7 @@
 #include "access/ginxlog.h"
 #include "access/xloginsert.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "storage/predicate.h"
 #include "utils/injection_point.h"
 #include "utils/memutils.h"
@@ -103,6 +104,8 @@ ginFindLeafPage(GinBtree btree, bool searchMode,
 		stack->off = InvalidOffsetNumber;
 
 		page = BufferGetPage(stack->buffer);
+
+		pgstat_count_metadata_buffer_if(!GinPageIsLeaf(page), btree->index);
 
 		access = ginTraverseLock(stack->buffer, searchMode);
 
@@ -191,6 +194,8 @@ ginStepRight(Buffer buffer, Relation index, int lockmode)
 	if (isLeaf != GinPageIsLeaf(page) || isData != GinPageIsData(page))
 		elog(ERROR, "right sibling of GIN page is of different type");
 
+	pgstat_count_metadata_buffer_if(!GinPageIsLeaf(page), index);
+
 	return nextbuffer;
 }
 
@@ -254,6 +259,8 @@ ginFindParents(GinBtree btree, GinBtreeStack *stack)
 		page = BufferGetPage(buffer);
 		if (GinPageIsLeaf(page))
 			elog(ERROR, "Lost path");
+		else
+			pgstat_count_metadata_buffer(btree->index);
 
 		if (GinPageIsIncompleteSplit(page))
 		{

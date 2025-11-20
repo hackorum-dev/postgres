@@ -39,6 +39,7 @@
 #include "access/tableam.h"
 #include "access/xloginsert.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "nodes/execnodes.h"
 #include "optimizer/optimizer.h"
 #include "storage/bufmgr.h"
@@ -967,6 +968,7 @@ gistProcessItup(GISTBuildState *buildstate, IndexTuple itup,
 		 */
 
 		buffer = ReadBuffer(indexrel, blkno);
+		pgstat_count_metadata_buffer(indexrel);
 		LockBuffer(buffer, GIST_EXCLUSIVE);
 
 		page = BufferGetPage(buffer);
@@ -1248,6 +1250,7 @@ gistBufferingFindCorrectParent(GISTBuildState *buildstate,
 
 	buffer = ReadBuffer(buildstate->indexrel, parent);
 	page = BufferGetPage(buffer);
+	pgstat_count_metadata_buffer(buildstate->indexrel);
 	LockBuffer(buffer, GIST_EXCLUSIVE);
 	gistcheckpage(buildstate->indexrel, buffer);
 	maxoff = PageGetMaxOffsetNumber(page);
@@ -1456,6 +1459,8 @@ gistGetMaxLevel(Relation index)
 			UnlockReleaseBuffer(buffer);
 			break;
 		}
+
+		pgstat_count_metadata_buffer(index);
 
 		/*
 		 * Pick the first downlink on the page, and follow it. It doesn't

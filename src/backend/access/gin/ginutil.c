@@ -22,6 +22,7 @@
 #include "catalog/pg_type.h"
 #include "commands/progress.h"
 #include "commands/vacuum.h"
+#include "pgstat.h"
 #include "miscadmin.h"
 #include "storage/indexfsm.h"
 #include "utils/builtins.h"
@@ -632,6 +633,7 @@ ginGetStats(Relation index, GinStatsData *stats)
 	GinMetaPageData *metadata;
 
 	metabuffer = ReadBuffer(index, GIN_METAPAGE_BLKNO);
+	pgstat_count_metadata_buffer(index);
 	LockBuffer(metabuffer, GIN_SHARE);
 	metapage = BufferGetPage(metabuffer);
 	metadata = GinPageGetMeta(metapage);
@@ -659,6 +661,7 @@ ginUpdateStats(Relation index, const GinStatsData *stats, bool is_build)
 	GinMetaPageData *metadata;
 
 	metabuffer = ReadBuffer(index, GIN_METAPAGE_BLKNO);
+	pgstat_count_metadata_buffer(index);
 	LockBuffer(metabuffer, GIN_EXCLUSIVE);
 	metapage = BufferGetPage(metabuffer);
 	metadata = GinPageGetMeta(metapage);

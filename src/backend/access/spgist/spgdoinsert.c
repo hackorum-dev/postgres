@@ -22,6 +22,7 @@
 #include "common/int.h"
 #include "common/pg_prng.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "storage/bufmgr.h"
 #include "utils/rel.h"
 
@@ -2155,6 +2156,8 @@ spgdoinsert(Relation index, SpGistState *state,
 			SpGistInnerTuple innerTuple;
 			spgChooseIn in;
 			spgChooseOut out;
+
+			pgstat_count_metadata_buffer(index);
 
 			/*
 			 * spgAddNode and spgSplitTuple cases will loop back to here to

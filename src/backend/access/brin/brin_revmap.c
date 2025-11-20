@@ -27,6 +27,7 @@
 #include "access/brin_xlog.h"
 #include "access/rmgr.h"
 #include "access/xloginsert.h"
+#include "pgstat.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "utils/rel.h"
@@ -75,6 +76,7 @@ brinRevmapInitialize(Relation idxrel, BlockNumber *pagesPerRange)
 	Page		page;
 
 	meta = ReadBuffer(idxrel, BRIN_METAPAGE_BLKNO);
+	pgstat_count_metadata_buffer(idxrel);
 	LockBuffer(meta, BUFFER_LOCK_SHARE);
 	page = BufferGetPage(meta);
 	metadata = (BrinMetaPageData *) PageGetContents(page);
@@ -232,6 +234,7 @@ brinGetTupleForHeapBlock(BrinRevmap *revmap, BlockNumber heapBlk,
 
 			Assert(mapBlk != InvalidBlockNumber);
 			revmap->rm_currBuf = ReadBuffer(revmap->rm_irel, mapBlk);
+			pgstat_count_metadata_buffer(idxRel);
 		}
 
 		LockBuffer(revmap->rm_currBuf, BUFFER_LOCK_SHARE);
@@ -486,6 +489,7 @@ revmap_get_buffer(BrinRevmap *revmap, BlockNumber heapBlk)
 			ReleaseBuffer(revmap->rm_currBuf);
 
 		revmap->rm_currBuf = ReadBuffer(revmap->rm_irel, mapBlk);
+		pgstat_count_metadata_buffer(revmap->rm_irel);
 	}
 
 	return revmap->rm_currBuf;
@@ -554,6 +558,7 @@ revmap_physical_extend(BrinRevmap *revmap)
 	if (mapBlk < nblocks)
 	{
 		buf = ReadBuffer(irel, mapBlk);
+		pgstat_count_metadata_buffer(irel);
 		LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
 		page = BufferGetPage(buf);
 	}

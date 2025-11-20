@@ -21,6 +21,7 @@
 #include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "nodes/execnodes.h"
+#include "pgstat.h"
 #include "storage/predicate.h"
 #include "utils/fmgrprotos.h"
 #include "utils/index_selfuncs.h"
@@ -696,6 +697,7 @@ gistdoinsert(Relation r, IndexTuple itup, Size freespace,
 		}
 
 		stack->page = BufferGetPage(stack->buffer);
+		pgstat_count_metadata_buffer_if(!GistPageIsLeaf(stack->page), state.r);
 		stack->lsn = xlocked ?
 			PageGetLSN(stack->page) : BufferGetLSNAtomic(stack->buffer);
 		Assert(!RelationNeedsWAL(state.r) || XLogRecPtrIsValid(stack->lsn));
@@ -1121,6 +1123,7 @@ gistFindCorrectParent(Relation r, GISTInsertStack *child, bool is_build)
 	{
 		ptr->buffer = ReadBuffer(r, ptr->blkno);
 		ptr->page = BufferGetPage(ptr->buffer);
+		pgstat_count_metadata_buffer_if(!GistPageIsLeaf(ptr->page), r);
 		ptr = ptr->parent;
 	}
 

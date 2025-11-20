@@ -944,4 +944,21 @@ SELECT * FROM check_estimated_rows('SELECT * FROM table_fillfactor');
 
 DROP TABLE table_fillfactor;
 
+-- b-tree indexes: test stats collection for metadata index blocks
+select count(*) from tenk2 where unique1 = '1504';
+
+-- ensure pending stats are flushed
+SELECT pg_stat_force_next_flush();
+
+-- check effects
+BEGIN;
+SET LOCAL stats_fetch_consistency = snapshot;
+
+SELECT idx_metadata_blks < idx_blks_hit + idx_blks_read,
+       idx_metadata_blks > 0
+  FROM pg_statio_all_indexes
+ WHERE indexrelname='tenk2_unique1';
+
+COMMIT;
+
 -- End of Stats Test
