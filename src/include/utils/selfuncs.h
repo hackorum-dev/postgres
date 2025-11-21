@@ -247,6 +247,7 @@ extern List *add_predicate_to_index_quals(IndexOptInfo *index,
 extern void genericcostestimate(PlannerInfo *root, IndexPath *path,
 								double loop_count,
 								GenericCosts *costs);
+extern bool clauses_covering_uniquekey(Oid relid, Index rtIndex, List *clauses);
 
 /* Functions in array_selfuncs.c */
 
