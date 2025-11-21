@@ -311,6 +311,8 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptInfo *parent)
 	rel->all_partrels = NULL;
 	rel->partexprs = NULL;
 	rel->nullable_partexprs = NULL;
+	rel->adjust_param_clauses = NIL;
+	rel->adjust_rows = 0;
 
 	/*
 	 * Pass assorted information down the inheritance hierarchy.
