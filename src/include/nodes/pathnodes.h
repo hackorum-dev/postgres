@@ -1221,6 +1221,9 @@ typedef struct RelOptInfo
 	/* extension state */
 	void	  **extension_state pg_node_attr(read_write_ignore);
 	int			extension_state_allocated;
+
+	Cardinality adjust_rows;
+	List	   *adjust_param_clauses;
 } RelOptInfo;
 
 /*
