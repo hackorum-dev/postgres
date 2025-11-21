@@ -274,6 +274,8 @@ static bool get_actual_variable_endpoint(Relation heapRel,
 static RelOptInfo *find_join_input_rel(PlannerInfo *root, Relids relids);
 static double btcost_correlation(IndexOptInfo *index,
 								 VariableStatData *vardata);
+static bool clauses_varattnos_covering_index(Oid indexOid, Bitmapset *varattnos);
+static Bitmapset *pull_eq_clauses_varattnos(List *clauses, Index rtIndex);
 
 /* Define support routines for MCV hash tables */
 #define SH_PREFIX				MCVHashTable
@@ -7532,6 +7534,7 @@ genericcostestimate(PlannerInfo *root,
 	double		qual_arg_cost;
 	List	   *selectivityQuals;
 	ListCell   *l;
+	Bitmapset  *varattnos;
 
 	/*
 	 * If the index is partial, AND the index predicate with the explicitly
@@ -7564,11 +7567,15 @@ genericcostestimate(PlannerInfo *root,
 		}
 	}
 
-	/* Estimate the fraction of main-table tuples that will be visited */
-	indexSelectivity = clauselist_selectivity(root, selectivityQuals,
-											  index->rel->relid,
-											  JOIN_INNER,
-											  NULL);
+	varattnos = pull_eq_clauses_varattnos(selectivityQuals, index->rel->relid);
+	if (clauses_varattnos_covering_index(index->indexoid, varattnos))
+		indexSelectivity = 1.0 / index->rel->tuples;
+	else
+		/* Estimate the fraction of main-table tuples that will be visited */
+		indexSelectivity = clauselist_selectivity(root, selectivityQuals,
+												  index->rel->relid,
+												  JOIN_INNER,
+												  NULL);
 
 	/*
 	 * If caller didn't give us an estimate, estimate the number of index
@@ -9340,4 +9347,124 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 		statsData.pagesPerRange;
 
 	*indexPages = index->pages;
+}
+
+bool
+clauses_covering_uniquekey(Oid relid, Index rtIndex, List *clauses)
+{
+	ListCell   *l;
+	Bitmapset  *varattnos;
+	Relation	relation;
+	List	   *indexOids;
+	bool		covered = false;
+
+	varattnos = pull_eq_clauses_varattnos(clauses, rtIndex);
+	if (!varattnos)
+		return false;
+
+	relation = table_open(relid, AccessShareLock);
+	indexOids = RelationGetIndexList(relation);
+
+	foreach(l, indexOids)
+	{
+		if (clauses_varattnos_covering_index(lfirst_oid(l), varattnos))
+		{
+			covered = true;
+			break;
+		}
+	}
+
+	list_free(indexOids);
+	table_close(relation, AccessShareLock);
+
+	return covered;
+}
+
+static bool
+clauses_varattnos_covering_index(Oid indexOid, Bitmapset *varattnos)
+{
+	Relation	indexRelation;
+	Bitmapset  *index_attrs = NULL;
+	int			i;
+	bool		covered = false;
+
+	indexRelation = index_open(indexOid, AccessShareLock);
+
+	/* Must is a primary key or unique index */
+	if (!indexRelation->rd_index->indisprimary && !indexRelation->rd_index->indisunique)
+	{
+		index_close(indexRelation, AccessShareLock);
+		return false;
+	}
+
+	for (i = 0; i < indexRelation->rd_index->indnkeyatts; i++)
+	{
+		int			attrnum = indexRelation->rd_index->indkey.values[i];
+
+		/*
+		 * Collect all key attribute numbers from this index. Skip expression
+		 * indexes (attrnum == 0) as they cannot be checked for coverage by
+		 * simple attribute numbers.
+		 */
+		if (attrnum != 0)
+			index_attrs = bms_add_member(index_attrs, attrnum);
+	}
+
+	/*
+	 * Check if varattnos fully covers all attributes of this index. If so,
+	 * this means the constraints are sufficient to uniquely identify rows.
+	 */
+	if (bms_is_subset(index_attrs, varattnos))
+		covered = true;
+
+	bms_free(index_attrs);
+	index_close(indexRelation, AccessShareLock);
+
+	return covered;
+}
+
+
+static Bitmapset *
+pull_eq_clauses_varattnos(List *clauses, Index rtIndex)
+{
+	ListCell   *l;
+	Bitmapset  *varattnos = NULL;
+
+	foreach(l, clauses)
+	{
+		Node	   *clause = (Node *) lfirst(l);
+		RestrictInfo *rinfo;
+
+		if (!IsA(clause, RestrictInfo))
+			continue;
+
+		rinfo = (RestrictInfo *) clause;
+		clause = (Node *) rinfo->clause;
+
+		if (is_opclause(clause) && list_length(((OpExpr *) clause)->args) == 2)
+		{
+			OpExpr	   *expr = (OpExpr *) clause;
+
+			if (strcmp(get_opname(expr->opno), "=") != 0)
+				continue;
+
+			if (IsA(linitial(expr->args), Var))
+			{
+				Var		   *var = (Var *) linitial(expr->args);
+
+				if (var->varlevelsup == 0 && var->varno == rtIndex)
+					varattnos = bms_add_member(varattnos, var->varattno);
+			}
+
+			if (IsA(lsecond(expr->args), Var))
+			{
+				Var		   *var = (Var *) lsecond(expr->args);
+
+				if (var->varlevelsup == 0 && var->varno == rtIndex)
+					varattnos = bms_add_member(varattnos, var->varattno);
+			}
+		}
+	}
+
+	return varattnos;
 }

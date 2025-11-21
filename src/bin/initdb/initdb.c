@@ -783,8 +783,8 @@ cleanup_directories_atexit(void)
 		if (made_new_pgdata)
 		{
 			pg_log_info("removing data directory \"%s\"", pg_data);
-			if (!rmtree(pg_data, true))
-				pg_log_error("failed to remove data directory");
+			// if (!rmtree(pg_data, true))
+			// 	pg_log_error("failed to remove data directory");
 		}
 		else if (found_existing_pgdata)
 		{

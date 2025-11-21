@@ -5526,16 +5526,28 @@ void
 set_baserel_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 {
 	double		nrows;
+	bool		coveringUniquekey = false;
 
 	/* Should only be applied to base relations */
 	Assert(rel->relid > 0);
 
-	nrows = rel->tuples *
-		clauselist_selectivity(root,
-							   rel->baserestrictinfo,
-							   0,
-							   JOIN_INNER,
-							   NULL);
+	if (rel->rtekind == RTE_RELATION)
+	{
+		RangeTblEntry *rte = rt_fetch(rel->relid, root->parse->rtable);
+
+		coveringUniquekey = clauses_covering_uniquekey(rte->relid, rel->relid,
+													   rel->baserestrictinfo);
+	}
+
+	if (coveringUniquekey)
+		nrows = 1;
+	else
+		nrows = rel->tuples *
+			clauselist_selectivity(root,
+								   rel->baserestrictinfo,
+								   0,
+								   JOIN_INNER,
+								   NULL);
 
 	rel->rows = clamp_row_est(nrows);
 
@@ -5558,6 +5570,7 @@ get_parameterized_baserel_size(PlannerInfo *root, RelOptInfo *rel,
 {
 	List	   *allclauses;
 	double		nrows;
+	bool		coveringUniquekey = false;
 
 	/*
 	 * Estimate the number of rows returned by the parameterized scan, knowing
@@ -5566,12 +5579,32 @@ get_parameterized_baserel_size(PlannerInfo *root, RelOptInfo *rel,
 	 * non-join clauses during selectivity estimation.
 	 */
 	allclauses = list_concat_copy(param_clauses, rel->baserestrictinfo);
-	nrows = rel->tuples *
-		clauselist_selectivity(root,
-							   allclauses,
-							   rel->relid,	/* do not use 0! */
-							   JOIN_INNER,
-							   NULL);
+
+	if (rel->rtekind == RTE_RELATION)
+	{
+		RangeTblEntry *rte = rt_fetch(rel->relid, root->parse->rtable);
+
+		coveringUniquekey = clauses_covering_uniquekey(rte->relid, rel->relid,
+													   allclauses);
+	}
+
+	if (coveringUniquekey)
+	{
+		nrows = 1;
+
+		if (!rel->adjust_param_clauses)
+		{
+			rel->adjust_rows = nrows;
+			rel->adjust_param_clauses = allclauses;
+		}
+	}
+	else
+		nrows = rel->tuples *
+			clauselist_selectivity(root,
+								   allclauses,
+								   rel->relid,	/* do not use 0! */
+								   JOIN_INNER,
+								   NULL);
 	nrows = clamp_row_est(nrows);
 	/* For safety, make sure result is not more than the base estimate */
 	if (nrows > rel->rows)
@@ -5608,14 +5641,41 @@ set_joinrel_size_estimates(PlannerInfo *root, RelOptInfo *rel,
 						   SpecialJoinInfo *sjinfo,
 						   List *restrictlist)
 {
+	Cardinality outer_rows = outer_rel->rows;
+	Cardinality inner_rows = inner_rel->rows;
+	List	   *join_clauses = list_copy(restrictlist);
+	List	   *remove_clauses = NIL;
+	ListCell   *l1;
+	ListCell   *l2;
+
+	if (outer_rel->adjust_param_clauses)
+	{
+		remove_clauses = outer_rel->adjust_param_clauses;
+		outer_rows = outer_rel->adjust_rows;
+	}
+	else if (inner_rel->adjust_param_clauses)
+	{
+		remove_clauses = inner_rel->adjust_param_clauses;
+		inner_rows = inner_rel->adjust_rows;
+	}
+
+	foreach(l1, remove_clauses)
+	{
+		foreach(l2, join_clauses)
+		{
+			if (lfirst(l1) == lfirst(l2))
+				join_clauses = foreach_delete_current(join_clauses, l2);
+		}
+	}
+
 	rel->rows = calc_joinrel_size_estimate(root,
 										   rel,
 										   outer_rel,
 										   inner_rel,
-										   outer_rel->rows,
-										   inner_rel->rows,
+										   outer_rows,
+										   inner_rows,
 										   sjinfo,
-										   restrictlist);
+										   join_clauses);
 }
 
 /*
