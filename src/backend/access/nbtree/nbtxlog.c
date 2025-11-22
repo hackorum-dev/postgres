@@ -355,7 +355,6 @@ btree_xlog_split(bool newitemonleft, XLogReaderState *record)
 		 */
 		left_hikey = (IndexTuple) datapos;
 		left_hikeysz = MAXALIGN(IndexTupleSize(left_hikey));
-		datapos += left_hikeysz;
 		datalen -= left_hikeysz;
 
 		Assert(datalen == 0);
