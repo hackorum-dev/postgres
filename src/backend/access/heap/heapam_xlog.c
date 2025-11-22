@@ -116,7 +116,6 @@ heap_xlog_prune_freeze(XLogReaderState *record)
 
 		/* memcpy() because snapshot_conflict_horizon is stored unaligned */
 		memcpy(&snapshot_conflict_horizon, maindataptr, sizeof(TransactionId));
-		maindataptr += sizeof(TransactionId);
 
 		if (InHotStandby)
 			ResolveRecoveryConflictWithSnapshot(snapshot_conflict_horizon,
