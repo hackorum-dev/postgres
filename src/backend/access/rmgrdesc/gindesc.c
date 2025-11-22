@@ -95,7 +95,6 @@ gin_desc(StringInfo buf, XLogReaderState *record)
 					leftChildBlkno = BlockIdGetBlockNumber((BlockId) payload);
 					payload += sizeof(BlockIdData);
 					rightChildBlkno = BlockIdGetBlockNumber((BlockId) payload);
-					payload += sizeof(BlockNumber);
 					appendStringInfo(buf, " children: %u/%u",
 									 leftChildBlkno, rightChildBlkno);
 				}
