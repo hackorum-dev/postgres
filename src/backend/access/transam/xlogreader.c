@@ -2010,7 +2010,6 @@ DecodeXLogRecord(XLogReaderState *state,
 		out = (char *) MAXALIGN(out);
 		decoded->main_data = out;
 		memcpy(decoded->main_data, ptr, decoded->main_data_len);
-		ptr += decoded->main_data_len;
 		out += decoded->main_data_len;
 	}
 

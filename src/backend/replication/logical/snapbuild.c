@@ -1642,6 +1642,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 		sz = sizeof(TransactionId) * catchange_xcnt;
 		memcpy(ondisk_c, catchange_xip, sz);
 		COMP_CRC32C(ondisk->checksum, ondisk_c, sz);
+		/* keep pointer position updated for potential future use */
 		ondisk_c += sz;
 	}
 
