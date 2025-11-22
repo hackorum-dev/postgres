@@ -401,16 +401,12 @@ CreateWaitEventSet(ResourceOwner resowner, int nevents)
 
 #if defined(WAIT_USE_EPOLL)
 	set->epoll_ret_events = (struct epoll_event *) data;
-	data += MAXALIGN(sizeof(struct epoll_event) * nevents);
 #elif defined(WAIT_USE_KQUEUE)
 	set->kqueue_ret_events = (struct kevent *) data;
-	data += MAXALIGN(sizeof(struct kevent) * nevents);
 #elif defined(WAIT_USE_POLL)
 	set->pollfds = (struct pollfd *) data;
-	data += MAXALIGN(sizeof(struct pollfd) * nevents);
 #elif defined(WAIT_USE_WIN32)
 	set->handles = (HANDLE) data;
-	data += MAXALIGN(sizeof(HANDLE) * nevents);
 #endif
 
 	set->latch = NULL;
