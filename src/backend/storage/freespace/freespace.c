@@ -297,6 +297,8 @@ FreeSpaceMapPrepareTruncateRel(Relation rel, BlockNumber nblocks)
 	 */
 	if (first_removed_slot > 0)
 	{
+		bool changed;
+
 		buf = fsm_readbuf(rel, first_removed_address, false);
 		if (!BufferIsValid(buf))
 			return InvalidBlockNumber;	/* nothing to do; the FSM was already
@@ -306,7 +308,7 @@ FreeSpaceMapPrepareTruncateRel(Relation rel, BlockNumber nblocks)
 		/* NO EREPORT(ERROR) from here till changes are logged */
 		START_CRIT_SECTION();
 
-		fsm_truncate_avail(BufferGetPage(buf), first_removed_slot);
+		changed = fsm_truncate_avail(BufferGetPage(buf), first_removed_slot);
 
 		/*
 		 * This change is non-critical, because fsm_does_block_exist() would
@@ -315,7 +317,9 @@ FreeSpaceMapPrepareTruncateRel(Relation rel, BlockNumber nblocks)
 		 * of that many fsm_does_block_exist() rejections.  Use a full
 		 * MarkBufferDirty(), not MarkBufferDirtyHint().
 		 */
-		MarkBufferDirty(buf);
+
+		if (changed)
+			MarkBufferDirty(buf);
 
 		/*
 		 * WAL-log like MarkBufferDirtyHint() might have done, just to avoid
@@ -328,7 +332,7 @@ FreeSpaceMapPrepareTruncateRel(Relation rel, BlockNumber nblocks)
 		 * not changed, and our fork remains valid.  If we crash after that
 		 * flush, redo will return here.
 		 */
-		if (!InRecovery && RelationNeedsWAL(rel) && XLogHintBitIsNeeded())
+		if (changed && !InRecovery && RelationNeedsWAL(rel) && XLogHintBitIsNeeded())
 			log_newpage_buffer(buf, false);
 
 		END_CRIT_SECTION();
