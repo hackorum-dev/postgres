@@ -133,6 +133,7 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 		parsed->origin_lsn = xl_origin.origin_lsn;
 		parsed->origin_timestamp = xl_origin.origin_timestamp;
 
+		/* keep pointer position updated for potential future use */
 		data += sizeof(xl_xact_origin);
 	}
 }
@@ -228,6 +229,7 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 		parsed->origin_lsn = xl_origin.origin_lsn;
 		parsed->origin_timestamp = xl_origin.origin_timestamp;
 
+		/* keep pointer position updated for potential future use */
 		data += sizeof(xl_xact_origin);
 	}
 }
@@ -275,6 +277,7 @@ ParsePrepareRecord(uint8 info, xl_xact_prepare *xlrec, xl_xact_parsed_prepare *p
 	bufptr += MAXALIGN(xlrec->nabortstats * sizeof(xl_xact_stats_item));
 
 	parsed->msgs = (SharedInvalidationMessage *) bufptr;
+	/* keep pointer position updated for potential future use */
 	bufptr += MAXALIGN(xlrec->ninvalmsgs * sizeof(SharedInvalidationMessage));
 }
 

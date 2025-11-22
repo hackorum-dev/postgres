@@ -317,9 +317,6 @@ pgaio_uring_shmem_init(void *arg)
 
 		/* account for alignment */
 		ring_mem_remain -= ring_mem_next - shmem;
-		shmem += ring_mem_next - shmem;
-
-		shmem += ring_mem_remain;
 	}
 
 	for (int contextno = 0; contextno < TotalProcs; contextno++)
