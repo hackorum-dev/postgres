@@ -321,7 +321,7 @@ fill_val(CompactAttribute *att,
 	else if (att->attlen == -1)
 	{
 		/* varlena */
-		Pointer		val = DatumGetPointer(datum);
+		void	   *val = DatumGetPointer(datum);
 
 		*infomask |= HEAP_HASVARWIDTH;
 		if (VARATT_IS_EXTERNAL(val))

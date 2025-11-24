@@ -318,10 +318,10 @@ CommandIdGetDatum(CommandId X)
  * DatumGetPointer
  *		Returns pointer value of a datum.
  */
-static inline Pointer
+static inline void *
 DatumGetPointer(Datum X)
 {
-	return (Pointer) (uintptr_t) X;
+	return (void *) (uintptr_t) X;
 }
 
 /*

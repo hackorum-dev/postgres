@@ -696,7 +696,7 @@ heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
 	while ((ttup = systable_getnext_ordered(toastscan, ForwardScanDirection)) != NULL)
 	{
 		int32		curchunk;
-		Pointer		chunk;
+		void	   *chunk;
 		bool		isnull;
 		char	   *chunkdata;
 		int32		chunksize;

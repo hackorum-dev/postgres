@@ -128,7 +128,7 @@ toast_save_datum(Relation rel, Datum value,
 	int32		chunk_seq = 0;
 	char	   *data_p;
 	int32		data_todo;
-	Pointer		dval = DatumGetPointer(value);
+	void	   *dval = DatumGetPointer(value);
 	int			num_indexes;
 	int			validIndex;
 

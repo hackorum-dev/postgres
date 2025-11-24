@@ -1962,7 +1962,7 @@ range_serialize(TypeCacheEntry *typcache, RangeBound *lower, RangeBound *upper,
 	RangeType  *range;
 	int			cmp;
 	Size		msize;
-	Pointer		ptr;
+	char	   *ptr;
 	int16		typlen;
 	bool		typbyval;
 	char		typalign;
@@ -2070,7 +2070,7 @@ range_serialize(TypeCacheEntry *typcache, RangeBound *lower, RangeBound *upper,
 						  typstorage);
 	}
 
-	*((char *) ptr) = flags;
+	*ptr = flags;
 
 	return range;
 }
@@ -2953,7 +2953,7 @@ datum_write(char *ptr, Datum datum, bool typbyval, char typalign,
 	else if (typlen == -1)
 	{
 		/* varlena */
-		Pointer		val = DatumGetPointer(datum);
+		void	   *val = DatumGetPointer(datum);
 
 		if (VARATT_IS_EXTERNAL(val))
 		{

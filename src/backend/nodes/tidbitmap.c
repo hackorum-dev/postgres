@@ -1546,11 +1546,11 @@ tbm_calculate_entries(Size maxbytes)
 	/*
 	 * Estimate number of hashtable entries we can have within maxbytes. This
 	 * estimates the hash cost as sizeof(PagetableEntry), which is good enough
-	 * for our purpose.  Also count an extra Pointer per entry for the arrays
+	 * for our purpose.  Also count an extra pointer per entry for the arrays
 	 * created during iteration readout.
 	 */
 	nbuckets = maxbytes /
-		(sizeof(PagetableEntry) + sizeof(Pointer) + sizeof(Pointer));
+		(sizeof(PagetableEntry) + sizeof(void *) + sizeof(void *));
 	nbuckets = Min(nbuckets, INT_MAX - 1);	/* safety limit */
 	nbuckets = Max(nbuckets, 16);	/* sanity limit */
 

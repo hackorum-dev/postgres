@@ -1557,7 +1557,7 @@ check_toast_tuple(HeapTuple toasttup, HeapCheckContext *ctx,
 {
 	int32		chunk_seq;
 	int32		last_chunk_seq = (extsize - 1) / TOAST_MAX_CHUNK_SIZE;
-	Pointer		chunk;
+	void	   *chunk;
 	bool		isnull;
 	int32		chunksize;
 	int32		expected_size;

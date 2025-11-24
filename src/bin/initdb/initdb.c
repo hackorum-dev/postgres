@@ -1574,11 +1574,11 @@ bootstrap_template1(void)
 	sprintf(buf, "%d", NAMEDATALEN);
 	bki_lines = replace_token(bki_lines, "NAMEDATALEN", buf);
 
-	sprintf(buf, "%d", (int) sizeof(Pointer));
+	sprintf(buf, "%d", (int) sizeof(void *));
 	bki_lines = replace_token(bki_lines, "SIZEOF_POINTER", buf);
 
 	bki_lines = replace_token(bki_lines, "ALIGNOF_POINTER",
-							  (sizeof(Pointer) == 4) ? "i" : "d");
+							  (sizeof(void *) == 4) ? "i" : "d");
 
 	bki_lines = replace_token(bki_lines, "POSTGRES",
 							  escape_quotes_bki(username));

@@ -5003,7 +5003,7 @@ ReorderBufferToastAppendChunk(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	bool		found;
 	int32		chunksize;
 	bool		isnull;
-	Pointer		chunk;
+	void	   *chunk;
 	TupleDesc	desc = RelationGetDescr(relation);
 	Oid			chunk_id;
 	int32		chunk_seq;
@@ -5192,7 +5192,7 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			bool		cisnull;
 			ReorderBufferChange *cchange;
 			HeapTuple	ctup;
-			Pointer		chunk;
+			void	   *chunk;
 
 			cchange = dlist_container(ReorderBufferChange, node, it.cur);
 			ctup = cchange->data.tp.newtuple;
