@@ -557,6 +557,7 @@ ProcessCopyOptions(ParseState *pstate,
 	bool		on_error_specified = false;
 	bool		log_verbosity_specified = false;
 	bool		reject_limit_specified = false;
+	bool		trim_space_specified = false;
 	ListCell   *option;
 
 	/* Support external use for option sanity checking */
@@ -730,6 +731,13 @@ ProcessCopyOptions(ParseState *pstate,
 			reject_limit_specified = true;
 			opts_out->reject_limit = defGetCopyRejectLimitOption(defel);
 		}
+		else if (strcmp(defel->defname, "trim_space") == 0)
+		{
+			if (trim_space_specified)
+				errorConflictingDefElem(defel, pstate);
+			trim_space_specified = true;
+			opts_out->trim_space = defGetBoolean(defel);
+		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
@@ -757,6 +765,11 @@ ProcessCopyOptions(ParseState *pstate,
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("cannot specify %s in BINARY mode", "DEFAULT")));
+
+	if (opts_out->binary && opts_out->trim_space)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("cannot specify %s in BINARY mode", "TRIM_SPACE")));
 
 	/* Set defaults for omitted options */
 	if (!opts_out->delim)

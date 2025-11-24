@@ -1798,6 +1798,30 @@ CopyReadAttributesText(CopyFromState cstate)
 
 				pg_verifymbstr(fld, output_ptr - fld, false);
 			}
+
+			/* Apply TRIM_SPACE if requested */
+			if (cstate->opts.trim_space)
+			{
+				char	   *fld = cstate->raw_fields[fieldno];
+				char	   *start = fld;
+				char	   *end = output_ptr;
+
+				/* Trim leading spaces */
+				while (start < end && *start == ' ')
+					start++;
+
+				/* Trim trailing spaces */
+				while (end > start && *(end - 1) == ' ')
+					end--;
+
+				/* Move trimmed string to the beginning if needed */
+				if (start > fld)
+				{
+					memmove(fld, start, end - start);
+				}
+
+				output_ptr = fld + (end - start);
+			}
 		}
 
 		/* Terminate attribute value in output area */
@@ -1965,9 +1989,6 @@ CopyReadAttributesCSV(CopyFromState cstate)
 		}
 endfield:
 
-		/* Terminate attribute value in output area */
-		*output_ptr++ = '\0';
-
 		/* Check whether raw input matched null marker */
 		input_len = end_ptr - start_ptr;
 		if (!saw_quote && input_len == cstate->opts.null_print_len &&
@@ -1999,6 +2020,35 @@ endfield:
 								   NameStr(att->attname))));
 			}
 		}
+		else
+		{
+			/* Apply TRIM_SPACE if requested */
+			if (cstate->opts.trim_space)
+			{
+				char	   *fld = cstate->raw_fields[fieldno];
+				char	   *start = fld;
+				char	   *end = output_ptr;
+
+				/* Trim leading spaces */
+				while (start < end && *start == ' ')
+					start++;
+
+				/* Trim trailing spaces */
+				while (end > start && *(end - 1) == ' ')
+					end--;
+
+				/* Move trimmed string to the beginning if needed */
+				if (start > fld)
+				{
+					memmove(fld, start, end - start);
+				}
+
+				output_ptr = fld + (end - start);
+			}
+		}
+
+		/* Terminate attribute value in output area */
+		*output_ptr++ = '\0';
 
 		fieldno++;
 		/* Done if we hit EOL instead of a delim */
