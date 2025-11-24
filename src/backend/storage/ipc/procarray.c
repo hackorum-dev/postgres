@@ -1766,8 +1766,12 @@ ComputeXidHorizons(ComputeXidHorizonsResult *h)
 		 * Skip over backends either vacuuming (which is ok with rows being
 		 * removed, as long as pg_subtrans is not truncated) or doing logical
 		 * decoding (which manages xmin separately, check below).
+		 * Also skip over backends doing (RE)INDEX CONCURRENTLY on plain 
+		 * indexes as these also can not affect vacuum on other tables and 
+		 * we don't want long indexing operations to hold back vacuum cleanup
 		 */
-		if (statusFlags & (PROC_IN_VACUUM | PROC_IN_LOGICAL_DECODING))
+		if (statusFlags & (PROC_IN_VACUUM | PROC_IN_LOGICAL_DECODING
+										  | PROC_IN_SAFE_IC))
 			continue;
 
 		/* shared tables need to take backends in all databases into account */
