@@ -1598,6 +1598,7 @@ LargeObjectDesc
 Latch
 LauncherLastStartTimesEntry
 LerpFunc
+LetStmt
 LexDescr
 LexemeEntry
 LexemeHashKey
