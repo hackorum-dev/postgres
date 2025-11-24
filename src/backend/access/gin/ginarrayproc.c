@@ -84,7 +84,7 @@ ginqueryarrayextract(PG_FUNCTION_ARGS)
 	StrategyNumber strategy = PG_GETARG_UINT16(2);
 
 	/* bool   **pmatch = (bool **) PG_GETARG_POINTER(3); */
-	/* Pointer	   *extra_data = (Pointer *) PG_GETARG_POINTER(4); */
+	/* void	  **extra_data = (void **) PG_GETARG_POINTER(4); */
 	bool	  **nullFlags = (bool **) PG_GETARG_POINTER(5);
 	int32	   *searchMode = (int32 *) PG_GETARG_POINTER(6);
 	int16		elmlen;
@@ -147,7 +147,7 @@ ginarrayconsistent(PG_FUNCTION_ARGS)
 	/* ArrayType  *query = PG_GETARG_ARRAYTYPE_P(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
 
-	/* Pointer	   *extra_data = (Pointer *) PG_GETARG_POINTER(4); */
+	/* void	  **extra_data = (void **) PG_GETARG_POINTER(4); */
 	bool	   *recheck = (bool *) PG_GETARG_POINTER(5);
 
 	/* Datum	   *queryKeys = (Datum *) PG_GETARG_POINTER(6); */
@@ -231,7 +231,7 @@ ginarraytriconsistent(PG_FUNCTION_ARGS)
 	/* ArrayType  *query = PG_GETARG_ARRAYTYPE_P(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
 
-	/* Pointer	   *extra_data = (Pointer *) PG_GETARG_POINTER(4); */
+	/* void	  **extra_data = (void **) PG_GETARG_POINTER(4); */
 	/* Datum	   *queryKeys = (Datum *) PG_GETARG_POINTER(5); */
 	bool	   *nullFlags = (bool *) PG_GETARG_POINTER(6);
 	GinTernaryValue res;

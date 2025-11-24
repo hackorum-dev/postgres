@@ -44,7 +44,7 @@ gin_cmp_prefix(PG_FUNCTION_ARGS)
 
 #ifdef NOT_USED
 	StrategyNumber strategy = PG_GETARG_UINT16(2);
-	Pointer		extra_data = PG_GETARG_POINTER(3);
+	void	   *extra_data = (void *) PG_GETARG_POINTER(3);
 #endif
 	int			cmp;
 
@@ -98,7 +98,7 @@ gin_extract_tsquery(PG_FUNCTION_ARGS)
 
 	/* StrategyNumber strategy = PG_GETARG_UINT16(2); */
 	bool	  **ptr_partialmatch = (bool **) PG_GETARG_POINTER(3);
-	Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
+	void	 ***extra_data = (void ***) PG_GETARG_POINTER(4);
 
 	/* bool   **nullFlags = (bool **) PG_GETARG_POINTER(5); */
 	int32	   *searchMode = (int32 *) PG_GETARG_POINTER(6);
@@ -141,7 +141,7 @@ gin_extract_tsquery(PG_FUNCTION_ARGS)
 		 * same, entry's) number. Entry's number is used in check array in
 		 * consistent method. We use the same map for each entry.
 		 */
-		*extra_data = (Pointer *) palloc(sizeof(Pointer) * j);
+		*extra_data = palloc(sizeof(void *) * j);
 		map_item_operand = (int *) palloc0(sizeof(int) * query->size);
 
 		/* Now rescan the VAL items and fill in the arrays */
@@ -157,7 +157,7 @@ gin_extract_tsquery(PG_FUNCTION_ARGS)
 											   val->length);
 				entries[j] = PointerGetDatum(txt);
 				partialmatch[j] = val->prefix;
-				(*extra_data)[j] = (Pointer) map_item_operand;
+				(*extra_data)[j] = map_item_operand;
 				map_item_operand[i] = j;
 				j++;
 			}
@@ -219,7 +219,7 @@ gin_tsquery_consistent(PG_FUNCTION_ARGS)
 	TSQuery		query = PG_GETARG_TSQUERY(2);
 
 	/* int32	nkeys = PG_GETARG_INT32(3); */
-	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
+	void	  **extra_data = (void **) PG_GETARG_POINTER(4);
 	bool	   *recheck = (bool *) PG_GETARG_POINTER(5);
 	bool		res = false;
 
@@ -236,7 +236,7 @@ gin_tsquery_consistent(PG_FUNCTION_ARGS)
 		 */
 		gcv.first_item = GETQUERY(query);
 		gcv.check = (GinTernaryValue *) check;
-		gcv.map_item_operand = (int *) (extra_data[0]);
+		gcv.map_item_operand = extra_data[0];
 
 		switch (TS_execute_ternary(GETQUERY(query),
 								   &gcv,
@@ -268,7 +268,7 @@ gin_tsquery_triconsistent(PG_FUNCTION_ARGS)
 	TSQuery		query = PG_GETARG_TSQUERY(2);
 
 	/* int32	nkeys = PG_GETARG_INT32(3); */
-	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
+	void	  **extra_data = (void **) PG_GETARG_POINTER(4);
 	GinTernaryValue res = GIN_FALSE;
 
 	if (query->size > 0)
@@ -281,7 +281,7 @@ gin_tsquery_triconsistent(PG_FUNCTION_ARGS)
 		 */
 		gcv.first_item = GETQUERY(query);
 		gcv.check = check;
-		gcv.map_item_operand = (int *) (extra_data[0]);
+		gcv.map_item_operand = extra_data[0];
 
 		res = TS_execute_ternary(GETQUERY(query),
 								 &gcv,

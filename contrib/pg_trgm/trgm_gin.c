@@ -74,7 +74,7 @@ gin_extract_query_trgm(PG_FUNCTION_ARGS)
 	StrategyNumber strategy = PG_GETARG_UINT16(2);
 
 	/* bool   **pmatch = (bool **) PG_GETARG_POINTER(3); */
-	Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
+	void	 ***extra_data = (void ***) PG_GETARG_POINTER(4);
 
 	/* bool   **nullFlags = (bool **) PG_GETARG_POINTER(5); */
 	int32	   *searchMode = (int32 *) PG_GETARG_POINTER(6);
@@ -120,12 +120,12 @@ gin_extract_query_trgm(PG_FUNCTION_ARGS)
 				/*
 				 * Successful regex processing: store NFA-like graph as
 				 * extra_data.  GIN API requires an array of nentries
-				 * Pointers, but we just put the same value in each element.
+				 * pointers, but we just put the same value in each element.
 				 */
 				trglen = ARRNELEM(trg);
-				*extra_data = palloc_array(Pointer, trglen);
+				*extra_data = palloc_array(void *, trglen);
 				for (i = 0; i < trglen; i++)
-					(*extra_data)[i] = (Pointer) graph;
+					(*extra_data)[i] = graph;
 			}
 			else
 			{
@@ -174,7 +174,7 @@ gin_trgm_consistent(PG_FUNCTION_ARGS)
 
 	/* text    *query = PG_GETARG_TEXT_PP(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
-	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
+	void	  **extra_data = (void **) PG_GETARG_POINTER(4);
 	bool	   *recheck = (bool *) PG_GETARG_POINTER(5);
 	bool		res;
 	int32		i,
@@ -272,7 +272,7 @@ gin_trgm_triconsistent(PG_FUNCTION_ARGS)
 
 	/* text    *query = PG_GETARG_TEXT_PP(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
-	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
+	void	  **extra_data = (void **) PG_GETARG_POINTER(4);
 	GinTernaryValue res = GIN_MAYBE;
 	int32		i,
 				ntrue;

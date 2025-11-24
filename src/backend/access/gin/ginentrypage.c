@@ -43,7 +43,7 @@ static void entrySplitPage(GinBtree btree, Buffer origbuf,
 IndexTuple
 GinFormTuple(GinState *ginstate,
 			 OffsetNumber attnum, Datum key, GinNullCategory category,
-			 Pointer data, Size dataSize, int nipd,
+			 void *data, Size dataSize, int nipd,
 			 bool errorTooBig)
 {
 	Datum		datums[2];
@@ -136,7 +136,7 @@ GinFormTuple(GinState *ginstate,
 	 */
 	if (data)
 	{
-		char	   *ptr = GinGetPosting(itup);
+		void	   *ptr = GinGetPosting(itup);
 
 		memcpy(ptr, data, dataSize);
 	}
@@ -162,7 +162,7 @@ ItemPointer
 ginReadTuple(GinState *ginstate, OffsetNumber attnum, IndexTuple itup,
 			 int *nitems)
 {
-	Pointer		ptr = GinGetPosting(itup);
+	void	   *ptr = GinGetPosting(itup);
 	int			nipd = GinGetNPosting(itup);
 	ItemPointer ipd;
 	int			ndecoded;

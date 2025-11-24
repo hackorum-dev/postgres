@@ -214,7 +214,7 @@ extern void ginInsertValue(GinBtree btree, GinBtreeStack *stack,
 /* ginentrypage.c */
 extern IndexTuple GinFormTuple(GinState *ginstate,
 							   OffsetNumber attnum, Datum key, GinNullCategory category,
-							   Pointer data, Size dataSize, int nipd, bool errorTooBig);
+							   void *data, Size dataSize, int nipd, bool errorTooBig);
 extern void ginPrepareEntryScan(GinBtree btree, OffsetNumber attnum,
 								Datum key, GinNullCategory category,
 								GinState *ginstate);
@@ -303,7 +303,7 @@ typedef struct GinScanKeyData
 	/* NB: these three arrays have only nuserentries elements! */
 	Datum	   *queryValues;
 	GinNullCategory *queryCategories;
-	Pointer    *extra_data;
+	void	  **extra_data;
 	StrategyNumber strategy;
 	int32		searchMode;
 	OffsetNumber attnum;
@@ -341,7 +341,7 @@ typedef struct GinScanEntryData
 	Datum		queryKey;
 	GinNullCategory queryCategory;
 	bool		isPartialMatch;
-	Pointer		extra_data;
+	void	   *extra_data;
 	StrategyNumber strategy;
 	int32		searchMode;
 	OffsetNumber attnum;

@@ -74,7 +74,7 @@ gin_btree_extract_query(FunctionCallInfo fcinfo,
 	int32	   *nentries = (int32 *) PG_GETARG_POINTER(1);
 	StrategyNumber strategy = PG_GETARG_UINT16(2);
 	bool	  **partialmatch = (bool **) PG_GETARG_POINTER(3);
-	Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
+	void	 ***extra_data = (void ***) PG_GETARG_POINTER(4);
 	Datum	   *entries = palloc_object(Datum);
 	QueryInfo  *data = palloc_object(QueryInfo);
 	bool	   *ptr_partialmatch = palloc_object(bool);
@@ -140,8 +140,8 @@ gin_btree_extract_query(FunctionCallInfo fcinfo,
 	data->orig_datum = datum;
 	data->entry_datum = entries[0];
 	data->typecmp = cmp_fns[rhs_code];
-	*extra_data = palloc_object(Pointer);
-	**extra_data = (Pointer) data;
+	*extra_data = palloc_object(void *);
+	**extra_data = data;
 
 	PG_RETURN_POINTER(entries);
 }

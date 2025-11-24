@@ -8249,7 +8249,7 @@ gincost_pattern(IndexOptInfo *index, int indexcol,
 				righttype;
 	int32		nentries = 0;
 	bool	   *partial_matches = NULL;
-	Pointer    *extra_data = NULL;
+	void	  **extra_data = NULL;
 	bool	   *nullFlags = NULL;
 	int32		searchMode = GIN_SEARCH_MODE_DEFAULT;
 	int32		i;

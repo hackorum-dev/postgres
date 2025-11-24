@@ -236,7 +236,7 @@ typedef signed char GinNullCategory;
 #define GIN_ITUP_COMPRESSED		(1U << 31)
 #define GinGetPostingOffset(itup)	(GinItemPointerGetBlockNumber(&(itup)->t_tid) & (~GIN_ITUP_COMPRESSED))
 #define GinSetPostingOffset(itup,n) ItemPointerSetBlockNumber(&(itup)->t_tid,(n)|GIN_ITUP_COMPRESSED)
-#define GinGetPosting(itup)			((Pointer) ((char*)(itup) + GinGetPostingOffset(itup)))
+#define GinGetPosting(itup)			((void *) ((char*)(itup) + GinGetPostingOffset(itup)))
 #define GinItupIsCompressed(itup)	((GinItemPointerGetBlockNumber(&(itup)->t_tid) & GIN_ITUP_COMPRESSED) != 0)
 
 /*

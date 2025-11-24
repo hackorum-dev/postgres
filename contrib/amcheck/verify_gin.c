@@ -98,7 +98,7 @@ gin_index_check(PG_FUNCTION_ARGS)
 static ItemPointer
 ginReadTupleWithoutState(IndexTuple itup, int *nitems)
 {
-	Pointer		ptr = GinGetPosting(itup);
+	void	   *ptr = GinGetPosting(itup);
 	int			nipd = GinGetNPosting(itup);
 	ItemPointer ipd;
 	int			ndecoded;

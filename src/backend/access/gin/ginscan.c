@@ -57,7 +57,7 @@ static GinScanEntry
 ginFillScanEntry(GinScanOpaque so, OffsetNumber attnum,
 				 StrategyNumber strategy, int32 searchMode,
 				 Datum queryKey, GinNullCategory queryCategory,
-				 bool isPartialMatch, Pointer extra_data)
+				 bool isPartialMatch, void *extra_data)
 {
 	GinState   *ginstate = &so->ginstate;
 	GinScanEntry scanEntry;
@@ -160,7 +160,7 @@ ginFillScanKey(GinScanOpaque so, OffsetNumber attnum,
 			   StrategyNumber strategy, int32 searchMode,
 			   Datum query, uint32 nQueryValues,
 			   Datum *queryValues, GinNullCategory *queryCategories,
-			   bool *partial_matches, Pointer *extra_data)
+			   bool *partial_matches, void **extra_data)
 {
 	GinScanKey	key = &(so->keys[so->nkeys++]);
 	GinState   *ginstate = &so->ginstate;
@@ -206,7 +206,7 @@ ginFillScanKey(GinScanOpaque so, OffsetNumber attnum,
 		Datum		queryKey;
 		GinNullCategory queryCategory;
 		bool		isPartialMatch;
-		Pointer		this_extra;
+		void	   *this_extra;
 
 		queryKey = queryValues[i];
 		queryCategory = queryCategories[i];
@@ -302,7 +302,7 @@ ginNewScanKey(IndexScanDesc scan)
 		Datum	   *queryValues;
 		int32		nQueryValues = 0;
 		bool	   *partial_matches = NULL;
-		Pointer    *extra_data = NULL;
+		void	  **extra_data = NULL;
 		bool	   *nullFlags = NULL;
 		GinNullCategory *categories;
 		int32		searchMode = GIN_SEARCH_MODE_DEFAULT;

@@ -746,7 +746,7 @@ emit_jsp_gin_entries(JsonPathGinNode *node, GinEntries *entries)
  */
 static Datum *
 extract_jsp_query(JsonPath *jp, StrategyNumber strat, bool pathOps,
-				  int32 *nentries, Pointer **extra_data)
+				  int32 *nentries, void ***extra_data)
 {
 	JsonPathGinContext cxt;
 	JsonPathItem root;
@@ -786,7 +786,7 @@ extract_jsp_query(JsonPath *jp, StrategyNumber strat, bool pathOps,
 		return NULL;
 
 	*extra_data = palloc0(sizeof(**extra_data) * entries.count);
-	**extra_data = (Pointer) node;
+	**extra_data = node;
 
 	return entries.buf;
 }
@@ -909,7 +909,7 @@ gin_extract_jsonb_query(PG_FUNCTION_ARGS)
 			 strategy == JsonbJsonpathExistsStrategyNumber)
 	{
 		JsonPath   *jp = PG_GETARG_JSONPATH_P(0);
-		Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
+		void	 ***extra_data = (void ***) PG_GETARG_POINTER(4);
 
 		entries = extract_jsp_query(jp, strategy, false, nentries, extra_data);
 
@@ -934,7 +934,7 @@ gin_consistent_jsonb(PG_FUNCTION_ARGS)
 	/* Jsonb	   *query = PG_GETARG_JSONB_P(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
 
-	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
+	void	  **extra_data = (void **) PG_GETARG_POINTER(4);
 	bool	   *recheck = (bool *) PG_GETARG_POINTER(5);
 	bool		res = true;
 	int32		i;
@@ -1016,7 +1016,7 @@ gin_triconsistent_jsonb(PG_FUNCTION_ARGS)
 
 	/* Jsonb	   *query = PG_GETARG_JSONB_P(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
-	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
+	void	  **extra_data = (void **) PG_GETARG_POINTER(4);
 	GinTernaryValue res = GIN_MAYBE;
 	int32		i;
 
@@ -1198,7 +1198,7 @@ gin_extract_jsonb_query_path(PG_FUNCTION_ARGS)
 			 strategy == JsonbJsonpathExistsStrategyNumber)
 	{
 		JsonPath   *jp = PG_GETARG_JSONPATH_P(0);
-		Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
+		void	 ***extra_data = (void ***) PG_GETARG_POINTER(4);
 
 		entries = extract_jsp_query(jp, strategy, true, nentries, extra_data);
 
@@ -1222,7 +1222,7 @@ gin_consistent_jsonb_path(PG_FUNCTION_ARGS)
 
 	/* Jsonb	   *query = PG_GETARG_JSONB_P(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
-	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
+	void	  **extra_data = (void **) PG_GETARG_POINTER(4);
 	bool	   *recheck = (bool *) PG_GETARG_POINTER(5);
 	bool		res = true;
 	int32		i;
@@ -1273,7 +1273,7 @@ gin_triconsistent_jsonb_path(PG_FUNCTION_ARGS)
 
 	/* Jsonb	   *query = PG_GETARG_JSONB_P(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
-	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
+	void	  **extra_data = (void **) PG_GETARG_POINTER(4);
 	GinTernaryValue res = GIN_MAYBE;
 	int32		i;
 
