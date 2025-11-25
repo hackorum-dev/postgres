@@ -53,10 +53,18 @@ $node->restart;
 
 my @raw_connections = ();
 
+my $max_connections = $node->safe_psql(
+	'postgres', qq{select setting::int max_conn from pg_settings 
+	where name=\$\$max_connections\$\$});
+my $max_wal_senders = $node->safe_psql(
+	'postgres', qq{select setting::int max_conn from pg_settings 
+	where name=\$\$max_wal_senders\$\$});
+my $backend_pool_size = 2 * ($max_connections + $max_wal_senders);
+
 # Open a lot of TCP (or Unix domain socket) connections to use up all
 # the connection slots. Beyond a certain number (roughly 2x
 # max_connections), they will be "dead-end backends".
-for (my $i = 0; $i <= 20; $i++)
+for (my $i = 0; $i < $backend_pool_size; $i++)
 {
 	my $sock = $node->raw_connect();
 
