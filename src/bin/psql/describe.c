@@ -4194,7 +4194,29 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 		return false;
 	}
 
-	appendPQExpBufferStr(&buf, "ORDER BY 1,2;");
+	/*
+	 * Append ORDER BY clause to the query buffer.
+	 *
+	 * If the 'o' or 'O' flags are present in tabtypes (e.g., \dtO+)
+	 * sort the results by relation size.
+	 *
+	 * - 'o': Sort by size ascending.
+	 * - 'O': Sort by size descending.
+	 * - Default: Sort by schema name (1) and relation name (2).
+	 */
+	if (showTables || showIndexes)
+	{
+		if (strchr(tabtypes, 'o') != NULL)
+			appendPQExpBufferStr(&buf, "ORDER BY pg_catalog.pg_table_size(c.oid), 1, 2;");
+		else if (strchr(tabtypes, 'O') != NULL)
+			appendPQExpBufferStr(&buf, "ORDER BY pg_catalog.pg_table_size(c.oid) DESC, 1, 2;");
+		else
+			appendPQExpBufferStr(&buf, "ORDER BY 1,2;");
+	}
+	else
+	{
+		appendPQExpBufferStr(&buf, "ORDER BY 1,2;");
+	}
 
 	res = PSQLexec(buf.data);
 	termPQExpBuffer(&buf);

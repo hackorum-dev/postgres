@@ -246,7 +246,7 @@ slashUsage(unsigned short int pager)
 	HELP0("  \\dFp[x+] [PATTERN]     list text search parsers\n");
 	HELP0("  \\dFt[x+] [PATTERN]     list text search templates\n");
 	HELP0("  \\dg[Sx+] [PATTERN]     list roles\n");
-	HELP0("  \\di[Sx+] [PATTERN]     list indexes\n");
+	HELP0("  \\di[OoSx+] [PATTERN]   list indexes\n");
 	HELP0("  \\dl[x+]                list large objects, same as \\lo_list\n");
 	HELP0("  \\dL[Sx+] [PATTERN]     list procedural languages\n");
 	HELP0("  \\dm[Sx+] [PATTERN]     list materialized views\n");
@@ -262,7 +262,7 @@ slashUsage(unsigned short int pager)
 	HELP0("  \\dRp[x+] [PATTERN]     list replication publications\n");
 	HELP0("  \\dRs[x+] [PATTERN]     list replication subscriptions\n");
 	HELP0("  \\ds[Sx+] [PATTERN]     list sequences\n");
-	HELP0("  \\dt[Sx+] [PATTERN]     list tables\n");
+	HELP0("  \\dt[OoSx+] [PATTERN]   list tables\n");
 	HELP0("  \\dT[Sx+] [PATTERN]     list data types\n");
 	HELP0("  \\du[Sx+] [PATTERN]     list roles\n");
 	HELP0("  \\dv[Sx+] [PATTERN]     list views\n");
