@@ -197,7 +197,8 @@ in sync when changing the above synopsis!
         used for replication. If not specified,
         <literal>NOREPLICATION</literal> is the default.
         Only superuser roles or roles with <literal>REPLICATION</literal>
-        can specify <literal>REPLICATION</literal>.
+        can specify <literal>REPLICATION</literal>. Additionally, this role
+        needs to have read permissions on the objects belonging to the replication.
        </para>
       </listitem>
      </varlistentry>
