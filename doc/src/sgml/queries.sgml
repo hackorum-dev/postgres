@@ -931,6 +931,171 @@ WHERE pname IS NULL;
 </programlisting>
     </para>
    </sect3>
+
+   <sect3 id="queries-pivot">
+    <title><literal>PIVOT</literal></title>
+
+    <indexterm zone="queries-pivot">
+     <primary>PIVOT</primary>
+    </indexterm>
+
+    <para>
+     The <literal>PIVOT</literal> clause provides a declarative way to rotate
+     rows into columns, applying an aggregate function to create the pivoted
+     values.  This is commonly used in reporting and analytics to transform
+     normalized data into a cross-tabulation format.  The syntax is:
+<synopsis>
+<replaceable>table_reference</replaceable> PIVOT ( <replaceable>aggregate_function</replaceable>(<replaceable>value_column</replaceable>) FOR <replaceable>pivot_column</replaceable> IN (<replaceable>value1</replaceable>, <replaceable>value2</replaceable>, ...) )
+</synopsis>
+    </para>
+
+    <para>
+     This syntax is compatible with Microsoft SQL Server (since 2005) and
+     Oracle Database (since 11g).  For reference, see
+     <ulink url="https://learn.microsoft.com/en-us/sql/t-sql/queries/from-using-pivot-and-unpivot">SQL Server PIVOT documentation</ulink>
+     and
+     <ulink url="https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/SELECT.html">Oracle SELECT documentation</ulink>.
+    </para>
+
+    <para>
+     The <literal>PIVOT</literal> clause works as follows:
+     <orderedlist>
+      <listitem>
+       <para>
+        The columns in the <command>SELECT</command> list (excluding the
+        pivot column) become the <quote>row identifiers</quote> and are
+        implicitly grouped.
+       </para>
+      </listitem>
+      <listitem>
+       <para>
+        For each value specified in the <literal>IN</literal> list, the
+        aggregate function is applied with a filter condition matching
+        that value, producing a new output column.
+       </para>
+      </listitem>
+      <listitem>
+       <para>
+        The output column names are derived from the pivot values, quoted
+        as identifiers.
+       </para>
+      </listitem>
+     </orderedlist>
+    </para>
+
+    <para>
+     For example, given a <literal>sales</literal> table with columns
+     <literal>region</literal>, <literal>quarter</literal>, and
+     <literal>revenue</literal>, this query:
+<programlisting>
+SELECT region
+FROM sales
+PIVOT (SUM(revenue) FOR quarter IN ('Q1', 'Q2', 'Q3', 'Q4'))
+ORDER BY region;
+</programlisting>
+     produces output with columns <literal>region</literal>,
+     <literal>"Q1"</literal>, <literal>"Q2"</literal>,
+     <literal>"Q3"</literal>, and <literal>"Q4"</literal>, where each
+     quarter column contains the sum of revenue for that quarter.
+    </para>
+
+    <para>
+     Internally, <productname>PostgreSQL</productname> transforms the
+     <literal>PIVOT</literal> clause into equivalent <literal>FILTER</literal>
+     aggregate expressions.  The above query is equivalent to:
+<programlisting>
+SELECT region,
+       SUM(revenue) FILTER (WHERE quarter = 'Q1') AS "Q1",
+       SUM(revenue) FILTER (WHERE quarter = 'Q2') AS "Q2",
+       SUM(revenue) FILTER (WHERE quarter = 'Q3') AS "Q3",
+       SUM(revenue) FILTER (WHERE quarter = 'Q4') AS "Q4"
+FROM sales
+GROUP BY region
+ORDER BY region;
+</programlisting>
+    </para>
+
+    <para>
+     Any aggregate function can be used with <literal>PIVOT</literal>,
+     including user-defined aggregates.  Common aggregates include
+     <function>SUM</function>, <function>COUNT</function>,
+     <function>AVG</function>, <function>MIN</function>, and
+     <function>MAX</function>.  For <function>COUNT(*)</function>,
+     omit the value column:
+<programlisting>
+SELECT region
+FROM sales
+PIVOT (COUNT(*) FOR quarter IN ('Q1', 'Q2', 'Q3', 'Q4'));
+</programlisting>
+    </para>
+
+    <para>
+     Multiple row identifier columns can be specified in the
+     <command>SELECT</command> list:
+<programlisting>
+SELECT region, product
+FROM sales
+PIVOT (SUM(revenue) FOR quarter IN ('Q1', 'Q2', 'Q3', 'Q4'))
+ORDER BY region, product;
+</programlisting>
+    </para>
+
+    <para>
+     The following restrictions apply to <literal>PIVOT</literal>:
+     <itemizedlist>
+      <listitem>
+       <para>
+        <literal>SELECT *</literal> cannot be used with
+        <literal>PIVOT</literal>.  You must explicitly specify the
+        row identifier columns.
+       </para>
+      </listitem>
+      <listitem>
+       <para>
+        An explicit <literal>GROUP BY</literal> clause cannot be used
+        with <literal>PIVOT</literal>, as the grouping is automatically
+        derived from the row identifiers.
+       </para>
+      </listitem>
+      <listitem>
+       <para>
+        Duplicate values in the <literal>IN</literal> list are not
+        allowed.
+       </para>
+      </listitem>
+      <listitem>
+       <para>
+        Pivot values that would conflict with row identifier column
+        names are not allowed.
+       </para>
+      </listitem>
+     </itemizedlist>
+    </para>
+
+    <para>
+     <literal>PIVOT</literal> can be used with subqueries, CTEs, and
+     joins as the source table:
+<programlisting>
+WITH quarterly_totals AS (
+    SELECT region, quarter, SUM(revenue) AS revenue
+    FROM sales
+    GROUP BY region, quarter
+)
+SELECT region
+FROM quarterly_totals
+PIVOT (SUM(revenue) FOR quarter IN ('Q1', 'Q2', 'Q3', 'Q4'))
+ORDER BY region;
+</programlisting>
+    </para>
+
+    <note>
+     <para>
+      For more complex pivoting needs, such as dynamic pivot columns
+      determined at runtime, consider using the <function>crosstab</function>
+      function from the <xref linkend="tablefunc"/> module.
+     </para>
+    </note>
+   </sect3>
   </sect2>
 
   <sect2 id="queries-where">
