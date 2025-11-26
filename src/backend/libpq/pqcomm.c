@@ -903,15 +903,6 @@ pq_recvbuf(void)
 {
 	if (PqRecvPointer > 0)
 	{
-		if (PqRecvLength > PqRecvPointer)
-		{
-			/* still some unread data, left-justify it in the buffer */
-			memmove(PqRecvBuffer, PqRecvBuffer + PqRecvPointer,
-					PqRecvLength - PqRecvPointer);
-			PqRecvLength -= PqRecvPointer;
-			PqRecvPointer = 0;
-		}
-		else
 			PqRecvLength = PqRecvPointer = 0;
 	}
 
