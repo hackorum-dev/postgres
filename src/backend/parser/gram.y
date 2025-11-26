@@ -4566,8 +4566,28 @@ DomainConstraintElem:
 					n->raw_expr = $3;
 					n->cooked_expr = NULL;
 					processCASbits($5, @5, "CHECK",
-								   NULL, NULL, NULL, &n->skip_validation,
-								   &n->is_no_inherit, yyscanner);
+								   &n->deferrable, &n->initdeferred, &n->is_enforced,
+								   &n->skip_validation, &n->is_no_inherit, yyscanner);
+
+					if ($5 & (CAS_NOT_DEFERRABLE | CAS_DEFERRABLE | CAS_INITIALLY_IMMEDIATE |
+							  CAS_INITIALLY_DEFERRED))
+						ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("specifying constraint deferrability not supported for domains"),
+							parser_errposition(@5));
+
+					if ($5 & (CAS_NOT_ENFORCED | CAS_ENFORCED))
+						ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("specifying constraint enforceability not supported for domains"),
+							parser_errposition(@5));
+
+					if (n->is_no_inherit)
+						ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("check constraints for domains cannot be marked %s", "NO INHERIT"),
+							parser_errposition(@5));
+
 					n->is_enforced = true;
 					n->initially_valid = !n->skip_validation;
 					$$ = (Node *) n;
@@ -4581,8 +4601,33 @@ DomainConstraintElem:
 					n->keys = list_make1(makeString("value"));
 					/* no NOT VALID, NO INHERIT support */
 					processCASbits($3, @3, "NOT NULL",
-								   NULL, NULL, NULL,
-								   NULL, NULL, yyscanner);
+								   &n->deferrable, &n->initdeferred, &n->is_enforced,
+								   &n->skip_validation, &n->is_no_inherit, yyscanner);
+					if (($3 & CAS_NOT_VALID) != 0)
+						ereport(ERROR,
+								errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+								errmsg("not-null constraints on domains cannot be marked %s", "NOT VALID"),
+								parser_errposition(@3));
+
+					if ($3 & (CAS_NOT_DEFERRABLE | CAS_DEFERRABLE | CAS_INITIALLY_IMMEDIATE |
+							  CAS_INITIALLY_DEFERRED))
+						ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("specifying constraint deferrability not supported for domains"),
+							parser_errposition(@3));
+
+					if ($3 & (CAS_NOT_ENFORCED | CAS_ENFORCED))
+						ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("specifying constraint enforceability not supported for domains"),
+							parser_errposition(@3));
+
+					if (n->is_no_inherit)
+						ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("not-null constraints on domains cannot be marked %s", "NO INHERIT"),
+							parser_errposition(@3));
+
 					n->initially_valid = true;
 					$$ = (Node *) n;
 				}
