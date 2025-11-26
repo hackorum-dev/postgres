@@ -68,6 +68,44 @@ create domain d_fail as int4 constraint cc check (values > 1) deferrable;
 ERROR:  specifying constraint deferrability not supported for domains
 LINE 1: ...n d_fail as int4 constraint cc check (values > 1) deferrable...
                                                              ^
+create domain d_int as int4;
+alter domain d_int add constraint nn not null not valid;
+ERROR:  not-null constraints on domains cannot be marked NOT VALID
+LINE 1: alter domain d_int add constraint nn not null not valid;
+                                                      ^
+alter domain d_int add constraint nn not null no inherit;
+ERROR:  not-null constraints on domains cannot be marked NO INHERIT
+LINE 1: alter domain d_int add constraint nn not null no inherit;
+                                                      ^
+alter domain d_int add constraint nn not null not enforced;
+ERROR:  specifying constraint enforceability not supported for domains
+LINE 1: alter domain d_int add constraint nn not null not enforced;
+                                                      ^
+alter domain d_int add constraint nn not null not deferrable initially immediate;
+ERROR:  specifying constraint deferrability not supported for domains
+LINE 1: alter domain d_int add constraint nn not null not deferrable...
+                                                      ^
+alter domain d_int add constraint cc check(value > 1) no inherit;
+ERROR:  check constraints for domains cannot be marked NO INHERIT
+LINE 1: ...r domain d_int add constraint cc check(value > 1) no inherit...
+                                                             ^
+alter domain d_int add constraint cc check(value > 1) not enforced;
+ERROR:  specifying constraint enforceability not supported for domains
+LINE 1: ...r domain d_int add constraint cc check(value > 1) not enforc...
+                                                             ^
+alter domain d_int add constraint cc check(value > 1) enforced;
+ERROR:  specifying constraint enforceability not supported for domains
+LINE 1: ...er domain d_int add constraint cc check(value > 1) enforced;
+                                                              ^
+alter domain d_int add constraint cc check(value > 1) not deferrable initially immediate;
+ERROR:  specifying constraint deferrability not supported for domains
+LINE 1: ...r domain d_int add constraint cc check(value > 1) not deferr...
+                                                             ^
+alter domain d_int add constraint cc check(value > 1) deferrable initially deferred;
+ERROR:  specifying constraint deferrability not supported for domains
+LINE 1: ...r domain d_int add constraint cc check(value > 1) deferrable...
+                                                             ^
+drop domain d_int;
 -- Test domain input.
 -- Note: the point of checking both INSERT and COPY FROM is that INSERT
 -- exercises CoerceToDomain while COPY exercises domain_in.
@@ -1369,11 +1407,11 @@ LINE 1: ...S int CONSTRAINT the_constraint CHECK (value > 0) NOT ENFORC...
 CREATE DOMAIN constraint_enforced_dom AS int;
 -- XXX misleading error messages
 ALTER DOMAIN constraint_enforced_dom ADD CONSTRAINT the_constraint CHECK (value > 0) ENFORCED;
-ERROR:  CHECK constraints cannot be marked ENFORCED
+ERROR:  specifying constraint enforceability not supported for domains
 LINE 1: ...om ADD CONSTRAINT the_constraint CHECK (value > 0) ENFORCED;
                                                               ^
 ALTER DOMAIN constraint_enforced_dom ADD CONSTRAINT the_constraint CHECK (value > 0) NOT ENFORCED;
-ERROR:  CHECK constraints cannot be marked NOT ENFORCED
+ERROR:  specifying constraint enforceability not supported for domains
 LINE 1: ...m ADD CONSTRAINT the_constraint CHECK (value > 0) NOT ENFORC...
                                                              ^
 DROP DOMAIN constraint_enforced_dom;
