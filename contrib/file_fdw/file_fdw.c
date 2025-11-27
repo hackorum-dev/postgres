@@ -166,8 +166,7 @@ static bool check_selective_binary_conversion(RelOptInfo *baserel,
 											  List **columns);
 static void estimate_size(PlannerInfo *root, RelOptInfo *baserel,
 						  FileFdwPlanState *fdw_private);
-static void estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
-						   FileFdwPlanState *fdw_private,
+static void estimate_costs(RelOptInfo *baserel, FileFdwPlanState *fdw_private,
 						   Cost *startup_cost, Cost *total_cost);
 static int	file_acquire_sample_rows(Relation onerel, int elevel,
 									 HeapTuple *rows, int targrows,
@@ -569,8 +568,7 @@ fileGetForeignPaths(PlannerInfo *root,
 										  (Node *) columns, -1));
 
 	/* Estimate costs */
-	estimate_costs(root, baserel, fdw_private,
-				   &startup_cost, &total_cost);
+	estimate_costs(baserel, fdw_private, &startup_cost, &total_cost);
 
 	/*
 	 * Create a ForeignPath node and add it as only possible path.  We use the
@@ -1139,7 +1137,7 @@ estimate_size(PlannerInfo *root, RelOptInfo *baserel,
  * Results are returned in *startup_cost and *total_cost.
  */
 static void
-estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
+estimate_costs(RelOptInfo *baserel,
 			   FileFdwPlanState *fdw_private,
 			   Cost *startup_cost, Cost *total_cost)
 {
