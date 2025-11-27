@@ -166,7 +166,7 @@ gbt_var_node_cp_len(const GBT_VARKEY *node, const gbtree_vinfo *tinfo)
  * returns true, if query matches prefix ( common prefix )
  */
 static bool
-gbt_bytea_pf_match(const bytea *pf, const bytea *query, const gbtree_vinfo *tinfo)
+gbt_bytea_pf_match(const bytea *pf, const bytea *query)
 {
 	bool		out = false;
 	int32		qlen = VARSIZE(query) - VARHDRSZ;
@@ -191,8 +191,8 @@ static bool
 gbt_var_node_pf_match(const GBT_VARKEY_R *node, const bytea *query, const gbtree_vinfo *tinfo)
 {
 	return (tinfo->trnc &&
-			(gbt_bytea_pf_match(node->lower, query, tinfo) ||
-			 gbt_bytea_pf_match(node->upper, query, tinfo)));
+			(gbt_bytea_pf_match(node->lower, query) ||
+			 gbt_bytea_pf_match(node->upper, query)));
 }
 
 
@@ -201,7 +201,7 @@ gbt_var_node_pf_match(const GBT_VARKEY_R *node, const bytea *query, const gbtree
 *  cpf_length .. common prefix length
 */
 static GBT_VARKEY *
-gbt_var_node_truncate(const GBT_VARKEY *node, int32 cpf_length, const gbtree_vinfo *tinfo)
+gbt_var_node_truncate(const GBT_VARKEY *node, int32 cpf_length)
 {
 	GBT_VARKEY *out = NULL;
 	GBT_VARKEY_R r = gbt_var_key_readable(node);
@@ -348,7 +348,7 @@ gbt_var_union(const GistEntryVector *entryvec, int32 *size, Oid collation,
 		GBT_VARKEY *trc = NULL;
 
 		plen = gbt_var_node_cp_len((GBT_VARKEY *) DatumGetPointer(out), tinfo);
-		trc = gbt_var_node_truncate((GBT_VARKEY *) DatumGetPointer(out), plen + 1, tinfo);
+		trc = gbt_var_node_truncate((GBT_VARKEY *) DatumGetPointer(out), plen + 1);
 
 		out = PointerGetDatum(trc);
 	}
@@ -399,9 +399,9 @@ gbt_var_penalty(float *res, const GISTENTRY *o, const GISTENTRY *n,
 	if ((VARSIZE(ok.lower) - VARHDRSZ) == 0 && (VARSIZE(ok.upper) - VARHDRSZ) == 0)
 		*res = 0.0;
 	else if (!((tinfo->f_cmp(nk.lower, ok.lower, collation, flinfo) >= 0 ||
-				gbt_bytea_pf_match(ok.lower, nk.lower, tinfo)) &&
+				gbt_bytea_pf_match(ok.lower, nk.lower)) &&
 			   (tinfo->f_cmp(nk.upper, ok.upper, collation, flinfo) <= 0 ||
-				gbt_bytea_pf_match(ok.upper, nk.upper, tinfo))))
+				gbt_bytea_pf_match(ok.upper, nk.upper))))
 	{
 		Datum		d = PointerGetDatum(0);
 		double		dres;
@@ -537,8 +537,8 @@ gbt_var_picksplit(const GistEntryVector *entryvec, GIST_SPLITVEC *v,
 		ll = Max(ll, lr);
 		ll++;
 
-		dl = gbt_var_node_truncate((GBT_VARKEY *) DatumGetPointer(v->spl_ldatum), ll, tinfo);
-		dr = gbt_var_node_truncate((GBT_VARKEY *) DatumGetPointer(v->spl_rdatum), ll, tinfo);
+		dl = gbt_var_node_truncate((GBT_VARKEY *) DatumGetPointer(v->spl_ldatum), ll);
+		dr = gbt_var_node_truncate((GBT_VARKEY *) DatumGetPointer(v->spl_rdatum), ll);
 		v->spl_ldatum = PointerGetDatum(dl);
 		v->spl_rdatum = PointerGetDatum(dr);
 	}
