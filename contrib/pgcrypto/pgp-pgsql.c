@@ -119,7 +119,7 @@ struct debug_expect
 };
 
 static void
-fill_expect(struct debug_expect *ex, int text_mode)
+fill_expect(struct debug_expect *ex)
 {
 	ex->debug = 0;
 	ex->expect = 0;
@@ -353,7 +353,7 @@ init_work(PGP_Context **ctx_p, int is_text,
 {
 	int			err = pgp_init(ctx_p);
 
-	fill_expect(ex, is_text);
+	fill_expect(ex);
 
 	if (err == 0 && args != NULL)
 		err = parse_args(*ctx_p, (uint8 *) VARDATA_ANY(args),

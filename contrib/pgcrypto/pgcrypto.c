@@ -56,8 +56,7 @@ static const struct config_enum_entry builtin_crypto_options[] = {
 };
 
 typedef int (*PFN) (const char *name, void **res);
-static void *find_provider(text *name, PFN provider_lookup, const char *desc,
-						   int silent);
+static void *find_provider(text *name, PFN provider_lookup, int silent);
 
 int			builtin_crypto_enabled = BC_ON;
 
@@ -98,7 +97,7 @@ pg_digest(PG_FUNCTION_ARGS)
 	name = PG_GETARG_TEXT_PP(1);
 
 	/* will give error if fails */
-	md = find_provider(name, (PFN) px_find_digest, "Digest", 0);
+	md = find_provider(name, (PFN) px_find_digest, 0);
 
 	hlen = px_md_result_size(md);
 
@@ -136,7 +135,7 @@ pg_hmac(PG_FUNCTION_ARGS)
 	name = PG_GETARG_TEXT_PP(2);
 
 	/* will give error if fails */
-	h = find_provider(name, (PFN) px_find_hmac, "HMAC", 0);
+	h = find_provider(name, (PFN) px_find_hmac, 0);
 
 	hlen = px_hmac_result_size(h);
 
@@ -262,7 +261,7 @@ pg_encrypt(PG_FUNCTION_ARGS)
 				rlen;
 
 	type = PG_GETARG_TEXT_PP(2);
-	c = find_provider(type, (PFN) px_find_combo, "Cipher", 0);
+	c = find_provider(type, (PFN) px_find_combo, 0);
 
 	data = PG_GETARG_BYTEA_PP(0);
 	key = PG_GETARG_BYTEA_PP(1);
@@ -311,7 +310,7 @@ pg_decrypt(PG_FUNCTION_ARGS)
 				rlen;
 
 	type = PG_GETARG_TEXT_PP(2);
-	c = find_provider(type, (PFN) px_find_combo, "Cipher", 0);
+	c = find_provider(type, (PFN) px_find_combo, 0);
 
 	data = PG_GETARG_BYTEA_PP(0);
 	key = PG_GETARG_BYTEA_PP(1);
@@ -361,7 +360,7 @@ pg_encrypt_iv(PG_FUNCTION_ARGS)
 				rlen;
 
 	type = PG_GETARG_TEXT_PP(3);
-	c = find_provider(type, (PFN) px_find_combo, "Cipher", 0);
+	c = find_provider(type, (PFN) px_find_combo, 0);
 
 	data = PG_GETARG_BYTEA_PP(0);
 	key = PG_GETARG_BYTEA_PP(1);
@@ -415,7 +414,7 @@ pg_decrypt_iv(PG_FUNCTION_ARGS)
 				ivlen;
 
 	type = PG_GETARG_TEXT_PP(3);
-	c = find_provider(type, (PFN) px_find_combo, "Cipher", 0);
+	c = find_provider(type, (PFN) px_find_combo, 0);
 
 	data = PG_GETARG_BYTEA_PP(0);
 	key = PG_GETARG_BYTEA_PP(1);
@@ -493,9 +492,7 @@ pg_check_fipsmode(PG_FUNCTION_ARGS)
 }
 
 static void *
-find_provider(text *name,
-			  PFN provider_lookup,
-			  const char *desc, int silent)
+find_provider(text *name, PFN provider_lookup, int silent)
 {
 	void	   *res;
 	char	   *buf;
