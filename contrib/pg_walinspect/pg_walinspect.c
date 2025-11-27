@@ -58,7 +58,7 @@ static void FillXLogStatsRow(const char *name, uint64 n, uint64 total_count,
 							 uint64 rec_len, uint64 total_rec_len,
 							 uint64 fpi_len, uint64 total_fpi_len,
 							 uint64 tot_len, uint64 total_len,
-							 Datum *values, bool *nulls, uint32 ncols);
+							 Datum *values, uint32 ncols);
 static void GetWalStats(FunctionCallInfo fcinfo,
 						XLogRecPtr start_lsn,
 						XLogRecPtr end_lsn,
@@ -610,7 +610,7 @@ FillXLogStatsRow(const char *name,
 				 uint64 rec_len, uint64 total_rec_len,
 				 uint64 fpi_len, uint64 total_fpi_len,
 				 uint64 tot_len, uint64 total_len,
-				 Datum *values, bool *nulls, uint32 ncols)
+				 Datum *values, uint32 ncols)
 {
 	double		n_pct,
 				rec_len_pct,
@@ -725,7 +725,7 @@ GetXLogSummaryStats(XLogStats *stats, ReturnSetInfo *rsinfo,
 				FillXLogStatsRow(psprintf("%s/%s", desc.rm_name, id), count,
 								 total_count, rec_len, total_rec_len, fpi_len,
 								 total_fpi_len, tot_len, total_len,
-								 values, nulls, ncols);
+								 values, ncols);
 
 				tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc,
 									 values, nulls);
@@ -746,7 +746,7 @@ GetXLogSummaryStats(XLogStats *stats, ReturnSetInfo *rsinfo,
 
 			FillXLogStatsRow(desc.rm_name, count, total_count, rec_len,
 							 total_rec_len, fpi_len, total_fpi_len, tot_len,
-							 total_len, values, nulls, ncols);
+							 total_len, values, ncols);
 
 			tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc,
 								 values, nulls);
