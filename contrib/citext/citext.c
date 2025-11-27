@@ -22,7 +22,7 @@ PG_MODULE_MAGIC_EXT(
  */
 
 static int32 citextcmp(text *left, text *right, Oid collid);
-static int32 internal_citext_pattern_cmp(text *left, text *right, Oid collid);
+static int32 internal_citext_pattern_cmp(text *left, text *right);
 
 /*
  *		=================
@@ -69,7 +69,7 @@ citextcmp(text *left, text *right, Oid collid)
  * Returns int32 negative, zero, or positive.
  */
 static int32
-internal_citext_pattern_cmp(text *left, text *right, Oid collid)
+internal_citext_pattern_cmp(text *left, text *right)
 {
 	char	   *lcstr,
 			   *rcstr;
@@ -130,7 +130,7 @@ citext_pattern_cmp(PG_FUNCTION_ARGS)
 	text	   *right = PG_GETARG_TEXT_PP(1);
 	int32		result;
 
-	result = internal_citext_pattern_cmp(left, right, PG_GET_COLLATION());
+	result = internal_citext_pattern_cmp(left, right);
 
 	PG_FREE_IF_COPY(left, 0);
 	PG_FREE_IF_COPY(right, 1);
@@ -320,7 +320,7 @@ citext_pattern_lt(PG_FUNCTION_ARGS)
 	text	   *right = PG_GETARG_TEXT_PP(1);
 	bool		result;
 
-	result = internal_citext_pattern_cmp(left, right, PG_GET_COLLATION()) < 0;
+	result = internal_citext_pattern_cmp(left, right) < 0;
 
 	PG_FREE_IF_COPY(left, 0);
 	PG_FREE_IF_COPY(right, 1);
@@ -337,7 +337,7 @@ citext_pattern_le(PG_FUNCTION_ARGS)
 	text	   *right = PG_GETARG_TEXT_PP(1);
 	bool		result;
 
-	result = internal_citext_pattern_cmp(left, right, PG_GET_COLLATION()) <= 0;
+	result = internal_citext_pattern_cmp(left, right) <= 0;
 
 	PG_FREE_IF_COPY(left, 0);
 	PG_FREE_IF_COPY(right, 1);
@@ -354,7 +354,7 @@ citext_pattern_gt(PG_FUNCTION_ARGS)
 	text	   *right = PG_GETARG_TEXT_PP(1);
 	bool		result;
 
-	result = internal_citext_pattern_cmp(left, right, PG_GET_COLLATION()) > 0;
+	result = internal_citext_pattern_cmp(left, right) > 0;
 
 	PG_FREE_IF_COPY(left, 0);
 	PG_FREE_IF_COPY(right, 1);
@@ -371,7 +371,7 @@ citext_pattern_ge(PG_FUNCTION_ARGS)
 	text	   *right = PG_GETARG_TEXT_PP(1);
 	bool		result;
 
-	result = internal_citext_pattern_cmp(left, right, PG_GET_COLLATION()) >= 0;
+	result = internal_citext_pattern_cmp(left, right) >= 0;
 
 	PG_FREE_IF_COPY(left, 0);
 	PG_FREE_IF_COPY(right, 1);
