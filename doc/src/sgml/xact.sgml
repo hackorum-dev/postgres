@@ -102,6 +102,13 @@
    of multixact IDs (<literal>mxid</literal>;  see <xref
    linkend="vacuum-for-multixact-wraparound"/>).
   </para>
+
+  <para>
+   If there is a DEFERRED UNIQUE constraint on a row inserted in a transaction,
+   and there are multiple concurrent transactions inserting the same unique key,
+   the earlier transactions will wait for later transactions by
+   acquiring a <structfield>ShareLock</structfield> on the transaction ID.
+  </para>
  </sect1>
 
  <sect1 id="subxacts">
