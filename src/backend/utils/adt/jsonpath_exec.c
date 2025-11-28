@@ -355,6 +355,7 @@ static void JsonTableInitOpaque(TableFuncScanState *state, int natts);
 static JsonTablePlanState *JsonTableInitPlan(JsonTableExecContext *cxt,
 											 JsonTablePlan *plan,
 											 JsonTablePlanState *parentstate,
+											 NullableDatum *pathexpr,
 											 List *args,
 											 MemoryContext mcxt);
 static void JsonTableSetDocument(TableFuncScanState *state, Datum value);
@@ -4105,8 +4106,8 @@ GetJsonTableExecContext(TableFuncScanState *state, const char *fname)
  * JsonTableInitOpaque
  *		Fill in TableFuncScanState->opaque for processing JSON_TABLE
  *
- * This initializes the PASSING arguments and the JsonTablePlanState for
- * JsonTablePlan given in TableFunc.
+ * This initializes the PASSING arguments, top-level path expression and the
+ * JsonTablePlanState for JsonTablePlan given in TableFunc.
  */
 static void
 JsonTableInitOpaque(TableFuncScanState *state, int natts)
@@ -4118,9 +4119,22 @@ JsonTableInitOpaque(TableFuncScanState *state, int natts)
 	JsonTablePlan *rootplan = (JsonTablePlan *) tf->plan;
 	JsonExpr   *je = castNode(JsonExpr, tf->docexpr);
 	List	   *args = NIL;
+	NullableDatum	pathexpr;
 
 	cxt = palloc0(sizeof(JsonTableExecContext));
 	cxt->magic = JSON_TABLE_EXEC_CONTEXT_MAGIC;
+
+	/*
+	 * Evaluate JSON_TABLE() top-level path expression and save the value to
+	 * pathexpr
+	 */
+	if (state->rowexpr != NULL)
+	{
+		ExprState  *pathexprstate = state->rowexpr;
+
+		pathexpr.value = ExecEvalExpr(pathexprstate, ps->ps_ExprContext,
+									  &pathexpr.isnull);
+	}
 
 	/*
 	 * Evaluate JSON_TABLE() PASSING arguments to be passed to the jsonpath
@@ -4163,7 +4177,7 @@ JsonTableInitOpaque(TableFuncScanState *state, int natts)
 	 * Initialize plan for the root path and, recursively, also any child
 	 * plans that compute the NESTED paths.
 	 */
-	cxt->rootplanstate = JsonTableInitPlan(cxt, rootplan, NULL, args,
+	cxt->rootplanstate = JsonTableInitPlan(cxt, rootplan, NULL, &pathexpr, args,
 										   CurrentMemoryContext);
 
 	state->opaque = cxt;
@@ -4193,6 +4207,7 @@ JsonTableDestroyOpaque(TableFuncScanState *state)
 static JsonTablePlanState *
 JsonTableInitPlan(JsonTableExecContext *cxt, JsonTablePlan *plan,
 				  JsonTablePlanState *parentstate,
+				  NullableDatum	*pathexpr,
 				  List *args, MemoryContext mcxt)
 {
 	JsonTablePlanState *planstate = palloc0(sizeof(*planstate));
@@ -4205,7 +4220,20 @@ JsonTableInitPlan(JsonTableExecContext *cxt, JsonTablePlan *plan,
 		JsonTablePathScan *scan = (JsonTablePathScan *) plan;
 		int			i;
 
-		planstate->path = DatumGetJsonPathP(scan->path->value->constvalue);
+		/*
+		 * The top-level path expression has already been evaluated and stored
+		 * in pathexpr; see makeJsonTablePathScan and JsonTableInitOpaque also.
+		 */
+		if (pathexpr)
+		{
+			if (pathexpr->isnull)
+				planstate->path = NULL;
+			else
+				planstate->path = DatumGetJsonPathP(pathexpr->value);
+		}
+		else
+			planstate->path = DatumGetJsonPathP(scan->path->value->constvalue);
+
 		planstate->args = args;
 		planstate->mcxt = AllocSetContextCreate(mcxt, "JsonTableExecContext",
 												ALLOCSET_DEFAULT_SIZES);
@@ -4218,15 +4246,15 @@ JsonTableInitPlan(JsonTableExecContext *cxt, JsonTablePlan *plan,
 			cxt->colplanstates[i] = planstate;
 
 		planstate->nested = scan->child ?
-			JsonTableInitPlan(cxt, scan->child, planstate, args, mcxt) : NULL;
+			JsonTableInitPlan(cxt, scan->child, planstate, NULL, args, mcxt) : NULL;
 	}
 	else if (IsA(plan, JsonTableSiblingJoin))
 	{
 		JsonTableSiblingJoin *join = (JsonTableSiblingJoin *) plan;
 
-		planstate->left = JsonTableInitPlan(cxt, join->lplan, parentstate,
+		planstate->left = JsonTableInitPlan(cxt, join->lplan, parentstate, NULL,
 											args, mcxt);
-		planstate->right = JsonTableInitPlan(cxt, join->rplan, parentstate,
+		planstate->right = JsonTableInitPlan(cxt, join->rplan, parentstate, NULL,
 											 args, mcxt);
 	}
 
@@ -4264,11 +4292,14 @@ JsonTableResetRowPattern(JsonTablePlanState *planstate, Datum item)
 
 	oldcxt = MemoryContextSwitchTo(planstate->mcxt);
 
-	res = executeJsonPath(planstate->path, planstate->args,
-						  GetJsonPathVar, CountJsonPathVars,
-						  js, scan->errorOnError,
-						  &planstate->found,
-						  true);
+	if (planstate->path == NULL)
+		res = jperNotFound;
+	else
+		res = executeJsonPath(planstate->path, planstate->args,
+							  GetJsonPathVar, CountJsonPathVars,
+							  js, scan->errorOnError,
+							  &planstate->found,
+							  true);
 
 	MemoryContextSwitchTo(oldcxt);
 
