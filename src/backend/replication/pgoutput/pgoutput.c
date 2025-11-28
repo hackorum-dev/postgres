@@ -1063,7 +1063,7 @@ pgoutput_row_filter_init(PGOutputData *data, List *publications,
  * values of 'publish_generated_columns' parameter in the publications.
  */
 static void
-check_and_init_gencol(PGOutputData *data, List *publications,
+check_and_init_gencol(List *publications,
 					  RelationSyncEntry *entry)
 {
 	Relation	relation = RelationIdGetRelation(entry->publish_as_relid);
@@ -2353,7 +2353,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 			pgoutput_row_filter_init(data, rel_publications, entry);
 
 			/* Check whether to publish generated columns. */
-			check_and_init_gencol(data, rel_publications, entry);
+			check_and_init_gencol(rel_publications, entry);
 
 			/* Initialize the column list */
 			pgoutput_column_list_init(data, rel_publications, entry);
