@@ -574,7 +574,7 @@ static void send_feedback(XLogRecPtr recvpos, bool force, bool requestReply);
 
 static void maybe_advance_nonremovable_xid(RetainDeadTuplesData *rdt_data,
 										   bool status_received);
-static bool can_advance_nonremovable_xid(RetainDeadTuplesData *rdt_data);
+static bool can_advance_nonremovable_xid(void);
 static void process_rdt_phase_transition(RetainDeadTuplesData *rdt_data,
 										 bool status_received);
 static void get_candidate_xid(RetainDeadTuplesData *rdt_data);
@@ -584,7 +584,7 @@ static void wait_for_publisher_status(RetainDeadTuplesData *rdt_data,
 static void wait_for_local_flush(RetainDeadTuplesData *rdt_data);
 static bool should_stop_conflict_info_retention(RetainDeadTuplesData *rdt_data);
 static void stop_conflict_info_retention(RetainDeadTuplesData *rdt_data);
-static void resume_conflict_info_retention(RetainDeadTuplesData *rdt_data);
+static void resume_conflict_info_retention(void);
 static bool update_retention_status(bool active);
 static void reset_retention_data_fields(RetainDeadTuplesData *rdt_data);
 static void adjust_xid_advance_interval(RetainDeadTuplesData *rdt_data,
@@ -1681,7 +1681,7 @@ apply_handle_stream_prepare(StringInfo s)
  * TODO, support tracking of multiple origins
  */
 static void
-apply_handle_origin(StringInfo s)
+apply_handle_origin(void)
 {
 	/*
 	 * ORIGIN message can only come inside streaming transaction or inside
@@ -3843,7 +3843,7 @@ apply_dispatch(StringInfo s)
 			break;
 
 		case LOGICAL_REP_MSG_ORIGIN:
-			apply_handle_origin(s);
+			apply_handle_origin();
 			break;
 
 		case LOGICAL_REP_MSG_MESSAGE:
@@ -4410,7 +4410,7 @@ static void
 maybe_advance_nonremovable_xid(RetainDeadTuplesData *rdt_data,
 							   bool status_received)
 {
-	if (!can_advance_nonremovable_xid(rdt_data))
+	if (!can_advance_nonremovable_xid())
 		return;
 
 	process_rdt_phase_transition(rdt_data, status_received);
@@ -4421,7 +4421,7 @@ maybe_advance_nonremovable_xid(RetainDeadTuplesData *rdt_data,
  * is allowed.
  */
 static bool
-can_advance_nonremovable_xid(RetainDeadTuplesData *rdt_data)
+can_advance_nonremovable_xid(void)
 {
 	/*
 	 * It is sufficient to manage non-removable transaction ID for a
@@ -4464,7 +4464,7 @@ process_rdt_phase_transition(RetainDeadTuplesData *rdt_data,
 			stop_conflict_info_retention(rdt_data);
 			break;
 		case RDT_RESUME_CONFLICT_INFO_RETENTION:
-			resume_conflict_info_retention(rdt_data);
+			resume_conflict_info_retention();
 			break;
 	}
 }
@@ -4862,7 +4862,7 @@ stop_conflict_info_retention(RetainDeadTuplesData *rdt_data)
  * Workhorse for the RDT_RESUME_CONFLICT_INFO_RETENTION phase.
  */
 static void
-resume_conflict_info_retention(RetainDeadTuplesData *rdt_data)
+resume_conflict_info_retention(void)
 {
 	/* We can't resume retention without updating retention status. */
 	if (!update_retention_status(true))
