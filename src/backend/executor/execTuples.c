@@ -1662,9 +1662,6 @@ ExecSetSlotDescriptor(TupleTableSlot *slot, /* slot to change */
  * and let the upper-level table slot assume ownership of the copy!
  *
  * Return value is just the passed-in slot pointer.
- *
- * If the target slot is not guaranteed to be TTSOpsHeapTuple type slot, use
- * the, more expensive, ExecForceStoreHeapTuple().
  * --------------------------------
  */
 TupleTableSlot *
@@ -1702,9 +1699,6 @@ ExecStoreHeapTuple(HeapTuple tuple,
  * slot is cleared, so that the tuple won't go away on us.
  *
  * Return value is just the passed-in slot pointer.
- *
- * If the target slot is not guaranteed to be TTSOpsBufferHeapTuple type slot,
- * use the, more expensive, ExecForceStoreHeapTuple().
  * --------------------------------
  */
 TupleTableSlot *
@@ -1757,9 +1751,6 @@ ExecStorePinnedBufferHeapTuple(HeapTuple tuple,
 
 /*
  * Store a minimal tuple into TTSOpsMinimalTuple type slot.
- *
- * If the target slot is not guaranteed to be TTSOpsMinimalTuple type slot,
- * use the, more expensive, ExecForceStoreMinimalTuple().
  */
 TupleTableSlot *
 ExecStoreMinimalTuple(MinimalTuple mtup,
