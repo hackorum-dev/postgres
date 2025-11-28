@@ -293,7 +293,7 @@ pg_noreturn static void WalSndDoneImmediate(void);
 static void WalSndDone(WalSndSendDataCallback send_data);
 static void IdentifySystem(void);
 static void UploadManifest(void);
-static bool HandleUploadManifestPacket(StringInfo buf, off_t *offset,
+static bool HandleUploadManifestPacket(StringInfo buf,
 									   IncrementalBackupInfo *ib);
 static void ReadReplicationSlot(ReadReplicationSlotCmd *cmd);
 static void CreateReplicationSlot(CreateReplicationSlotCmd *cmd);
@@ -722,7 +722,6 @@ UploadManifest(void)
 {
 	MemoryContext mcxt;
 	IncrementalBackupInfo *ib;
-	off_t		offset = 0;
 	StringInfoData buf;
 
 	/*
@@ -748,7 +747,7 @@ UploadManifest(void)
 	pq_flush();
 
 	/* Receive packets from client until done. */
-	while (HandleUploadManifestPacket(&buf, &offset, ib))
+	while (HandleUploadManifestPacket(&buf, ib))
 		;
 
 	/* Finish up manifest processing. */
@@ -784,7 +783,7 @@ UploadManifest(void)
  * additional packets and false if the UPLOAD_MANIFEST operation is complete.
  */
 static bool
-HandleUploadManifestPacket(StringInfo buf, off_t *offset,
+HandleUploadManifestPacket(StringInfo buf,
 						   IncrementalBackupInfo *ib)
 {
 	int			mtype;

@@ -273,17 +273,17 @@ static Size ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn
 										TXNEntryFile *file, XLogSegNo *segno);
 static void ReorderBufferRestoreChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 									   char *data);
-static void ReorderBufferRestoreCleanup(ReorderBuffer *rb, ReorderBufferTXN *txn);
+static void ReorderBufferRestoreCleanup(ReorderBufferTXN *txn);
 static void ReorderBufferTruncateTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 									 bool txn_prepared);
-static void ReorderBufferMaybeMarkTXNStreamed(ReorderBuffer *rb, ReorderBufferTXN *txn);
+static void ReorderBufferMaybeMarkTXNStreamed(ReorderBufferTXN *txn);
 static bool ReorderBufferCheckAndTruncateAbortedTXN(ReorderBuffer *rb, ReorderBufferTXN *txn);
 static void ReorderBufferCleanupSerializedTXNs(const char *slotname);
-static void ReorderBufferSerializedPath(char *path, ReplicationSlot *slot,
+static void ReorderBufferSerializedPath(char *path,
 										TransactionId xid, XLogSegNo segno);
 static int	ReorderBufferTXNSizeCompare(const pairingheap_node *a, const pairingheap_node *b, void *arg);
 
-static void ReorderBufferFreeSnap(ReorderBuffer *rb, Snapshot snap);
+static void ReorderBufferFreeSnap(Snapshot snap);
 static Snapshot ReorderBufferCopySnap(ReorderBuffer *rb, Snapshot orig_snap,
 									  ReorderBufferTXN *txn, CommandId cid);
 
@@ -565,7 +565,7 @@ ReorderBufferFreeChange(ReorderBuffer *rb, ReorderBufferChange *change,
 		case REORDER_BUFFER_CHANGE_INTERNAL_SNAPSHOT:
 			if (change->data.snapshot)
 			{
-				ReorderBufferFreeSnap(rb, change->data.snapshot);
+				ReorderBufferFreeSnap(change->data.snapshot);
 				change->data.snapshot = NULL;
 			}
 			break;
@@ -1615,7 +1615,7 @@ ReorderBufferCleanupTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	if (txn->snapshot_now != NULL)
 	{
 		Assert(rbtxn_is_streamed(txn));
-		ReorderBufferFreeSnap(rb, txn->snapshot_now);
+		ReorderBufferFreeSnap(txn->snapshot_now);
 	}
 
 	/*
@@ -1637,7 +1637,7 @@ ReorderBufferCleanupTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 
 	/* remove entries spilled to disk */
 	if (rbtxn_is_serialized(txn))
-		ReorderBufferRestoreCleanup(rb, txn);
+		ReorderBufferRestoreCleanup(txn);
 
 	/* deallocate */
 	ReorderBufferFreeTXN(rb, txn);
@@ -1676,7 +1676,7 @@ ReorderBufferTruncateTXN(ReorderBuffer *rb, ReorderBufferTXN *txn, bool txn_prep
 		Assert(rbtxn_is_known_subxact(subtxn));
 		Assert(subtxn->nsubtxns == 0);
 
-		ReorderBufferMaybeMarkTXNStreamed(rb, subtxn);
+		ReorderBufferMaybeMarkTXNStreamed(subtxn);
 		ReorderBufferTruncateTXN(rb, subtxn, txn_prepared);
 	}
 
@@ -1745,7 +1745,7 @@ ReorderBufferTruncateTXN(ReorderBuffer *rb, ReorderBufferTXN *txn, bool txn_prep
 	/* If this txn is serialized then clean the disk space. */
 	if (rbtxn_is_serialized(txn))
 	{
-		ReorderBufferRestoreCleanup(rb, txn);
+		ReorderBufferRestoreCleanup(txn);
 		txn->txn_flags &= ~RBTXN_IS_SERIALIZED;
 
 		/*
@@ -1968,7 +1968,7 @@ ReorderBufferCopySnap(ReorderBuffer *rb, Snapshot orig_snap,
  * Free a previously ReorderBufferCopySnap'ed snapshot
  */
 static void
-ReorderBufferFreeSnap(ReorderBuffer *rb, Snapshot snap)
+ReorderBufferFreeSnap(Snapshot snap)
 {
 	if (snap->copied)
 		pfree(snap);
@@ -2141,7 +2141,7 @@ ReorderBufferSaveTXNSnapshot(ReorderBuffer *rb, ReorderBufferTXN *txn,
  * marked as streamed.
  */
 static void
-ReorderBufferMaybeMarkTXNStreamed(ReorderBuffer *rb, ReorderBufferTXN *txn)
+ReorderBufferMaybeMarkTXNStreamed(ReorderBufferTXN *txn)
 {
 	/*
 	 * The top-level transaction is marked as streamed always, even if it does
@@ -2539,7 +2539,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 					if (snapshot_now->copied)
 					{
-						ReorderBufferFreeSnap(rb, snapshot_now);
+						ReorderBufferFreeSnap(snapshot_now);
 						snapshot_now =
 							ReorderBufferCopySnap(rb, change->data.snapshot,
 												  txn, command_id);
@@ -2672,7 +2672,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		if (streaming)
 			ReorderBufferSaveTXNSnapshot(rb, txn, snapshot_now, command_id);
 		else if (snapshot_now->copied)
-			ReorderBufferFreeSnap(rb, snapshot_now);
+			ReorderBufferFreeSnap(snapshot_now);
 
 		/* cleanup */
 		TeardownHistoricSnapshot(false);
@@ -2722,7 +2722,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		if (streaming || rbtxn_is_prepared(txn))
 		{
 			if (streaming)
-				ReorderBufferMaybeMarkTXNStreamed(rb, txn);
+				ReorderBufferMaybeMarkTXNStreamed(txn);
 
 			ReorderBufferTruncateTXN(rb, txn, rbtxn_is_prepared(txn));
 			/* Reset the CheckXidAlive */
@@ -2804,7 +2804,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 			/* Mark the transaction is streamed if appropriate */
 			if (stream_started)
-				ReorderBufferMaybeMarkTXNStreamed(rb, txn);
+				ReorderBufferMaybeMarkTXNStreamed(txn);
 
 			/* Reset the TXN so that it is allowed to stream remaining data. */
 			ReorderBufferResetTXN(rb, txn, snapshot_now,
@@ -2832,7 +2832,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
  */
 static void
 ReorderBufferReplay(ReorderBufferTXN *txn,
-					ReorderBuffer *rb, TransactionId xid,
+					ReorderBuffer *rb,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
 					ReplOriginId origin_id, XLogRecPtr origin_lsn)
@@ -2906,7 +2906,7 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	if (txn == NULL)
 		return;
 
-	ReorderBufferReplay(txn, rb, xid, commit_lsn, end_lsn, commit_time,
+	ReorderBufferReplay(txn, rb, commit_lsn, end_lsn, commit_time,
 						origin_id, origin_lsn);
 }
 
@@ -2990,8 +2990,9 @@ ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 
 	txn->gid = pstrdup(gid);
 
-	ReorderBufferReplay(txn, rb, xid, txn->final_lsn, txn->end_lsn,
-						txn->prepare_time, txn->origin_id, txn->origin_lsn);
+	ReorderBufferReplay(txn, rb, txn->final_lsn, txn->end_lsn,
+						txn->prepare_time, txn->origin_id,
+						txn->origin_lsn);
 
 	/*
 	 * Send a prepare if not already done so. The "not already sent" case can
@@ -3068,8 +3069,9 @@ ReorderBufferFinishPrepared(ReorderBuffer *rb, TransactionId xid,
 		 * then downstream can behave as it has already replayed commit
 		 * prepared after the restart.
 		 */
-		ReorderBufferReplay(txn, rb, xid, txn->final_lsn, txn->end_lsn,
-							txn->prepare_time, txn->origin_id, txn->origin_lsn);
+		ReorderBufferReplay(txn, rb, txn->final_lsn, txn->end_lsn,
+							txn->prepare_time, txn->origin_id,
+							txn->origin_lsn);
 	}
 
 	/*
@@ -4177,7 +4179,7 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 			 * No need to care about TLIs here, only used during a single run,
 			 * so each LSN only maps to a specific WAL record.
 			 */
-			ReorderBufferSerializedPath(path, MyReplicationSlot, txn->xid,
+			ReorderBufferSerializedPath(path, txn->xid,
 										curOpenSegNo);
 
 			/* open segment, create it if necessary */
@@ -4558,7 +4560,7 @@ ReorderBufferStreamTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 
 		/* Free the previously copied snapshot. */
 		Assert(txn->snapshot_now->copied);
-		ReorderBufferFreeSnap(rb, txn->snapshot_now);
+		ReorderBufferFreeSnap(txn->snapshot_now);
 		txn->snapshot_now = NULL;
 	}
 
@@ -4724,8 +4726,7 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			 * No need to care about TLIs here, only used during a single run,
 			 * so each LSN only maps to a specific WAL record.
 			 */
-			ReorderBufferSerializedPath(path, MyReplicationSlot, txn->xid,
-										*segno);
+			ReorderBufferSerializedPath(path, txn->xid, *segno);
 
 			*fd = PathNameOpenFile(path, O_RDONLY | PG_BINARY);
 
@@ -4988,7 +4989,7 @@ ReorderBufferRestoreChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
  * Remove all on-disk stored for the passed in transaction.
  */
 static void
-ReorderBufferRestoreCleanup(ReorderBuffer *rb, ReorderBufferTXN *txn)
+ReorderBufferRestoreCleanup(ReorderBufferTXN *txn)
 {
 	XLogSegNo	first;
 	XLogSegNo	cur;
@@ -5005,7 +5006,7 @@ ReorderBufferRestoreCleanup(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	{
 		char		path[MAXPGPATH];
 
-		ReorderBufferSerializedPath(path, MyReplicationSlot, txn->xid, cur);
+		ReorderBufferSerializedPath(path, txn->xid, cur);
 		if (unlink(path) != 0 && errno != ENOENT)
 			ereport(ERROR,
 					(errcode_for_file_access(),
@@ -5057,7 +5058,7 @@ ReorderBufferCleanupSerializedTXNs(const char *slotname)
  * at least MAXPGPATH.
  */
 static void
-ReorderBufferSerializedPath(char *path, ReplicationSlot *slot, TransactionId xid,
+ReorderBufferSerializedPath(char *path, TransactionId xid,
 							XLogSegNo segno)
 {
 	XLogRecPtr	recptr;
