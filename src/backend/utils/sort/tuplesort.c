@@ -463,9 +463,14 @@ static void dumptuples(Tuplesortstate *state, bool alltuples);
 static void make_bounded_heap(Tuplesortstate *state);
 static void sort_bounded_heap(Tuplesortstate *state);
 static void tuplesort_sort_memtuples(Tuplesortstate *state);
-static void tuplesort_heap_insert(Tuplesortstate *state, SortTuple *tuple);
+static void tuplesort_heap_build(Tuplesortstate *state);
+static pg_attribute_always_inline void tuplesort_heap_insert_unordered(Tuplesortstate *state,
+																	   SortTuple *tuple);
 static void tuplesort_heap_replace_top(Tuplesortstate *state, SortTuple *tuple);
 static void tuplesort_heap_delete_top(Tuplesortstate *state);
+static pg_attribute_always_inline void tuplesort_heap_sift_down(Tuplesortstate *state,
+																int offset,
+																SortTuple *tuple);
 static void reversedirection(Tuplesortstate *state);
 static unsigned int getlen(LogicalTape *tape, bool eofOK);
 static void markrunend(LogicalTape *tape);
@@ -2171,9 +2176,12 @@ beginmerge(Tuplesortstate *state)
 		if (mergereadnext(state, state->inputTapes[srcTapeIndex], &tup))
 		{
 			tup.srctape = srcTapeIndex;
-			tuplesort_heap_insert(state, &tup);
+			tuplesort_heap_insert_unordered(state, &tup);
+			CHECK_FOR_INTERRUPTS();
 		}
 	}
+
+	tuplesort_heap_build(state);
 }
 
 /*
@@ -2494,32 +2502,25 @@ make_bounded_heap(Tuplesortstate *state)
 	/* Reverse sort direction so largest entry will be at root */
 	reversedirection(state);
 
-	state->memtupcount = 0;		/* make the heap empty */
-	for (i = 0; i < tupcount; i++)
-	{
-		if (state->memtupcount < state->bound)
-		{
-			/* Insert next tuple into heap */
-			/* Must copy source tuple to avoid possible overwrite */
-			SortTuple	stup = state->memtuples[i];
+	/* Build the initial heap from the first 'bound' tuples */
+	state->memtupcount = state->bound;
+	tuplesort_heap_build(state);
 
-			tuplesort_heap_insert(state, &stup);
+	/* Now process the remaining tuples */
+	for (i = state->bound; i < tupcount; i++)
+	{
+		/*
+		 * The heap is full.  Replace the largest entry with the new
+		 * tuple, or just discard it, if it's larger than anything already
+		 * in the heap.
+		 */
+		if (COMPARETUP(state, &state->memtuples[i], &state->memtuples[0]) <= 0)
+		{
+			free_sort_tuple(state, &state->memtuples[i]);
+			CHECK_FOR_INTERRUPTS();
 		}
 		else
-		{
-			/*
-			 * The heap is full.  Replace the largest entry with the new
-			 * tuple, or just discard it, if it's larger than anything already
-			 * in the heap.
-			 */
-			if (COMPARETUP(state, &state->memtuples[i], &state->memtuples[0]) <= 0)
-			{
-				free_sort_tuple(state, &state->memtuples[i]);
-				CHECK_FOR_INTERRUPTS();
-			}
-			else
-				tuplesort_heap_replace_top(state, &state->memtuples[i]);
-		}
+			tuplesort_heap_replace_top(state, &state->memtuples[i]);
 	}
 
 	Assert(state->memtupcount == state->bound);
@@ -3038,45 +3039,33 @@ tuplesort_sort_memtuples(Tuplesortstate *state)
 }
 
 /*
- * Insert a new tuple into an empty or existing heap, maintaining the
- * heap invariant.  Caller is responsible for ensuring there's room.
- *
- * Note: For some callers, tuple points to a memtuples[] entry above the
- * end of the heap.  This is safe as long as it's not immediately adjacent
- * to the end of the heap (ie, in the [memtupcount] array entry) --- if it
- * is, it might get overwritten before being moved into the heap!
+ * Assembles a valid heap from the valid range of the state->memtuples.
  */
 static void
-tuplesort_heap_insert(Tuplesortstate *state, SortTuple *tuple)
+tuplesort_heap_build(Tuplesortstate *state)
 {
-	SortTuple  *memtuples;
-	int			j;
+	int			i;
 
-	memtuples = state->memtuples;
+	for (i = (state->memtupcount - 2) / 2; i >= 0; i--)
+		tuplesort_heap_sift_down(state, i, NULL);
+}
+
+/*
+ * Insert a new tuple into the end of the heap, without maintaining the
+ * heap invariant.  Caller is responsible for ensuring there's room.
+ *
+ * To obtain a valid heap, one must call tuplesort_heap_build() afterwards.
+ */
+static pg_attribute_always_inline void
+tuplesort_heap_insert_unordered(Tuplesortstate *state, SortTuple *tuple)
+{
 	Assert(state->memtupcount < state->memtupsize);
-
-	CHECK_FOR_INTERRUPTS();
-
-	/*
-	 * Sift-up the new entry, per Knuth 5.2.3 exercise 16. Note that Knuth is
-	 * using 1-based array indexes, not 0-based.
-	 */
-	j = state->memtupcount++;
-	while (j > 0)
-	{
-		int			i = (j - 1) >> 1;
-
-		if (COMPARETUP(state, tuple, &memtuples[i]) >= 0)
-			break;
-		memtuples[j] = memtuples[i];
-		j = i;
-	}
-	memtuples[j] = *tuple;
+	state->memtuples[state->memtupcount++] = *tuple;
 }
 
 /*
  * Remove the tuple at state->memtuples[0] from the heap.  Decrement
- * memtupcount, and sift up to maintain the heap invariant.
+ * memtupcount, and sift down to maintain the heap invariant.
  *
  * The caller has already free'd the tuple the top node points to,
  * if necessary.
@@ -3084,37 +3073,55 @@ tuplesort_heap_insert(Tuplesortstate *state, SortTuple *tuple)
 static void
 tuplesort_heap_delete_top(Tuplesortstate *state)
 {
-	SortTuple  *memtuples = state->memtuples;
-	SortTuple  *tuple;
-
 	if (--state->memtupcount <= 0)
 		return;
 
-	/*
-	 * Remove the last tuple in the heap, and re-insert it, by replacing the
-	 * current top node with it.
-	 */
-	tuple = &memtuples[state->memtupcount];
-	tuplesort_heap_replace_top(state, tuple);
+	tuplesort_heap_sift_down(state, 0, &state->memtuples[state->memtupcount]);
 }
 
 /*
- * Replace the tuple at state->memtuples[0] with a new tuple.  Sift up to
+ * Replace the tuple at state->memtuples[0] with a new tuple.  Sift down to
  * maintain the heap invariant.
  *
- * This corresponds to Knuth's "sift-up" algorithm (Algorithm 5.2.3H,
+ * This corresponds to Knuth's "sift-down" algorithm (Algorithm 5.2.3H,
  * Heapsort, steps H3-H8).
  */
 static void
 tuplesort_heap_replace_top(Tuplesortstate *state, SortTuple *tuple)
 {
-	SortTuple  *memtuples = state->memtuples;
-	unsigned int i,
-				n;
+	tuplesort_heap_sift_down(state, 0, tuple);
+}
 
-	Assert(state->memtupcount >= 1);
+/*
+ * Sift state->memtuples[offset] down from its current position to
+ * maintain the heap invariant.
+ *
+ * If 'tuple' is not NULL, use it for comparison and to fill the final
+ * 'hole'. Caller is responsible for avoiding *tuple being overwritten
+ * during the sifting-down. (Tuples that out of the valid range of the
+ * state->memtuples are always safe to use)
+ */
+static pg_attribute_always_inline void
+tuplesort_heap_sift_down(Tuplesortstate *state, int offset, SortTuple *tuple)
+{
+	SortTuple   *memtuples = state->memtuples;
+	SortTuple    offset_tuple;
+	unsigned int i,
+				 n;
+
+	Assert(offset >= 0 && offset < state->memtupcount);
 
 	CHECK_FOR_INTERRUPTS();
+
+	/*
+	 * Use state->memtuples[offset] if tuple is NULL. We must copy it
+	 * to avoid being overwritten during the sifting-down.
+	 */
+	if (tuple == NULL)
+	{
+		offset_tuple = memtuples[offset];
+		tuple = &offset_tuple;
+	}
 
 	/*
 	 * state->memtupcount is "int", but we use "unsigned int" for i, j, n.
@@ -3122,7 +3129,7 @@ tuplesort_heap_replace_top(Tuplesortstate *state, SortTuple *tuple)
 	 * of the loop we must have i < n <= INT_MAX <= UINT_MAX/2.
 	 */
 	n = state->memtupcount;
-	i = 0;						/* i is where the "hole" is */
+	i = offset;					/* i is where the "hole" is */
 	for (;;)
 	{
 		unsigned int j = 2 * i + 1;
