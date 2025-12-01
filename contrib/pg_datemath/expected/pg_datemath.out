@@ -1,0 +1,291 @@
+--
+-- Test cases for pg_datemath extension
+-- Tests datediff function with various dateparts and edge cases
+--
+CREATE EXTENSION pg_datemath;
+--
+-- Basic Day Calculations
+--
+SELECT datediff('day', '2024-01-01'::date, '2024-01-15'::date);
+ datediff 
+----------
+       14
+(1 row)
+
+SELECT datediff('day', '2024-01-15'::date, '2024-01-01'::date);
+ datediff 
+----------
+      -14
+(1 row)
+
+--
+-- Week Calculations
+--
+SELECT datediff('week', '2024-01-01'::date, '2024-01-08'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('week', '2024-01-01'::date, '2024-01-10'::date);
+ datediff 
+----------
+    1.286
+(1 row)
+
+--
+-- Month Calculations
+--
+SELECT datediff('month', '2024-01-15'::date, '2024-02-15'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('month', '2024-01-15'::date, '2024-02-20'::date);
+ datediff 
+----------
+    1.172
+(1 row)
+
+SELECT datediff('month', '2024-01-31'::date, '2024-02-29'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+--
+-- Quarter Calculations
+--
+SELECT datediff('quarter', '2024-01-01'::date, '2024-04-01'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('quarter', '2024-01-15'::date, '2024-05-20'::date);
+ datediff 
+----------
+    1.385
+(1 row)
+
+--
+-- Year Calculations
+--
+SELECT datediff('year', '2024-03-15'::date, '2025-03-15'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('year', '2024-01-01'::date, '2024-07-01'::date);
+ datediff 
+----------
+    0.497
+(1 row)
+
+--
+-- NULL Handling - STRICT functions return NULL for NULL inputs
+--
+SELECT datediff('day', NULL::date, '2024-01-15'::date);
+ datediff 
+----------
+         
+(1 row)
+
+SELECT datediff('day', '2024-01-01'::date, NULL::date);
+ datediff 
+----------
+         
+(1 row)
+
+--
+-- Invalid Datepart
+--
+SELECT datediff('hour', '2024-01-01'::date, '2024-01-02'::date);
+ERROR:  Invalid datepart: 'hour'
+HINT:  Valid options: year, quarter, month, week, day
+--
+-- Case Insensitivity
+--
+SELECT datediff('MONTH', '2024-01-01'::date, '2024-02-01'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('Month', '2024-01-01'::date, '2024-02-01'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('month', '2024-01-01'::date, '2024-02-01'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+--
+-- Edge Cases
+--
+SELECT datediff('day', '2024-01-01'::date, '2024-01-01'::date);
+ datediff 
+----------
+        0
+(1 row)
+
+SELECT datediff('day', '2024-02-28'::date, '2024-03-01'::date);
+ datediff 
+----------
+        2
+(1 row)
+
+SELECT datediff('day', '2023-02-28'::date, '2023-03-01'::date);
+ datediff 
+----------
+        1
+(1 row)
+
+SELECT datediff('year', '2024-12-31'::date, '2025-01-01'::date);
+ datediff 
+----------
+    0.003
+(1 row)
+
+SELECT datediff('year', '2020-01-01'::date, '2025-01-01'::date);
+ datediff 
+----------
+    5.000
+(1 row)
+
+SELECT datediff('day', '1999-12-31'::date, '2000-01-01'::date);
+ datediff 
+----------
+        1
+(1 row)
+
+--
+-- Alias Tests
+--
+SELECT datediff('yy', '2024-01-01'::date, '2025-01-01'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('yyyy', '2024-01-01'::date, '2025-01-01'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('mm', '2024-01-15'::date, '2024-02-15'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('qq', '2024-01-01'::date, '2024-04-01'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('wk', '2024-01-01'::date, '2024-01-08'::date);
+ datediff 
+----------
+    1.000
+(1 row)
+
+SELECT datediff('dd', '2024-01-01'::date, '2024-01-15'::date);
+ datediff 
+----------
+       14
+(1 row)
+
+--
+-- Timestamp Tests
+--
+SELECT datediff('day', '2024-01-01 10:30:00'::timestamp, '2024-01-15 14:45:00'::timestamp);
+ datediff 
+----------
+       14
+(1 row)
+
+SELECT datediff('month', '2024-01-15 08:00:00'::timestamp, '2024-02-20 16:00:00'::timestamp);
+ datediff 
+----------
+    1.172
+(1 row)
+
+--
+-- Timestamptz Tests
+--
+SELECT datediff('day', '2024-01-01 10:30:00+00'::timestamptz, '2024-01-15 14:45:00+00'::timestamptz);
+ datediff 
+----------
+       14
+(1 row)
+
+--
+-- Additional Month Calculation Tests
+--
+SELECT datediff('month', '2024-01-25'::date, '2024-03-10'::date);
+ datediff 
+----------
+    1.483
+(1 row)
+
+SELECT datediff('month', '2024-01-15'::date, '2024-02-20'::date);
+ datediff 
+----------
+    1.172
+(1 row)
+
+--
+-- Additional Quarter Calculation Tests
+--
+SELECT datediff('quarter', '2024-01-15'::date, '2024-05-20'::date);
+ datediff 
+----------
+    1.385
+(1 row)
+
+--
+-- Additional Year Calculation Tests
+--
+SELECT datediff('year', '2024-03-15'::date, '2025-06-20'::date);
+ datediff 
+----------
+    1.266
+(1 row)
+
+SELECT datediff('year', '2020-03-15'::date, '2025-03-15'::date);
+ datediff 
+----------
+    5.000
+(1 row)
+
+SELECT datediff('year', '2024-01-01'::date, '2024-07-01'::date);
+ datediff 
+----------
+    0.497
+(1 row)
+
+--
+-- Week Calculation Additional Tests
+--
+SELECT datediff('week', '2024-01-01'::date, '2024-01-15'::date);
+ datediff 
+----------
+    2.000
+(1 row)
+
+SELECT datediff('week', '2024-01-01'::date, '2024-01-10'::date);
+ datediff 
+----------
+    1.286
+(1 row)
+
+DROP EXTENSION pg_datemath;
