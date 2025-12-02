@@ -22,6 +22,71 @@
 
 extern PGDLLIMPORT const PgAioHandleCallbacks aio_md_readv_cb;
 
+/*
+ * Hook function types for I/O transformation (e.g., encryption/decryption).
+ * These hooks allow extensions to transform data during storage I/O operations.
+ */
+
+/*
+ * Called after blocks are read from disk, before PostgreSQL's checksum verification.
+ * Extension can reverse-transform (e.g., decrypt) the data in place.
+ *
+ * For synchronous reads, called from mdreadv() after read completes.
+ * For AIO reads, called from buffer_readv_complete_one() before PageIsVerified().
+ *
+ * Note: The hook is responsible for verifying on-disk checksum before reverse
+ * transformation and recalculating checksum after transformation. This ensures
+ * data integrity is verified at both stages and PostgreSQL's checksum verification
+ * passes.
+ *
+ * On failure, the hook should raise an ERROR (or PANIC for critical errors).
+ */
+typedef void (*mdread_post_hook_type) (RelFileLocator *rlocator,
+									   ForkNumber forknum,
+									   BlockNumber blocknum,
+									   void **buffers,
+									   BlockNumber nblocks);
+
+/*
+ * Called before mdwritev() writes blocks to disk.
+ * Extension can transform (e.g., encrypt) data.
+ * Returns pointer to transformed buffers array (hook manages the memory,
+ * typically using static local storage).
+ *
+ * Note: The hook should recalculate checksum on transformed data after
+ * transformation. This on-disk checksum will be verified on read before
+ * reverse transformation, ensuring disk-level data integrity.
+ *
+ * On failure, the hook should raise an ERROR (or PANIC for critical errors),
+ * or return the original buffers with a WARNING as fallback.
+ */
+typedef const void **(*mdwrite_pre_hook_type) (RelFileLocator *rlocator,
+											   ForkNumber forknum,
+											   BlockNumber blocknum,
+											   const void **buffers,
+											   BlockNumber nblocks);
+
+/*
+ * Called before mdextend() extends a relation with new blocks.
+ * Returns pointer to transformed buffer (hook manages the memory,
+ * typically using static local storage).
+ *
+ * Note: Same as write hook - the hook should recalculate checksum on
+ * transformed data after transformation.
+ *
+ * On failure, the hook should raise an ERROR (or PANIC for critical errors),
+ * or return the original buffer with a WARNING as fallback.
+ */
+typedef const void *(*mdextend_pre_hook_type) (RelFileLocator *rlocator,
+											   ForkNumber forknum,
+											   BlockNumber blocknum,
+											   const void *buffer);
+
+/* Hook variables for I/O transformation */
+extern PGDLLIMPORT mdread_post_hook_type mdread_post_hook;
+extern PGDLLIMPORT mdwrite_pre_hook_type mdwrite_pre_hook;
+extern PGDLLIMPORT mdextend_pre_hook_type mdextend_pre_hook;
+
 /* md storage manager functionality */
 extern void mdinit(void);
 extern void mdopen(SMgrRelation reln);

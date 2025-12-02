@@ -401,6 +401,26 @@ extern bool DecodeXLogRecord(XLogReaderState *state,
 							 char **errormsg);
 
 /*
+ * Hook function type for WAL record transformation (e.g., decryption).
+ * Called before ValidXLogRecord() and DecodeXLogRecord().
+ * Extension can decrypt or transform the raw record data.
+ * Returns the (possibly modified) XLogRecord to be validated and decoded.
+ *
+ * If inplace_allowed is true, the hook may modify the record in place.
+ * If false, the hook must allocate a new buffer and return it.
+ *
+ * On failure, the hook should either PANIC or return the original record
+ * as fallback.
+ */
+typedef XLogRecord *(*xlog_decode_pre_hook_type) (XLogReaderState *state,
+												  XLogRecord *record,
+												  XLogRecPtr lsn,
+												  bool inplace_allowed);
+
+/* Hook variable for WAL record transformation */
+extern PGDLLIMPORT xlog_decode_pre_hook_type xlog_decode_pre_hook;
+
+/*
  * Macros that provide access to parts of the record most recently returned by
  * XLogReadRecord() or XLogNextRecord().
  */

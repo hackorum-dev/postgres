@@ -57,6 +57,7 @@
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/lmgr.h"
+#include "storage/md.h"
 #include "storage/proc.h"
 #include "storage/read_stream.h"
 #include "storage/smgr.h"
@@ -7400,6 +7401,14 @@ buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 		if (!BufferIsPinned(buffer))
 			VALGRIND_MAKE_MEM_DEFINED(bufdata, BLCKSZ);
 #endif
+
+		/* Decrypt block before checksum verification */
+		if (mdread_post_hook)
+		{
+			RelFileLocator rlocator = BufTagGetRelFileLocator(&tag);
+
+			mdread_post_hook(&rlocator, tag.forkNum, tag.blockNum, (void **) &bufdata, 1);
+		}
 
 		if (!PageIsVerified((Page) bufdata, tag.blockNum, piv_flags,
 							failed_checksum))

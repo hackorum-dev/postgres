@@ -96,6 +96,14 @@ typedef struct _MdfdVec
 
 static MemoryContext MdCxt;		/* context for all MdfdVec objects */
 
+/*
+ * Hook variables for I/O transformation (e.g., encryption/decryption).
+ * Extensions can set these hooks to transform data during storage I/O.
+ */
+mdread_post_hook_type mdread_post_hook = NULL;
+mdwrite_pre_hook_type mdwrite_pre_hook = NULL;
+mdextend_pre_hook_type mdextend_pre_hook = NULL;
+
 
 /* Populate a file tag describing an md.c segment file. */
 #define INIT_MD_FILETAG(a,xx_rlocator,xx_forknum,xx_segno) \
@@ -512,6 +520,10 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 				 errmsg("cannot extend file \"%s\" beyond %u blocks",
 						relpath(reln->smgr_rlocator, forknum).str,
 						InvalidBlockNumber)));
+
+	/* Pre-extend hook for transformation (e.g., encryption) */
+	if (mdextend_pre_hook)
+		buffer = mdextend_pre_hook(&reln->smgr_rlocator.locator, forknum, blocknum, buffer);
 
 	v = _mdfd_getseg(reln, forknum, blocknum, skipFsync, EXTENSION_CREATE);
 
@@ -972,6 +984,10 @@ mdreadv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 			iovcnt = compute_remaining_iovec(iov, iov, iovcnt, nbytes);
 		}
 
+		/* Post-read hook for transformation (e.g., decryption) */
+		if (mdread_post_hook)
+			mdread_post_hook(&reln->smgr_rlocator.locator, forknum, blocknum, buffers, nblocks_this_segment);
+
 		nblocks -= nblocks_this_segment;
 		buffers += nblocks_this_segment;
 		blocknum += nblocks_this_segment;
@@ -1063,6 +1079,10 @@ mdwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 #ifdef CHECK_WRITE_VS_EXTEND
 	Assert((uint64) blocknum + (uint64) nblocks <= (uint64) mdnblocks(reln, forknum));
 #endif
+
+	/* Pre-write hook for transformation (e.g., encryption) */
+	if (mdwrite_pre_hook)
+		buffers = mdwrite_pre_hook(&reln->smgr_rlocator.locator, forknum, blocknum, buffers, nblocks);
 
 	while (nblocks > 0)
 	{

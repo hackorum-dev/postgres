@@ -40,6 +40,13 @@
 #include "common/logging.h"
 #endif
 
+/*
+ * Hook variable for WAL record transformation (e.g., decryption).
+ * Extensions can set this hook to transform raw WAL data before decoding.
+ * Frontend tools can also set this hook at startup.
+ */
+xlog_decode_pre_hook_type xlog_decode_pre_hook = NULL;
+
 static void report_invalid_record(XLogReaderState *state, const char *fmt,...)
 			pg_attribute_printf(2, 3);
 static void allocate_recordbuf(XLogReaderState *state, uint32 reclength);
@@ -843,6 +850,11 @@ restart:
 		Assert(gotheader);
 
 		record = (XLogRecord *) state->readRecordBuf;
+
+		/* Pre-validation hook for transformation (e.g., decryption) */
+		if (xlog_decode_pre_hook)
+			record = xlog_decode_pre_hook(state, record, RecPtr, true);
+
 		if (!ValidXLogRecord(state, record, RecPtr))
 			goto err;
 
@@ -862,6 +874,15 @@ restart:
 			goto err;
 
 		/* Record does not cross a page boundary */
+
+		/*
+		 * Pre-validation hook for transformation (e.g., decryption).
+		 * inplace_allowed is false because record points to readBuf, which
+		 * may be copied back to WAL files (e.g., FinishWalRecovery).
+		 */
+		if (xlog_decode_pre_hook)
+			record = xlog_decode_pre_hook(state, record, RecPtr, false);
+
 		if (!ValidXLogRecord(state, record, RecPtr))
 			goto err;
 

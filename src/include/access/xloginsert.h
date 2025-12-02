@@ -19,6 +19,26 @@
 #include "storage/relfilelocator.h"
 #include "utils/relcache.h"
 
+/* Forward declaration for XLogRecData */
+struct XLogRecData;
+
+/*
+ * Hook function type for WAL insert transformation (e.g., encryption).
+ * Called after XLogRecordAssemble() but before XLogInsertRecord().
+ * Extension can transform the assembled WAL record data for encryption.
+ * Returns the (possibly modified) XLogRecData chain to be inserted.
+ *
+ * The first node's data points to XLogRecord header, which contains
+ * xl_rmid and xl_info if needed by the hook.
+ *
+ * On failure, the hook should either PANIC or return the original rdata
+ * as fallback.
+ */
+typedef struct XLogRecData *(*xlog_insert_pre_hook_type) (struct XLogRecData *rdata);
+
+/* Hook variable for WAL insert transformation */
+extern PGDLLIMPORT xlog_insert_pre_hook_type xlog_insert_pre_hook;
+
 /*
  * The minimum size of the WAL construction working area. If you need to
  * register more than XLR_NORMAL_MAX_BLOCK_ID block references or have more

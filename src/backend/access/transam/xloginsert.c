@@ -136,6 +136,12 @@ static bool begininsert_called = false;
 /* Memory context to hold the registered buffer and data references. */
 static MemoryContext xloginsert_cxt;
 
+/*
+ * Hook variable for WAL insert transformation (e.g., encryption).
+ * Extensions can set this hook to transform WAL data before assembly.
+ */
+xlog_insert_pre_hook_type xlog_insert_pre_hook = NULL;
+
 static XLogRecData *XLogRecordAssemble(RmgrId rmid, uint8 info,
 									   XLogRecPtr RedoRecPtr, bool doPageWrites,
 									   XLogRecPtr *fpw_lsn, int *num_fpi,
@@ -525,6 +531,10 @@ XLogInsert(RmgrId rmid, uint8 info)
 		rdt = XLogRecordAssemble(rmid, info, RedoRecPtr, doPageWrites,
 								 &fpw_lsn, &num_fpi, &fpi_bytes,
 								 &topxid_included);
+
+		/* Pre-insert hook for transformation (e.g., encryption) */
+		if (xlog_insert_pre_hook)
+			rdt = xlog_insert_pre_hook(rdt);
 
 		EndPos = XLogInsertRecord(rdt, fpw_lsn, curinsert_flags, num_fpi,
 								  fpi_bytes, topxid_included);

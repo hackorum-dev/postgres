@@ -189,7 +189,17 @@ typedef PageHeaderData *PageHeader;
 #define PD_ALL_VISIBLE		0x0004	/* all tuples on page are visible to
 									 * everyone */
 
-#define PD_VALID_FLAG_BITS	0x0007	/* OR of all valid pd_flags bits */
+/*
+ * Transform ID field (5 bits: values 0-31) for I/O transform extensions.
+ * Value 0 means the page is not transformed (backward compatible).
+ * Values 1-31 are available for extensions to define their own meanings
+ * (e.g., encryption key versions, algorithm identifiers, migration markers).
+ */
+#define PD_TRANSFORM_ID_MASK	0x00F8	/* bits 3-7 */
+#define PD_TRANSFORM_ID_SHIFT	3
+#define PD_TRANSFORM_NONE		0		/* not transformed (core reserved) */
+
+#define PD_VALID_FLAG_BITS	0x00FF	/* OR of all valid pd_flags bits */
 
 /*
  * Page layout version number 0 is for pre-7.3 Postgres releases.
@@ -439,6 +449,19 @@ static inline void
 PageClearAllVisible(Page page)
 {
 	((PageHeader) page)->pd_flags &= ~PD_ALL_VISIBLE;
+}
+
+static inline uint8
+PageGetTransformId(const PageData *page)
+{
+	return (((const PageHeaderData *) page)->pd_flags & PD_TRANSFORM_ID_MASK) >> PD_TRANSFORM_ID_SHIFT;
+}
+static inline void
+PageSetTransformId(Page page, uint8 id)
+{
+	((PageHeader) page)->pd_flags =
+		(((PageHeader) page)->pd_flags & ~PD_TRANSFORM_ID_MASK) |
+		((id << PD_TRANSFORM_ID_SHIFT) & PD_TRANSFORM_ID_MASK);
 }
 
 /*

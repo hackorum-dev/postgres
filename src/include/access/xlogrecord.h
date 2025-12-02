@@ -244,5 +244,10 @@ typedef struct XLogRecordDataHeaderLong
 #define XLR_BLOCK_ID_DATA_LONG		254
 #define XLR_BLOCK_ID_ORIGIN			253
 #define XLR_BLOCK_ID_TOPLEVEL_XID	252
+/*
+ * I/O transform hook marker. Uses same header format as XLogRecordDataHeaderLong
+ * (1 byte id + 4 bytes length). Use SizeOfXLogRecordDataHeaderLong for size.
+ */
+#define XLR_BLOCK_ID_TRANSFORMED	251
 
 #endif							/* XLOGRECORD_H */
