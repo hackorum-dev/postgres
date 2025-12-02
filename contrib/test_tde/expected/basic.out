@@ -1,0 +1,177 @@
+-- Basic test for test_tde extension
+-- Verify that encryption/decryption works correctly
+-- Show current settings
+SHOW test_tde.key;
+                           test_tde.key                           
+------------------------------------------------------------------
+ 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+(1 row)
+
+-- Create a test table
+CREATE TABLE test_encrypt (
+    id serial PRIMARY KEY,
+    secret_data text,
+    secret_number integer
+);
+-- Insert some data
+INSERT INTO test_encrypt (secret_data, secret_number) VALUES
+    ('This is secret data', 12345),
+    ('Another secret message', 67890),
+    ('PostgreSQL TDE test', 11111);
+-- Force a checkpoint to ensure data is written to disk
+CHECKPOINT;
+-- Read data back - should be decrypted correctly
+SELECT * FROM test_encrypt ORDER BY id;
+ id |      secret_data       | secret_number 
+----+------------------------+---------------
+  1 | This is secret data    |         12345
+  2 | Another secret message |         67890
+  3 | PostgreSQL TDE test    |         11111
+(3 rows)
+
+-- Update some data
+UPDATE test_encrypt SET secret_data = 'Updated secret' WHERE id = 1;
+-- Verify update worked
+SELECT * FROM test_encrypt WHERE id = 1;
+ id |  secret_data   | secret_number 
+----+----------------+---------------
+  1 | Updated secret |         12345
+(1 row)
+
+-- Test with larger data
+INSERT INTO test_encrypt (secret_data, secret_number)
+SELECT
+    repeat('Large data block ', 100),
+    generate_series
+FROM generate_series(1, 10);
+-- Count rows
+SELECT COUNT(*) FROM test_encrypt;
+ count 
+-------
+    13
+(1 row)
+
+-- Test with NULL values
+INSERT INTO test_encrypt (secret_data, secret_number) VALUES (NULL, NULL);
+SELECT * FROM test_encrypt WHERE secret_data IS NULL;
+ id | secret_data | secret_number 
+----+-------------+---------------
+ 14 |             |              
+(1 row)
+
+-- Test index creation (index pages should also be encrypted)
+CREATE INDEX ON test_encrypt (secret_number);
+-- Use the index
+SELECT secret_data FROM test_encrypt WHERE secret_number = 12345;
+  secret_data   
+----------------
+ Updated secret
+(1 row)
+
+-- Clean up
+DROP TABLE test_encrypt;
+-- =============================================================================
+-- DDL Tests: Operations that change RelFileNumber
+-- These operations create new files and write records through storage hooks,
+-- so encryption/decryption works correctly.
+-- =============================================================================
+-- -----------------------------------------------------------------------------
+-- Test 1: TRUNCATE (creates new file, writes through hooks)
+-- -----------------------------------------------------------------------------
+CREATE TABLE test_truncate (id int, data text);
+INSERT INTO test_truncate VALUES (1, 'before truncate');
+SELECT * FROM test_truncate;
+ id |      data       
+----+-----------------
+  1 | before truncate
+(1 row)
+
+TRUNCATE test_truncate;
+-- Insert new data after truncate - works fine (new file, new encryption through hooks)
+INSERT INTO test_truncate VALUES (2, 'after truncate');
+SELECT * FROM test_truncate;
+ id |      data      
+----+----------------
+  2 | after truncate
+(1 row)
+
+DROP TABLE test_truncate;
+-- -----------------------------------------------------------------------------
+-- Test 2: CLUSTER (rewrites table through hooks)
+-- -----------------------------------------------------------------------------
+CREATE TABLE test_cluster (id int PRIMARY KEY, data text);
+INSERT INTO test_cluster SELECT g, 'data ' || g FROM generate_series(1, 100) g;
+CHECKPOINT;
+CLUSTER test_cluster USING test_cluster_pkey;
+-- Works fine - data rewritten through storage hooks
+SELECT COUNT(*) FROM test_cluster;
+ count 
+-------
+   100
+(1 row)
+
+SELECT * FROM test_cluster WHERE id = 50;
+ id |  data   
+----+---------
+ 50 | data 50
+(1 row)
+
+DROP TABLE test_cluster;
+-- -----------------------------------------------------------------------------
+-- Test 3: VACUUM FULL (rewrites table through hooks)
+-- -----------------------------------------------------------------------------
+CREATE TABLE test_vacuum_full (id int, data text);
+INSERT INTO test_vacuum_full SELECT g, 'data ' || g FROM generate_series(1, 100) g;
+DELETE FROM test_vacuum_full WHERE id > 50;
+CHECKPOINT;
+VACUUM FULL test_vacuum_full;
+-- Works fine - data rewritten through storage hooks
+SELECT COUNT(*) FROM test_vacuum_full;
+ count 
+-------
+    50
+(1 row)
+
+DROP TABLE test_vacuum_full;
+-- -----------------------------------------------------------------------------
+-- Test 4: REINDEX (rebuilds index through hooks)
+-- -----------------------------------------------------------------------------
+CREATE TABLE test_reindex (id int PRIMARY KEY, data text);
+INSERT INTO test_reindex SELECT g, 'data ' || g FROM generate_series(1, 100) g;
+CHECKPOINT;
+REINDEX INDEX test_reindex_pkey;
+-- Works fine - index rebuilt through storage hooks
+SET enable_seqscan = off;
+SELECT * FROM test_reindex WHERE id = 50;
+ id |  data   
+----+---------
+ 50 | data 50
+(1 row)
+
+RESET enable_seqscan;
+DROP TABLE test_reindex;
+-- =============================================================================
+-- Additional DDL Tests: Operations that change RelFileNumber or copy files
+-- These also go through storage hooks, so encryption/decryption works correctly.
+-- =============================================================================
+-- -----------------------------------------------------------------------------
+-- Test 5: ALTER TABLE SET TABLESPACE
+-- RelFileNumber changes, but data is copied through storage hooks
+-- -----------------------------------------------------------------------------
+\! mkdir -p /tmp/test_tde_tablespace
+CREATE TABLESPACE test_tde_tblspc LOCATION '/tmp/test_tde_tablespace';
+CREATE TABLE test_set_tablespace (id int, data text);
+INSERT INTO test_set_tablespace SELECT g, 'data ' || g FROM generate_series(1, 50) g;
+CHECKPOINT;
+-- Move to different tablespace - data copied through storage hooks
+ALTER TABLE test_set_tablespace SET TABLESPACE test_tde_tblspc;
+-- Works fine - data was re-encrypted with new RelFileNumber
+SELECT COUNT(*) FROM test_set_tablespace;
+ count 
+-------
+    50
+(1 row)
+
+DROP TABLE test_set_tablespace;
+DROP TABLESPACE test_tde_tblspc;
+\! rm -rf /tmp/test_tde_tablespace

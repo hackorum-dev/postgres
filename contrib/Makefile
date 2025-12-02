@@ -54,9 +54,9 @@ SUBDIRS = \
 		vacuumlo
 
 ifeq ($(with_ssl),openssl)
-SUBDIRS += pgcrypto sslinfo
+SUBDIRS += pgcrypto sslinfo test_tde
 else
-ALWAYS_SUBDIRS += pgcrypto sslinfo
+ALWAYS_SUBDIRS += pgcrypto sslinfo test_tde
 endif
 
 ifneq ($(with_uuid),no)
