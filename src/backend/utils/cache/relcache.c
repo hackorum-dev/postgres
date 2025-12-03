@@ -1316,6 +1316,9 @@ retry:
 	/* It's fully valid */
 	relation->rd_isvalid = true;
 
+	relation->rd_creation_xid = InvalidTransactionId;
+	relation->rd_creation_xid_valid = false;
+
 #ifdef MAYBE_RECOVER_RELATION_BUILD_MEMORY
 	if (tmpcxt)
 	{
@@ -7029,4 +7032,26 @@ ResOwnerReleaseRelation(Datum res)
 	rel->rd_refcnt -= 1;
 
 	RelationCloseCleanup((Relation) DatumGetPointer(res));
+}
+
+TransactionId
+RelationGetCreationXid(Relation rel)
+{
+	if (rel == NULL)
+		return InvalidTransactionId;
+
+	if (rel->rd_creation_xid_valid)
+		return rel->rd_creation_xid;
+
+	if (rel->rd_rel)
+	{
+		TransactionId x = rel->rd_rel->relminxid;
+		if (TransactionIdIsNormal(x))
+		{
+			rel->rd_creation_xid = x;
+			rel->rd_creation_xid_valid = true;
+			return x;
+		}
+	}
+	return InvalidTransactionId;
 }
