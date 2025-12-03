@@ -1929,6 +1929,107 @@ GlobalVisHorizonKindForRel(Relation rel)
 		return VISHORIZON_TEMP;
 }
 
+static TransactionId
+ComputeDataHorizonForRelation(TransactionId create_xid)
+{
+	ProcArrayStruct *arrayP = procArray;
+	bool in_recovery = RecoveryInProgress();
+	TransactionId kaxmin = InvalidTransactionId;
+	FullTransactionId latest_completed = TransamVariables->latestCompletedXid;
+
+	TransactionId initial = XidFromFullTransactionId(latest_completed);
+	TransactionId rel_data_oldest_nonremovable = initial;
+
+	Assert(TransactionIdIsValid(initial));
+	TransactionIdAdvance(initial);
+
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+
+	/*
+	 * Take replication slot xmin into account globally; slots always limit
+	 * how far horizons can advance.
+	 */
+	TransactionId slot_xmin = procArray->replication_slot_xmin;
+
+	for (int i = 0; i < arrayP->numProcs; i++)
+	{
+		int pgprocno = arrayP->pgprocnos[i];
+		PGPROC *proc = &allProcs[pgprocno];
+		int8 flags = ProcGlobal->statusFlags[i];
+		TransactionId xid;
+		TransactionId xmin;
+		TransactionId eff;
+
+		/* As in ComputeXidHorizons: skip VACUUM and logical decoding. */
+		if (flags & (PROC_IN_VACUUM | PROC_IN_LOGICAL_DECODING))
+			continue;
+
+		/*
+		 * Only consider backends in the current database (as usual for
+		 * the data horizon).
+		 */
+		if (!(proc->databaseId == MyDatabaseId ||
+			  MyDatabaseId == InvalidOid || /* starting backend */
+			  (flags & PROC_AFFECTS_ALL_HORIZONS) ||
+			  in_recovery))
+			continue;
+
+		xid = pg_atomic_read_u64(&ProcGlobal->xids[i]);
+		xmin = pg_atomic_read_u64(&proc->xmin);
+
+		/*
+		 * As in the generic horizon computation, use the older of
+		 * xid/xmin.
+		 */
+		eff = TransactionIdOlder(xmin, xid);
+
+		/* If neither xid nor xmin is valid, this backend does not matter. */
+		if (!TransactionIdIsValid(eff))
+			continue;
+
+		/*
+		 * Filter by relation creation xid:
+		 *
+		 * If the transaction started before create_xid (xid < create_xid)
+		 * and either it has no snapshot yet (xmin invalid), or its
+		 * snapshot also predates the relation's creation (xmin <
+		 * create_xid), then this backend cannot see any tuples in the
+		 * relation and can be ignored for this horizon.
+		 */
+		if (TransactionIdIsValid(create_xid))
+		{
+			bool started_before_create = TransactionIdPrecedes(xid, create_xid);
+			bool snapshot_before_create;
+
+			snapshot_before_create =
+				(!TransactionIdIsValid(xmin)) ||
+				TransactionIdPrecedes(xmin, create_xid);
+
+			if (started_before_create && snapshot_before_create)
+				continue; /* cannot require preserving tuples in this relation */
+		}
+
+		/* Otherwise, include its effective xid/xmin in the MIN() computation. */
+		rel_data_oldest_nonremovable =
+			TransactionIdOlder(rel_data_oldest_nonremovable, eff);
+	}
+
+	if (in_recovery)
+		kaxmin = KnownAssignedXidsGetOldestXmin();
+
+	LWLockRelease(ProcArrayLock);
+
+	if (in_recovery)
+		rel_data_oldest_nonremovable =
+			TransactionIdOlder(rel_data_oldest_nonremovable, kaxmin);
+
+	/* Replication slots still limit the horizon. */
+	rel_data_oldest_nonremovable =
+		TransactionIdOlder(rel_data_oldest_nonremovable, slot_xmin);
+
+	return rel_data_oldest_nonremovable;
+}
+
 /*
  * Return the oldest XID for which deleted tuples must be preserved in the
  * passed table.
@@ -1954,7 +2055,12 @@ GetOldestNonRemovableTransactionId(Relation rel)
 		case VISHORIZON_CATALOG:
 			return horizons.catalog_oldest_nonremovable;
 		case VISHORIZON_DATA:
-			return horizons.data_oldest_nonremovable;
+			TransactionId create_xid = RelationGetCreationXid(rel);
+
+			if (TransactionIdIsValid(create_xid))
+				return ComputeDataHorizonForRelation(create_xid);
+			else
+				return horizons.data_oldest_nonremovable;
 		case VISHORIZON_TEMP:
 			return horizons.temp_oldest_nonremovable;
 	}
