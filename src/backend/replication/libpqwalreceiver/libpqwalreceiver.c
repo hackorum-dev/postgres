@@ -538,7 +538,6 @@ libpqrcv_startstreaming(WalReceiverConn *conn,
 	{
 		char	   *pubnames_str;
 		List	   *pubnames;
-		char	   *pubnames_literal;
 
 		appendStringInfoString(&cmd, " (");
 
@@ -565,15 +564,7 @@ libpqrcv_startstreaming(WalReceiverConn *conn,
 					(errcode(ERRCODE_OUT_OF_MEMORY),	/* likely guess */
 					 errmsg("could not start WAL streaming: %s",
 							pchomp(PQerrorMessage(conn->streamConn)))));
-		pubnames_literal = PQescapeLiteral(conn->streamConn, pubnames_str,
-										   strlen(pubnames_str));
-		if (!pubnames_literal)
-			ereport(ERROR,
-					(errcode(ERRCODE_OUT_OF_MEMORY),	/* likely guess */
-					 errmsg("could not start WAL streaming: %s",
-							pchomp(PQerrorMessage(conn->streamConn)))));
-		appendStringInfo(&cmd, ", publication_names %s", pubnames_literal);
-		PQfreemem(pubnames_literal);
+		appendStringInfo(&cmd, ", publication_names '%s'", pubnames_str);
 		pfree(pubnames_str);
 
 		if (options->proto.logical.binary &&

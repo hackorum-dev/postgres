@@ -585,11 +585,11 @@ $node_subscriber->stop('fast');
 # The bug is fixed by reducing the lock-level during DROP SUBSCRIPTION.
 $node_publisher->start();
 
-$publisher_connstr = $node_publisher->connstr . ' dbname=regress_db';
+my $publisher_connstr_regressdb = $node_publisher->connstr . ' dbname=regress_db';
 $node_publisher->safe_psql(
 	'postgres', qq(
 	CREATE DATABASE regress_db;
-	CREATE SUBSCRIPTION regress_sub1 CONNECTION '$publisher_connstr' PUBLICATION regress_pub WITH (connect=false);
+	CREATE SUBSCRIPTION regress_sub1 CONNECTION '$publisher_connstr_regressdb' PUBLICATION regress_pub WITH (connect=false);
 ));
 
 my ($ret, $stdout, $stderr) =
@@ -603,6 +603,28 @@ like(
 
 $node_publisher->safe_psql('postgres', "DROP DATABASE regress_db");
 
+$node_publisher->stop('fast');
+
+# The bug occurred because START_REPLICATION could not handle publication
+# names containing backslash escaped characters (such as NULL and newline).
+# When such a name was sent back by the WAL receiver, the walsender failed to
+# parse it, leading to a syntax error.
+$node_publisher->start();
+$node_subscriber->start();
+
+$node_publisher->safe_psql('postgres',
+	"CREATE PUBLICATION \"regress_pub_\\0\\n\"");
+$node_subscriber->safe_psql('postgres',
+	"CREATE SUBSCRIPTION regress_sub2 CONNECTION '$publisher_connstr' PUBLICATION \"regress_pub_\\0\\n\""
+);
+$node_subscriber->wait_for_subscription_sync($node_publisher, 'regress_sub2');
+
+# Clean up
+$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION regress_sub2");
+$node_publisher->safe_psql('postgres',
+	"DROP PUBLICATION \"regress_pub_\\0\\n\"");
+
+$node_subscriber->stop('fast');
 $node_publisher->stop('fast');
 
 done_testing();
