@@ -108,6 +108,9 @@ typedef struct RelationData
 													 * any value */
 	SubTransactionId rd_droppedSubid;	/* dropped with another Subid set */
 
+	TransactionId rd_creation_xid;
+	bool rd_creation_xid_valid;
+
 	Form_pg_class rd_rel;		/* RELATION tuple */
 	TupleDesc	rd_att;			/* tuple descriptor */
 	Oid			rd_id;			/* relation's object id */
@@ -729,4 +732,5 @@ RelationCloseSmgr(Relation relation)
 extern void RelationIncrementReferenceCount(Relation rel);
 extern void RelationDecrementReferenceCount(Relation rel);
 
+extern TransactionId RelationGetCreationXid(Relation rel);
 #endif							/* REL_H */
