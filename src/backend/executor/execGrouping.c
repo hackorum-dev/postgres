@@ -779,13 +779,6 @@ IndexLeafNodeSetNext(TupleIndexNode node, TupleIndexNode next)
 	node->pointers[0] = next;
 }
 
-#define SizeofTupleIndexInternalNode \
-	  (offsetof(TupleIndexNodeData, pointers) \
-	+ (TUPLE_INDEX_NODE_MAX_ENTRIES + 1) * sizeof(TupleIndexNode))
-
-#define SizeofTupleIndexLeafNode \
-	offsetof(TupleIndexNodeData, pointers) + sizeof(TupleIndexNode)
-
 static inline TupleIndexNode
 AllocLeafIndexNode(TupleIndex index, TupleIndexNode next)
 {

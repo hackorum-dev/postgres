@@ -248,6 +248,8 @@
 
 #include "postgres.h"
 
+#include <math.h>
+
 #include "access/htup_details.h"
 #include "access/parallel.h"
 #include "catalog/objectaccess.h"
@@ -1822,21 +1824,83 @@ agg_recompile_expressions(AggState *aggstate, bool minslot, bool nullcheck)
  */
 void
 agg_set_limits(double hashentrysize, double input_groups, int used_bits,
-			   Size *mem_limit, uint64 *ngroups_limit,
+			   bool ishash, Size *mem_limit, uint64 *ngroups_limit,
 			   int *num_partitions)
 {
 	int			npartitions;
 	Size		partition_mem;
 	Size		spill_mem_limit = get_hash_memory_limit();
 
-	/* if not expected to spill, use all of hash_mem */
-	if (input_groups * hashentrysize <= spill_mem_limit)
+	if (ishash)
 	{
-		if (num_partitions != NULL)
-			*num_partitions = 0;
-		*mem_limit = spill_mem_limit;
-		*ngroups_limit = spill_mem_limit / hashentrysize;
-		return;
+		/* if not expected to spill, use all of hash_mem */
+		if (input_groups * hashentrysize <= spill_mem_limit)
+		{
+			if (num_partitions != NULL)
+				*num_partitions = 0;
+			*mem_limit = spill_mem_limit;
+			*ngroups_limit = spill_mem_limit / hashentrysize;
+			return;
+		}
+	}
+	else
+	{
+		double totalsize;
+
+		totalsize = input_groups * hashentrysize;
+
+		if (input_groups <= TUPLE_INDEX_NODE_MAX_ENTRIES)
+			totalsize += SizeofTupleIndexLeafNode;
+		else
+		{
+			double height;
+			double nodes;
+			double leaf_nodes;
+			double internal_nodes;
+
+			/*
+			 * To calculate tree height we use the following formula:
+			 *
+			 *    h <= logt(N) + 1
+			 *
+			 * Where t - half of branching factor and N - number of leaves.
+			 * We know that max amount of tuples per node is given by macro,
+			 * so t = (63 + 1) / 2. Next we simplify formula itself and get:
+			 *
+			 *     log2(N) / 5 + 1
+			 */
+			leaf_nodes = (input_groups + TUPLE_INDEX_NODE_MAX_ENTRIES - 1)
+						 / TUPLE_INDEX_NODE_MAX_ENTRIES;
+			leaf_nodes = ceil(leaf_nodes);
+			height = log2(input_groups) / 5 + 1;
+
+			/*
+			 * To get total number of nodes we use the following formula:
+			 *
+			 *    (B^H - 1) / (B - 1)
+			 *
+			 * Where B - branching factor and H - height of tree
+			 */
+			nodes =   (pow(TUPLE_INDEX_NODE_MAX_ENTRIES + 1, height) - 1)
+					/ (TUPLE_INDEX_NODE_MAX_ENTRIES + 1);
+
+			if (leaf_nodes < nodes)
+				internal_nodes = ceil(nodes - leaf_nodes);
+			else
+				internal_nodes = 0;
+
+			totalsize += internal_nodes * SizeofTupleIndexInternalNode +
+						 leaf_nodes * SizeofTupleIndexLeafNode;
+		}
+
+		if (totalsize <= spill_mem_limit)
+		{
+			if (num_partitions != NULL)
+				*num_partitions = 0;
+			*mem_limit = spill_mem_limit;
+			*ngroups_limit = spill_mem_limit / hashentrysize;
+			return;
+		}
 	}
 
 	/*
@@ -2856,9 +2920,9 @@ agg_refill_hash_table(AggState *aggstate)
 	batch = llast(aggstate->spill_batches);
 	aggstate->spill_batches = list_delete_last(aggstate->spill_batches);
 
-	agg_set_limits(aggstate->hashentrysize, batch->input_card,
-						batch->used_bits, &aggstate->spill_mem_limit,
-						&aggstate->spill_ngroups_limit, NULL);
+	agg_set_limits(aggstate->hashentrysize, batch->input_card, batch->used_bits,
+				   true /* ishash */, &aggstate->spill_mem_limit,
+				   &aggstate->spill_ngroups_limit, NULL);
 
 	/*
 	 * Each batch only processes one grouping set; set the rest to NULL so
@@ -3631,7 +3695,8 @@ indexagg_refill_batch(AggState *aggstate, HashAggBatch *batch)
 	bool	spill_initialized = false;
 
 	agg_set_limits(aggstate->hashentrysize, batch->input_card, batch->used_bits,
-				   &aggstate->spill_mem_limit, &aggstate->spill_ngroups_limit, NULL);
+				   false /* ishash */, &aggstate->spill_mem_limit,
+				   &aggstate->spill_ngroups_limit, NULL);
 
 	ReScanExprContext(aggstate->indexcontext);
 
@@ -4554,7 +4619,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		for (int k = 0; k < aggstate->num_hashes; k++)
 			totalGroups += aggstate->perhash[k].aggnode->numGroups;
 
-		agg_set_limits(aggstate->hashentrysize, totalGroups, 0,
+		agg_set_limits(aggstate->hashentrysize, totalGroups, 0, use_hashing,
 					   &aggstate->spill_mem_limit,
 					   &aggstate->spill_ngroups_limit,
 					   &aggstate->spill_planned_partitions);

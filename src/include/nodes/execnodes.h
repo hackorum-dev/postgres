@@ -959,6 +959,13 @@ typedef struct TupleIndexNodeData
 
 typedef TupleIndexNodeData *TupleIndexNode;
 
+#define SizeofTupleIndexInternalNode \
+	  (offsetof(TupleIndexNodeData, pointers) \
+	+ (TUPLE_INDEX_NODE_MAX_ENTRIES + 1) * sizeof(TupleIndexNode))
+
+#define SizeofTupleIndexLeafNode \
+	(offsetof(TupleIndexNodeData, pointers) + sizeof(TupleIndexNode))
+
 typedef struct TupleIndexData
 {
 	TupleDesc	tupDesc;		/* descriptor for stored tuples */
