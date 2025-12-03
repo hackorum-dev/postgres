@@ -19,6 +19,7 @@
 #include "access/sysattr.h"
 #include "access/transam.h"
 #include "catalog/pg_class.h"
+#include "executor/executor.h"
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
 #include "nodes/extensible.h"
@@ -4238,6 +4239,24 @@ create_nestloop_plan(PlannerInfo *root,
 	/* Restore curOuterRels */
 	bms_free(root->curOuterRels);
 	root->curOuterRels = saveOuterRels;
+
+	/*
+	 * If the inner path doesn't support rescanning and we don't already have a
+	 * Material node, add one to allow the inner plan to be rescanned.
+	 */
+	if (!best_path->jpath.innerjoinpath->rescannable && !IsA(inner_plan, Material))
+	{
+		Plan	   *matplan = (Plan *) make_material(inner_plan);
+
+		/*
+		 * We charge cpu_operator_cost per tuple for materialization, similar
+		 * to what's done for merge joins.
+		 */
+		copy_plan_costsize(matplan, inner_plan);
+		matplan->total_cost += cpu_operator_cost * inner_plan->plan_rows;
+
+		inner_plan = matplan;
+	}
 
 	/* Sort join qual clauses into best execution order */
 	joinrestrictclauses = order_qual_clauses(root, joinrestrictclauses);
