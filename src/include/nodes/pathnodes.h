@@ -2028,6 +2028,13 @@ typedef struct Path
 
 	/* sort ordering of path's output; a List of PathKey nodes; see above */
 	List	   *pathkeys;
+
+	/*
+	 * Does this path support rescanning?
+	 * If false and rescanning is needed (e.g., as NestLoop inner path),
+	 * a Material node will be added automatically.
+	 */
+	bool		rescannable;
 } Path;
 
 /* Macro for extracting a path's parameterization relids; beware double eval */
