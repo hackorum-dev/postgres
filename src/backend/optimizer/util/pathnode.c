@@ -1059,6 +1059,7 @@ create_seqscan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = parallel_workers;
 	pathnode->pathkeys = NIL;	/* seqscan has unordered result */
+	pathnode->rescannable = true;	/* seqscan can restart */
 
 	cost_seqscan(pathnode, root, rel, pathnode->param_info);
 
@@ -1083,6 +1084,7 @@ create_samplescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* samplescan has unordered result */
+	pathnode->rescannable = true;	/* samplescan can restart */
 
 	cost_samplescan(pathnode, root, rel, pathnode->param_info);
 
@@ -1135,6 +1137,7 @@ create_index_path(PlannerInfo *root,
 	pathnode->path.parallel_safe = rel->consider_parallel;
 	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = pathkeys;
+	pathnode->path.rescannable = true;	/* index scans support rescan */
 
 	pathnode->indexinfo = index;
 	pathnode->indexclauses = indexclauses;
@@ -1186,6 +1189,7 @@ create_bitmap_heap_path(PlannerInfo *root,
 	pathnode->path.parallel_safe = rel->consider_parallel;
 	pathnode->path.parallel_workers = parallel_degree;
 	pathnode->path.pathkeys = NIL;	/* always unordered */
+	pathnode->path.rescannable = true; /* bitmap scan supports rescan */
 
 	pathnode->bitmapqual = bitmapqual;
 
@@ -1319,6 +1323,7 @@ create_tidscan_path(PlannerInfo *root, RelOptInfo *rel, List *tidquals,
 	pathnode->path.parallel_safe = rel->consider_parallel;
 	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = NIL;	/* always unordered */
+	pathnode->path.rescannable = true;	/* TID scans can restart */
 
 	pathnode->tidquals = tidquals;
 
@@ -1349,6 +1354,7 @@ create_tidrangescan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.parallel_safe = rel->consider_parallel;
 	pathnode->path.parallel_workers = parallel_workers;
 	pathnode->path.pathkeys = NIL;	/* always unordered */
+	pathnode->path.rescannable = true;	/* TID range scans can restart */
 
 	pathnode->tidrangequals = tidrangequals;
 
@@ -1413,6 +1419,8 @@ create_append_path(PlannerInfo *root,
 	pathnode->path.parallel_safe = rel->consider_parallel;
 	pathnode->path.parallel_workers = parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
+	/* Append is rescannable if all its children are, will check each later */
+	pathnode->path.rescannable = true;
 
 	/*
 	 * For parallel append, non-partial paths are sorted by descending total
@@ -1453,6 +1461,9 @@ create_append_path(PlannerInfo *root,
 
 		pathnode->path.parallel_safe = pathnode->path.parallel_safe &&
 			subpath->parallel_safe;
+
+		/* Append is rescannable only if all children are rescannable */
+		pathnode->path.rescannable = subpath->rescannable;
 
 		/* All child paths must have same parameterization */
 		Assert(bms_equal(PATH_REQ_OUTER(subpath), required_outer));
@@ -1574,6 +1585,8 @@ create_merge_append_path(PlannerInfo *root,
 	pathnode->path.parallel_safe = rel->consider_parallel;
 	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = pathkeys;
+	/* MergeAppend is rescannable if all its children are, will check each later */
+	pathnode->path.rescannable = true;
 	pathnode->subpaths = subpaths;
 
 	/*
@@ -1605,6 +1618,8 @@ create_merge_append_path(PlannerInfo *root,
 		pathnode->path.rows += subpath->rows;
 		pathnode->path.parallel_safe = pathnode->path.parallel_safe &&
 			subpath->parallel_safe;
+		/* MergeAppend is rescannable only if all children are */
+		pathnode->path.rescannable = subpath->rescannable;
 
 		if (!pathkeys_count_contained_in(pathkeys, subpath->pathkeys,
 										 &presorted_keys))
@@ -1750,6 +1765,10 @@ create_material_path(RelOptInfo *rel, Path *subpath, bool enabled)
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = subpath->pathkeys;
+	pathnode->path.rescannable = true;	/* Material always supports rescan
+										   unless the path is parameterized,
+										   which will be rejected by the
+										   planner if the scan is mandatory */
 
 	pathnode->subpath = subpath;
 
@@ -1786,6 +1805,7 @@ create_memoize_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = subpath->pathkeys;
+	pathnode->path.rescannable = true;	/* Memoize always supports rescan */
 
 	pathnode->subpath = subpath;
 	pathnode->hash_operators = hash_operators;
@@ -1904,6 +1924,7 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.parallel_safe = false;
 	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = NIL;	/* Gather has unordered result */
+	pathnode->path.rescannable = true; /* Gather supports rescan however maybe not efficient */
 
 	pathnode->subpath = subpath;
 	pathnode->num_workers = subpath->parallel_workers;
@@ -1948,6 +1969,7 @@ create_subqueryscan_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
+	pathnode->path.rescannable = true; /* subquery supports rescan if not parameterized */
 	pathnode->subpath = subpath;
 
 	cost_subqueryscan(pathnode, root, rel, pathnode->path.param_info,
@@ -1976,6 +1998,7 @@ create_functionscan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = pathkeys;
+	pathnode->rescannable = true;	/* function scans materialize their output */
 
 	cost_functionscan(pathnode, root, rel, pathnode->param_info);
 
@@ -2002,6 +2025,7 @@ create_tablefuncscan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* result is always unordered */
+	pathnode->rescannable = true;	/* table function scans materialize output */
 
 	cost_tablefuncscan(pathnode, root, rel, pathnode->param_info);
 
@@ -2028,6 +2052,7 @@ create_valuesscan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* result is always unordered */
+	pathnode->rescannable = true;	/* values scans can restart */
 
 	cost_valuesscan(pathnode, root, rel, pathnode->param_info);
 
@@ -2054,6 +2079,7 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = pathkeys;
+	pathnode->rescannable = true; /* CTE scans materialize output */
 
 	cost_ctescan(pathnode, root, rel, pathnode->param_info);
 
@@ -2080,6 +2106,7 @@ create_namedtuplestorescan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* result is always unordered */
+	pathnode->rescannable = true;	/* tuplestore scans materialize output */
 
 	cost_namedtuplestorescan(pathnode, root, rel, pathnode->param_info);
 
@@ -2106,6 +2133,7 @@ create_resultscan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* result is always unordered */
+	pathnode->rescannable = true;	/* result nodes can be rescanned */
 
 	cost_resultscan(pathnode, root, rel, pathnode->param_info);
 
@@ -2132,6 +2160,7 @@ create_worktablescan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->parallel_safe = rel->consider_parallel;
 	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* result is always unordered */
+	pathnode->rescannable = true;	/* work table scans materialize output */
 
 	/* Cost is the same as for a regular CTE scan */
 	cost_ctescan(pathnode, root, rel, pathnode->param_info);
@@ -2179,6 +2208,41 @@ create_foreignscan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.startup_cost = startup_cost;
 	pathnode->path.total_cost = total_cost;
 	pathnode->path.pathkeys = pathkeys;
+
+	/*
+	 * A foreign scan is considered rescannable only if the FDW provides
+	 * a ReScanForeignScan callback. If not provided, the planner will
+	 * automatically insert a Material node when rescanning is needed
+	 * (e.g., for nested loop joins).
+	 *
+	 * However, if the path is parameterized (required_outer is not empty),
+	 * and the FDW doesn't support rescan, we cannot create this path.
+	 * Parameterized paths require rescanning with different parameter values,
+	 * and Material nodes don't help in this case (they would need to be
+	 * rescanned too). This is similar to how Motion paths work.
+	 */
+	if (rel->fdwroutine != NULL && rel->fdwroutine->ReScanForeignScan != NULL)
+	{
+		pathnode->path.rescannable = true;
+	}
+	else
+	{
+		pathnode->path.rescannable = false;
+
+		/*
+		 * Reject parameterized paths if FDW doesn't support rescan
+		 *
+		 * We only need to check path.required_outer here. For a base relation,
+		 * any dependency from rel->lateral_relids is already reflected in the
+		 * required_outer set passed to this function. Therefore, checking
+		 * required_outer is sufficient to detect all parameterization.
+		 */
+		if (!bms_is_empty(required_outer))
+		{
+			pfree(pathnode);
+			return NULL;
+		}
+	}
 
 	pathnode->fdw_outerpath = fdw_outerpath;
 	pathnode->fdw_restrictinfo = fdw_restrictinfo;
@@ -2238,6 +2302,24 @@ create_foreign_join_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->fdw_restrictinfo = fdw_restrictinfo;
 	pathnode->fdw_private = fdw_private;
 
+	/*
+	 * A foreign join is considered rescannable only if the FDW provides
+	 * a ReScanForeignScan callback. If not provided, the planner will
+	 * automatically insert a Material node when rescanning is needed.
+	 */
+	if (rel->fdwroutine != NULL && rel->fdwroutine->ReScanForeignScan != NULL)
+	{
+		pathnode->path.rescannable = true;
+	}
+	else
+	{
+	  /*
+	   * Parameterized paths are rejected at the beginning of this function
+	   * already.
+	   */
+		pathnode->path.rescannable = false;
+	}
+
 	return pathnode;
 }
 
@@ -2286,6 +2368,20 @@ create_foreign_upper_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->fdw_outerpath = fdw_outerpath;
 	pathnode->fdw_restrictinfo = fdw_restrictinfo;
 	pathnode->fdw_private = fdw_private;
+
+	/*
+	 * A foreign upper relation is considered rescannable only if the FDW
+	 * provides a ReScanForeignScan callback. If not provided, the planner
+	 * will automatically insert a Material node when rescanning is needed.
+	 *
+	 * Note: Upper relations are never parameterized (param_info is always
+	 * NULL), so we don't need to check for the parameterization + no-rescan
+	 * combination here.
+	 */
+	if (rel->fdwroutine != NULL && rel->fdwroutine->ReScanForeignScan != NULL)
+		pathnode->path.rescannable = true;
+	else
+		pathnode->path.rescannable = false;
 
 	return pathnode;
 }
@@ -2444,6 +2540,8 @@ create_nestloop_path(PlannerInfo *root,
 	/* This is a foolish way to estimate parallel_workers, but for now... */
 	pathnode->jpath.path.parallel_workers = outer_path->parallel_workers;
 	pathnode->jpath.path.pathkeys = pathkeys;
+	/* NestLoop can be rescanned if both outer and inner can be */
+	pathnode->jpath.path.rescannable = outer_path->rescannable && inner_path->rescannable;
 	pathnode->jpath.jointype = jointype;
 	pathnode->jpath.inner_unique = extra->inner_unique;
 	pathnode->jpath.outerjoinpath = outer_path;
@@ -2510,6 +2608,8 @@ create_mergejoin_path(PlannerInfo *root,
 	/* This is a foolish way to estimate parallel_workers, but for now... */
 	pathnode->jpath.path.parallel_workers = outer_path->parallel_workers;
 	pathnode->jpath.path.pathkeys = pathkeys;
+	/* Mergejoin can be rescanned if both outer and inner can be */
+	pathnode->jpath.path.rescannable = outer_path->rescannable && inner_path->rescannable;
 	pathnode->jpath.jointype = jointype;
 	pathnode->jpath.inner_unique = extra->inner_unique;
 	pathnode->jpath.outerjoinpath = outer_path;
@@ -2588,6 +2688,8 @@ create_hashjoin_path(PlannerInfo *root,
 	 * outer rel than it does now.)
 	 */
 	pathnode->jpath.path.pathkeys = NIL;
+	/* Hashjoin can be rescanned if both outer and inner can be */
+	pathnode->jpath.path.rescannable = outer_path->rescannable && inner_path->rescannable;
 	pathnode->jpath.jointype = jointype;
 	pathnode->jpath.inner_unique = extra->inner_unique;
 	pathnode->jpath.outerjoinpath = outer_path;
@@ -2645,6 +2747,8 @@ create_projection_path(PlannerInfo *root,
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Projection does not change the sort order */
 	pathnode->path.pathkeys = subpath->pathkeys;
+	/* Projection inherits rescannability from its subpath */
+	pathnode->path.rescannable = subpath->rescannable;
 
 	pathnode->subpath = subpath;
 
@@ -2898,6 +3002,8 @@ create_incremental_sort_path(PlannerInfo *root,
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
+	/* Sort materializes its output, so it's rescannable */
+	pathnode->path.rescannable = true;
 
 	pathnode->subpath = subpath;
 
@@ -2946,6 +3052,8 @@ create_sort_path(PlannerInfo *root,
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
+	/* Sort materializes its output, so it's rescannable */
+	pathnode->path.rescannable = true;
 
 	pathnode->subpath = subpath;
 
@@ -2993,6 +3101,8 @@ create_group_path(PlannerInfo *root,
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Group doesn't change sort ordering */
 	pathnode->path.pathkeys = subpath->pathkeys;
+	/* Group doesn't materialize, so inherit from subpath */
+	pathnode->path.rescannable = subpath->rescannable;
 
 	pathnode->subpath = subpath;
 
@@ -3048,6 +3158,8 @@ create_unique_path(PlannerInfo *root,
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Unique doesn't change the input ordering */
 	pathnode->path.pathkeys = subpath->pathkeys;
+	/* Unique doesn't materialize, so inherit from subpath */
+	pathnode->path.rescannable = subpath->rescannable;
 
 	pathnode->subpath = subpath;
 	pathnode->numkeys = numCols;
@@ -3131,6 +3243,7 @@ create_agg_path(PlannerInfo *root,
 	}
 	else
 		pathnode->path.pathkeys = NIL;	/* output is unordered */
+	pathnode->path.rescannable = true; /* Aggregations support rescan, however maybe not efficient */
 
 	pathnode->subpath = subpath;
 
