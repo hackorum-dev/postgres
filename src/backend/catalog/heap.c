@@ -935,6 +935,7 @@ InsertPgClassTuple(Relation pg_class_desc,
 	Datum		values[Natts_pg_class];
 	bool		nulls[Natts_pg_class];
 	HeapTuple	tup;
+	TransactionId cxid = InvalidTransactionId;
 
 	/* This is a tad tedious, but way cleaner than what we used to do... */
 	memset(values, 0, sizeof(values));
@@ -971,6 +972,14 @@ InsertPgClassTuple(Relation pg_class_desc,
 	values[Anum_pg_class_relrewrite - 1] = ObjectIdGetDatum(rd_rel->relrewrite);
 	values[Anum_pg_class_relfrozenxid - 1] = TransactionIdGetDatum(rd_rel->relfrozenxid);
 	values[Anum_pg_class_relminmxid - 1] = MultiXactIdGetDatum(rd_rel->relminmxid);
+	if (!rd_rel->relisshared && !IsBootstrapProcessingMode() && !RecoveryInProgress())
+	{
+		(void)GetCurrentTransactionId();
+		cxid = GetTopTransactionIdIfAny();
+	}
+
+	values[Anum_pg_class_relminxid - 1] = TransactionIdGetDatum(cxid);
+
 	if (relacl != (Datum) 0)
 		values[Anum_pg_class_relacl - 1] = relacl;
 	else
