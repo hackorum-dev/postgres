@@ -596,6 +596,23 @@ tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_
 	}
 }
 
+
+static inline char* _format_tid(char *tidbuf, char prefix, ItemPointer itemPtr)
+{
+	BlockNumber blockNumber;
+	OffsetNumber offsetNumber;
+
+	blockNumber = ItemPointerGetBlockNumberNoCheck(itemPtr);
+	offsetNumber = ItemPointerGetOffsetNumberNoCheck(itemPtr);
+
+	tidbuf[0] = prefix;
+	/* Perhaps someday we should output this as a record. */
+	snprintf(tidbuf+1, 32-1, "(%u,%u)", blockNumber, offsetNumber);
+
+	return tidbuf;
+}
+
+
 /*
  * callback for individual changed tuples
  */
@@ -608,6 +625,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	Form_pg_class class_form;
 	TupleDesc	tupdesc;
 	MemoryContext old;
+	char		tidbuf[32];
 
 	data = ctx->output_plugin_private;
 	txndata = txn->output_plugin_private;
@@ -639,6 +657,9 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
 			appendStringInfoString(ctx->out, " INSERT:");
+			if (change->data.tp.newctid.ip_posid)
+				appendStringInfoString(ctx->out,
+					_format_tid(tidbuf, '+', &(change->data.tp.newctid)));
 			if (change->data.tp.newtuple == NULL)
 				appendStringInfoString(ctx->out, " (no-tuple-data)");
 			else
@@ -647,7 +668,15 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 									false);
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
+			if (change->data.tp.is_hot_update)
+				appendStringInfoString(ctx->out, " HOT");
 			appendStringInfoString(ctx->out, " UPDATE:");
+			if (change->data.tp.oldctid.ip_posid)
+				appendStringInfoString(ctx->out,
+					_format_tid(tidbuf, '-', &(change->data.tp.oldctid)));
+			if (change->data.tp.newctid.ip_posid)
+				appendStringInfoString(ctx->out,
+					_format_tid(tidbuf, '+', &(change->data.tp.newctid)));
 			if (change->data.tp.oldtuple != NULL)
 			{
 				appendStringInfoString(ctx->out, " old-key:");
@@ -666,7 +695,9 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
 			appendStringInfoString(ctx->out, " DELETE:");
-
+			if (change->data.tp.oldctid.ip_posid)
+				appendStringInfoString(ctx->out,
+					_format_tid(tidbuf, '-', &(change->data.tp.oldctid)));
 			/* if there was no PK, we only know that a delete happened */
 			if (change->data.tp.oldtuple == NULL)
 				appendStringInfoString(ctx->out, " (no-tuple-data)");

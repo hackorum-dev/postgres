@@ -104,6 +104,13 @@ typedef struct ReorderBufferChange
 			HeapTuple	oldtuple;
 			/* valid for INSERT || UPDATE */
 			HeapTuple	newtuple;
+
+			/* ctid for old tuple; valid for DELETE || UPDATE */
+			ItemPointerData oldctid;
+			/* ctid for new tuple; valid for INSERT || UPDATE */
+			ItemPointerData newctid;
+			/* update type - only valid for UPDATE */
+			bool		is_hot_update;
 		}			tp;
 
 		/*
