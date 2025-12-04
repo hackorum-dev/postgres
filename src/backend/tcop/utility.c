@@ -1076,7 +1076,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 		case T_DropSessionVarStmt:
 			/* No event triggers for catalog less session variables */
-			DropVariableByName(((DropSessionVarStmt *) parsetree)->name);
+			DropVariableByName((DropSessionVarStmt *) parsetree);
 			break;
 
 		case T_LetStmt:
