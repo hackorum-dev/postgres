@@ -40,6 +40,38 @@ extern Size mul_size(Size s1, Size s2);
 
 extern PGDLLIMPORT Size pg_get_shmem_pagesize(void);
 
+/*
+ * Simplified shared memory hash table creation API
+ *
+ * These macros provide a simpler way to create shared memory hash tables by:
+ * - Automatically determining keysize and entrysize from type information
+ * - Automatically choosing HASH_STRINGS vs HASH_BLOBS based on key type
+ * - Eliminating the need for explicit HASHCTL and flags in common cases
+ *
+ * Usage:
+ *   HTAB *hash = shmem_hash_make(MyEntry, keyfield, "My hash", 64, 128);
+ *
+ * For more options (partitioning, fixed size, custom hash):
+ *   HASHOPTS opts = {.num_partitions = 16, .fixed_size = true};
+ *   HTAB *hash = shmem_hash_make_ext(MyEntry, keyfield, "My hash", 64, 128, &opts);
+ */
+#define shmem_hash_make(entrytype, keymember, tabname, init_size, max_size) \
+	shmem_hash_make_ext(entrytype, keymember, tabname, init_size, max_size, NULL)
+
+#define shmem_hash_make_ext(entrytype, keymember, tabname, init_size, max_size, opts) \
+	(StaticAssertExpr(offsetof(entrytype, keymember) == 0, \
+						 #keymember " must be first member in " #entrytype), \
+	shmem_hash_make_impl( \
+		(tabname), (init_size), (max_size), \
+		sizeof(((entrytype *)0)->keymember), \
+		sizeof(entrytype), \
+		HASH_KEY_AS_STRING(entrytype, keymember), \
+		(opts)))
+
+extern HTAB *shmem_hash_make_impl(const char *name, int64 init_size, int64 max_size,
+								  Size keysize, Size entrysize, bool string_key,
+								  const HASHOPTS *opts);
+
 /* ipci.c */
 extern void RequestAddinShmemSpace(Size size);
 

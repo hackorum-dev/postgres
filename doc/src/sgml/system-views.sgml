@@ -4254,7 +4254,10 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
   <para>
    Anonymous allocations are allocations that have been made
    with <literal>ShmemAlloc()</literal> directly, rather than via
-   <literal>ShmemInitStruct()</literal> or
+   <literal>ShmemInitStruct()</literal>,
+   <literal>shmem_hash_make()</literal>,
+   <literal>shmem_hash_make_ext()</literal>,
+   or
    <literal>ShmemInitHash()</literal>.
   </para>
 
