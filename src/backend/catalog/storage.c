@@ -594,10 +594,7 @@ void
 SerializePendingSyncs(Size maxSize, char *startAddress)
 {
 	HTAB	   *tmphash;
-	HASH_SEQ_STATUS scan;
-	PendingRelSync *sync;
 	PendingRelDelete *delete;
-	RelFileLocator *src;
 	RelFileLocator *dest = (RelFileLocator *) startAddress;
 
 	if (!pendingSyncHash)
@@ -608,9 +605,10 @@ SerializePendingSyncs(Size maxSize, char *startAddress)
 						   hash_get_num_entries(pendingSyncHash));
 
 	/* collect all rlocator from pending syncs */
-	hash_seq_init(&scan, pendingSyncHash);
-	while ((sync = (PendingRelSync *) hash_seq_search(&scan)))
+	foreach_hash(PendingRelSync, sync, pendingSyncHash)
+	{
 		(void) hash_search(tmphash, &sync->rlocator, HASH_ENTER, NULL);
+	}
 
 	/* remove deleted rnodes */
 	for (delete = pendingDeletes; delete != NULL; delete = delete->next)
@@ -618,9 +616,10 @@ SerializePendingSyncs(Size maxSize, char *startAddress)
 			(void) hash_search(tmphash, &delete->rlocator,
 							   HASH_REMOVE, NULL);
 
-	hash_seq_init(&scan, tmphash);
-	while ((src = (RelFileLocator *) hash_seq_search(&scan)))
+	foreach_hash(RelFileLocator, src, tmphash)
+	{
 		*dest++ = *src;
+	}
 
 	hash_destroy(tmphash);
 
@@ -733,8 +732,6 @@ smgrDoPendingSyncs(bool isCommit, bool isParallelWorker)
 	int			nrels = 0,
 				maxrels = 0;
 	SMgrRelation *srels = NULL;
-	HASH_SEQ_STATUS scan;
-	PendingRelSync *pendingsync;
 
 	Assert(GetCurrentTransactionNestLevel() == 1);
 
@@ -763,8 +760,7 @@ smgrDoPendingSyncs(bool isCommit, bool isParallelWorker)
 			(void) hash_search(pendingSyncHash, &pending->rlocator,
 							   HASH_REMOVE, NULL);
 
-	hash_seq_init(&scan, pendingSyncHash);
-	while ((pendingsync = (PendingRelSync *) hash_seq_search(&scan)))
+	foreach_hash(PendingRelSync, pendingsync, pendingSyncHash)
 	{
 		ForkNumber	fork;
 		BlockNumber nblocks[MAX_FORKNUM + 1];

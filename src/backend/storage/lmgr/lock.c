@@ -2304,11 +2304,9 @@ LockRelease(const LOCKTAG *locktag, LOCKMODE lockmode, bool sessionLock)
 void
 LockReleaseAll(LOCKMETHODID lockmethodid, bool allLocks)
 {
-	HASH_SEQ_STATUS status;
 	LockMethod	lockMethodTable;
 	int			i,
 				numLockModes;
-	LOCALLOCK  *locallock;
 	LOCK	   *lock;
 	int			partition;
 	bool		have_fast_path_lwlock = false;
@@ -2341,9 +2339,7 @@ LockReleaseAll(LOCKMETHODID lockmethodid, bool allLocks)
 	 * pointers.  Fast-path locks are cleaned up during the locallock table
 	 * scan, though.
 	 */
-	hash_seq_init(&status, LockMethodLocalHash);
-
-	while ((locallock = (LOCALLOCK *) hash_seq_search(&status)) != NULL)
+	foreach_hash(LOCALLOCK, locallock, LockMethodLocalHash)
 	{
 		/*
 		 * If the LOCALLOCK entry is unused, something must've gone wrong
@@ -2578,15 +2574,10 @@ LockReleaseAll(LOCKMETHODID lockmethodid, bool allLocks)
 void
 LockReleaseSession(LOCKMETHODID lockmethodid)
 {
-	HASH_SEQ_STATUS status;
-	LOCALLOCK  *locallock;
-
 	if (lockmethodid <= 0 || lockmethodid >= lengthof(LockMethods))
 		elog(ERROR, "unrecognized lock method: %d", lockmethodid);
 
-	hash_seq_init(&status, LockMethodLocalHash);
-
-	while ((locallock = (LOCALLOCK *) hash_seq_search(&status)) != NULL)
+	foreach_hash(LOCALLOCK, locallock, LockMethodLocalHash)
 	{
 		/* Ignore items that are not of the specified lock method */
 		if (LOCALLOCK_LOCKMETHOD(*locallock) != lockmethodid)
@@ -2610,12 +2601,7 @@ LockReleaseCurrentOwner(LOCALLOCK **locallocks, int nlocks)
 {
 	if (locallocks == NULL)
 	{
-		HASH_SEQ_STATUS status;
-		LOCALLOCK  *locallock;
-
-		hash_seq_init(&status, LockMethodLocalHash);
-
-		while ((locallock = (LOCALLOCK *) hash_seq_search(&status)) != NULL)
+		foreach_hash(LOCALLOCK, locallock, LockMethodLocalHash)
 			ReleaseLockIfHeld(locallock, false);
 	}
 	else
@@ -2709,12 +2695,7 @@ LockReassignCurrentOwner(LOCALLOCK **locallocks, int nlocks)
 
 	if (locallocks == NULL)
 	{
-		HASH_SEQ_STATUS status;
-		LOCALLOCK  *locallock;
-
-		hash_seq_init(&status, LockMethodLocalHash);
-
-		while ((locallock = (LOCALLOCK *) hash_seq_search(&status)) != NULL)
+		foreach_hash(LOCALLOCK, locallock, LockMethodLocalHash)
 			LockReassignOwner(locallock, parent);
 	}
 	else
@@ -3393,17 +3374,13 @@ CheckForSessionAndXactLocks(void)
 	} PerLockTagEntry;
 
 	HTAB	   *lockhtab;
-	HASH_SEQ_STATUS status;
-	LOCALLOCK  *locallock;
 
 	/* Create a local hash table keyed by LOCKTAG only */
 	lockhtab = hash_make(PerLockTagEntry, lock,
 						 "CheckForSessionAndXactLocks table", 256);
 
 	/* Scan local lock table to find entries for each LOCKTAG */
-	hash_seq_init(&status, LockMethodLocalHash);
-
-	while ((locallock = (LOCALLOCK *) hash_seq_search(&status)) != NULL)
+	foreach_hash(LOCALLOCK, locallock, LockMethodLocalHash)
 	{
 		LOCALLOCKOWNER *lockOwners = locallock->lockOwners;
 		PerLockTagEntry *hentry;
@@ -3466,16 +3443,11 @@ CheckForSessionAndXactLocks(void)
 void
 AtPrepare_Locks(void)
 {
-	HASH_SEQ_STATUS status;
-	LOCALLOCK  *locallock;
-
 	/* First, verify there aren't locks of both xact and session level */
 	CheckForSessionAndXactLocks();
 
 	/* Now do the per-locallock cleanup work */
-	hash_seq_init(&status, LockMethodLocalHash);
-
-	while ((locallock = (LOCALLOCK *) hash_seq_search(&status)) != NULL)
+	foreach_hash(LOCALLOCK, locallock, LockMethodLocalHash)
 	{
 		TwoPhaseLockRecord record;
 		LOCALLOCKOWNER *lockOwners = locallock->lockOwners;
@@ -3563,8 +3535,6 @@ void
 PostPrepare_Locks(FullTransactionId fxid)
 {
 	PGPROC	   *newproc = TwoPhaseGetDummyProc(fxid, false);
-	HASH_SEQ_STATUS status;
-	LOCALLOCK  *locallock;
 	LOCK	   *lock;
 	PROCLOCK   *proclock;
 	PROCLOCKTAG proclocktag;
@@ -3586,9 +3556,7 @@ PostPrepare_Locks(FullTransactionId fxid)
 	 * pointing to the same proclock, and we daren't end up with any dangling
 	 * pointers.
 	 */
-	hash_seq_init(&status, LockMethodLocalHash);
-
-	while ((locallock = (LOCALLOCK *) hash_seq_search(&status)) != NULL)
+	foreach_hash(LOCALLOCK, locallock, LockMethodLocalHash)
 	{
 		LOCALLOCKOWNER *lockOwners = locallock->lockOwners;
 		bool		haveSessionLock;
@@ -3784,8 +3752,6 @@ LockData *
 GetLockStatusData(void)
 {
 	LockData   *data;
-	PROCLOCK   *proclock;
-	HASH_SEQ_STATUS seqstat;
 	int			els;
 	int			el;
 	int			i;
@@ -3921,9 +3887,7 @@ GetLockStatusData(void)
 	}
 
 	/* Now scan the tables to copy the data */
-	hash_seq_init(&seqstat, LockMethodProcLockHash);
-
-	while ((proclock = (PROCLOCK *) hash_seq_search(&seqstat)))
+	foreach_hash(PROCLOCK, proclock, LockMethodProcLockHash)
 	{
 		PGPROC	   *proc = proclock->tag.myProc;
 		LOCK	   *lock = proclock->tag.myLock;
@@ -4161,8 +4125,6 @@ xl_standby_lock *
 GetRunningTransactionLocks(int *nlocks)
 {
 	xl_standby_lock *accessExclusiveLocks;
-	PROCLOCK   *proclock;
-	HASH_SEQ_STATUS seqstat;
 	int			i;
 	int			index;
 	int			els;
@@ -4184,10 +4146,9 @@ GetRunningTransactionLocks(int *nlocks)
 	 */
 	accessExclusiveLocks = palloc(els * sizeof(xl_standby_lock));
 
-	/* Now scan the tables to copy the data */
-	hash_seq_init(&seqstat, LockMethodProcLockHash);
-
 	/*
+	 * Now scan the tables to copy the data.
+	 *
 	 * If lock is a currently granted AccessExclusiveLock then it will have
 	 * just one proclock holder, so locks are never accessed twice in this
 	 * particular case. Don't copy this code for use elsewhere because in the
@@ -4195,7 +4156,7 @@ GetRunningTransactionLocks(int *nlocks)
 	 * non-exclusive lock types.
 	 */
 	index = 0;
-	while ((proclock = (PROCLOCK *) hash_seq_search(&seqstat)))
+	foreach_hash(PROCLOCK, proclock, LockMethodProcLockHash)
 	{
 		/* make sure this definition matches the one used in LockAcquire */
 		if ((proclock->holdMask & LOCKBIT_ON(AccessExclusiveLock)) &&
@@ -4290,18 +4251,14 @@ void
 DumpAllLocks(void)
 {
 	PGPROC	   *proc;
-	PROCLOCK   *proclock;
 	LOCK	   *lock;
-	HASH_SEQ_STATUS status;
 
 	proc = MyProc;
 
 	if (proc && proc->waitLock)
 		LOCK_PRINT("DumpAllLocks: waiting on", proc->waitLock, 0);
 
-	hash_seq_init(&status, LockMethodProcLockHash);
-
-	while ((proclock = (PROCLOCK *) hash_seq_search(&status)) != NULL)
+	foreach_hash(PROCLOCK, proclock, LockMethodProcLockHash)
 	{
 		PROCLOCK_PRINT("DumpAllLocks", proclock);
 
