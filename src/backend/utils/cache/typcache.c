@@ -395,28 +395,23 @@ lookup_type_cache(Oid type_id, int flags)
 	if (TypeCacheHash == NULL)
 	{
 		/* First time through: initialize the hash table */
-		HASHCTL		ctl;
 		int			allocsize;
-
-		ctl.keysize = sizeof(Oid);
-		ctl.entrysize = sizeof(TypeCacheEntry);
 
 		/*
 		 * TypeCacheEntry takes hash value from the system cache. For
 		 * TypeCacheHash we use the same hash in order to speedup search by
 		 * hash value. This is used by hash_seq_init_with_hash_value().
 		 */
-		ctl.hash = type_cache_syshash;
-
-		TypeCacheHash = hash_create("Type information cache", 64,
-									&ctl, HASH_ELEM | HASH_FUNCTION);
+		TypeCacheHash = hash_make_fn_cxt(TypeCacheEntry, type_id,
+										 "Type information cache", 64,
+										 type_cache_syshash, NULL,
+										 TopMemoryContext);
 
 		Assert(RelIdToTypeIdCacheHash == NULL);
 
-		ctl.keysize = sizeof(Oid);
-		ctl.entrysize = sizeof(RelIdToTypeIdCacheEntry);
-		RelIdToTypeIdCacheHash = hash_create("Map from relid to OID of cached composite type", 64,
-											 &ctl, HASH_ELEM | HASH_BLOBS);
+		RelIdToTypeIdCacheHash = hash_make_cxt(RelIdToTypeIdCacheEntry, relid,
+											   "Map from relid to OID of cached composite type",
+											   64, TopMemoryContext);
 
 		/* Also set up callbacks for SI invalidations */
 		CacheRegisterRelcacheCallback(TypeCacheRelCallback, (Datum) 0);
@@ -2076,15 +2071,11 @@ assign_record_type_typmod(TupleDesc tupDesc)
 	if (RecordCacheHash == NULL)
 	{
 		/* First time through: initialize the hash table */
-		HASHCTL		ctl;
-
-		ctl.keysize = sizeof(TupleDesc);	/* just the pointer */
-		ctl.entrysize = sizeof(RecordCacheEntry);
-		ctl.hash = record_type_typmod_hash;
-		ctl.match = record_type_typmod_compare;
-		RecordCacheHash = hash_create("Record information cache", 64,
-									  &ctl,
-									  HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
+		RecordCacheHash = hash_make_fn_cxt(RecordCacheEntry, tupdesc,
+										   "Record information cache", 64,
+										   record_type_typmod_hash,
+										   record_type_typmod_compare,
+										   TopMemoryContext);
 
 		/* Also make sure CacheMemoryContext exists */
 		if (!CacheMemoryContext)

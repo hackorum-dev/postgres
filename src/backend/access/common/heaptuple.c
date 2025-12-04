@@ -125,18 +125,9 @@ missing_match(const void *key1, const void *key2, Size keysize)
 static void
 init_missing_cache(void)
 {
-	HASHCTL		hash_ctl;
-
-	hash_ctl.keysize = sizeof(missing_cache_key);
-	hash_ctl.entrysize = sizeof(missing_cache_key);
-	hash_ctl.hcxt = TopMemoryContext;
-	hash_ctl.hash = missing_hash;
-	hash_ctl.match = missing_match;
 	missing_cache =
-		hash_create("Missing Values Cache",
-					32,
-					&hash_ctl,
-					HASH_ELEM | HASH_CONTEXT | HASH_FUNCTION | HASH_COMPARE);
+		hashset_make_fn_cxt(missing_cache_key, "Missing Values Cache", 32,
+							missing_hash, missing_match, TopMemoryContext);
 }
 
 /* ----------------------------------------------------------------

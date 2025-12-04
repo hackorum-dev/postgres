@@ -518,7 +518,6 @@ static void
 pgss_shmem_startup(void)
 {
 	bool		found;
-	HASHCTL		info;
 	FILE	   *file = NULL;
 	FILE	   *qfile = NULL;
 	uint32		header;
@@ -558,12 +557,9 @@ pgss_shmem_startup(void)
 		pgss->stats.stats_reset = GetCurrentTimestamp();
 	}
 
-	info.keysize = sizeof(pgssHashKey);
-	info.entrysize = sizeof(pgssEntry);
-	pgss_hash = ShmemInitHash("pg_stat_statements hash",
-							  pgss_max, pgss_max,
-							  &info,
-							  HASH_ELEM | HASH_BLOBS);
+	pgss_hash = shmem_hash_make(pgssEntry, key,
+								"pg_stat_statements hash",
+								pgss_max, pgss_max);
 
 	LWLockRelease(AddinShmemInitLock);
 

@@ -179,8 +179,8 @@ InitShmemAllocator(PGShmemHeader *seghdr)
 	 * Create (or attach to) the shared memory index of shmem areas.
 	 *
 	 * This is the same initialization as ShmemInitHash() does, but we cannot
-	 * use ShmemInitHash() here because it relies on ShmemIndex being already
-	 * initialized.
+	 * use ShmemInitHash() nor shmem_hash_make() here because it relies on
+	 * ShmemIndex being already initialized.
 	 */
 	info.keysize = SHMEM_INDEX_KEYSIZE;
 	info.entrysize = sizeof(ShmemIndexEnt);
@@ -386,6 +386,28 @@ ShmemInitHash(const char *name,		/* table string name for shmem index */
 	infoP->hctl = (HASHHDR *) location;
 
 	return hash_create(name, init_size, infoP, hash_flags);
+}
+
+/*
+ * Implementation function for shmem_hash_make macros.
+ *
+ * Creates a shared memory hash table with simplified parameters.
+ * Pass NULL for opts to use all defaults.
+ */
+HTAB *
+shmem_hash_make_impl(const char *name, int64 init_size, int64 max_size,
+					 Size keysize, Size entrysize, bool string_key,
+					 const HASHOPTS *opts)
+{
+	HASHCTL		ctl;
+	int			flags;
+
+	/* Shared memory hash tables use ShmemAllocNoError, not a custom allocator */
+	Assert(opts == NULL || opts->alloc == NULL);
+
+	hash_opts_init(&ctl, &flags, keysize, entrysize, string_key, opts);
+
+	return ShmemInitHash(name, init_size, max_size, &ctl, flags);
 }
 
 /*

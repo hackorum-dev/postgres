@@ -872,7 +872,6 @@ build_guc_variables(void)
 {
 	int			size_vars;
 	int			num_vars = 0;
-	HASHCTL		hash_ctl;
 	GUCHashEntry *hentry;
 	bool		found;
 
@@ -895,15 +894,10 @@ build_guc_variables(void)
 	 */
 	size_vars = num_vars + num_vars / 4;
 
-	hash_ctl.keysize = sizeof(char *);
-	hash_ctl.entrysize = sizeof(GUCHashEntry);
-	hash_ctl.hash = guc_name_hash;
-	hash_ctl.match = guc_name_match;
-	hash_ctl.hcxt = GUCMemoryContext;
-	guc_hashtab = hash_create("GUC hash table",
-							  size_vars,
-							  &hash_ctl,
-							  HASH_ELEM | HASH_FUNCTION | HASH_COMPARE | HASH_CONTEXT);
+	guc_hashtab = hash_make_fn_cxt(GUCHashEntry, gucname,
+								   "GUC hash table", size_vars,
+								   guc_name_hash, guc_name_match,
+								   GUCMemoryContext);
 
 	for (int i = 0; ConfigureNames[i].name; i++)
 	{

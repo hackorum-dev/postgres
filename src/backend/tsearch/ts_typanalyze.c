@@ -149,7 +149,6 @@ compute_tsvector_stats(VacAttrStats *stats,
 
 	/* This is D from the LC algorithm. */
 	HTAB	   *lexemes_tab;
-	HASHCTL		hash_ctl;
 	HASH_SEQ_STATUS scan_status;
 
 	/* This is the current bucket number from the LC algorithm */
@@ -180,15 +179,9 @@ compute_tsvector_stats(VacAttrStats *stats,
 	 * worry about overflowing the initial size. Also we don't need to pay any
 	 * attention to locking and memory management.
 	 */
-	hash_ctl.keysize = sizeof(LexemeHashKey);
-	hash_ctl.entrysize = sizeof(TrackItem);
-	hash_ctl.hash = lexeme_hash;
-	hash_ctl.match = lexeme_match;
-	hash_ctl.hcxt = CurrentMemoryContext;
-	lexemes_tab = hash_create("Analyzed lexemes table",
-							  num_mcelem,
-							  &hash_ctl,
-							  HASH_ELEM | HASH_FUNCTION | HASH_COMPARE | HASH_CONTEXT);
+	lexemes_tab = hash_make_fn(TrackItem, key,
+							   "Analyzed lexemes table", num_mcelem,
+							   lexeme_hash, lexeme_match);
 
 	/* Initialize counters. */
 	b_current = 1;

@@ -50,19 +50,16 @@ BufTableShmemSize(int size)
 void
 InitBufTable(int size)
 {
-	HASHCTL		info;
+	HASHOPTS	opts = {0};
 
 	/* assume no locking is needed yet */
 
 	/* BufferTag maps to Buffer */
-	info.keysize = sizeof(BufferTag);
-	info.entrysize = sizeof(BufferLookupEnt);
-	info.num_partitions = NUM_BUFFER_PARTITIONS;
-
-	SharedBufHash = ShmemInitHash("Shared Buffer Lookup Table",
-								  size, size,
-								  &info,
-								  HASH_ELEM | HASH_BLOBS | HASH_PARTITION | HASH_FIXED_SIZE);
+	opts.num_partitions = NUM_BUFFER_PARTITIONS;
+	opts.fixed_size = true;
+	SharedBufHash = shmem_hash_make_ext(BufferLookupEnt, key,
+										"Shared Buffer Lookup Table",
+										size, size, &opts);
 }
 
 /*

@@ -27,6 +27,7 @@
 #include "utils/catcache.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
+#include "utils/memutils.h"
 #include "utils/spccache.h"
 #include "utils/syscache.h"
 #include "varatt.h"
@@ -78,14 +79,10 @@ InvalidateTableSpaceCacheCallback(Datum arg, SysCacheIdentifier cacheid,
 static void
 InitializeTableSpaceCache(void)
 {
-	HASHCTL		ctl;
-
 	/* Initialize the hash table. */
-	ctl.keysize = sizeof(Oid);
-	ctl.entrysize = sizeof(TableSpaceCacheEntry);
 	TableSpaceCacheHash =
-		hash_create("TableSpace cache", 16, &ctl,
-					HASH_ELEM | HASH_BLOBS);
+		hash_make_cxt(TableSpaceCacheEntry, oid,
+					  "TableSpace cache", 16, TopMemoryContext);
 
 	/* Make sure we've initialized CacheMemoryContext. */
 	if (!CacheMemoryContext)

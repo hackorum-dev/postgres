@@ -212,6 +212,7 @@
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "utils/guc_hooks.h"
+#include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/wait_event.h"
@@ -1155,7 +1156,7 @@ CheckPointPredicate(void)
 void
 PredicateLockShmemInit(void)
 {
-	HASHCTL		info;
+	HASHOPTS	opts;
 	int64		max_predicate_lock_targets;
 	int64		max_predicate_locks;
 	int64		max_serializable_xacts;
@@ -1177,16 +1178,13 @@ PredicateLockShmemInit(void)
 	 * Allocate hash table for PREDICATELOCKTARGET structs.  This stores
 	 * per-predicate-lock-target information.
 	 */
-	info.keysize = sizeof(PREDICATELOCKTARGETTAG);
-	info.entrysize = sizeof(PREDICATELOCKTARGET);
-	info.num_partitions = NUM_PREDICATELOCK_PARTITIONS;
-
-	PredicateLockTargetHash = ShmemInitHash("PREDICATELOCKTARGET hash",
-											max_predicate_lock_targets,
-											max_predicate_lock_targets,
-											&info,
-											HASH_ELEM | HASH_BLOBS |
-											HASH_PARTITION | HASH_FIXED_SIZE);
+	MemSet(&opts, 0, sizeof(opts));
+	opts.num_partitions = NUM_PREDICATELOCK_PARTITIONS;
+	opts.fixed_size = true;
+	PredicateLockTargetHash = shmem_hash_make_ext(PREDICATELOCKTARGET, tag,
+												  "PREDICATELOCKTARGET hash",
+												  max_predicate_lock_targets, max_predicate_lock_targets,
+												  &opts);
 
 	/*
 	 * Reserve a dummy entry in the hash table; we use it to make sure there's
@@ -1209,20 +1207,17 @@ PredicateLockShmemInit(void)
 	 * Allocate hash table for PREDICATELOCK structs.  This stores per
 	 * xact-lock-of-a-target information.
 	 */
-	info.keysize = sizeof(PREDICATELOCKTAG);
-	info.entrysize = sizeof(PREDICATELOCK);
-	info.hash = predicatelock_hash;
-	info.num_partitions = NUM_PREDICATELOCK_PARTITIONS;
-
 	/* Assume an average of 2 xacts per target */
 	max_predicate_locks = max_predicate_lock_targets * 2;
 
-	PredicateLockHash = ShmemInitHash("PREDICATELOCK hash",
-									  max_predicate_locks,
-									  max_predicate_locks,
-									  &info,
-									  HASH_ELEM | HASH_FUNCTION |
-									  HASH_PARTITION | HASH_FIXED_SIZE);
+	MemSet(&opts, 0, sizeof(opts));
+	opts.hash = predicatelock_hash;
+	opts.num_partitions = NUM_PREDICATELOCK_PARTITIONS;
+	opts.fixed_size = true;
+	PredicateLockHash = shmem_hash_make_ext(PREDICATELOCK, tag,
+											"PREDICATELOCK hash",
+											max_predicate_locks, max_predicate_locks,
+											&opts);
 
 	/*
 	 * Compute size for serializable transaction hashtable. Note these
@@ -1293,15 +1288,12 @@ PredicateLockShmemInit(void)
 	 * Allocate hash table for SERIALIZABLEXID structs.  This stores per-xid
 	 * information for serializable transactions which have accessed data.
 	 */
-	info.keysize = sizeof(SERIALIZABLEXIDTAG);
-	info.entrysize = sizeof(SERIALIZABLEXID);
-
-	SerializableXidHash = ShmemInitHash("SERIALIZABLEXID hash",
-										max_serializable_xacts,
-										max_serializable_xacts,
-										&info,
-										HASH_ELEM | HASH_BLOBS |
-										HASH_FIXED_SIZE);
+	MemSet(&opts, 0, sizeof(opts));
+	opts.fixed_size = true;
+	SerializableXidHash = shmem_hash_make_ext(SERIALIZABLEXID, tag,
+											  "SERIALIZABLEXID hash",
+											  max_serializable_xacts, max_serializable_xacts,
+											  &opts);
 
 	/*
 	 * Allocate space for tracking rw-conflicts in lists attached to the
@@ -1950,16 +1942,12 @@ GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 static void
 CreateLocalPredicateLockHash(void)
 {
-	HASHCTL		hash_ctl;
-
 	/* Initialize the backend-local hash table of parent locks */
 	Assert(LocalPredicateLockHash == NULL);
-	hash_ctl.keysize = sizeof(PREDICATELOCKTARGETTAG);
-	hash_ctl.entrysize = sizeof(LOCALPREDICATELOCK);
-	LocalPredicateLockHash = hash_create("Local predicate lock",
-										 max_predicate_locks_per_xact,
-										 &hash_ctl,
-										 HASH_ELEM | HASH_BLOBS);
+	LocalPredicateLockHash = hash_make_cxt(LOCALPREDICATELOCK, tag,
+										   "Local predicate lock",
+										   max_predicate_locks_per_xact,
+										   TopMemoryContext);
 }
 
 /*

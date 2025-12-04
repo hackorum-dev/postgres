@@ -744,7 +744,6 @@ static void
 InitLocalBuffers(void)
 {
 	int			nbufs = num_temp_buffers;
-	HASHCTL		info;
 	int			i;
 
 	/*
@@ -795,13 +794,9 @@ InitLocalBuffers(void)
 	}
 
 	/* Create the lookup hash table */
-	info.keysize = sizeof(BufferTag);
-	info.entrysize = sizeof(LocalBufferLookupEnt);
-
-	LocalBufHash = hash_create("Local Buffer Lookup Table",
-							   nbufs,
-							   &info,
-							   HASH_ELEM | HASH_BLOBS);
+	LocalBufHash = hash_make_cxt(LocalBufferLookupEnt, key,
+								 "Local Buffer Lookup Table", nbufs,
+								 TopMemoryContext);
 
 	if (!LocalBufHash)
 		elog(ERROR, "could not initialize local buffer hash table");

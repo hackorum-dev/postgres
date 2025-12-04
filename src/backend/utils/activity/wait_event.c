@@ -120,7 +120,6 @@ void
 WaitEventCustomShmemInit(void)
 {
 	bool		found;
-	HASHCTL		info;
 
 	WaitEventCustomCounter = (WaitEventCustomCounterData *)
 		ShmemInitStruct("WaitEventCustomCounterData",
@@ -134,24 +133,18 @@ WaitEventCustomShmemInit(void)
 	}
 
 	/* initialize or attach the hash tables to store custom wait events */
-	info.keysize = sizeof(uint32);
-	info.entrysize = sizeof(WaitEventCustomEntryByInfo);
 	WaitEventCustomHashByInfo =
-		ShmemInitHash("WaitEventCustom hash by wait event information",
-					  WAIT_EVENT_CUSTOM_HASH_INIT_SIZE,
-					  WAIT_EVENT_CUSTOM_HASH_MAX_SIZE,
-					  &info,
-					  HASH_ELEM | HASH_BLOBS);
+		shmem_hash_make(WaitEventCustomEntryByInfo, wait_event_info,
+						"WaitEventCustom hash by wait event information",
+						WAIT_EVENT_CUSTOM_HASH_INIT_SIZE,
+						WAIT_EVENT_CUSTOM_HASH_MAX_SIZE);
 
 	/* key is a NULL-terminated string */
-	info.keysize = sizeof(char[NAMEDATALEN]);
-	info.entrysize = sizeof(WaitEventCustomEntryByName);
 	WaitEventCustomHashByName =
-		ShmemInitHash("WaitEventCustom hash by name",
-					  WAIT_EVENT_CUSTOM_HASH_INIT_SIZE,
-					  WAIT_EVENT_CUSTOM_HASH_MAX_SIZE,
-					  &info,
-					  HASH_ELEM | HASH_STRINGS);
+		shmem_hash_make(WaitEventCustomEntryByName, wait_event_name,
+						"WaitEventCustom hash by name",
+						WAIT_EVENT_CUSTOM_HASH_INIT_SIZE,
+						WAIT_EVENT_CUSTOM_HASH_MAX_SIZE);
 }
 
 /*

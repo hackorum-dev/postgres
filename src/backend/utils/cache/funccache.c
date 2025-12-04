@@ -58,19 +58,13 @@ static int	cfunc_match(const void *key1, const void *key2, Size keysize);
 static void
 cfunc_hashtable_init(void)
 {
-	HASHCTL		ctl;
-
 	/* don't allow double-initialization */
 	Assert(cfunc_hashtable == NULL);
 
-	ctl.keysize = sizeof(CachedFunctionHashKey);
-	ctl.entrysize = sizeof(CachedFunctionHashEntry);
-	ctl.hash = cfunc_hash;
-	ctl.match = cfunc_match;
-	cfunc_hashtable = hash_create("Cached function hash",
-								  FUNCS_PER_USER,
-								  &ctl,
-								  HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
+	cfunc_hashtable = hash_make_fn_cxt(CachedFunctionHashEntry, key,
+									   "Cached function hash", FUNCS_PER_USER,
+									   cfunc_hash, cfunc_match,
+									   TopMemoryContext);
 }
 
 /*

@@ -21,6 +21,7 @@
 #include "utils/catcache.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
+#include "utils/memutils.h"
 #include "utils/syscache.h"
 #include "varatt.h"
 
@@ -97,22 +98,15 @@ relatt_cache_syshash(const void *key, Size keysize)
 static void
 InitializeAttoptCache(void)
 {
-	HASHCTL		ctl;
-
-	/* Initialize the hash table. */
-	ctl.keysize = sizeof(AttoptCacheKey);
-	ctl.entrysize = sizeof(AttoptCacheEntry);
-
 	/*
 	 * AttoptCacheEntry takes hash value from the system cache. For
 	 * AttoptCacheHash we use the same hash in order to speedup search by hash
 	 * value. This is used by hash_seq_init_with_hash_value().
 	 */
-	ctl.hash = relatt_cache_syshash;
-
-	AttoptCacheHash =
-		hash_create("Attopt cache", 256, &ctl,
-					HASH_ELEM | HASH_FUNCTION);
+	AttoptCacheHash = hash_make_fn_cxt(AttoptCacheEntry, key,
+									   "Attopt cache", 256,
+									   relatt_cache_syshash, NULL,
+									   TopMemoryContext);
 
 	/* Make sure we've initialized CacheMemoryContext. */
 	if (!CacheMemoryContext)

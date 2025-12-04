@@ -444,7 +444,7 @@ static void GetSingleProcBlockerStatusData(PGPROC *blocked_proc,
 void
 LockManagerShmemInit(void)
 {
-	HASHCTL		info;
+	HASHOPTS	opts;
 	int64		init_table_size,
 				max_table_size;
 	bool		found;
@@ -460,15 +460,11 @@ LockManagerShmemInit(void)
 	 * Allocate hash table for LOCK structs.  This stores per-locked-object
 	 * information.
 	 */
-	info.keysize = sizeof(LOCKTAG);
-	info.entrysize = sizeof(LOCK);
-	info.num_partitions = NUM_LOCK_PARTITIONS;
-
-	LockMethodLockHash = ShmemInitHash("LOCK hash",
-									   init_table_size,
-									   max_table_size,
-									   &info,
-									   HASH_ELEM | HASH_BLOBS | HASH_PARTITION);
+	MemSet(&opts, 0, sizeof(opts));
+	opts.num_partitions = NUM_LOCK_PARTITIONS;
+	LockMethodLockHash = shmem_hash_make_ext(LOCK, tag, "LOCK hash",
+											 init_table_size, max_table_size,
+											 &opts);
 
 	/* Assume an average of 2 holders per lock */
 	max_table_size *= 2;
@@ -478,16 +474,12 @@ LockManagerShmemInit(void)
 	 * Allocate hash table for PROCLOCK structs.  This stores
 	 * per-lock-per-holder information.
 	 */
-	info.keysize = sizeof(PROCLOCKTAG);
-	info.entrysize = sizeof(PROCLOCK);
-	info.hash = proclock_hash;
-	info.num_partitions = NUM_LOCK_PARTITIONS;
-
-	LockMethodProcLockHash = ShmemInitHash("PROCLOCK hash",
-										   init_table_size,
-										   max_table_size,
-										   &info,
-										   HASH_ELEM | HASH_FUNCTION | HASH_PARTITION);
+	MemSet(&opts, 0, sizeof(opts));
+	opts.hash = proclock_hash;
+	opts.num_partitions = NUM_LOCK_PARTITIONS;
+	LockMethodProcLockHash = shmem_hash_make_ext(PROCLOCK, tag, "PROCLOCK hash",
+												 init_table_size, max_table_size,
+												 &opts);
 
 	/*
 	 * Allocate fast-path structures.
@@ -509,15 +501,9 @@ InitLockManagerAccess(void)
 	 * Allocate non-shared hash table for LOCALLOCK structs.  This stores lock
 	 * counts and resource owner information.
 	 */
-	HASHCTL		info;
-
-	info.keysize = sizeof(LOCALLOCKTAG);
-	info.entrysize = sizeof(LOCALLOCK);
-
-	LockMethodLocalHash = hash_create("LOCALLOCK hash",
-									  16,
-									  &info,
-									  HASH_ELEM | HASH_BLOBS);
+	LockMethodLocalHash = hash_make_cxt(LOCALLOCK, tag,
+										"LOCALLOCK hash", 16,
+										TopMemoryContext);
 }
 
 
@@ -3406,20 +3392,13 @@ CheckForSessionAndXactLocks(void)
 		bool		xactLock;	/* is any lockmode held at xact level? */
 	} PerLockTagEntry;
 
-	HASHCTL		hash_ctl;
 	HTAB	   *lockhtab;
 	HASH_SEQ_STATUS status;
 	LOCALLOCK  *locallock;
 
 	/* Create a local hash table keyed by LOCKTAG only */
-	hash_ctl.keysize = sizeof(LOCKTAG);
-	hash_ctl.entrysize = sizeof(PerLockTagEntry);
-	hash_ctl.hcxt = CurrentMemoryContext;
-
-	lockhtab = hash_create("CheckForSessionAndXactLocks table",
-						   256, /* arbitrary initial size */
-						   &hash_ctl,
-						   HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+	lockhtab = hash_make(PerLockTagEntry, lock,
+						 "CheckForSessionAndXactLocks table", 256);
 
 	/* Scan local lock table to find entries for each LOCKTAG */
 	hash_seq_init(&status, LockMethodLocalHash);
