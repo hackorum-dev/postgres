@@ -542,6 +542,7 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 		case EXPR_KIND_WHERE:
 		case EXPR_KIND_POLICY:
 		case EXPR_KIND_HAVING:
+		case EXPR_KIND_QUALIFY:
 		case EXPR_KIND_FILTER:
 		case EXPR_KIND_WINDOW_PARTITION:
 		case EXPR_KIND_WINDOW_ORDER:
@@ -845,6 +846,37 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 					 errmsg("column reference \"%s\" is ambiguous",
 							NameListToString(cref->fields)),
 					 parser_errposition(pstate, cref->location)));
+	}
+
+	/*
+	 * If we haven't found a column, and we are in a QUALIFY clause,
+	 * try to resolve the name as an output column alias.
+	 */
+	if (node == NULL &&
+		list_length(cref->fields) == 1 &&
+		pstate->p_expr_kind == EXPR_KIND_QUALIFY)
+	{
+		ListCell   *lc;
+		Node	   *match = NULL;
+
+		foreach(lc, pstate->p_targetList)
+		{
+			TargetEntry *tle = (TargetEntry *) lfirst(lc);
+
+			if (tle->resname != NULL && strcmp(tle->resname, colname) == 0)
+			{
+				if (match != NULL)
+				{
+					ereport(ERROR,
+							(errcode(ERRCODE_AMBIGUOUS_COLUMN),
+							 errmsg("column reference \"%s\" is ambiguous",
+									colname),
+							 parser_errposition(pstate, cref->location)));
+				}
+				match = (Node *) copyObject(tle->expr);
+			}
+		}
+		node = match;
 	}
 
 	/*
@@ -1797,6 +1829,7 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		case EXPR_KIND_WHERE:
 		case EXPR_KIND_POLICY:
 		case EXPR_KIND_HAVING:
+		case EXPR_KIND_QUALIFY:
 		case EXPR_KIND_FILTER:
 		case EXPR_KIND_WINDOW_PARTITION:
 		case EXPR_KIND_WINDOW_ORDER:
@@ -3153,6 +3186,8 @@ ParseExprKindName(ParseExprKind exprKind)
 			return "POLICY";
 		case EXPR_KIND_HAVING:
 			return "HAVING";
+		case EXPR_KIND_QUALIFY:
+			return "QUALIFY";
 		case EXPR_KIND_FILTER:
 			return "FILTER";
 		case EXPR_KIND_WINDOW_PARTITION:

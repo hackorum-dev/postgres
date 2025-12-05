@@ -187,14 +187,16 @@ static RelOptInfo *create_window_paths(PlannerInfo *root,
 									   PathTarget *output_target,
 									   bool output_target_parallel_safe,
 									   WindowFuncLists *wflists,
-									   List *activeWindows);
+									   List *activeWindows,
+									   Node *qualifyQual);
 static void create_one_window_path(PlannerInfo *root,
 								   RelOptInfo *window_rel,
 								   Path *path,
 								   PathTarget *input_target,
 								   PathTarget *output_target,
 								   WindowFuncLists *wflists,
-								   List *activeWindows);
+								   List *activeWindows,
+								   Node *qualifyQual);
 static RelOptInfo *create_distinct_paths(PlannerInfo *root,
 										 RelOptInfo *input_rel,
 										 PathTarget *target);
@@ -1849,7 +1851,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 											  sort_input_target,
 											  sort_input_target_parallel_safe,
 											  wflists,
-											  activeWindows);
+											  activeWindows,
+											  parse->qualifyQual);
 			/* Fix things up if sort_input_target contains SRFs */
 			if (parse->hasTargetSRFs)
 				adjust_paths_for_srfs(root, current_rel,
@@ -4555,7 +4558,8 @@ create_window_paths(PlannerInfo *root,
 					PathTarget *output_target,
 					bool output_target_parallel_safe,
 					WindowFuncLists *wflists,
-					List *activeWindows)
+					List *activeWindows,
+					Node *qualifyQual)
 {
 	RelOptInfo *window_rel;
 	ListCell   *lc;
@@ -4600,7 +4604,8 @@ create_window_paths(PlannerInfo *root,
 								   input_target,
 								   output_target,
 								   wflists,
-								   activeWindows);
+								   activeWindows,
+								   qualifyQual);
 	}
 
 	/*
@@ -4642,11 +4647,19 @@ create_one_window_path(PlannerInfo *root,
 					   PathTarget *input_target,
 					   PathTarget *output_target,
 					   WindowFuncLists *wflists,
-					   List *activeWindows)
+					   List *activeWindows,
+					   Node *qualifyQual)
 {
 	PathTarget *window_target;
 	ListCell   *l;
 	List	   *topqual = NIL;
+
+	/*
+	 * If there's a QUALIFY clause, add it to topqual.
+	 * The QUALIFY clause filters rows after all window functions are computed.
+	 */
+	if (qualifyQual)
+		topqual = list_make1(qualifyQual);
 
 	/*
 	 * Since each window clause could require a different sort order, we stack

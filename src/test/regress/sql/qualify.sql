@@ -1,0 +1,101 @@
+--
+-- QUALIFY clause tests
+--
+
+CREATE TEMP TABLE qualify_test (
+    id int,
+    val int,
+    grp int
+);
+
+INSERT INTO qualify_test VALUES
+    (1, 10, 1),
+    (2, 20, 1),
+    (3, 30, 1),
+    (4, 10, 2),
+    (5, 40, 2),
+    (6, 50, 2);
+
+-- Simple QUALIFY
+SELECT id, val, grp, rank() OVER (PARTITION BY grp ORDER BY val) as r
+FROM qualify_test
+QUALIFY rank() OVER (PARTITION BY grp ORDER BY val) > 1;
+
+-- QUALIFY with alias (not supported directly in standard SQL usually, but Postgres allows aliases in GROUP BY/HAVING sometimes. 
+-- In QUALIFY, we might need to repeat the expression or use a window alias)
+-- Postgres doesn't support column aliases in HAVING usually.
+-- Let's try repeating the expression first.
+
+SELECT id, val, grp
+FROM qualify_test
+QUALIFY rank() OVER (PARTITION BY grp ORDER BY val) = 1;
+
+-- QUALIFY with WHERE
+SELECT id, val, grp
+FROM qualify_test
+WHERE val > 10
+QUALIFY count(*) OVER (PARTITION BY grp) > 1;
+
+-- QUALIFY with GROUP BY and HAVING
+SELECT grp, sum(val) as sum_val
+FROM qualify_test
+GROUP BY grp
+HAVING sum(val) > 20
+QUALIFY rank() OVER (ORDER BY sum(val) DESC) = 1;
+
+-- QUALIFY with Window Alias
+SELECT id, val, grp, rank() OVER w as r
+FROM qualify_test
+WINDOW w AS (PARTITION BY grp ORDER BY val)
+QUALIFY rank() OVER w > 1;
+
+-- QUALIFY with aggregates allowed (as arguments to window functions or if windowed)
+-- But plain aggregates are NOT allowed in QUALIFY unless they are part of a window function or the query is grouped.
+-- Actually, QUALIFY is evaluated after window functions.
+-- If the query is grouped, aggregates are evaluated before window functions.
+-- So aggregates in QUALIFY are allowed if they are valid in the SELECT list.
+
+-- Grouped query with aggregate in QUALIFY
+SELECT grp, sum(val)
+FROM qualify_test
+GROUP BY grp
+QUALIFY sum(val) > 50; -- This acts like HAVING, but technically allowed if we consider it a filter after windowing (which is identity here)
+
+-- Window function over aggregate
+SELECT grp, sum(val), rank() OVER (ORDER BY sum(val))
+FROM qualify_test
+GROUP BY grp
+QUALIFY rank() OVER (ORDER BY sum(val)) > 1;
+
+-- Negative tests
+
+-- Set-returning function in QUALIFY (should fail)
+SELECT id, val
+FROM qualify_test
+QUALIFY generate_series(1,3) > 1;
+
+-- Plain aggregate in QUALIFY without grouping (should fail like in WHERE? No, like in HAVING?)
+-- If query is not grouped, aggregate in QUALIFY implies grouping?
+-- No, QUALIFY is after windowing.
+-- If I say SELECT * FROM t QUALIFY sum(val) > 10
+-- This should probably fail if not grouped, or imply grouping?
+-- In Postgres, HAVING sum(val) > 10 implies grouping if no GROUP BY.
+-- But QUALIFY is specifically for window functions.
+-- If I use a plain aggregate, it might be ambiguous.
+-- Snowflake allows it (equivalent to HAVING).
+-- Let's see what my implementation does.
+-- I added EXPR_KIND_QUALIFY to parse_agg.c to allow aggregates.
+-- But in parse_func.c I disallowed SRFs.
+
+-- Test QUALIFY with output column alias (should work now)
+SELECT id, val, grp, rank() OVER (PARTITION BY grp ORDER BY val) as r
+FROM qualify_test
+QUALIFY r = 1;
+
+-- Test ambiguous alias in QUALIFY
+SELECT 1 as x, 2 as x
+FROM qualify_test
+QUALIFY x = 1;
+
+-- Clean up
+DROP TABLE qualify_test;

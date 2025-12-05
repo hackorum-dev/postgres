@@ -414,6 +414,7 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 
 			break;
 		case EXPR_KIND_HAVING:
+		case EXPR_KIND_QUALIFY:
 			/* okay */
 			break;
 		case EXPR_KIND_FILTER:
@@ -936,6 +937,9 @@ transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 			break;
 		case EXPR_KIND_HAVING:
 			errkind = true;
+			break;
+		case EXPR_KIND_QUALIFY:
+			/* okay */
 			break;
 		case EXPR_KIND_FILTER:
 			errkind = true;

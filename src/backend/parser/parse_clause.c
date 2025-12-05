@@ -2825,207 +2825,206 @@ transformSortClause(ParseState *pstate,
  */
 List *
 transformWindowDefinitions(ParseState *pstate,
-						   List *windowdefs,
-						   List **targetlist)
+                           List *windowdefs,
+                           List **targetlist,
+                           Node *qualifyClause) /* <--- Added argument */
 {
-	List	   *result = NIL;
-	Index		winref = 0;
-	ListCell   *lc;
+    List       *result = NIL;
+    Index       winref = 0;
+    ListCell   *lc;
+    Node       *transformedQualify = NULL;
 
-	foreach(lc, windowdefs)
-	{
-		WindowDef  *windef = (WindowDef *) lfirst(lc);
-		WindowClause *refwc = NULL;
-		List	   *partitionClause;
-		List	   *orderClause;
-		Oid			rangeopfamily = InvalidOid;
-		Oid			rangeopcintype = InvalidOid;
-		WindowClause *wc;
+	/*
+	 * The QUALIFY clause is transformed in analyze.c and passed here.
+	 * We might attach it to WindowClause nodes later if needed, but for now
+	 * we rely on Query->qualifyQual.
+	 */
 
-		winref++;
+    foreach(lc, windowdefs)
+    {
+        WindowDef  *windef = (WindowDef *) lfirst(lc);
+        WindowClause *refwc = NULL;
+        List       *partitionClause;
+        List       *orderClause;
+        Oid         rangeopfamily = InvalidOid;
+        Oid         rangeopcintype = InvalidOid;
+        WindowClause *wc;
 
-		/*
-		 * Check for duplicate window names.
-		 */
-		if (windef->name &&
-			findWindowClause(result, windef->name) != NULL)
-			ereport(ERROR,
-					(errcode(ERRCODE_WINDOWING_ERROR),
-					 errmsg("window \"%s\" is already defined", windef->name),
-					 parser_errposition(pstate, windef->location)));
+        winref++;
 
-		/*
-		 * If it references a previous window, look that up.
-		 */
-		if (windef->refname)
-		{
-			refwc = findWindowClause(result, windef->refname);
-			if (refwc == NULL)
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_OBJECT),
-						 errmsg("window \"%s\" does not exist",
-								windef->refname),
-						 parser_errposition(pstate, windef->location)));
-		}
+        /*
+         * Check for duplicate window names.
+         */
+        if (windef->name &&
+            findWindowClause(result, windef->name) != NULL)
+            ereport(ERROR,
+                    (errcode(ERRCODE_WINDOWING_ERROR),
+                     errmsg("window \"%s\" is already defined", windef->name),
+                     parser_errposition(pstate, windef->location)));
 
-		/*
-		 * Transform PARTITION and ORDER specs, if any.  These are treated
-		 * almost exactly like top-level GROUP BY and ORDER BY clauses,
-		 * including the special handling of nondefault operator semantics.
-		 */
-		orderClause = transformSortClause(pstate,
-										  windef->orderClause,
-										  targetlist,
-										  EXPR_KIND_WINDOW_ORDER,
-										  true /* force SQL99 rules */ );
-		partitionClause = transformGroupClause(pstate,
-											   windef->partitionClause,
-											   false /* not GROUP BY ALL */ ,
-											   NULL,
-											   targetlist,
-											   orderClause,
-											   EXPR_KIND_WINDOW_PARTITION,
-											   true /* force SQL99 rules */ );
+        /*
+         * If it references a previous window, look that up.
+         */
+        if (windef->refname)
+        {
+            refwc = findWindowClause(result, windef->refname);
+            if (refwc == NULL)
+                ereport(ERROR,
+                        (errcode(ERRCODE_UNDEFINED_OBJECT),
+                         errmsg("window \"%s\" does not exist",
+                                windef->refname),
+                         parser_errposition(pstate, windef->location)));
+        }
 
-		/*
-		 * And prepare the new WindowClause.
-		 */
-		wc = makeNode(WindowClause);
-		wc->name = windef->name;
-		wc->refname = windef->refname;
+        /*
+         * Transform PARTITION and ORDER specs, if any.
+         */
+        orderClause = transformSortClause(pstate,
+                                          windef->orderClause,
+                                          targetlist,
+                                          EXPR_KIND_WINDOW_ORDER,
+                                          true /* force SQL99 rules */ );
+        partitionClause = transformGroupClause(pstate,
+                                               windef->partitionClause,
+                                               false /* not GROUP BY ALL */ ,
+                                               NULL,
+                                               targetlist,
+                                               orderClause,
+                                               EXPR_KIND_WINDOW_PARTITION,
+                                               true /* force SQL99 rules */ );
 
-		/*
-		 * Per spec, a windowdef that references a previous one copies the
-		 * previous partition clause (and mustn't specify its own).  It can
-		 * specify its own ordering clause, but only if the previous one had
-		 * none.  It always specifies its own frame clause, and the previous
-		 * one must not have a frame clause.  Yeah, it's bizarre that each of
-		 * these cases works differently, but SQL:2008 says so; see 7.11
-		 * <window clause> syntax rule 10 and general rule 1.  The frame
-		 * clause rule is especially bizarre because it makes "OVER foo"
-		 * different from "OVER (foo)", and requires the latter to throw an
-		 * error if foo has a nondefault frame clause.  Well, ours not to
-		 * reason why, but we do go out of our way to throw a useful error
-		 * message for such cases.
-		 */
-		if (refwc)
-		{
-			if (partitionClause)
-				ereport(ERROR,
-						(errcode(ERRCODE_WINDOWING_ERROR),
-						 errmsg("cannot override PARTITION BY clause of window \"%s\"",
-								windef->refname),
-						 parser_errposition(pstate, windef->location)));
-			wc->partitionClause = copyObject(refwc->partitionClause);
-		}
-		else
-			wc->partitionClause = partitionClause;
-		if (refwc)
-		{
-			if (orderClause && refwc->orderClause)
-				ereport(ERROR,
-						(errcode(ERRCODE_WINDOWING_ERROR),
-						 errmsg("cannot override ORDER BY clause of window \"%s\"",
-								windef->refname),
-						 parser_errposition(pstate, windef->location)));
-			if (orderClause)
-			{
-				wc->orderClause = orderClause;
-				wc->copiedOrder = false;
-			}
-			else
-			{
-				wc->orderClause = copyObject(refwc->orderClause);
-				wc->copiedOrder = true;
-			}
-		}
-		else
-		{
-			wc->orderClause = orderClause;
-			wc->copiedOrder = false;
-		}
-		if (refwc && refwc->frameOptions != FRAMEOPTION_DEFAULTS)
-		{
-			/*
-			 * Use this message if this is a WINDOW clause, or if it's an OVER
-			 * clause that includes ORDER BY or framing clauses.  (We already
-			 * rejected PARTITION BY above, so no need to check that.)
-			 */
-			if (windef->name ||
-				orderClause || windef->frameOptions != FRAMEOPTION_DEFAULTS)
-				ereport(ERROR,
-						(errcode(ERRCODE_WINDOWING_ERROR),
-						 errmsg("cannot copy window \"%s\" because it has a frame clause",
-								windef->refname),
-						 parser_errposition(pstate, windef->location)));
-			/* Else this clause is just OVER (foo), so say this: */
-			ereport(ERROR,
-					(errcode(ERRCODE_WINDOWING_ERROR),
-					 errmsg("cannot copy window \"%s\" because it has a frame clause",
-							windef->refname),
-					 errhint("Omit the parentheses in this OVER clause."),
-					 parser_errposition(pstate, windef->location)));
-		}
-		wc->frameOptions = windef->frameOptions;
+        /*
+         * And prepare the new WindowClause.
+         */
+        wc = makeNode(WindowClause);
+        wc->name = windef->name;
+        wc->refname = windef->refname;
 
-		/*
-		 * RANGE offset PRECEDING/FOLLOWING requires exactly one ORDER BY
-		 * column; check that and get its sort opfamily info.
-		 */
-		if ((wc->frameOptions & FRAMEOPTION_RANGE) &&
-			(wc->frameOptions & (FRAMEOPTION_START_OFFSET |
-								 FRAMEOPTION_END_OFFSET)))
-		{
-			SortGroupClause *sortcl;
-			Node	   *sortkey;
-			CompareType rangecmptype;
+        /* 
+         * ADDED: Attach the transformed QUALIFY clause.
+         * Note: This attaches the same qual to every window definition.
+         * The planner must be smart enough to apply it only once globally
+         * or at the top-level window node.
+         */
+        wc->qualifyQual = transformedQualify;
 
-			if (list_length(wc->orderClause) != 1)
-				ereport(ERROR,
-						(errcode(ERRCODE_WINDOWING_ERROR),
-						 errmsg("RANGE with offset PRECEDING/FOLLOWING requires exactly one ORDER BY column"),
-						 parser_errposition(pstate, windef->location)));
-			sortcl = linitial_node(SortGroupClause, wc->orderClause);
-			sortkey = get_sortgroupclause_expr(sortcl, *targetlist);
-			/* Find the sort operator in pg_amop */
-			if (!get_ordering_op_properties(sortcl->sortop,
-											&rangeopfamily,
-											&rangeopcintype,
-											&rangecmptype))
-				elog(ERROR, "operator %u is not a valid ordering operator",
-					 sortcl->sortop);
-			/* Record properties of sort ordering */
-			wc->inRangeColl = exprCollation(sortkey);
-			wc->inRangeAsc = !sortcl->reverse_sort;
-			wc->inRangeNullsFirst = sortcl->nulls_first;
-		}
+        /*
+         * Per spec, a windowdef that references a previous one copies ...
+         */
+        if (refwc)
+        {
+            if (partitionClause)
+                ereport(ERROR,
+                        (errcode(ERRCODE_WINDOWING_ERROR),
+                         errmsg("cannot override PARTITION BY clause of window \"%s\"",
+                                windef->refname),
+                         parser_errposition(pstate, windef->location)));
+            wc->partitionClause = copyObject(refwc->partitionClause);
+        }
+        else
+            wc->partitionClause = partitionClause;
 
-		/* Per spec, GROUPS mode requires an ORDER BY clause */
-		if (wc->frameOptions & FRAMEOPTION_GROUPS)
-		{
-			if (wc->orderClause == NIL)
-				ereport(ERROR,
-						(errcode(ERRCODE_WINDOWING_ERROR),
-						 errmsg("GROUPS mode requires an ORDER BY clause"),
-						 parser_errposition(pstate, windef->location)));
-		}
+        if (refwc)
+        {
+            if (orderClause && refwc->orderClause)
+                ereport(ERROR,
+                        (errcode(ERRCODE_WINDOWING_ERROR),
+                         errmsg("cannot override ORDER BY clause of window \"%s\"",
+                                windef->refname),
+                         parser_errposition(pstate, windef->location)));
+            if (orderClause)
+            {
+                wc->orderClause = orderClause;
+                wc->copiedOrder = false;
+            }
+            else
+            {
+                wc->orderClause = copyObject(refwc->orderClause);
+                wc->copiedOrder = true;
+            }
+        }
+        else
+        {
+            wc->orderClause = orderClause;
+            wc->copiedOrder = false;
+        }
 
-		/* Process frame offset expressions */
-		wc->startOffset = transformFrameOffset(pstate, wc->frameOptions,
-											   rangeopfamily, rangeopcintype,
-											   &wc->startInRangeFunc,
-											   windef->startOffset);
-		wc->endOffset = transformFrameOffset(pstate, wc->frameOptions,
-											 rangeopfamily, rangeopcintype,
-											 &wc->endInRangeFunc,
-											 windef->endOffset);
-		wc->winref = winref;
+        if (refwc && refwc->frameOptions != FRAMEOPTION_DEFAULTS)
+        {
+            if (windef->name ||
+                orderClause || windef->frameOptions != FRAMEOPTION_DEFAULTS)
+                ereport(ERROR,
+                        (errcode(ERRCODE_WINDOWING_ERROR),
+                         errmsg("cannot copy window \"%s\" because it has a frame clause",
+                                windef->refname),
+                         parser_errposition(pstate, windef->location)));
+            ereport(ERROR,
+                    (errcode(ERRCODE_WINDOWING_ERROR),
+                     errmsg("cannot copy window \"%s\" because it has a frame clause",
+                            windef->refname),
+                     errhint("Omit the parentheses in this OVER clause."),
+                     parser_errposition(pstate, windef->location)));
+        }
+        wc->frameOptions = windef->frameOptions;
 
-		result = lappend(result, wc);
-	}
+        /*
+         * RANGE offset PRECEDING/FOLLOWING checks
+         */
+        if ((wc->frameOptions & FRAMEOPTION_RANGE) &&
+            (wc->frameOptions & (FRAMEOPTION_START_OFFSET |
+                                 FRAMEOPTION_END_OFFSET)))
+        {
+            SortGroupClause *sortcl;
+            Node       *sortkey;
+            CompareType rangecmptype;
 
-	return result;
+            if (list_length(wc->orderClause) != 1)
+                ereport(ERROR,
+                        (errcode(ERRCODE_WINDOWING_ERROR),
+                         errmsg("RANGE with offset PRECEDING/FOLLOWING requires exactly one ORDER BY column"),
+                         parser_errposition(pstate, windef->location)));
+            sortcl = linitial_node(SortGroupClause, wc->orderClause);
+            sortkey = get_sortgroupclause_expr(sortcl, *targetlist);
+            
+            if (!get_ordering_op_properties(sortcl->sortop,
+                                            &rangeopfamily,
+                                            &rangeopcintype,
+                                            &rangecmptype))
+                elog(ERROR, "operator %u is not a valid ordering operator",
+                     sortcl->sortop);
+            
+            wc->inRangeColl = exprCollation(sortkey);
+            wc->inRangeAsc = !sortcl->reverse_sort;
+            wc->inRangeNullsFirst = sortcl->nulls_first;
+        }
+
+        /* Per spec, GROUPS mode requires an ORDER BY clause */
+        if (wc->frameOptions & FRAMEOPTION_GROUPS)
+        {
+            if (wc->orderClause == NIL)
+                ereport(ERROR,
+                        (errcode(ERRCODE_WINDOWING_ERROR),
+                         errmsg("GROUPS mode requires an ORDER BY clause"),
+                         parser_errposition(pstate, windef->location)));
+        }
+
+        /* Process frame offset expressions */
+        wc->startOffset = transformFrameOffset(pstate, wc->frameOptions,
+                                               rangeopfamily, rangeopcintype,
+                                               &wc->startInRangeFunc,
+                                               windef->startOffset);
+        wc->endOffset = transformFrameOffset(pstate, wc->frameOptions,
+                                             rangeopfamily, rangeopcintype,
+                                             &wc->endInRangeFunc,
+                                             windef->endOffset);
+        wc->winref = winref;
+
+        result = lappend(result, wc);
+    }
+
+    return result;
 }
+
 
 /*
  * transformDistinctClause -

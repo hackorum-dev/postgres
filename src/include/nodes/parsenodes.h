@@ -116,146 +116,150 @@ typedef uint64 AclMode;			/* a bitmask of privilege bits */
  */
 typedef struct Query
 {
-	NodeTag		type;
+    NodeTag     type;
 
-	CmdType		commandType;	/* select|insert|update|delete|merge|utility */
+    CmdType     commandType;    /* select|insert|update|delete|merge|utility */
 
-	/* where did I come from? */
-	QuerySource querySource pg_node_attr(query_jumble_ignore);
+    /* where did I come from? */
+    QuerySource querySource pg_node_attr(query_jumble_ignore);
 
-	/*
-	 * query identifier (can be set by plugins); ignored for equal, as it
-	 * might not be set; also not stored.  This is the result of the query
-	 * jumble, hence ignored.
-	 *
-	 * We store this as a signed value as this is the form it's displayed to
-	 * users in places such as EXPLAIN and pg_stat_statements.  Primarily this
-	 * is done due to lack of an SQL type to represent the full range of
-	 * uint64.
-	 */
-	int64		queryId pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(0));
+    /*
+     * query identifier (can be set by plugins); ignored for equal, as it
+     * might not be set; also not stored.  This is the result of the query
+     * jumble, hence ignored.
+     *
+     * We store this as a signed value as this is the form it's displayed to
+     * users in places such as EXPLAIN and pg_stat_statements.  Primarily this
+     * is done due to lack of an SQL type to represent the full range of
+     * uint64.
+     */
+    int64       queryId pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(0));
 
-	/* do I set the command result tag? */
-	bool		canSetTag pg_node_attr(query_jumble_ignore);
+    /* do I set the command result tag? */
+    bool        canSetTag pg_node_attr(query_jumble_ignore);
 
-	Node	   *utilityStmt;	/* non-null if commandType == CMD_UTILITY */
+    Node       *utilityStmt;    /* non-null if commandType == CMD_UTILITY */
 
-	/*
-	 * rtable index of target relation for INSERT/UPDATE/DELETE/MERGE; 0 for
-	 * SELECT.  This is ignored in the query jumble as unrelated to the
-	 * compilation of the query ID.
-	 */
-	int			resultRelation pg_node_attr(query_jumble_ignore);
+    /*
+     * rtable index of target relation for INSERT/UPDATE/DELETE/MERGE; 0 for
+     * SELECT.  This is ignored in the query jumble as unrelated to the
+     * compilation of the query ID.
+     */
+    int         resultRelation pg_node_attr(query_jumble_ignore);
 
-	/* has aggregates in tlist or havingQual */
-	bool		hasAggs pg_node_attr(query_jumble_ignore);
-	/* has window functions in tlist */
-	bool		hasWindowFuncs pg_node_attr(query_jumble_ignore);
-	/* has set-returning functions in tlist */
-	bool		hasTargetSRFs pg_node_attr(query_jumble_ignore);
-	/* has subquery SubLink */
-	bool		hasSubLinks pg_node_attr(query_jumble_ignore);
-	/* distinctClause is from DISTINCT ON */
-	bool		hasDistinctOn pg_node_attr(query_jumble_ignore);
-	/* WITH RECURSIVE was specified */
-	bool		hasRecursive pg_node_attr(query_jumble_ignore);
-	/* has INSERT/UPDATE/DELETE/MERGE in WITH */
-	bool		hasModifyingCTE pg_node_attr(query_jumble_ignore);
-	/* FOR [KEY] UPDATE/SHARE was specified */
-	bool		hasForUpdate pg_node_attr(query_jumble_ignore);
-	/* rewriter has applied some RLS policy */
-	bool		hasRowSecurity pg_node_attr(query_jumble_ignore);
-	/* parser has added an RTE_GROUP RTE */
-	bool		hasGroupRTE pg_node_attr(query_jumble_ignore);
-	/* is a RETURN statement */
-	bool		isReturn pg_node_attr(query_jumble_ignore);
+    /* has aggregates in tlist or havingQual */
+    bool        hasAggs pg_node_attr(query_jumble_ignore);
+    /* has window functions in tlist */
+    bool        hasWindowFuncs pg_node_attr(query_jumble_ignore);
+    /* has set-returning functions in tlist */
+    bool        hasTargetSRFs pg_node_attr(query_jumble_ignore);
+    /* has subquery SubLink */
+    bool        hasSubLinks pg_node_attr(query_jumble_ignore);
+    /* distinctClause is from DISTINCT ON */
+    bool        hasDistinctOn pg_node_attr(query_jumble_ignore);
+    /* WITH RECURSIVE was specified */
+    bool        hasRecursive pg_node_attr(query_jumble_ignore);
+    /* has INSERT/UPDATE/DELETE/MERGE in WITH */
+    bool        hasModifyingCTE pg_node_attr(query_jumble_ignore);
+    /* FOR [KEY] UPDATE/SHARE was specified */
+    bool        hasForUpdate pg_node_attr(query_jumble_ignore);
+    /* rewriter has applied some RLS policy */
+    bool        hasRowSecurity pg_node_attr(query_jumble_ignore);
+    /* parser has added an RTE_GROUP RTE */
+    bool        hasGroupRTE pg_node_attr(query_jumble_ignore);
+    /* is a RETURN statement */
+    bool        isReturn pg_node_attr(query_jumble_ignore);
 
-	List	   *cteList;		/* WITH list (of CommonTableExpr's) */
+    List       *cteList;        /* WITH list (of CommonTableExpr's) */
 
-	List	   *rtable;			/* list of range table entries */
+    List       *rtable;         /* list of range table entries */
 
-	/*
-	 * list of RTEPermissionInfo nodes for the rtable entries having
-	 * perminfoindex > 0
-	 */
-	List	   *rteperminfos pg_node_attr(query_jumble_ignore);
-	FromExpr   *jointree;		/* table join tree (FROM and WHERE clauses);
-								 * also USING clause for MERGE */
+    /*
+     * list of RTEPermissionInfo nodes for the rtable entries having
+     * perminfoindex > 0
+     */
+    List       *rteperminfos pg_node_attr(query_jumble_ignore);
+    FromExpr   *jointree;       /* table join tree (FROM and WHERE clauses);
+                                 * also USING clause for MERGE */
 
-	List	   *mergeActionList;	/* list of actions for MERGE (only) */
+    List       *mergeActionList;    /* list of actions for MERGE (only) */
 
-	/*
-	 * rtable index of target relation for MERGE to pull data. Initially, this
-	 * is the same as resultRelation, but after query rewriting, if the target
-	 * relation is a trigger-updatable view, this is the index of the expanded
-	 * view subquery, whereas resultRelation is the index of the target view.
-	 */
-	int			mergeTargetRelation pg_node_attr(query_jumble_ignore);
+    /*
+     * rtable index of target relation for MERGE to pull data. Initially, this
+     * is the same as resultRelation, but after query rewriting, if the target
+     * relation is a trigger-updatable view, this is the index of the expanded
+     * view subquery, whereas resultRelation is the index of the target view.
+     */
+    int         mergeTargetRelation pg_node_attr(query_jumble_ignore);
 
-	/* join condition between source and target for MERGE */
-	Node	   *mergeJoinCondition;
+    /* join condition between source and target for MERGE */
+    Node       *mergeJoinCondition;
 
-	List	   *targetList;		/* target list (of TargetEntry) */
+    List       *targetList;     /* target list (of TargetEntry) */
 
-	/* OVERRIDING clause */
-	OverridingKind override pg_node_attr(query_jumble_ignore);
+    /* OVERRIDING clause */
+    OverridingKind override pg_node_attr(query_jumble_ignore);
 
-	OnConflictExpr *onConflict; /* ON CONFLICT DO [NOTHING | UPDATE] */
+    OnConflictExpr *onConflict; /* ON CONFLICT DO [NOTHING | UPDATE] */
 
-	/*
-	 * The following three fields describe the contents of the RETURNING list
-	 * for INSERT/UPDATE/DELETE/MERGE. returningOldAlias and returningNewAlias
-	 * are the alias names for OLD and NEW, which may be user-supplied values,
-	 * the defaults "old" and "new", or NULL (if the default "old"/"new" is
-	 * already in use as the alias for some other relation).
-	 */
-	char	   *returningOldAlias pg_node_attr(query_jumble_ignore);
-	char	   *returningNewAlias pg_node_attr(query_jumble_ignore);
-	List	   *returningList;	/* return-values list (of TargetEntry) */
+    /*
+     * The following three fields describe the contents of the RETURNING list
+     * for INSERT/UPDATE/DELETE/MERGE. returningOldAlias and returningNewAlias
+     * are the alias names for OLD and NEW, which may be user-supplied values,
+     * the defaults "old" and "new", or NULL (if the default "old"/"new" is
+     * already in use as the alias for some other relation).
+     */
+    char       *returningOldAlias pg_node_attr(query_jumble_ignore);
+    char       *returningNewAlias pg_node_attr(query_jumble_ignore);
+    List       *returningList;  /* return-values list (of TargetEntry) */
 
-	List	   *groupClause;	/* a list of SortGroupClause's */
-	bool		groupDistinct;	/* was GROUP BY DISTINCT used? */
-	bool		groupByAll;		/* was GROUP BY ALL used? */
+    List       *groupClause;    /* a list of SortGroupClause's */
+    bool        groupDistinct;  /* was GROUP BY DISTINCT used? */
+    bool        groupByAll;     /* was GROUP BY ALL used? */
 
-	List	   *groupingSets;	/* a list of GroupingSet's if present */
+    List       *groupingSets;   /* a list of GroupingSet's if present */
 
-	Node	   *havingQual;		/* qualifications applied to groups */
+    Node       *havingQual;     /* qualifications applied to groups */
+    
+    /* ADDED: QUALIFY clause */
+    Node       *qualifyQual;    /* qualifications applied to window functions */
 
-	List	   *windowClause;	/* a list of WindowClause's */
+    List       *windowClause;   /* a list of WindowClause's */
 
-	List	   *distinctClause; /* a list of SortGroupClause's */
+    List       *distinctClause; /* a list of SortGroupClause's */
 
-	List	   *sortClause;		/* a list of SortGroupClause's */
+    List       *sortClause;     /* a list of SortGroupClause's */
 
-	Node	   *limitOffset;	/* # of result tuples to skip (int8 expr) */
-	Node	   *limitCount;		/* # of result tuples to return (int8 expr) */
-	LimitOption limitOption;	/* limit type */
+    Node       *limitOffset;    /* # of result tuples to skip (int8 expr) */
+    Node       *limitCount;     /* # of result tuples to return (int8 expr) */
+    LimitOption limitOption;    /* limit type */
 
-	List	   *rowMarks;		/* a list of RowMarkClause's */
+    List       *rowMarks;       /* a list of RowMarkClause's */
 
-	Node	   *setOperations;	/* set-operation tree if this is top level of
-								 * a UNION/INTERSECT/EXCEPT query */
+    Node       *setOperations;  /* set-operation tree if this is top level of
+                                 * a UNION/INTERSECT/EXCEPT query */
 
-	/*
-	 * A list of pg_constraint OIDs that the query depends on to be
-	 * semantically valid
-	 */
-	List	   *constraintDeps pg_node_attr(query_jumble_ignore);
+    /*
+     * A list of pg_constraint OIDs that the query depends on to be
+     * semantically valid
+     */
+    List       *constraintDeps pg_node_attr(query_jumble_ignore);
 
-	/* a list of WithCheckOption's (added during rewrite) */
-	List	   *withCheckOptions pg_node_attr(query_jumble_ignore);
+    /* a list of WithCheckOption's (added during rewrite) */
+    List       *withCheckOptions pg_node_attr(query_jumble_ignore);
 
-	/*
-	 * The following two fields identify the portion of the source text string
-	 * containing this query.  They are typically only populated in top-level
-	 * Queries, not in sub-queries.  When not set, they might both be zero, or
-	 * both be -1 meaning "unknown".
-	 */
-	/* start location, or -1 if unknown */
-	ParseLoc	stmt_location;
-	/* length in bytes; 0 means "rest of string" */
-	ParseLoc	stmt_len pg_node_attr(query_jumble_ignore);
+    /*
+     * The following two fields identify the portion of the source text string
+     * containing this query.  They are typically only populated in top-level
+     * Queries, not in sub-queries.  When not set, they might both be zero, or
+     * both be -1 meaning "unknown".
+     */
+    /* start location, or -1 if unknown */
+    ParseLoc    stmt_location;
+    /* length in bytes; 0 means "rest of string" */
+    ParseLoc    stmt_len pg_node_attr(query_jumble_ignore);
 } Query;
+
 
 
 /****************************************************************************
@@ -596,6 +600,10 @@ typedef struct WindowDef
 	int			frameOptions;	/* frame_clause options, see below */
 	Node	   *startOffset;	/* expression for starting bound, if any */
 	Node	   *endOffset;		/* expression for ending bound, if any */
+
+	/* QUALIFY clause */
+	Node	   *qualifyQual;
+
 	ParseLoc	location;		/* parse location, or -1 if none/unknown */
 } WindowDef;
 
@@ -1222,6 +1230,7 @@ typedef struct RangeTblEntry
 
 	/*
 	 * Fields valid for a CTE RTE (else NULL/zero):
+	 *
 	 */
 	/* name of the WITH list item */
 	char	   *ctename;
@@ -1566,31 +1575,36 @@ typedef struct GroupingSet
  */
 typedef struct WindowClause
 {
-	NodeTag		type;
-	/* window name (NULL in an OVER clause) */
-	char	   *name pg_node_attr(query_jumble_ignore);
-	/* referenced window name, if any */
-	char	   *refname pg_node_attr(query_jumble_ignore);
-	List	   *partitionClause;	/* PARTITION BY list */
-	/* ORDER BY list */
-	List	   *orderClause;
-	int			frameOptions;	/* frame_clause options, see WindowDef */
-	Node	   *startOffset;	/* expression for starting bound, if any */
-	Node	   *endOffset;		/* expression for ending bound, if any */
-	/* in_range function for startOffset */
-	Oid			startInRangeFunc pg_node_attr(query_jumble_ignore);
-	/* in_range function for endOffset */
-	Oid			endInRangeFunc pg_node_attr(query_jumble_ignore);
-	/* collation for in_range tests */
-	Oid			inRangeColl pg_node_attr(query_jumble_ignore);
-	/* use ASC sort order for in_range tests? */
-	bool		inRangeAsc pg_node_attr(query_jumble_ignore);
-	/* nulls sort first for in_range tests? */
-	bool		inRangeNullsFirst pg_node_attr(query_jumble_ignore);
-	Index		winref;			/* ID referenced by window functions */
-	/* did we copy orderClause from refname? */
-	bool		copiedOrder pg_node_attr(query_jumble_ignore);
+    NodeTag     type;
+    /* window name (NULL in an OVER clause) */
+    char       *name pg_node_attr(query_jumble_ignore);
+    /* referenced window name, if any */
+    char       *refname pg_node_attr(query_jumble_ignore);
+    List       *partitionClause;    /* PARTITION BY list */
+    /* ORDER BY list */
+    List       *orderClause;
+    int         frameOptions;   /* frame_clause options, see WindowDef */
+    Node       *startOffset;    /* expression for starting bound, if any */
+    Node       *endOffset;      /* expression for ending bound, if any */
+    
+    /* ADDED: QUALIFY clause */
+    Node       *qualifyQual;    /* qualifications applied to window functions */
+
+    /* in_range function for startOffset */
+    Oid         startInRangeFunc pg_node_attr(query_jumble_ignore);
+    /* in_range function for endOffset */
+    Oid         endInRangeFunc pg_node_attr(query_jumble_ignore);
+    /* collation for in_range tests */
+    Oid         inRangeColl pg_node_attr(query_jumble_ignore);
+    /* use ASC sort order for in_range tests? */
+    bool        inRangeAsc pg_node_attr(query_jumble_ignore);
+    /* nulls sort first for in_range tests? */
+    bool        inRangeNullsFirst pg_node_attr(query_jumble_ignore);
+    Index       winref;         /* ID referenced by window functions */
+    /* did we copy orderClause from refname? */
+    bool        copiedOrder pg_node_attr(query_jumble_ignore);
 } WindowClause;
+
 
 /*
  * RowMarkClause -
@@ -2181,53 +2195,58 @@ typedef enum SetOperation
 
 typedef struct SelectStmt
 {
-	NodeTag		type;
+    NodeTag     type;
 
-	/*
-	 * These fields are used only in "leaf" SelectStmts.
-	 */
-	List	   *distinctClause; /* NULL, list of DISTINCT ON exprs, or
-								 * lcons(NIL,NIL) for all (SELECT DISTINCT) */
-	IntoClause *intoClause;		/* target for SELECT INTO */
-	List	   *targetList;		/* the target list (of ResTarget) */
-	List	   *fromClause;		/* the FROM clause */
-	Node	   *whereClause;	/* WHERE qualification */
-	List	   *groupClause;	/* GROUP BY clauses */
-	bool		groupDistinct;	/* Is this GROUP BY DISTINCT? */
-	bool		groupByAll;		/* Is this GROUP BY ALL? */
-	Node	   *havingClause;	/* HAVING conditional-expression */
-	List	   *windowClause;	/* WINDOW window_name AS (...), ... */
+    /*
+     * These fields are used only in "leaf" SelectStmts.
+     */
+    List       *distinctClause; /* NULL, list of DISTINCT ON exprs, or
+                                 * lcons(NIL,NIL) for all (SELECT DISTINCT) */
+    IntoClause *intoClause;     /* target for SELECT INTO */
+    List       *targetList;     /* the target list (of ResTarget) */
+    List       *fromClause;     /* the FROM clause */
+    Node       *whereClause;    /* WHERE qualification */
+    
+    /* ADDED: QUALIFY clause */
+    Node       *qualifyClause;  /* QUALIFY qualification */
 
-	/*
-	 * In a "leaf" node representing a VALUES list, the above fields are all
-	 * null, and instead this field is set.  Note that the elements of the
-	 * sublists are just expressions, without ResTarget decoration. Also note
-	 * that a list element can be DEFAULT (represented as a SetToDefault
-	 * node), regardless of the context of the VALUES list. It's up to parse
-	 * analysis to reject that where not valid.
-	 */
-	List	   *valuesLists;	/* untransformed list of expression lists */
+    List       *groupClause;    /* GROUP BY clauses */
+    bool        groupDistinct;  /* Is this GROUP BY DISTINCT? */
+    bool        groupByAll;     /* Is this GROUP BY ALL? */
+    Node       *havingClause;   /* HAVING conditional-expression */
+    List       *windowClause;   /* WINDOW window_name AS (...), ... */
 
-	/*
-	 * These fields are used in both "leaf" SelectStmts and upper-level
-	 * SelectStmts.
-	 */
-	List	   *sortClause;		/* sort clause (a list of SortBy's) */
-	Node	   *limitOffset;	/* # of result tuples to skip */
-	Node	   *limitCount;		/* # of result tuples to return */
-	LimitOption limitOption;	/* limit type */
-	List	   *lockingClause;	/* FOR UPDATE (list of LockingClause's) */
-	WithClause *withClause;		/* WITH clause */
+    /*
+     * In a "leaf" node representing a VALUES list, the above fields are all
+     * null, and instead this field is set.  Note that the elements of the
+     * sublists are just expressions, without ResTarget decoration. Also note
+     * that a list element can be DEFAULT (represented as a SetToDefault
+     * node), regardless of the context of the VALUES list. It's up to parse
+     * analysis to reject that where not valid.
+     */
+    List       *valuesLists;    /* untransformed list of expression lists */
 
-	/*
-	 * These fields are used only in upper-level SelectStmts.
-	 */
-	SetOperation op;			/* type of set op */
-	bool		all;			/* ALL specified? */
-	struct SelectStmt *larg;	/* left child */
-	struct SelectStmt *rarg;	/* right child */
-	/* Eventually add fields for CORRESPONDING spec here */
+    /*
+     * These fields are used in both "leaf" SelectStmts and upper-level
+     * SelectStmts.
+     */
+    List       *sortClause;     /* sort clause (a list of SortBy's) */
+    Node       *limitOffset;    /* # of result tuples to skip */
+    Node       *limitCount;     /* # of result tuples to return */
+    LimitOption limitOption;    /* limit type */
+    List       *lockingClause;  /* FOR UPDATE (list of LockingClause's) */
+    WithClause *withClause;     /* WITH clause */
+
+    /*
+     * These fields are used only in upper-level SelectStmts.
+     */
+    SetOperation op;            /* type of set op */
+    bool        all;            /* ALL specified? */
+    struct SelectStmt *larg;    /* left child */
+    struct SelectStmt *rarg;    /* right child */
+    /* Eventually add fields for CORRESPONDING spec here */
 } SelectStmt;
+
 
 
 /* ----------------------

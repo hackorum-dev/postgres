@@ -318,6 +318,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
+				qualify_clause
 				PLpgSQL_Expr PLAssignStmt
 
 %type <str>			opt_single_name
@@ -767,7 +768,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
 	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROCEDURES PROGRAM PUBLICATION
 
-	QUOTE QUOTES
+	QUALIFY QUOTE QUOTES
 
 	RANGE READ REAL REASSIGN RECURSIVE REF_P REFERENCES REFERENCING
 	REFRESH REINDEX RELATIVE_P RELEASE RENAME REPEATABLE REPLACE REPLICA
@@ -13050,6 +13051,7 @@ simple_select:
 			SELECT opt_all_clause opt_target_list
 			into_clause from_clause where_clause
 			group_clause having_clause window_clause
+			qualify_clause                          
 				{
 					SelectStmt *n = makeNode(SelectStmt);
 
@@ -13062,11 +13064,13 @@ simple_select:
 					n->groupByAll = ($7)->all;
 					n->havingClause = $8;
 					n->windowClause = $9;
+					n->qualifyClause = $10;
 					$$ = (Node *) n;
 				}
 			| SELECT distinct_clause target_list
 			into_clause from_clause where_clause
 			group_clause having_clause window_clause
+			qualify_clause                          
 				{
 					SelectStmt *n = makeNode(SelectStmt);
 
@@ -13080,6 +13084,7 @@ simple_select:
 					n->groupByAll = ($7)->all;
 					n->havingClause = $8;
 					n->windowClause = $9;
+					n->qualifyClause = $10;
 					$$ = (Node *) n;
 				}
 			| values_clause							{ $$ = $1; }
@@ -14202,6 +14207,13 @@ where_clause:
 			| /*EMPTY*/								{ $$ = NULL; }
 		;
 
+qualify_clause:
+            QUALIFY a_expr
+                { $$ = $2; }
+            | /*EMPTY*/
+                { $$ = NULL; }
+        ;
+
 /* variant for UPDATE and DELETE */
 where_or_current_clause:
 			WHERE a_expr							{ $$ = $2; }
@@ -14216,7 +14228,6 @@ where_or_current_clause:
 				}
 			| /*EMPTY*/								{ $$ = NULL; }
 		;
-
 
 OptTableFuncElementList:
 			TableFuncElementList				{ $$ = $1; }
@@ -18349,6 +18360,7 @@ reserved_keyword:
 			| ORDER
 			| PLACING
 			| PRIMARY
+			| QUALIFY
 			| REFERENCES
 			| RETURNING
 			| SELECT

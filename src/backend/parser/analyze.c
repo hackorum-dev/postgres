@@ -1398,149 +1398,162 @@ count_rowexpr_columns(ParseState *pstate, Node *expr)
  */
 static Query *
 transformSelectStmt(ParseState *pstate, SelectStmt *stmt,
-					SelectStmtPassthrough *passthru)
+                    SelectStmtPassthrough *passthru)
 {
-	Query	   *qry = makeNode(Query);
-	Node	   *qual;
-	ListCell   *l;
+    Query      *qry = makeNode(Query);
+    Node       *qual;
+    ListCell   *l;
 
-	qry->commandType = CMD_SELECT;
+    qry->commandType = CMD_SELECT;
 
-	/* process the WITH clause independently of all else */
-	if (stmt->withClause)
-	{
-		qry->hasRecursive = stmt->withClause->recursive;
-		qry->cteList = transformWithClause(pstate, stmt->withClause);
-		qry->hasModifyingCTE = pstate->p_hasModifyingCTE;
-	}
+    /* process the WITH clause independently of all else */
+    if (stmt->withClause)
+    {
+        qry->hasRecursive = stmt->withClause->recursive;
+        qry->cteList = transformWithClause(pstate, stmt->withClause);
+        qry->hasModifyingCTE = pstate->p_hasModifyingCTE;
+    }
 
-	/* Complain if we get called from someplace where INTO is not allowed */
-	if (stmt->intoClause)
-		ereport(ERROR,
-				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("SELECT ... INTO is not allowed here"),
-				 parser_errposition(pstate,
-									exprLocation((Node *) stmt->intoClause))));
+    /* Complain if we get called from someplace where INTO is not allowed */
+    if (stmt->intoClause)
+        ereport(ERROR,
+                (errcode(ERRCODE_SYNTAX_ERROR),
+                 errmsg("SELECT ... INTO is not allowed here"),
+                 parser_errposition(pstate,
+                                    exprLocation((Node *) stmt->intoClause))));
 
-	/* make FOR UPDATE/FOR SHARE info available to addRangeTableEntry */
-	pstate->p_locking_clause = stmt->lockingClause;
+    /* make FOR UPDATE/FOR SHARE info available to addRangeTableEntry */
+    pstate->p_locking_clause = stmt->lockingClause;
 
-	/* make WINDOW info available for window functions, too */
-	pstate->p_windowdefs = stmt->windowClause;
+    /* make WINDOW info available for window functions, too */
+    pstate->p_windowdefs = stmt->windowClause;
 
-	/* process the FROM clause */
-	transformFromClause(pstate, stmt->fromClause);
+    /* process the FROM clause */
+    transformFromClause(pstate, stmt->fromClause);
 
-	/* transform targetlist */
-	qry->targetList = transformTargetList(pstate, stmt->targetList,
-										  EXPR_KIND_SELECT_TARGET);
+    /* transform targetlist */
+    qry->targetList = transformTargetList(pstate, stmt->targetList,
+                                          EXPR_KIND_SELECT_TARGET);
+    pstate->p_targetList = qry->targetList;
 
-	/*
-	 * If we're within a PLAssignStmt, do further transformation of the
-	 * targetlist; that has to happen before we consider sorting or grouping.
-	 * Otherwise, mark column origins (which are useless in a PLAssignStmt).
-	 */
-	if (passthru)
-		qry->targetList = transformPLAssignStmtTarget(pstate, qry->targetList,
-													  passthru);
-	else
-		markTargetListOrigins(pstate, qry->targetList);
+    /*
+     * If we're within a PLAssignStmt, do further transformation of the
+     * targetlist; that has to happen before we consider sorting or grouping.
+     * Otherwise, mark column origins (which are useless in a PLAssignStmt).
+     */
+    if (passthru)
+        qry->targetList = transformPLAssignStmtTarget(pstate, qry->targetList,
+                                                      passthru);
+    else
+        markTargetListOrigins(pstate, qry->targetList);
 
-	/* transform WHERE */
-	qual = transformWhereClause(pstate, stmt->whereClause,
-								EXPR_KIND_WHERE, "WHERE");
+    /* transform WHERE */
+    qual = transformWhereClause(pstate, stmt->whereClause,
+                                EXPR_KIND_WHERE, "WHERE");
 
-	/* initial processing of HAVING clause is much like WHERE clause */
-	qry->havingQual = transformWhereClause(pstate, stmt->havingClause,
-										   EXPR_KIND_HAVING, "HAVING");
+    /* initial processing of HAVING clause is much like WHERE clause */
+    qry->havingQual = transformWhereClause(pstate, stmt->havingClause,
+                                           EXPR_KIND_HAVING, "HAVING");
 
-	/*
-	 * Transform sorting/grouping stuff.  Do ORDER BY first because both
-	 * transformGroupClause and transformDistinctClause need the results. Note
-	 * that these functions can also change the targetList, so it's passed to
-	 * them by reference.
-	 */
-	qry->sortClause = transformSortClause(pstate,
-										  stmt->sortClause,
-										  &qry->targetList,
-										  EXPR_KIND_ORDER_BY,
-										  false /* allow SQL92 rules */ );
+    /*
+     * The QUALIFY clause is much like HAVING, but for window functions.
+     * Using EXPR_KIND_QUALIFY allows specific checks (e.g., allowing window funcs).
+     */
+    qry->qualifyQual = transformWhereClause(pstate, stmt->qualifyClause,
+                                            EXPR_KIND_QUALIFY, "QUALIFY");
 
-	qry->groupClause = transformGroupClause(pstate,
-											stmt->groupClause,
-											stmt->groupByAll,
-											&qry->groupingSets,
-											&qry->targetList,
-											qry->sortClause,
-											EXPR_KIND_GROUP_BY,
-											false /* allow SQL92 rules */ );
-	qry->groupDistinct = stmt->groupDistinct;
-	qry->groupByAll = stmt->groupByAll;
+    /*
+     * Transform sorting/grouping stuff.  Do ORDER BY first because both
+     * transformGroupClause and transformDistinctClause need the results. Note
+     * that these functions can also change the targetList, so it's passed to
+     * them by reference.
+     */
+    qry->sortClause = transformSortClause(pstate,
+                                          stmt->sortClause,
+                                          &qry->targetList,
+                                          EXPR_KIND_ORDER_BY,
+                                          false /* allow SQL92 rules */ );
 
-	if (stmt->distinctClause == NIL)
-	{
-		qry->distinctClause = NIL;
-		qry->hasDistinctOn = false;
-	}
-	else if (linitial(stmt->distinctClause) == NULL)
-	{
-		/* We had SELECT DISTINCT */
-		qry->distinctClause = transformDistinctClause(pstate,
-													  &qry->targetList,
-													  qry->sortClause,
-													  false);
-		qry->hasDistinctOn = false;
-	}
-	else
-	{
-		/* We had SELECT DISTINCT ON */
-		qry->distinctClause = transformDistinctOnClause(pstate,
-														stmt->distinctClause,
-														&qry->targetList,
-														qry->sortClause);
-		qry->hasDistinctOn = true;
-	}
+    qry->groupClause = transformGroupClause(pstate,
+                                            stmt->groupClause,
+                                            stmt->groupByAll,
+                                            &qry->groupingSets,
+                                            &qry->targetList,
+                                            qry->sortClause,
+                                            EXPR_KIND_GROUP_BY,
+                                            false /* allow SQL92 rules */ );
+    qry->groupDistinct = stmt->groupDistinct;
+    qry->groupByAll = stmt->groupByAll;
 
-	/* transform LIMIT */
-	qry->limitOffset = transformLimitClause(pstate, stmt->limitOffset,
-											EXPR_KIND_OFFSET, "OFFSET",
-											stmt->limitOption);
-	qry->limitCount = transformLimitClause(pstate, stmt->limitCount,
-										   EXPR_KIND_LIMIT, "LIMIT",
-										   stmt->limitOption);
-	qry->limitOption = stmt->limitOption;
+    if (stmt->distinctClause == NIL)
+    {
+        qry->distinctClause = NIL;
+        qry->hasDistinctOn = false;
+    }
+    else if (linitial(stmt->distinctClause) == NULL)
+    {
+        /* We had SELECT DISTINCT */
+        qry->distinctClause = transformDistinctClause(pstate,
+                                                      &qry->targetList,
+                                                      qry->sortClause,
+                                                      false);
+        qry->hasDistinctOn = false;
+    }
+    else
+    {
+        /* We had SELECT DISTINCT ON */
+        qry->distinctClause = transformDistinctOnClause(pstate,
+                                                        stmt->distinctClause,
+                                                        &qry->targetList,
+                                                        qry->sortClause);
+        qry->hasDistinctOn = true;
+    }
 
-	/* transform window clauses after we have seen all window functions */
-	qry->windowClause = transformWindowDefinitions(pstate,
-												   pstate->p_windowdefs,
-												   &qry->targetList);
+    /* transform LIMIT */
+    qry->limitOffset = transformLimitClause(pstate, stmt->limitOffset,
+                                            EXPR_KIND_OFFSET, "OFFSET",
+                                            stmt->limitOption);
+    qry->limitCount = transformLimitClause(pstate, stmt->limitCount,
+                                           EXPR_KIND_LIMIT, "LIMIT",
+                                           stmt->limitOption);
+    qry->limitOption = stmt->limitOption;
 
-	/* resolve any still-unresolved output columns as being type text */
-	if (pstate->p_resolve_unknowns)
-		resolveTargetListUnknowns(pstate, qry->targetList);
+    /*
+     * transform window clauses after we have seen all window functions.
+     * UPDATED: Pass the QUALIFY clause (stmt->qualifyClause) so it can be
+     * attached to the WindowClause if the planner expects it there.
+     */
+    qry->windowClause = transformWindowDefinitions(pstate,
+                                                   pstate->p_windowdefs,
+                                                   &qry->targetList,
+                                                   qry->qualifyQual); /* <--- Added argument */
 
-	qry->rtable = pstate->p_rtable;
-	qry->rteperminfos = pstate->p_rteperminfos;
-	qry->jointree = makeFromExpr(pstate->p_joinlist, qual);
+    /* resolve any still-unresolved output columns as being type text */
+    if (pstate->p_resolve_unknowns)
+        resolveTargetListUnknowns(pstate, qry->targetList);
 
-	qry->hasSubLinks = pstate->p_hasSubLinks;
-	qry->hasWindowFuncs = pstate->p_hasWindowFuncs;
-	qry->hasTargetSRFs = pstate->p_hasTargetSRFs;
-	qry->hasAggs = pstate->p_hasAggs;
+    qry->rtable = pstate->p_rtable;
+    qry->rteperminfos = pstate->p_rteperminfos;
+    qry->jointree = makeFromExpr(pstate->p_joinlist, qual);
 
-	foreach(l, stmt->lockingClause)
-	{
-		transformLockingClause(pstate, qry,
-							   (LockingClause *) lfirst(l), false);
-	}
+    qry->hasSubLinks = pstate->p_hasSubLinks;
+    qry->hasWindowFuncs = pstate->p_hasWindowFuncs;
+    qry->hasTargetSRFs = pstate->p_hasTargetSRFs;
+    qry->hasAggs = pstate->p_hasAggs;
 
-	assign_query_collations(pstate, qry);
+    foreach(l, stmt->lockingClause)
+    {
+        transformLockingClause(pstate, qry,
+                               (LockingClause *) lfirst(l), false);
+    }
 
-	/* this must be done after collations, for reliable comparison of exprs */
-	if (pstate->p_hasAggs || qry->groupClause || qry->groupingSets || qry->havingQual)
-		parseCheckAggregates(pstate, qry);
+    assign_query_collations(pstate, qry);
 
-	return qry;
+    /* this must be done after collations, for reliable comparison of exprs */
+    if (pstate->p_hasAggs || qry->groupClause || qry->groupingSets || qry->havingQual)
+        parseCheckAggregates(pstate, qry);
+
+    return qry;
 }
 
 /*
@@ -2014,7 +2027,7 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 	assign_query_collations(pstate, qry);
 
 	/* this must be done after collations, for reliable comparison of exprs */
-	if (pstate->p_hasAggs || qry->groupClause || qry->groupingSets || qry->havingQual)
+	if (pstate->p_hasAggs || qry->groupClause || qry->groupingSets || qry->havingQual || qry->qualifyQual)
 		parseCheckAggregates(pstate, qry);
 
 	return qry;

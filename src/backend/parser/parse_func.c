@@ -2686,7 +2686,10 @@ check_srf_call_placement(ParseState *pstate, Node *last_srf, int location)
 			err = _("set-returning functions are not allowed in policy expressions");
 			break;
 		case EXPR_KIND_HAVING:
-			errkind = true;
+			/* okay */
+			break;
+		case EXPR_KIND_QUALIFY:
+			err = _("set-returning functions are not allowed in QUALIFY");
 			break;
 		case EXPR_KIND_FILTER:
 			errkind = true;

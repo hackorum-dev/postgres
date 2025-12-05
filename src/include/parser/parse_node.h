@@ -45,6 +45,7 @@ typedef enum ParseExprKind
 	EXPR_KIND_FROM_FUNCTION,	/* function in FROM clause */
 	EXPR_KIND_WHERE,			/* WHERE */
 	EXPR_KIND_HAVING,			/* HAVING */
+	EXPR_KIND_QUALIFY,			/* QUALIFY */
 	EXPR_KIND_FILTER,			/* FILTER */
 	EXPR_KIND_WINDOW_PARTITION, /* window definition PARTITION BY */
 	EXPR_KIND_WINDOW_ORDER,		/* window definition ORDER BY */
@@ -230,6 +231,8 @@ struct ParseState
 	bool		p_hasModifyingCTE;
 
 	Node	   *p_last_srf;		/* most recent set-returning func/op found */
+
+	List	   *p_targetList;		/* target list (of TargetEntry) */
 
 	/*
 	 * Optional hook functions for parser callbacks.  These are null unless
