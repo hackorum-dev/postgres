@@ -5211,6 +5211,8 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 	Form_pg_proc funcform = (Form_pg_proc) GETSTRUCT(func_tuple);
 	bool		has_nonconst_input = false;
 	bool		has_null_input = false;
+	bool		has_variadic_null = false;
+	int			i = 0;
 	ListCell   *arg;
 	FuncExpr   *newexpr;
 
@@ -5239,10 +5241,33 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 	foreach(arg, args)
 	{
 		if (IsA(lfirst(arg), Const))
-			has_null_input |= ((Const *) lfirst(arg))->constisnull;
+		{
+			if (i < funcform->pronargs - 1)
+				has_null_input |= ((Const *) lfirst(arg))->constisnull;
+			else
+			{
+				/*
+				 * For VARIADIC "any" last args are not constructed into an
+				 * array, but funcform->pronargs is calculated as if they
+				 * were. However, we still want has_null_input to not be set
+				 * in true if null argument is part of the VARIADIC array.
+				 */
+				if (funcform->provariadic)
+				{
+					has_variadic_null |= ((Const *) lfirst(arg))->constisnull;
+				}
+				else			/* last argument for non-variadic */
+					has_null_input |= ((Const *) lfirst(arg))->constisnull;
+			}
+		}
 		else
 			has_nonconst_input = true;
+		i++;
 	}
+
+	/* VARIADIC "any" argument is null. */
+	if (has_variadic_null && (i == funcform->pronargs))
+		has_null_input |= has_variadic_null;
 
 	/*
 	 * If the function is strict and has a constant-NULL input, it will never
