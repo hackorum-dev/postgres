@@ -947,6 +947,13 @@
   boot_val => 'true',
 },
 
+{ name => 'enable_loser_tree', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
+  short_desc => 'Enables loser tree for external k-way merge.',
+  flags => 'GUC_EXPLAIN',
+  variable => 'enable_loser_tree',
+  boot_val => 'false',
+},
+
 { name => 'enable_material', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
   short_desc => 'Enables the planner\'s use of materialization.',
   flags => 'GUC_EXPLAIN',

@@ -42,16 +42,16 @@
  * end of the input is reached, we dump out remaining tuples in memory into
  * a final run, then merge the runs.
  *
- * When merging runs, we use a heap containing just the frontmost tuple from
- * each source run; we repeatedly output the smallest tuple and replace it
- * with the next tuple from its source tape (if any).  When the heap empties,
- * the merge is complete.  The basic merge algorithm thus needs very little
- * memory --- only M tuples for an M-way merge, and M is constrained to a
- * small number.  However, we can still make good use of our full workMem
- * allocation by pre-reading additional blocks from each source tape.  Without
- * prereading, our access pattern to the temporary file would be very erratic;
- * on average we'd read one block from each of M source tapes during the same
- * time that we're writing M blocks to the output tape, so there is no
+ * When merging runs, we use a heap or loser tree containing just the frontmost
+ * tuple from each source run; we repeatedly output the smallest tuple and
+ * replace it with the next tuple from its source tape (if any).  When the heap
+ * or loser tree empties, the merge is complete.  The basic merge algorithm thus
+ * needs very little memory --- only M tuples for an M-way merge, and M is
+ * constrained to a small number.  However, we can still make good use of our
+ * full workMem allocation by pre-reading additional blocks from each source tape.
+ * Without prereading, our access pattern to the temporary file would be very
+ * erratic; on average we'd read one block from each of M source tapes during
+ * the same time that we're writing M blocks to the output tape, so there is no
  * sequentiality of access at all, defeating the read-ahead methods used by
  * most Unix kernels.  Worse, the output tape gets written into a very random
  * sequence of blocks of the temp file, ensuring that things will be even
@@ -119,8 +119,12 @@
 #define INITIAL_MEMTUPSIZE Max(1024, \
 	ALLOCSET_SEPARATE_THRESHOLD / sizeof(SortTuple) + 1)
 
+/* LOSER_TREE_EOF is always a loser in comparison */
+#define LOSER_TREE_EOF -1
+
 /* GUC variables */
 bool		trace_sort = false;
+bool        enable_loser_tree = false;
 
 #ifdef DEBUG_BOUNDED_SORT
 bool		optimize_bounded_sort = true;
@@ -204,6 +208,8 @@ struct Tuplesortstate
 								 * false means in-memory */
 	TupSortStatus maxSpaceStatus;	/* sort status when maxSpace was reached */
 	LogicalTapeSet *tapeset;	/* logtape.c object for tapes in a temp file */
+	bool        useLoserTree;   /* use loser tree for k-way merge if true */
+	int16      *losers;         /* array of losers, losers[0] is the winner */
 
 	/*
 	 * This array holds the tuples now in sort memory.  If we are in state
@@ -466,6 +472,8 @@ static void tuplesort_sort_memtuples(Tuplesortstate *state);
 static void tuplesort_heap_build(Tuplesortstate *state);
 static void tuplesort_heap_replace_top(Tuplesortstate *state, SortTuple *tuple);
 static void tuplesort_heap_delete_top(Tuplesortstate *state);
+static void tuplesort_loser_tree_build(Tuplesortstate *state);
+static void tuplesort_loser_tree_adjust(Tuplesortstate *state);
 static void reversedirection(Tuplesortstate *state);
 static unsigned int getlen(LogicalTape *tape, bool eofOK);
 static void markrunend(LogicalTape *tape);
@@ -590,6 +598,10 @@ tuplesort_begin_common(int workMem, SortCoordinate coordinate, int sortopt)
 	state->base.sortopt = sortopt;
 	state->base.tuples = true;
 	state->abbrevNext = 10;
+
+	/* Use loser tree for k-way merge if enable_loser_tree is true */
+	state->useLoserTree = enable_loser_tree;
+	state->losers = NULL;
 
 	/*
 	 * workMem is forced to be at least 64KB, the current minimum valid value
@@ -1553,11 +1565,12 @@ tuplesort_gettuple_common(Tuplesortstate *state, bool forward,
 			 */
 			if (state->memtupcount > 0)
 			{
-				int			srcTapeIndex = state->memtuples[0].srctape;
+				int         i = (state->useLoserTree ? state->losers[0] : 0);
+				int			srcTapeIndex = state->memtuples[i].srctape;
 				LogicalTape *srcTape = state->inputTapes[srcTapeIndex];
 				SortTuple	newtup;
 
-				*stup = state->memtuples[0];
+				*stup = state->memtuples[i];
 
 				/*
 				 * Remember the tuple we return, so that we can recycle its
@@ -1566,16 +1579,17 @@ tuplesort_gettuple_common(Tuplesortstate *state, bool forward,
 				state->lastReturnedTuple = stup->tuple;
 
 				/*
-				 * Pull next tuple from tape, and replace the returned tuple
-				 * at top of the heap with it.
+				 * Pull next tuple from tape, and adjust the heap or loser tree.
 				 */
 				if (!mergereadnext(state, srcTape, &newtup))
 				{
 					/*
 					 * If no more data, we've reached end of run on this tape.
-					 * Remove the top node from the heap.
 					 */
-					tuplesort_heap_delete_top(state);
+					if (state->useLoserTree)
+						state->memtuples[i].srctape = LOSER_TREE_EOF;
+					else
+						tuplesort_heap_delete_top(state);
 					state->nInputRuns--;
 
 					/*
@@ -1583,10 +1597,22 @@ tuplesort_gettuple_common(Tuplesortstate *state, bool forward,
 					 * anyway, but better to release the memory early.
 					 */
 					LogicalTapeClose(srcTape);
-					return true;
 				}
-				newtup.srctape = srcTapeIndex;
-				tuplesort_heap_replace_top(state, &newtup);
+				else
+				{
+					newtup.srctape = srcTapeIndex;
+					if (state->useLoserTree)
+						state->memtuples[i] = newtup;
+					else
+						tuplesort_heap_replace_top(state, &newtup);
+				}
+
+				if (state->useLoserTree)
+				{
+					tuplesort_loser_tree_adjust(state);
+					if (state->losers[0] == LOSER_TREE_EOF)
+						state->memtupcount = 0;
+				}
 				return true;
 			}
 			return false;
@@ -1967,8 +1993,8 @@ mergeruns(Tuplesortstate *state)
 		init_slab_allocator(state, 0);
 
 	/*
-	 * Allocate a new 'memtuples' array, for the heap.  It will hold one tuple
-	 * from each input tape.
+	 * Allocate a new 'memtuples' array.  It will hold one tuple from each
+	 * input tape.
 	 *
 	 * We could shrink this, too, between passes in a multi-pass merge, but we
 	 * don't bother.  (The initial input tapes are still in outputTapes.  The
@@ -1978,6 +2004,14 @@ mergeruns(Tuplesortstate *state)
 	state->memtuples = (SortTuple *) MemoryContextAlloc(state->base.maincontext,
 														state->nOutputTapes * sizeof(SortTuple));
 	USEMEM(state, GetMemoryChunkSpace(state->memtuples));
+
+	/* Allocate a 'losers' array if we will use loser tree for merge */
+	if (state->useLoserTree && state->losers == NULL)
+	{
+		state->losers = (int16 *) MemoryContextAlloc(state->base.maincontext,
+													 state->nOutputTapes * sizeof(int16));
+		USEMEM(state, GetMemoryChunkSpace(state->losers));
+	}
 
 	/*
 	 * Use all the remaining memory we have available for tape buffers among
@@ -2096,62 +2130,72 @@ mergeruns(Tuplesortstate *state)
 static void
 mergeonerun(Tuplesortstate *state)
 {
+	int         i;
 	int			srcTapeIndex;
 	LogicalTape *srcTape;
 
 	/*
 	 * Start the merge by loading one tuple from each active source tape into
-	 * the heap.
+	 * the heap or loser tree.
 	 */
 	beginmerge(state);
 
 	Assert(state->slabAllocatorUsed);
 
 	/*
-	 * Execute merge by repeatedly extracting lowest tuple in heap, writing it
-	 * out, and replacing it with next tuple from same tape (if there is
-	 * another one).
+	 * Execute merge by repeatedly extracting the tuple in the heap or loser
+	 * tree, writing it out, pulling next tuple from same tape (if there is
+	 * another one), and adjusting the heap or loser tree.
 	 */
 	while (state->memtupcount > 0)
 	{
 		SortTuple	stup;
 
 		/* write the tuple to destTape */
-		srcTapeIndex = state->memtuples[0].srctape;
+		i = (state->useLoserTree ? state->losers[0] : 0);
+		srcTapeIndex = state->memtuples[i].srctape;
 		srcTape = state->inputTapes[srcTapeIndex];
-		WRITETUP(state, state->destTape, &state->memtuples[0]);
+		WRITETUP(state, state->destTape, &state->memtuples[i]);
 
 		/* recycle the slot of the tuple we just wrote out, for the next read */
-		if (state->memtuples[0].tuple)
-			RELEASE_SLAB_SLOT(state, state->memtuples[0].tuple);
+		if (state->memtuples[i].tuple)
+			RELEASE_SLAB_SLOT(state, state->memtuples[i].tuple);
 
-		/*
-		 * pull next tuple from the tape, and replace the written-out tuple in
-		 * the heap with it.
-		 */
+		/* pull next tuple from the tape, and adjust the heap or loser tree */
 		if (mergereadnext(state, srcTape, &stup))
 		{
 			stup.srctape = srcTapeIndex;
-			tuplesort_heap_replace_top(state, &stup);
+			if (state->useLoserTree)
+				state->memtuples[i] = stup;
+			else
+				tuplesort_heap_replace_top(state, &stup);
 		}
 		else
 		{
-			tuplesort_heap_delete_top(state);
+			if (state->useLoserTree)
+				state->memtuples[i].srctape = LOSER_TREE_EOF;
+			else
+				tuplesort_heap_delete_top(state);
 			state->nInputRuns--;
+		}
+
+		if (state->useLoserTree)
+		{
+			tuplesort_loser_tree_adjust(state);
+			if (state->losers[0] == LOSER_TREE_EOF)
+				state->memtupcount = 0;
 		}
 	}
 
-	/*
-	 * When the heap empties, we're done.  Write an end-of-run marker on the
-	 * output tape.
-	 */
+	/* Done. Write an end-of-run marker on the output tape. */
 	markrunend(state->destTape);
 }
 
 /*
  * beginmerge - initialize for a merge pass
  *
- * Fill the merge heap with the first tuple from each input tape.
+ * Pull the first tuple from each input tape, and build a heap
+ * or loser tree for the merge pass.
  */
 static void
 beginmerge(Tuplesortstate *state)
@@ -2177,7 +2221,10 @@ beginmerge(Tuplesortstate *state)
 		}
 	}
 
-	tuplesort_heap_build(state);
+	if (state->useLoserTree)
+		tuplesort_loser_tree_build(state);
+	else
+		tuplesort_heap_build(state);
 }
 
 /*
@@ -3141,6 +3188,95 @@ tuplesort_heap_replace_top(Tuplesortstate *state, SortTuple *tuple)
 		i = j;
 	}
 	memtuples[i] = *tuple;
+}
+
+/*
+ * Build a valid loser tree from memtuples[].
+ */
+static void
+tuplesort_loser_tree_build(Tuplesortstate *state)
+{
+	SortTuple  *memtuples = state->memtuples;
+	int         k = state->memtupcount;
+	int16       winners[MAXORDER];
+	int         i;
+
+	Assert(state->losers != NULL);
+	Assert(k <= MAXORDER);
+
+	/* this can happen? */
+	if (unlikely(k <= 0))
+		return;
+
+	/* 1-way merge, losers[0] is always 0 */
+	if (k == 1)
+	{
+		state->losers[0] = 0;
+		return;
+	}
+
+	/* fill the losers array */
+	for (i = k - 1; i > 0; i--)
+	{
+		int l = i * 2;
+		int r = l + 1;
+		int ll = (l >= k ? l - k : winners[l]);
+		int rr = (r >= k ? r - k : winners[r]);
+
+		if (COMPARETUP(state, &memtuples[ll], &memtuples[rr]) < 0)
+		{
+			winners[i] = ll;
+			state->losers[i] = rr;
+		}
+		else
+		{
+			winners[i] = rr;
+			state->losers[i] = ll;
+		}
+	}
+	state->losers[0] = winners[1];
+}
+
+/*
+ * Adjust the loser tree to get the new winner.  Caller must have already
+ * pulled the next tuple from the last winner's input tape, and placed it
+ * to memtuples[losers[0]].
+ */
+static void
+tuplesort_loser_tree_adjust(Tuplesortstate *state)
+{
+	SortTuple  *memtuples = state->memtuples;
+	int         k = state->memtupcount;
+	int         winner = state->losers[0];
+	int         i = (winner + k) / 2;
+
+	Assert(state->losers != NULL);
+	Assert(k > 0 && k <= MAXORDER);
+	Assert(winner >= 0 && winner < k);
+
+	/*
+	 * Reach end of run on the tape, set winner to LOSER_TREE_EOF so that
+	 * it's always a loser in comparison.
+	 */
+	if (memtuples[winner].srctape == LOSER_TREE_EOF)
+		winner = LOSER_TREE_EOF;
+
+	for (; i > 0; i /= 2)
+	{
+		int loser = state->losers[i];
+
+		/* LOSER_TREE_EOF is always a loser */
+		if (loser == LOSER_TREE_EOF)
+			continue;
+
+		if (winner == LOSER_TREE_EOF ||
+			COMPARETUP(state, &memtuples[winner], &memtuples[loser]) > 0)
+		{
+			state->losers[i] = winner;
+			winner = loser;
+		}
+	}
+	state->losers[0] = winner;
 }
 
 /*

@@ -5954,6 +5954,20 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-enable-loser-tree" xreflabel="enable_loser_tree">
+      <term><varname>enable_loser_tree</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>enable_loser_tree</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Enables or disables the external k-way merge's use of loser tree.
+        The default is <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-enable-material" xreflabel="enable_material">
       <term><varname>enable_material</varname> (<type>boolean</type>)
       <indexterm>
