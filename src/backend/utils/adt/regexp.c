@@ -715,7 +715,8 @@ textregexreplace_extended(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"start", start)));
+							"start", start),
+					 errhint("\"%s\" must be an integer value greater than zero", "start")));
 	}
 	if (PG_NARGS() > 4)
 	{
@@ -724,7 +725,8 @@ textregexreplace_extended(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"n", n)));
+							"N", n),
+					 errhint("\"%s\" must be an integer value greater than or equal to zero", "N")));
 	}
 
 	/* Determine options */
@@ -1152,7 +1154,8 @@ regexp_count(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"start", start)));
+							"start", start)),
+					 errhint("\"%s\" must be an integer value greater than zero", "start"));
 	}
 
 	/* Determine options */
@@ -1216,7 +1219,8 @@ regexp_instr(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"start", start)));
+							"start", start),
+					 errhint("\"%s\" must be an integer value greater than zero", "start")));
 	}
 	if (PG_NARGS() > 3)
 	{
@@ -1225,7 +1229,8 @@ regexp_instr(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"n", n)));
+							"N", n)),
+					 errhint("\"%s\" must be an integer value greater than zero", "N"));
 	}
 	if (PG_NARGS() > 4)
 	{
@@ -1234,7 +1239,8 @@ regexp_instr(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"endoption", endoption)));
+							"endoption", endoption),
+					 errhint("\"%s\" must be an integer value of 1 or 0", "endoption")));
 	}
 	if (PG_NARGS() > 6)
 	{
@@ -1243,7 +1249,8 @@ regexp_instr(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"subexpr", subexpr)));
+							"subexpr", subexpr),
+					 errhint("\"%s\" must be an integer value greater than or equal to zero", "subexpr")));
 	}
 
 	/* Determine options */
@@ -1923,7 +1930,8 @@ regexp_substr(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"start", start)));
+							"start", start)),
+					 errhint("\"%s\" must be an integer value greater than zero", "start"));
 	}
 	if (PG_NARGS() > 3)
 	{
@@ -1932,7 +1940,9 @@ regexp_substr(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"n", n)));
+							"N", n)),
+					 errhint("\"%s\" must be an integer value greater than zero", "N"));
+
 	}
 	if (PG_NARGS() > 5)
 	{
@@ -1941,7 +1951,8 @@ regexp_substr(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid value for parameter \"%s\": %d",
-							"subexpr", subexpr)));
+							"subexpr", subexpr),
+					 errhint("\"%s\" must be an integer value greater than or equal to zero", "subexpr")));
 	}
 
 	/* Determine options */
