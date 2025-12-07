@@ -834,8 +834,10 @@ SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'g');
 -- errors
 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', -1, 0, 'i');
 ERROR:  invalid value for parameter "start": -1
+HINT:  "start" must be an integer value greater than zero
 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, -1, 'i');
-ERROR:  invalid value for parameter "n": -1
+ERROR:  invalid value for parameter "N": -1
+HINT:  "N" must be an integer value greater than or equal to zero
 -- erroneous invocation of non-extended form
 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', '1');
 ERROR:  invalid regular expression option: "1"
@@ -880,8 +882,10 @@ SELECT regexp_count('ABCABCABCABC', 'Abc', 1, 'i');
 -- errors
 SELECT regexp_count('123123123123', '123', 0);
 ERROR:  invalid value for parameter "start": 0
+HINT:  "start" must be an integer value greater than zero
 SELECT regexp_count('123123123123', '123', -3);
 ERROR:  invalid value for parameter "start": -3
+HINT:  "start" must be an integer value greater than zero
 -- regexp_like tests
 SELECT regexp_like('Steven', '^Ste(v|ph)en$');
  regexp_like 
@@ -1034,16 +1038,21 @@ SELECT regexp_instr('foo', 'foo(bar)?', 1, 1, 0, '', 1);
 -- errors
 SELECT regexp_instr('abcabcabc', 'a.c', 0, 1);
 ERROR:  invalid value for parameter "start": 0
+HINT:  "start" must be an integer value greater than zero
 SELECT regexp_instr('abcabcabc', 'a.c', 1, 0);
-ERROR:  invalid value for parameter "n": 0
+ERROR:  invalid value for parameter "N": 0
+HINT:  "N" must be an integer value greater than zero
 SELECT regexp_instr('abcabcabc', 'a.c', 1, 1, -1);
 ERROR:  invalid value for parameter "endoption": -1
+HINT:  "endoption" must be an integer value of 1 or 0
 SELECT regexp_instr('abcabcabc', 'a.c', 1, 1, 2);
 ERROR:  invalid value for parameter "endoption": 2
+HINT:  "endoption" must be an integer value of 1 or 0
 SELECT regexp_instr('abcabcabc', 'a.c', 1, 1, 0, 'g');
 ERROR:  regexp_instr() does not support the "global" option
 SELECT regexp_instr('abcabcabc', 'a.c', 1, 1, 0, '', -1);
 ERROR:  invalid value for parameter "subexpr": -1
+HINT:  "subexpr" must be an integer value greater than or equal to zero
 -- regexp_substr tests
 SELECT regexp_substr('abcdefghi', 'd.f');
  regexp_substr 
@@ -1133,12 +1142,15 @@ SELECT regexp_substr('foo', 'foo(bar)?', 1, 1, '', 1) IS NULL AS t;
 -- errors
 SELECT regexp_substr('abcabcabc', 'a.c', 0, 1);
 ERROR:  invalid value for parameter "start": 0
+HINT:  "start" must be an integer value greater than zero
 SELECT regexp_substr('abcabcabc', 'a.c', 1, 0);
-ERROR:  invalid value for parameter "n": 0
+ERROR:  invalid value for parameter "N": 0
+HINT:  "N" must be an integer value greater than zero
 SELECT regexp_substr('abcabcabc', 'a.c', 1, 1, 'g');
 ERROR:  regexp_substr() does not support the "global" option
 SELECT regexp_substr('abcabcabc', 'a.c', 1, 1, '', -1);
 ERROR:  invalid value for parameter "subexpr": -1
+HINT:  "subexpr" must be an integer value greater than or equal to zero
 -- set so we can tell NULL from empty string
 \pset null '\\N'
 -- return all matches from regexp
