@@ -725,6 +725,7 @@ ExplainPrintSettings(ExplainState *es)
 	else
 	{
 		StringInfoData str;
+		const char *sep = "";
 
 		/* In TEXT mode, print nothing if there are no options */
 		if (num <= 0)
@@ -737,15 +738,13 @@ ExplainPrintSettings(ExplainState *es)
 			char	   *setting;
 			struct config_generic *conf = gucs[i];
 
-			if (i > 0)
-				appendStringInfoString(&str, ", ");
-
 			setting = GetConfigOptionByName(conf->name, NULL, true);
 
 			if (setting)
-				appendStringInfo(&str, "%s = '%s'", conf->name, setting);
+				appendStringInfo(&str, "%s%s = '%s'", sep, conf->name, setting);
 			else
-				appendStringInfo(&str, "%s = NULL", conf->name);
+				appendStringInfo(&str, "%s%s = NULL", sep, conf->name);
+			sep = ", ";
 		}
 
 		ExplainPropertyText("Settings", str.data, es);
@@ -2972,6 +2971,7 @@ show_window_keys(StringInfo buf, PlanState *planstate,
 	Plan	   *plan = planstate->plan;
 	List	   *context;
 	bool		useprefix;
+	const char *sep = "";
 
 	/* Set up deparsing context */
 	context = set_deparse_context_plan(es->deparse_cxt,
@@ -2992,9 +2992,8 @@ show_window_keys(StringInfo buf, PlanState *planstate,
 		/* Deparse the expression, showing any top-level cast */
 		exprstr = deparse_expression((Node *) target->expr, context,
 									 useprefix, true);
-		if (keyno > 0)
-			appendStringInfoString(buf, ", ");
-		appendStringInfoString(buf, exprstr);
+		appendStringInfo(buf, "%s%s", sep, exprstr);
+		sep = ", ";
 		pfree(exprstr);
 
 		/*
@@ -3069,16 +3068,14 @@ show_tablesample(TableSampleClause *tsc, PlanState *planstate,
 	/* Print results */
 	if (es->format == EXPLAIN_FORMAT_TEXT)
 	{
-		bool		first = true;
+		const char *sep = "";
 
 		ExplainIndentText(es);
 		appendStringInfo(es->str, "Sampling: %s (", method_name);
 		foreach(lc, params)
 		{
-			if (!first)
-				appendStringInfoString(es->str, ", ");
-			appendStringInfoString(es->str, (const char *) lfirst(lc));
-			first = false;
+			appendStringInfo(es->str, "%s%s", sep, (const char *) lfirst(lc));
+			sep = ", ";
 		}
 		appendStringInfoChar(es->str, ')');
 		if (repeatable)
@@ -4976,6 +4973,7 @@ static void
 show_result_replacement_info(Result *result, ExplainState *es)
 {
 	StringInfoData buf;
+	const char *sep = "";
 	int			nrels = 0;
 	int			rti = -1;
 	bool		found_non_result = false;
@@ -5035,9 +5033,8 @@ show_result_replacement_info(Result *result, ExplainState *es)
 		refname = (char *) list_nth(es->rtable_names, rti - 1);
 		if (refname == NULL)
 			refname = rte->eref->aliasname;
-		if (buf.len > 0)
-			appendStringInfoString(&buf, ", ");
-		appendStringInfoString(&buf, refname);
+		appendStringInfo(&buf, "%s%s", sep, refname);
+		sep = ", ";
 
 		/* Keep track of whether we see anything other than RTE_RESULT. */
 		if (rte->rtekind != RTE_RESULT)
