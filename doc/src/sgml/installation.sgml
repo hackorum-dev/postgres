@@ -2144,6 +2144,14 @@ ninja
     postgres instance, specify <userinput>--setup running</userinput> as an
     argument to <userinput>meson test</userinput>.
    </para>
+
+   <para>
+    A subset of the regression tests can be run with the command
+    <userinput>TESTS="boolean char" meson test --suite regress</userinput> or
+    <userinput>TESTS="boolean char" meson test --suite regress-running</userinput>.
+    Note that sometimes tests have dependencies on objects created by other
+    tests, which can cause unexpected failures.
+   </para>
   </step>
 
   <step id="meson-install">
