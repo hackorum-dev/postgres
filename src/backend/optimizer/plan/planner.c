@@ -2466,11 +2466,6 @@ preprocess_grouping_sets(PlannerInfo *root)
 	root->processed_groupClause = parse->groupClause;
 
 	/* Detect unhashable and unsortable grouping expressions */
-	gd->any_hashable = false;
-	gd->unhashable_refs = NULL;
-	gd->unsortable_refs = NULL;
-	gd->unsortable_sets = NIL;
-
 	if (parse->groupClause)
 	{
 		ListCell   *lc;
