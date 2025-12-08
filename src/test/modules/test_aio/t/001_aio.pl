@@ -29,7 +29,7 @@ $node_worker->stop();
 # Test io_method=io_uring
 ###
 
-if (have_io_uring())
+if (have_io_uring() and io_uring_enabled())
 {
 	my $node_uring = create_node('io_uring');
 	$node_uring->start();
@@ -126,6 +126,27 @@ sub have_io_uring
 	note "supported io_method values are: $methods";
 
 	return ($methods =~ m/io_uring/) ? 1 : 0;
+}
+
+sub io_uring_enabled
+{
+	# Check if io_uring is disabled by the kernel
+	# 0 = enabled for all users
+	# 1 = disabled for unprivileged users (requires CAP_SYS_ADMIN)
+	# 2 = disabled for all users
+	# file not exists = very old kernel (< 5.1), treat as disabled
+
+	my $io_uring_disabled = `cat /proc/sys/kernel/io_uring_disabled 2>/dev/null || echo 2`;
+	chomp($io_uring_disabled);
+
+	# Only allow when fully enabled (value is 0)
+	if ($io_uring_disabled ne '0')
+	{
+		note "io_uring is restricted or disabled (io_uring_disabled=$io_uring_disabled)";
+		return 0;
+	}
+
+	return 1;
 }
 
 sub psql_like
