@@ -517,6 +517,7 @@ ReadReplicationSlot(ReadReplicationSlotCmd *cmd)
 	TupleDesc	tupdesc;
 	Datum		values[READ_REPLICATION_SLOT_COLS] = {0};
 	bool		nulls[READ_REPLICATION_SLOT_COLS];
+	char		xloc[64];
 
 	tupdesc = CreateTemplateTupleDesc(READ_REPLICATION_SLOT_COLS);
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 1, "slot_type",
@@ -561,8 +562,6 @@ ReadReplicationSlot(ReadReplicationSlotCmd *cmd)
 		/* start LSN */
 		if (XLogRecPtrIsValid(slot_contents.data.restart_lsn))
 		{
-			char		xloc[64];
-
 			snprintf(xloc, sizeof(xloc), "%X/%08X",
 					 LSN_FORMAT_ARGS(slot_contents.data.restart_lsn));
 			values[i] = CStringGetTextDatum(xloc);
