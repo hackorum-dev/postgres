@@ -278,6 +278,7 @@ page_header(PG_FUNCTION_ARGS)
 	Page		page;
 	PageHeader	pageheader;
 	XLogRecPtr	lsn;
+	char		lsnchar[64];
 
 	if (!superuser())
 		ereport(ERROR,
@@ -298,8 +299,6 @@ page_header(PG_FUNCTION_ARGS)
 	/* pageinspect >= 1.2 uses pg_lsn instead of text for the LSN field. */
 	if (TupleDescAttr(tupdesc, 0)->atttypid == TEXTOID)
 	{
-		char		lsnchar[64];
-
 		snprintf(lsnchar, sizeof(lsnchar), "%X/%08X", LSN_FORMAT_ARGS(lsn));
 		values[0] = CStringGetTextDatum(lsnchar);
 	}
