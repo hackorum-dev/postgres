@@ -78,11 +78,8 @@ VXIDGetDatum(ProcNumber procNumber, LocalTransactionId lxid)
 	 * decimal respectively.  Note that elog.c also knows how to format a
 	 * vxid.
 	 */
-	char		vxidstr[32];
 
-	snprintf(vxidstr, sizeof(vxidstr), "%d/%u", procNumber, lxid);
-
-	return CStringGetTextDatum(vxidstr);
+	return CStringGetTextDatum(psprintf("%d/%u", procNumber, lxid));
 }
 
 
