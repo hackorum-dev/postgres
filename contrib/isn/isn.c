@@ -144,7 +144,7 @@ invalidindex:
  *---------------------------------------------------------*/
 
 static unsigned
-dehyphenate(char *bufO, char *bufI)
+dehyphenate(char *bufO, const char *bufI)
 {
 	unsigned	ret = 0;
 
@@ -279,7 +279,7 @@ hyphenate(char *bufO, char *bufI, const char *(*TABLE)[2], const unsigned TABLE_
  * Returns the weight of the number (the check digit value, 0-10)
  */
 static unsigned
-weight_checkdig(char *isn, unsigned size)
+weight_checkdig(const char *isn, unsigned size)
 {
 	unsigned	weight = 0;
 
@@ -305,7 +305,7 @@ weight_checkdig(char *isn, unsigned size)
  * Returns the check digit value (0-9)
  */
 static unsigned
-checkdig(char *num, unsigned size)
+checkdig(const char *num, unsigned size)
 {
 	unsigned	check = 0,
 				check3 = 0;

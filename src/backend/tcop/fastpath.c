@@ -56,7 +56,8 @@ struct fp_info
 };
 
 
-static int16 parse_fcall_arguments(StringInfo msgBuf, struct fp_info *fip,
+static int16 parse_fcall_arguments(StringInfo msgBuf,
+								   const struct fp_info *fip,
 								   FunctionCallInfo fcinfo);
 
 /* ----------------
@@ -326,7 +327,7 @@ HandleFunctionRequest(StringInfo msgBuf)
  * is returned.
  */
 static int16
-parse_fcall_arguments(StringInfo msgBuf, struct fp_info *fip,
+parse_fcall_arguments(StringInfo msgBuf, const struct fp_info *fip,
 					  FunctionCallInfo fcinfo)
 {
 	int			nargs;

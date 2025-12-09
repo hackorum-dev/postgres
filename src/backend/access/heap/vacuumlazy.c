@@ -454,7 +454,7 @@ static IndexBulkDeleteResult *lazy_cleanup_one_index(Relation indrel,
 													 double reltuples,
 													 bool estimated_count,
 													 LVRelState *vacrel);
-static bool should_attempt_truncation(LVRelState *vacrel);
+static bool should_attempt_truncation(const LVRelState *vacrel);
 static void lazy_truncate_heap(LVRelState *vacrel);
 static BlockNumber count_nondeletable_pages(LVRelState *vacrel,
 											bool *lock_waiter_detected);
@@ -473,7 +473,7 @@ static bool heap_page_is_all_visible(Relation rel, Buffer buf,
 #endif
 static bool heap_page_would_be_all_visible(Relation rel, Buffer buf,
 										   TransactionId OldestXmin,
-										   OffsetNumber *deadoffsets,
+										   const OffsetNumber *deadoffsets,
 										   int ndeadoffsets,
 										   bool *all_frozen,
 										   TransactionId *visibility_cutoff_xid,
@@ -3236,7 +3236,7 @@ lazy_cleanup_one_index(Relation indrel, IndexBulkDeleteResult *istat,
  * we're called.
  */
 static bool
-should_attempt_truncation(LVRelState *vacrel)
+should_attempt_truncation(const LVRelState *vacrel)
 {
 	BlockNumber possibly_freeable;
 
@@ -3708,7 +3708,7 @@ heap_page_is_all_visible(Relation rel, Buffer buf,
 static bool
 heap_page_would_be_all_visible(Relation rel, Buffer buf,
 							   TransactionId OldestXmin,
-							   OffsetNumber *deadoffsets,
+							   const OffsetNumber *deadoffsets,
 							   int ndeadoffsets,
 							   bool *all_frozen,
 							   TransactionId *visibility_cutoff_xid,

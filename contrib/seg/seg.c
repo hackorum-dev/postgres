@@ -81,7 +81,7 @@ PG_FUNCTION_INFO_V1(seg_right);
 PG_FUNCTION_INFO_V1(seg_over_right);
 PG_FUNCTION_INFO_V1(seg_union);
 PG_FUNCTION_INFO_V1(seg_inter);
-static void rt_seg_size(SEG *a, float *size);
+static void rt_seg_size(const SEG *a, float *size);
 
 /*
 ** Various operators
@@ -706,7 +706,7 @@ seg_inter(PG_FUNCTION_ARGS)
 }
 
 static void
-rt_seg_size(SEG *a, float *size)
+rt_seg_size(const SEG *a, float *size)
 {
 	if (a == (SEG *) NULL || a->upper <= a->lower)
 		*size = 0.0;

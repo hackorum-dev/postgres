@@ -53,7 +53,7 @@
  * Does this Var represent the CTID column of the specified baserel?
  */
 static inline bool
-IsCTIDVar(Var *var, RelOptInfo *rel)
+IsCTIDVar(const Var *var, const RelOptInfo *rel)
 {
 	/* The vartype check is strictly paranoia */
 	if (var->varattno == SelfItemPointerAttributeNumber &&
@@ -209,7 +209,7 @@ IsTidEqualAnyClause(PlannerInfo *root, RestrictInfo *rinfo, RelOptInfo *rel)
  * Check to see if a RestrictInfo is a CurrentOfExpr referencing "rel".
  */
 static bool
-IsCurrentOfClause(RestrictInfo *rinfo, RelOptInfo *rel)
+IsCurrentOfClause(RestrictInfo *rinfo, const RelOptInfo *rel)
 {
 	CurrentOfExpr *node;
 
@@ -278,7 +278,8 @@ RestrictInfoIsTidQual(PlannerInfo *root, RestrictInfo *rinfo, RelOptInfo *rel)
  * that there's more than one choice.
  */
 static List *
-TidQualFromRestrictInfoList(PlannerInfo *root, List *rlist, RelOptInfo *rel,
+TidQualFromRestrictInfoList(PlannerInfo *root, const List *rlist,
+							RelOptInfo *rel,
 							bool *isCurrentOf)
 {
 	RestrictInfo *tidclause = NULL; /* best simple CTID qual so far */
@@ -395,7 +396,7 @@ TidQualFromRestrictInfoList(PlannerInfo *root, List *rlist, RelOptInfo *rel,
  * scans.
  */
 static List *
-TidRangeQualFromRestrictInfoList(List *rlist, RelOptInfo *rel)
+TidRangeQualFromRestrictInfoList(const List *rlist, RelOptInfo *rel)
 {
 	List	   *rlst = NIL;
 	ListCell   *l;
@@ -423,7 +424,8 @@ TidRangeQualFromRestrictInfoList(List *rlist, RelOptInfo *rel)
  * troubling over.
  */
 static void
-BuildParameterizedTidPaths(PlannerInfo *root, RelOptInfo *rel, List *clauses)
+BuildParameterizedTidPaths(PlannerInfo *root, RelOptInfo *rel,
+						   const List *clauses)
 {
 	ListCell   *l;
 

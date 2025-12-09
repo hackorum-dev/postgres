@@ -54,7 +54,8 @@ typedef struct LogicalRepPartMapEntry
 	LogicalRepRelMapEntry relmapentry;
 } LogicalRepPartMapEntry;
 
-static Oid	FindLogicalRepLocalIndex(Relation localrel, LogicalRepRelation *remoterel,
+static Oid	FindLogicalRepLocalIndex(Relation localrel,
+									 const LogicalRepRelation *remoterel,
 									 AttrMap *attrMap);
 
 /*
@@ -217,7 +218,8 @@ logicalrep_relmap_update(LogicalRepRelation *remoterel)
  * Returns -1 if not found.
  */
 static int
-logicalrep_rel_att_by_name(LogicalRepRelation *remoterel, const char *attname)
+logicalrep_rel_att_by_name(const LogicalRepRelation *remoterel,
+						   const char *attname)
 {
 	int			i;
 
@@ -235,7 +237,7 @@ logicalrep_rel_att_by_name(LogicalRepRelation *remoterel, const char *attname)
  * relation and bitmap indicating which attributes to include.
  */
 static char *
-logicalrep_get_attrs_str(LogicalRepRelation *remoterel, Bitmapset *atts)
+logicalrep_get_attrs_str(const LogicalRepRelation *remoterel, Bitmapset *atts)
 {
 	StringInfoData attsbuf;
 	int			attcnt = 0;
@@ -918,7 +920,8 @@ GetRelationIdentityOrPK(Relation rel)
  * returns InvalidOid.
  */
 static Oid
-FindLogicalRepLocalIndex(Relation localrel, LogicalRepRelation *remoterel,
+FindLogicalRepLocalIndex(Relation localrel,
+						 const LogicalRepRelation *remoterel,
 						 AttrMap *attrMap)
 {
 	Oid			idxoid;

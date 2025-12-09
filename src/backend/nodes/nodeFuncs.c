@@ -26,7 +26,7 @@
 static bool expression_returns_set_walker(Node *node, void *context);
 static int	leftmostLoc(int loc1, int loc2);
 static bool fix_opfuncids_walker(Node *node, void *context);
-static bool planstate_walk_subplans(List *plans,
+static bool planstate_walk_subplans(const List *plans,
 									planstate_tree_walker_callback walker,
 									void *context);
 static bool planstate_walk_members(PlanState **planstates, int nplans,
@@ -4800,7 +4800,7 @@ planstate_tree_walker_impl(PlanState *planstate,
  * Walk a list of SubPlans (or initPlans, which also use SubPlan nodes).
  */
 static bool
-planstate_walk_subplans(List *plans,
+planstate_walk_subplans(const List *plans,
 						planstate_tree_walker_callback walker,
 						void *context)
 {

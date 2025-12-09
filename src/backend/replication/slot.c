@@ -1730,7 +1730,7 @@ ReportSlotInvalidation(ReplicationSlotInvalidationCause cause,
  *	  inactive because they don't perform logical decoding to produce changes.
  */
 static inline bool
-CanInvalidateIdleSlot(ReplicationSlot *s)
+CanInvalidateIdleSlot(const ReplicationSlot *s)
 {
 	return (idle_replication_slot_timeout_secs != 0 &&
 			XLogRecPtrIsValid(s->data.restart_lsn) &&

@@ -23,7 +23,7 @@ WalUsage	pgWalUsage;
 static WalUsage save_pgWalUsage;
 
 static void BufferUsageAdd(BufferUsage *dst, const BufferUsage *add);
-static void WalUsageAdd(WalUsage *dst, WalUsage *add);
+static void WalUsageAdd(WalUsage *dst, const WalUsage *add);
 
 
 /* Allocate new instrumentation structure(s) */
@@ -275,7 +275,7 @@ BufferUsageAccumDiff(BufferUsage *dst,
 
 /* helper functions for WAL usage accumulation */
 static void
-WalUsageAdd(WalUsage *dst, WalUsage *add)
+WalUsageAdd(WalUsage *dst, const WalUsage *add)
 {
 	dst->wal_bytes += add->wal_bytes;
 	dst->wal_records += add->wal_records;

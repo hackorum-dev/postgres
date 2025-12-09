@@ -31,7 +31,7 @@ static void AppendStringToManifest(backup_manifest_info *manifest, const char *s
  * want a manifest, we set manifest->buffile to NULL.
  */
 static inline bool
-IsManifestEnabled(backup_manifest_info *manifest)
+IsManifestEnabled(const backup_manifest_info *manifest)
 {
 	return (manifest->buffile != NULL);
 }

@@ -38,7 +38,7 @@ spg_kd_config(PG_FUNCTION_ARGS)
 }
 
 static int
-getSide(double coord, bool isX, Point *tst)
+getSide(double coord, bool isX, const Point *tst)
 {
 	double		tstcoord = (isX) ? tst->x : tst->y;
 

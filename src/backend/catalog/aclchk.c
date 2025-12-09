@@ -117,14 +117,15 @@ static void ExecGrant_Largeobject(InternalGrant *istmt);
 static void ExecGrant_Type_check(InternalGrant *istmt, HeapTuple tuple);
 static void ExecGrant_Parameter(InternalGrant *istmt);
 
-static void SetDefaultACLsInSchemas(InternalDefaultACL *iacls, List *nspnames);
+static void SetDefaultACLsInSchemas(InternalDefaultACL *iacls,
+									const List *nspnames);
 static void SetDefaultACL(InternalDefaultACL *iacls);
 
-static List *objectNamesToOids(ObjectType objtype, List *objnames,
+static List *objectNamesToOids(ObjectType objtype, const List *objnames,
 							   bool is_grant);
-static List *objectsInSchemaToOids(ObjectType objtype, List *nspnames);
+static List *objectsInSchemaToOids(ObjectType objtype, const List *nspnames);
 static List *getRelationsInNamespace(Oid namespaceId, char relkind);
-static void expand_col_privileges(List *colnames, Oid table_oid,
+static void expand_col_privileges(const List *colnames, Oid table_oid,
 								  AclMode this_privileges,
 								  AclMode *col_privileges,
 								  int num_col_privileges);
@@ -180,7 +181,8 @@ static void recordExtensionInitPrivWorker(Oid objoid, Oid classoid, int objsubid
 static Acl *
 merge_acl_with_grant(Acl *old_acl, bool is_grant,
 					 bool grant_option, DropBehavior behavior,
-					 List *grantees, AclMode privileges,
+					 const List *grantees,
+					 AclMode privileges,
 					 Oid grantorId, Oid ownerId)
 {
 	unsigned	modechg;
@@ -674,7 +676,7 @@ ExecGrantStmt_oids(InternalGrant *istmt)
  * consumption spikes.
  */
 static List *
-objectNamesToOids(ObjectType objtype, List *objnames, bool is_grant)
+objectNamesToOids(ObjectType objtype, const List *objnames, bool is_grant)
 {
 	List	   *objects = NIL;
 	ListCell   *cell;
@@ -786,7 +788,7 @@ objectNamesToOids(ObjectType objtype, List *objnames, bool is_grant)
  * no privilege checking on the individual objects here.
  */
 static List *
-objectsInSchemaToOids(ObjectType objtype, List *nspnames)
+objectsInSchemaToOids(ObjectType objtype, const List *nspnames)
 {
 	List	   *objects = NIL;
 	ListCell   *cell;
@@ -1102,7 +1104,7 @@ ExecAlterDefaultPrivilegesStmt(ParseState *pstate, AlterDefaultPrivilegesStmt *s
  * All fields of *iacls except nspid were filled already
  */
 static void
-SetDefaultACLsInSchemas(InternalDefaultACL *iacls, List *nspnames)
+SetDefaultACLsInSchemas(InternalDefaultACL *iacls, const List *nspnames)
 {
 	if (nspnames == NIL)
 	{
@@ -1557,7 +1559,7 @@ RemoveRoleFromObjectACL(Oid roleid, Oid classid, Oid objid)
  * FirstLowInvalidHeapAttributeNumber, up to relation's last attribute.
  */
 static void
-expand_col_privileges(List *colnames, Oid table_oid,
+expand_col_privileges(const List *colnames, Oid table_oid,
 					  AclMode this_privileges,
 					  AclMode *col_privileges,
 					  int num_col_privileges)

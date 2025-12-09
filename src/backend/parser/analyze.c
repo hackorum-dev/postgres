@@ -80,13 +80,14 @@ static Query *transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt);
 static Node *transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 									   bool isTopLevel, List **targetlist);
 static void determineRecursiveColTypes(ParseState *pstate,
-									   Node *larg, List *nrtargetlist);
+									   Node *larg,
+									   const List *nrtargetlist);
 static Query *transformReturnStmt(ParseState *pstate, ReturnStmt *stmt);
 static Query *transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt);
 static Query *transformPLAssignStmt(ParseState *pstate,
 									PLAssignStmt *stmt);
 static List *transformPLAssignStmtTarget(ParseState *pstate, List *tlist,
-										 SelectStmtPassthrough *passthru);
+										 const SelectStmtPassthrough *passthru);
 static Query *transformDeclareCursorStmt(ParseState *pstate,
 										 DeclareCursorStmt *stmt);
 static Query *transformExplainStmt(ParseState *pstate,
@@ -2403,7 +2404,8 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
  * to set up the parent CTE's columns
  */
 static void
-determineRecursiveColTypes(ParseState *pstate, Node *larg, List *nrtargetlist)
+determineRecursiveColTypes(ParseState *pstate, Node *larg,
+						   const List *nrtargetlist)
 {
 	Node	   *node;
 	int			leftmostRTI;
@@ -2866,7 +2868,7 @@ transformPLAssignStmt(ParseState *pstate, PLAssignStmt *stmt)
  */
 static List *
 transformPLAssignStmtTarget(ParseState *pstate, List *tlist,
-							SelectStmtPassthrough *passthru)
+							const SelectStmtPassthrough *passthru)
 {
 	PLAssignStmt *stmt = passthru->stmt;
 	Node	   *target = passthru->target;

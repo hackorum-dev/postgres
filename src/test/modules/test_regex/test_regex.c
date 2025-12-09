@@ -62,8 +62,8 @@ static test_regex_ctx *setup_test_matches(text *orig_str,
 										  test_re_flags *re_flags,
 										  Oid collation,
 										  bool use_subpatterns);
-static ArrayType *build_test_info_result(regex_t *cpattern,
-										 test_re_flags *flags);
+static ArrayType *build_test_info_result(const regex_t *cpattern,
+										 const test_re_flags *flags);
 static ArrayType *build_test_match_result(test_regex_ctx *matchctx);
 
 
@@ -612,7 +612,7 @@ setup_test_matches(text *orig_str,
  * This borrows some code from Tcl's TclRegAbout().
  */
 static ArrayType *
-build_test_info_result(regex_t *cpattern, test_re_flags *flags)
+build_test_info_result(const regex_t *cpattern, const test_re_flags *flags)
 {
 	/* Translation data for flag bits in regex_t.re_info */
 	struct infoname

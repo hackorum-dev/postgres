@@ -351,7 +351,7 @@ static bool KnownAssignedXidsSearch(TransactionId xid, bool remove);
 static bool KnownAssignedXidExists(TransactionId xid);
 static void KnownAssignedXidsRemove(TransactionId xid);
 static void KnownAssignedXidsRemoveTree(TransactionId xid, int nsubxids,
-										TransactionId *subxids);
+										const TransactionId *subxids);
 static void KnownAssignedXidsRemovePreceding(TransactionId removeXid);
 static int	KnownAssignedXidsGet(TransactionId *xarray, TransactionId xmax);
 static int	KnownAssignedXidsGetAndSetXmin(TransactionId *xarray,
@@ -4971,7 +4971,7 @@ KnownAssignedXidsRemove(TransactionId xid)
  */
 static void
 KnownAssignedXidsRemoveTree(TransactionId xid, int nsubxids,
-							TransactionId *subxids)
+							const TransactionId *subxids)
 {
 	int			i;
 

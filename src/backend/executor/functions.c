@@ -223,8 +223,8 @@ static void sql_compile_error_callback(void *arg);
 static void sql_exec_error_callback(void *arg);
 static void ShutdownSQLFunction(Datum arg);
 static void RemoveSQLFunctionCache(void *arg);
-static void check_sql_fn_statement(List *queryTreeList);
-static bool check_sql_stmt_retval(List *queryTreeList,
+static void check_sql_fn_statement(const List *queryTreeList);
+static bool check_sql_stmt_retval(const List *queryTreeList,
 								  Oid rettype, TupleDesc rettupdesc,
 								  char prokind, bool insertDroppedCols);
 static bool coerce_fn_result_column(TargetEntry *src_tle,
@@ -232,7 +232,7 @@ static bool coerce_fn_result_column(TargetEntry *src_tle,
 									bool tlist_is_modifiable,
 									List **upper_tlist,
 									bool *upper_tlist_nontrivial);
-static List *get_sql_fn_result_tlist(List *queryTreeList);
+static List *get_sql_fn_result_tlist(const List *queryTreeList);
 static void sqlfunction_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
 static bool sqlfunction_receive(TupleTableSlot *slot, DestReceiver *self);
 static void sqlfunction_shutdown(DestReceiver *self);
@@ -2049,7 +2049,7 @@ check_sql_fn_statements(List *queryTreeLists)
  * As above, for a single sublist of Queries.
  */
 static void
-check_sql_fn_statement(List *queryTreeList)
+check_sql_fn_statement(const List *queryTreeList)
 {
 	ListCell   *lc;
 
@@ -2147,7 +2147,7 @@ check_sql_fn_retval(List *queryTreeLists,
  * rewritten-queries list.
  */
 static bool
-check_sql_stmt_retval(List *queryTreeList,
+check_sql_stmt_retval(const List *queryTreeList,
 					  Oid rettype, TupleDesc rettupdesc,
 					  char prokind, bool insertDroppedCols)
 {
@@ -2583,7 +2583,7 @@ coerce_fn_result_column(TargetEntry *src_tle,
  * of parsed-and-rewritten Queries.  Returns NIL if there is none.
  */
 static List *
-get_sql_fn_result_tlist(List *queryTreeList)
+get_sql_fn_result_tlist(const List *queryTreeList)
 {
 	Query	   *parse = NULL;
 	ListCell   *lc;

@@ -45,7 +45,7 @@ typedef struct
  * Flush page cached in BloomBuildState.
  */
 static void
-flushCachedPage(Relation index, BloomBuildState *buildstate)
+flushCachedPage(Relation index, const BloomBuildState *buildstate)
 {
 	Page		page;
 	Buffer		buffer = BloomNewBuffer(index);

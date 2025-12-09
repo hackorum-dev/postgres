@@ -21,7 +21,7 @@
 #include "storage/predicate.h"
 #include "utils/rel.h"
 
-static bool _hash_readpage(IndexScanDesc scan, Buffer *bufP,
+static bool _hash_readpage(IndexScanDesc scan, const Buffer *bufP,
 						   ScanDirection dir);
 static int	_hash_load_qualified_items(IndexScanDesc scan, Page page,
 									   OffsetNumber offnum, ScanDirection dir);
@@ -445,7 +445,7 @@ _hash_first(IndexScanDesc scan, ScanDirection dir)
  *	Return true if any matching items are found else return false.
  */
 static bool
-_hash_readpage(IndexScanDesc scan, Buffer *bufP, ScanDirection dir)
+_hash_readpage(IndexScanDesc scan, const Buffer *bufP, ScanDirection dir)
 {
 	Relation	rel = scan->indexRelation;
 	HashScanOpaque so = (HashScanOpaque) scan->opaque;

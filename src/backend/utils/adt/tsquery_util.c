@@ -289,7 +289,7 @@ QTNBinary(QTNode *in)
  * Caller must initialize *sumlen and *nnode to zeroes.
  */
 static void
-cntsize(QTNode *in, int *sumlen, int *nnode)
+cntsize(const QTNode *in, int *sumlen, int *nnode)
 {
 	/* since this function recurses, it could be driven to stack overflow. */
 	check_stack_depth();

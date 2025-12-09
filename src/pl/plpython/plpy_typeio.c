@@ -37,7 +37,8 @@ static PyObject *PLyList_FromArray(PLyDatumToOb *arg, Datum d);
 static PyObject *PLyList_FromArray_recurse(PLyDatumToOb *elm, int *dims, int ndim, int dim,
 										   char **dataptr_p, bits8 **bitmap_p, int *bitmask_p);
 static PyObject *PLyDict_FromComposite(PLyDatumToOb *arg, Datum d);
-static PyObject *PLyDict_FromTuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool include_generated);
+static PyObject *PLyDict_FromTuple(const PLyDatumToOb *arg, HeapTuple tuple,
+								   TupleDesc desc, bool include_generated);
 
 /* conversion from Python objects to Datums */
 static Datum PLyObject_ToBool(PLyObToDatum *arg, PyObject *plrv,
@@ -61,9 +62,13 @@ static void PLySequence_ToArray_recurse(PyObject *obj,
 
 /* conversion from Python objects to composite Datums */
 static Datum PLyUnicode_ToComposite(PLyObToDatum *arg, PyObject *string, bool inarray);
-static Datum PLyMapping_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *mapping);
-static Datum PLySequence_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *sequence);
-static Datum PLyGenericObject_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *object, bool inarray);
+static Datum PLyMapping_ToComposite(const PLyObToDatum *arg, TupleDesc desc,
+									PyObject *mapping);
+static Datum PLySequence_ToComposite(const PLyObToDatum *arg, TupleDesc desc,
+									 PyObject *sequence);
+static Datum PLyGenericObject_ToComposite(const PLyObToDatum *arg,
+										  TupleDesc desc, PyObject *object,
+										  bool inarray);
 
 
 /*
@@ -812,7 +817,8 @@ PLyDict_FromComposite(PLyDatumToOb *arg, Datum d)
  * Transform a tuple into a Python dict object.
  */
 static PyObject *
-PLyDict_FromTuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool include_generated)
+PLyDict_FromTuple(const PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc,
+				  bool include_generated)
 {
 	PyObject   *volatile dict;
 
@@ -1342,7 +1348,8 @@ PLyUnicode_ToComposite(PLyObToDatum *arg, PyObject *string, bool inarray)
 
 
 static Datum
-PLyMapping_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *mapping)
+PLyMapping_ToComposite(const PLyObToDatum *arg, TupleDesc desc,
+					   PyObject *mapping)
 {
 	Datum		result;
 	HeapTuple	tuple;
@@ -1407,7 +1414,8 @@ PLyMapping_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *mapping)
 
 
 static Datum
-PLySequence_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *sequence)
+PLySequence_ToComposite(const PLyObToDatum *arg, TupleDesc desc,
+						PyObject *sequence)
 {
 	Datum		result;
 	HeapTuple	tuple;
@@ -1484,7 +1492,8 @@ PLySequence_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *sequence)
 
 
 static Datum
-PLyGenericObject_ToComposite(PLyObToDatum *arg, TupleDesc desc, PyObject *object, bool inarray)
+PLyGenericObject_ToComposite(const PLyObToDatum *arg, TupleDesc desc,
+							 PyObject *object, bool inarray)
 {
 	Datum		result;
 	HeapTuple	tuple;

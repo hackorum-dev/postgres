@@ -204,7 +204,7 @@ static int	LocalLWLockCounter;
 #define MAX_NAMED_TRANCHES 256
 
 static void InitializeLWLocks(void);
-static inline void LWLockReportWaitStart(LWLock *lock);
+static inline void LWLockReportWaitStart(const LWLock *lock);
 static inline void LWLockReportWaitEnd(void);
 static const char *GetLWTrancheName(uint16 trancheId);
 
@@ -716,7 +716,7 @@ LWLockInitialize(LWLock *lock, int tranche_id)
  * event based on tranche and lock id.
  */
 static inline void
-LWLockReportWaitStart(LWLock *lock)
+LWLockReportWaitStart(const LWLock *lock)
 {
 	pgstat_report_wait_start(PG_WAIT_LWLOCK | lock->tranche);
 }

@@ -253,7 +253,8 @@ static void reapply_stacked_values(struct config_generic *variable,
 static void free_placeholder(struct config_generic *pHolder);
 static bool validate_option_array_item(const char *name, const char *value,
 									   bool skipIfNoPermissions);
-static void write_auto_conf_file(int fd, const char *filename, ConfigVariable *head);
+static void write_auto_conf_file(int fd, const char *filename,
+								 ConfigVariable *head);
 static void replace_auto_config_value(ConfigVariable **head_p, ConfigVariable **tail_p,
 									  const char *name, const char *value);
 static bool valid_custom_variable_name(const char *name);
@@ -703,7 +704,7 @@ guc_free(void *ptr)
  * Detect whether strval is referenced anywhere in a GUC string item
  */
 static bool
-string_field_used(struct config_generic *conf, char *strval)
+string_field_used(const struct config_generic *conf, const char *strval)
 {
 	if (strval == *(conf->_string.variable) ||
 		strval == conf->_string.reset_val ||
@@ -740,7 +741,7 @@ set_string_field(struct config_generic *conf, char **field, char *newval)
  * Detect whether an "extra" struct is referenced anywhere in a GUC item
  */
 static bool
-extra_field_used(struct config_generic *gconf, void *extra)
+extra_field_used(const struct config_generic *gconf, const void *extra)
 {
 	if (extra == gconf->extra)
 		return true;
@@ -5680,7 +5681,7 @@ read_nondefault_variables(void)
  * comments here and in RestoreGUCState thoroughly before changing this.
  */
 static bool
-can_skip_gucvar(struct config_generic *gconf)
+can_skip_gucvar(const struct config_generic *gconf)
 {
 	/*
 	 * We can skip GUCs that are guaranteed to have the same values in leaders
@@ -6000,7 +6001,7 @@ SerializeGUCState(Size maxsize, char *start_address)
  * to read the next string.
  */
 static char *
-read_gucstate(char **srcptr, char *srcend)
+read_gucstate(char **srcptr, const char *srcend)
 {
 	char	   *retptr = *srcptr;
 	char	   *ptr;
@@ -6023,7 +6024,7 @@ read_gucstate(char **srcptr, char *srcend)
 
 /* Binary read version of read_gucstate(). Copies into dest */
 static void
-read_gucstate_binary(char **srcptr, char *srcend, void *dest, Size size)
+read_gucstate_binary(char **srcptr, const char *srcend, void *dest, Size size)
 {
 	if (*srcptr + size > srcend)
 		elog(ERROR, "incomplete GUC state");

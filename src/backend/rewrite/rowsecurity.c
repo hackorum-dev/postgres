@@ -58,16 +58,16 @@ static void sort_policies_by_name(List *policies);
 static int	row_security_policy_cmp(const ListCell *a, const ListCell *b);
 
 static void add_security_quals(int rt_index,
-							   List *permissive_policies,
-							   List *restrictive_policies,
+							   const List *permissive_policies,
+							   const List *restrictive_policies,
 							   List **securityQuals,
 							   bool *hasSubLinks);
 
 static void add_with_check_options(Relation rel,
 								   int rt_index,
 								   WCOKind kind,
-								   List *permissive_policies,
-								   List *restrictive_policies,
+								   const List *permissive_policies,
+								   const List *restrictive_policies,
 								   List **withCheckOptions,
 								   bool *hasSubLinks,
 								   bool force_using);
@@ -698,8 +698,8 @@ row_security_policy_cmp(const ListCell *a, const ListCell *b)
  */
 static void
 add_security_quals(int rt_index,
-				   List *permissive_policies,
-				   List *restrictive_policies,
+				   const List *permissive_policies,
+				   const List *restrictive_policies,
 				   List **securityQuals,
 				   bool *hasSubLinks)
 {
@@ -796,8 +796,8 @@ static void
 add_with_check_options(Relation rel,
 					   int rt_index,
 					   WCOKind kind,
-					   List *permissive_policies,
-					   List *restrictive_policies,
+					   const List *permissive_policies,
+					   const List *restrictive_policies,
 					   List **withCheckOptions,
 					   bool *hasSubLinks,
 					   bool force_using)

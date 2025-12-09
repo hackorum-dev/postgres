@@ -310,7 +310,7 @@ static int	AttrDefaultCmp(const void *a, const void *b);
 static void CheckNNConstraintFetch(Relation relation);
 static int	CheckConstraintCmp(const void *a, const void *b);
 static void InitIndexAmRoutine(Relation relation);
-static void IndexSupportInitialize(oidvector *indclass,
+static void IndexSupportInitialize(const oidvector *indclass,
 								   RegProcedure *indexSupport,
 								   Oid *opFamily,
 								   Oid *opcInType,
@@ -924,7 +924,7 @@ RelationBuildRuleLock(Relation relation)
  *		Probably this should be in the rules code someplace...
  */
 static bool
-equalRuleLocks(RuleLock *rlock1, RuleLock *rlock2)
+equalRuleLocks(const RuleLock *rlock1, const RuleLock *rlock2)
 {
 	int			i;
 
@@ -1613,7 +1613,7 @@ RelationInitIndexAccessInfo(Relation relation)
  * for the index and access method.
  */
 static void
-IndexSupportInitialize(oidvector *indclass,
+IndexSupportInitialize(const oidvector *indclass,
 					   RegProcedure *indexSupport,
 					   Oid *opFamily,
 					   Oid *opcInType,

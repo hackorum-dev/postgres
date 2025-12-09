@@ -448,7 +448,7 @@ p_isneC(TParser *prs)
 }
 
 static int
-p_isascii(TParser *prs)
+p_isascii(const TParser *prs)
 {
 	return (prs->state->charlen == 1 && isascii((unsigned char) *(prs->str + prs->state->posbyte))) ? 1 : 0;
 }
@@ -1984,7 +1984,7 @@ checkcondition_HL(void *opaque, QueryOperand *val, ExecPhraseData *data)
  * words used in the query.
  */
 static bool
-hlCover(HeadlineParsedText *prs, TSQuery query, List *locations,
+hlCover(const HeadlineParsedText *prs, TSQuery query, const List *locations,
 		int *nextpos, int *p, int *q)
 {
 	int			pos = *nextpos;
@@ -2172,7 +2172,7 @@ mark_fragment(HeadlineParsedText *prs, bool highlightall,
  * interesting words respectively.
  */
 static void
-get_next_fragment(HeadlineParsedText *prs, int *startpos, int *endpos,
+get_next_fragment(const HeadlineParsedText *prs, int *startpos, int *endpos,
 				  int *curlen, int *poslen, int max_words)
 {
 	int			i;

@@ -42,11 +42,13 @@ typedef enum
 	FUNCLOOKUP_AMBIGUOUS,
 } FuncLookupError;
 
-static int	func_lookup_failure_details(int fgc_flags, List *argnames,
+static int	func_lookup_failure_details(int fgc_flags,
+										const List *argnames,
 										bool proc_call);
 static void unify_hypothetical_args(ParseState *pstate,
 									List *fargs, int numAggregatedArgs,
-									Oid *actual_arg_types, Oid *declared_arg_types);
+									Oid *actual_arg_types,
+									const Oid *declared_arg_types);
 static Oid	FuncNameAsType(List *funcname);
 static Node *ParseComplexProjection(ParseState *pstate, const char *funcname,
 									Node *first_arg, int location);
@@ -927,7 +929,8 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
  * function-not-found error.
  */
 static int
-func_lookup_failure_details(int fgc_flags, List *argnames, bool proc_call)
+func_lookup_failure_details(int fgc_flags, const List *argnames,
+							bool proc_call)
 {
 	/*
 	 * If not FGC_NAME_VISIBLE, we shouldn't raise the question of whether the
@@ -1865,7 +1868,7 @@ unify_hypothetical_args(ParseState *pstate,
 						List *fargs,
 						int numAggregatedArgs,
 						Oid *actual_arg_types,
-						Oid *declared_arg_types)
+						const Oid *declared_arg_types)
 {
 	int			numDirectArgs,
 				numNonHypotheticalArgs;

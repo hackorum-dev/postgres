@@ -404,7 +404,7 @@ PGTYPESdecimal_free(decimal *var)
  * ----------
  */
 static int
-cmp_abs(numeric *var1, numeric *var2)
+cmp_abs(const numeric *var1, const numeric *var2)
 {
 	int			i1 = 0;
 	int			i2 = 0;

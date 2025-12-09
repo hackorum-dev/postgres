@@ -312,7 +312,7 @@ pairingheap_dump_recurse(StringInfo buf,
 						 void (*dumpfunc) (pairingheap_node *node, StringInfo buf, void *opaque),
 						 void *opaque,
 						 int depth,
-						 pairingheap_node *prev_or_parent)
+						 const pairingheap_node *prev_or_parent)
 {
 	while (node)
 	{

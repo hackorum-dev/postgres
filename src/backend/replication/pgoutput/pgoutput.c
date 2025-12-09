@@ -85,7 +85,7 @@ static void pgoutput_stream_prepare_txn(LogicalDecodingContext *ctx,
 
 static bool publications_valid;
 
-static List *LoadPublications(List *pubnames);
+static List *LoadPublications(const List *pubnames);
 static void publication_invalidation_cb(Datum arg, int cacheid,
 										uint32 hashvalue);
 static void send_repl_origin(LogicalDecodingContext *ctx,
@@ -240,7 +240,7 @@ static void pgoutput_memory_context_reset(void *arg);
 /* row filter routines */
 static EState *create_estate_for_relation(Relation rel);
 static void pgoutput_row_filter_init(PGOutputData *data,
-									 List *publications,
+									 const List *publications,
 									 RelationSyncEntry *entry);
 static bool pgoutput_row_filter_exec_expr(ExprState *state,
 										  ExprContext *econtext);
@@ -287,7 +287,7 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 }
 
 static void
-parse_output_parameters(List *options, PGOutputData *data)
+parse_output_parameters(const List *options, PGOutputData *data)
 {
 	ListCell   *lc;
 	bool		protocol_version_given = false;
@@ -911,7 +911,7 @@ pgoutput_ensure_entry_cxt(PGOutputData *data, RelationSyncEntry *entry)
  * Initialize the row filter.
  */
 static void
-pgoutput_row_filter_init(PGOutputData *data, List *publications,
+pgoutput_row_filter_init(PGOutputData *data, const List *publications,
 						 RelationSyncEntry *entry)
 {
 	ListCell   *lc;
@@ -1058,7 +1058,7 @@ pgoutput_row_filter_init(PGOutputData *data, List *publications,
  * values of 'publish_generated_columns' parameter in the publications.
  */
 static void
-check_and_init_gencol(PGOutputData *data, List *publications,
+check_and_init_gencol(PGOutputData *data, const List *publications,
 					  RelationSyncEntry *entry)
 {
 	Relation	relation = RelationIdGetRelation(entry->publish_as_relid);
@@ -1795,7 +1795,7 @@ pgoutput_shutdown(LogicalDecodingContext *ctx)
  * have specified the required publications at the time of replication start.
  */
 static List *
-LoadPublications(List *pubnames)
+LoadPublications(const List *pubnames)
 {
 	List	   *result = NIL;
 	ListCell   *lc;

@@ -213,7 +213,7 @@ gist_box_penalty(PG_FUNCTION_ARGS)
  * and another half - to another
  */
 static void
-fallbackSplit(GistEntryVector *entryvec, GIST_SPLITVEC *v)
+fallbackSplit(const GistEntryVector *entryvec, GIST_SPLITVEC *v)
 {
 	OffsetNumber i,
 				maxoff;
@@ -1285,7 +1285,9 @@ computeDistance(bool isLeaf, BOX *box, Point *point)
 
 static bool
 gist_point_consistent_internal(StrategyNumber strategy,
-							   bool isLeaf, BOX *key, Point *query)
+							   bool isLeaf,
+							   const BOX *key,
+							   Point *query)
 {
 	bool		result = false;
 

@@ -80,7 +80,7 @@ getQuadrant(Point *centroid, Point *tst)
 
 /* Returns bounding box of a given quadrant inside given bounding box */
 static BOX *
-getQuadrantArea(BOX *bbox, Point *centroid, int quadrant)
+getQuadrantArea(const BOX *bbox, const Point *centroid, int quadrant)
 {
 	BOX		   *result = palloc_object(BOX);
 

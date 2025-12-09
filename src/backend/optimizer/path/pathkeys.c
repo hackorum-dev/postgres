@@ -31,12 +31,15 @@
 /* Consider reordering of GROUP BY keys? */
 bool		enable_group_by_reordering = true;
 
-static bool pathkey_is_redundant(PathKey *new_pathkey, List *pathkeys);
-static bool matches_boolean_partition_clause(RestrictInfo *rinfo,
-											 RelOptInfo *partrel,
+static bool pathkey_is_redundant(const PathKey *new_pathkey,
+								 const List *pathkeys);
+static bool matches_boolean_partition_clause(const RestrictInfo *rinfo,
+											 const RelOptInfo *partrel,
 											 int partkeycol);
-static Var *find_var_for_subquery_tle(RelOptInfo *rel, TargetEntry *tle);
-static bool right_merge_direction(PlannerInfo *root, PathKey *pathkey);
+static Var *find_var_for_subquery_tle(const RelOptInfo *rel,
+									  const TargetEntry *tle);
+static bool right_merge_direction(const PlannerInfo *root,
+								  const PathKey *pathkey);
 
 
 /****************************************************************************
@@ -156,7 +159,7 @@ append_pathkeys(List *target, List *source)
  * pointer comparison is enough to decide whether canonical ECs are the same.
  */
 static bool
-pathkey_is_redundant(PathKey *new_pathkey, List *pathkeys)
+pathkey_is_redundant(const PathKey *new_pathkey, const List *pathkeys)
 {
 	EquivalenceClass *new_ec = new_pathkey->pk_eclass;
 	ListCell   *lc;
@@ -367,7 +370,7 @@ pathkeys_contained_in(List *keys1, List *keys2)
  * Returns the number of GROUP BY keys with a matching pathkey.
  */
 static int
-group_keys_reorder_by_pathkeys(List *pathkeys, List **group_pathkeys,
+group_keys_reorder_by_pathkeys(const List *pathkeys, List **group_pathkeys,
 							   List **group_clauses,
 							   int num_groupby_pathkeys)
 {
@@ -881,8 +884,9 @@ partkey_is_bool_constant_for_query(RelOptInfo *partrel, int partkeycol)
  * or a NOT above an exact match (equivalent to partkey = false).
  */
 static bool
-matches_boolean_partition_clause(RestrictInfo *rinfo,
-								 RelOptInfo *partrel, int partkeycol)
+matches_boolean_partition_clause(const RestrictInfo *rinfo,
+								 const RelOptInfo *partrel,
+								 int partkeycol)
 {
 	Node	   *clause = (Node *) rinfo->clause;
 	Node	   *partexpr = (Node *) linitial(partrel->partexprs[partkeycol]);
@@ -1249,7 +1253,7 @@ convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
  * that are unavailable above the level of the subquery scan.
  */
 static Var *
-find_var_for_subquery_tle(RelOptInfo *rel, TargetEntry *tle)
+find_var_for_subquery_tle(const RelOptInfo *rel, const TargetEntry *tle)
 {
 	ListCell   *lc;
 
@@ -2053,7 +2057,8 @@ trim_mergeclauses_for_inner_pathkeys(PlannerInfo *root,
  * right_merge_direction() implements this heuristic.
  */
 static int
-pathkeys_useful_for_merging(PlannerInfo *root, RelOptInfo *rel, List *pathkeys)
+pathkeys_useful_for_merging(PlannerInfo *root, RelOptInfo *rel,
+							const List *pathkeys)
 {
 	int			useful = 0;
 	ListCell   *i;
@@ -2120,7 +2125,7 @@ pathkeys_useful_for_merging(PlannerInfo *root, RelOptInfo *rel, List *pathkeys)
  *		for merging its target column.
  */
 static bool
-right_merge_direction(PlannerInfo *root, PathKey *pathkey)
+right_merge_direction(const PlannerInfo *root, const PathKey *pathkey)
 {
 	ListCell   *l;
 
@@ -2166,7 +2171,7 @@ count_common_leading_pathkeys_ordered(List *keys1, List *keys2)
  *		'keys1'.
  */
 static int
-count_common_leading_pathkeys_unordered(List *keys1, List *keys2)
+count_common_leading_pathkeys_unordered(List *keys1, const List *keys2)
 {
 	int			ncommon = 0;
 

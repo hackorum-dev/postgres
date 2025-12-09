@@ -34,7 +34,7 @@
 
 static void usage(const char *progname);
 
-static void perform_rewind(filemap_t *filemap, rewind_source *source,
+static void perform_rewind(const filemap_t *filemap, rewind_source *source,
 						   XLogRecPtr chkptrec,
 						   TimeLineID chkpttli,
 						   XLogRecPtr chkptredo);
@@ -561,7 +561,7 @@ main(int argc, char **argv)
  * target and the source.
  */
 static void
-perform_rewind(filemap_t *filemap, rewind_source *source,
+perform_rewind(const filemap_t *filemap, rewind_source *source,
 			   XLogRecPtr chkptrec,
 			   TimeLineID chkpttli,
 			   XLogRecPtr chkptredo)

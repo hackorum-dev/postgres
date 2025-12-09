@@ -51,7 +51,7 @@ static void resolve_anyarray_from_others(polymorphic_actuals *actuals);
 static void resolve_anyrange_from_others(polymorphic_actuals *actuals);
 static void resolve_anymultirange_from_others(polymorphic_actuals *actuals);
 static bool resolve_polymorphic_tupdesc(TupleDesc tupdesc,
-										oidvector *declared_args,
+										const oidvector *declared_args,
 										Node *call_expr);
 static TypeFuncClass get_type_func_class(Oid typid, Oid *base_typeid);
 
@@ -741,7 +741,7 @@ resolve_anymultirange_from_others(polymorphic_actuals *actuals)
  * is not provided (call_expr is NULL or arg types aren't identifiable).
  */
 static bool
-resolve_polymorphic_tupdesc(TupleDesc tupdesc, oidvector *declared_args,
+resolve_polymorphic_tupdesc(TupleDesc tupdesc, const oidvector *declared_args,
 							Node *call_expr)
 {
 	int			natts = tupdesc->natts;

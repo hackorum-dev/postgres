@@ -84,7 +84,7 @@ static void _StartLOs(ArchiveHandle *AH, TocEntry *te);
 static void _StartLO(ArchiveHandle *AH, TocEntry *te, Oid oid);
 static void _EndLO(ArchiveHandle *AH, TocEntry *te, Oid oid);
 static void _EndLOs(ArchiveHandle *AH, TocEntry *te);
-static void _LoadLOs(ArchiveHandle *AH, TocEntry *te);
+static void _LoadLOs(ArchiveHandle *AH, const TocEntry *te);
 
 static void _PrepParallelRestore(ArchiveHandle *AH);
 static void _Clone(ArchiveHandle *AH);
@@ -93,7 +93,7 @@ static void _DeClone(ArchiveHandle *AH);
 static int	_WorkerJobRestoreDirectory(ArchiveHandle *AH, TocEntry *te);
 static int	_WorkerJobDumpDirectory(ArchiveHandle *AH, TocEntry *te);
 
-static void setFilePath(ArchiveHandle *AH, char *buf,
+static void setFilePath(const ArchiveHandle *AH, char *buf,
 						const char *relativeFilename);
 
 /*
@@ -393,7 +393,7 @@ _PrintTocData(ArchiveHandle *AH, TocEntry *te)
 }
 
 static void
-_LoadLOs(ArchiveHandle *AH, TocEntry *te)
+_LoadLOs(ArchiveHandle *AH, const TocEntry *te)
 {
 	Oid			oid;
 	lclContext *ctx = (lclContext *) AH->formatData;
@@ -679,7 +679,7 @@ _EndLOs(ArchiveHandle *AH, TocEntry *te)
  * multithreaded on Windows.
  */
 static void
-setFilePath(ArchiveHandle *AH, char *buf, const char *relativeFilename)
+setFilePath(const ArchiveHandle *AH, char *buf, const char *relativeFilename)
 {
 	lclContext *ctx = (lclContext *) AH->formatData;
 	char	   *dname;

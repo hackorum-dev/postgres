@@ -68,7 +68,7 @@ typedef struct
 } RelToCluster;
 
 
-static void cluster_multiple_rels(List *rtcs, ClusterParams *params);
+static void cluster_multiple_rels(const List *rtcs, ClusterParams *params);
 static void rebuild_relation(Relation OldHeap, Relation index, bool verbose);
 static void copy_table_data(Relation NewHeap, Relation OldHeap, Relation OldIndex,
 							bool verbose, bool *pSwapToastByContent,
@@ -260,7 +260,7 @@ cluster(ParseState *pstate, ClusterStmt *stmt, bool isTopLevel)
  * return.
  */
 static void
-cluster_multiple_rels(List *rtcs, ClusterParams *params)
+cluster_multiple_rels(const List *rtcs, ClusterParams *params)
 {
 	ListCell   *lc;
 

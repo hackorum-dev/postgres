@@ -72,7 +72,7 @@ static void _bt_simpledel_pass(Relation rel, Buffer buffer, Relation heapRel,
 							   OffsetNumber *deletable, int ndeletable,
 							   IndexTuple newitem, OffsetNumber minoff,
 							   OffsetNumber maxoff);
-static BlockNumber *_bt_deadblocks(Page page, OffsetNumber *deletable,
+static BlockNumber *_bt_deadblocks(Page page, const OffsetNumber *deletable,
 								   int ndeletable, IndexTuple newitem,
 								   int *nblocks);
 static inline int _bt_blk_cmp(const void *arg1, const void *arg2);
@@ -2948,7 +2948,7 @@ _bt_simpledel_pass(Relation rel, Buffer buffer, Relation heapRel,
  * Returns final array, and sets *nblocks to its final size for caller.
  */
 static BlockNumber *
-_bt_deadblocks(Page page, OffsetNumber *deletable, int ndeletable,
+_bt_deadblocks(Page page, const OffsetNumber *deletable, int ndeletable,
 			   IndexTuple newitem, int *nblocks)
 {
 	int			spacentids,

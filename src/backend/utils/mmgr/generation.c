@@ -138,7 +138,7 @@ static inline void GenerationBlockInit(GenerationContext *context,
 									   GenerationBlock *block,
 									   Size blksize);
 static inline void GenerationBlockMarkEmpty(GenerationBlock *block);
-static inline Size GenerationBlockFreeBytes(GenerationBlock *block);
+static inline Size GenerationBlockFreeBytes(const GenerationBlock *block);
 static inline void GenerationBlockFree(GenerationContext *set,
 									   GenerationBlock *block);
 
@@ -677,7 +677,7 @@ GenerationBlockMarkEmpty(GenerationBlock *block)
  *		Returns the number of bytes free in 'block'
  */
 static inline Size
-GenerationBlockFreeBytes(GenerationBlock *block)
+GenerationBlockFreeBytes(const GenerationBlock *block)
 {
 	return (block->endptr - block->freeptr);
 }

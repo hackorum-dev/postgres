@@ -4265,7 +4265,7 @@ preprocessNamespacePath(const char *searchPath, Oid roleid,
  * appears in the final list.
  */
 static List *
-finalNamespacePath(List *oidlist, Oid *firstNS)
+finalNamespacePath(const List *oidlist, Oid *firstNS)
 {
 	List	   *finalPath = NIL;
 	ListCell   *lc;

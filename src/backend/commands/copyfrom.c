@@ -422,7 +422,7 @@ CopyMultiInsertInfoInit(CopyMultiInsertInfo *miinfo, ResultRelInfo *rri,
  * Returns true if the buffers are full
  */
 static inline bool
-CopyMultiInsertInfoIsFull(CopyMultiInsertInfo *miinfo)
+CopyMultiInsertInfoIsFull(const CopyMultiInsertInfo *miinfo)
 {
 	if (miinfo->bufferedTuples >= MAX_BUFFERED_TUPLES ||
 		miinfo->bufferedBytes >= MAX_BUFFERED_BYTES)
@@ -434,7 +434,7 @@ CopyMultiInsertInfoIsFull(CopyMultiInsertInfo *miinfo)
  * Returns true if we have no buffered tuples
  */
 static inline bool
-CopyMultiInsertInfoIsEmpty(CopyMultiInsertInfo *miinfo)
+CopyMultiInsertInfoIsEmpty(const CopyMultiInsertInfo *miinfo)
 {
 	return miinfo->bufferedTuples == 0;
 }
@@ -659,7 +659,8 @@ CopyMultiInsertBufferCleanup(CopyMultiInsertInfo *miinfo,
  * 'curr_rri'.
  */
 static inline void
-CopyMultiInsertInfoFlush(CopyMultiInsertInfo *miinfo, ResultRelInfo *curr_rri,
+CopyMultiInsertInfoFlush(CopyMultiInsertInfo *miinfo,
+						 const ResultRelInfo *curr_rri,
 						 int64 *processed)
 {
 	ListCell   *lc;
@@ -753,8 +754,10 @@ CopyMultiInsertInfoNextFreeSlot(CopyMultiInsertInfo *miinfo,
  * CopyMultiInsertInfoNextFreeSlot as being consumed.
  */
 static inline void
-CopyMultiInsertInfoStore(CopyMultiInsertInfo *miinfo, ResultRelInfo *rri,
-						 TupleTableSlot *slot, int tuplen, uint64 lineno)
+CopyMultiInsertInfoStore(CopyMultiInsertInfo *miinfo,
+						 const ResultRelInfo *rri,
+						 const TupleTableSlot *slot,
+						 int tuplen, uint64 lineno)
 {
 	CopyMultiInsertBuffer *buffer = rri->ri_CopyMultiInsertBuffer;
 

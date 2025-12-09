@@ -57,13 +57,13 @@ static Node *transformMergeSupportFunc(ParseState *pstate, MergeSupportFunc *f);
 static Node *transformBoolExpr(ParseState *pstate, BoolExpr *a);
 static Node *transformFuncCall(ParseState *pstate, FuncCall *fn);
 static Node *transformMultiAssignRef(ParseState *pstate, MultiAssignRef *maref);
-static Node *transformCaseExpr(ParseState *pstate, CaseExpr *c);
+static Node *transformCaseExpr(ParseState *pstate, const CaseExpr *c);
 static Node *transformSubLink(ParseState *pstate, SubLink *sublink);
 static Node *transformArrayExpr(ParseState *pstate, A_ArrayExpr *a,
 								Oid array_type, Oid element_type, int32 typmod);
 static Node *transformRowExpr(ParseState *pstate, RowExpr *r, bool allowDefault);
-static Node *transformCoalesceExpr(ParseState *pstate, CoalesceExpr *c);
-static Node *transformMinMaxExpr(ParseState *pstate, MinMaxExpr *m);
+static Node *transformCoalesceExpr(ParseState *pstate, const CoalesceExpr *c);
+static Node *transformMinMaxExpr(ParseState *pstate, const MinMaxExpr *m);
 static Node *transformSQLValueFunction(ParseState *pstate,
 									   SQLValueFunction *svf);
 static Node *transformXmlExpr(ParseState *pstate, XmlExpr *x);
@@ -92,9 +92,11 @@ static Node *transformJsonSerializeExpr(ParseState *pstate,
 										JsonSerializeExpr *expr);
 static Node *transformJsonFuncExpr(ParseState *pstate, JsonFuncExpr *func);
 static void transformJsonPassingArgs(ParseState *pstate, const char *constructName,
-									 JsonFormatType format, List *args,
+									 JsonFormatType format,
+									 const List *args,
 									 List **passing_values, List **passing_names);
-static JsonBehavior *transformJsonBehavior(ParseState *pstate, JsonExpr *jsexpr,
+static JsonBehavior *transformJsonBehavior(ParseState *pstate,
+										   const JsonExpr *jsexpr,
 										   JsonBehavior *behavior,
 										   JsonBehaviorType default_behavior,
 										   JsonReturning *returning);
@@ -102,11 +104,14 @@ static Node *GetJsonBehaviorConst(JsonBehaviorType btype, int location);
 static Node *make_row_comparison_op(ParseState *pstate, List *opname,
 									List *largs, List *rargs, int location);
 static Node *make_row_distinct_op(ParseState *pstate, List *opname,
-								  RowExpr *lrow, RowExpr *rrow, int location);
+								  const RowExpr *lrow,
+								  const RowExpr *rrow,
+								  int location);
 static Expr *make_distinct_op(ParseState *pstate, List *opname,
 							  Node *ltree, Node *rtree, int location);
 static Node *make_nulltest_from_distinct(ParseState *pstate,
-										 A_Expr *distincta, Node *arg);
+										 const A_Expr *distincta,
+										 Node *arg);
 
 
 /*
@@ -1630,7 +1635,7 @@ transformMultiAssignRef(ParseState *pstate, MultiAssignRef *maref)
 }
 
 static Node *
-transformCaseExpr(ParseState *pstate, CaseExpr *c)
+transformCaseExpr(ParseState *pstate, const CaseExpr *c)
 {
 	CaseExpr   *newc = makeNode(CaseExpr);
 	Node	   *last_srf = pstate->p_last_srf;
@@ -2214,7 +2219,7 @@ transformRowExpr(ParseState *pstate, RowExpr *r, bool allowDefault)
 }
 
 static Node *
-transformCoalesceExpr(ParseState *pstate, CoalesceExpr *c)
+transformCoalesceExpr(ParseState *pstate, const CoalesceExpr *c)
 {
 	CoalesceExpr *newc = makeNode(CoalesceExpr);
 	Node	   *last_srf = pstate->p_last_srf;
@@ -2263,7 +2268,7 @@ transformCoalesceExpr(ParseState *pstate, CoalesceExpr *c)
 }
 
 static Node *
-transformMinMaxExpr(ParseState *pstate, MinMaxExpr *m)
+transformMinMaxExpr(ParseState *pstate, const MinMaxExpr *m)
 {
 	MinMaxExpr *newm = makeNode(MinMaxExpr);
 	List	   *newargs = NIL;
@@ -3029,7 +3034,8 @@ make_row_comparison_op(ParseState *pstate, List *opname,
  */
 static Node *
 make_row_distinct_op(ParseState *pstate, List *opname,
-					 RowExpr *lrow, RowExpr *rrow,
+					 const RowExpr *lrow,
+					 const RowExpr *rrow,
 					 int location)
 {
 	Node	   *result = NULL;
@@ -3107,7 +3113,8 @@ make_distinct_op(ParseState *pstate, List *opname, Node *ltree, Node *rtree,
  * "arg" is the untransformed other argument
  */
 static Node *
-make_nulltest_from_distinct(ParseState *pstate, A_Expr *distincta, Node *arg)
+make_nulltest_from_distinct(ParseState *pstate, const A_Expr *distincta,
+							Node *arg)
 {
 	NullTest   *nt = makeNode(NullTest);
 
@@ -3237,7 +3244,7 @@ ParseExprKindName(ParseExprKind exprKind)
  * UTF8 is default encoding.
  */
 static Const *
-getJsonEncodingConst(JsonFormat *format)
+getJsonEncodingConst(const JsonFormat *format)
 {
 	JsonEncoding encoding;
 	const char *enc;
@@ -3558,7 +3565,7 @@ transformJsonOutput(ParseState *pstate, const JsonOutput *output,
  */
 static JsonReturning *
 transformJsonConstructorOutput(ParseState *pstate, JsonOutput *output,
-							   List *args)
+							   const List *args)
 {
 	JsonReturning *returning = transformJsonOutput(pstate, output, true);
 
@@ -4672,7 +4679,8 @@ transformJsonFuncExpr(ParseState *pstate, JsonFuncExpr *func)
  */
 static void
 transformJsonPassingArgs(ParseState *pstate, const char *constructName,
-						 JsonFormatType format, List *args,
+						 JsonFormatType format,
+						 const List *args,
 						 List **passing_values, List **passing_names)
 {
 	ListCell   *lc;
@@ -4730,7 +4738,7 @@ ValidJsonBehaviorDefaultExpr(Node *expr, void *context)
  * Transform a JSON BEHAVIOR clause.
  */
 static JsonBehavior *
-transformJsonBehavior(ParseState *pstate, JsonExpr *jsexpr,
+transformJsonBehavior(ParseState *pstate, const JsonExpr *jsexpr,
 					  JsonBehavior *behavior,
 					  JsonBehaviorType default_behavior,
 					  JsonReturning *returning)

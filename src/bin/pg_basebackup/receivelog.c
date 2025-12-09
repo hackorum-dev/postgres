@@ -37,7 +37,8 @@ static PGresult *HandleCopyStream(PGconn *conn, StreamCtl *stream,
 static int	CopyStreamPoll(PGconn *conn, long timeout_ms, pgsocket stop_socket);
 static int	CopyStreamReceive(PGconn *conn, long timeout, pgsocket stop_socket,
 							  char **buffer);
-static bool ProcessKeepaliveMsg(PGconn *conn, StreamCtl *stream, char *copybuf,
+static bool ProcessKeepaliveMsg(PGconn *conn, StreamCtl *stream,
+								const char *copybuf,
 								int len, XLogRecPtr blockpos, TimestampTz *last_status);
 static bool ProcessWALDataMsg(PGconn *conn, StreamCtl *stream, char *copybuf, int len,
 							  XLogRecPtr *blockpos);
@@ -991,7 +992,8 @@ CopyStreamReceive(PGconn *conn, long timeout, pgsocket stop_socket,
  * Process the keepalive message.
  */
 static bool
-ProcessKeepaliveMsg(PGconn *conn, StreamCtl *stream, char *copybuf, int len,
+ProcessKeepaliveMsg(PGconn *conn, StreamCtl *stream, const char *copybuf,
+					int len,
 					XLogRecPtr blockpos, TimestampTz *last_status)
 {
 	int			pos;

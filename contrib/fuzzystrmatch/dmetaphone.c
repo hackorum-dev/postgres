@@ -289,7 +289,7 @@ MakeUpper(metastring *s)
 
 
 static int
-IsVowel(metastring *s, int pos)
+IsVowel(const metastring *s, int pos)
 {
 	char		c;
 
@@ -322,7 +322,7 @@ SlavoGermanic(metastring *s)
 
 
 static char
-GetAt(metastring *s, int pos)
+GetAt(const metastring *s, int pos)
 {
 	if ((pos < 0) || (pos >= s->length))
 		return '\0';
@@ -345,7 +345,7 @@ SetAt(metastring *s, int pos, char c)
    Caveats: the START value is 0 based
 */
 static int
-StringAt(metastring *s, int start, int length,...)
+StringAt(const metastring *s, int start, int length,...)
 {
 	char	   *test;
 	char	   *pos;

@@ -26,7 +26,7 @@
 #include "miscadmin.h"
 
 static void recompute_limits(LimitState *node);
-static int64 compute_tuples_needed(LimitState *node);
+static int64 compute_tuples_needed(const LimitState *node);
 
 
 /* ----------------------------------------------------------------
@@ -428,7 +428,7 @@ recompute_limits(LimitState *node)
  * Return a negative value if there is not a determinable limit.
  */
 static int64
-compute_tuples_needed(LimitState *node)
+compute_tuples_needed(const LimitState *node)
 {
 	if ((node->noCount) || (node->limitOption == LIMIT_OPTION_WITH_TIES))
 		return -1;

@@ -106,7 +106,7 @@ static StringInfo check_backup_label_files(int n_backups, char **backup_dirs);
 static uint64 check_control_files(int n_backups, char **backup_dirs);
 static void check_input_dir_permissions(char *dir);
 static void cleanup_directories_atexit(void);
-static void create_output_directory(char *dirname, cb_options *opt);
+static void create_output_directory(char *dirname, const cb_options *opt);
 static void help(const char *progname);
 static bool parse_oid(char *s, Oid *result);
 static void process_directory_recursively(Oid tsoid,
@@ -734,7 +734,7 @@ cleanup_directories_atexit(void)
  * at process exit.
  */
 static void
-create_output_directory(char *dirname, cb_options *opt)
+create_output_directory(char *dirname, const cb_options *opt)
 {
 	switch (pg_check_dir(dirname))
 	{

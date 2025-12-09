@@ -82,12 +82,12 @@ static void buildTocEntryArrays(ArchiveHandle *AH);
 static void _moveBefore(TocEntry *pos, TocEntry *te);
 static int	_discoverArchiveFormat(ArchiveHandle *AH);
 
-static int	RestoringToDB(ArchiveHandle *AH);
+static int	RestoringToDB(const ArchiveHandle *AH);
 static void dump_lo_buf(ArchiveHandle *AH);
 static void dumpTimestamp(ArchiveHandle *AH, const char *msg, time_t tim);
 static void SetOutput(ArchiveHandle *AH, const char *filename,
 					  const pg_compress_specification compression_spec);
-static CompressFileHandle *SaveOutput(ArchiveHandle *AH);
+static CompressFileHandle *SaveOutput(const ArchiveHandle *AH);
 static void RestoreOutput(ArchiveHandle *AH, CompressFileHandle *savedOutput);
 
 static int	restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel);
@@ -97,17 +97,17 @@ static void restore_toc_entries_parallel(ArchiveHandle *AH,
 										 ParallelState *pstate,
 										 TocEntry *pending_list);
 static void restore_toc_entries_postfork(ArchiveHandle *AH,
-										 TocEntry *pending_list);
+										 const TocEntry *pending_list);
 static void pending_list_header_init(TocEntry *l);
 static void pending_list_append(TocEntry *l, TocEntry *te);
 static void pending_list_remove(TocEntry *te);
 static int	TocEntrySizeCompareQsort(const void *p1, const void *p2);
 static int	TocEntrySizeCompareBinaryheap(void *p1, void *p2, void *arg);
-static void move_to_ready_heap(TocEntry *pending_list,
+static void move_to_ready_heap(const TocEntry *pending_list,
 							   binaryheap *ready_heap,
 							   RestorePass pass);
 static TocEntry *pop_next_work_item(binaryheap *ready_heap,
-									ParallelState *pstate);
+									const ParallelState *pstate);
 static void mark_dump_job_done(ArchiveHandle *AH,
 							   TocEntry *te,
 							   int status,
@@ -117,13 +117,15 @@ static void mark_restore_job_done(ArchiveHandle *AH,
 								  int status,
 								  void *callback_data);
 static void fix_dependencies(ArchiveHandle *AH);
-static bool has_lock_conflicts(TocEntry *te1, TocEntry *te2);
-static void repoint_table_dependencies(ArchiveHandle *AH);
-static void identify_locking_dependencies(ArchiveHandle *AH, TocEntry *te);
-static void reduce_dependencies(ArchiveHandle *AH, TocEntry *te,
+static bool has_lock_conflicts(const TocEntry *te1, const TocEntry *te2);
+static void repoint_table_dependencies(const ArchiveHandle *AH);
+static void identify_locking_dependencies(const ArchiveHandle *AH,
+										  TocEntry *te);
+static void reduce_dependencies(const ArchiveHandle *AH, TocEntry *te,
 								binaryheap *ready_heap);
-static void mark_create_done(ArchiveHandle *AH, TocEntry *te);
-static void inhibit_data_for_failed_table(ArchiveHandle *AH, TocEntry *te);
+static void mark_create_done(const ArchiveHandle *AH, const TocEntry *te);
+static void inhibit_data_for_failed_table(const ArchiveHandle *AH,
+										  TocEntry *te);
 
 static void StrictNamesCheck(RestoreOptions *ropt);
 
@@ -1734,7 +1736,7 @@ SetOutput(ArchiveHandle *AH, const char *filename,
 }
 
 static CompressFileHandle *
-SaveOutput(ArchiveHandle *AH)
+SaveOutput(const ArchiveHandle *AH)
 {
 	return (CompressFileHandle *) AH->OF;
 }
@@ -1792,7 +1794,7 @@ ahprintf(ArchiveHandle *AH, const char *fmt,...)
  * Single place for logic which says 'We are restoring to a direct DB connection'.
  */
 static int
-RestoringToDB(ArchiveHandle *AH)
+RestoringToDB(const ArchiveHandle *AH)
 {
 	RestoreOptions *ropt = AH->public.ropt;
 
@@ -4561,7 +4563,7 @@ restore_toc_entries_parallel(ArchiveHandle *AH, ParallelState *pstate,
  * at least some chance of completing the restore successfully.
  */
 static void
-restore_toc_entries_postfork(ArchiveHandle *AH, TocEntry *pending_list)
+restore_toc_entries_postfork(ArchiveHandle *AH, const TocEntry *pending_list)
 {
 	RestoreOptions *ropt = AH->public.ropt;
 	TocEntry   *te;
@@ -4595,7 +4597,7 @@ restore_toc_entries_postfork(ArchiveHandle *AH, TocEntry *pending_list)
  * requires, whether or not te2's requirement is for an exclusive lock.
  */
 static bool
-has_lock_conflicts(TocEntry *te1, TocEntry *te2)
+has_lock_conflicts(const TocEntry *te1, const TocEntry *te2)
 {
 	int			j,
 				k;
@@ -4685,7 +4687,7 @@ TocEntrySizeCompareBinaryheap(void *p1, void *p2, void *arg)
  * which applies the same logic one-at-a-time.)
  */
 static void
-move_to_ready_heap(TocEntry *pending_list,
+move_to_ready_heap(const TocEntry *pending_list,
 				   binaryheap *ready_heap,
 				   RestorePass pass)
 {
@@ -4721,7 +4723,7 @@ move_to_ready_heap(TocEntry *pending_list,
  */
 static TocEntry *
 pop_next_work_item(binaryheap *ready_heap,
-				   ParallelState *pstate)
+				   const ParallelState *pstate)
 {
 	/*
 	 * Search the ready_heap until we find a suitable item.  Note that we do a
@@ -4971,7 +4973,7 @@ fix_dependencies(ArchiveHandle *AH)
  * end a restore with only one active job working on a large table.
  */
 static void
-repoint_table_dependencies(ArchiveHandle *AH)
+repoint_table_dependencies(const ArchiveHandle *AH)
 {
 	TocEntry   *te;
 	int			i;
@@ -5005,7 +5007,7 @@ repoint_table_dependencies(ArchiveHandle *AH)
  * itself).  Record their dump IDs in the entry's lockDeps[] array.
  */
 static void
-identify_locking_dependencies(ArchiveHandle *AH, TocEntry *te)
+identify_locking_dependencies(const ArchiveHandle *AH, TocEntry *te)
 {
 	DumpId	   *lockids;
 	int			nlockids;
@@ -5069,7 +5071,7 @@ identify_locking_dependencies(ArchiveHandle *AH, TocEntry *te)
  * becomes ready should be moved to the ready_heap, if that's provided.
  */
 static void
-reduce_dependencies(ArchiveHandle *AH, TocEntry *te,
+reduce_dependencies(const ArchiveHandle *AH, TocEntry *te,
 					binaryheap *ready_heap)
 {
 	int			i;
@@ -5109,7 +5111,7 @@ reduce_dependencies(ArchiveHandle *AH, TocEntry *te,
  * TABLE member
  */
 static void
-mark_create_done(ArchiveHandle *AH, TocEntry *te)
+mark_create_done(const ArchiveHandle *AH, const TocEntry *te)
 {
 	if (AH->tableDataId[te->dumpId] != 0)
 	{
@@ -5124,7 +5126,7 @@ mark_create_done(ArchiveHandle *AH, TocEntry *te)
  * as not wanted
  */
 static void
-inhibit_data_for_failed_table(ArchiveHandle *AH, TocEntry *te)
+inhibit_data_for_failed_table(const ArchiveHandle *AH, TocEntry *te)
 {
 	pg_log_info("table \"%s\" could not be created, will not restore its data",
 				te->tag);

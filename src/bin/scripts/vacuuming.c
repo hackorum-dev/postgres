@@ -38,7 +38,7 @@ static int	vacuum_all_databases(ConnParams *cparams,
 								 const char *progname);
 static SimpleStringList *retrieve_objects(PGconn *conn,
 										  vacuumingOptions *vacopts,
-										  SimpleStringList *objects);
+										  const SimpleStringList *objects);
 static void free_retrieved_objects(SimpleStringList *list);
 static void prepare_vacuum_command(PGconn *conn, PQExpBuffer sql,
 								   vacuumingOptions *vacopts, const char *table);
@@ -528,7 +528,7 @@ vacuum_all_databases(ConnParams *cparams,
  */
 static SimpleStringList *
 retrieve_objects(PGconn *conn, vacuumingOptions *vacopts,
-				 SimpleStringList *objects)
+				 const SimpleStringList *objects)
 {
 	PQExpBufferData buf;
 	PQExpBufferData catalog_query;

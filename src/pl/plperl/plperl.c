@@ -1761,7 +1761,7 @@ plperl_event_trigger_build_args(FunctionCallInfo fcinfo)
 
 /* Construct the modified new tuple to be returned from a trigger. */
 static HeapTuple
-plperl_modify_tuple(HV *hvTD, TriggerData *tdata, HeapTuple otup)
+plperl_modify_tuple(HV *hvTD, const TriggerData *tdata, HeapTuple otup)
 {
 	dTHX;
 	SV		  **svp;

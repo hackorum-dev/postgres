@@ -40,15 +40,20 @@
 #define JSONB_MAX_PAIRS (Min(MaxAllocSize / sizeof(JsonbPair), JB_CMASK))
 
 static void fillJsonbValue(JsonbContainer *container, int index,
-						   char *base_addr, uint32 offset,
+						   char *base_addr,
+						   uint32 offset,
 						   JsonbValue *result);
 static bool equalsJsonbScalarValue(JsonbValue *a, JsonbValue *b);
-static int	compareJsonbScalarValue(JsonbValue *a, JsonbValue *b);
+static int	compareJsonbScalarValue(const JsonbValue *a,
+									const JsonbValue *b);
 static Jsonb *convertToJsonb(JsonbValue *val);
 static void convertJsonbValue(StringInfo buffer, JEntry *header, JsonbValue *val, int level);
-static void convertJsonbArray(StringInfo buffer, JEntry *header, JsonbValue *val, int level);
-static void convertJsonbObject(StringInfo buffer, JEntry *header, JsonbValue *val, int level);
-static void convertJsonbScalar(StringInfo buffer, JEntry *header, JsonbValue *scalarVal);
+static void convertJsonbArray(StringInfo buffer, JEntry *header,
+							  const JsonbValue *val, int level);
+static void convertJsonbObject(StringInfo buffer, JEntry *header,
+							   const JsonbValue *val, int level);
+static void convertJsonbScalar(StringInfo buffer, JEntry *header,
+							   const JsonbValue *scalarVal);
 
 static int	reserveFromBuffer(StringInfo buffer, int len);
 static void appendToBuffer(StringInfo buffer, const void *data, int len);
@@ -58,9 +63,12 @@ static short padBufferToInt(StringInfo buffer);
 static JsonbIterator *iteratorFromContainer(JsonbContainer *container, JsonbIterator *parent);
 static JsonbIterator *freeAndGetParent(JsonbIterator *it);
 static JsonbParseState *pushState(JsonbInState *pstate);
-static void appendKey(JsonbInState *pstate, JsonbValue *string, bool needCopy);
-static void appendValue(JsonbInState *pstate, JsonbValue *scalarVal, bool needCopy);
-static void appendElement(JsonbInState *pstate, JsonbValue *scalarVal, bool needCopy);
+static void appendKey(JsonbInState *pstate, const JsonbValue *string,
+					  bool needCopy);
+static void appendValue(JsonbInState *pstate, const JsonbValue *scalarVal,
+						bool needCopy);
+static void appendElement(JsonbInState *pstate, const JsonbValue *scalarVal,
+						  bool needCopy);
 static void copyScalarSubstructure(JsonbValue *v, MemoryContext outcontext);
 static int	lengthCompareJsonbStringValue(const void *a, const void *b);
 static int	lengthCompareJsonbString(const char *val1, int len1,
@@ -782,7 +790,7 @@ pushState(JsonbInState *pstate)
  * pushJsonbValue() worker:  Append a pair key to pstate
  */
 static void
-appendKey(JsonbInState *pstate, JsonbValue *string, bool needCopy)
+appendKey(JsonbInState *pstate, const JsonbValue *string, bool needCopy)
 {
 	JsonbParseState *ppstate = pstate->parseState;
 	JsonbValue *object = &ppstate->contVal;
@@ -815,7 +823,7 @@ appendKey(JsonbInState *pstate, JsonbValue *string, bool needCopy)
  * pushJsonbValue() worker:  Append a pair value to pstate
  */
 static void
-appendValue(JsonbInState *pstate, JsonbValue *scalarVal, bool needCopy)
+appendValue(JsonbInState *pstate, const JsonbValue *scalarVal, bool needCopy)
 {
 	JsonbValue *object = &pstate->parseState->contVal;
 	JsonbPair  *pair;
@@ -834,7 +842,8 @@ appendValue(JsonbInState *pstate, JsonbValue *scalarVal, bool needCopy)
  * pushJsonbValue() worker:  Append an array element to pstate
  */
 static void
-appendElement(JsonbInState *pstate, JsonbValue *scalarVal, bool needCopy)
+appendElement(JsonbInState *pstate, const JsonbValue *scalarVal,
+			  bool needCopy)
 {
 	JsonbParseState *ppstate = pstate->parseState;
 	JsonbValue *array = &ppstate->contVal;
@@ -1557,7 +1566,7 @@ equalsJsonbScalarValue(JsonbValue *a, JsonbValue *b)
  * operators, where a lexical sort order is generally expected.
  */
 static int
-compareJsonbScalarValue(JsonbValue *a, JsonbValue *b)
+compareJsonbScalarValue(const JsonbValue *a, const JsonbValue *b)
 {
 	if (a->type == b->type)
 	{
@@ -1739,7 +1748,8 @@ convertJsonbValue(StringInfo buffer, JEntry *header, JsonbValue *val, int level)
 }
 
 static void
-convertJsonbArray(StringInfo buffer, JEntry *header, JsonbValue *val, int level)
+convertJsonbArray(StringInfo buffer, JEntry *header, const JsonbValue *val,
+				  int level)
 {
 	int			base_offset;
 	int			jentry_offset;
@@ -1823,7 +1833,8 @@ convertJsonbArray(StringInfo buffer, JEntry *header, JsonbValue *val, int level)
 }
 
 static void
-convertJsonbObject(StringInfo buffer, JEntry *header, JsonbValue *val, int level)
+convertJsonbObject(StringInfo buffer, JEntry *header, const JsonbValue *val,
+				   int level)
 {
 	int			base_offset;
 	int			jentry_offset;
@@ -1939,7 +1950,8 @@ convertJsonbObject(StringInfo buffer, JEntry *header, JsonbValue *val, int level
 }
 
 static void
-convertJsonbScalar(StringInfo buffer, JEntry *header, JsonbValue *scalarVal)
+convertJsonbScalar(StringInfo buffer, JEntry *header,
+				   const JsonbValue *scalarVal)
 {
 	int			numlen;
 	short		padlen;

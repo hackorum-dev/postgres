@@ -280,7 +280,7 @@ ParsePrepareRecord(uint8 info, xl_xact_prepare *xlrec, xl_xact_parsed_prepare *p
 
 static void
 xact_desc_relations(StringInfo buf, char *label, int nrels,
-					RelFileLocator *xlocators)
+					const RelFileLocator *xlocators)
 {
 	int			i;
 
@@ -296,7 +296,8 @@ xact_desc_relations(StringInfo buf, char *label, int nrels,
 }
 
 static void
-xact_desc_subxacts(StringInfo buf, int nsubxacts, TransactionId *subxacts)
+xact_desc_subxacts(StringInfo buf, int nsubxacts,
+				   const TransactionId *subxacts)
 {
 	int			i;
 
@@ -425,7 +426,7 @@ xact_desc_prepare(StringInfo buf, uint8 info, xl_xact_prepare *xlrec, RepOriginI
 }
 
 static void
-xact_desc_assignment(StringInfo buf, xl_xact_assignment *xlrec)
+xact_desc_assignment(StringInfo buf, const xl_xact_assignment *xlrec)
 {
 	int			i;
 

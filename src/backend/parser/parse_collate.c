@@ -81,7 +81,7 @@ static void merge_collation_state(Oid collation,
 								  Oid collation2,
 								  int location2,
 								  assign_collations_context *context);
-static void assign_aggregate_collations(Aggref *aggref,
+static void assign_aggregate_collations(const Aggref *aggref,
 										assign_collations_context *loccontext);
 static void assign_ordered_set_collations(Aggref *aggref,
 										  assign_collations_context *loccontext);
@@ -878,7 +878,7 @@ merge_collation_state(Oid collation,
  * contain only SortGroupClause nodes which we need not process.
  */
 static void
-assign_aggregate_collations(Aggref *aggref,
+assign_aggregate_collations(const Aggref *aggref,
 							assign_collations_context *loccontext)
 {
 	ListCell   *lc;

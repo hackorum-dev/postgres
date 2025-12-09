@@ -794,7 +794,7 @@ SpGistGetInnerTypeSize(SpGistTypeDesc *att, Datum datum)
  * Copy the given non-null datum to *target, in the inner-tuple case
  */
 static void
-memcpyInnerDatum(void *target, SpGistTypeDesc *att, Datum datum)
+memcpyInnerDatum(void *target, const SpGistTypeDesc *att, Datum datum)
 {
 	unsigned int size;
 

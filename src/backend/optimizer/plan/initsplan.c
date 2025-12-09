@@ -82,7 +82,7 @@ typedef struct JoinTreeItem
 } JoinTreeItem;
 
 
-static bool is_partial_agg_memory_risky(PlannerInfo *root);
+static bool is_partial_agg_memory_risky(const PlannerInfo *root);
 static void create_agg_clause_infos(PlannerInfo *root);
 static void create_grouping_expr_infos(PlannerInfo *root);
 static EquivalenceClass *get_eclass_for_sortgroupclause(PlannerInfo *root,
@@ -105,11 +105,11 @@ static SpecialJoinInfo *make_outerjoininfo(PlannerInfo *root,
 										   JoinType jointype, Index ojrelid,
 										   List *clause);
 static void compute_semijoin_info(PlannerInfo *root, SpecialJoinInfo *sjinfo,
-								  List *clause);
+								  const List *clause);
 static void deconstruct_distribute_oj_quals(PlannerInfo *root,
-											List *jtitems,
+											const List *jtitems,
 											JoinTreeItem *jtitem);
-static void distribute_quals_to_rels(PlannerInfo *root, List *clauses,
+static void distribute_quals_to_rels(PlannerInfo *root, const List *clauses,
 									 JoinTreeItem *jtitem,
 									 SpecialJoinInfo *sjinfo,
 									 Index security_level,
@@ -133,7 +133,8 @@ static void distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 									bool has_clone,
 									bool is_clone,
 									List **postponed_oj_qual_list);
-static bool check_redundant_nullability_qual(PlannerInfo *root, Node *clause);
+static bool check_redundant_nullability_qual(const PlannerInfo *root,
+											 Node *clause);
 static Relids get_join_domain_min_rels(PlannerInfo *root, Relids domain_relids);
 static void check_mergejoinable(RestrictInfo *restrictinfo);
 static void check_hashjoinable(RestrictInfo *restrictinfo);
@@ -726,7 +727,7 @@ setup_eager_aggregation(PlannerInfo *root)
  * materialized nodes.
  */
 static bool
-is_partial_agg_memory_risky(PlannerInfo *root)
+is_partial_agg_memory_risky(const PlannerInfo *root)
 {
 	ListCell   *lc;
 
@@ -2412,7 +2413,8 @@ make_outerjoininfo(PlannerInfo *root,
  * SpecialJoinInfo; the rest may not be set yet.
  */
 static void
-compute_semijoin_info(PlannerInfo *root, SpecialJoinInfo *sjinfo, List *clause)
+compute_semijoin_info(PlannerInfo *root, SpecialJoinInfo *sjinfo,
+					  const List *clause)
 {
 	List	   *semi_operators;
 	List	   *semi_rhs_exprs;
@@ -2591,7 +2593,7 @@ compute_semijoin_info(PlannerInfo *root, SpecialJoinInfo *sjinfo, List *clause)
  */
 static void
 deconstruct_distribute_oj_quals(PlannerInfo *root,
-								List *jtitems,
+								const List *jtitems,
 								JoinTreeItem *jtitem)
 {
 	SpecialJoinInfo *sjinfo = jtitem->sjinfo;
@@ -2831,7 +2833,7 @@ deconstruct_distribute_oj_quals(PlannerInfo *root,
  *	  of an AND'ed list of clauses.
  */
 static void
-distribute_quals_to_rels(PlannerInfo *root, List *clauses,
+distribute_quals_to_rels(PlannerInfo *root, const List *clauses,
 						 JoinTreeItem *jtitem,
 						 SpecialJoinInfo *sjinfo,
 						 Index security_level,
@@ -3299,7 +3301,7 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
  * the qual.
  */
 static bool
-check_redundant_nullability_qual(PlannerInfo *root, Node *clause)
+check_redundant_nullability_qual(const PlannerInfo *root, Node *clause)
 {
 	Var		   *forced_null_var;
 	ListCell   *lc;

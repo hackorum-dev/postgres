@@ -166,8 +166,8 @@ static bool check_selective_binary_conversion(RelOptInfo *baserel,
 											  List **columns);
 static void estimate_size(PlannerInfo *root, RelOptInfo *baserel,
 						  FileFdwPlanState *fdw_private);
-static void estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
-						   FileFdwPlanState *fdw_private,
+static void estimate_costs(PlannerInfo *root, const RelOptInfo *baserel,
+						   const FileFdwPlanState *fdw_private,
 						   Cost *startup_cost, Cost *total_cost);
 static int	file_acquire_sample_rows(Relation onerel, int elevel,
 									 HeapTuple *rows, int targrows,
@@ -1139,8 +1139,8 @@ estimate_size(PlannerInfo *root, RelOptInfo *baserel,
  * Results are returned in *startup_cost and *total_cost.
  */
 static void
-estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
-			   FileFdwPlanState *fdw_private,
+estimate_costs(PlannerInfo *root, const RelOptInfo *baserel,
+			   const FileFdwPlanState *fdw_private,
 			   Cost *startup_cost, Cost *total_cost)
 {
 	BlockNumber pages = fdw_private->pages;

@@ -43,7 +43,8 @@ static JsonParseErrorType jsonb_in_object_end(void *pstate);
 static JsonParseErrorType jsonb_in_array_start(void *pstate);
 static JsonParseErrorType jsonb_in_array_end(void *pstate);
 static JsonParseErrorType jsonb_in_object_field_start(void *pstate, char *fname, bool isnull);
-static void jsonb_put_escaped_value(StringInfo out, JsonbValue *scalarVal);
+static void jsonb_put_escaped_value(StringInfo out,
+									const JsonbValue *scalarVal);
 static JsonParseErrorType jsonb_in_scalar(void *pstate, char *token, JsonTokenType tokentype);
 static void composite_to_jsonb(Datum composite, JsonbInState *result);
 static void array_dim_to_jsonb(JsonbInState *result, int dim, int ndims, int *dims,
@@ -339,7 +340,7 @@ jsonb_in_object_field_start(void *pstate, char *fname, bool isnull)
 }
 
 static void
-jsonb_put_escaped_value(StringInfo out, JsonbValue *scalarVal)
+jsonb_put_escaped_value(StringInfo out, const JsonbValue *scalarVal)
 {
 	switch (scalarVal->type)
 	{

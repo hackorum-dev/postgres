@@ -44,7 +44,7 @@ typedef struct
  * gistunionsubkey.
  */
 static void
-gistunionsubkeyvec(GISTSTATE *giststate, IndexTuple *itvec,
+gistunionsubkeyvec(GISTSTATE *giststate, const IndexTuple *itvec,
 				   GistSplitUnion *gsvp)
 {
 	IndexTuple *cleanedItVec;

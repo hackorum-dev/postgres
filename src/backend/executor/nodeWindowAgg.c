@@ -170,7 +170,7 @@ typedef struct WindowStatePerAggData
 	bool		restart;		/* need to restart this agg in this cycle? */
 } WindowStatePerAggData;
 
-static void initialize_windowaggregate(WindowAggState *winstate,
+static void initialize_windowaggregate(const WindowAggState *winstate,
 									   WindowStatePerFunc perfuncstate,
 									   WindowStatePerAgg peraggstate);
 static void advance_windowaggregate(WindowAggState *winstate,
@@ -199,7 +199,7 @@ static void update_frameheadpos(WindowAggState *winstate);
 static void update_frametailpos(WindowAggState *winstate);
 static void update_grouptailpos(WindowAggState *winstate);
 
-static WindowStatePerAggData *initialize_peragg(WindowAggState *winstate,
+static WindowStatePerAggData *initialize_peragg(const WindowAggState *winstate,
 												WindowFunc *wfunc,
 												WindowStatePerAgg peraggstate);
 static Datum GetAggInitVal(Datum textInitVal, Oid transtype);
@@ -247,7 +247,7 @@ static void put_notnull_info(WindowObject winobj,
  * parallel to initialize_aggregates in nodeAgg.c
  */
 static void
-initialize_windowaggregate(WindowAggState *winstate,
+initialize_windowaggregate(const WindowAggState *winstate,
 						   WindowStatePerFunc perfuncstate,
 						   WindowStatePerAgg peraggstate)
 {
@@ -2883,7 +2883,7 @@ ExecReScanWindowAgg(WindowAggState *node)
  * Almost same as in nodeAgg.c, except we don't support DISTINCT currently.
  */
 static WindowStatePerAggData *
-initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
+initialize_peragg(const WindowAggState *winstate, WindowFunc *wfunc,
 				  WindowStatePerAgg peraggstate)
 {
 	Oid			inputTypes[FUNC_MAX_ARGS];

@@ -181,7 +181,7 @@ static bool verify_final_nonce(scram_state *state);
 static void mock_scram_secret(const char *username, pg_cryptohash_type *hash_type,
 							  int *iterations, int *key_length, char **salt,
 							  uint8 *stored_key, uint8 *server_key);
-static bool is_scram_printable(char *p);
+static bool is_scram_printable(const char *p);
 static char *sanitize_char(char c);
 static char *sanitize_str(const char *s);
 static uint8 *scram_mock_salt(const char *username,
@@ -774,7 +774,7 @@ read_attr_value(char **input, char attr)
 }
 
 static bool
-is_scram_printable(char *p)
+is_scram_printable(const char *p)
 {
 	/*------
 	 * Printable characters, as defined by SCRAM spec: (RFC 5802)

@@ -143,7 +143,7 @@ ProcessSequencesForSync(void)
  * for the given list of sequence indexes.
  */
 static void
-get_sequences_string(List *seqindexes, StringInfo buf)
+get_sequences_string(const List *seqindexes, StringInfo buf)
 {
 	resetStringInfo(buf);
 	foreach_int(seqidx, seqindexes)

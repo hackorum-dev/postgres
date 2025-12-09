@@ -531,7 +531,8 @@ static inline BufferDesc *BufferAlloc(SMgrRelation smgr,
 									  BufferAccessStrategy strategy,
 									  bool *foundPtr, IOContext io_context);
 static bool AsyncReadBuffers(ReadBuffersOperation *operation, int *nblocks_progress);
-static void CheckReadBuffersOperation(ReadBuffersOperation *operation, bool is_complete);
+static void CheckReadBuffersOperation(const ReadBuffersOperation *operation,
+									  bool is_complete);
 static Buffer GetVictimBuffer(BufferAccessStrategy strategy, IOContext io_context);
 static void FlushUnlockedBuffer(BufferDesc *buf, SMgrRelation reln,
 								IOObject io_object, IOContext io_context);
@@ -1505,7 +1506,8 @@ StartReadBuffer(ReadBuffersOperation *operation,
  * Perform sanity checks on the ReadBuffersOperation.
  */
 static void
-CheckReadBuffersOperation(ReadBuffersOperation *operation, bool is_complete)
+CheckReadBuffersOperation(const ReadBuffersOperation *operation,
+						  bool is_complete)
 {
 #ifdef USE_ASSERT_CHECKING
 	Assert(operation->nblocks_done <= operation->nblocks);

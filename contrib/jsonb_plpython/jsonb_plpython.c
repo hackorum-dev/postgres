@@ -66,7 +66,7 @@ _PG_init(void)
  * Transform string JsonbValue to Python string.
  */
 static PyObject *
-PLyUnicode_FromJsonbValue(JsonbValue *jbv)
+PLyUnicode_FromJsonbValue(const JsonbValue *jbv)
 {
 	Assert(jbv->type == jbvString);
 

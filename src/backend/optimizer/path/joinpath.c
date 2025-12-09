@@ -70,7 +70,7 @@ static void consider_parallel_nestloop(PlannerInfo *root,
 									   JoinPathExtraData *extra);
 static void consider_parallel_mergejoin(PlannerInfo *root,
 										RelOptInfo *joinrel,
-										RelOptInfo *outerrel,
+										const RelOptInfo *outerrel,
 										RelOptInfo *innerrel,
 										JoinType jointype,
 										JoinPathExtraData *extra,
@@ -82,7 +82,7 @@ static List *select_mergejoin_clauses(PlannerInfo *root,
 									  RelOptInfo *joinrel,
 									  RelOptInfo *outerrel,
 									  RelOptInfo *innerrel,
-									  List *restrictlist,
+									  const List *restrictlist,
 									  JoinType jointype,
 									  bool *mergejoin_allowed);
 static void generate_mergejoin_paths(PlannerInfo *root,
@@ -442,7 +442,8 @@ have_unsafe_outer_join_ref(PlannerInfo *root,
  * required.
  */
 static bool
-paraminfo_get_equal_hashops(PlannerInfo *root, ParamPathInfo *param_info,
+paraminfo_get_equal_hashops(PlannerInfo *root,
+							const ParamPathInfo *param_info,
 							RelOptInfo *outerrel, RelOptInfo *innerrel,
 							List *ph_lateral_vars, List **param_exprs,
 							List **operators, bool *binary_mode)
@@ -2001,7 +2002,7 @@ match_unsorted_outer(PlannerInfo *root,
 static void
 consider_parallel_mergejoin(PlannerInfo *root,
 							RelOptInfo *joinrel,
-							RelOptInfo *outerrel,
+							const RelOptInfo *outerrel,
 							RelOptInfo *innerrel,
 							JoinType jointype,
 							JoinPathExtraData *extra,
@@ -2355,7 +2356,7 @@ select_mergejoin_clauses(PlannerInfo *root,
 						 RelOptInfo *joinrel,
 						 RelOptInfo *outerrel,
 						 RelOptInfo *innerrel,
-						 List *restrictlist,
+						 const List *restrictlist,
 						 JoinType jointype,
 						 bool *mergejoin_allowed)
 {

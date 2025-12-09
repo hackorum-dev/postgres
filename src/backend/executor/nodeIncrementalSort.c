@@ -209,7 +209,8 @@ preparePresortedCols(IncrementalSortState *node)
  * ----------------------------------------------------------------
  */
 static bool
-isCurrentGroup(IncrementalSortState *node, TupleTableSlot *pivot, TupleTableSlot *tuple)
+isCurrentGroup(const IncrementalSortState *node, TupleTableSlot *pivot,
+			   TupleTableSlot *tuple)
 {
 	int			nPresortedCols;
 

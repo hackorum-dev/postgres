@@ -221,7 +221,9 @@ struct ParallelVacuumState
 	PVIndVacStatus status;
 };
 
-static int	parallel_vacuum_compute_workers(Relation *indrels, int nindexes, int nrequested,
+static int	parallel_vacuum_compute_workers(const Relation *indrels,
+											int nindexes,
+											int nrequested,
 											bool *will_parallel_vacuum);
 static void parallel_vacuum_process_all_indexes(ParallelVacuumState *pvs, int num_index_scans,
 												bool vacuum);
@@ -546,7 +548,8 @@ parallel_vacuum_cleanup_all_indexes(ParallelVacuumState *pvs, long num_table_tup
  * vacuum.
  */
 static int
-parallel_vacuum_compute_workers(Relation *indrels, int nindexes, int nrequested,
+parallel_vacuum_compute_workers(const Relation *indrels, int nindexes,
+								int nrequested,
 								bool *will_parallel_vacuum)
 {
 	int			nindexes_parallel = 0;

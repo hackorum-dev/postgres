@@ -163,7 +163,7 @@ pgstat_fetch_stat_backend_by_pid(int pid, BackendType *bktype)
  * by the caller.
  */
 static void
-pgstat_flush_backend_entry_io(PgStat_EntryRef *entry_ref)
+pgstat_flush_backend_entry_io(const PgStat_EntryRef *entry_ref)
 {
 	PgStatShared_Backend *shbackendent;
 	PgStat_BktypeIO *bktype_shstats;
@@ -223,7 +223,7 @@ pgstat_backend_wal_have_pending(void)
  * by the caller.
  */
 static void
-pgstat_flush_backend_entry_wal(PgStat_EntryRef *entry_ref)
+pgstat_flush_backend_entry_wal(const PgStat_EntryRef *entry_ref)
 {
 	PgStatShared_Backend *shbackendent;
 	PgStat_WalCounters *bktype_shstats;

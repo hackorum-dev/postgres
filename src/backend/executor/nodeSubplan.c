@@ -700,7 +700,7 @@ static bool
 execTuplesUnequal(TupleTableSlot *slot1,
 				  TupleTableSlot *slot2,
 				  int numCols,
-				  AttrNumber *matchColIdx,
+				  const AttrNumber *matchColIdx,
 				  FmgrInfo *eqfunctions,
 				  const Oid *collations,
 				  MemoryContext evalContext)

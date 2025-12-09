@@ -592,7 +592,7 @@ setRedirectionTuple(SPPageDesc *current, OffsetNumber position,
  * fixes the problem even when there is only one old tuple.)
  */
 static bool
-checkAllTheSame(spgPickSplitIn *in, spgPickSplitOut *out, bool tooBig,
+checkAllTheSame(const spgPickSplitIn *in, spgPickSplitOut *out, bool tooBig,
 				bool *includeNew)
 {
 	int			theNode;
@@ -1710,7 +1710,8 @@ spgAddNodeAction(Relation index, SpGistState *state,
 static void
 spgSplitNodeAction(Relation index, SpGistState *state,
 				   SpGistInnerTuple innerTuple,
-				   SPPageDesc *current, spgChooseOut *out)
+				   SPPageDesc *current,
+				   const spgChooseOut *out)
 {
 	SpGistInnerTuple prefixTuple,
 				postfixTuple;

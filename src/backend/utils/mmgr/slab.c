@@ -208,7 +208,7 @@ typedef struct SlabBlock
  *		number of free chunks.
  */
 static inline int32
-SlabBlocklistIndex(SlabContext *slab, int nfree)
+SlabBlocklistIndex(const SlabContext *slab, int nfree)
 {
 	int32		index;
 	int32		blocklist_shift = slab->blocklist_shift;
@@ -248,7 +248,7 @@ SlabBlocklistIndex(SlabContext *slab, int nfree)
  * blocks will eventually become completely empty so they can be free'd.
  */
 static int32
-SlabFindNextBlockListIndex(SlabContext *slab)
+SlabFindNextBlockListIndex(const SlabContext *slab)
 {
 	/* start at 1 as blocklist[0] is for full blocks. */
 	for (int i = 1; i < SLAB_BLOCKLIST_COUNT; i++)

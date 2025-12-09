@@ -32,8 +32,10 @@
 #include "utils/typcache.h"
 #include "varatt.h"
 
-static double ndistinct_for_combination(double totalrows, StatsBuildData *data,
-										int k, int *combination);
+static double ndistinct_for_combination(double totalrows,
+										const StatsBuildData *data,
+										int k,
+										const int *combination);
 static double estimate_ndistinct(double totalrows, int numrows, int d, int f1);
 static int	n_choose_k(int n, int k);
 static int	num_combinations(int n);
@@ -337,8 +339,9 @@ statext_ndistinct_deserialize(bytea *data)
  * combination of multiple columns.
  */
 static double
-ndistinct_for_combination(double totalrows, StatsBuildData *data,
-						  int k, int *combination)
+ndistinct_for_combination(double totalrows, const StatsBuildData *data,
+						  int k,
+						  const int *combination)
 {
 	int			i,
 				j;

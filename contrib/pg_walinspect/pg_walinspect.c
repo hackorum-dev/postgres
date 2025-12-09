@@ -51,7 +51,7 @@ static void GetWALRecordInfo(XLogReaderState *record, Datum *values,
 static void GetWALRecordsInfo(FunctionCallInfo fcinfo,
 							  XLogRecPtr start_lsn,
 							  XLogRecPtr end_lsn);
-static void GetXLogSummaryStats(XLogStats *stats, ReturnSetInfo *rsinfo,
+static void GetXLogSummaryStats(const XLogStats *stats, ReturnSetInfo *rsinfo,
 								Datum *values, bool *nulls, uint32 ncols,
 								bool stats_per_record);
 static void FillXLogStatsRow(const char *name, uint64 n, uint64 total_count,
@@ -650,7 +650,7 @@ FillXLogStatsRow(const char *name,
  * Get summary statistics about the records seen so far.
  */
 static void
-GetXLogSummaryStats(XLogStats *stats, ReturnSetInfo *rsinfo,
+GetXLogSummaryStats(const XLogStats *stats, ReturnSetInfo *rsinfo,
 					Datum *values, bool *nulls, uint32 ncols,
 					bool stats_per_record)
 {

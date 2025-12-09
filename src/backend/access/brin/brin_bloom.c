@@ -405,7 +405,7 @@ bloom_add_value(BloomFilter *filter, uint32 value, bool *updated)
  * 		Check if the bloom filter contains a particular value.
  */
 static bool
-bloom_contains_value(BloomFilter *filter, uint32 value)
+bloom_contains_value(const BloomFilter *filter, uint32 value)
 {
 	int			i;
 	uint64		h1,

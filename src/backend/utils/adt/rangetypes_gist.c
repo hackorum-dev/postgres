@@ -161,14 +161,14 @@ static bool range_gist_consistent_leaf_element(TypeCacheEntry *typcache,
 											   const RangeType *key,
 											   Datum query);
 static void range_gist_fallback_split(TypeCacheEntry *typcache,
-									  GistEntryVector *entryvec,
+									  const GistEntryVector *entryvec,
 									  GIST_SPLITVEC *v);
 static void range_gist_class_split(TypeCacheEntry *typcache,
-								   GistEntryVector *entryvec,
+								   const GistEntryVector *entryvec,
 								   GIST_SPLITVEC *v,
-								   SplitLR *classes_groups);
+								   const SplitLR *classes_groups);
 static void range_gist_single_sorting_split(TypeCacheEntry *typcache,
-											GistEntryVector *entryvec,
+											const GistEntryVector *entryvec,
 											GIST_SPLITVEC *v,
 											bool use_upper_bound);
 static void range_gist_double_sorting_split(TypeCacheEntry *typcache,
@@ -1146,7 +1146,7 @@ range_gist_consistent_leaf_element(TypeCacheEntry *typcache,
  */
 static void
 range_gist_fallback_split(TypeCacheEntry *typcache,
-						  GistEntryVector *entryvec,
+						  const GistEntryVector *entryvec,
 						  GIST_SPLITVEC *v)
 {
 	RangeType  *left_range = NULL;
@@ -1184,9 +1184,9 @@ range_gist_fallback_split(TypeCacheEntry *typcache,
  */
 static void
 range_gist_class_split(TypeCacheEntry *typcache,
-					   GistEntryVector *entryvec,
+					   const GistEntryVector *entryvec,
 					   GIST_SPLITVEC *v,
-					   SplitLR *classes_groups)
+					   const SplitLR *classes_groups)
 {
 	RangeType  *left_range = NULL;
 	RangeType  *right_range = NULL;
@@ -1227,7 +1227,7 @@ range_gist_class_split(TypeCacheEntry *typcache,
  */
 static void
 range_gist_single_sorting_split(TypeCacheEntry *typcache,
-								GistEntryVector *entryvec,
+								const GistEntryVector *entryvec,
 								GIST_SPLITVEC *v,
 								bool use_upper_bound)
 {

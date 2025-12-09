@@ -1115,7 +1115,7 @@ logical_read_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr, int req
  * Process extra options given to CREATE_REPLICATION_SLOT.
  */
 static void
-parseCreateReplSlotOptions(CreateReplicationSlotCmd *cmd,
+parseCreateReplSlotOptions(const CreateReplicationSlotCmd *cmd,
 						   bool *reserve_wal,
 						   CRSSnapshotAction *snapshot_action,
 						   bool *two_phase, bool *failover)

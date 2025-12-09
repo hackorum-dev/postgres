@@ -2339,7 +2339,8 @@ heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
  * much the relation needs to be extended by.
  */
 static int
-heap_multi_insert_pages(HeapTuple *heaptuples, int done, int ntuples, Size saveFreeSpace)
+heap_multi_insert_pages(const HeapTuple *heaptuples, int done, int ntuples,
+						Size saveFreeSpace)
 {
 	size_t		page_avail = BLCKSZ - SizeOfPageHeaderData - saveFreeSpace;
 	int			npages = 1;

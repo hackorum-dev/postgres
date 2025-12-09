@@ -91,7 +91,7 @@ _ZstdCStreamParams(pg_compress_specification compress)
 
 /* Helper function for WriteDataToArchiveZstd and EndCompressorZstd */
 static void
-_ZstdWriteCommon(ArchiveHandle *AH, CompressorState *cs, bool flush)
+_ZstdWriteCommon(ArchiveHandle *AH, const CompressorState *cs, bool flush)
 {
 	ZstdCompressorState *zstdcs = (ZstdCompressorState *) cs->private_data;
 	ZSTD_inBuffer *input = &zstdcs->input;
@@ -258,7 +258,8 @@ InitCompressorZstd(CompressorState *cs,
  */
 
 static size_t
-Zstd_read_internal(void *ptr, size_t size, CompressFileHandle *CFH, bool exit_on_error)
+Zstd_read_internal(void *ptr, size_t size, const CompressFileHandle *CFH,
+				   bool exit_on_error)
 {
 	ZstdCompressorState *zstdcs = (ZstdCompressorState *) CFH->private_data;
 	ZSTD_inBuffer *input = &zstdcs->input;

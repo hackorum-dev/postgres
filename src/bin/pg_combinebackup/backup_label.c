@@ -20,7 +20,8 @@
 #include "write_manifest.h"
 
 static int	get_eol_offset(StringInfo buf);
-static bool line_starts_with(char *s, char *e, char *match, char **sout);
+static bool line_starts_with(char *s, const char *e, const char *match,
+							 char **sout);
 static bool parse_lsn(char *s, char *e, XLogRecPtr *lsn, char **c);
 static bool parse_tli(char *s, char *e, TimeLineID *tli);
 
@@ -221,7 +222,7 @@ get_eol_offset(StringInfo buf)
  * byte following the match into *sout.
  */
 static bool
-line_starts_with(char *s, char *e, char *match, char **sout)
+line_starts_with(char *s, const char *e, const char *match, char **sout)
 {
 	while (s < e && *match != '\0' && *s == *match)
 		++s, ++match;

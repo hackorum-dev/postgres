@@ -160,7 +160,8 @@ static void deleteOneObject(const ObjectAddress *object,
 static void doDeletion(const ObjectAddress *object, int flags);
 static bool find_expr_references_walker(Node *node,
 										find_expr_references_context *context);
-static void process_function_rte_ref(RangeTblEntry *rte, AttrNumber attnum,
+static void process_function_rte_ref(const RangeTblEntry *rte,
+									 AttrNumber attnum,
 									 find_expr_references_context *context);
 static void eliminate_duplicate_dependencies(ObjectAddresses *addrs);
 static int	object_address_comparator(const void *a, const void *b);
@@ -171,7 +172,7 @@ static void add_exact_object_address_extra(const ObjectAddress *object,
 										   ObjectAddresses *addrs);
 static bool object_address_present_add_flags(const ObjectAddress *object,
 											 int flags,
-											 ObjectAddresses *addrs);
+											 const ObjectAddresses *addrs);
 static bool stack_address_present_add_flags(const ObjectAddress *object,
 											int flags,
 											ObjectAddressStack *stack);
@@ -183,7 +184,7 @@ static void DeleteInitPrivs(const ObjectAddress *object);
  * the actual deletion.
  */
 static void
-deleteObjectsInList(ObjectAddresses *targetObjects, Relation *depRel,
+deleteObjectsInList(const ObjectAddresses *targetObjects, Relation *depRel,
 					int flags)
 {
 	int			i;
@@ -2376,7 +2377,7 @@ find_expr_references_walker(Node *node,
  * to an RTE_FUNCTION RTE
  */
 static void
-process_function_rte_ref(RangeTblEntry *rte, AttrNumber attnum,
+process_function_rte_ref(const RangeTblEntry *rte, AttrNumber attnum,
 						 find_expr_references_context *context)
 {
 	int			atts_done = 0;
@@ -2744,7 +2745,7 @@ object_address_present(const ObjectAddress *object,
 static bool
 object_address_present_add_flags(const ObjectAddress *object,
 								 int flags,
-								 ObjectAddresses *addrs)
+								 const ObjectAddresses *addrs)
 {
 	bool		result = false;
 	int			i;

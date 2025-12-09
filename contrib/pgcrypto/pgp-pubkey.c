@@ -250,7 +250,7 @@ out:
 #define HIDE_SHA1 254
 
 static int
-check_key_sha1(PullFilter *src, PGP_PubKey *pk)
+check_key_sha1(PullFilter *src, const PGP_PubKey *pk)
 {
 	int			res;
 	uint8		got_sha1[20];
@@ -296,7 +296,7 @@ err:
 }
 
 static int
-check_key_cksum(PullFilter *src, PGP_PubKey *pk)
+check_key_cksum(PullFilter *src, const PGP_PubKey *pk)
 {
 	int			res;
 	unsigned	got_cksum,

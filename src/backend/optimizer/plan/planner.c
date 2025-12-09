@@ -140,15 +140,17 @@ static void preprocess_qual_conditions(PlannerInfo *root, Node *jtnode);
 static void grouping_planner(PlannerInfo *root, double tuple_fraction,
 							 SetOperationStmt *setops);
 static grouping_sets_data *preprocess_grouping_sets(PlannerInfo *root);
-static List *remap_to_groupclause_idx(List *groupClause, List *gsets,
+static List *remap_to_groupclause_idx(const List *groupClause,
+									  const List *gsets,
 									  int *tleref_to_colnum_map);
 static void preprocess_rowmarks(PlannerInfo *root);
 static double preprocess_limit(PlannerInfo *root,
 							   double tuple_fraction,
 							   int64 *offset_est, int64 *count_est);
-static List *preprocess_groupclause(PlannerInfo *root, List *force);
+static List *preprocess_groupclause(const PlannerInfo *root,
+									const List *force);
 static List *extract_rollup_sets(List *groupingSets);
-static List *reorder_grouping_sets(List *groupingSets, List *sortclause);
+static List *reorder_grouping_sets(const List *groupingSets, List *sortclause);
 static void standard_qp_callback(PlannerInfo *root, void *extra);
 static double get_number_of_groups(PlannerInfo *root,
 								   double path_rows,
@@ -159,7 +161,7 @@ static RelOptInfo *create_grouping_paths(PlannerInfo *root,
 										 PathTarget *target,
 										 bool target_parallel_safe,
 										 grouping_sets_data *gd);
-static bool is_degenerate_grouping(PlannerInfo *root);
+static bool is_degenerate_grouping(const PlannerInfo *root);
 static void create_degenerate_grouping_paths(PlannerInfo *root,
 											 RelOptInfo *input_rel,
 											 RelOptInfo *grouped_rel);
@@ -193,7 +195,7 @@ static void create_one_window_path(PlannerInfo *root,
 								   Path *path,
 								   PathTarget *input_target,
 								   PathTarget *output_target,
-								   WindowFuncLists *wflists,
+								   const WindowFuncLists *wflists,
 								   List *activeWindows);
 static RelOptInfo *create_distinct_paths(PlannerInfo *root,
 										 RelOptInfo *input_rel,
@@ -203,11 +205,11 @@ static void create_partial_distinct_paths(PlannerInfo *root,
 										  RelOptInfo *final_distinct_rel,
 										  PathTarget *target);
 static RelOptInfo *create_final_distinct_paths(PlannerInfo *root,
-											   RelOptInfo *input_rel,
+											   const RelOptInfo *input_rel,
 											   RelOptInfo *distinct_rel);
 static List *get_useful_pathkeys_for_distinct(PlannerInfo *root,
 											  List *needed_pathkeys,
-											  List *path_pathkeys);
+											  const List *path_pathkeys);
 static RelOptInfo *create_ordered_paths(PlannerInfo *root,
 										RelOptInfo *input_rel,
 										PathTarget *target,
@@ -219,13 +221,14 @@ static PathTarget *make_partial_grouping_target(PlannerInfo *root,
 												PathTarget *grouping_target,
 												Node *havingQual);
 static List *postprocess_setop_tlist(List *new_tlist, List *orig_tlist);
-static void optimize_window_clauses(PlannerInfo *root,
+static void optimize_window_clauses(const PlannerInfo *root,
 									WindowFuncLists *wflists);
-static List *select_active_windows(PlannerInfo *root, WindowFuncLists *wflists);
-static void name_active_windows(List *activeWindows);
+static List *select_active_windows(const PlannerInfo *root,
+								   const WindowFuncLists *wflists);
+static void name_active_windows(const List *activeWindows);
 static PathTarget *make_window_input_target(PlannerInfo *root,
 											PathTarget *final_target,
-											List *activeWindows);
+											const List *activeWindows);
 static List *make_pathkeys_for_window(PlannerInfo *root, WindowClause *wc,
 									  List *tlist);
 static PathTarget *make_sort_input_target(PlannerInfo *root,
@@ -233,9 +236,10 @@ static PathTarget *make_sort_input_target(PlannerInfo *root,
 										  bool *have_postponed_srfs);
 static void adjust_paths_for_srfs(PlannerInfo *root, RelOptInfo *rel,
 								  List *targets, List *targets_contain_srfs);
-static void add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
+static void add_paths_to_grouping_rel(PlannerInfo *root,
+									  RelOptInfo *input_rel,
 									  RelOptInfo *grouped_rel,
-									  RelOptInfo *partially_grouped_rel,
+									  const RelOptInfo *partially_grouped_rel,
 									  const AggClauseCosts *agg_costs,
 									  grouping_sets_data *gd,
 									  GroupPathExtraData *extra);
@@ -248,11 +252,11 @@ static RelOptInfo *create_partial_grouping_paths(PlannerInfo *root,
 static Path *make_ordered_path(PlannerInfo *root,
 							   RelOptInfo *rel,
 							   Path *path,
-							   Path *cheapest_path,
+							   const Path *cheapest_path,
 							   List *pathkeys,
 							   double limit_tuples);
 static void gather_grouping_paths(PlannerInfo *root, RelOptInfo *rel);
-static bool can_partial_agg(PlannerInfo *root);
+static bool can_partial_agg(const PlannerInfo *root);
 static void apply_scanjoin_target_to_paths(PlannerInfo *root,
 										   RelOptInfo *rel,
 										   List *scanjoin_targets,
@@ -273,7 +277,8 @@ static bool group_by_has_partkey(RelOptInfo *input_rel,
 static int	common_prefix_cmp(const void *a, const void *b);
 static List *generate_setop_child_grouplist(SetOperationStmt *op,
 											List *targetlist);
-static void create_final_unique_paths(PlannerInfo *root, RelOptInfo *input_rel,
+static void create_final_unique_paths(PlannerInfo *root,
+									  const RelOptInfo *input_rel,
 									  List *sortPathkeys, List *groupClause,
 									  SpecialJoinInfo *sjinfo, RelOptInfo *unique_rel);
 static void create_partial_unique_paths(PlannerInfo *root, RelOptInfo *input_rel,
@@ -2387,8 +2392,8 @@ preprocess_grouping_sets(PlannerInfo *root)
  * (without annotation) mapped to indexes into the given groupclause.
  */
 static List *
-remap_to_groupclause_idx(List *groupClause,
-						 List *gsets,
+remap_to_groupclause_idx(const List *groupClause,
+						 const List *gsets,
 						 int *tleref_to_colnum_map)
 {
 	int			ref = 0;
@@ -2853,7 +2858,7 @@ limit_needed(Query *parse)
  * possible is done elsewhere.
  */
 static List *
-preprocess_groupclause(PlannerInfo *root, List *force)
+preprocess_groupclause(const PlannerInfo *root, const List *force)
 {
 	Query	   *parse = root->parse;
 	List	   *new_groupclause = NIL;
@@ -3161,7 +3166,7 @@ extract_rollup_sets(List *groupingSets)
  * gets implemented in one pass.)
  */
 static List *
-reorder_grouping_sets(List *groupingSets, List *sortclause)
+reorder_grouping_sets(const List *groupingSets, List *sortclause)
 {
 	ListCell   *lc;
 	List	   *previous = NIL;
@@ -3209,7 +3214,7 @@ reorder_grouping_sets(List *groupingSets, List *sortclause)
  *		containing a volatile function.  Otherwise returns false.
  */
 static bool
-has_volatile_pathkey(List *keys)
+has_volatile_pathkey(const List *keys)
 {
 	ListCell   *lc;
 
@@ -3971,7 +3976,7 @@ make_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
  * grouping sets are all empty).
  */
 static bool
-is_degenerate_grouping(PlannerInfo *root)
+is_degenerate_grouping(const PlannerInfo *root)
 {
 	Query	   *parse = root->parse;
 
@@ -4641,7 +4646,7 @@ create_one_window_path(PlannerInfo *root,
 					   Path *path,
 					   PathTarget *input_target,
 					   PathTarget *output_target,
-					   WindowFuncLists *wflists,
+					   const WindowFuncLists *wflists,
 					   List *activeWindows)
 {
 	PathTarget *window_target;
@@ -5059,7 +5064,7 @@ create_partial_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
  * distinct_rel: destination relation for storing created paths
  */
 static RelOptInfo *
-create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
+create_final_distinct_paths(PlannerInfo *root, const RelOptInfo *input_rel,
 							RelOptInfo *distinct_rel)
 {
 	Query	   *parse = root->parse;
@@ -5240,7 +5245,7 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
  */
 static List *
 get_useful_pathkeys_for_distinct(PlannerInfo *root, List *needed_pathkeys,
-								 List *path_pathkeys)
+								 const List *path_pathkeys)
 {
 	List	   *useful_pathkeys_list = NIL;
 	List	   *useful_pathkeys = NIL;
@@ -5831,7 +5836,7 @@ postprocess_setop_tlist(List *new_tlist, List *orig_tlist)
  * may allow more things to be done here in the future.
  */
 static void
-optimize_window_clauses(PlannerInfo *root, WindowFuncLists *wflists)
+optimize_window_clauses(const PlannerInfo *root, WindowFuncLists *wflists)
 {
 	List	   *windowClause = root->parse->windowClause;
 	ListCell   *lc;
@@ -5971,7 +5976,7 @@ optimize_window_clauses(PlannerInfo *root, WindowFuncLists *wflists)
  *		by non-deleted WindowFuncs) in the order they are to be executed.
  */
 static List *
-select_active_windows(PlannerInfo *root, WindowFuncLists *wflists)
+select_active_windows(const PlannerInfo *root, const WindowFuncLists *wflists)
 {
 	List	   *windowClause = root->parse->windowClause;
 	List	   *result = NIL;
@@ -6054,7 +6059,7 @@ select_active_windows(PlannerInfo *root, WindowFuncLists *wflists)
  * activeWindows: result of select_active_windows
  */
 static void
-name_active_windows(List *activeWindows)
+name_active_windows(const List *activeWindows)
 {
 	int			next_n = 1;
 	char		newname[16];
@@ -6176,7 +6181,7 @@ common_prefix_cmp(const void *a, const void *b)
 static PathTarget *
 make_window_input_target(PlannerInfo *root,
 						 PathTarget *final_target,
-						 List *activeWindows)
+						 const List *activeWindows)
 {
 	PathTarget *input_target;
 	Bitmapset  *sgrefs;
@@ -7097,7 +7102,7 @@ done:
 static void
 add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 						  RelOptInfo *grouped_rel,
-						  RelOptInfo *partially_grouped_rel,
+						  const RelOptInfo *partially_grouped_rel,
 						  const AggClauseCosts *agg_costs,
 						  grouping_sets_data *gd,
 						  GroupPathExtraData *extra)
@@ -7708,7 +7713,8 @@ create_partial_grouping_paths(PlannerInfo *root,
  */
 static Path *
 make_ordered_path(PlannerInfo *root, RelOptInfo *rel, Path *path,
-				  Path *cheapest_path, List *pathkeys, double limit_tuples)
+				  const Path *cheapest_path, List *pathkeys,
+				  double limit_tuples)
 {
 	bool		is_sorted;
 	int			presorted_keys;
@@ -7849,7 +7855,7 @@ gather_grouping_paths(PlannerInfo *root, RelOptInfo *rel)
  * Returns true when possible, false otherwise.
  */
 static bool
-can_partial_agg(PlannerInfo *root)
+can_partial_agg(const PlannerInfo *root)
 {
 	Query	   *parse = root->parse;
 
@@ -8681,7 +8687,7 @@ create_unique_paths(PlannerInfo *root, RelOptInfo *rel, SpecialJoinInfo *sjinfo)
  *    Create unique paths in 'unique_rel' based on 'input_rel' pathlist
  */
 static void
-create_final_unique_paths(PlannerInfo *root, RelOptInfo *input_rel,
+create_final_unique_paths(PlannerInfo *root, const RelOptInfo *input_rel,
 						  List *sortPathkeys, List *groupClause,
 						  SpecialJoinInfo *sjinfo, RelOptInfo *unique_rel)
 {

@@ -115,7 +115,7 @@ static cached_re_str re_array[MAX_CACHED_RES];	/* cached re's */
 
 /* Local functions */
 static regexp_matches_ctx *setup_regexp_matches(text *orig_str, text *pattern,
-												pg_re_flags *re_flags,
+												const pg_re_flags *re_flags,
 												int start_search,
 												Oid collation,
 												bool use_subpatterns,
@@ -1482,7 +1482,8 @@ regexp_matches_no_flags(PG_FUNCTION_ARGS)
  * anyway, and it didn't seem worth complicating the code further.)
  */
 static regexp_matches_ctx *
-setup_regexp_matches(text *orig_str, text *pattern, pg_re_flags *re_flags,
+setup_regexp_matches(text *orig_str, text *pattern,
+					 const pg_re_flags *re_flags,
 					 int start_search,
 					 Oid collation,
 					 bool use_subpatterns,

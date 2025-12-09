@@ -92,7 +92,7 @@ struct SharedTuplestoreAccessor
 	char	   *write_end;		/* One past the end of the current chunk. */
 };
 
-static void sts_filename(char *name, SharedTuplestoreAccessor *accessor,
+static void sts_filename(char *name, const SharedTuplestoreAccessor *accessor,
 						 int participant);
 
 /*
@@ -594,7 +594,8 @@ sts_parallel_scan_next(SharedTuplestoreAccessor *accessor, void *meta_data)
  * Create the name used for the BufFile that a given participant will write.
  */
 static void
-sts_filename(char *name, SharedTuplestoreAccessor *accessor, int participant)
+sts_filename(char *name, const SharedTuplestoreAccessor *accessor,
+			 int participant)
 {
 	snprintf(name, MAXPGPATH, "%s.p%d", accessor->sts->name, participant);
 }

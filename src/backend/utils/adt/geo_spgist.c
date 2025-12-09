@@ -127,7 +127,7 @@ typedef struct
  * This makes 16 quadrants in total.
  */
 static uint8
-getQuadrant(BOX *centroid, BOX *inBox)
+getQuadrant(const BOX *centroid, const BOX *inBox)
 {
 	uint8		quadrant = 0;
 
@@ -154,7 +154,7 @@ getQuadrant(BOX *centroid, BOX *inBox)
  * access the values with this structure.
  */
 static RangeBox *
-getRangeBox(BOX *box)
+getRangeBox(const BOX *box)
 {
 	RangeBox   *range_box = palloc_object(RangeBox);
 
@@ -202,7 +202,7 @@ initRectBox(void)
  * using centroid and quadrant.
  */
 static RectBox *
-nextRectBox(RectBox *rect_box, RangeBox *centroid, uint8 quadrant)
+nextRectBox(RectBox *rect_box, const RangeBox *centroid, uint8 quadrant)
 {
 	RectBox    *next_rect_box = palloc_object(RectBox);
 
@@ -233,7 +233,7 @@ nextRectBox(RectBox *rect_box, RangeBox *centroid, uint8 quadrant)
 
 /* Can any range from range_box overlap with this argument? */
 static bool
-overlap2D(RangeBox *range_box, Range *query)
+overlap2D(const RangeBox *range_box, Range *query)
 {
 	return FPge(range_box->right.high, query->low) &&
 		FPle(range_box->left.low, query->high);
@@ -249,7 +249,7 @@ overlap4D(RectBox *rect_box, RangeBox *query)
 
 /* Can any range from range_box contain this argument? */
 static bool
-contain2D(RangeBox *range_box, Range *query)
+contain2D(const RangeBox *range_box, Range *query)
 {
 	return FPge(range_box->right.high, query->high) &&
 		FPle(range_box->left.low, query->low);
@@ -265,7 +265,7 @@ contain4D(RectBox *rect_box, RangeBox *query)
 
 /* Can any range from range_box be contained by this argument? */
 static bool
-contained2D(RangeBox *range_box, Range *query)
+contained2D(const RangeBox *range_box, Range *query)
 {
 	return FPle(range_box->left.low, query->high) &&
 		FPge(range_box->left.high, query->low) &&
@@ -283,7 +283,7 @@ contained4D(RectBox *rect_box, RangeBox *query)
 
 /* Can any range from range_box to be lower than this argument? */
 static bool
-lower2D(RangeBox *range_box, Range *query)
+lower2D(const RangeBox *range_box, Range *query)
 {
 	return FPlt(range_box->left.low, query->low) &&
 		FPlt(range_box->right.low, query->low);
@@ -291,7 +291,7 @@ lower2D(RangeBox *range_box, Range *query)
 
 /* Can any range from range_box not extend to the right side of the query? */
 static bool
-overLower2D(RangeBox *range_box, Range *query)
+overLower2D(const RangeBox *range_box, Range *query)
 {
 	return FPle(range_box->left.low, query->high) &&
 		FPle(range_box->right.low, query->high);
@@ -299,7 +299,7 @@ overLower2D(RangeBox *range_box, Range *query)
 
 /* Can any range from range_box to be higher than this argument? */
 static bool
-higher2D(RangeBox *range_box, Range *query)
+higher2D(const RangeBox *range_box, Range *query)
 {
 	return FPgt(range_box->left.high, query->high) &&
 		FPgt(range_box->right.high, query->high);
@@ -307,7 +307,7 @@ higher2D(RangeBox *range_box, Range *query)
 
 /* Can any range from range_box not extend to the left side of the query? */
 static bool
-overHigher2D(RangeBox *range_box, Range *query)
+overHigher2D(const RangeBox *range_box, Range *query)
 {
 	return FPge(range_box->left.high, query->low) &&
 		FPge(range_box->right.high, query->low);
@@ -371,7 +371,7 @@ overAbove4D(RectBox *rect_box, RangeBox *query)
 
 /* Lower bound for the distance between point and rect_box */
 static double
-pointToRectBoxDistance(Point *point, RectBox *rect_box)
+pointToRectBoxDistance(const Point *point, const RectBox *rect_box)
 {
 	double		dx;
 	double		dy;

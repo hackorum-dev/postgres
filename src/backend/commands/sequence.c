@@ -93,7 +93,8 @@ static void create_seq_hashtable(void);
 static void init_sequence(Oid relid, SeqTable *p_elm, Relation *p_rel);
 static Form_pg_sequence_data read_seq_tuple(Relation rel,
 											Buffer *buf, HeapTuple seqdatatuple);
-static void init_params(ParseState *pstate, List *options, bool for_identity,
+static void init_params(ParseState *pstate, const List *options,
+						bool for_identity,
 						bool isInit,
 						Form_pg_sequence seqform,
 						int64 *last_value,
@@ -1257,7 +1258,7 @@ read_seq_tuple(Relation rel, Buffer *buf, HeapTuple seqdatatuple)
  * relfilenumber.
  */
 static void
-init_params(ParseState *pstate, List *options, bool for_identity,
+init_params(ParseState *pstate, const List *options, bool for_identity,
 			bool isInit,
 			Form_pg_sequence seqform,
 			int64 *last_value,

@@ -466,7 +466,7 @@ static void tuplesort_sort_memtuples(Tuplesortstate *state);
 static void tuplesort_heap_insert(Tuplesortstate *state, SortTuple *tuple);
 static void tuplesort_heap_replace_top(Tuplesortstate *state, SortTuple *tuple);
 static void tuplesort_heap_delete_top(Tuplesortstate *state);
-static void reversedirection(Tuplesortstate *state);
+static void reversedirection(const Tuplesortstate *state);
 static unsigned int getlen(LogicalTape *tape, bool eofOK);
 static void markrunend(LogicalTape *tape);
 static int	worker_get_identifier(Tuplesortstate *state);
@@ -2819,7 +2819,7 @@ tuplesort_heap_replace_top(Tuplesortstate *state, SortTuple *tuple)
  * It is not safe to call this when performing hash tuplesorts
  */
 static void
-reversedirection(Tuplesortstate *state)
+reversedirection(const Tuplesortstate *state)
 {
 	SortSupport sortKey = state->base.sortKeys;
 	int			nkey;

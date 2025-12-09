@@ -63,7 +63,7 @@ static bool split_pathtarget_walker(Node *node,
 									split_pathtarget_context *context);
 static void add_sp_item_to_pathtarget(PathTarget *target,
 									  split_pathtarget_item *item);
-static void add_sp_items_to_pathtarget(PathTarget *target, List *items);
+static void add_sp_items_to_pathtarget(PathTarget *target, const List *items);
 
 
 /*****************************************************************************
@@ -99,7 +99,7 @@ tlist_member(Expr *node, List *targetlist)
  * match.  For safety, though, we insist on vartype match.
  */
 static TargetEntry *
-tlist_member_match_var(Var *var, List *targetlist)
+tlist_member_match_var(const Var *var, const List *targetlist)
 {
 	ListCell   *temp;
 
@@ -1243,7 +1243,7 @@ add_sp_item_to_pathtarget(PathTarget *target, split_pathtarget_item *item)
  * Apply add_sp_item_to_pathtarget to each element of list.
  */
 static void
-add_sp_items_to_pathtarget(PathTarget *target, List *items)
+add_sp_items_to_pathtarget(PathTarget *target, const List *items)
 {
 	ListCell   *lc;
 

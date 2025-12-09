@@ -55,7 +55,7 @@ static bool tuples_equal(TupleTableSlot *slot1, TupleTableSlot *slot2,
  */
 static int
 build_replindex_scan_key(ScanKey skey, Relation rel, Relation idxrel,
-						 TupleTableSlot *searchslot)
+						 const TupleTableSlot *searchslot)
 {
 	int			index_attoff;
 	int			skey_attoff = 0;
@@ -448,7 +448,7 @@ retry:
  * Build additional index information necessary for conflict detection.
  */
 static void
-BuildConflictIndexInfo(ResultRelInfo *resultRelInfo, Oid conflictindex)
+BuildConflictIndexInfo(const ResultRelInfo *resultRelInfo, Oid conflictindex)
 {
 	for (int i = 0; i < resultRelInfo->ri_NumIndices; i++)
 	{

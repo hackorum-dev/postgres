@@ -77,10 +77,11 @@ static ParseNamespaceItem *scanNameSpaceForRefname(ParseState *pstate,
 												   int location);
 static ParseNamespaceItem *scanNameSpaceForRelid(ParseState *pstate, Oid relid,
 												 int location);
-static void check_lateral_ref_ok(ParseState *pstate, ParseNamespaceItem *nsitem,
+static void check_lateral_ref_ok(ParseState *pstate,
+								 const ParseNamespaceItem *nsitem,
 								 int location);
 static int	scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte,
-							 Alias *eref,
+							 const Alias *eref,
 							 const char *colname, int location,
 							 int fuzzy_rte_penalty,
 							 FuzzyAttrMatchState *fuzzystate);
@@ -314,7 +315,7 @@ scanNameSpaceForCTE(ParseState *pstate, const char *refname,
  * SQL semantics, but it's important for error reporting purposes.
  */
 static bool
-isFutureCTE(ParseState *pstate, const char *refname)
+isFutureCTE(const ParseState *pstate, const char *refname)
 {
 	for (; pstate != NULL; pstate = pstate->parentParseState)
 	{
@@ -484,7 +485,7 @@ checkNameSpaceConflicts(ParseState *pstate, List *namespace1,
  * Convenience subroutine to avoid multiple copies of a rather ugly ereport.
  */
 static void
-check_lateral_ref_ok(ParseState *pstate, ParseNamespaceItem *nsitem,
+check_lateral_ref_ok(ParseState *pstate, const ParseNamespaceItem *nsitem,
 					 int location)
 {
 	if (nsitem->p_lateral_only && !nsitem->p_lateral_ok)
@@ -809,7 +810,7 @@ scanNSItemForColumn(ParseState *pstate, ParseNamespaceItem *nsitem,
  */
 static int
 scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte,
-				 Alias *eref,
+				 const Alias *eref,
 				 const char *colname, int location,
 				 int fuzzy_rte_penalty,
 				 FuzzyAttrMatchState *fuzzystate)
@@ -1263,7 +1264,8 @@ buildRelationAliases(TupleDesc tupdesc, Alias *alias, Alias *eref)
  */
 static char *
 chooseScalarFunctionAlias(Node *funcexpr, char *funcname,
-						  Alias *alias, int nfuncs)
+						  const Alias *alias,
+						  int nfuncs)
 {
 	char	   *pname;
 
@@ -3857,7 +3859,7 @@ errorMissingColumn(ParseState *pstate,
  * We assume an RTE couldn't appear more than once in the namespace lists.
  */
 static ParseNamespaceItem *
-findNSItemForRTE(ParseState *pstate, RangeTblEntry *rte)
+findNSItemForRTE(const ParseState *pstate, const RangeTblEntry *rte)
 {
 	while (pstate != NULL)
 	{

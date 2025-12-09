@@ -121,19 +121,20 @@ static void check_publications_origin_tables(WalReceiverConn *wrconn,
 											 List *publications, bool copydata,
 											 bool retain_dead_tuples,
 											 char *origin,
-											 Oid *subrel_local_oids,
+											 const Oid *subrel_local_oids,
 											 int subrel_count, char *subname);
 static void check_publications_origin_sequences(WalReceiverConn *wrconn,
 												List *publications,
 												bool copydata, char *origin,
-												Oid *subrel_local_oids,
+												const Oid *subrel_local_oids,
 												int subrel_count,
 												char *subname);
 static void check_pub_dead_tuple_retention(WalReceiverConn *wrconn);
-static void check_duplicates_in_publist(List *publist, Datum *datums);
+static void check_duplicates_in_publist(const List *publist, Datum *datums);
 static List *merge_publications(List *oldpublist, List *newpublist, bool addpub, const char *subname);
-static void ReportSlotConnectionError(List *rstates, Oid subid, char *slotname, char *err);
-static void CheckAlterSubOption(Subscription *sub, const char *option,
+static void ReportSlotConnectionError(const List *rstates, Oid subid,
+									  char *slotname, char *err);
+static void CheckAlterSubOption(const Subscription *sub, const char *option,
 								bool slot_needs_update, bool isTopLevel);
 
 
@@ -144,7 +145,7 @@ static void CheckAlterSubOption(Subscription *sub, const char *option,
  * will report an error if mutually exclusive options are specified.
  */
 static void
-parse_subscription_options(ParseState *pstate, List *stmt_options,
+parse_subscription_options(ParseState *pstate, const List *stmt_options,
 						   bits32 supported_opts, SubOpts *opts)
 {
 	ListCell   *lc;
@@ -1240,7 +1241,7 @@ AlterSubscription_refresh_seq(Subscription *sub)
  * options.
  */
 static void
-CheckAlterSubOption(Subscription *sub, const char *option,
+CheckAlterSubOption(const Subscription *sub, const char *option,
 					bool slot_needs_update, bool isTopLevel)
 {
 	Assert(strcmp(option, "failover") == 0 ||
@@ -2494,7 +2495,8 @@ AlterSubscriptionOwner_oid(Oid subid, Oid newOwnerId)
 static void
 check_publications_origin_tables(WalReceiverConn *wrconn, List *publications,
 								 bool copydata, bool retain_dead_tuples,
-								 char *origin, Oid *subrel_local_oids,
+								 char *origin,
+								 const Oid *subrel_local_oids,
 								 int subrel_count, char *subname)
 {
 	WalRcvExecResult *res;
@@ -2637,7 +2639,8 @@ check_publications_origin_tables(WalReceiverConn *wrconn, List *publications,
 static void
 check_publications_origin_sequences(WalReceiverConn *wrconn, List *publications,
 									bool copydata, char *origin,
-									Oid *subrel_local_oids, int subrel_count,
+									const Oid *subrel_local_oids,
+									int subrel_count,
 									char *subname)
 {
 	WalRcvExecResult *res;
@@ -2994,7 +2997,8 @@ fetch_relation_list(WalReceiverConn *wrconn, List *publications)
  * them manually, if required.
  */
 static void
-ReportSlotConnectionError(List *rstates, Oid subid, char *slotname, char *err)
+ReportSlotConnectionError(const List *rstates, Oid subid, char *slotname,
+						  char *err)
 {
 	ListCell   *lc;
 
@@ -3038,7 +3042,7 @@ ReportSlotConnectionError(List *rstates, Oid subid, char *slotname, char *err)
  * NULL.
  */
 static void
-check_duplicates_in_publist(List *publist, Datum *datums)
+check_duplicates_in_publist(const List *publist, Datum *datums)
 {
 	ListCell   *cell;
 	int			j = 0;

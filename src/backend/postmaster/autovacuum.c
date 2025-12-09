@@ -349,7 +349,7 @@ static void recheck_relation_needs_vacanalyze(Oid relid, AutoVacOpts *avopts,
 											  bool *dovacuum, bool *doanalyze, bool *wraparound);
 static void relation_needs_vacanalyze(Oid relid, AutoVacOpts *relopts,
 									  Form_pg_class classForm,
-									  PgStat_StatTabEntry *tabentry,
+									  const PgStat_StatTabEntry *tabentry,
 									  int effective_multixact_freeze_max_age,
 									  bool *dovacuum, bool *doanalyze, bool *wraparound);
 
@@ -2998,7 +2998,7 @@ static void
 relation_needs_vacanalyze(Oid relid,
 						  AutoVacOpts *relopts,
 						  Form_pg_class classForm,
-						  PgStat_StatTabEntry *tabentry,
+						  const PgStat_StatTabEntry *tabentry,
 						  int effective_multixact_freeze_max_age,
  /* output params below */
 						  bool *dovacuum,

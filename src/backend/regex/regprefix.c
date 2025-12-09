@@ -19,7 +19,7 @@
 /*
  * forward declarations
  */
-static int	findprefix(struct cnfa *cnfa, struct colormap *cm,
+static int	findprefix(const struct cnfa *cnfa, struct colormap *cm,
 					   chr *string, size_t *slength);
 
 
@@ -113,7 +113,7 @@ pg_regprefix(regex_t *re,
  * *slength (which must be preset to zero) incremented for each chr.
  */
 static int						/* regprefix return code */
-findprefix(struct cnfa *cnfa,
+findprefix(const struct cnfa *cnfa,
 		   struct colormap *cm,
 		   chr *string,
 		   size_t *slength)

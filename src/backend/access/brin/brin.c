@@ -223,7 +223,8 @@ static void union_tuples(BrinDesc *bdesc, BrinMemTuple *a,
 static void brin_vacuum_scan(Relation idxrel, BufferAccessStrategy strategy);
 static bool add_values_to_range(Relation idxRel, BrinDesc *bdesc,
 								BrinMemTuple *dtup, const Datum *values, const bool *nulls);
-static bool check_null_keys(BrinValues *bval, ScanKey *nullkeys, int nnullkeys);
+static bool check_null_keys(const BrinValues *bval, const ScanKey *nullkeys,
+							int nnullkeys);
 static void brin_fill_empty_ranges(BrinBuildState *state,
 								   BlockNumber prevRange, BlockNumber nextRange);
 
@@ -2310,7 +2311,8 @@ add_values_to_range(Relation idxRel, BrinDesc *bdesc, BrinMemTuple *dtup,
 }
 
 static bool
-check_null_keys(BrinValues *bval, ScanKey *nullkeys, int nnullkeys)
+check_null_keys(const BrinValues *bval, const ScanKey *nullkeys,
+				int nnullkeys)
 {
 	int			keyno;
 

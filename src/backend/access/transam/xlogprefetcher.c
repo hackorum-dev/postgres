@@ -230,13 +230,13 @@ lrq_free(LsnReadQueue *lrq)
 }
 
 static inline uint32
-lrq_inflight(LsnReadQueue *lrq)
+lrq_inflight(const LsnReadQueue *lrq)
 {
 	return lrq->inflight;
 }
 
 static inline uint32
-lrq_completed(LsnReadQueue *lrq)
+lrq_completed(const LsnReadQueue *lrq)
 {
 	return lrq->completed;
 }

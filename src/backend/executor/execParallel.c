@@ -125,7 +125,7 @@ typedef struct ExecParallelInitializeDSMContext
 } ExecParallelInitializeDSMContext;
 
 /* Helper functions that run in the parallel leader. */
-static char *ExecSerializePlan(Plan *plan, EState *estate);
+static char *ExecSerializePlan(Plan *plan, const EState *estate);
 static bool ExecParallelEstimate(PlanState *planstate,
 								 ExecParallelEstimateContext *e);
 static bool ExecParallelInitializeDSM(PlanState *planstate,
@@ -144,7 +144,7 @@ static DestReceiver *ExecParallelGetReceiver(dsm_segment *seg, shm_toc *toc);
  * Create a serialized representation of the plan to be sent to each worker.
  */
 static char *
-ExecSerializePlan(Plan *plan, EState *estate)
+ExecSerializePlan(Plan *plan, const EState *estate)
 {
 	PlannedStmt *pstmt;
 	ListCell   *lc;
@@ -323,7 +323,7 @@ ExecParallelEstimate(PlanState *planstate, ExecParallelEstimateContext *e)
  * Estimate the amount of space required to serialize the indicated parameters.
  */
 static Size
-EstimateParamExecSpace(EState *estate, Bitmapset *params)
+EstimateParamExecSpace(const EState *estate, Bitmapset *params)
 {
 	int			paramid;
 	Size		sz = sizeof(int);
@@ -422,7 +422,7 @@ SerializeParamExecParams(EState *estate, Bitmapset *params, dsa_area *area)
  * Restore specified PARAM_EXEC parameters.
  */
 static void
-RestoreParamExecParams(char *start_address, EState *estate)
+RestoreParamExecParams(char *start_address, const EState *estate)
 {
 	int			nparams;
 	int			i;

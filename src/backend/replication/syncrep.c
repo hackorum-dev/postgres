@@ -108,12 +108,12 @@ static bool SyncRepGetSyncRecPtr(XLogRecPtr *writePtr,
 static void SyncRepGetOldestSyncRecPtr(XLogRecPtr *writePtr,
 									   XLogRecPtr *flushPtr,
 									   XLogRecPtr *applyPtr,
-									   SyncRepStandbyData *sync_standbys,
+									   const SyncRepStandbyData *sync_standbys,
 									   int num_standbys);
 static void SyncRepGetNthLatestSyncRecPtr(XLogRecPtr *writePtr,
 										  XLogRecPtr *flushPtr,
 										  XLogRecPtr *applyPtr,
-										  SyncRepStandbyData *sync_standbys,
+										  const SyncRepStandbyData *sync_standbys,
 										  int num_standbys,
 										  uint8 nth);
 static int	SyncRepGetStandbyPriority(void);
@@ -660,7 +660,7 @@ static void
 SyncRepGetOldestSyncRecPtr(XLogRecPtr *writePtr,
 						   XLogRecPtr *flushPtr,
 						   XLogRecPtr *applyPtr,
-						   SyncRepStandbyData *sync_standbys,
+						   const SyncRepStandbyData *sync_standbys,
 						   int num_standbys)
 {
 	int			i;
@@ -693,7 +693,7 @@ static void
 SyncRepGetNthLatestSyncRecPtr(XLogRecPtr *writePtr,
 							  XLogRecPtr *flushPtr,
 							  XLogRecPtr *applyPtr,
-							  SyncRepStandbyData *sync_standbys,
+							  const SyncRepStandbyData *sync_standbys,
 							  int num_standbys,
 							  uint8 nth)
 {

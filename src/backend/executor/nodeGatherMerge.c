@@ -50,7 +50,8 @@ typedef struct GMReaderTupleBuffer
 static TupleTableSlot *ExecGatherMerge(PlanState *pstate);
 static int32 heap_compare_slots(Datum a, Datum b, void *arg);
 static TupleTableSlot *gather_merge_getnext(GatherMergeState *gm_state);
-static MinimalTuple gm_readnext_tuple(GatherMergeState *gm_state, int nreader,
+static MinimalTuple gm_readnext_tuple(const GatherMergeState *gm_state,
+									  int nreader,
 									  bool nowait, bool *done);
 static void ExecShutdownGatherMergeWorkers(GatherMergeState *node);
 static void gather_merge_setup(GatherMergeState *gm_state);
@@ -710,7 +711,7 @@ gather_merge_readnext(GatherMergeState *gm_state, int reader, bool nowait)
  * Attempt to read a tuple from given worker.
  */
 static MinimalTuple
-gm_readnext_tuple(GatherMergeState *gm_state, int nreader, bool nowait,
+gm_readnext_tuple(const GatherMergeState *gm_state, int nreader, bool nowait,
 				  bool *done)
 {
 	TupleQueueReader *reader;

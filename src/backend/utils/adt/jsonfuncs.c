@@ -361,7 +361,7 @@ static Datum get_path_all(FunctionCallInfo fcinfo, bool as_text);
 static text *get_worker(text *json, char **tpath, int *ipath, int npath,
 						bool normalize_results);
 static Datum get_jsonb_path_all(FunctionCallInfo fcinfo, bool as_text);
-static text *JsonbValueAsText(JsonbValue *v);
+static text *JsonbValueAsText(const JsonbValue *v);
 
 /* semantic action functions for json_array_length */
 static JsonParseErrorType alen_object_start(void *state);
@@ -443,12 +443,14 @@ static void get_record_type_from_argument(FunctionCallInfo fcinfo,
 static void get_record_type_from_query(FunctionCallInfo fcinfo,
 									   const char *funcname,
 									   PopulateRecordCache *cache);
-static bool JsValueToJsObject(JsValue *jsv, JsObject *jso, Node *escontext);
+static bool JsValueToJsObject(const JsValue *jsv, JsObject *jso,
+							  Node *escontext);
 static Datum populate_composite(CompositeIOData *io, Oid typid,
 								const char *colname, MemoryContext mcxt,
 								HeapTupleHeader defaultval, JsValue *jsv, bool *isnull,
 								Node *escontext);
-static Datum populate_scalar(ScalarIOData *io, Oid typid, int32 typmod, JsValue *jsv,
+static Datum populate_scalar(ScalarIOData *io, Oid typid, int32 typmod,
+							 const JsValue *jsv,
 							 bool *isnull, Node *escontext, bool omit_quotes);
 static void prepare_column_cache(ColumnIOData *column, Oid typid, int32 typmod,
 								 MemoryContext mcxt, bool need_scalar);
@@ -457,17 +459,19 @@ static Datum populate_record_field(ColumnIOData *col, Oid typid, int32 typmod,
 								   JsValue *jsv, bool *isnull, Node *escontext,
 								   bool omit_scalar_quotes);
 static RecordIOData *allocate_record_info(MemoryContext mcxt, int ncolumns);
-static bool JsObjectGetField(JsObject *obj, char *field, JsValue *jsv);
+static bool JsObjectGetField(const JsObject *obj, char *field, JsValue *jsv);
 static void populate_recordset_record(PopulateRecordsetState *state, JsObject *obj);
 static bool populate_array_json(PopulateArrayContext *ctx, const char *json, int len);
-static bool populate_array_dim_jsonb(PopulateArrayContext *ctx, JsonbValue *jbv,
+static bool populate_array_dim_jsonb(PopulateArrayContext *ctx,
+									 const JsonbValue *jbv,
 									 int ndim);
 static void populate_array_report_expected_array(PopulateArrayContext *ctx, int ndim);
 static bool populate_array_assign_ndims(PopulateArrayContext *ctx, int ndims);
 static bool populate_array_check_dimension(PopulateArrayContext *ctx, int ndim);
 static bool populate_array_element(PopulateArrayContext *ctx, int ndim, JsValue *jsv);
 static Datum populate_array(ArrayIOData *aio, const char *colname,
-							MemoryContext mcxt, JsValue *jsv,
+							MemoryContext mcxt,
+							const JsValue *jsv,
 							bool *isnull,
 							Node *escontext);
 static Datum populate_domain(DomainIOData *io, Oid typid, const char *colname,
@@ -1799,7 +1803,7 @@ push_path(JsonbInState *st, int level, const Datum *path_elems,
  * Return the text representation of the given JsonbValue.
  */
 static text *
-JsonbValueAsText(JsonbValue *v)
+JsonbValueAsText(const JsonbValue *v)
 {
 	switch (v->type)
 	{
@@ -2820,7 +2824,8 @@ populate_array_json(PopulateArrayContext *ctx, const char *json, int len)
  */
 static bool
 populate_array_dim_jsonb(PopulateArrayContext *ctx, /* context */
-						 JsonbValue *jbv,	/* jsonb sub-array */
+						 const JsonbValue *jbv,
+ /* jsonb sub-array */
 						 int ndim)	/* current dimension */
 {
 	JsonbContainer *jbc = jbv->val.binary.data;
@@ -2912,7 +2917,7 @@ static Datum
 populate_array(ArrayIOData *aio,
 			   const char *colname,
 			   MemoryContext mcxt,
-			   JsValue *jsv,
+			   const JsValue *jsv,
 			   bool *isnull,
 			   Node *escontext)
 {
@@ -2976,7 +2981,7 @@ populate_array(ArrayIOData *aio,
  * ErrorSaveContext.
  */
 static bool
-JsValueToJsObject(JsValue *jsv, JsObject *jso, Node *escontext)
+JsValueToJsObject(const JsValue *jsv, JsObject *jso, Node *escontext)
 {
 	jso->is_json = jsv->is_json;
 
@@ -3119,7 +3124,7 @@ populate_composite(CompositeIOData *io,
  * provided escontext is valid.
  */
 static Datum
-populate_scalar(ScalarIOData *io, Oid typid, int32 typmod, JsValue *jsv,
+populate_scalar(ScalarIOData *io, Oid typid, int32 typmod, const JsValue *jsv,
 				bool *isnull, Node *escontext, bool omit_quotes)
 {
 	Datum		res;
@@ -3486,7 +3491,7 @@ allocate_record_info(MemoryContext mcxt, int ncolumns)
 }
 
 static bool
-JsObjectGetField(JsObject *obj, char *field, JsValue *jsv)
+JsObjectGetField(const JsObject *obj, char *field, JsValue *jsv)
 {
 	jsv->is_json = obj->is_json;
 

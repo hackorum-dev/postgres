@@ -23,7 +23,8 @@
 #include "utils/rel.h"
 
 
-static char *fetch_cursor_param_value(ExprContext *econtext, int paramId);
+static char *fetch_cursor_param_value(const ExprContext *econtext,
+									  int paramId);
 static ScanState *search_plan_tree(PlanState *node, Oid table_oid,
 								   bool *pending_rescan);
 
@@ -255,7 +256,7 @@ execCurrentOf(CurrentOfExpr *cexpr,
  * Fetch the string value of a param, verifying it is of type REFCURSOR.
  */
 static char *
-fetch_cursor_param_value(ExprContext *econtext, int paramId)
+fetch_cursor_param_value(const ExprContext *econtext, int paramId)
 {
 	ParamListInfo paramInfo = econtext->ecxt_param_list_info;
 

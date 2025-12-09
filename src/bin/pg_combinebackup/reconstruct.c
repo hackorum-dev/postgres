@@ -49,14 +49,14 @@ typedef struct rfile
 static void debug_reconstruction(int n_source,
 								 rfile **sources,
 								 bool dry_run);
-static unsigned find_reconstructed_block_length(rfile *s);
+static unsigned find_reconstructed_block_length(const rfile *s);
 static rfile *make_incremental_rfile(char *filename);
 static rfile *make_rfile(char *filename, bool missing_ok);
 static void write_reconstructed_file(char *input_filename,
 									 char *output_filename,
 									 unsigned block_length,
 									 rfile **sourcemap,
-									 off_t *offsetmap,
+									 const off_t *offsetmap,
 									 pg_checksum_context *checksum_ctx,
 									 CopyMethod copy_method,
 									 bool debug,
@@ -436,7 +436,7 @@ debug_reconstruction(int n_source, rfile **sources, bool dry_run)
  * necessary to include those blocks.
  */
 static unsigned
-find_reconstructed_block_length(rfile *s)
+find_reconstructed_block_length(const rfile *s)
 {
 	unsigned	block_length = s->truncation_block_length;
 	unsigned	i;
@@ -554,7 +554,7 @@ write_reconstructed_file(char *input_filename,
 						 char *output_filename,
 						 unsigned block_length,
 						 rfile **sourcemap,
-						 off_t *offsetmap,
+						 const off_t *offsetmap,
 						 pg_checksum_context *checksum_ctx,
 						 CopyMethod copy_method,
 						 bool debug,

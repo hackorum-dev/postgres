@@ -79,8 +79,10 @@ static void do_analyze_rel(Relation onerel,
 						   AcquireSampleRowsFunc acquirefunc, BlockNumber relpages,
 						   bool inh, bool in_outer_xact, int elevel);
 static void compute_index_stats(Relation onerel, double totalrows,
-								AnlIndexData *indexdata, int nindexes,
-								HeapTuple *rows, int numrows,
+								AnlIndexData *indexdata,
+								int nindexes,
+								const HeapTuple *rows,
+								int numrows,
 								MemoryContext col_context);
 static VacAttrStats *examine_attribute(Relation onerel, int attnum,
 									   Node *index_expr);
@@ -869,8 +871,9 @@ do_analyze_rel(Relation onerel, const VacuumParams params,
  */
 static void
 compute_index_stats(Relation onerel, double totalrows,
-					AnlIndexData *indexdata, int nindexes,
-					HeapTuple *rows, int numrows,
+					AnlIndexData *indexdata,
+					int nindexes,
+					const HeapTuple *rows, int numrows,
 					MemoryContext col_context)
 {
 	MemoryContext ind_context,
@@ -1881,7 +1884,7 @@ static void compute_scalar_stats(VacAttrStatsP stats,
 								 double totalrows);
 static int	compare_scalars(const void *a, const void *b, void *arg);
 static int	compare_mcvs(const void *a, const void *b, void *arg);
-static int	analyze_mcv_list(int *mcv_counts,
+static int	analyze_mcv_list(const int *mcv_counts,
 							 int num_mcv,
 							 double stadistinct,
 							 double stanullfrac,
@@ -2982,7 +2985,7 @@ compare_mcvs(const void *a, const void *b, void *arg)
  * and which are therefore deemed worth storing in the table's MCV list.
  */
 static int
-analyze_mcv_list(int *mcv_counts,
+analyze_mcv_list(const int *mcv_counts,
 				 int num_mcv,
 				 double stadistinct,
 				 double stanullfrac,

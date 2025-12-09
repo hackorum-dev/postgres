@@ -130,7 +130,8 @@ struct plpgsql_yy_extra_type
 
 /* Internal functions */
 static int	internal_yylex(TokenAuxData *auxdata, yyscan_t yyscanner);
-static void push_back_token(int token, TokenAuxData *auxdata, yyscan_t yyscanner);
+static void push_back_token(int token, const TokenAuxData *auxdata,
+							yyscan_t yyscanner);
 static void location_lineno_init(yyscan_t yyscanner);
 
 /*
@@ -382,7 +383,7 @@ internal_yylex(TokenAuxData *auxdata, yyscan_t yyscanner)
  * Push back a token to be re-read by next internal_yylex() call.
  */
 static void
-push_back_token(int token, TokenAuxData *auxdata, yyscan_t yyscanner)
+push_back_token(int token, const TokenAuxData *auxdata, yyscan_t yyscanner)
 {
 	if (yyextra->num_pushbacks >= MAX_PUSHBACKS)
 		elog(ERROR, "too many tokens pushed back");

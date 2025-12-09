@@ -1458,7 +1458,7 @@ pg_stat_us_to_ms(PgStat_Counter val_ms)
  */
 static void
 pg_stat_io_build_tuples(ReturnSetInfo *rsinfo,
-						PgStat_BktypeIO *bktype_stats,
+						const PgStat_BktypeIO *bktype_stats,
 						BackendType bktype,
 						TimestampTz stat_reset_timestamp)
 {

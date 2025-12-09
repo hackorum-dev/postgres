@@ -55,7 +55,7 @@ static inline void pgaio_io_update_state(PgAioHandle *ioh, PgAioHandleState new_
 static void pgaio_io_reclaim(PgAioHandle *ioh);
 static void pgaio_io_resowner_register(PgAioHandle *ioh, struct ResourceOwnerData *resowner);
 static void pgaio_io_wait_for_free(void);
-static PgAioHandle *pgaio_io_from_wref(PgAioWaitRef *iow, uint64 *ref_generation);
+static PgAioHandle *pgaio_io_from_wref(const PgAioWaitRef *iow, uint64 *ref_generation);
 static const char *pgaio_io_state_get_name(PgAioHandleState s);
 static void pgaio_io_wait(PgAioHandle *ioh, uint64 ref_generation);
 
@@ -888,7 +888,7 @@ pgaio_io_wait_for_free(void)
  * such code to be safe.
  */
 static PgAioHandle *
-pgaio_io_from_wref(PgAioWaitRef *iow, uint64 *ref_generation)
+pgaio_io_from_wref(const PgAioWaitRef *iow, uint64 *ref_generation)
 {
 	PgAioHandle *ioh;
 

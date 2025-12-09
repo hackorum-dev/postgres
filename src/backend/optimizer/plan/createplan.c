@@ -77,8 +77,8 @@ static Plan *create_plan_recurse(PlannerInfo *root, Path *best_path,
 								 int flags);
 static Plan *create_scan_plan(PlannerInfo *root, Path *best_path,
 							  int flags);
-static List *build_path_tlist(PlannerInfo *root, Path *path);
-static bool use_physical_tlist(PlannerInfo *root, Path *path, int flags);
+static List *build_path_tlist(PlannerInfo *root, const Path *path);
+static bool use_physical_tlist(const PlannerInfo *root, Path *path, int flags);
 static List *get_gating_quals(PlannerInfo *root, List *quals);
 static Plan *create_gating_plan(PlannerInfo *root, Path *path, Plan *plan,
 								List *gating_quals);
@@ -123,10 +123,13 @@ static SeqScan *create_seqscan_plan(PlannerInfo *root, Path *best_path,
 static SampleScan *create_samplescan_plan(PlannerInfo *root, Path *best_path,
 										  List *tlist, List *scan_clauses);
 static Scan *create_indexscan_plan(PlannerInfo *root, IndexPath *best_path,
-								   List *tlist, List *scan_clauses, bool indexonly);
+								   List *tlist,
+								   const List *scan_clauses,
+								   bool indexonly);
 static BitmapHeapScan *create_bitmap_scan_plan(PlannerInfo *root,
 											   BitmapHeapPath *best_path,
-											   List *tlist, List *scan_clauses);
+											   List *tlist,
+											   const List *scan_clauses);
 static Plan *create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 								   List **qual, List **indexqual, List **indexECs);
 static void bitmap_subplan_mark_shared(Plan *plan);
@@ -163,18 +166,20 @@ static MergeJoin *create_mergejoin_plan(PlannerInfo *root, MergePath *best_path)
 static HashJoin *create_hashjoin_plan(PlannerInfo *root, HashPath *best_path);
 static Node *replace_nestloop_params(PlannerInfo *root, Node *expr);
 static Node *replace_nestloop_params_mutator(Node *node, PlannerInfo *root);
-static void fix_indexqual_references(PlannerInfo *root, IndexPath *index_path,
+static void fix_indexqual_references(PlannerInfo *root,
+									 const IndexPath *index_path,
 									 List **stripped_indexquals_p,
 									 List **fixed_indexquals_p);
-static List *fix_indexorderby_references(PlannerInfo *root, IndexPath *index_path);
+static List *fix_indexorderby_references(PlannerInfo *root,
+										 const IndexPath *index_path);
 static Node *fix_indexqual_clause(PlannerInfo *root,
 								  IndexOptInfo *index, int indexcol,
 								  Node *clause, List *indexcolnos);
 static Node *fix_indexqual_operand(Node *node, IndexOptInfo *index, int indexcol);
-static List *get_switched_clauses(List *clauses, Relids outerrelids);
+static List *get_switched_clauses(const List *clauses, Relids outerrelids);
 static List *order_qual_clauses(PlannerInfo *root, List *clauses);
-static void copy_generic_path_info(Plan *dest, Path *src);
-static void copy_plan_costsize(Plan *dest, Plan *src);
+static void copy_generic_path_info(Plan *dest, const Path *src);
+static void copy_plan_costsize(Plan *dest, const Plan *src);
 static void label_sort_with_costsize(PlannerInfo *root, Sort *plan,
 									 double limit_tuples);
 static void label_incrementalsort_with_costsize(PlannerInfo *root, IncrementalSort *plan,
@@ -276,7 +281,7 @@ static Sort *make_sort_from_pathkeys(Plan *lefttree, List *pathkeys,
 static IncrementalSort *make_incrementalsort_from_pathkeys(Plan *lefttree,
 														   List *pathkeys, Relids relids, int nPresortedCols);
 static Sort *make_sort_from_groupcols(List *groupcls,
-									  AttrNumber *grpColIdx,
+									  const AttrNumber *grpColIdx,
 									  Plan *lefttree);
 static Material *make_material(Plan *lefttree);
 static Memoize *make_memoize(Plan *lefttree, Oid *hashoperators,
@@ -286,7 +291,7 @@ static Memoize *make_memoize(Plan *lefttree, Oid *hashoperators,
 							 Cardinality est_calls,
 							 Cardinality est_unique_keys,
 							 double est_hit_ratio);
-static WindowAgg *make_windowagg(List *tlist, WindowClause *wc,
+static WindowAgg *make_windowagg(List *tlist, const WindowClause *wc,
 								 int partNumCols, AttrNumber *partColIdx, Oid *partOperators, Oid *partCollations,
 								 int ordNumCols, AttrNumber *ordColIdx, Oid *ordOperators, Oid *ordCollations,
 								 List *runCondition, List *qual, bool topWindow,
@@ -314,7 +319,8 @@ static ModifyTable *make_modifytable(PlannerInfo *root, Plan *subplan,
 									 List *resultRelations,
 									 List *updateColnosLists,
 									 List *withCheckOptionLists, List *returningLists,
-									 List *rowMarks, OnConflictExpr *onconflict,
+									 List *rowMarks,
+									 const OnConflictExpr *onconflict,
 									 List *mergeActionLists, List *mergeJoinConditions,
 									 int epqParam);
 static GatherMerge *create_gather_merge_plan(PlannerInfo *root,
@@ -815,7 +821,7 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
  * deal with replacing nestloop params.
  */
 static List *
-build_path_tlist(PlannerInfo *root, Path *path)
+build_path_tlist(PlannerInfo *root, const Path *path)
 {
 	List	   *tlist = NIL;
 	Index	   *sortgrouprefs = path->pathtarget->sortgrouprefs;
@@ -855,7 +861,7 @@ build_path_tlist(PlannerInfo *root, Path *path)
  *		rather than only those Vars actually referenced.
  */
 static bool
-use_physical_tlist(PlannerInfo *root, Path *path, int flags)
+use_physical_tlist(const PlannerInfo *root, Path *path, int flags)
 {
 	RelOptInfo *rel = path->parent;
 	int			i;
@@ -2198,7 +2204,7 @@ create_agg_plan(PlannerInfo *root, AggPath *best_path)
  * look them up there.
  */
 static AttrNumber *
-remap_groupColIdx(PlannerInfo *root, List *groupClause)
+remap_groupColIdx(const PlannerInfo *root, List *groupClause)
 {
 	AttrNumber *grouping_map = root->grouping_map;
 	AttrNumber *new_grpColIdx;
@@ -2842,7 +2848,7 @@ static Scan *
 create_indexscan_plan(PlannerInfo *root,
 					  IndexPath *best_path,
 					  List *tlist,
-					  List *scan_clauses,
+					  const List *scan_clauses,
 					  bool indexonly)
 {
 	Scan	   *scan_plan;
@@ -3038,7 +3044,7 @@ static BitmapHeapScan *
 create_bitmap_scan_plan(PlannerInfo *root,
 						BitmapHeapPath *best_path,
 						List *tlist,
-						List *scan_clauses)
+						const List *scan_clauses)
 {
 	Index		baserelid = best_path->path.parent->relid;
 	Plan	   *bitmapqualplan;
@@ -4962,7 +4968,7 @@ replace_nestloop_params_mutator(Node *node, PlannerInfo *root)
  * things will go awry).
  */
 static void
-fix_indexqual_references(PlannerInfo *root, IndexPath *index_path,
+fix_indexqual_references(PlannerInfo *root, const IndexPath *index_path,
 						 List **stripped_indexquals_p, List **fixed_indexquals_p)
 {
 	IndexOptInfo *index = index_path->indexinfo;
@@ -5003,7 +5009,7 @@ fix_indexqual_references(PlannerInfo *root, IndexPath *index_path,
  * bare clauses and a separate indexcol list, instead of IndexClauses.
  */
 static List *
-fix_indexorderby_references(PlannerInfo *root, IndexPath *index_path)
+fix_indexorderby_references(PlannerInfo *root, const IndexPath *index_path)
 {
 	IndexOptInfo *index = index_path->indexinfo;
 	List	   *fixed_indexorderbys;
@@ -5178,7 +5184,7 @@ fix_indexqual_operand(Node *node, IndexOptInfo *index, int indexcol)
  *	  outer_is_left field in each RestrictInfo to show which side was which.
  */
 static List *
-get_switched_clauses(List *clauses, Relids outerrelids)
+get_switched_clauses(const List *clauses, Relids outerrelids)
 {
 	List	   *t_list = NIL;
 	ListCell   *l;
@@ -5349,7 +5355,7 @@ order_qual_clauses(PlannerInfo *root, List *clauses)
  * Also copy the parallel-related flags, which the executor *will* use.
  */
 static void
-copy_generic_path_info(Plan *dest, Path *src)
+copy_generic_path_info(Plan *dest, const Path *src)
 {
 	dest->disabled_nodes = src->disabled_nodes;
 	dest->startup_cost = src->startup_cost;
@@ -5365,7 +5371,7 @@ copy_generic_path_info(Plan *dest, Path *src)
  * (Most callers alter the info after copying it.)
  */
 static void
-copy_plan_costsize(Plan *dest, Plan *src)
+copy_plan_costsize(Plan *dest, const Plan *src)
 {
 	dest->disabled_nodes = src->disabled_nodes;
 	dest->startup_cost = src->startup_cost;
@@ -6436,7 +6442,7 @@ make_sort_from_sortclauses(List *sortcls, Plan *lefttree)
  */
 static Sort *
 make_sort_from_groupcols(List *groupcls,
-						 AttrNumber *grpColIdx,
+						 const AttrNumber *grpColIdx,
 						 Plan *lefttree)
 {
 	List	   *sub_tlist = lefttree->targetlist;
@@ -6601,7 +6607,7 @@ make_agg(List *tlist, List *qual,
 }
 
 static WindowAgg *
-make_windowagg(List *tlist, WindowClause *wc,
+make_windowagg(List *tlist, const WindowClause *wc,
 			   int partNumCols, AttrNumber *partColIdx, Oid *partOperators, Oid *partCollations,
 			   int ordNumCols, AttrNumber *ordColIdx, Oid *ordOperators, Oid *ordCollations,
 			   List *runCondition, List *qual, bool topWindow, Plan *lefttree)
@@ -6999,7 +7005,8 @@ make_modifytable(PlannerInfo *root, Plan *subplan,
 				 List *resultRelations,
 				 List *updateColnosLists,
 				 List *withCheckOptionLists, List *returningLists,
-				 List *rowMarks, OnConflictExpr *onconflict,
+				 List *rowMarks,
+				 const OnConflictExpr *onconflict,
 				 List *mergeActionLists, List *mergeJoinConditions,
 				 int epqParam)
 {

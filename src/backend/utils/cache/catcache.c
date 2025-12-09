@@ -1279,7 +1279,7 @@ InitCatCachePhase2(CatCache *cache, bool touch_index)
  *		catalogs' indexes.
  */
 static bool
-IndexScanOK(CatCache *cache)
+IndexScanOK(const CatCache *cache)
 {
 	switch (cache->id)
 	{

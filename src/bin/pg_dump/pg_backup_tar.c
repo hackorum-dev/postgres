@@ -104,7 +104,7 @@ static char *tarGets(char *buf, size_t len, TAR_MEMBER *th);
 #endif
 static int	tarPrintf(TAR_MEMBER *th, const char *fmt,...) pg_attribute_printf(2, 3);
 
-static void _tarAddFile(ArchiveHandle *AH, TAR_MEMBER *th);
+static void _tarAddFile(const ArchiveHandle *AH, TAR_MEMBER *th);
 static TAR_MEMBER *_tarPositionTo(ArchiveHandle *AH, const char *filename);
 static size_t tarRead(void *buf, size_t len, TAR_MEMBER *th);
 static size_t tarWrite(const void *buf, size_t len, TAR_MEMBER *th);
@@ -1011,7 +1011,7 @@ isValidTarHeader(char *header)
 
 /* Given the member, write the TAR header & copy the file */
 static void
-_tarAddFile(ArchiveHandle *AH, TAR_MEMBER *th)
+_tarAddFile(const ArchiveHandle *AH, TAR_MEMBER *th)
 {
 	lclContext *ctx = (lclContext *) AH->formatData;
 	FILE	   *tmp = th->tmpFH;	/* Grab it for convenience */

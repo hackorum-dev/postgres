@@ -47,10 +47,10 @@ typedef struct JoinHashEntry
 	RelOptInfo *join_rel;
 } JoinHashEntry;
 
-static void build_joinrel_tlist(PlannerInfo *root, RelOptInfo *joinrel,
-								RelOptInfo *input_rel,
+static void build_joinrel_tlist(PlannerInfo *root, const RelOptInfo *joinrel,
+								const RelOptInfo *input_rel,
 								SpecialJoinInfo *sjinfo,
-								List *pushed_down_joins,
+								const List *pushed_down_joins,
 								bool can_null);
 static List *build_joinrel_restrictlist(PlannerInfo *root,
 										RelOptInfo *joinrel,
@@ -62,11 +62,11 @@ static void build_joinrel_joinlist(RelOptInfo *joinrel,
 								   RelOptInfo *inner_rel);
 static List *subbuild_joinrel_restrictlist(PlannerInfo *root,
 										   RelOptInfo *joinrel,
-										   RelOptInfo *input_rel,
+										   const RelOptInfo *input_rel,
 										   Relids both_input_relids,
 										   List *new_restrictlist);
 static List *subbuild_joinrel_joinlist(RelOptInfo *joinrel,
-									   List *joininfo_list,
+									   const List *joininfo_list,
 									   List *new_joininfo);
 static void set_foreign_rel_properties(RelOptInfo *joinrel,
 									   RelOptInfo *outer_rel, RelOptInfo *inner_rel);
@@ -78,15 +78,17 @@ static void build_joinrel_partition_info(PlannerInfo *root,
 										 List *restrictlist);
 static bool have_partkey_equi_join(PlannerInfo *root, RelOptInfo *joinrel,
 								   RelOptInfo *rel1, RelOptInfo *rel2,
-								   JoinType jointype, List *restrictlist);
+								   JoinType jointype,
+								   const List *restrictlist);
 static int	match_expr_to_partition_keys(Expr *expr, RelOptInfo *rel,
 										 bool strict_op);
 static void set_joinrel_partition_key_exprs(RelOptInfo *joinrel,
-											RelOptInfo *outer_rel, RelOptInfo *inner_rel,
+											const RelOptInfo *outer_rel,
+											const RelOptInfo *inner_rel,
 											JoinType jointype);
 static void build_child_join_reltarget(PlannerInfo *root,
-									   RelOptInfo *parentrel,
-									   RelOptInfo *childrel,
+									   const RelOptInfo *parentrel,
+									   const RelOptInfo *childrel,
 									   int nappinfos,
 									   AppendRelInfo **appinfos);
 static bool eager_aggregation_possible_for_relation(PlannerInfo *root,
@@ -96,7 +98,7 @@ static bool init_grouping_targets(PlannerInfo *root, RelOptInfo *rel,
 								  List **group_clauses, List **group_exprs);
 static bool is_var_in_aggref_only(PlannerInfo *root, Var *var);
 static bool is_var_needed_by_join(PlannerInfo *root, Var *var, RelOptInfo *rel);
-static Index get_expression_sortgroupref(PlannerInfo *root, Expr *expr);
+static Index get_expression_sortgroupref(const PlannerInfo *root, Expr *expr);
 
 
 /*
@@ -1220,10 +1222,10 @@ min_join_parameterization(PlannerInfo *root,
  * A/B join.
  */
 static void
-build_joinrel_tlist(PlannerInfo *root, RelOptInfo *joinrel,
-					RelOptInfo *input_rel,
+build_joinrel_tlist(PlannerInfo *root, const RelOptInfo *joinrel,
+					const RelOptInfo *input_rel,
 					SpecialJoinInfo *sjinfo,
-					List *pushed_down_joins,
+					const List *pushed_down_joins,
 					bool can_null)
 {
 	Relids		relids = joinrel->relids;
@@ -1462,7 +1464,7 @@ build_joinrel_joinlist(RelOptInfo *joinrel,
 static List *
 subbuild_joinrel_restrictlist(PlannerInfo *root,
 							  RelOptInfo *joinrel,
-							  RelOptInfo *input_rel,
+							  const RelOptInfo *input_rel,
 							  Relids both_input_relids,
 							  List *new_restrictlist)
 {
@@ -1527,7 +1529,7 @@ subbuild_joinrel_restrictlist(PlannerInfo *root,
 
 static List *
 subbuild_joinrel_joinlist(RelOptInfo *joinrel,
-						  List *joininfo_list,
+						  const List *joininfo_list,
 						  List *new_joininfo)
 {
 	ListCell   *l;
@@ -2185,7 +2187,8 @@ build_joinrel_partition_info(PlannerInfo *root,
 static bool
 have_partkey_equi_join(PlannerInfo *root, RelOptInfo *joinrel,
 					   RelOptInfo *rel1, RelOptInfo *rel2,
-					   JoinType jointype, List *restrictlist)
+					   JoinType jointype,
+					   const List *restrictlist)
 {
 	PartitionScheme part_scheme = rel1->part_scheme;
 	bool		pk_known_equal[PARTITION_MAX_KEYS];
@@ -2480,7 +2483,8 @@ match_expr_to_partition_keys(Expr *expr, RelOptInfo *rel, bool strict_op)
  */
 static void
 set_joinrel_partition_key_exprs(RelOptInfo *joinrel,
-								RelOptInfo *outer_rel, RelOptInfo *inner_rel,
+								const RelOptInfo *outer_rel,
+								const RelOptInfo *inner_rel,
 								JoinType jointype)
 {
 	PartitionScheme part_scheme = joinrel->part_scheme;
@@ -2623,8 +2627,8 @@ set_joinrel_partition_key_exprs(RelOptInfo *joinrel,
  */
 static void
 build_child_join_reltarget(PlannerInfo *root,
-						   RelOptInfo *parentrel,
-						   RelOptInfo *childrel,
+						   const RelOptInfo *parentrel,
+						   const RelOptInfo *childrel,
 						   int nappinfos,
 						   AppendRelInfo **appinfos)
 {
@@ -3132,7 +3136,7 @@ is_var_needed_by_join(PlannerInfo *root, Var *var, RelOptInfo *rel)
  *	  match is found.
  */
 static Index
-get_expression_sortgroupref(PlannerInfo *root, Expr *expr)
+get_expression_sortgroupref(const PlannerInfo *root, Expr *expr)
 {
 	ListCell   *lc;
 

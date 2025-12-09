@@ -63,7 +63,7 @@ static void import_error_callback(void *arg);
  * conversion.
  */
 static Datum
-optionListToArray(List *options)
+optionListToArray(const List *options)
 {
 	ArrayBuildState *astate = NULL;
 	ListCell   *cell;
@@ -483,7 +483,7 @@ AlterForeignServerOwner_oid(Oid srvId, Oid newOwnerId)
  * Convert a handler function name passed from the parser to an Oid.
  */
 static Oid
-lookup_fdw_handler_func(DefElem *handler)
+lookup_fdw_handler_func(const DefElem *handler)
 {
 	Oid			handlerOid;
 
@@ -507,7 +507,7 @@ lookup_fdw_handler_func(DefElem *handler)
  * Convert a validator function name passed from the parser to an Oid.
  */
 static Oid
-lookup_fdw_validator_func(DefElem *validator)
+lookup_fdw_validator_func(const DefElem *validator)
 {
 	Oid			funcargtypes[2];
 
@@ -526,7 +526,7 @@ lookup_fdw_validator_func(DefElem *validator)
  * Process function options of CREATE/ALTER FDW
  */
 static void
-parse_func_options(ParseState *pstate, List *func_options,
+parse_func_options(ParseState *pstate, const List *func_options,
 				   bool *handler_given, Oid *fdwhandler,
 				   bool *validator_given, Oid *fdwvalidator)
 {

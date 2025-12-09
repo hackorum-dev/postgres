@@ -125,7 +125,8 @@ static Datum ArrayCast(char *value, bool byval, int len);
 static int	ArrayCastAndSet(Datum src,
 							int typlen, bool typbyval, char typalign,
 							char *dest);
-static char *array_seek(char *ptr, int offset, bits8 *nullbitmap, int nitems,
+static char *array_seek(char *ptr, int offset, const bits8 *nullbitmap,
+						int nitems,
 						int typlen, bool typbyval, char typalign);
 static int	array_nelems_size(char *ptr, int offset, bits8 *nullbitmap,
 							  int nitems, int typlen, bool typbyval, char typalign);
@@ -4864,7 +4865,7 @@ ArrayCastAndSet(Datum src,
  * It is caller's responsibility to ensure that nitems is within range
  */
 static char *
-array_seek(char *ptr, int offset, bits8 *nullbitmap, int nitems,
+array_seek(char *ptr, int offset, const bits8 *nullbitmap, int nitems,
 		   int typlen, bool typbyval, char typalign)
 {
 	int			bitmask;

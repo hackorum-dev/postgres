@@ -258,7 +258,8 @@ static MemoryContext MXactContext = NULL;
 /* internal MultiXactId management */
 static void MultiXactIdSetOldestVisible(void);
 static void RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
-							   int nmembers, MultiXactMember *members);
+							   int nmembers,
+							   const MultiXactMember *members);
 static MultiXactId GetNewMultiXactId(int nmembers, MultiXactOffset *offset);
 
 /* MultiXact cache management */
@@ -774,7 +775,8 @@ MultiXactIdCreateFromMembers(int nmembers, MultiXactMember *members)
  */
 static void
 RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
-				   int nmembers, MultiXactMember *members)
+				   int nmembers,
+				   const MultiXactMember *members)
 {
 	int64		pageno;
 	int64		prev_pageno;

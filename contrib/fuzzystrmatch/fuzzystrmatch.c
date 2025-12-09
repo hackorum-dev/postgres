@@ -106,7 +106,7 @@ soundex_code(char letter)
 #define  SH		'X'
 #define  TH		'0'
 
-static char Lookahead(char *word, int how_far);
+static char Lookahead(const char *word, int how_far);
 static void _metaphone(char *word, int max_phonemes, char **phoned_word);
 
 /* Metachar.h ... little bits about characters for metaphone */
@@ -318,7 +318,7 @@ metaphone(PG_FUNCTION_ARGS)
 /* Allows us to safely look ahead an arbitrary # of letters */
 /* I probably could have just used strlen... */
 static char
-Lookahead(char *word, int how_far)
+Lookahead(const char *word, int how_far)
 {
 	char		letter_ahead = '\0';	/* null by default */
 	int			idx;

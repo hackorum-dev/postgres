@@ -72,7 +72,7 @@ static TupleTableSlot *setop_retrieve_sorted(SetOpState *setopstate);
 static void setop_load_group(SetOpStatePerInput *input, PlanState *inputPlan,
 							 SetOpState *setopstate);
 static int	setop_compare_slots(TupleTableSlot *s1, TupleTableSlot *s2,
-								SetOpState *setopstate);
+								const SetOpState *setopstate);
 static void setop_fill_hash_table(SetOpState *setopstate);
 static TupleTableSlot *setop_retrieve_hash_table(SetOpState *setopstate);
 
@@ -384,7 +384,7 @@ setop_load_group(SetOpStatePerInput *input, PlanState *inputPlan,
  */
 static int
 setop_compare_slots(TupleTableSlot *s1, TupleTableSlot *s2,
-					SetOpState *setopstate)
+					const SetOpState *setopstate)
 {
 	/* We'll often need to fetch all the columns, so just do it */
 	slot_getallattrs(s1);

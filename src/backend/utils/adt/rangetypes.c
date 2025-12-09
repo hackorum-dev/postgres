@@ -78,7 +78,7 @@ static Node *find_simplified_clause(PlannerInfo *root,
 									Expr *rangeExpr, Expr *elemExpr);
 static Expr *build_bound_expr(Expr *elemExpr, Datum val,
 							  bool isLowerBound, bool isInclusive,
-							  TypeCacheEntry *typeCache,
+							  const TypeCacheEntry *typeCache,
 							  Oid opfamily, Oid rng_collation);
 
 
@@ -3139,7 +3139,7 @@ find_simplified_clause(PlannerInfo *root, Expr *rangeExpr, Expr *elemExpr)
 static Expr *
 build_bound_expr(Expr *elemExpr, Datum val,
 				 bool isLowerBound, bool isInclusive,
-				 TypeCacheEntry *typeCache,
+				 const TypeCacheEntry *typeCache,
 				 Oid opfamily, Oid rng_collation)
 {
 	Oid			elemType = typeCache->type_id;

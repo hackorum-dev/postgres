@@ -67,13 +67,14 @@ typedef struct inline_cte_walker_context
 
 
 static Node *build_subplan(PlannerInfo *root, Plan *plan, Path *path,
-						   PlannerInfo *subroot, List *plan_params,
+						   PlannerInfo *subroot,
+						   const List *plan_params,
 						   SubLinkType subLinkType, int subLinkId,
 						   Node *testexpr, List *testexpr_paramids,
 						   bool unknownEqFalse);
-static List *generate_subquery_params(PlannerInfo *root, List *tlist,
+static List *generate_subquery_params(PlannerInfo *root, const List *tlist,
 									  List **paramIds);
-static List *generate_subquery_vars(PlannerInfo *root, List *tlist,
+static List *generate_subquery_vars(PlannerInfo *root, const List *tlist,
 									Index varno);
 static Node *convert_testexpr(PlannerInfo *root,
 							  Node *testexpr,
@@ -89,7 +90,7 @@ static bool contain_dml(Node *node);
 static bool contain_dml_walker(Node *node, void *context);
 static bool contain_outer_selfref(Node *node);
 static bool contain_outer_selfref_walker(Node *node, Index *depth);
-static void inline_cte(PlannerInfo *root, CommonTableExpr *cte);
+static void inline_cte(const PlannerInfo *root, CommonTableExpr *cte);
 static bool inline_cte_walker(Node *node, inline_cte_walker_context *context);
 static bool simplify_EXISTS_query(PlannerInfo *root, Query *query);
 static Query *convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
@@ -324,7 +325,7 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
  */
 static Node *
 build_subplan(PlannerInfo *root, Plan *plan, Path *path,
-			  PlannerInfo *subroot, List *plan_params,
+			  PlannerInfo *subroot, const List *plan_params,
 			  SubLinkType subLinkType, int subLinkId,
 			  Node *testexpr, List *testexpr_paramids,
 			  bool unknownEqFalse)
@@ -582,7 +583,8 @@ build_subplan(PlannerInfo *root, Plan *plan, Path *path,
  * We also return an integer list of the paramids of the Params.
  */
 static List *
-generate_subquery_params(PlannerInfo *root, List *tlist, List **paramIds)
+generate_subquery_params(PlannerInfo *root, const List *tlist,
+						 List **paramIds)
 {
 	List	   *result;
 	List	   *ids;
@@ -615,7 +617,7 @@ generate_subquery_params(PlannerInfo *root, List *tlist, List **paramIds)
  * The Vars have the specified varno (RTE index).
  */
 static List *
-generate_subquery_vars(PlannerInfo *root, List *tlist, Index varno)
+generate_subquery_vars(PlannerInfo *root, const List *tlist, Index varno)
 {
 	List	   *result;
 	ListCell   *lc;
@@ -1136,7 +1138,7 @@ contain_outer_selfref_walker(Node *node, Index *depth)
  * inline_cte: convert RTE_CTE references to given CTE into RTE_SUBQUERYs
  */
 static void
-inline_cte(PlannerInfo *root, CommonTableExpr *cte)
+inline_cte(const PlannerInfo *root, CommonTableExpr *cte)
 {
 	struct inline_cte_walker_context context;
 

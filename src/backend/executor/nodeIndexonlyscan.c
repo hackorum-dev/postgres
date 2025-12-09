@@ -47,7 +47,8 @@
 
 
 static TupleTableSlot *IndexOnlyNext(IndexOnlyScanState *node);
-static void StoreIndexTuple(IndexOnlyScanState *node, TupleTableSlot *slot,
+static void StoreIndexTuple(const IndexOnlyScanState *node,
+							TupleTableSlot *slot,
 							IndexTuple itup, TupleDesc itupdesc);
 
 
@@ -266,7 +267,7 @@ IndexOnlyNext(IndexOnlyScanState *node)
  * right now we don't need it elsewhere.
  */
 static void
-StoreIndexTuple(IndexOnlyScanState *node, TupleTableSlot *slot,
+StoreIndexTuple(const IndexOnlyScanState *node, TupleTableSlot *slot,
 				IndexTuple itup, TupleDesc itupdesc)
 {
 	/*

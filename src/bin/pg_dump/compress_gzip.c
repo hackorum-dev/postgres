@@ -44,7 +44,8 @@ typedef struct GzipCompressorState
 /* Private routines that support gzip compressed data I/O */
 static void DeflateCompressorInit(CompressorState *cs);
 static void DeflateCompressorEnd(ArchiveHandle *AH, CompressorState *cs);
-static void DeflateCompressorCommon(ArchiveHandle *AH, CompressorState *cs,
+static void DeflateCompressorCommon(ArchiveHandle *AH,
+									const CompressorState *cs,
 									bool flush);
 static void EndCompressorGzip(ArchiveHandle *AH, CompressorState *cs);
 static void WriteDataToArchiveGzip(ArchiveHandle *AH, CompressorState *cs,
@@ -108,7 +109,8 @@ DeflateCompressorEnd(ArchiveHandle *AH, CompressorState *cs)
 }
 
 static void
-DeflateCompressorCommon(ArchiveHandle *AH, CompressorState *cs, bool flush)
+DeflateCompressorCommon(ArchiveHandle *AH, const CompressorState *cs,
+						bool flush)
 {
 	GzipCompressorState *gzipcs = (GzipCompressorState *) cs->private_data;
 	z_streamp	zp = gzipcs->zp;

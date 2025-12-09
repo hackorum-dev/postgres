@@ -36,7 +36,7 @@ typedef enum ReindexType
 
 static SimpleStringList *get_parallel_tables_list(PGconn *conn,
 												  ReindexType type,
-												  SimpleStringList *user_list,
+												  const SimpleStringList *user_list,
 												  bool echo);
 static void get_parallel_tabidx_list(PGconn *conn,
 									 SimpleStringList *index_list,
@@ -627,7 +627,8 @@ run_reindex_command(PGconn *conn, ReindexType type, const char *name,
  */
 static SimpleStringList *
 get_parallel_tables_list(PGconn *conn, ReindexType type,
-						 SimpleStringList *user_list, bool echo)
+						 const SimpleStringList *user_list,
+						 bool echo)
 {
 	PQExpBufferData catalog_query;
 	PGresult   *res;

@@ -87,7 +87,7 @@ read_pubenc_keyid(PullFilter *pkt, uint8 *keyid_buf)
 static const char hextbl[] = "0123456789ABCDEF";
 
 static int
-print_key(uint8 *keyid, char *dst)
+print_key(const uint8 *keyid, char *dst)
 {
 	int			i;
 	unsigned	c;

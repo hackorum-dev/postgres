@@ -197,7 +197,8 @@ static double eqjoinsel_inner(FmgrInfo *eqproc, Oid collation,
 static double eqjoinsel_semi(FmgrInfo *eqproc, Oid collation,
 							 Oid hashLeft, Oid hashRight,
 							 bool op_is_reversed,
-							 VariableStatData *vardata1, VariableStatData *vardata2,
+							 VariableStatData *vardata1,
+							 const VariableStatData *vardata2,
 							 double nd1, double nd2,
 							 bool isdefault1, bool isdefault2,
 							 AttStatsSlot *sslot1, AttStatsSlot *sslot2,
@@ -205,7 +206,7 @@ static double eqjoinsel_semi(FmgrInfo *eqproc, Oid collation,
 							 bool have_mcvs1, bool have_mcvs2,
 							 bool *hasmatch1, bool *hasmatch2,
 							 int *p_nmatches,
-							 RelOptInfo *inner_rel);
+							 const RelOptInfo *inner_rel);
 static void eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
 								   Oid hashLeft, Oid hashRight,
 								   bool op_is_reversed,
@@ -213,8 +214,8 @@ static void eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
 								   int nvalues1, int nvalues2,
 								   bool *hasmatch1, bool *hasmatch2,
 								   int *p_nmatches, double *p_matchprodfreq);
-static uint32 hash_mcv(MCVHashTable_hash *tab, Datum key);
-static bool mcvs_equal(MCVHashTable_hash *tab, Datum key0, Datum key1);
+static uint32 hash_mcv(const MCVHashTable_hash *tab, Datum key);
+static bool mcvs_equal(const MCVHashTable_hash *tab, Datum key0, Datum key1);
 static bool estimate_multivariate_ndistinct(PlannerInfo *root,
 											RelOptInfo *rel, List **varinfos, double *ndistinct);
 static bool convert_to_scalar(Datum value, Oid valuetypid, Oid collid,
@@ -244,16 +245,17 @@ static double convert_timevalue_to_scalar(Datum value, Oid typid,
 										  bool *failure);
 static void examine_simple_variable(PlannerInfo *root, Var *var,
 									VariableStatData *vardata);
-static void examine_indexcol_variable(PlannerInfo *root, IndexOptInfo *index,
+static void examine_indexcol_variable(PlannerInfo *root,
+									  const IndexOptInfo *index,
 									  int indexcol, VariableStatData *vardata);
 static bool get_variable_range(PlannerInfo *root, VariableStatData *vardata,
 							   Oid sortop, Oid collation,
 							   Datum *min, Datum *max);
-static void get_stats_slot_range(AttStatsSlot *sslot,
+static void get_stats_slot_range(const AttStatsSlot *sslot,
 								 Oid opfuncoid, FmgrInfo *opproc,
 								 Oid collation, int16 typLen, bool typByVal,
 								 Datum *min, Datum *max, bool *p_have_data);
-static bool get_actual_variable_range(PlannerInfo *root,
+static bool get_actual_variable_range(const PlannerInfo *root,
 									  VariableStatData *vardata,
 									  Oid sortop, Oid collation,
 									  Datum *min, Datum *max);
@@ -267,7 +269,7 @@ static bool get_actual_variable_endpoint(Relation heapRel,
 										 MemoryContext outercontext,
 										 Datum *endpointDatum);
 static RelOptInfo *find_join_input_rel(PlannerInfo *root, Relids relids);
-static double btcost_correlation(IndexOptInfo *index,
+static double btcost_correlation(const IndexOptInfo *index,
 								 VariableStatData *vardata);
 
 /* Define support routines for MCV hash tables */
@@ -2715,7 +2717,8 @@ static double
 eqjoinsel_semi(FmgrInfo *eqproc, Oid collation,
 			   Oid hashLeft, Oid hashRight,
 			   bool op_is_reversed,
-			   VariableStatData *vardata1, VariableStatData *vardata2,
+			   VariableStatData *vardata1,
+			   const VariableStatData *vardata2,
 			   double nd1, double nd2,
 			   bool isdefault1, bool isdefault2,
 			   AttStatsSlot *sslot1, AttStatsSlot *sslot2,
@@ -2723,7 +2726,7 @@ eqjoinsel_semi(FmgrInfo *eqproc, Oid collation,
 			   bool have_mcvs1, bool have_mcvs2,
 			   bool *hasmatch1, bool *hasmatch2,
 			   int *p_nmatches,
-			   RelOptInfo *inner_rel)
+			   const RelOptInfo *inner_rel)
 {
 	double		selec;
 
@@ -3085,7 +3088,7 @@ eqjoinsel_find_matches(FmgrInfo *eqproc, Oid collation,
  * Support functions for the hash tables used by eqjoinsel_find_matches
  */
 static uint32
-hash_mcv(MCVHashTable_hash *tab, Datum key)
+hash_mcv(const MCVHashTable_hash *tab, Datum key)
 {
 	MCVHashContext *context = (MCVHashContext *) tab->private_data;
 	FunctionCallInfo fcinfo = context->hash_fcinfo;
@@ -3099,7 +3102,7 @@ hash_mcv(MCVHashTable_hash *tab, Datum key)
 }
 
 static bool
-mcvs_equal(MCVHashTable_hash *tab, Datum key0, Datum key1)
+mcvs_equal(const MCVHashTable_hash *tab, Datum key0, Datum key1)
 {
 	MCVHashContext *context = (MCVHashContext *) tab->private_data;
 
@@ -6415,7 +6418,7 @@ all_rows_selectable(PlannerInfo *root, Index varno, Bitmapset *varattnos)
  * Caller is responsible for doing ReleaseVariableStats() before exiting.
  */
 static void
-examine_indexcol_variable(PlannerInfo *root, IndexOptInfo *index,
+examine_indexcol_variable(PlannerInfo *root, const IndexOptInfo *index,
 						  int indexcol, VariableStatData *vardata)
 {
 	AttrNumber	colnum;
@@ -6778,7 +6781,8 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata,
  * to what we find in the statistics array.
  */
 static void
-get_stats_slot_range(AttStatsSlot *sslot, Oid opfuncoid, FmgrInfo *opproc,
+get_stats_slot_range(const AttStatsSlot *sslot, Oid opfuncoid,
+					 FmgrInfo *opproc,
 					 Oid collation, int16 typLen, bool typByVal,
 					 Datum *min, Datum *max, bool *p_have_data)
 {
@@ -6841,7 +6845,7 @@ get_stats_slot_range(AttStatsSlot *sslot, Oid opfuncoid, FmgrInfo *opproc,
  * collation is the required collation.
  */
 static bool
-get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
+get_actual_variable_range(const PlannerInfo *root, VariableStatData *vardata,
 						  Oid sortop, Oid collation,
 						  Datum *min, Datum *max)
 {
@@ -7565,7 +7569,7 @@ add_predicate_to_index_quals(IndexOptInfo *index, List *indexQuals)
  * We already filled in the stats tuple for *vardata when called.
  */
 static double
-btcost_correlation(IndexOptInfo *index, VariableStatData *vardata)
+btcost_correlation(const IndexOptInfo *index, VariableStatData *vardata)
 {
 	Oid			sortop;
 	AttStatsSlot sslot;

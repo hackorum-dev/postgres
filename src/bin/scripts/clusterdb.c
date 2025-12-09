@@ -20,7 +20,8 @@
 
 static void cluster_one_database(const ConnParams *cparams, const char *table,
 								 const char *progname, bool verbose, bool echo);
-static void cluster_all_databases(ConnParams *cparams, SimpleStringList *tables,
+static void cluster_all_databases(ConnParams *cparams,
+								  const SimpleStringList *tables,
 								  const char *progname, bool verbose, bool echo,
 								  bool quiet);
 static void help(const char *progname);
@@ -224,7 +225,7 @@ cluster_one_database(const ConnParams *cparams, const char *table,
 
 
 static void
-cluster_all_databases(ConnParams *cparams, SimpleStringList *tables,
+cluster_all_databases(ConnParams *cparams, const SimpleStringList *tables,
 					  const char *progname, bool verbose, bool echo,
 					  bool quiet)
 {

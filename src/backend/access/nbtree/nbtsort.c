@@ -282,7 +282,7 @@ static void _bt_end_parallel(BTLeader *btleader);
 static Size _bt_parallel_estimate_shared(Relation heap, Snapshot snapshot);
 static double _bt_parallel_heapscan(BTBuildState *buildstate,
 									bool *brokenhotchain);
-static void _bt_leader_participate_as_worker(BTBuildState *buildstate);
+static void _bt_leader_participate_as_worker(const BTBuildState *buildstate);
 static void _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 									   BTShared *btshared, Sharedsort *sharedsort,
 									   Sharedsort *sharedsort2, int sortmem,
@@ -1685,7 +1685,7 @@ _bt_parallel_heapscan(BTBuildState *buildstate, bool *brokenhotchain)
  * Within leader, participate as a parallel worker.
  */
 static void
-_bt_leader_participate_as_worker(BTBuildState *buildstate)
+_bt_leader_participate_as_worker(const BTBuildState *buildstate)
 {
 	BTLeader   *btleader = buildstate->btleader;
 	BTSpool    *leaderworker;

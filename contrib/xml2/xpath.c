@@ -44,7 +44,7 @@ typedef struct
 
 static xmlChar *pgxmlNodeSetToText(xmlNodeSetPtr nodeset,
 								   xmlChar *toptagname, xmlChar *septagname,
-								   xmlChar *plainsep);
+								   const xmlChar *plainsep);
 
 static text *pgxml_result_to_text(xmlXPathObjectPtr res, xmlChar *toptag,
 								  xmlChar *septag, xmlChar *plainsep);
@@ -142,7 +142,7 @@ static xmlChar *
 pgxmlNodeSetToText(xmlNodeSetPtr nodeset,
 				   xmlChar *toptagname,
 				   xmlChar *septagname,
-				   xmlChar *plainsep)
+				   const xmlChar *plainsep)
 {
 	volatile xmlBufferPtr buf = NULL;
 	xmlChar    *volatile result = NULL;

@@ -28,7 +28,7 @@
 
 static bool check_attrmap_match(TupleDesc indesc,
 								TupleDesc outdesc,
-								AttrMap *attrMap);
+								const AttrMap *attrMap);
 
 /*
  * make_attrmap
@@ -287,7 +287,7 @@ build_attrmap_by_name_if_req(TupleDesc indesc,
 static bool
 check_attrmap_match(TupleDesc indesc,
 					TupleDesc outdesc,
-					AttrMap *attrMap)
+					const AttrMap *attrMap)
 {
 	int			i;
 

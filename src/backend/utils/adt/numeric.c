@@ -498,7 +498,7 @@ static void alloc_var(NumericVar *var, int ndigits);
 static void free_var(NumericVar *var);
 static void zero_var(NumericVar *var);
 
-static bool set_var_from_str(const char *str, const char *cp,
+static bool set_var_from_str(char *str, const char *cp,
 							 NumericVar *dest, const char **endptr,
 							 Node *escontext);
 static bool set_var_from_non_decimal_integer_str(const char *str,
@@ -4109,7 +4109,7 @@ numeric_scale(PG_FUNCTION_ARGS)
  * Calculate minimum scale for value.
  */
 static int
-get_min_scale(NumericVar *var)
+get_min_scale(const NumericVar *var)
 {
 	int			min_scale;
 	int			last_digit_pos;
@@ -6739,7 +6739,7 @@ zero_var(NumericVar *var)
  * ErrorSaveContext; otherwise errors are thrown).
  */
 static bool
-set_var_from_str(const char *str, const char *cp,
+set_var_from_str(char *str, const char *cp,
 				 NumericVar *dest, const char **endptr,
 				 Node *escontext)
 {

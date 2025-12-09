@@ -189,7 +189,7 @@ injection_init_shmem(void)
  * otherwise.
  */
 static bool
-injection_point_allowed(InjectionPointCondition *condition)
+injection_point_allowed(const InjectionPointCondition *condition)
 {
 	bool		result = true;
 

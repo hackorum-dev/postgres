@@ -62,17 +62,20 @@ static void remove_rel_from_restrictinfo(RestrictInfo *rinfo,
 static void remove_rel_from_eclass(EquivalenceClass *ec,
 								   SpecialJoinInfo *sjinfo,
 								   int relid, int subst);
-static List *remove_rel_from_joinlist(List *joinlist, int relid, int *nremoved);
-static bool rel_supports_distinctness(PlannerInfo *root, RelOptInfo *rel);
+static List *remove_rel_from_joinlist(const List *joinlist, int relid,
+									  int *nremoved);
+static bool rel_supports_distinctness(const PlannerInfo *root,
+									  const RelOptInfo *rel);
 static bool rel_is_distinct_for(PlannerInfo *root, RelOptInfo *rel,
 								List *clause_list, List **extra_clauses);
-static Oid	distinct_col_search(int colno, List *colnos, List *opids);
+static Oid	distinct_col_search(int colno, const List *colnos,
+								const List *opids);
 static bool is_innerrel_unique_for(PlannerInfo *root,
 								   Relids joinrelids,
 								   Relids outerrelids,
 								   RelOptInfo *innerrel,
 								   JoinType jointype,
-								   List *restrictlist,
+								   const List *restrictlist,
 								   List **extra_clauses);
 static int	self_join_candidates_cmp(const void *a, const void *b);
 static bool replace_relid_callback(Node *node,
@@ -323,7 +326,7 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
  * self-join removal.
  */
 static void
-remove_rel_from_query(PlannerInfo *root, RelOptInfo *rel,
+remove_rel_from_query(PlannerInfo *root, const RelOptInfo *rel,
 					  int subst, SpecialJoinInfo *sjinfo,
 					  Relids joinrelids)
 {
@@ -788,7 +791,7 @@ remove_rel_from_eclass(EquivalenceClass *ec, SpecialJoinInfo *sjinfo,
  * should be exactly one, but the caller checks that).
  */
 static List *
-remove_rel_from_joinlist(List *joinlist, int relid, int *nremoved)
+remove_rel_from_joinlist(const List *joinlist, int relid, int *nremoved)
 {
 	List	   *result = NIL;
 	ListCell   *jl;
@@ -918,7 +921,7 @@ reduce_unique_semijoins(PlannerInfo *root)
  * succeed.
  */
 static bool
-rel_supports_distinctness(PlannerInfo *root, RelOptInfo *rel)
+rel_supports_distinctness(const PlannerInfo *root, const RelOptInfo *rel)
 {
 	/* We only know about baserels ... */
 	if (rel->reloptkind != RELOPT_BASEREL)
@@ -1267,7 +1270,7 @@ query_is_distinct_for(Query *query, List *colnos, List *opids)
  * but if it does, we arbitrarily select the first match.)
  */
 static Oid
-distinct_col_search(int colno, List *colnos, List *opids)
+distinct_col_search(int colno, const List *colnos, const List *opids)
 {
 	ListCell   *lc1,
 			   *lc2;
@@ -1461,7 +1464,7 @@ is_innerrel_unique_for(PlannerInfo *root,
 					   Relids outerrelids,
 					   RelOptInfo *innerrel,
 					   JoinType jointype,
-					   List *restrictlist,
+					   const List *restrictlist,
 					   List **extra_clauses)
 {
 	List	   *clause_list = NIL;
@@ -1657,7 +1660,7 @@ restrict_infos_logically_equal(RestrictInfo *a, RestrictInfo *b)
  */
 static void
 add_non_redundant_clauses(PlannerInfo *root,
-						  List *rinfo_candidates,
+						  const List *rinfo_candidates,
 						  List **keep_rinfo_list,
 						  Index removed_relid)
 {
@@ -1824,7 +1827,8 @@ replace_relid_callback(Node *node, ChangeVarNodes_context *context)
  * self-join elimination procedure.
  */
 static void
-remove_self_join_rel(PlannerInfo *root, PlanRowMark *kmark, PlanRowMark *rmark,
+remove_self_join_rel(PlannerInfo *root, const PlanRowMark *kmark,
+					 PlanRowMark *rmark,
 					 RelOptInfo *toKeep, RelOptInfo *toRemove,
 					 List *restrictlist)
 {
@@ -2007,7 +2011,8 @@ remove_self_join_rel(PlannerInfo *root, PlanRowMark *kmark, PlanRowMark *rmark,
  * itself.
  */
 static void
-split_selfjoin_quals(PlannerInfo *root, List *joinquals, List **selfjoinquals,
+split_selfjoin_quals(PlannerInfo *root, const List *joinquals,
+					 List **selfjoinquals,
 					 List **otherjoinquals, int from, int to)
 {
 	List	   *sjoinquals = NIL;
@@ -2072,7 +2077,8 @@ split_selfjoin_quals(PlannerInfo *root, List *joinquals, List **selfjoinquals,
  * are different).
  */
 static bool
-match_unique_clauses(PlannerInfo *root, RelOptInfo *outer, List *uclauses,
+match_unique_clauses(PlannerInfo *root, RelOptInfo *outer,
+					 const List *uclauses,
 					 Index relid)
 {
 	foreach_node(RestrictInfo, rinfo, uclauses)
@@ -2305,7 +2311,8 @@ remove_self_joins_one_group(PlannerInfo *root, Relids relids)
  * joins.
  */
 static Relids
-remove_self_joins_recurse(PlannerInfo *root, List *joinlist, Relids toRemove)
+remove_self_joins_recurse(PlannerInfo *root, const List *joinlist,
+						  Relids toRemove)
 {
 	ListCell   *jl;
 	Relids		relids = NULL;

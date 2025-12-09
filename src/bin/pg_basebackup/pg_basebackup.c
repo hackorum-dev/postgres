@@ -211,7 +211,7 @@ static char GetCopyDataByte(size_t r, char *copybuf, size_t *cursor);
 static char *GetCopyDataString(size_t r, char *copybuf, size_t *cursor);
 static uint64 GetCopyDataUInt64(size_t r, char *copybuf, size_t *cursor);
 static void GetCopyDataEnd(size_t r, char *copybuf, size_t cursor);
-static void ReportCopyDataParseError(size_t r, char *copybuf);
+static void ReportCopyDataParseError(size_t r, const char *copybuf);
 static void ReceiveTarFile(PGconn *conn, char *archive_name, char *spclocation,
 						   bool tablespacenum, pg_compress_specification *compress);
 static void ReceiveTarCopyChunk(size_t r, char *copybuf, void *callback_data);
@@ -1583,7 +1583,7 @@ GetCopyDataEnd(size_t r, char *copybuf, size_t cursor)
  * can't-happen case.
  */
 static void
-ReportCopyDataParseError(size_t r, char *copybuf)
+ReportCopyDataParseError(size_t r, const char *copybuf)
 {
 	if (r == 0)
 		pg_fatal("empty COPY message");

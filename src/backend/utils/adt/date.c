@@ -2536,7 +2536,7 @@ timetz_scale(PG_FUNCTION_ARGS)
 
 
 static int
-timetz_cmp_internal(TimeTzADT *time1, TimeTzADT *time2)
+timetz_cmp_internal(const TimeTzADT *time1, const TimeTzADT *time2)
 {
 	TimeOffset	t1,
 				t2;

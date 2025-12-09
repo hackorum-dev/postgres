@@ -29,10 +29,11 @@
 #include "utils/rel.h"
 
 static void setNamespaceForMergeWhen(ParseState *pstate,
-									 MergeWhenClause *mergeWhenClause,
+									 const MergeWhenClause *mergeWhenClause,
 									 Index targetRTI,
 									 Index sourceRTI);
-static void setNamespaceVisibilityForRTE(List *namespace, RangeTblEntry *rte,
+static void setNamespaceVisibilityForRTE(const List *namespace,
+										 const RangeTblEntry *rte,
 										 bool rel_visible,
 										 bool cols_visible);
 
@@ -49,7 +50,8 @@ static void setNamespaceVisibilityForRTE(List *namespace, RangeTblEntry *rte,
  * that columns can be referenced unqualified from these relations.
  */
 static void
-setNamespaceForMergeWhen(ParseState *pstate, MergeWhenClause *mergeWhenClause,
+setNamespaceForMergeWhen(ParseState *pstate,
+						 const MergeWhenClause *mergeWhenClause,
 						 Index targetRTI, Index sourceRTI)
 {
 	RangeTblEntry *targetRelRTE,
@@ -412,7 +414,7 @@ transformMergeStmt(ParseState *pstate, MergeStmt *stmt)
 }
 
 static void
-setNamespaceVisibilityForRTE(List *namespace, RangeTblEntry *rte,
+setNamespaceVisibilityForRTE(const List *namespace, const RangeTblEntry *rte,
 							 bool rel_visible,
 							 bool cols_visible)
 {

@@ -446,7 +446,7 @@ generate_trgm(char *str, int slen)
  * Returns concatenated trigram array.
  */
 static pos_trgm *
-make_positional_trgm(trgm *trg1, int len1, trgm *trg2, int len2)
+make_positional_trgm(const trgm *trg1, int len1, const trgm *trg2, int len2)
 {
 	pos_trgm   *result;
 	int			i,
@@ -502,13 +502,13 @@ comp_ptrgm(const void *v1, const void *v2)
  * Returns word similarity.
  */
 static float4
-iterate_word_similarity(int *trg2indexes,
-						bool *found,
+iterate_word_similarity(const int *trg2indexes,
+						const bool *found,
 						int ulen1,
 						int len2,
 						int len,
 						uint8 flags,
-						TrgmBound *bounds)
+						const TrgmBound *bounds)
 {
 	int		   *lastpos,
 				i,

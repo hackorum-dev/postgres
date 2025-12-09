@@ -172,8 +172,8 @@ static int	interactive_getc(void);
 static int	SocketBackend(StringInfo inBuf);
 static int	ReadCommand(StringInfo inBuf);
 static void forbidden_in_wal_sender(char firstchar);
-static bool check_log_statement(List *stmt_list);
-static int	errdetail_execute(List *raw_parsetree_list);
+static bool check_log_statement(const List *stmt_list);
+static int	errdetail_execute(const List *raw_parsetree_list);
 static int	errdetail_params(ParamListInfo params);
 static int	errdetail_abort(void);
 static void bind_param_error_callback(void *arg);
@@ -2387,7 +2387,7 @@ exec_execute_message(const char *portal_name, long max_rows)
  * statements
  */
 static bool
-check_log_statement(List *stmt_list)
+check_log_statement(const List *stmt_list)
 {
 	ListCell   *stmt_item;
 
@@ -2489,7 +2489,7 @@ check_log_duration(char *msec_str, bool was_logged)
  * The argument is the raw parsetree list.
  */
 static int
-errdetail_execute(List *raw_parsetree_list)
+errdetail_execute(const List *raw_parsetree_list)
 {
 	ListCell   *parsetree_item;
 

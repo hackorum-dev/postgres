@@ -698,7 +698,7 @@ static char *str_time(pg_time_t tnow, char *buf, size_t bufsize);
 static int	get_sync_bit(int method);
 
 static void CopyXLogRecordToWAL(int write_len, bool isLogSwitch,
-								XLogRecData *rdata,
+								const XLogRecData *rdata,
 								XLogRecPtr StartPos, XLogRecPtr EndPos,
 								TimeLineID tli);
 static void ReserveXLogInsertLocation(int size, XLogRecPtr *StartPos,
@@ -1228,7 +1228,7 @@ ReserveXLogSwitch(XLogRecPtr *StartPos, XLogRecPtr *EndPos, XLogRecPtr *PrevPtr)
  * area in the WAL.
  */
 static void
-CopyXLogRecordToWAL(int write_len, bool isLogSwitch, XLogRecData *rdata,
+CopyXLogRecordToWAL(int write_len, bool isLogSwitch, const XLogRecData *rdata,
 					XLogRecPtr StartPos, XLogRecPtr EndPos, TimeLineID tli)
 {
 	char	   *currpos;
@@ -7614,7 +7614,8 @@ CheckPointGuts(XLogRecPtr checkPointRedo, int flags)
  * startup process.)
  */
 static void
-RecoveryRestartPoint(const CheckPoint *checkPoint, XLogReaderState *record)
+RecoveryRestartPoint(const CheckPoint *checkPoint,
+					 const XLogReaderState *record)
 {
 	/*
 	 * Also refrain from creating a restartpoint if we have seen any

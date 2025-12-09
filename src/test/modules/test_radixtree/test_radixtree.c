@@ -108,7 +108,7 @@ static rt_node_class_test_elem rt_node_class_tests[] =
  * Return the number of keys in the radix tree.
  */
 static uint64
-rt_num_entries(rt_radix_tree *tree)
+rt_num_entries(const rt_radix_tree *tree)
 {
 	return tree->ctl->num_keys;
 }

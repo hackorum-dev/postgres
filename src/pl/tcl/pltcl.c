@@ -335,7 +335,7 @@ static void pltcl_set_tuple_values(Tcl_Interp *interp, const char *arrayname,
 static Tcl_Obj *pltcl_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, bool include_generated);
 static HeapTuple pltcl_build_tuple_result(Tcl_Interp *interp,
 										  Tcl_Obj **kvObjv, int kvObjc,
-										  pltcl_call_state *call_state);
+										  const pltcl_call_state *call_state);
 static void pltcl_init_tuple_store(pltcl_call_state *call_state);
 
 
@@ -3265,7 +3265,7 @@ pltcl_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, bool include_gene
  **********************************************************************/
 static HeapTuple
 pltcl_build_tuple_result(Tcl_Interp *interp, Tcl_Obj **kvObjv, int kvObjc,
-						 pltcl_call_state *call_state)
+						 const pltcl_call_state *call_state)
 {
 	HeapTuple	tuple;
 	TupleDesc	tupdesc;

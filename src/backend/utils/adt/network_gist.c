@@ -405,7 +405,8 @@ calc_inet_union_params(GISTENTRY *ent,
  */
 static void
 calc_inet_union_params_indexed(GISTENTRY *ent,
-							   OffsetNumber *offsets, int noffsets,
+							   const OffsetNumber *offsets,
+							   int noffsets,
 							   int *minfamily_p,
 							   int *maxfamily_p,
 							   int *minbits_p,

@@ -142,7 +142,7 @@ writeListPage(Relation index, Buffer buffer,
 }
 
 static void
-makeSublist(Relation index, IndexTuple *tuples, int32 ntuples,
+makeSublist(Relation index, const IndexTuple *tuples, int32 ntuples,
 			GinMetaPageData *res)
 {
 	Buffer		curBuffer = InvalidBuffer;

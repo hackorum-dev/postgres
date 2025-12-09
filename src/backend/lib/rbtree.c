@@ -124,7 +124,7 @@ rbt_create(Size node_size,
 
 /* Copy the additional data fields from one RBTNode to another */
 static inline void
-rbt_copy_data(RBTree *rbt, RBTNode *dest, const RBTNode *src)
+rbt_copy_data(const RBTree *rbt, RBTNode *dest, const RBTNode *src)
 {
 	memcpy(dest + 1, src + 1, rbt->node_size - sizeof(RBTNode));
 }

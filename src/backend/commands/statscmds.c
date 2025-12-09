@@ -42,7 +42,7 @@
 
 static char *ChooseExtendedStatisticName(const char *name1, const char *name2,
 										 const char *label, Oid namespaceid);
-static char *ChooseExtendedStatisticNameAddition(List *exprs);
+static char *ChooseExtendedStatisticNameAddition(const List *exprs);
 
 
 /* qsort comparator for the attnums in CreateStatistics */
@@ -888,7 +888,7 @@ ChooseExtendedStatisticName(const char *name1, const char *name2,
  * ChooseIndexNameAddition.
  */
 static char *
-ChooseExtendedStatisticNameAddition(List *exprs)
+ChooseExtendedStatisticNameAddition(const List *exprs)
 {
 	char		buf[NAMEDATALEN * 2];
 	int			buflen = 0;

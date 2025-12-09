@@ -26,9 +26,9 @@ static void get_db_infos(ClusterInfo *cluster);
 static char *get_rel_infos_query(void);
 static void process_rel_infos(DbInfo *dbinfo, PGresult *res, void *arg);
 static void free_rel_infos(RelInfoArr *rel_arr);
-static void print_db_infos(DbInfoArr *db_arr);
-static void print_rel_infos(RelInfoArr *rel_arr);
-static void print_slot_infos(LogicalSlotInfoArr *slot_arr);
+static void print_db_infos(const DbInfoArr *db_arr);
+static void print_rel_infos(const RelInfoArr *rel_arr);
+static void print_slot_infos(const LogicalSlotInfoArr *slot_arr);
 static char *get_old_cluster_logical_slot_infos_query(void);
 static void process_old_cluster_logical_slot_infos(DbInfo *dbinfo, PGresult *res, void *arg);
 
@@ -854,7 +854,7 @@ free_rel_infos(RelInfoArr *rel_arr)
 
 
 static void
-print_db_infos(DbInfoArr *db_arr)
+print_db_infos(const DbInfoArr *db_arr)
 {
 	int			dbnum;
 
@@ -870,7 +870,7 @@ print_db_infos(DbInfoArr *db_arr)
 
 
 static void
-print_rel_infos(RelInfoArr *rel_arr)
+print_rel_infos(const RelInfoArr *rel_arr)
 {
 	int			relnum;
 
@@ -883,7 +883,7 @@ print_rel_infos(RelInfoArr *rel_arr)
 }
 
 static void
-print_slot_infos(LogicalSlotInfoArr *slot_arr)
+print_slot_infos(const LogicalSlotInfoArr *slot_arr)
 {
 	/* Quick return if there are no logical slots. */
 	if (slot_arr->nslots == 0)

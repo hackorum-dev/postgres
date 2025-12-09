@@ -127,7 +127,8 @@ static void CopyToTextLikeStart(CopyToState cstate, TupleDesc tupDesc);
 static void CopyToTextLikeOutFunc(CopyToState cstate, Oid atttypid, FmgrInfo *finfo);
 static void CopyToTextOneRow(CopyToState cstate, TupleTableSlot *slot);
 static void CopyToCSVOneRow(CopyToState cstate, TupleTableSlot *slot);
-static void CopyToTextLikeOneRow(CopyToState cstate, TupleTableSlot *slot,
+static void CopyToTextLikeOneRow(CopyToState cstate,
+								 const TupleTableSlot *slot,
 								 bool is_csv);
 static void CopyToTextLikeEnd(CopyToState cstate);
 static void CopyToBinaryStart(CopyToState cstate, TupleDesc tupDesc);
@@ -267,7 +268,7 @@ CopyToCSVOneRow(CopyToState cstate, TupleTableSlot *slot)
  */
 static pg_attribute_always_inline void
 CopyToTextLikeOneRow(CopyToState cstate,
-					 TupleTableSlot *slot,
+					 const TupleTableSlot *slot,
 					 bool is_csv)
 {
 	bool		need_delim = false;

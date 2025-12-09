@@ -64,7 +64,8 @@
 
 static bool tlist_matches_tupdesc(PlanState *ps, List *tlist, int varno, TupleDesc tupdesc);
 static void ShutdownExprContext(ExprContext *econtext, bool isCommit);
-static RTEPermissionInfo *GetResultRTEPermissionInfo(ResultRelInfo *relinfo, EState *estate);
+static RTEPermissionInfo *GetResultRTEPermissionInfo(const ResultRelInfo *relinfo,
+													 EState *estate);
 
 
 /* ----------------------------------------------------------------
@@ -1435,7 +1436,7 @@ ExecGetAllUpdatedCols(ResultRelInfo *relinfo, EState *estate)
  *		Looks up RTEPermissionInfo for ExecGet*Cols() routines
  */
 static RTEPermissionInfo *
-GetResultRTEPermissionInfo(ResultRelInfo *relinfo, EState *estate)
+GetResultRTEPermissionInfo(const ResultRelInfo *relinfo, EState *estate)
 {
 	Index		rti;
 	RangeTblEntry *rte;

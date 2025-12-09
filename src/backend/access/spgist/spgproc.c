@@ -28,7 +28,7 @@
 
 /* Point-box distance in the assumption that box is aligned by axis */
 static double
-point_box_distance(Point *point, BOX *box)
+point_box_distance(Point *point, const BOX *box)
 {
 	double		dx,
 				dy;

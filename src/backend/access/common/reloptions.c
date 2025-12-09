@@ -578,7 +578,7 @@ static relopt_gen **custom_options = NULL;
 static bool need_initialization = true;
 
 static void initialize_reloptions(void);
-static void parse_one_reloption(relopt_value *option, char *text_str,
+static void parse_one_reloption(relopt_value *option, const char *text_str,
 								int text_len, bool validate);
 
 /*
@@ -1595,7 +1595,7 @@ parseLocalRelOptions(local_relopts *relopts, Datum options, bool validate)
  * value
  */
 static void
-parse_one_reloption(relopt_value *option, char *text_str, int text_len,
+parse_one_reloption(relopt_value *option, const char *text_str, int text_len,
 					bool validate)
 {
 	char	   *value;

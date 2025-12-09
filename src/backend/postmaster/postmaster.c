@@ -154,7 +154,7 @@ btmask(BackendType t)
 }
 
 static inline BackendTypeMask
-btmask_add_n(BackendTypeMask mask, int nargs, BackendType *t)
+btmask_add_n(BackendTypeMask mask, int nargs, const BackendType *t)
 {
 	for (int i = 0; i < nargs; i++)
 		mask.mask |= 1 << t[i];
@@ -175,7 +175,7 @@ btmask_del(BackendTypeMask mask, BackendType t)
 }
 
 static inline BackendTypeMask
-btmask_all_except_n(int nargs, BackendType *t)
+btmask_all_except_n(int nargs, const BackendType *t)
 {
 	BackendTypeMask mask = BTYPE_MASK_ALL;
 

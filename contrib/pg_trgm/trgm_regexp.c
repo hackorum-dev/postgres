@@ -491,9 +491,10 @@ static void addKeyToQueue(TrgmNFA *trgmNFA, TrgmStateKey *key);
 static void addArcs(TrgmNFA *trgmNFA, TrgmState *state);
 static void addArc(TrgmNFA *trgmNFA, TrgmState *state, TrgmStateKey *key,
 				   TrgmColor co, TrgmStateKey *destKey);
-static bool validArcLabel(TrgmStateKey *key, TrgmColor co);
+static bool validArcLabel(const TrgmStateKey *key, TrgmColor co);
 static TrgmState *getState(TrgmNFA *trgmNFA, TrgmStateKey *key);
-static bool prefixContains(TrgmPrefix *prefix1, TrgmPrefix *prefix2);
+static bool prefixContains(const TrgmPrefix *prefix1,
+						   const TrgmPrefix *prefix2);
 static bool selectColorTrigrams(TrgmNFA *trgmNFA);
 static TRGM *expandColorTrigrams(TrgmNFA *trgmNFA, MemoryContext rcontext);
 static void fillTrgm(trgm *ptrgm, trgm_mb_char s[3]);
@@ -504,10 +505,12 @@ static TrgmPackedGraph *packGraph(TrgmNFA *trgmNFA, MemoryContext rcontext);
 static int	packArcInfoCmp(const void *a1, const void *a2);
 
 #ifdef TRGM_REGEXP_DEBUG
-static void printSourceNFA(regex_t *regex, TrgmColorInfo *colors, int ncolors);
+static void printSourceNFA(regex_t *regex, const TrgmColorInfo *colors,
+						   int ncolors);
 static void printTrgmNFA(TrgmNFA *trgmNFA);
 static void printTrgmColor(StringInfo buf, TrgmColor co);
-static void printTrgmPackedGraph(TrgmPackedGraph *packedGraph, TRGM *trigrams);
+static void printTrgmPackedGraph(const TrgmPackedGraph *packedGraph,
+								 TRGM *trigrams);
 #endif
 
 
@@ -1326,7 +1329,7 @@ addArc(TrgmNFA *trgmNFA, TrgmState *state, TrgmStateKey *key,
  * This is split out so that tests in addKey and addArc will stay in sync.
  */
 static bool
-validArcLabel(TrgmStateKey *key, TrgmColor co)
+validArcLabel(const TrgmStateKey *key, TrgmColor co)
 {
 	/*
 	 * We have to know full trigram in order to add outgoing arc.  So we can't
@@ -1412,7 +1415,7 @@ getState(TrgmNFA *trgmNFA, TrgmStateKey *key)
  * prefix2 also satisfies prefix1.
  */
 static bool
-prefixContains(TrgmPrefix *prefix1, TrgmPrefix *prefix2)
+prefixContains(const TrgmPrefix *prefix1, const TrgmPrefix *prefix2)
 {
 	if (prefix1->colors[1] == COLOR_UNKNOWN)
 	{
@@ -2122,7 +2125,7 @@ packArcInfoCmp(const void *a1, const void *a2)
  * Print initial NFA, in regexp library's representation
  */
 static void
-printSourceNFA(regex_t *regex, TrgmColorInfo *colors, int ncolors)
+printSourceNFA(regex_t *regex, const TrgmColorInfo *colors, int ncolors)
 {
 	StringInfoData buf;
 	int			nstates = pg_reg_getnumstates(regex);
@@ -2282,7 +2285,7 @@ printTrgmColor(StringInfo buf, TrgmColor co)
  * Print final packed representation of trigram-based expanded graph.
  */
 static void
-printTrgmPackedGraph(TrgmPackedGraph *packedGraph, TRGM *trigrams)
+printTrgmPackedGraph(const TrgmPackedGraph *packedGraph, TRGM *trigrams)
 {
 	StringInfoData buf;
 	trgm	   *p;

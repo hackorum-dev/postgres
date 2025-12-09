@@ -51,25 +51,28 @@
 static void AlterOpFamilyAdd(AlterOpFamilyStmt *stmt,
 							 Oid amoid, Oid opfamilyoid,
 							 int maxOpNumber, int maxProcNumber,
-							 int optsProcNumber, List *items);
+							 int optsProcNumber,
+							 const List *items);
 static void AlterOpFamilyDrop(AlterOpFamilyStmt *stmt,
 							  Oid amoid, Oid opfamilyoid,
 							  int maxOpNumber, int maxProcNumber,
-							  List *items);
+							  const List *items);
 static void processTypesSpec(List *args, Oid *lefttype, Oid *righttype);
 static void assignOperTypes(OpFamilyMember *member, Oid amoid, Oid typeoid);
 static void assignProcTypes(OpFamilyMember *member, Oid amoid, Oid typeoid,
 							int opclassOptsProcNum);
 static void addFamilyMember(List **list, OpFamilyMember *member);
 static void storeOperators(List *opfamilyname, Oid amoid, Oid opfamilyoid,
-						   List *operators, bool isAdd);
+						   const List *operators,
+						   bool isAdd);
 static void storeProcedures(List *opfamilyname, Oid amoid, Oid opfamilyoid,
-							List *procedures, bool isAdd);
+							const List *procedures,
+							bool isAdd);
 static bool typeDepNeeded(Oid typid, OpFamilyMember *member);
 static void dropOperators(List *opfamilyname, Oid amoid, Oid opfamilyoid,
-						  List *operators);
+						  const List *operators);
 static void dropProcedures(List *opfamilyname, Oid amoid, Oid opfamilyoid,
-						   List *procedures);
+						   const List *procedures);
 
 /*
  * OpFamilyCacheLookup
@@ -880,7 +883,7 @@ AlterOpFamily(AlterOpFamilyStmt *stmt)
 static void
 AlterOpFamilyAdd(AlterOpFamilyStmt *stmt, Oid amoid, Oid opfamilyoid,
 				 int maxOpNumber, int maxProcNumber, int optsProcNumber,
-				 List *items)
+				 const List *items)
 {
 	IndexAmRoutine *amroutine = GetIndexAmRoutineByAmId(amoid, false);
 	List	   *operators;		/* OpFamilyMember list for operators */
@@ -1028,7 +1031,8 @@ AlterOpFamilyAdd(AlterOpFamilyStmt *stmt, Oid amoid, Oid opfamilyoid,
  */
 static void
 AlterOpFamilyDrop(AlterOpFamilyStmt *stmt, Oid amoid, Oid opfamilyoid,
-				  int maxOpNumber, int maxProcNumber, List *items)
+				  int maxOpNumber, int maxProcNumber,
+				  const List *items)
 {
 	List	   *operators;		/* OpFamilyMember list for operators */
 	List	   *procedures;		/* OpFamilyMember list for support procs */
@@ -1452,7 +1456,7 @@ addFamilyMember(List **list, OpFamilyMember *member)
  */
 static void
 storeOperators(List *opfamilyname, Oid amoid, Oid opfamilyoid,
-			   List *operators, bool isAdd)
+			   const List *operators, bool isAdd)
 {
 	Relation	rel;
 	Datum		values[Natts_pg_amop];
@@ -1582,7 +1586,7 @@ storeOperators(List *opfamilyname, Oid amoid, Oid opfamilyoid,
  */
 static void
 storeProcedures(List *opfamilyname, Oid amoid, Oid opfamilyoid,
-				List *procedures, bool isAdd)
+				const List *procedures, bool isAdd)
 {
 	Relation	rel;
 	Datum		values[Natts_pg_amproc];
@@ -1748,7 +1752,7 @@ typeDepNeeded(Oid typid, OpFamilyMember *member)
  */
 static void
 dropOperators(List *opfamilyname, Oid amoid, Oid opfamilyoid,
-			  List *operators)
+			  const List *operators)
 {
 	ListCell   *l;
 
@@ -1788,7 +1792,7 @@ dropOperators(List *opfamilyname, Oid amoid, Oid opfamilyoid,
  */
 static void
 dropProcedures(List *opfamilyname, Oid amoid, Oid opfamilyoid,
-			   List *procedures)
+			   const List *procedures)
 {
 	ListCell   *l;
 

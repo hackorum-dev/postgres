@@ -396,7 +396,7 @@ do { \
  * ----------
  */
 static inline int
-pglz_find_match(int16 *hstart, const char *input, const char *end,
+pglz_find_match(const int16 *hstart, const char *input, const char *end,
 				int *lenp, int *offp, int good_match, int good_drop, int mask)
 {
 	PGLZ_HistEntry *hent;

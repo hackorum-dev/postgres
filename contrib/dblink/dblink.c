@@ -110,11 +110,14 @@ static void deleteConnection(const char *name);
 static char **get_pkey_attnames(Relation rel, int16 *indnkeyatts);
 static char **get_text_array_contents(ArrayType *array, int *numitems);
 static char *get_sql_insert(Relation rel, int *pkattnums, int pknumatts, char **src_pkattvals, char **tgt_pkattvals);
-static char *get_sql_delete(Relation rel, int *pkattnums, int pknumatts, char **tgt_pkattvals);
+static char *get_sql_delete(Relation rel, const int *pkattnums, int pknumatts,
+							char **tgt_pkattvals);
 static char *get_sql_update(Relation rel, int *pkattnums, int pknumatts, char **src_pkattvals, char **tgt_pkattvals);
 static char *quote_ident_cstr(char *rawstr);
-static int	get_attnum_pk_pos(int *pkattnums, int pknumatts, int key);
-static HeapTuple get_tuple_of_interest(Relation rel, int *pkattnums, int pknumatts, char **src_pkattvals);
+static int	get_attnum_pk_pos(const int *pkattnums, int pknumatts,
+							  int key);
+static HeapTuple get_tuple_of_interest(Relation rel, const int *pkattnums,
+									   int pknumatts, char **src_pkattvals);
 static Relation get_rel_from_relname(text *relname_text, LOCKMODE lockmode, AclMode aclmode);
 static char *generate_relation_name(Relation rel);
 static void dblink_connstr_check(const char *connstr);
@@ -132,7 +135,8 @@ static bool is_valid_dblink_option(const PQconninfoOption *options,
 								   const char *option, Oid context);
 static int	applyRemoteGucs(PGconn *conn);
 static void restoreLocalGucs(int nestlevel);
-static bool UseScramPassthrough(ForeignServer *foreign_server, UserMapping *user);
+static bool UseScramPassthrough(const ForeignServer *foreign_server,
+								const UserMapping *user);
 static void appendSCRAMKeysInfo(StringInfo buf);
 static bool is_valid_dblink_fdw_option(const PQconninfoOption *options, const char *option,
 									   Oid context);
@@ -2197,7 +2201,8 @@ get_sql_insert(Relation rel, int *pkattnums, int pknumatts, char **src_pkattvals
 }
 
 static char *
-get_sql_delete(Relation rel, int *pkattnums, int pknumatts, char **tgt_pkattvals)
+get_sql_delete(Relation rel, const int *pkattnums, int pknumatts,
+			   char **tgt_pkattvals)
 {
 	char	   *relname;
 	TupleDesc	tupdesc;
@@ -2340,7 +2345,7 @@ quote_ident_cstr(char *rawstr)
 }
 
 static int
-get_attnum_pk_pos(int *pkattnums, int pknumatts, int key)
+get_attnum_pk_pos(const int *pkattnums, int pknumatts, int key)
 {
 	int			i;
 
@@ -2355,7 +2360,8 @@ get_attnum_pk_pos(int *pkattnums, int pknumatts, int key)
 }
 
 static HeapTuple
-get_tuple_of_interest(Relation rel, int *pkattnums, int pknumatts, char **src_pkattvals)
+get_tuple_of_interest(Relation rel, const int *pkattnums, int pknumatts,
+					  char **src_pkattvals)
 {
 	char	   *relname;
 	TupleDesc	tupdesc;
@@ -3223,7 +3229,8 @@ appendSCRAMKeysInfo(StringInfo buf)
 
 
 static bool
-UseScramPassthrough(ForeignServer *foreign_server, UserMapping *user)
+UseScramPassthrough(const ForeignServer *foreign_server,
+					const UserMapping *user)
 {
 	ListCell   *cell;
 

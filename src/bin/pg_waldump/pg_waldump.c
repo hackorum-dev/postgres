@@ -623,7 +623,7 @@ XLogDumpStatsRow(const char *name,
  * Display summary statistics about the records seen so far.
  */
 static void
-XLogDumpDisplayStats(XLogDumpConfig *config, XLogStats *stats)
+XLogDumpDisplayStats(const XLogDumpConfig *config, XLogStats *stats)
 {
 	int			ri,
 				rj;

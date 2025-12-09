@@ -659,7 +659,7 @@ interpret_func_parallel(DefElem *defel)
  * The input and result may be NULL to signify a null entry.
  */
 static ArrayType *
-update_proconfig_value(ArrayType *a, List *set_items)
+update_proconfig_value(ArrayType *a, const List *set_items)
 {
 	ListCell   *l;
 
@@ -730,7 +730,7 @@ interpret_func_support(DefElem *defel)
 static void
 compute_function_attributes(ParseState *pstate,
 							bool is_procedure,
-							List *options,
+							const List *options,
 							List **as,
 							char **language,
 							Node **transform,

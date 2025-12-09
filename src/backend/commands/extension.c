@@ -145,7 +145,7 @@ static Datum convert_requires_to_datum(List *requires);
 static void ApplyExtensionUpdates(Oid extensionOid,
 								  ExtensionControlFile *pcontrol,
 								  const char *initialVersion,
-								  List *updateVersions,
+								  const List *updateVersions,
 								  char *origSchemaName,
 								  bool cascade,
 								  bool is_create);
@@ -1042,7 +1042,7 @@ execute_sql_string(const char *sql, const char *filename)
  * (Update the errhint logic below if you change this.)
  */
 static bool
-extension_is_trusted(ExtensionControlFile *control)
+extension_is_trusted(const ExtensionControlFile *control)
 {
 	AclResult	aclresult;
 
@@ -1370,7 +1370,7 @@ get_ext_ver_info(const char *versionname, List **evi_list)
  * make it much faster, but for now there's no need.
  */
 static ExtensionVersionInfo *
-get_nearest_unprocessed_vertex(List *evi_list)
+get_nearest_unprocessed_vertex(const List *evi_list)
 {
 	ExtensionVersionInfo *evi = NULL;
 	ListCell   *lc;
@@ -3426,7 +3426,7 @@ static void
 ApplyExtensionUpdates(Oid extensionOid,
 					  ExtensionControlFile *pcontrol,
 					  const char *initialVersion,
-					  List *updateVersions,
+					  const List *updateVersions,
 					  char *origSchemaName,
 					  bool cascade,
 					  bool is_create)

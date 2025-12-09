@@ -168,7 +168,8 @@ static inline bool SnapBuildXidHasCatalogChanges(SnapBuild *builder, Transaction
 
 /* xlog reading helper functions for SnapBuildProcessRunningXacts */
 static bool SnapBuildFindSnapshot(SnapBuild *builder, XLogRecPtr lsn, xl_running_xacts *running);
-static void SnapBuildWaitSnapshot(xl_running_xacts *running, TransactionId cutoff);
+static void SnapBuildWaitSnapshot(const xl_running_xacts *running,
+								  TransactionId cutoff);
 
 /* serialization functions */
 static void SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn);
@@ -1431,7 +1432,7 @@ SnapBuildFindSnapshot(SnapBuild *builder, XLogRecPtr lsn, xl_running_xacts *runn
  * ---
  */
 static void
-SnapBuildWaitSnapshot(xl_running_xacts *running, TransactionId cutoff)
+SnapBuildWaitSnapshot(const xl_running_xacts *running, TransactionId cutoff)
 {
 	int			off;
 

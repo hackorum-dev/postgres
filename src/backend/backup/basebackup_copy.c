@@ -87,7 +87,7 @@ static void bbsink_copystream_cleanup(bbsink *sink);
 static void SendCopyOutResponse(void);
 static void SendCopyDone(void);
 static void SendXlogRecPtrResult(XLogRecPtr ptr, TimeLineID tli);
-static void SendTablespaceList(List *tablespaces);
+static void SendTablespaceList(const List *tablespaces);
 
 static const bbsink_ops bbsink_copystream_ops = {
 	.begin_backup = bbsink_copystream_begin_backup,
@@ -375,7 +375,7 @@ SendXlogRecPtrResult(XLogRecPtr ptr, TimeLineID tli)
  * Send a result set via libpq describing the tablespace list.
  */
 static void
-SendTablespaceList(List *tablespaces)
+SendTablespaceList(const List *tablespaces)
 {
 	DestReceiver *dest;
 	TupOutputState *tstate;

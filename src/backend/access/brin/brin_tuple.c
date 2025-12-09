@@ -50,7 +50,9 @@
 
 
 static inline void brin_deconstruct_tuple(BrinDesc *brdesc,
-										  char *tp, bits8 *nullbits, bool nulls,
+										  const char *tp,
+										  bits8 *nullbits,
+										  bool nulls,
 										  Datum *values, bool *allnulls, bool *hasnulls);
 
 
@@ -642,7 +644,8 @@ brin_deform_tuple(BrinDesc *brdesc, BrinTuple *tuple, BrinMemTuple *dMemtuple)
  */
 static inline void
 brin_deconstruct_tuple(BrinDesc *brdesc,
-					   char *tp, bits8 *nullbits, bool nulls,
+					   const char *tp, bits8 *nullbits,
+					   bool nulls,
 					   Datum *values, bool *allnulls, bool *hasnulls)
 {
 	int			attnum;

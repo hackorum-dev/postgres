@@ -289,7 +289,7 @@ static Snapshot ReorderBufferCopySnap(ReorderBuffer *rb, Snapshot orig_snap,
  * Streaming support functions
  * ---------------------------------------
  */
-static inline bool ReorderBufferCanStream(ReorderBuffer *rb);
+static inline bool ReorderBufferCanStream(const ReorderBuffer *rb);
 static inline bool ReorderBufferCanStartStreaming(ReorderBuffer *rb);
 static void ReorderBufferStreamTXN(ReorderBuffer *rb, ReorderBufferTXN *txn);
 static void ReorderBufferStreamCommit(ReorderBuffer *rb, ReorderBufferTXN *txn);
@@ -298,7 +298,8 @@ static void ReorderBufferStreamCommit(ReorderBuffer *rb, ReorderBufferTXN *txn);
  * toast reassembly support
  * ---------------------------------------
  */
-static void ReorderBufferToastInitHash(ReorderBuffer *rb, ReorderBufferTXN *txn);
+static void ReorderBufferToastInitHash(const ReorderBuffer *rb,
+									   ReorderBufferTXN *txn);
 static void ReorderBufferToastReset(ReorderBuffer *rb, ReorderBufferTXN *txn);
 static void ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 									  Relation relation, ReorderBufferChange *change);
@@ -310,9 +311,9 @@ static void ReorderBufferToastAppendChunk(ReorderBuffer *rb, ReorderBufferTXN *t
  * memory accounting
  * ---------------------------------------
  */
-static Size ReorderBufferChangeSize(ReorderBufferChange *change);
+static Size ReorderBufferChangeSize(const ReorderBufferChange *change);
 static void ReorderBufferChangeMemoryUpdate(ReorderBuffer *rb,
-											ReorderBufferChange *change,
+											const ReorderBufferChange *change,
 											ReorderBufferTXN *txn,
 											bool addition, Size sz);
 
@@ -1833,7 +1834,7 @@ ReorderBufferCheckAndTruncateAbortedTXN(ReorderBuffer *rb, ReorderBufferTXN *txn
  * HeapTupleSatisfiesHistoricMVCC.
  */
 static void
-ReorderBufferBuildTupleCidHash(ReorderBuffer *rb, ReorderBufferTXN *txn)
+ReorderBufferBuildTupleCidHash(const ReorderBuffer *rb, ReorderBufferTXN *txn)
 {
 	dlist_iter	iter;
 	HASHCTL		hash_ctl;
@@ -3383,7 +3384,7 @@ ReorderBufferAddNewCommandId(ReorderBuffer *rb, TransactionId xid,
  */
 static void
 ReorderBufferChangeMemoryUpdate(ReorderBuffer *rb,
-								ReorderBufferChange *change,
+								const ReorderBufferChange *change,
 								ReorderBufferTXN *txn,
 								bool addition, Size sz)
 {
@@ -4304,7 +4305,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 /* Returns true, if the output plugin supports streaming, false, otherwise. */
 static inline bool
-ReorderBufferCanStream(ReorderBuffer *rb)
+ReorderBufferCanStream(const ReorderBuffer *rb)
 {
 	LogicalDecodingContext *ctx = rb->private_data;
 
@@ -4456,7 +4457,7 @@ ReorderBufferStreamTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
  * Size of a change in memory.
  */
 static Size
-ReorderBufferChangeSize(ReorderBufferChange *change)
+ReorderBufferChangeSize(const ReorderBufferChange *change)
 {
 	Size		sz = sizeof(ReorderBufferChange);
 
@@ -4972,7 +4973,7 @@ StartupReorderBuffer(void)
  * Initialize per tuple toast reconstruction support.
  */
 static void
-ReorderBufferToastInitHash(ReorderBuffer *rb, ReorderBufferTXN *txn)
+ReorderBufferToastInitHash(const ReorderBuffer *rb, ReorderBufferTXN *txn)
 {
 	HASHCTL		hash_ctl;
 

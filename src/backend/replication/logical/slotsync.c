@@ -419,7 +419,8 @@ get_local_synced_slots(void)
  * otherwise true.
  */
 static bool
-local_sync_slot_required(ReplicationSlot *local_slot, List *remote_slots)
+local_sync_slot_required(ReplicationSlot *local_slot,
+						 const List *remote_slots)
 {
 	bool		remote_exists = false;
 	bool		locally_invalidated = false;

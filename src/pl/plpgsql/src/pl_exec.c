@@ -280,15 +280,15 @@ static int	exec_toplevel_block(PLpgSQL_execstate *estate,
 static int	exec_stmt_block(PLpgSQL_execstate *estate,
 							PLpgSQL_stmt_block *block);
 static int	exec_stmts(PLpgSQL_execstate *estate,
-					   List *stmts);
+					   const List *stmts);
 static int	exec_stmt_assign(PLpgSQL_execstate *estate,
 							 PLpgSQL_stmt_assign *stmt);
 static int	exec_stmt_perform(PLpgSQL_execstate *estate,
-							  PLpgSQL_stmt_perform *stmt);
+							  const PLpgSQL_stmt_perform *stmt);
 static int	exec_stmt_call(PLpgSQL_execstate *estate,
 						   PLpgSQL_stmt_call *stmt);
 static int	exec_stmt_getdiag(PLpgSQL_execstate *estate,
-							  PLpgSQL_stmt_getdiag *stmt);
+							  const PLpgSQL_stmt_getdiag *stmt);
 static int	exec_stmt_if(PLpgSQL_execstate *estate,
 						 PLpgSQL_stmt_if *stmt);
 static int	exec_stmt_case(PLpgSQL_execstate *estate,
@@ -310,7 +310,7 @@ static int	exec_stmt_open(PLpgSQL_execstate *estate,
 static int	exec_stmt_fetch(PLpgSQL_execstate *estate,
 							PLpgSQL_stmt_fetch *stmt);
 static int	exec_stmt_close(PLpgSQL_execstate *estate,
-							PLpgSQL_stmt_close *stmt);
+							const PLpgSQL_stmt_close *stmt);
 static int	exec_stmt_exit(PLpgSQL_execstate *estate,
 						   PLpgSQL_stmt_exit *stmt);
 static int	exec_stmt_return(PLpgSQL_execstate *estate,
@@ -330,9 +330,9 @@ static int	exec_stmt_dynexecute(PLpgSQL_execstate *estate,
 static int	exec_stmt_dynfors(PLpgSQL_execstate *estate,
 							  PLpgSQL_stmt_dynfors *stmt);
 static int	exec_stmt_commit(PLpgSQL_execstate *estate,
-							 PLpgSQL_stmt_commit *stmt);
+							 const PLpgSQL_stmt_commit *stmt);
 static int	exec_stmt_rollback(PLpgSQL_execstate *estate,
-							   PLpgSQL_stmt_rollback *stmt);
+							   const PLpgSQL_stmt_rollback *stmt);
 
 static void plpgsql_estate_setup(PLpgSQL_execstate *estate,
 								 PLpgSQL_function *func,
@@ -388,7 +388,7 @@ static int	exec_run_select(PLpgSQL_execstate *estate,
 							PLpgSQL_expr *expr, long maxtuples, Portal *portalP);
 static int	exec_for_query(PLpgSQL_execstate *estate, PLpgSQL_stmt_forq *stmt,
 						   Portal portal, bool prefetch_ok);
-static ParamListInfo setup_param_list(PLpgSQL_execstate *estate,
+static ParamListInfo setup_param_list(const PLpgSQL_execstate *estate,
 									  PLpgSQL_expr *expr);
 static ParamExternData *plpgsql_param_fetch(ParamListInfo params,
 											int paramid, bool speculative,
@@ -425,7 +425,7 @@ static void exec_move_row_from_fields(PLpgSQL_execstate *estate,
 									  TupleDesc tupdesc);
 static bool compatible_tupdescs(TupleDesc src_tupdesc, TupleDesc dst_tupdesc);
 static HeapTuple make_tuple_from_row(PLpgSQL_execstate *estate,
-									 PLpgSQL_row *row,
+									 const PLpgSQL_row *row,
 									 TupleDesc tupdesc);
 static TupleDesc deconstruct_composite_datum(Datum value,
 											 HeapTupleData *tmptup);
@@ -1591,7 +1591,7 @@ pop_stmt_mcontext(PLpgSQL_execstate *estate)
  * match the current exception?
  */
 static bool
-exception_matches_conditions(ErrorData *edata, PLpgSQL_condition *cond)
+exception_matches_conditions(ErrorData *edata, const PLpgSQL_condition *cond)
 {
 	for (; cond != NULL; cond = cond->next)
 	{
@@ -1992,7 +1992,7 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
  * ----------
  */
 static int
-exec_stmts(PLpgSQL_execstate *estate, List *stmts)
+exec_stmts(PLpgSQL_execstate *estate, const List *stmts)
 {
 	PLpgSQL_stmt *save_estmt = estate->err_stmt;
 	ListCell   *s;
@@ -2176,7 +2176,7 @@ exec_stmt_assign(PLpgSQL_execstate *estate, PLpgSQL_stmt_assign *stmt)
  * ----------
  */
 static int
-exec_stmt_perform(PLpgSQL_execstate *estate, PLpgSQL_stmt_perform *stmt)
+exec_stmt_perform(PLpgSQL_execstate *estate, const PLpgSQL_stmt_perform *stmt)
 {
 	PLpgSQL_expr *expr = stmt->expr;
 
@@ -2406,7 +2406,7 @@ make_callstmt_target(PLpgSQL_execstate *estate, PLpgSQL_expr *expr)
  * ----------
  */
 static int
-exec_stmt_getdiag(PLpgSQL_execstate *estate, PLpgSQL_stmt_getdiag *stmt)
+exec_stmt_getdiag(PLpgSQL_execstate *estate, const PLpgSQL_stmt_getdiag *stmt)
 {
 	ListCell   *lc;
 
@@ -4923,7 +4923,7 @@ exec_stmt_fetch(PLpgSQL_execstate *estate, PLpgSQL_stmt_fetch *stmt)
  * ----------
  */
 static int
-exec_stmt_close(PLpgSQL_execstate *estate, PLpgSQL_stmt_close *stmt)
+exec_stmt_close(PLpgSQL_execstate *estate, const PLpgSQL_stmt_close *stmt)
 {
 	PLpgSQL_var *curvar;
 	Portal		portal;
@@ -4966,7 +4966,7 @@ exec_stmt_close(PLpgSQL_execstate *estate, PLpgSQL_stmt_close *stmt)
  * Commit the transaction.
  */
 static int
-exec_stmt_commit(PLpgSQL_execstate *estate, PLpgSQL_stmt_commit *stmt)
+exec_stmt_commit(PLpgSQL_execstate *estate, const PLpgSQL_stmt_commit *stmt)
 {
 	if (stmt->chain)
 		SPI_commit_and_chain();
@@ -4990,7 +4990,8 @@ exec_stmt_commit(PLpgSQL_execstate *estate, PLpgSQL_stmt_commit *stmt)
  * Abort the transaction.
  */
 static int
-exec_stmt_rollback(PLpgSQL_execstate *estate, PLpgSQL_stmt_rollback *stmt)
+exec_stmt_rollback(PLpgSQL_execstate *estate,
+				   const PLpgSQL_stmt_rollback *stmt)
 {
 	if (stmt->chain)
 		SPI_rollback_and_chain();
@@ -6260,7 +6261,7 @@ exec_eval_simple_expr(PLpgSQL_execstate *estate,
  * that seems like a waste of memory.)
  */
 static ParamListInfo
-setup_param_list(PLpgSQL_execstate *estate, PLpgSQL_expr *expr)
+setup_param_list(const PLpgSQL_execstate *estate, PLpgSQL_expr *expr)
 {
 	ParamListInfo paramLI;
 
@@ -7502,7 +7503,7 @@ compatible_tupdescs(TupleDesc src_tupdesc, TupleDesc dst_tupdesc)
  */
 static HeapTuple
 make_tuple_from_row(PLpgSQL_execstate *estate,
-					PLpgSQL_row *row,
+					const PLpgSQL_row *row,
 					TupleDesc tupdesc)
 {
 	int			natts = tupdesc->natts;

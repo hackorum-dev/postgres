@@ -16,7 +16,7 @@
 #include "utils/fmgrprotos.h"
 #include "varatt.h"
 
-static void pg_to_ascii(unsigned char *src, unsigned char *src_end,
+static void pg_to_ascii(unsigned char *src, const unsigned char *src_end,
 						unsigned char *dest, int enc);
 static text *encode_to_ascii(text *data, int enc);
 
@@ -26,7 +26,8 @@ static text *encode_to_ascii(text *data, int enc);
  * ----------
  */
 static void
-pg_to_ascii(unsigned char *src, unsigned char *src_end, unsigned char *dest, int enc)
+pg_to_ascii(unsigned char *src, const unsigned char *src_end,
+			unsigned char *dest, int enc)
 {
 	unsigned char *x;
 	const unsigned char *ascii;

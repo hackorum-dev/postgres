@@ -423,7 +423,7 @@ printtup_destroy(DestReceiver *self)
 static void
 printatt(unsigned attributeId,
 		 Form_pg_attribute attributeP,
-		 char *value)
+		 const char *value)
 {
 	printf("\t%2d: %s%s%s%s\t(typeid = %u, len = %d, typmod = %d, byval = %c)\n",
 		   attributeId,

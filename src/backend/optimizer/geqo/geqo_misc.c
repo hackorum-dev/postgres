@@ -31,7 +31,7 @@
  * avg_pool
  */
 static double
-avg_pool(Pool *pool)
+avg_pool(const Pool *pool)
 {
 	int			i;
 	double		cumulative = 0.0;

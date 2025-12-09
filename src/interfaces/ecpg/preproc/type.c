@@ -212,7 +212,10 @@ static void ECPGdump_a_simple(FILE *o, const char *name, enum ECPGttype type,
 							  char *varcharsize,
 							  char *arrsize, const char *size, const char *prefix, int counter);
 static void ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsize,
-							  struct ECPGtype *type, struct ECPGtype *ind_type, const char *prefix, const char *ind_prefix);
+							  struct ECPGtype *type,
+							  const struct ECPGtype *ind_type,
+							  const char *prefix,
+							  const char *ind_prefix);
 
 void
 ECPGdump_a_type(FILE *o, const char *name, struct ECPGtype *type, const int brace_level,
@@ -555,7 +558,9 @@ ECPGdump_a_simple(FILE *o, const char *name, enum ECPGttype type,
 
 /* Penetrate a struct and dump the contents. */
 static void
-ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsize, struct ECPGtype *type, struct ECPGtype *ind_type, const char *prefix, const char *ind_prefix)
+ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsize, struct ECPGtype *type,
+				  const struct ECPGtype *ind_type, const char *prefix,
+				  const char *ind_prefix)
 {
 	/*
 	 * If offset is NULL, then this is the first recursive level. If not then

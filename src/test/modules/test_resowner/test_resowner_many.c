@@ -60,7 +60,8 @@ static void RememberManyTestResources(ResourceOwner owner,
 static void ForgetManyTestResources(ResourceOwner owner,
 									ManyTestResourceKind *kinds, int nkinds,
 									int nresources);
-static int	GetTotalResourceCount(ManyTestResourceKind *kinds, int nkinds);
+static int	GetTotalResourceCount(const ManyTestResourceKind *kinds,
+								  int nkinds);
 
 /* ResourceOwner callback */
 static void
@@ -181,7 +182,7 @@ ForgetManyTestResources(ResourceOwner owner,
  * Get total number of currently active resources among 'kinds'.
  */
 static int
-GetTotalResourceCount(ManyTestResourceKind *kinds, int nkinds)
+GetTotalResourceCount(const ManyTestResourceKind *kinds, int nkinds)
 {
 	int			ntotal = 0;
 

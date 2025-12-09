@@ -56,19 +56,19 @@ static void generate_base_implied_equalities_const(PlannerInfo *root,
 static void generate_base_implied_equalities_no_const(PlannerInfo *root,
 													  EquivalenceClass *ec);
 static void generate_base_implied_equalities_broken(PlannerInfo *root,
-													EquivalenceClass *ec);
+													const EquivalenceClass *ec);
 static List *generate_join_implied_equalities_normal(PlannerInfo *root,
 													 EquivalenceClass *ec,
 													 Relids join_relids,
 													 Relids outer_relids,
 													 Relids inner_relids);
 static List *generate_join_implied_equalities_broken(PlannerInfo *root,
-													 EquivalenceClass *ec,
+													 const EquivalenceClass *ec,
 													 Relids nominal_join_relids,
 													 Relids outer_relids,
 													 Relids nominal_inner_relids,
 													 RelOptInfo *inner_rel);
-static Oid	select_equality_operator(EquivalenceClass *ec,
+static Oid	select_equality_operator(const EquivalenceClass *ec,
 									 Oid lefttype, Oid righttype);
 static RestrictInfo *create_join_clause(PlannerInfo *root,
 										EquivalenceClass *ec, Oid opno,
@@ -76,11 +76,11 @@ static RestrictInfo *create_join_clause(PlannerInfo *root,
 										EquivalenceMember *rightem,
 										EquivalenceClass *parent_ec);
 static bool reconsider_outer_join_clause(PlannerInfo *root,
-										 OuterJoinClauseInfo *ojcinfo,
+										 const OuterJoinClauseInfo *ojcinfo,
 										 bool outer_on_left);
 static bool reconsider_full_join_clause(PlannerInfo *root,
-										OuterJoinClauseInfo *ojcinfo);
-static JoinDomain *find_join_domain(PlannerInfo *root, Relids relids);
+										const OuterJoinClauseInfo *ojcinfo);
+static JoinDomain *find_join_domain(const PlannerInfo *root, Relids relids);
 static Bitmapset *get_eclass_indexes_for_relids(PlannerInfo *root,
 												Relids relids);
 static Bitmapset *get_common_eclass_indexes(PlannerInfo *root, Relids relids1,
@@ -1485,7 +1485,7 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
  */
 static void
 generate_base_implied_equalities_broken(PlannerInfo *root,
-										EquivalenceClass *ec)
+										const EquivalenceClass *ec)
 {
 	ListCell   *lc;
 
@@ -1897,7 +1897,7 @@ generate_join_implied_equalities_normal(PlannerInfo *root,
  */
 static List *
 generate_join_implied_equalities_broken(PlannerInfo *root,
-										EquivalenceClass *ec,
+										const EquivalenceClass *ec,
 										Relids nominal_join_relids,
 										Relids outer_relids,
 										Relids nominal_inner_relids,
@@ -1945,7 +1945,8 @@ generate_join_implied_equalities_broken(PlannerInfo *root,
  * Returns InvalidOid if no operator can be found for this datatype combination
  */
 static Oid
-select_equality_operator(EquivalenceClass *ec, Oid lefttype, Oid righttype)
+select_equality_operator(const EquivalenceClass *ec, Oid lefttype,
+						 Oid righttype)
 {
 	ListCell   *lc;
 
@@ -2254,7 +2255,8 @@ reconsider_outer_join_clauses(PlannerInfo *root)
  * Returns true if we were able to propagate a constant through the clause.
  */
 static bool
-reconsider_outer_join_clause(PlannerInfo *root, OuterJoinClauseInfo *ojcinfo,
+reconsider_outer_join_clause(PlannerInfo *root,
+							 const OuterJoinClauseInfo *ojcinfo,
 							 bool outer_on_left)
 {
 	RestrictInfo *rinfo = ojcinfo->rinfo;
@@ -2381,7 +2383,8 @@ reconsider_outer_join_clause(PlannerInfo *root, OuterJoinClauseInfo *ojcinfo,
  * Returns true if we were able to propagate a constant through the clause.
  */
 static bool
-reconsider_full_join_clause(PlannerInfo *root, OuterJoinClauseInfo *ojcinfo)
+reconsider_full_join_clause(PlannerInfo *root,
+							const OuterJoinClauseInfo *ojcinfo)
 {
 	RestrictInfo *rinfo = ojcinfo->rinfo;
 	SpecialJoinInfo *sjinfo = ojcinfo->sjinfo;
@@ -2614,7 +2617,7 @@ rebuild_eclass_attr_needed(PlannerInfo *root)
  * which doesn't seem worth it.)
  */
 static JoinDomain *
-find_join_domain(PlannerInfo *root, Relids relids)
+find_join_domain(const PlannerInfo *root, Relids relids)
 {
 	ListCell   *lc;
 

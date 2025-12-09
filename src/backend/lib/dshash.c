@@ -183,7 +183,7 @@ static bool delete_key_from_bucket(dshash_table *hash_table,
 								   const void *key,
 								   dsa_pointer *bucket_head);
 static bool delete_item_from_bucket(dshash_table *hash_table,
-									dshash_table_item *item,
+									const dshash_table_item *item,
 									dsa_pointer *bucket_head);
 static inline dshash_hash hash_key(dshash_table *hash_table, const void *key);
 static inline bool equal_keys(dshash_table *hash_table,
@@ -1035,7 +1035,7 @@ delete_key_from_bucket(dshash_table *hash_table,
  */
 static bool
 delete_item_from_bucket(dshash_table *hash_table,
-						dshash_table_item *item,
+						const dshash_table_item *item,
 						dsa_pointer *bucket_head)
 {
 	while (DsaPointerIsValid(*bucket_head))

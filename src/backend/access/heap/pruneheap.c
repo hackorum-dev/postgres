@@ -157,9 +157,9 @@ typedef struct
 } PruneState;
 
 /* Local functions */
-static void prune_freeze_setup(PruneFreezeParams *params,
-							   TransactionId *new_relfrozen_xid,
-							   MultiXactId *new_relmin_mxid,
+static void prune_freeze_setup(const PruneFreezeParams *params,
+							   const TransactionId *new_relfrozen_xid,
+							   const MultiXactId *new_relmin_mxid,
 							   const PruneFreezeResult *presult,
 							   PruneState *prstate);
 static void prune_freeze_plan(Oid reloid, Buffer buffer,
@@ -324,9 +324,9 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
  * the provided parameters.
  */
 static void
-prune_freeze_setup(PruneFreezeParams *params,
-				   TransactionId *new_relfrozen_xid,
-				   MultiXactId *new_relmin_mxid,
+prune_freeze_setup(const PruneFreezeParams *params,
+				   const TransactionId *new_relfrozen_xid,
+				   const MultiXactId *new_relmin_mxid,
 				   const PruneFreezeResult *presult,
 				   PruneState *prstate)
 {
@@ -1993,7 +1993,7 @@ heap_get_root_tuples(Page page, OffsetNumber *root_offsets)
  * caller's plan.
  */
 static inline bool
-heap_log_freeze_eq(xlhp_freeze_plan *plan, HeapTupleFreeze *frz)
+heap_log_freeze_eq(const xlhp_freeze_plan *plan, const HeapTupleFreeze *frz)
 {
 	if (plan->xmax == frz->xmax &&
 		plan->t_infomask2 == frz->t_infomask2 &&
@@ -2055,7 +2055,7 @@ heap_log_freeze_cmp(const void *arg1, const void *arg2)
  * will have steps required to freeze described by caller's plan during REDO.
  */
 static inline void
-heap_log_freeze_new_plan(xlhp_freeze_plan *plan, HeapTupleFreeze *frz)
+heap_log_freeze_new_plan(xlhp_freeze_plan *plan, const HeapTupleFreeze *frz)
 {
 	plan->xmax = frz->xmax;
 	plan->t_infomask2 = frz->t_infomask2;

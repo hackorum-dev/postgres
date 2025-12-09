@@ -20,7 +20,7 @@
 #include "utils/rel.h"
 
 static void entrySplitPage(GinBtree btree, Buffer origbuf,
-						   GinBtreeStack *stack,
+						   const GinBtreeStack *stack,
 						   GinBtreeEntryInsertData *insertData,
 						   BlockNumber updateblkno,
 						   Page *newlpage, Page *newrpage);
@@ -600,7 +600,7 @@ entryExecPlaceToPage(GinBtree btree, Buffer buf, GinBtreeStack *stack,
  */
 static void
 entrySplitPage(GinBtree btree, Buffer origbuf,
-			   GinBtreeStack *stack,
+			   const GinBtreeStack *stack,
 			   GinBtreeEntryInsertData *insertData,
 			   BlockNumber updateblkno,
 			   Page *newlpage, Page *newrpage)

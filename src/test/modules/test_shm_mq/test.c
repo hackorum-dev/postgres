@@ -25,8 +25,8 @@ PG_MODULE_MAGIC;
 PG_FUNCTION_INFO_V1(test_shm_mq);
 PG_FUNCTION_INFO_V1(test_shm_mq_pipelined);
 
-static void verify_message(Size origlen, char *origdata, Size newlen,
-						   char *newdata);
+static void verify_message(Size origlen, const char *origdata, Size newlen,
+						   const char *newdata);
 
 /* value cached, fetched from shared memory */
 static uint32 we_message_queue = 0;
@@ -255,7 +255,8 @@ test_shm_mq_pipelined(PG_FUNCTION_ARGS)
  * Verify that two messages are the same.
  */
 static void
-verify_message(Size origlen, char *origdata, Size newlen, char *newdata)
+verify_message(Size origlen, const char *origdata, Size newlen,
+			   const char *newdata)
 {
 	Size		i;
 

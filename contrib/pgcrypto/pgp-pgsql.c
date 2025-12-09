@@ -144,7 +144,7 @@ fill_expect(struct debug_expect *ex, int text_mode)
 	} while (0)
 
 static void
-check_expect(PGP_Context *ctx, struct debug_expect *ex)
+check_expect(const PGP_Context *ctx, struct debug_expect *ex)
 {
 	EX_CHECK(cipher_algo);
 	EX_CHECK(s2k_mode);

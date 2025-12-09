@@ -84,7 +84,7 @@ static bool printCrosstab(const PGresult *result,
 						  int field_for_data);
 static void avlInit(avl_tree *tree);
 static void avlMergeValue(avl_tree *tree, char *name, char *sort_value);
-static int	avlCollectFields(avl_tree *tree, avl_node *node,
+static int	avlCollectFields(avl_tree *tree, const avl_node *node,
 							 pivot_field *fields, int idx);
 static void avlFree(avl_tree *tree, avl_node *node);
 static void rankSort(int num_columns, pivot_field *piv_columns);
@@ -492,7 +492,7 @@ avlRotate(avl_node **current, int dir)
 }
 
 static int
-avlBalance(avl_node *n)
+avlBalance(const avl_node *n)
 {
 	return n->children[0]->height - n->children[1]->height;
 }
@@ -503,7 +503,7 @@ avlBalance(avl_node *n)
  * May update *node.
  */
 static void
-avlAdjustBalance(avl_tree *tree, avl_node **node)
+avlAdjustBalance(const avl_tree *tree, avl_node **node)
 {
 	avl_node   *current = *node;
 	int			b = avlBalance(current) / 2;
@@ -574,7 +574,8 @@ avlMergeValue(avl_tree *tree, char *name, char *sort_value)
  * fields[] must be preallocated to hold tree->count entries
  */
 static int
-avlCollectFields(avl_tree *tree, avl_node *node, pivot_field *fields, int idx)
+avlCollectFields(avl_tree *tree, const avl_node *node, pivot_field *fields,
+				 int idx)
 {
 	if (node == tree->end)
 		return idx;

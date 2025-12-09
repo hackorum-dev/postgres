@@ -202,7 +202,7 @@ DWORD		mainThreadId;
 #endif							/* WIN32 */
 
 /* Local function prototypes */
-static ParallelSlot *GetMyPSlot(ParallelState *pstate);
+static ParallelSlot *GetMyPSlot(const ParallelState *pstate);
 static void archive_close_connection(int code, void *arg);
 static void ShutdownWorkersHard(ParallelState *pstate);
 static void WaitForTerminatingWorkers(ParallelState *pstate);
@@ -210,8 +210,8 @@ static void set_cancel_handler(void);
 static void set_cancel_pstate(ParallelState *pstate);
 static void set_cancel_slot_archive(ParallelSlot *slot, ArchiveHandle *AH);
 static void RunWorker(ArchiveHandle *AH, ParallelSlot *slot);
-static int	GetIdleWorker(ParallelState *pstate);
-static bool HasEveryWorkerTerminated(ParallelState *pstate);
+static int	GetIdleWorker(const ParallelState *pstate);
+static bool HasEveryWorkerTerminated(const ParallelState *pstate);
 static void lockTableForWorker(ArchiveHandle *AH, TocEntry *te);
 static void WaitForCommands(ArchiveHandle *AH, int pipefd[2]);
 static bool ListenToWorkers(ArchiveHandle *AH, ParallelState *pstate,
@@ -219,9 +219,9 @@ static bool ListenToWorkers(ArchiveHandle *AH, ParallelState *pstate,
 static char *getMessageFromLeader(int pipefd[2]);
 static void sendMessageToLeader(int pipefd[2], const char *str);
 static int	select_loop(int maxFd, fd_set *workerset);
-static char *getMessageFromWorker(ParallelState *pstate,
+static char *getMessageFromWorker(const ParallelState *pstate,
 								  bool do_wait, int *worker);
-static void sendMessageToWorker(ParallelState *pstate,
+static void sendMessageToWorker(const ParallelState *pstate,
 								int worker, const char *str);
 static char *readMessageFromPipe(int fd);
 
@@ -263,7 +263,7 @@ init_parallel_dump_utils(void)
  * Returns NULL if no matching slot is found (this implies we're the leader).
  */
 static ParallelSlot *
-GetMyPSlot(ParallelState *pstate)
+GetMyPSlot(const ParallelState *pstate)
 {
 	int			i;
 
@@ -1155,7 +1155,8 @@ parseWorkerCommand(ArchiveHandle *AH, TocEntry **te, T_Action *act,
  * The string is built in the caller-supplied buffer of size buflen.
  */
 static void
-buildWorkerResponse(ArchiveHandle *AH, TocEntry *te, T_Action act, int status,
+buildWorkerResponse(const ArchiveHandle *AH, TocEntry *te, T_Action act,
+					int status,
 					char *buf, int buflen)
 {
 	snprintf(buf, buflen, "OK %d %d %d",
@@ -1170,7 +1171,7 @@ buildWorkerResponse(ArchiveHandle *AH, TocEntry *te, T_Action act, int status,
  * Returns the integer status code, and may update fields of AH and/or te.
  */
 static int
-parseWorkerResponse(ArchiveHandle *AH, TocEntry *te,
+parseWorkerResponse(ArchiveHandle *AH, const TocEntry *te,
 					const char *msg)
 {
 	DumpId		dumpId;
@@ -1235,7 +1236,7 @@ DispatchJobForTocEntry(ArchiveHandle *AH,
  * Return NO_SLOT if none are idle.
  */
 static int
-GetIdleWorker(ParallelState *pstate)
+GetIdleWorker(const ParallelState *pstate)
 {
 	int			i;
 
@@ -1251,7 +1252,7 @@ GetIdleWorker(ParallelState *pstate)
  * Return true iff no worker is running.
  */
 static bool
-HasEveryWorkerTerminated(ParallelState *pstate)
+HasEveryWorkerTerminated(const ParallelState *pstate)
 {
 	int			i;
 
@@ -1578,7 +1579,7 @@ select_loop(int maxFd, fd_set *workerset)
  * This function is executed in the leader process.
  */
 static char *
-getMessageFromWorker(ParallelState *pstate, bool do_wait, int *worker)
+getMessageFromWorker(const ParallelState *pstate, bool do_wait, int *worker)
 {
 	int			i;
 	fd_set		workerset;
@@ -1643,7 +1644,7 @@ getMessageFromWorker(ParallelState *pstate, bool do_wait, int *worker)
  * This function is executed in the leader process.
  */
 static void
-sendMessageToWorker(ParallelState *pstate, int worker, const char *str)
+sendMessageToWorker(const ParallelState *pstate, int worker, const char *str)
 {
 	int			len = strlen(str) + 1;
 

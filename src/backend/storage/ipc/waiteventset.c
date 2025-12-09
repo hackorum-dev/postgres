@@ -198,9 +198,10 @@ static void WaitEventAdjustEpoll(WaitEventSet *set, WaitEvent *event, int action
 #elif defined(WAIT_USE_KQUEUE)
 static void WaitEventAdjustKqueue(WaitEventSet *set, WaitEvent *event, int old_events);
 #elif defined(WAIT_USE_POLL)
-static void WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event);
+static void WaitEventAdjustPoll(const WaitEventSet *set,
+								const WaitEvent *event);
 #elif defined(WAIT_USE_WIN32)
-static void WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event);
+static void WaitEventAdjustWin32(const WaitEventSet *set, WaitEvent *event);
 #endif
 
 static inline int WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
@@ -787,7 +788,7 @@ WaitEventAdjustEpoll(WaitEventSet *set, WaitEvent *event, int action)
 
 #if defined(WAIT_USE_POLL)
 static void
-WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event)
+WaitEventAdjustPoll(const WaitEventSet *set, const WaitEvent *event)
 {
 	struct pollfd *pollfd = &set->pollfds[event->pos];
 
@@ -836,7 +837,7 @@ WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event)
 
 static inline void
 WaitEventAdjustKqueueAdd(struct kevent *k_ev, int filter, int action,
-						 WaitEvent *event)
+						 const WaitEvent *event)
 {
 	k_ev->ident = event->fd;
 	k_ev->filter = filter;
@@ -847,7 +848,8 @@ WaitEventAdjustKqueueAdd(struct kevent *k_ev, int filter, int action,
 }
 
 static inline void
-WaitEventAdjustKqueueAddPostmaster(struct kevent *k_ev, WaitEvent *event)
+WaitEventAdjustKqueueAddPostmaster(struct kevent *k_ev,
+								   const WaitEvent *event)
 {
 	/* For now postmaster death can only be added, not removed. */
 	k_ev->ident = PostmasterPid;
@@ -859,7 +861,7 @@ WaitEventAdjustKqueueAddPostmaster(struct kevent *k_ev, WaitEvent *event)
 }
 
 static inline void
-WaitEventAdjustKqueueAddLatch(struct kevent *k_ev, WaitEvent *event)
+WaitEventAdjustKqueueAddLatch(struct kevent *k_ev, const WaitEvent *event)
 {
 	/* For now latch can only be added, not removed. */
 	k_ev->ident = SIGURG;
@@ -980,7 +982,7 @@ WaitEventAdjustKqueue(WaitEventSet *set, WaitEvent *event, int old_events)
 
 #if defined(WAIT_USE_WIN32)
 static void
-WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event)
+WaitEventAdjustWin32(const WaitEventSet *set, WaitEvent *event)
 {
 	HANDLE	   *handle = &set->handles[event->pos + 1];
 

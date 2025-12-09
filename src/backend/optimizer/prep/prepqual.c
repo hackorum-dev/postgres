@@ -37,8 +37,8 @@
 #include "utils/lsyscache.h"
 
 
-static List *pull_ands(List *andlist);
-static List *pull_ors(List *orlist);
+static List *pull_ands(const List *andlist);
+static List *pull_ors(const List *orlist);
 static Expr *find_duplicate_ors(Expr *qual, bool is_check);
 static Expr *process_duplicate_ors(List *orlist);
 
@@ -320,7 +320,7 @@ canonicalize_qual(Expr *qual, bool is_check)
  * Returns the rebuilt arglist (note original list structure is not touched).
  */
 static List *
-pull_ands(List *andlist)
+pull_ands(const List *andlist)
 {
 	List	   *out_list = NIL;
 	ListCell   *arg;
@@ -346,7 +346,7 @@ pull_ands(List *andlist)
  * Returns the rebuilt arglist (note original list structure is not touched).
  */
 static List *
-pull_ors(List *orlist)
+pull_ors(const List *orlist)
 {
 	List	   *out_list = NIL;
 	ListCell   *arg;

@@ -128,16 +128,17 @@ static IndexStmt *transformIndexConstraint(Constraint *constraint,
 static void transformFKConstraints(CreateStmtContext *cxt,
 								   bool skipValidation,
 								   bool isAddConstraint);
-static void transformCheckConstraints(CreateStmtContext *cxt,
+static void transformCheckConstraints(const CreateStmtContext *cxt,
 									  bool skipValidation);
 static void transformConstraintAttrs(CreateStmtContext *cxt,
-									 List *constraintList);
+									 const List *constraintList);
 static void transformColumnType(CreateStmtContext *cxt, ColumnDef *column);
 static void setSchemaName(const char *context_schema, char **stmt_schema_name);
 static void transformPartitionCmd(CreateStmtContext *cxt, PartitionCmd *cmd);
-static List *transformPartitionRangeBounds(ParseState *pstate, List *blist,
+static List *transformPartitionRangeBounds(ParseState *pstate,
+										   const List *blist,
 										   Relation parent);
-static void validateInfiniteBounds(ParseState *pstate, List *blist);
+static void validateInfiniteBounds(ParseState *pstate, const List *blist);
 static Const *transformPartitionBoundValue(ParseState *pstate, Node *val,
 										   const char *colName, Oid colType, int32 colTypmod,
 										   Oid partCollation);
@@ -2942,7 +2943,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
  * don't do anything if we're not authorized to skip validation.
  */
 static void
-transformCheckConstraints(CreateStmtContext *cxt, bool skipValidation)
+transformCheckConstraints(const CreateStmtContext *cxt, bool skipValidation)
 {
 	ListCell   *ckclist;
 
@@ -3887,7 +3888,7 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
  * supported for other constraint types.
  */
 static void
-transformConstraintAttrs(CreateStmtContext *cxt, List *constraintList)
+transformConstraintAttrs(CreateStmtContext *cxt, const List *constraintList)
 {
 	Constraint *lastprimarycon = NULL;
 	bool		saw_deferrability = false;
@@ -4429,7 +4430,7 @@ transformPartitionBound(ParseState *pstate, Relation parent,
  *		grammar representation to PartitionRangeDatum structs
  */
 static List *
-transformPartitionRangeBounds(ParseState *pstate, List *blist,
+transformPartitionRangeBounds(ParseState *pstate, const List *blist,
 							  Relation parent)
 {
 	List	   *result = NIL;
@@ -4546,7 +4547,7 @@ transformPartitionRangeBounds(ParseState *pstate, List *blist,
  * followed only by more of the same.
  */
 static void
-validateInfiniteBounds(ParseState *pstate, List *blist)
+validateInfiniteBounds(ParseState *pstate, const List *blist)
 {
 	ListCell   *lc;
 	PartitionRangeDatumKind kind = PARTITION_RANGE_DATUM_VALUE;

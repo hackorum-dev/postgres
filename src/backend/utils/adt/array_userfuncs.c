@@ -1611,7 +1611,7 @@ array_positions(PG_FUNCTION_ARGS)
  */
 static ArrayType *
 array_shuffle_n(ArrayType *array, int n, bool keep_lb,
-				Oid elmtyp, TypeCacheEntry *typentry)
+				Oid elmtyp, const TypeCacheEntry *typentry)
 {
 	ArrayType  *result;
 	int			ndim,
@@ -1772,7 +1772,7 @@ array_sample(PG_FUNCTION_ARGS)
  * in a better position to cache this info across multiple calls.
  */
 static ArrayType *
-array_reverse_n(ArrayType *array, Oid elmtyp, TypeCacheEntry *typentry)
+array_reverse_n(ArrayType *array, Oid elmtyp, const TypeCacheEntry *typentry)
 {
 	ArrayType  *result;
 	int			ndim,

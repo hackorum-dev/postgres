@@ -1201,7 +1201,7 @@ AlterTSConfiguration(AlterTSConfigurationStmt *stmt)
  * Check whether a token type name is a member of a TSTokenTypeItem list.
  */
 static bool
-tstoken_list_member(char *token_name, List *tokens)
+tstoken_list_member(char *token_name, const List *tokens)
 {
 	ListCell   *c;
 	bool		found = false;

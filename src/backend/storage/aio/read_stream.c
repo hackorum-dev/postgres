@@ -148,7 +148,7 @@ struct ReadStream
  * Return a pointer to the per-buffer data by index.
  */
 static inline void *
-get_per_buffer_data(ReadStream *stream, int16 buffer_index)
+get_per_buffer_data(const ReadStream *stream, int16 buffer_index)
 {
 	return (char *) stream->per_buffer_data +
 		stream->per_buffer_data_size * buffer_index;

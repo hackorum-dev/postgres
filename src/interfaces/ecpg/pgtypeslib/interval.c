@@ -969,7 +969,7 @@ interval2tm(interval span, struct tm *tm, fsec_t *fsec)
 }								/* interval2tm() */
 
 static int
-tm2interval(struct tm *tm, fsec_t fsec, interval * span)
+tm2interval(const struct tm *tm, fsec_t fsec, interval * span)
 {
 	if ((double) tm->tm_year * MONTHS_PER_YEAR + tm->tm_mon > INT_MAX ||
 		(double) tm->tm_year * MONTHS_PER_YEAR + tm->tm_mon < INT_MIN)

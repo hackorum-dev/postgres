@@ -145,8 +145,10 @@ static Datum ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnul
 static void ExecInitInterpreter(void);
 
 /* support functions */
-static void CheckVarSlotCompatibility(TupleTableSlot *slot, int attnum, Oid vartype);
-static void CheckOpSlotCompatibility(ExprEvalStep *op, TupleTableSlot *slot);
+static void CheckVarSlotCompatibility(const TupleTableSlot *slot, int attnum,
+									  Oid vartype);
+static void CheckOpSlotCompatibility(const ExprEvalStep *op,
+									 const TupleTableSlot *slot);
 static TupleDesc get_cached_rowtype(Oid type_id, int32 typmod,
 									ExprEvalRowtypeCache *rowcache,
 									bool *changed);
@@ -168,12 +170,14 @@ static Datum ExecJustScanVarVirt(ExprState *state, ExprContext *econtext, bool *
 static Datum ExecJustAssignInnerVarVirt(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustAssignOuterVarVirt(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustAssignScanVarVirt(ExprState *state, ExprContext *econtext, bool *isnull);
-static Datum ExecJustHashInnerVarWithIV(ExprState *state, ExprContext *econtext, bool *isnull);
+static Datum ExecJustHashInnerVarWithIV(const ExprState *state,
+										ExprContext *econtext, bool *isnull);
 static Datum ExecJustHashOuterVar(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustHashInnerVar(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustHashOuterVarVirt(ExprState *state, ExprContext *econtext, bool *isnull);
 static Datum ExecJustHashInnerVarVirt(ExprState *state, ExprContext *econtext, bool *isnull);
-static Datum ExecJustHashOuterVarStrict(ExprState *state, ExprContext *econtext, bool *isnull);
+static Datum ExecJustHashOuterVarStrict(const ExprState *state,
+										ExprContext *econtext, bool *isnull);
 
 /* execution helper functions */
 static pg_attribute_always_inline void ExecAggPlainTransByVal(AggState *aggstate,
@@ -206,9 +210,10 @@ typedef struct ScalarArrayOpExprHashEntry
 #define SH_DECLARE
 #include "lib/simplehash.h"
 
-static bool saop_hash_element_match(struct saophash_hash *tb, Datum key1,
+static bool saop_hash_element_match(const struct saophash_hash *tb,
+									Datum key1,
 									Datum key2);
-static uint32 saop_element_hash(struct saophash_hash *tb, Datum key);
+static uint32 saop_element_hash(const struct saophash_hash *tb, Datum key);
 
 /*
  * ScalarArrayOpExprHashTable
@@ -2375,7 +2380,7 @@ CheckExprStillValid(ExprState *state, ExprContext *econtext)
  * since the expression tree has been created.
  */
 static void
-CheckVarSlotCompatibility(TupleTableSlot *slot, int attnum, Oid vartype)
+CheckVarSlotCompatibility(const TupleTableSlot *slot, int attnum, Oid vartype)
 {
 	/*
 	 * What we have to check for here is the possibility of an attribute
@@ -2430,7 +2435,7 @@ CheckVarSlotCompatibility(TupleTableSlot *slot, int attnum, Oid vartype)
  * Verify that the slot is compatible with a EEOP_*_FETCHSOME operation.
  */
 static void
-CheckOpSlotCompatibility(ExprEvalStep *op, TupleTableSlot *slot)
+CheckOpSlotCompatibility(const ExprEvalStep *op, const TupleTableSlot *slot)
 {
 #ifdef USE_ASSERT_CHECKING
 	/* there's nothing to check */
@@ -2543,7 +2548,7 @@ get_cached_rowtype(Oid type_id, int32 typmod,
 
 /* implementation of ExecJust(Inner|Outer|Scan)Var */
 static pg_attribute_always_inline Datum
-ExecJustVarImpl(ExprState *state, TupleTableSlot *slot, bool *isnull)
+ExecJustVarImpl(const ExprState *state, TupleTableSlot *slot, bool *isnull)
 {
 	ExprEvalStep *op = &state->steps[1];
 	int			attnum = op->d.var.attnum + 1;
@@ -2581,7 +2586,8 @@ ExecJustScanVar(ExprState *state, ExprContext *econtext, bool *isnull)
 
 /* implementation of ExecJustAssign(Inner|Outer|Scan)Var */
 static pg_attribute_always_inline Datum
-ExecJustAssignVarImpl(ExprState *state, TupleTableSlot *inslot, bool *isnull)
+ExecJustAssignVarImpl(const ExprState *state, TupleTableSlot *inslot,
+					  bool *isnull)
 {
 	ExprEvalStep *op = &state->steps[1];
 	int			attnum = op->d.assign_var.attnum + 1;
@@ -2676,7 +2682,8 @@ ExecJustConst(ExprState *state, ExprContext *econtext, bool *isnull)
 
 /* implementation of ExecJust(Inner|Outer|Scan)VarVirt */
 static pg_attribute_always_inline Datum
-ExecJustVarVirtImpl(ExprState *state, TupleTableSlot *slot, bool *isnull)
+ExecJustVarVirtImpl(const ExprState *state, TupleTableSlot *slot,
+					bool *isnull)
 {
 	ExprEvalStep *op = &state->steps[0];
 	int			attnum = op->d.var.attnum;
@@ -2719,7 +2726,8 @@ ExecJustScanVarVirt(ExprState *state, ExprContext *econtext, bool *isnull)
 
 /* implementation of ExecJustAssign(Inner|Outer|Scan)VarVirt */
 static pg_attribute_always_inline Datum
-ExecJustAssignVarVirtImpl(ExprState *state, TupleTableSlot *inslot, bool *isnull)
+ExecJustAssignVarVirtImpl(const ExprState *state, TupleTableSlot *inslot,
+						  bool *isnull)
 {
 	ExprEvalStep *op = &state->steps[0];
 	int			attnum = op->d.assign_var.attnum;
@@ -2764,7 +2772,7 @@ ExecJustAssignScanVarVirt(ExprState *state, ExprContext *econtext, bool *isnull)
  * implementation for hashing an inner Var, seeding with an initial value.
  */
 static Datum
-ExecJustHashInnerVarWithIV(ExprState *state, ExprContext *econtext,
+ExecJustHashInnerVarWithIV(const ExprState *state, ExprContext *econtext,
 						   bool *isnull)
 {
 	ExprEvalStep *fetchop = &state->steps[0];
@@ -2798,7 +2806,8 @@ ExecJustHashInnerVarWithIV(ExprState *state, ExprContext *econtext,
 
 /* implementation of ExecJustHash(Inner|Outer)Var */
 static pg_attribute_always_inline Datum
-ExecJustHashVarImpl(ExprState *state, TupleTableSlot *slot, bool *isnull)
+ExecJustHashVarImpl(const ExprState *state, TupleTableSlot *slot,
+					bool *isnull)
 {
 	ExprEvalStep *fetchop = &state->steps[0];
 	ExprEvalStep *var = &state->steps[1];
@@ -2836,7 +2845,8 @@ ExecJustHashInnerVar(ExprState *state, ExprContext *econtext, bool *isnull)
 
 /* implementation of ExecJustHash(Inner|Outer)VarVirt */
 static pg_attribute_always_inline Datum
-ExecJustHashVarVirtImpl(ExprState *state, TupleTableSlot *slot, bool *isnull)
+ExecJustHashVarVirtImpl(const ExprState *state, const TupleTableSlot *slot,
+						bool *isnull)
 {
 	ExprEvalStep *var = &state->steps[0];
 	ExprEvalStep *hashop = &state->steps[1];
@@ -2874,7 +2884,7 @@ ExecJustHashOuterVarVirt(ExprState *state, ExprContext *econtext,
  * implementation for hashing an outer Var.  Returns NULL on NULL input.
  */
 static Datum
-ExecJustHashOuterVarStrict(ExprState *state, ExprContext *econtext,
+ExecJustHashOuterVarStrict(const ExprState *state, ExprContext *econtext,
 						   bool *isnull)
 {
 	ExprEvalStep *fetchop = &state->steps[0];
@@ -4173,7 +4183,7 @@ ExecEvalScalarArrayOp(ExprState *state, ExprEvalStep *op)
  * if the type is collation-sensitive.
  */
 static uint32
-saop_element_hash(struct saophash_hash *tb, Datum key)
+saop_element_hash(const struct saophash_hash *tb, Datum key)
 {
 	ScalarArrayOpExprHashTable *elements_tab = (ScalarArrayOpExprHashTable *) tb->private_data;
 	FunctionCallInfo fcinfo = &elements_tab->hash_fcinfo_data;
@@ -4192,7 +4202,8 @@ saop_element_hash(struct saophash_hash *tb, Datum key)
  * lookups.
  */
 static bool
-saop_hash_element_match(struct saophash_hash *tb, Datum key1, Datum key2)
+saop_hash_element_match(const struct saophash_hash *tb, Datum key1,
+						Datum key2)
 {
 	Datum		result;
 
@@ -5161,7 +5172,7 @@ ExecEvalJsonCoercion(ExprState *state, ExprEvalStep *op,
 }
 
 static char *
-GetJsonBehaviorValueString(JsonBehavior *behavior)
+GetJsonBehaviorValueString(const JsonBehavior *behavior)
 {
 	/*
 	 * The order of array elements must correspond to the order of

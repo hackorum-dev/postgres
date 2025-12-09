@@ -41,9 +41,10 @@
 
 static int	gimme_edge(PlannerInfo *root, Gene gene1, Gene gene2, Edge *edge_table);
 static void remove_gene(PlannerInfo *root, Gene gene, Edge edge, Edge *edge_table);
-static Gene gimme_gene(PlannerInfo *root, Edge edge, Edge *edge_table);
+static Gene gimme_gene(PlannerInfo *root, Edge edge, const Edge *edge_table);
 
-static Gene edge_failure(PlannerInfo *root, Gene *gene, int index, Edge *edge_table, int num_gene);
+static Gene edge_failure(PlannerInfo *root, const Gene *gene, int index,
+						 const Edge *edge_table, int num_gene);
 
 
 /* alloc_edge_table
@@ -279,7 +280,7 @@ remove_gene(PlannerInfo *root, Gene gene, Edge edge, Edge *edge_table)
  *
  */
 static Gene
-gimme_gene(PlannerInfo *root, Edge edge, Edge *edge_table)
+gimme_gene(PlannerInfo *root, Edge edge, const Edge *edge_table)
 {
 	int			i;
 	Gene		friend;
@@ -369,7 +370,8 @@ gimme_gene(PlannerInfo *root, Edge edge, Edge *edge_table)
  *
  */
 static Gene
-edge_failure(PlannerInfo *root, Gene *gene, int index, Edge *edge_table, int num_gene)
+edge_failure(PlannerInfo *root, const Gene *gene, int index,
+			 const Edge *edge_table, int num_gene)
 {
 	int			i;
 	Gene		fail_gene = gene[index];

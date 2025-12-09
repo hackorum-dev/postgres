@@ -71,7 +71,7 @@ check_eme_pkcs1_v15(uint8 *data, int len)
  * ignore algo in cksum
  */
 static int
-control_cksum(uint8 *msg, int msglen)
+control_cksum(const uint8 *msg, int msglen)
 {
 	int			i;
 	unsigned	my_cksum,

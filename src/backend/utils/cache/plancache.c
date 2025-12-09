@@ -98,10 +98,10 @@ static CachedPlan *BuildCachedPlan(CachedPlanSource *plansource, List *qlist,
 								   ParamListInfo boundParams, QueryEnvironment *queryEnv);
 static bool choose_custom_plan(CachedPlanSource *plansource,
 							   ParamListInfo boundParams);
-static double cached_plan_cost(CachedPlan *plan, bool include_planner);
-static Query *QueryListGetPrimaryStmt(List *stmts);
-static void AcquireExecutorLocks(List *stmt_list, bool acquire);
-static void AcquirePlannerLocks(List *stmt_list, bool acquire);
+static double cached_plan_cost(const CachedPlan *plan, bool include_planner);
+static Query *QueryListGetPrimaryStmt(const List *stmts);
+static void AcquireExecutorLocks(const List *stmt_list, bool acquire);
+static void AcquirePlannerLocks(const List *stmt_list, bool acquire);
 static void ScanQueryForLocks(Query *parsetree, bool acquire);
 static bool ScanQueryWalker(Node *node, bool *acquire);
 static TupleDesc PlanCacheComputeResultDesc(List *stmt_list);
@@ -1227,7 +1227,7 @@ choose_custom_plan(CachedPlanSource *plansource, ParamListInfo boundParams)
  * we don't count it for a generic plan.)
  */
 static double
-cached_plan_cost(CachedPlan *plan, bool include_planner)
+cached_plan_cost(const CachedPlan *plan, bool include_planner)
 {
 	double		result = 0;
 	ListCell   *lc;
@@ -1887,7 +1887,7 @@ FreeCachedExpression(CachedExpression *cexpr)
  * occur in present usages of this function.
  */
 static Query *
-QueryListGetPrimaryStmt(List *stmts)
+QueryListGetPrimaryStmt(const List *stmts)
 {
 	ListCell   *lc;
 
@@ -1906,7 +1906,7 @@ QueryListGetPrimaryStmt(List *stmts)
  * or release them if acquire is false.
  */
 static void
-AcquireExecutorLocks(List *stmt_list, bool acquire)
+AcquireExecutorLocks(const List *stmt_list, bool acquire)
 {
 	ListCell   *lc1;
 
@@ -1962,7 +1962,7 @@ AcquireExecutorLocks(List *stmt_list, bool acquire)
  * a non-conflicting lock.
  */
 static void
-AcquirePlannerLocks(List *stmt_list, bool acquire)
+AcquirePlannerLocks(const List *stmt_list, bool acquire)
 {
 	ListCell   *lc;
 

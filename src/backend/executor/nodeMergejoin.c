@@ -173,10 +173,10 @@ typedef enum
  */
 static MergeJoinClause
 MJExamineQuals(List *mergeclauses,
-			   Oid *mergefamilies,
-			   Oid *mergecollations,
-			   bool *mergereversals,
-			   bool *mergenullsfirst,
+			   const Oid *mergefamilies,
+			   const Oid *mergecollations,
+			   const bool *mergereversals,
+			   const bool *mergenullsfirst,
 			   PlanState *parent)
 {
 	MergeJoinClause clauses;
@@ -383,7 +383,7 @@ MJEvalInnerValues(MergeJoinState *mergestate, TupleTableSlot *innerslot)
  * for the current outer and inner tuples, respectively.
  */
 static int
-MJCompare(MergeJoinState *mergestate)
+MJCompare(const MergeJoinState *mergestate)
 {
 	int			result = 0;
 	bool		nulleqnull = false;
@@ -511,7 +511,7 @@ MJFillInner(MergeJoinState *node)
  * away any non-constant terms that have been ANDed with a constant false.
  */
 static bool
-check_constant_qual(List *qual, bool *is_const_false)
+check_constant_qual(const List *qual, bool *is_const_false)
 {
 	ListCell   *lc;
 

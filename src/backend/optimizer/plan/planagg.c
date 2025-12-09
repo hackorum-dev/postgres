@@ -47,7 +47,7 @@
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
-static bool can_minmax_aggs(PlannerInfo *root, List **context);
+static bool can_minmax_aggs(const PlannerInfo *root, List **context);
 static bool build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
 							  Oid eqop, Oid sortop, bool reverse_sort,
 							  bool nulls_first);
@@ -235,7 +235,7 @@ preprocess_minmax_aggregates(PlannerInfo *root)
  * Returns false if a non-MIN/MAX aggregate is found, true otherwise.
  */
 static bool
-can_minmax_aggs(PlannerInfo *root, List **context)
+can_minmax_aggs(const PlannerInfo *root, List **context)
 {
 	ListCell   *lc;
 

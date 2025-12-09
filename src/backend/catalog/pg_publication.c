@@ -179,7 +179,7 @@ pg_relation_is_publishable(PG_FUNCTION_ARGS)
  * Otherwise, returns false.
  */
 static bool
-is_ancestor_member_tableinfos(Oid ancestor, List *table_infos)
+is_ancestor_member_tableinfos(Oid ancestor, const List *table_infos)
 {
 	ListCell   *lc;
 

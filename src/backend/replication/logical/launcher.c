@@ -566,7 +566,7 @@ retry:
  * slot.
  */
 static void
-logicalrep_worker_stop_internal(LogicalRepWorker *worker, int signo)
+logicalrep_worker_stop_internal(const LogicalRepWorker *worker, int signo)
 {
 	uint16		generation;
 

@@ -139,7 +139,7 @@ setCorrLex(LexizeData *ld, ParsedLex **correspondLexem)
 }
 
 static void
-moveToWaste(LexizeData *ld, ParsedLex *stop)
+moveToWaste(LexizeData *ld, const ParsedLex *stop)
 {
 	bool		go = true;
 

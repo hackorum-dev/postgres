@@ -67,7 +67,8 @@ typedef struct NotnullHashEntry
 } NotnullHashEntry;
 
 
-static void get_relation_foreign_keys(PlannerInfo *root, RelOptInfo *rel,
+static void get_relation_foreign_keys(PlannerInfo *root,
+									  const RelOptInfo *rel,
 									  Relation relation, bool inhparent);
 static bool infer_collation_opclass_match(InferenceElem *elem, Relation idxRel,
 										  List *idxExprs);
@@ -592,7 +593,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
  * relcache entries would probably exceed any savings.
  */
 static void
-get_relation_foreign_keys(PlannerInfo *root, RelOptInfo *rel,
+get_relation_foreign_keys(PlannerInfo *root, const RelOptInfo *rel,
 						  Relation relation, bool inhparent)
 {
 	List	   *rtable = root->parse->rtable;

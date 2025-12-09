@@ -118,7 +118,7 @@ pg_noreturn static void json_manifest_parse_failure(JsonManifestParseContext *co
 													char *msg);
 
 static int	hexdecode_char(char c);
-static bool hexdecode_string(uint8 *result, char *input, int nbytes);
+static bool hexdecode_string(uint8 *result, const char *input, int nbytes);
 static bool parse_xlogrecptr(XLogRecPtr *result, char *input);
 
 /*
@@ -916,7 +916,7 @@ hexdecode_char(char c)
  * Returns false if invalid characters are encountered; otherwise true.
  */
 static bool
-hexdecode_string(uint8 *result, char *input, int nbytes)
+hexdecode_string(uint8 *result, const char *input, int nbytes)
 {
 	int			i;
 

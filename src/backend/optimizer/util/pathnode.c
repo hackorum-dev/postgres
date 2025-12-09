@@ -51,9 +51,9 @@ typedef enum
 static int	append_total_cost_compare(const ListCell *a, const ListCell *b);
 static int	append_startup_cost_compare(const ListCell *a, const ListCell *b);
 static List *reparameterize_pathlist_by_child(PlannerInfo *root,
-											  List *pathlist,
+											  const List *pathlist,
 											  RelOptInfo *child_rel);
-static bool pathlist_is_reparameterizable_by_child(List *pathlist,
+static bool pathlist_is_reparameterizable_by_child(const List *pathlist,
 												   RelOptInfo *child_rel);
 
 
@@ -4445,7 +4445,7 @@ do { \
  */
 static List *
 reparameterize_pathlist_by_child(PlannerInfo *root,
-								 List *pathlist,
+								 const List *pathlist,
 								 RelOptInfo *child_rel)
 {
 	ListCell   *lc;
@@ -4473,7 +4473,8 @@ reparameterize_pathlist_by_child(PlannerInfo *root,
  *		Helper function to check if a list of paths can be reparameterized.
  */
 static bool
-pathlist_is_reparameterizable_by_child(List *pathlist, RelOptInfo *child_rel)
+pathlist_is_reparameterizable_by_child(const List *pathlist,
+									   RelOptInfo *child_rel)
 {
 	ListCell   *lc;
 

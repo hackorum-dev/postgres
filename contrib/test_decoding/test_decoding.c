@@ -57,7 +57,7 @@ static void pg_decode_shutdown(LogicalDecodingContext *ctx);
 static void pg_decode_begin_txn(LogicalDecodingContext *ctx,
 								ReorderBufferTXN *txn);
 static void pg_output_begin(LogicalDecodingContext *ctx,
-							TestDecodingData *data,
+							const TestDecodingData *data,
 							ReorderBufferTXN *txn,
 							bool last_write);
 static void pg_decode_commit_txn(LogicalDecodingContext *ctx,
@@ -93,7 +93,7 @@ static void pg_decode_rollback_prepared_txn(LogicalDecodingContext *ctx,
 static void pg_decode_stream_start(LogicalDecodingContext *ctx,
 								   ReorderBufferTXN *txn);
 static void pg_output_stream_start(LogicalDecodingContext *ctx,
-								   TestDecodingData *data,
+								   const TestDecodingData *data,
 								   ReorderBufferTXN *txn,
 								   bool last_write);
 static void pg_decode_stream_stop(LogicalDecodingContext *ctx,
@@ -307,7 +307,8 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 }
 
 static void
-pg_output_begin(LogicalDecodingContext *ctx, TestDecodingData *data, ReorderBufferTXN *txn, bool last_write)
+pg_output_begin(LogicalDecodingContext *ctx, const TestDecodingData *data,
+				ReorderBufferTXN *txn, bool last_write)
 {
 	OutputPluginPrepareWrite(ctx, last_write);
 	if (data->include_xids)
@@ -790,7 +791,9 @@ pg_decode_stream_start(LogicalDecodingContext *ctx,
 }
 
 static void
-pg_output_stream_start(LogicalDecodingContext *ctx, TestDecodingData *data, ReorderBufferTXN *txn, bool last_write)
+pg_output_stream_start(LogicalDecodingContext *ctx,
+					   const TestDecodingData *data, ReorderBufferTXN *txn,
+					   bool last_write)
 {
 	OutputPluginPrepareWrite(ctx, last_write);
 	if (data->include_xids)

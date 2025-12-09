@@ -170,19 +170,21 @@ typedef struct
 	QualCost	total;
 } cost_qual_eval_context;
 
-static List *extract_nonindex_conditions(List *qual_clauses, List *indexclauses);
+static List *extract_nonindex_conditions(const List *qual_clauses,
+										 List *indexclauses);
 static MergeScanSelCache *cached_scansel(PlannerInfo *root,
 										 RestrictInfo *rinfo,
 										 PathKey *pathkey);
 static void cost_rescan(PlannerInfo *root, Path *path,
 						Cost *rescan_startup_cost, Cost *rescan_total_cost);
 static bool cost_qual_eval_walker(Node *node, cost_qual_eval_context *context);
-static void get_restriction_qual_cost(PlannerInfo *root, RelOptInfo *baserel,
+static void get_restriction_qual_cost(PlannerInfo *root,
+									  const RelOptInfo *baserel,
 									  ParamPathInfo *param_info,
 									  QualCost *qpqual_cost);
 static bool has_indexed_join_quals(NestPath *path);
-static double approx_tuple_count(PlannerInfo *root, JoinPath *path,
-								 List *quals);
+static double approx_tuple_count(PlannerInfo *root, const JoinPath *path,
+								 const List *quals);
 static double calc_joinrel_size_estimate(PlannerInfo *root,
 										 RelOptInfo *joinrel,
 										 RelOptInfo *outer_rel,
@@ -196,13 +198,13 @@ static Selectivity get_foreign_key_join_selectivity(PlannerInfo *root,
 													Relids inner_relids,
 													SpecialJoinInfo *sjinfo,
 													List **restrictlist);
-static Cost append_nonpartial_cost(List *subpaths, int numpaths,
+static Cost append_nonpartial_cost(const List *subpaths, int numpaths,
 								   int parallel_workers);
 static void set_rel_width(PlannerInfo *root, RelOptInfo *rel);
-static int32 get_expr_width(PlannerInfo *root, const Node *expr);
+static int32 get_expr_width(const PlannerInfo *root, const Node *expr);
 static double relation_byte_size(double tuples, int width);
 static double page_size(double tuples, int width);
-static double get_parallel_divisor(Path *path);
+static double get_parallel_divisor(const Path *path);
 
 
 /*
@@ -821,7 +823,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
  * indexclauses is a list of IndexClauses.
  */
 static List *
-extract_nonindex_conditions(List *qual_clauses, List *indexclauses)
+extract_nonindex_conditions(const List *qual_clauses, List *indexclauses)
 {
 	List	   *result = NIL;
 	ListCell   *lc;
@@ -2161,7 +2163,8 @@ cost_sort(Path *path, PlannerInfo *root,
  *	  from the subpaths list, and to be in order of decreasing cost.
  */
 static Cost
-append_nonpartial_cost(List *subpaths, int numpaths, int parallel_workers)
+append_nonpartial_cost(const List *subpaths, int numpaths,
+					   int parallel_workers)
 {
 	Cost	   *costarr;
 	int			arrlen;
@@ -5094,7 +5097,7 @@ cost_qual_eval_walker(Node *node, cost_qual_eval_context *context)
  * set_baserel_size_estimates().
  */
 static void
-get_restriction_qual_cost(PlannerInfo *root, RelOptInfo *baserel,
+get_restriction_qual_cost(PlannerInfo *root, const RelOptInfo *baserel,
 						  ParamPathInfo *param_info,
 						  QualCost *qpqual_cost)
 {
@@ -5326,7 +5329,7 @@ has_indexed_join_quals(NestPath *path)
  * seems OK to live with the approximation.
  */
 static double
-approx_tuple_count(PlannerInfo *root, JoinPath *path, List *quals)
+approx_tuple_count(PlannerInfo *root, const JoinPath *path, const List *quals)
 {
 	double		tuples;
 	double		outer_tuples = path->outerjoinpath->rows;
@@ -6427,7 +6430,7 @@ set_pathtarget_cost_width(PlannerInfo *root, PathTarget *target)
  *		average width when unable to or when the given Node is not a Var.
  */
 static int32
-get_expr_width(PlannerInfo *root, const Node *expr)
+get_expr_width(const PlannerInfo *root, const Node *expr)
 {
 	int32		width;
 
@@ -6496,7 +6499,7 @@ page_size(double tuples, int width)
  * number of workers budgeted for the path.
  */
 static double
-get_parallel_divisor(Path *path)
+get_parallel_divisor(const Path *path)
 {
 	double		parallel_divisor = path->parallel_workers;
 

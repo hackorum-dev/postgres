@@ -41,7 +41,7 @@ static void plpython_return_error_callback(void *arg);
 
 static PyObject *PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc,
 										HeapTuple *rv);
-static HeapTuple PLy_modify_tuple(PLyProcedure *proc, PyObject *pltd,
+static HeapTuple PLy_modify_tuple(const PLyProcedure *proc, PyObject *pltd,
 								  TriggerData *tdata, HeapTuple otup);
 static void plpython_trigger_error_callback(void *arg);
 
@@ -959,7 +959,7 @@ PLy_trigger_build_args(FunctionCallInfo fcinfo, PLyProcedure *proc, HeapTuple *r
  * Apply changes requested by a MODIFY return from a trigger function.
  */
 static HeapTuple
-PLy_modify_tuple(PLyProcedure *proc, PyObject *pltd, TriggerData *tdata,
+PLy_modify_tuple(const PLyProcedure *proc, PyObject *pltd, TriggerData *tdata,
 				 HeapTuple otup)
 {
 	HeapTuple	rtup;

@@ -1078,7 +1078,7 @@ static const KeyWord *index_seq_search(const char *str, const KeyWord *kw,
 									   const int *index);
 static const KeySuffix *suff_search(const char *str, const KeySuffix *suf, enum KeySuffixType type);
 static bool is_separator_char(const char *str);
-static void NUMDesc_prepare(NUMDesc *num, FormatNode *n);
+static void NUMDesc_prepare(NUMDesc *num, const FormatNode *n);
 static void parse_format(FormatNode *node, const char *str, const KeyWord *kw,
 						 const KeySuffix *suf, const int *index, uint32 flags, NUMDesc *Num);
 
@@ -1110,7 +1110,8 @@ static int	seq_search_localized(const char *name, char **array, size_t *len,
 static bool from_char_seq_search(int *dest, const char **src,
 								 const char *const *array,
 								 char **localized_array, Oid collid,
-								 FormatNode *node, Node *escontext);
+								 const FormatNode *node,
+								 Node *escontext);
 static bool do_to_timestamp(const text *date_txt, const text *fmt, Oid collid, bool std,
 							struct pg_tm *tm, fsec_t *fsec, struct fmt_tz *tz,
 							int *fprec, uint32 *flags, Node *escontext);
@@ -1190,7 +1191,7 @@ is_separator_char(const char *str)
  * Prepare NUMDesc (number description struct) via FormatNode struct
  */
 static void
-NUMDesc_prepare(NUMDesc *num, FormatNode *n)
+NUMDesc_prepare(NUMDesc *num, const FormatNode *n)
 {
 	if (n->type != NODE_TYPE_ACTION)
 		return;
@@ -2432,7 +2433,8 @@ seq_search_localized(const char *name, char **array, size_t *len, Oid collid)
 static bool
 from_char_seq_search(int *dest, const char **src, const char *const *array,
 					 char **localized_array, Oid collid,
-					 FormatNode *node, Node *escontext)
+					 const FormatNode *node,
+					 Node *escontext)
 {
 	size_t		len;
 

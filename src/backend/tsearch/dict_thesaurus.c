@@ -69,7 +69,8 @@ typedef struct
 
 
 static void
-newLexeme(DictThesaurus *d, char *b, char *e, uint32 idsubst, uint16 posinsubst)
+newLexeme(DictThesaurus *d, char *b, const char *e, uint32 idsubst,
+		  uint16 posinsubst)
 {
 	TheLexeme  *ptr;
 
@@ -103,7 +104,8 @@ newLexeme(DictThesaurus *d, char *b, char *e, uint32 idsubst, uint16 posinsubst)
 }
 
 static void
-addWrd(DictThesaurus *d, char *b, char *e, uint32 idsubst, uint16 nwrd, uint16 posinsubst, bool useasis)
+addWrd(DictThesaurus *d, char *b, const char *e, uint32 idsubst, uint16 nwrd,
+	   uint16 posinsubst, bool useasis)
 {
 	static int	nres = 0;
 	static int	ntres = 0;
@@ -301,7 +303,8 @@ thesaurusRead(const char *filename, DictThesaurus *d)
 }
 
 static TheLexeme *
-addCompiledLexeme(TheLexeme *newwrds, int *nnw, int *tnm, TSLexeme *lexeme, LexemeInfo *src, uint16 tnvariant)
+addCompiledLexeme(TheLexeme *newwrds, int *nnw, int *tnm, TSLexeme *lexeme,
+				  const LexemeInfo *src, uint16 tnvariant)
 {
 	if (*nnw >= *tnm)
 	{
@@ -332,7 +335,7 @@ addCompiledLexeme(TheLexeme *newwrds, int *nnw, int *tnm, TSLexeme *lexeme, Lexe
 }
 
 static int
-cmpLexemeInfo(LexemeInfo *a, LexemeInfo *b)
+cmpLexemeInfo(const LexemeInfo *a, const LexemeInfo *b)
 {
 	if (a == NULL || b == NULL)
 		return 0;
@@ -674,7 +677,7 @@ findTheLexeme(DictThesaurus *d, char *lexeme)
 }
 
 static bool
-matchIdSubst(LexemeInfo *stored, uint32 idsubst)
+matchIdSubst(const LexemeInfo *stored, uint32 idsubst)
 {
 	bool		res = true;
 
@@ -751,7 +754,7 @@ findVariant(LexemeInfo *in, LexemeInfo *stored, uint16 curpos, LexemeInfo **newi
 }
 
 static TSLexeme *
-copyTSLexeme(TheSubstitute *ts)
+copyTSLexeme(const TheSubstitute *ts)
 {
 	TSLexeme   *res;
 	uint16		i;
@@ -769,7 +772,8 @@ copyTSLexeme(TheSubstitute *ts)
 }
 
 static TSLexeme *
-checkMatch(DictThesaurus *d, LexemeInfo *info, uint16 curpos, bool *moreres)
+checkMatch(const DictThesaurus *d, const LexemeInfo *info, uint16 curpos,
+		   bool *moreres)
 {
 	*moreres = false;
 	while (info)

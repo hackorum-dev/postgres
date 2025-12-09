@@ -36,7 +36,7 @@ typedef struct ws_file_info
 static BlockNumber *block_buffer = NULL;
 static unsigned block_buffer_size = 512;	/* Initial size. */
 
-static void dump_one_relation(ws_options *opt, RelFileLocator *rlocator,
+static void dump_one_relation(const ws_options *opt, RelFileLocator *rlocator,
 							  ForkNumber forknum, BlockNumber limit_block,
 							  BlockRefTableReader *reader);
 static void help(const char *progname);
@@ -125,7 +125,7 @@ main(int argc, char *argv[])
  * Dump details for one relation.
  */
 static void
-dump_one_relation(ws_options *opt, RelFileLocator *rlocator,
+dump_one_relation(const ws_options *opt, RelFileLocator *rlocator,
 				  ForkNumber forknum, BlockNumber limit_block,
 				  BlockRefTableReader *reader)
 {

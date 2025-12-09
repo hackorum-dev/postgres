@@ -109,7 +109,8 @@ static CommitTimestampShared *commitTsShared;
 bool		track_commit_timestamp;
 
 static void SetXidCommitTsInPage(TransactionId xid, int nsubxids,
-								 TransactionId *subxids, TimestampTz ts,
+								 const TransactionId *subxids,
+								 TimestampTz ts,
 								 RepOriginId nodeid, int64 pageno);
 static void TransactionIdSetCommitTs(TransactionId xid, TimestampTz ts,
 									 RepOriginId nodeid, int slotno);
@@ -218,7 +219,8 @@ TransactionTreeSetCommitTsData(TransactionId xid, int nsubxids,
  */
 static void
 SetXidCommitTsInPage(TransactionId xid, int nsubxids,
-					 TransactionId *subxids, TimestampTz ts,
+					 const TransactionId *subxids,
+					 TimestampTz ts,
 					 RepOriginId nodeid, int64 pageno)
 {
 	LWLock	   *lock = SimpleLruGetBankLock(CommitTsCtl, pageno);

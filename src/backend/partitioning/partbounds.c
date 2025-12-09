@@ -103,7 +103,7 @@ static PartitionBoundInfo create_list_bounds(PartitionBoundSpec **boundspecs,
 static PartitionBoundInfo create_range_bounds(PartitionBoundSpec **boundspecs,
 											  int nparts, PartitionKey key, int **mapping);
 static PartitionBoundInfo merge_list_bounds(FmgrInfo *partsupfunc,
-											Oid *partcollation,
+											const Oid *partcollation,
 											RelOptInfo *outer_rel,
 											RelOptInfo *inner_rel,
 											JoinType jointype,
@@ -117,9 +117,9 @@ static PartitionBoundInfo merge_range_bounds(int partnatts,
 											 JoinType jointype,
 											 List **outer_parts,
 											 List **inner_parts);
-static void init_partition_map(RelOptInfo *rel, PartitionMap *map);
+static void init_partition_map(const RelOptInfo *rel, PartitionMap *map);
 static void free_partition_map(PartitionMap *map);
-static bool is_dummy_partition(RelOptInfo *rel, int part_index);
+static bool is_dummy_partition(const RelOptInfo *rel, int part_index);
 static int	merge_matching_partitions(PartitionMap *outer_map,
 									  PartitionMap *inner_map,
 									  int outer_index,
@@ -163,13 +163,14 @@ static void merge_default_partitions(PartitionMap *outer_map,
 									 int *default_index);
 static int	merge_partition_with_dummy(PartitionMap *map, int index,
 									   int *next_index);
-static void fix_merged_indexes(PartitionMap *outer_map,
-							   PartitionMap *inner_map,
-							   int nmerged, List *merged_indexes);
-static void generate_matching_part_pairs(RelOptInfo *outer_rel,
-										 RelOptInfo *inner_rel,
-										 PartitionMap *outer_map,
-										 PartitionMap *inner_map,
+static void fix_merged_indexes(const PartitionMap *outer_map,
+							   const PartitionMap *inner_map,
+							   int nmerged,
+							   const List *merged_indexes);
+static void generate_matching_part_pairs(const RelOptInfo *outer_rel,
+										 const RelOptInfo *inner_rel,
+										 const PartitionMap *outer_map,
+										 const PartitionMap *inner_map,
 										 int nmerged,
 										 List **outer_parts,
 										 List **inner_parts);
@@ -213,13 +214,16 @@ static void add_merged_range_bounds(int partnatts, FmgrInfo *partsupfuncs,
 									List **merged_kinds,
 									List **merged_indexes);
 static PartitionRangeBound *make_one_partition_rbound(PartitionKey key, int index,
-													  List *datums, bool lower);
+													  const List *datums,
+													  bool lower);
 static int32 partition_hbound_cmp(int modulus1, int remainder1, int modulus2,
 								  int remainder2);
 static int32 partition_rbound_cmp(int partnatts, FmgrInfo *partsupfunc,
-								  Oid *partcollation, Datum *datums1,
-								  PartitionRangeDatumKind *kind1, bool lower1,
-								  PartitionRangeBound *b2);
+								  const Oid *partcollation,
+								  const Datum *datums1,
+								  const PartitionRangeDatumKind *kind1,
+								  bool lower1,
+								  const PartitionRangeBound *b2);
 static int	partition_range_bsearch(int partnatts, FmgrInfo *partsupfunc,
 									Oid *partcollation,
 									PartitionBoundInfo boundinfo,
@@ -229,7 +233,8 @@ static Expr *make_partition_op_expr(PartitionKey key, int keynum,
 static Oid	get_partition_operator(PartitionKey key, int col,
 								   StrategyNumber strategy, bool *need_relabel);
 static List *get_qual_for_hash(Relation parent, PartitionBoundSpec *spec);
-static List *get_qual_for_list(Relation parent, PartitionBoundSpec *spec);
+static List *get_qual_for_list(Relation parent,
+							   const PartitionBoundSpec *spec);
 static List *get_qual_for_range(Relation parent, PartitionBoundSpec *spec,
 								bool for_default);
 static void get_range_key_properties(PartitionKey key, int keynum,
@@ -1188,7 +1193,7 @@ partition_bounds_merge(int partnatts,
  * join can't handle.
  */
 static PartitionBoundInfo
-merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
+merge_list_bounds(FmgrInfo *partsupfunc, const Oid *partcollation,
 				  RelOptInfo *outer_rel, RelOptInfo *inner_rel,
 				  JoinType jointype,
 				  List **outer_parts, List **inner_parts)
@@ -1801,7 +1806,7 @@ cleanup:
  *		Initialize a PartitionMap struct for given relation
  */
 static void
-init_partition_map(RelOptInfo *rel, PartitionMap *map)
+init_partition_map(const RelOptInfo *rel, PartitionMap *map)
 {
 	int			nparts = rel->nparts;
 	int			i;
@@ -1833,7 +1838,7 @@ free_partition_map(PartitionMap *map)
  * is_dummy_partition --- has partition been proven empty?
  */
 static bool
-is_dummy_partition(RelOptInfo *rel, int part_index)
+is_dummy_partition(const RelOptInfo *rel, int part_index)
 {
 	RelOptInfo *part_rel;
 
@@ -2375,8 +2380,9 @@ merge_partition_with_dummy(PartitionMap *map, int index, int *next_index)
  *		Adjust merged indexes of re-merged partitions
  */
 static void
-fix_merged_indexes(PartitionMap *outer_map, PartitionMap *inner_map,
-				   int nmerged, List *merged_indexes)
+fix_merged_indexes(const PartitionMap *outer_map,
+				   const PartitionMap *inner_map,
+				   int nmerged, const List *merged_indexes)
 {
 	int		   *new_indexes;
 	int			merged_index;
@@ -2429,8 +2435,10 @@ fix_merged_indexes(PartitionMap *outer_map, PartitionMap *inner_map,
  * and returned in *outer_parts and *inner_parts.
  */
 static void
-generate_matching_part_pairs(RelOptInfo *outer_rel, RelOptInfo *inner_rel,
-							 PartitionMap *outer_map, PartitionMap *inner_map,
+generate_matching_part_pairs(const RelOptInfo *outer_rel,
+							 const RelOptInfo *inner_rel,
+							 const PartitionMap *outer_map,
+							 const PartitionMap *inner_map,
 							 int nmerged,
 							 List **outer_parts, List **inner_parts)
 {
@@ -3417,7 +3425,8 @@ get_hash_partition_greatest_modulus(PartitionBoundInfo bound)
  * because there are multiple sites that want to use this facility.
  */
 static PartitionRangeBound *
-make_one_partition_rbound(PartitionKey key, int index, List *datums, bool lower)
+make_one_partition_rbound(PartitionKey key, int index, const List *datums,
+						  bool lower)
 {
 	PartitionRangeBound *bound;
 	ListCell   *lc;
@@ -3477,9 +3486,11 @@ make_one_partition_rbound(PartitionKey key, int index, List *datums, bool lower)
  */
 static int32
 partition_rbound_cmp(int partnatts, FmgrInfo *partsupfunc,
-					 Oid *partcollation,
-					 Datum *datums1, PartitionRangeDatumKind *kind1,
-					 bool lower1, PartitionRangeBound *b2)
+					 const Oid *partcollation,
+					 const Datum *datums1,
+					 const PartitionRangeDatumKind *kind1,
+					 bool lower1,
+					 const PartitionRangeBound *b2)
 {
 	int32		colnum = 0;
 	int32		cmpval = 0;		/* placate compiler */
@@ -4054,7 +4065,7 @@ get_qual_for_hash(Relation parent, PartitionBoundSpec *spec)
  * partition since in that case there is no constraint.
  */
 static List *
-get_qual_for_list(Relation parent, PartitionBoundSpec *spec)
+get_qual_for_list(Relation parent, const PartitionBoundSpec *spec)
 {
 	PartitionKey key = RelationGetPartitionKey(parent);
 	List	   *result;

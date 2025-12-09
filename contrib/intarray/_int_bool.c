@@ -359,7 +359,7 @@ gin_bool_consistent(QUERYTYPE *query, bool *check)
 }
 
 static bool
-contains_required_value(ITEM *curitem)
+contains_required_value(const ITEM *curitem)
 {
 	/* since this function recurses, it could be driven to stack overflow */
 	check_stack_depth();

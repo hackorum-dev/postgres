@@ -165,7 +165,8 @@ consume_query_cancel_impl(int line, PGconn *conn)
  */
 static void
 wait_for_connection_state(int line, PGconn *monitorConn, int procpid,
-						  char *state, char *event)
+						  const char *state,
+						  const char *event)
 {
 	const Oid	paramTypes[] = {INT4OID, TEXTOID};
 	const char *paramValues[2];

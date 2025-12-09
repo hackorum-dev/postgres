@@ -131,9 +131,9 @@ typedef struct MemoizeEntry
 #define SH_DECLARE
 #include "lib/simplehash.h"
 
-static uint32 MemoizeHash_hash(struct memoize_hash *tb,
+static uint32 MemoizeHash_hash(const struct memoize_hash *tb,
 							   const MemoizeKey *key);
-static bool MemoizeHash_equal(struct memoize_hash *tb,
+static bool MemoizeHash_equal(const struct memoize_hash *tb,
 							  const MemoizeKey *key1,
 							  const MemoizeKey *key2);
 
@@ -156,7 +156,7 @@ static bool MemoizeHash_equal(struct memoize_hash *tb,
  *		probeslot with the key values to be looked up.
  */
 static uint32
-MemoizeHash_hash(struct memoize_hash *tb, const MemoizeKey *key)
+MemoizeHash_hash(const struct memoize_hash *tb, const MemoizeKey *key)
 {
 	MemoizeState *mstate = (MemoizeState *) tb->private_data;
 	ExprContext *econtext = mstate->ss.ps.ps_ExprContext;
@@ -219,7 +219,7 @@ MemoizeHash_hash(struct memoize_hash *tb, const MemoizeKey *key)
  *		probeslot is always populated with details of what's being looked up.
  */
 static bool
-MemoizeHash_equal(struct memoize_hash *tb, const MemoizeKey *key1,
+MemoizeHash_equal(const struct memoize_hash *tb, const MemoizeKey *key1,
 				  const MemoizeKey *key2)
 {
 	MemoizeState *mstate = (MemoizeState *) tb->private_data;
@@ -300,7 +300,7 @@ build_hash_table(MemoizeState *mstate, uint32 size)
  *		mstate's param_exprs.
  */
 static inline void
-prepare_probe_slot(MemoizeState *mstate, MemoizeKey *key)
+prepare_probe_slot(const MemoizeState *mstate, MemoizeKey *key)
 {
 	TupleTableSlot *pslot = mstate->probeslot;
 	TupleTableSlot *tslot = mstate->tableslot;
@@ -438,7 +438,7 @@ cache_purge_all(MemoizeState *mstate)
  * which the key belongs to is removed from the cache.
  */
 static bool
-cache_reduce_memory(MemoizeState *mstate, MemoizeKey *specialkey)
+cache_reduce_memory(MemoizeState *mstate, const MemoizeKey *specialkey)
 {
 	bool		specialkey_intact = true;	/* for now */
 	dlist_mutable_iter iter;

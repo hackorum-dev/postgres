@@ -80,7 +80,8 @@
 #define RDELIM			')'
 #define DELIM			','
 
-static void regress_lseg_construct(LSEG *lseg, Point *pt1, Point *pt2);
+static void regress_lseg_construct(LSEG *lseg, const Point *pt1,
+								   const Point *pt2);
 
 PG_MODULE_MAGIC_EXT(
 					.name = "regress",
@@ -133,7 +134,7 @@ interpt_pp(PG_FUNCTION_ARGS)
 
 /* like lseg_construct, but assume space already allocated */
 static void
-regress_lseg_construct(LSEG *lseg, Point *pt1, Point *pt2)
+regress_lseg_construct(LSEG *lseg, const Point *pt1, const Point *pt2)
 {
 	lseg->p[0].x = pt1->x;
 	lseg->p[0].y = pt1->y;

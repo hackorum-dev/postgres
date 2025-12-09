@@ -37,7 +37,7 @@
 #include "utils/syscache.h"
 
 
-static void checkRuleResultList(List *targetList, TupleDesc resultDesc,
+static void checkRuleResultList(const List *targetList, TupleDesc resultDesc,
 								bool isSelect, bool requireColumnNameMatch);
 static bool setRuleCheckAsUser_walker(Node *node, Oid *context);
 static void setRuleCheckAsUser_Query(Query *qry, Oid userid);
@@ -503,7 +503,8 @@ DefineQueryRewrite(const char *rulename,
  * A SELECT targetlist may optionally require that column names match.
  */
 static void
-checkRuleResultList(List *targetList, TupleDesc resultDesc, bool isSelect,
+checkRuleResultList(const List *targetList, TupleDesc resultDesc,
+					bool isSelect,
 					bool requireColumnNameMatch)
 {
 	ListCell   *tllist;

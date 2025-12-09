@@ -97,13 +97,14 @@ static void _bt_array_set_low_or_high(Relation rel, ScanKey skey,
 									  BTArrayKeyInfo *array, bool low_not_high);
 static void _bt_skiparray_set_element(Relation rel, ScanKey skey, BTArrayKeyInfo *array,
 									  int32 set_elem_result, Datum tupdatum, bool tupnull);
-static void _bt_skiparray_set_isnull(Relation rel, ScanKey skey, BTArrayKeyInfo *array);
+static void _bt_skiparray_set_isnull(Relation rel, ScanKey skey,
+									 const BTArrayKeyInfo *array);
 static inline int32 _bt_compare_array_skey(FmgrInfo *orderproc,
 										   Datum tupdatum, bool tupnull,
 										   Datum arrdatum, ScanKey cur);
 static void _bt_binsrch_skiparray_skey(bool cur_elem_trig, ScanDirection dir,
 									   Datum tupdatum, bool tupnull,
-									   BTArrayKeyInfo *array, ScanKey cur,
+									   const BTArrayKeyInfo *array, ScanKey cur,
 									   int32 *set_elem_result);
 #ifdef USE_ASSERT_CHECKING
 static bool _bt_verify_keys_with_arraykeys(IndexScanDesc scan);
@@ -3316,7 +3317,8 @@ _bt_skiparray_set_element(Relation rel, ScanKey skey, BTArrayKeyInfo *array,
  * _bt_skiparray_set_isnull() -- set skip array scan key to NULL
  */
 static void
-_bt_skiparray_set_isnull(Relation rel, ScanKey skey, BTArrayKeyInfo *array)
+_bt_skiparray_set_isnull(Relation rel, ScanKey skey,
+						 const BTArrayKeyInfo *array)
 {
 	Assert(skey->sk_flags & SK_BT_SKIP);
 	Assert(skey->sk_flags & SK_SEARCHARRAY);
@@ -3579,7 +3581,7 @@ _bt_binsrch_array_skey(FmgrInfo *orderproc,
 static void
 _bt_binsrch_skiparray_skey(bool cur_elem_trig, ScanDirection dir,
 						   Datum tupdatum, bool tupnull,
-						   BTArrayKeyInfo *array, ScanKey cur,
+						   const BTArrayKeyInfo *array, ScanKey cur,
 						   int32 *set_elem_result)
 {
 	Assert(cur->sk_flags & SK_BT_SKIP);

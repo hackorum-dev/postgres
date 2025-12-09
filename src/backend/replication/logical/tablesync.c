@@ -623,7 +623,7 @@ ProcessSyncingTablesForApply(XLogRecPtr current_lsn)
  * Create list of columns for COPY based on logical relation mapping.
  */
 static List *
-make_copy_attnamelist(LogicalRepRelMapEntry *rel)
+make_copy_attnamelist(const LogicalRepRelMapEntry *rel)
 {
 	List	   *attnamelist = NIL;
 	int			i;

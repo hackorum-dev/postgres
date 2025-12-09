@@ -41,7 +41,7 @@ static void checkViewColumns(TupleDesc newdesc, TupleDesc olddesc);
  *---------------------------------------------------------------------
  */
 static ObjectAddress
-DefineVirtualRelation(RangeVar *relation, List *tlist, bool replace,
+DefineVirtualRelation(RangeVar *relation, const List *tlist, bool replace,
 					  List *options, Query *viewParse)
 {
 	Oid			viewOid;

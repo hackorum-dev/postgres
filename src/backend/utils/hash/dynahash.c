@@ -269,7 +269,7 @@ struct HTAB
  * Private function prototypes
  */
 static void *DynaHashAlloc(Size size);
-static HASHSEGMENT seg_alloc(HTAB *hashp);
+static HASHSEGMENT seg_alloc(const HTAB *hashp);
 static bool element_alloc(HTAB *hashp, int nelem, int freelist_idx);
 static bool dir_realloc(HTAB *hashp);
 static bool expand_table(HTAB *hashp);
@@ -285,7 +285,7 @@ static int64 next_pow2_int64(int64 num);
 static int	next_pow2_int(int64 num);
 static void register_seq_scan(HTAB *hashp);
 static void deregister_seq_scan(HTAB *hashp);
-static bool has_seq_scans(HTAB *hashp);
+static bool has_seq_scans(const HTAB *hashp);
 
 
 /*
@@ -912,7 +912,7 @@ get_hash_value(HTAB *hashp, const void *keyPtr)
 
 /* Convert a hash value to a bucket number */
 static inline uint32
-calc_bucket(HASHHDR *hctl, uint32 hash_val)
+calc_bucket(const HASHHDR *hctl, uint32 hash_val)
 {
 	uint32		bucket;
 
@@ -1679,7 +1679,7 @@ dir_realloc(HTAB *hashp)
 
 
 static HASHSEGMENT
-seg_alloc(HTAB *hashp)
+seg_alloc(const HTAB *hashp)
 {
 	HASHSEGMENT segp;
 
@@ -1914,7 +1914,7 @@ deregister_seq_scan(HTAB *hashp)
 
 /* Check if a table has any active scan */
 static bool
-has_seq_scans(HTAB *hashp)
+has_seq_scans(const HTAB *hashp)
 {
 	int			i;
 

@@ -426,7 +426,7 @@ static void CleanUpLock(LOCK *lock, PROCLOCK *proclock,
 static void LockRefindAndRelease(LockMethod lockMethodTable, PGPROC *proc,
 								 LOCKTAG *locktag, LOCKMODE lockmode,
 								 bool decrement_strong_lock_count);
-static void GetSingleProcBlockerStatusData(PGPROC *blocked_proc,
+static void GetSingleProcBlockerStatusData(const PGPROC *blocked_proc,
 										   BlockedProcsData *data);
 
 
@@ -4073,7 +4073,8 @@ GetBlockerStatusData(int blocked_pid)
 
 /* Accumulate data about one possibly-blocked proc for GetBlockerStatusData */
 static void
-GetSingleProcBlockerStatusData(PGPROC *blocked_proc, BlockedProcsData *data)
+GetSingleProcBlockerStatusData(const PGPROC *blocked_proc,
+							   BlockedProcsData *data)
 {
 	LOCK	   *theLock = blocked_proc->waitLock;
 	BlockedProcData *bproc;

@@ -85,7 +85,7 @@ typedef struct
  *------
  */
 static void _readBlockHeader(ArchiveHandle *AH, int *type, int *id);
-static pgoff_t _getFilePos(ArchiveHandle *AH, lclContext *ctx);
+static pgoff_t _getFilePos(ArchiveHandle *AH, const lclContext *ctx);
 
 static void _CustomWriteFunc(ArchiveHandle *AH, const char *buf, size_t len);
 static size_t _CustomReadFunc(ArchiveHandle *AH, char **buf, size_t *buflen);
@@ -941,7 +941,7 @@ _WorkerJobRestoreCustom(ArchiveHandle *AH, TocEntry *te)
  * data block offsets anyway.
  */
 static pgoff_t
-_getFilePos(ArchiveHandle *AH, lclContext *ctx)
+_getFilePos(ArchiveHandle *AH, const lclContext *ctx)
 {
 	pgoff_t		pos;
 

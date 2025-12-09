@@ -62,7 +62,7 @@ typedef struct
 
 /* utility functions for CTAS definition creation */
 static ObjectAddress create_ctas_internal(List *attrList, IntoClause *into);
-static ObjectAddress create_ctas_nodata(List *tlist, IntoClause *into);
+static ObjectAddress create_ctas_nodata(const List *tlist, IntoClause *into);
 
 /* DestReceiver routines for collecting data */
 static void intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
@@ -152,7 +152,7 @@ create_ctas_internal(List *attrList, IntoClause *into)
  * the targetlist of the SELECT or view definition.
  */
 static ObjectAddress
-create_ctas_nodata(List *tlist, IntoClause *into)
+create_ctas_nodata(const List *tlist, IntoClause *into)
 {
 	List	   *attrList;
 	ListCell   *t,

@@ -67,7 +67,7 @@ static int	_SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 							  Snapshot snapshot, Snapshot crosscheck_snapshot,
 							  bool fire_triggers);
 
-static ParamListInfo _SPI_convert_params(int nargs, Oid *argtypes,
+static ParamListInfo _SPI_convert_params(int nargs, const Oid *argtypes,
 										 const Datum *Values, const char *Nulls);
 
 static int	_SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount);
@@ -2845,7 +2845,7 @@ fail:
  * Convert arrays of query parameters to form wanted by planner and executor
  */
 static ParamListInfo
-_SPI_convert_params(int nargs, Oid *argtypes,
+_SPI_convert_params(int nargs, const Oid *argtypes,
 					const Datum *Values, const char *Nulls)
 {
 	ParamListInfo paramLI;

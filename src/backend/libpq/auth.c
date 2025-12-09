@@ -2223,7 +2223,7 @@ static int	errdetail_for_ldap(LDAP *ldap);
  * TLS if requested.
  */
 static int
-InitializeLDAPConnection(Port *port, LDAP **ldap)
+InitializeLDAPConnection(const Port *port, LDAP **ldap)
 {
 	const char *scheme;
 	int			ldapversion = LDAP_VERSION3;

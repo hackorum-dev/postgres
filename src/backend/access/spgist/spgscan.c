@@ -599,7 +599,7 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 static void
 spgInitInnerConsistentIn(spgInnerConsistentIn *in,
 						 SpGistScanOpaque so,
-						 SpGistSearchItem *item,
+						 const SpGistSearchItem *item,
 						 SpGistInnerTuple innerTuple)
 {
 	in->scankeys = so->keyData;
@@ -621,9 +621,10 @@ spgInitInnerConsistentIn(spgInnerConsistentIn *in,
 
 static SpGistSearchItem *
 spgMakeInnerItem(SpGistScanOpaque so,
-				 SpGistSearchItem *parentItem,
+				 const SpGistSearchItem *parentItem,
 				 SpGistNodeTuple tuple,
-				 spgInnerConsistentOut *out, int i, bool isnull,
+				 const spgInnerConsistentOut *out, int i,
+				 bool isnull,
 				 double *distances)
 {
 	SpGistSearchItem *item = spgAllocSearchItem(so, isnull, distances);

@@ -181,7 +181,8 @@ static char *ExecBuildSlotPartitionKeyDescription(Relation rel,
 												  const bool *isnull,
 												  int maxfieldlen);
 static List *adjust_partition_colnos(List *colnos, ResultRelInfo *leaf_part_rri);
-static List *adjust_partition_colnos_using_map(List *colnos, AttrMap *attrMap);
+static List *adjust_partition_colnos_using_map(const List *colnos,
+											   const AttrMap *attrMap);
 static PartitionPruneState *CreatePartitionPruneState(EState *estate,
 													  PartitionPruneInfo *pruneinfo,
 													  Bitmapset **all_leafpart_rtis);
@@ -500,9 +501,9 @@ ExecFindPartition(ModifyTableState *mtstate,
  */
 static bool
 IsIndexCompatibleAsArbiter(Relation arbiterIndexRelation,
-						   IndexInfo *arbiterIndexInfo,
+						   const IndexInfo *arbiterIndexInfo,
 						   Relation indexRelation,
-						   IndexInfo *indexInfo)
+						   const IndexInfo *indexInfo)
 {
 	Assert(arbiterIndexRelation->rd_index->indrelid == indexRelation->rd_index->indrelid);
 
@@ -1854,7 +1855,7 @@ adjust_partition_colnos(List *colnos, ResultRelInfo *leaf_part_rri)
  * Note: mustn't be called if no adjustment is required.
  */
 static List *
-adjust_partition_colnos_using_map(List *colnos, AttrMap *attrMap)
+adjust_partition_colnos_using_map(const List *colnos, const AttrMap *attrMap)
 {
 	List	   *new_colnos = NIL;
 	ListCell   *lc;

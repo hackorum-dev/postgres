@@ -49,7 +49,7 @@ static void expand_single_inheritance_child(PlannerInfo *root,
 											RangeTblEntry **childrte_p,
 											Index *childRTindex_p);
 static Bitmapset *translate_col_privs(const Bitmapset *parent_privs,
-									  List *translated_vars);
+									  const List *translated_vars);
 static Bitmapset *translate_col_privs_multilevel(PlannerInfo *root,
 												 RelOptInfo *rel,
 												 RelOptInfo *parent_rel,
@@ -704,7 +704,7 @@ get_rel_all_updated_cols(PlannerInfo *root, RelOptInfo *rel)
  */
 static Bitmapset *
 translate_col_privs(const Bitmapset *parent_privs,
-					List *translated_vars)
+					const List *translated_vars)
 {
 	Bitmapset  *child_privs = NULL;
 	bool		whole_row;

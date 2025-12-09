@@ -599,8 +599,9 @@ static void apply_handle_delete_internal(ApplyExecutionData *edata,
 										 ResultRelInfo *relinfo,
 										 TupleTableSlot *remoteslot,
 										 Oid localindexoid);
-static bool FindReplTupleInLocalRel(ApplyExecutionData *edata, Relation localrel,
-									LogicalRepRelation *remoterel,
+static bool FindReplTupleInLocalRel(const ApplyExecutionData *edata,
+									Relation localrel,
+									const LogicalRepRelation *remoterel,
 									Oid localidxoid,
 									TupleTableSlot *remoteslot,
 									TupleTableSlot **localslot);
@@ -678,7 +679,7 @@ ReplicationOriginNameForLogicalRep(Oid suboid, Oid relid,
  * while applying this transaction.
  */
 static bool
-should_apply_changes_for_rel(LogicalRepRelMapEntry *rel)
+should_apply_changes_for_rel(const LogicalRepRelMapEntry *rel)
 {
 	switch (MyLogicalRepWorker->type)
 	{
@@ -1014,8 +1015,8 @@ slot_fill_defaults(LogicalRepRelMapEntry *rel, EState *estate,
  * Incoming data can be either text or binary format.
  */
 static void
-slot_store_data(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
-				LogicalRepTupleData *tupleData)
+slot_store_data(TupleTableSlot *slot, const LogicalRepRelMapEntry *rel,
+				const LogicalRepTupleData *tupleData)
 {
 	int			natts = slot->tts_tupleDescriptor->natts;
 	int			i;
@@ -1116,8 +1117,8 @@ slot_store_data(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
  */
 static void
 slot_modify_data(TupleTableSlot *slot, TupleTableSlot *srcslot,
-				 LogicalRepRelMapEntry *rel,
-				 LogicalRepTupleData *tupleData)
+				 const LogicalRepRelMapEntry *rel,
+				 const LogicalRepTupleData *tupleData)
 {
 	int			natts = slot->tts_tupleDescriptor->natts;
 	int			i;
@@ -3171,8 +3172,8 @@ apply_handle_delete_internal(ApplyExecutionData *edata,
  * Local tuple, if found, is returned in '*localslot'.
  */
 static bool
-FindReplTupleInLocalRel(ApplyExecutionData *edata, Relation localrel,
-						LogicalRepRelation *remoterel,
+FindReplTupleInLocalRel(const ApplyExecutionData *edata, Relation localrel,
+						const LogicalRepRelation *remoterel,
 						Oid localidxoid,
 						TupleTableSlot *remoteslot,
 						TupleTableSlot **localslot)

@@ -141,7 +141,8 @@ static void gist_indexsortbuild_levelstate_flush(GISTBuildState *state,
 												 GistSortedBuildLevelState *levelstate);
 
 static void gistInitBuffering(GISTBuildState *buildstate);
-static int	calculatePagesPerBuffer(GISTBuildState *buildstate, int levelStep);
+static int	calculatePagesPerBuffer(const GISTBuildState *buildstate,
+									int levelStep);
 static void gistBuildCallback(Relation index,
 							  ItemPointer tid,
 							  Datum *values,
@@ -158,7 +159,7 @@ static BlockNumber gistbufferinginserttuples(GISTBuildState *buildstate,
 											 BlockNumber parentblk, OffsetNumber downlinkoffnum);
 static Buffer gistBufferingFindCorrectParent(GISTBuildState *buildstate,
 											 BlockNumber childblkno, int level,
-											 BlockNumber *parentblkno,
+											 const BlockNumber *parentblkno,
 											 OffsetNumber *downlinkoffnum);
 static void gistProcessEmptyingQueue(GISTBuildState *buildstate);
 static void gistEmptyAllBuffers(GISTBuildState *buildstate);
@@ -786,7 +787,7 @@ gistInitBuffering(GISTBuildState *buildstate)
  * at the next lower level.
  */
 static int
-calculatePagesPerBuffer(GISTBuildState *buildstate, int levelStep)
+calculatePagesPerBuffer(const GISTBuildState *buildstate, int levelStep)
 {
 	double		pagesPerBuffer;
 	double		avgIndexTuplesPerPage;
@@ -1224,7 +1225,7 @@ gistbufferinginserttuples(GISTBuildState *buildstate, Buffer buffer, int level,
 static Buffer
 gistBufferingFindCorrectParent(GISTBuildState *buildstate,
 							   BlockNumber childblkno, int level,
-							   BlockNumber *parentblkno,
+							   const BlockNumber *parentblkno,
 							   OffsetNumber *downlinkoffnum)
 {
 	BlockNumber parent;

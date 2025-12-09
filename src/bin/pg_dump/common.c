@@ -84,7 +84,8 @@ static catalogid_hash *catalogIdHash = NULL;
 static void flagInhTables(Archive *fout, TableInfo *tblinfo, int numTables,
 						  InhInfo *inhinfo, int numInherits);
 static void flagInhIndexes(Archive *fout, TableInfo *tblinfo, int numTables);
-static void flagInhAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo,
+static void flagInhAttrs(const Archive *fout, DumpOptions *dopt,
+						 TableInfo *tblinfo,
 						 int numTables);
 static int	strInArray(const char *pattern, char **arr, int arr_size);
 static IndxInfo *findIndexByOid(Oid oid);
@@ -475,7 +476,8 @@ flagInhIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
  * modifies tblinfo
  */
 static void
-flagInhAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTables)
+flagInhAttrs(const Archive *fout, DumpOptions *dopt, TableInfo *tblinfo,
+			 int numTables)
 {
 	int			i,
 				j,

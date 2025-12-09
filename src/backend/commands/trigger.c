@@ -3945,7 +3945,7 @@ static void AfterTriggerExecute(EState *estate,
 								ResultRelInfo *relInfo,
 								ResultRelInfo *src_relInfo,
 								ResultRelInfo *dst_relInfo,
-								TriggerDesc *trigdesc,
+								const TriggerDesc *trigdesc,
 								FmgrInfo *finfo,
 								Instrumentation *instr,
 								MemoryContext per_tuple_context,
@@ -3958,9 +3958,9 @@ static TupleTableSlot *GetAfterTriggersStoreSlot(AfterTriggersTableData *table,
 static Tuplestorestate *GetAfterTriggersTransitionTable(int event,
 														TupleTableSlot *oldslot,
 														TupleTableSlot *newslot,
-														TransitionCaptureState *transition_capture);
+														const TransitionCaptureState *transition_capture);
 static void TransitionTableAddTuple(EState *estate,
-									TransitionCaptureState *transition_capture,
+									const TransitionCaptureState *transition_capture,
 									ResultRelInfo *relinfo,
 									TupleTableSlot *slot,
 									TupleTableSlot *original_insert_tuple,
@@ -4339,8 +4339,9 @@ AfterTriggerExecute(EState *estate,
 					ResultRelInfo *relInfo,
 					ResultRelInfo *src_relInfo,
 					ResultRelInfo *dst_relInfo,
-					TriggerDesc *trigdesc,
-					FmgrInfo *finfo, Instrumentation *instr,
+					const TriggerDesc *trigdesc,
+					FmgrInfo *finfo,
+					Instrumentation *instr,
 					MemoryContext per_tuple_context,
 					TupleTableSlot *trig_tuple_slot1,
 					TupleTableSlot *trig_tuple_slot2)
@@ -4626,7 +4627,7 @@ AfterTriggerExecute(EState *estate,
  *	Returns true if any invokable events were found.
  */
 static bool
-afterTriggerMarkEvents(AfterTriggerEventList *events,
+afterTriggerMarkEvents(const AfterTriggerEventList *events,
 					   AfterTriggerEventList *move_list,
 					   bool immediate_only)
 {
@@ -5532,7 +5533,7 @@ static Tuplestorestate *
 GetAfterTriggersTransitionTable(int event,
 								TupleTableSlot *oldslot,
 								TupleTableSlot *newslot,
-								TransitionCaptureState *transition_capture)
+								const TransitionCaptureState *transition_capture)
 {
 	Tuplestorestate *tuplestore = NULL;
 	bool		delete_old_table = transition_capture->tcs_delete_old_table;
@@ -5581,7 +5582,7 @@ GetAfterTriggersTransitionTable(int event,
  */
 static void
 TransitionTableAddTuple(EState *estate,
-						TransitionCaptureState *transition_capture,
+						const TransitionCaptureState *transition_capture,
 						ResultRelInfo *relinfo,
 						TupleTableSlot *slot,
 						TupleTableSlot *original_insert_tuple,

@@ -34,7 +34,7 @@ static bool owningrel_does_not_exist_skipping(List *object,
 											  const char **msg, char **name);
 static bool schema_does_not_exist_skipping(List *object,
 										   const char **msg, char **name);
-static bool type_in_list_does_not_exist_skipping(List *typenames,
+static bool type_in_list_does_not_exist_skipping(const List *typenames,
 												 const char **msg, char **name);
 
 
@@ -203,7 +203,7 @@ schema_does_not_exist_skipping(List *object, const char **msg, char **name)
  * First parameter is a list of TypeNames.
  */
 static bool
-type_in_list_does_not_exist_skipping(List *typenames, const char **msg,
+type_in_list_does_not_exist_skipping(const List *typenames, const char **msg,
 									 char **name)
 {
 	ListCell   *l;

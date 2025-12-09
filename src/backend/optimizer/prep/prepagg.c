@@ -52,7 +52,7 @@
 #include "utils/syscache.h"
 
 static bool preprocess_aggrefs_walker(Node *node, PlannerInfo *root);
-static int	find_compatible_agg(PlannerInfo *root, Aggref *newagg,
+static int	find_compatible_agg(const PlannerInfo *root, Aggref *newagg,
 								List **same_input_transnos);
 static int	find_compatible_trans(PlannerInfo *root, Aggref *newagg,
 								  bool shareable,
@@ -61,7 +61,7 @@ static int	find_compatible_trans(PlannerInfo *root, Aggref *newagg,
 								  Oid aggcombinefn,
 								  Oid aggserialfn, Oid aggdeserialfn,
 								  Datum initValue, bool initValueIsNull,
-								  List *transnos);
+								  const List *transnos);
 static Datum GetAggInitVal(Datum textInitVal, Oid transtype);
 
 /* -----------------
@@ -376,7 +376,7 @@ preprocess_aggrefs_walker(Node *node, PlannerInfo *root)
  * the state value of another aggregate.
  */
 static int
-find_compatible_agg(PlannerInfo *root, Aggref *newagg,
+find_compatible_agg(const PlannerInfo *root, Aggref *newagg,
 					List **same_input_transnos)
 {
 	ListCell   *lc;
@@ -460,7 +460,7 @@ find_compatible_trans(PlannerInfo *root, Aggref *newagg, bool shareable,
 					  Oid aggcombinefn,
 					  Oid aggserialfn, Oid aggdeserialfn,
 					  Datum initValue, bool initValueIsNull,
-					  List *transnos)
+					  const List *transnos)
 {
 	ListCell   *lc;
 

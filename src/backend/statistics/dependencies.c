@@ -64,8 +64,9 @@ static void generate_dependencies(DependencyGenerator state);
 static DependencyGenerator DependencyGenerator_init(int n, int k);
 static void DependencyGenerator_free(DependencyGenerator state);
 static AttrNumber *DependencyGenerator_next(DependencyGenerator state);
-static double dependency_degree(StatsBuildData *data, int k, AttrNumber *dependency);
-static bool dependency_is_fully_matched(MVDependency *dependency,
+static double dependency_degree(StatsBuildData *data, int k,
+								const AttrNumber *dependency);
+static bool dependency_is_fully_matched(const MVDependency *dependency,
 										Bitmapset *attnums);
 static bool dependency_is_compatible_clause(Node *clause, Index relid,
 											AttrNumber *attnum);
@@ -73,12 +74,13 @@ static bool dependency_is_compatible_expression(Node *clause, Index relid,
 												List *statlist, Node **expr);
 static MVDependency *find_strongest_dependency(MVDependencies **dependencies,
 											   int ndependencies, Bitmapset *attnums);
-static Selectivity clauselist_apply_dependencies(PlannerInfo *root, List *clauses,
+static Selectivity clauselist_apply_dependencies(PlannerInfo *root,
+												 const List *clauses,
 												 int varRelid, JoinType jointype,
 												 SpecialJoinInfo *sjinfo,
 												 MVDependency **dependencies,
 												 int ndependencies,
-												 AttrNumber *list_attnums,
+												 const AttrNumber *list_attnums,
 												 Bitmapset **estimatedclauses);
 
 static void
@@ -212,7 +214,7 @@ DependencyGenerator_next(DependencyGenerator state)
  * the last one.
  */
 static double
-dependency_degree(StatsBuildData *data, int k, AttrNumber *dependency)
+dependency_degree(StatsBuildData *data, int k, const AttrNumber *dependency)
 {
 	int			i,
 				nitems;
@@ -585,7 +587,8 @@ statext_dependencies_deserialize(bytea *data)
  *		attributes (assuming the clauses are suitable equality clauses)
  */
 static bool
-dependency_is_fully_matched(MVDependency *dependency, Bitmapset *attnums)
+dependency_is_fully_matched(const MVDependency *dependency,
+							Bitmapset *attnums)
 {
 	int			j;
 
@@ -919,11 +922,11 @@ find_strongest_dependency(MVDependencies **dependencies, int ndependencies,
  * clauses are not consistent with the functional dependency.
  */
 static Selectivity
-clauselist_apply_dependencies(PlannerInfo *root, List *clauses,
+clauselist_apply_dependencies(PlannerInfo *root, const List *clauses,
 							  int varRelid, JoinType jointype,
 							  SpecialJoinInfo *sjinfo,
 							  MVDependency **dependencies, int ndependencies,
-							  AttrNumber *list_attnums,
+							  const AttrNumber *list_attnums,
 							  Bitmapset **estimatedclauses)
 {
 	Bitmapset  *attnums;

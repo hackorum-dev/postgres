@@ -101,7 +101,7 @@ static void check_role_membership_authorization(Oid currentUserId, Oid roleid,
 												bool is_grant);
 static Oid	check_role_grantor(Oid currentUserId, Oid roleid, Oid grantorId,
 							   bool is_grant);
-static RevokeRoleGrantAction *initialize_revoke_actions(CatCList *memlist);
+static RevokeRoleGrantAction *initialize_revoke_actions(const CatCList *memlist);
 static bool plan_single_revoke(CatCList *memlist,
 							   RevokeRoleGrantAction *actions,
 							   Oid member, Oid grantor,
@@ -2287,7 +2287,7 @@ check_role_grantor(Oid currentUserId, Oid roleid, Oid grantorId, bool is_grant)
  * that is, every element is initially RRG_NOOP.
  */
 static RevokeRoleGrantAction *
-initialize_revoke_actions(CatCList *memlist)
+initialize_revoke_actions(const CatCList *memlist)
 {
 	RevokeRoleGrantAction *result;
 	int			i;

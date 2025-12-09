@@ -114,7 +114,7 @@ static WalReceiverFunctionsType PQWalReceiverFunctions = {
 };
 
 /* Prototypes for private functions */
-static char *stringlist_to_identifierstr(PGconn *conn, List *strings);
+static char *stringlist_to_identifierstr(PGconn *conn, const List *strings);
 
 /*
  * Module initialization function
@@ -1180,7 +1180,7 @@ libpqrcv_exec(WalReceiverConn *conn, const char *query,
  * The caller should free the result.
  */
 static char *
-stringlist_to_identifierstr(PGconn *conn, List *strings)
+stringlist_to_identifierstr(PGconn *conn, const List *strings)
 {
 	ListCell   *lc;
 	StringInfoData res;

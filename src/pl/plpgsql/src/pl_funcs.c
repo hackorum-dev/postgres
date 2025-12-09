@@ -811,8 +811,8 @@ static void dump_cursor_direction(PLpgSQL_stmt_fetch *stmt);
 static void dump_close(PLpgSQL_stmt_close *stmt);
 static void dump_perform(PLpgSQL_stmt_perform *stmt);
 static void dump_call(PLpgSQL_stmt_call *stmt);
-static void dump_commit(PLpgSQL_stmt_commit *stmt);
-static void dump_rollback(PLpgSQL_stmt_rollback *stmt);
+static void dump_commit(const PLpgSQL_stmt_commit *stmt);
+static void dump_rollback(const PLpgSQL_stmt_rollback *stmt);
 static void dump_expr(PLpgSQL_expr *expr);
 
 
@@ -919,7 +919,7 @@ dump_stmt(PLpgSQL_stmt *stmt)
 }
 
 static void
-dump_stmts(List *stmts)
+dump_stmts(const List *stmts)
 {
 	ListCell   *s;
 
@@ -1294,7 +1294,7 @@ dump_call(PLpgSQL_stmt_call *stmt)
 }
 
 static void
-dump_commit(PLpgSQL_stmt_commit *stmt)
+dump_commit(const PLpgSQL_stmt_commit *stmt)
 {
 	dump_ind();
 	if (stmt->chain)
@@ -1304,7 +1304,7 @@ dump_commit(PLpgSQL_stmt_commit *stmt)
 }
 
 static void
-dump_rollback(PLpgSQL_stmt_rollback *stmt)
+dump_rollback(const PLpgSQL_stmt_rollback *stmt)
 {
 	dump_ind();
 	if (stmt->chain)

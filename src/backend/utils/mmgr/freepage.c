@@ -132,7 +132,7 @@ static FreePageBtree *FreePageBtreeFindLeftSibling(char *base,
 												   FreePageBtree *btp);
 static FreePageBtree *FreePageBtreeFindRightSibling(char *base,
 													FreePageBtree *btp);
-static Size FreePageBtreeFirstKey(FreePageBtree *btp);
+static Size FreePageBtreeFirstKey(const FreePageBtree *btp);
 static FreePageBtree *FreePageBtreeGetRecycled(FreePageManager *fpm);
 static void FreePageBtreeInsertInternal(char *base, FreePageBtree *btp,
 										Size index, Size first_page, FreePageBtree *child);
@@ -144,8 +144,9 @@ static void FreePageBtreeRemove(FreePageManager *fpm, FreePageBtree *btp,
 static void FreePageBtreeRemovePage(FreePageManager *fpm, FreePageBtree *btp);
 static void FreePageBtreeSearch(FreePageManager *fpm, Size first_page,
 								FreePageBtreeSearchResult *result);
-static Size FreePageBtreeSearchInternal(FreePageBtree *btp, Size first_page);
-static Size FreePageBtreeSearchLeaf(FreePageBtree *btp, Size first_page);
+static Size FreePageBtreeSearchInternal(const FreePageBtree *btp,
+										Size first_page);
+static Size FreePageBtreeSearchLeaf(const FreePageBtree *btp, Size first_page);
 static FreePageBtree *FreePageBtreeSplitPage(FreePageManager *fpm,
 											 FreePageBtree *btp);
 static void FreePageBtreeUpdateParentPointers(char *base, FreePageBtree *btp);
@@ -249,7 +250,8 @@ FreePageManagerGet(FreePageManager *fpm, Size npages, Size *first_page)
 
 #ifdef FPM_EXTRA_ASSERTS
 static void
-sum_free_pages_recurse(FreePageManager *fpm, FreePageBtree *btp, Size *sum)
+sum_free_pages_recurse(FreePageManager *fpm, const FreePageBtree *btp,
+					   Size *sum)
 {
 	char	   *base = fpm_segment_base(fpm);
 
@@ -860,7 +862,7 @@ FreePageBtreeFindRightSibling(char *base, FreePageBtree *btp)
  * Get the first key on a btree page.
  */
 static Size
-FreePageBtreeFirstKey(FreePageBtree *btp)
+FreePageBtreeFirstKey(const FreePageBtree *btp)
 {
 	Assert(btp->hdr.nused > 0);
 
@@ -1137,7 +1139,7 @@ FreePageBtreeSearch(FreePageManager *fpm, Size first_page,
  * of keys on the page if none.
  */
 static Size
-FreePageBtreeSearchInternal(FreePageBtree *btp, Size first_page)
+FreePageBtreeSearchInternal(const FreePageBtree *btp, Size first_page)
 {
 	Size		low = 0;
 	Size		high = btp->hdr.nused;
@@ -1167,7 +1169,7 @@ FreePageBtreeSearchInternal(FreePageBtree *btp, Size first_page)
  * of keys on the page if none.
  */
 static Size
-FreePageBtreeSearchLeaf(FreePageBtree *btp, Size first_page)
+FreePageBtreeSearchLeaf(const FreePageBtree *btp, Size first_page)
 {
 	Size		low = 0;
 	Size		high = btp->hdr.nused;

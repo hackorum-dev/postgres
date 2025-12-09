@@ -847,7 +847,7 @@ static void free_socket_set(socket_set *sa);
 static void clear_socket_set(socket_set *sa);
 static void add_socket_to_set(socket_set *sa, int fd, int idx);
 static int	wait_on_socket_set(socket_set *sa, int64 usecs);
-static bool socket_has_input(socket_set *sa, int fd, int idx);
+static bool socket_has_input(const socket_set *sa, int fd, int idx);
 
 /* callback used to build rows for COPY during data loading */
 typedef void (*initRowMethod) (PQExpBufferData *sql, int64 curr);
@@ -1406,7 +1406,7 @@ addToSimpleStats(SimpleStats *ss, double val)
  * Merge two SimpleStats objects
  */
 static void
-mergeSimpleStats(SimpleStats *acc, SimpleStats *ss)
+mergeSimpleStats(SimpleStats *acc, const SimpleStats *ss)
 {
 	if (acc->count == 0 || ss->min < acc->min)
 		acc->min = ss->min;
@@ -1974,7 +1974,7 @@ getQueryParams(Variables *variables, const Command *command,
 }
 
 static char *
-valueTypeName(PgBenchValue *pval)
+valueTypeName(const PgBenchValue *pval)
 {
 	if (pval->type == PGBT_NO_VALUE)
 		return "none";
@@ -2016,7 +2016,7 @@ coerceToBool(PgBenchValue *pval, bool *bval)
  * Non zero numerical values are true, zero and NULL are false.
  */
 static bool
-valueTruth(PgBenchValue *pval)
+valueTruth(const PgBenchValue *pval)
 {
 	switch (pval->type)
 	{
@@ -6310,7 +6310,8 @@ addScript(const ParsedScript *script)
  * progress report.  On exit, they are updated with the new stats.
  */
 static void
-printProgressReport(TState *threads, int64 test_start, pg_time_usec_t now,
+printProgressReport(const TState *threads, int64 test_start,
+					pg_time_usec_t now,
 					StatsData *last, int64 *last_report)
 {
 	/* generate and show report */
@@ -6405,7 +6406,7 @@ printProgressReport(TState *threads, int64 test_start, pg_time_usec_t now,
 }
 
 static void
-printSimpleStats(const char *prefix, SimpleStats *ss)
+printSimpleStats(const char *prefix, const SimpleStats *ss)
 {
 	if (ss->count > 0)
 	{
@@ -7969,7 +7970,7 @@ wait_on_socket_set(socket_set *sa, int64 usecs)
 }
 
 static bool
-socket_has_input(socket_set *sa, int fd, int idx)
+socket_has_input(const socket_set *sa, int fd, int idx)
 {
 	/*
 	 * In some cases, threadRun will apply clear_socket_set and then try to
@@ -8052,7 +8053,7 @@ wait_on_socket_set(socket_set *sa, int64 usecs)
 }
 
 static bool
-socket_has_input(socket_set *sa, int fd, int idx)
+socket_has_input(const socket_set *sa, int fd, int idx)
 {
 	return (FD_ISSET(fd, &sa->fds) != 0);
 }

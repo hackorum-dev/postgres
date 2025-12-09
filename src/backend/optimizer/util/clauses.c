@@ -118,7 +118,7 @@ static Node *eval_const_expressions_mutator(Node *node,
 											eval_const_expressions_context *context);
 static bool contain_non_const_walker(Node *node, void *context);
 static bool ece_function_is_safe(Oid funcid,
-								 eval_const_expressions_context *context);
+								 const eval_const_expressions_context *context);
 static List *simplify_or_arguments(List *args,
 								   eval_const_expressions_context *context,
 								   bool *haveNull, bool *forceTrue);
@@ -132,7 +132,7 @@ static Expr *simplify_function(Oid funcid,
 							   bool funcvariadic, bool process_args, bool allow_non_const,
 							   eval_const_expressions_context *context);
 static Node *simplify_aggref(Aggref *aggref,
-							 eval_const_expressions_context *context);
+							 const eval_const_expressions_context *context);
 static List *reorder_function_arguments(List *args, int pronargs,
 										HeapTuple func_tuple);
 static List *add_function_defaults(List *args, int pronargs,
@@ -145,7 +145,7 @@ static Expr *evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 							   Oid result_collid, Oid input_collid, List *args,
 							   bool funcvariadic,
 							   HeapTuple func_tuple,
-							   eval_const_expressions_context *context);
+							   const eval_const_expressions_context *context);
 static Expr *inline_function(Oid funcid, Oid result_type, Oid result_collid,
 							 Oid input_collid, List *args,
 							 bool funcvariadic,
@@ -3805,7 +3805,8 @@ contain_non_const_walker(Node *node, void *context)
  * Subroutine for eval_const_expressions: check if a function is OK to evaluate
  */
 static bool
-ece_function_is_safe(Oid funcid, eval_const_expressions_context *context)
+ece_function_is_safe(Oid funcid,
+					 const eval_const_expressions_context *context)
 {
 	char		provolatile = func_volatile(funcid);
 
@@ -4218,7 +4219,7 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
  * details.
  */
 static Node *
-simplify_aggref(Aggref *aggref, eval_const_expressions_context *context)
+simplify_aggref(Aggref *aggref, const eval_const_expressions_context *context)
 {
 	Oid			prosupport = get_func_support(aggref->aggfnoid);
 
@@ -4611,7 +4612,7 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 				  Oid result_collid, Oid input_collid, List *args,
 				  bool funcvariadic,
 				  HeapTuple func_tuple,
-				  eval_const_expressions_context *context)
+				  const eval_const_expressions_context *context)
 {
 	Form_pg_proc funcform = (Form_pg_proc) GETSTRUCT(func_tuple);
 	bool		has_nonconst_input = false;

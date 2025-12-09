@@ -138,7 +138,7 @@ static int	text_position(text *t1, text *t2, Oid collid);
 static void text_position_setup(text *t1, text *t2, Oid collid, TextPositionState *state);
 static bool text_position_next(TextPositionState *state);
 static char *text_position_next_internal(char *start_ptr, TextPositionState *state);
-static char *text_position_get_match_ptr(TextPositionState *state);
+static char *text_position_get_match_ptr(const TextPositionState *state);
 static int	text_position_get_match_pos(TextPositionState *state);
 static void text_position_cleanup(TextPositionState *state);
 static void check_collation_set(Oid collid);
@@ -1234,7 +1234,7 @@ text_position_next_internal(char *start_ptr, TextPositionState *state)
  * The returned pointer points into the original haystack string.
  */
 static char *
-text_position_get_match_ptr(TextPositionState *state)
+text_position_get_match_ptr(const TextPositionState *state)
 {
 	return state->last_match;
 }
@@ -3211,7 +3211,7 @@ check_replace_text_has_escape(const text *replace_text)
  */
 static void
 appendStringInfoRegexpSubstr(StringInfo str, text *replace_text,
-							 regmatch_t *pmatch,
+							 const regmatch_t *pmatch,
 							 char *start_ptr, int data_pos)
 {
 	const char *p = VARDATA_ANY(replace_text);

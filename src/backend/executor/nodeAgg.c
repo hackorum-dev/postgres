@@ -368,7 +368,7 @@ static void select_current_set(AggState *aggstate, int setno, bool is_hash);
 static void initialize_phase(AggState *aggstate, int newphase);
 static TupleTableSlot *fetch_input_tuple(AggState *aggstate);
 static void initialize_aggregates(AggState *aggstate,
-								  AggStatePerGroup *pergroups,
+								  const AggStatePerGroup *pergroups,
 								  int numReset);
 static void advance_transition_function(AggState *aggstate,
 										AggStatePerTrans pertrans,
@@ -384,7 +384,7 @@ static void finalize_aggregate(AggState *aggstate,
 							   AggStatePerAgg peragg,
 							   AggStatePerGroup pergroupstate,
 							   Datum *resultVal, bool *resultIsNull);
-static void finalize_partialaggregate(AggState *aggstate,
+static void finalize_partialaggregate(const AggState *aggstate,
 									  AggStatePerAgg peragg,
 									  AggStatePerGroup pergroupstate,
 									  Datum *resultVal, bool *resultIsNull);
@@ -398,7 +398,7 @@ static void finalize_aggregates(AggState *aggstate,
 								AggStatePerAgg peraggs,
 								AggStatePerGroup pergroup);
 static TupleTableSlot *project_aggregates(AggState *aggstate);
-static void find_cols(AggState *aggstate, Bitmapset **aggregated,
+static void find_cols(const AggState *aggstate, Bitmapset **aggregated,
 					  Bitmapset **unaggregated);
 static bool find_cols_walker(Node *node, FindColsContext *context);
 static void build_hash_tables(AggState *aggstate);
@@ -430,7 +430,8 @@ static void hashagg_reset_spill_state(AggState *aggstate);
 static HashAggBatch *hashagg_batch_new(LogicalTape *input_tape, int setno,
 									   int64 input_tuples, double input_card,
 									   int used_bits);
-static MinimalTuple hashagg_batch_read(HashAggBatch *batch, uint32 *hashp);
+static MinimalTuple hashagg_batch_read(const HashAggBatch *batch,
+									   uint32 *hashp);
 static void hashagg_spill_init(HashAggSpill *spill, LogicalTapeSet *tapeset,
 							   int used_bits, double input_groups,
 							   double hashentrysize);
@@ -576,7 +577,7 @@ fetch_input_tuple(AggState *aggstate)
  * When called, CurrentMemoryContext should be the per-query context.
  */
 static void
-initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
+initialize_aggregate(const AggState *aggstate, AggStatePerTrans pertrans,
 					 AggStatePerGroup pergroupstate)
 {
 	/*
@@ -664,7 +665,7 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
  */
 static void
 initialize_aggregates(AggState *aggstate,
-					  AggStatePerGroup *pergroups,
+					  const AggStatePerGroup *pergroups,
 					  int numReset)
 {
 	int			transno;
@@ -1141,7 +1142,7 @@ finalize_aggregate(AggState *aggstate,
  * output-tuple context; caller's CurrentMemoryContext does not matter.
  */
 static void
-finalize_partialaggregate(AggState *aggstate,
+finalize_partialaggregate(const AggState *aggstate,
 						  AggStatePerAgg peragg,
 						  AggStatePerGroup pergroupstate,
 						  Datum *resultVal, bool *resultIsNull)
@@ -1392,7 +1393,8 @@ project_aggregates(AggState *aggstate)
  * aggregated and unaggregated sets.
  */
 static void
-find_cols(AggState *aggstate, Bitmapset **aggregated, Bitmapset **unaggregated)
+find_cols(const AggState *aggstate, Bitmapset **aggregated,
+		  Bitmapset **unaggregated)
 {
 	Agg		   *agg = (Agg *) aggstate->ss.ps.plan;
 	FindColsContext context;
@@ -3113,7 +3115,7 @@ hashagg_batch_new(LogicalTape *input_tape, int setno,
  * 		read the next tuple from a batch's tape.  Return NULL if no more.
  */
 static MinimalTuple
-hashagg_batch_read(HashAggBatch *batch, uint32 *hashp)
+hashagg_batch_read(const HashAggBatch *batch, uint32 *hashp)
 {
 	LogicalTape *tape = batch->input_tape;
 	MinimalTuple tuple;

@@ -108,7 +108,7 @@ free_statement(struct statement *stmt)
 }
 
 static int
-next_insert(char *text, int pos, bool questionmarks, bool std_strings)
+next_insert(const char *text, int pos, bool questionmarks, bool std_strings)
 {
 	bool		string = false;
 	int			p = pos;

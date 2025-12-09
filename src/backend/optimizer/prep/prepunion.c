@@ -66,18 +66,20 @@ static List *plan_union_children(PlannerInfo *root,
 								 List **tlist_list,
 								 List **istrivial_tlist);
 static void postprocess_setop_rel(PlannerInfo *root, RelOptInfo *rel);
-static List *generate_setop_tlist(List *colTypes, List *colCollations,
+static List *generate_setop_tlist(const List *colTypes,
+								  const List *colCollations,
 								  Index varno,
 								  bool hack_constants,
-								  List *input_tlist,
-								  List *refnames_tlist,
+								  const List *input_tlist,
+								  const List *refnames_tlist,
 								  bool *trivial_tlist);
-static List *generate_append_tlist(List *colTypes, List *colCollations,
+static List *generate_append_tlist(List *colTypes, const List *colCollations,
 								   List *input_tlists,
-								   List *refnames_tlist);
-static List *generate_setop_grouplist(SetOperationStmt *op, List *targetlist);
+								   const List *refnames_tlist);
+static List *generate_setop_grouplist(SetOperationStmt *op,
+									  const List *targetlist);
 static PathTarget *create_setop_pathtarget(PlannerInfo *root, List *tlist,
-										   List *child_pathlist);
+										   const List *child_pathlist);
 
 
 /*
@@ -1480,11 +1482,11 @@ postprocess_setop_rel(PlannerInfo *root, RelOptInfo *rel)
  * trivial_tlist: output parameter, set to true if targetlist is trivial
  */
 static List *
-generate_setop_tlist(List *colTypes, List *colCollations,
+generate_setop_tlist(const List *colTypes, const List *colCollations,
 					 Index varno,
 					 bool hack_constants,
-					 List *input_tlist,
-					 List *refnames_tlist,
+					 const List *input_tlist,
+					 const List *refnames_tlist,
 					 bool *trivial_tlist)
 {
 	List	   *tlist = NIL;
@@ -1608,9 +1610,9 @@ generate_setop_tlist(List *colTypes, List *colCollations,
  * ought to refactor this code to produce a PathTarget directly, anyway.
  */
 static List *
-generate_append_tlist(List *colTypes, List *colCollations,
+generate_append_tlist(List *colTypes, const List *colCollations,
 					  List *input_tlists,
-					  List *refnames_tlist)
+					  const List *refnames_tlist)
 {
 	List	   *tlist = NIL;
 	int			resno = 1;
@@ -1717,7 +1719,7 @@ generate_append_tlist(List *colTypes, List *colCollations,
  * proper sortgrouprefs into it (copying those from the targetlist).
  */
 static List *
-generate_setop_grouplist(SetOperationStmt *op, List *targetlist)
+generate_setop_grouplist(SetOperationStmt *op, const List *targetlist)
 {
 	List	   *grouplist = copyObject(op->groupClauses);
 	ListCell   *lg;
@@ -1757,7 +1759,8 @@ generate_setop_grouplist(SetOperationStmt *op, List *targetlist)
  * statistics of the columns from the set op children.
  */
 static PathTarget *
-create_setop_pathtarget(PlannerInfo *root, List *tlist, List *child_pathlist)
+create_setop_pathtarget(PlannerInfo *root, List *tlist,
+						const List *child_pathlist)
 {
 	PathTarget *reltarget;
 	ListCell   *lc;

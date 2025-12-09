@@ -18,7 +18,7 @@
 #include "executor/executor.h"
 #include "executor/nodeWorktablescan.h"
 
-static TupleTableSlot *WorkTableScanNext(WorkTableScanState *node);
+static TupleTableSlot *WorkTableScanNext(const WorkTableScanState *node);
 
 /* ----------------------------------------------------------------
  *		WorkTableScanNext
@@ -27,7 +27,7 @@ static TupleTableSlot *WorkTableScanNext(WorkTableScanState *node);
  * ----------------------------------------------------------------
  */
 static TupleTableSlot *
-WorkTableScanNext(WorkTableScanState *node)
+WorkTableScanNext(const WorkTableScanState *node)
 {
 	TupleTableSlot *slot;
 	Tuplestorestate *tuplestorestate;

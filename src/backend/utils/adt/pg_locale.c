@@ -439,7 +439,7 @@ free_struct_lconv(struct lconv *s)
  * about) are non-NULL.  The field list must match free_struct_lconv().
  */
 static bool
-struct_lconv_is_valid(struct lconv *s)
+struct_lconv_is_valid(const struct lconv *s)
 {
 	if (s->decimal_point == NULL)
 		return false;

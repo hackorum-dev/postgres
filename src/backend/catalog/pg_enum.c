@@ -65,7 +65,8 @@ static HTAB *uncommitted_enum_values = NULL;
 static void init_uncommitted_enum_types(void);
 static void init_uncommitted_enum_values(void);
 static bool EnumTypeUncommitted(Oid typ_id);
-static void RenumberEnumType(Relation pg_enum, HeapTuple *existing, int nelems);
+static void RenumberEnumType(Relation pg_enum, const HeapTuple *existing,
+							 int nelems);
 static int	sort_order_cmp(const void *p1, const void *p2);
 
 
@@ -771,7 +772,7 @@ AtEOXact_Enum(void)
  * (for example, enum_in and enum_out do so).
  */
 static void
-RenumberEnumType(Relation pg_enum, HeapTuple *existing, int nelems)
+RenumberEnumType(Relation pg_enum, const HeapTuple *existing, int nelems)
 {
 	int			i;
 

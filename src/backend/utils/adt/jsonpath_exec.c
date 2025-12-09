@@ -321,21 +321,23 @@ static JsonbValue *getJsonPathVariableFromJsonb(void *varsJsonb, char *varName,
 												int varNameLength,
 												JsonbValue *baseObject,
 												int *baseObjectId);
-static int	JsonbArraySize(JsonbValue *jb);
+static int	JsonbArraySize(const JsonbValue *jb);
 static JsonPathBool executeComparison(JsonPathItem *cmp, JsonbValue *lv,
 									  JsonbValue *rv, void *p);
-static JsonPathBool compareItems(int32 op, JsonbValue *jb1, JsonbValue *jb2,
+static JsonPathBool compareItems(int32 op, JsonbValue *jb1,
+								 const JsonbValue *jb2,
 								 bool useTz);
 static int	compareNumeric(Numeric a, Numeric b);
-static JsonbValue *copyJsonbValue(JsonbValue *src);
+static JsonbValue *copyJsonbValue(const JsonbValue *src);
 static JsonPathExecResult getArrayIndex(JsonPathExecContext *cxt,
 										JsonPathItem *jsp, JsonbValue *jb, int32 *index);
 static JsonBaseObjectInfo setBaseObject(JsonPathExecContext *cxt,
-										JsonbValue *jbv, int32 id);
+										const JsonbValue *jbv,
+										int32 id);
 static void JsonValueListClear(JsonValueList *jvl);
 static void JsonValueListAppend(JsonValueList *jvl, JsonbValue *jbv);
 static int	JsonValueListLength(const JsonValueList *jvl);
-static bool JsonValueListIsEmpty(JsonValueList *jvl);
+static bool JsonValueListIsEmpty(const JsonValueList *jvl);
 static JsonbValue *JsonValueListHead(JsonValueList *jvl);
 static List *JsonValueListGetList(JsonValueList *jvl);
 static void JsonValueListInitIterator(const JsonValueList *jvl,
@@ -343,7 +345,7 @@ static void JsonValueListInitIterator(const JsonValueList *jvl,
 static JsonbValue *JsonValueListNext(const JsonValueList *jvl,
 									 JsonValueListIterator *it);
 static JsonbValue *JsonbInitBinary(JsonbValue *jbv, Jsonb *jb);
-static int	JsonbType(JsonbValue *jb);
+static int	JsonbType(const JsonbValue *jb);
 static JsonbValue *getScalar(JsonbValue *scalar, enum jbvType type);
 static JsonbValue *wrapItemsInArray(const JsonValueList *items);
 static int	compareDatetime(Datum val1, Oid typid1, Datum val2, Oid typid2,
@@ -3223,7 +3225,7 @@ countVariablesFromJsonb(void *varsJsonb)
  * Returns the size of an array item, or -1 if item is not an array.
  */
 static int
-JsonbArraySize(JsonbValue *jb)
+JsonbArraySize(const JsonbValue *jb)
 {
 	Assert(jb->type != jbvArray);
 
@@ -3339,7 +3341,7 @@ compareStrings(const char *mbstr1, int mblen1,
  * Compare two SQL/JSON items using comparison operation 'op'.
  */
 static JsonPathBool
-compareItems(int32 op, JsonbValue *jb1, JsonbValue *jb2, bool useTz)
+compareItems(int32 op, JsonbValue *jb1, const JsonbValue *jb2, bool useTz)
 {
 	int			cmp;
 	bool		res;
@@ -3443,7 +3445,7 @@ compareNumeric(Numeric a, Numeric b)
 }
 
 static JsonbValue *
-copyJsonbValue(JsonbValue *src)
+copyJsonbValue(const JsonbValue *src)
 {
 	JsonbValue *dst = palloc_object(JsonbValue);
 
@@ -3492,7 +3494,7 @@ getArrayIndex(JsonPathExecContext *cxt, JsonPathItem *jsp, JsonbValue *jb,
 
 /* Save base object and its id needed for the execution of .keyvalue(). */
 static JsonBaseObjectInfo
-setBaseObject(JsonPathExecContext *cxt, JsonbValue *jbv, int32 id)
+setBaseObject(JsonPathExecContext *cxt, const JsonbValue *jbv, int32 id)
 {
 	JsonBaseObjectInfo baseObject = cxt->baseObject;
 
@@ -3531,7 +3533,7 @@ JsonValueListLength(const JsonValueList *jvl)
 }
 
 static bool
-JsonValueListIsEmpty(JsonValueList *jvl)
+JsonValueListIsEmpty(const JsonValueList *jvl)
 {
 	return !jvl->singleton && (jvl->list == NIL);
 }
@@ -3612,7 +3614,7 @@ JsonbInitBinary(JsonbValue *jbv, Jsonb *jb)
  * Returns jbv* type of JsonbValue. Note, it never returns jbvBinary as is.
  */
 static int
-JsonbType(JsonbValue *jb)
+JsonbType(const JsonbValue *jb)
 {
 	int			type = jb->type;
 

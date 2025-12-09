@@ -73,7 +73,8 @@ static void buildShSecLabels(PGconn *conn,
 							 const char *objtype, const char *objname,
 							 PQExpBuffer buffer);
 static void executeCommand(PGconn *conn, const char *query);
-static void expand_dbname_patterns(PGconn *conn, SimpleStringList *patterns,
+static void expand_dbname_patterns(PGconn *conn,
+								   const SimpleStringList *patterns,
 								   SimpleStringList *names);
 static void read_dumpall_filters(const char *filename, SimpleStringList *pattern);
 
@@ -1562,7 +1563,7 @@ dumpUserConfig(PGconn *conn, const char *username)
  */
 static void
 expand_dbname_patterns(PGconn *conn,
-					   SimpleStringList *patterns,
+					   const SimpleStringList *patterns,
 					   SimpleStringList *names)
 {
 	PQExpBuffer query;

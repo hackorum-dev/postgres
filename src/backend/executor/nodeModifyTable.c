@@ -173,7 +173,7 @@ static TupleTableSlot *ExecMergeMatched(ModifyTableContext *context,
 										bool canSetTag,
 										bool *matched);
 static TupleTableSlot *ExecMergeNotMatched(ModifyTableContext *context,
-										   ResultRelInfo *resultRelInfo,
+										   const ResultRelInfo *resultRelInfo,
 										   bool canSetTag);
 
 
@@ -193,7 +193,7 @@ static TupleTableSlot *ExecMergeNotMatched(ModifyTableContext *context,
  * are done in ExecBuildUpdateProjection.
  */
 static void
-ExecCheckPlanOutput(Relation resultRel, List *targetList)
+ExecCheckPlanOutput(Relation resultRel, const List *targetList)
 {
 	TupleDesc	resultDesc = RelationGetDescr(resultRel);
 	int			attno = 0;
@@ -286,7 +286,7 @@ ExecCheckPlanOutput(Relation resultRel, List *targetList)
  * Returns a slot holding the result tuple
  */
 static TupleTableSlot *
-ExecProcessReturning(ModifyTableContext *context,
+ExecProcessReturning(const ModifyTableContext *context,
 					 ResultRelInfo *resultRelInfo,
 					 CmdType cmdType,
 					 TupleTableSlot *oldSlot,
@@ -396,7 +396,7 @@ ExecCheckTupleVisible(EState *estate,
  */
 static void
 ExecCheckTIDVisible(EState *estate,
-					ResultRelInfo *relinfo,
+					const ResultRelInfo *relinfo,
 					ItemPointer tid,
 					TupleTableSlot *tempSlot)
 {
@@ -1511,7 +1511,8 @@ ExecDeleteAct(ModifyTableContext *context, ResultRelInfo *resultRelInfo,
  * cross-partition tuple move.
  */
 static void
-ExecDeleteEpilogue(ModifyTableContext *context, ResultRelInfo *resultRelInfo,
+ExecDeleteEpilogue(const ModifyTableContext *context,
+				   ResultRelInfo *resultRelInfo,
 				   ItemPointer tupleid, HeapTuple oldtuple, bool changingPart)
 {
 	ModifyTableState *mtstate = context->mtstate;
@@ -2318,7 +2319,8 @@ lreplace:
  * returns indicating that the tuple was updated.
  */
 static void
-ExecUpdateEpilogue(ModifyTableContext *context, UpdateContext *updateCxt,
+ExecUpdateEpilogue(ModifyTableContext *context,
+				   const UpdateContext *updateCxt,
 				   ResultRelInfo *resultRelInfo, ItemPointer tupleid,
 				   HeapTuple oldtuple, TupleTableSlot *slot)
 {
@@ -3603,7 +3605,8 @@ out:
  * Execute the first qualifying NOT MATCHED [BY TARGET] action.
  */
 static TupleTableSlot *
-ExecMergeNotMatched(ModifyTableContext *context, ResultRelInfo *resultRelInfo,
+ExecMergeNotMatched(ModifyTableContext *context,
+					const ResultRelInfo *resultRelInfo,
 					bool canSetTag)
 {
 	ModifyTableState *mtstate = context->mtstate;

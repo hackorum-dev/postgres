@@ -22,7 +22,7 @@ PG_FUNCTION_INFO_V1(lt_q_rregex);
 #define NEXTVAL(x) ( (lquery*)( (char*)(x) + INTALIGN( VARSIZE(x) ) ) )
 
 static char *
-getlexeme(char *start, char *end, int *len)
+getlexeme(char *start, const char *end, int *len)
 {
 	char	   *ptr;
 
