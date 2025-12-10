@@ -5216,10 +5216,21 @@ exec_assign_value(PLpgSQL_execstate *estate,
 					}
 					else
 					{
-						/* else transfer value if R/W, else just datumCopy */
-						newvalue = datumTransfer(newvalue,
-												 false,
-												 var->datatype->typlen);
+						if (var->datatype->typlen == -1 &&
+							VARATT_IS_EXTERNAL_EXPANDED(DatumGetPointer(newvalue)))
+						{
+							MemoryContext oldcontext = MemoryContextSwitchTo(estate->datum_context);
+							newvalue = datumCopy(newvalue, false, -1);
+							MemoryContextSwitchTo(oldcontext);
+						}
+						else
+						{
+							/* else transfer value if R/W, else just datumCopy */
+							newvalue = datumTransfer(newvalue,
+													 false,
+													 var->datatype->typlen);
+						}
+
 					}
 				}
 
