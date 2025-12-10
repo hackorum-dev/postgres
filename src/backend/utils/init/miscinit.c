@@ -274,6 +274,24 @@ GetBackendTypeDesc(BackendType backendType)
 	return backendDesc;
 }
 
+/*
+ * Return the non-translated, short name of a BackendType.
+ */
+const char *
+GetBackendTypeName(BackendType backendType)
+{
+	const char *backendName = "unknown";
+
+	switch (backendType)
+	{
+#define PG_PROCTYPE(bktype, name, description, main_fun, shmem_attach) \
+		case bktype: backendName = name; break;
+#include "postmaster/proctypelist.h"
+#undef PG_PROCTYPE
+	}
+	return backendName;
+}
+
 /* ----------------------------------------------------------------
  *				database path / name support stuff
  * ----------------------------------------------------------------

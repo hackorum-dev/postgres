@@ -2781,7 +2781,7 @@ get_backend_type_for_log(void)
 	else if (MyBackendType == B_BG_WORKER)
 		backend_type_str = MyBgworkerEntry->bgw_type;
 	else
-		backend_type_str = GetBackendTypeDesc(MyBackendType);
+		backend_type_str = GetBackendTypeName(MyBackendType);
 
 	return backend_type_str;
 }

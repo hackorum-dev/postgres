@@ -290,7 +290,7 @@ init_ps_display(const char *fixed_part)
 
 	Assert(fixed_part || MyBackendType);
 	if (!fixed_part)
-		fixed_part = GetBackendTypeDesc(MyBackendType);
+		fixed_part = GetBackendTypeName(MyBackendType);
 
 #ifndef PS_USE_NONE
 	/* no ps display for stand-alone backend */

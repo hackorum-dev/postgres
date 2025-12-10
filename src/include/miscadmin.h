@@ -406,6 +406,7 @@ extern PGDLLIMPORT BackendType MyBackendType;
 	(backend_type == B_BACKEND || backend_type == B_WAL_SENDER)
 
 extern const char *GetBackendTypeDesc(BackendType backendType);
+extern const char *GetBackendTypeName(BackendType backendType);
 
 extern void SetDatabasePath(const char *path);
 extern void checkDataDir(void);
