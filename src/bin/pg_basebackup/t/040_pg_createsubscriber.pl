@@ -463,6 +463,7 @@ command_ok(
 		'--database' => $db1,
 		'--database' => $db2,
 		'--enable-two-phase',
+		'--enable-failover',
 		'--clean' => 'publications',
 	],
 	'run pg_createsubscriber on node S');
@@ -494,6 +495,21 @@ is( $node_s->safe_psql(
 	),
 	't',
 	'subscriptions are created with the two-phase option enabled');
+
+# check failover option
+is( $node_s->safe_psql(
+		$db1,
+		"SELECT count(*) FROM pg_subscription WHERE subfailover"
+	),
+	'2',
+	'subscriptions are created with the failover option enabled');
+
+is( $node_p->safe_psql(
+		$db1,
+		"SELECT count(*) FROM pg_replication_slots WHERE slot_type = 'logical' and failover and slot_name = 'replslot1'"
+	),
+	'1',
+	'replication slot are created with the failover option enabled');
 
 # Confirm the pre-existing subscription has been removed
 $result = $node_s->safe_psql(

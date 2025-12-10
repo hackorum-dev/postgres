@@ -273,6 +273,23 @@ PostgreSQL documentation
     </varlistentry>
 
     <varlistentry>
+     <term><option>--enable-failover</option></term>
+     <listitem>
+      <para>
+       Enables the subscription's
+       <link linkend="sql-createsubscription-params-with-failover"><literal>failover</literal></link>
+       option, allowing its logical replication slot to be used after failover.
+       The default is <literal>false</literal>.
+      </para>
+       When this option is enabled, the connection string used in the <option>--publisher-server</option>
+       option may be adjusted to support failover. For example, by specifying multiple hosts 
+       and using <literal>target_session_attrs=read-write</literal>.
+      <para>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
      <term><option>--publication=<replaceable class="parameter">name</replaceable></option></term>
      <listitem>
       <para>

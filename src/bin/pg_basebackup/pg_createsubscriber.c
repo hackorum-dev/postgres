@@ -49,6 +49,7 @@ struct CreateSubscriberOptions
 	int			recovery_timeout;	/* stop recovery after this time */
 	bool		all_dbs;		/* all option */
 	SimpleStringList objecttypes_to_clean;	/* list of object types to cleanup */
+	bool		failover;		/* enable failover option of subscription */
 };
 
 /* per-database publication/subscription info */
@@ -73,6 +74,8 @@ struct LogicalRepInfos
 {
 	struct LogicalRepInfo *dbinfo;
 	bool		two_phase;		/* enable-two-phase option */
+	bool		failover;		/* enable failover option of logical
+								 * replication slot */
 	bits32		objecttypes_to_clean;	/* flags indicating which object types
 										 * to clean up on subscriber */
 };
@@ -260,6 +263,8 @@ usage(void)
 	printf(_("      --publication=NAME          publication name\n"));
 	printf(_("      --replication-slot=NAME     replication slot name\n"));
 	printf(_("      --subscription=NAME         subscription name\n"));
+	printf(_("      --enable-failover           enable syncing replication slots associated\n"
+			 "                                  with the subscription\n"));
 	printf(_("  -V, --version                   output version information, then exit\n"));
 	printf(_("  -?, --help                      show this help, then exit\n"));
 	printf(_("\nReport bugs to <%s>.\n"), PACKAGE_BUGREPORT);
@@ -507,16 +512,18 @@ store_pub_sub_info(const struct CreateSubscriberOptions *opt,
 			dbinfo[i].subname = subcell->val;
 		else
 			dbinfo[i].subname = NULL;
+		dbinfos.failover = opt->failover;
 		/* Other fields will be filled later */
 
 		pg_log_debug("publisher(%d): publication: %s ; replication slot: %s ; connection string: %s", i,
 					 dbinfo[i].pubname ? dbinfo[i].pubname : "(auto)",
 					 dbinfo[i].replslotname ? dbinfo[i].replslotname : "(auto)",
 					 dbinfo[i].pubconninfo);
-		pg_log_debug("subscriber(%d): subscription: %s ; connection string: %s, two_phase: %s", i,
+		pg_log_debug("subscriber(%d): subscription: %s ; connection string: %s, two_phase: %s, failover: %s", i,
 					 dbinfo[i].subname ? dbinfo[i].subname : "(auto)",
 					 dbinfo[i].subconninfo,
-					 dbinfos.two_phase ? "true" : "false");
+					 dbinfos.two_phase ? "true" : "false",
+					 dbinfos.failover ? "true" : "false");
 
 		if (num_pubs > 0)
 			pubcell = pubcell->next;
@@ -1395,9 +1402,10 @@ create_logical_replication_slot(PGconn *conn, struct LogicalRepInfo *dbinfo)
 	slot_name_esc = PQescapeLiteral(conn, slot_name, strlen(slot_name));
 
 	appendPQExpBuffer(str,
-					  "SELECT lsn FROM pg_catalog.pg_create_logical_replication_slot(%s, 'pgoutput', false, %s, false)",
+					  "SELECT lsn FROM pg_catalog.pg_create_logical_replication_slot(%s, 'pgoutput', false, %s, %s)",
 					  slot_name_esc,
-					  dbinfos.two_phase ? "true" : "false");
+					  dbinfos.two_phase ? "true" : "false",
+					  dbinfos.failover ? "true" : "false");
 
 	PQfreemem(slot_name_esc);
 
@@ -1833,9 +1841,10 @@ create_subscription(PGconn *conn, const struct LogicalRepInfo *dbinfo)
 	appendPQExpBuffer(str,
 					  "CREATE SUBSCRIPTION %s CONNECTION %s PUBLICATION %s "
 					  "WITH (create_slot = false, enabled = false, "
-					  "slot_name = %s, copy_data = false, two_phase = %s)",
+					  "slot_name = %s, copy_data = false, two_phase = %s, failover = %s)",
 					  subname_esc, pubconninfo_esc, pubname_esc, replslotname_esc,
-					  dbinfos.two_phase ? "true" : "false");
+					  dbinfos.two_phase ? "true" : "false",
+					  dbinfos.failover ? "true" : "false");
 
 	PQfreemem(pubname_esc);
 	PQfreemem(subname_esc);
@@ -2079,6 +2088,7 @@ main(int argc, char **argv)
 		{"replication-slot", required_argument, NULL, 3},
 		{"subscription", required_argument, NULL, 4},
 		{"clean", required_argument, NULL, 5},
+		{"enable-failover", no_argument, NULL, 6},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -2127,6 +2137,7 @@ main(int argc, char **argv)
 	opt.sub_port = DEFAULT_SUB_PORT;
 	opt.sub_username = NULL;
 	opt.two_phase = false;
+	opt.failover = false;
 	opt.database_names = (SimpleStringList)
 	{
 		0
@@ -2231,6 +2242,9 @@ main(int argc, char **argv)
 					simple_string_list_append(&opt.objecttypes_to_clean, optarg);
 				else
 					pg_fatal("object type \"%s\" specified more than once for --clean", optarg);
+				break;
+			case 6:
+				opt.failover = true;
 				break;
 			default:
 				/* getopt_long already emitted a complaint */
