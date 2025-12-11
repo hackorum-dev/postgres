@@ -835,7 +835,10 @@ configure_remote_session(PGconn *conn)
 	 */
 	do_sql_command(conn, "SET datestyle = ISO");
 	if (remoteversion >= 80400)
+	{
 		do_sql_command(conn, "SET intervalstyle = postgres");
+		do_sql_command(conn, "SET cursor_tuple_fraction = 1.0");
+	}
 	if (remoteversion >= 90000)
 		do_sql_command(conn, "SET extra_float_digits = 3");
 	else

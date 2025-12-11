@@ -2610,61 +2610,71 @@ ANALYZE local_tbl;
 SET enable_nestloop TO false;
 SET enable_hashjoin TO false;
 EXPLAIN (VERBOSE, COSTS OFF)
+WITH s AS MATERIALIZED (
 SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = ft4.c1
-    AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE;
-                                                                                                                                                                                                                                                                                                                                                                                                                                               QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                               
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- LockRows
-   Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft4.c1, ft4.c2, ft4.c3, ft5.c1, ft5.c2, ft5.c3, local_tbl.c1, local_tbl.c2, local_tbl.c3, ft1.*, ft2.*, ft4.*, ft5.*, local_tbl.ctid
-   ->  Merge Join
-         Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft4.c1, ft4.c2, ft4.c3, ft5.c1, ft5.c2, ft5.c3, local_tbl.c1, local_tbl.c2, local_tbl.c3, ft1.*, ft2.*, ft4.*, ft5.*, local_tbl.ctid
-         Inner Unique: true
-         Merge Cond: (ft1.c2 = local_tbl.c1)
-         ->  Foreign Scan
-               Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
-               Relations: (((public.ft1) INNER JOIN (public.ft2)) INNER JOIN (public.ft4)) INNER JOIN (public.ft5)
-               Remote SQL: SELECT r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8) END, r3.c1, r3.c2, r3.c3, CASE WHEN (r3.*)::text IS NOT NULL THEN ROW(r3.c1, r3.c2, r3.c3) END, r4.c1, r4.c2, r4.c3, CASE WHEN (r4.*)::text IS NOT NULL THEN ROW(r4.c1, r4.c2, r4.c3) END FROM ((("S 1"."T 1" r1 INNER JOIN "S 1"."T 1" r2 ON (((r2."C 1" = r1."C 1")) AND ((r2."C 1" < 100)) AND ((r1."C 1" < 100)))) INNER JOIN "S 1"."T 3" r3 ON (((r1.c2 = r3.c1)))) INNER JOIN "S 1"."T 4" r4 ON (((r1.c2 = r4.c1)))) ORDER BY r1.c2 ASC NULLS LAST FOR UPDATE OF r1 FOR UPDATE OF r2 FOR UPDATE OF r3 FOR UPDATE OF r4
-               ->  Merge Join
-                     Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
-                     Merge Cond: (ft1.c2 = ft5.c1)
-                     ->  Merge Join
-                           Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*, ft4.c1, ft4.c2, ft4.c3, ft4.*
-                           Merge Cond: (ft1.c2 = ft4.c1)
-                           ->  Sort
-                                 Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
-                                 Sort Key: ft1.c2
-                                 ->  Merge Join
-                                       Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
-                                       Merge Cond: (ft1.c1 = ft2.c1)
-                                       ->  Sort
-                                             Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*
-                                             Sort Key: ft1.c1
-                                             ->  Foreign Scan on public.ft1
-                                                   Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*
-                                                   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) FOR UPDATE
-                                       ->  Materialize
-                                             Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
-                                             ->  Foreign Scan on public.ft2
-                                                   Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
-                                                   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) ORDER BY "C 1" ASC NULLS LAST FOR UPDATE
-                           ->  Sort
-                                 Output: ft4.c1, ft4.c2, ft4.c3, ft4.*
-                                 Sort Key: ft4.c1
-                                 ->  Foreign Scan on public.ft4
-                                       Output: ft4.c1, ft4.c2, ft4.c3, ft4.*
-                                       Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 3" FOR UPDATE
-                     ->  Sort
-                           Output: ft5.c1, ft5.c2, ft5.c3, ft5.*
-                           Sort Key: ft5.c1
-                           ->  Foreign Scan on public.ft5
-                                 Output: ft5.c1, ft5.c2, ft5.c3, ft5.*
-                                 Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 4" FOR UPDATE
-         ->  Index Scan using local_tbl_pkey on public.local_tbl
-               Output: local_tbl.c1, local_tbl.c2, local_tbl.c3, local_tbl.ctid
-(47 rows)
+    AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE)
+SELECT * FROM s ORDER BY 1;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                   QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                                   
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort
+   Output: s.c1, s.c2, s.c3, s.c4, s.c5, s.c6, s.c7, s.c8, s.c1_1, s.c2_1, s.c3_1, s.c4_1, s.c5_1, s.c6_1, s.c7_1, s.c8_1, s.c1_2, s.c2_2, s.c3_2, s.c1_3, s.c2_3, s.c3_3, s.c1_4, s.c2_4, s.c3_4
+   Sort Key: s.c1
+   CTE s
+     ->  LockRows
+           Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft4.c1, ft4.c2, ft4.c3, ft5.c1, ft5.c2, ft5.c3, local_tbl.c1, local_tbl.c2, local_tbl.c3, ft1.*, ft2.*, ft4.*, ft5.*, local_tbl.ctid
+           ->  Merge Join
+                 Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft4.c1, ft4.c2, ft4.c3, ft5.c1, ft5.c2, ft5.c3, local_tbl.c1, local_tbl.c2, local_tbl.c3, ft1.*, ft2.*, ft4.*, ft5.*, local_tbl.ctid
+                 Inner Unique: true
+                 Merge Cond: (ft1.c2 = local_tbl.c1)
+                 ->  Foreign Scan
+                       Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
+                       Relations: (((public.ft1) INNER JOIN (public.ft2)) INNER JOIN (public.ft4)) INNER JOIN (public.ft5)
+                       Remote SQL: SELECT r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8) END, r3.c1, r3.c2, r3.c3, CASE WHEN (r3.*)::text IS NOT NULL THEN ROW(r3.c1, r3.c2, r3.c3) END, r4.c1, r4.c2, r4.c3, CASE WHEN (r4.*)::text IS NOT NULL THEN ROW(r4.c1, r4.c2, r4.c3) END FROM ((("S 1"."T 1" r1 INNER JOIN "S 1"."T 1" r2 ON (((r2."C 1" = r1."C 1")) AND ((r2."C 1" < 100)) AND ((r1."C 1" < 100)))) INNER JOIN "S 1"."T 3" r3 ON (((r1.c2 = r3.c1)))) INNER JOIN "S 1"."T 4" r4 ON (((r1.c2 = r4.c1)))) ORDER BY r1.c2 ASC NULLS LAST FOR UPDATE OF r1 FOR UPDATE OF r2 FOR UPDATE OF r3 FOR UPDATE OF r4
+                       ->  Merge Join
+                             Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
+                             Merge Cond: (ft1.c2 = ft5.c1)
+                             ->  Merge Join
+                                   Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*, ft4.c1, ft4.c2, ft4.c3, ft4.*
+                                   Merge Cond: (ft1.c2 = ft4.c1)
+                                   ->  Sort
+                                         Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
+                                         Sort Key: ft1.c2
+                                         ->  Merge Join
+                                               Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
+                                               Merge Cond: (ft1.c1 = ft2.c1)
+                                               ->  Sort
+                                                     Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*
+                                                     Sort Key: ft1.c1
+                                                     ->  Foreign Scan on public.ft1
+                                                           Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*
+                                                           Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) FOR UPDATE
+                                               ->  Materialize
+                                                     Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
+                                                     ->  Foreign Scan on public.ft2
+                                                           Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
+                                                           Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) ORDER BY "C 1" ASC NULLS LAST FOR UPDATE
+                                   ->  Sort
+                                         Output: ft4.c1, ft4.c2, ft4.c3, ft4.*
+                                         Sort Key: ft4.c1
+                                         ->  Foreign Scan on public.ft4
+                                               Output: ft4.c1, ft4.c2, ft4.c3, ft4.*
+                                               Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 3" FOR UPDATE
+                             ->  Sort
+                                   Output: ft5.c1, ft5.c2, ft5.c3, ft5.*
+                                   Sort Key: ft5.c1
+                                   ->  Foreign Scan on public.ft5
+                                         Output: ft5.c1, ft5.c2, ft5.c3, ft5.*
+                                         Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 4" FOR UPDATE
+                 ->  Index Scan using local_tbl_pkey on public.local_tbl
+                       Output: local_tbl.c1, local_tbl.c2, local_tbl.c3, local_tbl.ctid
+   ->  CTE Scan on s
+         Output: s.c1, s.c2, s.c3, s.c4, s.c5, s.c6, s.c7, s.c8, s.c1_1, s.c2_1, s.c3_1, s.c4_1, s.c5_1, s.c6_1, s.c7_1, s.c8_1, s.c1_2, s.c2_2, s.c3_2, s.c1_3, s.c2_3, s.c3_3, s.c1_4, s.c2_4, s.c3_4
+(53 rows)
 
+WITH s AS MATERIALIZED (
 SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = ft4.c1
-    AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE;
+    AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE)
+SELECT * FROM s ORDER BY 1;
  c1 | c2 |  c3   |              c4              |            c5            | c6 |     c7     | c8  | c1 | c2 |  c3   |              c4              |            c5            | c6 |     c7     | c8  | c1 | c2 |   c3   | c1 | c2 |   c3   | c1 | c2 |  c3  
 ----+----+-------+------------------------------+--------------------------+----+------------+-----+----+----+-------+------------------------------+--------------------------+----+------------+-----+----+----+--------+----+----+--------+----+----+------
   6 |  6 | 00006 | Wed Jan 07 00:00:00 1970 PST | Wed Jan 07 00:00:00 1970 | 6  | 6          | foo |  6 |  6 | 00006 | Wed Jan 07 00:00:00 1970 PST | Wed Jan 07 00:00:00 1970 | 6  | 6          | foo |  6 |  7 | AAA006 |  6 |  7 | AAA006 |  6 |  6 | 0006
@@ -2680,67 +2690,77 @@ SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = f
 (10 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF)
+WITH s AS MATERIALIZED (
 SELECT * FROM ft1, ft4, ft5, local_tbl WHERE ft1.c1 = ft4.c1 AND ft1.c1 = ft5.c1
-    AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft5.c1 < 100 FOR UPDATE;
-                                                                                                                                                                                                                                                                                                            QUERY PLAN                                                                                                                                                                                                                                                                                                            
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- LockRows
-   Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft4.c1, ft4.c2, ft4.c3, ft5.c1, ft5.c2, ft5.c3, local_tbl.c1, local_tbl.c2, local_tbl.c3, ft1.*, ft4.*, ft5.*, local_tbl.ctid
-   ->  Merge Join
-         Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft4.c1, ft4.c2, ft4.c3, ft5.c1, ft5.c2, ft5.c3, local_tbl.c1, local_tbl.c2, local_tbl.c3, ft1.*, ft4.*, ft5.*, local_tbl.ctid
-         Merge Cond: (local_tbl.c1 = ft1.c2)
-         ->  Index Scan using local_tbl_pkey on public.local_tbl
-               Output: local_tbl.c1, local_tbl.c2, local_tbl.c3, local_tbl.ctid
-         ->  Sort
-               Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
-               Sort Key: ft1.c2
-               ->  Foreign Scan
-                     Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
-                     Relations: ((public.ft1) INNER JOIN (public.ft4)) INNER JOIN (public.ft5)
-                     Remote SQL: SELECT r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, r2.c1, r2.c2, r2.c3, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2.c1, r2.c2, r2.c3) END, r3.c1, r3.c2, r3.c3, CASE WHEN (r3.*)::text IS NOT NULL THEN ROW(r3.c1, r3.c2, r3.c3) END FROM (("S 1"."T 1" r1 INNER JOIN "S 1"."T 3" r2 ON (((r1."C 1" = r2.c1)) AND ((r1."C 1" < 100)))) INNER JOIN "S 1"."T 4" r3 ON (((r1."C 1" = r3.c1)) AND ((r3.c1 < 100)))) FOR UPDATE OF r1 FOR UPDATE OF r2 FOR UPDATE OF r3
-                     ->  Merge Join
-                           Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
-                           Merge Cond: (ft1.c1 = ft5.c1)
-                           ->  Merge Join
-                                 Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft4.c1, ft4.c2, ft4.c3, ft4.*
-                                 Merge Cond: (ft1.c1 = ft4.c1)
-                                 ->  Sort
-                                       Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*
-                                       Sort Key: ft1.c1
-                                       ->  Foreign Scan on public.ft1
-                                             Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*
-                                             Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) FOR UPDATE
-                                 ->  Sort
-                                       Output: ft4.c1, ft4.c2, ft4.c3, ft4.*
-                                       Sort Key: ft4.c1
-                                       ->  Foreign Scan on public.ft4
-                                             Output: ft4.c1, ft4.c2, ft4.c3, ft4.*
-                                             Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 3" FOR UPDATE
-                           ->  Sort
-                                 Output: ft5.c1, ft5.c2, ft5.c3, ft5.*
-                                 Sort Key: ft5.c1
-                                 ->  Foreign Scan on public.ft5
-                                       Output: ft5.c1, ft5.c2, ft5.c3, ft5.*
-                                       Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 4" WHERE ((c1 < 100)) FOR UPDATE
-(38 rows)
+    AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft5.c1 < 100 FOR UPDATE)
+SELECT * FROM s ORDER BY 1;
+                                                                                                                                                                                                                                                                                                                QUERY PLAN                                                                                                                                                                                                                                                                                                                
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort
+   Output: s.c1, s.c2, s.c3, s.c4, s.c5, s.c6, s.c7, s.c8, s.c1_1, s.c2_1, s.c3_1, s.c1_2, s.c2_2, s.c3_2, s.c1_3, s.c2_3, s.c3_3
+   Sort Key: s.c1
+   CTE s
+     ->  LockRows
+           Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft4.c1, ft4.c2, ft4.c3, ft5.c1, ft5.c2, ft5.c3, local_tbl.c1, local_tbl.c2, local_tbl.c3, ft1.*, ft4.*, ft5.*, local_tbl.ctid
+           ->  Merge Join
+                 Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft4.c1, ft4.c2, ft4.c3, ft5.c1, ft5.c2, ft5.c3, local_tbl.c1, local_tbl.c2, local_tbl.c3, ft1.*, ft4.*, ft5.*, local_tbl.ctid
+                 Merge Cond: (local_tbl.c1 = ft1.c2)
+                 ->  Index Scan using local_tbl_pkey on public.local_tbl
+                       Output: local_tbl.c1, local_tbl.c2, local_tbl.c3, local_tbl.ctid
+                 ->  Sort
+                       Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
+                       Sort Key: ft1.c2
+                       ->  Foreign Scan
+                             Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
+                             Relations: ((public.ft1) INNER JOIN (public.ft4)) INNER JOIN (public.ft5)
+                             Remote SQL: SELECT r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, r2.c1, r2.c2, r2.c3, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2.c1, r2.c2, r2.c3) END, r3.c1, r3.c2, r3.c3, CASE WHEN (r3.*)::text IS NOT NULL THEN ROW(r3.c1, r3.c2, r3.c3) END FROM (("S 1"."T 1" r1 INNER JOIN "S 1"."T 3" r2 ON (((r1."C 1" = r2.c1)) AND ((r1."C 1" < 100)))) INNER JOIN "S 1"."T 4" r3 ON (((r1."C 1" = r3.c1)) AND ((r3.c1 < 100)))) FOR UPDATE OF r1 FOR UPDATE OF r2 FOR UPDATE OF r3
+                             ->  Merge Join
+                                   Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
+                                   Merge Cond: (ft1.c1 = ft5.c1)
+                                   ->  Merge Join
+                                         Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft4.c1, ft4.c2, ft4.c3, ft4.*
+                                         Merge Cond: (ft1.c1 = ft4.c1)
+                                         ->  Sort
+                                               Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*
+                                               Sort Key: ft1.c1
+                                               ->  Foreign Scan on public.ft1
+                                                     Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*
+                                                     Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) FOR UPDATE
+                                         ->  Sort
+                                               Output: ft4.c1, ft4.c2, ft4.c3, ft4.*
+                                               Sort Key: ft4.c1
+                                               ->  Foreign Scan on public.ft4
+                                                     Output: ft4.c1, ft4.c2, ft4.c3, ft4.*
+                                                     Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 3" FOR UPDATE
+                                   ->  Sort
+                                         Output: ft5.c1, ft5.c2, ft5.c3, ft5.*
+                                         Sort Key: ft5.c1
+                                         ->  Foreign Scan on public.ft5
+                                               Output: ft5.c1, ft5.c2, ft5.c3, ft5.*
+                                               Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 4" WHERE ((c1 < 100)) FOR UPDATE
+   ->  CTE Scan on s
+         Output: s.c1, s.c2, s.c3, s.c4, s.c5, s.c6, s.c7, s.c8, s.c1_1, s.c2_1, s.c3_1, s.c1_2, s.c2_2, s.c3_2, s.c1_3, s.c2_3, s.c3_3
+(44 rows)
 
+WITH s AS MATERIALIZED (
 SELECT * FROM ft1, ft4, ft5, local_tbl WHERE ft1.c1 = ft4.c1 AND ft1.c1 = ft5.c1
-    AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft5.c1 < 100 FOR UPDATE;
+    AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft5.c1 < 100 FOR UPDATE)
+SELECT * FROM s ORDER BY 1;
  c1 | c2 |  c3   |              c4              |            c5            | c6 |     c7     | c8  | c1 | c2 |   c3   | c1 | c2 |   c3   | c1 | c2 |  c3  
 ----+----+-------+------------------------------+--------------------------+----+------------+-----+----+----+--------+----+----+--------+----+----+------
+  6 |  6 | 00006 | Wed Jan 07 00:00:00 1970 PST | Wed Jan 07 00:00:00 1970 | 6  | 6          | foo |  6 |  7 | AAA006 |  6 |  7 | AAA006 |  6 |  6 | 0006
  12 |  2 | 00012 | Tue Jan 13 00:00:00 1970 PST | Tue Jan 13 00:00:00 1970 | 2  | 2          | foo | 12 | 13 | AAA012 | 12 | 13 | AAA012 |  2 |  2 | 0002
- 42 |  2 | 00042 | Thu Feb 12 00:00:00 1970 PST | Thu Feb 12 00:00:00 1970 | 2  | 2          | foo | 42 | 43 | AAA042 | 42 | 43 | AAA042 |  2 |  2 | 0002
- 72 |  2 | 00072 | Sat Mar 14 00:00:00 1970 PST | Sat Mar 14 00:00:00 1970 | 2  | 2          | foo | 72 | 73 | AAA072 | 72 | 73 |        |  2 |  2 | 0002
+ 18 |  8 | 00018 | Mon Jan 19 00:00:00 1970 PST | Mon Jan 19 00:00:00 1970 | 8  | 8          | foo | 18 | 19 | AAA018 | 18 | 19 |        |  8 |  8 | 0008
  24 |  4 | 00024 | Sun Jan 25 00:00:00 1970 PST | Sun Jan 25 00:00:00 1970 | 4  | 4          | foo | 24 | 25 | AAA024 | 24 | 25 | AAA024 |  4 |  4 | 0004
+ 36 |  6 | 00036 | Fri Feb 06 00:00:00 1970 PST | Fri Feb 06 00:00:00 1970 | 6  | 6          | foo | 36 | 37 | AAA036 | 36 | 37 |        |  6 |  6 | 0006
+ 42 |  2 | 00042 | Thu Feb 12 00:00:00 1970 PST | Thu Feb 12 00:00:00 1970 | 2  | 2          | foo | 42 | 43 | AAA042 | 42 | 43 | AAA042 |  2 |  2 | 0002
+ 48 |  8 | 00048 | Wed Feb 18 00:00:00 1970 PST | Wed Feb 18 00:00:00 1970 | 8  | 8          | foo | 48 | 49 | AAA048 | 48 | 49 | AAA048 |  8 |  8 | 0008
  54 |  4 | 00054 | Tue Feb 24 00:00:00 1970 PST | Tue Feb 24 00:00:00 1970 | 4  | 4          | foo | 54 | 55 | AAA054 | 54 | 55 |        |  4 |  4 | 0004
+ 66 |  6 | 00066 | Sun Mar 08 00:00:00 1970 PST | Sun Mar 08 00:00:00 1970 | 6  | 6          | foo | 66 | 67 | AAA066 | 66 | 67 | AAA066 |  6 |  6 | 0006
+ 72 |  2 | 00072 | Sat Mar 14 00:00:00 1970 PST | Sat Mar 14 00:00:00 1970 | 2  | 2          | foo | 72 | 73 | AAA072 | 72 | 73 |        |  2 |  2 | 0002
+ 78 |  8 | 00078 | Fri Mar 20 00:00:00 1970 PST | Fri Mar 20 00:00:00 1970 | 8  | 8          | foo | 78 | 79 | AAA078 | 78 | 79 | AAA078 |  8 |  8 | 0008
  84 |  4 | 00084 | Thu Mar 26 00:00:00 1970 PST | Thu Mar 26 00:00:00 1970 | 4  | 4          | foo | 84 | 85 | AAA084 | 84 | 85 | AAA084 |  4 |  4 | 0004
  96 |  6 | 00096 | Tue Apr 07 00:00:00 1970 PST | Tue Apr 07 00:00:00 1970 | 6  | 6          | foo | 96 | 97 | AAA096 | 96 | 97 | AAA096 |  6 |  6 | 0006
- 36 |  6 | 00036 | Fri Feb 06 00:00:00 1970 PST | Fri Feb 06 00:00:00 1970 | 6  | 6          | foo | 36 | 37 | AAA036 | 36 | 37 |        |  6 |  6 | 0006
- 66 |  6 | 00066 | Sun Mar 08 00:00:00 1970 PST | Sun Mar 08 00:00:00 1970 | 6  | 6          | foo | 66 | 67 | AAA066 | 66 | 67 | AAA066 |  6 |  6 | 0006
-  6 |  6 | 00006 | Wed Jan 07 00:00:00 1970 PST | Wed Jan 07 00:00:00 1970 | 6  | 6          | foo |  6 |  7 | AAA006 |  6 |  7 | AAA006 |  6 |  6 | 0006
- 48 |  8 | 00048 | Wed Feb 18 00:00:00 1970 PST | Wed Feb 18 00:00:00 1970 | 8  | 8          | foo | 48 | 49 | AAA048 | 48 | 49 | AAA048 |  8 |  8 | 0008
- 18 |  8 | 00018 | Mon Jan 19 00:00:00 1970 PST | Mon Jan 19 00:00:00 1970 | 8  | 8          | foo | 18 | 19 | AAA018 | 18 | 19 |        |  8 |  8 | 0008
- 78 |  8 | 00078 | Fri Mar 20 00:00:00 1970 PST | Fri Mar 20 00:00:00 1970 | 8  | 8          | foo | 78 | 79 | AAA078 | 78 | 79 | AAA078 |  8 |  8 | 0008
 (13 rows)
 
 RESET enable_nestloop;
@@ -7134,65 +7154,75 @@ UPDATE ft2 SET c3 = 'foo'
 
 BEGIN;
   EXPLAIN (verbose, costs off)
+  WITH s AS MATERIALIZED (
   UPDATE ft2 SET c3 = 'bar'
     FROM ft4 INNER JOIN ft5 ON (ft4.c1 = ft5.c1)
     WHERE ft2.c1 > 1200 AND ft2.c2 = ft4.c1
-    RETURNING old, new, ft2, ft2.*, ft4, ft4.*;  -- can't be pushed down
-                                                                                                                                                                                                                                     QUERY PLAN                                                                                                                                                                                                                                     
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Update on public.ft2
-   Output: old.*, new.*, ft2.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft4.*, ft4.c1, ft4.c2, ft4.c3
-   Remote SQL: UPDATE "S 1"."T 1" SET c3 = $2 WHERE ctid = $1 RETURNING "C 1", c2, c3, c4, c5, c6, c7, c8
-   ->  Foreign Scan
-         Output: 'bar'::text, ft2.ctid, ft2.*, ft4.*, ft5.*, ft4.c1, ft4.c2, ft4.c3
-         Relations: ((public.ft2) INNER JOIN (public.ft4)) INNER JOIN (public.ft5)
-         Remote SQL: SELECT r1.ctid, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2.c1, r2.c2, r2.c3) END, CASE WHEN (r3.*)::text IS NOT NULL THEN ROW(r3.c1, r3.c2, r3.c3) END, r2.c1, r2.c2, r2.c3 FROM (("S 1"."T 1" r1 INNER JOIN "S 1"."T 3" r2 ON (((r1.c2 = r2.c1)) AND ((r1."C 1" > 1200)))) INNER JOIN "S 1"."T 4" r3 ON (((r2.c1 = r3.c1)))) FOR UPDATE OF r1
-         ->  Nested Loop
-               Output: ft2.ctid, ft2.*, ft4.*, ft5.*, ft4.c1, ft4.c2, ft4.c3
-               Join Filter: (ft4.c1 = ft5.c1)
-               ->  Sort
-                     Output: ft2.ctid, ft2.*, ft2.c2, ft4.*, ft4.c1, ft4.c2, ft4.c3
-                     Sort Key: ft2.c2
-                     ->  Hash Join
-                           Output: ft2.ctid, ft2.*, ft2.c2, ft4.*, ft4.c1, ft4.c2, ft4.c3
-                           Hash Cond: (ft2.c2 = ft4.c1)
-                           ->  Foreign Scan on public.ft2
-                                 Output: ft2.ctid, ft2.*, ft2.c2
-                                 Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8, ctid FROM "S 1"."T 1" WHERE (("C 1" > 1200)) FOR UPDATE
-                           ->  Hash
-                                 Output: ft4.*, ft4.c1, ft4.c2, ft4.c3
-                                 ->  Foreign Scan on public.ft4
-                                       Output: ft4.*, ft4.c1, ft4.c2, ft4.c3
-                                       Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 3"
-               ->  Materialize
-                     Output: ft5.*, ft5.c1
-                     ->  Foreign Scan on public.ft5
-                           Output: ft5.*, ft5.c1
-                           Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 4"
-(29 rows)
+    RETURNING old, new, ft2, ft2.*, ft4, ft4.*  -- can't be pushed down
+  ) SELECT * FROM s ORDER BY 1;
+                                                                                                                                                                                                                                         QUERY PLAN                                                                                                                                                                                                                                         
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort
+   Output: s.old, s.new, s.ft2, s.c1, s.c2, s.c3, s.c4, s.c5, s.c6, s.c7, s.c8, s.ft4, s.c1_1, s.c2_1, s.c3_1
+   Sort Key: s.old
+   CTE s
+     ->  Update on public.ft2
+           Output: old.*, new.*, ft2.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft4.*, ft4.c1, ft4.c2, ft4.c3
+           Remote SQL: UPDATE "S 1"."T 1" SET c3 = $2 WHERE ctid = $1 RETURNING "C 1", c2, c3, c4, c5, c6, c7, c8
+           ->  Foreign Scan
+                 Output: 'bar'::text, ft2.ctid, ft2.*, ft4.*, ft5.*, ft4.c1, ft4.c2, ft4.c3
+                 Relations: ((public.ft2) INNER JOIN (public.ft4)) INNER JOIN (public.ft5)
+                 Remote SQL: SELECT r1.ctid, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2.c1, r2.c2, r2.c3) END, CASE WHEN (r3.*)::text IS NOT NULL THEN ROW(r3.c1, r3.c2, r3.c3) END, r2.c1, r2.c2, r2.c3 FROM (("S 1"."T 1" r1 INNER JOIN "S 1"."T 3" r2 ON (((r1.c2 = r2.c1)) AND ((r1."C 1" > 1200)))) INNER JOIN "S 1"."T 4" r3 ON (((r2.c1 = r3.c1)))) FOR UPDATE OF r1
+                 ->  Nested Loop
+                       Output: ft2.ctid, ft2.*, ft4.*, ft5.*, ft4.c1, ft4.c2, ft4.c3
+                       Join Filter: (ft4.c1 = ft5.c1)
+                       ->  Sort
+                             Output: ft2.ctid, ft2.*, ft2.c2, ft4.*, ft4.c1, ft4.c2, ft4.c3
+                             Sort Key: ft2.c2
+                             ->  Hash Join
+                                   Output: ft2.ctid, ft2.*, ft2.c2, ft4.*, ft4.c1, ft4.c2, ft4.c3
+                                   Hash Cond: (ft2.c2 = ft4.c1)
+                                   ->  Foreign Scan on public.ft2
+                                         Output: ft2.ctid, ft2.*, ft2.c2
+                                         Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8, ctid FROM "S 1"."T 1" WHERE (("C 1" > 1200)) FOR UPDATE
+                                   ->  Hash
+                                         Output: ft4.*, ft4.c1, ft4.c2, ft4.c3
+                                         ->  Foreign Scan on public.ft4
+                                               Output: ft4.*, ft4.c1, ft4.c2, ft4.c3
+                                               Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 3"
+                       ->  Materialize
+                             Output: ft5.*, ft5.c1
+                             ->  Foreign Scan on public.ft5
+                                   Output: ft5.*, ft5.c1
+                                   Remote SQL: SELECT c1, c2, c3 FROM "S 1"."T 4"
+   ->  CTE Scan on s
+         Output: s.old, s.new, s.ft2, s.c1, s.c2, s.c3, s.c4, s.c5, s.c6, s.c7, s.c8, s.ft4, s.c1_1, s.c2_1, s.c3_1
+(35 rows)
 
+  WITH s AS MATERIALIZED (
   UPDATE ft2 SET c3 = 'bar'
     FROM ft4 INNER JOIN ft5 ON (ft4.c1 = ft5.c1)
     WHERE ft2.c1 > 1200 AND ft2.c2 = ft4.c1
-    RETURNING old, new, ft2, ft2.*, ft4, ft4.*;
+    RETURNING old, new, ft2, ft2.*, ft4, ft4.*
+  ) SELECT * FROM s ORDER BY 1;
               old               |              new               |              ft2               |  c1  | c2 | c3  | c4 | c5 | c6 |     c7     | c8 |      ft4       | c1 | c2 |   c3   
 --------------------------------+--------------------------------+--------------------------------+------+----+-----+----+----+----+------------+----+----------------+----+----+--------
  (1206,6,foo,,,,"ft2       ",)  | (1206,6,bar,,,,"ft2       ",)  | (1206,6,bar,,,,"ft2       ",)  | 1206 |  6 | bar |    |    |    | ft2        |    | (6,7,AAA006)   |  6 |  7 | AAA006
  (1212,12,foo,,,,"ft2       ",) | (1212,12,bar,,,,"ft2       ",) | (1212,12,bar,,,,"ft2       ",) | 1212 | 12 | bar |    |    |    | ft2        |    | (12,13,AAA012) | 12 | 13 | AAA012
+ (1218,18,foo,,,,"ft2       ",) | (1218,18,bar,,,,"ft2       ",) | (1218,18,bar,,,,"ft2       ",) | 1218 | 18 | bar |    |    |    | ft2        |    | (18,19,AAA018) | 18 | 19 | AAA018
  (1224,24,foo,,,,"ft2       ",) | (1224,24,bar,,,,"ft2       ",) | (1224,24,bar,,,,"ft2       ",) | 1224 | 24 | bar |    |    |    | ft2        |    | (24,25,AAA024) | 24 | 25 | AAA024
  (1230,30,foo,,,,"ft2       ",) | (1230,30,bar,,,,"ft2       ",) | (1230,30,bar,,,,"ft2       ",) | 1230 | 30 | bar |    |    |    | ft2        |    | (30,31,AAA030) | 30 | 31 | AAA030
+ (1236,36,foo,,,,"ft2       ",) | (1236,36,bar,,,,"ft2       ",) | (1236,36,bar,,,,"ft2       ",) | 1236 | 36 | bar |    |    |    | ft2        |    | (36,37,AAA036) | 36 | 37 | AAA036
  (1242,42,foo,,,,"ft2       ",) | (1242,42,bar,,,,"ft2       ",) | (1242,42,bar,,,,"ft2       ",) | 1242 | 42 | bar |    |    |    | ft2        |    | (42,43,AAA042) | 42 | 43 | AAA042
  (1248,48,foo,,,,"ft2       ",) | (1248,48,bar,,,,"ft2       ",) | (1248,48,bar,,,,"ft2       ",) | 1248 | 48 | bar |    |    |    | ft2        |    | (48,49,AAA048) | 48 | 49 | AAA048
+ (1254,54,foo,,,,"ft2       ",) | (1254,54,bar,,,,"ft2       ",) | (1254,54,bar,,,,"ft2       ",) | 1254 | 54 | bar |    |    |    | ft2        |    | (54,55,AAA054) | 54 | 55 | AAA054
  (1260,60,foo,,,,"ft2       ",) | (1260,60,bar,,,,"ft2       ",) | (1260,60,bar,,,,"ft2       ",) | 1260 | 60 | bar |    |    |    | ft2        |    | (60,61,AAA060) | 60 | 61 | AAA060
  (1266,66,foo,,,,"ft2       ",) | (1266,66,bar,,,,"ft2       ",) | (1266,66,bar,,,,"ft2       ",) | 1266 | 66 | bar |    |    |    | ft2        |    | (66,67,AAA066) | 66 | 67 | AAA066
+ (1272,72,foo,,,,"ft2       ",) | (1272,72,bar,,,,"ft2       ",) | (1272,72,bar,,,,"ft2       ",) | 1272 | 72 | bar |    |    |    | ft2        |    | (72,73,AAA072) | 72 | 73 | AAA072
  (1278,78,foo,,,,"ft2       ",) | (1278,78,bar,,,,"ft2       ",) | (1278,78,bar,,,,"ft2       ",) | 1278 | 78 | bar |    |    |    | ft2        |    | (78,79,AAA078) | 78 | 79 | AAA078
  (1284,84,foo,,,,"ft2       ",) | (1284,84,bar,,,,"ft2       ",) | (1284,84,bar,,,,"ft2       ",) | 1284 | 84 | bar |    |    |    | ft2        |    | (84,85,AAA084) | 84 | 85 | AAA084
- (1296,96,foo,,,,"ft2       ",) | (1296,96,bar,,,,"ft2       ",) | (1296,96,bar,,,,"ft2       ",) | 1296 | 96 | bar |    |    |    | ft2        |    | (96,97,AAA096) | 96 | 97 | AAA096
- (1218,18,foo,,,,"ft2       ",) | (1218,18,bar,,,,"ft2       ",) | (1218,18,bar,,,,"ft2       ",) | 1218 | 18 | bar |    |    |    | ft2        |    | (18,19,AAA018) | 18 | 19 | AAA018
- (1236,36,foo,,,,"ft2       ",) | (1236,36,bar,,,,"ft2       ",) | (1236,36,bar,,,,"ft2       ",) | 1236 | 36 | bar |    |    |    | ft2        |    | (36,37,AAA036) | 36 | 37 | AAA036
- (1254,54,foo,,,,"ft2       ",) | (1254,54,bar,,,,"ft2       ",) | (1254,54,bar,,,,"ft2       ",) | 1254 | 54 | bar |    |    |    | ft2        |    | (54,55,AAA054) | 54 | 55 | AAA054
- (1272,72,foo,,,,"ft2       ",) | (1272,72,bar,,,,"ft2       ",) | (1272,72,bar,,,,"ft2       ",) | 1272 | 72 | bar |    |    |    | ft2        |    | (72,73,AAA072) | 72 | 73 | AAA072
  (1290,90,foo,,,,"ft2       ",) | (1290,90,bar,,,,"ft2       ",) | (1290,90,bar,,,,"ft2       ",) | 1290 | 90 | bar |    |    |    | ft2        |    | (90,91,AAA090) | 90 | 91 | AAA090
+ (1296,96,foo,,,,"ft2       ",) | (1296,96,bar,,,,"ft2       ",) | (1296,96,bar,,,,"ft2       ",) | 1296 | 96 | bar |    |    |    | ft2        |    | (96,97,AAA096) | 96 | 97 | AAA096
 (16 rows)
 
 ROLLBACK;
