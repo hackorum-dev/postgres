@@ -4060,8 +4060,9 @@ RemovePartitionKeyByRelId(Oid relid)
 
 /*
  * StorePartitionBound
- *		Update pg_class tuple of rel to store the partition bound and set
- *		relispartition to true
+ *		Update pg_class tuple of rel to store the partition bound, set 
+ *		relreplident to the same of the parent and set relispartition
+ *		to true
  *
  * If this is the default partition, also update the default partition OID in
  * pg_partitioned_table.
@@ -4113,6 +4114,9 @@ StorePartitionBound(Relation rel, Relation parent, PartitionBoundSpec *bound)
 								 new_val, new_null, new_repl);
 	/* Also set the flag */
 	((Form_pg_class) GETSTRUCT(newtuple))->relispartition = true;
+
+	/* Copy replication identity from parent if needed */
+	((Form_pg_class) GETSTRUCT(newtuple))->relreplident = parent->rd_rel->relreplident;
 
 	/*
 	 * We already checked for no inheritance children, but reset

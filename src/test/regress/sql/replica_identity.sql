@@ -134,6 +134,45 @@ ALTER TABLE test_replica_identity5 ALTER b SET NOT NULL;
 ALTER TABLE test_replica_identity5 DROP CONSTRAINT test_replica_identity5_pkey;
 ALTER TABLE test_replica_identity5 ALTER b DROP NOT NULL;
 
+-- New partitions inherit parent's replica identity setting
+CREATE TABLE test_replica_identity6 (a int, b int) PARTITION BY LIST (a);
+ALTER TABLE test_replica_identity6 REPLICA IDENTITY FULL;
+
+CREATE TABLE test_replica_identity6_p1 PARTITION OF test_replica_identity6
+  FOR VALUES IN (1);
+SELECT relreplident FROM pg_class
+  WHERE oid = 'test_replica_identity6_p1'::regclass;
+
+CREATE TABLE test_replica_identity6_p2 (a int, b int);
+SELECT relreplident FROM pg_class
+  WHERE oid = 'test_replica_identity6_p2'::regclass;
+ALTER TABLE test_replica_identity6 ATTACH PARTITION test_replica_identity6_p2
+  FOR VALUES IN (2);
+SELECT relreplident FROM pg_class
+  WHERE oid = 'test_replica_identity6_p2'::regclass;
+
+-- Partitioned child tables and their grandchildren inherit replica identity
+CREATE TABLE test_replica_identity7 (a int, b int) PARTITION BY LIST (a);
+ALTER TABLE test_replica_identity7 REPLICA IDENTITY FULL;
+
+CREATE TABLE test_replica_identity7_p PARTITION OF test_replica_identity7
+  FOR VALUES IN (1) PARTITION BY LIST (b);
+SELECT relreplident FROM pg_class
+  WHERE oid = 'test_replica_identity7_p'::regclass;
+
+CREATE TABLE test_replica_identity7_p1 PARTITION OF test_replica_identity7_p
+  FOR VALUES IN (1);
+SELECT relreplident FROM pg_class
+  WHERE oid = 'test_replica_identity7_p1'::regclass;
+
+CREATE TABLE test_replica_identity7_leaf (a int, b int);
+SELECT relreplident FROM pg_class
+  WHERE oid = 'test_replica_identity7_leaf'::regclass;
+ALTER TABLE test_replica_identity7_p ATTACH PARTITION test_replica_identity7_leaf
+  FOR VALUES IN (2);
+SELECT relreplident FROM pg_class
+  WHERE oid = 'test_replica_identity7_leaf'::regclass;
+
 DROP TABLE test_replica_identity;
 DROP TABLE test_replica_identity2;
 DROP TABLE test_replica_identity3;
@@ -141,3 +180,5 @@ DROP TABLE test_replica_identity4;
 DROP TABLE test_replica_identity5;
 DROP TABLE test_replica_identity_othertable;
 DROP TABLE test_replica_identity_t3;
+DROP TABLE test_replica_identity6;
+DROP TABLE test_replica_identity7;
