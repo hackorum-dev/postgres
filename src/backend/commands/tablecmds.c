@@ -19081,7 +19081,6 @@ relation_mark_replica_identity(Relation rel, char ri_type, Oid indexOid,
 							   bool is_internal)
 {
 	Relation	pg_index;
-	Relation	pg_class;
 	HeapTuple	pg_class_tuple;
 	HeapTuple	pg_index_tuple;
 	Form_pg_class pg_class_form;
@@ -19091,7 +19090,7 @@ relation_mark_replica_identity(Relation rel, char ri_type, Oid indexOid,
 	/*
 	 * Check whether relreplident has changed, and update it if so.
 	 */
-	pg_class = table_open(RelationRelationId, RowExclusiveLock);
+
 	pg_class_tuple = SearchSysCacheCopy1(RELOID,
 										 ObjectIdGetDatum(RelationGetRelid(rel)));
 	if (!HeapTupleIsValid(pg_class_tuple))
@@ -19100,10 +19099,12 @@ relation_mark_replica_identity(Relation rel, char ri_type, Oid indexOid,
 	pg_class_form = (Form_pg_class) GETSTRUCT(pg_class_tuple);
 	if (pg_class_form->relreplident != ri_type)
 	{
+		Relation	pg_class = table_open(RelationRelationId, RowExclusiveLock);
+
 		pg_class_form->relreplident = ri_type;
 		CatalogTupleUpdate(pg_class, &pg_class_tuple->t_self, pg_class_tuple);
+		table_close(pg_class, RowExclusiveLock);
 	}
-	table_close(pg_class, RowExclusiveLock);
 	heap_freetuple(pg_class_tuple);
 
 	/*
