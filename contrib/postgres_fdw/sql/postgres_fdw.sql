@@ -773,15 +773,23 @@ ANALYZE local_tbl;
 SET enable_nestloop TO false;
 SET enable_hashjoin TO false;
 EXPLAIN (VERBOSE, COSTS OFF)
+WITH s AS MATERIALIZED (
 SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = ft4.c1
-    AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE;
+    AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE)
+SELECT * FROM s ORDER BY 1;
+WITH s AS MATERIALIZED (
 SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = ft4.c1
-    AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE;
+    AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE)
+SELECT * FROM s ORDER BY 1;
 EXPLAIN (VERBOSE, COSTS OFF)
+WITH s AS MATERIALIZED (
 SELECT * FROM ft1, ft4, ft5, local_tbl WHERE ft1.c1 = ft4.c1 AND ft1.c1 = ft5.c1
-    AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft5.c1 < 100 FOR UPDATE;
+    AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft5.c1 < 100 FOR UPDATE)
+SELECT * FROM s ORDER BY 1;
+WITH s AS MATERIALIZED (
 SELECT * FROM ft1, ft4, ft5, local_tbl WHERE ft1.c1 = ft4.c1 AND ft1.c1 = ft5.c1
-    AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft5.c1 < 100 FOR UPDATE;
+    AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft5.c1 < 100 FOR UPDATE)
+SELECT * FROM s ORDER BY 1;
 RESET enable_nestloop;
 RESET enable_hashjoin;
 
@@ -1660,14 +1668,18 @@ UPDATE ft2 SET c3 = 'foo'
   RETURNING ft2, ft2.*, ft4, ft4.*;
 BEGIN;
   EXPLAIN (verbose, costs off)
+  WITH s AS MATERIALIZED (
   UPDATE ft2 SET c3 = 'bar'
     FROM ft4 INNER JOIN ft5 ON (ft4.c1 = ft5.c1)
     WHERE ft2.c1 > 1200 AND ft2.c2 = ft4.c1
-    RETURNING old, new, ft2, ft2.*, ft4, ft4.*;  -- can't be pushed down
+    RETURNING old, new, ft2, ft2.*, ft4, ft4.*  -- can't be pushed down
+  ) SELECT * FROM s ORDER BY 1;
+  WITH s AS MATERIALIZED (
   UPDATE ft2 SET c3 = 'bar'
     FROM ft4 INNER JOIN ft5 ON (ft4.c1 = ft5.c1)
     WHERE ft2.c1 > 1200 AND ft2.c2 = ft4.c1
-    RETURNING old, new, ft2, ft2.*, ft4, ft4.*;
+    RETURNING old, new, ft2, ft2.*, ft4, ft4.*
+  ) SELECT * FROM s ORDER BY 1;
 ROLLBACK;
 EXPLAIN (verbose, costs off)
 DELETE FROM ft2
