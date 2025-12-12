@@ -9771,6 +9771,35 @@ get_backup_status(void)
 }
 
 /*
+ * XLogBackupStatus
+ *
+ * Returns true if any backup is currently in progress on this server (across all sessions),
+ * and optionally returns the LSN of the latest checkpoint redo location used as a starting
+ * point for an online backup (if lastBackupStart is not NULL).
+ *
+ * Note: We must hold WALInsertLock to read runningBackups and lastBackupStart to ensure
+ * consistent access to the shared memory values.
+ */
+bool
+XLogBackupStatus(XLogRecPtr *lastBackupStart)
+{
+	bool result;
+	XLogRecPtr lsn = InvalidXLogRecPtr;
+
+	WALInsertLockAcquireExclusive();
+	result = (XLogCtl->Insert.runningBackups > 0);
+	if (lastBackupStart)
+		lsn = XLogCtl->Insert.lastBackupStart;
+	WALInsertLockRelease();
+
+	if (lastBackupStart)
+		*lastBackupStart = lsn;
+
+	return result;
+}
+
+
+/*
  * do_pg_backup_stop
  *
  * Utility function called at the end of an online backup.  It creates history
