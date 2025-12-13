@@ -6033,6 +6033,19 @@ RelationGetIndexAttOptions(Relation relation, bool copy)
 	return relation->rd_opcoptions;
 }
 
+bool
+ColumnIsVirtualGenerated(Relation rel, AttrNumber attnum)
+{
+	Form_pg_attribute attr;
+
+	TupleDesc tupdesc = RelationGetDescr(rel);
+
+	Assert(attnum > 0);
+	attr = TupleDescAttr(tupdesc, attnum -1);
+
+	return (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL);
+}
+
 /*
  * Routines to support ereport() reports of relation-related errors
  *

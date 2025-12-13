@@ -54,6 +54,9 @@ CATALOG(pg_partitioned_table,3350,PartitionedRelationId)
 																				 * collation for keys */
 	pg_node_tree partexprs;		/* list of expressions in the partition key;
 								 * one item for each zero entry in partattrs[] */
+	pg_node_tree partvirtualexprs;		/* list of expressions in the partition key;
+								 * one item for each zero entry in partattrs[] */
+
 #endif
 } FormData_pg_partitioned_table;
 
