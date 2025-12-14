@@ -3603,4 +3603,75 @@ CREATE SUBSCRIPTION mysub CONNECTION 'dbname=foo host=bar user=repuser' PUBLICAT
    incremental changes to those tables.
   </para>
  </sect1>
+ <section id="logical-replication-practical-examples">
+  <title>Practical Usage Examples</title>
+
+  <para>
+    While logical replication is conceptually simple, many users struggle with
+    initial configuration because real-world examples are spread across
+    different sections. This part consolidates common usage patterns with
+    complete and reproducible examples.
+  </para>
+
+  <sect2 id="logical-replication-single-table-example">
+    <title>Single-Table Replication Example</title>
+
+    <para>
+      The following example demonstrates a minimal setup where a single table
+      is replicated from publisher to subscriber. This is a common use case for
+      operational reporting and incremental data ingestion by downstream
+      systems.
+    </para>
+
+<programlisting>
+-- On the publisher:
+CREATE TABLE public.sales_events (
+  id bigserial PRIMARY KEY,
+  event_time timestamptz NOT NULL,
+  payload jsonb NOT NULL
+);
+
+ALTER TABLE public.sales_events REPLICA IDENTITY FULL;
+
+CREATE PUBLICATION sales_pub FOR TABLE public.sales_events;
+
+-- On the subscriber:
+CREATE SUBSCRIPTION sales_sub
+  CONNECTION 'host=publisher port=5432 dbname=app user=replicator'
+  PUBLICATION sales_pub;
+</programlisting>
+
+    <para>
+      After the subscription is created, PostgreSQL performs an initial table
+      copy. Users often assume this happens in the background, but it actually
+      uses a separate apply worker. Monitoring can be done via
+      <link linkend="view-pg-stat- subscription">
+        pg_stat_subscription
+      </link>.
+    </para>
+  </sect2>
+
+  <sect2 id="logical-replication-initial-sync-behavior">
+    <title>Clarification of Initial Synchronization Behavior</title>
+    <para>
+      Initial synchronization is commonly misunderstood. Each table is copied in
+      a dedicated worker process, which can lead to higher-than-expected
+      resource usage on large schemas. Administrators may prefer to temporarily
+      disable table copy and load the initial data manually. This can be done
+      using <literal>copy_data = false</literal> during subscription creation.
+    </para>
+  </sect2>
+
+  <sect2 id="logical-replication-conflict-resolution">
+    <title>Conflict Resolution in Apply Workers</title>
+    <para>
+      Conflicts occur when the subscriber contains preexisting data or when
+      concurrent writes race with replicated changes. PostgreSQL always
+      prioritizes local transactions, causing replicated transactions to abort
+      and retry. This behavior is rarely documented clearly, yet it is
+      essential for users handling high write volumes.
+    </para>
+  </sect2>
+
+</section>
 </chapter>
