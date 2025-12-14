@@ -7,4 +7,5 @@ CREATE EXTENSION test_lfind;
 --
 SELECT test_lfind8();
 SELECT test_lfind8_le();
+SELECT test_lfind8_nonzero();
 SELECT test_lfind32();
