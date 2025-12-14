@@ -1414,4 +1414,60 @@ pg_ctl start | rotatelogs /var/log/pgsql_log 86400
    files, as well as detection of many other extraordinary conditions.
   </para>
  </sect1>
+ <section id="autovacuum-advanced-behavior">
+  <title>Understanding Autovacuum Behavior in Depth</title>
+
+  <para>
+    The autovacuum launcher dynamically decides when to create worker processes
+    based on table activity. Although this mechanism operates automatically, it
+    is sensitive to workload patterns, visibility map state, freeze thresholds,
+    and cost-based throttling. This section clarifies these behaviors to help
+    administrators diagnose performance regressions and long-running
+    autovacuum cycles.
+  </para>
+
+  <sect2 id="autovacuum-cost-based-throttling">
+    <title>Cost-Based Throttling</title>
+
+    <para>
+      Autovacuum workers obey cost-based throttling rules that were originally
+      designed for manual VACUUM operations. When the accumulated cost exceeds
+      <literal>autovacuum_vacuum_cost_limit</literal>, the worker sleeps for the
+      duration defined by <literal>autovacuum_vacuum_cost_delay</literal>. In
+      environments with high write throughput, throttling can cause autovacuum
+      to take significantly longer than expected.
+    </para>
+
+    <para>
+      A common misconception is that increasing the number of autovacuum
+      workers solves slow autovacuum cycles. In practice, cost-based throttling
+      often becomes the bottleneck. In such cases, adjusting cost_limit upward,
+      or disabling throttling entirely for specific relations, may be more
+      effective.
+    </para>
+  </sect2>
+
+  <sect2 id="autovacuum-long-running">
+    <title>Diagnosing Long-Running Autovacuum Operations</title>
+
+    <para>
+      Administrators frequently observe autovacuum workers running for hours on
+      tables with large dead tuples or bloated indexes. The primary causes are:
+    </para>
+
+    <itemizedlist>
+      <listitem><para>Heavy write activity preventing visibility map advancement.</para></listitem>
+      <listitem><para>Cost-based throttling limiting processing rate.</para></listitem>
+      <listitem><para>Background worker slots exhausted by other processes.</para></listitem>
+      <listitem><para>Insufficient I/O bandwidth for vacuuming operations.</para></listitem>
+    </itemizedlist>
+
+    <para>
+      Monitoring can be performed using
+      <xref linkend="view-pg-stat-progress-vacuum"/>. If index scans dominate
+      runtime, administrators should consider index deduplication, partitioning,
+      or targeted <literal>VACUUM (INDEX_CLEANUP OFF)</literal>.
+    </para>
+  </sect2>
+</section>
 </chapter>
