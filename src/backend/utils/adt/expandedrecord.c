@@ -23,6 +23,7 @@
 #include "access/htup_details.h"
 #include "catalog/heap.h"
 #include "catalog/pg_type.h"
+#include "port/pg_lfind.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/expandedrecord.h"
@@ -727,14 +728,8 @@ ER_get_flat_size(ExpandedObjectHeader *eohptr)
 
 	/* Test if we currently have any null values */
 	hasnull = false;
-	for (i = 0; i < erh->nfields; i++)
-	{
-		if (erh->dnulls[i])
-		{
-			hasnull = true;
-			break;
-		}
-	}
+	if (likely(erh->nfields > 0))
+		hasnull = pg_lfind8_nonzero((uint8 *) erh->dnulls, erh->nfields);
 
 	/* Determine total space needed */
 	len = offsetof(HeapTupleHeaderData, t_bits);
