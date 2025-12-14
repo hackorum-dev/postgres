@@ -14,3 +14,7 @@ CREATE FUNCTION test_lfind8()
 CREATE FUNCTION test_lfind8_le()
 	RETURNS pg_catalog.void
 	AS 'MODULE_PATHNAME' LANGUAGE C;
+
+CREATE FUNCTION test_lfind8_nonzero()
+	RETURNS pg_catalog.void
+	AS 'MODULE_PATHNAME' LANGUAGE C;

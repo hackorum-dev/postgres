@@ -115,6 +115,23 @@ test_lfind8_le(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+PG_FUNCTION_INFO_V1(test_lfind8_nonzero);
+Datum
+test_lfind8_nonzero(PG_FUNCTION_ARGS)
+{
+	uint8		charbuf[64] = {0};
+
+	charbuf[32] = 1;
+
+	if (pg_lfind8_nonzero(charbuf, 32))
+		elog(ERROR, "pg_lfind8_nonzero() found nonexistent nonzero");
+
+	if (!pg_lfind8_nonzero(charbuf, 64))
+		elog(ERROR, "pg_lfind8_nonzero() did not find existing nonzero");
+
+	PG_RETURN_VOID();
+}
+
 PG_FUNCTION_INFO_V1(test_lfind32);
 Datum
 test_lfind32(PG_FUNCTION_ARGS)
