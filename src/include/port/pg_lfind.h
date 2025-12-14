@@ -81,6 +81,46 @@ pg_lfind8_le(uint8 key, const uint8 *base, uint32 nelem)
 }
 
 /*
+ * pg_lfind8_nonzero
+ *
+ * Return true if there is an element in 'base' that is not equal to
+ * zero, otherwise return false.
+ */
+static inline bool
+pg_lfind8_nonzero(uint8 *base, uint32 nelem)
+{
+	uint32      i;
+	uint32		tail_idx;
+	uint64      chunk;
+
+	/* Search the array one-by-one if there aren't enough elements. */
+	if (nelem < sizeof(chunk))
+	{
+		for (i = 0; i < nelem; i++)
+		{
+			if (base[i] != 0)
+				return true;
+		}
+		return false;
+	}
+
+	/* Round down to multiple of chunk length. */
+	tail_idx = nelem & ~(sizeof(chunk) - 1);
+
+	for (i = 0; i < tail_idx; i += sizeof(chunk))
+	{
+		/* memcpy() to avoid unaligned access. */
+		memcpy(&chunk, &base[i], sizeof(chunk));
+		if (chunk != 0)
+			return true;
+	}
+
+	/* Process the last chunk in the array. */
+	memcpy(&chunk, &base[nelem - sizeof(chunk)], sizeof(chunk));
+	return chunk != 0;
+}
+
+/*
  * pg_lfind32_one_by_one_helper
  *
  * Searches the array of integers one-by-one.  The caller is responsible for
