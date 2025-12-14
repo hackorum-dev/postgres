@@ -61,6 +61,7 @@
 #include "access/sysattr.h"
 #include "access/tupdesc_details.h"
 #include "common/hashfn.h"
+#include "port/pg_lfind.h"
 #include "utils/datum.h"
 #include "utils/expandeddatum.h"
 #include "utils/hsearch.h"
@@ -1033,7 +1034,6 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	int			hoff;
 	bool		hasnull = false;
 	int			numberOfAttributes = tupleDescriptor->natts;
-	int			i;
 
 	if (numberOfAttributes > MaxTupleAttributeNumber)
 		ereport(ERROR,
@@ -1044,14 +1044,8 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 	/*
 	 * Check for nulls
 	 */
-	for (i = 0; i < numberOfAttributes; i++)
-	{
-		if (isnull[i])
-		{
-			hasnull = true;
-			break;
-		}
-	}
+	if (likely(numberOfAttributes > 0))
+		hasnull = pg_lfind8_nonzero((uint8 *) isnull, numberOfAttributes);
 
 	/*
 	 * Determine total space needed
@@ -1399,7 +1393,6 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	int			hoff;
 	bool		hasnull = false;
 	int			numberOfAttributes = tupleDescriptor->natts;
-	int			i;
 
 	Assert(extra == MAXALIGN(extra));
 
@@ -1412,14 +1405,8 @@ heap_form_minimal_tuple(TupleDesc tupleDescriptor,
 	/*
 	 * Check for nulls
 	 */
-	for (i = 0; i < numberOfAttributes; i++)
-	{
-		if (isnull[i])
-		{
-			hasnull = true;
-			break;
-		}
-	}
+	if (likely(numberOfAttributes > 0))
+		hasnull = pg_lfind8_nonzero((uint8 *) isnull, numberOfAttributes);
 
 	/*
 	 * Determine total space needed
