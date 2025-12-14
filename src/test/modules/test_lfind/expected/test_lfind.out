@@ -16,6 +16,12 @@ SELECT test_lfind8_le();
  
 (1 row)
 
+SELECT test_lfind8_nonzero();
+ test_lfind8_nonzero 
+---------------------
+ 
+(1 row)
+
 SELECT test_lfind32();
  test_lfind32 
 --------------
