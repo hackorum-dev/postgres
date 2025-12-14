@@ -1996,4 +1996,53 @@ SELECT pg_advisory_lock(q.id) FROM
     indexes should be used instead.
    </para>
   </sect1>
+  <section id="transaction-freeze-deep-dive">
+  <title>Understanding Transaction Freezing and Anti-Wraparound Protection</title>
+
+  <para>
+    PostgreSQL must frequently freeze old tuples to prevent transaction ID
+    wraparound, which would otherwise cause catalog corruption and data loss.
+    Although this mechanism is documented, many details are not fully clear to
+    new users. This section explains the practical impact of freezing,
+    thresholds, and autovacuum interaction.
+  </para>
+
+  <sect2 id="freeze-thresholds">
+    <title>Freeze Thresholds and Vacuum Triggering</title>
+
+    <para>
+      Autovacuum triggers a freeze operation when a relation reaches the
+      threshold defined by <literal>autovacuum_freeze_max_age</literal>. In
+      addition, each table carries its own age counter at the page level, based
+      on the oldest XID present. When this counter crosses
+      <literal>vacuum_freeze_min_age</literal>, tuples are marked as frozen.
+    </para>
+
+    <para>
+      A common misunderstanding is that freezing is expensive. In reality,
+      freezing is often cheaper than regular vacuuming, because frozen tuples
+      no longer require XID visibility checks. High freeze ages only become a
+      problem when autovacuum is unable to keep up, typically due to sustained
+      heavy writes or throttling constraints.
+    </para>
+  </sect2>
+
+  <sect2 id="visibility-map-freeze">
+    <title>Visibility Map and Freeze Operations</title>
+
+    <para>
+      Freezing interacts closely with the visibility map. When all tuples in a
+      page are frozen or visible to all transactions, the page can be marked as
+      all-visible. This reduces scanning overhead for future vacuum operations.
+      However, frequent updates prevent visibility map bits from being set,
+      increasing vacuum and freeze pressure.
+    </para>
+
+    <para>
+      Administrators should monitor visibility map saturation via
+      <literal>pgstattuple</literal> or external tooling to detect tables that
+      are chronically difficult to vacuum.
+    </para>
+  </sect2>
+</section>
  </chapter>
