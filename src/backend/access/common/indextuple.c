@@ -21,6 +21,7 @@
 #include "access/htup_details.h"
 #include "access/itup.h"
 #include "access/toast_internals.h"
+#include "port/pg_lfind.h"
 
 /*
  * This enables de-toasting of index entries.  Needed until VACUUM is
@@ -139,14 +140,8 @@ index_form_tuple_context(TupleDesc tupleDescriptor,
 	}
 #endif
 
-	for (i = 0; i < numberOfAttributes; i++)
-	{
-		if (isnull[i])
-		{
-			hasnull = true;
-			break;
-		}
-	}
+	if (likely(numberOfAttributes > 0))
+		hasnull = pg_lfind8_nonzero((uint8 *) isnull, numberOfAttributes);
 
 	if (hasnull)
 		infomask |= INDEX_NULL_MASK;
