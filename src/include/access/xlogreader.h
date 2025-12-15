@@ -304,7 +304,9 @@ struct XLogReaderState
 	 * crosses a page boundary.
 	 */
 	char	   *readRecordBuf;
-	uint32		readRecordBufSize;
+	uint32	    readRecordBufSize;
+	uint32	    readRecordBufUsed;
+	XLogRecPtr  readRecordBufPage;
 
 	/* Buffer to hold error message */
 	char	   *errormsg_buf;

@@ -3125,9 +3125,6 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 	private->randAccess = !XLogRecPtrIsValid(xlogreader->ReadRecPtr);
 	private->replayTLI = replayTLI;
 
-	/* This is the first attempt to read this page. */
-	lastSourceFailed = false;
-
 	for (;;)
 	{
 		char	   *errormsg;
