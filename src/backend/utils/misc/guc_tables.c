@@ -803,6 +803,16 @@ const char *const config_type_names[] =
 	[PGC_ENUM] = "enum",
 };
 
+/*
+ * Enum GUCs where duplicate numeric values are expected, so they will be
+ * skipped in enum sanity checks. Hidden enum values are not checked, as they
+ * are not exposed to users.
+ */
+const char *enum_dup_whitelist[] = {
+	"wal_compression",
+	NULL
+};
+
 StaticAssertDecl(lengthof(config_type_names) == (PGC_ENUM + 1),
 				 "array length mismatch");
 
