@@ -239,6 +239,7 @@ static int	guc_name_match(const void *key1, const void *key2, Size keysize);
 static void InitializeGUCOptionsFromEnvironment(void);
 static void InitializeOneGUCOption(struct config_generic *gconf);
 static void RemoveGUCFromLists(struct config_generic *gconf);
+static void check_enum_duplicates(void);
 static void set_guc_source(struct config_generic *gconf, GucSource newsource);
 static void pg_timezone_abbrev_initialize(void);
 static void push_old_value(struct config_generic *gconf, GucAction action);
@@ -861,6 +862,63 @@ get_guc_variables(int *num_vars)
 	return result;
 }
 
+/*
+ * If an enum-typed GUC has duplicate values for different names, raise an error.
+ * There are a few exceptions, listed in enum_dup_whitelist.
+ */
+static void
+check_enum_duplicates(void)
+{
+	HASH_SEQ_STATUS status;
+	GUCHashEntry *hentry;
+
+	Assert(guc_hashtab != NULL);
+
+	hash_seq_init(&status, guc_hashtab);
+	while ((hentry = (GUCHashEntry *) hash_seq_search(&status)) != NULL)
+	{
+		const struct config_generic *gconf = hentry->gucvar;
+
+		if (gconf->vartype == PGC_ENUM)
+		{
+			bool		allow_dups = false;
+
+			for (const char *const *p = enum_dup_whitelist; *p; p++)
+			{
+				if (strcmp(gconf->name, *p) == 0)
+				{
+					allow_dups = true;
+					break;
+				}
+			}
+			if (allow_dups)
+				continue;
+
+			for (const struct config_enum_entry *opt1 = gconf->_enum.options; opt1->name; opt1++)
+			{
+				if (opt1->hidden)
+					continue;
+
+				for (const struct config_enum_entry *opt2 = opt1 + 1; opt2->name; opt2++)
+				{
+					if (opt2->hidden)
+						continue;
+
+					if (opt1->val == opt2->val)
+					{
+						elog(ERROR,
+							 "GUC enum \"%s\" has duplicate value %d for \"%s\" and \"%s\"",
+							 gconf->name,
+							 opt1->val,
+							 opt1->name,
+							 opt2->name);
+					}
+				}
+			}
+		}
+	}
+}
+
 
 /*
  * Build the GUC hash table.  This is split out so that help_config.c can
@@ -1420,6 +1478,11 @@ InitializeGUCOptions(void)
 	 * Create GUCMemoryContext and build hash table of all GUC variables.
 	 */
 	build_guc_variables();
+
+	/*
+	 * Check for enum GUCs with duplicate values.
+	 */
+	check_enum_duplicates();
 
 	/*
 	 * Load all variables with their compiled-in defaults, and initialize
