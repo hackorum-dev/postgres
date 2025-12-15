@@ -328,6 +328,8 @@ extern struct config_generic **get_guc_variables(int *num_vars);
 
 extern void build_guc_variables(void);
 
+extern const char *enum_dup_whitelist[];
+
 /* search in enum options */
 extern const char *config_enum_lookup_by_value(const struct config_generic *record, int val);
 extern bool config_enum_lookup_by_name(const struct config_enum *record,
