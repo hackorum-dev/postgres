@@ -29,6 +29,12 @@ if ($ENV{with_gssapi} ne 'yes')
 {
 	plan skip_all => 'GSSAPI/Kerberos not supported by this build';
 }
+elsif ($ENV{PG_TEST_EXTRA}
+	&& $ENV{PG_TEST_EXTRA} =~ /\bkerberos\b/
+	&& $windows_os)
+{
+	plan skip_all => 'GSSAPI/Kerberos tests are not supported on Windows';
+}
 elsif (!$ENV{PG_TEST_EXTRA} || $ENV{PG_TEST_EXTRA} !~ /\bkerberos\b/)
 {
 	plan skip_all =>
