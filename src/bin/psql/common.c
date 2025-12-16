@@ -1611,7 +1611,7 @@ ExecQueryAndProcessResults(const char *query,
 			break;
 		case PSQL_SEND_EXTENDED_QUERY_PREPARED:
 			Assert(pset.stmtName != NULL);
-			success = PQsendQueryPrepared(pset.db, pset.stmtName,
+			success = PQsendQueryPrepared(pset.db, NULL, pset.stmtName,
 										  pset.bind_nparams,
 										  (const char *const *) pset.bind_params,
 										  NULL, NULL, 0);

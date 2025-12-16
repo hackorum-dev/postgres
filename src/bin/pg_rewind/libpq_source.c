@@ -472,7 +472,7 @@ process_queued_fetch_requests(libpq_source *src)
 	params[1] = src->offsets.data;
 	params[2] = src->lengths.data;
 
-	if (PQsendQueryPrepared(src->conn, "fetch_chunks_stmt", 3, params, NULL, NULL, 1) != 1)
+	if (PQsendQueryPrepared(src->conn, NULL, "fetch_chunks_stmt", 3, params, NULL, NULL, 1) != 1)
 		pg_fatal("could not send query: %s", PQerrorMessage(src->conn));
 
 	if (PQsetSingleRowMode(src->conn) != 1)
