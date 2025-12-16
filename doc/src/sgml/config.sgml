@@ -10525,6 +10525,28 @@ SET XML OPTION { DOCUMENT | CONTENT };
      </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-permit-unlogged-tables" xreflabel="permit_unlogged_tables">
+      <term><varname>permit_unlogged_tables</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>permit_unlogged_tables</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Controls whether unlogged tables can be created. When this parameter is
+        set to <literal>true</literal> (the default), unlogged tables are permitted.
+        When set to <literal>false</literal>, attempts to create unlogged
+        tables or alter existing tables to be unlogged will fail with an error.
+       </para>
+       <para>
+        This parameter can only be set in the <filename>postgresql.conf</filename>
+        file or on the server command line. Changes to this parameter can be
+        applied without restarting the server by reloading the configuration
+        (using <literal>pg_ctl reload</literal> or <function>pg_reload_conf()</function>).
+       </para>
+      </listitem>
+     </varlistentry>
+
      </variablelist>
     </sect2>
      <sect2 id="runtime-config-client-format">

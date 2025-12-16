@@ -560,6 +560,8 @@ char	   *external_pid_file;
 
 char	   *application_name;
 
+bool		permit_unlogged_tables = true;
+
 int			tcp_keepalives_idle;
 int			tcp_keepalives_interval;
 int			tcp_keepalives_count;

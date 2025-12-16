@@ -109,6 +109,24 @@
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
 #include "utils/usercontext.h"
+#include "utils/guc.h"
+
+/*
+ *	User-tweakable parameters
+ */
+
+/*
+ * GUC hook functions for permit_unlogged_tables
+ */
+void
+assign_permit_unlogged_tables(bool newval, void *extra)
+{
+	permit_unlogged_tables = newval;
+
+	/* Log the change with user context */
+	elog(LOG, "permit_unlogged_tables changed to %s",
+		 newval ? "on" : "off");
+}
 
 /*
  * ON COMMIT action list
@@ -791,6 +809,10 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	LOCKMODE	parentLockmode;
 	Oid			accessMethodId = InvalidOid;
 
+	if (stmt->relation->relpersistence == RELPERSISTENCE_UNLOGGED && !permit_unlogged_tables)
+		ereport(ERROR,
+				errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+				errmsg("Unlogged tables are not permitted."));
 	/*
 	 * Truncate relname to appropriate length (probably a waste of time, as
 	 * parser should have done this already).
@@ -5149,6 +5171,10 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_SetLogged:		/* SET LOGGED */
 		case AT_SetUnLogged:	/* SET UNLOGGED */
+			if (cmd->subtype == AT_SetUnLogged && !permit_unlogged_tables)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+						errmsg("Unlogged tables are not permitted.")));
 			ATSimplePermissions(cmd->subtype, rel, ATT_TABLE | ATT_SEQUENCE);
 			if (tab->chgPersistence)
 				ereport(ERROR,

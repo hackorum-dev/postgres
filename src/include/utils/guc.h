@@ -316,6 +316,8 @@ extern PGDLLIMPORT char *external_pid_file;
 
 extern PGDLLIMPORT char *application_name;
 
+extern PGDLLIMPORT bool permit_unlogged_tables;
+
 extern PGDLLIMPORT int tcp_keepalives_idle;
 extern PGDLLIMPORT int tcp_keepalives_interval;
 extern PGDLLIMPORT int tcp_keepalives_count;

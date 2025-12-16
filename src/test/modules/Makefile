@@ -47,6 +47,7 @@ SUBDIRS = \
 		  test_shm_mq \
 		  test_slru \
 		  test_tidstore \
+		  test_permit_unlogged_tables \
 		  unsafe_tests \
 		  worker_spi \
 		  xid_wraparound

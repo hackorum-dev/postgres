@@ -93,6 +93,7 @@ extern bool check_multixact_member_buffers(int *newval, void **extra,
 extern bool check_multixact_offset_buffers(int *newval, void **extra,
 										   GucSource source);
 extern bool check_notify_buffers(int *newval, void **extra, GucSource source);
+extern void assign_permit_unlogged_tables(bool newval, void *extra);
 extern bool check_primary_slot_name(char **newval, void **extra,
 									GucSource source);
 extern bool check_random_seed(double *newval, void **extra, GucSource source);
