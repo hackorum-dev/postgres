@@ -2085,9 +2085,18 @@ create foreign table tab_batch_sharded_p1 partition of tab_batch_sharded
   server loopback options (table_name 'tab_batch_sharded_p1_remote');
 insert into tab_batch_sharded select * from tab_batch_local;
 select count(*) from tab_batch_sharded;
+delete from tab_batch_sharded;
+-- test batch insert with large tuples and switching from batch to usual insert
+set work_mem to 64;
+insert into tab_batch_sharded select 3, case when i%4 = 0 then lpad('a',65*1024,'a') else 'test'|| i end from generate_series(1, 100) i;
+select count(*) from tab_batch_sharded;
+reset work_mem;
+
 drop table tab_batch_local;
 drop table tab_batch_sharded;
 drop table tab_batch_sharded_p1_remote;
+
+
 
 alter server loopback options (drop batch_size);
 

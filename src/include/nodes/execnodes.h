@@ -575,6 +575,8 @@ typedef struct ResultRelInfo
 	int			ri_NumSlots;	/* number of slots in the array */
 	int			ri_NumSlotsInitialized; /* number of initialized slots */
 	int			ri_BatchSize;	/* max slots inserted in a single batch */
+	int			ri_BatchMemoryUsed;	/* memory used by batch */
+	bool			ri_ExecutorPendingStateModified; /* true if member of estate->es_insert_pending_result_relations */
 	TupleTableSlot **ri_Slots;	/* input tuples for batch insert */
 	TupleTableSlot **ri_PlanSlots;
 

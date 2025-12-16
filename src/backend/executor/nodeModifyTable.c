@@ -965,87 +965,100 @@ ExecInsert(ModifyTableContext *context,
 		 */
 		if (resultRelInfo->ri_BatchSize > 1)
 		{
-			bool		flushed = false;
+			Size		tuple_len;
+
+			/* Compute length of the current tuple */
+			slot_getallattrs(slot);
+			tuple_len = estimate_tuple_size(slot->tts_tupleDescriptor, slot->tts_values, slot->tts_isnull);
 
 			/*
-			 * When we've reached the desired batch size, perform the
-			 * insertion.
+			 * When we've reached the desired batch size or exceeded work_mem,
+			 * perform the insertion.
 			 */
-			if (resultRelInfo->ri_NumSlots == resultRelInfo->ri_BatchSize)
+			if (resultRelInfo->ri_NumSlots == resultRelInfo->ri_BatchSize ||
+				((tuple_len + resultRelInfo->ri_BatchMemoryUsed > work_mem * 1024L) && (resultRelInfo->ri_NumSlots > 0)))
 			{
 				ExecBatchInsert(mtstate, resultRelInfo,
 								resultRelInfo->ri_Slots,
 								resultRelInfo->ri_PlanSlots,
 								resultRelInfo->ri_NumSlots,
 								estate, canSetTag);
-				flushed = true;
 			}
 
-			oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
-
-			if (resultRelInfo->ri_Slots == NULL)
+			if (tuple_len < work_mem * 1024L)
 			{
-				resultRelInfo->ri_Slots = palloc_array(TupleTableSlot *, resultRelInfo->ri_BatchSize);
-				resultRelInfo->ri_PlanSlots = palloc_array(TupleTableSlot *, resultRelInfo->ri_BatchSize);
+				oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
+
+				if (resultRelInfo->ri_Slots == NULL)
+				{
+					resultRelInfo->ri_Slots = palloc_array(TupleTableSlot *, resultRelInfo->ri_BatchSize);
+					resultRelInfo->ri_PlanSlots = palloc_array(TupleTableSlot *, resultRelInfo->ri_BatchSize);
+				}
+
+				/*
+				 * Initialize the batch slots. We don't know how many slots
+				 * will be needed, so we initialize them as the batch grows,
+				 * and we keep them across batches. To mitigate an
+				 * inefficiency in how resource owner handles objects with
+				 * many references (as with many slots all referencing the
+				 * same tuple descriptor) we copy the appropriate tuple
+				 * descriptor for each slot.
+				 */
+				if (resultRelInfo->ri_NumSlots >= resultRelInfo->ri_NumSlotsInitialized)
+				{
+					TupleDesc	tdesc = CreateTupleDescCopy(slot->tts_tupleDescriptor);
+					TupleDesc	plan_tdesc =
+						CreateTupleDescCopy(planSlot->tts_tupleDescriptor);
+
+					resultRelInfo->ri_Slots[resultRelInfo->ri_NumSlots] =
+						MakeSingleTupleTableSlot(tdesc, slot->tts_ops);
+
+					resultRelInfo->ri_PlanSlots[resultRelInfo->ri_NumSlots] =
+						MakeSingleTupleTableSlot(plan_tdesc, planSlot->tts_ops);
+
+					/* remember how many batch slots we initialized */
+					resultRelInfo->ri_NumSlotsInitialized++;
+				}
+
+				ExecCopySlot(resultRelInfo->ri_Slots[resultRelInfo->ri_NumSlots],
+							 slot);
+
+				ExecCopySlot(resultRelInfo->ri_PlanSlots[resultRelInfo->ri_NumSlots],
+							 planSlot);
+
+				/*
+				 * If these are the first tuples stored in the buffers, add
+				 * the target rel and the mtstate to the
+				 * es_insert_pending_result_relations and
+				 * es_insert_pending_modifytables lists respectively, except
+				 * in the case where flushing was done above, in which case
+				 * they would already have been added to the lists, so no need
+				 * to do this.
+				 */
+				if (resultRelInfo->ri_NumSlots == 0 && !resultRelInfo->ri_ExecutorPendingStateModified)
+				{
+					Assert(!list_member_ptr(estate->es_insert_pending_result_relations,
+											resultRelInfo));
+					estate->es_insert_pending_result_relations =
+						lappend(estate->es_insert_pending_result_relations,
+								resultRelInfo);
+					estate->es_insert_pending_modifytables =
+						lappend(estate->es_insert_pending_modifytables, mtstate);
+					resultRelInfo->ri_ExecutorPendingStateModified = true;
+				}
+				Assert(list_member_ptr(estate->es_insert_pending_result_relations,
+									   resultRelInfo));
+
+				resultRelInfo->ri_NumSlots++;
+				resultRelInfo->ri_BatchMemoryUsed += tuple_len;
+				/* We've flushed batch if it is too big. */
+				Assert(resultRelInfo->ri_BatchMemoryUsed < work_mem * 1024L);
+
+				MemoryContextSwitchTo(oldContext);
+
+				return NULL;
 			}
-
-			/*
-			 * Initialize the batch slots. We don't know how many slots will
-			 * be needed, so we initialize them as the batch grows, and we
-			 * keep them across batches. To mitigate an inefficiency in how
-			 * resource owner handles objects with many references (as with
-			 * many slots all referencing the same tuple descriptor) we copy
-			 * the appropriate tuple descriptor for each slot.
-			 */
-			if (resultRelInfo->ri_NumSlots >= resultRelInfo->ri_NumSlotsInitialized)
-			{
-				TupleDesc	tdesc = CreateTupleDescCopy(slot->tts_tupleDescriptor);
-				TupleDesc	plan_tdesc =
-					CreateTupleDescCopy(planSlot->tts_tupleDescriptor);
-
-				resultRelInfo->ri_Slots[resultRelInfo->ri_NumSlots] =
-					MakeSingleTupleTableSlot(tdesc, slot->tts_ops);
-
-				resultRelInfo->ri_PlanSlots[resultRelInfo->ri_NumSlots] =
-					MakeSingleTupleTableSlot(plan_tdesc, planSlot->tts_ops);
-
-				/* remember how many batch slots we initialized */
-				resultRelInfo->ri_NumSlotsInitialized++;
-			}
-
-			ExecCopySlot(resultRelInfo->ri_Slots[resultRelInfo->ri_NumSlots],
-						 slot);
-
-			ExecCopySlot(resultRelInfo->ri_PlanSlots[resultRelInfo->ri_NumSlots],
-						 planSlot);
-
-			/*
-			 * If these are the first tuples stored in the buffers, add the
-			 * target rel and the mtstate to the
-			 * es_insert_pending_result_relations and
-			 * es_insert_pending_modifytables lists respectively, except in
-			 * the case where flushing was done above, in which case they
-			 * would already have been added to the lists, so no need to do
-			 * this.
-			 */
-			if (resultRelInfo->ri_NumSlots == 0 && !flushed)
-			{
-				Assert(!list_member_ptr(estate->es_insert_pending_result_relations,
-										resultRelInfo));
-				estate->es_insert_pending_result_relations =
-					lappend(estate->es_insert_pending_result_relations,
-							resultRelInfo);
-				estate->es_insert_pending_modifytables =
-					lappend(estate->es_insert_pending_modifytables, mtstate);
-			}
-			Assert(list_member_ptr(estate->es_insert_pending_result_relations,
-								   resultRelInfo));
-
-			resultRelInfo->ri_NumSlots++;
-
-			MemoryContextSwitchTo(oldContext);
-
-			return NULL;
+			/* else do usual foreign insert */
 		}
 
 		/*
@@ -1694,6 +1707,7 @@ ExecBatchInsert(ModifyTableState *mtstate,
 		ExecClearTuple(planSlots[i]);
 	}
 	resultRelInfo->ri_NumSlots = 0;
+	resultRelInfo->ri_BatchMemoryUsed = 0;
 }
 
 /*
@@ -1712,11 +1726,18 @@ ExecPendingInserts(EState *estate)
 		ModifyTableState *mtstate = (ModifyTableState *) lfirst(l2);
 
 		Assert(mtstate);
-		ExecBatchInsert(mtstate, resultRelInfo,
-						resultRelInfo->ri_Slots,
-						resultRelInfo->ri_PlanSlots,
-						resultRelInfo->ri_NumSlots,
-						estate, mtstate->canSetTag);
+
+		/*
+		 * Batch insert could switch to non-batched insert, in this case we
+		 * could have no filled slots.
+		 */
+		if (resultRelInfo->ri_NumSlots > 0)
+			ExecBatchInsert(mtstate, resultRelInfo,
+							resultRelInfo->ri_Slots,
+							resultRelInfo->ri_PlanSlots,
+							resultRelInfo->ri_NumSlots,
+							estate, mtstate->canSetTag);
+		resultRelInfo->ri_ExecutorPendingStateModified = false;
 	}
 
 	list_free(estate->es_insert_pending_result_relations);
