@@ -166,6 +166,19 @@ CREATE PUBLICATION regress_pub_for_allsequences_alltables FOR ALL SEQUENCES, ALL
 -- fail - Specifying ALL SEQUENCES more than once
 CREATE PUBLICATION regress_pub_for_allsequences_alltables FOR ALL SEQUENCES, ALL TABLES, ALL SEQUENCES;
 
+-- Tests for inheritance
+CREATE TABLE testpub_inh (a int);
+CREATE TABLE testpub_inh1 () INHERITS(testpub_inh);
+CREATE TEMPORARY TABLE testpub_inh2 () INHERITS(testpub_inh);
+SET client_min_messages = 'ERROR';
+-- fail - unsupported relation as a child relation
+CREATE PUBLICATION testpub_inh FOR TABLE testpub_inh;
+ALTER TABLE testpub_inh2 NO INHERIT testpub_inh;
+CREATE PUBLICATION testpub_inh FOR TABLE testpub_inh;
+RESET client_min_messages;
+DROP TABLE testpub_inh, testpub_inh1, testpub_inh2;
+DROP PUBLICATION testpub_inh;
+
 -- Tests for partitioned tables
 SET client_min_messages = 'ERROR';
 CREATE PUBLICATION testpub_forparted;
@@ -173,9 +186,18 @@ CREATE PUBLICATION testpub_forparted1;
 RESET client_min_messages;
 CREATE TABLE testpub_parted1 (LIKE testpub_parted);
 CREATE TABLE testpub_parted2 (LIKE testpub_parted);
+CREATE UNLOGGED TABLE testpub_parted3 (LIKE testpub_parted);
 ALTER PUBLICATION testpub_forparted1 SET (publish='insert');
 ALTER TABLE testpub_parted ATTACH PARTITION testpub_parted1 FOR VALUES IN (1);
 ALTER TABLE testpub_parted ATTACH PARTITION testpub_parted2 FOR VALUES IN (2);
+ALTER TABLE testpub_parted ATTACH PARTITION testpub_parted3 FOR VALUES IN (3);
+-- fail - unsupported relation as a partition
+SET client_min_messages = 'ERROR';
+CREATE PUBLICATION testpub_forparted2 FOR TABLE testpub_parted;
+RESET client_min_messages;
+-- fail - unsupported relation as a partition
+ALTER PUBLICATION testpub_forparted ADD TABLE testpub_parted;
+ALTER TABLE testpub_parted DETACH PARTITION testpub_parted3;
 -- works despite missing REPLICA IDENTITY, because updates are not replicated
 UPDATE testpub_parted1 SET a = 1;
 -- only parent is listed as being in publication, not the partition
@@ -195,7 +217,7 @@ UPDATE testpub_parted2 SET a = 2;
 ALTER PUBLICATION testpub_forparted DROP TABLE testpub_parted;
 -- works again, because update is no longer replicated
 UPDATE testpub_parted2 SET a = 2;
-DROP TABLE testpub_parted1, testpub_parted2;
+DROP TABLE testpub_parted1, testpub_parted2, testpub_parted3;
 DROP PUBLICATION testpub_forparted, testpub_forparted1;
 
 -- Tests for row filters

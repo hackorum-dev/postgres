@@ -466,7 +466,22 @@ publication_add_relation(Oid pubid, PublicationRelInfo *pri,
 						RelationGetRelationName(targetrel), pub->name)));
 	}
 
+	/*
+	 * Check for supported relation. For partitioned tables, all partitions
+	 * should be supported relations too.
+	 */
 	check_publication_add_relation(targetrel);
+
+	relids = GetPubPartitionOptionRelations(relids, PUBLICATION_PART_ALL,
+											relid);
+	foreach_oid(partoid, relids)
+	{
+		Relation	partrel = RelationIdGetRelation(partoid);
+
+		check_publication_add_relation(partrel);
+		RelationClose(partrel);
+	}
+
 
 	/* Validate and translate column names into a Bitmapset of attnums. */
 	attnums = pub_collist_validate(pri->relation, pri->columns);
@@ -537,9 +552,6 @@ publication_add_relation(Oid pubid, PublicationRelInfo *pri,
 	 * mentioned in the publication. This is required because we implicitly
 	 * publish the child tables when the parent table is published.
 	 */
-	relids = GetPubPartitionOptionRelations(relids, PUBLICATION_PART_ALL,
-											relid);
-
 	InvalidatePublicationRels(relids);
 
 	return myself;
