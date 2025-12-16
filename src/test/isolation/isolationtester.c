@@ -884,7 +884,7 @@ try_complete_step(TestSpec *testspec, PermutationStep *pstep, int flags)
 			{
 				bool		waiting;
 
-				res = PQexecPrepared(conns[0].conn, PREP_WAITING, 1,
+				res = PQexecPrepared(conns[0].conn, NULL, PREP_WAITING, 1,
 									 &conns[step->session + 1].backend_pid_str,
 									 NULL, NULL, 0);
 				if (PQresultStatus(res) != PGRES_TUPLES_OK ||

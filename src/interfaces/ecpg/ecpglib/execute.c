@@ -1612,6 +1612,7 @@ ecpg_execute(struct statement *stmt)
 	if (stmt->statement_type == ECPGst_execute)
 	{
 		stmt->results = PQexecPrepared(stmt->connection->connection,
+									   NULL,
 									   stmt->name,
 									   stmt->nparams,
 									   (const char *const *) stmt->paramvalues,
