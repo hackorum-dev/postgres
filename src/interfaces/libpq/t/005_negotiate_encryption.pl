@@ -84,10 +84,13 @@ if (!$ENV{PG_TEST_EXTRA} || $ENV{PG_TEST_EXTRA} !~ /\blibpq_encryption\b/)
 }
 
 # Only run the GSSAPI tests when compiled with GSSAPI support and
-# PG_TEST_EXTRA includes 'kerberos'
+# PG_TEST_EXTRA includes 'kerberos'. 'kerberos' tests are not supported on
+# Windows, so skip them.
 my $gss_supported = $ENV{with_gssapi} eq 'yes';
 my $kerberos_enabled =
-  $ENV{PG_TEST_EXTRA} && $ENV{PG_TEST_EXTRA} =~ /\bkerberos\b/;
+	!$windows_os
+  && $ENV{PG_TEST_EXTRA}
+  && $ENV{PG_TEST_EXTRA} =~ /\bkerberos\b/;
 my $ssl_supported = $ENV{with_ssl} eq 'openssl';
 
 ###
