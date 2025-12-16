@@ -229,6 +229,8 @@ addToArray(tzEntry **base, int *arraysize, int n,
 			if (override)
 			{
 				/* same abbrev but something is different, override */
+				if (midptr->zone != NULL)
+					pfree(midptr->zone);
 				midptr->zone = entry->zone;
 				midptr->offset = entry->offset;
 				midptr->is_dst = entry->is_dst;
