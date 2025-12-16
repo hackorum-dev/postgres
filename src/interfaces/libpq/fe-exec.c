@@ -68,6 +68,7 @@ static int	PQsendQueryInternal(PGconn *conn, const char *query, bool newQuery);
 static bool PQsendQueryStart(PGconn *conn, bool newQuery);
 static int	PQsendQueryGuts(PGconn *conn,
 							const char *command,
+							const char *portalName,
 							const char *stmtName,
 							int nParams,
 							const Oid *paramTypes,
@@ -1533,6 +1534,7 @@ PQsendQueryParams(PGconn *conn,
 
 	return PQsendQueryGuts(conn,
 						   command,
+						   "",	/* use unnamed portal */
 						   "",	/* use unnamed statement */
 						   nParams,
 						   paramTypes,
@@ -1648,6 +1650,7 @@ sendFailed:
  */
 int
 PQsendQueryPrepared(PGconn *conn,
+					const char *portalName,
 					const char *stmtName,
 					int nParams,
 					const char *const *paramValues,
@@ -1673,6 +1676,7 @@ PQsendQueryPrepared(PGconn *conn,
 
 	return PQsendQueryGuts(conn,
 						   NULL,	/* no command to parse */
+						   portalName,
 						   stmtName,
 						   nParams,
 						   NULL,	/* no param types */
@@ -1773,6 +1777,7 @@ PQsendQueryStart(PGconn *conn, bool newQuery)
 static int
 PQsendQueryGuts(PGconn *conn,
 				const char *command,
+				const char *portalName,
 				const char *stmtName,
 				int nParams,
 				const Oid *paramTypes,
@@ -1783,6 +1788,13 @@ PQsendQueryGuts(PGconn *conn,
 {
 	int			i;
 	PGcmdQueueEntry *entry;
+	const char *	resolvedPortalName;
+
+	/* use unnamed portal, if not explicitly set */
+	if (portalName)
+		resolvedPortalName = portalName;
+	else
+		resolvedPortalName = "";
 
 	entry = pqAllocCmdQueueEntry(conn);
 	if (entry == NULL)
@@ -1822,7 +1834,7 @@ PQsendQueryGuts(PGconn *conn,
 
 	/* Construct the Bind message */
 	if (pqPutMsgStart(PqMsg_Bind, conn) < 0 ||
-		pqPuts("", conn) < 0 ||
+		pqPuts(resolvedPortalName, conn) < 0 ||
 		pqPuts(stmtName, conn) < 0)
 		goto sendFailed;
 
@@ -1889,13 +1901,13 @@ PQsendQueryGuts(PGconn *conn,
 	/* construct the Describe Portal message */
 	if (pqPutMsgStart(PqMsg_Describe, conn) < 0 ||
 		pqPutc('P', conn) < 0 ||
-		pqPuts("", conn) < 0 ||
+		pqPuts(resolvedPortalName, conn) < 0 ||
 		pqPutMsgEnd(conn) < 0)
 		goto sendFailed;
 
 	/* construct the Execute message */
 	if (pqPutMsgStart(PqMsg_Execute, conn) < 0 ||
-		pqPuts("", conn) < 0 ||
+		pqPuts(resolvedPortalName, conn) < 0 ||
 		pqPutInt(0, 4, conn) < 0 ||
 		pqPutMsgEnd(conn) < 0)
 		goto sendFailed;
@@ -2334,10 +2346,12 @@ PQprepare(PGconn *conn,
 /*
  * PQexecPrepared
  *		Like PQexec, but execute a previously prepared statement,
- *		using extended query protocol so we can pass parameters
+ *		in given portal, using extended query protocol
+ *		so we can pass parameters.
  */
 PGresult *
 PQexecPrepared(PGconn *conn,
+			   const char *portalName,
 			   const char *stmtName,
 			   int nParams,
 			   const char *const *paramValues,
@@ -2347,7 +2361,7 @@ PQexecPrepared(PGconn *conn,
 {
 	if (!PQexecStart(conn))
 		return NULL;
-	if (!PQsendQueryPrepared(conn, stmtName,
+	if (!PQsendQueryPrepared(conn, portalName, stmtName,
 							 nParams, paramValues, paramLengths,
 							 paramFormats, resultFormat))
 		return NULL;
