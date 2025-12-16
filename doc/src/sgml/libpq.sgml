@@ -3684,6 +3684,7 @@ PGresult *PQprepare(PGconn *conn,
         parameters, and waits for the result.
 <synopsis>
 PGresult *PQexecPrepared(PGconn *conn,
+                         const char *portalName,
                          const char *stmtName,
                          int nParams,
                          const char * const *paramValues,
@@ -3697,6 +3698,8 @@ PGresult *PQexecPrepared(PGconn *conn,
         <xref linkend="libpq-PQexecPrepared"/> is like <xref linkend="libpq-PQexecParams"/>,
         but the command to be executed is specified by naming a
         previously-prepared statement, instead of giving a query string.
+        Statement will be executed in given destination portal, with unnamed portal
+        being default.
         This feature allows commands that will be used repeatedly to be
         parsed and planned just once, rather than each time they are
         executed.  The statement must have been prepared previously in
@@ -3704,8 +3707,9 @@ PGresult *PQexecPrepared(PGconn *conn,
        </para>
 
        <para>
-        The parameters are identical to <xref linkend="libpq-PQexecParams"/>, except that the
-        name of a prepared statement is given instead of a query string, and the
+        The parameters are almost identical to <xref linkend="libpq-PQexecParams"/>, with a
+        few exceptions. First is that the name of a prepared statement is given instead of a query string.
+        Second, name of destination query portal can be specified. And last, the
         <parameter>paramTypes[]</parameter> parameter is not present (it is not needed since
         the prepared statement's parameter types were determined when it was created).
        </para>
@@ -5450,6 +5454,7 @@ int PQsendPrepare(PGconn *conn,
        parameters, without waiting for the result(s).
 <synopsis>
 int PQsendQueryPrepared(PGconn *conn,
+                        const char *portalName,
                         const char *stmtName,
                         int nParams,
                         const char * const *paramValues,
@@ -5461,6 +5466,8 @@ int PQsendQueryPrepared(PGconn *conn,
        This is similar to <xref linkend="libpq-PQsendQueryParams"/>, but
        the command to be executed is specified by naming a
        previously-prepared statement, instead of giving a query string.
+       Command will be executed in given portal, or in unnamed portal if
+       portalName is NULL.
        The function's parameters are handled identically to
        <xref linkend="libpq-PQexecPrepared"/>.
       </para>
