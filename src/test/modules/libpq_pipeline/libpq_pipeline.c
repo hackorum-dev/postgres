@@ -1119,7 +1119,7 @@ test_pipelined_insert(PGconn *conn, int n_rows)
 				/* use up some buffer space with a wide value */
 				snprintf(insert_param_1, MAXINT8LEN, "%lld", 1LL << 62);
 
-				if (PQsendQueryPrepared(conn, "my_insert",
+				if (PQsendQueryPrepared(conn, NULL, "my_insert",
 										2, insert_params, NULL, NULL, 0) == 1)
 				{
 					pg_debug("sent row %d\n", rows_to_send);
@@ -1782,7 +1782,7 @@ test_transaction(PGconn *conn)
 	 * send a ROLLBACK using a prepared stmt. Doesn't work because we need to
 	 * get out of the pipeline-aborted state first.
 	 */
-	if (PQsendQueryPrepared(conn, "rollback", 0, NULL, NULL, NULL, 1) != 1)
+	if (PQsendQueryPrepared(conn, NULL, "rollback", 0, NULL, NULL, NULL, 1) != 1)
 		pg_fatal("failed to execute prepared: %s",
 				 PQerrorMessage(conn));
 
@@ -1813,7 +1813,7 @@ test_transaction(PGconn *conn)
 	 * Send ROLLBACK using prepared stmt. This one works because we just did
 	 * PQpipelineSync above.
 	 */
-	if (PQsendQueryPrepared(conn, "rollback", 0, NULL, NULL, NULL, 1) != 1)
+	if (PQsendQueryPrepared(conn, NULL, "rollback", 0, NULL, NULL, NULL, 1) != 1)
 		pg_fatal("failed to execute prepared: %s",
 				 PQerrorMessage(conn));
 
@@ -2021,7 +2021,7 @@ test_uniqviol(PGconn *conn)
 					sprintf(paramValue0, "%d", ctr++);
 				}
 
-				if (PQsendQueryPrepared(conn, "insertion", 2, paramValues, NULL, NULL, 0) != 1)
+				if (PQsendQueryPrepared(conn, NULL, "insertion", 2, paramValues, NULL, NULL, 0) != 1)
 					pg_fatal("failed to execute prepared query: %s", PQerrorMessage(conn));
 				numsent++;
 

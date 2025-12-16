@@ -3183,7 +3183,7 @@ sendCommand(CState *st, Command *command)
 		getQueryParams(&st->variables, command, params);
 
 		pg_log_debug("client %d sending %s", st->id, command->prepname);
-		r = PQsendQueryPrepared(st->con, command->prepname, command->argc - 1,
+		r = PQsendQueryPrepared(st->con, NULL, command->prepname, command->argc - 1,
 								params, NULL, NULL, 0);
 	}
 	else						/* unknown sql mode */
