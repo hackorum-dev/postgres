@@ -3,32 +3,31 @@
  * queryjumblefuncs.c
  *	 Query normalization and fingerprinting.
  *
- * Normalization is a process whereby similar queries, typically differing only
- * in their constants (though the exact rules are somewhat more subtle than
- * that) are recognized as equivalent, and are tracked as a single entry.  This
- * is particularly useful for non-prepared queries.
+ * Fingerprinting selectively serializes key fields within a tree structure,
+ * such as a Query or Plan tree, to create a unique identifier while ignoring
+ * extraneous details. These essential fields are concatenated into a jumble,
+ * from which a 64-bit hash is computed. Unlike regular serialization, this
+ * approach excludes irrelevant information.
+ * 
+ * Use Cases:
  *
- * Normalization is implemented by fingerprinting queries, selectively
- * serializing those fields of each query tree's nodes that are judged to be
- * essential to the query.  This is referred to as a query jumble.  This is
- * distinct from a regular serialization in that various extraneous
- * information is ignored as irrelevant or not essential to the query, such
- * as the collations of Vars and, most notably, the values of constants.
+ * 1. In-Core Query Normalization & Identification
  *
- * This jumble is acquired at the end of parse analysis of each query, and
- * a 64-bit hash of it is stored into the query's Query.queryId field.
- * The server then copies this value around, making it available in plan
- * tree(s) generated from the query.  The executor can then use this value
- * to blame query costs on the proper queryId.
- *
- * Arrays of two or more constants and PARAM_EXTERN parameters are "squashed"
- * and contribute only once to the jumble.  This has the effect that queries
- * that differ only on the length of such lists have the same queryId.
- *
- *
- * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
- * Portions Copyright (c) 1994, Regents of the University of California
- *
+ * Fingerprinting is used to normalize query trees by generating a hash stored
+ * in the Query.queryId field. This ID is propagated to plan tree(s), allowing
+ * the executor to attribute query costs on the proper queryId. The process
+ * excludes information like typmod, collation, and most notably, the values
+ * of constants.
+ * 
+ * Example: The following queries produce the same queryId:
+ * 
+ * SELECT t.* FROM s1.t WHERE c1 = 1;
+ * SELECT t.* FROM s1.t WHERE c1 = 2;
+ * 
+ * 2. Modified jumbling logic for extensions
+ * 
+ * Extensions can modify the fingerprinting logic for queryId, or fingerprint
+ * other types of trees, such as a plan tree, to compute a plan identifier.
  *
  * IDENTIFICATION
  *	  src/backend/nodes/queryjumblefuncs.c
@@ -50,6 +49,7 @@
 
 /* GUC parameters */
 int			compute_query_id = COMPUTE_QUERY_ID_AUTO;
+int			compute_plan_id = COMPUTE_PLAN_ID_AUTO;
 
 /*
  * True when compute_query_id is ON or AUTO, and a module requests them.
@@ -60,15 +60,21 @@ int			compute_query_id = COMPUTE_QUERY_ID_AUTO;
  */
 bool		query_id_enabled = false;
 
-static JumbleState *InitJumble(void);
-static int64 DoJumble(JumbleState *jstate, Node *node);
+/*
+ * True when compute_plan_id is ON or AUTO, and a module requests them.
+ *
+ * Note that IsPlanIdEnabled() should be used instead of checking
+ * plan_id_enabled or compute_plan_id directly when we want to know
+ * whether query identifiers are computed in the core or not.
+ */
+bool		plan_id_enabled = false;
+
 static void AppendJumble(JumbleState *jstate,
 						 const unsigned char *value, Size size);
 static void FlushPendingNulls(JumbleState *jstate);
 static void RecordConstLocation(JumbleState *jstate,
 								bool extern_param,
 								int location, int len);
-static void _jumbleNode(JumbleState *jstate, Node *node);
 static void _jumbleList(JumbleState *jstate, Node *node);
 static void _jumbleElements(JumbleState *jstate, List *elements, Node *node);
 static void _jumbleParam(JumbleState *jstate, Node *node);
@@ -136,13 +142,13 @@ CleanQuerytext(const char *query, int *location, int *len)
 JumbleState *
 JumbleQuery(Query *query)
 {
-	JumbleState *jstate;
+	JumbleState *jstate = InitializeJumbleState(true);;
 
 	Assert(IsQueryIdEnabled());
 
-	jstate = InitJumble();
-
-	query->queryId = DoJumble(jstate, (Node *) query);
+	/* Compute query ID and mark the Query node with it */
+	JumbleNode(jstate, (Node *) query);
+	query->queryId = HashJumbleState(jstate);
 
 	/*
 	 * If we are unlucky enough to get a hash of zero, use 1 instead for
@@ -173,44 +179,44 @@ EnableQueryId(void)
 }
 
 /*
- * InitJumble
+ * Enables plan identifier computation.
+ *
+ * Third-party plugins can use this function to inform core that they require
+ * a query identifier to be computed.
+ */
+void
+EnablePlanId(void)
+{
+	if (compute_plan_id != COMPUTE_PLAN_ID_OFF)
+		plan_id_enabled = true;
+}
+
+/*
+ * InitializeJumbleState
  *		Allocate a JumbleState object and make it ready to jumble.
  */
-static JumbleState *
-InitJumble(void)
+JumbleState *
+InitializeJumbleState(bool record_clocations)
 {
-	JumbleState *jstate;
-
-	jstate = palloc_object(JumbleState);
+	JumbleState *jstate = (JumbleState *) palloc0(sizeof(JumbleState));
 
 	/* Set up workspace for query jumbling */
 	jstate->jumble = (unsigned char *) palloc(JUMBLE_SIZE);
 	jstate->jumble_len = 0;
-	jstate->clocations_buf_size = 32;
-	jstate->clocations = (LocationLen *) palloc(jstate->clocations_buf_size *
-												sizeof(LocationLen));
-	jstate->clocations_count = 0;
-	jstate->highest_extern_param_id = 0;
-	jstate->pending_nulls = 0;
-	jstate->has_squashed_lists = false;
-#ifdef USE_ASSERT_CHECKING
-	jstate->total_jumble_len = 0;
-#endif
+
+	if (record_clocations)
+	{
+		jstate->clocations_buf_size = 32;
+		jstate->clocations = (LocationLen *)
+			palloc(jstate->clocations_buf_size * sizeof(LocationLen));
+	}
 
 	return jstate;
 }
 
-/*
- * DoJumble
- *		Jumble the given Node using the given JumbleState and return the resulting
- *		jumble hash.
- */
-static int64
-DoJumble(JumbleState *jstate, Node *node)
+uint64
+HashJumbleState(JumbleState *jstate)
 {
-	/* Jumble the given node */
-	_jumbleNode(jstate, node);
-
 	/* Flush any pending NULLs before doing the final hash */
 	if (jstate->pending_nulls > 0)
 		FlushPendingNulls(jstate);
@@ -219,10 +225,9 @@ DoJumble(JumbleState *jstate, Node *node)
 	if (jstate->has_squashed_lists)
 		jstate->highest_extern_param_id = 0;
 
-	/* Process the jumble buffer and produce the hash value */
-	return DatumGetInt64(hash_any_extended(jstate->jumble,
-										   jstate->jumble_len,
-										   0));
+	return DatumGetUInt64(hash_any_extended(jstate->jumble,
+											jstate->jumble_len,
+											0));
 }
 
 /*
@@ -398,7 +403,7 @@ static void
 RecordConstLocation(JumbleState *jstate, bool extern_param, int location, int len)
 {
 	/* -1 indicates unknown or undefined location */
-	if (location >= 0)
+	if (location >= 0 && jstate->clocations_buf_size > 0)
 	{
 		/* enlarge array if needed */
 		if (jstate->clocations_count >= jstate->clocations_buf_size)
@@ -526,7 +531,7 @@ IsSquashableConstantList(List *elements)
 }
 
 #define JUMBLE_NODE(item) \
-	_jumbleNode(jstate, (Node *) expr->item)
+	JumbleNode(jstate, (Node *) expr->item)
 #define JUMBLE_ELEMENTS(list, node) \
 	_jumbleElements(jstate, (List *) expr->list, node)
 #define JUMBLE_LOCATION(location) \
@@ -544,6 +549,16 @@ do { \
 	else \
 		AppendJumble(jstate, (const unsigned char *) &(expr->item), sizeof(expr->item)); \
 } while (0)
+#define JUMBLE_BITMAPSET(item) \
+do { \
+	if (expr->item) \
+		AppendJumble(jstate, (const unsigned char *) expr->item->words, sizeof(bitmapword) * expr->item->nwords); \
+} while(0)
+#define JUMBLE_ARRAY(item, len) \
+	do { \
+		if (len) \
+			AppendJumble(jstate, (const unsigned char *) expr->item, sizeof(*(expr->item)) * len); \
+	} while (0)
 #define JUMBLE_STRING(str) \
 do { \
 	if (expr->str) \
@@ -557,8 +572,8 @@ do { \
 
 #include "queryjumblefuncs.funcs.c"
 
-static void
-_jumbleNode(JumbleState *jstate, Node *node)
+void
+JumbleNode(JumbleState *jstate, Node *node)
 {
 	Node	   *expr = node;
 #ifdef USE_ASSERT_CHECKING
@@ -612,7 +627,7 @@ _jumbleList(JumbleState *jstate, Node *node)
 	{
 		case T_List:
 			foreach(l, expr)
-				_jumbleNode(jstate, lfirst(l));
+				JumbleNode(jstate, lfirst(l));
 			break;
 		case T_IntList:
 			foreach(l, expr)
@@ -668,7 +683,7 @@ _jumbleElements(JumbleState *jstate, List *elements, Node *node)
 
 	if (!normalize_list)
 	{
-		_jumbleNode(jstate, (Node *) elements);
+		JumbleNode(jstate, (Node *) elements);
 	}
 }
 
@@ -756,6 +771,40 @@ _jumbleVariableSetStmt(JumbleState *jstate, Node *node)
 		JUMBLE_NODE(args);
 	JUMBLE_FIELD(is_local);
 	JUMBLE_LOCATION(location);
+}
+
+/*
+ * Jumble the entries in the rangle table to map RT indexes to relations
+ *
+ * This ensures jumbled RT indexes (e.g. in a Scan or Modify node), are
+ * distinguished by the target of the RT entry, even if the index is the same.
+ */
+void
+JumbleRangeTable(JumbleState *jstate, List *rtable)
+{
+	ListCell *lc;
+
+	foreach(lc, rtable)
+	{
+		RangeTblEntry *expr = lfirst_node(RangeTblEntry, lc);
+
+		switch (expr->rtekind)
+		{
+			case RTE_RELATION:
+				JUMBLE_FIELD(relid);
+				break;
+			case RTE_CTE:
+				JUMBLE_STRING(ctename);
+				break;
+			default:
+
+				/*
+				* Ignore other targets, the jumble includes something identifying
+				* about them already
+				*/
+				break;
+		}
+	}
 }
 
 /*

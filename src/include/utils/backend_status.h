@@ -172,7 +172,7 @@ typedef struct PgBackendStatus
 	/* query identifier, optionally computed using post_parse_analyze_hook */
 	int64		st_query_id;
 
-	/* plan identifier, optionally computed using planner_hook */
+	/* plan identifier, optionally computed after planning */
 	int64		st_plan_id;
 } PgBackendStatus;
 

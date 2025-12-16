@@ -15,6 +15,7 @@
 #define QUERYJUMBLE_H
 
 #include "nodes/parsenodes.h"
+#include "nodes/pathnodes.h"
 
 /*
  * Struct for tracking locations/lengths of constants during normalization
@@ -86,15 +87,26 @@ enum ComputeQueryIdType
 	COMPUTE_QUERY_ID_REGRESS,
 };
 
+/* Values for the compute_plan_id GUC */
+enum ComputePlanIdType
+{
+	COMPUTE_PLAN_ID_OFF,
+	COMPUTE_PLAN_ID_ON,
+	COMPUTE_PLAN_ID_AUTO,
+	COMPUTE_PLAN_ID_REGRESS,
+};
+
 /* GUC parameters */
 extern PGDLLIMPORT int compute_query_id;
-
+extern PGDLLIMPORT int compute_plan_id;
 
 extern const char *CleanQuerytext(const char *query, int *location, int *len);
 extern JumbleState *JumbleQuery(Query *query);
 extern void EnableQueryId(void);
+extern void EnablePlanId(void);
 
 extern PGDLLIMPORT bool query_id_enabled;
+extern PGDLLIMPORT bool plan_id_enabled;
 
 /*
  * Returns whether query identifier computation has been enabled, either
@@ -109,5 +121,26 @@ IsQueryIdEnabled(void)
 		return true;
 	return query_id_enabled;
 }
+
+/*
+ * Returns whether plan identifier computation has been enabled, either
+ * directly in the GUC or by a module when the setting is 'auto'.
+ */
+static inline bool
+IsPlanIdEnabled(void)
+{
+	if (compute_plan_id == COMPUTE_PLAN_ID_OFF)
+		return false;
+	if (compute_plan_id == COMPUTE_PLAN_ID_ON)
+		return true;
+	return plan_id_enabled;
+}
+
+/* Functions called for plan jumbling or extensions doing their own jumbling */
+extern JumbleState *InitializeJumbleState(bool record_clocations);
+//extern void AppendJumble(JumbleState *jstate, const unsigned char *item, Size size);
+extern void JumbleRangeTable(JumbleState *jstate, List *rtable);
+extern void JumbleNode(JumbleState *jstate, Node *node);
+extern uint64 HashJumbleState(JumbleState *jstate);
 
 #endif							/* QUERYJUMBLE_H */

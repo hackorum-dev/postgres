@@ -462,6 +462,13 @@
   check_hook => 'check_commit_ts_buffers',
 },
 
+{ name => 'compute_plan_id', type => 'enum', context => 'PGC_SUSET', group => 'STATS_MONITORING',
+  short_desc => 'Enables in-core computation of plan identifiers.',
+  variable => 'compute_plan_id',
+  boot_val => 'COMPUTE_PLAN_ID_AUTO',
+  options => 'compute_plan_id_options',
+},
+
 { name => 'compute_query_id', type => 'enum', context => 'PGC_SUSET', group => 'STATS_MONITORING',
   short_desc => 'Enables in-core computation of query identifiers.',
   variable => 'compute_query_id',

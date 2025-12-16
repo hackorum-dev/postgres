@@ -189,6 +189,9 @@ typedef struct PlannerGlobal
 	/* extension state */
 	void	  **extension_state pg_node_attr(read_write_ignore);
 	int			extension_state_allocated;
+
+	/* optional jumble state for plan identifier calculation */
+	struct JumbleState *plan_jumble_state pg_node_attr(read_write_ignore);
 } PlannerGlobal;
 
 /* macro for fetching the Plan associated with a SubPlan node */
