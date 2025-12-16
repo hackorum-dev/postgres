@@ -1698,7 +1698,7 @@ expand_schema_name_patterns(Archive *fout,
 			prohibit_crossdb_refs(GetConnection(fout), dbbuf.data, cell->val);
 		termPQExpBuffer(&dbbuf);
 
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 		if (strict_names && PQntuples(res) == 0)
 			pg_fatal("no matching schemas were found for pattern \"%s\"", cell->val);
 
@@ -1751,7 +1751,7 @@ expand_extension_name_patterns(Archive *fout,
 			pg_fatal("improper qualified name (too many dotted names): %s",
 					 cell->val);
 
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 		if (strict_names && PQntuples(res) == 0)
 			pg_fatal("no matching extensions were found for pattern \"%s\"", cell->val);
 
@@ -1804,7 +1804,7 @@ expand_foreign_server_name_patterns(Archive *fout,
 			pg_fatal("improper qualified name (too many dotted names): %s",
 					 cell->val);
 
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 		if (PQntuples(res) == 0)
 			pg_fatal("no matching foreign servers were found for pattern \"%s\"", cell->val);
 
@@ -1895,7 +1895,7 @@ expand_table_name_patterns(Archive *fout,
 		}
 
 		ExecuteSqlStatement(fout, "RESET search_path");
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 		PQclear(ExecuteSqlQueryForSingleRow(fout,
 											ALWAYS_SECURE_SEARCH_PATH_SQL));
 		if (strict_names && PQntuples(res) == 0)
@@ -2437,7 +2437,7 @@ dumpTableData_copy(Archive *fout, const void *dcontext)
 						  fmtQualifiedDumpable(tbinfo),
 						  column_list);
 	}
-	res = ExecuteSqlQuery(fout, q->data, PGRES_COPY_OUT);
+	res = ExecuteSqlCopy(fout, q->data);
 	PQclear(res);
 	destroyPQExpBuffer(clistBuf);
 
@@ -2600,8 +2600,7 @@ dumpTableData_insert(Archive *fout, const void *dcontext)
 
 	while (1)
 	{
-		res = ExecuteSqlQuery(fout, "FETCH 100 FROM _pg_dump_cursor",
-							  PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, "FETCH 100 FROM _pg_dump_cursor");
 
 		/* cross-check field count, allowing for dummy NULL if any */
 		if (nfields != PQnfields(res) &&
@@ -3168,7 +3167,7 @@ buildMatViewRefreshDependencies(Archive *fout)
 						 "FROM w "
 						 "WHERE refrelkind = " CppAsString2(RELKIND_MATVIEW));
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -3564,7 +3563,7 @@ dumpDatabase(Archive *fout)
 		seclabelQry = createPQExpBuffer();
 
 		buildShSecLabelQuery("pg_database", dbCatId.oid, seclabelQry);
-		shres = ExecuteSqlQuery(fout, seclabelQry->data, PGRES_TUPLES_OK);
+		shres = ExecuteSqlQuery(fout, seclabelQry->data);
 		resetPQExpBuffer(seclabelQry);
 		emitShSecLabels(conn, shres, seclabelQry, "DATABASE", datname);
 		if (seclabelQry->len > 0)
@@ -3692,7 +3691,7 @@ dumpDatabase(Archive *fout)
 							  "WHERE oid IN (%u, %u);\n",
 							  LargeObjectRelationId, LargeObjectLOidPNIndexId);
 
-		lo_res = ExecuteSqlQuery(fout, loFrozenQry->data, PGRES_TUPLES_OK);
+		lo_res = ExecuteSqlQuery(fout, loFrozenQry->data);
 
 		ii_relfrozenxid = PQfnumber(lo_res, "relfrozenxid");
 		ii_relminmxid = PQfnumber(lo_res, "relminmxid");
@@ -3800,7 +3799,7 @@ dumpDatabaseConfig(Archive *AH, PQExpBuffer outbuf,
 					  "WHERE setrole = 0 AND setdatabase = '%u'::oid",
 					  dboid);
 
-	res = ExecuteSqlQuery(AH, buf->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(AH, buf->data);
 
 	for (int i = 0; i < PQntuples(res); i++)
 		makeAlterConfigCommand(conn, PQgetvalue(res, i, 0),
@@ -3815,7 +3814,7 @@ dumpDatabaseConfig(Archive *AH, PQExpBuffer outbuf,
 					  "WHERE setrole = r.oid AND setdatabase = '%u'::oid",
 					  dboid);
 
-	res = ExecuteSqlQuery(AH, buf->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(AH, buf->data);
 
 	for (int i = 0; i < PQntuples(res); i++)
 		makeAlterConfigCommand(conn, PQgetvalue(res, i, 1),
@@ -3968,7 +3967,7 @@ getLOs(Archive *fout)
 						 "FROM pg_largeobject_metadata "
 						 "ORDER BY lomowner, lomacl::pg_catalog.text, oid");
 
-	res = ExecuteSqlQuery(fout, loQry->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, loQry->data);
 
 	i_oid = PQfnumber(res, "oid");
 	i_lomowner = PQfnumber(res, "lomowner");
@@ -4350,7 +4349,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 					  "JOIN pg_catalog.pg_policy pol ON (src.tbloid = pol.polrelid)",
 					  tbloids->data);
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 	if (ntups > 0)
@@ -4587,7 +4586,7 @@ getPublications(Archive *fout)
 
 	appendPQExpBufferStr(query, "FROM pg_publication p");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -4776,7 +4775,7 @@ getPublicationNamespaces(Archive *fout)
 	appendPQExpBufferStr(query,
 						 "SELECT tableoid, oid, pnpubid, pnnspid "
 						 "FROM pg_catalog.pg_publication_namespace");
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -4873,7 +4872,7 @@ getPublicationTables(Archive *fout, TableInfo tblinfo[], int numTables)
 							 "SELECT tableoid, oid, prpubid, prrelid, "
 							 "NULL AS prrelqual, NULL AS prattrs "
 							 "FROM pg_catalog.pg_publication_rel");
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -5093,7 +5092,7 @@ set_restrict_relation_kind(Archive *AH, const char *value)
 					  "FROM pg_settings "
 					  "WHERE name = 'restrict_nonsystem_relation_kind'",
 					  value);
-	res = ExecuteSqlQuery(AH, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(AH, query->data);
 
 	PQclear(res);
 	destroyPQExpBuffer(query);
@@ -5143,8 +5142,7 @@ getSubscriptions(Archive *fout)
 		res = ExecuteSqlQuery(fout,
 							  "SELECT count(*) FROM pg_subscription "
 							  "WHERE subdbid = (SELECT oid FROM pg_database"
-							  "                 WHERE datname = current_database())",
-							  PGRES_TUPLES_OK);
+							  "                 WHERE datname = current_database())");
 		n = atoi(PQgetvalue(res, 0, 0));
 		if (n > 0)
 			pg_log_warning("subscriptions not dumped because current user is not a superuser");
@@ -5233,7 +5231,7 @@ getSubscriptions(Archive *fout)
 						 "WHERE s.subdbid = (SELECT oid FROM pg_database\n"
 						 "                   WHERE datname = current_database())");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -5344,8 +5342,7 @@ getSubscriptionRelations(Archive *fout)
 	res = ExecuteSqlQuery(fout,
 						  "SELECT srsubid, srrelid, srsubstate, srsublsn "
 						  "FROM pg_catalog.pg_subscription_rel "
-						  "ORDER BY srsubid",
-						  PGRES_TUPLES_OK);
+						  "ORDER BY srsubid");
 	ntups = PQntuples(res);
 	if (ntups == 0)
 		goto cleanup;
@@ -5661,7 +5658,7 @@ append_depends_on_extension(Archive *fout,
 						  "AND refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass",
 						  catalog,
 						  dobj->catId.oid);
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 		ntups = PQntuples(res);
 		i_extname = PQfnumber(res, "extname");
 		for (i = 0; i < ntups; i++)
@@ -5833,7 +5830,7 @@ collectBinaryUpgradeClassOids(Archive *fout)
 		"LEFT JOIN pg_catalog.pg_class AS cti ON (i.indexrelid = cti.oid) "
 		"ORDER BY c.oid;";
 
-	res = ExecuteSqlQuery(fout, query, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query);
 
 	nbinaryUpgradeClassOids = PQntuples(res);
 	binaryUpgradeClassOids = (BinaryUpgradeClassOidItem *)
@@ -6014,7 +6011,7 @@ getNamespaces(Archive *fout)
 						 "acldefault('n', n.nspowner) AS acldefault "
 						 "FROM pg_namespace n");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -6144,7 +6141,7 @@ getExtensions(Archive *fout, int *numExtensions)
 						 "FROM pg_extension x "
 						 "JOIN pg_namespace n ON n.oid = x.extnamespace");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 	if (ntups == 0)
@@ -6245,7 +6242,7 @@ getTypes(Archive *fout)
 						 "(SELECT typarray FROM pg_type te WHERE oid = pg_type.typelem) = oid AS isarray "
 						 "FROM pg_type");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -6394,7 +6391,7 @@ getOperators(Archive *fout)
 						 "oprcode::oid AS oprcode "
 						 "FROM pg_operator");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -6466,7 +6463,7 @@ getCollations(Archive *fout)
 						 "collencoding "
 						 "FROM pg_collation");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -6530,7 +6527,7 @@ getConversions(Archive *fout)
 						 "conowner "
 						 "FROM pg_conversion");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -6603,7 +6600,7 @@ getAccessMethods(Archive *fout)
 							 "'-'::pg_catalog.regproc AS amhandler ");
 	appendPQExpBufferStr(query, "FROM pg_am");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -6665,7 +6662,7 @@ getOpclasses(Archive *fout)
 						 "opcowner "
 						 "FROM pg_opclass");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -6730,7 +6727,7 @@ getOpfamilies(Archive *fout)
 						 "opfowner "
 						 "FROM pg_opfamily");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -6848,7 +6845,7 @@ getAggregates(Archive *fout)
 		appendPQExpBufferChar(query, ')');
 	}
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -7039,7 +7036,7 @@ getFuncs(Archive *fout)
 		appendPQExpBufferChar(query, ')');
 	}
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -7397,7 +7394,7 @@ getTables(Archive *fout, int *numTables)
 						 CppAsString2(RELKIND_PARTITIONED_TABLE) ")\n"
 						 "ORDER BY c.oid");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -7738,7 +7735,7 @@ getInherits(Archive *fout, int *numInherits)
 	/* find all the inheritance information */
 	appendPQExpBufferStr(query, "SELECT inhrelid, inhparent FROM pg_inherits");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -7811,7 +7808,7 @@ getPartitioningInfo(Archive *fout)
 						 "AND opcnamespace = 'pg_catalog'::regnamespace "
 						 "AND amname = 'hash') = ANY(partclass)");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -8022,7 +8019,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 						  tbloids->data);
 	}
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -8239,7 +8236,7 @@ getExtendedStatistics(Archive *fout)
 							 "stxnamespace, stxowner, stxrelid, stxstattarget "
 							 "FROM pg_catalog.pg_statistic_ext");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -8347,7 +8344,7 @@ getConstraints(Archive *fout, TableInfo tblinfo[], int numTables)
 	appendPQExpBufferStr(query,
 						 "ORDER BY conrelid, conname");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -8509,7 +8506,7 @@ getDomainConstraints(Archive *fout, TypeInfo *tyinfo)
 					  "EXECUTE getDomainConstraints('%u')",
 					  tyinfo->dobj.catId.oid);
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -8604,7 +8601,7 @@ getRules(Archive *fout)
 						 "FROM pg_rewrite "
 						 "ORDER BY oid");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -8802,7 +8799,7 @@ getTriggers(Archive *fout, TableInfo tblinfo[], int numTables)
 						  tbloids->data);
 	}
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -8907,7 +8904,7 @@ getEventTriggers(Archive *fout)
 						 "FROM pg_event_trigger e "
 						 "ORDER BY e.oid");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -8981,7 +8978,7 @@ getProcLangs(Archive *fout)
 						 "WHERE lanispl "
 						 "ORDER BY oid");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -9073,7 +9070,7 @@ getCasts(Archive *fout)
 							 "FROM pg_cast ORDER BY 3,4");
 	}
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -9172,7 +9169,7 @@ getTransforms(Archive *fout)
 						 "FROM pg_transform "
 						 "ORDER BY 3,4");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -9441,7 +9438,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 						 "WHERE a.attnum > 0::pg_catalog.int2\n"
 						 "ORDER BY a.attrelid, a.attnum");
 
-	res = ExecuteSqlQuery(fout, q->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, q->data);
 
 	ntups = PQntuples(res);
 
@@ -9617,7 +9614,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 						  "ORDER BY a.adrelid, a.adnum",
 						  tbloids->data);
 
-		res = ExecuteSqlQuery(fout, q->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, q->data);
 
 		numDefaults = PQntuples(res);
 		attrdefs = (AttrDefInfo *) pg_malloc(numDefaults * sizeof(AttrDefInfo));
@@ -9753,7 +9750,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 						  "ORDER BY c.conrelid, c.conname",
 						  invalidnotnulloids->data);
 
-		res = ExecuteSqlQuery(fout, q->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, q->data);
 
 		numConstrs = PQntuples(res);
 		constrs = (ConstraintInfo *) pg_malloc(numConstrs * sizeof(ConstraintInfo));
@@ -9852,7 +9849,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 						  "ORDER BY c.conrelid, c.conname",
 						  checkoids->data);
 
-		res = ExecuteSqlQuery(fout, q->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, q->data);
 
 		numConstrs = PQntuples(res);
 		constrs = (ConstraintInfo *) pg_malloc(numConstrs * sizeof(ConstraintInfo));
@@ -10179,7 +10176,7 @@ getTSParsers(Archive *fout)
 						 "prsend::oid, prsheadline::oid, prslextype::oid "
 						 "FROM pg_ts_parser");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -10246,7 +10243,7 @@ getTSDictionaries(Archive *fout)
 						 "dicttemplate, dictinitoption "
 						 "FROM pg_ts_dict");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -10310,7 +10307,7 @@ getTSTemplates(Archive *fout)
 						 "tmplnamespace, tmplinit::oid, tmpllexize::oid "
 						 "FROM pg_ts_template");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -10369,7 +10366,7 @@ getTSConfigurations(Archive *fout)
 						 "cfgnamespace, cfgowner, cfgparser "
 						 "FROM pg_ts_config");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -10441,7 +10438,7 @@ getForeignDataWrappers(Archive *fout)
 						 "), E',\n    ') AS fdwoptions "
 						 "FROM pg_foreign_data_wrapper");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -10524,7 +10521,7 @@ getForeignServers(Archive *fout)
 						 "), E',\n    ') AS srvoptions "
 						 "FROM pg_foreign_server");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -10622,7 +10619,7 @@ getDefaultACLs(Archive *fout)
 						 "defaclrole) ELSE '{}' END AS acldefault "
 						 "FROM pg_default_acl");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -10721,7 +10718,7 @@ collectRoleNames(Archive *fout)
 
 	query = "SELECT oid, rolname FROM pg_catalog.pg_roles ORDER BY 1";
 
-	res = ExecuteSqlQuery(fout, query, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query);
 
 	nrolenames = PQntuples(res);
 
@@ -10760,7 +10757,7 @@ getAdditionalACLs(Archive *fout)
 						 "SELECT DISTINCT attrelid FROM pg_attribute "
 						 "WHERE attacl IS NOT NULL");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 	for (i = 0; i < ntups; i++)
@@ -10785,7 +10782,7 @@ getAdditionalACLs(Archive *fout)
 						  "SELECT objoid, classoid, objsubid, privtype, initprivs "
 						  "FROM pg_init_privs");
 
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 
 		ntups = PQntuples(res);
 		for (i = 0; i < ntups; i++)
@@ -11082,7 +11079,7 @@ fetchAttributeStats(Archive *fout)
 		appendPQExpBufferStr(query, "::pg_catalog.name[],");
 		appendStringLiteralAH(query, relnames->data, fout);
 		appendPQExpBufferStr(query, "::pg_catalog.name[])");
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 		destroyPQExpBuffer(query);
 	}
 
@@ -11591,7 +11588,7 @@ collectComments(Archive *fout)
 						 "FROM pg_catalog.pg_description "
 						 "ORDER BY classoid, objoid, objsubid");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	/* Construct lookup table containing OIDs in numeric form */
 
@@ -12120,7 +12117,7 @@ dumpEnumType(Archive *fout, const TypeInfo *tyinfo)
 					  "EXECUTE dumpEnumType('%u')",
 					  tyinfo->dobj.catId.oid);
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	num = PQntuples(res);
 
@@ -12973,7 +12970,7 @@ dumpCompositeType(Archive *fout, const TypeInfo *tyinfo)
 					  "EXECUTE dumpCompositeType('%u')",
 					  tyinfo->dobj.catId.oid);
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -14621,7 +14618,7 @@ dumpOpclass(Archive *fout, const OpclassInfo *opcinfo)
 					  opcinfo->dobj.catId.oid,
 					  opcfamily);
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -14679,7 +14676,7 @@ dumpOpclass(Archive *fout, const OpclassInfo *opcinfo)
 					  "ORDER BY amprocnum",
 					  opcinfo->dobj.catId.oid);
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -14823,7 +14820,7 @@ dumpOpfamily(Archive *fout, const OpfamilyInfo *opfinfo)
 					  opfinfo->dobj.catId.oid,
 					  opfinfo->dobj.catId.oid);
 
-	res_ops = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res_ops = ExecuteSqlQuery(fout, query->data);
 
 	resetPQExpBuffer(query);
 
@@ -14839,7 +14836,7 @@ dumpOpfamily(Archive *fout, const OpfamilyInfo *opfinfo)
 					  "ORDER BY amprocnum",
 					  opfinfo->dobj.catId.oid);
 
-	res_procs = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res_procs = ExecuteSqlQuery(fout, query->data);
 
 	/* Get additional fields from the pg_opfamily row */
 	resetPQExpBuffer(query);
@@ -15982,7 +15979,7 @@ dumpTSConfig(Archive *fout, const TSConfigInfo *cfginfo)
 					  "ORDER BY m.mapcfg, m.maptokentype, m.mapseqno",
 					  cfginfo->cfgparser, cfginfo->dobj.catId.oid);
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 	ntups = PQntuples(res);
 
 	i_tokenname = PQfnumber(res, "tokenname");
@@ -16260,7 +16257,7 @@ dumpUserMappings(Archive *fout,
 					  "ORDER BY usename",
 					  catalogId.oid);
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 	i_usename = PQfnumber(res, "usename");
@@ -16794,7 +16791,7 @@ collectSecLabels(Archive *fout)
 						 "FROM pg_catalog.pg_seclabels "
 						 "ORDER BY classoid, objoid, objsubid");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	/* Construct lookup table containing OIDs in numeric form */
 	i_label = PQfnumber(res, "label");
@@ -16957,7 +16954,7 @@ dumpTable(Archive *fout, const TableInfo *tbinfo)
 						  "EXECUTE getColumnACLs('%u')",
 						  tbinfo->dobj.catId.oid);
 
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 
 		for (i = 0; i < PQntuples(res); i++)
 		{
@@ -17012,7 +17009,7 @@ createViewAsClause(Archive *fout, const TableInfo *tbinfo)
 					  "SELECT pg_catalog.pg_get_viewdef('%u'::pg_catalog.oid) AS viewdef",
 					  tbinfo->dobj.catId.oid);
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	if (PQntuples(res) != 1)
 	{
@@ -18942,7 +18939,7 @@ collectSequences(Archive *fout)
 			"pg_get_sequence_data(seqrelid) "
 			"ORDER BY seqrelid;";
 
-	res = ExecuteSqlQuery(fout, query, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query);
 
 	nsequences = PQntuples(res);
 	sequences = (SequenceItem *) pg_malloc(nsequences * sizeof(SequenceItem));
@@ -19014,7 +19011,7 @@ dumpSequence(Archive *fout, const TableInfo *tbinfo)
 						  "cache_value, is_cycled FROM %s",
 						  fmtQualifiedDumpable(tbinfo));
 
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 
 		if (PQntuples(res) != 1)
 			pg_fatal(ngettext("query to get data of sequence \"%s\" returned %d row (expected 1)",
@@ -19246,7 +19243,7 @@ dumpSequenceData(Archive *fout, const TableDataInfo *tdinfo)
 						  "SELECT last_value, is_called FROM %s",
 						  fmtQualifiedDumpable(tbinfo));
 
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 
 		if (PQntuples(res) != 1)
 			pg_fatal(ngettext("query to get data of sequence \"%s\" returned %d row (expected 1)",
@@ -19584,7 +19581,7 @@ dumpRule(Archive *fout, const RuleInfo *rinfo)
 						  "SELECT pg_catalog.pg_get_ruledef('%u'::pg_catalog.oid)",
 						  rinfo->dobj.catId.oid);
 
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		res = ExecuteSqlQuery(fout, query->data);
 
 		if (PQntuples(res) != 1)
 			pg_fatal("query to get rule \"%s\" for table \"%s\" failed: wrong number of rows returned",
@@ -19709,7 +19706,7 @@ getExtensionMembership(Archive *fout, ExtensionInfo extinfo[],
 						 "AND deptype = 'e' "
 						 "ORDER BY 3");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 
@@ -19917,7 +19914,7 @@ processExtensionTables(Archive *fout, ExtensionInfo extinfo[],
 					  "AND refclassid = 'pg_extension'::regclass "
 					  "AND classid = 'pg_class'::regclass;");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 	ntups = PQntuples(res);
 
 	i_conrelid = PQfnumber(res, "conrelid");
@@ -20016,7 +20013,7 @@ getDependencies(Archive *fout)
 	/* Sort the output for efficiency below */
 	appendPQExpBufferStr(query, "ORDER BY 1,2");
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query->data);
 
 	ntups = PQntuples(res);
 

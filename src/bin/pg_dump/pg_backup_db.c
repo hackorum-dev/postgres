@@ -226,13 +226,25 @@ ExecuteSqlStatement(Archive *AHX, const char *query)
 }
 
 PGresult *
-ExecuteSqlQuery(Archive *AHX, const char *query, ExecStatusType status)
+ExecuteSqlQuery(Archive *AHX, const char *query)
 {
 	ArchiveHandle *AH = (ArchiveHandle *) AHX;
 	PGresult   *res;
 
 	res = PQexec(AH->connection, query);
-	if (PQresultStatus(res) != status)
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+		die_on_query_failure(AH, query);
+	return res;
+}
+
+PGresult *
+ExecuteSqlCopy(Archive *AHX, const char *query)
+{
+	ArchiveHandle *AH = (ArchiveHandle *) AHX;
+	PGresult   *res;
+
+	res = PQexec(AH->connection, query);
+	if (PQresultStatus(res) != PGRES_COPY_OUT)
 		die_on_query_failure(AH, query);
 	return res;
 }
@@ -246,7 +258,7 @@ ExecuteSqlQueryForSingleRow(Archive *fout, const char *query)
 	PGresult   *res;
 	int			ntups;
 
-	res = ExecuteSqlQuery(fout, query, PGRES_TUPLES_OK);
+	res = ExecuteSqlQuery(fout, query);
 
 	/* Expecting a single result only */
 	ntups = PQntuples(res);
