@@ -22,21 +22,21 @@
 #undef ALIGNOF_SHORT
 
 /* Size of a disk block --- this also limits the size of a tuple. You can set
-   it bigger if you need bigger tuples (although TOAST should reduce the need
-   to have large tuples, since fields can be spread across multiple tuples).
-   BLCKSZ must be a power of 2. The maximum possible value of BLCKSZ is
-   currently 2^15 (32768). This is determined by the 15-bit widths of the
-   lp_off and lp_len fields in ItemIdData (see include/storage/itemid.h).
-   Changing BLCKSZ requires an initdb. */
+	it bigger if you need bigger tuples (although TOAST should reduce the need
+	to have large tuples, since fields can be spread across multiple tuples).
+	BLCKSZ must be a power of 2. The maximum possible value of BLCKSZ is
+	currently 2^15 (32768). This is determined by the 15-bit widths of the
+	lp_off and lp_len fields in ItemIdData (see include/storage/itemid.h).
+	Changing BLCKSZ requires an initdb. */
 #undef BLCKSZ
 
 /* Saved arguments from configure */
 #undef CONFIGURE_ARGS
 
 /* Define to the default TCP port number on which the server listens and to
-   which clients will try to connect. This can be overridden at run-time, but
-   it's convenient if your clients have the right default compiled in.
-   (--with-pgport=PORTNUM) */
+	which clients will try to connect. This can be overridden at run-time, but
+	it's convenient if your clients have the right default compiled in.
+	(--with-pgport=PORTNUM) */
 #undef DEF_PGPORT
 
 /* Define to the default TCP port number as a string constant. */
@@ -76,59 +76,59 @@
 #undef HAVE_CRTDEFS_H
 
 /* Define to 1 if you have the declaration of `fdatasync', and to 0 if you
-   don't. */
+	don't. */
 #undef HAVE_DECL_FDATASYNC
 
 /* Define to 1 if you have the declaration of `F_FULLFSYNC', and to 0 if you
-   don't. */
+	don't. */
 #undef HAVE_DECL_F_FULLFSYNC
 
 /* Define to 1 if you have the declaration of
-   `LLVMCreateGDBRegistrationListener', and to 0 if you don't. */
+	`LLVMCreateGDBRegistrationListener', and to 0 if you don't. */
 #undef HAVE_DECL_LLVMCREATEGDBREGISTRATIONLISTENER
 
 /* Define to 1 if you have the declaration of
-   `LLVMCreatePerfJITEventListener', and to 0 if you don't. */
+	`LLVMCreatePerfJITEventListener', and to 0 if you don't. */
 #undef HAVE_DECL_LLVMCREATEPERFJITEVENTLISTENER
 
 /* Define to 1 if you have the declaration of `memset_s', and to 0 if you
-   don't. */
+	don't. */
 #undef HAVE_DECL_MEMSET_S
 
 /* Define to 1 if you have the declaration of `posix_fadvise', and to 0 if you
-   don't. */
+	don't. */
 #undef HAVE_DECL_POSIX_FADVISE
 
 /* Define to 1 if you have the declaration of `preadv', and to 0 if you don't.
-   */
+	*/
 #undef HAVE_DECL_PREADV
 
 /* Define to 1 if you have the declaration of `pwritev', and to 0 if you
-   don't. */
+	don't. */
 #undef HAVE_DECL_PWRITEV
 
 /* Define to 1 if you have the declaration of `strchrnul', and to 0 if you
-   don't. */
+	don't. */
 #undef HAVE_DECL_STRCHRNUL
 
 /* Define to 1 if you have the declaration of `strlcat', and to 0 if you
-   don't. */
+	don't. */
 #undef HAVE_DECL_STRLCAT
 
 /* Define to 1 if you have the declaration of `strlcpy', and to 0 if you
-   don't. */
+	don't. */
 #undef HAVE_DECL_STRLCPY
 
 /* Define to 1 if you have the declaration of `strnlen', and to 0 if you
-   don't. */
+	don't. */
 #undef HAVE_DECL_STRNLEN
 
 /* Define to 1 if you have the declaration of `strsep', and to 0 if you don't.
-   */
+	*/
 #undef HAVE_DECL_STRSEP
 
 /* Define to 1 if you have the declaration of `timingsafe_bcmp', and to 0 if
-   you don't. */
+	you don't. */
 #undef HAVE_DECL_TIMINGSAFE_BCMP
 
 /* Define to 1 if you have the <editline/history.h> header file. */
@@ -153,7 +153,7 @@
 #undef HAVE_GCC__ATOMIC_INT32_CAS
 
 /* Define to 1 if you have __atomic_compare_exchange_n(int64 *, int64 *,
-   int64). */
+	int64). */
 #undef HAVE_GCC__ATOMIC_INT64_CAS
 
 /* Define to 1 if you have __sync_lock_test_and_set(char *) and friends. */
@@ -166,7 +166,7 @@
 #undef HAVE_GCC__SYNC_INT32_TAS
 
 /* Define to 1 if you have __sync_val_compare_and_swap(int64_t *, int64_t,
-   int64_t). */
+	int64_t). */
 #undef HAVE_GCC__SYNC_INT64_CAS
 
 /* Define to 1 if you have the `getauxval' function. */
@@ -341,18 +341,18 @@
 #undef HAVE_RL_COMPLETION_MATCHES
 
 /* Define to 1 if you have the global variable 'rl_completion_suppress_quote'.
-   */
+	*/
 #undef HAVE_RL_COMPLETION_SUPPRESS_QUOTE
 
 /* Define to 1 if you have the `rl_filename_completion_function' function. */
 #undef HAVE_RL_FILENAME_COMPLETION_FUNCTION
 
 /* Define to 1 if you have the global variable 'rl_filename_quote_characters'.
-   */
+	*/
 #undef HAVE_RL_FILENAME_QUOTE_CHARACTERS
 
 /* Define to 1 if you have the global variable 'rl_filename_quoting_function'.
-   */
+	*/
 #undef HAVE_RL_FILENAME_QUOTING_FUNCTION
 
 /* Define to 1 if you have the `rl_reset_screen_size' function. */
@@ -575,7 +575,7 @@
 #undef MEMSET_LOOP_LIMIT
 
 /* Define to the OpenSSL API version in use. This avoids deprecation warnings
-   from newer OpenSSL versions. */
+	from newer OpenSSL versions. */
 #undef OPENSSL_API_COMPAT
 
 /* Define to the address where bug reports for this package should be sent. */
@@ -597,18 +597,18 @@
 #undef PACKAGE_VERSION
 
 /* Define to best C++ printf format archetype, usually gnu_printf if
-   available. */
+	available. */
 #undef PG_CXX_PRINTF_ATTRIBUTE
 
 /* Define to best C printf format archetype, usually gnu_printf if available.
-   */
+	*/
 #undef PG_C_PRINTF_ATTRIBUTE
 
 /* Define to the name of a signed 128-bit integer type. */
 #undef PG_INT128_TYPE
 
 /* Define to the name of the default PostgreSQL service principal in Kerberos
-   (GSSAPI). (--with-krb-srvnam=NAME) */
+	(GSSAPI). (--with-krb-srvnam=NAME) */
 #undef PG_KRB_SRVNAM
 
 /* PostgreSQL major version as a string */
@@ -630,24 +630,24 @@
 #undef PG_VERSION_STR
 
 /* Define to 1 to allow profiling output to be saved separately for each
-   process. */
+	process. */
 #undef PROFILE_PID_DIR
 
 /* Define to necessary symbol if this constant uses a non-standard name on
-   your system. */
+	your system. */
 #undef PTHREAD_CREATE_JOINABLE
 
 /* RELSEG_SIZE is the maximum number of blocks allowed in one disk file. Thus,
-   the maximum size of a single file is RELSEG_SIZE * BLCKSZ; relations bigger
-   than that are divided into multiple files. RELSEG_SIZE * BLCKSZ must be
-   less than your OS' limit on file size. This is often 2 GB or 4GB in a
-   32-bit operating system, unless you have large file support enabled. By
-   default, we make the limit 1 GB to avoid any possible integer-overflow
-   problems within the OS. A limit smaller than necessary only means we divide
-   a large relation into more chunks than necessary, so it seems best to err
-   in the direction of a small limit. A power-of-2 value is recommended to
-   save a few cycles in md.c, but is not absolutely required. Changing
-   RELSEG_SIZE requires an initdb. */
+	the maximum size of a single file is RELSEG_SIZE * BLCKSZ; relations bigger
+	than that are divided into multiple files. RELSEG_SIZE * BLCKSZ must be
+	less than your OS' limit on file size. This is often 2 GB or 4GB in a
+	32-bit operating system, unless you have large file support enabled. By
+	default, we make the limit 1 GB to avoid any possible integer-overflow
+	problems within the OS. A limit smaller than necessary only means we divide
+	a large relation into more chunks than necessary, so it seems best to err
+	in the direction of a small limit. A power-of-2 value is recommended to
+	save a few cycles in md.c, but is not absolutely required. Changing
+	RELSEG_SIZE requires an initdb. */
 #undef RELSEG_SIZE
 
 /* The size of `intmax_t', as computed by sizeof. */
@@ -717,7 +717,7 @@
 #undef USE_LIBXML
 
 /* Define to 1 to use XSLT support when building contrib/xml2.
-   (--with-libxslt) */
+	(--with-libxslt) */
 #undef USE_LIBXSLT
 
 /* Define to 1 to build with LLVM based JIT support. (--with-llvm) */
@@ -750,6 +750,9 @@
 /* Define to 1 to use SVE popcount instructions with a runtime check. */
 #undef USE_SVE_POPCNT_WITH_RUNTIME_CHECK
 
+/* Define to 1 to use SVE2 CRC instructions with a runtime check. */
+#undef USE_SVE2_CRC32C_WITH_RUNTIME_CHECK
+
 /* Define to build with systemd support. (--with-systemd) */
 #undef USE_SYSTEMD
 
@@ -772,7 +775,7 @@
 #undef USE_ZSTD
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
-   significant byte first (like Motorola and SPARC, unlike Intel). */
+	significant byte first (like Motorola and SPARC, unlike Intel). */
 #if defined AC_APPLE_UNIVERSAL_BUILD
 # if defined __BIG_ENDIAN__
 #  define WORDS_BIGENDIAN 1
@@ -784,10 +787,10 @@
 #endif
 
 /* Size of a WAL file block. This need have no particular relation to BLCKSZ.
-   XLOG_BLCKSZ must be a power of 2, and if your system supports O_DIRECT I/O,
-   XLOG_BLCKSZ must be a multiple of the alignment requirement for direct-I/O
-   buffers, else direct I/O may fail. Changing XLOG_BLCKSZ requires an initdb.
-   */
+	XLOG_BLCKSZ must be a power of 2, and if your system supports O_DIRECT I/O,
+	XLOG_BLCKSZ must be a multiple of the alignment requirement for direct-I/O
+	buffers, else direct I/O may fail. Changing XLOG_BLCKSZ requires an initdb.
+	*/
 #undef XLOG_BLCKSZ
 
 
@@ -802,20 +805,20 @@
 #undef _LARGE_FILES
 
 /* Define to `__inline__' or `__inline' if that's what the C compiler
-   calls it, or to nothing if 'inline' is not supported under any name.  */
+	calls it, or to nothing if 'inline' is not supported under any name.  */
 #ifndef __cplusplus
 #undef inline
 #endif
 
 /* Define to the equivalent of the C99 'restrict' keyword, or to
-   nothing if this is not supported.  Do not define if restrict is
-   supported directly.  */
+	nothing if this is not supported.  Do not define if restrict is
+	supported directly.  */
 #undef restrict
 /* Work around a bug in Sun C++: it does not support _Restrict or
-   __restrict__, even though the corresponding Sun C compiler ends up with
-   "#define restrict _Restrict" or "#define restrict __restrict__" in the
-   previous line.  Perhaps some future version of Sun C++ will work with
-   restrict; if so, hopefully it defines __RESTRICT like Sun C does.  */
+	__restrict__, even though the corresponding Sun C compiler ends up with
+	"#define restrict _Restrict" or "#define restrict __restrict__" in the
+	previous line.  Perhaps some future version of Sun C++ will work with
+	restrict; if so, hopefully it defines __RESTRICT like Sun C does.  */
 #if defined __SUNPRO_CC && !defined __RESTRICT
 # define _Restrict
 # define __restrict__

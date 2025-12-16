@@ -14,11 +14,11 @@ AC_DEFUN([PGAC_PRINTF_ARCHETYPE],
 [pgac_cv_printf_archetype=gnu_printf
 PGAC_TEST_PRINTF_ARCHETYPE
 if [[ "$ac_archetype_ok" = no ]]; then
-  pgac_cv_printf_archetype=__syslog__
-  PGAC_TEST_PRINTF_ARCHETYPE
-  if [[ "$ac_archetype_ok" = no ]]; then
-    pgac_cv_printf_archetype=printf
-  fi
+	pgac_cv_printf_archetype=__syslog__
+	PGAC_TEST_PRINTF_ARCHETYPE
+	if [[ "$ac_archetype_ok" = no ]]; then
+		pgac_cv_printf_archetype=printf
+	fi
 fi])
 AC_DEFINE_UNQUOTED([PG_C_PRINTF_ATTRIBUTE], [$pgac_cv_printf_archetype],
 [Define to best C printf format archetype, usually gnu_printf if available.])
@@ -32,8 +32,8 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 [extern void pgac_write(int ignore, const char *fmt,...)
 __attribute__((format($pgac_cv_printf_archetype, 2, 3)));],
 [pgac_write(0, "error %s: %m", "foo");])],
-                  [ac_archetype_ok=yes],
-                  [ac_archetype_ok=no])
+									[ac_archetype_ok=yes],
+									[ac_archetype_ok=no])
 ac_c_werror_flag=$ac_save_c_werror_flag
 ])# PGAC_TEST_PRINTF_ARCHETYPE
 
@@ -48,11 +48,11 @@ AC_DEFUN([PGAC_CXX_PRINTF_ARCHETYPE],
 [pgac_cv_cxx_printf_archetype=gnu_printf
 PGAC_TEST_CXX_PRINTF_ARCHETYPE
 if [[ "$ac_archetype_ok" = no ]]; then
-  pgac_cv_cxx_printf_archetype=__syslog__
-  PGAC_TEST_CXX_PRINTF_ARCHETYPE
-  if [[ "$ac_archetype_ok" = no ]]; then
-    pgac_cv_cxx_printf_archetype=printf
-  fi
+	pgac_cv_cxx_printf_archetype=__syslog__
+	PGAC_TEST_CXX_PRINTF_ARCHETYPE
+	if [[ "$ac_archetype_ok" = no ]]; then
+		pgac_cv_cxx_printf_archetype=printf
+	fi
 fi])
 AC_DEFINE_UNQUOTED([PG_CXX_PRINTF_ATTRIBUTE], [$pgac_cv_cxx_printf_archetype],
 [Define to best C++ printf format archetype, usually gnu_printf if available.])
@@ -67,8 +67,8 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 [extern void pgac_write(int ignore, const char *fmt,...)
 __attribute__((format($pgac_cv_cxx_printf_archetype, 2, 3)));],
 [pgac_write(0, "error %s: %m", "foo");])],
-                  [ac_archetype_ok=yes],
-                  [ac_archetype_ok=no])
+									[ac_archetype_ok=yes],
+									[ac_archetype_ok=no])
 AC_LANG_POP([])
 ac_cxx_werror_flag=$ac_save_cxx_werror_flag
 ])# PGAC_TEST_CXX_PRINTF_ARCHETYPE
@@ -107,17 +107,17 @@ c = a * b;
 d = (c + b) / b;
 /* must use the results, else compiler may optimize arithmetic away */
 if (d != a+1)
-  return 1;
+	return 1;
 ])],
 [pgac_cv__128bit_int=yes],
 [pgac_cv__128bit_int=no])])
 if test x"$pgac_cv__128bit_int" = xyes ; then
-  # Use of non-default alignment with __int128 tickles bugs in some compilers.
-  # If not cross-compiling, we can test for bugs and disable use of __int128
-  # with buggy compilers.  If cross-compiling, hope for the best.
-  # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=83925
-  AC_CACHE_CHECK([for __int128 alignment bug], [pgac_cv__128bit_int_bug],
-  [AC_RUN_IFELSE([AC_LANG_PROGRAM([
+	# Use of non-default alignment with __int128 tickles bugs in some compilers.
+	# If not cross-compiling, we can test for bugs and disable use of __int128
+	# with buggy compilers.  If cross-compiling, hope for the best.
+	# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=83925
+	AC_CACHE_CHECK([for __int128 alignment bug], [pgac_cv__128bit_int_bug],
+	[AC_RUN_IFELSE([AC_LANG_PROGRAM([
 /* This must match the corresponding code in c.h: */
 #if defined(__GNUC__)
 #define pg_attribute_aligned(a) __attribute__((aligned(a)))
@@ -137,15 +137,15 @@ int128a q;
 pass_by_val(main, (int128a) i64);
 q = (int128a) i64;
 if (q != holder)
-  return 1;
+	return 1;
 ])],
-  [pgac_cv__128bit_int_bug=ok],
-  [pgac_cv__128bit_int_bug=broken],
-  [pgac_cv__128bit_int_bug="assuming ok"])])
-  if test x"$pgac_cv__128bit_int_bug" != xbroken ; then
-    AC_DEFINE(PG_INT128_TYPE, __int128, [Define to the name of a signed 128-bit integer type.])
-    AC_CHECK_ALIGNOF(PG_INT128_TYPE)
-  fi
+	[pgac_cv__128bit_int_bug=ok],
+	[pgac_cv__128bit_int_bug=broken],
+	[pgac_cv__128bit_int_bug="assuming ok"])])
+	if test x"$pgac_cv__128bit_int_bug" != xbroken ; then
+		AC_DEFINE(PG_INT128_TYPE, __int128, [Define to the name of a signed 128-bit integer type.])
+		AC_CHECK_ALIGNOF(PG_INT128_TYPE)
+	fi
 fi])# PGAC_TYPE_128BIT_INT
 
 
@@ -161,7 +161,7 @@ AC_DEFUN([PGAC_C_STATEMENT_EXPRESSIONS],
 [pgac_cv_statement_expressions=no])])
 if test x"$pgac_cv_statement_expressions" = xyes ; then
 AC_DEFINE(HAVE_STATEMENT_EXPRESSIONS, 1,
-          [Define to 1 if your compiler supports statement expressions.])
+					[Define to 1 if your compiler supports statement expressions.])
 fi])# PGAC_C_STATEMENT_EXPRESSIONS
 
 
@@ -175,20 +175,20 @@ AC_DEFUN([PGAC_C_TYPEOF],
 [AC_CACHE_CHECK(for typeof, pgac_cv_c_typeof,
 [pgac_cv_c_typeof=no
 for pgac_kw in typeof __typeof__; do
-  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],
+	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],
 [int x = 0;
 $pgac_kw(x) y;
 y = x;
 return y;])],
 [pgac_cv_c_typeof=$pgac_kw])
-  test "$pgac_cv_c_typeof" != no && break
+	test "$pgac_cv_c_typeof" != no && break
 done])
 if test "$pgac_cv_c_typeof" != no; then
-  AC_DEFINE(HAVE_TYPEOF, 1,
-            [Define to 1 if your compiler understands `typeof' or something similar.])
-  if test "$pgac_cv_c_typeof" != typeof; then
-    AC_DEFINE_UNQUOTED(typeof, $pgac_cv_c_typeof, [Define to how the compiler spells `typeof'.])
-  fi
+	AC_DEFINE(HAVE_TYPEOF, 1,
+						[Define to 1 if your compiler understands `typeof' or something similar.])
+	if test "$pgac_cv_c_typeof" != typeof; then
+		AC_DEFINE_UNQUOTED(typeof, $pgac_cv_c_typeof, [Define to how the compiler spells `typeof'.])
+	fi
 fi])# PGAC_C_TYPEOF
 
 
@@ -208,7 +208,7 @@ AC_DEFUN([PGAC_C_TYPES_COMPATIBLE],
 [pgac_cv__types_compatible=no])])
 if test x"$pgac_cv__types_compatible" = xyes ; then
 AC_DEFINE(HAVE__BUILTIN_TYPES_COMPATIBLE_P, 1,
-          [Define to 1 if your compiler understands __builtin_types_compatible_p.])
+					[Define to 1 if your compiler understands __builtin_types_compatible_p.])
 fi])# PGAC_C_TYPES_COMPATIBLE
 
 
@@ -222,15 +222,15 @@ AC_DEFUN([PGAC_C_BUILTIN_CONSTANT_P],
 [AC_CACHE_CHECK(for __builtin_constant_p, pgac_cv__builtin_constant_p,
 [AC_COMPILE_IFELSE([AC_LANG_SOURCE(
 [[static int x;
-  static int y[__builtin_constant_p(x) ? x : 1];
-  static int z[__builtin_constant_p("string literal") ? 1 : x];
+	static int y[__builtin_constant_p(x) ? x : 1];
+	static int z[__builtin_constant_p("string literal") ? 1 : x];
 ]]
 )],
 [pgac_cv__builtin_constant_p=yes],
 [pgac_cv__builtin_constant_p=no])])
 if test x"$pgac_cv__builtin_constant_p" = xyes ; then
 AC_DEFINE(HAVE__BUILTIN_CONSTANT_P, 1,
-          [Define to 1 if your compiler understands __builtin_constant_p.])
+					[Define to 1 if your compiler understands __builtin_constant_p.])
 fi])# PGAC_C_BUILTIN_CONSTANT_P
 
 
@@ -259,7 +259,7 @@ int oflo;
 [pgac_cv__builtin_op_overflow=no])])
 if test x"$pgac_cv__builtin_op_overflow" = xyes ; then
 AC_DEFINE(HAVE__BUILTIN_OP_OVERFLOW, 1,
-          [Define to 1 if your compiler understands __builtin_$op_overflow.])
+					[Define to 1 if your compiler understands __builtin_$op_overflow.])
 fi])# PGAC_C_BUILTIN_OP_OVERFLOW
 
 
@@ -280,7 +280,7 @@ AC_DEFUN([PGAC_C_BUILTIN_UNREACHABLE],
 [pgac_cv__builtin_unreachable=no])])
 if test x"$pgac_cv__builtin_unreachable" = xyes ; then
 AC_DEFINE(HAVE__BUILTIN_UNREACHABLE, 1,
-          [Define to 1 if your compiler understands __builtin_unreachable.])
+					[Define to 1 if your compiler understands __builtin_unreachable.])
 fi])# PGAC_C_BUILTIN_UNREACHABLE
 
 
@@ -296,15 +296,15 @@ AC_DEFUN([PGAC_C_COMPUTED_GOTO],
 [AC_CACHE_CHECK(for computed goto support, pgac_cv_computed_goto,
 [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],
 [[void *labeladdrs[] = {&&my_label};
-  goto *labeladdrs[0];
-  my_label:
-  return 1;
+	goto *labeladdrs[0];
+	my_label:
+	return 1;
 ]])],
 [pgac_cv_computed_goto=yes],
 [pgac_cv_computed_goto=no])])
 if test x"$pgac_cv_computed_goto" = xyes ; then
 AC_DEFINE(HAVE_COMPUTED_GOTO, 1,
-          [Define to 1 if your compiler handles computed gotos.])
+					[Define to 1 if your compiler handles computed gotos.])
 fi])# PGAC_C_COMPUTED_GOTO
 
 
@@ -325,13 +325,13 @@ AC_DEFUN([PGAC_CHECK_BUILTIN_FUNC],
 int
 call$1($2)
 {
-    return $1(x);
+		return $1(x);
 }], [])],
 [pgac_cv$1=yes],
 [pgac_cv$1=no])])
 if test x"${pgac_cv$1}" = xyes ; then
 AC_DEFINE_UNQUOTED(AS_TR_CPP([HAVE$1]), 1,
-                   [Define to 1 if your compiler understands $1.])
+									 [Define to 1 if your compiler understands $1.])
 fi])# PGAC_CHECK_BUILTIN_FUNC
 
 
@@ -347,13 +347,13 @@ AC_DEFUN([PGAC_CHECK_BUILTIN_FUNC_PTR],
 void *
 call$1(void)
 {
-    return $1($2);
+		return $1($2);
 }], [])],
 [pgac_cv$1=yes],
 [pgac_cv$1=no])])
 if test x"${pgac_cv$1}" = xyes ; then
 AC_DEFINE_UNQUOTED(AS_TR_CPP([HAVE$1]), 1,
-                   [Define to 1 if your compiler understands $1.])
+									 [Define to 1 if your compiler understands $1.])
 fi])# PGAC_CHECK_BUILTIN_FUNC_PTR
 
 
@@ -373,13 +373,13 @@ CFLAGS="${$2} $3"
 ac_save_c_werror_flag=$ac_c_werror_flag
 ac_c_werror_flag=yes
 _AC_COMPILE_IFELSE([AC_LANG_PROGRAM()],
-                   [Ac_cachevar=yes],
-                   [Ac_cachevar=no])
+									 [Ac_cachevar=yes],
+									 [Ac_cachevar=no])
 ac_c_werror_flag=$ac_save_c_werror_flag
 CFLAGS="$pgac_save_CFLAGS"
 CC="$pgac_save_CC"])
 if test x"$Ac_cachevar" = x"yes"; then
-  $2="${$2} $3"
+	$2="${$2} $3"
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_PROG_VARCC_VARFLAGS_OPT
@@ -423,14 +423,14 @@ ac_save_cxx_werror_flag=$ac_cxx_werror_flag
 ac_cxx_werror_flag=yes
 AC_LANG_PUSH(C++)
 _AC_COMPILE_IFELSE([AC_LANG_PROGRAM()],
-                   [Ac_cachevar=yes],
-                   [Ac_cachevar=no])
+									 [Ac_cachevar=yes],
+									 [Ac_cachevar=no])
 AC_LANG_POP([])
 ac_cxx_werror_flag=$ac_save_cxx_werror_flag
 CXXFLAGS="$pgac_save_CXXFLAGS"
 CXX="$pgac_save_CXX"])
 if test x"$Ac_cachevar" = x"yes"; then
-  $2="${$2} $3"
+	$2="${$2} $3"
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_PROG_VARCXX_VARFLAGS_OPT
@@ -460,12 +460,12 @@ AC_CACHE_CHECK([whether $CC supports $2, for $1], [Ac_cachevar],
 [pgac_save_LDFLAGS=$LDFLAGS
 LDFLAGS="$pgac_save_LDFLAGS $2"
 AC_RUN_IFELSE([AC_LANG_PROGRAM([extern void $3 (); void (*fptr) () = $3;],[])],
-              [Ac_cachevar=yes],
-              [Ac_cachevar=no],
-              [Ac_cachevar="assuming no"])
+							[Ac_cachevar=yes],
+							[Ac_cachevar=no],
+							[Ac_cachevar="assuming no"])
 LDFLAGS="$pgac_save_LDFLAGS"])
 if test x"$Ac_cachevar" = x"yes"; then
-  $1="${$1} $2"
+	$1="${$1} $2"
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_PROG_CC_LD_VARFLAGS_OPT
@@ -490,13 +490,13 @@ AC_DEFUN([PGAC_PROG_CC_LDFLAGS_OPT],
 AC_DEFUN([PGAC_HAVE_GCC__SYNC_CHAR_TAS],
 [AC_CACHE_CHECK(for builtin __sync char locking functions, pgac_cv_gcc_sync_char_tas,
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([],
-  [char lock = 0;
-   __sync_lock_test_and_set(&lock, 1);
-   __sync_lock_release(&lock);])],
-  [pgac_cv_gcc_sync_char_tas="yes"],
-  [pgac_cv_gcc_sync_char_tas="no"])])
+	[char lock = 0;
+	 __sync_lock_test_and_set(&lock, 1);
+	 __sync_lock_release(&lock);])],
+	[pgac_cv_gcc_sync_char_tas="yes"],
+	[pgac_cv_gcc_sync_char_tas="no"])])
 if test x"$pgac_cv_gcc_sync_char_tas" = x"yes"; then
-  AC_DEFINE(HAVE_GCC__SYNC_CHAR_TAS, 1, [Define to 1 if you have __sync_lock_test_and_set(char *) and friends.])
+	AC_DEFINE(HAVE_GCC__SYNC_CHAR_TAS, 1, [Define to 1 if you have __sync_lock_test_and_set(char *) and friends.])
 fi])# PGAC_HAVE_GCC__SYNC_CHAR_TAS
 
 # PGAC_HAVE_GCC__SYNC_INT32_TAS
@@ -506,13 +506,13 @@ fi])# PGAC_HAVE_GCC__SYNC_CHAR_TAS
 AC_DEFUN([PGAC_HAVE_GCC__SYNC_INT32_TAS],
 [AC_CACHE_CHECK(for builtin __sync int32 locking functions, pgac_cv_gcc_sync_int32_tas,
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([],
-  [int lock = 0;
-   __sync_lock_test_and_set(&lock, 1);
-   __sync_lock_release(&lock);])],
-  [pgac_cv_gcc_sync_int32_tas="yes"],
-  [pgac_cv_gcc_sync_int32_tas="no"])])
+	[int lock = 0;
+	 __sync_lock_test_and_set(&lock, 1);
+	 __sync_lock_release(&lock);])],
+	[pgac_cv_gcc_sync_int32_tas="yes"],
+	[pgac_cv_gcc_sync_int32_tas="no"])])
 if test x"$pgac_cv_gcc_sync_int32_tas" = x"yes"; then
-  AC_DEFINE(HAVE_GCC__SYNC_INT32_TAS, 1, [Define to 1 if you have __sync_lock_test_and_set(int *) and friends.])
+	AC_DEFINE(HAVE_GCC__SYNC_INT32_TAS, 1, [Define to 1 if you have __sync_lock_test_and_set(int *) and friends.])
 fi])# PGAC_HAVE_GCC__SYNC_INT32_TAS
 
 # PGAC_HAVE_GCC__SYNC_INT32_CAS
@@ -522,12 +522,12 @@ fi])# PGAC_HAVE_GCC__SYNC_INT32_TAS
 AC_DEFUN([PGAC_HAVE_GCC__SYNC_INT32_CAS],
 [AC_CACHE_CHECK(for builtin __sync int32 atomic operations, pgac_cv_gcc_sync_int32_cas,
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([],
-  [int val = 0;
-   __sync_val_compare_and_swap(&val, 0, 37);])],
-  [pgac_cv_gcc_sync_int32_cas="yes"],
-  [pgac_cv_gcc_sync_int32_cas="no"])])
+	[int val = 0;
+	 __sync_val_compare_and_swap(&val, 0, 37);])],
+	[pgac_cv_gcc_sync_int32_cas="yes"],
+	[pgac_cv_gcc_sync_int32_cas="no"])])
 if test x"$pgac_cv_gcc_sync_int32_cas" = x"yes"; then
-  AC_DEFINE(HAVE_GCC__SYNC_INT32_CAS, 1, [Define to 1 if you have __sync_val_compare_and_swap(int *, int, int).])
+	AC_DEFINE(HAVE_GCC__SYNC_INT32_CAS, 1, [Define to 1 if you have __sync_val_compare_and_swap(int *, int, int).])
 fi])# PGAC_HAVE_GCC__SYNC_INT32_CAS
 
 # PGAC_HAVE_GCC__SYNC_INT64_CAS
@@ -537,12 +537,12 @@ fi])# PGAC_HAVE_GCC__SYNC_INT32_CAS
 AC_DEFUN([PGAC_HAVE_GCC__SYNC_INT64_CAS],
 [AC_CACHE_CHECK(for builtin __sync int64 atomic operations, pgac_cv_gcc_sync_int64_cas,
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <stdint.h>],
-  [int64_t lock = 0;
-   __sync_val_compare_and_swap(&lock, 0, (int64_t) 37);])],
-  [pgac_cv_gcc_sync_int64_cas="yes"],
-  [pgac_cv_gcc_sync_int64_cas="no"])])
+	[int64_t lock = 0;
+	 __sync_val_compare_and_swap(&lock, 0, (int64_t) 37);])],
+	[pgac_cv_gcc_sync_int64_cas="yes"],
+	[pgac_cv_gcc_sync_int64_cas="no"])])
 if test x"$pgac_cv_gcc_sync_int64_cas" = x"yes"; then
-  AC_DEFINE(HAVE_GCC__SYNC_INT64_CAS, 1, [Define to 1 if you have __sync_val_compare_and_swap(int64_t *, int64_t, int64_t).])
+	AC_DEFINE(HAVE_GCC__SYNC_INT64_CAS, 1, [Define to 1 if you have __sync_val_compare_and_swap(int64_t *, int64_t, int64_t).])
 fi])# PGAC_HAVE_GCC__SYNC_INT64_CAS
 
 # PGAC_HAVE_GCC__ATOMIC_INT32_CAS
@@ -552,13 +552,13 @@ fi])# PGAC_HAVE_GCC__SYNC_INT64_CAS
 AC_DEFUN([PGAC_HAVE_GCC__ATOMIC_INT32_CAS],
 [AC_CACHE_CHECK(for builtin __atomic int32 atomic operations, pgac_cv_gcc_atomic_int32_cas,
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([],
-  [int val = 0;
-   int expect = 0;
-   __atomic_compare_exchange_n(&val, &expect, 37, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);])],
-  [pgac_cv_gcc_atomic_int32_cas="yes"],
-  [pgac_cv_gcc_atomic_int32_cas="no"])])
+	[int val = 0;
+	 int expect = 0;
+	 __atomic_compare_exchange_n(&val, &expect, 37, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);])],
+	[pgac_cv_gcc_atomic_int32_cas="yes"],
+	[pgac_cv_gcc_atomic_int32_cas="no"])])
 if test x"$pgac_cv_gcc_atomic_int32_cas" = x"yes"; then
-  AC_DEFINE(HAVE_GCC__ATOMIC_INT32_CAS, 1, [Define to 1 if you have __atomic_compare_exchange_n(int *, int *, int).])
+	AC_DEFINE(HAVE_GCC__ATOMIC_INT32_CAS, 1, [Define to 1 if you have __atomic_compare_exchange_n(int *, int *, int).])
 fi])# PGAC_HAVE_GCC__ATOMIC_INT32_CAS
 
 # PGAC_HAVE_GCC__ATOMIC_INT64_CAS
@@ -568,13 +568,13 @@ fi])# PGAC_HAVE_GCC__ATOMIC_INT32_CAS
 AC_DEFUN([PGAC_HAVE_GCC__ATOMIC_INT64_CAS],
 [AC_CACHE_CHECK(for builtin __atomic int64 atomic operations, pgac_cv_gcc_atomic_int64_cas,
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <stdint.h>],
-  [int64_t val = 0;
-   int64_t expect = 0;
-   __atomic_compare_exchange_n(&val, &expect, 37, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);])],
-  [pgac_cv_gcc_atomic_int64_cas="yes"],
-  [pgac_cv_gcc_atomic_int64_cas="no"])])
+	[int64_t val = 0;
+	 int64_t expect = 0;
+	 __atomic_compare_exchange_n(&val, &expect, 37, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);])],
+	[pgac_cv_gcc_atomic_int64_cas="yes"],
+	[pgac_cv_gcc_atomic_int64_cas="no"])])
 if test x"$pgac_cv_gcc_atomic_int64_cas" = x"yes"; then
-  AC_DEFINE(HAVE_GCC__ATOMIC_INT64_CAS, 1, [Define to 1 if you have __atomic_compare_exchange_n(int64 *, int64 *, int64).])
+	AC_DEFINE(HAVE_GCC__ATOMIC_INT64_CAS, 1, [Define to 1 if you have __atomic_compare_exchange_n(int64 *, int64 *, int64).])
 fi])# PGAC_HAVE_GCC__ATOMIC_INT64_CAS
 
 # PGAC_SSE42_CRC32_INTRINSICS
@@ -593,22 +593,22 @@ AC_DEFUN([PGAC_SSE42_CRC32_INTRINSICS],
 [define([Ac_cachevar], [AS_TR_SH([pgac_cv_sse42_crc32_intrinsics])])dnl
 AC_CACHE_CHECK([for _mm_crc32_u8 and _mm_crc32_u32], [Ac_cachevar],
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <nmmintrin.h>
-    unsigned int crc;
-    #if defined(__has_attribute) && __has_attribute (target)
-    __attribute__((target("sse4.2")))
-    #endif
-    static int crc32_sse42_test(void)
-    {
-      crc = _mm_crc32_u8(crc, 0);
-      crc = _mm_crc32_u32(crc, 0);
-      /* return computed value, to prevent the above being optimized away */
-      return crc == 0;
-    }],
-  [return crc32_sse42_test();])],
-  [Ac_cachevar=yes],
-  [Ac_cachevar=no])])
+		unsigned int crc;
+		#if defined(__has_attribute) && __has_attribute (target)
+		__attribute__((target("sse4.2")))
+		#endif
+		static int crc32_sse42_test(void)
+		{
+			crc = _mm_crc32_u8(crc, 0);
+			crc = _mm_crc32_u32(crc, 0);
+			/* return computed value, to prevent the above being optimized away */
+			return crc == 0;
+		}],
+	[return crc32_sse42_test();])],
+	[Ac_cachevar=yes],
+	[Ac_cachevar=no])])
 if test x"$Ac_cachevar" = x"yes"; then
-  pgac_sse42_crc32_intrinsics=yes
+	pgac_sse42_crc32_intrinsics=yes
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_SSE42_CRC32_INTRINSICS
@@ -624,30 +624,30 @@ AC_DEFUN([PGAC_AVX512_PCLMUL_INTRINSICS],
 [define([Ac_cachevar], [AS_TR_SH([pgac_cv_avx512_pclmul_intrinsics])])dnl
 AC_CACHE_CHECK([for _mm512_clmulepi64_epi128], [Ac_cachevar],
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <immintrin.h>
-    __m512i x;
-    __m512i y;
+		__m512i x;
+		__m512i y;
 
-    #if defined(__has_attribute) && __has_attribute (target)
-    __attribute__((target("vpclmulqdq,avx512vl")))
-    #endif
-    static int avx512_pclmul_test(void)
-    {
-      __m128i z;
+		#if defined(__has_attribute) && __has_attribute (target)
+		__attribute__((target("vpclmulqdq,avx512vl")))
+		#endif
+		static int avx512_pclmul_test(void)
+		{
+			__m128i z;
 
-      x = _mm512_xor_si512(_mm512_zextsi128_si512(_mm_cvtsi32_si128(0)), x);
-      y = _mm512_clmulepi64_epi128(x, y, 0);
-      z = _mm_ternarylogic_epi64(
-                _mm512_castsi512_si128(y),
-                _mm512_extracti32x4_epi32(y, 1),
-                _mm512_extracti32x4_epi32(y, 2),
-                0x96);
-      return _mm_crc32_u64(0, _mm_extract_epi64(z, 0));
-    }],
-  [return avx512_pclmul_test();])],
-  [Ac_cachevar=yes],
-  [Ac_cachevar=no])])
+			x = _mm512_xor_si512(_mm512_zextsi128_si512(_mm_cvtsi32_si128(0)), x);
+			y = _mm512_clmulepi64_epi128(x, y, 0);
+			z = _mm_ternarylogic_epi64(
+								_mm512_castsi512_si128(y),
+								_mm512_extracti32x4_epi32(y, 1),
+								_mm512_extracti32x4_epi32(y, 2),
+								0x96);
+			return _mm_crc32_u64(0, _mm_extract_epi64(z, 0));
+		}],
+	[return avx512_pclmul_test();])],
+	[Ac_cachevar=yes],
+	[Ac_cachevar=no])])
 if test x"$Ac_cachevar" = x"yes"; then
-  pgac_avx512_pclmul_intrinsics=yes
+	pgac_avx512_pclmul_intrinsics=yes
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_AVX512_PCLMUL_INTRINSICS
@@ -669,18 +669,18 @@ AC_CACHE_CHECK([for __crc32cb, __crc32ch, __crc32cw, and __crc32cd with CFLAGS=$
 CFLAGS="$pgac_save_CFLAGS $1"
 AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <arm_acle.h>
 unsigned int crc;],
-  [crc = __crc32cb(crc, 0);
-   crc = __crc32ch(crc, 0);
-   crc = __crc32cw(crc, 0);
-   crc = __crc32cd(crc, 0);
-   /* return computed value, to prevent the above being optimized away */
-   return crc == 0;])],
-  [Ac_cachevar=yes],
-  [Ac_cachevar=no])
+	[crc = __crc32cb(crc, 0);
+	 crc = __crc32ch(crc, 0);
+	 crc = __crc32cw(crc, 0);
+	 crc = __crc32cd(crc, 0);
+	 /* return computed value, to prevent the above being optimized away */
+	 return crc == 0;])],
+	[Ac_cachevar=yes],
+	[Ac_cachevar=no])
 CFLAGS="$pgac_save_CFLAGS"])
 if test x"$Ac_cachevar" = x"yes"; then
-  CFLAGS_CRC="$1"
-  pgac_armv8_crc32c_intrinsics=yes
+	CFLAGS_CRC="$1"
+	pgac_armv8_crc32c_intrinsics=yes
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_ARMV8_CRC32C_INTRINSICS
@@ -700,19 +700,19 @@ undefine([Ac_cachevar])dnl
 AC_DEFUN([PGAC_LOONGARCH_CRC32C_INTRINSICS],
 [define([Ac_cachevar], [AS_TR_SH([pgac_cv_loongarch_crc32c_intrinsics])])dnl
 AC_CACHE_CHECK(
-  [for __builtin_loongarch_crcc_w_b_w, __builtin_loongarch_crcc_w_h_w, __builtin_loongarch_crcc_w_w_w and __builtin_loongarch_crcc_w_d_w],
-  [Ac_cachevar],
+	[for __builtin_loongarch_crcc_w_b_w, __builtin_loongarch_crcc_w_h_w, __builtin_loongarch_crcc_w_w_w and __builtin_loongarch_crcc_w_d_w],
+	[Ac_cachevar],
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([unsigned int crc;],
-  [crc = __builtin_loongarch_crcc_w_b_w(0, crc);
-   crc = __builtin_loongarch_crcc_w_h_w(0, crc);
-   crc = __builtin_loongarch_crcc_w_w_w(0, crc);
-   crc = __builtin_loongarch_crcc_w_d_w(0, crc);
-   /* return computed value, to prevent the above being optimized away */
-   return crc == 0;])],
-  [Ac_cachevar=yes],
-  [Ac_cachevar=no])])
+	[crc = __builtin_loongarch_crcc_w_b_w(0, crc);
+	 crc = __builtin_loongarch_crcc_w_h_w(0, crc);
+	 crc = __builtin_loongarch_crcc_w_w_w(0, crc);
+	 crc = __builtin_loongarch_crcc_w_d_w(0, crc);
+	 /* return computed value, to prevent the above being optimized away */
+	 return crc == 0;])],
+	[Ac_cachevar=yes],
+	[Ac_cachevar=no])])
 if test x"$Ac_cachevar" = x"yes"; then
-  pgac_loongarch_crc32c_intrinsics=yes
+	pgac_loongarch_crc32c_intrinsics=yes
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_LOONGARCH_CRC32C_INTRINSICS
@@ -727,18 +727,18 @@ AC_DEFUN([PGAC_XSAVE_INTRINSICS],
 [define([Ac_cachevar], [AS_TR_SH([pgac_cv_xsave_intrinsics])])dnl
 AC_CACHE_CHECK([for _xgetbv], [Ac_cachevar],
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <immintrin.h>
-    #if defined(__has_attribute) && __has_attribute (target)
-    __attribute__((target("xsave")))
-    #endif
-    static int xsave_test(void)
-    {
-      return _xgetbv(0) & 0xe0;
-    }],
-  [return xsave_test();])],
-  [Ac_cachevar=yes],
-  [Ac_cachevar=no])])
+		#if defined(__has_attribute) && __has_attribute (target)
+		__attribute__((target("xsave")))
+		#endif
+		static int xsave_test(void)
+		{
+			return _xgetbv(0) & 0xe0;
+		}],
+	[return xsave_test();])],
+	[Ac_cachevar=yes],
+	[Ac_cachevar=no])])
 if test x"$Ac_cachevar" = x"yes"; then
-  pgac_xsave_intrinsics=yes
+	pgac_xsave_intrinsics=yes
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_XSAVE_INTRINSICS
@@ -754,27 +754,27 @@ AC_DEFUN([PGAC_AVX512_POPCNT_INTRINSICS],
 [define([Ac_cachevar], [AS_TR_SH([pgac_cv_avx512_popcnt_intrinsics])])dnl
 AC_CACHE_CHECK([for _mm512_popcnt_epi64], [Ac_cachevar],
 [AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <immintrin.h>
-    #include <stdint.h>
-    char buf[sizeof(__m512i)];
+		#include <stdint.h>
+		char buf[sizeof(__m512i)];
 
-    #if defined(__has_attribute) && __has_attribute (target)
-    __attribute__((target("avx512vpopcntdq,avx512bw")))
-    #endif
-    static int popcount_test(void)
-    {
-      int64_t popcnt = 0;
-      __m512i accum = _mm512_setzero_si512();
-      __m512i val = _mm512_maskz_loadu_epi8((__mmask64) 0xf0f0f0f0f0f0f0f0, (const __m512i *) buf);
-      __m512i cnt = _mm512_popcnt_epi64(val);
-      accum = _mm512_add_epi64(accum, cnt);
-      popcnt = _mm512_reduce_add_epi64(accum);
-      return (int) popcnt;
-    }]],
-  [return popcount_test();])],
-  [Ac_cachevar=yes],
-  [Ac_cachevar=no])])
+		#if defined(__has_attribute) && __has_attribute (target)
+		__attribute__((target("avx512vpopcntdq,avx512bw")))
+		#endif
+		static int popcount_test(void)
+		{
+			int64_t popcnt = 0;
+			__m512i accum = _mm512_setzero_si512();
+			__m512i val = _mm512_maskz_loadu_epi8((__mmask64) 0xf0f0f0f0f0f0f0f0, (const __m512i *) buf);
+			__m512i cnt = _mm512_popcnt_epi64(val);
+			accum = _mm512_add_epi64(accum, cnt);
+			popcnt = _mm512_reduce_add_epi64(accum);
+			return (int) popcnt;
+		}]],
+	[return popcount_test();])],
+	[Ac_cachevar=yes],
+	[Ac_cachevar=no])])
 if test x"$Ac_cachevar" = x"yes"; then
-  pgac_avx512_popcnt_intrinsics=yes
+	pgac_avx512_popcnt_intrinsics=yes
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_AVX512_POPCNT_INTRINSICS
@@ -822,11 +822,48 @@ AC_CACHE_CHECK([for svcnt_x], [Ac_cachevar],
 		vec8 = svand_n_u8_x(pred, svld1_u8(pred, (const uint8_t *) p), 0x55);
 		return (int) (popcnt + svaddv_u8(pred, svcnt_u8_x(pred, vec8)));
 	}]],
-  [return popcount_test();])],
-  [Ac_cachevar=yes],
-  [Ac_cachevar=no])])
+	[return popcount_test();])],
+	[Ac_cachevar=yes],
+	[Ac_cachevar=no])])
 if test x"$Ac_cachevar" = x"yes"; then
-  pgac_sve_popcnt_intrinsics=yes
+	pgac_sve_popcnt_intrinsics=yes
 fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_SVE_POPCNT_INTRINSICS
+
+# PGAC_SVE2_CRC32_INTRINSICS
+# --------------------------
+# Check if the compiler supports the SVE2 CRC32 intrinsics like:
+# svcrc32b_u32, svcrc32h_u32, svcrc32w_u32, svcrc32x_u32, etc.
+#
+# If supported, sets pgac_sve2_crc32_intrinsics.
+AC_DEFUN([PGAC_SVE2_CRC32_INTRINSICS],
+[define([Ac_cachevar], [AS_TR_SH([pgac_cv_sve2_crc32_intrinsics])])dnl
+AC_CACHE_CHECK([for SVE2 CRC32 intrinsics], [Ac_cachevar],
+[AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <arm_sve.h>
+#include <stdint.h>
+
+#if defined(__has_attribute) && __has_attribute (target)
+__attribute__((target("arch=armv9-a+sve2-aes")))
+#endif
+static uint32_t test_crc32_sve2(void)
+{
+		svbool_t pg = svptrue_b64();
+	const uint64_t data[2] = { 0x1234567890abcdef, 0xfedcba0987654321 };
+	svuint64_t x1 = svld1_u64(pg, data);
+	svuint64_t x2 = svld1_u64(pg, data + 1);
+
+	// test key CRC folding ops
+	svuint64_t m1 = svpmullb_pair_u64(x1, x2);
+	svuint64_t m2 = svpmullt_pair_u64(x1, x2);
+	svuint64_t res = sveor3_u64(m1, m2, x2);
+	return (int)svaddv_u64(pg, res) & 1;
+}]],
+[return (int)test_crc32_sve2();])],
+[Ac_cachevar=yes],
+[Ac_cachevar=no])])
+if test x"$Ac_cachevar" = x"yes"; then
+	pgac_sve2_crc32_intrinsics=yes
+fi
+undefine([Ac_cachevar])dnl
+])# PGAC_SVE2_CRC32_INTRINSICS

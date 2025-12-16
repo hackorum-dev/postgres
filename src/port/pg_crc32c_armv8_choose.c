@@ -26,8 +26,7 @@
 
 #if defined(HAVE_ELF_AUX_INFO) || defined(HAVE_GETAUXVAL)
 #include <sys/auxv.h>
-/* Ancient glibc releases don't include the HWCAPxxx macros in sys/auxv.h */
-#if defined(__linux__) && (defined(__aarch64__) ? !defined(HWCAP_CRC32) : !defined(HWCAP2_CRC32))
+#if defined(__linux__) && !defined(__aarch64__) && !defined(HWCAP2_CRC32)
 #include <asm/hwcap.h>
 #endif
 #endif
@@ -36,10 +35,44 @@
 #include <sys/sysctl.h>
 #if defined(__aarch64__)
 #include <aarch64/armreg.h>
+#include <arm_sve.h>
 #endif
 #endif
 
+#include <sys/prctl.h>
+
 #include "port/pg_crc32c.h"
+
+#ifndef PR_SVE_GET_VL
+#define PR_SVE_GET_VL 51
+#endif
+
+static bool
+pg_crc32c_sve2_available(void)
+{
+#if defined(__aarch64__)
+#ifdef HAVE_ELF_AUX_INFO
+	unsigned long hwcap, hwcap2;
+
+	/* Check for CRC32 and SVE2 on BSD systems */
+	if (elf_aux_info(AT_HWCAP, &hwcap, sizeof(hwcap)) != 0)
+		return false;
+	if (elf_aux_info(AT_HWCAP2, &hwcap2, sizeof(hwcap2)) != 0)
+		return false;
+	return (hwcap & HWCAP_CRC32) && (hwcap2 & HWCAP2_SVE2);
+#elif defined(HAVE_GETAUXVAL)
+	/* Check for CRC32 and SVE2 on Linux systems */
+	unsigned long hwcap = getauxval(AT_HWCAP);
+	unsigned long hwcap2 = getauxval(AT_HWCAP2);
+
+	return (hwcap & HWCAP_CRC32) && (hwcap2 & HWCAP2_SVE2);
+#else
+	return false;
+#endif
+#else
+	return false;
+#endif
+}
 
 static bool
 pg_crc32c_armv8_available(void)
@@ -74,14 +107,17 @@ pg_crc32c_armv8_available(void)
 
 	size_t		len;
 	uint64		sysctlbuf[SYSCTL_CPU_ID_MAXSIZE];
+
 #if defined(__aarch64__)
 	/* We assume cpu0 is representative of all the machine's CPUs. */
 	const char *path = "machdep.cpu0.cpu_id";
 	size_t		expected_len = sizeof(struct aarch64_sysctl_cpu_id);
+
 #define ISAR0 ((struct aarch64_sysctl_cpu_id *) sysctlbuf)->ac_aa64isar0
 #else
 	const char *path = "machdep.id_isar";
 	size_t		expected_len = 6 * sizeof(int);
+
 #define ISAR0 ((int *) sysctlbuf)[5]
 #endif
 	uint64		fld;
@@ -115,7 +151,11 @@ pg_crc32c_armv8_available(void)
 static pg_crc32c
 pg_comp_crc32c_choose(pg_crc32c crc, const void *data, size_t len)
 {
-	if (pg_crc32c_armv8_available())
+	int vl = prctl(PR_SVE_GET_VL);
+
+	if (pg_crc32c_sve2_available() && vl > 0 && (vl & 0xFFFF) == 16) /* 16 bytes = 128 bits */
+		pg_comp_crc32c = pg_comp_crc32c_sve2;
+	else if (pg_crc32c_armv8_available())
 		pg_comp_crc32c = pg_comp_crc32c_armv8;
 	else
 		pg_comp_crc32c = pg_comp_crc32c_sb8;
