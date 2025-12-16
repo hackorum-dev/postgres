@@ -4468,6 +4468,7 @@ execute_foreign_modify(EState *estate,
 	 * Execute the prepared statement.
 	 */
 	if (!PQsendQueryPrepared(fmstate->conn,
+							 NULL,
 							 fmstate->p_name,
 							 fmstate->p_nums * (*numSlots),
 							 p_values,
