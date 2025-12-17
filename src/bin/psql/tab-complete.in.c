@@ -1936,7 +1936,7 @@ psql_completion(const char *text, int start, int end)
 		"\\if", "\\include", "\\include_relative", "\\ir",
 		"\\list", "\\lo_import", "\\lo_export", "\\lo_list", "\\lo_unlink",
 		"\\out",
-		"\\parse", "\\password", "\\print", "\\prompt", "\\pset",
+		"\\parse", "\\password", "\\print", "\\portal", "\\prompt", "\\pset",
 		"\\qecho", "\\quit",
 		"\\reset", "\\restrict",
 		"\\s", "\\sendpipeline", "\\set", "\\setenv", "\\sf",
