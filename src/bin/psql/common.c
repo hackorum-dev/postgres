@@ -1622,7 +1622,7 @@ ExecQueryAndProcessResults(const char *query,
 			break;
 		case PSQL_SEND_EXTENDED_QUERY_PREPARED:
 			Assert(pset.stmtName != NULL);
-			success = PQsendQueryPrepared(pset.db, NULL, pset.stmtName,
+			success = PQsendQueryPrepared(pset.db, pset.portalName, pset.stmtName,
 										  pset.bind_nparams,
 										  (const char *const *) pset.bind_params,
 										  NULL, NULL, 0);
@@ -2873,6 +2873,7 @@ clean_extended_state(void)
 	}
 
 	pset.stmtName = NULL;
+	pset.portalName = NULL;
 	pset.send_mode = PSQL_SEND_QUERY;
 }
 
