@@ -59,7 +59,7 @@ override LDFLAGS := $(LDFLAGS) $(LDFLAGS_EX) $(LDFLAGS_EX_BE)
 
 ##########################################################################
 
-all: submake-libpgport submake-catalog-headers submake-utils-headers postgres $(POSTGRES_IMP)
+all: submake-libpgport submake-catalog-headers submake-utils-headers postgres postgresql-server.pc $(POSTGRES_IMP)
 
 ifneq ($(PORTNAME), cygwin)
 ifneq ($(PORTNAME), win32)
@@ -94,6 +94,22 @@ libpostgres.a: postgres
 	touch $@
 
 endif # win32
+
+postgresql-server.pc: $(MAKEFILE_LIST)
+	echo 'prefix=$(prefix)' >$@
+	echo 'exec_prefix=$(patsubst $(prefix),$${prefix},$(exec_prefix))' >>$@
+	echo 'libdir=$(patsubst $(exec_prefix)/%,$${exec_prefix}/%,$(libdir))' >>$@
+	echo 'includedir=$(patsubst $(prefix)/%,$${prefix}/%,$(includedir))' >>$@
+	echo >>$@
+	echo 'Name: postgresql-server' >>$@
+	echo 'Description: PostgreSQL server module' >>$@
+	echo 'URL: $(PACKAGE_URL)' >>$@
+	echo 'Version: $(VERSION)' >>$@
+	echo 'Requires: ' >>$@
+	echo 'Requires.private: ' >>$@
+	echo 'Cflags: -I$${includedir} -I$${includedir}/server -I$${includedir}/internal $(CFLAGS_SL) $(CFLAGS_SL_MODULE)' >>$@
+	echo 'Libs: -L$${libdir} $(LDFLAGS_SL) $(CFLAGS_SL_MODULE)' >>$@
+	echo 'Libs.private: ' >>$@
 
 $(top_builddir)/src/port/libpgport_srv.a: | submake-libpgport
 
@@ -171,7 +187,7 @@ generated-parser-sources:
 
 ##########################################################################
 
-install: all installdirs install-bin
+install: all installdirs install-bin install-lib-pc
 ifeq ($(PORTNAME), cygwin)
 ifeq ($(MAKE_DLL), true)
 	$(INSTALL_DATA) libpostgres.a '$(DESTDIR)$(libdir)/libpostgres.a'
@@ -205,18 +221,14 @@ endif
 
 .PHONY: install-bin
 
+install-lib-pc: postgresql-server.pc installdirs
+	$(INSTALL_DATA) $< '$(DESTDIR)$(pkgconfigdir)/postgresql-server.pc'
+
+.PHONY: install-lib-pc
+
 installdirs:
 	$(MKDIR_P) '$(DESTDIR)$(bindir)' '$(DESTDIR)$(datadir)'
-ifeq ($(PORTNAME), cygwin)
-ifeq ($(MAKE_DLL), true)
-	$(MKDIR_P) '$(DESTDIR)$(libdir)'
-endif
-endif
-ifeq ($(PORTNAME), win32)
-ifeq ($(MAKE_DLL), true)
-	$(MKDIR_P) '$(DESTDIR)$(libdir)'
-endif
-endif
+	$(MKDIR_P) '$(DESTDIR)$(libdir)' '$(DESTDIR)$(pkgconfigdir)'
 ifeq ($(MAKE_EXPORTS), true)
 	$(MKDIR_P) '$(DESTDIR)$(pkglibdir)'
 	$(MKDIR_P) '$(DESTDIR)$(pgxsdir)/$(MKLDEXPORT_DIR)'
@@ -227,6 +239,7 @@ endif
 
 uninstall:
 	rm -f '$(DESTDIR)$(bindir)/postgres$(X)'
+	rm -f '$(DESTDIR)$(pkgconfigdir)/postgresql-server.pc'
 ifeq ($(MAKE_EXPORTS), true)
 	rm -f '$(DESTDIR)$(pkglibdir)/$(POSTGRES_IMP)'
 	rm -f '$(DESTDIR)$(pgxsdir)/$(MKLDEXPORT_DIR)/mkldexport.sh'
