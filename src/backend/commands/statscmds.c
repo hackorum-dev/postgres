@@ -30,6 +30,7 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
+#include "parser/parse_utilcmd.h"
 #include "statistics/statistics.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -60,7 +61,7 @@ compare_int16(const void *a, const void *b)
  *		CREATE STATISTICS
  */
 ObjectAddress
-CreateStatistics(CreateStatsStmt *stmt, bool check_rights)
+CreateStatistics(CreateStatsStmt *stmt, bool check_rights, const char *queryString)
 {
 	int16		attnums[STATS_MAX_DIMENSIONS];
 	int			nattnums = 0;
@@ -78,6 +79,7 @@ CreateStatistics(CreateStatsStmt *stmt, bool check_rights)
 	Datum		exprsDatum;
 	Relation	statrel;
 	Relation	rel = NULL;
+	RangeTblEntry *rte;
 	Oid			relid;
 	ObjectAddress parentobject,
 				myself;
@@ -95,64 +97,13 @@ CreateStatistics(CreateStatsStmt *stmt, bool check_rights)
 
 	Assert(IsA(stmt, CreateStatsStmt));
 
-	/*
-	 * Examine the FROM clause.  Currently, we only allow it to be a single
-	 * simple table, but later we'll probably allow multiple tables and JOIN
-	 * syntax.  The grammar is already prepared for that, so we have to check
-	 * here that what we got is what we can support.
-	 */
-	if (list_length(stmt->relations) != 1)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("only a single relation is allowed in CREATE STATISTICS")));
+	/* Run parse analysis */
+	stmt = transformStatsStmt(stmt, queryString);
 
-	foreach(cell, stmt->relations)
-	{
-		Node	   *rln = (Node *) lfirst(cell);
+	Assert(list_length(stmt->rtable) == list_length(stmt->from_clause));
 
-		if (!IsA(rln, RangeVar))
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("only a single relation is allowed in CREATE STATISTICS")));
-
-		/*
-		 * CREATE STATISTICS will influence future execution plans but does
-		 * not interfere with currently executing plans.  So it should be
-		 * enough to take only ShareUpdateExclusiveLock on relation,
-		 * conflicting with ANALYZE and other DDL that sets statistical
-		 * information, but not with normal queries.
-		 */
-		rel = relation_openrv((RangeVar *) rln, ShareUpdateExclusiveLock);
-
-		/* Restrict to allowed relation types */
-		if (rel->rd_rel->relkind != RELKIND_RELATION &&
-			rel->rd_rel->relkind != RELKIND_MATVIEW &&
-			rel->rd_rel->relkind != RELKIND_FOREIGN_TABLE &&
-			rel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot define statistics for relation \"%s\"",
-							RelationGetRelationName(rel)),
-					 errdetail_relkind_not_supported(rel->rd_rel->relkind)));
-
-		/*
-		 * You must own the relation to create stats on it.
-		 *
-		 * NB: Concurrent changes could cause this function's lookup to find a
-		 * different relation than a previous lookup by the caller, so we must
-		 * perform this check even when check_rights == false.
-		 */
-		if (!object_ownercheck(RelationRelationId, RelationGetRelid(rel), stxowner))
-			aclcheck_error(ACLCHECK_NOT_OWNER, get_relkind_objtype(rel->rd_rel->relkind),
-						   RelationGetRelationName(rel));
-
-		/* Creating statistics on system catalogs is not allowed */
-		if (!allowSystemTableMods && IsSystemRelation(rel))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied: \"%s\" is a system catalog",
-							RelationGetRelationName(rel))));
-	}
+	rte = linitial_node(RangeTblEntry, stmt->rtable);
+	rel = relation_open(rte->relid, NoLock);
 
 	Assert(rel);
 	relid = RelationGetRelid(rel);

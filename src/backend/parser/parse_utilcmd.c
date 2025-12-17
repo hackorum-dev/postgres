@@ -2052,6 +2052,7 @@ generateClonedExtStatsStmt(RangeVar *heapRel, Oid heapRelid,
 	HeapTuple	ht_stats;
 	Form_pg_statistic_ext statsrec;
 	CreateStatsStmt *stats;
+	RangeTblEntry *rte;
 	List	   *stat_types = NIL;
 	List	   *def_names = NIL;
 	bool		isnull;
@@ -2155,7 +2156,15 @@ generateClonedExtStatsStmt(RangeVar *heapRel, Oid heapRelid,
 	stats->defnames = NULL;
 	stats->stat_types = stat_types;
 	stats->exprs = def_names;
-	stats->relations = list_make1(heapRel);
+	stats->from_clause = list_make1(heapRel);
+
+	/* Create a range table entry. */
+	rte = makeNode(RangeTblEntry);
+	rte->rtekind = RTE_RELATION;
+	rte->relid = heapRelid;
+	rte->rellockmode = ShareUpdateExclusiveLock;
+	stats->rtable = list_make1(rte);
+
 	stats->stxcomment = NULL;
 	stats->transformed = true;	/* don't need transformStatsStmt again */
 	stats->if_not_exists = false;
@@ -3139,21 +3148,37 @@ transformIndexStmt(Oid relid, IndexStmt *stmt, const char *queryString)
 /*
  * transformStatsStmt - parse analysis for CREATE STATISTICS
  *
- * To avoid race conditions, it's important that this function relies only on
- * the passed-in relid (and not on stmt->relation) to determine the target
- * relation.
+ * This is used by CREATE STATISTICS. Changing table column’s data type or
+ * generated expression will trigger a rebuild of the related table’s
+ * statistics, during which this will also be used.
  */
 CreateStatsStmt *
-transformStatsStmt(Oid relid, CreateStatsStmt *stmt, const char *queryString)
+transformStatsStmt(CreateStatsStmt *stmt, const char *queryString)
 {
 	ParseState *pstate;
 	ParseNamespaceItem *nsitem;
 	ListCell   *l;
 	Relation	rel;
+	RangeTblEntry *rte;
 
 	/* Nothing to do if statement already transformed. */
 	if (stmt->transformed)
 		return stmt;
+
+	/* Construct range table if not done yet. */
+	if (stmt->rtable == NIL)
+		stmt->rtable = transformStatsFromClause(stmt->from_clause);
+
+	/*
+	 * The range table should have been derived from a FROM clause consisting
+	 * of a single RangeVar, so we expect a single RangeTblEntry.
+	 */
+	Assert(list_length(stmt->rtable) == 1);
+	rte = linitial(stmt->rtable);
+	Assert(IsA(rte, RangeTblEntry));
+
+	/* See transformStatsFromClause for notes on lock level. */
+	rel = table_open(rte->relid, NoLock);
 
 	/* Set up pstate */
 	pstate = make_parsestate(NULL);
@@ -3161,10 +3186,8 @@ transformStatsStmt(Oid relid, CreateStatsStmt *stmt, const char *queryString)
 
 	/*
 	 * Put the parent table into the rtable so that the expressions can refer
-	 * to its fields without qualification.  Caller is responsible for locking
-	 * relation, but we still need to open it.
+	 * to its fields without qualification.
 	 */
-	rel = relation_open(relid, NoLock);
 	nsitem = addRangeTableEntryForRelation(pstate, rel,
 										   AccessShareLock,
 										   NULL, false, true);
@@ -3206,6 +3229,91 @@ transformStatsStmt(Oid relid, CreateStatsStmt *stmt, const char *queryString)
 	stmt->transformed = true;
 
 	return stmt;
+}
+
+/*
+ * Accepts a list of RangeVar objects and returns a corresponding list of
+ * RangeTblEntry objects. For use while transforming a CreateStatsStmt.
+ *
+ * At present, the only case we know how to handle is a FROM clause
+ * consisting of a single RangeVar.
+ */
+List *
+transformStatsFromClause(List *from_clause)
+{
+	RangeTblEntry *rte;
+	ListCell   *cell;
+	Relation	rel = NULL;
+
+	/*
+	 * Examine the FROM clause.  Currently, we only allow it to be a single
+	 * simple table, but later we'll probably allow multiple tables and JOIN
+	 * syntax.  The grammar is already prepared for that, so we have to check
+	 * here that what we got is what we can support.
+	 */
+	if (list_length(from_clause) != 1)
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("only a single relation is allowed in CREATE STATISTICS"));
+
+	foreach(cell, from_clause)
+	{
+		Node	   *rln = (Node *) lfirst(cell);
+
+		if (!IsA(rln, RangeVar))
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("CREATE STATISTICS only supports relation names in the FROM clause"));
+
+		/*
+		 * CREATE STATISTICS will influence future execution plans but does
+		 * not interfere with currently executing plans.  So it should be
+		 * enough to take only ShareUpdateExclusiveLock on relation,
+		 * conflicting with ANALYZE and other DDL that sets statistical
+		 * information, but not with normal queries.
+		 */
+		rel = relation_openrv((RangeVar *) rln, ShareUpdateExclusiveLock);
+
+		/* Restrict to allowed relation types */
+		if (rel->rd_rel->relkind != RELKIND_RELATION &&
+			rel->rd_rel->relkind != RELKIND_MATVIEW &&
+			rel->rd_rel->relkind != RELKIND_FOREIGN_TABLE &&
+			rel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
+			ereport(ERROR,
+					errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					errmsg("cannot define statistics for relation \"%s\"",
+						   RelationGetRelationName(rel)),
+					errdetail_relkind_not_supported(rel->rd_rel->relkind));
+
+		/*
+		 * You must own the relation to create stats on it.
+		 *
+		 * NB: Concurrent changes could cause this function's lookup to find a
+		 * different relation than a previous lookup by the caller, so we must
+		 * perform this check unconditionally.
+		 */
+		if (!object_ownercheck(RelationRelationId, RelationGetRelid(rel), GetUserId()))
+			aclcheck_error(ACLCHECK_NOT_OWNER, get_relkind_objtype(rel->rd_rel->relkind),
+						   RelationGetRelationName(rel));
+
+		/* Creating statistics on system catalogs is not allowed */
+		if (!allowSystemTableMods && IsSystemRelation(rel))
+			ereport(ERROR,
+					errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					errmsg("permission denied: \"%s\" is a system catalog",
+						   RelationGetRelationName(rel)));
+	}
+
+	/* Create a range table entry. */
+	rte = makeNode(RangeTblEntry);
+	rte->rtekind = RTE_RELATION;
+	rte->relid = RelationGetRelid(rel);
+	rte->rellockmode = ShareUpdateExclusiveLock;
+
+	/* Close relation */
+	relation_close(rel, NoLock);
+
+	return list_make1(rte);
 }
 
 

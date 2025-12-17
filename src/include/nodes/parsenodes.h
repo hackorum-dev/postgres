@@ -3551,6 +3551,10 @@ typedef struct CreateStatsStmt
 	List	   *stat_types;		/* stat types (list of String) */
 	List	   *exprs;			/* expressions to build statistics on */
 	List	   *relations;		/* rels to build stats on (list of RangeVar) */
+	List	   *from_clause;	/* FROM clause ((list of RangeVar)) */
+	List	   *rtable;			/* It’s not derived directly from the
+								 * parser, instead it comes from parse
+								 * analysis. (list of RangeTblEntry) */
 	char	   *stxcomment;		/* comment to apply to stats, or NULL */
 	bool		transformed;	/* true when transformStatsStmt is finished */
 	bool		if_not_exists;	/* do nothing if stats name already exists */

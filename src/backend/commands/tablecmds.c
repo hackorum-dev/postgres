@@ -9718,7 +9718,7 @@ ATExecAddStatistics(AlteredTableInfo *tab, Relation rel,
 	/* The CreateStatsStmt has already been through transformStatsStmt */
 	Assert(stmt->transformed);
 
-	address = CreateStatistics(stmt, !is_rebuild);
+	address = CreateStatistics(stmt, !is_rebuild, NULL);
 
 	return address;
 }
@@ -15694,10 +15694,19 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 			querytree_list = list_concat(querytree_list, afterStmts);
 		}
 		else if (IsA(stmt, CreateStatsStmt))
+		{
+			RangeTblEntry *rte;
+			CreateStatsStmt *ss = castNode(CreateStatsStmt, stmt);
+
+			rte = makeNode(RangeTblEntry);
+			rte->rtekind = RTE_RELATION;
+			rte->relid = oldRelId;
+			rte->rellockmode = ShareUpdateExclusiveLock;
+			ss->rtable = list_make1(rte);
+
 			querytree_list = lappend(querytree_list,
-									 transformStatsStmt(oldRelId,
-														(CreateStatsStmt *) stmt,
-														cmd));
+									 transformStatsStmt(ss, cmd));
+		}
 		else
 			querytree_list = lappend(querytree_list, stmt);
 	}

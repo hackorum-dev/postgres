@@ -26,8 +26,9 @@ extern AlterTableStmt *transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 											   List **afterStmts);
 extern IndexStmt *transformIndexStmt(Oid relid, IndexStmt *stmt,
 									 const char *queryString);
-extern CreateStatsStmt *transformStatsStmt(Oid relid, CreateStatsStmt *stmt,
+extern CreateStatsStmt *transformStatsStmt(CreateStatsStmt *stmt,
 										   const char *queryString);
+extern List *transformStatsFromClause(List *from_clause);
 extern void transformRuleStmt(RuleStmt *stmt, const char *queryString,
 							  List **actions, Node **whereClause);
 extern List *transformCreateSchemaStmtElements(List *schemaElts,
