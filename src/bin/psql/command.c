@@ -124,6 +124,8 @@ static backslashResult exec_command_print(PsqlScanState scan_state, bool active_
 static backslashResult exec_command_parse(PsqlScanState scan_state, bool active_branch,
 										  const char *cmd);
 static backslashResult exec_command_password(PsqlScanState scan_state, bool active_branch);
+static backslashResult exec_command_portal(PsqlScanState scan_state, bool active_branch,
+						const char *cmd);
 static backslashResult exec_command_prompt(PsqlScanState scan_state, bool active_branch,
 										   const char *cmd);
 static backslashResult exec_command_pset(PsqlScanState scan_state, bool active_branch);
@@ -425,6 +427,8 @@ exec_command(const char *cmd,
 		status = exec_command_parse(scan_state, active_branch, cmd);
 	else if (strcmp(cmd, "password") == 0)
 		status = exec_command_password(scan_state, active_branch);
+	else if (strcmp(cmd, "portal") == 0)
+		status = exec_command_portal(scan_state, active_branch, cmd);
 	else if (strcmp(cmd, "prompt") == 0)
 		status = exec_command_prompt(scan_state, active_branch, cmd);
 	else if (strcmp(cmd, "pset") == 0)
@@ -590,6 +594,38 @@ exec_command_bind_named(PsqlScanState scan_state, bool active_branch,
 				pset.bind_params[nparams - 1] = opt;
 			}
 			pset.bind_nparams = nparams;
+		}
+	}
+	else
+		ignore_slash_options(scan_state);
+
+	return status;
+}
+
+
+/*
+ * \bind_named -- set query parameters for an existing prepared statement
+ */
+static backslashResult
+exec_command_portal(PsqlScanState scan_state, bool active_branch,
+						const char *cmd)
+{
+	backslashResult status = PSQL_CMD_SKIP_LINE;
+
+	if (active_branch)
+	{
+		char	   *opt;
+
+		/* get the mandatory prepared statement name */
+		opt = psql_scan_slash_option(scan_state, OT_NORMAL, NULL, false);
+		if (!opt)
+		{
+			pg_log_error("\\%s: missing required argument", cmd);
+			status = PSQL_CMD_ERROR;
+		}
+		else
+		{
+			pset.portalName = opt;
 		}
 	}
 	else
