@@ -117,6 +117,13 @@ PostgreSQL documentation
    In contrast, the data file integrity checks should work with any version
    of the server that generates a <literal>backup_manifest</literal> file.
   </para>
+
+  <para>
+   If <literal>pg_verifybackup</literal> encounters a problem with the backup,
+   the program return value will be <literal>2</literal>, if there is a problem
+   with the parameters passed to the program the return value will be
+   <literal>1</literal>.
+  </para>
  </refsect1>
 
  <refsect1>
