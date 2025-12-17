@@ -68,6 +68,13 @@ PostgreSQL documentation
    <replaceable>dbname</replaceable> can also be a
    <link linkend="libpq-connstring">connection string</link>.
   </para>
+
+  <para>
+   If <application>pg_amcheck</application> encounters a problem, the program
+   return value will be <literal>2</literal>, if there is a problem with the
+   parameters passed to the program the return value will be
+   <literal>1</literal>.
+  </para>
  </refsect1>
 
  <refsect1>
