@@ -200,6 +200,18 @@ SELECT $1 \bind 3 \sendpipeline
 \getresults 0
 \endpipeline
 
+-- Test named portals
+-- Since portals do not survive transaction
+-- bound, we have to make explicit BEGIN-COMMIT
+BEGIN;
+\startpipeline
+SELECT 10 + $1 \parse s1 \bind_named s1 1 \portal p1 \sendpipeline \syncpipeline
+\syncpipeline
+\endpipeline
+--recheck that statement was prepared in right portal
+SELECT name FROM pg_cursors WHERE statement = 'SELECT 10 + $1 ';
+COMMIT;
+
 --
 -- Pipeline errors
 --
