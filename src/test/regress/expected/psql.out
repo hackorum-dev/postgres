@@ -160,6 +160,37 @@ LINE 1: SELECT $1, $2
  foo4     | bar4
 (1 row)
 
+-- Since portals do not survive transaction
+-- bound, we have to make explicit BEGIN-COMMIT
+BEGIN;
+-- \portal (extended query protocol)
+\bind_named stmt2 'foo5' \portal prtl1 \g
+ ?column? 
+----------
+ foo5
+(1 row)
+
+-- check we prepared in correct portal
+SELECT name FROM pg_cursors WHERE statement = 'SELECT $1 ';
+ name  
+-------
+ prtl1
+(1 row)
+
+\bind_named stmt3 'foo6', 'boo6' \portal prtl2 \g
+ ?column? | ?column? 
+----------+----------
+ foo6,    | boo6
+(1 row)
+
+-- check we prepared in correct portal
+SELECT name FROM pg_cursors WHERE statement = 'SELECT $1, $2 ';
+ name  
+-------
+ prtl2
+(1 row)
+
+COMMIT;
 -- \close_prepared (extended query protocol)
 \close_prepared
 \close_prepared: missing required argument
