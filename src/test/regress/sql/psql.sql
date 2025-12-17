@@ -68,6 +68,20 @@ SELECT $1, $2 \parse stmt3
 -- Multiple \g calls mean multiple executions
 \bind_named stmt2 'foo3' \g \bind_named stmt3 'foo4' 'bar4' \g
 
+-- Since portals do not survive transaction
+-- bound, we have to make explicit BEGIN-COMMIT
+BEGIN;
+-- \portal (extended query protocol)
+\bind_named stmt2 'foo5' \portal prtl1 \g
+-- check we prepared in correct portal
+SELECT name FROM pg_cursors WHERE statement = 'SELECT $1 ';
+
+\bind_named stmt3 'foo6', 'boo6' \portal prtl2 \g
+-- check we prepared in correct portal
+SELECT name FROM pg_cursors WHERE statement = 'SELECT $1, $2 ';
+
+COMMIT;
+
 -- \close_prepared (extended query protocol)
 \close_prepared
 \close_prepared ''
