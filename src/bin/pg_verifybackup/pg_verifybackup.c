@@ -533,7 +533,7 @@ report_manifest_error(JsonManifestParseContext *context, const char *fmt, ...)
 	pg_log_generic_v(PG_LOG_ERROR, PG_LOG_PRIMARY, gettext(fmt), ap);
 	va_end(ap);
 
-	exit(1);
+	exit(2);
 }
 
 /*
@@ -1268,7 +1268,7 @@ report_backup_error(verifier_context *context, const char *pg_restrict fmt, ...)
 
 	context->saw_any_error = true;
 	if (context->exit_on_error)
-		exit(1);
+		exit(2);
 }
 
 /*
@@ -1283,7 +1283,7 @@ report_fatal_error(const char *pg_restrict fmt, ...)
 	pg_log_generic_v(PG_LOG_ERROR, PG_LOG_PRIMARY, gettext(fmt), ap);
 	va_end(ap);
 
-	exit(1);
+	exit(2);
 }
 
 /*
