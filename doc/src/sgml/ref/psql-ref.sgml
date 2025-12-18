@@ -25,6 +25,7 @@ PostgreSQL documentation
   <cmdsynopsis>
    <command>psql</command>
    <arg rep="repeat"><replaceable class="parameter">option</replaceable></arg>
+   <arg rep="repeat"><replaceable class="parameter">connparam</replaceable></arg>
    <arg choice="opt"><replaceable class="parameter">dbname</replaceable>
    <arg choice="opt"><replaceable class="parameter">username</replaceable></arg></arg>
   </cmdsynopsis>
@@ -164,7 +165,10 @@ EOF
        argument on the command line.  The <replaceable>dbname</replaceable>
        can be a <link linkend="libpq-connstring">connection string</link>.
        If so, connection string parameters will override any conflicting
-       command line options.
+       command line options. This option also overrides any
+       <literal>dbname</literal> specified in connection parameters passed
+       as positional arguments (e.g., <literal>psql service=myservice -d postgres</literal>
+       uses <literal>postgres</literal> as the database name).
       </para>
       </listitem>
     </varlistentry>
@@ -665,6 +669,31 @@ EOF
     Note that you cannot
     just connect to any database under any database user name. Your database
     administrator should have informed you about your access rights.
+    </para>
+
+    <para>
+    Additionally, any non-option argument containing an equals sign
+    (<literal>=</literal>) is treated as a connection string parameter
+    rather than a database name or user name. This allows specifying
+    connection parameters such as <literal>service</literal>,
+    <literal>host</literal>, or <literal>sslmode</literal> directly on the
+    command line. For example:
+<programlisting>
+$ <userinput>psql service=myservice</userinput>
+$ <userinput>psql host=localhost port=5433 sslmode=require mydb</userinput>
+</programlisting>
+    Multiple connection parameters can be specified this way, and they are
+    combined into a connection string. Explicit options such as
+    <option>-d</option>, <option>-h</option>, <option>-p</option>, and
+    <option>-U</option> override any corresponding values specified as
+    connection parameters. This is particularly useful when using
+    connection services defined in <filename>pg_service.conf</filename>,
+    allowing you to use a service but override specific parameters:
+<programlisting>
+$ <userinput>psql service=myservice -d postgres</userinput>
+</programlisting>
+    This connects using the service definition but overrides the database
+    name with <literal>postgres</literal>.
     </para>
 
     <para>
