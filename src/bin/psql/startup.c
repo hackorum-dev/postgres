@@ -71,6 +71,7 @@ struct adhoc_opts
 	char	   *port;
 	char	   *username;
 	char	   *logfilename;
+	char	   *connstring;		/* connection string from positional args */
 	bool		no_readline;
 	bool		no_psqlrc;
 	bool		single_txn;
@@ -247,6 +248,48 @@ main(int argc, char *argv[])
 		 * cancel handler, there's no need to use simple_prompt_extended.)
 		 */
 		password = simple_prompt("Password: ", false);
+	}
+
+	/*
+	 * Build the effective dbname for connection. If we have a connection
+	 * string from positional args (e.g., "service=myservice"), use it as
+	 * the base. Explicit -d/--dbname overrides the dbname within it.
+	 */
+	{
+		char *effective_dbname = NULL;
+
+		if (options.connstring != NULL)
+		{
+			if (options.dbname != NULL)
+			{
+				/* Combine connstring with explicit dbname override */
+				effective_dbname = psprintf("%s dbname=%s",
+											options.connstring, options.dbname);
+			}
+			else if (options.list_dbs)
+			{
+				/* For -l, default to postgres database */
+				effective_dbname = psprintf("%s dbname=postgres",
+											options.connstring);
+			}
+			else
+			{
+				/* Just use the connection string as-is */
+				effective_dbname = pg_strdup(options.connstring);
+			}
+		}
+		else
+		{
+			/* No connection string, use explicit dbname or default */
+			if (options.list_dbs && options.dbname == NULL)
+				effective_dbname = pg_strdup("postgres");
+			else if (options.dbname != NULL)
+				effective_dbname = pg_strdup(options.dbname);
+			/* else effective_dbname stays NULL */
+		}
+
+		/* Store for use in connection loop */
+		options.dbname = effective_dbname;
 	}
 
 	/* loop until we have a password if requested by backend */
@@ -732,11 +775,30 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 	}
 
 	/*
-	 * if we still have arguments, use it as the database name and username
+	 * if we still have arguments, use it as the database name and username.
+	 * Arguments containing '=' are treated as connection string parameters
+	 * (e.g., "service=myservice" or "host=localhost") and collected into
+	 * a connection string that will be used as the base for the connection.
 	 */
 	while (argc - optind >= 1)
 	{
-		if (!options->dbname)
+		/*
+		 * If argument contains '=', treat it as a connection string parameter.
+		 * This allows syntax like: psql service=myservice -d postgres
+		 */
+		if (strchr(argv[optind], '=') != NULL)
+		{
+			if (options->connstring == NULL)
+				options->connstring = pg_strdup(argv[optind]);
+			else
+			{
+				/* Append to existing connection string with space separator */
+				char *newstr = psprintf("%s %s", options->connstring, argv[optind]);
+				pg_free(options->connstring);
+				options->connstring = newstr;
+			}
+		}
+		else if (!options->dbname)
 			options->dbname = argv[optind];
 		else if (!options->username)
 			options->username = argv[optind];
