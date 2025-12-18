@@ -69,6 +69,11 @@ static List *lock_files = NIL;
 
 static Latch LocalLatchData;
 
+#if HAVE_DECL_F_OFD_SETLK
+/* File descriptor for data directory lock file. */
+static int DataDirLockFD;
+#endif
+
 /* ----------------------------------------------------------------
  *		ignoring system indexes support stuff
  *
@@ -1120,12 +1125,56 @@ RestoreClientConnectionInfo(char *conninfo)
  */
 
 /*
+ * Flock the data directory lockfile.
+ *
+ * Lock the data directory lockfile with an open file description lock. If the
+ * lock is already taken, it's a hard stop. It's only a best effort test, and
+ * any other errors are ignored. On succes the file descriptor is duplicated,
+ * to make sure there will be at least one open copy of it to keep the lock.
+ *
+ * filename is used only for reporting purposes.
+ */
+static void
+FlockDataDirLockFile(int fd, const char *filename)
+{
+
+#if HAVE_DECL_F_OFD_SETLK
+	struct flock lock;
+
+	lock.l_type		= F_WRLCK;
+	lock.l_whence	= SEEK_SET;
+	lock.l_start	= 0;
+	lock.l_len		= 0;
+	lock.l_pid		= 0;
+
+	if (fcntl(fd, F_OFD_SETLK, &lock) == -1)
+	{
+		if (errno == EAGAIN)
+			ereport(FATAL,
+					(errcode(ERRCODE_LOCK_FILE_EXISTS),
+					 errmsg("cannot lock the lock file \"%s\"", filename),
+					 errhint("Another server is starting.")));
+		else
+			elog(WARNING, "Failed locking file \"%s\", %m", filename);
+	}
+	else
+		DataDirLockFD = dup(fd);
+#endif
+
+}
+
+/*
  * proc_exit callback to remove lockfiles.
  */
 static void
 UnlinkLockFiles(int status, Datum arg)
 {
 	ListCell   *l;
+
+#if HAVE_DECL_F_OFD_SETLK
+	/* Close the file descriptor, which keeps the open file description lock */
+	close(DataDirLockFD);
+#endif
 
 	foreach(l, lock_files)
 	{
@@ -1172,22 +1221,32 @@ CreateLockFile(const char *filename, bool amPostmaster,
 	const char *envvar;
 
 	/*
-	 * If the PID in the lockfile is our own PID or our parent's or
-	 * grandparent's PID, then the file must be stale (probably left over from
-	 * a previous system boot cycle).  We need to check this because of the
-	 * likelihood that a reboot will assign exactly the same PID as we had in
-	 * the previous reboot, or one that's only one or two counts larger and
-	 * hence the lockfile's PID now refers to an ancestor shell process.  We
-	 * allow pg_ctl to pass down its parent shell PID (our grandparent PID)
-	 * via the environment variable PG_GRANDPARENT_PID; this is so that
-	 * launching the postmaster via pg_ctl can be just as reliable as
-	 * launching it directly.  There is no provision for detecting
-	 * further-removed ancestor processes, but if the init script is written
-	 * carefully then all but the immediate parent shell will be root-owned
-	 * processes and so the kill test will fail with EPERM.  Note that we
-	 * cannot get a false negative this way, because an existing postmaster
-	 * would surely never launch a competing postmaster or pg_ctl process
-	 * directly.
+	 * If we find an already existing lockfile containing our own PID,
+	 * there are few options:
+	 *
+	 * - There is another process, that we don't see due to PID namespace
+	 *   isolation, which is already running in this data directory.
+	 *
+	 *   To prevent two concurrent processes working with the same data
+	 *   directory, we first try to lock the lockfile exclusively.
+	 *
+	 * - The file must be stale, probably left over from a previous system boot
+	 *   cycle. The same if the lockfile contains our parent's or grandparent's
+	 *   PID.
+	 *
+	 *   We need to check this because of the likelihood that a reboot will
+	 *   assign exactly the same PID as we had in the previous reboot, or one
+	 *   that's only one or two counts larger and hence the lockfile's PID now
+	 *   refers to an ancestor shell process.  We allow pg_ctl to pass down its
+	 *   parent shell PID (our grandparent PID) via the environment variable
+	 *   PG_GRANDPARENT_PID; this is so that launching the postmaster via
+	 *   pg_ctl can be just as reliable as launching it directly.  There is no
+	 *   provision for detecting further-removed ancestor processes, but if the
+	 *   init script is written carefully then all but the immediate parent
+	 *   shell will be root-owned processes and so the kill test will fail with
+	 *   EPERM.  Note that we cannot get a false negative this way, because an
+	 *   existing postmaster would surely never launch a competing postmaster
+	 *   or pg_ctl process directly.
 	 */
 	my_pid = getpid();
 
@@ -1225,7 +1284,11 @@ CreateLockFile(const char *filename, bool amPostmaster,
 		 */
 		fd = open(filename, O_RDWR | O_CREAT | O_EXCL, pg_file_create_mode);
 		if (fd >= 0)
-			break;				/* Success; exit the retry loop */
+		{
+			/* Success; lock and exit the retry loop */
+			FlockDataDirLockFile(fd, filename);
+			break;
+		}
 
 		/*
 		 * Couldn't create the pid file. Probably it already exists.
@@ -1239,8 +1302,12 @@ CreateLockFile(const char *filename, bool amPostmaster,
 		/*
 		 * Read the file to get the old owner's PID.  Note race condition
 		 * here: file might have been deleted since we tried to create it.
+		 *
+		 * We're going to use the same fd for flock, and want to create a write
+		 * lock for the latter one. Since both fd and the lock have to be of
+		 * the same type, open the file for read and write.
 		 */
-		fd = open(filename, O_RDONLY, pg_file_create_mode);
+		fd = open(filename, O_RDWR, pg_file_create_mode);
 		if (fd < 0)
 		{
 			if (errno == ENOENT)
@@ -1250,6 +1317,10 @@ CreateLockFile(const char *filename, bool amPostmaster,
 					 errmsg("could not open lock file \"%s\": %m",
 							filename)));
 		}
+
+		/* Try to lock the file. We stop here, if it's already locked. */
+		FlockDataDirLockFile(fd, filename);
+
 		pgstat_report_wait_start(WAIT_EVENT_LOCK_FILE_CREATE_READ);
 		if ((len = read(fd, buffer, sizeof(buffer) - 1)) < 0)
 			ereport(FATAL,
