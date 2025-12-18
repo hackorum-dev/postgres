@@ -18,6 +18,7 @@
 #include "access/htup_details.h"
 #include "access/skey.h"
 #include "access/tupdesc.h"
+#include "executor/tuptable.h"
 
 /*
  *		HeapKeyTest
@@ -25,7 +26,8 @@
  *		Test a heap tuple to see if it satisfies a scan key.
  */
 static inline bool
-HeapKeyTest(HeapTuple tuple, TupleDesc tupdesc, int nkeys, ScanKey keys)
+HeapKeyTest(HeapTuple tuple, TupleDesc tupdesc, int nkeys, ScanKey keys,
+	TupleTableSlot *slot)
 {
 	int			cur_nkeys = nkeys;
 	ScanKey		cur_key = keys;
@@ -39,7 +41,10 @@ HeapKeyTest(HeapTuple tuple, TupleDesc tupdesc, int nkeys, ScanKey keys)
 		if (cur_key->sk_flags & SK_ISNULL)
 			return false;
 
-		atp = heap_getattr(tuple, cur_key->sk_attno, tupdesc, &isnull);
+		if (slot)
+			atp = slot_getattr(slot, cur_key->sk_attno, &isnull);
+		else
+			atp = heap_getattr(tuple, cur_key->sk_attno, tupdesc, &isnull);
 
 		if (isnull)
 			return false;

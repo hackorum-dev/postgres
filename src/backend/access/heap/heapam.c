@@ -31,6 +31,7 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/heapam.h"
 #include "access/heaptoast.h"
 #include "access/hio.h"
@@ -43,6 +44,7 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_database_d.h"
 #include "commands/vacuum.h"
+#include "executor/tuptable.h"
 #include "pgstat.h"
 #include "port/pg_bitutils.h"
 #include "storage/lmgr.h"
@@ -911,7 +913,8 @@ static void
 heapgettup(HeapScanDesc scan,
 		   ScanDirection dir,
 		   int nkeys,
-		   ScanKey key)
+		   ScanKey key,
+		   TupleTableSlot *slot)
 {
 	HeapTuple	tuple = &(scan->rs_ctup);
 	Page		page;
@@ -975,10 +978,13 @@ continue_page:
 			if (!visible)
 				continue;
 
+			if (slot)
+				ExecStoreBufferHeapTuple(&scan->rs_ctup, slot, scan->rs_cbuf);
+
 			/* skip any tuples that don't match the scan key */
 			if (key != NULL &&
 				!HeapKeyTest(tuple, RelationGetDescr(scan->rs_base.rs_rd),
-							 nkeys, key))
+							 nkeys, key, slot))
 				continue;
 
 			LockBuffer(scan->rs_cbuf, BUFFER_LOCK_UNLOCK);
@@ -1021,7 +1027,8 @@ static void
 heapgettup_pagemode(HeapScanDesc scan,
 					ScanDirection dir,
 					int nkeys,
-					ScanKey key)
+					ScanKey key,
+					TupleTableSlot *slot)
 {
 	HeapTuple	tuple = &(scan->rs_ctup);
 	Page		page;
@@ -1083,10 +1090,13 @@ continue_page:
 			tuple->t_len = ItemIdGetLength(lpp);
 			ItemPointerSetOffsetNumber(&tuple->t_self, lineoff);
 
+			if (slot)
+				ExecStoreBufferHeapTuple(&scan->rs_ctup, slot, scan->rs_cbuf);
+
 			/* skip any tuples that don't match the scan key */
 			if (key != NULL &&
 				!HeapKeyTest(tuple, RelationGetDescr(scan->rs_base.rs_rd),
-							 nkeys, key))
+							 nkeys, key, slot))
 				continue;
 
 			scan->rs_cindex = lineindex;
@@ -1388,10 +1398,10 @@ heap_getnext(TableScanDesc sscan, ScanDirection direction)
 
 	if (scan->rs_base.rs_flags & SO_ALLOW_PAGEMODE)
 		heapgettup_pagemode(scan, direction,
-							scan->rs_base.rs_nkeys, scan->rs_base.rs_key);
+							scan->rs_base.rs_nkeys, scan->rs_base.rs_key, NULL);
 	else
 		heapgettup(scan, direction,
-				   scan->rs_base.rs_nkeys, scan->rs_base.rs_key);
+				   scan->rs_base.rs_nkeys, scan->rs_base.rs_key, NULL);
 
 	if (scan->rs_ctup.t_data == NULL)
 		return NULL;
@@ -1414,9 +1424,9 @@ heap_getnextslot(TableScanDesc sscan, ScanDirection direction, TupleTableSlot *s
 	/* Note: no locking manipulations needed */
 
 	if (sscan->rs_flags & SO_ALLOW_PAGEMODE)
-		heapgettup_pagemode(scan, direction, sscan->rs_nkeys, sscan->rs_key);
+		heapgettup_pagemode(scan, direction, sscan->rs_nkeys, sscan->rs_key, slot);
 	else
-		heapgettup(scan, direction, sscan->rs_nkeys, sscan->rs_key);
+		heapgettup(scan, direction, sscan->rs_nkeys, sscan->rs_key, slot);
 
 	if (scan->rs_ctup.t_data == NULL)
 	{
@@ -1431,8 +1441,6 @@ heap_getnextslot(TableScanDesc sscan, ScanDirection direction, TupleTableSlot *s
 
 	pgstat_count_heap_getnext(scan->rs_base.rs_rd);
 
-	ExecStoreBufferHeapTuple(&scan->rs_ctup, slot,
-							 scan->rs_cbuf);
 	return true;
 }
 
@@ -1521,9 +1529,9 @@ heap_getnextslot_tidrange(TableScanDesc sscan, ScanDirection direction,
 	for (;;)
 	{
 		if (sscan->rs_flags & SO_ALLOW_PAGEMODE)
-			heapgettup_pagemode(scan, direction, sscan->rs_nkeys, sscan->rs_key);
+			heapgettup_pagemode(scan, direction, sscan->rs_nkeys, sscan->rs_key, slot);
 		else
-			heapgettup(scan, direction, sscan->rs_nkeys, sscan->rs_key);
+			heapgettup(scan, direction, sscan->rs_nkeys, sscan->rs_key, slot);
 
 		if (scan->rs_ctup.t_data == NULL)
 		{
@@ -1579,7 +1587,6 @@ heap_getnextslot_tidrange(TableScanDesc sscan, ScanDirection direction,
 	 */
 	pgstat_count_heap_getnext(scan->rs_base.rs_rd);
 
-	ExecStoreBufferHeapTuple(&scan->rs_ctup, slot, scan->rs_cbuf);
 	return true;
 }
 
