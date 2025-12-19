@@ -178,6 +178,8 @@ typedef struct IndexScanDescData
 
 	bool		xs_recheck;		/* T means scan keys must be rechecked */
 
+	int			xs_visrecheck;	/* TM_VisCheckResult from tableam.h */
+
 	/*
 	 * When fetching with an ordering operator, the values of the ORDER BY
 	 * expressions of the last returned tuple, according to the index.  If
