@@ -16,7 +16,7 @@
  *		visibilitymap_pin_ok - check whether correct map page is already pinned
  *		visibilitymap_set	 - set bit(s) in a previously pinned page and log
  *		visibilitymap_set_vmbits - set bit(s) in a pinned page
- *		visibilitymap_get_status - get status of bits
+ *		visibilitymap_get_status_v - get status of bits
  *		visibilitymap_count  - count number of bits set in visibility map
  *		visibilitymap_prepare_truncate -
  *			prepare for truncation of the visibility map
@@ -118,6 +118,9 @@
 #define HEAPBLK_TO_MAPBLOCK(x) ((x) / HEAPBLOCKS_PER_PAGE)
 #define HEAPBLK_TO_MAPBYTE(x) (((x) % HEAPBLOCKS_PER_PAGE) / HEAPBLOCKS_PER_BYTE)
 #define HEAPBLK_TO_OFFSET(x) (((x) % HEAPBLOCKS_PER_BYTE) * BITS_PER_HEAPBLOCK)
+
+/* map VM blocks back to the first heap block on that page */
+#define MAPBLOCK_TO_HEAPBLK(x) ((x) * HEAPBLOCKS_PER_PAGE)
 
 /* Masks for counting subsets of bits in the visibility map. */
 #define VISIBLE_MASK8	(0x55)	/* The lower bit of each bit pair */
@@ -391,7 +394,32 @@ visibilitymap_set_vmbits(BlockNumber heapBlk,
 }
 
 /*
- *	visibilitymap_get_status - get status of bits
+ * Do a binary search over the provided array of BlockNumber, returning the
+ * index that the provided key could be inserted whilst maintaining order.
+ */
+static int
+find_index_in_block_array(BlockNumber key, const BlockNumber *blknos, int nblocks)
+{
+	int			low = 0,
+				high = nblocks;
+
+	/* standard binary search */
+	while (low != high)
+	{
+		int		mid = low + (high - low + 1) / 2;
+		BlockNumber midpoint = blknos[mid];
+
+		if (midpoint > key)
+			high = mid - 1;
+		else
+			low = mid;
+	}
+
+	return low;
+}
+
+/*
+ *	visibilitymap_get_status_v - get status of bits
  *
  * Are all tuples on heapBlk visible to all or are marked frozen, according
  * to the visibility map?
@@ -402,6 +430,9 @@ visibilitymap_set_vmbits(BlockNumber heapBlk,
  * the bit for heapBlk, or InvalidBuffer. The caller is responsible for
  * releasing *vmbuf after it's done testing and setting bits.
  *
+ * The caller is responsible for providing a sorted array of unique heap
+ * blocks, and providing sufficient space in *status.
+ *
  * NOTE: This function is typically called without a lock on the heap page,
  * so somebody else could change the bit just after we look at it.  In fact,
  * since we don't lock the visibility map page either, it's even possible that
@@ -409,45 +440,123 @@ visibilitymap_set_vmbits(BlockNumber heapBlk,
  * we might see the old value.  It is the caller's responsibility to deal with
  * all concurrency issues!
  */
-uint8
-visibilitymap_get_status(Relation rel, BlockNumber heapBlk, Buffer *vmbuf)
+void
+visibilitymap_get_statusv(Relation rel, const BlockNumber *heapBlks, uint8 *status,
+						  int nblocks, Buffer *vmbuf)
 {
-	BlockNumber mapBlock = HEAPBLK_TO_MAPBLOCK(heapBlk);
-	uint32		mapByte = HEAPBLK_TO_MAPBYTE(heapBlk);
-	uint8		mapOffset = HEAPBLK_TO_OFFSET(heapBlk);
-	char	   *map;
-	uint8		result;
+	BlockNumber mapBlock = HEAPBLK_TO_MAPBLOCK(heapBlks[0]);
+	int			startOff = 0;
+	int			currblk;
 
 #ifdef TRACE_VISIBILITYMAP
-	elog(DEBUG1, "vm_get_status %s %d", RelationGetRelationName(rel), heapBlk);
+	elog(DEBUG1, "vm_get_statusv %s %d", RelationGetRelationName(rel), heapBlks[0]);
 #endif
 
 	/* Reuse the old pinned buffer if possible */
 	if (BufferIsValid(*vmbuf))
 	{
-		if (BufferGetBlockNumber(*vmbuf) != mapBlock)
+		BlockNumber curMapBlock = BufferGetBlockNumber(*vmbuf);
+
+		/*
+		 * If we have more than one block, but the head of the array isn't
+		 * on the current VM page, it's still possible that the current VM
+		 * page contains some other requested pages' visibility status.  To
+		 * figure out if we must swap the buffer now, we search the array to
+		 * find the location where such a BlockNumber should be located.
+		 *
+		 * The index that's returned references the first BlockNumber >=
+		 * firstHeapBlock, so it may reference a different VM page entirely.
+		 * That's fine, we do have a later check which verifies whether that
+		 * block belongs to the current VM buffer, and if not, we bail out.
+		 */
+		if (nblocks > 1 && curMapBlock != mapBlock)
 		{
+			BlockNumber firstHeapBlk = MAPBLOCK_TO_HEAPBLK(curMapBlock);
+			startOff = find_index_in_block_array(firstHeapBlk, heapBlks, nblocks);
+		}
+
+		/*
+		 * Bail if we still don't have pages for this VM buffer.
+		 */
+		if (curMapBlock != HEAPBLK_TO_MAPBLOCK(heapBlks[startOff]))
+		{
+			startOff = 0;
 			ReleaseBuffer(*vmbuf);
 			*vmbuf = InvalidBuffer;
 		}
 	}
 
-	if (!BufferIsValid(*vmbuf))
+	/* We can return here when we started processing the array only halfway through */
+restart:
+	currblk = startOff;
+	mapBlock = HEAPBLK_TO_MAPBLOCK(heapBlks[currblk]);
+
+	/* grab the VM buffer for our mapBlock, if we didn't have it already */
+	if (*vmbuf == InvalidBuffer)
 	{
 		*vmbuf = vm_readbuf(rel, mapBlock, false);
-		if (!BufferIsValid(*vmbuf))
-			return (uint8) 0;
+
+		if (*vmbuf == InvalidBuffer)
+			goto endOfVisMap;
 	}
 
-	map = PageGetContents(BufferGetPage(*vmbuf));
+	/* main loop */
+	while (1)
+	{
+		char	   *map = PageGetContents(BufferGetPage(*vmbuf));
+		int64		firstNext = MAPBLOCK_TO_HEAPBLK((int64) mapBlock) + (int64) HEAPBLOCKS_PER_PAGE;
+
+		/* Check the visibility status of all heap blocks on the current VM page */
+		for (;currblk < nblocks && ((int64) (heapBlks[currblk])) < firstNext; currblk++)
+		{
+			uint32		mapByte;
+			uint8		mapOffset;
+
+			mapByte = HEAPBLK_TO_MAPBYTE(heapBlks[currblk]);
+			mapOffset = HEAPBLK_TO_OFFSET(heapBlks[currblk]);
+
+			status[currblk] = (map[mapByte] >> mapOffset) & VISIBILITYMAP_VALID_BITS;
+		}
+
+		/* end of the scan */
+		if (currblk >= nblocks)
+			break;
+
+		/* prepare the vm buffer for the next vm block */
+		ReleaseBuffer(*vmbuf);
+		mapBlock = HEAPBLK_TO_MAPBLOCK(heapBlks[currblk]);
+		*vmbuf = vm_readbuf(rel, mapBlock, false);
+
+		if (*vmbuf == InvalidBuffer)
+			goto endOfVisMap;
+	}
+
+endOfVisMap:
+	/* set visibility map result to 0 for blocks past the end of the VM */
+	while (currblk < nblocks)
+		status[currblk++] = 0;
 
 	/*
-	 * A single byte read is atomic.  There could be memory-ordering effects
-	 * here, but for performance reasons we make it the caller's job to worry
-	 * about that.
+	 * If we started processing in the middle of the array to reduce buffer
+	 * churn, we loop back to restart here
 	 */
-	result = ((map[mapByte] >> mapOffset) & VISIBILITYMAP_VALID_BITS);
-	return result;
+	if (startOff > 0)
+	{
+		nblocks = startOff;
+		startOff = 0;
+
+		/*
+		 * The next loop around will work on a different page, so we should
+		 * release this buffer.
+		 */
+		if (BufferIsValid(*vmbuf))
+		{
+			ReleaseBuffer(*vmbuf);
+			*vmbuf = InvalidBuffer;
+		}
+
+		goto restart;
+	}
 }
 
 /*

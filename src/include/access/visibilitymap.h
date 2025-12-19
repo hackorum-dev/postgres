@@ -41,9 +41,21 @@ extern uint8 visibilitymap_set(Relation rel,
 extern uint8 visibilitymap_set_vmbits(BlockNumber heapBlk,
 									  Buffer vmBuf, uint8 flags,
 									  const RelFileLocator rlocator);
-extern uint8 visibilitymap_get_status(Relation rel, BlockNumber heapBlk, Buffer *vmbuf);
+extern void visibilitymap_get_statusv(Relation rel, const BlockNumber *heapBlks,
+									  uint8 *statusv, int nblocks,
+									  Buffer *vmbuf);
 extern void visibilitymap_count(Relation rel, BlockNumber *all_visible, BlockNumber *all_frozen);
 extern BlockNumber visibilitymap_prepare_truncate(Relation rel,
 												  BlockNumber nheapblocks);
+
+static inline uint8
+visibilitymap_get_status(Relation rel, BlockNumber heapBlk, Buffer *vmbuf)
+{
+	uint8	status;
+
+	visibilitymap_get_statusv(rel, &heapBlk, &status, 1, vmbuf);
+
+	return status;
+}
 
 #endif							/* VISIBILITYMAP_H */
