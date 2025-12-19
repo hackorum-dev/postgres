@@ -510,6 +510,9 @@ collect_visibility_data(Oid relid, bool include_pd)
 	BufferAccessStrategy bstrategy = GetAccessStrategy(BAS_BULKREAD);
 	BlockRangeReadStreamPrivate p;
 	ReadStream *stream = NULL;
+#define VM_BATCHSIZE	1024
+	BlockNumber *blknos;
+	uint8	   *status;
 
 	rel = relation_open(relid, AccessShareLock);
 
@@ -520,6 +523,9 @@ collect_visibility_data(Oid relid, bool include_pd)
 	info = palloc0(offsetof(vbits, bits) + nblocks);
 	info->next = 0;
 	info->count = nblocks;
+
+	blknos = palloc0_array(BlockNumber, VM_BATCHSIZE);
+	status = palloc0_array(uint8, VM_BATCHSIZE);
 
 	/* Create a stream if reading main fork. */
 	if (include_pd)
@@ -541,29 +547,43 @@ collect_visibility_data(Oid relid, bool include_pd)
 											0);
 	}
 
-	for (blkno = 0; blkno < nblocks; ++blkno)
+	for (blkno = 0; blkno < nblocks;)
 	{
-		int32		mapbits;
+		int batchsize = 0;
+
+		for (BlockNumber bno = blkno; batchsize < VM_BATCHSIZE && bno < nblocks;)
+			blknos[batchsize++] = bno++;
 
 		/* Make sure we are interruptible. */
 		CHECK_FOR_INTERRUPTS();
 
-		/* Get map info. */
-		mapbits = (int32) visibilitymap_get_status(rel, blkno, &vmbuffer);
-		if ((mapbits & VISIBILITYMAP_ALL_VISIBLE) != 0)
-			info->bits[blkno] |= (1 << 0);
-		if ((mapbits & VISIBILITYMAP_ALL_FROZEN) != 0)
-			info->bits[blkno] |= (1 << 1);
+		/* Get map info in bulk. */
+		visibilitymap_get_statusv(rel, blknos, status, batchsize, &vmbuffer);
+
+		/* move the status bits */
+		for (int i = 0; i < batchsize; i++)
+		{
+			uint32 mapbits = status[i];
+			BlockNumber bno = blknos[i];
+
+			if ((mapbits & VISIBILITYMAP_ALL_VISIBLE) != 0)
+				info->bits[bno] |= (1 << 0);
+			if ((mapbits & VISIBILITYMAP_ALL_FROZEN) != 0)
+				info->bits[bno] |= (1 << 1);
+		}
 
 		/*
 		 * Page-level data requires reading every block, so only get it if the
 		 * caller needs it.  Use a buffer access strategy, too, to prevent
 		 * cache-trashing.
 		 */
-		if (include_pd)
+		for (int i = 0; include_pd && i < batchsize; i++)
 		{
 			Buffer		buffer;
 			Page		page;
+
+			/* This subloop should be interruptable, it does IO */
+			CHECK_FOR_INTERRUPTS();
 
 			buffer = read_stream_next_buffer(stream, NULL);
 			LockBuffer(buffer, BUFFER_LOCK_SHARE);
@@ -574,6 +594,8 @@ collect_visibility_data(Oid relid, bool include_pd)
 
 			UnlockReleaseBuffer(buffer);
 		}
+
+		blkno += batchsize;
 	}
 
 	if (include_pd)
