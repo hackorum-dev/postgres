@@ -106,6 +106,20 @@ static XLogRecPtr log_heap_new_cid(Relation relation, HeapTuple tup);
 static HeapTuple ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
 										bool *copy);
 
+/* sort template definitions for index visibility checks */
+#define ST_SORT heap_ivc_sortby_tidheapblk
+#define ST_ELEMENT_TYPE TM_VisCheck
+#define ST_DECLARE
+#define ST_DEFINE
+#define ST_SCOPE static inline
+#define ST_COMPARE(a, b) ( \
+	a->tidblkno < b->tidblkno ? -1 : ( \
+		a->tidblkno > b->tidblkno ? 1 : 0 \
+	) \
+)
+
+#include "lib/sort_template.h"
+
 
 /*
  * Each tuple lock mode has a corresponding heavyweight lock, and one or two
@@ -8811,6 +8825,116 @@ bottomup_sort_and_shrink(TM_IndexDeleteOp *delstate)
 	pfree(blockgroups);
 
 	return nblocksfavorable;
+}
+
+/*
+ * heapam implementation of tableam's index_vischeck_tuples interface.
+ *
+ * This helper function is called by index AMs during index-only scans,
+ * to do VM-based visibility checks on individual tuples, so that the AM
+ * can hold the tuple in memory for e.g. reordering for extended periods of
+ * time while without holding thousands of pins to conflict with VACUUM.
+ *
+ * It's possible for this to generate a fair amount of I/O, since we may be
+ * checking hundreds of tuples from a single index block, but that is
+ * preferred over holding thousands of pins.
+ *
+ * We use heuristics to balance the costs of sorting TIDs with VM page
+ * lookups.
+ */
+void
+heap_index_vischeck_tuples(Relation rel, TM_IndexVisibilityCheckOp *checkop)
+{
+	TM_VisCheck	   *checks = checkop->checktids;
+	int				checkntids = checkop->checkntids;
+	int				nblocks = 1;
+	BlockNumber	   *blknos;
+	uint8		   *status;
+	TMVC_Result		res;
+
+	if (checkntids == 0)
+		return;
+
+	/*
+	 * Order the TIDs to heap order, so that we will only need to visit every
+	 * VM page at most once.
+	 */
+	heap_ivc_sortby_tidheapblk(checks, checkntids);
+
+	for (int i = 0; i < checkntids - 1; i++)
+	{
+		if (checks[i].tidblkno != checks[i + 1].tidblkno)
+		{
+			Assert(checks[i].tidblkno < checks[i + 1].tidblkno);
+			nblocks++;
+		}
+	}
+
+	/*
+	 * No need to allocate arrays or do other (comparatively expensive)
+	 * bookkeeping when we have only one block to check.
+	 */
+	if (nblocks == 1)
+	{
+		if (VM_ALL_VISIBLE(rel, checks[0].tidblkno, checkop->vmbuf))
+			res = TMVC_Visible;
+		else
+			res = TMVC_MaybeVisible;
+
+		for (int i = 0; i < checkntids; i++)
+			checks[i].vischeckresult = res;
+
+		return;
+	}
+
+	blknos = palloc_array(BlockNumber, nblocks);
+	status = palloc_array(uint8, nblocks);
+
+	blknos[0] = checks[0].tidblkno;
+
+	/* fill in the rest of the blknos array with unique block numbers */
+	for (int i = 0, j = 0; i < checkntids; i++)
+	{
+		Assert(BlockNumberIsValid(checks[i].tidblkno));
+
+		if (checks[i].tidblkno != blknos[j])
+			blknos[++j] = checks[i].tidblkno;
+	}
+
+	/* do the actual visibility checks */
+	visibilitymap_get_statusv(rel, blknos, status, nblocks, checkop->vmbuf);
+
+	/*
+	 * 'res' is the current TMVC value for blknos[j] below. It is updated
+	 * inside the loop, but only when j is updated, so we must initialize it
+	 * here, or we'll store uninitialized data instead of an TMVC value for
+	 * the first block's result.
+	 */
+	if (status[0] & VISIBILITYMAP_ALL_VISIBLE)
+		res = TMVC_Visible;
+	else
+		res = TMVC_MaybeVisible;
+
+	/* copy the results of blknos into the TM_VisChecks */
+	for (int i = 0, j = 0; i < checkntids; i++)
+	{
+		if (checks[i].tidblkno != blknos[j])
+		{
+			j += 1;
+			Assert(checks[i].tidblkno == blknos[j]);
+
+			if (status[j] & VISIBILITYMAP_ALL_VISIBLE)
+				res = TMVC_Visible;
+			else
+				res = TMVC_MaybeVisible;
+		}
+
+		checks[i].vischeckresult = res;
+	}
+
+	/* and clean up the resources we'd used */
+	pfree(status);
+	pfree(blknos);
 }
 
 /*
