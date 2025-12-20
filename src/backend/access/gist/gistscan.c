@@ -348,6 +348,12 @@ gistendscan(IndexScanDesc scan)
 {
 	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
 
+	if (BufferIsValid(so->vmbuf))
+	{
+		ReleaseBuffer(so->vmbuf);
+		so->vmbuf = InvalidBuffer;
+	}
+
 	/*
 	 * freeGISTstate is enough to clean up everything made by gistbeginscan,
 	 * as well as the queueCxt if there is a separate context for it.

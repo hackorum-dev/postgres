@@ -17,6 +17,7 @@
 #include "access/genam.h"
 #include "access/gist_private.h"
 #include "access/relscan.h"
+#include "access/tableam.h"
 #include "lib/pairingheap.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -394,7 +395,11 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem,
 		return;
 	}
 
-	so->nPageData = so->curPageData = 0;
+	if (scan->numberOfOrderBys)
+		so->nsortItems = 0;
+	else
+		so->nPageData = so->curPageData = 0;
+
 	scan->xs_hitup = NULL;		/* might point into pageDataCxt */
 	if (so->pageDataCxt)
 		MemoryContextReset(so->pageDataCxt);
@@ -498,10 +503,16 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem,
 				item->data.heap.recheckDistances = recheck_distances;
 
 				/*
-				 * In an index-only scan, also fetch the data from the tuple.
+				 * In an index-only scan, also fetch the data from the tuple,
+				 * and keep a reference to the tuple so we can run visibility
+				 * checks on the tuples before we release the buffer.
 				 */
 				if (scan->xs_want_itup)
+				{
 					item->data.heap.recontup = gistFetchTuple(giststate, r, it);
+					so->sortItems[so->nsortItems] = &item->data.heap;
+					so->nsortItems += 1;
+				}
 			}
 			else
 			{
@@ -526,7 +537,104 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem,
 		}
 	}
 
-	UnlockReleaseBuffer(buffer);
+	/* Allow writes to the buffer, but don't yet allow VACUUM */
+	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
+
+	/*
+	 * If we're in an index-only scan, we need to do VM-like visibility checks
+	 * before we release the pin.  This way, VACUUM can't clean up dead tuples
+	 * from this index page and mark the heap page ALL_VISIBLE before the tuple
+	 * was returned; or at least not without the index-only scan knowing to
+	 * still look at the heap page for the visibility of this tuple.
+	 *
+	 * See also docs section "Index Locking Considerations".
+	 */
+	if (scan->xs_want_itup)
+	{
+		TM_IndexVisibilityCheckOp	op;
+		op.vmbuf = &so->vmbuf;
+
+		/* get the number of TIDs we're about to check */
+		if (scan->numberOfOrderBys > 0)
+			op.checkntids = so->nsortItems;
+		else
+			op.checkntids = so->nPageData;
+
+		/* skip the rest of the vischeck code if nothing is to be done. */
+		if (op.checkntids == 0)
+			goto IOSVisChecksDone;
+
+		op.checktids = palloc_array(TM_VisCheck, op.checkntids);
+
+		/* Populate the visibility check items */
+		if (scan->numberOfOrderBys > 0)
+		{
+			for (int off = 0; off < op.checkntids; off++)
+			{
+				Assert(ItemPointerIsValid(&so->sortItems[off]->heapPtr));
+
+				PopulateTMVischeck(&op.checktids[off],
+								   &so->sortItems[off]->heapPtr,
+								   off);
+			}
+		}
+		else
+		{
+			for (int off = 0; off < op.checkntids; off++)
+			{
+				Assert(ItemPointerIsValid(&so->pageData[off].heapPtr));
+
+				PopulateTMVischeck(&op.checktids[off],
+								   &so->pageData[off].heapPtr,
+								   off);
+			}
+		}
+
+		/* ask the table for the visibility status of these tids */
+		table_index_vischeck_tuples(scan->heapRelation, &op);
+
+		/* and copy the visibility status into the GISTSearchItems */
+		if (scan->numberOfOrderBys > 0)
+		{
+			for (int off = 0; off < op.checkntids; off++)
+			{
+				TM_VisCheck *check = &op.checktids[off];
+				GISTSearchHeapItem *item = so->sortItems[check->idxoffnum];
+
+				/* sanity checks */
+				Assert(check->idxoffnum < op.checkntids);
+				Assert(check->tidblkno == ItemPointerGetBlockNumberNoCheck(&item->heapPtr));
+				Assert(check->tidoffset == ItemPointerGetOffsetNumberNoCheck(&item->heapPtr));
+
+				item->visrecheck = check->vischeckresult;
+			}
+
+			/* reset the temporary state used for tracking IOS items */
+			so->nsortItems = 0;
+		}
+		else
+		{
+			for (int off = 0; off < op.checkntids; off++)
+			{
+				TM_VisCheck *check = &op.checktids[off];
+				GISTSearchHeapItem *item = &so->pageData[check->idxoffnum];
+
+				Assert(check->idxoffnum < op.checkntids);
+				Assert(check->tidblkno == ItemPointerGetBlockNumberNoCheck(&item->heapPtr));
+				Assert(check->tidoffset == ItemPointerGetOffsetNumberNoCheck(&item->heapPtr));
+
+				item->visrecheck = check->vischeckresult;
+			}
+		}
+
+		/* finally, clean up the used resources */
+		pfree(op.checktids);
+	}
+
+IOSVisChecksDone:
+
+	/* Allow VACUUM to process the buffer again */
+	ReleaseBuffer(buffer);
 }
 
 /*
@@ -586,9 +694,15 @@ getNextNearest(IndexScanDesc scan)
 												 item->distances,
 												 item->data.heap.recheckDistances);
 
-			/* in an index-only scan, also return the reconstructed tuple. */
+			/*
+			 * In an index-only scan, also return the reconstructed tuple,
+			 * and store the visibility check's result.
+			 */
 			if (scan->xs_want_itup)
+			{
 				scan->xs_hitup = item->data.heap.recontup;
+				scan->xs_visrecheck = item->data.heap.visrecheck;
+			}
 			res = true;
 		}
 		else
@@ -675,7 +789,10 @@ gistgettuple(IndexScanDesc scan, ScanDirection dir)
 
 				/* in an index-only scan, also return the reconstructed tuple */
 				if (scan->xs_want_itup)
+				{
 					scan->xs_hitup = so->pageData[so->curPageData].recontup;
+					scan->xs_visrecheck = so->pageData[so->curPageData].visrecheck;
+				}
 
 				so->curPageData++;
 
