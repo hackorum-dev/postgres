@@ -862,9 +862,9 @@ test_inline_in_from_support_func(PG_FUNCTION_ARGS)
 		}
 
 		c = (Const *) node;
-		if (c->consttype != TEXTOID || c->constisnull)
+		if (c->constisnull)
 		{
-			ereport(WARNING, (errmsg("test_inline_in_from_support_func called with non-TEXT parameters")));
+			ereport(WARNING, (errmsg("test_inline_in_from_support_func called with null parameter for colname")));
 			PG_RETURN_POINTER(NULL);
 		}
 		colname = TextDatumGetCString(c->constvalue);
@@ -878,9 +878,9 @@ test_inline_in_from_support_func(PG_FUNCTION_ARGS)
 		}
 
 		c = (Const *) node;
-		if (c->consttype != TEXTOID || c->constisnull)
+		if (c->constisnull)
 		{
-			ereport(WARNING, (errmsg("test_inline_in_from_support_func called with non-TEXT parameters")));
+			ereport(WARNING, (errmsg("test_inline_in_from_support_func called with null parameter for tablename")));
 			PG_RETURN_POINTER(NULL);
 		}
 		tablename = TextDatumGetCString(c->constvalue);
