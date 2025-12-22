@@ -1038,6 +1038,8 @@ _bt_saveitem(BTScanOpaque so, int itemIndex,
 
 	currItem->heapTid = itup->t_tid;
 	currItem->indexOffset = offnum;
+	currItem->visrecheck = TMVC_Unchecked;
+
 	if (so->currTuples)
 	{
 		Size		itupsz = IndexTupleSize(itup);
@@ -1068,6 +1070,8 @@ _bt_setuppostingitems(BTScanOpaque so, int itemIndex, OffsetNumber offnum,
 
 	currItem->heapTid = *heapTid;
 	currItem->indexOffset = offnum;
+	currItem->visrecheck = TMVC_Unchecked;
+
 	if (so->currTuples)
 	{
 		/* Save base IndexTuple (truncate posting list) */
@@ -1104,6 +1108,7 @@ _bt_savepostingitem(BTScanOpaque so, int itemIndex, OffsetNumber offnum,
 
 	currItem->heapTid = *heapTid;
 	currItem->indexOffset = offnum;
+	currItem->visrecheck = TMVC_Unchecked;
 
 	/*
 	 * Have index-only scans return the same base IndexTuple for every TID

@@ -17,6 +17,7 @@
 #include "access/amapi.h"
 #include "access/itup.h"
 #include "access/sdir.h"
+#include "access/tableam.h"
 #include "catalog/pg_am_d.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_index.h"
@@ -957,6 +958,7 @@ typedef struct BTScanPosItem	/* what we remember about each match */
 	ItemPointerData heapTid;	/* TID of referenced heap item */
 	OffsetNumber indexOffset;	/* index item's location within page */
 	LocationIndex tupleOffset;	/* IndexTuple's offset in workspace, if any */
+	uint8		visrecheck;		/* visibility recheck status, if any */
 } BTScanPosItem;
 
 typedef struct BTScanPosData
@@ -1071,6 +1073,12 @@ typedef struct BTScanOpaqueData
 	int		   *killedItems;	/* currPos.items indexes of killed items */
 	int			numKilled;		/* number of currently stored items */
 	bool		dropPin;		/* drop leaf pin before btgettuple returns? */
+
+	/* used for index-only scan visibility prechecks */
+	bool		vischeck;		/* check visibility of scanned tuples */
+	Buffer		vmbuf;			/* vm buffer */
+	int			vischeckcap;	/* capacity of vischeckbuf */
+	TM_VisCheck *vischecksbuf;	/* single allocation to save on alloc overhead */
 
 	/*
 	 * If we are doing an index-only scan, these are the tuple storage

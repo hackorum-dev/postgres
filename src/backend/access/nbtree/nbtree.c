@@ -364,6 +364,10 @@ btbeginscan(Relation rel, int nkeys, int norderbys)
 	so->killedItems = NULL;		/* until needed */
 	so->numKilled = 0;
 
+	so->vmbuf = InvalidBuffer;
+	so->vischeckcap = 0;
+	so->vischecksbuf = NULL;
+
 	/*
 	 * We don't know yet whether the scan will be index-only, so we do not
 	 * allocate the tuple workspace arrays until btrescan.  However, we set up
@@ -420,10 +424,12 @@ btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 	 *
 	 * Note: so->dropPin should never change across rescans.
 	 */
-	so->dropPin = (!scan->xs_want_itup &&
-				   IsMVCCSnapshot(scan->xs_snapshot) &&
+	so->dropPin = (IsMVCCSnapshot(scan->xs_snapshot) &&
 				   RelationNeedsWAL(scan->indexRelation) &&
 				   scan->heapRelation != NULL);
+	so->vischeck = scan->xs_want_itup;
+
+	Assert(!scan->xs_want_itup || so->vischeck || !so->dropPin);
 
 	so->markItemIndex = -1;
 	so->needPrimScan = false;
@@ -431,6 +437,12 @@ btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 	so->oppositeDirCheck = false;
 	BTScanPosUnpinIfPinned(so->markPos);
 	BTScanPosInvalidate(so->markPos);
+
+	if (BufferIsValid(so->vmbuf))
+	{
+		ReleaseBuffer(so->vmbuf);
+		so->vmbuf = InvalidBuffer;
+	}
 
 	/*
 	 * Allocate tuple workspace arrays, if needed for an index-only scan and
@@ -472,6 +484,17 @@ btendscan(IndexScanDesc scan)
 
 	so->markItemIndex = -1;
 	BTScanPosUnpinIfPinned(so->markPos);
+
+	if (so->vischecksbuf)
+		pfree(so->vischecksbuf);
+	so->vischecksbuf = NULL;
+	so->vischeckcap = 0;
+
+	if (BufferIsValid(so->vmbuf))
+	{
+		ReleaseBuffer(so->vmbuf);
+		so->vmbuf = InvalidBuffer;
+	}
 
 	/* No need to invalidate positions, the RAM is about to be freed. */
 

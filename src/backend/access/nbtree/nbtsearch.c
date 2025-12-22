@@ -25,7 +25,8 @@
 #include "utils/rel.h"
 
 
-static inline void _bt_drop_lock_and_maybe_pin(Relation rel, BTScanOpaque so);
+static inline void _bt_drop_lock_and_maybe_pin(Relation rel, Relation heaprel,
+											   BTScanOpaque so);
 static Buffer _bt_moveright(Relation rel, Relation heaprel, BTScanInsert key,
 							Buffer buf, bool forupdate, BTStack stack,
 							int access);
@@ -51,12 +52,95 @@ static bool _bt_endpoint(IndexScanDesc scan, ScanDirection dir);
  * Dropping the pin prevents VACUUM from blocking on acquiring a cleanup lock.
  */
 static inline void
-_bt_drop_lock_and_maybe_pin(Relation rel, BTScanOpaque so)
+_bt_drop_lock_and_maybe_pin(Relation rel, Relation heaprel, BTScanOpaque so)
 {
+	if (so->dropPin)
+		so->currPos.lsn = BufferGetLSNAtomic(so->currPos.buf);
+
+	_bt_unlockbuf(rel, so->currPos.buf);
+
+	/*
+	 * Do some visibility checks if this is an index-only scan; allowing us to
+	 * drop the pin on this page before we have returned all tuples from this
+	 * IOS to the executor.
+	 */
+	if (so->vischeck)
+	{
+		TM_IndexVisibilityCheckOp visCheck;
+		BTScanPos sp = &so->currPos;
+		BTScanPosItem *item;
+		int		initOffset = sp->firstItem;
+
+		visCheck.checkntids = 1 + sp->lastItem - initOffset;
+
+		Assert(visCheck.checkntids > 0);
+
+		/* populate the visibility checking buffer */
+		if (so->vischeckcap == 0)
+		{
+			Assert(so->vischecksbuf == NULL);
+			so->vischecksbuf = palloc_array(TM_VisCheck,
+											visCheck.checkntids);
+			so->vischeckcap = visCheck.checkntids;
+		}
+		else if (so->vischeckcap < visCheck.checkntids)
+		{
+			so->vischecksbuf = repalloc_array(so->vischecksbuf,
+											  TM_VisCheck,
+											  visCheck.checkntids);
+			so->vischeckcap = visCheck.checkntids;
+		}
+
+		/* populate the visibility check data */
+		visCheck.checktids = so->vischecksbuf;
+		visCheck.vmbuf = &so->vmbuf;
+
+		item = &so->currPos.items[initOffset];
+
+		for (int i = 0; i < visCheck.checkntids; i++)
+		{
+			TM_VisCheck *check = &visCheck.checktids[i];
+			Assert(item->visrecheck == TMVC_Unchecked);
+			Assert(ItemPointerIsValid(&item->heapTid));
+
+			PopulateTMVischeck(check, &item->heapTid, initOffset);
+
+			item++;
+			initOffset++;
+		}
+
+		/* do the visibility check */
+		table_index_vischeck_tuples(heaprel, &visCheck);
+
+		/* ... and put the results into the BTScanPosItems */
+		for (int i = 0; i < visCheck.checkntids; i++)
+		{
+			TM_VisCheck *check = &visCheck.checktids[i];
+			TMVC_Result result = check->vischeckresult;
+			/* We must have a valid visibility check result */
+			Assert(result != TMVC_Unchecked && result <= TMVC_MAX);
+
+			/* The idxoffnum should be in the expected range */
+			Assert(check->idxoffnum >= so->currPos.firstItem &&
+				   check->idxoffnum <= so->currPos.lastItem);
+
+			item = &so->currPos.items[check->idxoffnum];
+
+			/* Ensure we don't visit the same item twice */
+			Assert(item->visrecheck == TMVC_Unchecked);
+
+			/* The offset number should still indicate the right item */
+			Assert(check->tidblkno == ItemPointerGetBlockNumberNoCheck(&item->heapTid));
+			Assert(check->tidoffset == ItemPointerGetOffsetNumberNoCheck(&item->heapTid));
+
+			/* Store the visibility check result */
+			item->visrecheck = result;
+		}
+	}
+
 	if (!so->dropPin)
 	{
-		/* Just drop the lock (not the pin) */
-		_bt_unlockbuf(rel, so->currPos.buf);
+		/* Only drop the lock (not the pin) */
 		return;
 	}
 
@@ -67,8 +151,7 @@ _bt_drop_lock_and_maybe_pin(Relation rel, BTScanOpaque so)
 	 * when concurrent heap TID recycling by VACUUM might have taken place.
 	 */
 	Assert(RelationNeedsWAL(rel));
-	so->currPos.lsn = BufferGetLSNAtomic(so->currPos.buf);
-	_bt_relbuf(rel, so->currPos.buf);
+	ReleaseBuffer(so->currPos.buf);
 	so->currPos.buf = InvalidBuffer;
 }
 
@@ -1626,9 +1709,25 @@ _bt_returnitem(IndexScanDesc scan, BTScanOpaque so)
 	Assert(BTScanPosIsValid(so->currPos));
 	Assert(so->currPos.itemIndex >= so->currPos.firstItem);
 	Assert(so->currPos.itemIndex <= so->currPos.lastItem);
+	Assert(!scan->xs_want_itup || so->vischeck || !so->dropPin);
 
 	/* Return next item, per amgettuple contract */
 	scan->xs_heaptid = currItem->heapTid;
+
+	if (scan->xs_want_itup)
+	{
+		/*
+		 * If we've already dropped the buffer, we better have already
+		 * checked the visibility state of the tuple:  Without the
+		 * buffer pinned, vacuum may have already cleaned up the tuple
+		 * and marked the page as ALL_VISIBLE.
+		 */
+		Assert(BufferIsValid(so->currPos.buf) ||
+			   currItem->visrecheck != TMVC_Unchecked);
+
+		scan->xs_visrecheck = currItem->visrecheck;
+	}
+
 	if (so->currTuples)
 		scan->xs_itup = (IndexTuple) (so->currTuples + currItem->tupleOffset);
 }
@@ -1785,7 +1884,7 @@ _bt_readfirstpage(IndexScanDesc scan, OffsetNumber offnum, ScanDirection dir)
 		 * so->currPos.buf in preparation for btgettuple returning tuples.
 		 */
 		Assert(BTScanPosIsPinned(so->currPos));
-		_bt_drop_lock_and_maybe_pin(rel, so);
+		_bt_drop_lock_and_maybe_pin(rel, scan->heapRelation, so);
 		return true;
 	}
 
@@ -1945,7 +2044,7 @@ _bt_readnextpage(IndexScanDesc scan, BlockNumber blkno,
 	 */
 	Assert(so->currPos.currPage == blkno);
 	Assert(BTScanPosIsPinned(so->currPos));
-	_bt_drop_lock_and_maybe_pin(rel, so);
+	_bt_drop_lock_and_maybe_pin(rel, scan->heapRelation, so);
 
 	return true;
 }
