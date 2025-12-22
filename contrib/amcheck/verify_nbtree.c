@@ -440,6 +440,9 @@ bt_check_every_level(Relation rel, Relation heaprel, bool heapkeyspace,
 		 */
 		state->snapshot = RegisterSnapshot(GetTransactionSnapshot());
 
+		if (state->snapshot->snapshot_type != SNAPSHOT_MVCC)
+			elog(ERROR, "cannot check index consistency with a non-MVCC snapshot");
+
 		/*
 		 * GetTransactionSnapshot() always acquires a new MVCC snapshot in
 		 * READ COMMITTED mode.  A new snapshot is guaranteed to have all the

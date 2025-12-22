@@ -379,6 +379,8 @@ pg_current_snapshot(PG_FUNCTION_ARGS)
 	cur = GetActiveSnapshot();
 	if (cur == NULL)
 		elog(ERROR, "no active snapshot set");
+	if (cur->snapshot_type != SNAPSHOT_MVCC)
+		elog(ERROR, "pg_current_snapshot() cannot be used with a non-MVCC snapshot");
 
 	/* allocate */
 	nxip = cur->xcnt;

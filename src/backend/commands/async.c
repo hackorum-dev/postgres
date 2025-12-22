@@ -1992,6 +1992,8 @@ asyncQueueProcessPageEntries(QueuePosition *current,
 	alignas(AsyncQueueEntry) char local_buf[QUEUE_PAGESIZE];
 	char	   *local_buf_end = local_buf;
 
+	Assert(snapshot->snapshot_type == SNAPSHOT_MVCC);
+
 	slotno = SimpleLruReadPage_ReadOnly(NotifyCtl, curpage,
 										InvalidTransactionId);
 	page_buffer = NotifyCtl->shared->page_buffer[slotno];

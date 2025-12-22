@@ -146,7 +146,11 @@ find_inheritance_children_extended(Oid parentrelId, bool omit_detached,
 				Snapshot	snap;
 
 				xmin = HeapTupleHeaderGetXmin(inheritsTuple->t_data);
+
+				/* XXX: what should we do with a non-MVCC snapshot? */
 				snap = GetActiveSnapshot();
+				if (snap->snapshot_type != SNAPSHOT_MVCC)
+					elog(ERROR, "cannot look up partition information with a non-MVCC snapshot");
 
 				if (!XidInMVCCSnapshot(xmin, snap))
 				{

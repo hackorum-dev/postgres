@@ -1737,6 +1737,8 @@ SerializeSnapshot(Snapshot snapshot, char *start_address)
 {
 	SerializedSnapshotData serialized_snapshot;
 
+	if (snapshot->snapshot_type != SNAPSHOT_MVCC)
+		elog(ERROR, "cannot serialize non-MVCC snapshot");
 	Assert(snapshot->subxcnt >= 0);
 
 	/* Copy all required fields */

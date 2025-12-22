@@ -102,7 +102,13 @@ RelationGetPartitionDesc(Relation rel, bool omit_detached)
 		Assert(TransactionIdIsValid(rel->rd_partdesc_nodetached_xmin));
 		activesnap = GetActiveSnapshot();
 
-		if (!XidInMVCCSnapshot(rel->rd_partdesc_nodetached_xmin, activesnap))
+		/*
+		 * XXX: Not clear what we can do with a non-MVCC snapshot, so fall
+		 * through to let RelationBuildPartitionDesc() handle it.  (It
+		 * currently just throws an error.)
+		 */
+		if (activesnap->snapshot_type == SNAPSHOT_MVCC &&
+			!XidInMVCCSnapshot(rel->rd_partdesc_nodetached_xmin, activesnap))
 			return rel->rd_partdesc_nodetached;
 	}
 

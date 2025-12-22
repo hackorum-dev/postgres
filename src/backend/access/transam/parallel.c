@@ -229,6 +229,11 @@ InitializeParallelDSM(ParallelContext *pcxt)
 	Snapshot	transaction_snapshot = GetTransactionSnapshot();
 	Snapshot	active_snapshot = GetActiveSnapshot();
 
+	if (transaction_snapshot->snapshot_type != SNAPSHOT_MVCC)
+		elog(ERROR, "cannot use parallel workers with non-MVCC transaction snapshot");
+	if (active_snapshot->snapshot_type != SNAPSHOT_MVCC)
+		elog(ERROR, "cannot use parallel workers with non-MVCC active snapshot");
+
 	/* We might be running in a very short-lived memory context. */
 	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
 
