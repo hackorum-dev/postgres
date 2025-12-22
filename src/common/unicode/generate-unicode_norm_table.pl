@@ -17,7 +17,7 @@ use lib "$FindBin::RealBin/../../tools/";
 use TwoStageTable;
 use Text::Wrap;
 
-local $Text::Wrap::columns = 80;
+$Text::Wrap::columns = 80;
 
 my $output_path = '.';
 
@@ -88,7 +88,10 @@ while (my $line = <$FH>)
 		class => $class,
 		compat => $compat,
 		decomp => \@decomp_elts,
-		decomp_length => scalar @decomp_elts);
+		decomp_length => scalar @decomp_elts,
+		canonical => [],
+		compatibility => [],
+		decomp_eq => 0);
 	push(@characters, \%char_entry);
 	$character_hash{ hex($code) } = \%char_entry;
 }
@@ -131,6 +134,7 @@ typedef struct
 #define DECOMP_COMPAT		0x20	/* compatibility mapping */
 
 #define DECOMPOSITION_SIZE(x) ((x)->dec_size_flags & 0x1F)
+#define DECOMPOSITION_COMPAT_SIZE(x) (UnicodeDecompSizes[(x)->dec_index])
 #define DECOMPOSITION_NO_COMPOSE(x) (((x)->dec_size_flags & (DECOMP_NO_COMPOSE | DECOMP_COMPAT)) != 0)
 #define DECOMPOSITION_IS_INLINE(x) (((x)->dec_size_flags & DECOMP_INLINE) != 0)
 #define DECOMPOSITION_IS_COMPAT(x) (((x)->dec_size_flags & DECOMP_COMPAT) != 0)
@@ -139,7 +143,21 @@ HEADER
 
 # Sorting the values so that the table is always generated in the same way.
 my @sorted_codes = sort { $a <=> $b } keys %character_hash;
-my @decomp_codepoints;
+
+foreach my $code (@sorted_codes)
+{
+	my $entry = $character_hash{$code};
+
+	# Full Canonical Decomposition.
+	$entry->{canonical} =
+	  resolve_decomposition($entry->{decomp}, \%character_hash, 0);
+	# Full Compatibility Decomposition.
+	$entry->{compatibility} =
+	  resolve_decomposition($entry->{decomp}, \%character_hash);
+}
+
+my @decomp_codepoints = (0);
+my @compat_sizes = (0);
 
 # Collect all codepoints of the decomposition and remove duplicate sequences.
 # Be sure to sort by number of codepoints, from largest to smallest.
@@ -151,11 +169,33 @@ foreach my $code (
 	} @sorted_codes)
 {
 	my $entry = $character_hash{$code};
-	my $decomp = $entry->{decomp};
+	my $canonical = $entry->{canonical};
+	my $compatibility = $entry->{compatibility};
+
+	# Canonical and Compatibility have one index for the UnicodeDecompCodepoints
+	# table. The difference is that different Canonical and Compatibility values
+	# are written to the tables sequentially, the size from Canonical is
+	# specified in UnicodeDecompMain, and the size from Compatibility is
+	# specified in a separately created uint8 UnicodeDecompSizes table.
+	#
+	# That is, if we have an index from the UnicodeDecompMain table, the same
+	# index will be suitable for obtaining the size from UnicodeDecompSizes.
+	$entry->{decomp_eq} = arrays_equal($canonical, $compatibility);
+
+	if (!$entry->{decomp_eq})
+	{
+		my $index = scalar @decomp_codepoints;
+		push @decomp_codepoints, @$canonical, @$compatibility;
+
+		$compat_sizes[$index] = scalar @$compatibility;
+		$entry->{decomp_index} = $index;
+
+		next;
+	}
 
 	# Skip those values that will be stored directly in the main table.
-	if ($entry->{decomp_length} == 0
-		|| ($entry->{decomp_length} == 1 && length($decomp->[0]) <= 4))
+	if (@$canonical == 0
+		|| (@$canonical == 1 && length($canonical->[0]) <= 4))
 	{
 		next;
 	}
@@ -163,15 +203,17 @@ foreach my $code (
 	# Search for a sequence of decomposition codepoints in the existing data.
 	# If found, we assign a record index; otherwise, we add the sequence to the
 	# end of the existing data.
-	my $index = contains_subarray(\@decomp_codepoints, $decomp);
+	my $index = contains_subarray(\@decomp_codepoints, $canonical);
 
-	if ($index == -1)
+	if ((exists $compat_sizes[$index] && $compat_sizes[$index])
+		|| $index == -1)
 	{
 		$index = scalar @decomp_codepoints;
-		push @decomp_codepoints, @$decomp;
+		push @decomp_codepoints, @$canonical;
 	}
 
 	$entry->{decomp_index} = $index;
+	$compat_sizes[$index] = 0;
 }
 
 my $main_index = 1;
@@ -179,7 +221,7 @@ my @decomp_main = ("\t{0, 0, 0},\n");
 my %duplicates;
 my %inverse;
 my %decomp_index;
-my $decomp_gsa = new TwoStageTable(6);
+my $decomp_gsa = TwoStageTable->new(6);
 
 my $last_code = $characters[-1]->{code};
 foreach my $char (@characters)
@@ -188,14 +230,14 @@ foreach my $char (@characters)
 	my $class = $char->{class};
 	my $compat = $char->{compat};
 	my $decomp = $char->{decomp};
+	my $canonical = $char->{canonical};
 	my $index = $char->{decomp_index};
 
 	# Decomposition size
 	# Print size of decomposition
 	my $decomp_size = scalar(@$decomp);
-	die if $decomp_size > 0x1F;    # to not overrun bitmask
 
-	my $first_decomp = shift @$decomp;
+	my $first_decomp = $decomp->[0];
 	my $first_num = $first_decomp ? hex($first_decomp) : 0;
 
 	my $flags = "";
@@ -234,13 +276,19 @@ foreach my $char (@characters)
 		# src/common/unicode_norm.c.
 		if (!($flags =~ /DECOMP_COMPAT/ || $flags =~ /DECOMP_NO_COMPOSE/))
 		{
-			$inverse{$first_num}->{ hex($decomp->[0]) } = hex($code);
+			$inverse{$first_num}->{ hex($decomp->[1]) } = hex($code);
 		}
 	}
 
 	my $line;
+	$decomp_size = scalar @$canonical;
+	die if $decomp_size > 0x1F;    # to not overrun bitmask
 
-	if ($decomp_size == 0)
+	if (!$char->{decomp_eq})
+	{
+		$line = "\t{$class, $decomp_size$flags, $index}";
+	}
+	elsif ($decomp_size == 0)
 	{
 		$line = "\t{$class, 0$flags, 0}";
 	}
@@ -281,13 +329,21 @@ foreach my $char (@characters)
 	$decomp_index{ hex($code) } = $main_index++;
 }
 
-# Сompile a table with sequences of codepoints for decomposition.
+# Compile a table with sequences of codepoints for decomposition.
 my @decomp_lines;
 
 foreach my $index (0 .. $#decomp_codepoints)
 {
 	my $code = $decomp_codepoints[$index];
 	push @decomp_lines, "0x$code";
+}
+
+# Сompile a table with sequences of sizes for full compatibility decomposition.
+my @sizes_lines;
+
+foreach my $index (0 .. $#compat_sizes)
+{
+	push @sizes_lines, $compat_sizes[$index] || 0;
 }
 
 # Preparing data for codepoint composition. A situation where two code points
@@ -303,7 +359,7 @@ foreach my $index (0 .. $#decomp_codepoints)
 my %inverse_index;
 my @inverse_second;
 my @inverse_codes;
-my $inverse_gsa = new TwoStageTable(6);
+my $inverse_gsa = TwoStageTable->new(6);
 
 # The reserved value for "not found", like a NULL.
 push @inverse_second, 0, 0, 0;
@@ -319,7 +375,7 @@ foreach my $first (sort { $a <=> $b } keys %inverse)
 
 	# Store a 32-bit number in two 16-bit numbers.
 	push @inverse_second, $sorted[0] >> 16;
-	push @inverse_second, $sorted[0] & ~(((1 << 16) - 1) << 16);
+	push @inverse_second, $sorted[0] & 0xFFFF;
 	# Store the number of entries.
 	push @inverse_second, $sorted[-1] - $sorted[0];
 
@@ -340,10 +396,16 @@ foreach my $first (sort { $a <=> $b } keys %inverse)
 my $main_string = join "", @decomp_main;
 my $decomp_length = scalar @decomp_lines;
 my $decomp_string = wrap("\t", "\t", join(", ", @decomp_lines));
+my $sizes_length = scalar @compat_sizes;
+my $sizes_string = wrap("\t", "\t", join(", ", @sizes_lines));
 my $inverse_length = scalar @inverse_codes;
 my $inverse_string = wrap("\t", "\t", join(", ", @inverse_codes));
 my $second_length = scalar @inverse_second;
 my $second_string = wrap("\t", "\t", join(", ", @inverse_second));
+
+die "the sizes of the UnicodeDecompCodepoints and UnicodeDecompSizes tables "
+  . "do not match"
+  if $decomp_length != $sizes_length;
 
 # Print the array of decomposed codes.
 print $OT <<HEADER;
@@ -357,6 +419,14 @@ $main_string
 static const uint32 UnicodeDecompCodepoints[$decomp_length] =
 {
 $decomp_string
+};
+
+/*
+ * Table of sizes for full compatibility decomposition.
+ */
+static const uint8 UnicodeDecompSizes[$sizes_length] =
+{
+$sizes_string
 };
 
 /*
@@ -469,4 +539,44 @@ sub contains_subarray
 	}
 
 	return -1;
+}
+
+sub resolve_decomposition
+{
+	my ($decomps, $index, $type) = @_;
+	my ($res, @map);
+
+	foreach my $cp (@$decomps)
+	{
+		my $entry = $index->{ hex($cp) };
+
+		if (   defined $entry
+			&& scalar @{ $entry->{decomp} }
+			&& (!defined $type || $type == $entry->{compat}))
+		{
+			$res = resolve_decomposition($entry->{decomp}, $index, $type);
+		}
+		else
+		{
+			$res = [$cp];
+		}
+
+		push @map, @$res;
+	}
+
+	return \@map;
+}
+
+sub arrays_equal
+{
+	my ($arr1, $arr2) = @_;
+
+	return 0 if @$arr1 != @$arr2;
+
+	for my $i (0 .. $#$arr1)
+	{
+		return 0 if $arr1->[$i] ne $arr2->[$i];
+	}
+
+	return 1;
 }
