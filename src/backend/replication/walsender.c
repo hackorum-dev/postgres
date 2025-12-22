@@ -49,6 +49,7 @@
 #include "postgres.h"
 
 #include <signal.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "access/timeline.h"
@@ -303,6 +304,7 @@ static void StartLogicalReplication(StartReplicationCmd *cmd);
 static void ProcessStandbyMessage(void);
 static void ProcessStandbyReplyMessage(void);
 static void ProcessStandbyHSFeedbackMessage(void);
+static void ProcessStandbyArchiveQueryMessage(void);
 static void ProcessStandbyPSRequestMessage(void);
 static void ProcessRepliesIfAny(void);
 static void ProcessPendingWrites(void);
@@ -2493,6 +2495,10 @@ ProcessStandbyMessage(void)
 			ProcessStandbyHSFeedbackMessage();
 			break;
 
+		case PqReplMsg_ArchiveStatusQuery:
+			ProcessStandbyArchiveQueryMessage();
+			break;
+
 		case PqReplMsg_PrimaryStatusRequest:
 			ProcessStandbyPSRequestMessage();
 			break;
@@ -2844,6 +2850,84 @@ ProcessStandbyHSFeedbackMessage(void)
 		else
 			MyProc->xmin = feedbackXmin;
 	}
+}
+
+/*
+ * Process archive status query from standby.
+ *
+ * Standby sends us segment numbers for which it has .ready files, and we
+ * respond with the subset that don't have .ready files on the primary
+ * (meaning they're either archived or not yet ready for archiving).
+ */
+static void
+ProcessStandbyArchiveQueryMessage(void)
+{
+	int				num_segments;
+	int				num_archived = 0;
+	StringInfoData	response_message;
+	StringInfoData	segments_message;
+
+	/* Read the count of segments from the standby */
+	num_segments = pq_getmsgint(&reply_message, 4);
+
+	elog(DEBUG2, "received archive status query for %d segments", num_segments);
+
+	initStringInfoExt(&segments_message,
+					  num_segments * (sizeof(XLogSegNo) + sizeof(TimeLineID)));
+
+	/* Process each segment */
+	for (int i = 0; i < num_segments; i++)
+	{
+		XLogSegNo	segno;
+		TimeLineID	tli;
+		char		xlogfname[MAXFNAMELEN];
+		char		archiveReady[MAXPGPATH];
+		struct stat stat_buf;
+
+		tli = pq_getmsgint(&reply_message, 4);
+		segno = pq_getmsgint64(&reply_message);
+
+		/* Check for .ready file on the primary */
+		XLogFileName(xlogfname, tli, segno, wal_segment_size);
+		StatusFilePath(archiveReady, xlogfname, ".ready");
+
+		/*
+		 * If the .ready file does not exist on the primary (ENOENT), this
+		 * segment is either already archived or not yet ready for archiving.
+		 * The standby can safely mark it as .done.
+		 *
+		 * If stat() fails for other reasons (permissions, I/O error, etc.),
+		 * we don't include the segment in the response to be conservative.
+		 */
+		if (stat(archiveReady, &stat_buf) != 0)
+		{
+			if (errno == ENOENT)
+			{
+				pq_sendint32(&segments_message, tli);
+				pq_sendint64(&segments_message, segno);
+				num_archived++;
+				elog(DEBUG2, "segment %s has no .ready file, can be marked .done",
+					 xlogfname);
+			}
+			else
+			{
+				elog(DEBUG2, "could not stat archive status file \"%s\": %m, skipping",
+					 archiveReady);
+			}
+		}
+	}
+
+	elog(DEBUG2, "responding with %d archived segments", num_archived);
+
+	/* Send response to standby */
+	pq_beginmessage(&response_message, PqMsg_CopyData);
+	pq_sendbyte(&response_message, PqReplMsg_ArchiveStatusResponse);
+	pq_sendint32(&response_message, num_archived);
+	pq_sendbytes(&response_message, segments_message.data, segments_message.len);
+	pq_endmessage(&response_message);
+	pq_flush();
+
+	destroyStringInfo(&segments_message);
 }
 
 /*
