@@ -2772,7 +2772,7 @@ sub poll_query_until
 {
 	my ($self, $dbname, $query, $expected) = @_;
 
-	local %ENV = $self->_get_env();
+	my %env = $self->_get_env();
 
 	$expected = 't' unless defined($expected);    # default value
 
@@ -2782,41 +2782,12 @@ sub poll_query_until
 		'--dbname' => $self->connstr($dbname)
 	];
 	my ($stdout, $stderr);
-	my $max_attempts = 10 * $PostgreSQL::Test::Utils::timeout_default;
-	my $attempts = 0;
 
-	while ($attempts < $max_attempts)
-	{
-		my $result = IPC::Run::run $cmd,
-		  '<' => \$query,
-		  '>' => \$stdout,
-		  '2>' => \$stderr;
-
-		chomp($stdout);
-		chomp($stderr);
-
-		if ($stdout eq $expected && $stderr eq '')
-		{
-			return 1;
-		}
-
-		# Wait 0.1 second before retrying.
-		usleep(100_000);
-
-		$attempts++;
-	}
-
-	# Give up. Print the output from the last attempt, hopefully that's useful
-	# for debugging.
-	diag qq(poll_query_until timed out executing this query:
-$query
-expecting this output:
-$expected
-last actual query output:
-$stdout
-with stderr:
-$stderr);
-	return 0;
+	return PostgreSQL::Test::Utils::poll_cmd($cmd,
+		input => $query,
+		expected => $expected,
+		env => \%env
+	);
 }
 
 =pod

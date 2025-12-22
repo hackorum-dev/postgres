@@ -57,6 +57,7 @@ use File::stat qw(stat);
 use File::Temp ();
 use IPC::Run;
 use POSIX qw(locale_h);
+use Time::HiRes qw(usleep);
 use PostgreSQL::Test::SimpleTee;
 use Time::HiRes qw(usleep);
 
@@ -587,6 +588,151 @@ sub append_to_file
 	print $fh $str;
 	close $fh;
 	return;
+}
+=pod
+
+=item poll_until($condition, [, %options])
+
+Run callback B<$condition> repeatedly, until it returns 1
+Continues polling if B<$condition> returns an error result.
+Times out after $PostgreSQL::Test::Utils::timeout_default seconds.
+Returns 1 if successful, 0 if timed out.
+
+=over
+
+=item interval => $number
+
+Number of microseconds to wait before next poll.
+Default is 100_000 (0.1 second).
+
+=item max_attempts => $number
+
+Maximum number of polling attempts.
+Default is B<$PostgreSQL::Test::Utils::timeout_default> / B<$interval>.
+
+=back
+
+=cut
+
+sub poll_until
+{
+	my ($condition, %args) = @_;
+
+	my $interval = $args{interval} // 100_000;
+	my $max_attempts = $args{max_attempts} // int($timeout_default * 1_000_000 / $interval);
+
+	my $attempts = 0;
+	while ($attempts < $max_attempts)
+	{
+		if ($condition->())
+		{
+			return 1;
+		}
+
+		usleep($interval);
+
+		$attempts++;
+	}
+
+	return 0;
+}
+
+=pod
+
+=item poll_cmd($cmd, %options)
+
+Run B<$cmd> repeatedly until it returns the expected result.
+Continues polling if B<$cmd> returns an error result.
+Times out after B<$PostgreSQL::Test::Utils::timeout_default> seconds.
+Returns 1 if successful, 0 if timed out.
+
+=over
+
+=item expected => $string
+
+Expected stdout output. If not provided, checks for zero return code.
+
+=item input => $string
+
+Optional input to pass to the command via stdin.
+
+=item interval => $number
+
+Number of microseconds to wait before next poll.
+Default is 100_000 (0.1 second).
+
+=item max_attempts => $number
+
+Maximum number of polling attempts.
+Default is B<$PostgreSQL::Test::Utils::timeout_default> / B<$interval>.
+
+=item env => \%hash
+
+Hash reference with environment variables to set for the command.
+
+=back
+
+=cut
+
+sub poll_cmd
+{
+	my ($cmd, %args) = @_;
+
+	my $expected = $args{expected};
+	my $input = $args{input};
+	my $env = $args{env};
+	my $max_attempts = $args{max_attempts};
+	my $interval = $args{interval};
+
+	my ($stdout, $stderr);
+
+	local %ENV = %$env if defined($env);
+
+	my $condition = sub {
+		my $result;
+
+		$result = IPC::Run::run $cmd,
+		  '<' => \$input,
+		  '>' => \$stdout,
+		  '2>' => \$stderr;
+
+		chomp($stdout);
+		chomp($stderr);
+
+		if (defined($expected))
+		{
+			return ($stdout eq $expected && $stderr eq '');
+		}
+		else
+		{
+			return $result;
+		}
+	};
+
+	my %poll_args = ();
+	$poll_args{max_attempts} = $max_attempts if defined($max_attempts);
+	$poll_args{interval} = $interval if defined($interval);
+
+	my $result = poll_until($condition, %poll_args);
+
+	if (!$result)
+	{
+		my $cmd_str = join(' ', @$cmd);
+		my $expected_str = defined($expected) ? $expected : '<successful exit code>';
+
+		diag qq(poll_cmd timed out executing this cmd:
+$cmd_str
+with input:
+$input
+expecting this output:
+$expected_str
+last actual cmd output:
+$stdout
+with stderr:
+$stderr);
+	}
+
+	return $result;
 }
 
 =pod
