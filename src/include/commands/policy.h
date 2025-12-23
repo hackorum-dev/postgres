@@ -25,7 +25,7 @@ extern void RemovePolicyById(Oid policy_id);
 
 extern bool RemoveRoleFromObjectPolicy(Oid roleid, Oid classid, Oid policy_id);
 
-extern ObjectAddress CreatePolicy(CreatePolicyStmt *stmt);
+extern ObjectAddress CreatePolicy(CreatePolicyStmt *stmt, const char *queryString);
 extern ObjectAddress AlterPolicy(AlterPolicyStmt *stmt);
 
 extern Oid	get_relation_policy_oid(Oid relid, const char *policy_name,

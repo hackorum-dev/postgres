@@ -3208,6 +3208,74 @@ transformStatsStmt(Oid relid, CreateStatsStmt *stmt, const char *queryString)
 	return stmt;
 }
 
+/*
+ * transformPolicyStmt - parse analysis for CREATE POLICY
+ *
+ * To avoid race conditions, it's important that this function relies only on
+ * the relid on stmt->rte (and not on stmt->table) to determine the target
+ * relation.
+ */
+CreatePolicyStmt *
+transformPolicyStmt(CreatePolicyStmt *stmt, const char *queryString)
+{
+	Relation	target_table;
+	ParseNamespaceItem *nsitem;
+	ParseState *qual_pstate;
+	ParseState *with_check_pstate;
+
+	/* Nothing to do if statement already transformed. */
+	if (stmt->transformed)
+	{
+		Assert(stmt->rte != NULL);
+		return stmt;
+	}
+
+	target_table = relation_open(stmt->rte->relid, NoLock);
+
+	/* Parse the supplied clause */
+	qual_pstate = make_parsestate(NULL);
+	with_check_pstate = make_parsestate(NULL);
+
+	qual_pstate->p_sourcetext = queryString;
+	with_check_pstate->p_sourcetext = queryString;
+
+	/* Add for the regular security quals */
+	nsitem = addRangeTableEntryForRelation(qual_pstate, target_table,
+										   AccessShareLock,
+										   NULL, false, false);
+	addNSItemToQuery(qual_pstate, nsitem, false, true, true);
+
+	/* Add for the with-check quals */
+	nsitem = addRangeTableEntryForRelation(with_check_pstate, target_table,
+										   AccessShareLock,
+										   NULL, false, false);
+	addNSItemToQuery(with_check_pstate, nsitem, false, true, true);
+
+	stmt->qual = transformWhereClause(qual_pstate,
+									  stmt->qual,
+									  EXPR_KIND_POLICY,
+									  "POLICY");
+
+	stmt->with_check = transformWhereClause(with_check_pstate,
+											stmt->with_check,
+											EXPR_KIND_POLICY,
+											"POLICY");
+
+	/* Fix up collation information */
+	assign_expr_collations(qual_pstate, stmt->qual);
+	assign_expr_collations(with_check_pstate, stmt->with_check);
+
+	free_parsestate(qual_pstate);
+	free_parsestate(with_check_pstate);
+
+	relation_close(target_table, NoLock);
+
+	/* Mark statement as successfully transformed */
+	stmt->transformed = true;
+
+	return stmt;
+}
+
 
 /*
  * transformRuleStmt -

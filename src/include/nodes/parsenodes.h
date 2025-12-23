@@ -3109,6 +3109,7 @@ typedef struct CreatePolicyStmt
 	List	   *roles;			/* the roles associated with the policy */
 	Node	   *qual;			/* the policy's condition */
 	Node	   *with_check;		/* the policy's WITH CHECK condition. */
+	bool		transformed;	/* true when transformPolicyStmt is finished */
 } CreatePolicyStmt;
 
 /*----------------------

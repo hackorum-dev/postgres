@@ -28,6 +28,7 @@ extern IndexStmt *transformIndexStmt(Oid relid, IndexStmt *stmt,
 									 const char *queryString);
 extern CreateStatsStmt *transformStatsStmt(Oid relid, CreateStatsStmt *stmt,
 										   const char *queryString);
+extern CreatePolicyStmt *transformPolicyStmt(CreatePolicyStmt *stmt, const char *queryString);
 extern void transformRuleStmt(RuleStmt *stmt, const char *queryString,
 							  List **actions, Node **whereClause);
 extern List *transformCreateSchemaStmtElements(List *schemaElts,

@@ -1826,7 +1826,7 @@ ProcessUtilitySlow(ParseState *pstate,
 				break;
 
 			case T_CreatePolicyStmt:	/* CREATE POLICY */
-				address = CreatePolicy((CreatePolicyStmt *) parsetree);
+				address = CreatePolicy(castNode(CreatePolicyStmt, parsetree), queryString);
 				break;
 
 			case T_AlterPolicyStmt: /* ALTER POLICY */

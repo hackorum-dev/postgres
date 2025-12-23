@@ -33,6 +33,7 @@
 #include "parser/parse_collate.h"
 #include "parser/parse_node.h"
 #include "parser/parse_relation.h"
+#include "parser/parse_utilcmd.h"
 #include "rewrite/rewriteManip.h"
 #include "rewrite/rowsecurity.h"
 #include "utils/acl.h"
@@ -564,9 +565,10 @@ RemoveRoleFromObjectPolicy(Oid roleid, Oid classid, Oid policy_id)
  *	 handles the execution of the CREATE POLICY command.
  *
  * stmt - the CreatePolicyStmt that describes the policy to create.
+ * queryString - the source text of the CREATE POLICY command.
  */
 ObjectAddress
-CreatePolicy(CreatePolicyStmt *stmt)
+CreatePolicy(CreatePolicyStmt *stmt, const char *queryString)
 {
 	Relation	pg_policy_rel;
 	Oid			policy_id;
@@ -576,9 +578,7 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	Datum	   *role_oids;
 	int			nitems = 0;
 	ArrayType  *role_ids;
-	ParseState *qual_pstate;
-	ParseState *with_check_pstate;
-	ParseNamespaceItem *nsitem;
+	List	   *rtable;
 	Node	   *qual;
 	Node	   *with_check_qual;
 	ScanKeyData skey[2];
@@ -615,10 +615,6 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	role_oids = policy_role_list_to_array(stmt->roles, &nitems);
 	role_ids = construct_array_builtin(role_oids, nitems, OIDOID);
 
-	/* Parse the supplied clause */
-	qual_pstate = make_parsestate(NULL);
-	with_check_pstate = make_parsestate(NULL);
-
 	/* zero-clear */
 	memset(values, 0, sizeof(values));
 	memset(isnull, 0, sizeof(isnull));
@@ -640,34 +636,16 @@ CreatePolicy(CreatePolicyStmt *stmt)
 		stmt->rte->rellockmode = AccessExclusiveLock;
 	}
 
-	/* Open target_table to build quals. No additional lock is necessary. */
+	rtable = list_make1(stmt->rte);
+
+	/* do parse analysis for qual and check qual */
+	transformPolicyStmt(stmt, NULL);
+
+	qual = stmt->qual;
+	with_check_qual = stmt->with_check;
+
+	/* Open target_table, No additional lock is necessary. */
 	target_table = relation_open(table_id, NoLock);
-
-	/* Add for the regular security quals */
-	nsitem = addRangeTableEntryForRelation(qual_pstate, target_table,
-										   AccessShareLock,
-										   NULL, false, false);
-	addNSItemToQuery(qual_pstate, nsitem, false, true, true);
-
-	/* Add for the with-check quals */
-	nsitem = addRangeTableEntryForRelation(with_check_pstate, target_table,
-										   AccessShareLock,
-										   NULL, false, false);
-	addNSItemToQuery(with_check_pstate, nsitem, false, true, true);
-
-	qual = transformWhereClause(qual_pstate,
-								stmt->qual,
-								EXPR_KIND_POLICY,
-								"POLICY");
-
-	with_check_qual = transformWhereClause(with_check_pstate,
-										   stmt->with_check,
-										   EXPR_KIND_POLICY,
-										   "POLICY");
-
-	/* Fix up collation information */
-	assign_expr_collations(qual_pstate, qual);
-	assign_expr_collations(with_check_pstate, with_check_qual);
 
 	/* Open pg_policy catalog */
 	pg_policy_rel = table_open(PolicyRelationId, RowExclusiveLock);
@@ -735,11 +713,11 @@ CreatePolicy(CreatePolicyStmt *stmt)
 
 	recordDependencyOn(&myself, &target, DEPENDENCY_AUTO);
 
-	recordDependencyOnExpr(&myself, qual, qual_pstate->p_rtable,
+	recordDependencyOnExpr(&myself, qual, rtable,
 						   DEPENDENCY_NORMAL);
 
 	recordDependencyOnExpr(&myself, with_check_qual,
-						   with_check_pstate->p_rtable, DEPENDENCY_NORMAL);
+						   rtable, DEPENDENCY_NORMAL);
 
 	/* Register role dependencies */
 	target.classId = AuthIdRelationId;
@@ -760,8 +738,6 @@ CreatePolicy(CreatePolicyStmt *stmt)
 
 	/* Clean up. */
 	heap_freetuple(policy_tuple);
-	free_parsestate(qual_pstate);
-	free_parsestate(with_check_pstate);
 	systable_endscan(sscan);
 	relation_close(target_table, NoLock);
 	table_close(pg_policy_rel, RowExclusiveLock);

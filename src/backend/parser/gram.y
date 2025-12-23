@@ -6029,6 +6029,7 @@ CreatePolicyStmt:
 					n->roles = $8;
 					n->qual = $9;
 					n->with_check = $10;
+					n->transformed = false;
 					$$ = (Node *) n;
 				}
 		;
