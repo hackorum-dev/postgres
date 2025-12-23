@@ -6023,6 +6023,7 @@ CreatePolicyStmt:
 
 					n->policy_name = $3;
 					n->table = $5;
+					n->rte = NULL;
 					n->permissive = $6;
 					n->cmd_name = $7;
 					n->roles = $8;

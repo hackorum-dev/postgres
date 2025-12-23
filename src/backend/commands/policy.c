@@ -623,11 +623,22 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	memset(values, 0, sizeof(values));
 	memset(isnull, 0, sizeof(isnull));
 
-	/* Get id of table.  Also handles permissions checks. */
-	table_id = RangeVarGetRelidExtended(stmt->table, AccessExclusiveLock,
-										0,
-										RangeVarCallbackForPolicy,
-										stmt);
+	if (stmt->rte != NULL)
+		table_id = stmt->rte->relid;
+	else
+	{
+		/* Get id of table.  Also handles permissions checks. */
+		table_id = RangeVarGetRelidExtended(stmt->table, AccessExclusiveLock,
+											0,
+											RangeVarCallbackForPolicy,
+											stmt);
+
+		/* Create a range table entry. */
+		stmt->rte = makeNode(RangeTblEntry);
+		stmt->rte->rtekind = RTE_RELATION;
+		stmt->rte->relid = table_id;
+		stmt->rte->rellockmode = AccessExclusiveLock;
+	}
 
 	/* Open target_table to build quals. No additional lock is necessary. */
 	target_table = relation_open(table_id, NoLock);

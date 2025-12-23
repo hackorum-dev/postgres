@@ -3094,6 +3094,16 @@ typedef struct CreatePolicyStmt
 	NodeTag		type;
 	char	   *policy_name;	/* Policy's name */
 	RangeVar   *table;			/* the table name the policy applies to */
+
+	/*
+	 * RangeTblEntry for the table. This is useful for avoid repeated name
+	 * lookups issue. If CreatePolicyStmt.table has been looked up, we should
+	 * not rely on it to resolve the relation again, use this rte field
+	 * instead. This is useful when calling CreatePolicy not directly from
+	 * parser.
+	 */
+	RangeTblEntry *rte;
+
 	char	   *cmd_name;		/* the command name the policy applies to */
 	bool		permissive;		/* restrictive or permissive policy */
 	List	   *roles;			/* the roles associated with the policy */
