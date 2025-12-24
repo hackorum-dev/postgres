@@ -121,7 +121,7 @@ parse_publication_options(ParseState *pstate,
 			pubactions->pubtruncate = false;
 
 			*publish_given = true;
-			publish = defGetString(defel);
+			publish = pstrdup(defGetString(defel));
 
 			if (!SplitIdentifierString(publish, ',', &publish_list))
 				ereport(ERROR,
