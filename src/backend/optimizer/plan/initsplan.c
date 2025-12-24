@@ -3440,9 +3440,80 @@ add_base_clause_to_rel(PlannerInfo *root, Index relid,
 	 */
 	if (!rte->inh || rte->relkind == RELKIND_PARTITIONED_TABLE)
 	{
-		/* Don't add the clause if it is always true */
+		/*
+		 * Don't add the clause if it is always true.  However, we must keep
+		 * IS NOT NULL clauses if a partial index needs them to prove its
+		 * predicate is satisfied.  Without this, a partial index with
+		 * predicate "WHERE col IS NOT NULL" would not be usable for min/max
+		 * optimization on a NOT NULL column, because the IS NOT NULL clause
+		 * would be removed as "always true" before check_index_predicates
+		 * runs.
+		 */
 		if (restriction_is_always_true(root, restrictinfo))
-			return;
+		{
+			bool		dominated_by_notnull = false;
+
+			/*
+			 * Check if this is an IS NOT NULL clause on a simple Var that
+			 * matches an IS NOT NULL predicate in some partial index.
+			 */
+			if (IsA(restrictinfo->clause, NullTest))
+			{
+				NullTest   *ntest = (NullTest *) restrictinfo->clause;
+
+				if (ntest->nulltesttype == IS_NOT_NULL &&
+					IsA(ntest->arg, Var))
+				{
+					Var		   *var = (Var *) ntest->arg;
+					ListCell   *lc;
+
+					foreach(lc, rel->indexlist)
+					{
+						IndexOptInfo *index = (IndexOptInfo *) lfirst(lc);
+						ListCell   *lcp;
+
+						/* Skip non-partial indexes */
+						if (index->indpred == NIL)
+							continue;
+
+						/* Check each predicate clause */
+						foreach(lcp, index->indpred)
+						{
+							Node	   *pred = (Node *) lfirst(lcp);
+
+							if (IsA(pred, NullTest))
+							{
+								NullTest   *pntest = (NullTest *) pred;
+
+								if (pntest->nulltesttype == IS_NOT_NULL &&
+									IsA(pntest->arg, Var))
+								{
+									Var		   *pvar = (Var *) pntest->arg;
+
+									/*
+									 * Match if same column.  The varno in the
+									 * index predicate should already be
+									 * adjusted to match the relation.
+									 */
+									if (pvar->varno == var->varno &&
+										pvar->varattno == var->varattno)
+									{
+										dominated_by_notnull = true;
+										break;
+									}
+								}
+							}
+						}
+
+						if (dominated_by_notnull)
+							break;
+					}
+				}
+			}
+
+			if (!dominated_by_notnull)
+				return;
+		}
 
 		/*
 		 * Substitute the origin qual with constant-FALSE if it is provably
