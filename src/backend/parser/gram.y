@@ -6030,6 +6030,7 @@ CreatePolicyStmt:
 					n->qual = $9;
 					n->with_check = $10;
 					n->transformed = false;
+					n->polcomment = NULL;
 					$$ = (Node *) n;
 				}
 		;

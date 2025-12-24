@@ -60,6 +60,7 @@
 #include "commands/comment.h"
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
+#include "commands/policy.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
@@ -208,6 +209,8 @@ typedef struct AlteredTableInfo
 	char	   *clusterOnIndex; /* index to use for CLUSTER */
 	List	   *changedStatisticsOids;	/* OIDs of statistics to rebuild */
 	List	   *changedStatisticsDefs;	/* string definitions of same */
+	List	   *changedPolicyOids;	/* OIDs of policy to rebuild */
+	List	   *changedPolicyDefs;	/* string definitions of same */
 } AlteredTableInfo;
 
 /* Struct describing one new constraint to check in Phase 3 scan */
@@ -546,6 +549,8 @@ static ObjectAddress ATExecAddIndex(AlteredTableInfo *tab, Relation rel,
 									IndexStmt *stmt, bool is_rebuild, LOCKMODE lockmode);
 static ObjectAddress ATExecAddStatistics(AlteredTableInfo *tab, Relation rel,
 										 CreateStatsStmt *stmt, bool is_rebuild, LOCKMODE lockmode);
+static ObjectAddress ATExecAddPolicies(AlteredTableInfo *tab, Relation rel,
+									   CreatePolicyStmt *stmt, bool is_rebuild, LOCKMODE lockmode);
 static ObjectAddress ATExecAddConstraint(List **wqueue,
 										 AlteredTableInfo *tab, Relation rel,
 										 Constraint *newConstraint, bool recurse, bool is_readd,
@@ -648,9 +653,12 @@ static ObjectAddress ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 										   AlterTableCmd *cmd, LOCKMODE lockmode);
 static void RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
 											  Relation rel, AttrNumber attnum, const char *colName);
+static void CheckDepentPolicies(AlteredTableInfo *tab, AlterTableType subtype,
+								Relation rel, AttrNumber attnum, const char *colName);
 static void RememberConstraintForRebuilding(Oid conoid, AlteredTableInfo *tab);
 static void RememberIndexForRebuilding(Oid indoid, AlteredTableInfo *tab);
 static void RememberStatisticsForRebuilding(Oid stxoid, AlteredTableInfo *tab);
+static void RememberPolicyForRebuilding(Oid policyId, AlteredTableInfo *tab);
 static void ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab,
 								   LOCKMODE lockmode);
 static void ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId,
@@ -5464,6 +5472,10 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			address = ATExecAddStatistics(tab, rel, (CreateStatsStmt *) cmd->def,
 										  true, lockmode);
 			break;
+		case AT_ReAddPolicies:	/* ADD POLICIES */
+			address = ATExecAddPolicies(tab, rel, castNode(CreatePolicyStmt, cmd->def),
+										true, lockmode);
+			break;
 		case AT_AddConstraint:	/* ADD CONSTRAINT */
 			/* Transform the command only during initial examination */
 			if (cur_pass == AT_PASS_ADD_CONSTR)
@@ -6750,6 +6762,8 @@ alter_table_type_to_string(AlterTableType cmdtype)
 		case AT_DropIdentity:
 			return "ALTER COLUMN ... DROP IDENTITY";
 		case AT_ReAddStatistics:
+			return NULL;		/* not real grammar */
+		case AT_ReAddPolicies:
 			return NULL;		/* not real grammar */
 	}
 
@@ -9719,6 +9733,29 @@ ATExecAddStatistics(AlteredTableInfo *tab, Relation rel,
 	Assert(stmt->transformed);
 
 	address = CreateStatistics(stmt, !is_rebuild);
+
+	return address;
+}
+
+/*
+ * ALTER TABLE ADD POLICIES
+ *
+ * This is no such command in the grammar, but we use this internally to add
+ * AT_ReAddPolicies subcommands to rebuild policy after a table
+ * column type change.
+ */
+static ObjectAddress
+ATExecAddPolicies(AlteredTableInfo *tab, Relation rel,
+				  CreatePolicyStmt *stmt, bool is_rebuild, LOCKMODE lockmode)
+{
+	ObjectAddress address;
+
+	Assert(IsA(stmt, CreatePolicyStmt));
+
+	/* The CreatePolicyStmt has already been through transformPolicyStmt */
+	Assert(stmt->transformed);
+
+	address = CreatePolicy(stmt, NULL);
 
 	return address;
 }
@@ -14869,6 +14906,13 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	RememberAllDependentForRebuilding(tab, AT_AlterColumnType, rel, attnum, colName);
 
 	/*
+	 * Check that all policies does not contain subquery before adding its
+	 * definition to tab->changedPolicyDefs, as
+	 * RememberAllDependentForRebuilding only collects the policy OID.
+	 */
+	CheckDepentPolicies(tab, AT_AlterColumnType, rel, attnum, colName);
+
+	/*
 	 * Now scan for dependencies of this column on other things.  The only
 	 * things we should find are the dependency on the column datatype and
 	 * possibly a collation dependency.  Those can be removed.
@@ -15063,6 +15107,109 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 }
 
 /*
+ * Subroutine for ATExecAlterColumnType.
+ *
+ * ALTER COLUMN SET DATA TYPE cannot cope with policies that contain subqueries
+ * in the USING or WITH CHECK qual; otherwise, repeated name lookup issues may
+ * occur.
+ */
+static void
+CheckDepentPolicies(AlteredTableInfo *tab, AlterTableType subtype,
+					Relation rel, AttrNumber attnum, const char *colName)
+{
+	Relation	pg_policy;
+	ScanKeyData skey[1];
+	SysScanDesc sscan;
+	HeapTuple	tuple;
+	Form_pg_policy form_policy;
+	Node	   *qual;
+	Node	   *with_check_qual;
+	bool		hassublinks = false;
+
+	pg_policy = table_open(PolicyRelationId, AccessShareLock);
+
+	foreach_oid(poloid, tab->changedPolicyOids)
+	{
+		Datum		datum;
+		bool		isnull;
+		char	   *str_value;
+
+		/* Fetch the policy's table OID the hard way */
+		ScanKeyInit(&skey[0],
+					Anum_pg_policy_oid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(poloid));
+		sscan = systable_beginscan(pg_policy, PolicyOidIndexId, true,
+								   NULL, 1, skey);
+		tuple = systable_getnext(sscan);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "could not find tuple for pg_policy %u", poloid);
+
+		form_policy = (Form_pg_policy) GETSTRUCT(tuple);
+
+		/* Get policy qual */
+		datum = heap_getattr(tuple, Anum_pg_policy_polqual,
+							 RelationGetDescr(pg_policy), &isnull);
+		if (!isnull)
+		{
+			str_value = TextDatumGetCString(datum);
+			qual = stringToNode(str_value);
+
+			if (checkExprHasSubLink(qual))
+				hassublinks = true;
+
+			pfree(str_value);
+		}
+
+		if (hassublinks)
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot alter type of a column used by a policy definition when the policy contains subquery"),
+					errdetail("policy %s on table %s depends on column \"%s\"",
+							  NameStr(form_policy->polname),
+							  RelationGetRelationName(rel),
+							  colName));
+
+		/* Get WITH CHECK qual */
+		datum = heap_getattr(tuple, Anum_pg_policy_polwithcheck,
+							 RelationGetDescr(pg_policy), &isnull);
+		if (!isnull)
+		{
+			str_value = TextDatumGetCString(datum);
+			with_check_qual = stringToNode(str_value);
+
+			if (checkExprHasSubLink(with_check_qual))
+				hassublinks = true;
+
+			pfree(str_value);
+		}
+
+		if (hassublinks)
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot alter type of a column used by a policy definition when the policy contains subquery"),
+					errdetail("policy %s on table %s depends on column \"%s\"",
+							  NameStr(form_policy->polname),
+							  RelationGetRelationName(rel),
+							  colName));
+
+		Assert(form_policy->polrelid == RelationGetRelid(rel));
+
+		systable_endscan(sscan);
+	}
+
+	table_close(pg_policy, AccessShareLock);
+
+	foreach_oid(poloid, tab->changedPolicyOids)
+	{
+		/* OK, capture the policies's existing definition string */
+		char	   *defstring = pg_get_policy_def_command(poloid);
+
+		tab->changedPolicyDefs = lappend(tab->changedPolicyDefs, defstring);
+	}
+}
+
+/*
  * Subroutine for ATExecAlterColumnType and ATExecSetExpression: Find everything
  * that depends on the column (constraints, indexes, etc), and record enough
  * information to let us recreate the objects.
@@ -15196,22 +15343,8 @@ RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
 				break;
 
 			case PolicyRelationId:
-
-				/*
-				 * A policy can depend on a column because the column is
-				 * specified in the policy's USING or WITH CHECK qual
-				 * expressions.  It might be possible to rewrite and recheck
-				 * the policy expression, but punt for now.  It's certainly
-				 * easy enough to remove and recreate the policy; still, FIXME
-				 * someday.
-				 */
 				if (subtype == AT_AlterColumnType)
-					ereport(ERROR,
-							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-							 errmsg("cannot alter type of a column used in a policy definition"),
-							 errdetail("%s depends on column \"%s\"",
-									   getObjectDescription(&foundObject, false),
-									   colName)));
+					RememberPolicyForRebuilding(foundObject.objectId, tab);
 				break;
 
 			case AttrDefaultRelationId:
@@ -15454,6 +15587,27 @@ RememberStatisticsForRebuilding(Oid stxoid, AlteredTableInfo *tab)
 }
 
 /*
+ * Subroutine for ATExecAlterColumnType: remember that a policy object needs to
+ * be rebuilt (which we might already know).
+ */
+static void
+RememberPolicyForRebuilding(Oid policyId, AlteredTableInfo *tab)
+{
+	/*
+	 * This de-duplication check is critical for two independent reasons: we
+	 * mustn't try to recreate the same policy twice, and if a policy depends
+	 * on more than one column whose type is to be altered, we must capture
+	 * its definition string before applying any of the column type changes.
+	 * ruleutils.c will get confused if we ask again later.
+	 *
+	 * changedPolicyDefs will be collected later on CheckDepentPolicies.
+	 */
+	if (!list_member_oid(tab->changedPolicyOids, policyId))
+		tab->changedPolicyOids = lappend_oid(tab->changedPolicyOids,
+											 policyId);
+}
+
+/*
  * Cleanup after we've finished all the ALTER TYPE or SET EXPRESSION
  * operations for a particular relation.  We have to drop and recreate all the
  * indexes and constraints that depend on the altered columns.  We do the
@@ -15597,6 +15751,35 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 		add_exact_object_address(&obj, objects);
 	}
 
+	/* add dependencies for new policies */
+	forboth(oid_item, tab->changedPolicyOids,
+			def_item, tab->changedPolicyDefs)
+	{
+		Oid			oldId = lfirst_oid(oid_item);
+		Oid			relid;
+
+		relid = PolicyGetRelation(oldId);
+
+		/*
+		 * As above, make sure we have lock on the relations if it's not the
+		 * same table.  However, we take AccessExclusiveLock here, aligning
+		 * with the lock level used in CreatePolicy and RemovePolicyById.
+		 *
+		 * CAUTION: this should be done after all cases that grab
+		 * AccessExclusiveLock, else we risk causing deadlock due to needing
+		 * to promote our table lock.
+		 */
+		if (relid != tab->relid)
+			LockRelationOid(relid, ShareUpdateExclusiveLock);
+
+		ATPostAlterTypeParse(oldId, tab->relid, InvalidOid,
+							 (char *) lfirst(def_item),
+							 wqueue, lockmode, tab->rewrite);
+
+		ObjectAddressSet(obj, PolicyRelationId, oldId);
+		add_exact_object_address(&obj, objects);
+	}
+
 	/*
 	 * Queue up command to restore replica identity index marking
 	 */
@@ -15645,8 +15828,8 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 }
 
 /*
- * Parse the previously-saved definition string for a constraint, index or
- * statistics object against the newly-established column data type(s), and
+ * Parse the previously-saved definition string for a constraint, index,
+ * statistics or policy object against the newly-established column data type(s), and
  * queue up the resulting command parsetrees for execution.
  *
  * This might fail if, for example, you have a WHERE clause that uses an
@@ -15698,6 +15881,21 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 									 transformStatsStmt(oldRelId,
 														(CreateStatsStmt *) stmt,
 														cmd));
+		else if (IsA(stmt, CreatePolicyStmt))
+		{
+			RangeTblEntry *rte;
+			CreatePolicyStmt *polstmt = castNode(CreatePolicyStmt, stmt);
+
+			rte = makeNode(RangeTblEntry);
+			rte->rtekind = RTE_RELATION;
+			rte->relid = oldRelId;
+			rte->rellockmode = AccessExclusiveLock;
+			polstmt->rte = rte;
+
+			querytree_list = lappend(querytree_list,
+									 transformPolicyStmt(polstmt,
+														 cmd));
+		}
 		else
 			querytree_list = lappend(querytree_list, stmt);
 	}
@@ -15844,6 +16042,20 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 
 			newcmd = makeNode(AlterTableCmd);
 			newcmd->subtype = AT_ReAddStatistics;
+			newcmd->def = (Node *) stmt;
+			tab->subcmds[AT_PASS_MISC] =
+				lappend(tab->subcmds[AT_PASS_MISC], newcmd);
+		}
+		else if (IsA(stm, CreatePolicyStmt))
+		{
+			CreatePolicyStmt *stmt = (CreatePolicyStmt *) stm;
+			AlterTableCmd *newcmd;
+
+			/* keep the policy's object's comment */
+			stmt->polcomment = GetComment(oldId, PolicyRelationId, 0);
+
+			newcmd = makeNode(AlterTableCmd);
+			newcmd->subtype = AT_ReAddPolicies;
 			newcmd->def = (Node *) stmt;
 			tab->subcmds[AT_PASS_MISC] =
 				lappend(tab->subcmds[AT_PASS_MISC], newcmd);

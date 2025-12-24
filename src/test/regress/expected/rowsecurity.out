@@ -26,6 +26,27 @@ GRANT regress_rls_group2 TO regress_rls_carol;
 CREATE SCHEMA regress_rls_schema;
 GRANT ALL ON SCHEMA regress_rls_schema to public;
 SET search_path = regress_rls_schema;
+--check alter column set data type will recreate security policy
+CREATE TABLE rls_tbl (a int, b int, c int);
+CREATE POLICY p1 ON rls_tbl
+  FOR UPDATE
+  TO regress_rls_alice, regress_rls_bob, regress_rls_carol
+  USING (a < 20) WITH CHECK (c <> 0 and a is not null);
+CREATE POLICY p2 ON rls_tbl AS RESTRICTIVE
+  FOR ALL
+  TO PUBLIC
+  USING (a < 40) WITH CHECK (c > 0 and a is not null);
+ALTER TABLE rls_tbl ALTER COLUMN a SET DATA TYPE INT8, ALTER COLUMN c SET DATA TYPE INT8;
+SELECT * FROM pg_policies
+WHERE schemaname = 'regress_rls_schema' AND tablename = 'rls_tbl'
+ORDER BY policyname;
+     schemaname     | tablename | policyname | permissive  |                         roles                         |  cmd   |   qual   |           with_check           
+--------------------+-----------+------------+-------------+-------------------------------------------------------+--------+----------+--------------------------------
+ regress_rls_schema | rls_tbl   | p1         | PERMISSIVE  | {regress_rls_alice,regress_rls_bob,regress_rls_carol} | UPDATE | (a < 20) | ((c <> 0) AND (a IS NOT NULL))
+ regress_rls_schema | rls_tbl   | p2         | RESTRICTIVE | {public}                                              | ALL    | (a < 40) | ((c > 0) AND (a IS NOT NULL))
+(2 rows)
+
+DROP TABLE rls_tbl;
 -- setup of malicious function
 CREATE OR REPLACE FUNCTION f_leak(text) RETURNS bool
     COST 0.0000001 LANGUAGE plpgsql
@@ -2637,6 +2658,54 @@ SELECT * FROM document;
   14 |  11 |      1 | regress_rls_bob   | new novel                        | 
 (16 rows)
 
+CREATE TABLE document_c(LIKE document INCLUDING ALL);
+CREATE POLICY p5 ON document_c AS RESTRICTIVE FOR ALL TO regress_rls_bob, regress_rls_alice, regress_rls_carol
+USING (CID IS NOT NULL AND
+    (WITH CTE AS (SELECT uaccount IS NOT NULL FROM uaccount) SELECT true FROM CTE));
+ALTER TABLE document_c ALTER COLUMN cid SET DATA TYPE INT8; --error
+ERROR:  cannot alter type of a column used by a policy definition when the policy contains subquery
+DETAIL:  policy p5 on table document_c depends on column "cid"
+ALTER TABLE uaccount ALTER COLUMN seclv SET DATA TYPE INT8; --error
+ERROR:  cannot alter type of a column used by a policy definition when the policy contains subquery
+DETAIL:  policy pp3 on table uaccount depends on column "seclv"
+DROP POLICY p5 ON document_c CASCADE;
+CREATE POLICY p5 ON document_c AS RESTRICTIVE
+  FOR ALL TO regress_rls_bob, regress_rls_alice, regress_rls_carol
+  USING (cid IS NOT NULL AND dlevel > 0);
+COMMENT ON POLICY p5 ON document_c IS 'policy p5';
+SELECT * FROM pg_policies
+WHERE schemaname = 'regress_rls_schema' AND tablename = 'document_c';
+     schemaname     | tablename  | policyname | permissive  |                         roles                         | cmd |                 qual                 | with_check 
+--------------------+------------+------------+-------------+-------------------------------------------------------+-----+--------------------------------------+------------
+ regress_rls_schema | document_c | p5         | RESTRICTIVE | {regress_rls_alice,regress_rls_bob,regress_rls_carol} | ALL | ((cid IS NOT NULL) AND (dlevel > 0)) | 
+(1 row)
+
+ALTER TABLE document_c ALTER COLUMN dlevel SET DATA TYPE text; --error
+ERROR:  operator does not exist: text > integer
+DETAIL:  No operator of that name accepts the given argument types.
+HINT:  You might need to add explicit type casts.
+ALTER TABLE document_c ALTER COLUMN cid SET DATA TYPE bool USING (cid::bool);
+ALTER TABLE document_c
+  ALTER COLUMN cid SET DATA TYPE INT8 USING cid::INT4::INT8,
+  ALTER COLUMN dlevel SET DATA TYPE INT8;
+SELECT * FROM pg_policies
+WHERE schemaname = 'regress_rls_schema' AND tablename = 'document_c';
+     schemaname     | tablename  | policyname | permissive  |                         roles                         | cmd |                 qual                 | with_check 
+--------------------+------------+------------+-------------+-------------------------------------------------------+-----+--------------------------------------+------------
+ regress_rls_schema | document_c | p5         | RESTRICTIVE | {regress_rls_alice,regress_rls_bob,regress_rls_carol} | ALL | ((cid IS NOT NULL) AND (dlevel > 0)) | 
+(1 row)
+
+--comments should not change
+SELECT polname, description
+FROM  pg_description, pg_policy c
+WHERE classoid = 'pg_policy'::regclass AND objoid = c.oid AND c.polrelid = 'document_c'::regclass
+ORDER BY polname;
+ polname | description 
+---------+-------------
+ p5      | policy p5
+(1 row)
+
+DROP TABLE document_c;
 --
 -- ROLE/GROUP
 --

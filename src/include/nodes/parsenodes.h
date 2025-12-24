@@ -2508,6 +2508,7 @@ typedef enum AlterTableType
 	AT_SetIdentity,				/* SET identity column options */
 	AT_DropIdentity,			/* DROP IDENTITY */
 	AT_ReAddStatistics,			/* internal to commands/tablecmds.c */
+	AT_ReAddPolicies,			/* internal to commands/tablecmds.c */
 } AlterTableType;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
@@ -3105,6 +3106,7 @@ typedef struct CreatePolicyStmt
 	RangeTblEntry *rte;
 
 	char	   *cmd_name;		/* the command name the policy applies to */
+	char	   *polcomment;		/* comment to apply to policies, or NULL */
 	bool		permissive;		/* restrictive or permissive policy */
 	List	   *roles;			/* the roles associated with the policy */
 	Node	   *qual;			/* the policy's condition */

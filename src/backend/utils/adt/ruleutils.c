@@ -33,11 +33,13 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_partitioned_table.h"
+#include "catalog/pg_policy.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_statistic_ext.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
+#include "commands/policy.h"
 #include "commands/tablespace.h"
 #include "common/keywords.h"
 #include "executor/spi.h"
@@ -367,6 +369,7 @@ static char *pg_get_partkeydef_worker(Oid relid, int prettyFlags,
 									  bool attrsOnly, bool missing_ok);
 static char *pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 										 int prettyFlags, bool missing_ok);
+static char *pg_get_policydef_worker(Oid policyId, int prettyFlags, bool missing_ok);
 static text *pg_get_expr_worker(text *expr, Oid relid, int prettyFlags);
 static int	print_function_arguments(StringInfo buf, HeapTuple proctup,
 									 bool print_table_args, bool print_defaults);
@@ -2602,6 +2605,166 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 		appendStringInfoString(&buf, " NOT ENFORCED");
 	else if (!conForm->convalidated)
 		appendStringInfoString(&buf, " NOT VALID");
+
+	/* Cleanup */
+	systable_endscan(scandesc);
+	table_close(relation, AccessShareLock);
+
+	return buf.data;
+}
+
+/*
+ * Internal version that returns a full CREATE POLICY command
+ */
+char *
+pg_get_policy_def_command(Oid policyId)
+{
+	int			prettyFlags;
+
+	prettyFlags = PRETTYFLAG_INDENT;
+
+	return pg_get_policydef_worker(policyId, prettyFlags, false);
+}
+
+static char *
+pg_get_policydef_worker(Oid policyId, int prettyFlags, bool missing_ok)
+{
+	HeapTuple	tup;
+	Form_pg_policy policy_form;
+	StringInfoData buf;
+	SysScanDesc scandesc;
+	ScanKeyData scankey[1];
+	Snapshot	snapshot = RegisterSnapshot(GetTransactionSnapshot());
+	Relation	relation = table_open(PolicyRelationId, AccessShareLock);
+	ArrayType  *policy_roles;
+	Datum		roles_datum;
+	Datum		datum;
+	bool		isnull;
+	Oid		   *roles;
+	int			num_roles;
+	List	   *context = NIL;
+	char	   *str_value;
+	char	   *exprsrc;
+	char	   *rolString;
+	char	   *policy_command;
+	Node	   *expr;
+
+	ScanKeyInit(&scankey[0],
+				Anum_pg_policy_oid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(policyId));
+
+	scandesc = systable_beginscan(relation,
+								  PolicyOidIndexId,
+								  true,
+								  snapshot,
+								  1,
+								  scankey);
+	tup = systable_getnext(scandesc);
+
+	UnregisterSnapshot(snapshot);
+
+	if (!HeapTupleIsValid(tup))
+	{
+		if (missing_ok)
+		{
+			systable_endscan(scandesc);
+			table_close(relation, AccessShareLock);
+			return NULL;
+		}
+		elog(ERROR, "could not find tuple for policy %u", policyId);
+	}
+
+	policy_form = (Form_pg_policy) GETSTRUCT(tup);
+	context = deparse_context_for(get_relation_name(policy_form->polrelid),
+								  policy_form->polrelid);
+
+	initStringInfo(&buf);
+	if (OidIsValid(policy_form->oid))
+		appendStringInfo(&buf, "CREATE POLICY %s ON %s ",
+						 quote_identifier(NameStr(policy_form->polname)),
+						 generate_qualified_relation_name(policy_form->polrelid));
+	else
+		elog(ERROR, "invalid policy: %u", policyId);
+
+	/* Get policy type, permissive or restrictive */
+	if (policy_form->polpermissive)
+		appendStringInfoString(&buf, "AS PERMISSIVE ");
+	else
+		appendStringInfoString(&buf, "AS RESTRICTIVE ");
+
+	appendStringInfoString(&buf, "FOR ");
+
+	/* Get policy applied command type */
+	policy_command = get_policy_applied_command(policy_form->polcmd);
+	if (strcmp(policy_command, "all") == 0)
+		appendStringInfoString(&buf, "ALL ");
+	else if (strcmp(policy_command, "select") == 0)
+		appendStringInfoString(&buf, "SELECT ");
+	else if (strcmp(policy_command, "insert") == 0)
+		appendStringInfoString(&buf, "INSERT ");
+	else if (strcmp(policy_command, "update") == 0)
+		appendStringInfoString(&buf, "UPDATE ");
+	else if (strcmp(policy_command, "delete") == 0)
+		appendStringInfoString(&buf, "DELETE ");
+	else
+		elog(ERROR, "invalid command type %c", policy_form->polcmd);
+
+	appendStringInfoString(&buf, "TO ");
+
+	/* Get the current set of roles */
+	datum = heap_getattr(tup,
+						 Anum_pg_policy_polroles,
+						 RelationGetDescr(relation),
+						 &isnull);
+	Assert(!isnull);
+
+	policy_roles = DatumGetArrayTypePCopy(datum);
+	roles = (Oid *) ARR_DATA_PTR(policy_roles);
+	num_roles = ARR_DIMS(policy_roles)[0];
+
+	for (int i = 0; i < num_roles; i++)
+	{
+		if (i > 0)
+			appendStringInfoString(&buf, ", ");
+
+		if (OidIsValid(roles[i]))
+		{
+			datum = ObjectIdGetDatum(roles[i]);
+			roles_datum = DirectFunctionCall1(pg_get_userbyid, datum);
+			rolString = DatumGetCString(DirectFunctionCall1(nameout, roles_datum));
+			appendStringInfo(&buf, "%s", rolString);
+		}
+		else
+			appendStringInfoString(&buf, "PUBLIC");
+	}
+
+	/* Get policy qual */
+	datum = heap_getattr(tup, Anum_pg_policy_polqual,
+						 RelationGetDescr(relation), &isnull);
+	if (!isnull)
+	{
+		str_value = TextDatumGetCString(datum);
+		expr = stringToNode(str_value);
+		exprsrc = deparse_expression_pretty(expr, context, false, false,
+											prettyFlags, 0);
+		appendStringInfo(&buf, " USING (%s) ", exprsrc);
+		pfree(str_value);
+	}
+
+	/* Get WITH CHECK qual */
+	datum = heap_getattr(tup, Anum_pg_policy_polwithcheck,
+						 RelationGetDescr(relation), &isnull);
+	if (!isnull)
+	{
+		str_value = TextDatumGetCString(datum);
+		expr = stringToNode(str_value);
+		pfree(str_value);
+
+		exprsrc = deparse_expression_pretty(expr, context, false, false,
+											prettyFlags, 0);
+		appendStringInfo(&buf, "WITH CHECK (%s)", exprsrc);
+	}
 
 	/* Cleanup */
 	systable_endscan(scandesc);

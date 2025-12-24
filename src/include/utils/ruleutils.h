@@ -34,6 +34,7 @@ extern char *pg_get_partkeydef_columns(Oid relid, bool pretty);
 extern char *pg_get_partconstrdef_string(Oid partitionId, char *aliasname);
 
 extern char *pg_get_constraintdef_command(Oid constraintId);
+extern char *pg_get_policy_def_command(Oid policyId);
 extern char *deparse_expression(Node *expr, List *dpcontext,
 								bool forceprefix, bool showimplicit);
 extern List *deparse_context_for(const char *aliasname, Oid relid);

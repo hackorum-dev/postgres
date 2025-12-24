@@ -26,6 +26,7 @@
 #include "catalog/pg_authid.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_type.h"
+#include "commands/comment.h"
 #include "commands/policy.h"
 #include "miscadmin.h"
 #include "nodes/pg_list.h"
@@ -742,6 +743,11 @@ CreatePolicy(CreatePolicyStmt *stmt, const char *queryString)
 	relation_close(target_table, NoLock);
 	table_close(pg_policy_rel, RowExclusiveLock);
 
+	/* Add any requested comment */
+	if (stmt->polcomment != NULL)
+		CreateComments(policy_id, PolicyRelationId, 0,
+					   stmt->polcomment);
+
 	return myself;
 }
 
@@ -1263,4 +1269,66 @@ relation_has_policies(Relation rel)
 	table_close(catalog, AccessShareLock);
 
 	return ret;
+}
+
+/*
+ * PolicyGetRelation: given a policy object's OID, get the OID of
+ * the relation it is defined on.
+ */
+Oid
+PolicyGetRelation(Oid policyId)
+{
+	Relation	pg_policy_rel;
+	ScanKeyData skey[1];
+	SysScanDesc sscan;
+	HeapTuple	tuple;
+	Oid			relid;
+
+	/* Fetch the policy's table OID the hard way */
+	pg_policy_rel = table_open(PolicyRelationId, AccessShareLock);
+	ScanKeyInit(&skey[0],
+				Anum_pg_policy_oid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(policyId));
+	sscan = systable_beginscan(pg_policy_rel, PolicyOidIndexId, true,
+							   NULL, 1, skey);
+	tuple = systable_getnext(sscan);
+
+	if (HeapTupleIsValid(tuple))
+		relid = ((Form_pg_policy) GETSTRUCT(tuple))->polrelid;
+	else
+	{
+		relid = InvalidOid;		/* shouldn't happen */
+		elog(ERROR, "could not find tuple for policy %u", policyId);
+	}
+	systable_endscan(sscan);
+
+	table_close(pg_policy_rel, AccessShareLock);
+
+	return relid;
+}
+
+/*
+ * get_policy_applied_command
+ *
+ * Convert pg_policy.polcmd char representation to their full command strings.
+ */
+char *
+get_policy_applied_command(char polcmd)
+{
+	if (polcmd == '*')
+		return pstrdup("all");
+	else if (polcmd == ACL_SELECT_CHR)
+		return pstrdup("select");
+	else if (polcmd == ACL_INSERT_CHR)
+		return pstrdup("insert");
+	else if (polcmd == ACL_UPDATE_CHR)
+		return pstrdup("update");
+	else if (polcmd == ACL_DELETE_CHR)
+		return pstrdup("delete");
+	else
+	{
+		elog(ERROR, "unrecognized policy command");
+		return NULL;
+	}
 }

@@ -35,6 +35,25 @@ CREATE SCHEMA regress_rls_schema;
 GRANT ALL ON SCHEMA regress_rls_schema to public;
 SET search_path = regress_rls_schema;
 
+--check alter column set data type will recreate security policy
+CREATE TABLE rls_tbl (a int, b int, c int);
+CREATE POLICY p1 ON rls_tbl
+  FOR UPDATE
+  TO regress_rls_alice, regress_rls_bob, regress_rls_carol
+  USING (a < 20) WITH CHECK (c <> 0 and a is not null);
+CREATE POLICY p2 ON rls_tbl AS RESTRICTIVE
+  FOR ALL
+  TO PUBLIC
+  USING (a < 40) WITH CHECK (c > 0 and a is not null);
+
+ALTER TABLE rls_tbl ALTER COLUMN a SET DATA TYPE INT8, ALTER COLUMN c SET DATA TYPE INT8;
+
+SELECT * FROM pg_policies
+WHERE schemaname = 'regress_rls_schema' AND tablename = 'rls_tbl'
+ORDER BY policyname;
+
+DROP TABLE rls_tbl;
+
 -- setup of malicious function
 CREATE OR REPLACE FUNCTION f_leak(text) RETURNS bool
     COST 0.0000001 LANGUAGE plpgsql
@@ -1162,6 +1181,41 @@ RESET SESSION AUTHORIZATION;
 DROP POLICY p1 ON document;
 -- Just check everything went per plan
 SELECT * FROM document;
+
+CREATE TABLE document_c(LIKE document INCLUDING ALL);
+CREATE POLICY p5 ON document_c AS RESTRICTIVE FOR ALL TO regress_rls_bob, regress_rls_alice, regress_rls_carol
+USING (CID IS NOT NULL AND
+    (WITH CTE AS (SELECT uaccount IS NOT NULL FROM uaccount) SELECT true FROM CTE));
+
+ALTER TABLE document_c ALTER COLUMN cid SET DATA TYPE INT8; --error
+ALTER TABLE uaccount ALTER COLUMN seclv SET DATA TYPE INT8; --error
+
+DROP POLICY p5 ON document_c CASCADE;
+CREATE POLICY p5 ON document_c AS RESTRICTIVE
+  FOR ALL TO regress_rls_bob, regress_rls_alice, regress_rls_carol
+  USING (cid IS NOT NULL AND dlevel > 0);
+
+COMMENT ON POLICY p5 ON document_c IS 'policy p5';
+
+SELECT * FROM pg_policies
+WHERE schemaname = 'regress_rls_schema' AND tablename = 'document_c';
+
+ALTER TABLE document_c ALTER COLUMN dlevel SET DATA TYPE text; --error
+ALTER TABLE document_c ALTER COLUMN cid SET DATA TYPE bool USING (cid::bool);
+ALTER TABLE document_c
+  ALTER COLUMN cid SET DATA TYPE INT8 USING cid::INT4::INT8,
+  ALTER COLUMN dlevel SET DATA TYPE INT8;
+
+SELECT * FROM pg_policies
+WHERE schemaname = 'regress_rls_schema' AND tablename = 'document_c';
+
+--comments should not change
+SELECT polname, description
+FROM  pg_description, pg_policy c
+WHERE classoid = 'pg_policy'::regclass AND objoid = c.oid AND c.polrelid = 'document_c'::regclass
+ORDER BY polname;
+
+DROP TABLE document_c;
 
 --
 -- ROLE/GROUP
