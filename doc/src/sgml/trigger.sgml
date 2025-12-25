@@ -561,7 +561,7 @@ CALLED_AS_TRIGGER(fcinfo)
 
    <para>
     <structname>struct TriggerData</structname> is defined in
-    <filename>commands/trigger.h</filename>:
+    <filename>src/include/commands/trigger.h</filename>:
 
 <programlisting>
 typedef struct TriggerData
@@ -690,7 +690,7 @@ typedef struct TriggerData
       <listitem>
        <para>
         A pointer to a structure describing the relation that the trigger fired for.
-        Look at <filename>utils/rel.h</filename> for details about
+        Look at <filename>src/include/utils/rel.h</filename> for details about
         this structure.  The most interesting things are
         <literal>tg_relation-&gt;rd_att</literal> (descriptor of the relation
         tuples) and <literal>tg_relation-&gt;rd_rel-&gt;relname</literal>
@@ -739,7 +739,7 @@ typedef struct TriggerData
       <listitem>
        <para>
         A pointer to a structure of type <structname>Trigger</structname>,
-        defined in <filename>utils/reltrigger.h</filename>:
+        defined in <filename>src/include/utils/reltrigger.h</filename>:
 
 <programlisting>
 typedef struct Trigger

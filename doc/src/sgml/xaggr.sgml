@@ -661,7 +661,7 @@ if (AggCheckCallContext(fcinfo, NULL))
    for ordered-set aggregates, which can inspect the substructure of
    the <literal>Aggref</literal> node to find out what sort ordering they are
    supposed to implement.  Examples can be found
-   in <filename>orderedsetaggs.c</filename> in the <productname>PostgreSQL</productname>
+   in <filename>src/backend/utils/adt/orderedsetaggs.c</filename> in the <productname>PostgreSQL</productname>
    source code.
   </para>
 
