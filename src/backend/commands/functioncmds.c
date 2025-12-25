@@ -213,10 +213,10 @@ interpret_function_parameter_list(ParseState *pstate,
 	*variadicArgType = InvalidOid;	/* default result */
 	*requiredResultType = InvalidOid;	/* default result */
 
-	inTypes = (Oid *) palloc(parameterCount * sizeof(Oid));
-	allTypes = (Datum *) palloc(parameterCount * sizeof(Datum));
-	paramModes = (Datum *) palloc(parameterCount * sizeof(Datum));
-	paramNames = (Datum *) palloc0(parameterCount * sizeof(Datum));
+	inTypes = palloc_array(Oid, parameterCount);
+	allTypes = palloc_array(Datum, parameterCount);
+	paramModes = palloc_array(Datum, parameterCount);
+	paramNames = palloc0_array(Datum, parameterCount);
 	*parameterDefaults = NIL;
 
 	/* Scan the list and extract data into work arrays */
@@ -918,7 +918,7 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
 
 		pinfo->fname = funcname;
 		pinfo->nargs = list_length(parameterTypes);
-		pinfo->argtypes = (Oid *) palloc(pinfo->nargs * sizeof(Oid));
+		pinfo->argtypes = palloc_array(Oid, pinfo->nargs);
 		pinfo->argnames = (char **) palloc(pinfo->nargs * sizeof(char *));
 		for (int i = 0; i < list_length(parameterTypes); i++)
 		{

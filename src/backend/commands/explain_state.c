@@ -343,8 +343,8 @@ RegisterExtensionExplainOption(const char *option_name,
 	{
 		int			i = pg_nextpower2_32(ExplainExtensionOptionsAssigned + 1);
 
-		ExplainExtensionOptionArray = (ExplainExtensionOption *)
-			repalloc(ExplainExtensionOptionArray, i * sizeof(ExplainExtensionOption));
+		ExplainExtensionOptionArray = repalloc_array(ExplainExtensionOptionArray,
+													 ExplainExtensionOption, i);
 		ExplainExtensionOptionsAllocated = i;
 	}
 

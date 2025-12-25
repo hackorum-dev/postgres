@@ -544,7 +544,7 @@ startScanKey(GinState *ginstate, GinScanOpaque so, GinScanKey key)
 
 		key->nrequired = 0;
 		key->nadditional = key->nentries;
-		key->additionalEntries = palloc(key->nadditional * sizeof(GinScanEntry));
+		key->additionalEntries = palloc_array(GinScanEntry, key->nadditional);
 		for (i = 0; i < key->nadditional; i++)
 			key->additionalEntries[i] = key->scanEntry[i];
 	}
@@ -577,8 +577,8 @@ startScanKey(GinState *ginstate, GinScanOpaque so, GinScanKey key)
 
 		key->nrequired = i + 1;
 		key->nadditional = key->nentries - key->nrequired;
-		key->requiredEntries = palloc(key->nrequired * sizeof(GinScanEntry));
-		key->additionalEntries = palloc(key->nadditional * sizeof(GinScanEntry));
+		key->requiredEntries = palloc_array(GinScanEntry, key->nrequired);
+		key->additionalEntries = palloc_array(GinScanEntry, key->nadditional);
 
 		j = 0;
 		for (i = 0; i < key->nrequired; i++)
@@ -595,7 +595,7 @@ startScanKey(GinState *ginstate, GinScanOpaque so, GinScanKey key)
 
 		key->nrequired = 1;
 		key->nadditional = 0;
-		key->requiredEntries = palloc(1 * sizeof(GinScanEntry));
+		key->requiredEntries = palloc_array(GinScanEntry, key->nrequired);
 		key->requiredEntries[0] = key->scanEntry[0];
 	}
 	MemoryContextSwitchTo(oldCtx);

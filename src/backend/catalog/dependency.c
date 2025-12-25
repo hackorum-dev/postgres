@@ -966,9 +966,8 @@ findDependentObjects(const ObjectAddress *object,
 		{
 			/* enlarge array if needed */
 			maxDependentObjects *= 2;
-			dependentObjects = (ObjectAddressAndFlags *)
-				repalloc(dependentObjects,
-						 maxDependentObjects * sizeof(ObjectAddressAndFlags));
+			dependentObjects = repalloc_array(dependentObjects,
+											  ObjectAddressAndFlags, maxDependentObjects);
 		}
 
 		dependentObjects[numDependentObjects].obj = otherObject;
@@ -2710,8 +2709,7 @@ add_object_address(Oid classId, Oid objectId, int32 subId,
 	if (addrs->numrefs >= addrs->maxrefs)
 	{
 		addrs->maxrefs *= 2;
-		addrs->refs = (ObjectAddress *)
-			repalloc(addrs->refs, addrs->maxrefs * sizeof(ObjectAddress));
+		addrs->refs = repalloc_array(addrs->refs, ObjectAddress, addrs->maxrefs);
 		Assert(!addrs->extras);
 	}
 	/* record this item */
@@ -2737,8 +2735,8 @@ add_exact_object_address(const ObjectAddress *object,
 	if (addrs->numrefs >= addrs->maxrefs)
 	{
 		addrs->maxrefs *= 2;
-		addrs->refs = (ObjectAddress *)
-			repalloc(addrs->refs, addrs->maxrefs * sizeof(ObjectAddress));
+		addrs->refs = repalloc_array(addrs->refs,
+									 ObjectAddress, addrs->maxrefs);
 		Assert(!addrs->extras);
 	}
 	/* record this item */
@@ -2762,17 +2760,16 @@ add_exact_object_address_extra(const ObjectAddress *object,
 
 	/* allocate extra space if first time */
 	if (!addrs->extras)
-		addrs->extras = (ObjectAddressExtra *)
-			palloc(addrs->maxrefs * sizeof(ObjectAddressExtra));
+		addrs->extras = palloc_array(ObjectAddressExtra, addrs->maxrefs);
 
 	/* enlarge array if needed */
 	if (addrs->numrefs >= addrs->maxrefs)
 	{
 		addrs->maxrefs *= 2;
-		addrs->refs = (ObjectAddress *)
-			repalloc(addrs->refs, addrs->maxrefs * sizeof(ObjectAddress));
-		addrs->extras = (ObjectAddressExtra *)
-			repalloc(addrs->extras, addrs->maxrefs * sizeof(ObjectAddressExtra));
+		addrs->refs = repalloc_array(addrs->refs,
+									 ObjectAddress, addrs->maxrefs);
+		addrs->extras = repalloc_array(addrs->extras,
+									   ObjectAddressExtra, addrs->maxrefs);
 	}
 	/* record this item */
 	item = addrs->refs + addrs->numrefs;

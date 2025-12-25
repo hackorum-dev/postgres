@@ -258,8 +258,8 @@ _bt_preprocess_keys(IndexScanDesc scan)
 		 * a skip array's scan key
 		 */
 		if (numberOfKeys > scan->numberOfKeys)
-			so->keyData = repalloc(so->keyData,
-								   numberOfKeys * sizeof(ScanKeyData));
+			so->keyData = repalloc_array(so->keyData,
+										 ScanKeyData, numberOfKeys);
 	}
 	else
 		inkeys = scan->keyData;
@@ -1653,14 +1653,14 @@ _bt_unmark_keys(IndexScanDesc scan, int *keyDataMap)
 	 * Next, allocate temp arrays: one for required keys that'll remain
 	 * required, the other for all remaining keys
 	 */
-	unmarkKeys = palloc(nunmark * sizeof(ScanKeyData));
-	keepKeys = palloc((so->numberOfKeys - nunmark) * sizeof(ScanKeyData));
+	unmarkKeys = palloc_array(ScanKeyData, nunmark);
+	keepKeys = palloc_array(ScanKeyData, so->numberOfKeys - nunmark);
 	nunmarked = 0;
 	nkept = 0;
 	if (so->numArrayKeys)
 	{
-		unmarkOrderProcs = palloc(nunmark * sizeof(FmgrInfo));
-		keepOrderProcs = palloc((so->numberOfKeys - nunmark) * sizeof(FmgrInfo));
+		unmarkOrderProcs = palloc_array(FmgrInfo, nunmark);
+		keepOrderProcs = palloc_array(FmgrInfo, so->numberOfKeys - nunmark);
 	}
 
 	/*

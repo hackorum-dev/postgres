@@ -1650,7 +1650,7 @@ MatchNamedCall(HeapTuple proctup, int nargs, List *argnames,
 	Assert(include_out_arguments ? (pronargs == pronallargs) : (pronargs <= pronallargs));
 
 	/* initialize state for matching */
-	*argnumbers = (int *) palloc(pronargs * sizeof(int));
+	*argnumbers = palloc_array(int, pronargs);
 	memset(arggiven, false, pronargs * sizeof(bool));
 
 	/* there are numposargs positional args before the named args */

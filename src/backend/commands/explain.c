@@ -5015,7 +5015,7 @@ ExplainCreateWorkersState(int num_workers)
 	wstate->worker_inited = (bool *) palloc0(num_workers * sizeof(bool));
 	wstate->worker_str = (StringInfoData *)
 		palloc0(num_workers * sizeof(StringInfoData));
-	wstate->worker_state_save = (int *) palloc(num_workers * sizeof(int));
+	wstate->worker_state_save = palloc_array(int, num_workers);
 	return wstate;
 }
 

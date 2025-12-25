@@ -587,8 +587,8 @@ gistSplitHalf(GIST_SPLITVEC *v, int len)
 	int			i;
 
 	v->spl_nright = v->spl_nleft = 0;
-	v->spl_left = (OffsetNumber *) palloc(len * sizeof(OffsetNumber));
-	v->spl_right = (OffsetNumber *) palloc(len * sizeof(OffsetNumber));
+	v->spl_left = palloc_array(OffsetNumber, len);
+	v->spl_right = palloc_array(OffsetNumber, len);
 	for (i = 1; i <= len; i++)
 		if (i < len / 2)
 			v->spl_right[v->spl_nright++] = i;

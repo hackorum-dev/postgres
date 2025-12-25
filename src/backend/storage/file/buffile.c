@@ -141,7 +141,7 @@ makeBufFile(File firstfile)
 {
 	BufFile    *file = makeBufFileCommon(1);
 
-	file->files = palloc_object(File);
+	file->files = palloc_array(File, 1);
 	file->files[0] = firstfile;
 	file->readOnly = false;
 	file->fileset = NULL;
@@ -172,8 +172,7 @@ extendBufFile(BufFile *file)
 
 	CurrentResourceOwner = oldowner;
 
-	file->files = (File *) repalloc(file->files,
-									(file->numFiles + 1) * sizeof(File));
+	file->files = repalloc_array(file->files, File, file->numFiles + 1);
 	file->files[file->numFiles] = pfile;
 	file->numFiles++;
 }
@@ -272,7 +271,7 @@ BufFileCreateFileSet(FileSet *fileset, const char *name)
 	file = makeBufFileCommon(1);
 	file->fileset = fileset;
 	file->name = pstrdup(name);
-	file->files = palloc_object(File);
+	file->files = palloc_array(File, 1);
 	file->files[0] = MakeNewFileSetSegment(file, 0);
 	file->readOnly = false;
 
@@ -911,8 +910,7 @@ BufFileAppend(BufFile *target, BufFile *source)
 	if (target->resowner != source->resowner)
 		elog(ERROR, "could not append BufFile with non-matching resource owner");
 
-	target->files = (File *)
-		repalloc(target->files, sizeof(File) * newNumFiles);
+	target->files = repalloc_array(target->files, File, newNumFiles);
 	for (i = target->numFiles; i < newNumFiles; i++)
 		target->files[i] = source->files[i - target->numFiles];
 	target->numFiles = newNumFiles;

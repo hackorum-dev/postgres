@@ -529,7 +529,7 @@ do_analyze_rel(Relation onerel, const VacuumParams params,
 	/*
 	 * Acquire the sample rows
 	 */
-	rows = (HeapTuple *) palloc(targrows * sizeof(HeapTuple));
+	rows = palloc_array(HeapTuple, targrows);
 	pgstat_progress_update_param(PROGRESS_ANALYZE_PHASE,
 								 inh ? PROGRESS_ANALYZE_PHASE_ACQUIRE_SAMPLE_ROWS_INH :
 								 PROGRESS_ANALYZE_PHASE_ACQUIRE_SAMPLE_ROWS);
@@ -924,8 +924,8 @@ compute_index_stats(Relation onerel, double totalrows,
 		predicate = ExecPrepareQual(indexInfo->ii_Predicate, estate);
 
 		/* Compute and save index expression values */
-		exprvals = (Datum *) palloc(numrows * attr_cnt * sizeof(Datum));
-		exprnulls = (bool *) palloc(numrows * attr_cnt * sizeof(bool));
+		exprvals = palloc_array(Datum, numrows * attr_cnt);
+		exprnulls = palloc_array(bool, numrows * attr_cnt);
 		numindexrows = 0;
 		tcnt = 0;
 		for (rowno = 0; rowno < numrows; rowno++)
@@ -1440,10 +1440,9 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 	 * Identify acquirefuncs to use, and count blocks in all the relations.
 	 * The result could overflow BlockNumber, so we use double arithmetic.
 	 */
-	rels = (Relation *) palloc(list_length(tableOIDs) * sizeof(Relation));
-	acquirefuncs = (AcquireSampleRowsFunc *)
-		palloc(list_length(tableOIDs) * sizeof(AcquireSampleRowsFunc));
-	relblocks = (double *) palloc(list_length(tableOIDs) * sizeof(double));
+	rels = palloc_array(Relation, list_length(tableOIDs));
+	acquirefuncs = palloc_array(AcquireSampleRowsFunc, list_length(tableOIDs));
+	relblocks = palloc_array(double, list_length(tableOIDs));
 	totalblocks = 0;
 	nrels = 0;
 	has_child = false;
@@ -1718,7 +1717,7 @@ update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
 			if (stats->stanumbers[k] != NULL)
 			{
 				int			nnum = stats->numnumbers[k];
-				Datum	   *numdatums = (Datum *) palloc(nnum * sizeof(Datum));
+				Datum	   *numdatums = palloc_array(Datum, nnum);
 				ArrayType  *arry;
 
 				for (n = 0; n < nnum; n++)
@@ -2090,7 +2089,7 @@ compute_distinct_stats(VacAttrStatsP stats,
 	track_max = 2 * num_mcv;
 	if (track_max < 10)
 		track_max = 10;
-	track = (TrackItem *) palloc(track_max * sizeof(TrackItem));
+	track = palloc_array(TrackItem, track_max);
 	track_cnt = 0;
 
 	fmgr_info(mystats->eqfunc, &f_cmpeq);
@@ -2327,7 +2326,7 @@ compute_distinct_stats(VacAttrStatsP stats,
 
 			if (num_mcv > 0)
 			{
-				mcv_counts = (int *) palloc(num_mcv * sizeof(int));
+				mcv_counts = palloc_array(int, num_mcv);
 				for (i = 0; i < num_mcv; i++)
 					mcv_counts[i] = track[i].count;
 
@@ -2347,8 +2346,8 @@ compute_distinct_stats(VacAttrStatsP stats,
 
 			/* Must copy the target values into anl_context */
 			old_context = MemoryContextSwitchTo(stats->anl_context);
-			mcv_values = (Datum *) palloc(num_mcv * sizeof(Datum));
-			mcv_freqs = (float4 *) palloc(num_mcv * sizeof(float4));
+			mcv_values = palloc_array(Datum, num_mcv);
+			mcv_freqs = palloc_array(float4, num_mcv);
 			for (i = 0; i < num_mcv; i++)
 			{
 				mcv_values[i] = datumCopy(track[i].value,
@@ -2426,9 +2425,9 @@ compute_scalar_stats(VacAttrStatsP stats,
 	int			num_bins = stats->attstattarget;
 	StdAnalyzeData *mystats = (StdAnalyzeData *) stats->extra_data;
 
-	values = (ScalarItem *) palloc(samplerows * sizeof(ScalarItem));
-	tupnoLink = (int *) palloc(samplerows * sizeof(int));
-	track = (ScalarMCVItem *) palloc(num_mcv * sizeof(ScalarMCVItem));
+	values = palloc_array(ScalarItem, samplerows);
+	tupnoLink = palloc_array(int, samplerows);
+	track = palloc_array(ScalarMCVItem, num_mcv);
 
 	memset(&ssup, 0, sizeof(ssup));
 	ssup.ssup_cxt = CurrentMemoryContext;

@@ -168,7 +168,7 @@ GinDataLeafPageGetItems(Page page, int *nitems, ItemPointerData advancePast)
 	{
 		ItemPointer tmp = dataLeafPageGetUncompressed(page, nitems);
 
-		result = palloc((*nitems) * sizeof(ItemPointerData));
+		result = palloc_array(ItemPointerData, *nitems);
 		memcpy(result, tmp, (*nitems) * sizeof(ItemPointerData));
 	}
 
