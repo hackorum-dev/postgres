@@ -227,7 +227,7 @@
        in most cases is probably not a good candidate for a GIN operator
        class.)
        The symbols to use for setting this mode are defined in
-       <filename>access/gin.h</filename>.
+       <filename>src/include/access/gin.h</filename>.
       </para>
 
       <para>
