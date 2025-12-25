@@ -2405,7 +2405,7 @@ PG_FUNCTION_INFO_V1(funcname);
 
     <para>
      These convenience functions and similar ones can be found
-     in <filename>fmgr.h</filename>.
+     in <filename>src/include/fmgr.h</filename>.
      The <function>DirectFunctionCall<replaceable>n</replaceable></function>
      family expect a C function name as their first argument.  There are also
      <function>OidFunctionCall<replaceable>n</replaceable></function> which
