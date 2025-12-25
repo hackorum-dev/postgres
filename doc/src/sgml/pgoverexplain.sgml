@@ -40,7 +40,7 @@ LOAD 'pg_overexplain';
    the plan tree that is not normally shown because it is not expected to be
    of general interest. For each individual plan node, it will display the
    following fields.  See <structname>Plan</structname> in
-   <filename>nodes/plannodes.h</filename> for additional documentation of these
+   <filename>src/include/nodes/plannodes.h</filename> for additional documentation of these
    fields.
   </para>
 
@@ -83,7 +83,7 @@ LOAD 'pg_overexplain';
   <para>
    Once per query, the <literal>DEBUG</literal> option will display the
    following fields. See <structname>PlannedStmt</structname> in
-   <filename>nodes/plannodes.h</filename> for additional detail.
+   <filename>src/include/nodes/plannodes.h</filename> for additional detail.
   </para>
 
   <itemizedlist>
@@ -186,7 +186,7 @@ LOAD 'pg_overexplain';
 
   <para>
    For more information about range table entries, see the definition of
-   <structname>RangeTblEntry</structname> in <filename>nodes/parsenodes.h</filename>.
+   <structname>RangeTblEntry</structname> in <filename>src/include/nodes/parsenodes.h</filename>.
   </para>
  </sect2>
 

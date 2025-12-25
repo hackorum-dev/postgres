@@ -202,7 +202,7 @@ block_fpi_data    |
       <link linkend="catalog-pg-class"><structname>pg_class</structname></link>.<structfield>relfilenode</structfield>
       respectively.  The <structfield>relforknumber</structfield>
       field is the fork number within the relation for the block
-      reference; see <filename>common/relpath.h</filename> for
+      reference; see <filename>src/include/common/relpath.h</filename> for
       details.
      </para>
      <tip>
