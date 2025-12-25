@@ -625,7 +625,7 @@ amadjustmembers (Oid opfamilyoid,
    case <parameter>opclassoid</parameter> is <literal>InvalidOid</literal>.
    The <type>List</type> arguments are lists
    of <structname>OpFamilyMember</structname> structs, as defined
-   in <filename>amapi.h</filename>.
+   in <filename>src/include/access/amapi.h</filename>.
 
    Tests done by this function will typically be a subset of those
    performed by <function>amvalidate</function>,
