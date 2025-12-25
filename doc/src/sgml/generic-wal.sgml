@@ -19,8 +19,8 @@
 
   <para>
    The API for constructing generic WAL records is defined in
-   <filename>access/generic_xlog.h</filename> and implemented
-   in <filename>access/transam/generic_xlog.c</filename>.
+   <filename>src/include/access/generic_xlog.h</filename> and implemented
+   in <filename>src/backend/access/transam/generic_xlog.c</filename>.
   </para>
 
   <para>
