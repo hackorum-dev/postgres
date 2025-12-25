@@ -4610,7 +4610,7 @@ Oid PQftype(const PGresult *res,
        You can query the system table <structname>pg_type</structname> to
        obtain the names and properties of the various data types. The
        <acronym>OID</acronym>s of the built-in data types are defined
-       in the file <filename>catalog/pg_type_d.h</filename>
+       in the file <filename>src/include/catalog/pg_type_d.h</filename>
        in the <productname>PostgreSQL</productname>
        installation's <filename>include</filename> directory.
       </para>

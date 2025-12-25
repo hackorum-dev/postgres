@@ -12797,8 +12797,8 @@ dynamic_library_path = '/usr/local/lib/postgresql:$libdir'
         This parameter can be very helpful when trying to trigger
         hard-to-reproduce bugs involving concurrent catalog changes, but it
         is otherwise rarely needed.  See the source code files
-        <filename>inval.c</filename> and
-        <filename>pg_config_manual.h</filename> for details.
+        <filename>src/backend/utils/cache/inval.c</filename> and
+        <filename>src/include/pg_config_manual.h</filename> for details.
        </para>
 
        <para>
@@ -12924,7 +12924,7 @@ dynamic_library_path = '/usr/local/lib/postgresql:$libdir'
       <listitem>
        <para>
         Enabling this forces all parse and plan trees to be passed through
-        <filename>outfuncs.c</filename>/<filename>readfuncs.c</filename>, to
+        <filename>src/backend/nodes/outfuncs.c</filename> and <filename>src/backend/nodes/readfuncs.c</filename>, to
         facilitate catching errors and omissions in those modules.  The
         default is off.
        </para>
