@@ -597,7 +597,7 @@ t
   <para>
    To make it harder for people to break things, there
    is a limit of 100 on the number of dimensions of cubes. This is set
-   in <filename>cubedata.h</filename> if you need something bigger.
+   in <filename>contrib/cube/cubedata.h</filename> if you need something bigger.
   </para>
  </sect2>
 
