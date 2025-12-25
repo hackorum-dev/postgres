@@ -4196,7 +4196,7 @@ typedef struct sqlvar_struct sqlvar_t;
           <listitem>
            <para>
             Contains the type identifier of the field. For values,
-            see <literal>enum ECPGttype</literal> in <literal>ecpgtype.h</literal>.
+            see <literal>enum ECPGttype</literal> in <literal>src/interfaces/ecpg/include/ecpgtype.h</literal>.
            </para>
           </listitem>
          </varlistentry>
@@ -8597,8 +8597,8 @@ EXEC SQL INCLUDE sqlda.h;
     free(sqlda); /* The main structure is all to be free(),
                   * sqlda and sqlda-&gt;sqlvar is in one allocated area */
 </programlisting>
-    For more information, see the <literal>sqlda.h</literal> header and the
-    <literal>src/interfaces/ecpg/test/compat_informix/sqlda.pgc</literal> regression test.
+    For more information, see the <filename>src/interfaces/ecpg/include/sqlda.h</filename> header and the
+    <filename>src/interfaces/ecpg/test/compat_informix/sqlda.pgc</filename> regression test.
    </para>
   </sect2>
 
