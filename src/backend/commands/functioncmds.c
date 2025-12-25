@@ -1246,7 +1246,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 
 	/*
 	 * Set default values for COST and ROWS depending on other parameters;
-	 * reject ROWS if it's not returnsSet.  NB: pg_dump knows these default
+	 * reject ROWS if it does not return a set.  NB: pg_dump knows these default
 	 * values, keep it in sync if you change them.
 	 */
 	if (procost < 0)
