@@ -1130,7 +1130,7 @@ SPIPlanPtr SPI_prepare(const char * <parameter>command</parameter>, int <paramet
 
   <para>
    <type>SPIPlanPtr</type> is declared as a pointer to an opaque struct type in
-   <filename>spi.h</filename>.  It is unwise to try to access its contents
+   <filename>src/include/executor/spi.h</filename>.  It is unwise to try to access its contents
    directly, as that makes your code much more likely to break in
    future revisions of <productname>PostgreSQL</productname>.
   </para>
@@ -1171,7 +1171,7 @@ SPIPlanPtr SPI_prepare_cursor(const char * <parameter>command</parameter>, int <
    <function>SPI_prepare_cursor</function> is identical to
    <function>SPI_prepare</function>, except that it also allows specification
    of the planner's <quote>cursor options</quote> parameter.  This is a bit mask
-   having the values shown in <filename>nodes/parsenodes.h</filename>
+   having the values shown in <filename>src/include/nodes/parsenodes.h</filename>
    for the <structfield>options</structfield> field of <structname>DeclareCursorStmt</structname>.
    <function>SPI_prepare</function> always takes the cursor options as zero.
   </para>
