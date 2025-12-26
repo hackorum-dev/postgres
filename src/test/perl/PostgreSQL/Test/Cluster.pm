@@ -1926,8 +1926,8 @@ sub get_free_port
 		{
 			foreach my $addr (qw(127.0.0.1),
 				($use_tcp && $PostgreSQL::Test::Utils::windows_os)
-				  ? qw(127.0.0.2 127.0.0.3 0.0.0.0)
-				  : ())
+				? qw(127.0.0.2 127.0.0.3 0.0.0.0)
+				: ())
 			{
 				if (!can_bind($addr, $port))
 				{
@@ -4051,8 +4051,7 @@ sub checksum_disable_offline
 
 ##########################################################################
 
-package PostgreSQL::Test::Cluster::V_11
-  ;    ## no critic (ProhibitMultiplePackages)
+package PostgreSQL::Test::Cluster::V_11;    ## no critic (ProhibitMultiplePackages)
 
 use parent -norequire, qw(PostgreSQL::Test::Cluster);
 
@@ -4079,8 +4078,7 @@ sub init
 
 ##########################################################################
 
-package PostgreSQL::Test::Cluster::V_10
-  ;    ## no critic (ProhibitMultiplePackages)
+package PostgreSQL::Test::Cluster::V_10;    ## no critic (ProhibitMultiplePackages)
 
 use parent -norequire, qw(PostgreSQL::Test::Cluster::V_11);
 
