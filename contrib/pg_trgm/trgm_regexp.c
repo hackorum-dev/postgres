@@ -2193,6 +2193,8 @@ printSourceNFA(regex_t *regex, TrgmColorInfo *colors, int ncolors)
 		/* dot -Tpng -o /tmp/source.png < /tmp/source.gv */
 		FILE	   *fp = fopen("/tmp/source.gv", "w");
 
+		if (!fp)
+			elog(ERROR, "could not open file \"/tmp/source.gv\": %m");
 		fprintf(fp, "%s", buf.data);
 		fclose(fp);
 	}
@@ -2255,6 +2257,8 @@ printTrgmNFA(TrgmNFA *trgmNFA)
 		/* dot -Tpng -o /tmp/transformed.png < /tmp/transformed.gv */
 		FILE	   *fp = fopen("/tmp/transformed.gv", "w");
 
+		if (!fp)
+			elog(ERROR, "could not open file \"/tmp/transformed.gv\": %m");
 		fprintf(fp, "%s", buf.data);
 		fclose(fp);
 	}
@@ -2346,6 +2350,8 @@ printTrgmPackedGraph(TrgmPackedGraph *packedGraph, TRGM *trigrams)
 		/* dot -Tpng -o /tmp/packed.png < /tmp/packed.gv */
 		FILE	   *fp = fopen("/tmp/packed.gv", "w");
 
+		if (!fp)
+			elog(ERROR, "could not open file \"/tmp/packed.gv\": %m");
 		fprintf(fp, "%s", buf.data);
 		fclose(fp);
 	}
