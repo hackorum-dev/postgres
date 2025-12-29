@@ -2429,9 +2429,6 @@ eqjoinsel(PG_FUNCTION_ARGS)
 
 	opfuncoid = get_opcode(operator);
 
-	memset(&sslot1, 0, sizeof(sslot1));
-	memset(&sslot2, 0, sizeof(sslot2));
-
 	/*
 	 * There is no use in fetching one side's MCVs if we lack MCVs for the
 	 * other side, so do a quick check to verify that both stats exist.
