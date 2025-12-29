@@ -20,7 +20,8 @@ PROGS = \
 	testlibpq3 \
 	testlibpq4 \
 	testlo \
-	testlo64
+	testlo64 \
+	$(ENDLIST)
 
 all: $(PROGS)
 

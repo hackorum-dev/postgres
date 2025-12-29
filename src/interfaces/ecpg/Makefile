@@ -7,7 +7,8 @@ SUBDIRS = \
 	ecpglib \
 	include \
 	pgtypeslib \
-	preproc
+	preproc \
+	$(ENDLIST)
 
 # Suppress parallel build of subdirectories to avoid a bug in GNU make 3.82, cf
 # https://savannah.gnu.org/bugs/?30653
