@@ -24,7 +24,8 @@ PROGRAMS = \
 	dropuser \
 	pg_isready \
 	reindexdb \
-	vacuumdb
+	vacuumdb \
+	$(ENDLIST)
 
 override CPPFLAGS := -I$(libpq_srcdir) $(CPPFLAGS)
 LDFLAGS_INTERNAL += -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport)
