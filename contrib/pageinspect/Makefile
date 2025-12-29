@@ -10,7 +10,8 @@ OBJS = \
 	gistfuncs.o \
 	hashfuncs.o \
 	heapfuncs.o \
-	rawpage.o
+	rawpage.o \
+	$(ENDLIST)
 
 EXTENSION = pageinspect
 DATA =  pageinspect--1.12--1.13.sql \
