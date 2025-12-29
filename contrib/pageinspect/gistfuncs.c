@@ -342,7 +342,7 @@ gist_page_items(PG_FUNCTION_ARGS)
 					char		ch = *tmp;
 
 					if (ch == '"' || ch == '\\')
-						appendStringInfoCharMacro(&buf, ch);
+						appendStringInfoCharMacro(&buf, '\\');
 					appendStringInfoCharMacro(&buf, ch);
 				}
 				if (nq)
