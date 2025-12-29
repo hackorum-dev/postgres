@@ -56,7 +56,8 @@ SUBDIRS = \
 	port/win32/arpa \
 	port/win32/netinet \
 	port/win32/sys \
-	portability
+	portability \
+	$(ENDLIST)
 
 # Install all headers
 install: all installdirs

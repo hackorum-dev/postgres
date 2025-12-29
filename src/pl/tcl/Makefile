@@ -40,7 +40,8 @@ REGRESS = \
 	pltcl_subxact \
 	pltcl_transaction \
 	pltcl_trigger \
-	pltcl_unicode
+	pltcl_unicode \
+	$(ENDLIST)
 
 # Tcl on win32 ships with import libraries only for Microsoft Visual C++,
 # which are not compatible with mingw gcc. Therefore we need to build a
