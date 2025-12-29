@@ -706,6 +706,7 @@ with_lz4
 with_zlib
 with_system_tzdata
 with_libxslt
+XML_KEEP_BLANKS_DEPRECATED
 XML2_LIBS
 XML2_CFLAGS
 XML2_CONFIG
@@ -14353,6 +14354,34 @@ else
   as_fn_error $? "header file <libxml/parser.h> is required for XML support" "$LINENO" 5
 fi
 
+  # Check if xmlKeepBlanksDefault triggers a deprecation warning
+  pgac_cv_xml_keep_blanks_deprecated=no
+  if test "$GCC" = yes; then
+    { $as_echo "$as_me:${as_lineno[$LINENO]}: checking whether xmlKeepBlanksDefault is deprecated" >&5
+$as_echo_n "checking whether xmlKeepBlanksDefault is deprecated... " >&6; }
+    pgac_save_CFLAGS=$CFLAGS
+    CFLAGS="$CFLAGS -Werror=deprecated-declarations"
+    cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <libxml/parser.h>
+int
+main ()
+{
+xmlKeepBlanksDefault(0);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+else
+  pgac_cv_xml_keep_blanks_deprecated=yes
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+    CFLAGS=$pgac_save_CFLAGS
+    { $as_echo "$as_me:${as_lineno[$LINENO]}: result: $pgac_cv_xml_keep_blanks_deprecated" >&5
+$as_echo "$pgac_cv_xml_keep_blanks_deprecated" >&6; }
+  fi
+  XML_KEEP_BLANKS_DEPRECATED=$pgac_cv_xml_keep_blanks_deprecated
 
 fi
 
