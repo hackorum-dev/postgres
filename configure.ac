@@ -1650,6 +1650,20 @@ fi
 
 if test "$with_libxml" = yes ; then
   AC_CHECK_HEADER(libxml/parser.h, [], [AC_MSG_ERROR([header file <libxml/parser.h> is required for XML support])])
+  # Check if xmlKeepBlanksDefault triggers a deprecation warning
+  pgac_cv_xml_keep_blanks_deprecated=no
+  if test "$GCC" = yes; then
+    AC_MSG_CHECKING([whether xmlKeepBlanksDefault is deprecated])
+    pgac_save_CFLAGS=$CFLAGS
+    CFLAGS="$CFLAGS -Werror=deprecated-declarations"
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <libxml/parser.h>],
+                                       [xmlKeepBlanksDefault(0);])],
+                      [],
+                      [pgac_cv_xml_keep_blanks_deprecated=yes])
+    CFLAGS=$pgac_save_CFLAGS
+    AC_MSG_RESULT([$pgac_cv_xml_keep_blanks_deprecated])
+  fi
+  AC_SUBST(XML_KEEP_BLANKS_DEPRECATED, [$pgac_cv_xml_keep_blanks_deprecated])
 fi
 
 if test "$with_libxslt" = yes ; then
