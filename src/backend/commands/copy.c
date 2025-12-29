@@ -485,16 +485,17 @@ defGetCopyOnErrorChoice(DefElem *def, ParseState *pstate, bool is_from)
 }
 
 /*
- * Extract REJECT_LIMIT value from a DefElem.
+ * Extract a positive int64 value from a DefElem.
  *
- * REJECT_LIMIT can be specified in two ways: as an int64 for the COPY command
- * option or as a single-quoted string for the foreign table option using
- * file_fdw. Therefore this function needs to handle both formats.
+ * COPY options that limit processing can be specified in two ways: as an int64
+ * for the COPY command option or as a single-quoted string for the foreign
+ * table option using file_fdw. Therefore this function needs to handle both
+ * formats.
  */
 static int64
-defGetCopyRejectLimitOption(DefElem *def)
+defGetCopyPositiveInt64Option(DefElem *def, const char *optname)
 {
-	int64		reject_limit;
+	int64		option_value;
 
 	if (def->arg == NULL)
 		ereport(ERROR,
@@ -502,17 +503,17 @@ defGetCopyRejectLimitOption(DefElem *def)
 				 errmsg("%s requires a numeric value",
 						def->defname)));
 	else if (IsA(def->arg, String))
-		reject_limit = pg_strtoint64(strVal(def->arg));
+		option_value = pg_strtoint64(strVal(def->arg));
 	else
-		reject_limit = defGetInt64(def);
+		option_value = defGetInt64(def);
 
-	if (reject_limit <= 0)
+	if (option_value <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("REJECT_LIMIT (%" PRId64 ") must be greater than zero",
-						reject_limit)));
+				 errmsg("%s (%" PRId64 ") must be greater than zero",
+						optname, option_value)));
 
-	return reject_limit;
+	return option_value;
 }
 
 /*
@@ -741,7 +742,8 @@ ProcessCopyOptions(ParseState *pstate,
 			if (reject_limit_specified)
 				errorConflictingDefElem(defel, pstate);
 			reject_limit_specified = true;
-			opts_out->reject_limit = defGetCopyRejectLimitOption(defel);
+			opts_out->reject_limit =
+				defGetCopyPositiveInt64Option(defel, "REJECT_LIMIT");
 		}
 		else
 			ereport(ERROR,
