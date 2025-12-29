@@ -13,6 +13,7 @@ SUBDIRS = \
 	path \
 	plan \
 	prep \
-	util
+	util \
+	$(ENDLIST)
 
 include $(top_srcdir)/src/backend/common.mk
