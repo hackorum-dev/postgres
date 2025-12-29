@@ -154,6 +154,11 @@ like.o: like.c like_match.c
 numeric.o: CFLAGS += ${CFLAGS_VECTORIZE}
 varbit.o: CFLAGS += ${CFLAGS_VECTORIZE}
 
+# Suppress deprecation warning for xmlKeepBlanksDefault
+ifeq ($(XML_KEEP_BLANKS_DEPRECATED), yes)
+xml.o: CFLAGS += -Wno-deprecated-declarations
+endif
+
 varlena.o: varlena.c levenshtein.c
 
 include $(top_srcdir)/src/backend/common.mk
