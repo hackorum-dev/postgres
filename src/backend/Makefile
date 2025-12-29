@@ -43,7 +43,8 @@ SUBDIRS = \
 	tsearch \
 	utils \
 	$(top_builddir)/src/timezone \
-	jit
+	jit \
+	$(ENDLIST)
 
 include $(srcdir)/common.mk
 
@@ -63,7 +64,8 @@ OBJS = \
 	$(LOCALOBJS) \
 	$(SUBDIROBJS) \
 	$(top_builddir)/src/common/libpgcommon_srv.a \
-	$(top_builddir)/src/port/libpgport_srv.a
+	$(top_builddir)/src/port/libpgport_srv.a \
+	$(ENDLIST)
 
 # We put libpgport and libpgcommon into OBJS, so remove it from LIBS.
 LIBS := $(filter-out -lpgport -lpgcommon, $(LIBS))

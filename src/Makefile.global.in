@@ -76,6 +76,9 @@ VPATH = $(srcdir)
 endif
 endif # not PGXS
 
+# Used to terminated a multi-line list
+ENDLIST=
+
 
 ##########################################################################
 #
