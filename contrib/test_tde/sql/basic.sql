@@ -128,19 +128,18 @@ DROP TABLE test_reindex;
 -- Test 5: ALTER TABLE SET TABLESPACE
 -- RelFileNumber changes, but data is copied through storage hooks
 -- -----------------------------------------------------------------------------
-\! mkdir -p /tmp/test_tde_tablespace
-CREATE TABLESPACE test_tde_tblspc LOCATION '/tmp/test_tde_tablespace';
+SET allow_in_place_tablespaces = true;
+CREATE TABLESPACE regress_tde_tblspc LOCATION '';
 
 CREATE TABLE test_set_tablespace (id int, data text);
 INSERT INTO test_set_tablespace SELECT g, 'data ' || g FROM generate_series(1, 50) g;
 CHECKPOINT;
 
 -- Move to different tablespace - data copied through storage hooks
-ALTER TABLE test_set_tablespace SET TABLESPACE test_tde_tblspc;
+ALTER TABLE test_set_tablespace SET TABLESPACE regress_tde_tblspc;
 
 -- Works fine - data was re-encrypted with new RelFileNumber
 SELECT COUNT(*) FROM test_set_tablespace;
 
 DROP TABLE test_set_tablespace;
-DROP TABLESPACE test_tde_tblspc;
-\! rm -rf /tmp/test_tde_tablespace
+DROP TABLESPACE regress_tde_tblspc;
