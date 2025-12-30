@@ -1021,7 +1021,7 @@ RehashCatCache(CatCache *cp)
 		dlist_foreach_modify(iter, &cp->cc_bucket[i])
 		{
 			CatCTup    *ct = dlist_container(CatCTup, cache_elem, iter.cur);
-			int			hashIndex = HASH_INDEX(ct->hash_value, newnbuckets);
+			Index		hashIndex = HASH_INDEX(ct->hash_value, newnbuckets);
 
 			dlist_delete(iter.cur);
 
@@ -1066,7 +1066,7 @@ RehashCatCacheLists(CatCache *cp)
 		dlist_foreach_modify(iter, &cp->cc_lbucket[i])
 		{
 			CatCList   *cl = dlist_container(CatCList, cache_elem, iter.cur);
-			int			hashIndex = HASH_INDEX(cl->hash_value, newnbuckets);
+			Index		hashIndex = HASH_INDEX(cl->hash_value, newnbuckets);
 
 			dlist_delete(iter.cur);
 
@@ -2066,8 +2066,7 @@ SearchCatCacheList(CatCache *cache,
 #ifndef CATCACHE_FORCE_RELEASE
 				ct->dead &&
 #endif
-				ct->refcount == 0 &&
-				(ct->c_list == NULL || ct->c_list->refcount == 0))
+				ct->refcount == 0)
 				CatCacheRemoveCTup(cache, ct);
 		}
 
