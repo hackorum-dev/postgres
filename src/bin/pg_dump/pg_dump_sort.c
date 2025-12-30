@@ -199,8 +199,8 @@ sortDumpableObjectsByTypeName(DumpableObject **objs, int numObjs)
 static int
 DOTypeNameCompare(const void *p1, const void *p2)
 {
-	DumpableObject *obj1 = *(DumpableObject *const *) p1;
-	DumpableObject *obj2 = *(DumpableObject *const *) p2;
+	const DumpableObject *obj1 = *(DumpableObject *const *) p1;
+	const DumpableObject *obj2 = *(DumpableObject *const *) p2;
 	int			cmpval;
 
 	/* Sort by type's priority */
@@ -265,8 +265,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	 */
 	if (obj1->objType == DO_FUNC || obj1->objType == DO_AGG)
 	{
-		FuncInfo   *fobj1 = *(FuncInfo *const *) p1;
-		FuncInfo   *fobj2 = *(FuncInfo *const *) p2;
+		const FuncInfo   *fobj1 = *(FuncInfo *const *) p1;
+		const FuncInfo   *fobj2 = *(FuncInfo *const *) p2;
 		int			i;
 
 		/* Sort by number of arguments, then argument type names */
@@ -283,8 +283,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_OPERATOR)
 	{
-		OprInfo    *oobj1 = *(OprInfo *const *) p1;
-		OprInfo    *oobj2 = *(OprInfo *const *) p2;
+		const OprInfo    *oobj1 = *(OprInfo *const *) p1;
+		const OprInfo    *oobj2 = *(OprInfo *const *) p2;
 
 		/* oprkind is 'l', 'r', or 'b'; this sorts prefix, postfix, infix */
 		cmpval = (oobj2->oprkind - oobj1->oprkind);
@@ -300,8 +300,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_OPCLASS)
 	{
-		OpclassInfo *opcobj1 = *(OpclassInfo *const *) p1;
-		OpclassInfo *opcobj2 = *(OpclassInfo *const *) p2;
+		const OpclassInfo *opcobj1 = *(OpclassInfo *const *) p1;
+		const OpclassInfo *opcobj2 = *(OpclassInfo *const *) p2;
 
 		/* Sort by access method name, per pg_opclass_am_name_nsp_index */
 		cmpval = accessMethodNameCompare(opcobj1->opcmethod,
@@ -311,8 +311,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_OPFAMILY)
 	{
-		OpfamilyInfo *opfobj1 = *(OpfamilyInfo *const *) p1;
-		OpfamilyInfo *opfobj2 = *(OpfamilyInfo *const *) p2;
+		const OpfamilyInfo *opfobj1 = *(OpfamilyInfo *const *) p1;
+		const OpfamilyInfo *opfobj2 = *(OpfamilyInfo *const *) p2;
 
 		/* Sort by access method name, per pg_opfamily_am_name_nsp_index */
 		cmpval = accessMethodNameCompare(opfobj1->opfmethod,
@@ -322,8 +322,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_COLLATION)
 	{
-		CollInfo   *cobj1 = *(CollInfo *const *) p1;
-		CollInfo   *cobj2 = *(CollInfo *const *) p2;
+		const CollInfo   *cobj1 = *(CollInfo *const *) p1;
+		const CollInfo   *cobj2 = *(CollInfo *const *) p2;
 
 		/*
 		 * Sort by encoding, per pg_collation_name_enc_nsp_index. Technically,
@@ -344,8 +344,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_ATTRDEF)
 	{
-		AttrDefInfo *adobj1 = *(AttrDefInfo *const *) p1;
-		AttrDefInfo *adobj2 = *(AttrDefInfo *const *) p2;
+		const AttrDefInfo *adobj1 = *(AttrDefInfo *const *) p1;
+		const AttrDefInfo *adobj2 = *(AttrDefInfo *const *) p2;
 
 		/* Sort by attribute number */
 		cmpval = (adobj1->adnum - adobj2->adnum);
@@ -354,8 +354,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_POLICY)
 	{
-		PolicyInfo *pobj1 = *(PolicyInfo *const *) p1;
-		PolicyInfo *pobj2 = *(PolicyInfo *const *) p2;
+		const PolicyInfo *pobj1 = *(PolicyInfo *const *) p1;
+		const PolicyInfo *pobj2 = *(PolicyInfo *const *) p2;
 
 		/* Sort by table name (table namespace was considered already) */
 		cmpval = strcmp(pobj1->poltable->dobj.name,
@@ -365,8 +365,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_RULE)
 	{
-		RuleInfo   *robj1 = *(RuleInfo *const *) p1;
-		RuleInfo   *robj2 = *(RuleInfo *const *) p2;
+		const RuleInfo   *robj1 = *(RuleInfo *const *) p1;
+		const RuleInfo   *robj2 = *(RuleInfo *const *) p2;
 
 		/* Sort by table name (table namespace was considered already) */
 		cmpval = strcmp(robj1->ruletable->dobj.name,
@@ -376,8 +376,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_TRIGGER)
 	{
-		TriggerInfo *tobj1 = *(TriggerInfo *const *) p1;
-		TriggerInfo *tobj2 = *(TriggerInfo *const *) p2;
+		const TriggerInfo *tobj1 = *(TriggerInfo *const *) p1;
+		const TriggerInfo *tobj2 = *(TriggerInfo *const *) p2;
 
 		/* Sort by table name (table namespace was considered already) */
 		cmpval = strcmp(tobj1->tgtable->dobj.name,
@@ -388,8 +388,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	else if (obj1->objType == DO_CONSTRAINT ||
 			 obj1->objType == DO_FK_CONSTRAINT)
 	{
-		ConstraintInfo *robj1 = *(ConstraintInfo *const *) p1;
-		ConstraintInfo *robj2 = *(ConstraintInfo *const *) p2;
+		const ConstraintInfo *robj1 = *(ConstraintInfo *const *) p1;
+		const ConstraintInfo *robj2 = *(ConstraintInfo *const *) p2;
 
 		/*
 		 * Sort domain constraints before table constraints, for consistency
@@ -421,8 +421,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_DEFAULT_ACL)
 	{
-		DefaultACLInfo *daclobj1 = *(DefaultACLInfo *const *) p1;
-		DefaultACLInfo *daclobj2 = *(DefaultACLInfo *const *) p2;
+		const DefaultACLInfo *daclobj1 = *(DefaultACLInfo *const *) p1;
+		const DefaultACLInfo *daclobj2 = *(DefaultACLInfo *const *) p2;
 
 		/*
 		 * Sort by defaclrole, per pg_default_acl_role_nsp_obj_index.  The
@@ -434,8 +434,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_PUBLICATION_REL)
 	{
-		PublicationRelInfo *probj1 = *(PublicationRelInfo *const *) p1;
-		PublicationRelInfo *probj2 = *(PublicationRelInfo *const *) p2;
+		const PublicationRelInfo *probj1 = *(PublicationRelInfo *const *) p1;
+		const PublicationRelInfo *probj2 = *(PublicationRelInfo *const *) p2;
 
 		/* Sort by publication name, since (namespace, name) match the rel */
 		cmpval = strcmp(probj1->publication->dobj.name,
@@ -445,8 +445,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_PUBLICATION_TABLE_IN_SCHEMA)
 	{
-		PublicationSchemaInfo *psobj1 = *(PublicationSchemaInfo *const *) p1;
-		PublicationSchemaInfo *psobj2 = *(PublicationSchemaInfo *const *) p2;
+		const PublicationSchemaInfo *psobj1 = *(PublicationSchemaInfo *const *) p1;
+		const PublicationSchemaInfo *psobj2 = *(PublicationSchemaInfo *const *) p2;
 
 		/* Sort by publication name, since ->name is just nspname */
 		cmpval = strcmp(psobj1->publication->dobj.name,
@@ -456,8 +456,8 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	}
 	else if (obj1->objType == DO_SUBSCRIPTION_REL)
 	{
-		SubRelInfo *srobj1 = *(SubRelInfo *const *) p1;
-		SubRelInfo *srobj2 = *(SubRelInfo *const *) p2;
+		const SubRelInfo *srobj1 = *(SubRelInfo *const *) p1;
+		const SubRelInfo *srobj2 = *(SubRelInfo *const *) p2;
 
 		/* Sort by subscription name, since (namespace, name) match the rel */
 		cmpval = strcmp(srobj1->subinfo->dobj.name,
