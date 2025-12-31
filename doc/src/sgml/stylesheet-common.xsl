@@ -41,7 +41,7 @@
 <xsl:param name="punct.honorific" select="''"></xsl:param>
 <xsl:param name="variablelist.term.break.after">1</xsl:param>
 <xsl:param name="variablelist.term.separator"></xsl:param>
-<xsl:param name="xref.with.number.and.title" select="0"></xsl:param>
+<xsl:param name="xref.with.number.and.title" select="1"></xsl:param>
 
 <!--
   This is the default setting, but putting it here makes sure the variable
