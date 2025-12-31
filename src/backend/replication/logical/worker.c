@@ -263,6 +263,7 @@
 #include "commands/trigger.h"
 #include "executor/executor.h"
 #include "executor/execPartition.h"
+#include "libpq/be-fsstubs.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "optimizer/optimizer.h"
@@ -3211,6 +3212,23 @@ apply_handle_delete_internal(ApplyExecutionData *edata,
 	EvalPlanQualEnd(&epqstate);
 }
 
+static void
+apply_handle_lowrite(StringInfo s)
+{
+	Oid			loid;
+	int64		offset;
+	Size		datalen;
+	char	   *data;
+
+	if (handle_streamed_transaction(LOGICAL_REP_MSG_LOWRITE, s))
+		return;
+
+	begin_replication_step();
+	logicalrep_read_lo_write(s, &loid, &offset, &datalen, &data);
+	lo_put(loid, offset, data, datalen);
+	end_replication_step();
+}
+
 /*
  * Try to find a tuple received from the publication side (in 'remoteslot') in
  * the corresponding local relation using either replica identity index,
@@ -3916,6 +3934,9 @@ apply_dispatch(StringInfo s)
 			apply_handle_stream_prepare(s);
 			break;
 
+		case LOGICAL_REP_MSG_LOWRITE:
+			apply_handle_lowrite(s);
+			break;
 		default:
 			ereport(ERROR,
 					(errcode(ERRCODE_PROTOCOL_VIOLATION),
