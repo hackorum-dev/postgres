@@ -205,6 +205,20 @@ lo_write(int fd, const char *buf, int len)
 	return status;
 }
 
+void
+lo_put(Oid loOid, int64 offset, const char *str, int len)
+{
+	LargeObjectDesc *loDesc;
+	int			written PG_USED_FOR_ASSERTS_ONLY;
+
+	lo_cleanup_needed = true;
+	loDesc = inv_open(loOid, INV_WRITE, CurrentMemoryContext);
+	inv_seek(loDesc, offset, SEEK_SET);
+	written = inv_write(loDesc, str, len);
+	Assert(written == len);
+	inv_close(loDesc);
+}
+
 Datum
 be_lo_lseek(PG_FUNCTION_ARGS)
 {
@@ -861,18 +875,10 @@ be_lo_put(PG_FUNCTION_ARGS)
 	Oid			loOid = PG_GETARG_OID(0);
 	int64		offset = PG_GETARG_INT64(1);
 	bytea	   *str = PG_GETARG_BYTEA_PP(2);
-	LargeObjectDesc *loDesc;
-	int			written PG_USED_FOR_ASSERTS_ONLY;
 
 	PreventCommandIfReadOnly("lo_put()");
 
-	lo_cleanup_needed = true;
-	loDesc = inv_open(loOid, INV_WRITE, CurrentMemoryContext);
-	inv_seek(loDesc, offset, SEEK_SET);
-	written = inv_write(loDesc, VARDATA_ANY(str), VARSIZE_ANY_EXHDR(str));
-	Assert(written == VARSIZE_ANY_EXHDR(str));
-	inv_close(loDesc);
-
+	lo_put(loOid, offset, VARDATA_ANY(str), VARSIZE_ANY_EXHDR(str));
 	PG_RETURN_VOID();
 }
 
