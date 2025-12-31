@@ -2656,6 +2656,7 @@ _bt_setup_array_cmp(IndexScanDesc scan, ScanKey skey, Oid elemtype,
 	Relation	rel = scan->indexRelation;
 	RegProcedure cmp_proc;
 	Oid			opcintype = rel->rd_opcintype[skey->sk_attno - 1];
+	Oid			opfamily;
 
 	Assert(skey->sk_strategy == BTEqualStrategyNumber);
 	Assert(OidIsValid(elemtype));
@@ -2674,6 +2675,8 @@ _bt_setup_array_cmp(IndexScanDesc scan, ScanKey skey, Oid elemtype,
 		return;
 	}
 
+	opfamily = rel->rd_opfamily[skey->sk_attno - 1];
+
 	/*
 	 * Look up the appropriate cross-type comparison function in the opfamily.
 	 *
@@ -2685,8 +2688,7 @@ _bt_setup_array_cmp(IndexScanDesc scan, ScanKey skey, Oid elemtype,
 	 * incomplete, but only in cases where it's quite likely that _bt_first
 	 * would fail in just the same way (had we not failed before it could).
 	 */
-	cmp_proc = get_opfamily_proc(rel->rd_opfamily[skey->sk_attno - 1],
-								 opcintype, elemtype, BTORDER_PROC);
+	cmp_proc = get_opfamily_proc(opfamily, opcintype, elemtype, BTORDER_PROC);
 	if (!RegProcedureIsValid(cmp_proc))
 		elog(ERROR, "missing support function %d(%u,%u) for attribute %d of index \"%s\"",
 			 BTORDER_PROC, opcintype, elemtype, skey->sk_attno,
@@ -2707,8 +2709,7 @@ _bt_setup_array_cmp(IndexScanDesc scan, ScanKey skey, Oid elemtype,
 	 * non-cross-type comparison procs for any datatype that it supports at
 	 * all.
 	 */
-	cmp_proc = get_opfamily_proc(rel->rd_opfamily[skey->sk_attno - 1],
-								 elemtype, elemtype, BTORDER_PROC);
+	cmp_proc = get_opfamily_proc(opfamily, elemtype, elemtype, BTORDER_PROC);
 	if (!RegProcedureIsValid(cmp_proc))
 		elog(ERROR, "missing support function %d(%u,%u) for attribute %d of index \"%s\"",
 			 BTORDER_PROC, elemtype, elemtype,
