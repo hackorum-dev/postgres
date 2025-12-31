@@ -63,6 +63,21 @@
   </span>
 </xsl:template>
 
+<!--
+  Templates to remove section n.n.n.n
+  -->
+<xsl:param name="local.l10n.xml" select="document('')"/> 
+<l:i18n xmlns:l="http://docbook.sourceforge.net/xmlns/l10n/1.0"> 
+  <l:l10n language="en"> 
+    <l:context name="xref-number-and-title"> 
+      <l:template name="appendix" text="Appendix %n: &#8220;%t&#8221;"/> 
+      <l:template name="chapter" text="%t"/> 
+      <l:template name="sect1" text="%t"/>
+      <l:template name="sect2" text="%t"/>
+      <l:template name="sect3" text="%t"/>
+    </l:context>    
+  </l:l10n>
+</l:i18n>
 
 <!-- table of contents configuration -->
 
