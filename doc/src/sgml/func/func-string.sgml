@@ -1390,11 +1390,11 @@
         <indexterm>
          <primary>substr</primary>
         </indexterm>
-        <function>substr</function> ( <parameter>string</parameter> <type>text</type>, <parameter>start</parameter> <type>integer</type> <optional>, <parameter>count</parameter> <type>integer</type> </optional> )
+        <function>substr</function> ( <parameter>source</parameter> <type>text</type>, <parameter>start</parameter> <type>integer</type> <optional>, <parameter>count</parameter> <type>integer</type> </optional> )
         <returnvalue>text</returnvalue>
        </para>
        <para>
-        Extracts the substring of <parameter>string</parameter> starting at
+        Extracts the substring of <parameter>source</parameter> starting at
         the <parameter>start</parameter>'th character,
         and extending for <parameter>count</parameter> characters if that is
         specified.  (Same
