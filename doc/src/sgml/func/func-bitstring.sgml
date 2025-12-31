@@ -279,11 +279,11 @@
         <indexterm>
          <primary>substring</primary>
         </indexterm>
-        <function>substring</function> ( <parameter>bits</parameter> <type>bit</type> <optional> <literal>FROM</literal> <parameter>start</parameter> <type>integer</type> </optional> <optional> <literal>FOR</literal> <parameter>count</parameter> <type>integer</type> </optional> )
+        <function>substring</function> ( <parameter>source</parameter> <type>bit</type> <optional> <literal>FROM</literal> <parameter>start</parameter> <type>integer</type> </optional> <optional> <literal>FOR</literal> <parameter>count</parameter> <type>integer</type> </optional> )
         <returnvalue>bit</returnvalue>
        </para>
        <para>
-        Extracts the substring of <parameter>bits</parameter> starting at
+        Extracts the substring of <parameter>source</parameter> starting at
         the <parameter>start</parameter>'th bit if that is specified,
         and stopping after <parameter>count</parameter> bits if that is
         specified.  Provide at least one of <parameter>start</parameter>
@@ -291,6 +291,29 @@
        </para>
        <para>
         <literal>substring(B'110010111111' FROM 3 FOR 2)</literal>
+        <returnvalue>00</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>substring</primary>
+        </indexterm>
+        <function>substring</function> (
+          <parameter>source</parameter> <type>bit</type>,
+          <parameter>start</parameter> <type>integer</type>
+          <optional>, <parameter>count</parameter> <type>integer</type> </optional> )
+        <returnvalue>bit</returnvalue>
+       </para>
+       <para>
+        Extracts the substring of <parameter>source</parameter> starting at
+        the <parameter>start</parameter>'th bit,
+        and stopping after <parameter>count</parameter> bits if that is
+        specified.
+       </para>
+       <para>
+        <literal>substring(source=>B'110010111111', start=>3, count=>2)</literal>
         <returnvalue>00</returnvalue>
        </para></entry>
       </row>

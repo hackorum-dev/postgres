@@ -234,13 +234,13 @@
    </indexterm>
 
 <synopsis>
-<replaceable>string</replaceable> SIMILAR TO <replaceable>pattern</replaceable> <optional>ESCAPE <replaceable>escape-character</replaceable></optional>
-<replaceable>string</replaceable> NOT SIMILAR TO <replaceable>pattern</replaceable> <optional>ESCAPE <replaceable>escape-character</replaceable></optional>
+<replaceable>source</replaceable> SIMILAR TO <replaceable>pattern</replaceable> <optional>ESCAPE <replaceable>escape-character</replaceable></optional>
+<replaceable>source</replaceable> NOT SIMILAR TO <replaceable>pattern</replaceable> <optional>ESCAPE <replaceable>escape-character</replaceable></optional>
 </synopsis>
 
    <para>
     The <function>SIMILAR TO</function> operator returns true or
-    false depending on whether its pattern matches the given string.
+    false depending on whether its pattern matches the given string (the <replaceable>source</replaceable>).
     It is similar to <function>LIKE</function>, except that it
     interprets the pattern using the SQL standard's definition of a
     regular expression.  SQL regular expressions are a curious cross
@@ -369,15 +369,15 @@
     regular expression pattern.  The function can be written according
     to standard SQL syntax:
 <synopsis>
-substring(<replaceable>string</replaceable> SIMILAR <replaceable>pattern</replaceable> ESCAPE <replaceable>escape-character</replaceable>)
+substring(<replaceable>source</replaceable> SIMILAR <replaceable>pattern</replaceable> ESCAPE <replaceable>escape</replaceable>)
 </synopsis>
     or using the now obsolete SQL:1999 syntax:
 <synopsis>
-substring(<replaceable>string</replaceable> FROM <replaceable>pattern</replaceable> FOR <replaceable>escape-character</replaceable>)
+substring(<replaceable>source</replaceable> FROM <replaceable>pattern</replaceable> FOR <replaceable>escape</replaceable>)
 </synopsis>
     or as a plain three-argument function:
 <synopsis>
-substring(<replaceable>string</replaceable>, <replaceable>pattern</replaceable>, <replaceable>escape-character</replaceable>)
+substring(<replaceable>source</replaceable>, <replaceable>pattern</replaceable>, <replaceable>escape</replaceable>)
 </synopsis>
     As with <literal>SIMILAR TO</literal>, the
     specified pattern must match the entire data string, or else the
@@ -581,11 +581,17 @@ substring('foobar' SIMILAR '#"o_b#"%' ESCAPE '#')    <lineannotation>NULL</linea
     </para>
 
     <para>
-     The <function>substring</function> function with two parameters,
-     <function>substring(<replaceable>string</replaceable> from
-     <replaceable>pattern</replaceable>)</function>, provides extraction of a
-     substring
-     that matches a POSIX regular expression pattern.  It returns null if
+     The <function>substring</function> function with two parameters provides extraction of a
+     substring that matches a <acronym>POSIX</acronym> regular expression pattern.
+     The function can be written according to standard <acronym>SQL</acronym> syntax:
+<synopsis>
+substring(<replaceable>source</replaceable> FROM <replaceable>pattern</replaceable>)
+</synopsis>
+     It can also written as a plain two-argument function:
+<synopsis>
+substring(<replaceable>source</replaceable>, <replaceable>pattern</replaceable>)
+</synopsis>
+     It returns null if
      there is no match, otherwise the first portion of the text that matched the
      pattern.  But if the pattern contains any parentheses, the portion
      of the text that matched the first parenthesized subexpression (the

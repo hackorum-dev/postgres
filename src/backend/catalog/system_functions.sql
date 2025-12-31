@@ -42,7 +42,7 @@ CREATE OR REPLACE FUNCTION rpad(text, integer)
  IMMUTABLE PARALLEL SAFE STRICT COST 1
 RETURN rpad($1, $2, ' ');
 
-CREATE OR REPLACE FUNCTION "substring"(text, text, text)
+CREATE OR REPLACE FUNCTION "substring"(source text, pattern text, escape text)
  RETURNS text
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE STRICT COST 1

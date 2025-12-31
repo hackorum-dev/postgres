@@ -200,11 +200,11 @@
         <indexterm>
          <primary>substring</primary>
         </indexterm>
-        <function>substring</function> ( <parameter>bytes</parameter> <type>bytea</type> <optional> <literal>FROM</literal> <parameter>start</parameter> <type>integer</type> </optional> <optional> <literal>FOR</literal> <parameter>count</parameter> <type>integer</type> </optional> )
+        <function>substring</function> ( <parameter>source</parameter> <type>bytea</type> <optional> <literal>FROM</literal> <parameter>start</parameter> <type>integer</type> </optional> <optional> <literal>FOR</literal> <parameter>count</parameter> <type>integer</type> </optional> )
         <returnvalue>bytea</returnvalue>
        </para>
        <para>
-        Extracts the substring of <parameter>bytes</parameter> starting at
+        Extracts the substring of <parameter>source</parameter> starting at
         the <parameter>start</parameter>'th byte if that is specified,
         and stopping after <parameter>count</parameter> bytes if that is
         specified.  Provide at least one of <parameter>start</parameter>
@@ -212,6 +212,29 @@
        </para>
        <para>
         <literal>substring('\x1234567890'::bytea FROM 3 FOR 2)</literal>
+        <returnvalue>\x5678</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>substring</primary>
+        </indexterm>
+        <function>substring</function> (
+          <parameter>source</parameter> <type>bytea</type>,
+          <parameter>start</parameter> <type>integer</type>
+          <optional>, <parameter>count</parameter> <type>integer</type> </optional> )
+        <returnvalue>bytea</returnvalue>
+       </para>
+       <para>
+        Extracts the substring of <parameter>source</parameter> starting at
+        the <parameter>start</parameter>'th byte,
+        and stopping after <parameter>count</parameter> bytes if that is
+        specified.
+       </para>
+       <para>
+        <literal>substring(source=>'\x1234567890'::bytea, start=>3, count=>2)</literal>
         <returnvalue>\x5678</returnvalue>
        </para></entry>
       </row>
@@ -579,7 +602,7 @@
         the <parameter>start</parameter>'th byte,
         and extending for <parameter>count</parameter> bytes if that is
         specified.  (Same
-        as <literal>substring(<parameter>bytes</parameter>
+        as <literal>substring(<parameter>source</parameter>
         from <parameter>start</parameter>
         for <parameter>count</parameter>)</literal>.)
        </para>

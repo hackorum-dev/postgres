@@ -400,11 +400,11 @@
         <indexterm>
          <primary>substring</primary>
         </indexterm>
-        <function>substring</function> ( <parameter>string</parameter> <type>text</type> <optional> <literal>FROM</literal> <parameter>start</parameter> <type>integer</type> </optional> <optional> <literal>FOR</literal> <parameter>count</parameter> <type>integer</type> </optional> )
+        <function>substring</function> ( <parameter>source</parameter> <type>text</type> <optional> <literal>FROM</literal> <parameter>start</parameter> <type>integer</type> </optional> <optional> <literal>FOR</literal> <parameter>count</parameter> <type>integer</type> </optional> )
         <returnvalue>text</returnvalue>
        </para>
        <para>
-        Extracts the substring of <parameter>string</parameter> starting at
+        Extracts the substring of <parameter>source</parameter> starting at
         the <parameter>start</parameter>'th character if that is specified,
         and stopping after <parameter>count</parameter> characters if that is
         specified.  Provide at least one of <parameter>start</parameter>
@@ -426,7 +426,7 @@
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
-        <function>substring</function> ( <parameter>string</parameter> <type>text</type> <literal>FROM</literal> <parameter>pattern</parameter> <type>text</type> )
+        <function>substring</function> ( <parameter>source</parameter> <type>text</type> <literal>FROM</literal> <parameter>pattern</parameter> <type>text</type> )
         <returnvalue>text</returnvalue>
        </para>
        <para>
@@ -441,11 +441,11 @@
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
-        <function>substring</function> ( <parameter>string</parameter> <type>text</type> <literal>SIMILAR</literal> <parameter>pattern</parameter> <type>text</type> <literal>ESCAPE</literal> <parameter>escape</parameter> <type>text</type> )
+        <function>substring</function> ( <parameter>source</parameter> <type>text</type> <literal>SIMILAR</literal> <parameter>pattern</parameter> <type>text</type> <literal>ESCAPE</literal> <parameter>escape</parameter> <type>text</type> )
         <returnvalue>text</returnvalue>
        </para>
        <para role="func_signature">
-        <function>substring</function> ( <parameter>string</parameter> <type>text</type> <literal>FROM</literal> <parameter>pattern</parameter> <type>text</type> <literal>FOR</literal> <parameter>escape</parameter> <type>text</type> )
+        <function>substring</function> ( <parameter>source</parameter> <type>text</type> <literal>FROM</literal> <parameter>pattern</parameter> <type>text</type> <literal>FOR</literal> <parameter>escape</parameter> <type>text</type> )
         <returnvalue>text</returnvalue>
        </para>
        <para>
@@ -1398,7 +1398,7 @@
         the <parameter>start</parameter>'th character,
         and extending for <parameter>count</parameter> characters if that is
         specified.  (Same
-        as <literal>substring(<parameter>string</parameter>
+        as <literal>substring(<parameter>source</parameter>
         from <parameter>start</parameter>
         for <parameter>count</parameter>)</literal>.)
        </para>
@@ -1409,6 +1409,63 @@
        <para>
         <literal>substr('alphabet', 3, 2)</literal>
         <returnvalue>ph</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>substring</primary>
+        </indexterm>
+        <function>substring</function> (
+          <parameter>source</parameter> <type>text</type>,
+          <parameter>start</parameter> <type>integer</type>
+          <optional>, <parameter>count</parameter> <type>integer</type> </optional> )
+        <returnvalue>text</returnvalue>
+       </para>
+       <para>
+        Extracts the substring of <parameter>source</parameter> starting at the
+        <parameter>start</parameter>'th character, and stopping after
+        <parameter>count</parameter> characters if that is specified.
+       </para>
+       <para>
+        <literal>substring(source=>'Thomas', start=>2, count=>3)</literal>
+        <returnvalue>hom</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>substring</function> (
+          <parameter>source</parameter> <type>text</type>,
+          <parameter>pattern</parameter> <type>text</type>,
+          <parameter>escape</parameter> <type>text</type>)
+        <returnvalue>text</returnvalue>
+       </para>
+       <para>
+        Extracts the first substring matching <acronym>SQL</acronym> regular expression;
+        see <xref linkend="functions-similarto-regexp"/>.
+       </para>
+       <para>
+        <literal>substring('Thomas', '%#"o_a#"_', '#')</literal>
+        <returnvalue>oma</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>substring</function> (
+          <parameter>source</parameter> <type>text</type>,
+          <parameter>pattern</parameter> <type>text</type> )
+        <returnvalue>text</returnvalue>
+       </para>
+       <para>
+        Extracts the first substring matching <acronym>POSIX</acronym> regular expression;
+        see <xref linkend="functions-posix-regexp"/>.
+       </para>
+       <para>
+        <literal>substring('Thomas', '...$')</literal>
+        <returnvalue>mas</returnvalue>
        </para></entry>
       </row>
 
