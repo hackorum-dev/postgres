@@ -218,23 +218,31 @@ pgaio_io_call_stage(PgAioHandle *ioh)
 }
 
 /*
- * Internal function which invokes ->complete_shared for all the registered
+ * Internal function which invokes completion callbacks for all registered
  * callbacks.
  */
-void
-pgaio_io_call_complete_shared(PgAioHandle *ioh)
+static PgAioResult
+pgaio_io_call_complete_internal(PgAioHandle *ioh, bool is_shared)
 {
 	PgAioResult result;
-
-	START_CRIT_SECTION();
+	const char *callback_name = is_shared ? "complete_shared" : "complete_local";
 
 	Assert(ioh->target > PGAIO_TID_INVALID && ioh->target < PGAIO_TID_COUNT);
 	Assert(ioh->op > PGAIO_OP_INVALID && ioh->op < PGAIO_OP_COUNT);
 
-	result.status = PGAIO_RS_OK;	/* low level IO is always considered OK */
-	result.result = ioh->result;
-	result.id = PGAIO_HCB_INVALID;
-	result.error_data = 0;
+	/* Initialize result based on callback type */
+	if (is_shared)
+	{
+		result.status = PGAIO_RS_OK;	/* low level IO is always considered OK */
+		result.result = ioh->result;
+		result.id = PGAIO_HCB_INVALID;
+		result.error_data = 0;
+	}
+	else
+	{
+		result = ioh->distilled_result;
+		Assert(result.status != PGAIO_RS_UNKNOWN);
+	}
 
 	/*
 	 * Call callbacks with the last registered (innermost) callback first.
@@ -245,22 +253,41 @@ pgaio_io_call_complete_shared(PgAioHandle *ioh)
 		PgAioHandleCallbackID cb_id = ioh->callbacks[i - 1];
 		uint8		cb_data = ioh->callbacks_data[i - 1];
 		const PgAioHandleCallbacksEntry *ce = &aio_handle_cbs[cb_id];
+		PgAioHandleCallbackComplete cb_func = NULL;
 
-		if (!ce->cb->complete_shared)
+		/* Select the appropriate callback function based on type */
+		cb_func = is_shared ? ce->cb->complete_shared : ce->cb->complete_local;
+
+		if (!cb_func)
 			continue;
 
 		pgaio_debug_io(DEBUG4, ioh,
-					   "calling cb #%d, id %d/%s->complete_shared(%u) with distilled result: (status %s, id %u, error_data %d, result %d)",
-					   i, cb_id, ce->name,
+					   "calling cb #%d, id %d/%s->%s(%u) with distilled result: (status %s, id %u, error_data %d, result %d)",
+					   i, cb_id, ce->name, callback_name,
 					   cb_data,
 					   pgaio_result_status_string(result.status),
 					   result.id, result.error_data, result.result);
-		result = ce->cb->complete_shared(ioh, result, cb_data);
+		result = cb_func(ioh, result, cb_data);
 
 		/* the callback should never transition to unknown */
 		Assert(result.status != PGAIO_RS_UNKNOWN);
 	}
 
+	return result;
+}
+
+/*
+ * Internal function which invokes ->complete_shared for all the registered
+ * callbacks.
+ */
+void
+pgaio_io_call_complete_shared(PgAioHandle *ioh)
+{
+	PgAioResult result;
+
+	START_CRIT_SECTION();
+
+	result = pgaio_io_call_complete_internal(ioh, true);
 	ioh->distilled_result = result;
 
 	pgaio_debug_io(DEBUG3, ioh,
@@ -278,8 +305,6 @@ pgaio_io_call_complete_shared(PgAioHandle *ioh)
  *
  * Returns ioh->distilled_result after, possibly, being modified by local
  * callbacks.
- *
- * XXX: It'd be nice to deduplicate with pgaio_io_call_complete_shared().
  */
 PgAioResult
 pgaio_io_call_complete_local(PgAioHandle *ioh)
@@ -288,39 +313,8 @@ pgaio_io_call_complete_local(PgAioHandle *ioh)
 
 	START_CRIT_SECTION();
 
-	Assert(ioh->target > PGAIO_TID_INVALID && ioh->target < PGAIO_TID_COUNT);
-	Assert(ioh->op > PGAIO_OP_INVALID && ioh->op < PGAIO_OP_COUNT);
+	result = pgaio_io_call_complete_internal(ioh, false);
 
-	/* start with distilled result from shared callback */
-	result = ioh->distilled_result;
-	Assert(result.status != PGAIO_RS_UNKNOWN);
-
-	for (int i = ioh->num_callbacks; i > 0; i--)
-	{
-		PgAioHandleCallbackID cb_id = ioh->callbacks[i - 1];
-		uint8		cb_data = ioh->callbacks_data[i - 1];
-		const PgAioHandleCallbacksEntry *ce = &aio_handle_cbs[cb_id];
-
-		if (!ce->cb->complete_local)
-			continue;
-
-		pgaio_debug_io(DEBUG4, ioh,
-					   "calling cb #%d, id %d/%s->complete_local(%u) with distilled result: status %s, id %u, error_data %d, result %d",
-					   i, cb_id, ce->name, cb_data,
-					   pgaio_result_status_string(result.status),
-					   result.id, result.error_data, result.result);
-		result = ce->cb->complete_local(ioh, result, cb_data);
-
-		/* the callback should never transition to unknown */
-		Assert(result.status != PGAIO_RS_UNKNOWN);
-	}
-
-	/*
-	 * Note that we don't save the result in ioh->distilled_result, the local
-	 * callback's result should not ever matter to other waiters. However, the
-	 * local backend does care, so we return the result as modified by local
-	 * callbacks, which then can be passed to ioh->report_return->result.
-	 */
 	pgaio_debug_io(DEBUG3, ioh,
 				   "after local completion: result: (status %s, id %u, error_data %d, result %d), raw_result: %d",
 				   pgaio_result_status_string(result.status),
