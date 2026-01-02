@@ -216,12 +216,22 @@ SELECT typname FROM pg_type WHERE oid = '_attmp_array[]'::regtype;
 DROP TABLE _attmp_array;
 
 -- ALTER TABLE ... RENAME on non-table relations
--- renaming indexes (FIXME: this should probably test the index's functionality)
+-- renaming indexes
 ALTER INDEX IF EXISTS __onek_unique1 RENAME TO attmp_onek_unique1;
 ALTER INDEX IF EXISTS __attmp_onek_unique1 RENAME TO onek_unique1;
 
 ALTER INDEX onek_unique1 RENAME TO attmp_onek_unique1;
 ALTER INDEX attmp_onek_unique1 RENAME TO onek_unique1;
+
+-- verify the renamed index is usable
+set enable_seqscan to off;
+set enable_bitmapscan to off;
+set enable_indexonlyscan to off;
+EXPLAIN (COSTS OFF) SELECT 1 FROM onek WHERE unique1 = 1;
+SELECT unique1 FROM onek WHERE unique1 = 1;
+reset enable_seqscan;
+reset enable_bitmapscan;
+reset enable_indexonlyscan;
 
 SET ROLE regress_alter_table_user1;
 ALTER INDEX onek_unique1 RENAME TO fail;  -- permission denied
