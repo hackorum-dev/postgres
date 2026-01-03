@@ -23,6 +23,7 @@
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/selfuncs.h"
+#include "nodes/makefuncs.h"
 
 /*
  * Data structure for accumulating info about possible range-query
@@ -48,6 +49,16 @@ static Selectivity clauselist_selectivity_or(PlannerInfo *root,
 											 JoinType jointype,
 											 SpecialJoinInfo *sjinfo,
 											 bool use_extended_stats);
+
+static Selectivity clauselist_selectivity_coalesce_op_expr(PlannerInfo *root,
+														   CoalesceExpr* cexpr,
+														   Expr* expr,
+														   Oid opno,
+														   Oid inputcollid,
+														   int varRelid,
+														   JoinType jointype,
+														   SpecialJoinInfo *sjinfo,
+														   bool use_extended_stats);
 
 /****************************************************************************
  *		ROUTINES TO COMPUTE SELECTIVITIES
@@ -419,6 +430,73 @@ clauselist_selectivity_or(PlannerInfo *root,
 }
 
 /*
+ * clauselist_selectivity_coalesce_op_expr -
+ *    Compute selectivity for expression having form:
+ *       COALESCE(...) OP VAR
+ *       COALESCE(...) OP CONST
+ *    by using clauselist_selectivity_or instead of the generic function selectivity.
+ *    To archieve that, it converts the coalesce clause into a list of 'or' clauses.
+ */
+static Selectivity
+clauselist_selectivity_coalesce_op_expr(PlannerInfo *root,
+										CoalesceExpr* cexpr,
+										Expr* expr,
+										Oid opno,
+										Oid inputcollid,
+										int varRelid,
+										JoinType jointype,
+										SpecialJoinInfo *sjinfo,
+										bool use_extended_stats)
+{
+    ListCell     *lc;
+    List         *or_clauses = NIL;
+    List         *previous_null_clauses = NIL;
+
+    /*
+     * build new clauses for each coalesce element
+     * foreach each element, check that the previous ones are NULL
+     * the is null checks are copied and reused for the next loop.
+     */
+    foreach(lc, cexpr->args)
+    {
+		Expr *e = (Expr *) lfirst(lc);
+		NullTest *ntest;
+
+		/* build e OP expr */
+		Node *opexpr = (Node *) make_opclause(opno, BOOLOID, false, e, expr, InvalidOid, inputcollid);
+		if(previous_null_clauses == NIL) {
+			or_clauses = lappend(or_clauses, opexpr);
+		} else {
+			Expr *andexpr;
+
+			/*
+			  do a copy because the previous_null_clauses evolves during the loop on coalesce expressions
+			 */
+			List *and_clauses = copyObject(previous_null_clauses);
+			and_clauses = lappend(and_clauses, opexpr);
+			andexpr = makeBoolExpr(AND_EXPR, and_clauses, -1);
+			or_clauses = lappend(or_clauses, andexpr);
+		}
+
+		/* e IS NULL check */
+		ntest = makeNode(NullTest);
+		ntest->arg = e;
+		ntest->nulltesttype = IS_NULL;
+		ntest->argisrow = false;
+		ntest->location = -1;
+		
+		previous_null_clauses = lappend(previous_null_clauses, ntest);
+    }
+
+    return clauselist_selectivity_or(root,
+                                     or_clauses,
+                                     varRelid,
+                                     jointype,
+                                     sjinfo,
+                                     use_extended_stats);
+}
+
+/*
  * addRangeClause --- add a new range clause for clauselist_selectivity
  *
  * Here is where we try to match up pairs of range-query clauses
@@ -624,6 +702,84 @@ treat_as_join_clause(PlannerInfo *root, Node *clause, RestrictInfo *rinfo,
 	}
 }
 
+/*
+  Identify if a clause has a coalesce part to be eligible to a specific coalesce selectivity computation
+*/
+static inline CoalesceExpr* get_coalesce_op_expr_clause_coalesce_part_recurse(Node* clause) {
+	if(IsA(clause, CoalesceExpr))     return ((CoalesceExpr*) clause);
+	else if(IsA(clause, RelabelType)) return get_coalesce_op_expr_clause_coalesce_part_recurse((Node*) ((RelabelType*)clause)->arg);
+	return NULL;
+}
+
+/*
+ * Identify if a clause has a simple expression part to be eligible to a specific coalesce selectivity computation
+ * actually, only var and const are considered
+ * while it seems where the benefic seems obvious
+*/
+static inline Expr* get_coalesce_op_expr_clause_expression_part_recurse(Node* clause) {
+	if(IsA(clause, Const)) return ((Expr*)clause);
+	else if(IsA(clause, Var)) return ((Expr*)clause);
+	else if(IsA(clause, RelabelType)) return get_coalesce_op_expr_clause_expression_part_recurse((Node*)((RelabelType*)clause)->arg);
+	return NULL;
+}
+
+static inline CoalesceExpr* get_coalesce_op_expr_clause_coalesce_part(Node* clause) {
+	Expr	   *leftOp;
+	Expr	   *rightOp;
+	CoalesceExpr* cexpr = NULL;
+
+	if(!is_opclause(clause)) return NULL;
+	leftOp  = (Expr *) get_leftop(clause);
+	rightOp = (Expr *) get_rightop(clause);
+
+	if(leftOp != NULL) {
+		cexpr = get_coalesce_op_expr_clause_coalesce_part_recurse((Node*)leftOp);
+	} else if(rightOp != NULL) {
+		cexpr = get_coalesce_op_expr_clause_coalesce_part_recurse((Node*)rightOp);
+	}
+
+	/*
+	 * Check that all the coalesce elements are simple element
+	 */
+	if(cexpr != NULL) {
+		ListCell *lc;
+
+		foreach(lc, cexpr->args)
+		{
+			Expr *e = (Expr *) lfirst(lc);
+			if(get_coalesce_op_expr_clause_expression_part_recurse((Node*)e) == NULL) {
+				return NULL;
+			}
+		}
+	}
+
+	return cexpr;
+}
+
+/*
+ *  - get_coalesce_op_expr_clause_expression_part
+ *	  Detect nodes of the form coalesce(...) = <simple expression (var/constant)>
+ */
+static inline Expr* get_coalesce_op_expr_clause_expression_part(Node* clause) {
+	Expr	   *leftOp;
+	Expr	   *rightOp;
+
+	if(!is_opclause(clause)) return false;
+	leftOp  = (Expr *) get_leftop(clause);
+	rightOp = (Expr *) get_rightop(clause);
+
+	if(leftOp != NULL) {
+		Expr* expr = get_coalesce_op_expr_clause_expression_part_recurse((Node*)leftOp);
+		if(expr != NULL) return expr;
+	}
+
+	if(rightOp != NULL) {
+		Expr* expr = get_coalesce_op_expr_clause_expression_part_recurse((Node*)rightOp);
+		if(expr != NULL) return expr;
+	}
+
+	return NULL;
+}
 
 /*
  * clause_selectivity -
@@ -833,6 +989,18 @@ clause_selectivity_ext(PlannerInfo *root,
 		OpExpr	   *opclause = (OpExpr *) clause;
 		Oid			opno = opclause->opno;
 
+		/*
+		 * if the opclause is composed of:
+		 * - a coalesce side composed of simple expressions
+		 * - a simple expression
+		 * a specific estimate is done for the coalesce function
+		 */
+		CoalesceExpr *coalesce_cexpr = get_coalesce_op_expr_clause_coalesce_part(clause);
+		Expr *coalesce_expr = NULL;
+		if(coalesce_cexpr != NULL) {
+			coalesce_expr = get_coalesce_op_expr_clause_expression_part(clause);
+		}
+
 		if (treat_as_join_clause(root, clause, rinfo, varRelid, sjinfo))
 		{
 			/* Estimate selectivity for a join clause. */
@@ -841,6 +1009,20 @@ clause_selectivity_ext(PlannerInfo *root,
 								  opclause->inputcollid,
 								  jointype,
 								  sjinfo);
+		}
+		else if (coalesce_cexpr != NULL && coalesce_expr != NULL) {
+			/* 
+			 * Almost the same thing as is_orclause
+			 */
+			s1 = clauselist_selectivity_coalesce_op_expr(root,
+														 coalesce_cexpr,
+														 coalesce_expr,
+														 ((OpExpr *) clause)->opno,
+														 ((OpExpr *) clause)->inputcollid,
+														 varRelid,
+														 jointype,
+														 sjinfo,
+														 use_extended_stats);
 		}
 		else
 		{
