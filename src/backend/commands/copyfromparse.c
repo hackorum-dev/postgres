@@ -2066,3 +2066,31 @@ CopyReadBinaryAttribute(CopyFromState cstate, FmgrInfo *flinfo,
 	*isnull = false;
 	return result;
 }
+
+/*
+ * Discard remaining COPY FROM STDIN data after reaching a row limit.
+ */
+void
+CopyFromDrainInput(CopyFromState cstate)
+{
+	Assert(cstate->copy_src == COPY_FRONTEND);
+
+	/* Read to EOF on the raw input */
+	while (!cstate->raw_reached_eof)
+	{
+		int			inbytes;
+
+		inbytes = CopyGetData(cstate, cstate->raw_buf, 1, RAW_BUF_SIZE);
+		if (inbytes <= 0)
+			break;
+	}
+
+	/* Reset buffer pointers */
+	cstate->raw_buf_index = 0;
+	cstate->raw_buf_len = 0;
+	if (cstate->input_buf != NULL)
+	{
+		cstate->input_buf_index = 0;
+		cstate->input_buf_len = 0;
+	}
+}

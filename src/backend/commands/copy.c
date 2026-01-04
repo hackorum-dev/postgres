@@ -568,6 +568,7 @@ ProcessCopyOptions(ParseState *pstate,
 	bool		format_specified = false;
 	bool		freeze_specified = false;
 	bool		header_specified = false;
+	bool		limit_specified = false;
 	bool		on_error_specified = false;
 	bool		log_verbosity_specified = false;
 	bool		reject_limit_specified = false;
@@ -634,6 +635,13 @@ ProcessCopyOptions(ParseState *pstate,
 				errorConflictingDefElem(defel, pstate);
 			header_specified = true;
 			opts_out->header_line = defGetCopyHeaderOption(defel, is_from);
+		}
+		else if (strcmp(defel->defname, "limit") == 0)
+		{
+			if (limit_specified)
+				errorConflictingDefElem(defel, pstate);
+			limit_specified = true;
+			opts_out->limit = defGetCopyPositiveInt64Option(defel, "LIMIT");
 		}
 		else if (strcmp(defel->defname, "quote") == 0)
 		{
@@ -842,6 +850,16 @@ ProcessCopyOptions(ParseState *pstate,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 		/*- translator: %s is the name of a COPY option, e.g. ON_ERROR */
 				 errmsg("cannot specify %s in BINARY mode", "HEADER")));
+
+	/* Check limit */
+	if (opts_out->limit && !is_from)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+		/*- translator: first %s is the name of a COPY option, e.g. ON_ERROR,
+		 second %s is a COPY with direction, e.g. COPY TO */
+				 errmsg("COPY %s cannot be used with %s", "LIMIT", "COPY TO")));
+	}
 
 	/* Check quote */
 	if (!opts_out->csv_mode && opts_out->quote != NULL)

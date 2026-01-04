@@ -63,6 +63,7 @@ typedef struct CopyFormatOptions
 	bool		csv_mode;		/* Comma Separated Value format? */
 	int			header_line;	/* number of lines to skip or COPY_HEADER_XXX
 								 * value (see the above) */
+	int64		limit;			/* maximum rows to load */
 	char	   *null_print;		/* NULL marker string (server encoding!) */
 	int			null_print_len; /* length of same */
 	char	   *null_print_client;	/* same converted to file encoding */

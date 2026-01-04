@@ -1228,7 +1228,7 @@ Alter_routine_options, "CALLED ON NULL INPUT", "RETURNS NULL ON NULL INPUT", \
 /* COPY FROM options */
 #define Copy_from_options \
 Copy_common_options, "DEFAULT", "FORCE_NOT_NULL", "FORCE_NULL", "FREEZE", \
-"LOG_VERBOSITY", "ON_ERROR", "REJECT_LIMIT"
+"LIMIT", "LOG_VERBOSITY", "ON_ERROR", "REJECT_LIMIT"
 
 /* COPY TO options */
 #define Copy_to_options \

@@ -38,6 +38,7 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
     NULL '<replaceable class="parameter">null_string</replaceable>'
     DEFAULT '<replaceable class="parameter">default_string</replaceable>'
     HEADER [ <replaceable class="parameter">boolean</replaceable> | <replaceable class="parameter">integer</replaceable> | MATCH ]
+    LIMIT <replaceable class="parameter">rowcount</replaceable>
     QUOTE '<replaceable class="parameter">quote_character</replaceable>'
     ESCAPE '<replaceable class="parameter">escape_character</replaceable>'
     FORCE_QUOTE { ( <replaceable class="parameter">column_name</replaceable> [, ...] ) | * }
@@ -331,6 +332,21 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
      </para>
      <para>
       This option is not allowed when using <literal>binary</literal> format.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="sql-copy-params-limit">
+    <term><literal>LIMIT</literal></term>
+    <listitem>
+     <para>
+      Specifies the maximum number of rows that <command>COPY FROM</command>
+      inserts. Rows filtered out by the <literal>WHERE</literal> clause or
+      skipped because of <literal>ON_ERROR</literal>=<literal>ignore</literal>
+      do not count toward the limit. When the limit is reached, any remaining
+      input is ignored; if the source is <literal>STDIN</literal>, the server
+      will read and discard the rest of the stream to finish the copy
+      protocol. This option is allowed only in <command>COPY FROM</command>.
      </para>
     </listitem>
    </varlistentry>

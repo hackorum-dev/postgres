@@ -193,5 +193,6 @@ extern bool CopyFromCSVOneRow(CopyFromState cstate, ExprContext *econtext,
 							  Datum *values, bool *nulls);
 extern bool CopyFromBinaryOneRow(CopyFromState cstate, ExprContext *econtext,
 								 Datum *values, bool *nulls);
+extern void CopyFromDrainInput(CopyFromState cstate);
 
 #endif							/* COPYFROM_INTERNAL_H */

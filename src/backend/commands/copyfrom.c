@@ -1122,6 +1122,32 @@ CopyFrom(CopyFromState cstate)
 		 */
 		ResetPerTupleExprContext(estate);
 
+		/*
+		 * Stop early when LIMIT would be exceeded.  In multi-insert mode,
+		 * include already buffered tuples so we don't overshoot.
+		 */
+		if (cstate->opts.limit > 0)
+		{
+			int64		pending_tuples = 0;
+
+			if (insertMethod != CIM_SINGLE)
+				pending_tuples = multiInsertInfo.bufferedTuples;
+
+			if (processed + pending_tuples >= cstate->opts.limit)
+			{
+				/*
+				 * COPY FROM STDIN uses the FE/BE COPY IN protocol. To finish
+				 * cleanly after reaching LIMIT, we must consume incoming
+				 * CopyData up to CopyDone/CopyFail so that protocol state
+				 * stays synchronized.
+				 */
+				if (cstate->copy_src == COPY_FRONTEND)
+					CopyFromDrainInput(cstate);
+
+				break;
+			}
+		}
+
 		/* select slot to (initially) load row into */
 		if (insertMethod == CIM_SINGLE || proute)
 		{

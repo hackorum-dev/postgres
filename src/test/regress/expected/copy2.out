@@ -85,6 +85,10 @@ COPY x from stdin (log_verbosity default, log_verbosity verbose);
 ERROR:  conflicting or redundant options
 LINE 1: COPY x from stdin (log_verbosity default, log_verbosity verb...
                                                   ^
+COPY x from stdin (limit 10, limit 10);
+ERROR:  conflicting or redundant options
+LINE 1: COPY x from stdin (limit 10, limit 10);
+                                     ^
 -- incorrect options
 COPY x from stdin (format BINARY, delimiter ',');
 ERROR:  cannot specify DELIMITER in BINARY mode
@@ -144,6 +148,12 @@ COPY x from stdin with (header '2.5');
 ERROR:  header requires a Boolean value, an integer value greater than or equal to zero, or the string "match"
 COPY x to stdout with (header '2');
 ERROR:  cannot use multi-line header in COPY TO
+COPY x from stdin (limit 0);
+ERROR:  LIMIT (0) must be greater than zero
+COPY x from stdin (limit 1.5);
+ERROR:  invalid input syntax for type bigint: "1.5"
+COPY x to stdout (limit 1);
+ERROR:  COPY LIMIT cannot be used with COPY TO
 -- too many columns in column list: should fail
 COPY x (a, b, c, d, e, d, c) from stdin;
 ERROR:  column "d" specified more than once
@@ -192,6 +202,39 @@ COPY x from stdin WHERE a = row_number() over(b);
 ERROR:  window functions are not allowed in COPY FROM WHERE conditions
 LINE 1: COPY x from stdin WHERE a = row_number() over(b);
                                     ^
+-- tests for LIMIT option
+CREATE TEMP TABLE copy_limit_basic (a int);
+COPY copy_limit_basic FROM stdin (limit 2);
+SELECT * FROM copy_limit_basic ORDER BY a;
+ a 
+---
+ 1
+ 2
+(2 rows)
+
+-- test LIMIT with WHERE option
+CREATE TEMP TABLE copy_limit (a int, b text);
+COPY copy_limit FROM stdin (limit 2);
+COPY copy_limit FROM stdin (limit 1) WHERE a > 5;
+SELECT * FROM copy_limit ORDER BY a;
+ a |  b  
+---+-----
+ 1 | one
+ 2 | two
+ 6 | six
+(3 rows)
+
+-- test LIMIT with ON_ERROR option
+CREATE TEMP TABLE copy_limit_err (a int);
+COPY copy_limit_err FROM stdin (on_error ignore, limit 2);
+NOTICE:  1 row was skipped due to data type incompatibility
+SELECT * FROM copy_limit_err ORDER BY a;
+ a 
+---
+ 1
+ 2
+(2 rows)
+
 -- check results of copy in
 SELECT * FROM x;
    a   | b  |     c      |   d    |          e           

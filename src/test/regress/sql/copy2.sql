@@ -68,6 +68,7 @@ COPY x from stdin (convert_selectively (a), convert_selectively (b));
 COPY x from stdin (encoding 'sql_ascii', encoding 'sql_ascii');
 COPY x from stdin (on_error ignore, on_error ignore);
 COPY x from stdin (log_verbosity default, log_verbosity verbose);
+COPY x from stdin (limit 10, limit 10);
 
 -- incorrect options
 COPY x from stdin (format BINARY, delimiter ',');
@@ -96,6 +97,9 @@ COPY x to stdout with (header 2);
 COPY x to stdout with (header '-1');
 COPY x from stdin with (header '2.5');
 COPY x to stdout with (header '2');
+COPY x from stdin (limit 0);
+COPY x from stdin (limit 1.5);
+COPY x to stdout (limit 1);
 
 -- too many columns in column list: should fail
 COPY x (a, b, c, d, e, d, c) from stdin;
@@ -163,6 +167,46 @@ COPY x from stdin WHERE a IN (SELECT 1 FROM x);
 COPY x from stdin WHERE a IN (generate_series(1,5));
 
 COPY x from stdin WHERE a = row_number() over(b);
+
+-- tests for LIMIT option
+CREATE TEMP TABLE copy_limit_basic (a int);
+
+COPY copy_limit_basic FROM stdin (limit 2);
+1
+2
+3
+\.
+
+SELECT * FROM copy_limit_basic ORDER BY a;
+
+-- test LIMIT with WHERE option
+CREATE TEMP TABLE copy_limit (a int, b text);
+
+COPY copy_limit FROM stdin (limit 2);
+1	one
+2	two
+3	three
+\.
+
+COPY copy_limit FROM stdin (limit 1) WHERE a > 5;
+5	five
+6	six
+7	seven
+\.
+
+SELECT * FROM copy_limit ORDER BY a;
+
+-- test LIMIT with ON_ERROR option
+CREATE TEMP TABLE copy_limit_err (a int);
+
+COPY copy_limit_err FROM stdin (on_error ignore, limit 2);
+1
+bad
+2
+3
+\.
+
+SELECT * FROM copy_limit_err ORDER BY a;
 
 
 -- check results of copy in
