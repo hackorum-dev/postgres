@@ -1,4 +1,5 @@
-CREATE EXTENSION btree_gist;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+NOTICE:  extension "btree_gist" already exists, skipping
 -- Check whether any of our opclasses fail amvalidate
 SELECT amname, opcname
 FROM pg_opclass opc LEFT JOIN pg_am am ON am.oid = opcmethod
