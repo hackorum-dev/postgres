@@ -28,6 +28,7 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_class.h"
 #include "access/htup_details.h"
 #include "catalog/pg_aggregate.h"
 #include "catalog/pg_type.h"
@@ -135,6 +136,13 @@ preprocess_minmax_aggregates(PlannerInfo *root)
 	else if (rte->rtekind == RTE_SUBQUERY && rte->inh)
 		 /* flattened UNION ALL subquery, ok */ ;
 	else
+		return;
+
+	/*
+	 * Reject foreign tables. They have their own optimizations, so just let
+	 * them have it.
+	 */
+	if (rte->relkind == RELKIND_FOREIGN_TABLE)
 		return;
 
 	/*
