@@ -268,7 +268,7 @@ pgstat_flush_backend_entry_wal(PgStat_EntryRef *entry_ref)
  * if some statistics could not be flushed due to lock contention.
  */
 bool
-pgstat_flush_backend(bool nowait, bits32 flags)
+pgstat_flush_backend(bool nowait, bits32 flags, bool in_txn_only)
 {
 	PgStat_EntryRef *entry_ref;
 	bool		has_pending_data = false;
@@ -311,9 +311,9 @@ pgstat_flush_backend(bool nowait, bits32 flags)
  * If some stats could not be flushed due to lock contention, return true.
  */
 bool
-pgstat_backend_flush_cb(bool nowait)
+pgstat_backend_flush_cb(bool nowait, bool in_txn_only)
 {
-	return pgstat_flush_backend(nowait, PGSTAT_BACKEND_FLUSH_ALL);
+	return pgstat_flush_backend(nowait, PGSTAT_BACKEND_FLUSH_ALL, in_txn_only);
 }
 
 /*

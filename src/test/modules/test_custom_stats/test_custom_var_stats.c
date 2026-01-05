@@ -37,6 +37,11 @@ PG_MODULE_MAGIC_EXT(
  */
 #define PGSTAT_KIND_TEST_CUSTOM_VAR_STATS 25
 
+/*
+ * Kind ID for test_custom_var_intxn_stats statistics (FLUSH_IN_TRANSACTION).
+ */
+#define PGSTAT_KIND_TEST_CUSTOM_VAR_INTXN_STATS 27
+
 /* File paths for auxiliary data serialization */
 #define TEST_CUSTOM_AUX_DATA_DESC "pg_stat/test_custom_var_stats_desc.stats"
 
@@ -44,6 +49,8 @@ PG_MODULE_MAGIC_EXT(
  * Hash statistic name to generate entry index for pgstat lookup.
  */
 #define PGSTAT_CUSTOM_VAR_STATS_IDX(name) hash_bytes_extended((const unsigned char *) name, strlen(name), 0)
+
+#define PGSTAT_CUSTOM_VAR_INTXN_IDX(name) hash_bytes_extended((const unsigned char *) name, strlen(name), 0)
 
 /*--------------------------------------------------------------------------
  * Type definitions
@@ -56,6 +63,12 @@ typedef struct PgStat_StatCustomVarEntry
 	PgStat_Counter numcalls;	/* times statistic was incremented */
 } PgStat_StatCustomVarEntry;
 
+/* Pending entry for FLUSH_IN_TRANSACTION kind (same layout) */
+typedef struct PgStat_CustomVarInTxnEntry
+{
+	PgStat_Counter numcalls;
+}			PgStat_CustomVarInTxnEntry;
+
 /* Shared memory statistics entry visible to all backends */
 typedef struct PgStatShared_CustomVarEntry
 {
@@ -63,6 +76,13 @@ typedef struct PgStatShared_CustomVarEntry
 	PgStat_StatCustomVarEntry stats;	/* custom statistics data */
 	dsa_pointer description;	/* pointer to description string in DSA */
 } PgStatShared_CustomVarEntry;
+
+/* Shared memory entry for FLUSH_IN_TRANSACTION kind */
+typedef struct PgStatShared_CustomVarInTxnEntry
+{
+	PgStatShared_Common header;
+	PgStat_CustomVarInTxnEntry stats;
+}			PgStatShared_CustomVarInTxnEntry;
 
 /*--------------------------------------------------------------------------
  * Global Variables
@@ -85,7 +105,8 @@ static dsa_area *custom_stats_description_dsa = NULL;
 
 /* Flush callback: merge pending stats into shared memory */
 static bool test_custom_stats_var_flush_pending_cb(PgStat_EntryRef *entry_ref,
-												   bool nowait);
+												   bool nowait, bool in_txn_only,
+												   bool *is_partial);
 
 /* Serialization callback: write auxiliary entry data */
 static void test_custom_stats_var_to_serialized_data(const PgStat_HashKey *key,
@@ -99,6 +120,11 @@ static bool test_custom_stats_var_from_serialized_data(const PgStat_HashKey *key
 
 /* Finish callback: end of statistics file operations */
 static void test_custom_stats_var_finish(PgStat_StatsFileOp status);
+
+/* Flush callback for FLUSH_IN_TRANSACTION kind */
+static bool test_custom_var_intxn_flush_pending_cb(PgStat_EntryRef *entry_ref,
+												   bool nowait, bool in_txn_only,
+												   bool *is_partial);
 
 /*--------------------------------------------------------------------------
  * Custom kind configuration
@@ -121,6 +147,19 @@ static const PgStat_KindInfo custom_stats = {
 	.finish = test_custom_stats_var_finish,
 };
 
+static const PgStat_KindInfo custom_intxn_stats = {
+	.name = "test_custom_var_intxn_stats",
+	.fixed_amount = false,
+	.write_to_file = false,		/* no persistence needed for test */
+	.flush_mode = FLUSH_IN_TRANSACTION,
+	.accessed_across_databases = true,
+	.shared_size = sizeof(PgStatShared_CustomVarInTxnEntry),
+	.shared_data_off = offsetof(PgStatShared_CustomVarInTxnEntry, stats),
+	.shared_data_len = sizeof(PgStat_CustomVarInTxnEntry),
+	.pending_size = sizeof(PgStat_CustomVarInTxnEntry),
+	.flush_pending_cb = test_custom_var_intxn_flush_pending_cb,
+};
+
 /*--------------------------------------------------------------------------
  * Module initialization
  *--------------------------------------------------------------------------
@@ -133,8 +172,9 @@ _PG_init(void)
 	if (!process_shared_preload_libraries_in_progress)
 		return;
 
-	/* Register custom statistics kind */
+	/* Register custom statistics kinds */
 	pgstat_register_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS, &custom_stats);
+	pgstat_register_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_INTXN_STATS, &custom_intxn_stats);
 }
 
 /*--------------------------------------------------------------------------
@@ -152,13 +192,17 @@ _PG_init(void)
  * Returns false only if nowait=true and lock acquisition fails.
  */
 static bool
-test_custom_stats_var_flush_pending_cb(PgStat_EntryRef *entry_ref, bool nowait)
+test_custom_stats_var_flush_pending_cb(PgStat_EntryRef *entry_ref, bool nowait,
+									   bool in_txn_only, bool *is_partial)
 {
 	PgStat_StatCustomVarEntry *pending_entry;
 	PgStatShared_CustomVarEntry *shared_entry;
 
 	pending_entry = (PgStat_StatCustomVarEntry *) entry_ref->pending;
 	shared_entry = (PgStatShared_CustomVarEntry *) entry_ref->shared_stats;
+
+	/* this is not a partial flush */
+	*is_partial = false;
 
 	if (!pgstat_lock_entry(entry_ref, nowait))
 		return false;
@@ -690,4 +734,68 @@ test_custom_stats_var_report(PG_FUNCTION_ARGS)
 	}
 
 	SRF_RETURN_DONE(funcctx);
+}
+
+/*--------------------------------------------------------------------------
+ * FLUSH_IN_TRANSACTION kind: callbacks and SQL functions
+ *--------------------------------------------------------------------------
+ */
+
+static bool
+test_custom_var_intxn_flush_pending_cb(PgStat_EntryRef *entry_ref, bool nowait,
+									   bool in_txn_only, bool *is_partial)
+{
+	PgStat_CustomVarInTxnEntry *pending;
+	PgStatShared_CustomVarInTxnEntry *shared;
+
+	pending = (PgStat_CustomVarInTxnEntry *) entry_ref->pending;
+	shared = (PgStatShared_CustomVarInTxnEntry *) entry_ref->shared_stats;
+
+	*is_partial = false;
+
+	if (!pgstat_lock_entry(entry_ref, nowait))
+		return false;
+
+	shared->stats.numcalls += pending->numcalls;
+
+	pgstat_unlock_entry(entry_ref);
+
+	return true;
+}
+
+PG_FUNCTION_INFO_V1(test_custom_var_intxn_update);
+Datum
+test_custom_var_intxn_update(PG_FUNCTION_ARGS)
+{
+	char	   *stat_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	PgStat_EntryRef *entry_ref;
+	PgStat_CustomVarInTxnEntry *pending;
+
+	entry_ref = pgstat_prep_pending_entry(PGSTAT_KIND_TEST_CUSTOM_VAR_INTXN_STATS,
+										  InvalidOid,
+										  PGSTAT_CUSTOM_VAR_INTXN_IDX(stat_name),
+										  NULL);
+
+	pending = (PgStat_CustomVarInTxnEntry *) entry_ref->pending;
+	pending->numcalls++;
+
+	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(test_custom_var_intxn_report);
+Datum
+test_custom_var_intxn_report(PG_FUNCTION_ARGS)
+{
+	char	   *stat_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	PgStat_CustomVarInTxnEntry *stats;
+
+	stats = (PgStat_CustomVarInTxnEntry *)
+		pgstat_fetch_entry(PGSTAT_KIND_TEST_CUSTOM_VAR_INTXN_STATS,
+						   InvalidOid,
+						   PGSTAT_CUSTOM_VAR_INTXN_IDX(stat_name));
+
+	if (!stats)
+		PG_RETURN_NULL();
+
+	PG_RETURN_INT64(stats->numcalls);
 }

@@ -68,7 +68,7 @@ pgstat_report_checkpointer(void)
 	/*
 	 * Report IO statistics
 	 */
-	pgstat_flush_io(false);
+	pgstat_flush_io(false, true);
 }
 
 /*

@@ -1993,8 +1993,8 @@ WalSndWaitForWal(XLogRecPtr loc)
 		if (TimestampDifferenceExceeds(last_flush, now,
 									   WALSENDER_STATS_FLUSH_INTERVAL))
 		{
-			pgstat_flush_io(false);
-			(void) pgstat_flush_backend(false, PGSTAT_BACKEND_FLUSH_IO);
+			pgstat_flush_io(false, true);
+			(void) pgstat_flush_backend(false, PGSTAT_BACKEND_FLUSH_IO, true);
 			last_flush = now;
 		}
 
@@ -3022,8 +3022,8 @@ WalSndLoop(WalSndSendDataCallback send_data)
 			if (TimestampDifferenceExceeds(last_flush, now,
 										   WALSENDER_STATS_FLUSH_INTERVAL))
 			{
-				pgstat_flush_io(false);
-				(void) pgstat_flush_backend(false, PGSTAT_BACKEND_FLUSH_IO);
+				pgstat_flush_io(false, true);
+				(void) pgstat_flush_backend(false, PGSTAT_BACKEND_FLUSH_IO, true);
 				last_flush = now;
 			}
 

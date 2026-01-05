@@ -51,12 +51,12 @@ pgstat_report_wal(bool force)
 	nowait = !force;
 
 	/* flush wal stats */
-	(void) pgstat_wal_flush_cb(nowait);
-	pgstat_flush_backend(nowait, PGSTAT_BACKEND_FLUSH_WAL);
+	(void) pgstat_wal_flush_cb(nowait, true);
+	(void) pgstat_flush_backend(nowait, PGSTAT_BACKEND_FLUSH_WAL, true);
 
 	/* flush IO stats */
-	pgstat_flush_io(nowait);
-	(void) pgstat_flush_backend(nowait, PGSTAT_BACKEND_FLUSH_IO);
+	pgstat_flush_io(nowait, true);
+	(void) pgstat_flush_backend(nowait, PGSTAT_BACKEND_FLUSH_IO, true);
 }
 
 /*
@@ -88,7 +88,7 @@ pgstat_wal_have_pending(void)
  * acquired. Otherwise return false.
  */
 bool
-pgstat_wal_flush_cb(bool nowait)
+pgstat_wal_flush_cb(bool nowait, bool in_txn_only)
 {
 	PgStatShared_Wal *stats_shmem = &pgStatLocal.shmem->wal;
 	WalUsage	wal_usage_diff = {0};

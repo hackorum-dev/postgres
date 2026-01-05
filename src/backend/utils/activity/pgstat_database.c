@@ -435,13 +435,17 @@ pgstat_reset_database_timestamp(Oid dboid, TimestampTz ts)
  * false without flushing the entry.  Otherwise returns true.
  */
 bool
-pgstat_database_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
+pgstat_database_flush_cb(PgStat_EntryRef *entry_ref, bool nowait,
+						 bool in_txn_only, bool *is_partial)
 {
 	PgStatShared_Database *sharedent;
 	PgStat_StatDBEntry *pendingent;
 
 	pendingent = (PgStat_StatDBEntry *) entry_ref->pending;
 	sharedent = (PgStatShared_Database *) entry_ref->shared_stats;
+
+	/* this is not a partial flush */
+	*is_partial = false;
 
 	if (!pgstat_lock_entry(entry_ref, nowait))
 		return false;

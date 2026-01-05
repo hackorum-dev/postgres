@@ -235,13 +235,29 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
    When using the cumulative statistics views and functions to monitor
    collected data, it is important to realize that the information does not
    update instantaneously.  Each individual server process flushes out
-   accumulated statistics to shared memory just before going idle, but not
-   more frequently than once per <varname>PGSTAT_MIN_INTERVAL</varname>
-   milliseconds (1 second unless altered while building the server); so a
-   query or transaction still in progress does not affect the displayed totals
-   and the displayed information lags behind actual activity.  However,
-   current-query information collected by <varname>track_activities</varname>
+   accumulated statistics to shared memory just before going idle or
+   periodically during transactions, depending on whether the statistics
+   should only be flushed at a transaction boundary, as described below.
+   Current-query information collected by <varname>track_activities</varname>
    is always up-to-date.
+  </para>
+
+  <para>
+   When a server process is about to become idle, it flushes all pending
+   statistics to shared memory, but not more frequently than once per
+   <varname>PGSTAT_MIN_INTERVAL</varname> milliseconds (1 second unless
+   altered while building the server).
+  </para>
+
+  <para>
+   During explicit transaction blocks, statistics that can be flushed at any
+   time, such as relation scan counts, tuples returned and fetched, blocks
+   fetched and hit, as well as IO, WAL, SLRU, and backend statistics, are
+   periodically flushed to shared memory every
+   <varname>PGSTAT_IDLE_TXN_INTERVAL</varname> milliseconds (10 seconds
+   unless altered while building the server).  This periodic flushing occurs
+   when the transaction goes idle between commands.  It does not apply to
+   single statements running outside an explicit transaction block.
   </para>
 
   <para>

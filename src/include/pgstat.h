@@ -38,6 +38,13 @@ typedef struct RelationData *Relation;
 /* Default directory to store temporary statistics data in */
 #define PG_STAT_TMP_DIR		"pg_stat_tmp"
 
+/*
+ * Interval in milliseconds for flushing FLUSH_IN_TRANSACTION stats to shared
+ * memory.  An explicit transaction always enters idle-in-transaction state
+ * between commands, which is when this timeout is enabled.
+ */
+#define PGSTAT_IDLE_TXN_INTERVAL	10000
+
 /* Values for track_functions GUC variable --- order is significant! */
 typedef enum TrackFunctionsLevel
 {
@@ -536,6 +543,7 @@ extern void pgstat_initialize(void);
 
 /* Functions called from backends */
 extern long pgstat_report_stat(bool force);
+extern void pgstat_report_in_transaction_stat(bool force);
 extern void pgstat_force_next_flush(void);
 
 extern void pgstat_reset_counters(void);

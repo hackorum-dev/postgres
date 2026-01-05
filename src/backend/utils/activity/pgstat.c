@@ -187,7 +187,8 @@ static void pgstat_init_snapshot_fixed(void);
 
 static void pgstat_reset_after_failure(void);
 
-static bool pgstat_flush_pending_entries(bool nowait);
+static bool pgstat_flush_pending_entries(bool nowait, bool in_txn_only);
+static bool pgstat_flush_fixed_stats(bool nowait, bool in_txn_only);
 
 static void pgstat_prep_snapshot(void);
 static void pgstat_build_snapshot(void);
@@ -288,6 +289,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 
 		.fixed_amount = false,
 		.write_to_file = true,
+		.flush_mode = FLUSH_IN_TRANSACTION,
 		/* so pg_stat_database entries can be seen in all databases */
 		.accessed_across_databases = true,
 
@@ -305,6 +307,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 
 		.fixed_amount = false,
 		.write_to_file = true,
+		.flush_mode = FLUSH_IN_TRANSACTION,
 
 		.shared_size = sizeof(PgStatShared_Relation),
 		.shared_data_off = offsetof(PgStatShared_Relation, stats),
@@ -321,6 +324,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 
 		.fixed_amount = false,
 		.write_to_file = true,
+		.flush_mode = FLUSH_AT_TXN_BOUNDARY,
 
 		.shared_size = sizeof(PgStatShared_Function),
 		.shared_data_off = offsetof(PgStatShared_Function, stats),
@@ -336,6 +340,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 
 		.fixed_amount = false,
 		.write_to_file = true,
+		.flush_mode = FLUSH_AT_TXN_BOUNDARY,
 
 		.accessed_across_databases = true,
 
@@ -353,6 +358,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 
 		.fixed_amount = false,
 		.write_to_file = true,
+		.flush_mode = FLUSH_AT_TXN_BOUNDARY,
 		/* so pg_stat_subscription_stats entries can be seen in all databases */
 		.accessed_across_databases = true,
 
@@ -370,6 +376,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 
 		.fixed_amount = false,
 		.write_to_file = false,
+		.flush_mode = FLUSH_IN_TRANSACTION,
 
 		.accessed_across_databases = true,
 
@@ -436,6 +443,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 
 		.fixed_amount = true,
 		.write_to_file = true,
+		.flush_mode = FLUSH_IN_TRANSACTION,
 
 		.snapshot_ctl_off = offsetof(PgStat_Snapshot, io),
 		.shared_ctl_off = offsetof(PgStat_ShmemControl, io),
@@ -453,6 +461,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 
 		.fixed_amount = true,
 		.write_to_file = true,
+		.flush_mode = FLUSH_IN_TRANSACTION,
 
 		.snapshot_ctl_off = offsetof(PgStat_Snapshot, slru),
 		.shared_ctl_off = offsetof(PgStat_ShmemControl, slru),
@@ -470,6 +479,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 
 		.fixed_amount = true,
 		.write_to_file = true,
+		.flush_mode = FLUSH_IN_TRANSACTION,
 
 		.snapshot_ctl_off = offsetof(PgStat_Snapshot, wal),
 		.shared_ctl_off = offsetof(PgStat_ShmemControl, wal),
@@ -775,23 +785,11 @@ pgstat_report_stat(bool force)
 	partial_flush = false;
 
 	/* flush of variable-numbered stats tracked in pending entries list */
-	partial_flush |= pgstat_flush_pending_entries(nowait);
+	partial_flush |= pgstat_flush_pending_entries(nowait, false);
 
 	/* flush of other stats kinds */
 	if (pgstat_report_fixed)
-	{
-		for (PgStat_Kind kind = PGSTAT_KIND_MIN; kind <= PGSTAT_KIND_MAX; kind++)
-		{
-			const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
-
-			if (!kind_info)
-				continue;
-			if (!kind_info->flush_static_cb)
-				continue;
-
-			partial_flush |= kind_info->flush_static_cb(nowait);
-		}
-	}
+		partial_flush |= pgstat_flush_fixed_stats(nowait, false);
 
 	last_flush = now;
 
@@ -1293,7 +1291,8 @@ pgstat_prep_pending_entry(PgStat_Kind kind, Oid dboid, uint64 objid, bool *creat
 
 	if (entry_ref->pending == NULL)
 	{
-		size_t		entrysize = pgstat_get_kind_info(kind)->pending_size;
+		const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
+		size_t		entrysize = kind_info->pending_size;
 
 		Assert(entrysize != (size_t) -1);
 
@@ -1345,9 +1344,15 @@ pgstat_delete_pending_entry(PgStat_EntryRef *entry_ref)
 
 /*
  * Flush out pending variable-numbered stats.
+ *
+ * If in_txn_only is true, only flushes FLUSH_IN_TRANSACTION entries. For entries
+ * that support it, the callback may flush only non-transactional fields.
+ * This is safe to call inside transactions.
+ *
+ * If in_txn_only is false, flushes all entries.
  */
 static bool
-pgstat_flush_pending_entries(bool nowait)
+pgstat_flush_pending_entries(bool nowait, bool in_txn_only)
 {
 	bool		have_pending = false;
 	dlist_node *cur = NULL;
@@ -1372,13 +1377,29 @@ pgstat_flush_pending_entries(bool nowait)
 		PgStat_Kind kind = key.kind;
 		const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
 		bool		did_flush;
+		bool		is_partial_flush = false;
 		dlist_node *next;
 
 		Assert(!kind_info->fixed_amount);
 		Assert(kind_info->flush_pending_cb != NULL);
 
+		/* Skip transactional stats if we're in in_txn_only mode */
+		if (in_txn_only && kind_info->flush_mode == FLUSH_AT_TXN_BOUNDARY)
+		{
+			have_pending = true;
+
+			if (dlist_has_next(&pgStatPending, cur))
+				next = dlist_next_node(&pgStatPending, cur);
+			else
+				next = NULL;
+
+			cur = next;
+			continue;
+		}
+
 		/* flush the stats, if possible */
-		did_flush = kind_info->flush_pending_cb(entry_ref, nowait);
+		did_flush = kind_info->flush_pending_cb(entry_ref, nowait,
+												in_txn_only, &is_partial_flush);
 
 		Assert(did_flush || nowait);
 
@@ -1388,8 +1409,8 @@ pgstat_flush_pending_entries(bool nowait)
 		else
 			next = NULL;
 
-		/* if successfully flushed, remove entry */
-		if (did_flush)
+		/* if successfull non-partial flush, remove entry */
+		if (did_flush && !is_partial_flush)
 			pgstat_delete_pending_entry(entry_ref);
 		else
 			have_pending = true;
@@ -1402,6 +1423,33 @@ pgstat_flush_pending_entries(bool nowait)
 	return have_pending;
 }
 
+/*
+ * Flush fixed-amount stats.
+ *
+ * If in_txn_only is true, only flushes FLUSH_IN_TRANSACTION stats (safe inside transactions).
+ * If in_txn_only is false, flushes all stats with flush_static_cb.
+ */
+static bool
+pgstat_flush_fixed_stats(bool nowait, bool in_txn_only)
+{
+	bool		partial_flush = false;
+
+	for (PgStat_Kind kind = PGSTAT_KIND_MIN; kind <= PGSTAT_KIND_MAX; kind++)
+	{
+		const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
+
+		if (!kind_info || !kind_info->flush_static_cb)
+			continue;
+
+		/* Skip transactional stats if we're in in_txn_only mode */
+		if (in_txn_only && kind_info->flush_mode == FLUSH_AT_TXN_BOUNDARY)
+			continue;
+
+		partial_flush |= kind_info->flush_static_cb(nowait, in_txn_only);
+	}
+
+	return partial_flush;
+}
 
 /* ------------------------------------------------------------
  * Helper / infrastructure functions
@@ -2118,4 +2166,25 @@ assign_stats_fetch_consistency(int newval, void *extra)
 	 */
 	if (pgstat_fetch_consistency != newval)
 		force_stats_snapshot_clear = true;
+}
+
+/*
+ * Flushes only FLUSH_IN_TRANSACTION stats using non-blocking locks. Transactional
+ * stats (FLUSH_AT_TXN_BOUNDARY) remain pending until transaction boundary.
+ * Safe to call inside transactions.
+ *
+ * This is called from a timeout handler every PGSTAT_IDLE_TXN_INTERVAL
+ * (10000ms) while idle in transaction, to ensure non-transactional stats
+ * (e.g., IO, backend) are flushed periodically even during long transactions.
+ */
+void
+pgstat_report_in_transaction_stat(bool force)
+{
+	bool		nowait = !force;
+
+	pgstat_assert_is_up();
+
+	/* Flush stats outside of transaction boundary */
+	pgstat_flush_pending_entries(nowait, true);
+	pgstat_flush_fixed_stats(nowait, true);
 }

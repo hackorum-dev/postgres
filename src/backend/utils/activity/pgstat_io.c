@@ -172,9 +172,9 @@ pgstat_fetch_stat_io(void)
  * Simpler wrapper of pgstat_io_flush_cb()
  */
 void
-pgstat_flush_io(bool nowait)
+pgstat_flush_io(bool nowait, bool in_txn_only)
 {
-	(void) pgstat_io_flush_cb(nowait);
+	(void) pgstat_io_flush_cb(nowait, in_txn_only);
 }
 
 /*
@@ -186,7 +186,7 @@ pgstat_flush_io(bool nowait)
  * acquired. Otherwise, return false.
  */
 bool
-pgstat_io_flush_cb(bool nowait)
+pgstat_io_flush_cb(bool nowait, bool in_txn_only)
 {
 	LWLock	   *bktype_lock;
 	PgStat_BktypeIO *bktype_shstats;

@@ -156,5 +156,64 @@ $result = $node->safe_psql('postgres',
 );
 is($result, "0", "report of fixed-sized after manual reset");
 
+# Test FLUSH_IN_TRANSACTION custom stats kind.
+# The intxn kind is registered alongside the regular kind by test_custom_var_stats.
+
+# Basic update and report.
+$node->safe_psql('postgres',
+	q(SELECT test_custom_var_intxn_update('intxn_entry1')));
+$node->safe_psql('postgres',
+	q(SELECT test_custom_var_intxn_update('intxn_entry1')));
+$node->safe_psql('postgres',
+	q(SELECT test_custom_var_intxn_update('intxn_entry1')));
+
+$result = $node->safe_psql('postgres',
+	q(SELECT test_custom_var_intxn_report('intxn_entry1')));
+is($result, "3", "intxn stats report after updates");
+
+# Verify intxn stats are not persisted (write_to_file = false).
+$node->stop();
+$node->start();
+
+$result = $node->safe_psql('postgres',
+	q(SELECT test_custom_var_intxn_report('intxn_entry1')));
+is($result, "", "intxn stats lost after clean restart (not persisted)");
+
+# Test in-transaction flushing with injection point.
+SKIP:
+{
+	skip "injection points not supported", 1
+		unless (($ENV{enable_injection_points} // '') eq 'yes'
+		&& $node->check_extension('injection_points'));
+
+	$node->safe_psql('postgres', 'CREATE EXTENSION IF NOT EXISTS injection_points;');
+	$node->safe_psql('postgres',
+		"SELECT injection_points_attach('in-transaction-stats-short-interval', 'error');");
+
+	$node->append_conf('postgresql.conf', 'stats_fetch_consistency = none');
+	$node->reload;
+
+	my $intxn_before = $node->safe_psql('postgres',
+		"SELECT COALESCE(test_custom_var_intxn_report('intxn_flush'), 0);");
+
+	$result = $node->safe_psql('postgres', q{
+BEGIN;
+SELECT test_custom_var_intxn_update('intxn_flush');
+SELECT test_custom_var_intxn_update('intxn_flush');
+SELECT test_custom_var_intxn_update('intxn_flush');
+SELECT pg_sleep(2);
+SELECT COALESCE(test_custom_var_intxn_report('intxn_flush'), 0);
+});
+
+	my @lines = split(/\n/, $result);
+	my $intxn_mid_txn = $lines[-1];
+
+	ok($intxn_mid_txn > $intxn_before,
+		"custom intxn stats flushed mid-transaction (before: $intxn_before, mid-txn: $intxn_mid_txn)");
+
+	$node->safe_psql('postgres',
+		"SELECT injection_points_detach('in-transaction-stats-short-interval');");
+}
+
 # Test completed successfully
 done_testing();

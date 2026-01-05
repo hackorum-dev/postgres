@@ -65,6 +65,7 @@
 #include "utils/injection_point.h"
 #include "utils/memutils.h"
 #include "utils/pg_locale.h"
+#include "utils/pgstat_internal.h"
 #include "utils/portal.h"
 #include "utils/ps_status.h"
 #include "utils/snapmgr.h"
@@ -89,6 +90,7 @@ static void IdleInTransactionSessionTimeoutHandler(void);
 static void TransactionTimeoutHandler(void);
 static void IdleSessionTimeoutHandler(void);
 static void IdleStatsUpdateTimeoutHandler(void);
+static void InTransactionStatsUpdateTimeoutHandler(void);
 static void ClientCheckTimeoutHandler(void);
 static bool ThereIsAtLeastOneRole(void);
 static void process_startup_options(Port *port, bool am_superuser);
@@ -774,6 +776,8 @@ InitPostgres(const char *in_dbname, Oid dboid,
 		RegisterTimeout(CLIENT_CONNECTION_CHECK_TIMEOUT, ClientCheckTimeoutHandler);
 		RegisterTimeout(IDLE_STATS_UPDATE_TIMEOUT,
 						IdleStatsUpdateTimeoutHandler);
+		RegisterTimeout(IN_TRANSACTION_STATS_UPDATE_TIMEOUT,
+						InTransactionStatsUpdateTimeoutHandler);
 	}
 
 	/*
@@ -1429,6 +1433,14 @@ static void
 IdleStatsUpdateTimeoutHandler(void)
 {
 	IdleStatsUpdateTimeoutPending = true;
+	InterruptPending = true;
+	SetLatch(MyLatch);
+}
+
+static void
+InTransactionStatsUpdateTimeoutHandler(void)
+{
+	InTransactionStatsUpdateTimeoutPending = true;
 	InterruptPending = true;
 	SetLatch(MyLatch);
 }

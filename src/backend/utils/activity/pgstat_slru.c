@@ -139,7 +139,7 @@ pgstat_get_slru_index(const char *name)
  * acquired. Otherwise return false.
  */
 bool
-pgstat_slru_flush_cb(bool nowait)
+pgstat_slru_flush_cb(bool nowait, bool in_txn_only)
 {
 	PgStatShared_SLRU *stats_shmem = &pgStatLocal.shmem->slru;
 	int			i;

@@ -61,7 +61,7 @@ pgstat_report_bgwriter(void)
 	/*
 	 * Report IO statistics
 	 */
-	pgstat_flush_io(false);
+	pgstat_flush_io(false, true);
 }
 
 /*

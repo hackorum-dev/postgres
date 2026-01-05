@@ -3565,6 +3565,12 @@ ProcessInterrupts(void)
 		pgstat_report_stat(true);
 	}
 
+	if (InTransactionStatsUpdateTimeoutPending)
+	{
+		InTransactionStatsUpdateTimeoutPending = false;
+		pgstat_report_in_transaction_stat(false);
+	}
+
 	if (ProcSignalBarrierPending)
 		ProcessProcSignalBarrier();
 
@@ -4621,6 +4627,21 @@ PostgresMain(const char *dbname, const char *username)
 					enable_timeout_after(IDLE_IN_TRANSACTION_SESSION_TIMEOUT,
 										 IdleInTransactionSessionTimeout);
 				}
+
+				/*
+				 * Flush in-transaction stats.
+				 */
+				if (!get_timeout_active(IN_TRANSACTION_STATS_UPDATE_TIMEOUT))
+				{
+					int			stats_interval = PGSTAT_IDLE_TXN_INTERVAL;
+
+#ifdef USE_INJECTION_POINTS
+					if (IS_INJECTION_POINT_ATTACHED("in-transaction-stats-short-interval"))
+						stats_interval = 1000;
+#endif
+					enable_timeout_after(IN_TRANSACTION_STATS_UPDATE_TIMEOUT,
+										 stats_interval);
+				}
 			}
 			else if (IsTransactionOrTransactionBlock())
 			{
@@ -4634,6 +4655,21 @@ PostgresMain(const char *dbname, const char *username)
 					idle_in_transaction_timeout_enabled = true;
 					enable_timeout_after(IDLE_IN_TRANSACTION_SESSION_TIMEOUT,
 										 IdleInTransactionSessionTimeout);
+				}
+
+				/*
+				 * Flush in-transaction stats.
+				 */
+				if (!get_timeout_active(IN_TRANSACTION_STATS_UPDATE_TIMEOUT))
+				{
+					int			stats_interval = PGSTAT_IDLE_TXN_INTERVAL;
+
+#ifdef USE_INJECTION_POINTS
+					if (IS_INJECTION_POINT_ATTACHED("in-transaction-stats-short-interval"))
+						stats_interval = 1000;
+#endif
+					enable_timeout_after(IN_TRANSACTION_STATS_UPDATE_TIMEOUT,
+										 stats_interval);
 				}
 			}
 			else
@@ -4649,6 +4685,13 @@ PostgresMain(const char *dbname, const char *username)
 				 */
 				if (notifyInterruptPending)
 					ProcessNotifyInterrupt(false);
+
+				/*
+				 * We are no longer in a transaction, so disable the
+				 * in-transaction stats flush timeout if it was active.
+				 */
+				if (get_timeout_active(IN_TRANSACTION_STATS_UPDATE_TIMEOUT))
+					disable_timeout(IN_TRANSACTION_STATS_UPDATE_TIMEOUT, false);
 
 				/*
 				 * Check if we need to report stats. If pgstat_report_stat()
