@@ -866,6 +866,15 @@ explain (verbose, costs off)
 select count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), sum(c1) * (random() <= 1)::int as sum2 from ft1 where c2 < 5 group by c2 order by 1, 2 limit 1;
 select count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), sum(c1) * (random() <= 1)::int as sum2 from ft1 where c2 < 5 group by c2 order by 1, 2 limit 1;
 
+-- Simple MIN and MAX aggregates should push down
+explain (verbose, costs off)
+select min(c2) from ft4;
+select min(c2) from ft4;
+
+explain (verbose, costs off)
+select max(c2) from ft4;
+select max(c2) from ft4;
+
 -- Aggregate is not pushed down as aggregation contains random()
 explain (verbose, costs off)
 select sum(c1 * (random() <= 1)::int) as sum, avg(c1) from ft1;
