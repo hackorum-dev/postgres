@@ -22,6 +22,63 @@
 #include "access/xloginsert.h"
 #include "miscadmin.h"
 #include "utils/rel.h"
+/*-------------------------------------------------------------------------
+ * Backend-local reuse cache for recently freed overflow pages.
+ * Best-effort hint only: no correctness or WAL dependency.
+ *-------------------------------------------------------------------------
+ */
+#define HASH_OVFL_REUSE_CACHE_SIZE 32
+
+typedef struct HashOvflReuseCache
+{
+	BlockNumber blocks[HASH_OVFL_REUSE_CACHE_SIZE];
+	int			head;
+	int			count;
+}			HashOvflReuseCache;
+
+static HashOvflReuseCache ovfl_reuse_cache;
+
+/* Record a freed overflow page */
+static void
+hash_record_freed_ovflpage(BlockNumber blkno)
+{
+	ovfl_reuse_cache.blocks[ovfl_reuse_cache.head] = blkno;
+	ovfl_reuse_cache.head =
+		(ovfl_reuse_cache.head + 1) % HASH_OVFL_REUSE_CACHE_SIZE;
+
+	if (ovfl_reuse_cache.count < HASH_OVFL_REUSE_CACHE_SIZE)
+		ovfl_reuse_cache.count++;
+}
+
+/* Try to reuse a recently freed overflow page */
+static bool
+hash_try_reuse_cached_ovflpage(Relation rel, Buffer metabuf,
+							   BlockNumber *reuse_blkno)
+{
+	HashMetaPage metap = HashPageGetMeta(BufferGetPage(metabuf));
+	int			i;
+
+	for (i = 0; i < ovfl_reuse_cache.count; i++)
+	{
+		int			idx =
+			(ovfl_reuse_cache.head - 1 - i + HASH_OVFL_REUSE_CACHE_SIZE)
+			% HASH_OVFL_REUSE_CACHE_SIZE;
+
+		BlockNumber blkno = ovfl_reuse_cache.blocks[idx];
+		uint32		bitno = _hash_ovflblkno_to_bitno(metap, blkno);
+
+		/* Bitmap is authoritative */
+		if (_hash_isbitset(metap->hashm_mapp, bitno))
+		{
+			_hash_clrbit(metap->hashm_mapp, bitno);
+			*reuse_blkno = blkno;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 
 
 static uint32 _hash_firstfreebit(uint32 map);
@@ -132,6 +189,10 @@ _hash_addovflpage(Relation rel, Buffer metabuf, Buffer buf, bool retain_pin)
 	uint32		i,
 				j;
 	bool		page_found = false;
+	BlockNumber reuse_blkno;
+
+
+
 
 	/*
 	 * Write-lock the tail page.  Here, we need to maintain locking order such
@@ -185,6 +246,16 @@ _hash_addovflpage(Relation rel, Buffer metabuf, Buffer buf, bool retain_pin)
 
 	_hash_checkpage(rel, metabuf, LH_META_PAGE);
 	metap = HashPageGetMeta(BufferGetPage(metabuf));
+
+	/*
+	 * NEW: Try reuse cache before scanning bitmap
+	 */
+	if (hash_try_reuse_cached_ovflpage(rel, metabuf, &reuse_blkno))
+	{
+		ovflbuf = _hash_getinitbuf(rel, reuse_blkno);
+		page_found = true;
+		goto found;
+	}
 
 	/* start search at hashm_firstfree */
 	orig_firstfree = metap->hashm_firstfree;
@@ -632,6 +703,12 @@ _hash_freeovflpage(Relation rel, Buffer bucketbuf, Buffer ovflbuf,
 	/* Clear the bitmap bit to indicate that this overflow page is free */
 	CLRBIT(freep, bitmapbit);
 	MarkBufferDirty(mapbuf);
+
+	/*
+	 * NEW: Remember this overflow page for reuse
+	 */
+
+	hash_record_freed_ovflpage(ovflblkno);
 
 	/* if this is now the first free page, update hashm_firstfree */
 	if (ovflbitno < metap->hashm_firstfree)
