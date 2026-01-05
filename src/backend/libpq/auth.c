@@ -2954,6 +2954,8 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 	radius_packet *receivepacket = &radius_recv_pack;
 	void	   *radius_buffer = &radius_send_pack;
 	void	   *receive_buffer = &radius_recv_pack;
+	const size_t passwd_len = strlen(passwd);
+	const size_t secret_len = strlen(secret);
 	int32		service = pg_hton32(RADIUS_AUTHENTICATE_ONLY);
 	uint8	   *cryptvector;
 	int			encryptedpasswordlen;
@@ -3018,9 +3020,9 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 	 * and then: e[i] = p[i] XOR MD5(secret + e[i-1]) for the following ones
 	 * (if necessary)
 	 */
-	encryptedpasswordlen = ((strlen(passwd) + RADIUS_VECTOR_LENGTH - 1) / RADIUS_VECTOR_LENGTH) * RADIUS_VECTOR_LENGTH;
-	cryptvector = palloc(strlen(secret) + RADIUS_VECTOR_LENGTH);
-	memcpy(cryptvector, secret, strlen(secret));
+	encryptedpasswordlen = ((passwd_len + RADIUS_VECTOR_LENGTH - 1) / RADIUS_VECTOR_LENGTH) * RADIUS_VECTOR_LENGTH;
+	cryptvector = palloc(secret_len + RADIUS_VECTOR_LENGTH);
+	memcpy(cryptvector, secret, secret_len);
 
 	/* for the first iteration, we use the Request Authenticator vector */
 	md5trailer = packet->vector;
@@ -3028,7 +3030,7 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 	{
 		const char *errstr = NULL;
 
-		memcpy(cryptvector + strlen(secret), md5trailer, RADIUS_VECTOR_LENGTH);
+		memcpy(cryptvector + secret_len, md5trailer, RADIUS_VECTOR_LENGTH);
 
 		/*
 		 * .. and for subsequent iterations the result of the previous XOR
@@ -3036,7 +3038,7 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 		 */
 		md5trailer = encryptedpassword + i;
 
-		if (!pg_md5_binary(cryptvector, strlen(secret) + RADIUS_VECTOR_LENGTH,
+		if (!pg_md5_binary(cryptvector, secret_len + RADIUS_VECTOR_LENGTH,
 						   encryptedpassword + i, &errstr))
 		{
 			ereport(LOG,
@@ -3049,7 +3051,7 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 
 		for (j = i; j < i + RADIUS_VECTOR_LENGTH; j++)
 		{
-			if (j < strlen(passwd))
+			if (j < passwd_len)
 				encryptedpassword[j] = passwd[j] ^ encryptedpassword[j];
 			else
 				encryptedpassword[j] = '\0' ^ encryptedpassword[j];
@@ -3216,7 +3218,7 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 		 * Verify the response authenticator, which is calculated as
 		 * MD5(Code+ID+Length+RequestAuthenticator+Attributes+Secret)
 		 */
-		cryptvector = palloc(packetlength + strlen(secret));
+		cryptvector = palloc(packetlength + secret_len);
 
 		memcpy(cryptvector, receivepacket, 4);	/* code+id+length */
 		memcpy(cryptvector + 4, packet->vector, RADIUS_VECTOR_LENGTH);	/* request
@@ -3227,10 +3229,10 @@ PerformRadiusTransaction(const char *server, const char *secret, const char *por
 			memcpy(cryptvector + RADIUS_HEADER_LENGTH,
 				   (char *) receive_buffer + RADIUS_HEADER_LENGTH,
 				   packetlength - RADIUS_HEADER_LENGTH);
-		memcpy(cryptvector + packetlength, secret, strlen(secret));
+		memcpy(cryptvector + packetlength, secret, secret_len);
 
 		if (!pg_md5_binary(cryptvector,
-						   packetlength + strlen(secret),
+						   packetlength + secret_len,
 						   encryptedpassword, &errstr))
 		{
 			ereport(LOG,
