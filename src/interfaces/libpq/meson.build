@@ -82,8 +82,10 @@ libpq_so = shared_library('libpq',
 
 libpq = declare_dependency(
   link_with: [libpq_so],
-  include_directories: [include_directories('.')]
+  include_directories: [include_directories('.'), postgres_inc]
 )
+
+meson.override_dependency('libpq', libpq)
 
 # Check for functions that libpq must not call.  See libpq_check.pl for the
 # full set of platform rules.  Skip the test when profiling, as gcc may
