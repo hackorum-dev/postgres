@@ -3009,3 +3009,5 @@ CREATE VIEW user_mappings AS
     FROM _pg_user_mappings;
 
 GRANT SELECT ON user_mappings TO PUBLIC;
+
+RESET search_path;
