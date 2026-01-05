@@ -3672,6 +3672,39 @@ select count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), sum(c1) * (ran
    100 | 49600 | 496.0000000000000000 |   1 | 991 |      0 | 49600
 (1 row)
 
+-- Simple MIN and MAX aggregates should push down
+explain (verbose, costs off)
+select min(c2) from ft4;
+                  QUERY PLAN                   
+-----------------------------------------------
+ Foreign Scan
+   Output: (min(c2))
+   Relations: Aggregate on (public.ft4)
+   Remote SQL: SELECT min(c2) FROM "S 1"."T 3"
+(4 rows)
+
+select min(c2) from ft4;
+ min 
+-----
+   3
+(1 row)
+
+explain (verbose, costs off)
+select max(c2) from ft4;
+                  QUERY PLAN                   
+-----------------------------------------------
+ Foreign Scan
+   Output: (max(c2))
+   Relations: Aggregate on (public.ft4)
+   Remote SQL: SELECT max(c2) FROM "S 1"."T 3"
+(4 rows)
+
+select max(c2) from ft4;
+ max 
+-----
+ 101
+(1 row)
+
 -- Aggregate is not pushed down as aggregation contains random()
 explain (verbose, costs off)
 select sum(c1 * (random() <= 1)::int) as sum, avg(c1) from ft1;
