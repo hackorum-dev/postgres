@@ -3805,7 +3805,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
     does not use a secure schema usage pattern, users wishing to securely
     query that database would take protective action at the beginning of each
     session.  Specifically, they would begin each session by
-    setting <varname>search_path</varname> to the empty string or otherwise
+    setting <varname>search_path</varname> to an empty string or otherwise
     removing schemas that are writable by non-superusers
     from <varname>search_path</varname>.  There are a few usage patterns
     easily supported by the default configuration:

@@ -868,7 +868,7 @@ include_dir 'conf.d'
         server.)  In combination with the parameter
         <varname>unix_socket_permissions</varname> this can be used as
         an additional access control mechanism for Unix-domain connections.
-        By default this is the empty string, which uses the default
+        By default this is an empty string, which uses the default
         group of the server user.  This parameter can only be set at
         server start.
        </para>
@@ -8015,7 +8015,7 @@ local0.*    /var/log/postgresql
       <listitem>
        <para>
         Causes aspects of each connection to the server to be logged.
-        The default is the empty string, <literal>''</literal>, which
+        The default is an empty string, <literal>''</literal>, which
         disables all connection logging. The following options may be
         specified alone or in a comma-separated list:
        </para>
@@ -9047,7 +9047,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         <varname>cluster_name</varname> value.
         Other characters are replaced with <link
         linkend="sql-syntax-strings-escape">C-style hexadecimal escapes</link>.
-        No name is shown if this parameter is set to the empty string
+        No name is shown if this parameter is set to an empty string
         <literal>''</literal> (which is the default).
         This parameter can only be set at server start.
        </para>
@@ -10470,7 +10470,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
        </para>
 
        <para>
-        If this parameter is set to a value other than the empty string
+        If this parameter is set to a value other than an empty string
         when a partitioned table is created, the partitioned table's
         tablespace will be set to that value, which will be used as
         the default tablespace for partitions created in the future,
@@ -11288,7 +11288,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
        <para>
         Sets the language in which messages are displayed.  Acceptable
         values are system-dependent; see <xref linkend="locale"/> for
-        more information.  If this variable is set to the empty string
+        more information.  If this variable is set to an empty string
         (which is the default) then the value is inherited from the
         execution environment of the server in a system-dependent way.
        </para>
@@ -11320,7 +11320,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
         example with the <function>to_char</function> family of
         functions.  Acceptable values are system-dependent; see <xref
         linkend="locale"/> for more information.  If this variable is
-        set to the empty string (which is the default) then the value
+        set to an empty string (which is the default) then the value
         is inherited from the execution environment of the server in a
         system-dependent way.
        </para>
@@ -11339,7 +11339,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
         with the <function>to_char</function> family of
         functions. Acceptable values are system-dependent; see <xref
         linkend="locale"/> for more information.  If this variable is
-        set to the empty string (which is the default) then the value
+        set to an empty string (which is the default) then the value
         is inherited from the execution environment of the server in a
         system-dependent way.
        </para>
@@ -11358,7 +11358,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
         with the <function>to_char</function> family of
         functions. Acceptable values are system-dependent; see <xref
         linkend="locale"/> for more information.  If this variable is
-        set to the empty string (which is the default) then the value
+        set to an empty string (which is the default) then the value
         is inherited from the execution environment of the server in a
         system-dependent way.
        </para>
@@ -13275,7 +13275,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        </para>
 
        <para>
-        The default value of this setting is the empty string, which disables
+        The default value of this setting is an empty string, which disables
         the feature.  It can be set to <literal>all</literal> to check all
         records, or to a comma-separated list of resource managers to check
         only records originating from those resource managers.  Currently,
