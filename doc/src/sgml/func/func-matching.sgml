@@ -1103,7 +1103,7 @@ regexp_substr('ABCDEFGHI', '(c..)(...)', 1, 1, 'i', 2)
     A branch is zero or more <firstterm>quantified atoms</firstterm> or
     <firstterm>constraints</firstterm>, concatenated.
     It matches a match for the first, followed by a match for the second, etc.;
-    an empty branch matches the empty string.
+    An empty branch matches an empty string.
    </para>
 
    <para>
@@ -1529,7 +1529,7 @@ regexp_substr('ABCDEFGHI', '(c..)(...)', 1, 1, 'i', 2)
 
    <para>
     A <firstterm>constraint escape</firstterm> is a constraint,
-    matching the empty string if specific conditions are met,
+    matching an empty string if specific conditions are met,
     written as an escape.  They are
     shown in <xref linkend="posix-constraint-escapes-table"/>.
    </para>
@@ -2213,7 +2213,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
     (so that matches will not cross lines unless the RE
     explicitly includes a newline)
     and <literal>^</literal> and <literal>$</literal>
-    will match the empty string after and before a newline
+    will match an empty string after and before a newline
     respectively, in addition to matching at beginning and end of string
     respectively.
     But the ARE escapes <literal>\A</literal> and <literal>\Z</literal>
