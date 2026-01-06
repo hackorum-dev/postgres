@@ -321,13 +321,14 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				simple_select values_clause
 				PLpgSQL_Expr PLAssignStmt
 
+%type <node>        opt_trailing_comma
 %type <str>			opt_single_name
 %type <list>		opt_qualified_name
 %type <boolean>		opt_concurrently
 %type <dbehavior>	opt_drop_behavior
 %type <list>		opt_utility_option_list
 %type <list>		opt_wait_with_clause
-%type <list>		utility_option_list
+%type <list>		utility_option_list utility_option_list_items
 %type <defelt>		utility_option_elem
 %type <str>			utility_option_name
 %type <node>		utility_option_arg
@@ -337,14 +338,14 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <node>	alter_table_cmd alter_type_cmd opt_collate_clause
 	   replica_identity partition_cmd index_partition_cmd
-%type <list>	alter_table_cmds alter_type_cmds
+%type <list>	alter_table_cmds alter_table_cmds_items alter_type_cmds alter_type_cmds_items
 %type <list>    alter_identity_column_option_list
 %type <defelt>  alter_identity_column_option
 %type <node>	set_statistics_value
 %type <str>		set_access_method_name
 
 %type <list>	createdb_opt_list createdb_opt_items copy_opt_list
-				transaction_mode_list
+				transaction_mode_list transaction_mode_list_items
 				create_extension_opt_list alter_extension_opt_list
 %type <defelt>	createdb_opt_item copy_opt_item
 				transaction_mode_item
@@ -356,7 +357,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				opt_grant_grant_option
 				opt_nowait opt_if_exists opt_with_data
 				opt_transaction_chain
-%type <list>	grant_role_opt_list
+%type <list>	grant_role_opt_list grant_role_opt_list_items
 %type <defelt>	grant_role_opt
 %type <node>	grant_role_opt_value
 %type <ival>	opt_nowait_or_skip
@@ -369,7 +370,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		opt_in_database
 
 %type <str>		parameter_name
-%type <list>	OptSchemaEltList parameter_name_list
+%type <list>	OptSchemaEltList parameter_name_list parameter_name_list_items
 
 %type <chr>		am_type
 
@@ -382,7 +383,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <boolean>	TransitionRowOrTable TransitionOldOrNew
 %type <node>	TriggerTransition
 
-%type <list>	event_trigger_when_list event_trigger_value_list
+%type <list>	event_trigger_when_list event_trigger_value_list event_trigger_value_list_items
 %type <defelt>	event_trigger_when_item
 %type <chr>		enable_trigger
 
@@ -406,12 +407,14 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <str>		iso_level opt_encoding
 %type <rolespec> grantee
-%type <list>	grantee_list
+%type <list>	grantee_list grantee_list_items
 %type <accesspriv> privilege
-%type <list>	privileges privilege_list
+%type <list>	privileges privilege_list privilege_list_items
 %type <privtarget> privilege_target
 %type <objwithargs> function_with_argtypes aggregate_with_argtypes operator_with_argtypes
 %type <list>	function_with_argtypes_list aggregate_with_argtypes_list operator_with_argtypes_list
+%type <list>	function_with_argtypes_list_items aggregate_with_argtypes_list_items
+%type <list>	operator_with_argtypes_list_items
 %type <ival>	defacl_privilege_target
 %type <defelt>	DefACLOption
 %type <list>	DefACLOptionList
@@ -421,47 +424,54 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <selectlimit> opt_select_limit select_limit limit_clause
 
 %type <list>	parse_toplevel stmtmulti routine_body_stmt_list
-				OptTableElementList TableElementList OptInherit definition
-				OptTypedTableElementList TypedTableElementList
+				OptTableElementList TableElementList TableElementListItems OptInherit definition
+				OptTypedTableElementList TypedTableElementList TypedTableElementListItems
 				reloptions opt_reloptions
-				OptWith opt_definition func_args func_args_list
-				func_args_with_defaults func_args_with_defaults_list
-				aggr_args aggr_args_list
+				OptWith opt_definition func_args func_args_list func_args_list_items
+				func_args_with_defaults func_args_with_defaults_list func_args_with_defaults_list_items
+				aggr_args aggr_args_list aggr_args_list_items
 				func_as createfunc_opt_list opt_createfunc_opt_list alterfunc_opt_list
 				old_aggr_definition old_aggr_list
 				oper_argtypes RuleActionList RuleActionMulti
-				opt_column_list columnList opt_name_list
-				sort_clause opt_sort_clause sortby_list index_params
-				stats_params
-				opt_include opt_c_include index_including_params
-				name_list role_list from_clause from_list opt_array_bounds
-				qualified_name_list any_name any_name_list type_name_list
-				any_operator expr_list attrs
+				opt_column_list columnList columnListOptionalComma columnListItems opt_name_list
+				sort_clause opt_sort_clause sortby_list sortby_list_items sortby_list_no_trailing_comma
+				index_params index_params_items
+				stats_params stats_params_items
+				opt_include opt_c_include index_including_params index_including_params_items
+				name_list name_list_items role_list role_list_items
+				from_clause from_list from_list_items opt_array_bounds
+				qualified_name_list qualified_name_list_items any_name any_name_list any_name_list_items
+				type_name_list type_name_list_items
+				any_operator expr_list expr_list_items expr_list_no_trailing_comma attrs
 				distinct_clause opt_distinct_clause
-				target_list opt_target_list insert_column_list set_target_list
-				merge_values_clause
-				set_clause_list set_clause
-				def_list operator_def_list indirection opt_indirection
-				reloption_list TriggerFuncArgs opclass_item_list opclass_drop_list
+				target_list target_list_items opt_target_list insert_column_list insert_column_list_items
+				set_target_list	set_target_list_items merge_values_clause
+				set_clause_list set_clause_list_items set_clause
+				def_list def_list_items operator_def_list operator_def_list_items
+				indirection opt_indirection
+				reloption_list reloption_list_items TriggerFuncArgs TriggerFuncArgsItems
+				opclass_item_list opclass_item_list_items opclass_drop_list opclass_drop_list_items
 				opclass_purpose opt_opfamily transaction_mode_list_or_empty
-				OptTableFuncElementList TableFuncElementList opt_type_modifiers
+				OptTableFuncElementList TableFuncElementList TableFuncElementListItems opt_type_modifiers
 				prep_type_clause
 				execute_param_clause using_clause
 				returning_with_clause returning_options
-				opt_enum_val_list enum_val_list table_func_column_list
+				opt_enum_val_list enum_val_list enum_val_list_items
+				table_func_column_list table_func_column_list_items
 				create_generic_options alter_generic_options
-				relation_expr_list dostmt_opt_list
-				transform_element_list transform_type_list
+				relation_expr_list relation_expr_list_items dostmt_opt_list
+				transform_element_list transform_type_list transform_type_list_items
 				TriggerTransitions TriggerReferencing
-				vacuum_relation_list opt_vacuum_relation_list
-				drop_option_list pub_obj_list pub_all_obj_type_list
+				vacuum_relation_list vacuum_relation_list_items opt_vacuum_relation_list
+				drop_option_list drop_option_list_items
+				pub_obj_list pub_obj_list_items pub_all_obj_type_list pub_all_obj_type_list_items
 
 %type <retclause> returning_clause
 %type <node>	returning_option
 %type <retoptionkind> returning_option_kind
 %type <node>	opt_routine_body
 %type <groupclause> group_clause
-%type <list>	group_by_list
+%type <list>	group_by_list group_by_list_items
 %type <node>	group_by_item empty_grouping_set rollup_clause cube_clause
 %type <node>	grouping_sets_clause
 
@@ -534,15 +544,16 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				columnref having_clause func_table xmltable array_expr
 				OptWhereClause operator_def_arg
 %type <list>	opt_column_and_period_list
-%type <list>	rowsfrom_item rowsfrom_list opt_col_def_list
+%type <list>	rowsfrom_item rowsfrom_list rowsfrom_list_items opt_col_def_list
 %type <boolean> opt_ordinality opt_without_overlaps
-%type <list>	ExclusionConstraintList ExclusionConstraintElem
-%type <list>	func_arg_list func_arg_list_opt
+%type <list>	ExclusionConstraintList ExclusionConstraintListItems ExclusionConstraintElem
+%type <list>	func_arg_list func_arg_list_no_trailing_comma func_arg_list_items func_arg_list_opt
 %type <node>	func_arg_expr
-%type <list>	row explicit_row implicit_row type_list array_expr_list
+%type <list>	row explicit_row implicit_row type_list type_list_items array_expr_list array_expr_list_items
 %type <node>	case_expr case_arg when_clause case_default
 %type <list>	when_clause_list
 %type <node>	opt_search_clause opt_cycle_clause
+%type <boolean> depth_or_breadth
 %type <ival>	sub_type opt_materialized
 %type <node>	NumericOnly
 %type <list>	NumericOnly_list
@@ -562,13 +573,13 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		generic_option_name
 %type <node>	generic_option_arg
 %type <defelt>	generic_option_elem alter_generic_option_elem
-%type <list>	generic_option_list alter_generic_option_list
+%type <list>	generic_option_list generic_option_list_items alter_generic_option_list alter_generic_option_list_items
 
 %type <ival>	reindex_target_relation reindex_target_all
 
 %type <node>	copy_generic_opt_arg copy_generic_opt_arg_list_item
 %type <defelt>	copy_generic_opt_elem
-%type <list>	copy_generic_opt_list copy_generic_opt_arg_list
+%type <list>	copy_generic_opt_list copy_generic_opt_list_items copy_generic_opt_arg_list copy_generic_opt_arg_list_items
 %type <list>	copy_options
 
 %type <typnam>	Typename SimpleTypename ConstTypename
@@ -618,15 +629,15 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		opt_provider security_label
 
 %type <target>	xml_attribute_el
-%type <list>	xml_attribute_list xml_attributes
+%type <list>	xml_attribute_list xml_attribute_list_items xml_attributes
 %type <node>	xml_root_version opt_xml_root_standalone
 %type <node>	xmlexists_argument
 %type <ival>	document_or_content
 %type <boolean>	xml_indent_option xml_whitespace_option
-%type <list>	xmltable_column_list xmltable_column_option_list
+%type <list>	xmltable_column_list xmltable_column_list_items xmltable_column_option_list
 %type <node>	xmltable_column_el
 %type <defelt>	xmltable_column_option_el
-%type <list>	xml_namespace_list
+%type <list>	xml_namespace_list xml_namespace_list_items
 %type <target>	xml_namespace_el
 
 %type <node>	func_application func_expr_common_subexpr
@@ -637,7 +648,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <list>	within_group_clause
 %type <node>	filter_clause
-%type <list>	window_clause window_definition_list opt_partition_clause
+%type <list>	window_clause window_definition_list window_definition_list_items opt_partition_clause
 %type <windef>	window_definition over_clause window_specification
 				opt_frame_clause frame_extent frame_bound
 %type <ival>	null_treatment opt_window_exclusion_clause
@@ -647,11 +658,11 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <ival>	generated_when override_kind opt_virtual_or_stored
 %type <partspec>	PartitionSpec OptPartitionSpec
 %type <partelem>	part_elem
-%type <list>		part_params
+%type <list>		part_params part_params_items
 %type <partboundspec> PartitionBoundSpec
 %type <singlepartspec>	SinglePartitionSpec
 %type <list>		partitions_list
-%type <list>		hash_partbound
+%type <list>		hash_partbound hash_partbound_elem_items
 %type <defelt>		hash_partbound_elem
 
 %type <node>	json_format_clause
@@ -672,7 +683,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				json_arguments
 				json_behavior_clause_opt
 				json_passing_clause_opt
-				json_table_column_definition_list
+				json_table_column_definition_list json_table_column_definition_list_items
 %type <str>		json_table_path_name_opt
 %type <ival>	json_behavior_type
 				json_predicate_type_constraint
@@ -891,6 +902,9 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %nonassoc	UNBOUNDED NESTED /* ideally would have same precedence as IDENT */
 %nonassoc	IDENT PARTITION RANGE ROWS GROUPS PRECEDING FOLLOWING CUBE ROLLUP
 			SET KEYS OBJECT_P SCALAR VALUE_P WITH WITHOUT PATH
+%nonassoc	DEFERRED IMMEDIATE SKIP NOWAIT RESTRICT CASCADE REVOKE REPLACE PERIOD GRANTED
+%nonassoc	RESTART CONTINUE_P
+%nonassoc	ADMIN CONNECTION INHERIT ENCRYPTED PASSWORD ROLE SYSID UNENCRYPTED VALID
 %left		Op OPERATOR		/* multi-character ops and user-defined operators */
 %left		'+' '-'
 %left		'*' '/' '%'
@@ -903,6 +917,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %left		'(' ')'
 %left		TYPECAST
 %left		'.'
+%left		','
 /*
  * These might seem to be low-precedence, but actually they are not part
  * of the arithmetic hierarchy at all in their use as JOIN operators.
@@ -1131,6 +1146,11 @@ stmt:
 /*
  * Generic supporting productions for DDL
  */
+opt_trailing_comma:
+			 ','							{ $$ = NULL; }
+			| /* EMPTY */					{ $$ = NULL; }
+			;
+
 opt_single_name:
 			ColId							{ $$ = $1; }
 			| /* EMPTY */					{ $$ = NULL; }
@@ -1158,14 +1178,12 @@ opt_utility_option_list:
 		;
 
 utility_option_list:
-			utility_option_elem
-				{
-					$$ = list_make1($1);
-				}
-			| utility_option_list ',' utility_option_elem
-				{
-					$$ = lappend($1, $3);
-				}
+			utility_option_list_items opt_trailing_comma 			{ $$ = $1; }
+		;
+
+utility_option_list_items:
+			utility_option_elem										{ $$ = list_make1($1); }
+			| utility_option_list_items ',' utility_option_elem		{ $$ = lappend($1, $3); }
 		;
 
 utility_option_elem:
@@ -2384,8 +2402,12 @@ AlterTableStmt:
 		;
 
 alter_table_cmds:
-			alter_table_cmd							{ $$ = list_make1($1); }
-			| alter_table_cmds ',' alter_table_cmd	{ $$ = lappend($1, $3); }
+			alter_table_cmds_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+alter_table_cmds_items:
+			alter_table_cmd									{ $$ = list_make1($1); }
+			| alter_table_cmds_items ',' alter_table_cmd	{ $$ = lappend($1, $3); }
 		;
 
 partitions_list:
@@ -3190,8 +3212,12 @@ opt_reloptions:		WITH reloptions					{ $$ = $2; }
 		;
 
 reloption_list:
-			reloption_elem							{ $$ = list_make1($1); }
-			| reloption_list ',' reloption_elem		{ $$ = lappend($1, $3); }
+			reloption_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+reloption_list_items:
+			reloption_elem								{ $$ = list_make1($1); }
+			| reloption_list_items ',' reloption_elem	{ $$ = lappend($1,$3); }
 		;
 
 /* This should match def_elem and also allow qualified names */
@@ -3361,14 +3387,12 @@ hash_partbound_elem:
 		;
 
 hash_partbound:
-		hash_partbound_elem
-			{
-				$$ = list_make1($1);
-			}
-		| hash_partbound ',' hash_partbound_elem
-			{
-				$$ = lappend($1, $3);
-			}
+			hash_partbound_elem_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+hash_partbound_elem_items:
+			hash_partbound_elem									{ $$ = list_make1($1); }
+			| hash_partbound_elem_items ',' hash_partbound_elem	{ $$ = lappend($1,$3); }
 		;
 
 /*****************************************************************************
@@ -3392,8 +3416,12 @@ AlterCompositeTypeStmt:
 			;
 
 alter_type_cmds:
-			alter_type_cmd							{ $$ = list_make1($1); }
-			| alter_type_cmds ',' alter_type_cmd	{ $$ = lappend($1, $3); }
+			alter_type_cmds_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+alter_type_cmds_items:
+			alter_type_cmd								{ $$ = list_make1($1); }
+			| alter_type_cmds_items ',' alter_type_cmd	{ $$ = lappend($1, $3); }
 		;
 
 alter_type_cmd:
@@ -3676,14 +3704,12 @@ opt_using:
 
 /* new COPY option syntax */
 copy_generic_opt_list:
-			copy_generic_opt_elem
-				{
-					$$ = list_make1($1);
-				}
-			| copy_generic_opt_list ',' copy_generic_opt_elem
-				{
-					$$ = lappend($1, $3);
-				}
+			copy_generic_opt_list_items opt_trailing_comma			{ $$ = $1; }
+			;
+
+copy_generic_opt_list_items:
+			copy_generic_opt_elem									{ $$ = list_make1($1); }
+			| copy_generic_opt_list_items ',' copy_generic_opt_elem	{ $$ = lappend($1, $3); }
 		;
 
 copy_generic_opt_elem:
@@ -3703,14 +3729,14 @@ copy_generic_opt_arg:
 		;
 
 copy_generic_opt_arg_list:
-			  copy_generic_opt_arg_list_item
-				{
-					$$ = list_make1($1);
-				}
-			| copy_generic_opt_arg_list ',' copy_generic_opt_arg_list_item
-				{
-					$$ = lappend($1, $3);
-				}
+			copy_generic_opt_arg_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+copy_generic_opt_arg_list_items:
+			copy_generic_opt_arg_list_item
+																{ $$ = list_make1($1); }
+			| copy_generic_opt_arg_list_items ',' copy_generic_opt_arg_list_item
+																{ $$ = lappend($1,$3); }
 		;
 
 /* beware of emitting non-string list elements here; see commands/define.c */
@@ -3896,25 +3922,21 @@ OptTypedTableElementList:
 		;
 
 TableElementList:
-			TableElement
-				{
-					$$ = list_make1($1);
-				}
-			| TableElementList ',' TableElement
-				{
-					$$ = lappend($1, $3);
-				}
+			TableElementListItems opt_trailing_comma	{ $$ = $1; }
+		;
+
+TableElementListItems:
+			TableElement								{ $$ = list_make1($1); }
+			| TableElementListItems ',' TableElement	{ $$ = lappend($1, $3); }
 		;
 
 TypedTableElementList:
-			TypedTableElement
-				{
-					$$ = list_make1($1);
-				}
-			| TypedTableElementList ',' TypedTableElement
-				{
-					$$ = lappend($1, $3);
-				}
+			TypedTableElementListItems opt_trailing_comma		{ $$ = $1; }
+		;
+
+TypedTableElementListItems:
+			TypedTableElement									{ $$ = list_make1($1); }
+			| TypedTableElementListItems ',' TypedTableElement	{ $$ = lappend($1,$3); }
 		;
 
 TableElement:
@@ -4526,12 +4548,14 @@ opt_no_inherit:	NO INHERIT							{  $$ = true; }
 		;
 
 opt_without_overlaps:
-			WITHOUT OVERLAPS						{ $$ = true; }
+			','										{ $$ = false; }
+			| ',' WITHOUT OVERLAPS					{ $$ = true; }
+			| WITHOUT OVERLAPS						{ $$ = true; }
 			| /*EMPTY*/								{ $$ = false; }
 	;
 
 opt_column_list:
-			'(' columnList ')'						{ $$ = $2; }
+			'(' columnListOptionalComma ')'						{ $$ = $2; }
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 
@@ -4540,9 +4564,20 @@ columnList:
 			| columnList ',' columnElem				{ $$ = lappend($1, $3); }
 		;
 
+columnListOptionalComma:
+			columnListItems opt_trailing_comma		{ $$ = $1; }
+		;
+
+columnListItems:
+			columnElem								{ $$ = list_make1($1); }
+			| columnListItems ',' columnElem		{ $$ = lappend($1,$3); }
+		;
+
 optionalPeriodName:
-			',' PERIOD columnElem { $$ = $3; }
-			| /*EMPTY*/               { $$ = NULL; }
+			','						{ $$ = NULL; }
+			| PERIOD columnElem		{ $$ = $2; }
+			| ',' PERIOD columnElem	{ $$ = $3; }
+			| /*EMPTY*/				{ $$ = NULL; }
 	;
 
 opt_column_and_period_list:
@@ -4556,7 +4591,7 @@ columnElem: ColId
 				}
 		;
 
-opt_c_include:	INCLUDE '(' columnList ')'			{ $$ = $3; }
+opt_c_include:	INCLUDE '(' columnListOptionalComma ')'			{ $$ = $3; }
 			 |		/* EMPTY */						{ $$ = NIL; }
 		;
 
@@ -4583,9 +4618,13 @@ key_match:  MATCH FULL
 		;
 
 ExclusionConstraintList:
-			ExclusionConstraintElem					{ $$ = list_make1($1); }
-			| ExclusionConstraintList ',' ExclusionConstraintElem
-													{ $$ = lappend($1, $3); }
+			ExclusionConstraintListItems 					{ $$ = $1; }
+		;
+
+ExclusionConstraintListItems:
+			ExclusionConstraintElem 						{ $$ = list_make1($1); }
+			| ExclusionConstraintListItems ',' ExclusionConstraintElem
+															{ $$ = lappend($1, $3); }
 		;
 
 ExclusionConstraintElem: index_elem WITH any_operator
@@ -4737,8 +4776,13 @@ PartitionSpec: PARTITION BY ColId '(' part_params ')'
 				}
 		;
 
-part_params:	part_elem						{ $$ = list_make1($1); }
-			| part_params ',' part_elem			{ $$ = lappend($1, $3); }
+part_params:
+			part_params_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+part_params_items:
+			part_elem								{ $$ = list_make1($1); }
+			| part_params_items ',' part_elem		{ $$ = lappend($1, $3); }
 		;
 
 part_elem: ColId opt_collate opt_qualified_name
@@ -4857,8 +4901,13 @@ CreateStatsStmt:
  * written without parens.
  */
 
-stats_params:	stats_param							{ $$ = list_make1($1); }
-			| stats_params ',' stats_param			{ $$ = lappend($1, $3); }
+stats_params:
+			stats_params_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+stats_params_items:
+			stats_param								{ $$ = list_make1($1); }
+			| stats_params_items ',' stats_param	{ $$ = lappend($1, $3); }
 		;
 
 stats_param:	ColId
@@ -5626,14 +5675,12 @@ create_generic_options:
 		;
 
 generic_option_list:
-			generic_option_elem
-				{
-					$$ = list_make1($1);
-				}
-			| generic_option_list ',' generic_option_elem
-				{
-					$$ = lappend($1, $3);
-				}
+			generic_option_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+generic_option_list_items:
+			generic_option_elem									{ $$ = list_make1($1); }
+			| generic_option_list_items ',' generic_option_elem	{ $$ = lappend($1, $3); }
 		;
 
 /* Options definition for ALTER FDW, SERVER and USER MAPPING */
@@ -5642,14 +5689,12 @@ alter_generic_options:
 		;
 
 alter_generic_option_list:
-			alter_generic_option_elem
-				{
-					$$ = list_make1($1);
-				}
-			| alter_generic_option_list ',' alter_generic_option_elem
-				{
-					$$ = lappend($1, $3);
-				}
+			alter_generic_option_list_items opt_trailing_comma				{ $$ = $1; }
+		;
+
+alter_generic_option_list_items:
+			alter_generic_option_elem										{ $$ = list_make1($1); }
+			| alter_generic_option_list_items ',' alter_generic_option_elem	{ $$ = lappend($1, $3); }
 		;
 
 alter_generic_option_elem:
@@ -6241,7 +6286,7 @@ TriggerOneEvent:
 				{ $$ = list_make2(makeInteger(TRIGGER_TYPE_DELETE), NIL); }
 			| UPDATE
 				{ $$ = list_make2(makeInteger(TRIGGER_TYPE_UPDATE), NIL); }
-			| UPDATE OF columnList
+			| UPDATE OF columnListOptionalComma
 				{ $$ = list_make2(makeInteger(TRIGGER_TYPE_UPDATE), $3); }
 			| TRUNCATE
 				{ $$ = list_make2(makeInteger(TRIGGER_TYPE_TRUNCATE), NIL); }
@@ -6327,9 +6372,13 @@ FUNCTION_or_PROCEDURE:
 		;
 
 TriggerFuncArgs:
-			TriggerFuncArg							{ $$ = list_make1($1); }
-			| TriggerFuncArgs ',' TriggerFuncArg	{ $$ = lappend($1, $3); }
-			| /*EMPTY*/								{ $$ = NIL; }
+			TriggerFuncArgsItems opt_trailing_comma		{ $$ = $1; }
+		;
+
+TriggerFuncArgsItems:
+			TriggerFuncArg								{ $$ = list_make1($1); }
+			| TriggerFuncArgsItems ',' TriggerFuncArg	{ $$ = lappend($1,$3); }
+			| /*EMPTY*/									{ $$ = NIL; }
 		;
 
 TriggerFuncArg:
@@ -6436,10 +6485,12 @@ event_trigger_when_item:
 		;
 
 event_trigger_value_list:
-		  SCONST
-			{ $$ = list_make1(makeString($1)); }
-		| event_trigger_value_list ',' SCONST
-			{ $$ = lappend($1, makeString($3)); }
+			event_trigger_value_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+event_trigger_value_list_items:
+			SCONST												{ $$ = list_make1(makeString($1)); }
+			| event_trigger_value_list_items ',' SCONST			{ $$ = lappend($1, makeString($3)); }
 		;
 
 AlterEventTrigStmt:
@@ -6659,8 +6710,13 @@ DefineStmt:
 definition: '(' def_list ')'						{ $$ = $2; }
 		;
 
-def_list:	def_elem								{ $$ = list_make1($1); }
-			| def_list ',' def_elem					{ $$ = lappend($1, $3); }
+def_list:
+			 def_list_items opt_trailing_comma	{ $$ = $1; }
+	;
+
+def_list_items:
+			def_elem			{ $$ = list_make1($1); }
+			| def_list_items ',' def_elem	{ $$ = lappend($1, $3); }
 		;
 
 def_elem:	ColLabel '=' def_arg
@@ -6705,10 +6761,13 @@ opt_enum_val_list:
 		| /*EMPTY*/								{ $$ = NIL; }
 		;
 
-enum_val_list:	Sconst
-				{ $$ = list_make1(makeString($1)); }
-			| enum_val_list ',' Sconst
-				{ $$ = lappend($1, makeString($3)); }
+enum_val_list:
+			enum_val_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+enum_val_list_items:
+			Sconst								{ $$ = list_make1(makeString($1)); }
+			| enum_val_list_items ',' Sconst	{ $$ = lappend($1, makeString($3)); }
 		;
 
 /*****************************************************************************
@@ -6828,8 +6887,12 @@ CreateOpClassStmt:
 		;
 
 opclass_item_list:
-			opclass_item							{ $$ = list_make1($1); }
-			| opclass_item_list ',' opclass_item	{ $$ = lappend($1, $3); }
+			opclass_item_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+opclass_item_list_items:
+			opclass_item								{ $$ = list_make1($1); }
+			| opclass_item_list_items ',' opclass_item	{ $$ = lappend($1, $3); }
 		;
 
 opclass_item:
@@ -6934,8 +6997,12 @@ AlterOpFamilyStmt:
 		;
 
 opclass_drop_list:
-			opclass_drop							{ $$ = list_make1($1); }
-			| opclass_drop_list ',' opclass_drop	{ $$ = lappend($1, $3); }
+			opclass_drop_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+opclass_drop_list_items:
+			opclass_drop								{ $$ = list_make1($1); }
+			| opclass_drop_list_items ',' opclass_drop	{ $$ = lappend($1, $3); }
 		;
 
 opclass_drop:
@@ -7234,8 +7301,12 @@ object_type_name_on_any_name:
 		;
 
 any_name_list:
+			any_name_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+any_name_list_items:
 			any_name								{ $$ = list_make1($1); }
-			| any_name_list ',' any_name			{ $$ = lappend($1, $3); }
+			| any_name_list_items ',' any_name		{ $$ = lappend($1, $3); }
 		;
 
 any_name:	ColId						{ $$ = list_make1(makeString($1)); }
@@ -7249,8 +7320,12 @@ attrs:		'.' attr_name
 		;
 
 type_name_list:
-			Typename								{ $$ = list_make1($1); }
-			| type_name_list ',' Typename			{ $$ = lappend($1, $3); }
+			type_name_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+type_name_list_items:
+			Typename									{ $$ = list_make1($1); }
+			| type_name_list_items ',' Typename			{ $$ = lappend($1, $3); }
 		;
 
 /*****************************************************************************
@@ -7874,7 +7949,7 @@ privileges: privilege_list
 				{ $$ = NIL; }
 			| ALL PRIVILEGES
 				{ $$ = NIL; }
-			| ALL '(' columnList ')'
+			| ALL '(' columnListOptionalComma ')'
 				{
 					AccessPriv *n = makeNode(AccessPriv);
 
@@ -7882,7 +7957,7 @@ privileges: privilege_list
 					n->cols = $3;
 					$$ = list_make1(n);
 				}
-			| ALL PRIVILEGES '(' columnList ')'
+			| ALL PRIVILEGES '(' columnListOptionalComma ')'
 				{
 					AccessPriv *n = makeNode(AccessPriv);
 
@@ -7892,8 +7967,13 @@ privileges: privilege_list
 				}
 		;
 
-privilege_list:	privilege							{ $$ = list_make1($1); }
-			| privilege_list ',' privilege			{ $$ = lappend($1, $3); }
+privilege_list:
+			privilege_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+privilege_list_items:
+			privilege								{ $$ = list_make1($1); }
+			| privilege_list_items ',' privilege	{ $$ = lappend($1, $3); }
 		;
 
 privilege:	SELECT opt_column_list
@@ -7938,14 +8018,12 @@ privilege:	SELECT opt_column_list
 		;
 
 parameter_name_list:
-		parameter_name
-			{
-				$$ = list_make1(makeString($1));
-			}
-		| parameter_name_list ',' parameter_name
-			{
-				$$ = lappend($1, makeString($3));
-			}
+			parameter_name_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+parameter_name_list_items:
+			parameter_name									{ $$ = list_make1(makeString($1)); }
+			| parameter_name_list_items ',' parameter_name	{ $$ = lappend($1, makeString($3)); }
 		;
 
 parameter_name:
@@ -8156,8 +8234,12 @@ privilege_target:
 
 
 grantee_list:
+			grantee_list_items opt_trailing_comma { $$ = $1; }
+		;
+
+grantee_list_items:
 			grantee									{ $$ = list_make1($1); }
-			| grantee_list ',' grantee				{ $$ = lappend($1, $3); }
+			| grantee_list_items ',' grantee				{ $$ = lappend($1, $3); }
 		;
 
 grantee:
@@ -8233,8 +8315,12 @@ RevokeRoleStmt:
 		;
 
 grant_role_opt_list:
-			grant_role_opt_list ',' grant_role_opt	{ $$ = lappend($1, $3); }
-			| grant_role_opt						{ $$ = list_make1($1); }
+			grant_role_opt_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+grant_role_opt_list_items:
+			grant_role_opt									{ $$ = list_make1($1); }
+			| grant_role_opt_list_items ',' grant_role_opt	{ $$ = lappend($1, $3); }
 		;
 
 grant_role_opt:
@@ -8437,10 +8523,14 @@ access_method_clause:
 			| /*EMPTY*/								{ $$ = DEFAULT_INDEX_TYPE; }
 		;
 
-index_params:	index_elem							{ $$ = list_make1($1); }
-			| index_params ',' index_elem			{ $$ = lappend($1, $3); }
+index_params:
+			index_params_items opt_trailing_comma		{ $$ = $1; }
 		;
 
+index_params_items:
+			index_elem									{ $$ = list_make1($1); }
+			| index_params_items ',' index_elem			{ $$ = lappend($1, $3); }
+		;
 
 index_elem_options:
 	opt_collate opt_qualified_name opt_asc_desc opt_nulls_order
@@ -8500,8 +8590,13 @@ opt_include:		INCLUDE '(' index_including_params ')'			{ $$ = $3; }
 			 |		/* EMPTY */						{ $$ = NIL; }
 		;
 
-index_including_params:	index_elem						{ $$ = list_make1($1); }
-			| index_including_params ',' index_elem		{ $$ = lappend($1, $3); }
+index_including_params:
+			index_including_params_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+index_including_params_items:
+			index_elem										{ $$ = list_make1($1); }
+			| index_including_params_items ',' index_elem	{ $$ = lappend($1, $3); }
 		;
 
 opt_collate: COLLATE any_name						{ $$ = $2; }
@@ -8601,13 +8696,22 @@ func_args:	'(' func_args_list ')'					{ $$ = $2; }
 		;
 
 func_args_list:
+			func_args_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+func_args_list_items:
 			func_arg								{ $$ = list_make1($1); }
-			| func_args_list ',' func_arg			{ $$ = lappend($1, $3); }
+			| func_args_list_items ',' func_arg	   	{ $$ = lappend($1, $3); }
 		;
 
 function_with_argtypes_list:
+			function_with_argtypes_list_items opt_trailing_comma
+													{ $$ = $1; }
+		;
+
+function_with_argtypes_list_items:
 			function_with_argtypes					{ $$ = list_make1($1); }
-			| function_with_argtypes_list ',' function_with_argtypes
+			| function_with_argtypes_list_items ',' function_with_argtypes
 													{ $$ = lappend($1, $3); }
 		;
 
@@ -8663,8 +8767,13 @@ func_args_with_defaults:
 		;
 
 func_args_with_defaults_list:
-		func_arg_with_default						{ $$ = list_make1($1); }
-		| func_args_with_defaults_list ',' func_arg_with_default
+			func_args_with_defaults_list_items opt_trailing_comma
+													{ $$ = $1; }
+		;
+
+func_args_with_defaults_list_items:
+			func_arg_with_default				   	{ $$ = list_make1($1); }
+			| func_args_with_defaults_list_items ',' func_arg_with_default
 													{ $$ = lappend($1, $3); }
 		;
 
@@ -8862,8 +8971,12 @@ aggr_args:	'(' '*' ')'
 		;
 
 aggr_args_list:
+			aggr_args_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+aggr_args_list_items:
 			aggr_arg								{ $$ = list_make1($1); }
-			| aggr_args_list ',' aggr_arg			{ $$ = lappend($1, $3); }
+			| aggr_args_list_items ',' aggr_arg		{ $$ = lappend($1, $3); }
 		;
 
 aggregate_with_argtypes:
@@ -8879,8 +8992,13 @@ aggregate_with_argtypes:
 		;
 
 aggregate_with_argtypes_list:
+			aggregate_with_argtypes_list_items opt_trailing_comma
+													{ $$ = $1; }
+		;
+
+aggregate_with_argtypes_list_items:
 			aggregate_with_argtypes					{ $$ = list_make1($1); }
-			| aggregate_with_argtypes_list ',' aggregate_with_argtypes
+			| aggregate_with_argtypes_list_items ',' aggregate_with_argtypes
 													{ $$ = lappend($1, $3); }
 		;
 
@@ -9051,8 +9169,14 @@ routine_body_stmt:
 		;
 
 transform_type_list:
-			FOR TYPE_P Typename { $$ = list_make1($3); }
-			| transform_type_list ',' FOR TYPE_P Typename { $$ = lappend($1, $5); }
+			transform_type_list_items opt_trailing_comma
+												{ $$ = $1; }
+		;
+
+transform_type_list_items:
+			FOR TYPE_P Typename					{ $$ = list_make1($3); }
+			| transform_type_list_items ',' FOR TYPE_P Typename
+												{ $$ = lappend($1, $5); }
 		;
 
 opt_definition:
@@ -9074,14 +9198,13 @@ table_func_column:	param_name func_type
 		;
 
 table_func_column_list:
-			table_func_column
-				{
-					$$ = list_make1($1);
-				}
-			| table_func_column_list ',' table_func_column
-				{
-					$$ = lappend($1, $3);
-				}
+			table_func_column_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+table_func_column_list_items:
+			table_func_column		{ $$ = list_make1($1); }
+			| table_func_column_list_items ',' table_func_column
+									{ $$ = lappend($1, $3); }
 		;
 
 /*****************************************************************************
@@ -9291,8 +9414,13 @@ any_operator:
 		;
 
 operator_with_argtypes_list:
+			operator_with_argtypes_list_items opt_trailing_comma
+													{ $$ = $1; }
+		;
+
+operator_with_argtypes_list_items:
 			operator_with_argtypes					{ $$ = list_make1($1); }
-			| operator_with_argtypes_list ',' operator_with_argtypes
+			| operator_with_argtypes_list_items ',' operator_with_argtypes
 													{ $$ = lappend($1, $3); }
 		;
 
@@ -10519,8 +10647,13 @@ AlterOperatorStmt:
 				}
 		;
 
-operator_def_list:	operator_def_elem								{ $$ = list_make1($1); }
-			| operator_def_list ',' operator_def_elem				{ $$ = lappend($1, $3); }
+operator_def_list:
+			operator_def_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+operator_def_list_items:
+			operator_def_elem								{ $$ = list_make1($1); }
+			| operator_def_list_items ',' operator_def_elem	{ $$ = lappend($1, $3); }
 		;
 
 operator_def_elem: ColLabel '=' NONE
@@ -10927,11 +11060,15 @@ PublicationObjSpec:
 				}
 				;
 
-pub_obj_list:	PublicationObjSpec
-					{ $$ = list_make1($1); }
-			| pub_obj_list ',' PublicationObjSpec
-					{ $$ = lappend($1, $3); }
-	;
+pub_obj_list:
+			pub_obj_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+pub_obj_list_items:
+			PublicationObjSpec							{ $$ = list_make1($1); }
+			| pub_obj_list_items ',' PublicationObjSpec	{ $$ = lappend($1, $3); }
+		;
+
 
 PublicationAllObjSpec:
 				ALL TABLES
@@ -10946,13 +11083,16 @@ PublicationAllObjSpec:
 						$$->pubobjtype = PUBLICATION_ALL_SEQUENCES;
 						$$->location = @1;
 					}
-					;
+		;
 
-pub_all_obj_type_list:	PublicationAllObjSpec
-					{ $$ = list_make1($1); }
-				| pub_all_obj_type_list ',' PublicationAllObjSpec
-					{ $$ = lappend($1, $3); }
-	;
+pub_all_obj_type_list:
+			pub_all_obj_type_list_items opt_trailing_comma			{ $$ = $1; }
+		;
+
+pub_all_obj_type_list_items:
+			PublicationAllObjSpec									{ $$ = list_make1($1); }
+			| pub_all_obj_type_list_items ',' PublicationAllObjSpec	{ $$ = lappend($1, $3); }
+		;
 
 
 /*****************************************************************************
@@ -11460,14 +11600,14 @@ transaction_mode_item:
 									   makeIntConst(false, @1), @1); }
 		;
 
-/* Syntax with commas is SQL-spec, without commas is Postgres historical */
 transaction_mode_list:
-			transaction_mode_item
-					{ $$ = list_make1($1); }
-			| transaction_mode_list ',' transaction_mode_item
-					{ $$ = lappend($1, $3); }
-			| transaction_mode_list transaction_mode_item
-					{ $$ = lappend($1, $2); }
+			transaction_mode_list_items opt_trailing_comma			{ $$ = $1; }
+		;
+
+transaction_mode_list_items:
+			transaction_mode_item									{ $$ = list_make1($1); }
+			| transaction_mode_list_items ',' transaction_mode_item	{ $$ = lappend($1, $3); }
+			| transaction_mode_list_items transaction_mode_item		{ $$ = lappend($1, $2); }
 		;
 
 transaction_mode_list_or_empty:
@@ -11519,7 +11659,7 @@ ViewStmt: CREATE OptTemp VIEW qualified_name opt_column_list opt_reloptions
 					n->withCheckOption = $11;
 					$$ = (Node *) n;
 				}
-		| CREATE OptTemp RECURSIVE VIEW qualified_name '(' columnList ')' opt_reloptions
+		| CREATE OptTemp RECURSIVE VIEW qualified_name '(' columnListOptionalComma ')' opt_reloptions
 				AS SelectStmt opt_check_option
 				{
 					ViewStmt   *n = makeNode(ViewStmt);
@@ -11538,7 +11678,7 @@ ViewStmt: CREATE OptTemp VIEW qualified_name opt_column_list opt_reloptions
 								 parser_errposition(@12)));
 					$$ = (Node *) n;
 				}
-		| CREATE OR REPLACE OptTemp RECURSIVE VIEW qualified_name '(' columnList ')' opt_reloptions
+		| CREATE OR REPLACE OptTemp RECURSIVE VIEW qualified_name '(' columnListOptionalComma ')' opt_reloptions
 				AS SelectStmt opt_check_option
 				{
 					ViewStmt   *n = makeNode(ViewStmt);
@@ -11754,14 +11894,12 @@ DropdbStmt: DROP DATABASE name
 		;
 
 drop_option_list:
-			drop_option
-				{
-					$$ = list_make1((Node *) $1);
-				}
-			| drop_option_list ',' drop_option
-				{
-					$$ = lappend($1, (Node *) $3);
-				}
+			drop_option_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+drop_option_list_items:
+			drop_option									{ $$ = list_make1($1); }
+			| drop_option_list_items ',' drop_option	{ $$ = lappend($1, $3); }
 		;
 
 /*
@@ -12197,10 +12335,12 @@ vacuum_relation:
 		;
 
 vacuum_relation_list:
-			vacuum_relation
-					{ $$ = list_make1($1); }
-			| vacuum_relation_list ',' vacuum_relation
-					{ $$ = lappend($1, $3); }
+			vacuum_relation_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+vacuum_relation_list_items:
+			vacuum_relation										{ $$ = list_make1($1); }
+			| vacuum_relation_list_items ',' vacuum_relation	{ $$ = lappend($1, $3); }
 		;
 
 opt_vacuum_relation_list:
@@ -12478,10 +12618,12 @@ override_kind:
 		;
 
 insert_column_list:
-			insert_column_item
-					{ $$ = list_make1($1); }
-			| insert_column_list ',' insert_column_item
-					{ $$ = lappend($1, $3); }
+			insert_column_list_items opt_trailing_comma			{ $$ = $1; }
+		;
+
+insert_column_list_items:
+			insert_column_item									{ $$ = list_make1($1); }
+			| insert_column_list_items ',' insert_column_item	{ $$ = lappend($1, $3); }
 		;
 
 insert_column_item:
@@ -12684,8 +12826,12 @@ UpdateStmt: opt_with_clause UPDATE relation_expr_opt_alias
 		;
 
 set_clause_list:
-			set_clause							{ $$ = $1; }
-			| set_clause_list ',' set_clause	{ $$ = list_concat($1,$3); }
+			set_clause_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+set_clause_list_items:
+			set_clause									{ $$ = $1; }
+			| set_clause_list_items ',' set_clause		{ $$ = list_concat($1,$3); }
 		;
 
 set_clause:
@@ -12729,10 +12875,13 @@ set_target:
 		;
 
 set_target_list:
-			set_target								{ $$ = list_make1($1); }
-			| set_target_list ',' set_target		{ $$ = lappend($1,$3); }
+			set_target_list_items opt_trailing_comma		{ $$ = $1; }
 		;
 
+set_target_list_items:
+			set_target										{ $$ = list_make1($1); }
+			| set_target_list_items ',' set_target			{ $$ = lappend($1,$3); }
+		;
 
 /*****************************************************************************
  *
@@ -13232,23 +13381,23 @@ opt_materialized:
 		;
 
 opt_search_clause:
-		SEARCH DEPTH FIRST_P BY columnList SET ColId
+		SEARCH depth_or_breadth FIRST_P BY columnList SET ColId
 			{
 				CTESearchClause *n = makeNode(CTESearchClause);
 
 				n->search_col_list = $5;
-				n->search_breadth_first = false;
+				n->search_breadth_first = $2;
 				n->search_seq_column = $7;
 				n->location = @1;
 				$$ = (Node *) n;
 			}
-		| SEARCH BREADTH FIRST_P BY columnList SET ColId
+		| SEARCH depth_or_breadth FIRST_P BY columnList ',' SET ColId
 			{
 				CTESearchClause *n = makeNode(CTESearchClause);
 
 				n->search_col_list = $5;
-				n->search_breadth_first = true;
-				n->search_seq_column = $7;
+				n->search_breadth_first = $2;
+				n->search_seq_column = $8;
 				n->location = @1;
 				$$ = (Node *) n;
 			}
@@ -13257,6 +13406,11 @@ opt_search_clause:
 				$$ = NULL;
 			}
 		;
+
+depth_or_breadth:
+		DEPTH		{ $$ = false; }
+		| BREADTH	{ $$ = true; }
+	;
 
 opt_cycle_clause:
 		CYCLE columnList SET ColId TO AexprConst DEFAULT AexprConst USING ColId
@@ -13271,6 +13425,18 @@ opt_cycle_clause:
 				n->location = @1;
 				$$ = (Node *) n;
 			}
+		| CYCLE columnList ',' SET ColId TO AexprConst DEFAULT AexprConst USING ColId
+			{
+				CTECycleClause *n = makeNode(CTECycleClause);
+
+				n->cycle_col_list = $2;
+				n->cycle_mark_column = $5;
+				n->cycle_mark_value = $7;
+				n->cycle_mark_default = $9;
+				n->cycle_path_column = $11;
+				n->location = @1;
+				$$ = (Node *) n;
+			}
 		| CYCLE columnList SET ColId USING ColId
 			{
 				CTECycleClause *n = makeNode(CTECycleClause);
@@ -13280,6 +13446,18 @@ opt_cycle_clause:
 				n->cycle_mark_value = makeBoolAConst(true, -1);
 				n->cycle_mark_default = makeBoolAConst(false, -1);
 				n->cycle_path_column = $6;
+				n->location = @1;
+				$$ = (Node *) n;
+			}
+		| CYCLE columnList ',' SET ColId USING ColId
+			{
+				CTECycleClause *n = makeNode(CTECycleClause);
+
+				n->cycle_col_list = $2;
+				n->cycle_mark_column = $5;
+				n->cycle_mark_value = makeBoolAConst(true, -1);
+				n->cycle_mark_default = makeBoolAConst(false, -1);
+				n->cycle_path_column = $7;
 				n->location = @1;
 				$$ = (Node *) n;
 			}
@@ -13405,9 +13583,18 @@ sort_clause:
 			ORDER BY sortby_list					{ $$ = $3; }
 		;
 
+sortby_list_no_trailing_comma:
+			sortby										{ $$ = list_make1($1); }
+			| sortby_list_no_trailing_comma ',' sortby	{ $$ = lappend($1, $3); }
+		;
+
 sortby_list:
-			sortby									{ $$ = list_make1($1); }
-			| sortby_list ',' sortby				{ $$ = lappend($1, $3); }
+			sortby_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+sortby_list_items:
+			sortby										{ $$ = list_make1($1); }
+			| sortby_list_items ',' sortby				{ $$ = lappend($1, $3); }
 		;
 
 sortby:		a_expr USING qual_all_Op opt_nulls_order
@@ -13656,8 +13843,12 @@ group_clause:
 		;
 
 group_by_list:
-			group_by_item							{ $$ = list_make1($1); }
-			| group_by_list ',' group_by_item		{ $$ = lappend($1,$3); }
+			group_by_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+group_by_list_items:
+			group_by_item								{ $$ = list_make1($1); }
+			| group_by_list_items ',' group_by_item		{ $$ = lappend($1,$3); }
 		;
 
 group_by_item:
@@ -13784,8 +13975,12 @@ from_clause:
 		;
 
 from_list:
+			from_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+from_list_items:
 			table_ref								{ $$ = list_make1($1); }
-			| from_list ',' table_ref				{ $$ = lappend($1, $3); }
+			| from_list_items ',' table_ref			{ $$ = lappend($1, $3); }
 		;
 
 /*
@@ -14142,10 +14337,13 @@ extended_relation_expr:
 
 
 relation_expr_list:
-			relation_expr							{ $$ = list_make1($1); }
-			| relation_expr_list ',' relation_expr	{ $$ = lappend($1, $3); }
+			relation_expr_list_items opt_trailing_comma		{ $$ = $1; }
 		;
 
+relation_expr_list_items:
+			relation_expr									{ $$ = list_make1($1); }
+			| relation_expr_list_items ',' relation_expr	{ $$ = lappend($1, $3); }
+		;
 
 /*
  * Given "UPDATE foo set set ...", we have to decide without looking any
@@ -14241,8 +14439,12 @@ rowsfrom_item: func_expr_windowless opt_col_def_list
 		;
 
 rowsfrom_list:
-			rowsfrom_item						{ $$ = list_make1($1); }
-			| rowsfrom_list ',' rowsfrom_item	{ $$ = lappend($1, $3); }
+			rowsfrom_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+rowsfrom_list_items:
+			rowsfrom_item							{ $$ = list_make1($1); }
+			| rowsfrom_list_items ',' rowsfrom_item	{ $$ = lappend($1, $3); }
 		;
 
 opt_col_def_list: AS '(' TableFuncElementList ')'	{ $$ = $3; }
@@ -14281,14 +14483,12 @@ OptTableFuncElementList:
 		;
 
 TableFuncElementList:
-			TableFuncElement
-				{
-					$$ = list_make1($1);
-				}
-			| TableFuncElementList ',' TableFuncElement
-				{
-					$$ = lappend($1, $3);
-				}
+			TableFuncElementListItems opt_trailing_comma		{ $$ = $1; }
+		;
+
+TableFuncElementListItems:
+			TableFuncElement									{ $$ = list_make1($1); }
+			| TableFuncElementListItems ',' TableFuncElement	{ $$ = lappend($1, $3);	}
 		;
 
 TableFuncElement:	ColId Typename opt_collate_clause
@@ -14341,8 +14541,13 @@ xmltable:
 				}
 		;
 
-xmltable_column_list: xmltable_column_el					{ $$ = list_make1($1); }
-			| xmltable_column_list ',' xmltable_column_el	{ $$ = lappend($1, $3); }
+xmltable_column_list:
+			xmltable_column_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+xmltable_column_list_items:
+			xmltable_column_el									{ $$ = list_make1($1); }
+			| xmltable_column_list_items ',' xmltable_column_el	{ $$ = lappend($1, $3); }
 		;
 
 xmltable_column_el:
@@ -14458,10 +14663,12 @@ xmltable_column_option_el:
 		;
 
 xml_namespace_list:
-			xml_namespace_el
-				{ $$ = list_make1($1); }
-			| xml_namespace_list ',' xml_namespace_el
-				{ $$ = lappend($1, $3); }
+			xml_namespace_list_items opt_trailing_comma			{ $$ = $1; }
+		;
+
+xml_namespace_list_items:
+			xml_namespace_el									{ $$ = list_make1($1); }
+			| xml_namespace_list_items ',' xml_namespace_el		{ $$ = lappend($1, $3); }
 		;
 
 xml_namespace_el:
@@ -14517,10 +14724,13 @@ json_table_path_name_opt:
 		;
 
 json_table_column_definition_list:
-			json_table_column_definition
-				{ $$ = list_make1($1); }
-			| json_table_column_definition_list ',' json_table_column_definition
-				{ $$ = lappend($1, $3); }
+			json_table_column_definition_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+json_table_column_definition_list_items:
+			json_table_column_definition								{ $$ = list_make1($1); }
+			| json_table_column_definition_list_items ',' json_table_column_definition
+																		{ $$ = lappend($1, $3); }
 		;
 
 json_table_column_definition:
@@ -15844,13 +16054,22 @@ func_application: func_name '(' ')'
 											   COERCE_EXPLICIT_CALL,
 											   @1);
 				}
-			| func_name '(' func_arg_list opt_sort_clause ')'
+			| func_name '(' func_arg_list_no_trailing_comma opt_sort_clause ')'
 				{
 					FuncCall   *n = makeFuncCall($1, $3,
 												 COERCE_EXPLICIT_CALL,
 												 @1);
 
 					n->agg_order = $4;
+					$$ = (Node *) n;
+				}
+			| func_name '(' func_arg_list_no_trailing_comma ',' opt_sort_clause ')'
+				{
+					FuncCall   *n = makeFuncCall($1, $3,
+												 COERCE_EXPLICIT_CALL,
+												 @1);
+
+					n->agg_order = $5;
 					$$ = (Node *) n;
 				}
 			| func_name '(' VARIADIC func_arg_expr opt_sort_clause ')'
@@ -15863,7 +16082,7 @@ func_application: func_name '(' ')'
 					n->agg_order = $5;
 					$$ = (Node *) n;
 				}
-			| func_name '(' func_arg_list ',' VARIADIC func_arg_expr opt_sort_clause ')'
+			| func_name '(' func_arg_list_no_trailing_comma ',' VARIADIC func_arg_expr opt_sort_clause ')'
 				{
 					FuncCall   *n = makeFuncCall($1, lappend($3, $6),
 												 COERCE_EXPLICIT_CALL,
@@ -16478,8 +16697,13 @@ opt_xml_root_standalone: ',' STANDALONE_P YES_P
 xml_attributes: XMLATTRIBUTES '(' xml_attribute_list ')'	{ $$ = $3; }
 		;
 
-xml_attribute_list:	xml_attribute_el					{ $$ = list_make1($1); }
-			| xml_attribute_list ',' xml_attribute_el	{ $$ = lappend($1, $3); }
+xml_attribute_list:
+			xml_attribute_list_items opt_trailing_comma			{ $$ = $1; }
+		;
+
+xml_attribute_list_items:
+			xml_attribute_el									{ $$ = list_make1($1); }
+			| xml_attribute_list_items ',' xml_attribute_el		{ $$ = lappend($1, $3); }
 		;
 
 xml_attribute_el: a_expr AS ColLabel
@@ -16589,9 +16813,13 @@ window_clause:
 		;
 
 window_definition_list:
-			window_definition						{ $$ = list_make1($1); }
-			| window_definition_list ',' window_definition
-													{ $$ = lappend($1, $3); }
+			window_definition_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+window_definition_list_items:
+			window_definition								{ $$ = list_make1($1); }
+			| window_definition_list_items ',' window_definition
+															{ $$ = lappend($1, $3); }
 		;
 
 window_definition:
@@ -16830,16 +17058,17 @@ opt_window_exclusion_clause:
  * without conflicting with the parenthesized a_expr production.  Without the
  * ROW keyword, there must be more than one a_expr inside the parens.
  */
-row:		ROW '(' expr_list ')'					{ $$ = $3; }
-			| ROW '(' ')'							{ $$ = NIL; }
-			| '(' expr_list ',' a_expr ')'			{ $$ = lappend($2, $4); }
+row:		ROW '(' expr_list_no_trailing_comma ')'			 	{ $$ = $3; }
+			| ROW '(' ')'										{ $$ = NIL; }
+			| '(' expr_list_no_trailing_comma ',' a_expr ')'  	{ $$ = lappend($2, $4); }
 		;
 
-explicit_row:	ROW '(' expr_list ')'				{ $$ = $3; }
-			| ROW '(' ')'							{ $$ = NIL; }
+explicit_row:	ROW '(' expr_list_no_trailing_comma ')'	   		{ $$ = $3; }
+			| ROW '(' expr_list_no_trailing_comma ',' ')'		{ $$ = $3; }
+			| ROW '(' ')'							   			{ $$ = NIL; }
 		;
 
-implicit_row:	'(' expr_list ',' a_expr ')'		{ $$ = lappend($2, $4); }
+implicit_row:	'(' expr_list_no_trailing_comma ',' a_expr ')'	{ $$ = lappend($2, $4); }
 		;
 
 sub_type:	ANY										{ $$ = ANY_SUBLINK; }
@@ -16901,25 +17130,34 @@ subquery_Op:
  */
 			;
 
-expr_list:	a_expr
-				{
-					$$ = list_make1($1);
-				}
-			| expr_list ',' a_expr
-				{
-					$$ = lappend($1, $3);
-				}
+expr_list_no_trailing_comma:
+			a_expr								{ $$ = list_make1($1); }
+			| expr_list_no_trailing_comma ',' a_expr		{ $$ = lappend($1, $3); }
+		;
+
+expr_list:
+			expr_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+expr_list_items:
+			a_expr								{ $$ = list_make1($1); }
+			| expr_list_items ',' a_expr		{ $$ = lappend($1, $3); }
 		;
 
 /* function arguments can have names */
-func_arg_list:  func_arg_expr
-				{
-					$$ = list_make1($1);
-				}
-			| func_arg_list ',' func_arg_expr
-				{
-					$$ = lappend($1, $3);
-				}
+func_arg_list_no_trailing_comma:
+			func_arg_expr								{ $$ = list_make1($1); }
+			| func_arg_list_no_trailing_comma ',' func_arg_expr
+														{ $$ = lappend($1, $3); }
+		;
+
+func_arg_list:
+			func_arg_list_items opt_trailing_comma		{ $$ = $1; }
+		;
+
+func_arg_list_items:
+			func_arg_expr								{ $$ = list_make1($1); }
+			| func_arg_list_items ',' func_arg_expr		{ $$ = lappend($1, $3); }
 		;
 
 func_arg_expr:  a_expr
@@ -16952,8 +17190,12 @@ func_arg_list_opt:	func_arg_list					{ $$ = $1; }
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 
-type_list:	Typename								{ $$ = list_make1($1); }
-			| type_list ',' Typename				{ $$ = lappend($1, $3); }
+type_list:
+			type_list_items opt_trailing_comma		{ $$ = $1; }
+
+type_list_items:
+			Typename								{ $$ = list_make1($1); }
+			| type_list_items ',' Typename			{ $$ = lappend($1, $3); }
 		;
 
 array_expr: '[' expr_list ']'
@@ -16970,10 +17212,14 @@ array_expr: '[' expr_list ']'
 				}
 		;
 
-array_expr_list: array_expr							{ $$ = list_make1($1); }
-			| array_expr_list ',' array_expr		{ $$ = lappend($1, $3); }
+array_expr_list:
+			array_expr_list_items opt_trailing_comma		{ $$ = $1; }
 		;
 
+array_expr_list_items:
+			array_expr										{ $$ = list_make1($1); }
+			| array_expr_list_items ',' array_expr			{ $$ = lappend($1, $3); }
+		;
 
 extract_list:
 			extract_arg FROM a_expr
@@ -17439,7 +17685,7 @@ json_aggregate_func:
 		;
 
 json_array_aggregate_order_by_clause_opt:
-			ORDER BY sortby_list					{ $$ = $3; }
+			ORDER BY sortby_list_no_trailing_comma	{ $$ = $3; }
 			| /* EMPTY */							{ $$ = NIL; }
 		;
 
@@ -17454,9 +17700,13 @@ opt_target_list: target_list						{ $$ = $1; }
 		;
 
 target_list:
+			target_list_items  opt_trailing_comma	{ $$ = $1; }
+			;
+
+target_list_items:
 			target_el								{ $$ = list_make1($1); }
-			| target_list ',' target_el				{ $$ = lappend($1, $3); }
-		;
+			| target_list_items ',' target_el		{ $$ = lappend($1, $3); }
+			;
 
 target_el:	a_expr AS ColLabel
 				{
@@ -17505,8 +17755,12 @@ target_el:	a_expr AS ColLabel
  *****************************************************************************/
 
 qualified_name_list:
-			qualified_name							{ $$ = list_make1($1); }
-			| qualified_name_list ',' qualified_name { $$ = lappend($1, $3); }
+			qualified_name_list_items opt_trailing_comma	{ $$ = $1; }
+		;
+
+qualified_name_list_items:
+			qualified_name									{ $$ = list_make1($1); }
+			| qualified_name_list_items ',' qualified_name	{ $$ = lappend($1, $3); }
 		;
 
 /*
@@ -17527,12 +17781,14 @@ qualified_name:
 				}
 		;
 
-name_list:	name
-					{ $$ = list_make1(makeString($1)); }
-			| name_list ',' name
-					{ $$ = lappend($1, makeString($3)); }
+name_list:
+			name_list_items opt_trailing_comma		{ $$ = $1; }
 		;
 
+name_list_items:
+			name									{ $$ = list_make1(makeString($1)); }
+			| name_list_items ',' name				{ $$ = lappend($1, makeString($3)); }
+		;
 
 name:		ColId									{ $$ = $1; };
 
@@ -17594,7 +17850,7 @@ AexprConst: Iconst
 					t->location = @1;
 					$$ = makeStringConstCast($2, @2, t);
 				}
-			| func_name '(' func_arg_list opt_sort_clause ')' Sconst
+			| func_name '(' func_arg_list_no_trailing_comma opt_sort_clause ')' Sconst
 				{
 					/* generic syntax with a type modifier */
 					TypeName   *t = makeTypeNameFromNameList($1);
@@ -17751,12 +18007,14 @@ RoleSpec:	NonReservedWord
 				}
 		;
 
-role_list:	RoleSpec
-				{ $$ = list_make1($1); }
-			| role_list ',' RoleSpec
-				{ $$ = lappend($1, $3); }
+role_list:
+			role_list_items opt_trailing_comma	{ $$ = $1; }
 		;
 
+role_list_items:
+			RoleSpec							{ $$ = list_make1($1); }
+			| role_list_items ',' RoleSpec		{ $$ = lappend($1, $3); }
+		;
 
 /*****************************************************************************
  *
