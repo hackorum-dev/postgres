@@ -1413,7 +1413,6 @@ pg_strncoll(const char *arg1, size_t len1, const char *arg2, size_t len2,
  * Return true if the collation provider supports pg_strxfrm() and
  * pg_strnxfrm(); otherwise false.
  *
- *
  * No similar problem is known for the ICU provider.
  */
 bool
