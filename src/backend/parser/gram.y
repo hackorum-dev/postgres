@@ -2576,6 +2576,34 @@ alter_table_cmd:
 					n->def = $8;
 					$$ = (Node *) n;
 				}
+			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET EXPRESSION AS <expr> VIRTUAL */
+			| ALTER opt_column ColId SET EXPRESSION AS '(' a_expr ')' VIRTUAL
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					GenerationExpr *g = makeNode(GenerationExpr);
+
+					g->raw_expr = $8;
+					g->generated_kind = ATTRIBUTE_GENERATED_VIRTUAL;
+
+					n->subtype = AT_SetExpression;
+					n->name = $3;
+					n->def = (Node *) g;
+					$$ = (Node *) n;
+				}
+			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET EXPRESSION AS <expr> STORED */
+			| ALTER opt_column ColId SET EXPRESSION AS '(' a_expr ')' STORED
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					GenerationExpr *g = makeNode(GenerationExpr);
+
+					g->raw_expr = $8;
+					g->generated_kind = ATTRIBUTE_GENERATED_STORED;
+
+					n->subtype = AT_SetExpression;
+					n->name = $3;
+					n->def = (Node *) g;
+					$$ = (Node *) n;
+				}
 			/* ALTER TABLE <name> ALTER [COLUMN] <colname> DROP EXPRESSION */
 			| ALTER opt_column ColId DROP EXPRESSION
 				{

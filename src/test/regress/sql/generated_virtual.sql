@@ -5,6 +5,13 @@ CREATE SCHEMA generated_virtual_tests;
 GRANT USAGE ON SCHEMA generated_virtual_tests TO PUBLIC;
 SET search_path = generated_virtual_tests;
 
+PREPARE get_generated_info(regclass[], text[]) AS
+SELECT attrelid::regclass as table, attname, attnum, attgenerated, pg_get_expr(pd.adbin, pa.attrelid)
+FROM    pg_attribute pa JOIN pg_attrdef pd
+ON      pd.adrelid = pa.attrelid
+WHERE   pa.attrelid = ANY($1) AND pa.attname =ANY($2) AND pa.attnum > 0 AND atthasdef
+ORDER BY attrelid::regclass::text COLLATE "C", attnum;
+
 CREATE TABLE gtest0 (a int PRIMARY KEY, b int GENERATED ALWAYS AS (55) VIRTUAL);
 CREATE TABLE gtest1 (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
 
@@ -319,6 +326,10 @@ INSERT INTO gtest20 (a) VALUES (30);  -- violates constraint
 
 ALTER TABLE gtest20 ALTER COLUMN b SET EXPRESSION AS (a * 100);  -- violates constraint (currently not supported)
 ALTER TABLE gtest20 ALTER COLUMN b SET EXPRESSION AS (a * 3);  -- ok (currently not supported)
+ALTER TABLE gtest20 ALTER COLUMN b SET EXPRESSION AS (a * 3) VIRTUAL;  -- ok (currently not supported)
+ALTER TABLE gtest20 ALTER COLUMN b SET EXPRESSION AS (a * 5) STORED;  --error, violates constraint
+ALTER TABLE gtest20 ALTER COLUMN b SET EXPRESSION AS (a * 3) STORED;  --ok
+\d gtest20
 
 CREATE TABLE gtest20a (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
 INSERT INTO gtest20a (a) VALUES (10);
@@ -530,6 +541,11 @@ SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
 -- alter only parent's and one child's generation expression
 ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
 ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10);
+-- ALTER COLUMN SET EXPRESSION VIRTUAL/STORED must apply to all inherited tables
+ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4) STORED; --error
+ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4) VIRTUAL; --error
+ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10) VIRTUAL; --error
+ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10) STORED; --error
 \d gtest_parent
 \d gtest_child
 \d gtest_child2
@@ -542,6 +558,10 @@ ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 2);
 \d gtest_child
 \d gtest_child2
 \d gtest_child3
+ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 11) STORED;
+EXECUTE get_generated_info('{gtest_parent, gtest_child, gtest_child2, gtest_child3}', '{f3}');
+ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 2) VIRTUAL;
+EXECUTE get_generated_info('{gtest_parent, gtest_child, gtest_child2, gtest_child3}', '{f3}');
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
 -- we leave these tables around for purposes of testing dump/reload/upgrade
 
@@ -566,6 +586,9 @@ ALTER TABLE gtest25 ALTER COLUMN d SET DATA TYPE float8,
   ADD COLUMN y float8 GENERATED ALWAYS AS (d * 4) VIRTUAL;
 SELECT * FROM gtest25 ORDER BY a;
 \d gtest25
+--error, can not add and set generation expression in one statement
+ALTER TABLE gtest25 ADD COLUMN d1 int GENERATED ALWAYS AS (a * 2) VIRTUAL,
+  ALTER COLUMN d1 SET EXPRESSION AS (a * 3) STORED;
 
 -- ALTER TABLE ... ALTER COLUMN
 CREATE TABLE gtest27 (
@@ -625,6 +648,17 @@ INSERT INTO gtest29 (a, b) VALUES (6, 66);
 SELECT * FROM gtest29;
 \d gtest29
 
+-- ALTER COLUMN ... SET EXPRESSION VIRTUAL
+-- ALTER COLUMN ... SET EXPRESSION STORED
+ALTER TABLE gtest29 ALTER COLUMN b SET EXPRESSION AS (a * 2) STORED;
+EXECUTE get_generated_info('{gtest29}', '{b}');
+SELECT * FROM gtest29;
+ALTER TABLE gtest29 ALTER COLUMN b SET EXPRESSION AS (a * 4);
+EXECUTE get_generated_info('{gtest29}', '{b}');
+ALTER TABLE gtest29 ALTER COLUMN b SET EXPRESSION AS (a * 3) VIRTUAL;
+EXECUTE get_generated_info('{gtest29}', '{b}');
+SELECT * FROM gtest29;
+
 -- check that dependencies between columns have also been removed
 --ALTER TABLE gtest29 DROP COLUMN a;  -- should not drop b
 --\d gtest29
@@ -648,6 +682,13 @@ ALTER TABLE ONLY gtest30 ALTER COLUMN b DROP EXPRESSION;  -- error
 \d gtest30
 \d gtest30_1
 ALTER TABLE gtest30_1 ALTER COLUMN b DROP EXPRESSION;  -- error
+ALTER TABLE gtest30_1 ALTER COLUMN b SET EXPRESSION AS (a * 2) STORED;  -- error
+ALTER TABLE gtest30_1 ALTER COLUMN b SET EXPRESSION AS (a * 2) VIRTUAL;  -- error
+ALTER TABLE gtest30 ALTER COLUMN b SET EXPRESSION AS (a * 2) STORED;
+EXECUTE get_generated_info('{gtest30, gtest30_1}', '{b}');
+ALTER TABLE gtest30 ALTER COLUMN b SET EXPRESSION AS (a * 3) VIRTUAL;
+EXECUTE get_generated_info('{gtest30, gtest30_1}', '{b}');
+DEALLOCATE get_generated_info;
 
 -- composite type dependencies
 CREATE TABLE gtest31_1 (a int, b text GENERATED ALWAYS AS ('hello') VIRTUAL, c text);
@@ -657,6 +698,8 @@ ALTER TABLE gtest31_1 ALTER COLUMN b TYPE varchar;  -- fails
 -- bug #18970
 ALTER TABLE gtest31_2 ADD CONSTRAINT cc CHECK ((y).b IS NOT NULL);
 ALTER TABLE gtest31_1 ALTER COLUMN b SET EXPRESSION AS ('hello1');
+ALTER TABLE gtest31_1 ALTER COLUMN b SET EXPRESSION AS ('hello1') VIRTUAL;
+ALTER TABLE gtest31_1 ALTER COLUMN b SET EXPRESSION AS ('hello1') STORED;
 ALTER TABLE gtest31_2 DROP CONSTRAINT cc;
 
 CREATE STATISTICS gtest31_2_stat ON ((y).b is not null) FROM gtest31_2;

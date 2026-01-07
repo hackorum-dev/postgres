@@ -523,6 +523,7 @@ static ObjectAddress ATExecDropIdentity(Relation rel, const char *colName, bool 
 static ObjectAddress ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 										 Node *newExpr, LOCKMODE lockmode);
 static void ATPrepDropExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recursing, LOCKMODE lockmode);
+static void ATPrepSetExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recursing, LOCKMODE lockmode);
 static ObjectAddress ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode);
 static ObjectAddress ATExecSetStatistics(Relation rel, const char *colName, int16 colNum,
 										 Node *newValue, LOCKMODE lockmode);
@@ -5032,6 +5033,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			ATSimplePermissions(cmd->subtype, rel,
 								ATT_TABLE | ATT_PARTITIONED_TABLE | ATT_FOREIGN_TABLE);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode, context);
+			ATPrepSetExpression(rel, cmd, recurse, recursing, lockmode);
 			pass = AT_PASS_SET_EXPRESSION;
 			break;
 		case AT_DropExpression: /* ALTER COLUMN DROP EXPRESSION */
@@ -8641,8 +8643,9 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 	Expr	   *defval;
 	NewColumnValue *newval;
 	RawColumnDefault *rawEnt;
+	Node	   *raw_default;
 
-	tuple = SearchSysCacheAttName(RelationGetRelid(rel), colName);
+	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colName);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_COLUMN),
@@ -8669,7 +8672,8 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 	 * TODO: This could be done, just need to recheck any constraints
 	 * afterwards.
 	 */
-	if (attgenerated == ATTRIBUTE_GENERATED_VIRTUAL &&
+	if (!IsA(newExpr, GenerationExpr) &&
+		attgenerated == ATTRIBUTE_GENERATED_VIRTUAL &&
 		rel->rd_att->constr && rel->rd_att->constr->num_check > 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -8697,7 +8701,80 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 
 	rewrite = (attgenerated == ATTRIBUTE_GENERATED_STORED);
 
-	ReleaseSysCache(tuple);
+	/*
+	 * For ALTER TABLE ALTER COLUMN SET EXPRESSION STORED/VIRTUAL, newExpr is
+	 * a GenerationExpr node. For ALTER TABLE ALTER COLUMN SET EXPRESSION
+	 * without STORED/VIRTUAL, newExpr is a non-GenerationExpr node; see
+	 * gram.y.
+	 */
+	if (!IsA(newExpr, GenerationExpr))
+		raw_default = newExpr;
+	else
+	{
+		GenerationExpr *g = castNode(GenerationExpr, newExpr);
+
+		raw_default = g->raw_expr;
+
+		if (attgenerated == g->generated_kind &&
+			g->generated_kind == ATTRIBUTE_GENERATED_VIRTUAL &&
+			rel->rd_att->constr && rel->rd_att->constr->num_check > 0)
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("ALTER TABLE / SET EXPRESSION VIRTUAL is not supported for virtual generated columns in tables with check constraints"),
+					errdetail("Column \"%s\" of relation \"%s\" is a virtual generated column.",
+							  colName, RelationGetRelationName(rel)));
+
+		if (attgenerated != g->generated_kind)
+		{
+			Relation	pg_attribute = table_open(AttributeRelationId,
+												  RowExclusiveLock);
+
+			attgenerated = g->generated_kind;
+			attTup->attgenerated = g->generated_kind;
+
+			if (g->generated_kind == ATTRIBUTE_GENERATED_STORED)
+				rewrite = true;
+			else
+			{
+				char	   *errdetail_msg = NULL;
+
+				RememberAllDependentForRebuilding(tab, AT_SetExpression, rel, attnum, colName);
+
+				/*
+				 * Virtual generated columns do not currently support indexes,
+				 * statistics, user-defined types, or publications.
+				 */
+				if (tab->changedIndexOids != NIL)
+					errdetail_msg = _("Indexes on virtual generated columns are not supported.");
+				else if (tab->changedStatisticsOids != NIL)
+					errdetail_msg = _("Statistics creation on virtual generated columns is not supported.");
+				else if (attTup->atttypid >= FirstUnpinnedObjectId)
+					errdetail_msg = _("Virtual generated columns that make use of user-defined types are not yet supported.");
+				else if (GetRelationPublications(RelationGetRelid(rel)) != NIL)
+					errdetail_msg = _("Publication on virtual generated columns are not supported.");
+
+				if (errdetail_msg != NULL)
+					ereport(ERROR,
+							errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("cannot changed generated column (%s) from %s to %s", colName, "STORED", "VIRTUAL"),
+							errdetail_internal("%s", errdetail_msg));
+
+				/*
+				 * change GENERATED COLUMN from stored to virtual do not need
+				 * table rewrite
+				 */
+				rewrite = false;
+			}
+
+			CatalogTupleUpdate(pg_attribute, &tuple->t_self, tuple);
+
+			InvokeObjectPostAlterHook(RelationRelationId,
+									  RelationGetRelid(rel),
+									  attnum);
+			table_close(pg_attribute, RowExclusiveLock);
+		}
+	}
+	heap_freetuple(tuple);
 
 	if (rewrite)
 	{
@@ -8743,7 +8820,7 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 	/* Prepare to store the new expression, in the catalogs */
 	rawEnt = palloc_object(RawColumnDefault);
 	rawEnt->attnum = attnum;
-	rawEnt->raw_default = newExpr;
+	rawEnt->raw_default = raw_default;
 	rawEnt->generated = attgenerated;
 
 	/* Store the generated expression */
@@ -8821,6 +8898,63 @@ ATPrepDropExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recurs
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
 					 errmsg("cannot drop generation expression from inherited column")));
+	}
+}
+
+/*
+ * ALTER TABLE ALTER COLUMN SET EXPRESSION [STORED | VIRTUAL]
+ *
+ * This needs to recurse into all child tables; otherwise, the parent and child
+ * may end up with different storage types for the generated column.
+ */
+static void
+ATPrepSetExpression(Relation rel, AlterTableCmd *cmd, bool recurse, bool recursing, LOCKMODE lockmode)
+{
+	GenerationExpr *genexpr = NULL;
+
+	if (IsA(cmd->def, GenerationExpr))
+		genexpr = castNode(GenerationExpr, cmd->def);
+
+	/*
+	 * Reject ONLY if there are child tables.
+	 */
+	if (!recurse && !recursing &&
+		genexpr != NULL &&
+		find_inheritance_children(RelationGetRelid(rel), lockmode))
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("%s must be applied to child tables too",
+					   (genexpr->generated_kind == ATTRIBUTE_GENERATED_STORED) ?
+					   "ALTER TABLE ... SET EXPRESSION STORED" :
+					   "ALTER TABLE ... SET EXPRESSION VIRTUAL"),
+				errhint("Do not specify the ONLY keyword."));
+
+	/*
+	 * Cannot change generation expression kind from inherited columns.
+	 */
+	if (!recursing && genexpr != NULL)
+	{
+		Form_pg_attribute attTup;
+
+		HeapTuple	tuple = SearchSysCacheAttName(RelationGetRelid(rel), cmd->name);
+
+		if (!HeapTupleIsValid(tuple))
+			ereport(ERROR,
+					errcode(ERRCODE_UNDEFINED_COLUMN),
+					errmsg("column \"%s\" of relation \"%s\" does not exist",
+						   cmd->name, RelationGetRelationName(rel)));
+
+		attTup = (Form_pg_attribute) GETSTRUCT(tuple);
+
+		if (attTup->attinhcount > 0)
+			ereport(ERROR,
+					errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					errmsg("cannot use %s change generation expression from inherited column",
+						   (genexpr->generated_kind == ATTRIBUTE_GENERATED_STORED) ?
+						   "ALTER TABLE ... SET EXPRESSION STORED" :
+						   "ALTER TABLE ... SET EXPRESSION VIRTUAL"));
+
+		ReleaseSysCache(tuple);
 	}
 }
 

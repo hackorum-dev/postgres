@@ -2375,6 +2375,10 @@ heapam_scan_sample_next_tuple(TableScanDesc scan, SampleScanState *scanstate,
  * currently only known to happen as an after-effect of ALTER TABLE
  * SET WITHOUT OIDS.
  *
+ * 3. ALTER TABLE SET EXPRESSION VIRTUAL will converts the stored generated column
+ *    into virtual; in that case, the corresponding tuple value must
+ *    be set to NULL.
+ *
  * So, we must reconstruct the tuple from component Datums.
  */
 static void
@@ -2394,6 +2398,14 @@ reform_and_rewrite_tuple(HeapTuple tuple,
 	{
 		if (TupleDescCompactAttr(newTupDesc, i)->attisdropped)
 			isnull[i] = true;
+		if (TupleDescCompactAttr(newTupDesc, i)->attgenerated)
+		{
+			if (TupleDescAttr(newTupDesc, i)->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+			{
+				values[i] = (Datum) 0;
+				isnull[i] = true;
+			}
+		}
 	}
 
 	copiedTuple = heap_form_tuple(newTupDesc, values, isnull);

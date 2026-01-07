@@ -1049,6 +1049,7 @@ Gene
 GeneratePruningStepsContext
 GenerationBlock
 GenerationContext
+GenerationExpr
 GenerationPointer
 GenericCosts
 GenericXLogPageData

@@ -547,6 +547,8 @@ ALTER PUBLICATION testpub_fortable DROP TABLE testpub_tbl5;
 
 -- ok: stored generated column "d" can be in the list too
 ALTER PUBLICATION testpub_fortable ADD TABLE testpub_tbl5 (a, d);
+--error
+ALTER TABLE testpub_tbl5 ALTER COLUMN d SET EXPRESSION AS (a + length(b)) VIRTUAL;
 ALTER PUBLICATION testpub_fortable DROP TABLE testpub_tbl5;
 -- error: virtual generated column "e" can't be in list
 ALTER PUBLICATION testpub_fortable ADD TABLE testpub_tbl5 (a, e);

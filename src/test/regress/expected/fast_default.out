@@ -70,6 +70,20 @@ NOTICE:  rewriting table has_volatile for reason 4
 -- stored generated columns need a rewrite
 ALTER TABLE has_volatile ADD col7 int GENERATED ALWAYS AS (55) stored;
 NOTICE:  rewriting table has_volatile for reason 2
+-- Changing a generated column from virtual to stored does not require a table
+-- rewrite.
+ALTER TABLE has_volatile ADD col8 int GENERATED ALWAYS AS (55) VIRTUAL;
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55) STORED;
+NOTICE:  rewriting table has_volatile for reason 2
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55) STORED;
+NOTICE:  rewriting table has_volatile for reason 2
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55);
+NOTICE:  rewriting table has_volatile for reason 2
+-- Changing a generated column from stored to virtual does not require a table
+-- rewrite.
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55) VIRTUAL;
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55) VIRTUAL;
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55);
 -- Test a large sample of different datatypes
 CREATE TABLE T(pk INT NOT NULL PRIMARY KEY, c_int INT DEFAULT 1);
 SELECT set('t');

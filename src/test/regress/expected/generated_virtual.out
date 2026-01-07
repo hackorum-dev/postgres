@@ -2,6 +2,12 @@
 CREATE SCHEMA generated_virtual_tests;
 GRANT USAGE ON SCHEMA generated_virtual_tests TO PUBLIC;
 SET search_path = generated_virtual_tests;
+PREPARE get_generated_info(regclass[], text[]) AS
+SELECT attrelid::regclass as table, attname, attnum, attgenerated, pg_get_expr(pd.adbin, pa.attrelid)
+FROM    pg_attribute pa JOIN pg_attrdef pd
+ON      pd.adrelid = pa.attrelid
+WHERE   pa.attrelid = ANY($1) AND pa.attname =ANY($2) AND pa.attnum > 0 AND atthasdef
+ORDER BY attrelid::regclass::text COLLATE "C", attnum;
 CREATE TABLE gtest0 (a int PRIMARY KEY, b int GENERATED ALWAYS AS (55) VIRTUAL);
 CREATE TABLE gtest1 (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
 SELECT table_name, column_name, column_default, is_nullable, is_generated, generation_expression FROM information_schema.columns WHERE table_schema = 'generated_virtual_tests' ORDER BY 1, 2;
@@ -645,6 +651,23 @@ DETAIL:  Column "b" of relation "gtest20" is a virtual generated column.
 ALTER TABLE gtest20 ALTER COLUMN b SET EXPRESSION AS (a * 3);  -- ok (currently not supported)
 ERROR:  ALTER TABLE / SET EXPRESSION is not supported for virtual generated columns in tables with check constraints
 DETAIL:  Column "b" of relation "gtest20" is a virtual generated column.
+ALTER TABLE gtest20 ALTER COLUMN b SET EXPRESSION AS (a * 3) VIRTUAL;  -- ok (currently not supported)
+ERROR:  ALTER TABLE / SET EXPRESSION VIRTUAL is not supported for virtual generated columns in tables with check constraints
+DETAIL:  Column "b" of relation "gtest20" is a virtual generated column.
+ALTER TABLE gtest20 ALTER COLUMN b SET EXPRESSION AS (a * 5) STORED;  --error, violates constraint
+ERROR:  check constraint "gtest20_b_check" of relation "gtest20" is violated by some row
+ALTER TABLE gtest20 ALTER COLUMN b SET EXPRESSION AS (a * 3) STORED;  --ok
+\d gtest20
+                   Table "generated_virtual_tests.gtest20"
+ Column |  Type   | Collation | Nullable |              Default               
+--------+---------+-----------+----------+------------------------------------
+ a      | integer |           | not null | 
+ b      | integer |           |          | generated always as (a * 3) stored
+Indexes:
+    "gtest20_pkey" PRIMARY KEY, btree (a)
+Check constraints:
+    "gtest20_b_check" CHECK (b < 50)
+
 CREATE TABLE gtest20a (a int PRIMARY KEY, b int GENERATED ALWAYS AS (a * 2) VIRTUAL);
 INSERT INTO gtest20a (a) VALUES (10);
 INSERT INTO gtest20a (a) VALUES (30);
@@ -943,6 +966,17 @@ SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
 -- alter only parent's and one child's generation expression
 ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
 ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10);
+-- ALTER COLUMN SET EXPRESSION VIRTUAL/STORED must apply to all inherited tables
+ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4) STORED; --error
+ERROR:  ALTER TABLE ... SET EXPRESSION STORED must be applied to child tables too
+HINT:  Do not specify the ONLY keyword.
+ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4) VIRTUAL; --error
+ERROR:  ALTER TABLE ... SET EXPRESSION VIRTUAL must be applied to child tables too
+HINT:  Do not specify the ONLY keyword.
+ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10) VIRTUAL; --error
+ERROR:  cannot use ALTER TABLE ... SET EXPRESSION VIRTUAL change generation expression from inherited column
+ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10) STORED; --error
+ERROR:  cannot use ALTER TABLE ... SET EXPRESSION STORED change generation expression from inherited column
 \d gtest_parent
        Partitioned table "generated_virtual_tests.gtest_parent"
  Column |  Type  | Collation | Nullable |           Default            
@@ -1027,6 +1061,26 @@ Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
  f3     | bigint |           |          | generated always as (f2 * 2)
 Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
 
+ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 11) STORED;
+EXECUTE get_generated_info('{gtest_parent, gtest_child, gtest_child2, gtest_child3}', '{f3}');
+    table     | attname | attnum | attgenerated | pg_get_expr 
+--------------+---------+--------+--------------+-------------
+ gtest_child  | f3      |      3 | s            | (f2 * 11)
+ gtest_child2 | f3      |      3 | s            | (f2 * 11)
+ gtest_child3 | f3      |      3 | s            | (f2 * 11)
+ gtest_parent | f3      |      3 | s            | (f2 * 11)
+(4 rows)
+
+ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 2) VIRTUAL;
+EXECUTE get_generated_info('{gtest_parent, gtest_child, gtest_child2, gtest_child3}', '{f3}');
+    table     | attname | attnum | attgenerated | pg_get_expr 
+--------------+---------+--------+--------------+-------------
+ gtest_child  | f3      |      3 | v            | (f2 * 2)
+ gtest_child2 | f3      |      3 | v            | (f2 * 2)
+ gtest_child3 | f3      |      3 | v            | (f2 * 2)
+ gtest_parent | f3      |      3 | v            | (f2 * 2)
+(4 rows)
+
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
    tableoid   |     f1     | f2 | f3 
 --------------+------------+----+----
@@ -1103,6 +1157,10 @@ SELECT * FROM gtest25 ORDER BY a;
 Indexes:
     "gtest25_pkey" PRIMARY KEY, btree (a)
 
+--error, can not add and set generation expression in one statement
+ALTER TABLE gtest25 ADD COLUMN d1 int GENERATED ALWAYS AS (a * 2) VIRTUAL,
+  ALTER COLUMN d1 SET EXPRESSION AS (a * 3) STORED;
+ERROR:  column "d1" of relation "gtest25" does not exist
 -- ALTER TABLE ... ALTER COLUMN
 CREATE TABLE gtest27 (
     a int,
@@ -1244,6 +1302,45 @@ SELECT * FROM gtest29;
  a      | integer |           |          | 
  b      | integer |           |          | generated always as (a * 3)
 
+-- ALTER COLUMN ... SET EXPRESSION VIRTUAL
+-- ALTER COLUMN ... SET EXPRESSION STORED
+ALTER TABLE gtest29 ALTER COLUMN b SET EXPRESSION AS (a * 2) STORED;
+EXECUTE get_generated_info('{gtest29}', '{b}');
+  table  | attname | attnum | attgenerated | pg_get_expr 
+---------+---------+--------+--------------+-------------
+ gtest29 | b       |      2 | s            | (a * 2)
+(1 row)
+
+SELECT * FROM gtest29;
+ a | b  
+---+----
+ 3 |  6
+ 4 |  8
+ 5 | 10
+(3 rows)
+
+ALTER TABLE gtest29 ALTER COLUMN b SET EXPRESSION AS (a * 4);
+EXECUTE get_generated_info('{gtest29}', '{b}');
+  table  | attname | attnum | attgenerated | pg_get_expr 
+---------+---------+--------+--------------+-------------
+ gtest29 | b       |      2 | s            | (a * 4)
+(1 row)
+
+ALTER TABLE gtest29 ALTER COLUMN b SET EXPRESSION AS (a * 3) VIRTUAL;
+EXECUTE get_generated_info('{gtest29}', '{b}');
+  table  | attname | attnum | attgenerated | pg_get_expr 
+---------+---------+--------+--------------+-------------
+ gtest29 | b       |      2 | v            | (a * 3)
+(1 row)
+
+SELECT * FROM gtest29;
+ a | b  
+---+----
+ 3 |  9
+ 4 | 12
+ 5 | 15
+(3 rows)
+
 -- check that dependencies between columns have also been removed
 --ALTER TABLE gtest29 DROP COLUMN a;  -- should not drop b
 --\d gtest29
@@ -1299,6 +1396,27 @@ Inherits: gtest30
 
 ALTER TABLE gtest30_1 ALTER COLUMN b DROP EXPRESSION;  -- error
 ERROR:  cannot drop generation expression from inherited column
+ALTER TABLE gtest30_1 ALTER COLUMN b SET EXPRESSION AS (a * 2) STORED;  -- error
+ERROR:  cannot use ALTER TABLE ... SET EXPRESSION STORED change generation expression from inherited column
+ALTER TABLE gtest30_1 ALTER COLUMN b SET EXPRESSION AS (a * 2) VIRTUAL;  -- error
+ERROR:  cannot use ALTER TABLE ... SET EXPRESSION VIRTUAL change generation expression from inherited column
+ALTER TABLE gtest30 ALTER COLUMN b SET EXPRESSION AS (a * 2) STORED;
+EXECUTE get_generated_info('{gtest30, gtest30_1}', '{b}');
+   table   | attname | attnum | attgenerated | pg_get_expr 
+-----------+---------+--------+--------------+-------------
+ gtest30   | b       |      2 | s            | (a * 2)
+ gtest30_1 | b       |      2 | s            | (a * 2)
+(2 rows)
+
+ALTER TABLE gtest30 ALTER COLUMN b SET EXPRESSION AS (a * 3) VIRTUAL;
+EXECUTE get_generated_info('{gtest30, gtest30_1}', '{b}');
+   table   | attname | attnum | attgenerated | pg_get_expr 
+-----------+---------+--------+--------------+-------------
+ gtest30   | b       |      2 | v            | (a * 3)
+ gtest30_1 | b       |      2 | v            | (a * 3)
+(2 rows)
+
+DEALLOCATE get_generated_info;
 -- composite type dependencies
 CREATE TABLE gtest31_1 (a int, b text GENERATED ALWAYS AS ('hello') VIRTUAL, c text);
 CREATE TABLE gtest31_2 (x int, y gtest31_1);
@@ -1307,6 +1425,9 @@ ERROR:  cannot alter table "gtest31_1" because column "gtest31_2.y" uses its row
 -- bug #18970
 ALTER TABLE gtest31_2 ADD CONSTRAINT cc CHECK ((y).b IS NOT NULL);
 ALTER TABLE gtest31_1 ALTER COLUMN b SET EXPRESSION AS ('hello1');
+ALTER TABLE gtest31_1 ALTER COLUMN b SET EXPRESSION AS ('hello1') VIRTUAL;
+ALTER TABLE gtest31_1 ALTER COLUMN b SET EXPRESSION AS ('hello1') STORED;
+ERROR:  cannot alter table "gtest31_1" because column "gtest31_2.y" uses its row type
 ALTER TABLE gtest31_2 DROP CONSTRAINT cc;
 CREATE STATISTICS gtest31_2_stat ON ((y).b is not null) FROM gtest31_2;
 ALTER TABLE gtest31_1 ALTER COLUMN b SET EXPRESSION AS ('hello2');

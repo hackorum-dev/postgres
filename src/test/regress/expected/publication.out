@@ -876,6 +876,10 @@ DETAIL:  Column list used by the publication does not cover the replica identity
 ALTER PUBLICATION testpub_fortable DROP TABLE testpub_tbl5;
 -- ok: stored generated column "d" can be in the list too
 ALTER PUBLICATION testpub_fortable ADD TABLE testpub_tbl5 (a, d);
+--error
+ALTER TABLE testpub_tbl5 ALTER COLUMN d SET EXPRESSION AS (a + length(b)) VIRTUAL;
+ERROR:  cannot changed generated column (d) from STORED to VIRTUAL
+DETAIL:  Publication on virtual generated columns are not supported.
 ALTER PUBLICATION testpub_fortable DROP TABLE testpub_tbl5;
 -- error: virtual generated column "e" can't be in list
 ALTER PUBLICATION testpub_fortable ADD TABLE testpub_tbl5 (a, e);

@@ -77,6 +77,18 @@ ALTER TABLE has_volatile ALTER COLUMN col1 SET DATA TYPE float8,
 -- stored generated columns need a rewrite
 ALTER TABLE has_volatile ADD col7 int GENERATED ALWAYS AS (55) stored;
 
+-- Changing a generated column from virtual to stored does not require a table
+-- rewrite.
+ALTER TABLE has_volatile ADD col8 int GENERATED ALWAYS AS (55) VIRTUAL;
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55) STORED;
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55) STORED;
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55);
+
+-- Changing a generated column from stored to virtual does not require a table
+-- rewrite.
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55) VIRTUAL;
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55) VIRTUAL;
+ALTER TABLE has_volatile ALTER COLUMN col8 SET EXPRESSION AS (55);
 
 
 -- Test a large sample of different datatypes

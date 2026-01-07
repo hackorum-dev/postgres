@@ -135,6 +135,12 @@ NOTICE:  DDL test: type simple, tag CREATE TABLE
 ALTER TABLE tbl ALTER COLUMN a SET EXPRESSION AS (b::int * 3);
 NOTICE:  DDL test: type alter table, tag ALTER TABLE
 NOTICE:    subcommand: type SET EXPRESSION desc column a of table tbl
+ALTER TABLE tbl ALTER COLUMN a SET EXPRESSION AS (b::int * 2) VIRTUAL;
+NOTICE:  DDL test: type alter table, tag ALTER TABLE
+NOTICE:    subcommand: type SET EXPRESSION VIRTUAL desc column a of table tbl
+ALTER TABLE tbl ALTER COLUMN a SET EXPRESSION AS (b::int * 2) STORED;
+NOTICE:  DDL test: type alter table, tag ALTER TABLE
+NOTICE:    subcommand: type SET EXPRESSION STORED desc column a of table tbl
 ALTER TABLE tbl ALTER COLUMN a DROP EXPRESSION;
 NOTICE:  DDL test: type alter table, tag ALTER TABLE
 NOTICE:    subcommand: type DROP EXPRESSION desc column a of table tbl

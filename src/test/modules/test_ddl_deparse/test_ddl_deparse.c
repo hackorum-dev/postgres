@@ -129,8 +129,20 @@ get_altertable_subcmdinfo(PG_FUNCTION_ARGS)
 				strtype = "SET NOT NULL";
 				break;
 			case AT_SetExpression:
-				strtype = "SET EXPRESSION";
+			{
+				if (IsA(subcmd->def, GenerationExpr))
+				{
+					GenerationExpr *genexpr = castNode(GenerationExpr, subcmd->def);
+
+					if (genexpr->generated_kind == ATTRIBUTE_GENERATED_STORED)
+						strtype = "SET EXPRESSION STORED";
+					else
+						strtype = "SET EXPRESSION VIRTUAL";
+				}
+				else
+					strtype = "SET EXPRESSION";
 				break;
+			}
 			case AT_DropExpression:
 				strtype = "DROP EXPRESSION";
 				break;

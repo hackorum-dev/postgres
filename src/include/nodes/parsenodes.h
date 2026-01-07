@@ -2907,6 +2907,19 @@ typedef struct Constraint
 } Constraint;
 
 /* ----------------------
+ *	ALTER COLUMN SET EXPRESSION STORED
+ *	ALTER COLUMN SET EXPRESSION VIRTUAL
+ * ----------------------
+ */
+typedef struct GenerationExpr
+{
+	NodeTag		type;
+	Node	   *raw_expr;		/* generation expression as a untransformed
+								 * a_expr node */
+	char		generated_kind; /* STORED or VIRTUAL */
+} GenerationExpr;
+
+/* ----------------------
  *		Create/Drop Table Space Statements
  * ----------------------
  */
