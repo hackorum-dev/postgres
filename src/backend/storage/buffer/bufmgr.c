@@ -2520,25 +2520,14 @@ again:
 		 * If using a nondefault strategy, and writing the buffer would
 		 * require a WAL flush, let the strategy decide whether to go ahead
 		 * and write/reuse the buffer or to choose another victim.  We need a
-		 * lock to inspect the page LSN, so this can't be done inside
+		 * content lock to inspect the page LSN, so this can't be done inside
 		 * StrategyGetBuffer.
 		 */
-		if (strategy != NULL)
+		if (strategy && StrategyRejectBuffer(strategy, buf_hdr, from_ring))
 		{
-			XLogRecPtr	lsn;
-
-			/* Read the LSN while holding buffer header lock */
-			buf_state = LockBufHdr(buf_hdr);
-			lsn = BufferGetLSN(buf_hdr);
-			UnlockBufHdr(buf_hdr);
-
-			if (XLogNeedsFlush(lsn)
-				&& StrategyRejectBuffer(strategy, buf_hdr, from_ring))
-			{
-				LockBuffer(buf, BUFFER_LOCK_UNLOCK);
-				UnpinBuffer(buf_hdr);
-				goto again;
-			}
+			LockBuffer(buf, BUFFER_LOCK_UNLOCK);
+			UnpinBuffer(buf_hdr);
+			goto again;
 		}
 
 		/* OK, do the I/O */
@@ -3437,6 +3426,45 @@ TrackNewBufferPin(Buffer buf)
 	VALGRIND_MAKE_MEM_DEFINED(BufHdrGetBlock(GetBufferDescriptor(buf - 1)),
 							  BLCKSZ);
 }
+
+/*
+ * Returns true if the buffer needs WAL flushed before it can be written out.
+ *
+ * If the result is required to be correct, the caller must hold a buffer
+ * content lock. If they only hold a shared content lock, we'll need to
+ * acquire the buffer header spinlock, so they must not already hold it.
+ */
+bool
+BufferNeedsWALFlush(BufferDesc *bufdesc, bool exclusive_locked)
+{
+	uint32		buf_state = pg_atomic_read_u64(&bufdesc->state);
+	Buffer		buffer;
+	char	   *page;
+	XLogRecPtr	lsn;
+
+	/*
+	 * Unlogged buffers can't need WAL flush. See FlushBuffer() for more
+	 * details on unlogged relations with LSNs.
+	 */
+	if (!(buf_state & BM_PERMANENT))
+		return false;
+
+	buffer = BufferDescriptorGetBuffer(bufdesc);
+	page = BufferGetPage(buffer);
+
+	if (!XLogHintBitIsNeeded() || BufferIsLocal(buffer) || exclusive_locked)
+		lsn = PageGetLSN(page);
+	else
+	{
+		/* Buffer is either share locked or not locked */
+		LockBufHdr(bufdesc);
+		lsn = PageGetLSN(page);
+		UnlockBufHdr(bufdesc);
+	}
+
+	return XLogNeedsFlush(lsn);
+}
+
 
 #define ST_SORT sort_checkpoint_bufferids
 #define ST_ELEMENT_TYPE CkptSortItem

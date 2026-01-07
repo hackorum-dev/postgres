@@ -552,6 +552,7 @@ extern void WritebackContextInit(WritebackContext *context, int *max_pending);
 extern void IssuePendingWritebacks(WritebackContext *wb_context, IOContext io_context);
 
 extern void TrackNewBufferPin(Buffer buf);
+extern bool BufferNeedsWALFlush(BufferDesc *bufdesc, bool exclusive_locked);
 
 /* solely to make it easier to write tests */
 extern bool StartBufferIO(BufferDesc *buf, bool forInput, bool nowait);
