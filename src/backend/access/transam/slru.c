@@ -249,7 +249,7 @@ SimpleLruAutotuneBuffers(int divisor, int max)
  * long_segment_names: use short or long segment names
  */
 void
-SimpleLruInit(SlruCtl ctl, const char *name, int nslots, int nlsns,
+SimpleLruInit(SlruCtl ctl, SlruType type, const char *name, int nslots, int nlsns,
 			  const char *subdir, int buffer_tranche_id, int bank_tranche_id,
 			  SyncRequestHandler sync_handler, bool long_segment_names)
 {
@@ -345,6 +345,7 @@ SimpleLruInit(SlruCtl ctl, const char *name, int nslots, int nlsns,
 	ctl->long_segment_names = long_segment_names;
 	ctl->nbanks = nbanks;
 	strlcpy(ctl->Dir, subdir, sizeof(ctl->Dir));
+	ctl->type = type;
 }
 
 /*
@@ -862,7 +863,7 @@ SlruPhysicalReadPage(SlruCtl ctl, int64 pageno, int slotno)
 	}
 
 	errno = 0;
-	pgstat_report_wait_start(WAIT_EVENT_SLRU_READ);
+	pgstat_report_wait_start(WAIT_EVENT_SLRU_READ | ctl->type);
 	if (pg_pread(fd, shared->page_buffer[slotno], BLCKSZ, offset) != BLCKSZ)
 	{
 		pgstat_report_wait_end();
@@ -1014,7 +1015,7 @@ SlruPhysicalWritePage(SlruCtl ctl, int64 pageno, int slotno, SlruWriteAll fdata)
 	}
 
 	errno = 0;
-	pgstat_report_wait_start(WAIT_EVENT_SLRU_WRITE);
+	pgstat_report_wait_start(WAIT_EVENT_SLRU_WRITE | ctl->type);
 	if (pg_pwrite(fd, shared->page_buffer[slotno], BLCKSZ, offset) != BLCKSZ)
 	{
 		pgstat_report_wait_end();
@@ -1038,7 +1039,7 @@ SlruPhysicalWritePage(SlruCtl ctl, int64 pageno, int slotno, SlruWriteAll fdata)
 		if (!RegisterSyncRequest(&tag, SYNC_REQUEST, false))
 		{
 			/* No space to enqueue sync request.  Do it synchronously. */
-			pgstat_report_wait_start(WAIT_EVENT_SLRU_SYNC);
+			pgstat_report_wait_start(WAIT_EVENT_SLRU_SYNC | ctl->type);
 			if (pg_fsync(fd) != 0)
 			{
 				pgstat_report_wait_end();
@@ -1865,7 +1866,7 @@ SlruSyncFileTag(SlruCtl ctl, const FileTag *ftag, char *path)
 	if (fd < 0)
 		return -1;
 
-	pgstat_report_wait_start(WAIT_EVENT_SLRU_FLUSH_SYNC);
+	pgstat_report_wait_start(WAIT_EVENT_SLRU_FLUSH_SYNC | ctl->type);
 	result = pg_fsync(fd);
 	pgstat_report_wait_end();
 	save_errno = errno;

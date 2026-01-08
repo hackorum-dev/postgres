@@ -811,7 +811,7 @@ SerialInit(void)
 	 * Set up SLRU management of the pg_serial data.
 	 */
 	SerialSlruCtl->PagePrecedes = SerialPagePrecedesLogically;
-	SimpleLruInit(SerialSlruCtl, "serializable",
+	SimpleLruInit(SerialSlruCtl, SLRU_TYPE_SERIAL, "serializable",
 				  serializable_buffers, 0, "pg_serial",
 				  LWTRANCHE_SERIAL_BUFFER, LWTRANCHE_SERIAL_SLRU,
 				  SYNC_HANDLER_NONE, false);

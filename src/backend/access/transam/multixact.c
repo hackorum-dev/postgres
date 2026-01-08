@@ -1730,14 +1730,14 @@ MultiXactShmemInit(void)
 	MultiXactOffsetCtl->PagePrecedes = MultiXactOffsetPagePrecedes;
 	MultiXactMemberCtl->PagePrecedes = MultiXactMemberPagePrecedes;
 
-	SimpleLruInit(MultiXactOffsetCtl,
+	SimpleLruInit(MultiXactOffsetCtl, SLRU_TYPE_MULTIXACT_OFFSET,
 				  "multixact_offset", multixact_offset_buffers, 0,
 				  "pg_multixact/offsets", LWTRANCHE_MULTIXACTOFFSET_BUFFER,
 				  LWTRANCHE_MULTIXACTOFFSET_SLRU,
 				  SYNC_HANDLER_MULTIXACT_OFFSET,
 				  false);
 	SlruPagePrecedesUnitTests(MultiXactOffsetCtl, MULTIXACT_OFFSETS_PER_PAGE);
-	SimpleLruInit(MultiXactMemberCtl,
+	SimpleLruInit(MultiXactMemberCtl, SLRU_TYPE_MULTIXACT_MEMBER,
 				  "multixact_member", multixact_member_buffers, 0,
 				  "pg_multixact/members", LWTRANCHE_MULTIXACTMEMBER_BUFFER,
 				  LWTRANCHE_MULTIXACTMEMBER_SLRU,

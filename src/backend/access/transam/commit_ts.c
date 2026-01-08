@@ -551,11 +551,12 @@ CommitTsShmemInit(void)
 	Assert(commit_timestamp_buffers != 0);
 
 	CommitTsCtl->PagePrecedes = CommitTsPagePrecedes;
-	SimpleLruInit(CommitTsCtl, "commit_timestamp", CommitTsShmemBuffers(), 0,
-				  "pg_commit_ts", LWTRANCHE_COMMITTS_BUFFER,
-				  LWTRANCHE_COMMITTS_SLRU,
-				  SYNC_HANDLER_COMMIT_TS,
-				  false);
+	SimpleLruInit(CommitTsCtl, SLRU_TYPE_COMMIT_TS,
+			   "commit_timestamp", CommitTsShmemBuffers(), 0,
+			   "pg_commit_ts", LWTRANCHE_COMMITTS_BUFFER,
+			   LWTRANCHE_COMMITTS_SLRU,
+			   SYNC_HANDLER_COMMIT_TS,
+			   false);
 	SlruPagePrecedesUnitTests(CommitTsCtl, COMMIT_TS_XACTS_PER_PAGE);
 
 	commitTsShared = ShmemInitStruct("CommitTs shared",

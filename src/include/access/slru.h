@@ -37,6 +37,19 @@ typedef enum
 	SLRU_PAGE_WRITE_IN_PROGRESS,	/* page is being written out */
 } SlruPageStatus;
 
+/* Used only for pg_stat_activity.wait_event_arg for Slru* wait events */
+typedef enum {
+	SLRU_TYPE_UNKNOWN,
+	SLRU_TYPE_NOTIFY,
+	SLRU_TYPE_CLOG,
+	SLRU_TYPE_SUBTRANS,
+	SLRU_TYPE_COMMIT_TS,
+	SLRU_TYPE_MULTIXACT_OFFSET,
+	SLRU_TYPE_MULTIXACT_MEMBER,
+	SLRU_TYPE_SERIAL,
+	SLRU_TYPE_EXTENSION			/* 3rd party extension */
+} SlruType;
+
 /*
  * Shared-memory state
  *
@@ -113,6 +126,9 @@ typedef struct SlruCtlData
 {
 	SlruShared	shared;
 
+	/* Type of SLRU that is later passed pgstat_report_wait_start() */
+	SlruType 	type;
+
 	/* Number of banks in this SLRU. */
 	uint16		nbanks;
 
@@ -167,7 +183,7 @@ SimpleLruGetBankLock(SlruCtl ctl, int64 pageno)
 
 extern Size SimpleLruShmemSize(int nslots, int nlsns);
 extern int	SimpleLruAutotuneBuffers(int divisor, int max);
-extern void SimpleLruInit(SlruCtl ctl, const char *name, int nslots, int nlsns,
+extern void SimpleLruInit(SlruCtl ctl, SlruType type, const char *name, int nslots, int nlsns,
 						  const char *subdir, int buffer_tranche_id,
 						  int bank_tranche_id, SyncRequestHandler sync_handler,
 						  bool long_segment_names);

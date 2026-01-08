@@ -830,9 +830,10 @@ AsyncShmemInit(void)
 	 * names are used in order to avoid wraparound.
 	 */
 	NotifyCtl->PagePrecedes = asyncQueuePagePrecedes;
-	SimpleLruInit(NotifyCtl, "notify", notify_buffers, 0,
-				  "pg_notify", LWTRANCHE_NOTIFY_BUFFER, LWTRANCHE_NOTIFY_SLRU,
-				  SYNC_HANDLER_NONE, true);
+	SimpleLruInit(NotifyCtl, SLRU_TYPE_NOTIFY, "notify", 
+			   notify_buffers, 0,
+			   "pg_notify", LWTRANCHE_NOTIFY_BUFFER, LWTRANCHE_NOTIFY_SLRU,
+			   SYNC_HANDLER_NONE, true);
 
 	if (!found)
 	{

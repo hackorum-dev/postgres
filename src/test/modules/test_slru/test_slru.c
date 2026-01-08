@@ -245,7 +245,7 @@ test_slru_shmem_startup(void)
 	}
 
 	TestSlruCtl->PagePrecedes = test_slru_page_precedes_logically;
-	SimpleLruInit(TestSlruCtl, "TestSLRU",
+	SimpleLruInit(TestSlruCtl, SLRU_TYPE_UNKNOWN, "TestSLRU",
 				  NUM_TEST_BUFFERS, 0, slru_dir_name,
 				  test_buffer_tranche_id, test_tranche_id, SYNC_HANDLER_NONE,
 				  long_segment_names);
