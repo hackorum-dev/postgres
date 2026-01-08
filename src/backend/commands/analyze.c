@@ -46,6 +46,7 @@
 #include "storage/procarray.h"
 #include "utils/attoptcache.h"
 #include "utils/datum.h"
+#include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -95,7 +96,7 @@ static void update_attstats(Oid relid, bool inh,
 							int natts, VacAttrStats **vacattrstats);
 static Datum std_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
 static Datum ind_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
-
+static const char *format_relation_qualified_name(Relation rel);
 
 /*
  *	analyze_rel() -- analyze one relation
@@ -212,7 +213,7 @@ analyze_rel(Oid relid, RangeVar *relation,
 		{
 			ereport(WARNING,
 					(errmsg("skipping \"%s\" --- cannot analyze this foreign table",
-							RelationGetRelationName(onerel))));
+							format_relation_qualified_name(onerel))));
 			relation_close(onerel, ShareUpdateExclusiveLock);
 			return;
 		}
@@ -229,7 +230,7 @@ analyze_rel(Oid relid, RangeVar *relation,
 		if (!(params.options & VACOPT_VACUUM))
 			ereport(WARNING,
 					(errmsg("skipping \"%s\" --- cannot analyze non-tables or special system tables",
-							RelationGetRelationName(onerel))));
+							format_relation_qualified_name(onerel))));
 		relation_close(onerel, ShareUpdateExclusiveLock);
 		return;
 	}
@@ -319,14 +320,12 @@ do_analyze_rel(Relation onerel, const VacuumParams params,
 							  params.log_analyze_min_duration >= 0));
 	if (inh)
 		ereport(elevel,
-				(errmsg("analyzing \"%s.%s\" inheritance tree",
-						get_namespace_name(RelationGetNamespace(onerel)),
-						RelationGetRelationName(onerel))));
+				(errmsg("analyzing \"%s\" inheritance tree",
+						format_relation_qualified_name(onerel))));
 	else
 		ereport(elevel,
-				(errmsg("analyzing \"%s.%s\"",
-						get_namespace_name(RelationGetNamespace(onerel)),
-						RelationGetRelationName(onerel))));
+				(errmsg("analyzing \"%s\"",
+						format_relation_qualified_name(onerel))));
 
 	/*
 	 * Set up a working context so that we can easily free whatever junk gets
@@ -805,14 +804,12 @@ do_analyze_rel(Relation onerel, const VacuumParams params,
 			initStringInfo(&buf);
 
 			if (AmAutoVacuumWorkerProcess())
-				msgfmt = _("automatic analyze of table \"%s.%s.%s\"\n");
+				msgfmt = _("automatic analyze of table \"%s\"\n");
 			else
-				msgfmt = _("finished analyzing table \"%s.%s.%s\"\n");
+				msgfmt = _("finished analyzing table \"%s\"\n");
 
 			appendStringInfo(&buf, msgfmt,
-							 get_database_name(MyDatabaseId),
-							 get_namespace_name(RelationGetNamespace(onerel)),
-							 RelationGetRelationName(onerel));
+							 format_relation_qualified_name(onerel));
 			if (track_cost_delay_timing)
 			{
 				/*
@@ -1352,7 +1349,7 @@ acquire_sample_rows(Relation onerel, int elevel,
 			(errmsg("\"%s\": scanned %d of %u pages, "
 					"containing %.0f live rows and %.0f dead rows; "
 					"%d rows in sample, %.0f estimated total rows",
-					RelationGetRelationName(onerel),
+					format_relation_qualified_name(onerel),
 					bs.m, totalblocks,
 					liverows, deadrows,
 					numrows, *totalrows)));
@@ -1433,9 +1430,8 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 		CommandCounterIncrement();
 		SetRelationHasSubclass(RelationGetRelid(onerel), false);
 		ereport(elevel,
-				(errmsg("skipping analyze of \"%s.%s\" inheritance tree --- this inheritance tree contains no child tables",
-						get_namespace_name(RelationGetNamespace(onerel)),
-						RelationGetRelationName(onerel))));
+				(errmsg("skipping analyze of \"%s\" inheritance tree --- this inheritance tree contains no child tables",
+						format_relation_qualified_name(onerel))));
 		return 0;
 	}
 
@@ -1531,9 +1527,8 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 	if (!has_child)
 	{
 		ereport(elevel,
-				(errmsg("skipping analyze of \"%s.%s\" inheritance tree --- this inheritance tree contains no analyzable child tables",
-						get_namespace_name(RelationGetNamespace(onerel)),
-						RelationGetRelationName(onerel))));
+				(errmsg("skipping analyze of \"%s\" inheritance tree --- this inheritance tree contains no analyzable child tables",
+						format_relation_qualified_name(onerel))));
 		return 0;
 	}
 
@@ -3092,4 +3087,12 @@ analyze_mcv_list(int *mcv_counts,
 		}
 	}
 	return num_mcv;
+}
+
+static const char *
+format_relation_qualified_name(Relation rel)
+{
+	return quote_qualified_identifier(
+									  get_namespace_name(RelationGetNamespace(rel)),
+									  RelationGetRelationName(rel));
 }
