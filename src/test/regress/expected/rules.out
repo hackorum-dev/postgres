@@ -2796,8 +2796,9 @@ pg_views| SELECT n.nspname AS schemaname,
   WHERE (c.relkind = 'v'::"char");
 pg_wait_events| SELECT type,
     name,
-    description
-   FROM pg_get_wait_events() pg_get_wait_events(type, name, description);
+    description,
+    waiteventarg_description
+   FROM pg_get_wait_events() pg_get_wait_events(type, name, description, waiteventarg_description);
 SELECT tablename, rulename, definition FROM pg_rules
 WHERE schemaname = 'pg_catalog'
 ORDER BY tablename, rulename;

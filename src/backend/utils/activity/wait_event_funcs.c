@@ -27,13 +27,14 @@ static const struct
 	const char *type;
 	const char *name;
 	const char *description;
+	const char *waiteventargdesc;
 }
 
 			waitEventData[] =
 {
 #include "utils/wait_event_funcs_data.c"
 	/* end of list */
-	{NULL, NULL, NULL}
+	{NULL, NULL, NULL, NULL}
 };
 
 
@@ -45,7 +46,7 @@ static const struct
 Datum
 pg_get_wait_events(PG_FUNCTION_ARGS)
 {
-#define PG_GET_WAIT_EVENTS_COLS 3
+#define PG_GET_WAIT_EVENTS_COLS 4
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	char	  **waiteventnames;
 	int			nbwaitevents;
@@ -62,6 +63,7 @@ pg_get_wait_events(PG_FUNCTION_ARGS)
 		values[0] = CStringGetTextDatum(waitEventData[idx].type);
 		values[1] = CStringGetTextDatum(waitEventData[idx].name);
 		values[2] = CStringGetTextDatum(waitEventData[idx].description);
+		values[3] = CStringGetTextDatum(waitEventData[idx].waiteventargdesc);
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 	}
@@ -86,6 +88,7 @@ pg_get_wait_events(PG_FUNCTION_ARGS)
 						 waiteventnames[idx]);
 
 		values[2] = CStringGetTextDatum(buf.data);
+		nulls[3] = true;
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 	}
@@ -110,6 +113,7 @@ pg_get_wait_events(PG_FUNCTION_ARGS)
 						 waiteventnames[idx]);
 
 		values[2] = CStringGetTextDatum(buf.data);
+		nulls[3] = true;
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 	}

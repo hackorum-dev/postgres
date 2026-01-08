@@ -8,9 +8,9 @@
 # related to wait events.
 #
 # This file defines one wait event per line, with the following
-# tab-separated fields:
+# tab-separated fields (the wait_event_arg description is optional):
 #
-#   "Typedef enum definitions" "description in the docs"
+#   "Typedef enum definitions" "desc in the docs" "desc of the wait_event_arg""
 #
 # The files generated from this one are:
 #
@@ -158,7 +158,7 @@ REPLICATION_ORIGIN_DROP	"Waiting for a replication origin to become inactive so 
 REPLICATION_SLOT_DROP	"Waiting for a replication slot to become inactive so it can be dropped."
 RESTORE_COMMAND	"Waiting for <xref linkend="guc-restore-command"/> to complete."
 SAFE_SNAPSHOT	"Waiting to obtain a valid snapshot for a <literal>READ ONLY DEFERRABLE</literal> transaction."
-SYNC_REP	"Waiting for confirmation from a remote server during synchronous replication."
+SYNC_REP	"Waiting for confirmation from a remote server during synchronous replication."	"PID of the slowest walsender."
 WAL_RECEIVER_EXIT	"Waiting for the WAL receiver to exit."
 WAL_RECEIVER_WAIT_START	"Waiting for startup process to send initial data for streaming replication."
 WAL_SUMMARY_READY	"Waiting for a new WAL summary to be generated."
@@ -177,7 +177,7 @@ Section: ClassName - WaitEventTimeout
 BASE_BACKUP_THROTTLE	"Waiting during base backup when throttling activity."
 CHECKPOINT_WRITE_DELAY	"Waiting between writes while performing a checkpoint."
 COMMIT_DELAY	"Waiting for commit delay before WAL flush."
-PG_SLEEP	"Waiting due to a call to <function>pg_sleep</function> or a sibling function."
+PG_SLEEP	"Waiting due to a call to <function>pg_sleep</function> or a sibling function."	"how many seconds to sleep for."
 RECOVERY_APPLY_DELAY	"Waiting to apply WAL during recovery because of a delay setting."
 RECOVERY_RETRIEVE_RETRY_INTERVAL	"Waiting during recovery when WAL data is not available from any source (<filename>pg_wal</filename>, archive or stream)."
 REGISTER_SYNC_REQUEST	"Waiting while sending synchronization requests to the checkpointer, because the request queue is full."
@@ -248,10 +248,10 @@ REPLICATION_SLOT_READ	"Waiting for a read from a replication slot control file."
 REPLICATION_SLOT_RESTORE_SYNC	"Waiting for a replication slot control file to reach durable storage while restoring it to memory."
 REPLICATION_SLOT_SYNC	"Waiting for a replication slot control file to reach durable storage."
 REPLICATION_SLOT_WRITE	"Waiting for a write to a replication slot control file."
-SLRU_FLUSH_SYNC	"Waiting for SLRU data to reach durable storage during a checkpoint or database shutdown."
-SLRU_READ	"Waiting for a read of an SLRU page."
-SLRU_SYNC	"Waiting for SLRU data to reach durable storage following a page write."
-SLRU_WRITE	"Waiting for a write of an SLRU page."
+SLRU_FLUSH_SYNC	"Waiting for SLRU data to reach durable storage during a checkpoint or database shutdown."	"SlruType: unknown(0), notify(1), clog(2), subtrans(3), committs(4), multixactoffset (5), multixactmembers(6), serialializable(7)"
+SLRU_READ	"Waiting for a read of an SLRU page."	"SlruType: unknown(0), notify(1), clog(2), subtrans(3), committs(4), multixactoffset (5), multixactmembers(6), serialializable(7)"
+SLRU_SYNC	"Waiting for SLRU data to reach durable storage following a page write."	"SlruType: unknown(0), notify(1), clog(2), subtrans(3), committs(4), multixactoffset (5), multixactmembers(6), serialializable(7)"
+SLRU_WRITE	"Waiting for a write of an SLRU page."	"SlruType: unknown(0), notify(1), clog(2), subtrans(3), committs(4), multixactoffset (5), multixactmembers(6), serialializable(7)"
 SNAPBUILD_READ	"Waiting for a read of a serialized historical catalog snapshot."
 SNAPBUILD_SYNC	"Waiting for a serialized historical catalog snapshot to reach durable storage."
 SNAPBUILD_WRITE	"Waiting for a write of a serialized historical catalog snapshot."

@@ -97,10 +97,11 @@ if ($gen_code)
 foreach my $line (@lines_sorted)
 {
 	die "unable to parse wait_event_names.txt for line $line\n"
-	  unless $line =~ /^(\w+)\t+(\w+)\t+("\w.*\.")$/;
+	  unless $line =~ /^(\w+)\t+(\w+)\t+("\w.*?")(?:\t+("\w.*"))?$/;
 
-	(my $waitclassname, my $waiteventname, my $waitevendocsentence) =
-	  ($1, $2, $3);
+	(my $waitclassname, my $waiteventname, my $waitevendocsentence, my $waiteventargdesc) =
+	  ($1, $2, $3, $4);
+	$waiteventargdesc = "" if !defined($waiteventargdesc);
 
 	# Generate the element name for the enums based on the
 	# description.  The C symbols are prefixed with "WAIT_EVENT_".
@@ -126,7 +127,7 @@ foreach my $line (@lines_sorted)
 
 	# Store the event into the list for each class.
 	my @waiteventlist =
-	  [ $waiteventenumname, $waiteventdescription, $waitevendocsentence ];
+	  [ $waiteventenumname, $waiteventdescription, $waitevendocsentence, $waiteventargdesc ];
 	push(@{ $hashwe{$waitclassname} }, @waiteventlist);
 }
 
@@ -257,8 +258,11 @@ if ($gen_code)
 		foreach my $wev (@{ $hashwe{$waitclass} })
 		{
 			my $new_desc = substr $wev->[2], 1, -2;
+			my $waiteventargdesc = $wev->[3];
+
 			# Escape single quotes.
 			$new_desc =~ s/'/\\'/g;
+			$waiteventargdesc =~ s/"//g;
 
 			# Replace the "quote" markups by real ones.
 			$new_desc =~ s/<quote>(.*?)<\/quote>/\\"$1\\"/g;
@@ -279,9 +283,9 @@ if ($gen_code)
 			$new_desc =~ s/; see.*$//;
 
 			# Build one element of the C structure holding the
-			# wait event info, as of (type, name, description).
-			printf $wc "\t{\"%s\", \"%s\", \"%s\"},\n", $last, $wev->[1],
-			  $new_desc;
+			# wait event info, as of (type, name, description, waiteventargdesc).
+			printf $wc "\t{\"%s\", \"%s\", \"%s\", \"%s\"},\n", $last, $wev->[1],
+			  $new_desc, $waiteventargdesc;
 		}
 	}
 
@@ -315,22 +319,31 @@ elsif ($gen_docs)
 		printf $s
 		  "   <title>Wait Events of Type <literal>%s</literal></title>\n",
 		  ucfirst($lastlc);
-		printf $s "   <tgroup cols=\"2\">\n";
+		printf $s "   <tgroup cols=\"3\">\n";
 		printf $s "    <thead>\n";
 		printf $s "     <row>\n";
 		printf $s
 		  "      <entry><literal>$last</literal> Wait Event</entry>\n";
 		printf $s "      <entry>Description</entry>\n";
+		printf $s "      <entry>wait_event_arg description (optional)</entry>\n";
 		printf $s "     </row>\n";
 		printf $s "    </thead>\n\n";
 		printf $s "    <tbody>\n";
 
 		foreach my $wev (@{ $hashwe{$waitclass} })
 		{
+			my $waiteventargdesc = $wev->[3];
+			if (defined($waiteventargdesc)) {
+				$waiteventargdesc =~ s/\"//g;
+			} else {
+				$waiteventargdesc = "";
+			}
+
 			printf $s "     <row>\n";
 			printf $s "      <entry><literal>%s</literal></entry>\n",
 			  $wev->[1];
 			printf $s "      <entry>%s</entry>\n", substr $wev->[2], 1, -1;
+			printf $s "      <entry>%s</entry>\n", $waiteventargdesc;
 			printf $s "     </row>\n";
 		}
 
