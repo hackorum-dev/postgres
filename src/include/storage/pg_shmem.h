@@ -48,21 +48,21 @@ extern PGDLLIMPORT int huge_page_size;
 extern PGDLLIMPORT int huge_pages_status;
 
 /* Possible values for huge_pages and huge_pages_status */
-typedef enum
+enum HugePagesType
 {
 	HUGE_PAGES_OFF,
 	HUGE_PAGES_ON,
 	HUGE_PAGES_TRY,				/* only for huge_pages */
 	HUGE_PAGES_UNKNOWN,			/* only for huge_pages_status */
-}			HugePagesType;
+};
 
 /* Possible values for shared_memory_type */
-typedef enum
+enum PGShmemType
 {
 	SHMEM_TYPE_WINDOWS,
 	SHMEM_TYPE_SYSV,
 	SHMEM_TYPE_MMAP,
-}			PGShmemType;
+};
 
 #ifndef WIN32
 extern PGDLLIMPORT unsigned long UsedShmemSegID;
