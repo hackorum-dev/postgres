@@ -395,3 +395,27 @@ FROM   (VALUES (NULL::hstore), (''), ('"a key" =>1'), ('c => null'),
        ('e => 012345'), ('g => 2.345e+4')) x(v)
 WHERE  hstore_hash(v)::bit(32) != hstore_hash_extended(v, 0)::bit(32)
        OR hstore_hash(v)::bit(32) = hstore_hash_extended(v, 1)::bit(32);
+
+-- for single-argument functions: (h).func_name calls func_name(h)
+select ('aa=>1, b=>2, cq=>3'::hstore).akeys;
+select ('aa=>1, b=>2, cq=>3'::hstore).avals;
+select ('aa=>1, b=>2, cq=>3'::hstore).hstore_to_json;
+select ('aa=>1, b=>2, cq=>3'::hstore).hstore_to_jsonb;
+select ('aa=>1, b=>2'::hstore).nonexistent;
+-- key with same name as function - function takes precedence with dot notation
+-- but bracket notation returns the key value
+select ('"akeys"=>"surprise", "aa"=>"1"'::hstore).akeys;
+select ('"akeys"=>"surprise", "aa"=>"1"'::hstore)['akeys'];
+
+-- dot notation for key access
+select ('aa=>1, b=>2, cq=>3'::hstore).aa;
+select ('aa=>1, b=>2, cq=>3'::hstore).b;
+select ('aa=>1, b=>2, cq=>3'::hstore).cq;
+select ('aa=>1, b=>2, cq=>3'::hstore).missing;
+
+-- dot notation with special key names
+select ('"a b"=>"space", "a.b"=>"dot"'::hstore)."a b";
+select ('"a b"=>"space", "a.b"=>"dot"'::hstore)."a.b";
+
+-- star expansion is not supported
+select ('aa=>1, b=>2'::hstore).*;

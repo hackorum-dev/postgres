@@ -439,44 +439,65 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 {
 	Node	   *last_srf = pstate->p_last_srf;
 	Node	   *result = transformExprRecurse(pstate, ind->arg);
-	List	   *subscripts = NIL;
+	List	   *indirections = NIL;
 	int			location = exprLocation(result);
 	ListCell   *i;
 
 	/*
-	 * We have to split any field-selection operations apart from
-	 * subscripting.  Adjacent A_Indices nodes have to be treated as a single
-	 * multidimensional subscript operation.
+	 * Combine field names and subscripts into a single indirection list, as
+	 * some subscripting containers, such as hstore, support field access
+	 * using dot notation. Adjacent A_Indices nodes have to be treated as a
+	 * single multidimensional subscript operation.
 	 */
 	foreach(i, ind->indirection)
 	{
 		Node	   *n = lfirst(i);
 
-		if (IsA(n, A_Indices))
-			subscripts = lappend(subscripts, n);
-		else if (IsA(n, A_Star))
+		if (IsA(n, A_Indices) || IsA(n, String))
+			indirections = lappend(indirections, n);
+		else
 		{
+			Assert(IsA(n, A_Star));
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("row expansion via \"*\" is not supported here"),
 					 parser_errposition(pstate, location)));
 		}
-		else
+	}
+
+	while (indirections)
+	{
+		/* try processing container subscripts first */
+		int			transformed_count = 0;
+		Node	   *newresult = (Node *)
+			transformContainerSubscripts(pstate,
+										 result,
+										 exprType(result),
+										 exprTypmod(result),
+										 indirections,
+										 false,
+										 &transformed_count);
+
+		if (!newresult)
 		{
-			Node	   *newresult;
+			/*
+			 * generic subscripting failed; falling back to field selection
+			 * for a composite type, or a single-argument function.
+			 */
+			Node	   *n;
 
-			Assert(IsA(n, String));
+			Assert(indirections);
 
-			/* process subscripts before this field selection */
-			if (subscripts)
-				result = (Node *) transformContainerSubscripts(pstate,
-															   result,
-															   exprType(result),
-															   exprTypmod(result),
-															   subscripts,
-															   false);
-			subscripts = NIL;
+			n = linitial(indirections);
 
+			if (!IsA(n, String))
+				ereport(ERROR,
+						(errcode(ERRCODE_DATATYPE_MISMATCH),
+						 errmsg("cannot subscript type %s because it does not support subscripting",
+								format_type_be(exprType(result))),
+						 parser_errposition(pstate, exprLocation(result))));
+
+			/* try to parse function or field selection */
 			newresult = ParseFuncOrColumn(pstate,
 										  list_make1(n),
 										  list_make1(result),
@@ -484,19 +505,18 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 										  NULL,
 										  false,
 										  location);
-			if (newresult == NULL)
+
+			if (!newresult)
 				unknown_attribute(pstate, result, strVal(n), location);
-			result = newresult;
+			else
+				transformed_count = 1;
 		}
+
+		/* remove the processed indirections */
+		indirections = list_delete_first_n(indirections, transformed_count);
+
+		result = newresult;
 	}
-	/* process trailing subscripts, if any */
-	if (subscripts)
-		result = (Node *) transformContainerSubscripts(pstate,
-													   result,
-													   exprType(result),
-													   exprTypmod(result),
-													   subscripts,
-													   false);
 
 	return result;
 }

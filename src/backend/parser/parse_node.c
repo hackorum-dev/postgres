@@ -238,20 +238,22 @@ transformContainerType(Oid *containerType, int32 *containerTypmod)
  * containerTypMod	typmod for the container
  * indirection		Untransformed list of subscripts (must not be NIL)
  * isAssignment		True if this will become a container assignment.
- */
+ * nSubscripts		Output parameter for number of transformed subscripts.
+*/
 SubscriptingRef *
 transformContainerSubscripts(ParseState *pstate,
 							 Node *containerBase,
 							 Oid containerType,
 							 int32 containerTypMod,
 							 List *indirection,
-							 bool isAssignment)
+							 bool isAssignment,
+							 int *nSubscripts)
 {
 	SubscriptingRef *sbsref;
 	const SubscriptRoutines *sbsroutines;
 	Oid			elementType;
-	bool		isSlice = false;
-	ListCell   *idx;
+
+	*nSubscripts = 0;
 
 	/*
 	 * Determine the actual container type, smashing any domain.  In the
@@ -267,28 +269,15 @@ transformContainerSubscripts(ParseState *pstate,
 	 */
 	sbsroutines = getSubscriptingRoutines(containerType, &elementType);
 	if (!sbsroutines)
+	{
+		if (!isAssignment)
+			return NULL;
+
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg("cannot subscript type %s because it does not support subscripting",
 						format_type_be(containerType)),
 				 parser_errposition(pstate, exprLocation(containerBase))));
-
-	/*
-	 * Detect whether any of the indirection items are slice specifiers.
-	 *
-	 * A list containing only simple subscripts refers to a single container
-	 * element.  If any of the items are slice specifiers (lower:upper), then
-	 * the subscript expression means a container slice operation.
-	 */
-	foreach(idx, indirection)
-	{
-		A_Indices  *ai = lfirst_node(A_Indices, idx);
-
-		if (ai->is_slice)
-		{
-			isSlice = true;
-			break;
-		}
 	}
 
 	/*
@@ -309,8 +298,65 @@ transformContainerSubscripts(ParseState *pstate,
 	 * Call the container-type-specific logic to transform the subscripts and
 	 * determine the subscripting result type.
 	 */
-	sbsroutines->transform(sbsref, indirection, pstate,
-						   isSlice, isAssignment);
+	Assert((sbsroutines->transform_partial == NULL) ^ (sbsroutines->transform == NULL));
+	if (sbsroutines->transform_partial != NULL)
+	{
+		/*
+		 * If the container type provides a partial transform function, use it
+		 * here. This function can accept any node types in the indirection
+		 * list as input, and is responsible for identifying and transforming
+		 * as many leading elements as it can handle, which may be only a
+		 * prefix of the indirection list. For example, it might process
+		 * A_Indices nodes, String nodes (for hstore dot-notation), or other
+		 * node types, depending on the container's requirements. It returns
+		 * the number of elements it transformed.
+		 */
+		*nSubscripts = sbsroutines->transform_partial(sbsref, indirection, pstate, isAssignment);
+	}
+	else
+	{
+		/*
+		 * Full transform only accepts bracket subscripts (A_Indices nodes).
+		 * We pre-collect the leading A_Indices nodes from the indirection
+		 * list, then call the transform function to process this prefix of
+		 * subscripts.
+		 */
+		List	   *subscriptlist = NIL;
+		ListCell   *lc;
+		bool		isSlice = false;
+
+		/* Collect leading A_Indices subscripts */
+		foreach(lc, indirection)
+		{
+			Node	   *n = lfirst(lc);
+
+			if (IsA(n, A_Indices))
+			{
+				A_Indices  *ai = (A_Indices *) n;
+
+				subscriptlist = lappend(subscriptlist, n);
+				if (ai->is_slice)
+					isSlice = true;
+			}
+			else
+				break;
+		}
+
+		if (subscriptlist)
+			sbsroutines->transform(sbsref, subscriptlist, pstate, isSlice, isAssignment);
+
+		*nSubscripts = list_length(subscriptlist);
+	}
+
+	if (*nSubscripts == 0)
+	{
+		/* Fallback to field selection in caller */
+		if (!isAssignment)
+			return NULL;
+
+		/* This should not happen with well-behaved transform functions */
+		elog(ERROR, "subscripting transform function failed to consume any indirection elements");
+	}
 
 	/*
 	 * Verify we got a valid type (this defends, for example, against someone

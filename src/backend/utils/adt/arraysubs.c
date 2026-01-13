@@ -541,6 +541,7 @@ array_subscript_handler(PG_FUNCTION_ARGS)
 {
 	static const SubscriptRoutines sbsroutines = {
 		.transform = array_subscript_transform,
+		.transform_partial = NULL,
 		.exec_setup = array_exec_setup,
 		.fetch_strict = true,	/* fetch returns NULL for NULL inputs */
 		.fetch_leakproof = true,	/* fetch returns NULL for bad subscript */
@@ -568,6 +569,7 @@ raw_array_subscript_handler(PG_FUNCTION_ARGS)
 {
 	static const SubscriptRoutines sbsroutines = {
 		.transform = array_subscript_transform,
+		.transform_partial = NULL,
 		.exec_setup = array_exec_setup,
 		.fetch_strict = true,	/* fetch returns NULL for NULL inputs */
 		.fetch_leakproof = true,	/* fetch returns NULL for bad subscript */

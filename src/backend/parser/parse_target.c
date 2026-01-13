@@ -922,6 +922,7 @@ transformAssignmentSubscripts(ParseState *pstate,
 	Oid			typeNeeded;
 	int32		typmodNeeded;
 	Oid			collationNeeded;
+	int			nSubscripts = 0;
 
 	Assert(subscripts != NIL);
 
@@ -936,7 +937,10 @@ transformAssignmentSubscripts(ParseState *pstate,
 										  containerType,
 										  containerTypMod,
 										  subscripts,
-										  true);
+										  true,
+										  &nSubscripts);
+
+	Assert(nSubscripts == list_length(subscripts));
 
 	typeNeeded = sbsref->refrestype;
 	typmodNeeded = sbsref->reftypmod;

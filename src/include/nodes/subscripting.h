@@ -99,6 +99,25 @@ typedef void (*SubscriptTransform) (SubscriptingRef *sbsref,
 									bool isAssignment);
 
 /*
+ * SubscriptTransformPartial is an alternative to SubscriptTransform for
+ * container types that can accept non-A_Indices indirection as input
+ * (e.g., hstore accepts dot-notation (String node) for field access).
+
+ * It may transform a prefix of the indirection list and leave the rest
+ * unprocessed. It returns the number of indirections it transformed.
+ * The caller will then remove that many items from the head of the
+ * list, and handle the remaining indirections differently or to raise
+ * an error as needed.
+ *
+ * If transform_partial is NULL, the complete transform function is used,
+ * which accepts only A_Indices (bracket) nodes.
+ */
+typedef int (*SubscriptTransformPartial) (SubscriptingRef *sbsref,
+										  List *indirection,
+										  ParseState *pstate,
+										  bool isAssignment);
+
+/*
  * The exec_setup method is called during executor-startup compilation of a
  * SubscriptingRef node in an expression.  It must fill *methods with pointers
  * to functions that can be called for execution of the node.  Optionally,
@@ -157,7 +176,10 @@ typedef void (*SubscriptExecSetup) (const SubscriptingRef *sbsref,
 /* Struct returned by the SQL-visible subscript handler function */
 typedef struct SubscriptRoutines
 {
-	SubscriptTransform transform;	/* parse analysis function */
+	SubscriptTransform transform;	/* parse analysis function, or NULL */
+	SubscriptTransformPartial transform_partial;	/* alternative parse
+													 * analysis function, or
+													 * NULL */
 	SubscriptExecSetup exec_setup;	/* expression compilation function */
 	bool		fetch_strict;	/* is fetch SubscriptingRef strict? */
 	bool		fetch_leakproof;	/* is fetch SubscriptingRef leakproof? */

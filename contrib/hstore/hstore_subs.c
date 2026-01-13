@@ -23,56 +23,119 @@
  */
 #include "postgres.h"
 
+#include "catalog/pg_collation_d.h"
 #include "executor/execExpr.h"
 #include "hstore.h"
+#include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/subscripting.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
+#include "parser/parse_func.h"
 #include "utils/builtins.h"
 
 
 /*
  * Finish parse analysis of a SubscriptingRef expression for hstore.
  *
- * Verify there's just one subscript, coerce it to text,
+ * Handles both bracket notation h['key'] and dot notation (h).key. Both notations
+ * are semantically identical.
+ *
+ * For dot notation, check single-element function call first, if not a function call,
+ * verify there's just one indirection, coerce it to text,
  * and set the result type of the SubscriptingRef node.
+ *
+ * Returns the number of indirection elements processed (0 or 1).
  */
-static void
+static int
 hstore_subscript_transform(SubscriptingRef *sbsref,
 						   List *indirection,
 						   ParseState *pstate,
-						   bool isSlice,
 						   bool isAssignment)
 {
 	A_Indices  *ai;
 	Node	   *subexpr;
 
-	/* We support only single-subscript, non-slice cases */
-	if (isSlice || list_length(indirection) != 1)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("hstore allows only one subscript"),
-				 parser_errposition(pstate,
-									exprLocation((Node *) indirection))));
+	Assert(list_length(indirection) >= 1);
 
-	/* Transform the subscript expression to type text */
-	ai = linitial_node(A_Indices, indirection);
-	Assert(ai->uidx != NULL && ai->lidx == NULL && !ai->is_slice);
+	if (IsA(linitial(indirection), String))
+	{
+		/*
+		 * Dot notation: (h).keyname
+		 *
+		 * For backward compatibility, check if a function with this name
+		 * exists that takes hstore. If so, return 0 to let the parser handle
+		 * it as a function call instead.
+		 */
+		char	   *fieldname = strVal(linitial(indirection));
+		Oid			argtypes[1] = {sbsref->refcontainertype};
+		Oid			funcoid;
 
-	subexpr = transformExpr(pstate, ai->uidx, pstate->p_expr_kind);
-	/* If it's not text already, try to coerce */
-	subexpr = coerce_to_target_type(pstate,
-									subexpr, exprType(subexpr),
-									TEXTOID, -1,
-									COERCION_ASSIGNMENT,
-									COERCE_IMPLICIT_CAST,
-									-1);
-	if (subexpr == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg("hstore subscript must have type text"),
-				 parser_errposition(pstate, exprLocation(ai->uidx))));
+		funcoid = LookupFuncName(list_make1(makeString(pstrdup(fieldname))),
+								 1, argtypes, true);
+		if (OidIsValid(funcoid))
+			return 0;
+
+		/* We support only single-element indirection */
+		if (list_length(indirection) != 1)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("hstore allows only one subscript"),
+					 parser_errposition(pstate,
+										exprLocation((Node *) indirection))));
+
+		/* No conflicting function - treat as key lookup */
+		subexpr = (Node *) makeConst(TEXTOID,
+									 -1,
+									 DEFAULT_COLLATION_OID,
+									 -1,
+									 CStringGetTextDatum(fieldname),
+									 false,
+									 false);
+	}
+	else if (IsA(linitial(indirection), A_Indices))
+	{
+		/* We support only single-subscript, non-slice cases */
+		if (list_length(indirection) != 1)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("hstore allows only one subscript"),
+					 parser_errposition(pstate,
+										exprLocation((Node *) indirection))));
+
+		ai = linitial_node(A_Indices, indirection);
+
+		if (ai->is_slice)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("hstore subscript does not support slices"),
+					 parser_errposition(pstate,
+										exprLocation((Node *) indirection))));
+
+		Assert(ai->uidx != NULL && ai->lidx == NULL);
+
+		/* Transform the subscript expression to type text */
+		subexpr = transformExpr(pstate, ai->uidx, pstate->p_expr_kind);
+		/* If it's not text already, try to coerce */
+		subexpr = coerce_to_target_type(pstate,
+										subexpr, exprType(subexpr),
+										TEXTOID, -1,
+										COERCION_ASSIGNMENT,
+										COERCE_IMPLICIT_CAST,
+										-1);
+		if (subexpr == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("hstore subscript must have type text"),
+					 parser_errposition(pstate,
+										exprLocation(ai->uidx))));
+	}
+	else
+	{
+		/* A_Star is handled by the parser before we get here */
+		Assert(false);
+		return 0;
+	}
 
 	/* ... and store the transformed subscript into the SubscriptingRef node */
 	sbsref->refupperindexpr = list_make1(subexpr);
@@ -81,6 +144,8 @@ hstore_subscript_transform(SubscriptingRef *sbsref,
 	/* Determine the result type of the subscripting operation; always text */
 	sbsref->refrestype = TEXTOID;
 	sbsref->reftypmod = -1;
+
+	return 1;
 }
 
 /*
@@ -286,7 +351,8 @@ Datum
 hstore_subscript_handler(PG_FUNCTION_ARGS)
 {
 	static const SubscriptRoutines sbsroutines = {
-		.transform = hstore_subscript_transform,
+		.transform = NULL,
+		.transform_partial = hstore_subscript_transform,
 		.exec_setup = hstore_exec_setup,
 		.fetch_strict = true,	/* fetch returns NULL for NULL inputs */
 		.fetch_leakproof = true,	/* fetch returns NULL for bad subscript */

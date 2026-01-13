@@ -403,6 +403,7 @@ jsonb_subscript_handler(PG_FUNCTION_ARGS)
 {
 	static const SubscriptRoutines sbsroutines = {
 		.transform = jsonb_subscript_transform,
+		.transform_partial = NULL,
 		.exec_setup = jsonb_exec_setup,
 		.fetch_strict = true,	/* fetch returns NULL for NULL inputs */
 		.fetch_leakproof = true,	/* fetch returns NULL for bad subscript */

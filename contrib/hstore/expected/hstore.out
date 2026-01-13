@@ -1607,7 +1607,7 @@ select f2['d'], f2['x'] is null as x_isnull from test_json_agg;
 select f2['d']['e'] from test_json_agg;  -- error
 ERROR:  hstore allows only one subscript
 select f2['d':'e'] from test_json_agg;  -- error
-ERROR:  hstore allows only one subscript
+ERROR:  hstore subscript does not support slices
 update test_json_agg set f2['d'] = f2['e'], f2['x'] = 'xyzzy';
 select f2 from test_json_agg;
                                                          f2                                                          
@@ -1633,3 +1633,89 @@ WHERE  hstore_hash(v)::bit(32) != hstore_hash_extended(v, 0)::bit(32)
 -------+----------+-----------+-----------
 (0 rows)
 
+-- for single-argument functions: (h).func_name calls func_name(h)
+select ('aa=>1, b=>2, cq=>3'::hstore).akeys;
+   akeys   
+-----------
+ {b,aa,cq}
+(1 row)
+
+select ('aa=>1, b=>2, cq=>3'::hstore).avals;
+  avals  
+---------
+ {2,1,3}
+(1 row)
+
+select ('aa=>1, b=>2, cq=>3'::hstore).hstore_to_json;
+          hstore_to_json          
+----------------------------------
+ {"b": "2", "aa": "1", "cq": "3"}
+(1 row)
+
+select ('aa=>1, b=>2, cq=>3'::hstore).hstore_to_jsonb;
+         hstore_to_jsonb          
+----------------------------------
+ {"b": "2", "aa": "1", "cq": "3"}
+(1 row)
+
+select ('aa=>1, b=>2'::hstore).nonexistent;
+ nonexistent 
+-------------
+ 
+(1 row)
+
+-- key with same name as function - function takes precedence with dot notation
+-- but bracket notation returns the key value
+select ('"akeys"=>"surprise", "aa"=>"1"'::hstore).akeys;
+   akeys    
+------------
+ {aa,akeys}
+(1 row)
+
+select ('"akeys"=>"surprise", "aa"=>"1"'::hstore)['akeys'];
+  hstore  
+----------
+ surprise
+(1 row)
+
+-- dot notation for key access
+select ('aa=>1, b=>2, cq=>3'::hstore).aa;
+ aa 
+----
+ 1
+(1 row)
+
+select ('aa=>1, b=>2, cq=>3'::hstore).b;
+ b 
+---
+ 2
+(1 row)
+
+select ('aa=>1, b=>2, cq=>3'::hstore).cq;
+ cq 
+----
+ 3
+(1 row)
+
+select ('aa=>1, b=>2, cq=>3'::hstore).missing;
+ missing 
+---------
+ 
+(1 row)
+
+-- dot notation with special key names
+select ('"a b"=>"space", "a.b"=>"dot"'::hstore)."a b";
+  a b  
+-------
+ space
+(1 row)
+
+select ('"a b"=>"space", "a.b"=>"dot"'::hstore)."a.b";
+ a.b 
+-----
+ dot
+(1 row)
+
+-- star expansion is not supported
+select ('aa=>1, b=>2'::hstore).*;
+ERROR:  type hstore is not composite
