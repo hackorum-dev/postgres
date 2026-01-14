@@ -139,6 +139,9 @@ SELECT * FROM verify_heapam('test_foreign_table',
 							endblock := NULL);
 
 -- cleanup
+DROP FOREIGN DATA WRAPPER dummy CASCADE;
+DROP VIEW test_view;
+DROP SEQUENCE test_sequence;
 DROP TABLE heaptest;
 DROP TABLESPACE regress_test_stats_tblspc;
 DROP TABLE test_partition;
