@@ -31,7 +31,7 @@ PG_FUNCTION_INFO_V1(gist_page_opaque_info);
 PG_FUNCTION_INFO_V1(gist_page_items);
 PG_FUNCTION_INFO_V1(gist_page_items_bytea);
 
-#define IS_GIST(r) ((r)->rd_rel->relam == GIST_AM_OID)
+#define IS_GIST(r) ((r)->rd_rel->relkind == RELKIND_INDEX && (r)->rd_rel->relam == GIST_AM_OID)
 
 
 static Page verify_gist_page(bytea *raw_page);
