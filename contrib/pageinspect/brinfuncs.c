@@ -29,7 +29,7 @@ PG_FUNCTION_INFO_V1(brin_page_items);
 PG_FUNCTION_INFO_V1(brin_metapage_info);
 PG_FUNCTION_INFO_V1(brin_revmap_data);
 
-#define IS_BRIN(r) ((r)->rd_rel->relam == BRIN_AM_OID)
+#define IS_BRIN(r) ((r)->rd_rel->relkind == RELKIND_INDEX && (r)->rd_rel->relam == BRIN_AM_OID)
 
 typedef struct brin_column_state
 {
