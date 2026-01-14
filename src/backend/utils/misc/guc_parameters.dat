@@ -1411,6 +1411,7 @@
   boot_val => 'DEFAULT_IO_METHOD',
   options => 'io_method_options',
   assign_hook => 'assign_io_method',
+  check_hook => 'check_io_method',
 },
 
 { name => 'io_min_workers', type => 'int', context => 'PGC_SIGHUP', group => 'RESOURCES_IO',
