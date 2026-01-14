@@ -213,11 +213,25 @@ SELECT * FROM verify_heapam('test_view',
 							endblock := NULL);
 ERROR:  cannot check relation "test_view"
 DETAIL:  This operation is not supported for views.
--- Check that sequences are rejected
+-- Check that valid options are not rejected nor corruption reported
+-- for a sequence
 CREATE SEQUENCE test_sequence;
-SELECT * FROM verify_heapam('test_sequence',
-							startblock := NULL,
-							endblock := NULL);
+SELECT * FROM verify_heapam(relation := 'test_sequence', skip := 'none');
+ blkno | offnum | attnum | msg 
+-------+--------+--------+-----
+(0 rows)
+
+SELECT * FROM verify_heapam(relation := 'test_sequence', skip := 'all-frozen');
+ blkno | offnum | attnum | msg 
+-------+--------+--------+-----
+(0 rows)
+
+SELECT * FROM verify_heapam(relation := 'test_sequence', skip := 'all-visible');
+ blkno | offnum | attnum | msg 
+-------+--------+--------+-----
+(0 rows)
+
+SELECT * FROM verify_heapam(relation := 'test_sequence', startblock := 0, endblock := 0);
  blkno | offnum | attnum | msg 
 -------+--------+--------+-----
 (0 rows)
