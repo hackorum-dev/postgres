@@ -50,6 +50,9 @@
 #include "utils/resowner.h"
 #include "utils/wait_event_types.h"
 
+#ifdef IOMETHOD_IO_URING_ENABLED
+#include <liburing.h>
+#endif
 
 static inline void pgaio_io_update_state(PgAioHandle *ioh, PgAioHandleState new_state);
 static void pgaio_io_reclaim(PgAioHandle *ioh);
@@ -1355,4 +1358,38 @@ check_io_max_concurrency(int *newval, void **extra, GucSource source)
 	}
 
 	return true;
+}
+
+
+bool
+check_io_method(int *newval, void **extra, GucSource source) 
+{
+#ifdef IOMETHOD_IO_URING_ENABLED
+	if (*newval == IOMETHOD_IO_URING)
+	{
+		struct io_uring_probe *probe = io_uring_get_probe();
+
+		if (probe == NULL)             
+		{
+			GUC_check_errdetail("liburing probe is not supported by this operating system kernel: setting io_method to io_uring is not possible.");
+			return false;
+		}
+	}	
+
+	return true;
+#else
+	if (*newval == IOMETHOD_WORKER || *newval == IOMETHOD_SYNC)
+	{
+		/*
+		 * OK
+		 */
+	} 
+	else 
+	{
+		GUC_check_errdetail("liburing has not been enabled at build time for this executable: setting io_method to io_uring is not possible.");
+		return false;
+	}
+
+	return true;
+#endif
 }
