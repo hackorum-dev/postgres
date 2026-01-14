@@ -252,6 +252,7 @@ SELECT toplevel, calls, query FROM pg_stat_statements
   ORDER BY query COLLATE "C";
 
 -- DECLARE CURSOR, all-level tracking.
+-- Explicitly close cursor
 SET pg_stat_statements.track = 'all';
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
 BEGIN;
@@ -261,6 +262,58 @@ CLOSE foocur;
 COMMIT;
 SELECT toplevel, calls, query FROM pg_stat_statements
   ORDER BY query COLLATE "C";
+-- Implicitly close cursor
+SET pg_stat_statements.track = 'all';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+COMMIT;
+SELECT toplevel, calls, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+
+SET pg_stat_statements.track = 'all';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+END;
+SELECT toplevel, calls, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+
+-- DECLARE CURSOR, all-level tracking with track_planning
+-- Explicitly close cursor
+SET pg_stat_statements.track = 'all';
+SET pg_stat_statements.track_planning = 'on';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+CLOSE foocur;
+COMMIT;
+SELECT toplevel, calls, plans, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+-- Implicitly close cursor
+SET pg_stat_statements.track = 'all';
+SET pg_stat_statements.track_planning = 'on';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+COMMIT;
+SELECT toplevel, calls, plans, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+
+SET pg_stat_statements.track = 'all';
+SET pg_stat_statements.track_planning = 'on';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+END;
+SELECT toplevel, calls, plans, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+RESET pg_stat_statements.track_planning;
 
 -- DECLARE CURSOR, top-level tracking.
 SET pg_stat_statements.track = 'top';
@@ -430,6 +483,15 @@ $$ SELECT i + 3 LIMIT 1 $$ IMMUTABLE LANGUAGE SQL;
 SELECT PLUS_THREE(8);
 SELECT PLUS_THREE(10);
 
+SELECT toplevel, calls, rows, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+
+--
+-- Ensure that a statement following a COMMIT has correct tracking level
+--
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+BEGIN;
+COMMIT;
+SELECT 1, 2;
 SELECT toplevel, calls, rows, query FROM pg_stat_statements ORDER BY query COLLATE "C";
 
 --

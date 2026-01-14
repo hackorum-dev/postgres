@@ -1122,6 +1122,7 @@ SELECT toplevel, calls, query FROM pg_stat_statements
 (2 rows)
 
 -- DECLARE CURSOR, all-level tracking.
+-- Explicitly close cursor
 SET pg_stat_statements.track = 'all';
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
  t 
@@ -1151,6 +1152,157 @@ SELECT toplevel, calls, query FROM pg_stat_statements
  t        |     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
 (7 rows)
 
+-- Implicitly close cursor
+SET pg_stat_statements.track = 'all';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+ x 
+---
+(0 rows)
+
+COMMIT;
+SELECT toplevel, calls, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+ toplevel | calls |                          query                           
+----------+-------+----------------------------------------------------------
+ t        |     1 | BEGIN
+ t        |     1 | COMMIT
+ t        |     1 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab
+ f        |     1 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+ t        |     1 | FETCH FORWARD $1 FROM foocur
+ t        |     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(6 rows)
+
+SET pg_stat_statements.track = 'all';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+ x 
+---
+(0 rows)
+
+END;
+SELECT toplevel, calls, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+ toplevel | calls |                          query                           
+----------+-------+----------------------------------------------------------
+ t        |     1 | BEGIN
+ t        |     1 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab
+ f        |     1 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+ t        |     1 | END
+ t        |     1 | FETCH FORWARD $1 FROM foocur
+ t        |     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(6 rows)
+
+-- DECLARE CURSOR, all-level tracking with track_planning
+-- Explicitly close cursor
+SET pg_stat_statements.track = 'all';
+SET pg_stat_statements.track_planning = 'on';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+ x 
+---
+(0 rows)
+
+CLOSE foocur;
+COMMIT;
+SELECT toplevel, calls, plans, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+ toplevel | calls | plans |                            query                             
+----------+-------+-------+--------------------------------------------------------------
+ t        |     1 |     0 | BEGIN
+ t        |     1 |     0 | CLOSE foocur
+ t        |     1 |     0 | COMMIT
+ t        |     1 |     0 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab
+ f        |     1 |     1 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+ t        |     1 |     0 | FETCH FORWARD $1 FROM foocur
+ t        |     1 |     0 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+ t        |     0 |     1 | SELECT toplevel, calls, plans, query FROM pg_stat_statements+
+          |       |       |   ORDER BY query COLLATE "C"
+(8 rows)
+
+-- Implicitly close cursor
+SET pg_stat_statements.track = 'all';
+SET pg_stat_statements.track_planning = 'on';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+ x 
+---
+(0 rows)
+
+COMMIT;
+SELECT toplevel, calls, plans, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+ toplevel | calls | plans |                            query                             
+----------+-------+-------+--------------------------------------------------------------
+ t        |     1 |     0 | BEGIN
+ t        |     1 |     0 | COMMIT
+ t        |     1 |     0 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab
+ f        |     1 |     1 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+ t        |     1 |     0 | FETCH FORWARD $1 FROM foocur
+ t        |     1 |     0 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+ t        |     0 |     1 | SELECT toplevel, calls, plans, query FROM pg_stat_statements+
+          |       |       |   ORDER BY query COLLATE "C"
+(7 rows)
+
+SET pg_stat_statements.track = 'all';
+SET pg_stat_statements.track_planning = 'on';
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+BEGIN;
+DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+FETCH FORWARD 1 FROM foocur;
+ x 
+---
+(0 rows)
+
+END;
+SELECT toplevel, calls, plans, query FROM pg_stat_statements
+  ORDER BY query COLLATE "C";
+ toplevel | calls | plans |                            query                             
+----------+-------+-------+--------------------------------------------------------------
+ t        |     1 |     0 | BEGIN
+ t        |     1 |     0 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab
+ f        |     1 |     1 | DECLARE FOOCUR CURSOR FOR SELECT * from stats_track_tab;
+ t        |     1 |     0 | END
+ t        |     1 |     0 | FETCH FORWARD $1 FROM foocur
+ t        |     1 |     0 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+ t        |     0 |     1 | SELECT toplevel, calls, plans, query FROM pg_stat_statements+
+          |       |       |   ORDER BY query COLLATE "C"
+(7 rows)
+
+RESET pg_stat_statements.track_planning;
 -- DECLARE CURSOR, top-level tracking.
 SET pg_stat_statements.track = 'top';
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
@@ -1534,6 +1686,30 @@ SELECT toplevel, calls, rows, query FROM pg_stat_statements ORDER BY query COLLA
  f        |     2 |    2 | SELECT i + $2 LIMIT $3
  t        |     1 |    1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
 (8 rows)
+
+--
+-- Ensure that a statement following a COMMIT has correct tracking level
+--
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+BEGIN;
+COMMIT;
+SELECT 1, 2;
+ ?column? | ?column? 
+----------+----------
+        1 |        2
+(1 row)
+
+SELECT toplevel, calls, rows, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+ toplevel | calls | rows |                       query                        
+----------+-------+------+----------------------------------------------------
+ t        |     1 |    1 | SELECT $1, $2
+ t        |     1 |    1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(2 rows)
 
 --
 -- pg_stat_statements.track = none

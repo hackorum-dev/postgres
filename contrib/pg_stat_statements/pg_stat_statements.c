@@ -263,6 +263,20 @@ typedef struct pgssSharedState
 /* Current nesting depth of planner/ExecutorRun/ProcessUtility calls */
 static int	nesting_level = 0;
 
+/*
+ * Flag to handle nesting_level adjustment when pgss_ExecutorEnd is called
+ * during PortalCleanup after COMMIT (e.g., for DECLARE CURSOR statements).
+ *
+ * Set to true in pgss_ProcessUtility when processing COMMIT. When true,
+ * pgss_ExecutorEnd increments nesting_level to ensure proper tracking.
+ *
+ * Reset at command entry points (pgss_post_parse_analyze, pgss_planner,
+ * pgss_ExecutorStart, pgss_ProcessUtility, pgss_ExecutorRun) and
+ * unconditionally in pgss_ExecutorEnd to prevent persisting across
+ * statements.
+ */
+static bool is_txn_end = false;
+
 /* Saved hook values */
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
@@ -841,6 +855,8 @@ error:
 static void
 pgss_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 {
+	is_txn_end = false;
+
 	if (prev_post_parse_analyze_hook)
 		prev_post_parse_analyze_hook(pstate, query, jstate);
 
@@ -899,6 +915,8 @@ pgss_planner(Query *parse,
 			 ExplainState *es)
 {
 	PlannedStmt *result;
+
+	is_txn_end = false;
 
 	/*
 	 * We can't process the query if no query_string is provided, as
@@ -1001,6 +1019,8 @@ pgss_planner(Query *parse,
 static void
 pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
+	is_txn_end = false;
+
 	if (prev_ExecutorStart)
 		prev_ExecutorStart(queryDesc, eflags);
 	else
@@ -1035,6 +1055,8 @@ pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 static void
 pgss_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count)
 {
+	is_txn_end = false;
+
 	nesting_level++;
 	PG_TRY();
 	{
@@ -1079,35 +1101,48 @@ pgss_ExecutorEnd(QueryDesc *queryDesc)
 {
 	int64		queryId = queryDesc->plannedstmt->queryId;
 
-	if (queryId != INT64CONST(0) && queryDesc->totaltime &&
-		pgss_enabled(nesting_level))
+	if (is_txn_end)
+		nesting_level++;
+
+	PG_TRY();
 	{
-		/*
-		 * Make sure stats accumulation is done.  (Note: it's okay if several
-		 * levels of hook all do this.)
-		 */
-		InstrEndLoop(queryDesc->totaltime);
+		if (queryId != INT64CONST(0) && queryDesc->totaltime &&
+			pgss_enabled(nesting_level))
+		{
+			/*
+			 * Make sure stats accumulation is done.  (Note: it's okay if
+			 * several levels of hook all do this.)
+			 */
+			InstrEndLoop(queryDesc->totaltime);
 
-		pgss_store(queryDesc->sourceText,
-				   queryId,
-				   queryDesc->plannedstmt->stmt_location,
-				   queryDesc->plannedstmt->stmt_len,
-				   PGSS_EXEC,
-				   INSTR_TIME_GET_MILLISEC(queryDesc->totaltime->total),
-				   queryDesc->estate->es_total_processed,
-				   &queryDesc->totaltime->bufusage,
-				   &queryDesc->totaltime->walusage,
-				   queryDesc->estate->es_jit ? &queryDesc->estate->es_jit->instr : NULL,
-				   NULL,
-				   queryDesc->estate->es_parallel_workers_to_launch,
-				   queryDesc->estate->es_parallel_workers_launched,
-				   queryDesc->plannedstmt->planOrigin);
+			pgss_store(queryDesc->sourceText,
+					   queryId,
+					   queryDesc->plannedstmt->stmt_location,
+					   queryDesc->plannedstmt->stmt_len,
+					   PGSS_EXEC,
+					   INSTR_TIME_GET_MILLISEC(queryDesc->totaltime->total),
+					   queryDesc->estate->es_total_processed,
+					   &queryDesc->totaltime->bufusage,
+					   &queryDesc->totaltime->walusage,
+					   queryDesc->estate->es_jit ? &queryDesc->estate->es_jit->instr : NULL,
+					   NULL,
+					   queryDesc->estate->es_parallel_workers_to_launch,
+					   queryDesc->estate->es_parallel_workers_launched,
+					   queryDesc->plannedstmt->planOrigin);
+		}
+
+		if (prev_ExecutorEnd)
+			prev_ExecutorEnd(queryDesc);
+		else
+			standard_ExecutorEnd(queryDesc);
 	}
-
-	if (prev_ExecutorEnd)
-		prev_ExecutorEnd(queryDesc);
-	else
-		standard_ExecutorEnd(queryDesc);
+	PG_FINALLY();
+	{
+		if (is_txn_end)
+			nesting_level--;
+		is_txn_end = false;
+	}
+	PG_END_TRY();
 }
 
 /*
@@ -1125,6 +1160,8 @@ pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 	int			saved_stmt_location = pstmt->stmt_location;
 	int			saved_stmt_len = pstmt->stmt_len;
 	bool		enabled = pgss_track_utility && pgss_enabled(nesting_level);
+
+	is_txn_end = false;
 
 	/*
 	 * Force utility statements to get queryId zero.  We do this even in cases
@@ -1236,6 +1273,14 @@ pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 				   0,
 				   0,
 				   pstmt->planOrigin);
+
+		/* Set flag for COMMIT to adjust nesting_level in ExecutorEnd */
+		if (IsA(parsetree, TransactionStmt))
+		{
+			TransactionStmt *stmt = (TransactionStmt *) parsetree;
+
+			is_txn_end = (stmt->kind == TRANS_STMT_COMMIT);
+		}
 	}
 	else
 	{
