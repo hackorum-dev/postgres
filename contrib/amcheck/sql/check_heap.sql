@@ -124,11 +124,13 @@ SELECT * FROM verify_heapam('test_view',
 							startblock := NULL,
 							endblock := NULL);
 
--- Check that sequences are rejected
+-- Check that valid options are not rejected nor corruption reported
+-- for a sequence
 CREATE SEQUENCE test_sequence;
-SELECT * FROM verify_heapam('test_sequence',
-							startblock := NULL,
-							endblock := NULL);
+SELECT * FROM verify_heapam(relation := 'test_sequence', skip := 'none');
+SELECT * FROM verify_heapam(relation := 'test_sequence', skip := 'all-frozen');
+SELECT * FROM verify_heapam(relation := 'test_sequence', skip := 'all-visible');
+SELECT * FROM verify_heapam(relation := 'test_sequence', startblock := 0, endblock := 0);
 
 -- Check that foreign tables are rejected
 CREATE FOREIGN DATA WRAPPER dummy;
