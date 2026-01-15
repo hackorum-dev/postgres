@@ -27,9 +27,13 @@
  * Enable Python Limited API
  *
  * XXX currently not enabled on MSVC because of build failures
+ * XXX currently not enabled for python free-thread build
  */
 #if !defined(_MSC_VER)
+#include <pyconfig.h>
+#if !defined(Py_GIL_DISABLED)
 #define Py_LIMITED_API 0x03020000
+#endif
 #endif
 
 /*
