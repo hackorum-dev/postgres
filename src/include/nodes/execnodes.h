@@ -753,6 +753,7 @@ typedef struct EState
 								 * ExecutorRun() call. */
 	uint64		es_total_processed; /* total # of tuples aggregated across all
 									 * ExecutorRun() calls. */
+	bool		es_eof;	/* true if no more data to process */
 
 	int			es_top_eflags;	/* eflags passed to ExecutorStart */
 	int			es_instrument;	/* OR of InstrumentOption flags */

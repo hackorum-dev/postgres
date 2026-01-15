@@ -569,6 +569,15 @@
   assign_hook => 'assign_createrole_self_grant',
 },
 
+{ name => 'cursor_fetch_limit', type => 'int', context => 'PGC_USERSET', group => 'RESOURCES_MEM',
+  short_desc => 'Sets the maximum size in bytes for fetching from cursor',
+  flags => 'GUC_UNIT_BYTE',
+  variable => 'cursor_fetch_limit',
+  boot_val => '4194304',
+  min => '-1',
+  max => 'MaxAllocSize',
+},
+
 { name => 'cursor_tuple_fraction', type => 'real', context => 'PGC_USERSET', group => 'QUERY_TUNING_OTHER',
   short_desc => 'Sets the planner\'s estimate of the fraction of a cursor\'s rows that will be retrieved.',
   flags => 'GUC_EXPLAIN',

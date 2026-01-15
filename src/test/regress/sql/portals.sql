@@ -610,3 +610,34 @@ drop table toasted_data;
 fetch all in held_portal;
 
 reset default_toast_compression;
+
+-- Check memory limit for fetching from cursor
+set cursor_fetch_limit = '512B';
+
+BEGIN;
+DECLARE foo1 SCROLL MEMORY LIMITED CURSOR FOR SELECT * FROM tenk1 ORDER BY unique2;
+DECLARE foo2 SCROLL MEMORY LIMITED CURSOR FOR SELECT * FROM tenk2;
+DECLARE foo3 SCROLL MEMORY LIMITED CURSOR FOR SELECT * FROM tenk1 ORDER BY unique2;
+DECLARE foo4 SCROLL MEMORY LIMITED CURSOR FOR SELECT * FROM tenk2;
+
+FETCH 1 in foo1;
+FETCH 2 in foo2;
+FETCH 3 in foo3;
+-- Well, we've reached the limit
+FETCH 4 in foo4;
+-- Fetch the next batch
+FETCH 4 in foo4;
+FETCH backward 4 in foo4;
+
+-- Check cursor with hold
+DECLARE foo5 MEMORY LIMITED CURSOR WITH HOLD FOR SELECT * FROM tenk2 LIMIT 30;
+commit;
+FETCH 5 FROM foo5;
+FETCH 5 FROM foo5;
+-- MOVE is not limited by cursor_fetch_limit
+MOVE BACKWARD 10 IN foo5;
+FETCH 5 FROM foo5;
+-- FETCH ALL is not limited by cursor_fetch_limit
+FETCH ALL FROM foo5;
+CLOSE foo5;
+reset cursor_fetch_limit;

@@ -148,6 +148,7 @@ CreateExecutorState(void)
 
 	estate->es_processed = 0;
 	estate->es_total_processed = 0;
+	estate->es_eof = false;
 
 	estate->es_top_eflags = 0;
 	estate->es_instrument = 0;

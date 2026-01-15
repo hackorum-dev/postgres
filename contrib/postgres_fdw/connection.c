@@ -840,6 +840,19 @@ configure_remote_session(PGconn *conn)
 		do_sql_command(conn, "SET extra_float_digits = 3");
 	else
 		do_sql_command(conn, "SET extra_float_digits = 2");
+	/*
+	 * Limit fetch size with work_mem to avoid uncontrolled memory
+	 * consumption.
+	 */
+	if (remoteversion >= 190000)
+	{
+		char sql[64];
+		Size fetch_limit;
+
+		fetch_limit = (work_mem * 1024L > MaxAllocSize) ? MaxAllocSize : work_mem * 1024L;
+		snprintf(sql, sizeof(sql), "SET cursor_fetch_limit = %zu", fetch_limit);
+		do_sql_command(conn, sql);
+	}
 }
 
 /*

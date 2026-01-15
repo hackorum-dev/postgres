@@ -66,6 +66,9 @@
 #include "utils/snapmgr.h"
 
 
+/* max batch for fetching from cursor */
+int cursor_fetch_limit = 4096*1024;
+
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
 ExecutorRun_hook_type ExecutorRun_hook = NULL;
@@ -354,6 +357,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	 * startup tuple receiver, if we will be emitting tuples
 	 */
 	estate->es_processed = 0;
+	estate->es_eof = false;
 
 	sendTuples = (operation == CMD_SELECT ||
 				  queryDesc->plannedstmt->hasReturning);
@@ -1731,11 +1735,13 @@ ExecutePlan(QueryDesc *queryDesc,
 	bool		use_parallel_mode;
 	TupleTableSlot *slot;
 	uint64		current_tuple_count;
+	Size		current_batch_size;
 
 	/*
 	 * initialize local variables
 	 */
 	current_tuple_count = 0;
+	current_batch_size = 0;
 
 	/*
 	 * Set the direction.
@@ -1777,7 +1783,10 @@ ExecutePlan(QueryDesc *queryDesc,
 		 * process so we just end the loop...
 		 */
 		if (TupIsNull(slot))
+		{
+			estate->es_eof = true;
 			break;
+		}
 
 		/*
 		 * If we have a junk filter, then project a new tuple with the junk
@@ -1802,7 +1811,10 @@ ExecutePlan(QueryDesc *queryDesc,
 			 * end the loop.
 			 */
 			if (!dest->receiveSlot(slot, dest))
+			{
+				estate->es_eof = true;
 				break;
+			}
 		}
 
 		/*
@@ -1819,8 +1831,30 @@ ExecutePlan(QueryDesc *queryDesc,
 		 * means no limit.
 		 */
 		current_tuple_count++;
-		if (numberTuples && numberTuples == current_tuple_count)
-			break;
+		if (numberTuples)
+		{
+			if (numberTuples == current_tuple_count)
+				break;
+
+			/*
+			 * If batch limit in bytes is specified, count current batch size
+			 * and exit if limit is reached. MOVE should not be limited. We
+			 * identify MOVE by DestNone receiver.
+			 */
+			if (cursor_fetch_limit >= 0 && dest->mydest != DestNone && (estate->es_top_eflags & EXEC_FLAG_MEMORY_LIMITED))
+			{
+				Size tuple_len;
+
+				/* Compute length of the current tuple */
+				slot_getallattrs(slot);
+				tuple_len = estimate_tuple_size(slot->tts_tupleDescriptor, slot->tts_values, slot->tts_isnull);
+				current_batch_size += tuple_len;
+
+				if (current_batch_size > cursor_fetch_limit)
+					break;
+			}
+		}
+
 	}
 
 	/*

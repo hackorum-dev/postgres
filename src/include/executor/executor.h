@@ -71,7 +71,7 @@
 #define EXEC_FLAG_MARK				0x0010	/* need mark/restore */
 #define EXEC_FLAG_SKIP_TRIGGERS		0x0020	/* skip AfterTrigger setup */
 #define EXEC_FLAG_WITH_NO_DATA		0x0040	/* REFRESH ... WITH NO DATA */
-
+#define EXEC_FLAG_MEMORY_LIMITED 	0x0080	/* memory limited */
 
 /* Hook for plugins to get control in ExecutorStart() */
 typedef void (*ExecutorStart_hook_type) (QueryDesc *queryDesc, int eflags);
@@ -97,6 +97,8 @@ typedef bool (*ExecutorCheckPerms_hook_type) (List *rangeTable,
 											  bool ereport_on_violation);
 extern PGDLLIMPORT ExecutorCheckPerms_hook_type ExecutorCheckPerms_hook;
 
+/* GUC variables */
+extern PGDLLIMPORT int cursor_fetch_limit;
 
 /*
  * prototypes from functions in execAmi.c

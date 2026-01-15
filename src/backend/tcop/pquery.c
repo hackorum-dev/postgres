@@ -17,6 +17,7 @@
 
 #include <limits.h>
 
+#include "access/htup_details.h"
 #include "access/xact.h"
 #include "commands/prepare.h"
 #include "executor/executor.h"
@@ -44,7 +45,7 @@ static void ProcessQuery(PlannedStmt *plan,
 						 QueryCompletion *qc);
 static void FillPortalStore(Portal portal, bool isTopLevel);
 static uint64 RunFromStore(Portal portal, ScanDirection direction, uint64 count,
-						   DestReceiver *dest);
+						   DestReceiver *dest, bool *eof);
 static uint64 PortalRunSelect(Portal portal, bool forward, long count,
 							  DestReceiver *dest);
 static void PortalRunUtility(Portal portal, PlannedStmt *pstmt,
@@ -508,6 +509,8 @@ PortalStart(Portal portal, ParamListInfo params,
 				else
 					myeflags = eflags;
 
+				if (portal->cursorOptions & CURSOR_OPT_MEMORY_LIMITED)
+					myeflags |= EXEC_FLAG_MEMORY_LIMITED;
 				/*
 				 * Call ExecutorStart to prepare the plan for execution
 				 */
@@ -865,6 +868,7 @@ PortalRunSelect(Portal portal,
 	QueryDesc  *queryDesc;
 	ScanDirection direction;
 	uint64		nprocessed;
+	bool		eof;
 
 	/*
 	 * NB: queryDesc will be NULL if we are fetching from a held cursor or a
@@ -910,20 +914,23 @@ PortalRunSelect(Portal portal,
 			count = 0;
 
 		if (portal->holdStore)
-			nprocessed = RunFromStore(portal, direction, (uint64) count, dest);
+		{
+			nprocessed = RunFromStore(portal, direction, (uint64) count, dest, &eof);
+		}
 		else
 		{
 			PushActiveSnapshot(queryDesc->snapshot);
 			ExecutorRun(queryDesc, direction, (uint64) count);
 			nprocessed = queryDesc->estate->es_processed;
 			PopActiveSnapshot();
+			eof = queryDesc->estate->es_eof;
 		}
 
 		if (!ScanDirectionIsNoMovement(direction))
 		{
 			if (nprocessed > 0)
 				portal->atStart = false;	/* OK to go backward now */
-			if (count == 0 || nprocessed < (uint64) count)
+			if (count == 0 || eof)
 				portal->atEnd = true;	/* we retrieved 'em all */
 			portal->portalPos += nprocessed;
 		}
@@ -949,13 +956,16 @@ PortalRunSelect(Portal portal,
 			count = 0;
 
 		if (portal->holdStore)
-			nprocessed = RunFromStore(portal, direction, (uint64) count, dest);
+		{
+			nprocessed = RunFromStore(portal, direction, (uint64) count, dest, &eof);
+		}
 		else
 		{
 			PushActiveSnapshot(queryDesc->snapshot);
 			ExecutorRun(queryDesc, direction, (uint64) count);
 			nprocessed = queryDesc->estate->es_processed;
 			PopActiveSnapshot();
+			eof = queryDesc->estate->es_eof;
 		}
 
 		if (!ScanDirectionIsNoMovement(direction))
@@ -965,7 +975,7 @@ PortalRunSelect(Portal portal,
 				portal->atEnd = false;	/* OK to go forward now */
 				portal->portalPos++;	/* adjust for endpoint case */
 			}
-			if (count == 0 || nprocessed < (uint64) count)
+			if (count == 0 || eof)
 			{
 				portal->atStart = true; /* we retrieved 'em all */
 				portal->portalPos = 0;
@@ -1050,14 +1060,17 @@ FillPortalStore(Portal portal, bool isTopLevel)
  */
 static uint64
 RunFromStore(Portal portal, ScanDirection direction, uint64 count,
-			 DestReceiver *dest)
+			 DestReceiver *dest, bool *eof)
 {
 	uint64		current_tuple_count = 0;
+	Size		current_batch_size = 0;
 	TupleTableSlot *slot;
 
 	slot = MakeSingleTupleTableSlot(portal->tupDesc, &TTSOpsMinimalTuple);
 
 	dest->rStartup(dest, CMD_SELECT, portal->tupDesc);
+
+	*eof = false;
 
 	if (ScanDirectionIsNoMovement(direction))
 	{
@@ -1080,7 +1093,10 @@ RunFromStore(Portal portal, ScanDirection direction, uint64 count,
 			MemoryContextSwitchTo(oldcontext);
 
 			if (!ok)
+			{
+				*eof = true;
 				break;
+			}
 
 			/*
 			 * If we are not able to send the tuple, we assume the destination
@@ -1088,7 +1104,24 @@ RunFromStore(Portal portal, ScanDirection direction, uint64 count,
 			 * end the loop.
 			 */
 			if (!dest->receiveSlot(slot, dest))
+			{
+				*eof = true;
 				break;
+			}
+
+			/*
+			 * If batch limit in bytes is specified, count current batch
+			 * size. MOVE should not be limited. We identify MOVE by DestNone receiver.
+			 */
+			if (cursor_fetch_limit >= 0 &&  dest->mydest != DestNone && count && (portal->cursorOptions & CURSOR_OPT_MEMORY_LIMITED))
+			{
+				Size		tuple_len;
+
+				/* Compute length of the current tuple. */
+				slot_getallattrs(slot);
+				tuple_len = estimate_tuple_size(slot->tts_tupleDescriptor, slot->tts_values, slot->tts_isnull);
+				current_batch_size += tuple_len;
+			}
 
 			ExecClearTuple(slot);
 
@@ -1098,8 +1131,15 @@ RunFromStore(Portal portal, ScanDirection direction, uint64 count,
 			 * means no limit.
 			 */
 			current_tuple_count++;
-			if (count && count == current_tuple_count)
-				break;
+			if (count)
+			{
+				if (count == current_tuple_count)
+					break;
+
+				/* Exit if batch limit is reached */
+				if (current_batch_size > cursor_fetch_limit)
+					break;
+			}
 		}
 	}
 

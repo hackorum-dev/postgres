@@ -3825,6 +3825,8 @@ create_cursor(ForeignScanState *node)
 	PGconn	   *conn = fsstate->conn;
 	StringInfoData buf;
 	PGresult   *res;
+	const char *memory_limited = "";
+	int remoteversion;
 
 	/* First, process a pending asynchronous request, if any. */
 	if (fsstate->conn_state->pendingAreq)
@@ -3851,8 +3853,13 @@ create_cursor(ForeignScanState *node)
 
 	/* Construct the DECLARE CURSOR command */
 	initStringInfo(&buf);
-	appendStringInfo(&buf, "DECLARE c%u CURSOR FOR\n%s",
-					 fsstate->cursor_number, fsstate->query);
+
+	remoteversion = PQserverVersion(conn);
+	if (remoteversion >= 190000)
+		memory_limited = "MEMORY LIMITED ";
+
+	appendStringInfo(&buf, "DECLARE c%u %sCURSOR FOR\n%s",
+					 fsstate->cursor_number, memory_limited, fsstate->query);
 
 	/*
 	 * Notice that we pass NULL for paramTypes, thus forcing the remote server
@@ -3959,8 +3966,11 @@ fetch_more_data(ForeignScanState *node)
 	if (fsstate->fetch_ct_2 < 2)
 		fsstate->fetch_ct_2++;
 
-	/* Must be EOF if we didn't get as many tuples as we asked for. */
-	fsstate->eof_reached = (numrows < fsstate->fetch_size);
+	/*
+	 * Must be EOF if we got 0 rows. We can get less rows than we asked for
+	 * even if there's more data if batch of "fetch_size" exceeds work_mem.
+	 */
+	fsstate->eof_reached = (numrows == 0);
 
 	PQclear(res);
 
@@ -5120,6 +5130,7 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 	char		fetch_sql[64];
 	int			fetch_size;
 	ListCell   *lc;
+	const char *memory_limited = "";
 
 	/* Initialize workspace state */
 	astate.rel = relation;
@@ -5291,7 +5302,11 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 	 */
 	cursor_number = GetCursorNumber(conn);
 	initStringInfo(&sql);
-	appendStringInfo(&sql, "DECLARE c%u CURSOR FOR ", cursor_number);
+
+	if (server_version_num >= 190000)
+		memory_limited = "MEMORY LIMITED ";
+
+	appendStringInfo(&sql, "DECLARE c%u %sCURSOR FOR ", cursor_number, memory_limited);
 
 	deparseAnalyzeSql(&sql, relation, method, sample_frac, &astate.retrieved_attrs);
 
