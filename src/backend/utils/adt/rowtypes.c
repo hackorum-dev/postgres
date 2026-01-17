@@ -148,6 +148,9 @@ record_in(PG_FUNCTION_ARGS)
 	 * each column, which is then fed to the appropriate input converter.
 	 */
 	ptr = string;
+
+	initStringInfo(&buf);
+
 	/* Allow leading whitespace */
 	while (*ptr && isspace((unsigned char) *ptr))
 		ptr++;
@@ -160,7 +163,6 @@ record_in(PG_FUNCTION_ARGS)
 		goto fail;
 	}
 
-	initStringInfo(&buf);
 
 	for (i = 0; i < ncolumns; i++)
 	{
@@ -318,6 +320,9 @@ record_in(PG_FUNCTION_ARGS)
 
 	/* exit here once we've done lookup_rowtype_tupdesc */
 fail:
+	pfree(buf.data);
+	pfree(values);
+	pfree(nulls);
 	ReleaseTupleDesc(tupdesc);
 	PG_RETURN_NULL();
 }
