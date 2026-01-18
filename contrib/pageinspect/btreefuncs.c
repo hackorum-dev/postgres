@@ -39,6 +39,8 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
+#include "utils/ruleutils.h"
+#include "utils/lsyscache.h"
 #include "utils/varlena.h"
 
 PG_FUNCTION_INFO_V1(bt_metap);
@@ -96,6 +98,8 @@ typedef struct ua_page_items
 	bool		leafpage;
 	bool		rightmost;
 	TupleDesc	tupd;
+	Relation	indexRel;
+	bool		pretty_print;
 } ua_page_items;
 
 
@@ -547,17 +551,118 @@ bt_page_print_tuples(ua_page_items *uargs)
 	if (dlen < 0 || dlen > INDEX_SIZE_MASK)
 		elog(ERROR, "invalid tuple length %d for tuple at offset number %u",
 			 dlen, offset);
-	dump = palloc0(dlen * 3 + 1);
-	datacstring = dump;
-	for (off = 0; off < dlen; off++)
+
+	if (!uargs->pretty_print)
 	{
-		if (off > 0)
-			*dump++ = ' ';
-		sprintf(dump, "%02x", *(ptr + off) & 0xff);
-		dump += 2;
+		/* Old-style, print hex bytes */
+		dump = palloc0(dlen * 3 + 1);
+		datacstring = dump;
+		for (off = 0; off < dlen; off++)
+		{
+			if (off > 0)
+				*dump++ = ' ';
+			sprintf(dump, "%02x", *(ptr + off) & 0xff);
+			dump += 2;
+		}
+		values[j++] = CStringGetTextDatum(datacstring);
+		pfree(datacstring);
 	}
-	values[j++] = CStringGetTextDatum(datacstring);
-	pfree(datacstring);
+	else
+	{
+		/* Do pretty-print, akin to record_out() */
+		StringInfoData buf;
+		TupleDesc tupdesc;
+
+		Datum		itup_values[INDEX_MAX_KEYS];
+		bool		itup_isnull[INDEX_MAX_KEYS];
+		char		*index_columns;
+
+		/*
+		* Included attributes are added when dealing with leaf pages, discarded
+		* for non-leaf pages as these include only data for key attributes.
+		*/
+		int printflags = RULE_INDEXDEF_PRETTY;
+		if (true)
+		{
+			tupdesc = RelationGetDescr(uargs->indexRel);
+		}
+		else
+		{
+			tupdesc = CreateTupleDescTruncatedCopy(RelationGetDescr(uargs->indexRel),
+												IndexRelationGetNumberOfKeyAttributes(uargs->indexRel));
+			printflags |= RULE_INDEXDEF_KEYS_ONLY;
+		}
+
+		index_columns = pg_get_indexdef_columns_extended(RelationGetRelid(uargs->indexRel),
+														printflags);
+
+
+		index_deform_tuple(itup, tupdesc,
+						   itup_values, itup_isnull);
+
+
+		initStringInfo(&buf);
+		appendStringInfo(&buf, "(%s)=(", index_columns);
+
+		for (int i = 0; i < tupdesc->natts; i++)
+		{
+			char	   *value;
+			char	   *tmp;
+			bool		nq = false;
+
+			if (itup_isnull[i])
+				value = "null";
+			else
+			{
+				Oid			foutoid;
+				bool		typisvarlena;
+				Oid			typoid;
+
+				typoid = TupleDescAttr(tupdesc, i)->atttypid;
+				getTypeOutputInfo(typoid, &foutoid, &typisvarlena);
+				value = OidOutputFunctionCall(foutoid, itup_values[i]);
+			}
+
+			if (i == IndexRelationGetNumberOfKeyAttributes(uargs->indexRel))
+				appendStringInfoString(&buf, ") INCLUDE (");
+			else if (i > 0)
+				appendStringInfoString(&buf, ", ");
+
+			/* Check whether we need double quotes for this value */
+			nq = (value[0] == '\0');	/* force quotes for empty string */
+			for (tmp = value; *tmp; tmp++)
+			{
+				char		ch = *tmp;
+
+				if (ch == '"' || ch == '\\' ||
+					ch == '(' || ch == ')' || ch == ',' ||
+					isspace((unsigned char) ch))
+				{
+					nq = true;
+					break;
+				}
+			}
+
+			/* And emit the string */
+			if (nq)
+				appendStringInfoCharMacro(&buf, '"');
+			for (tmp = value; *tmp; tmp++)
+			{
+				char		ch = *tmp;
+
+				if (ch == '"' || ch == '\\')
+					appendStringInfoCharMacro(&buf, ch);
+				appendStringInfoCharMacro(&buf, ch);
+			}
+			if (nq)
+				appendStringInfoCharMacro(&buf, '"');
+		}
+
+		appendStringInfoChar(&buf, ')');
+
+		values[j++] = CStringGetTextDatum(buf.data);
+		pfree(buf.data);
+	}
 
 	/*
 	 * We need to work around the BTreeTupleIsPivot() !heapkeyspace limitation
@@ -629,6 +734,11 @@ bt_page_items_internal(PG_FUNCTION_ARGS, enum pageinspect_version ext_version)
 	FuncCallContext *fctx;
 	MemoryContext mctx;
 	ua_page_items *uargs;
+	bool		pretty_print = false;
+
+	if (PG_NARGS() >= 3) {
+		pretty_print = PG_GETARG_BOOL(2);
+	}
 
 	if (!superuser())
 		ereport(ERROR,
@@ -666,7 +776,6 @@ bt_page_items_internal(PG_FUNCTION_ARGS, enum pageinspect_version ext_version)
 		memcpy(uargs->page, BufferGetPage(buffer), BLCKSZ);
 
 		UnlockReleaseBuffer(buffer);
-		relation_close(rel, AccessShareLock);
 
 		uargs->offset = FirstOffsetNumber;
 
@@ -682,6 +791,9 @@ bt_page_items_internal(PG_FUNCTION_ARGS, enum pageinspect_version ext_version)
 		}
 		uargs->leafpage = P_ISLEAF(opaque);
 		uargs->rightmost = P_RIGHTMOST(opaque);
+
+		uargs->pretty_print = pretty_print;
+		uargs->indexRel = rel;
 
 		/* Build a tuple descriptor for our result type */
 		if (get_call_result_type(fcinfo, NULL, &tupleDesc) != TYPEFUNC_COMPOSITE)
@@ -704,6 +816,8 @@ bt_page_items_internal(PG_FUNCTION_ARGS, enum pageinspect_version ext_version)
 		uargs->offset++;
 		SRF_RETURN_NEXT(fctx, result);
 	}
+
+	relation_close(uargs->indexRel, AccessShareLock);
 
 	SRF_RETURN_DONE(fctx);
 }
@@ -798,6 +912,9 @@ bt_page_items_bytea(PG_FUNCTION_ARGS)
 		}
 		uargs->leafpage = P_ISLEAF(opaque);
 		uargs->rightmost = P_RIGHTMOST(opaque);
+		uargs->pretty_print = false;
+		/* For bytea function, we cannot do pretty-print */
+		uargs->indexRel = NULL;
 
 		/* Build a tuple descriptor for our result type */
 		if (get_call_result_type(fcinfo, NULL, &tupleDesc) != TYPEFUNC_COMPOSITE)
