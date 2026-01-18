@@ -42,8 +42,10 @@
 #include "utils/ruleutils.h"
 #include "utils/lsyscache.h"
 #include "utils/varlena.h"
+#include "utils/pg_lsn.h"
 
 PG_FUNCTION_INFO_V1(bt_metap);
+PG_FUNCTION_INFO_V1(bt_page_opaque);
 PG_FUNCTION_INFO_V1(bt_page_items_1_9);
 PG_FUNCTION_INFO_V1(bt_page_items);
 PG_FUNCTION_INFO_V1(bt_page_items_bytea);
@@ -1051,4 +1053,87 @@ bt_metap(PG_FUNCTION_ARGS)
 	relation_close(rel, AccessShareLock);
 
 	PG_RETURN_DATUM(result);
+}
+
+
+/* ------------------------------------------------
+ * bt_metap()
+ *
+ * Get a btree's page opaque information
+ *
+ * Usage: SELECT * FROM bt_page_opaque(get_raw_page('t1_pkey', 100))
+ * ------------------------------------------------
+ */
+Datum
+bt_page_opaque(PG_FUNCTION_ARGS)
+{
+	bytea	   *raw_page = PG_GETARG_BYTEA_P(0);
+	TupleDesc	tupdesc;
+	Page		page;
+	HeapTuple	resultTuple;
+	Datum		values[6];
+	bool		nulls[6];
+	Datum		flags[16];
+	int			nflags = 0;
+	uint16		flagbits;
+	BTPageOpaque opaque;
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to use raw page functions")));
+
+	page = get_page_from_raw(raw_page);
+
+	if (PageIsNew(page))
+		PG_RETURN_NULL();
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+
+	opaque = BTPageGetOpaque(page);
+
+	/* Convert the flags bitmask to an array of human-readable names */
+	flagbits = opaque->btpo_flags;
+	if (flagbits & BTP_LEAF)
+		flags[nflags++] = CStringGetTextDatum("leaf");
+	if (flagbits & BTP_ROOT)
+		flags[nflags++] = CStringGetTextDatum("root");
+	if (flagbits & BTP_DELETED)
+		flags[nflags++] = CStringGetTextDatum("deleted");
+	if (flagbits & BTP_META)
+		flags[nflags++] = CStringGetTextDatum("meta");
+	if (flagbits & BTP_HALF_DEAD)
+		flags[nflags++] = CStringGetTextDatum("half_dead");
+	if (flagbits & BTP_SPLIT_END)
+		flags[nflags++] = CStringGetTextDatum("split_end");
+	if (flagbits & BTP_HAS_GARBAGE)
+		flags[nflags++] = CStringGetTextDatum("has_garbage");
+	if (flagbits & BTP_INCOMPLETE_SPLIT)
+		flags[nflags++] = CStringGetTextDatum("incomplete_split");
+	if (flagbits & BTP_HAS_FULLXID)
+		flags[nflags++] = CStringGetTextDatum("has_fullxid");
+	
+	flagbits &= ~(BTP_LEAF | BTP_ROOT | BTP_DELETED | BTP_META | BTP_HALF_DEAD | BTP_SPLIT_END | BTP_HAS_GARBAGE | BTP_INCOMPLETE_SPLIT | BTP_HAS_FULLXID);
+	
+	if (flagbits)
+	{
+		/* any flags we don't recognize are printed in hex */
+		flags[nflags++] = DirectFunctionCall1(to_hex32, Int32GetDatum(flagbits));
+	}
+
+	memset(nulls, 0, sizeof(nulls));
+
+	values[0] = LSNGetDatum(PageGetLSN(page));
+	values[1] = Int32GetDatum(opaque->btpo_prev);
+	values[2] = Int32GetDatum(opaque->btpo_next);
+	values[3] = UInt32GetDatum(opaque->btpo_level);
+	values[4] = PointerGetDatum(construct_array_builtin(flags, nflags, TEXTOID));
+	values[5] = UInt16GetDatum(opaque->btpo_cycleid);
+
+	/* Build and return the result tuple. */
+	resultTuple = heap_form_tuple(tupdesc, values, nulls);
+
+	return HeapTupleGetDatum(resultTuple);
 }
