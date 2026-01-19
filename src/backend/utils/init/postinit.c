@@ -1343,10 +1343,14 @@ ShutdownPostgres(int code, Datum arg)
 	/* Make sure we've killed any active transaction */
 	AbortOutOfAnyTransaction();
 
+	/* If waiting, get off wait queue (should only be needed after error) */
+	LockErrorCleanup();
+
 	/*
 	 * Session locks are not released by transaction end, so be sure to
 	 * release them explicitly.
 	 */
+	LockReleaseSession(DEFAULT_LOCKMETHOD);
 	LockReleaseSession(USER_LOCKMETHOD);
 }
 
