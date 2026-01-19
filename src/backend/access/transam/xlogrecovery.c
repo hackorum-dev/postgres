@@ -388,6 +388,7 @@ static int	XLogFileRead(XLogSegNo segno, TimeLineID tli,
 static int	XLogFileReadAnyTLI(XLogSegNo segno, XLogSource source);
 
 static bool CheckForStandbyTrigger(void);
+static bool CanPromoteOnCurrentTimeline(void);
 static void SetPromoteIsTriggered(void);
 static bool HotStandbyActiveInReplay(void);
 
@@ -4453,6 +4454,12 @@ CheckForStandbyTrigger(void)
 
 	if (IsPromoteSignaled() && CheckPromoteSignal())
 	{
+		/*
+		 * Verify that promotion request is safe to process.
+		 */
+		if (!CanPromoteOnCurrentTimeline())
+			return false;
+
 		ereport(LOG, (errmsg("received promote request")));
 		RemovePromoteSignalFiles();
 		ResetPromoteSignaled();
@@ -4470,6 +4477,69 @@ void
 RemovePromoteSignalFiles(void)
 {
 	unlink(PROMOTE_SIGNAL_FILE);
+}
+
+/*
+ * Check if promotion is safe on the current timeline.
+ *
+ * This function verifies that the WAL receiver has processed at least some
+ * records on the current timeline before allowing promotion.
+ *
+ * Returns true if promotion is safe, as at least one record of the new
+ * timeline given by the caller has been written, false otherwise, meaning
+ * that the promotion request cannot be processed yet.
+ */
+static bool
+CanPromoteOnCurrentTimeline(void)
+{
+	XLogRecPtr	flushedUpto;
+	TimeLineID	receiveTLI;
+	XLogRecPtr	replayPtr;
+	TimeLineID	currentReplayTLI;
+	TimeLineID replayTLI;
+
+	GetCurrentReplayRecPtr(&replayTLI);
+
+	/*
+	 * If WAL receiver is not actively streaming, we can't get timeline
+	 * information from it, so allow promotion to proceed.
+	 */
+	if (!WalRcvStreaming())
+		return true;
+
+	/*
+	 * Get the current state from WAL receiver and startup process
+	 */
+	flushedUpto = GetWalRcvFlushRecPtr(NULL, &receiveTLI);
+	replayPtr = GetCurrentReplayRecPtr(&currentReplayTLI);
+
+	/*
+	 * If WAL receiver is on a different timeline than what we're replaying,
+	 * check if we have received any data on the WAL receiver's timeline.
+	 */
+	if (receiveTLI != replayTLI)
+	{
+		/*
+		 * WAL receiver is on a newer timeline. Check if we have received
+		 * any records on this timeline.  If flushedUpto is invalid or
+		 * at the beginning of the timeline, we haven't received sufficient
+		 * data to be able to safely promote.
+		 */
+		if (!XLogRecPtrIsValid(flushedUpto) || flushedUpto <= replayPtr)
+		{
+			ereport(WARNING,
+					(errmsg("could not process promotion request"),
+					 errdetail("WAL receiver on timeline %u has not yet received sufficient data (received up to %X/%08X, replay at %X/%08X on timeline %u).",
+							receiveTLI,
+							LSN_FORMAT_ARGS(flushedUpto),
+							LSN_FORMAT_ARGS(replayPtr),
+							replayTLI),
+					 errhint("Wait for WAL receiver to process records from timeline %u before promoting.", receiveTLI)));
+			return false;
+		}
+	}
+
+	return true;
 }
 
 /*
