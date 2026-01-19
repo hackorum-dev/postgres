@@ -832,3 +832,133 @@ select explain_filter('explain (analyze,buffers off,costs off) select sum(n) ove
 (9 rows)
 
 reset work_mem;
+--
+-- Check "Rows Removed by Hash Matching" metric in EXPLAIN ANALYZE
+set enable_hashjoin = on;
+set enable_mergejoin = off;
+set enable_nestloop = off;
+-- Function to extract "Rows Removed" metrics from EXPLAIN ANALYZE
+-- Returns a table with all found metrics
+create or replace function get_rows_removed(query text)
+returns table (
+  metric text,
+  count numeric
+) language plpgsql
+as
+$$
+declare
+  ln text;
+  match text[];
+  metrics text[] := ARRAY[
+    'Rows Removed by Hash Matching',
+    'Rows Removed by Join Filter'
+  ];
+  metric_name text;
+  pattern text;
+begin
+  for ln in execute 'explain (analyze, buffers off, costs off) ' || query
+  loop
+    foreach metric_name in array metrics
+    loop
+      pattern := metric_name || ': (\d+(?:\.\d+)?)';
+      match := regexp_match(ln, pattern);
+      if match is not null then
+        metric := metric_name;
+        count := match[1]::numeric;
+        return next;
+      end if;
+    end loop;
+  end loop;
+end;
+$$;
+create table hash_outer (id int, val text);
+create table hash_inner (id int, val text);
+insert into hash_outer select i, 'outer' || i from generate_series(1, 100) i;
+insert into hash_inner select i, 'inner' || i from generate_series(51, 150) i;
+analyze hash_outer, hash_inner;
+-- Inner join where some outer tuples have no matching inner tuples
+select explain_filter('explain (analyze, buffers off, costs off) select * from hash_outer o join hash_inner i on o.id = i.id;');
+                                explain_filter
+------------------------------------------------------------------------------
+ Hash Join (actual time=N.N..N.N rows=N.N loops=N)
+   Hash Cond: (o.id = i.id)
+   Rows Removed by Hash Matching: N
+   ->  Seq Scan on hash_outer o (actual time=N.N..N.N rows=N.N loops=N)
+   ->  Hash (actual time=N.N..N.N rows=N.N loops=N)
+         Buckets: N  Batches: N  Memory Usage: NkB
+         ->  Seq Scan on hash_inner i (actual time=N.N..N.N rows=N.N loops=N)
+ Planning Time: N.N ms
+ Execution Time: N.N ms
+(9 rows)
+
+select get_rows_removed('select * from hash_outer o join hash_inner i on o.id = i.id') as removed_rows;
+             removed_rows
+--------------------------------------
+ ("Rows Removed by Hash Matching",50)
+(1 row)
+
+-- Hash join with all matches (should NOT show "Rows Removed by Hash Matching")
+create table hash_outer_all (id int, val text);
+create table hash_inner_all (id int, val text);
+insert into hash_outer_all select i, 'outer' || i from generate_series(1, 100) i;
+insert into hash_inner_all select i, 'inner' || i from generate_series(1, 100) i;  -- all ids match
+analyze hash_outer_all, hash_inner_all;
+select explain_filter('explain (analyze, buffers off, costs off) select * from hash_outer_all o join hash_inner_all i on o.id = i.id;');
+                                  explain_filter
+----------------------------------------------------------------------------------
+ Hash Join (actual time=N.N..N.N rows=N.N loops=N)
+   Hash Cond: (o.id = i.id)
+   ->  Seq Scan on hash_outer_all o (actual time=N.N..N.N rows=N.N loops=N)
+   ->  Hash (actual time=N.N..N.N rows=N.N loops=N)
+         Buckets: N  Batches: N  Memory Usage: NkB
+         ->  Seq Scan on hash_inner_all i (actual time=N.N..N.N rows=N.N loops=N)
+ Planning Time: N.N ms
+ Execution Time: N.N ms
+(8 rows)
+
+select get_rows_removed('select * from hash_outer_all o join hash_inner_all i on o.id = i.id') as removed_rows;
+ removed_rows
+--------------
+(0 rows)
+
+-- Hash join with WHERE filter on join result (Hash Matching and Filter together)
+create table hash_outer2 (id int, val int);
+create table hash_inner2 (id int, val int);
+insert into hash_outer2 select i, i from generate_series(1, 100) i;
+insert into hash_inner2 select i, i from generate_series(51, 150) i;
+analyze hash_outer2, hash_inner2;
+select explain_filter('explain (analyze, buffers off, costs off)
+select * from hash_outer2 o join hash_inner2 i on o.id = i.id where o.val + i.val > 150;');
+                                explain_filter
+-------------------------------------------------------------------------------
+ Hash Join (actual time=N.N..N.N rows=N.N loops=N)
+   Hash Cond: (o.id = i.id)
+   Join Filter: ((o.val + i.val) > N)
+   Rows Removed by Hash Matching: N
+   Rows Removed by Join Filter: N
+   ->  Seq Scan on hash_outer2 o (actual time=N.N..N.N rows=N.N loops=N)
+   ->  Hash (actual time=N.N..N.N rows=N.N loops=N)
+         Buckets: N  Batches: N  Memory Usage: NkB
+         ->  Seq Scan on hash_inner2 i (actual time=N.N..N.N rows=N.N loops=N)
+ Planning Time: N.N ms
+ Execution Time: N.N ms
+(11 rows)
+
+select * from get_rows_removed('select * from hash_outer2 o join hash_inner2 i on o.id = i.id where o.val + i.val > 150;');
+            metric             | count
+-------------------------------+-------
+ Rows Removed by Hash Matching |    50
+ Rows Removed by Join Filter   |    25
+(2 rows)
+
+-- Clean up
+drop table hash_outer, hash_inner, hash_outer_all, hash_inner_all, hash_outer2, hash_inner2;
+drop function get_rows_removed(text);
+reset enable_hashjoin;
+reset enable_mergejoin;
+reset enable_nestloop;
+reset max_parallel_workers_per_gather;
+reset min_parallel_table_scan_size;
+reset parallel_setup_cost;
+reset parallel_tuple_cost;
+reset enable_parallel_hash;
