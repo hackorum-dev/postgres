@@ -565,33 +565,6 @@ typedef uint32 bits32;			/* >= 32 bits */
 #define UINT64_FORMAT "%" PRIu64
 #define OID8_FORMAT "%" PRIu64
 
-/*
- * 128-bit signed and unsigned integers
- *		There currently is only limited support for such types.
- *		E.g. 128bit literals and snprintf are not supported; but math is.
- *		Also, because we exclude such types when choosing MAXIMUM_ALIGNOF,
- *		it must be possible to coerce the compiler to allocate them on no
- *		more than MAXALIGN boundaries.
- */
-#if defined(PG_INT128_TYPE)
-#if defined(pg_attribute_aligned) || ALIGNOF_PG_INT128_TYPE <= MAXIMUM_ALIGNOF
-#define HAVE_INT128 1
-
-typedef PG_INT128_TYPE int128
-#if defined(pg_attribute_aligned)
-			pg_attribute_aligned(MAXIMUM_ALIGNOF)
-#endif
-		   ;
-
-typedef unsigned PG_INT128_TYPE uint128
-#if defined(pg_attribute_aligned)
-			pg_attribute_aligned(MAXIMUM_ALIGNOF)
-#endif
-		   ;
-
-#endif
-#endif
-
 /* Historical names for limits in <stdint.h>. */
 #define PG_INT8_MIN		INT8_MIN
 #define PG_INT8_MAX		INT8_MAX
@@ -801,6 +774,33 @@ typedef NameData *Name;
  *		Number of elements in an array.
  */
 #define lengthof(array) (sizeof (array) / sizeof ((array)[0]))
+
+/*
+ * Compute maximum alignment of any basic type.
+ *
+ * We require 'double' to have the strictest alignment among the basic types,
+ * because otherwise the C ABI might impose 8-byte alignment on some of the
+ * other C types that correspond to TYPALIGN_DOUBLE SQL types.  That could
+ * cause a mismatch between the tuple layout and the C struct layout of a
+ * catalog tuple.  We used to carefully order catalog columns such that any
+ * fixed-width, attalign=4 columns were at offsets divisible by 8 regardless
+ * of MAXIMUM_ALIGNOF to avoid that, but we no longer support any platforms
+ * where TYPALIGN_DOUBLE != MAXIMUM_ALIGNOF.
+ *
+ * We assume without checking that the alignments of int64_t and long are at
+ * least as strong as char, short, or int.  Note that we intentionally do not
+ * consider any types wider than 64 bits, as allowing MAXIMUM_ALIGNOF to
+ * exceed 8 would be too much of a penalty for disk and memory space.
+ */
+
+static_assert(ALIGNOF_LONG <= ALIGNOF_DOUBLE,
+			  "alignment of 'long' is greater than the alignment of 'double'");
+
+static_assert(ALIGNOF_INT64_T <= ALIGNOF_DOUBLE,
+			  "alignment of 'int64_t' is greater than the alignment of 'double'");
+
+/* The maximum alignment requirement of any C data type */
+#define MAXIMUM_ALIGNOF ALIGNOF_DOUBLE
 
 /* ----------------
  * Alignment macros: align a length or address appropriately for a given type.
@@ -1101,6 +1101,33 @@ pg_noreturn extern void ExceptionalCondition(const char *conditionName,
  */
 #define INVERT_COMPARE_RESULT(var) \
 	((var) = ((var) < 0) ? 1 : -(var))
+
+/*
+ * 128-bit signed and unsigned integers
+ *		There currently is only limited support for such types.
+ *		E.g. 128bit literals and snprintf are not supported; but math is.
+ *		Also, because we exclude such types when choosing MAXIMUM_ALIGNOF,
+ *		it must be possible to coerce the compiler to allocate them on no
+ *		more than MAXALIGN boundaries.
+ */
+#if defined(PG_INT128_TYPE)
+#if defined(pg_attribute_aligned) || ALIGNOF_PG_INT128_TYPE <= MAXIMUM_ALIGNOF
+#define HAVE_INT128 1
+
+typedef PG_INT128_TYPE int128
+#if defined(pg_attribute_aligned)
+			pg_attribute_aligned(MAXIMUM_ALIGNOF)
+#endif
+		   ;
+
+typedef unsigned PG_INT128_TYPE uint128
+#if defined(pg_attribute_aligned)
+			pg_attribute_aligned(MAXIMUM_ALIGNOF)
+#endif
+		   ;
+
+#endif
+#endif
 
 /*
  * Use this, not "char buf[BLCKSZ]", to declare a field or local variable

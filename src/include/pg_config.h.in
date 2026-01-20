@@ -547,9 +547,6 @@
 /* Define to 1 if you have __get_cpuid_count. */
 #undef HAVE__GET_CPUID_COUNT
 
-/* Define as the maximum alignment requirement of any C data type. */
-#undef MAXIMUM_ALIGNOF
-
 /* Define bytes to use libc memset(). */
 #undef MEMSET_LOOP_LIMIT
 
