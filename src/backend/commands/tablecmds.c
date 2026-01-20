@@ -4612,11 +4612,10 @@ AlterTableLookupRelation(AlterTableStmt *stmt, LOCKMODE lockmode)
  *
  * The caller must lock the relation, with an appropriate lock level
  * for the subcommands requested, using AlterTableGetLockLevel(stmt->cmds)
- * or higher. We pass the lock level down
- * so that we can apply it recursively to inherited tables. Note that the
- * lock level we want as we recurse might well be higher than required for
- * that specific subcommand. So we pass down the overall lock requirement,
- * rather than reassess it at lower levels.
+ * or higher. We pass the lock level down so that we can apply it recursively
+ * to inherited tables. Note that the lock level we want as we recurse might
+ * well be higher than required for that specific subcommand. So we pass down
+ * the overall lock requirement, rather than reassess it at lower levels.
  *
  * The caller also provides a "context" which is to be passed back to
  * utility.c when we need to execute a subcommand such as CREATE INDEX.
@@ -4995,8 +4994,29 @@ ATController(AlterTableStmt *parsetree,
  * Traffic cop for ALTER TABLE Phase 1 operations, including simple
  * recursion and permission checks.
  *
- * Caller must have acquired appropriate lock type on relation already.
- * This lock should be held until commit.
+ * *wqueue: resulting AlteredTableInfo structs are added to this list
+ * rel: the relation we are currently considering
+ * cmd: the ALTER TABLE subcommand we are currently considering
+ * recurse: true to recurse to child tables of rel (including partitions)
+ * recursing: true if already recursing (rel is a descendant of original table)
+ * lockmode: lock level held on rel, and to be acquired on children
+ * context: context passed down from ProcessUtility, or NULL if none
+ *
+ * At top level, recurse is true unless the command specified ONLY.
+ * Internally, recurse may be true when descending the inheritance tree
+ * on-the-fly, or false when the tree has already been expanded at an
+ * outer level (see ATSimpleRecursion).
+ *
+ * recurse and recursing together control how recursion proceeds:
+ *
+ *   recurse=false, recursing=false: top-level call, no recursion
+ *   recurse=true,  recursing=false: top-level call, recurse if supported
+ *   recurse=true,  recursing=true:  recursive call, continue recursion
+ *   recurse=false, recursing=true:  recursive call, stop recursion
+ *
+ * Caller must have acquired lockmode on rel already. This lock should be held
+ * until commit. If we recurse, the same lockmode will be acquired on child
+ * tables.
  */
 static void
 ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
@@ -10854,6 +10874,7 @@ validateFkOnDeleteSetColumns(int numfks, const int16 *fkattnums,
  *      (...) clause
  * fkdelsetcols: the attnum array of the columns in the ON DELETE SET
  *      NULL/DEFAULT clause
+ * is_internal: true if this is an internally generated constraint
  * with_period: true if this is a temporal FK
  */
 static ObjectAddress
