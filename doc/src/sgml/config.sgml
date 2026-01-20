@@ -3723,6 +3723,23 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-checkpoint-request-size" xreflabel="checkpoint_request_size">
+      <term><varname>checkpoint_request_size</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>checkpoint_request_size</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies the amount of request the checkpointer queue can hold.
+        The default value is <literal>0</literal>, which sets the queue
+        size to <varname>shared_buffers</varname> with a cap of 10000000,
+        to prevent from accumulating too many checkpoint requests.
+        This parameter can only be set at server start.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-checkpoint-warning" xreflabel="checkpoint_warning">
       <term><varname>checkpoint_warning</varname> (<type>integer</type>)
       <indexterm>
