@@ -323,6 +323,14 @@ errdetail_apply_conflict(EState *estate, ResultRelInfo *relinfo,
 			break;
 
 		case CT_UPDATE_ORIGIN_DIFFERS:
+
+			/*
+			 * UPDATE_ORIGIN_DIFFERS conflict is reported only when
+			 * track_commit_timestamp is enabled, and a valid local commit
+			 * timestamp is available for the conflicting row.
+			 */
+			Assert(localts != 0);
+
 			if (localorigin == InvalidRepOriginId)
 				appendStringInfo(&err_detail, _("Updating the row that was modified locally in transaction %u at %s"),
 								 localxmin, timestamptz_to_str(localts));
@@ -377,6 +385,14 @@ errdetail_apply_conflict(EState *estate, ResultRelInfo *relinfo,
 			break;
 
 		case CT_DELETE_ORIGIN_DIFFERS:
+
+			/*
+			 * DELETE_ORIGIN_DIFFERS conflict is reported only when
+			 * track_commit_timestamp is enabled, and a valid local commit
+			 * timestamp is available for the conflicting row.
+			 */
+			Assert(localts != 0);
+
 			if (localorigin == InvalidRepOriginId)
 				appendStringInfo(&err_detail, _("Deleting the row that was modified locally in transaction %u at %s"),
 								 localxmin, timestamptz_to_str(localts));
