@@ -720,7 +720,7 @@ for (my $tupidx = 0; $tupidx < $ROWCOUNT; $tupidx++)
 		$tup->{t_xmax} = $in_progress_xid;
 		$tup->{t_infomask} &= ~HEAP_XMIN_COMMITTED;
 		push @expected,
-		  qr/${header}tuple with aborted xmin \d+ was updated to produce a tuple at offset \d+ with in-progress xmin \d+/;
+		  qr/${header}tuple with aborted xmin \d+ was updated to produce a tuple at offset 43 with in-progress xmin \d+/;
 	}
 	elsif ($offnum == 40)
 	{
