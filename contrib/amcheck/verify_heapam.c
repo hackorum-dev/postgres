@@ -776,7 +776,7 @@ verify_heapam(PG_FUNCTION_ARGS)
 				report_corruption(&ctx,
 								  psprintf("tuple with in-progress xmin %u was updated to produce a tuple at offset %d with committed xmin %u",
 										   curr_xmin,
-										   ctx.offnum,
+										   nextoffnum,
 										   next_xmin));
 			}
 
@@ -792,13 +792,13 @@ verify_heapam(PG_FUNCTION_ARGS)
 					report_corruption(&ctx,
 									  psprintf("tuple with aborted xmin %u was updated to produce a tuple at offset %d with in-progress xmin %u",
 											   curr_xmin,
-											   ctx.offnum,
+											   nextoffnum,
 											   next_xmin));
 				else if (xmin_commit_status[nextoffnum] == XID_COMMITTED)
 					report_corruption(&ctx,
 									  psprintf("tuple with aborted xmin %u was updated to produce a tuple at offset %d with committed xmin %u",
 											   curr_xmin,
-											   ctx.offnum,
+											   nextoffnum,
 											   next_xmin));
 			}
 		}
