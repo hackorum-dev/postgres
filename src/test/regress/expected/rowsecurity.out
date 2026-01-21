@@ -406,6 +406,124 @@ SELECT * FROM pg_policies WHERE schemaname = 'regress_rls_schema' AND tablename 
  regress_rls_schema | document  | p2r        | RESTRICTIVE | {regress_rls_dave} | ALL | ((cid <> 44) AND (cid < 50))               | 
 (3 rows)
 
+--whole-row on policy USING qual, CREATE TABLE LIKE should fail
+CREATE POLICY p2 ON document AS PERMISSIVE USING (document IS NOT NULL);
+CREATE TABLE document0(LIKE document INCLUDING ALL);
+ERROR:  cannot convert whole-row table reference
+DETAIL:  Security policy "p2" contains a whole-row reference to table "document".
+DROP POLICY p2 ON document;
+--whole-row on policy WITH CHECK qual, CREATE TABLE LIKE should fail
+CREATE POLICY p2 ON document FOR INSERT WITH CHECK (document IS NOT NULL);
+CREATE TABLE document0(LIKE document INCLUDING ALL);
+ERROR:  cannot convert whole-row table reference
+DETAIL:  Security policy "p2" contains a whole-row reference to table "document".
+DROP POLICY p2 ON document;
+-- A deliberately complex policy used to test expression node mapping
+CREATE POLICY p4 ON document AS PERMISSIVE USING (document.cid IS NOT NULL AND
+    (WITH cte AS (SELECT uaccount IS NOT NULL FROM uaccount)
+     SELECT * FROM cte WHERE EXISTS
+     (SELECT category FROM category WHERE EXISTS
+        (SELECT uaccount FROM uaccount WHERE uaccount IS NULL))))
+    WITH CHECK (cid = (SELECT cid FROM document));
+COMMENT ON POLICY p1 ON document IS 'security policy p1 on table document';
+CREATE TABLE document1(a int, LIKE document INCLUDING ALL EXCLUDING POLICIES);
+--expect zero row
+SELECT true FROM pg_policies WHERE schemaname = 'regress_rls_schema' AND tablename = 'document1';
+ ?column? 
+----------
+(0 rows)
+
+BEGIN;
+DROP TYPE IF EXISTS lockmodes;
+NOTICE:  type "lockmodes" does not exist, skipping
+CREATE TYPE lockmodes as enum (
+ 'SIReadLock'
+,'AccessShareLock'
+,'RowShareLock'
+,'RowExclusiveLock'
+,'ShareUpdateExclusiveLock'
+,'ShareLock'
+,'ShareRowExclusiveLock'
+,'ExclusiveLock'
+,'AccessExclusiveLock'
+);
+CREATE OR REPLACE VIEW my_locks AS
+SELECT c.relname, MAX(mode::lockmodes) AS max_lockmode
+FROM pg_locks l JOIN pg_class c ON l.relation = c.oid
+  WHERE virtualtransaction = (
+  SELECT virtualtransaction
+  FROM pg_locks
+  WHERE transactionid = pg_current_xact_id()::xid)
+AND locktype = 'relation'
+AND relnamespace != (SELECT oid FROM pg_namespace WHERE nspname = 'pg_catalog')
+AND c.relname != 'my_locks'
+AND c.relname NOT LIKE 'pg_toast%'
+GROUP BY c.relname
+ORDER BY c.relname;
+CREATE TABLE document2(prefix text, LIKE document INCLUDING COMMENTS INCLUDING POLICIES);
+SELECT * FROM my_locks;
+  relname  |    max_lockmode     
+-----------+---------------------
+ category  | AccessShareLock
+ document  | AccessShareLock
+ document2 | AccessExclusiveLock
+ uaccount  | AccessShareLock
+(4 rows)
+
+ROLLBACK;
+CREATE TABLE document2(prefix text, LIKE document INCLUDING COMMENTS INCLUDING POLICIES);
+SELECT  tablename, policyname, permissive, roles, cmd, qual, with_check
+FROM    pg_policies
+WHERE   schemaname = 'regress_rls_schema' AND tablename IN ('document', 'document2')
+ORDER BY policyname, tablename;
+ tablename | policyname | permissive  |       roles        | cmd |                               qual                                |           with_check           
+-----------+------------+-------------+--------------------+-----+-------------------------------------------------------------------+--------------------------------
+ document  | p1         | PERMISSIVE  | {public}           | ALL | (dlevel <= ( SELECT uaccount.seclv                               +| 
+           |            |             |                    |     |    FROM uaccount                                                 +| 
+           |            |             |                    |     |   WHERE (uaccount.pguser = CURRENT_USER)))                        | 
+ document2 | p1         | PERMISSIVE  | {public}           | ALL | (dlevel <= ( SELECT uaccount.seclv                               +| 
+           |            |             |                    |     |    FROM uaccount                                                 +| 
+           |            |             |                    |     |   WHERE (uaccount.pguser = CURRENT_USER)))                        | 
+ document  | p1r        | RESTRICTIVE | {regress_rls_dave} | ALL | (cid <> 44)                                                       | 
+ document2 | p1r        | RESTRICTIVE | {regress_rls_dave} | ALL | (cid <> 44)                                                       | 
+ document  | p2r        | RESTRICTIVE | {regress_rls_dave} | ALL | ((cid <> 44) AND (cid < 50))                                      | 
+ document2 | p2r        | RESTRICTIVE | {regress_rls_dave} | ALL | ((cid <> 44) AND (cid < 50))                                      | 
+ document  | p4         | PERMISSIVE  | {public}           | ALL | ((cid IS NOT NULL) AND ( WITH cte AS (                           +| (cid = ( SELECT document_1.cid+
+           |            |             |                    |     |          SELECT (uaccount.* IS NOT NULL) AS "?column?"           +|    FROM document document_1))
+           |            |             |                    |     |            FROM uaccount                                         +| 
+           |            |             |                    |     |         )                                                        +| 
+           |            |             |                    |     |  SELECT cte."?column?"                                           +| 
+           |            |             |                    |     |    FROM cte                                                      +| 
+           |            |             |                    |     |   WHERE (EXISTS ( SELECT category.*::category AS category        +| 
+           |            |             |                    |     |            FROM category                                         +| 
+           |            |             |                    |     |           WHERE (EXISTS ( SELECT uaccount.*::uaccount AS uaccount+| 
+           |            |             |                    |     |                    FROM uaccount                                 +| 
+           |            |             |                    |     |                   WHERE (uaccount.* IS NULL)))))))                | 
+ document2 | p4         | PERMISSIVE  | {public}           | ALL | ((cid IS NOT NULL) AND ( WITH cte AS (                           +| (cid = ( SELECT document.cid  +
+           |            |             |                    |     |          SELECT (uaccount.* IS NOT NULL) AS "?column?"           +|    FROM document))
+           |            |             |                    |     |            FROM uaccount                                         +| 
+           |            |             |                    |     |         )                                                        +| 
+           |            |             |                    |     |  SELECT cte."?column?"                                           +| 
+           |            |             |                    |     |    FROM cte                                                      +| 
+           |            |             |                    |     |   WHERE (EXISTS ( SELECT category.*::category AS category        +| 
+           |            |             |                    |     |            FROM category                                         +| 
+           |            |             |                    |     |           WHERE (EXISTS ( SELECT uaccount.*::uaccount AS uaccount+| 
+           |            |             |                    |     |                    FROM uaccount                                 +| 
+           |            |             |                    |     |                   WHERE (uaccount.* IS NULL)))))))                | 
+(8 rows)
+
+SELECT pd.description, pc.relname
+FROM  pg_description pd JOIN pg_policy pp ON pp.oid = pd.objoid AND pp.tableoid = pd.classoid
+JOIN  pg_class pc ON pc.oid = pp.polrelid
+WHERE relname IN ('document', 'document1', 'document2')
+ORDER BY relname COLLATE "C";
+             description              |  relname  
+--------------------------------------+-----------
+ security policy p1 on table document | document
+ security policy p1 on table document | document2
+(2 rows)
+
+DROP POLICY p4 ON document;
 -- viewpoint from regress_rls_bob
 SET SESSION AUTHORIZATION regress_rls_bob;
 SET row_security TO ON;
@@ -1227,6 +1345,16 @@ SELECT * FROM pg_policies WHERE schemaname = 'regress_rls_schema' AND tablename 
                     |               |            |             |                    |     |    FROM uaccount                          +| 
                     |               |            |             |                    |     |   WHERE (uaccount.pguser = CURRENT_USER))) | 
  regress_rls_schema | part_document | pp1r       | RESTRICTIVE | {regress_rls_dave} | ALL | (cid < 55)                                 | 
+(2 rows)
+
+CREATE TABLE part_document_copy(LIKE part_document INCLUDING POLICIES);
+SELECT * FROM pg_policies WHERE schemaname = 'regress_rls_schema' AND tablename = 'part_document_copy' ORDER BY policyname;
+     schemaname     |     tablename      | policyname | permissive  |       roles        | cmd |                    qual                    | with_check 
+--------------------+--------------------+------------+-------------+--------------------+-----+--------------------------------------------+------------
+ regress_rls_schema | part_document_copy | pp1        | PERMISSIVE  | {public}           | ALL | (dlevel <= ( SELECT uaccount.seclv        +| 
+                    |                    |            |             |                    |     |    FROM uaccount                          +| 
+                    |                    |            |             |                    |     |   WHERE (uaccount.pguser = CURRENT_USER))) | 
+ regress_rls_schema | part_document_copy | pp1r       | RESTRICTIVE | {regress_rls_dave} | ALL | (cid < 55)                                 | 
 (2 rows)
 
 -- viewpoint from regress_rls_bob
@@ -4288,6 +4416,17 @@ SELECT attname, most_common_vals FROM pg_stats
 BEGIN;
 CREATE TABLE coll_t (c) AS VALUES ('bar'::text);
 CREATE POLICY coll_p ON coll_t USING (c < ('foo'::text COLLATE "C"));
+-- coll_t1 row security is not enabled, but we still copy it's policy
+CREATE TABLE coll_t1(LIKE coll_t INCLUDING POLICIES);
+\d coll_t1
+       Table "regress_rls_schema.coll_t1"
+ Column | Type | Collation | Nullable | Default 
+--------+------+-----------+----------+---------
+ c      | text |           |          | 
+Policies (row security disabled):
+    POLICY "coll_p"
+      USING ((c < ('foo'::text COLLATE "C")))
+
 ALTER TABLE coll_t ENABLE ROW LEVEL SECURITY;
 GRANT SELECT ON coll_t TO regress_rls_alice;
 SELECT (string_to_array(polqual, ':'))[7] AS inputcollid FROM pg_policy WHERE polrelid = 'coll_t'::regclass;
@@ -5105,12 +5244,15 @@ drop table rls_t, test_t;
 --
 RESET SESSION AUTHORIZATION;
 DROP SCHEMA regress_rls_schema CASCADE;
-NOTICE:  drop cascades to 30 other objects
+NOTICE:  drop cascades to 33 other objects
 DETAIL:  drop cascades to function f_leak(text)
 drop cascades to table uaccount
 drop cascades to table category
 drop cascades to table document
+drop cascades to table document1
+drop cascades to table document2
 drop cascades to table part_document
+drop cascades to table part_document_copy
 drop cascades to table dependent
 drop cascades to table rec1
 drop cascades to table rec2

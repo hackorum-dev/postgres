@@ -253,6 +253,8 @@ CREATE TABLE ctl_table(a int PRIMARY KEY,
 
 CREATE INDEX ctl_table_a_key ON ctl_table(a);
 COMMENT ON COLUMN ctl_table.b IS 'Column b';
+ALTER TABLE ctl_table ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p1 ON ctl_table AS PERMISSIVE USING (c =2);
 CREATE STATISTICS ctl_table_stat ON a,b FROM ctl_table;
 ALTER TABLE ctl_table ADD CONSTRAINT foo CHECK (b = 'text');
 ALTER TABLE ctl_table ALTER COLUMN b SET STORAGE MAIN;
@@ -268,7 +270,7 @@ SELECT attname, attcompression FROM pg_attribute
   WHERE attrelid = 'ctl_foreign_table1'::regclass and attnum > 0 ORDER BY attnum;
 
 -- Test INCLUDING ALL
--- INDEXES, IDENTITY, COMPRESSION, STORAGE are not copied.
+-- INDEXES, IDENTITY, COMPRESSION, POLICIES, STORAGE are not copied.
 CREATE FOREIGN TABLE ctl_foreign_table2(LIKE ctl_table INCLUDING ALL) SERVER ctl_s0;
 \d+ ctl_foreign_table2
 -- \d+ does not report the value of attcompression for a foreign table, so

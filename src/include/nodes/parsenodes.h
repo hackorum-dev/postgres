@@ -795,6 +795,7 @@ typedef enum TableLikeOption
 	CREATE_TABLE_LIKE_INDEXES = 1 << 6,
 	CREATE_TABLE_LIKE_STATISTICS = 1 << 7,
 	CREATE_TABLE_LIKE_STORAGE = 1 << 8,
+	CREATE_TABLE_LIKE_POLICIES = 1 << 9,
 	CREATE_TABLE_LIKE_ALL = PG_INT32_MAX
 } TableLikeOption;
 
@@ -3100,6 +3101,16 @@ typedef struct CreatePolicyStmt
 	List	   *roles;			/* the roles associated with the policy */
 	Node	   *qual;			/* the policy's condition */
 	Node	   *with_check;		/* the policy's WITH CHECK condition. */
+	bool		transformed;	/* true means parsing analysis of the policy's
+								 * USING, WITH CHECK qual has finished */
+	char	   *policycomment;	/* comment to apply to policies, or NULL */
+
+	/*
+	 * List of roles OID associated with this policy. Either this is NIL or
+	 * CreatePolicyStmt->roles is NIL. This field is used only for command
+	 * CREATE TABLE LIKE INCLUDING POLICIES.
+	 */
+	List	   *rolesId;
 } CreatePolicyStmt;
 
 /*----------------------

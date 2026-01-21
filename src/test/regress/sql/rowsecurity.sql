@@ -250,6 +250,78 @@ CREATE POLICY p1r ON document AS RESTRICTIVE TO regress_rls_dave
 \d document
 SELECT * FROM pg_policies WHERE schemaname = 'regress_rls_schema' AND tablename = 'document' ORDER BY policyname;
 
+--whole-row on policy USING qual, CREATE TABLE LIKE should fail
+CREATE POLICY p2 ON document AS PERMISSIVE USING (document IS NOT NULL);
+CREATE TABLE document0(LIKE document INCLUDING ALL);
+DROP POLICY p2 ON document;
+
+--whole-row on policy WITH CHECK qual, CREATE TABLE LIKE should fail
+CREATE POLICY p2 ON document FOR INSERT WITH CHECK (document IS NOT NULL);
+CREATE TABLE document0(LIKE document INCLUDING ALL);
+DROP POLICY p2 ON document;
+
+-- A deliberately complex policy used to test expression node mapping
+CREATE POLICY p4 ON document AS PERMISSIVE USING (document.cid IS NOT NULL AND
+    (WITH cte AS (SELECT uaccount IS NOT NULL FROM uaccount)
+     SELECT * FROM cte WHERE EXISTS
+     (SELECT category FROM category WHERE EXISTS
+        (SELECT uaccount FROM uaccount WHERE uaccount IS NULL))))
+    WITH CHECK (cid = (SELECT cid FROM document));
+
+COMMENT ON POLICY p1 ON document IS 'security policy p1 on table document';
+CREATE TABLE document1(a int, LIKE document INCLUDING ALL EXCLUDING POLICIES);
+
+--expect zero row
+SELECT true FROM pg_policies WHERE schemaname = 'regress_rls_schema' AND tablename = 'document1';
+
+BEGIN;
+DROP TYPE IF EXISTS lockmodes;
+CREATE TYPE lockmodes as enum (
+ 'SIReadLock'
+,'AccessShareLock'
+,'RowShareLock'
+,'RowExclusiveLock'
+,'ShareUpdateExclusiveLock'
+,'ShareLock'
+,'ShareRowExclusiveLock'
+,'ExclusiveLock'
+,'AccessExclusiveLock'
+);
+
+CREATE OR REPLACE VIEW my_locks AS
+SELECT c.relname, MAX(mode::lockmodes) AS max_lockmode
+FROM pg_locks l JOIN pg_class c ON l.relation = c.oid
+  WHERE virtualtransaction = (
+  SELECT virtualtransaction
+  FROM pg_locks
+  WHERE transactionid = pg_current_xact_id()::xid)
+AND locktype = 'relation'
+AND relnamespace != (SELECT oid FROM pg_namespace WHERE nspname = 'pg_catalog')
+AND c.relname != 'my_locks'
+AND c.relname NOT LIKE 'pg_toast%'
+GROUP BY c.relname
+ORDER BY c.relname;
+
+CREATE TABLE document2(prefix text, LIKE document INCLUDING COMMENTS INCLUDING POLICIES);
+
+SELECT * FROM my_locks;
+ROLLBACK;
+
+CREATE TABLE document2(prefix text, LIKE document INCLUDING COMMENTS INCLUDING POLICIES);
+
+SELECT  tablename, policyname, permissive, roles, cmd, qual, with_check
+FROM    pg_policies
+WHERE   schemaname = 'regress_rls_schema' AND tablename IN ('document', 'document2')
+ORDER BY policyname, tablename;
+
+SELECT pd.description, pc.relname
+FROM  pg_description pd JOIN pg_policy pp ON pp.oid = pd.objoid AND pp.tableoid = pd.classoid
+JOIN  pg_class pc ON pc.oid = pp.polrelid
+WHERE relname IN ('document', 'document1', 'document2')
+ORDER BY relname COLLATE "C";
+
+DROP POLICY p4 ON document;
+
 -- viewpoint from regress_rls_bob
 SET SESSION AUTHORIZATION regress_rls_bob;
 SET row_security TO ON;
@@ -496,6 +568,8 @@ CREATE POLICY pp1r ON part_document AS RESTRICTIVE TO regress_rls_dave
 
 \d+ part_document
 SELECT * FROM pg_policies WHERE schemaname = 'regress_rls_schema' AND tablename like '%part_document%' ORDER BY policyname;
+CREATE TABLE part_document_copy(LIKE part_document INCLUDING POLICIES);
+SELECT * FROM pg_policies WHERE schemaname = 'regress_rls_schema' AND tablename = 'part_document_copy' ORDER BY policyname;
 
 -- viewpoint from regress_rls_bob
 SET SESSION AUTHORIZATION regress_rls_bob;
@@ -1912,6 +1986,11 @@ SELECT attname, most_common_vals FROM pg_stats
 BEGIN;
 CREATE TABLE coll_t (c) AS VALUES ('bar'::text);
 CREATE POLICY coll_p ON coll_t USING (c < ('foo'::text COLLATE "C"));
+
+-- coll_t1 row security is not enabled, but we still copy it's policy
+CREATE TABLE coll_t1(LIKE coll_t INCLUDING POLICIES);
+\d coll_t1
+
 ALTER TABLE coll_t ENABLE ROW LEVEL SECURITY;
 GRANT SELECT ON coll_t TO regress_rls_alice;
 SELECT (string_to_array(polqual, ':'))[7] AS inputcollid FROM pg_policy WHERE polrelid = 'coll_t'::regclass;

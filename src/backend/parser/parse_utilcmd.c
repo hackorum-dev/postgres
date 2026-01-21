@@ -38,10 +38,12 @@
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
+#include "catalog/pg_policy.h"
 #include "catalog/pg_statistic_ext.h"
 #include "catalog/pg_type.h"
 #include "commands/comment.h"
 #include "commands/defrem.h"
+#include "commands/policy.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
@@ -62,8 +64,10 @@
 #include "partitioning/partbounds.h"
 #include "partitioning/partdesc.h"
 #include "rewrite/rewriteManip.h"
+#include "storage/lmgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/partcache.h"
 #include "utils/rel.h"
@@ -123,6 +127,11 @@ static CreateStatsStmt *generateClonedExtStatsStmt(RangeVar *heapRel,
 												   Oid heapRelid,
 												   Oid source_statsid,
 												   const AttrMap *attmap);
+static CreatePolicyStmt *generateClonedPolicyStmt(RangeVar *heapRel,
+												  Relation parent_rel,
+												  Relation pg_policy,
+												  HeapTuple poltup,
+												  const AttrMap *attmap);
 static List *get_collation(Oid collation, Oid actual_datatype);
 static List *get_opclass(Oid opclass, Oid actual_datatype);
 static void transformIndexConstraints(CreateStmtContext *cxt);
@@ -1122,8 +1131,8 @@ transformTableConstraint(CreateStmtContext *cxt, Constraint *constraint)
  * table has been created.
  *
  * Some options are ignored.  For example, as foreign tables have no storage,
- * these INCLUDING options have no effect: STORAGE, COMPRESSION, IDENTITY
- * and INDEXES.  Similarly, INCLUDING INDEXES is ignored from a view.
+ * these INCLUDING options have no effect: STORAGE, COMPRESSION, IDENTITY,
+ * POLICIES, and INDEXES.  Similarly, INCLUDING INDEXES is ignored from a view.
  */
 static void
 transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_clause)
@@ -1307,8 +1316,8 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 	}
 
 	/*
-	 * We cannot yet deal with defaults, CHECK constraints, indexes, or
-	 * statistics, since we don't yet know what column numbers the copied
+	 * We cannot yet deal with defaults, CHECK constraints, indexes, policies
+	 * or statistics, since we don't yet know what column numbers the copied
 	 * columns will have in the finished table.  If any of those options are
 	 * specified, add the LIKE clause to cxt->likeclauses so that
 	 * expandTableLikeClause will be called after we do know that.
@@ -1321,7 +1330,8 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 		 CREATE_TABLE_LIKE_GENERATED |
 		 CREATE_TABLE_LIKE_CONSTRAINTS |
 		 CREATE_TABLE_LIKE_INDEXES |
-		 CREATE_TABLE_LIKE_STATISTICS))
+		 CREATE_TABLE_LIKE_STATISTICS |
+		 CREATE_TABLE_LIKE_POLICIES))
 	{
 		table_like_clause->relationOid = RelationGetRelid(relation);
 		cxt->likeclauses = lappend(cxt->likeclauses, table_like_clause);
@@ -1585,6 +1595,83 @@ expandTableLikeClause(RangeVar *heapRel, TableLikeClause *table_like_clause)
 
 			index_close(parent_index, AccessShareLock);
 		}
+	}
+
+	/*
+	 * Process table row level security policies if required.
+	 */
+	if (table_like_clause->options & CREATE_TABLE_LIKE_POLICIES &&
+		childrel->rd_rel->relkind != RELKIND_FOREIGN_TABLE)
+	{
+		List	   *polrels = NIL;
+		ScanKeyData skey;
+		SysScanDesc sscan;
+		HeapTuple	tuple;
+		CreatePolicyStmt *polstmt;
+
+		/*
+		 * Scan pg_policy for any RLS policies defined on the source relation.
+		 * The order of visiting the policies does not matter, since we are
+		 * copying all of them to the new target relation.
+		 */
+		Relation	pg_policy = table_open(PolicyRelationId,
+										   AccessShareLock);
+
+		ScanKeyInit(&skey,
+					Anum_pg_policy_polrelid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(RelationGetRelid(relation)));
+		sscan = systable_beginscan(pg_policy,
+								   PolicyPolrelidPolnameIndexId, true,
+								   NULL,
+								   1,
+								   &skey);
+
+		while (HeapTupleIsValid(tuple = systable_getnext(sscan)))
+		{
+			Form_pg_policy policy_form = (Form_pg_policy) GETSTRUCT(tuple);
+
+			polrels = PolicyGetRelations(policy_form->oid);
+
+			/*
+			 * Acquire AccessShareLock on all tables referenced in the
+			 * policy's USING or WITH CHECK qualifiers. These locks are held
+			 * until transaction commit to prevent concurrent DROP or ALTER
+			 * operations on the referenced tables before the child is
+			 * committed.
+			 *
+			 * The source table is being locked already, so no need for it.
+			 */
+			foreach_oid(refrelid, polrels)
+			{
+				if (refrelid != RelationGetRelid(relation))
+					LockRelationOid(refrelid, AccessShareLock);
+			}
+
+			polstmt = generateClonedPolicyStmt(heapRel,
+											   relation,
+											   pg_policy,
+											   tuple,
+											   attmap);
+
+			/* Copy comment on policies object, if requested */
+			if (table_like_clause->options & CREATE_TABLE_LIKE_COMMENTS)
+			{
+				comment = GetComment(policy_form->oid, PolicyRelationId, 0);
+
+				/*
+				 * We make use of CreatePolicyStmt's policycomment option, so
+				 * as not to need to know now what name the policies will
+				 * have.
+				 */
+				polstmt->policycomment = comment;
+			}
+
+			result = lappend(result, polstmt);
+		}
+		systable_endscan(sscan);
+
+		table_close(pg_policy, AccessShareLock);
 	}
 
 	/*
@@ -2040,6 +2127,124 @@ generateClonedIndexStmt(RangeVar *heapRel, Relation source_idx,
 	ReleaseSysCache(ht_am);
 
 	return index;
+}
+
+/*
+ * Generate a CreatePolicyStmt node using information from an already existing
+ * pg_policy tuple "poltup", which is owned by parent_rel.
+ *
+ * Attribute numbers in expression Vars are adjusted according to attmap.
+ */
+static CreatePolicyStmt *
+generateClonedPolicyStmt(RangeVar *heapRel, Relation parent_rel, Relation pg_policy,
+						 HeapTuple poltup, const AttrMap *attmap)
+{
+	Datum		datum;
+	bool		isnull;
+	char	   *str_value;
+	Oid		   *rawarr;
+	ArrayType  *arr;
+	int			numkeys;
+	bool		found_whole_row;
+
+	Form_pg_policy policy_form = (Form_pg_policy) GETSTRUCT(poltup);
+
+	CreatePolicyStmt *polstmt = makeNode(CreatePolicyStmt);
+
+	if (heapRel->schemaname == NULL)
+		elog(ERROR, "table name \"%s\" must be schema-qualified",
+			 heapRel->relname);
+
+	polstmt->policy_name = pstrdup(NameStr(policy_form->polname));
+	polstmt->table = heapRel;
+	polstmt->cmd_name = get_policy_applied_command(policy_form->polcmd);
+	polstmt->permissive = policy_form->polpermissive;
+	polstmt->roles = NIL;
+	polstmt->rolesId = NIL;
+
+	/* Get policy roles */
+	datum = heap_getattr(poltup, Anum_pg_policy_polroles,
+						 RelationGetDescr(pg_policy),
+						 &isnull);
+	/* shouldn't be null, but let's check for luck */
+	if (isnull)
+		elog(ERROR, "unexpected null value in pg_policy.polroles");
+
+	arr = DatumGetArrayTypeP(datum);
+	if (ARR_NDIM(arr) != 1 ||
+		ARR_HASNULL(arr) ||
+		ARR_ELEMTYPE(arr) != OIDOID)
+		elog(ERROR, "policy roles is not a 1-D Oid array");
+	rawarr = (Oid *) ARR_DATA_PTR(arr);
+	numkeys = ARR_DIMS(arr)[0];
+
+	/* stash a List of the role Oids in our CreatePolicyStmt node */
+	for (int i = 0; i < numkeys; i++)
+		polstmt->rolesId = lappend_oid(polstmt->rolesId, rawarr[i]);
+
+	/* Get policy USING qual */
+	datum = heap_getattr(poltup, Anum_pg_policy_polqual,
+						 RelationGetDescr(pg_policy),
+						 &isnull);
+	if (!isnull)
+	{
+		str_value = TextDatumGetCString(datum);
+
+		polstmt->qual = stringToNode(str_value);
+
+		/* Adjust Vars to match new table's column numbering */
+		polstmt->qual = map_variable_attnos(polstmt->qual,
+											1, 0,
+											attmap,
+											InvalidOid,
+											&found_whole_row);
+
+		/* As in expandTableLikeClause, reject whole-row variables */
+		if (found_whole_row)
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot convert whole-row table reference"),
+					errdetail("Security policy \"%s\" contains a whole-row reference to table \"%s\".",
+							  NameStr(policy_form->polname),
+							  RelationGetRelationName(parent_rel)));
+		pfree(str_value);
+	}
+
+	/* Get policy WITH CHECK qual */
+	datum = heap_getattr(poltup, Anum_pg_policy_polwithcheck,
+						 RelationGetDescr(pg_policy),
+						 &isnull);
+	if (!isnull)
+	{
+		str_value = TextDatumGetCString(datum);
+
+		polstmt->with_check = stringToNode(str_value);
+
+		/* Adjust Vars to match new table's column numbering */
+		polstmt->with_check = map_variable_attnos(polstmt->with_check,
+												  1, 0,
+												  attmap,
+												  InvalidOid,
+												  &found_whole_row);
+
+		/* As in expandTableLikeClause, reject whole-row variables */
+		if (found_whole_row)
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot convert whole-row table reference"),
+					errdetail("Security policy \"%s\" contains a whole-row reference to table \"%s\".",
+							  NameStr(policy_form->polname),
+							  RelationGetRelationName(parent_rel)));
+		pfree(str_value);
+	}
+
+	/*
+	 * Avoid re-running parse analysis: the source policy quals have already
+	 * been processed, copied, and mapped to the target relation context.
+	 */
+	polstmt->transformed = true;
+
+	return polstmt;
 }
 
 /*

@@ -766,7 +766,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	OVER OVERLAPS OVERLAY OVERRIDING OWNED OWNER
 
 	PARALLEL PARAMETER PARSER PARTIAL PARTITION PARTITIONS PASSING PASSWORD PATH
-	PERIOD PLACING PLAN PLANS POLICY
+	PERIOD PLACING PLAN PLANS POLICIES POLICY
 	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
 	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROCEDURES PROGRAM PUBLICATION
 
@@ -4294,6 +4294,7 @@ TableLikeOption:
 				| IDENTITY_P		{ $$ = CREATE_TABLE_LIKE_IDENTITY; }
 				| GENERATED			{ $$ = CREATE_TABLE_LIKE_GENERATED; }
 				| INDEXES			{ $$ = CREATE_TABLE_LIKE_INDEXES; }
+				| POLICIES			{ $$ = CREATE_TABLE_LIKE_POLICIES; }
 				| STATISTICS		{ $$ = CREATE_TABLE_LIKE_STATISTICS; }
 				| STORAGE			{ $$ = CREATE_TABLE_LIKE_STORAGE; }
 				| ALL				{ $$ = CREATE_TABLE_LIKE_ALL; }
@@ -6028,6 +6029,9 @@ CreatePolicyStmt:
 					n->roles = $8;
 					n->qual = $9;
 					n->with_check = $10;
+					n->transformed = false;
+					n->policycomment = NULL;
+					n->rolesId = NIL;
 					$$ = (Node *) n;
 				}
 		;
@@ -18102,6 +18106,7 @@ unreserved_keyword:
 			| PERIOD
 			| PLAN
 			| PLANS
+			| POLICIES
 			| POLICY
 			| PRECEDING
 			| PREPARE
@@ -18735,6 +18740,7 @@ bare_label_keyword:
 			| PLACING
 			| PLAN
 			| PLANS
+			| POLICIES
 			| POLICY
 			| POSITION
 			| PRECEDING

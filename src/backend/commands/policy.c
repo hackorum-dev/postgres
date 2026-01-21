@@ -24,8 +24,10 @@
 #include "catalog/namespace.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_authid.h"
+#include "catalog/pg_depend.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_type.h"
+#include "commands/comment.h"
 #include "commands/policy.h"
 #include "miscadmin.h"
 #include "nodes/pg_list.h"
@@ -612,8 +614,22 @@ CreatePolicy(CreatePolicyStmt *stmt)
 				 errmsg("only WITH CHECK expression allowed for INSERT")));
 
 	/* Collect role ids */
-	role_oids = policy_role_list_to_array(stmt->roles, &nitems);
-	role_ids = construct_array_builtin(role_oids, nitems, OIDOID);
+	if (stmt->roles != NIL)
+	{
+		role_oids = policy_role_list_to_array(stmt->roles, &nitems);
+		role_ids = construct_array_builtin(role_oids, nitems, OIDOID);
+	}
+	else
+	{
+		Assert(stmt->rolesId != NIL);
+		nitems = list_length(stmt->rolesId);
+
+		role_oids = (Datum *) palloc(nitems * sizeof(Datum));
+		foreach_oid(roleoid, stmt->rolesId)
+			role_oids[foreach_current_index(roleoid)] = ObjectIdGetDatum(roleoid);
+
+		role_ids = construct_array_builtin(role_oids, nitems, OIDOID);
+	}
 
 	/* Parse the supplied clause */
 	qual_pstate = make_parsestate(NULL);
@@ -644,19 +660,27 @@ CreatePolicy(CreatePolicyStmt *stmt)
 										   NULL, false, false);
 	addNSItemToQuery(with_check_pstate, nsitem, false, true, true);
 
-	qual = transformWhereClause(qual_pstate,
-								stmt->qual,
-								EXPR_KIND_POLICY,
-								"POLICY");
+	if (stmt->transformed)
+	{
+		qual = stmt->qual;
+		with_check_qual = stmt->with_check;
+	}
+	else
+	{
+		qual = transformWhereClause(qual_pstate,
+									stmt->qual,
+									EXPR_KIND_POLICY,
+									"POLICY");
 
-	with_check_qual = transformWhereClause(with_check_pstate,
-										   stmt->with_check,
-										   EXPR_KIND_POLICY,
-										   "POLICY");
+		with_check_qual = transformWhereClause(with_check_pstate,
+											   stmt->with_check,
+											   EXPR_KIND_POLICY,
+											   "POLICY");
 
-	/* Fix up collation information */
-	assign_expr_collations(qual_pstate, qual);
-	assign_expr_collations(with_check_pstate, with_check_qual);
+		/* Fix up collation information */
+		assign_expr_collations(qual_pstate, qual);
+		assign_expr_collations(with_check_pstate, with_check_qual);
+	}
 
 	/* Open pg_policy catalog */
 	pg_policy_rel = table_open(PolicyRelationId, RowExclusiveLock);
@@ -754,6 +778,11 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	systable_endscan(sscan);
 	relation_close(target_table, NoLock);
 	table_close(pg_policy_rel, RowExclusiveLock);
+
+	/* Add any requested comment */
+	if (stmt->policycomment != NULL)
+		CreateComments(policy_id, PolicyRelationId, 0,
+					   stmt->policycomment);
 
 	return myself;
 }
@@ -1276,4 +1305,78 @@ relation_has_policies(Relation rel)
 	table_close(catalog, AccessShareLock);
 
 	return ret;
+}
+
+/*
+ * PolicyGetRelations -
+ *
+ * Collect all relations that this policy depends on.
+ *
+ * The policy's USING or WITH CHECK qualifiers may reference other relations,
+ * such relations are included as well.
+ */
+List *
+PolicyGetRelations(Oid policyId)
+{
+	List	   *result = NIL;
+	Relation	depRel;
+	ScanKeyData key[2];
+	SysScanDesc depScan;
+	HeapTuple	depTup;
+
+	/*
+	 * We scan pg_depend to find those things that policy being depended on.
+	 */
+	depRel = table_open(DependRelationId, AccessShareLock);
+
+	ScanKeyInit(&key[0],
+				Anum_pg_depend_classid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(PolicyRelationId));
+	ScanKeyInit(&key[1],
+				Anum_pg_depend_objid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(policyId));
+
+	depScan = systable_beginscan(depRel, DependDependerIndexId, true,
+								 NULL,
+								 2,
+								 key);
+	while (HeapTupleIsValid(depTup = systable_getnext(depScan)))
+	{
+		Form_pg_depend pg_depend = (Form_pg_depend) GETSTRUCT(depTup);
+
+		if (pg_depend->refclassid == RelationRelationId &&
+			!list_member_oid(result, pg_depend->refobjid))
+		{
+			result = lappend_oid(result, pg_depend->refobjid);
+		}
+	}
+	systable_endscan(depScan);
+
+	relation_close(depRel, AccessShareLock);
+
+	Assert(result != NIL);
+
+	return result;
+}
+
+char *
+get_policy_applied_command(char polcmd)
+{
+	if (polcmd == '*')
+		return pstrdup("all");
+	else if (polcmd == ACL_SELECT_CHR)
+		return pstrdup("select");
+	else if (polcmd == ACL_INSERT_CHR)
+		return pstrdup("insert");
+	else if (polcmd == ACL_UPDATE_CHR)
+		return pstrdup("update");
+	else if (polcmd == ACL_DELETE_CHR)
+		return pstrdup("delete");
+	else
+	{
+		elog(ERROR, "unrecognized policy command");
+		return NULL;
+	}
 }
