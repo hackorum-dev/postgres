@@ -1922,7 +1922,7 @@ psql_completion(const char *text, int start, int end)
 		"\\connect", "\\conninfo", "\\C", "\\cd", "\\close_prepared", "\\copy",
 		"\\copyright", "\\crosstabview",
 		"\\d", "\\da", "\\dA", "\\dAc", "\\dAf", "\\dAo", "\\dAp",
-		"\\db", "\\dc", "\\dconfig", "\\dC", "\\dd", "\\ddp", "\\dD",
+		"\\db", "\\dc", "\\dconfig", "\\dC", "\\dCN", "\\dd", "\\ddp", "\\dD",
 		"\\des", "\\det", "\\deu", "\\dew", "\\dE", "\\df",
 		"\\dF", "\\dFd", "\\dFp", "\\dFt", "\\dg", "\\di", "\\dl", "\\dL",
 		"\\dm", "\\dn", "\\do", "\\dO", "\\dp", "\\dP", "\\dPi", "\\dPt",
@@ -5649,6 +5649,8 @@ match_previous_words(int pattern_id,
 		COMPLETE_WITH_QUERY(Query_for_list_of_tablespaces);
 	else if (TailMatchesCS("\\dconfig*"))
 		COMPLETE_WITH_QUERY_VERBATIM(Query_for_list_of_show_vars);
+	else if (TailMatchesCS("\\dCN*"))
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_constraints_with_schema);
 	else if (TailMatchesCS("\\dD*"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_domains);
 	else if (TailMatchesCS("\\des*"))
