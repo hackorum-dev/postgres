@@ -86,6 +86,10 @@ extern bool describeConfigurationParameters(const char *pattern, bool verbose,
 /* \dC */
 extern bool listCasts(const char *pattern, bool verbose);
 
+/* \dCN */
+extern bool listConstraints(const char *contypes, const char *pattern, bool verbose,
+							bool showSystem);
+
 /* \dO */
 extern bool listCollations(const char *pattern, bool verbose, bool showSystem);
 

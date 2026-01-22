@@ -5143,6 +5143,153 @@ error_return:
 }
 
 /*
+ * \dCN
+ * Describes constraints
+ *
+ * As with \d, you can specify the kinds of constraints you want:
+ *
+ * c for check
+ * f for foreign key
+ * n for not null
+ * p for primary key
+ * t for trigger
+ * u for unique
+ * e for exclusion
+ *
+ * and you can mix and match these in any order.
+ */
+bool
+listConstraints(const char *contypes, const char *pattern, bool verbose, bool showSystem)
+{
+	const char *dCN_options = "cfnptueSx+";
+	bool		showCheck = strchr(contypes, CONSTRAINT_CHECK) != NULL;
+	bool		showForeign = strchr(contypes, CONSTRAINT_FOREIGN) != NULL;
+	bool		showNotnull = strchr(contypes, CONSTRAINT_NOTNULL) != NULL;
+	bool		showPrimary = strchr(contypes, CONSTRAINT_PRIMARY) != NULL;
+	bool		showTrigger = strchr(contypes, CONSTRAINT_TRIGGER) != NULL;
+	bool		showUnique = strchr(contypes, CONSTRAINT_UNIQUE) != NULL;
+				/* 'x' is already used for expanded display, so use 'e' instead */
+	bool		showExclusion = strchr(contypes, 'e') != NULL;
+	bool		showAllkinds;
+	PQExpBufferData buf;
+	PGresult   *res;
+	printQueryOpt myopt = pset.popt;
+
+	if (strlen(contypes) != strspn(contypes, dCN_options))
+	{
+		pg_log_error("\\dCN only takes [cfnptue][Sx+] as options");
+		return true;
+	}
+
+	if (pset.sversion < 180000)
+	{
+		char		sverbuf[32];
+
+		pg_log_error("The server (version %s) does not support this meta-command on psql.",
+					 formatPGVersionNumber(pset.sversion, false,
+										   sverbuf, sizeof(sverbuf)));
+		return true;
+	}
+
+	/* If contypes were not selected, show them all */
+	showAllkinds = !(showCheck || showForeign || showNotnull || showPrimary || showTrigger || showUnique || showExclusion);
+
+	initPQExpBuffer(&buf);
+	printfPQExpBuffer(&buf,
+					  "SELECT n.nspname AS \"%s\", \n"
+					  "       c.relname AS \"%s\", \n"
+					  "       CASE cns.contype \n"
+					  "         WHEN " CppAsString2(CONSTRAINT_CHECK) " THEN 'check' \n"
+					  "         WHEN " CppAsString2(CONSTRAINT_FOREIGN) " THEN 'foreign key' \n"
+					  "         WHEN " CppAsString2(CONSTRAINT_NOTNULL) " THEN 'not-null' \n"
+					  "         WHEN " CppAsString2(CONSTRAINT_PRIMARY) " THEN 'primary key' \n"
+					  "         WHEN " CppAsString2(CONSTRAINT_TRIGGER) " THEN 'trigger' \n"
+					  "         WHEN " CppAsString2(CONSTRAINT_UNIQUE) " THEN 'unique' \n"
+					  "         WHEN " CppAsString2(CONSTRAINT_EXCLUSION) " THEN 'exclusion' \n"
+					  "       END AS \"%s\", \n"
+					  "       cns.conname AS \"%s\"",
+					  gettext_noop("Schema"),
+					  gettext_noop("Table"),
+					  gettext_noop("Type"),
+					  gettext_noop("Name")
+					 );
+
+	if (verbose)
+		appendPQExpBuffer(&buf,
+						  ",\n       pg_catalog.pg_get_constraintdef(cns.oid, true) AS \"%s\" ",
+						  gettext_noop("Definition")
+						 );
+
+	/*
+	 * conrelid <> 0: table constraints including column constraints
+	 * contypid > 0: domain constraints
+	 */
+	appendPQExpBufferStr(&buf,
+						 "\nFROM pg_catalog.pg_constraint cns \n"
+						 "     JOIN pg_catalog.pg_namespace n ON n.oid = cns.connamespace \n"
+						 "     LEFT JOIN pg_catalog.pg_type t ON t.oid = cns.contypid \n"
+						 "     LEFT JOIN pg_catalog.pg_class c on c.oid = cns.conrelid \n"
+						 "WHERE ((cns.conrelid <> 0 AND pg_catalog.pg_table_is_visible(cns.conrelid)) \n"
+						 "      OR (cns.contypid > 0 AND pg_catalog.pg_type_is_visible(t.oid))) \n"
+						);
+
+	if (!showSystem && !pattern)
+		appendPQExpBufferStr(&buf,
+							 "  AND n.nspname <> 'pg_catalog' \n"
+							 "  AND n.nspname <> 'information_schema' \n");
+
+	if (!validateSQLNamePattern(&buf, pattern,
+								true, false,
+								"n.nspname", "cns.conname", NULL,
+								NULL, NULL, 3))
+	{
+		termPQExpBuffer(&buf);
+		return false;
+	}
+
+	if (!showAllkinds)
+	{
+		appendPQExpBufferStr(&buf, "  AND cns.contype in (");
+
+		if (showCheck)
+			appendPQExpBufferStr(&buf, CppAsString2(CONSTRAINT_CHECK) ",");
+		if (showForeign)
+			appendPQExpBufferStr(&buf, CppAsString2(CONSTRAINT_FOREIGN) ",");
+		if (showNotnull)
+			appendPQExpBufferStr(&buf, CppAsString2(CONSTRAINT_NOTNULL) ",");
+		if (showPrimary)
+			appendPQExpBufferStr(&buf, CppAsString2(CONSTRAINT_PRIMARY) ",");
+		if (showTrigger)
+			appendPQExpBufferStr(&buf, CppAsString2(CONSTRAINT_TRIGGER) ",");
+		if (showUnique)
+			appendPQExpBufferStr(&buf, CppAsString2(CONSTRAINT_UNIQUE) ",");
+		if (showExclusion)
+			appendPQExpBufferStr(&buf, CppAsString2(CONSTRAINT_EXCLUSION) ",");
+
+		appendPQExpBufferStr(&buf, " ''");	/* dummy */
+		appendPQExpBufferStr(&buf, ")\n");
+	}
+
+	if (verbose)
+		appendPQExpBufferStr(&buf, "ORDER BY 1, 2, 3, 4, 5;");
+	else
+		appendPQExpBufferStr(&buf, "ORDER BY 1, 2, 3, 4;");
+
+	res = PSQLexec(buf.data);
+	termPQExpBuffer(&buf);
+	if (!res)
+		return false;
+
+	myopt.title = _("List of constraints");
+	myopt.translate_header = true;
+
+	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	PQclear(res);
+	return true;
+}
+
+/*
  * \dO
  *
  * Describes collations.
