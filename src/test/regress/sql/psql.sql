@@ -1369,6 +1369,149 @@ set work_mem = 10240;
 \dconfig+ work*
 reset work_mem;
 
+-- check \dCN
+CREATE TABLE con_c (
+    primary_col SERIAL PRIMARY KEY
+);
+
+CREATE TABLE con_p (
+    primary_col SERIAL PRIMARY KEY,
+    notnull_col TEXT NOT NULL,
+    check_col INT CHECK (check_col >= 0),
+    foreign_col INT REFERENCES con_c(primary_col),
+    unique_col TEXT UNIQUE,
+    exclusion_col INT,
+    CONSTRAINT con_p_exclusion EXCLUDE USING btree (exclusion_col WITH =)
+);
+
+CREATE OR REPLACE FUNCTION trigger_hoge() RETURNS TRIGGER AS $$
+  BEGIN
+    RETURN NULL;
+  END;
+  $$ LANGUAGE PLPGSQL;
+
+CREATE CONSTRAINT TRIGGER con_p_trigger AFTER INSERT ON con_p
+  FOR EACH ROW EXECUTE PROCEDURE trigger_hoge();
+
+
+---- \dCN shows constraints
+\dCN con_*
+\dCNcfnptue con_*
+\dCN+ con_*
+\dCNcfnptue+ con_*
+\dCNc con_*
+\dCNc+ con_*
+\dCNf con_*
+\dCNf+ con_*
+\dCNn con_*
+\dCNn+ con_*
+\dCNp con_*
+\dCNp+ con_*
+\dCNt con_*
+\dCNt+ con_*
+\dCNu con_*
+\dCNu+ con_*
+\dCNe con_*
+\dCNe+ con_*
+\dCNx con_*
+\dCNx+ con_*
+\dCNS pg_constraint*
+\dCNS+ pg_constraint*
+\dCNcfnpueS pg_constraint*
+\dCNcfnpueS+ pg_constraint*
+\dCNcfnpueS+x pg_constraint*
+\dCN pg_con*.
+
+---- domain
+---- table name is not displayed because conrelid is zero
+CREATE DOMAIN hoge_domain integer
+    DEFAULT 10
+    NOT NULL
+    CHECK (VALUE > 0 AND VALUE < 100);
+
+CREATE TABLE table_using_domain (
+    col hoge_domain PRIMARY KEY
+);
+
+\dCN+ hoge*
+
+---- type
+CREATE TABLE table_using_type(
+    a INT,
+    b int42 NOT NULL
+);
+
+\dCN+ table_using_type*
+
+---- Incorrect options will result in an error
+\dCNcz
+
+---- search_path
+CREATE SCHEMA con_schema;
+CREATE TABLE con_schema.con_schema_test (
+    primary_col SERIAL PRIMARY KEY
+);
+
+SET SEARCH_PATH TO public, con_schema;
+\dCN con_*
+\dCN con_*.con_*_pkey
+SET SEARCH_PATH TO public;
+\dCN con_*
+RESET search_path;
+
+---- inherits
+CREATE TABLE zoo_parent (
+  cage int PRIMARY KEY
+);
+
+CREATE TABLE zoo_child (
+    animal text
+) INHERITS (zoo_parent);
+
+\dCN+ zoo_parent_cage_not_null
+
+---- partitioned table
+CREATE TABLE zoo_part (
+    cage int,
+    animal text,
+    CONSTRAINT zoo_part_pk PRIMARY KEY (cage)
+) PARTITION BY RANGE (cage);
+
+CREATE TABLE zoo_part_1
+    PARTITION OF zoo_part
+    FOR VALUES FROM (0) TO (100);
+
+\dCN+ zoo_part*
+
+---- temporal constraints
+CREATE TABLE temporal_con_pk (
+    id int4range,
+    valid_at daterange,
+    PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)
+);
+
+CREATE TABLE temporal_con_uq (
+    id int4range,
+    valid_at daterange,
+    UNIQUE (id, valid_at WITHOUT OVERLAPS)
+);
+
+CREATE TABLE temporal_con_fk (
+  p_id int4range,
+  valid_at daterange,
+  FOREIGN KEY (p_id, PERIOD valid_at)
+    REFERENCES temporal_con_pk (id, PERIOD valid_at)
+);
+
+\dCN+ temporal_con_*
+
+-- clean up for \dCN test cases
+DROP SCHEMA con_schema CASCADE;
+DROP TABLE con_p, con_c, table_using_domain, table_using_type, zoo_parent, zoo_part CASCADE;
+DROP TABLE temporal_con_pk, temporal_con_uq, temporal_con_fk CASCADE;
+DROP FUNCTION trigger_hoge;
+DROP DOMAIN hoge_domain;
+
 -- check \df, \do with argument specifications
 \df *sqrt
 \df *sqrt num*
@@ -1717,6 +1860,8 @@ DROP FUNCTION psql_error;
 \dC host.regression.pg_catalog.int8
 \dC ).pg_catalog.int8
 \dC nonesuch.pg_catalog.int8
+\dCN host.regression.public.constraint
+\dCN nonesuch.public.constraint
 \dd host.regression.pg_catalog.pg_class
 \dd [.pg_catalog.pg_class
 \dd nonesuch.pg_catalog.pg_class
@@ -1815,6 +1960,7 @@ DROP FUNCTION psql_error;
 \db "no.such.tablespace"
 \dc "no.such.conversion"
 \dC "no.such.cast"
+\dCN "no.such.constraint"
 \dd "no.such.object.description"
 \dD "no.such.domain"
 \ddp "no.such.default.access.privilege"
@@ -1856,6 +2002,7 @@ DROP FUNCTION psql_error;
 \db "no.such.schema"."no.such.tablespace"
 \dc "no.such.schema"."no.such.conversion"
 \dC "no.such.schema"."no.such.cast"
+\dCN "no.such.schema"."no.such.constraint"
 \dd "no.such.schema"."no.such.object.description"
 \dD "no.such.schema"."no.such.domain"
 \ddp "no.such.schema"."no.such.default.access.privilege"
@@ -1890,6 +2037,7 @@ DROP FUNCTION psql_error;
 \da regression."no.such.schema"."no.such.aggregate.function"
 \dc regression."no.such.schema"."no.such.conversion"
 \dC regression."no.such.schema"."no.such.cast"
+\dCN regression."no.such.schema"."no.such.constraint"
 \dd regression."no.such.schema"."no.such.object.description"
 \dD regression."no.such.schema"."no.such.domain"
 \di regression."no.such.schema"."no.such.index.relation"
@@ -1914,6 +2062,7 @@ DROP FUNCTION psql_error;
 \da "no.such.database"."no.such.schema"."no.such.aggregate.function"
 \dc "no.such.database"."no.such.schema"."no.such.conversion"
 \dC "no.such.database"."no.such.schema"."no.such.cast"
+\dCN "no.such.database"."no.such.schema"."no.such.constraint"
 \dd "no.such.database"."no.such.schema"."no.such.object.description"
 \dD "no.such.database"."no.such.schema"."no.such.domain"
 \ddp "no.such.database"."no.such.schema"."no.such.default.access.privilege"
