@@ -2037,6 +2037,8 @@ index_constraint_create(Relation heapRelation,
 		trigger->deferrable = true;
 		trigger->initdeferred = initdeferred;
 		trigger->constrrel = NULL;
+		trigger->transformed = true;
+		trigger->trigcomment = NULL;
 
 		(void) CreateTrigger(trigger, NULL, RelationGetRelid(heapRelation),
 							 InvalidOid, conOid, indexRelationId, InvalidOid,

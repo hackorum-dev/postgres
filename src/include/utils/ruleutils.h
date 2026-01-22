@@ -53,5 +53,6 @@ extern char *generate_opclass_name(Oid opclass);
 extern char *get_range_partbound_string(List *bound_datums);
 
 extern char *pg_get_statisticsobjdef_string(Oid statextid);
+extern char *pg_get_triggerobjdef_string(Oid trigid);
 
 #endif							/* RULEUTILS_H */
