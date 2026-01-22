@@ -231,6 +231,8 @@ slashUsage(unsigned short int pager)
 	HELP0("  \\dc[Sx+] [PATTERN]     list conversions\n");
 	HELP0("  \\dconfig[x+] [PATTERN] list configuration parameters\n");
 	HELP0("  \\dC[x+]  [PATTERN]     list casts\n");
+	HELP0("  \\dCN[cfnptue][Sx+] [PATTERN] list [only check/foreign key/not-null/primary key/\n"
+		  "                              constraint trigger/unique key/exclusion] constraints\n");
 	HELP0("  \\dd[Sx]  [PATTERN]     show object descriptions not displayed elsewhere\n");
 	HELP0("  \\dD[Sx+] [PATTERN]     list domains\n");
 	HELP0("  \\ddp[x]  [PATTERN]     list default privileges\n");
