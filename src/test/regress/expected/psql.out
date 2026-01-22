@@ -5414,6 +5414,525 @@ List of configuration parameters
 (1 row)
 
 reset work_mem;
+-- check \dCN
+CREATE TABLE con_c (
+    primary_col SERIAL PRIMARY KEY
+);
+CREATE TABLE con_p (
+    primary_col SERIAL PRIMARY KEY,
+    notnull_col TEXT NOT NULL,
+    check_col INT CHECK (check_col >= 0),
+    foreign_col INT REFERENCES con_c(primary_col),
+    unique_col TEXT UNIQUE,
+    exclusion_col INT,
+    CONSTRAINT con_p_exclusion EXCLUDE USING btree (exclusion_col WITH =)
+);
+CREATE OR REPLACE FUNCTION trigger_hoge() RETURNS TRIGGER AS $$
+  BEGIN
+    RETURN NULL;
+  END;
+  $$ LANGUAGE PLPGSQL;
+CREATE CONSTRAINT TRIGGER con_p_trigger AFTER INSERT ON con_p
+  FOR EACH ROW EXECUTE PROCEDURE trigger_hoge();
+---- \dCN shows constraints
+\dCN con_*
+                    List of constraints
+ Schema | Table |    Type     |            Name            
+--------+-------+-------------+----------------------------
+ public | con_c | not-null    | con_c_primary_col_not_null
+ public | con_c | primary key | con_c_pkey
+ public | con_p | check       | con_p_check_col_check
+ public | con_p | exclusion   | con_p_exclusion
+ public | con_p | foreign key | con_p_foreign_col_fkey
+ public | con_p | not-null    | con_p_notnull_col_not_null
+ public | con_p | not-null    | con_p_primary_col_not_null
+ public | con_p | primary key | con_p_pkey
+ public | con_p | trigger     | con_p_trigger
+ public | con_p | unique      | con_p_unique_col_key
+(10 rows)
+
+\dCNcfnptue con_*
+                    List of constraints
+ Schema | Table |    Type     |            Name            
+--------+-------+-------------+----------------------------
+ public | con_c | not-null    | con_c_primary_col_not_null
+ public | con_c | primary key | con_c_pkey
+ public | con_p | check       | con_p_check_col_check
+ public | con_p | exclusion   | con_p_exclusion
+ public | con_p | foreign key | con_p_foreign_col_fkey
+ public | con_p | not-null    | con_p_notnull_col_not_null
+ public | con_p | not-null    | con_p_primary_col_not_null
+ public | con_p | primary key | con_p_pkey
+ public | con_p | trigger     | con_p_trigger
+ public | con_p | unique      | con_p_unique_col_key
+(10 rows)
+
+\dCN+ con_*
+                                                 List of constraints
+ Schema | Table |    Type     |            Name            |                       Definition                        
+--------+-------+-------------+----------------------------+---------------------------------------------------------
+ public | con_c | not-null    | con_c_primary_col_not_null | NOT NULL primary_col
+ public | con_c | primary key | con_c_pkey                 | PRIMARY KEY (primary_col)
+ public | con_p | check       | con_p_check_col_check      | CHECK (check_col >= 0)
+ public | con_p | exclusion   | con_p_exclusion            | EXCLUDE USING btree (exclusion_col WITH =)
+ public | con_p | foreign key | con_p_foreign_col_fkey     | FOREIGN KEY (foreign_col) REFERENCES con_c(primary_col)
+ public | con_p | not-null    | con_p_notnull_col_not_null | NOT NULL notnull_col
+ public | con_p | not-null    | con_p_primary_col_not_null | NOT NULL primary_col
+ public | con_p | primary key | con_p_pkey                 | PRIMARY KEY (primary_col)
+ public | con_p | trigger     | con_p_trigger              | TRIGGER
+ public | con_p | unique      | con_p_unique_col_key       | UNIQUE (unique_col)
+(10 rows)
+
+\dCNcfnptue+ con_*
+                                                 List of constraints
+ Schema | Table |    Type     |            Name            |                       Definition                        
+--------+-------+-------------+----------------------------+---------------------------------------------------------
+ public | con_c | not-null    | con_c_primary_col_not_null | NOT NULL primary_col
+ public | con_c | primary key | con_c_pkey                 | PRIMARY KEY (primary_col)
+ public | con_p | check       | con_p_check_col_check      | CHECK (check_col >= 0)
+ public | con_p | exclusion   | con_p_exclusion            | EXCLUDE USING btree (exclusion_col WITH =)
+ public | con_p | foreign key | con_p_foreign_col_fkey     | FOREIGN KEY (foreign_col) REFERENCES con_c(primary_col)
+ public | con_p | not-null    | con_p_notnull_col_not_null | NOT NULL notnull_col
+ public | con_p | not-null    | con_p_primary_col_not_null | NOT NULL primary_col
+ public | con_p | primary key | con_p_pkey                 | PRIMARY KEY (primary_col)
+ public | con_p | trigger     | con_p_trigger              | TRIGGER
+ public | con_p | unique      | con_p_unique_col_key       | UNIQUE (unique_col)
+(10 rows)
+
+\dCNc con_*
+              List of constraints
+ Schema | Table | Type  |         Name          
+--------+-------+-------+-----------------------
+ public | con_p | check | con_p_check_col_check
+(1 row)
+
+\dCNc+ con_*
+                           List of constraints
+ Schema | Table | Type  |         Name          |       Definition       
+--------+-------+-------+-----------------------+------------------------
+ public | con_p | check | con_p_check_col_check | CHECK (check_col >= 0)
+(1 row)
+
+\dCNf con_*
+                  List of constraints
+ Schema | Table |    Type     |          Name          
+--------+-------+-------------+------------------------
+ public | con_p | foreign key | con_p_foreign_col_fkey
+(1 row)
+
+\dCNf+ con_*
+                                               List of constraints
+ Schema | Table |    Type     |          Name          |                       Definition                        
+--------+-------+-------------+------------------------+---------------------------------------------------------
+ public | con_p | foreign key | con_p_foreign_col_fkey | FOREIGN KEY (foreign_col) REFERENCES con_c(primary_col)
+(1 row)
+
+\dCNn con_*
+                  List of constraints
+ Schema | Table |   Type   |            Name            
+--------+-------+----------+----------------------------
+ public | con_c | not-null | con_c_primary_col_not_null
+ public | con_p | not-null | con_p_notnull_col_not_null
+ public | con_p | not-null | con_p_primary_col_not_null
+(3 rows)
+
+\dCNn+ con_*
+                              List of constraints
+ Schema | Table |   Type   |            Name            |      Definition      
+--------+-------+----------+----------------------------+----------------------
+ public | con_c | not-null | con_c_primary_col_not_null | NOT NULL primary_col
+ public | con_p | not-null | con_p_notnull_col_not_null | NOT NULL notnull_col
+ public | con_p | not-null | con_p_primary_col_not_null | NOT NULL primary_col
+(3 rows)
+
+\dCNp con_*
+            List of constraints
+ Schema | Table |    Type     |    Name    
+--------+-------+-------------+------------
+ public | con_c | primary key | con_c_pkey
+ public | con_p | primary key | con_p_pkey
+(2 rows)
+
+\dCNp+ con_*
+                          List of constraints
+ Schema | Table |    Type     |    Name    |        Definition         
+--------+-------+-------------+------------+---------------------------
+ public | con_c | primary key | con_c_pkey | PRIMARY KEY (primary_col)
+ public | con_p | primary key | con_p_pkey | PRIMARY KEY (primary_col)
+(2 rows)
+
+\dCNt con_*
+           List of constraints
+ Schema | Table |  Type   |     Name      
+--------+-------+---------+---------------
+ public | con_p | trigger | con_p_trigger
+(1 row)
+
+\dCNt+ con_*
+                  List of constraints
+ Schema | Table |  Type   |     Name      | Definition 
+--------+-------+---------+---------------+------------
+ public | con_p | trigger | con_p_trigger | TRIGGER
+(1 row)
+
+\dCNu con_*
+              List of constraints
+ Schema | Table |  Type  |         Name         
+--------+-------+--------+----------------------
+ public | con_p | unique | con_p_unique_col_key
+(1 row)
+
+\dCNu+ con_*
+                         List of constraints
+ Schema | Table |  Type  |         Name         |     Definition      
+--------+-------+--------+----------------------+---------------------
+ public | con_p | unique | con_p_unique_col_key | UNIQUE (unique_col)
+(1 row)
+
+\dCNe con_*
+             List of constraints
+ Schema | Table |   Type    |      Name       
+--------+-------+-----------+-----------------
+ public | con_p | exclusion | con_p_exclusion
+(1 row)
+
+\dCNe+ con_*
+                                    List of constraints
+ Schema | Table |   Type    |      Name       |                 Definition                 
+--------+-------+-----------+-----------------+--------------------------------------------
+ public | con_p | exclusion | con_p_exclusion | EXCLUDE USING btree (exclusion_col WITH =)
+(1 row)
+
+\dCNx con_*
+List of constraints
+-[ RECORD 1 ]----------------------
+Schema | public
+Table  | con_c
+Type   | not-null
+Name   | con_c_primary_col_not_null
+-[ RECORD 2 ]----------------------
+Schema | public
+Table  | con_c
+Type   | primary key
+Name   | con_c_pkey
+-[ RECORD 3 ]----------------------
+Schema | public
+Table  | con_p
+Type   | check
+Name   | con_p_check_col_check
+-[ RECORD 4 ]----------------------
+Schema | public
+Table  | con_p
+Type   | exclusion
+Name   | con_p_exclusion
+-[ RECORD 5 ]----------------------
+Schema | public
+Table  | con_p
+Type   | foreign key
+Name   | con_p_foreign_col_fkey
+-[ RECORD 6 ]----------------------
+Schema | public
+Table  | con_p
+Type   | not-null
+Name   | con_p_notnull_col_not_null
+-[ RECORD 7 ]----------------------
+Schema | public
+Table  | con_p
+Type   | not-null
+Name   | con_p_primary_col_not_null
+-[ RECORD 8 ]----------------------
+Schema | public
+Table  | con_p
+Type   | primary key
+Name   | con_p_pkey
+-[ RECORD 9 ]----------------------
+Schema | public
+Table  | con_p
+Type   | trigger
+Name   | con_p_trigger
+-[ RECORD 10 ]---------------------
+Schema | public
+Table  | con_p
+Type   | unique
+Name   | con_p_unique_col_key
+
+\dCNx+ con_*
+List of constraints
+-[ RECORD 1 ]-------------------------------------------------------
+Schema     | public
+Table      | con_c
+Type       | not-null
+Name       | con_c_primary_col_not_null
+Definition | NOT NULL primary_col
+-[ RECORD 2 ]-------------------------------------------------------
+Schema     | public
+Table      | con_c
+Type       | primary key
+Name       | con_c_pkey
+Definition | PRIMARY KEY (primary_col)
+-[ RECORD 3 ]-------------------------------------------------------
+Schema     | public
+Table      | con_p
+Type       | check
+Name       | con_p_check_col_check
+Definition | CHECK (check_col >= 0)
+-[ RECORD 4 ]-------------------------------------------------------
+Schema     | public
+Table      | con_p
+Type       | exclusion
+Name       | con_p_exclusion
+Definition | EXCLUDE USING btree (exclusion_col WITH =)
+-[ RECORD 5 ]-------------------------------------------------------
+Schema     | public
+Table      | con_p
+Type       | foreign key
+Name       | con_p_foreign_col_fkey
+Definition | FOREIGN KEY (foreign_col) REFERENCES con_c(primary_col)
+-[ RECORD 6 ]-------------------------------------------------------
+Schema     | public
+Table      | con_p
+Type       | not-null
+Name       | con_p_notnull_col_not_null
+Definition | NOT NULL notnull_col
+-[ RECORD 7 ]-------------------------------------------------------
+Schema     | public
+Table      | con_p
+Type       | not-null
+Name       | con_p_primary_col_not_null
+Definition | NOT NULL primary_col
+-[ RECORD 8 ]-------------------------------------------------------
+Schema     | public
+Table      | con_p
+Type       | primary key
+Name       | con_p_pkey
+Definition | PRIMARY KEY (primary_col)
+-[ RECORD 9 ]-------------------------------------------------------
+Schema     | public
+Table      | con_p
+Type       | trigger
+Name       | con_p_trigger
+Definition | TRIGGER
+-[ RECORD 10 ]------------------------------------------------------
+Schema     | public
+Table      | con_p
+Type       | unique
+Name       | con_p_unique_col_key
+Definition | UNIQUE (unique_col)
+
+\dCNS pg_constraint*
+                                   List of constraints
+   Schema   |     Table     |    Type     |                     Name                      
+------------+---------------+-------------+-----------------------------------------------
+ pg_catalog | pg_constraint | not-null    | pg_constraint_oid_not_null
+ pg_catalog | pg_constraint | primary key | pg_constraint_oid_index
+ pg_catalog | pg_constraint | unique      | pg_constraint_conrelid_contypid_conname_index
+(3 rows)
+
+\dCNS+ pg_constraint*
+                                                       List of constraints
+   Schema   |     Table     |    Type     |                     Name                      |              Definition              
+------------+---------------+-------------+-----------------------------------------------+--------------------------------------
+ pg_catalog | pg_constraint | not-null    | pg_constraint_oid_not_null                    | NOT NULL oid
+ pg_catalog | pg_constraint | primary key | pg_constraint_oid_index                       | PRIMARY KEY (oid)
+ pg_catalog | pg_constraint | unique      | pg_constraint_conrelid_contypid_conname_index | UNIQUE (conrelid, contypid, conname)
+(3 rows)
+
+\dCNcfnpueS pg_constraint*
+                                   List of constraints
+   Schema   |     Table     |    Type     |                     Name                      
+------------+---------------+-------------+-----------------------------------------------
+ pg_catalog | pg_constraint | not-null    | pg_constraint_oid_not_null
+ pg_catalog | pg_constraint | primary key | pg_constraint_oid_index
+ pg_catalog | pg_constraint | unique      | pg_constraint_conrelid_contypid_conname_index
+(3 rows)
+
+\dCNcfnpueS+ pg_constraint*
+                                                       List of constraints
+   Schema   |     Table     |    Type     |                     Name                      |              Definition              
+------------+---------------+-------------+-----------------------------------------------+--------------------------------------
+ pg_catalog | pg_constraint | not-null    | pg_constraint_oid_not_null                    | NOT NULL oid
+ pg_catalog | pg_constraint | primary key | pg_constraint_oid_index                       | PRIMARY KEY (oid)
+ pg_catalog | pg_constraint | unique      | pg_constraint_conrelid_contypid_conname_index | UNIQUE (conrelid, contypid, conname)
+(3 rows)
+
+\dCNcfnpueS+x pg_constraint*
+List of constraints
+-[ RECORD 1 ]---------------------------------------------
+Schema     | pg_catalog
+Table      | pg_constraint
+Type       | not-null
+Name       | pg_constraint_oid_not_null
+Definition | NOT NULL oid
+-[ RECORD 2 ]---------------------------------------------
+Schema     | pg_catalog
+Table      | pg_constraint
+Type       | primary key
+Name       | pg_constraint_oid_index
+Definition | PRIMARY KEY (oid)
+-[ RECORD 3 ]---------------------------------------------
+Schema     | pg_catalog
+Table      | pg_constraint
+Type       | unique
+Name       | pg_constraint_conrelid_contypid_conname_index
+Definition | UNIQUE (conrelid, contypid, conname)
+
+\dCN pg_con*.
+     List of constraints
+ Schema | Table | Type | Name 
+--------+-------+------+------
+(0 rows)
+
+---- domain
+---- table name is not displayed because conrelid is zero
+CREATE DOMAIN hoge_domain integer
+    DEFAULT 10
+    NOT NULL
+    CHECK (VALUE > 0 AND VALUE < 100);
+CREATE TABLE table_using_domain (
+    col hoge_domain PRIMARY KEY
+);
+\dCN+ hoge*
+                                 List of constraints
+ Schema | Table |   Type   |         Name         |            Definition             
+--------+-------+----------+----------------------+-----------------------------------
+ public |       | check    | hoge_domain_check    | CHECK (VALUE > 0 AND VALUE < 100)
+ public |       | not-null | hoge_domain_not_null | NOT NULL
+(2 rows)
+
+---- type
+CREATE TABLE table_using_type(
+    a INT,
+    b int42 NOT NULL
+);
+\dCN+ table_using_type*
+                               List of constraints
+ Schema |      Table       |   Type   |            Name             | Definition 
+--------+------------------+----------+-----------------------------+------------
+ public | table_using_type | not-null | table_using_type_b_not_null | NOT NULL b
+(1 row)
+
+---- Incorrect options will result in an error
+\dCNcz
+\dCN only takes [cfnptue][Sx+] as options
+---- search_path
+CREATE SCHEMA con_schema;
+CREATE TABLE con_schema.con_schema_test (
+    primary_col SERIAL PRIMARY KEY
+);
+SET SEARCH_PATH TO public, con_schema;
+\dCN con_*
+                                List of constraints
+   Schema   |      Table      |    Type     |                 Name                 
+------------+-----------------+-------------+--------------------------------------
+ con_schema | con_schema_test | not-null    | con_schema_test_primary_col_not_null
+ con_schema | con_schema_test | primary key | con_schema_test_pkey
+ public     | con_c           | not-null    | con_c_primary_col_not_null
+ public     | con_c           | primary key | con_c_pkey
+ public     | con_p           | check       | con_p_check_col_check
+ public     | con_p           | exclusion   | con_p_exclusion
+ public     | con_p           | foreign key | con_p_foreign_col_fkey
+ public     | con_p           | not-null    | con_p_notnull_col_not_null
+ public     | con_p           | not-null    | con_p_primary_col_not_null
+ public     | con_p           | primary key | con_p_pkey
+ public     | con_p           | trigger     | con_p_trigger
+ public     | con_p           | unique      | con_p_unique_col_key
+(12 rows)
+
+\dCN con_*.con_*_pkey
+                        List of constraints
+   Schema   |      Table      |    Type     |         Name         
+------------+-----------------+-------------+----------------------
+ con_schema | con_schema_test | primary key | con_schema_test_pkey
+(1 row)
+
+SET SEARCH_PATH TO public;
+\dCN con_*
+                    List of constraints
+ Schema | Table |    Type     |            Name            
+--------+-------+-------------+----------------------------
+ public | con_c | not-null    | con_c_primary_col_not_null
+ public | con_c | primary key | con_c_pkey
+ public | con_p | check       | con_p_check_col_check
+ public | con_p | exclusion   | con_p_exclusion
+ public | con_p | foreign key | con_p_foreign_col_fkey
+ public | con_p | not-null    | con_p_notnull_col_not_null
+ public | con_p | not-null    | con_p_primary_col_not_null
+ public | con_p | primary key | con_p_pkey
+ public | con_p | trigger     | con_p_trigger
+ public | con_p | unique      | con_p_unique_col_key
+(10 rows)
+
+RESET search_path;
+---- inherits
+CREATE TABLE zoo_parent (
+  cage int PRIMARY KEY
+);
+CREATE TABLE zoo_child (
+    animal text
+) INHERITS (zoo_parent);
+\dCN+ zoo_parent_cage_not_null
+                            List of constraints
+ Schema |   Table    |   Type   |           Name           |  Definition   
+--------+------------+----------+--------------------------+---------------
+ public | zoo_child  | not-null | zoo_parent_cage_not_null | NOT NULL cage
+ public | zoo_parent | not-null | zoo_parent_cage_not_null | NOT NULL cage
+(2 rows)
+
+---- partitioned table
+CREATE TABLE zoo_part (
+    cage int,
+    animal text,
+    CONSTRAINT zoo_part_pk PRIMARY KEY (cage)
+) PARTITION BY RANGE (cage);
+CREATE TABLE zoo_part_1
+    PARTITION OF zoo_part
+    FOR VALUES FROM (0) TO (100);
+\dCN+ zoo_part*
+                               List of constraints
+ Schema |   Table    |    Type     |          Name          |     Definition     
+--------+------------+-------------+------------------------+--------------------
+ public | zoo_part   | not-null    | zoo_part_cage_not_null | NOT NULL cage
+ public | zoo_part   | primary key | zoo_part_pk            | PRIMARY KEY (cage)
+ public | zoo_part_1 | not-null    | zoo_part_cage_not_null | NOT NULL cage
+ public | zoo_part_1 | primary key | zoo_part_1_pkey        | PRIMARY KEY (cage)
+(4 rows)
+
+---- temporal constraints
+CREATE TABLE temporal_con_pk (
+    id int4range,
+    valid_at daterange,
+    PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)
+);
+CREATE TABLE temporal_con_uq (
+    id int4range,
+    valid_at daterange,
+    UNIQUE (id, valid_at WITHOUT OVERLAPS)
+);
+CREATE TABLE temporal_con_fk (
+  p_id int4range,
+  valid_at daterange,
+  FOREIGN KEY (p_id, PERIOD valid_at)
+    REFERENCES temporal_con_pk (id, PERIOD valid_at)
+);
+\dCN+ temporal_con_*
+                                                                        List of constraints
+ Schema |      Table      |    Type     |                Name                |                                     Definition                                      
+--------+-----------------+-------------+------------------------------------+-------------------------------------------------------------------------------------
+ public | temporal_con_fk | foreign key | temporal_con_fk_p_id_valid_at_fkey | FOREIGN KEY (p_id, PERIOD valid_at) REFERENCES temporal_con_pk(id, PERIOD valid_at)
+ public | temporal_con_pk | not-null    | temporal_con_pk_id_not_null        | NOT NULL id
+ public | temporal_con_pk | not-null    | temporal_con_pk_valid_at_not_null  | NOT NULL valid_at
+ public | temporal_con_pk | primary key | temporal_con_pk_pkey               | PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)
+ public | temporal_con_uq | unique      | temporal_con_uq_id_valid_at_key    | UNIQUE (id, valid_at WITHOUT OVERLAPS)
+(5 rows)
+
+-- clean up for \dCN test cases
+DROP SCHEMA con_schema CASCADE;
+NOTICE:  drop cascades to table con_schema.con_schema_test
+DROP TABLE con_p, con_c, table_using_domain, table_using_type, zoo_parent, zoo_part CASCADE;
+NOTICE:  drop cascades to table zoo_child
+DROP TABLE temporal_con_pk, temporal_con_uq, temporal_con_fk CASCADE;
+DROP FUNCTION trigger_hoge;
+DROP DOMAIN hoge_domain;
 -- check \df, \do with argument specifications
 \df *sqrt
                              List of functions
@@ -6132,6 +6651,10 @@ improper qualified name (too many dotted names): host.regression.pg_catalog.int8
 cross-database references are not implemented: ).pg_catalog.int8
 \dC nonesuch.pg_catalog.int8
 cross-database references are not implemented: nonesuch.pg_catalog.int8
+\dCN host.regression.public.constraint
+improper qualified name (too many dotted names): host.regression.public.constraint
+\dCN nonesuch.public.constraint
+cross-database references are not implemented: nonesuch.public.constraint
 \dd host.regression.pg_catalog.pg_class
 improper qualified name (too many dotted names): host.regression.pg_catalog.pg_class
 \dd [.pg_catalog.pg_class
@@ -6365,6 +6888,12 @@ List of access methods
 -------------+-------------+----------+-----------
 (0 rows)
 
+\dCN "no.such.constraint"
+     List of constraints
+ Schema | Table | Type | Name 
+--------+-------+------+------
+(0 rows)
+
 \dd "no.such.object.description"
          Object descriptions
  Schema | Name | Object | Description 
@@ -6575,6 +7104,12 @@ improper qualified name (too many dotted names): "no.such.schema"."no.such.table
 -------------+-------------+----------+-----------
 (0 rows)
 
+\dCN "no.such.schema"."no.such.constraint"
+     List of constraints
+ Schema | Table | Type | Name 
+--------+-------+------+------
+(0 rows)
+
 \dd "no.such.schema"."no.such.object.description"
          Object descriptions
  Schema | Name | Object | Description 
@@ -6732,6 +7267,12 @@ improper qualified name (too many dotted names): "no.such.schema"."no.such.event
 -------------+-------------+----------+-----------
 (0 rows)
 
+\dCN regression."no.such.schema"."no.such.constraint"
+     List of constraints
+ Schema | Table | Type | Name 
+--------+-------+------+------
+(0 rows)
+
 \dd regression."no.such.schema"."no.such.object.description"
          Object descriptions
  Schema | Name | Object | Description 
@@ -6849,6 +7390,8 @@ cross-database references are not implemented: "no.such.database"."no.such.schem
 cross-database references are not implemented: "no.such.database"."no.such.schema"."no.such.conversion"
 \dC "no.such.database"."no.such.schema"."no.such.cast"
 cross-database references are not implemented: "no.such.database"."no.such.schema"."no.such.cast"
+\dCN "no.such.database"."no.such.schema"."no.such.constraint"
+cross-database references are not implemented: "no.such.database"."no.such.schema"."no.such.constraint"
 \dd "no.such.database"."no.such.schema"."no.such.object.description"
 cross-database references are not implemented: "no.such.database"."no.such.schema"."no.such.object.description"
 \dD "no.such.database"."no.such.schema"."no.such.domain"
