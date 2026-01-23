@@ -292,7 +292,7 @@ comp_trgm(const void *a, const void *b)
  * endword points to the character after word
  */
 static char *
-find_word(char *str, int lenstr, char **endword)
+find_word(char *str, int lenstr, char **endword, Oid collation)
 {
 	char	   *beginword = str;
 	const char *endstr = str + lenstr;
@@ -301,7 +301,7 @@ find_word(char *str, int lenstr, char **endword)
 	{
 		int			clen = pg_mblen_range(beginword, endstr);
 
-		if (ISWORDCHR(beginword, clen))
+		if (ISWORDCHR(beginword, clen, collation))
 			break;
 		beginword += clen;
 	}
@@ -314,7 +314,7 @@ find_word(char *str, int lenstr, char **endword)
 	{
 		int			clen = pg_mblen_range(*endword, endstr);
 
-		if (!ISWORDCHR(*endword, clen))
+		if (!ISWORDCHR(*endword, clen, collation))
 			break;
 		*endword += clen;
 	}
@@ -490,7 +490,7 @@ generate_trgm_only(growable_trgm_array *dst, char *str, int slen, Oid collation,
 	}
 
 	eword = str;
-	while ((bword = find_word(eword, slen - (eword - str), &eword)) != NULL)
+	while ((bword = find_word(eword, slen - (eword - str), &eword, collation)) != NULL)
 	{
 		int			oldlen;
 
@@ -907,7 +907,7 @@ calc_word_similarity(char *str1, int slen1, char *str2, int slen2,
  */
 static const char *
 get_wildcard_part(const char *str, int lenstr,
-				  char *buf, int *bytelen)
+				  char *buf, int *bytelen, Oid collation)
 {
 	const char *beginword = str;
 	const char *endword;
@@ -930,7 +930,7 @@ get_wildcard_part(const char *str, int lenstr,
 
 		if (in_escape)
 		{
-			if (ISWORDCHR(beginword, clen))
+			if (ISWORDCHR(beginword, clen, collation))
 				break;
 			in_escape = false;
 			in_leading_wildcard_meta = false;
@@ -941,7 +941,7 @@ get_wildcard_part(const char *str, int lenstr,
 				in_escape = true;
 			else if (ISWILDCARDCHAR(beginword))
 				in_leading_wildcard_meta = true;
-			else if (ISWORDCHR(beginword, clen))
+			else if (ISWORDCHR(beginword, clen, collation))
 				break;
 			else
 				in_leading_wildcard_meta = false;
@@ -979,7 +979,7 @@ get_wildcard_part(const char *str, int lenstr,
 		clen = pg_mblen_range(endword, endstr);
 		if (in_escape)
 		{
-			if (ISWORDCHR(endword, clen))
+			if (ISWORDCHR(endword, clen, collation))
 			{
 				memcpy(s, endword, clen);
 				s += clen;
@@ -1006,7 +1006,7 @@ get_wildcard_part(const char *str, int lenstr,
 				in_trailing_wildcard_meta = true;
 				break;
 			}
-			else if (ISWORDCHR(endword, clen))
+			else if (ISWORDCHR(endword, clen, collation))
 			{
 				memcpy(s, endword, clen);
 				s += clen;
@@ -1070,7 +1070,7 @@ generate_wildcard_trgm(const char *str, int slen, Oid collation)
 	 */
 	eword = str;
 	while ((eword = get_wildcard_part(eword, slen - (eword - str),
-									  buf, &bytelen)) != NULL)
+									  buf, &bytelen, collation)) != NULL)
 	{
 		char	   *word;
 
