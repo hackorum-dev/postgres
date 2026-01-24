@@ -173,6 +173,44 @@ ALTER TABLE test_replica_identity7_p ATTACH PARTITION test_replica_identity7_lea
 SELECT relreplident FROM pg_class
   WHERE oid = 'test_replica_identity7_leaf'::regclass;
 
+----
+-- Test recurse to child partitions
+----
+
+CREATE TABLE test_replica_identity8 (a int not null, b int not null, c int not null) PARTITION BY LIST (a);
+CREATE TABLE test_replica_identity8_p1 PARTITION OF test_replica_identity8
+  FOR VALUES IN (1) PARTITION BY LIST(b);
+CREATE TABLE test_replica_identity8_p1_leaf1 PARTITION OF test_replica_identity8_p1
+  FOR VALUES IN (1);
+CREATE TABLE test_replica_identity8_p1_leaf2 PARTITION OF test_replica_identity8_p1
+  FOR VALUES IN (2);
+-- For better coverage, create a partition in the other schema
+CREATE SCHEMA test_replica_identity_schema8;
+CREATE TABLE test_replica_identity_schema8.test_replica_identity8_p1 PARTITION OF test_replica_identity8
+  FOR VALUES IN (2);
+-- With ONLY, it should only update the current table
+ALTER TABLE ONLY test_replica_identity8 REPLICA IDENTITY FULL;
+SELECT relname, relreplident FROM pg_class WHERE relname LIKE 'test_replica_identity8%' ORDER BY relname;
+ALTER TABLE test_replica_identity8 REPLICA IDENTITY NOTHING;
+SELECT relname, relreplident FROM pg_class WHERE relname LIKE 'test_replica_identity8%' ORDER BY relname;
+-- Without ONLY, it should update all partitions as well
+CREATE UNIQUE INDEX test_idx_replica_identity8 ON test_replica_identity8 (a, b, c);
+ALTER TABLE test_replica_identity8 REPLICA IDENTITY USING INDEX test_idx_replica_identity8;
+SELECT c.relname, c.relreplident, i.indexrelid::regclass AS index_name FROM pg_class c
+  LEFT JOIN pg_index i ON c.oid = i.indrelid
+  WHERE relname LIKE 'test_replica_identity8%' AND i.indisreplident = true
+  ORDER BY c.relname;
+-- After index rebuild, index replica identity should be updated
+ALTER TABLE test_replica_identity8 ALTER c TYPE bigint;
+SELECT c.relname, c.relreplident, i.indexrelid::regclass AS index_name FROM pg_class c
+  LEFT JOIN pg_index i ON c.oid = i.indrelid
+  WHERE relname LIKE 'test_replica_identity8%' AND i.indisreplident = true
+  ORDER BY c.relname;
+
+----
+-- Clean up
+----
+
 DROP TABLE test_replica_identity;
 DROP TABLE test_replica_identity2;
 DROP TABLE test_replica_identity3;
@@ -182,3 +220,5 @@ DROP TABLE test_replica_identity_othertable;
 DROP TABLE test_replica_identity_t3;
 DROP TABLE test_replica_identity6;
 DROP TABLE test_replica_identity7;
+DROP TABLE test_replica_identity8;
+DROP SCHEMA test_replica_identity_schema8;

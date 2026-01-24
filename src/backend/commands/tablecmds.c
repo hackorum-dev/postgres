@@ -739,7 +739,9 @@ static void drop_parent_dependency(Oid relid, Oid refclassid, Oid refobjid,
 								   DependencyType deptype);
 static ObjectAddress ATExecAddOf(Relation rel, const TypeName *ofTypename, LOCKMODE lockmode);
 static void ATExecDropOf(Relation rel, LOCKMODE lockmode);
-static void ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, LOCKMODE lockmode);
+static void ATPrepReplicaIdentity(List **wqueue, Relation rel, AlterTableCmd *cmd, bool recurse,
+								  LOCKMODE lockmode, AlterTableUtilityContext *context);
+static void ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, bool recurse, LOCKMODE lockmode);
 static void ATExecGenericOptions(Relation rel, List *options);
 static void ATExecSetRowSecurity(Relation rel, bool rls);
 static void ATExecForceNoForceRowSecurity(Relation rel, bool force_rls);
@@ -5320,9 +5322,9 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_ReplicaIdentity:	/* REPLICA IDENTITY ... */
 			ATSimplePermissions(cmd->subtype, rel,
 								ATT_TABLE | ATT_PARTITIONED_TABLE | ATT_MATVIEW);
+			/* Performs own recursion */
+			ATPrepReplicaIdentity(wqueue, rel, cmd, recurse, lockmode, context);
 			pass = AT_PASS_MISC;
-			/* This command never recurses */
-			/* No command-specific prep needed */
 			break;
 		case AT_EnableTrig:		/* ENABLE TRIGGER variants */
 		case AT_EnableAlwaysTrig:
@@ -5737,7 +5739,8 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			ATExecDropOf(rel, lockmode);
 			break;
 		case AT_ReplicaIdentity:
-			ATExecReplicaIdentity(rel, (ReplicaIdentityStmt *) cmd->def, lockmode);
+			ATExecReplicaIdentity(rel, (ReplicaIdentityStmt *) cmd->def,
+								  cmd->recurse, lockmode);
 			break;
 		case AT_EnableRowSecurity:
 			ATExecSetRowSecurity(rel, true);
@@ -19177,14 +19180,79 @@ relation_mark_replica_identity(Relation rel, char ri_type, Oid indexOid,
 }
 
 /*
+ * Prepare to set replica identity. Recurse to child partitions if we are asked for.
+ */
+static void
+ATPrepReplicaIdentity(List **wqueue, Relation rel, AlterTableCmd *cmd, bool recurse,
+					  LOCKMODE lockmode, AlterTableUtilityContext *context)
+{
+	ReplicaIdentityStmt *stmt = (ReplicaIdentityStmt *) (cmd->def);
+	List	   *partRelIds = NIL;
+	Oid			indexId;
+
+	if (!recurse || rel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
+		return;
+
+	/* Fast path for non-index replica identity. */
+	if (stmt->identity_type != REPLICA_IDENTITY_INDEX)
+	{
+		ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode, context);
+		return;
+	}
+
+	/*
+	 * For index replica identity, the key problem is to find the
+	 * corresponding index on each partition. To determine a partition’s
+	 * index name, we need the index OID of its direct parent, so we
+	 * intentionally find the direct children, then recurse down to next
+	 * level.
+	 */
+
+	indexId = get_relname_relid(stmt->name, rel->rd_rel->relnamespace);
+	partRelIds = find_inheritance_children(RelationGetRelid(rel), lockmode);
+	foreach_oid(partRelOid, partRelIds)
+	{
+		Relation	partRel;
+		Oid			partIndexId;
+		char	   *partIndexName;
+		AlterTableCmd *cmdCopy;
+
+		if (partRelOid == RelationGetRelid(rel))
+			continue;
+
+		partRel = relation_open(partRelOid, lockmode);
+
+		/*
+		 * Find the partition's corresponding index. This should be unlikely
+		 * to fail because when creating an index on a partitioned table, the
+		 * index will be automatically created on all partitions, and it's
+		 * not allowed to drop the index from individual partition.
+		 */
+		partIndexId = index_get_partition(partRel, indexId);
+		if (!OidIsValid(partIndexId))
+			ereport(ERROR,
+					errcode(ERRCODE_UNDEFINED_OBJECT),
+					errmsg("cannot find index \"%s\" for partition \"%s\"",
+						   stmt->name, RelationGetRelationName(partRel)));
+
+		cmdCopy = copyObject(cmd);
+		partIndexName = get_rel_name(partIndexId);
+		((ReplicaIdentityStmt *) (cmdCopy->def))->name = partIndexName;
+		CheckAlterTableIsSafe(partRel);
+		ATPrepCmd(wqueue, partRel, cmdCopy, recurse, true, lockmode, context);
+
+		relation_close(partRel, NoLock);
+	}
+}
+
+/*
  * ALTER TABLE <name> REPLICA IDENTITY ...
  */
 static void
-ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, LOCKMODE lockmode)
+ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, bool recurse, LOCKMODE lockmode)
 {
 	Oid			indexOid;
 	Relation	indexRel;
-	int			key;
 
 	if (stmt->identity_type == REPLICA_IDENTITY_DEFAULT)
 	{
@@ -19259,7 +19327,7 @@ ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, LOCKMODE lockmode
 						RelationGetRelationName(indexRel))));
 
 	/* Check index for nullable columns. */
-	for (key = 0; key < IndexRelationGetNumberOfKeyAttributes(indexRel); key++)
+	for (int key = 0; key < IndexRelationGetNumberOfKeyAttributes(indexRel); key++)
 	{
 		int16		attno = indexRel->rd_index->indkey.values[key];
 		Form_pg_attribute attr;
