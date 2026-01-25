@@ -963,9 +963,32 @@ primary_conninfo = 'host=192.168.1.50 port=5432 user=foo password=foopass'
     <para>
      Beware that replication slots can cause the server to retain so
      many WAL segments that they fill up the space allocated for
-     <literal>pg_wal</literal>.
-     <xref linkend="guc-max-slot-wal-keep-size"/> can be used to limit the size
-     of WAL files retained by replication slots.
+     <filename>pg_wal</filename>. To prevent this condition, monitor
+     the following metrics in production environments:
+     <itemizedlist>
+      <listitem>
+       <para>
+        Disk space usage in the <filename>pg_wal</filename> directory
+       </para>
+      </listitem>
+      <listitem>
+       <para>
+        Replication lag using the <structname>pg_stat_replication</structname>
+        view, particularly the <structfield>write_lag</structfield>,
+        <structfield>flush_lag</structfield>, and
+        <structfield>replay_lag</structfield> columns
+       </para>
+      </listitem>
+      <listitem>
+       <para>
+        Slot status using the <structname>pg_replication_slots</structname>
+        view, checking the <structfield>active</structfield> and
+        <structfield>restart_lsn</structfield> values
+       </para>
+      </listitem>
+     </itemizedlist>
+     The <xref linkend="guc-max-slot-wal-keep-size"/> parameter can be
+     used to limit the amount of WAL retained by replication slots.
     </para>
    </caution>
 
