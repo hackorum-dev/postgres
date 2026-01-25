@@ -1285,6 +1285,17 @@ PostgreSQL documentation
           and not-null constraints.
           Pre-data items include all other data definition items.
          </para>
+           <note>
+            <para>
+             Archives that contain only <option>post-data</option> omit table entries.
+             When such an archive is restored in parallel, constraint creation can
+             fail because <application>pg_restore</application> cannot order foreign
+             keys that depend on tables not present in the archive.  To avoid this,
+             take a schema-inclusive dump (for example, <option>--schema-only</option>
+             or the default), then filter sections at restore time, or restore the
+             post-data-only archive with <option>-j1</option>.
+            </para>
+           </note>
        </listitem>
      </varlistentry>
 
