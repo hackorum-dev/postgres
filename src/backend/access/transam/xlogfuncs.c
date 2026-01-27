@@ -789,6 +789,7 @@ pg_stat_get_recovery(PG_FUNCTION_ARGS)
 	TimestampTz recovery_last_xact_time;
 	TimestampTz current_chunk_start_time;
 	RecoveryPauseState pause_state;
+	XLogSource	wal_read_source;
 
 	if (!RecoveryInProgress())
 		PG_RETURN_NULL();
@@ -807,6 +808,7 @@ pg_stat_get_recovery(PG_FUNCTION_ARGS)
 	recovery_last_xact_time = XLogRecoveryCtl->recoveryLastXTime;
 	current_chunk_start_time = XLogRecoveryCtl->currentChunkStartTime;
 	pause_state = XLogRecoveryCtl->recoveryPauseState;
+	wal_read_source = XLogRecoveryCtl->lastReadSource;
 	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
@@ -853,6 +855,22 @@ pg_stat_get_recovery(PG_FUNCTION_ARGS)
 		nulls[7] = true;
 
 	values[8] = CStringGetTextDatum(GetRecoveryPauseStateString(pause_state));
+
+	switch (wal_read_source)
+	{
+		case XLOG_FROM_ANY:
+			nulls[8] = true;
+			break;
+		case XLOG_FROM_ARCHIVE:
+			values[8] = CStringGetTextDatum("archive");
+			break;
+		case XLOG_FROM_PG_WAL:
+			values[8] = CStringGetTextDatum("pg_wal");
+			break;
+		case XLOG_FROM_STREAM:
+			values[8] = CStringGetTextDatum("stream");
+			break;
+	}
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
 }

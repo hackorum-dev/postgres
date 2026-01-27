@@ -132,6 +132,16 @@ typedef struct XLogRecoveryCtlData
 	RecoveryPauseState recoveryPauseState;
 	ConditionVariable recoveryNotPausedCV;
 
+	/*
+	 * Source from which the startup process most recently read WAL data:
+	 *   XLOG_FROM_ARCHIVE - retrieved via archive recovery
+	 *   XLOG_FROM_PG_WAL  - read from pg_wal outside active streaming
+	 *   XLOG_FROM_STREAM  - opened during active walreceiver streaming
+	 *                       (I/O still reads a local pg_wal file)
+	 *   XLOG_FROM_ANY     - initial/unknown before first successful read
+	 */
+	XLogSource	lastReadSource;
+
 	slock_t		info_lck;		/* locks shared variables shown above */
 } XLogRecoveryCtlData;
 
