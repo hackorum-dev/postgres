@@ -103,7 +103,7 @@ WHERE
     o.slot_name != c.slot_name
 ORDER BY o.slot_name, c.slot_name;
 
--- Now we have maximum 4 replication slots. Check slots are properly
+-- Now we have maximum 4 logical replication slots. Check slots are properly
 -- released even when raise error during creating the target slot.
 SELECT 'copy' FROM pg_copy_logical_replication_slot('orig_slot1', 'failed'); -- error
 
@@ -190,3 +190,26 @@ SELECT pg_drop_replication_slot('failover_true_slot');
 SELECT pg_drop_replication_slot('failover_false_slot');
 SELECT pg_drop_replication_slot('failover_default_slot');
 SELECT pg_drop_replication_slot('physical_slot');
+
+--
+-- Test maximum limits for replication slots
+--
+
+-- Check that no more than 4 logical replication slots can be created
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot1', 'test_decoding');
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot2', 'test_decoding');
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot3', 'test_decoding');
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot4', 'test_decoding');
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot5', 'test_decoding'); -- error
+
+-- Check that the remaining 2 slots can be used for physical replication
+SELECT 'init' FROM pg_create_physical_replication_slot('physical_slot1');
+SELECT 'init' FROM pg_create_physical_replication_slot('physical_slot2'); -- error
+
+SELECT slot_name, slot_type FROM pg_replication_slots;
+
+SELECT pg_drop_replication_slot('logical_slot1');
+SELECT pg_drop_replication_slot('logical_slot2');
+SELECT pg_drop_replication_slot('logical_slot3');
+SELECT pg_drop_replication_slot('logical_slot4');
+SELECT pg_drop_replication_slot('physical_slot1');

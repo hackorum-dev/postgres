@@ -2642,6 +2642,12 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
    </para>
 
    <para>
+    <link linkend="guc-max-logical-replication-slots"><varname>max_logical_replication_slots</varname></link>
+    must be set to at least the number of subscriptions expected to connect,
+    plus some reserve for table synchronization.
+   </para>
+
+   <para>
     Logical replication slots are also affected by
     <link linkend="guc-idle-replication-slot-timeout"><varname>idle_replication_slot_timeout</varname></link>.
    </para>

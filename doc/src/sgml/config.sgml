@@ -4575,6 +4575,28 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
        </listitem>
       </varlistentry>
 
+      <varlistentry id="guc-max-logical-replication-slots" xreflabel="max_logical_replication_slots">
+       <term><varname>max_logical_replication_slots</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>max_logical_replication_slots</varname> configuration parameter</primary>
+       </indexterm>
+       </term>
+       <listitem>
+        <para>
+         Specifies the maximum number of logical replication slots that
+         the server can support.  It defaults to -1, indicating that
+         the value of <xref linkend="guc-max-replication-slots"/> should
+         be used instead.  The value of this parameter cannot exceed
+         <xref linkend="guc-max-replication-slots"/>, and the total number
+         of replication slots (logical and physical) is limited by
+         <varname>max_replication_slots</varname>.  This parameter can
+         only be set at server start.  Setting it to a lower value than
+         the number of currently existing logical replication slots will
+         prevent the server from starting.
+        </para>
+       </listitem>
+      </varlistentry>
+
       <varlistentry id="guc-wal-keep-size" xreflabel="wal_keep_size">
        <term><varname>wal_keep_size</varname> (<type>integer</type>)
        <indexterm>

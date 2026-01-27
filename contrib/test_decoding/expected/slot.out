@@ -216,11 +216,11 @@ ORDER BY o.slot_name, c.slot_name;
  orig_slot1 | test_decoding | f         | copied_slot1_no_change          | test_decoding | f
 (3 rows)
 
--- Now we have maximum 4 replication slots. Check slots are properly
+-- Now we have maximum 4 logical replication slots. Check slots are properly
 -- released even when raise error during creating the target slot.
 SELECT 'copy' FROM pg_copy_logical_replication_slot('orig_slot1', 'failed'); -- error
-ERROR:  all replication slots are in use
-HINT:  Free one or increase "max_replication_slots".
+ERROR:  all logical replication slots are in use
+HINT:  Free one or increase "max_logical_replication_slots".
 -- temporary slots were dropped automatically
 SELECT pg_drop_replication_slot('orig_slot1');
  pg_drop_replication_slot 
@@ -461,6 +461,87 @@ SELECT pg_drop_replication_slot('failover_default_slot');
 (1 row)
 
 SELECT pg_drop_replication_slot('physical_slot');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+--
+-- Test maximum limits for replication slots
+--
+-- Check that no more than 4 logical replication slots can be created
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot1', 'test_decoding');
+ ?column? 
+----------
+ init
+(1 row)
+
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot2', 'test_decoding');
+ ?column? 
+----------
+ init
+(1 row)
+
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot3', 'test_decoding');
+ ?column? 
+----------
+ init
+(1 row)
+
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot4', 'test_decoding');
+ ?column? 
+----------
+ init
+(1 row)
+
+SELECT 'init' FROM pg_create_logical_replication_slot('logical_slot5', 'test_decoding'); -- error
+ERROR:  all logical replication slots are in use
+HINT:  Free one or increase "max_logical_replication_slots".
+-- Check that the remaining 2 slots can be used for physical replication
+SELECT 'init' FROM pg_create_physical_replication_slot('physical_slot1');
+ ?column? 
+----------
+ init
+(1 row)
+
+SELECT 'init' FROM pg_create_physical_replication_slot('physical_slot2'); -- error
+ERROR:  all replication slots are in use
+HINT:  Free one or increase "max_replication_slots".
+SELECT slot_name, slot_type FROM pg_replication_slots;
+   slot_name    | slot_type 
+----------------+-----------
+ logical_slot1  | logical
+ logical_slot2  | logical
+ logical_slot3  | logical
+ logical_slot4  | logical
+ physical_slot1 | physical
+(5 rows)
+
+SELECT pg_drop_replication_slot('logical_slot1');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('logical_slot2');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('logical_slot3');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('logical_slot4');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('physical_slot1');
  pg_drop_replication_slot 
 --------------------------
  

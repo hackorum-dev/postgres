@@ -1928,6 +1928,14 @@
   max => 'INT_MAX',
 },
 
+{ name => 'max_logical_replication_slots', type => 'int', context => 'PGC_POSTMASTER', group => 'REPLICATION_SENDING',
+  short_desc => 'Sets the maximum number of simultaneously defined logical replication slots.',
+  variable => 'max_logical_replication_slots',
+  boot_val => '-1',
+  min => '-1',
+  max => 'MAX_BACKENDS /* XXX? */',
+},
+
 { name => 'max_logical_replication_workers', type => 'int', context => 'PGC_POSTMASTER', group => 'REPLICATION_SUBSCRIBERS',
   short_desc => 'Maximum number of logical replication worker processes.',
   variable => 'max_logical_replication_workers',

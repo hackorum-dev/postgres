@@ -150,6 +150,8 @@ ReplicationSlot *MyReplicationSlot = NULL;
 /* GUC variables */
 int			max_replication_slots = 10; /* the maximum number of replication
 										 * slots */
+int			max_logical_replication_slots = -1; /* the maximum number of
+												 * logical replication slots */
 
 /*
  * Invalidate replication slots that have remained idle longer than this
@@ -381,6 +383,9 @@ ReplicationSlotCreate(const char *name, bool db_specific,
 {
 	ReplicationSlot *slot = NULL;
 	int			i;
+	int			used_logical_slot_count = 0;
+	int			max_logical_slots = max_logical_replication_slots != -1 ?
+		max_logical_replication_slots : max_replication_slots;
 
 	Assert(MyReplicationSlot == NULL);
 
@@ -442,6 +447,8 @@ ReplicationSlotCreate(const char *name, bool db_specific,
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_OBJECT),
 					 errmsg("replication slot \"%s\" already exists", name)));
+		if (s->in_use && SlotIsLogical(s))
+			used_logical_slot_count++;
 		if (!s->in_use && slot == NULL)
 			slot = s;
 	}
@@ -453,6 +460,17 @@ ReplicationSlotCreate(const char *name, bool db_specific,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
 				 errmsg("all replication slots are in use"),
 				 errhint("Free one or increase \"max_replication_slots\".")));
+
+	/*
+	 * Check the logical replication slots limit. Any remaining slots are to
+	 * be used for physical replication.
+	 */
+	if (db_specific &&
+		used_logical_slot_count >= max_logical_slots)
+		ereport(ERROR,
+				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+				 errmsg("all logical replication slots are in use"),
+				 errhint("Free one or increase \"max_logical_replication_slots\".")));
 
 	/*
 	 * Since this slot is not in use, nobody should be looking at any part of
@@ -2379,8 +2397,18 @@ StartupReplicationSlots(void)
 {
 	DIR		   *replication_dir;
 	struct dirent *replication_de;
+	int			i;
+	int			logical_slot_count = 0;
 
 	elog(DEBUG1, "starting up replication slots");
+
+	/* fail early for invalid GUCs */
+	if (max_logical_replication_slots != -1 &&
+		max_logical_replication_slots > max_replication_slots)
+		ereport(FATAL,
+				(errmsg("max_logical_replication_slots (%d) cannot be greater than max_replication_slots (%d)",
+						max_logical_replication_slots,
+						max_replication_slots)));
 
 	/* restore all slots by iterating over all on-disk entries */
 	replication_dir = AllocateDir(PG_REPLSLOT_DIR);
@@ -2418,6 +2446,26 @@ StartupReplicationSlots(void)
 		RestoreSlotFromDisk(replication_de->d_name);
 	}
 	FreeDir(replication_dir);
+
+	/* check that we don't have more logical slots restored than allowed */
+	if (max_logical_replication_slots != -1)
+	{
+		for (i = 0; i < max_replication_slots; i++)
+		{
+			ReplicationSlot *slot = &ReplicationSlotCtl->replication_slots[i];
+
+			if (!slot->in_use)
+				continue;
+
+			if (SlotIsLogical(slot))
+				logical_slot_count++;
+		}
+
+		if (logical_slot_count > max_logical_replication_slots)
+			ereport(FATAL,
+					(errmsg("too many logical replication slots active before shutdown"),
+					 errhint("Increase \"max_logical_replication_slots\" and try again.")));
+	}
 
 	/* currently no slots exist, we're done. */
 	if (max_replication_slots <= 0)
