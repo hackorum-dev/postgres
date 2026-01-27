@@ -2629,6 +2629,30 @@ find_join_domain(PlannerInfo *root, Relids relids)
 
 
 /*
+ * strip_collation_preserving_relabel
+ *	  Remove any leading RelabelType decorations from "node", but only the
+ *	  layers that don't change the expression's exposed collation.
+ *
+ * This lets us match expressions that differ only by a binary-compatible
+ * cast (e.g. varchar to text), while not discarding a RelabelType that was
+ * added specifically to force a different collation, since that would
+ * change the expression's semantics.
+ */
+static Node *
+strip_collation_preserving_relabel(Node *node)
+{
+	while (node && IsA(node, RelabelType))
+	{
+		RelabelType *re = (RelabelType *) node;
+
+		if (re->resultcollid != exprCollation((Node *) re->arg))
+			break;
+		node = (Node *) re->arg;
+	}
+	return node;
+}
+
+/*
  * exprs_known_equal
  *	  Detect whether two expressions are known equal due to equivalence
  *	  relationships.
@@ -2646,6 +2670,17 @@ bool
 exprs_known_equal(PlannerInfo *root, Node *item1, Node *item2, Oid opfamily)
 {
 	ListCell   *lc1;
+
+	/*
+	 * Strip any collation-preserving RelabelType decorations from the input
+	 * expressions, so that they can still be matched below against EC members
+	 * that get the same treatment.  This is needed because, e.g., partition
+	 * key expressions stored in an EC member may be wrapped in a RelabelType
+	 * (binary-compatible cast) that the caller-supplied item may or may not
+	 * also carry.
+	 */
+	item1 = strip_collation_preserving_relabel(item1);
+	item2 = strip_collation_preserving_relabel(item2);
 
 	foreach(lc1, root->eq_classes)
 	{
@@ -2673,12 +2708,13 @@ exprs_known_equal(PlannerInfo *root, Node *item1, Node *item2, Oid opfamily)
 		foreach(lc2, ec->ec_members)
 		{
 			EquivalenceMember *em = (EquivalenceMember *) lfirst(lc2);
+			Node	   *expr = strip_collation_preserving_relabel((Node *) em->em_expr);
 
 			/* Child members should not exist in ec_members */
 			Assert(!em->em_is_child);
-			if (equal(item1, em->em_expr))
+			if (equal(item1, expr))
 				item1member = true;
-			else if (equal(item2, em->em_expr))
+			else if (equal(item2, expr))
 				item2member = true;
 			/* Exit as soon as equality is proven */
 			if (item1member && item2member)

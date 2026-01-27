@@ -350,6 +350,37 @@ EXPLAIN (COSTS OFF)
 SELECT avg(t1.a), avg(t2.b), avg(t3.a + t3.b), t1.c, t2.c, t3.c FROM pht1 t1, pht2 t2, pht1_e t3 WHERE t1.b = t2.b AND t1.c = t2.c AND ltrim(t3.c, 'A') = t1.c GROUP BY t1.c, t2.c, t3.c ORDER BY t1.c, t2.c, t3.c;
 SELECT avg(t1.a), avg(t2.b), avg(t3.a + t3.b), t1.c, t2.c, t3.c FROM pht1 t1, pht2 t2, pht1_e t3 WHERE t1.b = t2.b AND t1.c = t2.c AND ltrim(t3.c, 'A') = t1.c GROUP BY t1.c, t2.c, t3.c ORDER BY t1.c, t2.c, t3.c;
 
+--
+-- hash partitioned by an expression that's a binary-compatible cast
+-- (varchar to text); the partition key expression is stored wrapped in a
+-- RelabelType, which needs to still match join/restriction clauses for
+-- partitionwise join to kick in
+--
+CREATE TABLE pht3 (a int, b int, c varchar(40)) PARTITION BY HASH((c::text));
+CREATE TABLE pht3_p1 PARTITION OF pht3 FOR VALUES WITH (MODULUS 3, REMAINDER 0);
+CREATE TABLE pht3_p2 PARTITION OF pht3 FOR VALUES WITH (MODULUS 3, REMAINDER 1);
+CREATE TABLE pht3_p3 PARTITION OF pht3 FOR VALUES WITH (MODULUS 3, REMAINDER 2);
+INSERT INTO pht3 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(0, 599, 2) i;
+ANALYZE pht3;
+
+CREATE TABLE pht4 (a int, b int, c varchar(40)) PARTITION BY HASH((c::text));
+CREATE TABLE pht4_p1 PARTITION OF pht4 FOR VALUES WITH (MODULUS 3, REMAINDER 0);
+CREATE TABLE pht4_p2 PARTITION OF pht4 FOR VALUES WITH (MODULUS 3, REMAINDER 1);
+CREATE TABLE pht4_p3 PARTITION OF pht4 FOR VALUES WITH (MODULUS 3, REMAINDER 2);
+INSERT INTO pht4 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(0, 599, 3) i;
+ANALYZE pht4;
+
+-- Force nested loop, since hash/merge join costs tend to be close to the
+-- partitionwise join's cost at this scale, which would make the test
+-- output machine-dependent.
+SET enable_hashjoin = off;
+SET enable_mergejoin = off;
+EXPLAIN (COSTS OFF)
+SELECT avg(t1.a), avg(t2.a), t1.c, t2.c FROM pht3 t1, pht4 t2 WHERE t1.c::text = t2.c::text GROUP BY t1.c, t2.c ORDER BY t1.c, t2.c;
+SELECT avg(t1.a), avg(t2.a), t1.c, t2.c FROM pht3 t1, pht4 t2 WHERE t1.c::text = t2.c::text GROUP BY t1.c, t2.c ORDER BY t1.c, t2.c;
+RESET enable_hashjoin;
+RESET enable_mergejoin;
+
 -- test default partition behavior for range
 ALTER TABLE prt1 DETACH PARTITION prt1_p3;
 ALTER TABLE prt1 ATTACH PARTITION prt1_p3 DEFAULT;
