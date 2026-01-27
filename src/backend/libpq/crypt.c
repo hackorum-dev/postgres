@@ -20,6 +20,7 @@
 #include "common/scram-common.h"
 #include "libpq/crypt.h"
 #include "libpq/scram.h"
+#include "miscadmin.h"
 #include "utils/builtins.h"
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
@@ -66,7 +67,19 @@ get_role_password(const char *role, const char **logdetail)
 	datum = SysCacheGetAttr(AUTHNAME, roleTup,
 							Anum_pg_authid_rolvaliduntil, &isnull);
 	if (!isnull)
+	{
 		vuntil = DatumGetTimestampTz(datum);
+		/*
+		 * Cache the password expiration timestamp from pg_authid.rolvaliduntil
+		 * during initial authentication so it can be checked throughout the
+		 * lifetime of the connection. By changing this value from -1 to >= 0
+		 * we signal that password authentication was used.
+		 */
+		password_valid_until_timestamp = vuntil;
+	}
+	/* No expiration limit set */
+	else
+		password_valid_until_timestamp = 0;
 
 	ReleaseSysCache(roleTup);
 

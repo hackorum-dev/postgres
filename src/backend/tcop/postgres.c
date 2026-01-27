@@ -34,6 +34,7 @@
 #include "access/parallel.h"
 #include "access/printtup.h"
 #include "access/xact.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_type.h"
 #include "commands/async.h"
 #include "commands/event_trigger.h"
@@ -74,10 +75,12 @@
 #include "tcop/utility.h"
 #include "utils/guc_hooks.h"
 #include "utils/injection_point.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
 #include "utils/snapmgr.h"
+#include "utils/syscache.h"
 #include "utils/timeout.h"
 #include "utils/timestamp.h"
 #include "utils/varlena.h"
@@ -104,6 +107,13 @@ int			client_connection_check_interval = 0;
 
 /* flags for non-system relation kinds to restrict use */
 int			restrict_nonsystem_relation_kind;
+
+/*
+ * Flag set by syscache listener to indicate if the user's password validity
+ * (rolvaliduntil) needs to be checked for expiration before the next
+ * command execution.
+ */
+static bool	AuthCheckNeeded = false;
 
 /* ----------------
  *		private typedefs etc
@@ -163,6 +173,13 @@ static volatile sig_atomic_t RecoveryConflictPendingReasons[NUM_PROCSIGNALS];
 static MemoryContext row_description_context = NULL;
 static StringInfoData row_description_buf;
 
+/*
+ * Tracks whether the SysCache callback for AUTHOID has been registered.
+ * This ensures CacheRegisterSyscacheCallback is called exactly once during
+ * backend initialization, preventing redundant registrations in the main loop.
+ */
+static bool password_auth_cache_callback_registered = false;
+
 /* ----------------------------------------------------------------
  *		decls for routines only used in this file
  * ----------------------------------------------------------------
@@ -186,6 +203,8 @@ static void drop_unnamed_stmt(void);
 static void log_disconnections(int code, Datum arg);
 static void enable_statement_timeout(void);
 static void disable_statement_timeout(void);
+static void AuthCacheInvalidated(Datum arg, int cacheid, uint32 hashvalue);
+static void enforce_password_expiration(void);
 
 
 /* ----------------------------------------------------------------
@@ -1051,6 +1070,11 @@ exec_simple_query(const char *query_string)
 	start_xact_command();
 
 	/*
+	 * Verify that the user's password has not expired.
+	 */
+	enforce_password_expiration();
+
+	/*
 	 * Zap any pre-existing unnamed statement.  (While not strictly necessary,
 	 * it seems best to define simple-Query mode as if it used the unnamed
 	 * statement and portal; this ensures we recover any storage used by prior
@@ -1433,6 +1457,11 @@ exec_parse_message(const char *query_string,	/* string to execute */
 	start_xact_command();
 
 	/*
+	 * Verify that the user's password has not expired.
+	 */
+	enforce_password_expiration();
+
+	/*
 	 * Switch to appropriate context for constructing parsetrees.
 	 *
 	 * We have two strategies depending on whether the prepared statement is
@@ -1707,6 +1736,11 @@ exec_bind_message(StringInfo input_message)
 	 * necessary.
 	 */
 	start_xact_command();
+
+	/*
+	 * Verify that the user's password has not expired.
+	 */
+	enforce_password_expiration();
 
 	/* Switch back to message context */
 	MemoryContextSwitchTo(MessageContext);
@@ -2222,6 +2256,11 @@ exec_execute_message(const char *portal_name, long max_rows)
 	start_xact_command();
 
 	/*
+	 * Verify that the user's password has not expired.
+	 */
+	enforce_password_expiration();
+
+	/*
 	 * If we re-issue an Execute protocol request against an existing portal,
 	 * then we are only fetching more rows rather than completely re-executing
 	 * the query from the start. atStart is never reset for a v3 portal, so we
@@ -2654,6 +2693,11 @@ exec_describe_statement_message(const char *stmt_name)
 	 */
 	start_xact_command();
 
+	/*
+	 * Verify that the user's password has not expired.
+	 */
+	enforce_password_expiration();
+
 	/* Switch back to message context */
 	MemoryContextSwitchTo(MessageContext);
 
@@ -2746,6 +2790,11 @@ exec_describe_portal_message(const char *portal_name)
 	 * current memory context.) Nothing happens if we are already in one.
 	 */
 	start_xact_command();
+
+	/*
+	 * Verify that the user's password has not expired.
+	 */
+	enforce_password_expiration();
 
 	/* Switch back to message context */
 	MemoryContextSwitchTo(MessageContext);
@@ -4518,6 +4567,20 @@ PostgresMain(const char *dbname, const char *username)
 	if (!ignore_till_sync)
 		send_ready_for_query = true;	/* initially, or after error */
 
+
+	/*
+	 * Register a SysCache listener for pg_authid changes (specifically for
+	 * rolvaliduntil). This provides an event-driven mechanism to enforce
+	 * password/authorization expiration immediately upon change, rather than
+	 * relying on polling. The callback sets a flag (AuthCheckNeeded) which
+	 * is checked before executing each simple query.
+	 */
+	if (!password_auth_cache_callback_registered)
+	{
+		CacheRegisterSyscacheCallback(AUTHOID, AuthCacheInvalidated, (Datum) 0);
+		password_auth_cache_callback_registered = true;
+	}
+
 	/*
 	 * Non-error queries loop here.
 	 */
@@ -5236,4 +5299,108 @@ disable_statement_timeout(void)
 {
 	if (get_timeout_active(STATEMENT_TIMEOUT))
 		disable_timeout(STATEMENT_TIMEOUT, false);
+}
+
+/*
+ * CheckPasswordExpiration
+ * Refreshes the cached password expiration timestamp from the system cache.
+ * This function looks up the current user's entry in pg_authid and updates
+ * 'password_valid_until_timestamp' with the current value of 'rolvaliduntil'.
+ * It is called by enforce_password_expiration() when the 'AuthCheckNeeded'
+ * flag is set, typically due to a syscache invalidation (AuthCacheInvalidated).
+ * If the user no longer exists (e.g., the role was dropped concurrently), this
+ * function will trigger a FATAL error to prevent further operations.
+ */
+static void
+CheckPasswordExpiration(void)
+{
+	HeapTuple	tuple;
+
+	/*
+	 * Look up the current user's entry in pg_authid. We must do this, even
+	 * if only AuthCheckNeeded is set, because GetUserId() might return a
+	 * different user ID than the one that triggered the invalidation (though
+	 * that's unlikely for AUTHOID).
+	 */
+
+	tuple = SearchSysCache1(AUTHOID, ObjectIdGetDatum(GetUserId()));
+
+	if (HeapTupleIsValid(tuple))
+	{
+		Datum 		rolvaliduntil_datum;
+		bool		validUntil_null;
+
+		/* Get the expiration time column */
+		rolvaliduntil_datum = SysCacheGetAttr(AUTHOID, tuple,
+											  Anum_pg_authid_rolvaliduntil,
+											  &validUntil_null);
+
+		if (!validUntil_null)
+			password_valid_until_timestamp = DatumGetTimestampTz(rolvaliduntil_datum);
+		else
+			password_valid_until_timestamp = 0;
+
+		ReleaseSysCache(tuple);
+
+		/* Reset the flag after performing the check */
+		AuthCheckNeeded = false;
+	}
+
+	/*
+	 * Handle the case where the user was deleted.This can happen if the role was
+	 * dropped by another session after this process started.
+	 */
+	else
+		ereport(FATAL,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("user with OID %u does not exist", GetUserId()),
+				 errdetail("A lookup in the pg_authid system catalog failed for the current "
+						   "user OID."),
+				 errhint("The user might have been dropped concurrently by another session.")));
+}
+
+/*
+ * enforce_password_expiration
+ *
+ * Check if the user's password has expired and terminate the connection
+ * if necessary. This encapsulates the state checks and the FATAL report.
+ * CheckPasswordExpiration must only be called when the system is out of
+ * recovery and inside a valid transaction.
+ */
+static void
+enforce_password_expiration(void)
+{
+
+	if (!RecoveryInProgress() && IsTransactionState())
+	{
+		if (AuthCheckNeeded)
+			CheckPasswordExpiration();
+
+		if (password_valid_until_timestamp > 0 &&
+			password_valid_until_timestamp < GetCurrentTransactionStartTimestamp())
+			ereport(FATAL,
+					(errcode(ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION),
+					 errmsg("connection expired due to internal password policy enforcement"),
+					 errdetail("User's password expired at %s.",
+							   timestamptz_to_str(password_valid_until_timestamp)),
+					 errhint("Reconnect with a renewed password.")));
+	}
+}
+
+/*
+ * AuthCacheInvalidated
+ * Syscache callback function registered for the AUTHOID cache (pg_authid).
+ *
+ * This function is executed whenever a tuple in pg_authid is updated, inserted,
+ * or deleted. Its primary purpose is to catch changes to the currently
+ * connected user's 'rolvaliduntil' field.
+ *
+ * It sets the static flag AuthCheckNeeded to true, signaling that the user's
+ * password expiration status must be checked.
+ */
+static void
+AuthCacheInvalidated(Datum arg, int cacheid, uint32 hashvalue)
+{
+	/* This callback is executed when an entry in pg_authid changes */
+	AuthCheckNeeded = true;
 }

@@ -165,3 +165,10 @@ int			notify_buffers = 16;
 int			serializable_buffers = 32;
 int			subtransaction_buffers = 0;
 int			transaction_buffers = 0;
+
+/*
+ * Cached value of the current user's password expiration time (pg_authid.rolvaliduntil).
+ * This value is updated via CheckPasswordExpiration() when the AuthCheckNeeded
+ * flag is set by a syscache invalidation callback.
+ */
+TimestampTz	password_valid_until_timestamp = -1;

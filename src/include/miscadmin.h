@@ -287,7 +287,7 @@ extern PGDLLIMPORT double VacuumCostDelay;
 
 extern PGDLLIMPORT int VacuumCostBalance;
 extern PGDLLIMPORT bool VacuumCostActive;
-
+extern PGDLLIMPORT TimestampTz password_valid_until_timestamp;
 
 /* in utils/misc/stack_depth.c */
 
