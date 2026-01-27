@@ -190,6 +190,7 @@ static void deparseRangeTblRef(StringInfo buf, PlannerInfo *root,
 							   Index ignore_rel, List **ignore_conds,
 							   List **additional_conds, List **params_list);
 static void deparseAggref(Aggref *node, deparse_expr_cxt *context);
+static void deparseCoalesceExpr(CoalesceExpr *node, deparse_expr_cxt *context);
 static void appendGroupByClause(List *tlist, deparse_expr_cxt *context);
 static void appendOrderBySuffix(Oid sortop, Oid sortcoltype, bool nulls_first,
 								deparse_expr_cxt *context);
@@ -1043,6 +1044,33 @@ foreign_expr_walker(Node *node,
 				 * node might not care.)
 				 */
 				collation = agg->aggcollid;
+				if (collation == InvalidOid)
+					state = FDW_COLLATE_NONE;
+				else if (inner_cxt.state == FDW_COLLATE_SAFE &&
+						 collation == inner_cxt.collation)
+					state = FDW_COLLATE_SAFE;
+				else if (collation == DEFAULT_COLLATION_OID)
+					state = FDW_COLLATE_NONE;
+				else
+					state = FDW_COLLATE_UNSAFE;
+			}
+			break;
+		case T_CoalesceExpr:
+			{
+				CoalesceExpr *cs = (CoalesceExpr *) node;
+
+				if (!foreign_expr_walker((Node *) cs->args,
+										 glob_cxt, &inner_cxt, case_arg_cxt))
+					return false;
+
+				collation = cs->coalescecollid;
+
+				/*
+				 * Detect whether node is introducing a collation not derived
+				 * from a foreign Var.  (If so, we just mark it unsafe for now
+				 * rather than immediately returning false, since the parent
+				 * node might not care.)
+				 */
 				if (collation == InvalidOid)
 					state = FDW_COLLATE_NONE;
 				else if (inner_cxt.state == FDW_COLLATE_SAFE &&
@@ -2981,6 +3009,9 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
 		case T_ArrayExpr:
 			deparseArrayExpr((ArrayExpr *) node, context);
 			break;
+		case T_CoalesceExpr:
+			deparseCoalesceExpr((CoalesceExpr *) node, context);
+			break;
 		case T_Aggref:
 			deparseAggref((Aggref *) node, context);
 			break;
@@ -3812,6 +3843,29 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	}
 
 	appendStringInfoChar(buf, ')');
+}
+
+/*
+ * Deparse COALESCE node.
+ */
+static void
+deparseCoalesceExpr(CoalesceExpr *node, deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+	bool		first;
+	ListCell   *arg;
+
+	appendStringInfoString(buf, "COALESCE(");
+
+	first = true;
+	foreach(arg, node->args)
+	{
+		if (!first)
+			appendStringInfoString(buf, ", ");
+		deparseExpr((Expr *) lfirst(arg), context);
+		first = false;
+	}
+	appendStringInfoString(buf, ")");
 }
 
 /*
