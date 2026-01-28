@@ -31,6 +31,7 @@
 typedef struct
 {
 	bool		is_grant;
+	bool		is_remove_role;
 	ObjectType	objtype;
 	List	   *objects;
 	bool		all_privs;
