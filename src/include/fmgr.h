@@ -799,6 +799,7 @@ extern void get_loaded_module_details(DynamicFileList *dfptr,
 									  const char **module_name,
 									  const char **module_version);
 extern void **find_rendezvous_variable(const char *varName);
+extern const char *get_current_loading_library_name(void);
 extern Size EstimateLibraryStateSpace(void);
 extern void SerializeLibraryState(Size maxsize, char *start_address);
 extern void RestoreLibraryState(char *start_address);

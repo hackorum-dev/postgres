@@ -500,6 +500,17 @@ static const struct config_enum_entry file_extend_method_options[] = {
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry guc_prefix_enforcement_options[] = {
+	{"off", GUC_PREFIX_ENFORCEMENT_OFF, false},
+	{"warn", GUC_PREFIX_ENFORCEMENT_WARN, false},
+	{"prefix", GUC_PREFIX_ENFORCEMENT_PREFIX, false},
+	{"strict", GUC_PREFIX_ENFORCEMENT_STRICT, false},
+	{NULL, 0, false}
+};
+
+StaticAssertDecl(lengthof(guc_prefix_enforcement_options) == (GUC_PREFIX_ENFORCEMENT_STRICT + 2),
+				 "array length mismatch");
+
 /*
  * Options for enum values stored in other modules
  */
@@ -588,6 +599,8 @@ static int	ssl_renegotiation_limit;
 int			huge_pages = HUGE_PAGES_TRY;
 int			huge_page_size;
 int			huge_pages_status = HUGE_PAGES_UNKNOWN;
+
+int			guc_prefix_enforcement = GUC_PREFIX_ENFORCEMENT_OFF;
 
 /*
  * These variables are all dummies that don't do anything, except in some

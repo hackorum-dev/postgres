@@ -32,6 +32,7 @@
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "catalog/objectaccess.h"
+#include "fmgr.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_parameter_acl.h"
 #include "catalog/pg_type.h"
@@ -75,6 +76,12 @@
 #define GUC_SAFE_SEARCH_PATH "pg_catalog, pg_temp"
 
 static int	GUC_check_errcode_value;
+
+typedef struct ReservedGUCPrefix
+{
+	char	   *prefix;			/* the reserved prefix (e.g., "myext") */
+	char	   *library_name;	/* library that reserved this prefix, or NULL */
+} ReservedGUCPrefix;
 
 static List *reserved_class_prefix = NIL;
 
@@ -259,6 +266,8 @@ static void replace_auto_config_value(ConfigVariable **head_p, ConfigVariable **
 static bool valid_custom_variable_name(const char *name);
 static bool assignable_custom_variable_name(const char *name, bool skip_errors,
 											int elevel);
+static ReservedGUCPrefix *find_reserved_prefix_for_variable(const char *varname);
+static bool library_has_reserved_prefix(const char *library_name);
 static void do_serialize(char **destptr, Size *maxbytes,
 						 const char *fmt,...) pg_attribute_printf(3, 4);
 static bool call_bool_check_hook(const struct config_generic *conf, bool *newval,
@@ -1022,10 +1031,10 @@ assignable_custom_variable_name(const char *name, bool skip_errors, int elevel)
 		/* ... and it must not match any previously-reserved prefix */
 		foreach(lc, reserved_class_prefix)
 		{
-			const char *rcprefix = lfirst(lc);
+			ReservedGUCPrefix *reservation = (ReservedGUCPrefix *) lfirst(lc);
 
-			if (strlen(rcprefix) == classLen &&
-				strncmp(name, rcprefix, classLen) == 0)
+			if (strlen(reservation->prefix) == classLen &&
+				strncmp(name, reservation->prefix, classLen) == 0)
 			{
 				if (!skip_errors)
 					ereport(elevel,
@@ -1033,7 +1042,7 @@ assignable_custom_variable_name(const char *name, bool skip_errors, int elevel)
 							 errmsg("invalid configuration parameter name \"%s\"",
 									name),
 							 errdetail("\"%s\" is a reserved prefix.",
-									   rcprefix)));
+									   reservation->prefix)));
 				return false;
 			}
 		}
@@ -4788,6 +4797,19 @@ init_custom_variable(const char *name,
 	gen->flags = flags;
 	gen->vartype = type;
 
+	/*
+	 * Record which library defined this variable, for GUC prefix enforcement.
+	 * This will be NULL for variables defined outside of _PG_init context.
+	 */
+	{
+		const char *library_name = get_current_loading_library_name();
+
+		if (library_name)
+			gen->library_name = guc_strdup(FATAL, library_name);
+		else
+			gen->library_name = NULL;
+	}
+
 	return gen;
 }
 
@@ -5143,6 +5165,8 @@ DefineCustomEnumVariable(const char *name,
  * and then prevents new ones from being created.
  * Extensions should call this after they've defined all of their custom
  * GUCs, to help catch misspelled config-file entries.
+ *
+ * Also records the library that reserved this prefix for enforcement purposes.
  */
 void
 MarkGUCPrefixReserved(const char *className)
@@ -5151,6 +5175,8 @@ MarkGUCPrefixReserved(const char *className)
 	HASH_SEQ_STATUS status;
 	GUCHashEntry *hentry;
 	MemoryContext oldcontext;
+	ReservedGUCPrefix *reservation;
+	const char *library_name = get_current_loading_library_name();
 
 	/*
 	 * Check for existing placeholders.  We must actually remove invalid
@@ -5183,10 +5209,137 @@ MarkGUCPrefixReserved(const char *className)
 		}
 	}
 
-	/* And remember the name so we can prevent future mistakes. */
+	/*
+	 * Remember the prefix and its associated library so we can prevent
+	 * future mistakes and enforce prefix ownership.
+	 */
 	oldcontext = MemoryContextSwitchTo(GUCMemoryContext);
-	reserved_class_prefix = lappend(reserved_class_prefix, pstrdup(className));
+	reservation = (ReservedGUCPrefix *) palloc(sizeof(ReservedGUCPrefix));
+	reservation->prefix = pstrdup(className);
+	if (library_name)
+		reservation->library_name = pstrdup(library_name);
+	else
+		reservation->library_name = NULL;
+	reserved_class_prefix = lappend(reserved_class_prefix, reservation);
 	MemoryContextSwitchTo(oldcontext);
+}
+
+static ReservedGUCPrefix *
+find_reserved_prefix_for_variable(const char *varname)
+{
+	ListCell   *lc;
+	const char *sep;
+	int			classLen;
+
+	/* Find the class (prefix) portion of the variable name */
+	sep = strchr(varname, GUC_QUALIFIER_SEPARATOR);
+	if (sep == NULL)
+		return NULL;
+
+	classLen = sep - varname;
+
+	foreach(lc, reserved_class_prefix)
+	{
+		ReservedGUCPrefix *reservation = (ReservedGUCPrefix *) lfirst(lc);
+
+		if (strlen(reservation->prefix) == classLen &&
+			strncmp(varname, reservation->prefix, classLen) == 0)
+			return reservation;
+	}
+
+	return NULL;
+}
+
+static bool
+library_has_reserved_prefix(const char *library_name)
+{
+	ListCell   *lc;
+
+	if (library_name == NULL)
+		return false;
+
+	foreach(lc, reserved_class_prefix)
+	{
+		ReservedGUCPrefix *reservation = (ReservedGUCPrefix *) lfirst(lc);
+
+		if (reservation->library_name != NULL &&
+			strcmp(reservation->library_name, library_name) == 0)
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * Check GUC prefix reservations after library loading.
+ *
+ * This function validates that:
+ * - In "prefix" mode: all custom GUCs are defined under a reserved prefix
+ * - In "strict" mode: all libraries that define custom GUCs have called
+ *   MarkGUCPrefixReserved()
+ */
+void
+check_guc_prefix_reservations(void)
+{
+	HASH_SEQ_STATUS status;
+	GUCHashEntry *hentry;
+
+	if (guc_prefix_enforcement == GUC_PREFIX_ENFORCEMENT_OFF)
+		return;
+
+	hash_seq_init(&status, guc_hashtab);
+	while ((hentry = (GUCHashEntry *) hash_seq_search(&status)) != NULL)
+	{
+		struct config_generic *gconf = hentry->gucvar;
+		ReservedGUCPrefix *reservation;
+		int			strict_elevel;
+		int			prefix_elevel;
+		bool		has_reserved_prefix;
+
+		if (gconf->flags & GUC_CUSTOM_PLACEHOLDER)
+			continue;
+		if (gconf->library_name == NULL)
+			continue;
+
+		strict_elevel = (guc_prefix_enforcement == GUC_PREFIX_ENFORCEMENT_STRICT)
+			? FATAL : WARNING;
+		prefix_elevel = (guc_prefix_enforcement == GUC_PREFIX_ENFORCEMENT_WARN)
+			? WARNING : FATAL;
+
+		has_reserved_prefix = library_has_reserved_prefix(gconf->library_name);
+		if (!has_reserved_prefix)
+		{
+			ereport(strict_elevel,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("extension \"%s\" defines GUC variables without calling MarkGUCPrefixReserved()",
+							gconf->library_name),
+					 errdetail("Variable \"%s\" was defined without prefix reservation.",
+							   gconf->name),
+					 errhint("Extensions should call MarkGUCPrefixReserved() after defining their GUC variables.")));
+		}
+
+		reservation = find_reserved_prefix_for_variable(gconf->name);
+
+		if (reservation == NULL)
+		{
+			if (has_reserved_prefix)
+			{
+				ereport(prefix_elevel,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("extension \"%s\" defines GUC variable \"%s\" outside any reserved prefix",
+								gconf->library_name, gconf->name),
+						 errhint("Extensions should call MarkGUCPrefixReserved() to reserve a prefix for their variables.")));
+			}
+		}
+		else if (reservation->library_name != NULL &&
+				 strcmp(reservation->library_name, gconf->library_name) != 0)
+		{
+			ereport(prefix_elevel,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("extension \"%s\" defines GUC variable \"%s\" under prefix reserved by \"%s\"",
+							gconf->library_name, gconf->name, reservation->library_name)));
+		}
+	}
 }
 
 

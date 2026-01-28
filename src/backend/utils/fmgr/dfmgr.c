@@ -59,6 +59,12 @@ struct DynamicFileList
 static DynamicFileList *file_list = NULL;
 static DynamicFileList *file_tail = NULL;
 
+/*
+ * Track the library currently being loaded (during _PG_init execution).
+ * This allows GUC code to know which library is defining custom variables.
+ */
+static const char *current_loading_library_name = NULL;
+
 /* stat() call under Win32 returns an st_ino field, but it has no meaning */
 #ifndef WIN32
 #define SAME_INODE(A,B) ((A).st_ino == (B).inode && (A).st_dev == (B).device)
@@ -293,10 +299,32 @@ internal_load_library(const char *libname)
 
 		/*
 		 * If the library has a _PG_init() function, call it.
+		 *
+		 * Set current_loading_library_name so that GUC code can track which
+		 * library is defining custom variables. Use the module name from the
+		 * magic block if available, otherwise extract from the filename.
 		 */
 		PG_init = (PG_init_t) dlsym(file_scanner->handle, "_PG_init");
 		if (PG_init)
+		{
+			if (file_scanner->magic->name != NULL)
+				current_loading_library_name = file_scanner->magic->name;
+			else
+			{
+				/* Extract module name from library path */
+				const char *basename = strrchr(libname, '/');
+
+				if (basename)
+					basename++;
+				else
+					basename = libname;
+				current_loading_library_name = basename;
+			}
+
 			(*PG_init) ();
+
+			current_loading_library_name = NULL;
+		}
 
 		/* OK to link it into list */
 		if (file_list == NULL)
@@ -745,4 +773,14 @@ RestoreLibraryState(char *start_address)
 		internal_load_library(start_address);
 		start_address += strlen(start_address) + 1;
 	}
+}
+
+/*
+ * Return the name of the library currently being loaded (during _PG_init),
+ * or NULL if no library is currently being loaded.
+ */
+const char *
+get_current_loading_library_name(void)
+{
+	return current_loading_library_name;
 }

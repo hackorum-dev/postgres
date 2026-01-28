@@ -1856,6 +1856,8 @@ process_shared_preload_libraries(void)
 				   false);
 	process_shared_preload_libraries_in_progress = false;
 	process_shared_preload_libraries_done = true;
+
+	check_guc_prefix_reservations();
 }
 
 /*
@@ -1870,6 +1872,8 @@ process_session_preload_libraries(void)
 	load_libraries(local_preload_libraries_string,
 				   "local_preload_libraries",
 				   true);
+
+	check_guc_prefix_reservations();
 }
 
 /*

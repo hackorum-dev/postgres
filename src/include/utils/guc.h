@@ -127,6 +127,20 @@ typedef enum
 } GucSource;
 
 /*
+ * Enforcement modes for GUC prefix reservations.
+ *
+ * This controls how strictly we enforce that extensions call
+ * MarkGUCPrefixReserved() and only define GUCs under their reserved prefix.
+ */
+typedef enum
+{
+	GUC_PREFIX_ENFORCEMENT_OFF,		/* no enforcement */
+	GUC_PREFIX_ENFORCEMENT_WARN,	/* emit warnings on violations */
+	GUC_PREFIX_ENFORCEMENT_PREFIX,	/* ERROR if GUC defined outside reserved prefix */
+	GUC_PREFIX_ENFORCEMENT_STRICT,	/* ERROR if extension doesn't call MarkGUCPrefixReserved */
+} GucPrefixEnforcement;
+
+/*
  * Parsing the configuration file(s) will return a list of name-value pairs
  * with source location info.  We also abuse this data structure to carry
  * error reports about the config files.  An entry reporting an error will
@@ -286,6 +300,8 @@ extern PGDLLIMPORT bool log_executor_stats;
 extern PGDLLIMPORT bool log_statement_stats;
 extern PGDLLIMPORT bool log_btree_build_stats;
 extern PGDLLIMPORT char *event_source;
+
+extern PGDLLIMPORT int guc_prefix_enforcement;
 
 extern PGDLLIMPORT bool check_function_bodies;
 extern PGDLLIMPORT bool current_role_is_superuser;
@@ -459,6 +475,7 @@ extern int	set_config_with_handle(const char *name, config_handle *handle,
 								   GucAction action, bool changeVal,
 								   int elevel, bool is_reload);
 extern config_handle *get_config_handle(const char *name);
+extern void check_guc_prefix_reservations(void);
 extern void AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt);
 extern char *GetConfigOptionByName(const char *name, const char **varname,
 								   bool missing_ok);

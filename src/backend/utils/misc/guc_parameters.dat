@@ -1161,6 +1161,15 @@
   boot_val => 'false',
 },
 
+{ name => 'guc_prefix_enforcement', type => 'enum', context => 'PGC_SIGHUP', group => 'DEVELOPER_OPTIONS',
+  short_desc => 'Enforcement mode for GUC prefix reservations.',
+  long_desc => 'Controls whether violations of GUC prefix reservations generate warnings or errors.',
+  flags => 'GUC_NOT_IN_SAMPLE',
+  variable => 'guc_prefix_enforcement',
+  boot_val => 'GUC_PREFIX_ENFORCEMENT_OFF',
+  options => 'guc_prefix_enforcement_options',
+},
+
 { name => 'hash_mem_multiplier', type => 'real', context => 'PGC_USERSET', group => 'RESOURCES_MEM',
   short_desc => 'Multiple of "work_mem" to use for hash tables.',
   flags => 'GUC_EXPLAIN',

@@ -278,6 +278,8 @@ struct config_generic
 	char	   *sourcefile;		/* file current setting is from (NULL if not
 								 * set in config file) */
 	int			sourceline;		/* line in source file */
+	const char *library_name;	/* library that defined this variable, or NULL
+								 * for core variables */
 
 	/* fields for specific variable types */
 	union
