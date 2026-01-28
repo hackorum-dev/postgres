@@ -33,7 +33,8 @@
    This section describes the <acronym>SQL</acronym>-compliant subquery
    expressions available in <productname>PostgreSQL</productname>.
    All of the expression forms documented in this section return
-   Boolean (true/false) results.
+   <link linkend="nullvalues">three-valued</link> typed
+   results (true, false, or null).
   </para>
 
   <sect2 id="functions-subquery-exists">
@@ -101,19 +102,17 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
 
   <para>
    The right-hand side is a parenthesized
-   subquery, which must return exactly one column.  The left-hand expression
+   subquery, which must return exactly one column.  The result of <token>IN</token>
+   is <quote>false</quote> if the subquery returns no rows, otherwise the left-hand expression
    is evaluated and compared to each row of the subquery result.
-   The result of <token>IN</token> is <quote>true</quote> if any equal subquery row is found.
-   The result is <quote>false</quote> if no equal row is found (including the
-   case where the subquery returns no rows).
+   The result is <quote>true</quote> if any equal subquery row is found.
+   The result is <quote>false</quote> if no equal row is found.
   </para>
 
   <para>
-   Note that if the left-hand expression yields null, or if there are
-   no equal right-hand values and at least one right-hand row yields
-   null, the result of the <token>IN</token> construct will be null, not false.
-   This is in accordance with SQL's normal rules for Boolean combinations
-   of null values.
+   As explained in <xref linkend="nullvalues-multielement"/>, it is not possible
+   to see a <quote>false</quote> result in the presence of both rows and null
+   values since the multiple equality tests are OR'd together.
   </para>
 
   <para>
@@ -130,21 +129,18 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
    as described in <xref linkend="sql-syntax-row-constructors"/>.
    The right-hand side is a parenthesized
    subquery, which must return exactly as many columns as there are
-   expressions in the left-hand row.  The left-hand expressions are
+   expressions in the left-hand row.
+   The result of <token>IN</token> is <quote>false</quote> if the subquery returns no rows,
+   otherwise the left-hand expressions are
    evaluated and compared row-wise to each row of the subquery result.
-   The result of <token>IN</token> is <quote>true</quote> if any equal subquery row is found.
-   The result is <quote>false</quote> if no equal row is found (including the
-   case where the subquery returns no rows).
+   The result is <quote>true</quote> if any equal subquery row is found.
+   The result is <quote>false</quote> if no equal row is found.
   </para>
 
   <para>
-   As usual, null values in the rows are combined per
-   the normal rules of SQL Boolean expressions.  Two rows are considered
-   equal if all their corresponding members are non-null and equal; the rows
-   are unequal if any corresponding members are non-null and unequal;
-   otherwise the result of that row comparison is unknown (null).
-   If all the per-row results are either unequal or null, with at least one
-   null, then the result of <token>IN</token> is null.
+   As explained in <xref linkend="nullvalues-multielement"/>, it is not possible
+   to see a <quote>false</quote> result in the presence of both rows and null
+   values since the multiple equality tests are OR'd together.
   </para>
   </sect2>
 
@@ -156,20 +152,17 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
 </synopsis>
 
   <para>
-   The right-hand side is a parenthesized
-   subquery, which must return exactly one column.  The left-hand expression
-   is evaluated and compared to each row of the subquery result.
-   The result of <token>NOT IN</token> is <quote>true</quote> if only unequal subquery rows
-   are found (including the case where the subquery returns no rows).
+   The right-hand side is a parenthesized subquery, which must return exactly one column.
+   The result of <token>NOT IN</token> is <quote>true</quote> if the subquery returns no rows,
+   otherwise the left-hand expression is evaluated and compared to each row of the subquery result.
+   The result is <quote>true</quote> if only unequal subquery rows are found.
    The result is <quote>false</quote> if any equal row is found.
   </para>
 
   <para>
-   Note that if the left-hand expression yields null, or if there are
-   no equal right-hand values and at least one right-hand row yields
-   null, the result of the <token>NOT IN</token> construct will be null, not true.
-   This is in accordance with SQL's normal rules for Boolean combinations
-   of null values.
+   As explained in <xref linkend="nullvalues-multielement"/>, it is not possible
+   to see a <quote>true</quote> result in the presence of both rows and null
+   values since the multiple inequality tests are AND'd together.
   </para>
 
   <para>
@@ -186,21 +179,18 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
    as described in <xref linkend="sql-syntax-row-constructors"/>.
    The right-hand side is a parenthesized
    subquery, which must return exactly as many columns as there are
-   expressions in the left-hand row.  The left-hand expressions are
+   expressions in the left-hand row.
+   The result of <token>NOT IN</token> is <quote>true</quote> if the subquery returns no rows,
+   otherwise the left-hand expressions are
    evaluated and compared row-wise to each row of the subquery result.
-   The result of <token>NOT IN</token> is <quote>true</quote> if only unequal subquery rows
-   are found (including the case where the subquery returns no rows).
+   The result is <quote>true</quote> if only unequal subquery rows are found.
    The result is <quote>false</quote> if any equal row is found.
   </para>
 
   <para>
-   As usual, null values in the rows are combined per
-   the normal rules of SQL Boolean expressions.  Two rows are considered
-   equal if all their corresponding members are non-null and equal; the rows
-   are unequal if any corresponding members are non-null and unequal;
-   otherwise the result of that row comparison is unknown (null).
-   If all the per-row results are either unequal or null, with at least one
-   null, then the result of <token>NOT IN</token> is null.
+   As explained in <xref linkend="nullvalues-multielement"/>, it is not possible
+   to see a <quote>true</quote> result in the presence of both rows and null
+   values since the multiple inequality tests are AND'd together.
   </para>
   </sect2>
 
@@ -214,13 +204,13 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
 
   <para>
    The right-hand side is a parenthesized
-   subquery, which must return exactly one column.  The left-hand expression
+   subquery, which must return exactly one column.  The result of <token>ANY</token> is
+   <quote>false</quote> if the subquery returns no rows, otherwise the left-hand expression
    is evaluated and compared to each row of the subquery result using the
    given <replaceable>operator</replaceable>, which must yield a Boolean
    result.
-   The result of <token>ANY</token> is <quote>true</quote> if any true result is obtained.
-   The result is <quote>false</quote> if no true result is found (including the
-   case where the subquery returns no rows).
+   The result is <quote>true</quote> if any true result is obtained.
+   The result is <quote>false</quote> if no true result is found.
   </para>
 
   <para>
@@ -229,11 +219,10 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
   </para>
 
   <para>
-   Note that if there are no successes and at least one right-hand row yields
-   null for the operator's result, the result of the <token>ANY</token> construct
-   will be null, not false.
-   This is in accordance with SQL's normal rules for Boolean combinations
-   of null values.
+   If <replaceable>operator</replaceable> can produce null valued booleans then,
+   as explained in <xref linkend="nullvalues-multielement"/>, it is not possible
+   to see a <quote>false</quote> result in the presence of both rows and null
+   values since the multiple equality tests are OR'd together.
   </para>
 
   <para>
@@ -251,16 +240,19 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
    as described in <xref linkend="sql-syntax-row-constructors"/>.
    The right-hand side is a parenthesized
    subquery, which must return exactly as many columns as there are
-   expressions in the left-hand row.  The left-hand expressions are
+   expressions in the left-hand row.  The result of <token>ANY</token> is
+   <quote>false</quote> if the subquery returns no rows, otherwise the left-hand expressions are
    evaluated and compared row-wise to each row of the subquery result,
    using the given <replaceable>operator</replaceable>.
-   The result of <token>ANY</token> is <quote>true</quote> if the comparison
-   returns true for any subquery row.
-   The result is <quote>false</quote> if the comparison returns false for every
-   subquery row (including the case where the subquery returns no
-   rows).
-   The result is NULL if no comparison with a subquery row returns true,
-   and at least one comparison returns NULL.
+   The result is <quote>true</quote> if the comparison returns true for any subquery row.
+   The result is <quote>false</quote> if the comparison returns false for every subquery row.
+  </para>
+
+  <para>
+   If <replaceable>operator</replaceable> can produce null valued booleans then,
+   as explained in <xref linkend="nullvalues-multielement"/>, it is not possible
+   to see a <quote>false</quote> result in the presence of both rows and null
+   values since the multiple equality tests are AND'd together.
   </para>
 
   <para>
@@ -278,15 +270,20 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
 
   <para>
    The right-hand side is a parenthesized
-   subquery, which must return exactly one column.  The left-hand expression
+   subquery, which must return exactly one column.  The result of <token>ALL</token> is
+   <quote>true</quote> if the subquery returns no rows, otherwise the left-hand expression
    is evaluated and compared to each row of the subquery result using the
    given <replaceable>operator</replaceable>, which must yield a Boolean
    result.
-   The result of <token>ALL</token> is <quote>true</quote> if all rows yield true
-   (including the case where the subquery returns no rows).
+   The result is <quote>true</quote> if all rows yield true.
    The result is <quote>false</quote> if any false result is found.
-   The result is NULL if no comparison with a subquery row returns false,
-   and at least one comparison returns NULL.
+  </para>
+
+  <para>
+   If <replaceable>operator</replaceable> can produce null valued booleans then,
+   as explained in <xref linkend="nullvalues-multielement"/>, it is not possible
+   to see a <quote>true</quote> result in the presence of both rows and null
+   values since the multiple equality tests are AND'd together.
   </para>
 
   <para>
@@ -307,22 +304,21 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
    as described in <xref linkend="sql-syntax-row-constructors"/>.
    The right-hand side is a parenthesized
    subquery, which must return exactly as many columns as there are
-   expressions in the left-hand row.  The left-hand expressions are
+   expressions in the left-hand row.  The result of <token>ALL</token> is
+   <quote>true</quote> if the subquery returns no rows, otherwise the left-hand expressions are
    evaluated and compared row-wise to each row of the subquery result,
    using the given <replaceable>operator</replaceable>.
-   The result of <token>ALL</token> is <quote>true</quote> if the comparison
-   returns true for all subquery rows (including the
-   case where the subquery returns no rows).
-   The result is <quote>false</quote> if the comparison returns false for any
-   subquery row.
-   The result is NULL if no comparison with a subquery row returns false,
-   and at least one comparison returns NULL.
+   The result is <quote>true</quote> if the comparison returns true for all subquery rows.
+   The result is <quote>false</quote> if the comparison returns false for any subquery row.
   </para>
 
   <para>
-   See <xref linkend="row-wise-comparison"/> for details about the meaning
-   of a row constructor comparison.
+   If <replaceable>operator</replaceable> can produce null valued booleans then,
+   as explained in <xref linkend="nullvalues-multielement"/>, it is not possible
+   to see a <quote>true</quote> result in the presence of both rows and null
+   values since the multiple equality tests are AND'd together.
   </para>
+
   </sect2>
 
   <sect2 id="functions-subquery-single-row-comp">
@@ -345,6 +341,14 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
    the subquery cannot return more than one row.  (If it returns zero rows,
    the result is taken to be null.)  The left-hand side is evaluated and
    compared row-wise to the single subquery result row.
+  </para>
+
+  <para>
+   If <replaceable>operator</replaceable> can produce null valued booleans then,
+   as explained in <xref linkend="nullvalues-multielement"/>, the result cannot
+   be <quote>true</quote> in the presence of null valued fields in either the
+   row constructor or the subquery result row, as the individual field tests
+   are AND'd together.
   </para>
 
   <para>
