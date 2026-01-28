@@ -197,7 +197,7 @@ extern void recordDependencyOnNewAcl(Oid classId, Oid objectId, int32 objsubId,
 									 Oid ownerId, Acl *acl);
 
 extern Acl *aclupdate(const Acl *old_acl, const AclItem *mod_aip,
-					  int modechg, Oid ownerId, DropBehavior behavior);
+					  int modechg, Oid ownerId, DropBehavior behavior, bool is_remove_role);
 extern Acl *aclnewowner(const Acl *old_acl, Oid oldOwnerId, Oid newOwnerId);
 extern Acl *make_empty_acl(void);
 extern Acl *aclcopy(const Acl *orig_acl);
