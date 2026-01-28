@@ -1974,7 +1974,7 @@ ALTER TABLE products ADD COLUMN description text;
      each row will need to be updated with the value calculated at the time
      <command>ALTER TABLE</command> is executed. To avoid a potentially
      lengthy update operation, particularly if you intend to fill the column
-     with mostly nondefault values anyway, it may be preferable to add the
+     with mostly non-default values anyway, it may be preferable to add the
      column with no default, insert the correct values using
      <command>UPDATE</command>, and then add any desired default as described
      below.
@@ -2890,7 +2890,7 @@ GRANT SELECT (col1), UPDATE (col1) ON mytable TO miriam_rw;
    privileges (producing, for
    example, <literal>miriam=arwdDxt/miriam</literal>) and then modify them
    per the specified request.  Similarly, entries are shown in <quote>Column
-   privileges</quote> only for columns with nondefault privileges.
+   privileges</quote> only for columns with non-default privileges.
    (Note: for this purpose, <quote>default privileges</quote> always means
    the built-in default privileges for the object's type.  An object whose
    privileges have been affected by an <command>ALTER DEFAULT

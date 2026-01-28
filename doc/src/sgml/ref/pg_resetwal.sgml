@@ -239,7 +239,7 @@ PostgreSQL documentation
      </para>
 
      <para>
-      Note that when using nondefault WAL segment sizes, the numbers in the WAL
+      Note that when using non-default WAL segment sizes, the numbers in the WAL
       file names are different from the LSNs that are reported by system
       functions and system views.  This option takes a WAL file name, not an
       LSN.
