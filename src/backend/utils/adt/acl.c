@@ -544,7 +544,7 @@ aclmerge(const Acl *left_acl, const Acl *right_acl, Oid ownerId)
 		Acl		   *tmp_acl;
 
 		tmp_acl = aclupdate(result_acl, aip, ACL_MODECHG_ADD,
-							ownerId, DROP_RESTRICT);
+							ownerId, DROP_RESTRICT, false);
 		pfree(result_acl);
 		result_acl = tmp_acl;
 	}
@@ -1021,7 +1021,7 @@ acldefault_sql(PG_FUNCTION_ARGS)
  */
 Acl *
 aclupdate(const Acl *old_acl, const AclItem *mod_aip,
-		  int modechg, Oid ownerId, DropBehavior behavior)
+		  int modechg, Oid ownerId, DropBehavior behavior, bool is_remove_role)
 {
 	Acl		   *new_acl = NULL;
 	AclItem    *old_aip,
@@ -1044,6 +1044,23 @@ aclupdate(const Acl *old_acl, const AclItem *mod_aip,
 	num = ACL_NUM(old_acl);
 	old_aip = ACL_DAT(old_acl);
 
+	if (is_remove_role)
+	{
+		int src;
+		new_acl = allocacl(num);
+		new_aip = ACL_DAT(new_acl);
+		for (dst = src = 0; src < num; src += 1)
+		{
+			if (mod_aip->ai_grantee != old_aip[src].ai_grantee)
+			{
+				memmove(&new_aip[dst++], &old_aip[src], sizeof(AclItem));
+			}
+		}
+		/* Adjust array size to be 'num - 1' items */
+		ARR_DIMS(new_acl)[0] = dst;
+		SET_VARSIZE(new_acl, ACL_N_SIZE(dst));
+		return new_acl;
+	}
 	/*
 	 * Search the ACL for an existing entry for this grantee and grantor. If
 	 * one exists, just modify the entry in-place (well, in the same position,
@@ -1288,7 +1305,7 @@ cc_restart:
 
 			/* We'll actually zap ordinary privs too, but no matter */
 			new_acl = aclupdate(acl, &aip[i], ACL_MODECHG_DEL,
-								ownerId, DROP_CASCADE);
+								ownerId, DROP_CASCADE, false);
 
 			pfree(acl);
 			acl = new_acl;
@@ -1379,7 +1396,7 @@ restart:
 									   revoke_privs);
 
 			new_acl = aclupdate(acl, &mod_acl, ACL_MODECHG_DEL,
-								ownerId, behavior);
+								ownerId, behavior, false);
 
 			pfree(acl);
 			acl = new_acl;

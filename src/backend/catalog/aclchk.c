@@ -179,7 +179,7 @@ static void recordExtensionInitPrivWorker(Oid objoid, Oid classoid, int objsubid
  * NB: the original old_acl is pfree'd.
  */
 static Acl *
-merge_acl_with_grant(Acl *old_acl, bool is_grant,
+merge_acl_with_grant(Acl *old_acl, bool is_grant, bool is_remove_role,
 					 bool grant_option, DropBehavior behavior,
 					 List *grantees, AclMode privileges,
 					 Oid grantorId, Oid ownerId)
@@ -223,7 +223,7 @@ merge_acl_with_grant(Acl *old_acl, bool is_grant,
 								   (is_grant || !grant_option) ? privileges : ACL_NO_RIGHTS,
 								   (!is_grant || grant_option) ? privileges : ACL_NO_RIGHTS);
 
-		newer_acl = aclupdate(new_acl, &aclitem, modechg, ownerId, behavior);
+		newer_acl = aclupdate(new_acl, &aclitem, modechg, ownerId, behavior, is_remove_role);
 
 		/* avoid memory leak when there are many grantees */
 		pfree(new_acl);
@@ -403,6 +403,7 @@ ExecuteGrantStmt(GrantStmt *stmt)
 	 * Turn the regular GrantStmt into the InternalGrant form.
 	 */
 	istmt.is_grant = stmt->is_grant;
+	istmt.is_remove_role = false;
 	istmt.objtype = stmt->objtype;
 
 	/* Collect the OIDs of the target objects */
@@ -1286,6 +1287,7 @@ SetDefaultACL(InternalDefaultACL *iacls)
 	 */
 	new_acl = merge_acl_with_grant(old_acl,
 								   iacls->is_grant,
+								   false,
 								   iacls->grant_option,
 								   iacls->behavior,
 								   iacls->grantees,
@@ -1541,6 +1543,7 @@ RemoveRoleFromObjectACL(Oid roleid, Oid classid, Oid objid)
 				break;
 		}
 		istmt.is_grant = false;
+		istmt.is_remove_role = true;
 		istmt.objects = list_make1_oid(objid);
 		istmt.all_privs = true;
 		istmt.privileges = ACL_NO_RIGHTS;
@@ -1727,7 +1730,7 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 	/*
 	 * Generate new ACL.
 	 */
-	new_acl = merge_acl_with_grant(old_acl, istmt->is_grant,
+	new_acl = merge_acl_with_grant(old_acl, istmt->is_grant, false,
 								   istmt->grant_option,
 								   istmt->behavior, istmt->grantees,
 								   col_privileges, grantorId,
@@ -2032,6 +2035,7 @@ ExecGrant_Relation(InternalGrant *istmt)
 			 */
 			new_acl = merge_acl_with_grant(old_acl,
 										   istmt->is_grant,
+										   istmt->is_remove_role,
 										   istmt->grant_option,
 										   istmt->behavior,
 										   istmt->grantees,
@@ -2238,7 +2242,7 @@ ExecGrant_common(InternalGrant *istmt, Oid classid, AclMode default_privs,
 		/*
 		 * Generate new ACL.
 		 */
-		new_acl = merge_acl_with_grant(old_acl, istmt->is_grant,
+		new_acl = merge_acl_with_grant(old_acl, istmt->is_grant, false,
 									   istmt->grant_option, istmt->behavior,
 									   istmt->grantees, this_privileges,
 									   grantorId, ownerId);
@@ -2390,7 +2394,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		/*
 		 * Generate new ACL.
 		 */
-		new_acl = merge_acl_with_grant(old_acl, istmt->is_grant,
+		new_acl = merge_acl_with_grant(old_acl, istmt->is_grant, false,
 									   istmt->grant_option, istmt->behavior,
 									   istmt->grantees, this_privileges,
 									   grantorId, ownerId);
@@ -2537,7 +2541,7 @@ ExecGrant_Parameter(InternalGrant *istmt)
 		/*
 		 * Generate new ACL.
 		 */
-		new_acl = merge_acl_with_grant(old_acl, istmt->is_grant,
+		new_acl = merge_acl_with_grant(old_acl, istmt->is_grant, false,
 									   istmt->grant_option, istmt->behavior,
 									   istmt->grantees, this_privileges,
 									   grantorId, ownerId);
@@ -5031,6 +5035,7 @@ RemoveRoleFromInitPriv(Oid roleid, Oid classid, Oid objid, int32 objsubid)
 	if (old_acl != NULL)
 		new_acl = merge_acl_with_grant(old_acl,
 									   false,	/* is_grant */
+									   false,	/* is_remove_role */
 									   false,	/* grant_option */
 									   DROP_RESTRICT,
 									   list_make1_oid(roleid),
