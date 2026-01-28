@@ -10378,7 +10378,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         to specify using the default tablespace of the current database.
         If the value does not match the name of any existing tablespace,
         <productname>PostgreSQL</productname> will automatically use the default
-        tablespace of the current database.  If a nondefault tablespace
+        tablespace of the current database.  If a non-default tablespace
         is specified, the user must have <literal>CREATE</literal> privilege
         for it, or creation attempts will fail.
        </para>
