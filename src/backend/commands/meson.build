@@ -45,6 +45,7 @@ backend_sources += files(
   'statscmds.c',
   'subscriptioncmds.c',
   'tablecmds.c',
+  'tablecmds_partition.c',
   'tablespace.c',
   'trigger.c',
   'tsearchcmds.c',

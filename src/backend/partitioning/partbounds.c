@@ -22,6 +22,7 @@
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_type.h"
 #include "commands/tablecmds.h"
+#include "commands/tablecmds_partition.h"
 #include "common/hashfn.h"
 #include "executor/executor.h"
 #include "miscadmin.h"

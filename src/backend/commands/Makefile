@@ -57,6 +57,7 @@ OBJS = \
 	statscmds.o \
 	subscriptioncmds.o \
 	tablecmds.o \
+	tablecmds_partition.o \
 	tablespace.o \
 	trigger.o \
 	tsearchcmds.o \
