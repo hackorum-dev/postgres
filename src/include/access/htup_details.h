@@ -794,6 +794,9 @@ HeapTupleClearHeapOnly(const HeapTupleData *tuple)
 /* prototypes for functions in common/heaptuple.c */
 extern Size heap_compute_data_size(TupleDesc tupleDesc,
 								   const Datum *values, const bool *isnull);
+extern Size estimate_tuple_size(TupleDesc tupleDesc,
+					   const Datum *values, const bool *isnull);
+
 extern void heap_fill_tuple(TupleDesc tupleDesc,
 							const Datum *values, const bool *isnull,
 							char *data, Size data_size,

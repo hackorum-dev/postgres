@@ -57,6 +57,7 @@
 
 #include "postgres.h"
 
+#include "access/detoast.h"
 #include "access/heaptoast.h"
 #include "access/sysattr.h"
 #include "access/tupdesc_details.h"
@@ -253,6 +254,59 @@ heap_compute_data_size(TupleDesc tupleDesc,
 			 */
 			data_length = att_nominal_alignby(data_length, atti->attalignby);
 			data_length += EOH_get_flat_size(DatumGetEOHP(val));
+		}
+		else
+		{
+			data_length = att_datum_alignby(data_length, atti->attalignby,
+											atti->attlen, val);
+			data_length = att_addlength_datum(data_length, atti->attlen,
+											  val);
+		}
+	}
+
+	return data_length;
+}
+
+/*
+ * Estimate tuple size when it's transferred to the wire. Unlike
+ * heap_compute_data_size() it assumes that all toasts will be
+ * detoasted (but doesn't make assumptions about further
+ * processing).
+ */
+Size
+estimate_tuple_size(TupleDesc tupleDesc,
+					   const Datum *values,
+					   const bool *isnull)
+{
+	Size		data_length = 0;
+	int			i;
+	int			numberOfAttributes = tupleDesc->natts;
+
+	for (i = 0; i < numberOfAttributes; i++)
+	{
+		Datum		val;
+		CompactAttribute *atti;
+		bool		is_varlena;
+		bool		is_varwidth;
+
+		if (isnull[i])
+			continue;
+
+		val = values[i];
+		atti = TupleDescCompactAttr(tupleDesc, i);
+
+		is_varlena = (!atti->attbyval && atti->attlen == -1);
+		is_varwidth = (!atti->attbyval && atti->attlen == -2);
+
+		if (is_varlena)
+		{
+			data_length = att_nominal_alignby(data_length, atti->attalignby);
+			data_length += toast_raw_datum_size(val);
+		}
+		else if (is_varwidth)
+		{
+			data_length = att_nominal_alignby(data_length, atti->attalignby);
+			data_length += strlen(DatumGetCString(val)) + 1;
 		}
 		else
 		{
