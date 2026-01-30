@@ -1,0 +1,113 @@
+-- B-Tree Merge Scan Access Method Test
+--
+-- B-Tree Merge Scan is an access method that allows lazily producing
+-- output sorted by a non-leading column when the prefix has few distinct values.
+--
+--
+-- Let S be an infinite set of lattic points (x,y).
+-- Let S(x=1,y>=b) be the sequence of points 
+--     SELECT * FROM S WHERE x = a and y >= b ORDER BY b;
+--     i.e. (a, b), (a, b+1), (a, b+2), ...
+-- Similarly, S(x IN X, y=b) being the sequence of points
+--     SELECT * FROM S WHERE x IN X and y = b ORDER BY x;
+--     i.e. (x[1], b), ..., (x[n], b), (x[1], b+1), ...
+-- The output of S(x IN X, y >= b) can be computed as a
+--
+-- Proposition (uncomputable): 
+-- S(x, IN X, y >= b) is the K-way merge of the sequences 
+-- {S(x=x[i], y >= b), x[i] in X}
+-- 
+--
+--
+-- Proposition (computable): Bounded suffix
+--
+-- S(x, IN X, b1 <= y <= b2) as bounded
+-- can be computed with (SELECT count(distinct x) + count(1) FROM bounded)
+-- tuple accesses.
+-- (Constructive) Proof:
+-- The result of 
+--    SELECT * FROM X 
+--    JOIN S on x = x[i] WHERE y BETWEEN b1 AND b2;
+-- is the same as 
+--    SELECT * FROM X,
+--    LATERAL (
+--        (SELECT * FROM S 
+--           WHERE x = x[i] AND y BETWEEN b1 AND b2
+--        ) AS subscan[i]
+--    ) as merged
+-- 
+-- Each of subscan[i] is covered by a single range in the index and can
+-- and require at most 
+--  (count(1) FROM subscan[i]) + 1    -- subscan tuple access count
+-- tupples to be accessed.
+-- The merged result can be computed using a K-way merge sort 
+-- whose number of rows is
+--   sum(count(1) FROM subscan[i])    -- query output rows
+-- Q.E.D.
+--
+--
+-- Proposition (computable): Limitted query
+-- The query
+--   S(x, IN X, y >= b) LIMIT N as limited
+-- Can be computed with at most 
+--   N + count(distinct X) - 1
+-- tuple accesses.
+--
+-- (Constructive) Proof:
+-- If an upper `u` bound for `MAX(y IN S(x, IN X, y >= b) LIMIT N)` is known,
+-- then the query can be rewritten as
+--   S(x, IN X, b <= y <= u) LIMIT N
+-- The K-way can produce the next element as soon as it has fetched
+-- the next element for each subquery
+-- 1 row can be produced after count(distinct X) fetches,
+-- After that it can produce one new row for each fetch.
+-- Thus, the total number of fetches is at most
+--   N + count(distinct X) - 1
+-- Q.E.D.
+-- Generate a table with lattice points 
+-- Could be infinite
+CREATE TABLE btree_merge_test AS (
+    SELECT x, y FROM 
+        generate_series(1, 50) AS x, 
+        generate_series(1, 50) AS y
+    ORDER BY random()
+);
+CREATE INDEX btree_merge_test_idx ON btree_merge_test USING btree (x, y);
+ANALYSE btree_merge_test;
+SET enable_seqscan = OFF;
+SET enable_bitmapscan = OFF;
+SHOW track_counts;  -- should be 'on'
+ track_counts 
+--------------
+ on
+(1 row)
+
+-- From the limited query proposition this can be computed with 10
+-- tupple accesses.
+SELECT x, y
+FROM btree_merge_test
+WHERE x IN (1,2,5,8,13,21,34,55) AND y >= 19
+ORDER BY y, x -- sort x to make result unique
+LIMIT 3;
+ x | y  
+---+----
+ 1 | 19
+ 2 | 19
+ 5 | 19
+(3 rows)
+
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+SELECT idx_scan, idx_tup_read, idx_tup_fetch 
+FROM pg_stat_user_indexes 
+WHERE indexrelname = 'btree_merge_test_idx';
+ idx_scan | idx_tup_read | idx_tup_fetch 
+----------+--------------+---------------
+        5 |           10 |            10
+(1 row)
+
+DROP TABLE btree_merge_test;
