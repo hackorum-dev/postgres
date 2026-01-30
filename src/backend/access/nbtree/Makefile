@@ -16,6 +16,7 @@ OBJS = \
 	nbtcompare.o \
 	nbtdedup.o \
 	nbtinsert.o \
+	nbtmergescan.o \
 	nbtpage.o \
 	nbtpreprocesskeys.o \
 	nbtreadpage.o \

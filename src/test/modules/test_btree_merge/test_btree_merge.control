@@ -1,0 +1,5 @@
+# test_btree_merge extension
+comment = 'Unit tests for B-tree merge scan'
+default_version = '1.0'
+module_pathname = '$libdir/test_btree_merge'
+relocatable = true

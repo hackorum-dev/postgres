@@ -20,6 +20,7 @@
 #include "catalog/pg_am_d.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_index.h"
+#include "lib/pairingheap.h"
 #include "lib/stringinfo.h"
 #include "storage/bufmgr.h"
 #include "storage/dsm.h"
@@ -1050,6 +1051,49 @@ typedef struct BTArrayKeyInfo
 	ScanKey		high_compare;	/* array's < or <= upper bound */
 } BTArrayKeyInfo;
 
+/*
+ * BTMergeCursor - tracks scan state for one prefix value in merge scan
+ *
+ * Each cursor maintains its own position within the index for a specific
+ * prefix value. Cursors are organized in a min-heap ordered by their
+ * current suffix key value for efficient K-way merge.
+ */
+typedef struct BTMergeCursor
+{
+	pairingheap_node ph_node;	/* pairing heap node for merge */
+	int			cursor_id;		/* index in merge state's cursors array */
+	Datum		prefix_value;	/* the prefix value for this sub-scan */
+	bool		prefix_isnull;	/* is prefix value NULL? */
+	Datum		sort_key;		/* current tuple's sort key (suffix) */
+	bool		sort_key_isnull;/* is sort key NULL? */
+	bool		exhausted;		/* no more tuples for this prefix */
+	BTScanPosData pos;			/* current position in index */
+	char	   *tuples;			/* tuple storage workspace (BLCKSZ) */
+} BTMergeCursor;
+
+/*
+ * BTMergeScanState - state for K-way merge scan
+ *
+ * This structure manages multiple cursors for a merge scan, allowing
+ * lazy evaluation of queries like:
+ *   WHERE prefix IN (v1, v2, ..., vK) AND suffix >= b ORDER BY suffix LIMIT N
+ */
+typedef struct BTMergeScanState
+{
+	int			num_cursors;	/* number of prefix values (K) */
+	int			active_cursors;	/* cursors not yet exhausted */
+	BTMergeCursor *cursors;		/* array of cursors */
+	pairingheap *merge_heap;	/* min-heap ordered by sort_key */
+	int			prefix_attno;	/* attribute number of prefix column (1-based) */
+	int			suffix_attno;	/* attribute number of suffix column (1-based) */
+	FmgrInfo	suffix_cmp;		/* comparison function for suffix */
+	Oid			suffix_collation;	/* collation for suffix comparison */
+	ScanDirection direction;	/* scan direction */
+	bool		initialized;	/* have cursors been initialized? */
+	MemoryContext merge_context;/* memory context for allocations */
+	int64		tuples_accessed;/* count of index tuples accessed */
+} BTMergeScanState;
+
 typedef struct BTScanOpaqueData
 {
 	/* these fields are set by _bt_preprocess_keys(): */
@@ -1088,6 +1132,12 @@ typedef struct BTScanOpaqueData
 	 * markPos.
 	 */
 	int			markItemIndex;	/* itemIndex, or -1 if not valid */
+
+	/*
+	 * Merge scan state, if using merge scan optimization.
+	 * NULL if not using merge scan.
+	 */
+	BTMergeScanState *mergeState;
 
 	/* keep these last in struct for efficiency */
 	BTScanPosData currPos;		/* current position data */
@@ -1330,5 +1380,19 @@ extern void btadjustmembers(Oid opfamilyoid,
 extern IndexBuildResult *btbuild(Relation heap, Relation index,
 								 struct IndexInfo *indexInfo);
 extern void _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc);
+
+/*
+ * prototypes for functions in nbtmergescan.c
+ */
+extern BTMergeScanState *bt_merge_init(IndexScanDesc scan,
+									   Datum *prefix_values,
+									   bool *prefix_nulls,
+									   int num_prefixes,
+									   int prefix_attno,
+									   int suffix_attno,
+									   Oid suffix_cmp_oid,
+									   Oid suffix_collation);
+extern bool bt_merge_getnext(IndexScanDesc scan, ScanDirection dir);
+extern void bt_merge_end(BTMergeScanState *state);
 
 #endif							/* NBTREE_H */

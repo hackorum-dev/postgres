@@ -43,3 +43,11 @@ lib*.pc
 /Release/
 /tmp_install/
 /portlock/
+
+# hidden files (e.g. .dbdata, .install, good practice to test locally in isolation)
+.*
+
+# Test output
+**/regression.diffs
+**/regression.out
+**/results/
