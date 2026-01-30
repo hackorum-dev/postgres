@@ -43,6 +43,7 @@
  *		pq_sendstring	- append a null-terminated text string (with conversion)
  *		pq_send_ascii_string - append a null-terminated text string (without conversion)
  *		pq_endmessage	- send the completed message to the frontend
+ *		pq_endmessage_noblock	- like pq_endmessage, but never blocks
  * Note: it is also possible to append data to the StringInfo buffer using
  * the regular StringInfo routines, but this is discouraged since required
  * character set conversion may not occur.
@@ -297,6 +298,23 @@ pq_endmessage(StringInfo buf)
 {
 	/* msgtype was saved in cursor field */
 	(void) pq_putmessage(buf->cursor, buf->data, buf->len);
+	/* no need to complain about any failure, since pqcomm.c already did */
+	pfree(buf->data);
+	buf->data = NULL;
+}
+
+/* --------------------------------
+ *		pq_endmessage_noblock	- like pq_endmessage, but never blocks
+ *
+ * The data buffer is pfree()d, but if the StringInfo was allocated with
+ * makeStringInfo then the caller must still pfree it.
+ * --------------------------------
+ */
+void
+pq_endmessage_noblock(StringInfo buf)
+{
+	/* msgtype was saved in cursor field */
+	(void) pq_putmessage_noblock(buf->cursor, buf->data, buf->len);
 	/* no need to complain about any failure, since pqcomm.c already did */
 	pfree(buf->data);
 	buf->data = NULL;
