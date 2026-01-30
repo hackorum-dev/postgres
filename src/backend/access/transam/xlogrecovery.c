@@ -3574,7 +3574,7 @@ next_record_is_invalid:
  * timelines, we can reject a switch to a timeline that branched off before
  * this point.
  *
- * If the record is not immediately available, the function returns false
+ * If the record is not immediately available, the function returns XLREAD_FAIL
  * if we're not in standby mode. In standby mode, waits for it to become
  * available.
  *
