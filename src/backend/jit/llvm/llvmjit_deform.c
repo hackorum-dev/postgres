@@ -149,14 +149,8 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 
 	b_entry =
 		LLVMAppendBasicBlockInContext(lc, v_deform_fn, "entry");
-	b_adjust_unavail_cols =
-		LLVMAppendBasicBlockInContext(lc, v_deform_fn, "adjust_unavail_cols");
 	b_find_start =
 		LLVMAppendBasicBlockInContext(lc, v_deform_fn, "find_startblock");
-	b_out =
-		LLVMAppendBasicBlockInContext(lc, v_deform_fn, "outblock");
-	b_dead =
-		LLVMAppendBasicBlockInContext(lc, v_deform_fn, "deadblock");
 
 	b = LLVMCreateBuilderInContext(lc);
 
@@ -317,6 +311,10 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 			l_bb_append_v(v_deform_fn, "block.attr.%d.store", attnum);
 	}
 
+	/* create the exit and dead blocks at the end, so that even with O0 they will be at the end */
+	b_out = LLVMAppendBasicBlockInContext(lc, v_deform_fn, "outblock");
+	b_dead = LLVMAppendBasicBlockInContext(lc, v_deform_fn, "deadblock");
+
 	/*
 	 * Check if it is guaranteed that all the desired attributes are available
 	 * in the tuple (but still possibly NULL), by dint of either the last
@@ -328,14 +326,15 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 	if ((natts - 1) <= guaranteed_column_number)
 	{
 		/* just skip through unnecessary blocks */
-		LLVMBuildBr(b, b_adjust_unavail_cols);
-		LLVMPositionBuilderAtEnd(b, b_adjust_unavail_cols);
 		LLVMBuildBr(b, b_find_start);
 	}
 	else
 	{
 		LLVMValueRef v_params[3];
 		LLVMValueRef f;
+
+		/* create the block since it is now needed */
+		b_adjust_unavail_cols = LLVMAppendBasicBlockInContext(lc, v_deform_fn, "adjust_unavail_cols");
 
 		/* branch if not all columns available */
 		LLVMBuildCondBr(b,
@@ -404,6 +403,8 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 		LLVMValueRef l_attno = l_int16_const(lc, attnum);
 		LLVMValueRef v_attdatap;
 		LLVMValueRef v_resultp;
+		bool		delayed_jump_in_nonnullable;
+		bool		delayed_jump_in_attcheckno;
 
 		/* build block checking whether we did all the necessary attributes */
 		LLVMPositionBuilderAtEnd(b, attcheckattnoblocks[attnum]);
@@ -424,7 +425,7 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 		 */
 		if (attnum <= guaranteed_column_number)
 		{
-			LLVMBuildBr(b, attstartblocks[attnum]);
+			delayed_jump_in_attcheckno = true;
 		}
 		else
 		{
@@ -435,6 +436,7 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 									 v_maxatt,
 									 "heap_natts");
 			LLVMBuildCondBr(b, v_islast, b_out, attstartblocks[attnum]);
+			delayed_jump_in_attcheckno = false;
 		}
 		LLVMPositionBuilderAtEnd(b, attstartblocks[attnum]);
 
@@ -492,13 +494,19 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 
 			LLVMBuildBr(b, b_next);
 			attguaranteedalign = false;
+			delayed_jump_in_nonnullable = false;
+			/* add the jump to our attisnull block in start */
+			if (delayed_jump_in_attcheckno)
+			{
+				LLVMPositionBuilderAtEnd(b, attcheckattnoblocks[attnum]);
+				LLVMBuildBr(b, attstartblocks[attnum]);
+				delayed_jump_in_attcheckno = false;
+			}
 		}
 		else
 		{
 			/* nothing to do */
-			LLVMBuildBr(b, attcheckalignblocks[attnum]);
-			LLVMPositionBuilderAtEnd(b, attisnullblocks[attnum]);
-			LLVMBuildBr(b, attcheckalignblocks[attnum]);
+			delayed_jump_in_nonnullable = true;
 		}
 		LLVMPositionBuilderAtEnd(b, attcheckalignblocks[attnum]);
 
@@ -582,14 +590,40 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 			}
 
 			LLVMBuildBr(b, attstoreblocks[attnum]);
-			LLVMPositionBuilderAtEnd(b, attstoreblocks[attnum]);
+			if (delayed_jump_in_nonnullable)
+			{
+				LLVMPositionBuilderAtEnd(b, attstartblocks[attnum]);
+				LLVMBuildBr(b, attcheckalignblocks[attnum]);
+				LLVMPositionBuilderAtEnd(b, attisnullblocks[attnum]);
+				LLVMBuildBr(b, attcheckalignblocks[attnum]);
+			}
+			if (delayed_jump_in_attcheckno)
+			{
+				LLVMPositionBuilderAtEnd(b, attcheckattnoblocks[attnum]);
+				LLVMBuildBr(b, attcheckalignblocks[attnum]);
+				delayed_jump_in_attcheckno = false;
+			}
 		}
 		else
 		{
 			LLVMPositionBuilderAtEnd(b, attcheckalignblocks[attnum]);
-			LLVMBuildBr(b, attalignblocks[attnum]);
+			LLVMBuildBr(b, attstoreblocks[attnum]);
 			LLVMPositionBuilderAtEnd(b, attalignblocks[attnum]);
 			LLVMBuildBr(b, attstoreblocks[attnum]);
+			if (delayed_jump_in_nonnullable)
+			{
+				LLVMPositionBuilderAtEnd(b, attstartblocks[attnum]);
+				LLVMBuildBr(b, attstoreblocks[attnum]);
+				LLVMPositionBuilderAtEnd(b, attisnullblocks[attnum]);
+				LLVMBuildBr(b, attstoreblocks[attnum]);
+			}
+
+			if (delayed_jump_in_attcheckno)
+			{
+				LLVMPositionBuilderAtEnd(b, attcheckattnoblocks[attnum]);
+				LLVMBuildBr(b, attstoreblocks[attnum]);
+				delayed_jump_in_attcheckno = false;
+			}
 		}
 		LLVMPositionBuilderAtEnd(b, attstoreblocks[attnum]);
 
