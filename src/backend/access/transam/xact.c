@@ -1602,7 +1602,7 @@ RecordTransactionCommit(void)
 	XactLastCommitEnd = XactLastRecEnd;
 
 	/* Reset XactLastRecEnd until the next transaction writes something */
-	XactLastRecEnd = 0;
+	XactLastRecEnd = InvalidXLogRecPtr;
 cleanup:
 	/* Clean up local data */
 	if (rels)
@@ -1815,7 +1815,7 @@ RecordTransactionAbort(bool isSubXact)
 	{
 		/* Reset XactLastRecEnd until the next transaction writes something */
 		if (!isSubXact)
-			XactLastRecEnd = 0;
+			XactLastRecEnd = InvalidXLogRecPtr;
 		return InvalidTransactionId;
 	}
 
@@ -1907,7 +1907,7 @@ RecordTransactionAbort(bool isSubXact)
 
 	/* Reset XactLastRecEnd until the next transaction writes something */
 	if (!isSubXact)
-		XactLastRecEnd = 0;
+		XactLastRecEnd = InvalidXLogRecPtr;
 
 	/* And clean up local data */
 	if (rels)
@@ -2730,7 +2730,7 @@ PrepareTransaction(void)
 	 */
 
 	/* Reset XactLastRecEnd until the next transaction writes something */
-	XactLastRecEnd = 0;
+	XactLastRecEnd = InvalidXLogRecPtr;
 
 	/*
 	 * Transfer our locks to a dummy PGPROC.  This has to be done before
