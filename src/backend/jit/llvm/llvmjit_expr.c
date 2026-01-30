@@ -972,7 +972,7 @@ llvm_compile_expr(ExprState *state)
 				{
 					LLVMValueRef v_resnull;
 					LLVMValueRef v_resvalue;
-					LLVMValueRef v_nullorfalse;
+					LLVMValueRef v_notnullnorfalse;
 					LLVMBasicBlockRef b_qualfail;
 
 					b_qualfail = l_bb_before_v(opblocks[opno + 1],
@@ -981,18 +981,18 @@ llvm_compile_expr(ExprState *state)
 					v_resvalue = l_load(b, TypeDatum, v_resvaluep, "");
 					v_resnull = l_load(b, TypeStorageBool, v_resnullp, "");
 
-					v_nullorfalse =
-						LLVMBuildOr(b,
-									LLVMBuildICmp(b, LLVMIntEQ, v_resnull,
-												  l_sbool_const(1), ""),
-									LLVMBuildICmp(b, LLVMIntEQ, v_resvalue,
-												  l_datum_const(0), ""),
-									"");
+					v_notnullnorfalse =
+						LLVMBuildAnd(b,
+									 LLVMBuildICmp(b, LLVMIntNE, v_resnull,
+												   l_sbool_const(1), ""),
+									 LLVMBuildICmp(b, LLVMIntNE, v_resvalue,
+												   l_datum_const(0), ""),
+									 "");
 
 					LLVMBuildCondBr(b,
-									v_nullorfalse,
-									b_qualfail,
-									opblocks[opno + 1]);
+									v_notnullnorfalse,
+									opblocks[opno + 1],
+									b_qualfail);
 
 					/* build block handling NULL or false */
 					LLVMPositionBuilderAtEnd(b, b_qualfail);
