@@ -3979,6 +3979,7 @@ static void
 send_message_to_frontend(ErrorData *edata)
 {
 	StringInfoData msgbuf;
+	bool		nonblocking = false;
 
 	/*
 	 * We no longer support pre-3.0 FE/BE protocol, except here.  If a client
@@ -3992,6 +3993,16 @@ send_message_to_frontend(ErrorData *edata)
 		/* New style with separate fields */
 		const char *sev;
 		char		tbuf[12];
+
+		/*
+		 * When the walsender is exiting with a FATAL or PANIC, attempt to
+		 * send the error message to the client in non-blocking mode. If
+		 * sending fails (for example, because the send buffer is full), give
+		 * up sending the message and exit immediately. Without this, the
+		 * walsender could block waiting for the message to be sent, delaying
+		 * termination when it should exit immediately.
+		 */
+		nonblocking = (edata->elevel >= FATAL && MyBackendType == B_WAL_SENDER);
 
 		/* 'N' (Notice) is for nonfatal conditions, 'E' is for errors */
 		if (edata->elevel < ERROR)
@@ -4106,7 +4117,10 @@ send_message_to_frontend(ErrorData *edata)
 
 		pq_sendbyte(&msgbuf, '\0'); /* terminator */
 
-		pq_endmessage(&msgbuf);
+		if (nonblocking)
+			pq_endmessage_noblock(&msgbuf);
+		else
+			pq_endmessage(&msgbuf);
 	}
 	else
 	{
@@ -4138,7 +4152,23 @@ send_message_to_frontend(ErrorData *edata)
 	 * messages should not be a performance-critical path anyway, so an extra
 	 * flush won't hurt much ...
 	 */
-	pq_flush();
+	if (nonblocking)
+	{
+		if (pq_flush_if_writable() != 0 || pq_is_send_pending())
+		{
+			/*
+			 * Reset whereToSendOutput to prevent ereport from attempting to
+			 * send any more messages to the client.
+			 */
+			if (whereToSendOutput == DestRemote)
+				whereToSendOutput = DestNone;
+
+			ereport(COMMERROR,
+					(errmsg("could not send error message to client")));
+		}
+	}
+	else
+		pq_flush();
 }
 
 
