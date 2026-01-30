@@ -20,6 +20,7 @@
 extern void pq_beginmessage(StringInfo buf, char msgtype);
 extern void pq_beginmessage_reuse(StringInfo buf, char msgtype);
 extern void pq_endmessage(StringInfo buf);
+extern void pq_endmessage_noblock(StringInfo buf);
 extern void pq_endmessage_reuse(StringInfo buf);
 
 extern void pq_sendbytes(StringInfo buf, const void *data, int datalen);
