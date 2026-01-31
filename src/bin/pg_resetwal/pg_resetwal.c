@@ -55,6 +55,7 @@
 #include "common/restricted_token.h"
 #include "common/string.h"
 #include "fe_utils/option_utils.h"
+#include "fe_utils/simple_list.h"
 #include "fe_utils/version.h"
 #include "getopt_long.h"
 #include "mb/pg_wchar.h"
@@ -118,6 +119,14 @@ static void usage(void);
 static int	internal_wcswidth(const char *pwcs, size_t len, int encoding);
 static uint32 strtouint32_strict(const char *restrict s, char **restrict endptr, int base);
 static uint64 strtouint64_strict(const char *restrict s, char **restrict endptr, int base);
+
+/* Define the string enums */
+#define CONTROLDATA_LINE(symbol, description, fmt, ...)			\
+	symbol,
+enum ControldataStrings {
+#include "entries.h"
+};
+#undef CONTROLDATA_LINE
 
 
 int
@@ -768,7 +777,7 @@ PrintControlValues(bool guessed)
 	 * First, determine the maximum length of the description of all entries,
 	 * some or all of which might be translated.
 	 */
-#define CONTROLDATA_LINE(description, fmt, ...)			\
+#define CONTROLDATA_LINE(symbol, description, fmt, ...)			\
 	thislen = internal_wcswidth(_(description),			\
 								strlen(_(description)),	\
 								encoding);				\
@@ -781,7 +790,7 @@ PrintControlValues(bool guessed)
 	 * Print each line: the possibly-translated description, then some padding
 	 * spaces according to its display width, then the value.
 	 */
-#define CONTROLDATA_LINE(description, fmt, ...)			\
+#define CONTROLDATA_LINE(symbol, description, fmt, ...)			\
 	{													\
 		int		thisstrlen;								\
 														\
@@ -807,69 +816,99 @@ static void
 PrintNewControlValues(void)
 {
 	char		fname[MAXFNAMELEN];
+	int			encoding = pg_get_encoding_from_locale(NULL, true);
+	SimpleOidList	toprint = {NULL, NULL};
+	int			maxlen = 0;
+	int			thislen;
 
 	/* This will be always printed in order to keep format same. */
 	printf(_("\n\nValues to be changed:\n\n"));
 
-	XLogFileName(fname, ControlFile.checkPointCopy.ThisTimeLineID,
-				 newXlogSegNo, WalSegSz);
-	printf(_("First log segment after reset:        %s\n"), fname);
-
 	if (mxids_given)
 	{
-		printf(_("NextMultiXactId:                      %u\n"),
-			   ControlFile.checkPointCopy.nextMulti);
-		printf(_("OldestMultiXid:                       %u\n"),
-			   ControlFile.checkPointCopy.oldestMulti);
-		printf(_("OldestMulti's DB:                     %u\n"),
-			   ControlFile.checkPointCopy.oldestMultiDB);
+		simple_oid_list_append(&toprint, CD_CKPT_NEXTMXID);
+		simple_oid_list_append(&toprint, CD_CKPT_OLDEST_MULTI);
+		simple_oid_list_append(&toprint, CD_CKPT_OLDEST_MULTI_DB);
 	}
 
 	if (next_mxoff_given)
-	{
-		printf(_("NextMultiOffset:                      %" PRIu64 "\n"),
-			   ControlFile.checkPointCopy.nextMultiOffset);
-	}
+		simple_oid_list_append(&toprint, CD_CKPT_NEXTMXOFF);
 
 	if (next_oid_given)
-	{
-		printf(_("NextOID:                              %u\n"),
-			   ControlFile.checkPointCopy.nextOid);
-	}
+		simple_oid_list_append(&toprint, CD_CKPT_NEXTOID);
 
 	if (next_xid_given)
-	{
-		printf(_("NextXID:                              %u\n"),
-			   XidFromFullTransactionId(ControlFile.checkPointCopy.nextXid));
-	}
+		simple_oid_list_append(&toprint, CD_CKPT_NEXTXID);
 
 	if (oldest_xid_given)
 	{
-		printf(_("OldestXID:                            %u\n"),
-			   ControlFile.checkPointCopy.oldestXid);
-		printf(_("OldestXID's DB:                       %u\n"),
-			   ControlFile.checkPointCopy.oldestXidDB);
-	}
-
-	if (next_xid_epoch_given)
-	{
-		printf(_("NextXID epoch:                        %u\n"),
-			   EpochFromFullTransactionId(ControlFile.checkPointCopy.nextXid));
+		simple_oid_list_append(&toprint, CD_CKPT_OLDESTXID);
+		simple_oid_list_append(&toprint, CD_CKPT_OLDESTXID_DB);
 	}
 
 	if (commit_ts_xids_given)
 	{
-		printf(_("oldestCommitTsXid:                    %u\n"),
-			   ControlFile.checkPointCopy.oldestCommitTsXid);
-		printf(_("newestCommitTsXid:                    %u\n"),
-			   ControlFile.checkPointCopy.newestCommitTsXid);
+		simple_oid_list_append(&toprint, CD_CKPT_OLDEST_COMMITTS_XID);
+		simple_oid_list_append(&toprint, CD_CKPT_NEWEST_COMMITTS_XID);
 	}
 
 	if (wal_segsize_given)
-	{
-		printf(_("Bytes per WAL segment:                %u\n"),
-			   ControlFile.xlog_seg_size);
+		simple_oid_list_append(&toprint, CD_WAL_SEGSIZE);
+
+#define CONTROLDATA_LINE(symbol, description, fmt, ...)			\
+	if (simple_oid_list_member(&toprint, symbol))				\
+	{															\
+	thislen = internal_wcswidth(_(description),					\
+								strlen(_(description)),			\
+								encoding);						\
+	if (thislen > maxlen)										\
+		maxlen = thislen;										\
 	}
+#include "entries.h"
+#undef CONTROLDATA_LINE
+
+
+	XLogFileName(fname, ControlFile.checkPointCopy.ThisTimeLineID,
+				 newXlogSegNo, WalSegSz);
+
+	/* We print this one inconditionally */
+	{
+		char *str = "First log segment after reset";
+		thislen = internal_wcswidth(_(str), strlen(_(str)), encoding);
+		if (thislen > maxlen)
+			maxlen = thislen;
+		printf("%s:%*s%s\n", _(str), maxlen - thislen + 2, " ", fname);
+	}
+
+	/* We print the XID epoch in a degenerate case */
+	if (next_xid_epoch_given)
+	{
+		char *str = "NextXID epoch";
+		thislen = internal_wcswidth(_(str), strlen(_(str)), encoding);
+		if (thislen > maxlen)
+			maxlen = thislen;
+		printf("%s:%*s%u\n", _(str), maxlen - thislen + 2, " ",
+			   EpochFromFullTransactionId(ControlFile.checkPointCopy.nextXid));
+
+	}
+
+#define CONTROLDATA_LINE(symbol, description, fmt, ...)			\
+	if (simple_oid_list_member(&toprint, symbol))				\
+	{													\
+		int		thisstrlen;								\
+														\
+		thisstrlen = strlen(_(description));			\
+		thislen = internal_wcswidth(_(description),		\
+									thisstrlen,			\
+									encoding);			\
+		printf("%s:%*s" fmt "\n",						\
+			   _(description),							\
+			   maxlen - thislen + 2,					\
+			   " ",										\
+			   __VA_ARGS__);							\
+	}
+#include "entries.h"
+#undef CONTROLDATA_LINE
 }
 
 
