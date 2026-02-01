@@ -2857,9 +2857,9 @@ schema_get_xml_visible_tables(Oid nspid)
 	initStringInfo(&query);
 	appendStringInfo(&query, "SELECT oid FROM pg_catalog.pg_class"
 					 " WHERE relnamespace = %u AND relkind IN ("
-					 CppAsString2(RELKIND_RELATION) ","
-					 CppAsString2(RELKIND_MATVIEW) ","
-					 CppAsString2(RELKIND_VIEW) ")"
+					 RELKIND_RELATION_STR ","
+					 RELKIND_MATVIEW_STR ","
+					 RELKIND_VIEW_STR ")"
 					 " AND pg_catalog.has_table_privilege (oid, 'SELECT')"
 					 " ORDER BY relname;", nspid);
 
@@ -2889,9 +2889,9 @@ database_get_xml_visible_tables(void)
 	/* At the moment there is no order required here. */
 	return query_to_oid_list("SELECT oid FROM pg_catalog.pg_class"
 							 " WHERE relkind IN ("
-							 CppAsString2(RELKIND_RELATION) ","
-							 CppAsString2(RELKIND_MATVIEW) ","
-							 CppAsString2(RELKIND_VIEW) ")"
+							 RELKIND_RELATION_STR ","
+							 RELKIND_MATVIEW_STR ","
+							 RELKIND_VIEW_STR ")"
 							 " AND pg_catalog.has_table_privilege(pg_class.oid, 'SELECT')"
 							 " AND relnamespace IN (" XML_VISIBLE_SCHEMAS ");");
 }

@@ -651,8 +651,8 @@ get_parallel_tables_list(PGconn *conn, ReindexType type,
 								 " ON c.relnamespace = ns.oid\n"
 								 " WHERE ns.nspname != 'pg_catalog'\n"
 								 "   AND c.relkind IN ("
-								 CppAsString2(RELKIND_RELATION) ", "
-								 CppAsString2(RELKIND_MATVIEW) ")\n"
+								 RELKIND_RELATION_STR ", "
+								 RELKIND_MATVIEW_STR ")\n"
 								 "   AND c.relpersistence != "
 								 CppAsString2(RELPERSISTENCE_TEMP) "\n"
 								 " ORDER BY c.relpages DESC;");
@@ -674,8 +674,8 @@ get_parallel_tables_list(PGconn *conn, ReindexType type,
 									 " JOIN pg_catalog.pg_namespace ns"
 									 " ON c.relnamespace = ns.oid\n"
 									 " WHERE c.relkind IN ("
-									 CppAsString2(RELKIND_RELATION) ", "
-									 CppAsString2(RELKIND_MATVIEW) ")\n"
+									 RELKIND_RELATION_STR ", "
+									 RELKIND_MATVIEW_STR ")\n"
 									 "   AND c.relpersistence != "
 									 CppAsString2(RELPERSISTENCE_TEMP) "\n"
 									 " AND ns.nspname IN (");

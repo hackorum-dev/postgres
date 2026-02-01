@@ -1976,28 +1976,28 @@ compile_relation_list_one_db(PGconn *conn, SimplePtrList *relations,
 		appendPQExpBuffer(&sql,
 						  " AND c.relam = %u "
 						  "AND c.relkind IN ("
-						  CppAsString2(RELKIND_RELATION) ", "
-						  CppAsString2(RELKIND_SEQUENCE) ", "
-						  CppAsString2(RELKIND_MATVIEW) ", "
-						  CppAsString2(RELKIND_TOASTVALUE) ") "
+						  RELKIND_RELATION_STR ", "
+						  RELKIND_SEQUENCE_STR ", "
+						  RELKIND_MATVIEW_STR ", "
+						  RELKIND_TOASTVALUE_STR ") "
 						  "AND c.relnamespace != %u",
 						  HEAP_TABLE_AM_OID, PG_TOAST_NAMESPACE);
 	else
 		appendPQExpBuffer(&sql,
 						  " AND c.relam IN (%u, %u)"
 						  "AND c.relkind IN ("
-						  CppAsString2(RELKIND_RELATION) ", "
-						  CppAsString2(RELKIND_SEQUENCE) ", "
-						  CppAsString2(RELKIND_MATVIEW) ", "
-						  CppAsString2(RELKIND_TOASTVALUE) ", "
-						  CppAsString2(RELKIND_INDEX) ") "
+						  RELKIND_RELATION_STR ", "
+						  RELKIND_SEQUENCE_STR ", "
+						  RELKIND_MATVIEW_STR ", "
+						  RELKIND_TOASTVALUE_STR ", "
+						  RELKIND_INDEX_STR ") "
 						  "AND ((c.relam = %u AND c.relkind IN ("
-						  CppAsString2(RELKIND_RELATION) ", "
-						  CppAsString2(RELKIND_SEQUENCE) ", "
-						  CppAsString2(RELKIND_MATVIEW) ", "
-						  CppAsString2(RELKIND_TOASTVALUE) ")) OR "
+						  RELKIND_RELATION_STR ", "
+						  RELKIND_SEQUENCE_STR ", "
+						  RELKIND_MATVIEW_STR ", "
+						  RELKIND_TOASTVALUE_STR ")) OR "
 						  "(c.relam = %u AND c.relkind = "
-						  CppAsString2(RELKIND_INDEX) "))",
+						  RELKIND_INDEX_STR "))",
 						  HEAP_TABLE_AM_OID, BTREE_AM_OID,
 						  HEAP_TABLE_AM_OID, BTREE_AM_OID);
 
@@ -2058,7 +2058,7 @@ compile_relation_list_one_db(PGconn *conn, SimplePtrList *relations,
 								 "\nWHERE true");
 		appendPQExpBuffer(&sql,
 						  " AND c.relam = %u "
-						  "AND c.relkind = " CppAsString2(RELKIND_INDEX),
+						  "AND c.relkind = " RELKIND_INDEX_STR,
 						  BTREE_AM_OID);
 		if (opts.no_toast_expansion)
 			appendPQExpBuffer(&sql,
@@ -2095,7 +2095,7 @@ compile_relation_list_one_db(PGconn *conn, SimplePtrList *relations,
 								 "\nWHERE true");
 		appendPQExpBuffer(&sql,
 						  " AND c.relam = %u"
-						  " AND c.relkind = " CppAsString2(RELKIND_INDEX) ")",
+						  " AND c.relkind = " RELKIND_INDEX_STR ")",
 						  BTREE_AM_OID);
 	}
 

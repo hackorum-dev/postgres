@@ -372,9 +372,9 @@ data_type_check_query(int checknum)
 					"		NOT a.attisdropped AND "
 					"		a.atttypid IN (SELECT oid FROM oids) AND "
 					"		c.relkind IN ("
-					CppAsString2(RELKIND_RELATION) ", "
-					CppAsString2(RELKIND_MATVIEW) ", "
-					CppAsString2(RELKIND_INDEX) ") AND "
+					RELKIND_RELATION_STR ", "
+					RELKIND_MATVIEW_STR ", "
+					RELKIND_INDEX_STR ") AND "
 					"		c.relnamespace = n.oid AND "
 	/* exclude possible orphaned temp tables */
 					"		n.nspname !~ '^pg_temp_' AND "

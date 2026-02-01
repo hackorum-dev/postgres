@@ -3158,14 +3158,14 @@ buildMatViewRefreshDependencies(Archive *fout)
 						 "SELECT d1.objid, d2.refobjid, c2.relkind AS refrelkind "
 						 "FROM pg_depend d1 "
 						 "JOIN pg_class c1 ON c1.oid = d1.objid "
-						 "AND c1.relkind = " CppAsString2(RELKIND_MATVIEW)
+						 "AND c1.relkind = " RELKIND_MATVIEW_STR
 						 " JOIN pg_rewrite r1 ON r1.ev_class = d1.objid "
 						 "JOIN pg_depend d2 ON d2.classid = 'pg_rewrite'::regclass "
 						 "AND d2.objid = r1.oid "
 						 "AND d2.refobjid <> d1.objid "
 						 "JOIN pg_class c2 ON c2.oid = d2.refobjid "
-						 "AND c2.relkind IN (" CppAsString2(RELKIND_MATVIEW) ","
-						 CppAsString2(RELKIND_VIEW) ") "
+						 "AND c2.relkind IN (" RELKIND_MATVIEW_STR ","
+						 RELKIND_VIEW_STR ") "
 						 "WHERE d1.classid = 'pg_class'::regclass "
 						 "UNION "
 						 "SELECT w.objid, d3.refobjid, c3.relkind "
@@ -3175,12 +3175,12 @@ buildMatViewRefreshDependencies(Archive *fout)
 						 "AND d3.objid = r3.oid "
 						 "AND d3.refobjid <> w.refobjid "
 						 "JOIN pg_class c3 ON c3.oid = d3.refobjid "
-						 "AND c3.relkind IN (" CppAsString2(RELKIND_MATVIEW) ","
-						 CppAsString2(RELKIND_VIEW) ") "
+						 "AND c3.relkind IN (" RELKIND_MATVIEW_STR ","
+						 RELKIND_VIEW_STR ") "
 						 ") "
 						 "SELECT 'pg_class'::regclass::oid AS classid, objid, refobjid "
 						 "FROM w "
-						 "WHERE refrelkind = " CppAsString2(RELKIND_MATVIEW));
+						 "WHERE refrelkind = " RELKIND_MATVIEW_STR);
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
@@ -7279,9 +7279,9 @@ getTables(Archive *fout, int *numTables)
 						 "c.relhastriggers, c.relpersistence, "
 						 "c.reloftype, "
 						 "c.relacl, "
-						 "acldefault(CASE WHEN c.relkind = " CppAsString2(RELKIND_SEQUENCE)
+						 "acldefault(CASE WHEN c.relkind = " RELKIND_SEQUENCE_STR
 						 " THEN 's'::\"char\" ELSE 'r'::\"char\" END, c.relowner) AS acldefault, "
-						 "CASE WHEN c.relkind = " CppAsString2(RELKIND_FOREIGN_TABLE) " THEN "
+						 "CASE WHEN c.relkind = " RELKIND_FOREIGN_TABLE_STR " THEN "
 						 "(SELECT ftserver FROM pg_catalog.pg_foreign_table WHERE ftrelid = c.oid) "
 						 "ELSE 0 END AS foreignserver, "
 						 "c.relfrozenxid, tc.relfrozenxid AS tfrozenxid, "
@@ -7367,7 +7367,7 @@ getTables(Archive *fout, int *numTables)
 	appendPQExpBufferStr(query,
 						 "\nFROM pg_class c\n"
 						 "LEFT JOIN pg_depend d ON "
-						 "(c.relkind = " CppAsString2(RELKIND_SEQUENCE) " AND "
+						 "(c.relkind = " RELKIND_SEQUENCE_STR " AND "
 						 "d.classid = 'pg_class'::regclass AND d.objid = c.oid AND "
 						 "d.objsubid = 0 AND "
 						 "d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i'))\n"
@@ -7387,8 +7387,8 @@ getTables(Archive *fout, int *numTables)
 	 */
 	appendPQExpBufferStr(query,
 						 "LEFT JOIN pg_class tc ON (c.reltoastrelid = tc.oid"
-						 " AND tc.relkind = " CppAsString2(RELKIND_TOASTVALUE)
-						 " AND c.relkind <> " CppAsString2(RELKIND_PARTITIONED_TABLE) ")\n");
+						 " AND tc.relkind = " RELKIND_TOASTVALUE_STR
+						 " AND c.relkind <> " RELKIND_PARTITIONED_TABLE_STR ")\n");
 
 	/*
 	 * Restrict to interesting relkinds (in particular, not indexes).  Not all
@@ -7402,13 +7402,13 @@ getTables(Archive *fout, int *numTables)
 	 */
 	appendPQExpBufferStr(query,
 						 "WHERE c.relkind IN ("
-						 CppAsString2(RELKIND_RELATION) ", "
-						 CppAsString2(RELKIND_SEQUENCE) ", "
-						 CppAsString2(RELKIND_VIEW) ", "
-						 CppAsString2(RELKIND_COMPOSITE_TYPE) ", "
-						 CppAsString2(RELKIND_MATVIEW) ", "
-						 CppAsString2(RELKIND_FOREIGN_TABLE) ", "
-						 CppAsString2(RELKIND_PARTITIONED_TABLE) ")\n"
+						 RELKIND_RELATION_STR ", "
+						 RELKIND_SEQUENCE_STR ", "
+						 RELKIND_VIEW_STR ", "
+						 RELKIND_COMPOSITE_TYPE_STR ", "
+						 RELKIND_MATVIEW_STR ", "
+						 RELKIND_FOREIGN_TABLE_STR ", "
+						 RELKIND_PARTITIONED_TABLE_STR ")\n"
 						 "ORDER BY c.oid");
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);

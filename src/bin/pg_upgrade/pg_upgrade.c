@@ -990,9 +990,9 @@ set_frozenxids(bool minmxid_only)
 									  "SET	relfrozenxid = '%u' "
 			/* only heap, materialized view, and TOAST are vacuumed */
 									  "WHERE	relkind IN ("
-									  CppAsString2(RELKIND_RELATION) ", "
-									  CppAsString2(RELKIND_MATVIEW) ", "
-									  CppAsString2(RELKIND_TOASTVALUE) ")",
+									  RELKIND_RELATION_STR ", "
+									  RELKIND_MATVIEW_STR ", "
+									  RELKIND_TOASTVALUE_STR ")",
 									  old_cluster.controldata.chkpnt_nxtxid));
 
 		/* set pg_class.relminmxid */
@@ -1001,9 +1001,9 @@ set_frozenxids(bool minmxid_only)
 								  "SET	relminmxid = '%u' "
 		/* only heap, materialized view, and TOAST are vacuumed */
 								  "WHERE	relkind IN ("
-								  CppAsString2(RELKIND_RELATION) ", "
-								  CppAsString2(RELKIND_MATVIEW) ", "
-								  CppAsString2(RELKIND_TOASTVALUE) ")",
+								  RELKIND_RELATION_STR ", "
+								  RELKIND_MATVIEW_STR ", "
+								  RELKIND_TOASTVALUE_STR ")",
 								  old_cluster.controldata.chkpnt_nxtmulti));
 		PQfinish(conn);
 

@@ -2921,7 +2921,7 @@ fetch_relation_list(WalReceiverConn *wrconn, List *publications)
 		if (server_version >= 190000)
 			appendStringInfo(&cmd,
 							 "UNION ALL\n"
-							 "  SELECT DISTINCT s.schemaname, s.sequencename, " CppAsString2(RELKIND_SEQUENCE) "::\"char\" AS relkind, NULL::int2vector AS attrs\n"
+							 "  SELECT DISTINCT s.schemaname, s.sequencename, " RELKIND_SEQUENCE_STR "::\"char\" AS relkind, NULL::int2vector AS attrs\n"
 							 "  FROM pg_catalog.pg_publication_sequences s\n"
 							 "  WHERE s.pubname IN ( %s )",
 							 pub_names.data);
@@ -2929,7 +2929,7 @@ fetch_relation_list(WalReceiverConn *wrconn, List *publications)
 	else
 	{
 		tableRow[3] = NAMEARRAYOID;
-		appendStringInfoString(&cmd, "SELECT DISTINCT t.schemaname, t.tablename, " CppAsString2(RELKIND_RELATION) "::\"char\" AS relkind \n");
+		appendStringInfoString(&cmd, "SELECT DISTINCT t.schemaname, t.tablename, " RELKIND_RELATION_STR "::\"char\" AS relkind \n");
 
 		/* Get column lists for each relation if the publisher supports it */
 		if (check_columnlist)

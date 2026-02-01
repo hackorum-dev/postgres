@@ -598,8 +598,8 @@ retrieve_objects(PGconn *conn, vacuumingOptions *vacopts,
 						 " JOIN pg_catalog.pg_namespace ns"
 						 " ON c.relnamespace OPERATOR(pg_catalog.=) ns.oid\n"
 						 " CROSS JOIN LATERAL (SELECT c.relkind IN ("
-						 CppAsString2(RELKIND_PARTITIONED_TABLE) ", "
-						 CppAsString2(RELKIND_PARTITIONED_INDEX) ")) as p (inherited)\n"
+						 RELKIND_PARTITIONED_TABLE_STR ", "
+						 RELKIND_PARTITIONED_INDEX_STR ")) as p (inherited)\n"
 						 " LEFT JOIN pg_catalog.pg_class t"
 						 " ON c.reltoastrelid OPERATOR(pg_catalog.=) t.oid\n");
 
@@ -659,14 +659,14 @@ retrieve_objects(PGconn *conn, vacuumingOptions *vacopts,
 		if (vacopts->mode == MODE_ANALYZE)
 			appendPQExpBufferStr(&catalog_query,
 								 " AND c.relkind OPERATOR(pg_catalog.=) ANY (array["
-								 CppAsString2(RELKIND_RELATION) ", "
-								 CppAsString2(RELKIND_MATVIEW) ", "
-								 CppAsString2(RELKIND_PARTITIONED_TABLE) "])\n");
+								 RELKIND_RELATION_STR ", "
+								 RELKIND_MATVIEW_STR ", "
+								 RELKIND_PARTITIONED_TABLE_STR "])\n");
 		else
 			appendPQExpBufferStr(&catalog_query,
 								 " AND c.relkind OPERATOR(pg_catalog.=) ANY (array["
-								 CppAsString2(RELKIND_RELATION) ", "
-								 CppAsString2(RELKIND_MATVIEW) "])\n");
+								 RELKIND_RELATION_STR ", "
+								 RELKIND_MATVIEW_STR "])\n");
 	}
 
 	/*

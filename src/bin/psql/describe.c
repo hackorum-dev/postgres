@@ -689,7 +689,7 @@ describeTypes(const char *pattern, bool verbose, bool showSystem)
 	 * composite types
 	 */
 	appendPQExpBufferStr(&buf, "WHERE (t.typrelid = 0 ");
-	appendPQExpBufferStr(&buf, "OR (SELECT c.relkind = " CppAsString2(RELKIND_COMPOSITE_TYPE)
+	appendPQExpBufferStr(&buf, "OR (SELECT c.relkind = " RELKIND_COMPOSITE_TYPE_STR
 						 " FROM pg_catalog.pg_class c "
 						 "WHERE c.oid = t.typrelid))\n");
 
@@ -1063,12 +1063,12 @@ permissionsList(const char *pattern, bool showSystem)
 					  "SELECT n.nspname as \"%s\",\n"
 					  "  c.relname as \"%s\",\n"
 					  "  CASE c.relkind"
-					  " WHEN " CppAsString2(RELKIND_RELATION) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_VIEW) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_MATVIEW) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_SEQUENCE) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_FOREIGN_TABLE) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_PARTITIONED_TABLE) " THEN '%s'"
+					  " WHEN " RELKIND_RELATION_STR " THEN '%s'"
+					  " WHEN " RELKIND_VIEW_STR " THEN '%s'"
+					  " WHEN " RELKIND_MATVIEW_STR " THEN '%s'"
+					  " WHEN " RELKIND_SEQUENCE_STR " THEN '%s'"
+					  " WHEN " RELKIND_FOREIGN_TABLE_STR " THEN '%s'"
+					  " WHEN " RELKIND_PARTITIONED_TABLE_STR " THEN '%s'"
 					  " END as \"%s\",\n"
 					  "  ",
 					  gettext_noop("Schema"),
@@ -1164,12 +1164,12 @@ permissionsList(const char *pattern, bool showSystem)
 	appendPQExpBufferStr(&buf, "\nFROM pg_catalog.pg_class c\n"
 						 "     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace\n"
 						 "WHERE c.relkind IN ("
-						 CppAsString2(RELKIND_RELATION) ","
-						 CppAsString2(RELKIND_VIEW) ","
-						 CppAsString2(RELKIND_MATVIEW) ","
-						 CppAsString2(RELKIND_SEQUENCE) ","
-						 CppAsString2(RELKIND_FOREIGN_TABLE) ","
-						 CppAsString2(RELKIND_PARTITIONED_TABLE) ")\n");
+						 RELKIND_RELATION_STR ","
+						 RELKIND_VIEW_STR ","
+						 RELKIND_MATVIEW_STR ","
+						 RELKIND_SEQUENCE_STR ","
+						 RELKIND_FOREIGN_TABLE_STR ","
+						 RELKIND_PARTITIONED_TABLE_STR ")\n");
 
 	if (!showSystem && !pattern)
 		appendPQExpBufferStr(&buf, "      AND n.nspname <> 'pg_catalog'\n"
@@ -3471,8 +3471,8 @@ describeOneTableDetails(const char *schemaname,
 						  "SELECT c.oid::pg_catalog.regclass\n"
 						  "FROM pg_catalog.pg_class c, pg_catalog.pg_inherits i\n"
 						  "WHERE c.oid = i.inhparent AND i.inhrelid = '%s'\n"
-						  "  AND c.relkind != " CppAsString2(RELKIND_PARTITIONED_TABLE)
-						  " AND c.relkind != " CppAsString2(RELKIND_PARTITIONED_INDEX)
+						  "  AND c.relkind != " RELKIND_PARTITIONED_TABLE_STR
+						  " AND c.relkind != " RELKIND_PARTITIONED_INDEX_STR
 						  "\nORDER BY inhseqno;",
 						  oid);
 
@@ -4067,15 +4067,15 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 					  "SELECT n.nspname as \"%s\",\n"
 					  "  c.relname as \"%s\",\n"
 					  "  CASE c.relkind"
-					  " WHEN " CppAsString2(RELKIND_RELATION) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_VIEW) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_MATVIEW) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_INDEX) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_SEQUENCE) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_TOASTVALUE) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_FOREIGN_TABLE) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_PARTITIONED_TABLE) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_PARTITIONED_INDEX) " THEN '%s'"
+					  " WHEN " RELKIND_RELATION_STR " THEN '%s'"
+					  " WHEN " RELKIND_VIEW_STR " THEN '%s'"
+					  " WHEN " RELKIND_MATVIEW_STR " THEN '%s'"
+					  " WHEN " RELKIND_INDEX_STR " THEN '%s'"
+					  " WHEN " RELKIND_SEQUENCE_STR " THEN '%s'"
+					  " WHEN " RELKIND_TOASTVALUE_STR " THEN '%s'"
+					  " WHEN " RELKIND_FOREIGN_TABLE_STR " THEN '%s'"
+					  " WHEN " RELKIND_PARTITIONED_TABLE_STR " THEN '%s'"
+					  " WHEN " RELKIND_PARTITIONED_INDEX_STR " THEN '%s'"
 					  " END as \"%s\",\n"
 					  "  pg_catalog.pg_get_userbyid(c.relowner) as \"%s\"",
 					  gettext_noop("Schema"),
@@ -4157,25 +4157,25 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	appendPQExpBufferStr(&buf, "\nWHERE c.relkind IN (");
 	if (showTables)
 	{
-		appendPQExpBufferStr(&buf, CppAsString2(RELKIND_RELATION) ","
-							 CppAsString2(RELKIND_PARTITIONED_TABLE) ",");
+		appendPQExpBufferStr(&buf, RELKIND_RELATION_STR ","
+							 RELKIND_PARTITIONED_TABLE_STR ",");
 		/* with 'S' or a pattern, allow 't' to match TOAST tables too */
 		if (showSystem || pattern)
-			appendPQExpBufferStr(&buf, CppAsString2(RELKIND_TOASTVALUE) ",");
+			appendPQExpBufferStr(&buf, RELKIND_TOASTVALUE_STR ",");
 	}
 	if (showViews)
-		appendPQExpBufferStr(&buf, CppAsString2(RELKIND_VIEW) ",");
+		appendPQExpBufferStr(&buf, RELKIND_VIEW_STR ",");
 	if (showMatViews)
-		appendPQExpBufferStr(&buf, CppAsString2(RELKIND_MATVIEW) ",");
+		appendPQExpBufferStr(&buf, RELKIND_MATVIEW_STR ",");
 	if (showIndexes)
-		appendPQExpBufferStr(&buf, CppAsString2(RELKIND_INDEX) ","
-							 CppAsString2(RELKIND_PARTITIONED_INDEX) ",");
+		appendPQExpBufferStr(&buf, RELKIND_INDEX_STR ","
+							 RELKIND_PARTITIONED_INDEX_STR ",");
 	if (showSeq)
-		appendPQExpBufferStr(&buf, CppAsString2(RELKIND_SEQUENCE) ",");
+		appendPQExpBufferStr(&buf, RELKIND_SEQUENCE_STR ",");
 	if (showSystem || pattern)
 		appendPQExpBufferStr(&buf, "'s',"); /* was RELKIND_SPECIAL */
 	if (showForeign)
-		appendPQExpBufferStr(&buf, CppAsString2(RELKIND_FOREIGN_TABLE) ",");
+		appendPQExpBufferStr(&buf, RELKIND_FOREIGN_TABLE_STR ",");
 
 	appendPQExpBufferStr(&buf, "''");	/* dummy */
 	appendPQExpBufferStr(&buf, ")\n");
@@ -4348,8 +4348,8 @@ listPartitionedTables(const char *reltypes, const char *pattern, bool verbose)
 	{
 		appendPQExpBuffer(&buf,
 						  ",\n  CASE c.relkind"
-						  " WHEN " CppAsString2(RELKIND_PARTITIONED_TABLE) " THEN '%s'"
-						  " WHEN " CppAsString2(RELKIND_PARTITIONED_INDEX) " THEN '%s'"
+						  " WHEN " RELKIND_PARTITIONED_TABLE_STR " THEN '%s'"
+						  " WHEN " RELKIND_PARTITIONED_INDEX_STR " THEN '%s'"
 						  " END as \"%s\"",
 						  gettext_noop("partitioned table"),
 						  gettext_noop("partitioned index"),
@@ -4449,9 +4449,9 @@ listPartitionedTables(const char *reltypes, const char *pattern, bool verbose)
 
 	appendPQExpBufferStr(&buf, "\nWHERE c.relkind IN (");
 	if (showTables)
-		appendPQExpBufferStr(&buf, CppAsString2(RELKIND_PARTITIONED_TABLE) ",");
+		appendPQExpBufferStr(&buf, RELKIND_PARTITIONED_TABLE_STR ",");
 	if (showIndexes)
-		appendPQExpBufferStr(&buf, CppAsString2(RELKIND_PARTITIONED_INDEX) ",");
+		appendPQExpBufferStr(&buf, RELKIND_PARTITIONED_INDEX_STR ",");
 	appendPQExpBufferStr(&buf, "''");	/* dummy */
 	appendPQExpBufferStr(&buf, ")\n");
 
