@@ -175,6 +175,19 @@ MAKE_SYSCACHE(RELNAMENSP, pg_class_relname_nsp_index, 128);
 #define		  RELKIND_PARTITIONED_TABLE 'p' /* partitioned table */
 #define		  RELKIND_PARTITIONED_INDEX 'I' /* partitioned index */
 
+/* annoying defines for client-side C string construction */
+#define RELKIND_RELATION_STR			"'r'"
+#define RELKIND_INDEX_STR				"'i'"
+#define RELKIND_SEQUENCE_STR			"'S'"
+#define RELKIND_TOASTVALUE_STR			"'t'"
+#define RELKIND_VIEW_STR				"'v'"
+#define RELKIND_MATVIEW_STR				"'m'"
+#define RELKIND_COMPOSITE_TYPE_STR		"'c'"
+#define RELKIND_FOREIGN_TABLE_STR		"'f'"
+#define RELKIND_PARTITIONED_TABLE_STR	"'p'"
+#define RELKIND_PARTITIONED_INDEX_STR	"'I'"
+
+
 #define		  RELPERSISTENCE_PERMANENT	'p' /* regular table */
 #define		  RELPERSISTENCE_UNLOGGED	'u' /* unlogged permanent table */
 #define		  RELPERSISTENCE_TEMP		't' /* temporary table */
