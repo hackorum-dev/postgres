@@ -3330,6 +3330,45 @@ $.* ? (@ like_regex "^\\d+$")
    or a character string that can be successfully cast to <type>jsonb</type>.
   </para>
 
+  <tip>
+   <para>
+    Deciding between SQL/JSON functions and PostgreSQL-specific operators:
+   </para>
+   <itemizedlist>
+    <listitem>
+     <para>
+      Use SQL/JSON functions (e.g., <function>JSON_EXISTS</function>,
+      <function>JSON_QUERY</function>, <function>JSON_VALUE</function>)
+      when writing portable applications, or when you need granular control over empty/error
+      handling (for example, <literal>DEFAULT ... ON EMPTY</literal> and <literal>... ON ERROR</literal>).
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Use <emphasis>operators</emphasis> (e.g., <literal>-&gt;&gt;</literal>, <literal>@?</literal>,
+      <literal>@@</literal>) for conciseness in ad-hoc queries, and when you want to take advantage
+      of GIN operator classes that index these operators.
+     </para>
+    </listitem>
+   </itemizedlist>
+  </tip>
+
+  <note>
+   <para>
+    GIN indexes on <type>jsonb</type> support different operator classes.
+    The default <literal>jsonb_ops</literal> operator class supports several operators,
+    while <literal>jsonb_path_ops</literal> supports fewer operators but is typically smaller
+    and faster for <literal>@&gt;</literal>, <literal>@?</literal>, and <literal>@@</literal> queries.
+   </para>
+   <para>
+    For queries that frequently filter on specific JSON scalar values extracted at known paths,
+    a B-tree expression index can be more efficient than a general GIN index. For example:
+    <programlisting>
+     CREATE INDEX idx_user_id ON users ((json_value(data, '$.user_id' RETURNING int)));
+    </programlisting>
+   </para>
+  </note>
+
   <table id="functions-sqljson-querying">
    <title>SQL/JSON Query Functions</title>
    <tgroup cols="1">
