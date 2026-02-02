@@ -590,6 +590,47 @@ $function$
     </para>
    </sect3>
 
+   <sect3 id="sql-syntax-strings-national">
+    <title>National Character String Constants</title>
+
+    <indexterm zone="sql-syntax-strings-national">
+     <primary>national character</primary>
+     <secondary>string constant</secondary>
+    </indexterm>
+
+    <para>
+     <productname>PostgreSQL</productname> accepts string constants
+     with a leading <literal>N</literal> (upper or lower case)
+     immediately before the opening single quote, for
+     example <literal>N'hello'</literal>.  This syntax is specified by
+     the <acronym>SQL</acronym> standard for identifying string
+     literals of <quote>national character</quote> types
+     (<type>NCHAR</type> and <type>NCHAR VARYING</type>).
+    </para>
+
+    <para>
+      The <acronym>SQL</acronym> standard specifies that strings written
+      with this syntax should use an <quote>implementation-defined
+      national character set</quote>.
+      <productname>PostgreSQL</productname> does not implement a separate
+      national character set; it treats <literal>N'...'</literal> as
+      equivalent to a string constant of type <type>bpchar</type>
+      (blank-padded character), for example <literal>N'hello'</literal>
+      has the same type and value as <literal>'hello'::bpchar</literal>.
+      Note that trailing spaces are semantically insignificant
+      in <type>bpchar</type> values.
+    </para>
+
+    <para>
+     This syntax is accepted primarily for compatibility with SQL
+     migrated from other database systems.  Since
+     <productname>PostgreSQL</productname> uses a single character set
+     for all string types (determined by the database encoding),
+     there is typically no advantage to using
+     <literal>N'...'</literal> over regular string constants.
+    </para>
+   </sect3>
+
    <sect3 id="sql-syntax-bit-strings">
     <title>Bit-String Constants</title>
 
