@@ -100,6 +100,7 @@
 #include "catalog/pg_subscription_rel.h"
 #include "catalog/pg_type.h"
 #include "commands/copy.h"
+#include "libpq/be-fsstubs.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_relation.h"
@@ -1441,6 +1442,51 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 
 	replorigin_session_setup(originid, 0);
 	replorigin_xact_state.origin = originid;
+	if (rel->rd_id == LargeObjectRelationId)
+	{
+		TupleTableSlot *slot;
+		Oid			tableRow[2] = {OIDOID, BYTEAOID};
+
+		PushActiveSnapshot(GetTransactionSnapshot());
+		res = walrcv_exec(LogRepWorkerWalRcvConn, "SELECT m.oid as oid, lo_get(m.oid) FROM pg_largeobject_metadata as m JOIN pg_user as u ON m.lomowner = u.usesysid where u.usename=CURRENT_USER", 2, tableRow);
+		if (res->status != WALRCV_OK_TUPLES)
+			ereport(ERROR,
+					errmsg("could not run large objects command."));
+		slot = MakeSingleTupleTableSlot(res->tupledesc, &TTSOpsMinimalTuple);
+		while (tuplestore_gettupleslot(res->tuplestore, true, false, slot))
+		{
+			Oid			looid;
+			bytea	   *lodata;
+			bool		isnull;
+
+			looid = DatumGetObjectId(slot_getattr(slot, 1, &isnull));
+			Assert(!isnull);
+			lodata = (bytea *) (slot_getattr(slot, 2, &isnull));
+			lo_from_bytea(looid, lodata);
+			ExecClearTuple(slot);
+		}
+		ExecDropSingleTupleTableSlot(slot);
+		walrcv_clear_result(res);
+		PopActiveSnapshot();
+
+		res = walrcv_exec(LogRepWorkerWalRcvConn, "COMMIT", 0, NULL);
+		if (res->status != WALRCV_OK_COMMAND)
+			ereport(ERROR,
+					(errcode(ERRCODE_CONNECTION_FAILURE),
+					 errmsg("table copy could not finish transaction on publisher: %s",
+							res->err)));
+
+		walrcv_clear_result(res);
+		table_close(rel, NoLock);
+		CommandCounterIncrement();
+		UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
+								   MyLogicalRepWorker->relid,
+								   SUBREL_STATE_FINISHEDCOPY,
+								   MyLogicalRepWorker->relstate_lsn,
+								   false);
+		CommitTransactionCommand();
+		goto copy_table_done;
+	}
 
 	/*
 	 * If the user did not opt to run as the owner of the subscription
@@ -1509,7 +1555,6 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 	CommitTransactionCommand();
 
 copy_table_done:
-
 	elog(DEBUG1,
 		 "LogicalRepSyncTableStart: '%s' origin_startpos lsn %X/%08X",
 		 originname, LSN_FORMAT_ARGS(*origin_startpos));
