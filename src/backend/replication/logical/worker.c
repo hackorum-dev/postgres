@@ -486,6 +486,7 @@ static XLogRecPtr remote_final_lsn = InvalidXLogRecPtr;
 
 /* fields valid only when processing streamed transaction */
 static bool in_streamed_transaction = false;
+static uint32 LogicalRepProtoVersion = LOGICALREP_PROTO_FALLBACKFULL_VERSION_NUM;
 
 static TransactionId stream_xid = InvalidTransactionId;
 
@@ -2567,7 +2568,7 @@ apply_handle_relation(StringInfo s)
 	if (handle_streamed_transaction(LOGICAL_REP_MSG_RELATION, s))
 		return;
 
-	rel = logicalrep_read_rel(s);
+	rel = logicalrep_read_rel(s, LogicalRepProtoVersion);
 	logicalrep_relmap_update(rel);
 
 	/* Also reset all entries in the partition map that refer to remoterel. */
@@ -3051,6 +3052,24 @@ apply_handle_delete(StringInfo s)
 	check_relation_updatable(rel);
 
 	/*
+	 * Before fallbackfull was added as an option to publication, if a table's
+	 * replica identity is default but without a PK, it cannot be updated, so
+	 * check_relation_updatable() treated unexpected update as error.
+	 *
+	 * However, with fallbackfull, such table can be updated because the table
+	 * might belong to anther publication with fallbackfull enabled. So here
+	 * we just skip the update if the table in current publication is not
+	 * updatable.
+	 */
+	if (!rel->updatable)
+	{
+		/* XXX: should close with NoLock or RowExclusiveLock??? */
+		logicalrep_rel_close(rel, NoLock);
+		end_replication_step();
+		return;
+	}
+
+	/*
 	 * Make sure that any user-supplied code runs as the table owner, unless
 	 * the user has opted out of that behavior.
 	 */
@@ -3189,7 +3208,8 @@ FindReplTupleInLocalRel(ApplyExecutionData *edata, Relation localrel,
 	*localslot = table_slot_create(localrel, &estate->es_tupleTable);
 
 	Assert(OidIsValid(localidxoid) ||
-		   (remoterel->replident == REPLICA_IDENTITY_FULL));
+		   (remoterel->replident == REPLICA_IDENTITY_FULL) ||
+		   (remoterel->replident == REPLICA_IDENTITY_DEFAULT && remoterel->fallbackfull));
 
 	if (OidIsValid(localidxoid))
 	{
@@ -5523,10 +5543,14 @@ set_stream_options(WalRcvStreamOptions *options,
 
 	server_version = walrcv_server_version(LogRepWorkerWalRcvConn);
 	options->proto.logical.proto_version =
+		server_version >= 190000 ? LOGICALREP_PROTO_FALLBACKFULL_VERSION_NUM :
 		server_version >= 160000 ? LOGICALREP_PROTO_STREAM_PARALLEL_VERSION_NUM :
 		server_version >= 150000 ? LOGICALREP_PROTO_TWOPHASE_VERSION_NUM :
 		server_version >= 140000 ? LOGICALREP_PROTO_STREAM_VERSION_NUM :
 		LOGICALREP_PROTO_VERSION_NUM;
+
+	/* Cache the chosen protocol version for RELATION message parsing. */
+	LogicalRepProtoVersion = options->proto.logical.proto_version;
 
 	options->proto.logical.publication_names = MySubscription->publications;
 	options->proto.logical.binary = MySubscription->binary;

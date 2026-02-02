@@ -66,6 +66,9 @@ CATALOG(pg_publication,6104,PublicationRelationId)
 	 * if stored generated column data should be published.
 	 */
 	char		pubgencols;
+
+	/* true if fallbackfull is enabled */
+	bool		pubfallbackfull;
 } FormData_pg_publication;
 
 /* ----------------
@@ -138,6 +141,7 @@ typedef struct Publication
 	bool		allsequences;
 	bool		pubviaroot;
 	PublishGencolsType pubgencols_type;
+	bool		pubfallbackfull;
 	PublicationActions pubactions;
 } Publication;
 

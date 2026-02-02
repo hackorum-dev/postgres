@@ -21,6 +21,7 @@
 #include "access/genam.h"
 #include "access/table.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_publication.h"
 #include "catalog/pg_subscription_rel.h"
 #include "executor/executor.h"
 #include "nodes/makefuncs.h"
@@ -209,6 +210,7 @@ logicalrep_relmap_update(LogicalRepRelation *remoterel)
 		(remoterel->relkind == 0) ? RELKIND_RELATION : remoterel->relkind;
 
 	entry->remoterel.attkeys = bms_copy(remoterel->attkeys);
+	entry->remoterel.fallbackfull = remoterel->fallbackfull;
 	MemoryContextSwitchTo(oldctx);
 }
 
@@ -326,7 +328,10 @@ logicalrep_rel_mark_updatable(LogicalRepRelMapEntry *entry)
 		 * If no replica identity index and no PK, the published table must
 		 * have replica identity FULL.
 		 */
-		if (idkey == NULL && remoterel->replident != REPLICA_IDENTITY_FULL)
+		if (idkey == NULL &&
+			remoterel->replident != REPLICA_IDENTITY_FULL &&
+			!(remoterel->replident == REPLICA_IDENTITY_DEFAULT &&
+			  remoterel->fallbackfull))
 			entry->updatable = false;
 	}
 
@@ -713,6 +718,7 @@ logicalrep_partition_open(LogicalRepRelMapEntry *root,
 			entry->remoterel.atttyps[i] = remoterel->atttyps[i];
 		}
 		entry->remoterel.replident = remoterel->replident;
+		entry->remoterel.fallbackfull = remoterel->fallbackfull;
 		entry->remoterel.attkeys = bms_copy(remoterel->attkeys);
 	}
 
@@ -775,6 +781,44 @@ logicalrep_partition_open(LogicalRepRelMapEntry *root,
 	entry->localrelvalid = true;
 
 	return entry;
+}
+
+/*
+ * logicalrep_identity_is_full
+ *
+ * Check whether the replica identity of the relation is full or not.
+ * When a table's replica identity is default, but there is no primary key,
+ * if any publication the relation is in has fallbackfull enabled, we consider
+ * the replica identity as full. This function should only be called on the
+ * publisher.
+ */
+bool
+logicalrep_identity_is_full(Relation relation)
+{
+    Form_pg_class relform = RelationGetForm(relation);
+
+    if (relform->relreplident == REPLICA_IDENTITY_FULL)
+        return true;
+
+    if (relform->relreplident == REPLICA_IDENTITY_DEFAULT &&
+        !OidIsValid(RelationGetReplicaIndex(relation)))
+    {
+		/* relreplident is default, but no primary key, check if we can fallback to full. */	
+		List *pubids = GetRelationPublications(RelationGetRelid(relation));
+		foreach_oid(pubid, pubids)
+		{
+			Publication *pub = GetPublication(pubid);
+
+			if (pub->pubfallbackfull)
+			{
+				list_free(pubids);
+				return true;
+			}
+		}
+		list_free(pubids);
+	}
+
+    return false;
 }
 
 /*
@@ -938,7 +982,9 @@ FindLogicalRepLocalIndex(Relation localrel, LogicalRepRelation *remoterel,
 	if (OidIsValid(idxoid))
 		return idxoid;
 
-	if (remoterel->replident == REPLICA_IDENTITY_FULL)
+	if (remoterel->replident == REPLICA_IDENTITY_FULL ||
+		(remoterel->replident == REPLICA_IDENTITY_DEFAULT &&
+		 remoterel->fallbackfull))
 	{
 		/*
 		 * We are looking for one more opportunity for using an index. If

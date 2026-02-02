@@ -81,13 +81,16 @@ parse_publication_options(ParseState *pstate,
 						  bool *publish_via_partition_root_given,
 						  bool *publish_via_partition_root,
 						  bool *publish_generated_columns_given,
-						  char *publish_generated_columns)
+						  char *publish_generated_columns,
+						  bool *fallbackfull_given,
+						  bool *fallbackfull)
 {
 	ListCell   *lc;
 
 	*publish_given = false;
 	*publish_via_partition_root_given = false;
 	*publish_generated_columns_given = false;
+	*fallbackfull_given = false;
 
 	/* defaults */
 	pubactions->pubinsert = true;
@@ -96,6 +99,7 @@ parse_publication_options(ParseState *pstate,
 	pubactions->pubtruncate = true;
 	*publish_via_partition_root = false;
 	*publish_generated_columns = PUBLISH_GENCOLS_NONE;
+	*fallbackfull = false;
 
 	/* Parse options */
 	foreach(lc, options)
@@ -167,6 +171,13 @@ parse_publication_options(ParseState *pstate,
 				errorConflictingDefElem(defel, pstate);
 			*publish_generated_columns_given = true;
 			*publish_generated_columns = defGetGeneratedColsOption(defel);
+		}
+		else if (strcmp(defel->defname, "fallbackfull") == 0)
+		{
+			if (*fallbackfull_given)
+				errorConflictingDefElem(defel, pstate);
+			*fallbackfull_given = true;
+			*fallbackfull = defGetBoolean(defel);
 		}
 		else
 			ereport(ERROR,
@@ -281,6 +292,7 @@ pub_rf_contains_invalid_column(Oid pubid, Relation relation, List *ancestors,
 	bool		result = false;
 	Datum		rfdatum;
 	bool		rfisnull;
+	Publication *pub;
 
 	/*
 	 * FULL means all columns are in the REPLICA IDENTITY, so all columns are
@@ -288,6 +300,20 @@ pub_rf_contains_invalid_column(Oid pubid, Relation relation, List *ancestors,
 	 */
 	if (relation->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
 		return false;
+
+	/* 
+	 * If REPLICA INDENTITY is DEFAULT and no replica index exists, see if we 
+	 * should fallback to FULL.
+	 */
+	if (relation->rd_rel->relreplident == REPLICA_IDENTITY_DEFAULT && 
+		!OidIsValid(RelationGetReplicaIndex(relation)))
+	{
+		Publication * pub = GetPublication(pubid);
+		if (pub->pubfallbackfull)
+		{
+			return false;	
+		}
+	}
 
 	/*
 	 * For a partition, if pubviaroot is true, find the topmost ancestor that
@@ -394,9 +420,12 @@ pub_contains_invalid_column(Oid pubid, Relation relation, List *ancestors,
 	pub = GetPublication(pubid);
 	check_and_fetch_column_list(pub, publish_as_relid, NULL, &columns);
 
-	if (relation->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
+	if (relation->rd_rel->relreplident == REPLICA_IDENTITY_FULL
+		|| (relation->rd_rel->relreplident == REPLICA_IDENTITY_DEFAULT &&
+			!OidIsValid(RelationGetReplicaIndex(relation)) && 
+			pub->pubfallbackfull))
 	{
-		/* With REPLICA IDENTITY FULL, no column list is allowed. */
+		/* With REPLICA IDENTITY FULL or fallback to FULL, no column list is allowed. */
 		*invalid_column_list = (columns != NULL);
 
 		/*
@@ -842,6 +871,8 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 	bool		publish_via_partition_root;
 	bool		publish_generated_columns_given;
 	char		publish_generated_columns;
+	bool		fallbackfull_given;
+	bool		fallbackfull;
 	AclResult	aclresult;
 	List	   *relations = NIL;
 	List	   *schemaidlist = NIL;
@@ -886,11 +917,13 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 							  &publish_via_partition_root_given,
 							  &publish_via_partition_root,
 							  &publish_generated_columns_given,
-							  &publish_generated_columns);
+							  &publish_generated_columns,
+							  &fallbackfull_given,
+							  &fallbackfull);
 
 	if (stmt->for_all_sequences &&
 		(publish_given || publish_via_partition_root_given ||
-		 publish_generated_columns_given))
+		 publish_generated_columns_given || fallbackfull_given))
 		ereport(NOTICE,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				errmsg("publication parameters are not applicable to sequence synchronization and will be ignored for sequences"));
@@ -914,6 +947,8 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 		BoolGetDatum(publish_via_partition_root);
 	values[Anum_pg_publication_pubgencols - 1] =
 		CharGetDatum(publish_generated_columns);
+	values[Anum_pg_publication_pubfallbackfull - 1] =
+		BoolGetDatum(fallbackfull);
 
 	tup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 
@@ -1010,6 +1045,8 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	bool		publish_via_partition_root;
 	bool		publish_generated_columns_given;
 	char		publish_generated_columns;
+	bool		fallbackfull_given;
+	bool		fallbackfull;
 	ObjectAddress obj;
 	Form_pg_publication pubform;
 	List	   *root_relids = NIL;
@@ -1023,11 +1060,13 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 							  &publish_via_partition_root_given,
 							  &publish_via_partition_root,
 							  &publish_generated_columns_given,
-							  &publish_generated_columns);
+							  &publish_generated_columns,
+							  &fallbackfull_given,
+							  &fallbackfull);
 
 	if (pubform->puballsequences &&
 		(publish_given || publish_via_partition_root_given ||
-		 publish_generated_columns_given))
+		 publish_generated_columns_given || fallbackfull_given))
 		ereport(NOTICE,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				errmsg("publication parameters are not applicable to sequence synchronization and will be ignored for sequences"));
@@ -1142,6 +1181,11 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	{
 		values[Anum_pg_publication_pubgencols - 1] = CharGetDatum(publish_generated_columns);
 		replaces[Anum_pg_publication_pubgencols - 1] = true;
+	}
+	if (fallbackfull_given)
+	{
+		values[Anum_pg_publication_pubfallbackfull - 1] = BoolGetDatum(fallbackfull);
+		replaces[Anum_pg_publication_pubfallbackfull - 1] = true;
 	}
 
 	tup = heap_modify_tuple(tup, RelationGetDescr(rel), values, nulls,

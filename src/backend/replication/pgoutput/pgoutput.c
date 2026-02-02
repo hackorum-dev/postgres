@@ -145,6 +145,19 @@ typedef struct RelationSyncEntry
 	/* are we publishing this rel? */
 	PublicationActions pubactions;
 
+	/* when replica identity is default but no pk, should we fallback to full? */
+	bool		fallbackfull;
+
+	/*
+	 * when replica identity is defaut and no pk and fallbackfull is false, we
+	 * should not send any updates/deletes for this relation. But if the table
+	 * belong to another publication that has falllbackfull enabled, then the
+	 * talbe can still be updated/deleted, thus still has WAL generated, but
+	 * we should skip sending those changes to downstream. This flag is used
+	 * to indicate that.
+	 */
+	bool		block_update_delete;
+
 	/*
 	 * ExprState array for row filter. Different publication actions don't
 	 * allow multiple expressions to always be combined into one, because
@@ -799,6 +812,7 @@ send_relation_and_attrs(Relation relation, TransactionId xid,
 						LogicalDecodingContext *ctx,
 						RelationSyncEntry *relentry)
 {
+	PGOutputData *data = (PGOutputData *) ctx->output_plugin_private;
 	TupleDesc	desc = RelationGetDescr(relation);
 	Bitmapset  *columns = relentry->columns;
 	PublishGencolsType include_gencols_type = relentry->include_gencols_type;
@@ -830,7 +844,9 @@ send_relation_and_attrs(Relation relation, TransactionId xid,
 
 	OutputPluginPrepareWrite(ctx, false);
 	logicalrep_write_rel(ctx->out, xid, relation, columns,
-						 include_gencols_type);
+						 include_gencols_type,
+						 relentry->fallbackfull,
+						 data->protocol_version);
 	OutputPluginWrite(ctx, false);
 }
 
@@ -1519,9 +1535,13 @@ pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		case REORDER_BUFFER_CHANGE_UPDATE:
 			if (!relentry->pubactions.pubupdate)
 				return;
+			if (relentry->block_update_delete)
+				return;
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
 			if (!relentry->pubactions.pubdelete)
+				return;
+			if (relentry->block_update_delete)
 				return;
 
 			/*
@@ -2057,6 +2077,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 	bool		found;
 	MemoryContext oldctx;
 	Oid			relid = RelationGetRelid(relation);
+	Form_pg_class relform = RelationGetForm(relation);
 
 	Assert(RelationSyncCache != NULL);
 
@@ -2075,6 +2096,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 		entry->streamed_txns = NIL;
 		entry->pubactions.pubinsert = entry->pubactions.pubupdate =
 			entry->pubactions.pubdelete = entry->pubactions.pubtruncate = false;
+		entry->fallbackfull = false;
 		entry->new_slot = NULL;
 		entry->old_slot = NULL;
 		memset(entry->exprstate, 0, sizeof(entry->exprstate));
@@ -2130,6 +2152,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 		entry->pubactions.pubupdate = false;
 		entry->pubactions.pubdelete = false;
 		entry->pubactions.pubtruncate = false;
+		entry->fallbackfull = false;
 
 		/*
 		 * Tuple slots cleanups. (Will be rebuilt later if needed).
@@ -2267,6 +2290,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 				entry->pubactions.pubupdate |= pub->pubactions.pubupdate;
 				entry->pubactions.pubdelete |= pub->pubactions.pubdelete;
 				entry->pubactions.pubtruncate |= pub->pubactions.pubtruncate;
+				entry->fallbackfull |= pub->pubfallbackfull;
 
 				/*
 				 * We want to publish the changes as the top-most ancestor
@@ -2301,6 +2325,13 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 				rel_publications = lappend(rel_publications, pub);
 			}
 		}
+
+		if (!entry->fallbackfull &&
+			relform->relreplident == REPLICA_IDENTITY_DEFAULT &&
+			!OidIsValid(RelationGetReplicaIndex(relation)))
+			entry->block_update_delete = true;
+		else
+			entry->block_update_delete = false;
 
 		entry->publish_as_relid = publish_as_relid;
 

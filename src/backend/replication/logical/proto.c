@@ -452,6 +452,10 @@ logicalrep_write_update(StringInfo out, TransactionId xid, Relation rel,
 						bool binary, Bitmapset *columns,
 						PublishGencolsType include_gencols_type)
 {
+	ereport(LOG,
+			(errmsg("EVAN: logical replication: send UPDATE for relation \"%s\" (oid %u)",
+					RelationGetRelationName(rel), RelationGetRelid(rel))));
+
 	pq_sendbyte(out, LOGICAL_REP_MSG_UPDATE);
 
 	Assert(rel->rd_rel->relreplident == REPLICA_IDENTITY_DEFAULT ||
@@ -533,6 +537,10 @@ logicalrep_write_delete(StringInfo out, TransactionId xid, Relation rel,
 	Assert(rel->rd_rel->relreplident == REPLICA_IDENTITY_DEFAULT ||
 		   rel->rd_rel->relreplident == REPLICA_IDENTITY_FULL ||
 		   rel->rd_rel->relreplident == REPLICA_IDENTITY_INDEX);
+
+	ereport(LOG,
+			(errmsg("EVAN: logical replication: send DELETE for relation \"%s\" (oid %u)",
+					RelationGetRelationName(rel), RelationGetRelid(rel))));
 
 	pq_sendbyte(out, LOGICAL_REP_MSG_DELETE);
 
@@ -666,9 +674,14 @@ logicalrep_write_message(StringInfo out, TransactionId xid, XLogRecPtr lsn,
 void
 logicalrep_write_rel(StringInfo out, TransactionId xid, Relation rel,
 					 Bitmapset *columns,
-					 PublishGencolsType include_gencols_type)
+					 PublishGencolsType include_gencols_type,
+					 bool fallbackfull, uint32 proto_version)
 {
 	char	   *relname;
+
+	ereport(LOG,
+			(errmsg("EVAN: logical replication: send RELATION for \"%s\" (oid %u), fallbackfull=%s",
+					RelationGetRelationName(rel), RelationGetRelid(rel), fallbackfull ? "true" : "false")));
 
 	pq_sendbyte(out, LOGICAL_REP_MSG_RELATION);
 
@@ -687,6 +700,10 @@ logicalrep_write_rel(StringInfo out, TransactionId xid, Relation rel,
 	/* send replica identity */
 	pq_sendbyte(out, rel->rd_rel->relreplident);
 
+	/* send publication fallbackfull flag if supported */
+	if (proto_version >= LOGICALREP_PROTO_FALLBACKFULL_VERSION_NUM)
+		pq_sendbyte(out, fallbackfull ? 1 : 0);
+
 	/* send the attribute info */
 	logicalrep_write_attrs(out, rel, columns, include_gencols_type);
 }
@@ -695,7 +712,7 @@ logicalrep_write_rel(StringInfo out, TransactionId xid, Relation rel,
  * Read the relation info from stream and return as LogicalRepRelation.
  */
 LogicalRepRelation *
-logicalrep_read_rel(StringInfo in)
+logicalrep_read_rel(StringInfo in, uint32 proto_version)
 {
 	LogicalRepRelation *rel = palloc_object(LogicalRepRelation);
 
@@ -707,6 +724,12 @@ logicalrep_read_rel(StringInfo in)
 
 	/* Read the replica identity. */
 	rel->replident = pq_getmsgbyte(in);
+
+	/* Read publication fallbackfull flag if present. */
+	if (proto_version >= LOGICALREP_PROTO_FALLBACKFULL_VERSION_NUM)
+		rel->fallbackfull = (pq_getmsgbyte(in) != 0);
+	else
+		rel->fallbackfull = false;
 
 	/* relkind is not sent */
 	rel->relkind = 0;

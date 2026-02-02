@@ -60,7 +60,8 @@ static HeapTuple heap_prepare_insert(Relation relation, HeapTuple tup,
 static XLogRecPtr log_heap_update(Relation reln, Buffer oldbuf,
 								  Buffer newbuf, HeapTuple oldtup,
 								  HeapTuple newtup, HeapTuple old_key_tuple,
-								  bool all_visible_cleared, bool new_all_visible_cleared);
+								  bool all_visible_cleared, bool new_all_visible_cleared,
+								  bool logical_identity_is_full);
 #ifdef USE_ASSERT_CHECKING
 static void check_lock_if_inplace_updateable_rel(Relation relation,
 												 const ItemPointerData *otid,
@@ -107,7 +108,7 @@ static void index_delete_sort(TM_IndexDeleteOp *delstate);
 static int	bottomup_sort_and_shrink(TM_IndexDeleteOp *delstate);
 static XLogRecPtr log_heap_new_cid(Relation relation, HeapTuple tup);
 static HeapTuple ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
-										bool *copy);
+										bool *copy, bool *ri_is_full);
 
 
 /*
@@ -2859,6 +2860,7 @@ heap_delete(Relation relation, const ItemPointerData *tid,
 	bool		all_visible_cleared = false;
 	HeapTuple	old_key_tuple = NULL;	/* replica identity of the tuple */
 	bool		old_key_copied = false;
+	bool		logical_identity_is_full = false;
 
 	Assert(ItemPointerIsValid(tid));
 
@@ -3088,7 +3090,7 @@ l1:
 	 * Compute replica identity tuple before entering the critical section so
 	 * we don't PANIC upon a memory allocation failure.
 	 */
-	old_key_tuple = ExtractReplicaIdentity(relation, &tp, true, &old_key_copied);
+	old_key_tuple = ExtractReplicaIdentity(relation, &tp, true, &old_key_copied, &logical_identity_is_full);
 
 	/*
 	 * If this is the first possibly-multixact-able operation in the current
@@ -3170,13 +3172,13 @@ l1:
 		xlrec.offnum = ItemPointerGetOffsetNumber(&tp.t_self);
 		xlrec.xmax = new_xmax;
 
-		if (old_key_tuple != NULL)
-		{
-			if (relation->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
-				xlrec.flags |= XLH_DELETE_CONTAINS_OLD_TUPLE;
-			else
-				xlrec.flags |= XLH_DELETE_CONTAINS_OLD_KEY;
-		}
+			if (old_key_tuple != NULL)
+			{
+				if (logical_identity_is_full)
+					xlrec.flags |= XLH_DELETE_CONTAINS_OLD_TUPLE;
+				else
+					xlrec.flags |= XLH_DELETE_CONTAINS_OLD_KEY;
+			}
 
 		XLogBeginInsert();
 		XLogRegisterData(&xlrec, SizeOfHeapDelete);
@@ -3326,6 +3328,7 @@ heap_update(Relation relation, const ItemPointerData *otid, HeapTuple newtup,
 	HeapTuple	heaptup;
 	HeapTuple	old_key_tuple = NULL;
 	bool		old_key_copied = false;
+	bool		logical_identity_is_full = false;
 	Page		page;
 	BlockNumber block;
 	MultiXactStatus mxact_status;
@@ -4113,7 +4116,7 @@ l2:
 	old_key_tuple = ExtractReplicaIdentity(relation, &oldtup,
 										   bms_overlap(modified_attrs, id_attrs) ||
 										   id_has_external,
-										   &old_key_copied);
+										   &old_key_copied, &logical_identity_is_full);
 
 	/* NO EREPORT(ERROR) from here till changes are logged */
 	START_CRIT_SECTION();
@@ -4200,11 +4203,12 @@ l2:
 			log_heap_new_cid(relation, heaptup);
 		}
 
-		recptr = log_heap_update(relation, buffer,
-								 newbuf, &oldtup, heaptup,
-								 old_key_tuple,
-								 all_visible_cleared,
-								 all_visible_cleared_new);
+			recptr = log_heap_update(relation, buffer,
+									 newbuf, &oldtup, heaptup,
+									 old_key_tuple,
+									 all_visible_cleared,
+									 all_visible_cleared_new,
+									 logical_identity_is_full);
 		if (newbuf != buffer)
 		{
 			PageSetLSN(BufferGetPage(newbuf), recptr);
@@ -8918,7 +8922,8 @@ static XLogRecPtr
 log_heap_update(Relation reln, Buffer oldbuf,
 				Buffer newbuf, HeapTuple oldtup, HeapTuple newtup,
 				HeapTuple old_key_tuple,
-				bool all_visible_cleared, bool new_all_visible_cleared)
+				bool all_visible_cleared, bool new_all_visible_cleared,
+				bool logical_identity_is_full)
 {
 	xl_heap_update xlrec;
 	xl_heap_header xlhdr;
@@ -9007,14 +9012,14 @@ log_heap_update(Relation reln, Buffer oldbuf,
 		xlrec.flags |= XLH_UPDATE_SUFFIX_FROM_OLD;
 	if (need_tuple_data)
 	{
-		xlrec.flags |= XLH_UPDATE_CONTAINS_NEW_TUPLE;
-		if (old_key_tuple)
-		{
-			if (reln->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
-				xlrec.flags |= XLH_UPDATE_CONTAINS_OLD_TUPLE;
-			else
-				xlrec.flags |= XLH_UPDATE_CONTAINS_OLD_KEY;
-		}
+			xlrec.flags |= XLH_UPDATE_CONTAINS_NEW_TUPLE;
+			if (old_key_tuple)
+			{
+				if (logical_identity_is_full)
+					xlrec.flags |= XLH_UPDATE_CONTAINS_OLD_TUPLE;
+				else
+					xlrec.flags |= XLH_UPDATE_CONTAINS_OLD_KEY;
+			}
 	}
 
 	/* If new tuple is the single and first tuple on page... */
@@ -9219,7 +9224,7 @@ log_heap_new_cid(Relation relation, HeapTuple tup)
  */
 static HeapTuple
 ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
-					   bool *copy)
+					   bool *copy, bool *ri_is_full)
 {
 	TupleDesc	desc = RelationGetDescr(relation);
 	char		replident = relation->rd_rel->relreplident;
@@ -9229,6 +9234,7 @@ ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
 	Datum		values[MaxHeapAttributeNumber];
 
 	*copy = false;
+	*ri_is_full = false;
 
 	if (!RelationIsLogicallyLogged(relation))
 		return NULL;
@@ -9236,7 +9242,7 @@ ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
 	if (replident == REPLICA_IDENTITY_NOTHING)
 		return NULL;
 
-	if (replident == REPLICA_IDENTITY_FULL)
+	if (logicalrep_identity_is_full(relation))
 	{
 		/*
 		 * When logging the entire old tuple, it very well could contain
@@ -9247,6 +9253,7 @@ ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_required,
 			*copy = true;
 			tp = toast_flatten_tuple(tp, desc);
 		}
+		*ri_is_full = true;
 		return tp;
 	}
 

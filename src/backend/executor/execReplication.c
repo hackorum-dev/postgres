@@ -1089,7 +1089,7 @@ CheckCmdReplicaIdentity(Relation rel, CmdType cmd)
 		return;
 
 	/* REPLICA IDENTITY FULL is also good for UPDATE/DELETE. */
-	if (rel->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
+	if (logicalrep_identity_is_full(rel))
 		return;
 
 	/*

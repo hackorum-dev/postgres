@@ -36,13 +36,17 @@
  * LOGICALREP_PROTO_STREAM_PARALLEL_VERSION_NUM is the minimum protocol version
  * where we support applying large streaming transactions in parallel.
  * Introduced in PG16.
+ *
+ * LOGICALREP_PROTO_FALLBACKFULL_VERSION_NUM is the minimum protocol version
+ * that includes the fallbackfull flag in RELATION messages.
  */
 #define LOGICALREP_PROTO_MIN_VERSION_NUM 1
 #define LOGICALREP_PROTO_VERSION_NUM 1
 #define LOGICALREP_PROTO_STREAM_VERSION_NUM 2
 #define LOGICALREP_PROTO_TWOPHASE_VERSION_NUM 3
 #define LOGICALREP_PROTO_STREAM_PARALLEL_VERSION_NUM 4
-#define LOGICALREP_PROTO_MAX_VERSION_NUM LOGICALREP_PROTO_STREAM_PARALLEL_VERSION_NUM
+#define LOGICALREP_PROTO_FALLBACKFULL_VERSION_NUM 5
+#define LOGICALREP_PROTO_MAX_VERSION_NUM LOGICALREP_PROTO_FALLBACKFULL_VERSION_NUM
 
 /*
  * Logical message types
@@ -111,6 +115,7 @@ typedef struct LogicalRepRelation
 	char	  **attnames;		/* column names */
 	Oid		   *atttyps;		/* column types */
 	char		replident;		/* replica identity */
+	bool		fallbackfull;	/* publication fallback to full identity */
 	char		relkind;		/* remote relation kind */
 	Bitmapset  *attkeys;		/* Bitmap of key columns */
 } LogicalRepRelation;
@@ -250,8 +255,10 @@ extern void logicalrep_write_message(StringInfo out, TransactionId xid, XLogRecP
 									 bool transactional, const char *prefix, Size sz, const char *message);
 extern void logicalrep_write_rel(StringInfo out, TransactionId xid,
 								 Relation rel, Bitmapset *columns,
-								 PublishGencolsType include_gencols_type);
-extern LogicalRepRelation *logicalrep_read_rel(StringInfo in);
+								 PublishGencolsType include_gencols_type,
+								 bool fallbackfull, uint32 proto_version);
+extern LogicalRepRelation *logicalrep_read_rel(StringInfo in,
+											   uint32 proto_version);
 extern void logicalrep_write_typ(StringInfo out, TransactionId xid,
 								 Oid typoid);
 extern void logicalrep_read_typ(StringInfo in, LogicalRepTyp *ltyp);

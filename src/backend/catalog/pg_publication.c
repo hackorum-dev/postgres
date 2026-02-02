@@ -1097,6 +1097,7 @@ GetPublication(Oid pubid)
 	pub->pubactions.pubtruncate = pubform->pubtruncate;
 	pub->pubviaroot = pubform->pubviaroot;
 	pub->pubgencols_type = pubform->pubgencols;
+	pub->pubfallbackfull = pubform->pubfallbackfull;
 
 	ReleaseSysCache(tup);
 
