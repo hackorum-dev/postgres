@@ -22,6 +22,7 @@
 extern int	lo_read(int fd, char *buf, int len);
 extern int	lo_write(int fd, const char *buf, int len);
 extern void lo_put(Oid loOid, int64 offset, const char *str, int len);
+extern Oid lo_from_bytea(Oid loOid, bytea *str);
 
 struct LoBulkWriteItem;
 struct LoBulkPutItem;
