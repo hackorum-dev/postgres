@@ -219,6 +219,22 @@ lo_put(Oid loOid, int64 offset, const char *str, int len)
 	inv_close(loDesc);
 }
 
+Oid
+lo_from_bytea(Oid loOid, bytea *str)
+{
+	LargeObjectDesc *loDesc;
+	int			written PG_USED_FOR_ASSERTS_ONLY;
+
+	lo_cleanup_needed = true;
+	loOid = inv_create(loOid);
+	loDesc = inv_open(loOid, INV_WRITE, CurrentMemoryContext);
+	written = inv_write(loDesc, VARDATA_ANY(str), VARSIZE_ANY_EXHDR(str));
+	Assert(written == VARSIZE_ANY_EXHDR(str));
+	inv_close(loDesc);
+
+	return loOid;
+}
+
 Datum
 be_lo_lseek(PG_FUNCTION_ARGS)
 {
@@ -851,18 +867,10 @@ be_lo_from_bytea(PG_FUNCTION_ARGS)
 {
 	Oid			loOid = PG_GETARG_OID(0);
 	bytea	   *str = PG_GETARG_BYTEA_PP(1);
-	LargeObjectDesc *loDesc;
-	int			written PG_USED_FOR_ASSERTS_ONLY;
 
 	PreventCommandIfReadOnly("lo_from_bytea()");
 
-	lo_cleanup_needed = true;
-	loOid = inv_create(loOid);
-	loDesc = inv_open(loOid, INV_WRITE, CurrentMemoryContext);
-	written = inv_write(loDesc, VARDATA_ANY(str), VARSIZE_ANY_EXHDR(str));
-	Assert(written == VARSIZE_ANY_EXHDR(str));
-	inv_close(loDesc);
-
+	loOid = lo_from_bytea(loOid, str);
 	PG_RETURN_OID(loOid);
 }
 
