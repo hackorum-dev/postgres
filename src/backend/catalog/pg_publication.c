@@ -1522,6 +1522,14 @@ pg_get_publication_tables(FunctionCallInfo fcinfo, ArrayType *pubnames,
 			}
 
 			/*
+			 * TODO : For poc, just add pg_largeobject relid to the
+			 * publication. We need to figure out the long term approach to do
+			 * this and also decide which publication would publish the large
+			 * objects.
+			 */
+			pub_elem_tables = lappend_oid(pub_elem_tables, LargeObjectRelationId);
+
+			/*
 			 * Record the published table and the corresponding publication so
 			 * that we can get row filters and column lists later.
 			 *
