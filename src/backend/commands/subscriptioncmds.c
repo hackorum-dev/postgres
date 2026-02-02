@@ -3635,6 +3635,15 @@ fetch_relation_list(WalReceiverConn *wrconn, List *publications)
 
 	walrcv_clear_result(res);
 
+	/*
+	 * TODO : Might need a check or special code here to include the
+	 * largeobject tables. In the POC, we are chaning
+	 * pg_get_publication_tables. But that might change. We also might want to
+	 * have a combination of both - the publication provides the large object
+	 * tables and the subscription has a flag to decide if it wants to
+	 * replicate large objects or not.
+	 */
+
 	return relationlist;
 }
 
