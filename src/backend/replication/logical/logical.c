@@ -511,7 +511,7 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 	if (SlotIsPhysical(slot))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("cannot use physical replication slot for logical decoding")));
+				 errmsg("cannot use a physical replication slot for logical decoding")));
 
 	/*
 	 * We need to access the system tables during decoding to build the
