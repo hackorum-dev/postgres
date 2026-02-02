@@ -1104,7 +1104,9 @@ data. Empty in ordinary tables.</entry>
      The update does not modify any columns referenced by the table's indexes,
      not including summarizing indexes.  The only summarizing index method in
      the core <productname>PostgreSQL</productname> distribution is <link
-     linkend="brin">BRIN</link>.
+     linkend="brin">BRIN</link>. At runtime, a binary comparison checks old
+     and new values to determine if a change has occurred in the indexed
+     values.
      </para>
    </listitem>
    <listitem>
