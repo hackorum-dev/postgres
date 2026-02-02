@@ -4557,7 +4557,7 @@ FlushUnlockedBuffer(BufferDesc *buf, SMgrRelation reln,
 	Buffer		buffer = BufferDescriptorGetBuffer(buf);
 
 	BufferLockAcquire(buffer, buf, BUFFER_LOCK_SHARE);
-	FlushBuffer(buf, reln, IOOBJECT_RELATION, IOCONTEXT_NORMAL);
+	FlushBuffer(buf, reln, io_object, io_context);
 	BufferLockUnlock(buffer, buf);
 }
 
