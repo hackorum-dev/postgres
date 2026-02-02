@@ -2545,25 +2545,26 @@ typedef struct AggState
 	int			num_hashes;
 	MemoryContext hash_metacxt; /* memory for hash table bucket array */
 	MemoryContext hash_tuplescxt;	/* memory for hash table tuples */
-	struct LogicalTapeSet *hash_tapeset;	/* tape set for hash spill tapes */
-	struct HashAggSpill *hash_spills;	/* HashAggSpill for each grouping set,
-										 * exists only during first pass */
-	TupleTableSlot *hash_spill_rslot;	/* for reading spill files */
-	TupleTableSlot *hash_spill_wslot;	/* for writing spill files */
-	List	   *hash_batches;	/* hash batches remaining to be processed */
-	bool		hash_ever_spilled;	/* ever spilled during this execution? */
-	bool		hash_spill_mode;	/* we hit a limit during the current batch
-									 * and we must not create new groups */
-	Size		hash_mem_limit; /* limit before spilling hash table */
-	uint64		hash_ngroups_limit; /* limit before spilling hash table */
-	int			hash_planned_partitions;	/* number of partitions planned
+	struct LogicalTapeSet *spill_tapeset;	/* tape set for hash spill tapes */
+	struct HashAggSpill *spills;	/* HashAggSpill for each grouping set,
+									 * exists only during first pass */
+	TupleTableSlot *spill_rslot;	/* for reading spill files */
+	TupleTableSlot *spill_wslot;	/* for writing spill files */
+	List	   *spill_batches;	/* hash batches remaining to be processed */
+
+	bool		spill_ever_happened;	/* ever spilled during this execution? */
+	bool		spill_mode;	/* we hit a limit during the current batch
+							 * and we must not create new groups */
+	Size		spill_mem_limit; /* limit before spilling hash table or index */
+	uint64		spill_ngroups_limit; /* limit before spilling hash table or index */
+	int			spill_planned_partitions;	/* number of partitions planned
 											 * for first pass */
 	double		hashentrysize;	/* estimate revised during execution */
-	Size		hash_mem_peak;	/* peak hash table memory usage */
-	uint64		hash_ngroups_current;	/* number of groups currently in
+	Size		spill_mem_peak;	/* peak memory usage of hash table or index */
+	uint64		spill_ngroups_current;	/* number of groups currently in
 										 * memory in all hash tables */
-	uint64		hash_disk_used; /* kB of disk space used */
-	int			hash_batches_used;	/* batches used during entire execution */
+	uint64		spill_disk_used; /* kB of disk space used */
+	int			spill_batches_used;	/* batches used during entire execution */
 
 	AggStatePerHash perhash;	/* array of per-hashtable data */
 	AggStatePerGroup *hash_pergroup;	/* grouping set indexed array of
