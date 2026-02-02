@@ -2498,6 +2498,7 @@ typedef struct AggStatePerTransData *AggStatePerTrans;
 typedef struct AggStatePerGroupData *AggStatePerGroup;
 typedef struct AggStatePerPhaseData *AggStatePerPhase;
 typedef struct AggStatePerHashData *AggStatePerHash;
+typedef struct AggStatePerIndexData *AggStatePerIndex;
 
 typedef struct AggState
 {
@@ -2513,17 +2514,18 @@ typedef struct AggState
 	AggStatePerAgg peragg;		/* per-Aggref information */
 	AggStatePerTrans pertrans;	/* per-Trans state information */
 	ExprContext *hashcontext;	/* econtexts for long-lived data (hashtable) */
+	ExprContext *indexcontext;	/* econtexts for long-lived data (index) */
 	ExprContext **aggcontexts;	/* econtexts for long-lived data (per GS) */
 	ExprContext *tmpcontext;	/* econtext for input expressions */
-#define FIELDNO_AGGSTATE_CURAGGCONTEXT 14
+#define FIELDNO_AGGSTATE_CURAGGCONTEXT 15
 	ExprContext *curaggcontext; /* currently active aggcontext */
 	AggStatePerAgg curperagg;	/* currently active aggregate, if any */
-#define FIELDNO_AGGSTATE_CURPERTRANS 16
+#define FIELDNO_AGGSTATE_CURPERTRANS 17
 	AggStatePerTrans curpertrans;	/* currently active trans state, if any */
 	bool		input_done;		/* indicates end of input */
 	bool		agg_done;		/* indicates completion of Agg scan */
 	int			projected_set;	/* The last projected grouping set */
-#define FIELDNO_AGGSTATE_CURRENT_SET 20
+#define FIELDNO_AGGSTATE_CURRENT_SET 21
 	int			current_set;	/* The current grouping set being evaluated */
 	Bitmapset  *grouped_cols;	/* grouped cols in current projection */
 	List	   *all_grouped_cols;	/* list of all grouped cols in DESC order */
@@ -2545,6 +2547,8 @@ typedef struct AggState
 	int			num_hashes;
 	MemoryContext hash_metacxt; /* memory for hash table bucket array */
 	MemoryContext hash_tuplescxt;	/* memory for hash table tuples */
+
+	/* Fields used for managing spill mode in hash and index aggs */
 	struct LogicalTapeSet *spill_tapeset;	/* tape set for hash spill tapes */
 	struct HashAggSpill *spills;	/* HashAggSpill for each grouping set,
 									 * exists only during first pass */
@@ -2566,12 +2570,21 @@ typedef struct AggState
 	uint64		spill_disk_used; /* kB of disk space used */
 	int			spill_batches_used;	/* batches used during entire execution */
 
+	/* these fields are used in AGG_INDEXED mode: */
+	AggStatePerIndex perindex;	/* pointer to per-index state data */
+	bool			index_filled;	/* index filled yet? */
+	MemoryContext	index_metacxt;	/* memory for index structure */
+	MemoryContext	index_nodecxt;	/* memory for index nodes */
+	MemoryContext	index_entrycxt;	/* memory for index entries */
+	Sort		   *index_sort;		/* ordering information for index */
+	Tuplesortstate *mergestate;		/* state for merging projected tuples if
+									 * spill occurred */
 	AggStatePerHash perhash;	/* array of per-hashtable data */
 	AggStatePerGroup *hash_pergroup;	/* grouping set indexed array of
 										 * per-group pointers */
 
 	/* support for evaluation of agg input expressions: */
-#define FIELDNO_AGGSTATE_ALL_PERGROUPS 54
+#define FIELDNO_AGGSTATE_ALL_PERGROUPS 62
 	AggStatePerGroup *all_pergroups;	/* array of first ->pergroups, than
 										 * ->hash_pergroup */
 	SharedAggInfo *shared_info; /* one entry per worker */
