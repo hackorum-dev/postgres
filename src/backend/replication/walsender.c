@@ -1547,6 +1547,11 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 
 	Assert(!MyReplicationSlot);
 
+	/*
+	 * Acquire the replication slot and assign it to MyReplicationSlot.
+	 * Verification that the slot is logical is deferred to
+	 * CreateDecodingContext().
+	 */
 	ReplicationSlotAcquire(cmd->slotname, true, true);
 
 	/*
@@ -1877,6 +1882,8 @@ NeedToWaitForStandbys(XLogRecPtr flushed_lsn, uint32 *wait_event)
 {
 	int			elevel = got_STOPPING ? ERROR : WARNING;
 	bool		failover_slot;
+
+	Assert(MyReplicationSlot);
 
 	failover_slot = (replication_active && MyReplicationSlot->data.failover);
 
