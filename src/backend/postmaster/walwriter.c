@@ -165,7 +165,7 @@ WalWriterMain(const void *startup_data, size_t startup_data_len)
 		pgaio_error_cleanup();
 		UnlockBuffers();
 		ReleaseAuxProcessResources(false);
-		AtEOXact_Buffers(false);
+		AtEOXact_Buffers();
 		AtEOXact_SMgr();
 		AtEOXact_Files(false);
 		AtEOXact_HashTables(false);

@@ -4219,11 +4219,11 @@ SyncOneBuffer(int buf_id, bool skip_recently_used, WritebackContext *wb_context)
  *		cross-check that no pins remain.
  */
 void
-AtEOXact_Buffers(bool isCommit)
+AtEOXact_Buffers(void)
 {
 	CheckForBufferLeaks();
 
-	AtEOXact_LocalBuffers(isCommit);
+	AtEOXact_LocalBuffers();
 
 	Assert(PrivateRefCountOverflowed == 0);
 }
