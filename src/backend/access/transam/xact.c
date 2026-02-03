@@ -2456,7 +2456,7 @@ CommitTransaction(void)
 	AtEOXact_Aio(true);
 
 	/* Check we've released all buffer pins */
-	AtEOXact_Buffers(true);
+	AtEOXact_Buffers();
 
 	/* Clean up the relation cache */
 	AtEOXact_RelationCache(true);
@@ -2765,7 +2765,7 @@ PrepareTransaction(void)
 	AtEOXact_Aio(true);
 
 	/* Check we've released all buffer pins */
-	AtEOXact_Buffers(true);
+	AtEOXact_Buffers();
 
 	/* Clean up the relation cache */
 	AtEOXact_RelationCache(true);
@@ -3018,7 +3018,7 @@ AbortTransaction(void)
 							 RESOURCE_RELEASE_BEFORE_LOCKS,
 							 false, true);
 		AtEOXact_Aio(false);
-		AtEOXact_Buffers(false);
+		AtEOXact_Buffers();
 		AtEOXact_RelationCache(false);
 		AtEOXact_TypeCache();
 		AtEOXact_Inval(false);
