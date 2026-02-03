@@ -80,6 +80,7 @@
 #include "replication/syncrep.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
+#include "utils/injection_point.h"
 #include "replication/walsender_private.h"
 #include "storage/condition_variable.h"
 #include "storage/aio_subsys.h"
@@ -1538,6 +1539,8 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 	CheckLogicalDecodingRequirements(false);
 
 	Assert(!MyReplicationSlot);
+
+	INJECTION_POINT("start-logical-replication-before-acquire", NULL);
 
 	/*
 	 * Acquire the replication slot and assign it to MyReplicationSlot.
