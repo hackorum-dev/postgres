@@ -1024,7 +1024,7 @@ CheckForLocalBufferLeaks(void)
  * This is just like AtEOXact_Buffers, but for local buffers.
  */
 void
-AtEOXact_LocalBuffers(bool isCommit)
+AtEOXact_LocalBuffers(void)
 {
 	CheckForLocalBufferLeaks();
 }
