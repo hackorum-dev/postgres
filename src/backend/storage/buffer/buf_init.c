@@ -39,7 +39,7 @@ const ShmemCallbacks BufferManagerShmemCallbacks = {
 
 /*
  * Data Structures:
- *		buffers live in a freelist and a lookup data structure.
+ *		buffers live in a lookup data structure.
  *
  *
  * Buffer Lookup:
