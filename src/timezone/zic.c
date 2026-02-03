@@ -49,11 +49,6 @@ typedef int_fast64_t zic_t;
 static ptrdiff_t const PTRDIFF_MAX = MAXVAL(ptrdiff_t, TYPE_BIT(ptrdiff_t));
 #endif
 
-/* The minimum alignment of a type, for pre-C11 platforms.  */
-#if __STDC_VERSION__ < 201112
-#define _Alignof(type) offsetof(struct { char a; type b; }, b)
-#endif
-
 /* The type for line numbers.  Use PRIdMAX to format them; formerly
    there was also "#define PRIdLINENO PRIdMAX" and formats used
    PRIdLINENO, but xgettext cannot grok that.  */
