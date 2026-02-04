@@ -19,6 +19,7 @@
 #include "slru_io.h"
 
 static SlruSegState *AllocSlruSegState(const char *dir);
+static void FreeSlruSegState(SlruSegState *state);
 static char *SlruFileName(SlruSegState *state, int64 segno);
 static void SlruFlush(SlruSegState *state);
 
@@ -28,7 +29,7 @@ AllocSlruSegState(const char *dir)
 {
 	SlruSegState *state = pg_malloc_object(SlruSegState);
 
-	state->dir = pstrdup(dir);
+	state->dir = pg_strdup(dir);
 	state->fn = NULL;
 	state->fd = -1;
 	state->segno = -1;
@@ -67,6 +68,17 @@ AllocSlruRead(const char *dir, bool long_segment_names)
 	state->long_segment_names = long_segment_names;
 
 	return state;
+}
+
+static void
+FreeSlruSegState(SlruSegState *state)
+{
+	if (state->fd != -1)
+		close(state->fd);
+
+	pg_free(state->fn);
+	pg_free(state->dir);
+	pg_free(state);
 }
 
 /*
@@ -154,9 +166,7 @@ FreeSlruRead(SlruSegState *state)
 {
 	Assert(!state->writing);	/* read only mode */
 
-	if (state->fd != -1)
-		close(state->fd);
-	pg_free(state);
+	FreeSlruSegState(state);
 }
 
 /*
@@ -263,7 +273,5 @@ FreeSlruWrite(SlruSegState *state)
 
 	SlruFlush(state);
 
-	if (state->fd != -1)
-		close(state->fd);
-	pg_free(state);
+	FreeSlruSegState(state);
 }
