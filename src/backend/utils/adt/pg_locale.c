@@ -233,10 +233,38 @@ pg_perm_setlocale(int category, const char *locale)
 		case LC_MESSAGES:
 			envvar = "LC_MESSAGES";
 #ifdef WIN32
+
+			/*
+			 * gettext 0.20+ expects Windows locale names (e.g.,
+			 * "English_United States") rather than POSIX names (e.g.,
+			 * "en_US").  When given a POSIX name, its get_lcid() function
+			 * enumerates all ~259 system locales looking for a match, fails,
+			 * and due to a cache bug, repeats this enumeration on every
+			 * gettext() call.  This causes exception-heavy workloads to be
+			 * 5-6x slower.
+			 *
+			 * For gettext 0.20+, pass the locale through as-is (it's already
+			 * in Windows format from setlocale()).  For older versions, convert
+			 * to POSIX/ISO format via IsoLocaleName() since they expect that.
+			 *
+			 * "C" and "POSIX" are not valid Windows locale names and would
+			 * trigger the same enumeration bug, so map them to the current
+			 * LC_CTYPE locale instead.
+			 *
+			 * Note: locale is guaranteed non-NULL and non-empty here, as those
+			 * cases are handled earlier in the LC_MESSAGES block above.
+			 */
+#if defined(LIBINTL_VERSION) && (LIBINTL_VERSION >= 0x001400)
+			if (strcmp(locale, "C") == 0 || strcmp(locale, "POSIX") == 0)
+				result = setlocale(LC_CTYPE, NULL);
+			else
+				result = (char *) locale;
+#else
 			result = IsoLocaleName(locale);
 			if (result == NULL)
 				result = (char *) locale;
-			elog(DEBUG3, "IsoLocaleName() executed; locale: \"%s\"", result);
+#endif
+			elog(DEBUG3, "LC_MESSAGES locale: \"%s\"", result);
 #endif							/* WIN32 */
 			break;
 #endif							/* LC_MESSAGES */
@@ -1025,6 +1053,7 @@ get_iso_localename(const char *winlocname)
 	return NULL;
 }
 
+pg_attribute_unused()
 static char *
 IsoLocaleName(const char *winlocname)
 {
