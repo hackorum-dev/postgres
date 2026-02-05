@@ -593,6 +593,19 @@
        <structfield>max_exec_time</structfield>)
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>stats_last_updated</structfield> <type>timestamp with time zone</type>
+      </para>
+      <para>
+       Time when statistics were last updated for this statement. This represents
+       the end time of the most recent execution that completed. For nested
+       statements (if <structfield>toplevel</structfield> is
+       <literal>false</literal>), this reflects when the top-level statement
+       completed.
+      </para></entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
