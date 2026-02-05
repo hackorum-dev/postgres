@@ -119,6 +119,7 @@ IndexNext(IndexScanState *node)
 
 		node->iss_ScanDesc = scandesc;
 
+		scandesc->xs_num_merge_prefixes = node->iss_NumMergePrefixes;
 		/*
 		 * If no run-time keys to calculate or they are ready, go ahead and
 		 * pass the scankeys to the index AM.
@@ -216,6 +217,8 @@ IndexNextWithReorder(IndexScanState *node)
 								   SO_HINT_REL_READ_ONLY : SO_NONE);
 
 		node->iss_ScanDesc = scandesc;
+
+		scandesc->xs_num_merge_prefixes = node->iss_NumMergePrefixes;
 
 		/*
 		 * If no run-time keys to calculate or they are ready, go ahead and
@@ -1098,6 +1101,11 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	}
 
 	/*
+	 * Initialize merge scan state from plan node
+	 */
+	indexstate->iss_NumMergePrefixes = node->num_merge_prefixes;
+
+	/*
 	 * all done.
 	 */
 	return indexstate;
@@ -1713,6 +1721,8 @@ ExecIndexScanInitializeDSM(IndexScanState *node,
 								 ScanRelIsReadOnly(&node->ss) ?
 								 SO_HINT_REL_READ_ONLY : SO_NONE);
 
+	node->iss_ScanDesc->xs_num_merge_prefixes = node->iss_NumMergePrefixes;
+
 	/*
 	 * If no run-time keys to calculate or they are ready, go ahead and pass
 	 * the scankeys to the index AM.
@@ -1761,6 +1771,7 @@ ExecIndexScanInitializeWorker(IndexScanState *node,
 								 ScanRelIsReadOnly(&node->ss) ?
 								 SO_HINT_REL_READ_ONLY : SO_NONE);
 
+	node->iss_ScanDesc->xs_num_merge_prefixes = node->iss_NumMergePrefixes;
 	/*
 	 * If no run-time keys to calculate or they are ready, go ahead and pass
 	 * the scankeys to the index AM.

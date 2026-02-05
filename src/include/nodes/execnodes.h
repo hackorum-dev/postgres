@@ -1774,6 +1774,9 @@ typedef struct IndexScanState
 	bool	   *iss_OrderByTypByVals;
 	int16	   *iss_OrderByTypLens;
 	Size		iss_PscanLen;
+
+	/* Merge scan: K-way merge */
+	int			iss_NumMergePrefixes;
 } IndexScanState;
 
 /* ----------------
@@ -1820,6 +1823,8 @@ typedef struct IndexOnlyScanState
 	Size		ioss_PscanLen;
 	AttrNumber *ioss_NameCStringAttNums;
 	int			ioss_NameCStringCount;
+	/* Merge scan: K-way merge */
+	int			ioss_NumMergePrefixes;
 } IndexOnlyScanState;
 
 /* ----------------

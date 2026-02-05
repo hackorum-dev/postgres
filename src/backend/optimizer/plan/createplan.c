@@ -185,12 +185,14 @@ static IndexScan *make_indexscan(List *qptlist, List *qpqual, Index scanrelid,
 								 Oid indexid, List *indexqual, List *indexqualorig,
 								 List *indexorderby, List *indexorderbyorig,
 								 List *indexorderbyops,
+								 int num_merge_prefixes,
 								 ScanDirection indexscandir);
 static IndexOnlyScan *make_indexonlyscan(List *qptlist, List *qpqual,
 										 Index scanrelid, Oid indexid,
 										 List *indexqual, List *recheckqual,
 										 List *indexorderby,
 										 List *indextlist,
+										 int num_merge_prefixes,
 										 ScanDirection indexscandir);
 static BitmapIndexScan *make_bitmap_indexscan(Index scanrelid, Oid indexid,
 											  List *indexqual,
@@ -3019,6 +3021,7 @@ create_indexscan_plan(PlannerInfo *root,
 												stripped_indexquals,
 												fixed_indexorderbys,
 												indexinfo->indextlist,
+												best_path->num_merge_prefixes,
 												best_path->indexscandir);
 	else
 		scan_plan = (Scan *) make_indexscan(tlist,
@@ -3030,6 +3033,7 @@ create_indexscan_plan(PlannerInfo *root,
 											fixed_indexorderbys,
 											indexorderbys,
 											indexorderbyops,
+											best_path->num_merge_prefixes,
 											best_path->indexscandir);
 
 	copy_generic_path_info(&scan_plan->plan, &best_path->path);
@@ -5558,6 +5562,7 @@ make_indexscan(List *qptlist,
 			   List *indexorderby,
 			   List *indexorderbyorig,
 			   List *indexorderbyops,
+			   int num_merge_prefixes,
 			   ScanDirection indexscandir)
 {
 	IndexScan  *node = makeNode(IndexScan);
@@ -5574,6 +5579,7 @@ make_indexscan(List *qptlist,
 	node->indexorderby = indexorderby;
 	node->indexorderbyorig = indexorderbyorig;
 	node->indexorderbyops = indexorderbyops;
+	node->num_merge_prefixes = num_merge_prefixes;
 	node->indexorderdir = indexscandir;
 
 	return node;
@@ -5588,6 +5594,7 @@ make_indexonlyscan(List *qptlist,
 				   List *recheckqual,
 				   List *indexorderby,
 				   List *indextlist,
+				   int num_merge_prefixes,
 				   ScanDirection indexscandir)
 {
 	IndexOnlyScan *node = makeNode(IndexOnlyScan);
@@ -5603,6 +5610,7 @@ make_indexonlyscan(List *qptlist,
 	node->recheckqual = recheckqual;
 	node->indexorderby = indexorderby;
 	node->indextlist = indextlist;
+	node->num_merge_prefixes = num_merge_prefixes;
 	node->indexorderdir = indexscandir;
 
 	return node;

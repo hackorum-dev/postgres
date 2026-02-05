@@ -202,6 +202,9 @@ typedef struct IndexScanDescData
 
 	/* parallel index scan information, in shared memory */
 	struct ParallelIndexScanDescData *parallel_scan;
+
+	/* Merge scan: K-way merge, ordered by an index suffix */
+	int			xs_num_merge_prefixes;
 } IndexScanDescData;
 
 /* Generic structure for parallel scans */

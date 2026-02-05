@@ -21,6 +21,8 @@
 #include "access/nbtree.h"
 #include "access/relscan.h"
 #include "access/stratnum.h"
+#include "catalog/pg_amop.h"
+#include "utils/array.h"
 #include "commands/progress.h"
 #include "commands/vacuum.h"
 #include "nodes/execnodes.h"
@@ -35,6 +37,7 @@
 #include "utils/datum.h"
 #include "utils/fmgrprotos.h"
 #include "utils/index_selfuncs.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/wait_event.h"
 
@@ -100,6 +103,8 @@ static void _bt_parallel_serialize_arrays(Relation rel, BTParallelScanDesc btsca
 										  BTScanOpaque so);
 static void _bt_parallel_restore_arrays(Relation rel, BTParallelScanDesc btscan,
 										BTScanOpaque so);
+static bool bt_init_merge_scan_from_keys(IndexScanDesc scan);
+
 static void btvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 						 IndexBulkDeleteCallback callback, void *callback_state,
 						 BTCycleId cycleid);
@@ -224,6 +229,106 @@ btinsert(Relation rel, Datum *values, bool *isnull,
 }
 
 /*
+ * bt_init_merge_scan_from_keys
+ *		Initialize merge scan state from the preprocessed scan keys.
+ *
+ * Returns true if merge scan was successfully initialized.
+ * Returns false if merge scan cannot be used (e.g., no suitable array key).
+ */
+static bool
+bt_init_merge_scan_from_keys(IndexScanDesc scan)
+{
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	Relation	rel = scan->indexRelation;
+	TupleDesc	itupdesc = RelationGetDescr(rel);
+	ScanKey		arrayKey = NULL;
+	ArrayType  *arr;
+	Datum	   *prefix_values;
+	bool	   *prefix_nulls;
+	int			num_prefixes;
+	int			prefix_attno;
+	int			suffix_attno;
+	Oid			suffix_cmp_oid;
+	Oid			suffix_collation;
+	Oid			opfamily;
+	Oid			elemtype;
+	int16		elemlen;
+	bool		elembyval;
+	char		elemalign;
+	int			i;
+
+	/* Look for SK_SEARCHARRAY on first column in the raw scan keys */
+	for (i = 0; i < scan->numberOfKeys; i++)
+	{
+		ScanKey		sk = &scan->keyData[i];
+
+		if ((sk->sk_flags & SK_SEARCHARRAY) &&
+			sk->sk_attno == 1 &&
+			sk->sk_strategy == BTEqualStrategyNumber)
+		{
+			arrayKey = sk;
+			break;
+		}
+	}
+
+	if (arrayKey == NULL)
+		return false;
+
+	/* Extract array values from the scan key */
+	arr = DatumGetArrayTypeP(arrayKey->sk_argument);
+	num_prefixes = ArrayGetNItems(ARR_NDIM(arr), ARR_DIMS(arr));
+
+	if (num_prefixes < 2)
+		return false;
+
+	/* Get array element type info */
+	elemtype = ARR_ELEMTYPE(arr);
+	get_typlenbyvalalign(elemtype, &elemlen, &elembyval, &elemalign);
+
+	/* Deconstruct the array into individual elements */
+	deconstruct_array(arr, elemtype, elemlen, elembyval, elemalign,
+					  &prefix_values, &prefix_nulls, &num_prefixes);
+
+	/* Attribute numbers (1-based) */
+	prefix_attno = 1;
+	suffix_attno = 2;
+
+	/* Get the opfamily from the index */
+	opfamily = rel->rd_opfamily[suffix_attno - 1];
+
+	/* Get collation from the suffix column */
+	suffix_collation = TupleDescAttr(itupdesc, suffix_attno - 1)->attcollation;
+
+	/* Get the comparison function OID for the suffix column */
+	suffix_cmp_oid = get_opfamily_proc(opfamily,
+									   TupleDescAttr(itupdesc, suffix_attno - 1)->atttypid,
+									   TupleDescAttr(itupdesc, suffix_attno - 1)->atttypid,
+									   BTORDER_PROC);
+
+	if (!OidIsValid(suffix_cmp_oid))
+	{
+		pfree(prefix_values);
+		pfree(prefix_nulls);
+		return false;
+	}
+
+	/* Initialize the merge scan state */
+	so->mergeState = bt_merge_init(scan,
+								   prefix_values,
+								   prefix_nulls,
+								   num_prefixes,
+								   prefix_attno,
+								   suffix_attno,
+								   suffix_cmp_oid,
+								   suffix_collation);
+
+	pfree(prefix_values);
+	pfree(prefix_nulls);
+
+	return (so->mergeState != NULL);
+}
+
+/*
  *	btgettuple() -- Get the next tuple in the scan.
  */
 bool
@@ -236,6 +341,24 @@ btgettuple(IndexScanDesc scan, ScanDirection dir)
 
 	/* btree indexes are never lossy */
 	scan->xs_recheck = false;
+
+	/*
+	 * Check if merge scan optimization should be used.
+	 * Initialize merge scan state on first call if needed.
+	 */
+	if (scan->xs_num_merge_prefixes > 0 && so->mergeState == NULL)
+	{
+		if (!bt_init_merge_scan_from_keys(scan))
+		{
+			/* Merge scan init failed, fall through to regular scan */
+			scan->xs_num_merge_prefixes = 0;
+		}
+	}
+
+	/* Use merge scan if initialized */
+	/* Use merge scan if initialized */
+	if (so->mergeState != NULL)
+		return bt_merge_getnext(scan, dir);
 
 	/* Each loop iteration performs another primitive index scan */
 	do
@@ -367,6 +490,9 @@ btbeginscan(Relation rel, int nkeys, int norderbys)
 	so->killedItems = NULL;		/* until needed */
 	so->numKilled = 0;
 
+	/* Initialize merge scan state to NULL */
+	so->mergeState = NULL;
+
 	/*
 	 * We don't know yet whether the scan will be index-only, so we do not
 	 * allocate the tuple workspace arrays until btrescan.  However, we set up
@@ -480,6 +606,9 @@ btendscan(IndexScanDesc scan)
 		pfree(so->killedItems);
 	if (so->currTuples != NULL)
 		pfree(so->currTuples);
+	/* Clean up merge scan state */
+	if (so->mergeState != NULL)
+		bt_merge_end(so->mergeState);
 	/* so->markTuples should not be pfree'd, see btrescan */
 	pfree(so);
 }

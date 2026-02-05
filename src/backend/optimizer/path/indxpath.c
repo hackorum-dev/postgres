@@ -16,6 +16,7 @@
 #include "postgres.h"
 
 #include "access/stratnum.h"
+#include "utils/array.h"
 #include "access/sysattr.h"
 #include "access/transam.h"
 #include "catalog/pg_am.h"
@@ -103,6 +104,8 @@ static bool eclass_already_used(EquivalenceClass *parent_ec, Relids oldrelids,
 static void get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 							IndexOptInfo *index, IndexClauseSet *clauses,
 							List **bitindexpaths);
+static void consider_merge_scan_path(PlannerInfo *root, RelOptInfo *rel,
+									 IndexOptInfo *index, IndexClauseSet *clauses);
 static List *build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 							   IndexOptInfo *index, IndexClauseSet *clauses,
 							   bool useful_predicate,
@@ -769,6 +772,191 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 									   NULL);
 		*bitindexpaths = list_concat(*bitindexpaths, indexpaths);
 	}
+
+	/*
+	 * Consider merge scan optimization for queries with:
+	 * - ScalarArrayOpExpr (IN clause) on first index column
+	 * - ORDER BY on second column (different from index leading column)
+	 * - Optionally LIMIT
+	 */
+	consider_merge_scan_path(root, rel, index, clauses);
+}
+
+/*
+ * consider_merge_scan_path
+ *	  Check if this index can provide a merge scan path for queries of the form:
+ *	  WHERE prefix IN (...) AND suffix >= b ORDER BY suffix, prefix LIMIT N
+ *
+ *	  Merge scan allows lazily producing output sorted by (suffix, prefix) from
+ *	  an index on (prefix, suffix) by doing a K-way merge of K separate scans.
+ */
+static void
+consider_merge_scan_path(PlannerInfo *root, RelOptInfo *rel,
+						 IndexOptInfo *index, IndexClauseSet *clauses)
+{
+	IndexPath  *ipath;
+	List	   *index_clauses;
+	List	   *index_pathkeys;
+	List	   *merge_pathkeys;
+	ListCell   *lc;
+	int			num_prefixes = 0;
+	int			indexcol;
+	bool		has_saop_on_first = false;
+	bool		has_clause_on_second = false;
+
+	/* Need at least 2 index columns for merge scan */
+	if (index->nkeycolumns < 2)
+		return;
+
+	/* Index must be ordered and support gettuple */
+	if (index->sortopfamily == NULL || !index->amhasgettuple)
+		return;
+
+	/* Must have query pathkeys with at least 2 elements */
+	if (root->query_pathkeys == NIL || list_length(root->query_pathkeys) < 2)
+		return;
+
+	/*
+	 * Check for ScalarArrayOpExpr on first column.
+	 * Count the number of array elements (prefix values).
+	 */
+	foreach(lc, clauses->indexclauses[0])
+	{
+		IndexClause *iclause = (IndexClause *) lfirst(lc);
+		RestrictInfo *rinfo = iclause->rinfo;
+
+		if (IsA(rinfo->clause, ScalarArrayOpExpr))
+		{
+			ScalarArrayOpExpr *saop = (ScalarArrayOpExpr *) rinfo->clause;
+			Node	   *arrayarg = (Node *) lsecond(saop->args);
+
+			has_saop_on_first = true;
+
+			/* Try to determine the number of array elements */
+			if (IsA(arrayarg, Const))
+			{
+				Const	   *con = (Const *) arrayarg;
+
+				if (!con->constisnull)
+				{
+					ArrayType  *arr = DatumGetArrayTypeP(con->constvalue);
+					num_prefixes = ArrayGetNItems(ARR_NDIM(arr), ARR_DIMS(arr));
+				}
+			}
+			else
+			{
+				/* Can't determine size, estimate conservatively */
+				num_prefixes = 10;
+			}
+			break;
+		}
+	}
+
+	if (!has_saop_on_first || num_prefixes < 2)
+		return;
+
+	/* Check if there's any clause on second column */
+	if (clauses->indexclauses[1] != NIL)
+		has_clause_on_second = true;
+
+	if (!has_clause_on_second)
+		return;
+
+	/*
+	 * Get the natural index pathkeys (prefix, suffix order).
+	 * We need at least 2 pathkeys for merge scan to make sense.
+	 */
+	index_pathkeys = build_index_pathkeys(root, index, ForwardScanDirection);
+	if (list_length(index_pathkeys) < 2)
+		return;
+
+	/*
+	 * Check if query pathkeys are (suffix, prefix) - the REVERSED order.
+	 * query_pathkeys[0] should match index_pathkeys[1] (suffix)
+	 * query_pathkeys[1] should match index_pathkeys[0] (prefix)
+	 */
+	{
+		PathKey    *qpk0 = (PathKey *) linitial(root->query_pathkeys);
+		PathKey    *qpk1 = (PathKey *) lsecond(root->query_pathkeys);
+		PathKey    *ipk0 = (PathKey *) linitial(index_pathkeys);
+		PathKey    *ipk1 = (PathKey *) lsecond(index_pathkeys);
+
+		/* Query's first pathkey must match index's SECOND pathkey (suffix) */
+		if (qpk0->pk_eclass != ipk1->pk_eclass)
+			return;
+
+		/* Query's second pathkey must match index's FIRST pathkey (prefix) */
+		if (qpk1->pk_eclass != ipk0->pk_eclass)
+			return;
+	}
+
+	/*
+	 * The merge scan can satisfy the query's ORDER BY (suffix, prefix).
+	 * Use the query's pathkeys directly since we've verified they match.
+	 * This is critical: PostgreSQL compares pathkeys by pointer equality.
+	 */
+	merge_pathkeys = root->query_pathkeys;
+
+	/*
+	 * Build the index clause list (same as normal path).
+	 */
+	index_clauses = NIL;
+	for (indexcol = 0; indexcol < index->nkeycolumns; indexcol++)
+	{
+		foreach(lc, clauses->indexclauses[indexcol])
+		{
+			IndexClause *iclause = (IndexClause *) lfirst(lc);
+			index_clauses = lappend(index_clauses, iclause);
+		}
+	}
+
+	/*
+	 * Create the merge scan path with (suffix, prefix) pathkeys.
+	 */
+	ipath = create_index_path(root, index,
+							  index_clauses,
+							  NIL,		/* no ORDER BY expressions */
+							  NIL,		/* no ORDER BY columns */
+							  merge_pathkeys,
+							  ForwardScanDirection,
+							  check_index_only(rel, index),
+							  NULL,		/* no outer relids */
+							  1.0,		/* loop_count */
+							  false);	/* not parallel */
+
+	/* Enable merge scan with K-way merge */
+	ipath->num_merge_prefixes = num_prefixes;
+
+	/*
+	 * Adjust costs and row estimate for merge scan.
+	 * Merge scan reads exactly (limit + K - 1) tuples instead of all matching.
+	 * The row estimate reflects actual tuple accesses, not total matches.
+	 */
+	if (root->limit_tuples > 0 && root->limit_tuples < ipath->path.rows)
+	{
+		double		merge_rows;
+		double		original_rows = ipath->path.rows;
+
+		/* Merge scan reads exactly (limit + K - 1) tuples */
+		merge_rows = root->limit_tuples + num_prefixes - 1;
+		if (merge_rows < original_rows)
+		{
+			double		ratio = merge_rows / original_rows;
+
+			/* Scale run cost by ratio of tuples accessed */
+			ipath->path.total_cost = ipath->path.startup_cost +
+				(ipath->path.total_cost - ipath->path.startup_cost) * ratio;
+
+			/* Add startup cost for K index descents */
+			ipath->path.startup_cost += num_prefixes * 0.01 * cpu_operator_cost;
+
+			/* Update row estimate to reflect merge scan efficiency */
+			ipath->path.rows = merge_rows;
+		}
+	}
+
+	/* Submit the path for consideration */
+	add_path(rel, (Path *) ipath);
 }
 
 /*

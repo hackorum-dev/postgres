@@ -102,6 +102,7 @@ IndexOnlyNext(IndexOnlyScanState *node)
 
 		node->ioss_ScanDesc = scandesc;
 
+		scandesc->xs_num_merge_prefixes = node->ioss_NumMergePrefixes;
 
 		/* Set it up for index-only scan */
 		node->ioss_ScanDesc->xs_want_itup = true;
@@ -628,7 +629,7 @@ ExecInitIndexOnlyScan(IndexOnlyScan *node, EState *estate, int eflags)
 	indexstate->ioss_RuntimeKeysReady = false;
 	indexstate->ioss_RuntimeKeys = NULL;
 	indexstate->ioss_NumRuntimeKeys = 0;
-
+	indexstate->ioss_NumMergePrefixes = node->num_merge_prefixes;
 	/*
 	 * build the index scan keys from the index qualification
 	 */
@@ -780,6 +781,7 @@ ExecIndexOnlyScanInitializeDSM(IndexOnlyScanState *node,
 								 ScanRelIsReadOnly(&node->ss) ?
 								 SO_HINT_REL_READ_ONLY : SO_NONE);
 	node->ioss_ScanDesc->xs_want_itup = true;
+	node->ioss_ScanDesc->xs_num_merge_prefixes = node->ioss_NumMergePrefixes;
 	node->ioss_VMBuffer = InvalidBuffer;
 
 	/*
@@ -830,6 +832,7 @@ ExecIndexOnlyScanInitializeWorker(IndexOnlyScanState *node,
 								 ScanRelIsReadOnly(&node->ss) ?
 								 SO_HINT_REL_READ_ONLY : SO_NONE);
 	node->ioss_ScanDesc->xs_want_itup = true;
+	node->ioss_ScanDesc->xs_num_merge_prefixes = node->ioss_NumMergePrefixes;
 
 	/*
 	 * If no run-time keys to calculate or they are ready, go ahead and pass

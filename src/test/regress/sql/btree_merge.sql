@@ -81,6 +81,15 @@ ANALYSE btree_merge_test;
 SET enable_seqscan = OFF;
 SET enable_bitmapscan = OFF;
 SHOW track_counts;  -- should be 'on'
+
+-- Verify merge scan is used: no Sort node, rows=10 (N + K - 1 = 3 + 8 - 1)
+EXPLAIN (COSTS OFF)
+SELECT x, y
+FROM btree_merge_test
+WHERE x IN (1,2,5,8,13,21,34,55) AND y >= 19
+ORDER BY y, x
+LIMIT 3;
+
 -- From the limited query proposition this can be computed with 10
 -- tupple accesses.
 SELECT x, y

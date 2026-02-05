@@ -27,6 +27,7 @@
 #include "access/relscan.h"
 #include "lib/pairingheap.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "storage/bufmgr.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
@@ -169,7 +170,8 @@ bt_merge_init(IndexScanDesc scan,
 		cursor->exhausted = prefix_nulls[i];	/* NULL prefix = exhausted */
 		cursor->sort_key_isnull = true;
 		BTScanPosInvalidate(cursor->pos);
-		cursor->tuples = NULL;
+		/* Allocate tuple workspace for index-only scans */
+		cursor->tuples = palloc(BLCKSZ);
 	}
 
 	/* Initialize the merge heap */
@@ -219,6 +221,15 @@ bt_merge_getnext(IndexScanDesc scan, ScanDirection dir)
 				state->active_cursors++;
 			}
 		}
+
+		/*
+		 * Track internal tuple reads for stats. We read active_cursors tuples
+		 * during initialization. One of these will be returned first and
+		 * counted by index_getnext_tid, so we count (active_cursors - 1) here.
+		 */
+		if (state->active_cursors > 1)
+			pgstat_count_index_tuples(scan->indexRelation,
+									  state->active_cursors - 1);
 	}
 
 	/* Get the cursor with the smallest suffix value */
@@ -228,9 +239,15 @@ bt_merge_getnext(IndexScanDesc scan, ScanDirection dir)
 	node = pairingheap_remove_first(state->merge_heap);
 	cursor = pairingheap_container(BTMergeCursor, ph_node, node);
 
-	/* Set up the heap TID from the current cursor position */
+	/* Set up the heap TID and index tuple from the current cursor position */
 	Assert(BTScanPosIsValid(cursor->pos));
-	scan->xs_heaptid = cursor->pos.items[cursor->pos.itemIndex].heapTid;
+	{
+		BTScanPosItem *currItem = &cursor->pos.items[cursor->pos.itemIndex];
+		scan->xs_heaptid = currItem->heapTid;
+		/* For index-only scans, set the index tuple pointer */
+		if (cursor->tuples)
+			scan->xs_itup = (IndexTuple) (cursor->tuples + currItem->tupleOffset);
+	}
 
 	/* Advance cursor to next tuple */
 	if (bt_merge_cursor_advance(state, scan, cursor))
@@ -255,8 +272,22 @@ bt_merge_getnext(IndexScanDesc scan, ScanDirection dir)
 void
 bt_merge_end(BTMergeScanState *state)
 {
+	int			i;
+
 	if (state == NULL)
 		return;
+
+	/* Release any buffer pins held by cursors */
+	for (i = 0; i < state->num_cursors; i++)
+	{
+		BTMergeCursor *cursor = &state->cursors[i];
+
+		if (BTScanPosIsValid(cursor->pos) && BufferIsValid(cursor->pos.buf))
+		{
+			ReleaseBuffer(cursor->pos.buf);
+			cursor->pos.buf = InvalidBuffer;
+		}
+	}
 
 	/* Free the memory context, which frees all allocations */
 	MemoryContextDelete(state->merge_context);
@@ -302,8 +333,14 @@ bt_merge_cursor_init(BTMergeScanState *state,
 	/* Invalidate current position to force _bt_first */
 	BTScanPosInvalidate(so->currPos);
 
-	/* Disable array key handling for this cursor's scan */
+	/*
+	 * Disable array key handling for this cursor's scan.
+	 * We need to clear both numArrayKeys and needPrimScan to avoid
+	 * assertions in _bt_readfirstpage that expect array keys when
+	 * needPrimScan is set.
+	 */
 	so->numArrayKeys = 0;
+	so->needPrimScan = false;
 
 	/* Position at first matching tuple */
 	found = _bt_first(scan, state->direction);
@@ -312,6 +349,16 @@ bt_merge_cursor_init(BTMergeScanState *state,
 	{
 		/* Copy position to cursor */
 		memcpy(&cursor->pos, &so->currPos, sizeof(BTScanPosData));
+
+		/*
+		 * Copy the tuple data for index-only scans.
+		 * The tuple workspace contains copies of index tuples referenced
+		 * by items in currPos.
+		 */
+		if (so->currTuples && so->currPos.nextTupleOffset > 0)
+		{
+			memcpy(cursor->tuples, so->currTuples, so->currPos.nextTupleOffset);
+		}
 
 		/* Extract the sort key for heap ordering */
 		cursor->sort_key = bt_merge_extract_sortkey(state, scan, cursor,
@@ -390,6 +437,11 @@ bt_merge_cursor_advance(BTMergeScanState *state,
 
 	if (found)
 	{
+		/*
+		 * Don't count here - the advanced-to tuple will be returned later
+		 * and counted by index_getnext_tid at that time.
+		 */
+
 		/* Extract new sort key */
 		cursor->sort_key = bt_merge_extract_sortkey(state, scan, cursor,
 													&cursor->sort_key_isnull);

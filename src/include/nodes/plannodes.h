@@ -618,6 +618,8 @@ typedef struct IndexScan
 	List	   *indexorderbyops;
 	/* forward or backward or don't care */
 	ScanDirection indexorderdir;
+	/* Merge scan: K-way merge */
+	int			num_merge_prefixes;
 } IndexScan;
 
 /* ----------------
@@ -666,6 +668,8 @@ typedef struct IndexOnlyScan
 	List	   *indextlist;
 	/* forward or backward or don't care */
 	ScanDirection indexorderdir;
+	/* Merge scan: K-way merge */
+	int			num_merge_prefixes;
 } IndexOnlyScan;
 
 /* ----------------

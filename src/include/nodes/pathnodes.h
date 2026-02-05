@@ -2060,6 +2060,7 @@ typedef struct IndexPath
 	ScanDirection indexscandir;
 	Cost		indextotalcost;
 	Selectivity indexselectivity;
+	int			num_merge_prefixes;
 } IndexPath;
 
 /*
