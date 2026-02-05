@@ -85,7 +85,7 @@ PG_MODULE_MAGIC_EXT(
 #define PGSS_TEXT_FILE	PG_STAT_TMP_DIR "/pgss_query_texts.stat"
 
 /* Magic number identifying the stats file format */
-static const uint32 PGSS_FILE_HEADER = 0x20250731;
+static const uint32 PGSS_FILE_HEADER = 0x20260205;
 
 /* PostgreSQL major version number, changes in which invalidate all entries */
 static const uint32 PGSS_PG_MAJOR_VERSION = PG_VERSION_NUM / 100;
@@ -115,6 +115,7 @@ typedef enum pgssVersion
 	PGSS_V1_11,
 	PGSS_V1_12,
 	PGSS_V1_13,
+	PGSS_V1_14,
 } pgssVersion;
 
 typedef enum pgssStoreKind
@@ -239,6 +240,7 @@ typedef struct pgssEntry
 	int			encoding;		/* query text encoding */
 	TimestampTz stats_since;	/* timestamp of entry allocation */
 	TimestampTz minmax_stats_since; /* timestamp of last min/max values reset */
+	TimestampTz stats_last_updated; /* timestamp of last stats update (statement end) */
 	slock_t		mutex;			/* protects the counters only */
 } pgssEntry;
 
@@ -332,6 +334,7 @@ PG_FUNCTION_INFO_V1(pg_stat_statements_1_10);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_11);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_12);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_13);
+PG_FUNCTION_INFO_V1(pg_stat_statements_1_14);
 PG_FUNCTION_INFO_V1(pg_stat_statements);
 PG_FUNCTION_INFO_V1(pg_stat_statements_info);
 
@@ -664,6 +667,7 @@ pgss_shmem_init(void *arg)
 		entry->counters = temp.counters;
 		entry->stats_since = temp.stats_since;
 		entry->minmax_stats_since = temp.minmax_stats_since;
+		entry->stats_last_updated = temp.stats_last_updated;
 	}
 
 	/* Read global statistics for pg_stat_statements */
@@ -1384,7 +1388,15 @@ pgss_store(const char *query, int64 queryId,
 	/* Increment the counts, except when jstate is not NULL */
 	if (!jstate)
 	{
+		TimestampTz stats_updated_at;
+
 		Assert(kind == PGSS_PLAN || kind == PGSS_EXEC);
+
+		/*
+		 * Get current timestamp before acquiring spinlock to avoid holding
+		 * the lock during syscall.
+		 */
+		stats_updated_at = GetCurrentTimestamp();
 
 		/*
 		 * Grab the spinlock while updating the counters (see comment about
@@ -1490,6 +1502,9 @@ pgss_store(const char *query, int64 queryId,
 		else if (planOrigin == PLAN_STMT_CACHE_CUSTOM)
 			entry->counters.custom_plan_calls++;
 
+		/* Update the timestamp of the last stats update */
+		entry->stats_last_updated = stats_updated_at;
+
 		SpinLockRelease(&entry->mutex);
 	}
 
@@ -1558,7 +1573,8 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
 #define PG_STAT_STATEMENTS_COLS_V1_11	49
 #define PG_STAT_STATEMENTS_COLS_V1_12	52
 #define PG_STAT_STATEMENTS_COLS_V1_13	54
-#define PG_STAT_STATEMENTS_COLS			54	/* maximum of above */
+#define PG_STAT_STATEMENTS_COLS_V1_14	55
+#define PG_STAT_STATEMENTS_COLS			55	/* maximum of above */
 
 /*
  * Retrieve statement statistics.
@@ -1570,6 +1586,16 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
  * expected API version is identified by embedding it in the C name of the
  * function.  Unfortunately we weren't bright enough to do that for 1.1.
  */
+Datum
+pg_stat_statements_1_14(PG_FUNCTION_ARGS)
+{
+	bool		showtext = PG_GETARG_BOOL(0);
+
+	pg_stat_statements_internal(fcinfo, PGSS_V1_14, showtext);
+
+	return (Datum) 0;
+}
+
 Datum
 pg_stat_statements_1_13(PG_FUNCTION_ARGS)
 {
@@ -1742,6 +1768,10 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			if (api_version != PGSS_V1_13)
 				elog(ERROR, "incorrect number of output arguments");
 			break;
+		case PG_STAT_STATEMENTS_COLS_V1_14:
+			if (api_version != PGSS_V1_14)
+				elog(ERROR, "incorrect number of output arguments");
+			break;
 		default:
 			elog(ERROR, "incorrect number of output arguments");
 	}
@@ -1818,6 +1848,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 		int64		queryid = entry->key.queryid;
 		TimestampTz stats_since;
 		TimestampTz minmax_stats_since;
+		TimestampTz stats_last_updated;
 
 		memset(values, 0, sizeof(values));
 		memset(nulls, 0, sizeof(nulls));
@@ -1886,11 +1917,12 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 		SpinLockRelease(&entry->mutex);
 
 		/*
-		 * The spinlock is not required when reading these two as they are
+		 * The spinlock is not required when reading these three as they are
 		 * always updated when holding pgss->lock exclusively.
 		 */
 		stats_since = entry->stats_since;
 		minmax_stats_since = entry->minmax_stats_since;
+		stats_last_updated = entry->stats_last_updated;
 
 		/* Skip entry if unexecuted (ie, it's a pending "sticky" entry) */
 		if (IS_STICKY(tmp))
@@ -2005,6 +2037,10 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			values[i++] = TimestampTzGetDatum(stats_since);
 			values[i++] = TimestampTzGetDatum(minmax_stats_since);
 		}
+		if (api_version >= PGSS_V1_14)
+		{
+			values[i++] = TimestampTzGetDatum(stats_last_updated);
+		}
 
 		Assert(i == (api_version == PGSS_V1_0 ? PG_STAT_STATEMENTS_COLS_V1_0 :
 					 api_version == PGSS_V1_1 ? PG_STAT_STATEMENTS_COLS_V1_1 :
@@ -2016,6 +2052,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 					 api_version == PGSS_V1_11 ? PG_STAT_STATEMENTS_COLS_V1_11 :
 					 api_version == PGSS_V1_12 ? PG_STAT_STATEMENTS_COLS_V1_12 :
 					 api_version == PGSS_V1_13 ? PG_STAT_STATEMENTS_COLS_V1_13 :
+					 api_version == PGSS_V1_14 ? PG_STAT_STATEMENTS_COLS_V1_14 :
 					 -1 /* fail if you forget to update this assert */ ));
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
@@ -2109,6 +2146,7 @@ entry_alloc(pgssHashKey *key, Size query_offset, int query_len, int encoding,
 		entry->encoding = encoding;
 		entry->stats_since = GetCurrentTimestamp();
 		entry->minmax_stats_since = entry->stats_since;
+		entry->stats_last_updated = entry->stats_since;
 	}
 
 	return entry;
