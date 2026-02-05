@@ -779,6 +779,29 @@ build_index_pathkeys(PlannerInfo *root,
 		}
 
 		/*
+		 * For not null columns nulls_first order is irrelevant since there are no nulls,
+		 * We try to create an alternative pathkey with the reverse nulls_first direction and search
+		 * if its present in our query pathkeys, if so we should use it as it's a prefect match.
+		 */
+		if (index->indexkeys[i] > 0 &&
+			bms_is_member(index->indexkeys[i], index->rel->notnullattnums))
+		{
+			cpathkey = make_pathkey_from_sortinfo(root,
+												 indexkey,
+												 index->sortopfamily[i],
+												 index->opcintype[i],
+												 index->indexcollations[i],
+												 reverse_sort,
+												 !nulls_first,
+												 0,
+												 index->rel->relids,
+												 false);
+
+			if (cpathkey != NULL && list_member_ptr(root->sort_pathkeys, cpathkey))
+				goto reverse_pathkey_found;
+		}
+
+		/*
 		 * OK, try to make a canonical pathkey for this sort key.
 		 */
 		cpathkey = make_pathkey_from_sortinfo(root,
@@ -791,7 +814,7 @@ build_index_pathkeys(PlannerInfo *root,
 											  0,
 											  index->rel->relids,
 											  false);
-
+reverse_pathkey_found:
 		if (cpathkey)
 		{
 			/*
