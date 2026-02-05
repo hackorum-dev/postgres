@@ -1515,6 +1515,7 @@ addRangeTableEntry(ParseState *pstate,
 	rte->relid = RelationGetRelid(rel);
 	rte->inh = inh;
 	rte->relkind = rel->rd_rel->relkind;
+	Assert(RelkindIsValid(rte->relkind));
 	rte->rellockmode = lockmode;
 
 	/*
@@ -1600,6 +1601,7 @@ addRangeTableEntryForRelation(ParseState *pstate,
 	rte->relid = RelationGetRelid(rel);
 	rte->inh = inh;
 	rte->relkind = rel->rd_rel->relkind;
+	Assert(RelkindIsValid(rte->relkind));
 	rte->rellockmode = lockmode;
 
 	/*

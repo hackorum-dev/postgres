@@ -453,6 +453,10 @@ AllocateRelationDesc(Form_pg_class relp)
 
 	MemoryContextSwitchTo(oldcxt);
 
+	if (!RelkindIsValid(relation->rd_rel->relkind))
+		elog(ERROR, "invalid relkind \"%c\" for relation \"%s\"",
+			 relation->rd_rel->relkind, RelationGetRelationName(relation));
+
 	return relation;
 }
 
@@ -3527,6 +3531,7 @@ RelationBuildLocalRelation(const char *relname,
 	bool		nailit;
 
 	Assert(natts >= 0);
+	Assert(RelkindIsValid(relkind));
 
 	/*
 	 * check for creation of a rel that must be nailed in cache.

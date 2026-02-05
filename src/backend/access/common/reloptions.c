@@ -1488,7 +1488,6 @@ bytea *
 extractRelOptions(HeapTuple tuple, TupleDesc tupdesc,
 				  amoptions_function amoptions)
 {
-	bytea	   *options;
 	bool		isnull;
 	Datum		datum;
 	Form_pg_class classForm;
@@ -1502,34 +1501,31 @@ extractRelOptions(HeapTuple tuple, TupleDesc tupdesc,
 
 	classForm = (Form_pg_class) GETSTRUCT(tuple);
 
+	Assert(RelkindIsValid(classForm->relkind));
+
 	/* Parse into appropriate format; don't error out here */
 	switch (classForm->relkind)
 	{
 		case RELKIND_RELATION:
 		case RELKIND_TOASTVALUE:
 		case RELKIND_MATVIEW:
-			options = heap_reloptions(classForm->relkind, datum, false);
-			break;
+			return heap_reloptions(classForm->relkind, datum, false);
+
 		case RELKIND_PARTITIONED_TABLE:
-			options = partitioned_table_reloptions(datum, false);
-			break;
+			return partitioned_table_reloptions(datum, false);
+
 		case RELKIND_VIEW:
-			options = view_reloptions(datum, false);
-			break;
+			return view_reloptions(datum, false);
+
 		case RELKIND_INDEX:
 		case RELKIND_PARTITIONED_INDEX:
-			options = index_reloptions(amoptions, datum, false);
-			break;
+			return index_reloptions(amoptions, datum, false);
+
 		case RELKIND_FOREIGN_TABLE:
-			options = NULL;
-			break;
-		default:
-			Assert(false);		/* can't get here */
-			options = NULL;		/* keep compiler quiet */
-			break;
+			return NULL;
 	}
 
-	return options;
+	pg_unreachable();
 }
 
 static void

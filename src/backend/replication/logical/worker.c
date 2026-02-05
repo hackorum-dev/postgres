@@ -884,6 +884,7 @@ create_edata_for_relation(LogicalRepRelMapEntry *rel)
 	rte->rtekind = RTE_RELATION;
 	rte->relid = RelationGetRelid(rel->localrel);
 	rte->relkind = rel->localrel->rd_rel->relkind;
+	Assert(RelkindIsValid(rte->relkind));
 	rte->rellockmode = AccessShareLock;
 
 	addRTEPermissionInfo(&perminfos, rte);

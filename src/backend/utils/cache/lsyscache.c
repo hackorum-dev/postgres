@@ -2162,10 +2162,15 @@ get_rel_relkind(Oid relid)
 
 		result = (Relkind) reltup->relkind;
 		ReleaseSysCache(tp);
+
+		if (!RelkindIsValid(result))
+			elog(ERROR, "relation %u has invalid relkind '%c'",
+				 relid, result);
+
 		return result;
 	}
-	else
-		return '\0';
+
+	elog(ERROR, "cache lookup failed for relation %u", relid);
 }
 
 /*

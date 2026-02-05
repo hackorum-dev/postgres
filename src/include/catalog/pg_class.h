@@ -251,4 +251,25 @@ typedef enum
 
 extern int	errdetail_relkind_not_supported(Relkind relkind);
 
+static inline bool
+RelkindIsValid(char relkind)
+{
+	switch (relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+		case RELKIND_MATVIEW:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_PARTITIONED_INDEX:
+			return true;
+	}
+
+	return false;
+}
+
 #endif							/* PG_CLASS_H */

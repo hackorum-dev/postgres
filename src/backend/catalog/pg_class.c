@@ -45,8 +45,8 @@ errdetail_relkind_not_supported(Relkind relkind)
 			return errdetail("This operation is not supported for partitioned tables.");
 		case RELKIND_PARTITIONED_INDEX:
 			return errdetail("This operation is not supported for partitioned indexes.");
-		default:
-			elog(ERROR, "unrecognized relkind: '%c'", relkind);
-			return 0;
 	}
+
+	elog(ERROR, "unrecognized relkind: '%c'", relkind);
+	pg_unreachable();
 }

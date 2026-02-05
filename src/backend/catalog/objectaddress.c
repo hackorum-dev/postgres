@@ -6202,8 +6202,10 @@ get_relkind_objtype(Relkind relkind)
 			return OBJECT_FOREIGN_TABLE;
 		case RELKIND_TOASTVALUE:
 			return OBJECT_TABLE;
-		default:
-			/* Per above, don't raise an error */
+		case RELKIND_COMPOSITE_TYPE:
 			return OBJECT_TABLE;
 	}
+
+	/* Unknown relkind, return default object type as per prologue. */
+	return OBJECT_TABLE;
 }

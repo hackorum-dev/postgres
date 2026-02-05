@@ -851,6 +851,7 @@ create_estate_for_relation(Relation rel)
 	rte->rtekind = RTE_RELATION;
 	rte->relid = RelationGetRelid(rel);
 	rte->relkind = rel->rd_rel->relkind;
+	Assert(RelkindIsValid(rte->relkind));
 	rte->rellockmode = AccessShareLock;
 
 	addRTEPermissionInfo(&perminfos, rte);

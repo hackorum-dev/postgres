@@ -1554,6 +1554,7 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	rte->rtekind = RTE_RELATION;
 	rte->relid = RelationGetRelid(pk_rel);
 	rte->relkind = pk_rel->rd_rel->relkind;
+	Assert(RelkindIsValid(rte->relkind));
 	rte->rellockmode = AccessShareLock;
 	rte->perminfoindex = list_length(perminfos);
 	rtes = lappend(rtes, rte);
@@ -1566,6 +1567,7 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	rte->rtekind = RTE_RELATION;
 	rte->relid = RelationGetRelid(fk_rel);
 	rte->relkind = fk_rel->rd_rel->relkind;
+	Assert(RelkindIsValid(rte->relkind));
 	rte->rellockmode = AccessShareLock;
 	rte->perminfoindex = list_length(perminfos);
 	rtes = lappend(rtes, rte);

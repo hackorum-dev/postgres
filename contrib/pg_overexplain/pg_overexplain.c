@@ -404,7 +404,7 @@ overexplain_range_table(PlannedStmt *plannedstmt, ExplainState *es)
 	{
 		RangeTblEntry *rte = rt_fetch(rti, plannedstmt->rtable);
 		char	   *kind = NULL;
-		char	   *relkind;
+		char	   *relkind = NULL;
 
 		/* NULL entries are possible; skip them */
 		if (rte == NULL)
@@ -534,15 +534,13 @@ overexplain_range_table(PlannedStmt *plannedstmt, ExplainState *es)
 			case RELKIND_PARTITIONED_INDEX:
 				relkind = "partitioned_index";
 				break;
-			default:
-				pg_unreachable();
-				relkind = psprintf("%c", rte->relkind);
-				break;
 		}
 
 		/* If there is a relkind, show it */
 		if (relkind != NULL)
 			ExplainPropertyText("Relation Kind", relkind, es);
+		else
+			Assert(!OidIsValid(rte->relid));
 
 		/* If there is a lock mode, show it */
 		if (rte->rellockmode != 0)
