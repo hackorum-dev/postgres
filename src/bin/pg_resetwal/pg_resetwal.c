@@ -97,6 +97,9 @@ static int	wal_segsize_val;
 static bool char_signedness_given = false;
 static bool char_signedness_val;
 
+static bool sysid_given = false;
+static uint64 sysid_val;
+
 
 static TimeLineID minXlogTli = 0;
 static XLogSegNo minXlogSegNo = 0;
@@ -135,6 +138,7 @@ main(int argc, char *argv[])
 		{"next-transaction-id", required_argument, NULL, 'x'},
 		{"wal-segsize", required_argument, NULL, 1},
 		{"char-signedness", required_argument, NULL, 2},
+		{"system-identifier", required_argument, NULL, 3},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -356,6 +360,20 @@ main(int argc, char *argv[])
 					break;
 				}
 
+			case 3:
+				errno = 0;
+				sysid_val = strtou64(optarg, &endptr, 0);
+				if (endptr == optarg || *endptr != '\0' || errno != 0)
+				{
+					pg_log_error("invalid argument for option %s", "--system-identifier");
+					pg_log_error_hint("Try \"%s --help\" for more information.", progname);
+					exit(1);
+				}
+				if (sysid_val == 0)
+					pg_fatal("system identifier must not be 0");
+				sysid_given = true;
+				break;
+
 			default:
 				/* getopt_long already emitted a complaint */
 				pg_log_error_hint("Try \"%s --help\" for more information.", progname);
@@ -513,6 +531,9 @@ main(int argc, char *argv[])
 
 	if (char_signedness_given)
 		ControlFile.default_char_signedness = char_signedness_val;
+
+	if (sysid_given)
+		ControlFile.system_identifier = sysid_val;
 
 	if (minXlogSegNo > newXlogSegNo)
 		newXlogSegNo = minXlogSegNo;
@@ -898,6 +919,12 @@ PrintNewControlValues(void)
 		printf(_("Bytes per WAL segment:                %u\n"),
 			   ControlFile.xlog_seg_size);
 	}
+
+	if (sysid_given)
+	{
+		printf(_("Database system identifier:           %" PRIu64 "\n"),
+			   ControlFile.system_identifier);
+	}
 }
 
 
@@ -1240,6 +1267,7 @@ usage(void)
 	printf(_("  -O, --multixact-offset=OFFSET    set next multitransaction offset\n"));
 	printf(_("  -u, --oldest-transaction-id=XID  set oldest transaction ID\n"));
 	printf(_("  -x, --next-transaction-id=XID    set next transaction ID\n"));
+	printf(_("      --system-identifier=SYSID    set database system identifier\n"));
 	printf(_("      --char-signedness=OPTION     set char signedness to \"signed\" or \"unsigned\"\n"));
 	printf(_("      --wal-segsize=SIZE           size of WAL segments, in megabytes\n"));
 
