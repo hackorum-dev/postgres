@@ -110,5 +110,53 @@ SELECT
 FROM pg_stat_statements
 WHERE query LIKE '%STMTTS%';
 
+--
+-- stats_last_updated timestamp tests
+--
+
+SELECT 1 AS "STATS_UPD1";
+SELECT now() AS ref_ts_upd1 \gset
+SELECT pg_sleep(0.1);
+SELECT 2 AS "STATS_UPD2";
+SELECT now() AS ref_ts_upd2 \gset
+
+-- verify stats_last_updated is set and updated
+SELECT
+    query,
+    stats_last_updated IS NOT NULL as has_ts,
+    stats_last_updated >= :'ref_ts_upd1' as after_ref1,
+    stats_since <= stats_last_updated as after_stats_since
+FROM pg_stat_statements
+WHERE query LIKE '%STATS_UPD%'
+ORDER BY query COLLATE "C";
+
+-- execute again and verify update
+SELECT pg_sleep(0.1);
+SELECT 1 AS "STATS_UPD1";
+SELECT now() AS ref_ts_upd3 \gset
+
+SELECT
+    query,
+    stats_last_updated >= :'ref_ts_upd3' as updated
+FROM pg_stat_statements
+WHERE query LIKE '%STATS_UPD1%';
+
+-- test filtering (monitoring use case)
+SELECT count(*) as filtered_count
+FROM pg_stat_statements
+WHERE stats_last_updated >= :'ref_ts_upd2'
+  AND query LIKE '%STATS_UPD%';
+
+-- minmax reset should not affect stats_last_updated
+SELECT pg_stat_statements_reset(0, 0, queryid, true)
+FROM pg_stat_statements
+WHERE query LIKE '%STATS_UPD1%' \gset
+
+SELECT
+    query,
+    stats_last_updated >= :'ref_ts_upd3' as ts_preserved
+FROM pg_stat_statements
+WHERE query LIKE '%STATS_UPD1%';
+
 -- Cleanup
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
