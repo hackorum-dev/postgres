@@ -1121,6 +1121,7 @@ create_index_path(PlannerInfo *root,
 	pathnode->indexscandir = indexscandir;
 
 	pathnode->num_merge_prefixes = 0;
+	pathnode->suffix_indexcol = -1;
 
 	cost_index(pathnode, root, loop_count, partial_path);
 

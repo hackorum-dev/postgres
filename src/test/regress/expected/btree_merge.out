@@ -82,26 +82,27 @@ SHOW track_counts;  -- should be 'on'
  on
 (1 row)
 
--- Verify merge scan is used: no Sort node, rows=10 (N + K - 1 = 3 + 8 - 1)
+-- Verify merge scan is used: no Sort node when ORDER BY suffix only
+-- K = 8 prefixes, LIMIT 3 -> reads at most 3 + 8 - 1 = 10 tuples
 EXPLAIN (COSTS OFF)
 SELECT x, y
 FROM btree_merge_test
 WHERE x IN (1,2,5,8,13,21,34,55) AND y >= 19
-ORDER BY y, x
+ORDER BY y
 LIMIT 3;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                               QUERY PLAN                               
+------------------------------------------------------------------------
  Limit
    ->  Index Only Scan using btree_merge_test_idx on btree_merge_test
-         Index Cond: ((x = ANY ('{1,2,5,8,13,21,34,55}'::integer[])) AND (y >= 19))
-(3 rows)
+         Index Cond: (y >= 19)
+         Index Prefixes: (x = ANY ('{1,2,5,8,13,21,34,55}'::integer[]))
+(4 rows)
 
--- From the limited query proposition this can be computed with 10
--- tupple accesses.
+-- Verify the query produces correct results (sorted by y)
 SELECT x, y
 FROM btree_merge_test
 WHERE x IN (1,2,5,8,13,21,34,55) AND y >= 19
-ORDER BY y, x -- sort x to make result unique
+ORDER BY y
 LIMIT 3;
  x | y  
 ---+----
@@ -125,3 +126,262 @@ WHERE indexrelname = 'btree_merge_test_idx';
 (1 row)
 
 DROP TABLE btree_merge_test;
+-- ============================================
+-- Multi-column prefix tests
+-- ============================================
+-- Create a 3-column table for multi-prefix testing
+CREATE TABLE btree_merge_multi AS (
+    SELECT a, b, c FROM 
+        generate_series(1, 10) AS a, 
+        generate_series(1, 10) AS b,
+        generate_series(1, 20) AS c
+    ORDER BY random()
+);
+CREATE INDEX btree_merge_multi_idx ON btree_merge_multi USING btree (a, b, c);
+ANALYSE btree_merge_multi;
+-- Test 1: a = const AND b IN B -> 3 cursors (just the IN list)
+-- Merge scan triggered, no Sort node when ORDER BY suffix only
+EXPLAIN (COSTS OFF)
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a = 1 AND b IN (1, 2, 3) AND c >= 5
+ORDER BY c
+LIMIT 3;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Limit
+   ->  Index Only Scan using btree_merge_multi_idx on btree_merge_multi
+         Index Cond: (c >= 5)
+         Index Prefixes: ((a = 1) AND (b = ANY ('{1,2,3}'::integer[])))
+(4 rows)
+
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a = 1 AND b IN (1, 2, 3) AND c >= 5
+ORDER BY c
+LIMIT 3;
+ a | b | c 
+---+---+---
+ 1 | 1 | 5
+ 1 | 2 | 5
+ 1 | 3 | 5
+(3 rows)
+
+-- Test 2: a IN A AND b IN B -> len(A) * len(B) cursors (Cartesian product)
+-- With a IN (1,2), b IN (1,2,3), ORDER BY c LIMIT 4
+-- Should use 6 cursors (2*3), no Sort node needed
+EXPLAIN (COSTS OFF)
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2) AND b IN (1, 2, 3) AND c >= 10
+ORDER BY c
+LIMIT 4;
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Limit
+   ->  Index Only Scan using btree_merge_multi_idx on btree_merge_multi
+         Index Cond: (c >= 10)
+         Index Prefixes: ((a = ANY ('{1,2}'::integer[])) AND (b = ANY ('{1,2,3}'::integer[])))
+(4 rows)
+
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2) AND b IN (1, 2, 3) AND c >= 10
+ORDER BY c
+LIMIT 4;
+ a | b | c  
+---+---+----
+ 1 | 1 | 10
+ 1 | 2 | 10
+ 1 | 3 | 10
+ 2 | 1 | 10
+(4 rows)
+
+-- Test 3: a IN A AND b = const -> len(A) cursors
+-- With a IN (1,2,3,4), b=5, ORDER BY c LIMIT 2
+-- Should use 4 cursors, no Sort node needed
+EXPLAIN (COSTS OFF)
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3, 4) AND b = 5 AND c >= 8
+ORDER BY c
+LIMIT 2;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Limit
+   ->  Index Only Scan using btree_merge_multi_idx on btree_merge_multi
+         Index Cond: (c >= 8)
+         Index Prefixes: ((a = ANY ('{1,2,3,4}'::integer[])) AND (b = 5))
+(4 rows)
+
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3, 4) AND b = 5 AND c >= 8
+ORDER BY c
+LIMIT 2;
+ a | b | c 
+---+---+---
+ 1 | 5 | 8
+ 2 | 5 | 8
+(2 rows)
+
+-- Test 4: Backward scan direction (ORDER BY DESC)
+-- With a IN (1,2,3), b IN (1,2), ORDER BY c DESC LIMIT 3
+-- Should use 6 cursors (3*2), no Sort node needed
+EXPLAIN (COSTS OFF)
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b IN (1, 2) AND c <= 15
+ORDER BY c DESC
+LIMIT 3;
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Limit
+   ->  Index Only Scan Backward using btree_merge_multi_idx on btree_merge_multi
+         Index Cond: (c <= 15)
+         Index Prefixes: ((a = ANY ('{1,2,3}'::integer[])) AND (b = ANY ('{1,2}'::integer[])))
+(4 rows)
+
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b IN (1, 2) AND c <= 15
+ORDER BY c DESC
+LIMIT 3;
+ a | b | c  
+---+---+----
+ 1 | 1 | 15
+ 1 | 2 | 15
+ 2 | 1 | 15
+(3 rows)
+
+-- =================================================================
+-- Multi-column suffix tests
+-- Index is on (a, b, c), testing with prefix on 'a' only
+-- =================================================================
+-- Test 5: ORDER BY b (single column suffix)
+-- With a IN (1,2,3), ORDER BY b LIMIT 6
+-- Prefix: a, Suffix: b
+EXPLAIN (COSTS OFF)
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b >= 1
+ORDER BY b
+LIMIT 6;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Limit
+   ->  Index Only Scan using btree_merge_multi_idx on btree_merge_multi
+         Index Cond: (b >= 1)
+         Index Prefixes: (a = ANY ('{1,2,3}'::integer[]))
+(4 rows)
+
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b >= 1
+ORDER BY b
+LIMIT 6;
+ a | b | c 
+---+---+---
+ 1 | 1 | 1
+ 2 | 1 | 1
+ 3 | 1 | 1
+ 1 | 1 | 2
+ 2 | 1 | 2
+ 3 | 1 | 2
+(6 rows)
+
+-- Test 6: ORDER BY b DESC (single column suffix, backward)
+-- With a IN (1,2,3), ORDER BY b DESC LIMIT 6
+EXPLAIN (COSTS OFF)
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b <= 10
+ORDER BY b DESC
+LIMIT 6;
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Limit
+   ->  Index Only Scan Backward using btree_merge_multi_idx on btree_merge_multi
+         Index Cond: (b <= 10)
+         Index Prefixes: (a = ANY ('{1,2,3}'::integer[]))
+(4 rows)
+
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b <= 10
+ORDER BY b DESC
+LIMIT 6;
+ a | b  | c  
+---+----+----
+ 1 | 10 | 20
+ 2 | 10 | 20
+ 3 | 10 | 20
+ 1 | 10 | 19
+ 2 | 10 | 19
+ 3 | 10 | 19
+(6 rows)
+
+-- Test 7: ORDER BY b, c (multi-column suffix)
+-- With a IN (1,2,3), ORDER BY b, c LIMIT 6
+-- Prefix: a, Suffix: (b, c)
+EXPLAIN (COSTS OFF)
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b >= 1
+ORDER BY b, c
+LIMIT 6;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Limit
+   ->  Index Only Scan using btree_merge_multi_idx on btree_merge_multi
+         Index Cond: (b >= 1)
+         Index Prefixes: (a = ANY ('{1,2,3}'::integer[]))
+(4 rows)
+
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b >= 1
+ORDER BY b, c
+LIMIT 6;
+ a | b | c 
+---+---+---
+ 1 | 1 | 1
+ 2 | 1 | 1
+ 3 | 1 | 1
+ 1 | 1 | 2
+ 2 | 1 | 2
+ 3 | 1 | 2
+(6 rows)
+
+-- Test 8: ORDER BY b DESC, c DESC (multi-column suffix, backward)
+-- With a IN (1,2,3), ORDER BY b DESC, c DESC LIMIT 6
+EXPLAIN (COSTS OFF)
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b <= 10
+ORDER BY b DESC, c DESC
+LIMIT 6;
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Limit
+   ->  Index Only Scan Backward using btree_merge_multi_idx on btree_merge_multi
+         Index Cond: (b <= 10)
+         Index Prefixes: (a = ANY ('{1,2,3}'::integer[]))
+(4 rows)
+
+SELECT a, b, c
+FROM btree_merge_multi
+WHERE a IN (1, 2, 3) AND b <= 10
+ORDER BY b DESC, c DESC
+LIMIT 6;
+ a | b  | c  
+---+----+----
+ 1 | 10 | 20
+ 2 | 10 | 20
+ 3 | 10 | 20
+ 1 | 10 | 19
+ 2 | 10 | 19
+ 3 | 10 | 19
+(6 rows)
+
+DROP TABLE btree_merge_multi;

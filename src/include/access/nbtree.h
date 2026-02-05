@@ -1052,20 +1052,20 @@ typedef struct BTArrayKeyInfo
 } BTArrayKeyInfo;
 
 /*
- * BTMergeCursor - tracks scan state for one prefix value in merge scan
+ * BTMergeCursor - tracks scan state for one prefix in merge scan
  *
  * Each cursor maintains its own position within the index for a specific
- * prefix value. Cursors are organized in a min-heap ordered by their
- * current suffix key value for efficient K-way merge.
+ * prefix values. Cursors are organized in a min-heap ordered
+ * by their current suffix key value for efficient K-way merge.
+ *
+ * Note: cursors with any NULL prefix are marked exhausted (they would match nothing).
+ * The suffix key is extracted on-demand from the tuple data during comparison.
  */
 typedef struct BTMergeCursor
 {
 	pairingheap_node ph_node;	/* pairing heap node for merge */
 	int			cursor_id;		/* index in merge state's cursors array */
-	Datum		prefix_value;	/* the prefix value for this sub-scan */
-	bool		prefix_isnull;	/* is prefix value NULL? */
-	Datum		sort_key;		/* current tuple's sort key (suffix) */
-	bool		sort_key_isnull;/* is sort key NULL? */
+	Datum	   *prefix_values;	/* array of prefix values for this sub-scan */
 	bool		exhausted;		/* no more tuples for this prefix */
 	BTScanPosData pos;			/* current position in index */
 	char	   *tuples;			/* tuple storage workspace (BLCKSZ) */
@@ -1080,18 +1080,17 @@ typedef struct BTMergeCursor
  */
 typedef struct BTMergeScanState
 {
-	int			num_cursors;	/* number of prefix values (K) */
+	int			num_cursors;	/* number of prefix combinations (K) */
 	int			active_cursors;	/* cursors not yet exhausted */
 	BTMergeCursor *cursors;		/* array of cursors */
-	pairingheap *merge_heap;	/* min-heap ordered by sort_key */
-	int			prefix_attno;	/* attribute number of prefix column (1-based) */
-	int			suffix_attno;	/* attribute number of suffix column (1-based) */
-	FmgrInfo	suffix_cmp;		/* comparison function for suffix */
-	Oid			suffix_collation;	/* collation for suffix comparison */
+	pairingheap *merge_heap;	/* min-heap ordered by suffix key */
+	int			num_prefix_cols;/* number of prefix columns (attno 1..N) */
 	ScanDirection direction;	/* scan direction */
 	bool		initialized;	/* have cursors been initialized? */
 	MemoryContext merge_context;/* memory context for allocations */
 	int64		tuples_accessed;/* count of index tuples accessed */
+	Relation	index_rel;		/* index relation (for cmp funcs, indoption) */
+	TupleDesc	index_tupdesc;	/* index tuple descriptor for suffix extraction */
 } BTMergeScanState;
 
 typedef struct BTScanOpaqueData
@@ -1385,13 +1384,10 @@ extern void _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc);
  * prototypes for functions in nbtmergescan.c
  */
 extern BTMergeScanState *bt_merge_init(IndexScanDesc scan,
-									   Datum *prefix_values,
-									   bool *prefix_nulls,
-									   int num_prefixes,
-									   int prefix_attno,
-									   int suffix_attno,
-									   Oid suffix_cmp_oid,
-									   Oid suffix_collation);
+									   Datum **prefix_tuples,
+									   bool **prefix_nulls,
+									   int num_cursors,
+									   int num_prefix_cols);
 extern bool bt_merge_getnext(IndexScanDesc scan, ScanDirection dir);
 extern void bt_merge_end(BTMergeScanState *state);
 

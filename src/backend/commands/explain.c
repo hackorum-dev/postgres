@@ -89,6 +89,10 @@ static void show_qual(List *qual, const char *qlabel,
 static void show_scan_qual(List *qual, const char *qlabel,
 						   PlanState *planstate, List *ancestors,
 						   ExplainState *es);
+static void show_index_qual_with_prefix(List *suffix_qual, List *prefix_qual,
+										List *default_qual,
+										PlanState *planstate, List *ancestors,
+										ExplainState *es);
 static void show_upper_qual(List *qual, const char *qlabel,
 							PlanState *planstate, List *ancestors,
 							ExplainState *es);
@@ -1967,35 +1971,47 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	switch (nodeTag(plan))
 	{
 		case T_IndexScan:
-			show_scan_qual(((IndexScan *) plan)->indexqualorig,
-						   "Index Cond", planstate, ancestors, es);
-			if (((IndexScan *) plan)->indexqualorig)
-				show_instrumentation_count("Rows Removed by Index Recheck", 2,
-										   planstate, es);
-			show_scan_qual(((IndexScan *) plan)->indexorderbyorig,
-						   "Order By", planstate, ancestors, es);
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
-				show_instrumentation_count("Rows Removed by Filter", 1,
-										   planstate, es);
-			show_indexsearches_info(planstate, es);
+			{
+				IndexScan *iscan = (IndexScan *) plan;
+
+				show_index_qual_with_prefix(iscan->indexqualorig,
+											iscan->indexprefixqual,
+											iscan->indexqualorig,
+											planstate, ancestors, es);
+				if (iscan->indexqualorig)
+					show_instrumentation_count("Rows Removed by Index Recheck", 2,
+											   planstate, es);
+				show_scan_qual(iscan->indexorderbyorig,
+							   "Order By", planstate, ancestors, es);
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				if (plan->qual)
+					show_instrumentation_count("Rows Removed by Filter", 1,
+											   planstate, es);
+				show_indexsearches_info(planstate, es);
+			}
 			break;
 		case T_IndexOnlyScan:
-			show_scan_qual(((IndexOnlyScan *) plan)->indexqual,
-						   "Index Cond", planstate, ancestors, es);
-			if (((IndexOnlyScan *) plan)->recheckqual)
-				show_instrumentation_count("Rows Removed by Index Recheck", 2,
-										   planstate, es);
-			show_scan_qual(((IndexOnlyScan *) plan)->indexorderby,
-						   "Order By", planstate, ancestors, es);
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
-				show_instrumentation_count("Rows Removed by Filter", 1,
-										   planstate, es);
-			if (es->analyze)
-				ExplainPropertyFloat("Heap Fetches", NULL,
-									 planstate->instrument->ntuples2, 0, es);
-			show_indexsearches_info(planstate, es);
+			{
+				IndexOnlyScan *ioscan = (IndexOnlyScan *) plan;
+
+				show_index_qual_with_prefix(ioscan->recheckqual,
+											ioscan->indexprefixqual,
+											ioscan->indexqual,
+											planstate, ancestors, es);
+				if (ioscan->recheckqual)
+					show_instrumentation_count("Rows Removed by Index Recheck", 2,
+											   planstate, es);
+				show_scan_qual(ioscan->indexorderby,
+							   "Order By", planstate, ancestors, es);
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				if (plan->qual)
+					show_instrumentation_count("Rows Removed by Filter", 1,
+											   planstate, es);
+				if (es->analyze)
+					ExplainPropertyFloat("Heap Fetches", NULL,
+										 planstate->instrument->ntuples2, 0, es);
+				show_indexsearches_info(planstate, es);
+			}
 			break;
 		case T_BitmapIndexScan:
 			show_scan_qual(((BitmapIndexScan *) plan)->indexqualorig,
@@ -2562,6 +2578,30 @@ show_scan_qual(List *qual, const char *qlabel,
 
 	useprefix = (IsA(planstate->plan, SubqueryScan) || es->verbose);
 	show_qual(qual, qlabel, planstate, ancestors, useprefix, es);
+}
+
+/*
+ * Show index quals with optional prefix separation for merge scans.
+ *
+ * For merge scans, shows "Index Cond" (suffix_qual) and "Index Prefixes"
+ * (prefix_qual) separately. For regular scans, shows default_qual as
+ * "Index Cond".
+ */
+static void
+show_index_qual_with_prefix(List *suffix_qual, List *prefix_qual,
+							List *default_qual,
+							PlanState *planstate, List *ancestors,
+							ExplainState *es)
+{
+	if (prefix_qual)
+	{
+		show_scan_qual(suffix_qual, "Index Cond", planstate, ancestors, es);
+		show_scan_qual(prefix_qual, "Index Prefixes", planstate, ancestors, es);
+	}
+	else
+	{
+		show_scan_qual(default_qual, "Index Cond", planstate, ancestors, es);
+	}
 }
 
 /*

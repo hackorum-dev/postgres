@@ -783,44 +783,17 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 }
 
 /*
- * consider_merge_scan_path
- *	  Check if this index can provide a merge scan path for queries of the form:
- *	  WHERE prefix IN (...) AND suffix >= b ORDER BY suffix, prefix LIMIT N
+ * count_equality_values
+ *	  Count the number of equality values for index clauses on a column.
  *
- *	  Merge scan allows lazily producing output sorted by (suffix, prefix) from
- *	  an index on (prefix, suffix) by doing a K-way merge of K separate scans.
+ * Returns 1 for simple equality, N for IN-list with N elements, 0 if none.
  */
-static void
-consider_merge_scan_path(PlannerInfo *root, RelOptInfo *rel,
-						 IndexOptInfo *index, IndexClauseSet *clauses)
+static int
+count_equality_values(List *indexclauses)
 {
-	IndexPath  *ipath;
-	List	   *index_clauses;
-	List	   *index_pathkeys;
-	List	   *merge_pathkeys;
 	ListCell   *lc;
-	int			num_prefixes = 0;
-	int			indexcol;
-	bool		has_saop_on_first = false;
-	bool		has_clause_on_second = false;
 
-	/* Need at least 2 index columns for merge scan */
-	if (index->nkeycolumns < 2)
-		return;
-
-	/* Index must be ordered and support gettuple */
-	if (index->sortopfamily == NULL || !index->amhasgettuple)
-		return;
-
-	/* Must have query pathkeys with at least 2 elements */
-	if (root->query_pathkeys == NIL || list_length(root->query_pathkeys) < 2)
-		return;
-
-	/*
-	 * Check for ScalarArrayOpExpr on first column.
-	 * Count the number of array elements (prefix values).
-	 */
-	foreach(lc, clauses->indexclauses[0])
+	foreach(lc, indexclauses)
 	{
 		IndexClause *iclause = (IndexClause *) lfirst(lc);
 		RestrictInfo *rinfo = iclause->rinfo;
@@ -830,9 +803,6 @@ consider_merge_scan_path(PlannerInfo *root, RelOptInfo *rel,
 			ScalarArrayOpExpr *saop = (ScalarArrayOpExpr *) rinfo->clause;
 			Node	   *arrayarg = (Node *) lsecond(saop->args);
 
-			has_saop_on_first = true;
-
-			/* Try to determine the number of array elements */
 			if (IsA(arrayarg, Const))
 			{
 				Const	   *con = (Const *) arrayarg;
@@ -840,61 +810,135 @@ consider_merge_scan_path(PlannerInfo *root, RelOptInfo *rel,
 				if (!con->constisnull)
 				{
 					ArrayType  *arr = DatumGetArrayTypeP(con->constvalue);
-					num_prefixes = ArrayGetNItems(ARR_NDIM(arr), ARR_DIMS(arr));
+
+					return ArrayGetNItems(ARR_NDIM(arr), ARR_DIMS(arr));
 				}
 			}
 			else
 			{
 				/* Can't determine size, estimate conservatively */
-				num_prefixes = 10;
+				return 10;
 			}
+		}
+		else if (IsA(rinfo->clause, OpExpr))
+		{
+			/* Simple equality constraint = 1 value */
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * consider_merge_scan_path
+ *	  Check if this index can provide a merge scan path for queries with
+ *	  equality/IN constraints on prefix columns and ORDER BY on suffix.
+ *
+ *	  Supports multiple prefix columns:
+ *	    - a = const AND b IN B -> len(B) cursors
+ *	    - a IN A AND b IN B -> len(A) * len(B) cursors
+ *	    - a IN A AND b = const -> len(A) cursors
+ *
+ *	  Merge scan allows lazily producing output sorted by suffix from an
+ *	  index on (prefixes..., suffix) by doing K-way merge of K separate scans.
+ */
+static void
+consider_merge_scan_path(PlannerInfo *root, RelOptInfo *rel,
+						 IndexOptInfo *index, IndexClauseSet *clauses)
+{
+	IndexPath  *ipath;
+	List	   *index_clauses;
+	List	   *merge_pathkeys;
+	ListCell   *lc;
+	int			num_prefixes;
+	int			suffix_indexcol;
+	int			indexcol;
+	PathKey    *query_first_pk;
+	ScanDirection scandirection;
+
+	if (!enable_indexmergescan)
+		return;
+
+	/* Need at least 2 index columns for merge scan */
+	if (index->nkeycolumns < 2)
+		return;
+
+	/* Index must be ordered and support gettuple */
+	if (index->sortopfamily == NULL || !index->amhasgettuple)
+		return;
+
+	/* Must have query pathkeys */
+	if (root->query_pathkeys == NIL)
+		return;
+
+	/*
+	 * Find the suffix column: the index column (not the first) that matches
+	 * the query's first ORDER BY column. We don't use build_index_pathkeys()
+	 * because equality-constrained prefix columns don't produce pathkeys.
+	 *
+	 * Instead, we directly check each index column's expression against the
+	 * query's first pathkey equivalence class.
+	 */
+	query_first_pk = (PathKey *) linitial(root->query_pathkeys);
+	suffix_indexcol = -1;
+
+	for (indexcol = 1; indexcol < index->nkeycolumns; indexcol++)
+	{
+		TargetEntry *indextle = (TargetEntry *) list_nth(index->indextlist, indexcol);
+		EquivalenceMember *em;
+
+		/* Check if this index column is in the query's first pathkey EC */
+		em = find_ec_member_matching_expr(query_first_pk->pk_eclass,
+										  indextle->expr,
+										  index->rel->relids);
+		if (em != NULL)
+		{
+			suffix_indexcol = indexcol;
 			break;
 		}
 	}
 
-	if (!has_saop_on_first || num_prefixes < 2)
-		return;
-
-	/* Check if there's any clause on second column */
-	if (clauses->indexclauses[1] != NIL)
-		has_clause_on_second = true;
-
-	if (!has_clause_on_second)
-		return;
+	if (suffix_indexcol < 1)
+		return;					/* No suitable suffix column found */
 
 	/*
-	 * Get the natural index pathkeys (prefix, suffix order).
-	 * We need at least 2 pathkeys for merge scan to make sense.
-	 */
-	index_pathkeys = build_index_pathkeys(root, index, ForwardScanDirection);
-	if (list_length(index_pathkeys) < 2)
-		return;
-
-	/*
-	 * Check if query pathkeys are (suffix, prefix) - the REVERSED order.
-	 * query_pathkeys[0] should match index_pathkeys[1] (suffix)
-	 * query_pathkeys[1] should match index_pathkeys[0] (prefix)
+	 * Determine scan direction based on query's sort direction and index's
+	 * natural order. If both match, use forward; if opposite, use backward.
 	 */
 	{
-		PathKey    *qpk0 = (PathKey *) linitial(root->query_pathkeys);
-		PathKey    *qpk1 = (PathKey *) lsecond(root->query_pathkeys);
-		PathKey    *ipk0 = (PathKey *) linitial(index_pathkeys);
-		PathKey    *ipk1 = (PathKey *) lsecond(index_pathkeys);
+		bool	query_is_desc = (query_first_pk->pk_cmptype == COMPARE_GT);
+		bool	index_is_desc = index->reverse_sort[suffix_indexcol];
 
-		/* Query's first pathkey must match index's SECOND pathkey (suffix) */
-		if (qpk0->pk_eclass != ipk1->pk_eclass)
-			return;
-
-		/* Query's second pathkey must match index's FIRST pathkey (prefix) */
-		if (qpk1->pk_eclass != ipk0->pk_eclass)
-			return;
+		if (query_is_desc == index_is_desc)
+			scandirection = ForwardScanDirection;
+		else
+			scandirection = BackwardScanDirection;
 	}
 
 	/*
-	 * The merge scan can satisfy the query's ORDER BY (suffix, prefix).
-	 * Use the query's pathkeys directly since we've verified they match.
-	 * This is critical: PostgreSQL compares pathkeys by pointer equality.
+	 * Count prefix combinations: product of equality values for all columns
+	 * before the suffix column. Each column must have equality constraint.
 	 */
+	num_prefixes = 1;
+	for (indexcol = 0; indexcol < suffix_indexcol; indexcol++)
+	{
+		int			col_count = count_equality_values(clauses->indexclauses[indexcol]);
+
+		if (col_count == 0)
+			return;				/* Gap in prefix - can't use merge scan */
+
+		num_prefixes *= col_count;
+	}
+
+	if (num_prefixes < 2)
+		return;					/* Need at least 2 cursors for merge scan */
+
+	/* Must have a clause on the suffix column */
+	if (clauses->indexclauses[suffix_indexcol] == NIL)
+		return;
+
+	/* Use query pathkeys for pointer equality */
 	merge_pathkeys = root->query_pathkeys;
 
 	/*
@@ -906,19 +950,20 @@ consider_merge_scan_path(PlannerInfo *root, RelOptInfo *rel,
 		foreach(lc, clauses->indexclauses[indexcol])
 		{
 			IndexClause *iclause = (IndexClause *) lfirst(lc);
+
 			index_clauses = lappend(index_clauses, iclause);
 		}
 	}
 
 	/*
-	 * Create the merge scan path with (suffix, prefix) pathkeys.
+	 * Create the merge scan path with query's pathkeys.
 	 */
 	ipath = create_index_path(root, index,
 							  index_clauses,
 							  NIL,		/* no ORDER BY expressions */
 							  NIL,		/* no ORDER BY columns */
 							  merge_pathkeys,
-							  ForwardScanDirection,
+							  scandirection,
 							  check_index_only(rel, index),
 							  NULL,		/* no outer relids */
 							  1.0,		/* loop_count */
@@ -926,11 +971,11 @@ consider_merge_scan_path(PlannerInfo *root, RelOptInfo *rel,
 
 	/* Enable merge scan with K-way merge */
 	ipath->num_merge_prefixes = num_prefixes;
+	ipath->suffix_indexcol = suffix_indexcol;
 
 	/*
 	 * Adjust costs and row estimate for merge scan.
 	 * Merge scan reads exactly (limit + K - 1) tuples instead of all matching.
-	 * The row estimate reflects actual tuple accesses, not total matches.
 	 */
 	if (root->limit_tuples > 0 && root->limit_tuples < ipath->path.rows)
 	{

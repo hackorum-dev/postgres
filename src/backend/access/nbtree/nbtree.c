@@ -229,101 +229,196 @@ btinsert(Relation rel, Datum *values, bool *isnull,
 }
 
 /*
+ * PrefixColConstraint - holds constraint info for one prefix column
+ */
+typedef struct PrefixColConstraint
+{
+	int			attno;			/* attribute number (1-based) */
+	int			num_values;		/* number of values (1 for equality, N for IN) */
+	Datum	   *values;			/* array of values */
+	bool	   *nulls;			/* array of null flags */
+} PrefixColConstraint;
+
+/*
  * bt_init_merge_scan_from_keys
- *		Initialize merge scan state from the preprocessed scan keys.
+ *		Initialize merge scan state from scan keys with multi-column support.
+ *
+ * Handles multiple prefix columns with equality or IN constraints.
+ * Expands Cartesian product of all prefix combinations.
  *
  * Returns true if merge scan was successfully initialized.
- * Returns false if merge scan cannot be used (e.g., no suitable array key).
+ * Returns false if merge scan cannot be used.
  */
 static bool
 bt_init_merge_scan_from_keys(IndexScanDesc scan)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 	Relation	rel = scan->indexRelation;
-	TupleDesc	itupdesc = RelationGetDescr(rel);
-	ScanKey		arrayKey = NULL;
-	ArrayType  *arr;
-	Datum	   *prefix_values;
-	bool	   *prefix_nulls;
-	int			num_prefixes;
-	int			prefix_attno;
-	int			suffix_attno;
-	Oid			suffix_cmp_oid;
-	Oid			suffix_collation;
-	Oid			opfamily;
-	Oid			elemtype;
-	int16		elemlen;
-	bool		elembyval;
-	char		elemalign;
+	PrefixColConstraint *constraints;
+	int			num_prefix_cols;
+	int			total_cursors;
+	Datum	  **prefix_tuples;
+	bool	  **prefix_nulls;
 	int			i;
+	int			j;
+	int			col;
 
-	/* Look for SK_SEARCHARRAY on first column in the raw scan keys */
-	for (i = 0; i < scan->numberOfKeys; i++)
+	/*
+	 * Find prefix columns: all columns with equality/IN constraints before
+	 * the suffix column. For now, assume columns 1..N are prefixes if they
+	 * have equality constraints, and column N+1 is the suffix.
+	 */
+	num_prefix_cols = 0;
+	for (col = 1; col <= rel->rd_index->indnkeyatts; col++)
 	{
-		ScanKey		sk = &scan->keyData[i];
+		bool		has_equality = false;
 
-		if ((sk->sk_flags & SK_SEARCHARRAY) &&
-			sk->sk_attno == 1 &&
-			sk->sk_strategy == BTEqualStrategyNumber)
+		for (i = 0; i < scan->numberOfKeys; i++)
 		{
-			arrayKey = sk;
-			break;
+			ScanKey		sk = &scan->keyData[i];
+
+			if (sk->sk_attno == col &&
+				sk->sk_strategy == BTEqualStrategyNumber)
+			{
+				has_equality = true;
+				break;
+			}
+		}
+
+		if (has_equality)
+			num_prefix_cols++;
+		else
+			break;				/* First column without equality is suffix */
+	}
+
+	if (num_prefix_cols == 0)
+		return false;
+
+	/* Allocate constraint array */
+	constraints = palloc0(num_prefix_cols * sizeof(PrefixColConstraint));
+
+	/* Collect constraints for each prefix column */
+	total_cursors = 1;
+	for (col = 0; col < num_prefix_cols; col++)
+	{
+		int			attno = col + 1;
+		PrefixColConstraint *c = &constraints[col];
+
+		c->attno = attno;
+
+		/* Look for array or scalar equality on this column */
+		for (i = 0; i < scan->numberOfKeys; i++)
+		{
+			ScanKey		sk = &scan->keyData[i];
+
+			if (sk->sk_attno == attno &&
+				sk->sk_strategy == BTEqualStrategyNumber)
+			{
+				if (sk->sk_flags & SK_SEARCHARRAY)
+				{
+					/* IN clause - extract array elements */
+					ArrayType  *arr = DatumGetArrayTypeP(sk->sk_argument);
+					Oid			elemtype = ARR_ELEMTYPE(arr);
+					int16		elemlen;
+					bool		elembyval;
+					char		elemalign;
+
+					get_typlenbyvalalign(elemtype, &elemlen, &elembyval, &elemalign);
+					deconstruct_array(arr, elemtype, elemlen, elembyval, elemalign,
+									  &c->values, &c->nulls, &c->num_values);
+				}
+				else
+				{
+					/* Simple equality - single value */
+					c->num_values = 1;
+					c->values = palloc(sizeof(Datum));
+					c->nulls = palloc(sizeof(bool));
+					c->values[0] = sk->sk_argument;
+					c->nulls[0] = (sk->sk_flags & SK_ISNULL) != 0;
+				}
+				break;
+			}
+		}
+
+		if (c->num_values == 0)
+		{
+			/* No constraint found - shouldn't happen */
+			pfree(constraints);
+			return false;
+		}
+
+		total_cursors *= c->num_values;
+	}
+
+	if (total_cursors < 2)
+	{
+		/* Not enough combinations for merge scan */
+		for (col = 0; col < num_prefix_cols; col++)
+		{
+			if (constraints[col].values)
+				pfree(constraints[col].values);
+			if (constraints[col].nulls)
+				pfree(constraints[col].nulls);
+		}
+		pfree(constraints);
+		return false;
+	}
+
+	/*
+	 * Expand Cartesian product of all prefix column values.
+	 * Each cursor gets one combination of prefix values.
+	 */
+	prefix_tuples = palloc(total_cursors * sizeof(Datum *));
+	prefix_nulls = palloc(total_cursors * sizeof(bool *));
+
+	for (i = 0; i < total_cursors; i++)
+	{
+		int			idx = i;
+
+		prefix_tuples[i] = palloc(num_prefix_cols * sizeof(Datum));
+		prefix_nulls[i] = palloc(num_prefix_cols * sizeof(bool));
+
+		/* Compute which value from each column for cursor i */
+		for (j = num_prefix_cols - 1; j >= 0; j--)
+		{
+			int			val_idx = idx % constraints[j].num_values;
+
+			prefix_tuples[i][j] = constraints[j].values[val_idx];
+			prefix_nulls[i][j] = constraints[j].nulls[val_idx];
+			idx /= constraints[j].num_values;
 		}
 	}
 
-	if (arrayKey == NULL)
-		return false;
-
-	/* Extract array values from the scan key */
-	arr = DatumGetArrayTypeP(arrayKey->sk_argument);
-	num_prefixes = ArrayGetNItems(ARR_NDIM(arr), ARR_DIMS(arr));
-
-	if (num_prefixes < 2)
-		return false;
-
-	/* Get array element type info */
-	elemtype = ARR_ELEMTYPE(arr);
-	get_typlenbyvalalign(elemtype, &elemlen, &elembyval, &elemalign);
-
-	/* Deconstruct the array into individual elements */
-	deconstruct_array(arr, elemtype, elemlen, elembyval, elemalign,
-					  &prefix_values, &prefix_nulls, &num_prefixes);
-
-	/* Attribute numbers (1-based) */
-	prefix_attno = 1;
-	suffix_attno = 2;
-
-	/* Get the opfamily from the index */
-	opfamily = rel->rd_opfamily[suffix_attno - 1];
-
-	/* Get collation from the suffix column */
-	suffix_collation = TupleDescAttr(itupdesc, suffix_attno - 1)->attcollation;
-
-	/* Get the comparison function OID for the suffix column */
-	suffix_cmp_oid = get_opfamily_proc(opfamily,
-									   TupleDescAttr(itupdesc, suffix_attno - 1)->atttypid,
-									   TupleDescAttr(itupdesc, suffix_attno - 1)->atttypid,
-									   BTORDER_PROC);
-
-	if (!OidIsValid(suffix_cmp_oid))
-	{
-		pfree(prefix_values);
-		pfree(prefix_nulls);
-		return false;
-	}
+	/*
+	 * Prefix tuples are passed to bt_merge_init in their current order.
+	 * The cursor_id assignment preserves this order, which serves as
+	 * tiebreaker when suffix values are equal. Future enhancement:
+	 * allow executor to sort prefixes by arbitrary expressions.
+	 */
 
 	/* Initialize the merge scan state */
 	so->mergeState = bt_merge_init(scan,
-								   prefix_values,
+								   prefix_tuples,
 								   prefix_nulls,
-								   num_prefixes,
-								   prefix_attno,
-								   suffix_attno,
-								   suffix_cmp_oid,
-								   suffix_collation);
+								   total_cursors,
+								   num_prefix_cols);
 
-	pfree(prefix_values);
+	/* Cleanup temporary allocations (bt_merge_init copies what it needs) */
+	for (i = 0; i < total_cursors; i++)
+	{
+		pfree(prefix_tuples[i]);
+		pfree(prefix_nulls[i]);
+	}
+	pfree(prefix_tuples);
 	pfree(prefix_nulls);
+	for (col = 0; col < num_prefix_cols; col++)
+	{
+		if (constraints[col].values)
+			pfree(constraints[col].values);
+		if (constraints[col].nulls)
+			pfree(constraints[col].nulls);
+	}
+	pfree(constraints);
 
 	return (so->mergeState != NULL);
 }

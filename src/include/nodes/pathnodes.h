@@ -2061,6 +2061,7 @@ typedef struct IndexPath
 	Cost		indextotalcost;
 	Selectivity indexselectivity;
 	int			num_merge_prefixes;
+	int			suffix_indexcol;
 } IndexPath;
 
 /*

@@ -182,11 +182,11 @@ static SeqScan *make_seqscan(List *qptlist, List *qpqual, Index scanrelid);
 static SampleScan *make_samplescan(List *qptlist, List *qpqual, Index scanrelid,
 								   TableSampleClause *tsc);
 static IndexScan *make_indexscan(List *qptlist, List *qpqual, Index scanrelid,
-								 Oid indexid, List *indexqual, List *indexqualorig,
-								 List *indexorderby, List *indexorderbyorig,
-								 List *indexorderbyops,
-								 int num_merge_prefixes,
-								 ScanDirection indexscandir);
+							 Oid indexid, List *indexqual, List *indexqualorig,
+							 List *indexorderby, List *indexorderbyorig,
+							 List *indexorderbyops,
+							 int num_merge_prefixes,
+							 ScanDirection indexscandir);
 static IndexOnlyScan *make_indexonlyscan(List *qptlist, List *qpqual,
 										 Index scanrelid, Oid indexid,
 										 List *indexqual, List *recheckqual,
@@ -194,6 +194,8 @@ static IndexOnlyScan *make_indexonlyscan(List *qptlist, List *qpqual,
 										 List *indextlist,
 										 int num_merge_prefixes,
 										 ScanDirection indexscandir);
+static void set_merge_scan_qual_info(Scan *scan_plan, IndexPath *best_path,
+									 List *stripped_indexquals, bool indexonly);
 static BitmapIndexScan *make_bitmap_indexscan(Index scanrelid, Oid indexid,
 											  List *indexqual,
 											  List *indexqualorig);
@@ -3036,6 +3038,9 @@ create_indexscan_plan(PlannerInfo *root,
 											best_path->num_merge_prefixes,
 											best_path->indexscandir);
 
+	/* For merge scan, separate prefix and suffix quals for EXPLAIN */
+	set_merge_scan_qual_info(scan_plan, best_path, stripped_indexquals, indexonly);
+
 	copy_generic_path_info(&scan_plan->plan, &best_path->path);
 
 	return scan_plan;
@@ -5614,6 +5619,75 @@ make_indexonlyscan(List *qptlist,
 	node->indexorderdir = indexscandir;
 
 	return node;
+}
+
+/*
+ * set_merge_scan_qual_info
+ *	  For merge scan, extract prefix quals for EXPLAIN output.
+ *
+ * Prefix quals are those on index columns before suffix_indexcol.
+ * This separates the equality/IN constraints (prefixes) from the
+ * range constraint (suffix) to make EXPLAIN output clearer.
+ */
+static void
+set_merge_scan_qual_info(Scan *scan_plan, IndexPath *best_path,
+						 List *stripped_indexquals, bool indexonly)
+{
+	List	   *prefix_quals = NIL;
+	List	   *suffix_quals = NIL;
+	ListCell   *lc;
+
+	/* Only process if this is a merge scan */
+	if (best_path->num_merge_prefixes <= 0 || best_path->suffix_indexcol < 0)
+		return;
+
+	/*
+	 * Partition quals into prefix (columns before suffix) and suffix.
+	 * We match each qual against the IndexClauses to determine which
+	 * index column it references.
+	 */
+	foreach(lc, stripped_indexquals)
+	{
+		Node	   *clause = (Node *) lfirst(lc);
+		bool		is_prefix = false;
+		ListCell   *ic;
+
+		foreach(ic, best_path->indexclauses)
+		{
+			IndexClause *iclause = (IndexClause *) lfirst(ic);
+
+			if (iclause->indexcol < best_path->suffix_indexcol &&
+				equal(clause, iclause->rinfo->clause))
+			{
+				is_prefix = true;
+				break;
+			}
+		}
+
+		if (is_prefix)
+			prefix_quals = lappend(prefix_quals, clause);
+		else
+			suffix_quals = lappend(suffix_quals, clause);
+	}
+
+	/* Store the separated quals in the plan node.
+	 * Prefix quals (equality/IN) don't need rechecking since they're exact
+	 * matches, so we only store suffix quals in recheckqual/indexqualorig.
+	 */
+	if (indexonly)
+	{
+		IndexOnlyScan *ios = (IndexOnlyScan *) scan_plan;
+
+		ios->indexprefixqual = prefix_quals;
+		ios->recheckqual = suffix_quals;
+	}
+	else
+	{
+		IndexScan *iscan = (IndexScan *) scan_plan;
+
+		iscan->indexprefixqual = prefix_quals;
+		iscan->indexqualorig = suffix_quals;
+	}
 }
 
 static BitmapIndexScan *

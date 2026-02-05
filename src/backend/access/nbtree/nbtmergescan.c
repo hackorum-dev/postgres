@@ -23,6 +23,7 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/nbtree.h"
 #include "access/relscan.h"
 #include "lib/pairingheap.h"
@@ -40,27 +41,43 @@ static int	bt_merge_heap_cmp(const pairingheap_node *a,
 							  void *arg);
 static bool bt_merge_cursor_init(BTMergeScanState *state,
 								 IndexScanDesc scan,
-								 BTMergeCursor *cursor,
-								 Datum prefix_value,
-								 bool prefix_isnull);
+								 BTMergeCursor *cursor);
 static bool bt_merge_cursor_advance(BTMergeScanState *state,
 									IndexScanDesc scan,
 									BTMergeCursor *cursor);
-static Datum bt_merge_extract_sortkey(BTMergeScanState *state,
-									  IndexScanDesc scan,
-									  BTMergeCursor *cursor,
-									  bool *isnull);
+static IndexTuple bt_merge_get_index_tuple(BTMergeCursor *cursor);
 
 
 /*
+ * bt_merge_get_index_tuple
+ *	  Get the current index tuple from a cursor.
+ *
+ * Returns the IndexTuple pointer from cursor->tuples, or NULL if exhausted.
+ */
+static IndexTuple
+bt_merge_get_index_tuple(BTMergeCursor *cursor)
+{
+	BTScanPosItem *currItem;
+
+	if (cursor->exhausted || cursor->tuples == NULL)
+		return NULL;
+
+	currItem = &cursor->pos.items[cursor->pos.itemIndex];
+	return (IndexTuple) (cursor->tuples + currItem->tupleOffset);
+}
+
+/*
  * bt_merge_heap_cmp
- *	  Compare two cursors by their current sort key (suffix value).
+ *	  Compare two cursors by their current sort key (all suffix columns).
  *
- * When sort keys are equal, uses prefix value as tiebreaker for
- * deterministic ordering (ORDER BY suffix, prefix).
+ * Compares all suffix columns in order. When all suffix columns are equal,
+ * uses cursor_id as tiebreaker for deterministic ordering (preserves
+ * original prefix array order).
  *
- * Returns positive if a > b (pairingheap is a max-heap, we want min-heap
- * behavior so we invert the comparison).
+ * returns
+ *    -1 if a comes before b
+ *     1 if b comes before a
+ *     0 if a and b are equal
  */
 static int
 bt_merge_heap_cmp(const pairingheap_node *a,
@@ -72,40 +89,64 @@ bt_merge_heap_cmp(const pairingheap_node *a,
 													(pairingheap_node *) a);
 	BTMergeCursor *cursor_b = pairingheap_container(BTMergeCursor, ph_node,
 													(pairingheap_node *) b);
-	Datum		key_a = cursor_a->sort_key;
-	Datum		key_b = cursor_b->sort_key;
-	bool		null_a = cursor_a->sort_key_isnull;
-	bool		null_b = cursor_b->sort_key_isnull;
-	int32		cmp;
+	IndexTuple	itup_a;
+	IndexTuple	itup_b;
+	int32		cmp = 0;
+	int			col;
 
-	/* Handle NULLs - NULLs sort last (NULLS LAST default for ASC) */
-	if (null_a && null_b)
-		return 0;
-	if (null_a)
-		return -1;				/* a is NULL, comes after b */
-	if (null_b)
-		return 1;				/* b is NULL, comes after a */
+	/* Get the index tuples from each cursor */
+	itup_a = bt_merge_get_index_tuple(cursor_a);
+	itup_b = bt_merge_get_index_tuple(cursor_b);
 
-	/* Compare using the suffix column's comparison function */
-	cmp = DatumGetInt32(FunctionCall2Coll(&state->suffix_cmp,
-										  state->suffix_collation,
-										  key_a, key_b));
+	/* Handle exhausted cursors */
+	if (itup_a == NULL && itup_b == NULL)
+		return cursor_b->cursor_id - cursor_a->cursor_id;
+	if (itup_a == NULL)
+		return -1;				/* a is exhausted, comes after b */
+	if (itup_b == NULL)
+		return 1;				/* b is exhausted, comes after a */
 
-	/*
-	 * Use prefix value as tiebreaker for deterministic ordering.
-	 * This ensures ORDER BY suffix, prefix behavior.
-	 */
-	if (cmp == 0)
+	/* Compare all suffix columns in order */
+	for (col = 0; col < state->index_rel->rd_index->indnkeyatts - state->num_prefix_cols && cmp == 0; col++)
 	{
-		/* Compare prefix values (assumes pass-by-value int4 for now) */
-		int32		prefix_a = DatumGetInt32(cursor_a->prefix_value);
-		int32		prefix_b = DatumGetInt32(cursor_b->prefix_value);
+		int			attno = state->num_prefix_cols + col + 1;
+		int16		indoption = state->index_rel->rd_indoption[attno - 1];
+		bool		null_a,
+					null_b;
+		Datum		key_a,
+					key_b;
 
-		if (prefix_a < prefix_b)
-			cmp = -1;
-		else if (prefix_a > prefix_b)
-			cmp = 1;
+		key_a = index_getattr(itup_a, attno, state->index_tupdesc, &null_a);
+		key_b = index_getattr(itup_b, attno, state->index_tupdesc, &null_b);
+
+		/* Handle NULLs - return directly with all factors multiplied */
+		if (null_a || null_b)
+		{
+			if (null_a && null_b)
+				continue;		/* Both NULL, try next column */
+
+			return (null_a ? -1 : 1)
+				 * ((indoption & INDOPTION_NULLS_FIRST) ? -1 : 1)
+				 * (state->direction == BackwardScanDirection ? -1 : 1);
+		}
+
+		/* Compare using index's comparison function and collation */
+		cmp = DatumGetInt32(FunctionCall2Coll(index_getprocinfo(state->index_rel, attno, BTORDER_PROC),
+											  TupleDescAttr(state->index_tupdesc, attno - 1)->attcollation,
+											  key_a, key_b));
+
+		/* For DESC columns, invert to match physical index order */
+		if ((indoption & INDOPTION_DESC))
+			cmp = -cmp;
 	}
+
+	/* For backward scan, invert the suffix comparison */
+	if (state->direction == BackwardScanDirection)
+		cmp = -cmp;
+
+	/* Use cursor_id as tiebreaker (always ascending for determinism) */
+	if (cmp == 0)
+		cmp = cursor_a->cursor_id - cursor_b->cursor_id;
 
 	/* Negate for min-heap behavior */
 	return -cmp;
@@ -116,24 +157,32 @@ bt_merge_heap_cmp(const pairingheap_node *a,
  * bt_merge_init
  *	  Initialize a merge scan state.
  *
- * Creates the merge state with one cursor per prefix value.
+ * Creates the merge state with one cursor per prefix combination.
  * The cursors will be positioned at their first matching tuples
  * when bt_merge_getnext is first called.
+ *
+ * Prefix columns are assumed to be 1..num_prefix_cols.
+ * Suffix columns are (num_prefix_cols+1)..indnkeyatts.
+ * Comparison functions are looked up from the index relation.
  */
 BTMergeScanState *
 bt_merge_init(IndexScanDesc scan,
-			  Datum *prefix_values,
-			  bool *prefix_nulls,
-			  int num_prefixes,
-			  int prefix_attno,
-			  int suffix_attno,
-			  Oid suffix_cmp_oid,
-			  Oid suffix_collation)
+			  Datum **prefix_tuples,
+			  bool **prefix_nulls,
+			  int num_cursors,
+			  int num_prefix_cols)
 {
 	BTMergeScanState *state;
+	Relation	rel = scan->indexRelation;
+	TupleDesc	tupdesc = RelationGetDescr(rel);
 	MemoryContext merge_context;
 	MemoryContext old_context;
 	int			i;
+	int			j;
+
+	/* Check there are suffix columns to order by */
+	if (rel->rd_index->indnkeyatts <= num_prefix_cols)
+		return NULL;
 
 	/* Create memory context for merge scan allocations */
 	merge_context = AllocSetContextCreate(CurrentMemoryContext,
@@ -144,33 +193,57 @@ bt_merge_init(IndexScanDesc scan,
 	/* Allocate main state structure */
 	state = palloc0(sizeof(BTMergeScanState));
 	state->merge_context = merge_context;
-	state->num_cursors = num_prefixes;
+	state->num_cursors = num_cursors;
 	state->active_cursors = 0;
-	state->prefix_attno = prefix_attno;
-	state->suffix_attno = suffix_attno;
-	state->suffix_collation = suffix_collation;
+	state->num_prefix_cols = num_prefix_cols;
 	state->direction = ForwardScanDirection;
 	state->initialized = false;
 	state->tuples_accessed = 0;
+	state->index_tupdesc = tupdesc;
 
-	/* Set up suffix comparison function */
-	fmgr_info(suffix_cmp_oid, &state->suffix_cmp);
+	/* Store reference to index relation (for cmp funcs, collations, indoption) */
+	state->index_rel = rel;
 
 	/* Allocate cursor array */
-	state->cursors = palloc0(num_prefixes * sizeof(BTMergeCursor));
+	state->cursors = palloc0(num_cursors * sizeof(BTMergeCursor));
 
 	/* Initialize cursor metadata (not positioned yet) */
-	for (i = 0; i < num_prefixes; i++)
+	for (i = 0; i < num_cursors; i++)
 	{
 		BTMergeCursor *cursor = &state->cursors[i];
+		bool		has_null = false;
 
 		cursor->cursor_id = i;
-		cursor->prefix_value = datumCopy(prefix_values[i], true, sizeof(Datum));
-		cursor->prefix_isnull = prefix_nulls[i];
-		cursor->exhausted = prefix_nulls[i];	/* NULL prefix = exhausted */
-		cursor->sort_key_isnull = true;
+
+		/* Check if any prefix value is NULL */
+		for (j = 0; j < num_prefix_cols; j++)
+		{
+			if (prefix_nulls[i][j])
+			{
+				has_null = true;
+				break;
+			}
+		}
+
+		/* Skip cursors with NULL prefixes - they would match nothing */
+		if (has_null)
+		{
+			cursor->prefix_values = NULL;
+			cursor->exhausted = true;
+			cursor->tuples = NULL;
+			BTScanPosInvalidate(cursor->pos);
+			continue;
+		}
+
+		/* Copy prefix values for this cursor */
+		cursor->prefix_values = palloc(num_prefix_cols * sizeof(Datum));
+		for (j = 0; j < num_prefix_cols; j++)
+		{
+			cursor->prefix_values[j] = datumCopy(prefix_tuples[i][j], true, sizeof(Datum));
+		}
+		cursor->exhausted = false;
 		BTScanPosInvalidate(cursor->pos);
-		/* Allocate tuple workspace for index-only scans */
+		/* Allocate tuple workspace for suffix key extraction */
 		cursor->tuples = palloc(BLCKSZ);
 	}
 
@@ -212,9 +285,7 @@ bt_merge_getnext(IndexScanDesc scan, ScanDirection dir)
 		{
 			BTMergeCursor *c = &state->cursors[i];
 
-			if (!c->exhausted &&
-				bt_merge_cursor_init(state, scan, c,
-									 c->prefix_value, c->prefix_isnull))
+			if (!c->exhausted && bt_merge_cursor_init(state, scan, c))
 			{
 				/* Cursor has at least one tuple, add to heap */
 				pairingheap_add(state->merge_heap, &c->ph_node);
@@ -303,32 +374,37 @@ bt_merge_end(BTMergeScanState *state)
 static bool
 bt_merge_cursor_init(BTMergeScanState *state,
 					 IndexScanDesc scan,
-					 BTMergeCursor *cursor,
-					 Datum prefix_value,
-					 bool prefix_isnull)
+					 BTMergeCursor *cursor)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 	bool		found;
-
-	if (prefix_isnull)
-	{
-		cursor->exhausted = true;
-		return false;
-	}
+	bool		save_want_itup;
+	int			col;
 
 	/*
-	 * Modify the scan key to use this cursor's prefix value.
-	 * We reuse the scan's existing key infrastructure.
+	 * Modify the scan keys to use this cursor's prefix values.
+	 * We modify scan->keyData (original keys) because _bt_first calls
+	 * _bt_preprocess_keys which re-processes scan->keyData into so->keyData.
+	 * Prefix columns are 1..num_prefix_cols.
 	 */
-	for (int i = 0; i < so->numberOfKeys; i++)
+	for (col = 0; col < state->num_prefix_cols; col++)
 	{
-		if (so->keyData[i].sk_attno == state->prefix_attno)
+		int			attno = col + 1;	/* 1-based attribute number */
+
+		for (int i = 0; i < scan->numberOfKeys; i++)
 		{
-			so->keyData[i].sk_argument = prefix_value;
-			so->keyData[i].sk_flags &= ~(SK_SEARCHARRAY);
-			break;
+			if (scan->keyData[i].sk_attno == attno &&
+				scan->keyData[i].sk_strategy == BTEqualStrategyNumber)
+			{
+				scan->keyData[i].sk_argument = cursor->prefix_values[col];
+				scan->keyData[i].sk_flags &= ~(SK_SEARCHARRAY);
+				break;
+			}
 		}
 	}
+
+	/* Force key re-preprocessing for this cursor's prefix values */
+	so->numberOfKeys = 0;
 
 	/* Invalidate current position to force _bt_first */
 	BTScanPosInvalidate(so->currPos);
@@ -342,6 +418,14 @@ bt_merge_cursor_init(BTMergeScanState *state,
 	so->numArrayKeys = 0;
 	so->needPrimScan = false;
 
+	/*
+	 * Force tuple data to be copied for suffix key extraction.
+	 * This is needed even for regular (non-index-only) scans because
+	 * the merge comparison function needs access to the suffix column.
+	 */
+	save_want_itup = scan->xs_want_itup;
+	scan->xs_want_itup = true;
+
 	/* Position at first matching tuple */
 	found = _bt_first(scan, state->direction);
 
@@ -351,7 +435,7 @@ bt_merge_cursor_init(BTMergeScanState *state,
 		memcpy(&cursor->pos, &so->currPos, sizeof(BTScanPosData));
 
 		/*
-		 * Copy the tuple data for index-only scans.
+		 * Copy the tuple data for suffix key extraction during heap comparison.
 		 * The tuple workspace contains copies of index tuples referenced
 		 * by items in currPos.
 		 */
@@ -360,12 +444,7 @@ bt_merge_cursor_init(BTMergeScanState *state,
 			memcpy(cursor->tuples, so->currTuples, so->currPos.nextTupleOffset);
 		}
 
-		/* Extract the sort key for heap ordering */
-		cursor->sort_key = bt_merge_extract_sortkey(state, scan, cursor,
-													&cursor->sort_key_isnull);
 		cursor->exhausted = false;
-
-		/* Count this as a tuple access */
 		state->tuples_accessed++;
 
 		/* Invalidate main scan position */
@@ -375,6 +454,9 @@ bt_merge_cursor_init(BTMergeScanState *state,
 	{
 		cursor->exhausted = true;
 	}
+
+	/* Restore original setting */
+	scan->xs_want_itup = save_want_itup;
 
 	return found;
 }
@@ -423,28 +505,38 @@ bt_merge_cursor_advance(BTMergeScanState *state,
 		 * call _bt_next, then swap back.
 		 */
 		BTScanPosData save_pos;
+		bool		save_want_itup;
 
 		memcpy(&save_pos, &so->currPos, sizeof(BTScanPosData));
 		memcpy(&so->currPos, &cursor->pos, sizeof(BTScanPosData));
 
+		/* Force tuple data to be copied for suffix key extraction */
+		save_want_itup = scan->xs_want_itup;
+		scan->xs_want_itup = true;
+
 		found = _bt_next(scan, state->direction);
 
 		if (found)
+		{
 			memcpy(&cursor->pos, &so->currPos, sizeof(BTScanPosData));
+
+			/*
+			 * Copy the new page's tuple data for suffix key extraction.
+			 */
+			if (so->currTuples && so->currPos.nextTupleOffset > 0)
+			{
+				memcpy(cursor->tuples, so->currTuples, so->currPos.nextTupleOffset);
+			}
+		}
+
+		/* Restore original setting */
+		scan->xs_want_itup = save_want_itup;
 
 		memcpy(&so->currPos, &save_pos, sizeof(BTScanPosData));
 	}
 
 	if (found)
 	{
-		/*
-		 * Don't count here - the advanced-to tuple will be returned later
-		 * and counted by index_getnext_tid at that time.
-		 */
-
-		/* Extract new sort key */
-		cursor->sort_key = bt_merge_extract_sortkey(state, scan, cursor,
-													&cursor->sort_key_isnull);
 		state->tuples_accessed++;
 	}
 	else
@@ -453,57 +545,4 @@ bt_merge_cursor_advance(BTMergeScanState *state,
 	}
 
 	return found;
-}
-
-
-/*
- * bt_merge_extract_sortkey
- *	  Extract the sort key (suffix column value) from the current tuple.
- */
-static Datum
-bt_merge_extract_sortkey(BTMergeScanState *state,
-						 IndexScanDesc scan,
-						 BTMergeCursor *cursor,
-						 bool *isnull)
-{
-	Relation	rel = scan->indexRelation;
-	Buffer		buf;
-	Page		page;
-	OffsetNumber offnum;
-	ItemId		itemid;
-	IndexTuple	itup;
-	TupleDesc	tupdesc;
-	Datum		result;
-
-	if (cursor->pos.currPage == InvalidBlockNumber)
-	{
-		*isnull = true;
-		return (Datum) 0;
-	}
-
-	/* Read the page */
-	buf = ReadBuffer(rel, cursor->pos.currPage);
-	LockBuffer(buf, BT_READ);
-	page = BufferGetPage(buf);
-
-	offnum = cursor->pos.items[cursor->pos.itemIndex].indexOffset;
-	itemid = PageGetItemId(page, offnum);
-	itup = (IndexTuple) PageGetItem(page, itemid);
-	tupdesc = RelationGetDescr(rel);
-
-	/* Extract the suffix column value */
-	result = index_getattr(itup, state->suffix_attno, tupdesc, isnull);
-
-	/* Copy pass-by-reference values before releasing buffer */
-	if (!*isnull)
-	{
-		Form_pg_attribute attr = TupleDescAttr(tupdesc, state->suffix_attno - 1);
-
-		if (!attr->attbyval)
-			result = datumCopy(result, attr->attbyval, attr->attlen);
-	}
-
-	UnlockReleaseBuffer(buf);
-
-	return result;
 }

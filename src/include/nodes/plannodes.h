@@ -620,6 +620,8 @@ typedef struct IndexScan
 	ScanDirection indexorderdir;
 	/* Merge scan: K-way merge */
 	int			num_merge_prefixes;
+	/* Merge scan: constraints on prefix columns for EXPLAIN */
+	List	   *indexprefixqual;
 } IndexScan;
 
 /* ----------------
@@ -670,6 +672,8 @@ typedef struct IndexOnlyScan
 	ScanDirection indexorderdir;
 	/* Merge scan: K-way merge */
 	int			num_merge_prefixes;
+	/* Merge scan: prefix quals (equality/IN on prefix columns) for EXPLAIN */
+	List	   *indexprefixqual;
 } IndexOnlyScan;
 
 /* ----------------
