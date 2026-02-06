@@ -1,0 +1,109 @@
+Parsed test spec with 2 sessions
+
+starting permutation: list1 run1 list2 run2 detach2 detach1
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step list1: 
+	SELECT point_name, library, function FROM injection_points_list()
+	  ORDER BY point_name COLLATE "C";
+
+point_name             |library         |function        
+-----------------------+----------------+----------------
+TestInjectionNoticeFunc|injection_points|injection_notice
+(1 row)
+
+s1: NOTICE:  notice triggered for injection point TestInjectionNoticeFunc (attach parameter: attach argument, run parameter: run argument)
+step run1: 
+	SELECT injection_points_run('TestInjectionNoticeFunc', 'run argument');
+
+injection_points_run
+--------------------
+                    
+(1 row)
+
+step list2: 
+	SELECT point_name, library, function FROM injection_points_list()
+	  ORDER BY point_name COLLATE "C";
+
+point_name             |library         |function        
+-----------------------+----------------+----------------
+TestInjectionNoticeFunc|injection_points|injection_notice
+(1 row)
+
+step run2: 
+	SELECT injection_points_run('TestInjectionNoticeFunc', 'run argument from other backend');
+
+injection_points_run
+--------------------
+                    
+(1 row)
+
+step detach2: 
+	SELECT injection_points_detach('TestInjectionNoticeFunc');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step detach1: 
+	SELECT injection_points_detach('TestInjectionNoticeFunc');
+
+ERROR:  could not detach injection point "TestInjectionNoticeFunc"
+
+starting permutation: list1 run1 list2 run2 detach1 detach2
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step list1: 
+	SELECT point_name, library, function FROM injection_points_list()
+	  ORDER BY point_name COLLATE "C";
+
+point_name             |library         |function        
+-----------------------+----------------+----------------
+TestInjectionNoticeFunc|injection_points|injection_notice
+(1 row)
+
+s1: NOTICE:  notice triggered for injection point TestInjectionNoticeFunc (attach parameter: attach argument, run parameter: run argument)
+step run1: 
+	SELECT injection_points_run('TestInjectionNoticeFunc', 'run argument');
+
+injection_points_run
+--------------------
+                    
+(1 row)
+
+step list2: 
+	SELECT point_name, library, function FROM injection_points_list()
+	  ORDER BY point_name COLLATE "C";
+
+point_name             |library         |function        
+-----------------------+----------------+----------------
+TestInjectionNoticeFunc|injection_points|injection_notice
+(1 row)
+
+step run2: 
+	SELECT injection_points_run('TestInjectionNoticeFunc', 'run argument from other backend');
+
+injection_points_run
+--------------------
+                    
+(1 row)
+
+step detach1: 
+	SELECT injection_points_detach('TestInjectionNoticeFunc');
+
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
+step detach2: 
+	SELECT injection_points_detach('TestInjectionNoticeFunc');
+
+ERROR:  could not detach injection point "TestInjectionNoticeFunc"

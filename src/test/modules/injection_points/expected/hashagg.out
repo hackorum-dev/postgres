@@ -39,26 +39,26 @@ SET max_parallel_workers_per_gather=0;
 SET enable_sort=FALSE;
 SET work_mem='4MB';
 SELECT COUNT(*) FROM (SELECT DISTINCT x FROM hashagg_ij) s;
-NOTICE:  notice triggered for injection point hash-aggregate-spill-1000
-NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode
-NOTICE:  notice triggered for injection point hash-aggregate-single-partition
-NOTICE:  notice triggered for injection point hash-aggregate-process-batch
-NOTICE:  notice triggered for injection point hash-aggregate-spill-1000
-NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode
-NOTICE:  notice triggered for injection point hash-aggregate-single-partition
-NOTICE:  notice triggered for injection point hash-aggregate-process-batch
-NOTICE:  notice triggered for injection point hash-aggregate-spill-1000
-NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode
-NOTICE:  notice triggered for injection point hash-aggregate-single-partition
-NOTICE:  notice triggered for injection point hash-aggregate-process-batch
-NOTICE:  notice triggered for injection point hash-aggregate-spill-1000
-NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode
-NOTICE:  notice triggered for injection point hash-aggregate-single-partition
-NOTICE:  notice triggered for injection point hash-aggregate-process-batch
-NOTICE:  notice triggered for injection point hash-aggregate-spill-1000
-NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode
-NOTICE:  notice triggered for injection point hash-aggregate-single-partition
-NOTICE:  notice triggered for injection point hash-aggregate-process-batch
+NOTICE:  notice triggered for injection point hash-aggregate-spill-1000 (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-single-partition (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-process-batch (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-spill-1000 (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-single-partition (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-process-batch (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-spill-1000 (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-single-partition (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-process-batch (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-spill-1000 (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-single-partition (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-process-batch (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-spill-1000 (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-enter-spill-mode (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-single-partition (attach parameter: (null), run parameter: (null))
+NOTICE:  notice triggered for injection point hash-aggregate-process-batch (attach parameter: (null), run parameter: (null))
  count 
 -------
   5100

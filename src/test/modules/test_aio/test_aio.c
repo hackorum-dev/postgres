@@ -90,12 +90,16 @@ test_aio_shmem_startup(void)
 							 "test_aio",
 							 "inj_io_short_read",
 							 NULL,
+							 0,
+							 NULL,
 							 0);
 		InjectionPointLoad("aio-process-completion-before-shared");
 
 		InjectionPointAttach("aio-worker-after-reopen",
 							 "test_aio",
 							 "inj_io_reopen",
+							 NULL,
+							 0,
 							 NULL,
 							 0);
 		InjectionPointLoad("aio-worker-after-reopen");
@@ -680,15 +684,11 @@ batch_end(PG_FUNCTION_ARGS)
 }
 
 #ifdef USE_INJECTION_POINTS
-extern PGDLLEXPORT void inj_io_short_read(const char *name,
-										  const void *private_data,
-										  void *arg);
-extern PGDLLEXPORT void inj_io_reopen(const char *name,
-									  const void *private_data,
-									  void *arg);
+extern PGDLLEXPORT InjectionPointCallback inj_io_short_read;
+extern PGDLLEXPORT InjectionPointCallback inj_io_reopen;
 
 void
-inj_io_short_read(const char *name, const void *private_data, void *arg)
+inj_io_short_read(const char *name, const void *attach_arg_data, const void *condition_data, void *arg)
 {
 	PgAioHandle *ioh = (PgAioHandle *) arg;
 
@@ -750,7 +750,7 @@ inj_io_short_read(const char *name, const void *private_data, void *arg)
 }
 
 void
-inj_io_reopen(const char *name, const void *private_data, void *arg)
+inj_io_reopen(const char *name, const void *attach_arg_data, const void *condition_data, void *arg)
 {
 	ereport(LOG,
 			errmsg("reopen injection point called, is enabled: %d",

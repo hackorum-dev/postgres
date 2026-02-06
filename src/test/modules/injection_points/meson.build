@@ -45,6 +45,7 @@ tests += {
     'specs': [
       'basic',
       'inplace',
+      'local_custom_injection',
       'syscache-update-pruned',
       'heap_lock_update',
     ],

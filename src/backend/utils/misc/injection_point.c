@@ -68,7 +68,8 @@ typedef struct InjectionPointEntry
 	 * Opaque data area that modules can use to pass some custom data to
 	 * callbacks, registered when attached.
 	 */
-	char		private_data[INJ_PRIVATE_MAXLEN];
+	char		attach_arg_data[INJ_PRIVATE_MAXLEN];
+	char		condition_data[INJ_PRIVATE_MAXLEN];
 } InjectionPointEntry;
 
 #define MAX_INJECTION_POINTS	128
@@ -95,8 +96,9 @@ NON_EXEC_STATIC InjectionPointsCtl *ActiveInjectionPoints;
 typedef struct InjectionPointCacheEntry
 {
 	char		name[INJ_NAME_MAXLEN];
-	char		private_data[INJ_PRIVATE_MAXLEN];
-	InjectionPointCallback callback;
+	char		attach_arg_data[INJ_PRIVATE_MAXLEN];
+	char		condition_data[INJ_PRIVATE_MAXLEN];
+	InjectionPointCallback *callback;
 
 	/*
 	 * Shmem slot and copy of its generation number when this cache entry was
@@ -118,8 +120,9 @@ static InjectionPointCacheEntry *
 injection_point_cache_add(const char *name,
 						  int slot_idx,
 						  uint64 generation,
-						  InjectionPointCallback callback,
-						  const void *private_data)
+						  InjectionPointCallback *callback,
+						  const void *attach_arg_data,
+						  const void *condition_data)
 {
 	InjectionPointCacheEntry *entry;
 	bool		found;
@@ -147,7 +150,8 @@ injection_point_cache_add(const char *name,
 	entry->slot_idx = slot_idx;
 	entry->generation = generation;
 	entry->callback = callback;
-	memcpy(entry->private_data, private_data, INJ_PRIVATE_MAXLEN);
+	memcpy(entry->attach_arg_data, attach_arg_data, INJ_PRIVATE_MAXLEN);
+	memcpy(entry->condition_data, condition_data, INJ_PRIVATE_MAXLEN);
 
 	return entry;
 }
@@ -198,7 +202,8 @@ injection_point_cache_load(InjectionPointEntry *entry, int slot_idx, uint64 gene
 									 slot_idx,
 									 generation,
 									 injection_callback_local,
-									 entry->private_data);
+									 entry->attach_arg_data,
+									 entry->condition_data);
 }
 
 /*
@@ -273,8 +278,10 @@ void
 InjectionPointAttach(const char *name,
 					 const char *library,
 					 const char *function,
-					 const void *private_data,
-					 int private_data_size)
+					 const void *attach_arg,
+					 int attach_arg_size,
+					 const void *condition,
+					 int condition_size)
 {
 #ifdef USE_INJECTION_POINTS
 	InjectionPointEntry *entry;
@@ -291,8 +298,11 @@ InjectionPointAttach(const char *name,
 	if (strlen(function) >= INJ_FUNC_MAXLEN)
 		elog(ERROR, "injection point function %s too long (maximum of %u characters)",
 			 function, INJ_FUNC_MAXLEN - 1);
-	if (private_data_size > INJ_PRIVATE_MAXLEN)
-		elog(ERROR, "injection point data too long (maximum of %u bytes)",
+	if (attach_arg_size > INJ_PRIVATE_MAXLEN)
+		elog(ERROR, "injection point attach parameter too long (maximum of %u bytes)",
+			 INJ_PRIVATE_MAXLEN);
+	if (condition_size > INJ_PRIVATE_MAXLEN)
+		elog(ERROR, "injection point condition data too long (maximum of %u bytes)",
 			 INJ_PRIVATE_MAXLEN);
 
 	/*
@@ -333,8 +343,10 @@ InjectionPointAttach(const char *name,
 	strlcpy(entry->name, name, sizeof(entry->name));
 	strlcpy(entry->library, library, sizeof(entry->library));
 	strlcpy(entry->function, function, sizeof(entry->function));
-	if (private_data != NULL)
-		memcpy(entry->private_data, private_data, private_data_size);
+	if (attach_arg != NULL)
+		memcpy(entry->attach_arg_data, attach_arg, attach_arg_size);
+	if (condition != NULL)
+		memcpy(entry->condition_data, condition, condition_size);
 
 	pg_write_barrier();
 	pg_atomic_write_u64(&entry->generation, generation + 1);
@@ -545,7 +557,7 @@ InjectionPointRun(const char *name, void *arg)
 
 	cache_entry = InjectionPointCacheRefresh(name);
 	if (cache_entry)
-		cache_entry->callback(name, cache_entry->private_data, arg);
+		cache_entry->callback(name, cache_entry->attach_arg_data, cache_entry->condition_data, arg);
 #else
 	elog(ERROR, "Injection points are not supported by this build");
 #endif
@@ -562,7 +574,7 @@ InjectionPointCached(const char *name, void *arg)
 
 	cache_entry = injection_point_cache_get(name);
 	if (cache_entry)
-		cache_entry->callback(name, cache_entry->private_data, arg);
+		cache_entry->callback(name, cache_entry->attach_arg_data, cache_entry->condition_data, arg);
 #else
 	elog(ERROR, "Injection points are not supported by this build");
 #endif

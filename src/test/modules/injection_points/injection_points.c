@@ -93,15 +93,9 @@ typedef struct InjectionPointSharedState
 /* Pointer to shared-memory state. */
 static InjectionPointSharedState *inj_state = NULL;
 
-extern PGDLLEXPORT void injection_error(const char *name,
-										const void *private_data,
-										void *arg);
-extern PGDLLEXPORT void injection_notice(const char *name,
-										 const void *private_data,
-										 void *arg);
-extern PGDLLEXPORT void injection_wait(const char *name,
-									   const void *private_data,
-									   void *arg);
+extern PGDLLEXPORT InjectionPointCallback injection_error;
+extern PGDLLEXPORT InjectionPointCallback injection_notice;
+extern PGDLLEXPORT InjectionPointCallback injection_wait;
 
 /* track if injection points attached in this process are linked to it */
 static bool injection_point_local = false;
@@ -230,9 +224,9 @@ injection_points_cleanup(int code, Datum arg)
 
 /* Set of callbacks available to be attached to an injection point. */
 void
-injection_error(const char *name, const void *private_data, void *arg)
+injection_error(const char *name, const void *attach_arg_data, const void *condition_data, void *arg)
 {
-	const InjectionPointCondition *condition = private_data;
+	const InjectionPointCondition *condition = condition_data;
 	char	   *argstr = arg;
 
 	if (!injection_point_allowed(condition))
@@ -246,29 +240,29 @@ injection_error(const char *name, const void *private_data, void *arg)
 }
 
 void
-injection_notice(const char *name, const void *private_data, void *arg)
+injection_notice(const char *name, const void *attach_arg_data, const void *condition_data, void *arg)
 {
-	const InjectionPointCondition *condition = private_data;
+	const InjectionPointCondition *condition = condition_data;
 	char	   *argstr = arg;
+	const char *attach_arg_data_str = attach_arg_data;
 
 	if (!injection_point_allowed(condition))
 		return;
 
-	if (argstr)
-		elog(NOTICE, "notice triggered for injection point %s (%s)",
-			 name, argstr);
-	else
-		elog(NOTICE, "notice triggered for injection point %s", name);
+	elog(NOTICE, "notice triggered for injection point %s (attach parameter: %s, run parameter: %s)",
+		 name,
+		 attach_arg_data_str[0] != '\0' ? attach_arg_data_str : "(null)",
+		 argstr ? argstr : "(null)");
 }
 
 /* Wait on a condition variable, awaken by injection_points_wakeup() */
 void
-injection_wait(const char *name, const void *private_data, void *arg)
+injection_wait(const char *name, const void *attach_arg_data, const void *condition_data, void *arg)
 {
 	uint32		old_wait_counts = 0;
 	int			index = -1;
 	uint32		injection_wait_event = 0;
-	const InjectionPointCondition *condition = private_data;
+	const InjectionPointCondition *condition = condition_data;
 
 	if (inj_state == NULL)
 		injection_init_shmem();
@@ -352,7 +346,7 @@ injection_points_attach(PG_FUNCTION_ARGS)
 		condition.pid = MyProcPid;
 	}
 
-	InjectionPointAttach(name, "injection_points", function, &condition,
+	InjectionPointAttach(name, "injection_points", function, NULL, 0, &condition,
 						 sizeof(InjectionPointCondition));
 
 	if (injection_point_local)
@@ -379,8 +373,9 @@ injection_points_attach_func(PG_FUNCTION_ARGS)
 	char	   *name;
 	char	   *lib_name;
 	char	   *function;
-	bytea	   *private_data = NULL;
-	int			private_data_size = 0;
+	void	   *attach_arg = NULL;
+	int			attach_arg_size = 0;
+	InjectionPointCondition condition = {0};
 
 	if (PG_ARGISNULL(0))
 		elog(ERROR, "injection point name cannot be NULL");
@@ -395,16 +390,31 @@ injection_points_attach_func(PG_FUNCTION_ARGS)
 
 	if (!PG_ARGISNULL(3))
 	{
-		private_data = PG_GETARG_BYTEA_PP(3);
-		private_data_size = VARSIZE_ANY_EXHDR(private_data);
+		bytea	   *attach_arg_bytea = PG_GETARG_BYTEA_PP(3);
+
+		attach_arg = VARDATA_ANY(attach_arg_bytea);
+		attach_arg_size = VARSIZE_ANY_EXHDR(attach_arg_bytea);
 	}
 
-	if (private_data != NULL)
-		InjectionPointAttach(name, lib_name, function, VARDATA_ANY(private_data),
-							 private_data_size);
-	else
-		InjectionPointAttach(name, lib_name, function, NULL,
-							 0);
+	if (injection_point_local)
+	{
+		condition.type = INJ_CONDITION_PID;
+		condition.pid = MyProcPid;
+	}
+
+	InjectionPointAttach(name, lib_name, function, attach_arg,
+						 attach_arg_size, &condition, sizeof(condition));
+
+	if (injection_point_local)
+	{
+		MemoryContext oldctx;
+
+		/* Local injection point, so track it for automated cleanup */
+		oldctx = MemoryContextSwitchTo(TopMemoryContext);
+		inj_list_local = lappend(inj_list_local, makeString(pstrdup(name)));
+		MemoryContextSwitchTo(oldctx);
+	}
+
 	PG_RETURN_VOID();
 }
 

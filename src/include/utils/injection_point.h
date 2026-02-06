@@ -42,9 +42,10 @@ typedef struct InjectionPointData
 /*
  * Typedef for callback function launched by an injection point.
  */
-typedef void (*InjectionPointCallback) (const char *name,
-										const void *private_data,
-										void *arg);
+typedef void (InjectionPointCallback) (const char *name,
+									   const void *attach_arg_data,
+									   const void *condition_data,
+									   void *arg);
 
 extern Size InjectionPointShmemSize(void);
 extern void InjectionPointShmemInit(void);
@@ -52,8 +53,10 @@ extern void InjectionPointShmemInit(void);
 extern void InjectionPointAttach(const char *name,
 								 const char *library,
 								 const char *function,
-								 const void *private_data,
-								 int private_data_size);
+								 const void *attach_arg,
+								 int attach_arg_size,
+								 const void *condition,
+								 int condition_size);
 extern void InjectionPointLoad(const char *name);
 extern void InjectionPointRun(const char *name, void *arg);
 extern void InjectionPointCached(const char *name, void *arg);

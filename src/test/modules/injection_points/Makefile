@@ -14,6 +14,7 @@ REGRESS_OPTS = --dlpath=$(top_builddir)/src/test/regress
 
 ISOLATION = basic \
 	    inplace \
+	    local_custom_injection \
 	    syscache-update-pruned \
 	    heap_lock_update
 

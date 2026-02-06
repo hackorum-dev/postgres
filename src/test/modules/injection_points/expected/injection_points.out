@@ -55,28 +55,28 @@ SELECT injection_points_run('TestInjectionBooh'); -- nothing
 (1 row)
 
 SELECT injection_points_run('TestInjectionLog2'); -- notice
-NOTICE:  notice triggered for injection point TestInjectionLog2
+NOTICE:  notice triggered for injection point TestInjectionLog2 (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
 (1 row)
 
 SELECT injection_points_run('TestInjectionLog2', NULL); -- notice
-NOTICE:  notice triggered for injection point TestInjectionLog2
+NOTICE:  notice triggered for injection point TestInjectionLog2 (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
 (1 row)
 
 SELECT injection_points_run('TestInjectionLog2', 'foobar'); -- notice + arg
-NOTICE:  notice triggered for injection point TestInjectionLog2 (foobar)
+NOTICE:  notice triggered for injection point TestInjectionLog2 (attach parameter: (null), run parameter: foobar)
  injection_points_run 
 ----------------------
  
 (1 row)
 
 SELECT injection_points_run('TestInjectionLog'); -- notice
-NOTICE:  notice triggered for injection point TestInjectionLog
+NOTICE:  notice triggered for injection point TestInjectionLog (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
@@ -91,14 +91,14 @@ ERROR:  error triggered for injection point TestInjectionError (foobar2)
 -- Re-load cache and run again.
 \c
 SELECT injection_points_run('TestInjectionLog2'); -- notice
-NOTICE:  notice triggered for injection point TestInjectionLog2
+NOTICE:  notice triggered for injection point TestInjectionLog2 (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
 (1 row)
 
 SELECT injection_points_run('TestInjectionLog'); -- notice
-NOTICE:  notice triggered for injection point TestInjectionLog
+NOTICE:  notice triggered for injection point TestInjectionLog (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
@@ -114,7 +114,7 @@ SELECT injection_points_detach('TestInjectionError'); -- ok
 (1 row)
 
 SELECT injection_points_run('TestInjectionLog'); -- notice
-NOTICE:  notice triggered for injection point TestInjectionLog
+NOTICE:  notice triggered for injection point TestInjectionLog (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
@@ -147,7 +147,7 @@ SELECT injection_points_run('TestInjectionError'); -- nothing
 (1 row)
 
 SELECT injection_points_run('TestInjectionLog2'); -- notice
-NOTICE:  notice triggered for injection point TestInjectionLog2
+NOTICE:  notice triggered for injection point TestInjectionLog2 (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
@@ -156,7 +156,7 @@ NOTICE:  notice triggered for injection point TestInjectionLog2
 SELECT injection_points_detach('TestInjectionLog'); -- fails
 ERROR:  could not detach injection point "TestInjectionLog"
 SELECT injection_points_run('TestInjectionLog2'); -- notice
-NOTICE:  notice triggered for injection point TestInjectionLog2
+NOTICE:  notice triggered for injection point TestInjectionLog2 (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
@@ -194,28 +194,28 @@ SELECT injection_points_load('TestInjectionLogLoad'); -- nothing happens
 (1 row)
 
 SELECT injection_points_cached('TestInjectionLogLoad'); -- runs from cache
-NOTICE:  notice triggered for injection point TestInjectionLogLoad
+NOTICE:  notice triggered for injection point TestInjectionLogLoad (attach parameter: (null), run parameter: (null))
  injection_points_cached 
 -------------------------
  
 (1 row)
 
 SELECT injection_points_cached('TestInjectionLogLoad', NULL); -- runs from cache
-NOTICE:  notice triggered for injection point TestInjectionLogLoad
+NOTICE:  notice triggered for injection point TestInjectionLogLoad (attach parameter: (null), run parameter: (null))
  injection_points_cached 
 -------------------------
  
 (1 row)
 
 SELECT injection_points_cached('TestInjectionLogLoad', 'foobar'); -- runs from cache
-NOTICE:  notice triggered for injection point TestInjectionLogLoad (foobar)
+NOTICE:  notice triggered for injection point TestInjectionLogLoad (attach parameter: (null), run parameter: foobar)
  injection_points_cached 
 -------------------------
  
 (1 row)
 
 SELECT injection_points_run('TestInjectionLogLoad'); -- runs from cache
-NOTICE:  notice triggered for injection point TestInjectionLogLoad
+NOTICE:  notice triggered for injection point TestInjectionLogLoad (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
@@ -256,7 +256,7 @@ SELECT injection_points_attach('TestConditionLocal2', 'notice');
 SELECT injection_points_run('TestConditionLocal1'); -- error
 ERROR:  error triggered for injection point TestConditionLocal1
 SELECT injection_points_run('TestConditionLocal2'); -- notice
-NOTICE:  notice triggered for injection point TestConditionLocal2
+NOTICE:  notice triggered for injection point TestConditionLocal2 (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
@@ -319,7 +319,7 @@ SELECT injection_points_attach('TestInjectionNoticeFunc', 'injection_points',
 ERROR:  injection point function aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa too long (maximum of 127 characters)
 SELECT injection_points_attach('TestInjectionNoticeFunc', 'injection_points',
   'injection_notice', repeat('a', 1025)::bytea);
-ERROR:  injection point data too long (maximum of 1024 bytes)
+ERROR:  injection point attach parameter too long (maximum of 1024 bytes)
 SELECT injection_points_attach(NULL, NULL, NULL, NULL);
 ERROR:  injection point name cannot be NULL
 SELECT injection_points_attach('TestInjectionNoticeFunc', NULL, NULL, NULL);
@@ -342,7 +342,7 @@ SELECT point_name, library, function FROM injection_points_list()
 (1 row)
 
 SELECT injection_points_run('TestInjectionNoticeFunc', NULL); -- notice
-NOTICE:  notice triggered for injection point TestInjectionNoticeFunc
+NOTICE:  notice triggered for injection point TestInjectionNoticeFunc (attach parameter: (null), run parameter: (null))
  injection_points_run 
 ----------------------
  
