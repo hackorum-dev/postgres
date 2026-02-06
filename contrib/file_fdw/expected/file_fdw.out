@@ -54,6 +54,7 @@ CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS ("a=b" 'true');  -- ERROR
 ERROR:  invalid option name "a=b": must not contain "="
 CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'xml');  -- ERROR
 ERROR:  COPY format "xml" not recognized
+HINT:  Valid formats are "binary", "csv", and "text".
 CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', quote ':');          -- ERROR
 ERROR:  COPY QUOTE requires CSV mode
 CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', escape ':');         -- ERROR
@@ -96,10 +97,12 @@ CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', null '
 ERROR:  COPY null representation cannot use newline or carriage return
 CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (on_error 'unsupported');       -- ERROR
 ERROR:  COPY ON_ERROR "unsupported" not recognized
+HINT:  Valid values are "ignore" and "stop".
 CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'binary', on_error 'ignore');       -- ERROR
 ERROR:  only ON_ERROR STOP is allowed in BINARY mode
 CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (log_verbosity 'unsupported');       -- ERROR
 ERROR:  COPY LOG_VERBOSITY "unsupported" not recognized
+HINT:  Valid values are "default", "silent", and "verbose".
 CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (reject_limit '1');       -- ERROR
 ERROR:  COPY REJECT_LIMIT requires ON_ERROR to be set to IGNORE
 CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (on_error 'ignore', reject_limit '0');       -- ERROR

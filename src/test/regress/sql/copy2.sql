@@ -97,6 +97,14 @@ COPY x to stdout with (header '-1');
 COPY x from stdin with (header '2.5');
 COPY x to stdout with (header '2');
 
+-- test error hints for invalid COPY options
+COPY x from stdin (foramt CSV);  -- error, suggests "format"
+COPY x from stdin (convert_selectivel (a));  -- error, should NOT suggest convert_selectively
+COPY x from stdin (completely_invalid_option 'value');  -- error, no suggestion
+COPY x from stdin (format cvs);  -- error, lists valid formats
+COPY x from stdin (format CSV, on_error ignor);  -- error, lists valid on_error values
+COPY x from stdin (format CSV, log_verbosity verbos);  -- error, lists valid log_verbosity values
+
 -- too many columns in column list: should fail
 COPY x (a, b, c, d, e, d, c) from stdin;
 

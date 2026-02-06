@@ -39,6 +39,23 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/rls.h"
+#include "utils/varlena.h"
+
+/*
+ * Helper to match a COPY option name during option extraction.
+ *
+ * If the option matches, return true.  Otherwise, register it as a candidate
+ * for closest-match hints and return false.
+ */
+static bool
+copy_option_matches(const char *defname, const char *option,
+					ClosestMatchState *match_state)
+{
+	if (strcmp(defname, option) == 0)
+		return true;
+	updateClosestMatch(match_state, option);
+	return false;
+}
 
 /*
  *	 DoCopy executes the SQL COPY statement
@@ -480,6 +497,7 @@ defGetCopyOnErrorChoice(DefElem *def, ParseState *pstate, bool is_from)
 			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 	/*- translator: first %s is the name of a COPY option, e.g. ON_ERROR */
 			 errmsg("COPY %s \"%s\" not recognized", "ON_ERROR", sval),
+			 errhint("Valid values are \"%s\" and \"%s\".", "ignore", "stop"),
 			 parser_errposition(pstate, def->location)));
 	return COPY_ON_ERROR_STOP;	/* keep compiler quiet */
 }
@@ -538,6 +556,8 @@ defGetCopyLogVerbosityChoice(DefElem *def, ParseState *pstate)
 			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 	/*- translator: first %s is the name of a COPY option, e.g. ON_ERROR */
 			 errmsg("COPY %s \"%s\" not recognized", "LOG_VERBOSITY", sval),
+			 errhint("Valid values are \"%s\", \"%s\", and \"%s\".",
+					 "default", "silent", "verbose"),
 			 parser_errposition(pstate, def->location)));
 	return COPY_LOG_VERBOSITY_DEFAULT;	/* keep compiler quiet */
 }
@@ -582,8 +602,12 @@ ProcessCopyOptions(ParseState *pstate,
 	foreach(option, options)
 	{
 		DefElem    *defel = lfirst_node(DefElem, option);
+		ClosestMatchState match_state;
+		const char *closest_match;
 
-		if (strcmp(defel->defname, "format") == 0)
+		initClosestMatch(&match_state, defel->defname, 4);
+
+		if (copy_option_matches(defel->defname, "format", &match_state))
 		{
 			char	   *fmt = defGetString(defel);
 
@@ -600,53 +624,55 @@ ProcessCopyOptions(ParseState *pstate,
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("COPY format \"%s\" not recognized", fmt),
+						 errhint("Valid formats are \"%s\", \"%s\", and \"%s\".",
+								 "binary", "csv", "text"),
 						 parser_errposition(pstate, defel->location)));
 		}
-		else if (strcmp(defel->defname, "freeze") == 0)
+		else if (copy_option_matches(defel->defname, "freeze", &match_state))
 		{
 			if (freeze_specified)
 				errorConflictingDefElem(defel, pstate);
 			freeze_specified = true;
 			opts_out->freeze = defGetBoolean(defel);
 		}
-		else if (strcmp(defel->defname, "delimiter") == 0)
+		else if (copy_option_matches(defel->defname, "delimiter", &match_state))
 		{
 			if (opts_out->delim)
 				errorConflictingDefElem(defel, pstate);
 			opts_out->delim = defGetString(defel);
 		}
-		else if (strcmp(defel->defname, "null") == 0)
+		else if (copy_option_matches(defel->defname, "null", &match_state))
 		{
 			if (opts_out->null_print)
 				errorConflictingDefElem(defel, pstate);
 			opts_out->null_print = defGetString(defel);
 		}
-		else if (strcmp(defel->defname, "default") == 0)
+		else if (copy_option_matches(defel->defname, "default", &match_state))
 		{
 			if (opts_out->default_print)
 				errorConflictingDefElem(defel, pstate);
 			opts_out->default_print = defGetString(defel);
 		}
-		else if (strcmp(defel->defname, "header") == 0)
+		else if (copy_option_matches(defel->defname, "header", &match_state))
 		{
 			if (header_specified)
 				errorConflictingDefElem(defel, pstate);
 			header_specified = true;
 			opts_out->header_line = defGetCopyHeaderOption(defel, is_from);
 		}
-		else if (strcmp(defel->defname, "quote") == 0)
+		else if (copy_option_matches(defel->defname, "quote", &match_state))
 		{
 			if (opts_out->quote)
 				errorConflictingDefElem(defel, pstate);
 			opts_out->quote = defGetString(defel);
 		}
-		else if (strcmp(defel->defname, "escape") == 0)
+		else if (copy_option_matches(defel->defname, "escape", &match_state))
 		{
 			if (opts_out->escape)
 				errorConflictingDefElem(defel, pstate);
 			opts_out->escape = defGetString(defel);
 		}
-		else if (strcmp(defel->defname, "force_quote") == 0)
+		else if (copy_option_matches(defel->defname, "force_quote", &match_state))
 		{
 			if (opts_out->force_quote || opts_out->force_quote_all)
 				errorConflictingDefElem(defel, pstate);
@@ -661,7 +687,7 @@ ProcessCopyOptions(ParseState *pstate,
 								defel->defname),
 						 parser_errposition(pstate, defel->location)));
 		}
-		else if (strcmp(defel->defname, "force_not_null") == 0)
+		else if (copy_option_matches(defel->defname, "force_not_null", &match_state))
 		{
 			if (opts_out->force_notnull || opts_out->force_notnull_all)
 				errorConflictingDefElem(defel, pstate);
@@ -676,7 +702,7 @@ ProcessCopyOptions(ParseState *pstate,
 								defel->defname),
 						 parser_errposition(pstate, defel->location)));
 		}
-		else if (strcmp(defel->defname, "force_null") == 0)
+		else if (copy_option_matches(defel->defname, "force_null", &match_state))
 		{
 			if (opts_out->force_null || opts_out->force_null_all)
 				errorConflictingDefElem(defel, pstate);
@@ -694,7 +720,11 @@ ProcessCopyOptions(ParseState *pstate,
 		else if (strcmp(defel->defname, "convert_selectively") == 0)
 		{
 			/*
-			 * Undocumented, not-accessible-from-SQL option: convert only the
+			 * Undocumented, not-accessible-from-SQL option.  Use plain strcmp
+			 * rather than copy_option_matches so that it is not suggested in
+			 * closest-match hints for unrecognized options.
+			 *
+			 * Convert only the
 			 * named columns to binary form, storing the rest as NULLs. It's
 			 * allowed for the column list to be NIL.
 			 */
@@ -710,7 +740,7 @@ ProcessCopyOptions(ParseState *pstate,
 								defel->defname),
 						 parser_errposition(pstate, defel->location)));
 		}
-		else if (strcmp(defel->defname, "encoding") == 0)
+		else if (copy_option_matches(defel->defname, "encoding", &match_state))
 		{
 			if (opts_out->file_encoding >= 0)
 				errorConflictingDefElem(defel, pstate);
@@ -722,21 +752,21 @@ ProcessCopyOptions(ParseState *pstate,
 								defel->defname),
 						 parser_errposition(pstate, defel->location)));
 		}
-		else if (strcmp(defel->defname, "on_error") == 0)
+		else if (copy_option_matches(defel->defname, "on_error", &match_state))
 		{
 			if (on_error_specified)
 				errorConflictingDefElem(defel, pstate);
 			on_error_specified = true;
 			opts_out->on_error = defGetCopyOnErrorChoice(defel, pstate, is_from);
 		}
-		else if (strcmp(defel->defname, "log_verbosity") == 0)
+		else if (copy_option_matches(defel->defname, "log_verbosity", &match_state))
 		{
 			if (log_verbosity_specified)
 				errorConflictingDefElem(defel, pstate);
 			log_verbosity_specified = true;
 			opts_out->log_verbosity = defGetCopyLogVerbosityChoice(defel, pstate);
 		}
-		else if (strcmp(defel->defname, "reject_limit") == 0)
+		else if (copy_option_matches(defel->defname, "reject_limit", &match_state))
 		{
 			if (reject_limit_specified)
 				errorConflictingDefElem(defel, pstate);
@@ -744,11 +774,17 @@ ProcessCopyOptions(ParseState *pstate,
 			opts_out->reject_limit = defGetCopyRejectLimitOption(defel);
 		}
 		else
+		{
+			closest_match = getClosestMatch(&match_state);
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("option \"%s\" not recognized",
 							defel->defname),
+					 closest_match ?
+					 errhint("Perhaps you meant \"%s\".",
+							 closest_match) : 0,
 					 parser_errposition(pstate, defel->location)));
+		}
 	}
 
 	/*

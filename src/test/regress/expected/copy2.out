@@ -96,6 +96,7 @@ COPY x from stdin (on_error unsupported);
 ERROR:  COPY ON_ERROR "unsupported" not recognized
 LINE 1: COPY x from stdin (on_error unsupported);
                            ^
+HINT:  Valid values are "ignore" and "stop".
 COPY x from stdin (format TEXT, force_quote(a));
 ERROR:  COPY FORCE_QUOTE requires CSV mode
 COPY x from stdin (format TEXT, force_quote *);
@@ -128,6 +129,7 @@ COPY x from stdin (log_verbosity unsupported);
 ERROR:  COPY LOG_VERBOSITY "unsupported" not recognized
 LINE 1: COPY x from stdin (log_verbosity unsupported);
                            ^
+HINT:  Valid values are "default", "silent", and "verbose".
 COPY x from stdin with (reject_limit 1);
 ERROR:  COPY REJECT_LIMIT requires ON_ERROR to be set to IGNORE
 COPY x from stdin with (on_error ignore, reject_limit 0);
@@ -144,6 +146,35 @@ COPY x from stdin with (header '2.5');
 ERROR:  header requires a Boolean value, an integer value greater than or equal to zero, or the string "match"
 COPY x to stdout with (header '2');
 ERROR:  cannot use multi-line header in COPY TO
+-- test error hints for invalid COPY options
+COPY x from stdin (foramt CSV);  -- error, suggests "format"
+ERROR:  option "foramt" not recognized
+LINE 1: COPY x from stdin (foramt CSV);
+                           ^
+HINT:  Perhaps you meant "format".
+COPY x from stdin (convert_selectivel (a));  -- error, should NOT suggest convert_selectively
+ERROR:  option "convert_selectivel" not recognized
+LINE 1: COPY x from stdin (convert_selectivel (a));
+                           ^
+COPY x from stdin (completely_invalid_option 'value');  -- error, no suggestion
+ERROR:  option "completely_invalid_option" not recognized
+LINE 1: COPY x from stdin (completely_invalid_option 'value');
+                           ^
+COPY x from stdin (format cvs);  -- error, lists valid formats
+ERROR:  COPY format "cvs" not recognized
+LINE 1: COPY x from stdin (format cvs);
+                           ^
+HINT:  Valid formats are "binary", "csv", and "text".
+COPY x from stdin (format CSV, on_error ignor);  -- error, lists valid on_error values
+ERROR:  COPY ON_ERROR "ignor" not recognized
+LINE 1: COPY x from stdin (format CSV, on_error ignor);
+                                       ^
+HINT:  Valid values are "ignore" and "stop".
+COPY x from stdin (format CSV, log_verbosity verbos);  -- error, lists valid log_verbosity values
+ERROR:  COPY LOG_VERBOSITY "verbos" not recognized
+LINE 1: COPY x from stdin (format CSV, log_verbosity verbos);
+                                       ^
+HINT:  Valid values are "default", "silent", and "verbose".
 -- too many columns in column list: should fail
 COPY x (a, b, c, d, e, d, c) from stdin;
 ERROR:  column "d" specified more than once
