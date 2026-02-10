@@ -243,7 +243,7 @@ BEGIN;
 LOCK TABLE $table2;
 PREPARE TRANSACTION 'lock';
 INSERT INTO $table1(a) VALUES (170);
-SELECT txid_current();
+SELECT pg_current_xact_id();
 ]);
 
 $node_primary->wait_for_replay_catchup($node_standby);
