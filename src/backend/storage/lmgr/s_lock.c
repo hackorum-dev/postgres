@@ -145,7 +145,7 @@ perform_spin_delay(SpinDelayStatus *status)
 		 * We might want to report something more granular at some point, but
 		 * this is better than nothing.
 		 */
-		pgstat_report_wait_start(WAIT_EVENT_SPIN_DELAY);
+		pgstat_report_wait_start(WAIT_EVENT_SPIN_DELAY | status->delays);
 		pg_usleep(status->cur_delay);
 		pgstat_report_wait_end();
 
