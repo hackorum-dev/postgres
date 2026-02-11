@@ -5831,7 +5831,9 @@ BufferLockAcquire(Buffer buffer, BufferDesc *buf_hdr, BufferLockMode mode)
 				pg_unreachable();
 
 		}
-		pgstat_report_wait_start(wait_event);
+		/* Local buffers can get negative */
+		pgstat_report_wait_start(wait_event |
+						   (uint32) ((buffer>=0) ? buffer : UINT32_MAX));
 
 		/*
 		 * Wait until awakened.
@@ -6643,7 +6645,9 @@ LockBufferForCleanup(Buffer buffer)
 			SetStartupBufferPinWaitBufId(-1);
 		}
 		else
-			ProcWaitForSignal(WAIT_EVENT_BUFFER_CLEANUP);
+			/* Local buffers can get negative */
+			ProcWaitForSignal(WAIT_EVENT_BUFFER_CLEANUP |
+					 (uint32) ((buffer>=0) ? buffer : UINT32_MAX));
 
 		/*
 		 * Remove flag marking us as waiter. Normally this will not be set
@@ -6858,7 +6862,8 @@ WaitIO(BufferDesc *buf)
 		}
 
 		/* wait on BufferDesc->cv, e.g. for concurrent synchronous IO */
-		ConditionVariableSleep(cv, WAIT_EVENT_BUFFER_IO);
+		ConditionVariableSleep(cv, WAIT_EVENT_BUFFER_IO |
+					 (uint32) ((buf->buf_id>=0) ? buf->buf_id : UINT32_MAX));
 	}
 	ConditionVariableCancelSleep();
 }

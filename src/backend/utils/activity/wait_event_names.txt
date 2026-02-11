@@ -114,7 +114,7 @@ BACKUP_WAIT_WAL_ARCHIVE	"Waiting for WAL files required for a backup to be succe
 BGWORKER_SHUTDOWN	"Waiting for background worker to shut down."
 BGWORKER_STARTUP	"Waiting for background worker to start up."
 BTREE_PAGE	"Waiting for the page number needed to continue a parallel B-tree scan to become available."
-BUFFER_IO	"Waiting for buffer I/O to complete."
+BUFFER_IO	"Waiting for buffer I/O to complete."	"Buffer# or UINT32_MAX for local(temporary) buffers."
 CHECKPOINT_DELAY_COMPLETE	"Waiting for a backend that blocks a checkpoint from completing."
 CHECKPOINT_DELAY_START	"Waiting for a backend that blocks a checkpoint from starting."
 CHECKPOINT_DONE	"Waiting for a checkpoint to complete."
@@ -288,10 +288,11 @@ ABI_compatibility:
 
 Section: ClassName - WaitEventBuffer
 
-BUFFER_CLEANUP	"Waiting to acquire an exclusive pin on a buffer. Buffer pin waits can be protracted if another process holds an open cursor that last read data from the buffer in question."
-BUFFER_SHARED	"Waiting to acquire a shared lock on a buffer."
-BUFFER_SHARE_EXCLUSIVE	"Waiting to acquire a share exclusive lock on a buffer."
-BUFFER_EXCLUSIVE	"Waiting to acquire a exclusive lock on a buffer."
+BUFFER_CLEANUP	"Waiting to acquire an exclusive pin on a buffer. Buffer pin waits can be protracted if another process holds an open cursor that last read data from the buffer in question."	"Buffer# or UINT32_MAX for local(temporary) buffers."
+BUFFER_SHARED	"Waiting to acquire a shared lock on a buffer."	"Buffer# or UINT32_MAX for local(temporary) buffers."
+BUFFER_SHARE_EXCLUSIVE	"Waiting to acquire a share exclusive lock on a buffer."	"Buffer# or UINT32_MAX for local(temporary) buffers."
+BUFFER_EXCLUSIVE	"Waiting to acquire a exclusive lock on a buffer."	"Buffer# or UINT32_MAX for local(temporary) buffers."
+
 
 ABI_compatibility:
 
