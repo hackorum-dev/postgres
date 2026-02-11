@@ -528,11 +528,11 @@ DisableLogicalDecoding(void)
 
 	END_CRIT_SECTION();
 
+	LWLockRelease(LogicalDecodingControlLock);
+
 	if (!in_recovery)
 		ereport(LOG,
 				errmsg("logical decoding is disabled because there are no valid logical replication slots"));
-
-	LWLockRelease(LogicalDecodingControlLock);
 
 	/*
 	 * Tell all running processes to reflect the xlog_logical_info update.
