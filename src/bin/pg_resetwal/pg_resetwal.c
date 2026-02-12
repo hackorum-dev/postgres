@@ -86,7 +86,7 @@ static Oid	next_oid_val;
 
 static bool mxids_given = false;
 static MultiXactId next_mxid_val;
-static MultiXactId oldest_mxid_val = 0;
+static MultiXactId oldest_mxid_val = InvalidMultiXactId;
 
 static bool next_mxoff_given = false;
 static MultiXactOffset next_mxoff_val;
