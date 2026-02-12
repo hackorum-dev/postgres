@@ -536,7 +536,7 @@ ExecBitmapHeapInitializeDSM(BitmapHeapScanState *node,
 		shm_toc_allocate(pcxt->toc,
 						 MAXALIGN(sizeof(ParallelBitmapHeapState)));
 
-	pstate->tbmiterator = 0;
+	pstate->tbmiterator = InvalidDsaPointer;
 
 	/* Initialize the mutex */
 	SpinLockInit(&pstate->mutex);
