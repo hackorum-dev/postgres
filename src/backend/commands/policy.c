@@ -15,7 +15,6 @@
 #include "access/genam.h"
 #include "access/htup.h"
 #include "access/htup_details.h"
-#include "access/relation.h"
 #include "access/table.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
@@ -663,7 +662,7 @@ CreatePolicy(CreatePolicyStmt *stmt)
 										stmt);
 
 	/* Open target_table to build quals. No additional lock is necessary. */
-	target_table = relation_open(table_id, NoLock);
+	target_table = table_open(table_id, NoLock);
 
 	/* Add for the regular security quals */
 	nsitem = addRangeTableEntryForRelation(qual_pstate, target_table,
@@ -788,7 +787,7 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	free_parsestate(qual_pstate);
 	free_parsestate(with_check_pstate);
 	systable_endscan(sscan);
-	relation_close(target_table, NoLock);
+	table_close(target_table, NoLock);
 	table_close(pg_policy_rel, RowExclusiveLock);
 
 	return myself;
@@ -841,7 +840,7 @@ AlterPolicy(AlterPolicyStmt *stmt)
 										RangeVarCallbackForPolicy,
 										stmt);
 
-	target_table = relation_open(table_id, NoLock);
+	target_table = table_open(table_id, NoLock);
 
 	/* Parse the using policy clause */
 	if (stmt->qual)
@@ -1123,7 +1122,7 @@ AlterPolicy(AlterPolicyStmt *stmt)
 
 	/* Clean up. */
 	systable_endscan(sscan);
-	relation_close(target_table, NoLock);
+	table_close(target_table, NoLock);
 	table_close(pg_policy_rel, RowExclusiveLock);
 
 	return myself;
@@ -1151,7 +1150,7 @@ rename_policy(RenameStmt *stmt)
 										RangeVarCallbackForPolicy,
 										stmt);
 
-	target_table = relation_open(table_id, NoLock);
+	target_table = table_open(table_id, NoLock);
 
 	pg_policy_rel = table_open(PolicyRelationId, RowExclusiveLock);
 
@@ -1230,7 +1229,7 @@ rename_policy(RenameStmt *stmt)
 	/* Clean up. */
 	systable_endscan(sscan);
 	table_close(pg_policy_rel, RowExclusiveLock);
-	relation_close(target_table, NoLock);
+	table_close(target_table, NoLock);
 
 	return address;
 }
