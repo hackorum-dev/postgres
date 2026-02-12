@@ -78,6 +78,7 @@
 #include "common/int.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "portability/instr_time.h"
 #include "replication/syncrep.h"
 #include "replication/walsender.h"
 #include "replication/walsender_private.h"
@@ -270,7 +271,8 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 	 */
 	for (;;)
 	{
-		int			rc;
+		int			rc, i;
+		uint32_t	wait_event_arg_pid = 0;
 
 		/* Must reset the latch before testing state. */
 		ResetLatch(MyLatch);
@@ -324,12 +326,58 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 			break;
 		}
 
+
+		/*
+		 * Get pid of slowest walsender based on the LSN
+		 *
+		 * XXX: performance impact of spinlocking here is unknown so far
+		 *      it might translate to O(max_wal_senders) overhead to the critical
+		 *      path of transaction commit.
+		 */
+		for (i = 0; i < max_wal_senders; i++)
+		{
+			WalSnd *walsnd = &WalSndCtl->walsnds[i];
+			XLogRecPtr wallsn;
+			pid_t walpid;
+
+			/* potentially we could NOT take those spinlocks to not loose performance? */
+			SpinLockAcquire(&walsnd->mutex);
+			walpid = walsnd->pid;
+			if (walpid == 0) {
+				SpinLockRelease(&walsnd->mutex);
+				continue;
+			}
+			switch (mode)
+			{
+				case SYNC_REP_WAIT_WRITE:
+					wallsn = walsnd->write;
+					break;
+				case SYNC_REP_WAIT_FLUSH:
+					wallsn = walsnd->flush;
+					break;
+				case SYNC_REP_WAIT_APPLY:
+					wallsn = walsnd->apply;
+					break;
+				default:
+					wallsn = InvalidXLogRecPtr;
+			}
+			SpinLockRelease(&walsnd->mutex);
+
+			/* elog(LOG, "walpid %d analysis, our LSN=%X/%08X walsndLSN=%X/%08X", walpid, LSN_FORMAT_ARGS(lsn), LSN_FORMAT_ARGS(wallsn)); */
+
+			if(wallsn <= lsn) {
+				wait_event_arg_pid = walpid;
+				break;
+			}
+		}
+
 		/*
 		 * Wait on latch.  Any condition that should wake us up will set the
-		 * latch, so no need for timeout.
+		 * latch, so no need for timeout, yet we set it update the wait event with
+		 * the slowest walpid.
 		 */
-		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, -1,
-					   WAIT_EVENT_SYNC_REP);
+		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT, 1000,
+					   WAIT_EVENT_SYNC_REP | wait_event_arg_pid);
 
 		/*
 		 * If the postmaster dies, we'll probably never get an acknowledgment,
