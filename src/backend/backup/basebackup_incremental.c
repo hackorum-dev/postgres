@@ -736,7 +736,7 @@ GetFileBackupMethod(IncrementalBackupInfo *ib, const char *path,
 	 */
 	rlocator.spcOid = spcoid;
 	rlocator.dbOid = dboid;
-	rlocator.relNumber = 0;
+	rlocator.relNumber = InvalidRelFileNumber;
 	if (BlockRefTableGetEntry(ib->brtab, &rlocator, MAIN_FORKNUM,
 							  &limit_block) != NULL)
 	{
