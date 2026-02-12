@@ -454,7 +454,7 @@ pg_visibility_tupdesc(bool include_blkno, bool include_pd)
 {
 	TupleDesc	tupdesc;
 	AttrNumber	maxattr = 2;
-	AttrNumber	a = 0;
+	AttrNumber	a = InvalidAttrNumber;
 
 	if (include_blkno)
 		++maxattr;

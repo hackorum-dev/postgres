@@ -4701,7 +4701,7 @@ estimate_multivariate_ndistinct(PlannerInfo *root, RelOptInfo *rel,
 		if (matched_info->exprs)
 			attnum_offset = (list_length(matched_info->exprs) + 1);
 		else
-			attnum_offset = 0;
+			attnum_offset = InvalidAttrNumber;
 
 		/* see what actually matched */
 		foreach(lc2, *varinfos)

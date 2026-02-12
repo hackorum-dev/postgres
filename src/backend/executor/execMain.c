@@ -1345,7 +1345,7 @@ InitResultRelInfo(ResultRelInfo *resultRelInfo,
 		resultRelInfo->ri_FdwRoutine = NULL;
 
 	/* The following fields are set later if needed */
-	resultRelInfo->ri_RowIdAttNo = 0;
+	resultRelInfo->ri_RowIdAttNo = InvalidAttrNumber;
 	resultRelInfo->ri_extraUpdatedCols = NULL;
 	resultRelInfo->ri_projectNew = NULL;
 	resultRelInfo->ri_newTupleSlot = NULL;

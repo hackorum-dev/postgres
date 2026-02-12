@@ -1135,7 +1135,7 @@ BuildDescFromLists(const List *names, const List *types, const List *typmods, co
 	 */
 	desc = CreateTemplateTupleDesc(natts);
 
-	attnum = 0;
+	attnum = InvalidAttrNumber;
 	forfour(l1, names, l2, types, l3, typmods, l4, collations)
 	{
 		char	   *attname = strVal(lfirst(l1));

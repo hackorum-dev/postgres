@@ -2617,7 +2617,7 @@ AddRelationNewConstraints(Relation rel,
 			cooked->contype = CONSTR_CHECK;
 			cooked->conoid = constrOid;
 			cooked->name = ccname;
-			cooked->attnum = 0;
+			cooked->attnum = InvalidAttrNumber;
 			cooked->expr = expr;
 			cooked->is_enforced = cdef->is_enforced;
 			cooked->skip_validation = cdef->skip_validation;

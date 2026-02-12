@@ -459,7 +459,7 @@ ExecInitFunctionScan(FunctionScan *node, EState *estate, int eflags)
 	}
 	else
 	{
-		AttrNumber	attno = 0;
+		AttrNumber	attno = InvalidAttrNumber;
 
 		if (node->funcordinality)
 			natts++;

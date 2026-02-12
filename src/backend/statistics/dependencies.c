@@ -174,7 +174,7 @@ DependencyGenerator_init(int n, int k)
 	state = palloc0_object(DependencyGeneratorData);
 	state->dependencies = palloc_array(AttrNumber, k);
 
-	state->ndependencies = 0;
+	state->ndependencies = InvalidAttrNumber;
 	state->current = 0;
 	state->k = k;
 	state->n = n;
@@ -1471,7 +1471,7 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 	if (unique_exprs_cnt > 0)
 		attnum_offset = (unique_exprs_cnt + 1);
 	else
-		attnum_offset = 0;
+		attnum_offset = InvalidAttrNumber;
 
 	/*
 	 * Now that we know how many expressions there are, we can offset the

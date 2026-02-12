@@ -2022,7 +2022,7 @@ ComputeIndexAttrs(ParseState *pstate,
 			}
 			else
 			{
-				indexInfo->ii_IndexAttrNumbers[attn] = 0;	/* marks expression */
+				indexInfo->ii_IndexAttrNumbers[attn] = InvalidAttrNumber;	/* marks expression */
 				indexInfo->ii_Expressions = lappend(indexInfo->ii_Expressions,
 													expr);
 

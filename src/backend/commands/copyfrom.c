@@ -1764,7 +1764,7 @@ BeginCopyFrom(ParseState *pstate,
 		cstate->rteperminfos = pstate->p_rteperminfos;
 	}
 
-	num_defaults = 0;
+	num_defaults = InvalidAttrNumber;
 	volatile_defexprs = false;
 
 	/*

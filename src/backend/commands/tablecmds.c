@@ -1041,7 +1041,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 */
 	rawDefaults = NIL;
 	cookedDefaults = NIL;
-	attnum = 0;
+	attnum = InvalidAttrNumber;
 
 	foreach(listptr, stmt->tableElts)
 	{
@@ -1452,7 +1452,7 @@ BuildDescForRelation(const List *columns)
 	natts = list_length(columns);
 	desc = CreateTemplateTupleDesc(natts);
 
-	attnum = 0;
+	attnum = InvalidAttrNumber;
 
 	foreach(l, columns)
 	{
@@ -9265,7 +9265,7 @@ SetIndexStorageProperties(Relation rel, Relation attrelation,
 	{
 		Oid			indexoid = lfirst_oid(lc);
 		Relation	indrel;
-		AttrNumber	indattnum = 0;
+		AttrNumber	indattnum = InvalidAttrNumber;
 		HeapTuple	tuple;
 
 		indrel = index_open(indexoid, lockmode);
@@ -20652,7 +20652,8 @@ ComputePartitionAttrs(ParseState *pstate, Relation rel, List *partParams, AttrNu
 			}
 			else
 			{
-				partattrs[attn] = 0;	/* marks the column as expression */
+				partattrs[attn] = InvalidAttrNumber;	/* marks the column as
+														 * expression */
 				*partexprs = lappend(*partexprs, expr);
 
 				/*
