@@ -1571,7 +1571,7 @@ GinBufferReset(GinBuffer *buffer)
 	 */
 	buffer->key = (Datum) 0;
 
-	buffer->attnum = 0;
+	buffer->attnum = InvalidOffsetNumber;
 	buffer->category = 0;
 	buffer->keylen = 0;
 	buffer->nitems = 0;

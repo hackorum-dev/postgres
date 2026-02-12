@@ -860,7 +860,7 @@ entryGetItem(GinState *ginstate, GinScanEntry entry,
 				 * matchResult is lossy.  So, on next call we will get next
 				 * result from TIDBitmap.
 				 */
-				entry->offset = 0;
+				entry->offset = InvalidOffsetNumber;
 			}
 			if (entry->isFinished)
 				break;

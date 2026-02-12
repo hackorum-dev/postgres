@@ -90,7 +90,7 @@ ItemPointerInc(ItemPointer pointer)
 	{
 		if (blk != InvalidBlockNumber)
 		{
-			off = 0;
+			off = InvalidOffsetNumber;
 			blk++;
 		}
 	}
