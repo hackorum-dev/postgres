@@ -8667,12 +8667,11 @@ buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 		 * Immediately log a message about the invalid page, but only to the
 		 * server log. The reason to do so immediately is that this may be
 		 * executed in a different backend than the one that originated the
-		 * request. The reason to do so immediately is that the originator
-		 * might not process the query result immediately (because it is busy
-		 * doing another part of query processing) or at all (e.g. if it was
-		 * cancelled or errored out due to another IO also failing). The
-		 * definer of the IO will emit an ERROR or WARNING when processing the
-		 * IO's results
+		 * request, and the originator might not process the query result
+		 * immediately (because it is busy doing another part of query
+		 * processing) or at all (e.g. if it was cancelled or errored out due
+		 * to another IO also failing). The definer of the IO will emit an
+		 * ERROR or WARNING when processing the IO's results
 		 *
 		 * To avoid duplicating the code to emit these log messages, we reuse
 		 * buffer_readv_report().
@@ -8840,83 +8839,66 @@ buffer_readv_report(PgAioResult result, const PgAioTargetData *td,
 	uint8		zeroed_or_error_count,
 				checkfail_count,
 				first_off;
-	uint8		affected_count;
-	const char *msg_one,
-			   *msg_mult,
-			   *det_mult,
-			   *hint_mult;
 
 	buffer_readv_decode_error(result, &zeroed_any, &ignored_any,
 							  &zeroed_or_error_count,
 							  &checkfail_count,
 							  &first_off);
 
-	/*
-	 * Treat a read that had both zeroed buffers *and* ignored checksums as a
-	 * special case, it's too irregular to be emitted the same way as the
-	 * other cases.
-	 */
 	if (zeroed_any && ignored_any)
 	{
-		Assert(zeroed_any && ignored_any);
 		Assert(nblocks > 1);	/* same block can't be both zeroed and ignored */
 		Assert(result.status != PGAIO_RS_ERROR);
-		affected_count = zeroed_or_error_count;
 
 		ereport(elevel,
 				errcode(ERRCODE_DATA_CORRUPTED),
 				errmsg("zeroing %u page(s) and ignoring %u checksum failure(s) among blocks %u..%u of relation \"%s\"",
-					   affected_count, checkfail_count, first, last, rpath.str),
-				affected_count > 1 ?
+					   zeroed_or_error_count, checkfail_count, first, last, rpath.str),
+				zeroed_or_error_count > 1 ?
 				errdetail("Block %u held the first zeroed page.",
 						  first + first_off) : 0,
 				errhint_plural("See server log for details about the other %d invalid block.",
 							   "See server log for details about the other %d invalid blocks.",
-							   affected_count + checkfail_count - 1,
-							   affected_count + checkfail_count - 1));
+							   zeroed_or_error_count + checkfail_count - 1,
+							   zeroed_or_error_count + checkfail_count - 1));
 		return;
 	}
 
-	/*
-	 * The other messages are highly repetitive. To avoid duplicating a long
-	 * and complicated ereport(), gather the translated format strings
-	 * separately and then do one common ereport.
-	 */
+#define BUFFER_READV_REPORT_FAILURE(msg_singular, msg_plural, count) \
+	ereport(elevel, \
+			errcode(ERRCODE_DATA_CORRUPTED), \
+			errmsg_plural(msg_singular, msg_plural, \
+						  (count), \
+						  (count), first, last, rpath.str), \
+			(count) > 1 ? \
+			errdetail("Block %u held the first affected page.", \
+					  first + first_off) : 0, \
+			(count) > 1 ? \
+			errhint("See server log for details about the other %u block(s).", \
+					(count) - 1) : 0);
+
 	if (result.status == PGAIO_RS_ERROR)
 	{
 		Assert(!zeroed_any);	/* can't have invalid pages when zeroing them */
-		affected_count = zeroed_or_error_count;
-		msg_one = _("invalid page in block %u of relation \"%s\"");
-		msg_mult = _("%u invalid pages among blocks %u..%u of relation \"%s\"");
-		det_mult = _("Block %u held the first invalid page.");
-		hint_mult = _("See server log for the other %u invalid block(s).");
+		BUFFER_READV_REPORT_FAILURE("%u invalid page in blocks %u..%u of relation \"%s\"",
+									"%u invalid pages in blocks %u..%u of relation \"%s\"",
+									zeroed_or_error_count)
 	}
 	else if (zeroed_any && !ignored_any)
 	{
-		affected_count = zeroed_or_error_count;
-		msg_one = _("invalid page in block %u of relation \"%s\"; zeroing out page");
-		msg_mult = _("zeroing out %u invalid pages among blocks %u..%u of relation \"%s\"");
-		det_mult = _("Block %u held the first zeroed page.");
-		hint_mult = _("See server log for the other %u zeroed block(s).");
+		BUFFER_READV_REPORT_FAILURE("%u zeroed page in blocks %u..%u of relation \"%s\"",
+									"%u zeroed pages in blocks %u..%u of relation \"%s\"",
+									zeroed_or_error_count)
 	}
 	else if (!zeroed_any && ignored_any)
 	{
-		affected_count = checkfail_count;
-		msg_one = _("ignoring checksum failure in block %u of relation \"%s\"");
-		msg_mult = _("ignoring %u checksum failures among blocks %u..%u of relation \"%s\"");
-		det_mult = _("Block %u held the first ignored page.");
-		hint_mult = _("See server log for the other %u ignored block(s).");
+		BUFFER_READV_REPORT_FAILURE("%u ignored checksum failure in blocks %u..%u of relation \"%s\"",
+									"%u ignored checksum failures in blocks %u..%u of relation \"%s\"",
+									checkfail_count)
 	}
 	else
 		pg_unreachable();
-
-	ereport(elevel,
-			errcode(ERRCODE_DATA_CORRUPTED),
-			affected_count == 1 ?
-			errmsg_internal(msg_one, first + first_off, rpath.str) :
-			errmsg_internal(msg_mult, affected_count, first, last, rpath.str),
-			affected_count > 1 ? errdetail_internal(det_mult, first + first_off) : 0,
-			affected_count > 1 ? errhint_internal(hint_mult, affected_count - 1) : 0);
+#undef BUFFER_READV_REPORT_FAILURE
 }
 
 static void
