@@ -1344,6 +1344,9 @@ backtrace_cleanup(int code, Datum arg)
  * We also use this for certain cases where we *must* not try to translate
  * the message because the translation would fail and result in infinite
  * error recursion.
+ *
+ * It may also be used when the message text has already been translated
+ * explicitly (e.g., via _()), to avoid performing translation twice.
  */
 int
 errmsg_internal(const char *fmt, ...)
