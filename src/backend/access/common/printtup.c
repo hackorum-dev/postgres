@@ -224,7 +224,7 @@ SendRowDescriptionMessage(StringInfo buf, TupleDesc typeinfo,
 		{
 			/* No info available, so send zeroes */
 			resorigtbl = 0;
-			resorigcol = 0;
+			resorigcol = InvalidAttrNumber;
 		}
 
 		if (formats)

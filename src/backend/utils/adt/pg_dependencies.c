@@ -235,7 +235,7 @@ dependencies_object_end(void *state)
 	 */
 	list_free(parse->attnum_list);
 	parse->attnum_list = NIL;
-	parse->dependency = 0;
+	parse->dependency = InvalidAttrNumber;
 	parse->degree = 0.0;
 	parse->found_attributes = false;
 	parse->found_dependency = false;
@@ -759,7 +759,7 @@ pg_dependencies_in(PG_FUNCTION_ARGS)
 	parse_state.state = DEPS_EXPECT_START;
 	parse_state.dependency_list = NIL;
 	parse_state.attnum_list = NIL;
-	parse_state.dependency = 0;
+	parse_state.dependency = InvalidAttrNumber;
 	parse_state.degree = 0.0;
 	parse_state.found_attributes = false;
 	parse_state.found_dependency = false;

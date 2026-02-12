@@ -8411,7 +8411,7 @@ make_tuple_from_result_row(PGresult *res,
 	/*
 	 * Set up and install callback to report where conversion error occurs.
 	 */
-	errpos.cur_attno = 0;
+	errpos.cur_attno = InvalidAttrNumber;
 	errpos.rel = rel;
 	errpos.fsstate = fsstate;
 	errcallback.callback = conversion_error_callback;
@@ -8462,7 +8462,7 @@ make_tuple_from_result_row(PGresult *res,
 				ctid = (ItemPointer) DatumGetPointer(datum);
 			}
 		}
-		errpos.cur_attno = 0;
+		errpos.cur_attno = InvalidAttrNumber;
 
 		j++;
 	}
@@ -8539,7 +8539,7 @@ conversion_error_callback(void *arg)
 		/* ForeignScan case */
 		ForeignScan *fsplan = castNode(ForeignScan, fsstate->ss.ps.plan);
 		int			varno = 0;
-		AttrNumber	colno = 0;
+		AttrNumber	colno = InvalidAttrNumber;
 
 		if (fsplan->scan.scanrelid > 0)
 		{

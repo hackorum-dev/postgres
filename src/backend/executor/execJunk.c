@@ -94,7 +94,7 @@ ExecInitJunkFilter(List *targetList, TupleTableSlot *slot)
 		ListCell   *t;
 
 		cleanMap = (AttrNumber *) palloc(cleanLength * sizeof(AttrNumber));
-		cleanResno = 0;
+		cleanResno = InvalidAttrNumber;
 		foreach(t, targetList)
 		{
 			TargetEntry *tle = lfirst(t);

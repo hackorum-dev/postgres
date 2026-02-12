@@ -1615,7 +1615,7 @@ process_owned_by(Relation seqrel, List *owned_by, bool for_identity)
 					 errmsg("invalid OWNED BY option"),
 					 errhint("Specify OWNED BY table.column or OWNED BY NONE.")));
 		tablerel = NULL;
-		attnum = 0;
+		attnum = InvalidAttrNumber;
 	}
 	else
 	{

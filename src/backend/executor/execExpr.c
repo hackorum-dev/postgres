@@ -396,7 +396,7 @@ ExecBuildProjectionInfo(List *targetList,
 	{
 		TargetEntry *tle = lfirst_node(TargetEntry, lc);
 		Var		   *variable = NULL;
-		AttrNumber	attnum = 0;
+		AttrNumber	attnum = InvalidAttrNumber;
 		bool		isSafeVar = false;
 
 		/*
@@ -4141,7 +4141,7 @@ ExecBuildHash32FromAttrs(TupleDesc desc, const TupleTableSlotOps *ops,
 	ExprEvalStep scratch = {0};
 	NullableDatum *iresult = NULL;
 	intptr_t	opcode;
-	AttrNumber	last_attnum = 0;
+	AttrNumber	last_attnum = InvalidAttrNumber;
 
 	Assert(numCols >= 0);
 

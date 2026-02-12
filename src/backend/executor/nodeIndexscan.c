@@ -1056,7 +1056,7 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 			/* See cmp_orderbyvals() comments on NULLS LAST */
 			orderbysort->ssup_nulls_first = false;
 			/* ssup_attno is unused here and elsewhere */
-			orderbysort->ssup_attno = 0;
+			orderbysort->ssup_attno = InvalidAttrNumber;
 			/* No abbreviation */
 			orderbysort->abbreviate = false;
 			PrepareSortSupportFromOrderingOp(orderbyop, orderbysort);

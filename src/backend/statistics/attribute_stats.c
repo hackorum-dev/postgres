@@ -192,7 +192,7 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("must specify either \"%s\" or \"%s\"", "attname", "attnum")));
 		attname = NULL;			/* keep compiler quiet */
-		attnum = 0;
+		attnum = InvalidAttrNumber;
 	}
 
 	if (attnum < 0)

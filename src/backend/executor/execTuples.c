@@ -117,7 +117,7 @@ tts_virtual_clear(TupleTableSlot *slot)
 		slot->tts_flags &= ~TTS_FLAG_SHOULDFREE;
 	}
 
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 	slot->tts_flags |= TTS_FLAG_EMPTY;
 	ItemPointerSetInvalid(&slot->tts_tid);
 }
@@ -335,7 +335,7 @@ tts_heap_clear(TupleTableSlot *slot)
 		slot->tts_flags &= ~TTS_FLAG_SHOULDFREE;
 	}
 
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 	slot->tts_flags |= TTS_FLAG_EMPTY;
 	ItemPointerSetInvalid(&slot->tts_tid);
 	hslot->off = 0;
@@ -413,7 +413,7 @@ tts_heap_materialize(TupleTableSlot *slot)
 	 * Have to deform from scratch, otherwise tts_values[] entries could point
 	 * into the non-materialized tuple (which might be gone when accessed).
 	 */
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 	hslot->off = 0;
 
 	if (!hslot->tuple)
@@ -490,7 +490,7 @@ tts_heap_store_tuple(TupleTableSlot *slot, HeapTuple tuple, bool shouldFree)
 
 	tts_heap_clear(slot);
 
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 	hslot->tuple = tuple;
 	hslot->off = 0;
 	slot->tts_flags &= ~(TTS_FLAG_EMPTY | TTS_FLAG_SHOULDFREE);
@@ -533,7 +533,7 @@ tts_minimal_clear(TupleTableSlot *slot)
 		slot->tts_flags &= ~TTS_FLAG_SHOULDFREE;
 	}
 
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 	slot->tts_flags |= TTS_FLAG_EMPTY;
 	ItemPointerSetInvalid(&slot->tts_tid);
 	mslot->off = 0;
@@ -601,7 +601,7 @@ tts_minimal_materialize(TupleTableSlot *slot)
 	 * Have to deform from scratch, otherwise tts_values[] entries could point
 	 * into the non-materialized tuple (which might be gone when accessed).
 	 */
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 	mslot->off = 0;
 
 	if (!mslot->mintuple)
@@ -689,7 +689,7 @@ tts_minimal_store_tuple(TupleTableSlot *slot, MinimalTuple mtup, bool shouldFree
 	Assert(TTS_EMPTY(slot));
 
 	slot->tts_flags &= ~TTS_FLAG_EMPTY;
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 	mslot->off = 0;
 
 	mslot->mintuple = mtup;
@@ -739,7 +739,7 @@ tts_buffer_heap_clear(TupleTableSlot *slot)
 	if (BufferIsValid(bslot->buffer))
 		ReleaseBuffer(bslot->buffer);
 
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 	slot->tts_flags |= TTS_FLAG_EMPTY;
 	ItemPointerSetInvalid(&slot->tts_tid);
 	bslot->base.tuple = NULL;
@@ -819,7 +819,7 @@ tts_buffer_heap_materialize(TupleTableSlot *slot)
 	 * into the non-materialized tuple (which might be gone when accessed).
 	 */
 	bslot->base.off = 0;
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 
 	if (!bslot->base.tuple)
 	{
@@ -956,7 +956,7 @@ tts_buffer_heap_store_tuple(TupleTableSlot *slot, HeapTuple tuple,
 	}
 
 	slot->tts_flags &= ~TTS_FLAG_EMPTY;
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 	bslot->base.tuple = tuple;
 	bslot->base.off = 0;
 	slot->tts_tid = tuple->t_self;
@@ -1401,7 +1401,7 @@ MakeTupleTableSlot(TupleDesc tupleDesc,
 		slot->tts_flags |= TTS_FLAG_FIXED;
 	slot->tts_tupleDescriptor = tupleDesc;
 	slot->tts_mcxt = CurrentMemoryContext;
-	slot->tts_nvalid = 0;
+	slot->tts_nvalid = InvalidAttrNumber;
 
 	if (tupleDesc != NULL)
 	{
