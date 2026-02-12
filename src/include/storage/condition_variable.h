@@ -53,9 +53,9 @@ extern void ConditionVariableInit(ConditionVariable *cv);
  * be called to ensure that the process is no longer in the wait list for
  * the condition variable.
  */
-extern void ConditionVariableSleep(ConditionVariable *cv, uint32 wait_event_info);
+extern void ConditionVariableSleep(ConditionVariable *cv, uint64 wait_event_info);
 extern bool ConditionVariableTimedSleep(ConditionVariable *cv, long timeout,
-										uint32 wait_event_info);
+										uint64 wait_event_info);
 extern bool ConditionVariableCancelSleep(void);
 
 /*

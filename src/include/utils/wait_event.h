@@ -12,15 +12,17 @@
 
 /* enums for wait events */
 #include "utils/wait_event_types.h"
+#include "port/atomics.h"
 
-extern const char *pgstat_get_wait_event(uint32 wait_event_info);
-extern const char *pgstat_get_wait_event_type(uint32 wait_event_info);
-static inline void pgstat_report_wait_start(uint32 wait_event_info);
+extern const char *pgstat_get_wait_event(uint64 wait_event_info);
+extern const char *pgstat_get_wait_event_type(uint64 wait_event_info);
+extern uint32 pgstat_get_wait_event_arg(uint64 wait_event_info);
+static inline void pgstat_report_wait_start(uint64 wait_event_info);
 static inline void pgstat_report_wait_end(void);
-extern void pgstat_set_wait_event_storage(uint32 *wait_event_info);
+extern void pgstat_set_wait_event_storage(volatile pg_atomic_uint64 *wait_event_info);
 extern void pgstat_reset_wait_event_storage(void);
 
-extern PGDLLIMPORT uint32 *my_wait_event_info;
+extern PGDLLIMPORT volatile pg_atomic_uint64 *my_wait_event_info;
 
 
 /*
@@ -39,23 +41,27 @@ extern PGDLLIMPORT uint32 *my_wait_event_info;
  *
  * The ID retrieved can be used with pgstat_report_wait_start() or equivalent.
  */
-extern uint32 WaitEventExtensionNew(const char *wait_event_name);
-extern uint32 WaitEventInjectionPointNew(const char *wait_event_name);
+extern uint64 WaitEventExtensionNew(const char *wait_event_name);
+extern uint64 WaitEventInjectionPointNew(const char *wait_event_name);
 
 extern void WaitEventCustomShmemInit(void);
 extern Size WaitEventCustomShmemSize(void);
-extern char **GetWaitEventCustomNames(uint32 classId, int *nwaitevents);
+extern char **GetWaitEventCustomNames(uint64 classId, int *nwaitevents);
 
 /* ----------
  * pgstat_report_wait_start() -
  *
  *	Called from places where server process needs to wait.  This is called
  *	to report wait event information.  The wait information is stored
- *	as 4-bytes where first byte represents the wait event class (type of
- *	wait, for different types of wait, refer WaitClass) and the next
- *	3-bytes represent the actual wait event.  Currently 2-bytes are used
- *	for wait event which is sufficient for current usage, 1-byte is
- *	reserved for future usage.
+ *	as 8-bytes where:
+ *	- first byte represents the wait event class (type of wait, for different
+ *	  types of wait, refer WaitClass)
+ *	- the next 3-bytes represent the actual wait event. Out of which:
+ *	-- currently 2-bytes are used for wait event which is sufficient for
+ *	   current usage,
+ *	-- 1-byte is reserved for future usage.
+ *	- the remaining 4-bytes are used to store additional per wait-event
+ *	  details
  *
  *	Historically we used to make this reporting conditional on
  *	pgstat_track_activities, but the check for that seems to add more cost
@@ -66,13 +72,13 @@ extern char **GetWaitEventCustomNames(uint32 classId, int *nwaitevents);
  * ----------
  */
 static inline void
-pgstat_report_wait_start(uint32 wait_event_info)
+pgstat_report_wait_start(uint64 wait_event_info)
 {
 	/*
-	 * Since this is a four-byte field which is always read and written as
-	 * four-bytes, updates are atomic.
+	 * Since this is a eight-byte field which is always read and written as
+	 * eight-bytes, updates should be on most platforms atomic.
 	 */
-	*(volatile uint32 *) my_wait_event_info = wait_event_info;
+	pg_atomic_write_u64(my_wait_event_info, wait_event_info);
 }
 
 /* ----------
@@ -85,7 +91,7 @@ static inline void
 pgstat_report_wait_end(void)
 {
 	/* see pgstat_report_wait_start() */
-	*(volatile uint32 *) my_wait_event_info = 0;
+	pg_atomic_write_u64(my_wait_event_info, 0);
 }
 
 

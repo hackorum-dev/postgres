@@ -86,7 +86,7 @@ extern void ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events,
 							struct Latch *latch);
 extern int	WaitEventSetWait(WaitEventSet *set, long timeout,
 							 WaitEvent *occurred_events, int nevents,
-							 uint32 wait_event_info);
+							 uint64 wait_event_info);
 extern int	GetNumRegisteredWaitEvents(WaitEventSet *set);
 extern bool WaitEventSetCanReportClosed(void);
 

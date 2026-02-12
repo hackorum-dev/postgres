@@ -2063,7 +2063,7 @@ FileClose(File file)
  * this.
  */
 int
-FilePrefetch(File file, pgoff_t offset, pgoff_t amount, uint32 wait_event_info)
+FilePrefetch(File file, pgoff_t offset, pgoff_t amount, uint64 wait_event_info)
 {
 	Assert(FileIsValid(file));
 
@@ -2119,7 +2119,7 @@ retry:
 }
 
 void
-FileWriteback(File file, pgoff_t offset, pgoff_t nbytes, uint32 wait_event_info)
+FileWriteback(File file, pgoff_t offset, pgoff_t nbytes, uint64 wait_event_info)
 {
 	int			returnCode;
 
@@ -2146,7 +2146,7 @@ FileWriteback(File file, pgoff_t offset, pgoff_t nbytes, uint32 wait_event_info)
 
 ssize_t
 FileReadV(File file, const struct iovec *iov, int iovcnt, pgoff_t offset,
-		  uint32 wait_event_info)
+		  uint64 wait_event_info)
 {
 	ssize_t		returnCode;
 	Vfd		   *vfdP;
@@ -2203,7 +2203,7 @@ retry:
 int
 FileStartReadV(PgAioHandle *ioh, File file,
 			   int iovcnt, pgoff_t offset,
-			   uint32 wait_event_info)
+			   uint64 wait_event_info)
 {
 	int			returnCode;
 	Vfd		   *vfdP;
@@ -2228,7 +2228,7 @@ FileStartReadV(PgAioHandle *ioh, File file,
 
 ssize_t
 FileWriteV(File file, const struct iovec *iov, int iovcnt, pgoff_t offset,
-		   uint32 wait_event_info)
+		   uint64 wait_event_info)
 {
 	ssize_t		returnCode;
 	Vfd		   *vfdP;
@@ -2332,7 +2332,7 @@ retry:
 }
 
 int
-FileSync(File file, uint32 wait_event_info)
+FileSync(File file, uint64 wait_event_info)
 {
 	int			returnCode;
 
@@ -2359,7 +2359,7 @@ FileSync(File file, uint32 wait_event_info)
  * appropriate error.
  */
 int
-FileZero(File file, pgoff_t offset, pgoff_t amount, uint32 wait_event_info)
+FileZero(File file, pgoff_t offset, pgoff_t amount, uint64 wait_event_info)
 {
 	int			returnCode;
 	ssize_t		written;
@@ -2404,7 +2404,7 @@ FileZero(File file, pgoff_t offset, pgoff_t amount, uint32 wait_event_info)
  * appropriate error.
  */
 int
-FileFallocate(File file, pgoff_t offset, pgoff_t amount, uint32 wait_event_info)
+FileFallocate(File file, pgoff_t offset, pgoff_t amount, uint64 wait_event_info)
 {
 #ifdef HAVE_POSIX_FALLOCATE
 	int			returnCode;
@@ -2461,7 +2461,7 @@ FileSize(File file)
 }
 
 int
-FileTruncate(File file, pgoff_t offset, uint32 wait_event_info)
+FileTruncate(File file, pgoff_t offset, uint64 wait_event_info)
 {
 	int			returnCode;
 

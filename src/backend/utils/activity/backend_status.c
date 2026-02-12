@@ -20,6 +20,7 @@
 #include "storage/proc.h"		/* for MyProc */
 #include "storage/procarray.h"
 #include "utils/ascii.h"
+#include "utils/dsa.h"
 #include "utils/guc.h"			/* for application_name */
 #include "utils/memutils.h"
 
@@ -601,7 +602,7 @@ pgstat_report_activity(BackendState state, const char *cmd_str)
 			beentry->st_xact_start_timestamp = 0;
 			beentry->st_query_id = INT64CONST(0);
 			beentry->st_plan_id = INT64CONST(0);
-			proc->wait_event_info = 0;
+			pg_atomic_write_u64(&proc->wait_event_info, 0);
 			PGSTAT_END_WRITE_ACTIVITY(beentry);
 		}
 		return;

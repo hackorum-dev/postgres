@@ -39,9 +39,9 @@
 
 
 static inline void libpqsrv_connect_prepare(void);
-static inline void libpqsrv_connect_internal(PGconn *conn, uint32 wait_event_info);
-static inline PGresult *libpqsrv_get_result_last(PGconn *conn, uint32 wait_event_info);
-static inline PGresult *libpqsrv_get_result(PGconn *conn, uint32 wait_event_info);
+static inline void libpqsrv_connect_internal(PGconn *conn, uint64 wait_event_info);
+static inline PGresult *libpqsrv_get_result_last(PGconn *conn, uint64 wait_event_info);
+static inline PGresult *libpqsrv_get_result(PGconn *conn, uint64 wait_event_info);
 
 
 /*
@@ -53,7 +53,7 @@ static inline PGresult *libpqsrv_get_result(PGconn *conn, uint32 wait_event_info
  * check if connection establishment succeeded.
  */
 static inline PGconn *
-libpqsrv_connect(const char *conninfo, uint32 wait_event_info)
+libpqsrv_connect(const char *conninfo, uint64 wait_event_info)
 {
 	PGconn	   *conn = NULL;
 
@@ -74,7 +74,7 @@ static inline PGconn *
 libpqsrv_connect_params(const char *const *keywords,
 						const char *const *values,
 						int expand_dbname,
-						uint32 wait_event_info)
+						uint64 wait_event_info)
 {
 	PGconn	   *conn = NULL;
 
@@ -147,7 +147,7 @@ libpqsrv_connect_prepare(void)
  * Helper function for all connection establishment functions.
  */
 static inline void
-libpqsrv_connect_internal(PGconn *conn, uint32 wait_event_info)
+libpqsrv_connect_internal(PGconn *conn, uint64 wait_event_info)
 {
 	/*
 	 * With conn == NULL libpqsrv_disconnect() wouldn't release the FD. So do
@@ -243,7 +243,7 @@ libpqsrv_connect_internal(PGconn *conn, uint32 wait_event_info)
  * notably, PQexec() would silently discard any prior query results.
  */
 static inline PGresult *
-libpqsrv_exec(PGconn *conn, const char *query, uint32 wait_event_info)
+libpqsrv_exec(PGconn *conn, const char *query, uint64 wait_event_info)
 {
 	if (!PQsendQuery(conn, query))
 		return NULL;
@@ -264,7 +264,7 @@ libpqsrv_exec_params(PGconn *conn,
 					 const int *paramLengths,
 					 const int *paramFormats,
 					 int resultFormat,
-					 uint32 wait_event_info)
+					 uint64 wait_event_info)
 {
 	if (!PQsendQueryParams(conn, command, nParams, paramTypes, paramValues,
 						   paramLengths, paramFormats, resultFormat))
@@ -277,7 +277,7 @@ libpqsrv_exec_params(PGconn *conn,
  * terminal state.  Return the last non-NULL result or the terminal state.
  */
 static inline PGresult *
-libpqsrv_get_result_last(PGconn *conn, uint32 wait_event_info)
+libpqsrv_get_result_last(PGconn *conn, uint64 wait_event_info)
 {
 	PGresult   *lastResult = NULL;
 
@@ -310,7 +310,7 @@ libpqsrv_get_result_last(PGconn *conn, uint32 wait_event_info)
  * Perform the equivalent of PQgetResult(), but watch for interrupts.
  */
 static inline PGresult *
-libpqsrv_get_result(PGconn *conn, uint32 wait_event_info)
+libpqsrv_get_result(PGconn *conn, uint64 wait_event_info)
 {
 	/*
 	 * Collect data until PQgetResult is ready to get the result without

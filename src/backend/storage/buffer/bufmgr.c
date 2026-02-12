@@ -5778,7 +5778,7 @@ BufferLockAcquire(Buffer buffer, BufferDesc *buf_hdr, BufferLockMode mode)
 
 	for (;;)
 	{
-		uint32		wait_event = 0; /* initialized to avoid compiler warning */
+		uint64		wait_event = 0; /* initialized to avoid compiler warning */
 		bool		mustwait;
 
 		/*

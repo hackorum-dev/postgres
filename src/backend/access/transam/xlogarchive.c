@@ -293,7 +293,7 @@ not_available:
  */
 void
 ExecuteRecoveryCommand(const char *command, const char *commandName,
-					   bool failOnSignal, uint32 wait_event_info)
+					   bool failOnSignal, uint64 wait_event_info)
 {
 	char	   *xlogRecoveryCmd;
 	char		lastRestartPointFname[MAXPGPATH];

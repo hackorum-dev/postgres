@@ -71,7 +71,7 @@ struct WaitLSNState *waitLSNState = NULL;
  * Wait event for each WaitLSNType, used with WaitLatch() to report
  * the wait in pg_stat_activity.
  */
-static const uint32 WaitLSNWaitEvents[] = {
+static const uint64 WaitLSNWaitEvents[] = {
 	[WAIT_LSN_TYPE_STANDBY_REPLAY] = WAIT_EVENT_WAIT_FOR_WAL_REPLAY,
 	[WAIT_LSN_TYPE_STANDBY_WRITE] = WAIT_EVENT_WAIT_FOR_WAL_WRITE,
 	[WAIT_LSN_TYPE_STANDBY_FLUSH] = WAIT_EVENT_WAIT_FOR_WAL_FLUSH,

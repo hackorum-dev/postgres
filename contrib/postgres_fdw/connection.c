@@ -86,9 +86,9 @@ static unsigned int prep_stmt_number = 0;
 static bool xact_got_connection = false;
 
 /* custom wait event values, retrieved from shared memory */
-static uint32 pgfdw_we_cleanup_result = 0;
-static uint32 pgfdw_we_connect = 0;
-static uint32 pgfdw_we_get_result = 0;
+static uint64 pgfdw_we_cleanup_result = 0;
+static uint64 pgfdw_we_connect = 0;
+static uint64 pgfdw_we_get_result = 0;
 
 /*
  * Milliseconds to wait to cancel an in-progress query or execute a cleanup

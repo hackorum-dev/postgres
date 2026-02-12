@@ -170,7 +170,7 @@ DisownLatch(Latch *latch)
  */
 int
 WaitLatch(Latch *latch, int wakeEvents, long timeout,
-		  uint32 wait_event_info)
+		  uint64 wait_event_info)
 {
 	WaitEvent	event;
 
@@ -221,7 +221,7 @@ WaitLatch(Latch *latch, int wakeEvents, long timeout,
  */
 int
 WaitLatchOrSocket(Latch *latch, int wakeEvents, pgsocket sock,
-				  long timeout, uint32 wait_event_info)
+				  long timeout, uint64 wait_event_info)
 {
 	int			ret = 0;
 	int			rc;

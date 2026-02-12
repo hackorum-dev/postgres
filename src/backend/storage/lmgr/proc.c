@@ -508,7 +508,7 @@ InitProcess(void)
 	Assert(dlist_is_empty(&MyProc->lockGroupMembers));
 
 	/* Initialize wait event information. */
-	MyProc->wait_event_info = 0;
+	pg_atomic_init_u64(&MyProc->wait_event_info, 0);
 
 	/* Initialize fields for group transaction status update. */
 	MyProc->clogGroupMember = false;
@@ -1444,7 +1444,7 @@ ProcSleep(LOCALLOCK *locallock)
 		else
 		{
 			(void) WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH, 0,
-							 PG_WAIT_LOCK | locallock->tag.lock.locktag_type);
+							 PG_WAIT_LOCK | ((uint64_t) locallock->tag.lock.locktag_type << 32));
 			ResetLatch(MyLatch);
 			/* check for deadlocks first, as that's probably log-worthy */
 			if (got_deadlock_timeout)
@@ -1968,7 +1968,7 @@ GetLockHoldersAndWaiters(LOCALLOCK *locallock, StringInfo lock_holders_sbuf,
  * wait again if not.
  */
 void
-ProcWaitForSignal(uint32 wait_event_info)
+ProcWaitForSignal(uint64 wait_event_info)
 {
 	(void) WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH, 0,
 					 wait_event_info);

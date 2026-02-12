@@ -20,8 +20,6 @@
 #include "utils/fmgrprotos.h"
 #include "utils/wait_event.h"
 
-#define UINT32_ACCESS_ONCE(var)		 ((uint32)(*((volatile uint32 *)&(var))))
-
 
 /*
  * pg_isolation_test_session_is_blocked - support function for isolationtester
@@ -56,7 +54,7 @@ pg_isolation_test_session_is_blocked(PG_FUNCTION_ARGS)
 	if (proc == NULL)
 		PG_RETURN_BOOL(false);	/* session gone: definitely unblocked */
 	wait_event_type =
-		pgstat_get_wait_event_type(UINT32_ACCESS_ONCE(proc->wait_event_info));
+		pgstat_get_wait_event_type(pg_atomic_read_u64(&proc->wait_event_info));
 	if (wait_event_type && strcmp("InjectionPoint", wait_event_type) == 0)
 		PG_RETURN_BOOL(true);
 

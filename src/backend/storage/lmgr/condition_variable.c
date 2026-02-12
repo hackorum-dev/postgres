@@ -95,7 +95,7 @@ ConditionVariablePrepareToSleep(ConditionVariable *cv)
  * wait_event_type and wait_event columns while waiting.
  */
 void
-ConditionVariableSleep(ConditionVariable *cv, uint32 wait_event_info)
+ConditionVariableSleep(ConditionVariable *cv, uint64 wait_event_info)
 {
 	(void) ConditionVariableTimedSleep(cv, -1 /* no timeout */ ,
 									   wait_event_info);
@@ -112,7 +112,7 @@ ConditionVariableSleep(ConditionVariable *cv, uint32 wait_event_info)
  */
 bool
 ConditionVariableTimedSleep(ConditionVariable *cv, long timeout,
-							uint32 wait_event_info)
+							uint64 wait_event_info)
 {
 	long		cur_timeout = -1;
 	instr_time	start_time;

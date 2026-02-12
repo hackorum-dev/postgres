@@ -282,7 +282,7 @@ static void WalSndKeepalive(bool requestReply, XLogRecPtr writePtr);
 static void WalSndKeepaliveIfNecessary(void);
 static void WalSndCheckTimeOut(void);
 static long WalSndComputeSleeptime(TimestampTz now);
-static void WalSndWait(uint32 socket_events, long timeout, uint32 wait_event);
+static void WalSndWait(uint32 socket_events, long timeout, uint64 wait_event);
 static void WalSndPrepareWrite(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid, bool last_write);
 static void WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid, bool last_write);
 static void WalSndUpdateProgress(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
@@ -1781,7 +1781,7 @@ PhysicalWakeupLogicalWalSnd(void)
  * wait_event; otherwise, wait_event is set to 0.
  */
 static bool
-NeedToWaitForStandbys(XLogRecPtr flushed_lsn, uint32 *wait_event)
+NeedToWaitForStandbys(XLogRecPtr flushed_lsn, uint64 *wait_event)
 {
 	int			elevel = got_STOPPING ? ERROR : WARNING;
 	bool		failover_slot;
@@ -1814,7 +1814,7 @@ NeedToWaitForStandbys(XLogRecPtr flushed_lsn, uint32 *wait_event)
  */
 static bool
 NeedToWaitForWal(XLogRecPtr target_lsn, XLogRecPtr flushed_lsn,
-				 uint32 *wait_event)
+				 uint64 *wait_event)
 {
 	/* Check if we need to wait for WALs to be flushed to disk */
 	if (target_lsn > flushed_lsn)
@@ -1844,7 +1844,7 @@ static XLogRecPtr
 WalSndWaitForWal(XLogRecPtr loc)
 {
 	int			wakeEvents;
-	uint32		wait_event = 0;
+	uint64		wait_event = 0;
 	static XLogRecPtr RecentFlushPtr = InvalidXLogRecPtr;
 	TimestampTz last_flush = 0;
 
@@ -3828,7 +3828,7 @@ WalSndWakeup(bool physical, bool logical)
  * on postmaster death.
  */
 static void
-WalSndWait(uint32 socket_events, long timeout, uint32 wait_event)
+WalSndWait(uint32 socket_events, long timeout, uint64 wait_event)
 {
 	WaitEvent	event;
 

@@ -132,9 +132,9 @@ extern void SetLatch(Latch *latch);
 extern void ResetLatch(Latch *latch);
 
 extern int	WaitLatch(Latch *latch, int wakeEvents, long timeout,
-					  uint32 wait_event_info);
+					  uint64 wait_event_info);
 extern int	WaitLatchOrSocket(Latch *latch, int wakeEvents,
-							  pgsocket sock, long timeout, uint32 wait_event_info);
+							  pgsocket sock, long timeout, uint64 wait_event_info);
 extern void InitializeLatchWaitSet(void);
 
 #endif							/* LATCH_H */

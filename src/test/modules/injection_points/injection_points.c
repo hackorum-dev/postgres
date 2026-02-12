@@ -267,7 +267,7 @@ injection_wait(const char *name, const void *private_data, void *arg)
 {
 	uint32		old_wait_counts = 0;
 	int			index = -1;
-	uint32		injection_wait_event = 0;
+	uint64		injection_wait_event = 0;
 	const InjectionPointCondition *condition = private_data;
 
 	if (inj_state == NULL)

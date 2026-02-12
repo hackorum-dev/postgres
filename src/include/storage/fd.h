@@ -134,17 +134,17 @@ extern File PathNameOpenFile(const char *fileName, int fileFlags);
 extern File PathNameOpenFilePerm(const char *fileName, int fileFlags, mode_t fileMode);
 extern File OpenTemporaryFile(bool interXact);
 extern void FileClose(File file);
-extern int	FilePrefetch(File file, pgoff_t offset, pgoff_t amount, uint32 wait_event_info);
-extern ssize_t FileReadV(File file, const struct iovec *iov, int iovcnt, pgoff_t offset, uint32 wait_event_info);
-extern ssize_t FileWriteV(File file, const struct iovec *iov, int iovcnt, pgoff_t offset, uint32 wait_event_info);
-extern int	FileStartReadV(struct PgAioHandle *ioh, File file, int iovcnt, pgoff_t offset, uint32 wait_event_info);
-extern int	FileSync(File file, uint32 wait_event_info);
-extern int	FileZero(File file, pgoff_t offset, pgoff_t amount, uint32 wait_event_info);
-extern int	FileFallocate(File file, pgoff_t offset, pgoff_t amount, uint32 wait_event_info);
+extern int	FilePrefetch(File file, pgoff_t offset, pgoff_t amount, uint64 wait_event_info);
+extern ssize_t FileReadV(File file, const struct iovec *iov, int iovcnt, pgoff_t offset, uint64 wait_event_info);
+extern ssize_t FileWriteV(File file, const struct iovec *iov, int iovcnt, pgoff_t offset, uint64 wait_event_info);
+extern int	FileStartReadV(struct PgAioHandle *ioh, File file, int iovcnt, pgoff_t offset, uint64 wait_event_info);
+extern int	FileSync(File file, uint64 wait_event_info);
+extern int	FileZero(File file, pgoff_t offset, pgoff_t amount, uint64 wait_event_info);
+extern int	FileFallocate(File file, pgoff_t offset, pgoff_t amount, uint64 wait_event_info);
 
 extern pgoff_t FileSize(File file);
-extern int	FileTruncate(File file, pgoff_t offset, uint32 wait_event_info);
-extern void FileWriteback(File file, pgoff_t offset, pgoff_t nbytes, uint32 wait_event_info);
+extern int	FileTruncate(File file, pgoff_t offset, uint64 wait_event_info);
+extern void FileWriteback(File file, pgoff_t offset, pgoff_t nbytes, uint64 wait_event_info);
 extern char *FilePathName(File file);
 extern int	FileGetRawDesc(File file);
 extern int	FileGetRawFlags(File file);
@@ -223,7 +223,7 @@ extern int	data_sync_elevel(int elevel);
 
 static inline ssize_t
 FileRead(File file, void *buffer, size_t amount, pgoff_t offset,
-		 uint32 wait_event_info)
+		 uint64 wait_event_info)
 {
 	struct iovec iov = {
 		.iov_base = buffer,
@@ -235,7 +235,7 @@ FileRead(File file, void *buffer, size_t amount, pgoff_t offset,
 
 static inline ssize_t
 FileWrite(File file, const void *buffer, size_t amount, pgoff_t offset,
-		  uint32 wait_event_info)
+		  uint64 wait_event_info)
 {
 	struct iovec iov = {
 		.iov_base = unconstify(void *, buffer),

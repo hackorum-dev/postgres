@@ -718,7 +718,7 @@ LWLockInitialize(LWLock *lock, int tranche_id)
 static inline void
 LWLockReportWaitStart(LWLock *lock)
 {
-	pgstat_report_wait_start(PG_WAIT_LWLOCK | lock->tranche);
+	pgstat_report_wait_start(PG_WAIT_LWLOCK | ((uint64_t) lock->tranche << 32));
 }
 
 /*
@@ -770,7 +770,7 @@ GetLWTrancheName(uint16 trancheId)
  * Return an identifier for an LWLock based on the wait class and event.
  */
 const char *
-GetLWLockIdentifier(uint32 classId, uint16 eventId)
+GetLWLockIdentifier(uint64 classId, uint16 eventId)
 {
 	Assert(classId == PG_WAIT_LWLOCK);
 	/* The event IDs are just tranche numbers. */

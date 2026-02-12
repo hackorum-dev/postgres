@@ -30,7 +30,7 @@ static void verify_message(Size origlen, char *origdata, Size newlen,
 						   char *newdata);
 
 /* value cached, fetched from shared memory */
-static uint32 we_message_queue = 0;
+static uint64 we_message_queue = 0;
 
 /*
  * Simple test of the shared memory message queue infrastructure.

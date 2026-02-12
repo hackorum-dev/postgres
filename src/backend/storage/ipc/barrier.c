@@ -122,7 +122,7 @@ BarrierInit(Barrier *barrier, int participants)
  * phase of work that must be done serially while other participants wait.
  */
 bool
-BarrierArriveAndWait(Barrier *barrier, uint32 wait_event_info)
+BarrierArriveAndWait(Barrier *barrier, uint64 wait_event_info)
 {
 	bool		release = false;
 	bool		elected;

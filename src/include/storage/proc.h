@@ -373,7 +373,7 @@ typedef struct PGPROC
 	 * Status reporting
 	 ************************************************************************/
 
-	uint32		wait_event_info;	/* proc's wait information */
+	volatile pg_atomic_uint64 wait_event_info;	/* proc's wait information */
 }
 
 /*
@@ -575,7 +575,7 @@ extern void GetLockHoldersAndWaiters(LOCALLOCK *locallock,
 									 StringInfo lock_waiters_sbuf,
 									 int *lockHoldersNum);
 
-extern void ProcWaitForSignal(uint32 wait_event_info);
+extern void ProcWaitForSignal(uint64 wait_event_info);
 extern void ProcSendSignal(ProcNumber procNumber);
 
 extern PGPROC *AuxiliaryPidGetProc(int pid);

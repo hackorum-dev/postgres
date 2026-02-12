@@ -41,7 +41,7 @@ static void wait_for_workers_to_become_ready(worker_state *wstate,
 static bool check_worker_status(worker_state *wstate);
 
 /* value cached, fetched from shared memory */
-static uint32 we_bgworker_startup = 0;
+static uint64 we_bgworker_startup = 0;
 
 /*
  * Set up a dynamic shared memory segment and zero or more background workers

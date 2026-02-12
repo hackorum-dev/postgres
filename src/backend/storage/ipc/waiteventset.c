@@ -1038,7 +1038,7 @@ WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event)
 int
 WaitEventSetWait(WaitEventSet *set, long timeout,
 				 WaitEvent *occurred_events, int nevents,
-				 uint32 wait_event_info)
+				 uint64 wait_event_info)
 {
 	int			returned_events = 0;
 	instr_time	start_time;

@@ -53,7 +53,7 @@ static char *worker_spi_database = NULL;
 static char *worker_spi_role = NULL;
 
 /* value cached, fetched from shared memory */
-static uint32 worker_spi_wait_event_main = 0;
+static uint64 worker_spi_wait_event_main = 0;
 
 typedef struct worktable
 {

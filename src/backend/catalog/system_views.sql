@@ -936,6 +936,7 @@ CREATE VIEW pg_stat_activity AS
             S.state_change,
             S.wait_event_type,
             S.wait_event,
+            S.wait_event_arg,
             S.state,
             S.backend_xid,
             S.backend_xmin,

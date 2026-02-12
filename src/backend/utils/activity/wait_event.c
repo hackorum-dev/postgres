@@ -22,6 +22,7 @@
  */
 #include "postgres.h"
 
+#include "port/atomics.h"
 #include "storage/lmgr.h"		/* for GetLockNameFromTagType */
 #include "storage/lwlock.h"		/* for GetLWLockIdentifier */
 #include "storage/spin.h"
@@ -36,11 +37,14 @@ static const char *pgstat_get_wait_timeout(WaitEventTimeout w);
 static const char *pgstat_get_wait_io(WaitEventIO w);
 
 
-static uint32 local_my_wait_event_info;
-uint32	   *my_wait_event_info = &local_my_wait_event_info;
+static volatile pg_atomic_uint64 local_my_wait_event_info;
+volatile pg_atomic_uint64 *my_wait_event_info = &local_my_wait_event_info;
 
-#define WAIT_EVENT_CLASS_MASK	0xFF000000
-#define WAIT_EVENT_ID_MASK		0x0000FFFF
+#define WAIT_EVENT_CLASS_MASK	0xFF00000000000000
+#define WAIT_EVENT_ID_MASK		0x0000FFFF00000000
+#define WAIT_EVENT_ARG_MASK		0x00000000FFFFFFFF
+/* just upper 24bits for decoding wait_event into name */
+#define WAIT_EVENT_CLASSID_MASK (WAIT_EVENT_CLASS_MASK | WAIT_EVENT_ID_MASK)
 
 /*
  * Hash tables for storing custom wait event ids and their names in
@@ -69,21 +73,21 @@ static HTAB *WaitEventCustomHashByName; /* find infos from names */
 /* hash table entries */
 typedef struct WaitEventCustomEntryByInfo
 {
-	uint32		wait_event_info;	/* hash key */
+	uint64		wait_event_info;	/* hash key */
 	char		wait_event_name[NAMEDATALEN];	/* custom wait event name */
 } WaitEventCustomEntryByInfo;
 
 typedef struct WaitEventCustomEntryByName
 {
 	char		wait_event_name[NAMEDATALEN];	/* hash key */
-	uint32		wait_event_info;
+	uint64		wait_event_info;
 } WaitEventCustomEntryByName;
 
 
 /* dynamic allocation counter for custom wait events */
 typedef struct WaitEventCustomCounterData
 {
-	int			nextId;			/* next ID to assign */
+	int		nextId;			/* next ID to assign */
 	slock_t		mutex;			/* protects the counter */
 } WaitEventCustomCounterData;
 
@@ -93,8 +97,8 @@ static WaitEventCustomCounterData *WaitEventCustomCounter;
 /* first event ID of custom wait events */
 #define WAIT_EVENT_CUSTOM_INITIAL_ID	1
 
-static uint32 WaitEventCustomNew(uint32 classId, const char *wait_event_name);
-static const char *GetWaitEventCustomIdentifier(uint32 wait_event_info);
+static uint64 WaitEventCustomNew(uint64 classId, const char *wait_event_name);
+static const char *GetWaitEventCustomIdentifier(uint64 wait_event_info);
 
 /*
  *  Return the space for dynamic shared hash tables and dynamic allocation counter.
@@ -133,7 +137,7 @@ WaitEventCustomShmemInit(void)
 	}
 
 	/* initialize or attach the hash tables to store custom wait events */
-	info.keysize = sizeof(uint32);
+	info.keysize = sizeof(uint64);
 	info.entrysize = sizeof(WaitEventCustomEntryByInfo);
 	WaitEventCustomHashByInfo =
 		ShmemInitHash("WaitEventCustom hash by wait event information",
@@ -158,27 +162,31 @@ WaitEventCustomShmemInit(void)
  *
  * If the wait event name is already defined, this does not allocate a new
  * entry; it returns the wait event information associated to the name.
+ *
+ * XXX: maybe we should return safe u64 struct here so that extension
+ * writers will get clear error message about need to change the type
  */
-uint32
+uint64
 WaitEventExtensionNew(const char *wait_event_name)
 {
 	return WaitEventCustomNew(PG_WAIT_EXTENSION, wait_event_name);
 }
 
-uint32
+uint64
 WaitEventInjectionPointNew(const char *wait_event_name)
 {
 	return WaitEventCustomNew(PG_WAIT_INJECTIONPOINT, wait_event_name);
+
 }
 
-static uint32
-WaitEventCustomNew(uint32 classId, const char *wait_event_name)
+static uint64
+WaitEventCustomNew(uint64 classId, const char *wait_event_name)
 {
-	uint16		eventId;
+	uint64		eventId;
 	bool		found;
 	WaitEventCustomEntryByName *entry_by_name;
 	WaitEventCustomEntryByInfo *entry_by_info;
-	uint32		wait_event_info;
+	uint64		wait_event_info;
 
 	/* Check the limit of the length of the event name */
 	if (strlen(wait_event_name) >= NAMEDATALEN)
@@ -197,7 +205,7 @@ WaitEventCustomNew(uint32 classId, const char *wait_event_name)
 	LWLockRelease(WaitEventCustomLock);
 	if (found)
 	{
-		uint32		oldClassId;
+		uint64		oldClassId;
 
 		oldClassId = entry_by_name->wait_event_info & WAIT_EVENT_CLASS_MASK;
 		if (oldClassId != classId)
@@ -206,7 +214,7 @@ WaitEventCustomNew(uint32 classId, const char *wait_event_name)
 					 errmsg("wait event \"%s\" already exists in type \"%s\"",
 							wait_event_name,
 							pgstat_get_wait_event_type(entry_by_name->wait_event_info))));
-		return entry_by_name->wait_event_info;
+		return entry_by_name->wait_event_info | classId;
 	}
 
 	/*
@@ -221,7 +229,7 @@ WaitEventCustomNew(uint32 classId, const char *wait_event_name)
 					HASH_FIND, &found);
 	if (found)
 	{
-		uint32		oldClassId;
+		uint64		oldClassId;
 
 		LWLockRelease(WaitEventCustomLock);
 		oldClassId = entry_by_name->wait_event_info & WAIT_EVENT_CLASS_MASK;
@@ -231,7 +239,7 @@ WaitEventCustomNew(uint32 classId, const char *wait_event_name)
 					 errmsg("wait event \"%s\" already exists in type \"%s\"",
 							wait_event_name,
 							pgstat_get_wait_event_type(entry_by_name->wait_event_info))));
-		return entry_by_name->wait_event_info;
+		return entry_by_name->wait_event_info | classId;
 	}
 
 	/* Allocate a new event Id */
@@ -245,12 +253,16 @@ WaitEventCustomNew(uint32 classId, const char *wait_event_name)
 				errmsg("too many custom wait events"));
 	}
 
-	eventId = WaitEventCustomCounter->nextId++;
+	/*
+	 * We shift the resulting nextId it as it needs to land in higher 32-bits
+	 * part of the 64-bit word (see WAIT_EVENT_ID_MASK).
+	 */
+	eventId = (uint64) (WaitEventCustomCounter->nextId++) << 32;
 
 	SpinLockRelease(&WaitEventCustomCounter->mutex);
 
 	/* Register the new wait event */
-	wait_event_info = classId | eventId;
+	wait_event_info = classId | (uint64) eventId;
 	entry_by_info = (WaitEventCustomEntryByInfo *)
 		hash_search(WaitEventCustomHashByInfo, &wait_event_info,
 					HASH_ENTER, &found);
@@ -273,7 +285,7 @@ WaitEventCustomNew(uint32 classId, const char *wait_event_name)
  * Return the name of a custom wait event information.
  */
 static const char *
-GetWaitEventCustomIdentifier(uint32 wait_event_info)
+GetWaitEventCustomIdentifier(uint64 wait_event_info)
 {
 	bool		found;
 	WaitEventCustomEntryByInfo *entry;
@@ -291,7 +303,7 @@ GetWaitEventCustomIdentifier(uint32 wait_event_info)
 
 	if (!entry)
 		elog(ERROR,
-			 "could not find custom name for wait event information %u",
+			 "could not find custom name for wait event information %" PRIu64,
 			 wait_event_info);
 
 	return entry->wait_event_name;
@@ -303,7 +315,7 @@ GetWaitEventCustomIdentifier(uint32 wait_event_info)
  * a palloc'd array, with the number of elements saved in *nwaitevents.
  */
 char	  **
-GetWaitEventCustomNames(uint32 classId, int *nwaitevents)
+GetWaitEventCustomNames(uint64 classId, int *nwaitevents)
 {
 	char	  **waiteventnames;
 	WaitEventCustomEntryByName *hentry;
@@ -346,7 +358,7 @@ GetWaitEventCustomNames(uint32 classId, int *nwaitevents)
  * into shared memory.
  */
 void
-pgstat_set_wait_event_storage(uint32 *wait_event_info)
+pgstat_set_wait_event_storage(volatile pg_atomic_uint64 *wait_event_info)
 {
 	my_wait_event_info = wait_event_info;
 }
@@ -370,9 +382,9 @@ pgstat_reset_wait_event_storage(void)
  *	waiting on.
  */
 const char *
-pgstat_get_wait_event_type(uint32 wait_event_info)
+pgstat_get_wait_event_type(uint64 wait_event_info)
 {
-	uint32		classId;
+	uint64		classId;
 	const char *event_type;
 
 	/* report process as not waiting. */
@@ -428,9 +440,9 @@ pgstat_get_wait_event_type(uint32 wait_event_info)
  *	waiting on.
  */
 const char *
-pgstat_get_wait_event(uint32 wait_event_info)
+pgstat_get_wait_event(uint64 wait_event_info)
 {
-	uint32		classId;
+	uint64		classId;
 	uint16		eventId;
 	const char *event_name;
 
@@ -439,7 +451,7 @@ pgstat_get_wait_event(uint32 wait_event_info)
 		return NULL;
 
 	classId = wait_event_info & WAIT_EVENT_CLASS_MASK;
-	eventId = wait_event_info & WAIT_EVENT_ID_MASK;
+	eventId = (uint16) ((wait_event_info & WAIT_EVENT_ID_MASK) >> 32);
 
 	switch (classId)
 	{
@@ -453,44 +465,48 @@ pgstat_get_wait_event(uint32 wait_event_info)
 		case PG_WAIT_INJECTIONPOINT:
 			event_name = GetWaitEventCustomIdentifier(wait_event_info);
 			break;
+		/* for the below ones we need to mask lower 32-bits */
 		case PG_WAIT_BUFFER:
 			{
-				WaitEventBuffer w = (WaitEventBuffer) wait_event_info;
+				WaitEventBuffer w = (WaitEventBuffer) wait_event_info & WAIT_EVENT_CLASSID_MASK;
 
 				event_name = pgstat_get_wait_buffer(w);
 				break;
 			}
 		case PG_WAIT_ACTIVITY:
 			{
-				WaitEventActivity w = (WaitEventActivity) wait_event_info;
+				WaitEventActivity w = (WaitEventActivity) wait_event_info & WAIT_EVENT_CLASSID_MASK;
+
 
 				event_name = pgstat_get_wait_activity(w);
 				break;
 			}
 		case PG_WAIT_CLIENT:
 			{
-				WaitEventClient w = (WaitEventClient) wait_event_info;
+				WaitEventClient w = (WaitEventClient) wait_event_info & WAIT_EVENT_CLASSID_MASK;
+
 
 				event_name = pgstat_get_wait_client(w);
 				break;
 			}
 		case PG_WAIT_IPC:
 			{
-				WaitEventIPC w = (WaitEventIPC) wait_event_info;
+				WaitEventIPC w = (WaitEventIPC) wait_event_info & WAIT_EVENT_CLASSID_MASK;
+
 
 				event_name = pgstat_get_wait_ipc(w);
 				break;
 			}
 		case PG_WAIT_TIMEOUT:
 			{
-				WaitEventTimeout w = (WaitEventTimeout) wait_event_info;
+				WaitEventTimeout w = (WaitEventTimeout) wait_event_info & WAIT_EVENT_CLASSID_MASK;
 
 				event_name = pgstat_get_wait_timeout(w);
 				break;
 			}
 		case PG_WAIT_IO:
 			{
-				WaitEventIO w = (WaitEventIO) wait_event_info;
+				WaitEventIO w = (WaitEventIO) wait_event_info & WAIT_EVENT_CLASSID_MASK;
 
 				event_name = pgstat_get_wait_io(w);
 				break;
@@ -501,6 +517,13 @@ pgstat_get_wait_event(uint32 wait_event_info)
 	}
 
 	return event_name;
+}
+
+uint32
+pgstat_get_wait_event_arg(uint64 wait_event_info)
+{
+	uint32		arg = wait_event_info & WAIT_EVENT_ARG_MASK;
+	return arg;
 }
 
 #include "utils/pgstat_wait_event.c"

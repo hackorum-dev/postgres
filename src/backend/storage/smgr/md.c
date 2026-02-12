@@ -748,7 +748,6 @@ mdprefetch(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 		   int nblocks)
 {
 #ifdef USE_PREFETCH
-
 	Assert((io_direct_flags & IO_DIRECT_DATA) == 0);
 
 	if ((uint64) blocknum + nblocks > (uint64) MaxBlockNumber + 1)
