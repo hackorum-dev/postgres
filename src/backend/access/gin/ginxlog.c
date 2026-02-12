@@ -643,7 +643,7 @@ ginRedoInsertListPage(XLogReaderState *record)
 	}
 	else
 	{
-		GinPageGetOpaque(page)->maxoff = 0;
+		GinPageGetOpaque(page)->maxoff = InvalidOffsetNumber;
 	}
 
 	payload = XLogRecGetBlockData(record, 0, &totaltupsize);

@@ -108,7 +108,7 @@ writeListPage(Relation index, Buffer buffer,
 	}
 	else
 	{
-		GinPageGetOpaque(page)->maxoff = 0;
+		GinPageGetOpaque(page)->maxoff = InvalidOffsetNumber;
 	}
 
 	MarkBufferDirty(buffer);
@@ -720,7 +720,7 @@ processPendingPage(BuildAccumulator *accum, KeyArray *ka,
 	maxoff = PageGetMaxOffsetNumber(page);
 	Assert(maxoff >= FirstOffsetNumber);
 	ItemPointerSetInvalid(&heapptr);
-	attrnum = 0;
+	attrnum = InvalidOffsetNumber;
 
 	for (i = startoff; i <= maxoff; i = OffsetNumberNext(i))
 	{

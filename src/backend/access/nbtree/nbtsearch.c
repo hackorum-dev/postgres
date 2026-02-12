@@ -2265,7 +2265,7 @@ _bt_endpoint(IndexScanDesc scan, ScanDirection dir)
 	else
 	{
 		elog(ERROR, "invalid scan direction: %d", (int) dir);
-		start = 0;				/* keep compiler quiet */
+		start = InvalidOffsetNumber;	/* keep compiler quiet */
 	}
 
 	/*
