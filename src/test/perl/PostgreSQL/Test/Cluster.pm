@@ -379,9 +379,10 @@ sub raw_connect_works
 	{
 		eval {
 			my $sock = $self->raw_connect();
+			$sock->send('foo');
 			$sock->close();
 		};
-		if ($@ =~ /not implemented/)
+		if ($@ =~ /not implemented/ or $@ =~ /Cannot determine peer address/)
 		{
 			diag "IO::Socket::UNIX does not work: $@";
 			return 0;
