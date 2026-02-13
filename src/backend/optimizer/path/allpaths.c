@@ -1958,6 +1958,7 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 			Path	   *cheapest_startup,
 					   *cheapest_total,
 					   *cheapest_fractional = NULL;
+			Path		sorted_cheapest = {0};
 
 			/* Locate the right paths, if they are available. */
 			cheapest_startup =
@@ -1984,6 +1985,35 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 				/* Assert we do have an unparameterized path for this child */
 				Assert(cheapest_total->param_info == NULL);
 			}
+
+			/*
+			 * Even if we found suitable ordered paths, they might be more
+			 * expensive than sorting the cheapest-total path. ( We don't
+			 * build a full representation of that sorted path here, just make
+			 * sorted_cheapest valid enough to perform cost comparisons.)
+			 *
+			 * Break ties in favor of sorting the cheapest-total path, because
+			 * that's probably a less risky solution than relying on an
+			 * ordered path.
+			 *
+			 * XXX is it worth considering incremental sort here?  It seems in
+			 * most cases that would not move the needle, so for now don't add
+			 * the complexity.
+			 */
+			cost_sort(&sorted_cheapest, root, NIL,
+					  childrel->cheapest_total_path->disabled_nodes,
+					  childrel->cheapest_total_path->total_cost,
+					  childrel->cheapest_total_path->rows,
+					  childrel->cheapest_total_path->pathtarget->width,
+					  0.0, work_mem, -1.0);
+
+			if (compare_path_costs(&sorted_cheapest, cheapest_startup,
+								   STARTUP_COST) <= 0)
+				cheapest_startup = childrel->cheapest_total_path;
+
+			if (compare_path_costs(&sorted_cheapest, cheapest_total,
+								   TOTAL_COST) <= 0)
+				cheapest_total = childrel->cheapest_total_path;
 
 			/*
 			 * When building a fractional path, determine a cheapest
@@ -2026,14 +2056,22 @@ generate_orderedappend_paths(PlannerInfo *root, RelOptInfo *rel,
 				 * XXX We might consider partially sorted paths too (with an
 				 * incremental sort on top). But we'd have to build all the
 				 * incremental paths, do the costing etc.
-				 *
-				 * Also, notice whether we actually have different paths for
-				 * the "fractional" and "total" cases.  This helps avoid
-				 * generating two identical ordered append paths.
 				 */
 				if (cheapest_fractional == NULL)
 					cheapest_fractional = cheapest_total;
-				else if (cheapest_fractional != cheapest_total)
+
+				/* Again, sorting the cheapest-total path could beat this */
+				if (compare_fractional_path_costs(&sorted_cheapest,
+												  cheapest_fractional,
+												  path_fraction) <= 0)
+					cheapest_fractional = childrel->cheapest_total_path;
+
+				/*
+				 * Notice whether we actually have different paths for the
+				 * "fractional" and "total" cases.  This helps avoid
+				 * generating two identical ordered append paths.
+				 */
+				if (cheapest_fractional != cheapest_total)
 					fraction_neq_total = true;
 			}
 
