@@ -90,6 +90,13 @@ SELECT length(with_nul) FROM regress_encoding;
       4
 (1 row)
 
+SELECT regexp_replace(with_nul, '^caf(.)$', '\1') FROM regress_encoding;
+ regexp_replace 
+----------------
+ é
+(1 row)
+
+-- NUL = character
 SELECT substring(with_nul, 3, 1) FROM regress_encoding;
  substring 
 -----------
@@ -102,25 +109,12 @@ SELECT substring(with_nul, 4, 1) FROM regress_encoding;
  é
 (1 row)
 
-SELECT substring(with_nul, 5, 1) FROM regress_encoding;
- substring 
------------
- 
+SELECT substring(with_nul, 5, 1) = test_bytea_to_text('\x00') FROM regress_encoding;
+ ?column? 
+----------
+ t
 (1 row)
 
-SELECT convert_to(substring(with_nul, 5, 1), 'UTF8') FROM regress_encoding;
- convert_to 
-------------
- \x
-(1 row)
-
-SELECT regexp_replace(with_nul, '^caf(.)$', '\1') FROM regress_encoding;
- regexp_replace 
-----------------
- é
-(1 row)
-
--- NUL = character
 SELECT with_nul, reverse(with_nul), reverse(reverse(with_nul)) FROM regress_encoding;
  with_nul | reverse | reverse 
 ----------+---------+---------

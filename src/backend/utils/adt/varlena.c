@@ -133,7 +133,6 @@ static text *text_substring(Datum str,
 							int32 start,
 							int32 length,
 							bool length_not_specified);
-static int	pg_mbcharcliplen_chars(const char *mbstr, int len, int limit);
 static text *text_overlay(text *t1, text *t2, int sp, int sl);
 static int	text_position(text *t1, text *t2, Oid collid);
 static void text_position_setup(text *t1, text *t2, Oid collid, TextPositionState *state);
@@ -645,34 +644,27 @@ text_substring(Datum str, int32 start, int32 length, bool length_not_specified)
 		 * detoasting, so we'll grab a conservatively large slice now and go
 		 * back later to do the right thing
 		 */
-		int32		slice_start;
 		int32		slice_size;
-		int32		slice_strlen;
-		int32		slice_len;
+		const char *slice_end;
 		text	   *slice;
-		int32		E1;
 		int32		i;
 		char	   *p;
 		char	   *s;
 		text	   *ret;
 
-		/*
-		 * We need to start at position zero because there is no way to know
-		 * in advance which byte offset corresponds to the supplied start
-		 * position.
-		 */
-		slice_start = 0;
-
-		if (length_not_specified)	/* special case - get length to end of
-									 * string */
-			slice_size = L1 = -1;
+		if (length_not_specified)	/* special case - get whole string */
+		{
+			slice_size = -1;
+			E = INT32_MAX;
+		}
 		else if (length < 0)
 		{
 			/* SQL99 says to throw an error for E < S, i.e., negative length */
 			ereport(ERROR,
 					(errcode(ERRCODE_SUBSTRING_ERROR),
 					 errmsg("negative substring length not allowed")));
-			slice_size = L1 = -1;	/* silence stupider compilers */
+			slice_size = -1;	/* silence stupider compilers */
+			E = INT32_MAX;
 		}
 		else if (pg_add_s32_overflow(S, length, &E))
 		{
@@ -680,24 +672,11 @@ text_substring(Datum str, int32 start, int32 length, bool length_not_specified)
 			 * L could be large enough for S + L to overflow, in which case
 			 * the substring must run to end of string.
 			 */
-			slice_size = L1 = -1;
+			slice_size = -1;
+			E = INT32_MAX;
 		}
 		else
 		{
-			/*
-			 * Ending at position 1, exclusive, obviously yields an empty
-			 * string.  A zero or negative value can happen if the start was
-			 * negative or one. SQL99 says to return a zero-length string.
-			 */
-			if (E <= 1)
-				return cstring_to_text("");
-
-			/*
-			 * if E is past the end of the string, the tuple toaster will
-			 * truncate the length for us
-			 */
-			L1 = E - S1;
-
 			/*
 			 * Total slice size in bytes can't be any longer than the
 			 * inclusive end position times the encoding max length.  If that
@@ -713,71 +692,39 @@ text_substring(Datum str, int32 start, int32 length, bool length_not_specified)
 		 */
 		if (VARATT_IS_COMPRESSED(DatumGetPointer(str)) ||
 			VARATT_IS_EXTERNAL(DatumGetPointer(str)))
-			slice = DatumGetTextPSlice(str, slice_start, slice_size);
+			slice = DatumGetTextPSlice(str, 0, slice_size);
 		else
 			slice = (text *) DatumGetPointer(str);
 
-		/* see if we got back an empty string */
-		slice_len = VARSIZE_ANY_EXHDR(slice);
-		if (slice_len == 0)
-		{
-			if (slice != (text *) DatumGetPointer(str))
-				pfree(slice);
-			return cstring_to_text("");
-		}
-
 		/*
-		 * Now we can get the actual length of the slice in MB characters,
-		 * stopping at the end of the substring.  Continuing beyond the
-		 * substring end could find an incomplete character attributable
-		 * solely to DatumGetTextPSlice() chopping in the middle of a
-		 * character, and it would be superfluous work at best.
-		 */
-		slice_strlen =
-			(slice_size == -1 ?
-			 pg_mbstrlen_with_len(VARDATA_ANY(slice), slice_len) :
-			 pg_mbcharcliplen_chars(VARDATA_ANY(slice), slice_len, E - 1));
-
-		/*
-		 * Check that the start position wasn't > slice_strlen. If so, SQL99
-		 * says to return a zero-length string.
-		 */
-		if (S1 > slice_strlen)
-		{
-			if (slice != (text *) DatumGetPointer(str))
-				pfree(slice);
-			return cstring_to_text("");
-		}
-
-		/*
-		 * Adjust L1 and E1 now that we know the slice string length. Again
-		 * remember that S1 is one based, and slice_start is zero based.
-		 */
-		if (L1 > -1)
-			E1 = Min(S1 + L1, slice_start + 1 + slice_strlen);
-		else
-			E1 = slice_start + 1 + slice_strlen;
-
-		/*
-		 * Find the start position in the slice; remember S1 is not zero based
+		 * pg_mblen_range() validates lengths and raises an encoding error if
+		 * we make it all the way to slice_end and find a partial (corrupted)
+		 * sequence there.
 		 */
 		p = VARDATA_ANY(slice);
-		for (i = 0; i < S1 - 1; i++)
-			p += pg_mblen_unbounded(p);
+		slice_end = p + VARSIZE_ANY_EXHDR(slice);
+
+		/*
+		 * Find the start position in the slice; remember S1 is not zero
+		 * based. If we run out of input first, we'll return an empty string.
+		 */
+		for (i = 1; i < S1 && p < slice_end; i++)
+			p += pg_mblen_range(p, slice_end);
 
 		/* hang onto a pointer to our start position */
 		s = p;
 
 		/*
 		 * Count the actual bytes used by the substring of the requested
-		 * length.
+		 * length, again giving up if we run out of input.
 		 */
-		for (i = S1; i < E1; i++)
-			p += pg_mblen_unbounded(p);
+		for (i = S1; i < E && p < slice_end; i++)
+			p += pg_mblen_range(p, slice_end);
 
 		ret = (text *) palloc(VARHDRSZ + (p - s));
 		SET_VARSIZE(ret, VARHDRSZ + (p - s));
-		memcpy(VARDATA(ret), s, (p - s));
+		if (s < p)
+			memcpy(VARDATA(ret), s, (p - s));
 
 		if (slice != (text *) DatumGetPointer(str))
 			pfree(slice);
@@ -789,35 +736,6 @@ text_substring(Datum str, int32 start, int32 length, bool length_not_specified)
 
 	/* not reached: suppress compiler warning */
 	return NULL;
-}
-
-/*
- * pg_mbcharcliplen_chars -
- *	Mirror pg_mbcharcliplen(), except return value unit is chars, not bytes.
- *
- *	This mirrors all the dubious historical behavior, so it's static to
- *	discourage proliferation.  The assertions are specific to the one caller.
- */
-static int
-pg_mbcharcliplen_chars(const char *mbstr, int len, int limit)
-{
-	int			nch = 0;
-	int			l;
-
-	Assert(len > 0);
-	Assert(limit > 0);
-	Assert(pg_database_encoding_max_length() > 1);
-
-	while (len > 0 && *mbstr)
-	{
-		l = pg_mblen_with_len(mbstr, len);
-		nch++;
-		if (nch == limit)
-			break;
-		len -= l;
-		mbstr += l;
-	}
-	return nch;
 }
 
 /*
