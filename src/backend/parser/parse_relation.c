@@ -3283,10 +3283,14 @@ expandNSItemVars(ParseState *pstate, ParseNamespaceItem *nsitem,
  * pstate->p_next_resno determines the resnos assigned to the TLEs.
  * The referenced columns are marked as requiring SELECT access, if
  * caller requests that.
+ *
+ * If an EXCLUDE list is provided, columns listed there are not
+ * included in the output TargetEntry list.
  */
 List *
 expandNSItemAttrs(ParseState *pstate, ParseNamespaceItem *nsitem,
-				  int sublevels_up, bool require_col_privs, int location)
+				  int sublevels_up, bool require_col_privs, int location,
+				  List *exclude_list)
 {
 	RangeTblEntry *rte = nsitem->p_rte;
 	RTEPermissionInfo *perminfo = nsitem->p_perminfo;
@@ -3295,6 +3299,71 @@ expandNSItemAttrs(ParseState *pstate, ParseNamespaceItem *nsitem,
 	ListCell   *name,
 			   *var;
 	List	   *te_list = NIL;
+
+	/*
+	 * With an EXCLUDE list, mark columns that should not be expanded.
+	 *
+	 * For qualified column names, only columns belonging to the specified
+	 * relation are excluded. We determine this by comparing the qualifier
+	 * against the RTE's alias. This ensures that multiple qualified "*"
+	 * expansions work correctly when there are several tables with different
+	 * names in the FROM list. The nsitem->p_rte would not be sufficient here,
+	 * as it may represent a join of several relations with all columns merged
+	 * and alias set to some arbitrary name (e.g. "unnamed_join"). So we check
+	 * each column's actual RTE's alias against the column qualifier.
+	 *
+	 * For unqualified column names in the EXCLUDE list, all columns with the
+	 * matching name are excluded, regardless of which relation they come
+	 * from.
+	 */
+	if (exclude_list)
+	{
+		int			colindex = 0;
+
+		foreach(name, nsitem->p_names->colnames)
+		{
+			ParseNamespaceColumn *nscol = nsitem->p_nscolumns + colindex;
+			RangeTblEntry *c_rte = rt_fetch(nscol->p_varno, pstate->p_rtable);
+			char	   *colname = strVal(lfirst(name));
+			ListCell   *elc;
+			bool		exclude_col_seen = false;
+
+			foreach(elc, exclude_list)
+			{
+				RangeVar   *rv = (RangeVar *) lfirst(elc);
+				char	   *excl_col = rv->relname;
+				char	   *schema = rv->schemaname;
+
+				/*
+				 * Skip columns whose RTE alias doesn't match the exclude
+				 * relation/schema qualifier, if any.
+				 */
+				if (schema && strcmp(schema, c_rte->eref->aliasname) != 0)
+					continue;	/* not for this RTE */
+
+				/*
+				 * Matching columns are marked with p_dontexpand so they are
+				 * skipped during expandNSItemVars, and we record whether each
+				 * EXCLUDE entry matched at least one column so unmatched
+				 * exclusions can be reported as errors later.
+				 */
+				if (strcmp(colname, excl_col) == 0)
+				{
+					/* This column was already seen in the EXCLUDE list */
+					if (exclude_col_seen)
+						ereport(ERROR,
+								(errcode(ERRCODE_DUPLICATE_COLUMN),
+								 errmsg("duplicate column \"%s\" in EXCLUDE list",
+										excl_col)));
+
+					nscol->p_dontexpand = true;
+					rv->exclude_exist = true;
+					exclude_col_seen = true;
+				}
+			}
+			colindex++;
+		}
+	}
 
 	vars = expandNSItemVars(pstate, nsitem, sublevels_up, location, &names);
 

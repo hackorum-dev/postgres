@@ -455,6 +455,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				TriggerTransitions TriggerReferencing
 				vacuum_relation_list opt_vacuum_relation_list
 				drop_option_list pub_obj_list pub_all_obj_type_list
+				opt_exclude
 
 %type <retclause> returning_clause
 %type <node>	returning_option
@@ -17492,15 +17493,28 @@ target_el:	a_expr AS ColLabel
 					$$->val = (Node *) $1;
 					$$->location = @1;
 				}
-			| a_expr
+			| a_expr opt_exclude
 				{
 					$$ = makeNode(ResTarget);
 					$$->name = NULL;
 					$$->indirection = NIL;
 					$$->val = (Node *) $1;
 					$$->location = @1;
+
+					if ($2 != NIL && IsA($1, ColumnRef))
+					{
+						ColumnRef  *n = (ColumnRef *) $1;
+
+						if (!IsA(llast(n->fields), A_Star))
+							ereport(ERROR,
+									(errcode(ERRCODE_SYNTAX_ERROR),
+									 errmsg("EXCLUDE clause can only be used with \"*\""),
+									 parser_errposition(@2)));
+
+						n->exclude_list = $2;
+					}
 				}
-			| '*'
+			| '*' opt_exclude
 				{
 					ColumnRef  *n = makeNode(ColumnRef);
 
@@ -17512,7 +17526,14 @@ target_el:	a_expr AS ColLabel
 					$$->indirection = NIL;
 					$$->val = (Node *) n;
 					$$->location = @1;
+
+					n->exclude_list = $2;
 				}
+		;
+
+opt_exclude:
+			EXCLUDE '(' qualified_name_list ')'		{ $$ = $3; }
+			| /* EMPTY */							{ $$ = NIL; }
 		;
 
 

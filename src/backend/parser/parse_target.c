@@ -46,12 +46,12 @@ static Node *transformAssignmentSubscripts(ParseState *pstate,
 										   int location);
 static List *ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 								 bool make_target_entry);
-static List *ExpandAllTables(ParseState *pstate, int location);
+static List *ExpandAllTables(ParseState *pstate, int location, List *exclude_list);
 static List *ExpandIndirectionStar(ParseState *pstate, A_Indirection *ind,
 								   bool make_target_entry, ParseExprKind exprKind);
 static List *ExpandSingleTable(ParseState *pstate, ParseNamespaceItem *nsitem,
 							   int sublevels_up, int location,
-							   bool make_target_entry);
+							   bool make_target_entry, List *exclude_list);
 static List *ExpandRowReference(ParseState *pstate, Node *expr,
 								bool make_target_entry);
 static int	FigureColnameInternal(Node *node, char **name);
@@ -152,6 +152,23 @@ transformTargetList(ParseState *pstate, List *targetlist,
 										   ExpandColumnRefStar(pstate,
 															   cref,
 															   true));
+					if (cref->exclude_list)
+					{
+						ListCell   *elc;
+
+						/* Check that excluded columns actually exist */
+						foreach(elc, cref->exclude_list)
+						{
+							RangeVar   *rv = (RangeVar *) lfirst(elc);
+
+							if (!rv->exclude_exist)
+								ereport(ERROR,
+										(errcode(ERRCODE_UNDEFINED_COLUMN),
+										 errmsg("column \"%s\" does not exist",
+												rv->relname),
+										 parser_errposition(pstate, rv->location)));
+						}
+					}
 					continue;
 				}
 			}
@@ -1125,6 +1142,7 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 					bool make_target_entry)
 {
 	List	   *fields = cref->fields;
+	List	   *exclude_list = cref->exclude_list;
 	int			numnames = list_length(fields);
 
 	if (numnames == 1)
@@ -1138,7 +1156,7 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 		 * need not handle the make_target_entry==false case here.
 		 */
 		Assert(make_target_entry);
-		return ExpandAllTables(pstate, cref->location);
+		return ExpandAllTables(pstate, cref->location, exclude_list);
 	}
 	else
 	{
@@ -1278,7 +1296,7 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 		 * OK, expand the nsitem into fields.
 		 */
 		return ExpandSingleTable(pstate, nsitem, levels_up, cref->location,
-								 make_target_entry);
+								 make_target_entry, exclude_list);
 	}
 }
 
@@ -1294,7 +1312,7 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
  * The referenced relations/columns are marked as requiring SELECT access.
  */
 static List *
-ExpandAllTables(ParseState *pstate, int location)
+ExpandAllTables(ParseState *pstate, int location, List *exclude_list)
 {
 	List	   *target = NIL;
 	bool		found_table = false;
@@ -1317,7 +1335,8 @@ ExpandAllTables(ParseState *pstate, int location)
 											   nsitem,
 											   0,
 											   true,
-											   location));
+											   location,
+											   exclude_list));
 	}
 
 	/*
@@ -1374,12 +1393,12 @@ ExpandIndirectionStar(ParseState *pstate, A_Indirection *ind,
  */
 static List *
 ExpandSingleTable(ParseState *pstate, ParseNamespaceItem *nsitem,
-				  int sublevels_up, int location, bool make_target_entry)
+				  int sublevels_up, int location, bool make_target_entry, List *exclude_list)
 {
 	if (make_target_entry)
 	{
 		/* expandNSItemAttrs handles permissions marking */
-		return expandNSItemAttrs(pstate, nsitem, sublevels_up, true, location);
+		return expandNSItemAttrs(pstate, nsitem, sublevels_up, true, location, exclude_list);
 	}
 	else
 	{
@@ -1448,7 +1467,7 @@ ExpandRowReference(ParseState *pstate, Node *expr,
 		ParseNamespaceItem *nsitem;
 
 		nsitem = GetNSItemByRangeTablePosn(pstate, var->varno, var->varlevelsup);
-		return ExpandSingleTable(pstate, nsitem, var->varlevelsup, var->location, make_target_entry);
+		return ExpandSingleTable(pstate, nsitem, var->varlevelsup, var->location, make_target_entry, NULL);
 	}
 
 	/*

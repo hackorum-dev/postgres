@@ -122,7 +122,7 @@ extern List *expandNSItemVars(ParseState *pstate, ParseNamespaceItem *nsitem,
 							  List **colnames);
 extern List *expandNSItemAttrs(ParseState *pstate, ParseNamespaceItem *nsitem,
 							   int sublevels_up, bool require_col_privs,
-							   int location);
+							   int location, List *exclude_list);
 extern int	attnameAttNum(Relation rd, const char *attname, bool sysColOK);
 extern const NameData *attnumAttName(Relation rd, int attid);
 extern Oid	attnumTypeId(Relation rd, int attid);

@@ -94,6 +94,9 @@ typedef struct RangeVar
 
 	/* token location, or -1 if unknown */
 	ParseLoc	location;
+
+	/* column existence flag for SELECT * EXCLUDE(...) */
+	bool		exclude_exist;
 } RangeVar;
 
 typedef enum TableFuncType
