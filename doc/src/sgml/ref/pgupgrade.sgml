@@ -22,6 +22,7 @@ PostgreSQL documentation
  <refsynopsisdiv>
   <cmdsynopsis>
    <command>pg_upgrade</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
    <arg choice="plain"><option>-b</option></arg>
    <arg choice="plain"><replaceable>oldbindir</replaceable></arg>
    <arg choice="opt"><option>-B</option> <replaceable>newbindir</replaceable></arg>
@@ -29,7 +30,6 @@ PostgreSQL documentation
    <arg choice="plain"><replaceable>oldconfigdir</replaceable></arg>
    <arg choice="plain"><option>-D</option></arg>
    <arg choice="plain"><replaceable>newconfigdir</replaceable></arg>
-   <arg rep="repeat"><replaceable>option</replaceable></arg>
   </cmdsynopsis>
  </refsynopsisdiv>
 
