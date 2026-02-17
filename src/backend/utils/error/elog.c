@@ -193,6 +193,7 @@ static pg_noinline void set_backtrace(ErrorData *edata, int num_skip);
 static void backtrace_cleanup(int code, Datum arg);
 static void set_errdata_field(MemoryContextData *cxt, char **ptr, const char *str);
 static void FreeErrorDataContents(ErrorData *edata);
+static int	parse_message_level(const char *level);
 static int	log_min_messages_cmp(const ListCell *a, const ListCell *b);
 static void write_console(const char *line, int len);
 static const char *process_log_prefix_padding(const char *p, int *ppadding);
@@ -2403,9 +2404,6 @@ check_log_min_messages(char **newval, void **extra, GucSource source)
 		 */
 		if (sep == NULL)
 		{
-			const struct config_enum_entry *entry;
-			bool		found;
-
 			/* Reject duplicates for default log level. */
 			if (defaultlevel != -1)
 			{
@@ -2414,18 +2412,7 @@ check_log_min_messages(char **newval, void **extra, GucSource source)
 			}
 
 			/* Validate the log level */
-			found = false;
-			for (entry = server_message_level_options; entry && entry->name; entry++)
-			{
-				if (pg_strcasecmp(entry->name, elem) == 0)
-				{
-					defaultlevel = entry->val;
-					found = true;
-					break;
-				}
-			}
-
-			if (!found)
+			if ((defaultlevel = parse_message_level(elem)) == 0)
 			{
 				GUC_check_errdetail("Unrecognized log level: \"%s\".", elem);
 				goto lmm_fail;
@@ -2437,7 +2424,6 @@ check_log_min_messages(char **newval, void **extra, GucSource source)
 			char	   *ptype = elem;
 			bool		found;
 			int			level;
-			const struct config_enum_entry *entry;
 
 			/*
 			 * Temporarily clobber the ':' with a string terminator, so that
@@ -2446,18 +2432,7 @@ check_log_min_messages(char **newval, void **extra, GucSource source)
 			*sep = '\0';
 
 			/* Validate the log level */
-			found = false;
-			for (entry = server_message_level_options; entry && entry->name; entry++)
-			{
-				if (pg_strcasecmp(entry->name, loglevel) == 0)
-				{
-					level = entry->val;
-					found = true;
-					break;
-				}
-			}
-
-			if (!found)
+			if ((level = parse_message_level(loglevel)) == 0)
 			{
 				GUC_check_errdetail("Unrecognized log level for process type \"%s\": \"%s\".",
 									ptype, loglevel);
@@ -2564,6 +2539,22 @@ lmm_fail:
 	memcpy(*extra, newlevel, BACKEND_NUM_TYPES * sizeof(int));
 
 	return true;
+}
+
+/*
+ * Recognize the given string as a message level (for log_min_messages), and
+ * return its value if successful.  Otherwise, return 0.
+ */
+static int
+parse_message_level(const char *level)
+{
+	const struct config_enum_entry *entry;
+
+	for (entry = server_message_level_options; entry && entry->name; entry++)
+		if (pg_strcasecmp(entry->name, level) == 0)
+			return entry->val;
+
+	return 0;
 }
 
 /*
