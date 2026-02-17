@@ -98,6 +98,26 @@ xmllint = xmltools_wrapper + [
   '--tool', xmllint_bin, '--',
 ]
 
+sgml_syntax_check = files(
+  'sgml_syntax_check.pl'
+)
+
+# Create a stamp file for sgml syntax check and make postgres_full_xml
+# depend on it.  So, this check will run before the generation of
+# postgres_full_xml.
+sgml_check_stamp = custom_target('sgml-check-stamp',
+  output: 'sgml-check-stamp',
+  depfile: 'sgml-check-stamp.d',
+  command: [
+    perl, sgml_syntax_check,
+    '--srcdir', meson.current_source_dir(),
+    '--builddir', meson.current_build_dir(),
+    '--dep_file', '@DEPFILE@',
+    '--stamp_file', '@OUTPUT@',
+  ],
+  build_by_default: false,
+)
+
 # Run validation only once, common to all subsequent targets.  While
 # we're at it, also resolve all entities (that is, copy all included
 # files into one big file).  This helps tools that don't understand
@@ -108,12 +128,11 @@ postgres_full_xml = custom_target('postgres-full.xml',
   depfile: 'postgres-full.xml.d',
   command: [xmllint, '--nonet', '--noent', '--valid',
             '--path', '@OUTDIR@', '-o', '@OUTPUT@', '@INPUT@'],
-  depends: doc_generated,
+  depends: [doc_generated, sgml_check_stamp],
   build_by_default: false,
 )
 docs += postgres_full_xml
 alldocs += postgres_full_xml
-
 
 if xsltproc_bin.found()
   xsltproc_flags = [
@@ -308,3 +327,16 @@ endif
 if alldocs.length() != 0
   alias_target('alldocs', alldocs)
 endif
+
+# The actual test is whether postgres_full_xml can be built, as it has a
+# xmllint check and also depends on sgml_check_stamp which performs the syntax
+# check.
+test(
+  'doc' / 'sgml_syntax_check',
+  python,
+  args: ['-c', ''],
+  depends: [postgres_full_xml],
+  suite: 'doc',
+)
+
+testprep_targets += doc_generated

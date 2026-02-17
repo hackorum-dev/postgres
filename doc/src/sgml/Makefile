@@ -69,6 +69,7 @@ ALL_IMAGES := $(wildcard $(srcdir)/images/*.svg)
 # files into one big file).  This helps tools that don't understand
 # vpath builds (such as dbtoepub).
 postgres-full.xml: postgres.sgml $(ALL_SGML)
+	$(PERL) $(srcdir)/sgml_syntax_check.pl --srcdir $(srcdir)
 	$(XMLLINT) $(XMLINCLUDE) --output $@ --noent --valid $<
 
 
@@ -200,8 +201,7 @@ MAKEINFO = makeinfo
 ##
 
 # Quick syntax check without style processing
-check: postgres.sgml $(ALL_SGML) check-tabs check-nbsp
-	$(XMLLINT) $(XMLINCLUDE) --noout --valid $<
+check: postgres-full.xml
 
 
 ##
@@ -260,18 +260,6 @@ clean-man:
 	rm -rf fixedman/ fixed-man-stamp
 
 endif # sqlmansectnum != 7
-
-# tabs are harmless, but it is best to avoid them in SGML files
-check-tabs:
-	@( ! grep '	' $(wildcard $(srcdir)/*.sgml $(srcdir)/func/*.sgml $(srcdir)/ref/*.sgml $(srcdir)/*.xsl) ) || \
-	(echo "Tabs appear in SGML/XML files" 1>&2;  exit 1)
-
-# Non-breaking spaces are harmless, but it is best to avoid them in SGML files.
-# Use perl command because non-GNU grep or sed could not have hex escape sequence.
-check-nbsp:
-	@ ( $(PERL) -ne '/\xC2\xA0/ and print("$$ARGV:$$_"),$$n++; END {exit($$n>0)}' \
-	  $(wildcard $(srcdir)/*.sgml $(srcdir)/func/*.sgml $(srcdir)/ref/*.sgml $(srcdir)/*.xsl $(srcdir)/images/*.xsl) ) || \
-	(echo "Non-breaking spaces appear in SGML/XML files" 1>&2;  exit 1)
 
 ##
 ## Clean
