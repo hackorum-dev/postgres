@@ -801,7 +801,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	WAIT WHEN WHERE WHITESPACE_P WINDOW WITH WITHIN WITHOUT WORK WRAPPER WRITE
 
 	XML_P XMLATTRIBUTES XMLCONCAT XMLELEMENT XMLEXISTS XMLFOREST XMLNAMESPACES
-	XMLPARSE XMLPI XMLROOT XMLSERIALIZE XMLTABLE
+	XMLPARSE XMLPI XMLROOT XMLSCHEMA XMLSERIALIZE XMLTABLE
 
 	YEAR_P YES_P
 
@@ -6664,6 +6664,27 @@ DefineStmt:
 					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
+			| CREATE XMLSCHEMA any_name AS Sconst
+				{
+					DefineStmt *n = makeNode(DefineStmt);
+
+					n->kind = OBJECT_XMLSCHEMA;
+					n->args = NIL;
+					n->defnames = $3;
+					n->definition = list_make1(makeDefElem("schema", (Node *) makeString($5), @5));
+					$$ = (Node *) n;
+				}
+			| CREATE XMLSCHEMA IF_P NOT EXISTS any_name AS Sconst
+				{
+					DefineStmt *n = makeNode(DefineStmt);
+
+					n->kind = OBJECT_XMLSCHEMA;
+					n->args = NIL;
+					n->defnames = $6;
+					n->definition = list_make1(makeDefElem("schema", (Node *) makeString($8), @8));
+					n->if_not_exists = true;
+					$$ = (Node *) n;
+				}
 		;
 
 definition: '(' def_list ')'						{ $$ = $2; }
@@ -7203,6 +7224,7 @@ object_type_any_name:
 			| INDEX									{ $$ = OBJECT_INDEX; }
 			| FOREIGN TABLE							{ $$ = OBJECT_FOREIGN_TABLE; }
 			| COLLATION								{ $$ = OBJECT_COLLATION; }
+			| XMLSCHEMA								{ $$ = OBJECT_XMLSCHEMA; }
 			| CONVERSION_P							{ $$ = OBJECT_CONVERSION; }
 			| STATISTICS							{ $$ = OBJECT_STATISTIC_EXT; }
 			| TEXT_P SEARCH PARSER					{ $$ = OBJECT_TSPARSER; }
@@ -8114,6 +8136,15 @@ privilege_target:
 
 					n->targtype = ACL_TARGET_OBJECT;
 					n->objtype = OBJECT_TYPE;
+					n->objs = $2;
+					$$ = n;
+				}
+			| XMLSCHEMA any_name_list
+				{
+					PrivTarget *n = palloc_object(PrivTarget);
+
+					n->targtype = ACL_TARGET_OBJECT;
+					n->objtype = OBJECT_XMLSCHEMA;
 					n->objs = $2;
 					$$ = n;
 				}
@@ -9583,6 +9614,16 @@ RenameStmt: ALTER AGGREGATE aggregate_with_argtypes RENAME TO name
 					n->missing_ok = false;
 					$$ = (Node *) n;
 				}
+			| ALTER XMLSCHEMA any_name RENAME TO name
+				{
+					RenameStmt *n = makeNode(RenameStmt);
+
+					n->renameType = OBJECT_XMLSCHEMA;
+					n->object = (Node *) $3;
+					n->newname = $6;
+					n->missing_ok = false;
+					$$ = (Node *) n;
+				}
 			| ALTER CONVERSION_P any_name RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
@@ -10260,6 +10301,16 @@ AlterObjectSchemaStmt:
 					n->missing_ok = false;
 					$$ = (Node *) n;
 				}
+			| ALTER XMLSCHEMA any_name SET SCHEMA name
+				{
+					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
+
+					n->objectType = OBJECT_XMLSCHEMA;
+					n->object = (Node *) $3;
+					n->newschema = $6;
+					n->missing_ok = false;
+					$$ = (Node *) n;
+				}
 			| ALTER CONVERSION_P any_name SET SCHEMA name
 				{
 					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
@@ -10589,6 +10640,15 @@ AlterOwnerStmt: ALTER AGGREGATE aggregate_with_argtypes OWNER TO RoleSpec
 					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
 
 					n->objectType = OBJECT_COLLATION;
+					n->object = (Node *) $3;
+					n->newowner = $6;
+					$$ = (Node *) n;
+				}
+			| ALTER XMLSCHEMA any_name OWNER TO RoleSpec
+				{
+					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
+
+					n->objectType = OBJECT_XMLSCHEMA;
 					n->object = (Node *) $3;
 					n->newowner = $6;
 					$$ = (Node *) n;
@@ -18349,6 +18409,7 @@ unreserved_keyword:
 			| WRAPPER
 			| WRITE
 			| XML_P
+			| XMLSCHEMA
 			| YEAR_P
 			| YES_P
 			| ZONE
@@ -19019,6 +19080,7 @@ bare_label_keyword:
 			| XMLPARSE
 			| XMLPI
 			| XMLROOT
+			| XMLSCHEMA
 			| XMLSERIALIZE
 			| XMLTABLE
 			| YES_P

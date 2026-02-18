@@ -97,6 +97,11 @@ GRANT { USAGE | ALL [ PRIVILEGES ] }
     TO <replaceable class="parameter">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
     [ GRANTED BY <replaceable class="parameter">role_specification</replaceable> ]
 
+GRANT { USAGE | ALL [ PRIVILEGES ] }
+    ON XMLSCHEMA <replaceable>xmlschema_name</replaceable> [, ...]
+    TO <replaceable class="parameter">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
+    [ GRANTED BY <replaceable class="parameter">role_specification</replaceable> ]
+
 GRANT <replaceable class="parameter">role_name</replaceable> [, ...] TO <replaceable class="parameter">role_specification</replaceable> [, ...]
     [ WITH { ADMIN | INHERIT | SET } { OPTION | TRUE | FALSE } ]
     [ GRANTED BY <replaceable class="parameter">role_specification</replaceable> ]
@@ -119,7 +124,7 @@ GRANT <replaceable class="parameter">role_name</replaceable> [, ...] TO <replace
    that grants privileges on a database object (table, column, view,
    foreign table, sequence, database, foreign-data wrapper, foreign server,
    function, procedure, procedural language, large object, configuration
-   parameter, schema, tablespace, or type), and one that grants
+   parameter, schema, tablespace, type, or XML schema), and one that grants
    membership in a role.  These variants are similar in many ways, but
    they are different enough to be described separately.
   </para>

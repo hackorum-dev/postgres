@@ -2487,6 +2487,9 @@ REVOKE ALL ON accounts FROM PUBLIC;
        the type later.)
       </para>
       <para>
+       For XML schemas, allows use of the XML schema for XML validation.
+      </para>
+      <para>
        For foreign-data wrappers, allows creation of new servers using the
        foreign-data wrapper.
       </para>
@@ -2548,6 +2551,7 @@ REVOKE ALL ON accounts FROM PUBLIC;
    foreign data wrappers,
    foreign servers,
    large objects,
+   XML schemas,
    schemas,
    tablespaces,
    or configuration parameters.
@@ -2669,7 +2673,8 @@ REVOKE ALL ON accounts FROM PUBLIC;
        <literal>LANGUAGE</literal>,
        <literal>SCHEMA</literal>,
        <literal>SEQUENCE</literal>,
-       <literal>TYPE</literal>
+       <literal>TYPE</literal>,
+       <literal>XMLSCHEMA</literal>
       </entry>
      </row>
      <row>
@@ -2798,6 +2803,12 @@ REVOKE ALL ON accounts FROM PUBLIC;
       <entry><literal>U</literal></entry>
       <entry><literal>U</literal></entry>
       <entry><literal>\dT+</literal></entry>
+     </row>
+     <row>
+      <entry><literal>XMLSCHEMA</literal></entry>
+      <entry><literal>U</literal></entry>
+      <entry>none</entry>
+      <entry>none</entry>
      </row>
     </tbody>
    </tgroup>
