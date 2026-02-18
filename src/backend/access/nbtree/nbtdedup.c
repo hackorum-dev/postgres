@@ -1040,8 +1040,11 @@ _bt_swap_posting(IndexTuple newitem, IndexTuple oposting, int postingoff)
 	 * Perform a basic sanity check to catch this case now.
 	 */
 	if (!(postingoff > 0 && postingoff < nhtids))
-		elog(ERROR, "posting list tuple with %d items cannot be split at offset %d",
-			 nhtids, postingoff);
+		ereport(ERROR,
+				errcode(ERRCODE_INDEX_CORRUPTED),
+				errmsg("posting list tuple with %d items cannot be split at offset %d",
+					   nhtids, postingoff),
+				errhint("Please REINDEX it."));
 
 	/*
 	 * Move item pointers in posting list to make a gap for the new item's
