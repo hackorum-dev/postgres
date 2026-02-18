@@ -15,6 +15,8 @@ subdir('interfaces')
 
 subdir('tools/pg_bsd_indent')
 
+subdir('tools/pginclude')
+
 
 ### Generate a Makefile.global that's complete enough for PGXS to work.
 #

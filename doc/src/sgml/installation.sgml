@@ -3231,6 +3231,19 @@ ninja install
       </listitem>
      </varlistentry>
 
+     <varlistentry id="configure-headerscheck-meson">
+      <term><option>-Dheaderscheck={ true | false }</option></term>
+      <listitem>
+       <para>
+        Builds additional targets that compile every source-tree header file
+        standalone, verifying that each header has no missing includes or other
+        portability issues.  This is enabled by default.  When disabled, the
+        headerscheck targets are skipped entirely, which can speed up builds
+        when header verification is not needed.
+       </para>
+      </listitem>
+     </varlistentry>
+
       <varlistentry id="configure-segsize-blocks-meson">
        <term><option>-Dsegsize_blocks=SEGSIZE_BLOCKS</option></term>
        <listitem>

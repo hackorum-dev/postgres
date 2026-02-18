@@ -1,0 +1,118 @@
+# Headers to skip during headerscheck/cpluspluscheck.
+#
+# Plain entries are skipped in both C and C++ modes.
+# Entries prefixed with "c_only:" are skipped only in C mode.
+# Entries prefixed with "cxx_only:" are skipped only in C++ mode.
+#
+# src/tools/pginclude/headerscheck_skip
+
+# Platform-specific headers (c.h includes the right one)
+src/include/port/cygwin.h
+src/include/port/darwin.h
+src/include/port/freebsd.h
+src/include/port/linux.h
+src/include/port/netbsd.h
+src/include/port/openbsd.h
+src/include/port/solaris.h
+src/include/port/win32.h
+
+# Additional Windows-specific headers
+src/include/port/win32_port.h
+src/include/port/win32/netdb.h
+src/include/port/win32/sys/resource.h
+src/include/port/win32/sys/socket.h
+src/include/port/win32_msvc/dirent.h
+src/include/port/win32_msvc/utime.h
+src/include/port/win32ntdll.h
+src/port/pthread-win32.h
+
+# Platform-specific atomics headers (atomics.h includes the right one)
+src/include/port/atomics/arch-arm.h
+src/include/port/atomics/arch-ppc.h
+src/include/port/atomics/arch-x86.h
+src/include/port/atomics/fallback.h
+src/include/port/atomics/generic.h
+src/include/port/atomics/generic-gcc.h
+src/include/port/atomics/generic-msvc.h
+
+# sepgsql.h depends on headers that aren't there on most platforms
+contrib/sepgsql/sepgsql.h
+
+# nodetags.h cannot be included standalone: it's just a code fragment
+src/include/nodes/nodetags.h
+src/backend/nodes/nodetags.h
+
+# These files are not meant to be included standalone, because
+# they contain lists that might have multiple use-cases.
+src/include/access/rmgrlist.h
+src/include/parser/kwlist.h
+src/include/postmaster/proctypelist.h
+src/include/regex/regerrs.h
+src/include/storage/lwlocklist.h
+src/include/tcop/cmdtaglist.h
+src/interfaces/ecpg/preproc/c_kwlist.h
+src/interfaces/ecpg/preproc/ecpg_kwlist.h
+src/pl/plpgsql/src/pl_reserved_kwlist.h
+src/pl/plpgsql/src/pl_unreserved_kwlist.h
+src/pl/plpgsql/src/plerrcodes.h
+src/pl/plpython/spiexceptions.h
+src/pl/tcl/pltclerrcodes.h
+
+# Also not meant to be included standalone
+contrib/isn/EAN13.h
+contrib/isn/ISBN.h
+contrib/isn/ISMN.h
+contrib/isn/ISSN.h
+contrib/isn/UPC.h
+
+src/include/common/unicode_nonspacing_table.h
+src/include/common/unicode_east_asian_fw_table.h
+
+src/include/catalog/syscache_ids.h
+src/include/catalog/syscache_info.h
+
+# We can't make these Bison output files compilable standalone
+# without using "%code require", which old Bison versions lack.
+# parser/gram.h will be included by parser/gramparse.h anyway.
+contrib/cube/cubeparse.h
+contrib/seg/segparse.h
+src/backend/bootstrap/bootparse.h
+src/backend/parser/gram.h
+src/backend/replication/repl_gram.h
+src/backend/replication/syncrep_gram.h
+src/backend/utils/adt/jsonpath_gram.h
+src/bin/pgbench/exprparse.h
+src/pl/plpgsql/src/pl_gram.h
+src/interfaces/ecpg/preproc/preproc.h
+src/test/isolation/specparse.h
+
+# This produces a "no previous prototype" warning
+c_only: src/include/storage/checksum_impl.h
+
+# SectionMemoryManager.h is C++
+src/include/jit/SectionMemoryManager.h
+
+# ppport.h is not under our control, so we can't make it standalone
+src/pl/plperl/ppport.h
+
+# regression.h is not actually C, but ECPG code
+src/interfaces/ecpg/test/regression.h
+# printf_hack.h produces "unused function" warnings
+src/interfaces/ecpg/test/printf_hack.h
+
+# pg_trace.h and utils/probes.h can include sys/sdt.h from SystemTap,
+# which itself contains C++ code and so won't compile with a C++
+# compiler under extern "C" linkage.
+cxx_only: src/include/pg_trace.h
+cxx_only: src/include/utils/probes.h
+
+# pg_dump is not C++-clean because it uses "public" and "namespace"
+# as field names, which is unfortunate but we won't change it now.
+cxx_only: src/bin/pg_dump/compress_gzip.h
+cxx_only: src/bin/pg_dump/compress_io.h
+cxx_only: src/bin/pg_dump/compress_lz4.h
+cxx_only: src/bin/pg_dump/compress_none.h
+cxx_only: src/bin/pg_dump/compress_zstd.h
+cxx_only: src/bin/pg_dump/parallel.h
+cxx_only: src/bin/pg_dump/pg_backup_archiver.h
+cxx_only: src/bin/pg_dump/pg_dump.h
