@@ -644,6 +644,11 @@ static uint32 MaxWriteBatchSize(BufferAccessStrategy strategy);
 static BlockNumber WriteBatchInit(BufferDesc *batch_start, uint32 max_batch_size,
 								  BufferWriteBatch *batch);
 static Buffer GetVictimBuffer(BufferAccessStrategy strategy, IOContext io_context);
+
+
+static void EagerCleanStrategyBuffer(BufferAccessStrategy strategy, BufferDesc *buf_hdr, IOContext io_context);
+
+static void EagerCleanBuffer(BufferAccessStrategy strategy, BufferDesc *buf_hdr, IOContext io_context);
 static void FlushUnlockedBuffer(BufferDesc *buf, SMgrRelation reln,
 								IOObject io_object, IOContext io_context);
 static void FlushBuffer(BufferDesc *buf, SMgrRelation reln,
@@ -2503,13 +2508,47 @@ MaxWriteBatchSize(BufferAccessStrategy strategy)
 	return result;
 }
 
+static BufferDesc *
+SelectVictimBuffer(BufferAccessStrategy strategy,
+				   IOContext io_context,
+				   uint64 *buf_state,
+				   void (**CleanBuffer) (BufferAccessStrategy strategy,
+										 BufferDesc *buf_hdr,
+										 IOContext io_context))
+{
+	BufferDesc *buf_hdr = NULL;
+
+	if (strategy)
+	{
+		buf_hdr = GetBufferFromRing(strategy, buf_state, io_context);
+		if (buf_hdr)
+		{
+			if (StrategySupportsEagerFlush(strategy))
+				*CleanBuffer = &EagerCleanStrategyBuffer;
+			else
+				*CleanBuffer = &EagerCleanBuffer;
+		}
+	}
+
+	/* If no strategy or didn't find a strategy buffer, get one from SB */
+	if (!buf_hdr)
+	{
+		buf_hdr = GetBufferFromClocksweep(buf_state, io_context);
+		if (strategy)
+			AddBufferToRing(strategy, buf_hdr);
+		*CleanBuffer = &EagerCleanBuffer;
+	}
+
+	CheckBufferIsPinnedOnce(BufferDescriptorGetBuffer(buf_hdr));
+	return buf_hdr;
+}
+
 static Buffer
 GetVictimBuffer(BufferAccessStrategy strategy, IOContext io_context)
 {
 	BufferDesc *buf_hdr;
-	Buffer		buf;
 	uint64		buf_state;
-	bool		from_ring;
+	Buffer		buffer;
 
 	/*
 	 * Ensure, before we pin a victim buffer, that there's a free refcount
@@ -2518,210 +2557,30 @@ GetVictimBuffer(BufferAccessStrategy strategy, IOContext io_context)
 	ReservePrivateRefCountEntry();
 	ResourceOwnerEnlarge(CurrentResourceOwner);
 
-	/* we return here if a prospective victim buffer gets used concurrently */
-again:
-
-	/*
-	 * Select a victim buffer.  The buffer is returned pinned and owned by
-	 * this backend.
-	 */
-	buf_hdr = StrategyGetBuffer(strategy, &buf_state, &from_ring);
-	buf = BufferDescriptorGetBuffer(buf_hdr);
-
-	/*
-	 * We shouldn't have any other pins for this buffer.
-	 */
-	CheckBufferIsPinnedOnce(buf);
-
-	/*
-	 * If the buffer was dirty, try to write it out.  There is a race
-	 * condition here, in that someone might dirty it after we released the
-	 * buffer header lock above, or even while we are writing it out (since
-	 * our share-lock won't prevent hint-bit updates).  We will recheck the
-	 * dirty bit after re-locking the buffer header.
-	 */
-	if (buf_state & BM_DIRTY)
+	for (;;)
 	{
-		Assert(buf_state & BM_TAG_VALID);
-		Assert(buf_state & BM_VALID);
+		void		(*CleanBuffer) (BufferAccessStrategy strategy,
+									BufferDesc *buf_hdr,
+									IOContext io_context);
 
-		/*
-		 * We need a share-lock on the buffer contents to write it out (else
-		 * we might write invalid data, eg because someone else is compacting
-		 * the page contents while we write).  We must use a conditional lock
-		 * acquisition here to avoid deadlock.  Even though the buffer was not
-		 * pinned (and therefore surely not locked) when StrategyGetBuffer
-		 * returned it, someone else could have pinned and exclusive-locked it
-		 * by the time we get here. If we try to get the lock unconditionally,
-		 * we'd block waiting for them; if they later block waiting for us,
-		 * deadlock ensues. (This has been observed to happen when two
-		 * backends are both trying to split btree index pages, and the second
-		 * one just happens to be trying to split the page the first one got
-		 * from StrategyGetBuffer.)
-		 */
-		if (!BufferLockConditional(buf, buf_hdr, BUFFER_LOCK_SHARE))
+		buf_hdr = SelectVictimBuffer(strategy, io_context, &buf_state, &CleanBuffer);
+
+		if (buf_state & BM_DIRTY)
 		{
-			/*
-			 * Someone else has locked the buffer, so give it up and loop back
-			 * to get another one.
-			 */
-			UnpinBuffer(buf_hdr);
-			goto again;
+			Assert(buf_state & BM_TAG_VALID);
+			Assert(buf_state & BM_VALID);
+
+			CleanBuffer(strategy, buf_hdr, io_context);
 		}
 
-		/*
-		 * If using a nondefault strategy, and writing the buffer would
-		 * require a WAL flush, let the strategy decide whether to go ahead
-		 * and write/reuse the buffer or to choose another victim.  We need a
-		 * content lock to inspect the page LSN, so this can't be done inside
-		 * StrategyGetBuffer.
-		 */
-		if (strategy && StrategyRejectBuffer(strategy, buf_hdr, from_ring))
-		{
-			LockBuffer(buf, BUFFER_LOCK_UNLOCK);
-			UnpinBuffer(buf_hdr);
-			goto again;
-		}
+		/* Once we have a clean buffer, we're done */
+		if (!(buf_state & BM_TAG_VALID) || InvalidateVictimBuffer(buf_hdr))
+			break;
 
-		if (!StartBufferIO(buf_hdr, false, false))
-		{
-			/* May be nothing to do if buffer was cleaned */
-			LockBuffer(buf, BUFFER_LOCK_UNLOCK);
-		}
-		else if (from_ring && StrategySupportsEagerFlush(strategy))
-		{
-			BufferDesc *next_bufdesc = buf_hdr;
-			Buffer		sweep_end = buf;
-			int			cursor = StrategyGetCurrentIndex(strategy);
-			uint32		max_batch_size = MaxWriteBatchSize(strategy);
-
-			/* Pin victim again so it stays ours even after batch released */
-			ReservePrivateRefCountEntry();
-			ResourceOwnerEnlarge(CurrentResourceOwner);
-			IncrBufferRefCount(BufferDescriptorGetBuffer(buf_hdr));
-
-			/*
-			 * Flush the victim buffer and then loop around strategy ring one
-			 * time eagerly flushing all of the eligible buffers. IO
-			 * concurrency only needs to be taken into account if AIO writes
-			 * are added in the future.
-			 */
-			for (;;)
-			{
-				bool		usage_count_zero;
-				Buffer		next_buf;
-				XLogRecPtr	next_buf_lsn;	/* unused */
-
-				if (next_bufdesc)
-				{
-					BufferWriteBatch batch;
-					BlockNumber limit;
-
-					/*
-					 * After finding an eligible buffer, if we are allowed
-					 * more pins and there are more blocks in the relation,
-					 * identify any of the buffers following it which are also
-					 * eligible and combine them into a batch.
-					 *
-					 * The cursor will be advanced through the ring such that
-					 * the next write batch will start at the next eligible
-					 * buffer after the current batch ends.
-					 */
-					limit = WriteBatchInit(next_bufdesc, max_batch_size, &batch);
-					if (limit > 1)
-						FindStrategyFlushAdjacents(strategy, sweep_end,
-												   next_bufdesc,
-												   limit, &batch, &cursor);
-					FlushBufferBatch(&batch, io_context);
-					/* Pins and locks released inside CompleteWriteBatchIO */
-					CompleteWriteBatchIO(&batch, io_context, &BackendWritebackContext);
-				}
-
-				next_buf = StrategyNextBuffer(strategy, &cursor);
-
-				/* Completed one sweep of the strategy ring */
-				if (next_buf == sweep_end)
-					break;
-
-				/*
-				 * For strategies currently supporting eager flush
-				 * (BAS_BULKWRITE, eventually BAS_VACUUM), once you hit an
-				 * InvalidBuffer, the remaining buffers in the ring will be
-				 * invalid. If BAS_BULKREAD is someday supported, this logic
-				 * will have to change.
-				 */
-				if (!BufferIsValid(next_buf))
-					break;
-
-				/*
-				 * If the buffer is eligible for eager flushing, it will be
-				 * the start of a new batch.  Otherwise, we'll keep looking
-				 * until we complete one full sweep around the ring.
-				 */
-				next_bufdesc =
-					PrepareOrRejectEagerFlushBuffer(next_buf,
-													NULL,
-													NULL,
-													&next_buf_lsn,
-													&usage_count_zero);
-			}
-		}
-		else
-		{
-			BufferWriteBatch batch;
-			BlockNumber limit;
-			uint32		max_batch_size = 3; /* we only look for two successors */
-
-			/* Pin victim again so it stays ours even after batch released */
-			ReservePrivateRefCountEntry();
-			ResourceOwnerEnlarge(CurrentResourceOwner);
-			IncrBufferRefCount(BufferDescriptorGetBuffer(buf_hdr));
-
-			/*
-			 * If we are allowed more pins and there are more blocks in the
-			 * relation and the victim buffer's block's successors are
-			 * eligible for eager flushing, combine them into a batch.
-			 */
-			limit = WriteBatchInit(buf_hdr, max_batch_size, &batch);
-			if (limit > 1)
-				FindFlushAdjacents(buf_hdr, limit, &batch);
-			FlushBufferBatch(&batch, io_context);
-			CompleteWriteBatchIO(&batch, io_context, &BackendWritebackContext);
-		}
-	}
-
-	if (buf_state & BM_VALID)
-	{
-		/*
-		 * When a BufferAccessStrategy is in use, blocks evicted from shared
-		 * buffers are counted as IOOP_EVICT in the corresponding context
-		 * (e.g. IOCONTEXT_BULKWRITE). Shared buffers are evicted by a
-		 * strategy in two cases: 1) while initially claiming buffers for the
-		 * strategy ring 2) to replace an existing strategy ring buffer
-		 * because it is pinned or in use and cannot be reused.
-		 *
-		 * Blocks evicted from buffers already in the strategy ring are
-		 * counted as IOOP_REUSE in the corresponding strategy context.
-		 *
-		 * At this point, we can accurately count evictions and reuses,
-		 * because we have successfully claimed the valid buffer. Previously,
-		 * we may have been forced to release the buffer due to concurrent
-		 * pinners or erroring out.
-		 */
-		pgstat_count_io_op(IOOBJECT_RELATION, io_context,
-						   from_ring ? IOOP_REUSE : IOOP_EVICT, 1, 0);
-	}
-
-	/*
-	 * If the buffer has an entry in the buffer mapping table, delete it. This
-	 * can fail because another backend could have pinned or dirtied the
-	 * buffer.
-	 */
-	if ((buf_state & BM_TAG_VALID) && !InvalidateVictimBuffer(buf_hdr))
-	{
 		UnpinBuffer(buf_hdr);
-		goto again;
 	}
+
+	buffer = BufferDescriptorGetBuffer(buf_hdr);
 
 	/* a final set of sanity checks */
 #ifdef USE_ASSERT_CHECKING
@@ -2730,10 +2589,127 @@ again:
 	Assert(BUF_STATE_GET_REFCOUNT(buf_state) == 1);
 	Assert(!(buf_state & (BM_TAG_VALID | BM_VALID | BM_DIRTY)));
 
-	CheckBufferIsPinnedOnce(buf);
+	CheckBufferIsPinnedOnce(buffer);
 #endif
 
-	return buf;
+	return buffer;
+}
+
+static void
+EagerCleanBuffer(BufferAccessStrategy strategy, BufferDesc *buf_hdr, IOContext io_context)
+{
+	BufferWriteBatch batch;
+	BlockNumber limit;
+	uint32		max_batch_size = 3; /* we only look for two successors */
+	Buffer		buf = BufferDescriptorGetBuffer(buf_hdr);
+
+	if (!StartBufferIO(buf_hdr, false, false))
+	{
+		/* May be nothing to do if buffer was cleaned */
+		LockBuffer(buf, BUFFER_LOCK_UNLOCK);
+		return;
+	}
+
+	/* Pin victim again so it stays ours even after batch released */
+	ReservePrivateRefCountEntry();
+	IncrBufferRefCount(BufferDescriptorGetBuffer(buf_hdr));
+
+	/*
+	 * If we are allowed more pins and there are more blocks in the relation
+	 * and the victim buffer's block's successors are eligible for eager
+	 * flushing, combine them into a batch.
+	 */
+	limit = WriteBatchInit(buf_hdr, max_batch_size, &batch);
+	if (limit > 1)
+		FindFlushAdjacents(buf_hdr, limit, &batch);
+	FlushBufferBatch(&batch, io_context);
+	CompleteWriteBatchIO(&batch, io_context, &BackendWritebackContext);
+}
+
+static void
+EagerCleanStrategyBuffer(BufferAccessStrategy strategy, BufferDesc *buf_hdr,
+						 IOContext io_context)
+{
+	BufferDesc *next_bufdesc = buf_hdr;
+	Buffer		buf = BufferDescriptorGetBuffer(buf_hdr);
+	Buffer		sweep_end = buf;
+	int			cursor = StrategyGetCurrentIndex(strategy);
+	uint32		max_batch_size = MaxWriteBatchSize(strategy);
+
+	if (!StartBufferIO(buf_hdr, false, false))
+	{
+		/* May be nothing to do if buffer was cleaned */
+		LockBuffer(buf, BUFFER_LOCK_UNLOCK);
+		return;
+	}
+
+	/* Pin victim again so it stays ours even after batch released */
+	ReservePrivateRefCountEntry();
+	IncrBufferRefCount(BufferDescriptorGetBuffer(buf_hdr));
+
+	/*
+	 * Flush the victim buffer and then loop around strategy ring one time
+	 * eagerly flushing all of the eligible buffers. IO concurrency only needs
+	 * to be taken into account if AIO writes are added in the future.
+	 */
+	for (;;)
+	{
+		bool		usage_count_zero;
+		Buffer		next_buf;
+		XLogRecPtr	next_buf_lsn;	/* unused */
+
+		if (next_bufdesc)
+		{
+			BufferWriteBatch batch;
+			BlockNumber limit;
+
+			/*
+			 * After finding an eligible buffer, if we are allowed more pins
+			 * and there are more blocks in the relation, identify any of the
+			 * buffers following it which are also eligible and combine them
+			 * into a batch.
+			 *
+			 * The cursor will be advanced through the ring such that the next
+			 * write batch will start at the next eligible buffer after the
+			 * current batch ends.
+			 */
+			limit = WriteBatchInit(next_bufdesc, max_batch_size, &batch);
+			if (limit > 1)
+				FindStrategyFlushAdjacents(strategy, sweep_end,
+										   next_bufdesc,
+										   limit, &batch, &cursor);
+			FlushBufferBatch(&batch, io_context);
+			/* Pins and locks released inside CompleteWriteBatchIO */
+			CompleteWriteBatchIO(&batch, io_context, &BackendWritebackContext);
+		}
+
+		next_buf = StrategyNextBuffer(strategy, &cursor);
+
+		/* Completed one sweep of the strategy ring */
+		if (next_buf == sweep_end)
+			break;
+
+		/*
+		 * For strategies currently supporting eager flush (BAS_BULKWRITE,
+		 * eventually BAS_VACUUM), once you hit an InvalidBuffer, the
+		 * remaining buffers in the ring will be invalid. If BAS_BULKREAD is
+		 * someday supported, this logic will have to change.
+		 */
+		if (!BufferIsValid(next_buf))
+			break;
+
+		/*
+		 * If the buffer is eligible for eager flushing, it will be the start
+		 * of a new batch.  Otherwise, we'll keep looking until we complete
+		 * one full sweep around the ring.
+		 */
+		next_bufdesc =
+			PrepareOrRejectEagerFlushBuffer(next_buf,
+											NULL,
+											NULL,
+											&next_buf_lsn,
+											&usage_count_zero);
+	}
 }
 
 /*
@@ -5209,7 +5185,11 @@ FlushBufferBatch(BufferWriteBatch *batch,
 
 #ifdef USE_ASSERT_CHECKING
 	for (uint32 i = 0; i < batch->n; i++)
+	{
 		Assert(!BufferNeedsWALFlush(batch->bufdescs[i], false));
+		Assert(BufTagGetForkNum(&batch->bufdescs[i]->tag) == batch->forkno);
+		Assert(batch->bufdescs[i]->tag.blockNum == batch->start + i);
+	}
 #endif
 
 	TRACE_POSTGRESQL_BUFFER_BATCH_FLUSH_START(batch->forkno,
@@ -7225,6 +7205,20 @@ ConditionalLockBuffer(Buffer buffer)
 	buf = GetBufferDescriptor(buffer - 1);
 
 	return BufferLockConditional(buffer, buf, BUFFER_LOCK_EXCLUSIVE);
+}
+
+bool
+ConditionalShareLockBuffer(Buffer buffer)
+{
+	BufferDesc *buf;
+
+	Assert(BufferIsPinned(buffer));
+	if (BufferIsLocal(buffer))
+		return true;			/* act as though we got it */
+
+	buf = GetBufferDescriptor(buffer - 1);
+
+	return BufferLockConditional(buffer, buf, BUFFER_LOCK_SHARE);
 }
 
 /*
