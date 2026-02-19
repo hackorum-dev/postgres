@@ -95,8 +95,6 @@ extern void CacheRegisterRelSyncCallback(RelSyncCallbackFunction func,
 
 extern void CallSyscacheCallbacks(SysCacheIdentifier cacheid, uint32 hashvalue);
 
-extern void CallRelSyncCallbacks(Oid relid);
-
 extern void InvalidateSystemCaches(void);
 extern void InvalidateSystemCachesExtended(bool debug_discard);
 

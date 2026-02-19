@@ -895,7 +895,14 @@ LocalExecuteInvalidationMessage(SharedInvalidationMessage *msg)
 	{
 		/* We only care about our own database */
 		if (msg->rs.dbId == MyDatabaseId)
-			CallRelSyncCallbacks(msg->rs.relid);
+		{
+			for (int i = 0; i < relsync_callback_count; i++)
+			{
+				struct RELSYNCCALLBACK *ccitem = relsync_callback_list + i;
+
+				ccitem->function(ccitem->arg, msg->rs.relid);
+			}
+		}
 	}
 	else
 		elog(FATAL, "unrecognized SI message ID: %d", msg->id);
@@ -1910,20 +1917,6 @@ CallSyscacheCallbacks(SysCacheIdentifier cacheid, uint32 hashvalue)
 		Assert(ccitem->id == cacheid);
 		ccitem->function(ccitem->arg, cacheid, hashvalue);
 		i = ccitem->link - 1;
-	}
-}
-
-/*
- * CallSyscacheCallbacks
- */
-void
-CallRelSyncCallbacks(Oid relid)
-{
-	for (int i = 0; i < relsync_callback_count; i++)
-	{
-		struct RELSYNCCALLBACK *ccitem = relsync_callback_list + i;
-
-		ccitem->function(ccitem->arg, relid);
 	}
 }
 
