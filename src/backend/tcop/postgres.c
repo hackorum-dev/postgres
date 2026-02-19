@@ -151,6 +151,11 @@ static bool xact_started = false;
 static bool DoingCommandRead = false;
 
 /*
+ * Flag to indicate that we're reading from stdin, in single-user mode.
+ */
+static bool DoingInteractiveRead = false;
+
+/*
  * Flags to implement skip-till-Sync-after-error behavior for messages of
  * the extended query protocol.
  */
@@ -347,7 +352,9 @@ interactive_getc(void)
 	 */
 	CHECK_FOR_INTERRUPTS();
 
+	DoingInteractiveRead = true;
 	c = getc(stdin);
+	DoingInteractiveRead = false;
 
 	ProcessClientReadInterrupt(false);
 
@@ -3143,7 +3150,7 @@ die(SIGNAL_ARGS)
 	 * Rather ugly, but it's unlikely to be worthwhile to invest much more
 	 * effort just for the benefit of single user mode.
 	 */
-	if (DoingCommandRead && whereToSendOutput != DestRemote)
+	if (DoingInteractiveRead)
 		ProcessInterrupts();
 }
 
