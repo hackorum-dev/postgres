@@ -4890,7 +4890,7 @@ listEventTriggers(const char *pattern, bool verbose)
  * Describes extended statistics.
  */
 bool
-listExtendedStats(const char *pattern)
+listExtendedStats(const char *pattern, bool verbose)
 {
 	PQExpBufferData buf;
 	PGresult   *res;
@@ -4947,12 +4947,17 @@ listExtendedStats(const char *pattern)
 	{
 		appendPQExpBuffer(&buf,
 						  ",\nCASE WHEN " CppAsString2(STATS_EXT_MCV) " = any(es.stxkind) THEN 'defined' \n"
-						  "END AS \"%s\" ",
+						  "END AS \"%s\"",
 						  gettext_noop("MCV"));
 	}
 
+	if (verbose)
+		appendPQExpBuffer(&buf,
+						  ",\npg_catalog.obj_description(es.oid, 'pg_statistic_ext') AS \"%s\"",
+						  gettext_noop("Description"));
+
 	appendPQExpBufferStr(&buf,
-						 " \nFROM pg_catalog.pg_statistic_ext es \n");
+						 "\nFROM pg_catalog.pg_statistic_ext es\n");
 
 	if (!validateSQLNamePattern(&buf, pattern,
 								false, false,
