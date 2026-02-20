@@ -314,6 +314,8 @@ nossluser   .            disable      postgres       connect, authok            
 
 	# Enable SSL in the server
 	$node->adjust_conf('postgresql.conf', 'ssl', 'on');
+	# Adjust default setting to ensure tests pass when FIPS is enabled
+	$node->append_conf('postgresql.conf', "ssl_groups = 'prime256v1:secp521r1'");
 	$node->reload;
 
 	note("Running tests with SSL enabled in server");
