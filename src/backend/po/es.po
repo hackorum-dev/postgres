@@ -20239,7 +20239,6 @@ msgstr "no se pudo enviar datos a la cola en memoria compartida"
 msgid "logical replication apply worker will serialize the remaining changes of remote transaction %u to a file"
 msgstr "el ayudante paralelo «apply» de replicación lógica serializará los cambios restantes de la transacción remota %u a un archivo"
 
-# FIXME see slot.c:779.  See also  postmaster.c:835
 #: replication/logical/decode.c:177 replication/logical/logical.c:141
 #, c-format
 msgid "logical decoding on standby requires \"wal_level\" >= \"logical\" on the primary"
@@ -20279,7 +20278,6 @@ msgstr "el slot del worker de replicación lógica %d está vacío, no se puede 
 msgid "logical replication worker slot %d is already used by another worker, cannot attach"
 msgstr "el slot de replicación lógica %d ya está siendo utilizado por otro worker, no se puede adjuntar"
 
-# FIXME see slot.c:779.  See also  postmaster.c:835
 #: replication/logical/logical.c:121
 #, c-format
 msgid "logical decoding requires \"wal_level\" >= \"logical\""
@@ -20351,7 +20349,6 @@ msgstr "Transacciones en flujo comprometiendo después de %X/%X, leyendo WAL des
 msgid "slot \"%s\", output plugin \"%s\", in the %s callback, associated LSN %X/%X"
 msgstr "slot «%s», plugin de salida «%s», en el callback %s, LSN asociado %X/%X"
 
-# FIXME must quote callback name?  Need a translator: comment?
 #: replication/logical/logical.c:784
 #, c-format
 msgid "slot \"%s\", output plugin \"%s\", in the %s callback"
@@ -20542,7 +20539,6 @@ msgstr "no se pudo leer desde el archivo de desborde de reorderbuffer: se leyero
 msgid "could not remove file \"%s\" during removal of pg_replslot/%s/xid*: %m"
 msgstr "no se pudo borrar el archivo «%s» durante la eliminación de pg_replslot/%s/xid*: %m"
 
-# FIXME almost duplicated again!?
 #: replication/logical/reorderbuffer.c:5120
 #, c-format
 msgid "could not read from file \"%s\": read %d instead of %d bytes"
@@ -20622,7 +20618,6 @@ msgstr "el slot de replicación «%s» especificado por «%s» no existe en el s
 msgid "replication slot synchronization requires \"%s\" to be specified in \"%s\""
 msgstr "la sincronización de slots de replicación requiere que «%s» esté especificado en «%s»"
 
-# FIXME see slot.c:779.  See also  postmaster.c:835
 #: replication/logical/slotsync.c:1050
 #, c-format
 msgid "replication slot synchronization requires \"wal_level\" >= \"logical\""
@@ -20682,7 +20677,6 @@ msgstr "no se pudo conectar al servidor primario: %s"
 msgid "initial slot snapshot too large"
 msgstr "el snapshot inicial del slot es demasiado grande"
 
-# FIXME: snapshot? instantánea?
 #: replication/logical/snapbuild.c:707
 #, c-format
 msgid "exported logical decoding snapshot: \"%s\" with %u transaction ID"
@@ -20721,7 +20715,6 @@ msgstr "la decodificación lógica encontró un punto consistente inicial en %X/
 msgid "There are no old transactions anymore."
 msgstr "Ya no hay transacciones antiguas en ejecución."
 
-# FIXME "snapbuild"?
 #: replication/logical/snapbuild.c:1904
 #, c-format
 msgid "snapbuild state file \"%s\" has wrong magic number: %u instead of %u"
@@ -21118,7 +21111,6 @@ msgstr "no se pudo eliminar el directorio «%s»"
 msgid "replication slots can only be used if \"max_replication_slots\" > 0"
 msgstr "los slots de replicación sólo pueden usarse si «max_replication_slots» > 0"
 
-# FIXME see logical.c:81
 #: replication/slot.c:1377
 #, c-format
 msgid "replication slots can only be used if \"wal_level\" >= \"replica\""
@@ -21146,7 +21138,6 @@ msgstr[1] "El restart_lsn %X/%X del slot excede el límite por %llu bytes."
 msgid "The slot conflicted with xid horizon %u."
 msgstr "El slot estaba en conflicto con el horizonte de XID %u."
 
-# FIXME see slot.c:779.  See also  postmaster.c:835
 #: replication/slot.c:1511
 msgid "Logical decoding on standby requires \"wal_level\" >= \"logical\" on the primary server."
 msgstr "La decodificación lógica en standby requiere «wal_level» >= «logical» en el primario."
@@ -21181,7 +21172,6 @@ msgstr "el archivo de slot de replicación «%s» tiene largo corrupto %u"
 msgid "checksum mismatch for replication slot file \"%s\": is %u, should be %u"
 msgstr "suma de verificación no coincidente en archivo de slot de replicación «%s»: es %u, debería ser %u"
 
-# FIXME see slot.c:779.  See also  postmaster.c:835
 #: replication/slot.c:2333
 #, c-format
 msgid "logical replication slot \"%s\" exists, but \"wal_level\" < \"logical\""
@@ -21192,11 +21182,10 @@ msgstr "existe el slot de replicación lógica «%s», pero «wal_level» < «lo
 msgid "Change \"wal_level\" to be \"logical\" or higher."
 msgstr "Cambie «wal_level» a «logical» o superior."
 
-# FIXME see slot.c:779.  See also  postmaster.c:835
 #: replication/slot.c:2339
 #, c-format
 msgid "physical replication slot \"%s\" exists, but \"wal_level\" < \"replica\""
-msgstr "existe el slot de replicación lógica «%s», pero «wal_level» < «replica»"
+msgstr "existe el slot de replicación física «%s», pero «wal_level» < «replica»"
 
 # <> hello vim
 #: replication/slot.c:2341
@@ -21319,7 +21308,6 @@ msgstr "no se puede copiar el slot de replicación lógica no terminado «%s»"
 msgid "Retry when the source replication slot's confirmed_flush_lsn is valid."
 msgstr "Reintente cuando el confirmed_flush_lsn del slot de replicación de origen sea válido."
 
-# FIXME see logical.c:81
 #: replication/slotfuncs.c:877
 #, c-format
 msgid "replication slots can only be synchronized to a standby server"
