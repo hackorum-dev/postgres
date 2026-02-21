@@ -122,6 +122,8 @@ bigcheck: all | temp-install
 	$(pg_regress_check) $(REGRESS_OPTS) --schedule=$(srcdir)/parallel_schedule $(MAXCONNOPT) numeric_big
 
 
+self-test: pg_regress$(X)
+	./test_readme_examples.sh
 ##
 ## Clean up
 ##

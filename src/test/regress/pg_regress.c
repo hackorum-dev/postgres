@@ -1279,30 +1279,6 @@ file_size(const char *file)
 	return r;
 }
 
-/*
- * Count lines in file
- */
-static int
-file_line_count(const char *file)
-{
-	int			c;
-	int			l = 0;
-	FILE	   *f = fopen(file, "r");
-
-	if (!f)
-	{
-		diag("could not open file \"%s\" for reading: %m", file);
-		return -1;
-	}
-	while ((c = fgetc(f)) != EOF)
-	{
-		if (c == '\n')
-			l++;
-	}
-	fclose(f);
-	return l;
-}
-
 bool
 file_exists(const char *file)
 {
@@ -1369,32 +1345,307 @@ get_alternative_expectfile(const char *expectfile, int i)
 }
 
 /*
- * Run a "diff" command and also check that it didn't crash
+ * Pattern matching flags for flexible test output comparison.
+ * These allow expected files to specify which differences to ignore.
  */
-static int
-run_diff(const char *cmd, const char *filename)
+#define IGNORE_NONE           0x00
+#define IGNORE_CASE           0x01
+#define IGNORE_COMMENTS       0x02
+#define IGNORE_SPACES         0x04
+#define IGNORE_WRAPPING       0x08
+#define IGNORE_NUMBERS        0x10
+#define IGNORE_RESULT         0x20	/* ignore extra lines in result */
+#define IGNORE_EXPECTED       0x40	/* ignore expected lines missing from result */
+
+/*
+ * Parse a directive line (--@@IGNORE: ...@@ or --@@CHECK: ...@@).
+ * Returns true if this line is a directive, modifying *flags accordingly.
+ */
+static bool
+parse_directive(const char *line, unsigned int *flags)
 {
-	int			r;
+	const char *p;
+	bool		is_ignore;
+	char		optbuf[64];
+	int			optlen;
+	unsigned int flag;
 
-	fflush(NULL);
-	r = system(cmd);
-	if (!WIFEXITED(r) || WEXITSTATUS(r) > 1)
+	p = line;
+	while (*p && isspace((unsigned char) *p))
+		p++;
+
+	if (strncmp(p, "--@@", 4) != 0)
+		return false;
+	p += 4;
+
+	if (strncasecmp(p, "IGNORE", 6) == 0)
 	{
-		bail("diff command failed with status %d: %s", r, cmd);
+		is_ignore = true;
+		p += 6;
 	}
-#ifdef WIN32
-
-	/*
-	 * On WIN32, if the 'diff' command cannot be found, system() returns 1,
-	 * but produces nothing to stdout, so we check for that here.
-	 */
-	if (WEXITSTATUS(r) == 1 && file_size(filename) <= 0)
+	else if (strncasecmp(p, "CHECK", 5) == 0)
 	{
-		bail("diff command not found: %s", cmd);
+		is_ignore = false;
+		p += 5;
 	}
-#endif
+	else
+		return false;
 
-	return WEXITSTATUS(r);
+	while (*p && (*p == ':' || *p == ' ' || *p == '\t'))
+		p++;
+
+	while (*p && strncmp(p, "@@", 2) != 0)
+	{
+		while (*p && (*p == ',' || *p == ' ' || *p == '\t'))
+			p++;
+		if (strncmp(p, "@@", 2) == 0)
+			break;
+
+		optlen = 0;
+		while (*p && *p != ',' && *p != '@' && !isspace((unsigned char) *p) &&
+			   optlen < (int) sizeof(optbuf) - 1)
+			optbuf[optlen++] = *p++;
+		optbuf[optlen] = '\0';
+
+		if (optlen == 0)
+			continue;
+
+		flag = IGNORE_NONE;
+		if (strcasecmp(optbuf, "case") == 0)
+			flag = IGNORE_CASE;
+		else if (strcasecmp(optbuf, "comments") == 0)
+			flag = IGNORE_COMMENTS;
+		else if (strcasecmp(optbuf, "spaces") == 0)
+			flag = IGNORE_SPACES;
+		else if (strcasecmp(optbuf, "wrapping") == 0)
+			flag = IGNORE_WRAPPING;
+		else if (strcasecmp(optbuf, "numbers") == 0)
+			flag = IGNORE_NUMBERS;
+		else if (strcasecmp(optbuf, "result-lines") == 0)
+			flag = IGNORE_RESULT;
+		else if (strcasecmp(optbuf, "expected-lines") == 0)
+			flag = IGNORE_EXPECTED;
+
+		if (is_ignore)
+			*flags |= flag;
+		else
+			*flags &= ~flag;
+	}
+	return true;
+}
+
+/*
+ * Normalize a line according to active ignore flags.
+ * Returns a newly allocated string.
+ */
+static char *
+normalize_line(const char *line, unsigned int flags)
+{
+	char	   *result;
+	char	   *dst;
+	const char *src;
+	bool		in_space = false;
+	bool		in_block_comment = false;
+
+	result = pg_malloc(strlen(line) + 1);
+	dst = result;
+	src = line;
+
+	while (*src)
+	{
+		if ((flags & IGNORE_COMMENTS) && !in_block_comment &&
+			src[0] == '/' && src[1] == '*')
+		{
+			in_block_comment = true;
+			src += 2;
+			continue;
+		}
+		if (in_block_comment)
+		{
+			if (src[0] == '*' && src[1] == '/')
+			{
+				in_block_comment = false;
+				src += 2;
+				while (*src && isspace((unsigned char) *src))
+					src++;
+			}
+			else
+				src++;
+			continue;
+		}
+		if ((flags & IGNORE_COMMENTS) && src[0] == '-' && src[1] == '-')
+			break;
+
+		if ((flags & IGNORE_SPACES) && isspace((unsigned char) *src))
+		{
+			if (!in_space)
+			{
+				*dst++ = ' ';
+				in_space = true;
+			}
+			src++;
+			continue;
+		}
+		in_space = false;
+
+		if ((flags & IGNORE_NUMBERS) &&
+			(isdigit((unsigned char) *src) ||
+			 (*src == '.' && src[1] != '.' && isdigit((unsigned char) src[1]))))
+		{
+			*dst++ = '#';
+			while (*src && (isdigit((unsigned char) *src) ||
+							(*src == '.' && src[1] != '.')))
+				src++;
+			continue;
+		}
+
+		if (flags & IGNORE_CASE)
+			*dst++ = tolower((unsigned char) *src++);
+		else
+			*dst++ = *src++;
+	}
+	*dst = '\0';
+
+	/* Trim trailing whitespace */
+	while (dst > result && isspace((unsigned char) dst[-1]))
+		*--dst = '\0';
+
+	return result;
+}
+
+/*
+ * Compare two files using pattern matching.
+ * Returns true if files match, false otherwise.
+ * If diff_out is not NULL, writes diff-like output there on mismatch.
+ */
+static bool
+compare_with_patterns(const char *expectfile, const char *resultfile,
+					  char **diff_out)
+{
+	FILE	   *exp_fp;
+	FILE	   *res_fp;
+	char		exp_line[8192];
+	char		res_line[8192];
+	char	  **exp_lines = NULL;
+	char	  **res_lines = NULL;
+	unsigned int *exp_flags = NULL;
+	int			exp_count = 0;
+	int			res_count = 0;
+	int			exp_alloc = 0;
+	int			res_alloc = 0;
+	unsigned int flags = IGNORE_NONE;
+	int			ei, ri, i;
+	bool		match = true;
+	StringInfoData diff_buf;
+
+	if (diff_out)
+	{
+		initStringInfo(&diff_buf);
+		*diff_out = NULL;
+	}
+
+	exp_fp = fopen(expectfile, "r");
+	if (!exp_fp)
+		return false;
+
+	res_fp = fopen(resultfile, "r");
+	if (!res_fp)
+	{
+		fclose(exp_fp);
+		return false;
+	}
+
+	/* Read expected file, parse directives, store normalized lines and flags */
+	while (fgets(exp_line, sizeof(exp_line), exp_fp))
+	{
+		exp_line[strcspn(exp_line, "\r\n")] = '\0';
+		if (parse_directive(exp_line, &flags))
+			continue;
+		if (exp_count >= exp_alloc)
+		{
+			exp_alloc = exp_alloc ? exp_alloc * 2 : 64;
+			exp_lines = pg_realloc(exp_lines, exp_alloc * sizeof(char *));
+			exp_flags = pg_realloc(exp_flags, exp_alloc * sizeof(unsigned int));
+		}
+		exp_lines[exp_count] = normalize_line(exp_line, flags);
+		exp_flags[exp_count] = flags;
+		exp_count++;
+	}
+	fclose(exp_fp);
+
+	/* Read result file and store raw lines */
+	while (fgets(res_line, sizeof(res_line), res_fp))
+	{
+		res_line[strcspn(res_line, "\r\n")] = '\0';
+		if (res_count >= res_alloc)
+		{
+			res_alloc = res_alloc ? res_alloc * 2 : 64;
+			res_lines = pg_realloc(res_lines, res_alloc * sizeof(char *));
+		}
+		res_lines[res_count++] = pg_strdup(res_line);
+	}
+	fclose(res_fp);
+
+	/* Compare lines using two-pointer approach */
+	ei = 0;
+	ri = 0;
+	while (ei < exp_count || ri < res_count)
+	{
+		flags = (ei < exp_count) ? exp_flags[ei] : IGNORE_NONE;
+
+		if (ei < exp_count && ri < res_count)
+		{
+			char *norm_res = normalize_line(res_lines[ri], flags);
+			int cmp = strcmp(exp_lines[ei], norm_res);
+			free(norm_res);
+
+			if (cmp == 0)
+			{
+				ei++;
+				ri++;
+				continue;
+			}
+		}
+
+		/* Mismatch - check ignore flags */
+		if (ri < res_count && (flags & IGNORE_RESULT))
+		{
+			ri++;
+			continue;
+		}
+		if (ei < exp_count && (flags & IGNORE_EXPECTED))
+		{
+			ei++;
+			continue;
+		}
+
+		match = false;
+		if (diff_out)
+		{
+			if (ei < exp_count)
+				appendStringInfo(&diff_buf, "-%s\n", exp_lines[ei++]);
+			if (ri < res_count)
+				appendStringInfo(&diff_buf, "+%s\n", res_lines[ri++]);
+		}
+		else
+			break;
+	}
+
+	for (i = 0; i < exp_count; i++)
+		free(exp_lines[i]);
+	for (i = 0; i < res_count; i++)
+		free(res_lines[i]);
+	if (exp_lines)
+		free(exp_lines);
+	if (exp_flags)
+		free(exp_flags);
+	if (res_lines)
+		free(res_lines);
+
+	if (diff_out)
+		*diff_out = diff_buf.data;
+
+	return match;
 }
 
 /*
@@ -1407,14 +1658,11 @@ static bool
 results_differ(const char *testname, const char *resultsfile, const char *default_expectfile)
 {
 	char		expectfile[MAXPGPATH];
-	char		diff[MAXPGPATH];
-	char		cmd[MAXPGPATH * 3];
 	char		best_expect_file[MAXPGPATH];
 	FILE	   *difffile;
-	int			best_line_count;
 	int			i;
-	int			l;
 	const char *platform_expectfile;
+	char	   *diff_output = NULL;
 
 	/*
 	 * We can pass either the resultsfile or the expectfile, they should have
@@ -1435,25 +1683,13 @@ results_differ(const char *testname, const char *resultsfile, const char *defaul
 			strcpy(++p, platform_expectfile);
 	}
 
-	/* Name to use for temporary diff file */
-	snprintf(diff, sizeof(diff), "%s.diff", resultsfile);
-
-	/* OK, run the diff */
-	snprintf(cmd, sizeof(cmd),
-			 "diff %s \"%s\" \"%s\" > \"%s\"",
-			 basic_diff_opts, expectfile, resultsfile, diff);
-
-	/* Is the diff file empty? */
-	if (run_diff(cmd, diff) == 0)
-	{
-		unlink(diff);
+	/* Try pattern-based comparison with primary expectfile */
+	if (compare_with_patterns(expectfile, resultsfile, NULL))
 		return false;
-	}
 
-	/* There may be secondary comparison files that match better */
-	best_line_count = file_line_count(diff);
 	strcpy(best_expect_file, expectfile);
 
+	/* There may be secondary comparison files that match better */
 	for (i = 0; i <= 9; i++)
 	{
 		char	   *alt_expectfile;
@@ -1468,23 +1704,10 @@ results_differ(const char *testname, const char *resultsfile, const char *defaul
 			continue;
 		}
 
-		snprintf(cmd, sizeof(cmd),
-				 "diff %s \"%s\" \"%s\" > \"%s\"",
-				 basic_diff_opts, alt_expectfile, resultsfile, diff);
-
-		if (run_diff(cmd, diff) == 0)
+		if (compare_with_patterns(alt_expectfile, resultsfile, NULL))
 		{
-			unlink(diff);
 			free(alt_expectfile);
 			return false;
-		}
-
-		l = file_line_count(diff);
-		if (l < best_line_count)
-		{
-			/* This diff was a better match than the last one */
-			best_line_count = l;
-			strlcpy(best_expect_file, alt_expectfile, sizeof(best_expect_file));
 		}
 		free(alt_expectfile);
 	}
@@ -1493,51 +1716,31 @@ results_differ(const char *testname, const char *resultsfile, const char *defaul
 	 * fall back on the canonical results file if we haven't tried it yet and
 	 * haven't found a complete match yet.
 	 */
-
 	if (platform_expectfile)
 	{
-		snprintf(cmd, sizeof(cmd),
-				 "diff %s \"%s\" \"%s\" > \"%s\"",
-				 basic_diff_opts, default_expectfile, resultsfile, diff);
-
-		if (run_diff(cmd, diff) == 0)
-		{
-			/* No diff = no changes = good */
-			unlink(diff);
+		if (compare_with_patterns(default_expectfile, resultsfile, NULL))
 			return false;
-		}
-
-		l = file_line_count(diff);
-		if (l < best_line_count)
-		{
-			/* This diff was a better match than the last one */
-			best_line_count = l;
-			strlcpy(best_expect_file, default_expectfile, sizeof(best_expect_file));
-		}
 	}
 
 	/*
-	 * Use the best comparison file to generate the "pretty" diff, which we
-	 * append to the diffs summary file.
+	 * Use the primary comparison file to generate the diff output,
+	 * which we append to the diffs summary file.
 	 */
+	compare_with_patterns(best_expect_file, resultsfile, &diff_output);
 
-	/* Write diff header */
 	difffile = fopen(difffilename, "a");
 	if (difffile)
 	{
-		fprintf(difffile,
-				"diff %s %s %s\n",
-				pretty_diff_opts, best_expect_file, resultsfile);
+		fprintf(difffile, "diff %s %s\n", best_expect_file, resultsfile);
+		if (diff_output)
+			fprintf(difffile, "%s", diff_output);
+		fprintf(difffile, "\n");
 		fclose(difffile);
 	}
 
-	/* Run diff */
-	snprintf(cmd, sizeof(cmd),
-			 "diff %s \"%s\" \"%s\" >> \"%s\"",
-			 pretty_diff_opts, best_expect_file, resultsfile, difffilename);
-	run_diff(cmd, difffilename);
+	if (diff_output)
+		free(diff_output);
 
-	unlink(diff);
 	return true;
 }
 
@@ -2096,6 +2299,7 @@ regression_main(int argc, char *argv[],
 		{"config-auth", required_argument, NULL, 24},
 		{"max-concurrent-tests", required_argument, NULL, 25},
 		{"expecteddir", required_argument, NULL, 26},
+		{"compare", no_argument, NULL, 27},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -2224,6 +2428,22 @@ regression_main(int argc, char *argv[],
 			case 26:
 				expecteddir = pg_strdup(optarg);
 				break;
+			case 27:
+				/* --compare: compare two files and exit */
+				if (argc - optind >= 2)
+				{
+					char	   *diff_output = NULL;
+					bool		match;
+
+					match = compare_with_patterns(argv[optind], argv[optind + 1], &diff_output);
+					if (diff_output && *diff_output)
+						printf("%s", diff_output);
+					if (diff_output)
+						free(diff_output);
+					exit(match ? 0 : 1);
+				}
+				pg_log_error("--compare requires two file arguments");
+				exit(2);
 			default:
 				/* getopt_long already emitted a complaint */
 				pg_log_error_hint("Try \"%s --help\" for more information.",
