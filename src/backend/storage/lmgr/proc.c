@@ -2070,16 +2070,29 @@ GetLockHoldersAndWaiters(LOCALLOCK *locallock, StringInfo lock_holders_sbuf,
 
 /*
  * ProcWaitForSignal - wait for a signal from another backend.
+ */
+void
+ProcWaitForSignal(uint32 wait_event_info)
+{
+	ProcWaitForSignalWithTimeout(wait_event_info, 0);
+}
+
+/*
+ * ProcWaitForSignalWithTimeout - wait for a signal from another backend with a
+ * timeout.
  *
  * As this uses the generic process latch the caller has to be robust against
  * unrelated wakeups: Always check that the desired state has occurred, and
  * wait again if not.
  */
 void
-ProcWaitForSignal(uint32 wait_event_info)
+ProcWaitForSignalWithTimeout(uint32 wait_event_info, long timeout_ms)
 {
-	(void) WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH, 0,
-					 wait_event_info);
+	int wake_events = WL_LATCH_SET | WL_EXIT_ON_PM_DEATH;
+	if (timeout_ms > 0)
+		wake_events |= WL_TIMEOUT;
+
+	(void) WaitLatch(MyLatch, wake_events, timeout_ms, wait_event_info);
 	ResetLatch(MyLatch);
 	CHECK_FOR_INTERRUPTS();
 }

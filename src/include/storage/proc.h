@@ -577,6 +577,8 @@ extern void GetLockHoldersAndWaiters(LOCALLOCK *locallock,
 									 int *lockHoldersNum);
 
 extern void ProcWaitForSignal(uint32 wait_event_info);
+extern void ProcWaitForSignalWithTimeout(uint32 wait_event_info,
+										 long timeout_ms);
 extern void ProcSendSignal(ProcNumber procNumber);
 
 extern PGPROC *AuxiliaryPidGetProc(int pid);
