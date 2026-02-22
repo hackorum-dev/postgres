@@ -795,12 +795,14 @@ void
 ResolveRecoveryConflictWithBufferPin(void)
 {
 	TimestampTz ltime;
+	bool standby_limit_expired;
 
 	Assert(InHotStandby);
 
 	ltime = GetStandbyLimitTime();
+	standby_limit_expired = GetCurrentTimestamp() >= ltime && ltime != 0;
 
-	if (GetCurrentTimestamp() >= ltime && ltime != 0)
+	if (standby_limit_expired)
 	{
 		/*
 		 * We're already behind, so clear a path as quickly as possible.
@@ -835,14 +837,20 @@ ResolveRecoveryConflictWithBufferPin(void)
 
 	/*
 	 * Wait to be signaled by UnpinBuffer() or for the wait to be interrupted
-	 * by one of the timeouts established above.
+	 * by one of the timeouts established above. If the standby limit has
+	 * already expired, we also set a 1s timeout. This ensures that if backends
+	 * acquire conflicting pins *after* processing the
+	 * PROCSIG_RECOVERY_CONFLICT_BUFFERPIN signal, the startup process will
+	 * resend the signal to notify these backends to cancel their queries.
 	 *
-	 * We assume that only UnpinBuffer() and the timeout requests established
-	 * above can wake us up here. WakeupRecovery() called by walreceiver or
-	 * SIGHUP signal handler, etc cannot do that because it uses the different
-	 * latch from that ProcWaitForSignal() waits on.
+	 * We assume that only UnpinBuffer(), the timeout requests established
+	 * above, and the 1s timeout (if standby limit has expired) can wake us up
+	 * here. WakeupRecovery() called by walreceiver or SIGHUP signal handler,
+	 * etc cannot do that because it uses the different latch from that
+	 * ProcWaitForSignalWithTimeout() waits on.
 	 */
-	ProcWaitForSignal(WAIT_EVENT_BUFFER_CLEANUP);
+	ProcWaitForSignalWithTimeout(WAIT_EVENT_BUFFER_CLEANUP,
+								 standby_limit_expired ? 1000 : 0);
 
 	if (got_standby_delay_timeout)
 		SendRecoveryConflictWithBufferPin(RECOVERY_CONFLICT_BUFFERPIN);
