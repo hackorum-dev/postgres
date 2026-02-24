@@ -115,6 +115,7 @@
 #include "nodes/nodeFuncs.h"
 #include "storage/lmgr.h"
 #include "utils/injection_point.h"
+#include "utils/lsyscache.h"
 #include "utils/multirangetypes.h"
 #include "utils/rangetypes.h"
 #include "utils/snapmgr.h"
@@ -145,7 +146,7 @@ static bool index_unchanged_by_update(ResultRelInfo *resultRelInfo,
 static bool index_expression_changed_walker(Node *node,
 											Bitmapset *allUpdatedCols);
 static void ExecWithoutOverlapsNotEmpty(Relation rel, NameData attname, Datum attval,
-										char typtype, Oid atttypid);
+										char typtype);
 
 /* ----------------------------------------------------------------
  *		ExecOpenIndices
@@ -753,11 +754,10 @@ check_exclusion_or_unique_constraint(Relation heap, Relation index,
 		{
 			TupleDesc	tupdesc = RelationGetDescr(heap);
 			Form_pg_attribute att = TupleDescAttr(tupdesc, attno - 1);
-			TypeCacheEntry *typcache = lookup_type_cache(att->atttypid, 0);
 
 			ExecWithoutOverlapsNotEmpty(heap, att->attname,
 										values[indnkeyatts - 1],
-										typcache->typtype, att->atttypid);
+										get_typtype(att->atttypid));
 		}
 	}
 
@@ -1149,7 +1149,7 @@ index_expression_changed_walker(Node *node, Bitmapset *allUpdatedCols)
  * range or multirange in the given attribute.
  */
 static void
-ExecWithoutOverlapsNotEmpty(Relation rel, NameData attname, Datum attval, char typtype, Oid atttypid)
+ExecWithoutOverlapsNotEmpty(Relation rel, NameData attname, Datum attval, char typtype)
 {
 	bool		isempty;
 	RangeType  *r;
