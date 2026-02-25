@@ -518,17 +518,17 @@ SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY income) FROM households;
 
  </sect2>
 
-  <sect2 id="xaggr-partial-aggregates">
-  <title>Partial Aggregation</title>
+  <sect2 id="xaggr-parallel-aggregates">
+  <title>Parallel Aggregation</title>
 
   <indexterm>
    <primary>aggregate function</primary>
-   <secondary>partial aggregation</secondary>
+   <secondary>parallel aggregation</secondary>
   </indexterm>
 
   <para>
-   Optionally, an aggregate function can support <firstterm>partial
-   aggregation</firstterm>.  The idea of partial aggregation is to run the aggregate's
+   Optionally, an aggregate function can support <firstterm>parallel
+   aggregation</firstterm>.  The idea of parallel aggregation is to run the aggregate's
    state transition function over different subsets of the input data
    independently, and then to combine the state values resulting from those
    subsets to produce the same state value that would have resulted from
@@ -542,7 +542,7 @@ SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY income) FROM households;
   </para>
 
   <para>
-   To support partial aggregation, the aggregate definition must provide
+   To support parallel aggregation, the aggregate definition must provide
    a <firstterm>combine function</firstterm>, which takes two values of the
    aggregate's state type (representing the results of aggregating over two
    subsets of the input rows) and produces a new value of the state type,
@@ -555,7 +555,7 @@ SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY income) FROM households;
 
   <para>
    As simple examples, <literal>MAX</literal> and <literal>MIN</literal> aggregates can be
-   made to support partial aggregation by specifying the combine function as
+   made to support parallel aggregation by specifying the combine function as
    the same greater-of-two or lesser-of-two comparison function that is used
    as their transition function.  <literal>SUM</literal> aggregates just need an
    addition function as combine function.  (Again, this is the same as their
@@ -571,7 +571,7 @@ SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY income) FROM households;
    definition specifies a non-null <literal>initcond</literal>, keep in mind that
    that will be used not only as the initial state for each partial
    aggregation run, but also as the initial state for the combine function,
-   which will be called to combine each partial result into that state.
+   which will be called to combine each parallel result into that state.
   </para>
 
   <para>
