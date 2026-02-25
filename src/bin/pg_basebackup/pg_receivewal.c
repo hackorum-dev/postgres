@@ -414,7 +414,6 @@ FindStreamingStart(uint32 *tli)
 					size_t		out_size = LZ4_CHUNK_SZ;
 					size_t		read_size = readend - readp;
 
-					memset(outbuf, 0, LZ4_CHUNK_SZ);
 					status = LZ4F_decompress(ctx, outbuf, &out_size,
 											 readp, &read_size, &dec_opt);
 					if (LZ4F_isError(status))
