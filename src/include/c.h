@@ -1373,6 +1373,11 @@ typedef struct PGAlignedXLogBlock PGAlignedXLogBlock;
 #define unconstify(underlying_type, expr) \
 	(StaticAssertVariableIsOfTypeMacro(expr, const underlying_type), \
 	 (underlying_type) (expr))
+#define unconstify_array(underlying_type, expr) \
+	(StaticAssertExpr(__builtin_types_compatible_p(__typeof(expr), underlying_type const*), \
+					  "wrong cast"), \
+	 (underlying_type*) (expr))
+
 #define unvolatize(underlying_type, expr) \
 	(StaticAssertVariableIsOfTypeMacro(expr, volatile underlying_type), \
 	 (underlying_type) (expr))
