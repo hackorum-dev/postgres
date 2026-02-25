@@ -1875,6 +1875,35 @@ PerformWalRecovery(void)
 						(errmsg("requested recovery stop point is before consistent recovery point")));
 
 			/*
+			 * If the recovery snapshot is still in the PENDING state (due to
+			 * subxid overflow in the initial XLOG_RUNNING_XACTS record),
+			 * force it to READY now.  All WAL up to the recovery target has
+			 * been replayed, so CLOG and SubTrans are complete for all
+			 * transactions that appear in WAL before the target.
+			 *
+			 * The correctness concern that motivates STANDBY_SNAPSHOT_PENDING
+			 * is that some subxids may lack a parent-mapping in SubTrans.  On
+			 * a standby this is harmless: subtransaction commits (SAVEPOINT
+			 * RELEASE) write to CLOG but generate no WAL entry, so the
+			 * standby always sees those subxids as INPROGRESS rather than
+			 * SUB_COMMITTED.  INPROGRESS subxids are treated as invisible
+			 * without any SubTrans lookup, so missing SubTrans entries cannot
+			 * cause incorrect visibility.
+			 *
+			 * Without this transition, recovery_target_action = 'pause' would
+			 * be silently skipped: recoveryPausesHere() bails out immediately
+			 * when hot standby is not yet active, causing unintended
+			 * promotion.
+			 */
+			if (standbyState == STANDBY_SNAPSHOT_PENDING)
+			{
+				standbyState = STANDBY_SNAPSHOT_READY;
+				ereport(LOG,
+						(errmsg("recovery snapshot advanced to ready at recovery target")));
+				CheckRecoveryConsistency();
+			}
+
+			/*
 			 * This is the last point where we can restart recovery with a new
 			 * recovery target, if we shutdown and begin again. After this,
 			 * Resource Managers may choose to do permanent corrective actions
