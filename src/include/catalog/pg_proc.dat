@@ -12714,5 +12714,29 @@
 { oid => '6462', descr => 'hash',
   proname => 'hashoid8extended', prorettype => 'int8',
   proargtypes => 'oid8 int8', prosrc => 'hashoid8extended' },
+  
+{ oid => '5300',
+  proname => 'interval_plus_int4',
+  prorettype => 'interval',
+  proargtypes => 'interval int4',
+  prosrc => 'interval_plus_int4' },
+
+{ oid => '5301',
+  proname => 'int4_plus_interval',
+  prorettype => 'interval',
+  proargtypes => 'int4 interval',
+  prosrc => 'int4_plus_interval' },
+
+{ oid => '5302',
+  proname => 'interval_minus_int4',
+  prorettype => 'interval',
+  proargtypes => 'interval int4',
+  prosrc => 'interval_minus_int4' },
+
+{ oid => '5303',
+  proname => 'int4_minus_interval',
+  prorettype => 'interval',
+  proargtypes => 'int4 interval',
+  prosrc => 'int4_minus_interval' },
 
 ]
