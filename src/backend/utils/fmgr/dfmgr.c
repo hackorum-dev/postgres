@@ -193,6 +193,7 @@ internal_load_library(const char *libname)
 	char	   *load_error;
 	struct stat stat_buf;
 	PG_init_t	PG_init;
+	int			stat_errno = 0;
 
 	/*
 	 * Scan the list of loaded FILES to see if the file has been loaded.
@@ -209,16 +210,66 @@ internal_load_library(const char *libname)
 		 * Check for same files - different paths (ie, symlink or link)
 		 */
 		if (stat(libname, &stat_buf) == -1)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not access file \"%s\": %m",
-							libname)));
+		{
+			/*
+			 * Save errno for later, but don't error out yet. We might still
+			 * find this library already loaded under a different path. This
+			 * can happen if the library was preloaded with its full path but
+			 * we're now trying to load it with a bare name.
+			 */
+			stat_errno = errno;
+		}
 
-		for (file_scanner = file_list;
-			 file_scanner != NULL &&
-			 !SAME_INODE(stat_buf, *file_scanner);
-			 file_scanner = file_scanner->next)
-			;
+		if (stat_errno == 0)
+		{
+			for (file_scanner = file_list;
+				 file_scanner != NULL &&
+				 !SAME_INODE(stat_buf, *file_scanner);
+				 file_scanner = file_scanner->next)
+				;
+		}
+
+		/*
+		 * If we couldn't stat() the file, check if any loaded library's
+		 * filename ends with the basename we're looking for. This handles
+		 * the case where a library was preloaded with its full path but
+		 * we're trying to load it again with just the basename.
+		 */
+		if (stat_errno != 0 && file_scanner == NULL)
+		{
+			size_t		libname_len = strlen(libname);
+
+			for (file_scanner = file_list;
+				 file_scanner != NULL;
+				 file_scanner = file_scanner->next)
+			{
+				size_t		scanner_len = strlen(file_scanner->filename);
+				const char *scanner_base;
+
+				/* Check if the loaded filename ends with our libname */
+				if (scanner_len >= libname_len)
+				{
+					scanner_base = file_scanner->filename + scanner_len - libname_len;
+					if ((scanner_base == file_scanner->filename ||
+						 IS_DIR_SEP(scanner_base[-1])) &&
+						strcmp(scanner_base, libname) == 0)
+					{
+						/* Found a match by basename */
+						break;
+					}
+				}
+			}
+
+			/* If still not found, now we can error out */
+			if (file_scanner == NULL)
+			{
+				errno = stat_errno;
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not access file \"%s\": %m",
+								libname)));
+			}
+		}
 	}
 
 	if (file_scanner == NULL)
