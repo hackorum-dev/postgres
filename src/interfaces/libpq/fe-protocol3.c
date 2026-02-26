@@ -1616,7 +1616,7 @@ getParameterStatus(PGconn *conn)
  * parseInput subroutine to read a BackendKeyData message.
  * Entry: 'K' message type and length have already been consumed.
  * Exit: returns 0 if successfully consumed message.
- *		 returns EOF if not enough data.
+ *              returns EOF if not enough data.
  */
 static int
 getBackendKeyData(PGconn *conn, int msgLength)
