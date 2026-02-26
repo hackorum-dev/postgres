@@ -3486,4 +3486,26 @@
   oprcom => '<=(oid8,oid8)', oprnegate => '<(oid8,oid8)', oprcode => 'oid8ge',
   oprrest => 'scalargesel', oprjoin => 'scalargejoinsel' },
 
+/* interval + integer */
+{ oid => '5200', oid_symbol => 'OPERATOR_INTERVAL_PLUS_INT4',
+  oprname => '+', oprleft => 'interval', oprright => 'int4',
+  oprresult => 'interval', oprcode => 'interval_plus_int4' },
+
+/* integer + interval */
+{ oid => '5201', oid_symbol => 'OPERATOR_INT4_PLUS_INTERVAL',
+  oprname => '+', oprleft => 'int4', oprright => 'interval',
+  oprresult => 'interval', oprcode => 'int4_plus_interval' },
+
+/* interval - integer */
+{ oid => '5202', oid_symbol => 'OPERATOR_INTERVAL_MINUS_INT4',
+  oprname => '-', oprleft => 'interval', oprright => 'int4',
+  oprresult => 'interval', 
+  oprcode => 'interval_minus_int4' },
+
+/* integer - interval */
+{ oid => '5203', oid_symbol => 'OPERATOR_INT4_MINUS_INTERVAL',
+  oprname => '-', oprleft => 'int4', oprright => 'interval',
+  oprresult => 'interval',
+  oprcode => 'int4_minus_interval' },
+  
 ]
