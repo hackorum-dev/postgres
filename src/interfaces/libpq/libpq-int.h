@@ -152,6 +152,13 @@ typedef struct
 	void	   *noticeProcArg;
 } PGNoticeHooks;
 
+/* Fields needed for OAuth handling */
+typedef struct
+{
+	PQConnAuthDataHook proc;
+	void	   *arg;
+} PGAuthDataHooks;
+
 typedef struct PGEvent
 {
 	PGEventProc proc;			/* the function to call on events */
@@ -452,6 +459,9 @@ struct pg_conn
 
 	/* Callback procedures for notice message processing */
 	PGNoticeHooks noticeHooks;
+
+	/* Callback procedures for OAuth authentication */
+	PGAuthDataHooks authDataHooks;
 
 	/* Event procs registered via PQregisterEventProc */
 	PGEvent    *events;			/* expandable array of event data */

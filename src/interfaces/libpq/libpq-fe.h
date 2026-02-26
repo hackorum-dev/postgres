@@ -812,9 +812,12 @@ extern char *PQencryptPasswordConn(PGconn *conn, const char *passwd, const char 
 extern PGresult *PQchangePassword(PGconn *conn, const char *user, const char *passwd);
 
 typedef int (*PQauthDataHook_type) (PGauthData type, PGconn *conn, void *data);
+typedef int (*PQConnAuthDataHook) (void *arg, PGauthData type, PGconn *conn, void *data);
 extern void PQsetAuthDataHook(PQauthDataHook_type hook);
 extern PQauthDataHook_type PQgetAuthDataHook(void);
 extern int	PQdefaultAuthDataHook(PGauthData type, PGconn *conn, void *data);
+extern PQConnAuthDataHook PQsetConnAuthDataHook(PGconn *conn, PQConnAuthDataHook proc, void *arg);
+extern int	PQrunConnAuthDataHook(PGauthData type, PGconn *conn, void *data);
 
 /* === in encnames.c === */
 

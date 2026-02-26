@@ -998,7 +998,11 @@ setup_token_request(PGconn *conn, fe_oauth_state *state)
 	Assert(request.openid_configuration);
 
 	/* The client may have overridden the OAuth flow. */
-	res = PQauthDataHook(PQAUTHDATA_OAUTH_BEARER_TOKEN, conn, &request);
+	if (conn->authDataHooks.proc)
+		res = conn->authDataHooks.proc(conn->authDataHooks.arg, PQAUTHDATA_OAUTH_BEARER_TOKEN, conn, &request);
+	else
+		res = PQauthDataHook(PQAUTHDATA_OAUTH_BEARER_TOKEN, conn, &request);
+
 	if (res > 0)
 	{
 		PGoauthBearerRequest *request_copy;

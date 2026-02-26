@@ -22,6 +22,7 @@
 #include "libpq-fe.h"
 
 static int	handle_auth_data(PGauthData type, PGconn *conn, void *data);
+static int	handle_auth_data_async(void *arg, PGauthData type, PGconn *conn, void *data);
 static PostgresPollingStatusType async_cb(PGconn *conn,
 										  PGoauthBearerRequest *req,
 										  pgsocket *altsock);
@@ -125,9 +126,6 @@ main(int argc, char *argv[])
 
 	conninfo = argv[optind];
 
-	/* Set up our OAuth hooks. */
-	PQsetAuthDataHook(handle_auth_data);
-
 	/* Connect. (All the actual work is in the hook.) */
 	if (stress_async)
 	{
@@ -141,6 +139,9 @@ main(int argc, char *argv[])
 
 		conn = PQconnectStart(conninfo);
 
+		/* Set up our OAuth hooks. */
+		PQsetConnAuthDataHook(conn, handle_auth_data_async, NULL);
+
 		do
 		{
 			res = PQconnectPoll(conn);
@@ -148,6 +149,9 @@ main(int argc, char *argv[])
 	}
 	else
 	{
+		/* Set up our OAuth hooks. */
+		PQsetAuthDataHook(handle_auth_data);
+
 		/* Perform a standard synchronous connection. */
 		conn = PQconnectdb(conninfo);
 	}
@@ -223,6 +227,12 @@ handle_auth_data(PGauthData type, PGconn *conn, void *data)
 
 	req->token = token;
 	return 1;
+}
+
+static int
+handle_auth_data_async(void *arg, PGauthData type, PGconn *conn, void *data)
+{
+	return handle_auth_data(type, conn, data);
 }
 
 static PostgresPollingStatusType

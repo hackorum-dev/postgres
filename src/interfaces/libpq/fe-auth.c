@@ -1602,3 +1602,29 @@ PQdefaultAuthDataHook(PGauthData type, PGconn *conn, void *data)
 {
 	return 0;					/* handle nothing */
 }
+
+PQConnAuthDataHook
+PQsetConnAuthDataHook(PGconn *conn, PQConnAuthDataHook proc, void *arg)
+{
+	PQConnAuthDataHook old;
+
+	if (conn == NULL)
+		return NULL;
+
+	old = conn->authDataHooks.proc;
+	if (proc)
+	{
+		conn->authDataHooks.proc = proc;
+		conn->authDataHooks.arg = arg;
+	}
+	return old;
+}
+
+int
+PQrunConnAuthDataHook(PGauthData type, PGconn *conn, void *data)
+{
+	if (conn->authDataHooks.proc)
+		return conn->authDataHooks.proc(conn->authDataHooks.arg, type, conn, data);
+
+	return PQauthDataHook(type, conn, data);
+}

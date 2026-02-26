@@ -2621,9 +2621,8 @@ prompt_user(struct async_ctx *actx, PGconn *conn)
 		.verification_uri_complete = actx->authz.verification_uri_complete,
 		.expires_in = actx->authz.expires_in,
 	};
-	PQauthDataHook_type hook = PQgetAuthDataHook();
 
-	res = hook(PQAUTHDATA_PROMPT_OAUTH_DEVICE, conn, &prompt);
+	res = PQrunConnAuthDataHook(PQAUTHDATA_PROMPT_OAUTH_DEVICE, conn, &prompt);
 
 	if (!res)
 	{
