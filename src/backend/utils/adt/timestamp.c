@@ -3231,6 +3231,113 @@ timestamp_mi_interval(PG_FUNCTION_ARGS)
 							   PointerGetDatum(&tspan));
 }
 
+/*
+ * interval + integer
+ */
+Datum
+interval_plus_int4(PG_FUNCTION_ARGS)
+{
+    Interval   *interval = PG_GETARG_INTERVAL_P(0);
+    int32       days = PG_GETARG_INT32(1);
+    Interval   *result;
+    
+    Interval    days_interval;
+    
+    result = (Interval *) palloc(sizeof(Interval));
+    
+    days_interval.month = 0;
+    days_interval.day = days;
+    days_interval.time = 0;
+    
+    result = DatumGetIntervalP(DirectFunctionCall2(
+        interval_pl,
+        IntervalPGetDatum(interval),
+        IntervalPGetDatum(&days_interval)
+    ));
+    
+    PG_RETURN_INTERVAL_P(result);
+}
+
+/*
+ * integer + interval
+ */
+Datum
+int4_plus_interval(PG_FUNCTION_ARGS)
+{
+    int32       days = PG_GETARG_INT32(0);
+    Interval   *interval = PG_GETARG_INTERVAL_P(1);
+    Interval   *result;
+    Interval    days_interval;
+    
+    days_interval.month = 0;
+    days_interval.day = days;
+    days_interval.time = 0;
+    
+    result = DatumGetIntervalP(DirectFunctionCall2(
+        interval_pl,
+        IntervalPGetDatum(interval),
+        IntervalPGetDatum(&days_interval)
+    ));
+    
+    PG_RETURN_INTERVAL_P(result);
+}
+/*
+ * interval - integer
+ */
+Datum
+interval_minus_int4(PG_FUNCTION_ARGS)
+{
+    Interval   *interval = PG_GETARG_INTERVAL_P(0);
+    int32       days = PG_GETARG_INT32(1);
+    Interval   *result;
+    Interval    days_interval;
+    
+    result = (Interval *) palloc(sizeof(Interval));
+    
+    days_interval.month = 0;
+    days_interval.day = -days;
+    days_interval.time = 0;
+    
+    /* interval + (-days) = interval - days */
+    result = DatumGetIntervalP(DirectFunctionCall2(
+        interval_pl,
+        IntervalPGetDatum(interval),
+        IntervalPGetDatum(&days_interval)
+    ));
+    
+    PG_RETURN_INTERVAL_P(result);
+}
+
+/*
+ * integer - interval
+ */
+Datum
+int4_minus_interval(PG_FUNCTION_ARGS)
+{
+    int32       days = PG_GETARG_INT32(0);
+    Interval   *interval = PG_GETARG_INTERVAL_P(1);
+    Interval   *result;
+    Interval    base_interval;
+    Interval    neg_interval;
+    
+    result = (Interval *) palloc(sizeof(Interval));
+
+    base_interval.month = 0;
+    base_interval.day = days;
+    base_interval.time = 0;
+
+    neg_interval.month = -interval->month;
+    neg_interval.day = -interval->day;
+    neg_interval.time = -interval->time;
+
+    result = DatumGetIntervalP(DirectFunctionCall2(
+        interval_pl,
+        IntervalPGetDatum(&base_interval),
+        IntervalPGetDatum(&neg_interval)
+    ));
+    
+    PG_RETURN_INTERVAL_P(result);
+}
 
 /*
  * timestamptz_pl_interval_internal()
