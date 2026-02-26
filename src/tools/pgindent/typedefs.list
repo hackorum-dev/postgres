@@ -2456,6 +2456,8 @@ PropGraphLabelAndProperties
 PropGraphProperties
 PropGraphVertex
 ProtocolVersion
+ProxyContext
+ProxyChunk
 PrsStorage
 PruneFreezeParams
 PruneFreezeResult
