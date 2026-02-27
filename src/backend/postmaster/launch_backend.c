@@ -54,20 +54,15 @@
 #include "utils/memutils.h"
 
 #ifdef EXEC_BACKEND
-#include "nodes/queryjumble.h"
-#include "storage/pg_shmem.h"
-#include "storage/spin.h"
-#endif
-
-
-#ifdef EXEC_BACKEND
 
 #include "common/file_utils.h"
+#include "nodes/queryjumble.h"
 #include "storage/fd.h"
 #include "storage/lwlock.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "storage/procsignal.h"
+#include "storage/spin.h"
 #include "tcop/tcopprot.h"
 #include "utils/injection_point.h"
 
