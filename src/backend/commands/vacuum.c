@@ -165,6 +165,7 @@ ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel)
 	BufferAccessStrategy bstrategy = NULL;
 	bool		verbose = false;
 	bool		skip_locked = false;
+	bool		missing_stats_only = false;
 	bool		analyze = false;
 	bool		freeze = false;
 	bool		full = false;
@@ -229,6 +230,8 @@ ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel)
 
 			ring_size = result;
 		}
+		else if (strcmp(opt->defname, "missing_stats_only") == 0)
+			missing_stats_only = defGetBoolean(opt);
 		else if (!vacstmt->is_vacuumcmd)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
@@ -305,6 +308,7 @@ ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel)
 		(vacstmt->is_vacuumcmd ? VACOPT_VACUUM : VACOPT_ANALYZE) |
 		(verbose ? VACOPT_VERBOSE : 0) |
 		(skip_locked ? VACOPT_SKIP_LOCKED : 0) |
+		(missing_stats_only ? VACOPT_MISSING_STATS_ONLY :0) |
 		(analyze ? VACOPT_ANALYZE : 0) |
 		(freeze ? VACOPT_FREEZE : 0) |
 		(full ? VACOPT_FULL : 0) |
@@ -315,7 +319,7 @@ ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel)
 		(only_database_stats ? VACOPT_ONLY_DATABASE_STATS : 0);
 
 	/* sanity checks on options */
-	Assert(params.options & (VACOPT_VACUUM | VACOPT_ANALYZE));
+	Assert(params.options & (VACOPT_VACUUM | VACOPT_ANALYZE | VACOPT_MISSING_STATS_ONLY));
 	Assert((params.options & VACOPT_VACUUM) ||
 		   !(params.options & (VACOPT_FULL | VACOPT_FREEZE)));
 

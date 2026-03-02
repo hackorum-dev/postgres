@@ -1,0 +1,97 @@
+--
+-- ANALYZE (MISSING_STATS_ONLY) regression test
+--
+-- 1. Brand new empty table
+CREATE TABLE ms1 (a int);
+-- No statistics yet → should analyze
+ANALYZE (MISSING_STATS_ONLY) ms1;
+-- pg_statistic should still be empty (table has no rows)
+SELECT count(*) AS stat_rows
+FROM pg_statistic
+WHERE starelid = 'ms1'::regclass;
+ stat_rows 
+-----------
+         0
+(1 row)
+
+-- 2. Insert data
+INSERT INTO ms1 SELECT generate_series(1,10);
+-- Stats missing → should analyze
+ANALYZE (MISSING_STATS_ONLY) ms1;
+-- Now stats must exist
+SELECT count(*) AS stat_rows
+FROM pg_statistic
+WHERE starelid = 'ms1'::regclass;
+ stat_rows 
+-----------
+         1
+(1 row)
+
+-- 3. Re-run → stats exist → should skip
+ANALYZE (MISSING_STATS_ONLY) ms1;
+-- Stats count should remain the same
+SELECT count(*) AS stat_rows
+FROM pg_statistic
+WHERE starelid = 'ms1'::regclass;
+ stat_rows 
+-----------
+         1
+(1 row)
+
+-- 4. Add new column → missing stats for column b
+ALTER TABLE ms1 ADD COLUMN b int;
+-- Should analyze again
+ANALYZE (MISSING_STATS_ONLY) ms1;
+-- Now both columns should have stats
+SELECT count(*) AS stat_rows
+FROM pg_statistic
+WHERE starelid = 'ms1'::regclass;
+ stat_rows 
+-----------
+         2
+(1 row)
+
+DROP TABLE ms1;
+-- 5. ANALYZE with explicit column list
+CREATE TABLE ms_cols (a int, b int);
+INSERT INTO ms_cols SELECT i, i FROM generate_series(1,10) i;
+ANALYZE (MISSING_STATS_ONLY) ms_cols;
+-- Re-run for column a only → should skip
+ANALYZE (MISSING_STATS_ONLY) ms_cols (a);
+SELECT count(*) AS stat_rows
+FROM pg_statistic
+WHERE starelid = 'ms_cols'::regclass;
+ stat_rows 
+-----------
+         2
+(1 row)
+
+DROP TABLE ms_cols;
+-- 6. Expression index
+CREATE TABLE ms_expr (a int);
+INSERT INTO ms_expr SELECT generate_series(1,10);
+CREATE INDEX ms_expr_idx ON ms_expr ((a + 1));
+ANALYZE (MISSING_STATS_ONLY) ms_expr;
+-- Re-run → should skip
+ANALYZE (MISSING_STATS_ONLY) ms_expr;
+DROP TABLE ms_expr;
+-- 7. Declarative partitioning
+CREATE TABLE ms_part (a int) PARTITION BY RANGE (a);
+CREATE TABLE ms_part_1 PARTITION OF ms_part
+    FOR VALUES FROM (0) TO (100);
+INSERT INTO ms_part SELECT generate_series(1,10);
+-- Should analyze parent and partition correctly
+ANALYZE (MISSING_STATS_ONLY) ms_part;
+-- Re-run → should skip
+ANALYZE (MISSING_STATS_ONLY) ms_part;
+DROP TABLE ms_part;
+-- 8. Table inheritance
+CREATE TABLE ms_parent (a int);
+CREATE TABLE ms_child () INHERITS (ms_parent);
+INSERT INTO ms_child SELECT generate_series(1,10);
+-- Analyze parent with inheritance
+ANALYZE (MISSING_STATS_ONLY) ms_parent;
+-- Re-run → should skip
+ANALYZE (MISSING_STATS_ONLY) ms_parent;
+DROP TABLE ms_child;
+DROP TABLE ms_parent;

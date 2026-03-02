@@ -29,6 +29,8 @@
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_inherits.h"
+#include "catalog/pg_statistic_ext.h"
+#include "catalog/pg_statistic_ext_data.h"
 #include "commands/progress.h"
 #include "commands/tablecmds.h"
 #include "commands/vacuum.h"
@@ -46,6 +48,7 @@
 #include "storage/procarray.h"
 #include "utils/attoptcache.h"
 #include "utils/datum.h"
+#include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -83,7 +86,7 @@ static void compute_index_stats(Relation onerel, double totalrows,
 								HeapTuple *rows, int numrows,
 								MemoryContext col_context);
 static VacAttrStats *examine_attribute(Relation onerel, int attnum,
-									   Node *index_expr);
+									   Node *index_expr,bool missing_stats_only);
 static int	acquire_sample_rows(Relation onerel, int elevel,
 								HeapTuple *rows, int targrows,
 								double *totalrows, double *totaldeadrows);
@@ -96,6 +99,54 @@ static void update_attstats(Oid relid, bool inh,
 static Datum std_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
 static Datum ind_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
 
+static bool
+relation_has_missing_extended_stats(Relation rel)
+{
+	Relation extrel;
+	SysScanDesc scan;
+	ScanKeyData key;
+	HeapTuple tup;
+
+	extrel = table_open(StatisticExtRelationId, AccessShareLock);
+
+	ScanKeyInit(&key,
+			Anum_pg_statistic_ext_stxrelid,
+			BTEqualStrategyNumber,
+			F_OIDEQ,
+			ObjectIdGetDatum(RelationGetRelid(rel)));
+
+	scan = systable_beginscan(extrel,
+					StatisticExtRelidIndexId,
+					true,
+					NULL,
+					1,
+					&key);
+
+	while (HeapTupleIsValid(tup = systable_getnext(scan)))
+	{
+		Form_pg_statistic_ext e =
+			(Form_pg_statistic_ext) GETSTRUCT(tup);
+
+		HeapTuple dtup =
+			SearchSysCache2(STATEXTDATASTXOID,
+				ObjectIdGetDatum(e->oid),
+				BoolGetDatum(false));
+
+		if (!HeapTupleIsValid(dtup))
+		{
+			systable_endscan(scan);
+			table_close(extrel, AccessShareLock);
+			return true;
+		}
+
+		ReleaseSysCache(dtup);
+	}
+
+	systable_endscan(scan);
+	table_close(extrel, AccessShareLock);
+
+	return false;
+}
 
 /*
  *	analyze_rel() -- analyze one relation
@@ -399,7 +450,7 @@ do_analyze_rel(Relation onerel, const VacuumParams params,
 								col, RelationGetRelationName(onerel))));
 			unique_cols = bms_add_member(unique_cols, i);
 
-			vacattrstats[tcnt] = examine_attribute(onerel, i, NULL);
+			vacattrstats[tcnt] = examine_attribute(onerel, i, NULL,(params.options & VACOPT_MISSING_STATS_ONLY));
 			if (vacattrstats[tcnt] != NULL)
 				tcnt++;
 		}
@@ -413,7 +464,7 @@ do_analyze_rel(Relation onerel, const VacuumParams params,
 		tcnt = 0;
 		for (i = 1; i <= attr_cnt; i++)
 		{
-			vacattrstats[tcnt] = examine_attribute(onerel, i, NULL);
+			vacattrstats[tcnt] = examine_attribute(onerel, i, NULL,(params.options & VACOPT_MISSING_STATS_ONLY));
 			if (vacattrstats[tcnt] != NULL)
 				tcnt++;
 		}
@@ -482,13 +533,47 @@ do_analyze_rel(Relation onerel, const VacuumParams params,
 						indexpr_item = lnext(indexInfo->ii_Expressions,
 											 indexpr_item);
 						thisdata->vacattrstats[tcnt] =
-							examine_attribute(Irel[ind], i + 1, indexkey);
+							examine_attribute(Irel[ind], i + 1, indexkey,(params.options & VACOPT_MISSING_STATS_ONLY));
 						if (thisdata->vacattrstats[tcnt] != NULL)
 							tcnt++;
 					}
 				}
 				thisdata->attr_cnt = tcnt;
 			}
+		}
+	}
+
+	/*
+	 * If ANALYZE (MISSING_STATS_ONLY) and nothing to analyze,
+	 * skip relation.
+	 */
+	if ((params.options & VACOPT_MISSING_STATS_ONLY) &&
+		attr_cnt == 0)
+	{
+		bool has_missing_ext = relation_has_missing_extended_stats(onerel);
+
+		bool has_expr = false;
+
+		for (ind = 0; ind < nindexes; ind++)
+		{
+			if (indexdata[ind].attr_cnt > 0)
+			{
+				has_expr = true;
+				break;
+			}
+		}
+
+		if (!has_expr && !has_missing_ext)
+		{
+			if (verbose)
+				ereport(INFO,
+					(errmsg("skipping analyzing \"%s.%s.%s\"",
+						get_database_name(MyDatabaseId),
+						get_namespace_name(RelationGetNamespace(onerel)),
+						RelationGetRelationName(onerel))));
+
+			vac_close_indexes(nindexes, Irel, NoLock);
+			return;
 		}
 	}
 
@@ -1039,7 +1124,7 @@ compute_index_stats(Relation onerel, double totalrows,
  * and index_expr is the expression tree representing the column's data.
  */
 static VacAttrStats *
-examine_attribute(Relation onerel, int attnum, Node *index_expr)
+examine_attribute(Relation onerel, int attnum, Node *index_expr, bool missing_stats_only)
 {
 	Form_pg_attribute attr = TupleDescAttr(onerel->rd_att, attnum - 1);
 	int			attstattarget;
@@ -1075,6 +1160,45 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 	/* Don't analyze column if user has specified not to */
 	if (attstattarget == 0)
 		return NULL;
+
+	/*
+	 * If ANALYZE (MISSING_STATS_ONLY),
+	 * skip attributes that already have stats.
+	 */
+	if (missing_stats_only)
+	{
+		HeapTuple statstup;
+		bool has_stats = false;
+
+		/* Try stainherit = false */
+		statstup = SearchSysCache3(STATRELATTINH,
+						ObjectIdGetDatum(RelationGetRelid(onerel)),
+						Int16GetDatum(attnum),
+						BoolGetDatum(false));
+
+		if (HeapTupleIsValid(statstup))
+		{
+			has_stats = true;
+			ReleaseSysCache(statstup);
+		}
+		else
+		{
+			/* Try stainherit = true (partition parents) */
+			statstup = SearchSysCache3(STATRELATTINH,
+							ObjectIdGetDatum(RelationGetRelid(onerel)),
+							Int16GetDatum(attnum),
+							BoolGetDatum(true));
+
+			if (HeapTupleIsValid(statstup))
+			{
+				has_stats = true;
+				ReleaseSysCache(statstup);
+			}
+		}
+		if (has_stats)
+			return NULL;   /* skip attribute */
+
+	}
 
 	/*
 	 * Create the VacAttrStats struct.
