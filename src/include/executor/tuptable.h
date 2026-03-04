@@ -175,6 +175,16 @@ struct TupleTableSlotOps
 	void		(*getsomeattrs) (TupleTableSlot *slot, int natts);
 
 	/*
+	 * Populate the tts_values and tts_isnull elements of the given slot with
+	 * the values of the corresponding attribute from the tuple stored in the
+	 * slot.  Populate up as far as last_attnum and store each attribute
+	 * mentioned in the attnums array.  Use attnum_map to determine the
+	 * starting element in the attnums array from the slot's tts_nvalid.
+	 */
+	void		(*selectattrs) (TupleTableSlot *slot, int last_attnum,
+								AttrNumber *attnums, AttrNumber *attnum_map);
+
+	/*
 	 * Returns value of the given system attribute as a datum and sets isnull
 	 * to false, if it's not NULL. Throws an error if the slot type does not
 	 * support system attributes.
@@ -378,6 +388,18 @@ slot_getsomeattrs(TupleTableSlot *slot, int attnum)
 	/* Populate slot with attributes up to 'attnum', if it's not already */
 	if (slot->tts_nvalid < attnum)
 		slot->tts_ops->getsomeattrs(slot, attnum);
+}
+
+static inline void
+slot_selectattrs(TupleTableSlot *slot, int last_attnum, AttrNumber *attnums,
+				 AttrNumber *attnum_map)
+{
+	/*
+	 * Populate slot only attributes mentioned in the attnums array, up to
+	 * 'last_attnum', if it's not already
+	 */
+	if (slot->tts_nvalid < last_attnum)
+		slot->tts_ops->selectattrs(slot, last_attnum, attnums, attnum_map);
 }
 
 /*

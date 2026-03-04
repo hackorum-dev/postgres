@@ -739,6 +739,15 @@
   ifdef => 'DEBUG_NODE_TESTS_ENABLED',
 },
 
+{ name => 'debug_tuple_deform', type => 'enum', context => 'PGC_USERSET', group => 'DEVELOPER_OPTIONS',
+  short_desc => 'Allows control over the tuple deform method used during execution.',
+  long_desc => 'This can be useful to test which tuple deform method is most efficient for a given set of attributes.',
+  flags => 'GUC_NOT_IN_SAMPLE | GUC_EXPLAIN',
+  variable => 'debug_tuple_deform',
+  boot_val => 'DEBUG_TUPLE_DEFORM_AUTO',
+  options => 'debug_tuple_deform_options',
+},
+
 { name => 'debug_write_read_parse_plan_trees', type => 'bool', context => 'PGC_SUSET', group => 'DEVELOPER_OPTIONS',
   short_desc => 'Set this to force all parse and plan trees to be passed through outfuncs.c/readfuncs.c, to facilitate catching errors and omissions in those modules.',
   flags => 'GUC_NOT_IN_SAMPLE',

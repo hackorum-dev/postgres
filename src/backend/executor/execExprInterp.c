@@ -489,6 +489,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		&&CASE_EEOP_SCAN_FETCHSOME,
 		&&CASE_EEOP_OLD_FETCHSOME,
 		&&CASE_EEOP_NEW_FETCHSOME,
+		&&CASE_EEOP_SCAN_SELECTSOME,
 		&&CASE_EEOP_INNER_VAR,
 		&&CASE_EEOP_OUTER_VAR,
 		&&CASE_EEOP_SCAN_VAR,
@@ -682,6 +683,18 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			CheckOpSlotCompatibility(op, newslot);
 
 			slot_getsomeattrs(newslot, op->d.fetch.last_var);
+
+			EEO_NEXT();
+		}
+
+		EEO_CASE(EEOP_SCAN_SELECTSOME)
+		{
+			CheckOpSlotCompatibility(op, scanslot);
+
+			slot_selectattrs(scanslot,
+							 op->d.fetch.last_var,
+							 op->d.fetch.req_attnums,
+							 op->d.fetch.next_req_attnums_index);
 
 			EEO_NEXT();
 		}

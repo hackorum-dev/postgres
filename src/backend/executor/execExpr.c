@@ -66,8 +66,18 @@ typedef struct ExprSetupInfo
 	AttrNumber	last_new;
 	/* MULTIEXPR SubPlan nodes appearing in the expression: */
 	List	   *multiexpr_subplans;
+
+	/*
+	 * Fetch only these attnums from the scan with EEOP_SCAN_SELECTSOME. Empty
+	 * set means use EEOP_SCAN_FETCHSOME (i.e fetch all up until last_scan).
+	 * The first user attribute is based at member 0.  System attributes not
+	 * represented.
+	 */
+	Bitmapset  *scan_attrs;
 } ExprSetupInfo;
 
+static ExprState *ExecInitExprInternal(Expr *node, PlanState *parent,
+									   Node *escontext, Bitmapset *scan_attrs);
 static void ExecReadyExpr(ExprState *state);
 static void ExecInitExprRec(Expr *node, ExprState *state,
 							Datum *resv, bool *resnull);
@@ -77,7 +87,8 @@ static void ExecInitFunc(ExprEvalStep *scratch, Expr *node, List *args,
 static void ExecInitSubPlanExpr(SubPlan *subplan,
 								ExprState *state,
 								Datum *resv, bool *resnull);
-static void ExecCreateExprSetupSteps(ExprState *state, Node *node);
+static void ExecCreateExprSetupSteps(ExprState *state, Node *node,
+									 Bitmapset *scan_attrs);
 static void ExecPushExprSetupSteps(ExprState *state, ExprSetupInfo *info);
 static bool expr_setup_walker(Node *node, ExprSetupInfo *info);
 static bool ExecComputeSlotInfo(ExprState *state, ExprEvalStep *op);
@@ -142,7 +153,7 @@ static void ExecInitJsonCoercion(ExprState *state, JsonReturning *returning,
 ExprState *
 ExecInitExpr(Expr *node, PlanState *parent)
 {
-	return ExecInitExprWithContext(node, parent, NULL);
+	return ExecInitExprInternal(node, parent, NULL, NULL);
 }
 
 /*
@@ -162,6 +173,31 @@ ExecInitExpr(Expr *node, PlanState *parent)
 ExprState *
 ExecInitExprWithContext(Expr *node, PlanState *parent, Node *escontext)
 {
+	return ExecInitExprInternal(node, parent, escontext, NULL);
+}
+
+/*
+ * ExecInitExprWithScanAttrs
+ *		As ExecInitExpr but when 'scan_attrs' is set, use
+ *		EEOP_SCAN_SELECTSOME instead of EEOP_SCAN_FETCHSOME to deform only
+ *		the mentioned 'scan_attrs' from the scan tuple.
+ */
+ExprState *
+ExecInitExprWithScanAttrs(Expr *node, PlanState *parent,
+						  Bitmapset *scan_attrs)
+{
+	return ExecInitExprInternal(node, parent, NULL, scan_attrs);
+}
+
+/*
+ * ExecInitExprInteral
+ *		Internal version to implement ExecInitExpr, ExecInitExprWithContext
+ *		and ExecInitExprWithScanAttrs.
+ */
+static ExprState *
+ExecInitExprInternal(Expr *node, PlanState *parent, Node *escontext,
+					 Bitmapset *scan_attrs)
+{
 	ExprState  *state;
 	ExprEvalStep scratch = {0};
 
@@ -177,7 +213,7 @@ ExecInitExprWithContext(Expr *node, PlanState *parent, Node *escontext)
 	state->escontext = (ErrorSaveContext *) escontext;
 
 	/* Insert setup steps as needed */
-	ExecCreateExprSetupSteps(state, (Node *) node);
+	ExecCreateExprSetupSteps(state, (Node *) node, scan_attrs);
 
 	/* Compile the expression proper */
 	ExecInitExprRec(node, state, &state->resvalue, &state->resnull);
@@ -214,7 +250,7 @@ ExecInitExprWithParams(Expr *node, ParamListInfo ext_params)
 	state->ext_params = ext_params;
 
 	/* Insert setup steps as needed */
-	ExecCreateExprSetupSteps(state, (Node *) node);
+	ExecCreateExprSetupSteps(state, (Node *) node, NULL);
 
 	/* Compile the expression proper */
 	ExecInitExprRec(node, state, &state->resvalue, &state->resnull);
@@ -249,6 +285,19 @@ ExecInitExprWithParams(Expr *node, ParamListInfo ext_params)
 ExprState *
 ExecInitQual(List *qual, PlanState *parent)
 {
+	return ExecInitQualWithScanAttrs(qual, parent, NULL);
+}
+
+/*
+ * ExecInitQualWithScanAttrs
+ *		As ExecInitQual but when 'scan_attrs' is set, use
+ *		EEOP_SCAN_SELECTSOME instead of EEOP_SCAN_FETCHSOME to deform only
+ *		the mentioned 'scan_attrs' from the scan tuple.
+ */
+ExprState *
+ExecInitQualWithScanAttrs(List *qual, PlanState *parent,
+						  Bitmapset *scan_attrs)
+{
 	ExprState  *state;
 	ExprEvalStep scratch = {0};
 	List	   *adjust_jumps = NIL;
@@ -268,7 +317,7 @@ ExecInitQual(List *qual, PlanState *parent)
 	state->flags = EEO_FLAG_IS_QUAL;
 
 	/* Insert setup steps as needed */
-	ExecCreateExprSetupSteps(state, (Node *) qual);
+	ExecCreateExprSetupSteps(state, (Node *) qual, scan_attrs);
 
 	/*
 	 * ExecQual() needs to return false for an expression returning NULL. That
@@ -394,6 +443,28 @@ ExecBuildProjectionInfo(List *targetList,
 						PlanState *parent,
 						TupleDesc inputDesc)
 {
+	return ExecBuildProjectionInfoWithScanAttrs(targetList,
+												econtext,
+												slot,
+												parent,
+												inputDesc,
+												NULL);
+}
+
+/*
+ * ExecBuildProjectionInfoWithScanAttrs
+ *		As ExecBuildProjectionInfo but when 'scan_attrs' is set, use
+ *		EEOP_SCAN_SELECTSOME instead of EEOP_SCAN_FETCHSOME to deform only
+ *		the mentioned 'scan_attrs' from the scan tuple.
+ */
+ProjectionInfo *
+ExecBuildProjectionInfoWithScanAttrs(List *targetList,
+									 ExprContext *econtext,
+									 TupleTableSlot *slot,
+									 PlanState *parent,
+									 TupleDesc inputDesc,
+									 Bitmapset *scan_attrs)
+{
 	ProjectionInfo *projInfo = makeNode(ProjectionInfo);
 	ExprState  *state;
 	ExprEvalStep scratch = {0};
@@ -410,7 +481,7 @@ ExecBuildProjectionInfo(List *targetList,
 	state->resultslot = slot;
 
 	/* Insert setup steps as needed */
-	ExecCreateExprSetupSteps(state, (Node *) targetList);
+	ExecCreateExprSetupSteps(state, (Node *) targetList, scan_attrs);
 
 	/* Now compile each tlist column */
 	foreach(lc, targetList)
@@ -2904,11 +2975,19 @@ ExecInitSubPlanExpr(SubPlan *subplan,
 /*
  * Add expression steps performing setup that's needed before any of the
  * main execution of the expression.
+ *
+ * 'scan_attrs' may be given an empty set, in which case deforming the scan
+ * tuple is done via EEOP_SCAN_FETCHSOME, which fetches every attribute from
+ * the scan tuple up until the maximum attribute used by this expression.
+ * When 'scan_attrs' is set, EEOP_SCAN_SELECTSOME is used to only fetch the
+ * attributes mentioned.  Callers must create a unioned set of the attributes
+ * needed from the scan for all expressions using the given slot so that we
+ * incrementally fetch the attributes required by all ExprStates.
  */
 static void
-ExecCreateExprSetupSteps(ExprState *state, Node *node)
+ExecCreateExprSetupSteps(ExprState *state, Node *node, Bitmapset *scan_attrs)
 {
-	ExprSetupInfo info = {0, 0, 0, 0, 0, NIL};
+	ExprSetupInfo info = {0, 0, 0, 0, 0, NIL, scan_attrs};
 
 	/* Prescan to find out what we need. */
 	expr_setup_walker(node, &info);
@@ -2956,11 +3035,75 @@ ExecPushExprSetupSteps(ExprState *state, ExprSetupInfo *info)
 	}
 	if (info->last_scan > 0)
 	{
-		scratch.opcode = EEOP_SCAN_FETCHSOME;
-		scratch.d.fetch.last_var = info->last_scan;
-		scratch.d.fetch.fixed = false;
-		scratch.d.fetch.kind = NULL;
-		scratch.d.fetch.known_desc = NULL;
+		/*
+		 * We have two operators for fetching attributes out of a tuple during
+		 * scans.  EEOP_SCAN_FETCHSOME deforms all attributes in the tuple up
+		 * to the 'last_scan' attnum.  This isn't ideal in some cases, as we
+		 * may only need a few attributes, and those might be deep into the
+		 * tuple.  EEOP_SCAN_SELECTSOME is an operator that fetches only the
+		 * required attributes from the tuple.  When the attcacheoff for these
+		 * attributes is known and no NULLs exist in the tuple prior to the
+		 * required attributes, then this can be a very fast operation.
+		 * EEOP_SCAN_FETCHSOME is still supported as many cases require all
+		 * attributes, and EEOP_SCAN_FETCHSOME can do this more efficiently.
+		 */
+		if (bms_is_empty(info->scan_attrs))
+		{
+			scratch.opcode = EEOP_SCAN_FETCHSOME;
+			scratch.d.fetch.last_var = info->last_scan;
+			scratch.d.fetch.fixed = false;
+			scratch.d.fetch.kind = NULL;
+			scratch.d.fetch.known_desc = NULL;
+		}
+		else
+		{
+			int			nattrs = bms_num_members(info->scan_attrs);
+			AttrNumber *atts;
+			int			a;
+			int			i;
+
+			scratch.opcode = EEOP_SCAN_SELECTSOME;
+			scratch.d.fetch.last_var = info->last_scan;
+			scratch.d.fetch.fixed = false;
+			scratch.d.fetch.natts = nattrs;
+			scratch.d.fetch.kind = NULL;
+			scratch.d.fetch.known_desc = NULL;
+
+			/*
+			 * Allocate these two arrays as a single allocation.  The
+			 * req_attnums array needs 1 element for each attnum that's being
+			 * selected, plus a sentinel attnum which we set to the
+			 * 'last_scan' attnum so that we correctly terminate each of the
+			 * loops during selective deformation before walking off the end
+			 * of the array.
+			 */
+			atts = palloc_array(AttrNumber, nattrs + 1 + info->last_scan + 1);
+
+			scratch.d.fetch.req_attnums = atts;
+			scratch.d.fetch.next_req_attnums_index = &atts[nattrs + 1];
+
+			/* Store each attnum in the Bitmapset into the req_attnum array */
+			a = -1;
+			i = 0;
+			while ((a = bms_next_member(info->scan_attrs, a)) >= 0)
+				scratch.d.fetch.req_attnums[i++] = a;
+
+			/* install sentinel */
+			scratch.d.fetch.req_attnums[nattrs] = info->last_scan;
+
+			/*
+			 * Populate the next_req_attnums_index array.  This allows the
+			 * deforming function to refind the position in the
+			 * next_req_attnums_index array from tts_nvalid.
+			 */
+			a = 0;
+			for (i = 0; i <= info->last_scan; i++)
+			{
+				scratch.d.fetch.next_req_attnums_index[i] = a;
+				if (bms_is_member(i, info->scan_attrs))
+					a++;
+			}
+		}
 		if (ExecComputeSlotInfo(state, &scratch))
 			ExprEvalPushStep(state, &scratch);
 	}
@@ -3033,6 +3176,13 @@ expr_setup_walker(Node *node, ExprSetupInfo *info)
 				switch (variable->varreturningtype)
 				{
 					case VAR_RETURNING_DEFAULT:
+
+						/*
+						 * scan_attrs must contain a member for this attnum or
+						 * be completely empty
+						 */
+						Assert(attnum < 0 || bms_is_empty(info->scan_attrs) ||
+							   bms_is_member(attnum - 1, info->scan_attrs));
 						info->last_scan = Max(info->last_scan, attnum);
 						break;
 					case VAR_RETURNING_OLD:
@@ -3099,7 +3249,8 @@ ExecComputeSlotInfo(ExprState *state, ExprEvalStep *op)
 		   opcode == EEOP_OUTER_FETCHSOME ||
 		   opcode == EEOP_SCAN_FETCHSOME ||
 		   opcode == EEOP_OLD_FETCHSOME ||
-		   opcode == EEOP_NEW_FETCHSOME);
+		   opcode == EEOP_NEW_FETCHSOME ||
+		   opcode == EEOP_SCAN_SELECTSOME);
 
 	if (op->d.fetch.known_desc != NULL)
 	{
@@ -3152,6 +3303,7 @@ ExecComputeSlotInfo(ExprState *state, ExprEvalStep *op)
 		}
 	}
 	else if (opcode == EEOP_SCAN_FETCHSOME ||
+			 opcode == EEOP_SCAN_SELECTSOME ||
 			 opcode == EEOP_OLD_FETCHSOME ||
 			 opcode == EEOP_NEW_FETCHSOME)
 	{
@@ -4346,7 +4498,7 @@ ExecBuildHash32Expr(TupleDesc desc, const TupleTableSlotOps *ops,
 	state->parent = parent;
 
 	/* Insert setup steps as needed. */
-	ExecCreateExprSetupSteps(state, (Node *) hash_exprs);
+	ExecCreateExprSetupSteps(state, (Node *) hash_exprs, NULL);
 
 	/*
 	 * Make a place to store intermediate hash values between subsequent

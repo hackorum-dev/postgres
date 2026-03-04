@@ -260,13 +260,15 @@ ExecInitSeqScan(SeqScan *node, EState *estate, int eflags)
 	 * Initialize result type and projection.
 	 */
 	ExecInitResultTypeTL(&scanstate->ss.ps);
-	ExecAssignScanProjectionInfo(&scanstate->ss);
+	ExecAssignScanProjectionInfoWithScanAttrs(&scanstate->ss,
+											  node->scan.scan_varattnos);
 
 	/*
 	 * initialize child expressions
 	 */
-	scanstate->ss.ps.qual =
-		ExecInitQual(node->scan.plan.qual, (PlanState *) scanstate);
+	scanstate->ss.ps.qual = ExecInitQualWithScanAttrs(node->scan.plan.qual,
+													  (PlanState *) scanstate,
+													  node->scan.scan_varattnos);
 
 	/*
 	 * When EvalPlanQual() is not in use, assign ExecProcNode for this node

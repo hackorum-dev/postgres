@@ -74,6 +74,13 @@ static TupleDesc ExecTypeFromTLInternal(List *targetList,
 										bool skipjunk);
 static pg_attribute_always_inline void slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 															  int reqnatts, bool support_cstring);
+static pg_attribute_always_inline void slot_selectively_deform_heap_tuple(TupleTableSlot *slot,
+																		  HeapTuple tuple,
+																		  uint32 *offp,
+																		  int last_attnum,
+																		  AttrNumber *attnums,
+																		  AttrNumber *attnum_map,
+																		  bool support_cstring);
 static inline void tts_buffer_heap_store_tuple(TupleTableSlot *slot,
 											   HeapTuple tuple,
 											   Buffer buffer,
@@ -129,7 +136,22 @@ tts_virtual_clear(TupleTableSlot *slot)
 static void
 tts_virtual_getsomeattrs(TupleTableSlot *slot, int natts)
 {
-	elog(ERROR, "getsomeattrs is not required to be called on a virtual tuple table slot");
+	elog(ERROR,
+		 "%s is not required to be called on a virtual tuple table slot",
+		 "getsomeattrs");
+}
+
+/*
+ * VirtualTupleTableSlots always have fully populated tts_values and
+ * tts_isnull arrays.  So this function should never be called.
+ */
+static void
+tts_virtual_selectattrs(TupleTableSlot *slot, int last_attnum,
+						AttrNumber *attnums, AttrNumber *attnum_map)
+{
+	elog(ERROR,
+		 "%s is not required to be called on a virtual tuple table slot",
+		 "selectattrs");
 }
 
 /*
@@ -352,6 +374,23 @@ tts_heap_getsomeattrs(TupleTableSlot *slot, int natts)
 	slot_deform_heap_tuple(slot, hslot->tuple, &hslot->off, natts, false);
 }
 
+static void
+tts_heap_selectattrs(TupleTableSlot *slot, int last_attnum,
+					 AttrNumber *attnums, AttrNumber *attnum_map)
+{
+	HeapTupleTableSlot *hslot = (HeapTupleTableSlot *) slot;
+
+	Assert(!TTS_EMPTY(slot));
+
+	slot_selectively_deform_heap_tuple(slot,
+									   hslot->tuple,
+									   &hslot->off,
+									   last_attnum,
+									   attnums,
+									   attnum_map,
+									   false);
+}
+
 static Datum
 tts_heap_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
 {
@@ -548,6 +587,23 @@ tts_minimal_getsomeattrs(TupleTableSlot *slot, int natts)
 	Assert(!TTS_EMPTY(slot));
 
 	slot_deform_heap_tuple(slot, mslot->tuple, &mslot->off, natts, true);
+}
+
+static void
+tts_minimal_selectattrs(TupleTableSlot *slot, int last_attnum,
+						AttrNumber *attnums, AttrNumber *attnum_map)
+{
+	MinimalTupleTableSlot *mslot = (MinimalTupleTableSlot *) slot;
+
+	Assert(!TTS_EMPTY(slot));
+
+	slot_selectively_deform_heap_tuple(slot,
+									   mslot->tuple,
+									   &mslot->off,
+									   last_attnum,
+									   attnums,
+									   attnum_map,
+									   true);
 }
 
 /*
@@ -755,6 +811,23 @@ tts_buffer_heap_getsomeattrs(TupleTableSlot *slot, int natts)
 	Assert(!TTS_EMPTY(slot));
 
 	slot_deform_heap_tuple(slot, bslot->base.tuple, &bslot->base.off, natts, false);
+}
+
+static void
+tts_buffer_heap_selectattrs(TupleTableSlot *slot, int last_attnum,
+							AttrNumber *attnums, AttrNumber *attnum_map)
+{
+	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
+
+	Assert(!TTS_EMPTY(slot));
+
+	slot_selectively_deform_heap_tuple(slot,
+									   bslot->base.tuple,
+									   &bslot->base.off,
+									   last_attnum,
+									   attnums,
+									   attnum_map,
+									   false);
 }
 
 static Datum
@@ -1256,12 +1329,311 @@ done:
 	*offp = off;
 }
 
+/*
+ * slot_selectively_deform_heap_tuple
+ *		Deform attributes of 'tuple' into the Datum/isnull arrays in 'slot'.
+ *		Unlike slot_deform_heap_tuple, which deforms every attribute up to the
+ *		given attribute number, here we deform only the attribute numbers
+ *		mentioned in the 'attnums' array.  When only a few attributes are
+ *		required, this can be more efficient.  When the attributes have a
+ *		known attcacheoff and it's valid to use that, then this version can be
+ *		much more efficient than slot_deform_heap_tuple when only a small
+ *		number of the total attributes are required.
+ */
+static pg_attribute_always_inline void
+slot_selectively_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple,
+								   uint32 *offp, int last_attnum,
+								   AttrNumber *attnums,
+								   AttrNumber *attnum_map,
+								   bool support_cstring)
+{
+	CompactAttribute *cattrs;
+	CompactAttribute *cattr;
+	TupleDesc	tupleDesc = slot->tts_tupleDescriptor;
+	HeapTupleHeader tup = tuple->t_data;
+	size_t		attnum;
+	int			attnums_idx;
+	int			firstNonCacheOffsetAttr;
+	int			firstNonGuaranteedAttr;
+	int			firstNullAttr;
+	int			natts;
+	Datum	   *values;
+	bool	   *isnull;
+	char	   *tp;				/* ptr to tuple data */
+	uint32		off;			/* offset in tuple data */
+	int			off_attnum;		/* the attnum that 'off' points to */
+
+	/* Did someone forget to call TupleDescFinalize()? */
+	Assert(tupleDesc->firstNonCachedOffsetAttr >= 0);
+
+	isnull = slot->tts_isnull;
+
+	/*
+	 * Some callers may form and deform tuples prior to NOT NULL constraints
+	 * being checked.  Here we'd like to optimize the case where we only need
+	 * to fetch attributes before or up to the point where the attribute is
+	 * guaranteed to exist in the tuple.  We rely on the slot flag being set
+	 * correctly to only enable this optimization when it's valid to do so.
+	 * This optimization allows us to save fetching the number of attributes
+	 * from the tuple and saves the additional cost of handling non-byval
+	 * attrs.
+	 */
+	firstNonGuaranteedAttr = Min(last_attnum, slot->tts_first_nonguaranteed);
+	firstNonCacheOffsetAttr = tupleDesc->firstNonCachedOffsetAttr;
+
+	if (HeapTupleHasNulls(tuple))
+	{
+		natts = HeapTupleHeaderGetNatts(tup);
+		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits) +
+									 BITMAPLEN(natts));
+
+		natts = Min(natts, last_attnum);
+		if (natts > firstNonGuaranteedAttr)
+		{
+			uint8	   *bp = tup->t_bits;
+
+			/* Find the first NULL attr */
+			firstNullAttr = first_null_attr(bp, natts);
+
+			/*
+			 * And populate the isnull array for all attributes up to the last
+			 * attribute we're deforming.  When not using attcacheoff, we need
+			 * to know if an attribute is NULL even when we're not deforming
+			 * it, so that we can skip over it when calculating the offset to
+			 * attributes that we are deforming.  Note that we purpusefully
+			 * don't try and only set the isnull element for attnums mentioned
+			 * in the attnums[] array.  Checking that would likely be more
+			 * expensive than it's worth.
+			 */
+			populate_isnull_array(bp, natts, isnull);
+		}
+		else
+		{
+			/* Otherwise all required columns are guaranteed to exist */
+			firstNullAttr = natts;
+		}
+	}
+	else
+	{
+		tp = (char *) tup + MAXALIGN(offsetof(HeapTupleHeaderData, t_bits));
+
+		/*
+		 * We only need to look at the tuple's natts if we need more than the
+		 * guaranteed number of columns
+		 */
+		if (last_attnum > firstNonGuaranteedAttr)
+			natts = Min(HeapTupleHeaderGetNatts(tup), last_attnum);
+		else
+		{
+			/* No need to access the number of attributes in the tuple */
+			natts = last_attnum;
+		}
+
+		/* All attrs can be fetched without checking for NULLs */
+		firstNullAttr = natts;
+	}
+
+	attnums_idx = attnum_map[slot->tts_nvalid];
+	attnum = attnums[attnums_idx];
+	values = slot->tts_values;
+
+	/*
+	 * We store the tupleDesc's CompactAttribute array in 'cattrs' as gcc
+	 * seems to be unwilling to optimize accessing the CompactAttribute
+	 * element efficiently when accessing it via TupleDescCompactAttr().
+	 */
+	cattrs = tupleDesc->compact_attrs;
+
+	/* Ensure we calculated tp correctly */
+	Assert(tp == (char *) tup + tup->t_hoff);
+
+	if (attnum < firstNonGuaranteedAttr)
+	{
+		int			attlen;
+
+		/*
+		 * We use a do/while loop as the if condition above guarantees at
+		 * least one loop and confirms to the compiler that 'attlen' and 'off'
+		 * get initialized, which some compilers are not clever enough to
+		 * figure out if we were to use a for loop.
+		 */
+		do
+		{
+			isnull[attnum] = false;
+			cattr = &cattrs[attnum];
+			attlen = cattr->attlen;
+
+			/* We don't expect any non-byval types */
+			pg_assume(attlen > 0);
+			Assert(cattr->attbyval == true);
+
+			off = cattr->attcacheoff;
+			values[attnum] = fetch_att_noerr(tp + off, true, attlen);
+			attnum = attnums[++attnums_idx];
+		} while (attnum < firstNonGuaranteedAttr);
+
+		off += attlen;
+
+		if (attnum == last_attnum)
+			goto done;
+	}
+
+	/* We can use attcacheoff up until the first NULL */
+	firstNonCacheOffsetAttr = Min(firstNonCacheOffsetAttr, firstNullAttr);
+
+	/*
+	 * Handle the portion of the tuple that we have cached the offset for up
+	 * to the first NULL attribute.  The offset is effectively fixed for
+	 * these, so we can use the CompactAttribute's attcacheoff.
+	 */
+	if (attnum < firstNonCacheOffsetAttr)
+	{
+		int			attlen;
+
+		do
+		{
+			isnull[attnum] = false;
+			cattr = &cattrs[attnum];
+			attlen = cattr->attlen;
+			off = cattr->attcacheoff;
+			values[attnum] = fetch_att_noerr(tp + off, cattr->attbyval,
+											 attlen);
+
+			/* fast-forward to the next required attnum */
+			attnum = attnums[++attnums_idx];
+		} while (attnum < firstNonCacheOffsetAttr);
+
+		off += attlen;
+		Assert(attlen > 0);
+
+		if (attnum == last_attnum)
+			goto done;
+	}
+
+	if (slot->tts_nvalid >= firstNonCacheOffsetAttr)
+	{
+		/* Restore state from previous execution */
+		off_attnum = slot->tts_nvalid;
+		off = *offp;
+	}
+	else
+	{
+		off_attnum = firstNonCacheOffsetAttr - 1;
+		off = cattrs[off_attnum].attcacheoff;
+	}
+
+	/*
+	 * We no longer have the ability to use attcacheoff, so we must look
+	 * through all attributes from this point on.  For attributes that we are
+	 * not selecting, we only calculate the offset to skip them, and don't do
+	 * the actual fetch.  Here we loop up to the first NULL attribute.
+	 */
+	for (; off_attnum < firstNullAttr; off_attnum++)
+	{
+		int			attlen;
+
+		cattr = &cattrs[off_attnum];
+		attlen = cattr->attlen;
+
+		/*
+		 * Only emit the cstring-related code in align_fetch_then_add() when
+		 * cstring support is needed.  We assume support_cstring will be
+		 * passed as a const to allow the compiler to eliminate this branch.
+		 */
+		if (!support_cstring)
+			pg_assume(attlen > 0 || attlen == -1);
+
+		off = att_pointer_alignby(off, cattr->attalignby, attlen, tp + off);
+
+		/*
+		 * If this is an attribute we want, do the fetch and then fast-forward
+		 * attnum to the next attribute we want.
+		 */
+		if (off_attnum == attnum)
+		{
+			isnull[off_attnum] = false;
+			values[off_attnum] = fetch_att_noerr(tp + off, cattr->attbyval,
+												 attlen);
+			attnum = attnums[++attnums_idx];
+
+		}
+		/* Move offset beyond this attribute */
+		off = att_addlength_pointer(off, attlen, tp + off);
+	}
+
+	/*
+	 * Now handle any remaining attributes in the tuple up to the requested
+	 * attnum.  This time, include NULL checks as we're now at the first NULL
+	 * attribute.
+	 */
+	for (; off_attnum < natts; off_attnum++)
+	{
+		int			attlen;
+
+		cattr = &cattrs[off_attnum];
+		attlen = cattr->attlen;
+
+		/* As above, only emit cstring code when needed. */
+		if (!support_cstring)
+			pg_assume(attlen > 0 || attlen == -1);
+
+		/* Is this an attribute we're selecting? */
+		if (off_attnum == attnum)
+		{
+			attnum = attnums[++attnums_idx];
+
+			if (isnull[off_attnum])
+			{
+				values[off_attnum] = (Datum) 0;
+				continue;
+			}
+
+			/*
+			 * align 'off', fetch the datum, and increment off beyond the
+			 * datum
+			 */
+			values[off_attnum] = align_fetch_then_add(tp,
+													  &off,
+													  cattr->attbyval,
+													  attlen,
+													  cattr->attalignby);
+		}
+		else if (!isnull[off_attnum])
+		{
+			/* We don't want this attribute, move beyond it */
+			off = att_pointer_alignby(off, cattr->attalignby, attlen, tp + off);
+			off = att_addlength_pointer(off, attlen, tp + off);
+		}
+		else
+		{
+			/* It's a NULL attribute that we're not selecting.  Do nothing. */
+		}
+	}
+
+	/* Fetch any missing attrs and raise an error if reqnatts is invalid */
+	if (unlikely(attnum < last_attnum))
+	{
+		*offp = off;
+		slot->tts_nvalid = last_attnum;
+
+		/* XXX worth doing this selectively too? */
+		slot_getmissingattrs(slot, attnum, last_attnum);
+		return;
+	}
+done:
+
+	slot->tts_nvalid = last_attnum;
+	/* Save current offset for next execution */
+	*offp = off;
+}
+
 const TupleTableSlotOps TTSOpsVirtual = {
 	.base_slot_size = sizeof(VirtualTupleTableSlot),
 	.init = tts_virtual_init,
 	.release = tts_virtual_release,
 	.clear = tts_virtual_clear,
 	.getsomeattrs = tts_virtual_getsomeattrs,
+	.selectattrs = tts_virtual_selectattrs,
 	.getsysattr = tts_virtual_getsysattr,
 	.materialize = tts_virtual_materialize,
 	.is_current_xact_tuple = tts_virtual_is_current_xact_tuple,
@@ -1283,6 +1655,7 @@ const TupleTableSlotOps TTSOpsHeapTuple = {
 	.release = tts_heap_release,
 	.clear = tts_heap_clear,
 	.getsomeattrs = tts_heap_getsomeattrs,
+	.selectattrs = tts_heap_selectattrs,
 	.getsysattr = tts_heap_getsysattr,
 	.is_current_xact_tuple = tts_heap_is_current_xact_tuple,
 	.materialize = tts_heap_materialize,
@@ -1301,6 +1674,7 @@ const TupleTableSlotOps TTSOpsMinimalTuple = {
 	.release = tts_minimal_release,
 	.clear = tts_minimal_clear,
 	.getsomeattrs = tts_minimal_getsomeattrs,
+	.selectattrs = tts_minimal_selectattrs,
 	.getsysattr = tts_minimal_getsysattr,
 	.is_current_xact_tuple = tts_minimal_is_current_xact_tuple,
 	.materialize = tts_minimal_materialize,
@@ -1319,6 +1693,7 @@ const TupleTableSlotOps TTSOpsBufferHeapTuple = {
 	.release = tts_buffer_heap_release,
 	.clear = tts_buffer_heap_clear,
 	.getsomeattrs = tts_buffer_heap_getsomeattrs,
+	.selectattrs = tts_buffer_heap_selectattrs,
 	.getsysattr = tts_buffer_heap_getsysattr,
 	.is_current_xact_tuple = tts_buffer_is_current_xact_tuple,
 	.materialize = tts_buffer_heap_materialize,

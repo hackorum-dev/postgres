@@ -87,6 +87,24 @@ ExecAssignScanProjectionInfo(ScanState *node)
 }
 
 /*
+ * ExecAssignScanProjectionInfoWithScanAttrs
+ *		As ExecAssignScanProjectionInfo but when 'scan_attrs' is set, use
+ *		EEOP_SCAN_SELECTSOME instead of EEOP_SCAN_FETCHSOME to deform only
+ *		the mentioned 'scan_attrs' from the scan tuple.
+ */
+void
+ExecAssignScanProjectionInfoWithScanAttrs(ScanState *node,
+										  Bitmapset *scan_attrs)
+{
+	Scan	   *scan = (Scan *) node->ps.plan;
+	TupleDesc	tupdesc = node->ss_ScanTupleSlot->tts_tupleDescriptor;
+
+	ExecConditionalAssignProjectionInfoWithScanAttrs(&node->ps, tupdesc,
+													 scan->scanrelid,
+													 scan_attrs);
+}
+
+/*
  * ExecAssignScanProjectionInfoWithVarno
  *		As above, but caller can specify varno expected in Vars in the tlist.
  */

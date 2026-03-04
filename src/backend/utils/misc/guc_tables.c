@@ -416,6 +416,13 @@ static const struct config_enum_entry debug_parallel_query_options[] = {
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry debug_tuple_deform_options[] = {
+	{"incremental", DEBUG_TUPLE_DEFORM_INCREMENTAL, false},
+	{"selective", DEBUG_TUPLE_DEFORM_SELECTIVE, false},
+	{"auto", DEBUG_TUPLE_DEFORM_AUTO, false},
+	{NULL, 0, false}
+};
+
 static const struct config_enum_entry plan_cache_mode_options[] = {
 	{"auto", PLAN_CACHE_MODE_AUTO, false},
 	{"force_generic_plan", PLAN_CACHE_MODE_FORCE_GENERIC_PLAN, false},

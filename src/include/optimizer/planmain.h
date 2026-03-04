@@ -21,6 +21,15 @@
 #define DEFAULT_CURSOR_TUPLE_FRACTION 0.1
 extern PGDLLIMPORT double cursor_tuple_fraction;
 extern PGDLLIMPORT bool enable_self_join_elimination;
+extern PGDLLIMPORT int debug_tuple_deform;
+
+/* possible values for debug_tuple_deform */
+typedef enum
+{
+	DEBUG_TUPLE_DEFORM_INCREMENTAL,
+	DEBUG_TUPLE_DEFORM_SELECTIVE,
+	DEBUG_TUPLE_DEFORM_AUTO,
+}			DebugTupleDeform;
 
 /* query_planner callback to compute query_pathkeys */
 typedef void (*query_pathkeys_callback) (PlannerInfo *root, void *extra);

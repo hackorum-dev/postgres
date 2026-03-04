@@ -542,6 +542,14 @@ typedef struct Scan
 	Plan		plan;
 	/* relid is index into the range table */
 	Index		scanrelid;
+
+	/*
+	 * All varattnos that are required from the scanrelid.  Does not include
+	 * any added due to the physical tlist optimization or system attributes
+	 * or whole-row attributes.  User attributes are 0 based, i.e attnum==1 is
+	 * member 0.
+	 */
+	Bitmapset  *scan_varattnos;
 } Scan;
 
 /* ----------------

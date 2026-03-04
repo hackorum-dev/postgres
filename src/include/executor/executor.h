@@ -333,8 +333,12 @@ ExecProcNode(PlanState *node)
  */
 extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
 extern ExprState *ExecInitExprWithContext(Expr *node, PlanState *parent, Node *escontext);
+extern ExprState *ExecInitExprWithScanAttrs(Expr *node, PlanState *parent,
+											Bitmapset *scan_attrs);
 extern ExprState *ExecInitExprWithParams(Expr *node, ParamListInfo ext_params);
 extern ExprState *ExecInitQual(List *qual, PlanState *parent);
+extern ExprState *ExecInitQualWithScanAttrs(List *qual, PlanState *parent,
+											Bitmapset *scan_attrs);
 extern ExprState *ExecInitCheck(List *qual, PlanState *parent);
 extern List *ExecInitExprList(List *nodes, PlanState *parent);
 extern ExprState *ExecBuildAggTrans(AggState *aggstate, struct AggStatePerPhaseData *phase,
@@ -373,6 +377,12 @@ extern ProjectionInfo *ExecBuildProjectionInfo(List *targetList,
 											   TupleTableSlot *slot,
 											   PlanState *parent,
 											   TupleDesc inputDesc);
+extern ProjectionInfo *ExecBuildProjectionInfoWithScanAttrs(List *targetList,
+															ExprContext *econtext,
+															TupleTableSlot *slot,
+															PlanState *parent,
+															TupleDesc inputDesc,
+															Bitmapset *scan_attrs);
 extern ProjectionInfo *ExecBuildUpdateProjection(List *targetList,
 												 bool evalTargetList,
 												 List *targetColnos,
@@ -592,6 +602,8 @@ typedef bool (*ExecScanRecheckMtd) (ScanState *node, TupleTableSlot *slot);
 extern TupleTableSlot *ExecScan(ScanState *node, ExecScanAccessMtd accessMtd,
 								ExecScanRecheckMtd recheckMtd);
 extern void ExecAssignScanProjectionInfo(ScanState *node);
+extern void ExecAssignScanProjectionInfoWithScanAttrs(ScanState *node,
+													  Bitmapset *scan_attrs);
 extern void ExecAssignScanProjectionInfoWithVarno(ScanState *node, int varno);
 extern void ExecScanReScan(ScanState *node);
 
@@ -688,8 +700,15 @@ extern const TupleTableSlotOps *ExecGetCommonSlotOps(PlanState **planstates,
 extern const TupleTableSlotOps *ExecGetCommonChildSlotOps(PlanState *ps);
 extern void ExecAssignProjectionInfo(PlanState *planstate,
 									 TupleDesc inputDesc);
+extern void ExecAssignProjectionInfoWithScanAttrs(PlanState *planstate,
+												  TupleDesc inputDesc,
+												  Bitmapset *scan_attrs);
 extern void ExecConditionalAssignProjectionInfo(PlanState *planstate,
 												TupleDesc inputDesc, int varno);
+extern void ExecConditionalAssignProjectionInfoWithScanAttrs(PlanState *planstate,
+															 TupleDesc inputDesc,
+															 int varno,
+															 Bitmapset *scan_attrs);
 extern void ExecAssignScanType(ScanState *scanstate, TupleDesc tupDesc);
 extern void ExecCreateScanSlotFromOuterPlan(EState *estate,
 											ScanState *scanstate,

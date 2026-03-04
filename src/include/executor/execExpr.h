@@ -78,6 +78,9 @@ typedef enum ExprEvalOp
 	EEOP_OLD_FETCHSOME,
 	EEOP_NEW_FETCHSOME,
 
+	/* apply slot_selectattrs on the corresponding tuple slot */
+	EEOP_SCAN_SELECTSOME,
+
 	/* compute non-system Var value */
 	EEOP_INNER_VAR,
 	EEOP_OUTER_VAR,
@@ -318,15 +321,34 @@ typedef struct ExprEvalStep
 	 */
 	union
 	{
-		/* for EEOP_INNER/OUTER/SCAN/OLD/NEW_FETCHSOME */
+		/*
+		 * for EEOP_INNER/OUTER/SCAN/OLD/NEW_FETCHSOME and
+		 * EEOP_SCAN_SELECTSOME
+		 */
 		struct
 		{
 			/* attribute number up to which to fetch (inclusive) */
 			int			last_var;
 			/* will the type of slot be the same for every invocation */
 			bool		fixed;
+			/* Number of elements in req_attnums array. XXX needed? */
+			AttrNumber	natts;
+
+			/* One element for each attnum to select, ordered by attnum */
+			AttrNumber *req_attnums;
+
+			/*
+			 * Provides mapping of 0-based attnums back to the index of the
+			 * req_attnums array that tuple deforming should continue from.
+			 * This allows us to re-find the element of req_attnums using the
+			 * slot's tts_nvalid so that we can continue deforming from the
+			 * last deformed attribute.
+			 */
+			AttrNumber *next_req_attnums_index;
+
 			/* tuple descriptor, if known */
 			TupleDesc	known_desc;
+
 			/* type of slot, can only be relied upon if fixed is set */
 			const TupleTableSlotOps *kind;
 		}			fetch;
