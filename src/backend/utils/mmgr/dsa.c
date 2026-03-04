@@ -2206,6 +2206,11 @@ make_new_segment(dsa_area *area, size_t requested_pages)
 			MAXALIGN(sizeof(FreePageManager)) +
 			usable_pages * sizeof(dsa_pointer);
 
+		/* Also cover the metadata pages in the pagemap (+1 for rounding). */
+		metadata_bytes +=
+			((metadata_bytes / (FPM_PAGE_SIZE - sizeof(dsa_pointer))) + 1) *
+			sizeof(dsa_pointer);
+
 		/* Add padding up to next page boundary. */
 		if (metadata_bytes % FPM_PAGE_SIZE != 0)
 			metadata_bytes += FPM_PAGE_SIZE - (metadata_bytes % FPM_PAGE_SIZE);
