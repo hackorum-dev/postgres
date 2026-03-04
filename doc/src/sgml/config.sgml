@@ -3248,9 +3248,10 @@ include_dir 'conf.d'
         read-only queries on a standby server. <literal>minimal</literal> removes all
         logging except the information required to recover from a crash or
         immediate shutdown.  Finally,
-        <literal>logical</literal> adds information necessary to support logical
-        decoding.  Each level includes the information logged at all lower
-        levels.  This parameter can only be set at server start.
+        <literal>logical</literal> adds information necessary to support
+        <link linkend="logical-replication">logical replication</link>, which
+        relies on logical decoding. Each level includes the information logged
+        at all lower levels.
        </para>
        <para>
         The <literal>minimal</literal> level generates the least WAL
