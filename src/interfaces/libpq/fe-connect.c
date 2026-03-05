@@ -4453,10 +4453,10 @@ keep_going:						/* We will come back to here until there is
 						sendTerminateConn(conn);
 
 						/*
-						 * Try next host if any, but we don't want to consider
-						 * additional addresses for this host.
+						 * Try next address for this host first, then move to
+						 * the next host if no more addresses.
 						 */
-						conn->try_next_host = true;
+						conn->try_next_addr = true;
 						goto keep_going;
 					}
 				}
@@ -4508,10 +4508,10 @@ keep_going:						/* We will come back to here until there is
 						sendTerminateConn(conn);
 
 						/*
-						 * Try next host if any, but we don't want to consider
-						 * additional addresses for this host.
+						 * Try next address for this host first, then move to
+						 * the next host if no more addresses.
 						 */
-						conn->try_next_host = true;
+						conn->try_next_addr = true;
 						goto keep_going;
 					}
 				}
