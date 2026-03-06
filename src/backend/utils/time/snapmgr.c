@@ -1746,7 +1746,7 @@ SetupHistoricSnapshot(Snapshot historic_snapshot, HTAB *tuplecids)
  * Make catalog snapshots behave normally again.
  */
 void
-TeardownHistoricSnapshot(bool is_error)
+TeardownHistoricSnapshot(void)
 {
 	HistoricSnapshot = NULL;
 	HistoricTupleCidHash = NULL;
