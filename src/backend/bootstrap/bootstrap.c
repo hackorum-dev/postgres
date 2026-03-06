@@ -820,19 +820,29 @@ InsertOneProargdefaultsValue(char *value)
 		bool		defnull;
 		Const	   *defConst;
 
-		boot_get_type_io_data(argtype,
-							  &typlen, &typbyval, &typalign,
-							  &typdelim, &typioparam,
-							  &typinput, &typoutput,
-							  &typcollation);
-
 		defnull = array_nulls[i];
 		if (defnull)
+		{
+			/*
+			 * For NULL defaults we don't need the type's I/O functions, so
+			 * we can handle types like "any" that aren't in TypInfo[].
+			 */
 			defval = (Datum) 0;
+			typlen = -1;
+			typbyval = false;
+			typcollation = InvalidOid;
+		}
 		else
+		{
+			boot_get_type_io_data(argtype,
+								  &typlen, &typbyval, &typalign,
+								  &typdelim, &typioparam,
+								  &typinput, &typoutput,
+								  &typcollation);
 			defval = OidInputFunctionCall(typinput,
 										  DatumGetCString(array_datums[i]),
 										  typioparam, -1);
+		}
 
 		defConst = makeConst(argtype,
 							 -1,	/* never any typmod */
