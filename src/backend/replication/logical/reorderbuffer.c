@@ -923,11 +923,11 @@ ReorderBufferQueueMessage(ReorderBuffer *rb, TransactionId xid,
 			rb->message(rb, txn, xid, lsn, false, prefix, message_size,
 						message);
 
-			TeardownHistoricSnapshot(false);
+			TeardownHistoricSnapshot();
 		}
 		PG_CATCH();
 		{
-			TeardownHistoricSnapshot(true);
+			TeardownHistoricSnapshot();
 			PG_RE_THROW();
 		}
 		PG_END_TRY();
@@ -2536,7 +2536,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 				case REORDER_BUFFER_CHANGE_INTERNAL_SNAPSHOT:
 					/* get rid of the old */
-					TeardownHistoricSnapshot(false);
+					TeardownHistoricSnapshot();
 
 					if (snapshot_now->copied)
 					{
@@ -2582,7 +2582,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 						snapshot_now->curcid = command_id;
 
-						TeardownHistoricSnapshot(false);
+						TeardownHistoricSnapshot();
 						SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash);
 					}
 
@@ -2676,7 +2676,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			ReorderBufferFreeSnap(rb, snapshot_now);
 
 		/* cleanup */
-		TeardownHistoricSnapshot(false);
+		TeardownHistoricSnapshot();
 
 		/*
 		 * Aborting the current (sub-)transaction as a whole has the right
@@ -2741,7 +2741,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		if (iterstate)
 			ReorderBufferIterTXNFinish(rb, iterstate);
 
-		TeardownHistoricSnapshot(true);
+		TeardownHistoricSnapshot();
 
 		/*
 		 * Force cache invalidation to happen outside of a valid transaction
