@@ -136,7 +136,7 @@ extern bool XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 struct HTAB;
 extern struct HTAB *HistoricSnapshotGetTupleCids(void);
 extern void SetupHistoricSnapshot(Snapshot historic_snapshot, struct HTAB *tuplecids);
-extern void TeardownHistoricSnapshot(bool is_error);
+extern void TeardownHistoricSnapshot(void);
 extern bool HistoricSnapshotActive(void);
 
 extern Size EstimateSnapshotSpace(Snapshot snapshot);
