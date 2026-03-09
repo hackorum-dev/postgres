@@ -143,7 +143,7 @@ CreateStatistics(CreateStatsStmt *stmt, bool check_rights)
 		 * different relation than a previous lookup by the caller, so we must
 		 * perform this check even when check_rights == false.
 		 */
-		if (!object_ownercheck(RelationRelationId, RelationGetRelid(rel), stxowner))
+		if (!object_ownercheck(RelationRelationId, RelationGetRelid(rel), GetUserId()))
 			aclcheck_error(ACLCHECK_NOT_OWNER, get_relkind_objtype(rel->rd_rel->relkind),
 						   RelationGetRelationName(rel));
 
@@ -171,6 +171,7 @@ CreateStatistics(CreateStatsStmt *stmt, bool check_rights)
 
 	Assert(rel);
 	relid = RelationGetRelid(rel);
+	stxowner = rel->rd_rel->relowner;
 
 	/*
 	 * If the node has a name, split it up and determine creation namespace.
