@@ -447,12 +447,12 @@ systable_beginscan(Relation heapRelation,
 
 		idxkey = palloc_array(ScanKeyData, nkeys);
 
+		memcpy(idxkey, key, nkeys * sizeof(ScanKeyData));
+
 		/* Convert attribute numbers to be index column numbers. */
 		for (i = 0; i < nkeys; i++)
 		{
 			int			j;
-
-			memcpy(&idxkey[i], &key[i], sizeof(ScanKeyData));
 
 			for (j = 0; j < IndexRelationGetNumberOfAttributes(irel); j++)
 			{
@@ -702,12 +702,12 @@ systable_beginscan_ordered(Relation heapRelation,
 
 	idxkey = palloc_array(ScanKeyData, nkeys);
 
+	memcpy(idxkey, key, nkeys * sizeof(ScanKeyData));
+
 	/* Convert attribute numbers to be index column numbers. */
 	for (i = 0; i < nkeys; i++)
 	{
 		int			j;
-
-		memcpy(&idxkey[i], &key[i], sizeof(ScanKeyData));
 
 		for (j = 0; j < IndexRelationGetNumberOfAttributes(indexRelation); j++)
 		{
