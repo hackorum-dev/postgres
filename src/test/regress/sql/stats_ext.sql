@@ -1819,6 +1819,16 @@ SET SESSION AUTHORIZATION regress_stats_user1;
 ALTER TABLE sts_sch1.tbl ALTER COLUMN a TYPE SMALLINT;
 ALTER TABLE sts_sch1.tbl ALTER COLUMN c SET EXPRESSION AS (a * 3);
 
+-- Test that statistics ownership follows the table owner when a superuser
+-- creates statistics on another user's table, consistent with CREATE INDEX.
+RESET SESSION AUTHORIZATION;
+CREATE TABLE stats_owner_test (a int, b int) WITH (autovacuum_enabled = off);
+ALTER TABLE stats_owner_test OWNER TO regress_stats_user1;
+CREATE STATISTICS stats_owner_test_stat ON a, b FROM stats_owner_test;
+SELECT pg_get_userbyid(stxowner) = 'regress_stats_user1' AS owner_is_table_owner
+FROM pg_statistic_ext WHERE stxname = 'stats_owner_test_stat';
+DROP TABLE stats_owner_test;
+
 -- Tidy up
 DROP OPERATOR <<< (int, int);
 DROP FUNCTION op_leak(int, int);
