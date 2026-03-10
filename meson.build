@@ -2198,6 +2198,26 @@ if have_cxx
   cxxflags += cxx.get_supported_arguments(common_functional_flags)
 endif
 
+# ICX is Clang-based and takes the flags above, but also requires these
+# additional flags.
+if cc.get_id() == 'intel-llvm'
+  # ICX by default links against Intel runtime libraries such as libimf.so,
+  # which provide IFUNC-based replacements for standard math functions (e.g.
+  # cosf). When shared libraries built with ICX are loaded into a process that
+  # also uses the system libm.so.6, the dynamic linker encounters conflicting
+  # IFUNC resolvers and segfaults. Use system libraries instead to avoid this.
+  cflags += cc.get_supported_arguments(['-no-intel-lib'])
+  if have_cxx
+    cxxflags += cxx.get_supported_arguments(['-no-intel-lib'])
+  endif
+  # ICX defaults to -fp-model=fast enabling unsafe floating-point optimizations.
+  # Use -fp-model=precise instead.
+  cflags += cc.get_supported_arguments(['-fp-model=precise'])
+  if have_cxx
+    cxxflags += cxx.get_supported_arguments(['-fp-model=precise'])
+  endif
+endif
+
 vectorize_cflags = cc.get_supported_arguments(['-ftree-vectorize'])
 unroll_loops_cflags = cc.get_supported_arguments(['-funroll-loops'])
 
@@ -3353,6 +3373,19 @@ add_project_arguments(cppflags, language: ['cpp'])
 add_project_arguments(cxxflags_warn, language: ['cpp'])
 add_project_link_arguments(ldflags, language: ['c', 'cpp'])
 
+# ICX by default links against Intel runtime libraries such as libimf.so,
+# which provide IFUNC-based replacements for standard math functions (e.g.
+# cosf). When shared libraries built with ICX are loaded into a process that
+# also uses the system libm.so.6, the dynamic linker encounters conflicting
+# IFUNC resolvers and segfaults. Use system libraries instead to avoid this.
+if cc.get_id() == 'intel-llvm'
+  add_project_link_arguments(
+    cc.get_supported_link_arguments(['-no-intel-lib']), language: 'c')
+  if have_cxx and cxx.get_id() == 'intel-llvm'
+    add_project_link_arguments(
+      cxx.get_supported_link_arguments(['-no-intel-lib']), language: 'cpp')
+  endif
+endif
 
 # Collect a number of lists of things while recursing through the source
 # tree. Later steps then can use those.
