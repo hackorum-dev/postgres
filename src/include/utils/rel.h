@@ -162,8 +162,9 @@ typedef struct RelationData
 	Bitmapset  *rd_keyattr;		/* cols that can be ref'd by foreign keys */
 	Bitmapset  *rd_pkattr;		/* cols included in primary key */
 	Bitmapset  *rd_idattr;		/* included in replica identity index */
-	Bitmapset  *rd_hotblockingattr; /* cols blocking HOT update */
-	Bitmapset  *rd_summarizedattr;	/* cols indexed by summarizing indexes */
+	Bitmapset  *rd_indexedattr; /* all cols referenced by indexes */
+	Bitmapset  *rd_summarizedattr;	/* cols indexed only by summarizing
+									 * indexes */
 
 	PublicationDesc *rd_pubdesc;	/* publication descriptor, or NULL */
 
