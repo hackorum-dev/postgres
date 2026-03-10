@@ -956,6 +956,8 @@ materializeResult(FunctionCallInfo fcinfo, PGconn *conn, PGresult *res)
 		{
 			HeapTuple	tuple;
 
+			CHECK_FOR_INTERRUPTS();
+
 			if (!is_sql_cmd)
 			{
 				int			i;
@@ -1900,6 +1902,8 @@ dblink_get_notify(PG_FUNCTION_ARGS)
 	{
 		Datum		values[DBLINK_NOTIFY_COLS];
 		bool		nulls[DBLINK_NOTIFY_COLS];
+
+		CHECK_FOR_INTERRUPTS();
 
 		memset(values, 0, sizeof(values));
 		memset(nulls, 0, sizeof(nulls));
