@@ -428,13 +428,19 @@ fi
 fi  # have_cxx
 
 
-# Check if it's Intel's compiler, which (usually) pretends to be gcc,
+# Check if it's Intel's ICC compiler, which (usually) pretends to be gcc,
 # but has idiosyncrasies of its own.  We assume icc will define
 # __INTEL_COMPILER regardless of CFLAGS.
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [@%:@ifndef __INTEL_COMPILER
 choke me
 @%:@endif])], [ICC=yes], [ICC=no])
 
+# Check if it's Intel's ICX compiler.
+# ICX defines __INTEL_LLVM_COMPILER but not __INTEL_COMPILER, so it
+# falls through as ICC=no above.
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [@%:@ifndef __INTEL_LLVM_COMPILER
+choke me
+@%:@endif])], [ICX=yes], [ICX=no])
 
 #
 # LLVM
@@ -647,6 +653,23 @@ elif test "$ICC" = yes; then
   # Make sure strict aliasing is off (though this is said to be the default)
   PGAC_PROG_CC_CFLAGS_OPT([-fno-strict-aliasing])
   PGAC_PROG_CXX_CFLAGS_OPT([-fno-strict-aliasing])
+fi
+
+# ICX is Clang-based and takes the GCC flag path above, but also requires these
+# additional flags.
+if test "$ICX" = yes; then
+  # ICX by default links against Intel runtime libraries such as libimf.so,
+  # which provide IFUNC-based replacements for standard math functions (e.g.
+  # cosf). When shared libraries built with ICX are loaded into a process that
+  # also uses the system libm.so.6, the dynamic linker encounters conflicting
+  # IFUNC resolvers and segfaults. Use system libraries instead to avoid this.
+  PGAC_PROG_CC_CFLAGS_OPT([-no-intel-lib])
+  PGAC_PROG_CXX_CFLAGS_OPT([-no-intel-lib])
+  # ICX defaults to -fp-model=fast enabling unsafe floating-point optimizations.
+  # This is the same class of optimizations that we guard against by rejecting
+  # -ffast-math below. Use -fp-model=precise instead.
+  PGAC_PROG_CC_CFLAGS_OPT([-fp-model=precise])
+  PGAC_PROG_CXX_CFLAGS_OPT([-fp-model=precise])
 fi
 
 # If the compiler knows how to hide symbols, add the switch needed for that to
