@@ -402,14 +402,11 @@ $node->reload();
 
 psql_like(
 	$node,
-	sprintf(
-		q{with x as (
-		select now()-backend_start AS howlong
-		from pg_stat_activity
-		where pid = pg_backend_pid()
-	  ) select 123 from x where howlong < '2 seconds' \watch i=%g m=2}, 0.5),
-	qr/^123$/,
-	'\watch, 2 minimum rows');
+	q{CREATE SEQUENCE watch_test;
+		WITH x AS (SELECT nextval('watch_test') > 3 AS seq_limit_reached)
+		SELECT 123 FROM x WHERE NOT seq_limit_reached \watch i=0.2 m=1},
+	qr/^123\n123\n123$/,
+	'\watch, check that minimum rows option works');
 
 $node->append_conf('postgresql.conf', 'post_auth_delay=0');
 $node->reload();
