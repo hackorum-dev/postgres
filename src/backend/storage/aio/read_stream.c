@@ -428,6 +428,8 @@ read_stream_start_pending_read(ReadStream *stream)
 static void
 read_stream_look_ahead(ReadStream *stream)
 {
+	int			buffer_limit;
+
 	/*
 	 * Allow amortizing the cost of submitting IO over multiple IOs. This
 	 * requires that we don't do any operations that could lead to a deadlock
@@ -437,8 +439,24 @@ read_stream_look_ahead(ReadStream *stream)
 	if (stream->batch_mode)
 		pgaio_enter_batchmode();
 
+	/*
+	 * Compute how many more buffers this backend is allowed to pin.
+	 * This is checked before each StartReadBuffers() call and also used
+	 * to throttle the outer loop so we don't queue more pending blocks
+	 * than we'll be able to pin.
+	 */
+	if (stream->temporary)
+		buffer_limit = Min(GetAdditionalLocalPinLimit(), PG_INT16_MAX);
+	else
+		buffer_limit = Min(GetAdditionalPinLimit(), PG_INT16_MAX);
+	/* Always allow at least 1 if we hold no pins yet, for progress */
+	if (buffer_limit == 0 && stream->pinned_buffers == 0)
+		buffer_limit = 1;
+
+
 	while (stream->ios_in_progress < stream->max_ios &&
-		   stream->pinned_buffers + stream->pending_read_nblocks < stream->distance)
+		   stream->pinned_buffers + stream->pending_read_nblocks < stream->distance &&
+		   stream->pinned_buffers + stream->pending_read_nblocks < buffer_limit)
 	{
 		BlockNumber blocknum;
 		int16		buffer_index;
@@ -447,6 +465,13 @@ read_stream_look_ahead(ReadStream *stream)
 		if (stream->pending_read_nblocks == stream->io_combine_limit)
 		{
 			read_stream_start_pending_read(stream);
+			/* Re-check limit after pinning */
+			if (stream->temporary)
+				buffer_limit = Min(GetAdditionalLocalPinLimit(), PG_INT16_MAX);
+			else
+				buffer_limit = Min(GetAdditionalPinLimit(), PG_INT16_MAX);
+			if (buffer_limit == 0 && stream->pinned_buffers == 0)
+				buffer_limit = 1;
 			continue;
 		}
 
@@ -488,6 +513,13 @@ read_stream_look_ahead(ReadStream *stream)
 					pgaio_exit_batchmode();
 				return;
 			}
+			/* Re-check limit after each pin */
+			if (stream->temporary)
+				buffer_limit = Min(GetAdditionalLocalPinLimit(), PG_INT16_MAX);
+			else
+				buffer_limit = Min(GetAdditionalPinLimit(), PG_INT16_MAX);
+			if (buffer_limit == 0 && stream->pinned_buffers == 0)
+				buffer_limit = 1;
 		}
 
 		/* This is the start of a new pending read. */
@@ -509,7 +541,8 @@ read_stream_look_ahead(ReadStream *stream)
 		(stream->pending_read_nblocks == stream->io_combine_limit ||
 		 (stream->pending_read_nblocks >= stream->distance &&
 		  stream->pinned_buffers == 0) ||
-		 stream->distance == 0) &&
+		 stream->distance == 0 ||
+		 stream->pinned_buffers + stream->pending_read_nblocks >= buffer_limit) &&
 		stream->ios_in_progress < stream->max_ios)
 		read_stream_start_pending_read(stream);
 
