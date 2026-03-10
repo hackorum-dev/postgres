@@ -397,6 +397,9 @@ psql_fails_like(
 	qr/minimum row count specified more than once/,
 	'\watch, minimum rows is specified more than once');
 
+$node->append_conf('postgresql.conf', 'post_auth_delay=3');
+$node->reload();
+
 psql_like(
 	$node,
 	sprintf(
@@ -407,6 +410,9 @@ psql_like(
 	  ) select 123 from x where howlong < '2 seconds' \watch i=%g m=2}, 0.5),
 	qr/^123$/,
 	'\watch, 2 minimum rows');
+
+$node->append_conf('postgresql.conf', 'post_auth_delay=0');
+$node->reload();
 
 # Check \watch errors
 psql_fails_like(
