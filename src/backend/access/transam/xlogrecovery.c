@@ -390,12 +390,8 @@ static void SetLatestXTime(TimestampTz xtime);
 Size
 XLogRecoveryShmemSize(void)
 {
-	Size		size;
-
 	/* XLogRecoveryCtl */
-	size = sizeof(XLogRecoveryCtlData);
-
-	return size;
+	return sizeof(XLogRecoveryCtlData);
 }
 
 void

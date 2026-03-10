@@ -158,11 +158,7 @@ static void pgarch_call_module_shutdown_cb(int code, Datum arg);
 Size
 PgArchShmemSize(void)
 {
-	Size		size = 0;
-
-	size = add_size(size, sizeof(PgArchData));
-
-	return size;
+	return sizeof(PgArchData);
 }
 
 /* Allocate and initialize archiver-related shared memory */

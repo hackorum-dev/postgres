@@ -44,11 +44,7 @@ WalRcvData *WalRcv = NULL;
 Size
 WalRcvShmemSize(void)
 {
-	Size		size = 0;
-
-	size = add_size(size, sizeof(WalRcvData));
-
-	return size;
+	return sizeof(WalRcvData);
 }
 
 /* Allocate and initialize walreceiver-related shared memory */

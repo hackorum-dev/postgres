@@ -233,10 +233,7 @@ Size
 InjectionPointShmemSize(void)
 {
 #ifdef USE_INJECTION_POINTS
-	Size		sz = 0;
-
-	sz = add_size(sz, sizeof(InjectionPointsCtl));
-	return sz;
+	return sizeof(InjectionPointsCtl);
 #else
 	return 0;
 #endif
