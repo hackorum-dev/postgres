@@ -1045,7 +1045,14 @@ typedef struct GraphElementPattern
 	NodeTag		type;
 	GraphElementPatternKind kind;
 	const char *variable;
+
+	/*
+	 * An empty label expression gets replaced by disjunction of all labels
+	 * during transformation. But we need to remember if it was originally
+	 * empty for various purposes.
+	 */
 	Node	   *labelexpr;
+	bool		has_empty_labelexpr;
 	List	   *subexpr;
 	Node	   *whereClause;
 	List	   *quantifier;

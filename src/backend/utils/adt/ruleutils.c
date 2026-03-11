@@ -8053,7 +8053,7 @@ get_path_pattern_expr_def(List *path_pattern_expr, deparse_context *context)
 			sep = " ";
 		}
 
-		if (gep->labelexpr)
+		if (!gep->has_empty_labelexpr)
 		{
 			appendStringInfoString(buf, sep);
 			appendStringInfoString(buf, "IS ");
