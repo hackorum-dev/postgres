@@ -124,6 +124,9 @@ $result =
   $node_subscriber->safe_psql('postgres', "SELECT count(*) FROM tab_ins");
 is($result, qq(1002), 'check initial data was copied to subscriber');
 
+my $initial_filtered_bytes = $node_publisher->safe_psql('postgres',
+	"SELECT filtered_bytes FROM pg_stat_replication_slots WHERE slot_name = 'tap_sub'");
+
 $node_publisher->safe_psql('postgres',
 	"INSERT INTO tab_ins SELECT generate_series(1,50)");
 $node_publisher->safe_psql('postgres', "DELETE FROM tab_ins WHERE a > 20");
@@ -156,6 +159,14 @@ $node_publisher->safe_psql('postgres',
 	"INSERT INTO tab_no_col default VALUES");
 
 $node_publisher->wait_for_catchup('tap_sub');
+
+# Verify that filtered_bytes increased due to filtered update and delete
+# operations on tab_ins.  We cannot test the exact value since it may include
+# changes from other concurrent transactions.
+my $final_filtered_bytes = $node_publisher->safe_psql('postgres',
+	"SELECT filtered_bytes FROM pg_stat_replication_slots WHERE slot_name = 'tap_sub'");
+cmp_ok($final_filtered_bytes, '>', $initial_filtered_bytes,
+	'filtered_bytes increased after DML filtering');
 
 $result = $node_subscriber->safe_psql('postgres',
 	"SELECT count(*), min(a), max(a) FROM tab_ins");

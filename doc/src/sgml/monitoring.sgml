@@ -1749,6 +1749,17 @@ description | Waiting for a newly initialized WAL file to reach durable storage
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>plugin</structfield> <type>text</type>
+       </para>
+       <para>
+        The base name of the shared object containing the output plugin this
+        logical slot is using. This column is same as the one in
+        <structname>pg_replication_slots</structname>.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
         <structfield>spill_txns</structfield> <type>bigint</type>
        </para>
        <para>
@@ -1859,6 +1870,31 @@ description | Waiting for a newly initialized WAL file to reach durable storage
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>filtered_bytes</structfield> <type>bigint</type>
+       </para>
+       <para>
+        Amount of changes, from <structfield>total_bytes</structfield>, filtered
+        out by the output plugin and not sent downstream. Please note that it
+        does not include the changes filtered before a change is sent to
+        the output plugin, e.g. the changes filtered by origin.
+       </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>sent_txns</structfield> <type>bigint</type>
+       </para>
+       <para>
+        Number of decoded transactions sent downstream for this slot. This
+        counts top-level transactions only, and is not incremented for
+        subtransactions. These transactions are subset of transactions sent to
+        the decoding plugin. Hence this count is expected to be less than or
+        equal to <structfield>total_txns</structfield>.
+       </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
         <structfield>sent_bytes</structfield><type>bigint</type>
        </para>
        <para>
@@ -1909,6 +1945,17 @@ description | Waiting for a newly initialized WAL file to reach durable storage
     </tbody>
    </tgroup>
   </table>
+
+  <note>
+   <para>
+    The accuracy of columns <structfield>filtered_bytes</structfield>, and
+    <structfield>sent_txns</structfield> depends upon the accuracy of return values
+    from respective callbacks associated with those counts as mentioned in <xref
+    linkend="logicaldecoding-output-plugin-callbacks"/>. A descripancy in those
+    counts may be result of incorrect implementation of those callbacks in the
+    output plugin given by column <structfield>plugin</structfield>.
+   </para>
+  </note>
 
  </sect2>
 

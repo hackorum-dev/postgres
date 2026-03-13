@@ -311,7 +311,6 @@ static void ReorderBufferToastAppendChunk(ReorderBuffer *rb, ReorderBufferTXN *t
  * memory accounting
  * ---------------------------------------
  */
-static Size ReorderBufferChangeSize(ReorderBufferChange *change);
 static void ReorderBufferChangeMemoryUpdate(ReorderBuffer *rb,
 											ReorderBufferChange *change,
 											ReorderBufferTXN *txn,
@@ -394,7 +393,9 @@ ReorderBufferAllocate(void)
 	buffer->memExceededCount = 0;
 	buffer->totalTxns = 0;
 	buffer->totalBytes = 0;
+	buffer->sentTxns = 0;
 	buffer->sentBytes = 0;
+	buffer->filteredBytes = 0;
 
 	buffer->current_restart_decoding_lsn = InvalidXLogRecPtr;
 
@@ -4449,7 +4450,7 @@ ReorderBufferStreamTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 /*
  * Size of a change in memory.
  */
-static Size
+Size
 ReorderBufferChangeSize(ReorderBufferChange *change)
 {
 	Size		sz = sizeof(ReorderBufferChange);

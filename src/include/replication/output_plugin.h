@@ -56,17 +56,19 @@ typedef void (*LogicalDecodeBeginCB) (struct LogicalDecodingContext *ctx,
 									  ReorderBufferTXN *txn);
 
 /*
- * Callback for every individual change in a successful transaction.
+ * Callback for every individual change in a successful transaction. Should
+ * return true if the change is output, false otherwise.
  */
-typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
 									   ReorderBufferTXN *txn,
 									   Relation relation,
 									   ReorderBufferChange *change);
 
 /*
- * Callback for every TRUNCATE in a successful transaction.
+ * Callback for every TRUNCATE in a successful transaction. Should return true if
+ * the change is output, false otherwise.
  */
-typedef void (*LogicalDecodeTruncateCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeTruncateCB) (struct LogicalDecodingContext *ctx,
 										 ReorderBufferTXN *txn,
 										 int nrelations,
 										 Relation relations[],
@@ -74,8 +76,9 @@ typedef void (*LogicalDecodeTruncateCB) (struct LogicalDecodingContext *ctx,
 
 /*
  * Called for every (explicit or implicit) COMMIT of a successful transaction.
+ * Should return true if the transaction is output, false otherwise.
  */
-typedef void (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
 									   ReorderBufferTXN *txn,
 									   XLogRecPtr commit_lsn);
 
@@ -118,10 +121,10 @@ typedef void (*LogicalDecodeBeginPrepareCB) (struct LogicalDecodingContext *ctx,
 											 ReorderBufferTXN *txn);
 
 /*
- * Called for PREPARE record unless it was filtered by filter_prepare()
- * callback.
+ * Called for PREPARE record unless it was filtered by filter_prepare() callback.
+ * Should return true if the transaction is output, false otherwise.
  */
-typedef void (*LogicalDecodePrepareCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodePrepareCB) (struct LogicalDecodingContext *ctx,
 										ReorderBufferTXN *txn,
 										XLogRecPtr prepare_lsn);
 
@@ -159,32 +162,35 @@ typedef void (*LogicalDecodeStreamStopCB) (struct LogicalDecodingContext *ctx,
 
 /*
  * Called to discard changes streamed to remote node from in-progress
- * transaction.
+ * transaction. Should return true if the transaction is output, false
+ * otherwise.
  */
-typedef void (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
 											ReorderBufferTXN *txn,
 											XLogRecPtr abort_lsn);
 
 /*
  * Called to prepare changes streamed to remote node from in-progress
- * transaction. This is called as part of a two-phase commit.
+ * transaction. This is called as part of a two-phase commit.  Should return true
+ * if the transaction is output, false otherwise.
  */
-typedef void (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx,
 											  ReorderBufferTXN *txn,
 											  XLogRecPtr prepare_lsn);
 
 /*
- * Called to apply changes streamed to remote node from in-progress
- * transaction.
+ * Called to apply changes streamed to remote node from in-progress transaction.
+ * Should return true if the transaction is output, false otherwise.
  */
-typedef void (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
 											 ReorderBufferTXN *txn,
 											 XLogRecPtr commit_lsn);
 
 /*
  * Callback for streaming individual changes from in-progress transactions.
+ * Should return true if the change is output, false otherwise.
  */
-typedef void (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
 											 ReorderBufferTXN *txn,
 											 Relation relation,
 											 ReorderBufferChange *change);
@@ -202,9 +208,10 @@ typedef void (*LogicalDecodeStreamMessageCB) (struct LogicalDecodingContext *ctx
 											  const char *message);
 
 /*
- * Callback for streaming truncates from in-progress transactions.
+ * Callback for streaming truncates from in-progress transactions. Should return
+ * true if the change is output, false otherwise.
  */
-typedef void (*LogicalDecodeStreamTruncateCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamTruncateCB) (struct LogicalDecodingContext *ctx,
 											   ReorderBufferTXN *txn,
 											   int nrelations,
 											   Relation relations[],

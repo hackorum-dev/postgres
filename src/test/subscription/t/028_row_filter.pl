@@ -579,6 +579,9 @@ is($result, qq(3|6),
 # commands are for testing normal logical replication behavior.
 #
 # test row filter (INSERT, UPDATE, DELETE)
+my $initial_filtered_bytes = $node_publisher->safe_psql('postgres',
+	"SELECT filtered_bytes FROM pg_stat_replication_slots WHERE slot_name = 'tap_sub'");
+
 $node_publisher->safe_psql('postgres',
 	"INSERT INTO tab_rowfilter_1 (a, b) VALUES (800, 'test 800')");
 $node_publisher->safe_psql('postgres',
@@ -611,6 +614,14 @@ $node_publisher->safe_psql('postgres',
 	"INSERT INTO tab_rowfilter_virtual (id, x) VALUES (4, 3), (5, 7)");
 
 $node_publisher->wait_for_catchup($appname);
+
+# The changes which do not pass the row filter will be filtered. Make sure that
+# the filtered_bytes reflects that. We can not test the exact value of
+# filtered_bytes since it is affected by background activity.
+my $final_filtered_bytes = $node_publisher->safe_psql('postgres',
+	"SELECT filtered_bytes FROM pg_stat_replication_slots WHERE slot_name = 'tap_sub'");
+cmp_ok($final_filtered_bytes, '>', $initial_filtered_bytes,
+	'filtered_bytes increased after row filtering');
 
 # Check expected replicated rows for tab_rowfilter_2
 # tap_pub_1 filter is: (c % 2 = 0)

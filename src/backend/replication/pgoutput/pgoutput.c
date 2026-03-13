@@ -46,12 +46,12 @@ static void pgoutput_startup(LogicalDecodingContext *ctx,
 static void pgoutput_shutdown(LogicalDecodingContext *ctx);
 static void pgoutput_begin_txn(LogicalDecodingContext *ctx,
 							   ReorderBufferTXN *txn);
-static void pgoutput_commit_txn(LogicalDecodingContext *ctx,
+static bool pgoutput_commit_txn(LogicalDecodingContext *ctx,
 								ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
-static void pgoutput_change(LogicalDecodingContext *ctx,
+static bool pgoutput_change(LogicalDecodingContext *ctx,
 							ReorderBufferTXN *txn, Relation relation,
 							ReorderBufferChange *change);
-static void pgoutput_truncate(LogicalDecodingContext *ctx,
+static bool pgoutput_truncate(LogicalDecodingContext *ctx,
 							  ReorderBufferTXN *txn, int nrelations, Relation relations[],
 							  ReorderBufferChange *change);
 static void pgoutput_message(LogicalDecodingContext *ctx,
@@ -62,7 +62,7 @@ static bool pgoutput_origin_filter(LogicalDecodingContext *ctx,
 								   ReplOriginId origin_id);
 static void pgoutput_begin_prepare_txn(LogicalDecodingContext *ctx,
 									   ReorderBufferTXN *txn);
-static void pgoutput_prepare_txn(LogicalDecodingContext *ctx,
+static bool pgoutput_prepare_txn(LogicalDecodingContext *ctx,
 								 ReorderBufferTXN *txn, XLogRecPtr prepare_lsn);
 static void pgoutput_commit_prepared_txn(LogicalDecodingContext *ctx,
 										 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
@@ -74,13 +74,13 @@ static void pgoutput_stream_start(struct LogicalDecodingContext *ctx,
 								  ReorderBufferTXN *txn);
 static void pgoutput_stream_stop(struct LogicalDecodingContext *ctx,
 								 ReorderBufferTXN *txn);
-static void pgoutput_stream_abort(struct LogicalDecodingContext *ctx,
+static bool pgoutput_stream_abort(struct LogicalDecodingContext *ctx,
 								  ReorderBufferTXN *txn,
 								  XLogRecPtr abort_lsn);
-static void pgoutput_stream_commit(struct LogicalDecodingContext *ctx,
+static bool pgoutput_stream_commit(struct LogicalDecodingContext *ctx,
 								   ReorderBufferTXN *txn,
 								   XLogRecPtr commit_lsn);
-static void pgoutput_stream_prepare_txn(LogicalDecodingContext *ctx,
+static bool pgoutput_stream_prepare_txn(LogicalDecodingContext *ctx,
 										ReorderBufferTXN *txn, XLogRecPtr prepare_lsn);
 
 static bool publications_valid;
@@ -628,7 +628,7 @@ pgoutput_send_begin(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 /*
  * COMMIT callback
  */
-static void
+static bool
 pgoutput_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					XLogRecPtr commit_lsn)
 {
@@ -649,12 +649,13 @@ pgoutput_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	if (!sent_begin_txn)
 	{
 		elog(DEBUG1, "skipped replication of an empty transaction with XID: %u", txn->xid);
-		return;
+		return false;
 	}
 
 	OutputPluginPrepareWrite(ctx, true);
 	logicalrep_write_commit(ctx->out, txn, commit_lsn);
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
 /*
@@ -677,7 +678,7 @@ pgoutput_begin_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 /*
  * PREPARE callback
  */
-static void
+static bool
 pgoutput_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					 XLogRecPtr prepare_lsn)
 {
@@ -686,6 +687,7 @@ pgoutput_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	OutputPluginPrepareWrite(ctx, true);
 	logicalrep_write_prepare(ctx->out, txn, prepare_lsn);
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
 /*
@@ -1480,7 +1482,7 @@ pgoutput_row_filter(Relation relation, TupleTableSlot *old_slot,
  *
  * This is called both in streaming and non-streaming modes.
  */
-static void
+static bool
 pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				Relation relation, ReorderBufferChange *change)
 {
@@ -1494,9 +1496,10 @@ pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	ReorderBufferChangeType action = change->action;
 	TupleTableSlot *old_slot = NULL;
 	TupleTableSlot *new_slot = NULL;
+	bool		result;
 
 	if (!is_publishable_relation(relation))
-		return;
+		return false;
 
 	/*
 	 * Remember the xid for the change in streaming mode. We need to send xid
@@ -1514,15 +1517,15 @@ pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
 			if (!relentry->pubactions.pubinsert)
-				return;
+				return false;
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
 			if (!relentry->pubactions.pubupdate)
-				return;
+				return false;
 			break;
 		case REORDER_BUFFER_CHANGE_DELETE:
 			if (!relentry->pubactions.pubdelete)
-				return;
+				return false;
 
 			/*
 			 * This is only possible if deletes are allowed even when replica
@@ -1532,7 +1535,7 @@ pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			if (!change->data.tp.oldtuple)
 			{
 				elog(DEBUG1, "didn't send DELETE change because of missing oldtuple");
-				return;
+				return false;
 			}
 			break;
 		default:
@@ -1587,7 +1590,16 @@ pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	 * of the row filter for old and new tuple.
 	 */
 	if (!pgoutput_row_filter(targetrel, old_slot, &new_slot, relentry, &action))
+	{
+		result = false;
 		goto cleanup;
+	}
+
+	/*
+	 * Even if we filter some columns while sending the message we are not
+	 * filtering the change as a whole. Hence we will return true.
+	 */
+	result = true;
 
 	/*
 	 * Send BEGIN if we haven't yet.
@@ -1650,9 +1662,10 @@ cleanup:
 
 	MemoryContextSwitchTo(old);
 	MemoryContextReset(data->context);
+	return result;
 }
 
-static void
+static bool
 pgoutput_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				  int nrelations, Relation relations[], ReorderBufferChange *change)
 {
@@ -1664,6 +1677,7 @@ pgoutput_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	int			nrelids;
 	Oid		   *relids;
 	TransactionId xid = InvalidTransactionId;
+	bool		result = false;
 
 	/* Remember the xid for the change in streaming mode. See pgoutput_change. */
 	if (data->in_streaming)
@@ -1714,10 +1728,18 @@ pgoutput_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 								  change->data.truncate.cascade,
 								  change->data.truncate.restart_seqs);
 		OutputPluginWrite(ctx, true);
+
+		/*
+		 * Even if we filtered out some relations, we still send a TRUNCATE
+		 * message for the remaining relations. Since the change, as a whole,
+		 * is not filtered out we return true.
+		 */
+		result = true;
 	}
 
 	MemoryContextSwitchTo(old);
 	MemoryContextReset(data->context);
+	return result;
 }
 
 static void
@@ -1890,7 +1912,7 @@ pgoutput_stream_stop(struct LogicalDecodingContext *ctx,
  * Notify downstream to discard the streamed transaction (along with all
  * its subtransactions, if it's a toplevel transaction).
  */
-static void
+static bool
 pgoutput_stream_abort(struct LogicalDecodingContext *ctx,
 					  ReorderBufferTXN *txn,
 					  XLogRecPtr abort_lsn)
@@ -1917,13 +1939,14 @@ pgoutput_stream_abort(struct LogicalDecodingContext *ctx,
 	OutputPluginWrite(ctx, true);
 
 	cleanup_rel_sync_cache(toptxn->xid, false);
+	return true;
 }
 
 /*
  * Notify downstream to apply the streamed transaction (along with all
  * its subtransactions).
  */
-static void
+static bool
 pgoutput_stream_commit(struct LogicalDecodingContext *ctx,
 					   ReorderBufferTXN *txn,
 					   XLogRecPtr commit_lsn)
@@ -1944,6 +1967,7 @@ pgoutput_stream_commit(struct LogicalDecodingContext *ctx,
 	OutputPluginWrite(ctx, true);
 
 	cleanup_rel_sync_cache(txn->xid, true);
+	return true;
 }
 
 /*
@@ -1951,7 +1975,7 @@ pgoutput_stream_commit(struct LogicalDecodingContext *ctx,
  *
  * Notify the downstream to prepare the transaction.
  */
-static void
+static bool
 pgoutput_stream_prepare_txn(LogicalDecodingContext *ctx,
 							ReorderBufferTXN *txn,
 							XLogRecPtr prepare_lsn)
@@ -1962,6 +1986,7 @@ pgoutput_stream_prepare_txn(LogicalDecodingContext *ctx,
 	OutputPluginPrepareWrite(ctx, true);
 	logicalrep_write_stream_prepare(ctx->out, txn, prepare_lsn);
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
 /*

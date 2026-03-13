@@ -2262,6 +2262,7 @@ pg_stat_replication| SELECT s.pid,
      JOIN pg_stat_get_wal_senders() w(pid, state, sent_lsn, write_lsn, flush_lsn, replay_lsn, write_lag, flush_lag, replay_lag, sync_priority, sync_state, reply_time) ON ((s.pid = w.pid)))
      LEFT JOIN pg_authid u ON ((s.usesysid = u.oid)));
 pg_stat_replication_slots| SELECT s.slot_name,
+    r.plugin,
     s.spill_txns,
     s.spill_count,
     s.spill_bytes,
@@ -2271,12 +2272,14 @@ pg_stat_replication_slots| SELECT s.slot_name,
     s.mem_exceeded_count,
     s.total_txns,
     s.total_bytes,
+    s.filtered_bytes,
+    s.sent_txns,
     s.sent_bytes,
     s.slotsync_skip_count,
     s.slotsync_last_skip,
     s.stats_reset
    FROM pg_replication_slots r,
-    LATERAL pg_stat_get_replication_slot((r.slot_name)::text) s(slot_name, spill_txns, spill_count, spill_bytes, stream_txns, stream_count, stream_bytes, mem_exceeded_count, total_txns, total_bytes, sent_bytes, slotsync_skip_count, slotsync_last_skip, stats_reset)
+    LATERAL pg_stat_get_replication_slot((r.slot_name)::text) s(slot_name, spill_txns, spill_count, spill_bytes, stream_txns, stream_count, stream_bytes, mem_exceeded_count, total_txns, total_bytes, filtered_bytes, sent_txns, sent_bytes, slotsync_skip_count, slotsync_last_skip, stats_reset)
   WHERE (r.datoid IS NOT NULL);
 pg_stat_slru| SELECT name,
     blks_zeroed,

@@ -69,6 +69,9 @@ $node_subscriber->safe_psql('postgres',
 # Wait for initial sync of all subscriptions
 $node_subscriber->wait_for_subscription_sync;
 
+my $initial_filtered_bytes = $node_publisher->safe_psql('postgres',
+	"SELECT filtered_bytes FROM pg_stat_replication_slots WHERE slot_name = 'sub2'");
+
 # insert data to truncate
 
 $node_subscriber->safe_psql('postgres',
@@ -98,6 +101,16 @@ $node_publisher->wait_for_catchup('sub1');
 $result = $node_subscriber->safe_psql('postgres', "SELECT nextval('seq1')");
 is($result, qq(101), 'truncate restarted identities');
 
+# All the DMLs above happen on tables that are subscribed to by sub1 and not
+# sub2. filtered_bytes should get incremented for replication slot
+# corresponding to the subscription sub2. We can not test the exact value of
+# filtered_bytes because the counter is affected by background activity.
+my $final_filtered_bytes = $node_publisher->safe_psql('postgres',
+	"SELECT filtered_bytes FROM pg_stat_replication_slots WHERE slot_name = 'sub2'");
+cmp_ok($final_filtered_bytes, '>', $initial_filtered_bytes,
+	'filtered_bytes increased after publication level filtering');
+$initial_filtered_bytes = $final_filtered_bytes;
+
 # test publication that does not replicate truncate
 
 $node_subscriber->safe_psql('postgres',
@@ -106,6 +119,13 @@ $node_subscriber->safe_psql('postgres',
 $node_publisher->safe_psql('postgres', "TRUNCATE tab2");
 
 $node_publisher->wait_for_catchup('sub2');
+
+# Truncate changes are filtered out at publication level itself. Make sure that
+# the filtered_bytes is incremented.
+$final_filtered_bytes = $node_publisher->safe_psql('postgres',
+	"SELECT filtered_bytes FROM pg_stat_replication_slots WHERE slot_name = 'sub2'");
+cmp_ok($final_filtered_bytes, '>', $initial_filtered_bytes,
+	'filtered_bytes increased after truncate filtering');
 
 $result = $node_subscriber->safe_psql('postgres',
 	"SELECT count(*), min(a), max(a) FROM tab2");

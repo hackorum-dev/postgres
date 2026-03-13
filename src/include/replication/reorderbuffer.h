@@ -699,6 +699,10 @@ struct ReorderBuffer
 	 */
 	int64		totalTxns;		/* total number of transactions sent */
 	int64		totalBytes;		/* total amount of data decoded */
+	int64		filteredBytes;	/* amount of data filtered out by output
+								 * plugin */
+	int64		sentTxns;		/* number of transactions decoded and sent
+								 * downstream */
 	int64		sentBytes;		/* amount of data decoded and sent downstream */
 };
 
@@ -719,6 +723,7 @@ extern void ReorderBufferFreeRelids(ReorderBuffer *rb, Oid *relids);
 extern void ReorderBufferQueueChange(ReorderBuffer *rb, TransactionId xid,
 									 XLogRecPtr lsn, ReorderBufferChange *change,
 									 bool toast_insert);
+extern Size ReorderBufferChangeSize(ReorderBufferChange *change);
 extern void ReorderBufferQueueMessage(ReorderBuffer *rb, TransactionId xid,
 									  Snapshot snap, XLogRecPtr lsn,
 									  bool transactional, const char *prefix,

@@ -60,12 +60,12 @@ static void pg_output_begin(LogicalDecodingContext *ctx,
 							TestDecodingData *data,
 							ReorderBufferTXN *txn,
 							bool last_write);
-static void pg_decode_commit_txn(LogicalDecodingContext *ctx,
+static bool pg_decode_commit_txn(LogicalDecodingContext *ctx,
 								 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
-static void pg_decode_change(LogicalDecodingContext *ctx,
+static bool pg_decode_change(LogicalDecodingContext *ctx,
 							 ReorderBufferTXN *txn, Relation relation,
 							 ReorderBufferChange *change);
-static void pg_decode_truncate(LogicalDecodingContext *ctx,
+static bool pg_decode_truncate(LogicalDecodingContext *ctx,
 							   ReorderBufferTXN *txn,
 							   int nrelations, Relation relations[],
 							   ReorderBufferChange *change);
@@ -80,7 +80,7 @@ static bool pg_decode_filter_prepare(LogicalDecodingContext *ctx,
 									 const char *gid);
 static void pg_decode_begin_prepare_txn(LogicalDecodingContext *ctx,
 										ReorderBufferTXN *txn);
-static void pg_decode_prepare_txn(LogicalDecodingContext *ctx,
+static bool pg_decode_prepare_txn(LogicalDecodingContext *ctx,
 								  ReorderBufferTXN *txn,
 								  XLogRecPtr prepare_lsn);
 static void pg_decode_commit_prepared_txn(LogicalDecodingContext *ctx,
@@ -98,16 +98,16 @@ static void pg_output_stream_start(LogicalDecodingContext *ctx,
 								   bool last_write);
 static void pg_decode_stream_stop(LogicalDecodingContext *ctx,
 								  ReorderBufferTXN *txn);
-static void pg_decode_stream_abort(LogicalDecodingContext *ctx,
+static bool pg_decode_stream_abort(LogicalDecodingContext *ctx,
 								   ReorderBufferTXN *txn,
 								   XLogRecPtr abort_lsn);
-static void pg_decode_stream_prepare(LogicalDecodingContext *ctx,
+static bool pg_decode_stream_prepare(LogicalDecodingContext *ctx,
 									 ReorderBufferTXN *txn,
 									 XLogRecPtr prepare_lsn);
-static void pg_decode_stream_commit(LogicalDecodingContext *ctx,
+static bool pg_decode_stream_commit(LogicalDecodingContext *ctx,
 									ReorderBufferTXN *txn,
 									XLogRecPtr commit_lsn);
-static void pg_decode_stream_change(LogicalDecodingContext *ctx,
+static bool pg_decode_stream_change(LogicalDecodingContext *ctx,
 									ReorderBufferTXN *txn,
 									Relation relation,
 									ReorderBufferChange *change);
@@ -115,7 +115,7 @@ static void pg_decode_stream_message(LogicalDecodingContext *ctx,
 									 ReorderBufferTXN *txn, XLogRecPtr lsn,
 									 bool transactional, const char *prefix,
 									 Size sz, const char *message);
-static void pg_decode_stream_truncate(LogicalDecodingContext *ctx,
+static bool pg_decode_stream_truncate(LogicalDecodingContext *ctx,
 									  ReorderBufferTXN *txn,
 									  int nrelations, Relation relations[],
 									  ReorderBufferChange *change);
@@ -318,7 +318,7 @@ pg_output_begin(LogicalDecodingContext *ctx, TestDecodingData *data, ReorderBuff
 }
 
 /* COMMIT callback */
-static void
+static bool
 pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					 XLogRecPtr commit_lsn)
 {
@@ -330,7 +330,7 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	txn->output_plugin_private = NULL;
 
 	if (data->skip_empty_xacts && !xact_wrote_changes)
-		return;
+		return false;
 
 	OutputPluginPrepareWrite(ctx, true);
 	if (data->include_xids)
@@ -343,6 +343,7 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 						 timestamptz_to_str(txn->commit_time));
 
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
 /* BEGIN PREPARE callback */
@@ -367,7 +368,7 @@ pg_decode_begin_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 }
 
 /* PREPARE callback */
-static void
+static bool
 pg_decode_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					  XLogRecPtr prepare_lsn)
 {
@@ -379,7 +380,7 @@ pg_decode_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	 * where the first operation is received for this transaction.
 	 */
 	if (data->skip_empty_xacts && !txndata->xact_wrote_changes)
-		return;
+		return false;
 
 	OutputPluginPrepareWrite(ctx, true);
 
@@ -394,6 +395,7 @@ pg_decode_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 						 timestamptz_to_str(txn->prepare_time));
 
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
 /* COMMIT PREPARED callback */
@@ -599,7 +601,7 @@ tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_
 /*
  * callback for individual changed tuples
  */
-static void
+static bool
 pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				 Relation relation, ReorderBufferChange *change)
 {
@@ -684,9 +686,10 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContextReset(data->context);
 
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
-static void
+static bool
 pg_decode_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				   int nrelations, Relation relations[], ReorderBufferChange *change)
 {
@@ -739,6 +742,7 @@ pg_decode_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContextReset(data->context);
 
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
 static void
@@ -818,7 +822,7 @@ pg_decode_stream_stop(LogicalDecodingContext *ctx,
 	OutputPluginWrite(ctx, true);
 }
 
-static void
+static bool
 pg_decode_stream_abort(LogicalDecodingContext *ctx,
 					   ReorderBufferTXN *txn,
 					   XLogRecPtr abort_lsn)
@@ -842,7 +846,7 @@ pg_decode_stream_abort(LogicalDecodingContext *ctx,
 	}
 
 	if (data->skip_empty_xacts && !xact_wrote_changes)
-		return;
+		return false;
 
 	OutputPluginPrepareWrite(ctx, true);
 	if (data->include_xids)
@@ -850,9 +854,10 @@ pg_decode_stream_abort(LogicalDecodingContext *ctx,
 	else
 		appendStringInfoString(ctx->out, "aborting streamed (sub)transaction");
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
-static void
+static bool
 pg_decode_stream_prepare(LogicalDecodingContext *ctx,
 						 ReorderBufferTXN *txn,
 						 XLogRecPtr prepare_lsn)
@@ -861,7 +866,7 @@ pg_decode_stream_prepare(LogicalDecodingContext *ctx,
 	TestDecodingTxnData *txndata = txn->output_plugin_private;
 
 	if (data->skip_empty_xacts && !txndata->xact_wrote_changes)
-		return;
+		return false;
 
 	OutputPluginPrepareWrite(ctx, true);
 
@@ -877,9 +882,10 @@ pg_decode_stream_prepare(LogicalDecodingContext *ctx,
 						 timestamptz_to_str(txn->prepare_time));
 
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
-static void
+static bool
 pg_decode_stream_commit(LogicalDecodingContext *ctx,
 						ReorderBufferTXN *txn,
 						XLogRecPtr commit_lsn)
@@ -892,7 +898,7 @@ pg_decode_stream_commit(LogicalDecodingContext *ctx,
 	txn->output_plugin_private = NULL;
 
 	if (data->skip_empty_xacts && !xact_wrote_changes)
-		return;
+		return false;
 
 	OutputPluginPrepareWrite(ctx, true);
 
@@ -906,6 +912,7 @@ pg_decode_stream_commit(LogicalDecodingContext *ctx,
 						 timestamptz_to_str(txn->commit_time));
 
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
 /*
@@ -913,7 +920,7 @@ pg_decode_stream_commit(LogicalDecodingContext *ctx,
  * at a later point in time.  We don't want users to see the changes until the
  * transaction is committed.
  */
-static void
+static bool
 pg_decode_stream_change(LogicalDecodingContext *ctx,
 						ReorderBufferTXN *txn,
 						Relation relation,
@@ -935,6 +942,7 @@ pg_decode_stream_change(LogicalDecodingContext *ctx,
 	else
 		appendStringInfoString(ctx->out, "streaming change for transaction");
 	OutputPluginWrite(ctx, true);
+	return true;
 }
 
 /*
@@ -981,7 +989,7 @@ pg_decode_stream_message(LogicalDecodingContext *ctx,
  * In streaming mode, we don't display the detailed information of Truncate.
  * See pg_decode_stream_change.
  */
-static void
+static bool
 pg_decode_stream_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 						  int nrelations, Relation relations[],
 						  ReorderBufferChange *change)
@@ -1001,4 +1009,5 @@ pg_decode_stream_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	else
 		appendStringInfoString(ctx->out, "streaming truncate for transaction");
 	OutputPluginWrite(ctx, true);
+	return true;
 }

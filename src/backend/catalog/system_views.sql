@@ -1130,6 +1130,7 @@ CREATE VIEW pg_replication_slots AS
 CREATE VIEW pg_stat_replication_slots AS
     SELECT
             s.slot_name,
+            r.plugin,
             s.spill_txns,
             s.spill_count,
             s.spill_bytes,
@@ -1139,6 +1140,8 @@ CREATE VIEW pg_stat_replication_slots AS
             s.mem_exceeded_count,
             s.total_txns,
             s.total_bytes,
+            s.filtered_bytes,
+            s.sent_txns,
             s.sent_bytes,
             s.slotsync_skip_count,
             s.slotsync_last_skip,

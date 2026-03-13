@@ -881,7 +881,8 @@ commit_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	ctx->end_xact = true;
 
 	/* do the actual work: call callback */
-	ctx->callbacks.commit_cb(ctx, txn, commit_lsn);
+	if (ctx->callbacks.commit_cb(ctx, txn, commit_lsn))
+		cache->sentTxns++;
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
@@ -977,7 +978,8 @@ prepare_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 						"prepare_cb")));
 
 	/* do the actual work: call callback */
-	ctx->callbacks.prepare_cb(ctx, txn, prepare_lsn);
+	if (ctx->callbacks.prepare_cb(ctx, txn, prepare_lsn))
+		cache->sentTxns++;
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
@@ -1108,7 +1110,8 @@ change_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 
 	ctx->end_xact = false;
 
-	ctx->callbacks.change_cb(ctx, txn, relation, change);
+	if (!ctx->callbacks.change_cb(ctx, txn, relation, change))
+		cache->filteredBytes += ReorderBufferChangeSize(change);
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
@@ -1150,7 +1153,8 @@ truncate_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 
 	ctx->end_xact = false;
 
-	ctx->callbacks.truncate_cb(ctx, txn, nrelations, relations, change);
+	if (!ctx->callbacks.truncate_cb(ctx, txn, nrelations, relations, change))
+		cache->filteredBytes += ReorderBufferChangeSize(change);
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
@@ -1389,7 +1393,8 @@ stream_abort_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 				 errmsg("logical streaming requires a %s callback",
 						"stream_abort_cb")));
 
-	ctx->callbacks.stream_abort_cb(ctx, txn, abort_lsn);
+	if (ctx->callbacks.stream_abort_cb(ctx, txn, abort_lsn))
+		cache->sentTxns++;
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
@@ -1434,7 +1439,8 @@ stream_prepare_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 				 errmsg("logical streaming at prepare time requires a %s callback",
 						"stream_prepare_cb")));
 
-	ctx->callbacks.stream_prepare_cb(ctx, txn, prepare_lsn);
+	if (ctx->callbacks.stream_prepare_cb(ctx, txn, prepare_lsn))
+		cache->sentTxns++;
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
@@ -1475,7 +1481,8 @@ stream_commit_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 				 errmsg("logical streaming requires a %s callback",
 						"stream_commit_cb")));
 
-	ctx->callbacks.stream_commit_cb(ctx, txn, commit_lsn);
+	if (ctx->callbacks.stream_commit_cb(ctx, txn, commit_lsn))
+		cache->sentTxns++;
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
@@ -1524,7 +1531,8 @@ stream_change_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 				 errmsg("logical streaming requires a %s callback",
 						"stream_change_cb")));
 
-	ctx->callbacks.stream_change_cb(ctx, txn, relation, change);
+	if (!ctx->callbacks.stream_change_cb(ctx, txn, relation, change))
+		cache->filteredBytes += ReorderBufferChangeSize(change);
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
@@ -1612,7 +1620,8 @@ stream_truncate_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 
 	ctx->end_xact = false;
 
-	ctx->callbacks.stream_truncate_cb(ctx, txn, nrelations, relations, change);
+	if (!ctx->callbacks.stream_truncate_cb(ctx, txn, nrelations, relations, change))
+		cache->filteredBytes += ReorderBufferChangeSize(change);
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
@@ -1958,7 +1967,7 @@ UpdateDecodingStats(LogicalDecodingContext *ctx)
 		rb->memExceededCount <= 0)
 		return;
 
-	elog(DEBUG2, "UpdateDecodingStats: updating stats %p %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64,
+	elog(DEBUG2, "UpdateDecodingStats: updating stats %p %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64,
 		 rb,
 		 rb->spillTxns,
 		 rb->spillCount,
@@ -1969,6 +1978,8 @@ UpdateDecodingStats(LogicalDecodingContext *ctx)
 		 rb->memExceededCount,
 		 rb->totalTxns,
 		 rb->totalBytes,
+		 rb->filteredBytes,
+		 rb->sentTxns,
 		 rb->sentBytes);
 
 	repSlotStat.spill_txns = rb->spillTxns;
@@ -1980,6 +1991,8 @@ UpdateDecodingStats(LogicalDecodingContext *ctx)
 	repSlotStat.mem_exceeded_count = rb->memExceededCount;
 	repSlotStat.total_txns = rb->totalTxns;
 	repSlotStat.total_bytes = rb->totalBytes;
+	repSlotStat.filtered_bytes = rb->filteredBytes;
+	repSlotStat.sent_txns = rb->sentTxns;
 	repSlotStat.sent_bytes = rb->sentBytes;
 
 	pgstat_report_replslot(ctx->slot, &repSlotStat);
@@ -1993,6 +2006,8 @@ UpdateDecodingStats(LogicalDecodingContext *ctx)
 	rb->memExceededCount = 0;
 	rb->totalTxns = 0;
 	rb->totalBytes = 0;
+	rb->filteredBytes = 0;
+	rb->sentTxns = 0;
 	rb->sentBytes = 0;
 }
 

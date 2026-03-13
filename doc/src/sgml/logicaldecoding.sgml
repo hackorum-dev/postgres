@@ -1020,10 +1020,15 @@ typedef void (*LogicalDecodeBeginCB) (struct LogicalDecodingContext *ctx,
       rows will have been called before this, if there have been any modified
       rows.
 <programlisting>
-typedef void (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
                                        ReorderBufferTXN *txn,
                                        XLogRecPtr commit_lsn);
 </programlisting>
+      If the callback outputs the transaction, it is expected to return true;
+      otherwise false. The return value is used to update the
+      <literal>sent_txns</literal> counter reported in <link
+      linkend="monitoring-pg-stat-replication-slots-view">
+      <structname>pg_stat_replication_slots</structname></link> view.
      </para>
     </sect3>
 
@@ -1044,7 +1049,7 @@ typedef void (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
       this very same transaction. In that case, the logical decoding of this
       aborted transaction is stopped gracefully.
 <programlisting>
-typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
                                        ReorderBufferTXN *txn,
                                        Relation relation,
                                        ReorderBufferChange *change);
@@ -1054,8 +1059,12 @@ typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
       and <function>commit_cb</function> callbacks, but additionally the
       relation descriptor <parameter>relation</parameter> points to the
       relation the row belongs to and a struct
-      <parameter>change</parameter> describing the row modification are passed
-      in.
+      <parameter>change</parameter> describing the row modification are passed in.
+      If the output plugin decoded and output the change, it is expected
+      to return true; otherwise false. This return value is used to update the
+      <structfield>filtered_bytes</structfield> counter reported in
+      <link linkend="monitoring-pg-stat-replication-slots-view">
+      <structname>pg_stat_replication_slots</structname></link> view.
      </para>
 
      <note>
@@ -1075,18 +1084,18 @@ typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
       The optional <function>truncate_cb</function> callback is called for a
       <command>TRUNCATE</command> command.
 <programlisting>
-typedef void (*LogicalDecodeTruncateCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeTruncateCB) (struct LogicalDecodingContext *ctx,
                                          ReorderBufferTXN *txn,
                                          int nrelations,
                                          Relation relations[],
                                          ReorderBufferChange *change);
 </programlisting>
-      The parameters are analogous to the <function>change_cb</function>
-      callback.  However, because <command>TRUNCATE</command> actions on
-      tables connected by foreign keys need to be executed together, this
-      callback receives an array of relations instead of just a single one.
-      See the description of the <xref linkend="sql-truncate"/> statement for
-      details.
+      The parameters and the expected return value are analogous to the
+      <function>change_cb</function> callback.  However, because
+      <command>TRUNCATE</command> actions on tables connected by foreign keys
+      need to be executed together, this callback receives an array of relations
+      instead of just a single one.  See the description of the <xref
+      linkend="sql-truncate"/> statement for details.
      </para>
     </sect3>
 
@@ -1219,8 +1228,18 @@ typedef void (*LogicalDecodeBeginPrepareCB) (struct LogicalDecodingContext *ctx,
       rows will have been called before this, if there have been any modified
       rows. The <parameter>gid</parameter> field, which is part of the
       <parameter>txn</parameter> parameter, can be used in this callback.
+      If the callback outputs the prepared transaction, it is expected to return
+      true; otherwise false. The return value is used to update the
+      <structfield>sent_txns</structfield> counter reported in
+      <link linkend="monitoring-pg-stat-replication-slots-view">
+      <structname>pg_stat_replication_slots</structname></link> view. Please
+      note that the return value of this callback suffices to determine
+      whether a prepared transaction was output or not; callbacks
+      <function>commit_prepared_cb</function> and
+      <function>rollback_prepared_cb</function> do not need to return this
+      status again.
 <programlisting>
-typedef void (*LogicalDecodePrepareCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodePrepareCB) (struct LogicalDecodingContext *ctx,
                                         ReorderBufferTXN *txn,
                                         XLogRecPtr prepare_lsn);
 </programlisting>
@@ -1294,9 +1313,14 @@ typedef void (*LogicalDecodeStreamStopCB) (struct LogicalDecodingContext *ctx,
      <title>Stream Abort Callback</title>
      <para>
       The required <function>stream_abort_cb</function> callback is called to
-      abort a previously streamed transaction.
+      abort a previously streamed transaction. If the output plugin has output
+      the streamed transaction, the callback is expected to return true;
+      otherwise false. The return value is used to update the
+      <structfield>sent_txns</structfield> counter reported in
+      <link linkend="monitoring-pg-stat-replication-slots-view">
+      <structname>pg_stat_replication_slots</structname></link> view.
 <programlisting>
-typedef void (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
                                             ReorderBufferTXN *txn,
                                             XLogRecPtr abort_lsn);
 </programlisting>
@@ -1309,9 +1333,19 @@ typedef void (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
       The <function>stream_prepare_cb</function> callback is called to prepare
       a previously streamed transaction as part of a two-phase commit. This
       callback is required when the output plugin supports both the streaming
-      of large in-progress transactions and two-phase commits.
+      of large in-progress transactions and two-phase commits. If the output
+      plugin has output the streamed transaction, the callback is expected to
+      return true; otherwise false. The return value is used to update the
+      <structfield>sent_txns</structfield> counter reported in
+      <link linkend="monitoring-pg-stat-replication-slots-view">
+      <structname>pg_stat_replication_slots</structname></link> view. Please
+      note that only the return value of this callback suffices to determine
+      whether a prepared transaction was output or not; callbacks
+      <function>commit_prepared_cb</function> and
+      <function>rollback_prepared_cb</function> do not need to return this
+      status again.
       <programlisting>
-typedef void (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx,
                                               ReorderBufferTXN *txn,
                                               XLogRecPtr prepare_lsn);
 </programlisting>
@@ -1322,9 +1356,14 @@ typedef void (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx
      <title>Stream Commit Callback</title>
      <para>
       The required <function>stream_commit_cb</function> callback is called to
-      commit a previously streamed transaction.
+      commit a previously streamed transaction. If the output plugin
+      has output the streamed transaction, the callback is expected to return
+      true; otherwise false. The return value is used to update the
+      <structfield>sent_txns</structfield> counter reported in
+      <link linkend="monitoring-pg-stat-replication-slots-view">
+      <structname>pg_stat_replication_slots</structname></link> view.
 <programlisting>
-typedef void (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
                                              ReorderBufferTXN *txn,
                                              XLogRecPtr commit_lsn);
 </programlisting>
@@ -1337,10 +1376,15 @@ typedef void (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
       The required <function>stream_change_cb</function> callback is called
       when sending a change in a block of streamed changes (demarcated by
       <function>stream_start_cb</function> and <function>stream_stop_cb</function> calls).
+      If the output plugin decoded and output the change, it is expected to
+      return true. Otherwise it is expected to return false. This return value
+      is used to update the <structfield>filtered_bytes</structfield> counter
+      reported in <link linkend="monitoring-pg-stat-replication-slots-view">
+      <structname>pg_stat_replication_slots</structname></link> view.
       The actual changes are not displayed as the transaction can abort at a later
       point in time and we don't decode changes for aborted transactions.
 <programlisting>
-typedef void (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
                                              ReorderBufferTXN *txn,
                                              Relation relation,
                                              ReorderBufferChange *change);
@@ -1377,18 +1421,18 @@ typedef void (*LogicalDecodeStreamMessageCB) (struct LogicalDecodingContext *ctx
       (demarcated by <function>stream_start_cb</function> and
       <function>stream_stop_cb</function> calls).
 <programlisting>
-typedef void (*LogicalDecodeStreamTruncateCB) (struct LogicalDecodingContext *ctx,
+typedef bool (*LogicalDecodeStreamTruncateCB) (struct LogicalDecodingContext *ctx,
                                                ReorderBufferTXN *txn,
                                                int nrelations,
                                                Relation relations[],
                                                ReorderBufferChange *change);
 </programlisting>
-      The parameters are analogous to the <function>stream_change_cb</function>
-      callback.  However, because <command>TRUNCATE</command> actions on
-      tables connected by foreign keys need to be executed together, this
-      callback receives an array of relations instead of just a single one.
-      See the description of the <xref linkend="sql-truncate"/> statement for
-      details.
+      The parameters and the return value are analogous to the
+      <function>stream_change_cb</function> callback.  However, because
+      <command>TRUNCATE</command> actions on tables connected by foreign keys
+      need to be executed together, this callback receives an array of relations
+      instead of just a single one.  See the description of the <xref
+      linkend="sql-truncate"/> statement for details.
      </para>
     </sect3>
 
