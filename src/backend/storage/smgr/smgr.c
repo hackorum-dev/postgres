@@ -1036,7 +1036,7 @@ ProcessBarrierSmgrRelease(void)
  */
 void
 pgaio_io_set_target_smgr(PgAioHandle *ioh,
-						 SMgrRelationData *smgr,
+						 const SMgrRelationData *smgr,
 						 ForkNumber forknum,
 						 BlockNumber blocknum,
 						 int nblocks,
