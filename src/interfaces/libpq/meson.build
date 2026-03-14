@@ -133,18 +133,18 @@ pkgconfig.generate(
 )
 
 _h = []
-foreach l : fs.read('public_headers.list').strip().split('\n')
+foreach l : fs.read('../../include/public_headers.list').strip().split('\n')
   l = l.strip()
-  if l != '' and not l.startswith('#')
+  if l != '' and not l.startswith('#') and fs.is_file(l)
     _h += l
   endif
 endforeach
 install_headers(_h)
 
 _h = []
-foreach l : fs.read('internal_headers.list').strip().split('\n')
+foreach l : fs.read('../../include/internal_headers.list').strip().split('\n')
   l = l.strip()
-  if l != '' and not l.startswith('#')
+  if l != '' and not l.startswith('#') and fs.is_file(l)
     _h += l
   endif
 endforeach
