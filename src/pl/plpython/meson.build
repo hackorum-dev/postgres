@@ -53,23 +53,14 @@ install_data(
   install_dir: dir_data_extension,
 )
 
-install_headers(
-  'plpy_cursorobject.h',
-  'plpy_elog.h',
-  'plpy_exec.h',
-  'plpy_main.h',
-  'plpy_planobject.h',
-  'plpy_plpymodule.h',
-  'plpy_procedure.h',
-  'plpy_resultobject.h',
-  'plpy_spi.h',
-  'plpy_subxactobject.h',
-  'plpy_typeio.h',
-  'plpy_util.h',
-  'plpython.h',
-  'plpython_system.h',
-  install_dir: dir_include_server,
-)
+_h = []
+foreach l : fs.read('install_headers.list').strip().split('\n')
+  l = l.strip()
+  if l != '' and not l.startswith('#')
+    _h += l
+  endif
+endforeach
+install_headers(_h, install_dir: dir_include_server)
 
 plpython_regress = [
   'plpython_schema',

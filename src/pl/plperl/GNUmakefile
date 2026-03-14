@@ -75,6 +75,8 @@ endif
 # where to find xsubpp for building XS.
 XSUBPPDIR = $(shell $(PERL) -e 'use List::Util qw(first); print first { -r "$$_/ExtUtils/xsubpp" } @INC')
 
+INSTALL_HDRS := $(shell grep -v '^\#' $(srcdir)/install_headers.list | grep -v '^$$')
+
 include $(top_srcdir)/src/Makefile.shlib
 
 plperl.o: perlchunks.h plperl_opmask.h
@@ -108,11 +110,11 @@ uninstall: uninstall-lib uninstall-data
 
 install-data: installdirs
 	$(INSTALL_DATA) $(addprefix $(srcdir)/, $(DATA)) '$(DESTDIR)$(datadir)/extension/'
-	$(INSTALL_DATA) $(srcdir)/plperl.h $(srcdir)/plperl_system.h $(srcdir)/ppport.h '$(DESTDIR)$(includedir_server)'
+	$(INSTALL_DATA) $(addprefix $(srcdir)/,$(INSTALL_HDRS)) '$(DESTDIR)$(includedir_server)'
 
 uninstall-data:
 	rm -f $(addprefix '$(DESTDIR)$(datadir)/extension'/, $(notdir $(DATA)))
-	rm -f $(addprefix '$(DESTDIR)$(includedir_server)'/, plperl.h plperl_system.h ppport.h)
+	rm -f $(addprefix '$(DESTDIR)$(includedir_server)'/, $(INSTALL_HDRS))
 
 .PHONY: install-data uninstall-data
 

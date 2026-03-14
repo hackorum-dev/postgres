@@ -1,0 +1,2 @@
+# PL/pgSQL headers installed to $(includedir_server)
+plpgsql.h
