@@ -37,21 +37,8 @@ OBJS = \
 DATA = $(NAME)u.control $(NAME)u--1.0.sql
 
 # header files to install - it's not clear which of these might be needed
-# so install them all.
-INCS = 	plpython.h \
-	plpython_system.h \
-	plpy_cursorobject.h \
-	plpy_elog.h \
-	plpy_exec.h \
-	plpy_main.h \
-	plpy_planobject.h \
-	plpy_plpymodule.h \
-	plpy_procedure.h \
-	plpy_resultobject.h \
-	plpy_spi.h \
-	plpy_subxactobject.h \
-	plpy_typeio.h \
-	plpy_util.h
+# so install them all.  See install_headers.list for the list.
+INCS := $(shell grep -v '^\#' $(srcdir)/install_headers.list | grep -v '^$$')
 
 # Python on win32 ships with import libraries only for Microsoft Visual C++,
 # which are not compatible with mingw gcc. Therefore we need to build a

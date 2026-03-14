@@ -1,0 +1,4 @@
+# Informix compatibility headers installed to $(pkgincludedir)/informix/esql
+datetime.h
+decimal.h
+sqltypes.h
