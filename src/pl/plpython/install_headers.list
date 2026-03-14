@@ -1,0 +1,15 @@
+# PL/Python headers installed to $(includedir_server)
+plpy_cursorobject.h
+plpy_elog.h
+plpy_exec.h
+plpy_main.h
+plpy_planobject.h
+plpy_plpymodule.h
+plpy_procedure.h
+plpy_resultobject.h
+plpy_spi.h
+plpy_subxactobject.h
+plpy_typeio.h
+plpy_util.h
+plpython.h
+plpython_system.h
