@@ -151,8 +151,6 @@ bki-stamp: $(top_srcdir)/src/backend/catalog/genbki.pl $(top_srcdir)/src/backend
 install: all installdirs
 	$(INSTALL_DATA) postgres.bki '$(DESTDIR)$(datadir)/postgres.bki'
 	$(INSTALL_DATA) system_constraints.sql '$(DESTDIR)$(datadir)/system_constraints.sql'
-# In non-vpath builds, src/include/Makefile already installs all headers.
-ifeq ($(vpath_build),yes)
 	$(INSTALL_DATA) schemapg.h '$(DESTDIR)$(includedir_server)'/catalog/schemapg.h
 	$(INSTALL_DATA) syscache_ids.h '$(DESTDIR)$(includedir_server)'/catalog/syscache_ids.h
 	$(INSTALL_DATA) syscache_info.h '$(DESTDIR)$(includedir_server)'/catalog/syscache_info.h
@@ -160,7 +158,6 @@ ifeq ($(vpath_build),yes)
 	for file in $(GENERATED_HEADERS); do \
 	  $(INSTALL_DATA) $$file '$(DESTDIR)$(includedir_server)'/catalog/$$file || exit; \
 	done
-endif
 
 installdirs:
 	$(MKDIR_P) '$(DESTDIR)$(datadir)' '$(DESTDIR)$(includedir_server)'
