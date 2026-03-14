@@ -83,7 +83,7 @@ foreach list_file, base_dir : _header_lists
   batch = []
   foreach line : fs.read(list_file).strip().split('\n')
     f = line.strip()
-    if f == '' or f.startswith('#')
+    if f == '' or f.startswith('#') or not fs.is_file(f)
       continue
     endif
     d = fs.parent(f)

@@ -15,8 +15,10 @@ subdir = src/interfaces/libpq
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-PUBLIC_HEADERS := $(shell grep -v '^\#' $(srcdir)/public_headers.list | grep -v '^$$')
-INTERNAL_HEADERS := $(shell grep -v '^\#' $(srcdir)/internal_headers.list | grep -v '^$$')
+_ALL_PUBLIC := $(shell grep -v '^\#' $(top_srcdir)/src/include/public_headers.list | grep -v '^$$')
+PUBLIC_HEADERS := $(foreach h,$(_ALL_PUBLIC),$(if $(wildcard $(srcdir)/$(h)),$(h)))
+_ALL_INTERNAL := $(shell grep -v '^\#' $(top_srcdir)/src/include/internal_headers.list | grep -v '^$$')
+INTERNAL_HEADERS := $(foreach h,$(_ALL_INTERNAL),$(if $(wildcard $(srcdir)/$(h)),$(h)))
 
 export with_ssl with_gssapi with_krb_srvnam
 
