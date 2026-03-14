@@ -42,6 +42,8 @@ TOOLSDIR = $(top_srcdir)/src/tools
 GEN_KEYWORDLIST = $(PERL) -I $(TOOLSDIR) $(TOOLSDIR)/gen_keywordlist.pl
 GEN_KEYWORDLIST_DEPS = $(TOOLSDIR)/gen_keywordlist.pl $(TOOLSDIR)/PerfectHash.pm
 
+INSTALL_HDRS := $(shell grep -v '^\#' $(srcdir)/install_headers.list | grep -v '^$$')
+
 all: all-lib
 
 # Shared library stuff
@@ -59,15 +61,14 @@ uninstall: uninstall-lib uninstall-data uninstall-headers
 install-data: installdirs
 	$(INSTALL_DATA) $(addprefix $(srcdir)/, $(DATA)) '$(DESTDIR)$(datadir)/extension/'
 
-# The plpgsql.h header file is needed by instrumentation plugins
 install-headers: installdirs
-	$(INSTALL_DATA) '$(srcdir)/plpgsql.h' '$(DESTDIR)$(includedir_server)'
+	$(INSTALL_DATA) $(addprefix $(srcdir)/,$(INSTALL_HDRS)) '$(DESTDIR)$(includedir_server)'
 
 uninstall-data:
 	rm -f $(addprefix '$(DESTDIR)$(datadir)/extension'/, $(notdir $(DATA)))
 
 uninstall-headers:
-	rm -f '$(DESTDIR)$(includedir_server)/plpgsql.h'
+	rm -f $(addprefix '$(DESTDIR)$(includedir_server)'/, $(INSTALL_HDRS))
 
 .PHONY: install-data install-headers uninstall-data uninstall-headers
 
