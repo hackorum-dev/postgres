@@ -69,12 +69,14 @@ install_data(
   install_dir: dir_data_extension,
 )
 
-install_headers(
-  'plperl.h',
-  'plperl_system.h',
-  'ppport.h',
-  install_dir: dir_include_server,
-)
+_h = []
+foreach l : fs.read('install_headers.list').strip().split('\n')
+  l = l.strip()
+  if l != '' and not l.startswith('#')
+    _h += l
+  endif
+endforeach
+install_headers(_h, install_dir: dir_include_server)
 
 tests += {
   'name': 'plperl',

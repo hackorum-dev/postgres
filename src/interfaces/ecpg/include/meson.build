@@ -26,27 +26,20 @@ configure_files += ecpg_config_h
 
 generated_sources_ac += {'src/interfaces/ecpg/include': ['stamp-h']}
 
-install_headers(
-  'ecpg_informix.h',
-  'ecpgerrno.h',
-  'ecpglib.h',
-  'ecpgtype.h',
-  'pgtypes.h',
-  'pgtypes_date.h',
-  'pgtypes_error.h',
-  'pgtypes_interval.h',
-  'pgtypes_numeric.h',
-  'pgtypes_timestamp.h',
-  'sql3types.h',
-  'sqlca.h',
-  'sqlda.h',
-  'sqlda-compat.h',
-  'sqlda-native.h',
-)
+_h = []
+foreach l : fs.read('public_headers.list').strip().split('\n')
+  l = l.strip()
+  if l != '' and not l.startswith('#')
+    _h += l
+  endif
+endforeach
+install_headers(_h)
 
-install_headers(
-  'datetime.h',
-  'decimal.h',
-  'sqltypes.h',
-  install_dir: dir_include_pkg / 'informix' / 'esql',
-)
+_h = []
+foreach l : fs.read('informix_headers.list').strip().split('\n')
+  l = l.strip()
+  if l != '' and not l.startswith('#')
+    _h += l
+  endif
+endforeach
+install_headers(_h, install_dir: dir_include_pkg / 'informix' / 'esql')
