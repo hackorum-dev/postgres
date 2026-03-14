@@ -1,4 +1,0 @@
-# Internal libpq headers installed to $(includedir_internal)
-fe-auth-sasl.h
-libpq-int.h
-pqexpbuffer.h
