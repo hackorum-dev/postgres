@@ -2,10 +2,17 @@
 #
 # These headers are needed by the not-so-public headers of the interfaces,
 # i.e. for client library development.
+#
+# Each source directory installs only the entries that exist locally.
 
+# src/include
 c.h
 port.h
 postgres_fe.h
-
 libpq/pqcomm.h
 libpq/protocol.h
+
+# src/interfaces/libpq
+fe-auth-sasl.h
+libpq-int.h
+pqexpbuffer.h

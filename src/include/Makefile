@@ -12,8 +12,10 @@ subdir = src/include
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 
-PUBLIC_HEADERS := $(shell grep -v '^\#' $(srcdir)/public_headers.list | grep -v '^$$')
-INTERNAL_HEADERS := $(shell grep -v '^\#' $(srcdir)/internal_headers.list | grep -v '^$$')
+_ALL_PUBLIC := $(shell grep -v '^\#' $(srcdir)/public_headers.list | grep -v '^$$')
+PUBLIC_HEADERS := $(foreach h,$(_ALL_PUBLIC),$(if $(wildcard $(srcdir)/$(h)),$(h)))
+_ALL_INTERNAL := $(shell grep -v '^\#' $(srcdir)/internal_headers.list | grep -v '^$$')
+INTERNAL_HEADERS := $(foreach h,$(_ALL_INTERNAL),$(if $(wildcard $(srcdir)/$(h)),$(h)))
 SERVER_HEADERS := $(shell grep -v '^\#' $(srcdir)/server_headers.list | grep -v '^$$')
 
 all: pg_config.h pg_config_os.h

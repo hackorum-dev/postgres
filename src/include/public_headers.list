@@ -6,7 +6,11 @@
 #
 # Each source directory installs only the entries that exist locally.
 
+# src/include
 pg_config_manual.h
 postgres_ext.h
-
 libpq/libpq-fs.h
+
+# src/interfaces/libpq
+libpq-events.h
+libpq-fe.h
