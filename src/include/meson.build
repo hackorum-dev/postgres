@@ -72,115 +72,49 @@ pg_config_paths = configure_file(
 )
 configure_files += pg_config_paths
 
-install_headers(
-  'pg_config_manual.h',
-  'postgres_ext.h',
-)
+_header_lists = {
+  'public_headers.list': dir_include,
+  'internal_headers.list': dir_include_internal,
+  'server_headers.list': dir_include_server,
+}
 
-install_headers(
-  'libpq/libpq-fs.h',
-  install_dir: dir_include / 'libpq',
-)
+foreach list_file, base_dir : _header_lists
+  prev_dir = ''
+  batch = []
+  foreach line : fs.read(list_file).strip().split('\n')
+    f = line.strip()
+    if f == '' or f.startswith('#')
+      continue
+    endif
+    d = fs.parent(f)
+    if d != prev_dir and batch.length() > 0
+      if prev_dir == '.'
+        install_headers(batch, install_dir: base_dir)
+      else
+        install_headers(batch, install_dir: base_dir / prev_dir)
+      endif
+      batch = []
+    endif
+    prev_dir = d
+    batch += f
+  endforeach
+  if batch.length() > 0
+    if prev_dir == '.'
+      install_headers(batch, install_dir: base_dir)
+    else
+      install_headers(batch, install_dir: base_dir / prev_dir)
+    endif
+  endif
+endforeach
 
-install_headers(
-  'c.h',
-  'port.h',
-  'postgres_fe.h',
-  install_dir: dir_include_internal,
-)
-
-install_headers(
-  'libpq/pqcomm.h',
-  'libpq/protocol.h',
-  install_dir: dir_include_internal / 'libpq',
-)
-
-install_headers(
-  'c.h',
-  'fmgr.h',
-  'funcapi.h',
-  'getopt_long.h',
-  'miscadmin.h',
-  'pg_config_manual.h',
-  'pg_getopt.h',
-  'pg_trace.h',
-  'pgstat.h',
-  'pgtar.h',
-  'pgtime.h',
-  'port.h',
-  'postgres.h',
-  'postgres_ext.h',
-  'postgres_fe.h',
-  'varatt.h',
-  'windowapi.h',
-  pg_config_os,
-  pg_config,
-  install_dir: dir_include_server,
-)
+# Generated headers for server directory
+install_headers(pg_config_os, pg_config, install_dir: dir_include_server)
 
 subdir('catalog')
 subdir('nodes')
 subdir('pch')
 subdir('storage')
 subdir('utils')
-
-header_subdirs = [
-  'access',
-  'archive',
-  'catalog',
-  'bootstrap',
-  'commands',
-  'common',
-  'datatype',
-  'executor',
-  'fe_utils',
-  'foreign',
-  'jit',
-  'lib',
-  'libpq',
-  'mb',
-  'nodes',
-  'optimizer',
-  'parser',
-  'partitioning',
-  'postmaster',
-  'regex',
-  'replication',
-  'rewrite',
-  'statistics',
-  'storage',
-  'tcop',
-  'snowball',
-  'tsearch',
-  'utils',
-  'port',
-  'portability',
-]
-
-# XXX: installing headers this way has the danger of installing editor files
-# etc, unfortunately install_subdir() doesn't allow including / excluding by
-# pattern currently.
-foreach d : header_subdirs
-  if d == 'catalog'
-    continue
-  endif
-  install_subdir(d, install_dir: dir_include_server,
-                 exclude_files: ['.gitignore', 'meson.build'])
-endforeach
-
-install_subdir('catalog',
-  install_dir: dir_include_server,
-  exclude_files: [
-    '.gitignore',
-    'Makefile',
-    'README',
-    'duplicate_oids',
-    'meson.build',
-    'reformat_dat_file.pl',
-    'renumber_oids.pl',
-    'unused_oids',
-  ] + bki_data,
-)
 
 # autoconf generates the file there, ensure we get a conflict
 generated_sources_ac += {'src/include': ['stamp-h']}
