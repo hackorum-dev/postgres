@@ -13,10 +13,8 @@ all: $(ecpg_config_h)
 install: all installdirs install-headers
 
 .PHONY: install-headers
-ecpg_headers = ecpgerrno.h ecpglib.h ecpgtype.h sqlca.h sql3types.h ecpg_informix.h \
-	pgtypes_error.h pgtypes_numeric.h pgtypes_timestamp.h pgtypes_date.h pgtypes_interval.h pgtypes.h \
-	sqlda.h sqlda-compat.h sqlda-native.h
-informix_headers = datetime.h decimal.h sqltypes.h
+ecpg_headers := $(shell grep -v '^\#' $(srcdir)/public_headers.list | grep -v '^$$')
+informix_headers := $(shell grep -v '^\#' $(srcdir)/informix_headers.list | grep -v '^$$')
 
 install-headers: $(ecpg_headers) $(informix_headers) installdirs
 	$(INSTALL_DATA) $(addprefix $(srcdir)/,$(ecpg_headers)) '$(DESTDIR)$(includedir)/'
