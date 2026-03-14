@@ -1,0 +1,11 @@
+# Internal client headers installed to $(includedir_internal)
+#
+# These headers are needed by the not-so-public headers of the interfaces,
+# i.e. for client library development.
+
+c.h
+port.h
+postgres_fe.h
+
+libpq/pqcomm.h
+libpq/protocol.h
