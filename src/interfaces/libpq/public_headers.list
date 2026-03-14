@@ -1,0 +1,3 @@
+# Public libpq headers installed to $(includedir)
+libpq-events.h
+libpq-fe.h
