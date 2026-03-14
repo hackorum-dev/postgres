@@ -15,6 +15,9 @@ subdir = src/interfaces/libpq
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
+PUBLIC_HEADERS := $(shell grep -v '^\#' $(srcdir)/public_headers.list | grep -v '^$$')
+INTERNAL_HEADERS := $(shell grep -v '^\#' $(srcdir)/internal_headers.list | grep -v '^$$')
+
 export with_ssl with_gssapi with_krb_srvnam
 
 PGFILEDESC = "PostgreSQL Access Library"
@@ -155,11 +158,8 @@ $(top_builddir)/src/port/pg_config_paths.h:
 	$(CC) $(CFLAGS) $(CFLAGS_SL) $(CPPFLAGS) $(CPPFLAGS_SHLIB) -c $< -o $@
 
 install: all installdirs install-lib
-	$(INSTALL_DATA) $(srcdir)/libpq-fe.h '$(DESTDIR)$(includedir)'
-	$(INSTALL_DATA) $(srcdir)/libpq-events.h '$(DESTDIR)$(includedir)'
-	$(INSTALL_DATA) $(srcdir)/libpq-int.h '$(DESTDIR)$(includedir_internal)'
-	$(INSTALL_DATA) $(srcdir)/fe-auth-sasl.h '$(DESTDIR)$(includedir_internal)'
-	$(INSTALL_DATA) $(srcdir)/pqexpbuffer.h '$(DESTDIR)$(includedir_internal)'
+	$(INSTALL_DATA) $(addprefix $(srcdir)/,$(PUBLIC_HEADERS)) '$(DESTDIR)$(includedir)'
+	$(INSTALL_DATA) $(addprefix $(srcdir)/,$(INTERNAL_HEADERS)) '$(DESTDIR)$(includedir_internal)'
 	$(INSTALL_DATA) $(srcdir)/pg_service.conf.sample '$(DESTDIR)$(datadir)/pg_service.conf.sample'
 
 test-build:
@@ -177,11 +177,8 @@ installdirs: installdirs-lib
 	$(MKDIR_P) '$(DESTDIR)$(includedir)' '$(DESTDIR)$(includedir_internal)' '$(DESTDIR)$(datadir)'
 
 uninstall: uninstall-lib
-	rm -f '$(DESTDIR)$(includedir)/libpq-fe.h'
-	rm -f '$(DESTDIR)$(includedir)/libpq-events.h'
-	rm -f '$(DESTDIR)$(includedir_internal)/libpq-int.h'
-	rm -f '$(DESTDIR)$(includedir_internal)/fe-auth-sasl.h'
-	rm -f '$(DESTDIR)$(includedir_internal)/pqexpbuffer.h'
+	rm -f $(addprefix '$(DESTDIR)$(includedir)'/, $(PUBLIC_HEADERS))
+	rm -f $(addprefix '$(DESTDIR)$(includedir_internal)'/, $(INTERNAL_HEADERS))
 	rm -f '$(DESTDIR)$(datadir)/pg_service.conf.sample'
 
 clean distclean: clean-lib
