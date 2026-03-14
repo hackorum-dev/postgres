@@ -132,17 +132,23 @@ pkgconfig.generate(
   libraries_private: private_deps,
 )
 
-install_headers(
-  'libpq-fe.h',
-  'libpq-events.h',
-)
+_h = []
+foreach l : fs.read('public_headers.list').strip().split('\n')
+  l = l.strip()
+  if l != '' and not l.startswith('#')
+    _h += l
+  endif
+endforeach
+install_headers(_h)
 
-install_headers(
-  'libpq-int.h',
-  'pqexpbuffer.h',
-  'fe-auth-sasl.h',
-  install_dir: dir_include_internal,
-)
+_h = []
+foreach l : fs.read('internal_headers.list').strip().split('\n')
+  l = l.strip()
+  if l != '' and not l.startswith('#')
+    _h += l
+  endif
+endforeach
+install_headers(_h, install_dir: dir_include_internal)
 install_data('pg_service.conf.sample',
   install_dir: dir_data,
 )
