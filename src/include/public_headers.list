@@ -1,0 +1,12 @@
+# Public API headers installed to $(includedir)
+#
+# These headers are needed by the public headers of the interfaces (e.g. libpq).
+# Generated headers are excluded from this list and handled directly by the
+# build system.
+#
+# Each source directory installs only the entries that exist locally.
+
+pg_config_manual.h
+postgres_ext.h
+
+libpq/libpq-fs.h
