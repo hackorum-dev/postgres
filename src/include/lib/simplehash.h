@@ -303,6 +303,12 @@ SH_SCOPE void SH_STAT(SH_TYPE * tb);
 #endif
 
 /*
+ * If the empty marker is non-zero (e.g., InvalidBlockNumber = 0xFFFFFFFF),
+ * define SH_NONZERO_EMPTY to explicitly initialize entries. When unset,
+ * zero-initialization via memset is sufficient (the default).
+ */
+
+/*
  * Wrap the following definitions in include guards, to avoid multiple
  * definition errors if this header is included more than once.  The rest of
  * the file deliberately has no include guards, because it can be included
@@ -482,6 +488,11 @@ SH_CREATE(MemoryContext ctx, uint32 nelements, void *private_data)
 
 	tb->data = (SH_ELEMENT_TYPE *) SH_ALLOCATE(tb, sizeof(SH_ELEMENT_TYPE) * size);
 
+#ifdef SH_NONZERO_EMPTY
+	for (uint64 i = 0; i < size; i++)
+		SH_MAKE_EMPTY(&tb->data[i]);
+#endif
+
 	SH_UPDATE_PARAMETERS(tb, size);
 	return tb;
 }
@@ -498,7 +509,12 @@ SH_DESTROY(SH_TYPE * tb)
 SH_SCOPE void
 SH_RESET(SH_TYPE * tb)
 {
+#ifdef SH_NONZERO_EMPTY
+	for (uint32 i = 0; i < tb->size; i++)
+		SH_MAKE_EMPTY(&tb->data[i]);
+#else
 	memset(tb->data, 0, sizeof(SH_ELEMENT_TYPE) * tb->size);
+#endif
 	tb->members = 0;
 }
 
@@ -526,6 +542,11 @@ SH_GROW(SH_TYPE * tb, uint64 newsize)
 	newsize = SH_COMPUTE_SIZE(newsize);
 
 	tb->data = (SH_ELEMENT_TYPE *) SH_ALLOCATE(tb, sizeof(SH_ELEMENT_TYPE) * newsize);
+
+#ifdef SH_NONZERO_EMPTY
+	for (uint64 j = 0; j < newsize; j++)
+		SH_MAKE_EMPTY(&tb->data[j]);
+#endif
 
 	/*
 	 * Update parameters for new table after allocation succeeds to avoid
@@ -1223,6 +1244,7 @@ SH_STAT(SH_TYPE * tb)
 #undef SH_ENTRY_EMPTY
 #undef SH_MAKE_EMPTY
 #undef SH_MAKE_IN_USE
+#undef SH_NONZERO_EMPTY
 
 /* undefine locally declared macros */
 #undef SH_MAKE_PREFIX
