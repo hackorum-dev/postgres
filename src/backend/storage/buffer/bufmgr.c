@@ -125,8 +125,6 @@ typedef struct PrivateRefCountEntry
 	 */
 	Buffer		buffer;
 
-	char		status;
-
 	PrivateRefCountData data;
 } PrivateRefCountEntry;
 
@@ -136,6 +134,9 @@ typedef struct PrivateRefCountEntry
 #define SH_KEY buffer
 #define SH_HASH_KEY(tb, key) murmurhash32((uint32) (key))
 #define SH_EQUAL(tb, a, b) ((a) == (b))
+#define SH_ENTRY_EMPTY(entry) ((entry)->buffer == InvalidBuffer)
+#define SH_MAKE_EMPTY(entry) ((entry)->buffer = InvalidBuffer)
+#define SH_MAKE_IN_USE(entry) ((void)0) /* key assignment implies in use */
 #define SH_SCOPE static inline
 #define SH_DECLARE
 #define SH_DEFINE
