@@ -92,7 +92,6 @@
 typedef struct PagetableEntry
 {
 	BlockNumber blockno;		/* page number (hashtable key) */
-	char		status;			/* hash entry status */
 	bool		ischunk;		/* T = lossy storage, F = exact */
 	bool		recheck;		/* should the tuples be rechecked? */
 	bitmapword	words[Max(WORDS_PER_PAGE, WORDS_PER_CHUNK)];
@@ -237,6 +236,12 @@ static int	tbm_shared_comparator(const void *left, const void *right,
 #define SH_KEY blockno
 #define SH_HASH_KEY(tb, key) murmurhash32(key)
 #define SH_EQUAL(tb, a, b) a == b
+#define SH_ENTRY_EMPTY(entry) ((entry)->blockno == InvalidBlockNumber)
+#define SH_MAKE_EMPTY(entry) ((entry)->blockno = InvalidBlockNumber)
+#define SH_MAKE_IN_USE(entry) ((void)0)
+// Since the empty marker is non-zero, we need to reset the entries
+// after allocation using the custom SH_MAKE_EMPTY macro.
+#define SH_NONZERO_EMPTY
 #define SH_SCOPE static inline
 #define SH_DEFINE
 #define SH_DECLARE
@@ -291,15 +296,12 @@ tbm_create_pagetable(TIDBitmap *tbm)
 	{
 		PagetableEntry *page;
 		bool		found;
-		char		oldstatus;
 
 		page = pagetable_insert(tbm->pagetable,
 								tbm->entry1.blockno,
 								&found);
 		Assert(!found);
-		oldstatus = page->status;
 		memcpy(page, &tbm->entry1, sizeof(PagetableEntry));
-		page->status = oldstatus;
 	}
 
 	tbm->status = TBM_HASH;
@@ -1230,10 +1232,7 @@ tbm_get_pageentry(TIDBitmap *tbm, BlockNumber pageno)
 	/* Initialize it if not present before */
 	if (!found)
 	{
-		char		oldstatus = page->status;
-
 		MemSet(page, 0, sizeof(PagetableEntry));
-		page->status = oldstatus;
 		page->blockno = pageno;
 		/* must count it too */
 		tbm->nentries++;
@@ -1317,10 +1316,7 @@ tbm_mark_page_lossy(TIDBitmap *tbm, BlockNumber pageno)
 	/* Initialize it if not present before */
 	if (!found)
 	{
-		char		oldstatus = page->status;
-
 		MemSet(page, 0, sizeof(PagetableEntry));
-		page->status = oldstatus;
 		page->blockno = chunk_pageno;
 		page->ischunk = true;
 		/* must count it too */
@@ -1329,11 +1325,8 @@ tbm_mark_page_lossy(TIDBitmap *tbm, BlockNumber pageno)
 	}
 	else if (!page->ischunk)
 	{
-		char		oldstatus = page->status;
-
 		/* chunk header page was formerly non-lossy, make it lossy */
 		MemSet(page, 0, sizeof(PagetableEntry));
-		page->status = oldstatus;
 		page->blockno = chunk_pageno;
 		page->ischunk = true;
 		/* we assume it had some tuple bit(s) set, so mark it lossy */
