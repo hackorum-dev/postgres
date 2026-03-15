@@ -45,6 +45,9 @@
 #define SH_KEY					path
 #define SH_HASH_KEY(tb, key)	hash_string(key)
 #define SH_EQUAL(tb, a, b)		(strcmp(a, b) == 0)
+#define SH_ENTRY_EMPTY(entry)   ((entry)->path == NULL)
+#define SH_MAKE_EMPTY(entry)    ((entry)->path = NULL)
+#define SH_MAKE_IN_USE(entry)   ((void)0)
 #define SH_SCOPE				static inline
 #define SH_RAW_ALLOCATOR		pg_malloc0
 #define SH_DECLARE
@@ -68,7 +71,6 @@ static file_entry_t *lookup_filehash_entry(const char *path);
 typedef struct keepwal_entry
 {
 	const char *path;
-	uint32		status;
 } keepwal_entry;
 
 #define SH_PREFIX				keepwal
@@ -77,6 +79,9 @@ typedef struct keepwal_entry
 #define SH_KEY					path
 #define SH_HASH_KEY(tb, key)	hash_string(key)
 #define SH_EQUAL(tb, a, b)		(strcmp(a, b) == 0)
+#define SH_ENTRY_EMPTY(entry)   ((entry)->path == NULL)
+#define SH_MAKE_EMPTY(entry)    ((entry)->path = NULL)
+#define SH_MAKE_IN_USE(entry)   ((void)0)
 #define SH_SCOPE				static inline
 #define SH_RAW_ALLOCATOR		pg_malloc0
 #define SH_DECLARE
