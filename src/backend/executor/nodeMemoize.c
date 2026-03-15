@@ -143,6 +143,9 @@ static bool MemoizeHash_equal(struct memoize_hash *tb,
 #define SH_KEY key
 #define SH_HASH_KEY(tb, key) MemoizeHash_hash(tb, key)
 #define SH_EQUAL(tb, a, b) MemoizeHash_equal(tb, a, b)
+#define SH_ENTRY_EMPTY(entry) ((entry)->key == NULL)
+#define SH_MAKE_EMPTY(entry) ((entry)->key = NULL)
+#define SH_MAKE_IN_USE(entry) ((void)0)
 #define SH_SCOPE static inline
 #define SH_STORE_HASH
 #define SH_GET_HASH(tb, a) a->hash
