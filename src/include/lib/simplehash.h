@@ -289,6 +289,20 @@ SH_SCOPE void SH_STAT(SH_TYPE * tb);
 #endif
 
 /*
+ * Macros to check/set entry status. Users can override these to avoid
+ * needing a separate status field if their key type has an "invalid" value.
+ */
+#ifndef SH_ENTRY_EMPTY
+#define SH_ENTRY_EMPTY(entry) ((entry)->status == SH_STATUS_EMPTY)
+#endif
+#ifndef SH_MAKE_EMPTY
+#define SH_MAKE_EMPTY(entry) ((entry)->status = SH_STATUS_EMPTY)
+#endif
+#ifndef SH_MAKE_IN_USE
+#define SH_MAKE_IN_USE(entry) ((entry)->status = SH_STATUS_IN_USE)
+#endif
+
+/*
  * Wrap the following definitions in include guards, to avoid multiple
  * definition errors if this header is included more than once.  The rest of
  * the file deliberately has no include guards, because it can be included
@@ -545,7 +559,7 @@ SH_GROW(SH_TYPE * tb, uint64 newsize)
 		uint32		hash;
 		uint32		optimal;
 
-		if (oldentry->status != SH_STATUS_IN_USE)
+		if (SH_ENTRY_EMPTY(oldentry))
 		{
 			startelem = i;
 			break;
@@ -567,7 +581,7 @@ SH_GROW(SH_TYPE * tb, uint64 newsize)
 	{
 		SH_ELEMENT_TYPE *oldentry = &olddata[copyelem];
 
-		if (oldentry->status == SH_STATUS_IN_USE)
+		if (!SH_ENTRY_EMPTY(oldentry))
 		{
 			uint32		hash;
 			uint32		startelem2;
@@ -583,7 +597,7 @@ SH_GROW(SH_TYPE * tb, uint64 newsize)
 			{
 				newentry = &newdata[curelem];
 
-				if (newentry->status == SH_STATUS_EMPTY)
+				if (SH_ENTRY_EMPTY(newentry))
 				{
 					break;
 				}
@@ -654,14 +668,14 @@ restart:
 		SH_ELEMENT_TYPE *entry = &data[curelem];
 
 		/* any empty bucket can directly be used */
-		if (entry->status == SH_STATUS_EMPTY)
+		if (SH_ENTRY_EMPTY(entry))
 		{
 			tb->members++;
 			entry->SH_KEY = key;
 #ifdef SH_STORE_HASH
 			SH_GET_HASH(tb, entry) = hash;
 #endif
-			entry->status = SH_STATUS_IN_USE;
+			SH_MAKE_IN_USE(entry);
 			*found = false;
 			return entry;
 		}
@@ -676,7 +690,7 @@ restart:
 
 		if (SH_COMPARE_KEYS(tb, hash, key, entry))
 		{
-			Assert(entry->status == SH_STATUS_IN_USE);
+			Assert(!SH_ENTRY_EMPTY(entry));
 			*found = true;
 			return entry;
 		}
@@ -700,7 +714,7 @@ restart:
 				emptyelem = SH_NEXT(tb, emptyelem, startelem);
 				emptyentry = &data[emptyelem];
 
-				if (emptyentry->status == SH_STATUS_EMPTY)
+				if (SH_ENTRY_EMPTY(emptyentry))
 				{
 					lastentry = emptyentry;
 					break;
@@ -749,7 +763,7 @@ restart:
 #ifdef SH_STORE_HASH
 			SH_GET_HASH(tb, entry) = hash;
 #endif
-			entry->status = SH_STATUS_IN_USE;
+			SH_MAKE_IN_USE(entry);
 			*found = false;
 			return entry;
 		}
@@ -811,12 +825,12 @@ SH_LOOKUP_HASH_INTERNAL(SH_TYPE * tb, SH_KEY_TYPE key, uint32 hash)
 	{
 		SH_ELEMENT_TYPE *entry = &tb->data[curelem];
 
-		if (entry->status == SH_STATUS_EMPTY)
+		if (SH_ENTRY_EMPTY(entry))
 		{
 			return NULL;
 		}
 
-		Assert(entry->status == SH_STATUS_IN_USE);
+		Assert(!SH_ENTRY_EMPTY(entry));
 
 		if (SH_COMPARE_KEYS(tb, hash, key, entry))
 			return entry;
@@ -869,10 +883,10 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 	{
 		SH_ELEMENT_TYPE *entry = &tb->data[curelem];
 
-		if (entry->status == SH_STATUS_EMPTY)
+		if (SH_ENTRY_EMPTY(entry))
 			return false;
 
-		if (entry->status == SH_STATUS_IN_USE &&
+		if (!SH_ENTRY_EMPTY(entry) &&
 			SH_COMPARE_KEYS(tb, hash, key, entry))
 		{
 			SH_ELEMENT_TYPE *lastentry = entry;
@@ -895,9 +909,9 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 				curelem = SH_NEXT(tb, curelem, startelem);
 				curentry = &tb->data[curelem];
 
-				if (curentry->status != SH_STATUS_IN_USE)
+				if (SH_ENTRY_EMPTY(curentry))
 				{
-					lastentry->status = SH_STATUS_EMPTY;
+					SH_MAKE_EMPTY(lastentry);
 					break;
 				}
 
@@ -907,7 +921,7 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 				/* current is at optimal position, done */
 				if (curoptimal == curelem)
 				{
-					lastentry->status = SH_STATUS_EMPTY;
+					SH_MAKE_EMPTY(lastentry);
 					break;
 				}
 
@@ -958,9 +972,9 @@ SH_DELETE_ITEM(SH_TYPE * tb, SH_ELEMENT_TYPE * entry)
 		curelem = SH_NEXT(tb, curelem, startelem);
 		curentry = &tb->data[curelem];
 
-		if (curentry->status != SH_STATUS_IN_USE)
+		if (SH_ENTRY_EMPTY(curentry))
 		{
-			lastentry->status = SH_STATUS_EMPTY;
+			SH_MAKE_EMPTY(lastentry);
 			break;
 		}
 
@@ -970,7 +984,7 @@ SH_DELETE_ITEM(SH_TYPE * tb, SH_ELEMENT_TYPE * entry)
 		/* current is at optimal position, done */
 		if (curoptimal == curelem)
 		{
-			lastentry->status = SH_STATUS_EMPTY;
+			SH_MAKE_EMPTY(lastentry);
 			break;
 		}
 
@@ -998,7 +1012,7 @@ SH_START_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter)
 	{
 		SH_ELEMENT_TYPE *entry = &tb->data[i];
 
-		if (entry->status != SH_STATUS_IN_USE)
+		if (SH_ENTRY_EMPTY(entry))
 		{
 			startelem = i;
 			break;
@@ -1064,7 +1078,7 @@ SH_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter)
 
 		if ((iter->cur & tb->sizemask) == (iter->end & tb->sizemask))
 			iter->done = true;
-		if (elem->status == SH_STATUS_IN_USE)
+		if (!SH_ENTRY_EMPTY(elem))
 		{
 			return elem;
 		}
@@ -1141,7 +1155,7 @@ SH_STAT(SH_TYPE * tb)
 
 		elem = &tb->data[i];
 
-		if (elem->status != SH_STATUS_IN_USE)
+		if (SH_ENTRY_EMPTY(elem))
 			continue;
 
 		hash = SH_ENTRY_HASH(tb, elem);
@@ -1206,6 +1220,9 @@ SH_STAT(SH_TYPE * tb)
 #undef SH_STORE_HASH
 #undef SH_USE_NONDEFAULT_ALLOCATOR
 #undef SH_EQUAL
+#undef SH_ENTRY_EMPTY
+#undef SH_MAKE_EMPTY
+#undef SH_MAKE_IN_USE
 
 /* undefine locally declared macros */
 #undef SH_MAKE_PREFIX
