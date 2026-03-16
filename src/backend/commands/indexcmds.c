@@ -54,6 +54,7 @@
 #include "parser/parse_utilcmd.h"
 #include "partitioning/partdesc.h"
 #include "pgstat.h"
+#include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
 #include "storage/lmgr.h"
 #include "storage/proc.h"
@@ -916,7 +917,12 @@ DefineIndex(ParseState *pstate,
 	 * Validate predicate, if given
 	 */
 	if (stmt->whereClause)
+	{
 		CheckPredicate((Expr *) stmt->whereClause);
+
+		stmt->whereClause =
+			expand_generated_columns_in_expr(stmt->whereClause, rel, 1);
+	}
 
 	/*
 	 * Parse AM-specific options, convert to text array form, validate.
@@ -1131,17 +1137,6 @@ DefineIndex(ParseState *pstate,
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("index creation on system columns is not supported")));
-
-
-		if (attno > 0 &&
-			TupleDescAttr(RelationGetDescr(rel), attno - 1)->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
-			ereport(ERROR,
-					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					stmt->primary ?
-					errmsg("primary keys on virtual generated columns are not supported") :
-					stmt->isconstraint ?
-					errmsg("unique constraints on virtual generated columns are not supported") :
-					errmsg("indexes on virtual generated columns are not supported"));
 	}
 
 	/*
@@ -1151,7 +1146,6 @@ DefineIndex(ParseState *pstate,
 	if (indexInfo->ii_Expressions || indexInfo->ii_Predicate)
 	{
 		Bitmapset  *indexattrs = NULL;
-		int			j;
 
 		pull_varattnos((Node *) indexInfo->ii_Expressions, 1, &indexattrs);
 		pull_varattnos((Node *) indexInfo->ii_Predicate, 1, &indexattrs);
@@ -1163,25 +1157,6 @@ DefineIndex(ParseState *pstate,
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("index creation on system columns is not supported")));
-		}
-
-		/*
-		 * XXX Virtual generated columns in index expressions or predicates
-		 * could be supported, but it needs support in
-		 * RelationGetIndexExpressions() and RelationGetIndexPredicate().
-		 */
-		j = -1;
-		while ((j = bms_next_member(indexattrs, j)) >= 0)
-		{
-			AttrNumber	attno = j + FirstLowInvalidHeapAttributeNumber;
-
-			if (attno > 0 &&
-				TupleDescAttr(RelationGetDescr(rel), attno - 1)->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 stmt->isconstraint ?
-						 errmsg("unique constraints on virtual generated columns are not supported") :
-						 errmsg("indexes on virtual generated columns are not supported")));
 		}
 	}
 
@@ -1913,6 +1888,8 @@ ComputeIndexAttrs(ParseState *pstate,
 	int			nkeycols = indexInfo->ii_NumIndexKeyAttrs;
 	Oid			save_userid;
 	int			save_sec_context;
+	Relation	rel = table_open(relId, NoLock);
+	Node	   *defexpr = NULL;
 
 	/* Allocate space for exclusion operator info, if needed */
 	if (exclusionOpNames)
@@ -1987,12 +1964,24 @@ ComputeIndexAttrs(ParseState *pstate,
 			indexInfo->ii_IndexAttrNumbers[attn] = attform->attnum;
 			atttype = attform->atttypid;
 			attcollation = attform->attcollation;
+
+			if (attform->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+				defexpr = build_generation_expression(rel, attform->attnum);
+
 			ReleaseSysCache(atttuple);
 		}
-		else
+
+		if (attribute->name == NULL || defexpr != NULL)
 		{
 			/* Index expression */
-			Node	   *expr = attribute->expr;
+			Node	   *expr;
+
+			if (defexpr)
+				expr = defexpr;
+			else
+				expr = expand_generated_columns_in_expr(attribute->expr, rel, 1);
+
+			defexpr = NULL;
 
 			Assert(expr != NULL);
 
@@ -2284,6 +2273,7 @@ ComputeIndexAttrs(ParseState *pstate,
 
 		attn++;
 	}
+	table_close(rel, NoLock);
 }
 
 /*
