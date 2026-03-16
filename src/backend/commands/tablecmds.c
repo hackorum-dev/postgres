@@ -503,6 +503,8 @@ static ObjectAddress ATExecAddColumn(List **wqueue, AlteredTableInfo *tab,
 									 bool recurse, bool recursing,
 									 LOCKMODE lockmode, AlterTablePass cur_pass,
 									 AlterTableUtilityContext *context);
+static void type_has_constrained_domain(Oid typoid, bool *has_constr,
+										bool *has_volatile);
 static bool check_for_column_name_collision(Relation rel, const char *colname,
 											bool if_not_exists);
 static void add_column_datatype_dependency(Oid relid, int32 attnum, Oid typid);
@@ -7506,7 +7508,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	 */
 	if (RELKIND_HAS_STORAGE(relkind))
 	{
-		bool		has_domain_constraints;
+		bool		has_domain_constraints = false;
 		bool		has_missing = false;
 		bool		has_volatile = false;
 
@@ -7526,8 +7528,9 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		else
 			defval = (Expr *) build_column_default(rel, attribute->attnum);
 
-		has_domain_constraints =
-			DomainHasConstraints(attribute->atttypid, &has_volatile);
+		type_has_constrained_domain(attribute->atttypid,
+									&has_domain_constraints,
+									&has_volatile);
 
 		/*
 		 * If the domain has volatile constraints, we must do a table rewrite
@@ -7712,6 +7715,100 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	ObjectAddressSubSet(address, RelationRelationId, myrelid, newattnum);
 	return address;
+}
+
+ /*
+  * Checks whether a type contains a constrained domain. This recurses into
+  * container types (arrays, composites, ranges, multiranges) to examine their
+  * element or subtypes.
+  *
+  * The caller must initialize *has_constr to false before calling. If a
+  * constrained domain is found at any level, has_constr is set to true.
+  * Obviously, has_constr will set to true for simple constrained domain.
+  *
+  * has_volatile is set to true if the element/subtypes type is a domain and
+  * that domain contains a volatile expression.
+  */
+static void
+type_has_constrained_domain(Oid typoid, bool *has_constr, bool *has_volatile)
+{
+	char		att_typtype = get_typtype(typoid);
+
+	/* since this function recurses, it could be driven to stack overflow */
+	check_stack_depth();
+
+	Assert(has_constr != NULL);
+
+	if (has_volatile)
+	{
+		if (*has_volatile)
+			return;
+	}
+	else if (*has_constr)
+		return;
+
+	if (att_typtype == TYPTYPE_DOMAIN)
+	{
+		*has_constr = DomainHasConstraints(typoid, has_volatile);
+		return;
+	}
+	else if (att_typtype == TYPTYPE_COMPOSITE)
+	{
+		/*
+		 * For a composite type, recurse into its attributes.  Use the
+		 * typcache to avoid opening the relation directly.
+		 */
+		TupleDesc	tupdesc = lookup_rowtype_tupdesc(typoid, -1);
+
+		for (int i = 0; i < tupdesc->natts; i++)
+		{
+			Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+
+			if (attr->attisdropped)
+				continue;
+
+			type_has_constrained_domain(attr->atttypid,
+										has_constr,
+										has_volatile);
+
+			if (has_volatile)
+			{
+				if (*has_volatile)
+					break;
+			}
+			else if (*has_constr)
+				break;
+		}
+		ReleaseTupleDesc(tupdesc);
+		return;
+	}
+	else if (att_typtype == TYPTYPE_RANGE)
+	{
+		type_has_constrained_domain(get_range_subtype(typoid),
+									has_constr,
+									has_volatile);
+		return;
+	}
+	else if (att_typtype == TYPTYPE_MULTIRANGE)
+	{
+		type_has_constrained_domain(get_multirange_range(typoid),
+									has_constr,
+									has_volatile);
+		return;
+	}
+	else
+	{
+		Oid			att_typelem = get_element_type(typoid);
+
+		if (OidIsValid(att_typelem))
+		{
+			/* recurse into array element type */
+			type_has_constrained_domain(att_typelem,
+										has_constr,
+										has_volatile);
+			return;
+		}
+	}
 }
 
 /*

@@ -372,8 +372,36 @@ NOTICE:  rewriting table test_add_domain_col for reason 2
 ALTER TABLE test_add_domain_col ADD COLUMN h domain5
   GENERATED ALWAYS AS (a + 20) VIRTUAL;  -- error
 ERROR:  virtual generated column "h" cannot have a domain type
+-- Test container type contains volatile domain for table rewrite
+CREATE TYPE domain6range AS range(subtype=domain6);
+CREATE TYPE comp_with_domain6 AS (a domain6);
+CREATE TYPE domain7range AS range(subtype=domain7);
+CREATE TYPE comp_with_domain7 AS (a domain7);
+-- all of the following should have table rewrite
+ALTER TABLE test_add_domain_col ADD COLUMN x domain7[] DEFAULT '{20}';
+NOTICE:  rewriting table test_add_domain_col for reason 2
+ALTER TABLE test_add_domain_col ADD COLUMN x1 domain7[];
+NOTICE:  rewriting table test_add_domain_col for reason 2
+ALTER TABLE test_add_domain_col ADD COLUMN x2 domain7range DEFAULT '[12, 22)';
+NOTICE:  rewriting table test_add_domain_col for reason 2
+ALTER TABLE test_add_domain_col ADD COLUMN x3 domain7range[] DEFAULT '{"[12,22)"}';
+NOTICE:  rewriting table test_add_domain_col for reason 2
+ALTER TABLE test_add_domain_col ADD COLUMN x4 domain7multirange DEFAULT '{[12, 22]}';
+NOTICE:  rewriting table test_add_domain_col for reason 2
+ALTER TABLE test_add_domain_col ADD COLUMN x5 domain7multirange[] DEFAULT '{"{[12,22]}"}';
+NOTICE:  rewriting table test_add_domain_col for reason 2
+ALTER TABLE test_add_domain_col ADD COLUMN x6 comp_with_domain7 DEFAULT '(12)';
+NOTICE:  rewriting table test_add_domain_col for reason 2
+ALTER TABLE test_add_domain_col ADD COLUMN x7 comp_with_domain7[] DEFAULT '{(12)}';
+NOTICE:  rewriting table test_add_domain_col for reason 2
+-- all of the above should have table rewrite
+-- No need table rewrite, as domain volatile default expressions are irrelevant for container types
+ALTER TABLE test_add_domain_col ADD COLUMN x10 comp_with_domain6 DEFAULT '(12)';
+ALTER TABLE test_add_domain_col ADD COLUMN x11 comp_with_domain6[] DEFAULT '{(12)}';
+ALTER TABLE test_add_domain_col ADD COLUMN x12 domain8[] DEFAULT '{12}';
 DROP TABLE t2;
 DROP TABLE test_add_domain_col;
+DROP TYPE domain7range, comp_with_domain7, comp_with_domain6, domain6range;
 DROP DOMAIN domain1;
 DROP DOMAIN domain2;
 DROP DOMAIN domain3;
