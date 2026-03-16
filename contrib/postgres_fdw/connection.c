@@ -2474,6 +2474,7 @@ postgres_fdw_connection(PG_FUNCTION_ARGS)
 	ForeignServer *server = GetForeignServer(serverid);
 	UserMapping *user = GetUserMapping(userid, serverid);
 	StringInfoData str;
+	text		*result;
 	const char **keywords;
 	const char **values;
 	char	   *appname;
@@ -2502,12 +2503,15 @@ postgres_fdw_connection(PG_FUNCTION_ARGS)
 		appendEscapedValue(&str, values[i]);
 		sep = " ";
 	}
+	result = cstring_to_text(str.data);
 
 	if (appname != NULL)
 		pfree(appname);
 	pfree(keywords);
 	pfree(values);
-	PG_RETURN_TEXT_P(cstring_to_text(str.data));
+	pfree(str.data);
+
+	PG_RETURN_TEXT_P(result);
 }
 
 /*
