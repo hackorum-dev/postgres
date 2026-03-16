@@ -301,4 +301,22 @@ like(
 	qr/without epoch must be greater than or equal to 3/,
 	"invalid recovery_target_xid (lower bound check)");
 
+# Invalid recovery_target_xid via ALTER SYSTEM (non-numeric)
+my $stderr = '';
+$ret = $node_primary->psql('postgres',
+	"ALTER SYSTEM SET recovery_target_xid = 'bogus'",
+	stderr => \$stderr);
+ok($ret != 0, 'ALTER SYSTEM rejects non-numeric recovery_target_xid');
+like($stderr, qr/invalid value for parameter "recovery_target_xid"/,
+	'error message for non-numeric XID value');
+
+# Invalid recovery_target_xid via ALTER SYSTEM (overflow)
+$stderr = '';
+$ret = $node_primary->psql('postgres',
+	"ALTER SYSTEM SET recovery_target_xid = '99999999999999999999'",
+	stderr => \$stderr);
+ok($ret != 0, 'ALTER SYSTEM rejects overflow recovery_target_xid');
+like($stderr, qr/invalid value for parameter "recovery_target_xid"/,
+	'error message for overflow XID value');
+
 done_testing();
