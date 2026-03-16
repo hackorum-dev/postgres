@@ -1859,6 +1859,23 @@ description | Waiting for a newly initialized WAL file to reach durable storage
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>sent_bytes</structfield><type>bigint</type>
+       </para>
+       <para>
+        Amount of transaction changes sent downstream for this slot by the
+        output plugin after applying output plugin filters, if any, and
+        converting it into the output plugin format. After applying filters,
+        the amount of data that gets converted is less than
+        <structfield>total_bytes</structfield>. But the format of data before
+        and after the conversion is different. Hence the value of
+        <structfield>sent_bytes</structfield> is not directly related to the
+        value of <structfield>total_bytes</structfield>.
+       </para>
+      </entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
         <structfield>slotsync_skip_count</structfield><type>bigint</type>
        </para>
        <para>
