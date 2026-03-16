@@ -28,6 +28,11 @@ install_data(
   install_dir: dir_data / 'tsearch_data'
 )
 
+bitcode_modules += {
+  'target': unaccent,
+  'srcfiles': unaccent_sources,
+}
+
 tests += {
   'name': 'unaccent',
   'sd': meson.current_source_dir(),
