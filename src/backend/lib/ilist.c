@@ -91,7 +91,8 @@ dlist_check(const dlist_head *head)
 			cur->next == NULL ||
 			cur->prev == NULL ||
 			cur->prev->next != cur ||
-			cur->next->prev != cur)
+			cur->next->prev != cur ||
+			cur->next == cur)
 			elog(ERROR, "doubly linked list is corrupted");
 	}
 
@@ -102,7 +103,8 @@ dlist_check(const dlist_head *head)
 			cur->next == NULL ||
 			cur->prev == NULL ||
 			cur->prev->next != cur ||
-			cur->next->prev != cur)
+			cur->next->prev != cur ||
+			cur->prev == cur)
 			elog(ERROR, "doubly linked list is corrupted");
 	}
 }
