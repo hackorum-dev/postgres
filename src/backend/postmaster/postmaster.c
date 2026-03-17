@@ -2806,13 +2806,16 @@ HandleFatalError(QuitSignalReason reason, bool consider_sigabrt)
 }
 
 /*
- * HandleChildCrash -- cleanup after failed backend, bgwriter, checkpointer,
- * walwriter, autovacuum, archiver, slot sync worker, or background worker.
+ * HandleChildCrash -- process a crash of a child process.
  *
  * The objectives here are to clean up our local state about the child
  * process, and to signal all other remaining children to quickdie.
  *
  * The caller has already released its PMChild slot.
+ *
+ * The specific conditions and process types that trigger this are
+ * managed in process_pm_child_exit() (for auxiliary processes)
+ * and CleanupBackend() (for backends).
  */
 static void
 HandleChildCrash(int pid, int exitstatus, const char *procname)
