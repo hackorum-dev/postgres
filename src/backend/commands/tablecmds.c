@@ -689,6 +689,8 @@ static void ATPrepAlterColumnType(List **wqueue,
 								  AlterTableCmd *cmd, LOCKMODE lockmode,
 								  AlterTableUtilityContext *context);
 static bool ATColumnChangeRequiresRewrite(Node *expr, AttrNumber varattno);
+static void ATColumnChangeRequiresRewriteWalker(Node *expr, AttrNumber varattno,
+												bool *need_rewrite);
 static ObjectAddress ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 										   AlterTableCmd *cmd, LOCKMODE lockmode);
 static void RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
@@ -15196,8 +15198,9 @@ ATPrepAlterColumnType(List **wqueue,
  *
  * - the old type is binary coercible to the new type
  * - the new type is an unconstrained domain over the old type
+ * * - the new type is an unconstrained domain array over the old type
  * - {NEW,OLD} or {OLD,NEW} is {timestamptz,timestamp} and the timezone is UTC
- *
+ * - {NEW,OLD} or {OLD,NEW} is {timestamptz[],timestamp[]} and the timezone is UTC
  * In the case of a constrained domain, we could get by with scanning the
  * table and checking the constraint rather than actually rewriting it, but we
  * don't currently try to do that.
@@ -15205,42 +15208,107 @@ ATPrepAlterColumnType(List **wqueue,
 static bool
 ATColumnChangeRequiresRewrite(Node *expr, AttrNumber varattno)
 {
+	bool		need_rewrite = false;
+
 	Assert(expr != NULL);
 
-	for (;;)
+	ATColumnChangeRequiresRewriteWalker(expr,
+										varattno,
+										&need_rewrite);
+
+	return need_rewrite;
+}
+
+static void
+ATColumnChangeRequiresRewriteWalker(Node *expr, AttrNumber varattno,
+									bool *need_rewrite)
+{
+	if (*need_rewrite)
+		return;
+
+	if (IsA(expr, Var))
 	{
-		/* only one varno, so no need to check that */
-		if (IsA(expr, Var) && ((Var *) expr)->varattno == varattno)
-			return false;
-		else if (IsA(expr, RelabelType))
-			expr = (Node *) ((RelabelType *) expr)->arg;
-		else if (IsA(expr, CoerceToDomain))
-		{
-			CoerceToDomain *d = (CoerceToDomain *) expr;
+		Var		   *var = (Var *) expr;
 
-			if (DomainHasConstraints(d->resulttype, NULL))
-				return true;
-			expr = (Node *) d->arg;
-		}
-		else if (IsA(expr, FuncExpr))
+		if (var->varattno != varattno)
 		{
-			FuncExpr   *f = (FuncExpr *) expr;
-
-			switch (f->funcid)
-			{
-				case F_TIMESTAMPTZ_TIMESTAMP:
-				case F_TIMESTAMP_TIMESTAMPTZ:
-					if (TimestampTimestampTzRequiresRewrite())
-						return true;
-					else
-						expr = linitial(f->args);
-					break;
-				default:
-					return true;
-			}
+			*need_rewrite = true;
+			return;
 		}
-		else
-			return true;
+	}
+	else if (IsA(expr, RelabelType))
+	{
+		RelabelType *r = (RelabelType *) expr;
+
+		ATColumnChangeRequiresRewriteWalker((Node *) r->arg,
+											varattno,
+											need_rewrite);
+
+		return;
+	}
+	else if (IsA(expr, ArrayCoerceExpr))
+	{
+		ArrayCoerceExpr *acoerce = (ArrayCoerceExpr *) expr;
+
+		ATColumnChangeRequiresRewriteWalker((Node *) acoerce->arg,
+											varattno,
+											need_rewrite);
+
+		ATColumnChangeRequiresRewriteWalker((Node *) acoerce->elemexpr,
+											varattno,
+											need_rewrite);
+
+		return;
+	}
+	else if (IsA(expr, CoerceToDomain))
+	{
+		CoerceToDomain *d = (CoerceToDomain *) expr;
+
+		if (DomainHasConstraints(d->resulttype, NULL))
+		{
+			*need_rewrite = true;
+			return;
+		}
+
+		ATColumnChangeRequiresRewriteWalker((Node *) d->arg,
+											varattno,
+											need_rewrite);
+
+		return;
+	}
+	else if (IsA(expr, FuncExpr))
+	{
+		FuncExpr   *f = (FuncExpr *) expr;
+
+		switch (f->funcid)
+		{
+			case F_TIMESTAMPTZ_TIMESTAMP:
+			case F_TIMESTAMP_TIMESTAMPTZ:
+				if (TimestampTimestampTzRequiresRewrite())
+				{
+					*need_rewrite = true;
+					return;
+				}
+				else
+				{
+					expr = linitial(f->args);
+					ATColumnChangeRequiresRewriteWalker(expr,
+														varattno,
+														need_rewrite);
+					return;
+				}
+				break;
+			default:
+				{
+					*need_rewrite = true;
+					return;
+				}
+		}
+	}
+	else if (!IsA(expr, CaseTestExpr))
+	{
+		*need_rewrite = true;
+		return;
 	}
 }
 

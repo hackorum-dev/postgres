@@ -460,12 +460,16 @@ DROP MATERIALIZED VIEW heapmv;
 -- shouldn't trigger a table_rewrite event
 alter table rewriteme alter column foo type numeric(12,4);
 begin;
+alter table rewriteme add column zoo timestamptz[];
 set timezone to 'UTC';
 alter table rewriteme alter column bar type timestamp;
+alter table rewriteme alter column zoo type timestamp[];
 set timezone to '0';
 alter table rewriteme alter column bar type timestamptz;
+alter table rewriteme alter column zoo type timestamptz[];
 set timezone to 'Europe/London';
 alter table rewriteme alter column bar type timestamp; -- does rewrite
+alter table rewriteme alter column zoo type timestamp[]; -- does rewrite
 rollback;
 
 -- typed tables are rewritten when their type changes.  Don't emit table
