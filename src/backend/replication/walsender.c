@@ -189,6 +189,16 @@ static XLogRecPtr sendTimeLineValidUpto = InvalidXLogRecPtr;
  */
 static XLogRecPtr sentPtr = InvalidXLogRecPtr;
 
+/*
+ * WAL position the standby must confirm before this physical streaming
+ * session may revalidate its slot.  Set once per session by
+ * XLogSendPhysical(): to the end of the first WAL data message queued, or
+ * to the current send position if the standby is already caught up.
+ * Invalid until then, so an ACK processed earlier cannot revalidate the
+ * slot.  Kept fixed for the rest of the session.
+ */
+static XLogRecPtr revalidationTargetPtr = InvalidXLogRecPtr;
+
 /* Buffers for constructing outgoing messages and processing reply messages. */
 static StringInfoData output_message;
 static StringInfoData reply_message;
@@ -863,6 +873,8 @@ StartReplication(StartReplicationCmd *cmd)
 	XLogRecPtr	FlushPtr;
 	TimeLineID	FlushTLI;
 
+	revalidationTargetPtr = InvalidXLogRecPtr;
+
 	/* create xlogreader for physical replication */
 	xlogreader =
 		XLogReaderAllocate(wal_segment_size, NULL,
@@ -887,11 +899,28 @@ StartReplication(StartReplicationCmd *cmd)
 
 	if (cmd->slotname)
 	{
-		ReplicationSlotAcquire(cmd->slotname, true, true);
+		ReplicationSlotAcquire(cmd->slotname, true, false);
 		if (SlotIsLogical(MyReplicationSlot))
 			ereport(ERROR,
 					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 					 errmsg("cannot use a logical replication slot for physical replication")));
+
+		/*
+		 * Check if the slot is invalidated.  Physical slots with
+		 * auto_revalidate can proceed -- they will be revalidated once the
+		 * standby confirms receipt of WAL streamed by this session.  All
+		 * other invalidated slots must error out as before.
+		 */
+		if (!SlotIsValid(MyReplicationSlot))
+		{
+			if (SlotCanBeRevalidated(MyReplicationSlot))
+				ereport(WARNING,
+						errmsg("replication slot \"%s\" is invalidated due to \"%s\", will attempt revalidation",
+							   NameStr(MyReplicationSlot->data.name),
+							   GetSlotInvalidationCauseName(MyReplicationSlot->data.invalidated)));
+			else
+				ReplicationSlotInvalidationError(MyReplicationSlot);
+		}
 
 		/*
 		 * We don't need to verify the slot's restart_lsn here; instead we
@@ -2512,6 +2541,7 @@ static void
 PhysicalConfirmReceivedLocation(XLogRecPtr lsn)
 {
 	bool		changed = false;
+	bool		revalidated = false;
 	ReplicationSlot *slot = MyReplicationSlot;
 
 	Assert(XLogRecPtrIsValid(lsn));
@@ -2521,6 +2551,26 @@ PhysicalConfirmReceivedLocation(XLogRecPtr lsn)
 		changed = true;
 		slot->data.restart_lsn = lsn;
 	}
+
+	/*
+	 * If the slot is invalidated and eligible for auto-revalidation, clear
+	 * the invalidation only when the standby confirms receipt of all WAL up
+	 * to revalidationTargetPtr: the end of the first WAL data message this
+	 * session queued, or the current send position if the standby was
+	 * already caught up.  The target is invalid until XLogSendPhysical()
+	 * establishes it, so an ACK processed earlier cannot revalidate the
+	 * slot.  Both restart_lsn and invalidated must be updated under the
+	 * same spinlock so ReplicationSlotsComputeRequiredLSN() sees a
+	 * consistent pair.
+	 */
+	if (SlotCanBeRevalidated(slot) &&
+		XLogRecPtrIsValid(revalidationTargetPtr) &&
+		lsn >= revalidationTargetPtr)
+	{
+		slot->data.invalidated = RS_INVAL_NONE;
+		changed = true;
+		revalidated = true;
+	}
 	SpinLockRelease(&slot->mutex);
 
 	if (changed)
@@ -2528,6 +2578,21 @@ PhysicalConfirmReceivedLocation(XLogRecPtr lsn)
 		ReplicationSlotMarkDirty();
 		ReplicationSlotsComputeRequiredLSN();
 		PhysicalWakeupLogicalWalSnd();
+	}
+
+	/*
+	 * Persist the revalidation to disk immediately so the cleared state
+	 * survives a crash.  Normal restart_lsn updates are not saved here
+	 * (the comment below explains why), but a revalidation is a significant
+	 * one-time state change worth persisting right away.
+	 */
+	if (revalidated)
+	{
+		revalidationTargetPtr = InvalidXLogRecPtr;
+		ReplicationSlotSave();
+		ereport(LOG,
+				errmsg("physical replication slot \"%s\" has been revalidated",
+					   NameStr(slot->data.name)));
 	}
 
 	/*
@@ -3528,6 +3593,25 @@ XLogSendPhysical(void)
 	Assert(sentPtr <= SendRqstPtr);
 	if (SendRqstPtr <= sentPtr)
 	{
+		/*
+		 * The standby already has all the WAL we could send, so there is
+		 * nothing left for this session to prove by streaming.  If the slot
+		 * awaits revalidation, use the current send position as the target.
+		 * The qualifying ACK may have been processed already (e.g. the
+		 * initial status reply), and a caught-up standby may never send
+		 * another one, so check the confirmed flush position right away.
+		 */
+		if (MyReplicationSlot != NULL &&
+			SlotCanBeRevalidated(MyReplicationSlot) &&
+			!XLogRecPtrIsValid(revalidationTargetPtr))
+		{
+			revalidationTargetPtr = sentPtr;
+
+			if (XLogRecPtrIsValid(MyWalSnd->flush) &&
+				MyWalSnd->flush >= revalidationTargetPtr)
+				PhysicalConfirmReceivedLocation(MyWalSnd->flush);
+		}
+
 		WalSndCaughtUp = true;
 		return;
 	}
@@ -3642,6 +3726,16 @@ retry:
 		   tmpbuf.data, sizeof(int64));
 
 	pq_putmessage_noblock(PqMsg_CopyData, output_message.data, output_message.len);
+
+	/*
+	 * If the slot is awaiting revalidation, remember the end of the first
+	 * WAL data message we queued.  Keep this first target fixed; later
+	 * messages must not move it to a later sentPtr.
+	 */
+	if (MyReplicationSlot != NULL &&
+		SlotCanBeRevalidated(MyReplicationSlot) &&
+		!XLogRecPtrIsValid(revalidationTargetPtr))
+		revalidationTargetPtr = endptr;
 
 	sentPtr = endptr;
 

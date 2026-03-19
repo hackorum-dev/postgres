@@ -141,7 +141,7 @@ StaticAssertDecl(lengthof(SlotInvalidationCauses) == (RS_INVAL_MAX_CAUSES + 1),
 	sizeof(ReplicationSlotOnDisk) - ReplicationSlotOnDiskConstantSize
 
 #define SLOT_MAGIC		0x1051CA1	/* format identifier */
-#define SLOT_VERSION	5		/* version for new files */
+#define SLOT_VERSION	6		/* version for new files */
 
 /* Control array for replication slot management */
 ReplicationSlotCtlData *ReplicationSlotCtl = NULL;
@@ -731,12 +731,7 @@ retry:
 	 * invalidate the slot immediately after the check.
 	 */
 	if (error_if_invalid && s->data.invalidated != RS_INVAL_NONE)
-		ereport(ERROR,
-				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				errmsg("can no longer access replication slot \"%s\"",
-					   NameStr(s->data.name)),
-				errdetail("This replication slot has been invalidated due to \"%s\".",
-						  GetSlotInvalidationCauseName(s->data.invalidated)));
+		ReplicationSlotInvalidationError(s);
 
 	/* Let everybody know we've modified this slot */
 	ConditionVariableBroadcast(&s->active_cv);
@@ -759,6 +754,25 @@ retry:
 				: errmsg("acquired physical replication slot \"%s\"",
 						 NameStr(s->data.name)));
 	}
+}
+
+/*
+ * Report an error when an invalidated replication slot cannot be used.
+ *
+ * Keep this separate from ReplicationSlotAcquire() so callers that implement
+ * their own invalidation policy can use the same error report.
+ */
+void
+ReplicationSlotInvalidationError(ReplicationSlot *slot)
+{
+	Assert(slot->data.invalidated != RS_INVAL_NONE);
+
+	ereport(ERROR,
+			errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			errmsg("can no longer access replication slot \"%s\"",
+				   NameStr(slot->data.name)),
+			errdetail("This replication slot has been invalidated due to \"%s\".",
+					  GetSlotInvalidationCauseName(slot->data.invalidated)));
 }
 
 /*
