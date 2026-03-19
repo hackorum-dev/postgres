@@ -28,6 +28,7 @@ SUBDIRS = \
 		  test_custom_types \
 		  test_ddl_deparse \
 		  test_dsa \
+		  test_dshash \
 		  test_dsm_registry \
 		  test_escape \
 		  test_extensible \
