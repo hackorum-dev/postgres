@@ -822,7 +822,7 @@ static void
 _bt_singleval_fillfactor(Page page, BTDedupState state, Size newitemsz)
 {
 	Size		leftfree;
-	int			reduction;
+	Size		reduction;
 
 	/* This calculation needs to match nbtsplitloc.c */
 	leftfree = PageGetPageSize(page) - SizeOfPageHeaderData -
