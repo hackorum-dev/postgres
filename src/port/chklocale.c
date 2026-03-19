@@ -21,6 +21,9 @@
 
 #ifndef WIN32
 #include <langinfo.h>
+#ifdef __APPLE__
+#include <xlocale.h>				/* provides nl_langinfo_l on macOS */
+#endif
 #endif
 
 #include "mb/pg_wchar.h"
