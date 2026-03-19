@@ -1327,6 +1327,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 			if (!cmd->temporary)
 				ReplicationSlotSave();
 		}
+
 	}
 	else
 	{
