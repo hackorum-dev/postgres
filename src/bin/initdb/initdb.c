@@ -3505,6 +3505,9 @@ main(int argc, char *argv[])
 	if (!username)
 		username = effective_user;
 
+	if (username[0] == '\0')
+		pg_fatal("superuser name must not be empty");
+
 	if (strncmp(username, "pg_", 3) == 0)
 		pg_fatal("superuser name \"%s\" is disallowed; role names cannot begin with \"pg_\"", username);
 
