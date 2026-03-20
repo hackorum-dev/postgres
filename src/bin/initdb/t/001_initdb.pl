@@ -34,6 +34,9 @@ command_fails(
 	[ 'initdb', '--waldir' => 'pgxlog', $datadir ],
 	'relative xlog directory not allowed');
 
+command_fails_like([ 'initdb', '--username' => '', $datadir ],
+	qr/superuser name must not be empty/,
+	'empty username not allowed');
 command_fails([ 'initdb', '--username' => 'pg_test', $datadir ],
 	'role names cannot begin with "pg_"');
 
