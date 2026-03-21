@@ -542,10 +542,15 @@ CookedConstraint
 CopyDest
 CopyFormat
 CopyFormatOptions
+CopyFromJsonParseState
+CopyFromJsonState
 CopyFromRoutine
 CopyFromState
 CopyFromStateData
 CopyInsertMethod
+CopyJsonArrayScanState
+CopyJsonAttribute
+CopyJsonScanState
 CopyLogVerbosityChoice
 CopyMethod
 CopyMultiInsertBuffer
@@ -3157,6 +3162,7 @@ Tcl_Obj
 Tcl_Size
 Tcl_Time
 TempNamespaceStatus
+TestCopyFromJsonState
 TestCustomScanState
 TestDSMRegistryHashEntry
 TestDSMRegistryStruct
