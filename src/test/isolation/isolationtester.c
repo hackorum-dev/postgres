@@ -216,15 +216,22 @@ main(int argc, char **argv)
 	 * exactly expect concurrent use of test tables.  However, autovacuum will
 	 * occasionally take AccessExclusiveLock to truncate a table, and we must
 	 * ignore that transient wait.
+	 *
+	 * If the session's backend is blocked, and if its background worker is
+	 * waiting on an injection point, we assume that the injection point is
+	 * the reason for the backend to be blocked. That's what we check in the
+	 * second query of the UNION. XXX Should we use a separate query for that?
 	 */
 	initPQExpBuffer(&wait_query);
 	appendPQExpBufferStr(&wait_query,
+						 "WITH blocking(res) AS ("
 						 "SELECT pg_catalog.pg_isolation_test_session_is_blocked($1, '{");
 	/* The spec syntax requires at least one session; assume that here. */
 	appendPQExpBufferStr(&wait_query, conns[1].backend_pid_str);
 	for (i = 2; i < nconns; i++)
 		appendPQExpBuffer(&wait_query, ",%s", conns[i].backend_pid_str);
-	appendPQExpBufferStr(&wait_query, "}')");
+	appendPQExpBufferStr(&wait_query, "}') UNION "
+						 "SELECT pg_catalog.pg_isolation_test_session_is_blocked(pid, '{}') FROM pg_stat_activity WHERE leader_pid=$1) SELECT bool_or(res) FROM blocking");
 
 	res = PQprepare(conns[0].conn, PREP_WAITING, wait_query.data, 0, NULL);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
