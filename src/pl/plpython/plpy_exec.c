@@ -1033,7 +1033,7 @@ PLy_modify_tuple(PLyProcedure *proc, PyObject *pltd, TriggerData *tdata,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("cannot set system attribute \"%s\"",
 								plattstr)));
-			if (TupleDescAttr(tupdesc, attn - 1)->attgenerated)
+			if (TupleDescCompactAttr(tupdesc, attn - 1)->attgenerated)
 				ereport(ERROR,
 						(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
 						 errmsg("cannot set generated column \"%s\"",

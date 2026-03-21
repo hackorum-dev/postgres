@@ -3324,7 +3324,7 @@ pltcl_build_tuple_result(Tcl_Interp *interp, Tcl_Obj **kvObjv, int kvObjc,
 					 errmsg("cannot set system attribute \"%s\"",
 							fieldName)));
 
-		if (TupleDescAttr(tupdesc, attn - 1)->attgenerated)
+		if (TupleDescCompactAttr(tupdesc, attn - 1)->attgenerated)
 			ereport(ERROR,
 					(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
 					 errmsg("cannot set generated column \"%s\"",

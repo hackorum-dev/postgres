@@ -654,7 +654,7 @@ CreateTriggerFiringOn(const CreateTrigStmt *stmt, const char *queryString,
 								 parser_errposition(pstate, var->location)));
 					if (TRIGGER_FOR_BEFORE(tgtype) &&
 						var->varattno > 0 &&
-						TupleDescAttr(RelationGetDescr(rel), var->varattno - 1)->attgenerated)
+						TupleDescCompactAttr(RelationGetDescr(rel), var->varattno - 1)->attgenerated)
 						ereport(ERROR,
 								(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 								 errmsg("BEFORE trigger's WHEN condition cannot reference NEW generated columns"),
