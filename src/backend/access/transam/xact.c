@@ -3039,6 +3039,15 @@ AbortTransaction(void)
 		ResourceOwnerRelease(TopTransactionResourceOwner,
 							 RESOURCE_RELEASE_AFTER_LOCKS,
 							 false, true);
+
+		/*
+		 * Now that resource owner cleanup has finished, we can release the
+		 * memory resource owners might have still accessed during cleanup.
+		 *
+		 * Note the portal context itself is freed later in PortalDrop.
+		 */
+		AtAbort_Portals_ReleaseMemory();
+
 		smgrDoPendingDeletes(false);
 
 		AtEOXact_GUC(false, 1);
@@ -3056,6 +3065,10 @@ AbortTransaction(void)
 		AtEOXact_LogicalRepWorkers(false);
 		AtEOXact_LogicalCtl();
 		pgstat_report_xact_timestamp(0);
+	}
+	else
+	{
+		AtAbort_Portals_ReleaseMemory();
 	}
 
 	/*
@@ -4981,6 +4994,7 @@ AbortOutOfAnyTransaction(void)
 				 * we need to shut down before doing CleanupTransaction.
 				 */
 				AtAbort_Portals();
+				AtAbort_Portals_ReleaseMemory();
 				CleanupTransaction();
 				s->blockState = TBLOCK_DEFAULT;
 				break;
@@ -5010,6 +5024,7 @@ AbortOutOfAnyTransaction(void)
 									   s->parent->subTransactionId,
 									   s->curTransactionOwner,
 									   s->parent->curTransactionOwner);
+					AtSubAbort_Portals_ReleaseMemory(s->subTransactionId);
 				}
 				CleanupSubTransaction();
 				s = CurrentTransactionState;	/* changed by pop */
@@ -5419,6 +5434,15 @@ AbortSubTransaction(void)
 		ResourceOwnerRelease(s->curTransactionOwner,
 							 RESOURCE_RELEASE_AFTER_LOCKS,
 							 false, false);
+
+		/*
+		 * Now that resource owner cleanup has finished, we can release the
+		 * memory resource owners might have still accessed during cleanup.
+		 *
+		 * Note the portal context itself is freed later in PortalDrop.
+		 */
+		AtSubAbort_Portals_ReleaseMemory(s->subTransactionId);
+
 		AtSubAbort_smgr();
 
 		AtEOXact_GUC(false, s->gucNestLevel);
