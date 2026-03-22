@@ -100,12 +100,15 @@ replace_funcs_pos = [
   # loongarch
   ['pg_crc32c_loongarch', 'USE_LOONGARCH_CRC32C'],
 
+  # riscv
+  ['pg_popcount_riscv', 'USE_RISCV_ZBB_WITH_RUNTIME_CHECK', 'zbb'],
+
   # generic fallback
   ['pg_crc32c_sb8', 'USE_SLICING_BY_8_CRC32C'],
 ]
 
-pgport_cflags = {'crc': cflags_crc}
-pgport_sources_cflags = {'crc': []}
+pgport_cflags = {'crc': cflags_crc, 'zbb': cflags_zbb}
+pgport_sources_cflags = {'crc': [], 'zbb': []}
 
 foreach f : replace_funcs_neg
   func = f.get(0)
