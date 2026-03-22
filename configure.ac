@@ -2186,6 +2186,35 @@ if test x"$host_cpu" = x"aarch64"; then
   fi
 fi
 
+# Check for RISC-V Zbb bitmanip extension (provides 'cpop' for popcount).
+#
+# The Zbb extension provides the 'cpop' instruction for hardware popcount.
+# GCC/Clang emit the cpop instruction from __builtin_popcountll() when
+# -march=rv64gc_zbb is used.  We test compilation with this flag, then
+# restore CFLAGS to avoid global march flags (for binary portability).
+# We define USE_RISCV_ZBB_WITH_RUNTIME_CHECK and use __riscv_hwprobe()
+# for runtime detection.  We compile src/port/pg_popcount_riscv.c with
+# -march=rv64gc_zbb separately (like ARM SVE and x86 POPCNT).
+AC_MSG_CHECKING([for RISC-V Zbb extension (cpop/popcount)])
+if test x"$host_cpu" = x"riscv64"; then
+  pgac_save_CFLAGS_zbb="$CFLAGS"
+  CFLAGS="$CFLAGS -march=rv64gc_zbb"
+  AC_COMPILE_IFELSE(
+    [AC_LANG_PROGRAM(
+      [/* Test that the compiler will emit cpop from __builtin_popcountll */
+       static inline int test_cpop(unsigned long long x)
+       { return __builtin_popcountll(x); }],
+      [volatile int r = test_cpop(0xdeadbeefULL); (void) r;])],
+    [AC_DEFINE(USE_RISCV_ZBB_WITH_RUNTIME_CHECK, 1,
+      [Define to 1 to use RISC-V Zbb popcount with runtime detection.])
+     CFLAGS="$pgac_save_CFLAGS_zbb"
+     AC_MSG_RESULT([yes, with runtime check])],
+    [CFLAGS="$pgac_save_CFLAGS_zbb"
+     AC_MSG_RESULT([no])])
+else
+  AC_MSG_RESULT([not on RISC-V])
+fi
+
 # Check for Intel SSE 4.2 intrinsics to do CRC calculations.
 #
 PGAC_SSE42_CRC32_INTRINSICS()
