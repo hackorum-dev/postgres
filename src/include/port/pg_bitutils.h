@@ -279,7 +279,7 @@ pg_ceil_log2_64(uint64 num)
 extern uint64 pg_popcount_portable(const char *buf, int bytes);
 extern uint64 pg_popcount_masked_portable(const char *buf, int bytes, uint8 mask);
 
-#if defined(HAVE_X86_64_POPCNTQ) || defined(USE_SVE_POPCNT_WITH_RUNTIME_CHECK)
+#if defined(HAVE_X86_64_POPCNTQ) || defined(USE_SVE_POPCNT_WITH_RUNTIME_CHECK) || defined(USE_RISCV_ZBB_WITH_RUNTIME_CHECK)
 /*
  * Attempt to use specialized CPU instructions, but perform a runtime check
  * first.
