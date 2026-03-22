@@ -2592,6 +2592,38 @@ int main(void)
 
 endif
 
+# ---------------------------------------------------------------------------
+# Check for RISC-V Zbb bitmanip extension (provides 'cpop' for popcount).
+#
+# The Zbb extension provides the 'cpop' instruction for hardware popcount.
+# GCC/Clang emit the cpop instruction from __builtin_popcountll() when
+# -march=rv64gc_zbb is used.  We test compilation with this flag, but
+# do NOT add it globally (for binary portability).  Instead, we define
+# USE_RISCV_ZBB_WITH_RUNTIME_CHECK and compile src/port/pg_popcount_riscv.c
+# with -march=rv64gc_zbb separately (like ARM SVE and x86 POPCNT).
+# Runtime detection uses __riscv_hwprobe().
+# ---------------------------------------------------------------------------
+zbb_test_code = '''
+static inline int test_cpop(unsigned long long x)
+{ return __builtin_popcountll(x); }
+int main(void) {
+  volatile int r = test_cpop(0xdeadbeefULL);
+  (void) r;
+  return 0;
+}
+'''
+
+cflags_zbb = []
+if host_cpu == 'riscv64'
+  if cc.compiles(zbb_test_code,
+                 args: ['-march=rv64gc_zbb'],
+                 name: 'RISC-V Zbb cpop')
+    cdata.set('USE_RISCV_ZBB_WITH_RUNTIME_CHECK', 1)
+    # Flag will be added only to pg_popcount_riscv.c in src/port/meson.build
+    cflags_zbb = ['-march=rv64gc_zbb']
+  endif
+endif
+
 
 ###############################################################
 # Select CRC-32C implementation.
