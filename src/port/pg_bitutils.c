@@ -162,7 +162,7 @@ pg_popcount_masked_portable(const char *buf, int bytes, uint8 mask)
 	return popcnt;
 }
 
-#if !defined(HAVE_X86_64_POPCNTQ) && !defined(USE_NEON)
+#if !defined(HAVE_X86_64_POPCNTQ) && !defined(USE_NEON) && !defined(USE_RISCV_ZBB_WITH_RUNTIME_CHECK)
 
 /*
  * When special CPU instructions are not available, there's no point in using
@@ -191,4 +191,5 @@ pg_popcount_masked_optimized(const char *buf, int bytes, uint8 mask)
 	return pg_popcount_masked_portable(buf, bytes, mask);
 }
 
-#endif							/* ! HAVE_X86_64_POPCNTQ && ! USE_NEON */
+#endif							/* ! HAVE_X86_64_POPCNTQ && ! USE_NEON && !
+								 * USE_RISCV_ZBB_WITH_RUNTIME_CHECK */
