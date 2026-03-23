@@ -685,8 +685,6 @@ ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
 	remainingPerms = requiredPerms & ~relPerms;
 	if (remainingPerms != 0)
 	{
-		int			col = -1;
-
 		/*
 		 * If we lack any permissions that exist only as relation permissions,
 		 * we can fail straight away.
@@ -701,45 +699,13 @@ ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
 		 * to report a column-level error if we have some but not all of the
 		 * column privileges.
 		 */
-		if (remainingPerms & ACL_SELECT)
-		{
-			/*
-			 * When the query doesn't explicitly reference any columns (for
-			 * example, SELECT COUNT(*) FROM table), allow the query if we
-			 * have SELECT on any column of the rel, as per SQL spec.
-			 */
-			if (bms_is_empty(perminfo->selectedCols))
-			{
-				if (pg_attribute_aclcheck_all(relOid, userid, ACL_SELECT,
-											  ACLMASK_ANY) != ACLCHECK_OK)
-					return false;
-			}
+		if (remainingPerms & ACL_SELECT &&
+			!ExecCheckPermissionsModified(relOid,
+										  userid,
+										  perminfo->selectedCols,
+										  ACL_SELECT))
+			return false;
 
-			while ((col = bms_next_member(perminfo->selectedCols, col)) >= 0)
-			{
-				/* bit #s are offset by FirstLowInvalidHeapAttributeNumber */
-				AttrNumber	attno = col + FirstLowInvalidHeapAttributeNumber;
-
-				if (attno == InvalidAttrNumber)
-				{
-					/* Whole-row reference, must have priv on all cols */
-					if (pg_attribute_aclcheck_all(relOid, userid, ACL_SELECT,
-												  ACLMASK_ALL) != ACLCHECK_OK)
-						return false;
-				}
-				else
-				{
-					if (pg_attribute_aclcheck(relOid, attno, userid,
-											  ACL_SELECT) != ACLCHECK_OK)
-						return false;
-				}
-			}
-		}
-
-		/*
-		 * Basically the same for the mod columns, for both INSERT and UPDATE
-		 * privilege as specified by remainingPerms.
-		 */
 		if (remainingPerms & ACL_INSERT &&
 			!ExecCheckPermissionsModified(relOid,
 										  userid,
@@ -759,7 +725,7 @@ ExecCheckOneRelPerms(RTEPermissionInfo *perminfo)
 
 /*
  * ExecCheckPermissionsModified
- *		Check INSERT or UPDATE access permissions for a single relation (these
+ *		Check SELECT, INSERT or UPDATE access permissions for a single relation (these
  *		are processed uniformly).
  */
 static bool
@@ -769,9 +735,11 @@ ExecCheckPermissionsModified(Oid relOid, Oid userid, Bitmapset *modifiedCols,
 	int			col = -1;
 
 	/*
-	 * When the query doesn't explicitly update any columns, allow the query
-	 * if we have permission on any column of the rel.  This is to handle
-	 * SELECT FOR UPDATE as well as possible corner cases in UPDATE.
+	 * When the query doesn't explicitly reference any columns (for
+	 * example, SELECT COUNT(*) FROM table or INSERT DEFAULT VALUES),
+   * allow the query if we have permission on any column of the rel, as per SQL spec.
+	 *
+	 * This handles SELECT FOR UPDATE as well as possible corner cases in UPDATE.
 	 */
 	if (bms_is_empty(modifiedCols))
 	{
@@ -785,10 +753,20 @@ ExecCheckPermissionsModified(Oid relOid, Oid userid, Bitmapset *modifiedCols,
 		/* bit #s are offset by FirstLowInvalidHeapAttributeNumber */
 		AttrNumber	attno = col + FirstLowInvalidHeapAttributeNumber;
 
+		/* Whole-row reference, must have priv on all cols */
 		if (attno == InvalidAttrNumber)
 		{
-			/* whole-row reference can't happen here */
-			elog(ERROR, "whole-row update is not implemented");
+
+			/* In the case of SELECT * we have to check for all column permissions */
+			if (requiredPerms == ACL_SELECT)
+			{
+				if (pg_attribute_aclcheck_all(relOid, userid, requiredPerms,
+											  ACLMASK_ALL) != ACLCHECK_OK)
+					return false;
+			}
+			else
+				/* whole-row reference can't happen here */
+				elog(ERROR, "whole-row update is not implemented");
 		}
 		else
 		{
