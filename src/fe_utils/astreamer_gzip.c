@@ -333,6 +333,10 @@ astreamer_gzip_decompressor_content(astreamer *streamer,
 							  mystreamer->base.bbs_buffer.maxlen, context);
 			mystreamer->bytes_written = 0;
 		}
+
+		/* If we've hit the end of the compressed stream, stop. */
+		if (res == Z_STREAM_END)
+			break;
 	}
 }
 
