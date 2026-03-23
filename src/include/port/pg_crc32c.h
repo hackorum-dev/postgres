@@ -166,6 +166,20 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
 extern pg_crc32c pg_comp_crc32c_pmull(pg_crc32c crc, const void *data, size_t len);
 #endif
 
+#elif defined(USE_RISCV_ZBC_CRC32C_WITH_RUNTIME_CHECK)
+
+/*
+ * Use RISC-V Zbc instructions, but perform a runtime check first
+ * to check that they are available.
+ */
+#define COMP_CRC32C(crc, data, len) \
+	((crc) = pg_comp_crc32c((crc), (data), (len)))
+#define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
+
+extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
+extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
+extern pg_crc32c pg_comp_crc32c_riscv_zbc(pg_crc32c crc, const void *data, size_t len);
+
 #else
 /*
  * Use slicing-by-8 algorithm.
