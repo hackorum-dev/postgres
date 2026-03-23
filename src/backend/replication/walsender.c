@@ -384,6 +384,18 @@ WalSndErrorCleanup(void)
 	if (xlogreader != NULL && xlogreader->seg.ws_file >= 0)
 		wal_segment_close(xlogreader);
 
+	/*
+	 * Clean up spill files before releasing the slot, because
+	 * ReorderBufferCleanupSerializedTXNs() needs the slot name to locate the
+	 * directory.  We use the static logical_decoding_ctx to determine whether
+	 * we are in a logical decoding session.
+	 */
+	if (logical_decoding_ctx != NULL && MyReplicationSlot != NULL)
+	{
+		ReorderBufferCleanupSerializedTXNs(NameStr(MyReplicationSlot->data.name));
+		logical_decoding_ctx = NULL;
+	}
+
 	if (MyReplicationSlot != NULL)
 		ReplicationSlotRelease();
 
