@@ -3377,6 +3377,7 @@ VirtualTransactionId
 VirtualTupleTableSlot
 VolatileFunctionStatus
 Vsrt
+V128
 WAIT_ORDER
 WALAvailability
 WALInsertLock
