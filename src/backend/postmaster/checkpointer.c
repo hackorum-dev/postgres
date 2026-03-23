@@ -39,6 +39,7 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include "access/twophase.h"
 #include "access/xlog.h"
 #include "access/xlog_internal.h"
 #include "access/xlogrecovery.h"
@@ -567,6 +568,12 @@ CheckpointerMain(const void *startup_data, size_t startup_data_len)
 
 		/* Check for archive_timeout and switch xlog files if necessary. */
 		CheckArchiveTimeout();
+
+		/*
+		 * Clean up orphaned prepared transactions that have exceeded the
+		 * prepared_orphaned_transaction_timeout.
+		 */
+		CleanupOrphanedPreparedTransactions();
 
 		/* Report pending statistics to the cumulative stats system */
 		pgstat_report_checkpointer();

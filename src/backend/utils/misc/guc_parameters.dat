@@ -2306,6 +2306,16 @@
   max => '60',
 },
 
+{ name => 'prepared_orphaned_transaction_timeout', type => 'int', context => 'PGC_SIGHUP', group => 'CLIENT_CONN_STATEMENT',
+  short_desc => 'Sets the maximum time that a prepared transaction can remain unresolved before it is automatically rolled back.',
+  long_desc => 'A value of 0 (the default) disables the timeout.',
+  flags => 'GUC_UNIT_MS',
+  variable => 'prepared_orphaned_transaction_timeout',
+  boot_val => '0',
+  min => '0',
+  max => 'INT_MAX',
+},
+
 { name => 'primary_conninfo', type => 'string', context => 'PGC_SIGHUP', group => 'REPLICATION_STANDBY',
   short_desc => 'Sets the connection string to be used to connect to the sending server.',
   flags => 'GUC_SUPERUSER_ONLY',

@@ -116,6 +116,9 @@
 /* GUC variable, can't be changed after startup */
 int			max_prepared_xacts = 0;
 
+/* GUC variable for orphaned prepared transaction timeout (in ms, 0 = disabled) */
+int			prepared_orphaned_transaction_timeout = 0;
+
 /*
  * This struct describes one global transaction that is in prepared state
  * or attempting to become prepared.
@@ -2872,4 +2875,253 @@ TwoPhaseGetOldestXidInCommit(void)
 	LWLockRelease(TwoPhaseStateLock);
 
 	return oldestRunningXid;
+}
+
+/*
+ * LockGXactForCleanup
+ *		Locate the prepared transaction by GID and mark it busy for cleanup.
+ *
+ * This is similar to LockGXact but does not check database identity or
+ * ownership, since it is used by the background cleanup of orphaned prepared
+ * transactions which operates as a superuser-like facility.
+ *
+ * Returns the GlobalTransaction on success, or NULL if the GID is not found
+ * or is already locked by another backend.
+ */
+static GlobalTransaction
+LockGXactForCleanup(const char *gid)
+{
+	int			i;
+
+	/* on first call, register the exit hook */
+	if (!twophaseExitRegistered)
+	{
+		before_shmem_exit(AtProcExit_Twophase, 0);
+		twophaseExitRegistered = true;
+	}
+
+	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+
+		/* Ignore not-yet-valid GIDs */
+		if (!gxact->valid)
+			continue;
+		if (strcmp(gxact->gid, gid) != 0)
+			continue;
+
+		/* Already locked by another backend? Skip it. */
+		if (gxact->locking_backend != INVALID_PROC_NUMBER)
+		{
+			LWLockRelease(TwoPhaseStateLock);
+			return NULL;
+		}
+
+		/* OK for us to lock it */
+		gxact->locking_backend = MyProcNumber;
+		MyLockedGxact = gxact;
+
+		LWLockRelease(TwoPhaseStateLock);
+
+		return gxact;
+	}
+
+	LWLockRelease(TwoPhaseStateLock);
+
+	return NULL;
+}
+
+/*
+ * CleanupOrphanedPreparedTransactions
+ *		Roll back prepared transactions that have exceeded the
+ *		prepared_orphaned_transaction_timeout.
+ *
+ * This is called from the checkpointer's main loop to periodically scan
+ * for prepared transactions that have been in the prepared state for
+ * longer than the configured timeout.  Such transactions are considered
+ * orphaned and are automatically rolled back.
+ *
+ * The function first collects GIDs of candidate transactions while holding
+ * TwoPhaseStateLock in shared mode, then processes each one individually.
+ */
+void
+CleanupOrphanedPreparedTransactions(void)
+{
+	int			timeout_ms = prepared_orphaned_transaction_timeout;
+	TimestampTz now;
+	int			num_orphaned = 0;
+	char	  **orphaned_gids = NULL;
+	int			i;
+
+	/* Quick exit if the feature is disabled or no prepared xacts configured */
+	if (timeout_ms <= 0 || max_prepared_xacts == 0)
+		return;
+
+	now = GetCurrentTimestamp();
+
+	/*
+	 * Phase 1: Collect GIDs of prepared transactions that have exceeded the
+	 * timeout.  We only hold the lock in shared mode for the scan.
+	 */
+	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+
+	if (TwoPhaseState->numPrepXacts > 0)
+	{
+		orphaned_gids = (char **) palloc(TwoPhaseState->numPrepXacts * sizeof(char *));
+
+		for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+		{
+			GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+
+			if (!gxact->valid)
+				continue;
+
+			/* Skip transactions currently being worked on */
+			if (gxact->locking_backend != INVALID_PROC_NUMBER)
+				continue;
+
+			/* Check if this transaction has exceeded the timeout */
+			if (TimestampDifferenceExceeds(gxact->prepared_at, now, timeout_ms))
+			{
+				orphaned_gids[num_orphaned] = pstrdup(gxact->gid);
+				num_orphaned++;
+			}
+		}
+	}
+
+	LWLockRelease(TwoPhaseStateLock);
+
+	/*
+	 * Phase 2: Roll back each orphaned prepared transaction.  We do this
+	 * outside the lock to avoid holding TwoPhaseStateLock for too long.
+	 *
+	 * We use LockGXactForCleanup which does not enforce database or owner
+	 * checks, since the checkpointer process is not connected to any
+	 * particular database.
+	 */
+	for (i = 0; i < num_orphaned; i++)
+	{
+		GlobalTransaction gxact;
+		PGPROC	   *proc;
+		FullTransactionId fxid;
+		TransactionId xid;
+		bool		ondisk;
+		char	   *buf;
+		char	   *bufptr;
+		TwoPhaseFileHeader *hdr;
+		TransactionId latestXid;
+		TransactionId *children;
+		RelFileLocator *abortrels;
+		int			ndelrels;
+		xl_xact_stats_item *abortstats;
+
+		ereport(LOG,
+				(errmsg("rolling back orphaned prepared transaction \"%s\"",
+						orphaned_gids[i]),
+				 errdetail("This prepared transaction has exceeded the prepared_orphaned_transaction_timeout of %d ms.",
+						   timeout_ms)));
+
+		/* Try to lock the gxact; skip if someone else got it first */
+		gxact = LockGXactForCleanup(orphaned_gids[i]);
+		if (gxact == NULL)
+		{
+			pfree(orphaned_gids[i]);
+			continue;
+		}
+
+		proc = GetPGProcByNumber(gxact->pgprocno);
+		fxid = gxact->fxid;
+		xid = XidFromFullTransactionId(fxid);
+
+		/*
+		 * Read and validate 2PC state data.
+		 */
+		if (gxact->ondisk)
+			buf = ReadTwoPhaseFile(fxid, false);
+		else
+			XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, NULL);
+
+		/*
+		 * Disassemble the header area
+		 */
+		hdr = (TwoPhaseFileHeader *) buf;
+		Assert(TransactionIdEquals(hdr->xid, xid));
+		bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
+		bufptr += MAXALIGN(hdr->gidlen);
+		children = (TransactionId *) bufptr;
+		bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
+		/* skip commitrels */
+		bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileLocator));
+		abortrels = (RelFileLocator *) bufptr;
+		bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileLocator));
+		/* skip commitstats */
+		bufptr += MAXALIGN(hdr->ncommitstats * sizeof(xl_xact_stats_item));
+		abortstats = (xl_xact_stats_item *) bufptr;
+		bufptr += MAXALIGN(hdr->nabortstats * sizeof(xl_xact_stats_item));
+		/* skip invalmsgs */
+		bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
+
+		/* compute latestXid among all children */
+		latestXid = TransactionIdLatest(xid, hdr->nsubxacts, children);
+
+		/* Prevent cancel/die interrupt while cleaning up */
+		HOLD_INTERRUPTS();
+
+		/* Record the abort in WAL and mark transaction as aborted in pg_xact */
+		RecordTransactionAbortPrepared(xid,
+									   hdr->nsubxacts, children,
+									   hdr->nabortrels, abortrels,
+									   hdr->nabortstats,
+									   abortstats,
+									   orphaned_gids[i]);
+
+		ProcArrayRemove(proc, latestXid);
+
+		/*
+		 * Mark the gxact invalid so no one else will try to commit/rollback.
+		 */
+		gxact->valid = false;
+
+		/* Drop files that were supposed to be dropped on abort */
+		ndelrels = hdr->nabortrels;
+		DropRelationFiles(abortrels, ndelrels, false);
+
+		pgstat_execute_transactional_drops(hdr->nabortstats, abortstats, false);
+
+		/*
+		 * Acquire the two-phase lock for callbacks and cleanup.
+		 */
+		LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+
+		/* Run post-abort callbacks */
+		ProcessRecords(bufptr, fxid, twophase_postabort_callbacks);
+
+		PredicateLockTwoPhaseFinish(fxid, false);
+
+		ondisk = gxact->ondisk;
+
+		/* Clear shared memory state */
+		RemoveGXact(gxact);
+
+		LWLockRelease(TwoPhaseStateLock);
+
+		/* Count the prepared xact as aborted */
+		AtEOXact_PgStat(false, false);
+
+		/* Remove on-disk state file if any */
+		if (ondisk)
+			RemoveTwoPhaseFile(fxid, true);
+
+		MyLockedGxact = NULL;
+
+		RESUME_INTERRUPTS();
+
+		pfree(buf);
+		pfree(orphaned_gids[i]);
+	}
+
+	if (orphaned_gids)
+		pfree(orphaned_gids);
 }

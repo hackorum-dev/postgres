@@ -25,8 +25,9 @@
  */
 typedef struct GlobalTransactionData *GlobalTransaction;
 
-/* GUC variable */
+/* GUC variables */
 extern PGDLLIMPORT int max_prepared_xacts;
+extern PGDLLIMPORT int prepared_orphaned_transaction_timeout;
 
 extern Size TwoPhaseShmemSize(void);
 extern void TwoPhaseShmemInit(void);
@@ -69,5 +70,7 @@ extern void TwoPhaseTransactionGid(Oid subid, TransactionId xid, char *gid_res,
 extern bool LookupGXactBySubid(Oid subid);
 
 extern TransactionId TwoPhaseGetOldestXidInCommit(void);
+
+extern void CleanupOrphanedPreparedTransactions(void);
 
 #endif							/* TWOPHASE_H */

@@ -10467,6 +10467,41 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-prepared-orphaned-transaction-timeout" xreflabel="prepared_orphaned_transaction_timeout">
+      <term><varname>prepared_orphaned_transaction_timeout</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>prepared_orphaned_transaction_timeout</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Automatically roll back any prepared transaction that has remained
+        in the prepared state for longer than the specified amount of time.
+        If this value is specified without units, it is taken as milliseconds.
+        A value of zero (the default) disables the timeout.
+       </para>
+
+       <para>
+        Prepared transactions (from <command>PREPARE TRANSACTION</command>)
+        persist even after the originating session disconnects, and hold
+        locks and prevent vacuum cleanup of recently-dead tuples.  If the
+        application that issued the <command>PREPARE TRANSACTION</command>
+        fails to follow up with <command>COMMIT PREPARED</command> or
+        <command>ROLLBACK PREPARED</command>, these orphaned prepared
+        transactions can accumulate and impact database performance.
+        This setting provides an automatic safety net to clean up such
+        orphaned transactions.
+       </para>
+
+       <para>
+        The cleanup is performed by the checkpointer process, which
+        periodically scans for prepared transactions exceeding the timeout
+        and rolls them back.  A log message is emitted for each transaction
+        that is automatically rolled back.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-bytea-output" xreflabel="bytea_output">
       <term><varname>bytea_output</varname> (<type>enum</type>)
       <indexterm>
