@@ -2247,6 +2247,17 @@ fi
 # with the default compiler flags.
 PGAC_LOONGARCH_CRC32C_INTRINSICS()
 
+# Check for RISC-V Zbc (carry-less multiply) for CRC calculations.
+#
+# The Zbc extension provides clmul and clmulh instructions for hardware-
+# accelerated CRC-32C computation using polynomial folding. Check if we
+# can compile with -march=rv64gc_zbc flag. CFLAGS_CRC is set if the flag
+# is required.
+#
+# This implementation is based on Google Abseil's algorithm:
+# https://github.com/abseil/abseil-cpp/pull/1986
+PGAC_RISCV_ZBC_CRC32C_INTRINSICS([-march=rv64gc_zbc])
+
 AC_SUBST(CFLAGS_CRC)
 
 # Select CRC-32C implementation.
@@ -2277,7 +2288,7 @@ AC_SUBST(CFLAGS_CRC)
 #
 # If we are targeting a LoongArch processor, CRC instructions are
 # always available (at least on 64 bit), so no runtime check is needed.
-if test x"$USE_SLICING_BY_8_CRC32C" = x"" && test x"$USE_SSE42_CRC32C" = x"" && test x"$USE_SSE42_CRC32C_WITH_RUNTIME_CHECK" = x"" && test x"$USE_ARMV8_CRC32C" = x"" && test x"$USE_ARMV8_CRC32C_WITH_RUNTIME_CHECK" = x"" && test x"$USE_LOONGARCH_CRC32C" = x""; then
+if test x"$USE_SLICING_BY_8_CRC32C" = x"" && test x"$USE_SSE42_CRC32C" = x"" && test x"$USE_SSE42_CRC32C_WITH_RUNTIME_CHECK" = x"" && test x"$USE_ARMV8_CRC32C" = x"" && test x"$USE_ARMV8_CRC32C_WITH_RUNTIME_CHECK" = x"" && test x"$USE_LOONGARCH_CRC32C" = x"" && test x"$USE_RISCV_ZBC_CRC32C_WITH_RUNTIME_CHECK" = x""; then
   # Use Intel SSE 4.2 if available.
   if test x"$pgac_sse42_crc32_intrinsics" = x"yes" && test x"$SSE4_2_TARGETED" = x"1" ; then
     USE_SSE42_CRC32C=1
@@ -2299,9 +2310,14 @@ if test x"$USE_SLICING_BY_8_CRC32C" = x"" && test x"$USE_SSE42_CRC32C" = x"" && 
           if test x"$pgac_loongarch_crc32c_intrinsics" = x"yes"; then
             USE_LOONGARCH_CRC32C=1
           else
-            # fall back to slicing-by-8 algorithm, which doesn't require any
-            # special CPU support.
-            USE_SLICING_BY_8_CRC32C=1
+            # RISC-V Zbc CRC, with runtime check.
+            if test x"$pgac_riscv_zbc_crc32c_intrinsics" = x"yes"; then
+              USE_RISCV_ZBC_CRC32C_WITH_RUNTIME_CHECK=1
+            else
+              # fall back to slicing-by-8 algorithm, which doesn't require any
+              # special CPU support.
+              USE_SLICING_BY_8_CRC32C=1
+            fi
           fi
         fi
       fi
@@ -2336,9 +2352,15 @@ else
           PG_CRC32C_OBJS="pg_crc32c_loongarch.o"
           AC_MSG_RESULT(LoongArch CRCC instructions)
         else
-          AC_DEFINE(USE_SLICING_BY_8_CRC32C, 1, [Define to 1 to use software CRC-32C implementation (slicing-by-8).])
-          PG_CRC32C_OBJS="pg_crc32c_sb8.o"
-          AC_MSG_RESULT(slicing-by-8)
+          if test x"$USE_RISCV_ZBC_CRC32C_WITH_RUNTIME_CHECK" = x"1"; then
+            AC_DEFINE(USE_RISCV_ZBC_CRC32C_WITH_RUNTIME_CHECK, 1, [Define to 1 to use RISC-V Zbc CRC instructions with a runtime check.])
+            PG_CRC32C_OBJS="pg_crc32c_riscv_zbc.o pg_crc32c_sb8.o pg_crc32c_riscv_choose.o"
+            AC_MSG_RESULT(RISC-V Zbc instructions with runtime check)
+          else
+            AC_DEFINE(USE_SLICING_BY_8_CRC32C, 1, [Define to 1 to use software CRC-32C implementation (slicing-by-8).])
+            PG_CRC32C_OBJS="pg_crc32c_sb8.o"
+            AC_MSG_RESULT(slicing-by-8)
+          fi
         fi
       fi
     fi
