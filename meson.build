@@ -2826,6 +2826,42 @@ int main(void)
     have_optimized_crc = true
   endif
 
+elif host_cpu == 'riscv64'
+
+  # Check for RISC-V Zbc (carry-less multiply) extension for CRC-32C.
+  # The Zbc extension provides clmul and clmulh instructions used for
+  # hardware-accelerated CRC computation via polynomial folding.
+  #
+  # This implementation is based on Google Abseil's algorithm:
+  # https://github.com/abseil/abseil-cpp/pull/1986
+
+  prog = '''
+#if !defined(__riscv) || !defined(__riscv_xlen) || __riscv_xlen != 64
+#error not RISC-V 64-bit
+#endif
+
+static inline unsigned long clmul(unsigned long a, unsigned long b)
+{
+    unsigned long result;
+    __asm__("clmul %0, %1, %2" : "=r"(result) : "r"(a), "r"(b));
+    return result;
+}
+
+int main(void)
+{
+    unsigned long result = clmul(0x123, 0x456);
+    return result == 0;
+}
+'''
+
+  if cc.links(prog, name: 'RISC-V Zbc clmul with -march=rv64gc_zbc',
+      args: test_c_args + ['-march=rv64gc_zbc'])
+    # Use RISC-V Zbc CRC, with runtime check
+    cflags_crc += '-march=rv64gc_zbc'
+    cdata.set('USE_RISCV_ZBC_CRC32C_WITH_RUNTIME_CHECK', 1)
+    have_optimized_crc = true
+  endif
+
 endif
 
 if not have_optimized_crc
