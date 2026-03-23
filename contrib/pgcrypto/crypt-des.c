@@ -62,11 +62,13 @@
 
 #include "postgres.h"
 #include "miscadmin.h"
+#include "port/atomics.h"
 #include "port/pg_bswap.h"
 
 #include "px-crypt.h"
 
 #define _PASSWORD_EFMT1 '_'
+
 
 static const char _crypt_a64[] =
 "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -265,6 +267,10 @@ des_init(void)
 	for (i = 0; i < 64; i++)
 	{
 		init_perm[final_perm[i] = IP[i] - 1] = i;
+		/* This prevents a Clang bug related to auto-vectorization */
+#if defined(__riscv) && defined(__clang__)
+		pg_memory_barrier();
+#endif
 		inv_key_perm[i] = 255;
 	}
 
@@ -276,6 +282,10 @@ des_init(void)
 	{
 		u_key_perm[i] = key_perm[i] - 1;
 		inv_key_perm[key_perm[i] - 1] = i;
+		/* This prevents a Clang bug related to auto-vectorization */
+#if defined(__riscv) && defined(__clang__)
+		pg_memory_barrier();
+#endif
 		inv_comp_perm[i] = 255;
 	}
 
@@ -283,7 +293,13 @@ des_init(void)
 	 * Invert the key compression permutation.
 	 */
 	for (i = 0; i < 48; i++)
+	{
 		inv_comp_perm[comp_perm[i] - 1] = i;
+		/* This prevents a Clang bug related to auto-vectorization */
+#if defined(__riscv) && defined(__clang__)
+		pg_memory_barrier();
+#endif
+	}
 
 	/*
 	 * Set up the OR-mask arrays for the initial and final permutations, and
@@ -353,7 +369,13 @@ des_init(void)
 	 * the output of the S-box arrays setup above.
 	 */
 	for (i = 0; i < 32; i++)
+	{
 		un_pbox[pbox[i] - 1] = i;
+		/* This prevents a Clang bug related to auto-vectorization */
+#if defined(__riscv) && defined(__clang__)
+		pg_memory_barrier();
+#endif
+	}
 
 	for (b = 0; b < 4; b++)
 		for (i = 0; i < 256; i++)
