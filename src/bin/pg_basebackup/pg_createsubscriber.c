@@ -1390,7 +1390,8 @@ setup_recovery(const struct LogicalRepInfo *dbinfo, const char *datadir, const c
 		if (fwrite(recoveryconfcontents->data, recoveryconfcontents->len, 1, fd) != 1)
 			pg_fatal("could not write to file \"%s\": %m", conf_filename);
 
-		fclose(fd);
+		if (fclose(fd) != 0)
+			pg_fatal("could not close file \"%s\": %m", conf_filename);
 		recovery_params_set = true;
 
 		/* Include conditionally the recovery parameters. */

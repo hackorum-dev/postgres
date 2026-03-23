@@ -143,7 +143,8 @@ WriteRecoveryConfig(PGconn *pgconn, const char *target_dir, PQExpBuffer contents
 	if (fwrite(contents->data, contents->len, 1, cf) != 1)
 		pg_fatal("could not write to file \"%s\": %m", filename);
 
-	fclose(cf);
+	if (fclose(cf) != 0)
+		pg_fatal("could not close file \"%s\": %m", filename);
 
 	if (!use_recovery_conf)
 	{
@@ -152,7 +153,8 @@ WriteRecoveryConfig(PGconn *pgconn, const char *target_dir, PQExpBuffer contents
 		if (cf == NULL)
 			pg_fatal("could not create file \"%s\": %m", filename);
 
-		fclose(cf);
+		if (fclose(cf) != 0)
+			pg_fatal("could not close file \"%s\": %m", filename);
 	}
 }
 

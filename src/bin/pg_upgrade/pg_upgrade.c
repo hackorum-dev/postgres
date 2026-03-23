@@ -353,7 +353,8 @@ make_outputdirs(char *pgdata)
 				"  pg_upgrade run on %s"
 				"-----------------------------------------------------------------\n\n",
 				ctime(&run_time));
-		fclose(fp);
+		if (fclose(fp) != 0)
+			pg_fatal("could not close log file \"%s\": %m", filename_path);
 	}
 }
 

@@ -1300,12 +1300,19 @@ PostmasterMain(int argc, char *argv[])
 		if (fpidfile)
 		{
 			fprintf(fpidfile, "%d\n", MyProcPid);
-			fclose(fpidfile);
-
-			/* Make PID file world readable */
-			if (chmod(external_pid_file, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) != 0)
-				write_stderr("%s: could not change permissions of external PID file \"%s\": %m\n",
+			if (fclose(fpidfile) != 0)
+			{
+				write_stderr("%s: could not write external PID file \"%s\": %m\n",
 							 progname, external_pid_file);
+				unlink(external_pid_file);
+			}
+			else
+			{
+				/* Make PID file world readable */
+				if (chmod(external_pid_file, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) != 0)
+					write_stderr("%s: could not change permissions of external PID file \"%s\": %m\n",
+								 progname, external_pid_file);
+			}
 		}
 		else
 			write_stderr("%s: could not write external PID file \"%s\": %m\n",
@@ -4117,7 +4124,7 @@ CreateOptsFile(int argc, char *argv[], char *fullprogname)
 		fprintf(fp, " \"%s\"", argv[i]);
 	fputs("\n", fp);
 
-	if (fclose(fp))
+	if (fclose(fp) != 0)
 	{
 		ereport(LOG,
 				(errcode_for_file_access(),

@@ -842,7 +842,8 @@ main(int argc, char *argv[])
 
 		if (filename)
 		{
-			fclose(OPF);
+			if (fclose(OPF) != 0)
+				pg_fatal("could not close output file \"%s\": %m", filename);
 
 			/* sync the resulting file, errors are not fatal */
 			if (dosync)
@@ -2099,7 +2100,8 @@ dumpDatabases(PGconn *conn)
 			create_opts = "--create";
 
 		if (filename && archDumpFormat == archNull)
-			fclose(OPF);
+			if (fclose(OPF) != 0)
+				pg_fatal("could not close output file \"%s\": %m", filename);
 
 		/*
 		 * If this is not a plain format dump, then append dboid and dbname to
@@ -2133,7 +2135,10 @@ dumpDatabases(PGconn *conn)
 
 	/* Close map file */
 	if (archDumpFormat != archNull)
-		fclose(map_file);
+	{
+		if (fclose(map_file) != 0)
+			pg_fatal("could not close map file: %m");
+	}
 
 	PQclear(res);
 }
