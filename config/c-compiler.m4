@@ -835,6 +835,47 @@ fi
 undefine([Ac_cachevar])dnl
 ])# PGAC_LOONGARCH_CRC32C_INTRINSICS
 
+# PGAC_RISCV_ZBC_CRC32C_INTRINSICS
+# ---------------------------------
+# Check if the compiler supports RISC-V Zbc (carry-less multiply) instructions
+# for CRC-32C computation, using inline assembly for clmul instruction.
+#
+# An optional compiler flag can be passed as argument (e.g. -march=rv64gc_zbc).
+# If the intrinsics are supported, sets pgac_riscv_zbc_crc32c_intrinsics and
+# CFLAGS_CRC.
+#
+# The Zbc extension provides clmul and clmulh instructions which are used with
+# polynomial folding to compute CRC-32C. This implementation is based on the
+# algorithm from Google Abseil (https://github.com/abseil/abseil-cpp/pull/1986).
+AC_DEFUN([PGAC_RISCV_ZBC_CRC32C_INTRINSICS],
+[define([Ac_cachevar], [AS_TR_SH([pgac_cv_riscv_zbc_crc32c_intrinsics_$1])])dnl
+AC_CACHE_CHECK([for RISC-V Zbc clmul with CFLAGS=$1], [Ac_cachevar],
+[pgac_save_CFLAGS=$CFLAGS
+CFLAGS="$pgac_save_CFLAGS $1"
+AC_LINK_IFELSE([AC_LANG_PROGRAM([
+#if !defined(__riscv) || !defined(__riscv_xlen) || __riscv_xlen != 64
+#error not RISC-V 64-bit
+#endif
+
+static inline unsigned long clmul_test(unsigned long a, unsigned long b)
+{
+    unsigned long result;
+    __asm__("clmul %0, %1, %2" : "=r"(result) : "r"(a), "r"(b));
+    return result;
+}],
+  [unsigned long result = clmul_test(0x123, 0x456);
+   /* return computed value, to prevent the above being optimized away */
+   return result == 0;])],
+  [Ac_cachevar=yes],
+  [Ac_cachevar=no])
+CFLAGS="$pgac_save_CFLAGS"])
+if test x"$Ac_cachevar" = x"yes"; then
+  CFLAGS_CRC="$1"
+  pgac_riscv_zbc_crc32c_intrinsics=yes
+fi
+undefine([Ac_cachevar])dnl
+])# PGAC_RISCV_ZBC_CRC32C_INTRINSICS
+
 # PGAC_XSAVE_INTRINSICS
 # ---------------------
 # Check if the compiler supports the XSAVE instructions using the _xgetbv
