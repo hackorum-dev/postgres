@@ -25,6 +25,7 @@
 
 /* GUC variables */
 extern PGDLLIMPORT int logical_decoding_work_mem;
+extern PGDLLIMPORT int logical_decoding_spill_limit;
 extern PGDLLIMPORT int debug_logical_replication_streaming;
 
 /* possible values for debug_logical_replication_streaming */
@@ -462,6 +463,14 @@ typedef struct ReorderBufferTXN
 	Size		total_size;
 
 	/*
+	 * Size of this transaction's changes currently serialized to disk (in
+	 * bytes).  Tracked per-transaction so that we can accurately update the
+	 * ReorderBuffer-level spillBytesOnDisk counter when spill files are
+	 * cleaned up.
+	 */
+	Size		serialized_size;
+
+	/*
 	 * Private data pointer of the output plugin.
 	 */
 	void	   *output_plugin_private;
@@ -685,6 +694,14 @@ struct ReorderBuffer
 	int64		spillCount;		/* spill-to-disk invocation counter */
 	int64		spillBytes;		/* amount of data spilled to disk */
 
+	/*
+	 * Current total size of spill files on disk for this reorder buffer (in
+	 * bytes).  Unlike spillBytes which is a cumulative statistic counter, this
+	 * tracks the actual on-disk footprint right now and is decremented when
+	 * spill files are cleaned up.  Used to enforce logical_decoding_spill_limit.
+	 */
+	Size		spillBytesOnDisk;
+
 	/* Statistics about transactions streamed to the decoding output plugin */
 	int64		streamTxns;		/* number of transactions streamed */
 	int64		streamCount;	/* streaming invocation counter */
@@ -782,5 +799,6 @@ extern uint32 ReorderBufferGetInvalidations(ReorderBuffer *rb,
 											SharedInvalidationMessage **msgs);
 
 extern void StartupReorderBuffer(void);
+extern void ReorderBufferCleanupSerializedTXNs(const char *slotname);
 
 #endif
