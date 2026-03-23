@@ -2171,6 +2171,30 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-logical-decoding-spill-limit" xreflabel="logical_decoding_spill_limit">
+      <term><varname>logical_decoding_spill_limit</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>logical_decoding_spill_limit</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies the maximum total size of on-disk spill files that logical
+        decoding may use per replication slot. When changes exceed the memory
+        limit set by <varname>logical_decoding_work_mem</varname>, they are
+        spilled to disk. This parameter limits the total amount of disk space
+        used by those spill files. If the limit would be exceeded, the
+        walsender process raises an error and disconnects. The replication
+        slot's state is preserved, so the subscriber can reconnect after the
+        administrator increases this limit or switches to a streaming-capable
+        output plugin.
+        If this value is specified without units, it is taken as kilobytes.
+        The default value is <literal>0</literal>, which means there is no
+        limit on spill file disk usage.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-commit-timestamp-buffers" xreflabel="commit_timestamp_buffers">
       <term><varname>commit_timestamp_buffers</varname> (<type>integer</type>)
       <indexterm>
