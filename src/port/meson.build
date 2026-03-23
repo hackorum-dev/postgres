@@ -101,6 +101,9 @@ replace_funcs_pos = [
   ['pg_crc32c_loongarch', 'USE_LOONGARCH_CRC32C'],
 
   # riscv
+  ['pg_crc32c_riscv_zbc', 'USE_RISCV_ZBC_CRC32C_WITH_RUNTIME_CHECK', 'crc'],
+  ['pg_crc32c_riscv_choose', 'USE_RISCV_ZBC_CRC32C_WITH_RUNTIME_CHECK'],
+  ['pg_crc32c_sb8', 'USE_RISCV_ZBC_CRC32C_WITH_RUNTIME_CHECK'],
   ['pg_popcount_riscv', 'USE_RISCV_ZBB_WITH_RUNTIME_CHECK', 'zbb'],
 
   # generic fallback
