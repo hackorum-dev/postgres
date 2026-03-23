@@ -72,6 +72,15 @@
  *	  counter is updated; however transactions with size 0 are not stored in
  *	  the heap, because they have no changes to evict.
  *
+ *	  To prevent spill files from consuming unbounded disk space, the
+ *	  logical_decoding_spill_limit GUC can be set to limit the total size
+ *	  of spill files per replication slot.  We track the current on-disk
+ *	  footprint in ReorderBuffer.spillBytesOnDisk (incremented on each
+ *	  successful write, decremented when spill files are cleaned up) and
+ *	  per-transaction in ReorderBufferTXN.serialized_size.  Before
+ *	  serializing a transaction, we check whether the projected write would
+ *	  exceed the configured limit and raise an ERROR if so.
+ *
  *	  We still rely on max_changes_in_memory when loading serialized changes
  *	  back into memory. At that point we can't use the memory limit directly
  *	  as we load the subxacts independently. One option to deal with this
@@ -224,6 +233,7 @@ typedef struct ReorderBufferDiskChange
  * like.
  */
 int			logical_decoding_work_mem;
+int			logical_decoding_spill_limit;
 static const Size max_changes_in_memory = 4096; /* XXX for restore only */
 
 /* GUC variable */
@@ -276,7 +286,7 @@ static void ReorderBufferTruncateTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 									 bool txn_prepared);
 static void ReorderBufferMaybeMarkTXNStreamed(ReorderBuffer *rb, ReorderBufferTXN *txn);
 static bool ReorderBufferCheckAndTruncateAbortedTXN(ReorderBuffer *rb, ReorderBufferTXN *txn);
-static void ReorderBufferCleanupSerializedTXNs(const char *slotname);
+/* ReorderBufferCleanupSerializedTXNs is declared in reorderbuffer.h */
 static void ReorderBufferSerializedPath(char *path, ReplicationSlot *slot,
 										TransactionId xid, XLogSegNo segno);
 static int	ReorderBufferTXNSizeCompare(const pairingheap_node *a, const pairingheap_node *b, void *arg);
@@ -3906,6 +3916,10 @@ ReorderBufferLargestStreamableTopTXN(ReorderBuffer *rb)
  * If debug_logical_replication_streaming is set to "immediate", stream or
  * serialize the changes immediately.
  *
+ * When spilling to disk, if logical_decoding_spill_limit is set (> 0),
+ * we check whether the projected write would exceed the configured limit
+ * and raise an ERROR if so, to prevent unbounded disk usage.
+ *
  * XXX At this point we select the transactions until we reach under the memory
  * limit, but we might also adapt a more elaborate eviction strategy - for example
  * evicting enough transactions to free certain fraction (e.g. 50%) of the memory
@@ -3984,6 +3998,36 @@ ReorderBufferCheckMemoryLimit(ReorderBuffer *rb)
 			/* skip the transaction if aborted */
 			if (ReorderBufferCheckAndTruncateAbortedTXN(rb, txn))
 				continue;
+
+			/*
+			 * Check the spill-to-disk size limit before actually serializing.
+			 * We use the transaction's in-memory size as an estimate of how
+			 * much will be written, which is a reasonable approximation.
+			 *
+			 * We only check when logical_decoding_spill_limit is set (> 0).
+			 * When the limit would be exceeded, raise an ERROR.  The
+			 * walsender will exit, but the replication slot's restart_lsn is
+			 * preserved so the subscriber can reconnect after the DBA
+			 * increases the limit or switches to a streaming-capable output
+			 * plugin.
+			 */
+			if (logical_decoding_spill_limit > 0 &&
+				rb->spillBytesOnDisk + txn->size >
+				(Size) logical_decoding_spill_limit * 1024)
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+						 errmsg("logical decoding spill file size limit exceeded"),
+						 errdetail("Current on-disk spill size is %zu bytes, "
+								   "transaction to spill is %zu bytes, "
+								   "limit is %d kB.",
+								   rb->spillBytesOnDisk, txn->size,
+								   logical_decoding_spill_limit),
+						 errhint("Consider increasing %s, %s, "
+								 "or using a streaming-capable output plugin.",
+								 "logical_decoding_spill_limit",
+								 "logical_decoding_work_mem")));
+			}
 
 			ReorderBufferSerializeTXN(rb, txn);
 		}
@@ -4306,6 +4350,13 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 						txn->xid)));
 	}
 	pgstat_report_wait_end();
+
+	/*
+	 * Update the on-disk spill size accounting for both the transaction and
+	 * the reorder buffer.  This is used to enforce logical_decoding_spill_limit.
+	 */
+	txn->serialized_size += ondisk->size;
+	rb->spillBytesOnDisk += ondisk->size;
 
 	/*
 	 * Keep the transaction's final_lsn up to date with each change we send to
@@ -4893,13 +4944,18 @@ ReorderBufferRestoreCleanup(ReorderBuffer *rb, ReorderBufferTXN *txn)
 					(errcode_for_file_access(),
 					 errmsg("could not remove file \"%s\": %m", path)));
 	}
+
+	/* Update the on-disk spill size accounting. */
+	Assert(rb->spillBytesOnDisk >= txn->serialized_size);
+	rb->spillBytesOnDisk -= txn->serialized_size;
+	txn->serialized_size = 0;
 }
 
 /*
  * Remove any leftover serialized reorder buffers from a slot directory after a
  * prior crash or decoding session exit.
  */
-static void
+void
 ReorderBufferCleanupSerializedTXNs(const char *slotname)
 {
 	DIR		   *spill_dir;

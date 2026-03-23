@@ -1941,6 +1941,16 @@
   boot_val => 'false',
 },
 
+{ name => 'logical_decoding_spill_limit', type => 'int', context => 'PGC_USERSET', group => 'RESOURCES_MEM',
+  short_desc => 'Sets the maximum total size of spill files for logical decoding.',
+  long_desc => 'Limits the total disk space used by spill files per replication slot during logical decoding. 0 means no limit.',
+  flags => 'GUC_UNIT_KB',
+  variable => 'logical_decoding_spill_limit',
+  boot_val => '0',
+  min => '0',
+  max => 'MAX_KILOBYTES',
+},
+
 { name => 'logical_decoding_work_mem', type => 'int', context => 'PGC_USERSET', group => 'RESOURCES_MEM',
   short_desc => 'Sets the maximum memory to be used for logical decoding.',
   long_desc => 'This much memory can be used by each internal reorder buffer before spilling to disk.',
