@@ -717,9 +717,9 @@ PQprintTuples(const PGresult *res,
 	nTups = PQntuples(res);
 
 	if (colWidth > 0)
-		sprintf(formatString, "%%s %%-%ds", colWidth);
+		snprintf(formatString, sizeof(formatString), "%%s %%-%ds", colWidth);
 	else
-		sprintf(formatString, "%%s %%s");
+		snprintf(formatString, sizeof(formatString), "%%s %%s");
 
 	if (nFields > 0)
 	{							/* only print rows with at least 1 field.  */
