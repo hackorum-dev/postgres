@@ -411,6 +411,7 @@ void
 AutoVacLauncherMain(const void *startup_data, size_t startup_data_len)
 {
 	sigjmp_buf	local_sigjmp_buf;
+	TimestampTz	last_current_time;
 
 	Assert(startup_data_len == 0);
 
@@ -601,6 +602,12 @@ AutoVacLauncherMain(const void *startup_data, size_t startup_data_len)
 	}
 
 	/*
+	 * Set the initial last run time to just before we build the worker
+	 * schedule.
+	 */
+	last_current_time = GetCurrentTimestamp();
+
+	/*
 	 * Create the initial database list.  The invariant we want this list to
 	 * keep is that it's ordered by decreasing next_worker.  As soon as an
 	 * entry is updated to a higher time, it will be moved to the front (which
@@ -681,6 +688,16 @@ AutoVacLauncherMain(const void *startup_data, size_t startup_data_len)
 		 */
 
 		current_time = GetCurrentTimestamp();
+		if (current_time < last_current_time)
+		{
+			/*
+			 * The clock jumped backwards so reschedule the workers so that
+			 * databases won't stop getting auto-vacuumed.
+			 */
+			rebuild_database_list(InvalidOid);
+		}
+		last_current_time = current_time;
+
 		LWLockAcquire(AutovacuumLock, LW_SHARED);
 
 		can_launch = av_worker_available();
