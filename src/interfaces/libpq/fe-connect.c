@@ -7874,7 +7874,7 @@ PQsetClientEncoding(PGconn *conn, const char *encoding)
 		return -1;
 
 	/* ok, now send a query */
-	sprintf(qbuf, query, encoding);
+	snprintf(qbuf, sizeof(qbuf), query, encoding);
 	res = PQexec(conn, qbuf);
 
 	if (res == NULL)

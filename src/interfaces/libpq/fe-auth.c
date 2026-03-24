@@ -416,7 +416,8 @@ pg_SSPI_startup(PGconn *conn, int use_negotiate, int payloadlen)
 		libpq_append_conn_error(conn, "out of memory");
 		return STATUS_ERROR;
 	}
-	sprintf(conn->sspitarget, "%s/%s", conn->krbsrvname, host);
+	snprintf(conn->sspitarget, strlen(conn->krbsrvname) + strlen(host) + 2,
+			 "%s/%s", conn->krbsrvname, host);
 
 	/*
 	 * Indicate that we're in SSPI authentication mode to make sure that
