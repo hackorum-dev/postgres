@@ -87,17 +87,9 @@
 /* Helper macros for memory accounting */
 #define EMPTY_ENTRY_MEMORY_BYTES(e)		(sizeof(MemoizeEntry) + \
 										 sizeof(MemoizeKey) + \
-										 (e)->key->params->t_len);
-#define CACHE_TUPLE_BYTES(t)			(sizeof(MemoizeTuple) + \
-										 (t)->mintuple->t_len)
-
- /* MemoizeTuple Stores an individually cached tuple */
-typedef struct MemoizeTuple
-{
-	MinimalTuple mintuple;		/* Cached tuple */
-	struct MemoizeTuple *next;	/* The next tuple with the same parameter
-								 * values or NULL if it's the last one */
-} MemoizeTuple;
+										 (e)->key->params->t_len)
+#define CACHE_TUPLE_BYTES(t)			((t)->t_len + \
+										 MAXALIGN(sizeof(MinimalTuple)))
 
 /*
  * MemoizeKey
@@ -116,12 +108,46 @@ typedef struct MemoizeKey
 typedef struct MemoizeEntry
 {
 	MemoizeKey *key;			/* Hash key for hash table lookups */
-	MemoizeTuple *tuplehead;	/* Pointer to the first tuple or NULL if no
+	MinimalTuple tuplehead;		/* Pointer to the first tuple or NULL if no
 								 * tuples are cached for this entry */
 	uint32		hash;			/* Hash value (cached) */
 	char		status;			/* Hash status */
 	bool		complete;		/* Did we read the outer plan to completion? */
 } MemoizeEntry;
+
+/*
+ * Tuples stored in a MemoizeEntry are stored as MinimalTuples.  To allow
+ * these MinimalTuples to be formed into a linked list containing all tuples
+ * for the entry, we make use of ExecCopySlotMinimalTupleExtra() so that the
+ * palloc for the MinimalTuple has enough extra bytes to store the pointer to
+ * the next tuple for the cache entry, or NULL when it's the last tuple.
+ *
+ * The helper functions below allow us to avoid having to repeat the memory
+ * address calculations for the next tuple pointer and allow us to fetch and
+ * set the pointer to the next tuple.
+ */
+
+/*
+ * Calculate the address of the "next" pointer from the MinimalTuple
+ */
+#define MemoizeNextTupleAddress(t) \
+	((MinimalTuple *) ((char *) (t) - MAXALIGN(sizeof(MinimalTuple))))
+
+/* Fetch a pointer to the MinimalTupleData for the next tuple after 'tup' */
+static pg_always_inline MinimalTuple
+MemoizeGetNextTuple(MinimalTuple tup)
+{
+	return *MemoizeNextTupleAddress(tup);
+}
+
+/* Set the next pointer in 'tup' to 'next' or NULL when it's the last tuple */
+static pg_always_inline void
+MemoizeSetNextTuple(MinimalTuple tup, MinimalTuple next)
+{
+	MinimalTuple *next_ptr = MemoizeNextTupleAddress(tup);
+
+	*next_ptr = next;
+}
 
 
 #define SH_PREFIX memoize
@@ -344,18 +370,17 @@ prepare_probe_slot(MemoizeState *mstate, MemoizeKey *key)
 static inline void
 entry_purge_tuples(MemoizeState *mstate, MemoizeEntry *entry)
 {
-	MemoizeTuple *tuple = entry->tuplehead;
+	MinimalTuple tuple = entry->tuplehead;
 	uint64		freed_mem = 0;
 
 	while (tuple != NULL)
 	{
-		MemoizeTuple *next = tuple->next;
+		MinimalTuple next = MemoizeGetNextTuple(tuple);
 
 		freed_mem += CACHE_TUPLE_BYTES(tuple);
 
 		/* Free memory used for this tuple */
-		pfree(tuple->mintuple);
-		pfree(tuple);
+		pfree(MemoizeNextTupleAddress(tuple));
 
 		tuple = next;
 	}
@@ -625,21 +650,26 @@ cache_lookup(MemoizeState *mstate, bool *found)
 static bool
 cache_store_tuple(MemoizeState *mstate, TupleTableSlot *slot)
 {
-	MemoizeTuple *tuple;
 	MemoizeEntry *entry = mstate->entry;
 	MemoryContext oldcontext;
+	MinimalTuple mintuple;
 
 	Assert(slot != NULL);
 	Assert(entry != NULL);
 
 	oldcontext = MemoryContextSwitchTo(mstate->tableContext);
 
-	tuple = palloc_object(MemoizeTuple);
-	tuple->mintuple = ExecCopySlotMinimalTuple(slot);
-	tuple->next = NULL;
+	/* Form a MinimalTuple with extra space to store the next pointer */
+	mintuple = ExecCopySlotMinimalTupleExtra(slot,
+											 MAXALIGN(sizeof(MinimalTuple)));
+
+	/*
+	 * No need to use MemoizeSetNextTuple to point the next tuple to NULL as
+	 * ExecCopySlotMinimalTupleExtra zeros the extra bytes.
+	 */
 
 	/* Account for the memory we just consumed */
-	mstate->mem_used += CACHE_TUPLE_BYTES(tuple);
+	mstate->mem_used += CACHE_TUPLE_BYTES(mintuple);
 
 	if (entry->tuplehead == NULL)
 	{
@@ -647,15 +677,15 @@ cache_store_tuple(MemoizeState *mstate, TupleTableSlot *slot)
 		 * This is the first tuple for this entry, so just point the list head
 		 * to it.
 		 */
-		entry->tuplehead = tuple;
+		entry->tuplehead = mintuple;
 	}
 	else
 	{
 		/* push this tuple onto the tail of the list */
-		mstate->last_tuple->next = tuple;
+		MemoizeSetNextTuple(mstate->last_tuple, mintuple);
 	}
 
-	mstate->last_tuple = tuple;
+	mstate->last_tuple = mintuple;
 	MemoryContextSwitchTo(oldcontext);
 
 	/*
@@ -758,8 +788,7 @@ ExecMemoize(PlanState *pstate)
 						node->mstatus = MEMO_CACHE_FETCH_NEXT_TUPLE;
 
 						slot = node->ss.ps.ps_ResultTupleSlot;
-						ExecStoreMinimalTuple(entry->tuplehead->mintuple,
-											  slot, false);
+						ExecStoreMinimalTuple(entry->tuplehead, slot, false);
 
 						return slot;
 					}
@@ -846,7 +875,7 @@ ExecMemoize(PlanState *pstate)
 				Assert(node->last_tuple != NULL);
 
 				/* Skip to the next tuple to output */
-				node->last_tuple = node->last_tuple->next;
+				node->last_tuple = MemoizeGetNextTuple(node->last_tuple);
 
 				/* No more tuples in the cache */
 				if (node->last_tuple == NULL)
@@ -856,8 +885,7 @@ ExecMemoize(PlanState *pstate)
 				}
 
 				slot = node->ss.ps.ps_ResultTupleSlot;
-				ExecStoreMinimalTuple(node->last_tuple->mintuple, slot,
-									  false);
+				ExecStoreMinimalTuple(node->last_tuple, slot, false);
 
 				return slot;
 			}
@@ -1094,13 +1122,13 @@ ExecEndMemoize(MemoizeState *node)
 		count = 0;
 		while ((entry = memoize_iterate(node->hashtable, &i)) != NULL)
 		{
-			MemoizeTuple *tuple = entry->tuplehead;
+			MinimalTuple tuple = entry->tuplehead;
 
 			mem += EMPTY_ENTRY_MEMORY_BYTES(entry);
 			while (tuple != NULL)
 			{
 				mem += CACHE_TUPLE_BYTES(tuple);
-				tuple = tuple->next;
+				tuple = MemoizeGetNextTuple(tuple);
 			}
 			count++;
 		}
@@ -1167,13 +1195,14 @@ ExecReScanMemoize(MemoizeState *node)
 /*
  * ExecEstimateCacheEntryOverheadBytes
  *		For use in the query planner to help it estimate the amount of memory
- *		required to store a single entry in the cache.
+ *		required to store a single entry in the cache and each of the tuples
+ *		for that entry.
  */
 double
 ExecEstimateCacheEntryOverheadBytes(double ntuples)
 {
-	return sizeof(MemoizeEntry) + sizeof(MemoizeKey) + sizeof(MemoizeTuple) *
-		ntuples;
+	return sizeof(MemoizeEntry) + sizeof(MemoizeKey) +
+		MAXALIGN(sizeof(MinimalTuple)) * ntuples;
 }
 
 /* ----------------------------------------------------------------
