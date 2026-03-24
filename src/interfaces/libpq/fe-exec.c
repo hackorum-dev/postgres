@@ -976,7 +976,7 @@ pqInternalNotice(const PGNoticeHooks *hooks, const char *fmt, ...)
 	 */
 	res->errMsg = (char *) pqResultAlloc(res, strlen(msgBuf) + 2, false);
 	if (res->errMsg)
-		sprintf(res->errMsg, "%s\n", msgBuf);
+		snprintf(res->errMsg, strlen(msgBuf) + 2, "%s\n", msgBuf);
 	else
 		res->errMsg = libpq_gettext("out of memory\n");
 
