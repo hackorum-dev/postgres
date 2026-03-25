@@ -1327,6 +1327,65 @@ DROP SCHEMA sch1 cascade;
 DROP SCHEMA sch2 cascade;
 -- ======================================================
 
+-- Test that pg_publication_tables distinguishes between tables with
+-- an explicit column list and tables without one (attnames should be
+-- NULL when no column list was specified).
+CREATE TABLE pub_col_test (id int, name text, status text);
+CREATE PUBLICATION pub_nocols FOR TABLE pub_col_test;
+CREATE PUBLICATION pub_cols FOR TABLE pub_col_test (id, name);
+
+-- Without column list: attnames should be NULL
+SELECT pubname, attnames IS NULL AS all_columns FROM pg_publication_tables
+  WHERE tablename = 'pub_col_test' ORDER BY pubname;
+
+-- With column list: attnames should list specific columns
+SELECT pubname, attnames FROM pg_publication_tables
+  WHERE tablename = 'pub_col_test' AND attnames IS NOT NULL ORDER BY pubname;
+
+DROP PUBLICATION pub_nocols;
+DROP PUBLICATION pub_cols;
+DROP TABLE pub_col_test;
+
+-- Test that a table with a dropped column still shows attnames as NULL
+-- when no explicit column list was specified.  The old implementation
+-- compared the synthesized column count against relnatts, but relnatts
+-- includes dropped columns, so the heuristic was wrong for this case.
+CREATE TABLE pub_dropped_test (id int, dropped_col text, name text);
+ALTER TABLE pub_dropped_test DROP COLUMN dropped_col;
+CREATE PUBLICATION pub_dropped FOR TABLE pub_dropped_test;
+
+SELECT pubname, attnames IS NULL AS all_columns FROM pg_publication_tables
+  WHERE tablename = 'pub_dropped_test';
+
+DROP PUBLICATION pub_dropped;
+DROP TABLE pub_dropped_test;
+
+-- Test that two publications on the same table, one without a column list
+-- and one with an explicit list of all columns, produce distinguishable
+-- rows in pg_publication_tables. On the subscriber side this difference would
+-- now correctly trigger "cannot use different column lists" during tablesync.
+CREATE TABLE pub_conflict_test (id int, name text);
+CREATE PUBLICATION pub_all FOR TABLE pub_conflict_test;
+CREATE PUBLICATION pub_explicit FOR TABLE pub_conflict_test (id, name);
+
+-- The two publications should produce different attnames values:
+-- pub_all -> NULL (all current and future columns)
+-- pub_explicit -> {id,name} (only these columns)
+SELECT pubname, attnames, attnames IS NULL AS is_all_columns
+  FROM pg_publication_tables
+  WHERE tablename = 'pub_conflict_test' ORDER BY pubname;
+
+-- Confirm they are DISTINCT (2 rows, not 1), which is what causes the
+-- subscriber-side conflict check to fire.
+SELECT COUNT(DISTINCT attnames IS NULL) AS distinct_attnames_nullability
+  FROM pg_publication_tables
+  WHERE tablename = 'pub_conflict_test';
+
+DROP PUBLICATION pub_all;
+DROP PUBLICATION pub_explicit;
+DROP TABLE pub_conflict_test;
+-- ======================================================
+
 -- Test the 'publish_generated_columns' parameter with the following values:
 -- 'stored', 'none'.
 SET client_min_messages = 'ERROR';

@@ -799,13 +799,10 @@ fetch_remote_table_info(char *nspname, char *relname, LogicalRepRelation *lrel,
 		 */
 		resetStringInfo(&cmd);
 		appendStringInfo(&cmd,
-						 "SELECT DISTINCT"
-						 "  (CASE WHEN (array_length(gpt.attrs, 1) = c.relnatts)"
-						 "   THEN NULL ELSE gpt.attrs END)"
+						 "SELECT DISTINCT gpt.attrs"
 						 "  FROM pg_publication p,"
-						 "  LATERAL pg_get_publication_tables(p.pubname) gpt,"
-						 "  pg_class c"
-						 " WHERE gpt.relid = %u AND c.oid = gpt.relid"
+						 "  LATERAL pg_get_publication_tables(p.pubname) gpt"
+						 " WHERE gpt.relid = %u"
 						 "   AND p.pubname IN ( %s )",
 						 lrel->remoteid,
 						 pub_names->data);

@@ -1439,49 +1439,15 @@ pg_get_publication_tables(PG_FUNCTION_ARGS)
 			nulls[3] = true;
 		}
 
-		/* Show all columns when the column list is not specified. */
-		if (nulls[2])
-		{
-			Relation	rel = table_open(relid, AccessShareLock);
-			int			nattnums = 0;
-			int16	   *attnums;
-			TupleDesc	desc = RelationGetDescr(rel);
-			int			i;
-
-			attnums = palloc_array(int16, desc->natts);
-
-			for (i = 0; i < desc->natts; i++)
-			{
-				Form_pg_attribute att = TupleDescAttr(desc, i);
-
-				if (att->attisdropped)
-					continue;
-
-				if (att->attgenerated)
-				{
-					/* We only support replication of STORED generated cols. */
-					if (att->attgenerated != ATTRIBUTE_GENERATED_STORED)
-						continue;
-
-					/*
-					 * User hasn't requested to replicate STORED generated
-					 * cols.
-					 */
-					if (pub->pubgencols_type != PUBLISH_GENCOLS_STORED)
-						continue;
-				}
-
-				attnums[nattnums++] = att->attnum;
-			}
-
-			if (nattnums > 0)
-			{
-				values[2] = PointerGetDatum(buildint2vector(attnums, nattnums));
-				nulls[2] = false;
-			}
-
-			table_close(rel, AccessShareLock);
-		}
+		/*
+		 * When no column list is specified (prattrs is NULL), we leave
+		 * attrs as NULL rather than synthesizing a list of all current
+		 * columns.  This allows consumers of pg_publication_tables to
+		 * distinguish between "all columns are published" (attrs IS
+		 * NULL -- new columns will automatically be replicated) and an
+		 * explicit column list (attrs IS NOT NULL -- only listed columns
+		 * are replicated).
+		 */
 
 		rettuple = heap_form_tuple(funcctx->tuple_desc, values, nulls);
 

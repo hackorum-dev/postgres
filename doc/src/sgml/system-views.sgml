@@ -2712,9 +2712,12 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
        (references <link linkend="catalog-pg-attribute"><structname>pg_attribute</structname></link>.<structfield>attname</structfield>)
       </para>
       <para>
-       Names of table columns included in the publication. This contains all
-       the columns of the table when the user didn't specify the column list
-       for the table.
+       Names of the table columns included in the publication, or NULL if
+       no explicit column list was specified for the table.  When NULL, all
+       current and future columns of the table are published; new columns
+       added to the table will automatically be replicated.  When non-NULL,
+       only the listed columns are replicated, and newly added columns will
+       not appear until the publication is explicitly altered.
       </para></entry>
      </row>
 
