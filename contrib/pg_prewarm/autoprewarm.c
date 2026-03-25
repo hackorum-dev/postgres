@@ -39,18 +39,25 @@
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
+#include "storage/lmgr.h"
 #include "storage/lwlock.h"
 #include "storage/procsignal.h"
 #include "storage/read_stream.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"
 #include "utils/guc.h"
+#include "utils/injection_point.h"
 #include "utils/rel.h"
 #include "utils/relfilenumbermap.h"
 #include "utils/timestamp.h"
 #include "utils/wait_event.h"
 
 #define AUTOPREWARM_FILE "autoprewarm.blocks"
+
+/*
+ * Block interval for checking conflicting lock waiters during prewarming.
+ */
+#define PREWARM_WAITER_CHECK_INTERVAL		1024
 
 /* Metadata for each block we dump. */
 typedef struct BlockInfoRecord
@@ -642,13 +649,83 @@ autoprewarm_database_main(Datum main_arg)
 			 * read stream callback will check that we still have free buffers
 			 * before requesting each block from the read stream API.
 			 */
-			while ((buf = read_stream_next_buffer(stream, NULL)) != InvalidBuffer)
 			{
-				apw_state->prewarmed_blocks++;
-				ReleaseBuffer(buf);
-			}
+				int			blocks_since_check = 0;
+				bool		rel_dropped = false;
 
-			read_stream_end(stream);
+				while ((buf = read_stream_next_buffer(stream, NULL)) != InvalidBuffer)
+				{
+					CHECK_FOR_INTERRUPTS();
+					apw_state->prewarmed_blocks++;
+					ReleaseBuffer(buf);
+					blocks_since_check++;
+
+					/*
+					 * Periodically check for conflicting lock waiters.  If
+					 * found, end the current read stream and yield our lock
+					 * so the waiter can proceed.
+					 */
+					if (blocks_since_check >= PREWARM_WAITER_CHECK_INTERVAL)
+					{
+						blocks_since_check = 0;
+
+						INJECTION_POINT("autoprewarm-before-check-and-yield", NULL);
+
+						if (LockHasWaitersRelation(rel, AccessShareLock))
+						{
+							read_stream_end(stream);
+							relation_close(rel, AccessShareLock);
+
+							/* Reacquire and check if relation is still valid. */
+							rel = try_relation_open(reloid, AccessShareLock);
+							if (rel == NULL)
+							{
+								rel_dropped = true;
+								break;
+							}
+
+							/*
+							 * Recalculate fork size; skip remainder if
+							 * truncated.
+							 */
+							if (!smgrexists(RelationGetSmgr(rel), forknum))
+							{
+								i = p.pos;
+								blk = block_info[i];
+								break;
+							}
+							p.nblocks = RelationGetNumberOfBlocksInFork(rel, forknum);
+
+							/* Restart stream for remaining blocks. */
+							stream = read_stream_begin_relation(READ_STREAM_MAINTENANCE |
+																READ_STREAM_DEFAULT |
+																READ_STREAM_USE_BATCHING,
+																NULL,
+																rel,
+																p.forknum,
+																apw_read_stream_next_block,
+																&p,
+																0);
+						}
+					}
+				}
+
+				if (rel_dropped)
+				{
+					/* Fast-forward past remaining blocks for this relation. */
+					for (; i < apw_state->prewarm_stop_idx; i++)
+					{
+						blk = block_info[i];
+						if (blk.tablespace != tablespace ||
+							blk.filenumber != filenumber)
+							break;
+					}
+					CommitTransactionCommand();
+					continue;	/* outer while loop */
+				}
+
+				read_stream_end(stream);
+			}
 
 			/*
 			 * Advance i past all the blocks just prewarmed. Note that the

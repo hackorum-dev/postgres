@@ -25,6 +25,7 @@
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/injection_point.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
@@ -43,6 +44,74 @@ typedef enum
 } PrewarmType;
 
 static PGIOAlignedBlock blockbuffer;
+
+/*
+ * Block interval for checking conflicting lock waiters. Checking every
+ * block is too expensive because LockHasWaitersRelation performs a
+ * lock-table probe, but we don't want to check too infrequently either, to avoid
+ * long stalls when there are waiters.
+ */
+#define PREWARM_WAITER_CHECK_INTERVAL		1024
+
+/*
+ * Check whether any session is waiting for a lock that conflicts with
+ * AccessShareLock on the relation.  If so, release the lock to let the
+ * waiter proceed, then try to reacquire it.
+ *
+ * Throws an error if the relation was dropped or truncated past 'next_block' while
+ * the lock was not held.
+ */
+static Relation
+pg_prewarm_check_and_yield(Relation rel, Oid relOid, Oid privOid,
+						   ForkNumber forkNumber, int64 next_block,
+						   int64 blocks_done, int64 *last_block)
+{
+	int64		nblocks;
+
+	INJECTION_POINT("pg_prewarm-before-check-and-yield", NULL);
+
+	/* Nothing to do if nobody is waiting for a conflicting lock. */
+	if (!LockHasWaitersRelation(rel, AccessShareLock))
+		return rel;
+
+	/* Release all locks to let the waiter proceed. */
+	relation_close(rel, AccessShareLock);
+	if (privOid != relOid)
+		UnlockRelationOid(privOid, AccessShareLock);
+
+	/* Reacquire in the correct order: parent table before index. */
+	if (privOid != relOid)
+		LockRelationOid(privOid, AccessShareLock);
+	rel = try_relation_open(relOid, AccessShareLock);
+	if (rel == NULL)
+	{
+		if (privOid != relOid)
+			UnlockRelationOid(privOid, AccessShareLock);
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("relation was dropped during pg_prewarm after %" PRId64 " blocks",
+						blocks_done)));
+	}
+
+	/* Check if the fork still exists and has enough blocks. */
+	if (!smgrexists(RelationGetSmgr(rel), forkNumber) ||
+		(nblocks = RelationGetNumberOfBlocksInFork(rel, forkNumber)) <= next_block)
+	{
+		relation_close(rel, AccessShareLock);
+		if (privOid != relOid)
+			UnlockRelationOid(privOid, AccessShareLock);
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("relation was truncated during pg_prewarm after %" PRId64 " blocks",
+						blocks_done)));
+	}
+
+	/* Adjust endpoint if the relation was partially truncated. */
+	if (*last_block >= nblocks)
+		*last_block = nblocks - 1;
+
+	return rel;
+}
 
 /*
  * pg_prewarm(regclass, mode text, fork text,
@@ -208,6 +277,11 @@ pg_prewarm(PG_FUNCTION_ARGS)
 		for (block = first_block; block <= last_block; ++block)
 		{
 			CHECK_FOR_INTERRUPTS();
+			if (blocks_done > 0 &&
+				blocks_done % PREWARM_WAITER_CHECK_INTERVAL == 0)
+				rel = pg_prewarm_check_and_yield(rel, relOid, privOid,
+												 forkNumber, block,
+												 blocks_done, &last_block);
 			PrefetchBuffer(rel, forkNumber, block);
 			++blocks_done;
 		}
@@ -227,6 +301,11 @@ pg_prewarm(PG_FUNCTION_ARGS)
 		for (block = first_block; block <= last_block; ++block)
 		{
 			CHECK_FOR_INTERRUPTS();
+			if (blocks_done > 0 &&
+				blocks_done % PREWARM_WAITER_CHECK_INTERVAL == 0)
+				rel = pg_prewarm_check_and_yield(rel, relOid, privOid,
+												 forkNumber, block,
+												 blocks_done, &last_block);
 			smgrread(RelationGetSmgr(rel), forkNumber, block, blockbuffer.data);
 			++blocks_done;
 		}
@@ -266,6 +345,33 @@ pg_prewarm(PG_FUNCTION_ARGS)
 			buf = read_stream_next_buffer(stream, NULL);
 			ReleaseBuffer(buf);
 			++blocks_done;
+
+			/*
+			 * Periodically check for conflicting lock waiters.  If found, end
+			 * the current read stream and yield, then start a new stream for
+			 * the remaining blocks.
+			 */
+			if (blocks_done % PREWARM_WAITER_CHECK_INTERVAL == 0 &&
+				block < last_block)
+			{
+				read_stream_end(stream);
+				rel = pg_prewarm_check_and_yield(rel, relOid, privOid,
+												 forkNumber, block + 1,
+												 blocks_done, &last_block);
+
+				/* Restart stream for remaining blocks. */
+				p.current_blocknum = block + 1;
+				p.last_exclusive = last_block + 1;
+				stream = read_stream_begin_relation(READ_STREAM_MAINTENANCE |
+													READ_STREAM_FULL |
+													READ_STREAM_USE_BATCHING,
+													NULL,
+													rel,
+													forkNumber,
+													block_range_read_stream_cb,
+													&p,
+													0);
+			}
 		}
 		Assert(read_stream_next_buffer(stream, NULL) == InvalidBuffer);
 		read_stream_end(stream);
