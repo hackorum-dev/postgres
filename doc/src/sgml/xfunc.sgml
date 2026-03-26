@@ -3765,7 +3765,7 @@ LWLockPadded *GetNamedLWLockTranche(const char *tranche_name)
       <literal>shmem_request_hook</literal>.  To do so, first allocate a
       <literal>tranche_id</literal> by calling:
 <programlisting>
-int LWLockNewTrancheId(const char *name)
+int LWLockNewTrancheId(const char *tranche_name)
 </programlisting>
       Next, initialize each LWLock, passing the new
       <literal>tranche_id</literal> as an argument:

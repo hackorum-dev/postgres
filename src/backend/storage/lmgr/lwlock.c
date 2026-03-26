@@ -594,16 +594,16 @@ GetNamedLWLockTranche(const char *tranche_name)
  * Allocate a new tranche ID with the provided name.
  */
 int
-LWLockNewTrancheId(const char *name)
+LWLockNewTrancheId(const char *tranche_name)
 {
 	int			result;
 
-	if (!name)
+	if (!tranche_name)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_NAME),
 				 errmsg("tranche name cannot be NULL")));
 
-	if (strlen(name) >= NAMEDATALEN)
+	if (strlen(tranche_name) >= NAMEDATALEN)
 		ereport(ERROR,
 				(errcode(ERRCODE_NAME_TOO_LONG),
 				 errmsg("tranche name too long"),
@@ -627,7 +627,7 @@ LWLockNewTrancheId(const char *name)
 
 	result = (*LWLockCounter)++;
 	LocalLWLockCounter = *LWLockCounter;
-	strlcpy(LWLockTrancheNames[result - LWTRANCHE_FIRST_USER_DEFINED], name, NAMEDATALEN);
+	strlcpy(LWLockTrancheNames[result - LWTRANCHE_FIRST_USER_DEFINED], tranche_name, NAMEDATALEN);
 
 	SpinLockRelease(ShmemLock);
 

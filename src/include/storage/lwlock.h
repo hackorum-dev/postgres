@@ -155,7 +155,7 @@ extern LWLockPadded *GetNamedLWLockTranche(const char *tranche_name);
  * counter.  Second, LWLockInitialize should be called just once per lwlock,
  * passing the tranche ID as an argument.
  */
-extern int	LWLockNewTrancheId(const char *name);
+extern int	LWLockNewTrancheId(const char *tranche_name);
 extern void LWLockInitialize(LWLock *lock, int tranche_id);
 
 /*
