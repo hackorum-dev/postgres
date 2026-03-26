@@ -336,6 +336,31 @@ XLogPrefetchShmemInit(void)
 }
 
 /*
+ * Log a summary of the XLogPrefetcher stats. Intended to be called
+ * at the end of recovery or when a standby is promoted.
+ */
+void
+XLogPrefetchLogStats(void)
+{
+	if (recovery_prefetch == RECOVERY_PREFETCH_OFF)
+		return;
+
+	elog(LOG,
+		"redo prefetch stats: prefetched %lu blocks, "
+		"skipped (%lu in the buffer pool, "
+		"%lu zero-initialized, "
+		"%lu non-existent, "
+		"%lu full page image, "
+		"%lu recently prefetched)",
+		pg_atomic_read_u64(&SharedStats->prefetch),
+		pg_atomic_read_u64(&SharedStats->hit),
+		pg_atomic_read_u64(&SharedStats->skip_init),
+		pg_atomic_read_u64(&SharedStats->skip_new),
+		pg_atomic_read_u64(&SharedStats->skip_fpw),
+		pg_atomic_read_u64(&SharedStats->skip_rep));
+}
+
+/*
  * Called when any GUC is changed that affects prefetching.
  */
 void
