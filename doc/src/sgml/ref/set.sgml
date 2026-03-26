@@ -22,6 +22,7 @@ PostgreSQL documentation
  <refsynopsisdiv>
 <synopsis>
 SET [ SESSION | LOCAL ] <replaceable class="parameter">configuration_parameter</replaceable> { TO | = } { <replaceable class="parameter">value</replaceable> [, ...] | DEFAULT }
+SET [ SESSION | LOCAL ] [ SCHEMA | NAMES ] { '<replaceable class="parameter">value</replaceable>' }
 SET [ SESSION | LOCAL ] TIME ZONE { <replaceable class="parameter">value</replaceable> | LOCAL | DEFAULT }
 </synopsis>
  </refsynopsisdiv>
