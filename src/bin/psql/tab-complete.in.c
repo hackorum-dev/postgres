@@ -5279,6 +5279,13 @@ match_previous_words(int pattern_id,
 										  "ROLE",
 										  "TABLESPACE",
 										  "ALL");
+	/* Complete "SET LOCAL" or "SET SESSION" */
+	else if (Matches("SET", "LOCAL") ||
+			 Matches("SET", "SESSION"))
+		COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_set_vars,
+										  "TIME ZONE",
+										  "SCHEMA",
+										  "NAMES");
 	else if (Matches("SHOW"))
 		COMPLETE_WITH_QUERY_VERBATIM_PLUS(Query_for_list_of_show_vars,
 										  "SESSION AUTHORIZATION",
