@@ -189,6 +189,12 @@ pg_prewarm(PG_FUNCTION_ARGS)
 					 errmsg("ending block number must be between 0 and %" PRId64,
 							(nblocks - 1))));
 	}
+	if (last_block < first_block)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("ending block number cannot be less than starting block number")));
+	}
 
 	/* Now we're ready to do the real work. */
 	if (ptype == PREWARM_PREFETCH)
