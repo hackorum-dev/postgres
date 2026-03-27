@@ -548,6 +548,41 @@ ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_part_pk WHERE (b > 99);
 -- fail - "b" is not in REPLICA IDENTITY INDEX
 UPDATE rf_tbl_abcd_part_pk SET a = 1;
 
+-- Tests for DDL-time WARNING when row filter columns are not in replica
+-- identity.  The DML-time ERROR still fires as a safety net.
+
+-- Reset tables to known state
+ALTER TABLE rf_tbl_abcd_pk REPLICA IDENTITY DEFAULT;
+ALTER TABLE rf_tbl_abcd_nopk REPLICA IDENTITY FULL;
+
+-- DDL-time warning: "c" is not part of PK (DEFAULT replica identity)
+ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (c > 99);
+-- DML-time error still present
+UPDATE rf_tbl_abcd_pk SET a = 1;
+
+-- No warning: publication only publishes INSERT
+ALTER PUBLICATION testpub6 SET (publish = 'insert');
+ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (c > 99);
+
+-- DDL-time warning when widening publish set to include UPDATE/DELETE
+-- while an existing row filter references a non-identity column.
+ALTER PUBLICATION testpub6 SET (publish = 'insert, update, delete');
+-- DML-time error still present after widening
+UPDATE rf_tbl_abcd_pk SET a = 1;
+
+-- No warning: REPLICA IDENTITY FULL covers all columns
+ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_nopk WHERE (a > 99);
+
+-- No warning: widening publish set when REPLICA IDENTITY FULL
+ALTER PUBLICATION testpub6 SET (publish = 'insert');
+ALTER PUBLICATION testpub6 SET (publish = 'insert, update, delete');
+
+-- DDL-time warning from ALTER TABLE REPLICA IDENTITY: narrowing identity
+-- while a publication filter references a now-uncovered column.
+ALTER TABLE rf_tbl_abcd_nopk REPLICA IDENTITY NOTHING;
+-- DML-time error still present
+UPDATE rf_tbl_abcd_nopk SET a = 1;
+
 DROP PUBLICATION testpub6;
 DROP TABLE rf_tbl_abcd_pk;
 DROP TABLE rf_tbl_abcd_nopk;

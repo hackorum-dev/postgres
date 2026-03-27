@@ -883,17 +883,23 @@ ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (b > 99);
 -- ok - "b" is a PK col
 UPDATE rf_tbl_abcd_pk SET a = 1;
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (c > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_pk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- fail - "c" is not part of the PK
 UPDATE rf_tbl_abcd_pk SET a = 1;
 ERROR:  cannot update table "rf_tbl_abcd_pk"
 DETAIL:  Column used in the publication WHERE expression is not part of the replica identity.
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (d > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_pk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- fail - "d" is not part of the PK
 UPDATE rf_tbl_abcd_pk SET a = 1;
 ERROR:  cannot update table "rf_tbl_abcd_pk"
 DETAIL:  Column used in the publication WHERE expression is not part of the replica identity.
 -- 1b. REPLICA IDENTITY is DEFAULT and table has no PK
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_nopk WHERE (a > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_nopk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- fail - "a" is not part of REPLICA IDENTITY
 UPDATE rf_tbl_abcd_nopk SET a = 1;
 ERROR:  cannot update table "rf_tbl_abcd_nopk"
@@ -910,17 +916,25 @@ UPDATE rf_tbl_abcd_nopk SET a = 1;
 -- Case 3. REPLICA IDENTITY NOTHING
 ALTER TABLE rf_tbl_abcd_pk REPLICA IDENTITY NOTHING;
 ALTER TABLE rf_tbl_abcd_nopk REPLICA IDENTITY NOTHING;
+WARNING:  column used in the row filter of publication "testpub6" is not part of the replica identity for table "rf_tbl_abcd_nopk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (a > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_pk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- fail - "a" is in PK but it is not part of REPLICA IDENTITY NOTHING
 UPDATE rf_tbl_abcd_pk SET a = 1;
 ERROR:  cannot update table "rf_tbl_abcd_pk"
 DETAIL:  Column used in the publication WHERE expression is not part of the replica identity.
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (c > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_pk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- fail - "c" is not in PK and not in REPLICA IDENTITY NOTHING
 UPDATE rf_tbl_abcd_pk SET a = 1;
 ERROR:  cannot update table "rf_tbl_abcd_pk"
 DETAIL:  Column used in the publication WHERE expression is not part of the replica identity.
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_nopk WHERE (a > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_nopk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- fail - "a" is not in REPLICA IDENTITY NOTHING
 UPDATE rf_tbl_abcd_nopk SET a = 1;
 ERROR:  cannot update table "rf_tbl_abcd_nopk"
@@ -932,7 +946,11 @@ ALTER TABLE rf_tbl_abcd_pk REPLICA IDENTITY USING INDEX idx_abcd_pk_c;
 ALTER TABLE rf_tbl_abcd_nopk ALTER COLUMN c SET NOT NULL;
 CREATE UNIQUE INDEX idx_abcd_nopk_c ON rf_tbl_abcd_nopk(c);
 ALTER TABLE rf_tbl_abcd_nopk REPLICA IDENTITY USING INDEX idx_abcd_nopk_c;
+WARNING:  column used in the row filter of publication "testpub6" is not part of the replica identity for table "rf_tbl_abcd_nopk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (a > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_pk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- fail - "a" is in PK but it is not part of REPLICA IDENTITY INDEX
 UPDATE rf_tbl_abcd_pk SET a = 1;
 ERROR:  cannot update table "rf_tbl_abcd_pk"
@@ -941,6 +959,8 @@ ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (c > 99);
 -- ok - "c" is not in PK but it is part of REPLICA IDENTITY INDEX
 UPDATE rf_tbl_abcd_pk SET a = 1;
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_nopk WHERE (a > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_nopk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- fail - "a" is not in REPLICA IDENTITY INDEX
 UPDATE rf_tbl_abcd_nopk SET a = 1;
 ERROR:  cannot update table "rf_tbl_abcd_nopk"
@@ -979,6 +999,8 @@ ALTER PUBLICATION testpub6 SET (PUBLISH_VIA_PARTITION_ROOT=0);
 -- Now change the root filter to use a column "b"
 -- (which is not in the replica identity)
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_part_pk_1 WHERE (b > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_part_pk_1"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- ok - we don't have row filter for partitioned table.
 ALTER PUBLICATION testpub6 SET (PUBLISH_VIA_PARTITION_ROOT=0);
 -- fail - "b" is not in REPLICA IDENTITY INDEX
@@ -990,9 +1012,50 @@ DETAIL:  Column used in the publication WHERE expression is not part of the repl
 ALTER PUBLICATION testpub6 SET (PUBLISH_VIA_PARTITION_ROOT=1);
 -- ok - can use row filter for partitioned table
 ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_part_pk WHERE (b > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_part_pk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
 -- fail - "b" is not in REPLICA IDENTITY INDEX
 UPDATE rf_tbl_abcd_part_pk SET a = 1;
 ERROR:  cannot update table "rf_tbl_abcd_part_pk_1"
+DETAIL:  Column used in the publication WHERE expression is not part of the replica identity.
+-- Tests for DDL-time WARNING when row filter columns are not in replica
+-- identity.  The DML-time ERROR still fires as a safety net.
+-- Reset tables to known state
+ALTER TABLE rf_tbl_abcd_pk REPLICA IDENTITY DEFAULT;
+ALTER TABLE rf_tbl_abcd_nopk REPLICA IDENTITY FULL;
+-- DDL-time warning: "c" is not part of PK (DEFAULT replica identity)
+ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (c > 99);
+WARNING:  column used in the publication WHERE expression is not part of the replica identity for table "rf_tbl_abcd_pk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
+-- DML-time error still present
+UPDATE rf_tbl_abcd_pk SET a = 1;
+ERROR:  cannot update table "rf_tbl_abcd_pk"
+DETAIL:  Column used in the publication WHERE expression is not part of the replica identity.
+-- No warning: publication only publishes INSERT
+ALTER PUBLICATION testpub6 SET (publish = 'insert');
+ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_pk WHERE (c > 99);
+-- DDL-time warning when widening publish set to include UPDATE/DELETE
+-- while an existing row filter references a non-identity column.
+ALTER PUBLICATION testpub6 SET (publish = 'insert, update, delete');
+WARNING:  column used in the row filter of publication "testpub6" is not part of the replica identity for table "rf_tbl_abcd_pk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
+-- DML-time error still present after widening
+UPDATE rf_tbl_abcd_pk SET a = 1;
+ERROR:  cannot update table "rf_tbl_abcd_pk"
+DETAIL:  Column used in the publication WHERE expression is not part of the replica identity.
+-- No warning: REPLICA IDENTITY FULL covers all columns
+ALTER PUBLICATION testpub6 SET TABLE rf_tbl_abcd_nopk WHERE (a > 99);
+-- No warning: widening publish set when REPLICA IDENTITY FULL
+ALTER PUBLICATION testpub6 SET (publish = 'insert');
+ALTER PUBLICATION testpub6 SET (publish = 'insert, update, delete');
+-- DDL-time warning from ALTER TABLE REPLICA IDENTITY: narrowing identity
+-- while a publication filter references a now-uncovered column.
+ALTER TABLE rf_tbl_abcd_nopk REPLICA IDENTITY NOTHING;
+WARNING:  column used in the row filter of publication "testpub6" is not part of the replica identity for table "rf_tbl_abcd_nopk"
+HINT:  UPDATE and DELETE on this table will fail until the replica identity covers the filtered columns, or the publication is changed to not publish those operations.
+-- DML-time error still present
+UPDATE rf_tbl_abcd_nopk SET a = 1;
+ERROR:  cannot update table "rf_tbl_abcd_nopk"
 DETAIL:  Column used in the publication WHERE expression is not part of the replica identity.
 DROP PUBLICATION testpub6;
 DROP TABLE rf_tbl_abcd_pk;

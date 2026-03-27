@@ -881,6 +881,21 @@ HINT:  To initiate replication, you must manually create the replication slot, e
     <literal>WHERE</literal> clause can use any column.
    </para>
 
+   <warning>
+    <para>
+     If a row filter references columns not covered by the replica identity,
+     <command>UPDATE</command> and <command>DELETE</command> operations on the
+     table will fail at run time with an error. A <literal>WARNING</literal> is
+     emitted at <command>CREATE PUBLICATION</command>, <command>ALTER
+     PUBLICATION</command>, or <command>ALTER TABLE ... REPLICA IDENTITY</command>
+     time to alert the user to this misconfiguration. To resolve it, either
+     adjust the row filter to reference only replica identity columns, set the
+     replica identity to <literal>FULL</literal>, or configure the publication
+     to not publish <command>UPDATE</command> or <command>DELETE</command>
+     operations.
+    </para>
+   </warning>
+
   </sect2>
 
   <sect2 id="logical-replication-row-filter-transformations">

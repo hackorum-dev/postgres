@@ -22,6 +22,7 @@
 #include "catalog/namespace.h"
 #include "catalog/objectaccess.h"
 #include "catalog/objectaddress.h"
+#include "catalog/partition.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
@@ -344,6 +345,55 @@ pub_rf_contains_invalid_column(Oid pubid, Relation relation, List *ancestors,
 	ReleaseSysCache(rftuple);
 
 	return result;
+}
+
+/*
+ * Warn at DDL time if a publication's row filter references columns that are
+ * not part of the table's replica identity.  This catches a configuration
+ * mistake that would otherwise only surface as a hard ERROR on the first
+ * UPDATE or DELETE against the table (in CheckCmdReplicaIdentity).
+ *
+ * We only warn (not error) so that the existing DML-time safety check
+ * remains the authoritative gate.  The warning gives the DBA immediate
+ * feedback when creating or altering the publication.
+ */
+static void
+check_pub_rf_columns_at_ddl(Oid pubid, List *rels,
+							bool pubupdate, bool pubdelete,
+							bool pubviaroot)
+{
+	ListCell   *lc;
+
+	/* No point checking if the publication doesn't replicate UPD/DEL. */
+	if (!pubupdate && !pubdelete)
+		return;
+
+	foreach(lc, rels)
+	{
+		PublicationRelInfo *pub_rel = (PublicationRelInfo *) lfirst(lc);
+		Relation	rel = pub_rel->relation;
+		List	   *ancestors = NIL;
+
+		/* Only tables with a WHERE clause need the check. */
+		if (pub_rel->whereClause == NULL)
+			continue;
+
+		if (rel->rd_rel->relispartition)
+			ancestors = get_partition_ancestors(RelationGetRelid(rel));
+
+		if (pub_rf_contains_invalid_column(pubid, rel, ancestors,
+										   pubviaroot))
+			ereport(WARNING,
+					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+					 errmsg("column used in the publication WHERE expression is not part of the replica identity for table \"%s\"",
+							RelationGetRelationName(rel)),
+					 errhint("UPDATE and DELETE on this table will fail until "
+							 "the replica identity covers the filtered columns, "
+							 "or the publication is changed to not publish those "
+							 "operations.")));
+
+		list_free(ancestors);
+	}
 }
 
 /*
@@ -978,6 +1028,15 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 									   publish_via_partition_root);
 
 			PublicationAddTables(puboid, rels, true, NULL);
+
+			/* Make publication_rel rows visible for the check. */
+			CommandCounterIncrement();
+
+			check_pub_rf_columns_at_ddl(puboid, rels,
+										pubactions.pubupdate,
+										pubactions.pubdelete,
+										publish_via_partition_root);
+
 			CloseTableList(rels);
 		}
 
@@ -1028,6 +1087,8 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	char		publish_generated_columns;
 	ObjectAddress obj;
 	Form_pg_publication pubform;
+	bool		old_pubupdate;
+	bool		old_pubdelete;
 	List	   *root_relids = NIL;
 	ListCell   *lc;
 
@@ -1128,6 +1189,10 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 		}
 	}
 
+	/* Remember current publish flags so we can detect widening. */
+	old_pubupdate = pubform->pubupdate;
+	old_pubdelete = pubform->pubdelete;
+
 	/* Everything ok, form a new tuple. */
 	memset(values, 0, sizeof(values));
 	memset(nulls, false, sizeof(nulls));
@@ -1169,6 +1234,55 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 	CommandCounterIncrement();
 
 	pubform = (Form_pg_publication) GETSTRUCT(tup);
+
+	/*
+	 * If the publish set was widened to include UPDATE or DELETE, check
+	 * whether any existing row filters reference columns not covered by the
+	 * replica identity.  Skip FOR ALL TABLES publications, which cannot have
+	 * per-table WHERE clauses.
+	 */
+	if (publish_given &&
+		((pubactions.pubupdate && !old_pubupdate) ||
+		 (pubactions.pubdelete && !old_pubdelete)) &&
+		!pubform->puballtables)
+	{
+		List	   *relids;
+		ListCell   *rlc;
+
+		relids = GetIncludedPublicationRelations(pubform->oid,
+												 PUBLICATION_PART_ALL);
+
+		foreach(rlc, relids)
+		{
+			Oid			relid = lfirst_oid(rlc);
+			Relation	pubrel;
+			List	   *ancestors = NIL;
+
+			pubrel = table_open(relid, AccessShareLock);
+
+			if (pubrel->rd_rel->relispartition)
+				ancestors = get_partition_ancestors(relid);
+
+			if (pub_rf_contains_invalid_column(pubform->oid, pubrel,
+											   ancestors,
+											   pubform->pubviaroot))
+				ereport(WARNING,
+						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+						 errmsg("column used in the row filter of publication \"%s\" "
+								"is not part of the replica identity for table \"%s\"",
+								stmt->pubname,
+								RelationGetRelationName(pubrel)),
+						 errhint("UPDATE and DELETE on this table will fail until "
+								 "the replica identity covers the filtered columns, "
+								 "or the publication is changed to not publish those "
+								 "operations.")));
+
+			list_free(ancestors);
+			table_close(pubrel, AccessShareLock);
+		}
+
+		list_free(relids);
+	}
 
 	/* Invalidate the relcache. */
 	if (pubform->puballtables)
@@ -1267,6 +1381,14 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 								   pubform->pubviaroot);
 
 		PublicationAddTables(pubid, rels, false, stmt);
+
+		/* Make publication_rel rows visible for the check. */
+		CommandCounterIncrement();
+
+		check_pub_rf_columns_at_ddl(pubid, rels,
+									pubform->pubupdate,
+									pubform->pubdelete,
+									pubform->pubviaroot);
 	}
 	else if (stmt->action == AP_DropObjects)
 		PublicationDropTables(pubid, rels, false);
@@ -1411,6 +1533,14 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 		 * skip existing ones when doing catalog update.
 		 */
 		PublicationAddTables(pubid, rels, true, stmt);
+
+		/* Make publication_rel rows visible for the check. */
+		CommandCounterIncrement();
+
+		check_pub_rf_columns_at_ddl(pubid, rels,
+									pubform->pubupdate,
+									pubform->pubdelete,
+									pubform->pubviaroot);
 
 		CloseTableList(delrels);
 	}

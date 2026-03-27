@@ -48,6 +48,7 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_publication.h"
 #include "catalog/pg_publication_rel.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_statistic_ext.h"
@@ -61,6 +62,7 @@
 #include "commands/comment.h"
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
+#include "commands/publicationcmds.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
@@ -18721,6 +18723,70 @@ relation_mark_replica_identity(Relation rel, char ri_type, Oid indexOid,
 }
 
 /*
+ * Check whether any publication row filter on this relation references
+ * columns that are not part of the (possibly just-changed) replica identity.
+ * If so, emit a WARNING so the DBA knows that UPDATE/DELETE will fail.
+ */
+static void
+check_relation_publications_rf(Relation rel)
+{
+	Oid			relid = RelationGetRelid(rel);
+	List	   *puboids;
+	ListCell   *lc;
+	List	   *ancestors = NIL;
+
+	puboids = GetRelationIncludedPublications(relid);
+	if (puboids == NIL)
+		return;
+
+	if (rel->rd_rel->relispartition)
+		ancestors = get_partition_ancestors(relid);
+
+	foreach(lc, puboids)
+	{
+		Oid			pubid = lfirst_oid(lc);
+		HeapTuple	pubtup;
+		Form_pg_publication pubform;
+
+		pubtup = SearchSysCache1(PUBLICATIONOID, ObjectIdGetDatum(pubid));
+		if (!HeapTupleIsValid(pubtup))
+			continue;
+
+		pubform = (Form_pg_publication) GETSTRUCT(pubtup);
+
+		/*
+		 * Only check publications that replicate UPDATE or DELETE;
+		 * INSERT-only publications do not need old tuple values.
+		 */
+		if ((pubform->pubupdate || pubform->pubdelete) &&
+			!pubform->puballtables &&
+			pub_rf_contains_invalid_column(pubid, rel, ancestors,
+										   pubform->pubviaroot))
+		{
+			char	   *pubname = pstrdup(NameStr(pubform->pubname));
+
+			ReleaseSysCache(pubtup);
+			ereport(WARNING,
+					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+					 errmsg("column used in the row filter of publication \"%s\" "
+							"is not part of the replica identity for table \"%s\"",
+							pubname, RelationGetRelationName(rel)),
+					 errhint("UPDATE and DELETE on this table will fail until "
+							 "the replica identity covers the filtered columns, "
+							 "or the publication is changed to not publish those "
+							 "operations.")));
+			pfree(pubname);
+			continue;
+		}
+
+		ReleaseSysCache(pubtup);
+	}
+
+	list_free(ancestors);
+	list_free(puboids);
+}
+
+/*
  * ALTER TABLE <name> REPLICA IDENTITY ...
  */
 static void
@@ -18733,17 +18799,18 @@ ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, LOCKMODE lockmode
 	if (stmt->identity_type == REPLICA_IDENTITY_DEFAULT)
 	{
 		relation_mark_replica_identity(rel, stmt->identity_type, InvalidOid, true);
-		return;
+		goto check_publications;
 	}
 	else if (stmt->identity_type == REPLICA_IDENTITY_FULL)
 	{
 		relation_mark_replica_identity(rel, stmt->identity_type, InvalidOid, true);
+		/* FULL covers all columns, so no warning is possible. */
 		return;
 	}
 	else if (stmt->identity_type == REPLICA_IDENTITY_NOTHING)
 	{
 		relation_mark_replica_identity(rel, stmt->identity_type, InvalidOid, true);
-		return;
+		goto check_publications;
 	}
 	else if (stmt->identity_type == REPLICA_IDENTITY_INDEX)
 	{
@@ -18832,6 +18899,24 @@ ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, LOCKMODE lockmode
 	relation_mark_replica_identity(rel, stmt->identity_type, indexOid, true);
 
 	index_close(indexRel, NoLock);
+
+check_publications:
+
+	/*
+	 * The catalog changes from relation_mark_replica_identity are not yet
+	 * visible to the syscache/relcache.  Make them visible so that
+	 * check_relation_publications_rf can see the new replica identity when
+	 * evaluating publication row filters.
+	 */
+	CommandCounterIncrement();
+	{
+		Oid			relid = RelationGetRelid(rel);
+		Relation	freshrel;
+
+		freshrel = table_open(relid, NoLock);
+		check_relation_publications_rf(freshrel);
+		table_close(freshrel, NoLock);
+	}
 }
 
 /*
