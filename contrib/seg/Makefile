@@ -34,6 +34,10 @@ endif
 segparse.h: segparse.c
 	touch $@
 
+ifeq ($(with_llvm), yes)
+segscan.bc: segscan.o
+endif
+
 segparse.c: BISONFLAGS += -d
 
 # Force these dependencies to be known even without dependency info built:
