@@ -35,6 +35,10 @@ endif
 cubeparse.h: cubeparse.c
 	touch $@
 
+ifeq ($(with_llvm), yes)
+cubescan.bc: cubescan.o
+endif
+
 cubeparse.c: BISONFLAGS += -d
 
 # Force these dependencies to be known even without dependency info built:
