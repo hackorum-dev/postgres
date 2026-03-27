@@ -1509,7 +1509,7 @@ select * from int8_tbl t1 left join int8_tbl t2 on t1.q2 = t2.q1,
   lateral (select * from int8_tbl t3 where t2.q1 = t2.q2) ss;
 
 select * from int8_tbl t1 left join int8_tbl t2 on t1.q2 = t2.q1,
-  lateral (select * from int8_tbl t3 where t2.q1 = t2.q2) ss;
+  lateral (select * from int8_tbl t3 where t2.q1 = t2.q2) ss order by 1,2,3,4,5,6;
 
 --
 -- check handling of join aliases when flattening multiple levels of subquery
