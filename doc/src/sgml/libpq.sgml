@@ -2424,6 +2424,45 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       </listitem>
      </varlistentry>
 
+     <varlistentry id="libpq-connect-max-wal-replay-size" xreflabel="max_wal_replay_size">
+      <term><literal>max_wal_replay_size</literal></term>
+      <listitem>
+       <para>
+        Specifies the maximum acceptable WAL replay backlog when connecting
+        to a standby server.  The backlog is measured as the difference
+        between the last WAL byte received by the standby and the last WAL
+        byte it has replayed — in other words, how much received WAL is
+        waiting to be applied.  Note that this measures only the apply lag
+        on the standby itself; it does not account for any delay in WAL
+        reaching the standby from the primary.  The value must be a size
+        specifier understood by <function>pg_size_bytes</function>, such as
+        <literal>100MB</literal> or <literal>1GB</literal>.  If not set, no
+        check is performed.
+       </para>
+
+       <para>
+        When this parameter is set and the selected host is a standby (i.e.,
+        in recovery), <productname>libpq</productname> will query the
+        server's WAL replay backlog and reject the connection if it exceeds
+        the specified threshold.  A standby that has no active WAL receiver
+        process is one whose backlog cannot be determined and is therefore
+        also rejected.  In either case, <productname>libpq</productname> will
+        try the next host in the list, if any.
+       </para>
+
+       <para>
+        This parameter is ignored when connecting to a primary or when
+        <literal>target_session_attrs</literal> is set to
+        <literal>primary</literal> or <literal>read-write</literal>.  When
+        <literal>target_session_attrs</literal> is set to
+        <literal>any</literal>, the check still applies, and a standby that
+        exceeds the threshold will be skipped in favour of the next candidate
+        host (which may be a primary).
+       </para>
+
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="libpq-connect-load-balance-hosts" xreflabel="load_balance_hosts">
       <term><literal>load_balance_hosts</literal></term>
       <listitem>
