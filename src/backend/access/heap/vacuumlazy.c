@@ -1004,6 +1004,7 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 			WalUsage	walusage;
 			BufferUsage bufferusage;
 			StringInfoData buf;
+			StringInfoData detail;
 			char	   *msgfmt;
 			int32		diff;
 			double		read_rate = 0,
@@ -1033,7 +1034,7 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				 * VACUUM VERBOSE ereport
 				 */
 				Assert(!params->is_wraparound);
-				msgfmt = _("finished vacuuming \"%s.%s.%s\": index scans: %d\n");
+				msgfmt = _("finished vacuuming \"%s.%s.%s\"");
 			}
 			else if (params->is_wraparound)
 			{
@@ -1044,23 +1045,27 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				 * case all the same, just in case.
 				 */
 				if (vacrel->aggressive)
-					msgfmt = _("automatic aggressive vacuum to prevent wraparound of table \"%s.%s.%s\": index scans: %d\n");
+					msgfmt = _("automatic aggressive vacuum to prevent wraparound of table \"%s.%s.%s\"");
 				else
-					msgfmt = _("automatic vacuum to prevent wraparound of table \"%s.%s.%s\": index scans: %d\n");
+					msgfmt = _("automatic vacuum to prevent wraparound of table \"%s.%s.%s\"");
 			}
 			else
 			{
 				if (vacrel->aggressive)
-					msgfmt = _("automatic aggressive vacuum of table \"%s.%s.%s\": index scans: %d\n");
+					msgfmt = _("automatic aggressive vacuum of table \"%s.%s.%s\"\n");
 				else
-					msgfmt = _("automatic vacuum of table \"%s.%s.%s\": index scans: %d\n");
+					msgfmt = _("automatic vacuum of table \"%s.%s.%s\"");
 			}
 			appendStringInfo(&buf, msgfmt,
 							 vacrel->dbname,
 							 vacrel->relnamespace,
-							 vacrel->relname,
-							 vacrel->num_index_scans);
-			appendStringInfo(&buf, _("pages: %u removed, %u remain, %u scanned (%.2f%% of total), %u eagerly scanned\n"),
+							 vacrel->relname);
+
+			initStringInfo(&detail);
+
+			appendStringInfo(&detail, "index scans: %d\n", vacrel->num_index_scans);
+
+			appendStringInfo(&detail, _("pages: %u removed, %u remain, %u scanned (%.2f%% of total), %u eagerly scanned\n"),
 							 vacrel->removed_pages,
 							 new_rel_pages,
 							 vacrel->scanned_pages,
@@ -1068,26 +1073,26 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 							 100.0 * vacrel->scanned_pages /
 							 orig_rel_pages,
 							 vacrel->eager_scanned_pages);
-			appendStringInfo(&buf,
+			appendStringInfo(&detail,
 							 _("tuples: %" PRId64 " removed, %" PRId64 " remain, %" PRId64 " are dead but not yet removable\n"),
 							 vacrel->tuples_deleted,
 							 (int64) vacrel->new_rel_tuples,
 							 vacrel->recently_dead_tuples);
 			if (vacrel->missed_dead_tuples > 0)
-				appendStringInfo(&buf,
+				appendStringInfo(&detail,
 								 _("tuples missed: %" PRId64 " dead from %u pages not removed due to cleanup lock contention\n"),
 								 vacrel->missed_dead_tuples,
 								 vacrel->missed_dead_pages);
 			diff = (int32) (ReadNextTransactionId() -
 							vacrel->cutoffs.OldestXmin);
-			appendStringInfo(&buf,
+			appendStringInfo(&detail,
 							 _("removable cutoff: %u, which was %d XIDs old when operation ended\n"),
 							 vacrel->cutoffs.OldestXmin, diff);
 			if (frozenxid_updated)
 			{
 				diff = (int32) (vacrel->NewRelfrozenXid -
 								vacrel->cutoffs.relfrozenxid);
-				appendStringInfo(&buf,
+				appendStringInfo(&detail,
 								 _("new relfrozenxid: %u, which is %d XIDs ahead of previous value\n"),
 								 vacrel->NewRelfrozenXid, diff);
 			}
@@ -1095,18 +1100,18 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 			{
 				diff = (int32) (vacrel->NewRelminMxid -
 								vacrel->cutoffs.relminmxid);
-				appendStringInfo(&buf,
+				appendStringInfo(&detail,
 								 _("new relminmxid: %u, which is %d MXIDs ahead of previous value\n"),
 								 vacrel->NewRelminMxid, diff);
 			}
-			appendStringInfo(&buf, _("frozen: %u pages from table (%.2f%% of total) had %" PRId64 " tuples frozen\n"),
+			appendStringInfo(&detail, _("frozen: %u pages from table (%.2f%% of total) had %" PRId64 " tuples frozen\n"),
 							 vacrel->new_frozen_tuple_pages,
 							 orig_rel_pages == 0 ? 100.0 :
 							 100.0 * vacrel->new_frozen_tuple_pages /
 							 orig_rel_pages,
 							 vacrel->tuples_frozen);
 
-			appendStringInfo(&buf,
+			appendStringInfo(&detail,
 							 _("visibility map: %u pages set all-visible, %u pages set all-frozen (%u were all-visible)\n"),
 							 vacrel->new_all_visible_pages,
 							 vacrel->new_all_visible_all_frozen_pages +
@@ -1115,35 +1120,35 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 			if (vacrel->do_index_vacuuming)
 			{
 				if (vacrel->nindexes == 0 || vacrel->num_index_scans == 0)
-					appendStringInfoString(&buf, _("index scan not needed: "));
+					appendStringInfoString(&detail, _("index scan not needed: "));
 				else
-					appendStringInfoString(&buf, _("index scan needed: "));
+					appendStringInfoString(&detail, _("index scan needed: "));
 
 				msgfmt = _("%u pages from table (%.2f%% of total) had %" PRId64 " dead item identifiers removed\n");
 			}
 			else
 			{
 				if (!VacuumFailsafeActive)
-					appendStringInfoString(&buf, _("index scan bypassed: "));
+					appendStringInfoString(&detail, _("index scan bypassed: "));
 				else
-					appendStringInfoString(&buf, _("index scan bypassed by failsafe: "));
+					appendStringInfoString(&detail, _("index scan bypassed by failsafe: "));
 
 				msgfmt = _("%u pages from table (%.2f%% of total) have %" PRId64 " dead item identifiers\n");
 			}
-			appendStringInfo(&buf, msgfmt,
+			appendStringInfo(&detail, msgfmt,
 							 vacrel->lpdead_item_pages,
 							 orig_rel_pages == 0 ? 100.0 :
 							 100.0 * vacrel->lpdead_item_pages / orig_rel_pages,
 							 vacrel->lpdead_items);
 
 			if (vacrel->worker_usage.vacuum.nplanned > 0)
-				appendStringInfo(&buf,
+				appendStringInfo(&detail,
 								 _("parallel workers: index vacuum: %d planned, %d launched in total\n"),
 								 vacrel->worker_usage.vacuum.nplanned,
 								 vacrel->worker_usage.vacuum.nlaunched);
 
 			if (vacrel->worker_usage.cleanup.nplanned > 0)
-				appendStringInfo(&buf,
+				appendStringInfo(&detail,
 								 _("parallel workers: index cleanup: %d planned, %d launched\n"),
 								 vacrel->worker_usage.cleanup.nplanned,
 								 vacrel->worker_usage.cleanup.nlaunched);
@@ -1155,7 +1160,7 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				if (!istat)
 					continue;
 
-				appendStringInfo(&buf,
+				appendStringInfo(&detail,
 								 _("index \"%s\": pages: %u in total, %u newly deleted, %u currently deleted, %u reusable\n"),
 								 indnames[i],
 								 istat->num_pages,
@@ -1171,7 +1176,7 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				 * above call to pgstat_progress_end_command() to not clear
 				 * the st_progress_param array.
 				 */
-				appendStringInfo(&buf, _("delay time: %.3f ms\n"),
+				appendStringInfo(&detail, _("delay time: %.3f ms\n"),
 								 (double) MyBEEntry->st_progress_param[PROGRESS_VACUUM_DELAY_TIME] / 1000000.0);
 			}
 			if (track_io_timing)
@@ -1179,7 +1184,7 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				double		read_ms = (double) (pgStatBlockReadTime - startreadtime) / 1000;
 				double		write_ms = (double) (pgStatBlockWriteTime - startwritetime) / 1000;
 
-				appendStringInfo(&buf, _("I/O timings: read: %.3f ms, write: %.3f ms\n"),
+				appendStringInfo(&detail, _("I/O timings: read: %.3f ms, write: %.3f ms\n"),
 								 read_ms, write_ms);
 			}
 			if (secs_dur > 0 || usecs_dur > 0)
@@ -1189,14 +1194,14 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 				write_rate = (double) BLCKSZ * total_blks_dirtied /
 					(1024 * 1024) / (secs_dur + usecs_dur / 1000000.0);
 			}
-			appendStringInfo(&buf, _("avg read rate: %.3f MB/s, avg write rate: %.3f MB/s\n"),
+			appendStringInfo(&detail, _("avg read rate: %.3f MB/s, avg write rate: %.3f MB/s\n"),
 							 read_rate, write_rate);
-			appendStringInfo(&buf,
+			appendStringInfo(&detail,
 							 _("buffer usage: %" PRId64 " hits, %" PRId64 " reads, %" PRId64 " dirtied\n"),
 							 total_blks_hit,
 							 total_blks_read,
 							 total_blks_dirtied);
-			appendStringInfo(&buf,
+			appendStringInfo(&detail,
 							 _("WAL usage: %" PRId64 " records, %" PRId64 " full page images, %" PRIu64 " bytes, %" PRIu64 " full page image bytes, %" PRId64 " buffers full\n"),
 							 walusage.wal_records,
 							 walusage.wal_fpi,
@@ -1212,17 +1217,18 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 			 * one dead items are collected, even if index vacuuming is
 			 * disabled.
 			 */
-			appendStringInfo(&buf,
+			appendStringInfo(&detail,
 							 ngettext("memory usage: dead item storage %.2f MB accumulated across %d reset (limit %.2f MB each)\n",
 									  "memory usage: dead item storage %.2f MB accumulated across %d resets (limit %.2f MB each)\n",
 									  vacrel->num_dead_items_resets),
 							 (double) vacrel->total_dead_items_bytes / (1024 * 1024),
 							 vacrel->num_dead_items_resets,
 							 (double) dead_items_max_bytes / (1024 * 1024));
-			appendStringInfo(&buf, _("system usage: %s"), pg_rusage_show(&ru0));
+			appendStringInfo(&detail, _("system usage: %s"), pg_rusage_show(&ru0));
 
 			ereport(verbose ? INFO : LOG,
-					(errmsg_internal("%s", buf.data)));
+					(errmsg_internal("%s", buf.data),
+					 errdetail_internal("%s", detail.data)));
 			pfree(buf.data);
 		}
 	}
