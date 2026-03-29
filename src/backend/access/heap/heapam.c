@@ -2138,9 +2138,9 @@ ReleaseBulkInsertStatePin(BulkInsertState bistate)
  * See table_tuple_insert for comments about most of the input flags, except
  * that this routine directly takes a tuple rather than a slot.
  *
- * There's corresponding HEAP_INSERT_ options to all the TABLE_INSERT_
- * options, and there additionally is HEAP_INSERT_SPECULATIVE which is used to
- * implement table_tuple_insert_speculative().
+ * In addition to the TABLE_INSERT_ options, there additionally is
+ * HEAP_INSERT_SPECULATIVE which is used to implement
+ * table_tuple_insert_speculative().
  *
  * On return the header fields of *tup are updated to match the stored tuple;
  * in particular tup->t_self receives the actual TID where the tuple was
@@ -2228,7 +2228,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	 * Don't set it if we are in bootstrap mode or we are inserting a frozen
 	 * tuple, as there is no further pruning/freezing needed in those cases.
 	 */
-	if (TransactionIdIsNormal(xid) && !(options & HEAP_INSERT_FROZEN))
+	if (TransactionIdIsNormal(xid) && !(options & TABLE_INSERT_FROZEN))
 		PageSetPrunable(page, xid);
 
 	MarkBufferDirty(buffer);
@@ -2275,7 +2275,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		 * image. (XXX We could alternatively store a pointer into the FPW).
 		 */
 		if (RelationIsLogicallyLogged(relation) &&
-			!(options & HEAP_INSERT_NO_LOGICAL))
+			!(options & TABLE_INSERT_NO_LOGICAL))
 		{
 			xlrec.flags |= XLH_INSERT_CONTAINS_NEW_TUPLE;
 			bufflags |= REGBUF_KEEP_DATA;
@@ -2364,7 +2364,7 @@ heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
 	tup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);
 	tup->t_data->t_infomask |= HEAP_XMAX_INVALID;
 	HeapTupleHeaderSetXmin(tup->t_data, xid);
-	if (options & HEAP_INSERT_FROZEN)
+	if (options & TABLE_INSERT_FROZEN)
 		HeapTupleHeaderSetXminFrozen(tup->t_data);
 
 	HeapTupleHeaderSetCmin(tup->t_data, cid);
@@ -2445,7 +2445,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 	int			npages_used = 0;
 
 	/* currently not needed (thus unsupported) for heap_multi_insert() */
-	Assert(!(options & HEAP_INSERT_NO_LOGICAL));
+	Assert(!(options & TABLE_INSERT_NO_LOGICAL));
 
 	AssertHasSnapshotForToast(relation);
 
@@ -2535,7 +2535,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 
 		starting_with_empty_page = PageGetMaxOffsetNumber(page) == 0;
 
-		if (starting_with_empty_page && (options & HEAP_INSERT_FROZEN))
+		if (starting_with_empty_page && (options & TABLE_INSERT_FROZEN))
 		{
 			all_frozen_set = true;
 			/* Lock the vmbuffer before entering the critical section */
@@ -2583,7 +2583,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 		 * page, mark it as all-frozen and update the visibility map. We're
 		 * already holding a pin on the vmbuffer.
 		 */
-		if (PageIsAllVisible(page) && !(options & HEAP_INSERT_FROZEN))
+		if (PageIsAllVisible(page) && !(options & TABLE_INSERT_FROZEN))
 		{
 			all_visible_cleared = true;
 			PageClearAllVisible(page);
@@ -2655,7 +2655,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 
 			/*
 			 * We don't have to worry about including a conflict xid in the
-			 * WAL record, as HEAP_INSERT_FROZEN intentionally violates
+			 * WAL record, as TABLE_INSERT_FROZEN intentionally violates
 			 * visibility rules.
 			 */
 			if (all_frozen_set)

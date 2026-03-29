@@ -469,12 +469,12 @@ RelationAddBlocks(Relation relation, BulkInsertState bistate,
  *	which is indicated by these arguments not being InvalidBuffer on entry.
  *
  *	We normally use FSM to help us find free space.  However,
- *	if HEAP_INSERT_SKIP_FSM is specified, we just append a new empty page to
+ *	if TABLE_INSERT_SKIP_FSM is specified, we just append a new empty page to
  *	the end of the relation if the tuple won't fit on the current target page.
  *	This can save some cycles when we know the relation is new and doesn't
  *	contain useful amounts of free space.
  *
- *	HEAP_INSERT_SKIP_FSM is also useful for non-WAL-logged additions to a
+ *	TABLE_INSERT_SKIP_FSM is also useful for non-WAL-logged additions to a
  *	relation, if the caller holds exclusive lock and is careful to invalidate
  *	relation's smgr_targblock before the first insertion --- that ensures that
  *	all insertions will occur into newly added pages and not be intermixed
@@ -503,7 +503,7 @@ RelationGetBufferForTuple(Relation relation, Size len,
 						  Buffer *vmbuffer, Buffer *vmbuffer_other,
 						  int num_pages)
 {
-	bool		use_fsm = !(options & HEAP_INSERT_SKIP_FSM);
+	bool		use_fsm = !(options & TABLE_INSERT_SKIP_FSM);
 	Buffer		buffer = InvalidBuffer;
 	Page		page;
 	Size		nearlyEmptyFreeSpace,
@@ -621,7 +621,7 @@ loop:
 			/*
 			 * If the page is empty, pin vmbuffer to set all_frozen bit later.
 			 */
-			if ((options & HEAP_INSERT_FROZEN) &&
+			if ((options & TABLE_INSERT_FROZEN) &&
 				(PageGetMaxOffsetNumber(BufferGetPage(buffer)) == 0))
 				visibilitymap_pin(relation, targetBlock, vmbuffer);
 
@@ -774,7 +774,7 @@ loop:
 	 * do IO while the buffer is locked, so we unlock the page first if IO is
 	 * needed (necessitating checks below).
 	 */
-	if (options & HEAP_INSERT_FROZEN)
+	if (options & TABLE_INSERT_FROZEN)
 	{
 		Assert(PageGetMaxOffsetNumber(page) == 0);
 

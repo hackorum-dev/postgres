@@ -898,7 +898,7 @@ DecodeInsert(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 	/*
 	 * Ignore insert records without new tuples (this does happen when
-	 * raw_heap_insert marks the TOAST record as HEAP_INSERT_NO_LOGICAL).
+	 * raw_heap_insert marks the TOAST record as TABLE_INSERT_NO_LOGICAL).
 	 */
 	if (!(xlrec->flags & XLH_INSERT_CONTAINS_NEW_TUPLE))
 		return;

@@ -32,10 +32,6 @@
 #include "utils/snapshot.h"
 
 
-/* "options" flag bits for heap_insert */
-#define HEAP_INSERT_SKIP_FSM	TABLE_INSERT_SKIP_FSM
-#define HEAP_INSERT_FROZEN		TABLE_INSERT_FROZEN
-#define HEAP_INSERT_NO_LOGICAL	TABLE_INSERT_NO_LOGICAL
 /*
  * private flag bits for heap_insert: we define these starting from the
  * opposite end of the options word as the ones in tableam.h.
