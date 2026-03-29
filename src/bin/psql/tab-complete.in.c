@@ -2575,7 +2575,9 @@ match_previous_words(int pattern_id,
 	/* ALTER USER,ROLE <name> IN DATABASE <dbname> SET */
 	else if (Matches("ALTER", "USER|ROLE", MatchAny, "IN", "DATABASE", MatchAny, "SET"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_set_vars);
-	/* XXX missing support for ALTER ROLE <name> IN DATABASE <dbname> RESET */
+	/* ALTER USER,ROLE <name> IN DATABASE <dbname> RESET */
+	else if (Matches("ALTER", "USER|ROLE", MatchAny, "IN", "DATABASE", MatchAny, "RESET"))
+		COMPLETE_WITH_QUERY_PLUS(Query_for_list_of_set_vars, "ALL");
 	/* ALTER USER,ROLE <name> RESET */
 	else if (Matches("ALTER", "USER|ROLE", MatchAny, "RESET"))
 	{

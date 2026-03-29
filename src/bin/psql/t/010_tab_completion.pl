@@ -44,6 +44,7 @@ $node->safe_psql('postgres',
 	  . "CREATE TABLE mytab246 (f1 int, f2 text);\n"
 	  . "CREATE TABLE \"mixedName\" (f1 int, f2 text);\n"
 	  . "CREATE TYPE enum1 AS ENUM ('foo', 'bar', 'baz', 'BLACK');\n"
+	  . "CREATE ROLE tabcomp_role;\n"
 	  . "CREATE PUBLICATION some_publication;\n");
 
 # In a VPATH build, we'll be started in the source directory, but we want
@@ -225,6 +226,17 @@ check_completion(
 	"alter table public.\"tab1\" drop constraint t\t",
 	qr/tab1_pkey /,
 	"complete index name for referenced table, with schema and quoting");
+
+clear_query();
+
+check_completion(
+	"ALTER ROLE tabcomp_role IN DATABASE post\t",
+	qr/postgres /,
+	"complete database name for ALTER ROLE ... IN DATABASE");
+check_completion(
+	"RESET clie\t",
+	qr/client_encoding /,
+	"complete GUC for ALTER ROLE ... IN DATABASE ... RESET");
 
 clear_query();
 
