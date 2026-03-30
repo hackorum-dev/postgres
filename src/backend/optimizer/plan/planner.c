@@ -594,7 +594,9 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 		gather->plan.startup_cost = top_plan->startup_cost +
 			parallel_setup_cost;
 		gather->plan.total_cost = top_plan->total_cost +
-			parallel_setup_cost + parallel_tuple_cost * top_plan->plan_rows;
+			parallel_setup_cost +
+			width_adjusted_parallel_tuple_cost(top_plan->plan_width) *
+			top_plan->plan_rows;
 		gather->plan.plan_rows = top_plan->plan_rows;
 		gather->plan.plan_width = top_plan->plan_width;
 		gather->plan.parallel_aware = false;
