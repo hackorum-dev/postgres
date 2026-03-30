@@ -29,6 +29,7 @@
 #include "utils/cash.h"
 #include "utils/float.h"
 #include "utils/numeric.h"
+#include "utils/cash_exchange.h"
 #include "utils/pg_locale.h"
 
 
@@ -407,6 +408,7 @@ Datum
 cash_out(PG_FUNCTION_ARGS)
 {
 	Cash		value = PG_GETARG_CASH(0);
+	float8		fx_rate;
 	uint64		uvalue;
 	char	   *result;
 	char		buf[128];
@@ -422,6 +424,16 @@ cash_out(PG_FUNCTION_ARGS)
 				cs_precedes,
 				sep_by_space;
 	struct lconv *lconvert = PGLC_localeconv();
+
+	/* Apply exchange rate conversion if configured */
+	fx_rate = cash_exchange_rate();
+	if (fx_rate != 1.0)
+	{
+		float8		converted = rint((float8) value * fx_rate);
+
+		if (!isnan(converted) && FLOAT8_FITS_IN_INT64(converted))
+			value = (Cash) converted;
+	}
 
 	/* see comments about frac_digits in cash_in() */
 	points = lconvert->frac_digits;
