@@ -176,6 +176,30 @@ extern void initial_cost_hashjoin(PlannerInfo *root,
 extern void final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 								JoinCostWorkspace *workspace,
 								JoinPathExtraData *extra);
+
+/*
+ * Width-adjusted parallel tuple cost.
+ *
+ * The cost of passing a tuple through the shared-memory tuple queue has a
+ * fixed component (queue synchronization, slot operations) and a variable
+ * component proportional to tuple width (memcpy into/out of the ring buffer).
+ * parallel_tuple_cost is calibrated for PARALLEL_TUPLE_COST_REF_WIDTH bytes;
+ * we scale proportionally so narrow tuples (e.g. partial aggregate results)
+ * are cheaper and wide tuples are more expensive.
+ *
+ * PARALLEL_TUPLE_COST_FIXED_FRAC is the irreducible per-tuple overhead
+ * (queue synchronization) as a fraction of the total cost at the reference
+ * width.
+ */
+#define PARALLEL_TUPLE_COST_REF_WIDTH	100 /* bytes */
+#define PARALLEL_TUPLE_COST_FIXED_FRAC	0.10	/* fixed overhead fraction */
+
+#define width_adjusted_parallel_tuple_cost(width) \
+	(parallel_tuple_cost * \
+	 (PARALLEL_TUPLE_COST_FIXED_FRAC + \
+	  (1.0 - PARALLEL_TUPLE_COST_FIXED_FRAC) * \
+	  (double) Max((width), 1) / PARALLEL_TUPLE_COST_REF_WIDTH))
+
 extern void cost_gather(GatherPath *path, PlannerInfo *root,
 						RelOptInfo *rel, ParamPathInfo *param_info, double *rows);
 extern void cost_gather_merge(GatherMergePath *path, PlannerInfo *root,
