@@ -543,6 +543,7 @@ ExecInitGenerated(ResultRelInfo *resultRelInfo,
 	{
 		/* Don't call twice */
 		Assert(resultRelInfo->ri_GeneratedExprsU == NULL);
+		Assert(!resultRelInfo->ri_extraUpdatedCols_valid);
 
 		resultRelInfo->ri_GeneratedExprsU = ri_GeneratedExprs;
 		resultRelInfo->ri_NumGeneratedNeededU = ri_NumGeneratedNeeded;
@@ -587,7 +588,7 @@ ExecComputeStoredGenerated(ResultRelInfo *resultRelInfo,
 	 */
 	if (cmdtype == CMD_UPDATE)
 	{
-		if (resultRelInfo->ri_GeneratedExprsU == NULL)
+		if (!resultRelInfo->ri_extraUpdatedCols_valid)
 			ExecInitGenerated(resultRelInfo, estate, cmdtype);
 		if (resultRelInfo->ri_NumGeneratedNeededU == 0)
 			return;
