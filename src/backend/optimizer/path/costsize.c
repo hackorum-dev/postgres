@@ -11,7 +11,9 @@
  *	cpu_tuple_cost		Cost of typical CPU time to process a tuple
  *	cpu_index_tuple_cost  Cost of typical CPU time to process an index tuple
  *	cpu_operator_cost	Cost of CPU time to execute an operator or function
- *	parallel_tuple_cost Cost of CPU time to pass a tuple from worker to leader backend
+ *	parallel_tuple_cost Cost of CPU time to pass a tuple from worker to leader
+ *						backend.  Scaled by tuple width relative to a reference
+ *						width (see width_adjusted_parallel_tuple_cost).
  *	parallel_setup_cost Cost of setting up shared memory for parallelism
  *
  * We expect that the kernel will typically do some amount of read-ahead
@@ -447,9 +449,10 @@ cost_gather(GatherPath *path, PlannerInfo *root,
 
 	run_cost = path->subpath->total_cost - path->subpath->startup_cost;
 
-	/* Parallel setup and communication cost. */
+	/* Parallel setup and communication cost, scaled by tuple width. */
 	startup_cost += parallel_setup_cost;
-	run_cost += parallel_tuple_cost * path->path.rows;
+	run_cost += width_adjusted_parallel_tuple_cost(path->path.pathtarget->width) *
+		path->path.rows;
 
 	path->path.disabled_nodes = path->subpath->disabled_nodes
 		+ ((rel->pgs_mask & PGS_GATHER) != 0 ? 0 : 1);
@@ -510,13 +513,14 @@ cost_gather_merge(GatherMergePath *path, PlannerInfo *root,
 	run_cost += cpu_operator_cost * path->path.rows;
 
 	/*
-	 * Parallel setup and communication cost.  Since Gather Merge, unlike
-	 * Gather, requires us to block until a tuple is available from every
-	 * worker, we bump the IPC cost up a little bit as compared with Gather.
-	 * For lack of a better idea, charge an extra 5%.
+	 * Parallel setup and communication cost, scaled by tuple width.  Since
+	 * Gather Merge, unlike Gather, requires us to block until a tuple is
+	 * available from every worker, we bump the IPC cost up a little bit as
+	 * compared with Gather.  For lack of a better idea, charge an extra 5%.
 	 */
 	startup_cost += parallel_setup_cost;
-	run_cost += parallel_tuple_cost * path->path.rows * 1.05;
+	run_cost += width_adjusted_parallel_tuple_cost(path->path.pathtarget->width) *
+		path->path.rows * 1.05;
 
 	path->path.disabled_nodes = path->subpath->disabled_nodes
 		+ ((rel->pgs_mask & PGS_GATHER_MERGE) != 0 ? 0 : 1);
