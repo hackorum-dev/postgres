@@ -1086,6 +1086,11 @@ else
   libcurl = not_found_dep
 endif
 
+# Make libcurl available to the backend for FX rate fetching
+if libcurl.found()
+  backend_both_deps += libcurl
+endif
+
 
 ###############################################################
 # Library: libnuma
