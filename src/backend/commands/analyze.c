@@ -78,7 +78,7 @@ static BufferAccessStrategy vac_strategy;
 static void do_analyze_rel(Relation onerel,
 						   const VacuumParams *params, List *va_cols,
 						   AcquireSampleRowsFunc acquirefunc, BlockNumber relpages,
-						   bool inh, bool in_outer_xact, int elevel);
+						   bool inh, bool in_outer_xact);
 static void compute_index_stats(Relation onerel, double totalrows,
 								AnlIndexData *indexdata, int nindexes,
 								HeapTuple *rows, int numrows,
@@ -112,16 +112,9 @@ analyze_rel(Oid relid, RangeVar *relation,
 			BufferAccessStrategy bstrategy)
 {
 	Relation	onerel;
-	int			elevel;
 	AcquireSampleRowsFunc acquirefunc = NULL;
 	BlockNumber relpages = 0;
 	bool		stats_imported = false;
-
-	/* Select logging level */
-	if (params->options & VACOPT_VERBOSE)
-		elevel = INFO;
-	else
-		elevel = DEBUG2;
 
 	/* Set up static variables */
 	vac_strategy = bstrategy;
@@ -275,14 +268,14 @@ analyze_rel(Oid relid, RangeVar *relation,
 	if ((onerel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
 		&& !stats_imported)
 		do_analyze_rel(onerel, params, va_cols, acquirefunc,
-					   relpages, false, in_outer_xact, elevel);
+					   relpages, false, in_outer_xact);
 
 	/*
 	 * If there are child tables, do recursive ANALYZE.
 	 */
 	if (onerel->rd_rel->relhassubclass)
 		do_analyze_rel(onerel, params, va_cols, acquirefunc, relpages,
-					   true, in_outer_xact, elevel);
+					   true, in_outer_xact);
 
 	/*
 	 * Close source relation now, but keep lock so that no one deletes it
@@ -306,15 +299,15 @@ out:
 static void
 do_analyze_rel(Relation onerel, const VacuumParams *params,
 			   List *va_cols, AcquireSampleRowsFunc acquirefunc,
-			   BlockNumber relpages, bool inh, bool in_outer_xact,
-			   int elevel)
+			   BlockNumber relpages, bool inh, bool in_outer_xact)
 {
 	int			attr_cnt,
 				tcnt,
 				i,
 				ind;
 	Relation   *Irel;
-	int			nindexes;
+	int			nindexes,
+				elevel;
 	bool		verbose,
 				instrument,
 				hasindex;
@@ -339,6 +332,13 @@ do_analyze_rel(Relation onerel, const VacuumParams *params,
 	PgStat_Counter startwritetime = 0;
 
 	verbose = (params->options & VACOPT_VERBOSE) != 0;
+
+	/* Select logging level */
+	if (verbose)
+		elevel = INFO;
+	else
+		elevel = DEBUG2;
+
 	instrument = (verbose || (AmAutoVacuumWorkerProcess() &&
 							  params->log_analyze_min_duration >= 0));
 	if (inh)
