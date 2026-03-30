@@ -70,6 +70,7 @@ extern bool check_locale_messages(char **newval, void **extra, GucSource source)
 extern void assign_locale_messages(const char *newval, void *extra);
 extern bool check_locale_monetary(char **newval, void **extra, GucSource source);
 extern void assign_locale_monetary(const char *newval, void *extra);
+extern bool check_money_source_currency(char **newval, void **extra, GucSource source);
 extern bool check_locale_numeric(char **newval, void **extra, GucSource source);
 extern void assign_locale_numeric(const char *newval, void *extra);
 extern bool check_locale_time(char **newval, void **extra, GucSource source);
