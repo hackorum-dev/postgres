@@ -1206,7 +1206,7 @@ LockAcquireExtended(const LOCKTAG *locktag,
 			 * logLockFailure = true and lock acquisition fails with dontWait
 			 * = true
 			 */
-			if (logLockFailure)
+			if (logLockFailure && message_level_is_interesting(LOG))
 			{
 				StringInfoData buf,
 							lock_waiters_sbuf,
