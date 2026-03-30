@@ -1905,8 +1905,9 @@ AND c1.path[c2.level] = c2.path[c2.level];
        (references <link linkend="catalog-pg-class"><structname>pg_class</structname></link>.<structfield>oid</structfield>)
       </para>
       <para>
-       OID of the system catalog containing the lock target, or null if the
-       target is not a general database object
+       For a general database object, the OID of the system catalog
+       containing the lock target.
+       This column is also used for other lock types; see below.
       </para></entry>
      </row>
 
@@ -1916,8 +1917,9 @@ AND c1.path[c2.level] = c2.path[c2.level];
        (references any OID column)
       </para>
       <para>
-       OID of the lock target within its system catalog, or null if the
-       target is not a general database object
+       For a general database object, the OID of the lock target within
+       its system catalog.
+       This column is also used for other lock types; see below.
       </para></entry>
      </row>
 
@@ -1926,11 +1928,12 @@ AND c1.path[c2.level] = c2.path[c2.level];
        <structfield>objsubid</structfield> <type>int2</type>
       </para>
       <para>
-       Column number targeted by the lock (the
+       For a general database object, the column number targeted by the
+       lock (the
        <structfield>classid</structfield> and <structfield>objid</structfield> refer to the
        table itself),
-       or zero if the target is some other general database object,
-       or null if the target is not a general database object
+       or zero if the target is some other general database object.
+       This column is also used for other lock types; see below.
       </para></entry>
      </row>
 
@@ -2053,7 +2056,9 @@ AND c1.path[c2.level] = c2.path[c2.level];
   <para>
    Apply transaction locks are used in parallel mode to apply the transaction
    in logical replication. The remote transaction ID is displayed in the
-   <structfield>transactionid</structfield> column. The <structfield>objsubid</structfield>
+   <structfield>transactionid</structfield> column.  The OID of the subscription is
+   displayed in the <structfield>objid</structfield> column.
+   The <structfield>objsubid</structfield>
    displays the lock subtype which is 0 for the lock used to synchronize the
    set of changes, and 1 for the lock used to wait for the transaction to
    finish to ensure commit order.
