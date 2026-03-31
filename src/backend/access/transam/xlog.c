@@ -8136,7 +8136,6 @@ bool
 CreateRestartPoint(int flags)
 {
 	XLogRecPtr	lastCheckPointRecPtr;
-	XLogRecPtr	lastCheckPointEndPtr;
 	CheckPoint	lastCheckPoint;
 	XLogRecPtr	PriorRedoPtr;
 	XLogRecPtr	receivePtr;
@@ -8152,7 +8151,6 @@ CreateRestartPoint(int flags)
 	/* Get a local copy of the last safe checkpoint record. */
 	SpinLockAcquire(&XLogCtl->info_lck);
 	lastCheckPointRecPtr = XLogCtl->lastCheckPointRecPtr;
-	lastCheckPointEndPtr = XLogCtl->lastCheckPointEndPtr;
 	lastCheckPoint = XLogCtl->lastCheckPoint;
 	SpinLockRelease(&XLogCtl->info_lck);
 
@@ -8279,15 +8277,32 @@ CreateRestartPoint(int flags)
 		 */
 		if (ControlFile->state == DB_IN_ARCHIVE_RECOVERY)
 		{
-			if (ControlFile->minRecoveryPoint < lastCheckPointEndPtr)
+			/*
+			 * Advance minRecoveryPoint to at least the current replay
+			 * position.  Normally this happens as a side effect of
+			 * flushing dirty buffers, but during a shutdown restartpoint
+			 * there may be records between the checkpoint and the
+			 * recovery target that didn't dirty any buffers (e.g. a
+			 * RESTORE_POINT record).  Without this, a shutdown triggered
+			 * by recovery_target_action leaves minRecoveryPoint behind
+			 * the actual replay position.
+			 */
 			{
-				ControlFile->minRecoveryPoint = lastCheckPointEndPtr;
-				ControlFile->minRecoveryPointTLI = lastCheckPoint.ThisTimeLineID;
+				XLogRecPtr	replayPtr;
+				TimeLineID	replayTLI;
 
-				/* update local copy */
-				LocalMinRecoveryPoint = ControlFile->minRecoveryPoint;
-				LocalMinRecoveryPointTLI = ControlFile->minRecoveryPointTLI;
+				replayPtr = GetCurrentReplayRecPtr(&replayTLI);
+				if (ControlFile->minRecoveryPoint < replayPtr)
+				{
+					ControlFile->minRecoveryPoint = replayPtr;
+					ControlFile->minRecoveryPointTLI = replayTLI;
+				}
 			}
+
+			/* update local copy */
+			LocalMinRecoveryPoint = ControlFile->minRecoveryPoint;
+			LocalMinRecoveryPointTLI = ControlFile->minRecoveryPointTLI;
+
 			if (flags & CHECKPOINT_IS_SHUTDOWN)
 				ControlFile->state = DB_SHUTDOWNED_IN_RECOVERY;
 		}
