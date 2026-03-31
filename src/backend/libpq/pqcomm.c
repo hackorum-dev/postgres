@@ -174,6 +174,7 @@ pq_init(ClientSocket *client_sock)
 	Port	   *port;
 	int			socket_pos PG_USED_FOR_ASSERTS_ONLY;
 	int			latch_pos PG_USED_FOR_ASSERTS_ONLY;
+	int			cv_pos PG_USED_FOR_ASSERTS_ONLY;
 
 	/* allocate the Port struct and copy the ClientSocket contents to it */
 	port = palloc0_object(Port);
@@ -304,11 +305,13 @@ pq_init(ClientSocket *client_sock)
 
 	FeBeWaitSet = CreateWaitEventSet(NULL, FeBeWaitSetNEvents);
 	socket_pos = AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE,
-								   port->sock, NULL, NULL);
+								   port->sock, NULL, NULL, NULL);
 	latch_pos = AddWaitEventToSet(FeBeWaitSet, WL_LATCH_SET, PGINVALID_SOCKET,
-								  MyLatch, NULL);
+								  MyLatch, NULL, NULL);
+	cv_pos = AddWaitEventToSet(FeBeWaitSet, WL_CONDITION_VARIABLE, PGINVALID_SOCKET,
+							   NULL, NULL, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_POSTMASTER_DEATH, PGINVALID_SOCKET,
-					  NULL, NULL);
+					  NULL, NULL, NULL);
 
 	/*
 	 * The event positions match the order we added them, but let's sanity
@@ -316,6 +319,7 @@ pq_init(ClientSocket *client_sock)
 	 */
 	Assert(socket_pos == FeBeWaitSetSocketPos);
 	Assert(latch_pos == FeBeWaitSetLatchPos);
+	Assert(cv_pos == FeBeWaitSetCVPos);
 
 	return port;
 }
@@ -2060,7 +2064,7 @@ pq_check_connection(void)
 	 * It's OK to modify the socket event filter without restoring, because
 	 * all FeBeWaitSet socket wait sites do the same.
 	 */
-	ModifyWaitEvent(FeBeWaitSet, FeBeWaitSetSocketPos, WL_SOCKET_CLOSED, NULL);
+	ModifyWaitEvent(FeBeWaitSet, FeBeWaitSetSocketPos, WL_SOCKET_CLOSED, NULL, NULL);
 
 retry:
 	rc = WaitEventSetWait(FeBeWaitSet, 0, events, lengthof(events), 0);
