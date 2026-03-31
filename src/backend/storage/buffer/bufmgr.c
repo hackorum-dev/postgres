@@ -1468,6 +1468,10 @@ StartReadBuffersImpl(ReadBuffersOperation *operation,
 			{
 				*nblocks = 1;
 
+				/* Set the variables that callers might read */
+				operation->buffers = buffers;
+				operation->nblocks = 1;
+
 #ifdef USE_ASSERT_CHECKING
 
 				/*
@@ -1475,9 +1479,7 @@ StartReadBuffersImpl(ReadBuffersOperation *operation,
 				 * CheckReadBuffersOperation() work. Outside of assertions
 				 * that's not necessary when no IO is issued.
 				 */
-				operation->buffers = buffers;
 				operation->blocknum = blockNum;
-				operation->nblocks = 1;
 				operation->nblocks_done = 1;
 				CheckReadBuffersOperation(operation, true);
 #endif
