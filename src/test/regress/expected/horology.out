@@ -3324,8 +3324,20 @@ SELECT to_timestamp('2011-12-18 11:38 EST', 'YYYY-MM-DD HH12:MI TZ');
  Sun Dec 18 08:38:00 2011 PST
 (1 row)
 
+SELECT cast('2011-12-18 11:38 EST' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');
+         timestamptz          
+------------------------------
+ Sun Dec 18 08:38:00 2011 PST
+(1 row)
+
 SELECT to_timestamp('2011-12-18 11:38 -05', 'YYYY-MM-DD HH12:MI TZ');
          to_timestamp         
+------------------------------
+ Sun Dec 18 08:38:00 2011 PST
+(1 row)
+
+SELECT cast('2011-12-18 11:38 -05' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');
+         timestamptz          
 ------------------------------
  Sun Dec 18 08:38:00 2011 PST
 (1 row)
@@ -3336,8 +3348,20 @@ SELECT to_timestamp('2011-12-18 11:38 +01:30', 'YYYY-MM-DD HH12:MI TZ');
  Sun Dec 18 02:08:00 2011 PST
 (1 row)
 
+SELECT cast('2011-12-18 11:38 +01:30' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');
+         timestamptz          
+------------------------------
+ Sun Dec 18 02:08:00 2011 PST
+(1 row)
+
 SELECT to_timestamp('2011-12-18 11:38 MSK', 'YYYY-MM-DD HH12:MI TZ');  -- dyntz
          to_timestamp         
+------------------------------
+ Sat Dec 17 23:38:00 2011 PST
+(1 row)
+
+SELECT cast('2011-12-18 11:38 MSK' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');  -- dyntz
+         timestamptz          
 ------------------------------
  Sat Dec 17 23:38:00 2011 PST
 (1 row)
@@ -3348,8 +3372,20 @@ SELECT to_timestamp('2011-12-18 00:00 LMT', 'YYYY-MM-DD HH24:MI TZ');  -- dyntz
  Sat Dec 17 23:52:58 2011 PST
 (1 row)
 
+SELECT cast('2011-12-18 00:00 LMT' as timestamptz format 'YYYY-MM-DD HH24:MI TZ');  -- dyntz
+         timestamptz          
+------------------------------
+ Sat Dec 17 23:52:58 2011 PST
+(1 row)
+
 SELECT to_timestamp('2011-12-18 11:38ESTFOO24', 'YYYY-MM-DD HH12:MITZFOOSS');
          to_timestamp         
+------------------------------
+ Sun Dec 18 08:38:24 2011 PST
+(1 row)
+
+SELECT cast('2011-12-18 11:38ESTFOO24' as timestamptz format 'YYYY-MM-DD HH12:MITZFOOSS');
+         timestamptz          
 ------------------------------
  Sun Dec 18 08:38:24 2011 PST
 (1 row)
@@ -3360,14 +3396,32 @@ SELECT to_timestamp('2011-12-18 11:38-05FOO24', 'YYYY-MM-DD HH12:MITZFOOSS');
  Sun Dec 18 08:38:24 2011 PST
 (1 row)
 
+SELECT cast('2011-12-18 11:38-05FOO24' as timestamptz format 'YYYY-MM-DD HH12:MITZFOOSS');
+         timestamptz          
+------------------------------
+ Sun Dec 18 08:38:24 2011 PST
+(1 row)
+
 SELECT to_timestamp('2011-12-18 11:38 JUNK', 'YYYY-MM-DD HH12:MI TZ');  -- error
+ERROR:  invalid value "JUNK" for "TZ"
+DETAIL:  Time zone abbreviation is not recognized.
+SELECT cast('2011-12-18 11:38 JUNK' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');  -- error
 ERROR:  invalid value "JUNK" for "TZ"
 DETAIL:  Time zone abbreviation is not recognized.
 SELECT to_timestamp('2011-12-18 11:38 ...', 'YYYY-MM-DD HH12:MI TZ');  -- error
 ERROR:  invalid value ".." for "TZ"
 DETAIL:  Value must be an integer.
+SELECT cast('2011-12-18 11:38 ...' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');  -- error
+ERROR:  invalid value ".." for "TZ"
+DETAIL:  Value must be an integer.
 SELECT to_timestamp('2011-12-18 11:38 -05', 'YYYY-MM-DD HH12:MI OF');
          to_timestamp         
+------------------------------
+ Sun Dec 18 08:38:00 2011 PST
+(1 row)
+
+SELECT cast ('2011-12-18 11:38 -05' as timestamptz format 'YYYY-MM-DD HH12:MI OF');
+         timestamptz          
 ------------------------------
  Sun Dec 18 08:38:00 2011 PST
 (1 row)
@@ -3378,14 +3432,32 @@ SELECT to_timestamp('2011-12-18 11:38 +01:30', 'YYYY-MM-DD HH12:MI OF');
  Sun Dec 18 02:08:00 2011 PST
 (1 row)
 
+SELECT cast('2011-12-18 11:38 +01:30' as timestamptz format 'YYYY-MM-DD HH12:MI OF');
+         timestamptz          
+------------------------------
+ Sun Dec 18 02:08:00 2011 PST
+(1 row)
+
 SELECT to_timestamp('2011-12-18 11:38 +xyz', 'YYYY-MM-DD HH12:MI OF');  -- error
+ERROR:  invalid value "xy" for "OF"
+DETAIL:  Value must be an integer.
+SELECT cast('2011-12-18 11:38 +xyz' as timestamptz format 'YYYY-MM-DD HH12:MI OF');  -- error
 ERROR:  invalid value "xy" for "OF"
 DETAIL:  Value must be an integer.
 SELECT to_timestamp('2011-12-18 11:38 +01:xyz', 'YYYY-MM-DD HH12:MI OF');  -- error
 ERROR:  invalid value "xy" for "OF"
 DETAIL:  Value must be an integer.
+SELECT cast('2011-12-18 11:38 +01:xyz' as timestamptz format 'YYYY-MM-DD HH12:MI OF');  -- error
+ERROR:  invalid value "xy" for "OF"
+DETAIL:  Value must be an integer.
 SELECT to_timestamp('2018-11-02 12:34:56.025', 'YYYY-MM-DD HH24:MI:SS.MS');
            to_timestamp           
+----------------------------------
+ Fri Nov 02 12:34:56.025 2018 PDT
+(1 row)
+
+SELECT cast('2018-11-02 12:34:56.025' as timestamptz format 'YYYY-MM-DD HH24:MI:SS.MS');
+           timestamptz            
 ----------------------------------
  Fri Nov 02 12:34:56.025 2018 PDT
 (1 row)
@@ -3469,6 +3541,8 @@ SELECT i, to_timestamp('2018-11-02 12:34:56.123456', 'YYYY-MM-DD HH24:MI:SS.FF' 
 
 SELECT i, to_timestamp('2018-11-02 12:34:56.123456789', 'YYYY-MM-DD HH24:MI:SS.FF' || i) FROM generate_series(1, 6) i;
 ERROR:  date/time field value out of range: "2018-11-02 12:34:56.123456789"
+SELECT i, cast('2018-11-02 12:34:56.123456789' as timestamptz format 'YYYY-MM-DD HH24:MI:SS.FF' || i) FROM generate_series(1, 6) i;
+ERROR:  date/time field value out of range: "2018-11-02 12:34:56.123456789"
 SELECT i, to_timestamp('20181102123456123456', 'YYYYMMDDHH24MISSFF' || i) FROM generate_series(1, 6) i;
  i |            to_timestamp             
 ---+-------------------------------------
@@ -3486,14 +3560,32 @@ SELECT to_date('1 4 1902', 'Q MM YYYY');  -- Q is ignored
  04-01-1902
 (1 row)
 
+SELECT cast('1 4 1902' as date format 'Q MM YYYY');  -- Q is ignored
+    date    
+------------
+ 04-01-1902
+(1 row)
+
 SELECT to_date('3 4 21 01', 'W MM CC YY');
   to_date   
 ------------
  04-15-2001
 (1 row)
 
+SELECT cast('3 4 21 01' as date format 'W MM CC YY');
+    date    
+------------
+ 04-15-2001
+(1 row)
+
 SELECT to_date('2458872', 'J');
   to_date   
+------------
+ 01-23-2020
+(1 row)
+
+SELECT cast('2458872' as date format 'J');
+    date    
 ------------
  01-23-2020
 (1 row)
@@ -3833,8 +3925,20 @@ SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD HH:MI:SS TZ');
  2012-12-12 12:00:00 PST
 (1 row)
 
+SELECT cast('2012-12-12 12:00'::timestamptz as text format 'YYYY-MM-DD HH:MI:SS TZ');
+          text           
+-------------------------
+ 2012-12-12 12:00:00 PST
+(1 row)
+
 SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD HH:MI:SS tz');
          to_char         
+-------------------------
+ 2012-12-12 12:00:00 pst
+(1 row)
+
+SELECT cast('2012-12-12 12:00'::timestamptz as text format 'YYYY-MM-DD HH:MI:SS tz');
+          text           
 -------------------------
  2012-12-12 12:00:00 pst
 (1 row)
@@ -3868,6 +3972,32 @@ SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD HH:MI:SS TZ');
  2012-12-12 12:00:00 -01:30
 (1 row)
 
+SELECT cast('2012-12-12 12:00'::timestamptz as text format 'YYYY-MM-DD HH:MI:SS TZ'),
+        to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD HH:MI:SS TZ');
+            text            |          to_char           
+----------------------------+----------------------------
+ 2012-12-12 12:00:00 -01:30 | 2012-12-12 12:00:00 -01:30
+(1 row)
+
+SELECT cast('2012-12-12 12:00'::date as text format 'YYYY-MM-DD HH:MI:SS TZ'),
+        to_char('2012-12-12 12:00'::date, 'YYYY-MM-DD HH:MI:SS TZ');
+            text            |          to_char           
+----------------------------+----------------------------
+ 2012-12-12 12:00:00 -01:30 | 2012-12-12 12:00:00 -01:30
+(1 row)
+
+SELECT cast('12:00'::time as text format 'HH:MI:SS'),
+        to_char('12:00'::time, 'HH:MI:SS');
+   text   | to_char  
+----------+----------
+ 12:00:00 | 12:00:00
+(1 row)
+
+SELECT cast('2012-12-12 12:00'::timetz as text format 'YYYY-MM-DD HH:MI:SS TZ');
+ERROR:  cannot cast type time with time zone to text using formatted template
+LINE 1: SELECT cast('2012-12-12 12:00'::timetz as text format 'YYYY-...
+               ^
+DETAIL:  Only categories of numeric, string, datetime, and timespan source data types are supported for formatted type casting
 SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD SSSS');
      to_char      
 ------------------

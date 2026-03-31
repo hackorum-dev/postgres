@@ -182,12 +182,20 @@ SELECT to_char(date '2010-02-01', 'DD TMMON YYYY' COLLATE "tr_TR");
 SELECT to_char(date '2010-04-01', 'DD TMMON YYYY');
 SELECT to_char(date '2010-04-01', 'DD TMMON YYYY' COLLATE "tr_TR");
 
+SELECT CAST(date '2010-02-01' as text format 'DD TMMON YYYY');
+SELECT CAST(date '2010-02-01' as text format 'DD TMMON YYYY' COLLATE "tr_TR");
+SELECT CAST(date '2010-04-01' as text format 'DD TMMON YYYY');
+SELECT CAST(date '2010-04-01' as text format  'DD TMMON YYYY' COLLATE "tr_TR");
+
 -- to_date
 
 SELECT to_date('01 ŞUB 2010', 'DD TMMON YYYY');
 SELECT to_date('01 Şub 2010', 'DD TMMON YYYY');
 SELECT to_date('1234567890ab 2010', 'TMMONTH YYYY'); -- fail
 
+SELECT CAST('01 ŞUB 2010' as date format 'DD TMMON YYYY');
+SELECT CAST('01 ŞUB 2010' as date format 'DD TMMON YYYY'); -- ok
+SELECT CAST('1234567890ab 2010' as date format 'TMMONTH YYYY'); -- fail
 
 -- backwards parsing
 

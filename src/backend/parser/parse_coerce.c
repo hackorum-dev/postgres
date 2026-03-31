@@ -23,6 +23,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/parse_coerce.h"
+#include "parser/parse_func.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_type.h"
 #include "utils/builtins.h"
@@ -74,6 +75,8 @@ static bool typeIsOfTypedTable(Oid reltypeId, Oid reloftypeId);
  * targettypmod - desired result typmod
  * ccontext, cformat - context indicators to control coercions
  * location - parse location of the coercion request, or -1 if unknown/implicit
+ * format - cast format template expression, this typically is NULL, but it's
+ * for CAST(expr as type FORMAT 'format_expr') construct.
  */
 Node *
 coerce_to_target_type(ParseState *pstate, Node *expr, Oid exprtype,
@@ -81,6 +84,22 @@ coerce_to_target_type(ParseState *pstate, Node *expr, Oid exprtype,
 					  CoercionContext ccontext,
 					  CoercionForm cformat,
 					  int location)
+{
+	return coerce_to_target_type_extended(pstate, expr, exprtype,
+										  targettype, targettypmod,
+										  ccontext,
+										  cformat,
+										  location,
+										  NULL);
+}
+
+Node *
+coerce_to_target_type_extended(ParseState *pstate, Node *expr, Oid exprtype,
+							   Oid targettype, int32 targettypmod,
+							   CoercionContext ccontext,
+							   CoercionForm cformat,
+							   int location,
+							   Node *format)
 {
 	Node	   *result;
 	Node	   *origexpr;
@@ -102,9 +121,10 @@ coerce_to_target_type(ParseState *pstate, Node *expr, Oid exprtype,
 	while (expr && IsA(expr, CollateExpr))
 		expr = (Node *) ((CollateExpr *) expr)->arg;
 
-	result = coerce_type(pstate, expr, exprtype,
-						 targettype, targettypmod,
-						 ccontext, cformat, location);
+	result = coerce_type_extended(pstate, expr, exprtype,
+								  targettype, targettypmod,
+								  ccontext, cformat, location,
+								  format);
 
 	/*
 	 * If the target is a fixed-length type, it may need a length coercion as
@@ -129,6 +149,242 @@ coerce_to_target_type(ParseState *pstate, Node *expr, Oid exprtype,
 	}
 
 	return result;
+}
+
+ /*
+  * coerce_type_with_format()
+  *
+  * Coerce the CAST(expr AS type FORMAT 'fmt') construct to the target type.
+  *
+  * This is a subroutine of coerce_type_extended. The caller must ensure that
+  * the coercion is possible via can_coerce_type.
+  *
+  * We cannot simply construct a FuncCall node and rely on transformFuncCall,
+  * because the source expression and format template have already been
+  * transformed. Invoking transformExprRecurse again would be incorrect.
+  * Instead, we construct a FuncCall node and let ParseFuncOrColumn produce
+  * the final FuncExpr node.
+  */
+static Node *
+coerce_type_with_format(ParseState *pstate, Node *node, Node *fmt,
+						Oid inputTypeId, Oid targetTypeId, int32 targetTypeMod,
+						CoercionContext ccontext, CoercionForm cformat, int location)
+{
+	Node	   *format;
+	Node	   *funcexpr;
+	FuncCall   *fn;
+	List	   *funcname = NIL;
+	List	   *args = NIL;
+	TYPCATEGORY s_typcategory;
+	TYPCATEGORY t_typcategory;
+
+	int32		targetBaseTypeMod = targetTypeMod;
+	Oid			targetBaseTypeId = getBaseTypeAndTypmod(targetTypeId,
+														&targetBaseTypeMod);
+	Oid			inputBaseTypeId = getBaseType(inputTypeId);
+	Oid			formatBaseTypeId = getBaseType(exprType(fmt));
+	TYPCATEGORY fmtcategory = TypeCategory(formatBaseTypeId);
+	Node	   *arg = node;
+
+	if (fmtcategory != TYPCATEGORY_STRING && fmtcategory != TYPCATEGORY_UNKNOWN)
+		ereport(ERROR,
+				errcode(ERRCODE_CANNOT_COERCE),
+				errmsg("CAST FORMAT expression is not of type text"),
+				parser_errposition(pstate, exprLocation(fmt)));
+
+	s_typcategory = TypeCategory(inputBaseTypeId);
+	t_typcategory = TypeCategory(targetBaseTypeId);
+
+	/*
+	 * For CAST FORMAT, we explicitly coerce the source expression to TEXT and
+	 * later pass it to FuncCall node, then ParseFuncOrColumn can use it.
+	 */
+	if (IsA(node, Const) && inputTypeId == UNKNOWNOID)
+	{
+		Const	   *con = (Const *) node;
+		Const	   *newcon = makeNode(Const);
+		Type		textType = typeidType(TEXTOID);
+
+		newcon->consttype = TEXTOID;
+		newcon->consttypmod = -1;
+		newcon->constcollid = typeTypeCollation(textType);
+		newcon->constlen = typeLen(textType);
+		newcon->constbyval = typeByVal(textType);
+		newcon->constisnull = con->constisnull;
+		newcon->location = exprLocation(node);
+
+		newcon->constvalue = stringTypeDatum(textType,
+											 DatumGetCString(con->constvalue),
+											 -1);
+		if (!newcon->constisnull && newcon->constlen == -1)
+			newcon->constvalue =
+				PointerGetDatum(PG_DETOAST_DATUM(newcon->constvalue));
+
+		ReleaseSysCache(textType);
+
+		arg = (Node *) newcon;
+		inputBaseTypeId = TEXTOID;
+		inputTypeId = TEXTOID;
+		s_typcategory = TYPCATEGORY_STRING;
+	}
+
+	/*
+	 * It's not allowed to take a FORMAT and be cast to itself. This may
+	 * change in the future.
+	 */
+	if (IsBinaryCoercible(inputBaseTypeId, targetBaseTypeId))
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("cannot cast type %s to %s while using a format template",
+					   format_type_be(inputBaseTypeId),
+					   format_type_be(targetBaseTypeId)),
+				errdetail("binary coercible type cast is not supported while using a format template"),
+				parser_coercion_errposition(pstate, location, node));
+
+	switch (inputBaseTypeId)
+	{
+		case INT2OID:
+		case INT4OID:
+		case INT8OID:
+		case FLOAT4OID:
+		case FLOAT8OID:
+		case NUMERICOID:
+		case DATEOID:
+		case TIMEOID:
+		case TIMESTAMPOID:
+		case TIMESTAMPTZOID:
+		case INTERVALOID:
+		case NAMEOID:
+		case TEXTOID:
+		case BPCHAROID:
+		case VARCHAROID:
+			break;
+		default:
+
+			/*
+			 * TODO: We should ideally avoid erroring out if inputBaseTypeId
+			 * is binary-coercible to the above types, but iterating
+			 * IsBinaryCoercible() for each type is too expensive.
+			 */
+
+			/*
+			 * FIXME: errdetail is wrong, since timetz is a category of
+			 * datetime. But it's not allowed.
+			 */
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot cast type %s to %s using formatted template",
+						   format_type_be(inputTypeId),
+						   format_type_be(targetTypeId)),
+					errdetail("Only categories of numeric, string, datetime, and timespan source data types are supported for formatted type casting"),
+					parser_coercion_errposition(pstate, location, node));
+			break;
+	}
+
+	switch (targetBaseTypeId)
+	{
+		case NUMERICOID:
+		case TIMESTAMPTZOID:
+		case DATEOID:
+		case NAMEOID:
+		case TEXTOID:
+		case BPCHAROID:
+		case VARCHAROID:
+			break;
+		default:
+
+			/*
+			 * TODO: We should ideally avoid erroring out if targetBaseTypeId
+			 * is binary-coercible to the above types, but iterating
+			 * IsBinaryCoercible() for each type is too expensive.
+			 */
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot cast type %s to %s using formatted template",
+						   format_type_be(inputTypeId),
+						   format_type_be(targetTypeId)),
+					errdetail("Only timestamptz, text, numeric and date data type are supported for formatted type casting"),
+					parser_coercion_errposition(pstate, location, node));
+			break;
+	}
+
+	/*
+	 * For erroring out case like: CAST(NULL::int2 as numeric FORMAT '9');
+	 *
+	 * This is a necessary hack! The code above only checks the source and
+	 * target types individually, rather than validating their combination.
+	 * This works because all these formatting functions (to_char, to_date,
+	 * to_number, to_timestamp) have distinct type categories for their inputs
+	 * versus their outputs.
+	 */
+	if (s_typcategory == t_typcategory)
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("cannot cast type %s to %s using formatted template",
+					   format_type_be(inputTypeId),
+					   format_type_be(targetTypeId)));
+
+	/*
+	 * Internally, CAST FORMAT delegates to functions (e.g., to_char, to_date)
+	 * where the format string parameter is typed as TEXT. Consequently, the
+	 * FORMAT clause requires explicit coercion to TEXT.
+	 */
+	format = coerce_to_target_type(pstate, fmt,
+								   exprType(fmt), TEXTOID, -1,
+								   ccontext, cformat,
+								   exprLocation(fmt));
+
+	switch (targetBaseTypeId)
+	{
+		case DATEOID:
+			funcname = list_make2(makeString("pg_catalog"),
+								  makeString("to_date"));
+			break;
+		case NUMERICOID:
+			funcname = list_make2(makeString("pg_catalog"),
+								  makeString("to_number"));
+			break;
+		case TIMESTAMPTZOID:
+			funcname = list_make2(makeString("pg_catalog"),
+								  makeString("to_timestamp"));
+			break;
+		case NAMEOID:
+		case TEXTOID:
+		case BPCHAROID:
+		case VARCHAROID:
+			funcname = list_make2(makeString("pg_catalog"),
+								  makeString("to_char"));
+			break;
+		default:
+			elog(ERROR, "failed to find conversion function from %s to %s while using a format template",
+				 format_type_be(inputTypeId),
+				 format_type_be(targetTypeId));
+			break;
+	}
+
+	args = list_make2(arg, format);
+	fn = makeFuncCall(funcname, args, COERCE_SQL_SYNTAX, -1);
+
+	funcexpr = ParseFuncOrColumn(pstate,
+								 fn->funcname,
+								 fn->args,
+								 NULL,
+								 fn,
+								 false,
+								 fn->location);
+
+	/*
+	 * For CAST FORMAT, we do not enforce the exact source type, allowing
+	 * certain categories of types instead. Therefore, the produced FuncExpr
+	 * must be coerced to the exact target type. This is also necessary
+	 * because the target type might be a domain.
+	 */
+	return coerce_to_target_type(pstate,
+								 funcexpr, exprType(funcexpr),
+								 targetTypeId, targetTypeMod,
+								 ccontext,
+								 cformat,
+								 location);
 }
 
 
@@ -159,6 +415,18 @@ coerce_type(ParseState *pstate, Node *node,
 			Oid inputTypeId, Oid targetTypeId, int32 targetTypeMod,
 			CoercionContext ccontext, CoercionForm cformat, int location)
 {
+	return coerce_type_extended(pstate, node,
+								inputTypeId, targetTypeId, targetTypeMod,
+								ccontext, cformat, location,
+								NULL);
+}
+
+Node *
+coerce_type_extended(ParseState *pstate, Node *node,
+					 Oid inputTypeId, Oid targetTypeId, int32 targetTypeMod,
+					 CoercionContext ccontext, CoercionForm cformat, int location,
+					 Node *fmt)
+{
 	Node	   *result;
 	CoercionPathType pathtype;
 	Oid			funcId;
@@ -166,6 +434,22 @@ coerce_type(ParseState *pstate, Node *node,
 	if (targetTypeId == inputTypeId ||
 		node == NULL)
 	{
+		if (fmt != NULL)
+		{
+			if (inputTypeId == UNKNOWNOID)
+				inputTypeId = TEXTOID;
+
+			if (targetTypeId == UNKNOWNOID)
+				targetTypeId = TEXTOID;
+
+			ereport(ERROR,
+					errcode(ERRCODE_CANNOT_COERCE),
+					errmsg("cannot cast type %s to %s while using a format template",
+						   format_type_be(inputTypeId),
+						   format_type_be(targetTypeId)),
+					errdetail("binary coercible type cast is not supported while using a format template"));
+		}
+
 		/* no conversion needed */
 		return node;
 	}
@@ -175,6 +459,18 @@ coerce_type(ParseState *pstate, Node *node,
 		targetTypeId == ANYCOMPATIBLEOID ||
 		targetTypeId == ANYCOMPATIBLENONARRAYOID)
 	{
+		if (fmt != NULL)
+		{
+			if (inputTypeId == UNKNOWNOID)
+				inputTypeId = TEXTOID;
+
+			ereport(ERROR,
+					errcode(ERRCODE_CANNOT_COERCE),
+					errmsg("cannot cast type %s to %s while using a format template",
+						   format_type_be(inputTypeId),
+						   format_type_be(targetTypeId)));
+		}
+
 		/*
 		 * Assume can_coerce_type verified that implicit coercion is okay.
 		 *
@@ -197,6 +493,18 @@ coerce_type(ParseState *pstate, Node *node,
 		targetTypeId == ANYCOMPATIBLERANGEOID ||
 		targetTypeId == ANYCOMPATIBLEMULTIRANGEOID)
 	{
+		if (fmt != NULL)
+		{
+			if (inputTypeId == UNKNOWNOID)
+				inputTypeId = TEXTOID;
+
+			ereport(ERROR,
+					errcode(ERRCODE_CANNOT_COERCE),
+					errmsg("cannot cast type %s to %s while using a format template",
+						   format_type_be(inputTypeId),
+						   format_type_be(targetTypeId)));
+		}
+
 		/*
 		 * Assume can_coerce_type verified that implicit coercion is okay.
 		 *
@@ -230,6 +538,17 @@ coerce_type(ParseState *pstate, Node *node,
 			return node;
 		}
 	}
+
+	if (fmt != NULL)
+	{
+		result = coerce_type_with_format(pstate, node, fmt,
+										 inputTypeId,
+										 targetTypeId, targetTypeMod,
+										 ccontext, cformat,
+										 location);
+		return result;
+	}
+
 	if (inputTypeId == UNKNOWNOID && IsA(node, Const))
 	{
 		/*

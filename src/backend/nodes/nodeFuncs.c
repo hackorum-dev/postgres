@@ -4502,6 +4502,8 @@ raw_expression_tree_walker_impl(Node *node,
 
 				if (WALK(tc->arg))
 					return true;
+				if (WALK(tc->format))
+					return true;
 				if (WALK(tc->typeName))
 					return true;
 			}

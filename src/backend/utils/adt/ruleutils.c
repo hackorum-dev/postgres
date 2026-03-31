@@ -11972,6 +11972,26 @@ get_func_sql_syntax(FuncExpr *expr, deparse_context *context)
 			get_rule_expr((Node *) lsecond(expr->args), context, false);
 			appendStringInfoString(buf, "))");
 			return true;
+		case F_TO_CHAR_INT4_TEXT:
+		case F_TO_CHAR_INT8_TEXT:
+		case F_TO_CHAR_FLOAT4_TEXT:
+		case F_TO_CHAR_FLOAT8_TEXT:
+		case F_TO_CHAR_NUMERIC_TEXT:
+		case F_TO_CHAR_INTERVAL_TEXT:
+		case F_TO_CHAR_TIMESTAMP_TEXT:
+		case F_TO_CHAR_TIMESTAMPTZ_TEXT:
+		case F_TO_NUMBER:
+		case F_TO_TIMESTAMP_TEXT_TEXT:
+		case F_TO_DATE:
+			/* CAST FORMAT */
+			appendStringInfoString(buf, "CAST(");
+			get_rule_expr((Node *) linitial(expr->args), context, false);
+			appendStringInfoString(buf, " AS ");
+			appendStringInfoString(buf, format_type_be(expr->funcresulttype));
+			appendStringInfoString(buf, " FORMAT ");
+			get_rule_expr((Node *) lsecond(expr->args), context, false);
+			appendStringInfoChar(buf, ')');
+			return true;
 	}
 	return false;
 }

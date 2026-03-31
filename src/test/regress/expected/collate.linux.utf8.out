@@ -463,6 +463,30 @@ SELECT to_char(date '2010-04-01', 'DD TMMON YYYY' COLLATE "tr_TR");
  01 NİS 2010
 (1 row)
 
+SELECT CAST(date '2010-02-01' as text format 'DD TMMON YYYY');
+    text     
+-------------
+ 01 ŞUB 2010
+(1 row)
+
+SELECT CAST(date '2010-02-01' as text format 'DD TMMON YYYY' COLLATE "tr_TR");
+    text     
+-------------
+ 01 ŞUB 2010
+(1 row)
+
+SELECT CAST(date '2010-04-01' as text format 'DD TMMON YYYY');
+    text     
+-------------
+ 01 NIS 2010
+(1 row)
+
+SELECT CAST(date '2010-04-01' as text format  'DD TMMON YYYY' COLLATE "tr_TR");
+    text     
+-------------
+ 01 NİS 2010
+(1 row)
+
 -- to_date
 SELECT to_date('01 ŞUB 2010', 'DD TMMON YYYY');
   to_date   
@@ -477,6 +501,21 @@ SELECT to_date('01 Şub 2010', 'DD TMMON YYYY');
 (1 row)
 
 SELECT to_date('1234567890ab 2010', 'TMMONTH YYYY'); -- fail
+ERROR:  invalid value "1234567890ab" for "MONTH"
+DETAIL:  The given value did not match any of the allowed values for this field.
+SELECT CAST('01 ŞUB 2010' as date format 'DD TMMON YYYY');
+    date    
+------------
+ 02-01-2010
+(1 row)
+
+SELECT CAST('01 ŞUB 2010' as date format 'DD TMMON YYYY'); -- ok
+    date    
+------------
+ 02-01-2010
+(1 row)
+
+SELECT CAST('1234567890ab 2010' as date format 'TMMONTH YYYY'); -- fail
 ERROR:  invalid value "1234567890ab" for "MONTH"
 DETAIL:  The given value did not match any of the allowed values for this field.
 -- backwards parsing

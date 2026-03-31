@@ -686,6 +686,7 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 		castnode = makeNode(TypeCast);
 		castnode->typeName = SystemTypeName("regclass");
 		castnode->arg = (Node *) snamenode;
+		castnode->format = NULL;
 		castnode->location = -1;
 		funccallnode = makeFuncCall(SystemFuncName("nextval"),
 									list_make1(castnode),

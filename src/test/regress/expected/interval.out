@@ -2263,9 +2263,21 @@ SELECT to_char('infinity'::interval, 'YYYY');
  
 (1 row)
 
+SELECT cast('infinity'::interval as text format 'YYYY');
+ text 
+------
+ 
+(1 row)
+
 SELECT to_char('-infinity'::interval, 'YYYY');
  to_char 
 ---------
+ 
+(1 row)
+
+SELECT cast('-infinity'::interval as text format 'YYYY');
+ text 
+------
  
 (1 row)
 

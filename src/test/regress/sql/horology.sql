@@ -539,21 +539,46 @@ SELECT to_timestamp('2011-12-18 11:38 -05:20', 'YYYY-MM-DD HH12:MI TZH:TZM');
 SELECT to_timestamp('2011-12-18 11:38 20',     'YYYY-MM-DD HH12:MI TZM');
 
 SELECT to_timestamp('2011-12-18 11:38 EST', 'YYYY-MM-DD HH12:MI TZ');
+SELECT cast('2011-12-18 11:38 EST' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');
+
 SELECT to_timestamp('2011-12-18 11:38 -05', 'YYYY-MM-DD HH12:MI TZ');
+SELECT cast('2011-12-18 11:38 -05' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');
+
 SELECT to_timestamp('2011-12-18 11:38 +01:30', 'YYYY-MM-DD HH12:MI TZ');
+SELECT cast('2011-12-18 11:38 +01:30' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');
+
 SELECT to_timestamp('2011-12-18 11:38 MSK', 'YYYY-MM-DD HH12:MI TZ');  -- dyntz
+SELECT cast('2011-12-18 11:38 MSK' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');  -- dyntz
+
 SELECT to_timestamp('2011-12-18 00:00 LMT', 'YYYY-MM-DD HH24:MI TZ');  -- dyntz
+SELECT cast('2011-12-18 00:00 LMT' as timestamptz format 'YYYY-MM-DD HH24:MI TZ');  -- dyntz
+
 SELECT to_timestamp('2011-12-18 11:38ESTFOO24', 'YYYY-MM-DD HH12:MITZFOOSS');
+SELECT cast('2011-12-18 11:38ESTFOO24' as timestamptz format 'YYYY-MM-DD HH12:MITZFOOSS');
+
 SELECT to_timestamp('2011-12-18 11:38-05FOO24', 'YYYY-MM-DD HH12:MITZFOOSS');
+SELECT cast('2011-12-18 11:38-05FOO24' as timestamptz format 'YYYY-MM-DD HH12:MITZFOOSS');
+
 SELECT to_timestamp('2011-12-18 11:38 JUNK', 'YYYY-MM-DD HH12:MI TZ');  -- error
+SELECT cast('2011-12-18 11:38 JUNK' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');  -- error
+
 SELECT to_timestamp('2011-12-18 11:38 ...', 'YYYY-MM-DD HH12:MI TZ');  -- error
+SELECT cast('2011-12-18 11:38 ...' as timestamptz format 'YYYY-MM-DD HH12:MI TZ');  -- error
 
 SELECT to_timestamp('2011-12-18 11:38 -05', 'YYYY-MM-DD HH12:MI OF');
+SELECT cast ('2011-12-18 11:38 -05' as timestamptz format 'YYYY-MM-DD HH12:MI OF');
+
 SELECT to_timestamp('2011-12-18 11:38 +01:30', 'YYYY-MM-DD HH12:MI OF');
+SELECT cast('2011-12-18 11:38 +01:30' as timestamptz format 'YYYY-MM-DD HH12:MI OF');
+
 SELECT to_timestamp('2011-12-18 11:38 +xyz', 'YYYY-MM-DD HH12:MI OF');  -- error
+SELECT cast('2011-12-18 11:38 +xyz' as timestamptz format 'YYYY-MM-DD HH12:MI OF');  -- error
+
 SELECT to_timestamp('2011-12-18 11:38 +01:xyz', 'YYYY-MM-DD HH12:MI OF');  -- error
+SELECT cast('2011-12-18 11:38 +01:xyz' as timestamptz format 'YYYY-MM-DD HH12:MI OF');  -- error
 
 SELECT to_timestamp('2018-11-02 12:34:56.025', 'YYYY-MM-DD HH24:MI:SS.MS');
+SELECT cast('2018-11-02 12:34:56.025' as timestamptz format 'YYYY-MM-DD HH24:MI:SS.MS');
 
 SELECT i, to_timestamp('2018-11-02 12:34:56', 'YYYY-MM-DD HH24:MI:SS.FF' || i) FROM generate_series(1, 6) i;
 SELECT i, to_timestamp('2018-11-02 12:34:56.1', 'YYYY-MM-DD HH24:MI:SS.FF' || i) FROM generate_series(1, 6) i;
@@ -563,11 +588,15 @@ SELECT i, to_timestamp('2018-11-02 12:34:56.1234', 'YYYY-MM-DD HH24:MI:SS.FF' ||
 SELECT i, to_timestamp('2018-11-02 12:34:56.12345', 'YYYY-MM-DD HH24:MI:SS.FF' || i) FROM generate_series(1, 6) i;
 SELECT i, to_timestamp('2018-11-02 12:34:56.123456', 'YYYY-MM-DD HH24:MI:SS.FF' || i) FROM generate_series(1, 6) i;
 SELECT i, to_timestamp('2018-11-02 12:34:56.123456789', 'YYYY-MM-DD HH24:MI:SS.FF' || i) FROM generate_series(1, 6) i;
+SELECT i, cast('2018-11-02 12:34:56.123456789' as timestamptz format 'YYYY-MM-DD HH24:MI:SS.FF' || i) FROM generate_series(1, 6) i;
 SELECT i, to_timestamp('20181102123456123456', 'YYYYMMDDHH24MISSFF' || i) FROM generate_series(1, 6) i;
 
 SELECT to_date('1 4 1902', 'Q MM YYYY');  -- Q is ignored
+SELECT cast('1 4 1902' as date format 'Q MM YYYY');  -- Q is ignored
 SELECT to_date('3 4 21 01', 'W MM CC YY');
+SELECT cast('3 4 21 01' as date format 'W MM CC YY');
 SELECT to_date('2458872', 'J');
+SELECT cast('2458872' as date format 'J');
 
 --
 -- Check handling of BC dates
@@ -677,7 +706,9 @@ SELECT to_date('2147483647 01', 'CC YY');
 
 -- to_char's TZ format code produces zone abbrev if known
 SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD HH:MI:SS TZ');
+SELECT cast('2012-12-12 12:00'::timestamptz as text format 'YYYY-MM-DD HH:MI:SS TZ');
 SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD HH:MI:SS tz');
+SELECT cast('2012-12-12 12:00'::timestamptz as text format 'YYYY-MM-DD HH:MI:SS tz');
 
 --
 -- Check behavior with SQL-style fixed-GMT-offset time zone (cf bug #8572)
@@ -692,6 +723,17 @@ SELECT '2012-12-12 12:00'::timestamptz;
 SELECT '2012-12-12 12:00 America/New_York'::timestamptz;
 
 SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD HH:MI:SS TZ');
+SELECT cast('2012-12-12 12:00'::timestamptz as text format 'YYYY-MM-DD HH:MI:SS TZ'),
+        to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD HH:MI:SS TZ');
+
+SELECT cast('2012-12-12 12:00'::date as text format 'YYYY-MM-DD HH:MI:SS TZ'),
+        to_char('2012-12-12 12:00'::date, 'YYYY-MM-DD HH:MI:SS TZ');
+
+SELECT cast('12:00'::time as text format 'HH:MI:SS'),
+        to_char('12:00'::time, 'HH:MI:SS');
+
+SELECT cast('2012-12-12 12:00'::timetz as text format 'YYYY-MM-DD HH:MI:SS TZ');
+
 SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD SSSS');
 SELECT to_char('2012-12-12 12:00'::timestamptz, 'YYYY-MM-DD SSSSS');
 

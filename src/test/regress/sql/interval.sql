@@ -801,7 +801,9 @@ SELECT 'infinity'::interval::time;
 SELECT '-infinity'::interval::time;
 
 SELECT to_char('infinity'::interval, 'YYYY');
+SELECT cast('infinity'::interval as text format 'YYYY');
 SELECT to_char('-infinity'::interval, 'YYYY');
+SELECT cast('-infinity'::interval as text format 'YYYY');
 
 -- "ago" can only appear once at the end of an interval.
 SELECT INTERVAL '42 days 2 seconds ago ago';

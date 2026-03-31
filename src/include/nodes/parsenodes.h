@@ -397,6 +397,7 @@ typedef struct TypeCast
 	NodeTag		type;
 	Node	   *arg;			/* the expression being casted */
 	TypeName   *typeName;		/* the target type */
+	Node	   *format;			/* the cast format template expression */
 	ParseLoc	location;		/* token location, or -1 if unknown */
 } TypeCast;
 

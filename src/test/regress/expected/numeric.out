@@ -2264,8 +2264,20 @@ SELECT to_number('-34,338,492', '99G999G999');
  -34338492
 (1 row)
 
+SELECT CAST('-34,338,492' as numeric FORMAT  '99G999G999');
+  numeric  
+-----------
+ -34338492
+(1 row)
+
 SELECT to_number('-34,338,492.654,878', '99G999G999D999G999');
     to_number     
+------------------
+ -34338492.654878
+(1 row)
+
+SELECT CAST('-34,338,492.654,878' as numeric FORMAT '99G999G999D999G999');
+     numeric      
 ------------------
  -34338492.654878
 (1 row)
@@ -2276,10 +2288,22 @@ SELECT to_number('<564646.654564>', '999999.999999PR');
  -564646.654564
 (1 row)
 
+SELECT CAST('<564646.654564>' as numeric FORMAT '999999.999999PR');
+    numeric     
+----------------
+ -564646.654564
+(1 row)
+
 SELECT to_number('0.00001-', '9.999999S');
  to_number 
 -----------
   -0.00001
+(1 row)
+
+SELECT CAST('0.00001-' as numeric FORMAT '9.999999S');
+ numeric  
+----------
+ -0.00001
 (1 row)
 
 SELECT to_number('5.01-', 'FM9.999999S');
@@ -2288,14 +2312,32 @@ SELECT to_number('5.01-', 'FM9.999999S');
      -5.01
 (1 row)
 
+SELECT CAST('5.01-' as numeric FORMAT 'FM9.999999S');
+ numeric 
+---------
+   -5.01
+(1 row)
+
 SELECT to_number('5.01-', 'FM9.999999MI');
  to_number 
 -----------
      -5.01
 (1 row)
 
+SELECT CAST('5.01-' as numeric FORMAT 'FM9.999999MI');
+ numeric 
+---------
+   -5.01
+(1 row)
+
 SELECT to_number('5 4 4 4 4 8 . 7 8', '9 9 9 9 9 9 . 9 9');
  to_number 
+-----------
+ 544448.78
+(1 row)
+
+SELECT CAST('5 4 4 4 4 8 . 7 8' as numeric FORMAT '9 9 9 9 9 9 . 9 9');
+  numeric  
 -----------
  544448.78
 (1 row)
@@ -2306,10 +2348,22 @@ SELECT to_number('.01', 'FM9.99');
       0.01
 (1 row)
 
+SELECT CAST('.01' as numeric FORMAT 'FM9.99');
+ numeric 
+---------
+    0.01
+(1 row)
+
 SELECT to_number('.0', '99999999.99999999');
  to_number 
 -----------
        0.0
+(1 row)
+
+SELECT CAST('.0' as numeric FORMAT '99999999.99999999');
+ numeric 
+---------
+     0.0
 (1 row)
 
 SELECT to_number('0', '99.99');
@@ -2318,10 +2372,22 @@ SELECT to_number('0', '99.99');
          0
 (1 row)
 
+SELECT CAST('0' as numeric FORMAT '99.99');
+ numeric 
+---------
+       0
+(1 row)
+
 SELECT to_number('.-01', 'S99.99');
  to_number 
 -----------
      -0.01
+(1 row)
+
+SELECT CAST('.-01' as numeric FORMAT 'S99.99');
+ numeric 
+---------
+   -0.01
 (1 row)
 
 SELECT to_number('.01-', '99.99S');
@@ -2330,10 +2396,22 @@ SELECT to_number('.01-', '99.99S');
      -0.01
 (1 row)
 
+SELECT CAST('.01-' as numeric FORMAT '99.99S');
+ numeric 
+---------
+   -0.01
+(1 row)
+
 SELECT to_number(' . 0 1-', ' 9 9 . 9 9 S');
  to_number 
 -----------
      -0.01
+(1 row)
+
+SELECT CAST(' . 0 1-' as numeric FORMAT ' 9 9 . 9 9 S');
+ numeric 
+---------
+   -0.01
 (1 row)
 
 SELECT to_number('34,50','999,99');
@@ -2342,10 +2420,22 @@ SELECT to_number('34,50','999,99');
       3450
 (1 row)
 
+SELECT CAST('34,50' as numeric FORMAT '999,99');
+ numeric 
+---------
+    3450
+(1 row)
+
 SELECT to_number('123,000','999G');
  to_number 
 -----------
        123
+(1 row)
+
+SELECT CAST('123,000' as numeric FORMAT '999G');
+ numeric 
+---------
+     123
 (1 row)
 
 SELECT to_number('123456','999G999');
@@ -2354,10 +2444,22 @@ SELECT to_number('123456','999G999');
     123456
 (1 row)
 
+SELECT CAST('123456' as numeric FORMAT '999G999');
+ numeric 
+---------
+  123456
+(1 row)
+
 SELECT to_number('$1234.56','L9,999.99');
  to_number 
 -----------
    1234.56
+(1 row)
+
+SELECT CAST('$1234.56' as numeric FORMAT 'L9,999.99');
+ numeric 
+---------
+ 1234.56
 (1 row)
 
 SELECT to_number('$1234.56','L99,999.99');
@@ -2366,10 +2468,22 @@ SELECT to_number('$1234.56','L99,999.99');
    1234.56
 (1 row)
 
+SELECT CAST('$1234.56' as numeric FORMAT 'L99,999.99');
+ numeric 
+---------
+ 1234.56
+(1 row)
+
 SELECT to_number('$1,234.56','L99,999.99');
  to_number 
 -----------
    1234.56
+(1 row)
+
+SELECT CAST('$1,234.56' as numeric FORMAT 'L99,999.99');
+ numeric 
+---------
+ 1234.56
 (1 row)
 
 SELECT to_number('1234.56','L99,999.99');
@@ -2378,10 +2492,22 @@ SELECT to_number('1234.56','L99,999.99');
    1234.56
 (1 row)
 
+SELECT CAST('1234.56' as numeric FORMAT 'L99,999.99');
+ numeric 
+---------
+ 1234.56
+(1 row)
+
 SELECT to_number('1,234.56','L99,999.99');
  to_number 
 -----------
    1234.56
+(1 row)
+
+SELECT CAST('1,234.56' as numeric FORMAT 'L99,999.99');
+ numeric 
+---------
+ 1234.56
 (1 row)
 
 SELECT to_number('42nd', '99th');
@@ -2390,8 +2516,20 @@ SELECT to_number('42nd', '99th');
         42
 (1 row)
 
+SELECT CAST('42nd' as numeric FORMAT '99th');
+ numeric 
+---------
+      42
+(1 row)
+
 SELECT to_number('123456', '99999V99');
         to_number        
+-------------------------
+ 1234.560000000000000000
+(1 row)
+
+SELECT CAST('123456' as numeric FORMAT '99999V99');
+         numeric         
 -------------------------
  1234.560000000000000000
 (1 row)
@@ -2400,11 +2538,12 @@ SELECT to_number('123456', '99999V99');
 WITH rows AS
   (SELECT i, to_char(i, 'RN') AS roman FROM generate_series(1, 3999) AS i)
 SELECT
-  bool_and(to_number(roman, 'RN') = i) as valid
+  bool_and(to_number(roman, 'RN') = i) as valid,
+  bool_and(cast(roman as numeric format 'RN') = i) as valid
 FROM rows;
- valid 
--------
- t
+ valid | valid 
+-------+-------
+ t     | t
 (1 row)
 
 -- Some additional tests for RN input

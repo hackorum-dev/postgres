@@ -1,0 +1,329 @@
+create function ret_settxt() returns setof text as
+$$
+begin
+    return query execute 'select 1 union all select 1';
+end;
+$$
+language plpgsql immutable;
+-- check CAST FORMAT expression, the following should all fail
+select cast(NULL as date format ret_settxt()); -- cannot return a set
+ERROR:  set-returning functions are not allowed in CAST FORMAT expressions
+LINE 1: select cast(NULL as date format ret_settxt());
+                                        ^
+select cast(NULL as date format (select 1::text where false));
+ERROR:  cannot use subquery in CAST FORMAT expression
+LINE 1: select cast(NULL as date format (select 1::text where false)...
+                                        ^
+select cast(NULL as date format (string_agg(NULL, ' ')));
+ERROR:  aggregate functions are not allowed in CAST FORMAT expressions
+LINE 1: select cast(NULL as date format (string_agg(NULL, ' ')));
+                                         ^
+select cast(NULL as date format (string_agg(NULL, ' ') over () ));
+ERROR:  window functions are not allowed in CAST FORMAT expressions
+LINE 1: select cast(NULL as date format (string_agg(NULL, ' ') over ...
+                                         ^
+select cast(NULL as date format NULL::int);
+ERROR:  CAST FORMAT expression is not of type text
+LINE 1: select cast(NULL as date format NULL::int);
+                                        ^
+select cast('1' as date format B'01');
+ERROR:  CAST FORMAT expression is not of type text
+LINE 1: select cast('1' as date format B'01');
+                                       ^
+-- CAST FORMAT is restricted to the source and target types used by to_char, to_date, to_timestamp, and to_number
+-- The following should all fail
+select cast('hello' as name format 'test');
+ERROR:  cannot cast type text to name using formatted template
+select cast('hello' as bpchar format 'test');
+ERROR:  cannot cast type text to character while using a format template
+LINE 1: select cast('hello' as bpchar format 'test');
+               ^
+DETAIL:  binary coercible type cast is not supported while using a format template
+select cast('-34,338,492' as bigint format '99G999G999');
+ERROR:  cannot cast type text to bigint using formatted template
+LINE 1: select cast('-34,338,492' as bigint format '99G999G999');
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast(array[1] as text format 'YYYY');
+ERROR:  formatted type cast is not supported for array type
+LINE 1: select cast(array[1] as text format 'YYYY');
+                    ^
+select cast('1' as timestamp[] format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to timestamp without time zone[] using formatted template
+LINE 1: select cast('1' as timestamp[] format 'YYYY-MM-DD');
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('2012-13-12' as timestamp format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to timestamp without time zone using formatted template
+LINE 1: select cast('2012-13-12' as timestamp format 'YYYY-MM-DD');
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('2012-13-12' as time format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to time without time zone using formatted template
+LINE 1: select cast('2012-13-12' as time format 'YYYY-MM-DD');
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('2012-13-12' as timetz format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to time with time zone using formatted template
+LINE 1: select cast('2012-13-12' as timetz format 'YYYY-MM-DD');
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('2012-13-12' as interval format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to interval using formatted template
+LINE 1: select cast('2012-13-12' as interval format 'YYYY-MM-DD');
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('1'::text as unknown format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to unknown using formatted template
+LINE 1: select cast('1'::text as unknown format 'YYYY-MM-DD');
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('1' as bool format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to boolean using formatted template
+LINE 1: select cast('1' as bool format 'YYYY-MM-DD');
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('1' as json format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to json using formatted template
+LINE 1: select cast('1' as json format 'YYYY-MM-DD');
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('1'::json as text format 'YYYY-MM-DD');
+ERROR:  cannot cast type json to text using formatted template
+LINE 1: select cast('1'::json as text format 'YYYY-MM-DD');
+               ^
+DETAIL:  Only categories of numeric, string, datetime, and timespan source data types are supported for formatted type casting
+select cast('1' as anyelement format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to anyelement while using a format template
+select cast('1' as anyenum format 'YYYY-MM-DD');
+ERROR:  cannot cast type unknown to anyenum
+LINE 1: select cast('1' as anyenum format 'YYYY-MM-DD');
+               ^
+select cast('1' as anyarray format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to anyarray while using a format template
+select cast(null::anyelement as anyelement format 'YYYY-MM-DD');
+ERROR:  cannot cast type text to anyelement while using a format template
+select cast('2012-12-12 12:00'::timetz as text format 'YYYY-MM-DD HH:MI:SS TZ');
+ERROR:  cannot cast type time with time zone to text using formatted template
+LINE 1: select cast('2012-12-12 12:00'::timetz as text format 'YYYY-...
+               ^
+DETAIL:  Only categories of numeric, string, datetime, and timespan source data types are supported for formatted type casting
+select cast(null::regclass as text format 'YYYY-MM-DD HH:MI:SS TZ');
+ERROR:  cannot cast type regclass to text using formatted template
+LINE 1: select cast(null::regclass as text format 'YYYY-MM-DD HH:MI:...
+               ^
+DETAIL:  Only categories of numeric, string, datetime, and timespan source data types are supported for formatted type casting
+select cast(null::int2 as numeric format null);
+ERROR:  cannot cast type smallint to numeric using formatted template
+select cast(null::date as timestamptz format null);
+ERROR:  cannot cast type date to timestamp with time zone using formatted template
+select cast(null::time as timestamptz format null);
+ERROR:  cannot cast type time without time zone to timestamp with time zone
+LINE 1: select cast(null::time as timestamptz format null);
+               ^
+-- CAST FORMAT is not supported for binary coercible type cast
+select cast('2022-01-01' as unknown format null);
+ERROR:  cannot cast type text to text while using a format template
+DETAIL:  binary coercible type cast is not supported while using a format template
+select cast('1' as text format '1'::text);
+ERROR:  cannot cast type text to text while using a format template
+LINE 1: select cast('1' as text format '1'::text);
+               ^
+DETAIL:  binary coercible type cast is not supported while using a format template
+select cast('1'::text as text format '1'::text);
+ERROR:  cannot cast type text to text while using a format template
+DETAIL:  binary coercible type cast is not supported while using a format template
+select cast('2012-12-12 12:00'::timetz as text format 'YYYY-MM-DD HH:MI:SS TZ'); -- error
+ERROR:  cannot cast type time with time zone to text using formatted template
+LINE 1: select cast('2012-12-12 12:00'::timetz as text format 'YYYY-...
+               ^
+DETAIL:  Only categories of numeric, string, datetime, and timespan source data types are supported for formatted type casting
+select cast('2012-13-12' as date format 'YYYY-DD-MM'); -- ok
+    date    
+------------
+ 12-13-2012
+(1 row)
+
+select cast('2012-13-12' as date format 'YYYY-MM-DD'); -- error
+ERROR:  date/time field value out of range: "2012-13-12"
+select cast('1' as date format 'YYYY-MM-DD');
+    date    
+------------
+ 01-01-0001
+(1 row)
+
+select cast('1' collate "C" as date format 'YYYY-MM-DD');
+    date    
+------------
+ 01-01-0001
+(1 row)
+
+select cast('2012-13-12' as date format 'YYYY-DD-MM') as date;
+    date    
+------------
+ 12-13-2012
+(1 row)
+
+select cast('2012-13-12' as timestamptz format 'YYYY-DD-MM') as date;
+             date             
+------------------------------
+ Thu Dec 13 00:00:00 2012 PST
+(1 row)
+
+select cast('2012-13-12'::text as timestamp format 'YYYY-DD-MM') as date; -- error
+ERROR:  cannot cast type text to timestamp without time zone using formatted template
+LINE 1: select cast('2012-13-12'::text as timestamp format 'YYYY-DD-...
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('1' as timestamp format 'YYYY-MM-DD') = to_timestamp('1', 'YYYY-MM-DD');
+ERROR:  cannot cast type text to timestamp without time zone using formatted template
+LINE 1: select cast('1' as timestamp format 'YYYY-MM-DD') = to_times...
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('2026-01-28 13:29:12.324606+01'::text as timestamp format 'YYYY-MM-DD') =
+            to_timestamp('2026-01-28 13:29:12.324606+01'::text, 'YYYY-MM-DD');
+ERROR:  cannot cast type text to timestamp without time zone using formatted template
+LINE 1: select cast('2026-01-28 13:29:12.324606+01'::text as timesta...
+               ^
+DETAIL:  Only timestamptz, text, numeric and date data type are supported for formatted type casting
+select cast('1' as date format 'YYYY-MM-DD') = to_date('1', 'YYYY-MM-DD');
+ ?column? 
+----------
+ t
+(1 row)
+
+-- test with domain
+create domain d1 as date check (value <> '0001-01-01');
+select cast('1' as text format 'YYYY-MM-DD'); -- error
+ERROR:  cannot cast type text to text while using a format template
+LINE 1: select cast('1' as text format 'YYYY-MM-DD');
+               ^
+DETAIL:  binary coercible type cast is not supported while using a format template
+select cast('1' as d1 format 'YYYY-MM-DD'); -- error
+ERROR:  value for domain d1 violates check constraint "d1_check"
+select cast('1' as date format 'MM-DD'); -- ok
+     date      
+---------------
+ 01-01-0001 BC
+(1 row)
+
+select cast('1' as d1 format 'MM-DD'); -- ok
+      d1       
+---------------
+ 01-01-0001 BC
+(1 row)
+
+select cast('1'::text collate "C" as date format 'YYYY-MM-DD');
+    date    
+------------
+ 01-01-0001
+(1 row)
+
+select cast('1' as date format 'YYYY-MM-DD') = to_date('1', 'YYYY-MM-DD') as expect_true;
+ expect_true 
+-------------
+ t
+(1 row)
+
+create table tcast(col1 text, col2 text, col3 date, col4 timestamptz, col5 int8);
+insert into tcast(col1, col2, col5)
+  values('2022-12-13', 'YYYY-MM-DD', 1234),
+        ('2022-12-01', 'YYYY-DD-MM', -1234);
+select cast(col1 as date format col2) from tcast;
+    col1    
+------------
+ 12-13-2022
+ 01-12-2022
+(2 rows)
+
+select cast(col1 as date format col3) from tcast; -- error
+ERROR:  CAST FORMAT expression is not of type text
+LINE 1: select cast(col1 as date format col3) from tcast;
+                                        ^
+select cast(col1 as date format col3::text) from tcast; -- ok
+ col1 
+------
+ 
+ 
+(2 rows)
+
+create function imm_const() returns text as $$ begin return 'YYYY-MM-DD'; end; $$ language plpgsql immutable;
+select cast(col1 as date format imm_const()) from tcast;
+    col1    
+------------
+ 12-13-2022
+ 12-01-2022
+(2 rows)
+
+create index s1 on tcast(to_date(col1, 'YYYY-MM-DD')); -- error
+ERROR:  functions in index expression must be marked IMMUTABLE
+LINE 1: create index s1 on tcast(to_date(col1, 'YYYY-MM-DD'));
+                                 ^
+create index s1 on tcast(cast(col1 as date format 'YYYY-MM-DD')); -- error
+ERROR:  functions in index expression must be marked IMMUTABLE
+LINE 1: create index s1 on tcast(cast(col1 as date format 'YYYY-MM-D...
+                                 ^
+create view tcast_v1 as
+   select cast(col1 as date format 'YYYY-MM-DD') as to_date,
+         cast(col1 as timestamptz format 'YYYY-MM-DD') as to_timestamptz,
+         cast(NULL::interval as text format 'YYYY-MM-DD') as to_txt0,
+         cast(col1::timestamp as text format 'YYYY-MM-DD') as to_txt1,
+         cast(col3 as text format 'YYYY-MM-DD') as to_txt2,
+         cast(col4 as text format 'YYYY-MM-DD') as to_txt3,
+         cast(numeric 'inf' as text format 'YYYY-MM-DD') as to_txt4,
+         cast(bigint '12324' as text format 'YYYY-MM-DD') as to_txt5
+   from tcast;
+select pg_get_viewdef('tcast_v1', true);
+                                      pg_get_viewdef                                       
+-------------------------------------------------------------------------------------------
+  SELECT CAST(col1 AS date FORMAT 'YYYY-MM-DD'::text) AS to_date,                         +
+     CAST(col1 AS timestamp with time zone FORMAT 'YYYY-MM-DD'::text) AS to_timestamptz,  +
+     CAST(NULL::interval AS text FORMAT 'YYYY-MM-DD'::text) AS to_txt0,                   +
+     CAST(col1::timestamp without time zone AS text FORMAT 'YYYY-MM-DD'::text) AS to_txt1,+
+     CAST(col3 AS text FORMAT 'YYYY-MM-DD'::text) AS to_txt2,                             +
+     CAST(col4 AS text FORMAT 'YYYY-MM-DD'::text) AS to_txt3,                             +
+     CAST('Infinity'::numeric AS text FORMAT 'YYYY-MM-DD'::text) AS to_txt4,              +
+     CAST('12324'::bigint AS text FORMAT 'YYYY-MM-DD'::text) AS to_txt5                   +
+    FROM tcast;
+(1 row)
+
+explain (verbose, costs off)
+select cast(col5::float8 as text format '9.99EEEE') as to_txt1,
+ cast(col5::numeric as text format '9.99EEEE') as to_txt2
+from tcast;
+                                                           QUERY PLAN                                                            
+---------------------------------------------------------------------------------------------------------------------------------
+ Seq Scan on public.tcast
+   Output: CAST((col5)::double precision AS text FORMAT '9.99EEEE'::text), CAST((col5)::numeric AS text FORMAT '9.99EEEE'::text)
+(2 rows)
+
+create view tcast_v2 as
+   select cast(col5 as text format '9.99EEEE') as to_txt0,
+         cast(col5::float8 as text format '9.99EEEE') as to_txt1,
+         cast(col5::float4 as text format '9.99EEEE') as to_txt2,
+         cast(col5::numeric as text format '9.99EEEE') as to_txt3,
+         cast(col5::int2 as text format '9.99EEEE') as to_txt4,
+         cast(col5::int4 as text format '9.99EEEE') as to_txt5
+   from tcast;
+select pg_get_viewdef('tcast_v2', true);
+                                pg_get_viewdef                                
+------------------------------------------------------------------------------
+  SELECT CAST(col5 AS text FORMAT '9.99EEEE'::text) AS to_txt0,              +
+     CAST(col5::double precision AS text FORMAT '9.99EEEE'::text) AS to_txt1,+
+     CAST(col5::real AS text FORMAT '9.99EEEE'::text) AS to_txt2,            +
+     CAST(col5::numeric AS text FORMAT '9.99EEEE'::text) AS to_txt3,         +
+     CAST(col5::smallint AS text FORMAT '9.99EEEE'::text) AS to_txt4,        +
+     CAST(col5::integer AS text FORMAT '9.99EEEE'::text) AS to_txt5          +
+    FROM tcast;
+(1 row)
+
+select * from tcast_v2;
+  to_txt0  |  to_txt1  |  to_txt2  |  to_txt3  |  to_txt4  |  to_txt5  
+-----------+-----------+-----------+-----------+-----------+-----------
+  1.23e+03 |  1.23e+03 |  1.23e+03 |  1.23e+03 |  1.23e+03 |  1.23e+03
+ -1.23e+03 | -1.23e+03 | -1.23e+03 | -1.23e+03 | -1.23e+03 | -1.23e+03
+(2 rows)
+
+drop function ret_settxt;
+drop view tcast_v1, tcast_v2;
+drop table tcast;

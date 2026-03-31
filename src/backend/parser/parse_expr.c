@@ -579,6 +579,7 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 		case EXPR_KIND_GENERATED_COLUMN:
 		case EXPR_KIND_CYCLE_MARK:
 		case EXPR_KIND_PROPGRAPH_PROPERTY:
+		case EXPR_KIND_TYPECAST_FORMAT:
 			/* okay */
 			break;
 
@@ -1880,6 +1881,9 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		case EXPR_KIND_PROPGRAPH_PROPERTY:
 			err = _("cannot use subquery in property definition expression");
 			break;
+		case EXPR_KIND_TYPECAST_FORMAT:
+			err = _("cannot use subquery in CAST FORMAT expression");
+			break;
 
 			/*
 			 * There is intentionally no default: case here, so that the
@@ -2726,6 +2730,7 @@ transformTypeCast(ParseState *pstate, TypeCast *tc)
 	Node	   *result;
 	Node	   *arg = tc->arg;
 	Node	   *expr;
+	Node	   *format = NULL;
 	Oid			inputType;
 	Oid			targetType;
 	int32		targetTypmod;
@@ -2746,6 +2751,12 @@ transformTypeCast(ParseState *pstate, TypeCast *tc)
 		Oid			targetBaseType;
 		int32		targetBaseTypmod;
 		Oid			elementType;
+
+		if (tc->format)
+			ereport(ERROR,
+					errcode(ERRCODE_CANNOT_COERCE),
+					errmsg("formatted type cast is not supported for array type"),
+					parser_coercion_errposition(pstate, exprLocation(arg), arg));
 
 		/*
 		 * If target is a domain over array, work with the base array type
@@ -2774,6 +2785,8 @@ transformTypeCast(ParseState *pstate, TypeCast *tc)
 	if (inputType == InvalidOid)
 		return expr;			/* do nothing if NULL input */
 
+	format = transformExpr(pstate, tc->format, EXPR_KIND_TYPECAST_FORMAT);
+
 	/*
 	 * Location of the coercion is preferentially the location of the :: or
 	 * CAST symbol, but if there is none then use the location of the type
@@ -2783,11 +2796,12 @@ transformTypeCast(ParseState *pstate, TypeCast *tc)
 	if (location < 0)
 		location = tc->typeName->location;
 
-	result = coerce_to_target_type(pstate, expr, inputType,
-								   targetType, targetTypmod,
-								   COERCION_EXPLICIT,
-								   COERCE_EXPLICIT_CAST,
-								   location);
+	result = coerce_to_target_type_extended(pstate, expr, inputType,
+											targetType, targetTypmod,
+											COERCION_EXPLICIT,
+											COERCE_EXPLICIT_CAST,
+											location,
+											format);
 	if (result == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_CANNOT_COERCE),
@@ -3241,6 +3255,8 @@ ParseExprKindName(ParseExprKind exprKind)
 			return "CYCLE";
 		case EXPR_KIND_PROPGRAPH_PROPERTY:
 			return "property definition expression";
+		case EXPR_KIND_TYPECAST_FORMAT:
+			return "CAST FORMAT expression";
 
 			/*
 			 * There is intentionally no default: case here, so that the
