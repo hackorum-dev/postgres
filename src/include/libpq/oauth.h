@@ -64,6 +64,7 @@ typedef void (*ValidatorShutdownCB) (ValidatorModuleState *state);
 typedef bool (*ValidatorValidateCB) (const ValidatorModuleState *state,
 									 const char *token, const char *role,
 									 ValidatorModuleResult *result);
+typedef bool (*ValidatorExpireCB) (const ValidatorModuleState *state);
 
 /*
  * Identifies the compiled ABI version of the validator module. Since the server
@@ -71,7 +72,9 @@ typedef bool (*ValidatorValidateCB) (const ValidatorModuleState *state,
  * versions, this is reserved for emergency use within a stable release line.
  * May it never need to change.
  */
-#define PG_OAUTH_VALIDATOR_MAGIC 0x20250220
+#define PG_OAUTH_VALIDATOR_MAGIC_V1 0x20250220
+#define PG_OAUTH_VALIDATOR_MAGIC_V2 0x20260326
+#define PG_OAUTH_VALIDATOR_MAGIC PG_OAUTH_VALIDATOR_MAGIC_V2
 
 typedef struct OAuthValidatorCallbacks
 {
@@ -80,6 +83,7 @@ typedef struct OAuthValidatorCallbacks
 	ValidatorStartupCB startup_cb;
 	ValidatorShutdownCB shutdown_cb;
 	ValidatorValidateCB validate_cb;
+	ValidatorExpireCB expire_cb;  /* Optional: Check token expiration */
 } OAuthValidatorCallbacks;
 
 /*
@@ -98,4 +102,8 @@ extern PGDLLIMPORT const pg_be_sasl_mech pg_be_oauth_mech;
  */
 extern bool check_oauth_validator(HbaLine *hbaline, int elevel, char **err_msg);
 
+/*
+ * Check OAuth token expiration using validator's expire_cb if available.
+ */
+bool CheckOAuthValidatorExpiration(void);
 #endif							/* PG_OAUTH_H */

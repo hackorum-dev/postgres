@@ -904,6 +904,12 @@
 #include_if_exists = '...'              # include file only if it exists
 #include = '...'                        # include file
 
+#------------------------------------------------------------------------------
+# CREDENTIAL VALIDATION
+#------------------------------------------------------------------------------
+
+credential_validation.enabled = true  # enable periodic credential validation
+credential_validation.interval = 60    # validation interval in seconds (5-3600)
 
 #------------------------------------------------------------------------------
 # CUSTOMIZED OPTIONS

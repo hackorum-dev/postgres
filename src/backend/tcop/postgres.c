@@ -44,6 +44,7 @@
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "libpq/pqsignal.h"
+#include "libpq/auth-validate.h"
 #include "mb/pg_wchar.h"
 #include "mb/stringinfo_mb.h"
 #include "miscadmin.h"
@@ -97,6 +98,25 @@ CommandDest whereToSendOutput = DestDebug;
 bool		Log_disconnections = false;
 
 int			log_statement = LOGSTMT_NONE;
+
+
+
+/*
+ * Function that performs credential validation when needed
+ * Uses a timer-based approach to periodically validate credentials
+ * during normal operation, skipping validation in bootstrapping.
+ */
+static void
+CheckAndExecuteCredentialValidation(void)
+{
+	CredentialValidationTimeoutPending = false;
+
+	/* Process credential validation */
+	ProcessCredentialValidation();
+
+	/* Re-enable the timeout for the next validation cycle */
+	EnableCredentialValidationTimeout();
+}
 
 /* wait N seconds to allow attach from a debugger */
 int			PostAuthDelay = 0;
@@ -1050,6 +1070,10 @@ exec_simple_query(const char *query_string)
 	 */
 	start_xact_command();
 
+	/* Check and potentially execute credential validation */
+	if (CredentialValidationTimeoutPending && IsNormalProcessingMode())
+		CheckAndExecuteCredentialValidation();
+
 	/*
 	 * Zap any pre-existing unnamed statement.  (While not strictly necessary,
 	 * it seems best to define simple-Query mode as if it used the unnamed
@@ -1431,6 +1455,11 @@ exec_parse_message(const char *query_string,	/* string to execute */
 	 */
 	start_xact_command();
 
+
+	/* Check and potentially execute credential validation */
+	if (CredentialValidationTimeoutPending && IsNormalProcessingMode())
+		CheckAndExecuteCredentialValidation();
+
 	/*
 	 * Switch to appropriate context for constructing parsetrees.
 	 *
@@ -1705,6 +1734,10 @@ exec_bind_message(StringInfo input_message)
 	 * necessary.
 	 */
 	start_xact_command();
+
+	/* Check and potentially execute credential validation */
+	if (CredentialValidationTimeoutPending && IsNormalProcessingMode())
+		CheckAndExecuteCredentialValidation();
 
 	/* Switch back to message context */
 	MemoryContextSwitchTo(MessageContext);
@@ -2218,6 +2251,10 @@ exec_execute_message(const char *portal_name, long max_rows)
 	 */
 	start_xact_command();
 
+	/* Check and potentially execute credential validation */
+	if (CredentialValidationTimeoutPending && IsNormalProcessingMode())
+		CheckAndExecuteCredentialValidation();
+
 	/*
 	 * If we re-issue an Execute protocol request against an existing portal,
 	 * then we are only fetching more rows rather than completely re-executing
@@ -2636,6 +2673,10 @@ exec_describe_statement_message(const char *stmt_name)
 	 */
 	start_xact_command();
 
+	/* Check and potentially execute credential validation */
+	if (CredentialValidationTimeoutPending && IsNormalProcessingMode())
+		CheckAndExecuteCredentialValidation();
+
 	/* Switch back to message context */
 	MemoryContextSwitchTo(MessageContext);
 
@@ -2727,6 +2768,10 @@ exec_describe_portal_message(const char *portal_name)
 	 * current memory context.) Nothing happens if we are already in one.
 	 */
 	start_xact_command();
+
+	/* Check and potentially execute credential validation */
+	if (CredentialValidationTimeoutPending && IsNormalProcessingMode())
+		CheckAndExecuteCredentialValidation();
 
 	/* Switch back to message context */
 	MemoryContextSwitchTo(MessageContext);
@@ -4635,6 +4680,11 @@ PostgresMain(const char *dbname, const char *username)
 					enable_timeout_after(IDLE_IN_TRANSACTION_SESSION_TIMEOUT,
 										 IdleInTransactionSessionTimeout);
 				}
+
+				/* Re-enable credential validation timer if needed */
+				if (credential_validation_enabled &&
+					!get_timeout_active(CREDENTIAL_VALIDATION_TIMEOUT))
+					EnableCredentialValidationTimeout();
 			}
 			else
 			{
@@ -4687,6 +4737,11 @@ PostgresMain(const char *dbname, const char *username)
 					enable_timeout_after(IDLE_SESSION_TIMEOUT,
 										 IdleSessionTimeout);
 				}
+
+				/* Re-enable credential validation timer if needed */
+				if (credential_validation_enabled &&
+					!get_timeout_active(CREDENTIAL_VALIDATION_TIMEOUT))
+					EnableCredentialValidationTimeout();
 			}
 
 			/* Report any recently-changed GUC options */
