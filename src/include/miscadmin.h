@@ -436,6 +436,11 @@ extern void InitializeSystemUser(const char *authn_id,
 								 const char *auth_method);
 extern const char *GetSystemUser(void);
 
+extern void SetCurrentVersion(int version_num, text *version_short, text *version_str);
+extern char *GetCurrentVersionStr(void);
+extern Size VersionCtlShmemSize(void);
+extern void VersionCtlShmemInit(void);
+
 /* in utils/misc/superuser.c */
 extern bool superuser(void);	/* current user is superuser */
 extern bool superuser_arg(Oid roleid);	/* given user is superuser */
