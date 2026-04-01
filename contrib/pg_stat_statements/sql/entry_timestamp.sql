@@ -110,5 +110,79 @@ SELECT
 FROM pg_stat_statements
 WHERE query LIKE '%STMTTS%';
 
+--
+-- last_execution_start timestamp tests
+--
+-- Reset stats first to avoid queryId collisions: simple "SELECT const AS alias"
+-- queries all share the same normalized structure as the STMTTS queries above,
+-- so EXECSTART entries would otherwise land on the pre-existing STMTTS entry.
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+-- Capture a reference timestamp before running the tracked queries.
+SELECT now() AS ref_ts_upd1 \gset
+SELECT 1 AS "EXECSTART1";
+-- last_execution_start should be set and >= ref_ts_upd1, because the
+-- statement started after we captured the reference timestamp.
+SELECT
+    query,
+    last_execution_start IS NOT NULL as has_ts,
+    last_execution_start >= :'ref_ts_upd1' as after_ref1,
+    stats_since <= last_execution_start as after_stats_since
+FROM pg_stat_statements
+WHERE query LIKE '%EXECSTART%'
+ORDER BY query COLLATE "C";
+
+-- Run EXECSTART1 again and verify that last_execution_start is updated.
+SELECT now() AS ref_ts_upd2 \gset
+SELECT 1 AS "EXECSTART1";
+SELECT
+    query,
+    last_execution_start >= :'ref_ts_upd2' as updated
+FROM pg_stat_statements
+WHERE query LIKE '%EXECSTART1%';
+
+-- test filtering (monitoring use case): find statements that started
+-- executing since our last observation (ref_ts_upd2).
+SELECT count(*) as filtered_count
+FROM pg_stat_statements
+WHERE last_execution_start >= :'ref_ts_upd2'
+  AND query LIKE '%EXECSTART%';
+
+-- minmax reset should not affect last_execution_start
+SELECT pg_stat_statements_reset(0, 0, queryid, true)
+FROM pg_stat_statements
+WHERE query LIKE '%EXECSTART1%' \gset
+
+SELECT
+    query,
+    last_execution_start >= :'ref_ts_upd2' as ts_preserved
+FROM pg_stat_statements
+WHERE query LIKE '%EXECSTART1%';
+
+--
+-- Deferred ExecutorEnd test (extended query protocol)
+--
+-- In the extended query protocol the previous query's ExecutorEnd is
+-- deferred until the next Bind message, at which point
+-- GetCurrentStatementStartTimestamp() already reflects the *new* query.
+-- Verify that last_execution_start still records the *old* query's start.
+--
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT now() AS ref_ts_ext \gset
+-- Use \bind \g to force the extended query protocol.
+SELECT pg_sleep(0.5) AS "DEFERRED_END" \bind \g
+-- Capture a timestamp *after* the sleep finishes but *before* the next
+-- extended-protocol statement replaces the unnamed portal.
+SELECT now() AS ref_ts_ext2 \gset
+SELECT 1 AS "TRIGGER_END" \bind \g
+-- The pg_sleep query's last_execution_start should be close to ref_ts_ext
+-- (before the sleep), NOT to ref_ts_ext2 (after the sleep).
+SELECT
+    query,
+    last_execution_start >= :'ref_ts_ext' as after_start,
+    last_execution_start < :'ref_ts_ext2' as before_next
+FROM pg_stat_statements
+WHERE query LIKE '%DEFERRED_END%'
+ORDER BY query COLLATE "C";
+
 -- Cleanup
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
