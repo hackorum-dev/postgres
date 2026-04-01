@@ -549,6 +549,19 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 						(node != NULL &&
 						 node->onConflictAction != ONCONFLICT_NONE));
 
+	if (node &&
+		(node->withCheckOptionLists != NIL ||
+		 node->returningLists != NIL ||
+		 node->onConflictAction == ONCONFLICT_UPDATE ||
+		 node->onConflictWhere ||
+		 node->operation == CMD_MERGE))
+	{
+		/* later map_variable_attnos need use attribute map, build it now */
+		part_attmap = build_attrmap_by_name(RelationGetDescr(partrel),
+											RelationGetDescr(firstResultRel),
+											false);
+	}
+
 	/*
 	 * Build WITH CHECK OPTION constraints for the partition.  Note that we
 	 * didn't build the withCheckOptionList for partitions within the planner,
@@ -591,10 +604,6 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 		/*
 		 * Convert Vars in it to contain this partition's attribute numbers.
 		 */
-		part_attmap =
-			build_attrmap_by_name(RelationGetDescr(partrel),
-								  RelationGetDescr(firstResultRel),
-								  false);
 		wcoList = (List *)
 			map_variable_attnos((Node *) wcoList,
 								firstVarno, 0,
@@ -651,11 +660,6 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 		/*
 		 * Convert Vars in it to contain this partition's attribute numbers.
 		 */
-		if (part_attmap == NULL)
-			part_attmap =
-				build_attrmap_by_name(RelationGetDescr(partrel),
-									  RelationGetDescr(firstResultRel),
-									  false);
 		returningList = (List *)
 			map_variable_attnos((Node *) returningList,
 								firstVarno, 0,
@@ -889,11 +893,7 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 					List	   *onconflcols;
 
 					onconflset = copyObject(node->onConflictSet);
-					if (part_attmap == NULL)
-						part_attmap =
-							build_attrmap_by_name(RelationGetDescr(partrel),
-												  RelationGetDescr(firstResultRel),
-												  false);
+
 					onconflset = (List *)
 						map_variable_attnos((Node *) onconflset,
 											INNER_VAR, 0,
@@ -945,12 +945,6 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 				{
 					List	   *clause;
 
-					if (part_attmap == NULL)
-						part_attmap =
-							build_attrmap_by_name(RelationGetDescr(partrel),
-												  RelationGetDescr(firstResultRel),
-												  false);
-
 					clause = copyObject((List *) node->onConflictWhere);
 					clause = (List *)
 						map_variable_attnos((Node *) clause,
@@ -1001,12 +995,6 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 		ListCell   *lc;
 		ExprContext *econtext = mtstate->ps.ps_ExprContext;
 		Node	   *joinCondition;
-
-		if (part_attmap == NULL)
-			part_attmap =
-				build_attrmap_by_name(RelationGetDescr(partrel),
-									  RelationGetDescr(firstResultRel),
-									  false);
 
 		if (unlikely(!leaf_part_rri->ri_projectNewInfoValid))
 			ExecInitMergeTupleSlots(mtstate, leaf_part_rri);
