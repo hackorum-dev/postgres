@@ -42,6 +42,15 @@ export_file = custom_target('libpq.exports',
   kwargs: gen_export_kwargs,
 )
 
+gen_sqlstate_names = files('../../backend/utils/generate-sqlstate-names.pl')
+sqlstate_names_h = custom_target('sqlstate_names',
+  input: ['../../backend/utils/errcodes.txt'],
+  output: ['sqlstate_names.h'],
+  command: [perl, gen_sqlstate_names, '--outfile', '@OUTPUT@', '@INPUT0@'],
+)
+generated_sources += sqlstate_names_h
+libpq_sources += sqlstate_names_h
+
 # port needs to be in include path due to pthread-win32.h
 libpq_inc = include_directories('.', '../../port')
 libpq_c_args = ['-DSO_MAJOR_VERSION=5']
