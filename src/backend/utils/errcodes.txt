@@ -18,6 +18,9 @@
 #   src/pl/tcl/pltclerrcodes.h
 #      the same, for PL/Tcl
 #
+#   src/interfaces/libpq/sqlstate_names.h
+#      a lookup table mapping SQLSTATE codes to symbolic names for libpq
+#
 #   doc/src/sgml/errcodes-table.sgml
 #      a SGML table of error codes for inclusion in the documentation
 #
