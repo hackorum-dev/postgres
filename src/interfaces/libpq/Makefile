@@ -146,6 +146,12 @@ endif
 fe-connect.o: fe-connect.c $(top_builddir)/src/port/pg_config_paths.h
 fe-misc.o: fe-misc.c $(top_builddir)/src/port/pg_config_paths.h
 
+# generate sqlstate_names.h from src/backend/utils/errcodes.txt
+sqlstate_names.h: $(top_srcdir)/src/backend/utils/errcodes.txt $(top_srcdir)/src/backend/utils/generate-sqlstate-names.pl
+	$(PERL) $(top_srcdir)/src/backend/utils/generate-sqlstate-names.pl --outfile $@ $<
+
+fe-protocol3.o: fe-protocol3.c sqlstate_names.h
+
 $(top_builddir)/src/port/pg_config_paths.h:
 	$(MAKE) -C $(top_builddir)/src/port pg_config_paths.h
 
@@ -188,5 +194,6 @@ clean distclean: clean-lib
 	$(MAKE) -C test $@
 	rm -rf tmp_check
 	rm -f $(OBJS) $(OBJS_SHLIB) $(OBJS_STATIC) pthread.h libpq-refs-stamp
+	rm -f sqlstate_names.h
 # Might be left over from a Win32 client-only build
 	rm -f pg_config_paths.h
