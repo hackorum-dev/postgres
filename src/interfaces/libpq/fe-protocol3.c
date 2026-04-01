@@ -28,6 +28,7 @@
 #include "common/int.h"
 #include "libpq-fe.h"
 #include "libpq-int.h"
+#include "sqlstate_names.h"
 #include "mb/pg_wchar.h"
 #include "port/pg_bswap.h"
 
@@ -1081,7 +1082,14 @@ pqBuildErrorMessage3(PQExpBuffer msg, const PGresult *res,
 	{
 		val = PQresultErrorField(res, PG_DIAG_SQLSTATE);
 		if (val)
-			appendPQExpBuffer(msg, "%s: ", val);
+		{
+			const char *symbolic = sqlstate_to_symbolic_name(val);
+
+			if (symbolic)
+				appendPQExpBuffer(msg, "%s (%s): ", val, symbolic);
+			else
+				appendPQExpBuffer(msg, "%s: ", val);
+		}
 	}
 	val = PQresultErrorField(res, PG_DIAG_MESSAGE_PRIMARY);
 	if (val)
