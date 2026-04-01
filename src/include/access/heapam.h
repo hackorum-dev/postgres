@@ -36,7 +36,11 @@
 #define HEAP_INSERT_SKIP_FSM	TABLE_INSERT_SKIP_FSM
 #define HEAP_INSERT_FROZEN		TABLE_INSERT_FROZEN
 #define HEAP_INSERT_NO_LOGICAL	TABLE_INSERT_NO_LOGICAL
-#define HEAP_INSERT_SPECULATIVE 0x0010
+/*
+ * private flag bits for heap_insert: we define these starting from the
+ * opposite end of the options word as the ones in tableam.h.
+ */
+#define HEAP_INSERT_SPECULATIVE (1 << 31)
 
 /* "options" flag bits for heap_page_prune_and_freeze */
 #define HEAP_PAGE_PRUNE_MARK_UNUSED_NOW		(1 << 0)
