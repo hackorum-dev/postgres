@@ -38,6 +38,16 @@
  */
 #define GIST_MAX_SPLIT_PAGES		75
 
+/*
+ * A multi-entry opclass (one with an extractValue support function) can map a
+ * single heap tuple to several index tuples that share one heap TID.  We set
+ * this bit in an index tuple's t_info when, and only when, extractValue
+ * produced more than one entry, so scans know that TID may appear more than
+ * once and must be deduplicated.  Index tuples without the bit have a unique
+ * TID and skip the dedup hash entirely.
+ */
+#define GIST_MULTIENTRY_MASK		INDEX_AM_RESERVED_BIT
+
 /* Buffer lock modes */
 #define GIST_SHARE	BUFFER_LOCK_SHARE
 #define GIST_EXCLUSIVE	BUFFER_LOCK_EXCLUSIVE
@@ -92,6 +102,13 @@ typedef struct GISTSTATE
 	FmgrInfo	equalFn[INDEX_MAX_KEYS];
 	FmgrInfo	distanceFn[INDEX_MAX_KEYS];
 	FmgrInfo	fetchFn[INDEX_MAX_KEYS];
+	FmgrInfo	extractValueFn[INDEX_MAX_KEYS];
+
+	/*
+	 * Index of the key column that has an extractValue function, or -1 if the
+	 * index is not multi-entry.  At most one key column may be multi-entry.
+	 */
+	int			multiEntryColumn;
 
 	/* Collations to pass to the support functions */
 	Oid			supportCollation[INDEX_MAX_KEYS];
@@ -120,6 +137,7 @@ typedef struct GISTSearchHeapItem
 	ItemPointerData heapPtr;
 	bool		recheck;		/* T if quals must be rechecked */
 	bool		recheckDistances;	/* T if distances must be rechecked */
+	bool		multiEntry;		/* T if from a multi-entry tuple (needs dedup) */
 	HeapTuple	recontup;		/* data reconstructed from the index, used in
 								 * index-only scans */
 	OffsetNumber offnum;		/* track offset in page to mark tuple as
@@ -155,6 +173,14 @@ typedef struct GISTScanOpaqueData
 {
 	GISTSTATE  *giststate;		/* index information, see above */
 	Oid		   *orderByTypes;	/* datatypes of ORDER BY expressions */
+
+	/*
+	 * For multi-entry indexes: hash table for TID deduplication.  Each heap
+	 * tuple produces multiple index entries, so we track which TIDs have been
+	 * returned.  NULL for standard (non-multi-entry) indexes.
+	 */
+	struct gisttid_hash *tidHash;
+	MemoryContext tidHashCxt;	/* context holding the hash table */
 
 	pairingheap *queue;			/* queue of unvisited items */
 	MemoryContext queueCxt;		/* context holding the queue */
@@ -546,6 +572,11 @@ extern void gistSplitByKey(Relation r, Page page, IndexTuple *itup,
 /* gistbuild.c */
 extern IndexBuildResult *gistbuild(Relation heap, Relation index,
 								   struct IndexInfo *indexInfo);
+
+/* gistutil.c */
+extern IndexTuple *gistExtractEntries(GISTSTATE *giststate, Relation index,
+									  Datum *values, bool *isnull,
+									  int32 *nentries);
 
 /* gistbuildbuffers.c */
 extern GISTBuildBuffers *gistInitBuildBuffers(int pagesPerBuffer, int levelStep,
