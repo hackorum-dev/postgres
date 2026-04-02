@@ -161,6 +161,10 @@ gistbuildempty(Relation index)
  *
  *	  This is the public interface routine for tuple insertion in GiSTs.
  *	  It doesn't do any work; just locks the relation and passes the buck.
+ *
+ *	  If the opclass provides an extractValue function (multi-entry mode),
+ *	  a single heap tuple may produce multiple index entries.  Each entry
+ *	  is inserted separately, all pointing to the same heap TID.
  */
 bool
 gistinsert(Relation r, Datum *values, bool *isnull,
@@ -170,7 +174,6 @@ gistinsert(Relation r, Datum *values, bool *isnull,
 		   IndexInfo *indexInfo)
 {
 	GISTSTATE  *giststate = (GISTSTATE *) indexInfo->ii_AmCache;
-	IndexTuple	itup;
 	MemoryContext oldCxt;
 
 	/* Initialize GISTSTATE cache if first call in this statement */
@@ -185,10 +188,31 @@ gistinsert(Relation r, Datum *values, bool *isnull,
 
 	oldCxt = MemoryContextSwitchTo(giststate->tempCxt);
 
-	itup = gistFormTuple(giststate, r, values, isnull, true);
-	itup->t_tid = *ht_ctid;
+	/*
+	 * If the opclass provides an extractValue function, extract multiple
+	 * entries and insert each one separately.
+	 */
+	if (giststate->multiEntryColumn >= 0)
+	{
+		IndexTuple *itups;
+		int32		nitups;
+		int			i;
 
-	gistdoinsert(r, itup, 0, giststate, heapRel, false);
+		itups = gistExtractEntries(giststate, r, values, isnull, &nitups);
+		for (i = 0; i < nitups; i++)
+		{
+			itups[i]->t_tid = *ht_ctid;
+			gistdoinsert(r, itups[i], 0, giststate, heapRel, false);
+		}
+	}
+	else
+	{
+		IndexTuple	itup;
+
+		itup = gistFormTuple(giststate, r, values, isnull, true);
+		itup->t_tid = *ht_ctid;
+		gistdoinsert(r, itup, 0, giststate, heapRel, false);
+	}
 
 	/* cleanup */
 	MemoryContextSwitchTo(oldCxt);
@@ -1623,6 +1647,14 @@ initGISTstate(Relation index)
 		else
 			giststate->fetchFn[i].fn_oid = InvalidOid;
 
+		/* opclasses are not required to provide an ExtractValue method */
+		if (OidIsValid(index_getprocid(index, i + 1, GIST_EXTRACTVALUE_PROC)))
+			fmgr_info_copy(&(giststate->extractValueFn[i]),
+						   index_getprocinfo(index, i + 1, GIST_EXTRACTVALUE_PROC),
+						   scanCxt);
+		else
+			giststate->extractValueFn[i].fn_oid = InvalidOid;
+
 		/*
 		 * If the index column has a specified collation, we should honor that
 		 * while doing comparisons.  However, we may have a collatable storage
@@ -1640,6 +1672,26 @@ initGISTstate(Relation index)
 			giststate->supportCollation[i] = DEFAULT_COLLATION_OID;
 	}
 
+	/*
+	 * Record which key column is multi-entry (has an extractValue function),
+	 * if any.  Other key columns are allowed alongside it: their values are
+	 * duplicated across the extracted entries, just as INCLUDE columns are.
+	 * At most one key column may be multi-entry, though; decomposing two
+	 * columns at once would require a cross product, which we don't support.
+	 */
+	giststate->multiEntryColumn = -1;
+	for (i = 0; i < IndexRelationGetNumberOfKeyAttributes(index); i++)
+	{
+		if (OidIsValid(giststate->extractValueFn[i].fn_oid))
+		{
+			if (giststate->multiEntryColumn >= 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("multi-entry GiST indexes support at most one multi-entry key column")));
+			giststate->multiEntryColumn = i;
+		}
+	}
+
 	/* No opclass information for INCLUDE attributes */
 	for (; i < index->rd_att->natts; i++)
 	{
@@ -1652,6 +1704,7 @@ initGISTstate(Relation index)
 		giststate->equalFn[i].fn_oid = InvalidOid;
 		giststate->distanceFn[i].fn_oid = InvalidOid;
 		giststate->fetchFn[i].fn_oid = InvalidOid;
+		giststate->extractValueFn[i].fn_oid = InvalidOid;
 		giststate->supportCollation[i] = InvalidOid;
 	}
 
