@@ -80,6 +80,7 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/varlena.h"
+#include "pgstat.h"
 
 /* GUC variables */
 char	   *default_tablespace = NULL;
@@ -545,6 +546,9 @@ DropTableSpace(DropTableSpaceStmt *stmt)
 
 		(void) XLogInsert(RM_TBLSPC_ID, XLOG_TBLSPC_DROP);
 	}
+
+	/* Keep cumulative stats system up-to-date */
+	pgstat_drop_tablespace(tablespaceoid);
 
 	/*
 	 * Note: because we checked that the tablespace was empty, there should be

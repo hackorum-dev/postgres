@@ -1000,4 +1000,42 @@ SELECT fastpath_exceeded > :fastpath_exceeded_before FROM pg_stat_lock WHERE loc
 
 DROP TABLE part_test;
 
+-- Test pg_stat_tablespace
+SELECT count(*) > 0 FROM pg_stat_tablespace;
+
+SELECT tablespace_name FROM pg_stat_tablespace WHERE tablespace_name IN ('pg_default', 'pg_global') ORDER BY tablespace_name;
+
+-- Test block and tuple stats in pg_stat_tablespace
+SET track_io_timing = on;
+CREATE TABLE test_tablespace_stats (a int);
+INSERT INTO test_tablespace_stats SELECT generate_series(1, 100);
+SELECT count(*) FROM test_tablespace_stats;
+UPDATE test_tablespace_stats SET a = a + 1 WHERE a > 50;
+DELETE FROM test_tablespace_stats WHERE a > 90;
+
+SELECT pg_stat_force_next_flush();
+
+SELECT blks_read > 0 AS has_blks_read, blks_hit > 0 AS has_blks_hit, blk_read_time > 0 AS has_blk_read_time, blk_write_time > 0 AS has_blk_write_time, tup_inserted > 0 AS has_tup_inserted, tup_updated > 0 AS has_tup_updated, tup_deleted > 0 AS has_tup_deleted, tup_returned > 0 AS has_tup_returned FROM pg_stat_tablespace WHERE tablespace_name = 'pg_default';
+
+DROP TABLE test_tablespace_stats;
+-- Test temp file stats in pg_stat_tablespace
+-- Use a sort that exceeds work_mem to force temp file usage
+SET work_mem = '64kB';
+SELECT count(*) FROM (SELECT * FROM generate_series(1, 10000) AS s ORDER BY s DESC) AS foo;
+
+RESET work_mem;
+SELECT pg_stat_force_next_flush();
+
+-- We expect temp files to be in pg_default if not specified otherwise
+SELECT temp_files > 0 AS has_temp_files, temp_bytes > 0 AS has_temp_bytes FROM pg_stat_tablespace WHERE tablespace_name = 'pg_default';
+
+-- Test reset for pg_stat_tablespace
+-- Ensure we have a timestamp to compare
+SELECT pg_stat_reset_shared('tablespace');
+
+SELECT stats_reset AS ts_reset_before FROM pg_stat_tablespace WHERE tablespace_name = 'pg_default' \gset
+SELECT pg_stat_reset_shared('tablespace');
+
+SELECT stats_reset > :'ts_reset_before'::timestamptz FROM pg_stat_tablespace WHERE tablespace_name = 'pg_default';
+
 -- End of Stats Test

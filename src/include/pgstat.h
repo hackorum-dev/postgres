@@ -181,6 +181,7 @@ typedef struct PgStat_TableStatus
 {
 	Oid			id;				/* table's OID */
 	bool		shared;			/* is it a shared catalog? */
+	Oid			tablespace_oid; /* tablespace OID */
 	struct PgStat_TableXactStatus *trans;	/* lowest subxact's counts */
 	PgStat_TableCounts counts;	/* event counts to be sent */
 	Relation	relation;		/* rel that is using this entry */
@@ -401,6 +402,23 @@ typedef struct PgStat_StatDBEntry
 
 	TimestampTz stat_reset_timestamp;
 } PgStat_StatDBEntry;
+
+typedef struct PgStat_StatTabspaceEntry
+{
+	PgStat_Counter blk_read_time;	/* times in microseconds */
+	PgStat_Counter blk_write_time;
+	PgStat_Counter blocks_fetched;
+	PgStat_Counter blocks_hit;
+	PgStat_Counter temp_files;
+	PgStat_Counter temp_bytes;
+	PgStat_Counter tuples_returned;
+	PgStat_Counter tuples_fetched;
+	PgStat_Counter tuples_inserted;
+	PgStat_Counter tuples_updated;
+	PgStat_Counter tuples_deleted;
+
+	TimestampTz stat_reset_timestamp;
+} PgStat_StatTabspaceEntry;
 
 typedef struct PgStat_StatFuncEntry
 {
@@ -769,6 +787,17 @@ extern PgStat_StatTabEntry *pgstat_fetch_stat_tabentry(Oid relid);
 extern PgStat_StatTabEntry *pgstat_fetch_stat_tabentry_ext(bool shared,
 														   Oid reloid);
 extern PgStat_TableStatus *find_tabstat_entry(Oid rel_id);
+
+
+/*
+ * Functions in pgstat_tablespace.c
+ */
+
+extern void pgstat_drop_tablespace(Oid tablespaceid);
+extern PgStat_StatTabspaceEntry *pgstat_fetch_stat_tabspaceentry(Oid tablespaceid);
+extern PgStat_StatTabspaceEntry *pgstat_prep_tablespace_pending(Oid tablespaceid);
+extern void pgstat_count_tablespace_buffer_write_time(uint64 duration, Oid tablespace_oid);
+extern void pgstat_count_tablespace_buffer_read_time(uint64 duration, Oid tablespace_oid);
 
 
 /*

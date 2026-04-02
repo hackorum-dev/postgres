@@ -504,6 +504,12 @@ typedef struct PgStatShared_Database
 	PgStat_StatDBEntry stats;
 } PgStatShared_Database;
 
+typedef struct PgStatShared_Tablespace
+{
+	PgStatShared_Common header;
+	PgStat_StatTabspaceEntry stats;
+} PgStatShared_Tablespace;
+
 typedef struct PgStatShared_Relation
 {
 	PgStatShared_Common header;
@@ -744,6 +750,8 @@ extern PgStat_StatDBEntry *pgstat_prep_database_pending(Oid dboid);
 extern void pgstat_reset_database_timestamp(Oid dboid, TimestampTz ts);
 extern bool pgstat_database_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
 extern void pgstat_database_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts);
+extern bool pgstat_tablespace_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
+extern void pgstat_tablespace_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts);
 
 
 /*

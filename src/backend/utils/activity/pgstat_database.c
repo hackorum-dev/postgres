@@ -17,9 +17,11 @@
 
 #include "postgres.h"
 
+#include "miscadmin.h"
 #include "storage/standby.h"
 #include "utils/pgstat_internal.h"
 #include "utils/timestamp.h"
+#include "catalog/pg_tablespace_d.h"
 
 
 static bool pgstat_should_report_connstat(void);
@@ -215,19 +217,60 @@ pgstat_report_checksum_failures_in_db(Oid dboid, int failurecount)
 }
 
 /*
+ * Helper function to parse tablespace oid from temporary file path.
+ */
+static Oid
+get_tablespace_from_tempfile_path(const char *path)
+{
+	/*
+	 * XXX: We match the file path against known tablespace prefixes to avoid passing
+	 * down tablespace OIDs through the entire tuplestore/fd.c stack which would bloat
+	 * the Vfd internal structs.
+	 */
+	if (path == NULL)
+		return InvalidOid;
+
+	if (strncmp(path, "pg_tblspc/", 10) == 0)
+	{
+		return atooid(path + 10);
+	}
+	else if (strncmp(path, "base/", 5) == 0)
+	{
+		return DEFAULTTABLESPACE_OID;
+	}
+	else if (strncmp(path, "global/", 7) == 0)
+	{
+		return GLOBALTABLESPACE_OID;
+	}
+
+	return InvalidOid;
+}
+
+/*
  * Report creation of temporary file.
  */
 void
-pgstat_report_tempfile(size_t filesize)
+pgstat_report_tempfile(size_t filesize, const char *path)
 {
 	PgStat_StatDBEntry *dbent;
+	PgStat_StatTabspaceEntry *tsent;
+	Oid			tablespace_oid;
 
 	if (!pgstat_track_counts)
 		return;
 
+	tablespace_oid = get_tablespace_from_tempfile_path(path);
+
 	dbent = pgstat_prep_database_pending(MyDatabaseId);
 	dbent->temp_bytes += filesize;
 	dbent->temp_files++;
+
+	if (OidIsValid(tablespace_oid))
+	{
+		tsent = pgstat_prep_tablespace_pending(tablespace_oid);
+		tsent->temp_bytes += filesize;
+		tsent->temp_files++;
+	}
 }
 
 /*

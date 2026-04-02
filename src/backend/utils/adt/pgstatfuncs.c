@@ -1965,6 +1965,7 @@ pg_stat_reset_shared(PG_FUNCTION_ARGS)
 		XLogPrefetchResetStats();
 		pgstat_reset_of_kind(PGSTAT_KIND_SLRU);
 		pgstat_reset_of_kind(PGSTAT_KIND_WAL);
+		pgstat_reset_of_kind(PGSTAT_KIND_TABLESPACE);
 
 		PG_RETURN_VOID();
 	}
@@ -1987,11 +1988,13 @@ pg_stat_reset_shared(PG_FUNCTION_ARGS)
 		pgstat_reset_of_kind(PGSTAT_KIND_SLRU);
 	else if (strcmp(target, "wal") == 0)
 		pgstat_reset_of_kind(PGSTAT_KIND_WAL);
+	else if (strcmp(target, "tablespace") == 0)
+		pgstat_reset_of_kind(PGSTAT_KIND_TABLESPACE);
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("unrecognized reset target: \"%s\"", target),
-				 errhint("Target must be \"archiver\", \"bgwriter\", \"checkpointer\", \"io\", \"recovery_prefetch\", \"slru\", or \"wal\".")));
+				 errhint("Target must be \"archiver\", \"bgwriter\", \"checkpointer\", \"io\", \"recovery_prefetch\", \"slru\", \"wal\", or \"tablespace\".")));
 
 	PG_RETURN_VOID();
 }
@@ -2343,6 +2346,107 @@ pg_stat_get_subscription_stats(PG_FUNCTION_ARGS)
 		values[i] = TimestampTzGetDatum(subentry->stat_reset_timestamp);
 
 	Assert(i + 1 == PG_STAT_GET_SUBSCRIPTION_STATS_COLS);
+
+	/* Returns the record as Datum */
+	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
+}
+
+/*
+ * Returns tablespace statistics for the given tablespace. If the tablespace
+ * statistics is not available, return all-zeros stats.
+ */
+Datum
+pg_stat_get_tablespace(PG_FUNCTION_ARGS)
+{
+#define PG_STAT_GET_TABLESPACE_COLS	12
+	Oid			spcoid = PG_GETARG_OID(0);
+	TupleDesc	tupdesc;
+	Datum		values[PG_STAT_GET_TABLESPACE_COLS] = {0};
+	bool		nulls[PG_STAT_GET_TABLESPACE_COLS] = {0};
+	PgStat_StatTabspaceEntry *tsentry;
+	PgStat_StatTabspaceEntry allzero;
+	int			i = 0;
+
+	/* Get tablespace stats */
+	tsentry = pgstat_fetch_stat_tabspaceentry(spcoid);
+
+	/* Initialise attributes information in the tuple descriptor */
+	tupdesc = CreateTemplateTupleDesc(PG_STAT_GET_TABLESPACE_COLS);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "blk_read_time",
+					   FLOAT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "blk_write_time",
+					   FLOAT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "blks_fetched",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 4, "blks_hit",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 5, "temp_files",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 6, "temp_bytes",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 7, "tup_returned",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 8, "tup_fetched",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 9, "tup_inserted",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 10, "tup_updated",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 11, "tup_deleted",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 12, "stats_reset",
+					   TIMESTAMPTZOID, -1, 0);
+
+	TupleDescFinalize(tupdesc);
+	tupdesc = BlessTupleDesc(tupdesc);
+
+	if (!tsentry)
+	{
+		/* If the tablespace is not found, initialise its stats */
+		memset(&allzero, 0, sizeof(PgStat_StatTabspaceEntry));
+		tsentry = &allzero;
+	}
+
+	/* blk_read_time */
+	values[i++] = Float8GetDatum(pg_stat_us_to_ms(tsentry->blk_read_time));
+
+	/* blk_write_time */
+	values[i++] = Float8GetDatum(pg_stat_us_to_ms(tsentry->blk_write_time));
+
+	/* blocks_fetched */
+	values[i++] = Int64GetDatum(tsentry->blocks_fetched);
+
+	/* blocks_hit */
+	values[i++] = Int64GetDatum(tsentry->blocks_hit);
+
+	/* temp_files */
+	values[i++] = Int64GetDatum(tsentry->temp_files);
+
+	/* temp_bytes */
+	values[i++] = Int64GetDatum(tsentry->temp_bytes);
+
+	/* tup_returned */
+	values[i++] = Int64GetDatum(tsentry->tuples_returned);
+
+	/* tup_fetched */
+	values[i++] = Int64GetDatum(tsentry->tuples_fetched);
+
+	/* tup_inserted */
+	values[i++] = Int64GetDatum(tsentry->tuples_inserted);
+
+	/* tup_updated */
+	values[i++] = Int64GetDatum(tsentry->tuples_updated);
+
+	/* tup_deleted */
+	values[i++] = Int64GetDatum(tsentry->tuples_deleted);
+
+	/* stats_reset */
+	if (tsentry->stat_reset_timestamp == 0)
+		nulls[i] = true;
+	else
+		values[i] = TimestampTzGetDatum(tsentry->stat_reset_timestamp);
+
+	Assert(i + 1 == PG_STAT_GET_TABLESPACE_COLS);
 
 	/* Returns the record as Datum */
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));

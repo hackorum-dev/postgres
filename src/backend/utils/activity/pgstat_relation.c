@@ -20,6 +20,7 @@
 #include "access/twophase_rmgr.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "miscadmin.h"
 #include "utils/memutils.h"
 #include "utils/pgstat_internal.h"
 #include "utils/rel.h"
@@ -37,12 +38,13 @@ typedef struct TwoPhasePgStatRecord
 	PgStat_Counter updated_pre_truncdrop;
 	PgStat_Counter deleted_pre_truncdrop;
 	Oid			id;				/* table's OID */
+	Oid			tablespace_oid;	/* table's tablespace OID */
 	bool		shared;			/* is it a shared catalog? */
 	bool		truncdropped;	/* was the relation truncated/dropped? */
 } TwoPhasePgStatRecord;
 
 
-static PgStat_TableStatus *pgstat_prep_relation_pending(Oid rel_id, bool isshared);
+static PgStat_TableStatus *pgstat_prep_relation_pending(Oid rel_id, Oid tablespace_oid, bool isshared);
 static void add_tabstat_xact_level(PgStat_TableStatus *pgstat_info, int nest_level);
 static void ensure_tabstat_xact_level(PgStat_TableStatus *pgstat_info);
 static void save_truncdrop_counters(PgStat_TableXactStatus *trans, bool is_drop);
@@ -135,7 +137,8 @@ pgstat_assoc_relation(Relation rel)
 
 	/* Else find or make the PgStat_TableStatus entry, and update link */
 	rel->pgstat_info = pgstat_prep_relation_pending(RelationGetRelid(rel),
-													rel->rd_rel->relisshared);
+																	rel->rd_locator.spcOid,
+																	rel->rd_rel->relisshared);
 
 	/* don't allow link a stats to multiple relcache entries */
 	Assert(rel->pgstat_info->relation == NULL);
@@ -707,6 +710,7 @@ AtPrepare_PgStat_Relations(PgStat_SubXactStatus *xact_state)
 		record.updated_pre_truncdrop = trans->updated_pre_truncdrop;
 		record.deleted_pre_truncdrop = trans->deleted_pre_truncdrop;
 		record.id = tabstat->id;
+		record.tablespace_oid = tabstat->tablespace_oid;
 		record.shared = tabstat->shared;
 		record.truncdropped = trans->truncdropped;
 
@@ -750,7 +754,7 @@ pgstat_twophase_postcommit(FullTransactionId fxid, uint16 info,
 	PgStat_TableStatus *pgstat_info;
 
 	/* Find or create a tabstat entry for the rel */
-	pgstat_info = pgstat_prep_relation_pending(rec->id, rec->shared);
+	pgstat_info = pgstat_prep_relation_pending(rec->id, rec->tablespace_oid, rec->shared);
 
 	/* Same math as in AtEOXact_PgStat, commit case */
 	pgstat_info->counts.tuples_inserted += rec->tuples_inserted;
@@ -786,7 +790,7 @@ pgstat_twophase_postabort(FullTransactionId fxid, uint16 info,
 	PgStat_TableStatus *pgstat_info;
 
 	/* Find or create a tabstat entry for the rel */
-	pgstat_info = pgstat_prep_relation_pending(rec->id, rec->shared);
+	pgstat_info = pgstat_prep_relation_pending(rec->id, rec->tablespace_oid, rec->shared);
 
 	/* Same math as in AtEOXact_PgStat, abort case */
 	if (rec->truncdropped)
@@ -897,6 +901,23 @@ pgstat_relation_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 	dbentry->blocks_fetched += lstats->counts.blocks_fetched;
 	dbentry->blocks_hit += lstats->counts.blocks_hit;
 
+	/* The entry was successfully flushed, add the same to tablespace stats */
+	{
+		Oid tsid = (lstats->tablespace_oid == InvalidOid) ? MyDatabaseTableSpace : lstats->tablespace_oid;
+
+		if (OidIsValid(tsid))
+		{
+			PgStat_StatTabspaceEntry *tsentry = pgstat_prep_tablespace_pending(tsid);
+			tsentry->blocks_fetched += lstats->counts.blocks_fetched;
+			tsentry->blocks_hit += lstats->counts.blocks_hit;
+			tsentry->tuples_returned += lstats->counts.tuples_returned;
+			tsentry->tuples_fetched += lstats->counts.tuples_fetched;
+			tsentry->tuples_inserted += lstats->counts.tuples_inserted;
+			tsentry->tuples_updated += lstats->counts.tuples_updated;
+			tsentry->tuples_deleted += lstats->counts.tuples_deleted;
+		}
+	}
+
 	return true;
 }
 
@@ -920,7 +941,7 @@ pgstat_relation_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts)
  * initialized if not exists.
  */
 static PgStat_TableStatus *
-pgstat_prep_relation_pending(Oid rel_id, bool isshared)
+pgstat_prep_relation_pending(Oid rel_id, Oid tablespace_oid, bool isshared)
 {
 	PgStat_EntryRef *entry_ref;
 	PgStat_TableStatus *pending;
@@ -930,6 +951,7 @@ pgstat_prep_relation_pending(Oid rel_id, bool isshared)
 										  rel_id, NULL);
 	pending = entry_ref->pending;
 	pending->id = rel_id;
+	pending->tablespace_oid = tablespace_oid;
 	pending->shared = isshared;
 
 	return pending;
