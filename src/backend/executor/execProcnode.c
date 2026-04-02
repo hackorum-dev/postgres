@@ -958,6 +958,22 @@ ExecSetTupleBound(int64 tuples_needed, PlanState *child_node)
 
 		ExecSetTupleBound(tuples_needed, outerPlanState(child_node));
 	}
+	else if (IsA(child_node, NestLoopState))
+	{
+		/*
+		 * A nestloop left join returns at least one row for every outer row:
+		 * if no inner row passes the joinqual, the outer row is emitted
+		 * null-extended instead of being dropped.  So the bound carries over
+		 * unchanged to the outer input.
+		 * This logic works unless otherqual can discard an outer tuple during
+		 * the join. Hence, check it before propagating boundaries downstairs.
+		 */
+		NestLoopState  *nlstate = (NestLoopState *) child_node;
+		JoinType		jointype = nlstate->js.jointype;
+
+		if (jointype == JOIN_LEFT && nlstate->js.ps.qual == NULL)
+			ExecSetTupleBound(tuples_needed, outerPlanState(child_node));
+	}
 
 	/*
 	 * In principle we could descend through any plan node type that is
