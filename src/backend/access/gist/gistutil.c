@@ -1008,6 +1008,90 @@ gistproperty(Oid index_oid, int attno,
 }
 
 /*
+ * gistExtractEntries -- extract multiple index entries from one heap tuple.
+ *
+ * Calls the opclass's extractValue function to decompose the indexed datum
+ * into multiple sub-entries.  Returns an array of IndexTuples, one per
+ * sub-entry.
+ *
+ * The multi-entry key column is giststate->multiEntryColumn; extractValue is
+ * applied to it, and the resulting sub-entries each become one index tuple.
+ * Any other key columns, as well as INCLUDE columns, keep their original
+ * value on every entry (they are duplicated, just like INCLUDE columns).
+ * If the multi-entry datum is NULL or extractValue returns no entries, a
+ * single index entry with that column NULL is produced.
+ */
+IndexTuple *
+gistExtractEntries(GISTSTATE *giststate, Relation index,
+				   Datum *values, bool *isnull, int32 *nentries)
+{
+	int			mecol = giststate->multiEntryColumn;
+	Datum	   *entries;
+	bool	   *nullFlags;
+	IndexTuple *result;
+	int			i;
+
+	Assert(mecol >= 0);
+
+	/* A NULL in the multi-entry column produces a single NULL entry there */
+	if (isnull[mecol])
+	{
+		*nentries = 1;
+		result = palloc(sizeof(IndexTuple));
+		result[0] = gistFormTuple(giststate, index, values, isnull, true);
+		return result;
+	}
+
+	/* Call the opclass's extractValue function on the multi-entry column */
+	nullFlags = NULL;
+	entries = (Datum *)
+		DatumGetPointer(FunctionCall3Coll(&giststate->extractValueFn[mecol],
+										  giststate->supportCollation[mecol],
+										  values[mecol],
+										  PointerGetDatum(nentries),
+										  PointerGetDatum(&nullFlags)));
+
+	/* Handle empty or NULL result: produce a single NULL entry */
+	if (entries == NULL || *nentries <= 0)
+	{
+		*nentries = 1;
+		values[mecol] = (Datum) 0;
+		isnull[mecol] = true;
+		result = palloc(sizeof(IndexTuple));
+		result[0] = gistFormTuple(giststate, index, values, isnull, true);
+		return result;
+	}
+
+	/* Create nullFlags array if the function didn't */
+	if (nullFlags == NULL)
+		nullFlags = palloc0_array(bool, *nentries);
+
+	/*
+	 * Form one index tuple per extracted entry.  We overwrite only the
+	 * multi-entry column in values[]/isnull[]; the other columns keep their
+	 * original value, so each tuple carries a copy of them.
+	 */
+	result = palloc_array(IndexTuple, *nentries);
+	for (i = 0; i < *nentries; i++)
+	{
+		values[mecol] = entries[i];
+		isnull[mecol] = nullFlags[i];
+		result[i] = gistFormTuple(giststate, index, values, isnull, true);
+
+		/*
+		 * Mark the tuple as multi-entry only when this value produced more
+		 * than one entry, so that its heap TID appears several times in the
+		 * index.  Single-entry values keep a unique TID and let scans skip
+		 * the dedup hash for them.
+		 */
+		if (*nentries > 1)
+			result[i]->t_info |= GIST_MULTIENTRY_MASK;
+	}
+
+	return result;
+}
+
+/*
  * This is a stratnum translation support function for GiST opclasses that use
  * the RT*StrategyNumber constants.
  */
