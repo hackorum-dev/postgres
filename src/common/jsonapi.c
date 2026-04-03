@@ -2574,6 +2574,9 @@ json_errdetail(JsonParseErrorType error, JsonLexContext *lex)
 	if (PQExpBufferBroken(lex->errormsg))
 		return _("out of memory while constructing error description");
 #endif
+	
+	if (!lex->errormsg)
+		return _("out of memory while constructing error description");
 
 	return lex->errormsg->data;
 }
