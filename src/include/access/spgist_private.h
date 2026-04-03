@@ -175,6 +175,7 @@ typedef struct SpGistSearchItem
 	bool		isLeaf;			/* SearchItem is heap item */
 	bool		recheck;		/* qual recheck is needed */
 	bool		recheckDistances;	/* distance recheck is needed */
+	bool		multiEntry;		/* from a multi-entry leaf (needs TID dedup) */
 
 	/* array with numberOfOrderBys entries */
 	double		distances[FLEXIBLE_ARRAY_MEMBER];
@@ -192,6 +193,13 @@ typedef struct SpGistScanOpaqueData
 	pairingheap *scanQueue;		/* queue of to be visited items */
 	MemoryContext tempCxt;		/* short-lived memory context */
 	MemoryContext traversalCxt; /* single scan lifetime memory context */
+
+	/*
+	 * For multi-entry indexes: hash table for TID deduplication.  Each heap
+	 * tuple produces multiple index entries, so we track which TIDs have been
+	 * returned.  NULL for standard (non-multi-entry) indexes.
+	 */
+	struct spgtid_hash *tidHash;
 
 	/* Control flags showing whether to search nulls and/or non-nulls */
 	bool		searchNulls;	/* scan matches (all) null entries */
@@ -370,7 +378,8 @@ typedef SpGistNodeTupleData *SpGistNodeTuple;
  * considerations.
  *
  * t_info holds the nextOffset field (14 bits wide, enough for supported
- * page sizes) plus the has-nulls-bitmap flag bit; another flag bit is free.
+ * page sizes) plus the has-nulls-bitmap flag bit (0x8000) and the
+ * multi-entry flag bit (0x4000).
  *
  * Normally, nextOffset links to the next tuple belonging to the same parent
  * node (which must be on the same page), or it's 0 if there is no next tuple.
@@ -398,12 +407,23 @@ typedef struct SpGistLeafTupleData
 	((spgLeafTuple)->t_info & 0x3FFF)
 #define SGLT_GET_HASNULLMASK(spgLeafTuple) \
 	(((spgLeafTuple)->t_info & 0x8000) ? true : false)
+/*
+ * The 0x4000 bit marks a leaf tuple that came from a multi-entry extraction,
+ * i.e. one whose heap tuple produced more than one leaf entry and whose TID
+ * therefore needs deduplication on scan.  See GIST_MULTIENTRY_MASK for the
+ * GiST equivalent.
+ */
+#define SGLT_GET_MULTIENTRY(spgLeafTuple) \
+	(((spgLeafTuple)->t_info & 0x4000) ? true : false)
 #define SGLT_SET_NEXTOFFSET(spgLeafTuple, offsetNumber) \
 	((spgLeafTuple)->t_info = \
 	 ((spgLeafTuple)->t_info & 0xC000) | ((offsetNumber) & 0x3FFF))
 #define SGLT_SET_HASNULLMASK(spgLeafTuple, hasnulls) \
 	((spgLeafTuple)->t_info = \
 	 ((spgLeafTuple)->t_info & 0x7FFF) | ((hasnulls) ? 0x8000 : 0))
+#define SGLT_SET_MULTIENTRY(spgLeafTuple, multientry) \
+	((spgLeafTuple)->t_info = \
+	 ((spgLeafTuple)->t_info & 0xBFFF) | ((multientry) ? 0x4000 : 0))
 
 #define SGLTHDRSZ(hasnulls) \
 	((hasnulls) ? MAXALIGN(sizeof(SpGistLeafTupleData) + \
@@ -532,6 +552,8 @@ extern OffsetNumber SpGistPageAddNewItem(SpGistState *state, Page page,
 extern bool spgproperty(Oid index_oid, int attno,
 						IndexAMProperty prop, const char *propname,
 						bool *res, bool *isnull);
+extern Datum *spgExtractEntries(Relation index, Datum value, bool isnull,
+								int32 *nentries, bool **nullFlags);
 
 /* spgdoinsert.c */
 extern void spgUpdateNodeLink(SpGistInnerTuple tup, int nodeN,
@@ -541,7 +563,8 @@ extern void spgPageIndexMultiDelete(SpGistState *state, Page page,
 									int firststate, int reststate,
 									BlockNumber blkno, OffsetNumber offnum);
 extern bool spgdoinsert(Relation index, SpGistState *state,
-						const ItemPointerData *heapPtr, const Datum *datums, const bool *isnulls);
+						const ItemPointerData *heapPtr, const Datum *datums, const bool *isnulls,
+						bool multiEntry);
 
 /* spgproc.c */
 extern double *spg_key_orderbys_distances(Datum key, bool isLeaf,
