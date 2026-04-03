@@ -846,6 +846,7 @@ doPickSplit(Relation index, SpGistState *state,
 			newLeafs[i] = spgFormLeafTuple(state, &oldLeafs[i]->heapPtr,
 										   leafDatums,
 										   leafIsnulls);
+			SGLT_SET_MULTIENTRY(newLeafs[i], SGLT_GET_MULTIENTRY(oldLeafs[i]));
 			totalLeafSizes += newLeafs[i]->size + sizeof(ItemIdData);
 		}
 	}
@@ -882,6 +883,7 @@ doPickSplit(Relation index, SpGistState *state,
 			newLeafs[i] = spgFormLeafTuple(state, &oldLeafs[i]->heapPtr,
 										   leafDatums,
 										   leafIsnulls);
+			SGLT_SET_MULTIENTRY(newLeafs[i], SGLT_GET_MULTIENTRY(oldLeafs[i]));
 			totalLeafSizes += newLeafs[i]->size + sizeof(ItemIdData);
 		}
 	}
@@ -1904,10 +1906,15 @@ spgSplitNodeAction(Relation index, SpGistState *state,
  * Returns true on success, false if we failed to complete the insertion
  * (typically because of conflict with a concurrent insert).  In the latter
  * case, caller should re-call spgdoinsert() with the same args.
+ *
+ * multiEntry should be true when this item is one of several entries produced
+ * from a single heap tuple by an extractValue function, so that its leaf tuple
+ * is marked for TID deduplication on scan.
  */
 bool
 spgdoinsert(Relation index, SpGistState *state,
-			const ItemPointerData *heapPtr, const Datum *datums, const bool *isnulls)
+			const ItemPointerData *heapPtr, const Datum *datums, const bool *isnulls,
+			bool multiEntry)
 {
 	bool		result = true;
 	TupleDesc	leafDescriptor = state->leafTupDesc;
@@ -1932,7 +1939,9 @@ spgdoinsert(Relation index, SpGistState *state,
 	 * Prepare the leaf datum to insert.
 	 *
 	 * If an optional "compress" method is provided, then call it to form the
-	 * leaf key datum from the input datum.  Otherwise, store the input datum
+	 * leaf key datum from the input datum.  Otherwise the datum is already of
+	 * the leaf type, either because the opclass has no separate leaf type or
+	 * because an extractValue method produced leaf-typed entries, so store it
 	 * as is.  Since we don't use index_form_tuple in this AM, we have to make
 	 * sure value to be inserted is not toasted; FormIndexDatum doesn't
 	 * guarantee that.  But we assume the "compress" method to return an
@@ -1952,7 +1961,8 @@ spgdoinsert(Relation index, SpGistState *state,
 		}
 		else
 		{
-			Assert(state->attLeafType.type == state->attType.type);
+			Assert(state->attLeafType.type == state->attType.type ||
+				   OidIsValid(index_getprocid(index, 1, SPGIST_EXTRACTVALUE_PROC)));
 
 			if (state->attType.attlen == -1)
 				leafDatums[spgKeyColumn] =
@@ -2106,6 +2116,7 @@ spgdoinsert(Relation index, SpGistState *state,
 						sizeToSplit;
 
 			leafTuple = spgFormLeafTuple(state, heapPtr, leafDatums, isnulls);
+			SGLT_SET_MULTIENTRY(leafTuple, multiEntry);
 			if (leafTuple->size + sizeof(ItemIdData) <=
 				SpGistPageGetFreeSpace(current.page, 1))
 			{

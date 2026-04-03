@@ -175,6 +175,11 @@ spgvalidate(Oid opclassoid)
 			case SPGIST_OPTIONS_PROC:
 				ok = check_amoptsproc_signature(procform->amproc);
 				break;
+			case SPGIST_EXTRACTVALUE_PROC:
+				ok = check_amproc_signature(procform->amproc, INTERNALOID, true,
+											3, 3, INTERNALOID, INTERNALOID,
+											INTERNALOID);
+				break;
 			default:
 				ereport(INFO,
 						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
@@ -287,8 +292,12 @@ spgvalidate(Oid opclassoid)
 		{
 			if ((thisgroup->functionset & (((uint64) 1) << i)) != 0)
 				continue;		/* got it */
-			if (i == SPGIST_OPTIONS_PROC)
+			if (i == SPGIST_OPTIONS_PROC ||
+				i == SPGIST_EXTRACTVALUE_PROC)
 				continue;		/* optional method */
+			if (i == SPGIST_COMPRESS_PROC &&
+				(thisgroup->functionset & (((uint64) 1) << SPGIST_EXTRACTVALUE_PROC)) != 0)
+				continue;		/* extractValue handles type conversion */
 			ereport(INFO,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("operator family \"%s\" of access method %s is missing support function %d for type %s",
@@ -296,6 +305,25 @@ spgvalidate(Oid opclassoid)
 							format_type_be(thisgroup->lefttype))));
 			result = false;
 		}
+	}
+
+	/*
+	 * extractValue decomposes a value into several leaf entries, none of which
+	 * is the original datum, so the original cannot be returned in an
+	 * index-only scan.  An opclass with extractValue must not claim
+	 * canReturnData in its config.  (The CONFIG_PROC test ensures configOut was
+	 * filled before we read it.)
+	 */
+	if (opclassgroup &&
+		(opclassgroup->functionset & (((uint64) 1) << SPGIST_EXTRACTVALUE_PROC)) &&
+		(opclassgroup->functionset & (((uint64) 1) << SPGIST_CONFIG_PROC)) &&
+		configOut.canReturnData)
+	{
+		ereport(INFO,
+				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+				 errmsg("operator class \"%s\" of access method %s with extractValue cannot return data in an index-only scan",
+						opclassname, "spgist")));
+		result = false;
 	}
 
 	/* Check that the originally-named opclass is supported */
@@ -367,6 +395,7 @@ spgadjustmembers(Oid opfamilyoid,
 				break;
 			case SPGIST_COMPRESS_PROC:
 			case SPGIST_OPTIONS_PROC:
+			case SPGIST_EXTRACTVALUE_PROC:
 				/* Optional, so force it to be a soft family dependency */
 				op->ref_is_hard = false;
 				op->ref_is_family = true;
