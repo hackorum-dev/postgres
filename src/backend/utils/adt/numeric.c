@@ -104,6 +104,7 @@ typedef int16 NumericDigit;
 #endif
 
 #define NBASE_SQR	(NBASE * NBASE)
+#define NUMERIC_STACK_BUFFER_SIZE 64
 
 /*
  * The Numeric type as stored on disk.
@@ -493,6 +494,19 @@ static void dump_var(const char *str, NumericVar *var);
 	((scale) <= NUMERIC_SHORT_DSCALE_MAX && \
 	(weight) <= NUMERIC_SHORT_WEIGHT_MAX && \
 	(weight) >= NUMERIC_SHORT_WEIGHT_MIN)
+
+#define COPY_NUMERIC(src, data, digits, ndigit, buffer) \
+	do { \
+		if (VARATT_IS_1B((src))) \
+		{ \
+			memcpy((buffer), (data), (ndigit) * sizeof(NumericDigit)); \
+			(digits) = (buffer); \
+		} \
+		else \
+		{ \
+			(digits) = (NumericDigit *) (data); \
+		} \
+	} while (0)
 
 static void alloc_var(NumericVar *var, int ndigits);
 static void free_var(NumericVar *var);
@@ -2525,6 +2539,162 @@ numeric_le(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(result);
 }
 
+/*
+ * cmp_numerics_packed() -
+ *
+ *	Compare two packed Numeric varlenas without detoasting short-header
+ *	datums.  This avoids palloc/memcpy overhead for the common case of
+ *	1-byte varlena headers (small numerics on heap pages).
+ *
+ *	The key insight: VARDATA_ANY() returns a pointer to the start of the
+ *	NumericChoice data regardless of whether the varlena has a 1-byte or
+ *	4-byte header.  We read n_header from there and extract all needed
+ *	fields using pointer arithmetic rather than the standard NUMERIC_*
+ *	macros (which assume a 4-byte varlena header via the Numeric struct).
+ */
+static int
+cmp_numerics_packed(Numeric num1, Numeric num2)
+{
+	uint16			header1;
+	uint16			header2;
+	char	   		*data1;
+	char	   		*data2;
+	NumericDigit 	digit1_buffer[64];
+    NumericDigit 	digit2_buffer[64];
+	int				result;
+
+	/*
+	 * Get pointers to the NumericChoice data, which starts right after the
+	 * varlena header (1 or 4 bytes).
+	 */
+	data1 = VARDATA_ANY(num1);
+	data2 = VARDATA_ANY(num2);
+
+	/*
+	 * Read the n_header words.  We must use memcpy because data1/data2 may
+	 * be unaligned (when the varlena has a 1-byte header, the data starts at
+	 * an odd offset).
+	 */
+	memcpy(&header1, data1, sizeof(uint16));
+	memcpy(&header2, data2, sizeof(uint16));
+
+	/* Handle special values (NaN, Inf) — same logic as cmp_numerics */
+	if ((header1 & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL)
+	{
+		if (header1 == NUMERIC_NAN)
+		{
+			if (header2 == NUMERIC_NAN)
+				result = 0;		/* NAN = NAN */
+			else
+				result = 1;		/* NAN > non-NAN */
+		}
+		else if (header1 == NUMERIC_PINF)
+		{
+			if (header2 == NUMERIC_NAN)
+				result = -1;	/* PINF < NAN */
+			else if (header2 == NUMERIC_PINF)
+				result = 0;		/* PINF = PINF */
+			else
+				result = 1;		/* PINF > anything else */
+		}
+		else					/* num1 must be NINF */
+		{
+			if (header2 == NUMERIC_NINF)
+				result = 0;		/* NINF = NINF */
+			else
+				result = -1;	/* NINF < anything else */
+		}
+	}
+	else if ((header2 & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL)
+	{
+		if (header2 == NUMERIC_NINF)
+			result = 1;			/* normal > NINF */
+		else
+			result = -1;		/* normal < NAN or PINF */
+	}
+	else
+	{
+		/*
+		 * Both are regular numerics.  Extract fields from the raw data.
+		 *
+		 * For short-format numerics (header & 0x8000 != 0):
+		 *   - n_header is 2 bytes, digits follow immediately
+		 *   - sign is encoded in bit 0x2000
+		 *   - weight is in low 7 bits with sign extension
+		 *
+		 * For long-format numerics (header & 0x8000 == 0):
+		 *   - n_sign_dscale is 2 bytes, then n_weight is 2 bytes, then digits
+		 *   - sign is in high 2 bits of n_sign_dscale
+		 */
+		int			sign1,
+					sign2;
+		int			weight1,
+					weight2;
+		NumericDigit *digits1,
+				   *digits2;
+		int			ndigits1,
+					ndigits2;
+		int			data_len1,
+					data_len2;
+
+		data_len1 = (int) VARSIZE_ANY_EXHDR(num1);
+		data_len2 = (int) VARSIZE_ANY_EXHDR(num2);
+
+		if (header1 & 0x8000)
+		{
+			/* Short format */
+			sign1 = (header1 & NUMERIC_SHORT_SIGN_MASK) ? NUMERIC_NEG : NUMERIC_POS;
+			weight1 = (header1 & NUMERIC_SHORT_WEIGHT_SIGN_MASK ?
+					   ~NUMERIC_SHORT_WEIGHT_MASK : 0) |
+				(header1 & NUMERIC_SHORT_WEIGHT_MASK);
+			ndigits1 = (data_len1 - (int) sizeof(uint16)) / (int) sizeof(NumericDigit);
+
+			COPY_NUMERIC(num1, data1 + sizeof(uint16), digits1, ndigits1, digit1_buffer);
+		}
+		else
+		{
+			/* Long format */
+			int16		n_weight1;
+
+			sign1 = header1 & NUMERIC_SIGN_MASK;
+			memcpy(&n_weight1, data1 + sizeof(uint16), sizeof(int16));
+			weight1 = n_weight1;
+			ndigits1 = (data_len1 - (int) sizeof(uint16) - (int) sizeof(int16)) / (int) sizeof(NumericDigit);
+
+			COPY_NUMERIC(num1, data1 + sizeof(uint16) + sizeof(int16), digits1, ndigits1, digit1_buffer);
+		}
+
+		if (header2 & 0x8000)
+		{
+			/* Short format */
+			sign2 = (header2 & NUMERIC_SHORT_SIGN_MASK) ? NUMERIC_NEG : NUMERIC_POS;
+			weight2 = (header2 & NUMERIC_SHORT_WEIGHT_SIGN_MASK ?
+					   ~NUMERIC_SHORT_WEIGHT_MASK : 0) |
+				(header2 & NUMERIC_SHORT_WEIGHT_MASK);
+			ndigits2 = (data_len2 - (int) sizeof(uint16)) / (int) sizeof(NumericDigit);
+
+			COPY_NUMERIC(num2, data2 + sizeof(uint16), digits2, ndigits2, digit2_buffer);
+		}
+		else
+		{
+			/* Long format */
+			int16		n_weight2;
+
+			sign2 = header2 & NUMERIC_SIGN_MASK;
+			memcpy(&n_weight2, data2 + sizeof(uint16), sizeof(int16));
+			weight2 = n_weight2;
+			ndigits2 = (data_len2 - (int) sizeof(uint16) - (int) sizeof(int16)) / (int) sizeof(NumericDigit);
+
+			COPY_NUMERIC(num2, data2 + sizeof(uint16) + sizeof(int16), digits2, ndigits2, digit2_buffer);
+		}
+
+		result = cmp_var_common(digits1, ndigits1, weight1, sign1,
+								digits2, ndigits2, weight2, sign2);
+	}
+
+	return result;
+}
+
 static int
 cmp_numerics(Numeric num1, Numeric num2)
 {
@@ -3456,17 +3626,18 @@ numeric_inc(PG_FUNCTION_ARGS)
 Datum
 numeric_smaller(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric		num1 = (Numeric) PG_DETOAST_DATUM_PACKED(PG_GETARG_DATUM(0));
+	Numeric		num2 = (Numeric) PG_DETOAST_DATUM_PACKED(PG_GETARG_DATUM(1));
 
 	/*
-	 * Use cmp_numerics so that this will agree with the comparison operators,
-	 * particularly as regards comparisons involving NaN.
+	 * Use cmp_numerics_packed so that this will agree with the comparison
+	 * operators, particularly as regards comparisons involving NaN.
+	 * This avoids palloc/memcpy overhead for 1-byte varlena headers.
 	 */
-	if (cmp_numerics(num1, num2) < 0)
-		PG_RETURN_NUMERIC(num1);
+	if (cmp_numerics_packed(num1, num2) < 0)
+		PG_RETURN_DATUM(PG_GETARG_DATUM(0));
 	else
-		PG_RETURN_NUMERIC(num2);
+		PG_RETURN_DATUM(PG_GETARG_DATUM(1));
 }
 
 
@@ -3478,17 +3649,18 @@ numeric_smaller(PG_FUNCTION_ARGS)
 Datum
 numeric_larger(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric		num1 = (Numeric) PG_DETOAST_DATUM_PACKED(PG_GETARG_DATUM(0));
+	Numeric		num2 = (Numeric) PG_DETOAST_DATUM_PACKED(PG_GETARG_DATUM(1));
 
 	/*
-	 * Use cmp_numerics so that this will agree with the comparison operators,
-	 * particularly as regards comparisons involving NaN.
+	 * Use cmp_numerics_packed so that this will agree with the comparison
+	 * operators, particularly as regards comparisons involving NaN.
+	 * This avoids palloc/memcpy overhead for 1-byte varlena headers.
 	 */
-	if (cmp_numerics(num1, num2) > 0)
-		PG_RETURN_NUMERIC(num1);
+	if (cmp_numerics_packed(num1, num2) > 0)
+		PG_RETURN_DATUM(PG_GETARG_DATUM(0));
 	else
-		PG_RETURN_NUMERIC(num2);
+		PG_RETURN_DATUM(PG_GETARG_DATUM(1));
 }
 
 
@@ -4815,6 +4987,50 @@ makeNumericAggStateCurrentContext(bool calcSumX2)
 }
 
 /*
+ * Safely initialize a NumericVar from a potentially packed short-header datum.
+ */
+static void
+init_var_from_packed(Numeric num, NumericVar *dest, NumericDigit* digit_buffer)
+{
+	uint16		header;
+	char	   *data;
+
+	data = VARDATA_ANY(num);
+	memcpy(&header, data, sizeof(uint16));
+
+	dest->buf = NULL;
+	if ((header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL)
+	{
+		dest->ndigits = 0;
+		dest->weight = 0;
+		dest->sign = header & NUMERIC_EXT_SIGN_MASK;
+		dest->dscale = 0;
+		dest->digits = NULL;
+	}
+	else if ((header & 0x8000) != 0)
+	{
+		dest->ndigits = (VARSIZE_ANY_EXHDR(num) - sizeof(uint16)) / sizeof(NumericDigit);
+		dest->weight = (header & NUMERIC_SHORT_WEIGHT_SIGN_MASK ? ~NUMERIC_SHORT_WEIGHT_MASK : 0)
+					   | (header & NUMERIC_SHORT_WEIGHT_MASK);
+		dest->sign = (header & NUMERIC_SHORT_SIGN_MASK) ? NUMERIC_NEG : NUMERIC_POS;
+		dest->dscale = (header & NUMERIC_SHORT_DSCALE_MASK) >> NUMERIC_SHORT_DSCALE_SHIFT;
+
+		COPY_NUMERIC(num, data + sizeof(uint16), dest->digits, dest->ndigits, digit_buffer);
+	}
+	else
+	{
+		int16 weight;
+		memcpy(&weight, data + sizeof(uint16), sizeof(int16));
+		dest->ndigits = (VARSIZE_ANY_EXHDR(num) - sizeof(uint16) - sizeof(int16)) / sizeof(NumericDigit);
+		dest->weight = weight;
+		dest->sign = header & NUMERIC_SIGN_MASK;
+		dest->dscale = header & NUMERIC_DSCALE_MASK;
+
+		COPY_NUMERIC(num, data + sizeof(uint16) + sizeof(int16), dest->digits, dest->ndigits, digit_buffer);
+	}
+}
+
+/*
  * Accumulate a new input value for numeric aggregate functions.
  */
 static void
@@ -4822,22 +5038,23 @@ do_numeric_accum(NumericAggState *state, Numeric newval)
 {
 	NumericVar	X;
 	NumericVar	X2;
+	NumericDigit digit_buffer[NUMERIC_STACK_BUFFER_SIZE];
 	MemoryContext old_context;
 
+	/* load processed number in short-lived context */
+	init_var_from_packed(newval, &X, digit_buffer);
+
 	/* Count NaN/infinity inputs separately from all else */
-	if (NUMERIC_IS_SPECIAL(newval))
+	if (X.sign == NUMERIC_NAN || X.sign == NUMERIC_PINF || X.sign == NUMERIC_NINF)
 	{
-		if (NUMERIC_IS_PINF(newval))
+		if (X.sign == NUMERIC_PINF)
 			state->pInfcount++;
-		else if (NUMERIC_IS_NINF(newval))
+		else if (X.sign == NUMERIC_NINF)
 			state->nInfcount++;
 		else
 			state->NaNcount++;
 		return;
 	}
-
-	/* load processed number in short-lived context */
-	init_var_from_num(newval, &X);
 
 	/*
 	 * Track the highest input dscale that we've seen, to support inverse
@@ -4892,22 +5109,23 @@ do_numeric_discard(NumericAggState *state, Numeric newval)
 {
 	NumericVar	X;
 	NumericVar	X2;
+	NumericDigit digit_buffer[NUMERIC_STACK_BUFFER_SIZE];
 	MemoryContext old_context;
 
+	/* load processed number in short-lived context */
+	init_var_from_packed(newval, &X, digit_buffer);
+
 	/* Count NaN/infinity inputs separately from all else */
-	if (NUMERIC_IS_SPECIAL(newval))
+	if (X.sign == NUMERIC_NAN || X.sign == NUMERIC_PINF || X.sign == NUMERIC_NINF)
 	{
-		if (NUMERIC_IS_PINF(newval))
+		if (X.sign == NUMERIC_PINF)
 			state->pInfcount--;
-		else if (NUMERIC_IS_NINF(newval))
+		else if (X.sign == NUMERIC_NINF)
 			state->nInfcount--;
 		else
 			state->NaNcount--;
 		return true;
 	}
-
-	/* load processed number in short-lived context */
-	init_var_from_num(newval, &X);
 
 	/*
 	 * state->sumX's dscale is the maximum dscale of any of the inputs.
@@ -4992,7 +5210,7 @@ numeric_accum(PG_FUNCTION_ARGS)
 		state = makeNumericAggState(fcinfo, true);
 
 	if (!PG_ARGISNULL(1))
-		do_numeric_accum(state, PG_GETARG_NUMERIC(1));
+		do_numeric_accum(state, (Numeric) PG_DETOAST_DATUM_PACKED(PG_GETARG_DATUM(1)));
 
 	PG_RETURN_POINTER(state);
 }
@@ -5092,7 +5310,7 @@ numeric_avg_accum(PG_FUNCTION_ARGS)
 		state = makeNumericAggState(fcinfo, false);
 
 	if (!PG_ARGISNULL(1))
-		do_numeric_accum(state, PG_GETARG_NUMERIC(1));
+		do_numeric_accum(state, (Numeric) PG_DETOAST_DATUM_PACKED(PG_GETARG_DATUM(1)));
 
 	PG_RETURN_POINTER(state);
 }
