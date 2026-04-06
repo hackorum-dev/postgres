@@ -1550,6 +1550,13 @@ results_differ(const char *testname, const char *resultsfile, const char *defaul
 				 pretty_diff_opts, best_expect_file, resultsfile, difffilename);
 		run_diff(cmd, difffilename);
 
+		/* Disabling difffile output via an environment variable */
+		if (getenv("PG_REGRESS_DISABLE_DIFFS_OUTPUT") != NULL)
+		{
+			unlink(diff);
+			return true;
+		}
+
 		/*
 		 * Reopen the file for reading to emit the diff as TAP diagnostics. We
 		 * can't keep the file open while diff appends to it, because on
