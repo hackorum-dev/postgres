@@ -695,7 +695,12 @@ ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *latch)
 	if (event->events & WL_LATCH_SET && events != event->events)
 		elog(ERROR, "cannot modify latch event");
 
-	/* FIXME: validate event mask */
+	/* Validate event mask */
+	if ((events & WL_SOCKET_MASK) && event->fd == PGINVALID_SOCKET)
+		elog(ERROR, "cannot wait on socket event without a socket");
+	if ((events & WL_LATCH_SET) && !(event->events & WL_LATCH_SET))
+		elog(ERROR, "cannot modify non-latch event to wait on latch");
+
 	event->events = events;
 
 	if (events == WL_LATCH_SET)
