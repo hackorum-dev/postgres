@@ -1365,4 +1365,30 @@ SELECT * FROM temporal_partitioned_5 ORDER BY id, valid_at;
 
 DROP TABLE temporal_partitioned;
 
+-- UPDATE FOR PORTION OF with table inheritance
+-- Leftover rows must stay in the child table, preserving child-specific columns.
+
+CREATE TABLE fpo_inh_parent (
+  id int4range,
+  valid_at daterange,
+  name text
+);
+CREATE TABLE fpo_inh_child (
+  description text
+) INHERITS (fpo_inh_parent);
+INSERT INTO fpo_inh_child (id, valid_at, name, description) VALUES
+  ('[1,2)', '[2018-01-01,2019-01-01)', 'one', 'initial');
+
+-- Update targets the parent; the matching row lives in the child.
+UPDATE fpo_inh_parent FOR PORTION OF valid_at FROM '2018-04-01' TO '2018-10-01'
+  SET name = 'one^1';
+
+-- All three rows should be in the child, with description preserved.
+SELECT tableoid::regclass, * FROM fpo_inh_parent ORDER BY valid_at;
+SELECT * FROM fpo_inh_child ORDER BY valid_at;
+-- No rows should have leaked into the parent.
+SELECT * FROM ONLY fpo_inh_parent ORDER BY valid_at;
+
+DROP TABLE fpo_inh_parent CASCADE;
+
 RESET datestyle;

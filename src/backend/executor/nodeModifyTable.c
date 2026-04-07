@@ -1520,12 +1520,25 @@ ExecForPortionOfLeftovers(ModifyTableContext *context,
 	fcinfo->args[1].isnull = false;
 
 	/*
-	 * If there are partitions, we must insert into the root table, so we get
-	 * tuple routing. We already set up leftoverSlot with the root tuple
+	 * If the target is partitioned, we must insert into the root table so we
+	 * get tuple routing.  We already set up leftoverSlot with the root tuple
 	 * descriptor.
+	 *
+	 * For traditional inheritance (no partition tuple routing), we must
+	 * insert back into the same child table so that child-specific columns
+	 * are preserved.  In that case we need a leftover slot that matches the
+	 * child's tuple descriptor rather than the root's.
 	 */
-	if (resultRelInfo->ri_RootResultRelInfo)
+	if (resultRelInfo->ri_RootResultRelInfo &&
+		mtstate->mt_partition_tuple_routing)
 		resultRelInfo = resultRelInfo->ri_RootResultRelInfo;
+	else if (resultRelInfo->ri_RootResultRelInfo)
+	{
+		leftoverSlot =
+			ExecInitExtraTupleSlot(estate,
+								   RelationGetDescr(resultRelInfo->ri_RelationDesc),
+								   &TTSOpsVirtual);
+	}
 
 	/*
 	 * Insert a leftover for each value returned by the without_portion helper
@@ -1557,8 +1570,12 @@ ExecForPortionOfLeftovers(ModifyTableContext *context,
 			 * range column below. Convert oldtuple to the base table's format
 			 * if necessary. We need to insert temporal leftovers through the
 			 * root partition so they get routed correctly.
+			 *
+			 * For traditional inheritance (no partition routing), we keep the
+			 * child's tuple format so that child-specific columns are
+			 * preserved.
 			 */
-			if (map != NULL)
+			if (map != NULL && mtstate->mt_partition_tuple_routing)
 			{
 				leftoverSlot = execute_attr_map_slot(map->attrMap,
 													 oldtupleSlot,
