@@ -262,4 +262,107 @@
 
  </sect2>
 
+ <sect2 id="earthdistance-examples">
+  <title>Examples</title>
+
+  <para>
+   The following examples demonstrate the use of the
+   <filename>earthdistance</filename> module with locations in
+   Tokyo (latitude 35.6762, longitude 139.6503) and
+   Osaka (latitude 34.6937, longitude 135.5023).
+  </para>
+
+  <para>
+   First, install the required extensions:
+<programlisting>
+CREATE EXTENSION cube;
+CREATE EXTENSION earthdistance CASCADE;
+</programlisting>
+  </para>
+
+  <para>
+   Retrieve the assumed radius of the Earth in meters:
+<programlisting>
+SELECT earth();
+  earth
+---------
+ 6378168
+(1 row)
+</programlisting>
+  </para>
+
+  <para>
+   Convert latitude and longitude to an <type>earth</type> point
+   (a 3D coordinate):
+<programlisting>
+SELECT ll_to_earth(35.6762, 139.6503);
+                         ll_to_earth
+-------------------------------------------------------------
+ (-3948591.2574923225, 3354541.741384729, 3719772.012205412)
+(1 row)
+</programlisting>
+  </para>
+
+  <para>
+   Calculate the great circle distance in meters between Tokyo and Osaka:
+<programlisting>
+SELECT earth_distance(
+  ll_to_earth(35.6762, 139.6503),
+  ll_to_earth(34.6937, 135.5023)
+);
+  earth_distance
+-------------------
+ 392882.7648340743
+(1 row)
+</programlisting>
+  </para>
+
+  <para>
+   Extract latitude and longitude back from an <type>earth</type> point:
+<programlisting>
+SELECT latitude(ll_to_earth(35.6762, 139.6503));
+      latitude
+--------------------
+ 35.676199999999994
+(1 row)
+
+SELECT longitude(ll_to_earth(35.6762, 139.6503));
+ longitude
+-----------
+  139.6503
+(1 row)
+</programlisting>
+  </para>
+
+  <para>
+   Using the point-based operator to calculate distance in statute miles:
+<programlisting>
+SELECT point(139.6503, 35.6762) &lt;@&gt; point(135.5023, 34.6937);
+     ?column?
+-------------------
+ 243.8511729296967
+(1 row)
+</programlisting>
+   Note that <type>point</type> takes (longitude, latitude) order,
+   not (latitude, longitude).
+  </para>
+
+  <para>
+   Use <function>earth_box</function> to find points within 50 km of
+   Tokyo.  This creates a bounding box suitable for an indexed search:
+<programlisting>
+SELECT earth_box(ll_to_earth(35.6762, 139.6503), 50000);
+</programlisting>
+   Since some points inside the box may be farther than 50 km,
+   combine it with <function>earth_distance</function> for exact filtering:
+<programlisting>
+SELECT name, location
+FROM cities
+WHERE earth_box(ll_to_earth(35.6762, 139.6503), 50000) @&gt; location
+  AND earth_distance(location, ll_to_earth(35.6762, 139.6503)) &lt; 50000;
+</programlisting>
+  </para>
+
+ </sect2>
+ 
 </sect1>
