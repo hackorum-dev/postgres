@@ -35,6 +35,7 @@
 #include "access/xact.h"
 #include "access/xlog_internal.h"
 #include "access/xlogarchive.h"
+#include "access/xlogpipeline.h"
 #include "access/xlogprefetcher.h"
 #include "access/xlogreader.h"
 #include "access/xlogrecovery.h"
@@ -100,6 +101,8 @@ int			recovery_min_apply_delay = 0;
 char	   *PrimaryConnInfo = NULL;
 char	   *PrimarySlotName = NULL;
 bool		wal_receiver_create_temp_slot = false;
+bool		wal_pipeline_enabled = false;
+int			wal_pipeline_mq_size_mb = 128;
 
 /*
  * recoveryTargetTimeLineGoal: what the user requested, if any
@@ -206,17 +209,6 @@ typedef struct XLogPageReadPrivate
 /* flag to tell XLogPageRead that we have started replaying */
 static bool InRedo = false;
 
-/*
- * Codes indicating where we got a WAL file from during recovery, or where
- * to attempt to get one.
- */
-typedef enum
-{
-	XLOG_FROM_ANY = 0,			/* request to read WAL from any source */
-	XLOG_FROM_ARCHIVE,			/* restored using restore_command */
-	XLOG_FROM_PG_WAL,			/* existing file in pg_wal */
-	XLOG_FROM_STREAM,			/* streamed from primary */
-} XLogSource;
 
 /* human-readable names for XLogSources, for debugging output */
 static const char *const xlogSourceNames[] = {"any", "archive", "pg_wal", "stream"};
@@ -4738,6 +4730,49 @@ RecoveryRequiresIntParameter(const char *param_name, int currValue, int minValue
 	}
 }
 
+
+/*
+ * Pipeline bgw should be aware of all the parameters thats been initialized by
+ * the startup process before performing the actual recoevery. Other then this
+ * there are also some variables that keep on changing. The pipeline & the startup
+ * process should be aware of the state change of such variables, we can use shared
+ * memory for such variables.
+ */
+void
+InitializePipelineRecoveryEnv(WalPipelineParams *params)
+{
+	StandbyMode = params->StandbyMode;
+	StandbyModeRequested = params->StandbyModeRequested;
+	ArchiveRecoveryRequested = params->ArchiveRecoveryRequested;
+	InArchiveRecovery = params->InArchiveRecovery;
+	recoveryTargetTLI = params->recoveryTargetTLI;
+	minRecoveryPointTLI = params->minRecoveryPointTLI;
+	minRecoveryPoint = params->minRecoveryPoint;
+	currentSource = params->currentSource;
+	lastSourceFailed = params->lastSourceFailed;
+	pendingWalRcvRestart = params->pendingWalRcvRestart;
+	RedoStartTLI = params->RedoStartTLI;
+	RedoStartLSN = params->RedoStartLSN;
+	standbyState = params->standbyState;
+	CheckPointLoc = params->CheckPointLoc;
+	CheckPointTLI = params->CheckPointTLI;
+	flushedUpto = params->flushedUpto;
+	receiveTLI = params->receiveTLI;
+	abortedRecPtr = params->abortedRecPtr;
+	missingContrecPtr = params->missingContrecPtr;
+	InRedo = params->InRedo;
+	backupEndRequired = params->backupEndRequired;
+	backupStartPoint = params->backupStartPoint;
+	backupEndPoint = params->backupEndPoint;
+	curFileTLI = params->curFileTLI;
+	InRecovery = true;
+
+	/*
+	 * As pipeline will be reading the wal, so better to own the latch to wait at.
+	 */
+	if (ArchiveRecoveryRequested)
+		OwnLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
+}
 
 /*
  * GUC check_hook for primary_slot_name

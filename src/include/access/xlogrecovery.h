@@ -11,6 +11,7 @@
 #ifndef XLOGRECOVERY_H
 #define XLOGRECOVERY_H
 
+#include "access/xlogprefetcher.h"
 #include "access/xlogreader.h"
 #include "catalog/pg_control.h"
 #include "lib/stringinfo.h"
@@ -59,6 +60,17 @@ typedef enum RecoveryPauseState
 	RECOVERY_PAUSE_REQUESTED,	/* pause requested, but not yet paused */
 	RECOVERY_PAUSED,			/* recovery is paused */
 } RecoveryPauseState;
+
+/* Codes indicating where we got a WAL file from during recovery, or where
+ * to attempt to get one.
+ */
+typedef enum
+{
+	XLOG_FROM_ANY = 0,			/* request to read WAL from any source */
+	XLOG_FROM_ARCHIVE,			/* restored using restore_command */
+	XLOG_FROM_PG_WAL,			/* existing file in pg_wal */
+	XLOG_FROM_STREAM,			/* streamed from primary */
+} XLogSource;
 
 /*
  * Shared-memory state for WAL recovery.
@@ -205,6 +217,8 @@ typedef struct
 	bool		recovery_signal_file_found;
 } EndOfWalRecoveryInfo;
 
+struct WalPipelineParams;   /* forward declaration */
+
 extern EndOfWalRecoveryInfo *FinishWalRecovery(void);
 extern void ShutdownWalRecovery(void);
 extern void RemovePromoteSignalFiles(void);
@@ -217,6 +231,10 @@ extern void GetXLogReceiptTime(TimestampTz *rtime, bool *fromStream);
 extern TimestampTz GetLatestXTime(void);
 extern TimestampTz GetCurrentChunkReplayStartTime(void);
 extern XLogRecPtr GetCurrentReplayRecPtr(TimeLineID *replayEndTLI);
+extern XLogRecord *ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
+		   bool fetching_ckpt, TimeLineID replayTLI);
+extern int XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
+			 XLogRecPtr targetRecPtr, char *readBuf);
 
 extern bool PromoteIsTriggered(void);
 extern bool CheckPromoteSignal(void);
@@ -226,6 +244,7 @@ extern void StartupRequestWalReceiverRestart(void);
 extern void XLogRequestWalReceiverReply(void);
 
 extern void RecoveryRequiresIntParameter(const char *param_name, int currValue, int minValue);
+extern void InitializePipelineRecoveryEnv(struct WalPipelineParams *params);
 
 extern void xlog_outdesc(StringInfo buf, XLogReaderState *record);
 
