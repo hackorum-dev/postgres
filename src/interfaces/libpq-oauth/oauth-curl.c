@@ -3041,6 +3041,11 @@ pg_fe_run_oauth_flow(PGconn *conn, struct PGoauthBearerRequest *request,
 					actx->dbg_num_calls);
 	}
 
+	if ((actx->debug_flags & OAUTHDEBUG_UNSAFE_TRACE)
+		&& (result == PGRES_POLLING_OK || result == PGRES_POLLING_FAILED))
+		fprintf(stderr,
+				libpq_gettext("WARNING: PGOAUTHDEBUG trace output above may contain secrets. Do not share with third parties.\n"));
+
 #ifndef WIN32
 	if (masked)
 	{
@@ -3095,6 +3100,10 @@ pg_start_oauthbearer(PGconn *conn, PGoauthBearerRequestV2 *request)
 
 	/* Parse debug flags from the environment. */
 	actx->debug_flags = oauth_parse_debug_flags();
+
+	if (actx->debug_flags & OAUTHDEBUG_UNSAFE_TRACE)
+		fprintf(stderr,
+				libpq_gettext("WARNING: PGOAUTHDEBUG trace is enabled. HTTP traffic (including secrets) will be logged.\n"));
 
 	initPQExpBuffer(&actx->work_data);
 	initPQExpBuffer(&actx->errbuf);
