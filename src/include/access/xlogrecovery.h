@@ -13,6 +13,7 @@
 
 #include "access/xlogprefetcher.h"
 #include "access/xlogreader.h"
+#include "access/xlogutils.h"
 #include "catalog/pg_control.h"
 #include "lib/stringinfo.h"
 #include "storage/condition_variable.h"
@@ -107,6 +108,13 @@ typedef struct XLogRecoveryCtlData
 	Latch		recoveryWakeupLatch;
 
 	/*
+	 * In case pipeline enabled we will need two latches. One that can be used
+	 * by the pipeline for WAL waiting and other that can be used by the
+	 * startup process for the apply delay
+	 */
+	Latch		recoveryApplyDelayLatch;
+
+	/*
 	 * Last record successfully replayed.
 	 */
 	XLogRecPtr	lastReplayedReadRecPtr; /* start position */
@@ -133,6 +141,46 @@ typedef struct XLogRecoveryCtlData
 	ConditionVariable recoveryNotPausedCV;
 
 	slock_t		info_lck;		/* locks shared variables shown above */
+
+	/* ------------------------------------------------------------------
+	 * Variables use for IPC between pipeline and the startup proc.
+	 * These are also the static variables in xlogrecovery.c but there values
+	 * keep on changing. So we added then in the shared memory so that both
+	 * the pipeline and the startup proc stay synced on any of this state
+	 * change
+	 * ------------------------------------------------------------------
+	 */
+
+	/*
+	 * Pipeline could be waiting for the startup process to catchup with the
+	 * decoder. This could happend when no wait wal is available from the
+	 * current resource and now pipline have change the wal srouce
+	 * i.e enabling standby if requested.
+	 */
+	bool		pipeline_waiting;
+	bool		InArchiveRecovery;
+	bool		pendingWalRcvRestart;
+	bool		stanbyEnabled;
+
+	/* The target TLI for which expectedTLEs should be recomputed */
+	TimeLineID	expectedTLEsUpdateTLI;
+
+	/*
+	 * Normaly we wakeup walrcvr after specific records have been applied, as
+	 * reads are sequential so we wkaeup after specific read. But in case of pipeline
+	 * reads (decoded records) could be way ahead of the consumer. We cannot wakeup
+	 * wal rcvr based on read, so we tell consumer to wakup after apllied records
+	 * upto flushedUptoRecPtr
+	 */
+	XLogRecPtr	flushedUptoRecPtr;
+	XLogRecPtr	abortedRecPtr;
+	XLogRecPtr	missingContrecPtr;
+
+	XLogSource	currentSource;
+	XLogSource	XLogReceiptSource;
+
+	HotStandbyState standbyState;
+	TimestampTz		XLogReceiptTime;
 } XLogRecoveryCtlData;
 
 extern PGDLLIMPORT XLogRecoveryCtlData *XLogRecoveryCtl;
@@ -239,6 +287,8 @@ extern int XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, i
 extern bool PromoteIsTriggered(void);
 extern bool CheckPromoteSignal(void);
 extern void WakeupRecovery(void);
+extern void DisownRecoveryWakeupLatch(void);
+extern void SetSharedHotStandbyState(void);
 
 extern void StartupRequestWalReceiverRestart(void);
 extern void XLogRequestWalReceiverReply(void);

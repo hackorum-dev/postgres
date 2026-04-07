@@ -53,6 +53,16 @@
 #include "utils/timeout.h"
 
 
+/*
+ * Convert values of GUCs measured in megabytes to bytes
+ */
+#define MBToBytes(mbvar) (mbvar * 1024 * 1024)
+
+/*
+ * Waiting for consumer before exiting gracefully.
+ */
+#define MAX_SHUTDOWN_WAIT_ITERS 1000	/* 1000 * 10ms = 10 seconds */
+
 
 /* Global shared memory control structure */
 WalPipelineShmCtl *WalPipelineShm = NULL;
@@ -72,6 +82,10 @@ static dsm_segment *producer_dsm_seg = NULL;
 static shm_mq *producer_mq = NULL;
 static shm_mq_handle *producer_mq_handle = NULL;
 
+/* Local state for consumer */
+static dsm_segment *consumer_dsm_seg = NULL;
+static shm_mq *consumer_mq = NULL;
+static shm_mq_handle *consumer_mq_handle = NULL;
 
 /*
  * Flags set by interrupt handlers for later service in the redo loop.
@@ -84,8 +98,10 @@ static void PipelineBgwSigHupHandler(SIGNAL_ARGS);
 /* Forward declarations */
 static void wal_pipeline_cleanup_callback(int code, Datum arg);
 static Size serialize_wal_record(XLogReaderState *record, char **buffer);
+static DecodedXLogRecord *deserialize_wal_record(const char *buffer, Size len, XLogReaderState *startup_reader, bool first_iteration);
 static void cleanup_producer_resources(void);
 static void cleanup_consumer_resources(void);
+static void WalPipeline_WaitForConsumerShutdownRequest(void);
 
 /* copied from xlogrecovery.c */
 /* Parameters passed down from ReadRecord to the XLogPageRead callback. */
@@ -118,6 +134,168 @@ WalPipelineShmemInit(void *arg)
 	SpinLockInit(&WalPipelineShm->mutex);
 }
 
+/*
+ * Called by Consumer.
+ *
+ * Initialize and start the WAL pipeline. This will be called by the startup
+ * process (consumer) as a request to start the pipeline.
+ */
+void
+WalPipeline_Start(WalPipelineParams *params)
+{
+	BackgroundWorker worker;
+	BackgroundWorkerHandle *handle;
+	dsm_segment *seg;
+	shm_toc_estimator e;
+	shm_toc *toc;
+	Size        segsize;
+	shm_mq     *mq;
+	WalPipelineParams *shared_params;
+	pid_t		pid;
+	BgwHandleStatus status;
+
+	SpinLockAcquire(&WalPipelineShm->mutex);
+	if (WalPipelineShm->initialized)
+	{
+		SpinLockRelease(&WalPipelineShm->mutex);
+		return;  /* Already started */
+	}
+	WalPipelineShm->initialized = true;
+	SpinLockRelease(&WalPipelineShm->mutex);
+
+	shm_toc_initialize_estimator(&e);
+	shm_toc_estimate_chunk(&e, sizeof(WalPipelineParams));
+	shm_toc_estimate_chunk(&e, MBToBytes(wal_pipeline_mq_size_mb));
+	shm_toc_estimate_keys(&e, 2);   /* key=1 → params, key=2 → mq */
+	segsize = shm_toc_estimate(&e);
+
+	seg = dsm_create(segsize, 0);
+	dsm_pin_segment(seg);
+
+	toc = shm_toc_create(PG_WAL_PIPELINE_MAGIC,
+						 dsm_segment_address(seg), segsize);
+
+	/*
+	 * Pass the startup process vaaraibles state through WalPipelineParams
+	 */
+	shared_params = shm_toc_allocate(toc, sizeof(WalPipelineParams));
+	shm_toc_insert(toc, 1, shared_params);
+	*shared_params = *params;
+
+	/* create the message queue */
+	mq = shm_mq_create(shm_toc_allocate(toc, MBToBytes(wal_pipeline_mq_size_mb)),
+					   MBToBytes(wal_pipeline_mq_size_mb));
+	shm_toc_insert(toc, 2, mq);
+
+	/* update shared state */
+	SpinLockAcquire(&WalPipelineShm->mutex);
+	WalPipelineShm->dsm_seg_handle = dsm_segment_handle(seg);
+	WalPipelineShm->consumer_pid = MyProcPid;
+	SpinLockRelease(&WalPipelineShm->mutex);
+
+	/* Set up consumer side of the queue */
+	consumer_dsm_seg = seg;
+	consumer_mq = mq;
+	shm_mq_set_receiver(consumer_mq, MyProc);
+	consumer_mq_handle = shm_mq_attach(consumer_mq, seg, NULL);
+
+	/* Register cleanup callback */
+	before_shmem_exit(wal_pipeline_cleanup_callback, (Datum) 0);
+
+	/* Register background worker */
+	memset(&worker, 0, sizeof(worker));
+	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
+	worker.bgw_start_time = BgWorkerStart_PostmasterStart;
+	worker.bgw_restart_time = BGW_NEVER_RESTART;
+	sprintf(worker.bgw_library_name, "postgres");
+	sprintf(worker.bgw_function_name, "WalPipeline_ProducerMain");
+	snprintf(worker.bgw_name, BGW_MAXLEN, "wal pipeline producer");
+	snprintf(worker.bgw_type, BGW_MAXLEN, "wal pipeline producer");
+	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
+	worker.bgw_notify_pid = MyProcPid;
+
+	if (!RegisterDynamicBackgroundWorker(&worker, &handle))
+	{
+		SpinLockAcquire(&WalPipelineShm->mutex);
+		WalPipelineShm->initialized = false;
+		SpinLockRelease(&WalPipelineShm->mutex);
+
+		dsm_unpin_segment(dsm_segment_handle(seg));
+		dsm_detach(seg);
+		consumer_dsm_seg = NULL;
+		consumer_mq = NULL;
+		consumer_mq_handle = NULL;
+
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+				 errmsg("could not register background worker for WAL pipeline")));
+	}
+
+	status = WaitForBackgroundWorkerStartup(handle, &pid);
+
+	if (status != BGWH_STARTED)
+	ereport(ERROR,
+			(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+				errmsg("could not start background process"),
+				errhint("More details may be available in the server log.")));
+	else
+		ereport(LOG, (errmsg("[walpipeline] started.")));
+}
+
+/*
+ * Request producer shutdown.
+ * This is called by the consumer when it no longer needs records.
+ */
+static void
+WalPipeline_RequestShutdown(void)
+{
+	if (!WalPipelineShm)
+		return;
+
+	SpinLockAcquire(&WalPipelineShm->mutex);
+	WalPipelineShm->shutdown_requested = true;
+	SpinLockRelease(&WalPipelineShm->mutex);
+}
+
+/*
+ * Consumer Function.
+ * Stop the WAL pipeline. This will also be called be the startup process
+ * (consumer). This will only be called when consumer don't need any more
+ * decoded records. This function will also wait until the pipeline workers
+ * are stopped.
+ */
+void
+WalPipeline_Stop(void)
+{
+	if (!WalPipelineShm || !WalPipelineShm->initialized)
+		return;
+
+	/* Ask producer to stop */
+	WalPipeline_RequestShutdown();
+
+	/* Wait for producer to exit (max 10 seconds) */
+	for (int i = 0; i < 100; i++)
+	{
+		bool producer_alive;
+
+		SpinLockAcquire(&WalPipelineShm->mutex);
+		producer_alive = (WalPipelineShm->producer_pid != 0);
+		SpinLockRelease(&WalPipelineShm->mutex);
+
+		if (!producer_alive)
+			break;
+
+		pg_usleep(100000); /* 100 ms */
+	}
+
+	cleanup_consumer_resources();
+
+	SpinLockAcquire(&WalPipelineShm->mutex);
+	WalPipelineShm->initialized = false;
+	SpinLockRelease(&WalPipelineShm->mutex);
+
+	elog(LOG, "[walpipeline] stopped");
+}
 
 /*
  * Producer Function.
@@ -357,6 +535,116 @@ WalPipeline_SendError(int errcode, const char *errmsg)
 	return true;
 }
 
+/*
+ * Consumer Function.
+ * Receive and deserialize a WAL record from the producer
+ */
+DecodedXLogRecord *
+WalPipeline_ReceiveRecord(XLogReaderState *startup_reader, bool first_iteration)
+{
+	shm_mq_result res;
+	Size        nbytes;
+	void       *data;
+	char       *err_msg;
+	int        err_code;
+	WalRecordMsgHeader *hdr;
+	DecodedXLogRecord *record;
+
+	if (!consumer_mq_handle)
+		return NULL;
+
+	/* Receive message from queue */
+	res = shm_mq_receive(consumer_mq_handle, &nbytes, &data, false);
+
+	if (res != SHM_MQ_SUCCESS)
+		elog(ERROR, "[walpipeline] consumer: failed to receive record");
+
+	hdr = (WalRecordMsgHeader *) data;
+
+	/* Handle different message types */
+	switch (hdr->msg_type)
+	{
+		case WAL_MSG_RECORD:
+			record = deserialize_wal_record((char *) data, nbytes, startup_reader, first_iteration);
+
+			/* Update statistics */
+			SpinLockAcquire(&WalPipelineShm->mutex);
+			WalPipelineShm->records_received++;
+			WalPipelineShm->bytes_received += nbytes;
+			WalPipelineShm->consumer_lsn = hdr->endRecPtr;
+			SpinLockRelease(&WalPipelineShm->mutex);
+
+			return record;
+
+		case WAL_MSG_SHUTDOWN:
+			elog(LOG, "[walpipeline] consumer: received shutdown message from the producer");
+			return NULL;
+
+		case WAL_MSG_ERROR:
+			SpinLockAcquire(&WalPipelineShm->mutex);
+			err_code = WalPipelineShm->error_code;
+			err_msg = WalPipelineShm->error_message;
+			SpinLockRelease(&WalPipelineShm->mutex);
+
+			ereport(ERROR,
+					(errcode(err_code),
+					 errmsg("[walpipeline] consumer: received error from the producer: %s", err_msg)));
+			return NULL;
+
+		default:
+			elog(PANIC, "[walpipeline] consumer: unknown message type: %d",
+				 hdr->msg_type);
+			return NULL;
+	}
+}
+
+/*
+ * Consumer Function.
+ * Check if producer is still running
+ */
+bool
+WalPipeline_CheckProducerAlive(void)
+{
+	pid_t       pid;
+	bool        alive;
+
+	SpinLockAcquire(&WalPipelineShm->mutex);
+	pid = WalPipelineShm->producer_pid;
+	SpinLockRelease(&WalPipelineShm->mutex);
+
+	if (pid == 0)
+		return false;
+
+	alive = (kill(pid, 0) == 0);
+
+	if (!alive)
+	{
+		SpinLockAcquire(&WalPipelineShm->mutex);
+		WalPipelineShm->producer_pid = 0;
+		SpinLockRelease(&WalPipelineShm->mutex);
+	}
+
+	return alive;
+}
+
+/*
+ * Consumer Function.
+ * Check if pipeline is active
+ */
+bool
+WalPipeline_IsActive(void)
+{
+	bool        active;
+
+	if (!WalPipelineShm)
+		return false;
+
+	SpinLockAcquire(&WalPipelineShm->mutex);
+	active = WalPipelineShm->initialized && !WalPipelineShm->shutdown_requested;
+	SpinLockRelease(&WalPipelineShm->mutex);
+
+	return active;
+}
 
 /*
  * Producer Function.
@@ -395,6 +683,55 @@ WalPipeline_WaitForConsumerShutdownRequest(void)
 	}
 }
 
+/*
+ * Consumer Function.
+ * Wait unless last sent record by the pipeline is applied by the
+ * startup process.
+ */
+void
+WalPipeline_WaitForConsumerCatchup(void)
+{
+	XLogRecPtr producer_lsn;
+	XLogRecPtr consumer_lsn;
+
+	for (;;)
+	{
+		SpinLockAcquire(&WalPipelineShm->mutex);
+		producer_lsn = WalPipelineShm->producer_lsn;
+		consumer_lsn = WalPipelineShm->applied_lsn;
+		SpinLockRelease(&WalPipelineShm->mutex);
+
+		if (producer_lsn == consumer_lsn)
+			return;
+
+		CHECK_FOR_INTERRUPTS();
+
+		/* short sleep to avoid busy looping */
+		pg_usleep(50);   /* 50 microseconds */
+	}
+}
+
+/*
+ * Consumer Function.
+ * Get pipeline statistics
+ */
+void
+WalPipeline_GetStats(uint64 *records_sent, uint64 *records_received,
+					 XLogRecPtr *producer_lsn, XLogRecPtr *consumer_lsn)
+{
+	SpinLockAcquire(&WalPipelineShm->mutex);
+
+	if (records_sent)
+		*records_sent = WalPipelineShm->records_sent;
+	if (records_received)
+		*records_received = WalPipelineShm->records_received;
+	if (producer_lsn)
+		*producer_lsn = WalPipelineShm->producer_lsn;
+	if (consumer_lsn)
+		*consumer_lsn = WalPipelineShm->consumer_lsn;
+
+	SpinLockRelease(&WalPipelineShm->mutex);
+}
 
 
 /*
@@ -454,6 +791,94 @@ serialize_wal_record(XLogReaderState *xlogreader, char **outbuf)
 	return total;
 }
 
+/*
+ * deserialize_wal_record (Consumer)
+ *
+ * Unpack a buffer produced by serialize_wal_record, restore interior
+ * offsets to pointers, and attach the record to the startup reader.
+ */
+DecodedXLogRecord *
+deserialize_wal_record(const char *buf, Size len,
+					   XLogReaderState *startup_reader, bool first_iteration)
+{
+	WalRecordMsgHeader hdr;
+	DecodedXLogRecord *dec;
+
+	if (len < sizeof(hdr))
+		return NULL;
+
+	memcpy(&hdr, buf, sizeof(hdr));
+
+	if (hdr.decoded_size != len - sizeof(hdr))
+		return NULL;
+
+	dec = palloc(hdr.decoded_size);
+	memcpy(dec, buf + sizeof(hdr), hdr.decoded_size);
+
+	/*
+	 * Restore interior pointers from offsets.
+	 * Offset 0 means the original pointer was NULL.
+	 */
+	if (dec->main_data_len > 0)
+		dec->main_data = (char *)dec + (ptrdiff_t)dec->main_data;
+
+	for (int i = 0; i <= dec->max_block_id; i++)
+	{
+		DecodedBkpBlock *blk = &dec->blocks[i];
+		if (!blk->in_use)
+			continue;
+		if (blk->has_data)
+			blk->data = (char *)dec + (ptrdiff_t)blk->data;
+		if (blk->has_image)
+			blk->bkp_image = (char *)dec + (ptrdiff_t)blk->bkp_image;
+	}
+
+	/* clear the queue link — it belongs to the producer's queue */
+	dec->next = NULL;
+
+	/*
+	 * The previous decoded record has been deserialized from
+	 * from the pipeline and hence need to free the memory after
+	 * use.
+	 *
+	 * But for the first iteration memory space for `reader->record`
+	 * was allocated from the `decode_buffer`, and freeing this
+	 * memory can be fatal. This memory will be freed automatically
+	 * at the end of the recovery in `finishwalrecovery()`. So we
+	 * will skip pfree for the first iteration (main redo loop).
+	 */
+	if (startup_reader->record && !first_iteration)
+		pfree(startup_reader->record);
+
+	/* Attach to reader, only updating the public parameters */
+	startup_reader->record            = dec;
+	startup_reader->ReadRecPtr        = dec->lsn;
+	startup_reader->DecodeRecPtr      = dec->lsn;
+	startup_reader->EndRecPtr         = dec->next_lsn;
+	startup_reader->NextRecPtr        = dec->next_lsn;
+	startup_reader->decode_queue_head = dec;
+	startup_reader->decode_queue_tail = dec;
+	startup_reader->missingContrecPtr = hdr.missingContrecPtr;
+	startup_reader->abortedRecPtr     = hdr.abortedRecPtr;
+	startup_reader->overwrittenRecPtr = hdr.overwrittenRecPtr;
+
+	return dec;
+}
+
+/*
+ * We need to put some assertion that only pipeline worker should be touching
+ * the specific code.
+ */
+bool AmWalPipeline(void)
+{
+	if (MyBackendType == B_BG_WORKER && MyBgworkerEntry)
+	{
+		if (strncmp(MyBgworkerEntry->bgw_name, "wal pipeline", 12) == 0)
+			return true;
+	}
+
+	return false;
+}
 
 /*
  * Clean up producer-side resources
@@ -481,6 +906,32 @@ cleanup_producer_resources(void)
 	SpinLockRelease(&WalPipelineShm->mutex);
 }
 
+/*
+ * Clean up consumer-side resources
+ */
+static void
+cleanup_consumer_resources(void)
+{
+	if (consumer_mq_handle)
+	{
+		shm_mq_detach(consumer_mq_handle);
+		consumer_mq_handle = NULL;
+	}
+
+	if (consumer_dsm_seg)
+	{
+		dsm_unpin_segment(dsm_segment_handle(consumer_dsm_seg));
+		dsm_detach(consumer_dsm_seg);
+		consumer_dsm_seg = NULL;
+	}
+
+	consumer_mq = NULL;
+
+	SpinLockAcquire(&WalPipelineShm->mutex);
+	WalPipelineShm->consumer_pid = 0;
+	WalPipelineShm->dsm_seg_handle = DSM_HANDLE_INVALID;
+	SpinLockRelease(&WalPipelineShm->mutex);
+}
 
 /*
  * Cleanup callback for process exit

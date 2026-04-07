@@ -357,12 +357,6 @@ static void recoveryPausesHere(bool endOfRecovery);
 static bool recoveryApplyDelay(XLogReaderState *record);
 static void ConfirmRecoveryPaused(void);
 
-static XLogRecord *ReadRecord(XLogPrefetcher *xlogprefetcher,
-							  int emode, bool fetching_ckpt,
-							  TimeLineID replayTLI);
-
-static int	XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
-						 int reqLen, XLogRecPtr targetRecPtr, char *readBuf);
 static XLogPageReadResult WaitForWALToBecomeAvailable(XLogRecPtr RecPtr,
 													  bool randAccess,
 													  bool fetching_ckpt,
@@ -384,6 +378,7 @@ static bool HotStandbyActiveInReplay(void);
 
 static void SetCurrentChunkStartTime(TimestampTz xtime);
 static void SetLatestXTime(TimestampTz xtime);
+static void InitializePipelineStartupEnv(WalPipelineParams *params);
 
 /*
  * Register shared memory for WAL recovery
@@ -404,7 +399,25 @@ XLogRecoveryShmemInit(void *arg)
 
 	SpinLockInit(&XLogRecoveryCtl->info_lck);
 	InitSharedLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
+	InitSharedLatch(&XLogRecoveryCtl->recoveryApplyDelayLatch);
 	ConditionVariableInit(&XLogRecoveryCtl->recoveryNotPausedCV);
+}
+
+/*
+ * We may not be able to share expectedTLEs list across the sharedmemory.
+ * For now just trigger the startup process (consumer) to
+ * reread the timelinehistory file  whenever pipeline updates the value for
+ * expectedTLEs. So the consumer proc will expectedTLEs updated locally.
+ */
+static void
+PipelineConsumerexpectedTLEsUpdateTLI(TimeLineID recoveryTargetTLI)
+{
+	if (wal_pipeline_enabled)
+	{
+		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		XLogRecoveryCtl->expectedTLEsUpdateTLI = recoveryTargetTLI;
+		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	}
 }
 
 /*
@@ -422,7 +435,8 @@ EnableStandbyMode(void)
 	 * startup progress timeout in standby mode to avoid calling
 	 * startup_progress_timeout_handler() unnecessarily.
 	 */
-	disable_startup_progress_timeout();
+	if (!AmWalPipeline())
+		disable_startup_progress_timeout();
 }
 
 /*
@@ -482,7 +496,10 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	 * recovery, if required.
 	 */
 	if (ArchiveRecoveryRequested)
+	{
+		OwnLatch(&XLogRecoveryCtl->recoveryApplyDelayLatch);
 		OwnLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
+	}
 
 	/*
 	 * Set the WAL reading processor now, as it will be needed when reading
@@ -954,6 +971,14 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 		minRecoveryPointTLI = 0;
 	}
 
+	/* update shared state. */
+	if (wal_pipeline_enabled)
+	{
+		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		XLogRecoveryCtl->InArchiveRecovery = InArchiveRecovery;
+		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	}
+
 	/*
 	 * Start recovery assuming that the final record isn't lost.
 	 */
@@ -963,6 +988,12 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	*wasShutdown_ptr = wasShutdown;
 	*haveBackupLabel_ptr = haveBackupLabel;
 	*haveTblspcMap_ptr = haveTblspcMap;
+}
+
+void DisownRecoveryWakeupLatch(void)
+{
+	if (ArchiveRecoveryRequested)
+		DisownLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
 }
 
 /*
@@ -1413,6 +1444,15 @@ FinishWalRecovery(void)
 	TimeLineID	lastRecTLI;
 	XLogRecPtr	endOfLog;
 
+	if (wal_pipeline_enabled)
+	{
+		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		InArchiveRecovery = XLogRecoveryCtl->InArchiveRecovery;
+		missingContrecPtr = XLogRecoveryCtl->missingContrecPtr;
+		abortedRecPtr = XLogRecoveryCtl->abortedRecPtr;
+		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	}
+
 	/*
 	 * Kill WAL receiver, if it's still running, before we continue to write
 	 * the startup checkpoint and aborted-contrecord records. It will trump
@@ -1470,6 +1510,17 @@ FinishWalRecovery(void)
 		lastRec = XLogRecoveryCtl->lastReplayedReadRecPtr;
 		lastRecTLI = XLogRecoveryCtl->lastReplayedTLI;
 	}
+
+	/*
+	 * Invalidate contents of internal buffer before read attempt.  Just set
+	 * the length to 0, rather than a full XLogReaderInvalReadState().
+	 *
+	 * This is needed because we could be reading from the pipeline reader so
+	 * far, so before moving back the the startup proc readerstate better to
+	 * invalidate it.
+	 */
+	xlogreader->readLen = 0;
+
 	XLogPrefetcherBeginRead(xlogprefetcher, lastRec);
 	(void) ReadRecord(xlogprefetcher, PANIC, false, lastRecTLI);
 	endOfLog = xlogreader->EndRecPtr;
@@ -1592,7 +1643,69 @@ ShutdownWalRecovery(void)
 	 * it, but let's do it for the sake of tidiness.
 	 */
 	if (ArchiveRecoveryRequested)
-		DisownLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
+	{
+		DisownLatch(&XLogRecoveryCtl->recoveryApplyDelayLatch);
+
+		/*
+		 * Only disown the latch if we were the owner (pipeline disabled).
+		 */
+		if (!wal_pipeline_enabled)
+			DisownLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
+	}
+
+
+}
+
+/*
+ * Get next record for redo.
+ * Use the pipeline if enabled for parallel decoding and receive decoded
+ * records from a shared queue, else read it directly.
+ */
+static XLogRecord *
+ReceiveRecord(XLogPrefetcher *xlogprefetcher, int emode,
+				bool fetching_ckpt, TimeLineID replayTLI,
+				XLogReaderState **localreader, bool first_iteration)
+{
+
+	XLogRecord *record = NULL;
+	XLogReaderState *reader = *localreader;
+
+	/*
+	 * If pipeline not enabled read the record directly
+	 */
+	if (!wal_pipeline_enabled)
+	{
+		record = ReadRecord(xlogprefetcher, emode, fetching_ckpt, replayTLI);
+		return record;
+	}
+
+	/*
+	 * Get record from the pipeline
+	 */
+	if (WalPipeline_IsActive())
+	{
+		DecodedXLogRecord *decoded_record = NULL;
+
+		decoded_record = WalPipeline_ReceiveRecord(reader, first_iteration);
+
+		if (decoded_record)
+		{
+			record = &decoded_record->header;
+			return record;
+		}
+		else
+		{
+			/*
+			 * We will end up here only when pipeline couldn't read more
+			 * records and have sent a shutdown msg. We will acknowldge this
+			 * and will trigger request to stop the pipeline workers.
+			 */
+			WalPipeline_Stop();
+			return NULL;
+		}
+	}
+
+	elog(PANIC, "[walpipeline] consumer: pipeline not active, even though wal_pipeline is set to on.");
 }
 
 /*
@@ -1606,6 +1719,12 @@ PerformWalRecovery(void)
 	XLogRecord *record;
 	bool		reachedRecoveryTarget = false;
 	TimeLineID	replayTLI;
+
+	/*
+	 * standalone backend may exist in case of pg_rewind.
+	 */
+	if (!IsUnderPostmaster)
+		wal_pipeline_enabled = false;
 
 	/*
 	 * Initialize shared variables for tracking progress of WAL replay, as if
@@ -1681,10 +1800,23 @@ PerformWalRecovery(void)
 	{
 		TimestampTz xtime;
 		PGRUsage	ru0;
+		uint64 		loop_count = 0;
 
 		pg_rusage_init(&ru0);
 
 		InRedo = true;
+
+		if(wal_pipeline_enabled)
+		{
+			/*
+			 * Startup proc parameters that pipeline shold also be aware of.
+			 */
+			WalPipelineParams *params = palloc0(sizeof(WalPipelineParams));
+
+			params->ReplayTLI = replayTLI;
+			InitializePipelineStartupEnv(params);
+			WalPipeline_Start(params);
+		}
 
 		RmgrStartup();
 
@@ -1791,7 +1923,7 @@ PerformWalRecovery(void)
 			}
 
 			/* Else, try to fetch the next WAL record */
-			record = ReadRecord(xlogprefetcher, LOG, false, replayTLI);
+			record = ReceiveRecord(xlogprefetcher, LOG, false, replayTLI, &xlogreader, loop_count++ == 0);
 		} while (record != NULL);
 
 		/*
@@ -1800,6 +1932,9 @@ PerformWalRecovery(void)
 
 		if (reachedRecoveryTarget)
 		{
+			if (wal_pipeline_enabled)
+				WalPipeline_Stop();
+
 			if (!reachedConsistency)
 				ereport(FATAL,
 						(errmsg("requested recovery stop point is before consistent recovery point")));
@@ -1834,6 +1969,8 @@ PerformWalRecovery(void)
 
 		RmgrCleanup();
 
+		// XXX: testing purpose only
+		ereport(DEBUG1, (errmsg("replay loop fiinished with loop count: " UINT64_FORMAT, loop_count)));
 		ereport(LOG,
 				errmsg("redo done at %X/%08X system usage: %s",
 					   LSN_FORMAT_ARGS(xlogreader->ReadRecPtr),
@@ -1872,7 +2009,9 @@ static void
 ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *replayTLI)
 {
 	ErrorContextCallback errcallback;
+	XLogRecPtr 	walrcv_flushedupto;
 	bool		switchedTLI = false;
+	bool		pipeline_enabled_stanby = false;
 
 	/* Setup error traceback support for ereport() */
 	errcallback.callback = rm_redo_error_callback;
@@ -1973,6 +2112,8 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	XLogRecoveryCtl->lastReplayedReadRecPtr = xlogreader->ReadRecPtr;
 	XLogRecoveryCtl->lastReplayedEndRecPtr = xlogreader->EndRecPtr;
 	XLogRecoveryCtl->lastReplayedTLI = *replayTLI;
+	walrcv_flushedupto = XLogRecoveryCtl->flushedUptoRecPtr;
+	pipeline_enabled_stanby = XLogRecoveryCtl->stanbyEnabled;
 	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 
 	/* ------
@@ -2011,6 +2152,16 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 		WalRcvRequestApplyReply();
 	}
 
+	/*
+	 * As the pipeline (producer) was running way ahead of the startup proc
+	 * (consumer), see if the producer asked to wakeup the wal_reciever by
+	 * updating the value of `flushedUptoRecPtr`.
+	 */
+	if ((walrcv_flushedupto != InvalidXLogRecPtr) &&
+		((walrcv_flushedupto == xlogreader->EndRecPtr) ||
+		(walrcv_flushedupto == xlogreader->ReadRecPtr)))
+		WalRcvRequestApplyReply();
+
 	/* Allow read-only connections if we're consistent now */
 	CheckRecoveryConsistency();
 
@@ -2026,6 +2177,14 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 		/* Reset the prefetcher. */
 		XLogPrefetchReconfigure();
 	}
+
+	/* Conusmer should also enable the standby if pipline have */
+	if (pipeline_enabled_stanby)
+		EnableStandbyMode();
+
+	SpinLockAcquire(&WalPipelineShm->mutex);
+	WalPipelineShm->applied_lsn = xlogreader->EndRecPtr;
+	SpinLockRelease(&WalPipelineShm->mutex);
 }
 
 /*
@@ -2151,12 +2310,27 @@ CheckRecoveryConsistency(void)
 
 	Assert(InArchiveRecovery);
 
-	/*
-	 * assume that we are called in the startup process, and hence don't need
-	 * a lock to read lastReplayedEndRecPtr
-	 */
-	lastReplayedEndRecPtr = XLogRecoveryCtl->lastReplayedEndRecPtr;
-	lastReplayedTLI = XLogRecoveryCtl->lastReplayedTLI;
+
+	if (AmStartupProcess())
+	{
+		/*
+		 * assume that we are called in the startup process, and hence don't need
+		 * a lock to read lastReplayedEndRecPtr
+		 */
+		lastReplayedEndRecPtr = XLogRecoveryCtl->lastReplayedEndRecPtr;
+		lastReplayedTLI = XLogRecoveryCtl->lastReplayedTLI;
+	}
+	else
+	{
+		/*
+		 * We could be in the pipeline worker, so update the shared states.
+		 */
+		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		lastReplayedEndRecPtr = XLogRecoveryCtl->lastReplayedEndRecPtr;
+		lastReplayedTLI = XLogRecoveryCtl->lastReplayedTLI;
+		standbyState = XLogRecoveryCtl->standbyState;
+		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	}
 
 	/*
 	 * Have we reached the point where our base backup was completed?
@@ -2343,11 +2517,27 @@ static void
 checkTimeLineSwitch(XLogRecPtr lsn, TimeLineID newTLI, TimeLineID prevTLI,
 					TimeLineID replayTLI)
 {
+
+
 	/* Check that the record agrees on what the current (old) timeline is */
 	if (prevTLI != replayTLI)
 		ereport(PANIC,
 				(errmsg("unexpected previous timeline ID %u (current timeline ID %u) in checkpoint record",
 						prevTLI, replayTLI)));
+
+
+	/* Pipeline may have updated the expectedTLEs */
+	if (wal_pipeline_enabled)
+	{
+		TimeLineID	targetTLI;
+
+		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		targetTLI = XLogRecoveryCtl->expectedTLEsUpdateTLI;
+		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+
+		if (targetTLI)
+			expectedTLEs = readTimeLineHistory(targetTLI);
+	}
 
 	/*
 	 * The new timeline better be in the list of timelines we expect to see,
@@ -2996,7 +3186,7 @@ recoveryApplyDelay(XLogReaderState *record)
 
 	while (true)
 	{
-		ResetLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
+		ResetLatch(&XLogRecoveryCtl->recoveryApplyDelayLatch);
 
 		/* This might change recovery_min_apply_delay. */
 		ProcessStartupProcInterrupts();
@@ -3021,7 +3211,7 @@ recoveryApplyDelay(XLogReaderState *record)
 
 		elog(DEBUG2, "recovery apply delay %ld milliseconds", msecs);
 
-		(void) WaitLatch(&XLogRecoveryCtl->recoveryWakeupLatch,
+		(void) WaitLatch(&XLogRecoveryCtl->recoveryApplyDelayLatch,
 						 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
 						 msecs,
 						 WAIT_EVENT_RECOVERY_APPLY_DELAY);
@@ -3093,7 +3283,7 @@ ConfirmRecoveryPaused(void)
  * (emode must be either PANIC, LOG). In standby mode, retries until a valid
  * record is available.
  */
-static XLogRecord *
+XLogRecord *
 ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 		   bool fetching_ckpt, TimeLineID replayTLI)
 {
@@ -3101,7 +3291,7 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 	XLogReaderState *xlogreader = XLogPrefetcherGetReader(xlogprefetcher);
 	XLogPageReadPrivate *private = (XLogPageReadPrivate *) xlogreader->private_data;
 
-	Assert(AmStartupProcess() || !IsUnderPostmaster);
+	Assert(AmStartupProcess() || !IsUnderPostmaster || AmWalPipeline());
 
 	/* Pass through parameters to XLogPageRead */
 	private->fetching_ckpt = fetching_ckpt;
@@ -3136,6 +3326,17 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 			{
 				abortedRecPtr = xlogreader->abortedRecPtr;
 				missingContrecPtr = xlogreader->missingContrecPtr;
+
+				/*
+				 * Also update the shared state if necessary
+				 */
+				if (wal_pipeline_enabled)
+				{
+					SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+					XLogRecoveryCtl->abortedRecPtr = abortedRecPtr;
+					XLogRecoveryCtl->missingContrecPtr = missingContrecPtr;
+					SpinLockRelease(&XLogRecoveryCtl->info_lck);
+				}
 			}
 
 			if (readFile >= 0)
@@ -3203,9 +3404,31 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 			if (!InArchiveRecovery && ArchiveRecoveryRequested &&
 				!fetching_ckpt)
 			{
+				/*
+				 * Wait for the startup process to apply the last sent record
+				 * by the pipeline, otherwise we will fail the consistency
+				 * check as all the records decoded by the pipeline have not
+				 * arrived/consumed by the consumer (statup proc) yet.
+				 */
+				if (wal_pipeline_enabled && AmWalPipeline())
+					WalPipeline_WaitForConsumerCatchup();
+
 				ereport(DEBUG1,
 						(errmsg_internal("reached end of WAL in pg_wal, entering archive recovery")));
 				InArchiveRecovery = true;
+
+				if (wal_pipeline_enabled)
+				{
+					/* also update the shared state */
+					SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+					XLogRecoveryCtl->InArchiveRecovery = InArchiveRecovery;
+
+					/* update startup proc (consumer) about the standbymode */
+					if (StandbyModeRequested)
+						XLogRecoveryCtl->stanbyEnabled = true;
+					SpinLockRelease(&XLogRecoveryCtl->info_lck);
+				}
+
 				if (StandbyModeRequested)
 					EnableStandbyMode();
 
@@ -3262,7 +3485,7 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
  * XLogPageRead() to try fetching the record from another source, or to
  * sleep and retry.
  */
-static int
+int
 XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 			 XLogRecPtr targetRecPtr, char *readBuf)
 {
@@ -3274,7 +3497,7 @@ XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 	int			r;
 	instr_time	io_start;
 
-	Assert(AmStartupProcess() || !IsUnderPostmaster);
+	Assert(AmStartupProcess() || !IsUnderPostmaster || AmWalPipeline());
 
 	XLByteToSeg(targetPagePtr, targetSegNo, wal_segment_size);
 	targetPageOff = XLogSegmentOffset(targetPagePtr, wal_segment_size);
@@ -3700,7 +3923,8 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 							 LSN_FORMAT_ARGS(RecPtr));
 
 						/* Do background tasks that might benefit us later. */
-						KnownAssignedTransactionIdsIdleMaintenance();
+						if (AmStartupProcess())
+							KnownAssignedTransactionIdsIdleMaintenance();
 
 						(void) WaitLatch(&XLogRecoveryCtl->recoveryWakeupLatch,
 										 WL_LATCH_SET | WL_TIMEOUT |
@@ -3712,6 +3936,8 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 
 						/* Handle interrupt signals of startup process */
 						ProcessStartupProcInterrupts();
+						if (wal_pipeline_enabled)
+							ProcessPipelineBgwInterrupts();
 					}
 					last_fail_time = now;
 					currentSource = XLOG_FROM_ARCHIVE;
@@ -3736,6 +3962,15 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 			elog(DEBUG2, "switched WAL source from %s to %s after %s",
 				 xlogSourceNames[oldSource], xlogSourceNames[currentSource],
 				 lastSourceFailed ? "failure" : "success");
+
+		if (wal_pipeline_enabled)
+		{
+			/* also update the shared state */
+			SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+			XLogRecoveryCtl->currentSource = currentSource;
+			pendingWalRcvRestart = XLogRecoveryCtl->pendingWalRcvRestart;
+			SpinLockRelease(&XLogRecoveryCtl->info_lck);
+		}
 
 		/*
 		 * We've now handled possible failure. Try to read from the chosen
@@ -3810,6 +4045,14 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 						startWalReceiver = true;
 					}
 					pendingWalRcvRestart = false;
+
+					if (wal_pipeline_enabled)
+					{
+						/* also update the shared state */
+						SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+						XLogRecoveryCtl->pendingWalRcvRestart = false;
+						SpinLockRelease(&XLogRecoveryCtl->info_lck);
+					}
 
 					/*
 					 * Launch walreceiver if needed.
@@ -3888,6 +4131,15 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 							if (latestChunkStart <= RecPtr)
 							{
 								XLogReceiptTime = GetCurrentTimestamp();
+
+								if (wal_pipeline_enabled)
+								{
+									/* also update the shared state */
+									SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+									XLogRecoveryCtl->XLogReceiptTime = XLogReceiptTime;
+									SpinLockRelease(&XLogRecoveryCtl->info_lck);
+								}
+
 								SetCurrentChunkStartTime(XLogReceiptTime);
 							}
 						}
@@ -3916,7 +4168,12 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 						if (readFile < 0)
 						{
 							if (!expectedTLEs)
+							{
 								expectedTLEs = readTimeLineHistory(recoveryTargetTLI);
+								PipelineConsumerexpectedTLEsUpdateTLI(recoveryTargetTLI);
+							}
+
+
 							readFile = XLogFileRead(readSegNo, receiveTLI,
 													XLOG_FROM_STREAM, false);
 							Assert(readFile >= 0);
@@ -3926,6 +4183,13 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 							/* just make sure source info is correct... */
 							readSource = XLOG_FROM_STREAM;
 							XLogReceiptSource = XLOG_FROM_STREAM;
+							if (wal_pipeline_enabled)
+							{
+								/* also update the shared state */
+								SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+								XLogRecoveryCtl->XLogReceiptSource = XLogReceiptSource;
+								SpinLockRelease(&XLogRecoveryCtl->info_lck);
+							}
 							return XLREAD_SUCCESS;
 						}
 						break;
@@ -3963,15 +4227,35 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 */
 					if (!streaming_reply_sent)
 					{
-						WalRcvRequestApplyReply();
-						streaming_reply_sent = true;
+						if (wal_pipeline_enabled && AmWalPipeline())
+						{
+							/*
+							 * In case of pipeline enabled, we cannot just call
+							 * WalRcvForceReply() directly as the consumer (startup proc)
+							 * haven't actually received/replayed all the wal
+							 * received from the wal_receiver yet.
+							 */
+							SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+							XLogRecoveryCtl->flushedUptoRecPtr = flushedUpto;
+							SpinLockRelease(&XLogRecoveryCtl->info_lck);
+							streaming_reply_sent = true;
+						}
+						else
+						{
+							WalRcvRequestApplyReply();
+							streaming_reply_sent = true;
+						}
 					}
 
 					/* Do any background tasks that might benefit us later. */
-					KnownAssignedTransactionIdsIdleMaintenance();
+					if (AmStartupProcess())
+						KnownAssignedTransactionIdsIdleMaintenance();
 
 					/* Update pg_stat_recovery_prefetch before sleeping. */
-					XLogPrefetcherComputeStats(xlogprefetcher);
+					if (AmWalPipeline())
+						XLogPrefetcherComputeStats(xlogprefetcher_pipelined);
+					else
+						XLogPrefetcherComputeStats(xlogprefetcher);
 
 					/*
 					 * Wait for more WAL to arrive, when we will be woken
@@ -4002,6 +4286,8 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 		 * process.
 		 */
 		ProcessStartupProcInterrupts();
+		if (wal_pipeline_enabled)
+			ProcessPipelineBgwInterrupts();
 	}
 
 	return XLREAD_FAIL;			/* not reached */
@@ -4166,6 +4452,7 @@ rescanLatestTimeLine(TimeLineID replayTLI, XLogRecPtr replayLSN)
 	recoveryTargetTLI = newtarget;
 	list_free_deep(expectedTLEs);
 	expectedTLEs = newExpectedTLEs;
+	PipelineConsumerexpectedTLEsUpdateTLI(newtarget);
 
 	/*
 	 * As in StartupXLOG(), try to ensure we have all the history files
@@ -4255,6 +4542,15 @@ XLogFileRead(XLogSegNo segno, TimeLineID tli,
 		if (source != XLOG_FROM_STREAM)
 			XLogReceiptTime = GetCurrentTimestamp();
 
+		if (wal_pipeline_enabled)
+		{
+			/* also update the shared state */
+			SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+			XLogRecoveryCtl->XLogReceiptTime = XLogReceiptTime;
+			XLogRecoveryCtl->XLogReceiptSource = XLogReceiptSource;
+			SpinLockRelease(&XLogRecoveryCtl->info_lck);
+		}
+
 		return fd;
 	}
 	if (errno != ENOENT || !notfoundOk) /* unexpected failure? */
@@ -4339,7 +4635,10 @@ XLogFileReadAnyTLI(XLogSegNo segno, XLogSource source)
 			{
 				elog(DEBUG1, "got WAL segment from archive");
 				if (!expectedTLEs)
+				{
 					expectedTLEs = tles;
+					PipelineConsumerexpectedTLEsUpdateTLI(recoveryTargetTLI);
+				}
 				return fd;
 			}
 		}
@@ -4350,7 +4649,10 @@ XLogFileReadAnyTLI(XLogSegNo segno, XLogSource source)
 			if (fd != -1)
 			{
 				if (!expectedTLEs)
+				{
 					expectedTLEs = tles;
+					PipelineConsumerexpectedTLEsUpdateTLI(recoveryTargetTLI);
+				}
 				return fd;
 			}
 		}
@@ -4372,13 +4674,49 @@ XLogFileReadAnyTLI(XLogSegNo segno, XLogSource source)
 void
 StartupRequestWalReceiverRestart(void)
 {
+
+	/*
+	 * currentSource is also defined as pipeline shared state variable.
+	 * Update the state before procedding.
+	 */
+	if (wal_pipeline_enabled)
+	{
+		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		currentSource = XLogRecoveryCtl->currentSource;
+		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	}
+
 	if (currentSource == XLOG_FROM_STREAM && WalRcvRunning())
 	{
 		ereport(LOG,
 				(errmsg("WAL receiver process shutdown requested")));
 
 		pendingWalRcvRestart = true;
+
+		/*
+		 * pendingWalRcvRestart is also defined as pipeline shared state variable.
+		 * Update the state before procedding.
+		 */
+		if (wal_pipeline_enabled)
+		{
+			SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+			XLogRecoveryCtl->pendingWalRcvRestart = pendingWalRcvRestart;
+			SpinLockRelease(&XLogRecoveryCtl->info_lck);
+		}
 	}
+}
+
+
+/*
+ * standbyState is also defined as a shared state. Pipeline worker can also
+ * update its value, so always confirm the shared state before procedding.
+ */
+void
+SetSharedHotStandbyState(void)
+{
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	XLogRecoveryCtl->standbyState = standbyState;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
 }
 
 
@@ -4433,7 +4771,7 @@ CheckForStandbyTrigger(void)
 	if (LocalPromoteIsTriggered)
 		return true;
 
-	if (IsPromoteSignaled() && CheckPromoteSignal())
+	if (CheckPromoteSignal())
 	{
 		ereport(LOG, (errmsg("received promote request")));
 		RemovePromoteSignalFiles();
@@ -4476,6 +4814,7 @@ void
 WakeupRecovery(void)
 {
 	SetLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
+	SetLatch(&XLogRecoveryCtl->recoveryApplyDelayLatch);
 }
 
 /*
@@ -4645,6 +4984,14 @@ GetXLogReceiptTime(TimestampTz *rtime, bool *fromStream)
 	 */
 	Assert(InRecovery);
 
+	if (wal_pipeline_enabled)
+	{
+		SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+		XLogReceiptTime = XLogRecoveryCtl->XLogReceiptTime;
+		XLogReceiptSource = XLogRecoveryCtl->XLogReceiptSource;
+		SpinLockRelease(&XLogRecoveryCtl->info_lck);
+	}
+
 	*rtime = XLogReceiptTime;
 	*fromStream = (XLogReceiptSource == XLOG_FROM_STREAM);
 }
@@ -4730,6 +5077,60 @@ RecoveryRequiresIntParameter(const char *param_name, int currValue, int minValue
 	}
 }
 
+static void
+InitializePipelineStartupEnv(WalPipelineParams *params)
+{
+	/*
+	 * These parameters are already set for the startup process but not for our
+	 * pipeline worker. So in order to start decoding through the pipeline,
+	 * these variables should be saved and then restored later.
+	 */
+	params->NextRecPtr = xlogreader->NextRecPtr;
+	params->recoveryTargetTLI = recoveryTargetTLI;
+	params->StandbyModeRequested = StandbyModeRequested;
+	params->StandbyMode = StandbyMode;
+	params->ArchiveRecoveryRequested = ArchiveRecoveryRequested;
+	params->InArchiveRecovery = InArchiveRecovery;
+	params->minRecoveryPointTLI = minRecoveryPointTLI;
+	params->minRecoveryPoint = minRecoveryPoint;
+	params->InRedo = InRedo;
+	params->currentSource = currentSource;
+	params->lastSourceFailed = lastSourceFailed;
+	params->pendingWalRcvRestart = pendingWalRcvRestart;
+	params->RedoStartTLI = RedoStartTLI;
+	params->CheckPointLoc = CheckPointLoc;
+	params->CheckPointTLI = CheckPointTLI;
+	params->RedoStartLSN = RedoStartLSN;
+	params->standbyState = standbyState;
+	params->flushedUpto = flushedUpto;
+	params->receiveTLI = receiveTLI;
+	params->abortedRecPtr = abortedRecPtr;
+	params->missingContrecPtr = missingContrecPtr;
+	params->backupEndRequired = backupEndRequired;
+	params->backupStartPoint = backupStartPoint;
+	params->backupEndPoint = backupEndPoint;
+	params->curFileTLI = curFileTLI;
+
+	/*
+	 * The pipeline will do the waiting in this case startup proc should disown
+	 * the latch.
+	 */
+	DisownRecoveryWakeupLatch();
+
+	/*
+	 * Update shared state before starting.
+	 */
+	SpinLockAcquire(&XLogRecoveryCtl->info_lck);
+	XLogRecoveryCtl->InArchiveRecovery = InArchiveRecovery;
+	XLogRecoveryCtl->pendingWalRcvRestart = pendingWalRcvRestart;
+	XLogRecoveryCtl->abortedRecPtr = abortedRecPtr;
+	XLogRecoveryCtl->missingContrecPtr = missingContrecPtr;
+	XLogRecoveryCtl->currentSource = currentSource;
+	XLogRecoveryCtl->standbyState = standbyState;
+	XLogRecoveryCtl->XLogReceiptSource = XLogReceiptSource;
+	XLogRecoveryCtl->XLogReceiptTime = XLogReceiptTime;
+	SpinLockRelease(&XLogRecoveryCtl->info_lck);
+}
 
 /*
  * Pipeline bgw should be aware of all the parameters thats been initialized by

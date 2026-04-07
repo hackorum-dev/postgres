@@ -144,11 +144,27 @@ extern PGDLLIMPORT XLogPrefetcher *xlogprefetcher_pipelined;
  * Public API functions
  */
 
+/* Start/stop the pipeline */
+extern void WalPipeline_Start(WalPipelineParams *params);
+extern void WalPipeline_Stop(void);
+
 /* Producer functions (called by background worker) */
 extern void WalPipeline_ProducerMain(Datum main_arg);
 extern bool WalPipeline_SendRecord(XLogReaderState *record);
 extern bool WalPipeline_SendShutdown(void);
 extern bool WalPipeline_SendError(int errcode, const char *errmsg);
+
+/* Consumer functions (called by startup process) */
+extern DecodedXLogRecord *WalPipeline_ReceiveRecord(XLogReaderState *startup_reader, bool first_iteration);
+extern bool WalPipeline_CheckProducerAlive(void);
+
+/* Status and monitoring */
+extern bool WalPipeline_IsActive(void);
+extern void WalPipeline_WaitForConsumerCatchup(void);
+extern void WalPipeline_GetStats(uint64 *records_sent, uint64 *records_received,
+								  XLogRecPtr *producer_lsn, XLogRecPtr *consumer_lsn);
+extern bool AmWalPipeline(void);
+
 
 extern void ProcessPipelineBgwInterrupts(void);
 
