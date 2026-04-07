@@ -111,7 +111,7 @@ static relopt_bool boolRelOpts[] =
 		{
 			"autovacuum_enabled",
 			"Enables autovacuum in this relation",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		true
@@ -172,7 +172,7 @@ static relopt_ternary ternaryRelOpts[] =
 		{
 			"vacuum_truncate",
 			"Enables vacuum to truncate empty pages at the end of this table",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		}
 	},
@@ -249,7 +249,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_vacuum_threshold",
 			"Minimum number of tuple updates or deletes prior to vacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0, INT_MAX
@@ -258,7 +258,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_vacuum_max_threshold",
 			"Maximum number of tuple updates or deletes prior to vacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-2, -1, INT_MAX
@@ -267,7 +267,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_vacuum_insert_threshold",
 			"Minimum number of tuple inserts prior to vacuum, or -1 to disable insert vacuums",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-2, -1, INT_MAX
@@ -285,7 +285,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_vacuum_cost_limit",
 			"Vacuum cost amount available before napping, for autovacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 1, 10000
@@ -294,7 +294,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_freeze_min_age",
 			"Minimum age at which VACUUM should freeze a table row, for autovacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0, 1000000000
@@ -303,7 +303,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_multixact_freeze_min_age",
 			"Minimum multixact age at which VACUUM should freeze a row multixact's, for autovacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0, 1000000000
@@ -312,7 +312,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_freeze_max_age",
 			"Age at which to autovacuum a table to prevent transaction ID wraparound",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 100000, 2000000000
@@ -321,7 +321,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_multixact_freeze_max_age",
 			"Multixact age at which to autovacuum a table to prevent multixact wraparound",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 10000, 2000000000
@@ -330,7 +330,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_freeze_table_age",
 			"Age at which VACUUM should perform a full table sweep to freeze row versions",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		}, -1, 0, 2000000000
 	},
@@ -338,7 +338,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_multixact_freeze_table_age",
 			"Age of multixact at which VACUUM should perform a full table sweep to freeze row versions",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		}, -1, 0, 2000000000
 	},
@@ -346,7 +346,7 @@ static relopt_int intRelOpts[] =
 		{
 			"log_autovacuum_min_duration",
 			"Sets the minimum execution time above which vacuum actions by autovacuum will be logged",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, -1, INT_MAX
@@ -424,7 +424,7 @@ static relopt_real realRelOpts[] =
 		{
 			"autovacuum_vacuum_cost_delay",
 			"Vacuum cost delay in milliseconds, for autovacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0.0, 100.0
@@ -433,7 +433,7 @@ static relopt_real realRelOpts[] =
 		{
 			"autovacuum_vacuum_scale_factor",
 			"Number of tuple updates or deletes prior to vacuum as a fraction of reltuples",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0.0, 100.0
@@ -442,7 +442,7 @@ static relopt_real realRelOpts[] =
 		{
 			"autovacuum_vacuum_insert_scale_factor",
 			"Number of tuple inserts prior to vacuum as a fraction of reltuples",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0.0, 100.0
@@ -460,7 +460,7 @@ static relopt_real realRelOpts[] =
 		{
 			"vacuum_max_eager_freeze_failure_rate",
 			"Fraction of pages in a relation vacuum can scan and fail to freeze before disabling eager scanning.",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0.0, 1.0
@@ -554,7 +554,7 @@ static relopt_enum enumRelOpts[] =
 		{
 			"vacuum_index_cleanup",
 			"Controls index vacuuming and index cleanup",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
 		StdRdOptIndexCleanupValues,
@@ -2163,21 +2163,8 @@ view_reloptions(Datum reloptions, bool validate)
 bytea *
 heap_reloptions(char relkind, Datum reloptions, bool validate)
 {
-	StdRdOptions *rdopts;
-
 	switch (relkind)
 	{
-		case RELKIND_TOASTVALUE:
-			rdopts = (StdRdOptions *)
-				default_reloptions(reloptions, validate, RELOPT_KIND_TOAST);
-			if (rdopts != NULL)
-			{
-				/* adjust default-only parameters for TOAST relations */
-				rdopts->fillfactor = 100;
-				rdopts->autovacuum.analyze_threshold = -1;
-				rdopts->autovacuum.analyze_scale_factor = -1;
-			}
-			return (bytea *) rdopts;
 		case RELKIND_RELATION:
 		case RELKIND_MATVIEW:
 			return default_reloptions(reloptions, validate, RELOPT_KIND_HEAP);

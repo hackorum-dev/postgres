@@ -40,25 +40,21 @@ typedef enum relopt_kind
 {
 	RELOPT_KIND_LOCAL = 0,
 	RELOPT_KIND_HEAP = (1 << 0),
-	RELOPT_KIND_TOAST = (1 << 1),
-	RELOPT_KIND_BTREE = (1 << 2),
-	RELOPT_KIND_HASH = (1 << 3),
-	RELOPT_KIND_GIN = (1 << 4),
-	RELOPT_KIND_GIST = (1 << 5),
-	RELOPT_KIND_ATTRIBUTE = (1 << 6),
-	RELOPT_KIND_TABLESPACE = (1 << 7),
-	RELOPT_KIND_SPGIST = (1 << 8),
-	RELOPT_KIND_VIEW = (1 << 9),
-	RELOPT_KIND_BRIN = (1 << 10),
-	RELOPT_KIND_PARTITIONED = (1 << 11),
+	RELOPT_KIND_BTREE = (1 << 1),
+	RELOPT_KIND_HASH = (1 << 2),
+	RELOPT_KIND_GIN = (1 << 3),
+	RELOPT_KIND_GIST = (1 << 4),
+	RELOPT_KIND_ATTRIBUTE = (1 << 5),
+	RELOPT_KIND_TABLESPACE = (1 << 6),
+	RELOPT_KIND_SPGIST = (1 << 7),
+	RELOPT_KIND_VIEW = (1 << 8),
+	RELOPT_KIND_BRIN = (1 << 9),
+	RELOPT_KIND_PARTITIONED = (1 << 10),
 	/* if you add a new kind, make sure you update "last_default" too */
 	RELOPT_KIND_LAST_DEFAULT = RELOPT_KIND_PARTITIONED,
 	/* some compilers treat enums as signed ints, so we can't use 1 << 31 */
 	RELOPT_KIND_MAX = (1 << 30)
 } relopt_kind;
-
-/* reloption namespaces allowed for heaps -- currently only TOAST */
-#define HEAP_RELOPT_NAMESPACES { "toast", NULL }
 
 /* generic struct to hold shared data */
 typedef struct relopt_gen

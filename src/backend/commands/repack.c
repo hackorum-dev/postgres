@@ -1218,20 +1218,7 @@ make_new_heap(Oid OIDOldHeap, Oid NewTableSpace, Oid NewAccessMethod,
 	 */
 	toastid = OldHeap->rd_rel->reltoastrelid;
 	if (OidIsValid(toastid))
-	{
-		/* keep the existing toast table's reloptions, if any */
-		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(toastid));
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for relation %u", toastid);
-		reloptions = SysCacheGetAttr(RELOID, tuple, Anum_pg_class_reloptions,
-									 &isNull);
-		if (isNull)
-			reloptions = (Datum) 0;
-
-		NewHeapCreateToastTable(OIDNewHeap, reloptions, lockmode, toastid);
-
-		ReleaseSysCache(tuple);
-	}
+		NewHeapCreateToastTable(OIDNewHeap, lockmode, toastid);
 
 	table_close(OldHeap, NoLock);
 

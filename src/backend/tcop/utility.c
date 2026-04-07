@@ -1159,8 +1159,6 @@ ProcessUtilitySlow(ParseState *pstate,
 						if (IsA(stmt, CreateStmt))
 						{
 							CreateStmt *cstmt = (CreateStmt *) stmt;
-							Datum		toast_options;
-							const char *const validnsps[] = HEAP_RELOPT_NAMESPACES;
 
 							/* Remember transformed RangeVar for LIKE */
 							table_rv = cstmt->relation;
@@ -1180,22 +1178,7 @@ ProcessUtilitySlow(ParseState *pstate,
 							 */
 							CommandCounterIncrement();
 
-							/*
-							 * parse and validate reloptions for the toast
-							 * table
-							 */
-							toast_options = transformRelOptions((Datum) 0,
-																cstmt->options,
-																"toast",
-																validnsps,
-																true,
-																false);
-							(void) heap_reloptions(RELKIND_TOASTVALUE,
-												   toast_options,
-												   true);
-
-							NewRelationCreateToastTable(address.objectId,
-														toast_options);
+							NewRelationCreateToastTable(address.objectId);
 						}
 						else if (IsA(stmt, CreateForeignTableStmt))
 						{

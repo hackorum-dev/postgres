@@ -11,22 +11,22 @@ SELECT injection_points_attach('vacuum-truncate-disabled', 'notice');
 SELECT injection_points_attach('vacuum-truncate-enabled', 'notice');
 
 -- Check state of index_cleanup and truncate in VACUUM.
-CREATE TABLE vac_tab_on_toast_off(i int, j text) WITH
+CREATE TABLE vac_tab_on_toast(i int, j text) WITH
   (autovacuum_enabled=false,
-   vacuum_index_cleanup=true, toast.vacuum_index_cleanup=false,
-   vacuum_truncate=true, toast.vacuum_truncate=false);
-CREATE TABLE vac_tab_off_toast_on(i int, j text) WITH
+   vacuum_index_cleanup=true,
+   vacuum_truncate=true);
+CREATE TABLE vac_tab_off_toast(i int, j text) WITH
   (autovacuum_enabled=false,
-   vacuum_index_cleanup=false, toast.vacuum_index_cleanup=true,
-   vacuum_truncate=false, toast.vacuum_truncate=true);
+   vacuum_index_cleanup=false,
+   vacuum_truncate=false);
 -- Multiple relations should use their options in isolation.
-VACUUM vac_tab_on_toast_off, vac_tab_off_toast_on;
+VACUUM vac_tab_on_toast, vac_tab_off_toast;
 
 -- Check "auto" case of index_cleanup and "truncate" controlled by
 -- its GUC.
 CREATE TABLE vac_tab_auto(i int, j text) WITH
   (autovacuum_enabled=false,
-   vacuum_index_cleanup=auto, toast.vacuum_index_cleanup=auto);
+   vacuum_index_cleanup=auto);
 SET vacuum_truncate = false;
 VACUUM vac_tab_auto;
 SET vacuum_truncate = true;
@@ -34,8 +34,8 @@ VACUUM vac_tab_auto;
 RESET vacuum_truncate;
 
 DROP TABLE vac_tab_auto;
-DROP TABLE vac_tab_on_toast_off;
-DROP TABLE vac_tab_off_toast_on;
+DROP TABLE vac_tab_on_toast;
+DROP TABLE vac_tab_off_toast;
 
 -- Cleanup
 SELECT injection_points_detach('vacuum-index-cleanup-auto');

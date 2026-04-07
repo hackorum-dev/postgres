@@ -75,7 +75,6 @@ DROP TABLE reloptions_test;
 
 CREATE TEMP TABLE reloptions_test(i INT NOT NULL, j text)
 	WITH (vacuum_truncate=false,
-	toast.vacuum_truncate=false,
 	autovacuum_enabled=false);
 SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test'::regclass;
 INSERT INTO reloptions_test VALUES (1, NULL), (NULL, NULL);
@@ -94,39 +93,12 @@ INSERT INTO reloptions_test VALUES (1, NULL), (NULL, NULL);
 VACUUM (FREEZE, DISABLE_PAGE_SKIPPING) reloptions_test;
 SELECT pg_relation_size('reloptions_test') = 0;
 
--- Test toast.* options
-DROP TABLE reloptions_test;
-
-CREATE TABLE reloptions_test (s VARCHAR)
-	WITH (toast.autovacuum_vacuum_cost_delay = 23);
-SELECT reltoastrelid as toast_oid
-	FROM pg_class WHERE oid = 'reloptions_test'::regclass \gset
-SELECT reloptions FROM pg_class WHERE oid = :toast_oid;
-
-ALTER TABLE reloptions_test SET (toast.autovacuum_vacuum_cost_delay = 24);
-SELECT reloptions FROM pg_class WHERE oid = :toast_oid;
-
-ALTER TABLE reloptions_test RESET (toast.autovacuum_vacuum_cost_delay);
-SELECT reloptions FROM pg_class WHERE oid = :toast_oid;
-
--- Fail on non-existent options in toast namespace
-CREATE TABLE reloptions_test2 (i int) WITH (toast.not_existing_option = 42);
-
--- Mix TOAST & heap
-DROP TABLE reloptions_test;
-
-CREATE TABLE reloptions_test (s VARCHAR) WITH
-	(toast.autovacuum_vacuum_cost_delay = 23,
-	autovacuum_vacuum_cost_delay = 24, fillfactor = 40);
-
-SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test'::regclass;
-SELECT reloptions FROM pg_class WHERE oid = (
-	SELECT reltoastrelid FROM pg_class WHERE oid = 'reloptions_test'::regclass);
-
 --
 -- CREATE INDEX, ALTER INDEX for btrees
 --
+DROP TABLE reloptions_test;
 
+CREATE TABLE reloptions_test (s VARCHAR);
 CREATE INDEX reloptions_test_idx ON reloptions_test (s) WITH (fillfactor=30);
 SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test_idx'::regclass;
 

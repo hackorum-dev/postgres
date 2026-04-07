@@ -36,6 +36,7 @@ static void check_new_cluster_subscription_configuration(void);
 static void check_old_cluster_for_valid_slots(void);
 static void check_old_cluster_subscription_state(void);
 static void check_old_cluster_global_names(ClusterInfo *cluster);
+static void check_for_toast_reloptions(ClusterInfo *cluster);
 
 /*
  * DataTypesUsageChecks - definitions of data type checks for the old cluster
@@ -571,6 +572,9 @@ check_and_dump_old_cluster(void)
 	check_is_install_user(&old_cluster);
 	check_for_prepared_transactions(&old_cluster);
 	check_for_isn_and_int8_passing_mismatch(&old_cluster);
+
+	if (GET_MAJOR_VERSION(old_cluster.major_version) < 2000)
+		check_for_toast_reloptions(&old_cluster);
 
 	if (GET_MAJOR_VERSION(old_cluster.major_version) >= 1700)
 	{
@@ -2487,6 +2491,77 @@ check_old_cluster_global_names(ClusterInfo *cluster)
 				 "rename these objects.\n"
 				 "A list of all objects with invalid names is in the file:\n"
 				 "    %s", output_path);
+	}
+	else
+		check_ok();
+}
+
+/*
+ * Callback function for processing results of query for
+ * check_for_toast_reloptions()'s UpgradeTask.  If the query returned any rows
+ * (i.e., the check failed), write the details to the report file.
+ */
+static void
+process_toast_relopts_check(DbInfo *dbinfo, PGresult *res, void *arg)
+{
+	UpgradeTaskReport *report = (UpgradeTaskReport *) arg;
+	int			ntups = PQntuples(res);
+	int			i_nspname = PQfnumber(res, "nspname");
+	int			i_relname = PQfnumber(res, "relname");
+
+	if (ntups == 0)
+		return;
+
+	if (report->file == NULL &&
+		(report->file = fopen_priv(report->path, "w")) == NULL)
+		pg_fatal("could not open file \"%s\": %m", report->path);
+
+	fprintf(report->file, "In database: %s\n", dbinfo->db_name);
+
+	for (int rowno = 0; rowno < ntups; rowno++)
+		fprintf(report->file, "  %s.%s\n",
+				PQgetvalue(res, rowno, i_nspname),
+				PQgetvalue(res, rowno, i_relname));
+}
+
+/*
+ * Verify that no storage parameters (a.k.a. reloptions) are defined for TOAST
+ * tables.
+ */
+static void
+check_for_toast_reloptions(ClusterInfo *cluster)
+{
+	UpgradeTaskReport report;
+	UpgradeTask *task = upgrade_task_create();
+	const char *query = "SELECT n.nspname, c.relname "
+		"FROM  pg_catalog.pg_class c, "
+		"      pg_catalog.pg_class tc, "
+		"      pg_catalog.pg_namespace n "
+		"WHERE c.reltoastrelid = tc.oid AND "
+		"      c.relnamespace = n.oid AND "
+		"      tc.reloptions IS NOT NULL";
+
+	prep_status("Check for tables with TOAST storage parameters");
+
+	report.file = NULL;
+	snprintf(report.path, sizeof(report.path), "%s/%s",
+			 log_opts.basedir,
+			 "tables_with_toast_storage_parameters.txt");
+
+	upgrade_task_add_step(task, query, process_toast_relopts_check,
+						  true, &report);
+	upgrade_task_run(task, cluster);
+	upgrade_task_free(task);
+
+	if (report.file)
+	{
+		fclose(report.file);
+		pg_log(PG_REPORT, "fatal");
+		pg_fatal("Your installation contains tables with TOAST storage parameters set, which is\n"
+				 "not supported anymore.  Consider remove the TOAST storage parameters using\n"
+				 "    ALTER TABLE ... RESET ( ... );\n"
+				 "A list of tables with the problem is in the file:\n"
+				 "    %s", report.path);
 	}
 	else
 		check_ok();

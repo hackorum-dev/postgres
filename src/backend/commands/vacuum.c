@@ -2020,13 +2020,6 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams params,
 	Oid			save_userid;
 	int			save_sec_context;
 	int			save_nestlevel;
-	VacuumParams toast_vacuum_params;
-
-	/*
-	 * This function scribbles on the parameters, so make a copy early to
-	 * avoid affecting the TOAST table (if we do end up recursing to it).
-	 */
-	memcpy(&toast_vacuum_params, &params, sizeof(VacuumParams));
 
 	/* Begin a transaction for vacuuming this relation */
 	StartTransactionCommand();
@@ -2341,11 +2334,10 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams params,
 		 * relation.  NB: This is only safe to do because we hold a session
 		 * lock on the main relation that prevents concurrent deletion.
 		 */
-		toast_vacuum_params.options |= VACOPT_PROCESS_MAIN;
-		toast_vacuum_params.toast_parent = relid;
+		params.options |= VACOPT_PROCESS_MAIN;
+		params.toast_parent = relid;
 
-		vacuum_rel(toast_relid, NULL, toast_vacuum_params, bstrategy,
-				   isTopLevel);
+		vacuum_rel(toast_relid, NULL, params, bstrategy, isTopLevel);
 	}
 
 	/*

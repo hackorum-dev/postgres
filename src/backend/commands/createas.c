@@ -84,8 +84,6 @@ create_ctas_internal(List *attrList, IntoClause *into)
 	CreateStmt *create = makeNode(CreateStmt);
 	bool		is_matview;
 	char		relkind;
-	Datum		toast_options;
-	const char *const validnsps[] = HEAP_RELOPT_NAMESPACES;
 	ObjectAddress intoRelationAddr;
 
 	/* This code supports both CREATE TABLE AS and CREATE MATERIALIZED VIEW */
@@ -120,16 +118,7 @@ create_ctas_internal(List *attrList, IntoClause *into)
 	 */
 	CommandCounterIncrement();
 
-	/* parse and validate reloptions for the toast table */
-	toast_options = transformRelOptions((Datum) 0,
-										create->options,
-										"toast",
-										validnsps,
-										true, false);
-
-	(void) heap_reloptions(RELKIND_TOASTVALUE, toast_options, true);
-
-	NewRelationCreateToastTable(intoRelationAddr.objectId, toast_options);
+	NewRelationCreateToastTable(intoRelationAddr.objectId);
 
 	/* Create the "view" part of a materialized view. */
 	if (is_matview)

@@ -835,7 +835,6 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	bool		partitioned;
-	const char *const validnsps[] = HEAP_RELOPT_NAMESPACES;
 	Oid			ofTypeId;
 	ObjectAddress address;
 	LOCKMODE	parentLockmode;
@@ -984,7 +983,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	/*
 	 * Parse and validate reloptions, if any.
 	 */
-	reloptions = transformRelOptions((Datum) 0, stmt->options, NULL, validnsps,
+	reloptions = transformRelOptions((Datum) 0, stmt->options, NULL, NULL,
 									 true, false);
 
 	switch (relkind)
@@ -5468,7 +5467,7 @@ ATRewriteCatalogs(List **wqueue, LOCKMODE lockmode,
 			  tab->relkind == RELKIND_PARTITIONED_TABLE) &&
 			 tab->partition_constraint == NULL) ||
 			tab->relkind == RELKIND_MATVIEW)
-			AlterTableCreateToastTable(tab->relid, (Datum) 0, lockmode);
+			AlterTableCreateToastTable(tab->relid, lockmode);
 	}
 }
 
@@ -17360,7 +17359,6 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 	Datum		repl_val[Natts_pg_class];
 	bool		repl_null[Natts_pg_class];
 	bool		repl_repl[Natts_pg_class];
-	const char *const validnsps[] = HEAP_RELOPT_NAMESPACES;
 
 	if (defList == NIL && operation != AT_ReplaceRelOptions)
 		return;					/* nothing to do */
@@ -17393,7 +17391,7 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 	}
 
 	/* Generate new proposed reloptions (text array) */
-	newOptions = transformRelOptions(datum, defList, NULL, validnsps, false,
+	newOptions = transformRelOptions(datum, defList, NULL, NULL, false,
 									 operation == AT_ResetRelOptions);
 
 	/* Validate */
@@ -17516,20 +17514,11 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 				datum = (Datum) 0;
 		}
 
-		newOptions = transformRelOptions(datum, defList, "toast", validnsps,
-										 false, operation == AT_ResetRelOptions);
-
-		(void) heap_reloptions(RELKIND_TOASTVALUE, newOptions, true);
-
 		memset(repl_val, 0, sizeof(repl_val));
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
 
-		if (newOptions != (Datum) 0)
-			repl_val[Anum_pg_class_reloptions - 1] = newOptions;
-		else
-			repl_null[Anum_pg_class_reloptions - 1] = true;
-
+		repl_null[Anum_pg_class_reloptions - 1] = true;
 		repl_repl[Anum_pg_class_reloptions - 1] = true;
 
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(pgclass),

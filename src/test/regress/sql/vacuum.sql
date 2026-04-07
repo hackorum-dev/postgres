@@ -175,14 +175,6 @@ VACUUM no_index_cleanup;
 INSERT INTO no_index_cleanup(i, t) VALUES (generate_series(31,60),
     repeat('1234567890',269));
 DELETE FROM no_index_cleanup WHERE i < 45;
--- Only toast index is cleaned up.
-ALTER TABLE no_index_cleanup SET (vacuum_index_cleanup = off,
-    toast.vacuum_index_cleanup = yes);
-VACUUM no_index_cleanup;
--- Only parent is cleaned up.
-ALTER TABLE no_index_cleanup SET (vacuum_index_cleanup = true,
-    toast.vacuum_index_cleanup = false);
-VACUUM no_index_cleanup;
 -- Test some extra relations.
 VACUUM (INDEX_CLEANUP FALSE) vaccluster;
 VACUUM (INDEX_CLEANUP AUTO) vactst; -- index cleanup option is ignored if no indexes

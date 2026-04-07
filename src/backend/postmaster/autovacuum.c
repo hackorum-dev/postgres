@@ -2141,8 +2141,9 @@ do_autovacuum(void)
 	{
 		Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
 		Oid			relid;
-		AutoVacOpts *relopts;
-		bool		free_relopts = false;
+		av_relation *hentry;
+		bool		found;
+		AutoVacOpts *relopts = NULL;
 		bool		dovacuum;
 		bool		doanalyze;
 		bool		wraparound;
@@ -2156,22 +2157,10 @@ do_autovacuum(void)
 
 		relid = classForm->oid;
 
-		/*
-		 * fetch reloptions -- if this toast table does not have them, try the
-		 * main rel
-		 */
-		relopts = extract_autovac_opts(tuple, pg_class_desc);
-		if (relopts)
-			free_relopts = true;
-		else
-		{
-			av_relation *hentry;
-			bool		found;
-
-			hentry = hash_search(table_toast_map, &relid, HASH_FIND, &found);
-			if (found && hentry->ar_hasrelopts)
-				relopts = &hentry->ar_reloptions;
-		}
+		/* Use reloptions from main rel. */
+		hentry = hash_search(table_toast_map, &relid, HASH_FIND, &found);
+		if (found && hentry->ar_hasrelopts)
+			relopts = &hentry->ar_reloptions;
 
 		relation_needs_vacanalyze(relid, relopts, classForm,
 								  effective_multixact_freeze_max_age,
@@ -2188,10 +2177,6 @@ do_autovacuum(void)
 			table->score = scores.max;
 			tables_to_process = lappend(tables_to_process, table);
 		}
-
-		/* Release stuff to avoid leakage */
-		if (free_relopts)
-			pfree(relopts);
 	}
 
 	table_endscan(relScan);
@@ -2828,7 +2813,7 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 	bool		doanalyze;
 	autovac_table *tab = NULL;
 	bool		wraparound;
-	AutoVacOpts *avopts;
+	AutoVacOpts *avopts = NULL;
 	bool		free_avopts = false;
 	AutoVacuumScores scores;
 
@@ -2840,13 +2825,15 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 
 	/*
 	 * Get the applicable reloptions.  If it is a TOAST table, try to get the
-	 * main table reloptions if the toast table itself doesn't have.
+	 * main table reloptions.
 	 */
-	avopts = extract_autovac_opts(classTup, pg_class_desc);
-	if (avopts)
-		free_avopts = true;
-	else if (classForm->relkind == RELKIND_TOASTVALUE &&
-			 table_toast_map != NULL)
+	if (classForm->relkind != RELKIND_TOASTVALUE)
+	{
+		avopts = extract_autovac_opts(classTup, pg_class_desc);
+		if (avopts)
+			free_avopts = true;
+	}
+	else if (table_toast_map)
 	{
 		av_relation *hentry;
 		bool		found;
@@ -3132,8 +3119,7 @@ relation_needs_vacanalyze(Oid relid,
 
 	/*
 	 * Determine vacuum/analyze equation parameters.  We have two possible
-	 * sources: the passed reloptions (which could be a main table or a toast
-	 * table), or the autovacuum GUC variables.
+	 * sources: the passed reloptions or the autovacuum GUC variables.
 	 */
 
 	/* -1 in autovac setting means use plain vacuum_scale_factor */
