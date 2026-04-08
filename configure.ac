@@ -290,6 +290,10 @@ if test $segsize_blocks -ne 0 -a $segsize -ne 1; then
   AC_MSG_WARN([both --with-segsize and --with-segsize-blocks specified, --with-segsize-blocks wins])
 fi
 
+if test $segsize_blocks -ne 0 -a $segsize_blocks -lt 6; then
+  AC_MSG_ERROR([too small segsize-blocks specified])
+fi
+
 AC_MSG_CHECKING([for segment size])
 if test $segsize_blocks -eq 0; then
   # this expression is set up to avoid unnecessary integer overflow
