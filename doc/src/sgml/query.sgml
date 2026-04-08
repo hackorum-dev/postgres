@@ -3,6 +3,13 @@
  <chapter id="tutorial-sql">
   <title>The <acronym>SQL</acronym> Language</title>
 
+   <para>
+    This chapter introduces fundamental <acronym>SQL</acronym> operations
+    in <productname>PostgreSQL</productname>, including creating tables,
+    populating them with data, and querying them.  It also covers joins
+    between tables, aggregate functions, and how to update and delete data.
+   </para>
+
   <sect1 id="tutorial-sql-intro">
    <title>Introduction</title>
 
