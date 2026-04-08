@@ -211,16 +211,19 @@ typedef struct AlteredTableInfo
 	List	   *changedStatisticsDefs;	/* string definitions of same */
 } AlteredTableInfo;
 
-/* Struct describing one new constraint to check in Phase 3 scan */
-/* Note: new not-null constraints are handled elsewhere */
+/*
+ * Struct describing one new constraint to check in Phase 3 scan. Note: new
+ * not-null constraints are handled here too.
+*/
 typedef struct NewConstraint
 {
 	char	   *name;			/* Constraint name, or NULL if none */
-	ConstrType	contype;		/* CHECK or FOREIGN */
+	ConstrType	contype;		/* CHECK or FOREIGN or NOT NULL */
 	Oid			refrelid;		/* PK rel, if FOREIGN */
 	Oid			refindid;		/* OID of PK's index, if FOREIGN */
 	bool		conwithperiod;	/* Whether the new FOREIGN KEY uses PERIOD */
 	Oid			conid;			/* OID of pg_constraint entry, if FOREIGN */
+	int			attnum;			/* NOT NULL constraint attribute number */
 	Node	   *qual;			/* Check expr or CONSTR_FOREIGN Constraint */
 	ExprState  *qualstate;		/* Execution state for CHECK expr */
 } NewConstraint;
@@ -760,6 +763,7 @@ static void ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation
 static void ATExecSplitPartition(List **wqueue, AlteredTableInfo *tab,
 								 Relation rel, PartitionCmd *cmd,
 								 AlterTableUtilityContext *context);
+static bool index_check_notnull(Relation relation, List *notnull_attnums);
 
 /* ----------------------------------------------------------------
  *		DefineRelation
@@ -6251,6 +6255,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 				needscan = true;
 				con->qualstate = ExecPrepareExpr((Expr *) expand_generated_columns_in_expr(con->qual, oldrel, 1), estate);
 				break;
+			case CONSTR_NOTNULL:
+				/* Nothing to do here */
+				break;
 			case CONSTR_FOREIGN:
 				/* Nothing to do here */
 				break;
@@ -6278,6 +6285,78 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 	notnull_attrs = notnull_virtual_attrs = NIL;
 	if (newrel || tab->verify_new_notnull)
 	{
+		bool		null_vertified = false;
+
+		/*
+		 * The conditions for using indexscan mechanism fast verifying
+		 * not-null constraints are quite strict. All of the following
+		 * conditions must be met.
+		 *
+		 * 1. AlteredTableInfo->verify_new_notnull is true.
+		 *
+		 * 2. No table scan (e.g., for CHECK constraint verification) or table
+		 * rewrite is expected later, if one is, using indexscan would just
+		 * wastes cycles.
+		 *
+		 * 3. Indexes cannot be created on virtual generated columns, so fast
+		 * checking not-null constraints is not applicable to them.
+		 *
+		 * 4. The relation must be a plain table.
+		 *
+		 * 5. To prevent possible concurrency issues, the table must already
+		 * be locked with an AccessExclusiveLock, which is the lock obtained
+		 * during ALTER TABLE SET NOT NULL.
+		 */
+		if (!needscan &&
+			newrel == NULL &&
+			oldrel->rd_rel->relkind == RELKIND_RELATION &&
+			CheckRelationLockedByMe(oldrel, AccessExclusiveLock, false))
+		{
+			List	   *notnull_attnums = NIL;
+
+			Assert(!tab->rewrite);
+
+			foreach(l, tab->constraints)
+			{
+				Form_pg_attribute attr;
+				NewConstraint *con = lfirst(l);
+
+				if (con->contype != CONSTR_NOTNULL)
+					continue;
+
+				attr = TupleDescAttr(newTupDesc, con->attnum - 1);
+
+				if (attr->attisdropped)
+					continue;
+
+				Assert(attr->attnotnull);
+				Assert(attr->attnum == con->attnum);
+
+				if (attr->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
+				{
+					needscan = true;
+					break;
+				}
+
+				notnull_attnums = list_append_unique_int(notnull_attnums,
+														 attr->attnum);
+			}
+
+			if (!needscan)
+			{
+				if (index_check_notnull(oldrel, notnull_attnums))
+				{
+					null_vertified = true;
+
+					ereport(DEBUG1,
+							errmsg_internal("all new not-null constraints on relation \"%s\" have been validated by using index scan",
+											RelationGetRelationName(oldrel)));
+				}
+				else
+					needscan = true;
+			}
+		}
+
 		/*
 		 * If we are rebuilding the tuples OR if we added any new but not
 		 * verified not-null constraints, check all *valid* not-null
@@ -6288,7 +6367,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 		 * not-null constraints over virtual generated columns; instead, they
 		 * are collected in notnull_virtual_attrs for verification elsewhere.
 		 */
-		for (i = 0; i < newTupDesc->natts; i++)
+		for (i = 0; !null_vertified && i < newTupDesc->natts; i++)
 		{
 			CompactAttribute *attr = TupleDescCompactAttr(newTupDesc, i);
 
@@ -6306,6 +6385,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 		}
 		if (notnull_attrs || notnull_virtual_attrs)
 			needscan = true;
+
+		if (null_vertified)
+			Assert(needscan == false);
 	}
 
 	if (newrel || needscan)
@@ -8009,6 +8091,7 @@ ATExecSetNotNull(List **wqueue, Relation rel, char *conName, char *colName,
 	CookedConstraint *ccon;
 	List	   *cooked;
 	bool		is_no_inherit = false;
+	AlteredTableInfo *tab = ATGetQueueEntry(wqueue, rel);;
 
 	/* Guard against stack overflow due to overly deep inheritance tree. */
 	check_stack_depth();
@@ -8137,6 +8220,25 @@ ATExecSetNotNull(List **wqueue, Relation rel, char *conName, char *colName,
 	cooked = AddRelationNewConstraints(rel, NIL, list_make1(constraint),
 									   false, !recursing, false, NULL);
 	ccon = linitial(cooked);
+
+	Assert(ccon->contype == CONSTR_NOTNULL);
+
+	/*
+	 * We may using indexscan mechanism to vertify this not-null constraint in
+	 * Phase3.  Add this to-be-validated not-null constraint to Phase 3's
+	 * queue.
+	 */
+	if (!ccon->skip_validation)
+	{
+		NewConstraint *newcon = palloc0_object(NewConstraint);
+
+		newcon->name = ccon->name;
+		newcon->contype = CONSTR_NOTNULL;
+		newcon->attnum = ccon->attnum;
+
+		tab->constraints = lappend(tab->constraints, newcon);
+	}
+
 	ObjectAddressSet(address, ConstraintRelationId, ccon->conoid);
 
 	/* Mark pg_attribute.attnotnull for the column and queue validation */
@@ -10030,13 +10132,15 @@ ATAddCheckNNConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	{
 		CookedConstraint *ccon = (CookedConstraint *) lfirst(lcon);
 
-		if (!ccon->skip_validation && ccon->contype != CONSTR_NOTNULL)
+		if (!ccon->skip_validation)
 		{
 			NewConstraint *newcon;
 
 			newcon = palloc0_object(NewConstraint);
 			newcon->name = ccon->name;
 			newcon->contype = ccon->contype;
+			if (ccon->contype == CONSTR_NOTNULL)
+				newcon->attnum = ccon->attnum;
 			newcon->qual = ccon->expr;
 
 			tab->constraints = lappend(tab->constraints, newcon);
@@ -13474,6 +13578,7 @@ QueueNNConstraintValidation(List **wqueue, Relation conrel, Relation rel,
 	List	   *children = NIL;
 	AttrNumber	attnum;
 	char	   *colname;
+	NewConstraint *newcon;
 
 	con = (Form_pg_constraint) GETSTRUCT(contuple);
 	Assert(con->contype == CONSTRAINT_NOTNULL);
@@ -13537,7 +13642,21 @@ QueueNNConstraintValidation(List **wqueue, Relation conrel, Relation rel,
 	/* Set attnotnull appropriately without queueing another validation */
 	set_attnotnull(NULL, rel, attnum, true, false);
 
+	/*
+	 * Queue validation for phase 3. ALTER TABLE SET NOT NULL adds a NOT NULL
+	 * constraint (NewConstraint) to AlteredTableInfo->constraints; for
+	 * consistency, we do the same here. This setup allows phase 3
+	 * (ATRewriteTable) to quickly validate the column's NULL status using an
+	 * index scan, if all conditions are met.
+	 */
+	newcon = palloc0_object(NewConstraint);
+	newcon->name = colname;
+	newcon->contype = CONSTR_NOTNULL;
+	newcon->attnum = attnum;
+
+	/* Find or create work queue entry for this table */
 	tab = ATGetQueueEntry(wqueue, rel);
+	tab->constraints = lappend(tab->constraints, newcon);
 	tab->verify_new_notnull = true;
 
 	/*
@@ -23601,4 +23720,170 @@ ATExecSplitPartition(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/* Restore the userid and security context. */
 	SetUserIdAndSecContext(save_userid, save_sec_context);
+}
+
+/*
+ * notnull_attnums: list of attribute numbers for all newly added NOT NULL
+ * constraints.
+ *
+ * For each NOT NULL attribute, first check whether the relation has a suitable
+ * index to fetch that attribute content. If so, using indexscan to verify that
+ * attribute contains no NULL values.
+ *
+ * Returning true means the new NOT NULL constraints are fully verified and no
+ * extra table scans are necessary.
+ */
+static bool
+index_check_notnull(Relation relation, List *notnull_attnums)
+{
+	SysScanDesc indscan;
+	ScanKeyData skey;
+	HeapTuple	htup;
+	List	   *idxs = NIL;
+	List	   *attnums = NIL;
+	bool		all_not_null = true;
+	ListCell   *lc,
+			   *lc2;
+
+	Relation	pg_index = table_open(IndexRelationId, AccessShareLock);
+
+	if (notnull_attnums == NIL)
+		return false;
+
+	/* Prepare to scan pg_index for entries having indrelid = this rel */
+	ScanKeyInit(&skey,
+				Anum_pg_index_indrelid,
+				BTEqualStrategyNumber,
+				F_OIDEQ,
+				ObjectIdGetDatum(RelationGetRelid(relation)));
+
+	indscan = systable_beginscan(pg_index, IndexIndrelidIndexId, true,
+								 NULL, 1, &skey);
+
+	while (HeapTupleIsValid(htup = systable_getnext(indscan)))
+	{
+		Form_pg_attribute attr;
+		Relation	index_rel;
+
+		Form_pg_index index = (Form_pg_index) GETSTRUCT(htup);
+
+		/*
+		 * We only use non-deferred, valid, and live b-tree indexes to verify
+		 * NOT NULL constraints.
+		 */
+		if (!index->indimmediate || !index->indisvalid || !index->indislive)
+			continue;
+
+		/* cannot use expression index or partial index too */
+		if (!heap_attisnull(htup, Anum_pg_index_indexprs, NULL) ||
+			!heap_attisnull(htup, Anum_pg_index_indpred, NULL))
+			continue;
+
+		index_rel = index_open(index->indexrelid, AccessShareLock);
+
+		if (index_rel->rd_rel->relam != BTREE_AM_OID)
+		{
+			index_close(index_rel, AccessShareLock);
+
+			continue;
+		}
+
+		attr = TupleDescAttr(RelationGetDescr(relation), (index->indkey.values[0] - 1));
+
+		if (list_member_int(notnull_attnums, attr->attnum) &&
+			!list_member_int(attnums, attr->attnum))
+		{
+			attnums = lappend_int(attnums, attr->attnum);
+			idxs = lappend_oid(idxs, index->indexrelid);
+		}
+
+		index_close(index_rel, NoLock);
+	}
+	systable_endscan(indscan);
+	table_close(pg_index, AccessShareLock);
+
+	/*
+	 * Verify NOT NULL constraints using a suitable index, falling back to a
+	 * full table scan if a suitable index is not present.
+	 */
+	if (attnums == NIL ||
+		list_length(notnull_attnums) != list_length(attnums))
+		return false;
+
+	foreach_int(attno, notnull_attnums)
+	{
+		if (!list_member_int(attnums, attno))
+			return false;
+	}
+
+	forboth(lc, attnums, lc2, idxs)
+	{
+		SnapshotData DirtySnapshot;
+		IndexScanDesc index_scan;
+		ScanKeyData scankeys[INDEX_MAX_KEYS];
+		AttrNumber	sk_attno = -1;
+		AttrNumber	attno = lfirst_int(lc);
+		Oid			indexoid = lfirst_oid(lc2);
+
+		Relation	idxrel = index_open(indexoid, NoLock);
+		IndexInfo  *indexInfo = BuildIndexInfo(idxrel);
+		int			indnkeyatts = IndexRelationGetNumberOfKeyAttributes(idxrel);
+
+		TupleTableSlot *existing_slot = table_slot_create(relation, NULL);
+
+		/*
+		 * Search the tuples that are in the index for any violations,
+		 * including tuples that aren't visible yet.
+		 */
+		InitDirtySnapshot(DirtySnapshot);
+
+		if (indexInfo->ii_IndexAttrNumbers[0] == attno)
+			sk_attno = 1;
+		else
+			elog(ERROR, "cache lookup failed for attribute number %d on index %u",
+				 indexoid, attno);
+
+		for (int i = 0; i < indnkeyatts; i++)
+		{
+			/* set up an IS NULL scan key so that we ignore not nulls */
+			ScanKeyEntryInitialize(&scankeys[i],
+								   SK_ISNULL | SK_SEARCHNULL,
+								   sk_attno,	/* index col to scan */
+								   InvalidStrategy, /* no strategy */
+								   InvalidOid,	/* no strategy subtype */
+								   InvalidOid,	/* no collation */
+								   InvalidOid,	/* no reg proc for this */
+								   (Datum) 0);	/* constant */
+		}
+
+		index_scan = index_beginscan(relation,
+									 idxrel,
+									 &DirtySnapshot,
+									 NULL,
+									 indnkeyatts,
+									 0,
+									 SO_NONE);
+		index_rescan(index_scan, scankeys, indnkeyatts, NULL, 0);
+
+		while (index_getnext_slot(index_scan, ForwardScanDirection, existing_slot))
+		{
+			/*
+			 * At this point, we have found that some attribute value is NULL.
+			 * btree indexes are never lossy, we don't need recheck the
+			 * condition.
+			 */
+			all_not_null = false;
+			break;
+		}
+
+		index_endscan(index_scan);
+		index_close(idxrel, NoLock);
+		ExecDropSingleTupleTableSlot(existing_slot);
+
+		/* exit earlier */
+		if (!all_not_null)
+			return false;
+	}
+
+	return true;
 }
