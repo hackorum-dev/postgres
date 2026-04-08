@@ -512,6 +512,9 @@ if get_option('segsize_blocks') != 0
   if get_option('segsize') != 1
     warning('both segsize and segsize_blocks specified, segsize_blocks wins')
   endif
+  if get_option('segsize_blocks') < 6
+    error('too small segsize_blocks specified')
+  endif
 
   segsize = get_option('segsize_blocks')
 else

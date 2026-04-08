@@ -3796,6 +3796,10 @@ if test $segsize_blocks -ne 0 -a $segsize -ne 1; then
 $as_echo "$as_me: WARNING: both --with-segsize and --with-segsize-blocks specified, --with-segsize-blocks wins" >&2;}
 fi
 
+if test $segsize_blocks -ne 0 -a $segsize_blocks -lt 6; then
+  as_fn_error $? "too small segsize-blocks specified" "$LINENO" 5
+fi
+
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for segment size" >&5
 $as_echo_n "checking for segment size... " >&6; }
 if test $segsize_blocks -eq 0; then
