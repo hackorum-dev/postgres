@@ -3,6 +3,14 @@
  <chapter id="tutorial-advanced">
   <title>Advanced Features</title>
 
+   <para>
+    This chapter builds on the basics covered earlier and introduces
+    several advanced <acronym>SQL</acronym> features in
+    <productname>PostgreSQL</productname>, including views, foreign keys,
+    transactions, window functions, and inheritance.
+   </para>
+
+
   <sect1 id="tutorial-advanced-intro">
    <title>Introduction</title>
 
