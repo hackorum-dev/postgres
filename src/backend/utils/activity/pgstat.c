@@ -1300,10 +1300,19 @@ pgstat_prep_pending_entry(PgStat_Kind kind, Oid dboid, uint64 objid, bool *creat
 
 	if (unlikely(!pgStatPendingContext))
 	{
+#if 0
 		pgStatPendingContext =
 			AllocSetContextCreate(TopMemoryContext,
 								  "PgStat Pending",
 								  ALLOCSET_SMALL_SIZES);
+#else
+		pgStatPendingContext =
+			GenerationContextCreate(TopMemoryContext,
+									"PgStat Pending",
+									1024,
+									1024,
+									128 * 1024);
+#endif
 	}
 
 	entry_ref = pgstat_get_entry_ref(kind, dboid, objid,

@@ -1179,10 +1179,20 @@ static void
 pgstat_setup_memcxt(void)
 {
 	if (unlikely(!pgStatSharedRefContext))
+	{
+#if 0
 		pgStatSharedRefContext =
 			AllocSetContextCreate(TopMemoryContext,
 								  "PgStat Shared Ref",
 								  ALLOCSET_SMALL_SIZES);
+#else
+		pgStatSharedRefContext =
+			SlabContextCreate(TopMemoryContext,
+							  "PgStat Shared Ref",
+							  16*1024,
+							  sizeof(PgStat_EntryRef));
+#endif
+	}
 	if (unlikely(!pgStatEntryRefHashContext))
 		pgStatEntryRefHashContext =
 			AllocSetContextCreate(TopMemoryContext,
