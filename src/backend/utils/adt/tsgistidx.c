@@ -18,6 +18,7 @@
 #include "access/heaptoast.h"
 #include "access/reloptions.h"
 #include "common/int.h"
+#include "storage/shmem.h"
 #include "lib/qunique.h"
 #include "port/pg_bitutils.h"
 #include "tsearch/ts_utils.h"
@@ -624,7 +625,7 @@ gtsvector_picksplit(PG_FUNCTION_ARGS)
 				size_beta;
 	int32		size_waste,
 				waste = -1;
-	int32		nbytes;
+	Size		nbytes;
 	OffsetNumber seed_1 = 0,
 				seed_2 = 0;
 	OffsetNumber *left,
@@ -637,12 +638,12 @@ gtsvector_picksplit(PG_FUNCTION_ARGS)
 	SPLITCOST  *costvector;
 
 	maxoff = entryvec->n - 2;
-	nbytes = (maxoff + 2) * sizeof(OffsetNumber);
+	nbytes = mul_size(sizeof(OffsetNumber), (maxoff + 2));
 	v->spl_left = (OffsetNumber *) palloc(nbytes);
 	v->spl_right = (OffsetNumber *) palloc(nbytes);
 
 	cache = palloc_array(CACHESIGN, maxoff + 2);
-	cache_sign = palloc(siglen * (maxoff + 2));
+	cache_sign = palloc(mul_size(siglen, (maxoff + 2)));
 
 	for (j = 0; j < maxoff + 2; j++)
 		cache[j].sign = &cache_sign[siglen * j];

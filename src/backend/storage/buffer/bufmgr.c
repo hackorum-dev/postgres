@@ -62,6 +62,7 @@
 #include "storage/proclist.h"
 #include "storage/procsignal.h"
 #include "storage/read_stream.h"
+#include "storage/shmem.h"
 #include "storage/smgr.h"
 #include "storage/standby.h"
 #include "utils/memdebug.h"
@@ -4948,7 +4949,8 @@ DropRelationsAllBuffers(SMgrRelation *smgr_reln, int nlocators)
 	 * forks.
 	 */
 	block = (BlockNumber (*)[MAX_FORKNUM + 1])
-		palloc(sizeof(BlockNumber) * n * (MAX_FORKNUM + 1));
+		palloc(mul_size(mul_size(sizeof(BlockNumber), (MAX_FORKNUM + 1)),
+						n));
 
 	/*
 	 * We can avoid scanning the entire buffer pool if we know the exact size

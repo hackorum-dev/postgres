@@ -17,6 +17,7 @@
 #endif
 
 #include "backup/basebackup_sink.h"
+#include "storage/shmem.h"
 
 #ifdef HAVE_LIBZ
 typedef struct bbsink_gzip
@@ -297,7 +298,7 @@ bbsink_gzip_manifest_contents(bbsink *sink, size_t len)
 static void *
 gzip_palloc(void *opaque, unsigned items, unsigned size)
 {
-	return palloc(items * size);
+	return palloc(mul_size(size, items));
 }
 
 /*

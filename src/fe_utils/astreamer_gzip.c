@@ -32,6 +32,7 @@
 #include <zlib.h>
 #endif
 
+#include "common/int.h"
 #include "common/logging.h"
 #include "fe_utils/astreamer.h"
 
@@ -382,7 +383,12 @@ astreamer_gzip_decompressor_free(astreamer *streamer)
 static void *
 gzip_palloc(void *opaque, unsigned items, unsigned size)
 {
-	return palloc(items * size);
+	size_t nbytes;
+
+	if (pg_mul_size_overflow((size_t) size, (size_t) items, &nbytes))
+		pg_fatal("gzip library requested invalid allocation size");
+
+	return palloc(nbytes);
 }
 
 /*
