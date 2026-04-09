@@ -48,6 +48,7 @@
 #include "nodes/makefuncs.h"
 #include "storage/ipc.h"
 #include "storage/lmgr.h"
+#include "storage/shmem.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "utils/acl.h"
@@ -1994,7 +1995,7 @@ OpernameGetCandidates(List *names, char oprkind, bool missing_schema_ok,
 							  2 * sizeof(Oid))
 
 	if (catlist->n_members > 0)
-		resultSpace = palloc(catlist->n_members * SPACE_PER_OP);
+		resultSpace = palloc(mul_size(SPACE_PER_OP, catlist->n_members));
 
 	for (i = 0; i < catlist->n_members; i++)
 	{
