@@ -172,6 +172,7 @@ static bool resize(dshash_table *hash_table, size_t new_size_log2,
 static inline void ensure_valid_bucket_pointers(dshash_table *hash_table);
 static inline dshash_table_item *find_in_bucket(dshash_table *hash_table,
 												const void *key,
+												dshash_hash hash,
 												dsa_pointer item_pointer);
 static void insert_item_into_bucket(dshash_table *hash_table,
 									dsa_pointer item_pointer,
@@ -183,6 +184,7 @@ static dshash_table_item *insert_into_bucket(dshash_table *hash_table,
 											 int flags);
 static bool delete_key_from_bucket(dshash_table *hash_table,
 								   const void *key,
+								   dshash_hash hash,
 								   dsa_pointer *bucket_head);
 static bool delete_item_from_bucket(dshash_table *hash_table,
 									dshash_table_item *item,
@@ -419,7 +421,7 @@ dshash_find(dshash_table *hash_table, const void *key, bool exclusive)
 	ensure_valid_bucket_pointers(hash_table);
 
 	/* Search the active bucket. */
-	item = find_in_bucket(hash_table, key, BUCKET_FOR_HASH(hash_table, hash));
+	item = find_in_bucket(hash_table, key, hash, BUCKET_FOR_HASH(hash_table, hash));
 
 	if (!item)
 	{
@@ -473,7 +475,7 @@ restart:
 	ensure_valid_bucket_pointers(hash_table);
 
 	/* Search the active bucket. */
-	item = find_in_bucket(hash_table, key, BUCKET_FOR_HASH(hash_table, hash));
+	item = find_in_bucket(hash_table, key, hash, BUCKET_FOR_HASH(hash_table, hash));
 
 	if (item)
 		*found = true;
@@ -547,7 +549,7 @@ dshash_delete_key(dshash_table *hash_table, const void *key)
 	LWLockAcquire(PARTITION_LOCK(hash_table, partition), LW_EXCLUSIVE);
 	ensure_valid_bucket_pointers(hash_table);
 
-	if (delete_key_from_bucket(hash_table, key,
+	if (delete_key_from_bucket(hash_table, key, hash,
 							   &BUCKET_FOR_HASH(hash_table, hash)))
 	{
 		Assert(hash_table->control->partitions[partition].count > 0);
@@ -996,17 +998,27 @@ ensure_valid_bucket_pointers(dshash_table *hash_table)
 
 /*
  * Scan a locked bucket for a match, using the provided compare function.
+ * Skips items whose cached hash values don't match, avoiding expensive
+ * key comparisons.
  */
 static inline dshash_table_item *
 find_in_bucket(dshash_table *hash_table, const void *key,
-			   dsa_pointer item_pointer)
+			   dshash_hash hash, dsa_pointer item_pointer)
 {
 	while (DsaPointerIsValid(item_pointer))
 	{
 		dshash_table_item *item;
 
 		item = dsa_get_address(hash_table->area, item_pointer);
-		if (equal_keys(hash_table, key, ENTRY_FROM_ITEM(item)))
+
+		/*
+		 * If the hash values don't match, the keys certainly don't match
+		 * either, so we can skip the expensive key comparison.  Matching
+		 * hashes don't guarantee matching keys, so equal_keys() is still
+		 * needed for confirmation.
+		 */
+		if (item->hash == hash &&
+			equal_keys(hash_table, key, ENTRY_FROM_ITEM(item)))
 			return item;
 		item_pointer = item->next;
 	}
@@ -1058,10 +1070,13 @@ insert_into_bucket(dshash_table *hash_table,
 
 /*
  * Search a bucket for a matching key and delete it.
+ * Skips items whose cached hash values don't match, avoiding expensive
+ * key comparisons.
  */
 static bool
 delete_key_from_bucket(dshash_table *hash_table,
 					   const void *key,
+					   dshash_hash hash,
 					   dsa_pointer *bucket_head)
 {
 	while (DsaPointerIsValid(*bucket_head))
@@ -1070,7 +1085,9 @@ delete_key_from_bucket(dshash_table *hash_table,
 
 		item = dsa_get_address(hash_table->area, *bucket_head);
 
-		if (equal_keys(hash_table, key, ENTRY_FROM_ITEM(item)))
+		/* See comment in find_in_bucket() */
+		if (item->hash == hash &&
+			equal_keys(hash_table, key, ENTRY_FROM_ITEM(item)))
 		{
 			dsa_pointer next;
 
