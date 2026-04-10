@@ -1856,6 +1856,8 @@ get_database_list(void)
 		avw_dbase  *avdb;
 		MemoryContext oldcxt;
 
+		CHECK_FOR_INTERRUPTS();
+
 		/*
 		 * If database has partially been dropped, we can't, nor need to,
 		 * vacuum it.
@@ -2077,6 +2079,8 @@ do_autovacuum(void)
 		bool		wraparound;
 		AutoVacuumScores scores;
 
+		CHECK_FOR_INTERRUPTS();
+
 		if (classForm->relkind != RELKIND_RELATION &&
 			classForm->relkind != RELKIND_MATVIEW)
 			continue;
@@ -2173,6 +2177,8 @@ do_autovacuum(void)
 		bool		doanalyze;
 		bool		wraparound;
 		AutoVacuumScores scores;
+
+		CHECK_FOR_INTERRUPTS();
 
 		/*
 		 * We cannot safely process other backends' temp tables, so skip 'em.
@@ -3704,6 +3710,8 @@ pg_stat_get_autovacuum_scores(PG_FUNCTION_ARGS)
 		AutoVacuumScores scores;
 		Datum		vals[10];
 		bool		nulls[10] = {false};
+
+		CHECK_FOR_INTERRUPTS();
 
 		/* skip ineligible entries */
 		if (form->relkind != RELKIND_RELATION &&
