@@ -61,6 +61,23 @@ RESET ROLE;
 GRANT CONNECT ON DATABASE regression_database_ddl TO PUBLIC;
 DROP ROLE regress_db_ddl_noaccess;
 
+-- Test for dropped tablespace: dattablespace pointing to a non-existent OID
+-- should not crash (see commit fixing NULL deref in pg_get_database_ddl_internal)
+CREATE DATABASE regression_database_ddl2
+  ENCODING utf8 LC_COLLATE "C" LC_CTYPE "C" TEMPLATE template0
+  OWNER regress_datdba;
+SET allow_system_table_mods = on;
+UPDATE pg_database SET dattablespace = 99999
+    WHERE datname = 'regression_database_ddl2';
+RESET allow_system_table_mods;
+SELECT ddl_filter(pg_get_database_ddl) FROM pg_get_database_ddl('regression_database_ddl2');
+SET allow_system_table_mods = on;
+UPDATE pg_database SET dattablespace =
+  (SELECT oid FROM pg_tablespace WHERE spcname = 'pg_default')
+    WHERE datname = 'regression_database_ddl2';
+RESET allow_system_table_mods;
+DROP DATABASE regression_database_ddl2;
+
 DROP DATABASE regression_database_ddl;
 DROP FUNCTION ddl_filter(text);
 DROP ROLE regress_datdba;

@@ -976,7 +976,7 @@ pg_get_database_ddl_internal(Oid dbid, bool pretty,
 	{
 		char	   *spcname = get_tablespace_name(dbform->dattablespace);
 
-		if (pg_strcasecmp(spcname, "pg_default") != 0)
+		if (spcname != NULL && pg_strcasecmp(spcname, "pg_default") != 0)
 			append_ddl_option(&buf, pretty, 4, "TABLESPACE = %s",
 							  quote_identifier(spcname));
 	}
