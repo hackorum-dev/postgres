@@ -125,6 +125,11 @@ static List *objectNamesToOids(ObjectType objtype, List *objnames,
 							   bool is_grant);
 static List *objectsInSchemaToOids(ObjectType objtype, List *nspnames);
 static List *getRelationsInNamespace(Oid namespaceId, char relkind);
+/* Single-scan helper over pg_class for multiple relkinds in one namespace */
+static void getRelationsInNamespaceMulti(Oid namespaceId,
+										 const char *relkinds,
+										 int nkinds,
+										 List **buckets);
 static void expand_col_privileges(List *colnames, Oid table_oid,
 								  AclMode this_privileges,
 								  AclMode *col_privileges,
@@ -797,16 +802,25 @@ objectsInSchemaToOids(ObjectType objtype, List *nspnames)
 		switch (objtype)
 		{
 			case OBJECT_TABLE:
-				objs = getRelationsInNamespace(namespaceId, RELKIND_RELATION);
-				objects = list_concat(objects, objs);
-				objs = getRelationsInNamespace(namespaceId, RELKIND_VIEW);
-				objects = list_concat(objects, objs);
-				objs = getRelationsInNamespace(namespaceId, RELKIND_MATVIEW);
-				objects = list_concat(objects, objs);
-				objs = getRelationsInNamespace(namespaceId, RELKIND_FOREIGN_TABLE);
-				objects = list_concat(objects, objs);
-				objs = getRelationsInNamespace(namespaceId, RELKIND_PARTITIONED_TABLE);
-				objects = list_concat(objects, objs);
+				{
+					const char kinds[] = {
+						RELKIND_RELATION,
+						RELKIND_VIEW,
+						RELKIND_MATVIEW,
+						RELKIND_FOREIGN_TABLE,
+						RELKIND_PARTITIONED_TABLE
+					};
+					List *buckets[lengthof(kinds)];
+					int i;
+
+					for (i = 0; i < (int) lengthof(kinds); i++)
+						buckets[i] = NIL;
+
+					getRelationsInNamespaceMulti(namespaceId, kinds, lengthof(kinds), buckets);
+
+					for (i = 0; i < (int) lengthof(kinds); i++)
+						objects = list_concat(objects, buckets[i]);
+				}
 				break;
 			case OBJECT_SEQUENCE:
 				objs = getRelationsInNamespace(namespaceId, RELKIND_SEQUENCE);
@@ -905,6 +919,62 @@ getRelationsInNamespace(Oid namespaceId, char relkind)
 	table_close(rel, AccessShareLock);
 
 	return relations;
+}
+
+/*
+ * getRelationsInNamespaceMulti
+ *
+ * Perform a single heap scan over pg_class for the given namespace, and
+ * distribute matching tuples into per-relkind buckets provided by the
+ * caller.  There is no pg_class index matching (relnamespace, relkind),
+ * so the previous per-relkind variant also resorted to a full heap scan;
+ * this helper simply collapses N such scans into one.
+ *
+ * Order preservation: within each bucket, entries appear in the order
+ * they were encountered during the heap scan.  Because the underlying
+ * heap (and thus its physical scan order) is the same regardless of
+ * how we filter, each bucket ends up holding the same OIDs in the same
+ * relative order as a separate per-relkind heap scan would have
+ * produced.  Concatenating the buckets in the caller's requested
+ * relkind order therefore reproduces the list that the previous code
+ * built from N separate getRelationsInNamespace() calls, tuple for
+ * tuple.
+ */
+static void
+getRelationsInNamespaceMulti(Oid namespaceId, const char *relkinds, int nkinds, List **buckets)
+{
+	ScanKeyData key;
+	Relation	rel;
+	TableScanDesc scan;
+	HeapTuple	tuple;
+	int			i;
+
+	/* Open pg_class once and scan by namespace; filter relkind in-code */
+	ScanKeyInit(&key,
+				Anum_pg_class_relnamespace,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(namespaceId));
+
+	rel = table_open(RelationRelationId, AccessShareLock);
+	scan = table_beginscan_catalog(rel, 1, &key);
+
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		Form_pg_class cform = (Form_pg_class) GETSTRUCT(tuple);
+		char		rk = cform->relkind;
+
+		for (i = 0; i < nkinds; i++)
+		{
+			if (rk == relkinds[i])
+			{
+				buckets[i] = lappend_oid(buckets[i], cform->oid);
+				break;
+			}
+		}
+	}
+
+	table_endscan(scan);
+	table_close(rel, AccessShareLock);
 }
 
 
