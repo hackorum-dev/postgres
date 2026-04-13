@@ -2148,6 +2148,29 @@ CheckTablespaceDirectory(void)
 }
 
 /*
+ * If minRecoveryPoint is just after a xlog page header, we return a pointer
+ * that points to the begin of the page, otherwise return minRecoveryPoint.
+ *
+ * The returned pointer is used for checking whether we can reach a consistent
+ * state. It's safe because we just skip the xlog page header.
+ */
+static XLogRecPtr
+GetEffectiveMinRecoveryPoint(void)
+{
+	XLogRecPtr	ptr = minRecoveryPoint;
+	uint64		pageno = XLogSegmentOffset(ptr, wal_segment_size) / XLOG_BLCKSZ;
+	uint64		pageoff = ptr % XLOG_BLCKSZ;
+
+	if (pageno == 0 && pageoff == SizeOfXLogLongPHD)
+		return ptr - SizeOfXLogLongPHD;
+
+	if (pageno > 0 && pageoff == SizeOfXLogShortPHD)
+		return ptr - SizeOfXLogShortPHD;
+
+	return ptr;
+}
+
+/*
  * Checks if recovery has reached a consistent state. When consistency is
  * reached and we have a valid starting standby snapshot, tell postmaster
  * that it can start accepting read-only connections.
@@ -2207,7 +2230,7 @@ CheckRecoveryConsistency(void)
 	 * All we know prior to that is that we're not consistent yet.
 	 */
 	if (!reachedConsistency && !backupEndRequired &&
-		minRecoveryPoint <= lastReplayedEndRecPtr)
+		GetEffectiveMinRecoveryPoint() <= lastReplayedEndRecPtr)
 	{
 		/*
 		 * Check to see if the XLOG sequence contained any unresolved
