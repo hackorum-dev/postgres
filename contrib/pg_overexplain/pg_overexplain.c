@@ -419,6 +419,7 @@ overexplain_debug(PlannedStmt *plannedstmt, ExplainState *es)
 	if (flags.len == 0)
 		appendStringInfoString(&flags, ", none");
 	ExplainPropertyText("Flags", flags.data + 2, es);
+	pfree(flags.data);
 
 	/* Various lists of integers. */
 	overexplain_bitmapset("Subplans Needing Rewind",
