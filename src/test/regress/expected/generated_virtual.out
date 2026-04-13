@@ -20,11 +20,11 @@ SELECT table_name, column_name, dependent_column FROM information_schema.column_
 (1 row)
 
 \d gtest1
-                Table "generated_virtual_tests.gtest1"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                    Table "generated_virtual_tests.gtest1"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           | not null | 
- b      | integer |           |          | generated always as (a * 2)
+ b      | integer |           |          | generated always as (a * 2) virtual
 Indexes:
     "gtest1_pkey" PRIMARY KEY, btree (a)
 
@@ -313,11 +313,11 @@ SELECT * FROM gtest1_1;
 (0 rows)
 
 \d gtest1_1
-               Table "generated_virtual_tests.gtest1_1"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                   Table "generated_virtual_tests.gtest1_1"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           | not null | 
- b      | integer |           |          | generated always as (a * 2)
+ b      | integer |           |          | generated always as (a * 2) virtual
 Inherits:
     gtest1
 
@@ -360,12 +360,12 @@ DETAIL:  Parent column is VIRTUAL, child column is STORED.
 CREATE TABLE gtestx (x int, b int GENERATED ALWAYS AS (a * 22) VIRTUAL) INHERITS (gtest1);  -- ok, overrides parent
 NOTICE:  merging column "b" with inherited definition
 \d+ gtestx
-                                    Table "generated_virtual_tests.gtestx"
- Column |  Type   | Collation | Nullable |           Default            | Storage | Stats target | Description 
---------+---------+-----------+----------+------------------------------+---------+--------------+-------------
- a      | integer |           | not null |                              | plain   |              | 
- b      | integer |           |          | generated always as (a * 22) | plain   |              | 
- x      | integer |           |          |                              | plain   |              | 
+                                        Table "generated_virtual_tests.gtestx"
+ Column |  Type   | Collation | Nullable |               Default                | Storage | Stats target | Description 
+--------+---------+-----------+----------+--------------------------------------+---------+--------------+-------------
+ a      | integer |           | not null |                                      | plain   |              | 
+ b      | integer |           |          | generated always as (a * 22) virtual | plain   |              | 
+ x      | integer |           |          |                                      | plain   |              | 
 Not-null constraints:
     "gtest1_a_not_null" NOT NULL "a" (inherited)
 Inherits:
@@ -414,11 +414,11 @@ NOTICE:  merging multiple inherited definitions of column "b"
 NOTICE:  moving and merging column "b" with inherited definition
 DETAIL:  User-specified column moved to the position of the inherited column.
 \d gtest1_y
-               Table "generated_virtual_tests.gtest1_y"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                   Table "generated_virtual_tests.gtest1_y"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           | not null | 
- b      | integer |           |          | generated always as (x + 1)
+ b      | integer |           |          | generated always as (x + 1) virtual
  x      | integer |           |          | 
 Inherits:
     gtest1
@@ -661,11 +661,11 @@ SELECT pg_relation_filenode('gtest20') = :gtest20_filenode AS is_same_file;
 (1 row)
 
 \d gtest20
-                Table "generated_virtual_tests.gtest20"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                    Table "generated_virtual_tests.gtest20"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           | not null | 
- b      | integer |           |          | generated always as (a * 4)
+ b      | integer |           |          | generated always as (a * 4) virtual
  c      | integer |           |          | 11
 Indexes:
     "gtest20_pkey" PRIMARY KEY, btree (a)
@@ -948,30 +948,30 @@ DROP TABLE gtest_child3;
 CREATE TABLE gtest_child3 (f1 date NOT NULL, f2 bigint, f3 bigint GENERATED ALWAYS AS (f2 * 33) VIRTUAL);
 ALTER TABLE gtest_parent ATTACH PARTITION gtest_child3 FOR VALUES FROM ('2016-09-01') TO ('2016-10-01');
 \d gtest_child
-              Table "generated_virtual_tests.gtest_child"
- Column |  Type  | Collation | Nullable |           Default            
---------+--------+-----------+----------+------------------------------
+                  Table "generated_virtual_tests.gtest_child"
+ Column |  Type  | Collation | Nullable |               Default                
+--------+--------+-----------+----------+--------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 2)
+ f3     | bigint |           |          | generated always as (f2 * 2) virtual
 Partition of: gtest_parent FOR VALUES FROM ('07-01-2016') TO ('08-01-2016')
 
 \d gtest_child2
-              Table "generated_virtual_tests.gtest_child2"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
+                  Table "generated_virtual_tests.gtest_child2"
+ Column |  Type  | Collation | Nullable |                Default                
+--------+--------+-----------+----------+---------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 22)
+ f3     | bigint |           |          | generated always as (f2 * 22) virtual
 Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
 
 \d gtest_child3
-              Table "generated_virtual_tests.gtest_child3"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
+                  Table "generated_virtual_tests.gtest_child3"
+ Column |  Type  | Collation | Nullable |                Default                
+--------+--------+-----------+----------+---------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 33)
+ f3     | bigint |           |          | generated always as (f2 * 33) virtual
 Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
 
 INSERT INTO gtest_parent (f1, f2) VALUES ('2016-07-15', 1);
@@ -1016,40 +1016,40 @@ SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
 ALTER TABLE ONLY gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 4);
 ALTER TABLE gtest_child ALTER COLUMN f3 SET EXPRESSION AS (f2 * 10);
 \d gtest_parent
-       Partitioned table "generated_virtual_tests.gtest_parent"
- Column |  Type  | Collation | Nullable |           Default            
---------+--------+-----------+----------+------------------------------
+           Partitioned table "generated_virtual_tests.gtest_parent"
+ Column |  Type  | Collation | Nullable |               Default                
+--------+--------+-----------+----------+--------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 4)
+ f3     | bigint |           |          | generated always as (f2 * 4) virtual
 Partition key: RANGE (f1)
 Number of partitions: 3 (Use \d+ to list them.)
 
 \d gtest_child
-              Table "generated_virtual_tests.gtest_child"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
+                  Table "generated_virtual_tests.gtest_child"
+ Column |  Type  | Collation | Nullable |                Default                
+--------+--------+-----------+----------+---------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 10)
+ f3     | bigint |           |          | generated always as (f2 * 10) virtual
 Partition of: gtest_parent FOR VALUES FROM ('07-01-2016') TO ('08-01-2016')
 
 \d gtest_child2
-              Table "generated_virtual_tests.gtest_child2"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
+                  Table "generated_virtual_tests.gtest_child2"
+ Column |  Type  | Collation | Nullable |                Default                
+--------+--------+-----------+----------+---------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 22)
+ f3     | bigint |           |          | generated always as (f2 * 22) virtual
 Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
 
 \d gtest_child3
-              Table "generated_virtual_tests.gtest_child3"
- Column |  Type  | Collation | Nullable |            Default            
---------+--------+-----------+----------+-------------------------------
+                  Table "generated_virtual_tests.gtest_child3"
+ Column |  Type  | Collation | Nullable |                Default                
+--------+--------+-----------+----------+---------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 33)
+ f3     | bigint |           |          | generated always as (f2 * 33) virtual
 Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
 
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
@@ -1072,40 +1072,40 @@ ALTER TABLE gtest_parent DROP CONSTRAINT cc;
 -- alter generation expression of parent and all its children altogether
 ALTER TABLE gtest_parent ALTER COLUMN f3 SET EXPRESSION AS (f2 * 2);
 \d gtest_parent
-       Partitioned table "generated_virtual_tests.gtest_parent"
- Column |  Type  | Collation | Nullable |           Default            
---------+--------+-----------+----------+------------------------------
+           Partitioned table "generated_virtual_tests.gtest_parent"
+ Column |  Type  | Collation | Nullable |               Default                
+--------+--------+-----------+----------+--------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 2)
+ f3     | bigint |           |          | generated always as (f2 * 2) virtual
 Partition key: RANGE (f1)
 Number of partitions: 3 (Use \d+ to list them.)
 
 \d gtest_child
-              Table "generated_virtual_tests.gtest_child"
- Column |  Type  | Collation | Nullable |           Default            
---------+--------+-----------+----------+------------------------------
+                  Table "generated_virtual_tests.gtest_child"
+ Column |  Type  | Collation | Nullable |               Default                
+--------+--------+-----------+----------+--------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 2)
+ f3     | bigint |           |          | generated always as (f2 * 2) virtual
 Partition of: gtest_parent FOR VALUES FROM ('07-01-2016') TO ('08-01-2016')
 
 \d gtest_child2
-             Table "generated_virtual_tests.gtest_child2"
- Column |  Type  | Collation | Nullable |           Default            
---------+--------+-----------+----------+------------------------------
+                 Table "generated_virtual_tests.gtest_child2"
+ Column |  Type  | Collation | Nullable |               Default                
+--------+--------+-----------+----------+--------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 2)
+ f3     | bigint |           |          | generated always as (f2 * 2) virtual
 Partition of: gtest_parent FOR VALUES FROM ('08-01-2016') TO ('09-01-2016')
 
 \d gtest_child3
-             Table "generated_virtual_tests.gtest_child3"
- Column |  Type  | Collation | Nullable |           Default            
---------+--------+-----------+----------+------------------------------
+                 Table "generated_virtual_tests.gtest_child3"
+ Column |  Type  | Collation | Nullable |               Default                
+--------+--------+-----------+----------+--------------------------------------
  f1     | date   |           | not null | 
  f2     | bigint |           |          | 
- f3     | bigint |           |          | generated always as (f2 * 2)
+ f3     | bigint |           |          | generated always as (f2 * 2) virtual
 Partition of: gtest_parent FOR VALUES FROM ('09-01-2016') TO ('10-01-2016')
 
 SELECT tableoid::regclass, * FROM gtest_parent ORDER BY 1, 2, 3;
@@ -1172,15 +1172,15 @@ SELECT * FROM gtest25 ORDER BY a;
 (2 rows)
 
 \d gtest25
-                             Table "generated_virtual_tests.gtest25"
- Column |       Type       | Collation | Nullable |                    Default                    
---------+------------------+-----------+----------+-----------------------------------------------
+                                 Table "generated_virtual_tests.gtest25"
+ Column |       Type       | Collation | Nullable |                        Default                        
+--------+------------------+-----------+----------+-------------------------------------------------------
  a      | integer          |           | not null | 
- b      | integer          |           |          | generated always as (a * 3)
+ b      | integer          |           |          | generated always as (a * 3) virtual
  c      | integer          |           |          | 42
- x      | integer          |           |          | generated always as (c * 4)
+ x      | integer          |           |          | generated always as (c * 4) virtual
  d      | double precision |           |          | 101
- y      | double precision |           |          | generated always as (d * 4::double precision)
+ y      | double precision |           |          | generated always as (d * 4::double precision) virtual
 Indexes:
     "gtest25_pkey" PRIMARY KEY, btree (a)
 
@@ -1196,12 +1196,12 @@ ERROR:  cannot alter type of a column used by a generated column
 DETAIL:  Column "a" is used by generated column "x".
 ALTER TABLE gtest27 ALTER COLUMN x TYPE numeric;
 \d gtest27
-                    Table "generated_virtual_tests.gtest27"
- Column |  Type   | Collation | Nullable |               Default               
---------+---------+-----------+----------+-------------------------------------
+                        Table "generated_virtual_tests.gtest27"
+ Column |  Type   | Collation | Nullable |                   Default                   
+--------+---------+-----------+----------+---------------------------------------------
  a      | integer |           |          | 
  b      | integer |           |          | 
- x      | numeric |           |          | generated always as (((a + b) * 2))
+ x      | numeric |           |          | generated always as (((a + b) * 2)) virtual
 
 SELECT * FROM gtest27;
  a | b  | x  
@@ -1233,12 +1233,12 @@ ALTER TABLE gtest27
   ALTER COLUMN b TYPE bigint,
   ADD COLUMN x bigint GENERATED ALWAYS AS ((a + b) * 2) VIRTUAL;
 \d gtest27
-                  Table "generated_virtual_tests.gtest27"
- Column |  Type  | Collation | Nullable |              Default              
---------+--------+-----------+----------+-----------------------------------
+                      Table "generated_virtual_tests.gtest27"
+ Column |  Type  | Collation | Nullable |                  Default                  
+--------+--------+-----------+----------+-------------------------------------------
  a      | bigint |           |          | 
  b      | bigint |           |          | 
- x      | bigint |           |          | generated always as ((a + b) * 2)
+ x      | bigint |           |          | generated always as ((a + b) * 2) virtual
 
 -- Ideally you could just do this, but not today (and should x change type?):
 ALTER TABLE gtest27
@@ -1247,12 +1247,12 @@ ALTER TABLE gtest27
 ERROR:  cannot alter type of a column used by a generated column
 DETAIL:  Column "a" is used by generated column "x".
 \d gtest27
-                  Table "generated_virtual_tests.gtest27"
- Column |  Type  | Collation | Nullable |              Default              
---------+--------+-----------+----------+-----------------------------------
+                      Table "generated_virtual_tests.gtest27"
+ Column |  Type  | Collation | Nullable |                  Default                  
+--------+--------+-----------+----------+-------------------------------------------
  a      | bigint |           |          | 
  b      | bigint |           |          | 
- x      | bigint |           |          | generated always as ((a + b) * 2)
+ x      | bigint |           |          | generated always as ((a + b) * 2) virtual
 
 SELECT * FROM gtest27;
  a | b  | x  
@@ -1275,11 +1275,11 @@ SELECT * FROM gtest29;
 (2 rows)
 
 \d gtest29
-                Table "generated_virtual_tests.gtest29"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                    Table "generated_virtual_tests.gtest29"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 2)
+ b      | integer |           |          | generated always as (a * 2) virtual
 
 ALTER TABLE gtest29 ALTER COLUMN a SET EXPRESSION AS (a * 3);  -- error
 ERROR:  column "a" of relation "gtest29" is not a generated column
@@ -1297,11 +1297,11 @@ SELECT * FROM gtest29;
 (2 rows)
 
 \d gtest29
-                Table "generated_virtual_tests.gtest29"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                    Table "generated_virtual_tests.gtest29"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 3)
+ b      | integer |           |          | generated always as (a * 3) virtual
 
 ALTER TABLE gtest29 ALTER COLUMN b DROP EXPRESSION;  -- not supported
 ERROR:  ALTER TABLE / DROP EXPRESSION is not supported for virtual generated columns
@@ -1319,11 +1319,11 @@ SELECT * FROM gtest29;
 (3 rows)
 
 \d gtest29
-                Table "generated_virtual_tests.gtest29"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                    Table "generated_virtual_tests.gtest29"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 3)
+ b      | integer |           |          | generated always as (a * 3) virtual
 
 -- check that dependencies between columns have also been removed
 --ALTER TABLE gtest29 DROP COLUMN a;  -- should not drop b
@@ -1338,19 +1338,19 @@ ALTER TABLE gtest30 ALTER COLUMN b DROP EXPRESSION;
 ERROR:  ALTER TABLE / DROP EXPRESSION is not supported for virtual generated columns
 DETAIL:  Column "b" of relation "gtest30" is a virtual generated column.
 \d gtest30
-                Table "generated_virtual_tests.gtest30"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                    Table "generated_virtual_tests.gtest30"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 2)
+ b      | integer |           |          | generated always as (a * 2) virtual
 Number of child tables: 1 (Use \d+ to list them.)
 
 \d gtest30_1
-               Table "generated_virtual_tests.gtest30_1"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                   Table "generated_virtual_tests.gtest30_1"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 2)
+ b      | integer |           |          | generated always as (a * 2) virtual
 Inherits:
     gtest30
 
@@ -1364,19 +1364,19 @@ CREATE TABLE gtest30_1 () INHERITS (gtest30);
 ALTER TABLE ONLY gtest30 ALTER COLUMN b DROP EXPRESSION;  -- error
 ERROR:  ALTER TABLE / DROP EXPRESSION must be applied to child tables too
 \d gtest30
-                Table "generated_virtual_tests.gtest30"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                    Table "generated_virtual_tests.gtest30"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 2)
+ b      | integer |           |          | generated always as (a * 2) virtual
 Number of child tables: 1 (Use \d+ to list them.)
 
 \d gtest30_1
-               Table "generated_virtual_tests.gtest30_1"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                   Table "generated_virtual_tests.gtest30_1"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  a      | integer |           |          | 
- b      | integer |           |          | generated always as (a * 2)
+ b      | integer |           |          | generated always as (a * 2) virtual
 Inherits:
     gtest30
 
@@ -1563,19 +1563,19 @@ CREATE TABLE gtest28a (
 ALTER TABLE gtest28a DROP COLUMN a;
 CREATE TABLE gtest28b (LIKE gtest28a INCLUDING GENERATED);
 \d gtest28*
-               Table "generated_virtual_tests.gtest28a"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                   Table "generated_virtual_tests.gtest28a"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  b      | integer |           |          | 
  c      | integer |           |          | 
- x      | integer |           |          | generated always as (b * 2)
+ x      | integer |           |          | generated always as (b * 2) virtual
 
-               Table "generated_virtual_tests.gtest28b"
- Column |  Type   | Collation | Nullable |           Default           
---------+---------+-----------+----------+-----------------------------
+                   Table "generated_virtual_tests.gtest28b"
+ Column |  Type   | Collation | Nullable |               Default               
+--------+---------+-----------+----------+-------------------------------------
  b      | integer |           |          | 
  c      | integer |           |          | 
- x      | integer |           |          | generated always as (b * 2)
+ x      | integer |           |          | generated always as (b * 2) virtual
 
 -- rule actions referring to generated columns:
 -- NEW.b in a rule action should reflect the generated column's new value
