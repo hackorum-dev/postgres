@@ -224,7 +224,8 @@ static int32 partition_rbound_cmp(int partnatts, FmgrInfo *partsupfunc,
 static int	partition_range_bsearch(int partnatts, FmgrInfo *partsupfunc,
 									Oid *partcollation,
 									PartitionBoundInfo boundinfo,
-									PartitionRangeBound *probe, int32 *cmpval);
+									PartitionRangeBound *lower,
+									PartitionRangeBound *upper);
 static Expr *make_partition_op_expr(PartitionKey key, int keynum,
 									uint16 strategy, Expr *arg1, Expr *arg2);
 static Oid	get_partition_operator(PartitionKey key, int col,
@@ -677,8 +678,7 @@ create_range_bounds(PartitionBoundSpec **boundspecs, int nparts,
 {
 	PartitionBoundInfo boundinfo;
 	PartitionRangeBound **rbounds = NULL;
-	PartitionRangeBound **all_bounds,
-			   *prev;
+	PartitionRangeBound **all_bounds;
 	int			i,
 				k,
 				partnatts;
@@ -728,61 +728,12 @@ create_range_bounds(PartitionBoundSpec **boundspecs, int nparts,
 	Assert(ndatums == nparts * 2 ||
 		   (default_index != -1 && ndatums == (nparts - 1) * 2));
 
-	/* Sort all the bounds in ascending order */
-	qsort_arg(all_bounds, ndatums,
-			  sizeof(PartitionRangeBound *),
-			  qsort_partition_rbound_cmp,
-			  key);
-
-	/* Save distinct bounds from all_bounds into rbounds. */
 	rbounds = (PartitionRangeBound **)
 		palloc(ndatums * sizeof(PartitionRangeBound *));
 	k = 0;
-	prev = NULL;
 	for (i = 0; i < ndatums; i++)
 	{
-		PartitionRangeBound *cur = all_bounds[i];
-		bool		is_distinct = false;
-		int			j;
-
-		/* Is the current bound distinct from the previous one? */
-		for (j = 0; j < key->partnatts; j++)
-		{
-			Datum		cmpval;
-
-			if (prev == NULL || cur->kind[j] != prev->kind[j])
-			{
-				is_distinct = true;
-				break;
-			}
-
-			/*
-			 * If the bounds are both MINVALUE or MAXVALUE, stop now and treat
-			 * them as equal, since any values after this point must be
-			 * ignored.
-			 */
-			if (cur->kind[j] != PARTITION_RANGE_DATUM_VALUE)
-				break;
-
-			cmpval = FunctionCall2Coll(&key->partsupfunc[j],
-									   key->partcollation[j],
-									   cur->datums[j],
-									   prev->datums[j]);
-			if (DatumGetInt32(cmpval) != 0)
-			{
-				is_distinct = true;
-				break;
-			}
-		}
-
-		/*
-		 * Only if the bound is distinct save it into a temporary array, i.e,
-		 * rbounds which is later copied into boundinfo datums array.
-		 */
-		if (is_distinct)
 			rbounds[k++] = all_bounds[i];
-
-		prev = cur;
 	}
 
 	pfree(all_bounds);
@@ -3127,6 +3078,7 @@ check_new_partition_bound(char *relname, Relation parent,
 
 				if (partdesc->nparts > 0)
 				{
+					/* if key->partnatts == 1 or ? boundinfo->ndatums */
 					int			offset;
 
 					Assert(boundinfo &&
@@ -3152,68 +3104,10 @@ check_new_partition_bound(char *relname, Relation parent,
 					offset = partition_range_bsearch(key->partnatts,
 													 key->partsupfunc,
 													 key->partcollation,
-													 boundinfo, lower,
-													 &cmpval);
+													 boundinfo, lower, upper);
 
-					if (boundinfo->indexes[offset + 1] < 0)
-					{
-						/*
-						 * Check that the new partition will fit in the gap.
-						 * For it to fit, the new upper bound must be less
-						 * than or equal to the lower bound of the next
-						 * partition, if there is one.
-						 */
-						if (offset + 1 < boundinfo->ndatums)
-						{
-							Datum	   *datums;
-							PartitionRangeDatumKind *kind;
-							bool		is_lower;
-
-							datums = boundinfo->datums[offset + 1];
-							kind = boundinfo->kind[offset + 1];
-							is_lower = (boundinfo->indexes[offset + 1] == -1);
-
-							cmpval = partition_rbound_cmp(key->partnatts,
-														  key->partsupfunc,
-														  key->partcollation,
-														  datums, kind,
-														  is_lower, upper);
-							if (cmpval < 0)
-							{
-								/*
-								 * Point to problematic key in the upper
-								 * datums list.
-								 */
-								PartitionRangeDatum *datum =
-									list_nth(spec->upperdatums, abs(cmpval) - 1);
-
-								/*
-								 * The new partition overlaps with the
-								 * existing partition between offset + 1 and
-								 * offset + 2.
-								 */
-								overlap = true;
-								overlap_location = datum->location;
-								with = boundinfo->indexes[offset + 2];
-							}
-						}
-					}
-					else
-					{
-						/*
-						 * The new partition overlaps with the existing
-						 * partition between offset and offset + 1.
-						 */
-						PartitionRangeDatum *datum;
-
-						/*
-						 * Point to problematic key in the lower datums list;
-						 * if we have equality, point to the first one.
-						 */
-						datum = cmpval == 0 ? linitial(spec->lowerdatums) :
-							list_nth(spec->lowerdatums, abs(cmpval) - 1);
+					if (offset > -1) {
 						overlap = true;
-						overlap_location = datum->location;
 						with = boundinfo->indexes[offset + 1];
 					}
 				}
@@ -3646,34 +3540,133 @@ static int
 partition_range_bsearch(int partnatts, FmgrInfo *partsupfunc,
 						Oid *partcollation,
 						PartitionBoundInfo boundinfo,
-						PartitionRangeBound *probe, int32 *cmpval)
+						PartitionRangeBound *lower,
+						PartitionRangeBound *upper)
 {
-	int			lo,
-				hi,
-				mid;
+	int offset = -1;
+	int d, partattr;
+	int32 cmpval1, cmpval2;
 
-	lo = -1;
-	hi = boundinfo->ndatums - 1;
-	while (lo < hi)
+	Datum *lower_datums, *upper_datums;
+
+	fprintf(stdout,"Func : partition_range_bsearch : \n");
+	fprintf(stdout,"\n# Partition by range (relevant for 2D partition key, for Python script) : \n");
+
+	/* New the partition by range */
+	partattr = 0;
+	fprintf(stdout,"range((");
+	while (partattr < partnatts) {
+		fprintf(stdout, "%lu, ", lower->datums[partattr]);
+		partattr++;
+	}
+	fprintf(stdout,"), ");
+
+	partattr = 0;
+	fprintf(stdout,"(");
+	while (partattr < partnatts) {
+		fprintf(stdout, "%lu, ", upper->datums[partattr]);
+		partattr++;
+	}
+	fprintf(stdout,"), 'new', facecolor='black', edgecolor='yellow')\n");
+
+	/* Existing the partition by range */
+	d = 0;
+	while ( d < boundinfo->ndatums - 1 )
 	{
-		mid = (lo + hi + 1) / 2;
-		*cmpval = partition_rbound_cmp(partnatts, partsupfunc,
-									   partcollation,
-									   boundinfo->datums[mid],
-									   boundinfo->kind[mid],
-									   (boundinfo->indexes[mid] == -1),
-									   probe);
-		if (*cmpval <= 0)
+		if ( boundinfo->indexes[d] == -1 && boundinfo->indexes[d+1] > -1 )
 		{
-			lo = mid;
-			if (*cmpval == 0)
-				break;
+			lower_datums = boundinfo->datums[d];
+			upper_datums = boundinfo->datums[d+1];
+
+			partattr = 0;
+			fprintf(stdout,"range((");
+			while (partattr < partnatts) {
+				fprintf(stdout, "%lu, ", lower_datums[partattr]);
+				partattr++;
+			}
+			fprintf(stdout,"), ");
+
+			partattr = 0;
+			fprintf(stdout,"(");
+			while (partattr < partnatts) {
+				fprintf(stdout, "%lu, ", upper_datums[partattr]);
+				partattr++;
+			}
+			fprintf(stdout,"),'p-%d')\n", boundinfo->indexes[d+1]);
+
+			d+=2;
 		}
 		else
-			hi = mid - 1;
+			d++;
+	}
+	fprintf(stdout,"\n");
+	fflush(stdout);
+
+	/* Search algorithm */
+	d = 0;
+	while ( d < boundinfo->ndatums )
+	{
+		if ( (boundinfo->indexes[d] == -1) && (boundinfo->indexes[d+1] > -1) )
+		{
+			lower_datums = boundinfo->datums[d];
+			upper_datums = boundinfo->datums[d+1];
+
+			partattr = 0;
+			while (partattr < partnatts)
+			{
+				cmpval1 = DatumGetInt32(FunctionCall2Coll(&partsupfunc[partattr], partcollation[partattr],
+														 upper_datums[partattr], lower->datums[partattr]));
+
+				cmpval2 = DatumGetInt32(FunctionCall2Coll(&partsupfunc[partattr], partcollation[partattr],
+														 upper->datums[partattr], lower_datums[partattr]));
+
+				/* Step of the search algorithm */
+				/* datums_lower[partattr], datums_upper[partattr] ;
+				 * probe->datums[partattr], upper->datums[partattr];
+				 * a,a'; b,b' -> a_k' < b_k OR b_k' < a_k
+				 */
+				fprintf(stdout, "Range : Exists( %lu, %lu), New( %lu, %lu)\n",
+					lower_datums[partattr], upper_datums[partattr],
+					lower->datums[partattr], upper->datums[partattr]);
+				fprintf(stdout, "Condition: 1) %lu < %lu : result = %d or 2) %lu < %lu : result = %d; attr = %d; ",
+					upper_datums[partattr], lower->datums[partattr], cmpval1,
+					upper->datums[partattr], lower_datums[partattr], cmpval2,
+					partattr);
+
+				if ( cmpval1 < 1 || cmpval2 < 1 )
+				{
+					/* The partition range passed the check - there are no intersections
+					 * with the new partition range.
+					 * Then exit the loop with the value partnatts++
+					 */
+					partattr = partnatts;
+					fprintf(stdout, "[CHECK OK].");
+				}
+
+				partattr++;
+				fprintf(stdout,"\n");
+				fflush(stdout);
+			}
+
+			if (partattr == partnatts)
+			{
+				/* This condition means that in the while loop for all <partattr>,
+				 * there is an intersection of ranges across all partition key value.
+				 * Therefore, we can skip further partition range checks.
+				 */
+				offset = d;
+				d = boundinfo->ndatums + 3;
+			}
+			d+=2;
+		}
+		else
+			d++;
 	}
 
-	return lo;
+	fprintf(stdout,"New the partition by range : %s.\n", (d == boundinfo->ndatums + 3) ? "ERROR" : "OK" );
+	fflush(stdout);
+
+	return offset;
 }
 
 /*
@@ -3689,36 +3682,103 @@ partition_range_datum_bsearch(FmgrInfo *partsupfunc, Oid *partcollation,
 							  PartitionBoundInfo boundinfo,
 							  int nvalues, const Datum *values, bool *is_equal)
 {
-	int			lo,
-				hi,
-				mid;
+	int offset = -1;
+	int d, partattr;
+	int32 cmpval1, cmpval2;
 
-	lo = -1;
-	hi = boundinfo->ndatums - 1;
-	while (lo < hi)
+	Datum *lower_datums, *upper_datums;
+	fprintf(stdout,"Func : partition_range_datum_bsearch : nvalues = %d\n", nvalues);
+	fprintf(stdout,"\n# Partition by range (relevant for 2D partition key, for Python script) : \n");
+
+	/* New the partition key */
+	partattr = 0;
+	fprintf(stdout,"key((");
+	while (partattr < nvalues) {
+		fprintf(stdout, "%lu, ", values[partattr]);
+		partattr++;
+	}
+	fprintf(stdout,"), 0.3)\n");
+
+	/* Existing the partition by range */
+	d = 0;
+	while ( d < boundinfo->ndatums - 1 )
 	{
-		int32		cmpval;
-
-		mid = (lo + hi + 1) / 2;
-		cmpval = partition_rbound_datum_cmp(partsupfunc,
-											partcollation,
-											boundinfo->datums[mid],
-											boundinfo->kind[mid],
-											values,
-											nvalues);
-		if (cmpval <= 0)
+		if ( boundinfo->indexes[d] == -1 && boundinfo->indexes[d+1] > -1 )
 		{
-			lo = mid;
-			*is_equal = (cmpval == 0);
+			lower_datums = boundinfo->datums[d];
+			upper_datums = boundinfo->datums[d+1];
 
-			if (*is_equal)
-				break;
+			partattr = 0;
+			fprintf(stdout,"range((");
+			while (partattr < nvalues) {
+				fprintf(stdout, "%lu, ", lower_datums[partattr]);
+				partattr++;
+			}
+			fprintf(stdout,"), ");
+
+			partattr = 0;
+			fprintf(stdout,"(");
+			while (partattr < nvalues) {
+				fprintf(stdout, "%lu, ", upper_datums[partattr]);
+				partattr++;
+			}
+			fprintf(stdout,"),'p-%d')\n", boundinfo->indexes[d+1]);
+
+			d+=2;
 		}
 		else
-			hi = mid - 1;
+			d++;
+	}
+	fprintf(stdout,"\n");
+	fflush(stdout);
+
+	/* Search algorithm */
+	d = 0;
+	while ( d < boundinfo->ndatums )
+	{
+		if ( (boundinfo->indexes[d] == -1) && (boundinfo->indexes[d+1] > -1) )
+		{
+			lower_datums = boundinfo->datums[d];
+			upper_datums = boundinfo->datums[d+1];
+
+			partattr = 0;
+			while (partattr < nvalues)
+			{
+				cmpval1 = DatumGetInt32(FunctionCall2Coll(&partsupfunc[partattr], partcollation[partattr],
+														 lower_datums[partattr], values[partattr]));
+
+				cmpval2 = DatumGetInt32(FunctionCall2Coll(&partsupfunc[partattr], partcollation[partattr],
+														 values[partattr], upper_datums[partattr]));
+
+				/* Step of the search algorithm */
+				fprintf(stdout, "Range : Exists(%lu, %lu), Key(%lu)\n",  lower_datums[partattr], upper_datums[partattr], values[partattr]);
+
+				if ( !(cmpval1 < 1 && cmpval2 < 1) )
+				{
+					partattr = nvalues;
+					fprintf(stdout, "[KEY OUT RANGE].");
+				}
+
+				partattr++;
+				fprintf(stdout,"\n");
+				fflush(stdout);
+			}
+
+			if (partattr == nvalues)
+			{
+				offset = d;
+				d = boundinfo->ndatums + 3;
+			}
+			d+=2;
+		}
+		else
+			d++;
 	}
 
-	return lo;
+	fprintf(stdout,"New partition key : %s.\n", (d == boundinfo->ndatums + 3) ? "OK" : "ERROR" );
+	fflush(stdout);
+
+	return offset;
 }
 
 /*
