@@ -71,7 +71,7 @@ PartitionDesc
 RelationGetPartitionDesc(Relation rel, bool omit_detached)
 {
 	Assert(rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE);
-
+	return RelationBuildPartitionDesc(rel, omit_detached);
 	/*
 	 * If relcache has a partition descriptor, use that.  However, we can only
 	 * do so when we are asked to include all partitions including detached;
@@ -307,8 +307,29 @@ retry:
 	 * Create PartitionBoundInfo and mapping, working in the caller's context.
 	 * This could fail, but we haven't done any damage if so.
 	 */
-	if (nparts > 0)
+	if (nparts > 0) {
 		boundinfo = partition_bounds_create(boundspecs, nparts, key, &mapping);
+
+		int d = 0, partattr;
+
+		fprintf(stdout,"BoundInfo : \n");
+		while ( d < boundinfo->ndatums )
+		{
+			/*cur_datum = boundinfo->datums[d];*/
+			fprintf(stdout,"Index = %d, Range (",boundinfo->indexes[d]);
+
+			partattr = 0;
+			while (partattr < key->partnatts)
+			{
+				fprintf(stdout," %lu, ", boundinfo->datums[d][partattr]);
+				partattr++;
+			}
+			fprintf(stdout,");\n");
+			fflush(stdout);
+
+			d++;
+		}
+	}
 
 	/*
 	 * Now build the actual relcache partition descriptor, copying all the

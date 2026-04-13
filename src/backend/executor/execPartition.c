@@ -1684,7 +1684,7 @@ get_partition_for_tuple(PartitionDispatch pd, const Datum *values, const bool *i
 				if (range_partkey_has_null)
 					break;
 
-				if (partdesc->last_found_count >= PARTITION_CACHED_FIND_THRESHOLD)
+				if (partdesc->last_found_count >= PARTITION_CACHED_FIND_THRESHOLD && false /* temporary disable */)
 				{
 					int			last_datum_offset = partdesc->last_found_datum_index;
 					Datum	   *lastDatums = boundinfo->datums[last_datum_offset];
