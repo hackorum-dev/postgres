@@ -8,11 +8,13 @@
 #include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "utils/guc.h"
+#include "ziggurat.h"
 
 /* GUCs. */
 static int	io_limit_ios_per_second = 0;
 static int	io_limit_read_per_second = 0;
 static int	io_limit_write_per_second = 0;
+static int	io_limit_mean_delay = 0;
 
 typedef struct io_limit_control_data
 {
@@ -29,6 +31,8 @@ typedef struct io_limit_control_data
 	int			op_ns;
 	int			read_block_ns;
 	int			write_block_ns;
+
+	double		ios_probability;
 }			io_limit_control_data;
 
 static io_limit_control_data * io_limit_control;
@@ -39,6 +43,7 @@ static void io_limit_shmem_init(void *arg);
 static void assign_io_limit_ios_per_second(int newval, void *extra);
 static void assign_io_limit_read_per_second(int newval, void *extra);
 static void assign_io_limit_write_per_second(int newval, void *extra);
+static void assign_io_mean(int newval, void *extra);
 static const char *show_io_limit_ios_per_second(void);
 static const char *show_io_limit_read_per_second(void);
 static const char *show_io_limit_write_per_second(void);
@@ -95,6 +100,18 @@ _PG_init(void)
 							NULL,
 							assign_io_limit_write_per_second,
 							show_io_limit_write_per_second);
+	DefineCustomIntVariable("io_limit.mean_delay",
+							"For sampling delays from the geometric distribution, "
+							"mean delay in ns (1/p).",
+							"If set to zero, no random sampling is performed.",
+							&io_limit_mean_delay,
+							0,
+							0, INT_MAX,
+							PGC_USERSET,
+							0,
+							NULL,
+							assign_io_mean,
+							show_io_limit_ios_per_second);
 
 	MarkGUCPrefixReserved("io_limit");
 	RegisterShmemCallbacks(&io_limit_shmem_callbacks);
@@ -122,6 +139,8 @@ io_limit_shmem_init(void *arg)
 	assign_io_limit_ios_per_second(io_limit_ios_per_second, NULL);
 	assign_io_limit_read_per_second(io_limit_read_per_second, NULL);
 	assign_io_limit_write_per_second(io_limit_write_per_second, NULL);
+
+	assign_io_mean(io_limit_mean_delay, NULL);
 }
 
 static void
@@ -136,7 +155,25 @@ assign_io_limit(int *wait_ns, int per_second)
 	io_limit_control->enabled =
 		io_limit_control->op_ns > 0 ||
 		io_limit_control->read_block_ns > 0 ||
-		io_limit_control->write_block_ns > 0;
+		io_limit_control->write_block_ns > 0 ||
+		io_limit_control->ios_probability > 0;
+	LWLockRelease(&io_limit_control->lock);
+}
+
+static void
+assign_io_mean(int newval, void *extra)
+{
+	/* Ignore call from _PG_init() before ready. */
+	if (!io_limit_control)
+		return;
+
+	LWLockAcquire(&io_limit_control->lock, LW_EXCLUSIVE);
+	io_limit_control->ios_probability = 1.0 / (double) newval;
+	io_limit_control->enabled =
+		io_limit_control->op_ns > 0 ||
+		io_limit_control->read_block_ns > 0 ||
+		io_limit_control->write_block_ns > 0 ||
+		io_limit_control->ios_probability > 0;
 	LWLockRelease(&io_limit_control->lock);
 }
 
@@ -251,9 +288,17 @@ io_limit_on_perform(PgAioHandle *ioh)
 	int			op_ns;
 	int			read_block_ns;
 	int			write_block_ns;
+	double		ios_probability;
 
 	if (!io_limit_control->enabled)
 		return;
+
+	ios_probability = io_limit_control->ios_probability;
+	if (ios_probability)
+	{
+		int delay = random_geometric_inversion(io_limit_control->ios_probability);
+		io_limit_wait(&io_limit_control->op_next_ns, delay);
+	}
 
 	op_ns = io_limit_control->op_ns;
 	if (op_ns)
