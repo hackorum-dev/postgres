@@ -51,7 +51,6 @@ test_cplusplus_add(PG_FUNCTION_ARGS)
 		(void) rtr;
 	}
 
-	StaticAssertStmt(sizeof(int32) == 4, "int32 should be 4 bytes");
 	(void) StaticAssertExpr(sizeof(int64) == 8, "int64 should be 8 bytes");
 
 	list_free(list);
