@@ -418,6 +418,11 @@ mdunlinkfork(RelFileLocatorBackend rlocator, ForkNumber forknum, bool isRedo)
 		/* Prevent other backends' fds from holding on to the disk space */
 		ret = do_truncate(path.str);
 
+		/* Forget any pending sync requests for the first segment */
+		save_errno = errno;
+		register_forget_request(rlocator, forknum, 0 /* first seg */ );
+		errno = save_errno;
+
 		/* Register request to unlink first segment later */
 		save_errno = errno;
 		register_unlink_tombstone(rlocator);
