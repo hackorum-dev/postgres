@@ -287,6 +287,32 @@ explain (costs off)  -- this should not require a sort
   select * from overview where sqli = 'foo' order by sqli;
 
 --
+-- check that incomplete opfamily does not cause merge join to crash.
+-- the < operator for int8alias1 is temporarily removed from the opfamily
+-- to simulate an incomplete definition (equality without ordering operators).
+--
+begin;
+
+alter operator family integer_ops using btree drop operator 1 (int8alias1, int8alias1);
+
+set enable_nestloop = off;
+set enable_hashjoin = off;
+set enable_mergejoin = on;
+
+-- should fall back to non-merge plan without error
+explain (costs off)
+  select * from ec1,
+    (select ff + 1 as x from
+       (select ff + 2 as ff from ec1
+        union all
+        select ff + 3 as ff from ec1) ss0
+     union all
+     select ff + 4 as x from ec1) as ss1
+  where ss1.x = ec1.f1 and ec1.ff = 42::int8;
+
+abort;
+
+--
 -- test handling of merge/hash clauses that do not have valid commutators
 --
 
