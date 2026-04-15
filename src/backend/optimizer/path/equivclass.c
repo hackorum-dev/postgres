@@ -1139,6 +1139,45 @@ relation_can_be_sorted_early(PlannerInfo *root, RelOptInfo *rel,
 }
 
 /*
+ * ec_has_sortable_member
+ *		Check whether an EquivalenceClass has at least one non-constant member
+ *		belonging to 'relids' for which a sort operator of the given compare
+ *		type exists in the specified opfamily.  Returns false if no qualifying
+ *		member has a valid sort operator, which can happen with incomplete
+ *		opfamily definitions.
+ */
+bool
+ec_has_sortable_member(EquivalenceClass *ec, Relids relids,
+					   Oid opfamily, CompareType cmptype)
+{
+	EquivalenceMemberIterator it;
+	EquivalenceMember *em;
+
+	setup_eclass_member_iterator(&it, ec, relids);
+	while ((em = eclass_member_iterator_next(&it)) != NULL)
+	{
+		if (em->em_is_const)
+			continue;
+
+		/*
+		 * Only consider members that belong to the specified relation.
+		 * The iterator returns all non-child members regardless of relids,
+		 * so we must filter explicitly.
+		 */
+		if (!bms_is_subset(em->em_relids, relids))
+			continue;
+
+		if (OidIsValid(get_opfamily_member_for_cmptype(opfamily,
+													   em->em_datatype,
+													   em->em_datatype,
+													   cmptype)))
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * generate_base_implied_equalities
  *	  Generate any restriction clauses that we can deduce from equivalence
  *	  classes.
