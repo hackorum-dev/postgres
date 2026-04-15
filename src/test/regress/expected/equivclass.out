@@ -486,6 +486,42 @@ explain (costs off)  -- this should not require a sort
 (2 rows)
 
 --
+-- check that incomplete opfamily does not cause merge join to crash.
+-- the < operator for int8alias1 is temporarily removed from the opfamily
+-- to simulate an incomplete definition (equality without ordering operators).
+--
+begin;
+alter operator family integer_ops using btree drop operator 1 (int8alias1, int8alias1);
+set enable_nestloop = off;
+set enable_hashjoin = off;
+set enable_mergejoin = on;
+-- should fall back to non-merge plan without error
+explain (costs off)
+  select * from ec1,
+    (select ff + 1 as x from
+       (select ff + 2 as ff from ec1
+        union all
+        select ff + 3 as ff from ec1) ss0
+     union all
+     select ff + 4 as x from ec1) as ss1
+  where ss1.x = ec1.f1 and ec1.ff = 42::int8;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Nested Loop
+   Disabled: true
+   ->  Index Scan using ec1_pkey on ec1
+         Index Cond: (ff = '42'::bigint)
+   ->  Append
+         ->  Index Scan using ec1_expr2 on ec1 ec1_1
+               Index Cond: (((ff + 2) + 1) = ec1.f1)
+         ->  Seq Scan on ec1 ec1_2
+               Filter: (((ff + 3) + 1) = ec1.f1)
+         ->  Index Scan using ec1_expr4 on ec1 ec1_3
+               Index Cond: ((ff + 4) = ec1.f1)
+(11 rows)
+
+abort;
+--
 -- test handling of merge/hash clauses that do not have valid commutators
 --
 -- There are not (and should not be) any such operators built into Postgres
