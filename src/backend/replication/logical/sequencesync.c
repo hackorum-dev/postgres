@@ -217,7 +217,7 @@ get_sequences_string(List *seqindexes, List *seqinfos, StringInfo buf)
  */
 static void
 report_sequence_errors(List *mismatched_seqs_idx, List *insuffperm_seqs_idx,
-					   List *missing_seqs_idx, List *seqinfos)
+					   List *missing_seqs_idx, List *seqinfos, char *subname)
 {
 	StringInfoData seqstr;
 
@@ -263,7 +263,7 @@ report_sequence_errors(List *mismatched_seqs_idx, List *insuffperm_seqs_idx,
 	ereport(ERROR,
 			errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			errmsg("logical replication sequence synchronization failed for subscription \"%s\"",
-				   MySubscription->name));
+				   subname));
 }
 
 /*
@@ -420,10 +420,9 @@ check_seq_privileges_and_drift(LogicalRepSequenceInfo *seqinfo,
  */
 static CopySeqResult
 copy_sequence(LogicalRepSequenceInfo *seqinfo, Relation sequence_rel,
-			  bool update_lsn)
+			  Oid subid, bool run_as_owner, bool update_lsn)
 {
 	UserContext ucxt;
-	bool		run_as_owner = MySubscription->runasowner;
 	Oid			seqoid = seqinfo->localrelid;
 	CopySeqResult result;
 	bool		need_lsn_update = false;
@@ -467,8 +466,7 @@ copy_sequence(LogicalRepSequenceInfo *seqinfo, Relation sequence_rel,
 		XLogRecPtr	local_page_lsn;
 
 		/* Get the local page LSN for comparison with the remote value */
-		(void) GetSubscriptionRelState(MySubscription->oid,
-									   RelationGetRelid(sequence_rel),
+		(void) GetSubscriptionRelState(subid, RelationGetRelid(sequence_rel),
 									   &local_page_lsn);
 
 		need_lsn_update = (local_page_lsn != seqinfo->page_lsn);
@@ -480,7 +478,7 @@ copy_sequence(LogicalRepSequenceInfo *seqinfo, Relation sequence_rel,
 	 * cycle (update_lsn is true).
 	 */
 	if (seqinfo->relstate == SUBREL_STATE_INIT || need_lsn_update)
-		UpdateSubscriptionRelState(MySubscription->oid, seqoid, SUBREL_STATE_READY,
+		UpdateSubscriptionRelState(subid, seqoid, SUBREL_STATE_READY,
 								   seqinfo->page_lsn, false);
 
 	return COPYSEQ_SUCCESS;
@@ -499,7 +497,8 @@ copy_sequence(LogicalRepSequenceInfo *seqinfo, Relation sequence_rel,
  * Returns true/false if any sequences were actually copied.
  */
 static bool
-copy_sequences(WalReceiverConn *conn, List *seqinfos, bool update_lsn)
+copy_sequences(WalReceiverConn *conn, List *seqinfos, Oid subid, char *subname,
+			   bool runasowner, bool update_lsn)
 {
 	int			cur_batch_base_index = 0;
 	int			n_seqinfos = list_length(seqinfos);
@@ -531,11 +530,16 @@ copy_sequences(WalReceiverConn *conn, List *seqinfos, bool update_lsn)
 		int			batch_no_drift = 0;
 		int			batch_missing_count;
 		Relation	sequence_rel = NULL;
+		bool		started_tx = false;
 
 		WalRcvExecResult *res;
 		TupleTableSlot *slot;
 
-		StartTransactionCommand();
+		if (!IsTransactionState())
+		{
+			StartTransactionCommand();
+			started_tx = true;
+		}
 
 		for (int idx = cur_batch_base_index; idx < n_seqinfos; idx++)
 		{
@@ -627,14 +631,15 @@ copy_sequences(WalReceiverConn *conn, List *seqinfos, bool update_lsn)
 													&seqinfo, &seqidx, seqinfos);
 
 			if (sync_status == COPYSEQ_ALLOWED)
-				sync_status = copy_sequence(seqinfo, sequence_rel, update_lsn);
+				sync_status = copy_sequence(seqinfo, sequence_rel, subid,
+											runasowner, update_lsn);
 
 			switch (sync_status)
 			{
 				case COPYSEQ_SUCCESS:
 					elog(DEBUG1,
 						 "logical replication synchronization has updated sequence \"%s.%s\" in subscription \"%s\"",
-						 seqinfo->nspname, seqinfo->seqname, MySubscription->name);
+						 seqinfo->nspname, seqinfo->seqname, subname);
 					batch_succeeded_count++;
 					sequence_copied = true;
 					break;
@@ -707,13 +712,17 @@ copy_sequences(WalReceiverConn *conn, List *seqinfos, bool update_lsn)
 
 		elog(DEBUG1,
 			 "logical replication sequence synchronization for subscription \"%s\" - batch #%d = %d attempted, %d succeeded, %d mismatched, %d insufficient permission, %d missing from publisher, %d skipped, %d no drift",
-			 MySubscription->name,
+			 subname,
 			 (cur_batch_base_index / MAX_SEQUENCES_SYNC_PER_BATCH) + 1,
 			 batch_size, batch_succeeded_count, batch_mismatched_count,
 			 batch_insuffperm_count, batch_missing_count, batch_skipped_count, batch_no_drift);
 
-		/* Commit this batch, and prepare for next batch */
-		CommitTransactionCommand();
+		/*
+		 * Commit this batch if started a transaction, and prepare for next
+		 * batch.
+		 */
+		if (started_tx)
+			CommitTransactionCommand();
 
 		if (batch_missing_count)
 		{
@@ -738,7 +747,7 @@ copy_sequences(WalReceiverConn *conn, List *seqinfos, bool update_lsn)
 
 	/* Report mismatches, permission issues, or missing sequences */
 	report_sequence_errors(mismatched_seqs_idx, insuffperm_seqs_idx,
-						   missing_seqs_idx, seqinfos);
+						   missing_seqs_idx, seqinfos, subname);
 
 	return sequence_copied;
 }
@@ -754,36 +763,27 @@ invalidate_syncing_sequence_infos(Datum arg, SysCacheIdentifier cacheid,
 }
 
 /*
- * Get the list of sequence information for the current subscription.
+ * Get the list of sequence information for the given subscription from
+ * catalog.
  *
- * Return cached sequence states if valid; otherwise fetches them from the
- * catalog, caches the result, and return it.
+ * All entries in the returned list are allocated in the specified memory
+ * context.
  */
 static List *
-fetch_sequence_infos(void)
+fetch_sequences_from_catalog(Oid subid, MemoryContext ctx)
 {
 	Relation	rel;
 	HeapTuple	tup;
 	ScanKeyData skey[1];
 	SysScanDesc scan;
-	Oid			subid = MyLogicalRepWorker->subid;
-	List	   *tmp_seqinfos = NIL;
+	List	   *seqinfos = NIL;
+	bool		started_tx = false;
 
-	if (sequence_infos_valid)
-		return sequence_infos;
-
-	/* Free the existing invalid cache entries */
-	foreach_ptr(LogicalRepSequenceInfo, seqinfo, sequence_infos)
+	if (!IsTransactionState())
 	{
-		pfree(seqinfo->nspname);
-		pfree(seqinfo->seqname);
-		pfree(seqinfo);
+		StartTransactionCommand();
+		started_tx = true;
 	}
-
-	list_free(sequence_infos);
-	sequence_infos = NIL;
-
-	StartTransactionCommand();
 
 	rel = table_open(SubscriptionRelRelationId, AccessShareLock);
 
@@ -825,14 +825,14 @@ fetch_sequence_infos(void)
 
 		Assert(relstate == SUBREL_STATE_INIT || relstate == SUBREL_STATE_READY);
 
-		/* Cache the information in a permanent memory context */
-		oldctx = MemoryContextSwitchTo(CacheMemoryContext);
+		/* Cache the information in the given memory context */
+		oldctx = MemoryContextSwitchTo(ctx);
 		seq = palloc0_object(LogicalRepSequenceInfo);
 		seq->localrelid = subrel->srrelid;
 		seq->nspname = get_namespace_name(RelationGetNamespace(sequence_rel));
 		seq->seqname = pstrdup(RelationGetRelationName(sequence_rel));
 		seq->relstate = relstate;
-		tmp_seqinfos = lappend(tmp_seqinfos, seq);
+		seqinfos = lappend(seqinfos, seq);
 		MemoryContextSwitchTo(oldctx);
 
 		table_close(sequence_rel, NoLock);
@@ -842,10 +842,38 @@ fetch_sequence_infos(void)
 	systable_endscan(scan);
 	table_close(rel, AccessShareLock);
 
-	sequence_infos = tmp_seqinfos;
-	sequence_infos_valid = true;
+	if (started_tx)
+		CommitTransactionCommand();
 
-	CommitTransactionCommand();
+	return seqinfos;
+}
+
+/*
+ * Get the list of sequence information for the current subscription.
+ *
+ * Return cached sequence states if valid; otherwise fetches them from the
+ * catalog, caches the result, and return it.
+ */
+static List *
+fetch_sequence_infos(void)
+{
+	if (sequence_infos_valid)
+		return sequence_infos;
+
+	/* Free the existing invalid cache entries */
+	foreach_ptr(LogicalRepSequenceInfo, seqinfo, sequence_infos)
+	{
+		pfree(seqinfo->nspname);
+		pfree(seqinfo->seqname);
+		pfree(seqinfo);
+	}
+
+	list_free(sequence_infos);
+	sequence_infos = NIL;
+
+	sequence_infos = fetch_sequences_from_catalog(MySubscription->oid,
+												  CacheMemoryContext);
+	sequence_infos_valid = true;
 
 	return sequence_infos;
 }
@@ -950,6 +978,9 @@ start_sequence_sync(void)
 			seqinfos = fetch_sequence_infos();
 
 			sequence_copied = copy_sequences(LogRepWorkerWalRcvConn, seqinfos,
+											 MySubscription->oid,
+											 MySubscription->name,
+											 MySubscription->runasowner,
 											 update_lsn);
 
 			MemoryContextReset(SequenceSyncContext);
@@ -1018,4 +1049,41 @@ SequenceSyncWorkerMain(Datum main_arg)
 	start_sequence_sync();
 
 	FinishSyncWorker();
+}
+
+/*
+ * Wrapper for LogicalRepSyncSequences to synchronize all sequences of a
+ * subscription from outside the sequencesync worker.
+ */
+void
+AlterSubSyncSequences(WalReceiverConn *conn, Oid subid, char *subname,
+					  bool runasowner)
+{
+	List *seqinfos;
+
+	Assert(!SequenceSyncContext);
+
+	/*
+	 * Fetch sequences directly from the catalog rather than using the
+	 * sequence cache, which is maintained only for the sequence sync
+	 * worker.
+	 */
+	seqinfos = fetch_sequences_from_catalog(subid, CurrentMemoryContext);
+
+	PG_TRY();
+	{
+		/*
+		 * Use the current memory context for synchronization. Since this should
+		 * be short-lived command context that will be cleaned up automatically,
+		 * we can simply assign it as the synchronization context.
+		 */
+		SequenceSyncContext = CurrentMemoryContext;
+
+		(void) copy_sequences(conn, seqinfos, subid, subname, runasowner, true);
+	}
+	PG_FINALLY();
+	{
+		SequenceSyncContext = NULL;
+	}
+	PG_END_TRY();
 }

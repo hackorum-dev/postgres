@@ -1791,8 +1791,9 @@ Publications:
 
   <para>
    A <firstterm>sequence synchronization worker</firstterm> will be started
-   after executing any of the above subscriber commands. The worker will
-   remain running for the life of the subscription, periodically
+   after executing <command>CREATE SUBSCRIPTION</command> or
+   <command>ALTER SUBSCRIPTION ... REFRESH PUBLICATION</command> command. The
+   worker will remain running for the life of the subscription, periodically
    synchronizing all published sequences.
   </para>
   <para>

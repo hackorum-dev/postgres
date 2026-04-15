@@ -14,6 +14,8 @@
 
 #include <signal.h>
 
+#include "replication/walreceiver.h"
+
 extern PGDLLIMPORT volatile sig_atomic_t ParallelApplyMessagePending;
 
 extern void ApplyWorkerMain(Datum main_arg);
@@ -30,5 +32,8 @@ extern void ProcessParallelApplyMessages(void);
 extern void LogicalRepWorkersWakeupAtCommit(Oid subid);
 
 extern void AtEOXact_LogicalRepWorkers(bool isCommit);
+
+extern void AlterSubSyncSequences(WalReceiverConn *conn, Oid subid,
+								  char *subname, bool runasowner);
 
 #endif							/* LOGICALWORKER_H */

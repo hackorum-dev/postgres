@@ -176,4 +176,53 @@ $node_subscriber->wait_for_log(
 	qr/WARNING: ( [A-Z0-9]+:)? missing sequence on publisher \("public.regress_s4"\)/,
 	$log_offset);
 
+##########
+# ALTER SUBSCRIPTION ... REFRESH SEQUENCES synchronizes sequences online,
+# eliminating the need to launch a sequencesync worker.
+##########
+
+# Reduce max_logical_replication_workers to disallow sequence worker from running
+$node_subscriber->append_conf('postgresql.conf',
+	qq(max_logical_replication_workers = 0));
+$node_subscriber->restart;
+
+# Verify there is no logical replication apply worker running
+$result = $node_subscriber->safe_psql(
+	'postgres',
+	"SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'logical replication apply worker'");
+
+is($result, '0', 'no logical replication worker is running');
+
+# Increment sequence on publisher
+$node_publisher->safe_psql('postgres',
+	qq(SELECT nextval('regress_s1');));
+
+# The command should fail due to missing sequence ('regress_s4')
+my ($cmdret, $stdout, $stderr) = $node_subscriber->psql('postgres',
+	"ALTER SUBSCRIPTION regress_seq_sub REFRESH SEQUENCES;");
+
+like(
+	$stderr,
+	qr/WARNING:  missing sequence on publisher \("public.regress_s4"\)/,
+	"output the wanring for the missing sequence regress_s4");
+
+like(
+	$stderr,
+	qr/ERROR:  logical replication sequence synchronization failed for subscription \"regress_seq_sub\"/,
+	"the command failed due to the missing sequence regress_s4");
+
+# Refresh the publication to remove the missing sequence
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION regress_seq_sub REFRESH PUBLICATION;");
+
+# Sync the sequence regress_s1
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION regress_seq_sub REFRESH SEQUENCES;");
+
+# Get the current sequence value on subscriber
+$result = $node_subscriber->safe_psql('postgres',
+	qq(SELECT last_value FROM regress_s1;));
+
+is($result, '201', 'sequence regress_s1 is synced now');
+
 done_testing();

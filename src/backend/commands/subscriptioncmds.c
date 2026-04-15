@@ -1288,25 +1288,20 @@ AlterSubscription_refresh_seq(Subscription *sub)
 
 	PG_TRY();
 	{
-		List	   *subrel_states;
-
 		check_publications_origin_sequences(wrconn, sub->publications, true,
 											sub->origin, NULL, 0, sub->name);
 
-		/* Get local sequence list. */
-		subrel_states = GetSubscriptionRelations(sub->oid, false, true, false);
-		foreach_ptr(SubscriptionRelState, subrel, subrel_states)
-		{
-			Oid			relid = subrel->relid;
+		/*
+		 * Stop the sequencesync worker to prevent concurrent updates. This
+		 * avoids a race condition where the sequence value could be updated
+		 * by this command and then immediately moved backward by a
+		 * concurrently running worker. Stopping the worker is safe even if it
+		 * attempts to restart, as it will wait on the subscription lock
+		 * already held by this ALTER SUBSCRIPTION command.
+		 */
+		logicalrep_worker_stop(WORKERTYPE_SEQUENCESYNC, sub->oid, InvalidOid);
 
-			UpdateSubscriptionRelState(sub->oid, relid, SUBREL_STATE_INIT,
-									   InvalidXLogRecPtr, false);
-			ereport(DEBUG1,
-					errmsg_internal("sequence \"%s.%s\" of subscription \"%s\" set to INIT state",
-									get_namespace_name(get_rel_namespace(relid)),
-									get_rel_name(relid),
-									sub->name));
-		}
+		AlterSubSyncSequences(wrconn, sub->oid, sub->name, sub->runasowner);
 	}
 	PG_FINALLY();
 	{
