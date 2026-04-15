@@ -3311,8 +3311,7 @@ start_repack_decoding_worker(Oid relid)
 		BUFFERALIGN(REPACK_ERROR_QUEUE_SIZE);
 	seg = dsm_create(size, 0);
 	shared = (DecodingWorkerShared *) dsm_segment_address(seg);
-	shared->lsn_upto = InvalidXLogRecPtr;
-	shared->done = false;
+	memset(shared, 0, sizeof(DecodingWorkerShared));
 	SharedFileSetInit(&shared->sfs, seg);
 	shared->last_exported = -1;
 	SpinLockInit(&shared->mutex);
