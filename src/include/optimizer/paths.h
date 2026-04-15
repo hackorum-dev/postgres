@@ -156,6 +156,8 @@ extern EquivalenceMember *find_computable_ec_member(PlannerInfo *root,
 extern bool relation_can_be_sorted_early(PlannerInfo *root, RelOptInfo *rel,
 										 EquivalenceClass *ec,
 										 bool require_parallel_safe);
+extern bool ec_has_sortable_member(EquivalenceClass *ec, Relids relids,
+								   Oid opfamily, CompareType cmptype);
 extern void generate_base_implied_equalities(PlannerInfo *root);
 extern List *generate_join_implied_equalities(PlannerInfo *root,
 											  Relids join_relids,
@@ -223,6 +225,7 @@ typedef enum
 extern PathKeysComparison compare_pathkeys(List *keys1, List *keys2);
 extern bool pathkeys_contained_in(List *keys1, List *keys2);
 extern bool pathkeys_count_contained_in(List *keys1, List *keys2, int *n_common);
+extern bool pathkeys_are_sortable_for_rel(List *pathkeys, Relids relids);
 extern List *get_useful_group_keys_orderings(PlannerInfo *root, Path *path);
 extern Path *get_cheapest_path_for_pathkeys(List *paths, List *pathkeys,
 											Relids required_outer,
