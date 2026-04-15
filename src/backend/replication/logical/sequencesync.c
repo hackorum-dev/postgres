@@ -100,6 +100,19 @@ typedef enum CopySeqResult
 static MemoryContext SequenceSyncContext = NULL;
 
 /*
+ * Cached list of sequence information (LogicalRepSequenceInfo) for the current
+ * subscription. The cache is invalidated when pg_subscription_rel is modified.
+ *
+ * Note: To avoid the cost of searching for a specific sequence on relcache
+ * invalidation, we do not invalidate the cache immediately when a sequence is
+ * altered (e.g., renamed or moved to another namespace). Instead, we validate
+ * the sequence name and namespace when next attempting to sync it, at which
+ * point we verify the local sequence state.
+ */
+static List *sequence_infos = NIL;
+static bool sequence_infos_valid = false;
+
+/*
  * Apply worker determines whether a sequence sync worker is needed.
  *
  * Start a sequencesync worker if one is not already running. The active
@@ -503,6 +516,9 @@ copy_sequences(WalReceiverConn *conn, List *seqinfos, bool update_lsn)
 
 #define MAX_SEQUENCES_SYNC_PER_BATCH 100
 
+	if (seqinfos == NIL)
+		return false;
+
 	while (cur_batch_base_index < n_seqinfos)
 	{
 		Oid			seqRow[REMOTE_SEQ_COL_COUNT] = {INT8OID, INT8OID,
@@ -728,24 +744,44 @@ copy_sequences(WalReceiverConn *conn, List *seqinfos, bool update_lsn)
 }
 
 /*
- * Identifies sequences that require synchronization and initiates the
- * synchronization process.
- *
- * Returns true if sequences have been updated.
+ * Callback from syscache invalidation.
  */
-static bool
-LogicalRepSyncSequences(WalReceiverConn *conn, bool update_lsn)
+static void
+invalidate_syncing_sequence_infos(Datum arg, SysCacheIdentifier cacheid,
+								  uint32 hashvalue)
+{
+	sequence_infos_valid = false;
+}
+
+/*
+ * Get the list of sequence information for the current subscription.
+ *
+ * Return cached sequence states if valid; otherwise fetches them from the
+ * catalog, caches the result, and return it.
+ */
+static List *
+fetch_sequence_infos(void)
 {
 	Relation	rel;
 	HeapTuple	tup;
 	ScanKeyData skey[1];
 	SysScanDesc scan;
 	Oid			subid = MyLogicalRepWorker->subid;
-	bool		sequence_copied = false;
-	List	   *seqinfos = NIL;
-	MemoryContext oldctx;
+	List	   *tmp_seqinfos = NIL;
 
-	Assert(SequenceSyncContext);
+	if (sequence_infos_valid)
+		return sequence_infos;
+
+	/* Free the existing invalid cache entries */
+	foreach_ptr(LogicalRepSequenceInfo, seqinfo, sequence_infos)
+	{
+		pfree(seqinfo->nspname);
+		pfree(seqinfo->seqname);
+		pfree(seqinfo);
+	}
+
+	list_free(sequence_infos);
+	sequence_infos = NIL;
 
 	StartTransactionCommand();
 
@@ -766,6 +802,7 @@ LogicalRepSyncSequences(WalReceiverConn *conn, bool update_lsn)
 		LogicalRepSequenceInfo *seq;
 		Relation	sequence_rel;
 		char		relstate;
+		MemoryContext oldctx;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -788,17 +825,14 @@ LogicalRepSyncSequences(WalReceiverConn *conn, bool update_lsn)
 
 		Assert(relstate == SUBREL_STATE_INIT || relstate == SUBREL_STATE_READY);
 
-		/*
-		 * Worker needs to process sequences across transaction boundary, so
-		 * allocate them under SequenceSyncContext.
-		 */
-		oldctx = MemoryContextSwitchTo(SequenceSyncContext);
+		/* Cache the information in a permanent memory context */
+		oldctx = MemoryContextSwitchTo(CacheMemoryContext);
 		seq = palloc0_object(LogicalRepSequenceInfo);
 		seq->localrelid = subrel->srrelid;
 		seq->nspname = get_namespace_name(RelationGetNamespace(sequence_rel));
 		seq->seqname = pstrdup(RelationGetRelationName(sequence_rel));
 		seq->relstate = relstate;
-		seqinfos = lappend(seqinfos, seq);
+		tmp_seqinfos = lappend(tmp_seqinfos, seq);
 		MemoryContextSwitchTo(oldctx);
 
 		table_close(sequence_rel, NoLock);
@@ -808,18 +842,12 @@ LogicalRepSyncSequences(WalReceiverConn *conn, bool update_lsn)
 	systable_endscan(scan);
 	table_close(rel, AccessShareLock);
 
+	sequence_infos = tmp_seqinfos;
+	sequence_infos_valid = true;
+
 	CommitTransactionCommand();
 
-	/*
-	 * Exit early if no catalog entries found, likely due to concurrent drops.
-	 */
-	if (!seqinfos)
-		return false;
-
-	/* Process sequences */
-	sequence_copied = copy_sequences(conn, seqinfos, update_lsn);
-
-	return sequence_copied;
+	return sequence_infos;
 }
 
 /*
@@ -833,6 +861,14 @@ static void
 start_sequence_sync(void)
 {
 	Assert(am_sequencesync_worker());
+
+	/*
+	 * Setup callback for syscache so that we know when something changes in
+	 * the subscription relation state.
+	 */
+	CacheRegisterSyscacheCallback(SUBSCRIPTIONRELMAP,
+								  invalidate_syncing_sequence_infos,
+								  (Datum) 0);
 
 	PG_TRY();
 	{
@@ -879,6 +915,7 @@ start_sequence_sync(void)
 			bool		sequence_copied = false;
 			MemoryContext oldctx;
 			bool		update_lsn;
+			List	   *seqinfos;
 			TimestampTz now = GetCurrentTimestamp();
 
 			CHECK_FOR_INTERRUPTS();
@@ -910,8 +947,10 @@ start_sequence_sync(void)
 			/*
 			 * Synchronize all sequences (both READY and INIT states).
 			 */
-			sequence_copied = LogicalRepSyncSequences(LogRepWorkerWalRcvConn,
-													  update_lsn);
+			seqinfos = fetch_sequence_infos();
+
+			sequence_copied = copy_sequences(LogRepWorkerWalRcvConn, seqinfos,
+											 update_lsn);
 
 			MemoryContextReset(SequenceSyncContext);
 			MemoryContextSwitchTo(oldctx);
