@@ -354,6 +354,33 @@ pathkeys_contained_in(List *keys1, List *keys2)
 }
 
 /*
+ * pathkeys_are_sortable_for_rel
+ *		Check whether every pathkey in the list has a usable sort operator
+ *		for at least one EquivalenceClass member belonging to 'relids'.
+ *
+ * Returns false if any pathkey's opfamily lacks the required ordering
+ * operator for all EC members of the given relation.  This catches
+ * incomplete opfamily definitions (e.g. equality registered without
+ * corresponding ordering operators) that would cause an error later
+ * in prepare_sort_from_pathkeys().
+ */
+bool
+pathkeys_are_sortable_for_rel(List *pathkeys, Relids relids)
+{
+	ListCell   *lc;
+
+	foreach(lc, pathkeys)
+	{
+		PathKey    *pk = (PathKey *) lfirst(lc);
+
+		if (!ec_has_sortable_member(pk->pk_eclass, relids,
+									pk->pk_opfamily, pk->pk_cmptype))
+			return false;
+	}
+	return true;
+}
+
+/*
  * group_keys_reorder_by_pathkeys
  *		Reorder GROUP BY pathkeys and clauses to match the input pathkeys.
  *
