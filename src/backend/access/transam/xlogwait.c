@@ -93,6 +93,13 @@ StaticAssertDecl(lengthof(WaitLSNWaitEvents) == WAIT_LSN_TYPE_COUNT,
 
 /*
  * Get the current LSN for the specified wait type.
+ *
+ * For standby write and flush types, we first consult the WAL receiver's
+ * tracked position. However, during archive recovery (or after pg_rewind
+ * when the WAL receiver hasn't caught up), the WAL receiver may report 0/0
+ * or a position behind the replay LSN. In those cases, we fall back to the
+ * replay LSN, because any WAL that has been replayed has necessarily already
+ * been written and flushed to disk.
  */
 XLogRecPtr
 GetCurrentLSNForWaitType(WaitLSNType lsnType)
@@ -105,10 +112,27 @@ GetCurrentLSNForWaitType(WaitLSNType lsnType)
 			return GetXLogReplayRecPtr(NULL);
 
 		case WAIT_LSN_TYPE_STANDBY_WRITE:
-			return GetWalRcvWriteRecPtr();
-
 		case WAIT_LSN_TYPE_STANDBY_FLUSH:
-			return GetWalRcvFlushRecPtr(NULL, NULL);
+			{
+				XLogRecPtr	walrcvPtr;
+				XLogRecPtr	replayPtr;
+
+				if (lsnType == WAIT_LSN_TYPE_STANDBY_WRITE)
+					walrcvPtr = GetWalRcvWriteRecPtr();
+				else
+					walrcvPtr = GetWalRcvFlushRecPtr(NULL, NULL);
+
+				replayPtr = GetXLogReplayRecPtr(NULL);
+
+				/*
+				 * Use the WAL receiver position if it is valid and ahead of
+				 * the replay position. Otherwise, fall back to the replay
+				 * LSN. This handles archive recovery (no WAL receiver).
+				 */
+				if (walrcvPtr != InvalidXLogRecPtr && walrcvPtr > replayPtr)
+					return walrcvPtr;
+				return replayPtr;
+			}
 
 		case WAIT_LSN_TYPE_PRIMARY_FLUSH:
 			return GetFlushRecPtr(NULL);
