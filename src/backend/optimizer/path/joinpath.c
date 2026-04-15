@@ -1538,6 +1538,15 @@ sort_inner_and_outer(PlannerInfo *root,
 												  cur_mergeclauses,
 												  outerkeys);
 
+		/*
+		 * Verify that both sides can actually be sorted on these pathkeys.
+		 * An incomplete opfamily (e.g. equality without ordering operators)
+		 * could pass the mergejoinable check but fail at sort time.
+		 */
+		if (!pathkeys_are_sortable_for_rel(outerkeys, outerrel->relids) ||
+			!pathkeys_are_sortable_for_rel(innerkeys, innerrel->relids))
+			continue;
+
 		/* Build pathkeys representing output sort order */
 		merge_pathkeys = build_join_pathkeys(root, joinrel, jointype,
 											 outerkeys);
@@ -1643,6 +1652,20 @@ generate_mergejoin_paths(PlannerInfo *root,
 	innersortkeys = make_inner_pathkeys_for_merge(root,
 												  mergeclauses,
 												  outerpath->pathkeys);
+
+	/*
+	 * Verify that the inner side can be sorted on these pathkeys.  An
+	 * incomplete opfamily (e.g. equality without ordering operators) could
+	 * allow a mergejoin path that cannot be implemented.
+	 *
+	 * We only check the inner side here because the outer path is already
+	 * ordered (this function is called from match_unsorted_outer where the
+	 * outer path's existing pathkeys drive the merge).  The outer side
+	 * never needs an explicit sort, so outersortkeys is always NIL in the
+	 * try_mergejoin_path call below.
+	 */
+	if (!pathkeys_are_sortable_for_rel(innersortkeys, innerrel->relids))
+		return;
 
 	/*
 	 * Generate a mergejoin on the basis of sorting the cheapest inner. Since
