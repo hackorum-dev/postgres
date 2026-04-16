@@ -248,9 +248,11 @@ CREATE PUBLICATION <replaceable class="parameter">name</replaceable>
      <para>
       For partitioned tables, only the root partitioned table may be specified
       in <literal>EXCEPT</literal>. Doing so excludes the root table and
-      all of its partitions from replication. The optional
-      <literal>ONLY</literal> and <literal>*</literal> has no effect for
-      partitioned tables.
+      all of its partitions from replication.
+     </para>
+     <para>
+      The optional <literal>ONLY</literal> and <literal>*</literal> have no
+      effect for regular or partitioned tables.
      </para>
      <para>
       There can be a case where a subscription includes multiple publications.
