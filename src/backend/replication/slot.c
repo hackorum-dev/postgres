@@ -1318,6 +1318,11 @@ ReplicationSlotsComputeRequiredLSN(void)
 
 	Assert(ReplicationSlotCtl != NULL);
 
+	/*
+	 * Hold ReplicationSlotControlLock until after updating the minimum LSN.
+	 * Without this, a concurrent backend could compute a correct (lower)
+	 * minimum and then have it overwritten by our stale (higher) value.
+	 */
 	LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
 	for (i = 0; i < max_replication_slots + max_repack_replication_slots; i++)
 	{
@@ -1363,9 +1368,9 @@ ReplicationSlotsComputeRequiredLSN(void)
 			 restart_lsn < min_required))
 			min_required = restart_lsn;
 	}
-	LWLockRelease(ReplicationSlotControlLock);
 
 	XLogSetReplicationSlotMinimumLSN(min_required);
+	LWLockRelease(ReplicationSlotControlLock);
 }
 
 /*
