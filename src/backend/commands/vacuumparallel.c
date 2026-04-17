@@ -47,6 +47,7 @@
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
 #include "utils/lsyscache.h"
+#include "utils/ps_status.h"
 #include "utils/rel.h"
 
 /*
@@ -1097,6 +1098,28 @@ parallel_vacuum_process_one_index(ParallelVacuumState *pvs, Relation indrel,
 	pvs->indname = pstrdup(RelationGetRelationName(indrel));
 	pvs->status = indstats->status;
 
+	/*
+	 * Update the ps display to show which index this worker is currently
+	 * processing, along with the table and index OIDs.  This makes it easy
+	 * to identify which index a parallel vacuum worker is stuck on via
+	 * "ps -ef".  For example:
+	 *   "parallel worker for PID 12345: vacuuming index idx_foo (table OID 16384, index OID 16385)"
+	 */
+	{
+		char		ps_suffix[128];
+		const char *phase;
+
+		phase = (indstats->status == PARALLEL_INDVAC_STATUS_NEED_BULKDELETE)
+			? "vacuuming" : "cleaning up";
+		snprintf(ps_suffix, sizeof(ps_suffix),
+				 ": %s index \"%s\" (table OID %u, index OID %u)",
+				 phase,
+				 RelationGetRelationName(indrel),
+				 RelationGetRelid(pvs->heaprel),
+				 RelationGetRelid(indrel));
+		set_ps_display_suffix(ps_suffix);
+	}
+
 	switch (indstats->status)
 	{
 		case PARALLEL_INDVAC_STATUS_NEED_BULKDELETE:
@@ -1143,6 +1166,9 @@ parallel_vacuum_process_one_index(ParallelVacuumState *pvs, Relation indrel,
 	pvs->status = PARALLEL_INDVAC_STATUS_COMPLETED;
 	pfree(pvs->indname);
 	pvs->indname = NULL;
+
+	/* Clear the ps display suffix now that this index is done */
+	set_ps_display_suffix("");
 
 	/*
 	 * Call the parallel variant of pgstat_progress_incr_param so workers can
