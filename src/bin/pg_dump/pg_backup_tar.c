@@ -73,6 +73,8 @@ typedef struct
 	pgoff_t		pos;
 	pgoff_t		fileLen;
 	ArchiveHandle *AH;
+	pgoff_t		headerPos;		/* position of tar header in tarFH for
+								 * direct-write mode (seekable output) */
 } TAR_MEMBER;
 
 typedef struct
@@ -86,6 +88,9 @@ typedef struct
 	TAR_MEMBER *FH;
 	int			isSpecialScript;
 	TAR_MEMBER *scriptTH;
+	TAR_MEMBER *directWriteMember;	/* currently active direct-write member,
+									 * or NULL */
+	bool		inLOs;				/* true while writing large objects */
 } lclContext;
 
 typedef struct
@@ -331,61 +336,101 @@ tarOpen(ArchiveHandle *AH, const char *filename, char mode)
 	}
 	else
 	{
-		int			old_umask;
-
 		tm = pg_malloc0_object(TAR_MEMBER);
 
 		/*
-		 * POSIX does not require, but permits, tmpfile() to restrict file
-		 * permissions.  Given an OS crash after we write data, the filesystem
-		 * might retain the data but forget tmpfile()'s unlink().  If so, the
-		 * file mode protects confidentiality of the data written.
+		 * When the tar output is seekable and no other member is currently
+		 * being written directly, we can write data directly to the tar
+		 * file instead of using a temporary file.  We write a placeholder
+		 * header first, stream the data, then seek back to fix the header
+		 * with the actual file length.  This avoids the overhead of writing
+		 * all data twice (once to tmpfile, once to tar output).
+		 *
+		 * We cannot use this optimization when another direct-write member
+		 * is already active (e.g., the blob TOC file is open while
+		 * individual blob data files are being written).  The inLOs check
+		 * is needed beyond directWriteMember==NULL because the loToc member
+		 * stays open and receives interleaved tarPrintf writes while blob
+		 * data files are being finalized, which would corrupt the archive
+		 * if loToc were in direct-write mode.
+		 *
+		 * Note: tarFHpos is not kept up-to-date during direct writes
+		 * (tarWrite updates th->pos but not ctx->tarFHpos).  We fix it
+		 * in _tarAddFile using ftello() after the member is complete.
 		 */
-		old_umask = umask(S_IRWXG | S_IRWXO);
+		if (ctx->hasSeek && ctx->directWriteMember == NULL &&
+			!ctx->inLOs)
+		{
+			tm->tmpFH = NULL;
+			tm->nFH = ctx->tarFH;	/* tarWrite() writes data here */
+			tm->headerPos = ctx->tarFHpos;
+
+			/* Write a placeholder header (fileLen=0, will be rewritten) */
+			tm->targetFile = pg_strdup(filename);
+			tm->fileLen = 0;
+			tm->tarFH = ctx->tarFH;	/* _tarWriteHeader() writes here */
+			_tarWriteHeader(tm);
+			ctx->tarFHpos += TAR_BLOCK_SIZE;
+			ctx->directWriteMember = tm;
+		}
+		else
+		{
+			int			old_umask;
+
+			/*
+			 * POSIX does not require, but permits, tmpfile() to restrict
+			 * file permissions.  Given an OS crash after we write data,
+			 * the filesystem might retain the data but forget tmpfile()'s
+			 * unlink().  If so, the file mode protects confidentiality of
+			 * the data written.
+			 */
+			old_umask = umask(S_IRWXG | S_IRWXO);
 
 #ifndef WIN32
-		tm->tmpFH = tmpfile();
+			tm->tmpFH = tmpfile();
 #else
 
-		/*
-		 * On WIN32, tmpfile() generates a filename in the root directory,
-		 * which requires administrative permissions on certain systems. Loop
-		 * until we find a unique file name we can create.
-		 */
-		while (1)
-		{
-			char	   *name;
-			int			fd;
-
-			name = _tempnam(NULL, "pg_temp_");
-			if (name == NULL)
-				break;
-			fd = open(name, O_RDWR | O_CREAT | O_EXCL | O_BINARY |
-					  O_TEMPORARY, S_IRUSR | S_IWUSR);
-			free(name);
-
-			if (fd != -1)		/* created a file */
+			/*
+			 * On WIN32, tmpfile() generates a filename in the root
+			 * directory, which requires administrative permissions on
+			 * certain systems. Loop until we find a unique file name we
+			 * can create.
+			 */
+			while (1)
 			{
-				tm->tmpFH = fdopen(fd, "w+b");
-				break;
+				char	   *name;
+				int			fd;
+
+				name = _tempnam(NULL, "pg_temp_");
+				if (name == NULL)
+					break;
+				fd = open(name, O_RDWR | O_CREAT | O_EXCL | O_BINARY |
+						  O_TEMPORARY, S_IRUSR | S_IWUSR);
+				free(name);
+
+				if (fd != -1)	/* created a file */
+				{
+					tm->tmpFH = fdopen(fd, "w+b");
+					break;
+				}
+				else if (errno != EEXIST)
+					break;
 			}
-			else if (errno != EEXIST)	/* failure other than file exists */
-				break;
-		}
 #endif
 
-		if (tm->tmpFH == NULL)
-			pg_fatal("could not generate temporary file name: %m");
+			if (tm->tmpFH == NULL)
+				pg_fatal("could not generate temporary file name: %m");
 
-		umask(old_umask);
+			umask(old_umask);
 
-		if (AH->compression_spec.algorithm == PG_COMPRESSION_NONE)
 			tm->nFH = tm->tmpFH;
-		else
+			tm->targetFile = pg_strdup(filename);
+		}
+
+		if (AH->compression_spec.algorithm != PG_COMPRESSION_NONE)
 			pg_fatal("compression is not supported by tar archive format");
 
 		tm->AH = AH;
-		tm->targetFile = pg_strdup(filename);
 	}
 
 	tm->mode = mode;
@@ -882,6 +927,7 @@ _StartLOs(ArchiveHandle *AH, TocEntry *te)
 	char		fname[K_STD_BUF_SIZE];
 
 	sprintf(fname, "blobs_%d.toc", te->dumpId);
+	ctx->inLOs = true;
 	ctx->loToc = tarOpen(AH, fname, 'w');
 }
 
@@ -941,6 +987,7 @@ _EndLOs(ArchiveHandle *AH, TocEntry *te)
 	/* WriteInt(AH, 0); */
 
 	tarClose(AH, ctx->loToc);
+	ctx->inLOs = false;
 }
 
 
@@ -989,51 +1036,95 @@ static void
 _tarAddFile(ArchiveHandle *AH, TAR_MEMBER *th)
 {
 	lclContext *ctx = (lclContext *) AH->formatData;
-	FILE	   *tmp = th->tmpFH;	/* Grab it for convenience */
-	char		buf[32768];
-	size_t		cnt;
-	pgoff_t		len = 0;
-	size_t		res;
 	size_t		i,
 				pad;
 
-	/*
-	 * Find file len & go back to start.
-	 */
-	if (fseeko(tmp, 0, SEEK_END) != 0)
-		pg_fatal("error during file seek: %m");
-	th->fileLen = ftello(tmp);
-	if (th->fileLen < 0)
-		pg_fatal("could not determine seek position in archive file: %m");
-	if (fseeko(tmp, 0, SEEK_SET) != 0)
-		pg_fatal("error during file seek: %m");
-
-	_tarWriteHeader(th);
-
-	while ((cnt = fread(buf, 1, sizeof(buf), tmp)) > 0)
+	if (th->tmpFH == NULL)
 	{
-		if ((res = fwrite(buf, 1, cnt, th->tarFH)) != cnt)
+		/*
+		 * Direct-write mode: data was written directly to tarFH after a
+		 * placeholder header.  Seek back to rewrite the header with the
+		 * actual file length, then seek to the end and write padding.
+		 */
+		pgoff_t		endPos;
+
+		/* Flush any buffered data so ftello returns the right position */
+		if (fflush(th->tarFH) != 0)
 			WRITE_ERROR_EXIT;
-		len += res;
+
+		endPos = ftello(th->tarFH);
+		if (endPos < 0)
+			pg_fatal("could not determine seek position in archive file: %m");
+
+		th->fileLen = endPos - th->headerPos - TAR_BLOCK_SIZE;
+
+		/* Seek back to rewrite the header with the correct length */
+		if (fseeko(th->tarFH, th->headerPos, SEEK_SET) != 0)
+			pg_fatal("error during file seek: %m");
+
+		_tarWriteHeader(th);
+
+		/* Seek back to end of data */
+		if (fseeko(th->tarFH, endPos, SEEK_SET) != 0)
+			pg_fatal("error during file seek: %m");
+
+		/* Write tar padding */
+		pad = tarPaddingBytesRequired(th->fileLen);
+		for (i = 0; i < pad; i++)
+		{
+			if (fputc('\0', th->tarFH) == EOF)
+				WRITE_ERROR_EXIT;
+		}
+
+		ctx->tarFHpos = endPos + pad;
+		ctx->directWriteMember = NULL;
 	}
-	if (!feof(tmp))
-		READ_ERROR_EXIT(tmp);
-
-	if (fclose(tmp) != 0)		/* This *should* delete it... */
-		pg_fatal("could not close temporary file: %m");
-
-	if (len != th->fileLen)
-		pg_fatal("actual file length (%lld) does not match expected (%lld)",
-				 (long long) len, (long long) th->fileLen);
-
-	pad = tarPaddingBytesRequired(len);
-	for (i = 0; i < pad; i++)
+	else
 	{
-		if (fputc('\0', th->tarFH) == EOF)
-			WRITE_ERROR_EXIT;
-	}
+		/*
+		 * Tmpfile mode: copy data from tmpfile to tarFH (original path).
+		 */
+		FILE	   *tmp = th->tmpFH;
+		char		buf[32768];
+		size_t		cnt;
+		pgoff_t		len = 0;
+		size_t		res;
 
-	ctx->tarFHpos += len + pad;
+		if (fseeko(tmp, 0, SEEK_END) != 0)
+			pg_fatal("error during file seek: %m");
+		th->fileLen = ftello(tmp);
+		if (th->fileLen < 0)
+			pg_fatal("could not determine seek position in archive file: %m");
+		if (fseeko(tmp, 0, SEEK_SET) != 0)
+			pg_fatal("error during file seek: %m");
+
+		_tarWriteHeader(th);
+
+		while ((cnt = fread(buf, 1, sizeof(buf), tmp)) > 0)
+		{
+			if ((res = fwrite(buf, 1, cnt, th->tarFH)) != cnt)
+				WRITE_ERROR_EXIT;
+			len += res;
+		}
+		if (!feof(tmp))
+			READ_ERROR_EXIT(tmp);
+
+		if (fclose(tmp) != 0)
+			pg_fatal("could not close temporary file: %m");
+
+		if (len != th->fileLen)
+			pg_fatal("actual file length (%lld) does not match expected (%lld)",
+					 (long long) len, (long long) th->fileLen);
+
+		pad = tarPaddingBytesRequired(len);
+		for (i = 0; i < pad; i++)
+		{
+			if (fputc('\0', th->tarFH) == EOF)
+				WRITE_ERROR_EXIT;
+		}
+
+		ctx->tarFHpos += len + pad;
+	}
 }
 
 /* Locate the file in the archive, read header and position to data */
