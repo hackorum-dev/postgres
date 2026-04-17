@@ -7890,6 +7890,32 @@ FROM pg_stat_get_backend_idset() AS backendid;
        </itemizedlist>
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>current_index_relid</structfield> <type>oid</type>
+      </para>
+      <para>
+       If <command>VACUUM</command> is currently processing an index, this
+       column shows the OID of the index being vacuumed. The value is set
+       when the phase is <literal>vacuuming indexes</literal> or
+       <literal>cleaning up indexes</literal> and is reset to 0 when all
+       indexes have been processed. During parallel index vacuum, each
+       parallel worker row shows the index that particular worker is
+       processing.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>leader_pid</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Process ID of the leader process if this process is a parallel
+       vacuum worker; <literal>NULL</literal> if this process is the
+       leader itself or if the vacuum is not running in parallel.
+      </para></entry>
+     </row>
     </tbody>
    </tgroup>
   </table>

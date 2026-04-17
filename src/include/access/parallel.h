@@ -77,6 +77,7 @@ extern void ProcessParallelMessages(void);
 extern void AtEOXact_Parallel(bool isCommit);
 extern void AtEOSubXact_Parallel(bool isCommit, SubTransactionId mySubId);
 extern void ParallelWorkerReportLastRecEnd(XLogRecPtr last_xlog_end);
+extern pid_t GetParallelLeaderPid(void);
 
 extern void ParallelWorkerMain(Datum main_arg);
 

@@ -132,6 +132,15 @@ static dlist_head pcxt_list = DLIST_STATIC_INIT(pcxt_list);
 static pid_t ParallelLeaderPid;
 
 /*
+ * Return the PID of the parallel group leader.
+ */
+pid_t
+GetParallelLeaderPid(void)
+{
+	return ParallelLeaderPid;
+}
+
+/*
  * List of internal parallel worker entry points.  We need this for
  * reasons explained in LookupParallelWorkerFunction(), below.
  */
