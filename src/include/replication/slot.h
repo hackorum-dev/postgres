@@ -284,6 +284,13 @@ typedef struct ReplicationSlot
 	 * slotsync_skip_reason provides no practical benefit.
 	 */
 	SlotSyncSkipReason slotsync_skip_reason;
+
+	/*
+	 * Process currently attempting to invalidate this slot.
+	 * INVALID_PROC_NUMBER means no invalidation is in progress. Protected by
+	 * the slot's mutex.
+	 */
+	ProcNumber	invalidating_proc;
 } ReplicationSlot;
 
 #define SlotIsPhysical(slot) ((slot)->data.database == InvalidOid)

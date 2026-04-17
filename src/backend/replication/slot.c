@@ -233,6 +233,7 @@ ReplicationSlotsShmemInit(void *arg)
 
 		/* everything else is zeroed by the memset above */
 		slot->active_proc = INVALID_PROC_NUMBER;
+		slot->invalidating_proc = INVALID_PROC_NUMBER;
 		SpinLockInit(&slot->mutex);
 		LWLockInitialize(&slot->io_in_progress_lock,
 						 LWTRANCHE_REPLICATION_SLOT_IO);
@@ -501,6 +502,7 @@ ReplicationSlotCreate(const char *name, bool db_specific,
 	slot->last_saved_restart_lsn = InvalidXLogRecPtr;
 	slot->inactive_since = 0;
 	slot->slotsync_skip_reason = SS_SKIP_NONE;
+	slot->invalidating_proc = INVALID_PROC_NUMBER;
 
 	/*
 	 * Create the slot on disk.  We haven't actually marked the slot allocated
@@ -2048,6 +2050,7 @@ InvalidatePossiblyObsoleteSlot(uint32 possible_causes,
 	int			last_signaled_pid = 0;
 	bool		released_lock = false;
 	bool		invalidated = false;
+	bool		am_invalidating = false;
 	TimestampTz inactive_since = 0;
 
 	for (;;)
@@ -2108,6 +2111,59 @@ InvalidatePossiblyObsoleteSlot(uint32 possible_causes,
 			break;
 		}
 
+		/*
+		 * Skip XID-age invalidation if another process is already
+		 * invalidating this slot.
+		 *
+		 * Check if another process is already trying to invalidate this slot.
+		 * If so, skip it to avoid multiple processes blocking on the same CV
+		 * sleep. The first process will complete the invalidation attempt;
+		 * others defer to a subsequent cycle.
+		 *
+		 * We handle this only for XID-age invalidation because multiple
+		 * processes (autovacuum workers, backends running VACUUM, the
+		 * checkpointer) can attempt it concurrently, making it likely that
+		 * several end up blocking on the same ConditionVariable while waiting
+		 * for a slow walsender to release the slot. Invalidation due to other
+		 * causes can also involve multiple processes (e.g., on a standby, the
+		 * checkpointer and the startup process may attempt to invalidate a
+		 * slot for RS_INVAL_WAL_LEVEL and RS_INVAL_HORIZON respectively), but
+		 * such concurrent attempts are rare in practice.
+		 */
+		if (invalidation_cause == RS_INVAL_XID_AGE &&
+			s->invalidating_proc != INVALID_PROC_NUMBER)
+		{
+			int			invalidating_pid;
+
+			invalidating_pid = GetPGProcByNumber(s->invalidating_proc)->pid;
+
+			if (invalidating_pid != 0 &&
+				s->invalidating_proc != MyProcNumber)
+			{
+				/* Another live process is already invalidating this slot */
+				SpinLockRelease(&s->mutex);
+				if (released_lock)
+					LWLockRelease(ReplicationSlotControlLock);
+				break;
+			}
+
+			/*
+			 * The previously recorded process has exited (pid == 0) or it's
+			 * us. Reset and proceed with invalidation.
+			 */
+			s->invalidating_proc = INVALID_PROC_NUMBER;
+		}
+
+		/*
+		 * If the slot is active (we'll need to signal and wait), record
+		 * ourselves as the invalidating process.
+		 */
+		if (s->active_proc != INVALID_PROC_NUMBER)
+		{
+			s->invalidating_proc = MyProcNumber;
+			am_invalidating = true;
+		}
+
 		slotname = s->data.name;
 		active_proc = s->active_proc;
 
@@ -2126,6 +2182,12 @@ InvalidatePossiblyObsoleteSlot(uint32 possible_causes,
 			MyReplicationSlot = s;
 			s->active_proc = MyProcNumber;
 			s->data.invalidated = invalidation_cause;
+
+			/*
+			 * Clear the invalidating process since we have completed the
+			 * invalidation (acquired the slot and marked it invalid).
+			 */
+			s->invalidating_proc = INVALID_PROC_NUMBER;
 
 			/*
 			 * XXX: We should consider not overwriting restart_lsn and instead
@@ -2249,6 +2311,19 @@ InvalidatePossiblyObsoleteSlot(uint32 possible_causes,
 			/* done with this slot for now */
 			break;
 		}
+	}
+
+	/*
+	 * If we set invalidating_proc but exited without completing the
+	 * invalidation (e.g., the slot caught up while we were waiting, or the
+	 * slot was dropped), clear it so other processes don't skip this slot.
+	 */
+	if (am_invalidating && !invalidated)
+	{
+		SpinLockAcquire(&s->mutex);
+		if (s->invalidating_proc == MyProcNumber)
+			s->invalidating_proc = INVALID_PROC_NUMBER;
+		SpinLockRelease(&s->mutex);
 	}
 
 	Assert(released_lock == !LWLockHeldByMe(ReplicationSlotControlLock));

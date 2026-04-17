@@ -3466,6 +3466,17 @@ ProcessInterrupts(void)
 		ProcDieSenderUid = 0;
 		QueryCancelPending = false; /* ProcDie trumps QueryCancel */
 		LockErrorCleanup();
+
+#ifdef USE_INJECTION_POINTS
+		/*
+		 * Injection point used to simulate a walsender that is slow to
+		 * respond to SIGTERM, allowing tests to verify concurrent slot
+		 * invalidation behavior.
+		 */
+		if (am_walsender)
+			INJECTION_POINT("walsender-before-sigterm-exit", NULL);
+#endif
+
 		/* As in quickdie, don't risk sending to client during auth */
 		if (ClientAuthInProgress && whereToSendOutput == DestRemote)
 			whereToSendOutput = DestNone;

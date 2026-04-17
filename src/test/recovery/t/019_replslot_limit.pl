@@ -851,4 +851,165 @@ $primary6->stop;
 # Testcase end: XID-age-based slot invalidation with autovacuum (production-like)
 # ================================================================================
 
+# ===============================================================================
+# Testcase start: Concurrent slot invalidation due to max_slot_xid_age GUC
+#
+# Two concurrent VACUUMs both try to invalidate the same active logical slot.
+# An injection point delays the walsender's SIGTERM processing so that vacuum1
+# blocks on the CV waiting for the slot to be released.  When vacuum2 runs, it
+# sees that vacuum1 is already invalidating the same slot and skips without
+# blocking. After the walsender is woken, vacuum1 completes the invalidation.
+
+# Skip if injection points are not available.
+if ($ENV{enable_injection_points} ne 'yes')
+{
+	done_testing();
+	exit;
+}
+
+my $primary7 = PostgreSQL::Test::Cluster->new('primary7');
+$primary7->init(allows_streaming => 'logical');
+
+my $max_slot_xid_age7 = 100;
+$primary7->append_conf(
+	'postgresql.conf', qq{
+max_slot_xid_age = $max_slot_xid_age7
+autovacuum = off
+shared_preload_libraries = 'injection_points'
+});
+
+$primary7->start;
+
+# Check if injection_points extension is available.
+if (!$primary7->check_extension('injection_points'))
+{
+	$primary7->stop;
+	done_testing();
+	exit;
+}
+
+$primary7->safe_psql('postgres', 'CREATE EXTENSION injection_points');
+
+# Helper to consume XIDs.
+$primary7->safe_psql(
+	'postgres', qq{
+	CREATE PROCEDURE consume_xid(cnt int)
+	AS \$\$
+	DECLARE
+	    i int;
+	BEGIN
+	    FOR i IN 1..cnt LOOP
+	        EXECUTE 'SELECT pg_current_xact_id()';
+	        COMMIT;
+	    END LOOP;
+	END;
+	\$\$ LANGUAGE plpgsql;
+});
+
+
+# Create a logical slot (gets catalog_xmin immediately).
+$primary7->safe_psql('postgres',
+	"SELECT pg_create_logical_replication_slot('lslot7', 'test_decoding')");
+
+# Hold the slot active via pg_recvlogical.
+my $pg_recvlog_stdout7 = '';
+my $pg_recvlog_stderr7 = '';
+my $connstr7 = $primary7->connstr('postgres');
+my $pg_recvlogical_handle7 = IPC::Run::start(
+	[
+		'pg_recvlogical', '-d', $connstr7,
+		'--slot', 'lslot7', '--start',
+		'-f', '/dev/null', '--no-loop'
+	],
+	'>', \$pg_recvlog_stdout7,
+	'2>', \$pg_recvlog_stderr7);
+
+# Wait for the slot to become active.
+$primary7->poll_query_until(
+	'postgres', qq[
+	SELECT active FROM pg_replication_slots WHERE slot_name = 'lslot7';
+]) or die "Timed out waiting for slot lslot7 to become active";
+
+# Make the walsender block before processing SIGTERM.
+$primary7->safe_psql('postgres',
+	"SELECT injection_points_attach('walsender-before-sigterm-exit', 'wait')");
+
+# Make the slot's catalog_xmin stale.
+$primary7->safe_psql('postgres',
+	qq{CALL consume_xid(2 * $max_slot_xid_age7)});
+
+# Launch vacuum1 on a catalog table: the logical slot holds catalog_xmin,
+# so only catalog VACUUMs see it as OldestXmin and trigger invalidation.
+# vacuum1 will SIGTERM the walsender, then block on the CV.
+my $vacuum1 = $primary7->background_psql('postgres');
+my $vacuum2 = $primary7->background_psql('postgres');
+
+$vacuum1->query_until(
+	qr/starting_vacuum/,
+	q(\echo starting_vacuum
+VACUUM pg_class;
+\echo vacuum1_done
+));
+
+# Wait for the walsender to hit the injection point.
+$primary7->wait_for_event('walsender', 'walsender-before-sigterm-exit');
+
+# Verify vacuum1 is blocked on the CV.
+$primary7->poll_query_until(
+	'postgres', qq[
+	SELECT count(*) = 1 FROM pg_stat_activity
+		WHERE wait_event = 'ReplicationSlotDrop'
+		AND backend_type = 'client backend';
+]) or die "Timed out waiting for vacuum1 to block on slot CV";
+
+# Launch vacuum2 on a different catalog table: it also computes the catalog
+# horizon and sees the slot needs invalidation, but finds vacuum1 is already
+# invalidating the same slot (via invalidating_proc) and skips.
+$vacuum2->query_until(
+	qr/starting_vacuum/,
+	q(\echo starting_vacuum
+VACUUM pg_type;
+\echo vacuum2_done
+));
+
+# vacuum2 completes without blocking.
+$vacuum2->query_until(qr/vacuum2_done/, '');
+
+# Verify only vacuum1 is waiting on ReplicationSlotDrop.
+$result = $primary7->safe_psql(
+	'postgres', qq[
+	SELECT count(*) FROM pg_stat_activity
+		WHERE wait_event = 'ReplicationSlotDrop'
+		AND backend_type = 'client backend';
+]);
+is($result, '1',
+	'only vacuum1 blocks on CV; vacuum2 skips via invalidating_proc');
+
+# Wake up the walsender so it can exit and release the slot.
+$primary7->safe_psql('postgres',
+	"SELECT injection_points_wakeup('walsender-before-sigterm-exit')");
+
+# Detach the injection point.
+$primary7->safe_psql('postgres',
+	"SELECT injection_points_detach('walsender-before-sigterm-exit')");
+
+# Wait for pg_recvlogical to exit.
+$pg_recvlogical_handle7->finish;
+
+# Wait for vacuum1 to complete now that the walsender has released the slot.
+$vacuum1->query_until(qr/vacuum1_done/, '');
+
+# Verify the slot was invalidated.
+wait_for_xid_aged_invalidation($primary7, 'lslot7');
+ok(1,
+	"concurrent VACUUM: vacuum1 blocks on CV, vacuum2 skips via invalidating_proc"
+);
+
+$vacuum1->quit;
+$vacuum2->quit;
+$primary7->stop;
+
+# Testcase end: Concurrent slot invalidation due to max_slot_xid_age GUC
+# ===============================================================================
+
 done_testing();
