@@ -888,6 +888,9 @@ extern PGDLLIMPORT PgStat_Counter pgStatBlockWriteTime;
 extern PGDLLIMPORT PgStat_Counter pgStatActiveTime;
 extern PGDLLIMPORT PgStat_Counter pgStatTransactionIdleTime;
 
+/* see AtEOXact_PgStat_Database() */
+extern PGDLLIMPORT bool pgStatXactSkipCounters;
+
 /* updated by the traffic cop and in errfinish() */
 extern PGDLLIMPORT SessionEndType pgStatSessionEndCause;
 

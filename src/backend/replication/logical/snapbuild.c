@@ -617,8 +617,15 @@ SnapBuildClearExportedSnapshot(void)
 	 */
 	tmpResOwner = SavedResourceOwnerDuringExport;
 
-	/* make sure nothing could have ever happened */
+	/*
+	 * Make sure nothing could have ever happened.  Keep this cleanup abort
+	 * out of pg_stat_database.xact_rollback; the invariant that we are at
+	 * top level is required so the abort reaches AtEOXact_PgStat_Database.
+	 */
+	Assert(!IsSubTransaction());
+	pgStatXactSkipCounters = true;
 	AbortCurrentTransaction();
+	pgStatXactSkipCounters = false;
 
 	CurrentResourceOwner = tmpResOwner;
 }
