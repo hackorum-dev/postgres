@@ -7892,6 +7892,26 @@ FROM pg_stat_get_backend_idset() AS backendid;
        </itemizedlist>
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>index_vacuum_pids</structfield> <type>bigint[]</type>
+      </para>
+      <para>
+       A list of the process IDs, the leader process and any parallel workers,
+       currently vacuuming or cleaning up an index.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>index_vacuum_oids</structfield> <type>oid[]</type>
+      </para>
+      <para>
+       A list of the OIDs of the indexes being vacuumed or cleaned up by the
+       corresponding process in <structfield>index_vacuum_pids</structfield>.
+      </para></entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
