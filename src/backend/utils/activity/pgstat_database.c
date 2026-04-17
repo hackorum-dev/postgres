@@ -291,21 +291,28 @@ pgstat_fetch_stat_dbentry(Oid dboid)
 		pgstat_fetch_entry(PGSTAT_KIND_DATABASE, dboid, InvalidOid, NULL);
 }
 
+/*
+ * When true, AtEOXact_PgStat_Database() skips the xact_commit /
+ * xact_rollback bump for the current (sub-)transaction end.  Logical
+ * decoding sets this around its catalog-cleanup AbortCurrentTransaction()
+ * so that abort is not attributed to pg_stat_database.
+ */
+bool		pgStatXactSkipCounters = false;
+
 void
 AtEOXact_PgStat_Database(bool isCommit, bool parallel)
 {
-	/* Don't count parallel worker transaction stats */
-	if (!parallel)
-	{
-		/*
-		 * Count transaction commit or abort.  (We use counters, not just
-		 * bools, in case the reporting message isn't sent right away.)
-		 */
-		if (isCommit)
-			pgStatXactCommit++;
-		else
-			pgStatXactRollback++;
-	}
+	if (parallel || pgStatXactSkipCounters)
+		return;
+
+	/*
+	 * Count transaction commit or abort.  (We use counters, not just bools,
+	 * in case the reporting message isn't sent right away.)
+	 */
+	if (isCommit)
+		pgStatXactCommit++;
+	else
+		pgStatXactRollback++;
 }
 
 /*
