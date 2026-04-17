@@ -2127,6 +2127,7 @@ StartTransaction(void)
 
 	/* check the current transaction state */
 	Assert(s->state == TRANS_DEFAULT);
+	Assert(!pgStatXactSkipCounters);
 
 	/*
 	 * Set the current transaction state information appropriately during
