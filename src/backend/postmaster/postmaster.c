@@ -790,6 +790,8 @@ PostmasterMain(int argc, char *argv[])
 	 */
 	if (!SelectConfigFiles(userDoption, progname))
 		ExitPostmaster(2);
+	if (userDoption != NULL)
+		free(userDoption);
 
 	if (output_config_variable != NULL)
 	{
