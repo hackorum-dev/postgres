@@ -993,6 +993,30 @@ smgr_redo(XLogReaderState *record)
 
 		reln = smgropen(xlrec->rlocator, INVALID_PROC_NUMBER);
 		smgrcreate(reln, xlrec->forkNum, true);
+
+		/*
+		 * Initialize the cached nblocks to 0 for a newly created
+		 * relation, so that DropRelationsAllBuffers() can use the
+		 * optimized path (BufMapping lookup) instead of scanning
+		 * the entire buffer pool.
+		 *
+		 * This is safe because a CREATE record means the relation
+		 * has just been created with zero blocks.  If the relation
+		 * was extended before the crash, XLogReadBufferExtended()
+		 * will invalidate this cached value and let smgrnblocks()
+		 * do a fresh lseek.
+		 *
+		 * We only do this for MAIN_FORKNUM CREATE records, which
+		 * correspond to new relation creation.  FSM and VM forks
+		 * are also set to 0 because they cannot exist yet for a
+		 * newly created relation.
+		 */
+		if (xlrec->forkNum == MAIN_FORKNUM)
+		{
+			reln->smgr_cached_nblocks[MAIN_FORKNUM] = 0;
+			reln->smgr_cached_nblocks[FSM_FORKNUM] = 0;
+			reln->smgr_cached_nblocks[VISIBILITYMAP_FORKNUM] = 0;
+		}
 	}
 	else if (info == XLOG_SMGR_TRUNCATE)
 	{
