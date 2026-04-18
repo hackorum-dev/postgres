@@ -722,6 +722,17 @@ select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "
 select jsonb_path_query('"abc~@~def~@~ghi"', '$.split_part("~@~", 2)');
 select jsonb_path_query('"abc,def,ghi,jkl"', '$.split_part(",", -2)');
 
+-- Test .split_part() error handling in lax mode (should suppress errors)
+select jsonb '"hello-world"' @? '$.split_part("-", 0)';
+select jsonb '"hello-world"' @? '$.split_part("-", 99999999999)';
+select jsonb_path_exists('"hello-world"', '$.split_part("-", 0)', silent => true);
+select jsonb_path_exists('"hello-world"', '$.split_part("-", 99999999999)', silent => true);
+select jsonb_path_query('"hello-world"', '$.split_part("-", 0)', silent => true);
+select jsonb_path_query('"hello-world"', '$.split_part("-", 99999999999)', silent => true);
+-- These should still error in strict/non-silent mode
+select jsonb_path_query('"hello-world"', '$.split_part("-", 0)');
+select jsonb_path_query('"hello-world"', '$.split_part("-", 99999999999)');
+
 -- Test string methods play nicely together
 select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye")');

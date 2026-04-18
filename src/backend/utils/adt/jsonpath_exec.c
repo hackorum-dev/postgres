@@ -74,6 +74,7 @@
 #include "utils/json.h"
 #include "utils/jsonpath.h"
 #include "utils/memutils.h"
+#include "utils/numeric.h"
 #include "utils/timestamp.h"
 
 /*
@@ -3018,6 +3019,8 @@ executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 			{
 				char	   *from_str;
 				Numeric		n;
+				int32		field;
+				ErrorSaveContext escontext = {T_ErrorSaveContext};
 
 				jspGetLeftArg(jsp, &elem);
 				if (elem.type != jpiString)
@@ -3031,11 +3034,23 @@ executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 				n = jspGetNumeric(&elem);
 
+				field = numeric_int4_safe(n, (Node *) &escontext);
+				if (escontext.error_occurred)
+					RETURN_ERROR(ereport(ERROR,
+										 (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+										  errmsg("jsonpath item method .%s() field number is out of range for type integer",
+												 jspOperationName(jsp->type)))));
+
+				if (field == 0)
+					RETURN_ERROR(ereport(ERROR,
+										 (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+										  errmsg("field position must not be zero"))));
+
 				resStr = TextDatumGetCString(DirectFunctionCall3Coll(split_part,
 																	 DEFAULT_COLLATION_OID,
 																	 str,
 																	 CStringGetTextDatum(from_str),
-																	 DirectFunctionCall1(numeric_int4, NumericGetDatum(n))));
+																	 Int32GetDatum(field)));
 				break;
 			}
 		default:
