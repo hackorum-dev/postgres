@@ -513,6 +513,16 @@ XLogReadBufferExtended(RelFileLocator rlocator, ForkNumber forknum,
 	 */
 	smgrcreate(smgr, forknum, true);
 
+	/*
+	 * If the cached nblocks is 0, it was set by smgr_redo(CREATE) to
+	 * enable the optimized drop-buffer path.  But the relation may
+	 * have been extended before the crash, so we must invalidate the
+	 * cache and let smgrnblocks() do an lseek to get the real size.
+	 * This extra lseek is acceptable here because we're about to do
+	 * I/O to read the block anyway.
+	 */
+	if (smgr->smgr_cached_nblocks[forknum] == 0)
+		smgr->smgr_cached_nblocks[forknum] = InvalidBlockNumber;
 	lastblock = smgrnblocks(smgr, forknum);
 
 	if (blkno < lastblock)
