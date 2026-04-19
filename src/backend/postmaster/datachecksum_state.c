@@ -887,17 +887,24 @@ launcher_exit(int code, Datum arg)
 {
 	abort_requested = false;
 
-	if (launcher_running)
+	/*
+	 * Only perform cleanup if we actually claimed the launcher role by
+	 * setting the shared launcher_running flag.  A redundant launcher that
+	 * found another launcher already running will have exited early without
+	 * setting the local launcher_running flag, and must not touch the shared
+	 * state owned by the active launcher.
+	 */
+	if (!launcher_running)
+		return;
+
+	LWLockAcquire(DataChecksumsWorkerLock, LW_EXCLUSIVE);
+	if (DataChecksumState->worker_pid != InvalidPid)
 	{
-		LWLockAcquire(DataChecksumsWorkerLock, LW_EXCLUSIVE);
-		if (DataChecksumState->worker_pid != InvalidPid)
-		{
-			ereport(LOG,
-					errmsg("data checksums launcher exiting while worker is still running, signalling worker"));
-			kill(DataChecksumState->worker_pid, SIGTERM);
-		}
-		LWLockRelease(DataChecksumsWorkerLock);
+		ereport(LOG,
+				errmsg("data checksums launcher exiting while worker is still running, signalling worker"));
+		kill(DataChecksumState->worker_pid, SIGTERM);
 	}
+	LWLockRelease(DataChecksumsWorkerLock);
 
 	/*
 	 * If the launcher is exiting before data checksums are enabled then set
