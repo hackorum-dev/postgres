@@ -10219,7 +10219,7 @@ void PQsetAuthDataHook(PQauthDataHook_type hook);
         default handler will be reinstalled. Otherwise, the application passes
         a pointer to a callback function with the signature:
 <programlisting>
-int hook_fn(PGauthData type, PGconn *conn, void *data);
+typedef int (*PQauthDataHook_type) (PGauthData type, PGconn *conn, void *data);
 </programlisting>
         which <application>libpq</application> will call when an action is
         required of the application. <replaceable>type</replaceable> describes
