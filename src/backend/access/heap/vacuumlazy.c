@@ -345,6 +345,12 @@ typedef struct LVRelState
 	int			num_dead_items_resets;
 	Size		total_dead_items_bytes;
 
+	/* Per-phase elapsed time tracking (in microseconds) */
+	instr_time	phase_start_time;	/* when the current phase started */
+	int64		heap_vacuum_elapsed_us;
+	int64		index_vacuum_elapsed_us;
+	int64		index_cleanup_elapsed_us;
+
 	/*
 	 * Total number of planned and actually launched parallel workers for
 	 * index vacuuming and index cleanup.
@@ -767,6 +773,9 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 	vacrel->num_index_scans = 0;
 	vacrel->num_dead_items_resets = 0;
 	vacrel->total_dead_items_bytes = 0;
+	vacrel->heap_vacuum_elapsed_us = 0;
+	vacrel->index_vacuum_elapsed_us = 0;
+	vacrel->index_cleanup_elapsed_us = 0;
 	vacrel->tuples_deleted = 0;
 	vacrel->tuples_frozen = 0;
 	vacrel->lpdead_items = 0;
@@ -1285,6 +1294,7 @@ lazy_scan_heap(LVRelState *vacrel)
 	BlockNumber orig_eager_scan_success_limit =
 		vacrel->eager_scan_remaining_successes; /* for logging */
 	Buffer		vmbuffer = InvalidBuffer;
+	instr_time	now;
 	const int	initprog_index[] = {
 		PROGRESS_VACUUM_PHASE,
 		PROGRESS_VACUUM_TOTAL_HEAP_BLKS,
@@ -1297,6 +1307,9 @@ lazy_scan_heap(LVRelState *vacrel)
 	initprog_val[1] = rel_pages;
 	initprog_val[2] = vacrel->dead_items_info->max_bytes;
 	pgstat_progress_update_multi_param(3, initprog_index, initprog_val);
+
+	/* Start timing the heap scan phase */
+	INSTR_TIME_SET_CURRENT(vacrel->phase_start_time);
 
 	/* Initialize for the first heap_vac_scan_next_block() call */
 	vacrel->current_block = InvalidBlockNumber;
@@ -1367,6 +1380,15 @@ lazy_scan_heap(LVRelState *vacrel)
 				vmbuffer = InvalidBuffer;
 			}
 
+			/*
+			 * Accumulate heap vacuum time before switching to index vacuum.
+			 */
+			INSTR_TIME_SET_CURRENT(now);
+			INSTR_TIME_SUBTRACT(now, vacrel->phase_start_time);
+			vacrel->heap_vacuum_elapsed_us += INSTR_TIME_GET_MICROSEC(now);
+			pgstat_progress_update_param(PROGRESS_VACUUM_HEAP_VACUUM_TIME,
+										 vacrel->heap_vacuum_elapsed_us);
+
 			/* Perform a round of index and heap vacuuming */
 			vacrel->consider_bypass_optimization = false;
 			lazy_vacuum(vacrel);
@@ -1383,6 +1405,9 @@ lazy_scan_heap(LVRelState *vacrel)
 			/* Report that we are once again scanning the heap */
 			pgstat_progress_update_param(PROGRESS_VACUUM_PHASE,
 										 PROGRESS_VACUUM_PHASE_SCAN_HEAP);
+
+			/* Restart heap scan timing */
+			INSTR_TIME_SET_CURRENT(vacrel->phase_start_time);
 		}
 
 		buf = read_stream_next_buffer(stream, &per_buffer_data);
@@ -1595,6 +1620,15 @@ lazy_scan_heap(LVRelState *vacrel)
 		vacrel->missed_dead_tuples;
 
 	read_stream_end(stream);
+
+	/*
+	 * Accumulate final heap vacuum time before index vacuuming.
+	 */
+	INSTR_TIME_SET_CURRENT(now);
+	INSTR_TIME_SUBTRACT(now, vacrel->phase_start_time);
+	vacrel->heap_vacuum_elapsed_us += INSTR_TIME_GET_MICROSEC(now);
+	pgstat_progress_update_param(PROGRESS_VACUUM_HEAP_VACUUM_TIME,
+								 vacrel->heap_vacuum_elapsed_us);
 
 	/*
 	 * Do index vacuuming (call each index's ambulkdelete routine), then do
@@ -2506,6 +2540,7 @@ lazy_vacuum_all_indexes(LVRelState *vacrel)
 	};
 	int64		progress_start_val[2];
 	int64		progress_end_val[3];
+	instr_time	now;
 
 	Assert(vacrel->nindexes > 0);
 	Assert(vacrel->do_index_vacuuming);
@@ -2525,6 +2560,9 @@ lazy_vacuum_all_indexes(LVRelState *vacrel)
 	progress_start_val[0] = PROGRESS_VACUUM_PHASE_VACUUM_INDEX;
 	progress_start_val[1] = vacrel->nindexes;
 	pgstat_progress_update_multi_param(2, progress_start_index, progress_start_val);
+
+	/* Start timing index vacuum phase */
+	INSTR_TIME_SET_CURRENT(vacrel->phase_start_time);
 
 	if (!ParallelVacuumIsActive(vacrel))
 	{
@@ -2582,6 +2620,14 @@ lazy_vacuum_all_indexes(LVRelState *vacrel)
 	 * We deliberately include the case where we started a round of bulk
 	 * deletes that we weren't able to finish due to the failsafe triggering.
 	 */
+
+	/* Accumulate index vacuum elapsed time */
+	INSTR_TIME_SET_CURRENT(now);
+	INSTR_TIME_SUBTRACT(now, vacrel->phase_start_time);
+	vacrel->index_vacuum_elapsed_us += INSTR_TIME_GET_MICROSEC(now);
+	pgstat_progress_update_param(PROGRESS_VACUUM_INDEX_VACUUM_TIME,
+								 vacrel->index_vacuum_elapsed_us);
+
 	vacrel->num_index_scans++;
 	progress_end_val[0] = 0;
 	progress_end_val[1] = 0;
@@ -2644,6 +2690,7 @@ lazy_vacuum_heap_rel(LVRelState *vacrel)
 	Buffer		vmbuffer = InvalidBuffer;
 	LVSavedErrInfo saved_err_info;
 	TidStoreIter *iter;
+	instr_time	now;
 
 	Assert(vacrel->do_index_vacuuming);
 	Assert(vacrel->do_index_cleanup);
@@ -2652,6 +2699,9 @@ lazy_vacuum_heap_rel(LVRelState *vacrel)
 	/* Report that we are now vacuuming the heap */
 	pgstat_progress_update_param(PROGRESS_VACUUM_PHASE,
 								 PROGRESS_VACUUM_PHASE_VACUUM_HEAP);
+
+	/* Start timing heap vacuum (second pass) phase */
+	INSTR_TIME_SET_CURRENT(vacrel->phase_start_time);
 
 	/* Update error traceback information */
 	update_vacuum_error_info(vacrel, &saved_err_info,
@@ -2741,6 +2791,13 @@ lazy_vacuum_heap_rel(LVRelState *vacrel)
 			(errmsg("table \"%s\": removed %" PRId64 " dead item identifiers in %u pages",
 					vacrel->relname, vacrel->dead_items_info->num_items,
 					vacuumed_pages)));
+
+	/* Accumulate heap vacuum (second pass) elapsed time */
+	INSTR_TIME_SET_CURRENT(now);
+	INSTR_TIME_SUBTRACT(now, vacrel->phase_start_time);
+	vacrel->heap_vacuum_elapsed_us += INSTR_TIME_GET_MICROSEC(now);
+	pgstat_progress_update_param(PROGRESS_VACUUM_HEAP_VACUUM_TIME,
+								 vacrel->heap_vacuum_elapsed_us);
 
 	/* Revert to the previous phase information for error traceback */
 	restore_vacuum_error_info(vacrel, &saved_err_info);
@@ -2955,6 +3012,7 @@ lazy_cleanup_all_indexes(LVRelState *vacrel)
 	};
 	int64		progress_start_val[2];
 	int64		progress_end_val[2] = {0, 0};
+	instr_time	now;
 
 	Assert(vacrel->do_index_cleanup);
 	Assert(vacrel->nindexes > 0);
@@ -2966,6 +3024,9 @@ lazy_cleanup_all_indexes(LVRelState *vacrel)
 	progress_start_val[0] = PROGRESS_VACUUM_PHASE_INDEX_CLEANUP;
 	progress_start_val[1] = vacrel->nindexes;
 	pgstat_progress_update_multi_param(2, progress_start_index, progress_start_val);
+
+	/* Start timing index cleanup phase */
+	INSTR_TIME_SET_CURRENT(vacrel->phase_start_time);
 
 	if (!ParallelVacuumIsActive(vacrel))
 	{
@@ -2991,6 +3052,13 @@ lazy_cleanup_all_indexes(LVRelState *vacrel)
 											estimated_count,
 											&(vacrel->worker_usage.cleanup));
 	}
+
+	/* Accumulate index cleanup elapsed time */
+	INSTR_TIME_SET_CURRENT(now);
+	INSTR_TIME_SUBTRACT(now, vacrel->phase_start_time);
+	vacrel->index_cleanup_elapsed_us += INSTR_TIME_GET_MICROSEC(now);
+	pgstat_progress_update_param(PROGRESS_VACUUM_INDEX_CLEANUP_TIME,
+								 vacrel->index_cleanup_elapsed_us);
 
 	/* Reset the progress counters */
 	pgstat_progress_update_multi_param(2, progress_end_index, progress_end_val);

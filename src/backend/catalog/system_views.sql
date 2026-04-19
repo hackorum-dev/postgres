@@ -1353,7 +1353,10 @@ CREATE VIEW pg_stat_progress_vacuum AS
         CASE S.param13 WHEN 1 THEN 'manual'
                        WHEN 2 THEN 'autovacuum'
                        WHEN 3 THEN 'autovacuum_wraparound'
-                       ELSE NULL END AS started_by
+                       ELSE NULL END AS started_by,
+        S.param14 / 1000000::double precision AS heap_vacuum_time,
+        S.param15 / 1000000::double precision AS index_vacuum_time,
+        S.param16 / 1000000::double precision AS index_cleanup_time
     FROM pg_stat_get_progress_info('VACUUM') AS S
         LEFT JOIN pg_database D ON S.datid = D.oid;
 

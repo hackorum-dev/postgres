@@ -7892,6 +7892,42 @@ FROM pg_stat_get_backend_idset() AS backendid;
        </itemizedlist>
       </para></entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>heap_vacuum_time</structfield> <type>double precision</type>
+      </para>
+      <para>
+       Total time spent in heap vacuuming phase, in seconds (see
+       <xref linkend="vacuum-phases"/>). This includes time spent scanning
+       the heap to collect dead TIDs, plus the time spent in the heap
+       vacuuming pass (removing dead items from heap pages). The time is
+       accumulated across multiple passes when the TID store fills up.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>index_vacuum_time</structfield> <type>double precision</type>
+      </para>
+      <para>
+       Total time spent in the index vacuuming phase, in seconds (see
+       <xref linkend="vacuum-phases"/>). This includes the time to vacuum
+       all indexes on the table in each pass, and is accumulated across
+       multiple passes when all indexes have to be vacuumed again.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>index_cleanup_time</structfield> <type>double precision</type>
+      </para>
+      <para>
+       Total time spent in the index cleanup phase, in seconds (see
+       <xref linkend="vacuum-phases"/>). This includes the time to
+       clean up all indexes on the table.
+      </para></entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
