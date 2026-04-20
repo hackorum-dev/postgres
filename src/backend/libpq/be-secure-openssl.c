@@ -1429,13 +1429,8 @@ port_bio_method(void)
 {
 	if (!port_bio_method_ptr)
 	{
-		int			my_bio_index;
-
-		my_bio_index = BIO_get_new_index();
-		if (my_bio_index == -1)
-			return NULL;
-		my_bio_index |= BIO_TYPE_SOURCE_SINK;
-		port_bio_method_ptr = BIO_meth_new(my_bio_index, "PostgreSQL backend socket");
+		port_bio_method_ptr = BIO_meth_new(BIO_TYPE_SOURCE_SINK,
+										   "PostgreSQL backend socket");
 		if (!port_bio_method_ptr)
 			return NULL;
 		if (!BIO_meth_set_write(port_bio_method_ptr, port_bio_write) ||
