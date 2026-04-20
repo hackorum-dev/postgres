@@ -100,6 +100,7 @@
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/catcache.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -19617,13 +19618,44 @@ ATPrepChangePersistence(AlteredTableInfo *tab, Relation rel, bool toLogged)
 	 * Check that the table is not part of any publication when changing to
 	 * UNLOGGED, as UNLOGGED tables can't be published.
 	 */
-	if (!toLogged &&
-		GetRelationIncludedPublications(RelationGetRelid(rel)) != NIL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("cannot change table \"%s\" to unlogged because it is part of a publication",
-						RelationGetRelationName(rel)),
-				 errdetail("Unlogged relations cannot be replicated.")));
+	if (!toLogged)
+	{
+		CatCList   *pubrellist;
+
+		/* Find all publications associated with the relation. */
+		pubrellist = SearchSysCacheList1(PUBLICATIONRELMAP,
+										 ObjectIdGetDatum(RelationGetRelid(rel)));
+		for (int i = 0; i < pubrellist->n_members; i++)
+		{
+			HeapTuple	tup = &pubrellist->members[i]->tuple;
+			Form_pg_publication_rel pubrel = (Form_pg_publication_rel) GETSTRUCT(tup);
+
+			if (!pubrel->prexcept)
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("cannot change table \"%s\" to unlogged because it is part of a publication",
+								RelationGetRelationName(rel)),
+						 errdetail("Unlogged relations cannot be replicated.")));
+			}
+			else
+			{
+				ObjectAddress obj;
+				char	   *pubname;
+
+				pubname = get_publication_name(pubrel->prpubid, false);
+
+				ObjectAddressSet(obj, PublicationRelRelationId, pubrel->oid);
+				performDeletion(&obj, DROP_CASCADE, 0);
+
+				ereport(NOTICE,
+						errmsg("relation \"%s\" removed from publication \"%s\" due to being changed to UNLOGGED",
+							   RelationGetRelationName(rel), pubname));
+			}
+		}
+
+		ReleaseSysCacheList(pubrellist);
+	}
 
 	/*
 	 * Check existing foreign key constraints to preserve the invariant that

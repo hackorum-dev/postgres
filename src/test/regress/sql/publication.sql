@@ -123,6 +123,22 @@ CREATE PUBLICATION testpub_foralltables_excepttable1 FOR ALL TABLES EXCEPT (TABL
 -- Check that the table description shows the publications where it is listed
 -- in the EXCEPT clause
 \d testpub_tbl1
+
+SET client_min_messages = 'NOTICE';
+
+-- Change testpub_tbl1 to UNLOGGED. This should remove the relation from the
+-- publication (and effectively from the EXCEPT clause), since UNLOGGED tables
+-- are not supported in publications.
+ALTER TABLE testpub_tbl1 SET UNLOGGED;
+\dRp+ testpub_foralltables_excepttable1
+\d testpub_tbl1
+
+-- Restore the table to LOGGED.
+ALTER TABLE testpub_tbl1 SET LOGGED;
+
+SET client_min_messages = 'ERROR';
+
+
 -- fail - first table in the EXCEPT list should use TABLE keyword
 CREATE PUBLICATION testpub_foralltables_excepttable2 FOR ALL TABLES EXCEPT (testpub_tbl1, testpub_tbl2);
 
