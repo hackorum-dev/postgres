@@ -1907,13 +1907,7 @@ pgconn_bio_method(void)
 
 	if (!pgconn_bio_method_ptr)
 	{
-		int			my_bio_index;
-
-		my_bio_index = BIO_get_new_index();
-		if (my_bio_index == -1)
-			goto err;
-		my_bio_index |= BIO_TYPE_SOURCE_SINK;
-		res = BIO_meth_new(my_bio_index, "libpq socket");
+		res = BIO_meth_new(BIO_TYPE_SOURCE_SINK, "libpq socket");
 		if (!res)
 			goto err;
 
