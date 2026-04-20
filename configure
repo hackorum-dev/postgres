@@ -777,6 +777,7 @@ enable_tap_tests
 enable_dtrace
 DTRACEFLAGS
 DTRACE
+LCOV_EXTRA_FLAGS
 enable_coverage
 GENHTML
 LCOV
@@ -3473,6 +3474,11 @@ fi
 
 if test -z "$LCOV"; then
   as_fn_error $? "lcov not found" "$LINENO" 5
+fi
+lcov_version=$($LCOV --version 2>/dev/null | sed 's/^.* //')
+lcov_major_version=$(echo "$lcov_version" | sed 's/\..*//')
+if test "$lcov_major_version" -ge 2 2>/dev/null; then
+  LCOV_EXTRA_FLAGS="--ignore-errors inconsistent,range"
 fi
 if test -z "$GENHTML"; then
   for ac_prog in genhtml
