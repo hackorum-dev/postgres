@@ -11,6 +11,8 @@ PGFILEDESC = "pg_surgery - perform surgery on a damaged relation"
 
 REGRESS = heap_surgery
 
+TAP_TESTS = 1
+
 ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)

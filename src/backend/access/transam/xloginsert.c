@@ -39,6 +39,7 @@
 #include "replication/origin.h"
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
+#include "utils/injection_point.h"
 #include "utils/memutils.h"
 #include "utils/pgstat_internal.h"
 #include "utils/rel.h"
@@ -529,6 +530,18 @@ XLogInsert(RmgrId rmid, uint8 info)
 		rdt = XLogRecordAssemble(rmid, info, RedoRecPtr, doPageWrites,
 								 &fpw_lsn, &num_fpi, &fpi_bytes,
 								 &topxid_included);
+
+		/*
+		 * Injection point after CRC has been computed but before the record
+		 * data is copied to WAL buffers.  The XLogRecData chain points
+		 * directly at shared-buffer pages; if a concurrent backend modifies
+		 * those pages now, the CRC won't match the written bytes.
+		 *
+		 * Only fires when pre-loaded by the caller (e.g. pg_surgery's
+		 * heap_force_kill) via INJECTION_POINT_LOAD before the critical
+		 * section.
+		 */
+		INJECTION_POINT_CACHED("wal-insert-after-crc", NULL);
 
 		EndPos = XLogInsertRecord(rdt, fpw_lsn, curinsert_flags, num_fpi,
 								  fpi_bytes, topxid_included);

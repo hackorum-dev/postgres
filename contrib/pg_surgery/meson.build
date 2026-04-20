@@ -32,4 +32,12 @@ tests += {
       'heap_surgery',
     ],
   },
+  'tap': {
+    'env': {
+      'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
+    },
+    'tests': [
+      't/001_wal_corruption.pl',
+    ],
+  },
 }

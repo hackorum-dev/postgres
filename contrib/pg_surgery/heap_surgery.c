@@ -21,6 +21,7 @@
 #include "storage/bufmgr.h"
 #include "utils/acl.h"
 #include "utils/array.h"
+#include "utils/injection_point.h"
 #include "utils/rel.h"
 
 PG_MODULE_MAGIC_EXT(
@@ -237,7 +238,19 @@ heap_force_common(FunctionCallInfo fcinfo, HeapTupleForceOption heap_force_opt)
 		 * if it appears to be necessary.
 		 */
 		if (heap_force_opt == HEAP_FORCE_KILL && PageIsAllVisible(page))
+		{
 			visibilitymap_pin(rel, blkno, &vmbuf);
+
+			/*
+			 * Run an injection point outside the critical section to force
+			 * shared memory initialization (DSM registry) for the wait
+			 * machinery, then load the callback for the cached point that
+			 * runs inside the critical section.
+			 */
+			INJECTION_POINT("heap-force-kill-vm-pin", NULL);
+			INJECTION_POINT_LOAD("heap-force-kill-before-vm-wal");
+			INJECTION_POINT_LOAD("wal-insert-after-crc");
+		}
 
 		/* No ereport(ERROR) from here until all the changes are logged. */
 		START_CRIT_SECTION();
@@ -269,6 +282,15 @@ heap_force_common(FunctionCallInfo fcinfo, HeapTupleForceOption heap_force_opt)
 					PageClearAllVisible(page);
 					visibilitymap_clear(rel, blkno, vmbuf,
 										VISIBILITYMAP_VALID_BITS);
+
+					/*
+					 * Re-acquire the VM buffer lock so the page content
+					 * stays stable through log_newpage_buffer's XLogInsert
+					 * (which reads the page twice: once for CRC, once for
+					 * the data copy).  Only needed when WAL-logging.
+					 */
+					if (RelationNeedsWAL(rel))
+						LockBuffer(vmbuf, BUFFER_LOCK_EXCLUSIVE);
 					did_modify_vm = true;
 				}
 			}
@@ -325,7 +347,11 @@ heap_force_common(FunctionCallInfo fcinfo, HeapTupleForceOption heap_force_opt)
 
 		/* WAL log the VM page if it was modified. */
 		if (did_modify_vm && RelationNeedsWAL(rel))
+		{
+			INJECTION_POINT_CACHED("heap-force-kill-before-vm-wal", NULL);
 			log_newpage_buffer(vmbuf, false);
+			LockBuffer(vmbuf, BUFFER_LOCK_UNLOCK);
+		}
 
 		END_CRIT_SECTION();
 
