@@ -207,11 +207,17 @@ PGAC_PATH_PROGS(LCOV, lcov)
 if test -z "$LCOV"; then
   AC_MSG_ERROR([lcov not found])
 fi
+lcov_version=$($LCOV --version 2>/dev/null | sed 's/^.* //')
+lcov_major_version=$(echo "$lcov_version" | sed 's/\..*//')
+if test "$lcov_major_version" -ge 2 2>/dev/null; then
+  LCOV_EXTRA_FLAGS="--ignore-errors inconsistent,range"
+fi
 PGAC_PATH_PROGS(GENHTML, genhtml)
 if test -z "$GENHTML"; then
   AC_MSG_ERROR([genhtml not found])
 fi])
 AC_SUBST(enable_coverage)
+AC_SUBST(LCOV_EXTRA_FLAGS)
 
 #
 # DTrace
