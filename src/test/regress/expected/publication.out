@@ -274,6 +274,32 @@ Excluded from publications:
     "testpub_foralltables_excepttable"
     "testpub_foralltables_excepttable1"
 
+SET client_min_messages = 'NOTICE';
+-- Change testpub_tbl1 to UNLOGGED. This should remove the relation from the
+-- publication (and effectively from the EXCEPT clause), since UNLOGGED tables
+-- are not supported in publications.
+ALTER TABLE testpub_tbl1 SET UNLOGGED;
+NOTICE:  relation "testpub_tbl1" removed from publication "testpub_foralltables_excepttable" due to being changed to UNLOGGED
+NOTICE:  relation "testpub_tbl1" removed from publication "testpub_foralltables_excepttable1" due to being changed to UNLOGGED
+\dRp+ testpub_foralltables_excepttable1
+                                                Publication testpub_foralltables_excepttable1
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | t          | f             | t       | t       | t       | t         | none              | f        | 
+(1 row)
+
+\d testpub_tbl1
+                        Unlogged table "public.testpub_tbl1"
+ Column |  Type   | Collation | Nullable |                 Default                  
+--------+---------+-----------+----------+------------------------------------------
+ id     | integer |           | not null | nextval('testpub_tbl1_id_seq'::regclass)
+ data   | text    |           |          | 
+Indexes:
+    "testpub_tbl1_pkey" PRIMARY KEY, btree (id)
+
+-- Restore the table to LOGGED.
+ALTER TABLE testpub_tbl1 SET LOGGED;
+SET client_min_messages = 'ERROR';
 -- fail - first table in the EXCEPT list should use TABLE keyword
 CREATE PUBLICATION testpub_foralltables_excepttable2 FOR ALL TABLES EXCEPT (testpub_tbl1, testpub_tbl2);
 ERROR:  syntax error at or near "testpub_tbl1"
