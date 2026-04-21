@@ -1901,10 +1901,10 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 		}
 
 		/*
-		 * Now the new xmin is safely on disk, we can let the global value
-		 * advance. We do not take ProcArrayLock or similar since we only
-		 * advance xmin here and there's not much harm done by a concurrent
-		 * computation missing that.
+		 * Now the new xmin is safely on disk, we can let the global xmin
+		 * horizon advance. We do not take ProcArrayLock or similar since we
+		 * only advance xmin here and there's not much harm done by a
+		 * concurrent computation missing that.
 		 */
 		if (updated_xmin)
 		{
@@ -1913,8 +1913,14 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 			SpinLockRelease(&MyReplicationSlot->mutex);
 
 			ReplicationSlotsComputeRequiredXmin(false);
-			ReplicationSlotsComputeRequiredLSN();
 		}
+
+		/*
+		 * Now the new restart_lsn is safely on disk, recompute the global
+		 * WAL retention requirement.
+		 */
+		if (updated_restart)
+			ReplicationSlotsComputeRequiredLSN();
 	}
 	else
 	{
