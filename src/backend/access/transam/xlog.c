@@ -1027,8 +1027,15 @@ XLogInsertRecord(XLogRecData *rdata,
 		 */
 		if (inserted)
 		{
-			EndPos = StartPos + SizeOfXLogRecord;
-			if (StartPos / XLOG_BLCKSZ != EndPos / XLOG_BLCKSZ)
+			EndPos = StartPos + MAXALIGN(SizeOfXLogRecord);
+
+			/*
+			 * If the XLOG_SWITCH record crosses a page boundary and actually has
+			 * a part on the next page, we need to consider the page header. This
+			 * is consistent with XLogBytePosToEndRecPtr().
+			 */
+			if (StartPos / XLOG_BLCKSZ != EndPos / XLOG_BLCKSZ &&
+				EndPos % XLOG_BLCKSZ != 0)
 			{
 				uint64		offset = XLogSegmentOffset(EndPos, wal_segment_size);
 
