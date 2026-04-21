@@ -4175,7 +4175,7 @@ PostgresSingleUserMain(int argc, char *argv[],
 	CreateDataDirLockFile(false);
 
 	/* read control file (error checking and contains config ) */
-	LocalProcessControlFile(false);
+	LocalProcessControlFile(false, NULL);
 
 	/* Register the shared memory needs of all core subsystems. */
 	RegisterBuiltinShmemCallbacks();

@@ -724,7 +724,7 @@ static void UpdateMinRecoveryPoint(XLogRecPtr lsn, bool force);
 static bool PerformRecoveryXLogAction(void);
 static void InitControlFile(uint64 sysidentifier, uint32 data_checksum_version);
 static void WriteControlFile(void);
-static void ReadControlFile(void);
+static void ReadControlFile(ControlFileData *source);
 static void UpdateControlFile(void);
 static char *str_time(pg_time_t tnow, char *buf, size_t bufsize);
 
@@ -4407,42 +4407,56 @@ WriteControlFile(void)
 }
 
 static void
-ReadControlFile(void)
+ReadControlFile(ControlFileData *source)
 {
 	pg_crc32c	crc;
-	int			fd;
 	char		wal_segsz_str[20];
-	int			r;
 
 	/*
-	 * Read data...
+	 * If a source snapshot was provided, use it instead of reading from disk.
+	 * This path is used under EXEC_BACKEND to inherit pg_control from the
+	 * postmaster via BackendParameters, matching fork semantics and avoiding
+	 * torn reads of the on-disk file.
 	 */
-	fd = BasicOpenFile(XLOG_CONTROL_FILE,
-					   O_RDWR | PG_BINARY);
-	if (fd < 0)
-		ereport(PANIC,
-				(errcode_for_file_access(),
-				 errmsg("could not open file \"%s\": %m",
-						XLOG_CONTROL_FILE)));
-
-	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_READ);
-	r = read(fd, ControlFile, sizeof(ControlFileData));
-	if (r != sizeof(ControlFileData))
+	if (source)
 	{
-		if (r < 0)
+		memcpy(ControlFile, source, sizeof(ControlFileData));
+	}
+	else
+	{
+		int			fd;
+		int			r;
+
+		/*
+		 * Read data...
+		 */
+		fd = BasicOpenFile(XLOG_CONTROL_FILE,
+						   O_RDWR | PG_BINARY);
+		if (fd < 0)
 			ereport(PANIC,
 					(errcode_for_file_access(),
-					 errmsg("could not read file \"%s\": %m",
+					 errmsg("could not open file \"%s\": %m",
 							XLOG_CONTROL_FILE)));
-		else
-			ereport(PANIC,
-					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("could not read file \"%s\": read %d of %zu",
-							XLOG_CONTROL_FILE, r, sizeof(ControlFileData))));
-	}
-	pgstat_report_wait_end();
 
-	close(fd);
+		pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_READ);
+		r = read(fd, ControlFile, sizeof(ControlFileData));
+		if (r != sizeof(ControlFileData))
+		{
+			if (r < 0)
+				ereport(PANIC,
+						(errcode_for_file_access(),
+						 errmsg("could not read file \"%s\": %m",
+								XLOG_CONTROL_FILE)));
+			else
+				ereport(PANIC,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("could not read file \"%s\": read %d of %zu",
+								XLOG_CONTROL_FILE, r, sizeof(ControlFileData))));
+		}
+		pgstat_report_wait_end();
+
+		close(fd);
+	}
 
 	/*
 	 * Check for expected pg_control format version.  If this is wrong, the
@@ -4638,6 +4652,19 @@ static void
 UpdateControlFile(void)
 {
 	update_controlfile(DataDir, ControlFile, true);
+}
+
+/*
+ * Copy the postmaster's process-local pg_control image into *dest.  This is
+ * the same in-memory copy that a forked backend inherits in its address
+ * space, and it is used under EXEC_BACKEND to hand the image to sub-processes
+ * via BackendParameters instead of having them re-read pg_control from disk.
+ */
+void
+GetLocalControlFileCopy(ControlFileData *dest)
+{
+	Assert(LocalControlFile != NULL);
+	memcpy(dest, LocalControlFile, sizeof(ControlFileData));
 }
 
 /*
@@ -5264,14 +5291,18 @@ show_effective_wal_level(void)
  *
  * reset just controls whether previous contents are to be expected (in the
  * reset case, there's a dangling pointer into old shared memory), or not.
+ *
+ * If source is non-NULL, its contents are used instead of reading from disk.
+ * This supports EXEC_BACKEND sub-processes that inherit pg_control from the
+ * postmaster via BackendParameters.
  */
 void
-LocalProcessControlFile(bool reset)
+LocalProcessControlFile(bool reset, struct ControlFileData *source)
 {
 	Assert(reset || ControlFile == NULL);
 	LocalControlFile = palloc_object(ControlFileData);
 	ControlFile = LocalControlFile;
-	ReadControlFile();
+	ReadControlFile(source);
 	SetLocalDataChecksumState(ControlFile->data_checksum_version);
 }
 
@@ -5611,7 +5642,7 @@ BootStrapXLOG(uint32 data_checksum_version)
 	 * Force control file to be read - in contrast to normal processing we'd
 	 * otherwise never run the checks and GUC related initializations therein.
 	 */
-	ReadControlFile();
+	ReadControlFile(NULL);
 }
 
 static char *

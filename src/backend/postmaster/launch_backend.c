@@ -56,6 +56,7 @@
 #include "utils/memutils.h"
 
 #ifdef EXEC_BACKEND
+#include "catalog/pg_control.h"
 #include "nodes/queryjumble.h"
 #include "portability/instr_time.h"
 #include "storage/pg_shmem.h"
@@ -142,6 +143,13 @@ typedef struct
 	InheritableSocket inh_sock;
 
 	/*
+	 * Snapshot of pg_control taken by the postmaster.  Inherited by the
+	 * sub-process in place of re-reading the file from disk, to avoid torn
+	 * reads and to match fork() inheritance semantics.
+	 */
+	ControlFileData ControlFile;
+
+	/*
 	 * Extra startup data, content depends on the child process.
 	 */
 	size_t		startup_data_len;
@@ -149,6 +157,13 @@ typedef struct
 } BackendParameters;
 
 #define SizeOfBackendParameters(startup_data_len) (offsetof(BackendParameters, startup_data) + startup_data_len)
+
+/*
+ * Snapshot of pg_control inherited from the postmaster.  Populated from
+ * BackendParameters in restore_backend_variables() and then consumed by the
+ * call to LocalProcessControlFile() in SubPostmasterMain().
+ */
+static ControlFileData InheritedControlFile;
 
 static void read_backend_variables(char *id, void **startup_data, size_t *startup_data_len);
 static void restore_backend_variables(BackendParameters *param);
@@ -662,10 +677,11 @@ SubPostmasterMain(int argc, char *argv[])
 	checkDataDir();
 
 	/*
-	 * (re-)read control file, as it contains config. The postmaster will
-	 * already have read this, but this process doesn't know about that.
+	 * Set up control file from the snapshot the postmaster captured for us.
+	 * Reading pg_control from disk here would race with concurrent updates
+	 * from the startup process or checkpointer.
 	 */
-	LocalProcessControlFile(false);
+	LocalProcessControlFile(false, &InheritedControlFile);
 
 	RegisterBuiltinShmemCallbacks();
 
@@ -771,6 +787,14 @@ save_backend_variables(BackendParameters *param,
 	strlcpy(param->my_exec_path, my_exec_path, MAXPGPATH);
 
 	strlcpy(param->pkglib_path, pkglib_path, MAXPGPATH);
+
+	/*
+	 * Hand the postmaster's process-local pg_control image to the
+	 * sub-process.  This mirrors what fork() inheritance does on platforms
+	 * without EXEC_BACKEND, and it avoids re-reading pg_control from disk
+	 * concurrently with the startup process or checkpointer updating it.
+	 */
+	GetLocalControlFileCopy(&param->ControlFile);
 
 	param->startup_data_len = startup_data_len;
 	if (startup_data_len > 0)
@@ -1028,6 +1052,8 @@ restore_backend_variables(BackendParameters *param)
 	strlcpy(my_exec_path, param->my_exec_path, MAXPGPATH);
 
 	strlcpy(pkglib_path, param->pkglib_path, MAXPGPATH);
+
+	memcpy(&InheritedControlFile, &param->ControlFile, sizeof(ControlFileData));
 
 	/*
 	 * We need to restore fd.c's counts of externally-opened FDs; to avoid

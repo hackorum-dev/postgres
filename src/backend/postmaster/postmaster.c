@@ -916,7 +916,7 @@ PostmasterMain(int argc, char *argv[])
 	 * processes will inherit the correct function pointer and not need to
 	 * repeat the test.
 	 */
-	LocalProcessControlFile(false);
+	LocalProcessControlFile(false, NULL);
 
 	/*
 	 * Register the apply launcher.  It's probably a good idea to call this
@@ -3265,7 +3265,7 @@ PostmasterStateMachine(void)
 		shmem_exit(1);
 
 		/* re-read control file into local memory */
-		LocalProcessControlFile(true);
+		LocalProcessControlFile(true, NULL);
 
 		/*
 		 * Re-initialize shared memory and semaphores.  Note: We don't call
