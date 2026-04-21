@@ -529,7 +529,7 @@ msgstr "未识别的参数 \"%s\""
 #: access/common/reloptions.c:1180
 #, c-format
 msgid "parameter \"%s\" specified more than once"
-msgstr "表名 \"%s\" 被指定多次"
+msgstr "参数 \"%s\" 被指定多次"
 
 #: access/common/reloptions.c:1196
 #, c-format
