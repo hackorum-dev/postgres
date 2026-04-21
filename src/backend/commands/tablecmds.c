@@ -48,6 +48,7 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_propgraph_label_property.h"
 #include "catalog/pg_publication_rel.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_statistic_ext.h"
@@ -4034,6 +4035,58 @@ renameatt_internal(Oid myrelid,
 
 	/* new name should not already exist */
 	(void) check_for_column_name_collision(targetrelation, newattname, false);
+
+	/*
+	 * Disallow renaming columns that are used by a property graph.  The
+	 * property graph catalog stores the property name in
+	 * pg_propgraph_property.pgpname, which would become stale after a
+	 * rename, causing GRAPH_TABLE queries using the new column name to fail
+	 * while the old (dead) name would still work.
+	 */
+	{
+		Relation	depRel;
+		ScanKeyData key[3];
+		SysScanDesc depScan;
+		HeapTuple	depTup;
+
+		depRel = table_open(DependRelationId, AccessShareLock);
+
+		ScanKeyInit(&key[0],
+					Anum_pg_depend_refclassid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(RelationRelationId));
+		ScanKeyInit(&key[1],
+					Anum_pg_depend_refobjid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(myrelid));
+		ScanKeyInit(&key[2],
+					Anum_pg_depend_refobjsubid,
+					BTEqualStrategyNumber, F_INT4EQ,
+					Int32GetDatum((int32) attnum));
+
+		depScan = systable_beginscan(depRel, DependReferenceIndexId, true,
+									 NULL, 3, key);
+
+		while (HeapTupleIsValid(depTup = systable_getnext(depScan)))
+		{
+			Form_pg_depend depForm = (Form_pg_depend) GETSTRUCT(depTup);
+
+			if (depForm->classid == PropgraphLabelPropertyRelationId)
+			{
+				systable_endscan(depScan);
+				table_close(depRel, AccessShareLock);
+				ereport(ERROR,
+						(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
+						 errmsg("cannot rename column \"%s\" of table \"%s\" because a property graph depends on it",
+								oldattname,
+								RelationGetRelationName(targetrelation)),
+						 errhint("Drop the property graph first, then rename the column.")));
+			}
+		}
+
+		systable_endscan(depScan);
+		table_close(depRel, AccessShareLock);
+	}
 
 	/* apply the update */
 	namestrcpy(&(attform->attname), newattname);
