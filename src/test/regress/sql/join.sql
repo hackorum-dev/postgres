@@ -3215,6 +3215,27 @@ JOIN (
 	) _t2t3t4
 ON sj_t1.id = _t2t3t4.id;
 
+-- SJE with GiST-backed temporal primary key (WITHOUT OVERLAPS).
+-- Use int4range for the scalar key since btree_gist may not be available.
+CREATE TABLE sj_temporal (
+    id int4range,
+    valid_at daterange NOT NULL,
+    val text,
+    PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)
+);
+
+-- Remove SJ: join covers the full temporal PK
+EXPLAIN (COSTS OFF)
+SELECT t1.val FROM sj_temporal t1
+    JOIN sj_temporal t2 ON t1.id = t2.id AND t1.valid_at = t2.valid_at;
+
+-- Don't remove SJ: join only covers part of the temporal PK
+EXPLAIN (COSTS OFF)
+SELECT t1.val FROM sj_temporal t1
+    JOIN sj_temporal t2 ON t1.id = t2.id;
+
+DROP TABLE sj_temporal;
+
 --
 -- Test RowMarks-related code
 --

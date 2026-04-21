@@ -4227,8 +4227,17 @@ relation_has_unique_index_for(PlannerInfo *root, RelOptInfo *rel,
 				 * index opfamily, else it is not asserting the right kind of
 				 * equality behavior for this index.  We check this first
 				 * since it's probably cheaper than match_index_to_operand().
+				 *
+				 * For non-btree unique indexes (e.g., GiST-backed temporal
+				 * primary keys created with WITHOUT OVERLAPS), the index
+				 * opfamily won't appear in mergeopfamilies, which only lists
+				 * btree opfamilies.  Fall back to checking whether the
+				 * clause's equality operator is directly a member of the
+				 * index's opfamily.
 				 */
-				if (!list_member_oid(rinfo->mergeopfamilies, ind->opfamily[c]))
+				if (!list_member_oid(rinfo->mergeopfamilies, ind->opfamily[c]) &&
+					!op_in_opfamily(castNode(OpExpr, rinfo->clause)->opno,
+									ind->opfamily[c]))
 					continue;
 
 				/*
