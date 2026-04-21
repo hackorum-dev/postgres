@@ -974,6 +974,23 @@ ERROR:  cannot add temporary element table to non-temporary property graph
 LINE 2:     ADD VERTEX TABLES (v2tmp KEY (m));
                                ^
 DETAIL:  Table "v2tmp" is a temporary table.
+-- ALTER TABLE RENAME COLUMN should be blocked when column is used by
+-- a property graph (the property graph catalog stores property names
+-- that would become stale after the rename)
+CREATE TABLE rename_test (id int PRIMARY KEY, val text);
+CREATE PROPERTY GRAPH g_rename VERTEX TABLES (rename_test KEY (id));
+ALTER TABLE rename_test RENAME COLUMN val TO new_val;  -- error
+ERROR:  cannot rename column "val" of table "rename_test" because a property graph depends on it
+HINT:  Drop the property graph first, then rename the column.
+ALTER TABLE rename_test RENAME COLUMN id TO new_id;  -- error (KEY column)
+ERROR:  cannot rename column "id" of table "rename_test" because a property graph depends on it
+HINT:  Drop the property graph first, then rename the column.
+-- renaming a column not used by the graph should still work
+ALTER TABLE rename_test ADD COLUMN extra int;
+ALTER TABLE rename_test RENAME COLUMN extra TO extra2;  -- ok
+ALTER TABLE rename_test DROP COLUMN extra2;
+DROP PROPERTY GRAPH g_rename;
+DROP TABLE rename_test;
 -- DROP, ALTER SET SCHEMA, ALTER PROPERTY GRAPH RENAME TO
 DROP TABLE g2;  -- error: wrong object type
 ERROR:  "g2" is not a table

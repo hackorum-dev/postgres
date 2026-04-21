@@ -386,6 +386,22 @@ ALTER PROPERTY GRAPH g1
     ADD VERTEX TABLES (v2tmp KEY (m));  -- error
 
 
+-- ALTER TABLE RENAME COLUMN should be blocked when column is used by
+-- a property graph (the property graph catalog stores property names
+-- that would become stale after the rename)
+
+CREATE TABLE rename_test (id int PRIMARY KEY, val text);
+CREATE PROPERTY GRAPH g_rename VERTEX TABLES (rename_test KEY (id));
+ALTER TABLE rename_test RENAME COLUMN val TO new_val;  -- error
+ALTER TABLE rename_test RENAME COLUMN id TO new_id;  -- error (KEY column)
+-- renaming a column not used by the graph should still work
+ALTER TABLE rename_test ADD COLUMN extra int;
+ALTER TABLE rename_test RENAME COLUMN extra TO extra2;  -- ok
+ALTER TABLE rename_test DROP COLUMN extra2;
+DROP PROPERTY GRAPH g_rename;
+DROP TABLE rename_test;
+
+
 -- DROP, ALTER SET SCHEMA, ALTER PROPERTY GRAPH RENAME TO
 
 DROP TABLE g2;  -- error: wrong object type
