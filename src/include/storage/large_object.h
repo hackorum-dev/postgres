@@ -51,6 +51,20 @@ typedef struct LargeObjectDesc
 } LargeObjectDesc;
 
 
+typedef struct LoBulkWriteItem
+{
+	LargeObjectDesc *desc;
+	const char *buf;
+	int			len;
+}			LoBulkWriteItem;
+
+typedef struct LoBulkPutItem
+{
+	Oid			loid;
+	const char *buf;
+	int			len;
+}			LoBulkPutItem;
+
 /*
  * Each "page" (tuple) of a large object can hold this much data
  *
@@ -95,6 +109,9 @@ extern int64 inv_seek(LargeObjectDesc *obj_desc, int64 offset, int whence);
 extern int64 inv_tell(LargeObjectDesc *obj_desc);
 extern int	inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes);
 extern int	inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes);
+extern int64 inv_bulk_write(const LoBulkWriteItem *reqs, int nreqs);
+extern int64 inv_bulk_put(const LoBulkPutItem *reqs, int nreqs);
+extern void inv_bulk_create(const LoBulkPutItem *reqs, int nreqs);
 extern void inv_truncate(LargeObjectDesc *obj_desc, int64 len);
 
 #endif							/* LARGE_OBJECT_H */
