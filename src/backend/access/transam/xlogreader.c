@@ -1064,8 +1064,17 @@ ReadPageInternal(XLogReaderState *state, XLogRecPtr pageptr, int reqLen)
 	 * file and validate its header, even if that's not where the target
 	 * record is.  This is so that we can check the additional identification
 	 * info that is present in the first page's "long" header.
+	 *
+	 * When reading WAL from the in-memory WAL buffers via WALReadFromBuffers,
+	 * the first page of a segment may have already been overwritten by newer
+	 * WAL in the WAL buffers by the time we need to read a later page from
+	 * that same segment. In this case, we skip this first page validation.
+	 *
+	 * XXX: Consider adding a flag in XLogReaderState that callers reading
+	 * from WAL buffers can set, rather than relying on ws_segno == 0.
 	 */
-	if (targetSegNo != state->seg.ws_segno && targetPageOff != 0)
+	if (state->seg.ws_segno != 0 &&
+		targetSegNo != state->seg.ws_segno && targetPageOff != 0)
 	{
 		XLogRecPtr	targetSegmentPtr = pageptr - targetPageOff;
 
