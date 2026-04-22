@@ -16,6 +16,8 @@
  */
 #include "postgres.h"
 
+#include <float.h>
+
 #include "access/sysattr.h"
 #include "access/transam.h"
 #include "catalog/pg_class.h"
@@ -5267,15 +5269,14 @@ get_switched_clauses(List *clauses, Relids outerrelids)
  * different security levels in the list.  Quals of lower security_level
  * must go before quals of higher security_level, except that we can grant
  * exceptions to move up quals that are leakproof.  When security level
- * doesn't force the decision, we prefer to order clauses by estimated
- * execution cost, cheapest first.
+ * doesn't force the decision, we order clauses by a combined
+ * cost/selectivity rank so that cheap predicates that eliminate many rows
+ * are evaluated first.
  *
- * Ideally the order should be driven by a combination of execution cost and
- * selectivity, but it's not immediately clear how to account for both,
- * and given the uncertainty of the estimates the reliability of the decisions
- * would be doubtful anyway.  So we just order by security level then
- * estimated per-tuple cost, being careful not to change the order when
- * (as is often the case) the estimates are identical.
+ * For conjunctive predicates, we use the rank cost / (1 - selectivity),
+ * where selectivity is the fraction of rows that pass the clause.
+ * Clauses with a lower rank are checked first.  We are careful not to
+ * change the order when the computed ranks are identical.
  *
  * Although this will work on either bare clauses or RestrictInfos, it's
  * much faster to apply it to RestrictInfos, since it can re-use cost
@@ -5287,8 +5288,10 @@ get_switched_clauses(List *clauses, Relids outerrelids)
  *
  * Note: some callers pass lists that contain entries that will later be
  * removed; this is the easiest way to let this routine see RestrictInfos
- * instead of bare clauses.  This is another reason why trying to consider
- * selectivity in the ordering would likely do the wrong thing.
+ * instead of bare clauses.  In such cases, selectivity estimates for
+ * clauses that are later removed can still affect the temporary ordering,
+ * but that is acceptable because this routine only determines executor
+ * qual evaluation order after planning decisions have already been made.
  */
 static List *
 order_qual_clauses(PlannerInfo *root, List *clauses)
@@ -5297,6 +5300,8 @@ order_qual_clauses(PlannerInfo *root, List *clauses)
 	{
 		Node	   *clause;
 		Cost		cost;
+		Selectivity	selectivity;
+		double		rank;
 		Index		security_level;
 	} QualItem;
 	int			nitems = list_length(clauses);
@@ -5310,8 +5315,9 @@ order_qual_clauses(PlannerInfo *root, List *clauses)
 		return clauses;
 
 	/*
-	 * Collect the items and costs into an array.  This is to avoid repeated
-	 * cost_qual_eval work if the inputs aren't RestrictInfos.
+	 * Collect the items, costs, and selectivities into an array.  This is
+	 * to avoid repeated cost_qual_eval work if the inputs aren't
+	 * RestrictInfos.
 	 */
 	items = (QualItem *) palloc(nitems * sizeof(QualItem));
 	i = 0;
@@ -5323,6 +5329,38 @@ order_qual_clauses(PlannerInfo *root, List *clauses)
 		cost_qual_eval_node(&qcost, clause, root);
 		items[i].clause = clause;
 		items[i].cost = qcost.per_tuple;
+
+		/*
+		 * Compute selectivity for this clause.  Selectivity is the
+		 * fraction of rows that pass the predicate (lower = more
+		 * selective = eliminates more rows).
+		 */
+		items[i].selectivity = clause_selectivity(root,
+												  clause,
+												  0,
+												  JOIN_INNER,
+												  NULL);
+
+		if (items[i].selectivity < 0.0)
+			items[i].selectivity = 0.0;
+		else if (items[i].selectivity > 1.0)
+			items[i].selectivity = 1.0;
+
+		/*
+		 * For conjunctive predicates, rank is cost / (1 - selectivity),
+		 * where selectivity is the fraction of rows that pass.  Lower
+		 * rank means that the clause is a better candidate to
+		 * evaluate earlier.
+		 *
+		 * If selectivity is 1.0, the clause eliminates no rows, so
+		 * assign the maximum rank and move it to the end within the
+		 * same security level.
+		 */
+		if (items[i].selectivity < 1.0)
+			items[i].rank = items[i].cost / (1.0 - items[i].selectivity);
+		else
+			items[i].rank = DBL_MAX;
+
 		if (IsA(clause, RestrictInfo))
 		{
 			RestrictInfo *rinfo = (RestrictInfo *) clause;
@@ -5362,10 +5400,22 @@ order_qual_clauses(PlannerInfo *root, List *clauses)
 		{
 			QualItem   *olditem = &items[j - 1];
 
-			if (newitem.security_level > olditem->security_level ||
-				(newitem.security_level == olditem->security_level &&
-				 newitem.cost >= olditem->cost))
+			/*
+			 * First, respect security levels: higher security_level
+			 * must come after lower.
+			 */
+			if (newitem.security_level > olditem->security_level)
 				break;
+			if (newitem.security_level < olditem->security_level)
+			{
+				items[j] = *olditem;
+				continue;
+			}
+
+			/* Same security level: order by cost-effectiveness rank. */
+			if (newitem.rank >= olditem->rank)
+				break;
+
 			items[j] = *olditem;
 		}
 		items[j] = newitem;

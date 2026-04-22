@@ -426,7 +426,7 @@ EXPLAIN (COSTS OFF, PLAN_ADVICE) SELECT * FROM scan_table
                          QUERY PLAN                          
 -------------------------------------------------------------
  Seq Scan on scan_table
-   Filter: ((ctid > '(1,1)'::tid) AND (ctid < '(2,1)'::tid))
+   Filter: ((ctid < '(2,1)'::tid) AND (ctid > '(1,1)'::tid))
  Supplied Plan Advice:
    SEQ_SCAN(scan_table) /* matched */
  Generated Plan Advice:

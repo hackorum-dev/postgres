@@ -364,21 +364,21 @@ explain (costs off) select * from rlp where a > 15 and b = 'ab';
 ---------------------------------------------------------
  Append
    ->  Seq Scan on rlp3abcd rlp_1
-         Filter: ((a > 15) AND ((b)::text = 'ab'::text))
+         Filter: (((b)::text = 'ab'::text) AND (a > 15))
    ->  Seq Scan on rlp4_1 rlp_2
-         Filter: ((a > 15) AND ((b)::text = 'ab'::text))
+         Filter: (((b)::text = 'ab'::text) AND (a > 15))
    ->  Seq Scan on rlp4_2 rlp_3
-         Filter: ((a > 15) AND ((b)::text = 'ab'::text))
+         Filter: (((b)::text = 'ab'::text) AND (a > 15))
    ->  Seq Scan on rlp4_default rlp_4
-         Filter: ((a > 15) AND ((b)::text = 'ab'::text))
+         Filter: (((b)::text = 'ab'::text) AND (a > 15))
    ->  Seq Scan on rlp5_1 rlp_5
-         Filter: ((a > 15) AND ((b)::text = 'ab'::text))
+         Filter: (((b)::text = 'ab'::text) AND (a > 15))
    ->  Seq Scan on rlp5_default rlp_6
-         Filter: ((a > 15) AND ((b)::text = 'ab'::text))
+         Filter: (((b)::text = 'ab'::text) AND (a > 15))
    ->  Seq Scan on rlp_default_30 rlp_7
-         Filter: ((a > 15) AND ((b)::text = 'ab'::text))
+         Filter: (((b)::text = 'ab'::text) AND (a > 15))
    ->  Seq Scan on rlp_default_default rlp_8
-         Filter: ((a > 15) AND ((b)::text = 'ab'::text))
+         Filter: (((b)::text = 'ab'::text) AND (a > 15))
 (17 rows)
 
 explain (costs off) select * from rlp where a = 16;
@@ -406,7 +406,7 @@ explain (costs off) select * from rlp where a = 16 and b < 'ab';
                     QUERY PLAN                     
 ---------------------------------------------------
  Seq Scan on rlp3_default rlp
-   Filter: (((b)::text < 'ab'::text) AND (a = 16))
+   Filter: ((a = 16) AND ((b)::text < 'ab'::text))
 (2 rows)
 
 explain (costs off) select * from rlp where a = 16 and b <= 'ab';
@@ -414,9 +414,9 @@ explain (costs off) select * from rlp where a = 16 and b <= 'ab';
 ----------------------------------------------------------
  Append
    ->  Seq Scan on rlp3abcd rlp_1
-         Filter: (((b)::text <= 'ab'::text) AND (a = 16))
+         Filter: ((a = 16) AND ((b)::text <= 'ab'::text))
    ->  Seq Scan on rlp3_default rlp_2
-         Filter: (((b)::text <= 'ab'::text) AND (a = 16))
+         Filter: ((a = 16) AND ((b)::text <= 'ab'::text))
 (5 rows)
 
 explain (costs off) select * from rlp where a = 16 and b is null;
@@ -636,7 +636,7 @@ explain (costs off) select * from rlp where a > 1 and a = 10;	/* only default */
             QUERY PLAN            
 ----------------------------------
  Seq Scan on rlp_default_10 rlp
-   Filter: ((a > 1) AND (a = 10))
+   Filter: ((a = 10) AND (a > 1))
 (2 rows)
 
 explain (costs off) select * from rlp where a > 1 and a >=15;	/* rlp3 onwards, including default */
@@ -787,9 +787,9 @@ explain (costs off) select * from mc3p where a = 1 and abs(b) = 1 and c < 8;
 --------------------------------------------------------
  Append
    ->  Seq Scan on mc3p0 mc3p_1
-         Filter: ((c < 8) AND (a = 1) AND (abs(b) = 1))
+         Filter: ((a = 1) AND (c < 8) AND (abs(b) = 1))
    ->  Seq Scan on mc3p1 mc3p_2
-         Filter: ((c < 8) AND (a = 1) AND (abs(b) = 1))
+         Filter: ((a = 1) AND (c < 8) AND (abs(b) = 1))
 (5 rows)
 
 explain (costs off) select * from mc3p where a = 10 and abs(b) between 5 and 35;
@@ -1037,7 +1037,7 @@ explain (costs off) select * from mc2p where a = 2 and b < 1;
            QUERY PLAN            
 ---------------------------------
  Seq Scan on mc2p3 mc2p
-   Filter: ((b < 1) AND (a = 2))
+   Filter: ((a = 2) AND (b < 1))
 (2 rows)
 
 explain (costs off) select * from mc2p where a > 1;
@@ -1060,7 +1060,7 @@ explain (costs off) select * from mc2p where a = 1 and b > 1;
            QUERY PLAN            
 ---------------------------------
  Seq Scan on mc2p2 mc2p
-   Filter: ((b > 1) AND (a = 1))
+   Filter: ((a = 1) AND (b > 1))
 (2 rows)
 
 -- all partitions but the default one should be pruned
@@ -1855,9 +1855,9 @@ explain (costs off) select * from rlp where a = 15 and b <> 'ab' and b <> 'cd' a
 ------------------------------------------------------------------------------------------------------------------------------------------
  Append
    ->  Seq Scan on rlp3efgh rlp_1
-         Filter: ((b IS NOT NULL) AND ((b)::text <> 'ab'::text) AND ((b)::text <> 'cd'::text) AND ((b)::text <> 'xy'::text) AND (a = 15))
+         Filter: ((b IS NOT NULL) AND (a = 15) AND ((b)::text <> 'ab'::text) AND ((b)::text <> 'cd'::text) AND ((b)::text <> 'xy'::text))
    ->  Seq Scan on rlp3_default rlp_2
-         Filter: ((b IS NOT NULL) AND ((b)::text <> 'ab'::text) AND ((b)::text <> 'cd'::text) AND ((b)::text <> 'xy'::text) AND (a = 15))
+         Filter: ((b IS NOT NULL) AND (a = 15) AND ((b)::text <> 'ab'::text) AND ((b)::text <> 'cd'::text) AND ((b)::text <> 'xy'::text))
 (5 rows)
 
 --
@@ -2072,13 +2072,13 @@ explain (costs off) select * from hp where a < 1 and b = 'xxx';
 -------------------------------------------------
  Append
    ->  Seq Scan on hp0 hp_1
-         Filter: ((a < 1) AND (b = 'xxx'::text))
+         Filter: ((b = 'xxx'::text) AND (a < 1))
    ->  Seq Scan on hp1 hp_2
-         Filter: ((a < 1) AND (b = 'xxx'::text))
+         Filter: ((b = 'xxx'::text) AND (a < 1))
    ->  Seq Scan on hp2 hp_3
-         Filter: ((a < 1) AND (b = 'xxx'::text))
+         Filter: ((b = 'xxx'::text) AND (a < 1))
    ->  Seq Scan on hp3 hp_4
-         Filter: ((a < 1) AND (b = 'xxx'::text))
+         Filter: ((b = 'xxx'::text) AND (a < 1))
 (9 rows)
 
 explain (costs off) select * from hp where a <> 1 and b = 'yyy';
@@ -2086,13 +2086,13 @@ explain (costs off) select * from hp where a <> 1 and b = 'yyy';
 --------------------------------------------------
  Append
    ->  Seq Scan on hp0 hp_1
-         Filter: ((a <> 1) AND (b = 'yyy'::text))
+         Filter: ((b = 'yyy'::text) AND (a <> 1))
    ->  Seq Scan on hp1 hp_2
-         Filter: ((a <> 1) AND (b = 'yyy'::text))
+         Filter: ((b = 'yyy'::text) AND (a <> 1))
    ->  Seq Scan on hp2 hp_3
-         Filter: ((a <> 1) AND (b = 'yyy'::text))
+         Filter: ((b = 'yyy'::text) AND (a <> 1))
    ->  Seq Scan on hp3 hp_4
-         Filter: ((a <> 1) AND (b = 'yyy'::text))
+         Filter: ((b = 'yyy'::text) AND (a <> 1))
 (9 rows)
 
 explain (costs off) select * from hp where a <> 1 and b <> 'xxx';
@@ -4159,7 +4159,7 @@ select * from listp where a = (select 2) and b <> 10;
                        QUERY PLAN                       
 --------------------------------------------------------
  Seq Scan on listp1 listp (actual rows=0.00 loops=1)
-   Filter: ((b <> 10) AND (a = (InitPlan expr_1).col1))
+   Filter: ((a = (InitPlan expr_1).col1) AND (b <> 10))
    InitPlan expr_1
      ->  Result (never executed)
 (4 rows)
@@ -4321,7 +4321,7 @@ explain (costs off) select * from rp_prefix_test1 where a <= 1 and b = 'a';
                     QUERY PLAN                    
 --------------------------------------------------
  Seq Scan on rp_prefix_test1_p1 rp_prefix_test1
-   Filter: ((a <= 1) AND ((b)::text = 'a'::text))
+   Filter: (((b)::text = 'a'::text) AND (a <= 1))
 (2 rows)
 
 create table rp_prefix_test2 (a int, b int, c int) partition by range(a, b, c);
@@ -4333,7 +4333,7 @@ explain (costs off) select * from rp_prefix_test2 where a <= 1 and b = 1 and c >
                    QUERY PLAN                   
 ------------------------------------------------
  Seq Scan on rp_prefix_test2_p1 rp_prefix_test2
-   Filter: ((a <= 1) AND (c >= 0) AND (b = 1))
+   Filter: ((b = 1) AND (a <= 1) AND (c >= 0))
 (2 rows)
 
 create table rp_prefix_test3 (a int, b int, c int, d int) partition by range(a, b, c, d);
@@ -4355,7 +4355,7 @@ explain (costs off) select * from rp_prefix_test3 where a >= 1 and b >= 1 and b 
                                QUERY PLAN                               
 ------------------------------------------------------------------------
  Seq Scan on rp_prefix_test3_p2 rp_prefix_test3
-   Filter: ((a >= 1) AND (b >= 1) AND (d >= 0) AND (b = 2) AND (c = 2))
+   Filter: ((b = 2) AND (c = 2) AND (a >= 1) AND (b >= 1) AND (d >= 0))
 (2 rows)
 
 drop table rp_prefix_test1;
@@ -4632,7 +4632,7 @@ explain (verbose, costs off) execute update_part_abc_view (1, 'd');
          Subplans Removed: 1
          ->  Seq Scan on public.part_abc_1
                Output: $2, part_abc_1.tableoid, part_abc_1.ctid
-               Filter: ((part_abc_1.b <> 'a'::text) AND (part_abc_1.a = $1))
+               Filter: ((part_abc_1.a = $1) AND (part_abc_1.b <> 'a'::text))
 (8 rows)
 
 execute update_part_abc_view (1, 'd');
@@ -4651,7 +4651,7 @@ explain (verbose, costs off) execute update_part_abc_view (2, 'a');
          Subplans Removed: 1
          ->  Seq Scan on public.part_abc_2
                Output: $2, part_abc_2.tableoid, part_abc_2.ctid
-               Filter: ((part_abc_2.b <> 'a'::text) AND (part_abc_2.a = $1))
+               Filter: ((part_abc_2.a = $1) AND (part_abc_2.b <> 'a'::text))
 (8 rows)
 
 execute update_part_abc_view (2, 'a');
@@ -4687,7 +4687,7 @@ when matched then delete returning pt.a;
          ->  Append
                Subplans Removed: 1
                ->  Seq Scan on part_abc_1
-                     Filter: ((b <> 'a'::text) AND (a = stable_one()))
+                     Filter: ((a = stable_one()) AND (b <> 'a'::text))
          ->  Materialize
                ->  Seq Scan on part_abc_1 pt1
                      Filter: (a = stable_one())
