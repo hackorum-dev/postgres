@@ -1,0 +1,4 @@
+comment = 'Test WAL record stats reading from WAL buffers via WALReadFromBuffers'
+default_version = '1.0'
+module_pathname = '$libdir/test_wal_record_stats'
+relocatable = true
