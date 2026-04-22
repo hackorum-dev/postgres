@@ -195,7 +195,7 @@ static void
 append_tuple_value_detail(StringInfo buf, List *tuple_values,
 						  bool need_newline)
 {
-	bool		first = true;
+	char	   *prefix = ": ";
 
 	Assert(buf != NULL && tuple_values != NIL);
 
@@ -209,31 +209,12 @@ append_tuple_value_detail(StringInfo buf, List *tuple_values,
 		if (!tuple_value)
 			continue;
 
-		if (first)
-		{
-			/*
-			 * translator: The colon is used as a separator in conflict
-			 * messages. The first part, built in the caller, describes what
-			 * happened locally; the second part lists the conflicting keys
-			 * and tuple data.
-			 */
-			appendStringInfoString(buf, _(": "));
-		}
-		else
-		{
-			/*
-			 * translator: This is a separator in a list of conflicting keys
-			 * and tuple data.
-			 */
-			appendStringInfoString(buf, _(", "));
-		}
-
+		appendStringInfoString(buf, prefix);
 		appendStringInfoString(buf, tuple_value);
-		first = false;
+		prefix = ", ";
 	}
 
-	/* translator: This is the terminator of a conflict message */
-	appendStringInfoString(buf, _("."));
+	appendStringInfoChar(buf, '.');
 
 	if (need_newline)
 		appendStringInfoChar(buf, '\n');

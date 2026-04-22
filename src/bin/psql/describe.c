@@ -2504,10 +2504,10 @@ describeOneTableDetails(const char *schemaname,
 				printfPQExpBuffer(&tmpbuf, _("primary key, "));
 			else if (strcmp(indisunique, "t") == 0)
 			{
-				printfPQExpBuffer(&tmpbuf, _("unique"));
 				if (strcmp(indnullsnotdistinct, "t") == 0)
-					appendPQExpBufferStr(&tmpbuf, _(" nulls not distinct"));
-				appendPQExpBufferStr(&tmpbuf, _(", "));
+					appendPQExpBufferStr(&tmpbuf, _("unique nulls not distinct, "));
+				else
+					printfPQExpBuffer(&tmpbuf, _("unique, "));
 			}
 			else
 				resetPQExpBuffer(&tmpbuf);
