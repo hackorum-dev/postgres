@@ -3289,11 +3289,11 @@ explain (costs off) select * from range_list_parted where a between 3 and 23 and
 -----------------------------------------------------------------
  Append
    ->  Seq Scan on part_1_10_ab range_list_parted_1
-         Filter: ((a >= 3) AND (a <= 23) AND (b = 'ab'::bpchar))
+         Filter: ((b = 'ab'::bpchar) AND (a >= 3) AND (a <= 23))
    ->  Seq Scan on part_10_20_ab range_list_parted_2
-         Filter: ((a >= 3) AND (a <= 23) AND (b = 'ab'::bpchar))
+         Filter: ((b = 'ab'::bpchar) AND (a >= 3) AND (a <= 23))
    ->  Seq Scan on part_21_30_ab range_list_parted_3
-         Filter: ((a >= 3) AND (a <= 23) AND (b = 'ab'::bpchar))
+         Filter: ((b = 'ab'::bpchar) AND (a >= 3) AND (a <= 23))
 (7 rows)
 
 /* Should select no rows because range partition key cannot be null */
@@ -3437,7 +3437,7 @@ explain (costs off) select * from mcrparted where a = 20 and abs(b) = 10 and c >
                      QUERY PLAN                      
 -----------------------------------------------------
  Seq Scan on mcrparted4 mcrparted
-   Filter: ((c > 10) AND (a = 20) AND (abs(b) = 10))
+   Filter: ((a = 20) AND (c > 10) AND (abs(b) = 10))
 (2 rows)
 
 explain (costs off) select * from mcrparted where a = 20 and c > 20; -- scans mcrparted3, mcrparte4, mcrparte5, mcrparted_def
@@ -3445,13 +3445,13 @@ explain (costs off) select * from mcrparted where a = 20 and c > 20; -- scans mc
 ---------------------------------------------
  Append
    ->  Seq Scan on mcrparted3 mcrparted_1
-         Filter: ((c > 20) AND (a = 20))
+         Filter: ((a = 20) AND (c > 20))
    ->  Seq Scan on mcrparted4 mcrparted_2
-         Filter: ((c > 20) AND (a = 20))
+         Filter: ((a = 20) AND (c > 20))
    ->  Seq Scan on mcrparted5 mcrparted_3
-         Filter: ((c > 20) AND (a = 20))
+         Filter: ((a = 20) AND (c > 20))
    ->  Seq Scan on mcrparted_def mcrparted_4
-         Filter: ((c > 20) AND (a = 20))
+         Filter: ((a = 20) AND (c > 20))
 (9 rows)
 
 -- check that partitioned table Appends cope with being referenced in

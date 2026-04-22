@@ -2809,7 +2809,7 @@ select count(*) from
  Aggregate
    ->  Merge Left Join
          Merge Cond: (x.thousand = y.unique2)
-         Join Filter: ((x.twothousand = y.hundred) AND (x.fivethous = y.unique2))
+         Join Filter: ((x.fivethous = y.unique2) AND (x.twothousand = y.hundred))
          ->  Sort
                Sort Key: x.thousand, x.twothousand, x.fivethous
                ->  Seq Scan on tenk1 x
@@ -10528,7 +10528,7 @@ inner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2;
  Nested Loop
    Output: j1.id1, j1.id2, j2.id1, j2.id2
    Inner Unique: true
-   Join Filter: ((j1.id1 = j2.id1) AND (j1.id2 = j2.id2))
+   Join Filter: ((j1.id2 = j2.id2) AND (j1.id1 = j2.id1))
    ->  Seq Scan on public.j2
          Output: j2.id1, j2.id2
    ->  Seq Scan on public.j1
