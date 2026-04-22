@@ -698,6 +698,7 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
   </para>
 
   <note>
+    <title>Note on bool_and and bool_or</title>
     <indexterm>
       <primary>ANY</primary>
     </indexterm>
@@ -724,6 +725,7 @@ SELECT b1 = ANY((SELECT b2 FROM t2 ...)) FROM t1 ...;
   </note>
 
   <note>
+   <title>Note on count(*)</title>
    <para>
     Users accustomed to working with other SQL database management
     systems might be disappointed by the performance of the
@@ -732,7 +734,7 @@ SELECT b1 = ANY((SELECT b2 FROM t2 ...)) FROM t1 ...;
 <programlisting>
 SELECT count(*) FROM sometable;
 </programlisting>
-    will require effort proportional to the size of the table:
+    This will require effort proportional to the size of the table:
     <productname>PostgreSQL</productname> will need to scan either the
     entire table or the entirety of an index that includes all rows in
     the table.
