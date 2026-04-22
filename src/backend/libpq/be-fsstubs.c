@@ -44,13 +44,16 @@
 
 #include "access/xact.h"
 #include "catalog/pg_largeobject.h"
+#include "catalog/pg_type.h"
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
+#include "utils/array.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 #include "varatt.h"
@@ -871,4 +874,168 @@ be_lo_put(PG_FUNCTION_ARGS)
 	inv_close(loDesc);
 
 	PG_RETURN_VOID();
+}
+
+int64
+lo_bulk_write(const LoBulkWriteItem *items, int nitems)
+{
+	if (nitems <= 0)
+		return 0;
+
+	PreventCommandIfReadOnly("lo_bulk_write()");
+
+	/* lo_cleanup_needed is already set by lo_open calls required for fds */
+
+	return inv_bulk_write(items, nitems);
+}
+
+int64
+lo_bulk_put(const LoBulkPutItem *items, int nitems)
+{
+	if (nitems <= 0)
+		return 0;
+
+	PreventCommandIfReadOnly("lo_bulk_put()");
+
+	lo_cleanup_needed = true;
+
+	return inv_bulk_put(items, nitems);
+}
+
+Datum
+be_lo_bulk_put(PG_FUNCTION_ARGS)
+{
+	ArrayType  *oids_arr = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *contents_arr = PG_GETARG_ARRAYTYPE_P(1);
+	Oid			oids_eltype = ARR_ELEMTYPE(oids_arr);
+	Oid			contents_eltype = ARR_ELEMTYPE(contents_arr);
+	int16		oids_elmlen,
+				contents_elmlen;
+	bool		oids_elmbyval,
+				contents_elmbyval;
+	char		oids_elmalign,
+				contents_elmalign;
+	Datum	   *oid_datums,
+			   *content_datums;
+	bool	   *oid_nulls,
+			   *content_nulls;
+	int			noids,
+				ncontents;
+	LoBulkPutItem *items;
+	int64		res;
+	int			i;
+
+	if (oids_eltype != OIDOID)
+		elog(ERROR, "expected OID array for first argument");
+	if (contents_eltype != BYTEAOID)
+		elog(ERROR, "expected bytea array for second argument");
+
+	get_typlenbyvalalign(oids_eltype, &oids_elmlen, &oids_elmbyval, &oids_elmalign);
+	get_typlenbyvalalign(contents_eltype, &contents_elmlen, &contents_elmbyval, &contents_elmalign);
+
+	deconstruct_array(oids_arr, oids_eltype, oids_elmlen, oids_elmbyval, oids_elmalign,
+					  &oid_datums, &oid_nulls, &noids);
+	deconstruct_array(contents_arr, contents_eltype, contents_elmlen, contents_elmbyval, contents_elmalign,
+					  &content_datums, &content_nulls, &ncontents);
+
+	if (noids != ncontents)
+		elog(ERROR, "oid and content arrays must have same length");
+
+	if (noids == 0)
+		PG_RETURN_INT64(0);
+
+	items = palloc(noids * sizeof(LoBulkPutItem));
+	for (i = 0; i < noids; i++)
+	{
+		bytea	   *b;
+
+		if (oid_nulls[i] || content_nulls[i])
+			elog(ERROR, "array elements cannot be null");
+		items[i].loid = DatumGetObjectId(oid_datums[i]);
+		b = DatumGetByteaPP(content_datums[i]);
+		items[i].buf = VARDATA_ANY(b);
+		items[i].len = VARSIZE_ANY_EXHDR(b);
+	}
+
+	res = lo_bulk_put(items, noids);
+	pfree(items);
+
+	PG_RETURN_INT64(res);
+}
+
+Datum
+be_lo_bulk_write(PG_FUNCTION_ARGS)
+{
+	ArrayType  *fds_arr = PG_GETARG_ARRAYTYPE_P(0);
+	ArrayType  *contents_arr = PG_GETARG_ARRAYTYPE_P(1);
+	Oid			fds_eltype = ARR_ELEMTYPE(fds_arr);
+	Oid			contents_eltype = ARR_ELEMTYPE(contents_arr);
+	int16		fds_elmlen,
+				contents_elmlen;
+	bool		fds_elmbyval,
+				contents_elmbyval;
+	char		fds_elmalign,
+				contents_elmalign;
+	Datum	   *fd_datums,
+			   *content_datums;
+	bool	   *fd_nulls,
+			   *content_nulls;
+	int			nfds,
+				ncontents;
+	LoBulkWriteItem *items;
+	int64		res;
+	int			i;
+
+	if (fds_eltype != INT4OID)
+		elog(ERROR, "expected integer array for first argument");
+	if (contents_eltype != BYTEAOID)
+		elog(ERROR, "expected bytea array for second argument");
+
+	get_typlenbyvalalign(fds_eltype, &fds_elmlen, &fds_elmbyval, &fds_elmalign);
+	get_typlenbyvalalign(contents_eltype, &contents_elmlen, &contents_elmbyval, &contents_elmalign);
+
+	deconstruct_array(fds_arr, fds_eltype, fds_elmlen, fds_elmbyval, fds_elmalign,
+					  &fd_datums, &fd_nulls, &nfds);
+	deconstruct_array(contents_arr, contents_eltype, contents_elmlen, contents_elmbyval, contents_elmalign,
+					  &content_datums, &content_nulls, &ncontents);
+
+	if (nfds != ncontents)
+		elog(ERROR, "fd and content arrays must have same length");
+
+	if (nfds == 0)
+		PG_RETURN_INT64(0);
+
+	items = palloc(nfds * sizeof(LoBulkWriteItem));
+	for (i = 0; i < nfds; i++)
+	{
+		int			fd = DatumGetInt32(fd_datums[i]);
+		LargeObjectDesc *lobj;
+		bytea	   *b;
+
+		if (fd < 0 || fd >= cookies_size || cookies[fd] == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("invalid large-object descriptor: %d", fd)));
+		lobj = cookies[fd];
+
+		/* see comment in lo_read() */
+		if ((lobj->flags & IFS_WRLOCK) == 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("large object descriptor %d was not opened for writing",
+							fd)));
+
+		if (fd_nulls[i] || content_nulls[i])
+			elog(ERROR, "array elements cannot be null");
+
+		items[i].desc = lobj;
+		b = DatumGetByteaPP(content_datums[i]);
+		items[i].buf = VARDATA_ANY(b);
+		items[i].len = VARSIZE_ANY_EXHDR(b);
+	}
+
+	res = lo_bulk_write(items, nfds);
+	pfree(items);
+
+	PG_RETURN_INT64(res);
 }
