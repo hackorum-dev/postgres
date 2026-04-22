@@ -22,6 +22,12 @@
 extern int	lo_read(int fd, char *buf, int len);
 extern int	lo_write(int fd, const char *buf, int len);
 
+struct LoBulkWriteItem;
+struct LoBulkPutItem;
+
+extern int64 lo_bulk_write(const struct LoBulkWriteItem *items, int nitems);
+extern int64 lo_bulk_put(const struct LoBulkPutItem *items, int nitems);
+
 /*
  * Cleanup LOs at xact commit/abort
  */
