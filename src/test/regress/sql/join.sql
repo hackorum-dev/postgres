@@ -3457,6 +3457,16 @@ EXPLAIN (COSTS OFF)
 SELECT 1 AS c1 FROM sl sl1 LEFT JOIN (sl AS sl2 NATURAL JOIN sl AS sl3)
   ON sl2.bool_col LEFT JOIN sl AS sl4 ON sl2.bool_col;
 
+-- An EC-derived IS NOT NULL (from the NATURAL JOIN's self-join removal) may
+-- collide with an identical IS NOT NULL originating from an enclosing outer
+-- join's ON clause.  The two clauses differ only in outer_relids, so they
+-- must be merged (by union) rather than kept as duplicates.  Bug #19435.
+EXPLAIN (COSTS OFF)
+SELECT 1 AS c1 FROM (sl AS sl0 RIGHT JOIN
+  ((sl AS sl1 NATURAL JOIN sl AS sl2)
+   RIGHT JOIN sl AS sl3 ON sl1.bool_col IS NOT NULL)
+  ON sl1.bool_col);
+
 -- Check optimization disabling if it will violate special join conditions.
 -- Two identical joined relations satisfies self join removal conditions but
 -- stay in different special join infos.

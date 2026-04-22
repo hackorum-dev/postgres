@@ -2890,6 +2890,13 @@ typedef struct LimitPath
  *
  * parent_ec, left_ec, right_ec are not printed, lest it lead to infinite
  * recursion in plan tree dump.
+ *
+ * If you add a new field to RestrictInfo that affects semantic or
+ * placement-level equality, also revisit restrict_infos_logically_equal()
+ * and the dedup callers that rely on it (add_non_redundant_clauses,
+ * update_eclasses).  Fields that are caches or otherwise irrelevant to
+ * equality should be tagged pg_node_attr(equal_ignore) so they are skipped
+ * automatically.
  */
 
 typedef struct RestrictInfo
