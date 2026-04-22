@@ -1,0 +1,222 @@
+--
+-- Predicate ordering by selectivity
+--
+-- Test 1. Check reordering of equal-cost clauses by selectivity.
+--         Both clauses use the built-in "=" operator and have the
+--         same per-tuple cost.  The clause on column "a" is more
+--         selective and should appear first in the Filter.
+--
+CREATE TABLE pred_order (
+	a int,
+	b int
+);
+INSERT INTO pred_order
+SELECT i, i % 2
+FROM generate_series(1, 1000) AS g(i);
+ANALYZE pred_order;
+EXPLAIN (COSTS OFF)
+SELECT *
+FROM pred_order
+WHERE b = 0 AND a = 2;
+           QUERY PLAN            
+---------------------------------
+ Seq Scan on pred_order
+   Filter: ((a = 2) AND (b = 0))
+(2 rows)
+
+SELECT COUNT(*)
+FROM pred_order
+WHERE b = 0 AND a = 2;
+ count 
+-------
+     1
+(1 row)
+
+--
+-- Test setup. Use a SET clause to prevent SQL-function inlining.
+--             This keeps the operator node and its declared cost
+--             visible to the planner.
+--
+CREATE FUNCTION pred_order_eq_slow(int, int)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
+COST 1.5
+AS $$
+BEGIN
+	RETURN $1 = $2;
+END;
+$$;
+CREATE OPERATOR #=# (
+	LEFTARG = int4,
+	RIGHTARG = int4,
+	PROCEDURE = pred_order_eq_slow,
+	RESTRICT = eqsel,
+	JOIN = eqjoinsel
+);
+--
+-- Test 2. Check that a more selective clause can move before a
+--         cheaper clause when its cost/selectivity rank is better.
+--         Expected result: the predicate on column a is evaluated
+--         before the predicate on column b. The old cost-only
+--         ordering would keep the cheaper predicate first.
+--
+EXPLAIN (COSTS OFF)
+SELECT *
+FROM pred_order
+WHERE b = 0 AND a #=# 2;
+            QUERY PLAN             
+-----------------------------------
+ Seq Scan on pred_order
+   Filter: ((a #=# 2) AND (b = 0))
+(2 rows)
+
+SELECT COUNT(*)
+FROM pred_order
+WHERE b = 0 AND a #=# 2;
+ count 
+-------
+     1
+(1 row)
+
+-- Test setup.
+CREATE FUNCTION pred_order_eq_very_slow(int, int)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
+COST 10
+AS $$
+BEGIN
+	RETURN $1 = $2;
+END;
+$$;
+CREATE OPERATOR #==# (
+	LEFTARG = int4,
+	RIGHTARG = int4,
+	PROCEDURE = pred_order_eq_very_slow,
+	RESTRICT = eqsel,
+	JOIN = eqjoinsel
+);
+--
+-- Test 3. Check that a much more expensive clause stays after a
+--         cheaper clause when selectivity does not compensate for
+--         the extra cost.
+--         Expected result: the predicate on column b is evaluated
+--         before the predicate on column a.
+--
+EXPLAIN (COSTS OFF)
+SELECT *
+FROM pred_order
+WHERE b = 0 AND a #==# 2;
+             QUERY PLAN             
+------------------------------------
+ Seq Scan on pred_order
+   Filter: ((b = 0) AND (a #==# 2))
+(2 rows)
+
+SELECT COUNT(*)
+FROM pred_order
+WHERE b = 0 AND a #==# 2;
+ count 
+-------
+     1
+(1 row)
+
+--
+-- Test 4. Check that row-level security predicates are never
+--         reordered past user-supplied predicates even when
+--         the user predicate has a better rank.
+--         Expected result: the RLS predicate (b = 0) is evaluated
+--         before the user predicate (a #=# 2) because the latter
+--         is not leakproof and has a higher security_level.
+--
+ALTER TABLE pred_order ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pred_order FORCE ROW LEVEL SECURITY;
+CREATE POLICY pred_order_policy ON pred_order
+	USING (b = 0);
+CREATE ROLE pred_order_rls_user;
+GRANT SELECT ON pred_order TO pred_order_rls_user;
+SET ROLE pred_order_rls_user;
+EXPLAIN (COSTS OFF)
+SELECT *
+FROM pred_order
+WHERE a #=# 2;
+            QUERY PLAN             
+-----------------------------------
+ Seq Scan on pred_order
+   Filter: ((b = 0) AND (a #=# 2))
+(2 rows)
+
+SELECT COUNT(*)
+FROM pred_order
+WHERE a #=# 2;
+ count 
+-------
+     1
+(1 row)
+
+RESET ROLE;
+DROP POLICY pred_order_policy ON pred_order;
+REVOKE ALL ON pred_order FROM pred_order_rls_user;
+DROP ROLE pred_order_rls_user;
+ALTER TABLE pred_order DISABLE ROW LEVEL SECURITY;
+ALTER TABLE pred_order NO FORCE ROW LEVEL SECURITY;
+--
+-- Test 5. Check that clauses with identical ranks preserve their
+--         original order.
+--         Expected result: both columns have the same selectivity
+--         and cost, so the filter keeps the original clause order
+--         (c = 5) AND (d = 5).
+--
+CREATE TABLE pred_order_eq (
+	c int,
+	d int
+);
+INSERT INTO pred_order_eq
+SELECT i % 10, i % 10
+FROM generate_series(1, 1000) AS g(i);
+ANALYZE pred_order_eq;
+EXPLAIN (COSTS OFF)
+SELECT *
+FROM pred_order_eq
+WHERE c = 5 AND d = 5;
+           QUERY PLAN            
+---------------------------------
+ Seq Scan on pred_order_eq
+   Filter: ((c = 5) AND (d = 5))
+(2 rows)
+
+SELECT COUNT(*)
+FROM pred_order_eq
+WHERE c = 5 AND d = 5;
+ count 
+-------
+   100
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT *
+FROM pred_order_eq
+WHERE d = 5 AND c = 5;
+           QUERY PLAN            
+---------------------------------
+ Seq Scan on pred_order_eq
+   Filter: ((d = 5) AND (c = 5))
+(2 rows)
+
+SELECT COUNT(*)
+FROM pred_order_eq
+WHERE d = 5 AND c = 5;
+ count 
+-------
+   100
+(1 row)
+
+DROP TABLE pred_order_eq;
+DROP OPERATOR #==# (int4, int4);
+DROP FUNCTION pred_order_eq_very_slow(int, int);
+DROP OPERATOR #=# (int4, int4);
+DROP FUNCTION pred_order_eq_slow(int, int);
+DROP TABLE pred_order;

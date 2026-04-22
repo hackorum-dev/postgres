@@ -322,7 +322,7 @@ SELECT DISTINCT four FROM tenk1 WHERE four = 0 AND two <> 0;
 ---------------------------------------------
  Limit
    ->  Seq Scan on tenk1
-         Filter: ((two <> 0) AND (four = 0))
+         Filter: ((four = 0) AND (two <> 0))
 (3 rows)
 
 -- Ensure no rows are returned
