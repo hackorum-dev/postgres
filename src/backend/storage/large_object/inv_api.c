@@ -35,12 +35,18 @@
 #include "access/detoast.h"
 #include "access/genam.h"
 #include "access/htup_details.h"
+#include "access/heapam.h"
+#include "access/tableam.h"
 #include "access/table.h"
 #include "access/xact.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_largeobject.h"
+#include "catalog/pg_largeobject_metadata.h"
+#include "commands/trigger.h"
+#include "executor/executor.h"
+#include "executor/tuptable.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
 #include "storage/large_object.h"
@@ -732,6 +738,411 @@ inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes)
 	CommandCounterIncrement();
 
 	return nwritten;
+}
+
+#define MAX_LO_BUFFERED_TUPLES 100
+#define MAX_LO_METADATA_BUFFERED_TUPLES 1000
+
+/*
+ * Use the larger of the two limits for the static array size so the shared
+ * state can always handle both. This prevents any future risk of buffer
+ * overflow if the macro values are changed.
+ *
+ * NOTE: This leads to a slightly more bloated array on the stack. Based on
+ * review comments, we might change this approach.
+ */
+#define MAX_BULK_SLOTS (MAX_LO_METADATA_BUFFERED_TUPLES > MAX_LO_BUFFERED_TUPLES ? MAX_LO_METADATA_BUFFERED_TUPLES : MAX_LO_BUFFERED_TUPLES)
+
+typedef struct LoBulkInsertState
+{
+	Relation	rel;
+	int			max_slots;
+	TupleTableSlot *slots[MAX_BULK_SLOTS];
+	int			nslots;
+	BulkInsertState bistate;
+	MemoryContext batchcontext;
+	EState	   *estate;
+	ResultRelInfo *resultRelInfo;
+} LoBulkInsertState;
+
+static void
+flush_lo_inserts(LoBulkInsertState *state)
+{
+	MemoryContext oldcontext;
+	int			i;
+
+	if (state->nslots == 0)
+		return;
+
+	oldcontext = MemoryContextSwitchTo(GetPerTupleMemoryContext(state->estate));
+	table_multi_insert(state->resultRelInfo->ri_RelationDesc,
+					   state->slots,
+					   state->nslots,
+					   GetCurrentCommandId(true),
+					   0,
+					   state->bistate);
+	MemoryContextSwitchTo(oldcontext);
+
+	for (i = 0; i < state->nslots; i++)
+	{
+		if (state->resultRelInfo->ri_NumIndices > 0)
+		{
+			ExecInsertIndexTuples(state->resultRelInfo,
+								  state->estate, 0, state->slots[i],
+								  NIL, NULL);
+		}
+		ExecClearTuple(state->slots[i]);
+	}
+}
+
+
+
+static void
+init_lo_bulk_insert_state(LoBulkInsertState *state, Relation rel, int max_slots, MemoryContext batchcontext)
+{
+	int			i;
+
+	state->rel = rel;
+	state->max_slots = max_slots;
+	state->nslots = 0;
+	state->estate = NULL;
+	state->resultRelInfo = NULL;
+
+	state->bistate = GetBulkInsertState();
+	state->batchcontext = batchcontext;
+
+	for (i = 0; i < max_slots; ++i)
+		state->slots[i] = table_slot_create(rel, NULL);
+}
+
+static void
+ensure_lo_bulk_estate(LoBulkInsertState *state)
+{
+	if (!state->estate)
+	{
+		state->estate = CreateExecutorState();
+		state->resultRelInfo = makeNode(ResultRelInfo);
+		state->resultRelInfo->ri_RangeTableIndex = 1;
+		state->resultRelInfo->ri_RelationDesc = state->rel;
+		state->resultRelInfo->ri_TrigDesc = NULL;
+		state->resultRelInfo->ri_FdwRoutine = NULL;
+		ExecOpenIndices(state->resultRelInfo, false);
+	}
+}
+
+static void
+buffer_lo_page(LoBulkInsertState *state, Oid loid, int32 pageno, const char *buf, int len)
+{
+	MemoryContext oldcontext;
+	bytea	   *pdata;
+
+	oldcontext = MemoryContextSwitchTo(state->batchcontext);
+	pdata = (bytea *) palloc(len + VARHDRSZ);
+	SET_VARSIZE(pdata, len + VARHDRSZ);
+	memcpy(VARDATA(pdata), buf, len);
+	MemoryContextSwitchTo(oldcontext);
+
+	ExecClearTuple(state->slots[state->nslots]);
+	state->slots[state->nslots]->tts_values[Anum_pg_largeobject_loid - 1] = ObjectIdGetDatum(loid);
+	state->slots[state->nslots]->tts_values[Anum_pg_largeobject_pageno - 1] = Int32GetDatum(pageno);
+	state->slots[state->nslots]->tts_values[Anum_pg_largeobject_data - 1] = PointerGetDatum(pdata);
+	state->slots[state->nslots]->tts_isnull[Anum_pg_largeobject_loid - 1] = false;
+	state->slots[state->nslots]->tts_isnull[Anum_pg_largeobject_pageno - 1] = false;
+	state->slots[state->nslots]->tts_isnull[Anum_pg_largeobject_data - 1] = false;
+	ExecStoreVirtualTuple(state->slots[state->nslots]);
+
+	state->nslots++;
+
+	if (state->nslots >= state->max_slots)
+	{
+		ensure_lo_bulk_estate(state);
+		flush_lo_inserts(state);
+		state->nslots = 0;
+		MemoryContextReset(state->batchcontext);
+	}
+}
+
+static void
+flush_and_cleanup_lo_bulk_insert_state(LoBulkInsertState *state)
+{
+	int			i;
+
+	if (state->nslots > 0)
+	{
+		ensure_lo_bulk_estate(state);
+		flush_lo_inserts(state);
+		state->nslots = 0;
+	}
+
+	for (i = 0; i < state->max_slots; ++i)
+		ExecDropSingleTupleTableSlot(state->slots[i]);
+
+	if (state->estate)
+	{
+		ExecCloseIndices(state->resultRelInfo);
+		FreeExecutorState(state->estate);
+	}
+
+	FreeBulkInsertState(state->bistate);
+	MemoryContextDelete(state->batchcontext);
+}
+
+int64
+inv_bulk_write(const LoBulkWriteItem *reqs, int nreqs)
+{
+	int64		total_written = 0;
+	LoBulkInsertState state;
+	MemoryContext batchcontext;
+	int			i;
+
+	if (nreqs == 0)
+		return 0;
+
+	open_lo_relation();
+
+	batchcontext = AllocSetContextCreate(CurrentMemoryContext,
+										 "LO bulk write context",
+										 ALLOCSET_DEFAULT_SIZES);
+	init_lo_bulk_insert_state(&state, lo_heap_r, MAX_LO_BUFFERED_TUPLES, batchcontext);
+
+	for (i = 0; i < nreqs; ++i)
+	{
+		LargeObjectDesc *obj_desc = reqs[i].desc;
+		const char *buf = reqs[i].buf;
+		const int	nbytes = reqs[i].len;
+		int			nwritten = 0;
+
+		Assert(PointerIsValid(obj_desc));
+		Assert(buf != NULL);
+
+		/* enforce writability because snapshot is probably wrong otherwise */
+		if ((obj_desc->flags & IFS_WRLOCK) == 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied for large object %u",
+							obj_desc->id)));
+
+		if (nbytes <= 0)
+			continue;
+
+		/* this addition can't overflow because nbytes is only int32 */
+		if ((nbytes + obj_desc->offset) > MAX_LARGE_OBJECT_SIZE)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid large object write request size: %d",
+							nbytes)));
+
+		/*
+		 * The table_multi_insert path offers performance gains but only
+		 * supports inserts; it cannot update existing rows. We explicitly
+		 * choose not to implement complex ON CONFLICT DO UPDATE or
+		 * read-modify-write logic in the bulk API to keep the fast-path
+		 * simple.
+		 *
+		 * We only use the fast-path if we are at or past the end of the large
+		 * object AND we are starting at a page boundary. If we are
+		 * overwriting existing data or appending to a partial page, we fall
+		 * back to the safe, slow-path inv_write().
+		 *
+		 * NOTE: The performance benefits of the bulk API are only realized
+		 * when the write offset is a multiple of LOBLKSIZE (typically 2048
+		 * bytes) and is at or past EOF. Unaligned writes will silently fall
+		 * back to individual inv_write() calls to ensure data integrity.
+		 */
+		if (obj_desc->offset < inv_getsize(obj_desc) ||
+			(obj_desc->offset % LOBLKSIZE) != 0)
+		{
+			if (state.nslots > 0)
+			{
+				ensure_lo_bulk_estate(&state);
+				flush_lo_inserts(&state);
+				state.nslots = 0;
+				MemoryContextReset(state.batchcontext);
+			}
+			total_written += inv_write(obj_desc, buf, nbytes);
+			continue;
+		}
+
+		/*
+		 * Handle aligned writes by batching inserts, assuming we don't
+		 * overwrite pages.
+		 */
+		while (nwritten < nbytes)
+		{
+			const int32 pageno = (int32) (obj_desc->offset / LOBLKSIZE);
+			int			n = LOBLKSIZE;
+
+			n = (n <= (nbytes - nwritten)) ? n : (nbytes - nwritten);
+
+			buffer_lo_page(&state, obj_desc->id, pageno, buf + nwritten, n);
+
+			nwritten += n;
+			obj_desc->offset += n;
+		}
+		total_written += nwritten;
+	}
+
+	flush_and_cleanup_lo_bulk_insert_state(&state);
+
+	/*
+	 * Advance command counter so that my tuple updates will be seen by later
+	 * large-object operations in this transaction.
+	 */
+	CommandCounterIncrement();
+
+	return total_written;
+}
+
+/*
+ * inv_bulk_put - create and write multiple large objects efficiently.
+ *
+ * This function creates and populates multiple large objects in one go.
+ * It assumes none of the provided LO OIDs exist prior to this call.
+ * For each request, it creates large object metadata, then batches
+ * all data page insertions across all requests using table_multi_insert
+ * for efficiency.
+ */
+int64
+inv_bulk_put(const LoBulkPutItem *reqs, int nreqs)
+{
+	int64		total_written = 0;
+	LoBulkInsertState state;
+	MemoryContext batchcontext;
+	int			i;
+
+	if (nreqs == 0)
+		return 0;
+
+	/*
+	 * Create metadata for all LOs first.
+	 */
+	inv_bulk_create(reqs, nreqs);
+
+	/*
+	 * Make metadata visible to subsequent heap and index insertions.
+	 */
+	CommandCounterIncrement();
+
+	open_lo_relation();
+
+	batchcontext = AllocSetContextCreate(CurrentMemoryContext,
+										 "LO bulk put context",
+										 ALLOCSET_DEFAULT_SIZES);
+	init_lo_bulk_insert_state(&state, lo_heap_r, MAX_LO_BUFFERED_TUPLES, batchcontext);
+
+	for (i = 0; i < nreqs; ++i)
+	{
+		const Oid	loid = reqs[i].loid;
+		const char *buf = reqs[i].buf;
+		const size_t len = reqs[i].len;
+		size_t		nwritten = 0;
+		int32		pageno = 0;
+
+		while (nwritten < len)
+		{
+			int			n = LOBLKSIZE;
+
+			if (n > len - nwritten)
+				n = len - nwritten;
+
+			buffer_lo_page(&state, loid, pageno, buf + nwritten, n);
+
+			nwritten += n;
+			pageno++;
+			total_written += n;
+		}
+	}
+
+	flush_and_cleanup_lo_bulk_insert_state(&state);
+
+	/*
+	 * Advance command counter so that tuple updates will be seen by later
+	 * large-object operations in this transaction.
+	 */
+	CommandCounterIncrement();
+
+	return total_written;
+}
+
+void
+inv_bulk_create(const LoBulkPutItem *reqs, int nreqs)
+{
+	Relation	rel;
+	int			i;
+	Datum		values[Natts_pg_largeobject_metadata];
+	bool		nulls[Natts_pg_largeobject_metadata];
+	Acl		   *default_acl;
+	Oid			ownerId;
+	LoBulkInsertState state;
+	MemoryContext batchcontext;
+
+	if (nreqs == 0)
+		return;
+
+	rel = table_open(LargeObjectMetadataRelationId, RowExclusiveLock);
+
+	for (i = 0; i < nreqs; ++i)
+	{
+		if (LargeObjectExists(reqs[i].loid))
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("large object %u already exists", reqs[i].loid)));
+	}
+
+	ownerId = GetUserId();
+	default_acl = get_user_default_acl(OBJECT_LARGEOBJECT, ownerId,
+									   InvalidOid);
+
+	memset(nulls, false, sizeof(nulls));
+	if (default_acl == NULL)
+		nulls[Anum_pg_largeobject_metadata_lomacl - 1] = true;
+	else
+		values[Anum_pg_largeobject_metadata_lomacl - 1] = PointerGetDatum(default_acl);
+	values[Anum_pg_largeobject_metadata_lomowner - 1] = ObjectIdGetDatum(ownerId);
+
+	batchcontext = AllocSetContextCreate(CurrentMemoryContext,
+										 "LO bulk metadata context",
+										 ALLOCSET_DEFAULT_SIZES);
+
+	init_lo_bulk_insert_state(&state, rel, MAX_LO_METADATA_BUFFERED_TUPLES, batchcontext);
+
+	for (i = 0; i < nreqs; ++i)
+	{
+		Oid			loid = reqs[i].loid;
+
+		values[Anum_pg_largeobject_metadata_oid - 1] = ObjectIdGetDatum(loid);
+
+		ExecClearTuple(state.slots[state.nslots]);
+		memcpy(state.slots[state.nslots]->tts_values, values, sizeof(values));
+		memcpy(state.slots[state.nslots]->tts_isnull, nulls, sizeof(nulls));
+		ExecStoreVirtualTuple(state.slots[state.nslots]);
+		state.nslots++;
+
+		if (state.nslots >= state.max_slots)
+		{
+			ensure_lo_bulk_estate(&state);
+			flush_lo_inserts(&state);
+			state.nslots = 0;
+			/* No need to reset batchcontext for metadata as we don't palloc inside the loop */
+		}
+	}
+
+	flush_and_cleanup_lo_bulk_insert_state(&state);
+
+	table_close(rel, RowExclusiveLock);
+
+	for (i = 0; i < nreqs; ++i)
+	{
+		Oid			loid = reqs[i].loid;
+
+		if (default_acl)
+			recordDependencyOnNewAcl(LargeObjectRelationId, loid, 0,
+									 ownerId, default_acl);
+		recordDependencyOnOwner(LargeObjectRelationId, loid, ownerId);
+		InvokeObjectPostCreateHook(LargeObjectRelationId, loid, 0);
+	}
+
+	CommandCounterIncrement();
 }
 
 void

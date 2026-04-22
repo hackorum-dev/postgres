@@ -324,4 +324,100 @@ ROLLBACK;
 -- Clean up
 DROP TABLE lotest_stash_values;
 
+-- Test bulk apis
+SET bytea_output to hex;
+SELECT lo_bulk_put(ARRAY[1001, 1002], ARRAY[E'\\x1234'::bytea, E'\\x5678'::bytea]);
+SELECT lo_get(1001);
+SELECT lo_get(1002);
+BEGIN;
+SELECT lo_bulk_write(ARRAY[lo_open(1001, 131072), lo_open(1002, 131072)], ARRAY[E'\\x1111'::bytea, E'\\x2222'::bytea]);
+SELECT lo_close(fd) from (SELECT unnest(ARRAY[lo_open(1001, 131072), lo_open(1002, 131072)]) as fd) a;
+COMMIT;
+SELECT lo_get(1001);
+SELECT lo_get(1002);
+SELECT lo_unlink(1001);
+SELECT lo_unlink(1002);
+
+-- Test mixed-mode lo_bulk_write (Fast-path and Fallback-path interleaving)
+SELECT lo_create(1003); -- empty
+SELECT lo_put(lo_create(1004), 0, E'\\x1234'::bytea); -- 2 bytes
+SELECT lo_put(lo_create(1005), 0, E'\\x5678'::bytea); -- 2 bytes
+
+BEGIN;
+-- fd1: 1003 (offset 0, size 0) -> Fast-path
+-- fd2: 1004 (offset 0, size 2) -> Fallback (should trigger flush of fd1)
+-- fd3: 1005 (offset 2, size 2) -> Fast-path
+DO $$
+DECLARE
+    fd1 int; fd2 int; fd3 int;
+BEGIN
+    fd1 := lo_open(1003, 131072); -- INV_WRITE
+    fd2 := lo_open(1004, 131072);
+    fd3 := lo_open(1005, 131072);
+    PERFORM lo_lseek(fd3, 2, 0); -- move to end for fast-path append
+    
+    PERFORM lo_bulk_write(ARRAY[fd1, fd2, fd3], ARRAY[E'\\xAAAA'::bytea, E'\\xBBBB'::bytea, E'\\xCCCC'::bytea]);
+    
+    PERFORM lo_close(fd1);
+    PERFORM lo_close(fd2);
+    PERFORM lo_close(fd3);
+END $$;
+COMMIT;
+
+SELECT lo_get(1003); -- Expect \xaaaa
+SELECT lo_get(1004); -- Expect \xbbbb (overwritten)
+SELECT lo_get(1005); -- Expect \x5678cccc (appended)
+
+SELECT lo_unlink(1003);
+SELECT lo_unlink(1004);
+SELECT lo_unlink(1005);
+
+-- Test Savepoint and Rollback (lo_bulk_put)
+BEGIN;
+SELECT lo_bulk_put(ARRAY[5001, 5002], ARRAY[E'\\x11'::bytea, E'\\x22'::bytea]);
+SAVEPOINT s1;
+SELECT lo_bulk_put(ARRAY[5003, 5004], ARRAY[E'\\x33'::bytea, E'\\x44'::bytea]);
+ROLLBACK TO SAVEPOINT s1;
+COMMIT;
+SELECT lo_get(5001); -- Expect \x11
+SELECT lo_get(5003); -- Expect ERROR (not found)
+SELECT lo_unlink(5001);
+SELECT lo_unlink(5002);
+
+-- Test Atomic Failure on Permissions (lo_bulk_write)
+SELECT lo_create(1008); -- owned by superuser
+ALTER LARGE OBJECT 1008 OWNER TO regress_lo_user;
+SELECT lo_create(1009); -- owned by superuser
+
+SET SESSION AUTHORIZATION regress_lo_user;
+DO $$
+BEGIN
+    -- This should fail because 1009 is owned by superuser
+    PERFORM lo_bulk_write(ARRAY[lo_open(1008, 131072), lo_open(1009, 131072)], ARRAY[E'\\x11'::bytea, E'\\x22'::bytea]);
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Caught expected permission error: %', SQLERRM;
+END $$;
+RESET SESSION AUTHORIZATION;
+
+-- Verify atomicity: 1008 should NOT have been updated
+SELECT lo_get(1008); -- Expect empty
+SELECT lo_unlink(1008);
+SELECT lo_unlink(1009);
+
+-- Test Array NULL handling
+SELECT lo_bulk_put(ARRAY[6001, NULL, 6002], ARRAY[E'\\x11'::bytea, E'\\x22'::bytea, E'\\x33'::bytea]);
+SELECT lo_bulk_put(ARRAY[7001, 7002], ARRAY[E'\\x11'::bytea, NULL]);
+
+-- Trigger batch limit use-after-free bug
+SELECT lo_bulk_put(
+  (SELECT array_agg(id::oid) FROM generate_series(1000000, 1000098) id),
+  (SELECT array_agg(E'\\x12'::bytea) FROM generate_series(1000000, 1000098))
+) > 0 AS bulk_put_success;
+
+-- Test massive bulk insert exceeding all batch limits (1500 objects)
+SELECT lo_bulk_put(
+  (SELECT array_agg(id::oid) FROM generate_series(2000000, 2001499) id),
+  (SELECT array_agg(E'\\x12'::bytea) FROM generate_series(2000000, 2001499))
+) > 0 AS massive_bulk_put_success;
+
 DROP ROLE regress_lo_user;
