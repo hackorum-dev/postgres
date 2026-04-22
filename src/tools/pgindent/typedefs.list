@@ -3445,6 +3445,7 @@ WalRcvStreamOptions
 WalRcvWakeupReason
 WalReceiverConn
 WalReceiverFunctionsType
+WalRecordStat
 WalSnd
 WalSndCtlData
 WalSndSendDataCallback
