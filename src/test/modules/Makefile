@@ -15,6 +15,7 @@ SUBDIRS = \
 		  oauth_validator \
 		  plsample \
 		  spgist_name_ops \
+		  test_wal_record_stats \
 		  test_aio \
 		  test_autovacuum \
 		  test_binaryheap \
