@@ -560,4 +560,5 @@ SELECT * FROM tab_anti t1 WHERE t1.a IN
                      ->  Seq Scan on tab_anti t3
 (10 rows)
 
+DROP FUNCTION explain_memoize;
 DROP TABLE tab_anti;
