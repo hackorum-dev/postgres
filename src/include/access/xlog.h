@@ -303,6 +303,7 @@ extern void SetWalWriterSleeping(bool sleeping);
 
 extern void WakeupCheckpointer(void);
 
+extern XLogRecPtr WaitXLogInsertionsToFinish(XLogRecPtr upto);
 extern Size WALReadFromBuffers(char *dstbuf, XLogRecPtr startptr, Size count,
 							   TimeLineID tli);
 
