@@ -61,6 +61,9 @@ else:
     if args.tests:
         args.test_command.extend(args.tests)
 
+if "EXTRA_REGRESS_OPTS" in env_dict and args.testname in ('regress', 'isolation', 'ecpg'):
+    args.test_command += env_dict["EXTRA_REGRESS_OPTS"].split()
+
 sp = subprocess.Popen(args.test_command, env=env_dict, stdout=subprocess.PIPE)
 # Meson categorizes a passing TODO test point as bad
 # (https://github.com/mesonbuild/meson/issues/13183).  Remove the TODO
