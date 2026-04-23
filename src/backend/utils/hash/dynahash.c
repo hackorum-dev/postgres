@@ -241,12 +241,12 @@ struct HTAB
 	Size		keysize;		/* hash key length in bytes */
 
 	/*
-	 * In a USE_VALGRIND build, non-shared hashtables keep an slist chain of
-	 * all the element blocks they have allocated.  This pacifies Valgrind,
-	 * which would otherwise often claim that the element blocks are "possibly
-	 * lost" for lack of any non-interior pointers to their starts.
+	 * In a USE_MEMORY_ANNOTATIONS build, non-shared hashtables keep an slist
+	 * chain of all the element blocks they have allocated.  This pacifies
+	 * Valgrind, which would otherwise often claim that the element blocks are
+	 * "possibly lost" for lack of any non-interior pointers to their starts.
 	 */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 	slist_head	element_blocks;
 #endif
 };
@@ -1658,7 +1658,7 @@ element_alloc(HTAB *hashp, int nelem, int freelist_idx)
 	requestSize = nelem * elementSize;
 
 	/* Add space for slist_node list link if we need one. */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 	if (!hashp->isshared)
 		requestSize += MAXALIGN(sizeof(slist_node));
 #endif
@@ -1670,11 +1670,11 @@ element_alloc(HTAB *hashp, int nelem, int freelist_idx)
 		return false;
 
 	/*
-	 * If USE_VALGRIND, each allocated block of elements of a non-shared
-	 * hashtable is chained into a list, so that Valgrind won't think it's
-	 * been leaked.
+	 * If USE_MEMORY_ANNOTATIONS, each allocated block of elements of a
+	 * non-shared hashtable is chained into a list, so that Valgrind won't
+	 * think it's been leaked.
 	 */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATION
 	if (hashp->isshared)
 		firstElement = (HASHELEMENT *) allocedBlock;
 	else

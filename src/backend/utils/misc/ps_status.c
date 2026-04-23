@@ -106,7 +106,7 @@ static char **save_argv;
  * data is leaked.  To fix that, keep our own statically-allocated copy of the
  * pointer.  (Oddly, this doesn't seem to be a problem for "argv".)
  */
-#if defined(PS_USE_CLOBBER_ARGV) && defined(USE_VALGRIND)
+#if defined(PS_USE_CLOBBER_ARGV) && defined(USE_MEMORY_ANNOTATIONS)
 extern char **ps_status_new_environ;
 char	  **ps_status_new_environ;
 #endif
@@ -219,7 +219,7 @@ save_ps_display_args(int argc, char **argv)
 		environ = new_environ;
 
 		/* See notes about Valgrind above. */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 		ps_status_new_environ = new_environ;
 #endif
 	}

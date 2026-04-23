@@ -224,8 +224,8 @@ test_gb18030_json(pe_test_config *tc)
 	raw_buf = createPQExpBuffer();
 	appendBinaryPQExpBuffer(raw_buf, input, input_len);
 	appendPQExpBufferStr(raw_buf, NEVER_ACCESS_STR);
-	VALGRIND_MAKE_MEM_NOACCESS(&raw_buf->data[input_len],
-							   raw_buf->len - input_len);
+	PG_ANNOTATE_MEM_NOACCESS(&raw_buf->data[input_len],
+							 raw_buf->len - input_len);
 
 	/* name to describe the test */
 	testname = createPQExpBuffer();
@@ -716,8 +716,8 @@ test_one_vector_escape(pe_test_config *tc, const pe_test_vector *tv, const pe_te
 		 */
 		appendPQExpBufferStr(raw_buf, NEVER_ACCESS_STR);
 
-		VALGRIND_MAKE_MEM_NOACCESS(&raw_buf->data[tv->escape_len],
-								   raw_buf->len - tv->escape_len);
+		PG_ANNOTATE_MEM_NOACCESS(&raw_buf->data[tv->escape_len],
+								 raw_buf->len - tv->escape_len);
 	}
 	else
 	{
@@ -725,8 +725,8 @@ test_one_vector_escape(pe_test_config *tc, const pe_test_vector *tv, const pe_te
 		appendPQExpBufferChar(raw_buf, 0);
 		appendPQExpBufferStr(raw_buf, NEVER_ACCESS_STR);
 
-		VALGRIND_MAKE_MEM_NOACCESS(&raw_buf->data[tv->escape_len + 1],
-								   raw_buf->len - tv->escape_len - 1);
+		PG_ANNOTATE_MEM_NOACCESS(&raw_buf->data[tv->escape_len + 1],
+								 raw_buf->len - tv->escape_len - 1);
 	}
 
 	/* call the to-be-tested escape function */

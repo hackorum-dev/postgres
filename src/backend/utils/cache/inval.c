@@ -439,7 +439,7 @@ AddCatcacheInvalidationMessage(InvalidationMsgsGroup *group,
 	 * another process has written since, filling the previously uninitialized
 	 * bytes
 	 */
-	VALGRIND_MAKE_MEM_DEFINED(&msg, sizeof(msg));
+	PG_ANNOTATE_MEM_DEFINED(&msg, sizeof(msg));
 
 	AddInvalidationMessage(group, CatCacheMsgs, &msg);
 }
@@ -457,7 +457,7 @@ AddCatalogInvalidationMessage(InvalidationMsgsGroup *group,
 	msg.cat.dbId = dbId;
 	msg.cat.catId = catId;
 	/* check AddCatcacheInvalidationMessage() for an explanation */
-	VALGRIND_MAKE_MEM_DEFINED(&msg, sizeof(msg));
+	PG_ANNOTATE_MEM_DEFINED(&msg, sizeof(msg));
 
 	AddInvalidationMessage(group, CatCacheMsgs, &msg);
 }
@@ -487,7 +487,7 @@ AddRelcacheInvalidationMessage(InvalidationMsgsGroup *group,
 	invalmsg.rc.dbId = dbId;
 	invalmsg.rc.relId = relId;
 	/* check AddCatcacheInvalidationMessage() for an explanation */
-	VALGRIND_MAKE_MEM_DEFINED(&invalmsg, sizeof(invalmsg));
+	PG_ANNOTATE_MEM_DEFINED(&invalmsg, sizeof(invalmsg));
 
 	AddInvalidationMessage(group, RelCacheMsgs, &invalmsg);
 }
@@ -517,7 +517,7 @@ AddRelsyncInvalidationMessage(InvalidationMsgsGroup *group,
 	invalmsg.rs.dbId = dbId;
 	invalmsg.rs.relid = relId;
 	/* check AddCatcacheInvalidationMessage() for an explanation */
-	VALGRIND_MAKE_MEM_DEFINED(&invalmsg, sizeof(invalmsg));
+	PG_ANNOTATE_MEM_DEFINED(&invalmsg, sizeof(invalmsg));
 
 	AddInvalidationMessage(group, RelCacheMsgs, &invalmsg);
 }
@@ -545,7 +545,7 @@ AddSnapshotInvalidationMessage(InvalidationMsgsGroup *group,
 	invalmsg.sn.dbId = dbId;
 	invalmsg.sn.relId = relId;
 	/* check AddCatcacheInvalidationMessage() for an explanation */
-	VALGRIND_MAKE_MEM_DEFINED(&invalmsg, sizeof(invalmsg));
+	PG_ANNOTATE_MEM_DEFINED(&invalmsg, sizeof(invalmsg));
 
 	AddInvalidationMessage(group, RelCacheMsgs, &invalmsg);
 }
@@ -1759,7 +1759,7 @@ CacheInvalidateSmgr(RelFileLocatorBackend rlocator)
 	msg.sm.backend_lo = rlocator.backend & 0xffff;
 	msg.sm.rlocator = rlocator.locator;
 	/* check AddCatcacheInvalidationMessage() for an explanation */
-	VALGRIND_MAKE_MEM_DEFINED(&msg, sizeof(msg));
+	PG_ANNOTATE_MEM_DEFINED(&msg, sizeof(msg));
 
 	SendSharedInvalidMessages(&msg, 1);
 }
@@ -1787,7 +1787,7 @@ CacheInvalidateRelmap(Oid databaseId)
 	msg.rm.id = SHAREDINVALRELMAP_ID;
 	msg.rm.dbId = databaseId;
 	/* check AddCatcacheInvalidationMessage() for an explanation */
-	VALGRIND_MAKE_MEM_DEFINED(&msg, sizeof(msg));
+	PG_ANNOTATE_MEM_DEFINED(&msg, sizeof(msg));
 
 	SendSharedInvalidMessages(&msg, 1);
 }

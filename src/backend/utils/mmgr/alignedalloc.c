@@ -31,7 +31,7 @@ AlignedAllocFree(void *pointer)
 	MemoryChunk *chunk = PointerGetMemoryChunk(pointer);
 	void	   *unaligned;
 
-	VALGRIND_MAKE_MEM_DEFINED(chunk, sizeof(MemoryChunk));
+	PG_ANNOTATE_MEM_DEFINED(chunk, sizeof(MemoryChunk));
 
 	Assert(!MemoryChunkIsExternal(chunk));
 
@@ -51,8 +51,8 @@ AlignedAllocFree(void *pointer)
 	 * the unaligned chunk, keeping Valgrind happy.  Then when we return to
 	 * the outer pfree, that will clean up the vchunk for the aligned chunk.
 	 */
-	VALGRIND_MEMPOOL_ALLOC(GetMemoryChunkContext(unaligned), unaligned,
-						   (char *) pointer - (char *) unaligned);
+	PG_ANNOTATE_MEMPOOL_ALLOC(GetMemoryChunkContext(unaligned), unaligned,
+							  (char *) pointer - (char *) unaligned);
 
 	/* Recursively pfree the unaligned chunk */
 	pfree(unaligned);
@@ -76,7 +76,7 @@ AlignedAllocRealloc(void *pointer, Size size, int flags)
 	Size		old_size;
 	void	   *newptr;
 
-	VALGRIND_MAKE_MEM_DEFINED(redirchunk, sizeof(MemoryChunk));
+	PG_ANNOTATE_MEM_DEFINED(redirchunk, sizeof(MemoryChunk));
 
 	alignto = MemoryChunkGetValue(redirchunk);
 	unaligned = MemoryChunkGetBlock(redirchunk);
@@ -118,7 +118,7 @@ AlignedAllocRealloc(void *pointer, Size size, int flags)
 	/* Cope cleanly with OOM */
 	if (unlikely(newptr == NULL))
 	{
-		VALGRIND_MAKE_MEM_NOACCESS(redirchunk, sizeof(MemoryChunk));
+		PG_ANNOTATE_MEM_NOACCESS(redirchunk, sizeof(MemoryChunk));
 		return MemoryContextAllocationFailure(ctx, size, flags);
 	}
 
@@ -129,7 +129,7 @@ AlignedAllocRealloc(void *pointer, Size size, int flags)
 	 * entire old_size as defined.  That's slightly annoying, but probably not
 	 * worth improving.
 	 */
-	VALGRIND_MAKE_MEM_DEFINED(pointer, old_size);
+	PG_ANNOTATE_MEM_DEFINED(pointer, old_size);
 	memcpy(newptr, pointer, Min(size, old_size));
 
 	/*
@@ -138,8 +138,8 @@ AlignedAllocRealloc(void *pointer, Size size, int flags)
 	 * pfree'ing the old unaligned chunk, keeping Valgrind happy.  Then when
 	 * we return to repalloc, it will move the vchunk for the aligned chunk.
 	 */
-	VALGRIND_MEMPOOL_ALLOC(ctx, unaligned,
-						   (char *) pointer - (char *) unaligned);
+	PG_ANNOTATE_MEMPOOL_ALLOC(ctx, unaligned,
+							  (char *) pointer - (char *) unaligned);
 
 	pfree(unaligned);
 
@@ -156,13 +156,13 @@ AlignedAllocGetChunkContext(void *pointer)
 	MemoryChunk *redirchunk = PointerGetMemoryChunk(pointer);
 	MemoryContext cxt;
 
-	VALGRIND_MAKE_MEM_DEFINED(redirchunk, sizeof(MemoryChunk));
+	PG_ANNOTATE_MEM_DEFINED(redirchunk, sizeof(MemoryChunk));
 
 	Assert(!MemoryChunkIsExternal(redirchunk));
 
 	cxt = GetMemoryChunkContext(MemoryChunkGetBlock(redirchunk));
 
-	VALGRIND_MAKE_MEM_NOACCESS(redirchunk, sizeof(MemoryChunk));
+	PG_ANNOTATE_MEM_NOACCESS(redirchunk, sizeof(MemoryChunk));
 
 	return cxt;
 }
@@ -179,12 +179,12 @@ AlignedAllocGetChunkSpace(void *pointer)
 	void	   *unaligned;
 	Size		space;
 
-	VALGRIND_MAKE_MEM_DEFINED(redirchunk, sizeof(MemoryChunk));
+	PG_ANNOTATE_MEM_DEFINED(redirchunk, sizeof(MemoryChunk));
 
 	unaligned = MemoryChunkGetBlock(redirchunk);
 	space = GetMemoryChunkSpace(unaligned);
 
-	VALGRIND_MAKE_MEM_NOACCESS(redirchunk, sizeof(MemoryChunk));
+	PG_ANNOTATE_MEM_NOACCESS(redirchunk, sizeof(MemoryChunk));
 
 	return space;
 }

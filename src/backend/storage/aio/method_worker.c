@@ -921,13 +921,13 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 			 * that, explicitly allow access to the memory before reading data
 			 * into it.
 			 */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 			{
 				struct iovec *iov;
 				uint16		iov_length = pgaio_io_get_iovec_length(ioh, &iov);
 
 				for (int i = 0; i < iov_length; i++)
-					VALGRIND_MAKE_MEM_UNDEFINED(iov[i].iov_base, iov[i].iov_len);
+					PG_ANNOTATE_MEM_UNDEFINED(iov[i].iov_base, iov[i].iov_len);
 			}
 #endif
 

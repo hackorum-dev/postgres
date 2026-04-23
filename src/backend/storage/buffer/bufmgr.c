@@ -3370,12 +3370,12 @@ PinBuffer(BufferDesc *buf, BufferAccessStrategy strategy,
 		 * false spuriously: when WaitReadBuffers() calls StartBufferIO(),
 		 * it'll see that it's now valid.
 		 *
-		 * Note: We deliberately avoid a Valgrind client request here.
-		 * Individual access methods can optionally superimpose buffer page
-		 * client requests on top of our client requests to enforce that
-		 * buffers are only accessed while locked (and pinned).  It's possible
-		 * that the buffer page is legitimately non-accessible here.  We
-		 * cannot meddle with that.
+		 * Note: We deliberately avoid a memory annotation here. Individual
+		 * access methods can optionally superimpose buffer page client
+		 * requests on top of our client requests to enforce that buffers are
+		 * only accessed while locked (and pinned).  It's possible that the
+		 * buffer page is legitimately non-accessible here.  We cannot meddle
+		 * with that.
 		 */
 		result = (pg_atomic_read_u64(&buf->state) & BM_VALID) != 0;
 
@@ -3504,13 +3504,13 @@ UnpinBufferNoOwner(BufferDesc *buf)
 		uint64		old_buf_state;
 
 		/*
-		 * Mark buffer non-accessible to Valgrind.
+		 * Annotate buffer as non-accessible.
 		 *
 		 * Note that the buffer may have already been marked non-accessible
 		 * within access method code that enforces that buffers are only
 		 * accessed while a buffer lock is held.
 		 */
-		VALGRIND_MAKE_MEM_NOACCESS(BufHdrGetBlock(buf), BLCKSZ);
+		PG_ANNOTATE_MEM_NOACCESS(BufHdrGetBlock(buf), BLCKSZ);
 
 		/*
 		 * I'd better not still hold the buffer content lock. Can't use
@@ -3544,16 +3544,16 @@ TrackNewBufferPin(Buffer buf)
 	ResourceOwnerRememberBuffer(CurrentResourceOwner, buf);
 
 	/*
-	 * This is the first pin for this page by this backend, mark its page as
-	 * defined to valgrind. While the page contents might not actually be
-	 * valid yet, we don't currently guarantee that such pages are marked
-	 * undefined or non-accessible.
+	 * This is the first pin for this page by this backend, annotate its page
+	 * as defined. While the page contents might not actually be valid yet, we
+	 * don't currently guarantee that such pages are marked undefined or
+	 * non-accessible.
 	 *
 	 * It's not necessarily the prettiest to do this here, but otherwise we'd
 	 * need this block of code in multiple places.
 	 */
-	VALGRIND_MAKE_MEM_DEFINED(BufHdrGetBlock(GetBufferDescriptor(buf - 1)),
-							  BLCKSZ);
+	PG_ANNOTATE_MEM_DEFINED(BufHdrGetBlock(GetBufferDescriptor(buf - 1)),
+							BLCKSZ);
 }
 
 #define ST_SORT sort_checkpoint_bufferids
@@ -5218,8 +5218,8 @@ FlushRelationBuffers(Relation rel)
 				ResourceOwnerEnlarge(CurrentResourceOwner);
 
 				/*
-				 * Pin/unpin mostly to make valgrind work, but it also seems
-				 * like the right thing to do.
+				 * Pin/unpin mostly to make valgrind et al work, but it also
+				 * seems like the right thing to do.
 				 */
 				PinLocalBuffer(bufHdr, false);
 
@@ -5664,7 +5664,7 @@ UnlockReleaseBuffer(Buffer buffer)
 	if (likely(ref->data.refcount == 0))
 	{
 		/* See comment in UnpinBufferNoOwner() */
-		VALGRIND_MAKE_MEM_NOACCESS(BufHdrGetBlock(buf), BLCKSZ);
+		PG_ANNOTATE_MEM_NOACCESS(BufHdrGetBlock(buf), BLCKSZ);
 
 		sub |= BUF_REFCOUNT_ONE;
 		ForgetPrivateRefCountEntry(ref);
@@ -8640,9 +8640,9 @@ buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 		 * having been marked as inaccessible. The completion might also be
 		 * executed in a different process.
 		 */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 		if (!BufferIsPinned(buffer))
-			VALGRIND_MAKE_MEM_DEFINED(bufdata, BLCKSZ);
+			PG_ANNOTATE_MEM_DEFINED(bufdata, BLCKSZ);
 #endif
 
 		if (!PageIsVerified((Page) bufdata, tag.blockNum, piv_flags,
@@ -8664,9 +8664,9 @@ buffer_readv_complete_one(PgAioTargetData *td, uint8 buf_off, Buffer buffer,
 			*ignored_checksum = true;
 
 		/* undo what we did above */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 		if (!BufferIsPinned(buffer))
-			VALGRIND_MAKE_MEM_NOACCESS(bufdata, BLCKSZ);
+			PG_ANNOTATE_MEM_NOACCESS(bufdata, BLCKSZ);
 #endif
 
 		/*

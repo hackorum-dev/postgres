@@ -64,7 +64,7 @@ dlist_head	ActiveChildList;
  * PMChild structs.  Make it global to ensure the compiler doesn't
  * optimize it away.
  */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 extern PMChild *pmchild_array;
 PMChild    *pmchild_array;
 #endif
@@ -138,7 +138,7 @@ InitPostmasterChildSlots(void)
 
 	/* Allocate enough slots, and make sure Valgrind doesn't complain */
 	slots = palloc_array(PMChild, num_pmchild_slots);
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 	pmchild_array = slots;
 #endif
 

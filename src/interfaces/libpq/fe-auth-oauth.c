@@ -1466,7 +1466,7 @@ pqClearOAuthToken(PGconn *conn)
 static void
 poison_req_v2(PGoauthBearerRequestV2 *request, bool poison)
 {
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 	void	   *const base = (char *) request + sizeof(request->v1);
 	const size_t len = sizeof(*request) - sizeof(request->v1);
 #endif
@@ -1482,7 +1482,7 @@ poison_req_v2(PGoauthBearerRequestV2 *request, bool poison)
 		 */
 		Assert(!request->error);
 
-		VALGRIND_MAKE_MEM_NOACCESS(base, len);
+		PG_ANNOTATE_MEM_NOACCESS(base, len);
 	}
 	else
 	{
@@ -1493,7 +1493,7 @@ poison_req_v2(PGoauthBearerRequestV2 *request, bool poison)
 		 * stack regions, we can't be any stricter without tracking the
 		 * original state of the memory.
 		 */
-		VALGRIND_MAKE_MEM_DEFINED(base, len);
+		PG_ANNOTATE_MEM_DEFINED(base, len);
 
 		/* Undo our mask. */
 		request->issuer = POISON_MASK(request->issuer);

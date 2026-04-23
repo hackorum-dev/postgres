@@ -195,7 +195,7 @@ BumpContextCreate(MemoryContext parent, const char *name, Size minContextSize,
 	/* See comments about Valgrind interactions in aset.c */
 	VALGRIND_CREATE_MEMPOOL(set, 0, false);
 	/* This vchunk covers the BumpContext and the keeper block header */
-	VALGRIND_MEMPOOL_ALLOC(set, set, FIRST_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_ALLOC(set, set, FIRST_BLOCKHDRSZ);
 
 	dlist_init(&set->blocks);
 
@@ -276,7 +276,7 @@ BumpReset(MemoryContext context)
 	 * header.  This gets rid of the vchunks for whatever user data is getting
 	 * discarded by the context reset.
 	 */
-	VALGRIND_MEMPOOL_TRIM(set, set, FIRST_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_TRIM(set, set, FIRST_BLOCKHDRSZ);
 
 	/* Reset block size allocation sequence, too */
 	set->nextBlockSize = set->initBlockSize;
@@ -335,7 +335,7 @@ BumpAllocLarge(MemoryContext context, Size size, int flags)
 		return MemoryContextAllocationFailure(context, size, flags);
 
 	/* Make a vchunk covering the new block's header */
-	VALGRIND_MEMPOOL_ALLOC(set, block, Bump_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_ALLOC(set, block, Bump_BLOCKHDRSZ);
 
 	context->mem_allocated += blksize;
 
@@ -370,11 +370,11 @@ BumpAllocLarge(MemoryContext context, Size size, int flags)
 
 #ifdef MEMORY_CONTEXT_CHECKING
 	/* Ensure any padding bytes are marked NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
-							   chunk_size - size);
+	PG_ANNOTATE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
+							 chunk_size - size);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Bump_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Bump_CHUNKHDRSZ);
 
 	return MemoryChunkGetPointer(chunk);
 #else
@@ -412,7 +412,7 @@ BumpAllocChunkFromBlock(MemoryContext context, BumpBlock *block, Size size,
 
 #ifdef MEMORY_CONTEXT_CHECKING
 	/* Prepare to initialize the chunk header. */
-	VALGRIND_MAKE_MEM_UNDEFINED(chunk, Bump_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_UNDEFINED(chunk, Bump_CHUNKHDRSZ);
 
 	MemoryChunkSetHdrMask(chunk, block, chunk_size, MCTX_BUMP_ID);
 	chunk->requested_size = size;
@@ -426,11 +426,11 @@ BumpAllocChunkFromBlock(MemoryContext context, BumpBlock *block, Size size,
 #endif
 
 	/* Ensure any padding bytes are marked NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
-							   chunk_size - size);
+	PG_ANNOTATE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
+							 chunk_size - size);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Bump_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Bump_CHUNKHDRSZ);
 
 	return MemoryChunkGetPointer(chunk);
 #else
@@ -475,7 +475,7 @@ BumpAllocFromNewBlock(MemoryContext context, Size size, int flags,
 		return MemoryContextAllocationFailure(context, size, flags);
 
 	/* Make a vchunk covering the new block's header */
-	VALGRIND_MEMPOOL_ALLOC(set, block, Bump_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_ALLOC(set, block, Bump_BLOCKHDRSZ);
 
 	context->mem_allocated += blksize;
 
@@ -559,7 +559,7 @@ BumpBlockInit(BumpContext *context, BumpBlock *block, Size blksize)
 	block->endptr = ((char *) block) + blksize;
 
 	/* Mark unallocated space NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS(block->freeptr, blksize - Bump_BLOCKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(block->freeptr, blksize - Bump_BLOCKHDRSZ);
 }
 
 /*
@@ -580,7 +580,7 @@ BumpBlockIsEmpty(BumpBlock *block)
 static inline void
 BumpBlockMarkEmpty(BumpBlock *block)
 {
-#if defined(USE_VALGRIND) || defined(CLOBBER_FREED_MEMORY)
+#if defined(USE_MEMORY_ANNOTATIONS) || defined(CLOBBER_FREED_MEMORY)
 	char	   *datastart = ((char *) block) + Bump_BLOCKHDRSZ;
 #endif
 
@@ -588,7 +588,7 @@ BumpBlockMarkEmpty(BumpBlock *block)
 	wipe_mem(datastart, block->freeptr - datastart);
 #else
 	/* wipe_mem() would have done this */
-	VALGRIND_MAKE_MEM_NOACCESS(datastart, block->freeptr - datastart);
+	PG_ANNOTATE_MEM_NOACCESS(datastart, block->freeptr - datastart);
 #endif
 
 	/* Reset the block, but don't return it to malloc */
@@ -625,7 +625,7 @@ BumpBlockFree(BumpContext *set, BumpBlock *block)
 #endif
 
 	/* As in aset.c, free block-header vchunks explicitly */
-	VALGRIND_MEMPOOL_FREE(set, block);
+	PG_ANNOTATE_MEMPOOL_FREE(set, block);
 
 	free(block);
 }
@@ -792,7 +792,7 @@ BumpCheck(MemoryContext context)
 			Size		chunksize;
 
 			/* allow access to the chunk header */
-			VALGRIND_MAKE_MEM_DEFINED(chunk, Bump_CHUNKHDRSZ);
+			PG_ANNOTATE_MEM_DEFINED(chunk, Bump_CHUNKHDRSZ);
 
 			if (MemoryChunkIsExternal(chunk))
 			{

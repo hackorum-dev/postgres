@@ -282,7 +282,7 @@ SlabGetNextFreeChunk(SlabContext *slab, SlabBlock *block)
 		 * Pop the chunk from the linked list of free chunks.  The pointer to
 		 * the next free chunk is stored in the chunk itself.
 		 */
-		VALGRIND_MAKE_MEM_DEFINED(SlabChunkGetPointer(chunk), sizeof(MemoryChunk *));
+		PG_ANNOTATE_MEM_DEFINED(SlabChunkGetPointer(chunk), sizeof(MemoryChunk *));
 		block->freehead = *(MemoryChunk **) SlabChunkGetPointer(chunk);
 
 		/* check nothing stomped on the free chunk's memory */
@@ -376,7 +376,7 @@ SlabContextCreate(MemoryContext parent,
 	/* See comments about Valgrind interactions in aset.c */
 	VALGRIND_CREATE_MEMPOOL(slab, 0, false);
 	/* This vchunk covers the SlabContext only */
-	VALGRIND_MEMPOOL_ALLOC(slab, slab, sizeof(SlabContext));
+	PG_ANNOTATE_MEMPOOL_ALLOC(slab, slab, sizeof(SlabContext));
 
 	/* Fill in SlabContext-specific header fields */
 	slab->chunkSize = (uint32) chunkSize;
@@ -454,7 +454,7 @@ SlabReset(MemoryContext context)
 #endif
 
 		/* As in aset.c, free block-header vchunks explicitly */
-		VALGRIND_MEMPOOL_FREE(slab, block);
+		PG_ANNOTATE_MEMPOOL_FREE(slab, block);
 
 		free(block);
 		context->mem_allocated -= slab->blockSize;
@@ -474,7 +474,7 @@ SlabReset(MemoryContext context)
 #endif
 
 			/* As in aset.c, free block-header vchunks explicitly */
-			VALGRIND_MEMPOOL_FREE(slab, block);
+			PG_ANNOTATE_MEMPOOL_FREE(slab, block);
 
 			free(block);
 			context->mem_allocated -= slab->blockSize;
@@ -487,7 +487,7 @@ SlabReset(MemoryContext context)
 	 * the vchunks for whatever user data is getting discarded by the context
 	 * reset.
 	 */
-	VALGRIND_MEMPOOL_TRIM(slab, slab, sizeof(SlabContext));
+	PG_ANNOTATE_MEMPOOL_TRIM(slab, slab, sizeof(SlabContext));
 
 	slab->curBlocklistIndex = 0;
 
@@ -530,7 +530,7 @@ SlabAllocSetupNewChunk(MemoryContext context, SlabBlock *block,
 	Assert(SlabChunkMod(slab, block, chunk) == 0);
 
 	/* Prepare to initialize the chunk header. */
-	VALGRIND_MAKE_MEM_UNDEFINED(chunk, Slab_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_UNDEFINED(chunk, Slab_CHUNKHDRSZ);
 
 	MemoryChunkSetHdrMask(chunk, block, MAXALIGN(slab->chunkSize), MCTX_SLAB_ID);
 
@@ -539,10 +539,10 @@ SlabAllocSetupNewChunk(MemoryContext context, SlabBlock *block,
 	/* slab mark to catch clobber of "unused" space */
 	Assert(slab->chunkSize + MEMORY_CONTEXT_SENTINEL_SIZE <= (slab->fullChunkSize - Slab_CHUNKHDRSZ));
 	set_sentinel(MemoryChunkGetPointer(chunk), size);
-	VALGRIND_MAKE_MEM_NOACCESS(((char *) chunk) + Slab_CHUNKHDRSZ +
-							   slab->chunkSize,
-							   slab->fullChunkSize -
-							   (slab->chunkSize + Slab_CHUNKHDRSZ));
+	PG_ANNOTATE_MEM_NOACCESS(((char *) chunk) + Slab_CHUNKHDRSZ +
+							 slab->chunkSize,
+							 slab->fullChunkSize -
+							 (slab->chunkSize + Slab_CHUNKHDRSZ));
 #endif
 
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
@@ -551,7 +551,7 @@ SlabAllocSetupNewChunk(MemoryContext context, SlabBlock *block,
 #endif
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
 
 	return MemoryChunkGetPointer(chunk);
 }
@@ -590,7 +590,7 @@ SlabAllocFromNewBlock(MemoryContext context, Size size, int flags)
 			return MemoryContextAllocationFailure(context, size, flags);
 
 		/* Make a vchunk covering the new block's header */
-		VALGRIND_MEMPOOL_ALLOC(slab, block, Slab_BLOCKHDRSZ);
+		PG_ANNOTATE_MEMPOOL_ALLOC(slab, block, Slab_BLOCKHDRSZ);
 
 		block->slab = slab;
 		context->mem_allocated += slab->blockSize;
@@ -732,7 +732,7 @@ SlabFree(void *pointer)
 	int			newBlocklistIdx;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
 
 	block = MemoryChunkGetBlock(chunk);
 
@@ -829,7 +829,7 @@ SlabFree(void *pointer)
 #endif
 
 			/* As in aset.c, free block-header vchunks explicitly */
-			VALGRIND_MEMPOOL_FREE(slab, block);
+			PG_ANNOTATE_MEMPOOL_FREE(slab, block);
 
 			free(block);
 			slab->header.mem_allocated -= slab->blockSize;
@@ -866,12 +866,12 @@ SlabRealloc(void *pointer, Size size, int flags)
 	SlabContext *slab;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
 
 	block = MemoryChunkGetBlock(chunk);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
 
 	/*
 	 * Try to verify that we have a sane block pointer: the block header
@@ -902,12 +902,12 @@ SlabGetChunkContext(void *pointer)
 	SlabBlock  *block;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
 
 	block = MemoryChunkGetBlock(chunk);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
 
 	Assert(SlabBlockIsValid(block));
 
@@ -927,12 +927,12 @@ SlabGetChunkSpace(void *pointer)
 	SlabContext *slab;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
 
 	block = MemoryChunkGetBlock(chunk);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
 
 	Assert(SlabBlockIsValid(block));
 	slab = block->slab;
@@ -1109,7 +1109,7 @@ SlabCheck(MemoryContext context)
 				slab->isChunkFree[chunkidx] = true;
 
 				/* read pointer of the next free chunk */
-				VALGRIND_MAKE_MEM_DEFINED(MemoryChunkGetPointer(cur_chunk), sizeof(MemoryChunk *));
+				PG_ANNOTATE_MEM_DEFINED(MemoryChunkGetPointer(cur_chunk), sizeof(MemoryChunk *));
 				cur_chunk = *(MemoryChunk **) SlabChunkGetPointer(cur_chunk);
 			}
 
@@ -1146,12 +1146,12 @@ SlabCheck(MemoryContext context)
 					SlabBlock  *chunkblock;
 
 					/* Allow access to the chunk header. */
-					VALGRIND_MAKE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
+					PG_ANNOTATE_MEM_DEFINED(chunk, Slab_CHUNKHDRSZ);
 
 					chunkblock = (SlabBlock *) MemoryChunkGetBlock(chunk);
 
 					/* Disallow access to the chunk header. */
-					VALGRIND_MAKE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
+					PG_ANNOTATE_MEM_NOACCESS(chunk, Slab_CHUNKHDRSZ);
 
 					/*
 					 * check the chunk's blockoffset correctly points back to

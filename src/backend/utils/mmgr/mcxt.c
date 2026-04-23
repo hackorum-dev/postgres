@@ -223,12 +223,12 @@ GetMemoryChunkMethodID(const void *pointer)
 	Assert(pointer == (const void *) MAXALIGN(pointer));
 
 	/* Allow access to the uint64 header */
-	VALGRIND_MAKE_MEM_DEFINED((char *) pointer - sizeof(uint64), sizeof(uint64));
+	PG_ANNOTATE_MEM_DEFINED((char *) pointer - sizeof(uint64), sizeof(uint64));
 
 	header = *((const uint64 *) ((const char *) pointer - sizeof(uint64)));
 
 	/* Disallow access to the uint64 header */
-	VALGRIND_MAKE_MEM_NOACCESS((char *) pointer - sizeof(uint64), sizeof(uint64));
+	PG_ANNOTATE_MEM_NOACCESS((char *) pointer - sizeof(uint64), sizeof(uint64));
 
 	return (MemoryContextMethodID) (header & MEMORY_CONTEXT_METHODID_MASK);
 }
@@ -245,12 +245,12 @@ GetMemoryChunkHeader(const void *pointer)
 	uint64		header;
 
 	/* Allow access to the uint64 header */
-	VALGRIND_MAKE_MEM_DEFINED((char *) pointer - sizeof(uint64), sizeof(uint64));
+	PG_ANNOTATE_MEM_DEFINED((char *) pointer - sizeof(uint64), sizeof(uint64));
 
 	header = *((const uint64 *) ((const char *) pointer - sizeof(uint64)));
 
 	/* Disallow access to the uint64 header */
-	VALGRIND_MAKE_MEM_NOACCESS((char *) pointer - sizeof(uint64), sizeof(uint64));
+	PG_ANNOTATE_MEM_NOACCESS((char *) pointer - sizeof(uint64), sizeof(uint64));
 
 	return header;
 }
@@ -1254,7 +1254,7 @@ MemoryContextAlloc(MemoryContext context, Size size)
 	 */
 	ret = context->methods->alloc(context, size, 0);
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	PG_ANNOTATE_MEMPOOL_ALLOC(context, ret, size);
 
 	return ret;
 }
@@ -1278,7 +1278,7 @@ MemoryContextAllocZero(MemoryContext context, Size size)
 
 	ret = context->methods->alloc(context, size, 0);
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	PG_ANNOTATE_MEMPOOL_ALLOC(context, ret, size);
 
 	MemSetAligned(ret, 0, size);
 
@@ -1307,7 +1307,7 @@ MemoryContextAllocExtended(MemoryContext context, Size size, int flags)
 	if (unlikely(ret == NULL))
 		return NULL;
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	PG_ANNOTATE_MEMPOOL_ALLOC(context, ret, size);
 
 	if ((flags & MCXT_ALLOC_ZERO) != 0)
 		MemSetAligned(ret, 0, size);
@@ -1412,8 +1412,7 @@ palloc(Size size)
 	ret = context->methods->alloc(context, size, 0);
 	/* We expect OOM to be handled by the alloc function */
 	Assert(ret != NULL);
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
-
+	PG_ANNOTATE_MEMPOOL_ALLOC(context, ret, size);
 	return ret;
 }
 
@@ -1432,7 +1431,7 @@ palloc0(Size size)
 	ret = context->methods->alloc(context, size, 0);
 	/* We expect OOM to be handled by the alloc function */
 	Assert(ret != NULL);
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	PG_ANNOTATE_MEMPOOL_ALLOC(context, ret, size);
 
 	MemSetAligned(ret, 0, size);
 
@@ -1459,7 +1458,7 @@ palloc_extended(Size size, int flags)
 		return NULL;
 	}
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	PG_ANNOTATE_MEMPOOL_ALLOC(context, ret, size);
 
 	if ((flags & MCXT_ALLOC_ZERO) != 0)
 		MemSetAligned(ret, 0, size);
@@ -1586,8 +1585,8 @@ MemoryContextAllocAligned(MemoryContext context,
 	 * padding bytes before it, and any wasted trailing bytes) will be marked
 	 * NOACCESS, which is what we want.
 	 */
-	VALGRIND_MEMPOOL_FREE(context, unaligned);
-	VALGRIND_MEMPOOL_ALLOC(context, aligned, size);
+	PG_ANNOTATE_MEMPOOL_FREE(context, unaligned);
+	PG_ANNOTATE_MEMPOOL_ALLOC(context, aligned, size);
 
 	/* Now zero (and make DEFINED) just the aligned chunk, if requested */
 	if ((flags & MCXT_ALLOC_ZERO) != 0)
@@ -1624,13 +1623,13 @@ palloc_aligned(Size size, Size alignto, int flags)
 void
 pfree(void *pointer)
 {
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 	MemoryContext context = GetMemoryChunkContext(pointer);
 #endif
 
 	MCXT_METHOD(pointer, free_p) (pointer);
 
-	VALGRIND_MEMPOOL_FREE(context, pointer);
+	PG_ANNOTATE_MEMPOOL_FREE(context, pointer);
 }
 
 /*
@@ -1640,7 +1639,7 @@ pfree(void *pointer)
 void *
 repalloc(void *pointer, Size size)
 {
-#if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
+#if defined(USE_ASSERT_CHECKING) || defined(USE_MEMORY_ANNOTATIONS)
 	MemoryContext context = GetMemoryChunkContext(pointer);
 #endif
 	void	   *ret;
@@ -1662,7 +1661,7 @@ repalloc(void *pointer, Size size)
 	 */
 	ret = MCXT_METHOD(pointer, realloc) (pointer, size, 0);
 
-	VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, size);
+	PG_ANNOTATE_MEMPOOL_CHANGE(context, pointer, ret, size);
 
 	return ret;
 }
@@ -1675,7 +1674,7 @@ repalloc(void *pointer, Size size)
 void *
 repalloc_extended(void *pointer, Size size, int flags)
 {
-#if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
+#if defined(USE_ASSERT_CHECKING) || defined(USE_MEMORY_ANNOTATIONS)
 	MemoryContext context = GetMemoryChunkContext(pointer);
 #endif
 	void	   *ret;
@@ -1699,7 +1698,7 @@ repalloc_extended(void *pointer, Size size, int flags)
 	if (unlikely(ret == NULL))
 		return NULL;
 
-	VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, size);
+	PG_ANNOTATE_MEMPOOL_CHANGE(context, pointer, ret, size);
 
 	return ret;
 }
@@ -1878,7 +1877,7 @@ MemoryContextAllocHuge(MemoryContext context, Size size)
 	 */
 	ret = context->methods->alloc(context, size, MCXT_ALLOC_HUGE);
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	PG_ANNOTATE_MEMPOOL_ALLOC(context, ret, size);
 
 	return ret;
 }
