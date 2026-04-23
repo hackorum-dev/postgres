@@ -852,7 +852,7 @@ PinLocalBuffer(BufferDesc *buf_hdr, bool adjust_usagecount)
 		 * GetLocalBufferStorage().
 		 */
 		if (LocalBufHdrGetBlock(buf_hdr) != NULL)
-			VALGRIND_MAKE_MEM_DEFINED(LocalBufHdrGetBlock(buf_hdr), BLCKSZ);
+			PG_ANNOTATE_MEM_DEFINED(LocalBufHdrGetBlock(buf_hdr), BLCKSZ);
 	}
 	LocalRefCount[bufid]++;
 	ResourceOwnerRememberBuffer(CurrentResourceOwner,
@@ -890,7 +890,7 @@ UnpinLocalBufferNoOwner(Buffer buffer)
 		pg_atomic_unlocked_write_u64(&buf_hdr->state, buf_state);
 
 		/* see comment in UnpinBufferNoOwner */
-		VALGRIND_MAKE_MEM_NOACCESS(LocalBufHdrGetBlock(buf_hdr), BLCKSZ);
+		PG_ANNOTATE_MEM_NOACCESS(LocalBufHdrGetBlock(buf_hdr), BLCKSZ);
 	}
 }
 
@@ -980,7 +980,7 @@ GetLocalBufferStorage(void)
 	 * Valgrind doesn't recognize io_uring reads causing undefined memory to
 	 * become defined.
 	 */
-	VALGRIND_MAKE_MEM_DEFINED(this_buf, BLCKSZ);
+	PG_ANNOTATE_MEM_DEFINED(this_buf, BLCKSZ);
 
 	return (Block) this_buf;
 }

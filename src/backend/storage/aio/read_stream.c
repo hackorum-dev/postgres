@@ -274,14 +274,14 @@ read_stream_get_block(ReadStream *stream, void *per_buffer_data)
 	else
 	{
 		/*
-		 * Tell Valgrind that the per-buffer data is undefined.  That replaces
-		 * the "noaccess" state that was set when the consumer moved past this
-		 * entry last time around the queue, and should also catch callbacks
-		 * that fail to initialize data that the buffer consumer later
-		 * accesses.  On the first go around, it is undefined already.
+		 * Tell Valgrind et al that the per-buffer data is undefined.  That
+		 * replaces the "noaccess" state that was set when the consumer moved
+		 * past this entry last time around the queue, and should also catch
+		 * callbacks that fail to initialize data that the buffer consumer
+		 * later accesses.  On the first go around, it is undefined already.
 		 */
-		VALGRIND_MAKE_MEM_UNDEFINED(per_buffer_data,
-									stream->per_buffer_data_size);
+		PG_ANNOTATE_MEM_UNDEFINED(per_buffer_data,
+								  stream->per_buffer_data_size);
 		blocknum = stream->callback(stream,
 									stream->callback_private_data,
 									per_buffer_data);
@@ -1294,7 +1294,7 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 		stream->buffers[stream->queue_size + oldest_buffer_index] =
 			InvalidBuffer;
 
-#if defined(CLOBBER_FREED_MEMORY) || defined(USE_VALGRIND)
+#if defined(CLOBBER_FREED_MEMORY) || defined(USE_MEMORY_ANNOTATIONS)
 
 	/*
 	 * The caller will get access to the per-buffer data, until the next call.
@@ -1314,10 +1314,10 @@ read_stream_next_buffer(ReadStream *stream, void **per_buffer_data)
 #if defined(CLOBBER_FREED_MEMORY)
 		/* This also tells Valgrind the memory is "noaccess". */
 		wipe_mem(prev_per_buffer_data, stream->per_buffer_data_size);
-#elif defined(USE_VALGRIND)
+#elif defined(USE_MEMORY_ANNOTATIONS)
 		/* Tell it ourselves. */
-		VALGRIND_MAKE_MEM_NOACCESS(prev_per_buffer_data,
-								   stream->per_buffer_data_size);
+		PG_ANNOTATE_MEM_NOACCESS(prev_per_buffer_data,
+								 stream->per_buffer_data_size);
 #endif
 	}
 #endif

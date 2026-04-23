@@ -351,7 +351,7 @@ typedef struct
  * avl_dbase structs.  Make it global to ensure the compiler doesn't
  * optimize it away.
  */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 extern avl_dbase *avl_dbase_array;
 avl_dbase  *avl_dbase_array;
 #endif
@@ -1054,7 +1054,7 @@ rebuild_database_list(Oid newdb)
 		/* put all the hash elements into an array */
 		dbary = palloc_array(avl_dbase, nelems);
 		/* keep Valgrind quiet */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 		avl_dbase_array = dbary;
 #endif
 
@@ -2674,7 +2674,7 @@ deleted:
 	 * going away soon, it's not a problem normally.  But when using Valgrind,
 	 * release some stuff to reduce complaints about leaked storage.
 	 */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 	hash_destroy(table_toast_map);
 	FreeTupleDesc(pg_class_desc);
 	if (bstrategy)

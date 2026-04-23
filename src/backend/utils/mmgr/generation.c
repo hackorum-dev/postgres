@@ -227,7 +227,7 @@ GenerationContextCreate(MemoryContext parent,
 	/* See comments about Valgrind interactions in aset.c */
 	VALGRIND_CREATE_MEMPOOL(set, 0, false);
 	/* This vchunk covers the GenerationContext and the keeper block header */
-	VALGRIND_MEMPOOL_ALLOC(set, set, FIRST_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_ALLOC(set, set, FIRST_BLOCKHDRSZ);
 
 	dlist_init(&set->blocks);
 
@@ -323,7 +323,7 @@ GenerationReset(MemoryContext context)
 	 * keeper-block header.  This gets rid of the vchunks for whatever user
 	 * data is getting discarded by the context reset.
 	 */
-	VALGRIND_MEMPOOL_TRIM(set, set, FIRST_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_TRIM(set, set, FIRST_BLOCKHDRSZ);
 
 	/* set it so new allocations to make use of the keeper block */
 	set->block = KeeperBlock(set);
@@ -382,7 +382,7 @@ GenerationAllocLarge(MemoryContext context, Size size, int flags)
 		return MemoryContextAllocationFailure(context, size, flags);
 
 	/* Make a vchunk covering the new block's header */
-	VALGRIND_MEMPOOL_ALLOC(set, block, Generation_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_ALLOC(set, block, Generation_BLOCKHDRSZ);
 
 	context->mem_allocated += blksize;
 
@@ -415,11 +415,11 @@ GenerationAllocLarge(MemoryContext context, Size size, int flags)
 	dlist_push_head(&set->blocks, &block->node);
 
 	/* Ensure any padding bytes are marked NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
-							   chunk_size - size);
+	PG_ANNOTATE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
+							 chunk_size - size);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
 
 	return MemoryChunkGetPointer(chunk);
 }
@@ -440,7 +440,7 @@ GenerationAllocChunkFromBlock(MemoryContext context, GenerationBlock *block,
 		   Generation_CHUNKHDRSZ + chunk_size);
 
 	/* Prepare to initialize the chunk header. */
-	VALGRIND_MAKE_MEM_UNDEFINED(chunk, Generation_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_UNDEFINED(chunk, Generation_CHUNKHDRSZ);
 
 	block->nchunks += 1;
 	block->freeptr += (Generation_CHUNKHDRSZ + chunk_size);
@@ -460,11 +460,11 @@ GenerationAllocChunkFromBlock(MemoryContext context, GenerationBlock *block,
 #endif
 
 	/* Ensure any padding bytes are marked NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
-							   chunk_size - size);
+	PG_ANNOTATE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
+							 chunk_size - size);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
 
 	return MemoryChunkGetPointer(chunk);
 }
@@ -507,7 +507,7 @@ GenerationAllocFromNewBlock(MemoryContext context, Size size, int flags,
 		return MemoryContextAllocationFailure(context, size, flags);
 
 	/* Make a vchunk covering the new block's header */
-	VALGRIND_MEMPOOL_ALLOC(set, block, Generation_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_ALLOC(set, block, Generation_BLOCKHDRSZ);
 
 	context->mem_allocated += blksize;
 
@@ -636,8 +636,8 @@ GenerationBlockInit(GenerationContext *context, GenerationBlock *block,
 	block->endptr = ((char *) block) + blksize;
 
 	/* Mark unallocated space NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS(block->freeptr,
-							   blksize - Generation_BLOCKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(block->freeptr,
+							 blksize - Generation_BLOCKHDRSZ);
 }
 
 /*
@@ -647,7 +647,7 @@ GenerationBlockInit(GenerationContext *context, GenerationBlock *block,
 static inline void
 GenerationBlockMarkEmpty(GenerationBlock *block)
 {
-#if defined(USE_VALGRIND) || defined(CLOBBER_FREED_MEMORY)
+#if defined(USE_MEMORY_ANNOTATIONS) || defined(CLOBBER_FREED_MEMORY)
 	char	   *datastart = ((char *) block) + Generation_BLOCKHDRSZ;
 #endif
 
@@ -655,7 +655,7 @@ GenerationBlockMarkEmpty(GenerationBlock *block)
 	wipe_mem(datastart, block->freeptr - datastart);
 #else
 	/* wipe_mem() would have done this */
-	VALGRIND_MAKE_MEM_NOACCESS(datastart, block->freeptr - datastart);
+	PG_ANNOTATE_MEM_NOACCESS(datastart, block->freeptr - datastart);
 #endif
 
 	/* Reset the block, but don't return it to malloc */
@@ -696,7 +696,7 @@ GenerationBlockFree(GenerationContext *set, GenerationBlock *block)
 #endif
 
 	/* As in aset.c, free block-header vchunks explicitly */
-	VALGRIND_MEMPOOL_FREE(set, block);
+	PG_ANNOTATE_MEMPOOL_FREE(set, block);
 
 	free(block);
 }
@@ -718,7 +718,7 @@ GenerationFree(void *pointer)
 #endif
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
 
 	if (MemoryChunkIsExternal(chunk))
 	{
@@ -832,7 +832,7 @@ GenerationRealloc(void *pointer, Size size, int flags)
 	Size		oldsize;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
 
 	if (MemoryChunkIsExternal(chunk))
 	{
@@ -910,11 +910,11 @@ GenerationRealloc(void *pointer, Size size, int flags)
 		 * Otherwise, mark the obsolete part NOACCESS.
 		 */
 		if (size > oldrequest)
-			VALGRIND_MAKE_MEM_UNDEFINED((char *) pointer + oldrequest,
-										size - oldrequest);
+			PG_ANNOTATE_MEM_UNDEFINED((char *) pointer + oldrequest,
+									  size - oldrequest);
 		else
-			VALGRIND_MAKE_MEM_NOACCESS((char *) pointer + size,
-									   oldsize - size);
+			PG_ANNOTATE_MEM_NOACCESS((char *) pointer + size,
+									 oldsize - size);
 
 		/* set mark to catch clobber of "unused" space */
 		set_sentinel(pointer, size);
@@ -925,12 +925,12 @@ GenerationRealloc(void *pointer, Size size, int flags)
 		 * the old request or shrinking it, so we conservatively mark the
 		 * entire new allocation DEFINED.
 		 */
-		VALGRIND_MAKE_MEM_NOACCESS(pointer, oldsize);
-		VALGRIND_MAKE_MEM_DEFINED(pointer, size);
+		PG_ANNOTATE_MEM_NOACCESS(pointer, oldsize);
+		PG_ANNOTATE_MEM_DEFINED(pointer, size);
 #endif
 
 		/* Disallow access to the chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
+		PG_ANNOTATE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
 
 		return pointer;
 	}
@@ -942,7 +942,7 @@ GenerationRealloc(void *pointer, Size size, int flags)
 	if (newPointer == NULL)
 	{
 		/* Disallow access to the chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
+		PG_ANNOTATE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
 		return MemoryContextAllocationFailure((MemoryContext) set, size, flags);
 	}
 
@@ -954,11 +954,11 @@ GenerationRealloc(void *pointer, Size size, int flags)
 	 * defined to avoid errors as we copy the currently-NOACCESS trailing
 	 * bytes.
 	 */
-	VALGRIND_MAKE_MEM_UNDEFINED(newPointer, size);
+	PG_ANNOTATE_MEM_UNDEFINED(newPointer, size);
 #ifdef MEMORY_CONTEXT_CHECKING
 	oldsize = chunk->requested_size;
 #else
-	VALGRIND_MAKE_MEM_DEFINED(pointer, oldsize);
+	PG_ANNOTATE_MEM_DEFINED(pointer, oldsize);
 #endif
 
 	/* transfer existing data (certain to fit) */
@@ -981,7 +981,7 @@ GenerationGetChunkContext(void *pointer)
 	GenerationBlock *block;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
 
 	if (MemoryChunkIsExternal(chunk))
 		block = ExternalChunkGetBlock(chunk);
@@ -989,7 +989,7 @@ GenerationGetChunkContext(void *pointer)
 		block = (GenerationBlock *) MemoryChunkGetBlock(chunk);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
 
 	Assert(GenerationBlockIsValid(block));
 	return &block->context->header;
@@ -1007,7 +1007,7 @@ GenerationGetChunkSpace(void *pointer)
 	Size		chunksize;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
 
 	if (MemoryChunkIsExternal(chunk))
 	{
@@ -1020,7 +1020,7 @@ GenerationGetChunkSpace(void *pointer)
 		chunksize = MemoryChunkGetValue(chunk);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
 
 	return Generation_CHUNKHDRSZ + chunksize;
 }
@@ -1164,7 +1164,7 @@ GenerationCheck(MemoryContext context)
 			Size		chunksize;
 
 			/* Allow access to the chunk header. */
-			VALGRIND_MAKE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
+			PG_ANNOTATE_MEM_DEFINED(chunk, Generation_CHUNKHDRSZ);
 
 			if (MemoryChunkIsExternal(chunk))
 			{
@@ -1209,7 +1209,7 @@ GenerationCheck(MemoryContext context)
 
 			/* if chunk is allocated, disallow access to the chunk header */
 			if (chunk->requested_size != InvalidAllocSize)
-				VALGRIND_MAKE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
+				PG_ANNOTATE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
 		}
 
 		/*

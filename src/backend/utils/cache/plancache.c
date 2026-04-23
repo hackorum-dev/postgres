@@ -494,9 +494,10 @@ CompleteCachedPlan(CachedPlanSource *plansource,
 	/*
 	 * Also save the result tuple descriptor.  PlanCacheComputeResultDesc may
 	 * leak some cruft; normally we just accept that to save a copy step, but
-	 * in USE_VALGRIND mode be tidy by running it in the caller's context.
+	 * in USE_MEMORY_ANNOTATIONS mode be tidy by running it in the caller's
+	 * context.
 	 */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 	MemoryContextSwitchTo(oldcxt);
 	plansource->resultDesc = PlanCacheComputeResultDesc(querytree_list);
 	if (plansource->resultDesc)

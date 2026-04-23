@@ -471,7 +471,7 @@ AllocSetContextCreateInternal(MemoryContext parent,
 	 * Valgrind doesn't distinguish between these vchunks and those created by
 	 * mcxt.c for the user-accessible-data chunks we allocate.
 	 */
-	VALGRIND_MEMPOOL_ALLOC(set, set, FIRST_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_ALLOC(set, set, FIRST_BLOCKHDRSZ);
 
 	/* Fill in the initial block's block header */
 	block = KeeperBlock(set);
@@ -482,7 +482,7 @@ AllocSetContextCreateInternal(MemoryContext parent,
 	block->next = NULL;
 
 	/* Mark unallocated space NOACCESS; leave the block header alone. */
-	VALGRIND_MAKE_MEM_NOACCESS(block->freeptr, block->endptr - block->freeptr);
+	PG_ANNOTATE_MEM_NOACCESS(block->freeptr, block->endptr - block->freeptr);
 
 	/* Remember block as part of block list */
 	set->blocks = block;
@@ -580,7 +580,7 @@ AllocSetReset(MemoryContext context)
 			wipe_mem(datastart, block->freeptr - datastart);
 #else
 			/* wipe_mem() would have done this */
-			VALGRIND_MAKE_MEM_NOACCESS(datastart, block->freeptr - datastart);
+			PG_ANNOTATE_MEM_NOACCESS(datastart, block->freeptr - datastart);
 #endif
 			block->freeptr = datastart;
 			block->prev = NULL;
@@ -600,7 +600,7 @@ AllocSetReset(MemoryContext context)
 			 * the user-data vchunks within will go away in the TRIM below.
 			 * Otherwise Valgrind complains about leaked allocations.
 			 */
-			VALGRIND_MEMPOOL_FREE(set, block);
+			PG_ANNOTATE_MEMPOOL_FREE(set, block);
 
 			free(block);
 		}
@@ -615,7 +615,7 @@ AllocSetReset(MemoryContext context)
 	 * keeper-block header.  This gets rid of the vchunks for whatever user
 	 * data is getting discarded by the context reset.
 	 */
-	VALGRIND_MEMPOOL_TRIM(set, set, FIRST_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_TRIM(set, set, FIRST_BLOCKHDRSZ);
 
 	/* Reset block size allocation sequence, too */
 	set->nextBlockSize = set->initBlockSize;
@@ -705,7 +705,7 @@ AllocSetDelete(MemoryContext context)
 		if (!IsKeeperBlock(set, block))
 		{
 			/* As in AllocSetReset, free block-header vchunks explicitly */
-			VALGRIND_MEMPOOL_FREE(set, block);
+			PG_ANNOTATE_MEMPOOL_FREE(set, block);
 			free(block);
 		}
 
@@ -752,7 +752,7 @@ AllocSetAllocLarge(MemoryContext context, Size size, int flags)
 		return MemoryContextAllocationFailure(context, size, flags);
 
 	/* Make a vchunk covering the new block's header */
-	VALGRIND_MEMPOOL_ALLOC(set, block, ALLOC_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_ALLOC(set, block, ALLOC_BLOCKHDRSZ);
 
 	context->mem_allocated += blksize;
 
@@ -795,11 +795,11 @@ AllocSetAllocLarge(MemoryContext context, Size size, int flags)
 	}
 
 	/* Ensure any padding bytes are marked NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
-							   chunk_size - size);
+	PG_ANNOTATE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
+							 chunk_size - size);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 	return MemoryChunkGetPointer(chunk);
 }
@@ -824,7 +824,7 @@ AllocSetAllocChunkFromBlock(MemoryContext context, AllocBlock block,
 	chunk_size += MEMORY_CONTEXT_SENTINEL_SIZE;
 
 	/* Prepare to initialize the chunk header. */
-	VALGRIND_MAKE_MEM_UNDEFINED(chunk, ALLOC_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_UNDEFINED(chunk, ALLOC_CHUNKHDRSZ);
 
 	block->freeptr += (chunk_size + ALLOC_CHUNKHDRSZ);
 	Assert(block->freeptr <= block->endptr);
@@ -844,11 +844,11 @@ AllocSetAllocChunkFromBlock(MemoryContext context, AllocBlock block,
 #endif
 
 	/* Ensure any padding bytes are marked NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
-							   chunk_size - size);
+	PG_ANNOTATE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
+							 chunk_size - size);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 	return MemoryChunkGetPointer(chunk);
 }
@@ -909,7 +909,7 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
 		chunk = (MemoryChunk *) (block->freeptr);
 
 		/* Prepare to initialize the chunk header. */
-		VALGRIND_MAKE_MEM_UNDEFINED(chunk, ALLOC_CHUNKHDRSZ);
+		PG_ANNOTATE_MEM_UNDEFINED(chunk, ALLOC_CHUNKHDRSZ);
 		block->freeptr += (availchunk + ALLOC_CHUNKHDRSZ + MEMORY_CONTEXT_SENTINEL_SIZE);
 		availspace -= (availchunk + ALLOC_CHUNKHDRSZ + MEMORY_CONTEXT_SENTINEL_SIZE);
 
@@ -921,9 +921,9 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
 		/* push this chunk onto the free list */
 		link = GetFreeListLink(chunk);
 
-		VALGRIND_MAKE_MEM_DEFINED(link, sizeof(AllocFreeListLink));
+		PG_ANNOTATE_MEM_DEFINED(link, sizeof(AllocFreeListLink));
 		link->next = set->freelist[a_fidx];
-		VALGRIND_MAKE_MEM_NOACCESS(link, sizeof(AllocFreeListLink));
+		PG_ANNOTATE_MEM_NOACCESS(link, sizeof(AllocFreeListLink));
 
 		set->freelist[a_fidx] = chunk;
 	}
@@ -969,7 +969,7 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
 		return MemoryContextAllocationFailure(context, size, flags);
 
 	/* Make a vchunk covering the new block's header */
-	VALGRIND_MEMPOOL_ALLOC(set, block, ALLOC_BLOCKHDRSZ);
+	PG_ANNOTATE_MEMPOOL_ALLOC(set, block, ALLOC_BLOCKHDRSZ);
 
 	context->mem_allocated += blksize;
 
@@ -978,8 +978,8 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
 	block->endptr = ((char *) block) + blksize;
 
 	/* Mark unallocated space NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS(block->freeptr,
-							   blksize - ALLOC_BLOCKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(block->freeptr,
+							 blksize - ALLOC_BLOCKHDRSZ);
 
 	block->prev = NULL;
 	block->next = set->blocks;
@@ -1052,14 +1052,14 @@ AllocSetAlloc(MemoryContext context, Size size, int flags)
 		AllocFreeListLink *link = GetFreeListLink(chunk);
 
 		/* Allow access to the chunk header. */
-		VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
+		PG_ANNOTATE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
 
 		Assert(fidx == MemoryChunkGetValue(chunk));
 
 		/* pop this chunk off the freelist */
-		VALGRIND_MAKE_MEM_DEFINED(link, sizeof(AllocFreeListLink));
+		PG_ANNOTATE_MEM_DEFINED(link, sizeof(AllocFreeListLink));
 		set->freelist[fidx] = link->next;
-		VALGRIND_MAKE_MEM_NOACCESS(link, sizeof(AllocFreeListLink));
+		PG_ANNOTATE_MEM_NOACCESS(link, sizeof(AllocFreeListLink));
 
 #ifdef MEMORY_CONTEXT_CHECKING
 		chunk->requested_size = size;
@@ -1075,11 +1075,11 @@ AllocSetAlloc(MemoryContext context, Size size, int flags)
 #endif
 
 		/* Ensure any padding bytes are marked NOACCESS. */
-		VALGRIND_MAKE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
-								   GetChunkSizeFromFreeListIdx(fidx) - size);
+		PG_ANNOTATE_MEM_NOACCESS((char *) MemoryChunkGetPointer(chunk) + size,
+								 GetChunkSizeFromFreeListIdx(fidx) - size);
 
 		/* Disallow access to the chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+		PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 		return MemoryChunkGetPointer(chunk);
 	}
@@ -1115,7 +1115,7 @@ AllocSetFree(void *pointer)
 	MemoryChunk *chunk = PointerGetMemoryChunk(pointer);
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
 
 	if (MemoryChunkIsExternal(chunk))
 	{
@@ -1156,7 +1156,7 @@ AllocSetFree(void *pointer)
 #endif
 
 		/* As in AllocSetReset, free block-header vchunks explicitly */
-		VALGRIND_MEMPOOL_FREE(set, block);
+		PG_ANNOTATE_MEMPOOL_FREE(set, block);
 
 		free(block);
 	}
@@ -1209,9 +1209,9 @@ AllocSetFree(void *pointer)
 		wipe_mem(pointer, GetChunkSizeFromFreeListIdx(fidx));
 #endif
 		/* push this chunk onto the top of the free list */
-		VALGRIND_MAKE_MEM_DEFINED(link, sizeof(AllocFreeListLink));
+		PG_ANNOTATE_MEM_DEFINED(link, sizeof(AllocFreeListLink));
 		link->next = set->freelist[fidx];
-		VALGRIND_MAKE_MEM_NOACCESS(link, sizeof(AllocFreeListLink));
+		PG_ANNOTATE_MEM_NOACCESS(link, sizeof(AllocFreeListLink));
 		set->freelist[fidx] = chunk;
 
 #ifdef MEMORY_CONTEXT_CHECKING
@@ -1247,7 +1247,7 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 	int			fidx;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
 
 	if (MemoryChunkIsExternal(chunk))
 	{
@@ -1295,7 +1295,7 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		if (newblock == NULL)
 		{
 			/* Disallow access to the chunk header. */
-			VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+			PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 			return MemoryContextAllocationFailure(&set->header, size, flags);
 		}
 
@@ -1303,7 +1303,7 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		 * Move the block-header vchunk explicitly.  (mcxt.c will take care of
 		 * moving the vchunk for the user data.)
 		 */
-		VALGRIND_MEMPOOL_CHANGE(set, block, newblock, ALLOC_BLOCKHDRSZ);
+		PG_ANNOTATE_MEMPOOL_CHANGE(set, block, newblock, ALLOC_BLOCKHDRSZ);
 		block = newblock;
 
 		/* updated separately, not to underflow when (oldblksize > blksize) */
@@ -1342,10 +1342,10 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		 * Make sure not to mark too many bytes in case chunk->requested_size
 		 * < size < oldchksize.
 		 */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 		if (Min(size, oldchksize) > chunk->requested_size)
-			VALGRIND_MAKE_MEM_UNDEFINED((char *) pointer + chunk->requested_size,
-										Min(size, oldchksize) - chunk->requested_size);
+			PG_ANNOTATE_MEM_UNDEFINED((char *) pointer + chunk->requested_size,
+									  Min(size, oldchksize) - chunk->requested_size);
 #endif
 #endif
 
@@ -1363,14 +1363,14 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		 * old portion DEFINED.  Make sure not to mark memory beyond the new
 		 * allocation in case it's smaller than the old one.
 		 */
-		VALGRIND_MAKE_MEM_DEFINED(pointer, Min(size, oldchksize));
+		PG_ANNOTATE_MEM_DEFINED(pointer, Min(size, oldchksize));
 #endif
 
 		/* Ensure any padding bytes are marked NOACCESS. */
-		VALGRIND_MAKE_MEM_NOACCESS((char *) pointer + size, chksize - size);
+		PG_ANNOTATE_MEM_NOACCESS((char *) pointer + size, chksize - size);
 
 		/* Disallow access to the chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+		PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 		return pointer;
 	}
@@ -1426,11 +1426,11 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		 * Otherwise, mark the obsolete part NOACCESS.
 		 */
 		if (size > oldrequest)
-			VALGRIND_MAKE_MEM_UNDEFINED((char *) pointer + oldrequest,
-										size - oldrequest);
+			PG_ANNOTATE_MEM_UNDEFINED((char *) pointer + oldrequest,
+									  size - oldrequest);
 		else
-			VALGRIND_MAKE_MEM_NOACCESS((char *) pointer + size,
-									   oldchksize - size);
+			PG_ANNOTATE_MEM_NOACCESS((char *) pointer + size,
+									 oldchksize - size);
 
 		/* set mark to catch clobber of "unused" space */
 		set_sentinel(pointer, size);
@@ -1441,12 +1441,12 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		 * the old request or shrinking it, so we conservatively mark the
 		 * entire new allocation DEFINED.
 		 */
-		VALGRIND_MAKE_MEM_NOACCESS(pointer, oldchksize);
-		VALGRIND_MAKE_MEM_DEFINED(pointer, size);
+		PG_ANNOTATE_MEM_NOACCESS(pointer, oldchksize);
+		PG_ANNOTATE_MEM_DEFINED(pointer, size);
 #endif
 
 		/* Disallow access to the chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+		PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 		return pointer;
 	}
@@ -1473,7 +1473,7 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		if (newPointer == NULL)
 		{
 			/* Disallow access to the chunk header. */
-			VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+			PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 			return MemoryContextAllocationFailure((MemoryContext) set, size, flags);
 		}
 
@@ -1485,12 +1485,12 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		 * chunk defined to avoid errors as we copy the currently-NOACCESS
 		 * trailing bytes.
 		 */
-		VALGRIND_MAKE_MEM_UNDEFINED(newPointer, size);
+		PG_ANNOTATE_MEM_UNDEFINED(newPointer, size);
 #ifdef MEMORY_CONTEXT_CHECKING
 		oldsize = chunk->requested_size;
 #else
 		oldsize = oldchksize;
-		VALGRIND_MAKE_MEM_DEFINED(pointer, oldsize);
+		PG_ANNOTATE_MEM_DEFINED(pointer, oldsize);
 #endif
 
 		/* transfer existing data (certain to fit) */
@@ -1515,7 +1515,7 @@ AllocSetGetChunkContext(void *pointer)
 	AllocSet	set;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
 
 	if (MemoryChunkIsExternal(chunk))
 		block = ExternalChunkGetBlock(chunk);
@@ -1523,7 +1523,7 @@ AllocSetGetChunkContext(void *pointer)
 		block = (AllocBlock) MemoryChunkGetBlock(chunk);
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 	Assert(AllocBlockIsValid(block));
 	set = block->aset;
@@ -1543,14 +1543,14 @@ AllocSetGetChunkSpace(void *pointer)
 	int			fidx;
 
 	/* Allow access to the chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
 
 	if (MemoryChunkIsExternal(chunk))
 	{
 		AllocBlock	block = ExternalChunkGetBlock(chunk);
 
 		/* Disallow access to the chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+		PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 		Assert(AllocBlockIsValid(block));
 
@@ -1561,7 +1561,7 @@ AllocSetGetChunkSpace(void *pointer)
 	Assert(FreeListIdxIsValid(fidx));
 
 	/* Disallow access to the chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+	PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 	return GetChunkSizeFromFreeListIdx(fidx) + ALLOC_CHUNKHDRSZ;
 }
@@ -1629,16 +1629,16 @@ AllocSetStats(MemoryContext context,
 			AllocFreeListLink *link = GetFreeListLink(chunk);
 
 			/* Allow access to the chunk header. */
-			VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
+			PG_ANNOTATE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
 			Assert(MemoryChunkGetValue(chunk) == fidx);
-			VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+			PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 			freechunks++;
 			freespace += chksz + ALLOC_CHUNKHDRSZ;
 
-			VALGRIND_MAKE_MEM_DEFINED(link, sizeof(AllocFreeListLink));
+			PG_ANNOTATE_MEM_DEFINED(link, sizeof(AllocFreeListLink));
 			chunk = link->next;
-			VALGRIND_MAKE_MEM_NOACCESS(link, sizeof(AllocFreeListLink));
+			PG_ANNOTATE_MEM_NOACCESS(link, sizeof(AllocFreeListLink));
 		}
 	}
 
@@ -1727,7 +1727,7 @@ AllocSetCheck(MemoryContext context)
 						dsize;
 
 			/* Allow access to the chunk header. */
-			VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
+			PG_ANNOTATE_MEM_DEFINED(chunk, ALLOC_CHUNKHDRSZ);
 
 			if (MemoryChunkIsExternal(chunk))
 			{
@@ -1786,7 +1786,7 @@ AllocSetCheck(MemoryContext context)
 
 			/* if chunk is allocated, disallow access to the chunk header */
 			if (dsize != InvalidAllocSize)
-				VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
+				PG_ANNOTATE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
 
 			blk_data += chsize;
 			nchunks++;

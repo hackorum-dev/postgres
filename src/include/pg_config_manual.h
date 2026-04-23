@@ -261,6 +261,21 @@
 /* #define USE_VALGRIND */
 
 /*
+ * If we're being compiled with asan support, automatically turn on USE_ASAN.
+ */
+#ifdef __SANITIZE_ADDRESS__
+#define USE_ASAN
+#endif
+
+/*
+ * If either valgrind or asan is in use, default to annotating memory with
+ * additional information.
+ */
+#if defined(USE_VALGRIND) || defined(USE_ASAN)
+#define USE_MEMORY_ANNOTATIONS
+#endif
+
+/*
  * Define this to cause pfree()'d memory to be cleared immediately, to
  * facilitate catching bugs that refer to already-freed values.
  * Right now, this gets defined automatically if --enable-cassert.
@@ -270,11 +285,11 @@
 #endif
 
 /*
- * Define this to check memory allocation errors (scribbling on more
- * bytes than were allocated).  Right now, this gets defined
- * automatically if --enable-cassert or USE_VALGRIND.
+ * Define this to check memory allocation errors (scribbling on more bytes
+ * than were allocated).  Right now, this gets defined automatically if
+ * --enable-cassert, USE_VALGRIND or asan is used.
  */
-#if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
+#if defined(USE_ASSERT_CHECKING) || defined(USE_MEMORY_ANNOTATIONS)
 #define MEMORY_CONTEXT_CHECKING
 #endif
 
@@ -283,7 +298,7 @@
  * overflows.  It's probably good for this to be >= sizeof(size_t), to be able
  * to detect overflows in arrays.
  */
-#if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
+#if defined(USE_ASSERT_CHECKING) || defined(USE_MEMORY_ANNOTATIONS)
 #define MEMORY_CONTEXT_SENTINEL_SIZE	16
 #else
 #define MEMORY_CONTEXT_SENTINEL_SIZE	0

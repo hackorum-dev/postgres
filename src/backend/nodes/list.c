@@ -34,13 +34,13 @@
  * help flush out now-broken assumptions.  Defining DEBUG_LIST_MEMORY_USAGE
  * while building this file causes the List operations to forcibly move
  * all cells in a list whenever a cell is added or deleted.  In combination
- * with MEMORY_CONTEXT_CHECKING and/or Valgrind, this can usually expose
+ * with MEMORY_CONTEXT_CHECKING, Valgrind or asan, this can usually expose
  * broken code.  It's a bit expensive though, as there's many more palloc
  * cycles and a lot more data-copying than in a default build.
  *
- * By default, we enable this when building for Valgrind.
+ * By default, we enable this when building for Valgrind or asan.
  */
-#ifdef USE_VALGRIND
+#ifdef USE_MEMORY_ANNOTATIONS
 #define DEBUG_LIST_MEMORY_USAGE
 #endif
 
@@ -192,14 +192,14 @@ enlarge_list(List *list, int min_size)
 		 * We must not move the list header, so it's unsafe to try to reclaim
 		 * the initial_elements[] space via repalloc.  In debugging builds,
 		 * however, we can clear that space and/or mark it inaccessible.
-		 * (wipe_mem includes VALGRIND_MAKE_MEM_NOACCESS.)
+		 * (wipe_mem includes PG_ANNOTATE_MEM_NOACCESS.)
 		 */
 #ifdef CLOBBER_FREED_MEMORY
 		wipe_mem(list->initial_elements,
 				 list->max_length * sizeof(ListCell));
 #else
-		VALGRIND_MAKE_MEM_NOACCESS(list->initial_elements,
-								   list->max_length * sizeof(ListCell));
+		PG_ANNOTATE_MEM_NOACCESS(list->initial_elements,
+								 list->max_length * sizeof(ListCell));
 #endif
 	}
 	else
@@ -813,8 +813,8 @@ list_delete_nth_cell(List *list, int n)
 			wipe_mem(list->initial_elements,
 					 list->max_length * sizeof(ListCell));
 #else
-			VALGRIND_MAKE_MEM_NOACCESS(list->initial_elements,
-									   list->max_length * sizeof(ListCell));
+			PG_ANNOTATE_MEM_NOACCESS(list->initial_elements,
+									 list->max_length * sizeof(ListCell));
 #endif
 		}
 		list->elements = newelems;
@@ -1025,8 +1025,8 @@ list_delete_first_n(List *list, int n)
 			wipe_mem(list->initial_elements,
 					 list->max_length * sizeof(ListCell));
 #else
-			VALGRIND_MAKE_MEM_NOACCESS(list->initial_elements,
-									   list->max_length * sizeof(ListCell));
+			PG_ANNOTATE_MEM_NOACCESS(list->initial_elements,
+									 list->max_length * sizeof(ListCell));
 #endif
 		}
 		list->elements = newelems;

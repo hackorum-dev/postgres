@@ -962,7 +962,7 @@ _bt_allocbuf(Relation rel, Relation heaprel)
 	 */
 	buf = ExtendBufferedRel(BMR_REL(rel), MAIN_FORKNUM, NULL, EB_LOCK_FIRST);
 	if (!RelationUsesLocalBuffers(rel))
-		VALGRIND_MAKE_MEM_DEFINED(BufferGetPage(buf), BLCKSZ);
+		PG_ANNOTATE_MEM_DEFINED(BufferGetPage(buf), BLCKSZ);
 
 	/* Initialize the new page before returning it */
 	page = BufferGetPage(buf);
@@ -1029,7 +1029,7 @@ _bt_relbuf(Relation rel, Buffer buf)
 	 */
 	VALGRIND_CHECK_MEM_IS_DEFINED(BufferGetPage(buf), BLCKSZ);
 	if (!RelationUsesLocalBuffers(rel))
-		VALGRIND_MAKE_MEM_NOACCESS(BufferGetPage(buf), BLCKSZ);
+		PG_ANNOTATE_MEM_NOACCESS(BufferGetPage(buf), BLCKSZ);
 
 	UnlockReleaseBuffer(buf);
 }
@@ -1068,7 +1068,7 @@ _bt_lockbuf(Relation rel, Buffer buf, int access)
 	 * lock/pin held, though.
 	 */
 	if (!RelationUsesLocalBuffers(rel))
-		VALGRIND_MAKE_MEM_DEFINED(BufferGetPage(buf), BLCKSZ);
+		PG_ANNOTATE_MEM_DEFINED(BufferGetPage(buf), BLCKSZ);
 }
 
 /*
@@ -1087,7 +1087,7 @@ _bt_unlockbuf(Relation rel, Buffer buf)
 	LockBuffer(buf, BUFFER_LOCK_UNLOCK);
 
 	if (!RelationUsesLocalBuffers(rel))
-		VALGRIND_MAKE_MEM_NOACCESS(BufferGetPage(buf), BLCKSZ);
+		PG_ANNOTATE_MEM_NOACCESS(BufferGetPage(buf), BLCKSZ);
 }
 
 /*
@@ -1105,7 +1105,7 @@ _bt_conditionallockbuf(Relation rel, Buffer buf)
 		return false;
 
 	if (!RelationUsesLocalBuffers(rel))
-		VALGRIND_MAKE_MEM_DEFINED(BufferGetPage(buf), BLCKSZ);
+		PG_ANNOTATE_MEM_DEFINED(BufferGetPage(buf), BLCKSZ);
 
 	return true;
 }
