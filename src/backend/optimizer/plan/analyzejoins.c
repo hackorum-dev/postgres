@@ -1994,8 +1994,12 @@ remove_self_join_rel(PlannerInfo *root, PlanRowMark *kmark, PlanRowMark *rmark,
 	ChangeVarNodesExtended((Node *) root->processed_tlist, toRemove->relid,
 						   toKeep->relid, 0, replace_relid_callback);
 
-	adjust_relid_set(root->all_result_relids, toRemove->relid, toKeep->relid);
-	adjust_relid_set(root->leaf_result_relids, toRemove->relid, toKeep->relid);
+	root->all_result_relids = adjust_relid_set(root->all_result_relids,
+											   toRemove->relid,
+											   toKeep->relid);
+	root->leaf_result_relids = adjust_relid_set(root->leaf_result_relids,
+												toRemove->relid,
+												toKeep->relid);
 
 	/*
 	 * There may be references to the rel in root->fkey_list, but if so,
