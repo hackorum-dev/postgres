@@ -1978,11 +1978,24 @@ ExecInitExprRec(Expr *node, ExprState *state,
 					ExecTypeSetColNames(tupdesc, rowexpr->colnames);
 					/* Bless the tupdesc so it can be looked up later */
 					BlessTupleDesc(tupdesc);
+					scratch.d.row.rowcache.cacheptr = NULL;
+					scratch.d.row.rowcache.tupdesc_id = 0;
 				}
 				else
 				{
+					TypeCacheEntry *typentry;
+
 					/* it's been cast to a named type, use that */
-					tupdesc = lookup_rowtype_tupdesc_copy(rowexpr->row_typeid, -1);
+					typentry = lookup_type_cache(rowexpr->row_typeid,
+											   TYPECACHE_TUPDESC);
+					if (typentry->tupDesc == NULL)
+						ereport(ERROR,
+								(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+								 errmsg("type %s is not composite",
+										format_type_be(rowexpr->row_typeid))));
+					tupdesc = CreateTupleDescCopyConstr(typentry->tupDesc);
+					scratch.d.row.rowcache.cacheptr = typentry;
+					scratch.d.row.rowcache.tupdesc_id = typentry->tupDesc_identifier;
 				}
 
 				/*
