@@ -348,6 +348,7 @@ typedef struct ExprEvalStep
 			bool		first;	/* first time through, need to initialize? */
 			bool		slow;	/* need runtime check for nulls? */
 			TupleDesc	tupdesc;	/* descriptor for resulting tuples */
+			ExprEvalRowtypeCache *rowcache; /* cached descriptor identity */
 			JunkFilter *junkFilter; /* JunkFilter to remove resjunk cols */
 		}			wholerow;
 
