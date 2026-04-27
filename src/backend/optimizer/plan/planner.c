@@ -2434,7 +2434,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 		}
 
 		/* And shove it into final_rel */
-		add_path(final_rel, path);
+		add_path(final_rel, copy_path(path));
 	}
 
 	/*
@@ -2449,7 +2449,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 		{
 			Path	   *partial_path = (Path *) lfirst(lc);
 
-			add_partial_path(final_rel, partial_path);
+			add_partial_path(final_rel, copy_path(partial_path));
 		}
 	}
 
@@ -5648,7 +5648,7 @@ create_ordered_paths(PlannerInfo *root,
 												input_path->pathkeys, &presorted_keys);
 
 		if (is_sorted)
-			sorted_path = input_path;
+			sorted_path = copy_path(input_path);
 		else
 		{
 			/*
