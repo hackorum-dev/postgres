@@ -238,6 +238,161 @@ compare_path_costs_fuzzily(Path *path1, Path *path2, double fuzz_factor)
 }
 
 /*
+ * copy_path
+ *		Make a shallow copy of a Path node.
+ *
+ * The new node deliberately retains path->parent.  The parent field is not an
+ * ownership marker — it is a stable identity link. For example, it is used in
+ * createplan.c to identify base relation.
+ *
+ * For T_CustomPath, we dispatch to the optional CopyCustomPath callback if
+ * provided; otherwise we fall back to a sizeof(CustomPath) memcpy, which is
+ * correct only when the extension hasn't appended its own private fields.
+ *
+ * Note: this is intentionally shallower than copyObject() (which deep-copies
+ * sublists and substructure) and lighter than reparameterize_path() (which
+ * re-runs the constructor and re-costs).  We need only a fresh top-level
+ * node so add_path()'s pfree and apply_projection_to_path()'s in-place
+ * mutation cannot affect the original.
+ */
+Path *
+copy_path(Path *path)
+{
+	Path	   *newpath;
+
+	Assert(path != NULL);
+
+#define FLAT_COPY_PATH(newnode_, node_, nodetype_) \
+	( (newnode_) = (Path *) palloc(sizeof(nodetype_)), \
+	  memcpy((newnode_), (node_), sizeof(nodetype_)) )
+
+	switch (nodeTag(path))
+	{
+		case T_Path:
+			FLAT_COPY_PATH(newpath, path, Path);
+			break;
+		case T_IndexPath:
+			FLAT_COPY_PATH(newpath, path, IndexPath);
+			break;
+		case T_BitmapHeapPath:
+			FLAT_COPY_PATH(newpath, path, BitmapHeapPath);
+			break;
+		case T_BitmapAndPath:
+			FLAT_COPY_PATH(newpath, path, BitmapAndPath);
+			break;
+		case T_BitmapOrPath:
+			FLAT_COPY_PATH(newpath, path, BitmapOrPath);
+			break;
+		case T_TidPath:
+			FLAT_COPY_PATH(newpath, path, TidPath);
+			break;
+		case T_TidRangePath:
+			FLAT_COPY_PATH(newpath, path, TidRangePath);
+			break;
+		case T_SubqueryScanPath:
+			FLAT_COPY_PATH(newpath, path, SubqueryScanPath);
+			break;
+		case T_ForeignPath:
+			FLAT_COPY_PATH(newpath, path, ForeignPath);
+			break;
+		case T_CustomPath:
+			{
+				CustomPath *cpath = (CustomPath *) path;
+
+				Assert(cpath->methods != NULL);
+				if (cpath->methods->CopyCustomPath)
+					newpath = (Path *) cpath->methods->CopyCustomPath(cpath);
+				else
+					FLAT_COPY_PATH(newpath, path, CustomPath);
+			}
+			break;
+		case T_AppendPath:
+			FLAT_COPY_PATH(newpath, path, AppendPath);
+			break;
+		case T_MergeAppendPath:
+			FLAT_COPY_PATH(newpath, path, MergeAppendPath);
+			break;
+		case T_GroupResultPath:
+			FLAT_COPY_PATH(newpath, path, GroupResultPath);
+			break;
+		case T_MaterialPath:
+			FLAT_COPY_PATH(newpath, path, MaterialPath);
+			break;
+		case T_MemoizePath:
+			FLAT_COPY_PATH(newpath, path, MemoizePath);
+			break;
+		case T_GatherPath:
+			FLAT_COPY_PATH(newpath, path, GatherPath);
+			break;
+		case T_GatherMergePath:
+			FLAT_COPY_PATH(newpath, path, GatherMergePath);
+			break;
+		case T_NestPath:
+			FLAT_COPY_PATH(newpath, path, NestPath);
+			break;
+		case T_MergePath:
+			FLAT_COPY_PATH(newpath, path, MergePath);
+			break;
+		case T_HashPath:
+			FLAT_COPY_PATH(newpath, path, HashPath);
+			break;
+		case T_ProjectionPath:
+			FLAT_COPY_PATH(newpath, path, ProjectionPath);
+			break;
+		case T_ProjectSetPath:
+			FLAT_COPY_PATH(newpath, path, ProjectSetPath);
+			break;
+		case T_SortPath:
+			FLAT_COPY_PATH(newpath, path, SortPath);
+			break;
+		case T_IncrementalSortPath:
+			FLAT_COPY_PATH(newpath, path, IncrementalSortPath);
+			break;
+		case T_GroupPath:
+			FLAT_COPY_PATH(newpath, path, GroupPath);
+			break;
+		case T_UniquePath:
+			FLAT_COPY_PATH(newpath, path, UniquePath);
+			break;
+		case T_AggPath:
+			FLAT_COPY_PATH(newpath, path, AggPath);
+			break;
+		case T_GroupingSetsPath:
+			FLAT_COPY_PATH(newpath, path, GroupingSetsPath);
+			break;
+		case T_MinMaxAggPath:
+			FLAT_COPY_PATH(newpath, path, MinMaxAggPath);
+			break;
+		case T_WindowAggPath:
+			FLAT_COPY_PATH(newpath, path, WindowAggPath);
+			break;
+		case T_SetOpPath:
+			FLAT_COPY_PATH(newpath, path, SetOpPath);
+			break;
+		case T_RecursiveUnionPath:
+			FLAT_COPY_PATH(newpath, path, RecursiveUnionPath);
+			break;
+		case T_LockRowsPath:
+			FLAT_COPY_PATH(newpath, path, LockRowsPath);
+			break;
+		case T_ModifyTablePath:
+			FLAT_COPY_PATH(newpath, path, ModifyTablePath);
+			break;
+		case T_LimitPath:
+			FLAT_COPY_PATH(newpath, path, LimitPath);
+			break;
+		default:
+			elog(ERROR, "unrecognized path type: %d", (int) nodeTag(path));
+			newpath = NULL;		/* keep compiler quiet */
+			break;
+	}
+
+#undef FLAT_COPY_PATH
+
+	return newpath;
+}
+
+/*
  * set_cheapest
  *	  Find the minimum-cost paths from among a relation's paths,
  *	  and save them in the rel's cheapest-path fields.
@@ -2678,7 +2833,8 @@ create_projection_path(PlannerInfo *root,
  * a separate Result plan node isn't needed, we just replace the given path's
  * pathtarget with the desired one.  This must be used only when the caller
  * knows that the given path isn't referenced elsewhere and so can be modified
- * in-place.
+ * in-place.  In particular, callers must not pass a Path that is currently
+ * reachable from another RelOptInfo's pathlist.
  *
  * If the input path is a GatherPath or GatherMergePath, we try to push the
  * new target down to its input as well; this is a yet more invasive
