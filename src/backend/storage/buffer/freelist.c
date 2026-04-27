@@ -24,6 +24,10 @@
 #include "storage/subsystems.h"
 #include "port/pg_numa.h"
 
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+
 #define INT_ACCESS_ONCE(var)	((int)(*((volatile int *)&(var))))
 
 
@@ -61,6 +65,8 @@ static BufferStrategyControl *StrategyControl = NULL;
 
 static void StrategyCtlShmemRequest(void *arg);
 static void StrategyCtlShmemInit(void *arg);
+static int	pg_get_online_cpus(void);
+static uint32 ComputeClockBatchSize(int pool_nbuffers);
 
 const ShmemCallbacks StrategyCtlShmemCallbacks = {
 	.request_fn = StrategyCtlShmemRequest,
@@ -411,6 +417,69 @@ StrategyNotifyBgWriter(int bgwprocno)
 	SpinLockRelease(&StrategyControl->buffer_strategy_lock);
 }
 
+/*
+ * pg_get_online_cpus -- get the number of online CPU cores
+ */
+static int
+pg_get_online_cpus(void)
+{
+#ifdef _SC_NPROCESSORS_ONLN
+	long		ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+
+	if (ncpus > 0)
+		return (int) ncpus;
+#endif
+	/* Fallback if sysconf is unavailable or fails */
+	return 1;
+}
+
+/*
+ * ComputeClockBatchSize -- compute the effective clock-sweep batch size
+ *
+ * The function has two phases: select a base batch from hardware topology,
+ * then cap it to prevent over-claiming.
+ *
+ * Phase 1: Base batch from topology
+ * - NUMA (multi-socket): batch=64 (high cross-socket latency)
+ * - >16 cores, single socket: batch=32 (L3 contention)
+ * - 9-16 cores: batch=16 (moderate contention)
+ * - 5-8 cores: batch=8 (light contention)
+ * - <=4 cores: batch=1 (no batching overhead)
+ *
+ * Phase 2: Cap to prevent over-claiming
+ * - Ensure batch_size * MaxBackends <= pool_nbuffers / 2
+ * - Keeps total claims under 50% of the pool
+ */
+static uint32
+ComputeClockBatchSize(int pool_nbuffers)
+{
+	int			ncpus = pg_get_online_cpus();
+	int			numa_nodes = (pg_numa_init() != -1) ? pg_numa_get_max_node() + 1 : 1;
+	uint32		base_batch;
+	uint32		max_batch;
+
+	/* Phase 1: Base batch from topology */
+	if (numa_nodes > 1)
+		base_batch = 64;
+	else if (ncpus > 16)
+		base_batch = 32;
+	else if (ncpus > 8)
+		base_batch = 16;
+	else if (ncpus > 4)
+		base_batch = 8;
+	else
+		base_batch = 1;
+
+	/* Phase 2: Cap to prevent over-claiming */
+	max_batch = (MaxBackends > 0)
+		? pool_nbuffers / (2 * MaxBackends)
+		: pool_nbuffers / 200;
+	if (max_batch < 1)
+		max_batch = 1;
+
+	return Min(base_batch, Min(max_batch, (uint32) pool_nbuffers));
+}
+
 
 /*
  * StrategyCtlShmemRequest -- request shared memory for the buffer
@@ -444,22 +513,16 @@ StrategyCtlShmemInit(void *arg)
 	StrategyControl->bgwprocno = -1;
 
 	/*
-	 * Determine the effective clock-sweep batch size.
+	 * Compute the effective clock-sweep batch size based on hardware
+	 * topology.
 	 *
-	 * On multi-node NUMA systems, claiming batches of buffers from the shared
-	 * clock hand reduces cross-socket contention on the atomic counter.  On
-	 * single-socket systems, batching provides no benefit (the atomic is
-	 * already socket-local) and just causes backends to skip buffers, so we
-	 * use batch size 1 for the original behavior.
-	 *
-	 * pg_numa_init() returns -1 when NUMA is unavailable.
-	 * pg_numa_get_max_node() returns 0 for a single NUMA node.
+	 * This uses a tiered approach: larger batches on NUMA systems and
+	 * many-core single-socket systems where atomic contention is high,
+	 * smaller batches or no batching on few-core systems where fairness
+	 * matters more. The batch size is also capped to prevent over-claiming
+	 * when there are many backends relative to the buffer pool size.
 	 */
-	if (pg_numa_init() != -1 && pg_numa_get_max_node() >= 1)
-		ClockSweepBatchSize = Min(CLOCK_SWEEP_BATCH_SIZE,
-								  (uint32) NBuffers);
-	else
-		ClockSweepBatchSize = 1;
+	ClockSweepBatchSize = ComputeClockBatchSize(NBuffers);
 }
 
 
