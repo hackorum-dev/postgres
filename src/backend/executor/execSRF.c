@@ -21,6 +21,7 @@
 #include "access/htup_details.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
@@ -45,6 +46,8 @@ static void ExecPrepareTuplestoreResult(SetExprState *sexpr,
 										ExprContext *econtext,
 										Tuplestorestate *resultStore,
 										TupleDesc resultDesc);
+static TypeCacheEntry *lookup_srf_result_tcache(Oid funcrettype);
+static void check_srf_result_rowtype(SetExprState *sexpr);
 static void tupledesc_match(TupleDesc dst_tupdesc, TupleDesc src_tupdesc);
 
 
@@ -543,6 +546,7 @@ restart:
 			{
 				/* We must return the whole tuple as a Datum. */
 				*isNull = false;
+				check_srf_result_rowtype(fcache);
 				return ExecFetchSlotHeapTupleDatum(fcache->funcResultSlot);
 			}
 			else
@@ -643,6 +647,9 @@ restart:
 	{
 		if (*isDone != ExprEndResult)
 		{
+			if (fcache->funcReturnsTuple && !*isNull)
+				check_srf_result_rowtype(fcache);
+
 			/*
 			 * Save the current argument values to re-use on the next call.
 			 */
@@ -669,6 +676,9 @@ restart:
 					 errmsg("table-function protocol for materialize mode was not followed")));
 		if (rsinfo.setResult != NULL)
 		{
+			if (fcache->funcReturnsTuple)
+				check_srf_result_rowtype(fcache);
+
 			/* prepare to return values from the tuplestore */
 			ExecPrepareTuplestoreResult(fcache, econtext,
 										rsinfo.setResult,
@@ -767,6 +777,10 @@ init_sexpr(Oid foid, Oid input_collation, Expr *node,
 			/* Must copy it out of typcache for safety */
 			sexpr->funcResultDesc = CreateTupleDescCopy(tupdesc);
 			sexpr->funcReturnsTuple = true;
+			sexpr->funcResultTypentry = lookup_srf_result_tcache(funcrettype);
+			if (sexpr->funcResultTypentry != NULL)
+				sexpr->funcResultDescId =
+					((TypeCacheEntry *) sexpr->funcResultTypentry)->tupDesc_identifier;
 		}
 		else if (functypclass == TYPEFUNC_SCALAR)
 		{
@@ -870,6 +884,8 @@ ExecPrepareTuplestoreResult(SetExprState *sexpr,
 							TupleDesc resultDesc)
 {
 	sexpr->funcResultStore = resultStore;
+	if (sexpr->funcReturnsTuple)
+		check_srf_result_rowtype(sexpr);
 
 	if (sexpr->funcResultSlot == NULL)
 	{
@@ -930,6 +946,39 @@ ExecPrepareTuplestoreResult(SetExprState *sexpr,
 									PointerGetDatum(sexpr));
 		sexpr->shutdown_reg = true;
 	}
+}
+
+static TypeCacheEntry *
+lookup_srf_result_tcache(Oid funcrettype)
+{
+	TypeCacheEntry *typentry;
+
+	if (funcrettype == RECORDOID)
+		return NULL;
+
+	typentry = lookup_type_cache(funcrettype,
+							  TYPECACHE_TUPDESC |
+							  TYPECACHE_DOMAIN_BASE_INFO);
+	if (typentry->typtype == TYPTYPE_DOMAIN)
+		typentry = lookup_type_cache(typentry->domainBaseType,
+								   TYPECACHE_TUPDESC);
+	if (typentry->tupDesc == NULL)
+		return NULL;
+
+	return typentry;
+}
+
+static void
+check_srf_result_rowtype(SetExprState *sexpr)
+{
+	TypeCacheEntry *typentry = (TypeCacheEntry *) sexpr->funcResultTypentry;
+
+	if (typentry != NULL &&
+		typentry->tupDesc_identifier != sexpr->funcResultDescId)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("row type %s has changed",
+						format_type_be(sexpr->funcResultDesc->tdtypeid))));
 }
 
 /*
