@@ -562,3 +562,15 @@ SELECT (NULL::compositetable).a;
 SELECT (NULL::compositetable).oid;
 
 DROP TABLE compositetable;
+
+-- A named ROW() result must not survive ALTER TYPE with the old layout.
+CREATE TYPE cursor_rowtype AS (a int, b int);
+BEGIN;
+DECLARE c CURSOR FOR
+  SELECT (i, power(2, 30))::cursor_rowtype
+  FROM generate_series(1, 2) i;
+FETCH c;
+ALTER TYPE cursor_rowtype ALTER ATTRIBUTE b TYPE text;
+FETCH c;
+ROLLBACK;
+DROP TYPE cursor_rowtype;
