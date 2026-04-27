@@ -3179,6 +3179,14 @@ ExecInitWholeRowVar(ExprEvalStep *scratch, Var *variable, ExprState *state)
 	scratch->d.wholerow.first = true;
 	scratch->d.wholerow.slow = false;
 	scratch->d.wholerow.tupdesc = NULL; /* filled at runtime */
+	if (variable->vartype != RECORDOID)
+	{
+		scratch->d.wholerow.rowcache = palloc_object(ExprEvalRowtypeCache);
+		scratch->d.wholerow.rowcache->cacheptr = NULL;
+		scratch->d.wholerow.rowcache->tupdesc_id = 0;
+	}
+	else
+		scratch->d.wholerow.rowcache = NULL;
 	scratch->d.wholerow.junkFilter = NULL;
 
 	/* update ExprState flags if Var refers to OLD/NEW */
