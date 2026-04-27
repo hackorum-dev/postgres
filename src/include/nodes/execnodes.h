@@ -1006,6 +1006,8 @@ typedef struct SetExprState
 	 */
 	TupleDesc	funcResultDesc;
 	bool		funcReturnsTuple;	/* valid when funcResultDesc isn't NULL */
+	void	   *funcResultTypentry;	/* cached TypeCacheEntry for result rowtype */
+	uint64		funcResultDescId;	/* last-seen tupdesc identifier, or 0 */
 
 	/*
 	 * Remember whether the function is declared to return a set.  This is set
