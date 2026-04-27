@@ -574,3 +574,42 @@ ALTER TYPE cursor_rowtype ALTER ATTRIBUTE b TYPE text;
 FETCH c;
 ROLLBACK;
 DROP TYPE cursor_rowtype;
+
+-- A whole-row Var over a named row type must detect ALTER TYPE too.
+CREATE TYPE cursor_wholerow_type AS (a int, b int);
+CREATE FUNCTION cursor_wholerow_func() RETURNS SETOF cursor_wholerow_type
+LANGUAGE sql AS $$ SELECT i, power(2, 30)::int FROM generate_series(1, 2) i $$;
+BEGIN;
+DECLARE c CURSOR FOR SELECT x FROM cursor_wholerow_func() AS x;
+FETCH c;
+ALTER TYPE cursor_wholerow_type ALTER ATTRIBUTE b TYPE text;
+FETCH c;
+ROLLBACK;
+DROP FUNCTION cursor_wholerow_func();
+DROP TYPE cursor_wholerow_type;
+
+-- A SQL function returning a whole named row must not use its old tupdesc.
+CREATE TYPE cursor_sqlfunc_type AS (a int, b int);
+CREATE FUNCTION cursor_sqlfunc(i int) RETURNS cursor_sqlfunc_type
+LANGUAGE sql AS $$ SELECT i, power(2, 30)::int $$;
+BEGIN;
+DECLARE c CURSOR FOR SELECT cursor_sqlfunc(i) FROM generate_series(1, 2) i;
+FETCH c;
+ALTER TYPE cursor_sqlfunc_type ALTER ATTRIBUTE b TYPE text;
+FETCH c;
+ROLLBACK;
+DROP FUNCTION cursor_sqlfunc(int);
+DROP TYPE cursor_sqlfunc_type;
+
+-- A targetlist SRF returning a named row must not use its old tupdesc.
+CREATE TYPE cursor_srf_type AS (a int, b int);
+CREATE FUNCTION cursor_srf_func() RETURNS SETOF cursor_srf_type
+LANGUAGE sql AS $$ SELECT i, power(2, 30)::int FROM generate_series(1, 2) i $$;
+BEGIN;
+DECLARE c CURSOR FOR SELECT cursor_srf_func();
+FETCH c;
+ALTER TYPE cursor_srf_type ALTER ATTRIBUTE b TYPE text;
+FETCH c;
+ROLLBACK;
+DROP FUNCTION cursor_srf_func();
+DROP TYPE cursor_srf_type;
