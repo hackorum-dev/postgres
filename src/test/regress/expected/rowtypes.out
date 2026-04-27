@@ -1408,3 +1408,20 @@ ERROR:  column "oid" not found in data type compositetable
 LINE 1: SELECT (NULL::compositetable).oid;
                 ^
 DROP TABLE compositetable;
+-- A named ROW() result must not survive ALTER TYPE with the old layout.
+CREATE TYPE cursor_rowtype AS (a int, b int);
+BEGIN;
+DECLARE c CURSOR FOR
+  SELECT (i, power(2, 30))::cursor_rowtype
+  FROM generate_series(1, 2) i;
+FETCH c;
+      row       
+----------------
+ (1,1073741824)
+(1 row)
+
+ALTER TYPE cursor_rowtype ALTER ATTRIBUTE b TYPE text;
+FETCH c;
+ERROR:  row type cursor_rowtype has changed
+ROLLBACK;
+DROP TYPE cursor_rowtype;

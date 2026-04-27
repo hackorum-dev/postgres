@@ -3667,6 +3667,17 @@ ExecEvalRow(ExprState *state, ExprEvalStep *op)
 {
 	HeapTuple	tuple;
 
+	if (op->d.row.rowcache.tupdesc_id != 0)
+	{
+		TypeCacheEntry *typentry = (TypeCacheEntry *) op->d.row.rowcache.cacheptr;
+
+		if (typentry->tupDesc_identifier != op->d.row.rowcache.tupdesc_id)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("row type %s has changed",
+							format_type_be(op->d.row.tupdesc->tdtypeid))));
+	}
+
 	/* build tuple from evaluated field values */
 	tuple = heap_form_tuple(op->d.row.tupdesc,
 							op->d.row.elemvalues,
