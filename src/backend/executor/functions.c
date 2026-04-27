@@ -38,6 +38,7 @@
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tuplestore.h"
+#include "utils/typcache.h"
 
 
 /*
@@ -129,6 +130,8 @@ typedef struct SQLFunctionHashEntry
 	char		prokind;		/* prokind from pg_proc row */
 
 	TupleDesc	rettupdesc;		/* result tuple descriptor */
+	TypeCacheEntry *rettupdesc_typentry;
+	uint64		rettupdesc_id;
 
 	List	   *source_list;	/* RawStmts or Queries read from pg_proc */
 	int			num_queries;	/* original length of source_list */
@@ -203,6 +206,8 @@ static Node *sql_fn_resolve_param_name(SQLFunctionParseInfoPtr pinfo,
 									   const char *paramname, int location);
 static SQLFunctionCache *init_sql_fcache(FunctionCallInfo fcinfo,
 										 bool lazyEvalOK);
+static TypeCacheEntry *lookup_sql_fn_retval_tcache(Oid rettype);
+static void check_sql_fn_retval_rowtype(SQLFunctionCachePtr fcache);
 static bool init_execution_state(SQLFunctionCachePtr fcache);
 static void prepare_next_query(SQLFunctionHashEntry *func);
 static void sql_compile_callback(FunctionCallInfo fcinfo,
@@ -1102,6 +1107,10 @@ sql_compile_callback(FunctionCallInfo fcinfo,
 		MemoryContextSwitchTo(hcontext);
 		func->rettupdesc = CreateTupleDescCopy(rettupdesc);
 		MemoryContextSwitchTo(oldcontext);
+
+		func->rettupdesc_typentry = lookup_sql_fn_retval_tcache(rettype);
+		if (func->rettupdesc_typentry != NULL)
+			func->rettupdesc_id = func->rettupdesc_typentry->tupDesc_identifier;
 	}
 
 	/* Fetch the typlen and byval info for the result type */
@@ -1550,6 +1559,7 @@ postquel_get_single_result(TupleTableSlot *slot,
 	{
 		/* We must return the whole tuple as a Datum. */
 		fcinfo->isnull = false;
+		check_sql_fn_retval_rowtype(fcache);
 		value = ExecFetchSlotHeapTupleDatum(slot);
 	}
 	else
@@ -1828,7 +1838,10 @@ fmgr_sql(PG_FUNCTION_ARGS)
 			fcache->tstore = NULL;
 			/* must copy desc because execSRF.c will free it */
 			if (fcache->junkFilter)
+			{
+				check_sql_fn_retval_rowtype(fcache);
 				rsi->setDesc = CreateTupleDescCopy(fcache->junkFilter->jf_cleanTupType);
+			}
 
 			fcinfo->isnull = true;
 			result = (Datum) 0;
@@ -1886,6 +1899,39 @@ fmgr_sql(PG_FUNCTION_ARGS)
 	error_context_stack = sqlerrcontext.previous;
 
 	return result;
+}
+
+static TypeCacheEntry *
+lookup_sql_fn_retval_tcache(Oid rettype)
+{
+	TypeCacheEntry *typentry;
+
+	if (rettype == RECORDOID)
+		return NULL;
+
+	typentry = lookup_type_cache(rettype,
+							  TYPECACHE_TUPDESC |
+							  TYPECACHE_DOMAIN_BASE_INFO);
+	if (typentry->typtype == TYPTYPE_DOMAIN)
+		typentry = lookup_type_cache(typentry->domainBaseType,
+								   TYPECACHE_TUPDESC);
+	if (typentry->tupDesc == NULL)
+		return NULL;
+
+	return typentry;
+}
+
+static void
+check_sql_fn_retval_rowtype(SQLFunctionCachePtr fcache)
+{
+	TypeCacheEntry *typentry = fcache->func->rettupdesc_typentry;
+
+	if (typentry != NULL &&
+		typentry->tupDesc_identifier != fcache->func->rettupdesc_id)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("row type %s has changed",
+						format_type_be(fcache->func->rettupdesc->tdtypeid))));
 }
 
 
