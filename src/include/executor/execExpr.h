@@ -499,6 +499,7 @@ typedef struct ExprEvalStep
 		struct
 		{
 			TupleDesc	tupdesc;	/* descriptor for result tuples */
+			ExprEvalRowtypeCache rowcache;
 			/* workspace for the values constituting the row: */
 			Datum	   *elemvalues;
 			bool	   *elemnulls;
