@@ -17,6 +17,7 @@
 #include "access/nbtree.h"
 #include "access/tableam.h"
 #include "common/int.h"
+#include "common/pg_prng.h"
 
 typedef enum
 {
@@ -792,6 +793,7 @@ _bt_bestsplitloc(FindSplitData *state, int perfectpenalty,
 	int			bestpenalty,
 				lowsplit;
 	int			highsplit = Min(state->interval, state->nsplits);
+	int			rand_offset = 0;
 	SplitPoint *final;
 
 	bestpenalty = INT_MAX;
@@ -812,7 +814,24 @@ _bt_bestsplitloc(FindSplitData *state, int perfectpenalty,
 			break;
 	}
 
-	final = &state->splits[lowsplit];
+	/*
+	 * There are workloads, where we would find the same best split location
+	 * over and over, even with the suffix truncation introducing some
+	 * variability. According to [1] this leads to the number of splits
+	 * following oscillating pattern, and the easiest workaround is to
+	 * introduce some randomness in chosing split location.
+	 *
+	 * To achieve that add a random shift to the lowsplit, corresponding to the
+	 * 20% of the all possible split locations. Since splits are sorted by
+	 * delta (see _bt_deltasortsplits), it should be close enough to
+	 * introducing a range around the split point.
+	 *
+	 * [1]: Glombiewski N., Seeger B., Graefe G. (2019). Waves of Misery After
+	 * Index Creation. BTW 2019. Gesellschaft für Informatik. doi:10.18420/btw2019-06
+	 */
+	rand_offset = pg_prng_uint64_range(
+		&pg_global_prng_state, 0, state->nsplits * 0.2);
+	final = &state->splits[lowsplit + rand_offset];
 
 	/*
 	 * There is a risk that the "many duplicates" strategy will repeatedly do
