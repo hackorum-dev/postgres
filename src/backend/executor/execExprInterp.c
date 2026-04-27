@@ -2546,6 +2546,26 @@ get_cached_rowtype(Oid type_id, int32 typmod,
 	}
 }
 
+static TypeCacheEntry *
+lookup_named_rowtype_tcache(Oid type_id)
+{
+	TypeCacheEntry *typentry;
+
+	typentry = lookup_type_cache(type_id,
+							  TYPECACHE_TUPDESC |
+							  TYPECACHE_DOMAIN_BASE_INFO);
+	if (typentry->typtype == TYPTYPE_DOMAIN)
+		typentry = lookup_type_cache(typentry->domainBaseType,
+								   TYPECACHE_TUPDESC);
+	if (typentry->tupDesc == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("type %s is not composite",
+						format_type_be(type_id))));
+
+	return typentry;
+}
+
 
 /*
  * Fast-path functions, for very simple expressions
@@ -5495,6 +5515,7 @@ ExecEvalWholeRowVar(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 		 */
 		if (variable->vartype != RECORDOID)
 		{
+			TypeCacheEntry *typentry;
 			TupleDesc	var_tupdesc;
 			TupleDesc	slot_tupdesc;
 
@@ -5513,6 +5534,10 @@ ExecEvalWholeRowVar(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 			 * If vartype is a domain over composite, just look through that
 			 * to the base composite type.
 			 */
+			typentry = lookup_named_rowtype_tcache(variable->vartype);
+			op->d.wholerow.rowcache->cacheptr = typentry;
+			op->d.wholerow.rowcache->tupdesc_id = typentry->tupDesc_identifier;
+
 			var_tupdesc = lookup_rowtype_tupdesc_domain(variable->vartype,
 														-1, false);
 
@@ -5608,6 +5633,17 @@ ExecEvalWholeRowVar(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 		op->d.wholerow.tupdesc = BlessTupleDesc(output_tupdesc);
 
 		op->d.wholerow.first = false;
+	}
+	else if (variable->vartype != RECORDOID)
+	{
+		TypeCacheEntry *typentry;
+
+		typentry = (TypeCacheEntry *) op->d.wholerow.rowcache->cacheptr;
+		if (typentry->tupDesc_identifier != op->d.wholerow.rowcache->tupdesc_id)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("row type %s has changed",
+							format_type_be(op->d.wholerow.tupdesc->tdtypeid))));
 	}
 
 	/*
