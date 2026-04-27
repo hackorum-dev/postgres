@@ -103,6 +103,13 @@ typedef struct CustomPathMethods
 	struct List *(*ReparameterizeCustomPathByChild) (PlannerInfo *root,
 													 List *custom_private,
 													 RelOptInfo *child_rel);
+
+	/*
+	 * Produce a shallow copy of a CustomPath, returning a freshly palloc'd
+	 * struct of the extension's concrete type.  Required when the extension's
+	 * CustomPath subclass embeds private fields beyond sizeof(CustomPath).
+	 */
+	struct CustomPath *(*CopyCustomPath) (struct CustomPath *path);
 }			CustomPathMethods;
 
 /*
