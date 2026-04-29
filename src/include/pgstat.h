@@ -286,6 +286,16 @@ typedef struct PgStat_VfdCacheStats
 	TimestampTz stat_reset_timestamp;
 } PgStat_VfdCacheStats;
 
+/* -------
+ * PgStat_BackendVfdCacheStats	Per-backend VFD cache gauges
+ * -------
+ */
+typedef struct PgStat_BackendVfdCacheStats
+{
+	PgStat_Counter vfd_entries;
+	PgStat_Counter vfd_cache_bytes;
+} PgStat_BackendVfdCacheStats;
+
 /*
  * Types related to counting IO operations
  */
@@ -536,6 +546,7 @@ typedef struct PgStat_Backend
 	TimestampTz stat_reset_timestamp;
 	PgStat_BktypeIO io_stats;
 	PgStat_WalCounters wal_counters;
+	PgStat_BackendVfdCacheStats vfdcache_stats;
 } PgStat_Backend;
 
 /* ---------

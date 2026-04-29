@@ -1513,6 +1513,28 @@ FileAccess(File file)
 }
 
 /*
+ * Return the number of currently allocated VFD entries for this backend,
+ * excluding slot 0 which is used as freelist/LRU header.
+ */
+uint64
+GetVfdCacheEntries(void)
+{
+	if (SizeVfdCache == 0)
+		return 0;
+
+	return (uint64) (SizeVfdCache - 1);
+}
+
+/*
+ * Return the memory footprint of currently allocated VFD entries.
+ */
+uint64
+GetVfdCacheBytes(void)
+{
+	return GetVfdCacheEntries() * sizeof(Vfd);
+}
+
+/*
  * Called whenever a temporary file is deleted to report its size.
  */
 static void

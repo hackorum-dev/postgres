@@ -3673,6 +3673,26 @@ description | Waiting for a newly initialized WAL file to reach durable storage
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>cache_entries</structfield> <type>integer</type>
+      </para>
+      <para>
+       Sum of currently allocated VFD cache entries across all active
+       backends
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>cache_bytes</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Sum of memory used by allocated VFD cache entries across all active
+       backends, in bytes
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>max_open_fds</structfield> <type>integer</type>
       </para>
       <para>
