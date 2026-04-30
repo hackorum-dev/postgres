@@ -42,6 +42,7 @@
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
+#include "utils/memutils.h"
 #include "utils/ruleutils.h"
 #include "utils/syscache.h"
 
@@ -342,7 +343,6 @@ generate_queries_for_path_pattern(RangeTblEntry *rte, List *path_pattern)
 	foreach_ptr(struct path_factor, pf, path_factors)
 		path_elem_lists = lappend(path_elem_lists,
 								  get_path_elements_for_path_factor(rte->relid, pf));
-
 	pathqueries = generate_queries_for_path_pattern_recurse(rte, pathqueries,
 															NIL, path_elem_lists, 0);
 	if (!pathqueries)
@@ -367,6 +367,8 @@ generate_queries_for_path_pattern_recurse(RangeTblEntry *rte, List *pathqueries,
 
 	foreach_ptr(struct path_element, pe, path_elems)
 	{
+		CHECK_FOR_INTERRUPTS();
+
 		/* Update current path being built with current element. */
 		cur_path = lappend(cur_path, pe);
 
@@ -383,10 +385,19 @@ generate_queries_for_path_pattern_recurse(RangeTblEntry *rte, List *pathqueries,
 				pathqueries = lappend(pathqueries, pathquery);
 		}
 		else
+		{
+			/* Dump memory context before recursive path query generation */
+			ereport(LOG,
+					(errmsg("GRAPH_TABLE: before generate_queries_for_path_pattern_recurse, "
+							"current memory context \"%s\": %zu bytes total",
+							CurrentMemoryContext->name,
+							MemoryContextMemAllocated(CurrentMemoryContext, true))));
 			pathqueries = generate_queries_for_path_pattern_recurse(rte, pathqueries,
 																	cur_path,
 																	path_elem_lists,
 																	elempos + 1);
+		}
+
 		/* Make way for the next element at the same position. */
 		cur_path = list_delete_last(cur_path);
 	}
