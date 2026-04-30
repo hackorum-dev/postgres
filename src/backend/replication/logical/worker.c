@@ -734,9 +734,9 @@ static void set_wal_receiver_timeout(void);
 
 static void on_exit_clear_xact_state(int code, Datum arg);
 
-static void send_internal_dependencies(ParallelApplyWorkerInfo *winfo,
+static bool send_internal_dependencies(ParallelApplyWorkerInfo *winfo,
 									   List *depends_on_xids);
-static void build_dependency_with_last_committed_txn(ParallelApplyWorkerInfo *winfo);
+static bool build_dependency_with_last_committed_txn(ParallelApplyWorkerInfo *winfo);
 
 /*
  * Compute the hash value for entries in the replica_identity_table.
@@ -1937,6 +1937,9 @@ handle_parallelized_transaction(LogicalRepMsgType action, StringInfo s)
 	ParallelApplyWorkerInfo *winfo;
 	TransApplyAction apply_action;
 
+	/* Save the message before it is consumed. */
+	StringInfoData original_msg = *s;
+
 	/*
 	 * Dependency checking for non-streaming transactions is only required in
 	 * the leader apply worker during a remote transaction.
@@ -1957,6 +1960,12 @@ handle_parallelized_transaction(LogicalRepMsgType action, StringInfo s)
 
 	handle_dependency_on_change(action, s, remote_xid, winfo);
 
+	/*
+	 * Re-fetch the latest apply action as it might have been changed during
+	 * dependency check.
+	 */
+	apply_action = get_transaction_apply_action(remote_xid, &winfo);
+
 	switch (apply_action)
 	{
 		case TRANS_LEADER_SEND_TO_PARALLEL:
@@ -1968,13 +1977,18 @@ handle_parallelized_transaction(LogicalRepMsgType action, StringInfo s)
 						action != LOGICAL_REP_MSG_TYPE);
 
 			/*
-			 * TODO: Support switching to PARTIAL_SERIALIZE mode when the send
-			 * buffer becomes full.
+			 * Switch to serialize mode when we are not able to send the
+			 * change to parallel apply worker.
 			 */
-			ereport(ERROR,
-					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					errmsg("could not send data to the logical replication parallel apply worker"));
-			return false;	/* silence compiler warning */
+			pa_switch_to_partial_serialize(winfo, false);
+
+			pg_fallthrough;
+		case TRANS_LEADER_PARTIAL_SERIALIZE:
+			stream_write_change(action, &original_msg);
+
+			/* Same reason as TRANS_LEADER_SEND_TO_PARALLEL case. */
+			return (action != LOGICAL_REP_MSG_RELATION &&
+					action != LOGICAL_REP_MSG_TYPE);
 
 		default:
 			elog(ERROR, "unexpected apply action: %d", (int) apply_action);
@@ -2346,6 +2360,9 @@ apply_handle_begin(StringInfo s)
 	ParallelApplyWorkerInfo *winfo;
 	TransApplyAction apply_action;
 
+	/* Save the message before it is consumed. */
+	StringInfoData original_msg = *s;
+
 	/* There must not be an active streaming transaction. */
 	Assert(!TransactionIdIsValid(stream_xid));
 
@@ -2379,12 +2396,19 @@ apply_handle_begin(StringInfo s)
 			}
 
 			/*
-			 * TODO: Support switching to PARTIAL_SERIALIZE mode when the send
-			 * buffer becomes full.
+			 * Switch to serialize mode when we are not able to send the
+			 * change to parallel apply worker.
 			 */
-			ereport(ERROR,
-					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					errmsg("could not send data to the logical replication parallel apply worker"));
+			pa_switch_to_partial_serialize(winfo, true);
+
+			pg_fallthrough;
+		case TRANS_LEADER_PARTIAL_SERIALIZE:
+			Assert(winfo);
+
+			stream_write_change(LOGICAL_REP_MSG_BEGIN, &original_msg);
+
+			/* Cache the parallel apply worker for this transaction. */
+			pa_set_stream_apply_worker(winfo);
 			break;
 
 		case TRANS_PARALLEL_APPLY:
@@ -2406,7 +2430,7 @@ apply_handle_begin(StringInfo s)
 /*
  * Send an INTERNAL_DEPENDENCY message to a parallel apply worker.
  */
-static void
+static bool
 send_internal_dependencies(ParallelApplyWorkerInfo *winfo, List *depends_on_xids)
 {
 	StringInfoData dependencies;
@@ -2420,14 +2444,22 @@ send_internal_dependencies(ParallelApplyWorkerInfo *winfo, List *depends_on_xids
 	foreach_xid(xid, depends_on_xids)
 		pq_sendint32(&dependencies, xid);
 
+	if (!winfo->serialize_changes)
+	{
+		if (pa_send_data(winfo, dependencies.len, dependencies.data))
+			return true;
+
+		pa_switch_to_partial_serialize(winfo, true);
+	}
+
 	/*
-	 * TODO: Support switching to PARTIAL_SERIALIZE mode when the send
-	 * buffer becomes full.
+	 * Skip writing the first internal message flag because
+	 * stream_write_change() accepts it as the argument.
 	 */
-	if (!pa_send_data(winfo, dependencies.len, dependencies.data))
-		ereport(ERROR,
-				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				errmsg("could not send data to the logical replication parallel apply worker"));
+	dependencies.cursor++;
+	stream_write_change(LOGICAL_REP_MSG_INTERNAL_MESSAGE, &dependencies);
+
+	return false;
 }
 
 /*
@@ -2437,14 +2469,14 @@ send_internal_dependencies(ParallelApplyWorkerInfo *winfo, List *depends_on_xids
  * instructing it to wait for the last committed transaction to finish before
  * committing its own, thereby preserving commit order.
  */
-static void
+static bool
 build_dependency_with_last_committed_txn(ParallelApplyWorkerInfo *winfo)
 {
 	/* Skip if transactions have not been applied yet */
 	if (!TransactionIdIsValid(last_parallelized_remote_xid))
-		return;
+		return true;
 
-	send_internal_dependencies(winfo, list_make1_xid(last_parallelized_remote_xid));
+	return send_internal_dependencies(winfo, list_make1_xid(last_parallelized_remote_xid));
 }
 
 /*
@@ -2458,6 +2490,9 @@ apply_handle_commit(StringInfo s)
 	LogicalRepCommitData commit_data;
 	ParallelApplyWorkerInfo *winfo;
 	TransApplyAction apply_action;
+
+	/* Save the message before it is consumed. */
+	StringInfoData original_msg = *s;
 
 	logicalrep_read_commit(s, &commit_data);
 
@@ -2502,11 +2537,11 @@ apply_handle_commit(StringInfo s)
 
 			/*
 			 * Build a dependency between this transaction and the lastly
-			 * committed transaction to preserve the commit order.
+			 * committed transaction to preserve the commit order. Then try to
+			 * send a COMMIT message if succeeded.
 			 */
-			build_dependency_with_last_committed_txn(winfo);
-
-			if (pa_send_data(winfo, s->len, s->data))
+			if (build_dependency_with_last_committed_txn(winfo) &&
+				pa_send_data(winfo, s->len, s->data))
 			{
 				/* Cache the remote_xid */
 				last_parallelized_remote_xid = remote_xid;
@@ -2517,12 +2552,29 @@ apply_handle_commit(StringInfo s)
 			}
 
 			/*
-			 * TODO: Support switching to PARTIAL_SERIALIZE mode when the send
-			 * buffer becomes full.
+			 * Switch to serialize mode when we are not able to send the
+			 * change to parallel apply worker.
 			 */
-			ereport(ERROR,
-					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					errmsg("could not send data to the logical replication parallel apply worker"));
+			pa_switch_to_partial_serialize(winfo, true);
+
+			pg_fallthrough;
+		case TRANS_LEADER_PARTIAL_SERIALIZE:
+			Assert(winfo);
+
+			/*
+			 * Build a dependency with the last committed transaction if not
+			 * already done.
+			 */
+			if (apply_action != TRANS_LEADER_SEND_TO_PARALLEL)
+				build_dependency_with_last_committed_txn(winfo);
+
+			stream_open_and_write_change(remote_xid, LOGICAL_REP_MSG_COMMIT,
+										 &original_msg);
+
+			pa_set_fileset_state(winfo->shared, FS_SERIALIZE_DONE);
+
+			/* Finish processing the transaction. */
+			pa_xact_finish(winfo, commit_data.end_lsn);
 			break;
 
 		case TRANS_PARALLEL_APPLY:
@@ -2575,6 +2627,9 @@ apply_handle_begin_prepare(StringInfo s)
 	ParallelApplyWorkerInfo *winfo;
 	TransApplyAction apply_action;
 
+	/* Save the message before it is consumed. */
+	StringInfoData original_msg = *s;
+
 	/* Tablesync should never receive prepare. */
 	if (am_tablesync_worker())
 		ereport(ERROR,
@@ -2614,12 +2669,19 @@ apply_handle_begin_prepare(StringInfo s)
 			}
 
 			/*
-			 * TODO: Support switching to PARTIAL_SERIALIZE mode when the send
-			 * buffer becomes full.
+			 * Switch to serialize mode when we are not able to send the
+			 * change to parallel apply worker.
 			 */
-			ereport(ERROR,
-					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					errmsg("could not send data to the logical replication parallel apply worker"));
+			pa_switch_to_partial_serialize(winfo, true);
+
+			pg_fallthrough;
+		case TRANS_LEADER_PARTIAL_SERIALIZE:
+			Assert(winfo);
+
+			stream_write_change(LOGICAL_REP_MSG_BEGIN_PREPARE, &original_msg);
+
+			/* Cache the parallel apply worker for this transaction. */
+			pa_set_stream_apply_worker(winfo);
 			break;
 
 		case TRANS_PARALLEL_APPLY:
@@ -2684,6 +2746,9 @@ apply_handle_prepare(StringInfo s)
 	LogicalRepPreparedTxnData prepare_data;
 	ParallelApplyWorkerInfo *winfo;
 	TransApplyAction apply_action;
+
+	/* Save the message before it is consumed. */
+	StringInfoData original_msg = *s;
 
 	logicalrep_read_prepare(s, &prepare_data);
 
@@ -2754,11 +2819,11 @@ apply_handle_prepare(StringInfo s)
 
 			/*
 			 * Build a dependency between this transaction and the lastly
-			 * committed transaction to preserve the commit order.
+			 * committed transaction to preserve the commit order. Then try to
+			 * send a COMMIT message if succeeded.
 			 */
-			build_dependency_with_last_committed_txn(winfo);
-
-			if (pa_send_data(winfo, s->len, s->data))
+			if (build_dependency_with_last_committed_txn(winfo) &&
+				pa_send_data(winfo, s->len, s->data))
 			{
 				/* Cache the remote_xid */
 				last_parallelized_remote_xid = remote_xid;
@@ -2769,12 +2834,29 @@ apply_handle_prepare(StringInfo s)
 			}
 
 			/*
-			 * TODO: Support switching to PARTIAL_SERIALIZE mode when the send
-			 * buffer becomes full.
+			 * Switch to serialize mode when we are not able to send the
+			 * change to parallel apply worker.
 			 */
-			ereport(ERROR,
-					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					errmsg("could not send data to the logical replication parallel apply worker"));
+			pa_switch_to_partial_serialize(winfo, true);
+			pg_fallthrough;
+
+		case TRANS_LEADER_PARTIAL_SERIALIZE:
+			Assert(winfo);
+
+			/*
+			 * Build a dependency with the last committed transaction if not
+			 * already done.
+			 */
+			if (apply_action != TRANS_LEADER_SEND_TO_PARALLEL)
+				build_dependency_with_last_committed_txn(winfo);
+
+			stream_open_and_write_change(remote_xid, LOGICAL_REP_MSG_PREPARE,
+										 &original_msg);
+
+			pa_set_fileset_state(winfo->shared, FS_SERIALIZE_DONE);
+
+			/* Finish processing the transaction. */
+			pa_xact_finish(winfo, prepare_data.end_lsn);
 			break;
 
 		case TRANS_PARALLEL_APPLY:
@@ -3049,9 +3131,8 @@ apply_handle_stream_prepare(StringInfo s)
 			 * Build a dependency between this transaction and the lastly
 			 * committed transaction to preserve the commit order.
 			 */
-			build_dependency_with_last_committed_txn(winfo);
-
-			if (pa_send_data(winfo, s->len, s->data))
+			if (build_dependency_with_last_committed_txn(winfo) &&
+				pa_send_data(winfo, s->len, s->data))
 			{
 				/* Finish processing the streaming transaction. */
 				pa_xact_finish(winfo, prepare_data.end_lsn);
@@ -3929,9 +4010,8 @@ apply_handle_stream_commit(StringInfo s)
 			 * Build a dependency between this transaction and the lastly
 			 * committed transaction to preserve the commit order.
 			 */
-			build_dependency_with_last_committed_txn(winfo);
-
-			if (pa_send_data(winfo, s->len, s->data))
+			if (build_dependency_with_last_committed_txn(winfo) &&
+				pa_send_data(winfo, s->len, s->data))
 			{
 				/* Finish processing the streaming transaction. */
 				pa_xact_finish(winfo, commit_data.end_lsn);

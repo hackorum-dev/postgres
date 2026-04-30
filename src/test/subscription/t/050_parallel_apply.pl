@@ -417,4 +417,34 @@ $node_subscriber->safe_psql('postgres', qq[
 
 $node_subscriber->wait_for_log(qr/finish waiting for depended xid $xid/, $offset);
 
+# Cleanup
+$node_publisher->safe_psql('postgres', "DELETE FROM regress_tab;");
+$node_publisher->wait_for_catchup('regress_sub');
+
+# Force the leader apply worker to serialize changes to disk
+$node_subscriber->append_conf('postgresql.conf',
+	"debug_logical_replication_streaming = immediate");
+$node_subscriber->reload;
+
+$node_publisher->safe_psql('postgres',
+    "INSERT INTO regress_tab VALUES (generate_series(1, 10), 'test');");
+
+$node_publisher->wait_for_catchup('regress_sub');
+
+# Reset to buffered mode so that subsequent tests send changes via shared
+# memory.
+$node_subscriber->append_conf('postgresql.conf',
+	"debug_logical_replication_streaming = buffered");
+$node_subscriber->reload;
+
+# Verify that changes have been serialized
+$node_subscriber->wait_for_log(
+	qr/LOG: ( [A-Z0-9]+:)? logical replication apply worker will serialize the remaining changes of remote transaction \d+ to a file/,
+	$offset);
+
+# Verify that the parallel apply worker can restore serialized changes correctly
+$result =
+  $node_subscriber->safe_psql('postgres', "SELECT count(1) FROM regress_tab");
+is ($result, 10, 'inserts are replicated to subscriber');
+
 done_testing();

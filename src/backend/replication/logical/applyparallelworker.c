@@ -986,6 +986,38 @@ pa_get_last_commit_end(TransactionId xid, bool delete_entry, bool *skipped_write
 }
 
 /*
+ * Wait for the remote transaction associated with the specified remote xid to
+ * complete.
+ */
+static void
+pa_wait_for_transaction(TransactionId wait_for_xid)
+{
+	if (!am_leader_apply_worker())
+		return;
+
+	if (!TransactionIdIsValid(wait_for_xid))
+		return;
+
+	elog(DEBUG1, "plan to wait for remote_xid %u to finish",
+		 wait_for_xid);
+
+	for (;;)
+	{
+		if (pa_transaction_committed(wait_for_xid))
+			break;
+
+		pa_lock_transaction(wait_for_xid, AccessShareLock);
+		pa_unlock_transaction(wait_for_xid, AccessShareLock);
+
+		/* An interrupt may have occurred while we were waiting. */
+		CHECK_FOR_INTERRUPTS();
+	}
+
+	elog(DEBUG1, "finished wait for remote_xid %u to finish",
+		 wait_for_xid);
+}
+
+/*
  * Interrupt handler for main loop of parallel apply worker.
  */
 static void
@@ -1604,6 +1636,7 @@ pa_send_data(ParallelApplyWorkerInfo *winfo, Size nbytes, const void *data)
 void
 pa_distribute_schema_changes_to_workers(LogicalRepRelation *rel)
 {
+	List	   *workers_stopped = NIL;
 	StringInfoData out;
 
 	/* Only leader apply workers can distribute schema changes */
@@ -1640,13 +1673,22 @@ pa_distribute_schema_changes_to_workers(LogicalRepRelation *rel)
 			continue;
 
 		/*
-		 * TODO: Support switching to PARTIAL_SERIALIZE mode when the send
-		 * buffer becomes full.
+		 * Distribution to this worker failed due to a sending timeout. Wait
+		 * for the worker to complete its transaction and then stop it. This
+		 * is consistent with the handling of workers in serialize mode (see
+		 * pa_free_worker() for details).
 		 */
-		ereport(ERROR,
-				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				errmsg("could not send data to the logical replication parallel apply worker for subscription"));
+		pa_wait_for_transaction(winfo->shared->xid);
+
+		pa_get_last_commit_end(winfo->shared->xid, false, NULL);
+
+		logicalrep_pa_worker_stop(winfo);
+
+		workers_stopped = lappend(workers_stopped, winfo);
 	}
+
+	foreach_ptr(ParallelApplyWorkerInfo, winfo, workers_stopped)
+		pa_free_worker_info(winfo);
 }
 
 /*
