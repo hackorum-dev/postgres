@@ -146,6 +146,7 @@ typedef struct ReorderBufferTupleCidEnt
 	CommandId	cmin;
 	CommandId	cmax;
 	CommandId	combocid;		/* just for debugging */
+	TransactionId subxid;		/* subtransaction that wrote this entry */
 } ReorderBufferTupleCidEnt;
 
 /* Virtual file descriptor with file offset tracking */
@@ -1880,16 +1881,60 @@ ReorderBufferBuildTupleCidHash(ReorderBuffer *rb, ReorderBufferTXN *txn)
 			ent->cmin = change->data.tuplecid.cmin;
 			ent->cmax = change->data.tuplecid.cmax;
 			ent->combocid = change->data.tuplecid.combocid;
+			ent->subxid = change->data.tuplecid.subxid;
+		}
+		else if (ent->cmin != change->data.tuplecid.cmin)
+		{
+			/*
+			 * The same TID appears with a different cmin.  This happens when
+			 * a subtransaction inserts a catalog tuple, then a ROLLBACK TO
+			 * SAVEPOINT aborts that subtransaction, and a later operation
+			 * reuses the same TID (after page pruning reclaims the dead
+			 * tuple's slot).  Both xl_heap_new_cid records remain in the WAL
+			 * under the top-level xid.
+			 *
+			 * We resolve this by checking which entry's subtransaction
+			 * aborted.  The entry from the aborted subtransaction is stale
+			 * and should be discarded.
+			 */
+			if (TransactionIdDidAbort(ent->subxid))
+			{
+				/* Existing entry is from an aborted subtxn; replace it. */
+				ent->cmin = change->data.tuplecid.cmin;
+				ent->cmax = change->data.tuplecid.cmax;
+				ent->combocid = change->data.tuplecid.combocid;
+				ent->subxid = change->data.tuplecid.subxid;
+			}
+			else if (TransactionIdDidAbort(change->data.tuplecid.subxid))
+			{
+				/* New entry is from an aborted subtxn; skip it. */
+			}
+			else
+			{
+				/*
+				 * Neither subtransaction aborted — this shouldn't happen.
+				 * Keep the existing entry but log a warning.
+				 */
+				elog(WARNING, "tuplecid cmin mismatch with no aborted "
+					 "subtransaction: rel %u/%u/%u tid (%u,%u) "
+					 "existing cmin %u (subxid %u) "
+					 "new cmin %u (subxid %u)",
+					 key.rlocator.spcOid,
+					 key.rlocator.dbOid,
+					 key.rlocator.relNumber,
+					 ItemPointerGetBlockNumber(&key.tid),
+					 ItemPointerGetOffsetNumber(&key.tid),
+					 ent->cmin, ent->subxid,
+					 change->data.tuplecid.cmin,
+					 change->data.tuplecid.subxid);
+			}
 		}
 		else
 		{
 			/*
-			 * Maybe we already saw this tuple before in this transaction, but
-			 * if so it must have the same cmin.
-			 */
-			Assert(ent->cmin == change->data.tuplecid.cmin);
-
-			/*
+			 * Same cmin — this is the normal case where the same tuple is
+			 * seen multiple times (e.g. insert then update).  Update cmax.
+			 *
 			 * cmax may be initially invalid, but once set it can only grow,
 			 * and never become invalid again.
 			 */
@@ -3477,7 +3522,8 @@ void
 ReorderBufferAddNewTupleCids(ReorderBuffer *rb, TransactionId xid,
 							 XLogRecPtr lsn, RelFileLocator locator,
 							 ItemPointerData tid, CommandId cmin,
-							 CommandId cmax, CommandId combocid)
+							 CommandId cmax, CommandId combocid,
+							 TransactionId subxid)
 {
 	ReorderBufferChange *change = ReorderBufferAllocChange(rb);
 	ReorderBufferTXN *txn;
@@ -3489,6 +3535,7 @@ ReorderBufferAddNewTupleCids(ReorderBuffer *rb, TransactionId xid,
 	change->data.tuplecid.cmin = cmin;
 	change->data.tuplecid.cmax = cmax;
 	change->data.tuplecid.combocid = combocid;
+	change->data.tuplecid.subxid = subxid;
 	change->lsn = lsn;
 	change->txn = txn;
 	change->action = REORDER_BUFFER_CHANGE_INTERNAL_TUPLECID;
