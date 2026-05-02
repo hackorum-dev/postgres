@@ -16,6 +16,7 @@
 #include "port/atomics.h"
 #include "storage/shm_toc.h"
 #include "storage/spin.h"
+#include "utils/memdebug.h"
 
 typedef struct shm_toc_entry
 {
@@ -74,6 +75,13 @@ shm_toc_attach(uint64 magic, void *address)
 	return toc;
 }
 
+/* with valgrind, we want to add a couple NOACCESS bytes */
+#ifdef USE_VALGRIND
+#define NUM_NOACCESS_BYTES 32
+#else
+#define NUM_NOACCESS_BYTES 0
+#endif
+
 /*
  * Allocate shared memory from a segment managed by a table of contents.
  *
@@ -118,9 +126,19 @@ shm_toc_allocate(shm_toc *toc, Size nbytes)
 	}
 	toc->toc_allocated_bytes += nbytes;
 
+#ifdef USE_VALGRIND
+	vtoc->toc_allocated_bytes += NUM_NOACCESS_BYTES;
+#endif
+
 	SpinLockRelease(&toc->toc_mutex);
 
-	return ((char *) toc) + (total_bytes - allocated_bytes - nbytes);
+#ifdef USE_VALGRIND
+	/* make the bytes at the end no-access */
+	VALGRIND_MAKE_MEM_NOACCESS(((char *) toc) + (total_bytes - allocated_bytes - NUM_NOACCESS_BYTES),
+							   NUM_NOACCESS_BYTES);
+#endif
+
+	return ((char *) toc) + (total_bytes - allocated_bytes - nbytes - NUM_NOACCESS_BYTES);
 }
 
 /*
@@ -271,6 +289,9 @@ shm_toc_estimate(shm_toc_estimator *e)
 	sz = offsetof(shm_toc, toc_entry);
 	sz = add_size(sz, mul_size(e->number_of_keys, sizeof(shm_toc_entry)));
 	sz = add_size(sz, e->space_for_chunks);
+
+	/* add space for ENOACCESS bytes, NUM_NOACCESS_BYTES per key */
+	sz = add_size(sz, mul_size(e->number_of_keys, NUM_NOACCESS_BYTES));
 
 	return BUFFERALIGN(sz);
 }
