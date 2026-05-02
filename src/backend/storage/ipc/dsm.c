@@ -45,6 +45,7 @@
 #include "storage/shmem.h"
 #include "storage/subsystems.h"
 #include "utils/freepage.h"
+#include "utils/memdebug.h"
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 
@@ -846,6 +847,12 @@ dsm_detach(dsm_segment *seg)
 	 */
 	if (seg->mapped_address != NULL)
 	{
+		/*
+		 * We need to clear up NOACCESS regions set by shm_toc as shm_tocs
+		 * have no function for deatching or destroying.
+		 */
+		VALGRIND_MAKE_MEM_DEFINED(seg->mapped_address, seg->mapped_size);
+
 		if (!is_main_region_dsm_handle(seg->handle))
 			dsm_impl_op(DSM_OP_DETACH, seg->handle, 0, &seg->impl_private,
 						&seg->mapped_address, &seg->mapped_size, WARNING);
