@@ -16,6 +16,7 @@
 #include "port/atomics.h"
 #include "storage/shm_toc.h"
 #include "storage/spin.h"
+#include "utils/memdebug.h"
 
 typedef struct shm_toc_entry
 {
@@ -74,6 +75,13 @@ shm_toc_attach(uint64 magic, void *address)
 	return toc;
 }
 
+/* With valgrind, we want to add a couple NOACCESS bytes */
+#ifdef USE_VALGRIND
+#define NUM_NOACCESS_BYTES 32
+#else
+#define NUM_NOACCESS_BYTES 0
+#endif
+
 /*
  * Allocate shared memory from a segment managed by a table of contents.
  *
@@ -87,6 +95,7 @@ shm_toc_attach(uint64 magic, void *address)
 void *
 shm_toc_allocate(shm_toc *toc, Size nbytes)
 {
+	Size		reqbytes;
 	Size		total_bytes;
 	Size		allocated_bytes;
 	Size		nentry;
@@ -98,7 +107,7 @@ shm_toc_allocate(shm_toc *toc, Size nbytes)
 	 * proper definition for the minimum to make atomic ops safe, but
 	 * BUFFERALIGN ought to be enough.
 	 */
-	nbytes = BUFFERALIGN(nbytes);
+	reqbytes = BUFFERALIGN(nbytes + NUM_NOACCESS_BYTES);
 
 	SpinLockAcquire(&toc->toc_mutex);
 
@@ -109,18 +118,24 @@ shm_toc_allocate(shm_toc *toc, Size nbytes)
 		+ allocated_bytes;
 
 	/* Check for memory exhaustion and overflow. */
-	if (toc_bytes + nbytes > total_bytes || toc_bytes + nbytes < toc_bytes)
+	if (toc_bytes + reqbytes > total_bytes || toc_bytes + reqbytes < toc_bytes)
 	{
 		SpinLockRelease(&toc->toc_mutex);
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("out of shared memory")));
 	}
-	toc->toc_allocated_bytes += nbytes;
+	toc->toc_allocated_bytes += reqbytes;
 
 	SpinLockRelease(&toc->toc_mutex);
 
-	return ((char *) toc) + (total_bytes - allocated_bytes - nbytes);
+#ifdef USE_VALGRIND
+	/* Make the bytes at the end no-access */
+	VALGRIND_MAKE_MEM_NOACCESS(((char *) toc) + (total_bytes - allocated_bytes - reqbytes + nbytes),
+							   reqbytes - nbytes);
+#endif
+
+	return ((char *) toc) + (total_bytes - allocated_bytes - reqbytes);
 }
 
 /*
@@ -249,7 +264,20 @@ shm_toc_lookup(shm_toc *toc, uint64 key, bool noError)
 	for (i = 0; i < nentry; ++i)
 	{
 		if (toc->toc_entry[i].key == key)
+		{
+#ifdef USE_VALGRIND
+			/*
+			 * Since we do not know the size of entries we can only use the
+			 * start of the next entry for setting the no-access sentinel.
+			 */
+			Size		nextoffset = i == 0 ? toc->toc_total_bytes : toc->toc_entry[i - 1].offset;
+
+			VALGRIND_MAKE_MEM_NOACCESS(((char *) toc) + nextoffset - NUM_NOACCESS_BYTES,
+										NUM_NOACCESS_BYTES);
+#endif
+
 			return ((char *) toc) + toc->toc_entry[i].offset;
+		}
 	}
 
 	/* No matching entry was found. */
@@ -271,6 +299,9 @@ shm_toc_estimate(shm_toc_estimator *e)
 	sz = offsetof(shm_toc, toc_entry);
 	sz = add_size(sz, mul_size(e->number_of_keys, sizeof(shm_toc_entry)));
 	sz = add_size(sz, e->space_for_chunks);
+
+	/* add space for ENOACCESS bytes, NUM_NOACCESS_BYTES per key */
+	sz = add_size(sz, mul_size(e->number_of_keys, NUM_NOACCESS_BYTES));
 
 	return BUFFERALIGN(sz);
 }
