@@ -4803,9 +4803,10 @@ SetDataChecksumsOnInProgress(void)
  * state transition.
  */
 void
-SetDataChecksumsOn(void)
+SetDataChecksumsOn(bool fast)
 {
 	uint64		barrier;
+	int			flags;
 
 	SpinLockAcquire(&XLogCtl->info_lck);
 
@@ -4820,7 +4821,7 @@ SetDataChecksumsOn(void)
 		SpinLockRelease(&XLogCtl->info_lck);
 		elog(WARNING,
 			 "cannot set data checksums to \"on\", current state is not \"inprogress-on\", disabling");
-		SetDataChecksumsOff();
+		SetDataChecksumsOff(fast);
 		return;
 	}
 
@@ -4850,7 +4851,11 @@ SetDataChecksumsOn(void)
 	MyProc->delayChkptFlags &= ~DELAY_CHKPT_START;
 	END_CRIT_SECTION();
 
-	RequestCheckpoint(CHECKPOINT_FORCE | CHECKPOINT_WAIT | CHECKPOINT_FAST);
+	flags = CHECKPOINT_FORCE | CHECKPOINT_WAIT;
+	if (fast)
+		flags |= CHECKPOINT_FAST;
+
+	RequestCheckpoint(flags);
 	WaitForProcSignalBarrier(barrier);
 }
 
@@ -4868,9 +4873,15 @@ SetDataChecksumsOn(void)
  * state transition.
  */
 void
-SetDataChecksumsOff(void)
+SetDataChecksumsOff(bool fast)
 {
 	uint64		barrier;
+	int			flags;
+
+	/* determine flags for the checkpoint(s) */
+	flags = CHECKPOINT_FORCE | CHECKPOINT_WAIT;
+	if (fast)
+		flags |= CHECKPOINT_FAST;
 
 	SpinLockAcquire(&XLogCtl->info_lck);
 
@@ -4912,7 +4923,7 @@ SetDataChecksumsOff(void)
 		MyProc->delayChkptFlags &= ~DELAY_CHKPT_START;
 		END_CRIT_SECTION();
 
-		RequestCheckpoint(CHECKPOINT_FORCE | CHECKPOINT_WAIT | CHECKPOINT_FAST);
+		RequestCheckpoint(flags);
 		WaitForProcSignalBarrier(barrier);
 
 		/*
@@ -4950,7 +4961,7 @@ SetDataChecksumsOff(void)
 	MyProc->delayChkptFlags &= ~DELAY_CHKPT_START;
 	END_CRIT_SECTION();
 
-	RequestCheckpoint(CHECKPOINT_FORCE | CHECKPOINT_WAIT | CHECKPOINT_FAST);
+	RequestCheckpoint(flags);
 	WaitForProcSignalBarrier(barrier);
 }
 
