@@ -34,6 +34,7 @@
 #include "utils/wait_event.h"
 
 WalRcvData *WalRcv = NULL;
+//ArchivalReportData *ArchReport;
 
 static void WalRcvShmemRequest(void *arg);
 static void WalRcvShmemInit(void *arg);
@@ -57,6 +58,11 @@ WalRcvShmemRequest(void *arg)
 					   .size = sizeof(WalRcvData),
 					   .ptr = (void **) &WalRcv,
 		);
+
+	ShmemRequestStruct(.name = "Archival Report Data",
+				   .size = sizeof(ArchivalReportData),
+				   .ptr = (void **) &ArchReport,
+	);
 }
 
 /* Initialize walreceiver-related shared memory */
@@ -69,6 +75,8 @@ WalRcvShmemInit(void *arg)
 	SpinLockInit(&WalRcv->mutex);
 	pg_atomic_init_u64(&WalRcv->writtenUpto, 0);
 	WalRcv->procno = INVALID_PROC_NUMBER;
+
+	MemSet(ArchReport, 0, sizeof(ArchivalReportData));
 }
 
 /* Is walreceiver running (or starting up)? */
@@ -433,4 +441,48 @@ GetReplicationTransferLatency(void)
 
 	return TimestampDifferenceMilliseconds(lastMsgSendTime,
 										   lastMsgReceiptTime);
+}
+
+/*
+ * Is segment was already archived by master?
+ * Can be used only if archive_mode=shared.
+ */
+bool
+IsSegnoArchivedByUpstream(TimeLineID tli, XLogSegNo segno)
+{
+	elog(WARNING, "received tli: %d, segno: %ld", tli, segno);
+	elog(WARNING, "ArchReport->tli: %d, ArchReport->segno: %ld", ArchReport->tli, ArchReport->segno);
+	return tli == ArchReport->tli && segno <= ArchReport->segno;
+}
+
+/*
+ * Store archival report data in shared memory for later use by
+ * walreceiver and archiver.
+ */
+void
+StoreArchivalReport(TimeLineID tli, XLogSegNo segno)
+{
+	ereport(WARNING,
+		(errmsg("received archival report from primary: tli %u, segno %ld",
+			tli, segno)));
+
+	if (tli == 0 || segno == 0)
+	{
+		ereport(WARNING,
+				(errmsg("invalid values in archival report: tli %d, segno %ld",
+						tli, segno)));
+		return;
+	}
+
+	/* nothing is changed */
+	if (tli == ArchReport->tli && segno <= ArchReport->segno)
+		return;
+
+	/* Remember the last archived segment for XLogWalRcvClose() */
+	ArchReport->tli = tli;
+	ArchReport->segno = segno;
+
+	/* Notify archiver that it's got something to do */
+	if (IsUnderPostmaster)
+		PgArchWakeup();
 }
