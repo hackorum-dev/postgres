@@ -195,6 +195,14 @@ typedef struct
 struct WalReceiverConn;
 typedef struct WalReceiverConn WalReceiverConn;
 
+typedef struct ArchivalReportData
+{
+	TimeLineID tli;
+	XLogSegNo segno;
+} ArchivalReportData;
+/* Last archived WAL segment file reported by the primary */
+extern ArchivalReportData *ArchReport;
+
 /*
  * Status of walreceiver query execution.
  *
@@ -502,5 +510,7 @@ extern XLogRecPtr GetWalRcvFlushRecPtr(XLogRecPtr *latestChunkStart, TimeLineID 
 extern XLogRecPtr GetWalRcvWriteRecPtr(void);
 extern int	GetReplicationApplyDelay(void);
 extern int	GetReplicationTransferLatency(void);
+extern bool IsSegnoArchivedByUpstream(TimeLineID tli, XLogSegNo segno);
+extern void StoreArchivalReport(TimeLineID tli, XLogSegNo segno);
 
 #endif							/* _WALRECEIVER_H */
