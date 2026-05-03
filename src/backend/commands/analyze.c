@@ -55,6 +55,7 @@
 #include "utils/sortsupport.h"
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
+#include "utils/typcache.h"
 
 /* Per-index data for ANALYZE */
 typedef struct AnlIndexData
@@ -1899,6 +1900,12 @@ ind_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull)
  */
 #define WIDTH_THRESHOLD  1024
 
+/*
+ * Build a hash table for distinct/MCV tracking only when the statistics
+ * target is large enough to justify the overhead of maintaining it.
+ */
+#define ANALYZE_HASH_THRESHOLD  100
+
 #define swapInt(a,b)	do {int _tmp; _tmp=a; a=b; b=_tmp;} while(0)
 #define swapDatum(a,b)	do {Datum _tmp; _tmp=a; a=b; b=_tmp;} while(0)
 
@@ -1917,7 +1924,29 @@ typedef struct
 	int		   *tupnoLink;
 } CompareScalarsContext;
 
+/* Entries in the simplehash hash table used by compute_distinct_stats */
+typedef struct DistinctHashEntry
+{
+	Datum		value;			/* the value represented by this entry */
+	int			index;			/* its index in the relevant track */
+	uint32		hash;			/* hash code for the Datum */
+	char		status;			/* status code used by simplehash.h */
+}			DistinctHashEntry;
 
+/* private_data for the simplehash hash table */
+typedef struct DistinctHashContext
+{
+	FmgrInfo   *eqfunc;			/* the equality operator */
+	FmgrInfo   *hashfunc;		/* the hash function to use */
+	Oid			collation;		/* collation to use equality and hash calls */
+}			DistinctHashContext;
+
+
+/* forward reference */
+typedef struct DistinctHash_hash DistinctHash_hash;
+
+static uint32 distinct_hash_hash(DistinctHash_hash * tab, Datum key);
+static bool distinct_hash_equal(DistinctHash_hash * tab, Datum key0, Datum key1);
 static void compute_trivial_stats(VacAttrStatsP stats,
 								  AnalyzeAttrFetchFunc fetchfunc,
 								  int samplerows,
@@ -1939,6 +1968,53 @@ static int	analyze_mcv_list(int *mcv_counts,
 							 int samplerows,
 							 double totalrows);
 
+/* Define support routines for compute distinct values hash tables */
+#define SH_PREFIX DistinctHash
+#define SH_ELEMENT_TYPE DistinctHashEntry
+#define SH_KEY_TYPE Datum
+#define SH_KEY value
+#define SH_HASH_KEY(tab, key) distinct_hash_hash(tab, key)
+#define SH_EQUAL(tab, key0, key1) distinct_hash_equal(tab, key0, key1)
+#define SH_SCOPE static inline
+#define SH_STORE_HASH
+#define SH_GET_HASH(tab, ent) ((ent)->hash)
+#define SH_DEFINE
+#define SH_DECLARE
+#include "lib/simplehash.h"
+
+
+/*
+ * Support functions for the hash tables used by compute_distinct_stats
+ */
+static uint32
+distinct_hash_hash(DistinctHash_hash * tab, Datum key)
+{
+	DistinctHashContext *context = (DistinctHashContext *) tab->private_data;
+	Datum		result;
+
+	result = FunctionCall1Coll(context->hashfunc, context->collation, key);
+	return DatumGetUInt32(result);
+}
+
+static bool
+distinct_hash_equal(DistinctHash_hash * tab, Datum key0, Datum key1)
+{
+	DistinctHashContext *context = (DistinctHashContext *) tab->private_data;
+	Datum		result;
+
+	result = FunctionCall2Coll(context->eqfunc, context->collation, key0, key1);
+	return DatumGetBool(result);
+}
+
+static inline void
+distinct_hash_set_index(DistinctHash_hash * hash, Datum value,
+						uint32 value_hash, int index)
+{
+	DistinctHashEntry *entry = DistinctHash_lookup_hash(hash, value, value_hash);
+
+	Assert(entry != NULL);
+	entry->index = index;
+}
 
 /*
  * std_typanalyze -- the default type-specific typanalyze function
@@ -2128,15 +2204,20 @@ compute_distinct_stats(VacAttrStatsP stats,
 	bool		is_varwidth = (!stats->attrtype->typbyval &&
 							   stats->attrtype->typlen < 0);
 	FmgrInfo	f_cmpeq;
+	TypeCacheEntry *typentry;
 	typedef struct
 	{
 		Datum		value;
 		int			count;
+		uint32		hash;
 	} TrackItem;
 	TrackItem  *track;
 	int			track_cnt,
 				track_max;
 	int			num_mcv = stats->attstattarget;
+	bool		use_hash;
+	DistinctHashContext hash_context;
+	DistinctHash_hash *track_hash = NULL;
 	int			firstcount1 = 0,	/* index of first singleton in track[] */
 				c1_cursor = 0;	/* next singleton to evict (FIFO) */
 	StdAnalyzeData *mystats = (StdAnalyzeData *) stats->extra_data;
@@ -2151,6 +2232,26 @@ compute_distinct_stats(VacAttrStatsP stats,
 	track_cnt = 0;
 
 	fmgr_info(mystats->eqfunc, &f_cmpeq);
+	typentry = lookup_type_cache(stats->attrtypid,
+								 TYPECACHE_HASH_PROC_FINFO | TYPECACHE_EQ_OPR);
+
+	/*
+	 * For sufficiently large statistics targets, use a hash table to avoid
+	 * repeated linear searches of the track[] array, but only when we can use
+	 * the type's default hash support that matches the equality operator.
+	 */
+	use_hash = (num_mcv >= ANALYZE_HASH_THRESHOLD &&
+				mystats->eqopr == typentry->eq_opr &&
+				OidIsValid(typentry->hash_proc));
+
+	if (use_hash)
+	{
+		hash_context.eqfunc = &f_cmpeq;
+		hash_context.hashfunc = &typentry->hash_proc_finfo;
+		hash_context.collation = stats->attrcollid;
+		track_hash = DistinctHash_create(CurrentMemoryContext, track_max,
+										 &hash_context);
+	}
 
 	for (i = 0; i < samplerows; i++)
 	{
@@ -2159,6 +2260,7 @@ compute_distinct_stats(VacAttrStatsP stats,
 		bool		match;
 		int			match_index,
 					j;
+		uint32		value_hash = 0;
 
 		vacuum_delay_point(true);
 
@@ -2205,20 +2307,33 @@ compute_distinct_stats(VacAttrStatsP stats,
 		/*
 		 * See if the value matches anything we're already tracking.
 		 */
-		match = false;
-		firstcount1 = track_cnt;
-		for (j = 0; j < track_cnt; j++)
+		if (use_hash)
 		{
-			if (DatumGetBool(FunctionCall2Coll(&f_cmpeq,
-											   stats->attrcollid,
-											   value, track[j].value)))
+			DistinctHashEntry *entry;
+
+			value_hash = distinct_hash_hash(track_hash, value);
+			entry = DistinctHash_lookup_hash(track_hash, value, value_hash);
+			match = (entry != NULL);
+			if (match)
+				match_index = entry->index;
+		}
+		else
+		{
+			match = false;
+			firstcount1 = track_cnt;
+			for (j = 0; j < track_cnt; j++)
 			{
-				match = true;
-				match_index = j;
-				break;
+				if (DatumGetBool(FunctionCall2Coll(&f_cmpeq,
+												   stats->attrcollid,
+												   value, track[j].value)))
+				{
+					match = true;
+					match_index = j;
+					break;
+				}
+				if (j < firstcount1 && track[j].count == 1)
+					firstcount1 = j;
 			}
-			if (j < firstcount1 && track[j].count == 1)
-				firstcount1 = j;
 		}
 
 		if (match)
@@ -2233,6 +2348,18 @@ compute_distinct_stats(VacAttrStatsP stats,
 			{
 				swapDatum(track[j].value, track[j - 1].value);
 				swapInt(track[j].count, track[j - 1].count);
+				if (use_hash)
+				{
+					uint32		tmp;
+
+					tmp = track[j].hash;
+					track[j].hash = track[j - 1].hash;
+					track[j - 1].hash = tmp;
+					distinct_hash_set_index(track_hash, track[j].value,
+											track[j].hash, j);
+					distinct_hash_set_index(track_hash, track[j - 1].value,
+											track[j - 1].hash, j - 1);
+				}
 			}
 
 			/*
@@ -2280,12 +2407,34 @@ compute_distinct_stats(VacAttrStatsP stats,
 				insert_index = c1_cursor++;
 				if (c1_cursor >= track_cnt)
 					c1_cursor = firstcount1;
+
+				if (use_hash)
+				{
+					DistinctHashEntry *delentry;
+
+					delentry = DistinctHash_lookup_hash(track_hash,
+														track[insert_index].value,
+														track[insert_index].hash);
+					Assert(delentry != NULL);
+					DistinctHash_delete_item(track_hash, delentry);
+				}
 			}
 			else
 				continue;
 
 			track[insert_index].value = value;
 			track[insert_index].count = 1;
+			if (use_hash)
+			{
+				bool		found_hash;
+				DistinctHashEntry *entry;
+
+				track[insert_index].hash = value_hash;
+				entry = DistinctHash_insert_hash(track_hash, value, value_hash,
+												 &found_hash);
+				Assert(!found_hash);
+				entry->index = insert_index;
+			}
 		}
 	}
 
