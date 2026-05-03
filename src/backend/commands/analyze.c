@@ -56,7 +56,6 @@
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
 
-
 /* Per-index data for ANALYZE */
 typedef struct AnlIndexData
 {
@@ -2107,10 +2106,11 @@ compute_trivial_stats(VacAttrStatsP stats,
  *
  *	The most common values are determined by brute force: we keep a list
  *	of previously seen values, ordered by number of times seen, as we scan
- *	the samples.  A newly seen value is inserted just after the last
- *	multiply-seen value, causing the bottommost (oldest) singly-seen value
- *	to drop off the list.  The accuracy of this method, and also its cost,
- *	depend mainly on the length of the list we are willing to keep.
+ *	the samples.  Newly seen values are appended to the list, and when it's
+ *	full we replace the oldest singly-seen value (FIFO) using a round-robin
+ *	cursor (clock hand) over the count=1 region.  This avoids repeatedly
+ *	shifting the count=1 region, and when hashing is enabled, avoids having
+ *	to update a large number of hash->index mappings.
  */
 static void
 compute_distinct_stats(VacAttrStatsP stats,
@@ -2137,6 +2137,8 @@ compute_distinct_stats(VacAttrStatsP stats,
 	int			track_cnt,
 				track_max;
 	int			num_mcv = stats->attstattarget;
+	int			firstcount1 = 0,	/* index of first singleton in track[] */
+				c1_cursor = 0;	/* next singleton to evict (FIFO) */
 	StdAnalyzeData *mystats = (StdAnalyzeData *) stats->extra_data;
 
 	/*
@@ -2155,7 +2157,7 @@ compute_distinct_stats(VacAttrStatsP stats,
 		Datum		value;
 		bool		isnull;
 		bool		match;
-		int			firstcount1,
+		int			match_index,
 					j;
 
 		vacuum_delay_point(true);
@@ -2212,6 +2214,7 @@ compute_distinct_stats(VacAttrStatsP stats,
 											   value, track[j].value)))
 			{
 				match = true;
+				match_index = j;
 				break;
 			}
 			if (j < firstcount1 && track[j].count == 1)
@@ -2220,31 +2223,69 @@ compute_distinct_stats(VacAttrStatsP stats,
 
 		if (match)
 		{
+			bool		was_count1;
+
 			/* Found a match */
-			track[j].count++;
+			was_count1 = (track[match_index].count == 1);
+			track[match_index].count++;
 			/* This value may now need to "bubble up" in the track list */
-			while (j > 0 && track[j].count > track[j - 1].count)
+			for (j = match_index; j > 0 && track[j].count > track[j - 1].count; j--)
 			{
 				swapDatum(track[j].value, track[j - 1].value);
 				swapInt(track[j].count, track[j - 1].count);
-				j--;
 			}
+
+			/*
+			 * If a singleton was promoted, the singleton region shrinks by
+			 * one element, so advance its boundary.
+			 */
+			if (was_count1)
+			{
+				firstcount1++;
+
+				/*
+				 * If the cursor was pointing into the singleton region,
+				 * advance it so it still refers to a valid singleton.
+				 */
+				if (c1_cursor >= firstcount1 - 1)
+				{
+					c1_cursor++;
+					if (c1_cursor >= track_cnt)
+						c1_cursor = firstcount1;
+				}
+			}
+
+			/* Final safety: keep cursor inside singleton region */
+			if (c1_cursor < firstcount1 || c1_cursor >= track_cnt)
+				c1_cursor = firstcount1;
 		}
 		else
 		{
-			/* No match.  Insert at head of count-1 list */
+			int			insert_index;
+
+			/*
+			 * No match.  Track the value if we still have room; otherwise
+			 * evict the oldest singleton from the count=1 region.
+			 */
 			if (track_cnt < track_max)
-				track_cnt++;
-			for (j = track_cnt - 1; j > firstcount1; j--)
+				insert_index = track_cnt++;
+			else if (firstcount1 < track_cnt)
 			{
-				track[j].value = track[j - 1].value;
-				track[j].count = track[j - 1].count;
+				/*
+				 * Use c1_cursor as a round-robin cursor over the count=1
+				 * region.  Keep it on a current singleton before evicting.
+				 */
+				if (c1_cursor < firstcount1 || c1_cursor >= track_cnt)
+					c1_cursor = firstcount1;
+				insert_index = c1_cursor++;
+				if (c1_cursor >= track_cnt)
+					c1_cursor = firstcount1;
 			}
-			if (firstcount1 < track_cnt)
-			{
-				track[firstcount1].value = value;
-				track[firstcount1].count = 1;
-			}
+			else
+				continue;
+
+			track[insert_index].value = value;
+			track[insert_index].count = 1;
 		}
 	}
 
