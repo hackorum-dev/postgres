@@ -184,6 +184,18 @@ static bool sendTimeLineIsHistoric = false;
 static XLogRecPtr sendTimeLineValidUpto = InvalidXLogRecPtr;
 
 /*
+ * Last archived WAL file. This is fetched from pgstat periodically and sent
+ * to the standby. last_archival_report_timestamp tracks when we last sent
+ * the report to avoid excessive pgstat access.
+ */
+static TimeLineID last_archived_tli = 0;
+static XLogSegNo last_archived_segno = 0;
+static TimestampTz last_archival_report_timestamp = 0;
+
+/* Interval for sending archival reports (10 seconds) */
+#define ARCHIVAL_REPORT_INTERVAL 10000
+
+/*
  * How far have we sent WAL already? This is also advertised in
  * MyWalSnd->sentPtr.  (Actually, this is the next WAL location to send.)
  */
@@ -304,6 +316,7 @@ static void ProcessStandbyMessage(void);
 static void ProcessStandbyReplyMessage(void);
 static void ProcessStandbyHSFeedbackMessage(void);
 static void ProcessStandbyPSRequestMessage(void);
+static void WalSndArchivalReport(void);
 static void ProcessRepliesIfAny(void);
 static void ProcessPendingWrites(void);
 static void WalSndKeepalive(bool requestReply, XLogRecPtr writePtr);
@@ -2847,6 +2860,91 @@ ProcessStandbyHSFeedbackMessage(void)
 }
 
 /*
+ * Send archival status report to standby.
+ *
+ * This is called periodically during physical replication to inform the
+ * standby about the last WAL segment archived by the primary. The standby
+ * can then mark segments up to that point as .done, allowing them to be
+ * recycled. This prevents WAL loss during standby promotion.
+ */
+static void
+WalSndArchivalReport(void)
+{
+	PgStat_ArchiverStats *archiver_stats;
+	TimestampTz now;
+
+	/* Only send reports when archive_mode=shared */
+	if (XLogArchiveMode != ARCHIVE_MODE_SHARED)
+		return;
+
+	/* Only send reports during physical streaming replication, not during backup */
+	if (MyWalSnd->kind != REPLICATION_KIND_PHYSICAL)
+		return;
+	if (MyWalSnd->state != WALSNDSTATE_CATCHUP &&
+		MyWalSnd->state != WALSNDSTATE_STREAMING)
+		return;
+
+	/*
+	 * Don't send to temporary replication slots (used by pg_basebackup).
+	 * Connections without slots (regular standbys) are OK.
+	 */
+	if (MyReplicationSlot != NULL &&
+		MyReplicationSlot->data.persistency == RS_TEMPORARY)
+		return;
+
+	now = GetCurrentTimestamp();
+
+	/*
+	 * Send report at most once per ARCHIVAL_REPORT_INTERVAL (10 seconds).
+	 * This avoids excessive pgstat access.
+	 */
+	if (now < TimestampTzPlusMilliseconds(last_archival_report_timestamp,
+										  ARCHIVAL_REPORT_INTERVAL))
+		return;
+	last_archival_report_timestamp = now;
+	/*
+	 * Get archiver statistics. We use non-blocking access to avoid delaying
+	 * replication if stats collector is slow. If stats are unavailable or
+	 * stale, we'll just try again at the next interval.
+	 */
+	pgstat_clear_snapshot();
+	archiver_stats = pgstat_fetch_stat_archiver();
+	if (archiver_stats == NULL)
+		return;
+
+	/* Only send reports for WAL segments, not backup history files or other archived files */
+	if (!IsXLogFileName(archiver_stats->last_archived_wal))
+		return;
+
+	/*
+	 * Only send a report if the last archived WAL has changed. This is both
+	 * an optimization and ensures we don't send empty reports on startup.
+	 */
+	{
+		TimeLineID	tli;
+		XLogSegNo	segno;
+		XLogFromFileName(archiver_stats->last_archived_wal, &tli, &segno, wal_segment_size);
+		if (last_archived_tli == tli && last_archived_segno == segno)
+			return;
+
+		/* Remember what we are about to sent */
+		last_archived_tli = tli;
+		last_archived_segno = segno;
+	}
+
+	ereport(DEBUG1,
+			(errmsg("sending archival report: tli %d, segno %ld", last_archived_segno)));
+
+	/* Construct the message... */
+	resetStringInfo(&output_message);
+	pq_sendbyte(&output_message, PqReplMsg_ArchiveStatusReport);
+	pq_sendint64(&output_message, (int64) last_archived_tli);
+	pq_sendint64(&output_message, (int64) last_archived_segno);
+	/* ... and send it wrapped in CopyData */
+	pq_putmessage_noblock(PqMsg_CopyData, output_message.data, output_message.len);
+}
+
+/*
  * Process the request for a primary status update message.
  */
 static void
@@ -4443,6 +4541,9 @@ static void
 WalSndKeepaliveIfNecessary(void)
 {
 	TimestampTz ping_time;
+
+	/* Send archival status report if needed */
+	WalSndArchivalReport();
 
 	/*
 	 * Don't send keepalive messages if timeouts are globally disabled or
