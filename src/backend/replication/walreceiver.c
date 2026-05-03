@@ -726,7 +726,7 @@ WalReceiverMain(const void *startup_data, size_t startup_data_len)
 			 * Create .done file forcibly to prevent the streamed segment from
 			 * being archived later.
 			 */
-			if (XLogArchiveMode != ARCHIVE_MODE_ALWAYS)
+			if (XLogArchiveMode < ARCHIVE_MODE_ALWAYS)
 				XLogArchiveForceDone(xlogfname);
 			else
 				XLogArchiveNotify(xlogfname);
@@ -977,6 +977,19 @@ XLogWalRcvProcessMsg(unsigned char type, char *buf, Size len, TimeLineID tli)
 					XLogWalRcvSendReply(true, false, false);
 				break;
 			}
+		case PqReplMsg_ArchiveStatusReport:
+			{
+				TimeLineID		received_tli;
+				XLogSegNo		received_segno;
+				StringInfoData	incoming_message;
+
+				/* initialize a StringInfo with the given buffer */
+				initReadOnlyStringInfo(&incoming_message, buf, sizeof(int64) + sizeof(int64));
+				received_tli = (TimeLineID) pq_getmsgint64(&incoming_message);
+				received_segno = (XLogSegNo) pq_getmsgint64(&incoming_message);
+				StoreArchivalReport(received_tli, received_segno);
+				break;
+			}
 		default:
 			ereport(ERROR,
 					(errcode(ERRCODE_PROTOCOL_VIOLATION),
@@ -1179,12 +1192,39 @@ XLogWalRcvClose(XLogRecPtr recptr, TimeLineID tli)
 
 	/*
 	 * Create .done file forcibly to prevent the streamed segment from being
-	 * archived later.
+	 * archived later, unless archive_mode is 'always' or 'shared'.
+	 *
+	 * In 'always' mode, the standby archives independently.
+	 *
+	 * In 'shared' mode, we optimize by checking if this segment is already
+	 * covered by the last archival report from the primary. If so, create
+	 * .done directly. Otherwise, create .ready and wait for the next report.
 	 */
-	if (XLogArchiveMode != ARCHIVE_MODE_ALWAYS)
-		XLogArchiveForceDone(xlogfname);
-	else
+	if (XLogArchiveMode == ARCHIVE_MODE_ALWAYS)
+	{
 		XLogArchiveNotify(xlogfname);
+	}
+	else if (XLogArchiveMode == ARCHIVE_MODE_SHARED)
+	{
+		/*
+		 * In shared mode, check if this segment is already archived on primary.
+		 * If we're on the same timeline and this segment is <= last archived,
+		 * mark it .done immediately. Otherwise create .ready.
+		 *
+		 * We don't check ancestor timeline cases here to avoid reading timeline
+		 * history files on every segment close. ProcessArchivalReport() will
+		 * handle marking ancestor timeline segments as .done when it scans
+		 * the archive_status directory.
+		 */
+		if (IsSegnoArchivedByUpstream(recvFileTLI, recvSegNo))
+			XLogArchiveForceDone(xlogfname);
+		else
+			XLogArchiveNotify(xlogfname);
+	}
+	else
+	{
+		XLogArchiveForceDone(xlogfname);
+	}
 
 	recvFile = -1;
 }

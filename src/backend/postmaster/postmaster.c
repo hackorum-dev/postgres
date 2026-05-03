@@ -3399,7 +3399,9 @@ LaunchMissingBackgroundProcesses(void)
 	 */
 	if (PgArchPMChild == NULL &&
 		((XLogArchivingActive() && pmState == PM_RUN) ||
-		 (XLogArchivingAlways() && (pmState == PM_RECOVERY || pmState == PM_HOT_STANDBY))) &&
+		 (XLogArchivingAlways() && (pmState == PM_RECOVERY || pmState == PM_HOT_STANDBY)) ||
+		 (XLogArchivingShared())
+		) &&
 		PgArchCanRestart())
 		PgArchPMChild = StartChildProcess(B_ARCHIVER);
 
