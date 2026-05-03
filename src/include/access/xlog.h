@@ -67,6 +67,7 @@ typedef enum ArchiveMode
 	ARCHIVE_MODE_OFF = 0,		/* disabled */
 	ARCHIVE_MODE_ON,			/* enabled while server is running normally */
 	ARCHIVE_MODE_ALWAYS,		/* enabled always (even during recovery) */
+	ARCHIVE_MODE_SHARED,		/* shared archive between primary and standby */
 } ArchiveMode;
 extern PGDLLIMPORT int XLogArchiveMode;
 
@@ -117,6 +118,9 @@ extern PGDLLIMPORT bool XLogLogicalInfo;
 /* Is WAL archiving enabled always (even during recovery)? */
 #define XLogArchivingAlways() \
 	(AssertMacro(XLogArchiveMode == ARCHIVE_MODE_OFF || wal_level >= WAL_LEVEL_REPLICA), XLogArchiveMode == ARCHIVE_MODE_ALWAYS)
+#define XLogArchivingShared() \
+	(AssertMacro(XLogArchiveMode == ARCHIVE_MODE_OFF || wal_level >= WAL_LEVEL_REPLICA), XLogArchiveMode == ARCHIVE_MODE_SHARED)
+
 
 /*
  * Is WAL-logging necessary for archival or log-shipping, or can we skip
