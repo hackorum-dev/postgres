@@ -181,7 +181,7 @@ parse_publication_options(ParseState *pstate,
  */
 static void
 ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
-						   List **rels, List **exceptrels, List **schemas)
+						   List **rels, List **except_pubtables, List **schemas)
 {
 	ListCell   *cell;
 	PublicationObjSpec *pubobj;
@@ -200,7 +200,7 @@ ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
 		{
 			case PUBLICATIONOBJ_EXCEPT_TABLE:
 				pubobj->pubtable->except = true;
-				*exceptrels = lappend(*exceptrels, pubobj->pubtable);
+				*except_pubtables = lappend(*except_pubtables, pubobj->pubtable);
 				break;
 			case PUBLICATIONOBJ_TABLE:
 				pubobj->pubtable->except = false;
@@ -224,6 +224,38 @@ ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
 
 				/* Filter out duplicates if user specifies "sch1, sch1" */
 				*schemas = list_append_unique_oid(*schemas, schemaid);
+
+				/*
+				 * Qualify unqualified EXCEPT table names with the resolved
+				 * current schema and reject any explicitly cross-schema
+				 * entries.  This mirrors the parse-time handling done for
+				 * TABLES_IN_SCHEMA in preprocess_pubobj_list(), deferred here
+				 * because CURRENT_SCHEMA is not known until execution time.
+				 */
+				if (pubobj->except_tables != NIL)
+				{
+					char	   *cur_schema_name = get_namespace_name(schemaid);
+
+					foreach_ptr(PublicationObjSpec, eobj, pubobj->except_tables)
+					{
+						const char *eobj_schemaname =
+							eobj->pubtable->relation->schemaname;
+						const char *eobj_relname =
+							eobj->pubtable->relation->relname;
+
+						if (eobj_schemaname == NULL)
+							eobj->pubtable->relation->schemaname = cur_schema_name;
+						else if (strcmp(eobj_schemaname, cur_schema_name) != 0)
+							ereport(ERROR,
+									errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+									errmsg("table \"%s\" in EXCEPT clause does not belong to schema \"%s\"",
+										   quote_qualified_identifier(eobj_schemaname, eobj_relname),
+										   cur_schema_name));
+
+						*except_pubtables = lappend(*except_pubtables,
+													eobj->pubtable);
+					}
+				}
 				break;
 			default:
 				/* shouldn't happen */
@@ -305,7 +337,7 @@ pub_rf_contains_invalid_column(Oid pubid, Relation relation, List *ancestors,
 	if (pubviaroot && relation->rd_rel->relispartition)
 	{
 		publish_as_relid
-			= GetTopMostAncestorInPublication(pubid, ancestors, NULL);
+			= GetTopMostAncestorInPublication(pubid, ancestors, NULL, NIL);
 
 		if (!OidIsValid(publish_as_relid))
 			publish_as_relid = relid;
@@ -389,7 +421,7 @@ pub_contains_invalid_column(Oid pubid, Relation relation, List *ancestors,
 	 */
 	if (pubviaroot && relation->rd_rel->relispartition)
 	{
-		publish_as_relid = GetTopMostAncestorInPublication(pubid, ancestors, NULL);
+		publish_as_relid = GetTopMostAncestorInPublication(pubid, ancestors, NULL, NIL);
 
 		if (!OidIsValid(publish_as_relid))
 			publish_as_relid = relid;
@@ -849,7 +881,7 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 	char		publish_generated_columns;
 	AclResult	aclresult;
 	List	   *relations = NIL;
-	List	   *exceptrelations = NIL;
+	List	   *except_pubtables = NIL;
 	List	   *schemaidlist = NIL;
 
 	/* must have CREATE privilege on database */
@@ -936,16 +968,16 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 
 	/* Associate objects with the publication. */
 	ObjectsInPublicationToOids(stmt->pubobjects, pstate, &relations,
-							   &exceptrelations, &schemaidlist);
+							   &except_pubtables, &schemaidlist);
 
 	if (stmt->for_all_tables)
 	{
 		/* Process EXCEPT table list */
-		if (exceptrelations != NIL)
+		if (except_pubtables != NIL)
 		{
 			List	   *rels;
 
-			rels = OpenTableList(exceptrelations);
+			rels = OpenTableList(except_pubtables);
 			PublicationAddTables(puboid, rels, true, NULL);
 			CloseTableList(rels);
 		}
@@ -959,6 +991,8 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 	}
 	else if (!stmt->for_all_sequences)
 	{
+		List	   *explicitrelids = NIL;
+
 		/* FOR TABLES IN SCHEMA requires superuser */
 		if (schemaidlist != NIL && !superuser())
 			ereport(ERROR,
@@ -977,6 +1011,19 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 									   schemaidlist != NIL,
 									   publish_via_partition_root);
 
+			/*
+			 * Collect explicit table OIDs now, before we close the relation
+			 * list, so that except-table validation below can check for
+			 * contradictions without relying on a catalog scan that might not
+			 * yet see the just-inserted rows.
+			 */
+			if (except_pubtables != NIL)
+			{
+				foreach_ptr(PublicationRelInfo, pri, rels)
+					explicitrelids = lappend_oid(explicitrelids,
+												 RelationGetRelid(pri->relation));
+			}
+
 			PublicationAddTables(puboid, rels, true, NULL);
 			CloseTableList(rels);
 		}
@@ -989,6 +1036,34 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 			 */
 			LockSchemaList(schemaidlist);
 			PublicationAddSchemas(puboid, schemaidlist, true, NULL);
+
+			if (except_pubtables != NIL)
+			{
+				List	   *except_rels;
+
+				except_rels = OpenTableList(except_pubtables);
+
+				/*
+				 * Validate that each excluded table is not also in the
+				 * explicit table list (which would be contradictory). Use the
+				 * in-memory explicitrelids collected above rather than
+				 * re-reading the catalog, which may not yet see the
+				 * just-inserted rows.
+				 */
+				foreach_ptr(PublicationRelInfo, pri, except_rels)
+				{
+					Oid			except_relid = RelationGetRelid(pri->relation);
+
+					if (list_member_oid(explicitrelids, except_relid))
+						ereport(ERROR,
+								errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								errmsg("table \"%s\" cannot appear in both the table list and the EXCEPT clause",
+									   RelationGetQualifiedRelationName(pri->relation)));
+				}
+
+				PublicationAddTables(puboid, except_rels, true, NULL);
+				CloseTableList(except_rels);
+			}
 		}
 	}
 
@@ -1683,12 +1758,12 @@ AlterPublication(ParseState *pstate, AlterPublicationStmt *stmt)
 	else
 	{
 		List	   *relations = NIL;
-		List	   *exceptrelations = NIL;
+		List	   *except_pubtables = NIL;
 		List	   *schemaidlist = NIL;
 		Oid			pubid = pubform->oid;
 
 		ObjectsInPublicationToOids(stmt->pubobjects, pstate, &relations,
-								   &exceptrelations, &schemaidlist);
+								   &except_pubtables, &schemaidlist);
 
 		CheckAlterPublication(stmt, tup, relations, schemaidlist);
 
@@ -1711,7 +1786,7 @@ AlterPublication(ParseState *pstate, AlterPublicationStmt *stmt)
 					errmsg("publication \"%s\" does not exist",
 						   stmt->pubname));
 
-		relations = list_concat(relations, exceptrelations);
+		relations = list_concat(relations, except_pubtables);
 		AlterPublicationTables(stmt, tup, relations, pstate->p_sourcetext,
 							   schemaidlist != NIL);
 		AlterPublicationSchemas(stmt, tup, schemaidlist);
