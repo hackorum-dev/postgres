@@ -228,3 +228,21 @@ select name, generic_plans, custom_plans from pg_prepared_statements
   where  name = 'test_mode_pp';
 
 drop table test_mode;
+
+-- bug #19470: ALTER TYPE ... ALTER ATTRIBUTE should invalidate plans.
+-- Test compatible and incompatible attribute type changes.
+CREATE TYPE bug_19470 AS (a int, b text);
+
+PREPARE stmt_19470 AS SELECT CAST(ROW(1, 'hello') AS bug_19470)::text;
+EXECUTE stmt_19470;
+
+-- should be ok
+ALTER TYPE bug_19470 ALTER ATTRIBUTE a TYPE varchar(100);
+EXECUTE stmt_19470;
+
+-- should fail
+ALTER TYPE bug_19470 ALTER ATTRIBUTE a TYPE timestamp without time zone;
+EXECUTE stmt_19470;
+
+DEALLOCATE stmt_19470;
+DROP TYPE bug_19470;
