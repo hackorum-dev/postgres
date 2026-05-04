@@ -402,3 +402,28 @@ select name, generic_plans, custom_plans from pg_prepared_statements
 (1 row)
 
 drop table test_mode;
+-- bug #19470: ALTER TYPE ... ALTER ATTRIBUTE should invalidate plans.
+-- Test compatible and incompatible attribute type changes.
+CREATE TYPE bug_19470 AS (a int, b text);
+PREPARE stmt_19470 AS SELECT CAST(ROW(1, 'hello') AS bug_19470)::text;
+EXECUTE stmt_19470;
+    row    
+-----------
+ (1,hello)
+(1 row)
+
+-- should be ok
+ALTER TYPE bug_19470 ALTER ATTRIBUTE a TYPE varchar(100);
+EXECUTE stmt_19470;
+    row    
+-----------
+ (1,hello)
+(1 row)
+
+-- should fail
+ALTER TYPE bug_19470 ALTER ATTRIBUTE a TYPE timestamp without time zone;
+EXECUTE stmt_19470;
+ERROR:  cannot cast type record to bug_19470
+DETAIL:  Cannot cast type integer to timestamp without time zone in column 1.
+DEALLOCATE stmt_19470;
+DROP TYPE bug_19470;
