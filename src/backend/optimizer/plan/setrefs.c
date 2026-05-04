@@ -29,6 +29,7 @@
 #include "rewrite/rewriteManip.h"
 #include "tcop/utility.h"
 #include "utils/syscache.h"
+#include "utils/typcache.h"
 
 
 typedef enum
@@ -207,7 +208,8 @@ static List *set_returning_clause_references(PlannerInfo *root,
 static List *set_windowagg_runcondition_references(PlannerInfo *root,
 												   List *runcondition,
 												   Plan *plan);
-
+static void record_plan_composite_type_dependency(PlannerInfo *root,
+												  Oid typid);
 static void record_elided_node(PlannerGlobal *glob, int plan_node_id,
 							   NodeTag elided_type, Bitmapset *relids);
 
@@ -2137,6 +2139,13 @@ fix_expr_common(PlannerInfo *root, Node *node)
 			root->glob->relationOids =
 				lappend_oid(root->glob->relationOids,
 							DatumGetObjectId(con->constvalue));
+
+		record_plan_composite_type_dependency(root, con->consttype);
+	}
+	else if (IsA(node, RowExpr))
+	{
+		record_plan_composite_type_dependency(root,
+											  ((RowExpr *) node)->row_typeid);
 	}
 	else if (IsA(node, GroupingFunc))
 	{
@@ -3656,6 +3665,34 @@ record_plan_type_dependency(PlannerInfo *root, Oid typid)
 													  ObjectIdGetDatum(typid));
 
 		root->glob->invalItems = lappend(root->glob->invalItems, inval_item);
+	}
+}
+
+/*
+ * record_plan_composite_type_dependency
+ *      Mark the current plan as depending on a particular composite type.
+ *
+ * Add composite type relation to the list of the relations the plan depends
+ * on. This ensures that when ALTER TYPE ... ALTER ATTRIBUTE is executed, any
+ * plans that use this composite type will be invalidated.
+ */
+static void
+record_plan_composite_type_dependency(PlannerInfo *root, Oid typid)
+{
+	/*
+	 * As in record_plan_function_dependency, ignore the possibility that
+	 * someone would change a built-in composite type. Anonymous record types
+	 * are not considered.
+	 */
+	if (typid >= (Oid) FirstUnpinnedObjectId)
+	{
+		TypeCacheEntry *typentry;
+
+		typentry = lookup_type_cache(typid, 0);
+		if (typentry->typtype == TYPTYPE_COMPOSITE &&
+			OidIsValid(typentry->typrelid))
+			root->glob->relationOids =
+				lappend_oid(root->glob->relationOids, typentry->typrelid);
 	}
 }
 
