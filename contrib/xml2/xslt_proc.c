@@ -7,6 +7,7 @@
  */
 #include "postgres.h"
 
+#include "common/int.h"
 #include "fmgr.h"
 #include "utils/builtins.h"
 #include "utils/xml.h"
@@ -223,6 +224,7 @@ parse_params(text *paramstr)
 	char	   *itsep = ",";
 	const char **params;
 	int			max_params;
+	int			new_max_params;
 	int			nparams;
 
 	pstr = text_to_cstring(paramstr);
@@ -237,7 +239,12 @@ parse_params(text *paramstr)
 	{
 		if (nparams >= max_params)
 		{
-			max_params *= 2;
+			if (pg_mul_s32_overflow(max_params, 2, &new_max_params))
+				ereport(ERROR,
+						(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+						 errmsg("too many XSLT parameters")));
+
+			max_params = new_max_params;
 			params = (const char **) repalloc(params,
 											  (max_params + 1) * sizeof(char *));
 		}
