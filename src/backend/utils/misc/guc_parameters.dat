@@ -1019,6 +1019,13 @@
   boot_val => 'true',
 },
 
+{ name => 'enable_pulled_up_semi_relocation', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
+  short_desc => 'Enables relocation of pulled-up SEMI/ANTI joins next to their referenced relations.',
+  flags => 'GUC_EXPLAIN',
+  variable => 'enable_pulled_up_semi_relocation',
+  boot_val => 'true',
+},
+
 { name => 'enable_self_join_elimination', type => 'bool', context => 'PGC_USERSET', group => 'QUERY_TUNING_METHOD',
   short_desc => 'Enables removal of unique self-joins.',
   flags => 'GUC_EXPLAIN',
