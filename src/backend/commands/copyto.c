@@ -157,6 +157,7 @@ static void CopySendData(CopyToState cstate, const void *databuf, int datasize);
 static void CopySendString(CopyToState cstate, const char *str);
 static void CopySendChar(CopyToState cstate, char c);
 static void CopySendEndOfRow(CopyToState cstate);
+static void CopySendTextLikeLineTerminator(CopyToState cstate);
 static void CopySendTextLikeEndOfRow(CopyToState cstate);
 static void CopySendInt32(CopyToState cstate, int32 val);
 static void CopySendInt16(CopyToState cstate, int16 val);
@@ -350,6 +351,8 @@ CopyToJsonEnd(CopyToState cstate)
 {
 	if (cstate->opts.force_array)
 	{
+		if (cstate->json_row_delim_needed)
+			CopySendTextLikeLineTerminator(cstate);
 		CopySendChar(cstate, ']');
 		CopySendTextLikeEndOfRow(cstate);
 	}
@@ -435,7 +438,11 @@ CopyToJsonOneRow(CopyToState cstate, TupleTableSlot *slot)
 	if (cstate->opts.force_array)
 	{
 		if (cstate->json_row_delim_needed)
+		{
 			CopySendChar(cstate, ',');
+			CopySendTextLikeLineTerminator(cstate);
+			CopySendChar(cstate, ' ');
+		}
 		else
 		{
 			/* first row needs no delimiter */
@@ -464,7 +471,10 @@ CopyToJsonOneRow(CopyToState cstate, TupleTableSlot *slot)
 	else
 		CopySendData(cstate, cstate->json_buf->data, cstate->json_buf->len);
 
-	CopySendTextLikeEndOfRow(cstate);
+	if (cstate->opts.force_array)
+		CopySendEndOfRow(cstate);
+	else
+		CopySendTextLikeEndOfRow(cstate);
 }
 
 /*
@@ -676,11 +686,10 @@ CopySendEndOfRow(CopyToState cstate)
 }
 
 /*
- * Wrapper function of CopySendEndOfRow for text, CSV, and json formats. Sends the
- * line termination and do common appropriate things for the end of row.
+ * Append the platform-appropriate line termination for text-like output.
  */
-static inline void
-CopySendTextLikeEndOfRow(CopyToState cstate)
+static void
+CopySendTextLikeLineTerminator(CopyToState cstate)
 {
 	switch (cstate->copy_dest)
 	{
@@ -699,6 +708,16 @@ CopySendTextLikeEndOfRow(CopyToState cstate)
 		default:
 			break;
 	}
+}
+
+/*
+ * Wrapper function of CopySendEndOfRow for text, CSV, and json formats. Sends the
+ * line termination and do common appropriate things for the end of row.
+ */
+static inline void
+CopySendTextLikeEndOfRow(CopyToState cstate)
+{
+	CopySendTextLikeLineTerminator(cstate);
 
 	/* Now take the actions related to the end of a row */
 	CopySendEndOfRow(cstate);
