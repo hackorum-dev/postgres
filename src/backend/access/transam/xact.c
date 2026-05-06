@@ -2980,7 +2980,20 @@ AbortTransaction(void)
 	 * record.
 	 */
 	if (!is_parallel_worker)
-		latestXid = RecordTransactionAbort(false);
+	{
+		/*
+		 * Re-entrant abort: if another ERROR is raised during AbortTransaction()
+		 * after ProcArrayEndTransaction() cleared our advertised XID, local
+		 * transaction state can still report an XID until CleanupTransaction().
+		 * Do not run RecordTransactionAbort again (duplicate WAL/clog) and do
+		 * not pass a valid latestXid to ProcArrayEndTransaction with proc->xid
+		 * already cleared.
+		 */
+		if (TransactionIdIsValid(MyProc->xid))
+			latestXid = RecordTransactionAbort(false);
+		else
+			latestXid = InvalidTransactionId;
+	}
 	else
 	{
 		latestXid = InvalidTransactionId;
