@@ -1570,7 +1570,7 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 			if ((cur_event->events & WL_SOCKET_WRITEABLE) &&
 				(cur_pollfd->revents & (POLLOUT | errflags)))
 			{
-				/* writeable, or EOF */
+				/* writable, or EOF */
 				occurred_events->events |= WL_SOCKET_WRITEABLE;
 			}
 
@@ -1800,7 +1800,7 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 			if ((cur_event->events & WL_SOCKET_WRITEABLE) &&
 				(resEvents.lNetworkEvents & FD_WRITE))
 			{
-				/* writeable */
+				/* writable */
 				occurred_events->events |= WL_SOCKET_WRITEABLE;
 			}
 			if ((cur_event->events & WL_SOCKET_CONNECTED) &&
