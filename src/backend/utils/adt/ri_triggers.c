@@ -3120,6 +3120,15 @@ ri_FastPathBatchFlush(RI_FastPathEntry *fpentry, Relation fk_rel,
 	UnregisterSnapshot(snapshot);
 	index_endscan(scandesc);
 
+	/*
+	 * Clear the pk_slot buffer reference now that the scan is finished. This
+	 * prevents the buffer pin from staying active unnecessarily until the next
+	 * probe or the final teardown. Releasing the pin here ensures it doesn't
+	 * block buffer eviction and keeps the pin's lifetime strictly limited to
+	 * the duration of the probe.
+	 */
+	ExecClearTuple(fpentry->pk_slot);
+
 	if (violation_index >= 0)
 	{
 		ExecStoreHeapTuple(fpentry->batch[violation_index], fk_slot, false);
@@ -4395,6 +4404,22 @@ ri_FastPathTeardown(int depth)
 
 	if (ri_fastpath_cache == NULL)
 		return;
+
+	/*
+	 * Defensively clear pk_slot before dropping it. While
+	 * ri_FastPathBatchFlush normally clears the slot on success, this ensures
+	 * any remaining buffer pin is released if teardown is reached unexpectedly
+	 * (e.g., during an error path). This avoids relying on
+	 * ExecDropSingleTupleTableSlot to handle the release implicitly. fk_slot
+	 * does not need this treatment as it uses TTSOpsHeapTuple and never pins
+	 * buffers.
+	 */
+	hash_seq_init(&status, ri_fastpath_cache);
+	while ((entry = hash_seq_search(&status)) != NULL)
+	{
+		if (entry->pk_slot)
+			ExecClearTuple(entry->pk_slot);
+	}
 
 	hash_seq_init(&status, ri_fastpath_cache);
 	while ((entry = hash_seq_search(&status)) != NULL)
