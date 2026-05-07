@@ -4998,8 +4998,8 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
  * second_name:		name of the second partition
  * second_bound:	bound of the second partition
  * defaultPart:		true if one of the new partitions is DEFAULT
- * is_merge:		true indicates the operation is MERGE PARTITIONS;
- * 					false indicates the operation is SPLIT PARTITION.
+ * splitPartOid:	OID of the partition being split, or InvalidOid for
+ * 					MERGE PARTITIONS
  * pstate:			pointer to ParseState struct for determining error position
  */
 static void
@@ -5009,7 +5009,7 @@ check_two_partitions_bounds_range(Relation parent,
 								  RangeVar *second_name,
 								  PartitionBoundSpec *second_bound,
 								  bool defaultPart,
-								  bool is_merge,
+								  Oid splitPartOid,
 								  ParseState *pstate)
 {
 	PartitionKey key = RelationGetPartitionKey(parent);
@@ -5035,23 +5035,23 @@ check_two_partitions_bounds_range(Relation parent,
 	{
 		PartitionRangeDatum *datum = linitial(second_bound->lowerdatums);
 
-		if (is_merge)
+		if (!OidIsValid(splitPartOid))
 			ereport(ERROR,
 					errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					errmsg("cannot merge partition \"%s\" together with partition \"%s\"",
 						   second_name->relname, first_name->relname),
 					errdetail("The lower bound of partition \"%s\" is not equal to the upper bound of partition \"%s\".",
 							  second_name->relname, first_name->relname),
-					errhint("ALTER TABLE ... MERGE PARTITIONS requires the partition bounds to be adjacent."),
+					errhint("ALTER TABLE ... MERGE PARTITIONS requires the old partition bounds to be adjacent."),
 					parser_errposition(pstate, datum->location));
 		else
 			ereport(ERROR,
 					errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-					errmsg("cannot split to partition \"%s\" together with partition \"%s\"",
-						   second_name->relname, first_name->relname),
+					errmsg("cannot split partition \"%s\"",
+						   get_rel_name(splitPartOid)),
 					errdetail("The lower bound of partition \"%s\" is not equal to the upper bound of partition \"%s\".",
 							  second_name->relname, first_name->relname),
-					errhint("ALTER TABLE ... SPLIT PARTITION requires the partition bounds to be adjacent."),
+					errhint("ALTER TABLE ... SPLIT PARTITION requires the new partition bounds to be adjacent."),
 					parser_errposition(pstate, datum->location));
 	}
 }
@@ -5155,7 +5155,7 @@ calculate_partition_bound_for_merge(Relation parent,
 													  (RangeVar *) list_nth(partNames, index),
 													  (PartitionBoundSpec *) list_nth(bounds, index),
 													  false,
-													  true,
+													  InvalidOid,
 													  pstate);
 				}
 
@@ -5997,7 +5997,7 @@ check_partitions_for_split(Relation parent,
 			check_two_partitions_bounds_range(parent, spsPrev->name, spsPrev->bound,
 											  sps->name, sps->bound,
 											  createDefaultPart,
-											  false,
+											  splitPartOid,
 											  pstate);
 
 		spsPrev = sps;
