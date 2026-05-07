@@ -882,3 +882,123 @@ loop:
 
 	return buffer;
 }
+
+/*
+ * RelationGetSpecificBufferForTuple
+ *
+ *	Returns pinned and exclusive-locked buffer for the page identified by
+ *	requested_target, ready to receive a tuple of size len.  Unlike
+ *	RelationGetBufferForTuple, the target page is mandatory: this routine
+ *	never consults the FSM, never extends the relation, and returns
+ *	InvalidBuffer if the requested page does not (any longer) have enough
+ *	free space to hold the tuple.  The caller is expected to retry with a
+ *	different target in that case.
+ *
+ *	Intended for callers (e.g. VACUUM (COMPACT)) that need to relocate an
+ *	existing tuple to a specific lower-numbered page below a chosen
+ *	high-water mark, without risking the relation growing during the
+ *	operation.
+ *
+ *	otherBuffer, if valid, is the source-page buffer the caller already
+ *	holds exclusively-locked; locking order is handled here just as in
+ *	RelationGetBufferForTuple, so the caller need not (and must not) hold
+ *	the lock on entry -- pass an exclusively-pinned but unlocked buffer.
+ *	requested_target must differ from the block held in otherBuffer.
+ *
+ *	*vmbuffer / *vmbuffer_other are visibility-map buffer slots managed in
+ *	the same manner as RelationGetBufferForTuple.
+ */
+Buffer
+RelationGetSpecificBufferForTuple(Relation relation, Size len,
+								  BlockNumber requested_target,
+								  Buffer otherBuffer,
+								  Buffer *vmbuffer, Buffer *vmbuffer_other)
+{
+	Buffer		buffer;
+	Page		page;
+	Size		pageFreeSpace;
+	BlockNumber otherBlock;
+
+	len = MAXALIGN(len);
+
+	if (len > MaxHeapTupleSize)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("row is too big: size %zu, maximum size %zu",
+						len, MaxHeapTupleSize)));
+
+	Assert(BlockNumberIsValid(requested_target));
+	Assert(requested_target < RelationGetNumberOfBlocks(relation));
+
+	if (otherBuffer != InvalidBuffer)
+	{
+		otherBlock = BufferGetBlockNumber(otherBuffer);
+		if (otherBlock == requested_target)
+			elog(ERROR, "compaction target page must differ from source page");
+	}
+	else
+		otherBlock = InvalidBlockNumber;
+
+	/*
+	 * Pin the target page, check the all-visible flag (without the lock; we
+	 * recheck after acquiring it via GetVisibilityMapPins), and acquire the
+	 * page locks in block-number order to match RelationGetBufferForTuple's
+	 * convention.
+	 */
+	buffer = ReadBuffer(relation, requested_target);
+	if (PageIsAllVisible(BufferGetPage(buffer)))
+		visibilitymap_pin(relation, requested_target, vmbuffer);
+
+	if (otherBuffer == InvalidBuffer)
+	{
+		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+	}
+	else if (otherBlock < requested_target)
+	{
+		LockBuffer(otherBuffer, BUFFER_LOCK_EXCLUSIVE);
+		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+	}
+	else
+	{
+		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+		LockBuffer(otherBuffer, BUFFER_LOCK_EXCLUSIVE);
+	}
+
+	/*
+	 * Recheck visibility-map pins now that we hold the locks.  This may
+	 * temporarily release the locks to acquire pins, in which case the page
+	 * could fill up underneath us; the recheck below catches that.
+	 */
+	GetVisibilityMapPins(relation, buffer, otherBuffer,
+						 requested_target, otherBlock,
+						 vmbuffer, vmbuffer_other);
+
+	page = BufferGetPage(buffer);
+
+	/*
+	 * Initialise a brand-new page if necessary.  This shouldn't normally
+	 * happen for a compaction target -- callers pick existing in-use pages
+	 * -- but be defensive.
+	 */
+	if (PageIsNew(page))
+	{
+		PageInit(page, BufferGetPageSize(buffer), 0);
+		MarkBufferDirty(buffer);
+	}
+
+	pageFreeSpace = PageGetHeapFreeSpace(page);
+	if (len > pageFreeSpace)
+	{
+		/*
+		 * Lost the race: the page no longer has room.  Release everything
+		 * and let the caller pick a different target.  We don't release the
+		 * caller's pin on otherBuffer, only the lock we acquired above.
+		 */
+		if (otherBuffer != InvalidBuffer)
+			LockBuffer(otherBuffer, BUFFER_LOCK_UNLOCK);
+		UnlockReleaseBuffer(buffer);
+		return InvalidBuffer;
+	}
+
+	return buffer;
+}

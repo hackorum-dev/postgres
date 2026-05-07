@@ -58,5 +58,10 @@ extern Buffer RelationGetBufferForTuple(Relation relation, Size len,
 										BulkInsertStateData *bistate,
 										Buffer *vmbuffer, Buffer *vmbuffer_other,
 										int num_pages);
+extern Buffer RelationGetSpecificBufferForTuple(Relation relation, Size len,
+												BlockNumber requested_target,
+												Buffer otherBuffer,
+												Buffer *vmbuffer,
+												Buffer *vmbuffer_other);
 
 #endif							/* HIO_H */
