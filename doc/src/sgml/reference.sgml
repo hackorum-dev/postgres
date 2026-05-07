@@ -86,6 +86,7 @@
    &commentOn;
    &commit;
    &commitPrepared;
+   &compact;
    &copyTable;
    &createAccessMethod;
    &createAggregate;

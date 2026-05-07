@@ -288,7 +288,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		AlterCompositeTypeStmt AlterUserMappingStmt
 		AlterRoleStmt AlterRoleSetStmt AlterPolicyStmt AlterStatsStmt
 		AlterDefaultPrivilegesStmt DefACLAction
-		AnalyzeStmt CallStmt ClosePortalStmt CommentStmt
+		AnalyzeStmt CallStmt ClosePortalStmt CommentStmt CompactStmt
 		ConstraintsSetStmt CopyStmt CreateAsStmt CreateCastStmt
 		CreateDomainStmt CreateExtensionStmt CreateGroupStmt CreateOpClassStmt
 		CreateOpFamilyStmt AlterOpFamilyStmt CreatePLangStmt
@@ -753,7 +753,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	CACHE CALL CALLED CASCADE CASCADED CASE CAST CATALOG_P CHAIN CHAR_P
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
 	CLUSTER COALESCE COLLATE COLLATION COLUMN COLUMNS COMMENT COMMENTS COMMIT
-	COMMITTED COMPRESSION CONCURRENTLY CONDITIONAL CONFIGURATION CONFLICT
+	COMMITTED COMPACT COMPRESSION CONCURRENTLY CONDITIONAL CONFIGURATION CONFLICT
 	CONNECTION CONSTRAINT CONSTRAINTS CONTENT_P CONTINUE_P CONVERSION_P COPY
 	COST CREATE CROSS CSV CUBE CURRENT_P
 	CURRENT_CATALOG CURRENT_DATE CURRENT_ROLE CURRENT_SCHEMA
@@ -1076,6 +1076,7 @@ stmt:
 			| CheckPointStmt
 			| ClosePortalStmt
 			| CommentStmt
+			| CompactStmt
 			| ConstraintsSetStmt
 			| CopyStmt
 			| CreateAmStmt
@@ -12729,6 +12730,46 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose opt_analyze opt_vacuum_relati
 				}
 		;
 
+/*****************************************************************************
+ *
+ *		QUERY:
+ *				COMPACT
+ *
+ * Relocates live tuples from high-numbered pages onto low-numbered pages
+ * with free space and truncates the trailing empty pages.  Like VACUUM
+ * (and unlike REPACK) this never needs more than a small amount of extra
+ * disk space, but it cannot reorganise live data the way REPACK does.
+ *
+ *		COMPACT [ ( option [, ...] ) ] [ table_name [, ...] ]
+ *		COMPACT [ VERBOSE ] [ table_name [, ...] ]
+ *
+ * Where option is one of:
+ *		VERBOSE [ boolean ]
+ *		ANALYZE [ boolean ]
+ *
+ *****************************************************************************/
+
+CompactStmt: COMPACT opt_verbose opt_vacuum_relation_list
+				{
+					CompactStmt *n = makeNode(CompactStmt);
+
+					n->options = NIL;
+					if ($2)
+						n->options = lappend(n->options,
+											 makeDefElem("verbose", NULL, @2));
+					n->rels = $3;
+					$$ = (Node *) n;
+				}
+			| COMPACT '(' utility_option_list ')' opt_vacuum_relation_list
+				{
+					CompactStmt *n = makeNode(CompactStmt);
+
+					n->options = $3;
+					n->rels = $5;
+					$$ = (Node *) n;
+				}
+		;
+
 AnalyzeStmt: analyze_keyword opt_utility_option_list opt_vacuum_relation_list
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
@@ -18862,6 +18903,7 @@ unreserved_keyword:
 			| COMMENTS
 			| COMMIT
 			| COMMITTED
+			| COMPACT
 			| COMPRESSION
 			| CONDITIONAL
 			| CONFIGURATION
@@ -19441,6 +19483,7 @@ bare_label_keyword:
 			| COMMENTS
 			| COMMIT
 			| COMMITTED
+			| COMPACT
 			| COMPRESSION
 			| CONCURRENTLY
 			| CONDITIONAL

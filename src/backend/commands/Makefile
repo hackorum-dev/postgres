@@ -20,6 +20,7 @@ OBJS = \
 	async.o \
 	collationcmds.o \
 	comment.o \
+	compact.o \
 	constraint.o \
 	conversioncmds.o \
 	copy.o \

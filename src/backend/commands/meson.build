@@ -8,6 +8,7 @@ backend_sources += files(
   'async.c',
   'collationcmds.c',
   'comment.c',
+  'compact.c',
   'constraint.c',
   'conversioncmds.c',
   'copy.c',

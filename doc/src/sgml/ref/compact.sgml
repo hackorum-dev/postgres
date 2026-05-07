@@ -1,0 +1,250 @@
+<!--
+doc/src/sgml/ref/compact.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="sql-compact">
+ <indexterm zone="sql-compact">
+  <primary>COMPACT</primary>
+ </indexterm>
+
+ <refmeta>
+  <refentrytitle>COMPACT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>SQL - Language Statements</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>COMPACT</refname>
+  <refpurpose>shrink a table in place by relocating live tuples towards the start of the relation</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+COMPACT [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] [ <replaceable class="parameter">table_name</replaceable> [, ...] ]
+COMPACT [ VERBOSE ] [ <replaceable class="parameter">table_name</replaceable> [, ...] ]
+
+<phrase>where <replaceable class="parameter">option</replaceable> can be one of:</phrase>
+
+    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
+    ANALYZE [ <replaceable class="parameter">boolean</replaceable> ]
+    BUFFER_USAGE_LIMIT <replaceable class="parameter">size</replaceable>
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <command>COMPACT</command> reclaims storage occupied by trailing empty
+   pages of a table. It works by relocating live tuples from high-numbered
+   pages onto lower-numbered pages with free space, then truncating the
+   resulting empty pages from the end of the relation. Unlike <xref
+   linkend="sql-repack"/> and <command>VACUUM FULL</command>,
+   <command>COMPACT</command> never needs an extra copy of the table on
+   disk: it relocates tuples in place. It also never holds an
+   <literal>ACCESS EXCLUSIVE</literal> lock except briefly during the final
+   truncation step, so concurrent reads and writes are permitted throughout
+   most of the operation.
+  </para>
+
+  <para>
+   Internally <command>COMPACT</command> performs three passes per table:
+   first a <command>VACUUM</command> pass that scans, prunes, and then
+   relocates tuples; second a follow-up <command>VACUUM</command> pass that
+   prunes the dead source-tuple versions left behind by the relocation and
+   truncates the trailing empty pages; and optionally an
+   <command>ANALYZE</command> pass if the <literal>ANALYZE</literal>
+   option was specified. Each pass runs in its own transaction.
+  </para>
+
+  <para>
+   When a list of <replaceable class="parameter">table_name</replaceable>s is
+   omitted, <command>COMPACT</command> processes every table and materialized
+   view in the current database that the current user has the
+   <literal>MAINTAIN</literal> privilege on. This form of
+   <command>COMPACT</command> cannot be executed inside a transaction block.
+  </para>
+
+  <para>
+   <command>COMPACT</command> is most useful for relations whose live rows
+   have drifted towards the end of the file (typical of long-lived tables
+   that are heavily updated or that have had a large
+   <command>DELETE</command> at the head of the table). On such a relation,
+   the live data may occupy only a small fraction of its physical pages,
+   yet a regular <command>VACUUM</command> cannot reclaim the trailing
+   space because it cannot move tuples around.  <command>COMPACT</command>
+   moves the tuples explicitly so the trailing pages can be freed.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Parameters</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>VERBOSE</literal></term>
+    <listitem>
+     <para>
+      Prints a detailed activity report for each compacted table, including
+      the number of tuples relocated and the resulting size change.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ANALYZE</literal></term>
+    <listitem>
+     <para>
+      Updates statistics used by the planner to determine the most efficient
+      way to execute a query, equivalent to running
+      <command>ANALYZE</command> on the table after compaction. Especially
+      useful when the row distribution has changed significantly as a result
+      of relocation.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>BUFFER_USAGE_LIMIT</literal></term>
+    <listitem>
+     <para>
+      Specifies the buffer access strategy ring size to use; see
+      <xref linkend="sql-vacuum"/> for details.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">boolean</replaceable></term>
+    <listitem>
+     <para>
+      Specifies whether the selected option should be turned on or off. You
+      can write <literal>TRUE</literal>, <literal>ON</literal>, or
+      <literal>1</literal> to enable the option, and <literal>FALSE</literal>,
+      <literal>OFF</literal>, or <literal>0</literal> to disable it. The
+      <replaceable class="parameter">boolean</replaceable> value can also be
+      omitted, in which case <literal>TRUE</literal> is assumed.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">size</replaceable></term>
+    <listitem>
+     <para>
+      Specifies the buffer access strategy ring size in kilobytes for
+      <literal>BUFFER_USAGE_LIMIT</literal>. The size is in kilobytes by
+      default but can include a unit suffix; see <xref linkend="sql-vacuum"/>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">table_name</replaceable></term>
+    <listitem>
+     <para>
+      The name (optionally schema-qualified) of a table or materialized
+      view to compact. If omitted, all relations in the current database on
+      which the current user has the <literal>MAINTAIN</literal> privilege
+      are compacted.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Notes</title>
+
+  <para>
+   <command>COMPACT</command> can only relocate tuples whose
+   <literal>xmax</literal> is provably invalid at the time the compaction
+   step runs.  Tuples that are concurrently locked, that participate in a
+   multi-transaction lock, or that are being updated by another transaction
+   are skipped and remain on their original page until a future invocation.
+  </para>
+
+  <para>
+   Each relocation creates a new index entry for every index on the table.
+   The old entries become stale once the dead source tuples are pruned;
+   they are reaped by ordinary index vacuum on a subsequent
+   <command>VACUUM</command>. If a relation has many indexes,
+   <command>COMPACT</command> can therefore temporarily increase index
+   bloat. Running <command>REINDEX CONCURRENTLY</command> on the affected
+   indexes after a large compaction is the recommended remedy.
+  </para>
+
+  <para>
+   <command>COMPACT</command> writes a substantial amount of WAL: each
+   relocated tuple produces an update record, and the index inserts produce
+   their own records.  Empirically <command>COMPACT</command> generates
+   roughly 25% more WAL than <xref linkend="sql-repack"/> on the same input
+   --- the cost of producing one cross-page update WAL record per tuple
+   instead of a single bulk relation rewrite.  In exchange, it never needs
+   more than approximately one extra heap page of free space at any moment,
+   which is its defining advantage over <command>REPACK</command> /
+   <command>VACUUM FULL</command>.  Plan compaction during a maintenance
+   window for very large tables, or use <literal>BUFFER_USAGE_LIMIT</literal>
+   to throttle buffer pool churn.
+  </para>
+
+  <para>
+   Because relocations preserve tuple contents byte for byte, they do not
+   trigger logical replication output: subscribers will not see phantom
+   <command>UPDATE</command> events for compacted rows.
+  </para>
+
+  <para>
+   <command>COMPACT</command> is not a substitute for <xref
+   linkend="sql-repack"/> when fragmentation within live pages or the
+   physical ordering of tuples matters. Use <command>REPACK</command>
+   (or <command>VACUUM FULL</command>) when you need to fully rewrite
+   the table.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Examples</title>
+
+  <para>
+   Compact a single table, printing a detailed report:
+<programlisting>
+COMPACT VERBOSE my_table;
+</programlisting>
+  </para>
+
+  <para>
+   Compact a table and update its planner statistics in one command:
+<programlisting>
+COMPACT (ANALYZE) my_table;
+</programlisting>
+  </para>
+
+  <para>
+   Compact every eligible relation in the current database:
+<programlisting>
+COMPACT;
+</programlisting>
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Compatibility</title>
+
+  <para>
+   There is no <command>COMPACT</command> statement in the SQL standard.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>See Also</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-vacuum"/></member>
+   <member><xref linkend="sql-repack"/></member>
+   <member><xref linkend="sql-cluster"/></member>
+   <member><xref linkend="sql-reindex"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

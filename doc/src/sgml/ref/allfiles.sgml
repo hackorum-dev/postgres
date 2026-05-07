@@ -58,6 +58,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY commentOn          SYSTEM "comment.sgml">
 <!ENTITY commit             SYSTEM "commit.sgml">
 <!ENTITY commitPrepared     SYSTEM "commit_prepared.sgml">
+<!ENTITY compact            SYSTEM "compact.sgml">
 <!ENTITY copyTable          SYSTEM "copy.sgml">
 <!ENTITY createAccessMethod SYSTEM "create_access_method.sgml">
 <!ENTITY createAggregate    SYSTEM "create_aggregate.sgml">

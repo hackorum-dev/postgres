@@ -4112,6 +4112,22 @@ typedef struct RepackStmt
 } RepackStmt;
 
 /* ----------------------
+ *		Compact Statement
+ *
+ * Relocates live tuples from high-numbered heap pages onto low-numbered
+ * pages with free space and truncates the trailing empty pages.  Unlike
+ * REPACK / CLUSTER / VACUUM FULL it never needs an extra copy of the
+ * relation on disk; it relocates tuples in place.
+ * ----------------------
+ */
+typedef struct CompactStmt
+{
+	NodeTag		type;
+	List	   *options;		/* list of DefElem nodes */
+	List	   *rels;			/* list of VacuumRelation, or NIL for all */
+} CompactStmt;
+
+/* ----------------------
  *		Explain Statement
  *
  * The "query" field is initially a raw parse tree, and is converted to a

@@ -28,6 +28,7 @@
 #include "commands/async.h"
 #include "commands/collationcmds.h"
 #include "commands/comment.h"
+#include "commands/compact.h"
 #include "commands/conversioncmds.h"
 #include "commands/copy.h"
 #include "commands/createas.h"
@@ -285,6 +286,7 @@ ClassifyUtilityCommandAsReadOnly(Node *parsetree)
 		case T_ReindexStmt:
 		case T_VacuumStmt:
 		case T_RepackStmt:
+		case T_CompactStmt:
 			{
 				/*
 				 * These commands write WAL, so they're not strictly
@@ -865,6 +867,10 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 		case T_RepackStmt:
 			ExecRepack(pstate, (RepackStmt *) parsetree, isTopLevel);
+			break;
+
+		case T_CompactStmt:
+			ExecCompact(pstate, (CompactStmt *) parsetree, isTopLevel);
 			break;
 
 		case T_ExplainStmt:
@@ -2898,6 +2904,10 @@ CreateCommandTag(Node *parsetree)
 				tag = CMDTAG_REPACK;
 			break;
 
+		case T_CompactStmt:
+			tag = CMDTAG_COMPACT;
+			break;
+
 		case T_ExplainStmt:
 			tag = CMDTAG_EXPLAIN;
 			break;
@@ -3548,6 +3558,10 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_RepackStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_CompactStmt:
 			lev = LOGSTMT_DDL;
 			break;
 
