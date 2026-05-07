@@ -390,6 +390,13 @@ extern TM_Result heap_update(Relation relation, const ItemPointerData *otid,
 							 Snapshot crosscheck, bool wait,
 							 TM_FailureData *tmfd, LockTupleMode *lockmode,
 							 TU_UpdateIndexes *update_indexes);
+extern TM_Result heap_relocate(Relation relation,
+							   const ItemPointerData *otid,
+							   BlockNumber target_block,
+							   CommandId cid,
+							   TM_FailureData *tmfd,
+							   TU_UpdateIndexes *update_indexes,
+							   ItemPointer new_tid);
 extern TM_Result heap_lock_tuple(Relation relation, HeapTuple tuple,
 								 CommandId cid, LockTupleMode mode, LockWaitPolicy wait_policy,
 								 bool follow_updates,

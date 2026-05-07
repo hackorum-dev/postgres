@@ -90,6 +90,13 @@
 #define XLH_UPDATE_CONTAINS_NEW_TUPLE			(1<<4)
 #define XLH_UPDATE_PREFIX_FROM_OLD				(1<<5)
 #define XLH_UPDATE_SUFFIX_FROM_OLD				(1<<6)
+/*
+ * Set by heap_relocate (VACUUM (COMPACT)) to signal that the new tuple is
+ * byte-identical to the old.  Replay treats the record like any other
+ * cross-page update; logical decoding drops it so replication does not
+ * emit phantom no-op UPDATEs.
+ */
+#define XLH_UPDATE_RELOCATED					(1<<7)
 
 /* convenience macro for checking whether any form of old tuple was logged */
 #define XLH_UPDATE_CONTAINS_OLD						\

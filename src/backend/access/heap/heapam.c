@@ -63,7 +63,7 @@ static XLogRecPtr log_heap_update(Relation reln, Buffer oldbuf,
 								  Buffer newbuf, HeapTuple oldtup,
 								  HeapTuple newtup, HeapTuple old_key_tuple,
 								  bool all_visible_cleared, bool new_all_visible_cleared,
-								  bool walLogical);
+								  bool walLogical, bool is_relocation);
 #ifdef USE_ASSERT_CHECKING
 static void check_lock_if_inplace_updateable_rel(Relation relation,
 												 const ItemPointerData *otid,
@@ -4099,7 +4099,7 @@ l2:
 								 old_key_tuple,
 								 all_visible_cleared,
 								 all_visible_cleared_new,
-								 walLogical);
+								 walLogical, false);
 		if (newbuf != buffer)
 		{
 			PageSetLSN(newpage, recptr);
@@ -4176,6 +4176,437 @@ l2:
 	bms_free(modified_attrs);
 	bms_free(interesting_attrs);
 
+	return TM_Ok;
+}
+
+/*
+ *	heap_relocate	- move a live tuple to a different heap page
+ *
+ *	Logically a no-op update: the new tuple is byte-identical to the source.
+ *	Used by VACUUM (COMPACT) to drain tuples out of high-numbered pages so
+ *	the relation can be truncated.  Unlike heap_update:
+ *	  - The target page is supplied by the caller (no FSM lookup, no
+ *		relation extension).  If the target page no longer has room when we
+ *		acquire its buffer lock, we return TM_BeingModified and leave the
+ *		source tuple untouched, so the caller can pick a different target.
+ *	  - HOT is suppressed by construction (the target page is never the
+ *		source page).
+ *	  - We do not toast: the tuple body is unchanged, including any
+ *		pre-existing external (toast) datum pointers.
+ *	  - Modified-attribute analysis, replica identity extraction, and HOT
+ *		attribute bitmaps are all skipped; logical decoding filters our WAL
+ *		records via XLH_UPDATE_RELOCATED.
+ *	  - We do not wait for concurrent lockers.  We relocate tuples that
+ *		have only key-share lockers (single-locker or multixact), preserving
+ *		those lockers on the new tuple's xmax so concurrent locking xacts
+ *		still find their lock on the relocated row.  Tuples being updated
+ *		by another live transaction, or held under a stronger lock that
+ *		would conflict with our (no-key-exclusive) update, are skipped
+ *		via TM_BeingModified so the orchestrator can retry them later.
+ *
+ *	Caller must hold at least RowExclusiveLock on the relation.  The
+ *	relation must use the heap table AM.  target_block must differ from
+ *	the source block and must be within the relation.
+ *
+ *	Possible TM_Result values:
+ *	  TM_Ok				- tuple was relocated; *update_indexes set to TU_All
+ *	  TM_BeingModified	- skipped because of concurrent activity OR because
+ *						  the target page no longer had room.  In both cases
+ *						  tmfd->ctid is set to the source TID so the caller
+ *						  can retry.
+ *	  TM_Updated		- source has been updated by a committed concurrent
+ *	  TM_Deleted		  txn (caller must adjust); see heap_update.
+ *	  TM_Invisible		- source is not LP_NORMAL or otherwise unreadable
+ *						  (raises ERROR like heap_update does).
+ */
+TM_Result
+heap_relocate(Relation relation, const ItemPointerData *otid,
+			  BlockNumber target_block, CommandId cid,
+			  TM_FailureData *tmfd, TU_UpdateIndexes *update_indexes,
+			  ItemPointer new_tid)
+{
+	TM_Result	result;
+	TransactionId xid = GetCurrentTransactionId();
+	ItemId		lp;
+	HeapTupleData oldtup;
+	HeapTuple	newtup;
+	Page		page,
+				newpage;
+	BlockNumber block;
+	Buffer		buffer,
+				newbuf,
+				vmbuffer = InvalidBuffer,
+				vmbuffer_new = InvalidBuffer;
+	bool		all_visible_cleared = false;
+	bool		all_visible_cleared_new = false;
+	TransactionId xmax_old_tuple,
+				xmax_new_tuple;
+	uint16		infomask_old_tuple,
+				infomask2_old_tuple,
+				infomask_new_tuple,
+				infomask2_new_tuple;
+	bool		checked_lockers = false;
+	bool		locker_remains = false;
+	bool		iscombo;
+	const LockTupleMode lockmode = LockTupleNoKeyExclusive;
+
+	Assert(ItemPointerIsValid(otid));
+	Assert(BlockNumberIsValid(target_block));
+
+	if (IsInParallelMode())
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TRANSACTION_STATE),
+				 errmsg("cannot relocate tuples during a parallel operation")));
+
+	block = ItemPointerGetBlockNumber(otid);
+	if (target_block == block)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("relocation target page must differ from source page")));
+
+	buffer = ReadBuffer(relation, block);
+	page = BufferGetPage(buffer);
+
+	if (PageIsAllVisible(page))
+		visibilitymap_pin(relation, block, &vmbuffer);
+
+	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+
+	lp = PageGetItemId(page, ItemPointerGetOffsetNumber(otid));
+
+	if (!ItemIdIsNormal(lp))
+	{
+		UnlockReleaseBuffer(buffer);
+		if (vmbuffer != InvalidBuffer)
+			ReleaseBuffer(vmbuffer);
+		tmfd->ctid = *otid;
+		tmfd->xmax = InvalidTransactionId;
+		tmfd->cmax = InvalidCommandId;
+		*update_indexes = TU_None;
+		return TM_Deleted;
+	}
+
+	oldtup.t_tableOid = RelationGetRelid(relation);
+	oldtup.t_data = (HeapTupleHeader) PageGetItem(page, lp);
+	oldtup.t_len = ItemIdGetLength(lp);
+	oldtup.t_self = *otid;
+
+	/*
+	 * If we end up preserving an existing locker on the new tuple's xmax we
+	 * may have to write a multixact, so set the per-backend
+	 * OldestMemberMXactId now.
+	 */
+	MultiXactIdSetOldestMember();
+
+	/*
+	 * Check the source tuple's update visibility.  TM_Ok means we can
+	 * relocate immediately; TM_BeingModified means a concurrent locker or
+	 * updater is touching the tuple and we have to decide whether to skip
+	 * (waiting on a conflicting locker / live updater) or proceed
+	 * (preserving the locker on the new tuple's xmax).  Anything else is
+	 * propagated to the caller as-is.
+	 */
+	result = HeapTupleSatisfiesUpdate(&oldtup, cid, buffer);
+
+	if (result == TM_BeingModified)
+	{
+		TransactionId xwait;
+		uint16		infomask;
+		bool		can_continue = false;
+
+		xwait = HeapTupleHeaderGetRawXmax(oldtup.t_data);
+		infomask = oldtup.t_data->t_infomask;
+
+		if (infomask & HEAP_XMAX_IS_MULTI)
+		{
+			bool		current_is_member = false;
+
+			if (!DoesMultiXactIdConflict((MultiXactId) xwait, infomask,
+										 lockmode, &current_is_member))
+			{
+				TransactionId update_xact;
+
+				/*
+				 * No member of the multixact conflicts with our update.  If
+				 * a member is itself an updater (not lock-only) and is
+				 * still live, we still cannot proceed; otherwise we can.
+				 */
+				if (!HEAP_XMAX_IS_LOCKED_ONLY(infomask))
+					update_xact = HeapTupleGetUpdateXid(oldtup.t_data);
+				else
+					update_xact = InvalidTransactionId;
+
+				if (!TransactionIdIsValid(update_xact) ||
+					TransactionIdDidAbort(update_xact))
+				{
+					checked_lockers = true;
+					locker_remains = true;
+					can_continue = true;
+				}
+			}
+		}
+		else if (TransactionIdIsCurrentTransactionId(xwait))
+		{
+			/*
+			 * The tuple is locked by our own transaction.  This shouldn't
+			 * normally happen for vacuum-driven relocation; treat it as a
+			 * skip rather than risk corrupting our own lock state.
+			 */
+		}
+		else if (HEAP_XMAX_IS_KEYSHR_LOCKED(infomask))
+		{
+			/*
+			 * A single key-share locker on another transaction.  Since the
+			 * relocation does not change any key column (the data is
+			 * byte-identical), the locker need not be invalidated; we
+			 * preserve it on the new tuple's xmax and proceed without
+			 * waiting.
+			 */
+			checked_lockers = true;
+			locker_remains = true;
+			can_continue = true;
+		}
+		/* else: regular updater or stronger lock -- skip, let caller retry */
+
+		if (can_continue)
+			result = TM_Ok;
+	}
+
+	if (result != TM_Ok)
+	{
+		tmfd->ctid = oldtup.t_data->t_ctid;
+		tmfd->xmax = HeapTupleHeaderGetUpdateXid(oldtup.t_data);
+		tmfd->cmax = InvalidCommandId;
+		UnlockReleaseBuffer(buffer);
+		if (vmbuffer != InvalidBuffer)
+			ReleaseBuffer(vmbuffer);
+		*update_indexes = TU_None;
+		/*
+		 * Unlike heap_update, we do not raise ERROR on TM_Invisible: a
+		 * maintenance command iterating across pages can legitimately
+		 * encounter tuples whose xmin is from an in-progress transaction.
+		 * Leave the policy decision to the caller (which will simply skip
+		 * and continue).
+		 */
+		return result;
+	}
+
+	/*
+	 * Re-check VM pin: if the page became all-visible while we acquired the
+	 * lock, pin the VM page and retake the buffer lock.  Mirrors heap_update.
+	 *
+	 * The tuple's lock state could in principle have changed during the brief
+	 * unlock window, but pruning needs cleanup lock (which we hold pin
+	 * against) and we have already decided whether to proceed based on the
+	 * pre-unlock snapshot of xmax.  Any locker that arrived since then will
+	 * see the relocation in flight and either skip or wait, just as for
+	 * heap_update.
+	 */
+	if (vmbuffer == InvalidBuffer && PageIsAllVisible(page))
+	{
+		LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
+		visibilitymap_pin(relation, block, &vmbuffer);
+		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+	}
+
+	/*
+	 * The buffer-lock dance with the target page must be done with the source
+	 * page's lock released, in block-number order.  Drop the source lock,
+	 * keeping the pin, and let RelationGetSpecificBufferForTuple retake both.
+	 */
+	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
+
+	newbuf = RelationGetSpecificBufferForTuple(relation, oldtup.t_len,
+											   target_block, buffer,
+											   &vmbuffer_new, &vmbuffer);
+
+	if (newbuf == InvalidBuffer)
+	{
+		/*
+		 * Target page filled up between FSM consultation and now.  Surface
+		 * this as TM_BeingModified so the caller picks a different target.
+		 */
+		tmfd->ctid = *otid;
+		tmfd->xmax = InvalidTransactionId;
+		tmfd->cmax = InvalidCommandId;
+		ReleaseBuffer(buffer);
+		if (vmbuffer != InvalidBuffer)
+			ReleaseBuffer(vmbuffer);
+		if (vmbuffer_new != InvalidBuffer)
+			ReleaseBuffer(vmbuffer_new);
+		*update_indexes = TU_None;
+		return TM_BeingModified;
+	}
+
+	newpage = BufferGetPage(newbuf);
+
+	/*
+	 * Re-fetch the source line pointer; we re-acquired the buffer lock via
+	 * RelationGetSpecificBufferForTuple's locking-order dance, so the
+	 * pointer-derived addresses we held earlier may have moved if pruning
+	 * ran -- but pruning needs cleanup lock, which we hold pin against, so
+	 * in practice oldtup.t_data still points at our row.  Re-derive
+	 * defensively.
+	 */
+	lp = PageGetItemId(page, ItemPointerGetOffsetNumber(otid));
+	Assert(ItemIdIsNormal(lp));
+	oldtup.t_data = (HeapTupleHeader) PageGetItem(page, lp);
+	oldtup.t_len = ItemIdGetLength(lp);
+
+	/*
+	 * Compute xmax / infomasks for the source tuple post-relocation.  This
+	 * folds the relocator's xid in with any remaining lockers (potentially
+	 * creating a multixact), the same way heap_update does.
+	 */
+	compute_new_xmax_infomask(HeapTupleHeaderGetRawXmax(oldtup.t_data),
+							  oldtup.t_data->t_infomask,
+							  oldtup.t_data->t_infomask2,
+							  xid, lockmode, true,
+							  &xmax_old_tuple, &infomask_old_tuple,
+							  &infomask2_old_tuple);
+
+	/*
+	 * Compute xmax / infomasks for the NEW tuple, preserving any lockers we
+	 * found on the old tuple so concurrent locking transactions still find
+	 * their lock on the relocated row.  Logic mirrors heap_update.
+	 */
+	if ((oldtup.t_data->t_infomask & HEAP_XMAX_INVALID) ||
+		HEAP_LOCKED_UPGRADED(oldtup.t_data->t_infomask) ||
+		(checked_lockers && !locker_remains))
+		xmax_new_tuple = InvalidTransactionId;
+	else
+		xmax_new_tuple = HeapTupleHeaderGetRawXmax(oldtup.t_data);
+
+	if (!TransactionIdIsValid(xmax_new_tuple))
+	{
+		infomask_new_tuple = HEAP_XMAX_INVALID;
+		infomask2_new_tuple = 0;
+	}
+	else if (oldtup.t_data->t_infomask & HEAP_XMAX_IS_MULTI)
+	{
+		GetMultiXactIdHintBits(xmax_new_tuple, &infomask_new_tuple,
+							   &infomask2_new_tuple);
+	}
+	else
+	{
+		infomask_new_tuple = HEAP_XMAX_KEYSHR_LOCK | HEAP_XMAX_LOCK_ONLY;
+		infomask2_new_tuple = 0;
+	}
+
+	/*
+	 * Build the relocated tuple.  Header bytes are byte-identical except for
+	 * the xact fields, which we reset for the new MVCC version.  Both header
+	 * and body are copied as one block.
+	 */
+	newtup = (HeapTuple) palloc(HEAPTUPLESIZE + oldtup.t_len);
+	newtup->t_len = oldtup.t_len;
+	newtup->t_tableOid = RelationGetRelid(relation);
+	ItemPointerSetInvalid(&newtup->t_self);
+	newtup->t_data = (HeapTupleHeader) ((char *) newtup + HEAPTUPLESIZE);
+	memcpy(newtup->t_data, oldtup.t_data, oldtup.t_len);
+
+	newtup->t_data->t_infomask &= ~(HEAP_XACT_MASK);
+	newtup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);
+	newtup->t_data->t_infomask |= HEAP_UPDATED | infomask_new_tuple;
+	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
+	HeapTupleHeaderSetXmin(newtup->t_data, xid);
+	HeapTupleHeaderSetCmin(newtup->t_data, cid);
+	HeapTupleHeaderSetXmax(newtup->t_data, xmax_new_tuple);
+
+	HeapTupleHeaderAdjustCmax(oldtup.t_data, &cid, &iscombo);
+
+	/*
+	 * Predicate-lock check.  A relocation is logically a no-op for any
+	 * predicate-matching reader, but we still take the standard write-side
+	 * conflict check; false-positive SSI aborts during a maintenance
+	 * compaction are acceptable.
+	 */
+	CheckForSerializableConflictIn(relation, &oldtup.t_self,
+								   BufferGetBlockNumber(buffer));
+
+	START_CRIT_SECTION();
+
+	PageSetPrunable(page, xid);
+	PageSetFull(page);
+	PageSetPrunable(newpage, xid);
+
+	HeapTupleClearHotUpdated(&oldtup);
+	HeapTupleClearHeapOnly(newtup);
+
+	RelationPutHeapTuple(relation, newbuf, newtup, false);
+
+	/* Update the source tuple to point at the relocated copy. */
+	oldtup.t_data->t_infomask &= ~(HEAP_XMAX_BITS | HEAP_MOVED);
+	oldtup.t_data->t_infomask2 &= ~HEAP_KEYS_UPDATED;
+	HeapTupleHeaderSetXmax(oldtup.t_data, xmax_old_tuple);
+	oldtup.t_data->t_infomask |= infomask_old_tuple;
+	oldtup.t_data->t_infomask2 |= infomask2_old_tuple;
+	HeapTupleHeaderSetCmax(oldtup.t_data, cid, iscombo);
+	oldtup.t_data->t_ctid = newtup->t_self;
+
+	if (PageIsAllVisible(page))
+	{
+		all_visible_cleared = true;
+		PageClearAllVisible(page);
+		visibilitymap_clear(relation, BufferGetBlockNumber(buffer),
+							vmbuffer, VISIBILITYMAP_VALID_BITS);
+	}
+	if (PageIsAllVisible(newpage))
+	{
+		all_visible_cleared_new = true;
+		PageClearAllVisible(newpage);
+		visibilitymap_clear(relation, BufferGetBlockNumber(newbuf),
+							vmbuffer_new, VISIBILITYMAP_VALID_BITS);
+	}
+
+	MarkBufferDirty(newbuf);
+	MarkBufferDirty(buffer);
+
+	if (RelationNeedsWAL(relation))
+	{
+		XLogRecPtr	recptr;
+
+		/*
+		 * walLogical = false: relocations do not contribute to logical
+		 * decoding (decode.c filters them via XLH_UPDATE_RELOCATED), so we
+		 * suppress the new-tuple payload to keep records small.  Catalog
+		 * combo CIDs are not relevant for relocations of user tables; if a
+		 * caller ever uses heap_relocate on a system catalog, that path
+		 * would need additional work.
+		 */
+		recptr = log_heap_update(relation, buffer, newbuf,
+								 &oldtup, newtup,
+								 NULL,	/* old_key_tuple */
+								 all_visible_cleared,
+								 all_visible_cleared_new,
+								 false, /* walLogical */
+								 true /* is_relocation */ );
+		PageSetLSN(newpage, recptr);
+		PageSetLSN(page, recptr);
+	}
+
+	END_CRIT_SECTION();
+
+	LockBuffer(newbuf, BUFFER_LOCK_UNLOCK);
+	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
+
+	CacheInvalidateHeapTuple(relation, &oldtup, newtup);
+
+	ReleaseBuffer(newbuf);
+	ReleaseBuffer(buffer);
+	if (vmbuffer_new != InvalidBuffer)
+		ReleaseBuffer(vmbuffer_new);
+	if (vmbuffer != InvalidBuffer)
+		ReleaseBuffer(vmbuffer);
+
+	pgstat_count_heap_update(relation, false, true);
+
+	if (new_tid != NULL)
+		*new_tid = newtup->t_self;
+
+	heap_freetuple(newtup);
+
+	*update_indexes = TU_All;
 	return TM_Ok;
 }
 
@@ -8776,7 +9207,7 @@ log_heap_update(Relation reln, Buffer oldbuf,
 				Buffer newbuf, HeapTuple oldtup, HeapTuple newtup,
 				HeapTuple old_key_tuple,
 				bool all_visible_cleared, bool new_all_visible_cleared,
-				bool walLogical)
+				bool walLogical, bool is_relocation)
 {
 	xl_heap_update xlrec;
 	xl_heap_header xlhdr;
@@ -8863,6 +9294,8 @@ log_heap_update(Relation reln, Buffer oldbuf,
 		xlrec.flags |= XLH_UPDATE_PREFIX_FROM_OLD;
 	if (suffixlen > 0)
 		xlrec.flags |= XLH_UPDATE_SUFFIX_FROM_OLD;
+	if (is_relocation)
+		xlrec.flags |= XLH_UPDATE_RELOCATED;
 	if (need_tuple_data)
 	{
 		xlrec.flags |= XLH_UPDATE_CONTAINS_NEW_TUPLE;

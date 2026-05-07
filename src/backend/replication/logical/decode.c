@@ -998,6 +998,15 @@ DecodeUpdate(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
 		return;
 
+	/*
+	 * Relocations performed by VACUUM (COMPACT) carry byte-identical tuple
+	 * contents.  They are logged as ordinary updates so crash recovery sees
+	 * the page changes, but logical decoding must not surface them: the row
+	 * has not changed from the perspective of any subscriber.
+	 */
+	if (xlrec->flags & XLH_UPDATE_RELOCATED)
+		return;
+
 	change = ReorderBufferAllocChange(ctx->reorder);
 	change->action = REORDER_BUFFER_CHANGE_UPDATE;
 	change->origin_id = XLogRecGetOrigin(r);
