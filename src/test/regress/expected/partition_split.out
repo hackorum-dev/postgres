@@ -103,11 +103,11 @@ ALTER TABLE sales_range SPLIT PARTITION sales_feb_mar_apr2022 INTO
   (PARTITION sales_feb2022 FOR VALUES FROM ('2022-02-01') TO ('2022-03-01'),
    PARTITION sales_mar2022 FOR VALUES FROM ('2022-02-01') TO ('2022-04-01'),
    PARTITION sales_apr2022 FOR VALUES FROM ('2022-04-01') TO ('2022-05-01'));
-ERROR:  cannot split to partition "sales_mar2022" together with partition "sales_feb2022"
+ERROR:  cannot split partition "sales_feb_mar_apr2022"
 LINE 3:    PARTITION sales_mar2022 FOR VALUES FROM ('2022-02-01') TO...
                                                     ^
 DETAIL:  The lower bound of partition "sales_mar2022" is not equal to the upper bound of partition "sales_feb2022".
-HINT:  ALTER TABLE ... SPLIT PARTITION requires the partition bounds to be adjacent.
+HINT:  ALTER TABLE ... SPLIT PARTITION requires the new partition bounds to be adjacent.
 -- Tests for spaces between partitions, them should be executed without DEFAULT partition
 ALTER TABLE sales_range DETACH PARTITION sales_others;
 -- ERROR
@@ -462,11 +462,11 @@ ALTER TABLE sales_range SPLIT PARTITION sales_others INTO
    PARTITION sales_error FOR VALUES FROM ('2021-12-30') TO ('2022-02-01'),
    PARTITION sales_feb2022 FOR VALUES FROM ('2022-02-01') TO ('2022-03-01'),
    PARTITION sales_others DEFAULT);
-ERROR:  cannot split to partition "sales_error" together with partition "sales_dec2021"
+ERROR:  cannot split partition "sales_others"
 LINE 3:    PARTITION sales_error FOR VALUES FROM ('2021-12-30') TO (...
                                                   ^
 DETAIL:  The lower bound of partition "sales_error" is not equal to the upper bound of partition "sales_dec2021".
-HINT:  ALTER TABLE ... SPLIT PARTITION requires the partition bounds to be adjacent.
+HINT:  ALTER TABLE ... SPLIT PARTITION requires the new partition bounds to be adjacent.
 -- sales_error intersects with sales_feb2022 (upper bound)
 -- ERROR
 ALTER TABLE sales_range SPLIT PARTITION sales_others INTO
@@ -474,11 +474,11 @@ ALTER TABLE sales_range SPLIT PARTITION sales_others INTO
    PARTITION sales_error FOR VALUES FROM ('2022-01-01') TO ('2022-02-02'),
    PARTITION sales_feb2022 FOR VALUES FROM ('2022-02-01') TO ('2022-03-01'),
    PARTITION sales_others DEFAULT);
-ERROR:  cannot split to partition "sales_feb2022" together with partition "sales_error"
+ERROR:  cannot split partition "sales_others"
 LINE 4:    PARTITION sales_feb2022 FOR VALUES FROM ('2022-02-01') TO...
                                                     ^
 DETAIL:  The lower bound of partition "sales_feb2022" is not equal to the upper bound of partition "sales_error".
-HINT:  ALTER TABLE ... SPLIT PARTITION requires the partition bounds to be adjacent.
+HINT:  ALTER TABLE ... SPLIT PARTITION requires the new partition bounds to be adjacent.
 -- sales_error intersects with sales_dec2021 (inside bound)
 -- ERROR
 ALTER TABLE sales_range SPLIT PARTITION sales_others INTO
@@ -486,11 +486,11 @@ ALTER TABLE sales_range SPLIT PARTITION sales_others INTO
    PARTITION sales_error FOR VALUES FROM ('2021-12-10') TO ('2021-12-20'),
    PARTITION sales_feb2022 FOR VALUES FROM ('2022-02-01') TO ('2022-03-01'),
    PARTITION sales_others DEFAULT);
-ERROR:  cannot split to partition "sales_error" together with partition "sales_dec2021"
+ERROR:  cannot split partition "sales_others"
 LINE 3:    PARTITION sales_error FOR VALUES FROM ('2021-12-10') TO (...
                                                   ^
 DETAIL:  The lower bound of partition "sales_error" is not equal to the upper bound of partition "sales_dec2021".
-HINT:  ALTER TABLE ... SPLIT PARTITION requires the partition bounds to be adjacent.
+HINT:  ALTER TABLE ... SPLIT PARTITION requires the new partition bounds to be adjacent.
 -- sales_error intersects with sales_dec2021 (exactly the same bounds)
 -- ERROR
 ALTER TABLE sales_range SPLIT PARTITION sales_others INTO
@@ -498,11 +498,11 @@ ALTER TABLE sales_range SPLIT PARTITION sales_others INTO
    PARTITION sales_error FOR VALUES FROM ('2021-12-01') TO ('2022-01-01'),
    PARTITION sales_feb2022 FOR VALUES FROM ('2022-02-01') TO ('2022-03-01'),
    PARTITION sales_others DEFAULT);
-ERROR:  cannot split to partition "sales_error" together with partition "sales_dec2021"
+ERROR:  cannot split partition "sales_others"
 LINE 3:    PARTITION sales_error FOR VALUES FROM ('2021-12-01') TO (...
                                                   ^
 DETAIL:  The lower bound of partition "sales_error" is not equal to the upper bound of partition "sales_dec2021".
-HINT:  ALTER TABLE ... SPLIT PARTITION requires the partition bounds to be adjacent.
+HINT:  ALTER TABLE ... SPLIT PARTITION requires the new partition bounds to be adjacent.
 -- ERROR
 ALTER TABLE sales_range SPLIT PARTITION sales_others INTO
   (PARTITION sales_dec2021 FOR VALUES FROM ('2021-12-01') TO ('2022-01-01'),

@@ -35,13 +35,13 @@ HINT:  ALTER TABLE ... MERGE PARTITIONS can only merge partitions that don't hav
 ALTER TABLE sales_range MERGE PARTITIONS (sales_jan2022, sales_mar2022) INTO sales_jan_mar2022;
 ERROR:  cannot merge partition "sales_mar2022" together with partition "sales_jan2022"
 DETAIL:  The lower bound of partition "sales_mar2022" is not equal to the upper bound of partition "sales_jan2022".
-HINT:  ALTER TABLE ... MERGE PARTITIONS requires the partition bounds to be adjacent.
+HINT:  ALTER TABLE ... MERGE PARTITIONS requires the old partition bounds to be adjacent.
 -- ERROR
 -- (space between sections sales_dec2021 and sales_jan2022)
 ALTER TABLE sales_range MERGE PARTITIONS (sales_dec2021, sales_jan2022, sales_feb2022) INTO sales_dec_jan_feb2022;
 ERROR:  cannot merge partition "sales_jan2022" together with partition "sales_dec2021"
 DETAIL:  The lower bound of partition "sales_jan2022" is not equal to the upper bound of partition "sales_dec2021".
-HINT:  ALTER TABLE ... MERGE PARTITIONS requires the partition bounds to be adjacent.
+HINT:  ALTER TABLE ... MERGE PARTITIONS requires the old partition bounds to be adjacent.
 -- ERROR
 ALTER TABLE sales_range MERGE PARTITIONS (sales_feb2022, sales_mar2022, partitions_merge_schema.sales_feb2022) INTO sales_feb_mar_apr2022;
 ERROR:  partition with name "sales_feb2022" is already used
