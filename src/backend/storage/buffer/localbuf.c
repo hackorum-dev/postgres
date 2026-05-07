@@ -218,6 +218,9 @@ FlushLocalBuffer(BufferDesc *bufHdr, SMgrRelation reln)
 	TerminateLocalBufferIO(bufHdr, true, 0, false);
 
 	pgBufferUsage.local_blks_written++;
+
+	/* Track at database level */
+	pgstat_count_local_blk_written(MyDatabaseId, 1);
 }
 
 static Buffer
@@ -479,6 +482,7 @@ ExtendBufferedRelLocal(BufferManagerRelation bmr,
 	*extended_by = extend_by;
 
 	pgBufferUsage.local_blks_written += extend_by;
+	pgstat_count_local_blk_written(MyDatabaseId, extend_by);
 
 	return first_block;
 }
@@ -509,7 +513,10 @@ MarkLocalBufferDirty(Buffer buffer)
 	buf_state = pg_atomic_read_u64(&bufHdr->state);
 
 	if (!(buf_state & BM_DIRTY))
+	{
 		pgBufferUsage.local_blks_dirtied++;
+		pgstat_count_local_blk_dirtied(MyDatabaseId);
+	}
 
 	buf_state |= BM_DIRTY;
 

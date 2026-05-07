@@ -1110,6 +1110,21 @@ PG_STAT_GET_DBENTRY_INT64(temp_bytes)
 /* pg_stat_get_db_temp_files */
 PG_STAT_GET_DBENTRY_INT64(temp_files)
 
+/* pg_stat_get_db_temp_tables */
+PG_STAT_GET_DBENTRY_INT64(temp_tables)
+
+/* pg_stat_get_db_local_blks_hit */
+PG_STAT_GET_DBENTRY_INT64(local_blks_hit)
+
+/* pg_stat_get_db_local_blks_read */
+PG_STAT_GET_DBENTRY_INT64(local_blks_read)
+
+/* pg_stat_get_db_local_blks_dirtied */
+PG_STAT_GET_DBENTRY_INT64(local_blks_dirtied)
+
+/* pg_stat_get_db_local_blks_written */
+PG_STAT_GET_DBENTRY_INT64(local_blks_written)
+
 /* pg_stat_get_db_tuples_deleted */
 PG_STAT_GET_DBENTRY_INT64(tuples_deleted)
 

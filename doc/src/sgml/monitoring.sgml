@@ -3768,6 +3768,55 @@ description | Waiting for a newly initialized WAL file to reach durable storage
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>temp_tables</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of temporary tables created in this database.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>local_blks_hit</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of times temporary table blocks were found already in the
+       local buffer cache, so that a read was not necessary (this only
+       includes hits in the local buffer cache, whose size is controlled
+       by <xref linkend="guc-temp-buffers"/>, not the operating system's
+       file system cache).
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>local_blks_read</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of temporary table blocks read from disk in this database.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>local_blks_dirtied</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of temporary table blocks dirtied in this database.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>local_blks_written</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of temporary table blocks written to disk in this database.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>deadlocks</structfield> <type>bigint</type>
       </para>
       <para>

@@ -1521,6 +1521,12 @@ heap_create_with_catalog(const char *relname,
 		register_on_commit_action(relid, oncommit);
 
 	/*
+	 * Track temporary table statistics.
+	 */
+	if (relpersistence == RELPERSISTENCE_TEMP && relkind == RELKIND_RELATION)
+		pgstat_count_temp_table(MyDatabaseId);
+
+	/*
 	 * ok, the relation has been cataloged, so close our relations and return
 	 * the OID of the newly created relation.
 	 */

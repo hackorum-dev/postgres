@@ -365,6 +365,11 @@ typedef struct PgStat_StatDBEntry
 	PgStat_Counter conflict_startup_deadlock;
 	PgStat_Counter temp_files;
 	PgStat_Counter temp_bytes;
+	PgStat_Counter temp_tables;	/* # of temp tables created */
+	PgStat_Counter local_blks_hit;	/* temp table cache hits */
+	PgStat_Counter local_blks_read;	/* temp table blocks read */
+	PgStat_Counter local_blks_dirtied;	/* temp table blocks dirtied */
+	PgStat_Counter local_blks_written;	/* temp table blocks written */
 	PgStat_Counter deadlocks;
 	PgStat_Counter checksum_failures;
 	TimestampTz last_checksum_failure;
@@ -625,6 +630,11 @@ extern void pgstat_drop_database(Oid databaseid);
 extern void pgstat_report_autovac(Oid dboid);
 extern void pgstat_report_recovery_conflict(int reason);
 extern void pgstat_report_deadlock(void);
+extern void pgstat_count_temp_table(Oid dboid);
+extern void pgstat_count_local_blk_hit(Oid dboid);
+extern void pgstat_count_local_blk_read(Oid dboid, int64 count);
+extern void pgstat_count_local_blk_dirtied(Oid dboid);
+extern void pgstat_count_local_blk_written(Oid dboid, int64 count);
 extern void pgstat_prepare_report_checksum_failure(Oid dboid);
 extern void pgstat_report_checksum_failures_in_db(Oid dboid, int failurecount);
 extern void pgstat_report_connect(Oid dboid);
