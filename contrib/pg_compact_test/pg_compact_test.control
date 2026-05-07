@@ -1,0 +1,5 @@
+# pg_compact_test extension
+comment = 'exercise heap compaction primitives (RelationGetSpecificBufferForTuple)'
+default_version = '1.0'
+module_pathname = '$libdir/pg_compact_test'
+relocatable = true
