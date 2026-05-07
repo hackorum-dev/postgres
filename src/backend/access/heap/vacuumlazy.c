@@ -137,12 +137,15 @@
 #include "access/transam.h"
 #include "access/visibilitymap.h"
 #include "access/xloginsert.h"
+#include "catalog/index.h"
 #include "catalog/storage.h"
 #include "commands/progress.h"
 #include "commands/vacuum.h"
 #include "common/int.h"
 #include "common/pg_prng.h"
+#include "executor/executor.h"
 #include "executor/instrument.h"
+#include "executor/tuptable.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "portability/instr_time.h"
@@ -271,6 +274,11 @@ typedef struct LVRelState
 	bool		do_index_vacuuming;
 	bool		do_index_cleanup;
 	bool		do_rel_truncate;
+	/* Compact the heap by relocating tuples towards low-numbered pages? */
+	bool		do_compact;
+	/* Counters for compaction phase (only set when do_compact is true) */
+	int64		compact_tuples_moved;
+	BlockNumber compact_pages_visited;
 
 	/* VACUUM operation's cutoffs for freezing and pruning */
 	struct VacuumCutoffs cutoffs;
@@ -443,6 +451,7 @@ static bool lazy_scan_noprune(LVRelState *vacrel, Buffer buf,
 static void lazy_vacuum(LVRelState *vacrel);
 static bool lazy_vacuum_all_indexes(LVRelState *vacrel);
 static void lazy_vacuum_heap_rel(LVRelState *vacrel);
+static void lazy_compact_heap(LVRelState *vacrel);
 static void lazy_vacuum_heap_page(LVRelState *vacrel, BlockNumber blkno,
 								  Buffer buffer, OffsetNumber *deadoffsets,
 								  int num_offsets, Buffer vmbuffer);
@@ -730,6 +739,9 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 	vacrel->do_index_vacuuming = true;
 	vacrel->do_index_cleanup = true;
 	vacrel->do_rel_truncate = (params->truncate != VACOPTVALUE_DISABLED);
+	vacrel->do_compact = (params->options & VACOPT_COMPACT) != 0;
+	vacrel->compact_tuples_moved = 0;
+	vacrel->compact_pages_visited = 0;
 	if (params->index_cleanup == VACOPTVALUE_DISABLED)
 	{
 		/* Force disable index vacuuming up-front */
@@ -903,6 +915,15 @@ heap_vacuum_rel(Relation rel, const VacuumParams *params,
 	 */
 	if (vacrel->do_index_cleanup)
 		update_relstats_all_indexes(vacrel);
+
+	/*
+	 * Optionally compact the heap by relocating tuples from high-numbered
+	 * pages onto low-numbered pages with free space.  Indexes must still
+	 * be open here so that newly relocated tuples can have new index
+	 * entries inserted.
+	 */
+	if (vacrel->do_compact)
+		lazy_compact_heap(vacrel);
 
 	/* Done with rel's indexes */
 	vac_close_indexes(vacrel->nindexes, vacrel->indrels, NoLock);
@@ -3126,6 +3147,17 @@ should_attempt_truncation(LVRelState *vacrel)
 	if (!vacrel->do_rel_truncate || VacuumFailsafeActive)
 		return false;
 
+	/*
+	 * If compaction relocated any tuple, lots of trailing pages are likely
+	 * to have become empty.  vacrel->nonempty_pages was computed during the
+	 * scan phase before compaction ran and is now an overestimate, so the
+	 * heuristic threshold below would skip truncation.  Force the attempt;
+	 * lazy_truncate_heap will scan backward and bail cheaply if it turns
+	 * out there's nothing trailing-empty.
+	 */
+	if (vacrel->compact_tuples_moved > 0)
+		return true;
+
 	possibly_freeable = vacrel->rel_pages - vacrel->nonempty_pages;
 	if (possibly_freeable > 0 &&
 		(possibly_freeable >= REL_TRUNCATE_MINIMUM ||
@@ -3133,6 +3165,250 @@ should_attempt_truncation(LVRelState *vacrel)
 		return true;
 
 	return false;
+}
+
+/*
+ *	lazy_compact_heap - relocate tuples from high-numbered pages onto low
+ *						pages with free space.
+ *
+ *	Walks pages of the relation from the last block downward.  For each live
+ *	tuple whose xmax is provably invalid (the conservative concurrency policy
+ *	that heap_relocate enforces), asks the FSM for a lower-numbered page that
+ *	can accept the tuple and calls heap_relocate to move it.  After each
+ *	successful relocation we insert new entries into every index of the
+ *	relation pointing at the new TID; the old index entries are left for the
+ *	next index vacuum to reap.
+ *
+ *	This routine does not by itself shrink the relation; the dead source
+ *	tuples it leaves behind still occupy line pointer slots on their original
+ *	pages.  Truncation requires a follow-up VACUUM (without COMPACT) to
+ *	prune the dead tuples and run lazy_truncate_heap.
+ */
+static void
+lazy_compact_heap(LVRelState *vacrel)
+{
+	Relation	rel = vacrel->rel;
+	BlockNumber rel_pages = RelationGetNumberOfBlocks(rel);
+	IndexInfo **index_infos;
+	TupleTableSlot *slot;
+	EState	   *estate;
+	BlockNumber consecutive_no_progress = 0;
+	BlockNumber current_target = InvalidBlockNumber;
+	const BlockNumber stop_after_no_progress = 8;
+
+	pgstat_progress_update_param(PROGRESS_VACUUM_PHASE,
+								 PROGRESS_VACUUM_PHASE_COMPACT);
+
+	/*
+	 * No work possible if the rel is already a single page (the trailing
+	 * page is what compaction is trying to free up; we never compact onto
+	 * the same page we read from).
+	 */
+	if (rel_pages < 2)
+		return;
+
+	/* Per-index helpers: built once, reused for every relocated tuple. */
+	if (vacrel->nindexes > 0)
+		index_infos = palloc_array(IndexInfo *, vacrel->nindexes);
+	else
+		index_infos = NULL;
+	for (int i = 0; i < vacrel->nindexes; i++)
+		index_infos[i] = BuildIndexInfo(vacrel->indrels[i]);
+
+	slot = MakeSingleTupleTableSlot(RelationGetDescr(rel), &TTSOpsHeapTuple);
+	estate = CreateExecutorState();
+
+	/*
+	 * Walk pages from high to low.
+	 */
+	for (BlockNumber blk = rel_pages; blk-- > 0; )
+	{
+		Buffer		src_buf;
+		Page		src_page;
+		OffsetNumber maxoff;
+		HeapTuple	snapshots[MaxHeapTuplesPerPage];
+		int			nsnap = 0;
+		int			moved_this_page = 0;
+
+		CHECK_FOR_INTERRUPTS();
+		vacuum_delay_point(false);
+
+		vacrel->compact_pages_visited++;
+
+		src_buf = ReadBufferExtended(rel, MAIN_FORKNUM, blk, RBM_NORMAL,
+									 vacrel->bstrategy);
+		LockBuffer(src_buf, BUFFER_LOCK_SHARE);
+		src_page = BufferGetPage(src_buf);
+		maxoff = PageGetMaxOffsetNumber(src_page);
+
+		for (OffsetNumber off = FirstOffsetNumber;
+			 off <= maxoff && nsnap < MaxHeapTuplesPerPage;
+			 off = OffsetNumberNext(off))
+		{
+			ItemId		iid = PageGetItemId(src_page, off);
+			HeapTupleHeader htup;
+			Size		tuplen;
+			HeapTuple	t;
+
+			if (!ItemIdIsNormal(iid))
+				continue;
+
+			htup = (HeapTupleHeader) PageGetItem(src_page, iid);
+
+			/*
+			 * Skip tuples we ourselves just relocated onto a low-numbered
+			 * page earlier in this loop.  Their xmin is our own xid and
+			 * HeapTupleSatisfiesUpdate returns TM_Invisible for them; if
+			 * we did not skip here heap_relocate would skip silently, but
+			 * the snapshot copy and FSM lookup would be wasted.
+			 *
+			 * The remaining concurrency policy lives in heap_relocate: we
+			 * deliberately do not pre-filter on xmax here because
+			 * heap_relocate now accepts tuples with key-share lockers and
+			 * with multixacts whose members do not conflict with our
+			 * update.
+			 */
+			if (TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmin(htup)))
+				continue;
+
+			tuplen = ItemIdGetLength(iid);
+			t = (HeapTuple) palloc(HEAPTUPLESIZE + tuplen);
+			t->t_len = tuplen;
+			t->t_tableOid = RelationGetRelid(rel);
+			ItemPointerSet(&t->t_self, blk, off);
+			t->t_data = (HeapTupleHeader) ((char *) t + HEAPTUPLESIZE);
+			memcpy(t->t_data, htup, tuplen);
+			snapshots[nsnap++] = t;
+		}
+
+		UnlockReleaseBuffer(src_buf);
+
+		if (nsnap == 0)
+		{
+			consecutive_no_progress++;
+			if (consecutive_no_progress >= stop_after_no_progress)
+				break;
+			continue;
+		}
+
+		for (int i = 0; i < nsnap; i++)
+		{
+			HeapTuple	snap = snapshots[i];
+			TM_Result	result;
+			TM_FailureData tmfd;
+			TU_UpdateIndexes update_indexes;
+			ItemPointerData new_tid;
+			int			target_attempts = 0;
+
+			CHECK_FOR_INTERRUPTS();
+
+			/*
+			 * Keep packing one target page until heap_relocate reports it
+			 * is full (returning TM_BeingModified after a page-space race),
+			 * then mark that page exhausted in the FSM and ask for the
+			 * next.  The FSM otherwise gives stale free-space estimates
+			 * during a compaction run and would scatter our placements.
+			 *
+			 * Cap the per-tuple FSM cycle so we don't loop forever if the
+			 * FSM keeps producing high or full targets.
+			 */
+			result = TM_BeingModified;
+			while (result == TM_BeingModified && target_attempts++ < 8)
+			{
+				if (current_target == InvalidBlockNumber)
+					current_target = GetPageWithFreeSpace(rel, snap->t_len);
+				if (current_target == InvalidBlockNumber || current_target >= blk)
+				{
+					current_target = InvalidBlockNumber;
+					result = TM_BeingModified;
+					break;
+				}
+
+				result = heap_relocate(rel, &snap->t_self, current_target,
+									   GetCurrentCommandId(true),
+									   &tmfd, &update_indexes, &new_tid);
+
+				if (result == TM_BeingModified)
+				{
+					/*
+					 * Either the source tuple got concurrent attention or
+					 * the target lost its room.  In the rare first case we
+					 * just abandon this tuple; in the common second case
+					 * we exhaust the target and try a fresh one.
+					 */
+					RecordPageWithFreeSpace(rel, current_target, 0);
+					current_target = InvalidBlockNumber;
+				}
+			}
+
+			if (result != TM_Ok)
+			{
+				pfree(snap);
+				continue;
+			}
+
+			/*
+			 * Insert new index entries for the relocated tuple.  We use the
+			 * snapshot's tuple body (byte-identical to the relocated copy)
+			 * with the new TID.  UNIQUE_CHECK_NO is correct: the data did
+			 * not change, so no constraint can newly fail; the old index
+			 * entry pointing at the now-dead source TID will be reaped by
+			 * a later index vacuum.
+			 */
+			if (vacrel->nindexes > 0)
+			{
+				snap->t_self = new_tid;
+				ExecStoreHeapTuple(snap, slot, false);
+				ItemPointerCopy(&new_tid, &slot->tts_tid);
+				slot->tts_tableOid = RelationGetRelid(rel);
+
+				for (int idx = 0; idx < vacrel->nindexes; idx++)
+				{
+					Relation	idxrel = vacrel->indrels[idx];
+					IndexInfo  *idxinfo = index_infos[idx];
+					Datum		values[INDEX_MAX_KEYS];
+					bool		isnull[INDEX_MAX_KEYS];
+
+					if (!idxinfo->ii_ReadyForInserts)
+						continue;
+
+					FormIndexDatum(idxinfo, slot, estate, values, isnull);
+
+					(void) index_insert(idxrel, values, isnull,
+										&new_tid, rel,
+										UNIQUE_CHECK_NO,
+										false /* indexUnchanged */ ,
+										idxinfo);
+				}
+				ExecClearTuple(slot);
+			}
+
+			vacrel->compact_tuples_moved++;
+			moved_this_page++;
+
+			pfree(snap);
+		}
+
+		if (moved_this_page == 0)
+		{
+			consecutive_no_progress++;
+			if (consecutive_no_progress >= stop_after_no_progress)
+				break;
+		}
+		else
+			consecutive_no_progress = 0;
+	}
+
+	ExecDropSingleTupleTableSlot(slot);
+	FreeExecutorState(estate);
+	if (index_infos != NULL)
+		pfree(index_infos);
+
+	if (vacrel->verbose)
+		ereport(INFO,
+				(errmsg("\"%s\": compaction relocated " INT64_FORMAT " tuple(s) across %u page(s)",
+						vacrel->relname, vacrel->compact_tuples_moved,
+						vacrel->compact_pages_visited)));
 }
 
 /*
