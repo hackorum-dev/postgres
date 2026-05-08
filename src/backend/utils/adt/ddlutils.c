@@ -173,8 +173,10 @@ pg_get_role_ddl_internal(Oid roleid, bool pretty, bool memberships)
 	{
 		ReleaseSysCache(tuple);
 		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied for role %s", rolname)));
+				errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				errmsg("permission denied for role \"%s\"", rolname),
+				errhint("Grant SELECT on catalog \"%s\" to read role properties.",
+						get_rel_name(AuthIdRelationId)));
 	}
 
 	/*
@@ -502,7 +504,12 @@ pg_get_tablespace_ddl_internal(Oid tsid, bool pretty, bool no_owner)
 	if (pg_class_aclcheck(TableSpaceRelationId, GetUserId(), ACL_SELECT) != ACLCHECK_OK)
 	{
 		ReleaseSysCache(tuple);
-		aclcheck_error(ACLCHECK_NO_PRIV, OBJECT_TABLESPACE, spcname);
+		ereport(ERROR,
+				errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				errmsg("permission denied for tablespace \"%s\"",
+					   spcname),
+				errhint("Grant SELECT on catalog \"%s\" to read tablespace properties.",
+						get_rel_name(TableSpaceRelationId)));
 	}
 
 	/*
