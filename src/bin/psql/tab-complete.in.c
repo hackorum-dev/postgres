@@ -1283,6 +1283,10 @@ static const char *const sql_commands[] = {
 	NULL
 };
 
+static const char *const parallel_safety[] = {
+	"SAFE", "UNSAFE", "RESTRICTED", NULL
+};
+
 /*
  * This is a list of all "things" in Pgsql, which can show up after CREATE or
  * DROP; and there is also a query to get a list of them.
@@ -1341,6 +1345,7 @@ static const pgsql_thing_t words_after_create[] = {
 									 * a good idea. */
 	{"OR REPLACE", NULL, NULL, NULL, NULL, THING_NO_DROP | THING_NO_ALTER},
 	{"OWNED", NULL, NULL, NULL, NULL, THING_NO_CREATE | THING_NO_ALTER},	/* for DROP OWNED BY ... */
+	{"DML", NULL, NULL, NULL, parallel_safety},
 	{"PARSER", NULL, NULL, &Query_for_list_of_ts_parsers, NULL, THING_NO_SHOW},
 	{"POLICY", NULL, NULL, NULL},
 	{"PROCEDURE", NULL, NULL, Query_for_list_of_procedures},
@@ -2117,6 +2122,8 @@ psql_completion(const char *text, int start, int end)
 				else if (wac->squery)
 					COMPLETE_WITH_VERSIONED_SCHEMA_QUERY_LIST(wac->squery,
 															  wac->keywords);
+				else if (wac->keywords)
+					COMPLETE_WITH_LIST(wac->keywords);
 				break;
 			}
 		}
@@ -2831,7 +2838,7 @@ match_previous_words(int pattern_id,
 					  "REPLICA IDENTITY", "ATTACH PARTITION",
 					  "DETACH PARTITION", "FORCE ROW LEVEL SECURITY",
 					  "SPLIT PARTITION", "MERGE PARTITIONS (",
-					  "OF", "NOT OF");
+					  "OF", "NOT OF", "PARALLEL DML");
 	/* ALTER TABLE xxx ADD */
 	else if (Matches("ALTER", "TABLE", MatchAny, "ADD"))
 	{
@@ -3120,6 +3127,10 @@ match_previous_words(int pattern_id,
 	/* ALTER TABLE <name> OF */
 	else if (Matches("ALTER", "TABLE", MatchAny, "OF"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_composite_datatypes);
+
+	/* ALTER TABLE <name> PARALLEL DML */
+	else if (Matches("ALTER", "TABLE", MatchAny, "PARALLEL", "DML"))
+		COMPLETE_WITH("RESTRICTED", "SAFE", "UNSAFE");
 
 	/* ALTER TABLESPACE <foo> with RENAME TO, OWNER TO, SET, RESET */
 	else if (Matches("ALTER", "TABLESPACE", MatchAny))
@@ -3886,12 +3897,13 @@ match_previous_words(int pattern_id,
 		COMPLETE_WITH("EXECUTE", "SELECT", "TABLE", "VALUES", "WITH");
 	/* Complete CREATE TABLE name (...) with supported options */
 	else if (TailMatches("CREATE", "TABLE", MatchAny, "(*)"))
-		COMPLETE_WITH("AS", "INHERITS (", "PARTITION BY", "USING", "TABLESPACE", "WITH (");
+		COMPLETE_WITH("AS", "INHERITS (", "PARTITION BY", "USING", "TABLESPACE", "WITH (",
+					  "PARALLEL DML");
 	else if (TailMatches("CREATE", "UNLOGGED", "TABLE", MatchAny, "(*)"))
-		COMPLETE_WITH("AS", "INHERITS (", "USING", "TABLESPACE", "WITH (");
+		COMPLETE_WITH("AS", "INHERITS (", "USING", "TABLESPACE", "WITH (", "PARALLEL DML");
 	else if (TailMatches("CREATE", "TEMP|TEMPORARY", "TABLE", MatchAny, "(*)"))
 		COMPLETE_WITH("AS", "INHERITS (", "ON COMMIT", "PARTITION BY", "USING",
-					  "TABLESPACE", "WITH (");
+					  "TABLESPACE", "WITH (", "PARALLEL DML");
 	/* Complete CREATE TABLE (...) USING with table access methods */
 	else if (TailMatches("CREATE", "TABLE", MatchAny, "(*)", "USING") ||
 			 TailMatches("CREATE", "TEMP|TEMPORARY|UNLOGGED", "TABLE", MatchAny, "(*)", "USING"))
