@@ -272,6 +272,68 @@ TransactionIdSetCommitTs(TransactionId xid, TimestampTz ts,
 }
 
 /*
+ * Zero the nodeid field on every commit_ts SLRU entry that records the given
+ * origin.  Called when a replication origin is dropped so that rows stamped
+ * with the freed roident appear to have no origin; a future apply worker
+ * that reuses the same roident will then see nodeid=0 != current_origin and
+ * report a conflict via the ordinary origin-differs check.
+ *
+ * Does nothing when track_commit_timestamp is off.
+ */
+void
+InvalidateCommitTsOrigin(ReplOriginId origin)
+{
+	TransactionId oldest;
+	TransactionId newest;
+	int64		firstpage;
+	int64		lastpage;
+
+	if (!track_commit_timestamp)
+		return;
+
+	oldest = TransamVariables->oldestCommitTsXid;
+	newest = TransamVariables->newestCommitTsXid;
+
+	if (!TransactionIdIsValid(oldest))
+		return;
+
+	firstpage = TransactionIdToCTsPage(oldest);
+	lastpage = TransactionIdToCTsPage(newest);
+
+	for (int64 pageno = firstpage; pageno <= lastpage; pageno++)
+	{
+		LWLock	   *lock = SimpleLruGetBankLock(CommitTsCtl, pageno);
+		int			slotno;
+		bool		modified = false;
+		TransactionId xid = (TransactionId)
+		(pageno * COMMIT_TS_XACTS_PER_PAGE);
+
+		LWLockAcquire(lock, LW_EXCLUSIVE);
+		slotno = SimpleLruReadPage(CommitTsCtl, pageno, true, &xid);
+
+		for (int i = 0; i < COMMIT_TS_XACTS_PER_PAGE; i++)
+		{
+			CommitTimestampEntry entry;
+			char	   *entryptr = CommitTsCtl->shared->page_buffer[slotno]
+				+ SizeOfCommitTimestampEntry * i;
+
+			memcpy(&entry, entryptr, SizeOfCommitTimestampEntry);
+			if (entry.nodeid == origin)
+			{
+				entry.nodeid = InvalidReplOriginId;
+				memcpy(entryptr, &entry, SizeOfCommitTimestampEntry);
+				modified = true;
+			}
+		}
+
+		if (modified)
+			CommitTsCtl->shared->page_dirty[slotno] = true;
+
+		LWLockRelease(lock);
+	}
+}
+
+/*
  * Interrogate the commit timestamp of a transaction.
  *
  * The return value indicates whether a commit timestamp record was found for

@@ -71,6 +71,7 @@
 #include <sys/stat.h>
 
 #include "access/genam.h"
+#include "access/commit_ts.h"
 #include "access/htup_details.h"
 #include "access/table.h"
 #include "access/xact.h"
@@ -489,6 +490,13 @@ replorigin_drop_by_name(const char *name, bool missing_ok, bool nowait)
 	}
 
 	replorigin_state_clear(roident, nowait);
+
+	/*
+	 * Zero any commit_ts entries stamped with this origin so that a future
+	 * subscription reusing the same roident sees nodeid=0 != current_origin
+	 * and reports a conflict via the ordinary origin-differs check.
+	 */
+	InvalidateCommitTsOrigin(roident);
 
 	/*
 	 * Now, we can delete the catalog entry.
