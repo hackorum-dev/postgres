@@ -9631,7 +9631,7 @@ ATPrepAddPrimaryKey(List **wqueue, Relation rel, AlterTableCmd *cmd,
 				tup = findNotNullConstraint(childrelid, strVal(column));
 				if (!tup)
 					ereport(ERROR,
-							errmsg("column \"%s\" of table \"%s\" is not marked NOT NULL",
+							errmsg("column \"%s\" in child table \"%s\" is not marked NOT NULL",
 								   strVal(column), get_rel_name(childrelid)));
 				/* verify it's good enough */
 				verifyNotNullPKCompatible(tup, strVal(column));
