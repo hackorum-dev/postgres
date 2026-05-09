@@ -566,17 +566,34 @@ drop_local_obsolete_slots(List *remote_slot_list)
 
 			if (synced_slot)
 			{
+				NameData	slotname;
+				Oid			slotdb;
+
+				/*
+				 * Snapshot the identity for the log message below.  Once
+				 * ReplicationSlotDropAcquired() returns, the shared-memory
+				 * entry can be immediately reused by another backend (its
+				 * 'in_use' flag is cleared and ReplicationSlotControlLock is
+				 * released), so reading local_slot->data afterwards is unsafe.
+				 */
+				memcpy(&slotname, &local_slot->data.name, sizeof(NameData));
+				slotdb = local_slot->data.database;
+
 				ReplicationSlotAcquire(NameStr(local_slot->data.name), true, false);
 				ReplicationSlotDropAcquired();
+
+				UnlockSharedObject(DatabaseRelationId, slotdb,
+								   0, AccessShareLock);
+
+				ereport(LOG,
+						errmsg("dropped replication slot \"%s\" of database with OID %u",
+							   NameStr(slotname), slotdb));
 			}
-
-			UnlockSharedObject(DatabaseRelationId, local_slot->data.database,
-							   0, AccessShareLock);
-
-			ereport(LOG,
-					errmsg("dropped replication slot \"%s\" of database with OID %u",
-						   NameStr(local_slot->data.name),
-						   local_slot->data.database));
+			else
+			{
+				UnlockSharedObject(DatabaseRelationId, local_slot->data.database,
+								   0, AccessShareLock);
+			}
 		}
 	}
 }
