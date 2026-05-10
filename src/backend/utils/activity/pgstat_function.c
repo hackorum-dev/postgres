@@ -187,10 +187,16 @@ pgstat_end_function_usage(PgStat_FunctionCallUsage *fcu, bool finalize)
  * Flush out pending stats for the entry
  *
  * If nowait is true and the lock could not be immediately acquired, returns
- * false without flushing the entry.  Otherwise returns true.
+ * PGSTAT_FLUSH_LOCK_CONFLICT without flushing the entry.
+ *
+ * Function stats are not transactional, so this always flushes everything and
+ * returns PGSTAT_FLUSH_DONE.  The pending entry is zeroed after flushing to
+ * avoid double-counting if the caller keeps it alive (as happens
+ * mid-transaction).
  */
-bool
-pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
+PgStat_FlushResult
+pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait,
+						 bool xact_boundary)
 {
 	PgStat_FunctionCounts *localent;
 	PgStatShared_Function *shfuncent;
@@ -201,7 +207,7 @@ pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 	/* localent always has non-zero content */
 
 	if (!pgstat_lock_entry(entry_ref, nowait))
-		return false;
+		return PGSTAT_FLUSH_LOCK_CONFLICT;
 
 	shfuncent->stats.numcalls += localent->numcalls;
 	shfuncent->stats.total_time +=
@@ -211,7 +217,14 @@ pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 
 	pgstat_unlock_entry(entry_ref);
 
-	return true;
+	/*
+	 * Zeroing total_time can cause double-counting if a recursive function
+	 * calls pg_stat_force_next_flush().  This isn't ideal, but not worth
+	 * adding complexity to handle that case.
+	 */
+	memset(localent, 0, sizeof(*localent));
+
+	return PGSTAT_FLUSH_DONE;
 }
 
 void

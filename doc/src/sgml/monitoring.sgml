@@ -4540,7 +4540,8 @@ description | Waiting for a newly initialized WAL file to reach durable storage
       </para>
       <para>
        The time of the last sequential scan on this table, based on the
-       most recent transaction stop time
+       most recent transaction stop time, or the statement start time
+       when flushed mid-transaction
       </para></entry>
      </row>
 
@@ -4568,7 +4569,8 @@ description | Waiting for a newly initialized WAL file to reach durable storage
       </para>
       <para>
        The time of the last index scan on this table, based on the
-       most recent transaction stop time
+       most recent transaction stop time, or the statement start time
+       when flushed mid-transaction
       </para></entry>
      </row>
 
@@ -5069,7 +5071,8 @@ description | Waiting for a newly initialized WAL file to reach durable storage
       </para>
       <para>
        The time of the last scan on this index, based on the
-       most recent transaction stop time
+       most recent transaction stop time, or the statement start time
+       when flushed mid-transaction
       </para></entry>
      </row>
 
