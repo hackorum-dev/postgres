@@ -1008,36 +1008,39 @@ repairViewRuleMultiLoop(DumpableObject *viewobj,
 }
 
 /*
- * If a matview is involved in a multi-object loop, we can't currently fix
- * that by splitting off the rule.  As a stopgap, we try to fix it by
- * dropping the constraint that the matview be dumped in the pre-data section.
- * This is sufficient to handle cases where a matview depends on some unique
- * index, as can happen if it has a GROUP BY for example.
+ * If a matview or property graph is involved in a multi-object loop, we can't
+ * currently fix that by splitting off the rule (or, for property graphs, the
+ * element list).  As a stopgap, we try to fix it by dropping the constraint
+ * that the object be dumped in the pre-data section.  This is sufficient to
+ * handle cases where it depends on some unique index, as can happen for a
+ * matview with a GROUP BY, or a property graph whose element KEY / REFERENCES
+ * clauses point at a PRIMARY KEY constraint.
  *
- * Note that the "next object" is not necessarily the matview itself;
- * it could be the matview's rowtype, for example.  We may come through here
- * several times while removing all the pre-data linkages.  In particular,
- * if there are other matviews that depend on the one with the circularity
- * problem, we'll come through here for each such matview and mark them all
- * as postponed.  (This works because all MVs have pre-data dependencies
- * to begin with, so each of them will get visited.)
+ * Note that the "next object" is not necessarily the matview/property graph
+ * itself; it could be the matview's rowtype, for example.  We may come through
+ * here several times while removing all the pre-data linkages.  In particular,
+ * if there are other matviews or property graphs that depend on the one with
+ * the circularity problem, we'll come through here for each such object and
+ * mark them all as postponed.  (This works because all such objects have
+ * pre-data dependencies to begin with, so each of them will get visited.)
  */
 static void
-repairMatViewBoundaryMultiLoop(DumpableObject *boundaryobj,
-							   DumpableObject *nextobj)
+repairPostponableBoundaryMultiLoop(DumpableObject *boundaryobj,
+								   DumpableObject *nextobj)
 {
 	/* remove boundary's dependency on object after it in loop */
 	removeObjectDependency(boundaryobj, nextobj->dumpId);
 
 	/*
-	 * If that object is a matview or matview stats, mark it as postponed into
-	 * post-data.
+	 * If that object is a matview, property graph, or matview stats entry,
+	 * mark it as postponed into post-data.
 	 */
 	if (nextobj->objType == DO_TABLE)
 	{
 		TableInfo  *nextinfo = (TableInfo *) nextobj;
 
-		if (nextinfo->relkind == RELKIND_MATVIEW)
+		if (nextinfo->relkind == RELKIND_MATVIEW ||
+			nextinfo->relkind == RELKIND_PROPGRAPH)
 			nextinfo->postponed_def = true;
 	}
 	else if (nextobj->objType == DO_REL_STATS)
@@ -1242,13 +1245,19 @@ repairDependencyLoop(DumpableObject **loop,
 		}
 	}
 
-	/* Indirect loop involving matview and data boundary */
+	/*
+	 * Indirect loop involving matview or property graph and data boundary.
+	 * Both relkinds default to PRE_DATA but can depend on POST_DATA objects
+	 * (e.g. PRIMARY KEY constraints), and are handled identically by
+	 * repairPostponableBoundaryMultiLoop().
+	 */
 	if (nLoop > 2)
 	{
 		for (i = 0; i < nLoop; i++)
 		{
 			if (loop[i]->objType == DO_TABLE &&
-				((TableInfo *) loop[i])->relkind == RELKIND_MATVIEW)
+				(((TableInfo *) loop[i])->relkind == RELKIND_MATVIEW ||
+				 ((TableInfo *) loop[i])->relkind == RELKIND_PROPGRAPH))
 			{
 				for (j = 0; j < nLoop; j++)
 				{
@@ -1257,7 +1266,7 @@ repairDependencyLoop(DumpableObject **loop,
 						DumpableObject *nextobj;
 
 						nextobj = (j < nLoop - 1) ? loop[j + 1] : loop[0];
-						repairMatViewBoundaryMultiLoop(loop[j], nextobj);
+						repairPostponableBoundaryMultiLoop(loop[j], nextobj);
 						return;
 					}
 				}
@@ -1272,7 +1281,7 @@ repairDependencyLoop(DumpableObject **loop,
 						DumpableObject *nextobj;
 
 						nextobj = (j < nLoop - 1) ? loop[j + 1] : loop[0];
-						repairMatViewBoundaryMultiLoop(loop[j], nextobj);
+						repairPostponableBoundaryMultiLoop(loop[j], nextobj);
 						return;
 					}
 				}
