@@ -187,10 +187,13 @@ pgstat_end_function_usage(PgStat_FunctionCallUsage *fcu, bool finalize)
  * Flush out pending stats for the entry
  *
  * If nowait is true and the lock could not be immediately acquired, returns
- * false without flushing the entry.  Otherwise returns true.
+ * PGSTAT_FLUSH_LOCK_CONFLICT without flushing the entry.  Function stats are
+ * not transactional, so xact_boundary is unused and this always returns
+ * PGSTAT_FLUSH_DONE once flushed.
  */
-bool
-pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
+PgStat_FlushResult
+pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait,
+						 bool xact_boundary)
 {
 	PgStat_FunctionCounts *localent;
 	PgStatShared_Function *shfuncent;
@@ -201,7 +204,7 @@ pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 	/* localent always has non-zero content */
 
 	if (!pgstat_lock_entry(entry_ref, nowait))
-		return false;
+		return PGSTAT_FLUSH_LOCK_CONFLICT;
 
 	shfuncent->stats.numcalls += localent->numcalls;
 	shfuncent->stats.total_time +=
@@ -211,7 +214,7 @@ pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 
 	pgstat_unlock_entry(entry_ref);
 
-	return true;
+	return PGSTAT_FLUSH_DONE;
 }
 
 void

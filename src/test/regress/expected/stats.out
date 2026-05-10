@@ -691,12 +691,6 @@ SELECT pg_stat_force_next_flush();
  
 (1 row)
 
-SELECT last_seq_scan, last_idx_scan FROM pg_stat_all_tables WHERE relid = 'test_last_scan'::regclass;
- last_seq_scan | last_idx_scan 
----------------+---------------
-               | 
-(1 row)
-
 COMMIT;
 SELECT stats_reset IS NOT NULL AS has_stats_reset
   FROM pg_stat_all_tables WHERE relid = 'test_last_scan'::regclass;
@@ -2068,4 +2062,284 @@ SELECT fastpath_exceeded > :backend_fastpath_exceeded_before
 (1 row)
 
 DROP TABLE part_test;
+--
+-- Test in-transaction flushes
+--
+CREATE TABLE partial_flush(id int);
+INSERT INTO partial_flush VALUES (1), (2), (3);
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+-- Record counters before the explicit transaction
+SELECT seq_scan AS seq_scan_before,
+       seq_tup_read AS seq_tup_read_before,
+       n_tup_ins AS n_tup_ins_before,
+       n_tup_upd AS n_tup_upd_before
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush' \gset
+BEGIN;
+SET LOCAL stats_fetch_consistency = none;
+-- Generate both transaction-safe and transaction-unsafe counters.
+SELECT count(*) FROM partial_flush;
+ count 
+-------
+     3
+(1 row)
+
+INSERT INTO partial_flush VALUES (4), (5);
+UPDATE partial_flush SET id = id WHERE id = 1;
+-- Flush in-transaction
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+-- Transaction-safe counters should be visible in-transaction.
+-- Transaction-unsafe counters (ins, upd) should NOT be flushed yet,
+-- since their final values depend on whether the transaction commits.
+-- Also verify that hot/newpage updates (which are subsets of n_tup_upd)
+-- were not flushed ahead of n_tup_upd, and tuple counts stay non-negative.
+SELECT seq_scan - :seq_scan_before AS seq_scan_delta,
+       seq_tup_read - :seq_tup_read_before AS seq_tup_read_delta,
+       n_tup_ins - :n_tup_ins_before AS n_tup_ins_delta,
+       n_tup_upd - :n_tup_upd_before AS n_tup_upd_delta,
+       n_tup_hot_upd + n_tup_newpage_upd <= n_tup_upd AS upd_counts_ok
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush';
+ seq_scan_delta | seq_tup_read_delta | n_tup_ins_delta | n_tup_upd_delta | upd_counts_ok 
+----------------+--------------------+-----------------+-----------------+---------------
+              2 |                  8 |               0 |               0 | t
+(1 row)
+
+-- Generate more transaction-safe activity to verify no double counting.
+SELECT count(*) FROM partial_flush;
+ count 
+-------
+     5
+(1 row)
+
+-- Flush again in-transaction
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+-- Should show cumulative totals, not double-counted.
+SELECT seq_scan - :seq_scan_before AS seq_scan_delta,
+       seq_tup_read - :seq_tup_read_before AS seq_tup_read_delta,
+       n_tup_ins - :n_tup_ins_before AS n_tup_ins_delta,
+       n_tup_upd - :n_tup_upd_before AS n_tup_upd_delta
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush';
+ seq_scan_delta | seq_tup_read_delta | n_tup_ins_delta | n_tup_upd_delta 
+----------------+--------------------+-----------------+-----------------
+              3 |                 13 |               0 |               0
+(1 row)
+
+COMMIT;
+-- After commit, all counters should be flushed.
+SELECT seq_scan - :seq_scan_before AS seq_scan_delta,
+       seq_tup_read - :seq_tup_read_before AS seq_tup_read_delta,
+       n_tup_ins - :n_tup_ins_before AS n_tup_ins_delta,
+       n_tup_upd - :n_tup_upd_before AS n_tup_upd_delta,
+       n_tup_hot_upd + n_tup_newpage_upd <= n_tup_upd AS upd_counts_ok
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush';
+ seq_scan_delta | seq_tup_read_delta | n_tup_ins_delta | n_tup_upd_delta | upd_counts_ok 
+----------------+--------------------+-----------------+-----------------+---------------
+              3 |                 13 |               2 |               1 | t
+(1 row)
+
+DROP TABLE partial_flush;
+--
+-- Test in-transaction partial flush: rollback discards transactional counters
+-- but non-transactional counters already flushed to shared stats persist.
+--
+CREATE TABLE partial_flush_rollback(id int);
+INSERT INTO partial_flush_rollback SELECT generate_series(1, 50);
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+SELECT seq_scan AS seq_scan_before,
+       seq_tup_read AS seq_tup_read_before,
+       n_tup_ins AS n_tup_ins_before,
+       n_live_tup AS n_live_tup_before
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush_rollback' \gset
+BEGIN;
+SET LOCAL stats_fetch_consistency = none;
+-- Generate both non-transactional (scan) and transactional (insert) activity.
+SELECT count(*) FROM partial_flush_rollback;
+ count 
+-------
+    50
+(1 row)
+
+INSERT INTO partial_flush_rollback SELECT generate_series(51, 100);
+-- Flush in-transaction: scans go to shared stats, inserts stay pending.
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+-- Verify: scans visible, inserts and live_tup deferred.  Also check that
+-- partial flush did not expose hot/newpage without their parent update count.
+SELECT seq_scan - :seq_scan_before AS seq_scan_delta,
+       seq_tup_read - :seq_tup_read_before AS seq_tup_read_delta,
+       n_tup_ins - :n_tup_ins_before AS n_tup_ins_delta,
+       n_live_tup - :n_live_tup_before AS n_live_tup_delta,
+       n_tup_hot_upd + n_tup_newpage_upd <= n_tup_upd AS upd_counts_ok
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush_rollback';
+ seq_scan_delta | seq_tup_read_delta | n_tup_ins_delta | n_live_tup_delta | upd_counts_ok 
+----------------+--------------------+-----------------+------------------+---------------
+              1 |                 50 |               0 |                0 | t
+(1 row)
+
+ROLLBACK;
+-- After rollback: scans persist (already in shared stats), inserts discarded,
+-- n_live_tup unchanged, and hot/newpage remain consistent with n_tup_upd.
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+SELECT seq_scan - :seq_scan_before AS seq_scan_delta,
+       seq_tup_read - :seq_tup_read_before AS seq_tup_read_delta,
+       n_live_tup - :n_live_tup_before AS n_live_tup_delta,
+       n_tup_hot_upd + n_tup_newpage_upd <= n_tup_upd AS upd_counts_ok
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush_rollback';
+ seq_scan_delta | seq_tup_read_delta | n_live_tup_delta | upd_counts_ok 
+----------------+--------------------+------------------+---------------
+              1 |                 50 |                0 | t
+(1 row)
+
+DROP TABLE partial_flush_rollback;
+--
+-- Test in-transaction partial flush with TRUNCATE: the truncate's reset of
+-- live/dead counters is transactional and must not reach shared stats until
+-- commit.
+--
+CREATE TABLE partial_flush_truncate(id int);
+INSERT INTO partial_flush_truncate SELECT generate_series(1, 100);
+DELETE FROM partial_flush_truncate WHERE id <= 20;
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+SELECT n_live_tup AS n_live_tup_before,
+       n_dead_tup AS n_dead_tup_before,
+       seq_scan AS seq_scan_before
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush_truncate' \gset
+-- Case 1: DML + TRUNCATE + DML + ROLLBACK.  The truncate's zeroing and all
+-- transactional counters must not leak to shared stats.
+BEGIN;
+SET LOCAL stats_fetch_consistency = none;
+-- DML before truncate.
+SELECT count(*) FROM partial_flush_truncate;
+ count 
+-------
+    80
+(1 row)
+
+INSERT INTO partial_flush_truncate SELECT generate_series(101, 110);
+UPDATE partial_flush_truncate SET id = id WHERE id = 1;
+TRUNCATE partial_flush_truncate;
+-- DML after truncate.
+INSERT INTO partial_flush_truncate SELECT generate_series(1, 10);
+-- Mid-transaction flush: scan goes to shared stats, everything else deferred.
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+SELECT seq_scan - :seq_scan_before AS seq_scan_delta,
+       n_live_tup = :n_live_tup_before AS live_tup_unchanged,
+       n_dead_tup = :n_dead_tup_before AS dead_tup_unchanged
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush_truncate';
+ seq_scan_delta | live_tup_unchanged | dead_tup_unchanged 
+----------------+--------------------+--------------------
+              2 | t                  | t
+(1 row)
+
+ROLLBACK;
+-- After rollback: live_tup unchanged (rollback undid the inserts before they
+-- became live), but dead_tup increases because aborted inserts produce dead
+-- tuples that vacuum must clean up.
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+SELECT n_live_tup = :n_live_tup_before AS live_tup_unchanged,
+       n_dead_tup - :n_dead_tup_before AS dead_tup_delta
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush_truncate';
+ live_tup_unchanged | dead_tup_delta 
+--------------------+----------------
+ t                  |             10
+(1 row)
+
+-- Case 2: DML + TRUNCATE + INSERT + DELETE + COMMIT.
+-- Update baseline to account for changes from case 1.
+SELECT seq_scan AS seq_scan_before,
+       n_live_tup AS n_live_tup_before,
+       n_dead_tup AS n_dead_tup_before
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush_truncate' \gset
+BEGIN;
+SET LOCAL stats_fetch_consistency = none;
+-- DML before truncate.
+SELECT count(*) FROM partial_flush_truncate;
+ count 
+-------
+    80
+(1 row)
+
+INSERT INTO partial_flush_truncate SELECT generate_series(101, 110);
+UPDATE partial_flush_truncate SET id = id WHERE id = 1;
+TRUNCATE partial_flush_truncate;
+-- DML after truncate.
+INSERT INTO partial_flush_truncate SELECT generate_series(1, 10);
+DELETE FROM partial_flush_truncate WHERE id <= 3;
+-- Mid-transaction flush: scans visible, transactional counters deferred.
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+SELECT seq_scan - :seq_scan_before AS seq_scan_delta,
+       n_live_tup = :n_live_tup_before AS live_tup_unchanged,
+       n_dead_tup = :n_dead_tup_before AS dead_tup_unchanged
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush_truncate';
+ seq_scan_delta | live_tup_unchanged | dead_tup_unchanged 
+----------------+--------------------+--------------------
+              3 | t                  | t
+(1 row)
+
+COMMIT;
+-- After commit: TRUNCATE zeros live/dead, then only post-truncate DML counts.
+-- delta_live = inserted - deleted = 10 - 3 = 7
+-- delta_dead = updated + deleted = 0 + 3 = 3
+SELECT pg_stat_force_next_flush();
+ pg_stat_force_next_flush 
+--------------------------
+ 
+(1 row)
+
+SELECT n_live_tup, n_dead_tup
+  FROM pg_stat_user_tables WHERE relname = 'partial_flush_truncate';
+ n_live_tup | n_dead_tup 
+------------+------------
+          7 |          3
+(1 row)
+
+DROP TABLE partial_flush_truncate;
 -- End of Stats Test

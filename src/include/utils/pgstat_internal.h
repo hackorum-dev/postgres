@@ -226,6 +226,31 @@ typedef struct PgStat_SubXactStatus
 
 
 /*
+ * Result of a flush_pending_cb call, describing what happened to the pending
+ * entry.  The caller combines this with the flush context to decide whether the
+ * entry can be removed from the pending list.
+ */
+typedef enum PgStat_FlushResult
+{
+	/* Fully flushed; the entry can be removed from the pending list. */
+	PGSTAT_FLUSH_DONE,
+
+	/*
+	 * The lock could not be acquired without waiting (nowait was true).  The
+	 * entry must stay pending and be retried later.
+	 */
+	PGSTAT_FLUSH_LOCK_CONFLICT,
+
+	/*
+	 * Only part of the entry was flushed; some state was intentionally
+	 * retained because it cannot be flushed in the current context (e.g.
+	 * transactional counters flushed mid-transaction).  The entry must stay
+	 * pending and be flushed again at a suitable boundary.
+	 */
+	PGSTAT_FLUSH_PARTIAL,
+}			PgStat_FlushResult;
+
+/*
  * Metadata for a specific kind of statistics.
  */
 typedef struct PgStat_KindInfo
@@ -297,8 +322,19 @@ typedef struct PgStat_KindInfo
 	 * For variable-numbered stats: flush pending stats. Required if pending
 	 * data is used. See flush_static_cb when dealing with stats data that
 	 * that cannot use PgStat_EntryRef->pending.
+	 *
+	 * If nowait is true and the entry's lock cannot be acquired without
+	 * waiting, the callback must return PGSTAT_FLUSH_LOCK_CONFLICT without
+	 * flushing.  xact_boundary tells the callback whether it is safe to flush
+	 * transactional state: it is true when called outside of a transaction
+	 * (e.g. at transaction end), and false when called mid-transaction.  When
+	 * xact_boundary is false, a callback holding state whose outcome depends
+	 * on the transaction must flush only its non-transactional counters,
+	 * retain the rest, and return PGSTAT_FLUSH_PARTIAL.  Otherwise it flushes
+	 * everything and returns PGSTAT_FLUSH_DONE.
 	 */
-	bool		(*flush_pending_cb) (PgStat_EntryRef *sr, bool nowait);
+				PgStat_FlushResult(*flush_pending_cb) (PgStat_EntryRef *sr, bool nowait,
+													   bool xact_boundary);
 
 	/*
 	 * For variable-numbered stats: delete pending stats. Optional.
@@ -743,7 +779,8 @@ extern void AtEOXact_PgStat_Database(bool isCommit, bool parallel);
 
 extern PgStat_StatDBEntry *pgstat_prep_database_pending(Oid dboid);
 extern void pgstat_reset_database_timestamp(Oid dboid, TimestampTz ts);
-extern bool pgstat_database_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
+extern PgStat_FlushResult pgstat_database_flush_cb(PgStat_EntryRef *entry_ref,
+												   bool nowait, bool xact_boundary);
 extern void pgstat_database_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts);
 
 
@@ -751,7 +788,8 @@ extern void pgstat_database_reset_timestamp_cb(PgStatShared_Common *header, Time
  * Functions in pgstat_function.c
  */
 
-extern bool pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
+extern PgStat_FlushResult pgstat_function_flush_cb(PgStat_EntryRef *entry_ref,
+												   bool nowait, bool xact_boundary);
 extern void pgstat_function_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts);
 
 
@@ -784,7 +822,8 @@ extern void AtEOSubXact_PgStat_Relations(PgStat_SubXactStatus *xact_state, bool 
 extern void AtPrepare_PgStat_Relations(PgStat_SubXactStatus *xact_state);
 extern void PostPrepare_PgStat_Relations(PgStat_SubXactStatus *xact_state);
 
-extern bool pgstat_relation_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
+extern PgStat_FlushResult pgstat_relation_flush_cb(PgStat_EntryRef *entry_ref,
+												   bool nowait, bool xact_boundary);
 extern void pgstat_relation_delete_pending_cb(PgStat_EntryRef *entry_ref);
 extern void pgstat_relation_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts);
 
@@ -853,7 +892,8 @@ extern void pgstat_wal_snapshot_cb(void);
  * Functions in pgstat_subscription.c
  */
 
-extern bool pgstat_subscription_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
+extern PgStat_FlushResult pgstat_subscription_flush_cb(PgStat_EntryRef *entry_ref,
+													   bool nowait, bool xact_boundary);
 extern void pgstat_subscription_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts);
 
 
