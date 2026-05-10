@@ -7116,7 +7116,7 @@ getRelationStatistics(Archive *fout, DumpableObject *rel, int32 relpages,
 		 * stats. REFRESH MATERIALIZED VIEW replaces the storage and resets
 		 * the stats, so the stats must be restored after the data. Also, the
 		 * materialized view definition may be postponed to SECTION_POST_DATA
-		 * (see repairMatViewBoundaryMultiLoop()).
+		 * (see repairPostponableBoundaryMultiLoop()).
 		 */
 		switch (info->relkind)
 		{

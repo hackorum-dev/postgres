@@ -3184,6 +3184,27 @@ my %tests = (
 		  { exclude_dump_test_schema => 1, only_dump_measurement => 1, },
 	},
 
+	# A property graph that references a vertex table's PRIMARY KEY must be
+	# dumped after the ADD CONSTRAINT line, not before it, or the restore
+	# fails with "no unique constraint matching the key".  See
+	# repairPostponableBoundaryMultiLoop().
+	'Check ordering of a property graph that depends on a primary key' => {
+		create_order => 43,
+		create_sql => 'CREATE PROPERTY GRAPH dump_test.ordering_propgraph
+							VERTEX TABLES (dump_test.ordering_table);',
+		regexp => qr/^
+			\QALTER TABLE ONLY dump_test.ordering_table\E
+			\n\s+\QADD CONSTRAINT ordering_table_pkey PRIMARY KEY (id);\E
+			.*^
+			\QCREATE PROPERTY GRAPH dump_test.ordering_propgraph\E/xms,
+		like =>
+		  { %full_runs, %dump_test_schema_runs, section_post_data => 1, },
+		unlike => {
+			exclude_dump_test_schema => 1,
+			only_dump_measurement => 1,
+		},
+	},
+
 	'CREATE PUBLICATION pub1' => {
 		create_order => 50,
 		create_sql => 'CREATE PUBLICATION pub1;',
