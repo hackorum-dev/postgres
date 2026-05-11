@@ -1201,6 +1201,23 @@ CREATE DATABASE foo WITH TEMPLATE template0;
   </para>
 
   <para>
+   Dump files produced by <application>pg_dump</application> from servers
+   that had <varname>standard_conforming_strings</varname> set to
+   <literal>off</literal> contain
+   <literal>SET standard_conforming_strings = off</literal>, which will
+   produce an error when restored into <productname>PostgreSQL</productname>
+   19 or later.  By default, <application>pg_restore</application> will
+   continue past this error and restore data correctly when using
+   <command>COPY</command> format, but will exit with a non-zero status.
+   If <option>--exit-on-error</option> is specified, the restore will abort.
+   Dumps produced with <option>--inserts</option> may have incorrectly
+   escaped string literals, resulting in incorrect data being restored.
+   To safely restore such dump files, first restore into a server running
+   a version prior to 19, then produce a fresh dump using a version 19 or
+   later <application>pg_dump</application>.
+  </para>
+
+  <para>
    The limitations of <application>pg_restore</application> are detailed below.
 
    <itemizedlist>

@@ -1733,6 +1733,22 @@ CREATE DATABASE foo WITH TEMPLATE template0;
   </para>
 
   <para>
+   Beginning in <productname>PostgreSQL</productname> 19,
+   <varname>standard_conforming_strings</varname> is always
+   <literal>on</literal> and cannot be set to <literal>off</literal>.
+   When dumping from older servers that have
+   <varname>standard_conforming_strings</varname> set to
+   <literal>off</literal>, a version 19 or later
+   <application>pg_dump</application> will force the setting to
+   <literal>on</literal> during the dump session, ensuring that the
+   output is compatible with version 19 and later.  However, dump files
+   previously produced by older versions of <application>pg_dump</application>
+   while <varname>standard_conforming_strings</varname> was
+   <literal>off</literal> may not restore cleanly into version 19 or later;
+   see the <xref linkend="app-pgrestore"/> documentation for details.
+  </para>
+
+  <para>
    When dumping logical replication subscriptions,
    <application>pg_dump</application> will generate <command>CREATE
    SUBSCRIPTION</command> commands that use the <literal>connect = false</literal>

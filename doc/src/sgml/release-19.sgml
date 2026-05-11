@@ -110,6 +110,7 @@ Force standard_conforming_strings to always be "on" in the database server (Tom 
 
 <para>
 Server variable escape_string_warning has been removed as unnecessary.  Client applications still support "standard_conforming_strings = off" for compatibility with old servers.
+Dump files previously produced with standard_conforming_strings set to off may not restore correctly into version 19; in particular, dumps made with <option>--inserts</option> may have incorrectly escaped string literals.  To restore such files, first load them into a pre-version-19 server and then produce a fresh dump.
 </para>
 </listitem>
 
