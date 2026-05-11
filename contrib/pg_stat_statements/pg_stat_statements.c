@@ -85,7 +85,7 @@ PG_MODULE_MAGIC_EXT(
 #define PGSS_TEXT_FILE	PG_STAT_TMP_DIR "/pgss_query_texts.stat"
 
 /* Magic number identifying the stats file format */
-static const uint32 PGSS_FILE_HEADER = 0x20250731;
+static const uint32 PGSS_FILE_HEADER = 0x20260511;
 
 /* PostgreSQL major version number, changes in which invalidate all entries */
 static const uint32 PGSS_PG_MAJOR_VERSION = PG_VERSION_NUM / 100;
@@ -237,6 +237,7 @@ typedef struct pgssEntry
 	Size		query_offset;	/* query text offset in external file */
 	int			query_len;		/* # of valid bytes in query string, or -1 */
 	int			encoding;		/* query text encoding */
+	bool		query_normalized;	/* query text is a normalized string */
 	TimestampTz stats_since;	/* timestamp of entry allocation */
 	TimestampTz minmax_stats_since; /* timestamp of last min/max values reset */
 	slock_t		mutex;			/* protects the counters only */
@@ -364,12 +365,14 @@ static void pgss_store(const char *query, int64 queryId,
 					   const JumbleState *jstate,
 					   int parallel_workers_to_launch,
 					   int parallel_workers_launched,
+					   bool replace_query_text,
 					   PlannedStmtOrigin planOrigin);
 static void pg_stat_statements_internal(FunctionCallInfo fcinfo,
 										pgssVersion api_version,
 										bool showtext);
 static pgssEntry *entry_alloc(pgssHashKey *key, Size query_offset, int query_len,
-							  int encoding, bool sticky);
+							  int encoding, bool sticky,
+							  bool query_normalized);
 static void entry_dealloc(void);
 static bool qtext_store(const char *query, int query_len,
 						Size *query_offset, int *gc_count);
@@ -658,7 +661,8 @@ pgss_shmem_init(void *arg)
 		/* make the hashtable entry (discards old entries if too many) */
 		entry = entry_alloc(&temp.key, query_offset, temp.query_len,
 							temp.encoding,
-							false);
+							false,
+							temp.query_normalized);
 
 		/* copy in the actual stats */
 		entry->counters = temp.counters;
@@ -876,6 +880,7 @@ pgss_post_parse_analyze(ParseState *pstate, Query *query, const JumbleState *jst
 				   jstate,
 				   0,
 				   0,
+				   query->utilityStmt && IsA(query->utilityStmt, FetchStmt),
 				   PLAN_STMT_UNKNOWN);
 }
 
@@ -958,6 +963,7 @@ pgss_planner(Query *parse,
 				   NULL,
 				   0,
 				   0,
+				   false,
 				   result->planOrigin);
 	}
 	else
@@ -1076,6 +1082,7 @@ pgss_ExecutorEnd(QueryDesc *queryDesc)
 				   NULL,
 				   queryDesc->estate->es_parallel_workers_to_launch,
 				   queryDesc->estate->es_parallel_workers_launched,
+				   false,
 				   queryDesc->plannedstmt->planOrigin);
 	}
 
@@ -1210,6 +1217,7 @@ pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 				   NULL,
 				   0,
 				   0,
+				   false,
 				   pstmt->planOrigin);
 	}
 	else
@@ -1274,11 +1282,13 @@ pgss_store(const char *query, int64 queryId,
 		   const JumbleState *jstate,
 		   int parallel_workers_to_launch,
 		   int parallel_workers_launched,
+		   bool replace_query_text,
 		   PlannedStmtOrigin planOrigin)
 {
 	pgssHashKey key;
 	pgssEntry  *entry;
 	char	   *norm_query = NULL;
+	int			norm_query_len = -1;
 	int			encoding = GetDatabaseEncoding();
 
 	Assert(query != NULL);
@@ -1316,11 +1326,80 @@ pgss_store(const char *query, int64 queryId,
 
 	entry = (pgssEntry *) hash_search(pgss_hash, &key, HASH_FIND, NULL);
 
+	/*
+	 * If this entry was first created from an unnormalized spelling, but this
+	 * call has constant locations, replace the representative query text with
+	 * the normalized form.  This can happen for utility statements such as
+	 * FETCH, where "FETCH c" and "FETCH 2 c" have the same jumble but only
+	 * the latter has a source token that can be replaced by "$1".
+	 */
+	if (entry && jstate && jstate->clocations_count > 0 &&
+		replace_query_text && !entry->query_normalized)
+	{
+		Size		query_offset;
+		int			gc_count;
+		bool		stored;
+		bool		do_gc;
+
+		/* Release the lock before normalizing the query */
+		LWLockRelease(&pgss->lock.lock);
+
+		norm_query_len = query_len;
+		norm_query = generate_normalized_query(jstate, query,
+											   query_location,
+											   &norm_query_len);
+
+		/* Reacquire the lock and look up the entry again */
+		LWLockAcquire(&pgss->lock.lock, LW_SHARED);
+
+		entry = (pgssEntry *) hash_search(pgss_hash, &key, HASH_FIND, NULL);
+		if (entry && !entry->query_normalized)
+		{
+			stored = qtext_store(norm_query, norm_query_len,
+								 &query_offset, &gc_count);
+			do_gc = need_gc_qtexts();
+
+			LWLockRelease(&pgss->lock.lock);
+			LWLockAcquire(&pgss->lock.lock, LW_EXCLUSIVE);
+
+			/*
+			 * A garbage collection may have removed the text we stored while
+			 * the lock was released to promote it.  Store it again if so.
+			 */
+			if (!stored || pgss->gc_count != gc_count)
+				stored = qtext_store(norm_query, norm_query_len,
+									 &query_offset, NULL);
+
+			entry = (pgssEntry *) hash_search(pgss_hash, &key, HASH_FIND, NULL);
+			if (entry && stored && !entry->query_normalized)
+			{
+				entry->query_offset = query_offset;
+				entry->query_len = norm_query_len;
+				entry->encoding = encoding;
+				entry->query_normalized = true;
+			}
+
+			/* If needed, perform garbage collection while exclusive lock held */
+			if (do_gc)
+				gc_qtexts();
+
+			/*
+			 * Restore the lock mode expected by the common path below.  The
+			 * entry might have disappeared while switching lock modes, so
+			 * look it up again.
+			 */
+			LWLockRelease(&pgss->lock.lock);
+			LWLockAcquire(&pgss->lock.lock, LW_SHARED);
+			entry = (pgssEntry *) hash_search(pgss_hash, &key, HASH_FIND, NULL);
+		}
+	}
+
 	/* Create new entry, if not present */
 	if (!entry)
 	{
 		Size		query_offset;
 		int			gc_count;
+		int			stored_query_len;
 		bool		stored;
 		bool		do_gc;
 
@@ -1331,17 +1410,20 @@ pgss_store(const char *query, int64 queryId,
 		 * in the interval where we don't hold the lock below.  That case is
 		 * handled by entry_alloc.)
 		 */
-		if (jstate)
+		if (jstate && norm_query == NULL)
 		{
 			LWLockRelease(&pgss->lock.lock);
+			norm_query_len = query_len;
 			norm_query = generate_normalized_query(jstate, query,
 												   query_location,
-												   &query_len);
+												   &norm_query_len);
 			LWLockAcquire(&pgss->lock.lock, LW_SHARED);
 		}
 
+		stored_query_len = norm_query ? norm_query_len : query_len;
+
 		/* Append new query text to file with only shared lock held */
-		stored = qtext_store(norm_query ? norm_query : query, query_len,
+		stored = qtext_store(norm_query ? norm_query : query, stored_query_len,
 							 &query_offset, &gc_count);
 
 		/*
@@ -1363,7 +1445,7 @@ pgss_store(const char *query, int64 queryId,
 		 * exclusive lock isn't a performance problem.
 		 */
 		if (!stored || pgss->gc_count != gc_count)
-			stored = qtext_store(norm_query ? norm_query : query, query_len,
+			stored = qtext_store(norm_query ? norm_query : query, stored_query_len,
 								 &query_offset, NULL);
 
 		/* If we failed to write to the text file, give up */
@@ -1371,8 +1453,9 @@ pgss_store(const char *query, int64 queryId,
 			goto done;
 
 		/* OK to create a new hashtable entry */
-		entry = entry_alloc(&key, query_offset, query_len, encoding,
-							jstate != NULL);
+		entry = entry_alloc(&key, query_offset, stored_query_len, encoding,
+							jstate != NULL,
+							norm_query != NULL);
 
 		/* If needed, perform garbage collection while exclusive lock held */
 		if (do_gc)
@@ -2078,7 +2161,7 @@ pg_stat_statements_info(PG_FUNCTION_ARGS)
  */
 static pgssEntry *
 entry_alloc(pgssHashKey *key, Size query_offset, int query_len, int encoding,
-			bool sticky)
+			bool sticky, bool query_normalized)
 {
 	pgssEntry  *entry;
 	bool		found;
@@ -2105,6 +2188,7 @@ entry_alloc(pgssHashKey *key, Size query_offset, int query_len, int encoding,
 		entry->query_offset = query_offset;
 		entry->query_len = query_len;
 		entry->encoding = encoding;
+		entry->query_normalized = query_normalized;
 		entry->stats_since = GetCurrentTimestamp();
 		entry->minmax_stats_since = entry->stats_since;
 	}

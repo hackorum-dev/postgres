@@ -190,18 +190,46 @@ SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
      1 | BEGIN
      1 | COMMIT
      1 | DECLARE pgss_cursor CURSOR FOR SELECT FROM generate_series($1, $2)
+     4 | FETCH $1 pgss_cursor
      3 | FETCH ABSOLUTE $1 pgss_cursor
      1 | FETCH ALL pgss_cursor
+     4 | FETCH BACKWARD $1 pgss_cursor
      1 | FETCH BACKWARD ALL pgss_cursor
-     4 | FETCH BACKWARD pgss_cursor
      1 | FETCH FIRST pgss_cursor
+     4 | FETCH FORWARD $1 pgss_cursor
      1 | FETCH FORWARD ALL pgss_cursor
-     4 | FETCH FORWARD pgss_cursor
      1 | FETCH LAST pgss_cursor
      1 | FETCH NEXT pgss_cursor
      1 | FETCH PRIOR pgss_cursor
      3 | FETCH RELATIVE $1 pgss_cursor
-     4 | FETCH pgss_cursor
      1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
 (16 rows)
+
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+-- Order of FETCH statements should not matter.
+BEGIN;
+DECLARE pgss_cursor CURSOR FOR SELECT FROM generate_series(1, 10);
+FETCH 1 pgss_cursor;
+--
+(1 row)
+
+FETCH pgss_cursor;
+--
+(1 row)
+
+COMMIT;
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+ calls |                               query                                
+-------+--------------------------------------------------------------------
+     1 | BEGIN
+     1 | COMMIT
+     1 | DECLARE pgss_cursor CURSOR FOR SELECT FROM generate_series($1, $2)
+     2 | FETCH $1 pgss_cursor
+     1 | SELECT pg_stat_statements_reset() IS NOT NULL AS t
+(5 rows)
 

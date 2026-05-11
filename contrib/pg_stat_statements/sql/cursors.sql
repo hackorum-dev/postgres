@@ -71,3 +71,12 @@ FETCH BACKWARD -1 pgss_cursor;
 FETCH BACKWARD ALL pgss_cursor;
 COMMIT;
 SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+
+-- Order of FETCH statements should not matter.
+BEGIN;
+DECLARE pgss_cursor CURSOR FOR SELECT FROM generate_series(1, 10);
+FETCH 1 pgss_cursor;
+FETCH pgss_cursor;
+COMMIT;
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
