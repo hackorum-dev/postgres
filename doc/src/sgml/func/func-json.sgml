@@ -276,6 +276,9 @@
         (See <xref linkend="json-containment"/> for details about containment.)
        </para>
        <para>
+        Equivalent to the <function>jsonb_contains()</function> function.
+       </para>
+       <para>
         <literal>'{"a":1, "b":2}'::jsonb &#64;&gt; '{"b":2}'::jsonb</literal>
         <returnvalue>t</returnvalue>
        </para></entry>
@@ -288,6 +291,9 @@
        </para>
        <para>
         Is the first JSON value contained in the second?
+       </para>
+       <para>
+        Equivalent to the <function>jsonb_contained()</function> function.
        </para>
        <para>
         <literal>'{"b":2}'::jsonb &lt;@ '{"a":1, "b":2}'::jsonb</literal>
@@ -303,6 +309,9 @@
        <para>
         Does the text string exist as a top-level key or array element within
         the JSON value?
+       </para>
+       <para>
+        Equivalent to the <function>jsonb_exists()</function> function.
        </para>
        <para>
         <literal>'{"a":1, "b":2}'::jsonb ? 'b'</literal>
@@ -324,6 +333,9 @@
         array elements?
        </para>
        <para>
+        Equivalent to the <function>jsonb_exists_any()</function> function.
+       </para>
+       <para>
         <literal>'{"a":1, "b":2, "c":3}'::jsonb ?| array['b', 'd']</literal>
         <returnvalue>t</returnvalue>
        </para></entry>
@@ -337,6 +349,9 @@
        <para>
         Do all of the strings in the text array exist as top-level keys or
         array elements?
+       </para>
+       <para>
+        Equivalent to the <function>jsonb_exists_all()</function> function.
        </para>
        <para>
         <literal>'["a", "b", "c"]'::jsonb ?&amp; array['a', 'b']</literal>
@@ -359,6 +374,9 @@
         single-element array, and then proceeding as for two arrays.
         Does not operate recursively: only the top-level array or object
         structure is merged.
+       </para>
+       <para>
+        Equivalent to the <function>jsonb_concat()</function> function.
        </para>
        <para>
         <literal>'["a", "b"]'::jsonb || '["a", "d"]'::jsonb</literal>
@@ -394,6 +412,9 @@
        <para>
         Deletes a key (and its value) from a JSON object, or matching string
         value(s) from a JSON array.
+       </para>
+       <para>
+        Equivalent to the <function>jsonb_delete()</function> function.
        </para>
        <para>
         <literal>'{"a": "b", "c": "d"}'::jsonb - 'a'</literal>
@@ -443,6 +464,9 @@
        <para>
         Deletes the field or array element at the specified path, where path
         elements can be either field keys or array indexes.
+       </para>
+       <para>
+        Equivalent to the <function>jsonb_delete_path()</function> function.
        </para>
        <para>
         <literal>'["a", {"b":1}]'::jsonb #- '{1,b}'</literal>
