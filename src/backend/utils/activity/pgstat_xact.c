@@ -55,6 +55,14 @@ AtEOXact_PgStat(bool isCommit, bool parallel)
 	}
 	pgStatXactStack = NULL;
 
+	/*
+	 * Record current counter values as the baseline for the next transaction.
+	 * This must be after AtEOXact_PgStat_Relations(), which folds
+	 * transactional counts into ->counts, and AtEOXact_PgStat_DroppedStats(),
+	 * which removes dropped entries from pgStatPending.
+	 */
+	pgstat_set_pending_baselines();
+
 	/* Make sure any stats snapshot is thrown away */
 	pgstat_clear_snapshot();
 }
@@ -225,6 +233,13 @@ PostPrepare_PgStat(void)
 		PostPrepare_PgStat_Relations(xact_state);
 	}
 	pgStatXactStack = NULL;
+
+	/*
+	 * Record baselines, same as at commit/abort.  AtEOXact_PgStat() is not
+	 * called during PREPARE, so without this, counters from the prepared
+	 * transaction would leak into later transactions.
+	 */
+	pgstat_set_pending_baselines();
 
 	/* Make sure any stats snapshot is thrown away */
 	pgstat_clear_snapshot();

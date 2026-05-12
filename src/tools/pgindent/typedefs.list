@@ -2330,6 +2330,7 @@ PgStat_EntryRefHashEntry
 PgStat_FetchConsistency
 PgStat_FunctionCallUsage
 PgStat_FunctionCounts
+PgStat_FunctionPending
 PgStat_HashKey
 PgStat_IO
 PgStat_KindInfo

@@ -684,6 +684,7 @@ extern PgStat_EntryRef *pgstat_prep_pending_entry(PgStat_Kind kind, Oid dboid,
 												  bool *created_entry);
 extern PgStat_EntryRef *pgstat_fetch_pending_entry(PgStat_Kind kind,
 												   Oid dboid, uint64 objid);
+extern void pgstat_set_pending_baselines(void);
 
 extern void *pgstat_fetch_entry(PgStat_Kind kind, Oid dboid, uint64 objid,
 								bool *may_free);

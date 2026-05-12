@@ -119,7 +119,7 @@ pgstat_init_function_usage(FunctionCallInfo fcinfo,
 		}
 	}
 
-	pending = entry_ref->pending;
+	pending = &((PgStat_FunctionPending *) entry_ref->pending)->counts;
 
 	fcu->fs = pending;
 
@@ -192,10 +192,12 @@ pgstat_end_function_usage(PgStat_FunctionCallUsage *fcu, bool finalize)
 bool
 pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 {
+	PgStat_FunctionPending *fpending;
 	PgStat_FunctionCounts *localent;
 	PgStatShared_Function *shfuncent;
 
-	localent = (PgStat_FunctionCounts *) entry_ref->pending;
+	fpending = (PgStat_FunctionPending *) entry_ref->pending;
+	localent = &fpending->counts;
 	shfuncent = (PgStatShared_Function *) entry_ref->shared_stats;
 
 	/* localent always has non-zero content */
@@ -223,18 +225,39 @@ pgstat_function_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts)
 /*
  * find any existing PgStat_FunctionCounts entry for specified function
  *
- * If no entry, return NULL, don't create a new one
+ * Returns a palloc'd delta struct showing only the current transaction's
+ * contribution, or NULL if the function was not called in this transaction.
  */
 PgStat_FunctionCounts *
 find_funcstat_entry(Oid func_id)
 {
 	PgStat_EntryRef *entry_ref;
+	PgStat_FunctionPending *fpending;
+	PgStat_FunctionCounts *result;
+	PgStat_Counter delta_calls;
 
-	entry_ref = pgstat_fetch_pending_entry(PGSTAT_KIND_FUNCTION, MyDatabaseId, func_id);
+	entry_ref = pgstat_fetch_pending_entry(PGSTAT_KIND_FUNCTION,
+										   MyDatabaseId, func_id);
+	if (!entry_ref)
+		return NULL;
 
-	if (entry_ref)
-		return entry_ref->pending;
-	return NULL;
+	fpending = (PgStat_FunctionPending *) entry_ref->pending;
+	delta_calls = fpending->counts.numcalls - fpending->xact_baseline.numcalls;
+	if (delta_calls == 0)
+		return NULL;
+
+	result = palloc(sizeof(PgStat_FunctionCounts));
+	result->numcalls = delta_calls;
+	INSTR_TIME_SET_ZERO(result->total_time);
+	INSTR_TIME_ACCUM_DIFF(result->total_time,
+						  fpending->counts.total_time,
+						  fpending->xact_baseline.total_time);
+	INSTR_TIME_SET_ZERO(result->self_time);
+	INSTR_TIME_ACCUM_DIFF(result->self_time,
+						  fpending->counts.self_time,
+						  fpending->xact_baseline.self_time);
+
+	return result;
 }
 
 /*

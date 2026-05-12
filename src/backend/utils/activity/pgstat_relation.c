@@ -505,6 +505,7 @@ find_tabstat_entry(Oid rel_id)
 	PgStat_TableXactStatus *trans;
 	PgStat_TableStatus *tabentry = NULL;
 	PgStat_TableStatus *tablestatus = NULL;
+	PgStat_TableCounts *baseline;
 
 	entry_ref = pgstat_fetch_pending_entry(PGSTAT_KIND_RELATION, MyDatabaseId, rel_id);
 	if (!entry_ref)
@@ -524,6 +525,25 @@ find_tabstat_entry(Oid rel_id)
 	 * does not matter.
 	 */
 	tablestatus->trans = NULL;
+
+	/*
+	 * Subtract the xact baseline to show only the current top-level
+	 * transaction's activity.  Only subtract counters exposed through
+	 * pg_stat_xact_* views.  The remaining PgStat_TableCounts fields are
+	 * cumulative relation-maintenance state, not xact-view output.
+	 */
+	baseline = &tabentry->xact_baseline;
+	tablestatus->counts.numscans -= baseline->numscans;
+	tablestatus->counts.tuples_returned -= baseline->tuples_returned;
+	tablestatus->counts.tuples_fetched -= baseline->tuples_fetched;
+	tablestatus->counts.tuples_inserted -= baseline->tuples_inserted;
+	tablestatus->counts.tuples_updated -= baseline->tuples_updated;
+	tablestatus->counts.tuples_deleted -= baseline->tuples_deleted;
+	tablestatus->counts.tuples_hot_updated -= baseline->tuples_hot_updated;
+	tablestatus->counts.tuples_newpage_updated -=
+		baseline->tuples_newpage_updated;
+	tablestatus->counts.blocks_fetched -= baseline->blocks_fetched;
+	tablestatus->counts.blocks_hit -= baseline->blocks_hit;
 
 	/*
 	 * Live subtransaction counts are not included yet.  This is not a hot

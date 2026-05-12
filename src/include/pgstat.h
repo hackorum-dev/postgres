@@ -90,6 +90,21 @@ typedef struct PgStat_FunctionCounts
 	instr_time	self_time;
 } PgStat_FunctionCounts;
 
+/* ----------
+ * PgStat_FunctionPending	Backend-local pending state for function stats
+ *
+ * Wraps the accumulated counts with a per-transaction baseline so that
+ * pg_stat_xact_user_functions can report only the current transaction's
+ * contribution.  The baseline is set at each top-level transaction boundary
+ * by pgstat_set_pending_baselines().
+ * ----------
+ */
+typedef struct PgStat_FunctionPending
+{
+	PgStat_FunctionCounts counts;	/* accumulated counts */
+	PgStat_FunctionCounts xact_baseline;	/* snapshot at xact boundary */
+}			PgStat_FunctionPending;
+
 /*
  * Working state needed to accumulate per-function-call timing statistics.
  */
@@ -183,6 +198,7 @@ typedef struct PgStat_TableStatus
 	bool		shared;			/* is it a shared catalog? */
 	struct PgStat_TableXactStatus *trans;	/* lowest subxact's counts */
 	PgStat_TableCounts counts;	/* event counts to be sent */
+	PgStat_TableCounts xact_baseline;	/* snapshot at xact boundary */
 	Relation	relation;		/* rel that is using this entry */
 } PgStat_TableStatus;
 

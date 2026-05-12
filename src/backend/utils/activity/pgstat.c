@@ -326,7 +326,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 		.shared_size = sizeof(PgStatShared_Function),
 		.shared_data_off = offsetof(PgStatShared_Function, stats),
 		.shared_data_len = sizeof(((PgStatShared_Function *) 0)->stats),
-		.pending_size = sizeof(PgStat_FunctionCounts),
+		.pending_size = sizeof(PgStat_FunctionPending),
 
 		.flush_pending_cb = pgstat_function_flush_cb,
 		.reset_timestamp_cb = pgstat_function_reset_timestamp_cb,
@@ -1355,6 +1355,46 @@ pgstat_fetch_pending_entry(PgStat_Kind kind, Oid dboid, uint64 objid)
 		return NULL;
 
 	return entry_ref;
+}
+
+/*
+ * Set xact baselines for all pending relation and function entries.
+ *
+ * Called at top-level transaction commit, abort, and successful PREPARE to
+ * record the current counter state as the baseline.  The next transaction on
+ * this backend will compute xact-scoped deltas by subtracting this baseline.
+ *
+ * This sweeps all unflushed pending entries, not just those touched in the
+ * current transaction, because nontransactional counters (scans, buffer hits,
+ * etc.) accumulate in the pending entry regardless of whether a
+ * PgStat_TableXactStatus was created.
+ */
+void
+pgstat_set_pending_baselines(void)
+{
+	dlist_iter	iter;
+
+	dlist_foreach(iter, &pgStatPending)
+	{
+		PgStat_EntryRef *entry_ref =
+			dlist_container(PgStat_EntryRef, pending_node, iter.cur);
+		PgStat_Kind kind = entry_ref->shared_entry->key.kind;
+
+		if (kind == PGSTAT_KIND_RELATION)
+		{
+			PgStat_TableStatus *tabstat =
+				(PgStat_TableStatus *) entry_ref->pending;
+
+			tabstat->xact_baseline = tabstat->counts;
+		}
+		else if (kind == PGSTAT_KIND_FUNCTION)
+		{
+			PgStat_FunctionPending *fpending =
+				(PgStat_FunctionPending *) entry_ref->pending;
+
+			fpending->xact_baseline = fpending->counts;
+		}
+	}
 }
 
 void
