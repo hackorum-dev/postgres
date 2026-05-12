@@ -1545,6 +1545,42 @@ CreateForeignTable(CreateForeignTableStmt *stmt, Oid relid)
 
 	fdw = GetForeignDataWrapper(server->fdwid);
 
+	if (stmt->options != NIL) {
+		char *table_name = NULL;
+		ListCell *lc;
+
+		foreach(lc, stmt->options) {
+			DefElem *def = (DefElem *) lfirst(lc);
+			if (strcmp(def->defname, "table_name") == 0) {
+				table_name = defGetString(def);
+				break;
+			}
+		}
+
+		if (table_name && strcmp(stmt->base.relation->relname, table_name) == 0) {
+			/* Check if the server is pointing to the same database */
+			char *server_dbname = NULL;
+
+			foreach(lc, server->options) {
+				DefElem *def = (DefElem *) lfirst(lc);
+				if (strcmp(def->defname, "dbname") == 0) {
+					server_dbname = defGetString(def);
+					break;
+				}
+			}
+
+			if (server_dbname == NULL ||
+				strcmp(server_dbname, get_database_name(MyDatabaseId)) == 0) {
+				ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("foreign table \"%s\" cannot reference itself",
+							stmt->base.relation->relname),
+					 errhint("Foreign table pointing to the same table on the same database "
+							 "creates circular reference")));
+				}
+		}
+	}
+
 	/*
 	 * Insert tuple into pg_foreign_table.
 	 */
