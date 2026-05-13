@@ -73,8 +73,11 @@ extern bool IsBackendPid(int pid);
 extern VirtualTransactionId *GetCurrentVirtualXIDs(TransactionId limitXmin,
 												   bool excludeXmin0, bool allDbs, int excludeVacuum,
 												   int *nvxids);
+extern VirtualTransactionId *GetVirtualXIDsBlockingVacuumFreeze(TransactionId limitXmin,
+																Oid dbOid);
 extern VirtualTransactionId *GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid);
 
+extern bool TerminateBackendWithVirtualXID(VirtualTransactionId vxid, int *pid);
 extern bool SignalRecoveryConflict(PGPROC *proc, pid_t pid, RecoveryConflictReason reason);
 extern bool SignalRecoveryConflictWithVirtualXID(VirtualTransactionId vxid, RecoveryConflictReason reason);
 extern void SignalRecoveryConflictWithDatabase(Oid databaseid, RecoveryConflictReason reason);
