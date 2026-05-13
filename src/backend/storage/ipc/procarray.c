@@ -3343,6 +3343,92 @@ GetCurrentVirtualXIDs(TransactionId limitXmin, bool excludeXmin0,
 }
 
 /*
+ * GetVirtualXIDsBlockingVacuumFreeze -- returns active VXIDs holding back
+ * VACUUM's freeze horizon.
+ *
+ * The caller supplies the freeze cutoff that it wanted to use before it was
+ * constrained by OldestXmin.  We return regular client backends whose xmin/xid
+ * horizon is older than that cutoff and whose database scope matches the
+ * relation being vacuumed.
+ *
+ * Replication slots, hot standby feedback, and prepared transactions can also
+ * hold back horizons, but they are not ordinary long-running client
+ * transactions, so this routine deliberately ignores them.
+ *
+ * The result is palloc'd and terminated with an invalid VXID.
+ */
+VirtualTransactionId *
+GetVirtualXIDsBlockingVacuumFreeze(TransactionId limitXmin, Oid dbOid)
+{
+	VirtualTransactionId *vxids;
+	ProcArrayStruct *arrayP = procArray;
+	TransactionId *other_xids = ProcGlobal->xids;
+	int			count = 0;
+	int			index;
+
+	Assert(TransactionIdIsValid(limitXmin));
+
+	vxids = palloc_array(VirtualTransactionId, arrayP->maxProcs + 1);
+
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+
+	for (index = 0; index < arrayP->numProcs; index++)
+	{
+		int			pgprocno = arrayP->pgprocnos[index];
+		PGPROC	   *proc = &allProcs[pgprocno];
+		uint8		statusFlags = ProcGlobal->statusFlags[index];
+		TransactionId xid;
+		TransactionId xmin;
+
+		if (proc == MyProc)
+			continue;
+
+		/* Prepared transactions can block horizons, but have no session PID. */
+		if (proc->pid == 0)
+			continue;
+
+		/* Only ordinary client backends are actionable here. */
+		if (proc->backendType != B_BACKEND)
+			continue;
+
+		/* Hot standby feedback affects all horizons, but is not a client xact. */
+		if (statusFlags & PROC_AFFECTS_ALL_HORIZONS)
+			continue;
+
+		/*
+		 * Match ComputeXidHorizons(): lazy VACUUMs and logical decoding
+		 * backends do not hold back VACUUM's non-removable horizon here.
+		 */
+		if (statusFlags & (PROC_IN_VACUUM | PROC_IN_LOGICAL_DECODING))
+			continue;
+
+		if (OidIsValid(dbOid) && proc->databaseId != dbOid)
+			continue;
+
+		xid = UINT32_ACCESS_ONCE(other_xids[index]);
+		xmin = UINT32_ACCESS_ONCE(proc->xmin);
+		xmin = TransactionIdOlder(xmin, xid);
+
+		if (TransactionIdIsValid(xmin) &&
+			TransactionIdPrecedes(xmin, limitXmin))
+		{
+			VirtualTransactionId vxid;
+
+			GET_VXID_FROM_PGPROC(vxid, *proc);
+			if (VirtualTransactionIdIsValid(vxid))
+				vxids[count++] = vxid;
+		}
+	}
+
+	LWLockRelease(ProcArrayLock);
+
+	vxids[count].procNumber = INVALID_PROC_NUMBER;
+	vxids[count].localTransactionId = InvalidLocalTransactionId;
+
+	return vxids;
+}
+
+/*
  * GetConflictingVirtualXIDs -- returns an array of currently active VXIDs.
  *
  * Usage is limited to conflict resolution during recovery on standby servers.
@@ -3444,6 +3530,61 @@ GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid)
 	vxids[count].localTransactionId = InvalidLocalTransactionId;
 
 	return vxids;
+}
+
+/*
+ * TerminateBackendWithVirtualXID -- terminate the backend still owning a VXID.
+ *
+ * This follows the recovery-conflict convention of resolving the target by
+ * VXID under ProcArrayLock before signaling it.  The target PID is returned
+ * to the caller for reporting.
+ */
+bool
+TerminateBackendWithVirtualXID(VirtualTransactionId vxid, int *pid)
+{
+	ProcArrayStruct *arrayP = procArray;
+	pid_t		target_pid = 0;
+	int			index;
+
+	Assert(VirtualTransactionIdIsValid(vxid));
+
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+
+	for (index = 0; index < arrayP->numProcs; index++)
+	{
+		int			pgprocno = arrayP->pgprocnos[index];
+		PGPROC	   *proc = &allProcs[pgprocno];
+		uint8		statusFlags = ProcGlobal->statusFlags[index];
+		VirtualTransactionId procvxid;
+
+		GET_VXID_FROM_PGPROC(procvxid, *proc);
+
+		if (procvxid.procNumber == vxid.procNumber &&
+			procvxid.localTransactionId == vxid.localTransactionId)
+		{
+			if (proc->backendType == B_BACKEND &&
+				!(statusFlags & PROC_AFFECTS_ALL_HORIZONS))
+				target_pid = proc->pid;
+			break;
+		}
+	}
+
+	LWLockRelease(ProcArrayLock);
+
+	if (pid)
+		*pid = target_pid;
+
+	if (target_pid == 0)
+		return false;
+
+#ifdef HAVE_SETSID
+	if (kill(-target_pid, SIGTERM))
+#else
+	if (kill(target_pid, SIGTERM))
+#endif
+		return false;
+
+	return true;
 }
 
 /*
