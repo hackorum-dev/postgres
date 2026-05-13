@@ -2921,6 +2921,41 @@ apply_handle_update(StringInfo s)
 }
 
 /*
+ * Check whether the tuple's origin roident was reused by a new subscription.
+ * Returns true if a conflict should be reported despite matching roidents.
+ *
+ * When origins match (localorigin == current origin), the same numeric roident
+ * may have been recycled after a DROP/CREATE SUBSCRIPTION cycle.  If the local
+ * row's commit_ts is at or before the current origin's creation time, the row
+ * was written by an earlier subscription, not the current one.
+ *
+ * Uses <= rather than < so that a row committed at the exact same microsecond
+ * as the origin was created is treated as belonging to the prior subscription;
+ * a false positive (spurious conflict) is safer than a false negative here.
+ */
+static inline bool
+IsRoidentReused(ReplOriginId localorigin, TimestampTz localts)
+{
+	TimestampTz origin_created;
+
+	if (localorigin == InvalidReplOriginId)
+		return false;
+
+	origin_created = replorigin_get_creation_time();
+
+	/*
+	 * DT_NOBEGIN means no session origin is active, ro_created has not been
+	 * loaded yet, or the origin pre-dates this feature (NULL in catalog) --
+	 * in all cases skip the reuse check.  localts == 0 when
+	 * track_commit_timestamp is off; no timestamp to compare.
+	 */
+	if (origin_created == DT_NOBEGIN || localts == 0)
+		return false;
+
+	return (localts <= origin_created);
+}
+
+/*
  * Workhorse for apply_handle_update()
  * relinfo is for the relation we're actually updating in
  * (could be a child partition of edata->targetRelInfo)
@@ -2962,7 +2997,8 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 		 */
 		if (GetTupleTransactionInfo(localslot, &conflicttuple.xmin,
 									&conflicttuple.origin, &conflicttuple.ts) &&
-			conflicttuple.origin != replorigin_xact_state.origin)
+			(conflicttuple.origin != replorigin_xact_state.origin ||
+			 IsRoidentReused(conflicttuple.origin, conflicttuple.ts)))
 		{
 			TupleTableSlot *newslot;
 
@@ -3004,7 +3040,8 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 									   &conflicttuple.xmin,
 									   &conflicttuple.origin,
 									   &conflicttuple.ts) &&
-			conflicttuple.origin != replorigin_xact_state.origin)
+			(conflicttuple.origin != replorigin_xact_state.origin ||
+			 IsRoidentReused(conflicttuple.origin, conflicttuple.ts)))
 			type = CT_UPDATE_DELETED;
 		else
 			type = CT_UPDATE_MISSING;
@@ -3157,7 +3194,8 @@ apply_handle_delete_internal(ApplyExecutionData *edata,
 		 */
 		if (GetTupleTransactionInfo(localslot, &conflicttuple.xmin,
 									&conflicttuple.origin, &conflicttuple.ts) &&
-			conflicttuple.origin != replorigin_xact_state.origin)
+			(conflicttuple.origin != replorigin_xact_state.origin ||
+			 IsRoidentReused(conflicttuple.origin, conflicttuple.ts)))
 		{
 			conflicttuple.slot = localslot;
 			ReportApplyConflict(estate, relinfo, LOG, CT_DELETE_ORIGIN_DIFFERS,
@@ -3499,7 +3537,8 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 												   &conflicttuple.xmin,
 												   &conflicttuple.origin,
 												   &conflicttuple.ts) &&
-						conflicttuple.origin != replorigin_xact_state.origin)
+						(conflicttuple.origin != replorigin_xact_state.origin ||
+						 IsRoidentReused(conflicttuple.origin, conflicttuple.ts)))
 						type = CT_UPDATE_DELETED;
 					else
 						type = CT_UPDATE_MISSING;
@@ -3525,7 +3564,8 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 				if (GetTupleTransactionInfo(localslot, &conflicttuple.xmin,
 											&conflicttuple.origin,
 											&conflicttuple.ts) &&
-					conflicttuple.origin != replorigin_xact_state.origin)
+					(conflicttuple.origin != replorigin_xact_state.origin ||
+					 IsRoidentReused(conflicttuple.origin, conflicttuple.ts)))
 				{
 					TupleTableSlot *newslot;
 

@@ -51,6 +51,7 @@ CATALOG(pg_replication_origin,6000,ReplicationOriginRelationId) BKI_SHARED_RELAT
 	text		roname BKI_FORCE_NOT_NULL;
 
 #ifdef CATALOG_VARLEN			/* further variable-length fields */
+	timestamptz rocreated BKI_FORCE_NOT_NULL;
 #endif
 } FormData_pg_replication_origin;
 

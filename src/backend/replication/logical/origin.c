@@ -145,6 +145,14 @@ typedef struct ReplicationState
 	 * Lock protecting remote_lsn and local_lsn.
 	 */
 	LWLock		lock;
+
+	/*
+	 * Wall-clock time when this origin was created (from
+	 * pg_replication_origin.rocreated).  Used to detect roident reuse: if a
+	 * local row's commit_ts <= ro_created, the row was written by a prior
+	 * subscription that held this ID.
+	 */
+	TimestampTz ro_created;
 } ReplicationState;
 
 /*
@@ -360,6 +368,8 @@ replorigin_create(const char *roname)
 
 			values[Anum_pg_replication_origin_roident - 1] = ObjectIdGetDatum(roident);
 			values[Anum_pg_replication_origin_roname - 1] = roname_d;
+			values[Anum_pg_replication_origin_rocreated - 1] =
+				TimestampTzGetDatum(GetCurrentTimestamp());
 
 			tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 			CatalogTupleInsert(rel, tuple);
@@ -847,6 +857,7 @@ StartupReplicationOrigin(void)
 
 		/* copy data to shared memory */
 		replication_states[last_state].roident = disk_state.roident;
+		replication_states[last_state].ro_created = DT_NOBEGIN;
 		replication_states[last_state].remote_lsn = disk_state.remote_lsn;
 		last_state++;
 
@@ -1143,6 +1154,24 @@ ReplicationOriginExitCleanup(int code, Datum arg)
 }
 
 /*
+ * Return the creation timestamp of the current session's replication origin,
+ * or DT_NOBEGIN if no session origin is active or the value has not been
+ * loaded yet.
+ *
+ * Used by the apply worker to detect roident reuse during conflict checking:
+ * if a local row's commit_ts <= the returned value, the row was written by a
+ * prior subscription that happened to hold the same origin ID.
+ */
+TimestampTz
+replorigin_get_creation_time(void)
+{
+	if (session_replication_state == NULL)
+		return DT_NOBEGIN;
+
+	return session_replication_state->ro_created;
+}
+
+/*
  * Setup a replication origin in the shared memory struct if it doesn't
  * already exist and cache access to the specific ReplicationSlot so the
  * array doesn't have to be searched when calling
@@ -1271,8 +1300,8 @@ replorigin_session_setup(ReplOriginId node, int acquired_by)
 		Assert(!XLogRecPtrIsValid(session_replication_state->remote_lsn));
 		Assert(!XLogRecPtrIsValid(session_replication_state->local_lsn));
 		session_replication_state->roident = node;
+		session_replication_state->ro_created = DT_NOBEGIN;
 	}
-
 
 	Assert(session_replication_state->roident != InvalidReplOriginId);
 
@@ -1297,6 +1326,33 @@ replorigin_session_setup(ReplOriginId node, int acquired_by)
 
 	/* probably this one is pointless */
 	ConditionVariableBroadcast(&session_replication_state->origin_cv);
+
+	/*
+	 * Load the origin's creation time from the catalog if not already cached.
+	 * The guard fires because ro_created is explicitly set to DT_NOBEGIN in
+	 * the free-slot branch above and in StartupReplicationOrigin().  It also
+	 * fires for origins that pre-date this feature: those have NULL in the
+	 * catalog, so isnull will be true and ro_created stays DT_NOBEGIN,
+	 * meaning the roident-reuse check is safely skipped for them.
+	 */
+	if (session_replication_state->ro_created == DT_NOBEGIN)
+	{
+		HeapTuple	tuple;
+
+		tuple = SearchSysCache1(REPLORIGIDENT, ObjectIdGetDatum(node));
+		if (HeapTupleIsValid(tuple))
+		{
+			bool		isnull;
+			Datum		d;
+
+			d = SysCacheGetAttr(REPLORIGIDENT, tuple,
+								Anum_pg_replication_origin_rocreated,
+								&isnull);
+			if (!isnull)
+				session_replication_state->ro_created = DatumGetTimestampTz(d);
+			ReleaseSysCache(tuple);
+		}
+	}
 }
 
 /*
