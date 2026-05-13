@@ -337,6 +337,7 @@ extern PGDLLIMPORT int vacuum_multixact_freeze_min_age;
 extern PGDLLIMPORT int vacuum_multixact_freeze_table_age;
 extern PGDLLIMPORT int vacuum_failsafe_age;
 extern PGDLLIMPORT int vacuum_multixact_failsafe_age;
+extern PGDLLIMPORT bool vacuum_freeze_terminate_blockers_pid;
 extern PGDLLIMPORT bool track_cost_delay_timing;
 extern PGDLLIMPORT bool vacuum_truncate;
 
