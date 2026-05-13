@@ -101,6 +101,7 @@ test: create-trigger
 test: sequence-ddl
 test: async-notify
 test: vacuum-no-cleanup-lock
+test: vacuum-freeze-terminate-blockers
 test: timeouts
 test: vacuum-concurrent-drop
 test: vacuum-conflict
