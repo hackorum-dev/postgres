@@ -78,11 +78,13 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
 
    <para>
     If the <literal>USING INDEX</literal> clause is specified, the rows in
-    the table are stored in the order that the index specifies;
-    <firstterm>clustering</firstterm>, because rows are physically clustered
-    afterwards.
-    If an index name is specified in the command, the order implied by that
-    index is used, and that index is configured as the index to cluster on.
+    the table are physically rearranged according to the specified index;
+    this is known as <firstterm>clustering</firstterm>.  For b-tree indexes,
+    this means the table is stored in the index's sort order.  Other clusterable
+    index access methods use their own index scan order, which does not
+    necessarily correspond to a SQL sort order.
+    If an index name is specified in the command, that index is used for
+    clustering, and is configured as the index to cluster on.
     (This also applies to an index given to the <command>CLUSTER</command>
     command.)
     If no index name is specified, then the index that has
@@ -101,12 +103,12 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
    <para>
     Clustering is a one-time operation: when the table is
     subsequently updated, the changes are not clustered.  That is, no attempt
-    is made to store new or updated rows according to their index order.  (If
-    one wishes, one can periodically recluster by issuing the command again.
-    Also, setting the table's <literal>fillfactor</literal> storage parameter
-    to less than 100% can aid in preserving cluster ordering during updates,
-    since updated rows are kept on the same page if enough space is available
-    there.)
+    is made to store new or updated rows according to the clustering order.
+    (If one wishes, one can periodically recluster by issuing the command
+    again.  Also, setting the table's <literal>fillfactor</literal> storage
+    parameter to less than 100% can aid in preserving cluster ordering during
+    updates, since updated rows are kept on the same page if enough space is
+    available there.)
    </para>
 
    <para>
@@ -123,11 +125,12 @@ REPACK [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] USING
    </para>
 
    <para>
-    <command>REPACK</command> can re-sort the table using either an index scan
-    on the specified index (if the index is a b-tree), or a sequential scan
-    followed by sorting.  It will attempt to choose the method that will be
-    faster, based on planner cost parameters and available statistical
-    information.
+    When clustering on a b-tree index, <command>REPACK</command> can rewrite
+    the table using either an index scan on the specified index, or a
+    sequential scan followed by sorting.  It will attempt to choose the method
+    that will be faster, based on planner cost parameters and available
+    statistical information.  When clustering on a non-b-tree index,
+    <command>REPACK</command> uses an index scan.
    </para>
 
    <para>
