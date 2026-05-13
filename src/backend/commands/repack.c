@@ -1383,10 +1383,16 @@ copy_table_data(Relation NewHeap, Relation OldHeap, Relation OldIndex,
 
 	/*
 	 * Decide whether to use an indexscan or seqscan-and-optional-sort to scan
-	 * the OldHeap.  We know how to use a sort to duplicate the ordering of a
-	 * btree index, and will use seqscan-and-sort for that case if the planner
-	 * tells us it's cheaper.  Otherwise, always indexscan if an index is
-	 * provided, else plain seqscan.
+	 * the OldHeap.  For btree indexes, the scan order is a well-defined sort
+	 * order that can also be reproduced by an explicit sort, so use the
+	 * planner to choose between indexscan and seqscan-and-sort.
+	 *
+	 * Other index AMs can be marked clusterable even though they do not
+	 * provide btree-style ordering information to the planner.  For those,
+	 * clustering means rewriting the heap in the AM's index scan order, which
+	 * may improve locality but cannot be duplicated by sorting here, so leave
+	 * use_sort false.  If no index is provided, use a plain seqscan.
+
 	 */
 	if (OldIndex != NULL && OldIndex->rd_rel->relam == BTREE_AM_OID)
 		use_sort = plan_cluster_use_sort(RelationGetRelid(OldHeap),
