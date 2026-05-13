@@ -1,0 +1,45 @@
+Parsed test spec with 2 sessions
+
+starting permutation: blocker_record_pid blocker_begin blocker_assign_xid vacuum_check_age_past_threshold vacuum_run vacuum_check_blocker_gone
+step blocker_record_pid: 
+	INSERT INTO vacuum_freeze_blocker_pid SELECT pg_backend_pid();
+
+step blocker_begin: 
+	BEGIN;
+
+step blocker_assign_xid: 
+	SELECT txid_current() IS NOT NULL AS xid_assigned;
+
+xid_assigned
+------------
+t           
+(1 row)
+
+step vacuum_check_age_past_threshold: 
+	SELECT age(relfrozenxid)::float8 >
+		CASE WHEN current_setting('autovacuum_freeze_score_weight')::float8 > 0.0
+			THEN current_setting('vacuum_failsafe_age')::float8 /
+				current_setting('autovacuum_freeze_score_weight')::float8
+			ELSE current_setting('vacuum_failsafe_age')::float8
+		END AS past_termination_age
+	FROM pg_class
+	WHERE oid = 'vacuum_freeze_blocker_tab'::regclass;
+
+past_termination_age
+--------------------
+t                   
+(1 row)
+
+step vacuum_run: 
+	VACUUM vacuum_freeze_blocker_tab;
+
+step vacuum_check_blocker_gone: 
+	SELECT count(*) = 0 AS blocker_gone
+	FROM pg_stat_activity
+	WHERE pid = (SELECT pid FROM vacuum_freeze_blocker_pid);
+
+blocker_gone
+------------
+t           
+(1 row)
+
