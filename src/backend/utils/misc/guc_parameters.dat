@@ -3398,6 +3398,13 @@
   max => '2000000000',
 },
 
+{ name => 'vacuum_freeze_terminate_blockers_pid', type => 'bool', context => 'PGC_SUSET', group => 'VACUUM_FREEZING',
+  short_desc => 'Terminates client sessions that block VACUUM from advancing its freeze cutoff.',
+  long_desc => 'When enabled, VACUUM terminates regular client sessions whose transaction horizon blocks freezing once the table age is greater than vacuum_failsafe_age divided by autovacuum_freeze_score_weight, or greater than vacuum_failsafe_age when autovacuum_freeze_score_weight is zero.',
+  variable => 'vacuum_freeze_terminate_blockers_pid',
+  boot_val => 'false',
+},
+
 { name => 'vacuum_max_eager_freeze_failure_rate', type => 'real', context => 'PGC_USERSET', group => 'VACUUM_FREEZING',
   short_desc => 'Fraction of pages in a relation vacuum can scan and fail to freeze before disabling eager scanning.',
   long_desc => 'A value of 0.0 disables eager scanning and a value of 1.0 will eagerly scan up to 100 percent of the all-visible pages in the relation. If vacuum successfully freezes these pages, the cap is lower than 100 percent, because the goal is to amortize page freezing across multiple vacuums.',

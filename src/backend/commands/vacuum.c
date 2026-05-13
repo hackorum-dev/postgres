@@ -50,6 +50,7 @@
 #include "postmaster/interrupt.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
+#include "storage/lock.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
@@ -58,6 +59,7 @@
 #include "utils/guc.h"
 #include "utils/guc_hooks.h"
 #include "utils/injection_point.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
@@ -80,6 +82,7 @@ int			vacuum_multixact_freeze_table_age;
 int			vacuum_failsafe_age;
 int			vacuum_multixact_failsafe_age;
 double		vacuum_max_eager_freeze_failure_rate;
+bool		vacuum_freeze_terminate_blockers_pid;
 bool		track_cost_delay_timing;
 bool		vacuum_truncate;
 
@@ -128,6 +131,10 @@ static void vac_truncate_clog(TransactionId frozenXID,
 							  MultiXactId lastSaneMinMulti);
 static bool vacuum_rel(Oid relid, RangeVar *relation, VacuumParams params,
 					   BufferAccessStrategy bstrategy, bool isTopLevel);
+static void vacuum_maybe_terminate_freeze_pid(Relation rel,
+											  struct VacuumCutoffs *cutoffs,
+											  TransactionId freezeLimit,
+											  TransactionId nextXID);
 static double compute_parallel_delay(void);
 static VacOptValue get_vacoptval_from_boolean(DefElem *def);
 static bool vac_tid_reaped(ItemPointer itemptr, void *state);
@@ -1131,6 +1138,7 @@ vacuum_get_cutoffs(Relation rel, const VacuumParams *params,
 				effective_multixact_freeze_max_age;
 	TransactionId nextXID,
 				safeOldestXmin,
+				unconstrainedFreezeLimit,
 				aggressiveXIDCutoff;
 	MultiXactId nextMXID,
 				safeOldestMxact,
@@ -1209,9 +1217,14 @@ vacuum_get_cutoffs(Relation rel, const VacuumParams *params,
 	Assert(freeze_min_age >= 0);
 
 	/* Compute FreezeLimit, being careful to generate a normal XID */
-	cutoffs->FreezeLimit = nextXID - freeze_min_age;
-	if (!TransactionIdIsNormal(cutoffs->FreezeLimit))
-		cutoffs->FreezeLimit = FirstNormalTransactionId;
+	unconstrainedFreezeLimit = nextXID - freeze_min_age;
+	if (!TransactionIdIsNormal(unconstrainedFreezeLimit))
+		unconstrainedFreezeLimit = FirstNormalTransactionId;
+
+	vacuum_maybe_terminate_freeze_pid(rel, cutoffs,
+									  unconstrainedFreezeLimit, nextXID);
+
+	cutoffs->FreezeLimit = unconstrainedFreezeLimit;
 	/* FreezeLimit must always be <= OldestXmin */
 	if (TransactionIdPrecedes(cutoffs->OldestXmin, cutoffs->FreezeLimit))
 		cutoffs->FreezeLimit = cutoffs->OldestXmin;
@@ -1279,6 +1292,100 @@ vacuum_get_cutoffs(Relation rel, const VacuumParams *params,
 
 	/* Non-aggressive VACUUM */
 	return false;
+}
+
+/*
+ * Terminate active backends that are holding back VACUUM's ability to advance
+ * FreezeLimit, when explicitly enabled by the user.
+ */
+static void
+vacuum_maybe_terminate_freeze_pid(Relation rel,
+								  struct VacuumCutoffs *cutoffs,
+								  TransactionId freezeLimit,
+								  TransactionId nextXID)
+{
+	VirtualTransactionId *vxids;
+	VirtualTransactionId *vxid;
+	TransactionId freezeTerminateLimit;
+	TransactionId freezeTerminateAgeXids;
+	double		freezeTerminateAge;
+	int			terminated = 0;
+	int			i;
+	Oid			dbOid;
+
+	if (!vacuum_freeze_terminate_blockers_pid)
+		return;
+
+	if (vacuum_failsafe_age <= 0)
+		return;
+
+	/*
+	 * Determine the freeze termination age to use.  Normally this scales
+	 * vacuum_failsafe_age by autovacuum_freeze_score_weight.  When the weight
+	 * is zero, use vacuum_failsafe_age directly.
+	 */
+	if (likely(autovacuum_freeze_score_weight > 0.0))
+		freezeTerminateAge =
+			(double) vacuum_failsafe_age / autovacuum_freeze_score_weight;
+	else
+		freezeTerminateAge = (double) vacuum_failsafe_age;
+
+	if (freezeTerminateAge >= (double) MaxTransactionId)
+		return;
+
+	freezeTerminateAgeXids = (TransactionId) floor(freezeTerminateAge);
+	freezeTerminateLimit = nextXID - freezeTerminateAgeXids;
+	if (!TransactionIdIsNormal(freezeTerminateLimit))
+		freezeTerminateLimit = FirstNormalTransactionId;
+
+	/* Only act once the table age has passed the termination age. */
+	if (!TransactionIdPrecedes(cutoffs->relfrozenxid, freezeTerminateLimit))
+		return;
+
+	/* If OldestXmin is not holding back FreezeLimit, nobody blocks freeze. */
+	if (!TransactionIdPrecedes(cutoffs->OldestXmin, freezeLimit))
+		return;
+
+	dbOid = rel->rd_rel->relisshared ? InvalidOid : MyDatabaseId;
+	vxids = GetVirtualXIDsBlockingVacuumFreeze(freezeLimit, dbOid);
+
+	for (vxid = vxids; VirtualTransactionIdIsValid(*vxid); vxid++)
+	{
+		int			pid = 0;
+
+		if (TerminateBackendWithVirtualXID(*vxid, &pid))
+		{
+			char	   *nspname;
+
+			vxids[terminated++] = *vxid;
+			nspname = get_namespace_name(RelationGetNamespace(rel));
+
+			ereport(LOG,
+						(errmsg("terminating backend with PID %d because it blocks vacuum freeze of table \"%s.%s\"",
+								pid, nspname, RelationGetRelationName(rel)),
+					 errdetail("The table age is greater than the freeze termination age derived from vacuum_failsafe_age and autovacuum_freeze_score_weight."),
+					 errhint("Disable configuration parameter \"vacuum_freeze_terminate_blockers_pid\" to prevent VACUUM from terminating blocking sessions.")));
+
+			pfree(nspname);
+		}
+	}
+
+	/*
+	 * Terminate blockers before waiting, matching the recovery-conflict
+	 * pattern of identifying blockers by VXID and then waiting for each
+	 * signaled VXID to disappear.  Once they are gone, recompute OldestXmin so
+	 * this VACUUM can use the less conservative freeze cutoff immediately.
+	 */
+	if (terminated > 0)
+	{
+		for (i = 0; i < terminated; i++)
+			VirtualXactLock(vxids[i], true);
+
+		cutoffs->OldestXmin = GetOldestNonRemovableTransactionId(rel);
+		Assert(TransactionIdIsNormal(cutoffs->OldestXmin));
+	}
+
+	pfree(vxids);
 }
 
 /*
