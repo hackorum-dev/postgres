@@ -29,6 +29,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "common/int.h"
+#include "nodes/nodeFuncs.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -692,6 +693,78 @@ findDomainNotNullConstraint(Oid typid)
 	table_close(pg_constraint, AccessShareLock);
 
 	return retval;
+}
+
+/*
+ * Given a relation, an attnum and a (cooked) expression, this returns true if
+ * it finds a CHECK constraint which proves that the given column is equal to
+ * the expression.
+ *
+ * The constraint must use a mergejoinable operator for the type of the column,
+ * a concept used by the planner as well to infer equivalence classes on the
+ * terms in a query (see op_mergejoinable()).
+ *
+ * The expressions are compared structurally, so they must match exactly for
+ * this check to succeed.
+ */
+bool
+findStructuralCheckConstraintOnAttr(Oid relid, AttrNumber attnum,
+									const Node *target_expr)
+{
+	Relation	pg_constraint;
+	HeapTuple	conTup;
+	SysScanDesc scan;
+	ScanKeyData key;
+	bool		found = false;
+
+	pg_constraint = table_open(ConstraintRelationId, AccessShareLock);
+	ScanKeyInit(&key,
+				Anum_pg_constraint_conrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
+	scan = systable_beginscan(pg_constraint, ConstraintRelidTypidNameIndexId,
+							  true, NULL, 1, &key);
+
+	while (HeapTupleIsValid(conTup = systable_getnext(scan)))
+	{
+		Form_pg_constraint con = GETSTRUCT(conTup);
+		char	   *conbin;
+		Datum		val;
+		Node	   *conexpr;
+
+		if (con->contype != CONSTRAINT_CHECK)
+			continue;
+		if (!con->convalidated)
+			continue;
+
+		val = SysCacheGetAttrNotNull(CONSTROID, conTup,
+									 Anum_pg_constraint_conbin);
+		conbin = TextDatumGetCString(val);
+		conexpr = stringToNode(conbin);
+
+		if (IsA(conexpr, OpExpr))
+		{
+			OpExpr	   *op = (OpExpr *) conexpr;
+
+			if (list_length(op->args) == 2 && IsA(linitial(op->args), Var))
+			{
+				Var		   *var = linitial(op->args);
+
+				if (var->varattno == attnum &&
+					op_mergejoinable(op->opno, exprType((Node *) var)) &&
+					equal(lsecond(op->args), target_expr))
+				{
+					found = true;
+					break;
+				}
+			}
+		}
+	}
+
+	systable_endscan(scan);
+	table_close(pg_constraint, AccessShareLock);
+
+	return found;
 }
 
 /*

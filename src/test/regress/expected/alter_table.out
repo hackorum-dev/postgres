@@ -4957,6 +4957,159 @@ select :idx_filenode_before != :idx_filenode_after as did_rewrite_idx;
 (1 row)
 
 drop table testgen.t3;
+-- turning a regular column into a stored generated column
+-- without rewriting the table (when a check constraint proves it isn't needed)
+create table testgen.t4 (a int, b int not null);
+insert into testgen.t4 (a, b) select x, x * 2 from generate_series(0, 5) x;
+alter table testgen.t4 add constraint chk_gen_clause check (b = a * 2);
+select pg_relation_filenode('testgen.t4') as t4_filenode_before \gset
+alter table testgen.t4 alter column b add generated always as (a * 2) stored;
+select pg_relation_filenode('testgen.t4') as t4_filenode_after \gset
+select :t4_filenode_before = :t4_filenode_after as did_skip_rewrite;
+ did_skip_rewrite 
+------------------
+ t
+(1 row)
+
+\d+ testgen.t4
+                                                 Table "testgen.t4"
+ Column |  Type   | Collation | Nullable |              Default               | Storage | Stats target | Description 
+--------+---------+-----------+----------+------------------------------------+---------+--------------+-------------
+ a      | integer |           |          |                                    | plain   |              | 
+ b      | integer |           | not null | generated always as (a * 2) stored | plain   |              | 
+Check constraints:
+    "chk_gen_clause" CHECK (b = (a * 2))
+Not-null constraints:
+    "t4_b_not_null" NOT NULL "b"
+
+drop table testgen.t4;
+-- turning a regular column into a stored generated column
+-- same as the previous case, but a rewrite happens since the constraint is not
+-- valid
+create table testgen.t4 (a int, b int not null);
+insert into testgen.t4 (a, b) select x, x * 2 from generate_series(0, 5) x;
+alter table testgen.t4 add constraint chk_gen_clause check (b = a * 2) not valid;
+select pg_relation_filenode('testgen.t4') as t4_filenode_before \gset
+alter table testgen.t4 alter column b add generated always as (a * 2) stored;
+select pg_relation_filenode('testgen.t4') as t4_filenode_after \gset
+select :t4_filenode_before != :t4_filenode_after as did_rewrite;
+ did_rewrite 
+-------------
+ t
+(1 row)
+
+\d+ testgen.t4
+                                                 Table "testgen.t4"
+ Column |  Type   | Collation | Nullable |              Default               | Storage | Stats target | Description 
+--------+---------+-----------+----------+------------------------------------+---------+--------------+-------------
+ a      | integer |           |          |                                    | plain   |              | 
+ b      | integer |           | not null | generated always as (a * 2) stored | plain   |              | 
+Check constraints:
+    "chk_gen_clause" CHECK (b = (a * 2)) NOT VALID
+Not-null constraints:
+    "t4_b_not_null" NOT NULL "b"
+
+drop table testgen.t4;
+-- turning a regular column into a stored generated column
+-- same as the previous case, but a rewrite happens since the constraint
+-- operator is not mergejoinable
+create table testgen.t4 (a int, b int not null);
+insert into testgen.t4 (a, b) select x, x * 2 from generate_series(0, 5) x;
+alter table testgen.t4 add constraint chk_gen_clause check (b >= a * 2);
+select pg_relation_filenode('testgen.t4') as t4_filenode_before \gset
+alter table testgen.t4 alter column b add generated always as (a * 3) stored;
+select pg_relation_filenode('testgen.t4') as t4_filenode_after \gset
+select :t4_filenode_before != :t4_filenode_after as did_rewrite;
+ did_rewrite 
+-------------
+ t
+(1 row)
+
+\d+ testgen.t4
+                                                 Table "testgen.t4"
+ Column |  Type   | Collation | Nullable |              Default               | Storage | Stats target | Description 
+--------+---------+-----------+----------+------------------------------------+---------+--------------+-------------
+ a      | integer |           |          |                                    | plain   |              | 
+ b      | integer |           | not null | generated always as (a * 3) stored | plain   |              | 
+Check constraints:
+    "chk_gen_clause" CHECK (b >= (a * 2))
+Not-null constraints:
+    "t4_b_not_null" NOT NULL "b"
+
+drop table testgen.t4;
+-- test the whole process for adding a stored generated column without
+-- long-lived exclusive locks
+create table testgen.t5 (a int);
+select pg_relation_filenode('testgen.t5') as t5_filenode_before \gset
+insert into testgen.t5 select x from generate_series(1, 5) x;
+alter table testgen.t5 add column b int;
+-- take care of new and updated columns
+create function testgen.gen () returns trigger language plpgsql as $$
+begin
+  new.b = new.a * 2; return new;
+end
+$$;
+create trigger testgen_gen
+    before insert or update on testgen.t5
+    for each row execute function testgen.gen();
+-- add the constraint as not valid: enforced only for new and updated rows
+begin;
+alter table testgen.t5
+    add constraint chk_gen_clause check (b = a * 2) not valid;
+select locktype, mode from pg_locks
+  where relation = 'testgen.t5'::regclass and granted;
+ locktype |        mode         
+----------+---------------------
+ relation | AccessExclusiveLock
+(1 row)
+
+commit;
+insert into testgen.t5 (a) values (100), (200), (300);
+-- backfill existing rows at the appropriate pace
+update testgen.t5 set b = a * 2 where b is null;
+-- validate: this scans the table, but without an exclusive lock
+begin;
+alter table testgen.t5 validate constraint chk_gen_clause;
+select locktype, mode from pg_locks
+  where relation = 'testgen.t5'::regclass and granted;
+ locktype |           mode           
+----------+--------------------------
+ relation | ShareUpdateExclusiveLock
+(1 row)
+
+commit;
+-- now the schema update, which skips the rewrite because of the check
+begin;
+drop trigger testgen_gen on testgen.t5;
+alter table testgen.t5 alter column b
+    add generated always as (a * 2) stored;
+select locktype, mode from pg_locks
+where relation = 'testgen.t5'::regclass and granted;
+ locktype |        mode         
+----------+---------------------
+ relation | AccessShareLock
+ relation | AccessExclusiveLock
+(2 rows)
+
+commit;
+select pg_relation_filenode('testgen.t5') as t5_filenode_after \gset
+select :t5_filenode_before = :t5_filenode_after as did_skip_rewrite;
+ did_skip_rewrite 
+------------------
+ t
+(1 row)
+
+\d+ testgen.t5
+                                                 Table "testgen.t5"
+ Column |  Type   | Collation | Nullable |              Default               | Storage | Stats target | Description 
+--------+---------+-----------+----------+------------------------------------+---------+--------------+-------------
+ a      | integer |           |          |                                    | plain   |              | 
+ b      | integer |           |          | generated always as (a * 2) stored | plain   |              | 
+Check constraints:
+    "chk_gen_clause" CHECK (b = (a * 2))
+
+drop function testgen.gen;
+drop table testgen.t5;
 -- test support for partitioned tables and inheritance
 create table testgen.tpart (a int, b int) partition by hash (a);
 create table testgen.tpart_p1 partition of testgen.tpart

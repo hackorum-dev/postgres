@@ -8972,6 +8972,7 @@ ATExecAddGeneratedAsExprStored(AlteredTableInfo *tab,
 	Relation	pg_attribute;
 	List	   *newcons;
 	CookedConstraint *cookedDef;
+	bool		rewrite;
 
 	Assert(def->raw_expr != NULL);
 	Assert(def->cooked_expr == NULL);
@@ -9046,25 +9047,32 @@ ATExecAddGeneratedAsExprStored(AlteredTableInfo *tab,
 
 	cookedDef = linitial(newcons);
 
-	/*
-	 * Clear all the missing values if we're rewriting the table, since this
-	 * renders them pointless.
-	 */
-	RelationClearMissing(rel);
+	rewrite = !findStructuralCheckConstraintOnAttr(RelationGetRelid(rel),
+												   attnum,
+												   cookedDef->expr);
 
-	/* Make above changes visible */
-	CommandCounterIncrement();
+	if (rewrite)
+	{
+		/*
+		 * Clear all the missing values if we're rewriting the table, since
+		 * this renders them pointless.
+		 */
+		RelationClearMissing(rel);
 
-	/* Drop any pg_statistic entry for the column */
-	RemoveStatistics(RelationGetRelid(rel), attnum);
+		/* Make above changes visible */
+		CommandCounterIncrement();
 
-	/* Schedule a rewrite */
-	newval = palloc0_object(NewColumnValue);
-	newval->attnum = attnum;
-	newval->expr = (Expr *) cookedDef->expr;
-	newval->is_generated = true;
-	tab->newvals = lappend(tab->newvals, newval);
-	tab->rewrite |= AT_REWRITE_DEFAULT_VAL;
+		/* Drop any pg_statistic entry for the column */
+		RemoveStatistics(RelationGetRelid(rel), attnum);
+
+		/* Schedule a rewrite */
+		newval = palloc0_object(NewColumnValue);
+		newval->attnum = attnum;
+		newval->expr = (Expr *) cookedDef->expr;
+		newval->is_generated = true;
+		tab->newvals = lappend(tab->newvals, newval);
+		tab->rewrite |= AT_REWRITE_DEFAULT_VAL;
+	}
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel), attnum);
