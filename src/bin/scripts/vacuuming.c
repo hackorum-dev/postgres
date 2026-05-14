@@ -46,6 +46,7 @@ static int	vacuum_all_databases(ConnParams *cparams,
 								 vacuumingOptions *vacopts,
 								 SimpleStringList *objects,
 								 int concurrentCons,
+								 SimpleStringList *dbsToExclude,
 								 const char *progname);
 static RetrievedObjects *retrieve_objects(PGconn *conn,
 										  vacuumingOptions *vacopts,
@@ -68,6 +69,7 @@ vacuuming_main(ConnParams *cparams, const char *dbname,
 			   const char *maintenance_db, vacuumingOptions *vacopts,
 			   SimpleStringList *objects,
 			   unsigned int tbl_count, int concurrentCons,
+			   SimpleStringList *dbsToExclude,
 			   const char *progname)
 {
 	setup_cancel_handler(NULL);
@@ -83,6 +85,7 @@ vacuuming_main(ConnParams *cparams, const char *dbname,
 		return vacuum_all_databases(cparams, vacopts,
 									objects,
 									concurrentCons,
+									dbsToExclude,
 									progname);
 	}
 	else
@@ -445,17 +448,49 @@ vacuum_all_databases(ConnParams *cparams,
 					 vacuumingOptions *vacopts,
 					 SimpleStringList *objects,
 					 int concurrentCons,
+					 SimpleStringList *dbsToExclude,
 					 const char *progname)
 {
 	int			ret = EXIT_SUCCESS;
 	PGconn	   *conn;
 	PGresult   *result;
 	int			numdbs;
+	PQExpBufferData catalog_query;
 
 	conn = connectMaintenanceDatabase(cparams, progname, vacopts->echo);
+
+	initPQExpBuffer(&catalog_query);
+	appendPQExpBufferStr(&catalog_query,
+						 "SELECT datname FROM pg_database WHERE datallowconn AND datconnlimit <> -2");
+
+	if (dbsToExclude)
+	{
+		SimpleStringListCell *cell;
+		bool		first = true;
+
+		for (cell = dbsToExclude->head; cell; cell = cell->next)
+		{
+			if (first)
+			{
+				appendPQExpBufferStr(&catalog_query, " AND datname NOT IN (");
+				first = false;
+			}
+			else
+				appendPQExpBufferStr(&catalog_query, ",");
+
+			appendStringLiteralConn(&catalog_query, cell->val, conn);
+		}
+
+		if (!first)
+			appendPQExpBufferChar(&catalog_query, ')');
+	}
+
+	appendPQExpBufferStr(&catalog_query, " ORDER BY 1;");
+
 	result = executeQuery(conn,
-						  "SELECT datname FROM pg_database WHERE datallowconn AND datconnlimit <> -2 ORDER BY 1;",
+						  catalog_query.data,
 						  vacopts->echo);
+	termPQExpBuffer(&catalog_query);
 	numdbs = PQntuples(result);
 	PQfinish(conn);
 
