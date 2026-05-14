@@ -4686,6 +4686,17 @@ ALTER FOREIGN TABLE simport_fview OPTIONS (ADD restore_stats 'true');
 
 ANALYZE simport_fview;                    -- should fail
 
+-- Ensure ANALYZE uses the table owner's user mapping
+CREATE ROLE regress_simport_maintain NOSUPERUSER;
+GRANT MAINTAIN ON TABLE simport_ftable TO regress_simport_maintain;
+SET ROLE regress_simport_maintain;
+ANALYZE simport_ftable;           -- should work
+RESET ROLE;
+ALTER FOREIGN TABLE simport_ftable OPTIONS (SET restore_stats 'false');
+SET ROLE regress_simport_maintain;
+ANALYZE simport_ftable;           -- should work
+RESET ROLE;
+
 -- This tests build_remattrmap()'s deparsing of column names that include
 -- single quotes or backslashes
 CREATE TABLE dtest_table ("col'quote" int, "col\backslash" int);
@@ -4730,6 +4741,7 @@ DROP FOREIGN TABLE simport_ftable;
 DROP FOREIGN TABLE simport_fview;
 DROP VIEW simport_view;
 DROP TABLE simport_table;
+DROP ROLE regress_simport_maintain;
 DROP FOREIGN TABLE dtest_ftable;
 DROP TABLE dtest_table;
 
