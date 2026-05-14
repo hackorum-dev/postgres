@@ -5832,10 +5832,10 @@ fetch_remote_statistics(Relation relation,
 	}
 
 	/*
-	 * Get connection to the foreign server.  Connection manager will
-	 * establish new connection if necessary.
+	 * Get the connection to use.  We do the remote access as the table's
+	 * owner, even if the ANALYZE was started by some other user.
 	 */
-	user = GetUserMapping(GetUserId(), table->serverid);
+	user = GetUserMapping(relation->rd_rel->relowner, table->serverid);
 	conn = GetConnection(user, false, NULL);
 	remstats->version = server_version_num = PQserverVersion(conn);
 
