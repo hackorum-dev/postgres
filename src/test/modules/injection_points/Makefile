@@ -4,7 +4,8 @@ MODULE_big = injection_points
 OBJS = \
 	$(WIN32RES) \
 	injection_points.o \
-	regress_injection.o
+	regress_injection.o \
+	regress_prockill.o
 EXTENSION = injection_points
 DATA = injection_points--1.0.sql
 PGFILEDESC = "injection_points - facility for injection points"
@@ -13,6 +14,8 @@ EXTRA_INSTALL = contrib/test_decoding
 
 REGRESS = injection_points hashagg reindex_conc vacuum
 REGRESS_OPTS = --dlpath=$(top_builddir)/src/test/regress
+
+TAP_TESTS = 1
 
 ISOLATION = basic \
 	    inplace \
