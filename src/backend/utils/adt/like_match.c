@@ -256,10 +256,19 @@ MatchText(const char *t, int tlen, const char *p, int plen, pg_locale_t locale)
 				b = buf = palloc(p1 - p);
 				for (const char *c = p; c < p1; c++)
 				{
+					/*
+					 * If we see a backslash, skip it and copy the next
+					 * character literally. Since all backend server encodings
+					 * are ASCII-safe, a '\' (0x5C) can never be part of a
+					 * multibyte character.
+					 * Note: We don't need to check for the end of string
+					 * as the preceding loop has already verified that
+					 * an escape character is not the last byte.
+					  */
+
 					if (*c == '\\')
-						;
-					else
-						*(b++) = *c;
+						c++;
+					*(b++) = *c;
 				}
 
 				subpat = buf;
