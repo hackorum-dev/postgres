@@ -791,6 +791,14 @@ static void ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation
 static void ATExecSplitPartition(List **wqueue, AlteredTableInfo *tab,
 								 Relation rel, PartitionCmd *cmd,
 								 AlterTableUtilityContext *context);
+static void ATPrepAddGeneratedAsExprStored(Relation rel,
+										   AlterTableCmd *cmd,
+										   bool recurse, bool recursing,
+										   LOCKMODE lockmode);
+static ObjectAddress ATExecAddGeneratedAsExprStored(AlteredTableInfo *tab,
+													Relation rel,
+													const char *colName,
+													Constraint *def);
 static List *collectPartitionIndexExtDeps(List *partitionOids);
 static void applyPartitionIndexExtDeps(Oid newPartOid, List *extDepState);
 static void freePartitionIndexExtDeps(List *extDepState);
@@ -4804,6 +4812,7 @@ AlterTableGetLockLevel(List *cmds)
 			case AT_AddIdentity:
 			case AT_DropIdentity:
 			case AT_SetIdentity:
+			case AT_AddGeneratedAsExprStored:
 			case AT_SetExpression:
 			case AT_DropExpression:
 			case AT_SetCompression:
@@ -5126,6 +5135,13 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			ATSimplePermissions(cmd->subtype, rel,
 								ATT_TABLE | ATT_PARTITIONED_TABLE | ATT_FOREIGN_TABLE);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode, context);
+			pass = AT_PASS_SET_EXPRESSION;
+			break;
+		case AT_AddGeneratedAsExprStored:
+			ATSimplePermissions(cmd->subtype, rel,
+								ATT_TABLE | ATT_PARTITIONED_TABLE | ATT_FOREIGN_TABLE);
+			ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode, context);
+			ATPrepAddGeneratedAsExprStored(rel, cmd, recurse, recursing, lockmode);
 			pass = AT_PASS_SET_EXPRESSION;
 			break;
 		case AT_DropExpression: /* ALTER COLUMN DROP EXPRESSION */
@@ -5521,6 +5537,12 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			break;
 		case AT_SetExpression:
 			address = ATExecSetExpression(tab, rel, cmd->name, cmd->def, lockmode);
+			break;
+		case AT_AddGeneratedAsExprStored:
+			Assert(IsA(cmd->def, Constraint));
+			address = ATExecAddGeneratedAsExprStored(tab, rel,
+													 cmd->name,
+													 (Constraint *) cmd->def);
 			break;
 		case AT_DropExpression:
 			address = ATExecDropExpression(rel, cmd->name, cmd->missing_ok, lockmode);
@@ -6730,6 +6752,8 @@ alter_table_type_to_string(AlterTableType cmdtype)
 			return "ALTER COLUMN ... SET NOT NULL";
 		case AT_SetExpression:
 			return "ALTER COLUMN ... SET EXPRESSION";
+		case AT_AddGeneratedAsExprStored:
+			return "ALTER COLUMN ... ADD GENERATED ALWAYS AS (...) STORED";
 		case AT_DropExpression:
 			return "ALTER COLUMN ... DROP EXPRESSION";
 		case AT_SetStatistics:
@@ -8875,6 +8899,172 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 
 	/* Drop any pg_statistic entry for the column */
 	RemoveStatistics(RelationGetRelid(rel), attnum);
+
+	InvokeObjectPostAlterHook(RelationRelationId,
+							  RelationGetRelid(rel), attnum);
+
+	ObjectAddressSubSet(address, RelationRelationId,
+						RelationGetRelid(rel), attnum);
+	return address;
+}
+
+/*
+ * Preparation for
+ *
+ * ALTER TABLE ALTER COLUMN ADD GENERATED ALWAYS AS expr STORED
+ *
+ * Checks whether recursion is allowed, following the same logic as ATPrepDropExpression.
+ */
+static void
+ATPrepAddGeneratedAsExprStored(Relation rel,
+							   AlterTableCmd *cmd,
+							   bool recurse, bool recursing,
+							   LOCKMODE lockmode)
+{
+	/*
+	 * Reject ONLY if there are child tables. See ATPrepDropExpression.
+	 */
+	if (!recurse &&
+		find_inheritance_children(RelationGetRelid(rel), lockmode))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("ALTER TABLE / ADD GENERATED ALWAYS AS (expr) STORED must be applied to child tables too")));
+
+	/*
+	 * Cannot change only inherited columns to be stored generated columns.
+	 */
+	if (!recursing)
+	{
+		HeapTuple	tuple;
+		Form_pg_attribute attTup;
+
+		tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), cmd->name);
+		if (!HeapTupleIsValid(tuple))
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_COLUMN),
+					 errmsg("column \"%s\" of relation \"%s\" does not exist",
+							cmd->name, RelationGetRelationName(rel))));
+
+		attTup = (Form_pg_attribute) GETSTRUCT(tuple);
+
+		if (attTup->attinhcount > 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("cannot change inherited column to be a stored generated column")));
+	}
+}
+
+/*
+ * ALTER TABLE ALTER COLUMN ADD GENERATED ALWAYS AS expr STORED
+ */
+static ObjectAddress
+ATExecAddGeneratedAsExprStored(AlteredTableInfo *tab,
+							   Relation rel,
+							   const char *colName,
+							   Constraint *def)
+{
+	HeapTuple	tuple;
+	Form_pg_attribute attTup;
+	AttrNumber	attnum;
+	ObjectAddress address;
+	NewColumnValue *newval;
+	RawColumnDefault *rawEnt;
+	Relation	pg_attribute;
+	List	   *newcons;
+	CookedConstraint *cookedDef;
+
+	Assert(def->raw_expr != NULL);
+	Assert(def->cooked_expr == NULL);
+	Assert(def->generated_when == ATTRIBUTE_IDENTITY_ALWAYS);
+	Assert(def->generated_kind == ATTRIBUTE_GENERATED_STORED);
+
+	tuple = SearchSysCacheAttName(RelationGetRelid(rel), colName);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_COLUMN),
+				 errmsg("column \"%s\" of relation \"%s\" does not exist",
+						colName, RelationGetRelationName(rel))));
+
+	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
+
+	attnum = attTup->attnum;
+	if (attnum <= 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot alter system column \"%s\"",
+						colName)));
+
+	if (attTup->attgenerated)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("column \"%s\" of relation \"%s\" is already a generated column",
+						colName, RelationGetRelationName(rel))));
+
+	/*
+	 * Find everything that depends on the column (constraints, indexes, etc),
+	 * and record enough information to let us recreate the objects.
+	 */
+	RememberAllDependentForRebuilding(tab, AT_AddGeneratedAsExprStored,
+									  rel, attnum, colName);
+
+	/* Mark as generated stored in pg_attribute */
+	pg_attribute = table_open(AttributeRelationId, RowExclusiveLock);
+	attTup->attgenerated = ATTRIBUTE_GENERATED_STORED;
+	CatalogTupleUpdate(pg_attribute, &tuple->t_self, tuple);
+	table_close(pg_attribute, RowExclusiveLock);
+
+	/* Make above changes visible */
+	CommandCounterIncrement();
+
+	ReleaseSysCache(tuple);
+
+	/*
+	 * Remove previous default value, if any, and store the new generator
+	 * expression.
+	 */
+	RemoveAttrDefault(RelationGetRelid(rel), attnum, DROP_RESTRICT,
+					  false, false);
+
+	rawEnt = palloc_object(RawColumnDefault);
+	rawEnt->attnum = attnum;
+	rawEnt->raw_default = def->raw_expr;
+	rawEnt->generated = def->generated_kind;
+	newcons = AddRelationNewConstraints(rel, list_make1(rawEnt),
+										NIL, false, true, false, NULL);
+
+	/* Make above changes visible */
+	CommandCounterIncrement();
+
+	/*
+	 * At the moment, AddRelationNewConstraints always returns one element
+	 * when called with a generated = STORED input, but guard against
+	 * accessing an empty list anyway.
+	 */
+	if (list_length(newcons) < 1)
+		ereport(ERROR,
+				errmsg_internal("expected exactly one processed default value"));
+
+	cookedDef = linitial(newcons);
+
+	/*
+	 * Clear all the missing values if we're rewriting the table, since this
+	 * renders them pointless.
+	 */
+	RelationClearMissing(rel);
+
+	/* Make above changes visible */
+	CommandCounterIncrement();
+
+	/* Drop any pg_statistic entry for the column */
+	RemoveStatistics(RelationGetRelid(rel), attnum);
+
+	/* Schedule a rewrite */
+	newval = palloc0_object(NewColumnValue);
+	newval->attnum = attnum;
+	newval->expr = (Expr *) cookedDef->expr;
+	newval->is_generated = true;
+	tab->newvals = lappend(tab->newvals, newval);
+	tab->rewrite |= AT_REWRITE_DEFAULT_VAL;
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel), attnum);
@@ -15585,7 +15775,9 @@ RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
 	SysScanDesc scan;
 	HeapTuple	depTup;
 
-	Assert(subtype == AT_AlterColumnType || subtype == AT_SetExpression);
+	Assert(subtype == AT_AlterColumnType
+		   || subtype == AT_SetExpression
+		   || subtype == AT_AddGeneratedAsExprStored);
 
 	depRel = table_open(DependRelationId, RowExclusiveLock);
 
