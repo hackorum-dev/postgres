@@ -310,4 +310,6 @@ extern void RegisterAfterTriggerBatchCallback(AfterTriggerBatchCallback callback
 											  void *arg);
 extern bool AfterTriggerIsActive(void);
 
+extern int GetMyTriggerDepth(void);
+
 #endif							/* TRIGGER_H */
