@@ -549,6 +549,7 @@ a	{2}	2
 CREATE DOMAIN d_int_not_null AS integer NOT NULL CHECK (value > 0);
 CREATE DOMAIN d_int_positive_maybe_null AS integer CHECK (value > 0);
 CREATE TABLE t_on_error_null (a d_int_not_null, b d_int_positive_maybe_null, c integer);
+CREATE TABLE t_on_error_null_col_order (a integer, b d_int_not_null, c integer);
 
 \pset null NULL
 COPY t_on_error_null FROM STDIN WITH (on_error set_null); -- fail
@@ -561,6 +562,11 @@ ss	11	14
 
 COPY t_on_error_null FROM STDIN WITH (on_error set_null); -- fail
 -1	11	13
+\.
+
+-- fail, COPY column list order is not physical attribute order.
+COPY t_on_error_null_col_order (b, c) FROM STDIN WITH (on_error set_null);
+ss	1
 \.
 
 -- fail, less data.
@@ -651,6 +657,7 @@ DROP VIEW instead_of_insert_tbl_view;
 DROP VIEW instead_of_insert_tbl_view_2;
 DROP FUNCTION fun_instead_of_insert_tbl();
 DROP TABLE check_ign_err;
+DROP TABLE t_on_error_null_col_order;
 DROP TABLE t_on_error_null;
 DROP DOMAIN d_int_not_null;
 DROP DOMAIN d_int_positive_maybe_null;

@@ -1636,8 +1636,6 @@ BeginCopyFrom(ParseState *pstate,
 
 	if (cstate->opts.on_error == COPY_ON_ERROR_SET_NULL)
 	{
-		int			attr_count = list_length(cstate->attnumlist);
-
 		/*
 		 * When data type conversion fails and ON_ERROR is SET_NULL, we need
 		 * ensure that the input column allow null values.  ExecConstraints()
@@ -1646,20 +1644,20 @@ BeginCopyFrom(ParseState *pstate,
 		 * check must be performed during the initial string-to-datum
 		 * conversion (see CopyFromTextLikeOneRow()).
 		 */
-		cstate->domain_with_constraint = palloc0_array(bool, attr_count);
+		cstate->domain_with_constraint = palloc0_array(bool, num_phys_attrs);
 
 		foreach_int(attno, cstate->attnumlist)
 		{
-			int			i = foreach_current_index(attno);
+			int			m = attno - 1;
 
-			Form_pg_attribute att = TupleDescAttr(tupDesc, attno - 1);
+			Form_pg_attribute att = TupleDescAttr(tupDesc, m);
 
-			cstate->domain_with_constraint[i] = DomainHasConstraints(att->atttypid, NULL);
+			cstate->domain_with_constraint[m] = DomainHasConstraints(att->atttypid, NULL);
 		}
 	}
 
 	/* Convert FORCE_NULL name list to per-column flags, check validity */
-	cstate->opts.force_null_flags = (bool *) palloc0(num_phys_attrs * sizeof(bool));
+	cstate->opts.force_null_flags = palloc0_array(bool, num_phys_attrs);
 	if (cstate->opts.force_null_all)
 		MemSet(cstate->opts.force_null_flags, true, num_phys_attrs * sizeof(bool));
 	else if (cstate->opts.force_null)
@@ -1777,10 +1775,10 @@ BeginCopyFrom(ParseState *pstate,
 	 * the input function), and info about defaults and constraints. (Which
 	 * input function we use depends on text/binary format choice.)
 	 */
-	in_functions = (FmgrInfo *) palloc(num_phys_attrs * sizeof(FmgrInfo));
-	typioparams = (Oid *) palloc(num_phys_attrs * sizeof(Oid));
-	defmap = (int *) palloc(num_phys_attrs * sizeof(int));
-	defexprs = (ExprState **) palloc(num_phys_attrs * sizeof(ExprState *));
+	in_functions = palloc_array(FmgrInfo, num_phys_attrs);
+	typioparams = palloc_array(Oid, num_phys_attrs);
+	defmap = palloc_array(int, num_phys_attrs);
+	defexprs = palloc_array(ExprState *, num_phys_attrs);
 
 	for (int attnum = 1; attnum <= num_phys_attrs; attnum++)
 	{
@@ -1846,7 +1844,7 @@ BeginCopyFrom(ParseState *pstate,
 		}
 	}
 
-	cstate->defaults = (bool *) palloc0(tupDesc->natts * sizeof(bool));
+	cstate->defaults = palloc0_array(bool, tupDesc->natts);
 
 	/* initialize progress */
 	pgstat_progress_start_command(PROGRESS_COMMAND_COPY,
