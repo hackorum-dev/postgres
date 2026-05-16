@@ -2406,6 +2406,12 @@
   max => '60',
 },
 
+{ name => 'preallocate_stack', type => 'bool', context => 'PGC_POSTMASTER', group => 'RESOURCES_MEM',
+  short_desc => 'Preallocate stack on subprocess start.',
+  variable => 'preallocate_stack',
+  boot_val => 'false',
+},
+
 { name => 'primary_conninfo', type => 'string', context => 'PGC_SIGHUP', group => 'REPLICATION_STANDBY',
   short_desc => 'Sets the connection string to be used to connect to the sending server.',
   flags => 'GUC_SUPERUSER_ONLY',
