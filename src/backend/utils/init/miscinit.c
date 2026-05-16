@@ -107,6 +107,9 @@ InitPostmasterChild(void)
 	pgwin32_signal_initialize();
 #endif
 
+	if (preallocate_stack)
+		(void) allocate_stack();
+
 	InitProcessGlobals();
 
 	/*

@@ -256,6 +256,7 @@ bool		remove_temp_files_after_crash = true;
  */
 bool		send_abort_for_crash = false;
 bool		send_abort_for_kill = false;
+bool		preallocate_stack = false;
 
 /* special child processes; NULL when not running */
 static PMChild *StartupPMChild = NULL,
