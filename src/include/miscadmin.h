@@ -306,6 +306,7 @@ extern void restore_stack_base(pg_stack_base_t base);
 extern void check_stack_depth(void);
 extern bool stack_is_too_deep(void);
 extern ssize_t get_stack_depth_rlimit(void);
+extern int allocate_stack(void);
 
 /* in tcop/utility.c */
 extern void PreventCommandIfReadOnly(const char *cmdname);
