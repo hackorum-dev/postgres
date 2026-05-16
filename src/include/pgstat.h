@@ -269,6 +269,9 @@ typedef struct PgStat_CheckpointerStats
 	PgStat_Counter sync_time;
 	PgStat_Counter buffers_written;
 	PgStat_Counter slru_written;
+	PgStat_Counter segs_added;		/* WAL segments created since last reset */
+	PgStat_Counter segs_removed;	/* WAL segments deleted since last reset */
+	PgStat_Counter segs_recycled;	/* WAL segments recycled since last reset */
 	TimestampTz stat_reset_timestamp;
 } PgStat_CheckpointerStats;
 

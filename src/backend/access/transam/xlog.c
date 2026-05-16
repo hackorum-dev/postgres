@@ -7205,6 +7205,11 @@ LogCheckpointEnd(bool restartpoint, int flags)
 	PendingCheckpointerStats.write_time += write_msecs;
 	PendingCheckpointerStats.sync_time += sync_msecs;
 
+	/* Accumulate WAL segment file counts. */
+	PendingCheckpointerStats.segs_added += CheckpointStats.ckpt_segs_added;
+	PendingCheckpointerStats.segs_removed += CheckpointStats.ckpt_segs_removed;
+	PendingCheckpointerStats.segs_recycled += CheckpointStats.ckpt_segs_recycled;
+
 	/*
 	 * All of the published timing statistics are accounted for.  Only
 	 * continue if a log message is to be written.

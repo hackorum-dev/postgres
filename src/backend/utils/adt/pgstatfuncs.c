@@ -1291,6 +1291,24 @@ pg_stat_get_checkpointer_slru_written(PG_FUNCTION_ARGS)
 }
 
 Datum
+pg_stat_get_checkpointer_segs_added(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(pgstat_fetch_stat_checkpointer()->segs_added);
+}
+
+Datum
+pg_stat_get_checkpointer_segs_removed(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(pgstat_fetch_stat_checkpointer()->segs_removed);
+}
+
+Datum
+pg_stat_get_checkpointer_segs_recycled(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(pgstat_fetch_stat_checkpointer()->segs_recycled);
+}
+
+Datum
 pg_stat_get_bgwriter_buf_written_clean(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(pgstat_fetch_stat_bgwriter()->buf_written_clean);
