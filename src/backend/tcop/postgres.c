@@ -3709,6 +3709,106 @@ ProcessInterrupts(void)
 		ProcessRepackMessages();
 }
 
+#ifndef WIN32
+/*
+ * occupy_stack - recursively touch stack pages to force physical allocation
+ *
+ * Each frame allocates 256kB (half of STACK_DEPTH_SLOP). Recursion stops
+ * when stack_is_too_deep() fires.
+ *
+ * Returns the number of frames successfully allocated.
+ */
+static pg_noinline int
+occupy_stack(void)
+{
+	/* Occupy half of STACK_DEPTH_SLOP at once */
+	volatile char	stack_data[256 * 1024];
+	volatile char	*p = stack_data;
+
+	/* Touch each page to force kernel to back it with physical memory */
+	for (long i = 0; i < sizeof(stack_data); i += 4096)
+		p[i] = 0;
+
+	if (!stack_is_too_deep())
+		return occupy_stack() + 1;
+	return 0;
+}
+
+static sigjmp_buf alt_sigsegv_jump;
+
+/* SIGSEGV handler for allocate_stack() */
+#if defined(USE_SIGACTION) && defined(USE_SIGINFO)
+static void
+alt_sigsegv_handler(int postgres_signal_arg, siginfo_t *info, void *context)
+#else                           /* no USE_SIGINFO */
+static void
+alt_sigsegv_handler(int postgres_signal_arg)
+#endif
+{
+	siglongjmp(alt_sigsegv_jump, 1);
+}
+#endif
+
+/*
+ * allocate_stack - acquire stack pages to prevent SIGSEGV under memory pressure
+ *
+ * When the system is under memory pressure (e.g., cgroup limits), the kernel
+ * may fail to extend the stack on demand, killing the backend with SIGSEGV
+ * before check_stack_depth() can intervene.  This function proactively acquires
+ * physical pages of stack up to max_stack_depth via occupy_stack(), while it
+ * can still handle failures gracefully, using a temporary SIGSEGV handler on
+ * an alternate signal stack.
+ *
+ * Returns the number of frames successfully allocated (0 on Windows).
+ */
+int
+allocate_stack(void)
+{
+	int			result = 0;
+
+#ifndef WIN32
+	struct sigaction	act, oldact;
+	stack_t			ss, old_ss;
+
+	ss.ss_sp = palloc(SIGSTKSZ);
+	ss.ss_size = SIGSTKSZ;
+	ss.ss_flags = 0;
+	if (sigaltstack(&ss, &old_ss) == -1)
+		elog(FATAL, "sigaltstack failed: %m");
+
+	act.sa_flags = SA_ONSTACK;
+	act.sa_handler = alt_sigsegv_handler;
+	sigemptyset(&act.sa_mask);
+	if (sigaction(SIGSEGV, &act, &oldact) == -1)
+		elog(FATAL, "sigaction failed: %m");
+
+	/*
+	 * Use sigsetjmp to intercept SIGSEGV that can happen even at the process
+	 * start, and in this case occupy_stack() can't handle it.
+	 *
+	 * Terminating the process with FATAL is the only way to avoid
+	 * segfaults later.
+	 */
+	if (sigsetjmp(alt_sigsegv_jump, 1) == 0)
+	{
+		result = occupy_stack();
+	}
+	else
+	{
+		/* We got the SIGSEGV trap */
+		elog(FATAL, "could not allocate stack");
+	}
+
+	if (sigaltstack(&old_ss, NULL) == -1)
+		elog(FATAL, "sigaltstack restore failed: %m");
+	if (sigaction(SIGSEGV, &oldact, NULL) == -1)
+		elog(FATAL, "sigaction failed: %m");
+	pfree(ss.ss_sp);
+#endif
+
+	return result;
+}
+
 /*
  * GUC check_hook for client_connection_check_interval
  */
