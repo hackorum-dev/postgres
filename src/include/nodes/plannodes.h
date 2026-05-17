@@ -1847,6 +1847,12 @@ typedef enum MonotonicFunction
 	MONOTONICFUNC_INCREASING = (1 << 0),
 	MONOTONICFUNC_DECREASING = (1 << 1),
 	MONOTONICFUNC_BOTH = MONOTONICFUNC_INCREASING | MONOTONICFUNC_DECREASING,
+
+	/*
+	 * Planner-internal sentinel: pk_slope has not yet been computed.
+	 * Not returned by prosupport functions.
+	 */
+	MONOTONICFUNC_UNKNOWN = (1 << 2),
 } MonotonicFunction;
 
 /*
