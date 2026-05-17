@@ -48,6 +48,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "commands/extension.h"
+#include "commands/keyjoin.h"
 #include "commands/proclang.h"
 #include "executor/executor.h"
 #include "executor/functions.h"
@@ -950,6 +951,7 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
 				ParseState *pstate = make_parsestate(NULL);
 
 				pstate->p_sourcetext = queryString;
+				pstate->p_creating_stored_object = true;
 				sql_fn_parser_setup(pstate, pinfo);
 				q = transformStmt(pstate, stmt);
 				if (q->commandType == CMD_UTILITY)
@@ -969,6 +971,7 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
 			ParseState *pstate = make_parsestate(NULL);
 
 			pstate->p_sourcetext = queryString;
+			pstate->p_creating_stored_object = true;
 			sql_fn_parser_setup(pstate, pinfo);
 			q = transformStmt(pstate, sql_body_in);
 			if (q->commandType == CMD_UTILITY)
@@ -1448,11 +1451,8 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, stmt->objtype,
 					   NameListToString(stmt->func->objname));
 
-	if (procForm->prokind == PROKIND_AGGREGATE)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is an aggregate function",
-						NameListToString(stmt->func->objname))));
+	/* Routine kind cannot change for an existing pg_proc OID. */
+	Assert(procForm->prokind != PROKIND_AGGREGATE);
 
 	if (volatility_item)
 		procForm->provolatile = interpret_func_volatility(volatility_item);
@@ -1559,6 +1559,16 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 
 	table_close(rel, NoLock);
 	heap_freetuple(tup);
+
+	/*
+	 * Revalidate stored key-join proofs that captured this function in a
+	 * matched-filter conjunct.  Proof volatility and strictness assumptions
+	 * were decided at parse time; a later relevant function change can break
+	 * those contracts, so conservatively re-run validation after ALTER
+	 * FUNCTION and abort this DDL if the proof no longer holds.
+	 */
+	CommandCounterIncrement();
+	RevalidateDependentKeyJoinObjectsOnProcedure(funcOid);
 
 	return address;
 }

@@ -31,6 +31,7 @@
 typedef enum DependencyType
 {
 	DEPENDENCY_NORMAL = 'n',
+	DEPENDENCY_KEYJOIN = 'k',
 	DEPENDENCY_AUTO = 'a',
 	DEPENDENCY_INTERNAL = 'i',
 	DEPENDENCY_PARTITION_PRI = 'P',
@@ -115,6 +116,9 @@ extern void performMultipleDeletions(const ObjectAddresses *objects,
 extern void recordDependencyOnExpr(const ObjectAddress *depender,
 								   Node *expr, List *rtable,
 								   DependencyType behavior);
+
+extern void recordDependencyOnKeyJoinProofs(const ObjectAddress *depender,
+											Node *expr);
 
 extern void collectDependenciesOfExpr(ObjectAddresses *addrs,
 									  Node *expr, List *rtable);

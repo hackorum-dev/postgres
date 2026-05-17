@@ -251,6 +251,9 @@ struct ParseState
 
 	Node	   *p_last_srf;		/* most recent set-returning func/op found */
 
+	bool		p_creating_stored_object;	/* stored-object parse (view,
+											 * rule, policy, function with SQL body) */
+
 	/*
 	 * Optional hook functions for parser callbacks.  These are null unless
 	 * set up by the caller of make_parsestate.
