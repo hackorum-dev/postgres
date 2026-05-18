@@ -1,0 +1,727 @@
+CREATE EXTENSION anyarray;
+--
+-- Phase 1: set operations, helpers and operators for int8, uuid, text
+--
+-- ===== int8 =====
+SELECT anyarray_sort(ARRAY[3, 1, 2, 1]::int8[]);
+ anyarray_sort 
+---------------
+ {1,1,2,3}
+(1 row)
+
+SELECT anyarray_sort(ARRAY[3, 1, 2, 1]::int8[], 'desc');
+ anyarray_sort 
+---------------
+ {3,2,1,1}
+(1 row)
+
+SELECT anyarray_sort(ARRAY[]::int8[]);
+ anyarray_sort 
+---------------
+ {}
+(1 row)
+
+SELECT anyarray_uniq(ARRAY[1, 1, 2, 3, 3, 2]::int8[]);
+ anyarray_uniq 
+---------------
+ {1,2,3}
+(1 row)
+
+SELECT anyarray_idx(ARRAY[10, 20, 30]::int8[], 20::int8);
+ anyarray_idx 
+--------------
+            2
+(1 row)
+
+SELECT anyarray_idx(ARRAY[10, 20, 30]::int8[], 99::int8);
+ anyarray_idx 
+--------------
+            0
+(1 row)
+
+SELECT anyarray_subarray(ARRAY[1,2,3,4,5]::int8[], 2, 2);
+ anyarray_subarray 
+-------------------
+ {2,3}
+(1 row)
+
+SELECT anyarray_subarray(ARRAY[1,2,3,4,5]::int8[], 3);
+ anyarray_subarray 
+-------------------
+ {3,4,5}
+(1 row)
+
+SELECT anyarray_subarray(ARRAY[1,2,3]::int8[], 5, 1);
+ anyarray_subarray 
+-------------------
+ {}
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] & ARRAY[2,3,4]::int8[];
+ ?column? 
+----------
+ {2,3}
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] | ARRAY[3,4,5]::int8[];
+  ?column?   
+-------------
+ {1,2,3,4,5}
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] | 4::int8;
+ ?column?  
+-----------
+ {1,2,3,4}
+(1 row)
+
+SELECT ARRAY[1,2,3,4]::int8[] - ARRAY[2,4]::int8[];
+ ?column? 
+----------
+ {1,3}
+(1 row)
+
+SELECT ARRAY[1,2,2,3,2]::int8[] - 2::int8;
+ ?column? 
+----------
+ {1,3}
+(1 row)
+
+SELECT # ARRAY[10,20,30]::int8[];
+ ?column? 
+----------
+        3
+(1 row)
+
+SELECT ARRAY[10,20,30]::int8[] # 20::int8;
+ ?column? 
+----------
+        2
+(1 row)
+
+-- ===== uuid =====
+SELECT anyarray_sort(ARRAY[
+  '00000000-0000-0000-0000-000000000003'::uuid,
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000002']);
+                                                  anyarray_sort                                                   
+------------------------------------------------------------------------------------------------------------------
+ {00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000002,00000000-0000-0000-0000-000000000003}
+(1 row)
+
+SELECT anyarray_uniq(ARRAY[
+  '00000000-0000-0000-0000-000000000001'::uuid,
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000002']);
+                                anyarray_uniq                                
+-----------------------------------------------------------------------------
+ {00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000002}
+(1 row)
+
+SELECT anyarray_idx(ARRAY[
+  '00000000-0000-0000-0000-000000000001'::uuid,
+  '00000000-0000-0000-0000-000000000002'],
+  '00000000-0000-0000-0000-000000000002'::uuid);
+ anyarray_idx 
+--------------
+            2
+(1 row)
+
+SELECT ARRAY['00000000-0000-0000-0000-000000000001'::uuid,
+             '00000000-0000-0000-0000-000000000002']
+     & ARRAY['00000000-0000-0000-0000-000000000002'::uuid,
+             '00000000-0000-0000-0000-000000000003'];
+                ?column?                
+----------------------------------------
+ {00000000-0000-0000-0000-000000000002}
+(1 row)
+
+SELECT ARRAY['00000000-0000-0000-0000-000000000001'::uuid]
+     | '00000000-0000-0000-0000-000000000002'::uuid;
+                                  ?column?                                   
+-----------------------------------------------------------------------------
+ {00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000002}
+(1 row)
+
+-- ===== text =====
+SELECT anyarray_sort(ARRAY['banana','apple','cherry']);
+     anyarray_sort     
+-----------------------
+ {apple,banana,cherry}
+(1 row)
+
+SELECT anyarray_sort(ARRAY['banana','apple','cherry'], 'desc');
+     anyarray_sort     
+-----------------------
+ {cherry,banana,apple}
+(1 row)
+
+SELECT anyarray_uniq(ARRAY['a','b','a','c','b']);
+ anyarray_uniq 
+---------------
+ {a,b,c}
+(1 row)
+
+SELECT anyarray_idx(ARRAY['a','b','c'], 'b'::text);
+ anyarray_idx 
+--------------
+            2
+(1 row)
+
+SELECT ARRAY['a','b','c']::text[] & ARRAY['b','c','d']::text[];
+ ?column? 
+----------
+ {b,c}
+(1 row)
+
+SELECT ARRAY['a','b','c']::text[] | 'd'::text;
+ ?column?  
+-----------
+ {a,b,c,d}
+(1 row)
+
+SELECT ARRAY['a','b','c','b']::text[] - 'b'::text;
+ ?column? 
+----------
+ {a,c}
+(1 row)
+
+-- ===== error cases =====
+-- multi-dim
+SELECT anyarray_sort(ARRAY[[1,2],[3,4]]::int8[]);
+ERROR:  multidimensional arrays are not supported
+-- nulls
+SELECT anyarray_sort(ARRAY[1, NULL, 2]::int8[]);
+ERROR:  array must not contain nulls
+-- bad direction
+SELECT anyarray_sort(ARRAY[1,2,3]::int8[], 'bogus');
+ERROR:  second parameter must be "asc" or "desc"
+--
+-- Phase 2: anyquery and @@ operator
+--
+-- parsing + output round-trip
+SELECT '1 & 2'::anyquery::text;
+ text  
+-------
+ 1 & 2
+(1 row)
+
+SELECT '1 & 2 | 3'::anyquery::text;
+   text    
+-----------
+ 1 & 2 | 3
+(1 row)
+
+SELECT '(1 | 2) & 3'::anyquery::text;
+     text      
+---------------
+ ( 1 | 2 ) & 3
+(1 row)
+
+SELECT '!1 & 2'::anyquery::text;
+  text  
+--------
+ !1 & 2
+(1 row)
+
+SELECT '!(1 | 2) & 3'::anyquery::text;
+        text        
+--------------------
+ !( ( 1 | 2 ) ) & 3
+(1 row)
+
+SELECT '"hello world" | foo'::anyquery::text;
+        text         
+---------------------
+ "hello world" | foo
+(1 row)
+
+SELECT anyquery_querytree('1 & 2 | 3'::anyquery);
+ anyquery_querytree 
+--------------------
+ 1 2 & 3 |
+(1 row)
+
+-- int8 matching
+SELECT ARRAY[1,2,3]::int8[] @@ '1'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] @@ '1 & 2'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] @@ '1 & 4'::anyquery;
+ ?column? 
+----------
+ f
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] @@ '1 | 4'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] @@ '!4'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] @@ '!1'::anyquery;
+ ?column? 
+----------
+ f
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] @@ '!4 & 1'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT ARRAY[1,2,3]::int8[] @@ '(1 | 4) & (2 | 5)'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+-- commutator
+SELECT '1 & 2'::anyquery ~~ ARRAY[1,2,3]::int8[];
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT '1 & 4'::anyquery ~~ ARRAY[1,2,3]::int8[];
+ ?column? 
+----------
+ f
+(1 row)
+
+-- uuid
+SELECT ARRAY['00000000-0000-0000-0000-000000000001'::uuid,
+             '00000000-0000-0000-0000-000000000002']
+       @@ '00000000-0000-0000-0000-000000000001 & 00000000-0000-0000-0000-000000000002'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT ARRAY['00000000-0000-0000-0000-000000000001'::uuid]
+       @@ '00000000-0000-0000-0000-000000000002'::anyquery;
+ ?column? 
+----------
+ f
+(1 row)
+
+-- text
+SELECT ARRAY['apple','banana','cherry']::text[] @@ 'apple & banana'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT ARRAY['apple','banana','cherry']::text[] @@ '"banana" | grape'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT ARRAY['apple','banana','cherry']::text[] @@ 'durian | grape'::anyquery;
+ ?column? 
+----------
+ f
+(1 row)
+
+-- empty array
+SELECT ARRAY[]::int8[] @@ '1'::anyquery;
+ ?column? 
+----------
+ f
+(1 row)
+
+SELECT ARRAY[]::int8[] @@ '!1'::anyquery;
+ ?column? 
+----------
+ t
+(1 row)
+
+-- parse errors
+SELECT ''::anyquery;
+ERROR:  unexpected end of input in anyquery
+LINE 1: SELECT ''::anyquery;
+               ^
+SELECT '1 &'::anyquery;
+ERROR:  unexpected end of input in anyquery
+LINE 1: SELECT '1 &'::anyquery;
+               ^
+SELECT '1 & (2'::anyquery;
+ERROR:  missing closing parenthesis in anyquery
+LINE 1: SELECT '1 & (2'::anyquery;
+               ^
+SELECT '1 ) 2'::anyquery;
+ERROR:  unexpected trailing input in anyquery
+LINE 1: SELECT '1 ) 2'::anyquery;
+               ^
+-- runtime errors: token cannot be parsed as element type
+SELECT ARRAY[1,2]::int8[] @@ 'abc'::anyquery;
+ERROR:  invalid input syntax for type bigint: "abc"
+--
+-- Phase 3: GiST signature index
+--
+-- amvalidate: well-formed opclass
+SELECT amname, opcname FROM pg_opclass opc
+LEFT JOIN pg_am am ON am.oid = opcmethod
+WHERE opc.opcname = 'anyarray_gist_ops' AND NOT amvalidate(opc.oid);
+ amname | opcname 
+--------+---------
+(0 rows)
+
+-- int8 GiST: build deterministic table
+CREATE TABLE anyarray_gist_int8 (id int, a int8[]);
+INSERT INTO anyarray_gist_int8 VALUES
+  (1, ARRAY[1,2,3]::int8[]),
+  (2, ARRAY[10,20,30]::int8[]),
+  (3, ARRAY[10,20,30]::int8[]),
+  (4, ARRAY[1,2,3,4,5]::int8[]),
+  (5, ARRAY[100,200]::int8[]);
+CREATE INDEX anyarray_gist_int8_idx
+  ON anyarray_gist_int8 USING gist(a anyarray_gist_ops);
+SET enable_seqscan = off;
+SELECT id FROM anyarray_gist_int8 WHERE a @> ARRAY[1,2]::int8[] ORDER BY id;
+ id 
+----
+  1
+  4
+(2 rows)
+
+SELECT id FROM anyarray_gist_int8 WHERE a && ARRAY[10,200]::int8[] ORDER BY id;
+ id 
+----
+  2
+  3
+  5
+(3 rows)
+
+SELECT id FROM anyarray_gist_int8 WHERE a = ARRAY[10,20,30]::int8[] ORDER BY id;
+ id 
+----
+  2
+  3
+(2 rows)
+
+SELECT id FROM anyarray_gist_int8 WHERE a <@ ARRAY[1,2,3,4,5]::int8[] ORDER BY id;
+ id 
+----
+  1
+  4
+(2 rows)
+
+SELECT id FROM anyarray_gist_int8 WHERE a @@ '10 & 20'::anyquery ORDER BY id;
+ id 
+----
+  2
+  3
+(2 rows)
+
+SELECT id FROM anyarray_gist_int8 WHERE a @@ '1 | 100'::anyquery ORDER BY id;
+ id 
+----
+  1
+  4
+  5
+(3 rows)
+
+SELECT id FROM anyarray_gist_int8 WHERE a @@ '!1 & 10'::anyquery ORDER BY id;
+ id 
+----
+  2
+  3
+(2 rows)
+
+-- result consistency: GiST must agree with seqscan
+SELECT (
+  SELECT count(*) FROM anyarray_gist_int8 WHERE a @> ARRAY[10]::int8[]
+) = (
+  SELECT count(*) FROM (SELECT 1 FROM anyarray_gist_int8 WHERE a @> ARRAY[10]::int8[]) s
+) AS gist_matches_seqscan;
+ gist_matches_seqscan 
+----------------------
+ t
+(1 row)
+
+RESET enable_seqscan;
+-- text GiST
+CREATE TABLE anyarray_gist_text (id int, a text[]);
+INSERT INTO anyarray_gist_text VALUES
+  (1, ARRAY['apple','banana']),
+  (2, ARRAY['banana','cherry']),
+  (3, ARRAY['apple','cherry','durian']);
+CREATE INDEX anyarray_gist_text_idx
+  ON anyarray_gist_text USING gist(a anyarray_gist_ops(siglen=64));
+SET enable_seqscan = off;
+SELECT id FROM anyarray_gist_text WHERE a @> ARRAY['apple']::text[] ORDER BY id;
+ id 
+----
+  1
+  3
+(2 rows)
+
+SELECT id FROM anyarray_gist_text WHERE a @@ 'apple & cherry'::anyquery ORDER BY id;
+ id 
+----
+  3
+(1 row)
+
+RESET enable_seqscan;
+-- siglen bounds
+CREATE INDEX ON anyarray_gist_text USING gist(a anyarray_gist_ops(siglen=0));
+ERROR:  value 0 out of bounds for option "siglen"
+DETAIL:  Valid values are between "1" and "2024".
+CREATE INDEX ON anyarray_gist_text USING gist(a anyarray_gist_ops(siglen=8193));
+ERROR:  value 8193 out of bounds for option "siglen"
+DETAIL:  Valid values are between "1" and "2024".
+--
+-- Phase 4: GIN index (per-type, supports standard ops + @@)
+--
+-- amvalidate: all three opclasses
+SELECT amname, opcname FROM pg_opclass opc
+LEFT JOIN pg_am am ON am.oid = opcmethod
+WHERE opc.opcname LIKE '%anyquery_gin_ops' AND NOT amvalidate(opc.oid);
+ amname | opcname 
+--------+---------
+(0 rows)
+
+-- int8 GIN
+CREATE TABLE anyarray_gin_int8 (id int, a int8[]);
+INSERT INTO anyarray_gin_int8 VALUES
+  (1, ARRAY[1,2,3]::int8[]),
+  (2, ARRAY[10,20,30]::int8[]),
+  (3, ARRAY[10,20,30]::int8[]),
+  (4, ARRAY[1,2,3,4,5]::int8[]),
+  (5, ARRAY[100,200]::int8[]);
+CREATE INDEX anyarray_gin_int8_idx
+  ON anyarray_gin_int8 USING gin(a int8_anyquery_gin_ops);
+SET enable_seqscan = off;
+SELECT id FROM anyarray_gin_int8 WHERE a @> ARRAY[1,2]::int8[] ORDER BY id;
+ id 
+----
+  1
+  4
+(2 rows)
+
+SELECT id FROM anyarray_gin_int8 WHERE a && ARRAY[10,200]::int8[] ORDER BY id;
+ id 
+----
+  2
+  3
+  5
+(3 rows)
+
+SELECT id FROM anyarray_gin_int8 WHERE a @@ '10 & 20'::anyquery ORDER BY id;
+ id 
+----
+  2
+  3
+(2 rows)
+
+SELECT id FROM anyarray_gin_int8 WHERE a @@ '(1 & 2) | 100'::anyquery ORDER BY id;
+ id 
+----
+  1
+  4
+  5
+(3 rows)
+
+SELECT id FROM anyarray_gin_int8 WHERE a @@ '!1'::anyquery ORDER BY id;
+ id 
+----
+  2
+  3
+  5
+(3 rows)
+
+-- uuid GIN
+CREATE TABLE anyarray_gin_uuid (id int, a uuid[]);
+INSERT INTO anyarray_gin_uuid VALUES
+  (1, ARRAY['11111111-1111-1111-1111-111111111111'::uuid,
+            '22222222-2222-2222-2222-222222222222']),
+  (2, ARRAY['33333333-3333-3333-3333-333333333333'::uuid]),
+  (3, ARRAY['11111111-1111-1111-1111-111111111111'::uuid,
+            '33333333-3333-3333-3333-333333333333']);
+CREATE INDEX anyarray_gin_uuid_idx
+  ON anyarray_gin_uuid USING gin(a uuid_anyquery_gin_ops);
+SET enable_seqscan = off;
+SELECT id FROM anyarray_gin_uuid
+  WHERE a @@ '11111111-1111-1111-1111-111111111111 & 22222222-2222-2222-2222-222222222222'::anyquery
+  ORDER BY id;
+ id 
+----
+  1
+(1 row)
+
+SELECT id FROM anyarray_gin_uuid
+  WHERE a @> ARRAY['11111111-1111-1111-1111-111111111111'::uuid]
+  ORDER BY id;
+ id 
+----
+  1
+  3
+(2 rows)
+
+RESET enable_seqscan;
+-- text GIN
+CREATE TABLE anyarray_gin_text (id int, a text[]);
+INSERT INTO anyarray_gin_text VALUES
+  (1, ARRAY['apple','banana']),
+  (2, ARRAY['banana','cherry']),
+  (3, ARRAY['apple','cherry','durian']);
+CREATE INDEX anyarray_gin_text_idx
+  ON anyarray_gin_text USING gin(a text_anyquery_gin_ops);
+SET enable_seqscan = off;
+SELECT id FROM anyarray_gin_text WHERE a @@ 'apple & cherry'::anyquery ORDER BY id;
+ id 
+----
+  3
+(1 row)
+
+SELECT id FROM anyarray_gin_text WHERE a @@ '"durian"'::anyquery ORDER BY id;
+ id 
+----
+  3
+(1 row)
+
+SELECT id FROM anyarray_gin_text WHERE a @@ 'apple | grape'::anyquery ORDER BY id;
+ id 
+----
+  1
+  3
+(2 rows)
+
+SELECT id FROM anyarray_gin_text WHERE a @@ '!banana'::anyquery ORDER BY id;
+ id 
+----
+  3
+(1 row)
+
+RESET enable_seqscan;
+--
+-- Phase 5: cross-AM consistency and edge cases
+--
+-- Build a larger deterministic int8 table and index it with both GiST and
+-- GIN.  Then run each candidate query under seqscan, GiST and GIN and check
+-- that all three plans return the same row set.
+--
+CREATE TABLE anyarray_xcheck (id int, a int8[]);
+INSERT INTO anyarray_xcheck
+SELECT g,
+       ARRAY[(g % 7)::int8, ((g * 3) % 11)::int8, ((g + 1) % 5)::int8]
+FROM generate_series(1, 200) g;
+-- a few hand-picked rows to exercise common values
+INSERT INTO anyarray_xcheck VALUES
+  (1001, ARRAY[1,2,3,4,5]::int8[]),
+  (1002, ARRAY[1,2,3,4,5]::int8[]),
+  (1003, ARRAY[100,200,300]::int8[]),
+  (1004, ARRAY[]::int8[]),
+  (1005, NULL);
+CREATE INDEX anyarray_xcheck_gist ON anyarray_xcheck
+  USING gist(a anyarray_gist_ops);
+CREATE INDEX anyarray_xcheck_gin ON anyarray_xcheck
+  USING gin(a int8_anyquery_gin_ops);
+-- Run each predicate three times: pure seqscan, GiST-only, GIN-only.
+-- All three result sets must match.
+CREATE FUNCTION anyarray_xcheck_match(pred text)
+RETURNS TABLE(gist_ok bool, gin_ok bool)
+LANGUAGE plpgsql AS $$
+DECLARE
+  seq int[]; gst int[]; gin int[];
+BEGIN
+  SET LOCAL enable_seqscan = on;
+  SET LOCAL enable_indexscan = off;
+  SET LOCAL enable_bitmapscan = off;
+  EXECUTE 'SELECT array_agg(id ORDER BY id) FROM anyarray_xcheck WHERE '
+          || pred INTO seq;
+
+  -- Force GiST by hiding the GIN index.
+  ALTER INDEX anyarray_xcheck_gin SET (fastupdate = off);
+  SET LOCAL enable_seqscan = off;
+  SET LOCAL enable_indexscan = on;
+  SET LOCAL enable_bitmapscan = on;
+  DROP INDEX anyarray_xcheck_gin;
+  EXECUTE 'SELECT array_agg(id ORDER BY id) FROM anyarray_xcheck WHERE '
+          || pred INTO gst;
+  CREATE INDEX anyarray_xcheck_gin ON anyarray_xcheck
+    USING gin(a int8_anyquery_gin_ops);
+
+  -- Force GIN by hiding GiST.
+  DROP INDEX anyarray_xcheck_gist;
+  EXECUTE 'SELECT array_agg(id ORDER BY id) FROM anyarray_xcheck WHERE '
+          || pred INTO gin;
+  CREATE INDEX anyarray_xcheck_gist ON anyarray_xcheck
+    USING gist(a anyarray_gist_ops);
+
+  gist_ok := seq IS NOT DISTINCT FROM gst;
+  gin_ok  := seq IS NOT DISTINCT FROM gin;
+  RETURN NEXT;
+END $$;
+SELECT pred, gist_ok, gin_ok FROM (VALUES
+  ('a @> ARRAY[1,2]::int8[]'),
+  ('a @> ARRAY[100,200]::int8[]'),
+  ('a && ARRAY[5,99]::int8[]'),
+  ('a = ARRAY[1,2,3,4,5]::int8[]'),
+  ('a @@ ''1 & 2''::anyquery'),
+  ('a @@ ''100 | 999''::anyquery'),
+  ('a @@ ''!1 & 2''::anyquery')
+) v(pred), LATERAL anyarray_xcheck_match(pred);
+             pred             | gist_ok | gin_ok 
+------------------------------+---------+--------
+ a @> ARRAY[1,2]::int8[]      | t       | t
+ a @> ARRAY[100,200]::int8[]  | t       | t
+ a && ARRAY[5,99]::int8[]     | t       | t
+ a = ARRAY[1,2,3,4,5]::int8[] | t       | t
+ a @@ '1 & 2'::anyquery       | t       | t
+ a @@ '100 | 999'::anyquery   | t       | t
+ a @@ '!1 & 2'::anyquery      | t       | t
+(7 rows)
+
+-- Edge cases: empty / NULL arrays via index
+SET enable_seqscan = off;
+SELECT id FROM anyarray_xcheck WHERE a @> ARRAY[]::int8[] AND id = 1004;
+  id  
+------
+ 1004
+(1 row)
+
+SELECT id FROM anyarray_xcheck WHERE a <@ ARRAY[1,2,3]::int8[] AND id < 100 ORDER BY id LIMIT 3;
+ id 
+----
+  1
+ 15
+ 30
+(3 rows)
+
+SELECT count(*) FROM anyarray_xcheck WHERE a IS NULL;
+ count 
+-------
+     1
+(1 row)
+
+RESET enable_seqscan;
+-- DELETE / VACUUM / re-query through index
+DELETE FROM anyarray_xcheck WHERE id BETWEEN 1 AND 50;
+VACUUM anyarray_xcheck;
+SET enable_seqscan = off;
+SELECT count(*) FROM anyarray_xcheck WHERE a @@ '1 | 2'::anyquery;
+ count 
+-------
+    98
+(1 row)
+
+RESET enable_seqscan;
+DROP FUNCTION anyarray_xcheck_match(text);
