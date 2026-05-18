@@ -128,6 +128,7 @@ CREATE EXTENSION <replaceable>extension_name</replaceable>;
  </para>
 
  &amcheck;
+ &anyarray;
  &auth-delay;
  &auto-explain;
  &basebackup-to-shell;

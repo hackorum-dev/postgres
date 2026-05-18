@@ -1,0 +1,6 @@
+# anyarray extension
+comment = 'Operations and indexes for arrays of any type'
+default_version = '1.0'
+module_pathname = '$libdir/anyarray'
+relocatable = true
+trusted = false
