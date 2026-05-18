@@ -119,6 +119,7 @@
 <!-- contrib information -->
 <!ENTITY contrib         SYSTEM "contrib.sgml">
 <!ENTITY amcheck         SYSTEM "amcheck.sgml">
+<!ENTITY anyarray        SYSTEM "anyarray.sgml">
 <!ENTITY auth-delay      SYSTEM "auth-delay.sgml">
 <!ENTITY auto-explain    SYSTEM "auto-explain.sgml">
 <!ENTITY basic-archive   SYSTEM "basic-archive.sgml">
