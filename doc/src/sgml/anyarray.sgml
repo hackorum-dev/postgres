@@ -1,0 +1,482 @@
+<!-- doc/src/sgml/anyarray.sgml -->
+
+<sect1 id="anyarray" xreflabel="anyarray">
+ <title>anyarray &mdash; operations and indexes for arrays of any type</title>
+
+ <indexterm zone="anyarray">
+  <primary>anyarray</primary>
+ </indexterm>
+
+ <para>
+  The <filename>anyarray</filename> module generalizes
+  <xref linkend="intarray"/>-style operations to arrays of any element type
+  that provides a default B-tree opclass.  It adds set-style helpers, a
+  textual boolean query type (<type>anyquery</type>), and index support that
+  works for arbitrary element types.
+ </para>
+
+ <para>
+  All operations reject arrays that contain <literal>NULL</literal> elements,
+  and they are defined only for one-dimensional arrays.
+ </para>
+
+ <para>
+  This module is not marked as <quote>trusted</quote>: installing it
+  requires database-level privileges, because the index operator classes
+  it defines refer to internal storage types.
+ </para>
+
+ <sect2 id="anyarray-funcs-ops">
+  <title><filename>anyarray</filename> Functions and Operators</title>
+
+  <para>
+   The functions provided by <filename>anyarray</filename> are listed in
+   <xref linkend="anyarray-func-table"/>, the operators in
+   <xref linkend="anyarray-op-table"/>.
+  </para>
+
+  <table id="anyarray-func-table">
+   <title><filename>anyarray</filename> Functions</title>
+    <tgroup cols="1">
+     <thead>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        Function
+       </para>
+       <para>
+        Description
+       </para>
+       <para>
+        Example(s)
+       </para></entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_sort</function> ( <type>anyarray</type> [, <type>text</type> ] )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Sorts an array.  The optional second argument is
+        <literal>asc</literal> (default) or <literal>desc</literal>.
+       </para>
+       <para>
+        <literal>anyarray_sort('{3,1,2}'::int8[])</literal>
+        <returnvalue>{1,2,3}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_uniq</function> ( <type>anyarray</type> )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Removes duplicates from the array, returning the sorted unique
+        elements.
+       </para>
+       <para>
+        <literal>anyarray_uniq('{1,1,2,3,3}'::int8[])</literal>
+        <returnvalue>{1,2,3}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_idx</function> ( <type>anyarray</type>, <type>anyelement</type> )
+        <returnvalue>integer</returnvalue>
+       </para>
+       <para>
+        Returns the 1-based index of the first occurrence of the element,
+        or 0 if not found.
+       </para>
+       <para>
+        <literal>anyarray_idx(ARRAY['a','b','c'], 'b')</literal>
+        <returnvalue>2</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_subarray</function> ( <type>anyarray</type>, <parameter>start</parameter> <type>integer</type> [, <parameter>length</parameter> <type>integer</type> ] )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Returns a contiguous slice starting at <parameter>start</parameter>
+        (1-based).  If <parameter>length</parameter> is omitted the slice
+        extends to the end of the array.  Out-of-range positions or
+        non-positive lengths produce an empty array.
+       </para>
+       <para>
+        <literal>anyarray_subarray('{1,2,3,4,5}'::int8[], 2, 2)</literal>
+        <returnvalue>{2,3}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_icount</function> ( <type>anyarray</type> )
+        <returnvalue>integer</returnvalue>
+       </para>
+       <para>
+        Returns the number of elements in the array (exposed under the
+        <literal>#</literal> operator).
+       </para>
+       <para>
+        <literal>anyarray_icount('{10,20,30}'::int8[])</literal>
+        <returnvalue>3</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_intersect</function> ( <type>anyarray</type>, <type>anyarray</type> )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Returns the sorted, deduplicated values present in both inputs.
+       </para>
+       <para>
+        <literal>anyarray_intersect('{1,2,3}'::int8[], '{2,3,4}')</literal>
+        <returnvalue>{2,3}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_union</function> ( <type>anyarray</type>, <type>anyarray</type> )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Returns the sorted, deduplicated union of both inputs.
+       </para>
+       <para>
+        <literal>anyarray_union('{1,2}'::int8[], '{2,3}')</literal>
+        <returnvalue>{1,2,3}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_union_elem</function> ( <type>anyarray</type>, <type>anyelement</type> )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Adds an element to the array if not already present; result is
+        sorted and deduplicated.
+       </para>
+       <para>
+        <literal>anyarray_union_elem('{1,2,3}'::int8[], 4::int8)</literal>
+        <returnvalue>{1,2,3,4}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_difference</function> ( <type>anyarray</type>, <type>anyarray</type> )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Returns the sorted, deduplicated values from the first array that
+        are not in the second.
+       </para>
+       <para>
+        <literal>anyarray_difference('{1,2,3,4}'::int8[], '{2,4}')</literal>
+        <returnvalue>{1,3}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyarray_difference_elem</function> ( <type>anyarray</type>, <type>anyelement</type> )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Removes all occurrences of the given element, preserving the
+        relative order of the surviving elements.
+       </para>
+       <para>
+        <literal>anyarray_difference_elem('{1,2,2,3,2}'::int8[], 2::int8)</literal>
+        <returnvalue>{1,3}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>anyquery_querytree</function> ( <type>anyquery</type> )
+        <returnvalue>text</returnvalue>
+       </para>
+       <para>
+        Returns the query in postfix form; useful for debugging.
+       </para>
+       <para>
+        <literal>anyquery_querytree('1 &amp; 2 | 3'::anyquery)</literal>
+        <returnvalue>1 2 &amp; 3 |</returnvalue>
+       </para></entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+   <table id="anyarray-op-table">
+    <title><filename>anyarray</filename> Operators</title>
+     <tgroup cols="1">
+      <thead>
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         Operator
+        </para>
+        <para>
+         Description
+        </para></entry>
+       </row>
+      </thead>
+
+      <tbody>
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         <type></type> <literal>#</literal> <type>anyarray</type>
+         <returnvalue>integer</returnvalue>
+        </para>
+        <para>
+         Returns the number of elements in the array (prefix operator).
+        </para></entry>
+       </row>
+
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         <type>anyarray</type> <literal>#</literal> <type>anyelement</type>
+         <returnvalue>integer</returnvalue>
+        </para>
+        <para>
+         Returns the 1-based index of the right operand in the array, or 0
+         if not found.  Same as <function>anyarray_idx</function>.
+        </para></entry>
+       </row>
+
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         <type>anyarray</type> <literal>&amp;</literal> <type>anyarray</type>
+         <returnvalue>anyarray</returnvalue>
+        </para>
+        <para>
+         Set intersection of the operands.
+        </para></entry>
+       </row>
+
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         <type>anyarray</type> <literal>|</literal> <type>anyarray</type>
+         <returnvalue>anyarray</returnvalue>
+        </para>
+        <para>
+         Set union of the operands.
+        </para></entry>
+       </row>
+
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         <type>anyarray</type> <literal>|</literal> <type>anyelement</type>
+         <returnvalue>anyarray</returnvalue>
+        </para>
+        <para>
+         Adds the right operand to the array if not already present.
+        </para></entry>
+       </row>
+
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         <type>anyarray</type> <literal>-</literal> <type>anyarray</type>
+         <returnvalue>anyarray</returnvalue>
+        </para>
+        <para>
+         Set difference: elements of the left array not present in the
+         right.
+        </para></entry>
+       </row>
+
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         <type>anyarray</type> <literal>-</literal> <type>anyelement</type>
+         <returnvalue>anyarray</returnvalue>
+        </para>
+        <para>
+         Removes all occurrences of the right operand from the array.
+        </para></entry>
+       </row>
+
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         <type>anyarray</type> <literal>@@</literal> <type>anyquery</type>
+         <returnvalue>boolean</returnvalue>
+        </para>
+        <para>
+         True if the array satisfies the query (see below).
+        </para></entry>
+       </row>
+
+       <row>
+        <entry role="func_table_entry"><para role="func_signature">
+         <type>anyquery</type> <literal>~~</literal> <type>anyarray</type>
+         <returnvalue>boolean</returnvalue>
+        </para>
+        <para>
+         Commutator of <literal>@@</literal>.
+        </para></entry>
+       </row>
+      </tbody>
+     </tgroup>
+   </table>
+
+   <para>
+    The operators <literal>&amp;&amp;</literal>, <literal>@&gt;</literal>,
+    <literal>&lt;@</literal> and <literal>=</literal> on arrays are
+    <emphasis>not</emphasis> redefined by this extension; the built-in
+    PostgreSQL operators are used.
+   </para>
+ </sect2>
+
+ <sect2 id="anyarray-query">
+  <title>The <type>anyquery</type> Type</title>
+
+  <para>
+   <type>anyquery</type> represents a boolean expression over array
+   elements.  Values are textual tokens; the element type used to interpret
+   them is determined by the left-hand side of <literal>@@</literal> at
+   query time.  Tokens are combined with the operators
+   <literal>&amp;</literal> (AND), <literal>|</literal> (OR) and
+   <literal>!</literal> (NOT).  Parentheses control precedence; without
+   them <literal>&amp;</literal> binds tighter than <literal>|</literal>.
+  </para>
+
+  <para>
+   A token consists of any sequence of characters that are not whitespace
+   or one of <literal>&amp; | ! ( ) "</literal>.  To include those
+   characters or embedded whitespace, wrap the token in double quotes:
+   <literal>"hello world"</literal>.  Inside quotes, a backslash escapes
+   the next character.
+  </para>
+
+  <para>
+   At evaluation time, each token is parsed by the input function of the
+   array's element type.  This means
+   <literal>'1 &amp; 2'::anyquery @@ ARRAY[1,2,3]::bigint[]</literal>
+   parses <quote>1</quote> and <quote>2</quote> as <type>bigint</type>; the
+   same query against a <type>text[]</type> column compares the literal
+   strings <quote>1</quote> and <quote>2</quote>.  An unparseable token
+   raises an error at <literal>@@</literal>-time, not at parse time.
+  </para>
+ </sect2>
+
+ <sect2 id="anyarray-index">
+  <title>Index Support</title>
+
+  <para>
+   <filename>anyarray</filename> provides a polymorphic GiST opclass and
+   per-element-type GIN opclasses.  All of them support the standard array
+   operators (<literal>&amp;&amp;</literal>, <literal>@&gt;</literal>,
+   <literal>&lt;@</literal>, <literal>=</literal>) as well as
+   <literal>@@</literal>.
+  </para>
+
+  <sect3 id="anyarray-index-gist">
+   <title>GiST: <literal>anyarray_gist_ops</literal></title>
+
+   <para>
+    A single opclass on <type>anyarray</type> works for any element type
+    that has a default hash function.  Each indexed array is summarised as
+    a fixed-size bit vector by hashing every element into one bit; internal
+    nodes store the union of their children.  All matches are rechecked
+    because signatures are lossy.
+   </para>
+
+   <para>
+    The optional integer parameter <literal>siglen</literal> sets the
+    signature length in bytes.  The default is 252 bytes (2016 bits);
+    valid values are between 1 and the index-key size limit.  Longer
+    signatures produce more precise indexes at the cost of more storage.
+   </para>
+
+   <programlisting>
+CREATE INDEX my_idx ON my_table USING gist (col anyarray_gist_ops);
+CREATE INDEX my_idx ON my_table USING gist (col anyarray_gist_ops(siglen=64));
+   </programlisting>
+  </sect3>
+
+  <sect3 id="anyarray-index-gin">
+   <title>GIN: per-type opclasses</title>
+
+   <para>
+    Because the GIN extractQuery API does not expose the indexed column's
+    element type when the query is an <type>anyquery</type>, GIN support
+    is provided as one opclass per concrete element type.  Currently
+    supplied:
+   </para>
+
+   <itemizedlist>
+    <listitem><para>
+     <literal>int8_anyquery_gin_ops</literal> for <type>bigint[]</type>
+    </para></listitem>
+    <listitem><para>
+     <literal>uuid_anyquery_gin_ops</literal> for <type>uuid[]</type>
+    </para></listitem>
+    <listitem><para>
+     <literal>text_anyquery_gin_ops</literal> for <type>text[]</type>
+    </para></listitem>
+   </itemizedlist>
+
+   <para>
+    These opclasses are drop-in replacements for the built-in
+    <literal>array_ops</literal>; they additionally support
+    <literal>@@</literal>.
+   </para>
+
+   <programlisting>
+CREATE INDEX my_idx ON my_table USING gin (col int8_anyquery_gin_ops);
+   </programlisting>
+
+   <para>
+    For element types not in the list above, use the built-in GIN
+    <literal>array_ops</literal> for set queries and rely on
+    <literal>anyarray_gist_ops</literal> for <literal>@@</literal>.
+   </para>
+  </sect3>
+ </sect2>
+
+ <sect2 id="anyarray-example">
+  <title>Example</title>
+
+<programlisting>
+CREATE EXTENSION anyarray;
+
+CREATE TABLE message (mid INT PRIMARY KEY, tags TEXT[]);
+
+CREATE INDEX message_tags_gist ON message USING gist (tags anyarray_gist_ops);
+CREATE INDEX message_tags_gin  ON message USING gin  (tags text_anyquery_gin_ops);
+
+-- Messages tagged with both 'urgent' and 'bug':
+SELECT mid FROM message WHERE tags @&gt; ARRAY['urgent','bug'];
+
+-- Same, with the query syntax:
+SELECT mid FROM message WHERE tags @@ 'urgent &amp; bug'::anyquery;
+
+-- Messages tagged 'urgent' but not 'wontfix':
+SELECT mid FROM message WHERE tags @@ 'urgent &amp; !wontfix'::anyquery;
+
+-- Sort and deduplicate a tag list:
+SELECT anyarray_uniq(tags) FROM message WHERE mid = 42;
+</programlisting>
+ </sect2>
+
+ <sect2 id="anyarray-authors">
+  <title>Authors</title>
+
+  <para>
+   The <filename>anyarray</filename> module is a generalization of
+   <xref linkend="intarray"/> by Teodor Sigaev and Oleg Bartunov.
+  </para>
+ </sect2>
+
+</sect1>
