@@ -124,7 +124,13 @@ AnalyzeAttrFetchFunc
 AnalyzeForeignTable_function
 AnlExprData
 AnlIndexData
+AnyArrayGistKey
+AnyArrayGistOptions
 AnyArrayType
+AnyArrayTypeInfo
+AnyQuery
+AnyQueryCheck
+AnyQueryItem
 Append
 AppendPath
 AppendPathInput
@@ -1730,6 +1736,7 @@ MVNDistinct
 MVNDistinctItem
 ManyTestResource
 ManyTestResourceKind
+MatchContext
 Material
 MaterialPath
 MaterialState
@@ -2359,6 +2366,7 @@ PgXmlStrictness
 Pg_abi_values
 Pg_finfo_record
 Pg_magic_struct
+PickSplitEntry
 PipeProtoChunk
 PipeProtoHeader
 PlaceHolderInfo
