@@ -631,14 +631,23 @@ archive_command = 'test ! -f "/mnt/server/archivedir/%f" &amp;&amp; cp "%p" "/mn
 archive_command = 'copy "%p" "C:\\server\\archivedir\\%f"'  # Windows
 </programlisting>
     which will copy archivable WAL segments to the directory
-    <filename>/mnt/server/archivedir</filename>.  (This is an example, not a
-    recommendation, and might not work on all platforms.)  After the
+    <filename>/mnt/server/archivedir</filename>. After the
     <literal>%p</literal> and <literal>%f</literal> parameters have been replaced,
     the actual command executed might look like this:
 <programlisting>
 test ! -f /mnt/server/archivedir/00000001000000A900000065 &amp;&amp; cp pg_wal/00000001000000A900000065 /mnt/server/archivedir/00000001000000A900000065
 </programlisting>
     A similar command will be generated for each new file to be archived.
+
+    IMPORTANT: The simple cp or copy commands return success as soon as the data
+    is written to the operating system cache. However, PostgreSQL does not
+    automatically force these archived files to be flushed to physical storage as
+    of datafiles. In the event of an unexpected system shutdown or power failure,
+    files confirmed as archived might be lost from the OS cache, leading to data loss
+    in Point-in-Time Recovery (PITR) or issues with pg_rewind.
+
+    To ensure data persistence, the command should include a step to synchronize
+    the file to disk.
    </para>
 
    <para>
