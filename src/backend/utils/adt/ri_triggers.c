@@ -260,11 +260,23 @@ typedef struct RI_FastPathEntry
 } RI_FastPathEntry;
 
 /*
+ * RI_QueryPlanCacheExecutingRefCountEntry
+ *
+ * Entry to track the number of times a prepared plan is being executed.
+ */
+typedef struct RI_QueryPlanCacheExecutingRefCountEntry
+{
+	SPIPlanPtr  plan;
+	uint32      refcount; /* number of times this plan is being executed (can be more than 1 if reentrant) */
+} RI_QueryPlanCacheExecutingRefCountEntry;
+
+/*
  * Local data
  */
 static HTAB *ri_constraint_cache = NULL;
 static HTAB *ri_query_cache = NULL;
 static HTAB *ri_compare_cache = NULL;
+static HTAB *ri_query_plan_cache_executing_refcount = NULL;
 static dclist_head ri_constraint_cache_valid_list;
 
 static HTAB *ri_fastpath_cache = NULL;
@@ -303,6 +315,11 @@ static void InvalidateConstraintCacheCallBack(Datum arg, SysCacheIdentifier cach
 static SPIPlanPtr ri_FetchPreparedPlan(RI_QueryKey *key);
 static void ri_HashPreparedPlan(RI_QueryKey *key, SPIPlanPtr plan);
 static RI_CompareHashEntry *ri_HashCompareOp(Oid eq_opr, Oid typeid);
+
+/* Reentrancy protection: prevent segfault on deleting a plan in execution if invalidated during reentrant RI check. */
+static void ri_PreparedPlanExecutionStarted(SPIPlanPtr plan);
+static void ri_PreparedPlanExecutionFinished(SPIPlanPtr plan);
+static bool ri_PreparedPlanCanRelease(SPIPlanPtr plan);
 
 static void ri_CheckTrigger(FunctionCallInfo fcinfo, const char *funcname,
 							int tgkind);
@@ -2751,6 +2768,9 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 						   save_sec_context | SECURITY_LOCAL_USERID_CHANGE |
 						   SECURITY_NOFORCE_RLS);
 
+	/* Increase plan use count for reentrancy protection. */
+	ri_PreparedPlanExecutionStarted(qplan);
+
 	/*
 	 * Finally we can run the query.
 	 *
@@ -2762,6 +2782,9 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 									  vals, nulls,
 									  test_snapshot, crosscheck_snapshot,
 									  false, false, limit);
+	
+	/* Decrease plan use count. this call can free the plan if it was invalidated and no longer in use. */
+	ri_PreparedPlanExecutionFinished(qplan);
 
 	/* Restore UID and security context */
 	SetUserIdAndSecContext(save_userid, save_sec_context);
@@ -3863,6 +3886,12 @@ ri_InitHashTables(void)
 	ri_compare_cache = hash_create("RI compare cache",
 								   RI_INIT_QUERYHASHSIZE,
 								   &ctl, HASH_ELEM | HASH_BLOBS);
+
+	ctl.keysize = sizeof(SPIPlanPtr);
+	ctl.entrysize = sizeof(RI_QueryPlanCacheExecutingRefCountEntry);
+	ri_query_plan_cache_executing_refcount = hash_create("RI plan cache execution refcount",
+								   RI_INIT_QUERYHASHSIZE,
+								   &ctl, HASH_ELEM | HASH_BLOBS);
 }
 
 
@@ -3912,7 +3941,7 @@ ri_FetchPreparedPlan(RI_QueryKey *key)
 	 * memory space before we make a new one.
 	 */
 	entry->plan = NULL;
-	if (plan)
+	if (plan && ri_PreparedPlanCanRelease(plan))
 		SPI_freeplan(plan);
 
 	return NULL;
@@ -3945,6 +3974,61 @@ ri_HashPreparedPlan(RI_QueryKey *key, SPIPlanPtr plan)
 											  HASH_ENTER, &found);
 	Assert(!found || entry->plan == NULL);
 	entry->plan = plan;
+}
+
+
+static void
+ri_PreparedPlanExecutionStarted(SPIPlanPtr plan)
+{	
+	RI_QueryPlanCacheExecutingRefCountEntry* entry;
+	bool found;
+
+	if (!ri_query_plan_cache_executing_refcount)
+		ri_InitHashTables();
+	
+	entry = (RI_QueryPlanCacheExecutingRefCountEntry*) hash_search(ri_query_plan_cache_executing_refcount, &plan, HASH_ENTER, &found);
+	if (found)
+		entry->refcount++;
+	else
+		entry->refcount = 1;
+}
+
+static void
+ri_PreparedPlanExecutionFinished(SPIPlanPtr plan)
+{	
+	RI_QueryPlanCacheExecutingRefCountEntry* entry;
+	bool found;
+
+	if (!ri_query_plan_cache_executing_refcount)
+		return;
+	
+	entry = (RI_QueryPlanCacheExecutingRefCountEntry*) hash_search(ri_query_plan_cache_executing_refcount, &plan, HASH_FIND, &found);
+	if (!entry)
+		return;
+	
+	entry->refcount--;
+	if (entry->refcount == 0 && !SPI_plan_is_valid(plan))
+	{
+		// Remove the entry
+		hash_search(ri_query_plan_cache_executing_refcount, &plan, HASH_REMOVE, NULL);
+		SPI_freeplan(plan);
+	}
+}
+
+static bool
+ri_PreparedPlanCanRelease(SPIPlanPtr plan)
+{
+	RI_QueryPlanCacheExecutingRefCountEntry* entry;
+	bool found;
+
+	if (!ri_query_plan_cache_executing_refcount)
+		return true;
+	
+	entry = (RI_QueryPlanCacheExecutingRefCountEntry*) hash_search(ri_query_plan_cache_executing_refcount, &plan, HASH_FIND, &found);
+	if (!entry)
+		return true;
+	
+	return entry->refcount == 0;
 }
 
 
