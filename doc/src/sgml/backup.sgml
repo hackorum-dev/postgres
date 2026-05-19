@@ -1602,6 +1602,26 @@ archive_command = 'local_backup_script.sh "%p" "%f"'
      dropping tablespaces.
     </para>
    </listitem>
+
+   <listitem>
+    <para>
+   The archive_command example does not ensure persistence on some Unix/Linux systems, 
+   a more robust (but also simple) example command is:
+
+<programlisting>
+archive_command = 'test ! -f /mnt/server/archivedir/%f && cp %p /mnt/server/archivedir/%f && sync /mnt/server/archivedir/%f'
+<programlisting>
+
+     The sync command must operate at the file level, and sync version should be
+     validated to not write the entire cache. Alternatively, in Linux, the destination file
+     system can be mounted with the sync option in the system configuration
+     (e.g., /etc/fstab), though this may impact overall performance.
+     Administrators must validate the durability and behavior of the chosen
+     archival method on their specific operating system and storage architecture,
+     as file system synchronization guarantees vary significantly across
+     platforms.
+    </para>
+   </listitem>
   </itemizedlist>
    </para>
 
