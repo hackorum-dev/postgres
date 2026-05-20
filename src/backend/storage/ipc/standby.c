@@ -790,13 +790,20 @@ cleanup:
  * Deadlocks are extremely rare, and relatively expensive to check for,
  * so we don't do a deadlock check right away ... only if we have had to wait
  * at least deadlock_timeout.
+ *
+ * The current process should be the waiter process and should have
+ * published the waited buffer via SetStartupBufferPinWaitBufId().
  */
 void
 ResolveRecoveryConflictWithBufferPin(void)
 {
 	TimestampTz ltime;
+	int			bufid;
 
 	Assert(InHotStandby);
+
+	bufid = GetStartupBufferPinWaitBufId();
+	Assert(bufid >= 0);
 
 	ltime = GetStandbyLimitTime();
 
@@ -833,35 +840,59 @@ ResolveRecoveryConflictWithBufferPin(void)
 		enable_timeouts(timeouts, cnt);
 	}
 
-	/*
-	 * Wait to be signaled by UnpinBuffer() or for the wait to be interrupted
-	 * by one of the timeouts established above.
-	 *
-	 * We assume that only UnpinBuffer() and the timeout requests established
-	 * above can wake us up here. WakeupRecovery() called by walreceiver or
-	 * SIGHUP signal handler, etc cannot do that because it uses the different
-	 * latch from that ProcWaitForSignal() waits on.
-	 */
-	ProcWaitForSignal(WAIT_EVENT_BUFFER_CLEANUP);
-
-	if (got_standby_delay_timeout)
-		SendRecoveryConflictWithBufferPin(RECOVERY_CONFLICT_BUFFERPIN);
-	else if (got_standby_deadlock_timeout)
+	for (;;)
 	{
+		uint32		refcount;
+
 		/*
-		 * Send out a request for hot-standby backends to check themselves for
-		 * deadlocks.
+		 * Wait to be signaled by UnpinBuffer() or for the wait to be
+		 * interrupted by one of the timeouts established above.
 		 *
-		 * XXX The subsequent ResolveRecoveryConflictWithBufferPin() will wait
-		 * to be signaled by UnpinBuffer() again and send a request for
-		 * deadlocks check if deadlock_timeout happens. This causes the
-		 * request to continue to be sent every deadlock_timeout until the
-		 * buffer is unpinned or ltime is reached. This would increase the
-		 * workload in the startup process and backends. In practice it may
-		 * not be so harmful because the period that the buffer is kept pinned
-		 * is basically no so long. But we should fix this?
+		 * ProcWaitForSignal() can also wake up for unrelated reasons, so
+		 * recheck that the buffer is pinned by the current waiter process
+		 * only (reference counter should be 1). Continue waiting, if no
+		 * registered timeout is fired or the buffer is still pinned by other
+		 * processes as well.
 		 */
-		SendRecoveryConflictWithBufferPin(RECOVERY_CONFLICT_BUFFERPIN_DEADLOCK);
+		ProcWaitForSignal(WAIT_EVENT_BUFFER_CLEANUP);
+
+		/*
+		 * Once the reference count is 1, the waiter process itself is the
+		 * only backend pinning the buffer at the moment. There is a chance to
+		 * lock the buffer exclusively.
+		 */
+		refcount = BufferGetRefCount(bufid + 1);
+		Assert(refcount > 0);
+
+		if (refcount == 0)
+			elog(ERROR,
+				 "buffer refcount dropped to zero while waiting for cleanup lock");
+		if (refcount == 1)
+			break;
+
+		if (got_standby_delay_timeout)
+		{
+			SendRecoveryConflictWithBufferPin(RECOVERY_CONFLICT_BUFFERPIN);
+			break;
+		}
+		else if (got_standby_deadlock_timeout)
+		{
+			/*
+			 * Send out a request for hot-standby backends to check themselves
+			 * for deadlocks.
+			 *
+			 * XXX The subsequent ResolveRecoveryConflictWithBufferPin() will
+			 * wait to be signaled by UnpinBuffer() again and send a request
+			 * for deadlocks check if deadlock_timeout happens. This causes
+			 * the request to continue to be sent every deadlock_timeout until
+			 * the buffer is unpinned or ltime is reached. This would increase
+			 * the workload in the startup process and backends. In practice
+			 * it may not be so harmful because the period that the buffer is
+			 * kept pinned is basically no so long. But we should fix this?
+			 */
+			SendRecoveryConflictWithBufferPin(RECOVERY_CONFLICT_BUFFERPIN_DEADLOCK);
+			break;
+		}
 	}
 
 	/*

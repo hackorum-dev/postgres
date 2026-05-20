@@ -311,6 +311,7 @@ extern void DropDatabaseBuffers(Oid dbid);
 
 extern bool BufferIsPermanent(Buffer buffer);
 extern XLogRecPtr BufferGetLSNAtomic(Buffer buffer);
+extern uint32 BufferGetRefCount(Buffer buffer);
 extern void BufferGetTag(Buffer buffer, RelFileLocator *rlocator,
 						 ForkNumber *forknum, BlockNumber *blknum);
 

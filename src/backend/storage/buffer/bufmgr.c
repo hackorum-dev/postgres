@@ -4763,6 +4763,29 @@ BufferGetLSNAtomic(Buffer buffer)
 #endif
 }
 
+/*
+ * BufferGetRefCount
+ *		Return the current reference counter for a shared buffer.
+ */
+uint32
+BufferGetRefCount(Buffer buffer)
+{
+	BufferDesc *bufHdr;
+	uint64		buf_state;
+	uint32		buf_refcount;
+
+	Assert(BufferIsValid(buffer));
+	Assert(!BufferIsLocal(buffer));
+
+	bufHdr = GetBufferDescriptor(buffer - 1);
+
+	buf_state = LockBufHdr(bufHdr);
+	buf_refcount = BUF_STATE_GET_REFCOUNT(buf_state);
+	UnlockBufHdr(bufHdr);
+
+	return buf_refcount;
+}
+
 /* ---------------------------------------------------------------------
  *		DropRelationBuffers
  *
