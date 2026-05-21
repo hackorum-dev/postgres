@@ -778,28 +778,54 @@ logicalrep_partition_open(LogicalRepRelMapEntry *root,
  * We expect to call this function when REPLICA IDENTITY FULL is defined for
  * the remote relation.
  *
+ * If multiple usable indexes exist, unique indexes are preferred (they
+ * guarantee at most one tuple per scan), and among unique indexes those with
+ * fewer key columns win.  The first usable non-unique index is accepted
+ * without further ranking.
+ *
  * If no suitable index is found, returns InvalidOid.
  */
 static Oid
 FindUsableIndexForReplicaIdentityFull(Relation localrel, AttrMap *attrmap)
 {
 	List	   *idxlist = RelationGetIndexList(localrel);
+	Oid			best_idx = InvalidOid;
+	bool		best_is_unique = false;
+	int			best_nkeyatts = PG_INT32_MAX;
 
 	foreach_oid(idxoid, idxlist)
 	{
-		bool		isUsableIdx;
-		Relation	idxRel;
+		bool		is_usable;
+		bool		is_unique;
+		int			nkeyatts;
+		Relation	idxrel;
 
-		idxRel = index_open(idxoid, AccessShareLock);
-		isUsableIdx = IsIndexUsableForReplicaIdentityFull(idxRel, attrmap);
-		index_close(idxRel, AccessShareLock);
+		idxrel = index_open(idxoid, AccessShareLock);
+		is_usable = IsIndexUsableForReplicaIdentityFull(idxrel, attrmap);
+		is_unique = idxrel->rd_index->indisunique;
+		nkeyatts = idxrel->rd_index->indnkeyatts;
+		index_close(idxrel, AccessShareLock);
 
-		/* Return the first eligible index found */
-		if (isUsableIdx)
-			return idxoid;
+		if (!is_usable)
+			continue;
+
+		/*
+		 * Prefer unique indexes (at most one index scan per tuple match), and
+		 * among those prefer fewer key columns.  For non-unique indexes we
+		 * just accept the first one found, since more keys can narrow the
+		 * search space and fewer columns is not necessarily better.
+		 */
+		if (best_idx == InvalidOid ||
+			(is_unique && !best_is_unique) ||
+			(best_is_unique && is_unique && nkeyatts < best_nkeyatts))
+		{
+			best_idx = idxoid;
+			best_is_unique = is_unique;
+			best_nkeyatts = nkeyatts;
+		}
 	}
 
-	return InvalidOid;
+	return best_idx;
 }
 
 /*

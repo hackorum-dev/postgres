@@ -547,6 +547,72 @@ $node_subscriber->safe_psql('postgres', "DROP TABLE test_replica_id_full");
 # Testcase end: Subscription can use hash index
 # =============================================================================
 
+# =============================================================================
+# Testcase start: Index selection prefers unique indexes and fewer key columns
+#
+
+# create tables pub and sub
+$node_publisher->safe_psql('postgres',
+	"CREATE TABLE test_idx_select (a int, b int, c int)");
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE test_idx_select REPLICA IDENTITY FULL");
+$node_subscriber->safe_psql('postgres',
+	"CREATE TABLE test_idx_select (a int, b int, c int)");
+
+# create a non-unique index on (a, b, c) and a unique index on (a, b)
+# the unique index with fewer columns should be preferred
+$node_subscriber->safe_psql('postgres',
+	"CREATE INDEX test_idx_select_nonuniq ON test_idx_select(a, b, c)");
+$node_subscriber->safe_psql('postgres',
+	"CREATE UNIQUE INDEX test_idx_select_uniq ON test_idx_select(a, b)");
+
+# create pub/sub
+$node_publisher->safe_psql('postgres',
+	"CREATE PUBLICATION tap_pub_idx_select FOR TABLE test_idx_select");
+$node_subscriber->safe_psql('postgres',
+	"CREATE SUBSCRIPTION tap_sub_idx_select CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub_idx_select"
+);
+
+# wait for initial table synchronization to finish
+$node_subscriber->wait_for_subscription_sync($node_publisher, $appname);
+
+# insert and update a row
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO test_idx_select VALUES (1, 2, 3)");
+$node_publisher->safe_psql('postgres',
+	"UPDATE test_idx_select SET c = 4 WHERE a = 1");
+
+# wait until the index is used on the subscriber
+$node_publisher->wait_for_catchup($appname);
+$node_subscriber->poll_query_until('postgres',
+	q{select (idx_scan = 1) from pg_stat_all_indexes where indexrelname = 'test_idx_select_uniq';}
+  )
+  or die
+  "Timed out while waiting for check subscriber tap_sub_idx_select updates one row via unique index";
+
+# make sure that the non-unique index was not used
+$result = $node_subscriber->safe_psql('postgres',
+	"select idx_scan from pg_stat_all_indexes where indexrelname = 'test_idx_select_nonuniq'");
+is($result, qq(0),
+	'ensure non-unique index is not used when unique index is available');
+
+# make sure that the subscriber has the correct data
+$result = $node_subscriber->safe_psql('postgres',
+	"select c from test_idx_select where a = 1");
+is($result, qq(4),
+	'ensure subscriber has the correct data at the end of the test');
+
+# cleanup pub
+$node_publisher->safe_psql('postgres', "DROP PUBLICATION tap_pub_idx_select");
+$node_publisher->safe_psql('postgres', "DROP TABLE test_idx_select");
+
+# cleanup sub
+$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION tap_sub_idx_select");
+$node_subscriber->safe_psql('postgres', "DROP TABLE test_idx_select");
+
+# Testcase end: Index selection prefers unique indexes and fewer key columns
+# =============================================================================
+
 $node_subscriber->stop('fast');
 $node_publisher->stop('fast');
 
