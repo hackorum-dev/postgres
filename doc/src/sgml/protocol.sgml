@@ -4231,7 +4231,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Int32</term>
        <listitem>
         <para>
-         The process ID of this backend.
+         The process ID of this backend (signed).
         </para>
        </listitem>
       </varlistentry>
@@ -4315,7 +4315,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
          or that the parameters all use the default format (text);
          or one, in which case the specified format code is applied
          to all parameters; or it can equal the actual number of
-         parameters.
+         parameters (unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -4335,7 +4335,8 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          The number of parameter values that follow (possibly zero).
-         This must match the number of parameters needed by the query.
+         This must match the number of parameters needed by the query
+         (unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -4351,7 +4352,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          The length of the parameter value, in bytes (this count
-         does not include itself).  Can be zero.
+         does not include itself, signed).  Can be zero.
          As a special case, -1 indicates a NULL parameter value.
          No value bytes follow in the NULL case.
         </para>
@@ -4386,7 +4387,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
          (text);
          or one, in which case the specified format code is applied
          to all result columns (if any); or it can equal the actual
-         number of result columns of the query.
+         number of result columns of the query (unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -4784,7 +4785,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          The number of columns in the data to be copied
-         (denoted <replaceable>N</replaceable> below).
+         (denoted <replaceable>N</replaceable> below, unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -4844,7 +4845,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          The number of columns in the data to be copied
-         (denoted <replaceable>N</replaceable> below).
+         (denoted <replaceable>N</replaceable> below, unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -4904,7 +4905,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          The number of columns in the data to be copied
-         (denoted <replaceable>N</replaceable> below).
+         (denoted <replaceable>N</replaceable> below, unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -4949,7 +4950,8 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Int16</term>
        <listitem>
         <para>
-         The number of column values that follow (possibly zero).
+         The number of column values that follow (possibly zero,
+         unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -4965,7 +4967,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          The length of the column value, in bytes (this count
-         does not include itself).  Can be zero.
+         does not include itself, signed).  Can be zero.
          As a special case, -1 indicates a NULL column value.
          No value bytes follow in the NULL case.
         </para>
@@ -5153,7 +5155,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
         <para>
          Maximum number of rows to return, if portal contains
          a query that returns rows (ignored otherwise).  Zero
-         denotes <quote>no limit</quote>.
+         denotes <quote>no limit</quote> (unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -5227,7 +5229,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
          or that the arguments all use the default format (text);
          or one, in which case the specified format code is applied
          to all arguments; or it can equal the actual number of
-         arguments.
+         arguments (unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -5247,7 +5249,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          Specifies the number of arguments being supplied to the
-         function.
+         function (unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -5263,7 +5265,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          The length of the argument value, in bytes (this count
-         does not include itself).  Can be zero.
+         does not include itself, signed).  Can be zero.
          As a special case, -1 indicates a NULL argument value.
          No value bytes follow in the NULL case.
         </para>
@@ -5327,7 +5329,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          The length of the function result value, in bytes (this count
-         does not include itself).  Can be zero.
+         does not include itself, signed).  Can be zero.
          As a special case, -1 indicates a NULL function result.
          No value bytes follow in the NULL case.
         </para>
@@ -5449,7 +5451,8 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Int32</term>
        <listitem>
         <para>
-         Number of protocol options not recognized by the server.
+         Number of protocol options not recognized by the server
+         (unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -5581,7 +5584,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Int32</term>
        <listitem>
         <para>
-         The process ID of the notifying backend process.
+         The process ID of the notifying backend process (signed).
         </para>
        </listitem>
       </varlistentry>
@@ -5634,7 +5637,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          The number of parameters used by the statement
-         (can be zero).
+         (can be zero, unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -5749,7 +5752,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
          (can be zero).  Note that this is not an indication of
          the number of parameters that might appear in the
          query string, only the number that the frontend wants to
-         prespecify types for.
+         prespecify types for (unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -5961,7 +5964,8 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Int16</term>
        <listitem>
         <para>
-         Specifies the number of fields in a row (can be zero).
+         Specifies the number of fields in a row (can be zero,
+         unsigned).
         </para>
        </listitem>
       </varlistentry>
@@ -6014,7 +6018,8 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Int16</term>
        <listitem>
         <para>
-         The data type size (see <varname>pg_type.typlen</varname>).
+         The data type size (see <varname>pg_type.typlen</varname>,
+         signed).
          Note that negative values denote variable-width types.
         </para>
        </listitem>
@@ -6024,7 +6029,8 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Int32</term>
        <listitem>
         <para>
-         The type modifier (see <varname>pg_attribute.atttypmod</varname>).
+         The type modifier (see <varname>pg_attribute.atttypmod</varname>,
+         signed).
          The meaning of the modifier is type-specific.
         </para>
        </listitem>
@@ -6084,7 +6090,7 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <listitem>
         <para>
          Length of SASL mechanism specific "Initial Client Response" that
-         follows, or -1 if there is no Initial Response.
+         follows (signed), or -1 if there is no Initial Response.
         </para>
        </listitem>
       </varlistentry>
