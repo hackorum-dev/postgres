@@ -3961,6 +3961,26 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
         <literal>TABLESPACE</literal>.
        </para></entry>
       </row>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_get_policy_ddl</primary>
+        </indexterm>
+        <function>pg_get_policy_ddl</function>
+        ( <parameter>table</parameter> <type>regclass</type>,
+        <parameter>policy_name</parameter> <type>name</type>
+        <optional>, <literal>VARIADIC</literal> <parameter>options</parameter>
+        <type>text</type> </optional> )
+        <returnvalue>setof text</returnvalue>
+       </para>
+       <para>
+        Reconstructs the <command>CREATE POLICY</command> statement for the
+        named row-level security policy on the specified table.  The result
+        is returned as a single row.
+        The following option is supported: <literal>pretty</literal>
+        (boolean) for formatted output.
+       </para></entry>
+      </row>
      </tbody>
     </tgroup>
    </table>

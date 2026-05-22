@@ -26,6 +26,7 @@
 #include "catalog/pg_collation.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_db_role_setting.h"
+#include "catalog/pg_policy.h"
 #include "catalog/pg_tablespace.h"
 #include "commands/tablespace.h"
 #include "common/relpath.h"
@@ -86,6 +87,9 @@ static List *pg_get_tablespace_ddl_internal(Oid tsid, bool pretty, bool no_owner
 static Datum pg_get_tablespace_ddl_srf(FunctionCallInfo fcinfo, Oid tsid, bool isnull);
 static List *pg_get_database_ddl_internal(Oid dbid, bool pretty,
 										  bool no_owner, bool no_tablespace);
+static List *pg_get_policy_ddl_internal(Oid tableID, const char *policyName,
+										bool pretty);
+static const char *get_policy_cmd_name(char cmd);
 
 
 /*
@@ -1162,6 +1166,264 @@ pg_get_database_ddl(PG_FUNCTION_ARGS)
 												  opts[0].isset && opts[0].boolval,
 												  opts[1].isset && !opts[1].boolval,
 												  opts[2].isset && !opts[2].boolval);
+		funcctx->user_fctx = statements;
+		funcctx->max_calls = list_length(statements);
+
+		MemoryContextSwitchTo(oldcontext);
+	}
+
+	funcctx = SRF_PERCALL_SETUP();
+	statements = (List *) funcctx->user_fctx;
+
+	if (funcctx->call_cntr < funcctx->max_calls)
+	{
+		char	   *stmt;
+
+		stmt = list_nth(statements, funcctx->call_cntr);
+
+		SRF_RETURN_NEXT(funcctx, CStringGetTextDatum(stmt));
+	}
+	else
+	{
+		list_free_deep(statements);
+		SRF_RETURN_DONE(funcctx);
+	}
+}
+
+/*
+ * get_policy_cmd_name
+ *		Map a pg_policy.polcmd char to its SQL keyword.
+ */
+static const char *
+get_policy_cmd_name(char cmd)
+{
+	switch (cmd)
+	{
+		case '*':
+			return "ALL";
+		case ACL_SELECT_CHR:
+			return "SELECT";
+		case ACL_INSERT_CHR:
+			return "INSERT";
+		case ACL_UPDATE_CHR:
+			return "UPDATE";
+		case ACL_DELETE_CHR:
+			return "DELETE";
+		default:
+			elog(ERROR, "unrecognized policy command: %d", (int) cmd);
+	}
+}
+
+/*
+ * pg_get_policy_ddl_internal
+ *		Generate the DDL statement to recreate a row-level security policy.
+ *
+ * Returns a List containing a single palloc'd string with the CREATE POLICY
+ * statement.  Returning a List keeps the calling convention consistent with
+ * the rest of the pg_get_*_ddl family even though only one row is produced.
+ */
+static List *
+pg_get_policy_ddl_internal(Oid tableID, const char *policyName, bool pretty)
+{
+	Relation	pgPolicyRel;
+	HeapTuple	tuplePolicy;
+	Form_pg_policy policyForm;
+	ScanKeyData skey[2];
+	SysScanDesc sscan;
+	StringInfoData buf;
+	Datum		valueDatum;
+	bool		attrIsNull;
+	char	   *targetTable;
+	List	   *statements = NIL;
+
+	/* Validate that the relation exists */
+	{
+		char	   *relname = get_rel_name(tableID);
+		char	   *nspname;
+
+		if (relname == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_TABLE),
+					 errmsg("relation with OID %u does not exist", tableID)));
+
+		nspname = get_namespace_name(get_rel_namespace(tableID));
+		if (nspname == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_SCHEMA),
+					 errmsg("schema for relation with OID %u does not exist",
+							tableID)));
+
+		targetTable = quote_qualified_identifier(nspname, relname);
+		pfree(relname);
+		pfree(nspname);
+	}
+
+	pgPolicyRel = table_open(PolicyRelationId, AccessShareLock);
+
+	/* Set key - policy's relation id. */
+	ScanKeyInit(&skey[0],
+				Anum_pg_policy_polrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(tableID));
+
+	/* Set key - policy's name. */
+	ScanKeyInit(&skey[1],
+				Anum_pg_policy_polname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(policyName));
+
+	sscan = systable_beginscan(pgPolicyRel,
+							   PolicyPolrelidPolnameIndexId, true, NULL, 2,
+							   skey);
+
+	tuplePolicy = systable_getnext(sscan);
+	if (!HeapTupleIsValid(tuplePolicy))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("policy \"%s\" for table \"%s\" does not exist",
+						policyName, targetTable)));
+
+	policyForm = (Form_pg_policy) GETSTRUCT(tuplePolicy);
+
+	initStringInfo(&buf);
+
+	/* Build the CREATE POLICY statement */
+	appendStringInfo(&buf, "CREATE POLICY %s ON %s",
+					 quote_identifier(policyName),
+					 targetTable);
+
+	/*
+	 * Emit AS RESTRICTIVE only when it differs from the default (PERMISSIVE).
+	 */
+	if (!policyForm->polpermissive)
+		append_ddl_option(&buf, pretty, 4, "AS RESTRICTIVE");
+
+	/*
+	 * Emit FOR <cmd> only when it differs from the default (ALL, encoded as
+	 * '*').
+	 */
+	if (policyForm->polcmd != '*')
+		append_ddl_option(&buf, pretty, 4, "FOR %s",
+						  get_policy_cmd_name(policyForm->polcmd));
+
+	/*
+	 * Emit TO <roles> only when it differs from the default (PUBLIC).  PUBLIC
+	 * is encoded in polroles as a single InvalidOid element, so we omit the
+	 * clause whenever every entry is InvalidOid.
+	 */
+	valueDatum = heap_getattr(tuplePolicy,
+							  Anum_pg_policy_polroles,
+							  RelationGetDescr(pgPolicyRel),
+							  &attrIsNull);
+	if (!attrIsNull)
+	{
+		ArrayType  *policy_roles = DatumGetArrayTypePCopy(valueDatum);
+		int			nitems = ARR_DIMS(policy_roles)[0];
+		Oid		   *roles = (Oid *) ARR_DATA_PTR(policy_roles);
+		StringInfoData role_names;
+
+		initStringInfo(&role_names);
+
+		for (int i = 0; i < nitems; i++)
+		{
+			if (OidIsValid(roles[i]))
+			{
+				char	   *rolename = GetUserNameFromId(roles[i], false);
+
+				if (role_names.len > 0)
+					appendStringInfoString(&role_names, ", ");
+				appendStringInfoString(&role_names, quote_identifier(rolename));
+			}
+		}
+
+		if (role_names.len > 0)
+			append_ddl_option(&buf, pretty, 4, "TO %s", role_names.data);
+
+		pfree(role_names.data);
+		pfree(policy_roles);
+	}
+
+	/* USING expression */
+	valueDatum = heap_getattr(tuplePolicy,
+							  Anum_pg_policy_polqual,
+							  RelationGetDescr(pgPolicyRel),
+							  &attrIsNull);
+	if (!attrIsNull)
+	{
+		Datum		expr;
+
+		expr = DirectFunctionCall3(pg_get_expr_ext,
+								   valueDatum,
+								   ObjectIdGetDatum(policyForm->polrelid),
+								   BoolGetDatum(pretty));
+		append_ddl_option(&buf, pretty, 4, "USING (%s)",
+						  TextDatumGetCString(expr));
+	}
+
+	/* WITH CHECK expression */
+	valueDatum = heap_getattr(tuplePolicy,
+							  Anum_pg_policy_polwithcheck,
+							  RelationGetDescr(pgPolicyRel),
+							  &attrIsNull);
+	if (!attrIsNull)
+	{
+		Datum		expr;
+
+		expr = DirectFunctionCall3(pg_get_expr_ext,
+								   valueDatum,
+								   ObjectIdGetDatum(policyForm->polrelid),
+								   BoolGetDatum(pretty));
+		append_ddl_option(&buf, pretty, 4, "WITH CHECK (%s)",
+						  TextDatumGetCString(expr));
+	}
+
+	appendStringInfoChar(&buf, ';');
+
+	statements = lappend(statements, pstrdup(buf.data));
+
+	systable_endscan(sscan);
+	table_close(pgPolicyRel, AccessShareLock);
+	pfree(buf.data);
+
+	return statements;
+}
+
+/*
+ * pg_get_policy_ddl
+ *		Return DDL to recreate a row-level security policy as a single text row.
+ */
+Datum
+pg_get_policy_ddl(PG_FUNCTION_ARGS)
+{
+	FuncCallContext *funcctx;
+	List	   *statements;
+
+	if (SRF_IS_FIRSTCALL())
+	{
+		MemoryContext oldcontext;
+		Oid			tableID;
+		Name		policyName;
+		DdlOption	opts[] = {
+			{"pretty", DDL_OPT_BOOL},
+		};
+
+		funcctx = SRF_FIRSTCALL_INIT();
+		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+		if (PG_ARGISNULL(0) || PG_ARGISNULL(1))
+		{
+			MemoryContextSwitchTo(oldcontext);
+			SRF_RETURN_DONE(funcctx);
+		}
+
+		tableID = PG_GETARG_OID(0);
+		policyName = PG_GETARG_NAME(1);
+
+		parse_ddl_options(fcinfo, 2, opts, lengthof(opts));
+
+		statements = pg_get_policy_ddl_internal(tableID,
+												NameStr(*policyName),
+												opts[0].isset && opts[0].boolval);
 		funcctx->user_fctx = statements;
 		funcctx->max_calls = list_length(statements);
 
