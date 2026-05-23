@@ -22,6 +22,7 @@
 #include "command.h"
 #include "common.h"
 #include "common/logging.h"
+#include "sqlstate_names.h"
 #include "copy.h"
 #include "crosstabview.h"
 #include "fe_utils/cancel.h"
@@ -456,7 +457,20 @@ AcceptResult(const PGresult *result, bool show_error)
 		const char *error = PQerrorMessage(pset.db);
 
 		if (strlen(error))
+		{
 			pg_log_info("%s", error);
+
+			if (pset.verbosity == PQERRORS_VERBOSE)
+			{
+				const char *sqlstate = PQresultErrorField(result, PG_DIAG_SQLSTATE);
+				if (sqlstate)
+				{
+					const char *sym = get_sqlstate_symbolic_name(sqlstate);
+					if (sym)
+						pg_log_info("SQLSTATE name: %s\n", sym);
+				}
+			}
+		}
 
 		CheckConnection();
 	}
@@ -1854,7 +1868,21 @@ ExecQueryAndProcessResults(const char *query,
 			const char *error = PQresultErrorMessage(result);
 
 			if (strlen(error))
+			{
 				pg_log_info("%s", error);
+
+				if (pset.verbosity == PQERRORS_VERBOSE)
+				{
+					const char *sqlstate = PQresultErrorField(result, PG_DIAG_SQLSTATE);
+					if (sqlstate)
+					{
+						const char *sym = get_sqlstate_symbolic_name(sqlstate);
+						if (sym)
+							pg_log_info("SQLSTATE name: %s\n", sym);
+					}
+				}
+			}
+
 
 			CheckConnection();
 			if (!is_watch)
