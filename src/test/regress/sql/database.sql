@@ -4,6 +4,9 @@ ALTER DATABASE regression_tbd RENAME TO regression_utf8;
 ALTER DATABASE regression_utf8 SET TABLESPACE regress_tblspace;
 ALTER DATABASE regression_utf8 SET TABLESPACE pg_default;
 ALTER DATABASE regression_utf8 CONNECTION_LIMIT 123;
+-- Test raises an error when locale and encoding mismatch.
+CREATE DATABASE regression_locale_encoding_not_match
+	LOCALE "en_US.UTF-8" ENCODING LATIN9 TEMPLATE template0;
 
 -- Test PgDatabaseToastTable.  Doing this with GRANT would be slow.
 BEGIN;
