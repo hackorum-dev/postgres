@@ -28,6 +28,7 @@
 #include "command.h"
 #include "common.h"
 #include "common/logging.h"
+#include "sqlstate_names.h"
 #include "common/string.h"
 #include "copy.h"
 #include "describe.h"
@@ -1656,6 +1657,14 @@ exec_command_errverbose(PsqlScanState scan_state, bool active_branch)
 			{
 				pg_log_error("%s", msg);
 				PQfreemem(msg);
+
+				const char *sqlstate = PQresultErrorField(pset.last_error_result, PG_DIAG_SQLSTATE);
+				if (sqlstate)
+				{
+					const char *sym = get_sqlstate_symbolic_name(sqlstate);
+					if (sym)
+						pg_log_error("SQLSTATE name: %s\n", sym);
+				}
 			}
 			else
 				puts(_("out of memory"));
