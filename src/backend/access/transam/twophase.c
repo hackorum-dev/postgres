@@ -1652,6 +1652,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	 */
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 
+	INJECTION_POINT("twophase-callbacks-execution", NULL);
+
 	/* And now do the callbacks */
 	if (isCommit)
 		ProcessRecords(bufptr, fxid, twophase_postcommit_callbacks);
