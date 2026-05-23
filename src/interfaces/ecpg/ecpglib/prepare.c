@@ -620,6 +620,11 @@ ecpg_auto_prepare(int lineno, const char *connection_name, const int compat, cha
 			return false;
 
 		con = ecpg_get_connection(connection_name);
+		if (!ecpg_init(con, connection_name, lineno))
+		{
+			ecpg_free(*name);
+			return false;
+		}
 		prep = ecpg_find_prepared_statement(stmtID, con, NULL);
 		/* This prepared name doesn't exist on this connection. */
 		if (!prep && !prepare_common(lineno, con, stmtID, query))
