@@ -34,6 +34,17 @@ tabcomplete = custom_target('tabcomplete',
 generated_sources += tabcomplete
 psql_sources += tabcomplete
 
+sqlstate_names = custom_target('sqlstate_names',
+  input: '@SOURCE_ROOT@/src/backend/utils/errcodes.txt',
+  output: 'sqlstate_names.h',
+  command: [
+    perl, files('generate-errcode-names.pl'), '@INPUT@', '@OUTPUT@',
+  ],
+)
+generated_sources += sqlstate_names
+psql_sources += sqlstate_names
+
+
 sql_help = custom_target('psql_help',
   output: ['sql_help.c', 'sql_help.h'],
   depfile: 'sql_help.dep',
