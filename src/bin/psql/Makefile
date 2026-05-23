@@ -64,6 +64,11 @@ psqlscanslash.c: FLEX_NO_BACKUP=yes
 tab-complete.c: gen_tabcomplete.pl tab-complete.in.c
 	$(PERL) $^ --outfile $@
 
+common.o command.o: sqlstate_names.h
+
+sqlstate_names.h: generate-errcode-names.pl $(top_srcdir)/src/backend/utils/errcodes.txt
+	$(PERL) $^ $@
+
 install: all installdirs
 	$(INSTALL_PROGRAM) psql$(X) '$(DESTDIR)$(bindir)/psql$(X)'
 	$(INSTALL_DATA) $(srcdir)/psqlrc.sample '$(DESTDIR)$(datadir)/psqlrc.sample'
@@ -77,7 +82,7 @@ uninstall:
 clean distclean:
 	rm -f psql$(X) $(OBJS) lex.backup
 	rm -rf tmp_check
-	rm -f sql_help.h sql_help.c psqlscanslash.c tab-complete.c
+	rm -f sql_help.h sql_help.c psqlscanslash.c tab-complete.c sqlstate_names.h
 
 check:
 	$(prove_check)
