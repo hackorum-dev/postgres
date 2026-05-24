@@ -252,3 +252,23 @@ SELECT count(*) from test__int WHERE a @@ '!2733 & (2738 | 254)';
 
 
 RESET enable_seqscan;
+
+CREATE OR REPLACE FUNCTION my_text_eq(a text, b text) RETURNS boolean AS $$
+BEGIN
+    RETURN a = b;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OPERATOR %% (
+    LEFTARG = text,
+    RIGHTARG = text,
+    FUNCTION = my_text_eq,
+    RESTRICT = _int_matchsel
+);
+
+CREATE TEMP TABLE test_vuln (t text);
+INSERT INTO test_vuln SELECT md5(i::text) FROM generate_series(1, 1000) i;
+ANALYZE test_vuln;
+
+SELECT * FROM test_vuln WHERE t %% 'test'::text;
+DROP FUNCTION my_text_eq CASCADE;
