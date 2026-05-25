@@ -2,7 +2,12 @@
 
  <chapter id="tutorial-start">
   <title>Getting Started</title>
-
+<para>
+This chapter introduces the basics of working with
+<productname>PostgreSQL</productname>. It explains how to
+install the software, describes basic architectural concepts,
+and shows you how to create and access a database.
+</para>
   <sect1 id="tutorial-install">
    <title>Installation</title>
 
