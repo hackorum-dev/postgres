@@ -820,7 +820,10 @@ error:
 			 errmsg("could not write file \"%s\": %m",
 					PGSS_DUMP_FILE ".tmp")));
 	if (qbuffer)
+	{
 		pfree(qbuffer);
+		qbuffer = NULL;
+	}
 	if (file)
 		FreeFile(file);
 	unlink(PGSS_DUMP_FILE ".tmp");
@@ -2475,7 +2478,7 @@ need_gc_qtexts(void)
 static void
 gc_qtexts(void)
 {
-	char	   *qbuffer;
+	char	   *qbuffer = NULL;
 	Size		qbuffer_size;
 	FILE	   *qfile = NULL;
 	HASH_SEQ_STATUS hash_seq;
@@ -2590,6 +2593,7 @@ gc_qtexts(void)
 		pgss->mean_query_len = ASSUMED_LENGTH_INIT;
 
 	pfree(qbuffer);
+	qbuffer = NULL;
 
 	/*
 	 * OK, count a garbage collection cycle.  (Note: even though we have
@@ -2607,7 +2611,10 @@ gc_fail:
 	if (qfile)
 		FreeFile(qfile);
 	if (qbuffer)
+	{
 		pfree(qbuffer);
+		qbuffer = NULL;
+	}
 
 	/*
 	 * Since the contents of the external file are now uncertain, mark all
@@ -2880,9 +2887,11 @@ generate_normalized_query(const JumbleState *jstate, const char *query,
 		 * we have a squashable list, insert a placeholder comment starting
 		 * from the list's second value.
 		 */
-		n_quer_loc += sprintf(norm_query + n_quer_loc, "$%d%s",
-							  num_constants_replaced + 1 + jstate->highest_extern_param_id,
-							  locs[i].squashed ? " /*, ... */" : "");
+		n_quer_loc += snprintf(norm_query + n_quer_loc,
+							   norm_query_buflen - n_quer_loc + 1,
+							   "$%d%s",
+							   num_constants_replaced + 1 + jstate->highest_extern_param_id,
+							   locs[i].squashed ? " /*, ... */" : "");
 		num_constants_replaced++;
 
 		/* move forward */
