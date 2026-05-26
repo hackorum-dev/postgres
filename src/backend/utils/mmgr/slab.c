@@ -342,12 +342,8 @@ SlabContextCreate(MemoryContext parent,
 		chunkSize = sizeof(MemoryChunk *);
 
 	/* length of the maxaligned chunk including the chunk header  */
-#ifdef MEMORY_CONTEXT_CHECKING
-	/* ensure there's always space for the sentinel byte */
-	fullChunkSize = Slab_CHUNKHDRSZ + MAXALIGN(chunkSize + 1);
-#else
-	fullChunkSize = Slab_CHUNKHDRSZ + MAXALIGN(chunkSize);
-#endif
+	/* ensure there's space for the sentinel, if needed */
+	fullChunkSize = Slab_CHUNKHDRSZ + MAXALIGN(chunkSize + MEMORY_CONTEXT_SENTINEL_SIZE);
 
 	Assert(fullChunkSize <= MEMORYCHUNK_MAX_VALUE);
 
@@ -541,7 +537,7 @@ SlabAllocSetupNewChunk(MemoryContext context, SlabBlock *block,
 #ifdef MEMORY_CONTEXT_CHECKING
 	chunk->requested_size = size;
 	/* slab mark to catch clobber of "unused" space */
-	Assert(slab->chunkSize < (slab->fullChunkSize - Slab_CHUNKHDRSZ));
+	Assert(slab->chunkSize + MEMORY_CONTEXT_SENTINEL_SIZE <= (slab->fullChunkSize - Slab_CHUNKHDRSZ));
 	set_sentinel(MemoryChunkGetPointer(chunk), size);
 	VALGRIND_MAKE_MEM_NOACCESS(((char *) chunk) + Slab_CHUNKHDRSZ +
 							   slab->chunkSize,
@@ -755,7 +751,7 @@ SlabFree(void *pointer)
 		elog(ERROR, "detected double pfree in %s %p",
 			 slab->header.name, chunk);
 	/* Test for someone scribbling on unused space in chunk */
-	Assert(slab->chunkSize < (slab->fullChunkSize - Slab_CHUNKHDRSZ));
+	Assert(slab->chunkSize + MEMORY_CONTEXT_SENTINEL_SIZE <= (slab->fullChunkSize - Slab_CHUNKHDRSZ));
 	if (!sentinel_ok(pointer, slab->chunkSize))
 		elog(WARNING, "detected write past chunk end in %s %p",
 			 slab->header.name, chunk);
@@ -1165,8 +1161,8 @@ SlabCheck(MemoryContext context)
 						elog(WARNING, "problem in slab %s: bogus block link in block %p, chunk %p",
 							 name, block, chunk);
 
-					/* check the sentinel byte is intact */
-					Assert(slab->chunkSize < (slab->fullChunkSize - Slab_CHUNKHDRSZ));
+					/* check the sentinel is intact */
+					Assert(slab->chunkSize + MEMORY_CONTEXT_SENTINEL_SIZE <= (slab->fullChunkSize - Slab_CHUNKHDRSZ));
 					if (!sentinel_ok(chunk, Slab_CHUNKHDRSZ + slab->chunkSize))
 						elog(WARNING, "problem in slab %s: detected write past chunk end in block %p, chunk %p",
 							 name, block, chunk);

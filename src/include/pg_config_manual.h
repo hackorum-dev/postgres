@@ -279,6 +279,17 @@
 #endif
 
 /*
+ * Number of bytes to extend each allocation by, to check for buffer
+ * overflows.  It's probably good for this to be >= sizeof(size_t), to be able
+ * to detect overflows in arrays.
+ */
+#if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
+#define MEMORY_CONTEXT_SENTINEL_SIZE	16
+#else
+#define MEMORY_CONTEXT_SENTINEL_SIZE	0
+#endif
+
+/*
  * Define this to cause palloc()'d memory to be filled with random data, to
  * facilitate catching code that depends on the contents of uninitialized
  * memory.  Caution: this is horrendously expensive.

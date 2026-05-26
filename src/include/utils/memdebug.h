@@ -53,20 +53,27 @@ set_sentinel(void *base, Size offset)
 {
 	char	   *ptr = (char *) base + offset;
 
-	VALGRIND_MAKE_MEM_UNDEFINED(ptr, 1);
-	*ptr = 0x7E;
-	VALGRIND_MAKE_MEM_NOACCESS(ptr, 1);
+	VALGRIND_MAKE_MEM_UNDEFINED(ptr, MEMORY_CONTEXT_SENTINEL_SIZE);
+	memset(ptr, 0x7E, MEMORY_CONTEXT_SENTINEL_SIZE);
+	VALGRIND_MAKE_MEM_NOACCESS(ptr, MEMORY_CONTEXT_SENTINEL_SIZE);
 }
 
 static inline bool
 sentinel_ok(const void *base, Size offset)
 {
 	const char *ptr = (const char *) base + offset;
-	bool		ret;
+	bool		ret = true;
 
-	VALGRIND_MAKE_MEM_DEFINED(ptr, 1);
-	ret = *ptr == 0x7E;
-	VALGRIND_MAKE_MEM_NOACCESS(ptr, 1);
+	VALGRIND_MAKE_MEM_DEFINED(ptr, MEMORY_CONTEXT_SENTINEL_SIZE);
+	for (Size i = 0; i < MEMORY_CONTEXT_SENTINEL_SIZE; i++)
+	{
+		if (*ptr++ != 0x7e)
+		{
+			ret = false;
+			break;
+		}
+	}
+	VALGRIND_MAKE_MEM_NOACCESS(ptr, MEMORY_CONTEXT_SENTINEL_SIZE);
 
 	return ret;
 }
