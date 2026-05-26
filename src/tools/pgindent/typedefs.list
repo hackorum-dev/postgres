@@ -2473,8 +2473,8 @@ PublicationObjSpecType
 PublicationPartOpt
 PublicationRelInfo
 PublicationRelKind
+PublicationRelation
 PublicationSchemaInfo
-PublicationTable
 PublishGencolsType
 PullFilter
 PullFilterOps
