@@ -956,6 +956,25 @@ pqGetErrorNotice3(PGconn *conn, bool isError)
 					sizeof(conn->last_sqlstate));
 		else if (id == PG_DIAG_STATEMENT_POSITION)
 			have_position = true;
+		else if (isError && id == PG_DIAG_SEVERITY_NONLOCALIZED &&
+				 (strcmp(workBuf.data, "FATAL") == 0 ||
+				  strcmp(workBuf.data, "PANIC") == 0))
+		{
+			/*
+			 * A FATAL or PANIC from the server means the backend is going to
+			 * tear the connection down right after delivering this message.
+			 * Mark the connection bad immediately so callers that drain
+			 * results (PQexecFinish, PQexecStart's discard loop, etc.) stop
+			 * reading from the socket after receiving this result. Further
+			 * reads from the socket will receive an EOF, which would cause us
+			 * to incorrectly report this as an unexpected connection closure
+			 * by appending "server closed the connection unexpectedly ..." to
+			 * the server's own error message. We read SEVERITY_NONLOCALIZED
+			 * rather than SEVERITY so the check is independent of the
+			 * server's lc_messages setting.
+			 */
+			conn->status = CONNECTION_BAD;
+		}
 	}
 
 	/*
