@@ -743,12 +743,8 @@ AllocSetAllocLarge(MemoryContext context, Size size, int flags)
 	/* validate 'size' is within the limits for the given 'flags' */
 	MemoryContextCheckSize(context, size, flags);
 
-#ifdef MEMORY_CONTEXT_CHECKING
-	/* ensure there's always space for the sentinel byte */
-	chunk_size = MAXALIGN(size + 1);
-#else
-	chunk_size = MAXALIGN(size);
-#endif
+	/* ensure there's space for the sentinel, if needed */
+	chunk_size = MAXALIGN(size + MEMORY_CONTEXT_SENTINEL_SIZE);
 
 	blksize = chunk_size + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
 	block = (AllocBlock) malloc(blksize);
@@ -771,7 +767,7 @@ AllocSetAllocLarge(MemoryContext context, Size size, int flags)
 #ifdef MEMORY_CONTEXT_CHECKING
 	chunk->requested_size = size;
 	/* set mark to catch clobber of "unused" space */
-	Assert(size < chunk_size);
+	Assert(size + MEMORY_CONTEXT_SENTINEL_SIZE <= chunk_size);
 	set_sentinel(MemoryChunkGetPointer(chunk), size);
 #endif
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
@@ -820,6 +816,13 @@ AllocSetAllocChunkFromBlock(MemoryContext context, AllocBlock block,
 
 	chunk = (MemoryChunk *) (block->freeptr);
 
+	/*
+	 * Ensure there's space for the sentinel, if needed. Note this is
+	 * intentionally done after determining fidx, the space for the sentinel
+	 * is in addition to what the size class guarantees.
+	 */
+	chunk_size += MEMORY_CONTEXT_SENTINEL_SIZE;
+
 	/* Prepare to initialize the chunk header. */
 	VALGRIND_MAKE_MEM_UNDEFINED(chunk, ALLOC_CHUNKHDRSZ);
 
@@ -832,8 +835,8 @@ AllocSetAllocChunkFromBlock(MemoryContext context, AllocBlock block,
 #ifdef MEMORY_CONTEXT_CHECKING
 	chunk->requested_size = size;
 	/* set mark to catch clobber of "unused" space */
-	if (size < chunk_size)
-		set_sentinel(MemoryChunkGetPointer(chunk), size);
+	Assert(size + MEMORY_CONTEXT_SENTINEL_SIZE <= chunk_size);
+	set_sentinel(MemoryChunkGetPointer(chunk), size);
 #endif
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
 	/* fill the allocated space with junk */
@@ -884,11 +887,11 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
 	 * left in the block, this loop cannot iterate more than
 	 * ALLOCSET_NUM_FREELISTS-1 times.
 	 */
-	while (availspace >= ((1 << ALLOC_MINBITS) + ALLOC_CHUNKHDRSZ))
+	while (availspace >= ((1 << ALLOC_MINBITS) + ALLOC_CHUNKHDRSZ + MEMORY_CONTEXT_SENTINEL_SIZE))
 	{
 		AllocFreeListLink *link;
 		MemoryChunk *chunk;
-		Size		availchunk = availspace - ALLOC_CHUNKHDRSZ;
+		Size		availchunk = availspace - ALLOC_CHUNKHDRSZ - MEMORY_CONTEXT_SENTINEL_SIZE;
 		int			a_fidx = AllocSetFreeIndex(availchunk);
 
 		/*
@@ -907,8 +910,8 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
 
 		/* Prepare to initialize the chunk header. */
 		VALGRIND_MAKE_MEM_UNDEFINED(chunk, ALLOC_CHUNKHDRSZ);
-		block->freeptr += (availchunk + ALLOC_CHUNKHDRSZ);
-		availspace -= (availchunk + ALLOC_CHUNKHDRSZ);
+		block->freeptr += (availchunk + ALLOC_CHUNKHDRSZ + MEMORY_CONTEXT_SENTINEL_SIZE);
+		availspace -= (availchunk + ALLOC_CHUNKHDRSZ + MEMORY_CONTEXT_SENTINEL_SIZE);
 
 		/* store the freelist index in the value field */
 		MemoryChunkSetHdrMask(chunk, block, a_fidx, MCTX_ASET_ID);
@@ -942,7 +945,8 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
 	 * If initBlockSize is less than ALLOC_CHUNK_LIMIT, we could need more
 	 * space... but try to keep it a power of 2.
 	 */
-	required_size = chunk_size + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
+	required_size = chunk_size + ALLOC_BLOCKHDRSZ +
+		ALLOC_CHUNKHDRSZ + MEMORY_CONTEXT_SENTINEL_SIZE;
 	while (blksize < required_size)
 		blksize <<= 1;
 
@@ -1036,11 +1040,10 @@ AllocSetAlloc(MemoryContext context, Size size, int flags)
 	 * If one is found, remove it from the free list, make it again a member
 	 * of the alloc set and return its data address.
 	 *
-	 * Note that we don't attempt to ensure there's space for the sentinel
-	 * byte here.  We expect a large proportion of allocations to be for sizes
-	 * which are already a power of 2.  If we were to always make space for a
-	 * sentinel byte in MEMORY_CONTEXT_CHECKING builds, then we'd end up
-	 * doubling the memory requirements for such allocations.
+	 * Note that we always have space for the sentinel. To avoid wasting a lot
+	 * of space - we expect a large proportion of allocations to be for sizes
+	 * which are already a power of 2 - the space for the sentinel is added
+	 * after the rounding to power of 2.
 	 */
 	fidx = AllocSetFreeIndex(size);
 	chunk = set->freelist[fidx];
@@ -1060,9 +1063,11 @@ AllocSetAlloc(MemoryContext context, Size size, int flags)
 
 #ifdef MEMORY_CONTEXT_CHECKING
 		chunk->requested_size = size;
+
 		/* set mark to catch clobber of "unused" space */
-		if (size < GetChunkSizeFromFreeListIdx(fidx))
-			set_sentinel(MemoryChunkGetPointer(chunk), size);
+		/* space for sentinel is added in addition to the freelist size */
+		Assert(size <= GetChunkSizeFromFreeListIdx(fidx));
+		set_sentinel(MemoryChunkGetPointer(chunk), size);
 #endif
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
 		/* fill the allocated space with junk */
@@ -1092,7 +1097,7 @@ AllocSetAlloc(MemoryContext context, Size size, int flags)
 	 * If there is enough room in the active allocation block, we will put the
 	 * chunk into that block.  Else must start a new one.
 	 */
-	if (unlikely(availspace < (chunk_size + ALLOC_CHUNKHDRSZ)))
+	if (unlikely(availspace < (chunk_size + ALLOC_CHUNKHDRSZ + MEMORY_CONTEXT_SENTINEL_SIZE)))
 		return AllocSetAllocFromNewBlock(context, size, flags, fidx);
 
 	/* There's enough space on the current block, so allocate from that */
@@ -1195,10 +1200,9 @@ AllocSetFree(void *pointer)
 			elog(ERROR, "detected double pfree in %s %p",
 				 set->header.name, chunk);
 		/* Test for someone scribbling on unused space in chunk */
-		if (chunk->requested_size < GetChunkSizeFromFreeListIdx(fidx))
-			if (!sentinel_ok(pointer, chunk->requested_size))
-				elog(WARNING, "detected write past chunk end in %s %p",
-					 set->header.name, chunk);
+		if (!sentinel_ok(pointer, chunk->requested_size))
+			elog(WARNING, "detected write past chunk end in %s %p",
+				 set->header.name, chunk);
 #endif
 
 #ifdef CLOBBER_FREED_MEMORY
@@ -1275,18 +1279,13 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 
 #ifdef MEMORY_CONTEXT_CHECKING
 		/* Test for someone scribbling on unused space in chunk */
-		Assert(chunk->requested_size < oldchksize);
 		if (!sentinel_ok(pointer, chunk->requested_size))
 			elog(WARNING, "detected write past chunk end in %s %p",
 				 set->header.name, chunk);
 #endif
 
-#ifdef MEMORY_CONTEXT_CHECKING
-		/* ensure there's always space for the sentinel byte */
-		chksize = MAXALIGN(size + 1);
-#else
-		chksize = MAXALIGN(size);
-#endif
+		/* ensure there's space for the sentinel, if needed */
+		chksize = MAXALIGN(size + MEMORY_CONTEXT_SENTINEL_SIZE);
 
 		/* Do the realloc */
 		blksize = chksize + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
@@ -1398,10 +1397,9 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		elog(ERROR, "detected realloc of freed chunk in %s %p",
 			 set->header.name, chunk);
 	/* Test for someone scribbling on unused space in chunk */
-	if (chunk->requested_size < oldchksize)
-		if (!sentinel_ok(pointer, chunk->requested_size))
-			elog(WARNING, "detected write past chunk end in %s %p",
-				 set->header.name, chunk);
+	if (!sentinel_ok(pointer, chunk->requested_size))
+		elog(WARNING, "detected write past chunk end in %s %p",
+			 set->header.name, chunk);
 #endif
 
 	/*
@@ -1435,8 +1433,7 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 									   oldchksize - size);
 
 		/* set mark to catch clobber of "unused" space */
-		if (size < oldchksize)
-			set_sentinel(pointer, size);
+		set_sentinel(pointer, size);
 #else							/* !MEMORY_CONTEXT_CHECKING */
 
 		/*
@@ -1751,6 +1748,13 @@ AllocSetCheck(MemoryContext context)
 						 name, chunk, block);
 
 				chsize = GetChunkSizeFromFreeListIdx(fidx); /* aligned chunk size */
+
+				/*
+				 * Need to include the overhead for the sentinel in the
+				 * calculation, otherwise the offset of the next chunk would
+				 * be wrong.
+				 */
+				chsize += MEMORY_CONTEXT_SENTINEL_SIZE;
 
 				/*
 				 * Check the stored block offset correctly references this

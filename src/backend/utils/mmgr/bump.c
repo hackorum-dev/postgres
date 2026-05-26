@@ -324,12 +324,8 @@ BumpAllocLarge(MemoryContext context, Size size, int flags)
 	/* validate 'size' is within the limits for the given 'flags' */
 	MemoryContextCheckSize(context, size, flags);
 
-#ifdef MEMORY_CONTEXT_CHECKING
-	/* ensure there's always space for the sentinel byte */
-	chunk_size = MAXALIGN(size + 1);
-#else
-	chunk_size = MAXALIGN(size);
-#endif
+	/* ensure there's space for the sentinel, if needed */
+	chunk_size = MAXALIGN(size + MEMORY_CONTEXT_SENTINEL_SIZE);
 
 	required_size = chunk_size + Bump_CHUNKHDRSZ;
 	blksize = required_size + Bump_BLOCKHDRSZ;
@@ -357,7 +353,7 @@ BumpAllocLarge(MemoryContext context, Size size, int flags)
 
 	chunk->requested_size = size;
 	/* set mark to catch clobber of "unused" space */
-	Assert(size < chunk_size);
+	Assert(size + MEMORY_CONTEXT_SENTINEL_SIZE <= chunk_size);
 	set_sentinel(MemoryChunkGetPointer(chunk), size);
 #endif
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
@@ -421,7 +417,7 @@ BumpAllocChunkFromBlock(MemoryContext context, BumpBlock *block, Size size,
 	MemoryChunkSetHdrMask(chunk, block, chunk_size, MCTX_BUMP_ID);
 	chunk->requested_size = size;
 	/* set mark to catch clobber of "unused" space */
-	Assert(size < chunk_size);
+	Assert(size + MEMORY_CONTEXT_SENTINEL_SIZE <= chunk_size);
 	set_sentinel(MemoryChunkGetPointer(chunk), size);
 
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
@@ -523,12 +519,8 @@ BumpAlloc(MemoryContext context, Size size, int flags)
 
 	Assert(BumpIsValid(set));
 
-#ifdef MEMORY_CONTEXT_CHECKING
-	/* ensure there's always space for the sentinel byte */
-	chunk_size = MAXALIGN(size + 1);
-#else
-	chunk_size = MAXALIGN(size);
-#endif
+	/* ensure there's space for the sentinel, if needed */
+	chunk_size = MAXALIGN(size + MEMORY_CONTEXT_SENTINEL_SIZE);
 
 	/*
 	 * If requested size exceeds maximum for chunks we hand the request off to

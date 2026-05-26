@@ -1529,10 +1529,8 @@ MemoryContextAllocAligned(MemoryContext context,
 	 */
 	alloc_size = size + PallocAlignedExtraBytes(alignto);
 
-#ifdef MEMORY_CONTEXT_CHECKING
-	/* ensure there's space for a sentinel byte */
-	alloc_size += 1;
-#endif
+	/* ensure there's space for the sentinel */
+	alloc_size += MEMORY_CONTEXT_SENTINEL_SIZE;
 
 	/*
 	 * Perform the actual allocation, but do not pass down MCXT_ALLOC_ZERO.

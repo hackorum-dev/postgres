@@ -372,12 +372,8 @@ GenerationAllocLarge(MemoryContext context, Size size, int flags)
 	/* validate 'size' is within the limits for the given 'flags' */
 	MemoryContextCheckSize(context, size, flags);
 
-#ifdef MEMORY_CONTEXT_CHECKING
-	/* ensure there's always space for the sentinel byte */
-	chunk_size = MAXALIGN(size + 1);
-#else
-	chunk_size = MAXALIGN(size);
-#endif
+	/* ensure there's space for the sentinel, if needed */
+	chunk_size = MAXALIGN(size + MEMORY_CONTEXT_SENTINEL_SIZE);
 	required_size = chunk_size + Generation_CHUNKHDRSZ;
 	blksize = required_size + Generation_BLOCKHDRSZ;
 
@@ -407,7 +403,7 @@ GenerationAllocLarge(MemoryContext context, Size size, int flags)
 #ifdef MEMORY_CONTEXT_CHECKING
 	chunk->requested_size = size;
 	/* set mark to catch clobber of "unused" space */
-	Assert(size < chunk_size);
+	Assert(size + MEMORY_CONTEXT_SENTINEL_SIZE <= chunk_size);
 	set_sentinel(MemoryChunkGetPointer(chunk), size);
 #endif
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
@@ -559,12 +555,8 @@ GenerationAlloc(MemoryContext context, Size size, int flags)
 
 	Assert(GenerationIsValid(set));
 
-#ifdef MEMORY_CONTEXT_CHECKING
-	/* ensure there's always space for the sentinel byte */
-	chunk_size = MAXALIGN(size + 1);
-#else
-	chunk_size = MAXALIGN(size);
-#endif
+	/* ensure there's space for the sentinel, if needed */
+	chunk_size = MAXALIGN(size + MEMORY_CONTEXT_SENTINEL_SIZE);
 
 	/*
 	 * If requested size exceeds maximum for chunks we hand the request off to
@@ -1207,7 +1199,7 @@ GenerationCheck(MemoryContext context)
 						 name, block, chunk);
 
 				/* check sentinel */
-				Assert(chunk->requested_size < chunksize);
+				Assert(chunk->requested_size + MEMORY_CONTEXT_SENTINEL_SIZE <= chunksize);
 				if (!sentinel_ok(chunk, Generation_CHUNKHDRSZ + chunk->requested_size))
 					elog(WARNING, "problem in Generation %s: detected write past chunk end in block %p, chunk %p",
 						 name, block, chunk);
