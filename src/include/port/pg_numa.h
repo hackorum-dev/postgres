@@ -20,6 +20,8 @@ extern PGDLLIMPORT int pg_numa_get_max_node(void);
 
 #ifdef USE_LIBNUMA
 
+#include "utils/memdebug.h"
+
 /*
  * This is required on Linux, before pg_numa_query_pages() as we
  * need to page-fault before move_pages(2) syscall returns valid results.
@@ -28,6 +30,14 @@ static inline void
 pg_numa_touch_mem_if_required(void *ptr)
 {
 	volatile uint64 touch pg_attribute_unused();
+
+	/*
+	 * Other annotations, like in UnpinBufferNoOwner(), might have made this
+	 * inaccessible.  We don't know what the state is, so we can't restore the
+	 * prior state afterwards. That seems ok, this isn't used commonly while
+	 * other things are going on.
+	 */
+	PG_ANNOTATE_MEM_DEFINED(ptr, sizeof(uint64));
 
 	touch = *(volatile uint64 *) ptr;
 }
