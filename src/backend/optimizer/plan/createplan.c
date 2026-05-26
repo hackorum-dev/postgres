@@ -4191,8 +4191,10 @@ create_nestloop_plan(PlannerInfo *root,
 	Plan	   *outer_plan;
 	Plan	   *inner_plan;
 	Relids		outerrelids;
+	Relids		joinrelids = best_path->jpath.path.parent->relids;
 	List	   *tlist = build_path_tlist(root, &best_path->jpath.path);
 	List	   *joinrestrictclauses = best_path->jpath.joinrestrictinfo;
+	List	   *gating_clauses = NIL;
 	List	   *joinclauses;
 	List	   *otherclauses;
 	List	   *nestParams;
@@ -4238,8 +4240,29 @@ create_nestloop_plan(PlannerInfo *root,
 	if (IS_OUTER_JOIN(best_path->jpath.jointype))
 	{
 		extract_actual_join_clauses(joinrestrictclauses,
-									best_path->jpath.path.parent->relids,
+									joinrelids,
 									&joinclauses, &otherclauses);
+
+		/*
+		 * Collect the join clauses that reference only the outer rel: they are
+		 * constant for a given outer tuple, so the loop further down can gate
+		 * the inner side with them instead of re-checking them per inner row.
+		 *
+		 * Take only genuine join quals (non-pushed-down); a pushed-down filter
+		 * has different outer-join semantics and must never move into the gate.
+		 * Kept beside extract_actual_join_clauses() so both apply the same
+		 * joinrelids and cannot disagree on what is pushed down.  Inner and
+		 * semi joins never arrive here with such a clause: it would be a
+		 * single-rel restriction already pushed down to the outer scan.
+		 */
+		foreach_node(RestrictInfo, rinfo, joinrestrictclauses)
+		{
+			if (!rinfo->pseudoconstant &&
+				!RINFO_IS_PUSHED_DOWN(rinfo, joinrelids) &&
+				!bms_is_empty(rinfo->clause_relids) &&
+				bms_is_subset(rinfo->clause_relids, outerrelids))
+				gating_clauses = lappend(gating_clauses, rinfo->clause);
+		}
 	}
 	else
 	{
@@ -4248,6 +4271,15 @@ create_nestloop_plan(PlannerInfo *root,
 		otherclauses = NIL;
 	}
 
+	/*
+	 * Pull the outer-only clauses out of joinclauses; they become a gating
+	 * qual on the inner side below.  Match by Expr pointer (shared, since both
+	 * lists derive from the same RestrictInfos), and do it before
+	 * parameterization while the expressions are still un-parameterized.
+	 */
+	if (gating_clauses != NIL)
+		joinclauses = list_difference_ptr(joinclauses, gating_clauses);
+
 	/* Replace any outer-relation variables with nestloop params */
 	if (best_path->jpath.path.param_info)
 	{
@@ -4255,6 +4287,61 @@ create_nestloop_plan(PlannerInfo *root,
 			replace_nestloop_params(root, (Node *) joinclauses);
 		otherclauses = (List *)
 			replace_nestloop_params(root, (Node *) otherclauses);
+	}
+
+	/*
+	 * Outer-only clauses are constant across the inner scan for a given outer
+	 * tuple, so applying them as a per-rescan gate on the inner side is
+	 * equivalent to the usual per-row join filter: when the gate is false the
+	 * inner side yields no rows, which for an outer join is the same
+	 * null-extended result, but skips the inner scan entirely.
+	 *
+	 * The clauses must be parameterized (outer Vars -> NestLoop params) so the
+	 * gating Result can evaluate them against the current outer tuple.
+	 */
+	if (gating_clauses != NIL)
+	{
+		Relids		tmpOuterRels = root->curOuterRels;
+		Plan	   *subplan = inner_plan;
+
+		/*
+		 * Every Var in the gating qual must belong to this nestloop's outer
+		 * side; otherwise replace_nestloop_params() would strand an outer Var
+		 * on the inner side or mint a param no nestloop supplies.  Re-checks
+		 * the clause_relids test from the collection loop above.
+		 */
+		Assert(bms_is_subset(pull_varnos(root, (Node *) gating_clauses),
+							  outerrelids));
+
+		/*
+		 * Unlike the joinclauses above, this runs regardless of param_info:
+		 * the inner side always needs the outer Vars as params.
+		 *
+		 * replace_nestloop_params only converts Vars in curOuterRels, which
+		 * was restored above and no longer covers this join's outer relids, so
+		 * re-add them across the call.
+		 */
+		root->curOuterRels = bms_union(root->curOuterRels, outerrelids);
+
+		gating_clauses = (List *)
+			replace_nestloop_params(root, (Node *) gating_clauses);
+
+		bms_free(root->curOuterRels);
+		root->curOuterRels = tmpOuterRels;
+
+		/*
+		 * resconstantqual takes the clause list directly: ExecInitResult feeds
+		 * it to ExecInitQual, which reads an implicit-AND list.
+		 *
+		 * copy_plan_costsize() carries the child's costs and parallel-safety
+		 * onto the Result unchanged: final_cost_nestloop() does not model the
+		 * skipped inner rescans, so the gate is a runtime-only win the planner
+		 * does not credit (cf. create_gating_plan()).
+		 */
+		inner_plan = (Plan *) make_gating_result(subplan->targetlist,
+												 (Node *) gating_clauses,
+												 subplan);
+		copy_plan_costsize(inner_plan, subplan);
 	}
 
 	/*
