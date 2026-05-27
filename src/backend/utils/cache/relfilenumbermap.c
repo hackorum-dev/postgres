@@ -18,6 +18,7 @@
 #include "access/table.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_tablespace.h"
+#include "lib/ilist.h"
 #include "miscadmin.h"
 #include "utils/catcache.h"
 #include "utils/fmgroids.h"
@@ -44,6 +45,51 @@ typedef struct
 	Oid			relid;			/* pg_class.oid */
 } RelfilenumberMapEntry;
 
+typedef struct
+{
+	Oid			relid;			/* lookup key - must be first */
+	RelfilenumberMapKey mapkey;	/* corresponding key in main hash */
+} RelfilenumberReverseEntry;
+
+static HTAB *RelfilenumberReverseHash = NULL;
+
+typedef struct
+{
+	RelfilenumberMapKey key;
+	slist_node	node;
+} NegativeEntryNode;
+
+static slist_head NegativeEntryList = SLIST_STATIC_INIT(NegativeEntryList);
+
+/*
+ * CreateRelfilenumberMapHashes
+ *		Create (or recreate) both the forward and reverse hash tables,
+ *		and reinitialize the negative entry list.
+ */
+static void
+CreateRelfilenumberMapHashes(void)
+{
+	HASHCTL		ctl;
+
+	ctl.keysize = sizeof(RelfilenumberMapKey);
+	ctl.entrysize = sizeof(RelfilenumberMapEntry);
+	ctl.hcxt = CacheMemoryContext;
+
+	RelfilenumberMapHash =
+		hash_create("RelfilenumberMap cache", 64, &ctl,
+					HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+
+	ctl.keysize = sizeof(Oid);
+	ctl.entrysize = sizeof(RelfilenumberReverseEntry);
+	ctl.hcxt = CacheMemoryContext;
+
+	RelfilenumberReverseHash =
+		hash_create("RelfilenumberMap reverse cache", 64, &ctl,
+					HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+
+	slist_init(&NegativeEntryList);
+}
+
 /*
  * RelfilenumberMapInvalidateCallback
  *		Flush mapping entries when pg_class is updated in a relevant fashion.
@@ -51,29 +97,59 @@ typedef struct
 static void
 RelfilenumberMapInvalidateCallback(Datum arg, Oid relid)
 {
-	HASH_SEQ_STATUS status;
-	RelfilenumberMapEntry *entry;
-
-	/* callback only gets registered after creating the hash */
+	/* callback only gets registered after creating the hashes */
 	Assert(RelfilenumberMapHash != NULL);
+	Assert(RelfilenumberReverseHash != NULL);
 
-	hash_seq_init(&status, RelfilenumberMapHash);
-	while ((entry = (RelfilenumberMapEntry *) hash_seq_search(&status)) != NULL)
+	if (relid == InvalidOid)
 	{
-		/*
-		 * If relid is InvalidOid, signaling a complete reset, we must remove
-		 * all entries, otherwise just remove the specific relation's entry.
-		 * Always remove negative cache entries.
-		 */
-		if (relid == InvalidOid ||	/* complete reset */
-			entry->relid == InvalidOid ||	/* negative cache entry */
-			entry->relid == relid)	/* individual flushed relation */
+		slist_mutable_iter siter;
+
+		hash_destroy(RelfilenumberMapHash);
+		hash_destroy(RelfilenumberReverseHash);
+
+		slist_foreach_modify(siter, &NegativeEntryList)
 		{
+			NegativeEntryNode *nnode = slist_container(NegativeEntryNode,
+													   node, siter.cur);
+
+			pfree(nnode);
+		}
+
+		CreateRelfilenumberMapHashes();
+	}
+	else
+	{
+		RelfilenumberReverseEntry *rentry;
+		bool		found;
+		slist_mutable_iter siter;
+
+		rentry = hash_search(RelfilenumberReverseHash, &relid,
+							 HASH_FIND, &found);
+		if (found)
+		{
+			if (hash_search(RelfilenumberMapHash, &rentry->mapkey,
+							HASH_REMOVE, NULL) == NULL)
+				elog(ERROR, "hash table corrupted");
+
+			hash_search(RelfilenumberReverseHash, &relid,
+						HASH_REMOVE, NULL);
+		}
+
+		/* Also remove all negative cache entries */
+		slist_foreach_modify(siter, &NegativeEntryList)
+		{
+			NegativeEntryNode *nnode = slist_container(NegativeEntryNode,
+													   node, siter.cur);
+
 			if (hash_search(RelfilenumberMapHash,
-							&entry->key,
+							&nnode->key,
 							HASH_REMOVE,
 							NULL) == NULL)
 				elog(ERROR, "hash table corrupted");
+
+			slist_delete_current(&siter);
+			pfree(nnode);
 		}
 	}
 }
@@ -85,7 +161,6 @@ RelfilenumberMapInvalidateCallback(Datum arg, Oid relid)
 static void
 InitializeRelfilenumberMap(void)
 {
-	HASHCTL		ctl;
 	int			i;
 
 	/* Make sure we've initialized CacheMemoryContext. */
@@ -109,17 +184,11 @@ InitializeRelfilenumberMap(void)
 	relfilenumber_skey[1].sk_attno = Anum_pg_class_relfilenode;
 
 	/*
-	 * Only create the RelfilenumberMapHash now, so we don't end up partially
+	 * Only create the hash tables now, so we don't end up partially
 	 * initialized when fmgr_info_cxt() above ERRORs out with an out of memory
 	 * error.
 	 */
-	ctl.keysize = sizeof(RelfilenumberMapKey);
-	ctl.entrysize = sizeof(RelfilenumberMapEntry);
-	ctl.hcxt = CacheMemoryContext;
-
-	RelfilenumberMapHash =
-		hash_create("RelfilenumberMap cache", 64, &ctl,
-					HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+	CreateRelfilenumberMapHashes();
 
 	/* Watch for invalidation events. */
 	CacheRegisterRelcacheCallback(RelfilenumberMapInvalidateCallback,
@@ -244,6 +313,28 @@ RelidByRelfilenumber(Oid reltablespace, RelFileNumber relfilenumber)
 	if (found)
 		elog(ERROR, "corrupted hashtable");
 	entry->relid = relid;
+
+	if (relid != InvalidOid)
+	{
+		RelfilenumberReverseEntry *rentry;
+
+		rentry = hash_search(RelfilenumberReverseHash, &relid,
+							 HASH_ENTER, &found);
+		if (found)
+			elog(ERROR, "corrupted reverse hashtable");
+
+		memcpy(&rentry->mapkey, &key, sizeof(RelfilenumberMapKey));
+	}
+	else
+	{
+		NegativeEntryNode *nnode;
+
+		nnode = (NegativeEntryNode *)
+			MemoryContextAlloc(CacheMemoryContext, sizeof(NegativeEntryNode));
+		memcpy(&nnode->key, &key, sizeof(RelfilenumberMapKey));
+
+		slist_push_head(&NegativeEntryList, &nnode->node);
+	}
 
 	return relid;
 }
