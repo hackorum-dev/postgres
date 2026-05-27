@@ -1704,6 +1704,13 @@
   options => 'log_error_verbosity_options',
 },
 
+{ name => 'log_excess_connection_attempts', type => 'bool', context => 'PGC_SIGHUP', group => 'LOGGING_WHAT',
+  short_desc => 'Logs postmaster stats once per second when it is short of CPU.',
+  long_desc => 'If the postmaster has signs of being overloaded log message summarizing its recent activity.',
+  variable => 'log_excess_connection_attempts',
+  boot_val => 'false',
+},
+
 { name => 'log_executor_stats', type => 'bool', context => 'PGC_SUSET', group => 'STATS_MONITORING',
   short_desc => 'Writes executor performance statistics to the server log.',
   variable => 'log_executor_stats',
