@@ -600,6 +600,7 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 
 	ctx->reorder->output_rewrites = ctx->options.receive_rewrites;
 
+pg_usleep(100000);
 	ereport(LogicalDecodingLogLevel(),
 			(errmsg("starting logical decoding for slot \"%s\"",
 					NameStr(slot->data.name)),

@@ -200,6 +200,16 @@ pqsecure_raw_read(PGconn *conn, void *ptr, size_t len)
 
 	n = recv(conn->sock, ptr, len, 0);
 
+if (conn->replication && conn->replication[0])
+{
+int	save_errno = SOCK_ERRNO;
+char	hb[1024];
+hb[0] = 0;
+for (size_t i = 0; i < n && i < 256; i++) sprintf(hb + (i * 2), "%02x", ((char *)ptr)[i]);
+fprintf(stderr, "!!!pqsecure_raw_read| len=%zu n=%zd errno=%d buf=%s\n", len, n, (n < 0) ? save_errno : 0, hb);
+SOCK_ERRNO_SET(save_errno);
+}
+
 	if (n < 0)
 	{
 		result_errno = SOCK_ERRNO;

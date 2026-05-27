@@ -1539,6 +1539,7 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 
 	ReplicationSlotAcquire(cmd->slotname, true, true);
 
+pg_usleep(500000);
 	/*
 	 * Force a disconnect, so that the decoding code doesn't need to care
 	 * about an eventual switch from running in recovery, to running in a
