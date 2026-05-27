@@ -561,8 +561,24 @@ ALTER PROPERTY GRAPH myshop ALTER VERTEX TABLE customers
     ALTER LABEL customers DROP PROPERTIES (address);  -- error
 ALTER PROPERTY GRAPH myshop ALTER VERTEX TABLE products
     ALTER LABEL products DROP PROPERTIES (price);  -- error
--- ruleutils reverse parsing
-SELECT pg_get_viewdef('customers_us'::regclass);
+SELECT pg_get_viewdef('customers_us'::regclass); -- ruleutils reverse parsing
+
+-- l1 is shared by all vertex tables and edge tables. Dropping it only  from all
+-- vertex tables renders a view unusable. This is because the standard considers
+-- a label shared between vertex labels and edge labels as two different labels
+-- vertex label and edge label respectively. Further note that the standard
+-- still requires the two labels to have the same properties associated with
+-- them. We need the standard to clarify the behaviour in this case: should we
+-- prohibit dropping an element specific label or return no rows when the label
+-- exists but is not associated with any element of required type.
+CREATE VIEW v_shared_label AS SELECT * FROM GRAPH_TABLE (g1 MATCH (v IS l1) COLUMNS (v.elname));
+BEGIN;
+ALTER PROPERTY GRAPH g1 ALTER VERTEX TABLE v1 DROP LABEL l1;
+ALTER PROPERTY GRAPH g1 ALTER VERTEX TABLE v2 DROP LABEL l1;
+ALTER PROPERTY GRAPH g1 ALTER VERTEX TABLE v3 DROP LABEL l1;
+SELECT * FROM v_shared_label;
+ROLLBACK;
+SELECT pg_get_viewdef('v_shared_label'::regclass); -- ruleutils reverse parsing
 
 -- test view/graph nesting
 
