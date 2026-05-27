@@ -52,15 +52,6 @@ struct dshash_table_item
 	/* The user's entry object follows here.  See ENTRY_FROM_ITEM(item). */
 };
 
-/*
- * The number of partitions for locking purposes.  This is set to match
- * NUM_BUFFER_PARTITIONS for now, on the basis that whatever's good enough for
- * the buffer pool must be good enough for any other purpose.  This could
- * become a runtime parameter in future.
- */
-#define DSHASH_NUM_PARTITIONS_LOG2 7
-#define DSHASH_NUM_PARTITIONS (1 << DSHASH_NUM_PARTITIONS_LOG2)
-
 /* A magic value used to identify our hash tables. */
 #define DSHASH_MAGIC 0x75ff6a20
 
@@ -661,11 +652,40 @@ dshash_seq_init(dshash_seq_status *status, dshash_table *hash_table,
 {
 	status->hash_table = hash_table;
 	status->curbucket = 0;
-	status->nbuckets = 0;
+	status->endbucket = 0;
 	status->curitem = NULL;
 	status->pnextitem = InvalidDsaPointer;
 	status->curpartition = -1;
 	status->exclusive = exclusive;
+}
+
+/*
+ * Initialize a sequential scan restricted to a single partition.
+ *
+ * Only entries in the specified partition are visited.  The caller must
+ * ensure that 0 <= partition < DSHASH_NUM_PARTITIONS.
+ */
+void
+dshash_seq_init_partition(dshash_seq_status *status, dshash_table *hash_table,
+						  bool exclusive, int partition)
+{
+	Assert(partition >= 0 && partition < DSHASH_NUM_PARTITIONS);
+
+	status->hash_table = hash_table;
+	status->curitem = NULL;
+	status->pnextitem = InvalidDsaPointer;
+	status->exclusive = exclusive;
+
+	LWLockAcquire(PARTITION_LOCK(hash_table, partition),
+				  exclusive ? LW_EXCLUSIVE : LW_SHARED);
+	ensure_valid_bucket_pointers(hash_table);
+
+	status->curpartition = partition;
+	status->endbucket =
+		BUCKET_INDEX_FOR_PARTITION(partition + 1, hash_table->size_log2);
+	/* Set to one before first bucket as the seq scan will ++curbucket */
+	status->curbucket =
+		BUCKET_INDEX_FOR_PARTITION(partition, hash_table->size_log2) - 1;
 }
 
 /*
@@ -701,7 +721,7 @@ dshash_seq_next(dshash_seq_status *status)
 
 		ensure_valid_bucket_pointers(status->hash_table);
 
-		status->nbuckets =
+		status->endbucket =
 			NUM_BUCKETS(status->hash_table->control->size_log2);
 		next_item_pointer = status->hash_table->buckets[status->curbucket];
 	}
@@ -717,7 +737,7 @@ dshash_seq_next(dshash_seq_status *status)
 	{
 		int			next_partition;
 
-		if (++status->curbucket >= status->nbuckets)
+		if (++status->curbucket >= status->endbucket)
 		{
 			/* all buckets have been scanned. finish. */
 			return NULL;

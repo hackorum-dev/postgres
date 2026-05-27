@@ -73,7 +73,7 @@ typedef struct dshash_seq_status
 {
 	dshash_table *hash_table;	/* dshash table working on */
 	int			curbucket;		/* bucket number we are at */
-	int			nbuckets;		/* total number of buckets in the dshash */
+	int			endbucket;		/* first bucket beyond scan range */
 	dshash_table_item *curitem; /* item we are currently at */
 	dsa_pointer pnextitem;		/* dsa-pointer to the next item */
 	int			curpartition;	/* partition number we are at */
@@ -109,9 +109,21 @@ extern void dshash_release_lock(dshash_table *hash_table, void *entry);
 #define dshash_find_or_insert(hash_table, key, found) \
 	dshash_find_or_insert_extended(hash_table, key, found, 0)
 
+/*
+ * The number of partitions for locking purposes.  This is set to match
+ * NUM_BUFFER_PARTITIONS for now, on the basis that whatever's good enough for
+ * the buffer pool must be good enough for any other purpose.  This could
+ * become a runtime parameter in future.
+ */
+#define DSHASH_NUM_PARTITIONS_LOG2 7
+#define DSHASH_NUM_PARTITIONS (1 << DSHASH_NUM_PARTITIONS_LOG2)
+
 /* seq scan support */
 extern void dshash_seq_init(dshash_seq_status *status, dshash_table *hash_table,
 							bool exclusive);
+extern void dshash_seq_init_partition(dshash_seq_status *status,
+									  dshash_table *hash_table,
+									  bool exclusive, int partition);
 extern void *dshash_seq_next(dshash_seq_status *status);
 extern void dshash_seq_term(dshash_seq_status *status);
 extern void dshash_delete_current(dshash_seq_status *status);
