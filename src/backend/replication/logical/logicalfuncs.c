@@ -197,10 +197,10 @@ pg_logical_slot_get_changes_guts(FunctionCallInfo fcinfo, bool confirm, bool bin
 	else
 		end_of_wal = GetXLogReplayRecPtr(NULL);
 
-	ReplicationSlotAcquire(NameStr(*name), true, true);
-
 	PG_TRY();
 	{
+		ReplicationSlotAcquire(NameStr(*name), true, true);
+
 		/* restart at slot's confirmed_flush */
 		ctx = CreateDecodingContext(InvalidXLogRecPtr,
 									options,
@@ -319,6 +319,9 @@ pg_logical_slot_get_changes_guts(FunctionCallInfo fcinfo, bool confirm, bool bin
 	{
 		/* clear all timetravel entries */
 		InvalidateSystemCaches();
+
+		if (MyReplicationSlot != NULL)
+			ReplicationSlotRelease();
 
 		PG_RE_THROW();
 	}

@@ -466,3 +466,117 @@ SELECT pg_drop_replication_slot('physical_slot');
  
 (1 row)
 
+--
+-- Test that replication slots are properly released or dropped on error,
+-- even when the error is caught by a PL/pgSQL EXCEPTION handler (which
+-- doesn't terminate the session).
+--
+-- pg_create_logical_replication_slot: error during slot creation should
+-- drop the slot.
+DO $$
+BEGIN
+    PERFORM pg_create_logical_replication_slot('regression_slot_error', 'nonexistent_plugin_xyz', true);
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'caught: %', SQLERRM;
+END;
+$$;
+NOTICE:  caught: could not access file "nonexistent_plugin_xyz": No such file or directory
+-- the concerned slot must not exist (it was dropped on error)
+SELECT count(*) = 0 AS slot_was_dropped FROM pg_replication_slots
+    WHERE slot_name = 'regression_slot_error';
+ slot_was_dropped 
+------------------
+ t
+(1 row)
+
+-- the session is still usable
+SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot_t3', 'test_decoding', false);
+ ?column? 
+----------
+ init
+(1 row)
+
+-- pg_replication_slot_advance: error after acquiring the slot should
+-- release it so the session stays usable.
+SELECT slot_name FROM pg_replication_slot_advance('regression_slot_t3', pg_current_wal_lsn());
+     slot_name      
+--------------------
+ regression_slot_t3
+(1 row)
+
+DO $$
+BEGIN
+    PERFORM pg_replication_slot_advance('regression_slot_t3', '0/1');
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'caught expected error';
+END;
+$$;
+NOTICE:  caught expected error
+-- the session is still usable
+SELECT slot_name FROM pg_replication_slot_advance('regression_slot_t3', pg_current_wal_lsn());
+     slot_name      
+--------------------
+ regression_slot_t3
+(1 row)
+
+-- pg_copy_logical_replication_slot: error after creating the destination
+-- slot should drop it.
+DO $$
+BEGIN
+    PERFORM pg_copy_logical_replication_slot('regression_slot_t3', 'regression_slot_dst', false, 'nonexistent_plugin_xyz');
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'caught: %', SQLERRM;
+END;
+$$;
+NOTICE:  caught: could not access file "nonexistent_plugin_xyz": No such file or directory
+-- the destination slot must not exist (it was dropped on error)
+SELECT count(*) = 0 AS dst_slot_dropped FROM pg_replication_slots
+    WHERE slot_name = 'regression_slot_dst';
+ dst_slot_dropped 
+------------------
+ t
+(1 row)
+
+-- the session is still usable
+SELECT count(*) >= 0 AS changes_ok FROM pg_logical_slot_get_changes('regression_slot_t3', NULL, NULL);
+ changes_ok 
+------------
+ t
+(1 row)
+
+-- pg_logical_slot_get_changes: error after acquiring the slot should
+-- release it.
+SELECT 'init' FROM pg_create_physical_replication_slot('regression_slot_phy', true);
+ ?column? 
+----------
+ init
+(1 row)
+
+DO $$
+BEGIN
+    PERFORM pg_logical_slot_get_changes('regression_slot_phy', NULL, NULL);
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'caught: %', SQLERRM;
+END;
+$$;
+NOTICE:  caught: cannot use physical replication slot for logical decoding
+-- the session is still usable
+SELECT slot_name FROM pg_replication_slot_advance('regression_slot_t3', pg_current_wal_lsn());
+     slot_name      
+--------------------
+ regression_slot_t3
+(1 row)
+
+-- cleanup
+SELECT pg_drop_replication_slot('regression_slot_phy');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('regression_slot_t3');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
