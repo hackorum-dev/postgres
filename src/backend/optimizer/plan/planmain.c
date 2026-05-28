@@ -110,6 +110,7 @@ restart:
 	root->group_expr_list = NIL;
 	root->tlist_vars = NIL;
 	root->fkey_list = NIL;
+	root->starjoin_clusters = NIL;
 	root->initial_rels = NIL;
 	root->hasPseudoConstantQuals = false;
 
@@ -325,6 +326,14 @@ restart:
 	 * involving removed relations.
 	 */
 	match_foreign_keys_to_quals(root);
+
+	/*
+	 * Detect star-shaped sub-joins so that join_search can skip enumerating
+	 * equivalent join orderings.  Must be done after foreign keys are
+	 * matched to quals and after lateral, PHV and SpecialJoinInfo info is
+	 * available.
+	 */
+	generate_starjoin_clusters(root);
 
 	/*
 	 * Look for join OR clauses that we can extract single-relation
