@@ -998,7 +998,8 @@ pgstat_drop_database_and_contents(Oid dboid)
  * Drop a single stats entry.
  *
  * This routine returns false if the stats entry of the dropped object could
- * not be freed, true otherwise.
+ * not be freed, true otherwise.  If skip_dropped is true, already-dropped
+ * entries are tolerated and treated as success.
  *
  * The callers of this function should call pgstat_request_entry_refs_gc()
  * if the stats entry could not be freed, to ensure that this entry's memory
@@ -1006,7 +1007,7 @@ pgstat_drop_database_and_contents(Oid dboid)
  * pgstat_gc_entry_refs().
  */
 bool
-pgstat_drop_entry(PgStat_Kind kind, Oid dboid, uint64 objid)
+pgstat_drop_entry(PgStat_Kind kind, Oid dboid, uint64 objid, bool skip_dropped)
 {
 	PgStat_HashKey key = {0};
 	PgStatShared_HashEntry *shent;
@@ -1031,6 +1032,13 @@ pgstat_drop_entry(PgStat_Kind kind, Oid dboid, uint64 objid)
 	shent = dshash_find(pgStatLocal.shared_hash, &key, true);
 	if (shent)
 	{
+		/* already dropped by another backend, nothing to do */
+		if (shent->dropped && skip_dropped)
+		{
+			dshash_release_lock(pgStatLocal.shared_hash, shent);
+			return true;
+		}
+
 		freed = pgstat_drop_entry_internal(shent, NULL);
 
 		/*
