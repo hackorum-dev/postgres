@@ -843,6 +843,7 @@ get_subscription_info(ClusterInfo *cluster)
 	PGconn	   *conn;
 	PGresult   *res;
 	int			i_nsub;
+	int			i_nrepl_origins;
 	int			i_retain_dead_tuples;
 
 	conn = connectToServer(cluster, "template1");
@@ -862,6 +863,14 @@ get_subscription_info(ClusterInfo *cluster)
 	cluster->sub_retain_dead_tuples = (strcmp(PQgetvalue(res, 0, i_retain_dead_tuples), "t") == 0);
 
 	PQclear(res);
+
+	res = executeQueryOrDie(conn,
+							"SELECT count(*) AS nrepl_origins "
+							"FROM pg_catalog.pg_replication_origin");
+	i_nrepl_origins = PQfnumber(res, "nrepl_origins");
+	cluster->nrepl_origins = atoi(PQgetvalue(res, 0, i_nrepl_origins));
+	PQclear(res);
+
 	PQfinish(conn);
 }
 

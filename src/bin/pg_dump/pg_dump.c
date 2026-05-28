@@ -5668,37 +5668,15 @@ dumpSubscription(Archive *fout, const SubscriptionInfo *subinfo)
 	 * In binary-upgrade mode, we allow the replication to continue after the
 	 * upgrade.
 	 */
-	if (dopt->binary_upgrade && fout->remoteVersion >= 170000)
+	if (dopt->binary_upgrade && subinfo->subenabled && fout->remoteVersion >= 170000)
 	{
-		if (subinfo->suboriginremotelsn)
-		{
-			/*
-			 * Preserve the remote_lsn for the subscriber's replication
-			 * origin. This value is required to start the replication from
-			 * the position before the upgrade. This value will be stale if
-			 * the publisher gets upgraded before the subscriber node.
-			 * However, this shouldn't be a problem as the upgrade of the
-			 * publisher ensures that all the transactions were replicated
-			 * before upgrading it.
-			 */
-			appendPQExpBufferStr(query,
-								 "\n-- For binary upgrade, must preserve the remote_lsn for the subscriber's replication origin.\n");
-			appendPQExpBufferStr(query,
-								 "SELECT pg_catalog.binary_upgrade_replorigin_advance(");
-			appendStringLiteralAH(query, subinfo->dobj.name, fout);
-			appendPQExpBuffer(query, ", '%s');\n", subinfo->suboriginremotelsn);
-		}
-
-		if (subinfo->subenabled)
-		{
-			/*
-			 * Enable the subscription to allow the replication to continue
-			 * after the upgrade.
-			 */
-			appendPQExpBufferStr(query,
-								 "\n-- For binary upgrade, must preserve the subscriber's running state.\n");
-			appendPQExpBuffer(query, "ALTER SUBSCRIPTION %s ENABLE;\n", qsubname);
-		}
+		/*
+		 * Enable the subscription to allow the replication to continue
+		 * after the upgrade.
+		 */
+		appendPQExpBufferStr(query,
+							 "\n-- For binary upgrade, must preserve the subscriber's running state.\n");
+		appendPQExpBuffer(query, "ALTER SUBSCRIPTION %s ENABLE;\n", qsubname);
 	}
 
 	if (subinfo->dobj.dump & DUMP_COMPONENT_DEFINITION)

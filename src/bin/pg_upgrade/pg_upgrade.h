@@ -311,6 +311,7 @@ typedef struct
 	int			num_tablespaces;
 	const char *tablespace_suffix;	/* directory specification */
 	int			nsubs;			/* number of subscriptions */
+	int			nrepl_origins;	/* number of replication origins */
 	bool		sub_retain_dead_tuples; /* whether a subscription enables
 										 * retain_dead_tuples. */
 } ClusterInfo;

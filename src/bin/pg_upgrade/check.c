@@ -33,6 +33,7 @@ static void check_for_new_tablespace_dir(void);
 static void check_for_user_defined_encoding_conversions(ClusterInfo *cluster);
 static void check_for_unicode_update(ClusterInfo *cluster);
 static void check_new_cluster_replication_slots(void);
+static void check_new_cluster_replication_origins(void);
 static void check_new_cluster_subscription_configuration(void);
 static void check_old_cluster_for_valid_slots(void);
 static void check_old_cluster_subscription_state(void);
@@ -796,6 +797,8 @@ check_new_cluster(void)
 	check_for_new_tablespace_dir();
 
 	check_new_cluster_replication_slots();
+
+	check_new_cluster_replication_origins();
 
 	check_new_cluster_subscription_configuration();
 }
@@ -2303,11 +2306,49 @@ check_new_cluster_replication_slots(void)
 }
 
 /*
+ * check_new_cluster_replication_origins()
+ *
+ * Verify that the new cluster has no replication origins. During upgrade,
+ * pg_upgrade restores replication origins from the old cluster with their
+ * original OIDs. If the new cluster already contains origins, those OIDs
+ * may collide, causing the upgrade to fail mid-way.
+ */
+static void
+check_new_cluster_replication_origins(void)
+{
+	PGconn     *conn;
+	PGresult   *res;
+	int         norigins;
+
+	/* Quick return if there are no replication origins to migrate. */
+	if (old_cluster.nrepl_origins == 0)
+		return;
+
+	prep_status("Checking for replication origins in new cluster");
+
+	conn = connectToServer(&new_cluster, "template1");
+	res = executeQueryOrDie(conn,
+							"SELECT count(*) "
+							"FROM pg_catalog.pg_replication_origin");
+
+	if (PQntuples(res) != 1)
+		pg_fatal("could not count the number of replication origins");
+
+	norigins = atoi(PQgetvalue(res, 0, 0));
+	PQclear(res);
+	PQfinish(conn);
+
+	if (norigins > 0)
+		pg_fatal("expected 0 replication origins but found %d", norigins);
+
+	check_ok();
+}
+
+/*
  * check_new_cluster_subscription_configuration()
  *
  * Verify that the max_active_replication_origins configuration specified is
- * enough for creating the subscriptions. This is required to create the
- * replication origin for each subscription.
+ * enough for creating all the replication origins.
  */
 static void
 check_new_cluster_subscription_configuration(void)
@@ -2320,8 +2361,8 @@ check_new_cluster_subscription_configuration(void)
 	if (GET_MAJOR_VERSION(old_cluster.major_version) < 1700)
 		return;
 
-	/* Quick return if there are no subscriptions to be migrated. */
-	if (old_cluster.nsubs == 0)
+	/* Quick return if there are no replication origins to be migrated. */
+	if (old_cluster.nrepl_origins == 0)
 		return;
 
 	prep_status("Checking new cluster configuration for subscriptions");
@@ -2335,10 +2376,10 @@ check_new_cluster_subscription_configuration(void)
 		pg_fatal("could not determine parameter settings on new cluster");
 
 	max_active_replication_origins = atoi(PQgetvalue(res, 0, 0));
-	if (old_cluster.nsubs > max_active_replication_origins)
+	if (old_cluster.nrepl_origins > max_active_replication_origins)
 		pg_fatal("\"max_active_replication_origins\" (%d) must be greater than or equal to the number of "
-				 "subscriptions (%d) on the old cluster",
-				 max_active_replication_origins, old_cluster.nsubs);
+				 "replication origins (%d) on the old cluster",
+				 max_active_replication_origins, old_cluster.nrepl_origins);
 
 	PQclear(res);
 	PQfinish(conn);

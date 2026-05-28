@@ -11,6 +11,7 @@
 
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/relation.h"
 #include "access/table.h"
 #include "catalog/binary_upgrade.h"
@@ -27,8 +28,10 @@
 #include "storage/lmgr.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/pg_lsn.h"
+#include "utils/snapmgr.h"
 
 
 #define CHECK_IS_BINARY_UPGRADE									\
@@ -377,58 +380,6 @@ binary_upgrade_add_sub_rel_state(PG_FUNCTION_ARGS)
 }
 
 /*
- * binary_upgrade_replorigin_advance
- *
- * Update the remote_lsn for the subscriber's replication origin.
- */
-Datum
-binary_upgrade_replorigin_advance(PG_FUNCTION_ARGS)
-{
-	Relation	rel;
-	Oid			subid;
-	char	   *subname;
-	char		originname[NAMEDATALEN];
-	ReplOriginId node;
-	XLogRecPtr	remote_commit;
-
-	CHECK_IS_BINARY_UPGRADE;
-
-	/*
-	 * We must ensure a non-NULL subscription name before dereferencing the
-	 * arguments.
-	 */
-	if (PG_ARGISNULL(0))
-		elog(ERROR, "null argument to binary_upgrade_replorigin_advance is not allowed");
-
-	subname = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	remote_commit = PG_ARGISNULL(1) ? InvalidXLogRecPtr : PG_GETARG_LSN(1);
-
-	rel = table_open(SubscriptionRelationId, RowExclusiveLock);
-	subid = get_subscription_oid(subname, false);
-
-	ReplicationOriginNameForLogicalRep(subid, InvalidOid, originname, sizeof(originname));
-
-	/* Lock to prevent the replication origin from vanishing */
-	LockRelationOid(ReplicationOriginRelationId, RowExclusiveLock);
-	node = replorigin_by_name(originname, false);
-
-	/*
-	 * The server will be stopped after setting up the objects in the new
-	 * cluster and the origins will be flushed during the shutdown checkpoint.
-	 * This will ensure that the latest LSN values for origin will be
-	 * available after the upgrade.
-	 */
-	replorigin_advance(node, remote_commit, InvalidXLogRecPtr,
-					   false /* backward */ ,
-					   false /* WAL log */ );
-
-	UnlockRelationOid(ReplicationOriginRelationId, RowExclusiveLock);
-	table_close(rel, RowExclusiveLock);
-
-	PG_RETURN_VOID();
-}
-
-/*
  * binary_upgrade_create_conflict_detection_slot
  *
  * Create a replication slot to retain information necessary for conflict
@@ -442,6 +393,118 @@ binary_upgrade_create_conflict_detection_slot(PG_FUNCTION_ARGS)
 	CreateConflictDetectionSlot();
 
 	ReplicationSlotRelease();
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * binary_upgrade_create_replication_origin
+ *
+ * Create a replication origin with a specific OID and name, optionally
+ * restoring its remote_lsn. Used by pg_upgrade to preserve replication
+ * origin OIDs across the upgrade.
+ */
+Datum
+binary_upgrade_create_replication_origin(PG_FUNCTION_ARGS)
+{
+	Oid				node_oid;
+	ReplOriginId	node;
+	char		   *originname;
+	Relation		rel;
+	HeapTuple		tuple;
+	Datum			roname_d;
+	SysScanDesc		scan;
+	ScanKeyData		key;
+	bool			nulls[Natts_pg_replication_origin];
+	Datum			values[Natts_pg_replication_origin];
+	bool			collides;
+
+	CHECK_IS_BINARY_UPGRADE;
+
+	if (PG_ARGISNULL(0) || PG_ARGISNULL(1))
+		elog(ERROR,
+			 "null argument to binary_upgrade_create_replication_origin is not allowed");
+
+	node_oid = PG_GETARG_OID(0);
+
+	if (node_oid == InvalidOid || node_oid > PG_UINT16_MAX)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("replication origin ID %u is out of range", node_oid)));
+
+	node = (ReplOriginId) node_oid;
+	originname = text_to_cstring(PG_GETARG_TEXT_PP(1));
+
+	if (strlen(originname) > MAX_RONAME_LEN)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("replication origin name is too long"),
+				 errdetail("Replication origin names must be no longer than %d bytes.",
+						   MAX_RONAME_LEN)));
+
+	roname_d = CStringGetTextDatum(originname);
+
+	Assert(IsTransactionState());
+
+	rel = table_open(ReplicationOriginRelationId, RowExclusiveLock);
+
+	/* Check for OID collision */
+	ScanKeyInit(&key,
+				Anum_pg_replication_origin_roident,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(node));
+	scan = systable_beginscan(rel, ReplicationOriginIdentIndex,
+							  true /* indexOK */,
+							  SnapshotSelf,
+							  1, &key);
+	collides = HeapTupleIsValid(systable_getnext(scan));
+	systable_endscan(scan);
+
+	if (collides)
+		ereport(ERROR,
+				(errcode(ERRCODE_DUPLICATE_OBJECT),
+				 errmsg("replication origin with ID %u already exists", node_oid)));
+
+	/* Check for name collision */
+	ScanKeyInit(&key,
+				Anum_pg_replication_origin_roname,
+				BTEqualStrategyNumber, F_TEXTEQ,
+				roname_d);
+	scan = systable_beginscan(rel, ReplicationOriginNameIndex,
+							  true /* indexOK */,
+							  SnapshotSelf,
+							  1, &key);
+	collides = HeapTupleIsValid(systable_getnext(scan));
+	systable_endscan(scan);
+
+	if (collides)
+		ereport(ERROR,
+				(errcode(ERRCODE_DUPLICATE_OBJECT),
+				 errmsg("replication origin \"%s\" already exists",
+						originname)));
+
+	memset(&nulls, 0, sizeof(nulls));
+	memset(&values, 0, sizeof(values));
+
+	values[Anum_pg_replication_origin_roident - 1] = ObjectIdGetDatum(node);
+	values[Anum_pg_replication_origin_roname - 1] = roname_d;
+
+	tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
+	CatalogTupleInsert(rel, tuple);
+	heap_freetuple(tuple);
+	CommandCounterIncrement();
+
+	/* Restore the remote_lsn if provided, while still holding the lock */
+	if (!PG_ARGISNULL(2))
+	{
+		XLogRecPtr	remote_commit = PG_GETARG_LSN(2);
+
+		replorigin_advance(node, remote_commit, InvalidXLogRecPtr,
+						   false /* backward */,
+						   false /* WAL log */);
+	}
+
+	table_close(rel, RowExclusiveLock);
 
 	PG_RETURN_VOID();
 }
