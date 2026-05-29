@@ -5,9 +5,11 @@
  *		usage across a whole database cluster.
  *
  * Execution costs are totaled for each distinct source query, and kept in
- * a dshash table registered via DSM registry.  (We attempt to keep no more
- * distinct queries than the configured limit, but because dynamic shared
- * memory is used, the count may briefly exceed it.)
+ * a dshash table registered via DSM registry.  Query text is stored in a
+ * separate DSA area (also via DSM registry), eliminating the need for
+ * external file I/O.  (We attempt to keep no more distinct queries than
+ * the configured limit, but because dynamic shared memory is used, the
+ * count may briefly exceed it.)
  *
  * Starting in Postgres 9.2, this module normalized query entries.  As of
  * Postgres 14, the normalization is done by the core if compute_query_id is
@@ -15,13 +17,10 @@
  *
  * To facilitate presenting entries to users, we create "representative" query
  * strings in which constants are replaced with parameter symbols ($n), to
- * make it clearer what a normalized entry can represent.  To avoid having
- * to truncate oversized query strings, we store these strings in a temporary
- * external query-texts file.  Offsets into this file are kept in the dshash
- * entries.
+ * make it clearer what a normalized entry can represent.
  *
  * The dshash serves as the source-of-truth registry of tracked queries,
- * storing the key, file offsets to the query text, and an atomic refcount
+ * storing the key, a DSA pointer to the query text, and an atomic refcount
  * used for clock-sweep eviction.  Actual counters (calls, timing, buffers,
  * etc.) are maintained via a custom pgstat kind using the pending/flush
  * infrastructure, so backends accumulate stats locally and flush them
@@ -55,8 +54,6 @@
 #include "postgres.h"
 
 #include <math.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 #include "access/htup_details.h"
 #include "access/parallel.h"
@@ -73,12 +70,10 @@
 #include "optimizer/planner.h"
 #include "parser/analyze.h"
 #include "storage/dsm_registry.h"
-#include "storage/fd.h"
-#include "storage/ipc.h"
-#include "storage/spin.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/dsa.h"
 #include "utils/guc.h"
 #include "utils/numeric.h"
 #include "utils/pgstat_internal.h"
@@ -89,11 +84,6 @@ PG_MODULE_MAGIC_EXT(
 					.name = "pg_stat_statements",
 					.version = PG_VERSION
 );
-
-/*
- * Location of external query text file.
- */
-#define PGSS_TEXT_FILE	PG_STAT_TMP_DIR "/pgss_query_texts.stat"
 
 /* Custom pgstat kind ID */
 #define PGSTAT_KIND_PGSS	25
@@ -225,10 +215,6 @@ typedef struct PgStatShared_Pgss
 /*
  * Entry in the dshash source-of-truth registry.
  *
- * Note: in event of a failure in garbage collection of the query text file,
- * we reset query_offset to zero and query_len to -1.  This will be seen as
- * an invalid state by qtext_fetch().
- *
  * Note: Key must be first for dshash.
  */
 typedef struct pgssEntry
@@ -236,7 +222,7 @@ typedef struct pgssEntry
 	pgssHashKey key;
 	pg_atomic_uint32 refcount;	/* clock-sweep: decremented on sweep, evict at
 								 * 0 */
-	Size		query_offset;	/* query text offset in external file */
+	dsa_pointer query_text;		/* DSA pointer to query text */
 	int			query_len;		/* # of valid bytes in query string, or -1 */
 	int			encoding;		/* query text encoding */
 	TimestampTz stats_since;	/* timestamp of entry allocation */
@@ -253,10 +239,6 @@ typedef struct pgssSharedState
 	pg_atomic_uint32 sweep_partition;	/* rotating hand: next partition to
 										 * sweep */
 	TimestampTz stats_reset;	/* timestamp with all stats reset */
-	slock_t		mutex;			/* protects following fields only: */
-	Size		extent;			/* current extent of query file */
-	int			n_writers;		/* number of active writers to query file */
-	int			gc_count;		/* query file garbage collection cycle count */
 } pgssSharedState;
 
 /* Backend-local pending entry */
@@ -283,6 +265,9 @@ static const dshash_parameters pgss_dsh_params = {
 
 /* Global shared state */
 static pgssSharedState *pgss_shared = NULL;
+
+/* Query text dsa area */
+static dsa_area *pgss_qtext_dsa = NULL;
 
 /* source-of-truth dshash table */
 static dshash_table *pgss_hash = NULL;
@@ -322,18 +307,12 @@ static bool pgss_track_utility = true;	/* whether to track utility commands */
 static bool pgss_track_planning = false;	/* whether to track planning
 											 * duration */
 static bool pgss_save = true;	/* whether to save stats across shutdown */
+static int	pgss_query_text_memory = 4096;	/* in KB */
 
 #define pgss_enabled(level) \
 	(!IsParallelWorker() && \
 	(pgss_track == PGSS_TRACK_ALL || \
 	(pgss_track == PGSS_TRACK_TOP && (level) == 0)))
-
-#define record_gc_qtexts() \
-	do { \
-		SpinLockAcquire(&pgss_shared->mutex); \
-		pgss_shared->gc_count++; \
-		SpinLockRelease(&pgss_shared->mutex); \
-	} while(0)
 
 /*---- Function declarations ----*/
 
@@ -382,16 +361,9 @@ static void pgss_store(const char *query, int64 queryId,
 					   PlannedStmtOrigin planOrigin);
 
 static void entry_dealloc(void);
+static void pgss_assign_query_text_memory(int newval, void *extra);
 static TimestampTz entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only);
 static uint64 pgss_hash_key(pgssHashKey *key);
-
-static bool qtext_store(const char *query, int query_len,
-						Size *query_offset, int *gc_count);
-static char *qtext_load_file(Size *buffer_size);
-static char *qtext_fetch(Size query_offset, int query_len,
-						 char *buffer, Size buffer_size);
-static bool need_gc_qtexts(void);
-static void gc_qtexts(void);
 static char *generate_normalized_query(const JumbleState *jstate,
 									   const char *query,
 									   int query_loc, int *query_len_p);
@@ -407,7 +379,6 @@ static void pgss_to_serialized_data(const PgStat_HashKey *key,
 static bool pgss_from_serialized_data(const PgStat_HashKey *key,
 									  PgStatShared_Common *header,
 									  FILE *statfile);
-static void pgss_finish(PgStat_StatsFileOp status);
 
 /*--------------------------------------------------------------------------
  * Custom pgstat kind definition
@@ -427,7 +398,6 @@ static const PgStat_KindInfo pgss_kind_info = {
 	.flush_pending_cb = pgss_flush_pending_cb,
 	.to_serialized_data = pgss_to_serialized_data,
 	.from_serialized_data = pgss_from_serialized_data,
-	.finish = pgss_finish,
 };
 
 static uint64
@@ -446,10 +416,13 @@ pgss_init_shmem(void *ptr, void *arg)
 	pg_atomic_init_u64(&state->dealloc, 0);
 	pg_atomic_init_u32(&state->sweep_partition, 0);
 	state->stats_reset = GetCurrentTimestamp();
-	SpinLockInit(&state->mutex);
-	state->extent = 0;
-	state->n_writers = 0;
-	state->gc_count = 0;
+}
+
+static void
+pgss_assign_query_text_memory(int newval, void *extra)
+{
+	if (pgss_qtext_dsa)
+		dsa_set_size_limit(pgss_qtext_dsa, (size_t) newval * 1024);
 }
 
 static void
@@ -468,6 +441,12 @@ pgss_attach_shmem(void)
 	if (pgss_hash == NULL)
 		pgss_hash = GetNamedDSHash("pg_stat_statements", &pgss_dsh_params,
 								   &found);
+
+	if (pgss_qtext_dsa == NULL)
+	{
+		pgss_qtext_dsa = GetNamedDSA("pg_stat_statements_qtext", &found);
+		dsa_set_size_limit(pgss_qtext_dsa, (size_t) pgss_query_text_memory * 1024);
+	}
 }
 
 /*
@@ -542,6 +521,19 @@ _PG_init(void)
 							 NULL,
 							 NULL,
 							 NULL);
+
+	DefineCustomIntVariable("pg_stat_statements.query_text_memory",
+							"Sets the memory limit for query text storage.",
+							NULL,
+							&pgss_query_text_memory,
+							4096,
+							256,
+							MAX_KILOBYTES,
+							PGC_SIGHUP,
+							GUC_UNIT_KB,
+							NULL,
+							pgss_assign_query_text_memory,
+							NULL);
 
 	MarkGUCPrefixReserved("pg_stat_statements");
 
@@ -678,9 +670,6 @@ pgss_to_serialized_data(const PgStat_HashKey *key,
 						const PgStatShared_Common *header,
 						FILE *statfile)
 {
-	static char *qbuffer = NULL;
-	static Size qbuffer_size = 0;
-
 	PgStatShared_Pgss *shpgss = (PgStatShared_Pgss *) header;
 	pgssEntry  *entry;
 	bool		found = false;
@@ -713,13 +702,9 @@ pgss_to_serialized_data(const PgStat_HashKey *key,
 
 	pgstat_write_chunk_s(statfile, &serialized);
 
-	/* Load query text file once, reuse across all entries */
-	if (!qbuffer)
-		qbuffer = qtext_load_file(&qbuffer_size);
-
-	if (serialized.query_len >= 0 && qbuffer)
-		qtext = qtext_fetch(serialized.query_offset, serialized.query_len,
-							qbuffer, qbuffer_size);
+	/* Load query text */
+	if (DsaPointerIsValid(serialized.query_text) && serialized.query_len >= 0)
+		qtext = dsa_get_address(pgss_qtext_dsa, serialized.query_text);
 
 	if (qtext)
 	{
@@ -736,7 +721,7 @@ pgss_to_serialized_data(const PgStat_HashKey *key,
 
 /*
  * Deserialize auxiliary data: recreate the dshash entry and store query
- * text in the file.
+ * text in pgss_qtext_dsa.
  */
 static bool
 pgss_from_serialized_data(const PgStat_HashKey *key,
@@ -777,7 +762,7 @@ pgss_from_serialized_data(const PgStat_HashKey *key,
 		if (qtext_len >= 0)
 		{
 			char	   *qtext;
-			Size		query_offset;
+			dsa_pointer dp;
 
 			qtext = palloc(qtext_len + 1);
 			if (!pgstat_read_chunk(statfile, qtext, qtext_len + 1))
@@ -787,15 +772,16 @@ pgss_from_serialized_data(const PgStat_HashKey *key,
 				return false;
 			}
 
-			/* Store in the text file */
-			if (qtext_store(qtext, qtext_len, &query_offset, NULL))
+			dp = dsa_allocate_extended(pgss_qtext_dsa, qtext_len + 1, DSA_ALLOC_NO_OOM);
+			if (DsaPointerIsValid(dp))
 			{
-				dsh_entry->query_offset = query_offset;
+				memcpy(dsa_get_address(pgss_qtext_dsa, dp), qtext, qtext_len + 1);
+				dsh_entry->query_text = dp;
 				dsh_entry->query_len = qtext_len;
 			}
 			else
 			{
-				dsh_entry->query_offset = 0;
+				dsh_entry->query_text = InvalidDsaPointer;
 				dsh_entry->query_len = -1;
 			}
 
@@ -803,7 +789,7 @@ pgss_from_serialized_data(const PgStat_HashKey *key,
 		}
 		else
 		{
-			dsh_entry->query_offset = 0;
+			dsh_entry->query_text = InvalidDsaPointer;
 			dsh_entry->query_len = -1;
 		}
 
@@ -824,31 +810,6 @@ pgss_from_serialized_data(const PgStat_HashKey *key,
 	dshash_release_lock(pgss_hash, dsh_entry);
 
 	return true;
-}
-
-static void
-pgss_finish(PgStat_StatsFileOp status)
-{
-	switch (status)
-	{
-		case STATS_WRITE:
-
-			/*
-			 * Text has been serialized into the pgstat file; remove the
-			 * original.
-			 */
-			unlink(PGSS_TEXT_FILE);
-			break;
-
-		case STATS_READ:
-			/* Text file was rebuilt by from_serialized_data; keep it. */
-			break;
-
-		case STATS_DISCARD:
-			/* Stats discarded; remove orphaned text file. */
-			unlink(PGSS_TEXT_FILE);
-			break;
-	}
 }
 
 /*--------------------------------------------------------------------------
@@ -912,7 +873,60 @@ pgss_store(const char *query, int64 queryId,
 		if (cur < PGSS_REF_CAP)
 			pg_atomic_compare_exchange_u32(&dsh_entry->refcount, &cur, cur + 1);
 
-		dshash_release_lock(pgss_hash, dsh_entry);
+		/*
+		 * If text was lost due to DSA exhaustion, try to backfill now that
+		 * more memory may be available (e.g. after a limit increase +
+		 * reload).
+		 */
+		if (!DsaPointerIsValid(dsh_entry->query_text))
+		{
+			dsa_pointer dp;
+			const char *store_query;
+			int			store_len = query_len;
+
+			/*
+			 * Upgrade to exclusive lock for backfill.  Between release and
+			 * re-acquire the entry could be evicted and re-inserted; the
+			 * re-check below handles that harmlessly.
+			 *
+			 * When jstate is available (i.e. called from post_parse_analyze),
+			 * we normalize.  When called from executor/utility hooks, jstate
+			 * is NULL so we store the raw query text.
+			 */
+			if (jstate && jstate->clocations_count > 0)
+				norm_query = generate_normalized_query(jstate, query,
+													   query_location,
+													   &store_len);
+			store_query = norm_query ? norm_query : query;
+
+			dshash_release_lock(pgss_hash, dsh_entry);
+			dsh_entry = dshash_find(pgss_hash, &key, true);
+			if (dsh_entry && !DsaPointerIsValid(dsh_entry->query_text))
+			{
+				dp = dsa_allocate_extended(pgss_qtext_dsa, store_len + 1,
+										   DSA_ALLOC_NO_OOM);
+				if (DsaPointerIsValid(dp))
+				{
+					char	   *dst = dsa_get_address(pgss_qtext_dsa, dp);
+
+					memcpy(dst, store_query, store_len);
+					dst[store_len] = '\0';
+					dsh_entry->query_text = dp;
+					dsh_entry->query_len = store_len;
+					dsh_entry->encoding = encoding;
+				}
+			}
+			if (dsh_entry)
+				dshash_release_lock(pgss_hash, dsh_entry);
+
+			if (norm_query)
+			{
+				pfree(norm_query);
+				norm_query = NULL;
+			}
+		}
+		else
+			dshash_release_lock(pgss_hash, dsh_entry);
 
 		/* If jstate is provided and kind is PGSS_INVALID, nothing more to do */
 		if (jstate && kind == PGSS_INVALID)
@@ -920,55 +934,45 @@ pgss_store(const char *query, int64 queryId,
 	}
 	else
 	{
-		Size		query_offset;
-		int			gc_count;
-		bool		stored;
-		bool		do_gc;
-
 		/* Slow path: insert with exclusive lock */
-		if (jstate)
-		{
-			norm_query = generate_normalized_query(jstate, query,
-												   query_location,
-												   &query_len);
-		}
-
-		/* Store query text in the file */
-		stored = qtext_store(norm_query ? norm_query : query, query_len,
-							 &query_offset, &gc_count);
-
-		/*
-		 * Determine whether we need to garbage collect external query texts.
-		 */
-		do_gc = need_gc_qtexts();
-
 		dsh_entry = dshash_find_or_insert(pgss_hash, &key, &found);
 		if (!found)
 		{
+			dsa_pointer dp;
+
 			pg_atomic_init_u32(&dsh_entry->refcount, 1);
 			dsh_entry->stats_since = GetCurrentTimestamp();
 			dsh_entry->minmax_stats_since = dsh_entry->stats_since;
-			dsh_entry->encoding = encoding;
 
-			if (stored)
+			if (jstate)
 			{
-				dsh_entry->query_offset = query_offset;
+				norm_query = generate_normalized_query(jstate, query,
+													   query_location,
+													   &query_len);
+			}
+
+			dp = dsa_allocate_extended(pgss_qtext_dsa, query_len + 1, DSA_ALLOC_NO_OOM);
+			if (DsaPointerIsValid(dp))
+			{
+				char	   *dst = dsa_get_address(pgss_qtext_dsa, dp);
+
+				memcpy(dst, norm_query ? norm_query : query, query_len);
+				dst[query_len] = '\0';
+				dsh_entry->query_text = dp;
 				dsh_entry->query_len = query_len;
+				dsh_entry->encoding = encoding;
 			}
 			else
 			{
-				dsh_entry->query_offset = 0;
+				dsh_entry->query_text = InvalidDsaPointer;
 				dsh_entry->query_len = -1;
+				dsh_entry->encoding = encoding;
 			}
 
 			dshash_release_lock(pgss_hash, dsh_entry);
 
 			pg_atomic_fetch_add_u64(&pgss_shared->nentries, 1);
 			entry_dealloc();
-
-			/* If needed, perform garbage collection */
-			if (do_gc)
-				gc_qtexts();
 
 			if (jstate && kind == PGSS_INVALID)
 			{
@@ -987,11 +991,7 @@ pgss_store(const char *query, int64 queryId,
 			dshash_release_lock(pgss_hash, dsh_entry);
 
 			if (jstate && kind == PGSS_INVALID)
-			{
-				if (norm_query)
-					pfree(norm_query);
 				return;
-			}
 		}
 	}
 
@@ -1594,8 +1594,6 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	pgssEntry  *entry;
 	Oid			userid = GetUserId();
 	bool		is_allowed_role;
-	char	   *qbuffer = NULL;
-	Size		qbuffer_size = 0;
 
 	is_allowed_role = has_privs_of_role(userid, ROLE_PG_READ_ALL_STATS);
 
@@ -1659,10 +1657,6 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			elog(ERROR, "incorrect number of output arguments");
 	}
 
-	/* Load the query text file */
-	if (showtext)
-		qbuffer = qtext_load_file(&qbuffer_size);
-
 	dshash_seq_init(&status, pgss_hash, false);
 	while ((entry = dshash_seq_next(&status)) != NULL)
 	{
@@ -1704,13 +1698,9 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 
 			if (showtext)
 			{
-				char	   *qstr = qtext_fetch(entry->query_offset,
-											   entry->query_len,
-											   qbuffer,
-											   qbuffer_size);
-
-				if (qstr)
+				if (DsaPointerIsValid(entry->query_text) && entry->query_len >= 0)
 				{
+					char	   *qstr = dsa_get_address(pgss_qtext_dsa, entry->query_text);
 					char	   *enc = pg_any_to_server(qstr, entry->query_len, entry->encoding);
 
 					values[i++] = CStringGetTextDatum(enc);
@@ -1850,13 +1840,10 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 	}
 	dshash_seq_term(&status);
-
-	if (qbuffer)
-		pfree(qbuffer);
 }
 
 /* Number of output arguments (columns) for pg_stat_statements_info */
-#define PG_STAT_STATEMENTS_INFO_COLS	2
+#define PG_STAT_STATEMENTS_INFO_COLS	3
 
 /*
  * Return statistics of pg_stat_statements.
@@ -1875,6 +1862,7 @@ pg_stat_statements_info(PG_FUNCTION_ARGS)
 
 	values[0] = Int64GetDatum((int64) pg_atomic_read_u64(&pgss_shared->dealloc));
 	values[1] = TimestampTzGetDatum(pgss_shared->stats_reset);
+	values[2] = Int64GetDatum((int64) dsa_get_total_size(pgss_qtext_dsa));
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
 }
@@ -1950,6 +1938,10 @@ entry_dealloc(void)
 			if (cur - 1 > 0)
 				continue;
 		}
+
+		/* Free the DSA query text before evicting */
+		if (DsaPointerIsValid(entry->query_text))
+			dsa_free(pgss_qtext_dsa, entry->query_text);
 
 		/* Evict: drop from pgstat, then delete from dshash */
 		pgstat_drop_entry(PGSTAT_KIND_PGSS, entry->key.dbid,
@@ -2059,6 +2051,8 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 		{
 			uint64		objid = pgss_hash_key(&key);
 
+			if (DsaPointerIsValid(entry->query_text))
+				dsa_free(pgss_qtext_dsa, entry->query_text);
 			dshash_delete_entry(pgss_hash, entry);
 			pg_atomic_fetch_sub_u64(&pgss_shared->nentries, 1);
 			num_remove++;
@@ -2073,6 +2067,8 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 		{
 			uint64		objid = pgss_hash_key(&key);
 
+			if (DsaPointerIsValid(entry->query_text))
+				dsa_free(pgss_qtext_dsa, entry->query_text);
 			dshash_delete_entry(pgss_hash, entry);
 			pg_atomic_fetch_sub_u64(&pgss_shared->nentries, 1);
 			num_remove++;
@@ -2094,6 +2090,9 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 				pgssHashKey ekey = entry->key;
 				uint64		objid = pgss_hash_key(&ekey);
 
+				if (DsaPointerIsValid(entry->query_text))
+					dsa_free(pgss_qtext_dsa, entry->query_text);
+
 				dshash_delete_current(&status);
 				pg_atomic_fetch_sub_u64(&pgss_shared->nentries, 1);
 				num_remove++;
@@ -2105,428 +2104,14 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 		dshash_seq_term(&status);
 	}
 
-	/* If all entries were removed, reset global statistics and text file */
+	/* If all entries were removed, reset global statistics */
 	if (num_remove > 0 && num_entries == num_remove)
 	{
-		FILE	   *qfile;
-
 		pg_atomic_write_u64(&pgss_shared->dealloc, 0);
 		pgss_shared->stats_reset = stats_reset;
-
-		/* Write new empty query file */
-		qfile = AllocateFile(PGSS_TEXT_FILE, PG_BINARY_W);
-		if (qfile == NULL)
-		{
-			ereport(LOG,
-					(errcode_for_file_access(),
-					 errmsg("could not create file \"%s\": %m",
-							PGSS_TEXT_FILE)));
-		}
-		else
-		{
-			if (ftruncate(fileno(qfile), 0) != 0)
-				ereport(LOG,
-						(errcode_for_file_access(),
-						 errmsg("could not truncate file \"%s\": %m",
-								PGSS_TEXT_FILE)));
-			FreeFile(qfile);
-		}
-
-		SpinLockAcquire(&pgss_shared->mutex);
-		pgss_shared->extent = 0;
-		SpinLockRelease(&pgss_shared->mutex);
-		record_gc_qtexts();
 	}
 
 	return stats_reset;
-}
-
-/*--------------------------------------------------------------------------
- * Query text file management
- *--------------------------------------------------------------------------
- */
-
-/*
- * Store query text in the external file.
- *
- * If successful, returns true, and stores the new entry's offset in the file
- * into *query_offset.  Also, if gc_count isn't NULL, *gc_count is set to the
- * number of garbage collections that have occurred so far.
- *
- * On failure, returns false.
- */
-static bool
-qtext_store(const char *query, int query_len,
-			Size *query_offset, int *gc_count)
-{
-	Size		off;
-	int			fd;
-
-	/*
-	 * We use a spinlock to protect extent/n_writers/gc_count, so that
-	 * multiple processes may execute this function concurrently.
-	 */
-	SpinLockAcquire(&pgss_shared->mutex);
-	off = pgss_shared->extent;
-	pgss_shared->extent += query_len + 1;
-	pgss_shared->n_writers++;
-	if (gc_count)
-		*gc_count = pgss_shared->gc_count;
-	SpinLockRelease(&pgss_shared->mutex);
-
-	*query_offset = off;
-
-	/*
-	 * Don't allow the file to grow larger than what qtext_load_file can
-	 * (theoretically) handle.  This has been seen to be reachable on 32-bit
-	 * platforms.
-	 */
-	if (unlikely(query_len >= MaxAllocHugeSize - off))
-	{
-		errno = EFBIG;
-		fd = -1;
-		goto error;
-	}
-
-	/* Now write the data into the successfully-reserved part of the file */
-	fd = OpenTransientFile(PGSS_TEXT_FILE, O_RDWR | O_CREAT | PG_BINARY);
-	if (fd < 0)
-		goto error;
-
-	if (pg_pwrite(fd, query, query_len, off) != query_len)
-		goto error;
-	if (pg_pwrite(fd, "\0", 1, off + query_len) != 1)
-		goto error;
-
-	CloseTransientFile(fd);
-
-	/* Mark our write complete */
-	SpinLockAcquire(&pgss_shared->mutex);
-	pgss_shared->n_writers--;
-	SpinLockRelease(&pgss_shared->mutex);
-
-	return true;
-
-error:
-	ereport(LOG,
-			(errcode_for_file_access(),
-			 errmsg("could not write file \"%s\": %m",
-					PGSS_TEXT_FILE)));
-
-	if (fd >= 0)
-		CloseTransientFile(fd);
-
-	/* Mark our write complete */
-	SpinLockAcquire(&pgss_shared->mutex);
-	pgss_shared->n_writers--;
-	SpinLockRelease(&pgss_shared->mutex);
-
-	return false;
-}
-
-/*
- * Read the external query text file into a palloc'd buffer.
- *
- * Returns NULL (without throwing an error) if unable to read, eg
- * file not there or insufficient memory.
- *
- * On success, the buffer size is also returned into *buffer_size.
- */
-static char *
-qtext_load_file(Size *buffer_size)
-{
-	char	   *buf;
-	int			fd;
-	struct stat stat;
-	Size		nread;
-
-	fd = OpenTransientFile(PGSS_TEXT_FILE, O_RDONLY | PG_BINARY);
-	if (fd < 0)
-	{
-		if (errno != ENOENT)
-			ereport(LOG,
-					(errcode_for_file_access(),
-					 errmsg("could not read file \"%s\": %m",
-							PGSS_TEXT_FILE)));
-		return NULL;
-	}
-
-	/* Get file length */
-	if (fstat(fd, &stat))
-	{
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not stat file \"%s\": %m",
-						PGSS_TEXT_FILE)));
-		CloseTransientFile(fd);
-		return NULL;
-	}
-
-	/* Allocate buffer; beware that off_t might be wider than size_t */
-	if (stat.st_size <= MaxAllocHugeSize)
-		buf = (char *) palloc_extended(stat.st_size, MCXT_ALLOC_HUGE | MCXT_ALLOC_NO_OOM);
-	else
-		buf = NULL;
-	if (buf == NULL)
-	{
-		ereport(LOG,
-				(errcode(ERRCODE_OUT_OF_MEMORY),
-				 errmsg("out of memory"),
-				 errdetail("Could not allocate enough memory to read file \"%s\".",
-						   PGSS_TEXT_FILE)));
-		CloseTransientFile(fd);
-		return NULL;
-	}
-
-	/*
-	 * OK, slurp in the file.  Read in 1GB segments to avoid issues on some
-	 * platforms.
-	 */
-	nread = 0;
-	while (nread < stat.st_size)
-	{
-		int			toread = Min(1024 * 1024 * 1024, stat.st_size - nread);
-
-		errno = 0;
-		if (read(fd, buf + nread, toread) != toread)
-		{
-			if (errno)
-				ereport(LOG,
-						(errcode_for_file_access(),
-						 errmsg("could not read file \"%s\": %m",
-								PGSS_TEXT_FILE)));
-			pfree(buf);
-			CloseTransientFile(fd);
-			return NULL;
-		}
-		nread += toread;
-	}
-
-	if (CloseTransientFile(fd) != 0)
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not close file \"%s\": %m", PGSS_TEXT_FILE)));
-
-	*buffer_size = nread;
-	return buf;
-}
-
-/*
- * Locate a query text in the file image previously read by qtext_load_file().
- *
- * We validate the given offset/length, and return NULL if bogus.  Otherwise,
- * the result points to a null-terminated string within the buffer.
- */
-static char *
-qtext_fetch(Size query_offset, int query_len,
-			char *buffer, Size buffer_size)
-{
-	/* File read failed? */
-	if (buffer == NULL)
-		return NULL;
-	/* Bogus offset/length? */
-	if (query_len < 0 ||
-		query_offset + query_len >= buffer_size)
-		return NULL;
-	/* As a further sanity check, make sure there's a trailing null */
-	if (buffer[query_offset + query_len] != '\0')
-		return NULL;
-	/* Looks OK */
-	return buffer + query_offset;
-}
-
-/*
- * Do we need to garbage-collect the external query text file?
- *
- * We check whether the file has grown excessively relative to the number
- * of entries tracked.
- */
-static bool
-need_gc_qtexts(void)
-{
-	Size		extent;
-	int			nentries;
-
-	/* Read shared extent pointer */
-	SpinLockAcquire(&pgss_shared->mutex);
-	extent = pgss_shared->extent;
-	SpinLockRelease(&pgss_shared->mutex);
-
-	nentries = (int) pg_atomic_read_u64(&pgss_shared->nentries);
-
-	/*
-	 * Don't proceed if file does not exceed 512 bytes per possible entry.
-	 */
-	if ((uint64) extent < (uint64) 512 * pgss_max)
-		return false;
-
-	/*
-	 * Don't proceed if file is less than about 50% bloat.  We estimate mean
-	 * query length from the file size and entry count.
-	 */
-	if (nentries > 0)
-	{
-		Size		mean_query_len = extent / nentries;
-
-		if ((uint64) extent < (uint64) mean_query_len * pgss_max * 2)
-			return false;
-	}
-
-	return true;
-}
-
-/*
- * Garbage-collect orphaned query texts in external file.
- *
- * This rewrites the query text file, keeping only texts referenced by
- * current dshash entries, and updates their offsets accordingly.
- *
- * Note: unlike the upstream implementation which required LWLock exclusive,
- * this uses dshash partition-level exclusive locks via sequential scan with
- * exclusive=true.  This is safe because we're updating entry offsets in-place
- * and the file is guaranteed not to grow during GC (no new writers can get
- * offsets into the old region after we've reset the extent).
- */
-static void
-gc_qtexts(void)
-{
-	char	   *qbuffer;
-	Size		qbuffer_size;
-	FILE	   *qfile = NULL;
-	dshash_seq_status status;
-	pgssEntry  *entry;
-	Size		extent;
-
-	if (!need_gc_qtexts())
-		return;
-
-	/*
-	 * Load the old texts file.  If we fail (out of memory, for instance),
-	 * invalidate query texts.
-	 */
-	qbuffer = qtext_load_file(&qbuffer_size);
-	if (qbuffer == NULL)
-		goto gc_fail;
-
-	/*
-	 * We overwrite the query texts file in place, so as to reduce the risk of
-	 * an out-of-disk-space failure.
-	 */
-	qfile = AllocateFile(PGSS_TEXT_FILE, PG_BINARY_W);
-	if (qfile == NULL)
-	{
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not write file \"%s\": %m",
-						PGSS_TEXT_FILE)));
-		goto gc_fail;
-	}
-
-	extent = 0;
-
-	dshash_seq_init(&status, pgss_hash, true);
-	while ((entry = dshash_seq_next(&status)) != NULL)
-	{
-		int			query_len = entry->query_len;
-		char	   *qry = qtext_fetch(entry->query_offset,
-									  query_len,
-									  qbuffer,
-									  qbuffer_size);
-
-		if (qry == NULL)
-		{
-			/* Trouble ... drop the text */
-			entry->query_offset = 0;
-			entry->query_len = -1;
-			continue;
-		}
-
-		if (fwrite(qry, 1, query_len + 1, qfile) != query_len + 1)
-		{
-			ereport(LOG,
-					(errcode_for_file_access(),
-					 errmsg("could not write file \"%s\": %m",
-							PGSS_TEXT_FILE)));
-			dshash_seq_term(&status);
-			goto gc_fail;
-		}
-
-		entry->query_offset = extent;
-		extent += query_len + 1;
-	}
-	dshash_seq_term(&status);
-
-	/*
-	 * Truncate away any now-unused space.
-	 */
-	if (ftruncate(fileno(qfile), extent) != 0)
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not truncate file \"%s\": %m",
-						PGSS_TEXT_FILE)));
-
-	if (FreeFile(qfile))
-	{
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not write file \"%s\": %m",
-						PGSS_TEXT_FILE)));
-		qfile = NULL;
-		goto gc_fail;
-	}
-
-	elog(DEBUG1, "pgss gc of queries file shrunk size from %zu to %zu",
-		 pgss_shared->extent, extent);
-
-	/* Reset the shared extent pointer */
-	SpinLockAcquire(&pgss_shared->mutex);
-	pgss_shared->extent = extent;
-	SpinLockRelease(&pgss_shared->mutex);
-
-	pfree(qbuffer);
-
-	record_gc_qtexts();
-
-	return;
-
-gc_fail:
-	/* clean up resources */
-	if (qfile)
-		FreeFile(qfile);
-	if (qbuffer)
-		pfree(qbuffer);
-
-	/*
-	 * Since the contents of the external file are now uncertain, mark all
-	 * dshash entries as having invalid texts.
-	 */
-	dshash_seq_init(&status, pgss_hash, true);
-	while ((entry = dshash_seq_next(&status)) != NULL)
-	{
-		entry->query_offset = 0;
-		entry->query_len = -1;
-	}
-	dshash_seq_term(&status);
-
-	/*
-	 * Destroy the query text file and create a new, empty one
-	 */
-	(void) unlink(PGSS_TEXT_FILE);
-	qfile = AllocateFile(PGSS_TEXT_FILE, PG_BINARY_W);
-	if (qfile == NULL)
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not recreate file \"%s\": %m",
-						PGSS_TEXT_FILE)));
-	else
-		FreeFile(qfile);
-
-	/* Reset the shared extent pointer */
-	SpinLockAcquire(&pgss_shared->mutex);
-	pgss_shared->extent = 0;
-	SpinLockRelease(&pgss_shared->mutex);
-
-	record_gc_qtexts();
 }
 
 /*

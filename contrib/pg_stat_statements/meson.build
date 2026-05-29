@@ -71,6 +71,7 @@ tests += {
   'tap': {
     'tests': [
       't/001_restart.pl',
+      't/002_query_text_memory.pl',
     ],
   },
 }

@@ -79,3 +79,23 @@ GRANT SELECT ON pg_stat_statements TO PUBLIC;
 
 /* Mark reset functions as PARALLEL RESTRICTED */
 ALTER FUNCTION pg_stat_statements_reset(Oid, Oid, bigint, boolean) PARALLEL RESTRICTED;
+
+/* Recreate pg_stat_statements_info with query_text_size column */
+ALTER EXTENSION pg_stat_statements DROP VIEW pg_stat_statements_info;
+ALTER EXTENSION pg_stat_statements DROP FUNCTION pg_stat_statements_info();
+DROP VIEW pg_stat_statements_info;
+DROP FUNCTION pg_stat_statements_info();
+
+CREATE FUNCTION pg_stat_statements_info(
+    OUT dealloc bigint,
+    OUT stats_reset timestamp with time zone,
+    OUT query_text_size bigint
+)
+RETURNS record
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT VOLATILE PARALLEL SAFE;
+
+CREATE VIEW pg_stat_statements_info AS
+  SELECT * FROM pg_stat_statements_info();
+
+GRANT SELECT ON pg_stat_statements_info TO PUBLIC;
