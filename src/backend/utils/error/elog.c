@@ -2978,6 +2978,7 @@ write_eventlog(int level, const char *line, int len)
 {
 	int			eventlevel = EVENTLOG_ERROR_TYPE;
 	static HANDLE evtHandle = INVALID_HANDLE_VALUE;
+	uint32		outer_wait_event_info;
 
 	if (evtHandle == INVALID_HANDLE_VALUE)
 	{
@@ -3040,6 +3041,9 @@ write_eventlog(int level, const char *line, int len)
 		{
 			const WCHAR *utf16_const = utf16;
 
+			/* See write_console() for why the nested variants are used. */
+			outer_wait_event_info =
+				pgstat_report_wait_start_nested(WAIT_EVENT_EVENTLOG_WRITE);
 			ReportEventW(evtHandle,
 						 eventlevel,
 						 0,
@@ -3049,12 +3053,15 @@ write_eventlog(int level, const char *line, int len)
 						 0,
 						 &utf16_const,
 						 NULL);
+			pgstat_report_wait_end_nested(outer_wait_event_info);
 			/* XXX Try ReportEventA() when ReportEventW() fails? */
 
 			pfree(utf16);
 			return;
 		}
 	}
+	outer_wait_event_info =
+		pgstat_report_wait_start_nested(WAIT_EVENT_EVENTLOG_WRITE);
 	ReportEventA(evtHandle,
 				 eventlevel,
 				 0,
@@ -3064,6 +3071,7 @@ write_eventlog(int level, const char *line, int len)
 				 0,
 				 &line,
 				 NULL);
+	pgstat_report_wait_end_nested(outer_wait_event_info);
 }
 #endif							/* WIN32 */
 
@@ -3104,9 +3112,15 @@ write_console(const char *line, int len)
 		{
 			HANDLE		stdHandle;
 			DWORD		written;
+			BOOL		ok;
 
 			stdHandle = GetStdHandle(STD_ERROR_HANDLE);
-			if (WriteConsoleW(stdHandle, utf16, utf16len, &written, NULL))
+			/* see the comment at the write() below */
+			outer_wait_event_info =
+				pgstat_report_wait_start_nested(WAIT_EVENT_STDERR_WRITE);
+			ok = WriteConsoleW(stdHandle, utf16, utf16len, &written, NULL);
+			pgstat_report_wait_end_nested(outer_wait_event_info);
+			if (ok)
 			{
 				pfree(utf16);
 				return;
