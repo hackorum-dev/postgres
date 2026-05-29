@@ -71,8 +71,13 @@ tests += {
     'regress_args': ['--no-locale'],
   },
   'tap': {
+    'env': {
+      'TEST_EXT_LIB': test_ext.full_path(),
+    },
     'tests': [
       't/001_extension_control_path.pl',
+      't/002_load_extension_control_path.pl',
     ],
+    'deps': [test_ext],
   },
 }
