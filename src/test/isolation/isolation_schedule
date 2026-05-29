@@ -123,6 +123,9 @@ test: cluster-conflict
 test: cluster-conflict-partition
 test: key-join-lazy-facts-lock
 test: key-join-select-blocks-dml
+test: key-join-plain-function-drop-race
+test: key-join-plain-function-ownercheck-lock
+test: key-join-plain-function-alter-owner-lock
 test: cluster-toast-value-reuse
 test: truncate-conflict
 test: serializable-parallel
