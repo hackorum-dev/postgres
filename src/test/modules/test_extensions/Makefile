@@ -33,6 +33,9 @@ DATA = test_ext1--1.0.sql test_ext2--1.0.sql test_ext3--1.0.sql \
 REGRESS = test_extensions test_extdepend
 TAP_TESTS = 1
 
+# required for 002_load_extension_control_path.pl
+export TEST_EXT_LIB = $(abs_top_builddir)/src/test/modules/test_extensions/test_ext$(DLSUFFIX)
+
 # force C locale for output stability
 NO_LOCALE = 1
 
