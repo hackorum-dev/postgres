@@ -62,6 +62,7 @@
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
 #include "commands/extension.h"
+#include "commands/matview.h"
 #include "commands/repack.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
@@ -1811,6 +1812,26 @@ RangeVarCallbackForDropRelation(const RangeVar *rel, Oid relOid, Oid oldRelOid,
 	/* Pass back some data to save lookups in RemoveRelations */
 	state->actual_relkind = classform->relkind;
 	state->actual_relpersistence = classform->relpersistence;
+
+	if (classform->relkind == RELKIND_MATVIEW)
+	{
+		bool	isNull;
+		Datum	datum;
+
+		datum = SysCacheGetAttr(RELOID, tuple, Anum_pg_class_reloptions,
+								&isNull);
+
+		if (!isNull)
+		{
+			StdRdOptions *options;
+
+			options = (StdRdOptions*) default_reloptions(datum, false,
+														 RELOPT_KIND_MATVIEW);
+
+			if (options->incremental_view_maintenance)
+				removeImmv(relOid);
+		}
+	}
 
 	/*
 	 * Both RELKIND_RELATION and RELKIND_PARTITIONED_TABLE are OBJECT_TABLE,
@@ -17455,6 +17476,20 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 						 errmsg("WITH CHECK OPTION is supported only on automatically updatable views"),
 						 errhint("%s", _(view_updatable_error))));
 		}
+	}
+	/* ... and materialized view options */
+	else if (rel->rd_rel->relkind == RELKIND_MATVIEW)
+	{
+		StdRdOptions *options;
+
+		options = (StdRdOptions*) default_reloptions(newOptions, false,
+													 RELOPT_KIND_MATVIEW);
+
+		if (options->incremental_view_maintenance != RelationIsIMMV(rel))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("parameter \"%s\" cannot be changed",
+							"incremental_view_maintenance")));
 	}
 
 	/*
