@@ -3063,11 +3063,14 @@ write_console(const char *line, int len)
 			DWORD		written;
 
 			stdHandle = GetStdHandle(STD_ERROR_HANDLE);
+			pgstat_report_wait_start(WAIT_EVENT_STDERR_WRITE);
 			if (WriteConsoleW(stdHandle, utf16, utf16len, &written, NULL))
 			{
+				pgstat_report_wait_end();
 				pfree(utf16);
 				return;
 			}
+			pgstat_report_wait_end();
 
 			/*
 			 * In case WriteConsoleW() failed, fall back to writing the
