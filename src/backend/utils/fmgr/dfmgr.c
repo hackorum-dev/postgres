@@ -20,6 +20,7 @@
 #include <dlfcn.h>
 #endif							/* !WIN32 */
 
+#include "commands/extension.h"
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
@@ -68,6 +69,7 @@ static DynamicFileList *file_tail = NULL;
 
 char	   *Dynamic_library_path;
 
+static const char *strip_libdir_prefix(const char *filename);
 static void *internal_load_library(const char *libname);
 pg_noreturn static void incompatible_module_error(const char *libname,
 												  const Pg_abi_values *module_magic_data);
@@ -77,6 +79,27 @@ static void check_restricted_library_name(const char *name);
 /* ABI values that module needs to match to be accepted */
 static const Pg_abi_values magic_data = PG_MODULE_ABI_DATA;
 
+
+/*
+ * Strip a leading '$libdir/' prefix from a hardcoded library name so that the
+ * library search path (dynamic_library_path) is consulted instead of resolving
+ * '$libdir' straight to the package library directory.  This is what allows
+ * extensions located via extension_control_path to be loaded.
+ *
+ * The stripping is done only for simple names (e.g., "$libdir/foo"), not for
+ * nested paths (e.g., "$libdir/foo/bar").  For nested paths,
+ * expand_dynamic_library_name() expands the '$libdir' macro directly, so we
+ * leave them untouched.
+ */
+static const char *
+strip_libdir_prefix(const char *filename)
+{
+	if (strncmp(filename, "$libdir/", 8) == 0 &&
+		first_dir_separator(filename + 8) == NULL)
+		filename += 8;
+
+	return filename;
+}
 
 /*
  * Load the specified dynamic-link library file, and look for a function
@@ -100,19 +123,12 @@ load_external_function(const char *filename, const char *funcname,
 	void	   *retval;
 
 	/*
-	 * For extensions with hardcoded '$libdir/' library names, we strip the
-	 * prefix to allow the library search path to be used. This is done only
-	 * for simple names (e.g., "$libdir/foo"), not for nested paths (e.g.,
-	 * "$libdir/foo/bar").
-	 *
-	 * For nested paths, 'expand_dynamic_library_name' directly expands the
-	 * '$libdir' macro, so we leave them untouched.
+	 * Extensions typically hardcode a '$libdir/' prefix in their library
+	 * names (via MODULE_PATHNAME in their SQL scripts).  Strip it so that the
+	 * library search path can be used, which is what makes extensions found
+	 * via extension_control_path work.  See strip_libdir_prefix().
 	 */
-	if (strncmp(filename, "$libdir/", 8) == 0)
-	{
-		if (first_dir_separator(filename + 8) == NULL)
-			filename += 8;
-	}
+	filename = strip_libdir_prefix(filename);
 
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
@@ -153,6 +169,18 @@ load_file(const char *filename, bool restricted)
 	/* Apply security restriction if requested */
 	if (restricted)
 		check_restricted_library_name(filename);
+
+	/*
+	 * When a LOAD comes from within an extension script (e.g., a hardcoded
+	 * "LOAD '$libdir/foo'" in the script), strip the '$libdir/' prefix just as
+	 * we do for an extension's functions, so that extensions found via
+	 * extension_control_path can be loaded.  A LOAD issued directly by a user
+	 * is left untouched, so that an explicit '$libdir/' prefix keeps referring
+	 * to the package library directory.  The strip is done after the security
+	 * check so that the latter still sees the original name.
+	 */
+	if (creating_extension)
+		filename = strip_libdir_prefix(filename);
 
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
