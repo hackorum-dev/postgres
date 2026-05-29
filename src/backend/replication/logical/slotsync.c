@@ -2062,17 +2062,20 @@ SyncReplicationSlots(WalReceiverConn *wrconn)
 		List	   *remote_slots = NIL;
 		List	   *slot_names = NIL;	/* List of slot names to track */
 		MemoryContext sync_retry_ctx;
+		MemoryContext outerctx;
 
 		check_and_set_sync_info(MyProcPid);
 
 		validate_remote_info(wrconn);
+
+		outerctx = CurrentMemoryContext;
 
 		/*
 		 * Setup and use a per-sync-cycle memory context, which is reset every
 		 * time we loop below. This avoids having to retail freeing the memory
 		 * used in each sync cycle.
 		 */
-		sync_retry_ctx = AllocSetContextCreate(CurrentMemoryContext,
+		sync_retry_ctx = AllocSetContextCreate(outerctx,
 											   "slot sync retry context",
 											   ALLOCSET_DEFAULT_SIZES);
 
@@ -2081,7 +2084,6 @@ SyncReplicationSlots(WalReceiverConn *wrconn)
 		{
 			bool		slot_persistence_pending = false;
 			bool		some_slot_updated = false;
-			MemoryContext oldctx;
 
 			/* Check for interrupts and config changes */
 			CHECK_FOR_INTERRUPTS();
@@ -2093,7 +2095,7 @@ SyncReplicationSlots(WalReceiverConn *wrconn)
 			Assert(IsTransactionState());
 
 			MemoryContextReset(sync_retry_ctx);
-			oldctx = MemoryContextSwitchTo(sync_retry_ctx);
+			MemoryContextSwitchTo(sync_retry_ctx);
 
 			/*
 			 * Fetch remote slot info for the given slot_names. If slot_names
@@ -2115,7 +2117,7 @@ SyncReplicationSlots(WalReceiverConn *wrconn)
 			 * slot_names must survive later sync_retry_ctx resets, so copy it
 			 * in the outer context.
 			 */
-			MemoryContextSwitchTo(oldctx);
+			MemoryContextSwitchTo(outerctx);
 
 			/*
 			 * If slot_persistence_pending is true, extract slot names for
