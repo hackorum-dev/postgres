@@ -877,7 +877,7 @@ ProcessCopyOptions(ParseState *pstate,
 				 errmsg("COPY delimiter cannot be \"%s\"", opts_out->delim)));
 
 	/* Check header */
-	if (opts_out->header_line != COPY_HEADER_FALSE &&
+	if (header_specified &&
 		(opts_out->format == COPY_FORMAT_BINARY ||
 		 opts_out->format == COPY_FORMAT_JSON))
 		ereport(ERROR,
