@@ -810,9 +810,9 @@ CompLocation(const void *a, const void *b)
  * avoid re-scanning statements before the one of interest, so it's worth
  * doing.)
  *
- * N.B. There is an assumption that a '-' character at a Const location begins
- * a negative numeric constant.  This precludes there ever being another
- * reason for a constant to start with a '-'.
+ * N.B. There is an assumption that a '+' or '-' character at a Const location
+ * begins a signed numeric constant.  This precludes there ever being another
+ * reason for a constant to start with either sign.
  *
  * It is the caller's responsibility to free the result, if necessary.
  */
@@ -889,19 +889,21 @@ ComputeConstantLengths(const JumbleState *jstate, const char *query,
 			 */
 			if (yylloc >= loc)
 			{
-				if (query[loc] == '-')
+				if (query[loc] == '-' || query[loc] == '+')
 				{
 					/*
-					 * It's a negative value - this is the one and only case
+					 * It's a signed value - this is the one and only case
 					 * where we replace more than a single token.
 					 *
-					 * Do not compensate for the special-case adjustment of
-					 * location to that of the leading '-' operator in the
-					 * event of a negative constant (see doNegate() in
-					 * gram.y).  It is also useful for our purposes to start
-					 * from the minus symbol.  In this way, queries like
-					 * "select * from foo where bar = 1" and "select * from
-					 * foo where bar = -2" can be treated similarly.
+					 * Do not compensate for a location at the leading sign.
+					 * For negative constants this can happen because of
+					 * doNegate() in gram.y.  Starting from the sign allows
+					 * queries like "select * from foo where bar = 1" and
+					 * "select * from foo where bar = -2" to be treated
+					 * similarly.  Grammar rules using SignedIconst can also
+					 * provide a location at a leading '+', for example in
+					 * "FETCH +2 c".  Consuming both tokens normalizes such a
+					 * value as a single constant too.
 					 */
 					tok = core_yylex(&yylval, &yylloc, yyscanner);
 					if (tok == 0)
