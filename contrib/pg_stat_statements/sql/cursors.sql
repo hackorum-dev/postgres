@@ -29,6 +29,16 @@ COMMIT;
 SELECT calls, rows, query FROM pg_stat_statements ORDER BY query COLLATE "C";
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
 
+-- Normalization of FETCH and MOVE statements with an explicit plus sign
+BEGIN;
+DECLARE pgss_plus_cursor SCROLL CURSOR FOR SELECT FROM generate_series(1, 10);
+FETCH +2 pgss_plus_cursor;
+FETCH FORWARD +2 pgss_plus_cursor;
+MOVE RELATIVE +2 pgss_plus_cursor;
+COMMIT;
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+
 -- Normalization of FETCH statements
 BEGIN;
 DECLARE pgss_cursor CURSOR FOR SELECT FROM generate_series(1, 10);
