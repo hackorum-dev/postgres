@@ -18,6 +18,7 @@
 
 #ifndef WIN32
 #include <dlfcn.h>
+#include <glob.h>
 #endif							/* !WIN32 */
 
 #include "fmgr.h"
@@ -598,6 +599,11 @@ find_in_path(const char *basename, const char *path, const char *path_param,
 		char	   *piece;
 		char	   *mangled;
 		char	   *full;
+#ifndef WIN32
+		glob_t		globres;
+		int			glob_status;
+		int			i;
+#endif
 
 		piece = first_path_var_separator(p);
 		if (piece == p)
@@ -624,6 +630,36 @@ find_in_path(const char *basename, const char *path, const char *path_param,
 					(errcode(ERRCODE_INVALID_NAME),
 					 errmsg("component in parameter \"%s\" is not an absolute path", path_param)));
 
+#ifndef WIN32
+		glob_status = glob(mangled, GLOB_BRACE | GLOB_ERR, NULL, &globres);
+		if (glob_status != 0)
+		{
+			if (glob_status == GLOB_NOMATCH)
+				elog(DEBUG3, "%s: glob(%s) returned no match", path_param, mangled);
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_CONFIG_FILE_ERROR),
+						 errmsg("%s: glob(%s) returned %d", path_param, mangled, glob_status)));
+		}
+		pfree(mangled);
+		for (i=0;i < globres.gl_pathc; i++)
+		{
+			mangled = globres.gl_pathv[i];
+			full = palloc(strlen(mangled) + 1 + baselen + 1);
+			sprintf(full, "%s/%s", mangled, basename);
+
+			elog(DEBUG3, "%s: trying \"%s\"", __func__, full);
+
+			if (pg_file_exists(full))
+			{
+				globfree(&globres);
+				return full;
+			}
+
+			pfree(full);
+		}
+		globfree(&globres);
+#else
 		full = palloc(strlen(mangled) + 1 + baselen + 1);
 		sprintf(full, "%s/%s", mangled, basename);
 		pfree(mangled);
@@ -634,6 +670,7 @@ find_in_path(const char *basename, const char *path, const char *path_param,
 			return full;
 
 		pfree(full);
+#endif
 
 		if (p[len] == '\0')
 			break;
