@@ -104,6 +104,81 @@ bloom_bitset_bytes(int64 total_elems, int bloom_work_mem, size_t min_filter_size
 }
 
 /*
+ * Amount of memory (in bytes) that a Bloom filter sized for the given
+ * parameters occupies, including the fixed-size header.  This lets callers
+ * place a Bloom filter in caller-managed storage (for example shared memory)
+ * with bloom_init().
+ *
+ * The minimum size of the bitset (in bytes) is provided by the caller.
+ *
+ * See bloom_create_custom().
+ */
+size_t
+bloom_estimate(int64 total_elems, int bloom_work_mem, size_t min_filter_size)
+{
+	return offsetof(bloom_filter, bitset) +
+		sizeof(unsigned char) * bloom_bitset_bytes(total_elems, bloom_work_mem,
+												   min_filter_size);
+}
+
+/*
+ * Initialize a Bloom filter in caller-provided memory.
+ *
+ * "ptr" must point to a sufficiently large buffer, of at least
+ * bloom_estimate(total_elems, bloom_work_mem, min_filter_size)
+ * bytes.  This is useful when the filter must live in memory that the caller
+ * manages itself, such as a DSA allocation shared between parallel workers.
+ *
+ * Two filters initialized with identical total_elems, bloom_work_mem,
+ * min_filter_size and seed values share the same dimensions and may be
+ * combined with bloom_merge().
+ *
+ * The minimum size of the bitset (in bytes) is provided by the caller. See
+ * bloom_create_custom().
+ */
+bloom_filter *
+bloom_init(void *ptr, int64 total_elems, int bloom_work_mem,
+		   size_t min_filter_size, uint64 seed)
+{
+	bloom_filter *filter = (bloom_filter *) ptr;
+	uint64		bitset_bytes = bloom_bitset_bytes(total_elems, bloom_work_mem,
+												  min_filter_size);
+	uint64		bitset_bits = bitset_bytes * BITS_PER_BYTE;
+
+	filter->k_hash_funcs = optimal_k(bitset_bits, total_elems);
+	filter->seed = seed;
+	filter->m = bitset_bits;
+	memset(filter->bitset, 0, bitset_bytes);
+
+	return filter;
+}
+
+/*
+ * Merge the bits set in "src" into "dst".
+ *
+ * Both filters must have been created with identical dimensions (that is, the
+ * same total_elems, bloom_work_mem, minimum bitset size and seed values).
+ * After this call "dst" reports an element as possibly-present if it was
+ * possibly-present in either of the input filters, which is exactly the
+ * filter that would have resulted from adding every element of both filters
+ * to a single Bloom filter.
+ */
+void
+bloom_merge(bloom_filter *dst, const bloom_filter *src)
+{
+	uint64		bitset_bytes;
+	uint64		i;
+
+	Assert(dst->m == src->m);
+	Assert(dst->k_hash_funcs == src->k_hash_funcs);
+	Assert(dst->seed == src->seed);
+
+	bitset_bytes = dst->m / BITS_PER_BYTE;
+	for (i = 0; i < bitset_bytes; i++)
+		dst->bitset[i] |= src->bitset[i];
+}
+
+/*
  * Create Bloom filter in caller's memory context.  We aim for a false positive
  * rate of between 1% and 2% when bitset size is not constrained by memory
  * availability.
@@ -120,7 +195,7 @@ bloom_bitset_bytes(int64 total_elems, int bloom_work_mem, size_t min_filter_size
  * bits, and the largest possible bitset is 512MB (2^32 bits).  The
  * implementation allocates only enough memory to target its standard false
  * positive rate, using a simple formula with caller's total_elems estimate as
- * an input.  The bitset might be as small as min_bitset_bytes, even when
+ * an input.  The bitset might be as small as min_filter_size, even when
  * bloom_work_mem is much higher.
  *
  * The Bloom filter is seeded using a value provided by the caller.  Using a
@@ -129,7 +204,7 @@ bloom_bitset_bytes(int64 total_elems, int bloom_work_mem, size_t min_filter_size
  * Callers that don't care about this pass a constant as their seed, typically
  * 0.  Callers can also use a pseudo-random seed, eg from pg_prng_uint64().
  *
- * min_bitset_bytes is the minimum bitset size. This is useful for callers
+ * min_filter_size is the minimum bitset size. This is useful for callers
  * that want to allow filters smaller than the default DEFAULT_MIN_BITSET_BYTES
  * (1MB), for example when fingerprinting small sets where the 1MB minimum
  * would waste memory and would not fit into CPU caches. The bitset is still
