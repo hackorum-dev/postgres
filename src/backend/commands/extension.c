@@ -28,6 +28,9 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifndef WIN32
+#include <glob.h>
+#endif
 
 #include "access/genam.h"
 #include "access/htup_details.h"
@@ -541,7 +544,13 @@ get_extension_control_directories(void)
 			int			len;
 			char	   *mangled;
 			char	   *piece = first_path_var_separator(ecp);
-			ExtensionLocation *location = palloc_object(ExtensionLocation);
+			char	   *macro;
+#ifndef WIN32
+			glob_t		globres;
+			int			glob_status;
+			int			i;
+#endif
+			ExtensionLocation *location;
 
 			/* Get the length of the next path on ecp */
 			if (piece == NULL)
@@ -559,20 +568,43 @@ get_extension_control_directories(void)
 			 */
 			if (strcmp(piece, EXTENSION_SYSTEM_MACRO) == 0)
 			{
-				location->macro = pstrdup(piece);
+				macro = pstrdup(piece);
 				mangled = substitute_path_macro(piece, EXTENSION_SYSTEM_MACRO, system_dir);
 			}
 			else
 			{
-				location->macro = NULL;
+				macro = NULL;
 				mangled = psprintf("%s/extension", piece);
 			}
 			pfree(piece);
 
-			/* Canonicalize the path based on the OS and add to the list */
+			/* Canonicalize the path based on the OS */
 			canonicalize_path(mangled);
+
+#ifndef WIN32
+			glob_status = glob(mangled, GLOB_BRACE | GLOB_ERR, NULL, &globres);
+			if (glob_status != 0)
+			{
+				if (glob_status == GLOB_NOMATCH)
+					elog(DEBUG3, "extension_search_path: glob(%s) returned no match", mangled);
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_CONFIG_FILE_ERROR),
+							 errmsg("extension_search_path: glob(%s) returned %d", mangled, glob_status)));
+			}
+			for (i=0;i < globres.gl_pathc; i++) {
+				location = palloc_object(ExtensionLocation);
+				location->macro = macro;
+				location->loc = pstrdup(globres.gl_pathv[i]);
+				paths = lappend(paths, location);
+			}
+			globfree(&globres);
+#else
+			location = palloc_object(ExtensionLocation);
+			location->macro = macro;
 			location->loc = mangled;
 			paths = lappend(paths, location);
+#endif
 
 			/* Break if ecp is empty or move to the next path on ecp */
 			if (ecp[len] == '\0')
