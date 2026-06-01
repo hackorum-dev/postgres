@@ -48,14 +48,8 @@ A_Expr *
 makeSimpleA_Expr(A_Expr_Kind kind, char *name,
 				 Node *lexpr, Node *rexpr, int location)
 {
-	A_Expr	   *a = makeNode(A_Expr);
-
-	a->kind = kind;
-	a->name = list_make1(makeString(name));
-	a->lexpr = lexpr;
-	a->rexpr = rexpr;
-	a->location = location;
-	return a;
+	return makeA_Expr(kind, list_make1(makeString(name)),
+					  lexpr, rexpr, location);
 }
 
 /*
@@ -655,13 +649,11 @@ DefElem *
 makeDefElemExtended(char *nameSpace, char *name, Node *arg,
 					DefElemAction defaction, int location)
 {
-	DefElem    *res = makeNode(DefElem);
+
+	DefElem    *res = makeDefElem(name, arg, location);
 
 	res->defnamespace = nameSpace;
-	res->defname = name;
-	res->arg = arg;
 	res->defaction = defaction;
-	res->location = location;
 
 	return res;
 }
@@ -726,12 +718,7 @@ make_opclause(Oid opno, Oid opresulttype, bool opretset,
 Expr *
 make_andclause(List *andclauses)
 {
-	BoolExpr   *expr = makeNode(BoolExpr);
-
-	expr->boolop = AND_EXPR;
-	expr->args = andclauses;
-	expr->location = -1;
-	return (Expr *) expr;
+	return makeBoolExpr(AND_EXPR, andclauses, -1);
 }
 
 /*
@@ -742,12 +729,7 @@ make_andclause(List *andclauses)
 Expr *
 make_orclause(List *orclauses)
 {
-	BoolExpr   *expr = makeNode(BoolExpr);
-
-	expr->boolop = OR_EXPR;
-	expr->args = orclauses;
-	expr->location = -1;
-	return (Expr *) expr;
+	return makeBoolExpr(OR_EXPR, orclauses, -1);
 }
 
 /*
@@ -758,12 +740,7 @@ make_orclause(List *orclauses)
 Expr *
 make_notclause(Expr *notclause)
 {
-	BoolExpr   *expr = makeNode(BoolExpr);
-
-	expr->boolop = NOT_EXPR;
-	expr->args = list_make1(notclause);
-	expr->location = -1;
-	return (Expr *) expr;
+	return makeBoolExpr(NOT_EXPR, list_make1(notclause), -1);
 }
 
 /*
