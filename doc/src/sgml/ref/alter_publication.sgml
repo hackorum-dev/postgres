@@ -199,6 +199,21 @@ ALTER PUBLICATION <replaceable class="parameter">name</replaceable> RENAME TO <r
    </varlistentry>
 
    <varlistentry>
+    <term><literal>EXCEPT</literal></term>
+    <listitem>
+     <para>
+      This clause can be used with <literal>SET ALL TABLES</literal> to
+      specify a list of tables to be excluded from the publication.  If
+      <literal>EXCEPT</literal> is specified, the existing exclusion list is
+      replaced with the specified tables.  If <literal>EXCEPT</literal> is
+      omitted, any existing table exclusions are removed.  See
+      <link linkend="sql-createpublication-params-for-except-table"><command>CREATE PUBLICATION</command> ... <literal>EXCEPT</literal></link>
+      for details.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
     <term><literal>SET ( <replaceable class="parameter">publication_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] )</literal></term>
     <listitem>
      <para>
@@ -277,6 +292,13 @@ ALTER PUBLICATION mypublication SET ALL TABLES EXCEPT (TABLE users, departments)
    with no excluded tables:
 <programlisting>
 ALTER PUBLICATION mypublication SET ALL TABLES;
+</programlisting></para>
+
+  <para>
+   Convert a <literal>FOR ALL TABLES</literal> publication into a
+   <literal>FOR ALL SEQUENCES</literal> publication:
+<programlisting>
+ALTER PUBLICATION mypublication SET ALL SEQUENCES;
 </programlisting></para>
 
   <para>
