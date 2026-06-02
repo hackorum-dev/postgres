@@ -1588,8 +1588,8 @@ AlterPublicationSchemas(AlterPublicationStmt *stmt,
 
 	/*
 	 * Increment the command counter so that is_schema_publication() in
-	 * GetExcludedPublicationTables() can see the just-inserted schema
-	 * rows when AlterPublicationSchemaExceptTables runs next.
+	 * GetExcludedPublicationTables() can see the just-inserted schema rows
+	 * when AlterPublicationSchemaExceptTables runs next.
 	 */
 	if (stmt->action == AP_AddObjects || stmt->action == AP_SetObjects)
 		CommandCounterIncrement();
@@ -1607,16 +1607,18 @@ AlterPublicationSchemas(AlterPublicationStmt *stmt,
  */
 static void
 AlterPublicationSchemaExceptTables(AlterPublicationStmt *stmt,
-							 HeapTuple tup, List *except_pubtables,
-							 List *schemaidlist)
+								   HeapTuple tup, List *except_pubtables,
+								   List *schemaidlist)
 {
 	Form_pg_publication pubform = (Form_pg_publication) GETSTRUCT(tup);
 	Oid			pubid = pubform->oid;
 
 	/*
-	 * Nothing to do if no EXCEPT entries.
+	 * Nothing to do if there are no EXCEPT entries, unless handling the SET
+	 * command, because if the user has removed all exceptions we need to drop
+	 * any existing ones.
 	 */
-	if (!except_pubtables)
+	if (!except_pubtables && stmt->action != AP_SetObjects)
 		return;
 
 	/*
@@ -1636,16 +1638,6 @@ AlterPublicationSchemaExceptTables(AlterPublicationStmt *stmt,
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("EXCEPT clause is not supported with DROP in ALTER PUBLICATION")));
-
-	/*
-	 * XXX EXCEPT with SET is not currently implemented.  Workaround: DROP and
-	 * re-ADD the schema with the desired EXCEPT list.
-	 */
-	if (stmt->action == AP_SetObjects)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("EXCEPT clause is not supported with SET in ALTER PUBLICATION"),
-				 errhint("Drop and re-add the schema with the desired EXCEPT list.")));
 
 	if (stmt->action == AP_AddObjects)
 	{
@@ -1673,6 +1665,84 @@ AlterPublicationSchemaExceptTables(AlterPublicationStmt *stmt,
 		}
 
 		PublicationAddTables(pubid, rels, false, stmt);
+
+		CloseTableList(rels);
+	}
+	else						/* AP_SetObjects */
+	{
+		List	   *oldexceptrelids = NIL;
+		List	   *newexceptrelids = NIL;
+		List	   *delrelids = NIL;
+		List	   *rels;
+		List	   *explicitrelids;
+
+		rels = OpenTableList(except_pubtables);
+
+		/* Collect OIDs of the desired new EXCEPT list. */
+		foreach_ptr(PublicationRelInfo, pri, rels)
+			newexceptrelids = lappend_oid(newexceptrelids,
+										  RelationGetRelid(pri->relation));
+
+		explicitrelids = GetIncludedPublicationRelations(pubid,
+														 PUBLICATION_PART_ROOT);
+
+		/*
+		 * Validate that each excluded table is not also in the explicit table
+		 * list (which would be contradictory).
+		 */
+		foreach_ptr(PublicationRelInfo, pri, rels)
+		{
+			Oid			relid = RelationGetRelid(pri->relation);
+
+			if (list_member_oid(explicitrelids, relid))
+				ereport(ERROR,
+						errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("table \"%s\" cannot appear in both the table list and the EXCEPT clause",
+							   RelationGetQualifiedRelationName(pri->relation)));
+		}
+
+		/*
+		 * Get the current set of EXCEPT entries.  Only FOR ALL TABLES and
+		 * schema-level publications can have EXCEPT entries; for any other
+		 * publication type oldexceptrelids stays NIL.
+		 *
+		 * Note: we check is_schema_publication() against the current catalog
+		 * state (before AlterPublicationSchemas has run), so if the caller is
+		 * doing SET TABLE t1 to convert a schema publication into a plain
+		 * table publication, is_schema_publication() still returns true here.
+		 * That is intentional: it lets us discover and clean up any stale
+		 * EXCEPT entries that belong to the old schema definition.
+		 */
+		if (GetPublication(pubid)->alltables || is_schema_publication(pubid))
+			oldexceptrelids = GetExcludedPublicationTables(pubid,
+														   PUBLICATION_PART_ROOT);
+
+		/* Build a list of old EXCEPT entries not present in the new list. */
+		foreach_oid(oldrelid, oldexceptrelids)
+		{
+			if (!list_member_oid(newexceptrelids, oldrelid))
+				delrelids = lappend_oid(delrelids, oldrelid);
+		}
+
+		/* Drop old EXCEPT entries not present in the new list. */
+		foreach_oid(relid, delrelids)
+		{
+			Oid			proid;
+			ObjectAddress obj;
+
+			proid = GetSysCacheOid2(PUBLICATIONRELMAP,
+									Anum_pg_publication_rel_oid,
+									ObjectIdGetDatum(relid),
+									ObjectIdGetDatum(pubid));
+			if (OidIsValid(proid))
+			{
+				ObjectAddressSet(obj, PublicationRelRelationId, proid);
+				performDeletion(&obj, DROP_CASCADE, 0);
+			}
+		}
+
+		/* Add new EXCEPT entries, skipping any already present. */
+		PublicationAddTables(pubid, rels, true, stmt);
 
 		CloseTableList(rels);
 	}
@@ -2323,6 +2393,7 @@ PublicationDropSchemas(Oid pubid, List *schemas, bool missing_ok)
 	foreach(lc, schemas)
 	{
 		Oid			schemaid = lfirst_oid(lc);
+		List	   *except_relids;
 
 		psid = GetSysCacheOid2(PUBLICATIONNAMESPACEMAP,
 							   Anum_pg_publication_namespace_oid,
@@ -2339,8 +2410,40 @@ PublicationDropSchemas(Oid pubid, List *schemas, bool missing_ok)
 							get_namespace_name(schemaid))));
 		}
 
+		/*
+		 * Collect EXCEPT entries for tables belonging to this schema before
+		 * removing the schema entry.
+		 */
+		except_relids = GetExcludedPublicationTables(pubid, PUBLICATION_PART_ROOT);
+
 		ObjectAddressSet(obj, PublicationNamespaceRelationId, psid);
 		performDeletion(&obj, DROP_CASCADE, 0);
+
+		/*
+		 * Drop any prexcept rows for tables belonging to this schema. These
+		 * rows have no pg_depend entry pointing at the
+		 * pg_publication_namespace row, so they are not cascaded by the
+		 * performDeletion() call above and must be cleaned up explicitly.
+		 */
+		foreach_oid(relid, except_relids)
+		{
+			Oid			proid;
+
+			if (get_rel_namespace(relid) != schemaid)
+				continue;
+
+			proid = GetSysCacheOid2(PUBLICATIONRELMAP,
+									Anum_pg_publication_rel_oid,
+									ObjectIdGetDatum(relid),
+									ObjectIdGetDatum(pubid));
+			if (OidIsValid(proid))
+			{
+				ObjectAddressSet(obj, PublicationRelRelationId, proid);
+				performDeletion(&obj, DROP_CASCADE, 0);
+			}
+		}
+
+		list_free(except_relids);
 	}
 }
 

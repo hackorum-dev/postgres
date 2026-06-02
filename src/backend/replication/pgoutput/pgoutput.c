@@ -2229,7 +2229,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 			 */
 			if (pub->alltables)
 			{
-				List	   *exceptpubids = NIL;
+				List	   *except_pubids = NIL;
 
 				if (am_partition)
 				{
@@ -2252,7 +2252,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 					 * clause. Therefore, for a partition, exclusion must be
 					 * evaluated at the top-most ancestor.
 					 */
-					exceptpubids = GetRelationExcludedPublications(last_ancestor_relid);
+					except_pubids = GetRelationExcludedPublications(last_ancestor_relid);
 				}
 				else
 				{
@@ -2260,13 +2260,13 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 					 * For a regular table or a root partitioned table, check
 					 * exclusion on table itself.
 					 */
-					exceptpubids = GetRelationExcludedPublications(pub_relid);
+					except_pubids = GetRelationExcludedPublications(pub_relid);
 				}
 
-				if (!list_member_oid(exceptpubids, pub->oid))
+				if (!list_member_oid(except_pubids, pub->oid))
 					publish = true;
 
-				list_free(exceptpubids);
+				list_free(except_pubids);
 
 				if (!publish)
 					continue;
