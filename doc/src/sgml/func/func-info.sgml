@@ -3961,6 +3961,67 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
         <literal>TABLESPACE</literal>.
        </para></entry>
       </row>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_get_table_ddl</primary>
+        </indexterm>
+        <function>pg_get_table_ddl</function>
+        ( <parameter>table</parameter> <type>regclass</type>
+        <optional>, <literal>VARIADIC</literal> <parameter>options</parameter>
+        <type>text</type> </optional> )
+        <returnvalue>setof text</returnvalue>
+       </para>
+       <para>
+        Reconstructs the <command>CREATE TABLE</command> statement for the
+        specified ordinary or partitioned table, followed by the
+        <command>ALTER TABLE</command>, <command>CREATE INDEX</command>,
+        <command>CREATE RULE</command>, and <command>CREATE STATISTICS</command>
+        statements needed to recreate the table's columns, constraints,
+        indexes, rules, extended statistics, and row-level security flags.
+        Inherited columns and constraints are emitted by the parent table's
+        DDL and are not duplicated on inheritance children or partitions.
+        Each statement is returned as a separate row.
+        The following options are supported:
+        <literal>pretty</literal> (boolean) for formatted output,
+        <literal>owner</literal> (boolean) to include the
+        <command>ALTER TABLE ... OWNER TO</command> statement,
+        <literal>tablespace</literal> (boolean) to include the
+        <literal>TABLESPACE</literal> clause on the
+        <command>CREATE TABLE</command> statement, and a family of
+        <literal>includes_<replaceable>category</replaceable></literal>
+        booleans that gate emission of optional sub-objects:
+        <literal>includes_indexes</literal>,
+        <literal>includes_constraints</literal>,
+        <literal>includes_rules</literal>,
+        <literal>includes_statistics</literal>,
+        <literal>includes_triggers</literal>,
+        <literal>includes_policies</literal>,
+        <literal>includes_rls</literal> (the
+        <command>ENABLE</command>/<command>FORCE ROW LEVEL SECURITY</command>
+        toggles), and
+        <literal>includes_replica_identity</literal>.  Each of these
+        defaults to <literal>true</literal>.  The
+        <literal>includes_partition</literal> option, which defaults to
+        <literal>false</literal>, controls whether the DDL for partition
+        children is appended after a partitioned-table parent.
+       </para>
+       <para>
+        All three forms of <command>CREATE TABLE</command> are supported:
+        the ordinary column-list form, the typed-table form
+        (<literal>OF <replaceable>type_name</replaceable></literal>, with
+        per-column <literal>WITH OPTIONS</literal> overrides for local
+        defaults, <literal>NOT NULL</literal>, and <literal>CHECK</literal>
+        constraints), and the <literal>PARTITION OF</literal> form.
+        <literal>TEMPORARY</literal> and <literal>UNLOGGED</literal>
+        persistence modes are emitted from
+        <structfield>relpersistence</structfield>.  For temporary tables
+        registered in the current session, the
+        <literal>ON COMMIT DELETE ROWS</literal> and
+        <literal>ON COMMIT DROP</literal> clauses are emitted; the default
+        <literal>ON COMMIT PRESERVE ROWS</literal> is omitted.
+       </para></entry>
+      </row>
      </tbody>
     </tgroup>
    </table>

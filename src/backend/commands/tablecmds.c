@@ -19584,6 +19584,33 @@ remove_on_commit_action(Oid relid)
 }
 
 /*
+ * Look up the registered ON COMMIT action for a relation.
+ *
+ * Returns ONCOMMIT_NOOP when nothing was registered, which also covers
+ * temporary tables created with the default ON COMMIT PRESERVE ROWS
+ * behavior (register_on_commit_action() skips those, since no action is
+ * needed at commit).  Entries marked for deletion in the current
+ * transaction are ignored.
+ */
+OnCommitAction
+get_on_commit_action(Oid relid)
+{
+	ListCell   *l;
+
+	foreach(l, on_commits)
+	{
+		OnCommitItem *oc = (OnCommitItem *) lfirst(l);
+
+		if (oc->relid != relid)
+			continue;
+		if (oc->deleting_subid != InvalidSubTransactionId)
+			continue;
+		return oc->oncommit;
+	}
+	return ONCOMMIT_NOOP;
+}
+
+/*
  * Perform ON COMMIT actions.
  *
  * This is invoked just before actually committing, since it's possible
