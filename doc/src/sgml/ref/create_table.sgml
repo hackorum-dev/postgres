@@ -100,7 +100,7 @@ class="parameter">referential_action</replaceable> ] [ ON UPDATE <replaceable cl
 
 <phrase>and <replaceable class="parameter">like_option</replaceable> is:</phrase>
 
-{ INCLUDING | EXCLUDING } { COMMENTS | COMPRESSION | CONSTRAINTS | DEFAULTS | GENERATED | IDENTITY | INDEXES | STATISTICS | STORAGE | ALL }
+{ INCLUDING | EXCLUDING } { COMMENTS | COMPRESSION | CONSTRAINTS | DEFAULTS | GENERATED | IDENTITY | INDEXES | PRIVILEGES | STATISTICS | STORAGE | ALL }
 
 <phrase>and <replaceable class="parameter">partition_bound_spec</replaceable> is:</phrase>
 
@@ -772,6 +772,21 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
           duplicate-name failures for the new indexes.)
          </para>
         </listitem>
+       </varlistentry>
+
+        <varlistentry id="sql-createtable-parms-like-opt-privileges">
+         <term><literal>INCLUDING PRIVILEGES</literal></term>
+         <listitem>
+          <para>
+           Copies the access privileges of the source table and its columns
+           to the new table.  Note that when the original grants were made by
+           a role other than the source table owner, those grants will be
+           re-issued by the current user instead, since
+           <command>CREATE TABLE LIKE INCLUDING PRIVILEGES</command> requires
+           the current user to own the source table.
+           The default behavior is to exclude privileges.
+          </para>
+         </listitem>
        </varlistentry>
 
        <varlistentry id="sql-createtable-parms-like-opt-statistics">

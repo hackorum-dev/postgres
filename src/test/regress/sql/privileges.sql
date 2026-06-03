@@ -2263,6 +2263,17 @@ GRANT SELECT, UPDATE ON grantor_test TO regress_grantor5 GRANTED BY regress_gran
 SELECT * FROM information_schema.table_privileges t
     WHERE grantor LIKE 'regress_grantor%' ORDER BY ROW(t.*);
 
+BEGIN;
+RESET ROLE;
+CREATE ROLE regress_6;
+ALTER TABLE grantor_test OWNER TO regress_6;
+SET ROLE regress_6;
+CREATE TABLE grantor_test_copy(LIKE grantor_test INCLUDING PRIVILEGES);
+SELECT relname, relacl
+FROM pg_class pc
+WHERE relname IN ('grantor_test_copy', 'grantor_test') ORDER BY relname;
+ROLLBACK;
+
 REVOKE SELECT, UPDATE ON grantor_test FROM regress_grantor5 GRANTED BY regress_grantor2;
 REVOKE SELECT, UPDATE ON grantor_test FROM regress_grantor5 GRANTED BY regress_grantor3;
 

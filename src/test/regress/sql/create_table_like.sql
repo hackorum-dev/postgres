@@ -276,6 +276,62 @@ CREATE FOREIGN TABLE ctl_foreign_table2(LIKE ctl_table INCLUDING ALL) SERVER ctl
 SELECT attname, attcompression FROM pg_attribute
   WHERE attrelid = 'ctl_foreign_table2'::regclass and attnum > 0 ORDER BY attnum;
 
+CREATE ROLE regress_priv_1;
+CREATE ROLE regress_priv_2;
+CREATE ROLE regress_priv_3;
+
+SET SESSION AUTHORIZATION regress_priv_1;
+CREATE TABLE ctl_like_priv (a int, b int, c int, d int);
+CREATE VIEW ctl_like_priv_v1 AS SELECT * FROM ctl_like_priv;
+CREATE MATERIALIZED VIEW ctl_like_priv_mv AS SELECT * FROM ctl_like_priv;
+
+SET SESSION AUTHORIZATION regress_priv_2;
+-- error, current user should also own the source table
+CREATE TABLE ctl_like_aclcopy3(LIKE ctl_like_priv INCLUDING PRIVILEGES);
+SET SESSION AUTHORIZATION regress_priv_1;
+
+GRANT SELECT (a) ON ctl_like_priv TO regress_priv_2;
+GRANT UPDATE (b, c) ON ctl_like_priv TO regress_priv_3;
+GRANT INSERT (a, c) ON ctl_like_priv TO regress_priv_3;
+GRANT DELETE ON ctl_like_priv TO PUBLIC;
+GRANT REFERENCES (d) ON ctl_like_priv TO regress_priv_2;
+GRANT TRIGGER, MAINTAIN ON ctl_like_priv TO regress_priv_2 WITH GRANT OPTION;
+
+CREATE TABLE ctl_like_privcopy1(LIKE ctl_like_priv INCLUDING ALL EXCLUDING PRIVILEGES);
+CREATE TABLE ctl_like_privcopy2(LIKE ctl_like_priv INCLUDING ALL);
+CREATE TABLE ctl_like_privcopy3(LIKE ctl_like_priv INCLUDING PRIVILEGES);
+
+SELECT relname, relacl
+FROM  pg_class pc
+WHERE relname IN ('ctl_like_priv', 'ctl_like_privcopy1', 'ctl_like_privcopy2', 'ctl_like_privcopy3')
+ORDER BY relname;
+
+SELECT  relname, pa.attname, pa.attacl
+FROM  pg_class pc JOIN pg_attribute pa ON pa.attrelid = pc.oid
+WHERE relname IN ('ctl_like_priv', 'ctl_like_privcopy1', 'ctl_like_privcopy2', 'ctl_like_privcopy3')
+AND attnum > 0 AND pa.attacl IS NOT NULL
+ORDER BY pa.attname, relname;
+
+GRANT ALL ON ctl_like_priv_v1 TO regress_priv_2;
+GRANT SELECT(a,c, d) ON ctl_like_priv_mv TO regress_priv_3;
+CREATE TABLE ctl_like_privcopy4(LIKE ctl_like_priv_v1 INCLUDING ALL);
+CREATE TABLE ctl_like_privcopy5(LIKE ctl_like_priv_mv INCLUDING PRIVILEGES);
+
+SELECT relname, relacl
+FROM  pg_class pc
+WHERE relname IN ('ctl_like_priv_v1', 'ctl_like_priv_mv', 'ctl_like_privcopy4', 'ctl_like_privcopy5')
+ORDER BY relname;
+
+SELECT relname, pa.attname, pa.attacl
+FROM  pg_class pc JOIN pg_attribute pa ON pa.attrelid = pc.oid
+WHERE relname IN ('ctl_like_priv_v1', 'ctl_like_privcopy4', 'ctl_like_privcopy5', 'ctl_like_priv_mv')
+AND attnum > 0 AND pa.attacl IS NOT NULL
+ORDER BY pa.attname, relname;
+RESET SESSION AUTHORIZATION;
+
+DROP TABLE ctl_like_priv, ctl_like_privcopy1, ctl_like_privcopy2,
+      ctl_like_privcopy3, ctl_like_privcopy4, ctl_like_privcopy5 CASCADE;
+DROP ROLE regress_priv_1, regress_priv_2, regress_priv_3;
 DROP TABLE ctl_table;
 DROP FOREIGN TABLE ctl_foreign_table1;
 DROP FOREIGN TABLE ctl_foreign_table2;

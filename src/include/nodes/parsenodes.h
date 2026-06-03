@@ -811,6 +811,7 @@ typedef enum TableLikeOption
 	CREATE_TABLE_LIKE_INDEXES = 1 << 6,
 	CREATE_TABLE_LIKE_STATISTICS = 1 << 7,
 	CREATE_TABLE_LIKE_STORAGE = 1 << 8,
+	CREATE_TABLE_LIKE_PRIVILEGES = 1 << 9,
 	CREATE_TABLE_LIKE_ALL = PG_INT32_MAX
 } TableLikeOption;
 
@@ -2692,6 +2693,12 @@ typedef struct GrantStmt
 	List	   *privileges;		/* list of AccessPriv nodes */
 	/* privileges == NIL denotes ALL PRIVILEGES */
 	List	   *grantees;		/* list of RoleSpec nodes */
+
+	/*
+	 * list of RoleSpec nodes; exactly one of 'grantees' or 'granteeOids' must
+	 * be NIL
+	 */
+	List	   *granteeOids;
 	bool		grant_option;	/* grant or revoke grant option */
 	RoleSpec   *grantor;		/* GRANTED BY clause, or NULL if none */
 	DropBehavior behavior;		/* drop behavior (for REVOKE) */

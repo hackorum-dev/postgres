@@ -287,5 +287,6 @@ extern void RemoveRoleFromInitPriv(Oid roleid,
 extern bool object_ownercheck(Oid classid, Oid objectid, Oid roleid);
 extern bool has_createrole_privilege(Oid roleid);
 extern bool has_bypassrls_privilege(Oid roleid);
+extern const char *convert_aclchar_to_string(char acl);
 
 #endif							/* ACL_H */

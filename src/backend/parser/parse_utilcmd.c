@@ -140,6 +140,8 @@ static Const *transformPartitionBoundValue(ParseState *pstate, Node *val,
 										   const char *colName, Oid colType, int32 colTypmod,
 										   Oid partCollation);
 
+static void generateClonedGrantStmt(Relation relation, RangeVar *heapRel,
+									AttrNumber attnum, List **result);
 
 /*
  * transformCreateStmt -
@@ -1163,11 +1165,40 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 	}
 	else
 	{
-		aclresult = pg_class_aclcheck(RelationGetRelid(relation), GetUserId(),
-									  ACL_SELECT);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, get_relkind_objtype(relation->rd_rel->relkind),
-						   RelationGetRelationName(relation));
+		/*
+		 * CREATE TABLE LIKE INCLUDING PRIVILEGES requires the current user to
+		 * own the source table. Otherwise, the reconstructed GRANTED BY
+		 * clause of GrantStmt produced later may yield inconsistent results
+		 * depending on the relationship between the current user and the
+		 * grantor.
+		 */
+		if (table_like_clause->options & CREATE_TABLE_LIKE_PRIVILEGES)
+		{
+			if (!object_ownercheck(RelationRelationId,
+								   RelationGetRelid(relation),
+								   GetUserId()))
+				aclcheck_error(ACLCHECK_NOT_OWNER,
+							   get_relkind_objtype(relation->rd_rel->relkind),
+							   RelationGetRelationName(relation));
+		}
+		else
+		{
+			aclresult = pg_class_aclcheck(RelationGetRelid(relation), GetUserId(),
+										  ACL_SELECT);
+
+			if (aclresult != ACLCHECK_OK)
+				aclcheck_error(aclresult, get_relkind_objtype(relation->rd_rel->relkind),
+							   RelationGetRelationName(relation));
+		}
+	}
+
+	/* Process table/column ACL if required. */
+	if ((table_like_clause->options & CREATE_TABLE_LIKE_PRIVILEGES) &&
+		(relation->rd_rel->relkind != RELKIND_FOREIGN_TABLE &&
+		 relation->rd_rel->relkind != RELKIND_COMPOSITE_TYPE))
+	{
+		generateClonedGrantStmt(relation, cxt->relation,
+								0, &cxt->alist);
 	}
 
 	tupleDesc = RelationGetDescr(relation);
@@ -1264,6 +1295,16 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 
 			cxt->alist = lappend(cxt->alist, stmt);
 		}
+
+		/* Now copy parent table column ACL */
+		if ((table_like_clause->options & CREATE_TABLE_LIKE_PRIVILEGES) &&
+			(relation->rd_rel->relkind != RELKIND_FOREIGN_TABLE &&
+			 relation->rd_rel->relkind != RELKIND_COMPOSITE_TYPE))
+		{
+			generateClonedGrantStmt(relation, cxt->relation,
+									attribute->attnum,
+									&cxt->alist);
+		}
 	}
 
 	/*
@@ -1328,6 +1369,110 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 	 * parent before we can run expandTableLikeClause.
 	 */
 	table_close(relation, NoLock);
+}
+
+/*
+ * Reconstructs a single GrantStmt and append it to the result list.
+ */
+static void
+generateClonedGrantStmt(Relation relation, RangeVar *heapRel,
+						AttrNumber attnum, List **result)
+{
+	Acl		   *acl;
+	AclItem    *acldat;
+	GrantStmt  *stmt;
+	HeapTuple	tuple;
+	Datum		aclDatum;
+	bool		isNull;
+
+	/*
+	 * For table-level privilege grants, we get the source ACL from pg_class;
+	 * for column-level grants, we use pg_attribute.
+	 */
+	if (attnum > 0)
+	{
+		tuple = SearchSysCache2(ATTNUM,
+								ObjectIdGetDatum(RelationGetRelid(relation)),
+								Int16GetDatum(attnum));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+				 attnum, RelationGetRelid(relation));
+
+		aclDatum = SysCacheGetAttr(ATTNUM, tuple, Anum_pg_attribute_attacl,
+								   &isNull);
+	}
+	else
+	{
+		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(RelationGetRelid(relation)));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation %u", RelationGetRelid(relation));
+
+		aclDatum = SysCacheGetAttr(RELOID, tuple, Anum_pg_class_relacl,
+								   &isNull);
+	}
+
+	if (isNull)
+	{
+		/* If there's no ACL, no need to copy it */
+		ReleaseSysCache(tuple);
+		return;
+	}
+
+	acl = DatumGetAclPCopy(aclDatum);
+	acldat = ACL_DAT(acl);
+	/* ACL datum already copied, now release the tuple */
+	ReleaseSysCache(tuple);
+
+	for (int j = 0; j < ACL_NUM(acl); j++)
+	{
+		AclItem    *aclitem = &acldat[j];
+
+		/* Skip this if grantee is the same as grantor */
+		if (aclitem->ai_grantee == aclitem->ai_grantor)
+			continue;
+
+		stmt = makeNode(GrantStmt);
+		stmt->is_grant = true;
+		stmt->targtype = ACL_TARGET_OBJECT;
+		stmt->objtype = OBJECT_TABLE;
+		stmt->objects = list_make1(copyObject(heapRel));
+		stmt->privileges = NIL;
+		stmt->grantees = NIL;
+
+		for (int i = 0; i < N_ACL_RIGHTS; ++i)
+		{
+			if (ACLITEM_GET_PRIVS(*aclitem) & (UINT64CONST(1) << i))
+			{
+				AccessPriv *n = makeNode(AccessPriv);
+
+				n->priv_name = pstrdup(convert_aclchar_to_string(ACL_ALL_RIGHTS_STR[i]));
+
+				n->cols = NIL;
+
+				if (attnum > 0)
+				{
+					TupleDesc	tupleDesc = RelationGetDescr(relation);
+
+					Form_pg_attribute attribute = TupleDescAttr(tupleDesc,
+																attnum - 1);
+
+					n->cols = list_make1(makeString(pstrdup(NameStr(attribute->attname))));
+				}
+
+				stmt->privileges = lappend(stmt->privileges, n);
+			}
+		}
+
+		stmt->granteeOids = lappend_oid(stmt->granteeOids, aclitem->ai_grantee);
+		stmt->grant_option = (ACLITEM_GET_GOPTIONS(*aclitem) != ACL_NO_RIGHTS);
+
+		/*
+		 * Because CREATE TABLE LIKE INCLUDING PRIVILEGES requires the current
+		 * user to own the source table, the current user is always the
+		 * grantor, so leaving GrantStmt->grantor as NULL is ok.
+		 */
+		*result = lappend(*result, stmt);
+	}
 }
 
 /*

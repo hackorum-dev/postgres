@@ -434,21 +434,31 @@ ExecuteGrantStmt(GrantStmt *stmt)
 	 * insert an ACL_ID_PUBLIC into the list if appropriate, so downstream
 	 * there shouldn't be any additional work needed to support this case.
 	 */
-	foreach(cell, stmt->grantees)
+	if (list_length(stmt->grantees) > 0)
 	{
-		RoleSpec   *grantee = (RoleSpec *) lfirst(cell);
-		Oid			grantee_uid;
-
-		switch (grantee->roletype)
+		foreach(cell, stmt->grantees)
 		{
-			case ROLESPEC_PUBLIC:
-				grantee_uid = ACL_ID_PUBLIC;
-				break;
-			default:
-				grantee_uid = get_rolespec_oid(grantee, false);
-				break;
+			RoleSpec   *grantee = (RoleSpec *) lfirst(cell);
+			Oid			grantee_uid;
+
+			switch (grantee->roletype)
+			{
+				case ROLESPEC_PUBLIC:
+					grantee_uid = ACL_ID_PUBLIC;
+					break;
+				default:
+					grantee_uid = get_rolespec_oid(grantee, false);
+					break;
+			}
+			istmt.grantees = lappend_oid(istmt.grantees, grantee_uid);
 		}
-		istmt.grantees = lappend_oid(istmt.grantees, grantee_uid);
+	}
+	else
+	{
+		Assert(stmt->granteeOids != NIL);
+
+		foreach_oid(grantee_uid, stmt->granteeOids)
+			istmt.grantees = lappend_oid(istmt.grantees, grantee_uid);
 	}
 
 	/*
@@ -5034,4 +5044,45 @@ RemoveRoleFromInitPriv(Oid roleid, Oid classid, Oid objid, int32 objsubid)
 	CommandCounterIncrement();
 
 	table_close(rel, RowExclusiveLock);
+}
+
+const char *
+convert_aclchar_to_string(char acl)
+{
+	switch (acl)
+	{
+		case ACL_INSERT_CHR:
+			return "insert";
+		case ACL_SELECT_CHR:
+			return "select";
+		case ACL_UPDATE_CHR:
+			return "update";
+		case ACL_DELETE_CHR:
+			return "delete";
+		case ACL_TRUNCATE_CHR:
+			return "truncate";
+		case ACL_REFERENCES_CHR:
+			return "references";
+		case ACL_TRIGGER_CHR:
+			return "trigger";
+		case ACL_EXECUTE_CHR:
+			return "execute";
+		case ACL_USAGE_CHR:
+			return "usage";
+		case ACL_CREATE_CHR:
+			return "create";
+		case ACL_CREATE_TEMP_CHR:
+			return "temporary";
+		case ACL_CONNECT_CHR:
+			return "connect";
+		case ACL_SET_CHR:
+			return "set";
+		case ACL_ALTER_SYSTEM_CHR:
+			return "alter system";
+		case ACL_MAINTAIN_CHR:
+			return "maintain";
+		default:
+			elog(ERROR, "unexpected privilege type %c", acl);
+			pg_unreachable();
+	}
 }

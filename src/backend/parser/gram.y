@@ -4353,6 +4353,7 @@ TableLikeOption:
 				| INDEXES			{ $$ = CREATE_TABLE_LIKE_INDEXES; }
 				| STATISTICS		{ $$ = CREATE_TABLE_LIKE_STATISTICS; }
 				| STORAGE			{ $$ = CREATE_TABLE_LIKE_STORAGE; }
+				| PRIVILEGES		{ $$ = CREATE_TABLE_LIKE_PRIVILEGES; }
 				| ALL				{ $$ = CREATE_TABLE_LIKE_ALL; }
 		;
 
@@ -7877,6 +7878,7 @@ GrantStmt:	GRANT privileges ON privilege_target TO grantee_list
 					n->objtype = ($4)->objtype;
 					n->objects = ($4)->objs;
 					n->grantees = $6;
+					n->granteeOids = NIL;
 					n->grant_option = $7;
 					n->grantor = $8;
 					$$ = (Node *) n;
@@ -7896,6 +7898,7 @@ RevokeStmt:
 					n->objtype = ($4)->objtype;
 					n->objects = ($4)->objs;
 					n->grantees = $6;
+					n->granteeOids = NIL;
 					n->grantor = $7;
 					n->behavior = $8;
 					$$ = (Node *) n;
@@ -7912,6 +7915,7 @@ RevokeStmt:
 					n->objtype = ($7)->objtype;
 					n->objects = ($7)->objs;
 					n->grantees = $9;
+					n->granteeOids = NIL;
 					n->grantor = $10;
 					n->behavior = $11;
 					$$ = (Node *) n;
@@ -8376,6 +8380,7 @@ DefACLAction:
 					n->objtype = $4;
 					n->objects = NIL;
 					n->grantees = $6;
+					n->granteeOids = NIL;
 					n->grant_option = $7;
 					$$ = (Node *) n;
 				}
@@ -8391,6 +8396,7 @@ DefACLAction:
 					n->objtype = $4;
 					n->objects = NIL;
 					n->grantees = $6;
+					n->granteeOids = NIL;
 					n->behavior = $7;
 					$$ = (Node *) n;
 				}
@@ -8406,6 +8412,7 @@ DefACLAction:
 					n->objtype = $7;
 					n->objects = NIL;
 					n->grantees = $9;
+					n->granteeOids = NIL;
 					n->behavior = $10;
 					$$ = (Node *) n;
 				}

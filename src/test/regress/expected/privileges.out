@@ -3682,6 +3682,22 @@ SELECT * FROM information_schema.table_privileges t
  regress_grantor3 | regress_grantor5 | regression    | public       | grantor_test | UPDATE         | NO           | NO
 (2 rows)
 
+BEGIN;
+RESET ROLE;
+CREATE ROLE regress_6;
+ALTER TABLE grantor_test OWNER TO regress_6;
+SET ROLE regress_6;
+CREATE TABLE grantor_test_copy(LIKE grantor_test INCLUDING PRIVILEGES);
+SELECT relname, relacl
+FROM pg_class pc
+WHERE relname IN ('grantor_test_copy', 'grantor_test') ORDER BY relname;
+      relname      |                                                                                               relacl                                                                                               
+-------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ grantor_test      | {regress_6=arwdDxtm/regress_6,regress_grantor2=r*/regress_6,regress_grantor3=w*/regress_6,regress_grantor4=r*w*/regress_6,regress_grantor5=r/regress_grantor2,regress_grantor5=w/regress_grantor3}
+ grantor_test_copy | {regress_6=arwdDxtm/regress_6,regress_grantor2=r*/regress_6,regress_grantor3=w*/regress_6,regress_grantor4=r*w*/regress_6,regress_grantor5=rw/regress_6}
+(2 rows)
+
+ROLLBACK;
 REVOKE SELECT, UPDATE ON grantor_test FROM regress_grantor5 GRANTED BY regress_grantor2;
 WARNING:  not all privileges could be revoked for "grantor_test"
 WARNING:  not all privileges could be revoked for column "tableoid" of relation "grantor_test"
