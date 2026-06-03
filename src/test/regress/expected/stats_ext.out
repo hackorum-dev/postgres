@@ -2928,6 +2928,32 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_partial WHERE (a = 0
 (1 row)
 
 DROP TABLE mcv_lists_partial;
+-- P(a=0)=0.5, P(b=0)=0.5, P(c=TRUE)=0.5, P(d='{1,2}')=0.5 so the independence estimate is 0.0625 * N.
+-- After building MCV statistics the cap limits the combined estimate to the
+-- least-common MCV frequency, eliminating most of the over-estimation.
+CREATE TABLE mcv_cap (a INT, b INT, c BOOL, d INTEGER[]) WITH (autovacuum_enabled = off);
+INSERT INTO mcv_cap
+    SELECT 0, b, TRUE, '{}' FROM generate_series(1, 99) b, generate_series(1, 100) r;
+INSERT INTO mcv_cap
+    SELECT a, 0, NULL, '{1, 2}' FROM generate_series(1, 99) a, generate_series(1, 100) r;
+ANALYZE mcv_cap;
+-- without MCV statistics: independence gives 0.5 * 0.5 * 0.5 * 0.5 * 19800 = 1238 rows
+SELECT * FROM check_estimated_rows($$SELECT * FROM mcv_cap WHERE a = 0 AND b = 0 AND c = TRUE AND d = '{1, 2}'$$);
+ estimated | actual 
+-----------+--------
+      1238 |      0
+(1 row)
+
+CREATE STATISTICS mcv_cap_stats (mcv) ON a, b, c, d FROM mcv_cap;
+ANALYZE mcv_cap;
+-- with MCV statistics: bounded by least MCV frequency
+SELECT * FROM check_estimated_rows($$SELECT * FROM mcv_cap WHERE a = 0 AND b = 0 AND c = TRUE AND d = '{1, 2}'$$);
+ estimated | actual 
+-----------+--------
+       100 |      0
+(1 row)
+
+DROP TABLE mcv_cap;
 -- check the ability to use multiple MCV lists
 CREATE TABLE mcv_lists_multi (
 	a INTEGER,
