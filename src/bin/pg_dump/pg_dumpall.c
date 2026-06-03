@@ -740,7 +740,7 @@ main(int argc, char *argv[])
 	}
 	else
 	{
-		fprintf(OPF, "--\n-- PostgreSQL database cluster dump\n--\n\n");
+		fprintf(OPF, TEXT_DUMPALL_HEADER);
 
 		if (verbose)
 			dumpTimestamp("Started on");

@@ -30,6 +30,8 @@
 #include "pg_backup.h"
 #include "pqexpbuffer.h"
 
+#define TEXT_DUMPALL_HEADER "--\n-- PostgreSQL database cluster dump\n--\n\n"
+
 #define LOBBUFSIZE 16384
 
 /* Data block types */

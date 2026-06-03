@@ -47,7 +47,6 @@
 #include "pgtar.h"
 
 #define TEXT_DUMP_HEADER "--\n-- PostgreSQL database dump\n--\n\n"
-#define TEXT_DUMPALL_HEADER "--\n-- PostgreSQL database cluster dump\n--\n\n"
 
 #define TOC_PREFIX_NONE		""
 #define TOC_PREFIX_DATA		"Data for "
@@ -466,7 +465,7 @@ RestoreArchive(Archive *AHX, bool append_data)
 	if (ropt->filename || ropt->compression_spec.algorithm != PG_COMPRESSION_NONE)
 		SetOutput(AH, ropt->filename, ropt->compression_spec, append_data);
 
-	ahprintf(AH, "--\n-- PostgreSQL database dump\n--\n\n");
+	ahprintf(AH, TEXT_DUMP_HEADER);
 
 	/*
 	 * If generating plain-text output, enter restricted mode to block any
