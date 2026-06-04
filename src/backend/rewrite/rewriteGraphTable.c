@@ -640,6 +640,16 @@ generate_union_from_pathqueries(List **pathqueries)
 		return sampleQuery;
 	}
 
+	/*
+	 * Each path query will be wrapped in a subquery RTE of the UNION query
+	 * constructed below, which puts it one query level further away from the
+	 * query containing the GRAPH_TABLE clause than replace_property_refs()
+	 * assumed when it adjusted the levels of lateral references.  Compensate
+	 * by incrementing varlevelsup of any outer-query references once more.
+	 */
+	foreach_node(Query, pathquery, *pathqueries)
+		IncrementVarSublevelsUp((Node *) pathquery, 1, 1);
+
 	sostmt = castNode(SetOperationStmt,
 					  generate_setop_from_pathqueries(*pathqueries, &rtable, NULL));
 

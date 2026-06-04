@@ -564,6 +564,10 @@ ALTER PROPERTY GRAPH myshop ALTER VERTEX TABLE products
 -- ruleutils reverse parsing
 SELECT pg_get_viewdef('customers_us'::regclass);
 
+-- exercises lateral references combined with label disjunction, where the
+-- rewritten path queries are wrapped in an extra UNION query level
+SELECT * FROM customers_us;
+
 -- test view/graph nesting
 
 CREATE VIEW customers_view AS SELECT customer_id, 'redacted' || customer_id AS name_redacted, address FROM customers;
