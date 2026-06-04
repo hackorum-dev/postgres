@@ -396,7 +396,7 @@ gistSortedBuildCallback(Relation index,
 	tuplesort_putindextuplevalues(buildstate->sortstate,
 								  buildstate->indexrel,
 								  tid,
-								  compressed_values, isnull);
+								  compressed_values, isnull, false);
 
 	MemoryContextSwitchTo(oldCtx);
 	MemoryContextReset(buildstate->giststate->tempCxt);
