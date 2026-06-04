@@ -290,6 +290,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
 #include "utils/guc.h"
+#include "utils/hsearch.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -483,6 +484,21 @@ WalReceiverConn *LogRepWorkerWalRcvConn = NULL;
 
 Subscription *MySubscription = NULL;
 static bool MySubscriptionValid = false;
+
+/*
+ * Hash table mapping ReplOriginId -> bool for origins used by tablesync
+ * workers during initial COPY.  Built from pg_subscription_rel at apply
+ * worker startup and refreshed whenever a relation transitions to READY.
+ * Lets the apply worker suppress false update/delete_origin_differs
+ * conflicts on rows that were re-stamped with the tablesync origin ID
+ * during WAL replay after a crash.
+ */
+typedef struct TablesyncOriginEntry
+{
+	ReplOriginId originid;		/* hash key — must be first */
+} TablesyncOriginEntry;
+
+static HTAB *tablesync_origins = NULL;
 
 static List *on_commit_wakeup_workers_subids = NIL;
 
@@ -720,6 +736,75 @@ should_apply_changes_for_rel(LogicalRepRelMapEntry *rel)
 	}
 
 	return false;				/* dummy for compiler */
+}
+
+/*
+ * Rebuild the in-memory hash table of tablesync origin IDs from
+ * pg_subscription_rel.  Called at apply worker startup and whenever a
+ * relation transitions to SUBREL_STATE_READY, so newly finished tablesync
+ * workers are always reflected in the cache.
+ */
+void
+rebuild_tablesync_origins_cache(void)
+{
+	List	   *subrels;
+	ListCell   *lc;
+	HASHCTL		ctl;
+
+	/* Destroy the old table if it exists */
+	if (tablesync_origins != NULL)
+	{
+		hash_destroy(tablesync_origins);
+		tablesync_origins = NULL;
+	}
+
+	/*
+	 * Call GetSubscriptionRelations to get all tables for this subscription from
+	 * pg_subscription_rel.
+	 *
+	 */
+	subrels = GetSubscriptionRelations(MySubscription->oid, true, false, false);
+
+	foreach(lc, subrels)
+	{
+		SubscriptionRelState *relstate = (SubscriptionRelState *) lfirst(lc);
+
+		if (relstate->originid == InvalidReplOriginId)
+			continue;
+
+		if (tablesync_origins == NULL)
+		{
+			memset(&ctl, 0, sizeof(ctl));
+			ctl.keysize = sizeof(ReplOriginId);
+			ctl.entrysize = sizeof(TablesyncOriginEntry);
+			ctl.hcxt = ApplyContext;
+			tablesync_origins = hash_create("tablesync origins",
+											16,
+											&ctl,
+											HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+		}
+
+		hash_search(tablesync_origins, &relstate->originid, HASH_ENTER, NULL);
+	}
+
+	list_free_deep(subrels);
+}
+
+/*
+ * is_tablesync_origin
+ *
+ * Returns true if the given origin ID is recorded in pg_subscription_rel
+ * as the tablesync origin for any relation in this subscription.  Used to
+ * suppress false update/delete_origin_differs conflicts on rows that were
+ * stamped with the tablesync origin ID during WAL replay after a crash.
+ */
+static inline bool
+is_tablesync_origin(ReplOriginId originid)
+{
+	if (tablesync_origins == NULL || originid == InvalidReplOriginId)
+		return false;
+
+	return hash_search(tablesync_origins, &originid, HASH_FIND, NULL) != NULL;
 }
 
 /*
@@ -2958,11 +3043,13 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 	{
 		/*
 		 * Report the conflict if the tuple was modified by a different
-		 * origin.
+		 * origin. Skip if the origin is recorded in pg_subscription_rel
+		 * as a known tablesync origin for this subscription.
 		 */
 		if (GetTupleTransactionInfo(localslot, &conflicttuple.xmin,
 									&conflicttuple.origin, &conflicttuple.ts) &&
-			conflicttuple.origin != replorigin_xact_state.origin)
+			conflicttuple.origin != replorigin_xact_state.origin &&
+			!is_tablesync_origin(conflicttuple.origin))
 		{
 			TupleTableSlot *newslot;
 
@@ -2971,7 +3058,6 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 			slot_store_data(newslot, relmapentry, newtup);
 
 			conflicttuple.slot = localslot;
-
 			ReportApplyConflict(estate, relinfo, LOG, CT_UPDATE_ORIGIN_DIFFERS,
 								remoteslot, newslot,
 								list_make1(&conflicttuple));
@@ -3153,11 +3239,13 @@ apply_handle_delete_internal(ApplyExecutionData *edata,
 	{
 		/*
 		 * Report the conflict if the tuple was modified by a different
-		 * origin.
+		 * origin. Skip if the origin is recorded in pg_subscription_rel
+		 * as a known tablesync origin.
 		 */
 		if (GetTupleTransactionInfo(localslot, &conflicttuple.xmin,
 									&conflicttuple.origin, &conflicttuple.ts) &&
-			conflicttuple.origin != replorigin_xact_state.origin)
+			conflicttuple.origin != replorigin_xact_state.origin &&
+			!is_tablesync_origin(conflicttuple.origin))
 		{
 			conflicttuple.slot = localslot;
 			ReportApplyConflict(estate, relinfo, LOG, CT_DELETE_ORIGIN_DIFFERS,
@@ -3525,7 +3613,8 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 				if (GetTupleTransactionInfo(localslot, &conflicttuple.xmin,
 											&conflicttuple.origin,
 											&conflicttuple.ts) &&
-					conflicttuple.origin != replorigin_xact_state.origin)
+					conflicttuple.origin != replorigin_xact_state.origin &&
+					!is_tablesync_origin(conflicttuple.origin))
 				{
 					TupleTableSlot *newslot;
 
@@ -5712,6 +5801,16 @@ run_apply_worker(void)
 	replorigin_session_setup(originid, 0);
 	replorigin_xact_state.origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);
+	CommitTransactionCommand();
+
+	/*
+	 * Build the tablesync origins cache from pg_subscription_rel.  This
+	 * lets the apply worker recognise rows that were stamped with a (now
+	 * dropped) tablesync origin ID while applying updates and deletes, and
+	 * suppress false update/delete_origin_differs conflicts for them.
+	 */
+	StartTransactionCommand();
+	rebuild_tablesync_origins_cache();
 	CommitTransactionCommand();
 
 	/* Is the use of a password mandatory? */

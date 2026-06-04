@@ -25,6 +25,7 @@
 #include "catalog/pg_type.h"
 #include "foreign/foreign.h"
 #include "miscadmin.h"
+#include "replication/origin.h"
 #include "storage/lmgr.h"
 #include "storage/lock.h"
 #include "utils/acl.h"
@@ -327,6 +328,16 @@ AddSubscriptionRelState(Oid subid, Oid relid, char state,
 	values[Anum_pg_subscription_rel_srsubid - 1] = ObjectIdGetDatum(subid);
 	values[Anum_pg_subscription_rel_srrelid - 1] = ObjectIdGetDatum(relid);
 	values[Anum_pg_subscription_rel_srsubstate - 1] = CharGetDatum(state);
+
+	/*
+	 * No tablesync origin is known at start - the origin id is written
+	 * later by UpdateSubscriptionRelState() when the tablesync worker
+	 * transitions the relation to SUBREL_STATE_FINISHEDCOPY.
+	 */
+	values[Anum_pg_subscription_rel_srtablesyncoriginid - 1] =
+		Int16GetDatum((int16) InvalidReplOriginId);
+	nulls[Anum_pg_subscription_rel_srtablesyncoriginid - 1] = false;
+
 	if (XLogRecPtrIsValid(sublsn))
 		values[Anum_pg_subscription_rel_srsublsn - 1] = LSNGetDatum(sublsn);
 	else
@@ -356,7 +367,8 @@ AddSubscriptionRelState(Oid subid, Oid relid, char state,
  */
 void
 UpdateSubscriptionRelState(Oid subid, Oid relid, char state,
-						   XLogRecPtr sublsn, bool already_locked)
+						   XLogRecPtr sublsn, bool already_locked,
+						   ReplOriginId originid)
 {
 	Relation	rel;
 	HeapTuple	tup;
@@ -404,6 +416,30 @@ UpdateSubscriptionRelState(Oid subid, Oid relid, char state,
 		values[Anum_pg_subscription_rel_srsublsn - 1] = LSNGetDatum(sublsn);
 	else
 		nulls[Anum_pg_subscription_rel_srsublsn - 1] = true;
+
+
+
+	/*
+	 * Store the tablesync origin ID used during the initial COPY phase so
+	 * that the apply worker can suppress false update_origin_differs conflicts
+	 * on rows stamped with this origin after crash recovery.  If the caller
+	 * passes InvalidReplOriginId, preserve the existing value; all state
+	 * transitions after FINISHEDCOPY have no origin to contribute and pass
+	 * in InvalidReplOriginId and that should not overwrite the one recorded
+	 * during COPY.
+	 */
+
+	if (originid == InvalidReplOriginId)
+	{
+		replaces[Anum_pg_subscription_rel_srtablesyncoriginid - 1] = false;
+	}
+	else
+	{
+		values[Anum_pg_subscription_rel_srtablesyncoriginid - 1] =
+			Int16GetDatum((int16) originid);
+		replaces[Anum_pg_subscription_rel_srtablesyncoriginid - 1] = true;
+		nulls[Anum_pg_subscription_rel_srtablesyncoriginid - 1] = false;
+	}
 
 	tup = heap_modify_tuple(tup, RelationGetDescr(rel), values, nulls,
 							replaces);
@@ -655,6 +691,8 @@ GetSubscriptionRelations(Oid subid, bool tables, bool sequences,
 		relstate = palloc_object(SubscriptionRelState);
 		relstate->relid = subrel->srrelid;
 		relstate->state = subrel->srsubstate;
+		relstate->originid = subrel->srtablesyncoriginid;
+
 		d = SysCacheGetAttr(SUBSCRIPTIONRELMAP, tup,
 							Anum_pg_subscription_rel_srsublsn, &isnull);
 		if (isnull)

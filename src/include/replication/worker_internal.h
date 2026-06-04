@@ -305,6 +305,8 @@ extern void apply_spooled_messages(FileSet *stream_fileset, TransactionId xid,
 
 extern void apply_dispatch(StringInfo s);
 
+extern void rebuild_tablesync_origins_cache(void);
+
 extern void maybe_reread_subscription(void);
 
 extern void stream_cleanup_files(Oid subid, TransactionId xid);

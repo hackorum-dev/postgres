@@ -1300,7 +1300,7 @@ AlterSubscription_refresh_seq(Subscription *sub)
 			Oid			relid = subrel->relid;
 
 			UpdateSubscriptionRelState(sub->oid, relid, SUBREL_STATE_INIT,
-									   InvalidXLogRecPtr, false);
+									   InvalidXLogRecPtr, false, InvalidReplOriginId);
 			ereport(DEBUG1,
 					errmsg_internal("sequence \"%s.%s\" of subscription \"%s\" set to INIT state",
 									get_namespace_name(get_rel_namespace(relid)),

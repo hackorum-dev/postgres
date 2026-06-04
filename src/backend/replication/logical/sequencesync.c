@@ -59,6 +59,7 @@
 #include "pgstat.h"
 #include "postmaster/interrupt.h"
 #include "replication/logicalworker.h"
+#include "replication/origin.h"
 #include "replication/worker_internal.h"
 #include "storage/lwlock.h"
 #include "utils/acl.h"
@@ -372,7 +373,7 @@ copy_sequence(LogicalRepSequenceInfo *seqinfo, Oid seqowner)
 	 * sequence as READY.
 	 */
 	UpdateSubscriptionRelState(MySubscription->oid, seqoid, SUBREL_STATE_READY,
-							   seqinfo->page_lsn, false);
+							   seqinfo->page_lsn, false, InvalidReplOriginId);
 
 	return COPYSEQ_SUCCESS;
 }

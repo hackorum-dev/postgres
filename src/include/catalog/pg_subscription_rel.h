@@ -35,6 +35,8 @@ CATALOG(pg_subscription_rel,6102,SubscriptionRelRelationId)
 	Oid			srsubid BKI_LOOKUP(pg_subscription);	/* Oid of subscription */
 	Oid			srrelid BKI_LOOKUP(pg_class);	/* Oid of relation */
 	char		srsubstate;		/* state of the relation in subscription */
+	int16		srtablesyncoriginid; /* tablesync origin used during COPY,
+								* InvalidReplOriginId if not applicable */
 
 	/*
 	 * Although srsublsn is a fixed-width type, it is allowed to be NULL, so
@@ -84,6 +86,8 @@ typedef struct SubscriptionRelState
 	Oid			relid;
 	XLogRecPtr	lsn;
 	char		state;
+	ReplOriginId originid; /* tablesync origin from srtablesyncoriginid,
+							* InvalidReplOriginId if not set */
 } SubscriptionRelState;
 
 /*
@@ -112,7 +116,8 @@ typedef struct LogicalRepSequenceInfo
 extern void AddSubscriptionRelState(Oid subid, Oid relid, char state,
 									XLogRecPtr sublsn, bool retain_lock);
 extern void UpdateSubscriptionRelState(Oid subid, Oid relid, char state,
-									   XLogRecPtr sublsn, bool already_locked);
+									   XLogRecPtr sublsn, bool already_locked,
+									   ReplOriginId originid);
 extern char GetSubscriptionRelState(Oid subid, Oid relid, XLogRecPtr *sublsn);
 extern void RemoveSubscriptionRel(Oid subid, Oid relid);
 

@@ -269,7 +269,8 @@ ProcessSyncingTablesForSync(XLogRecPtr current_lsn)
 								   MyLogicalRepWorker->relid,
 								   MyLogicalRepWorker->relstate,
 								   MyLogicalRepWorker->relstate_lsn,
-								   false);
+								   false,
+								   InvalidReplOriginId);
 
 		/*
 		 * End streaming so that LogRepWorkerWalRcvConn can be used to drop
@@ -469,7 +470,17 @@ ProcessSyncingTablesForApply(XLogRecPtr current_lsn)
 				 */
 				UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
 										   rstate->relid, rstate->state,
-										   rstate->lsn, true);
+										   rstate->lsn, true,
+										   InvalidReplOriginId);
+
+				/*
+				 * Rebuild the tablesync origins cache now that this relation
+				 * has transitioned to READY. The srtablesyncoriginid written
+				 * at FINISHEDCOPY is now stable and needs to be loaded into
+				 * the cache before the apply worker starts processing WAL
+				 * changes for this relation.
+				 */
+				rebuild_tablesync_origins_cache();
 			}
 		}
 		else
@@ -1375,7 +1386,8 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 							   MyLogicalRepWorker->relid,
 							   MyLogicalRepWorker->relstate,
 							   MyLogicalRepWorker->relstate_lsn,
-							   false);
+							   false,
+							   InvalidReplOriginId);
 
 	/*
 	 * Create the replication origin in a separate transaction from the one
@@ -1504,8 +1516,8 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 							   MyLogicalRepWorker->relid,
 							   SUBREL_STATE_FINISHEDCOPY,
 							   MyLogicalRepWorker->relstate_lsn,
-							   false);
-
+							   false,
+							   originid);
 	CommitTransactionCommand();
 
 copy_table_done:
