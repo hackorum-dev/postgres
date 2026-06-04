@@ -531,7 +531,7 @@ static void
 _bt_spool(BTSpool *btspool, const ItemPointerData *self, const Datum *values, const bool *isnull)
 {
 	tuplesort_putindextuplevalues(btspool->sortstate, btspool->index,
-								  self, values, isnull);
+								  self, values, isnull, false);
 }
 
 /*
