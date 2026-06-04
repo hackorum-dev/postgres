@@ -1012,6 +1012,15 @@ SELECT pg_get_viewdef('customers_us'::regclass);
    ORDER BY g.customer_name, g.product_name;
 (1 row)
 
+-- exercises lateral references combined with label disjunction, where the
+-- rewritten path queries are wrapped in an extra UNION query level
+SELECT * FROM customers_us;
+ customer_name | product_name | a 
+---------------+--------------+---
+ customer1     | product1     | 1
+ customer1     | product2     | 1
+(2 rows)
+
 -- test view/graph nesting
 CREATE VIEW customers_view AS SELECT customer_id, 'redacted' || customer_id AS name_redacted, address FROM customers;
 SELECT * FROM customers;
