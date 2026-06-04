@@ -142,6 +142,7 @@
 #include "storage/shmem_internal.h"
 #include "storage/spin.h"
 #include "utils/builtins.h"
+#include "utils/memdebug.h"
 #include "utils/tuplestore.h"
 
 typedef struct ShmemIndexEnt ShmemIndexEnt;
@@ -288,6 +289,13 @@ static bool AttachShmemIndexEntry(ShmemRequest *request, bool missing_ok);
 
 Datum		pg_numa_available(PG_FUNCTION_ARGS);
 
+/* With valgrind, we want to add a couple NOACCESS bytes */
+#ifdef USE_VALGRIND
+#define NOACCESS_BYTES 32
+#else
+#define NOACCESS_BYTES 0
+#endif
+
 /*
  *	ShmemRequestStruct() --- request a named shared memory area
  *
@@ -418,9 +426,14 @@ ShmemGetRequestedSize(void)
 		/* pad the start address for alignment like ShmemAllocRaw() does */
 		if (alignment < PG_CACHE_LINE_SIZE)
 			alignment = PG_CACHE_LINE_SIZE;
+
 		size = TYPEALIGN(alignment, size);
 
 		size = add_size(size, request->options->size);
+
+#if USE_VALGRIND
+		size = add_size(size, NOACCESS_BYTES);
+#endif
 	}
 
 	return size;
@@ -510,6 +523,26 @@ ShmemAttachRequested(void)
 		if (callbacks->attach_fn)
 			callbacks->attach_fn(callbacks->opaque_arg);
 	}
+
+#ifdef USE_VALGRIND
+	{
+		HASH_SEQ_STATUS hstat;
+		ShmemIndexEnt *ent;
+
+		hash_seq_init(&hstat, ShmemIndex);
+
+		/*
+		 * When compiled with EXEC_BACKEND we need to recreate all NOACCESS
+		 * regions in each backend, but we can only recreate those with index
+		 * entries and not any of the regions for memory allocated directly with
+		 * ShmemAlloc().
+		 */
+		while ((ent = (ShmemIndexEnt *) hash_seq_search(&hstat)) != NULL)
+		{
+			VALGRIND_MAKE_MEM_NOACCESS(ent->location + ent->size, NOACCESS_BYTES);
+		}
+	}
+#endif
 
 	LWLockRelease(ShmemIndexLock);
 
@@ -866,11 +899,14 @@ ShmemAllocRaw(Size size, Size alignment, Size *allocated_size)
 	rawStart = ShmemAllocator->free_offset;
 	newStart = TYPEALIGN(alignment, rawStart);
 
-	newFree = newStart + size;
+	newFree = newStart + size + NOACCESS_BYTES;
 	if (newFree <= ShmemSegHdr->totalsize)
 	{
 		newSpace = (char *) ShmemBase + newStart;
 		ShmemAllocator->free_offset = newFree;
+
+		/* Make the bytes at the end no-access */
+		VALGRIND_MAKE_MEM_NOACCESS(newSpace + size, NOACCESS_BYTES);
 	}
 	else
 		newSpace = NULL;
