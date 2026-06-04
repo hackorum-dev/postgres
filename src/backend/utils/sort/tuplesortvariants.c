@@ -834,7 +834,7 @@ tuplesort_putheaptuple(Tuplesortstate *state, HeapTuple tup)
 void
 tuplesort_putindextuplevalues(Tuplesortstate *state, Relation rel,
 							  const ItemPointerData *self, const Datum *values,
-							  const bool *isnull)
+							  const bool *isnull, bool set_reserved_bit)
 {
 	SortTuple	stup;
 	IndexTuple	tuple;
@@ -846,6 +846,15 @@ tuplesort_putindextuplevalues(Tuplesortstate *state, Relation rel,
 										  isnull, base->tuplecontext);
 	tuple = ((IndexTuple) stup.tuple);
 	tuple->t_tid = *self;
+
+	/*
+	 * Optionally set the AM-reserved bit in the tuple's t_info.  Its meaning
+	 * is defined by the access method; the bit is preserved through the sort
+	 * and any tape spill.
+	 */
+	if (set_reserved_bit)
+		tuple->t_info |= INDEX_AM_RESERVED_BIT;
+
 	/* set up first-column key value */
 	stup.datum1 = index_getattr(tuple,
 								1,
