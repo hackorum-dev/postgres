@@ -242,18 +242,6 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 				hasallsortsupports = false;
 				break;
 			}
-
-			/*
-			 * The sorted build path forms a single index tuple per heap tuple
-			 * straight from the tuplesort and never calls extractValue, so it
-			 * cannot be used for a multi-entry key column.
-			 */
-			if (OidIsValid(index_getprocid(index, i + 1,
-										   GIST_EXTRACTVALUE_PROC)))
-			{
-				hasallsortsupports = false;
-				break;
-			}
 		}
 		if (hasallsortsupports)
 			buildstate.buildMode = GIST_SORTED_BUILD;
@@ -383,13 +371,62 @@ gistSortedBuildCallback(Relation index,
 						void *state)
 {
 	GISTBuildState *buildstate = (GISTBuildState *) state;
+	GISTSTATE  *giststate = buildstate->giststate;
+	int			mecol = giststate->multiEntryColumn;
 	MemoryContext oldCtx;
 	Datum		compressed_values[INDEX_MAX_KEYS];
 
-	oldCtx = MemoryContextSwitchTo(buildstate->giststate->tempCxt);
+	oldCtx = MemoryContextSwitchTo(giststate->tempCxt);
 
-	/* Form an index tuple and point it at the heap tuple */
-	gistCompressValues(buildstate->giststate, index,
+	/*
+	 * For a multi-entry key column, decompose the value with extractValue and
+	 * sort one tuple per sub-entry, mirroring gistExtractEntries.  Each tuple
+	 * gets the multi-entry reserved bit when the value produced more than one
+	 * entry, so scans deduplicate its heap TID.  A NULL or empty result falls
+	 * through to the single-entry path below, producing one NULL entry.
+	 */
+	if (mecol >= 0 && !isnull[mecol])
+	{
+		Datum	   *entries;
+		bool	   *nullFlags = NULL;
+		int32		nentries;
+
+		entries = (Datum *)
+			DatumGetPointer(FunctionCall3Coll(&giststate->extractValueFn[mecol],
+											  giststate->supportCollation[mecol],
+											  values[mecol],
+											  PointerGetDatum(&nentries),
+											  PointerGetDatum(&nullFlags)));
+
+		if (entries != NULL && nentries > 0)
+		{
+			if (nullFlags == NULL)
+				nullFlags = palloc0_array(bool, nentries);
+
+			for (int i = 0; i < nentries; i++)
+			{
+				values[mecol] = entries[i];
+				isnull[mecol] = nullFlags[i];
+				gistCompressValues(giststate, index, values, isnull,
+								   true, compressed_values);
+				tuplesort_putindextuplevalues(buildstate->sortstate,
+											  buildstate->indexrel,
+											  tid, compressed_values, isnull,
+											  nentries > 1);
+			}
+
+			MemoryContextSwitchTo(oldCtx);
+			MemoryContextReset(giststate->tempCxt);
+			return;
+		}
+
+		/* extractValue produced nothing: store a single NULL entry */
+		values[mecol] = (Datum) 0;
+		isnull[mecol] = true;
+	}
+
+	/* Form a single index tuple and point it at the heap tuple */
+	gistCompressValues(giststate, index,
 					   values, isnull,
 					   true, compressed_values);
 
@@ -399,7 +436,7 @@ gistSortedBuildCallback(Relation index,
 								  compressed_values, isnull, false);
 
 	MemoryContextSwitchTo(oldCtx);
-	MemoryContextReset(buildstate->giststate->tempCxt);
+	MemoryContextReset(giststate->tempCxt);
 
 	/* Update tuple count. */
 	buildstate->indtuples += 1;
