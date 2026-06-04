@@ -179,10 +179,10 @@ check_primary_key(PG_FUNCTION_ARGS)
 		 * Construct query: SELECT 1 FROM _referenced_relation_ WHERE Pkey1 =
 		 * $1 [AND Pkey2 = $2 [...]]
 		 */
-		appendStringInfo(&sql, "select 1 from %s where ", relname);
+		appendStringInfo(&sql, "select 1 from %s where ", quote_identifier(relname));
 		for (i = 1; i <= nkeys; i++)
 		{
-			appendStringInfo(&sql, "%s = $%d ", args[i + nkeys], i);
+			appendStringInfo(&sql, "%s = $%d ", quote_identifier(args[i + nkeys]), i);
 			if (i < nkeys)
 				appendStringInfoString(&sql, "and ");
 		}
@@ -452,7 +452,7 @@ check_foreign_key(PG_FUNCTION_ARGS)
 			 *---------
 			 */
 			if (action == 'r')
-				appendStringInfo(&sql, "select 1 from %s where ", relname);
+				appendStringInfo(&sql, "select 1 from %s where ", quote_identifier(relname));
 
 			/*---------
 			 * For 'C'ascade action we construct DELETE query
@@ -479,7 +479,7 @@ check_foreign_key(PG_FUNCTION_ARGS)
 					char	   *nv;
 					int			k;
 
-					appendStringInfo(&sql, "update %s set ", relname);
+					appendStringInfo(&sql, "update %s set ", quote_identifier(relname));
 					for (k = 1; k <= nkeys; k++)
 					{
 						fn = SPI_fnumber(tupdesc, args_temp[k - 1]);
@@ -487,7 +487,7 @@ check_foreign_key(PG_FUNCTION_ARGS)
 						nv = SPI_getvalue(newtuple, tupdesc, fn);
 
 						appendStringInfo(&sql, " %s = %s ",
-										 args2[k],
+										 quote_identifier(args2[k]),
 										 nv ? quote_literal_cstr(nv) : "NULL");
 						if (k < nkeys)
 							appendStringInfoString(&sql, ", ");
@@ -496,7 +496,7 @@ check_foreign_key(PG_FUNCTION_ARGS)
 				}
 				else
 					/* DELETE */
-					appendStringInfo(&sql, "delete from %s where ", relname);
+					appendStringInfo(&sql, "delete from %s where ", quote_identifier(relname));
 			}
 
 			/*
@@ -507,10 +507,10 @@ check_foreign_key(PG_FUNCTION_ARGS)
 			 */
 			else if (action == 's')
 			{
-				appendStringInfo(&sql, "update %s set ", relname);
+				appendStringInfo(&sql, "update %s set ", quote_identifier(relname));
 				for (i = 1; i <= nkeys; i++)
 				{
-					appendStringInfo(&sql, "%s = null", args2[i]);
+					appendStringInfo(&sql, "%s = null", quote_identifier(args2[i]));
 					if (i < nkeys)
 						appendStringInfoString(&sql, ", ");
 				}
@@ -520,7 +520,7 @@ check_foreign_key(PG_FUNCTION_ARGS)
 			/* Construct WHERE qual */
 			for (i = 1; i <= nkeys; i++)
 			{
-				appendStringInfo(&sql, "%s = $%d ", args2[i], i);
+				appendStringInfo(&sql, "%s = $%d ", quote_identifier(args2[i]), i);
 				if (i < nkeys)
 					appendStringInfoString(&sql, "and ");
 			}
