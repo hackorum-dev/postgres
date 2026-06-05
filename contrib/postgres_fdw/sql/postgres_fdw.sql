@@ -4027,6 +4027,21 @@ DROP TABLE ltable;
 DROP TABLE parent;
 DROP FUNCTION ftable_rowcount_trigf;
 
+-- Verify that DEBUG1 is emitted when batch_size is reduced to stay within
+-- the libpq 65535-parameter limit.  A single-column table has p_nums = 1,
+-- so the effective ceiling is 65535.  Setting batch_size to 65536 forces a
+-- one-step reduction.
+SET client_min_messages = DEBUG1;
+CREATE TABLE batch_table ( x int, y int );
+CREATE FOREIGN TABLE ftable ( x int, y int )
+	SERVER loopback
+	OPTIONS (table_name 'batch_table', batch_size '33000');
+INSERT INTO ftable VALUES (1);
+RESET client_min_messages;
+-- Clean up
+DROP FOREIGN TABLE ftable;
+DROP TABLE batch_table;
+
 -- ===================================================================
 -- test asynchronous execution
 -- ===================================================================
