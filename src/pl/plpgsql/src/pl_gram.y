@@ -417,6 +417,7 @@ option_value : T_WORD
 				{
 					$$ = pstrdup($1);
 				}
+			 ;
 
 opt_semi		:
 				| ';'
