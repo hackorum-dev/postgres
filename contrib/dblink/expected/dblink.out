@@ -176,6 +176,18 @@ WHERE t.a > 7;
  9 | j | {a9,b9,c9}
 (2 rows)
 
+-- remote notices should be logged server-side only
+SET client_min_messages = log;
+SELECT *
+FROM dblink(connection_parameters(),
+            $$DO $do$ BEGIN RAISE NOTICE 'remote notice'; END $do$; SELECT 1$$)
+  AS t(x int);
+ x 
+---
+ 1
+(1 row)
+
+RESET client_min_messages;
 -- should generate "connection not available" error
 SELECT *
 FROM dblink('SELECT * FROM foo') AS t(a int, b text, c text[])
