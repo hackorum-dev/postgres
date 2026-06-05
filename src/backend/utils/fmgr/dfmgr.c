@@ -20,6 +20,7 @@
 #include <dlfcn.h>
 #endif							/* !WIN32 */
 
+#include "commands/extension.h"
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
@@ -71,6 +72,7 @@ char	   *Dynamic_library_path;
 static void *internal_load_library(const char *libname);
 pg_noreturn static void incompatible_module_error(const char *libname,
 												  const Pg_abi_values *module_magic_data);
+static const char *strip_libdir_prefix(const char *filename);
 static char *expand_dynamic_library_name(const char *name);
 static void check_restricted_library_name(const char *name);
 
@@ -99,20 +101,7 @@ load_external_function(const char *filename, const char *funcname,
 	void	   *lib_handle;
 	void	   *retval;
 
-	/*
-	 * For extensions with hardcoded '$libdir/' library names, we strip the
-	 * prefix to allow the library search path to be used. This is done only
-	 * for simple names (e.g., "$libdir/foo"), not for nested paths (e.g.,
-	 * "$libdir/foo/bar").
-	 *
-	 * For nested paths, 'expand_dynamic_library_name' directly expands the
-	 * '$libdir' macro, so we leave them untouched.
-	 */
-	if (strncmp(filename, "$libdir/", 8) == 0)
-	{
-		if (first_dir_separator(filename + 8) == NULL)
-			filename += 8;
-	}
+	filename = strip_libdir_prefix(filename);
 
 	/* Expand the possibly-abbreviated filename to an exact path name */
 	fullname = expand_dynamic_library_name(filename);
@@ -149,6 +138,9 @@ void
 load_file(const char *filename, bool restricted)
 {
 	char	   *fullname;
+
+	if (creating_extension)
+		filename = strip_libdir_prefix(filename);
 
 	/* Apply security restriction if requested */
 	if (restricted)
@@ -307,6 +299,24 @@ internal_load_library(const char *libname)
 	}
 
 	return file_scanner->handle;
+}
+
+/*
+ * For extensions with hardcoded '$libdir/' library names, strip the prefix to
+ * allow the library search path to be used. This is done only for simple names
+ * (e.g., "$libdir/foo"), not for nested paths (e.g., "$libdir/foo/bar").
+ *
+ * For nested paths, expand_dynamic_library_name() directly expands the
+ * '$libdir' macro, so leave them untouched.
+ */
+static const char *
+strip_libdir_prefix(const char *filename)
+{
+	if (strncmp(filename, "$libdir/", 8) == 0 &&
+		first_dir_separator(filename + 8) == NULL)
+		filename += 8;
+
+	return filename;
 }
 
 /*
