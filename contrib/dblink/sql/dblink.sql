@@ -128,6 +128,14 @@ SELECT *
 FROM dblink(connection_parameters(),'SELECT * FROM foo') AS t(a int, b text, c text[])
 WHERE t.a > 7;
 
+-- remote notices should be logged server-side only
+SET client_min_messages = log;
+SELECT *
+FROM dblink(connection_parameters(),
+            $$DO $do$ BEGIN RAISE NOTICE 'remote notice'; END $do$; SELECT 1$$)
+  AS t(x int);
+RESET client_min_messages;
+
 -- should generate "connection not available" error
 SELECT *
 FROM dblink('SELECT * FROM foo') AS t(a int, b text, c text[])
