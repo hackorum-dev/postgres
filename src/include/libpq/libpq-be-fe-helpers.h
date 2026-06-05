@@ -498,7 +498,7 @@ libpqsrv_notice_receiver(void *arg, const PGresult *res)
 	if (len > 0 && message[len - 1] == '\n')
 		len--;
 
-	ereport(LOG,
+	ereport(LOG_SERVER_ONLY,
 			errmsg_internal("%s: %.*s", prefix, len, message));
 }
 
