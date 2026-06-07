@@ -167,7 +167,7 @@ get_sequences_string(List *seqindexes, StringInfo buf)
  * the publisher and subscriber. Emits warnings for:
  * a) mismatched definitions or concurrent rename
  * b) insufficient privileges
- * c) missing sequences on the subscriber
+ * c) missing sequences on the publisher
  * Then raises an ERROR to indicate synchronization failure.
  */
 static void
