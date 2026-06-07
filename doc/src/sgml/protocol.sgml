@@ -602,8 +602,8 @@
        <para>
         The server does not support the minor protocol version requested
         by the client, but does support an earlier version of the protocol;
-        this message indicates the highest supported minor version.  This
-        message will also be sent if the client requested unsupported protocol
+        this message indicates the highest supported version. This message
+        will also be sent if the client requested unsupported protocol
         options (i.e., beginning with <literal>_pq_.</literal>) in the
         startup packet.
        </para>
@@ -5450,8 +5450,8 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
        <term>Int32</term>
        <listitem>
         <para>
-         Newest minor protocol version supported by the server
-         for the major protocol version requested by the client.
+         Newest protocol version supported by the server for the
+         major protocol version requested by the client.
         </para>
        </listitem>
       </varlistentry>
