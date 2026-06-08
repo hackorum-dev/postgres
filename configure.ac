@@ -804,6 +804,25 @@ choke me
 [AC_MSG_ERROR([Compiling PostgreSQL with clang, on 32bit x86, requires SSE2 support. Use -msse2 or use gcc.])])
 fi
 
+# Defend against a Clang loop-vectorizer wrong-code bug on RISC-V.  Clang
+# versions before 22 miscompile data-dependent scatter-store loops of the
+# form "dst[idx[i]] = expr" when the V extension is enabled and auto-
+# vectorization runs (at -O2 and above): the indexed scatter is lowered to
+# a unit-stride store, silently dropping the permutation.  We hit this in
+# des_init() (contrib/pgcrypto), and the same idiom appears elsewhere in
+# the tree (e.g. zic.c), so a per-site workaround does not scale.  The bug
+# is fixed in Clang 22; rather than refuse such compilers outright (Clang
+# 20 still ships in current distributions for riscv64), disable auto-
+# vectorization globally on the affected combination.  The test keys on the
+# compiler so that a fixed Clang, or any other compiler, is unaffected.
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [
+@%:@if defined(__clang__) && defined(__riscv) && __clang_major__ < 22
+choke me
+@%:@endif
+])], [],
+[PGAC_PROG_CC_CFLAGS_OPT([-fno-vectorize])
+ PGAC_PROG_CXX_CFLAGS_OPT([-fno-vectorize])])
+
 AC_PROG_CPP
 AC_SUBST(GCC)
 
