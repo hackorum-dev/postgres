@@ -139,6 +139,7 @@ GetSubscription(Oid subid, bool missing_ok, bool conninfo_needed,
 	sub->maxretention = subform->submaxretention;
 	sub->retentionactive = subform->subretentionactive;
 	sub->conflictlogrelid = subform->subconflictlogrelid;
+	sub->messages = subform->submessages;
 
 	if (conninfo_needed)
 	{
