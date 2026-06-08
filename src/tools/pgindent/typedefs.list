@@ -1159,6 +1159,7 @@ GistTsVectorOptions
 GistVacState
 GlobalChannelEntry
 GlobalChannelKey
+GlobalPatternList
 GlobalTransaction
 GlobalTransactionData
 GlobalVisHorizonKind
