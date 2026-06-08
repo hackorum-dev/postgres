@@ -1539,7 +1539,8 @@ GRANT SELECT (oid, subdbid, subskiplsn, subname, subowner, subenabled,
 			  subpasswordrequired, subrunasowner, subfailover,
               subretaindeadtuples, submaxretention, subretentionactive,
               subserver, subconflictlogrelid, subconflictlogdest, subslotname,
-              subsynccommit, subwalrcvtimeout, subpublications, suborigin)
+              subsynccommit, subwalrcvtimeout, subpublications, suborigin,
+	      submessage)
     ON pg_subscription TO public;
 
 CREATE VIEW pg_stat_subscription_stats AS

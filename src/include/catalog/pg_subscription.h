@@ -83,6 +83,9 @@ CATALOG(pg_subscription,6100,SubscriptionRelationId) BKI_SHARED_RELATION BKI_ROW
 	bool		subretaindeadtuples;	/* True if dead tuples useful for
 										 * conflict detection are retained */
 
+	bool		submessage;		/* True if the subscription wants to receive
+								 * logical messages. */
+
 	int32		submaxretention;	/* The maximum duration (in milliseconds)
 									 * for which information useful for
 									 * conflict detection can be retained */
@@ -165,6 +168,8 @@ typedef struct Subscription
 								 * to be synchronized to the standbys. */
 	bool		retaindeadtuples;	/* True if dead tuples useful for conflict
 									 * detection are retained */
+	bool		message;		/* True if the subscription wants to receive
+								 * logical messages */
 	int32		maxretention;	/* The maximum duration (in milliseconds) for
 								 * which information useful for conflict
 								 * detection can be retained */

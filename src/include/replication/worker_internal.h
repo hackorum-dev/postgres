@@ -18,6 +18,7 @@
 #include "miscadmin.h"
 #include "replication/logicalrelation.h"
 #include "replication/walreceiver.h"
+#include "replication/logicalproto.h"
 #include "storage/buffile.h"
 #include "storage/fileset.h"
 #include "storage/shm_mq.h"
@@ -254,6 +255,24 @@ extern PGDLLIMPORT bool in_remote_transaction;
 extern PGDLLIMPORT bool InitializingApplyWorker;
 
 extern PGDLLIMPORT List *table_states_not_ready;
+
+/*
+ * Hook for extensions to handle logical decoding messages (see
+ * pg_logical_emit_message()) received from the publisher. Called only when
+ * the subscription has the "message" option enabled.
+ *
+ * The handler runs in the apply worker, inside a transaction, with an active
+ * snapshot pushed. For a transactional message the handler's work is part of
+ * the remote transaction and commits with it; a non-transactional message is
+ * committed as an independent unit. The same message may be delivered more
+ * than once, so the handler must be idempotent.
+ *
+ * Note that the apply worker runs with an empty search_path. An ERROR thrown
+ * by the handler restarts the apply worker, or disables the subscription if
+ * disable_on_error is set.
+ */
+typedef void (*LogicalRepMessageHandle_hook_type) (LogicalRepMessageData *msg);
+extern PGDLLIMPORT LogicalRepMessageHandle_hook_type LogicalRepMessageHandle_hook;
 
 extern void logicalrep_worker_attach(int slot);
 extern LogicalRepWorker *logicalrep_worker_find(LogicalRepWorkerType wtype,

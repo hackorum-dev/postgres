@@ -83,6 +83,7 @@
 #define SUBOPT_LSN					0x00020000
 #define SUBOPT_ORIGIN				0x00040000
 #define SUBOPT_CONFLICT_LOG_DEST	0x00080000
+#define SUBOPT_MESSAGE				0x00100000
 
 /* check if the 'val' has 'bits' set */
 #define IsSet(val, bits)  (((val) & (bits)) == (bits))
@@ -109,6 +110,7 @@ typedef struct SubOpts
 	bool		runasowner;
 	bool		failover;
 	bool		retaindeadtuples;
+	bool		message;
 	int32		maxretention;
 	char	   *origin;
 	ConflictLogDest conflictlogdest;
@@ -201,6 +203,8 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 		opts->failover = false;
 	if (IsSet(supported_opts, SUBOPT_RETAIN_DEAD_TUPLES))
 		opts->retaindeadtuples = false;
+	if (IsSet(supported_opts, SUBOPT_MESSAGE))
+		opts->message = false;
 	if (IsSet(supported_opts, SUBOPT_MAX_RETENTION_DURATION))
 		opts->maxretention = 0;
 	if (IsSet(supported_opts, SUBOPT_ORIGIN))
@@ -358,6 +362,15 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 
 			opts->specified_opts |= SUBOPT_RETAIN_DEAD_TUPLES;
 			opts->retaindeadtuples = defGetBoolean(defel);
+		}
+		else if (IsSet(supported_opts, SUBOPT_MESSAGE) &&
+				 strcmp(defel->defname, "message") == 0)
+		{
+			if (IsSet(opts->specified_opts, SUBOPT_MESSAGE))
+				errorConflictingDefElem(defel, pstate);
+
+			opts->specified_opts |= SUBOPT_MESSAGE;
+			opts->message = defGetBoolean(defel);
 		}
 		else if (IsSet(supported_opts, SUBOPT_MAX_RETENTION_DURATION) &&
 				 strcmp(defel->defname, "max_retention_duration") == 0)
@@ -699,7 +712,7 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 					  SUBOPT_RETAIN_DEAD_TUPLES |
 					  SUBOPT_MAX_RETENTION_DURATION |
 					  SUBOPT_WAL_RECEIVER_TIMEOUT | SUBOPT_ORIGIN |
-					  SUBOPT_CONFLICT_LOG_DEST);
+					  SUBOPT_CONFLICT_LOG_DEST | SUBOPT_MESSAGE);
 	parse_subscription_options(pstate, stmt->options, supported_opts, &opts);
 
 	/*
@@ -849,6 +862,7 @@ CreateSubscription(ParseState *pstate, CreateSubscriptionStmt *stmt,
 	values[Anum_pg_subscription_subfailover - 1] = BoolGetDatum(opts.failover);
 	values[Anum_pg_subscription_subretaindeadtuples - 1] =
 		BoolGetDatum(opts.retaindeadtuples);
+	values[Anum_pg_subscription_submessage - 1] = BoolGetDatum(opts.message);
 	values[Anum_pg_subscription_submaxretention - 1] =
 		Int32GetDatum(opts.maxretention);
 	values[Anum_pg_subscription_subretentionactive - 1] =
@@ -1666,7 +1680,8 @@ AlterSubscription(ParseState *pstate, AlterSubscriptionStmt *stmt,
 							  SUBOPT_MAX_RETENTION_DURATION |
 							  SUBOPT_WAL_RECEIVER_TIMEOUT |
 							  SUBOPT_ORIGIN |
-							  SUBOPT_CONFLICT_LOG_DEST);
+							  SUBOPT_CONFLICT_LOG_DEST |
+							  SUBOPT_MESSAGE);
 			break;
 
 		case ALTER_SUBSCRIPTION_ENABLED:
@@ -2051,6 +2066,12 @@ AlterSubscription(ParseState *pstate, AlterSubscriptionStmt *stmt,
 								true;
 						}
 					}
+				}
+
+				if (IsSet(opts.specified_opts, SUBOPT_MESSAGE))
+				{
+					values[Anum_pg_subscription_submessage - 1] = BoolGetDatum(opts.message);
+					replaces[Anum_pg_subscription_submessage - 1] = true;
 				}
 
 				update_tuple = true;
