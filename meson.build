@@ -2160,6 +2160,31 @@ choke me
 endif
 
 
+# Defend against a Clang loop-vectorizer wrong-code bug on RISC-V.  Clang
+# versions before 22 miscompile data-dependent scatter-store loops of the
+# form "dst[idx[i]] = expr" when the V extension is enabled and auto-
+# vectorization runs (at -O2 and above): the indexed scatter is lowered to
+# a unit-stride store, silently dropping the permutation.  We hit this in
+# des_init() (contrib/pgcrypto), and the same idiom appears elsewhere in
+# the tree (e.g. zic.c), so a per-site workaround does not scale.  The bug
+# is fixed in Clang 22; rather than refuse such compilers outright (Clang
+# 20 still ships in current distributions for riscv64), disable auto-
+# vectorization globally on the affected combination.  The test keys on the
+# compiler so that a fixed Clang, or any other compiler, is unaffected.
+if not cc.compiles('''
+#if defined(__clang__) && defined(__riscv) && __clang_major__ < 22
+choke me
+#endif''',
+    name: 'whether Clang on RISC-V needs auto-vectorization disabled',
+    args: test_c_args)
+  no_vectorize_cflags = cc.get_supported_arguments(['-fno-vectorize'])
+  cflags += no_vectorize_cflags
+  if have_cxx
+    cxxflags += cxx.get_supported_arguments(['-fno-vectorize'])
+  endif
+endif
+
+
 # Check whether the C++ compiler supports designated initializers.
 # These are used by PG_MODULE_MAGIC, and we use the result of this
 # test to decide whether to enable the test_cplusplusext test module.
