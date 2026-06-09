@@ -4965,7 +4965,32 @@ DropRelationsAllBuffers(SMgrRelation *smgr_reln, int nlocators)
 			if (block[i][j] == InvalidBlockNumber)
 			{
 				if (!smgrexists(rels[i], j))
+				{
+					/*
+					 * In a disaster-recovery situation a relation's data file
+					 * may be missing on disk while a dirty buffer for the fork
+					 * is still resident.  Skipping the fork (because it has no
+					 * file) would leave that buffer orphaned, after which the
+					 * checkpointer fails on every run trying to write it to the
+					 * missing file, so the server can no longer checkpoint.
+					 * Fall back to the full buffer-pool scan, which invalidates
+					 * the relation's buffers across all forks regardless of the
+					 * missing file, as was done unconditionally before this
+					 * optimization, so dropping the relation can still clean it
+					 * up.  The main fork is the sentinel: it is the only fork a
+					 * relation with storage always has, whereas the fsm, vm and
+					 * init forks are routinely absent on healthy relations
+					 * (small tables have no fsm/vm; permanent relations have no
+					 * init fork), so triggering on their absence would force a
+					 * full scan on nearly every drop.
+					 */
+					if (j == MAIN_FORKNUM)
+					{
+						cached = false;
+						break;
+					}
 					continue;
+				}
 				cached = false;
 				break;
 			}
