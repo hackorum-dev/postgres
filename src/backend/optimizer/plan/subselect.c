@@ -1405,6 +1405,33 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	if (contain_volatile_functions(sublink->testexpr))
 		return NULL;
 
+	/*
+	 * For a semijoin we can discard the sub-select's ORDER BY and DISTINCT: the
+	 * join only cares whether a matching row exists, not about the order or
+	 * multiplicity of the inner rows.  This mirrors simplify_EXISTS_query(), and
+	 * may also let the sub-select be flattened by pull_up_subqueries() (see
+	 * is_simple_subquery()).  Dropping DISTINCT loses no plan, because a
+	 * semijoin is equivalent to an inner join over a unique-ified inner, so the
+	 * planner can re-derive the de-duplication itself when worthwhile
+	 * (JOIN_UNIQUE_INNER).
+	 *
+	 * We must not do this for an antijoin (NOT IN): there is no such inner-join
+	 * equivalence, hence no JOIN_UNIQUE path for it (see joinrels.c), so a
+	 * dropped DISTINCT cannot be recovered and we would be forcing the full,
+	 * possibly heavily duplicated, inner relation through the join.
+	 *
+	 * LIMIT/OFFSET, and DISTINCT ON, make ORDER BY and DISTINCT significant, so
+	 * leave the sub-select alone in those cases too.
+	 */
+	if (!under_not &&
+		subselect->limitOffset == NULL &&
+		subselect->limitCount == NULL &&
+		!subselect->hasDistinctOn)
+	{
+		subselect->distinctClause = NIL;
+		subselect->sortClause = NIL;
+	}
+
 	/* Create a dummy ParseState for addRangeTableEntryForSubquery */
 	pstate = make_parsestate(NULL);
 
