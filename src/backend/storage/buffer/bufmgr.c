@@ -3470,6 +3470,25 @@ WakePinCountWaiter(BufferDesc *buf)
 }
 
 /*
+ * Register the current process as the pincount waiter for a shared buffer,
+ * set the BM_PIN_COUNT_WAITER flag, and unlock the buffer header.
+ *
+ * The caller must hold the buffer header lock, pass the current buffer state
+ * returned by LockBufHdr(), and ensure that no other backend is already
+ * registered as the waiter.
+ */
+static void
+RegisterPinCountWaiter(BufferDesc *bufHdr, uint64 buf_state)
+{
+	Assert((buf_state & BM_PIN_COUNT_WAITER) == 0 ||
+		   bufHdr->wait_backend_pgprocno == MyProcNumber);
+
+	bufHdr->wait_backend_pgprocno = MyProcNumber;
+	PinCountWaitBuf = bufHdr;
+	UnlockBufHdrExt(bufHdr, buf_state, BM_PIN_COUNT_WAITER, 0, 0);
+}
+
+/*
  * UnpinBuffer -- make buffer available for replacement.
  *
  * This should be applied only to shared buffers, never local ones.  This
@@ -4761,6 +4780,60 @@ BufferGetLSNAtomic(Buffer buffer)
 		return lsn;
 	}
 #endif
+}
+
+/*
+ * PinCountWaiterCheckReadyForCleanup
+ *		Recheck whether pin count waiter process (the startup process)
+ *		can retry cleanup lock acquisition.
+ *
+ * This is only for the hot-standby path in LockBufferForCleanup(), via
+ * ResolveRecoveryConflictWithBufferPin(), after ProcWaitForSignal() returns.
+ * The caller must already be registered as the shared buffer's
+ * BM_PIN_COUNT_WAITER.
+ *
+ * Returns true when the caller itself is the only remaining pin holder, so it
+ * can retry taking the cleanup lock. Returns false if other backends still
+ * pin the shared buffer. In that case, this function guarantees that the
+ * current backend remains registered as the pincount waiter to be woken when
+ * the buffer refcount drops to 1.
+ */
+bool
+PinCountWaiterCheckReadyForCleanup(Buffer buffer)
+{
+	BufferDesc *bufHdr;
+	uint64		buf_state;
+	uint32		buf_refcount;
+
+	Assert(BufferIsValid(buffer));
+	Assert(!BufferIsLocal(buffer));
+
+	bufHdr = GetBufferDescriptor(buffer - 1);
+	Assert(PinCountWaitBuf == bufHdr);
+
+	buf_state = LockBufHdr(bufHdr);
+	buf_refcount = BUF_STATE_GET_REFCOUNT(buf_state);
+
+	if (buf_refcount == 1)
+	{
+		UnlockBufHdr(bufHdr);
+		return true;
+	}
+
+	if ((buf_state & BM_PIN_COUNT_WAITER) != 0 &&
+		bufHdr->wait_backend_pgprocno != MyProcNumber)
+	{
+		UnlockBufHdr(bufHdr);
+		elog(ERROR, "multiple processes attempting to wait for pincount 1");
+	}
+
+	/*
+	 * If other processes still pin the buffer, register this process again as
+	 * the pincount waiter to wait again.
+	 */
+	RegisterPinCountWaiter(bufHdr, buf_state);
+
+	return false;
 }
 
 /* ---------------------------------------------------------------------
