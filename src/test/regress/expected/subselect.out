@@ -4050,3 +4050,212 @@ WHERE COALESCE(t1.id, -1) NOT IN
 (0 rows)
 
 ROLLBACK;
+-- ORDER BY and DISTINCT in an IN sublink are dropped: same plan as without them
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select distinct hundred from tenk2);
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Merge Join
+   Merge Cond: (t.unique1 = tenk2.hundred)
+   ->  Index Scan using tenk1_unique1 on tenk1 t
+   ->  Unique
+         ->  Index Only Scan using tenk2_hundred on tenk2
+(5 rows)
+
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select hundred from tenk2);
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Merge Join
+   Merge Cond: (t.unique1 = tenk2.hundred)
+   ->  Index Scan using tenk1_unique1 on tenk1 t
+   ->  Unique
+         ->  Index Only Scan using tenk2_hundred on tenk2
+(5 rows)
+
+explain (costs off)
+select * from tenk1 t
+where t.hundred in (select b.ten from tenk2 b where b.unique2 = t.unique1 order by b.ten);
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Hash Semi Join
+   Hash Cond: ((t.unique1 = b.unique2) AND (t.hundred = b.ten))
+   ->  Seq Scan on tenk1 t
+   ->  Hash
+         ->  Seq Scan on tenk2 b
+(5 rows)
+
+-- but kept with LIMIT, and for DISTINCT ON
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select distinct hundred from tenk2 limit 5);
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Nested Loop
+   ->  Limit
+         ->  Unique
+               ->  Index Only Scan using tenk2_hundred on tenk2
+   ->  Index Scan using tenk1_unique1 on tenk1 t
+         Index Cond: (unique1 = tenk2.hundred)
+(6 rows)
+
+explain (costs off)
+select * from tenk1 t
+where t.unique1 in (select distinct on (thousand) hundred from tenk2 order by thousand);
+                     QUERY PLAN                     
+----------------------------------------------------
+ Hash Join
+   Hash Cond: (t.unique1 = tenk2.hundred)
+   ->  Seq Scan on tenk1 t
+   ->  Hash
+         ->  HashAggregate
+               Group Key: tenk2.hundred
+               ->  Unique
+                     ->  Sort
+                           Sort Key: tenk2.thousand
+                           ->  Seq Scan on tenk2
+(10 rows)
+
+select count(*) from tenk1 t where t.unique1 in (select distinct hundred from tenk2);
+ count 
+-------
+   100
+(1 row)
+
+-- safe with aggregates and window functions (sub-select is not flattened)
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select distinct count(*) from tenk2 group by hundred);
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Hash Semi Join
+   Hash Cond: (t.unique1 = unnamed_subquery.count)
+   ->  Seq Scan on tenk1 t
+   ->  Hash
+         ->  Subquery Scan on unnamed_subquery
+               ->  GroupAggregate
+                     Group Key: tenk2.hundred
+                     ->  Index Only Scan using tenk2_hundred on tenk2
+(8 rows)
+
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select count(*) from tenk2 group by hundred);
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Hash Semi Join
+   Hash Cond: (t.unique1 = unnamed_subquery.count)
+   ->  Seq Scan on tenk1 t
+   ->  Hash
+         ->  Subquery Scan on unnamed_subquery
+               ->  GroupAggregate
+                     Group Key: tenk2.hundred
+                     ->  Index Only Scan using tenk2_hundred on tenk2
+(8 rows)
+
+select count(*) from tenk1 t where t.unique1 in (select distinct count(*) from tenk2 group by hundred);
+ count 
+-------
+     1
+(1 row)
+
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select distinct rank() over (order by hundred) from tenk2);
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (t.unique1 = (rank() OVER w1))
+   ->  Seq Scan on tenk1 t
+   ->  Hash
+         ->  HashAggregate
+               Group Key: rank() OVER w1
+               ->  WindowAgg
+                     Window: w1 AS (ORDER BY tenk2.hundred ROWS UNBOUNDED PRECEDING)
+                     ->  Index Only Scan using tenk2_hundred on tenk2
+(9 rows)
+
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select rank() over (order by hundred) from tenk2);
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (t.unique1 = (rank() OVER w1))
+   ->  Seq Scan on tenk1 t
+   ->  Hash
+         ->  HashAggregate
+               Group Key: rank() OVER w1
+               ->  WindowAgg
+                     Window: w1 AS (ORDER BY tenk2.hundred ROWS UNBOUNDED PRECEDING)
+                     ->  Index Only Scan using tenk2_hundred on tenk2
+(9 rows)
+
+select count(*) from tenk1 t where t.unique1 in (select distinct rank() over (order by hundred) from tenk2);
+ count 
+-------
+   100
+(1 row)
+
+-- correlated IN with DISTINCT: dropping it allows pull-up to a semi join
+explain (costs off)
+select * from tenk1 t
+where t.hundred in (select distinct b.ten from tenk2 b where b.unique2 = t.unique1);
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Hash Semi Join
+   Hash Cond: ((t.unique1 = b.unique2) AND (t.hundred = b.ten))
+   ->  Seq Scan on tenk1 t
+   ->  Hash
+         ->  Seq Scan on tenk2 b
+(5 rows)
+
+select count(*) from tenk1 t
+where t.hundred in (select distinct b.ten from tenk2 b where b.unique2 = t.unique1);
+ count 
+-------
+   107
+(1 row)
+
+-- NOT IN/anti join: clauses are kept (no JOIN_UNIQUE path to recover them)
+create temp table anti_o (a int not null);
+create temp table anti_i (k int not null);
+insert into anti_o select unique1 from tenk1;
+insert into anti_i select hundred from tenk2;
+analyze anti_o;
+analyze anti_i;
+explain (costs off) select * from anti_o where a not in (select distinct k from anti_i);
+              QUERY PLAN              
+--------------------------------------
+ Hash Anti Join
+   Hash Cond: (anti_o.a = anti_i.k)
+   ->  Seq Scan on anti_o
+   ->  Hash
+         ->  HashAggregate
+               Group Key: anti_i.k
+               ->  Seq Scan on anti_i
+(7 rows)
+
+explain (costs off) select * from anti_o where a not in (select k from anti_i);
+             QUERY PLAN             
+------------------------------------
+ Hash Anti Join
+   Hash Cond: (anti_o.a = anti_i.k)
+   ->  Seq Scan on anti_o
+   ->  Hash
+         ->  Seq Scan on anti_i
+(5 rows)
+
+explain (costs off) select * from anti_o where a not in (select k from anti_i order by k);
+              QUERY PLAN              
+--------------------------------------
+ Hash Anti Join
+   Hash Cond: (anti_o.a = anti_i.k)
+   ->  Seq Scan on anti_o
+   ->  Hash
+         ->  Sort
+               Sort Key: anti_i.k
+               ->  Seq Scan on anti_i
+(7 rows)
+
+select count(*) from anti_o where a not in (select distinct k from anti_i);
+ count 
+-------
+  9900
+(1 row)
+

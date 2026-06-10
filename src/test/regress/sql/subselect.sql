@@ -1778,3 +1778,52 @@ WHERE COALESCE(t1.id, -1) NOT IN
     (SELECT t1.val FROM not_null_tab t2 WHERE t2.val IS NOT NULL);
 
 ROLLBACK;
+
+-- ORDER BY and DISTINCT in an IN sublink are dropped: same plan as without them
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select distinct hundred from tenk2);
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select hundred from tenk2);
+explain (costs off)
+select * from tenk1 t
+where t.hundred in (select b.ten from tenk2 b where b.unique2 = t.unique1 order by b.ten);
+
+-- but kept with LIMIT, and for DISTINCT ON
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select distinct hundred from tenk2 limit 5);
+explain (costs off)
+select * from tenk1 t
+where t.unique1 in (select distinct on (thousand) hundred from tenk2 order by thousand);
+
+select count(*) from tenk1 t where t.unique1 in (select distinct hundred from tenk2);
+
+-- safe with aggregates and window functions (sub-select is not flattened)
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select distinct count(*) from tenk2 group by hundred);
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select count(*) from tenk2 group by hundred);
+select count(*) from tenk1 t where t.unique1 in (select distinct count(*) from tenk2 group by hundred);
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select distinct rank() over (order by hundred) from tenk2);
+explain (costs off)
+select * from tenk1 t where t.unique1 in (select rank() over (order by hundred) from tenk2);
+select count(*) from tenk1 t where t.unique1 in (select distinct rank() over (order by hundred) from tenk2);
+
+-- correlated IN with DISTINCT: dropping it allows pull-up to a semi join
+explain (costs off)
+select * from tenk1 t
+where t.hundred in (select distinct b.ten from tenk2 b where b.unique2 = t.unique1);
+select count(*) from tenk1 t
+where t.hundred in (select distinct b.ten from tenk2 b where b.unique2 = t.unique1);
+
+-- NOT IN/anti join: clauses are kept (no JOIN_UNIQUE path to recover them)
+create temp table anti_o (a int not null);
+create temp table anti_i (k int not null);
+insert into anti_o select unique1 from tenk1;
+insert into anti_i select hundred from tenk2;
+analyze anti_o;
+analyze anti_i;
+explain (costs off) select * from anti_o where a not in (select distinct k from anti_i);
+explain (costs off) select * from anti_o where a not in (select k from anti_i);
+explain (costs off) select * from anti_o where a not in (select k from anti_i order by k);
+select count(*) from anti_o where a not in (select distinct k from anti_i);
