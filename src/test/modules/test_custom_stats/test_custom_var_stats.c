@@ -18,6 +18,7 @@
 #include "storage/dsm_registry.h"
 #include "storage/fd.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
 #include "utils/pgstat_internal.h"
 
 PG_MODULE_MAGIC_EXT(
@@ -111,7 +112,27 @@ static void test_custom_stats_var_finish(PgStat_StatsFileOp status);
  *--------------------------------------------------------------------------
  */
 
-static const PgStat_KindInfo custom_stats = {
+/* Whether to use a dedicated dshash for this kind */
+static bool test_custom_stats_use_own_hash = false;
+
+static const PgStat_KindInfo custom_stats_own_hash = {
+	.name = "test_custom_var_stats",
+	.fixed_amount = false,		/* variable number of entries */
+	.write_to_file = true,		/* persist across restarts */
+	.track_entry_count = true,	/* count active entries */
+	.accessed_across_databases = true,	/* global statistics */
+	.own_hash = true,			/* use dedicated dshash */
+	.shared_size = sizeof(PgStatShared_CustomVarEntry),
+	.shared_data_off = offsetof(PgStatShared_CustomVarEntry, stats),
+	.shared_data_len = sizeof(((PgStatShared_CustomVarEntry *) 0)->stats),
+	.pending_size = sizeof(PgStat_StatCustomVarEntry),
+	.flush_pending_cb = test_custom_stats_var_flush_pending_cb,
+	.to_serialized_data = test_custom_stats_var_to_serialized_data,
+	.from_serialized_data = test_custom_stats_var_from_serialized_data,
+	.finish = test_custom_stats_var_finish,
+};
+
+static const PgStat_KindInfo custom_stats_shared_hash = {
 	.name = "test_custom_var_stats",
 	.fixed_amount = false,		/* variable number of entries */
 	.write_to_file = true,		/* persist across restarts */
@@ -135,8 +156,25 @@ static const PgStat_KindInfo custom_stats = {
 void
 _PG_init(void)
 {
-	/* Register custom statistics kind */
-	pgstat_register_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS, &custom_stats);
+	/*
+	 * test_custom_stats_use_own_hash = (on|off)
+	 *
+	 * Use the shared hash (default) or a dedicated hash for the
+	 * test_custom_var_stats kind.
+	 */
+	DefineCustomBoolVariable("test_custom_var_stats.use_own_hash",
+							 "Use dedicated dshash for test custom var stats",
+							 NULL,
+							 &test_custom_stats_use_own_hash,
+							 false,
+							 PGC_POSTMASTER,
+							 0,
+							 NULL, NULL, NULL);
+
+	/* Register with the appropriate kind info */
+	pgstat_register_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS,
+						 test_custom_stats_use_own_hash ?
+						 &custom_stats_own_hash : &custom_stats_shared_hash);
 }
 
 /*--------------------------------------------------------------------------
@@ -616,6 +654,19 @@ test_custom_stats_var_drop(PG_FUNCTION_ARGS)
 }
 
 /*
+ * test_custom_stats_var_reset
+ *		Reset all custom statistic entries
+ */
+PG_FUNCTION_INFO_V1(test_custom_stats_var_reset);
+Datum
+test_custom_stats_var_reset(PG_FUNCTION_ARGS)
+{
+	pgstat_reset_of_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS);
+
+	PG_RETURN_VOID();
+}
+
+/*
  * test_custom_stats_var_report
  *		Retrieve custom statistic values
  *
@@ -700,4 +751,29 @@ test_custom_stats_var_report(PG_FUNCTION_ARGS)
 	}
 
 	SRF_RETURN_DONE(funcctx);
+}
+
+/*
+ * test_custom_stats_var_is_own_hash
+ *		Verify whether the kind uses a dedicated dshash
+ *
+ * Scans pgStatLocal.all_hashes[] looking for the hash returned by
+ * pgstat_get_hash_for_kind().  Index 0 is always the shared hash,
+ * so finding it at a non-zero index confirms it has its own hash.
+ */
+PG_FUNCTION_INFO_V1(test_custom_stats_var_is_own_hash);
+Datum
+test_custom_stats_var_is_own_hash(PG_FUNCTION_ARGS)
+{
+	dshash_table *hash;
+
+	hash = pgstat_get_hash_for_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS);
+
+	for (int i = 0; i < pgStatLocal.num_hashes; i++)
+	{
+		if (pgStatLocal.all_hashes[i] == hash)
+			PG_RETURN_BOOL(i != 0);
+	}
+
+	PG_RETURN_BOOL(false);
 }
