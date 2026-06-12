@@ -39,12 +39,12 @@ static void fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc);
 /*
  * This macro specifies the maximum number of authentication options
  * that are possible with any given authentication method that is supported.
- * Currently LDAP supports 12, and there are 3 that are not dependent on
+ * Currently LDAP supports 14, and there are 3 that are not dependent on
  * the auth method here.  It may not actually be possible to set all of them
  * at the same time, but we'll set the macro value high enough to be
  * conservative and avoid warnings from static analysis tools.
  */
-#define MAX_HBA_OPTIONS 15
+#define MAX_HBA_OPTIONS 17
 
 /*
  * Create a text array listing the options specified in the HBA line.
@@ -90,6 +90,22 @@ get_hba_options(HbaLine *hba)
 		if (hba->ldapport)
 			options[noptions++] =
 				CStringGetTextDatum(psprintf("ldapport=%d", hba->ldapport));
+
+#ifdef WIN32
+		if (hba->ldapnetworktimeout != LDAP_NO_LIMIT)
+#else
+		if (hba->ldapnetworktimeout != -1)
+#endif
+			options[noptions++] =
+				CStringGetTextDatum(psprintf("ldapnetworktimeout=%d", hba->ldapnetworktimeout));
+
+#ifdef WIN32
+		if (hba->ldaptimeout != LDAP_NO_LIMIT)
+#else
+		if (hba->ldaptimeout != -1)
+#endif
+			options[noptions++] =
+				CStringGetTextDatum(psprintf("ldaptimeout=%d", hba->ldaptimeout));
 
 		if (hba->ldapscheme)
 			options[noptions++] =

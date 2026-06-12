@@ -113,6 +113,8 @@ typedef struct HbaLine
 	char	   *ldapscheme;
 	char	   *ldapserver;
 	int			ldapport;
+	int			ldapnetworktimeout;
+	int			ldaptimeout;
 	char	   *ldapbinddn;
 	char	   *ldapbindpasswd;
 	char	   *ldapsearchattribute;
