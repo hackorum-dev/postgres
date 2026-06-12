@@ -1841,6 +1841,45 @@ omicron         bryanh                  guest1
        </para>
       </listitem>
      </varlistentry>
+     <varlistentry>
+      <term><literal>ldapnetworktimeout</literal></term>
+      <listitem>
+       <para>
+        Maximum time in seconds to wait for a response from the LDAP
+        server when establishing a connection or waiting for data on an
+        existing connection.  A value of 0 disables the timeout.
+        If not specified, the behavior depends on the LDAP client library
+        configuration (typically no timeout, meaning authentication can
+        hang indefinitely if the LDAP server is unreachable).
+       </para>
+       <para>
+        Note that on Linux, this option interacts with the
+        <xref linkend="guc-tcp-user-timeout"/> parameter, which provides
+        an additional TCP-level timeout.
+       </para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>ldaptimeout</literal></term>
+     <listitem>
+      <para>
+       Maximum time in seconds to wait for the completion of a
+       synchronous LDAP operation, such as a search or bind request.
+       A value of 0 disables the timeout.  If not specified, the
+       behavior depends on the LDAP client library configuration
+       (typically no timeout).
+      </para>
+      <para>
+       Note that <literal>ldapnetworktimeout</literal> and
+       <literal>ldaptimeout</literal> control different aspects of
+       timeouts: <literal>ldapnetworktimeout</literal> applies to
+       individual network I/O operations, while
+       <literal>ldaptimeout</literal> applies to the overall duration of
+       an LDAP operation.
+      </para>
+     </listitem>
+    </varlistentry>
     </variablelist>
    </para>
 
