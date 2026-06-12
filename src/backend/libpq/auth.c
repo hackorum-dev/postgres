@@ -2267,6 +2267,15 @@ InitializeLDAPConnection(Port *port, LDAP **ldap)
 	int			ldapversion = LDAP_VERSION3;
 	int			r;
 
+#ifdef LDAP_OPT_TCP_USER_TIMEOUT
+	int				tcp_usr_timeout;
+#endif
+#ifdef WIN32
+	ULONG			option;
+#else
+	struct timeval	tv;
+#endif
+
 	scheme = port->hba->ldapscheme;
 	if (scheme == NULL)
 		scheme = "ldap";
@@ -2408,9 +2417,57 @@ InitializeLDAPConnection(Port *port, LDAP **ldap)
 				(errmsg("could not set LDAP protocol version: %s",
 						ldap_err2string(r)),
 				 errdetail_for_ldap(*ldap)));
-		ldap_unbind(*ldap);
-		return STATUS_ERROR;
+		goto error_cleanup;
 	}
+
+#ifdef WIN32
+	option = (ULONG) port->hba->ldapnetworktimeout;
+	if (port->hba->ldapnetworktimeout != LDAP_NO_LIMIT
+		&& (r = ldap_set_option(*ldap, LDAP_OPT_SEND_TIMEOUT, &option)) != LDAP_SUCCESS)
+#else
+	tv.tv_sec = port->hba->ldapnetworktimeout;
+	tv.tv_usec = 0;
+	if (port->hba->ldapnetworktimeout != -1
+		&& (r = ldap_set_option(*ldap, LDAP_OPT_NETWORK_TIMEOUT, &tv)) != LDAP_SUCCESS)
+#endif
+	{
+		ereport(LOG,
+				(errmsg("could not set LDAP network timeout: %s",
+						ldap_err2string(r)),
+				 errdetail_for_ldap(*ldap)));
+		goto error_cleanup;
+	}
+
+#ifdef WIN32
+	option = (ULONG) port->hba->ldaptimeout;
+	if (port->hba->ldaptimeout != LDAP_NO_LIMIT
+		&& (r = ldap_set_option(*ldap, LDAP_OPT_TIMELIMIT, &option)) != LDAP_SUCCESS)
+#else
+	tv.tv_sec = port->hba->ldaptimeout;
+	tv.tv_usec = 0;
+	if (port->hba->ldaptimeout != -1
+		&& (r = ldap_set_option(*ldap, LDAP_OPT_TIMEOUT, &tv)) != LDAP_SUCCESS)
+#endif
+	{
+		ereport(LOG,
+				(errmsg("could not set LDAP timeout: %s",
+						ldap_err2string(r)),
+				 errdetail_for_ldap(*ldap)));
+		goto error_cleanup;
+	}
+
+#ifdef LDAP_OPT_TCP_USER_TIMEOUT
+	tcp_usr_timeout = pq_gettcpusertimeout(port);
+	if (tcp_usr_timeout > 0
+		&& (r = ldap_set_option(*ldap, LDAP_OPT_TCP_USER_TIMEOUT, &tcp_usr_timeout)) != LDAP_SUCCESS)
+	{
+		ereport(LOG,
+				(errmsg("could not set LDAP tcp user timeout: %s",
+						ldap_err2string(r)),
+				 errdetail_for_ldap(*ldap)));
+		goto error_cleanup;
+	}
+#endif
 
 	if (port->hba->ldaptls)
 	{
@@ -2424,12 +2481,15 @@ InitializeLDAPConnection(Port *port, LDAP **ldap)
 					(errmsg("could not start LDAP TLS session: %s",
 							ldap_err2string(r)),
 					 errdetail_for_ldap(*ldap)));
-			ldap_unbind(*ldap);
-			return STATUS_ERROR;
+			goto error_cleanup;
 		}
 	}
 
 	return STATUS_OK;
+
+error_cleanup:
+	ldap_unbind(*ldap);
+	return STATUS_ERROR;
 }
 
 /* Placeholders recognized by FormatSearchFilter.  For now just one. */
