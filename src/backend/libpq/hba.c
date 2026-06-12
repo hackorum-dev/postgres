@@ -1343,6 +1343,14 @@ parse_hba_line(TokenizedAuthLine *tok_line, int elevel)
 	parsedline->linenumber = line_num;
 	parsedline->rawline = pstrdup(tok_line->raw_line);
 
+#ifndef WIN32
+	parsedline->ldapnetworktimeout = -1;
+	parsedline->ldaptimeout = -1;
+#else
+	parsedline->ldapnetworktimeout = LDAP_NO_LIMIT;
+	parsedline->ldaptimeout = LDAP_NO_LIMIT;
+#endif
+
 	/* Check the record type. */
 	Assert(tok_line->fields != NIL);
 	field = list_head(tok_line->fields);
@@ -2002,6 +2010,8 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 {
 	int			line_num = hbaline->linenumber;
 	char	   *file_name = hbaline->sourcefile;
+	char	   *endp;
+	long		long_val;
 
 #ifdef USE_LDAP
 	hbaline->ldapscope = LDAP_SCOPE_SUBTREE;
@@ -2195,6 +2205,38 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 			*err_msg = psprintf("invalid LDAP port number: \"%s\"", val);
 			return false;
 		}
+	}
+	else if (strcmp(name, "ldapnetworktimeout") == 0)
+	{
+		REQUIRE_AUTH_OPTION(uaLDAP, "ldapnetworktimeout", "ldap");
+		long_val = strtol(val, &endp, 10);
+		if (endp == val || long_val > INT_MAX || long_val < 0)
+		{
+			ereport(elevel,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("invalid LDAP network timeout number: \"%s\"", val),
+					 errcontext("line %d of configuration file \"%s\"",
+								line_num, file_name)));
+			*err_msg = psprintf("invalid LDAP network timeout number: \"%s\"", val);
+			return false;
+		}
+		hbaline->ldapnetworktimeout = (int) long_val;
+	}
+	else if (strcmp(name, "ldaptimeout") == 0)
+	{
+		REQUIRE_AUTH_OPTION(uaLDAP, "ldaptimeout", "ldap");
+		long_val = strtol(val, &endp, 10);
+		if (endp == val || long_val > INT_MAX || long_val < 0)
+		{
+			ereport(elevel,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("invalid LDAP timeout number: \"%s\"", val),
+					 errcontext("line %d of configuration file \"%s\"",
+								line_num, file_name)));
+			*err_msg = psprintf("invalid LDAP timeout number: \"%s\"", val);
+			return false;
+		}
+		hbaline->ldaptimeout = (int) long_val;
 	}
 	else if (strcmp(name, "ldapbinddn") == 0)
 	{
