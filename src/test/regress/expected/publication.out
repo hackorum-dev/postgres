@@ -2117,52 +2117,52 @@ CREATE TABLE sch2.tbl1_part1 PARTITION OF sch1.tbl1 FOR VALUES FROM (1) to (10);
 -- Schema publication that does not include the schema that has the parent table
 CREATE PUBLICATION pub FOR TABLES IN SCHEMA sch2 WITH (PUBLISH_VIA_PARTITION_ROOT=1);
 SELECT * FROM pg_publication_tables;
- pubname | schemaname | tablename  | attnames | rowfilter 
----------+------------+------------+----------+-----------
- pub     | sch2       | tbl1_part1 | {a}      | 
+ pubname | schemaname | tablename  | attnames | rowfilter | replident | replidentidx 
+---------+------------+------------+----------+-----------+-----------+--------------
+ pub     | sch2       | tbl1_part1 | {a}      |           | d         |             
 (1 row)
 
 DROP PUBLICATION pub;
 -- Table publication that does not include the parent table
 CREATE PUBLICATION pub FOR TABLE sch2.tbl1_part1 WITH (PUBLISH_VIA_PARTITION_ROOT=1);
 SELECT * FROM pg_publication_tables;
- pubname | schemaname | tablename  | attnames | rowfilter 
----------+------------+------------+----------+-----------
- pub     | sch2       | tbl1_part1 | {a}      | 
+ pubname | schemaname | tablename  | attnames | rowfilter | replident | replidentidx 
+---------+------------+------------+----------+-----------+-----------+--------------
+ pub     | sch2       | tbl1_part1 | {a}      |           | d         |             
 (1 row)
 
 -- Table publication that includes both the parent table and the child table
 ALTER PUBLICATION pub ADD TABLE sch1.tbl1;
 SELECT * FROM pg_publication_tables;
- pubname | schemaname | tablename | attnames | rowfilter 
----------+------------+-----------+----------+-----------
- pub     | sch1       | tbl1      | {a}      | 
+ pubname | schemaname | tablename | attnames | rowfilter | replident | replidentidx 
+---------+------------+-----------+----------+-----------+-----------+--------------
+ pub     | sch1       | tbl1      | {a}      |           | d         |             
 (1 row)
 
 DROP PUBLICATION pub;
 -- Schema publication that does not include the schema that has the parent table
 CREATE PUBLICATION pub FOR TABLES IN SCHEMA sch2 WITH (PUBLISH_VIA_PARTITION_ROOT=0);
 SELECT * FROM pg_publication_tables;
- pubname | schemaname | tablename  | attnames | rowfilter 
----------+------------+------------+----------+-----------
- pub     | sch2       | tbl1_part1 | {a}      | 
+ pubname | schemaname | tablename  | attnames | rowfilter | replident | replidentidx 
+---------+------------+------------+----------+-----------+-----------+--------------
+ pub     | sch2       | tbl1_part1 | {a}      |           | d         |             
 (1 row)
 
 DROP PUBLICATION pub;
 -- Table publication that does not include the parent table
 CREATE PUBLICATION pub FOR TABLE sch2.tbl1_part1 WITH (PUBLISH_VIA_PARTITION_ROOT=0);
 SELECT * FROM pg_publication_tables;
- pubname | schemaname | tablename  | attnames | rowfilter 
----------+------------+------------+----------+-----------
- pub     | sch2       | tbl1_part1 | {a}      | 
+ pubname | schemaname | tablename  | attnames | rowfilter | replident | replidentidx 
+---------+------------+------------+----------+-----------+-----------+--------------
+ pub     | sch2       | tbl1_part1 | {a}      |           | d         |             
 (1 row)
 
 -- Table publication that includes both the parent table and the child table
 ALTER PUBLICATION pub ADD TABLE sch1.tbl1;
 SELECT * FROM pg_publication_tables;
- pubname | schemaname | tablename  | attnames | rowfilter 
----------+------------+------------+----------+-----------
- pub     | sch2       | tbl1_part1 | {a}      | 
+ pubname | schemaname | tablename  | attnames | rowfilter | replident | replidentidx 
+---------+------------+------------+----------+-----------+-----------+--------------
+ pub     | sch2       | tbl1_part1 | {a}      |           | d         |             
 (1 row)
 
 DROP PUBLICATION pub;
@@ -2175,9 +2175,9 @@ CREATE TABLE sch1.tbl1_part3 (a int) PARTITION BY RANGE(a);
 ALTER TABLE sch1.tbl1 ATTACH PARTITION sch1.tbl1_part3 FOR VALUES FROM (20) to (30);
 CREATE PUBLICATION pub FOR TABLES IN SCHEMA sch1 WITH (PUBLISH_VIA_PARTITION_ROOT=1);
 SELECT * FROM pg_publication_tables;
- pubname | schemaname | tablename | attnames | rowfilter 
----------+------------+-----------+----------+-----------
- pub     | sch1       | tbl1      | {a}      | 
+ pubname | schemaname | tablename | attnames | rowfilter | replident | replidentidx 
+---------+------------+-----------+----------+-----------+-----------+--------------
+ pub     | sch1       | tbl1      | {a}      |           | d         |             
 (1 row)
 
 RESET client_min_messages;
@@ -2543,6 +2543,38 @@ DROP VIEW gpt_test_view;
 DROP TABLE tbl_normal, tbl_parent, tbl_part1;
 DROP SCHEMA gpt_test_sch CASCADE;
 NOTICE:  drop cascades to table gpt_test_sch.tbl_sch
+-- ======================================================
+-- Test replica identity in pg_publication_tables view
+-- ======================================================
+CREATE TABLE testpub_replident_d (a int PRIMARY KEY, b int);
+CREATE TABLE testpub_replident_f (a int, b int);
+ALTER TABLE testpub_replident_f REPLICA IDENTITY FULL;
+CREATE TABLE testpub_replident_i (a int not null, b int);
+CREATE UNIQUE INDEX testpub_replident_i_idx ON testpub_replident_i (a);
+ALTER TABLE testpub_replident_i REPLICA IDENTITY USING INDEX testpub_replident_i_idx;
+CREATE TABLE testpub_replident_n (a int, b int);
+ALTER TABLE testpub_replident_n REPLICA IDENTITY NOTHING;
+CREATE PUBLICATION testpub_replident FOR TABLE 
+    testpub_replident_d, 
+    testpub_replident_f, 
+    testpub_replident_i, 
+    testpub_replident_n;
+-- Check that replident and replidentidx are populated correctly
+SELECT tablename, replident, replidentidx::regclass 
+FROM pg_publication_tables 
+WHERE pubname = 'testpub_replident' 
+ORDER BY tablename;
+      tablename      | replident |       replidentidx       
+---------------------+-----------+--------------------------
+ testpub_replident_d | d         | testpub_replident_d_pkey
+ testpub_replident_f | f         | 
+ testpub_replident_i | i         | testpub_replident_i_idx
+ testpub_replident_n | n         | 
+(4 rows)
+
+-- Clean up
+DROP PUBLICATION testpub_replident;
+DROP TABLE testpub_replident_d, testpub_replident_f, testpub_replident_i, testpub_replident_n;
 -- stage objects for pg_dump tests
 CREATE SCHEMA pubme CREATE TABLE t0 (c int, d int) CREATE TABLE t1 (c int);
 CREATE SCHEMA pubme2 CREATE TABLE t0 (c int, d int);
