@@ -1552,6 +1552,37 @@ DROP VIEW gpt_test_view;
 DROP TABLE tbl_normal, tbl_parent, tbl_part1;
 DROP SCHEMA gpt_test_sch CASCADE;
 
+-- ======================================================
+-- Test replica identity in pg_publication_tables view
+-- ======================================================
+CREATE TABLE testpub_replident_d (a int PRIMARY KEY, b int);
+
+CREATE TABLE testpub_replident_f (a int, b int);
+ALTER TABLE testpub_replident_f REPLICA IDENTITY FULL;
+
+CREATE TABLE testpub_replident_i (a int not null, b int);
+CREATE UNIQUE INDEX testpub_replident_i_idx ON testpub_replident_i (a);
+ALTER TABLE testpub_replident_i REPLICA IDENTITY USING INDEX testpub_replident_i_idx;
+
+CREATE TABLE testpub_replident_n (a int, b int);
+ALTER TABLE testpub_replident_n REPLICA IDENTITY NOTHING;
+
+CREATE PUBLICATION testpub_replident FOR TABLE 
+    testpub_replident_d, 
+    testpub_replident_f, 
+    testpub_replident_i, 
+    testpub_replident_n;
+
+-- Check that replident and replidentidx are populated correctly
+SELECT tablename, replident, replidentidx::regclass 
+FROM pg_publication_tables 
+WHERE pubname = 'testpub_replident' 
+ORDER BY tablename;
+
+-- Clean up
+DROP PUBLICATION testpub_replident;
+DROP TABLE testpub_replident_d, testpub_replident_f, testpub_replident_i, testpub_replident_n;
+
 -- stage objects for pg_dump tests
 CREATE SCHEMA pubme CREATE TABLE t0 (c int, d int) CREATE TABLE t1 (c int);
 CREATE SCHEMA pubme2 CREATE TABLE t0 (c int, d int);
