@@ -420,7 +420,18 @@ CREATE VIEW pg_publication_tables AS
           WHERE a.attrelid = GPT.relid AND
                 a.attnum = ANY(GPT.attrs)
         ) AS attnames,
-        pg_get_expr(GPT.qual, GPT.relid) AS rowfilter
+        pg_get_expr(GPT.qual, GPT.relid) AS rowfilter,
+        C.relreplident AS replident,
+        (CASE
+            WHEN C.relreplident = 'd' THEN
+                (SELECT indexrelid FROM pg_index i
+                 WHERE i.indrelid = C.oid AND i.indisprimary AND i.indisvalid AND i.indimmediate)
+            WHEN C.relreplident = 'i' THEN
+                (SELECT indexrelid FROM pg_index i
+                 WHERE i.indrelid = C.oid AND i.indisreplident AND i.indisvalid AND i.indimmediate
+                       AND i.indisunique AND i.indpred IS NULL)
+            ELSE NULL::oid
+        END) AS replidentidx
     FROM pg_publication P,
          LATERAL pg_get_publication_tables(P.pubname) GPT,
          pg_class C JOIN pg_namespace N ON (N.oid = C.relnamespace)
