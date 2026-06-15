@@ -144,7 +144,7 @@ sub get_test_table_contents
 	my ($node, $filename) = @_;
 
 	my $contents = $node->safe_psql('postgres',
-		"SELECT ctid, xmin, xmax, * FROM mxofftest");
+		"SELECT id, n_updated, * FROM mxofftest");
 
 	my $path = $tempdir . '/' . $filename;
 	open(my $fh, '>', $path)
