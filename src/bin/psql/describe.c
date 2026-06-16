@@ -3036,7 +3036,29 @@ describeOneTableDetails(const char *schemaname,
 							  "FROM pg_catalog.pg_publication p\n"
 							  "     JOIN pg_catalog.pg_publication_namespace pn ON p.oid = pn.pnpubid\n"
 							  "     JOIN pg_catalog.pg_class pc ON pc.relnamespace = pn.pnnspid\n"
-							  "WHERE pc.oid ='%s' and pg_catalog.pg_relation_is_publishable('%s')\n"
+							  "WHERE pc.oid ='%s' and pg_catalog.pg_relation_is_publishable('%s')\n",
+							  oid, oid);
+
+			if (pset.sversion >= 200000)
+			{
+				/*
+				 * Publishing the schema does not publish a table named in the
+				 * publication's EXCEPT clause, nor a partition whose root is
+				 * named there, since excluding a root excludes the whole
+				 * partition tree.  Unlike the FOR ALL TABLES case below, a
+				 * schema publication can have both kinds of
+				 * pg_publication_rel row, so prexcept has to be tested.
+				 */
+				appendPQExpBuffer(&buf,
+								  "     AND NOT EXISTS (\n"
+								  "     SELECT 1\n"
+								  "     FROM pg_catalog.pg_publication_rel pr\n"
+								  "     WHERE pr.prpubid = p.oid AND pr.prexcept AND\n"
+								  "     (pr.prrelid = '%s' OR pr.prrelid = pg_catalog.pg_partition_root('%s')))\n",
+								  oid, oid);
+			}
+
+			appendPQExpBuffer(&buf,
 							  "UNION\n"
 							  "SELECT pubname\n"
 							  "     , pg_catalog.pg_get_expr(pr.prqual, c.oid)\n"
@@ -3060,7 +3082,7 @@ describeOneTableDetails(const char *schemaname,
 							  "     FROM pg_catalog.pg_publication_namespace pn\n"
 							  "     WHERE pn.pnpubid = p.oid\n"
 							  "       AND pn.pnnspid = c.relnamespace)\n",
-							  oid, oid, oid);
+							  oid);
 
 			if (pset.sversion >= 190000)
 			{
@@ -6839,6 +6861,24 @@ describePublications(const char *pattern)
 				if (!addFooterToPublicationDesc(&buf, _("Tables from schemas:"),
 												true, &cont))
 					goto error_return;
+
+				if (pset.sversion >= 200000)
+				{
+					/*
+					 * Get tables in the EXCEPT clause for this schema
+					 * publication.
+					 */
+					printfPQExpBuffer(&buf,
+									  "SELECT concat(c.relnamespace::regnamespace, '.', c.relname)\n"
+									  "FROM pg_catalog.pg_class c\n"
+									  "     JOIN pg_catalog.pg_publication_rel pr ON c.oid = pr.prrelid\n"
+									  "WHERE pr.prpubid = '%s'\n"
+									  "  AND pr.prexcept\n"
+									  "ORDER BY 1", pubid);
+					if (!addFooterToPublicationDesc(&buf, _("Except tables:"),
+													true, &cont))
+						goto error_return;
+				}
 			}
 		}
 		else
