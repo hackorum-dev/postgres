@@ -2280,10 +2280,36 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 					}
 				}
 
-				if (list_member_oid(pubids, pub->oid) ||
-					list_member_oid(schemaPubids, pub->oid) ||
-					ancestor_published)
+				if (list_member_oid(pubids, pub->oid) || ancestor_published)
 					publish = true;
+				else if (list_member_oid(schemaPubids, pub->oid))
+				{
+					Oid			root_relid;
+					bool		root_is_except = false;
+
+					/*
+					 * schemaPubids is the list of publications that include
+					 * relid's own schema, independent of the ancestor walk
+					 * above -- a partition can live in a different schema
+					 * than its root.  Still need to check for exclusion here,
+					 * using the top-most ancestor since only a root
+					 * (non-partition) table can appear in an EXCEPT clause.
+					 */
+					if (am_partition)
+					{
+						List	   *ancestors = get_partition_ancestors(relid);
+
+						root_relid = llast_oid(ancestors);
+						list_free(ancestors);
+					}
+					else
+						root_relid = relid;
+
+					CheckPublicationRelEntry(pub->oid, root_relid, &root_is_except);
+
+					if (!root_is_except)
+						publish = true;
+				}
 			}
 
 			/*
