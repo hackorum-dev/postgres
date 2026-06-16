@@ -149,6 +149,8 @@ ReplicationSlotCtlData *ReplicationSlotCtl = NULL;
 static void ReplicationSlotsShmemRequest(void *arg);
 static void ReplicationSlotsShmemInit(void *arg);
 
+int ReplicationSlotAcquireXactLevel = -1;
+
 const ShmemCallbacks ReplicationSlotsShmemCallbacks = {
 	.request_fn = ReplicationSlotsShmemRequest,
 	.init_fn = ReplicationSlotsShmemInit,
@@ -362,6 +364,22 @@ IsSlotForConflictCheck(const char *name)
 	return (strcmp(name, CONFLICT_DETECTION_SLOT) == 0);
 }
 
+void
+AtEOSubXact_ReplicationSlot(int nestLevel)
+{
+	/*
+	 * Nothing to do unless the aborting subxact is at or outside their* level
+	 * where we acquired/created the slot.
+	 */
+	if (nestLevel > ReplicationSlotAcquireXactLevel)
+		return;
+
+	if (MyReplicationSlot)
+		ReplicationSlotRelease();
+
+	/* XXX need to call ReplicationSlotCleanup() as well? */
+}
+
 /*
  * Create a new replication slot and mark it as used by this backend.
  *
@@ -517,6 +535,7 @@ ReplicationSlotCreate(const char *name, bool db_specific,
 	slot->active_proc = MyProcNumber;
 	SpinLockRelease(&slot->mutex);
 	MyReplicationSlot = slot;
+	ReplicationSlotAcquireXactLevel = GetCurrentTransactionNestLevel();
 
 	LWLockRelease(ReplicationSlotControlLock);
 
@@ -722,6 +741,7 @@ retry:
 
 	/* We made this slot active, so it's ours now. */
 	MyReplicationSlot = s;
+	ReplicationSlotAcquireXactLevel = GetCurrentTransactionNestLevel();
 
 	/*
 	 * We need to check for invalidation after making the slot ours to avoid
@@ -846,6 +866,8 @@ ReplicationSlotRelease(void)
 
 		pfree(slotname);
 	}
+
+	ReplicationSlotAcquireXactLevel = -1;
 }
 
 /*
@@ -1040,6 +1062,7 @@ ReplicationSlotDropAcquired(bool try_disable)
 
 	/* slot isn't acquired anymore */
 	MyReplicationSlot = NULL;
+	ReplicationSlotAcquireXactLevel = -1;
 
 	ReplicationSlotDropPtr(slot);
 

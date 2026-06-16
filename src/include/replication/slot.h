@@ -328,6 +328,10 @@ extern PGDLLIMPORT int max_repack_replication_slots;
 extern PGDLLIMPORT char *synchronized_standby_slots;
 extern PGDLLIMPORT int idle_replication_slot_timeout_secs;
 
+extern int ReplicationSlotAcquireXactLevel;
+extern void AtEOSubXact_ReplicationSlot(int nestLevel);
+
+
 /* management of individual slots */
 extern void ReplicationSlotCreate(const char *name, bool db_specific,
 								  ReplicationSlotPersistency persistency,

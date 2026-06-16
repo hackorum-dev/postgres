@@ -5367,6 +5367,8 @@ AbortSubTransaction(void)
 	AtEOSubXact_Parallel(false, s->subTransactionId);
 	s->parallelModeLevel = 0;
 
+	AtEOSubXact_ReplicationSlot(s->nestingLevel);
+
 	/*
 	 * We can skip all this stuff if the subxact failed before creating a
 	 * ResourceOwner...
