@@ -323,7 +323,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
      <row>
       <entry><structname>pg_stat_replication</structname><indexterm><primary>pg_stat_replication</primary></indexterm></entry>
       <entry>One row per WAL sender process, showing statistics about
-       replication to that sender's connected standby server.
+       replication to that sender's directly connected client.
        See <link linkend="monitoring-pg-stat-replication-view">
        <structname>pg_stat_replication</structname></link> for details.
       </entry>
@@ -1373,11 +1373,30 @@ description | Waiting for a newly initialized WAL file to reach durable storage
    <primary>pg_stat_replication</primary>
   </indexterm>
 
-   <para>
+  <para>
    The <structname>pg_stat_replication</structname> view will contain one row
    per WAL sender process, showing statistics about replication to that
-   sender's connected standby server.  Only directly connected standbys are
-   listed; no information is available about downstream standby servers.
+   sender's directly connected client.  For physical replication, the client
+   is a standby server.  For logical replication, the client is a logical
+   replication client, such as a subscriber apply worker.  No information is
+   available about downstream replication nodes.
+  </para>
+  <para>
+   For physical replication, the LSN columns in this view describe the
+   positions up to which WAL has been sent, written, flushed, and replayed
+   on the connected standby server.
+  </para>
+  <para>
+   For logical replication, <structfield>sent_lsn</structfield> reflects the
+   LSN up to which the walsender has processed WAL records.  Such records may
+   already have been streamed to the subscriber, queued for streaming at
+   transaction commit, or skipped because they were not eligible for logical
+   decoding.
+   <structfield>write_lsn</structfield>, <structfield>flush_lsn</structfield>,
+   and <structfield>replay_lsn</structfield> reflect progress reported by the
+   subscriber through replication status messages, and do not necessarily
+   mean that logical changes up to those LSNs have already been
+   received, durably stored, or made visible on the subscriber.
   </para>
 
   <table id="pg-stat-replication-view" xreflabel="pg_stat_replication">
@@ -1532,7 +1551,9 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        <structfield>sent_lsn</structfield> <type>pg_lsn</type>
       </para>
       <para>
-       Last write-ahead log location sent on this connection
+       For physical replication, the last write-ahead log location sent on
+       this connection.  For logical replication, the last write-ahead log
+       location processed by this walsender.
       </para></entry>
      </row>
 
@@ -1541,8 +1562,9 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        <structfield>write_lsn</structfield> <type>pg_lsn</type>
       </para>
       <para>
-       Last write-ahead log location written to disk by this standby
-       server
+       For physical replication, the last write-ahead log location written
+       to disk by this standby server.  For logical replication, progress is
+       reported by replication status messages received from the subscriber.
       </para></entry>
      </row>
 
@@ -1551,8 +1573,9 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        <structfield>flush_lsn</structfield> <type>pg_lsn</type>
       </para>
       <para>
-       Last write-ahead log location flushed to disk by this standby
-       server
+       For physical replication, the last write-ahead log location flushed
+       to disk by this standby server.  For logical replication, progress is
+       reported by replication status messages received from the subscriber.
       </para></entry>
      </row>
 
@@ -1561,8 +1584,10 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        <structfield>replay_lsn</structfield> <type>pg_lsn</type>
       </para>
       <para>
-       Last write-ahead log location replayed into the database on this
-       standby server
+       For physical replication, the last write-ahead log location replayed
+       into the database on this standby server.  For logical replication,
+       progress is reported by replication status messages received from the
+       subscriber.
       </para></entry>
      </row>
 
