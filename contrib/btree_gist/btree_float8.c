@@ -30,27 +30,27 @@ PG_FUNCTION_INFO_V1(gbt_float8_sortsupport);
 static bool
 gbt_float8gt(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float8 *) a) > *((const float8 *) b));
+	return float8_cmp_internal(*((const float8 *) a), *((const float8 *) b)) > 0;
 }
 static bool
 gbt_float8ge(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float8 *) a) >= *((const float8 *) b));
+	return float8_cmp_internal(*((const float8 *) a), *((const float8 *) b)) >= 0;
 }
 static bool
 gbt_float8eq(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float8 *) a) == *((const float8 *) b));
+	return float8_cmp_internal(*((const float8 *) a), *((const float8 *) b)) == 0;
 }
 static bool
 gbt_float8le(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float8 *) a) <= *((const float8 *) b));
+	return float8_cmp_internal(*((const float8 *) a), *((const float8 *) b)) <= 0;
 }
 static bool
 gbt_float8lt(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float8 *) a) < *((const float8 *) b));
+	return float8_cmp_internal(*((const float8 *) a), *((const float8 *) b)) < 0;
 }
 
 static int
@@ -58,16 +58,13 @@ gbt_float8key_cmp(const void *a, const void *b, FmgrInfo *flinfo)
 {
 	float8KEY  *ia = (float8KEY *) (((const Nsrt *) a)->t);
 	float8KEY  *ib = (float8KEY *) (((const Nsrt *) b)->t);
+	int			res;
 
-	if (ia->lower == ib->lower)
-	{
-		if (ia->upper == ib->upper)
-			return 0;
+	res = float8_cmp_internal(ia->lower, ib->lower);
+	if (res == 0)
+		return float8_cmp_internal(ia->upper, ib->upper);
 
-		return (ia->upper > ib->upper) ? 1 : -1;
-	}
-
-	return (ia->lower > ib->lower) ? 1 : -1;
+	return res;
 }
 
 static float8

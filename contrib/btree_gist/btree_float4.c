@@ -29,27 +29,27 @@ PG_FUNCTION_INFO_V1(gbt_float4_sortsupport);
 static bool
 gbt_float4gt(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float4 *) a) > *((const float4 *) b));
+	return float4_cmp_internal(*((const float4 *) a), *((const float4 *) b)) > 0;
 }
 static bool
 gbt_float4ge(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float4 *) a) >= *((const float4 *) b));
+	return float4_cmp_internal(*((const float4 *) a), *((const float4 *) b)) >= 0;
 }
 static bool
 gbt_float4eq(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float4 *) a) == *((const float4 *) b));
+	return float4_cmp_internal(*((const float4 *) a), *((const float4 *) b)) == 0;
 }
 static bool
 gbt_float4le(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float4 *) a) <= *((const float4 *) b));
+	return float4_cmp_internal(*((const float4 *) a), *((const float4 *) b)) <= 0;
 }
 static bool
 gbt_float4lt(const void *a, const void *b, FmgrInfo *flinfo)
 {
-	return (*((const float4 *) a) < *((const float4 *) b));
+	return float4_cmp_internal(*((const float4 *) a), *((const float4 *) b)) < 0;
 }
 
 static int
@@ -57,16 +57,13 @@ gbt_float4key_cmp(const void *a, const void *b, FmgrInfo *flinfo)
 {
 	float4KEY  *ia = (float4KEY *) (((const Nsrt *) a)->t);
 	float4KEY  *ib = (float4KEY *) (((const Nsrt *) b)->t);
+	int			res;
 
-	if (ia->lower == ib->lower)
-	{
-		if (ia->upper == ib->upper)
-			return 0;
+	res = float4_cmp_internal(ia->lower, ib->lower);
+	if (res == 0)
+		return float4_cmp_internal(ia->upper, ib->upper);
 
-		return (ia->upper > ib->upper) ? 1 : -1;
-	}
-
-	return (ia->lower > ib->lower) ? 1 : -1;
+	return res;
 }
 
 static float8
