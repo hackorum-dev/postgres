@@ -25,9 +25,12 @@ my $sub = PostgreSQL::Test::Cluster->new('subscriber');
 $sub->init;
 $sub->start;
 
-# part_table_sect_1 stores 'first' and has REPLICA IDENTITY FULL.
-# part_table_sect_2 stores 'second' and uses its default replica identity, the
-# primary key (id, ts).
+# We pick a root identity that both leaves cover, as required under
+# publish_via_partition_root: the root uses its default identity, the primary
+# key on (id, ts).  part_table_sect_1 stores 'first' and has the stronger
+# REPLICA IDENTITY FULL, so its old tuples must be tagged 'O'.
+# part_table_sect_2 stores 'second' and keeps the default identity (the same
+# primary key), so its old tuples must be tagged 'K'.
 $pub->safe_psql(
 	'postgres', q{
 create table part_table(
@@ -42,7 +45,6 @@ create table part_table_sect_1 partition of part_table
 create table part_table_sect_2 partition of part_table
   for values from ('2024-01-01') to (maxvalue);
 
-alter table part_table        replica identity full;
 alter table part_table_sect_1 replica identity full;
 
 create publication pub_part_table

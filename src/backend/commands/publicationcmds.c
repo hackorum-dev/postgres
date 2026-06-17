@@ -14,7 +14,9 @@
 
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/htup_details.h"
+#include "access/relation.h"
 #include "access/table.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
@@ -24,6 +26,7 @@
 #include "catalog/objectaddress.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_inherits.h"
+#include "catalog/partition.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_publication.h"
@@ -951,6 +954,43 @@ CreatePublication(ParseState *pstate, CreatePublicationStmt *stmt)
 		}
 
 		/*
+		 * For FOR ALL TABLES with publish_via_partition_root, every
+		 * top-most partitioned table becomes an implicit publishing root;
+		 * verify that every leaf partition's replica identity covers it.
+		 */
+		if (publish_via_partition_root)
+		{
+			Relation	pg_class;
+			SysScanDesc class_scan;
+			HeapTuple	class_tup;
+
+			pg_class = table_open(RelationRelationId, AccessShareLock);
+			class_scan = systable_beginscan(pg_class, InvalidOid, false,
+											NULL, 0, NULL);
+			while (HeapTupleIsValid(class_tup = systable_getnext(class_scan)))
+			{
+				Form_pg_class cform = (Form_pg_class) GETSTRUCT(class_tup);
+				Relation	root_rel;
+
+				if (cform->relkind != RELKIND_PARTITIONED_TABLE)
+					continue;
+				if (cform->relispartition)
+					continue;
+				if (cform->relpersistence != RELPERSISTENCE_PERMANENT)
+					continue;
+				if (cform->oid < FirstNormalObjectId ||
+					IsCatalogRelationOid(cform->oid))
+					continue;
+
+				root_rel = relation_open(cform->oid, AccessShareLock);
+				CheckPubViaRootLeafIdentityCoverage(root_rel);
+				relation_close(root_rel, AccessShareLock);
+			}
+			systable_endscan(class_scan);
+			table_close(pg_class, AccessShareLock);
+		}
+
+		/*
 		 * Invalidate relcache so that publication info is rebuilt. Sequences
 		 * publication doesn't require invalidation, as replica identity
 		 * checks don't apply to them.
@@ -1212,6 +1252,68 @@ AlterPublicationOptions(ParseState *pstate, AlterPublicationStmt *stmt,
 									 (Node *) stmt);
 
 	InvokeObjectPostAlterHook(PublicationRelationId, pubform->oid, 0);
+
+	/*
+	 * If we just turned publish_via_partition_root on, validate that every
+	 * partitioned root currently in the publication has covering leaf
+	 * partitions.  (Catalog state visible after CatalogTupleUpdate above.)
+	 *
+	 * Note: FOR ALL TABLES publications use puballtables instead of
+	 * pg_publication_rel for membership; we walk all top-most partitioned
+	 * tables in that case to provide the same guarantee.
+	 */
+	if (publish_via_partition_root_given && publish_via_partition_root &&
+		pubform->pubviaroot)
+	{
+		List	   *check_relids = NIL;
+
+		CommandCounterIncrement();
+
+		if (pubform->puballtables)
+		{
+			Relation	pg_class;
+			SysScanDesc class_scan;
+			HeapTuple	class_tup;
+
+			pg_class = table_open(RelationRelationId, AccessShareLock);
+			class_scan = systable_beginscan(pg_class, InvalidOid, false,
+											NULL, 0, NULL);
+			while (HeapTupleIsValid(class_tup = systable_getnext(class_scan)))
+			{
+				Form_pg_class cform = (Form_pg_class) GETSTRUCT(class_tup);
+
+				if (cform->relkind != RELKIND_PARTITIONED_TABLE)
+					continue;
+				if (cform->relispartition)
+					continue;
+				if (cform->relpersistence != RELPERSISTENCE_PERMANENT)
+					continue;
+				if (cform->oid < FirstNormalObjectId ||
+					IsCatalogRelationOid(cform->oid))
+					continue;
+				check_relids = lappend_oid(check_relids, cform->oid);
+			}
+			systable_endscan(class_scan);
+			table_close(pg_class, AccessShareLock);
+		}
+		else
+			check_relids = GetIncludedPublicationRelations(pubform->oid,
+														   PUBLICATION_PART_ROOT);
+
+		foreach(lc, check_relids)
+		{
+			Oid			relid = lfirst_oid(lc);
+			Relation	root_rel;
+
+			if (get_rel_relkind(relid) != RELKIND_PARTITIONED_TABLE)
+				continue;
+
+			root_rel = relation_open(relid, AccessShareLock);
+			CheckPubViaRootLeafIdentityCoverage(root_rel);
+			relation_close(root_rel, AccessShareLock);
+		}
+		list_free(check_relids);
+	}
 }
 
 /*
@@ -2057,6 +2159,21 @@ PublicationAddTables(Oid pubid, List *rels, bool if_not_exists,
 			InvokeObjectPostCreateHook(PublicationRelRelationId,
 									   obj.objectId, 0);
 		}
+
+		/*
+		 * If this publication uses publish_via_partition_root and the added
+		 * relation is a partitioned root, verify that every leaf partition's
+		 * replica identity covers the root's identity.  Otherwise pgoutput
+		 * would silently ship leaf-identity columns under the root's tag and
+		 * tupdesc, leaving the subscriber unable to locate the row.
+		 */
+		if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+		{
+			Publication *pub = GetPublication(pubid);
+
+			if (pub->pubviaroot)
+				CheckPubViaRootLeafIdentityCoverage(rel);
+		}
 	}
 }
 
@@ -2163,6 +2280,453 @@ PublicationDropSchemas(Oid pubid, List *schemas, bool missing_ok)
 		ObjectAddressSet(obj, PublicationNamespaceRelationId, psid);
 		performDeletion(&obj, DROP_CASCADE, 0);
 	}
+}
+
+/*
+ * Replica-identity coverage checks for publish_via_partition_root.
+ *
+ * A publication with publish_via_partition_root = true publishes all
+ * partition-level changes under the OID and tuple descriptor of an ancestor
+ * partitioned root.  The subscriber consequently uses the root's replica
+ * identity to locate the affected row.  But the old-tuple data on the wire
+ * is sourced from the leaf partition's replica identity: pgoutput records
+ * the columns the leaf wrote to WAL and remaps them into the root's column
+ * layout, filling whatever the leaf did not record with NULLs.
+ *
+ * If a leaf's replica identity does not contain every column that composes
+ * its publishing-root's identity, the subscriber receives an old-tuple it
+ * cannot match against its own root mirror, and the change is silently lost.
+ * To make publish_via_partition_root honour what it promises subscribers,
+ * we enforce the invariant
+ *
+ *     replica_identity(leaf) covers replica_identity(root)
+ *
+ * for every (leaf, root) pair created by a pubviaroot publication.  The
+ * helpers below validate this invariant at the four DDL entry points that
+ * could otherwise introduce a skew: adding a table to a pubviaroot
+ * publication, flipping pubviaroot on, attaching a partition, and changing
+ * a replica identity.
+ */
+
+/* Replica-identity descriptor used by the coverage checks. */
+typedef struct ReplidentInfo
+{
+	char		kind;			/* relreplident character */
+	Bitmapset  *attrs;			/* identity column bitmap, FirstLow-relative;
+								 * NULL for FULL/NOTHING */
+} ReplidentInfo;
+
+/*
+ * Fill 'info' from the relation's current state.  The bitmap is palloc'd and
+ * must be released by the caller.
+ */
+static void
+fill_replident_from_relation(Relation rel, ReplidentInfo *info)
+{
+	info->kind = rel->rd_rel->relreplident;
+	if (info->kind == REPLICA_IDENTITY_DEFAULT ||
+		info->kind == REPLICA_IDENTITY_INDEX)
+		info->attrs = RelationGetIndexAttrBitmap(rel,
+												 INDEX_ATTR_BITMAP_IDENTITY_KEY);
+	else
+		info->attrs = NULL;
+}
+
+/*
+ * Build the identity column bitmap that would result from setting the
+ * relation's identity to ('new_kind', 'new_index_oid').  For DEFAULT, the
+ * primary-key index is consulted; for INDEX, 'new_index_oid' is used; FULL
+ * and NOTHING yield NULL.  Bitmap is palloc'd; caller bms_free's.
+ */
+static Bitmapset *
+build_proposed_identity_attrs(Relation rel, char new_kind, Oid new_index_oid)
+{
+	Bitmapset  *result = NULL;
+	Oid			idx_oid = InvalidOid;
+	HeapTuple	idx_tup;
+	Form_pg_index idx_form;
+	int			i;
+
+	if (new_kind == REPLICA_IDENTITY_FULL ||
+		new_kind == REPLICA_IDENTITY_NOTHING)
+		return NULL;
+
+	if (new_kind == REPLICA_IDENTITY_INDEX)
+		idx_oid = new_index_oid;
+	else
+	{
+		ListCell   *lc;
+		List	   *indexes;
+
+		Assert(new_kind == REPLICA_IDENTITY_DEFAULT);
+
+		/* Find the primary key index, if any. */
+		indexes = RelationGetIndexList(rel);
+		foreach(lc, indexes)
+		{
+			Oid			candidate = lfirst_oid(lc);
+			Form_pg_index ifrm;
+
+			idx_tup = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(candidate));
+			if (!HeapTupleIsValid(idx_tup))
+				continue;
+			ifrm = (Form_pg_index) GETSTRUCT(idx_tup);
+			if (ifrm->indisprimary)
+			{
+				idx_oid = candidate;
+				ReleaseSysCache(idx_tup);
+				break;
+			}
+			ReleaseSysCache(idx_tup);
+		}
+		list_free(indexes);
+	}
+
+	if (!OidIsValid(idx_oid))
+		return NULL;
+
+	idx_tup = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(idx_oid));
+	if (!HeapTupleIsValid(idx_tup))
+		elog(ERROR, "cache lookup failed for index %u", idx_oid);
+	idx_form = (Form_pg_index) GETSTRUCT(idx_tup);
+
+	for (i = 0; i < idx_form->indnkeyatts; i++)
+	{
+		AttrNumber	attno = idx_form->indkey.values[i];
+
+		if (attno > 0)
+			result = bms_add_member(result,
+									attno - FirstLowInvalidHeapAttributeNumber);
+	}
+	ReleaseSysCache(idx_tup);
+
+	return result;
+}
+
+/*
+ * Predicate: does 'leaf's replica identity (described by 'leaf_info', plus
+ * 'leaf' for resolving attribute names) cover 'root's identity (described
+ * by 'root_info' / 'root')?
+ *
+ * Comparison is by column name, since a partition may have a different
+ * attribute ordering than its root.
+ */
+static bool
+replident_covers(Relation leaf, const ReplidentInfo *leaf_info,
+				 Relation root, const ReplidentInfo *root_info)
+{
+	int			bit;
+	TupleDesc	root_desc;
+
+	if (root_info->kind == REPLICA_IDENTITY_NOTHING)
+		return true;
+
+	if (root_info->kind == REPLICA_IDENTITY_FULL)
+		return leaf_info->kind == REPLICA_IDENTITY_FULL;
+
+	/* FULL on the leaf covers any non-FULL root identity. */
+	if (leaf_info->kind == REPLICA_IDENTITY_FULL)
+		return true;
+
+	if (leaf_info->kind == REPLICA_IDENTITY_NOTHING)
+		return false;
+
+	/* DEFAULT with no PK behaves as NOTHING. */
+	if (root_info->attrs == NULL || bms_is_empty(root_info->attrs))
+		return true;
+	if (leaf_info->attrs == NULL || bms_is_empty(leaf_info->attrs))
+		return false;
+
+	root_desc = RelationGetDescr(root);
+	bit = -1;
+	while ((bit = bms_next_member(root_info->attrs, bit)) >= 0)
+	{
+		AttrNumber	root_attno = bit + FirstLowInvalidHeapAttributeNumber;
+		const char *colname;
+		AttrNumber	leaf_attno;
+
+		/* System attributes can't compose a regular identity index. */
+		if (root_attno <= 0)
+			continue;
+
+		colname = NameStr(TupleDescAttr(root_desc, root_attno - 1)->attname);
+		leaf_attno = get_attnum(RelationGetRelid(leaf), colname);
+		if (leaf_attno == InvalidAttrNumber)
+			return false;
+
+		if (!bms_is_member(leaf_attno - FirstLowInvalidHeapAttributeNumber,
+						   leaf_info->attrs))
+			return false;
+	}
+
+	return true;
+}
+
+/*
+ * Report a coverage violation for the given (leaf, root) pair.  Caller must
+ * have established that the leaf does not cover the root.
+ */
+pg_noreturn static void
+emit_pubviaroot_skew_error(Relation leaf, Relation root)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+			 errmsg("replica identity of partition \"%s\" does not cover replica identity of partitioned root \"%s\"",
+					RelationGetRelationName(leaf),
+					RelationGetRelationName(root)),
+			 errdetail("Publications with publish_via_partition_root = true emit leaf-partition changes under the root's identity, so every leaf must record at least the columns that compose the root's replica identity."),
+			 errhint("Adjust the replica identity of partition \"%s\" so that it covers all columns of the replica identity of \"%s\", or weaken the replica identity of the root.",
+					 RelationGetRelationName(leaf),
+					 RelationGetRelationName(root))));
+}
+
+/*
+ * Walk all leaf partitions under 'root' and verify each leaf's identity
+ * covers 'root_override' (if non-NULL) or 'root's current identity.
+ *
+ * If 'root' is not partitioned the call is a no-op.
+ */
+static void
+validate_leaves_cover_root(Relation root, const ReplidentInfo *root_override)
+{
+	List	   *all;
+	ListCell   *lc;
+	ReplidentInfo root_info;
+	const ReplidentInfo *use_root_info;
+
+	if (root->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
+		return;
+
+	if (root_override)
+		use_root_info = root_override;
+	else
+	{
+		fill_replident_from_relation(root, &root_info);
+		use_root_info = &root_info;
+	}
+
+	all = find_all_inheritors(RelationGetRelid(root), AccessShareLock, NULL);
+
+	foreach(lc, all)
+	{
+		Oid			leaf_oid = lfirst_oid(lc);
+		Relation	leaf;
+		ReplidentInfo leaf_info;
+
+		if (get_rel_relkind(leaf_oid) != RELKIND_RELATION)
+			continue;
+
+		leaf = relation_open(leaf_oid, NoLock);
+		fill_replident_from_relation(leaf, &leaf_info);
+
+		if (!replident_covers(leaf, &leaf_info, root, use_root_info))
+		{
+			/* error throws, no need to close */
+			emit_pubviaroot_skew_error(leaf, root);
+		}
+
+		bms_free(leaf_info.attrs);
+		relation_close(leaf, NoLock);
+	}
+
+	if (!root_override)
+		bms_free(root_info.attrs);
+	list_free(all);
+}
+
+/*
+ * Determine whether 'relid' is the publishing root of any
+ * publish_via_partition_root publication.  If 'restricted_puboid' is valid,
+ * only that single publication is considered.
+ *
+ * FOR ALL TABLES + pubviaroot implicitly anchors on top-most partitioned
+ * roots, which is handled here.  Schema-only publications are not yet
+ * checked separately -- the publication-time hook covers added-by-schema
+ * roots, and the attach hook covers later additions.
+ */
+static bool
+relation_is_pubviaroot_publishing_root(Oid relid, Oid restricted_puboid)
+{
+	List	   *pubids;
+	ListCell   *lc;
+	bool		result = false;
+
+	pubids = GetRelationIncludedPublications(relid);
+	foreach(lc, pubids)
+	{
+		Oid			pubid = lfirst_oid(lc);
+		Publication *pub;
+
+		if (OidIsValid(restricted_puboid) && pubid != restricted_puboid)
+			continue;
+
+		pub = GetPublication(pubid);
+		if (pub->pubviaroot)
+		{
+			result = true;
+			break;
+		}
+	}
+	list_free(pubids);
+
+	if (!result &&
+		get_rel_relkind(relid) == RELKIND_PARTITIONED_TABLE &&
+		!get_rel_relispartition(relid))
+	{
+		List	   *all_tab_pubs = GetAllTablesPublications();
+
+		foreach(lc, all_tab_pubs)
+		{
+			Oid			pubid = lfirst_oid(lc);
+			Publication *pub;
+
+			if (OidIsValid(restricted_puboid) && pubid != restricted_puboid)
+				continue;
+
+			pub = GetPublication(pubid);
+			if (pub->pubviaroot)
+			{
+				result = true;
+				break;
+			}
+		}
+		list_free(all_tab_pubs);
+	}
+
+	return result;
+}
+
+/*
+ * For 'leaf' (a regular relation that is a partition), walk the publishing
+ * ancestors and verify 'leaf's identity (or 'leaf_override' if non-NULL)
+ * covers each ancestor's identity.
+ */
+static void
+validate_leaf_covers_publishing_ancestors(Relation leaf,
+										  const ReplidentInfo *leaf_override)
+{
+	List	   *ancestors;
+	ListCell   *lc;
+	ReplidentInfo leaf_info;
+	const ReplidentInfo *use_leaf_info;
+
+	if (leaf->rd_rel->relkind != RELKIND_RELATION ||
+		!leaf->rd_rel->relispartition)
+		return;
+
+	if (leaf_override)
+		use_leaf_info = leaf_override;
+	else
+	{
+		fill_replident_from_relation(leaf, &leaf_info);
+		use_leaf_info = &leaf_info;
+	}
+
+	ancestors = get_partition_ancestors(RelationGetRelid(leaf));
+
+	foreach(lc, ancestors)
+	{
+		Oid			anc_oid = lfirst_oid(lc);
+		Relation	anc;
+		ReplidentInfo anc_info;
+
+		if (!relation_is_pubviaroot_publishing_root(anc_oid, InvalidOid))
+			continue;
+
+		anc = relation_open(anc_oid, AccessShareLock);
+		fill_replident_from_relation(anc, &anc_info);
+
+		if (!replident_covers(leaf, use_leaf_info, anc, &anc_info))
+			emit_pubviaroot_skew_error(leaf, anc);
+
+		bms_free(anc_info.attrs);
+		relation_close(anc, AccessShareLock);
+	}
+
+	if (!leaf_override)
+		bms_free(leaf_info.attrs);
+	list_free(ancestors);
+}
+
+/*
+ * Validate the publish_via_partition_root identity invariant for every leaf
+ * in the subtree rooted at 'rel'.  When 'rel' is itself a leaf, only that
+ * leaf is checked; when 'rel' is partitioned, all leaves under it are
+ * checked.  Uses the relations' current replica identities.
+ */
+void
+CheckPubViaRootLeafCoverageOfPublishingAncestors(Relation rel)
+{
+	char		relkind = rel->rd_rel->relkind;
+
+	if (relkind == RELKIND_RELATION)
+	{
+		validate_leaf_covers_publishing_ancestors(rel, NULL);
+		return;
+	}
+
+	if (relkind == RELKIND_PARTITIONED_TABLE)
+	{
+		List	   *all;
+		ListCell   *lc;
+
+		all = find_all_inheritors(RelationGetRelid(rel), AccessShareLock, NULL);
+
+		foreach(lc, all)
+		{
+			Oid			leaf_oid = lfirst_oid(lc);
+			Relation	leaf;
+
+			if (get_rel_relkind(leaf_oid) != RELKIND_RELATION)
+				continue;
+
+			leaf = relation_open(leaf_oid, NoLock);
+			validate_leaf_covers_publishing_ancestors(leaf, NULL);
+			relation_close(leaf, NoLock);
+		}
+		list_free(all);
+	}
+}
+
+/*
+ * Validate the publish_via_partition_root identity invariant treating 'root'
+ * as a (possibly new) publishing root: every leaf under 'root' must have a
+ * replica identity covering 'root's current identity.
+ */
+void
+CheckPubViaRootLeafIdentityCoverage(Relation root)
+{
+	validate_leaves_cover_root(root, NULL);
+}
+
+/*
+ * Validate the publish_via_partition_root identity invariant when 'rel's
+ * replica identity is being changed to ('new_kind', 'new_index_oid').  The
+ * proposed identity is checked instead of the relation's current one.
+ *
+ * If 'rel' is a partitioned table that is a publishing root in some
+ * pubviaroot publication, every leaf under 'rel' is verified against the
+ * proposed identity.  If 'rel' is a leaf partition, the proposed identity
+ * is verified to cover every pubviaroot ancestor's identity.
+ */
+void
+CheckPubViaRootIdentityChange(Relation rel, char new_kind, Oid new_index_oid)
+{
+	Oid			relid = RelationGetRelid(rel);
+	char		relkind = rel->rd_rel->relkind;
+	ReplidentInfo override;
+
+	override.kind = new_kind;
+	override.attrs = build_proposed_identity_attrs(rel, new_kind, new_index_oid);
+
+	if (relkind == RELKIND_PARTITIONED_TABLE &&
+		relation_is_pubviaroot_publishing_root(relid, InvalidOid))
+		validate_leaves_cover_root(rel, &override);
+
+	if (relkind == RELKIND_RELATION && rel->rd_rel->relispartition)
+		validate_leaf_covers_publishing_ancestors(rel, &override);
+
+	bms_free(override.attrs);
 }
 
 /*

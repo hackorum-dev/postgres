@@ -62,6 +62,7 @@
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
 #include "commands/extension.h"
+#include "commands/publicationcmds.h"
 #include "commands/repack.h"
 #include "commands/sequence.h"
 #include "commands/tablecmds.h"
@@ -19235,16 +19236,19 @@ ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, LOCKMODE lockmode
 
 	if (stmt->identity_type == REPLICA_IDENTITY_DEFAULT)
 	{
+		CheckPubViaRootIdentityChange(rel, stmt->identity_type, InvalidOid);
 		relation_mark_replica_identity(rel, stmt->identity_type, InvalidOid, true);
 		return;
 	}
 	else if (stmt->identity_type == REPLICA_IDENTITY_FULL)
 	{
+		CheckPubViaRootIdentityChange(rel, stmt->identity_type, InvalidOid);
 		relation_mark_replica_identity(rel, stmt->identity_type, InvalidOid, true);
 		return;
 	}
 	else if (stmt->identity_type == REPLICA_IDENTITY_NOTHING)
 	{
+		CheckPubViaRootIdentityChange(rel, stmt->identity_type, InvalidOid);
 		relation_mark_replica_identity(rel, stmt->identity_type, InvalidOid, true);
 		return;
 	}
@@ -19354,6 +19358,7 @@ ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, LOCKMODE lockmode
 	}
 
 	/* This index is suitable for use as a replica identity. Mark it. */
+	CheckPubViaRootIdentityChange(rel, stmt->identity_type, indexOid);
 	relation_mark_replica_identity(rel, stmt->identity_type, indexOid, true);
 
 	index_close(indexRel, NoLock);
@@ -21064,6 +21069,16 @@ attachPartitionTable(List **wqueue, Relation rel, Relation attachrel, PartitionB
 	 * for phase 3 constraint verification.
 	 */
 	CloneForeignKeyConstraints(wqueue, rel, attachrel);
+
+	/*
+	 * If any ancestor (now reachable from attachrel through pg_inherits) is
+	 * a publishing root in a publish_via_partition_root publication, every
+	 * leaf under attachrel must have a replica identity that covers the
+	 * ancestor's identity.  Make the new inheritance row visible to syscache
+	 * lookups before walking ancestors.
+	 */
+	CommandCounterIncrement();
+	CheckPubViaRootLeafCoverageOfPublishingAncestors(attachrel);
 }
 
 /*
