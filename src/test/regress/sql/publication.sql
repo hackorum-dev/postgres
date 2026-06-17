@@ -1552,6 +1552,75 @@ DROP VIEW gpt_test_view;
 DROP TABLE tbl_normal, tbl_parent, tbl_part1;
 DROP SCHEMA gpt_test_sch CASCADE;
 
+-- ============================================================================
+-- publish_via_partition_root: replica-identity coverage between partition
+-- root and leaves.  A pubviaroot publication emits leaf-partition changes
+-- under the root's OID and tupdesc; the old-tuple data, however, is sourced
+-- from the leaf's replica identity.  If a leaf's identity does not cover the
+-- root's identity, the subscriber receives a partially-NULL old tuple that
+-- it cannot match, and changes are silently lost.  We reject the four DDL
+-- entry points that could otherwise create such a skew.
+-- ============================================================================
+
+-- 1. CREATE PUBLICATION: rejects a pubviaroot publication that contains a
+-- partitioned root whose leaves do not cover the root's identity.
+CREATE TABLE rident_root (a int NOT NULL, b int) PARTITION BY LIST (a);
+CREATE TABLE rident_leaf_full PARTITION OF rident_root FOR VALUES IN (1);
+CREATE TABLE rident_leaf_idx PARTITION OF rident_root FOR VALUES IN (2);
+CREATE UNIQUE INDEX ON rident_leaf_idx (a);
+ALTER TABLE rident_root REPLICA IDENTITY FULL;
+ALTER TABLE rident_leaf_full REPLICA IDENTITY FULL;
+ALTER TABLE rident_leaf_idx REPLICA IDENTITY USING INDEX rident_leaf_idx_a_idx;
+CREATE PUBLICATION rident_pub FOR TABLE rident_root
+    WITH (publish_via_partition_root = true);	-- fails
+
+-- 2. ALTER PUBLICATION ... SET (publish_via_partition_root = true): rejects
+-- the same skew when pubviaroot is flipped on after the fact.
+CREATE PUBLICATION rident_pub FOR TABLE rident_root
+    WITH (publish_via_partition_root = false);
+ALTER PUBLICATION rident_pub SET (publish_via_partition_root = true);	-- fails
+
+-- Fix the leaf so we can keep going.
+ALTER TABLE rident_leaf_idx REPLICA IDENTITY FULL;
+ALTER PUBLICATION rident_pub SET (publish_via_partition_root = true);
+
+-- 3. ALTER TABLE ... REPLICA IDENTITY on a leaf: rejects the proposed new
+-- identity if it would no longer cover the root's identity.
+ALTER TABLE rident_leaf_idx
+    REPLICA IDENTITY USING INDEX rident_leaf_idx_a_idx;	-- fails
+
+-- 4. ALTER TABLE ... REPLICA IDENTITY on the root: rejects the proposed new
+-- root identity if some leaf would no longer cover it.  Weaken the root to
+-- NOTHING (always covered) so we can set a leaf to INDEX, then attempt to
+-- bring the root back to FULL.
+ALTER TABLE rident_root REPLICA IDENTITY NOTHING;
+ALTER TABLE rident_leaf_idx
+    REPLICA IDENTITY USING INDEX rident_leaf_idx_a_idx;
+ALTER TABLE rident_root REPLICA IDENTITY FULL;	-- fails
+
+-- Restore covering identity on the leaf so we can put the root back to FULL.
+ALTER TABLE rident_leaf_idx REPLICA IDENTITY FULL;
+ALTER TABLE rident_root REPLICA IDENTITY FULL;
+
+-- 5. ATTACH PARTITION: rejects an attaching partition whose identity does
+-- not cover the publishing root's identity.
+ALTER TABLE rident_root DETACH PARTITION rident_leaf_idx;
+ALTER TABLE rident_leaf_idx
+    REPLICA IDENTITY USING INDEX rident_leaf_idx_a_idx;
+ALTER TABLE rident_root ATTACH PARTITION rident_leaf_idx
+    FOR VALUES IN (2);	-- fails
+
+-- INDEX-vs-INDEX column-subset coverage is by column name and accepted.
+DROP PUBLICATION rident_pub;
+CREATE UNIQUE INDEX ON rident_root (a);
+ALTER TABLE rident_root REPLICA IDENTITY USING INDEX rident_root_a_idx;
+ALTER TABLE rident_root ATTACH PARTITION rident_leaf_idx FOR VALUES IN (2);
+CREATE PUBLICATION rident_pub FOR TABLE rident_root
+    WITH (publish_via_partition_root = true);
+
+DROP PUBLICATION rident_pub;
+DROP TABLE rident_root;
+
 -- stage objects for pg_dump tests
 CREATE SCHEMA pubme CREATE TABLE t0 (c int, d int) CREATE TABLE t1 (c int);
 CREATE SCHEMA pubme2 CREATE TABLE t0 (c int, d int);
