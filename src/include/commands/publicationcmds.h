@@ -18,6 +18,7 @@
 #include "catalog/objectaddress.h"
 #include "parser/parse_node.h"
 #include "utils/inval.h"
+#include "utils/relcache.h"
 
 /* Same as MAXNUMMESSAGES in sinvaladt.c */
 #define MAX_RELCACHE_INVAL_MSGS 4096
@@ -39,5 +40,11 @@ extern bool pub_contains_invalid_column(Oid pubid, Relation relation,
 										bool *invalid_column_list,
 										bool *invalid_gen_col);
 extern void InvalidatePubRelSyncCache(Oid pubid, bool puballtables);
+
+extern void CheckPubViaRootLeafIdentityCoverage(Relation root);
+extern void CheckPubViaRootLeafCoverageOfPublishingAncestors(Relation rel);
+extern void CheckPubViaRootIdentityChange(Relation rel,
+										  char new_kind,
+										  Oid new_index_oid);
 
 #endif							/* PUBLICATIONCMDS_H */
