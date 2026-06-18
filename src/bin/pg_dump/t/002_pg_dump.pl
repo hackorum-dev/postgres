@@ -3976,6 +3976,89 @@ my %tests = (
 		},
 	},
 
+	'CREATE INDEX ... INVISIBLE' => {
+		create_order => 98,
+		create_sql => 'CREATE TABLE dump_test.test_invisible_idx_table (
+							 id int,
+							 v int
+						   );
+						   CREATE INDEX test_invisible_idx
+							 ON dump_test.test_invisible_idx_table(v) INVISIBLE;',
+		regexp => qr/^
+			\QCREATE INDEX test_invisible_idx ON dump_test.test_invisible_idx_table USING btree (v) INVISIBLE;\E
+			/xm,
+		like => { %full_runs, %dump_test_schema_runs, section_post_data => 1 },
+		unlike => { exclude_dump_test_schema => 1, only_dump_measurement => 1 },
+	},
+
+	'ALTER INDEX ... INVISIBLE for primary key' => {
+		create_order => 98,
+		create_sql => 'CREATE TABLE dump_test.test_invisible_pk_table (
+							 id int PRIMARY KEY
+						   );
+						   ALTER INDEX dump_test.test_invisible_pk_table_pkey INVISIBLE;',
+		regexp => qr/^
+			\QALTER TABLE ONLY dump_test.test_invisible_pk_table\E\n\s+
+			\QADD CONSTRAINT test_invisible_pk_table_pkey PRIMARY KEY (id);\E\n
+			\QALTER INDEX dump_test.test_invisible_pk_table_pkey INVISIBLE;\E
+			/xm,
+		like => { %full_runs, %dump_test_schema_runs, section_post_data => 1 },
+		unlike => { exclude_dump_test_schema => 1, only_dump_measurement => 1 },
+	},
+
+	'CREATE INDEX ... INVISIBLE on partitioned table (parent)' => {
+		create_order => 98,
+		create_sql => 'CREATE TABLE dump_test.test_invisible_partidx (
+							 a int,
+							 b int
+						   ) PARTITION BY RANGE (a);
+						   CREATE TABLE dump_test.test_invisible_partidx_p1
+							 PARTITION OF dump_test.test_invisible_partidx
+							 FOR VALUES FROM (0) TO (100);
+						   CREATE TABLE dump_test.test_invisible_partidx_p2
+							 PARTITION OF dump_test.test_invisible_partidx
+							 FOR VALUES FROM (100) TO (200);
+						   CREATE INDEX test_invisible_partidx_a_idx
+							 ON dump_test.test_invisible_partidx(a) INVISIBLE;',
+		regexp => qr/^
+			\QCREATE INDEX test_invisible_partidx_a_idx ON ONLY dump_test.test_invisible_partidx USING btree (a) INVISIBLE;\E
+			/xm,
+		like => { %full_runs, %dump_test_schema_runs, section_post_data => 1 },
+		unlike => { exclude_dump_test_schema => 1, only_dump_measurement => 1 },
+	},
+
+	'CREATE INDEX ... INVISIBLE on partitioned table (child)' => {
+		create_order => 99,
+		create_sql => '',
+		regexp => qr/^
+			\QCREATE INDEX test_invisible_partidx_p1_a_idx ON dump_test.test_invisible_partidx_p1 USING btree (a) INVISIBLE;\E
+			/xm,
+		like => { %full_runs, %dump_test_schema_runs, section_post_data => 1 },
+		unlike => { exclude_dump_test_schema => 1, only_dump_measurement => 1 },
+	},
+
+	'CREATE INDEX leaf-only INVISIBLE on partition' => {
+		create_order => 98,
+		create_sql => 'CREATE TABLE dump_test.test_invisible_leaf (
+							 a int
+						   ) PARTITION BY RANGE (a);
+						   CREATE TABLE dump_test.test_invisible_leaf_p1
+							 PARTITION OF dump_test.test_invisible_leaf
+							 FOR VALUES FROM (0) TO (100);
+						   CREATE TABLE dump_test.test_invisible_leaf_p2
+							 PARTITION OF dump_test.test_invisible_leaf
+							 FOR VALUES FROM (100) TO (200);
+						   CREATE INDEX test_invisible_leaf_a_idx
+							 ON dump_test.test_invisible_leaf(a);
+						   ALTER INDEX dump_test.test_invisible_leaf_p1_a_idx
+							 INVISIBLE;',
+		regexp => qr/^
+			\QCREATE INDEX test_invisible_leaf_p1_a_idx ON dump_test.test_invisible_leaf_p1 USING btree (a) INVISIBLE;\E
+			/xm,
+		like => { %full_runs, %dump_test_schema_runs, section_post_data => 1 },
+		unlike => { exclude_dump_test_schema => 1, only_dump_measurement => 1 },
+	},
+
 	'CREATE TABLE test_inheritance_parent' => {
 		create_order => 90,
 		create_sql => 'CREATE TABLE dump_test.test_inheritance_parent (
@@ -5373,6 +5456,177 @@ foreach my $run (sort keys %pgdump_runs)
 		}
 	}
 }
+
+#########################################
+# Round-trip test: dump and restore a database that mixes invisible-index
+# states across plain, constraint-backed, partitioned-parent, attached
+# child, and leaf-only-overridden indexes, then verify pg_index.indisvisible
+# is preserved exactly on the restored side.  This is the strongest
+# guarantee pg_dump can give for this feature; the regex-only tests above
+# only check that the expected DDL fragments appear in the dump output.
+
+$node->safe_psql('postgres', q{
+    CREATE DATABASE invvis_src;
+    CREATE DATABASE invvis_dst;
+});
+
+$node->safe_psql('invvis_src', q{
+    -- 1. Plain invisible index
+    CREATE TABLE plain_t(a int);
+    CREATE INDEX plain_t_idx ON plain_t(a) INVISIBLE;
+
+    -- 2. Constraint-backed (PRIMARY KEY) invisible index, also used as
+    -- replica identity.  REPLICA IDENTITY USING INDEX and INVISIBLE are
+    -- independent catalog properties: indisvisible only affects planner
+    -- visibility, not replica-identity selection.  Both must survive
+    -- dump/restore.
+    CREATE TABLE pk_t(a int PRIMARY KEY);
+    ALTER TABLE pk_t REPLICA IDENTITY USING INDEX pk_t_pkey;
+    ALTER INDEX pk_t_pkey INVISIBLE;
+
+    -- 3. & 4. Partitioned parent + attached children invisible
+    CREATE TABLE part_t(a int, b int, c int) PARTITION BY RANGE (a);
+    CREATE TABLE part_t_p1 PARTITION OF part_t FOR VALUES FROM (0) TO (100);
+    CREATE TABLE part_t_p2 PARTITION OF part_t FOR VALUES FROM (100) TO (200);
+    CREATE INDEX part_t_a_idx ON part_t(a) INVISIBLE;
+
+    -- 5. Leaf-only override on an otherwise-visible partitioned hierarchy
+    CREATE INDEX part_t_b_idx ON part_t(b);
+    ALTER INDEX part_t_p1_b_idx INVISIBLE;
+
+    -- 6. Unrelated visible index hierarchy on the same partitioned table.
+    -- Use a plain column so child names are deterministic
+    -- (part_t_p1_c_idx, part_t_p2_c_idx).
+    CREATE INDEX part_t_c_idx ON part_t(c);
+
+    -- 7. Partitioned constraint-backed (PRIMARY KEY) invisible index.
+    -- pg_dump restores this through ALTER TABLE ... ADD CONSTRAINT, so
+    -- the invisible state must be preserved by emitting an explicit
+    -- ALTER INDEX ... INVISIBLE on the parent constraint-backed index.
+    -- The recursion in ATExecSetIndexVisibility then propagates that to
+    -- every child *_pkey index in the hierarchy.
+    CREATE TABLE part_pk_invis_t (
+        a int NOT NULL,
+        b text,
+        PRIMARY KEY (a)
+    ) PARTITION BY RANGE (a);
+    CREATE TABLE part_pk_invis_t_p1
+        PARTITION OF part_pk_invis_t FOR VALUES FROM (0) TO (100);
+    CREATE TABLE part_pk_invis_t_p2
+        PARTITION OF part_pk_invis_t FOR VALUES FROM (100) TO (200);
+    ALTER INDEX part_pk_invis_t_pkey INVISIBLE;
+
+    -- Sanity check: PK enforcement still works while the backing index
+    -- hierarchy is invisible.  We just exercise it; the round-trip
+    -- assertion below covers catalog state after restore.
+    INSERT INTO part_pk_invis_t VALUES (1, 'one'), (101, 'a hundred one');
+});
+
+$node->command_ok(
+	[
+		'pg_dump',
+		'--port' => $node->port,
+		'--dbname' => 'invvis_src',
+		'--file' => "$tempdir/invvis.sql",
+	],
+	'invisible-index round-trip: dump');
+
+$node->command_ok(
+	[
+		'psql',
+		'--port' => $node->port,
+		'--dbname' => 'invvis_dst',
+		'--file' => "$tempdir/invvis.sql",
+	],
+	'invisible-index round-trip: restore');
+
+my $invvis_actual = $node->safe_psql(
+	'invvis_dst', q{
+    WITH parents(oid, label) AS (
+        SELECT c.oid, c.relname FROM pg_class c
+         WHERE c.relname IN ('plain_t_idx',
+                             'pk_t_pkey',
+                             'part_t_a_idx',
+                             'part_t_b_idx',
+                             'part_t_c_idx',
+                             'part_pk_invis_t_pkey')
+    )
+    SELECT
+        CASE
+          WHEN c.relname = 'plain_t_idx'    THEN 'plain'
+          WHEN c.relname = 'pk_t_pkey'      THEN 'pkey'
+          ELSE coalesce(p.label, p2.label) || ':' ||
+               CASE WHEN p.label IS NOT NULL THEN 'parent' ELSE 'child' END
+        END AS slot,
+        c.relname,
+        i.indisvisible::text
+    FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indexrelid
+    LEFT JOIN parents p  ON p.oid = c.oid
+    LEFT JOIN pg_inherits inh ON inh.inhrelid = c.oid
+    LEFT JOIN parents p2 ON p2.oid = inh.inhparent
+    WHERE p.oid IS NOT NULL OR p2.oid IS NOT NULL
+    ORDER BY slot, c.relname;
+});
+
+my $invvis_expected = join("\n", (
+	'part_pk_invis_t_pkey:child|part_pk_invis_t_p1_pkey|false',
+	'part_pk_invis_t_pkey:child|part_pk_invis_t_p2_pkey|false',
+	'part_pk_invis_t_pkey:parent|part_pk_invis_t_pkey|false',
+	'part_t_a_idx:child|part_t_p1_a_idx|false',
+	'part_t_a_idx:child|part_t_p2_a_idx|false',
+	'part_t_a_idx:parent|part_t_a_idx|false',
+	'part_t_b_idx:child|part_t_p1_b_idx|false',
+	'part_t_b_idx:child|part_t_p2_b_idx|true',
+	'part_t_b_idx:parent|part_t_b_idx|true',
+	'part_t_c_idx:child|part_t_p1_c_idx|true',
+	'part_t_c_idx:child|part_t_p2_c_idx|true',
+	'part_t_c_idx:parent|part_t_c_idx|true',
+	'pkey|pk_t_pkey|false',
+	'plain|plain_t_idx|false',
+));
+
+is($invvis_actual, $invvis_expected,
+	'invisible-index round-trip: pg_index.indisvisible matches across dump/restore for plain, constraint-backed, partitioned parent, attached children, leaf-only override, partitioned constraint-backed, and unrelated indexes'
+);
+
+# REPLICA IDENTITY + invisible coexistence after restore: pk_t_pkey was
+# created as PRIMARY KEY, marked REPLICA IDENTITY USING INDEX, then made
+# INVISIBLE in the source database.  After dump/restore, both
+# indisreplident = true and indisvisible = false must be preserved
+# independently: indisvisible is a planner-only flag and does not affect
+# replica-identity selection.
+my $invvis_replident_actual = $node->safe_psql(
+	'invvis_dst', q{
+    SELECT c.relname, i.indisvisible, i.indisreplident
+    FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indexrelid
+    WHERE c.relname = 'pk_t_pkey'
+    ORDER BY c.relname;
+});
+
+is($invvis_replident_actual,
+	'pk_t_pkey|f|t',
+	'invisible-index round-trip: REPLICA IDENTITY USING INDEX and indisvisible=false coexist and survive dump/restore on pk_t_pkey'
+);
+
+# Constraint enforcement after restore on the partitioned PK hierarchy
+# whose backing indexes are invisible: the duplicate must still be
+# rejected even though every index in the hierarchy is hidden from the
+# planner.
+my ($pk_dup_ret, $pk_dup_stdout, $pk_dup_stderr) = $node->psql(
+	'invvis_dst',
+	"INSERT INTO part_pk_invis_t VALUES (1, 'duplicate');");
+isnt($pk_dup_ret, 0,
+	'invisible-index round-trip: PK still rejects duplicates even when the constraint-backed index hierarchy is invisible'
+);
+like($pk_dup_stderr, qr/duplicate key value violates unique constraint/,
+	'invisible-index round-trip: duplicate insert fails with unique violation');
+
+$node->safe_psql('postgres', q{
+    DROP DATABASE invvis_src;
+    DROP DATABASE invvis_dst;
+});
 
 #########################################
 # Stop the database instance, which will be removed at the end of the tests.

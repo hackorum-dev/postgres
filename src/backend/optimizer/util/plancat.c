@@ -242,12 +242,14 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 			/*
 			 * Ignore invalid indexes, since they can't safely be used for
-			 * queries.  Note that this is OK because the data structure we
+			 * queries.  Also ignore invisible indexes, which the DBA has
+			 * marked unavailable to the planner with ALTER INDEX ...
+			 * INVISIBLE.  Note that this is OK because the data structure we
 			 * are constructing is only used by the planner --- the executor
-			 * still needs to insert into "invalid" indexes, if they're marked
-			 * indisready.
+			 * still needs to insert into "invalid" or invisible indexes, if
+			 * they're marked indisready.
 			 */
-			if (!index->indisvalid)
+			if (!index->indisvalid || !index->indisvisible)
 			{
 				index_close(indexRelation, NoLock);
 				continue;

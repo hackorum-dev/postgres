@@ -1673,6 +1673,37 @@ CREATE INDEX test1c_content_y_index ON test1c (content COLLATE "y");
      <productname>PostgreSQL</productname> developers to examine the issue.
     </para>
    </listitem>
+
+   <listitem>
+    <para>
+     An index can be hidden from the query planner without dropping it.
+     Mark an existing index invisible with
+     <command>ALTER INDEX ... INVISIBLE</command>, or create a new index
+     in the invisible state with
+     <command>CREATE INDEX ... INVISIBLE</command>.  An invisible index is
+     ignored by the planner but is still maintained by DML.  Unique
+     indexes continue to enforce uniqueness, and any uniqueness or
+     exclusion constraint backed by the index continues to be enforced.
+     Use <command>ALTER INDEX ... VISIBLE</command> to make the index
+     available to the planner again.  No rebuild is needed.
+    </para>
+    <para>
+     On partitioned tables, altering the visibility of a partitioned
+     parent index applies to the whole attached index hierarchy: the
+     parent partitioned index and every attached descendant child index
+     — at every partition level — are flipped together.  Altering the
+     visibility of an index that lives on a single partition affects
+     only that index.  Visibility is a global catalog property; there
+     is no GUC or session-level override.
+    </para>
+    <para>
+     This is useful for evaluating whether an index is needed before
+     dropping it: if performance regresses while the index is invisible,
+     it can be reinstated immediately.  Consult
+     <structname>pg_stat_user_indexes</structname>.<structfield>idx_scan</structfield>
+     for additional clues about index usage.
+    </para>
+   </listitem>
   </itemizedlist>
  </sect1>
 </chapter>

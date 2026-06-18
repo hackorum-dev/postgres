@@ -1,0 +1,34 @@
+--
+-- ALTER_INDEX
+--
+CREATE TABLE alter_idx_t (a int);
+NOTICE:  DDL test: type simple, tag CREATE TABLE
+CREATE INDEX alter_idx_t_a_idx ON alter_idx_t (a);
+NOTICE:  DDL test: type simple, tag CREATE INDEX
+ALTER INDEX alter_idx_t_a_idx INVISIBLE;
+NOTICE:  DDL test: type alter table, tag ALTER INDEX
+NOTICE:    subcommand: type SET INVISIBLE desc <NULL>
+ALTER INDEX alter_idx_t_a_idx VISIBLE;
+NOTICE:  DDL test: type alter table, tag ALTER INDEX
+NOTICE:    subcommand: type SET VISIBLE desc <NULL>
+-- IF EXISTS form, on a missing index: no DDL command fires
+ALTER INDEX IF EXISTS alter_idx_t_does_not_exist INVISIBLE;
+NOTICE:  relation "alter_idx_t_does_not_exist" does not exist, skipping
+-- Recursive form on a partitioned index
+CREATE TABLE alter_idx_part (a int) PARTITION BY RANGE (a);
+NOTICE:  DDL test: type simple, tag CREATE TABLE
+CREATE TABLE alter_idx_part_p1
+    PARTITION OF alter_idx_part FOR VALUES FROM (0) TO (100);
+NOTICE:  DDL test: type simple, tag CREATE TABLE
+CREATE INDEX alter_idx_part_a_idx ON alter_idx_part (a);
+NOTICE:  DDL test: type simple, tag CREATE INDEX
+ALTER INDEX alter_idx_part_a_idx INVISIBLE;
+NOTICE:  DDL test: type alter table, tag ALTER INDEX
+NOTICE:    subcommand: type SET INVISIBLE desc <NULL>
+NOTICE:    subcommand: type SET INVISIBLE desc <NULL>
+ALTER INDEX alter_idx_part_a_idx VISIBLE;
+NOTICE:  DDL test: type alter table, tag ALTER INDEX
+NOTICE:    subcommand: type SET VISIBLE desc <NULL>
+NOTICE:    subcommand: type SET VISIBLE desc <NULL>
+DROP TABLE alter_idx_part;
+DROP TABLE alter_idx_t;

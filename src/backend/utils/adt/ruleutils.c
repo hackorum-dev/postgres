@@ -1576,6 +1576,14 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 			else
 				appendStringInfo(&buf, " WHERE %s", str);
 		}
+
+		/*
+		 * Append INVISIBLE for indexes hidden from the planner.  We only
+		 * print the non-default state; visible indexes are deparsed without
+		 * any visibility clause to keep output stable for the common case.
+		 */
+		if (!idxrec->indisvisible)
+			appendStringInfoString(&buf, " INVISIBLE");
 	}
 
 	/* Clean up */

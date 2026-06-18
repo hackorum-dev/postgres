@@ -49,6 +49,7 @@ tests += {
       'defprivs',
       'textsearch',
       'matviews',
+      'alter_index',
     ],
   },
 }

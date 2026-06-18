@@ -2471,6 +2471,11 @@ describeOneTableDetails(const char *schemaname,
 		else
 			appendPQExpBufferStr(&buf, "false AS indnullsnotdistinct,\n");
 
+		if (pset.sversion >= 190000)
+			appendPQExpBufferStr(&buf, "i.indisvisible,\n");
+		else
+			appendPQExpBufferStr(&buf, "true AS indisvisible,\n");
+
 		appendPQExpBuffer(&buf, "  a.amname, c2.relname, "
 						  "pg_catalog.pg_get_expr(i.indpred, i.indrelid, true)\n"
 						  "FROM pg_catalog.pg_index i, pg_catalog.pg_class c, pg_catalog.pg_class c2, pg_catalog.pg_am a\n"
@@ -2496,9 +2501,10 @@ describeOneTableDetails(const char *schemaname,
 			char	   *deferred = PQgetvalue(result, 0, 5);
 			char	   *indisreplident = PQgetvalue(result, 0, 6);
 			char	   *indnullsnotdistinct = PQgetvalue(result, 0, 7);
-			char	   *indamname = PQgetvalue(result, 0, 8);
-			char	   *indtable = PQgetvalue(result, 0, 9);
-			char	   *indpred = PQgetvalue(result, 0, 10);
+			char	   *indisvisible = PQgetvalue(result, 0, 8);
+			char	   *indamname = PQgetvalue(result, 0, 9);
+			char	   *indtable = PQgetvalue(result, 0, 10);
+			char	   *indpred = PQgetvalue(result, 0, 11);
 
 			if (strcmp(indisprimary, "t") == 0)
 				printfPQExpBuffer(&tmpbuf, _("primary key, "));
@@ -2534,6 +2540,9 @@ describeOneTableDetails(const char *schemaname,
 
 			if (strcmp(indisreplident, "t") == 0)
 				appendPQExpBufferStr(&tmpbuf, _(", replica identity"));
+
+			if (strcmp(indisvisible, "t") != 0)
+				appendPQExpBufferStr(&tmpbuf, _(", invisible"));
 
 			printTableAddFooter(&cont, tmpbuf.data);
 
@@ -2578,6 +2587,10 @@ describeOneTableDetails(const char *schemaname,
 				appendPQExpBufferStr(&buf, ", con.conperiod");
 			else
 				appendPQExpBufferStr(&buf, ", false AS conperiod");
+			if (pset.sversion >= 190000)
+				appendPQExpBufferStr(&buf, ", i.indisvisible");
+			else
+				appendPQExpBufferStr(&buf, ", true AS indisvisible");
 			appendPQExpBuffer(&buf,
 							  "\nFROM pg_catalog.pg_class c, pg_catalog.pg_class c2, pg_catalog.pg_index i\n"
 							  "  LEFT JOIN pg_catalog.pg_constraint con ON (conrelid = i.indrelid AND conindid = i.indexrelid AND contype IN ("
@@ -2616,6 +2629,10 @@ describeOneTableDetails(const char *schemaname,
 					{
 						const char *indexdef;
 						const char *usingpos;
+						bool		indisvisible;
+						const char *invisible_suffix = " INVISIBLE";
+						const size_t invisible_suffix_len = strlen(invisible_suffix);
+						size_t		defLen;
 
 						/* Label as primary key or unique (but not both) */
 						if (strcmp(PQgetvalue(result, i, 1), "t") == 0)
@@ -2633,7 +2650,27 @@ describeOneTableDetails(const char *schemaname,
 						usingpos = strstr(indexdef, " USING ");
 						if (usingpos)
 							indexdef = usingpos + 7;
-						appendPQExpBuffer(&buf, " %s", indexdef);
+
+						/*
+						 * pg_get_indexdef() appends " INVISIBLE" for invisible
+						 * indexes (SQL deparse style).  Strip it here so we
+						 * can render the same information with the descriptive
+						 * "invisible" annotation below, matching the style
+						 * \d uses for an index relation directly.
+						 */
+						indisvisible = (strcmp(PQgetvalue(result, i, 13), "t") == 0);
+						defLen = strlen(indexdef);
+						if (!indisvisible &&
+							defLen >= invisible_suffix_len &&
+							strcmp(indexdef + defLen - invisible_suffix_len,
+								   invisible_suffix) == 0)
+						{
+							appendPQExpBufferChar(&buf, ' ');
+							appendBinaryPQExpBuffer(&buf, indexdef,
+													defLen - invisible_suffix_len);
+						}
+						else
+							appendPQExpBuffer(&buf, " %s", indexdef);
 
 						/* Need these for deferrable PK/UNIQUE indexes */
 						if (strcmp(PQgetvalue(result, i, 8), "t") == 0)
@@ -2641,6 +2678,9 @@ describeOneTableDetails(const char *schemaname,
 
 						if (strcmp(PQgetvalue(result, i, 9), "t") == 0)
 							appendPQExpBufferStr(&buf, " INITIALLY DEFERRED");
+
+						if (!indisvisible)
+							appendPQExpBufferStr(&buf, ", invisible");
 					}
 
 					/* Add these for all cases */

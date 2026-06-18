@@ -120,7 +120,8 @@ static void UpdateIndexRelation(Oid indexoid, Oid heapoid,
 								bool isexclusion,
 								bool immediate,
 								bool isvalid,
-								bool isready);
+								bool isready,
+								bool isvisible);
 static void index_update_stats(Relation rel,
 							   bool hasindex,
 							   double reltuples);
@@ -572,7 +573,8 @@ UpdateIndexRelation(Oid indexoid,
 					bool isexclusion,
 					bool immediate,
 					bool isvalid,
-					bool isready)
+					bool isready,
+					bool isvisible)
 {
 	int2vector *indkey;
 	oidvector  *indcollation;
@@ -650,6 +652,7 @@ UpdateIndexRelation(Oid indexoid,
 	values[Anum_pg_index_indisready - 1] = BoolGetDatum(isready);
 	values[Anum_pg_index_indislive - 1] = BoolGetDatum(true);
 	values[Anum_pg_index_indisreplident - 1] = BoolGetDatum(false);
+	values[Anum_pg_index_indisvisible - 1] = BoolGetDatum(isvisible);
 	values[Anum_pg_index_indkey - 1] = PointerGetDatum(indkey);
 	values[Anum_pg_index_indcollation - 1] = PointerGetDatum(indcollation);
 	values[Anum_pg_index_indclass - 1] = PointerGetDatum(indclass);
@@ -764,6 +767,7 @@ index_create(Relation heapRelation,
 	bool		concurrent = (flags & INDEX_CREATE_CONCURRENT) != 0;
 	bool		partitioned = (flags & INDEX_CREATE_PARTITIONED) != 0;
 	bool		progress = (flags & INDEX_CREATE_SUPPRESS_PROGRESS) == 0;
+	bool		isvisible = (flags & INDEX_CREATE_INVISIBLE) == 0;
 	char		relkind;
 	TransactionId relfrozenxid;
 	MultiXactId relminmxid;
@@ -1053,7 +1057,8 @@ index_create(Relation heapRelation,
 						isprimary, is_exclusion,
 						(constr_flags & INDEX_CONSTR_CREATE_DEFERRABLE) == 0,
 						!concurrent && !invalid,
-						!concurrent);
+						!concurrent,
+						isvisible);
 
 	/*
 	 * Register relcache invalidation on the indexes' heap relation, to
@@ -1459,7 +1464,14 @@ index_create_copy(Relation heapRelation, uint16 flags,
 	 * For a partition index, we adjust the partition dependency later, to
 	 * ensure a consistent state at all times.  That is why parentIndexRelid
 	 * is not set here.
+	 *
+	 * Preserve invisibility from the source index: if the source index is
+	 * invisible to the planner, the rebuilt copy must be too.  Visible is
+	 * the default and needs no flag.
 	 */
+	if (!indexRelation->rd_index->indisvisible)
+		flags |= INDEX_CREATE_INVISIBLE;
+
 	newIndexId = index_create(heapRelation,
 							  newName,
 							  InvalidOid,	/* indexRelationId */

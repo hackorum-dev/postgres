@@ -31,6 +31,7 @@ ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> ALTE
     SET STATISTICS <replaceable class="parameter">integer</replaceable>
 ALTER INDEX ALL IN TABLESPACE <replaceable class="parameter">name</replaceable> [ OWNED BY <replaceable class="parameter">role_name</replaceable> [, ... ] ]
     SET TABLESPACE <replaceable class="parameter">new_tablespace</replaceable> [ NOWAIT ]
+ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> { VISIBLE | INVISIBLE }
 </synopsis>
  </refsynopsisdiv>
 
@@ -160,6 +161,64 @@ ALTER INDEX ALL IN TABLESPACE <replaceable class="parameter">name</replaceable> 
       For more information on the use of statistics by the
       <productname>PostgreSQL</productname> query planner, refer to
       <xref linkend="planner-stats"/>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VISIBLE</literal></term>
+    <listitem>
+     <para>
+      Mark the index as visible to the query planner.  This is the default
+      state for newly created indexes.  Existing cached plans depending on
+      the underlying table are invalidated so they can be replanned and
+      consider this index again.
+     </para>
+     <para>
+      When applied to a partitioned index, the change recurses through
+      the partitioned-index hierarchy: the partitioned parent and every
+      attached descendant child index — at every partition level — are
+      made visible together.  Applying the form to a leaf partition
+      index affects only that one index and leaves the rest of the
+      hierarchy unchanged.
+     </para>
+     <para>
+      This form acquires a <literal>SHARE UPDATE EXCLUSIVE</literal> lock.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INVISIBLE</literal></term>
+    <listitem>
+     <para>
+      Mark the index as invisible to the query planner.  The index will not
+      be considered for query planning, but it is still maintained when the
+      table is modified.  Unique indexes continue to enforce uniqueness,
+      and any uniqueness or exclusion constraint backed by the index
+      continues to be enforced.  Existing cached plans depending on the
+      underlying table are invalidated so future executions stop using
+      this index.  An invisible index can be made visible again with
+      <literal>VISIBLE</literal>; no rebuild is needed.
+     </para>
+     <para>
+      When applied to a partitioned index, the change recurses through
+      the partitioned-index hierarchy: the partitioned parent and every
+      attached descendant child index — at every partition level — are
+      hidden from the planner together.  Applying the form to a leaf
+      partition index affects only that one index, so a single
+      partition's index can be hidden without disturbing other
+      partitions.  There is no GUC or session-level escape hatch:
+      visibility is a global catalog property.
+     </para>
+     <para>
+      This is useful for testing whether an index is needed before
+      dropping it: an invisible index that proves to be required can be
+      restored to service immediately, without paying the cost of
+      rebuilding it.
+     </para>
+     <para>
+      This form acquires a <literal>SHARE UPDATE EXCLUSIVE</literal> lock.
      </para>
     </listitem>
    </varlistentry>
@@ -304,6 +363,13 @@ REINDEX INDEX distributors;
 <programlisting>
 CREATE INDEX coord_idx ON measured (x, y, (z + t));
 ALTER INDEX coord_idx ALTER COLUMN 3 SET STATISTICS 1000;
+</programlisting></para>
+
+  <para>
+   To make an index invisible to the planner, then reinstate it:
+<programlisting>
+ALTER INDEX coord_idx INVISIBLE;
+ALTER INDEX coord_idx VISIBLE;
 </programlisting></para>
 
  </refsect1>

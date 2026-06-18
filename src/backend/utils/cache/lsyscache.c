@@ -3946,6 +3946,29 @@ get_index_isvalid(Oid index_oid)
 }
 
 /*
+ * get_index_visibility
+ *
+ *		Given the index OID, return pg_index.indisvisible.
+ */
+bool
+get_index_visibility(Oid index_oid)
+{
+	bool		isvisible;
+	HeapTuple	tuple;
+	Form_pg_index rd_index;
+
+	tuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(index_oid));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for index %u", index_oid);
+
+	rd_index = (Form_pg_index) GETSTRUCT(tuple);
+	isvisible = rd_index->indisvisible;
+	ReleaseSysCache(tuple);
+
+	return isvisible;
+}
+
+/*
  * get_index_isclustered
  *
  *		Given the index OID, return pg_index.indisclustered.

@@ -28,7 +28,8 @@ REGRESS = test_ddl_deparse \
 	opfamily \
 	defprivs \
 	textsearch \
-	matviews
+	matviews \
+	alter_index
 
 EXTRA_INSTALL = contrib/pg_stat_statements
 

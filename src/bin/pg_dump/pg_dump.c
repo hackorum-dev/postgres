@@ -7970,7 +7970,8 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 				i_tablespace,
 				i_indreloptions,
 				i_indstatcols,
-				i_indstatvals;
+				i_indstatvals,
+				i_indisvisible;
 
 	/*
 	 * We want to perform just one query against pg_index.  However, we
@@ -8034,6 +8035,13 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 	else
 		appendPQExpBufferStr(query,
 							 "false AS indisreplident, ");
+
+	if (fout->remoteVersion >= 190000)
+		appendPQExpBufferStr(query,
+							 "i.indisvisible, ");
+	else
+		appendPQExpBufferStr(query,
+							 "true AS indisvisible, ");
 
 	if (fout->remoteVersion >= 110000)
 		appendPQExpBufferStr(query,
@@ -8149,6 +8157,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 	i_indreloptions = PQfnumber(res, "indreloptions");
 	i_indstatcols = PQfnumber(res, "indstatcols");
 	i_indstatvals = PQfnumber(res, "indstatvals");
+	i_indisvisible = PQfnumber(res, "indisvisible");
 
 	indxinfo = pg_malloc_array(IndxInfo, ntups);
 
@@ -8221,6 +8230,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 						  indxinfo[j].indkeys, indxinfo[j].indnattrs);
 			indxinfo[j].indisclustered = (PQgetvalue(res, j, i_indisclustered)[0] == 't');
 			indxinfo[j].indisreplident = (PQgetvalue(res, j, i_indisreplident)[0] == 't');
+			indxinfo[j].indisvisible = (PQgetvalue(res, j, i_indisvisible)[0] == 't');
 			indxinfo[j].indnullsnotdistinct = (PQgetvalue(res, j, i_indnullsnotdistinct)[0] == 't');
 			indxinfo[j].parentidx = atooid(PQgetvalue(res, j, i_parentidx));
 			indxinfo[j].partattaches = (SimplePtrList)
@@ -19167,6 +19177,15 @@ dumpConstraint(Archive *fout, const ConstraintInfo *coninfo)
 			appendPQExpBuffer(q, " INDEX %s;\n",
 							  fmtId(indxinfo->dobj.name));
 		}
+
+		/*
+		 * pg_dump emits constraint-backed indexes through ALTER TABLE ADD
+		 * CONSTRAINT, which has no inline syntax for INVISIBLE.  Restore
+		 * the catalog state with an explicit ALTER INDEX after the fact.
+		 */
+		if (!indxinfo->indisvisible)
+			appendPQExpBuffer(q, "ALTER INDEX %s INVISIBLE;\n",
+							  fmtQualifiedDumpable(indxinfo));
 
 		/* Indexes can depend on extensions */
 		append_depends_on_extension(fout, q, &indxinfo->dobj,

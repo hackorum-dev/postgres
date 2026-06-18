@@ -777,6 +777,7 @@ static List *GetParentedForeignKeyRefs(Relation partition);
 static void ATDetachCheckNoForeignKeyRefs(Relation partition);
 static char GetAttributeCompression(Oid atttypid, const char *compression);
 static char GetAttributeStorage(Oid atttypid, const char *storagemode);
+static void ATExecSetIndexVisibility(Relation rel, bool visible);
 
 static void ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation rel,
 								  PartitionCmd *cmd, AlterTableUtilityContext *context);
@@ -4906,6 +4907,11 @@ AlterTableGetLockLevel(List *cmds)
 				cmd_lockmode = AccessExclusiveLock;
 				break;
 
+			case AT_SetIndexVisible:
+			case AT_SetIndexInvisible:
+				cmd_lockmode = ShareUpdateExclusiveLock;
+				break;
+
 			default:			/* oops */
 				elog(ERROR, "unrecognized alter table type: %d",
 					 (int) cmd->subtype);
@@ -5347,6 +5353,21 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
+		case AT_SetIndexVisible:
+		case AT_SetIndexInvisible:
+			ATSimplePermissions(cmd->subtype, rel,
+								ATT_INDEX | ATT_PARTITIONED_INDEX);
+
+			/*
+			 * A partitioned index represents an index hierarchy.  Apply
+			 * visibility changes recursively so ALTER INDEX on the parent
+			 * affects all attached descendant indexes.  For a leaf index,
+			 * this is a no-op.
+			 */
+			ATSimpleRecursion(wqueue, rel, cmd, true, lockmode, context);
+			/* No command-specific prep needed */
+			pass = AT_PASS_MISC;
+			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
@@ -5758,6 +5779,12 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			Assert(rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE);
 			ATExecSplitPartition(wqueue, tab, rel, (PartitionCmd *) cmd->def,
 								 context);
+			break;
+		case AT_SetIndexVisible:
+			ATExecSetIndexVisibility(rel, true);
+			break;
+		case AT_SetIndexInvisible:
+			ATExecSetIndexVisibility(rel, false);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
@@ -6711,6 +6738,8 @@ alter_table_type_to_string(AlterTableType cmdtype)
 			return "DROP COLUMN";
 		case AT_AddIndex:
 		case AT_ReAddIndex:
+		case AT_SetIndexVisible:
+		case AT_SetIndexInvisible:
 			return NULL;		/* not real grammar */
 		case AT_AddConstraint:
 		case AT_ReAddConstraint:
@@ -15958,6 +15987,8 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 			stmt->reset_default_tblspc = true;
 			/* keep the index's comment */
 			stmt->idxcomment = GetComment(oldId, RelationRelationId, 0);
+			/* preserve the index's visibility */
+			stmt->isvisible = get_index_visibility(oldId);
 
 			newcmd = makeNode(AlterTableCmd);
 			newcmd->subtype = AT_ReAddIndex;
@@ -15988,6 +16019,8 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 					indstmt->idxcomment = GetComment(indoid,
 													 RelationRelationId, 0);
 					indstmt->reset_default_tblspc = true;
+					/* preserve the index's visibility */
+					indstmt->isvisible = get_index_visibility(indoid);
 
 					cmd->subtype = AT_ReAddIndex;
 					tab->subcmds[AT_PASS_OLD_INDEX] =
@@ -23872,4 +23905,66 @@ ATExecSplitPartition(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/* Restore the userid and security context. */
 	SetUserIdAndSecContext(save_userid, save_sec_context);
+}
+
+/*
+ * ATExecSetIndexVisibility
+ *
+ * Toggle pg_index.indisvisible for one index.  When the value actually
+ * changes, invalidate the heap relation's relcache so that cached plans
+ * depending on it are replanned.  We don't open the heap; an OID-based
+ * relcache invalidation is sufficient and avoids taking a heap lock just
+ * to publish the invalidation message.
+ *
+ * Re-issuing the same value (e.g. ALTER INDEX idx INVISIBLE on an already
+ * invisible index) is a no-op: no catalog write and no invalidation.
+ *
+ * If pg_index.indcheckxmin is set, this command does not clear it and does
+ * not refuse the change.  The indcheckxmin safety check performed at
+ * planning time compares the pg_index tuple's xmin against TransactionXmin
+ * and continues to skip the index for transactions that might see broken
+ * HOT chains, regardless of indisvisible.  Restoring catalog visibility
+ * therefore cannot allow such a transaction to start trusting the index;
+ * the indcheckxmin check still applies after VISIBLE is set.
+ */
+static void
+ATExecSetIndexVisibility(Relation rel, bool visible)
+{
+	Oid			indexOid = RelationGetRelid(rel);
+	Oid			heapOid;
+	Relation	pg_index;
+	HeapTuple	indexTuple;
+	Form_pg_index indexForm;
+
+	heapOid = IndexGetRelation(indexOid, false);
+
+	pg_index = table_open(IndexRelationId, RowExclusiveLock);
+
+	indexTuple = SearchSysCacheCopy1(INDEXRELID, ObjectIdGetDatum(indexOid));
+	if (!HeapTupleIsValid(indexTuple))
+		elog(ERROR, "cache lookup failed for index %u", indexOid);
+	indexForm = (Form_pg_index) GETSTRUCT(indexTuple);
+
+	if (indexForm->indisvisible != visible)
+	{
+		indexForm->indisvisible = visible;
+		CatalogTupleUpdate(pg_index, &indexTuple->t_self, indexTuple);
+
+		/*
+		 * Changing index visibility changes the set of indexes the planner
+		 * may consider for the heap relation.  Invalidate the heap relation
+		 * relcache so cached plans depending on it are replanned.
+		 *
+		 * If indcheckxmin is set on this index, the indcheckxmin safety
+		 * check performed at planning time still applies after the index
+		 * becomes visible.
+		 */
+		CacheInvalidateRelcacheByRelid(heapOid);
+
+		InvokeObjectPostAlterHook(IndexRelationId, indexOid, 0);
+		CommandCounterIncrement();
+	}
+
+	heap_freetuple(indexTuple);
+	table_close(pg_index, RowExclusiveLock);
 }

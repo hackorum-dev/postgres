@@ -431,6 +431,7 @@ typedef struct _indxInfo
 	bool		indisclustered;
 	bool		indisreplident;
 	bool		indnullsnotdistinct;
+	bool		indisvisible;
 	Oid			parentidx;		/* if a partition, parent index OID */
 	SimplePtrList partattaches; /* if partitioned, partition attach objects */
 

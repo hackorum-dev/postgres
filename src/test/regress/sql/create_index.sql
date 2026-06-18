@@ -1500,6 +1500,783 @@ END;
 -- concurrently
 REINDEX SCHEMA CONCURRENTLY schema_to_reindex;
 
+--
+-- Index visibility (ALTER INDEX ... VISIBLE / INVISIBLE)
+--
+
+-- Group 1: basic planner visibility
+CREATE TABLE test_invisible_index(a int, b text);
+INSERT INTO test_invisible_index
+    SELECT i, md5(i::text)
+    FROM generate_series(1, 10000) i;
+CREATE INDEX test_invisible_index_a_idx ON test_invisible_index(a);
+ANALYZE test_invisible_index;
+
+SELECT indisvalid, indisready, indislive, indisvisible
+FROM pg_index WHERE indexrelid = 'test_invisible_index_a_idx'::regclass;
+
+-- Force a plan that uses the index when it is visible.  Invisible-index
+-- expectations below do not need to be stabilized: with no usable index
+-- the planner falls back to a sequential scan even with enable_seqscan
+-- and enable_bitmapscan turned off.
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invisible_index WHERE a = 42;
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+
+ALTER INDEX test_invisible_index_a_idx INVISIBLE;
+SELECT indisvalid, indisready, indislive, indisvisible
+FROM pg_index WHERE indexrelid = 'test_invisible_index_a_idx'::regclass;
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invisible_index WHERE a = 42;
+
+ALTER INDEX test_invisible_index_a_idx VISIBLE;
+SELECT indisvalid, indisready, indislive, indisvisible
+FROM pg_index WHERE indexrelid = 'test_invisible_index_a_idx'::regclass;
+
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invisible_index WHERE a = 42;
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+
+-- Group 2: CREATE INDEX ... INVISIBLE
+CREATE INDEX test_invisible_index_b_idx
+    ON test_invisible_index(b) INVISIBLE;
+ANALYZE test_invisible_index;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_index_b_idx'::regclass;
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invisible_index WHERE b = md5('42');
+
+ALTER INDEX test_invisible_index_b_idx VISIBLE;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_index_b_idx'::regclass;
+
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invisible_index WHERE b = md5('42');
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+
+-- Default visibility for plain CREATE INDEX
+CREATE INDEX test_invisible_index_default_idx ON test_invisible_index(a);
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_index_default_idx'::regclass;
+
+-- Explicit VISIBLE keyword
+CREATE INDEX test_invisible_index_visible_idx
+    ON test_invisible_index(a) VISIBLE;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_index_visible_idx'::regclass;
+
+DROP INDEX test_invisible_index_default_idx;
+DROP INDEX test_invisible_index_visible_idx;
+
+-- Group 3: prepared statement / plan cache invalidation
+CREATE TABLE test_invisible_plan_cache(a int, b text);
+INSERT INTO test_invisible_plan_cache
+    SELECT i, md5(i::text)
+    FROM generate_series(1, 10000) i;
+CREATE INDEX test_invisible_plan_cache_a_idx
+    ON test_invisible_plan_cache(a);
+ANALYZE test_invisible_plan_cache;
+
+SET plan_cache_mode = force_generic_plan;
+-- Force the visible-side plans to use the index regardless of cost.  The
+-- invisible-side plan still drops to a sequential scan, since no usable
+-- index exists.
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+
+PREPARE q_invisible_cache(int) AS
+    SELECT * FROM test_invisible_plan_cache WHERE a = $1;
+
+EXPLAIN (COSTS OFF) EXECUTE q_invisible_cache(42);
+
+-- Visible -> invisible: cached plan must be replanned, no longer use the index
+ALTER INDEX test_invisible_plan_cache_a_idx INVISIBLE;
+EXPLAIN (COSTS OFF) EXECUTE q_invisible_cache(42);
+
+-- Invisible -> visible: cached plan must be replanned, can use the index again
+ALTER INDEX test_invisible_plan_cache_a_idx VISIBLE;
+EXPLAIN (COSTS OFF) EXECUTE q_invisible_cache(42);
+
+DEALLOCATE q_invisible_cache;
+RESET plan_cache_mode;
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+
+-- Group 4: DML still maintains invisible indexes
+CREATE TABLE test_invisible_dml(a int, b int);
+CREATE UNIQUE INDEX test_invisible_dml_a_idx
+    ON test_invisible_dml(a) INVISIBLE;
+
+INSERT INTO test_invisible_dml VALUES (1, 10);
+INSERT INTO test_invisible_dml VALUES (2, 20);
+
+-- uniqueness must still be enforced while invisible
+DO $$
+BEGIN
+    BEGIN
+        INSERT INTO test_invisible_dml VALUES (1, 30);
+        RAISE EXCEPTION 'expected unique violation was not raised';
+    EXCEPTION WHEN unique_violation THEN
+        RAISE NOTICE 'unique violation correctly raised';
+    END;
+END $$;
+
+ALTER INDEX test_invisible_dml_a_idx VISIBLE;
+ANALYZE test_invisible_dml;
+
+-- After visibility flips back, the index is usable, proving it was
+-- maintained while invisible.
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invisible_dml WHERE a = 1;
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+
+-- Group 5: primary key / constraint-backed indexes
+CREATE TABLE test_invisible_pk(a int PRIMARY KEY, b int);
+INSERT INTO test_invisible_pk VALUES (1, 10), (2, 20);
+
+ALTER INDEX test_invisible_pk_pkey INVISIBLE;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_pk_pkey'::regclass;
+
+DO $$
+BEGIN
+    BEGIN
+        INSERT INTO test_invisible_pk VALUES (1, 30);
+        RAISE EXCEPTION 'expected unique violation was not raised';
+    EXCEPTION WHEN unique_violation THEN
+        RAISE NOTICE 'unique violation correctly raised';
+    END;
+END $$;
+
+\d test_invisible_pk
+
+ALTER INDEX test_invisible_pk_pkey VISIBLE;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_pk_pkey'::regclass;
+
+-- Group 6: pg_get_indexdef deparse
+ALTER INDEX test_invisible_index_b_idx INVISIBLE;
+SELECT pg_get_indexdef('test_invisible_index_b_idx'::regclass);
+ALTER INDEX test_invisible_index_b_idx VISIBLE;
+SELECT pg_get_indexdef('test_invisible_index_b_idx'::regclass);
+
+-- Group 7: psql \d annotations.  Both \d <table> and \d <indexname>
+-- render invisible indexes using the descriptive ", invisible" style.
+ALTER INDEX test_invisible_index_b_idx INVISIBLE;
+\d test_invisible_index
+\d test_invisible_index_b_idx
+ALTER INDEX test_invisible_index_b_idx VISIBLE;
+\d test_invisible_index_b_idx
+
+-- Group 8: REINDEX preserves visibility
+CREATE TABLE test_invisible_reindex(a int);
+CREATE INDEX test_invisible_reindex_idx
+    ON test_invisible_reindex(a) INVISIBLE;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_reindex_idx'::regclass;
+
+REINDEX INDEX test_invisible_reindex_idx;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_reindex_idx'::regclass;
+
+REINDEX INDEX CONCURRENTLY test_invisible_reindex_idx;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_reindex_idx'::regclass;
+
+ALTER INDEX test_invisible_reindex_idx VISIBLE;
+REINDEX INDEX CONCURRENTLY test_invisible_reindex_idx;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_reindex_idx'::regclass;
+
+-- Group 9: ALTER TABLE ALTER COLUMN TYPE rebuild path
+CREATE TABLE test_invisible_alter_type(a int);
+CREATE INDEX test_invisible_alter_type_idx
+    ON test_invisible_alter_type(a) INVISIBLE;
+ALTER TABLE test_invisible_alter_type
+    ALTER COLUMN a TYPE bigint;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invisible_alter_type_idx'::regclass;
+
+-- Group 10: expression index visibility and ANALYZE behavior.
+-- Confirm that (a) the planner ignores an invisible expression index
+-- and uses it once visible, and (b) ANALYZE still collects statistics
+-- for an invisible expression index, since invisibility is a planner
+-- hint only and does not stop other catalog-level work.
+CREATE TABLE test_invis_expr(a int, b int);
+INSERT INTO test_invis_expr
+    SELECT i, i * 2
+    FROM generate_series(1, 1000) AS i;
+CREATE INDEX test_invis_expr_idx
+    ON test_invis_expr ((a + b)) INVISIBLE;
+ANALYZE test_invis_expr;
+-- ANALYZE collected statistics on the expression-index attribute even
+-- though the index is invisible.
+SELECT COUNT(*) > 0 AS has_expr_stats
+FROM pg_statistic
+WHERE starelid = 'test_invis_expr_idx'::regclass;
+-- Planner ignores the invisible expression index.
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invis_expr WHERE (a + b) = 30;
+-- Made visible: planner picks the expression index back up.
+ALTER INDEX test_invis_expr_idx VISIBLE;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invis_expr WHERE (a + b) = 30;
+-- Made invisible again: planner falls back to a sequential scan.
+ALTER INDEX test_invis_expr_idx INVISIBLE;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invis_expr WHERE (a + b) = 30;
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+
+-- Group 11: UNIQUE constraint-backed invisible index.
+-- A UNIQUE constraint declared inline gets a backing index (named
+-- <table>_<column>_key by default).  Marking that index invisible must
+-- hide it from the planner but must NOT disable the UNIQUE constraint:
+-- duplicate inserts must still be rejected.
+CREATE TABLE test_invis_unique_constraint
+(
+    a int,
+    b text,
+    UNIQUE (a)
+);
+INSERT INTO test_invis_unique_constraint
+    SELECT i, md5(i::text)
+    FROM generate_series(1, 1000) AS i;
+ANALYZE test_invis_unique_constraint;
+ALTER INDEX test_invis_unique_constraint_a_key INVISIBLE;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invis_unique_constraint_a_key'::regclass;
+-- Planner should not use the invisible unique backing index.
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_invis_unique_constraint WHERE a = 1;
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+-- Constraint enforcement still works.  Wrap the duplicate insert in a
+-- DO block so the regression output stays stable, mirroring Group 5.
+DO $$
+BEGIN
+    BEGIN
+        INSERT INTO test_invis_unique_constraint VALUES (1, 'duplicate');
+        RAISE EXCEPTION 'expected unique violation was not raised';
+    EXCEPTION WHEN unique_violation THEN
+        RAISE NOTICE 'unique violation correctly raised';
+    END;
+END $$;
+ALTER INDEX test_invis_unique_constraint_a_key VISIBLE;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invis_unique_constraint_a_key'::regclass;
+DROP TABLE test_invis_unique_constraint;
+
+-- Group 12: ALTER TABLE ... ADD CONSTRAINT ... USING INDEX with an
+-- already-invisible unique index.  Promoting an invisible index into a
+-- constraint must preserve indisvisible = false; indisvalid /
+-- indisready / indislive remain true; uniqueness must be enforced.
+CREATE TABLE test_invis_using_idx
+(
+    a int NOT NULL,
+    b text
+);
+CREATE UNIQUE INDEX test_invis_using_idx_a_idx
+    ON test_invis_using_idx(a) INVISIBLE;
+SELECT indisvisible, indisvalid, indisready, indislive FROM pg_index
+WHERE indexrelid = 'test_invis_using_idx_a_idx'::regclass;
+-- Promote: ADD CONSTRAINT USING INDEX renames the index to the
+-- constraint name.  The renamed index must still be invisible.
+ALTER TABLE test_invis_using_idx
+    ADD CONSTRAINT test_invis_using_idx_a_key
+    UNIQUE USING INDEX test_invis_using_idx_a_idx;
+SELECT c.relname, i.indisvisible, i.indisvalid, i.indisready, i.indislive
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname IN ('test_invis_using_idx_a_idx',
+                    'test_invis_using_idx_a_key')
+ORDER BY c.relname;
+-- Constraint enforcement still works on the renamed, still-invisible
+-- backing index.
+INSERT INTO test_invis_using_idx VALUES (1, 'one');
+DO $$
+BEGIN
+    BEGIN
+        INSERT INTO test_invis_using_idx VALUES (1, 'duplicate');
+        RAISE EXCEPTION 'expected unique violation was not raised';
+    EXCEPTION WHEN unique_violation THEN
+        RAISE NOTICE 'unique violation correctly raised';
+    END;
+END $$;
+-- Flip the renamed constraint-backed index visible.
+ALTER INDEX test_invis_using_idx_a_key VISIBLE;
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_invis_using_idx_a_key'::regclass;
+DROP TABLE test_invis_using_idx;
+
+-- Group 13: psql \d INVISIBLE-suffix stripping on non-trivial index shapes.
+-- pg_get_indexdef() unconditionally appends " INVISIBLE" after any
+-- WITH/TABLESPACE/WHERE clause for invisible indexes; describe.c strips
+-- that suffix and renders the descriptive ", invisible" annotation
+-- instead.  Exercise that path against an expression index, a partial
+-- index, and a partitioned (ON ONLY) index so the strip-and-relabel
+-- logic is verified for shapes whose deparse output is non-trivial.
+CREATE TABLE test_invis_psql(a int, b int);
+CREATE INDEX test_invis_psql_expr_idx
+    ON test_invis_psql ((a + b)) INVISIBLE;
+CREATE INDEX test_invis_psql_partial_idx
+    ON test_invis_psql (a) WHERE a > 0;
+ALTER INDEX test_invis_psql_partial_idx INVISIBLE;
+-- pg_get_indexdef must show " INVISIBLE" at the very end.
+SELECT pg_get_indexdef('test_invis_psql_expr_idx'::regclass);
+SELECT pg_get_indexdef('test_invis_psql_partial_idx'::regclass);
+-- \d <table> shows the descriptive ", invisible" annotation, not the
+-- raw " INVISIBLE" SQL keyword.
+\d test_invis_psql
+DROP TABLE test_invis_psql;
+
+-- Partitioned (ON ONLY) parent index whose deparse includes INVISIBLE.
+CREATE TABLE test_invis_psql_part(a int) PARTITION BY RANGE (a);
+CREATE TABLE test_invis_psql_part_p1
+    PARTITION OF test_invis_psql_part FOR VALUES FROM (0) TO (100);
+CREATE INDEX test_invis_psql_part_idx
+    ON ONLY test_invis_psql_part(a) INVISIBLE;
+SELECT pg_get_indexdef('test_invis_psql_part_idx'::regclass);
+\d test_invis_psql_part
+DROP TABLE test_invis_psql_part;
+
+-- Cleanup
+DROP TABLE test_invisible_index;
+DROP TABLE test_invisible_plan_cache;
+DROP TABLE test_invisible_dml;
+DROP TABLE test_invisible_pk;
+DROP TABLE test_invisible_reindex;
+DROP TABLE test_invisible_alter_type;
+DROP TABLE test_invis_expr;
+
+--
+-- Index visibility on partitioned tables / partitioned indexes
+--
+
+-- Group P1: leaf partition index invisibility
+CREATE TABLE test_part_invisible_leaf
+(
+    a int,
+    b text
+) PARTITION BY RANGE (a);
+CREATE TABLE test_part_invisible_leaf_1
+    PARTITION OF test_part_invisible_leaf
+    FOR VALUES FROM (0) TO (1000);
+CREATE TABLE test_part_invisible_leaf_2
+    PARTITION OF test_part_invisible_leaf
+    FOR VALUES FROM (1000) TO (2000);
+INSERT INTO test_part_invisible_leaf
+    SELECT i, md5(i::text)
+    FROM generate_series(1, 1999) i;
+CREATE INDEX test_part_invisible_leaf_1_a_idx
+    ON test_part_invisible_leaf_1(a);
+CREATE INDEX test_part_invisible_leaf_2_a_idx
+    ON test_part_invisible_leaf_2(a);
+ANALYZE test_part_invisible_leaf;
+
+ALTER INDEX test_part_invisible_leaf_1_a_idx INVISIBLE;
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname LIKE 'test_part_invisible_leaf%'
+ORDER BY c.relname;
+
+-- The pt1 partition has no usable index, so a sequential scan is correct.
+-- Force the visible side (the pt2 partition lookup, and after VISIBLE the
+-- pt1 lookup) to use the index, regardless of cost.
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_part_invisible_leaf WHERE a = 42;
+
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_part_invisible_leaf WHERE a = 1042;
+
+ALTER INDEX test_part_invisible_leaf_1_a_idx VISIBLE;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_part_invisible_leaf WHERE a = 42;
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+
+DROP TABLE test_part_invisible_leaf;
+
+-- Group P2 / P3 / P4: parent partitioned index invisibility, catalog state,
+-- unrelated indexes left alone
+CREATE TABLE test_part_invisible_parent
+(
+    a int,
+    b text
+) PARTITION BY RANGE (a);
+CREATE TABLE test_part_invisible_parent_1
+    PARTITION OF test_part_invisible_parent
+    FOR VALUES FROM (0) TO (1000);
+CREATE TABLE test_part_invisible_parent_2
+    PARTITION OF test_part_invisible_parent
+    FOR VALUES FROM (1000) TO (2000);
+INSERT INTO test_part_invisible_parent
+    SELECT i, md5(i::text)
+    FROM generate_series(1, 1999) i;
+CREATE INDEX test_part_invisible_parent_a_idx
+    ON test_part_invisible_parent(a);
+CREATE INDEX test_part_invisible_parent_b_idx
+    ON test_part_invisible_parent(b);
+ANALYZE test_part_invisible_parent;
+
+ALTER INDEX test_part_invisible_parent_a_idx INVISIBLE;
+
+-- P3: parent and every attached child index in the 'a' hierarchy invisible;
+-- P4: the 'b' hierarchy must remain visible.  Identify each hierarchy by
+-- the parent index's OID rather than by name pattern.
+WITH parents(oid, relname) AS (
+    SELECT c.oid, c.relname
+      FROM pg_class c
+     WHERE c.relname IN ('test_part_invisible_parent_a_idx',
+                         'test_part_invisible_parent_b_idx')
+)
+SELECT c.relname, i.indisvisible
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indexrelid
+LEFT JOIN pg_inherits inh ON inh.inhrelid = c.oid
+WHERE c.oid IN (SELECT oid FROM parents)
+   OR inh.inhparent IN (SELECT oid FROM parents)
+ORDER BY c.relname;
+
+-- P2: planner must avoid the (now invisible) child indexes
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_part_invisible_parent WHERE a = 42;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_part_invisible_parent WHERE a = 1042;
+
+ALTER INDEX test_part_invisible_parent_a_idx VISIBLE;
+
+WITH parents(oid) AS (
+    SELECT c.oid FROM pg_class c
+     WHERE c.relname = 'test_part_invisible_parent_a_idx'
+)
+SELECT c.relname, i.indisvisible
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indexrelid
+LEFT JOIN pg_inherits inh ON inh.inhrelid = c.oid
+WHERE c.oid IN (SELECT oid FROM parents)
+   OR inh.inhparent IN (SELECT oid FROM parents)
+ORDER BY c.relname;
+
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+EXPLAIN (COSTS OFF)
+SELECT * FROM test_part_invisible_parent WHERE a = 42;
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+
+-- Group P5: multi-level partitioning
+CREATE TABLE test_part_invisible_multi
+(
+    a int,
+    b int,
+    c text
+) PARTITION BY RANGE (a);
+CREATE TABLE test_part_invisible_multi_1
+    PARTITION OF test_part_invisible_multi
+    FOR VALUES FROM (0) TO (1000)
+    PARTITION BY RANGE (b);
+CREATE TABLE test_part_invisible_multi_1_1
+    PARTITION OF test_part_invisible_multi_1
+    FOR VALUES FROM (0) TO (1000);
+CREATE TABLE test_part_invisible_multi_1_2
+    PARTITION OF test_part_invisible_multi_1
+    FOR VALUES FROM (1000) TO (2000);
+CREATE INDEX test_part_invisible_multi_a_idx
+    ON test_part_invisible_multi(a);
+
+ALTER INDEX test_part_invisible_multi_a_idx INVISIBLE;
+SELECT c.relname, c.relkind, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname LIKE 'test_part_invisible_multi%'
+ORDER BY c.relname;
+
+ALTER INDEX test_part_invisible_multi_a_idx VISIBLE;
+SELECT c.relname, c.relkind, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname LIKE 'test_part_invisible_multi%'
+ORDER BY c.relname;
+
+DROP TABLE test_part_invisible_multi;
+
+-- Group P6: prepared statement / plan cache invalidation
+SET plan_cache_mode = force_generic_plan;
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+
+PREPARE q_part_invisible(int) AS
+    SELECT * FROM test_part_invisible_parent WHERE a = $1;
+EXPLAIN (COSTS OFF) EXECUTE q_part_invisible(42);
+
+ALTER INDEX test_part_invisible_parent_a_idx INVISIBLE;
+EXPLAIN (COSTS OFF) EXECUTE q_part_invisible(42);
+
+ALTER INDEX test_part_invisible_parent_a_idx VISIBLE;
+EXPLAIN (COSTS OFF) EXECUTE q_part_invisible(42);
+
+DEALLOCATE q_part_invisible;
+RESET plan_cache_mode;
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+
+DROP TABLE test_part_invisible_parent;
+
+-- Group P7: DML maintenance and PRIMARY KEY enforcement
+CREATE TABLE test_part_invisible_unique
+(
+    a int,
+    b int,
+    PRIMARY KEY (a)
+) PARTITION BY RANGE (a);
+CREATE TABLE test_part_invisible_unique_1
+    PARTITION OF test_part_invisible_unique
+    FOR VALUES FROM (0) TO (1000);
+CREATE TABLE test_part_invisible_unique_2
+    PARTITION OF test_part_invisible_unique
+    FOR VALUES FROM (1000) TO (2000);
+INSERT INTO test_part_invisible_unique VALUES (1, 10), (1500, 20);
+
+ALTER INDEX test_part_invisible_unique_pkey INVISIBLE;
+
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname LIKE 'test_part_invisible_unique%pkey'
+ORDER BY c.relname;
+
+DO $$
+BEGIN
+    BEGIN
+        INSERT INTO test_part_invisible_unique VALUES (1, 99);
+        RAISE EXCEPTION 'expected unique violation was not raised';
+    EXCEPTION WHEN unique_violation THEN
+        RAISE NOTICE 'unique violation correctly raised';
+    END;
+END $$;
+
+DROP TABLE test_part_invisible_unique;
+
+-- Group P9: REINDEX preserves partitioned-index visibility
+CREATE TABLE test_part_invisible_reindex(a int) PARTITION BY RANGE (a);
+CREATE TABLE test_part_invisible_reindex_1
+    PARTITION OF test_part_invisible_reindex
+    FOR VALUES FROM (0) TO (1000);
+CREATE TABLE test_part_invisible_reindex_2
+    PARTITION OF test_part_invisible_reindex
+    FOR VALUES FROM (1000) TO (2000);
+CREATE INDEX test_part_invisible_reindex_a_idx
+    ON test_part_invisible_reindex(a) INVISIBLE;
+
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname LIKE 'test_part_invisible_reindex%'
+ORDER BY c.relname;
+
+REINDEX INDEX test_part_invisible_reindex_a_idx;
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname LIKE 'test_part_invisible_reindex%'
+ORDER BY c.relname;
+
+-- direct REINDEX of a leaf child partition index
+REINDEX INDEX CONCURRENTLY test_part_invisible_reindex_1_a_idx;
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname LIKE 'test_part_invisible_reindex%'
+ORDER BY c.relname;
+
+DROP TABLE test_part_invisible_reindex;
+
+-- Group P10: CREATE INDEX ... INVISIBLE on partitioned table propagates
+CREATE TABLE test_part_create_invisible(a int, b int) PARTITION BY RANGE (a);
+CREATE TABLE test_part_create_invisible_1
+    PARTITION OF test_part_create_invisible
+    FOR VALUES FROM (0) TO (1000);
+CREATE TABLE test_part_create_invisible_2
+    PARTITION OF test_part_create_invisible
+    FOR VALUES FROM (1000) TO (2000);
+
+CREATE INDEX test_part_create_invisible_a_idx
+    ON test_part_create_invisible(a) INVISIBLE;
+CREATE INDEX test_part_create_visible_b_idx
+    ON test_part_create_invisible(b) VISIBLE;
+
+-- Identify each partitioned-index hierarchy by its parent's OID, then
+-- include the parent itself, so the test never matches the wrong index
+-- through a name pattern.
+WITH parent(oid, relname) AS (
+    SELECT c.oid, c.relname
+      FROM pg_class c
+     WHERE c.relname IN ('test_part_create_invisible_a_idx',
+                         'test_part_create_visible_b_idx')
+)
+SELECT c.relname, i.indisvisible
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indexrelid
+LEFT JOIN pg_inherits inh ON inh.inhrelid = c.oid
+WHERE c.oid IN (SELECT oid FROM parent)
+   OR inh.inhparent IN (SELECT oid FROM parent)
+ORDER BY c.relname;
+
+ALTER INDEX test_part_create_invisible_a_idx VISIBLE;
+
+WITH parent(oid) AS (
+    SELECT c.oid
+      FROM pg_class c
+     WHERE c.relname = 'test_part_create_invisible_a_idx'
+)
+SELECT c.relname, i.indisvisible
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indexrelid
+LEFT JOIN pg_inherits inh ON inh.inhrelid = c.oid
+WHERE c.oid IN (SELECT oid FROM parent)
+   OR inh.inhparent IN (SELECT oid FROM parent)
+ORDER BY c.relname;
+
+DROP TABLE test_part_create_invisible;
+
+-- Group P11: no-op ALTER INDEX visibility commands are accepted.
+-- Re-issuing the same value must succeed without error.  The
+-- indcheckxmin safety check performed at planning time is existing
+-- PostgreSQL behavior: it compares the pg_index tuple xmin against
+-- TransactionXmin and skips the index for transactions that might
+-- see broken HOT chains, regardless of indisvisible.  ALTER INDEX
+-- ... VISIBLE only restores catalog visibility; it does not bypass
+-- that check.  The check is covered by existing code-path review
+-- and cannot be reproduced deterministically from regression SQL
+-- without directly mutating pg_index, so no SQL test is added here.
+CREATE TABLE test_part_invisible_noop(a int);
+CREATE INDEX test_part_invisible_noop_idx ON test_part_invisible_noop(a);
+ALTER INDEX test_part_invisible_noop_idx INVISIBLE;
+ALTER INDEX test_part_invisible_noop_idx INVISIBLE; -- no-op, must succeed
+ALTER INDEX test_part_invisible_noop_idx VISIBLE;
+ALTER INDEX test_part_invisible_noop_idx VISIBLE;   -- no-op, must succeed
+SELECT indisvisible FROM pg_index
+WHERE indexrelid = 'test_part_invisible_noop_idx'::regclass;
+DROP TABLE test_part_invisible_noop;
+
+-- Group P12: ALTER INDEX ... ATTACH PARTITION does not rewrite the child
+-- index's pg_index.indisvisible.  The attached child keeps whatever
+-- visibility it already had; alignment with the partitioned parent must
+-- come from a later recursive ALTER INDEX on the parent.
+
+-- Case 1: invisible parent, visible child
+CREATE TABLE attach_vis_parent (
+    a int NOT NULL,
+    b text
+) PARTITION BY RANGE (a);
+CREATE TABLE attach_vis_child (
+    a int NOT NULL,
+    b text
+);
+ALTER TABLE attach_vis_parent
+    ATTACH PARTITION attach_vis_child FOR VALUES FROM (0) TO (100);
+
+-- Build the parent partitioned index ON ONLY so it does not auto-create
+-- a child, then create the child index manually with a different
+-- visibility from the parent.
+CREATE INDEX attach_vis_parent_a_idx
+    ON ONLY attach_vis_parent(a) INVISIBLE;
+CREATE INDEX attach_vis_child_a_idx
+    ON attach_vis_child(a);
+
+-- Pre-attach: parent invisible, child visible.
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname IN ('attach_vis_parent_a_idx', 'attach_vis_child_a_idx')
+ORDER BY c.relname;
+
+ALTER INDEX attach_vis_parent_a_idx
+    ATTACH PARTITION attach_vis_child_a_idx;
+
+-- ATTACH PARTITION must not rewrite the child's indisvisible: the child
+-- remains visible even though the parent is invisible.
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname IN ('attach_vis_parent_a_idx', 'attach_vis_child_a_idx')
+ORDER BY c.relname;
+
+-- Recursive ALTER INDEX parent INVISIBLE aligns the hierarchy.  The
+-- parent is already invisible, but the recursion still propagates the
+-- new value to the attached child.
+ALTER INDEX attach_vis_parent_a_idx INVISIBLE;
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname IN ('attach_vis_parent_a_idx', 'attach_vis_child_a_idx')
+ORDER BY c.relname;
+
+-- Recursive ALTER INDEX parent VISIBLE flips the whole hierarchy back.
+ALTER INDEX attach_vis_parent_a_idx VISIBLE;
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname IN ('attach_vis_parent_a_idx', 'attach_vis_child_a_idx')
+ORDER BY c.relname;
+
+DROP TABLE attach_vis_parent;
+
+-- Case 2: visible parent, invisible child
+CREATE TABLE attach_vis2_parent (
+    a int NOT NULL,
+    b text
+) PARTITION BY RANGE (a);
+CREATE TABLE attach_vis2_child (
+    a int NOT NULL,
+    b text
+);
+ALTER TABLE attach_vis2_parent
+    ATTACH PARTITION attach_vis2_child FOR VALUES FROM (0) TO (100);
+
+CREATE INDEX attach_vis2_parent_a_idx
+    ON ONLY attach_vis2_parent(a);
+CREATE INDEX attach_vis2_child_a_idx
+    ON attach_vis2_child(a) INVISIBLE;
+
+-- Pre-attach: parent visible, child invisible.
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname IN ('attach_vis2_parent_a_idx', 'attach_vis2_child_a_idx')
+ORDER BY c.relname;
+
+ALTER INDEX attach_vis2_parent_a_idx
+    ATTACH PARTITION attach_vis2_child_a_idx;
+
+-- ATTACH PARTITION must not rewrite the child's indisvisible: the child
+-- remains invisible even though the parent is visible.
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname IN ('attach_vis2_parent_a_idx', 'attach_vis2_child_a_idx')
+ORDER BY c.relname;
+
+-- Recursive ALTER INDEX parent VISIBLE aligns the hierarchy.  The
+-- parent is already visible, but the recursion still propagates the
+-- new value to the attached child.
+ALTER INDEX attach_vis2_parent_a_idx VISIBLE;
+SELECT c.relname, i.indisvisible
+FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+WHERE c.relname IN ('attach_vis2_parent_a_idx', 'attach_vis2_child_a_idx')
+ORDER BY c.relname;
+
+DROP TABLE attach_vis2_parent;
+
 -- Failure for unauthorized user
 CREATE ROLE regress_reindexuser NOLOGIN;
 SET SESSION ROLE regress_reindexuser;

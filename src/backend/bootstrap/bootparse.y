@@ -303,6 +303,7 @@ Boot_DeclareIndexStmt:
 					stmt->concurrent = false;
 					stmt->if_not_exists = false;
 					stmt->reset_default_tblspc = false;
+					stmt->isvisible = true;
 
 					/* locks and races need not concern us in bootstrap mode */
 					relationId = RangeVarGetRelid(stmt->relation, NoLock,
@@ -357,6 +358,7 @@ Boot_DeclareUniqueIndexStmt:
 					stmt->concurrent = false;
 					stmt->if_not_exists = false;
 					stmt->reset_default_tblspc = false;
+					stmt->isvisible = true;
 
 					/* locks and races need not concern us in bootstrap mode */
 					relationId = RangeVarGetRelid(stmt->relation, NoLock,

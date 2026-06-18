@@ -28,6 +28,7 @@ CREATE [ UNIQUE ] INDEX [ CONCURRENTLY ] [ [ IF NOT EXISTS ] <replaceable class=
     [ WITH ( <replaceable class="parameter">storage_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] ) ]
     [ TABLESPACE <replaceable class="parameter">tablespace_name</replaceable> ]
     [ WHERE <replaceable class="parameter">predicate</replaceable> ]
+    [ VISIBLE | INVISIBLE ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -376,6 +377,29 @@ CREATE [ UNIQUE ] INDEX [ CONCURRENTLY ] [ [ IF NOT EXISTS ] <replaceable class=
       <listitem>
        <para>
         The constraint expression for a partial index.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>INVISIBLE</literal></term>
+      <listitem>
+       <para>
+        Create the index in the invisible state.  An invisible index is
+        not used by the query planner, but it is still maintained when
+        the underlying table is modified.  Unique indexes continue to
+        enforce uniqueness, and any uniqueness or exclusion constraint
+        backed by the index is enforced.  This is useful for preparing
+        an index without immediately disturbing query plans, or for
+        evaluating whether dropping an existing index is safe.  The
+        index can be made visible later with
+        <command>ALTER INDEX ... VISIBLE</command> without rebuilding it.
+       </para>
+       <para>
+        On a partitioned table, the visibility specified here is applied
+        to the partitioned parent index and propagated to every child
+        index that <command>CREATE INDEX</command> creates on the
+        partitions, so the entire hierarchy starts out in the same state.
        </para>
       </listitem>
      </varlistentry>
