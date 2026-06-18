@@ -367,6 +367,53 @@ ALTER PUBLICATION testpub_alter_except DROP TABLE pub_test.testpub_parted_s;
 ALTER PUBLICATION testpub_alter_except ADD TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1, testpub_tbl_s2);
 \dRp+ testpub_alter_except
 
+-- SET: replace the except list (keep same schema, different except table)
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s2);
+\dRp+ testpub_alter_except
+
+-- fail: table in EXCEPT clause also appears in the explicit table list
+ALTER PUBLICATION testpub_alter_except SET TABLE pub_test.testpub_tbl_s1, TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
+
+-- fail: explicit partition + EXCEPT-ed root, given in a single SET statement
+ALTER PUBLICATION testpub_alter_except SET TABLE pub_test.testpub_part_s, TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_parted_s);
+
+-- fail: except table's schema (public) not in the publication's schema list (pub_test)
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE public.testpub_tbl1);
+
+-- SET: unqualified name in EXCEPT is implicitly qualified with the schema
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE testpub_tbl_s1);
+\dRp+ testpub_alter_except
+
+-- SET without EXCEPT clears the existing except list
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test;
+\dRp+ testpub_alter_except
+
+-- SET to a different schema removes old schema's EXCEPT entries
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE testpub_tbl_s1);
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA public;
+\dRp+ testpub_alter_except
+
+-- fail: nonexistent table in EXCEPT clause (SET path)
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.nonexistent_table);
+
+-- SET: multiple schemas each with their own EXCEPT clause
+ALTER PUBLICATION testpub_alter_except SET TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1),
+                                                                      public EXCEPT (TABLE testpub_tbl1);
+\dRp+ testpub_alter_except
+
+-- fail: ALTER PUBLICATION ... DROP TABLE on an excluded table is rejected
+-- with an EXCEPT-specific error.
+ALTER PUBLICATION testpub_alter_except DROP TABLE pub_test.testpub_tbl_s1;
+-- the EXCEPT entry is still present after the rejected DROP TABLE
+\dRp+ testpub_alter_except
+
+-- fail: EXCEPT is not allowed with DROP
+ALTER PUBLICATION testpub_alter_except DROP TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s2);
+
+-- DROP TABLES IN SCHEMA removes associated EXCEPT entries
+ALTER PUBLICATION testpub_alter_except DROP TABLES IN SCHEMA pub_test;
+\dRp+ testpub_alter_except
+
 -- Cleanup
 RESET client_min_messages;
 DROP TABLE pub_test.testpub_tbl_s1, pub_test.testpub_tbl_s2;
