@@ -354,7 +354,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 	}
 
 	/*
-	 * NULL TREATEMENT is only allowed for window functions per spec.
+	 * NULL TREATMENT is only allowed for window functions per spec.
 	 */
 	if (fdresult != FUNCDETAIL_WINDOWFUNC && ignore_nulls != NO_NULLTREATMENT)
 		ereport(ERROR,
