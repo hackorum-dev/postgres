@@ -2771,6 +2771,7 @@ STRLEN
 SV
 SYNCHRONIZATION_BARRIER
 SYSTEM_INFO
+SafeQualsInfo
 SampleScan
 SampleScanGetSampleSize_function
 SampleScanState
