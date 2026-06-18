@@ -3175,6 +3175,9 @@ transformCreateTableAsStmt(ParseState *pstate, CreateTableAsStmt *stmt)
 	Query	   *result;
 	Query	   *query;
 
+	if (stmt->objtype == OBJECT_MATVIEW)
+		pstate->p_creating_stored_object = true;
+
 	/* transform contained query, not allowing SELECT INTO */
 	query = transformStmt(pstate, stmt->query);
 	stmt->query = (Node *) query;
