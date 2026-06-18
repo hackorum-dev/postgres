@@ -14,6 +14,7 @@
 #define SEQUENCE_H
 
 #include "catalog/objectaddress.h"
+#include "catalog/pg_sequence.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
 #include "parser/parse_node.h"
@@ -38,9 +39,17 @@ typedef FormData_pg_sequence_data *Form_pg_sequence_data;
 #define SEQ_COL_FIRSTCOL		SEQ_COL_LASTVAL
 #define SEQ_COL_LASTCOL			SEQ_COL_CALLED
 
+/* Information needed to define a sequence. */
+typedef struct Sequence_values
+{
+	Form_pg_sequence seqform;
+	int64		last_value;
+} Sequence_values;
+
 extern int64 nextval_internal(Oid relid, bool check_permissions);
 extern Datum nextval(PG_FUNCTION_ARGS);
 extern List *sequence_options(Oid relid);
+extern Sequence_values *get_sequence_values(Oid sequenceId);
 
 extern ObjectAddress DefineSequence(ParseState *pstate, CreateSeqStmt *seq);
 extern ObjectAddress AlterSequence(ParseState *pstate, AlterSeqStmt *stmt);

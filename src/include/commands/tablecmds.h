@@ -108,4 +108,6 @@ extern void RangeVarCallbackOwnsRelation(const RangeVar *relation,
 extern bool PartConstraintImpliedByRelConstraint(Relation scanrel,
 												 List *partConstraint);
 
+extern char *storage_name(char c);
+
 #endif							/* TABLECMDS_H */
