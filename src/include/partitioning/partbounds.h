@@ -152,5 +152,6 @@ extern void calculate_partition_bound_for_merge(Relation parent,
 												List *partOids,
 												PartitionBoundSpec *spec,
 												ParseState *pstate);
+extern char    *relation_get_part_bound(Oid relid);
 
 #endif							/* PARTBOUNDS_H */

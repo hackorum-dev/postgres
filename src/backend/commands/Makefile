@@ -28,6 +28,8 @@ OBJS = \
 	copyto.o \
 	createas.o \
 	dbcommands.o \
+	ddldeparse.o \
+	ddljson.o \
 	define.o \
 	discard.o \
 	dropcmds.o \

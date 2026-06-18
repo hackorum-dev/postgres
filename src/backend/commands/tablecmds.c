@@ -747,7 +747,6 @@ static ObjectAddress ATExecSetCompression(Relation rel,
 										  const char *column, Node *newValue, LOCKMODE lockmode);
 
 static void index_copy_data(Relation rel, RelFileLocator newrlocator);
-static const char *storage_name(char c);
 
 static void RangeVarCallbackForDropRelation(const RangeVar *rel, Oid relOid,
 											Oid oldRelOid, void *arg);
@@ -2525,7 +2524,7 @@ truncate_check_activity(Relation rel)
  * storage_name
  *	  returns the name corresponding to a typstorage/attstorage enum value
  */
-static const char *
+char *
 storage_name(char c)
 {
 	switch (c)
