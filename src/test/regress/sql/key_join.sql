@@ -543,3 +543,8 @@ BEGIN ATOMIC
   SELECT c.name FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)
   WHERE o.id = order_id;
 END;
+
+SELECT view_schema, view_name, constraint_schema, constraint_name
+FROM information_schema.view_constraint_usage
+WHERE view_name = 'order_customers'
+ORDER BY 4;
