@@ -372,7 +372,8 @@ CombineRangeTables(List **dst_rtable, List **dst_perminfos,
  * Find all Var nodes in the given tree with varlevelsup == sublevels_up,
  * and increment their varno fields (rangetable indexes) by 'offset'.
  * The varnosyn fields are adjusted similarly.  Also, adjust other nodes
- * that contain rangetable indexes, such as RangeTblRef and JoinExpr.
+ * that contain rangetable indexes, such as RangeTblRef, JoinExpr and
+ * KeyJoinNode.
  *
  * NOTE: although this has the form of a walker, we cheat and modify the
  * nodes in-place.  The given expression tree should have been copied
@@ -427,6 +428,20 @@ OffsetVarNodes_walker(Node *node, OffsetVarNodes_context *context)
 
 		if (j->rtindex && context->sublevels_up == 0)
 			j->rtindex += context->offset;
+		OffsetVarNodes_walker(j->keyJoin, context);
+		/* fall through to examine children */
+	}
+	if (IsA(node, KeyJoinNode))
+	{
+		KeyJoinNode *kjn = (KeyJoinNode *) node;
+
+		if (context->sublevels_up == 0)
+		{
+			Assert(kjn->referencingVarno > 0);
+			Assert(kjn->referencedVarno > 0);
+			kjn->referencingVarno += context->offset;
+			kjn->referencedVarno += context->offset;
+		}
 		/* fall through to examine children */
 	}
 	if (IsA(node, PlaceHolderVar))
@@ -531,14 +546,14 @@ OffsetVarNodes(Node *node, int offset, int sublevels_up)
  * (identified by sublevels_up and rt_index), and change their varno fields
  * to 'new_index', and update varnosyn and varnullingrels fields similarly.
  * Also adjust other nodes that contain rangetable indexes, such as
- * RangeTblRef and JoinExpr.
+ * RangeTblRef, JoinExpr and KeyJoinNode.
  *
  * Also, new_index can be INVALID_VAR to indicate that we are deleting the
  * given relid from the tree.  In this case we expect to find rt_index only
  * in Relids fields (varnullingrels, phnullingrels, phrels), never in any
- * field that identifies a single relation.  The exception is varnosyn,
- * which may name an aliased join being removed; the join's RTE remains in
- * the rangetable, so we leave such syntactic references unchanged.
+ * field that identifies a single relation.  Exceptions are varnosyn and
+ * KeyJoinNode fields, which may name an aliased join being removed; the join's
+ * RTE remains in the rangetable, so we leave such references unchanged.
  *
  * NOTE: although this has the form of a walker, we cheat and modify the
  * nodes in-place.  The given expression tree should have been copied
@@ -612,6 +627,22 @@ ChangeVarNodes_walker(Node *node, ChangeVarNodes_context *context)
 		{
 			Assert(context->new_index != INVALID_VAR);
 			j->rtindex = context->new_index;
+		}
+		ChangeVarNodes_walker(j->keyJoin, context);
+		/* fall through to examine children */
+	}
+	if (IsA(node, KeyJoinNode))
+	{
+		KeyJoinNode *kjn = (KeyJoinNode *) node;
+
+		/* When deleting, leave the retained pre-planning proof unchanged. */
+		if (context->sublevels_up == 0 &&
+			context->new_index != INVALID_VAR)
+		{
+			if (kjn->referencingVarno == context->rt_index)
+				kjn->referencingVarno = context->new_index;
+			if (kjn->referencedVarno == context->rt_index)
+				kjn->referencedVarno = context->new_index;
 		}
 		/* fall through to examine children */
 	}

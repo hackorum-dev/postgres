@@ -2404,6 +2404,8 @@ expression_tree_walker_impl(Node *node,
 			return WALK(((NullTest *) node)->arg);
 		case T_BooleanTest:
 			return WALK(((BooleanTest *) node)->arg);
+		case T_KeyJoinNode:
+			break;
 		case T_CoerceToDomain:
 			return WALK(((CoerceToDomain *) node)->arg);
 		case T_TargetEntry:
@@ -2605,7 +2607,8 @@ expression_tree_walker_impl(Node *node,
 					return true;
 
 				/*
-				 * alias clause, using list are deemed uninteresting.
+				 * Key-join proof metadata is not expression semantics.  Alias
+				 * clause, using list are deemed uninteresting.
 				 */
 			}
 			break;
@@ -3471,6 +3474,18 @@ expression_tree_mutator_impl(Node *node,
 				return (Node *) newnode;
 			}
 			break;
+		case T_KeyJoinNode:
+			{
+				KeyJoinNode *key_join = (KeyJoinNode *) node;
+				KeyJoinNode *newnode;
+
+				FLATCOPY(newnode, key_join, KeyJoinNode);
+				newnode->referencingAttnums =
+					copyObject(key_join->referencingAttnums);
+				newnode->referencedAttnums =
+					copyObject(key_join->referencedAttnums);
+				return (Node *) newnode;
+			}
 		case T_CoerceToDomain:
 			{
 				CoerceToDomain *ctest = (CoerceToDomain *) node;
@@ -3650,6 +3665,13 @@ expression_tree_mutator_impl(Node *node,
 				MUTATE(newnode->larg, join->larg, Node *);
 				MUTATE(newnode->rarg, join->rarg, Node *);
 				MUTATE(newnode->quals, join->quals, Node *);
+
+				/*
+				 * Copy, don't mutate: we assume keyJoin is read only from a
+				 * pre-planning tree (see KeyJoinNode), so it need not track the
+				 * varno rewrites a mutator makes.
+				 */
+				newnode->keyJoin = copyObject(join->keyJoin);
 				/* We do not mutate alias or using by default */
 				return (Node *) newnode;
 			}
@@ -4230,6 +4252,16 @@ raw_expression_tree_walker_impl(Node *node,
 			return WALK(((NullTest *) node)->arg);
 		case T_BooleanTest:
 			return WALK(((BooleanTest *) node)->arg);
+		case T_KeyJoinNode:
+			break;
+		case T_KeyJoinClause:
+			{
+				KeyJoinClause *kjc = (KeyJoinClause *) node;
+
+				if (WALK(kjc->leftCols))
+					return true;
+				return WALK(kjc->rightCols);
+			}
 		case T_JoinExpr:
 			{
 				JoinExpr   *join = (JoinExpr *) node;
@@ -4239,6 +4271,8 @@ raw_expression_tree_walker_impl(Node *node,
 				if (WALK(join->rarg))
 					return true;
 				if (WALK(join->quals))
+					return true;
+				if (WALK(join->keyJoin))
 					return true;
 				if (WALK(join->alias))
 					return true;

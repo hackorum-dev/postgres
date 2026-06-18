@@ -60,6 +60,8 @@ SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">expression</replac
     [ LATERAL ] ROWS FROM( <replaceable class="parameter">function_name</replaceable> ( [ <replaceable class="parameter">argument</replaceable> [, ...] ] ) [ AS ( <replaceable class="parameter">column_definition</replaceable> [, ...] ) ] [, ...] )
                 [ WITH ORDINALITY ] [ [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ] ]
     <replaceable class="parameter">from_item</replaceable> <replaceable class="parameter">join_type</replaceable> <replaceable class="parameter">from_item</replaceable> { ON <replaceable class="parameter">join_condition</replaceable> | USING ( <replaceable class="parameter">join_column</replaceable> [, ...] ) [ AS <replaceable class="parameter">join_using_alias</replaceable> ] }
+    <replaceable class="parameter">from_item</replaceable> <replaceable class="parameter">join_type</replaceable> <replaceable class="parameter">from_item</replaceable>
+        FOR KEY <replaceable class="parameter">left_from_reference</replaceable> ( <replaceable class="parameter">left_join_column</replaceable> [, ...] ) { -&gt; | &lt;- } <replaceable class="parameter">right_from_reference</replaceable> ( <replaceable class="parameter">right_join_column</replaceable> [, ...] )
     <replaceable class="parameter">from_item</replaceable> NATURAL <replaceable class="parameter">join_type</replaceable> <replaceable class="parameter">from_item</replaceable>
     <replaceable class="parameter">from_item</replaceable> CROSS JOIN <replaceable class="parameter">from_item</replaceable>
 
@@ -613,6 +615,11 @@ TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
         class="parameter">join_condition</replaceable></literal>,
         <literal>USING (<replaceable
         class="parameter">join_column</replaceable> [, ...])</literal>,
+        <literal>FOR KEY <replaceable
+        class="parameter">left_from_reference</replaceable> (<replaceable
+        class="parameter">join_column</replaceable> [, ...]) { -&gt; | &lt;- }
+        <replaceable class="parameter">right_from_reference</replaceable>
+        (<replaceable class="parameter">join_column</replaceable> [, ...])</literal>,
         or <literal>NATURAL</literal>.  See below for the meaning.
        </para>
 
@@ -626,7 +633,8 @@ TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
         tightly than the commas separating <literal>FROM</literal>-list items.
         All the <literal>JOIN</literal> options are just a notational
         convenience, since they do nothing you couldn't do with plain
-        <literal>FROM</literal> and <literal>WHERE</literal>.
+        <literal>FROM</literal> and <literal>WHERE</literal>, except that
+        <literal>FOR KEY</literal> also performs a proof check.
        </para>
 
        <para><literal>LEFT OUTER JOIN</literal> returns all rows in the qualified
@@ -690,6 +698,79 @@ TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
         <replaceable class="parameter">alias</replaceable>, you cannot write a
         column alias list &mdash; the output names of the join columns are the
         same as they appear in the <literal>USING</literal> list.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>FOR KEY <replaceable class="parameter">left_from_reference</replaceable> ( <replaceable class="parameter">left_join_column</replaceable> [, ...] ) { -&gt; | &lt;- } <replaceable class="parameter">right_from_reference</replaceable> ( <replaceable class="parameter">right_join_column</replaceable> [, ...] )</literal></term>
+      <listitem>
+       <para>
+        A <literal>FOR KEY</literal> clause requests an equality join that can
+        be proven to follow a usable foreign-key relationship.  It declares a
+        foreign-key traversal from the referencing side to the referenced side,
+        enriching referencing rows with their uniquely matching referenced
+        rows.  The equality comparisons for the join are generated
+        automatically.  If the key relationship cannot be proven during parse
+        analysis, the query is rejected.
+       </para>
+
+       <para>
+        <replaceable class="parameter">left_from_reference</replaceable>
+        must name a relation visible in the left-hand <replaceable
+        class="parameter">from_item</replaceable>, and <replaceable
+        class="parameter">right_from_reference</replaceable> one visible in
+        the right-hand <replaceable class="parameter">from_item</replaceable>;
+        a table name, or its alias if one was given.  Each column list names
+        columns exposed by the relation it follows.  The arrow points from
+        the referencing side to the referenced side: with
+        <literal>-&gt;</literal>, the left-hand columns are the referencing
+        columns and the right-hand columns are the referenced columns; with
+        <literal>&lt;-</literal>, the right-hand columns are the referencing
+        columns and the left-hand columns are the referenced columns.
+        The two column lists must have the same number of columns.
+       </para>
+
+       <para>
+        PostgreSQL checks the key relationship using the facts visible from
+        the two <replaceable class="parameter">from_item</replaceable> inputs
+        being joined.  A valid <literal>FOR KEY</literal> join must satisfy
+        these requirements:
+       </para>
+
+       <itemizedlist>
+        <listitem>
+         <para>
+          The referenced columns must be unique in the referenced input.  This
+          prevents one referencing row from matching more than one referenced
+          row.
+         </para>
+        </listitem>
+
+        <listitem>
+         <para>
+          Every all-non-null referencing key value present in the referencing
+          operand must have a matching referenced value in the referenced
+          operand.  This requires a matching usable foreign-key
+          constraint.
+         </para>
+        </listitem>
+
+        <listitem>
+         <para>
+          The referencing columns must be known non-null, or the join type must
+          preserve the referencing side.  Otherwise an inner join could
+          silently drop referencing rows whose key contains nulls.
+         </para>
+        </listitem>
+       </itemizedlist>
+
+       <para>
+        Base-table proof uses enforced, validated, nondeferrable foreign-key
+        constraints and usable unique keys whose key identities match.
+        <literal>FOR KEY</literal> does not suppress
+        duplicate output columns; its output column behavior is like
+        <literal>JOIN ON</literal>.
        </para>
       </listitem>
      </varlistentry>

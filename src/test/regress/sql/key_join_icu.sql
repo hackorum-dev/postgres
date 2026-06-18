@@ -1,0 +1,72 @@
+--
+-- key_join_icu
+--
+-- FOR KEY join cases that depend on an ICU nondeterministic collation.  Such a
+-- collation can only be created when the database encoding is one that ICU
+-- supports (e.g. UTF8), so these cases used to live inline in key_join.sql and
+-- key_join_mcdc.sql and broke the regression suite on SQL_ASCII databases and
+-- on builds without ICU.  Keep them here and skip the whole file unless an ICU
+-- collation can actually be built; the proof behavior they exercise is
+-- collation-mechanism specific and not otherwise reachable without ICU.
+--
+
+/* skip test if not UTF8 server encoding or no ICU collations installed */
+SELECT getdatabaseencoding() <> 'UTF8' OR
+       (SELECT count(*) FROM pg_collation WHERE collprovider = 'i' AND collname <> 'unicode') = 0
+       AS skip_test \gset
+\if :skip_test
+\quit
+\endif
+
+CREATE SCHEMA key_join_icu;
+SET search_path = key_join_icu, public;
+
+-- Exact-matching nondeterministic collations are a usable equality identity
+-- for catalog and query-shape proof facts.  The byte-distinct spellings below
+-- compare equal at ICU primary strength.
+CREATE COLLATION key_nondet (provider = icu, locale = 'und-u-ks-level1',
+    deterministic = false);
+
+SELECT 'Alpha'::text COLLATE key_nondet =
+       'alpha'::text COLLATE key_nondet AS collates_equal,
+       convert_to('Alpha', 'UTF8') <>
+       convert_to('alpha', 'UTF8') AS bytes_differ;
+
+CREATE TABLE key_nondet_parent
+(
+    code text COLLATE key_nondet PRIMARY KEY
+);
+CREATE TABLE key_nondet_child
+(
+    id          int PRIMARY KEY,
+    code        text COLLATE key_nondet UNIQUE NOT NULL,
+    parent_code text COLLATE key_nondet NOT NULL
+        REFERENCES key_nondet_parent (code)
+);
+CREATE TABLE key_nondet_grandchild
+(
+    id         int PRIMARY KEY,
+    child_code text COLLATE key_nondet NOT NULL
+        REFERENCES key_nondet_child (code)
+);
+
+INSERT INTO key_nondet_parent VALUES ('Alpha'), ('BETA');
+INSERT INTO key_nondet_child VALUES
+    (10, 'Child-One', 'alpha'),
+    (20, 'CHILD-TWO', 'beta'),
+    (30, 'Child-Three', 'ALPHA');
+INSERT INTO key_nondet_grandchild VALUES
+    (100, 'child-one'),
+    (200, 'Child-Two');
+
+-- accepted: the unique and FK constraints use the same nondeterministic
+-- equality, and the displayed values prove that matching is not bytewise.
+SELECT c.id, p.code AS parent_code, c.parent_code AS referenced_as
+FROM key_nondet_parent p
+JOIN key_nondet_child c FOR KEY p (code) <- c (parent_code)
+ORDER BY c.id;
+
+DROP TABLE key_nondet_grandchild, key_nondet_child, key_nondet_parent;
+DROP COLLATION key_nondet;
+
+DROP SCHEMA key_join_icu;
