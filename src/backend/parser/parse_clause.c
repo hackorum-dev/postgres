@@ -34,6 +34,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_collate.h"
 #include "parser/parse_expr.h"
+#include "parser/parse_key_join.h"
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_relation.h"
@@ -1217,7 +1218,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		/*
 		 * Generate combined namespace info for possible use below.
 		 */
-		my_namespace = list_concat(l_namespace, r_namespace);
+		my_namespace = list_concat_copy(l_namespace, r_namespace);
 
 		/*
 		 * We'll work from the nscolumns data and eref alias column names for
@@ -1404,6 +1405,11 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		{
 			/* User-written ON-condition; transform it */
 			j->quals = transformJoinOnClause(pstate, j, my_namespace);
+		}
+		else if (j->keyJoin)
+		{
+			transformAndValidateKeyJoin(pstate, j, l_nsitem, r_nsitem,
+										l_namespace, r_namespace);
 		}
 		else
 		{

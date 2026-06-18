@@ -979,6 +979,101 @@ typedef struct PartitionCmd
 	bool		concurrent;
 } PartitionCmd;
 
+/*
+ * Key-join proof support nodes.
+ *
+ * KeyJoinSurfaceFacts is the parser's transient cache for FOR KEY proof
+ * facts, hung off RangeTblEntry.keyJoinFacts; the other types are its
+ * contents.
+ */
+
+/*
+ * KeyJoinKeyPosition -
+ *	  position of a key participating in a key-join proof
+ *
+ * (typeOid, typmod, collationOid) is the surface Var type the position
+ * exposes; the prover asserts it matches the corresponding Var's vartype,
+ * vartypmod and collationOid exactly.
+ *
+ * (eqTypeOid, eqTypmod, eqOperator) describes the equality operator used at
+ * this position and the type it takes as input; these may differ from the
+ * surface type when equality is run on a domain.
+ */
+typedef struct KeyJoinKeyPosition
+{
+	NodeTag		type;
+	AttrNumber	attnum;			/* attnum forming this position */
+
+	/* Surface Var type the position exposes: */
+	Oid			typeOid;
+	int32		typmod;
+	Oid			collationOid;
+
+	/* Equality operator and its input type at this position: */
+	Oid			eqTypeOid;
+	int32		eqTypmod;
+	Oid			eqOperator;
+} KeyJoinKeyPosition;
+
+/*
+ * KeyJoinFactKind -
+ *	  what kind of key-join proof fact a KeyJoinFact represents
+ *
+ * KJF_UNIQUE and KJF_FOREIGN_KEY use SQL null semantics: they prove
+ * uniqueness and containment for all-non-null key values.  KJF_NOT_NULL is
+ * separate evidence consumed only when a key join might otherwise discard
+ * null referencing rows.
+ */
+typedef enum KeyJoinFactKind
+{
+	KJF_NOT_NULL,				/* attnum is proven non-null */
+	KJF_UNIQUE,					/* all-non-null keyPositions are unique */
+	KJF_FOREIGN_KEY,			/* baseAttnums reference referencedAttnums */
+} KeyJoinFactKind;
+
+/*
+ * KeyJoinFact -
+ *	  transient key-join proof fact attached to an RTE surface
+ *
+ * The parser attaches these to RangeTblEntry.keyJoinFacts while proving FOR
+ * KEY joins.  The kind field discriminates which sub-case of fields below is
+ * meaningful.
+ */
+typedef struct KeyJoinFact
+{
+	NodeTag		type;
+	KeyJoinFactKind kind;
+
+	/* KJF_NOT_NULL only: */
+	AttrNumber	attnum;			/* surface column attnum */
+
+	/*
+	 * KJF_UNIQUE, KJF_FOREIGN_KEY.  relid is the base relation supplying the
+	 * proof.  baseAttnums has one entry per keyPositions entry: the base
+	 * relation attnums of the key.
+	 */
+	List	   *keyPositions;	/* list of KeyJoinKeyPosition */
+	Oid			relid;
+	List	   *baseAttnums;
+
+	/* KJF_FOREIGN_KEY only: */
+	Oid			referencedRelid;
+	List	   *referencedAttnums;
+	Oid			constraint;
+} KeyJoinFact;
+
+/*
+ * KeyJoinSurfaceFacts -
+ *	  cached proof facts for one RTE surface
+ *
+ * Transient parser scratch, never read from stored query trees.  See
+ * RangeTblEntry.keyJoinFacts.
+ */
+typedef struct KeyJoinSurfaceFacts
+{
+	NodeTag		type;
+	List	   *facts;			/* list of KeyJoinFact */
+} KeyJoinSurfaceFacts;
 /****************************************************************************
  *	Nodes for a Query tree
  ****************************************************************************/
@@ -1281,6 +1376,13 @@ typedef struct RangeTblEntry
 	bool		inFromCl pg_node_attr(query_jumble_ignore);
 	/* security barrier quals to apply, if any */
 	List	   *securityQuals pg_node_attr(query_jumble_ignore);
+
+	/*
+	 * Transient proof caches for FOR KEY joins, populated lazily during
+	 * parse analysis.  Never read from stored query trees.
+	 */
+	bool		keyJoinFactsComputed pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(false));
+	KeyJoinSurfaceFacts *keyJoinFacts pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(NULL));
 } RangeTblEntry;
 
 /*
@@ -2102,6 +2204,66 @@ typedef struct JsonArrayAgg
 	JsonValueExpr *arg;			/* array element expression */
 	bool		absent_on_null; /* skip NULL elements? */
 } JsonArrayAgg;
+
+/*
+ * KeyJoinClause -
+ *	  raw parser representation of a FOR KEY join clause
+ *
+ * Produced by the grammar for "FOR KEY leftref (cols) -> rightref (cols)"
+ * and the matching "<-" form, used as the condition of a JOIN.  The name
+ * before the arrow must identify a table reference visible inside the JOIN's
+ * left operand and the name after it one visible inside the right operand.
+ * Each column list resolves against the reference it follows.  The arrow
+ * points from the referencing side to the referenced side, so "->" makes the
+ * left operand the referencing side and "<-" the right operand.
+ *
+ * Transformed into a KeyJoinNode during parse analysis once the referencing
+ * and referenced columns and the underlying foreign-key constraint have been
+ * resolved.
+ */
+typedef struct KeyJoinClause
+{
+	NodeTag		type;
+	char	   *leftRef;		/* table reference inside the left operand */
+	ParseLoc	leftRefLocation;	/* location of leftRef, or -1 */
+	List	   *leftCols;		/* column names to resolve with leftRef */
+	KeyJoinDirection direction; /* arrow direction; selects which side is FK */
+	char	   *rightRef;		/* table reference inside the right operand */
+	ParseLoc	rightRefLocation;	/* location of rightRef, or -1 */
+	List	   *rightCols;		/* column names to resolve with rightRef */
+	ParseLoc	location;		/* location of the FOR KEY token, or -1 */
+} KeyJoinClause;
+
+/*
+ * KeyJoinNode -
+ *	  analyzed representation of a FOR KEY join
+ *
+ * Produced by parse analysis from a KeyJoinClause once the referencing and
+ * referenced columns and supporting catalog objects have been resolved.
+ * Stored on JoinExpr.keyJoin as the retained record of the proof.
+ *
+ * referencingVarno/referencingAttnums and referencedVarno/referencedAttnums
+ * identify the referencing and referenced sides of the proof regardless of
+ * which side appeared on which side of the arrow in source.
+ */
+typedef struct KeyJoinNode
+{
+	NodeTag		type;
+	Index		referencingVarno;	/* rtindex of the referencing RTE */
+	Index		referencedVarno;	/* rtindex of the referenced RTE */
+
+	/* Paired 1:1, in proof-matched order: */
+	List	   *referencingAttnums;
+	List	   *referencedAttnums;
+
+	/*
+	 * Proof evidence: the FK constraint the proof relies on.  This is NOT
+	 * serialized and NOT compared by equal(): it is transient proof evidence
+	 * derived when the proof is built, not part of the node's executable
+	 * identity.  This mirrors keyJoinFacts.
+	 */
+	Oid			constraint pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(0));
+} KeyJoinNode;
 
 
 /*****************************************************************************

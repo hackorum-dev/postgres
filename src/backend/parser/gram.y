@@ -14013,6 +14013,7 @@ joined_table:
 					n->rarg = $4;
 					n->usingClause = NIL;
 					n->join_using_alias = NULL;
+					n->keyJoin = NULL;
 					n->quals = NULL;
 					$$ = n;
 				}
@@ -14026,9 +14027,14 @@ joined_table:
 					n->rarg = $4;
 					if ($5 != NULL && IsA($5, List))
 					{
-						 /* USING clause */
+						/* USING clause */
 						n->usingClause = linitial_node(List, castNode(List, $5));
 						n->join_using_alias = lsecond_node(Alias, castNode(List, $5));
+					}
+					else if ($5 != NULL && IsA($5, KeyJoinClause))
+					{
+						/* KEY clause */
+						n->keyJoin = (Node *) $5;
 					}
 					else
 					{
@@ -14052,6 +14058,11 @@ joined_table:
 						n->usingClause = linitial_node(List, castNode(List, $4));
 						n->join_using_alias = lsecond_node(Alias, castNode(List, $4));
 					}
+					else if ($4 != NULL && IsA($4, KeyJoinClause))
+					{
+						/* KEY clause */
+						n->keyJoin = (Node *) $4;
+					}
 					else
 					{
 						/* ON clause */
@@ -14069,6 +14080,7 @@ joined_table:
 					n->rarg = $5;
 					n->usingClause = NIL; /* figure out which columns later... */
 					n->join_using_alias = NULL;
+					n->keyJoin = NULL;
 					n->quals = NULL; /* fill later */
 					$$ = n;
 				}
@@ -14083,6 +14095,7 @@ joined_table:
 					n->rarg = $4;
 					n->usingClause = NIL; /* figure out which columns later... */
 					n->join_using_alias = NULL;
+					n->keyJoin = NULL;
 					n->quals = NULL; /* fill later */
 					$$ = n;
 				}
@@ -14183,10 +14196,22 @@ opt_outer: OUTER_P
  *						  allows only unqualified column names,
  *						  which must match between tables.
  *	ON expr allows more general qualifications.
+ *	FOR KEY left_ref ( column list ) { -> | <- } right_ref ( column list )
+ *						  names a table reference exposed by the left
+ *						  operand and one exposed by the right operand.
+ *						  The arrow points from the referencing one to
+ *						  the referenced one.
+ *
+ * A FOR KEY table reference is a plain ColId, matched against the names
+ * exposed by the operand.  The standard also admits a schema-qualified table
+ * name there and column references accept schema.table.column.  Our FOR KEY
+ * does neither, so a schema-qualified relation is named by its bare name or
+ * alias.
  *
  * We return USING as a two-element List (the first item being a sub-List
  * of the common column names, and the second either an Alias item or NULL).
- * An ON-expr will not be a List, so it can be told apart that way.
+ * An ON-expr will not be a List, so it can be told apart that way.  FOR KEY
+ * is returned as a KeyJoinClause node.
  */
 
 join_qual: USING '(' name_list ')' opt_alias_clause_for_join_using
@@ -14196,6 +14221,51 @@ join_qual: USING '(' name_list ')' opt_alias_clause_for_join_using
 			| ON a_expr
 				{
 					$$ = $2;
+				}
+			| FOR KEY ColId '(' name_list ')' '<' '-' ColId '(' name_list ')'
+				{
+					KeyJoinClause *n = makeNode(KeyJoinClause);
+
+					/*
+					 * The scanner returns <- as two tokens, so reject anything
+					 * between them.
+					 */
+					if (@8 != @7 + 1)
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 errmsg("key join arrow must be written as <-"),
+								 parser_errposition(@7)));
+
+					n->leftRef = $3;
+					n->leftRefLocation = @3;
+					n->leftCols = $5;
+					n->direction = KEY_JOIN_LEFT_ARROW;
+					n->rightRef = $9;
+					n->rightRefLocation = @9;
+					n->rightCols = $11;
+					n->location = @1;
+					$$ = (Node *) n;
+				}
+			| FOR KEY ColId '(' name_list ')' Op ColId '(' name_list ')'
+				{
+					KeyJoinClause *n = makeNode(KeyJoinClause);
+
+					/* The scanner returns -> as an ordinary operator. */
+					if (strcmp($7, "->") != 0)
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 errmsg("syntax error at or near \"%s\"", $7),
+								 parser_errposition(@7)));
+
+					n->leftRef = $3;
+					n->leftRefLocation = @3;
+					n->leftCols = $5;
+					n->direction = KEY_JOIN_RIGHT_ARROW;
+					n->rightRef = $8;
+					n->rightRefLocation = @8;
+					n->rightCols = $10;
+					n->location = @1;
+					$$ = (Node *) n;
 				}
 		;
 
