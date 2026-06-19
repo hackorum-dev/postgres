@@ -1431,8 +1431,6 @@ copy_table_data(Relation NewHeap, Relation OldHeap, Relation OldIndex,
 
 	/*
 	 * Reset rd_toastoid just to be tidy --- it shouldn't be looked at again.
-	 * In the CONCURRENTLY case, we need to set it again before applying the
-	 * concurrent changes.
 	 */
 	NewHeap->rd_toastoid = InvalidOid;
 
