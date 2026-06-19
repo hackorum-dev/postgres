@@ -91,6 +91,14 @@ restore_stack_base(pg_stack_base_t base)
  *
  * check_stack_depth() just throws an error summarily.  stack_is_too_deep()
  * can be used by code that wants to handle the error condition itself.
+ *
+ * Some recursive routines that use this may not actually consume increasing
+ * stack space, because their recursive calls can be optimized into loops
+ * via tail recursion.  In such cases there's a hazard that a referential
+ * loop in the input data could result in an uninterruptible infinite loop.
+ * Rather than expend effort trying to reason about whether that's possible
+ * in specific cases, we put a CHECK_FOR_INTERRUPTS() call here.  Note that
+ * direct users of stack_is_too_deep() need to consider that for themselves.
  */
 void
 check_stack_depth(void)
@@ -104,6 +112,8 @@ check_stack_depth(void)
 						 "after ensuring the platform's stack depth limit is adequate.",
 						 max_stack_depth)));
 	}
+
+	CHECK_FOR_INTERRUPTS();
 }
 
 bool
