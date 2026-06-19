@@ -3958,6 +3958,8 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 	int			lev;
 	RelOptInfo *rel;
 
+	int		standard_join_count = 0;
+
 	/*
 	 * This function cannot be invoked recursively within any one planning
 	 * problem, so join_rel_level[] can't be in use already.
@@ -3988,7 +3990,7 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 		 * level, and build paths for making each one from every available
 		 * pair of lower-level relations.
 		 */
-		join_search_one_level(root, lev);
+		standard_join_count += join_search_one_level(root, lev);
 
 		/*
 		 * Run generate_partitionwise_join_paths() and
@@ -4059,6 +4061,9 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 	rel = (RelOptInfo *) linitial(root->join_rel_level[levels_needed]);
 
 	root->join_rel_level = NULL;
+
+	elog(WARNING, "standard_join_search rels %d count %d",
+		 list_length(initial_rels), standard_join_count);
 
 	return rel;
 }
