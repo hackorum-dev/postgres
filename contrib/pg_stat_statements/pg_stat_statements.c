@@ -2822,6 +2822,7 @@ generate_normalized_query(const JumbleState *jstate, const char *query,
 				last_off = 0,	/* Offset from start for previous tok */
 				last_tok_len = 0;	/* Length (in bytes) of that tok */
 	int			num_constants_replaced = 0;
+	int			squashed_count = 0;
 	LocationLen *locs = NULL;
 
 	/*
@@ -2837,8 +2838,22 @@ generate_normalized_query(const JumbleState *jstate, const char *query,
 	 * certainly isn't more than 11 bytes, even if n reaches INT_MAX.  We
 	 * could refine that limit based on the max value of n for the current
 	 * query, but it hardly seems worth any extra effort to do so.
+	 *
+	 * Squashed lists need a little more room. The shortest squashed source
+	 * text is "1,2" (three bytes), while the longest squashed placeholder is
+	 * 22 bytes long (an INT_MAX placeholder plus the squash marker), so each
+	 * squashed list can need up to 9 bytes more than the base allowance of 10
+	 * bytes per entry.
 	 */
-	norm_query_buflen = query_len + jstate->clocations_count * 10;
+	for (int i = 0; i < jstate->clocations_count; i++)
+	{
+		/* Ignore duplicate locations that ComputeConstantLengths() disabled */
+		if (locs[i].squashed && locs[i].length >= 0)
+			squashed_count++;
+	}
+
+	norm_query_buflen = query_len + jstate->clocations_count * 10 +
+		squashed_count * 9;
 
 	/* Allocate result buffer */
 	norm_query = palloc(norm_query_buflen + 1);

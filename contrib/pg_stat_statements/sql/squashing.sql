@@ -24,6 +24,13 @@ SELECT ARRAY[1, 2, 3, 4];
 SELECT ARRAY[1, 2, 3, 4, 5];
 SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
 
+-- small array literals still fit once squashed placeholders reach 2 digits
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+SELECT ARRAY[1,2] AS a1, ARRAY[1,2] AS a2, ARRAY[1,2] AS a3, ARRAY[1,2] AS a4,
+       ARRAY[1,2] AS a5, ARRAY[1,2] AS a6, ARRAY[1,2] AS a7, ARRAY[1,2] AS a8,
+       ARRAY[1,2] AS a9, ARRAY[1,2] AS a10;
+SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
+
 -- built-in functions will be squashed
 -- the IN and ARRAY forms of this statement will have the same queryId
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
