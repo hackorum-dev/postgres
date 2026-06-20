@@ -79,6 +79,30 @@ SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
  SELECT pg_stat_statements_reset() IS NOT NULL AS t    |     1
 (3 rows)
 
+-- small array literals still fit once squashed placeholders reach 2 digits
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+ t 
+---
+ t
+(1 row)
+
+SELECT ARRAY[1,2] AS a1, ARRAY[1,2] AS a2, ARRAY[1,2] AS a3, ARRAY[1,2] AS a4,
+       ARRAY[1,2] AS a5, ARRAY[1,2] AS a6, ARRAY[1,2] AS a7, ARRAY[1,2] AS a8,
+       ARRAY[1,2] AS a9, ARRAY[1,2] AS a10;
+  a1   |  a2   |  a3   |  a4   |  a5   |  a6   |  a7   |  a8   |  a9   |  a10  
+-------+-------+-------+-------+-------+-------+-------+-------+-------+-------
+ {1,2} | {1,2} | {1,2} | {1,2} | {1,2} | {1,2} | {1,2} | {1,2} | {1,2} | {1,2}
+(1 row)
+
+SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
+                                                         query                                                          | calls 
+------------------------------------------------------------------------------------------------------------------------+-------
+ SELECT ARRAY[$1 /*, ... */] AS a1, ARRAY[$2 /*, ... */] AS a2, ARRAY[$3 /*, ... */] AS a3, ARRAY[$4 /*, ... */] AS a4,+|     1
+        ARRAY[$5 /*, ... */] AS a5, ARRAY[$6 /*, ... */] AS a6, ARRAY[$7 /*, ... */] AS a7, ARRAY[$8 /*, ... */] AS a8,+| 
+        ARRAY[$9 /*, ... */] AS a9, ARRAY[$10 /*, ... */] AS a10                                                        | 
+ SELECT pg_stat_statements_reset() IS NOT NULL AS t                                                                     |     1
+(2 rows)
+
 -- built-in functions will be squashed
 -- the IN and ARRAY forms of this statement will have the same queryId
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
