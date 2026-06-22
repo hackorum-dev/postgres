@@ -24,6 +24,14 @@ SELECT 'mauve'::rainbow;
 ERROR:  invalid input value for enum rainbow: "mauve"
 LINE 1: SELECT 'mauve'::rainbow;
                ^
+SELECT enum_in('red', -1); -- error
+ERROR:  invalid input value for enum ???: "red"
+SELECT enum_in('red', 'rainbow'::regtype);
+ enum_in 
+---------
+ red
+(1 row)
+
 -- Also try it with non-error-throwing API
 SELECT pg_input_is_valid('red', 'rainbow');
  pg_input_is_valid 
