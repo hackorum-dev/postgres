@@ -300,7 +300,13 @@ btree_xlog_split(bool newitemonleft, XLogReaderState *record)
 	MarkBufferDirty(rbuf);
 
 	/* Now reconstruct original page (left half of split) */
-	if (XLogReadBufferForRedo(record, 0, &buf) == BLK_NEEDS_REDO)
+	/*
+	 * Note: We're moving tuples off the page that a concurrent IOS won't
+	 * get a cleanup interlock with if they're DELETE-d, so we must do that
+	 * interlock here and now to avoid IOScans losing a vacuum interlock.
+	 */
+	if (XLogReadBufferForRedoExtended(record, 0, RBM_NORMAL, true,
+									  &buf) == BLK_NEEDS_REDO)
 	{
 		/*
 		 * To retain the same physical order of the tuples that they had, we
@@ -664,7 +670,8 @@ btree_xlog_delete(XLogReaderState *record)
 	 * We don't need to take a cleanup lock to apply these changes. See
 	 * nbtree/README for details.
 	 */
-	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
+	if (XLogReadBufferForRedoExtended(record, 0, RBM_NORMAL, true,
+									  &buffer) == BLK_NEEDS_REDO)
 	{
 		char	   *ptr = XLogRecGetBlockData(record, 0, NULL);
 
