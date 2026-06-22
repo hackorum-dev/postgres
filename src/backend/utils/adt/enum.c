@@ -119,7 +119,7 @@ enum_in(PG_FUNCTION_ARGS)
 		ereturn(escontext, (Datum) 0,
 				(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
 				 errmsg("invalid input value for enum %s: \"%s\"",
-						format_type_be(enumtypoid),
+						format_type_extended(enumtypoid, -1, FORMAT_TYPE_ALLOW_INVALID),
 						name)));
 
 	tup = SearchSysCache2(ENUMTYPOIDNAME,
@@ -129,7 +129,7 @@ enum_in(PG_FUNCTION_ARGS)
 		ereturn(escontext, (Datum) 0,
 				(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
 				 errmsg("invalid input value for enum %s: \"%s\"",
-						format_type_be(enumtypoid),
+						format_type_extended(enumtypoid, -1, FORMAT_TYPE_ALLOW_INVALID),
 						name)));
 
 	/*
