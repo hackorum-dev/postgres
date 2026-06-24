@@ -2774,6 +2774,14 @@
   boot_val => '"server.crt"',
 },
 
+{ name => 'ssl_cert_files', type => 'string', context => 'PGC_SIGHUP', group => 'CONN_AUTH_SSL',
+  short_desc => 'List of SSL server certificate files to load (comma-separated).',
+  long_desc => 'When set, takes precedence over ssl_cert_file. Each entry is paired with the corresponding entry in ssl_key_files.',
+  flags => 'GUC_LIST_INPUT | GUC_LIST_QUOTE',
+  variable => 'ssl_cert_files',
+  boot_val => '""',
+},
+
 { name => 'ssl_ciphers', type => 'string', context => 'PGC_SIGHUP', group => 'CONN_AUTH_SSL',
   short_desc => 'Sets the list of allowed TLSv1.2 (and lower) ciphers.',
   flags => 'GUC_SUPERUSER_ONLY',
@@ -2813,6 +2821,14 @@
   short_desc => 'Location of the SSL server private key file.',
   variable => 'ssl_key_file',
   boot_val => '"server.key"',
+},
+
+{ name => 'ssl_key_files', type => 'string', context => 'PGC_SIGHUP', group => 'CONN_AUTH_SSL',
+  short_desc => 'List of SSL server private key files to load (comma-separated).',
+  long_desc => 'When set, takes precedence over ssl_key_file. Each entry is paired with the corresponding entry in ssl_cert_files.',
+  flags => 'GUC_LIST_INPUT | GUC_LIST_QUOTE',
+  variable => 'ssl_key_files',
+  boot_val => '""',
 },
 
 { name => 'ssl_library', type => 'string', context => 'PGC_INTERNAL', group => 'PRESET_OPTIONS',

@@ -30,6 +30,7 @@
 #include "common/hashfn.h"
 #include "common/string.h"
 #include "libpq/libpq.h"
+#include "utils/varlena.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/fd.h"
@@ -98,7 +99,7 @@ static bool initialize_dh(SSL_CTX *context, bool isServerStart);
 static bool initialize_ecdh(SSL_CTX *context, bool isServerStart);
 static const char *SSLerrmessageExt(unsigned long ecode, const char *replacement);
 static const char *SSLerrmessage(unsigned long ecode);
-static bool init_host_context(HostsLine *host, bool isServerStart);
+static bool init_host_context(HostsLine *host, bool isServerStart, bool is_default);
 static void host_context_cleanup_cb(void *arg);
 #ifdef HAVE_SSL_CTX_SET_CLIENT_HELLO_CB
 static int	sni_clienthello_cb(SSL *ssl, int *al, void *arg);
@@ -249,7 +250,7 @@ be_tls_init(bool isServerStart)
 		{
 			HostsLine  *host = lfirst(line);
 
-			if (!init_host_context(host, isServerStart))
+			if (!init_host_context(host, isServerStart, false))
 				goto error;
 
 			/*
@@ -344,7 +345,7 @@ be_tls_init(bool isServerStart)
 		pgconf->ssl_passphrase_cmd = ssl_passphrase_command;
 		pgconf->ssl_passphrase_reload = ssl_passphrase_command_supports_reload;
 
-		if (!init_host_context(pgconf, isServerStart))
+		if (!init_host_context(pgconf, isServerStart, true))
 			goto error;
 
 		/*
@@ -609,7 +610,7 @@ host_context_cleanup_cb(void *arg)
 }
 
 static bool
-init_host_context(HostsLine *host, bool isServerStart)
+init_host_context(HostsLine *host, bool isServerStart, bool is_default)
 {
 	SSL_CTX    *ctx = SSL_CTX_new(SSLv23_method());
 	static bool init_warned = false;
@@ -686,8 +687,17 @@ init_host_context(HostsLine *host, bool isServerStart)
 	}
 
 	/*
-	 * Load and verify server's certificate and private key
+	 * Load and verify server's certificate and private key.
+	 * Skip when ssl_cert_files is set for the default host — those
+	 * take precedence and will be loaded below instead.
 	 */
+	if (is_default && ssl_cert_files && ssl_cert_files[0])
+	{
+		ereport(LOG,
+				(errmsg("ssl_cert_file and ssl_key_file are overridden by ssl_cert_files and ssl_key_files")));
+		goto load_cert_files;
+	}
+
 	if (SSL_CTX_use_certificate_chain_file(ctx, host->ssl_cert) != 1)
 	{
 		ereport(isServerStart ? FATAL : LOG,
@@ -732,6 +742,140 @@ init_host_context(HostsLine *host, bool isServerStart)
 				(errcode(ERRCODE_CONFIG_FILE_ERROR),
 				 errmsg("check of private key failed: %s",
 						SSLerrmessage(ERR_get_error()))));
+		goto error;
+	}
+
+load_cert_files:
+
+	/*
+	 * Load certificates from ssl_cert_files/ssl_key_files.  When set,
+	 * these take precedence over ssl_cert_file/ssl_key_file (the primary
+	 * cert/key loading above is skipped).  These list-valued GUCs allow
+	 * loading multiple certificate/key pairs of different key types
+	 * (e.g., RSA + ECDSA) into the same SSL_CTX.  OpenSSL selects the
+	 * appropriate certificate during the TLS handshake.
+	 * Only load for the default host context (postgresql.conf), not for
+	 * per-host SNI entries from pg_hosts.conf.
+	 */
+	if (is_default && ssl_cert_files && ssl_cert_files[0])
+	{
+		char	   *rawcerts;
+		char	   *rawkeys;
+		List	   *certlist;
+		List	   *keylist;
+		ListCell   *clc;
+		ListCell   *klc;
+
+		if (!ssl_key_files || !ssl_key_files[0])
+		{
+			ereport(isServerStart ? FATAL : LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("ssl_cert_files is set but ssl_key_files is not")));
+			goto error;
+		}
+
+		rawcerts = pstrdup(ssl_cert_files);
+		rawkeys = pstrdup(ssl_key_files);
+
+		if (!SplitGUCList(rawcerts, ',', &certlist))
+		{
+			ereport(isServerStart ? FATAL : LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("invalid list syntax in ssl_cert_files")));
+			pfree(rawcerts);
+			pfree(rawkeys);
+			goto error;
+		}
+
+		if (!SplitGUCList(rawkeys, ',', &keylist))
+		{
+			ereport(isServerStart ? FATAL : LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("invalid list syntax in ssl_key_files")));
+			pfree(rawcerts);
+			pfree(rawkeys);
+			goto error;
+		}
+
+		if (list_length(certlist) != list_length(keylist))
+		{
+			ereport(isServerStart ? FATAL : LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("ssl_cert_files has %d entries but ssl_key_files has %d entries",
+							list_length(certlist), list_length(keylist))));
+			pfree(rawcerts);
+			pfree(rawkeys);
+			goto error;
+		}
+
+#ifndef SSL_CERT_SET_FIRST
+		if (list_length(certlist) > 1)
+		{
+			ereport(isServerStart ? FATAL : LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("ssl_cert_files with multiple entries is not supported by this build"),
+					 errhint("This build lacks SSL_CTX_set_current_cert() support (e.g. LibreSSL). Only one certificate can be served.")));
+			pfree(rawcerts);
+			pfree(rawkeys);
+			goto error;
+		}
+#endif
+
+		forboth(clc, certlist, klc, keylist)
+		{
+			char	   *certfile = (char *) lfirst(clc);
+			char	   *keyfile = (char *) lfirst(klc);
+
+			if (SSL_CTX_use_certificate_chain_file(ctx, certfile) != 1)
+			{
+				ereport(isServerStart ? FATAL : LOG,
+						(errcode(ERRCODE_CONFIG_FILE_ERROR),
+						 errmsg("could not load server certificate file \"%s\": %s",
+								certfile, SSLerrmessage(ERR_get_error()))));
+				pfree(rawcerts);
+				pfree(rawkeys);
+				goto error;
+			}
+
+			if (!check_ssl_key_file_permissions(keyfile, isServerStart))
+			{
+				pfree(rawcerts);
+				pfree(rawkeys);
+				goto error;
+			}
+
+			if (SSL_CTX_use_PrivateKey_file(ctx, keyfile,
+											   SSL_FILETYPE_PEM) != 1)
+			{
+				ereport(isServerStart ? FATAL : LOG,
+						(errcode(ERRCODE_CONFIG_FILE_ERROR),
+						 errmsg("could not load private key file \"%s\": %s",
+								keyfile, SSLerrmessage(ERR_get_error()))));
+				pfree(rawcerts);
+				pfree(rawkeys);
+				goto error;
+			}
+
+			if (SSL_CTX_check_private_key(ctx) != 1)
+			{
+				ereport(isServerStart ? FATAL : LOG,
+						(errcode(ERRCODE_CONFIG_FILE_ERROR),
+						 errmsg("check of private key failed for \"%s\": %s",
+								keyfile, SSLerrmessage(ERR_get_error()))));
+				pfree(rawcerts);
+				pfree(rawkeys);
+				goto error;
+			}
+		}
+
+		pfree(rawcerts);
+		pfree(rawkeys);
+	}
+	else if (is_default && ssl_key_files && ssl_key_files[0])
+	{
+		ereport(isServerStart ? FATAL : LOG,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("ssl_key_files is set but ssl_cert_files is not")));
 		goto error;
 	}
 
@@ -1826,7 +1970,6 @@ ssl_update_ssl(SSL *ssl, HostsLine *host_config)
 
 	X509	   *cert;
 	EVP_PKEY   *key;
-
 	STACK_OF(X509) * chain;
 
 	Assert(ctx != NULL);
@@ -1836,23 +1979,57 @@ ssl_update_ssl(SSL *ssl, HostsLine *host_config)
 	 * beware -- it has very odd behavior:
 	 *
 	 *     https://github.com/openssl/openssl/issues/6109
+	 *
+	 * Instead, copy all certificate types from the SSL_CTX to the
+	 * per-connection SSL object.  Always use override=1 because this
+	 * callback may fire more than once per handshake (e.g. TLS 1.3
+	 * HelloRetryRequest).
+	 *
+	 * Fall back to single-cert copy when SSL_CTX_set_current_cert() is
+	 * not available (LibreSSL).
 	 */
+#ifdef SSL_CERT_SET_FIRST
+	SSL_CTX_set_current_cert(ctx, SSL_CERT_SET_FIRST);
+	do
+	{
+		cert = SSL_CTX_get0_certificate(ctx);
+		key = SSL_CTX_get0_privatekey(ctx);
+
+		if (!cert || !key)
+			continue;
+
+		if (!SSL_CTX_get0_chain_certs(ctx, &chain)
+			|| !SSL_use_cert_and_key(ssl, cert, key, chain, 1))
+		{
+			ereport(COMMERROR,
+					errcode(ERRCODE_INTERNAL_ERROR),
+					errmsg_internal("could not update certificate chain: %s",
+									SSLerrmessage(ERR_get_error())));
+			return false;
+		}
+	} while (SSL_CTX_set_current_cert(ctx, SSL_CERT_SET_NEXT));
+#else
 	cert = SSL_CTX_get0_certificate(ctx);
 	key = SSL_CTX_get0_privatekey(ctx);
 
 	Assert(cert && key);
 
 	if (!SSL_CTX_get0_chain_certs(ctx, &chain)
-		|| !SSL_use_cert_and_key(ssl, cert, key, chain, 1 /* override */ )
-		|| !SSL_check_private_key(ssl))
+		|| !SSL_use_cert_and_key(ssl, cert, key, chain, 1))
 	{
-		/*
-		 * This shouldn't really be possible, since the inputs came from a
-		 * SSL_CTX that was already populated by OpenSSL.
-		 */
 		ereport(COMMERROR,
 				errcode(ERRCODE_INTERNAL_ERROR),
 				errmsg_internal("could not update certificate chain: %s",
+								SSLerrmessage(ERR_get_error())));
+		return false;
+	}
+#endif
+
+	if (!SSL_check_private_key(ssl))
+	{
+		ereport(COMMERROR,
+				errcode(ERRCODE_INTERNAL_ERROR),
+				errmsg_internal("could not verify private key: %s",
 								SSLerrmessage(ERR_get_error())));
 		return false;
 	}

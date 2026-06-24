@@ -1456,6 +1456,41 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-ssl-cert-files" xreflabel="ssl_cert_files">
+      <term><varname>ssl_cert_files</varname> (<type>string</type>)
+      <indexterm>
+       <primary><varname>ssl_cert_files</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies a comma-separated list of SSL server certificate files to
+        load, each of a different key type (e.g., RSA, ECDSA, EdDSA).
+        <productname>OpenSSL</productname> selects the appropriate certificate
+        during the TLS handshake based on the negotiated cipher suite.
+        Each entry is paired positionally with the corresponding entry in
+        <xref linkend="guc-ssl-key-files"/>.  Relative paths are relative to
+        the data directory.
+        This parameter can only be set in the <filename>postgresql.conf</filename>
+        file or on the server command line.
+        The default is empty.  When set, this takes precedence over
+        <xref linkend="guc-ssl-cert-file"/> for loading certificates.
+       </para>
+       <para>
+        This setting applies only to the default SSL configuration from
+        <filename>postgresql.conf</filename>.  Per-host certificate
+        configuration via <filename>pg_hosts.conf</filename> is not affected
+        by this parameter.
+       </para>
+       <para>
+        Multiple entries require <productname>OpenSSL</productname>.
+        Builds using <productname>LibreSSL</productname> support only a
+        single entry; specifying more than one will result in a startup
+        error.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-ssl-ciphers" xreflabel="ssl_ciphers">
       <term><varname>ssl_ciphers</varname> (<type>string</type>)
       <indexterm>
@@ -12583,6 +12618,25 @@ dynamic_library_path = '/usr/local/lib/postgresql:$libdir'
         is always set to <literal>-1</literal> on other platforms.  For more
         details about using huge pages on <productname>Linux</productname>, see
         <xref linkend="linux-huge-pages"/>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-ssl-key-files" xreflabel="ssl_key_files">
+      <term><varname>ssl_key_files</varname> (<type>string</type>)
+      <indexterm>
+       <primary><varname>ssl_key_files</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies a comma-separated list of SSL server private key files,
+        each paired positionally with the corresponding entry in
+        <xref linkend="guc-ssl-cert-files"/>.
+        Relative paths are relative to the data directory.
+        This parameter can only be set in the <filename>postgresql.conf</filename>
+        file or on the server command line.
+        The default is empty.
        </para>
       </listitem>
      </varlistentry>

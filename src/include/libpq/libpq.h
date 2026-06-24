@@ -108,6 +108,8 @@ extern PGDLLIMPORT char *ssl_cert_file;
 extern PGDLLIMPORT char *ssl_crl_file;
 extern PGDLLIMPORT char *ssl_crl_dir;
 extern PGDLLIMPORT char *ssl_key_file;
+extern PGDLLIMPORT char *ssl_cert_files;
+extern PGDLLIMPORT char *ssl_key_files;
 extern PGDLLIMPORT int ssl_min_protocol_version;
 extern PGDLLIMPORT int ssl_max_protocol_version;
 extern PGDLLIMPORT char *ssl_passphrase_command;
