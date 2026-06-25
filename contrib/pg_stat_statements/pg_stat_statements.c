@@ -692,21 +692,21 @@ pgss_shmem_init(void *arg)
 
 read_error:
 	ereport(LOG,
-			(errcode_for_file_access(),
-			 errmsg("could not read file \"%s\": %m",
-					PGSS_DUMP_FILE)));
+			errcode_for_file_access(),
+			errmsg("could not read file \"%s\": %m",
+					PGSS_DUMP_FILE));
 	goto fail;
 data_error:
 	ereport(LOG,
-			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-			 errmsg("ignoring invalid data in file \"%s\"",
-					PGSS_DUMP_FILE)));
+			errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+			errmsg("ignoring invalid data in file \"%s\"",
+					PGSS_DUMP_FILE));
 	goto fail;
 write_error:
 	ereport(LOG,
-			(errcode_for_file_access(),
-			 errmsg("could not write file \"%s\": %m",
-					PGSS_TEXT_FILE)));
+			errcode_for_file_access(),
+			errmsg("could not write file \"%s\": %m",
+					PGSS_TEXT_FILE));
 fail:
 	if (buffer)
 		pfree(buffer);
@@ -815,9 +815,9 @@ pgss_shmem_shutdown(int code, Datum arg)
 
 error:
 	ereport(LOG,
-			(errcode_for_file_access(),
-			 errmsg("could not write file \"%s\": %m",
-					PGSS_DUMP_FILE ".tmp")));
+			errcode_for_file_access(),
+			errmsg("could not write file \"%s\": %m",
+					PGSS_DUMP_FILE ".tmp"));
 	if (qbuffer)
 		pfree(qbuffer);
 	if (file)
@@ -1687,8 +1687,8 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	/* hash table must exist already */
 	if (!pgss || !pgss_hash)
 		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\"")));
+				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\""));
 
 	InitMaterializedSRF(fcinfo, 0);
 
@@ -2042,8 +2042,8 @@ pg_stat_statements_info(PG_FUNCTION_ARGS)
 
 	if (!pgss || !pgss_hash)
 		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\"")));
+				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\""));
 
 	/* Build a tuple descriptor for our result type */
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
@@ -2280,9 +2280,9 @@ qtext_store(const char *query, int query_len,
 
 error:
 	ereport(LOG,
-			(errcode_for_file_access(),
-			 errmsg("could not write file \"%s\": %m",
-					PGSS_TEXT_FILE)));
+			errcode_for_file_access(),
+			errmsg("could not write file \"%s\": %m",
+					PGSS_TEXT_FILE));
 
 	if (fd >= 0)
 		CloseTransientFile(fd);
@@ -2319,9 +2319,9 @@ qtext_load_file(Size *buffer_size)
 	{
 		if (errno != ENOENT)
 			ereport(LOG,
-					(errcode_for_file_access(),
-					 errmsg("could not read file \"%s\": %m",
-							PGSS_TEXT_FILE)));
+					errcode_for_file_access(),
+					errmsg("could not read file \"%s\": %m",
+							PGSS_TEXT_FILE));
 		return NULL;
 	}
 
@@ -2329,9 +2329,9 @@ qtext_load_file(Size *buffer_size)
 	if (fstat(fd, &stat))
 	{
 		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not stat file \"%s\": %m",
-						PGSS_TEXT_FILE)));
+				errcode_for_file_access(),
+				errmsg("could not stat file \"%s\": %m",
+						PGSS_TEXT_FILE));
 		CloseTransientFile(fd);
 		return NULL;
 	}
@@ -2344,10 +2344,10 @@ qtext_load_file(Size *buffer_size)
 	if (buf == NULL)
 	{
 		ereport(LOG,
-				(errcode(ERRCODE_OUT_OF_MEMORY),
-				 errmsg("out of memory"),
-				 errdetail("Could not allocate enough memory to read file \"%s\".",
-						   PGSS_TEXT_FILE)));
+				errcode(ERRCODE_OUT_OF_MEMORY),
+				errmsg("out of memory"),
+				errdetail("Could not allocate enough memory to read file \"%s\".",
+						   PGSS_TEXT_FILE));
 		CloseTransientFile(fd);
 		return NULL;
 	}
@@ -2374,9 +2374,9 @@ qtext_load_file(Size *buffer_size)
 		{
 			if (errno)
 				ereport(LOG,
-						(errcode_for_file_access(),
-						 errmsg("could not read file \"%s\": %m",
-								PGSS_TEXT_FILE)));
+						errcode_for_file_access(),
+						errmsg("could not read file \"%s\": %m",
+								PGSS_TEXT_FILE));
 			pfree(buf);
 			CloseTransientFile(fd);
 			return NULL;
@@ -2386,8 +2386,8 @@ qtext_load_file(Size *buffer_size)
 
 	if (CloseTransientFile(fd) != 0)
 		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not close file \"%s\": %m", PGSS_TEXT_FILE)));
+				errcode_for_file_access(),
+				errmsg("could not close file \"%s\": %m", PGSS_TEXT_FILE));
 
 	*buffer_size = nread;
 	return buf;
@@ -2511,9 +2511,9 @@ gc_qtexts(void)
 	if (qfile == NULL)
 	{
 		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not write file \"%s\": %m",
-						PGSS_TEXT_FILE)));
+				errcode_for_file_access(),
+				errmsg("could not write file \"%s\": %m",
+						PGSS_TEXT_FILE));
 		goto gc_fail;
 	}
 
@@ -2541,9 +2541,9 @@ gc_qtexts(void)
 		if (fwrite(qry, 1, query_len + 1, qfile) != query_len + 1)
 		{
 			ereport(LOG,
-					(errcode_for_file_access(),
-					 errmsg("could not write file \"%s\": %m",
-							PGSS_TEXT_FILE)));
+					errcode_for_file_access(),
+					errmsg("could not write file \"%s\": %m",
+							PGSS_TEXT_FILE));
 			hash_seq_term(&hash_seq);
 			goto gc_fail;
 		}
@@ -2559,16 +2559,16 @@ gc_qtexts(void)
 	 */
 	if (ftruncate(fileno(qfile), extent) != 0)
 		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not truncate file \"%s\": %m",
-						PGSS_TEXT_FILE)));
+				errcode_for_file_access(),
+				errmsg("could not truncate file \"%s\": %m",
+						PGSS_TEXT_FILE));
 
 	if (FreeFile(qfile))
 	{
 		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not write file \"%s\": %m",
-						PGSS_TEXT_FILE)));
+				errcode_for_file_access(),
+				errmsg("could not write file \"%s\": %m",
+						PGSS_TEXT_FILE));
 		qfile = NULL;
 		goto gc_fail;
 	}
@@ -2626,9 +2626,9 @@ gc_fail:
 	qfile = AllocateFile(PGSS_TEXT_FILE, PG_BINARY_W);
 	if (qfile == NULL)
 		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not recreate file \"%s\": %m",
-						PGSS_TEXT_FILE)));
+				errcode_for_file_access(),
+				errmsg("could not recreate file \"%s\": %m",
+						PGSS_TEXT_FILE));
 	else
 		FreeFile(qfile);
 
@@ -2687,8 +2687,8 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 
 	if (!pgss || !pgss_hash)
 		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\"")));
+				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				errmsg("pg_stat_statements must be loaded via \"shared_preload_libraries\""));
 
 	LWLockAcquire(&pgss->lock.lock, LW_EXCLUSIVE);
 	num_entries = hash_get_num_entries(pgss_hash);
@@ -2763,18 +2763,18 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 	if (qfile == NULL)
 	{
 		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not create file \"%s\": %m",
-						PGSS_TEXT_FILE)));
+				errcode_for_file_access(),
+				errmsg("could not create file \"%s\": %m",
+						PGSS_TEXT_FILE));
 		goto done;
 	}
 
 	/* If ftruncate fails, log it, but it's not a fatal problem */
 	if (ftruncate(fileno(qfile), 0) != 0)
 		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not truncate file \"%s\": %m",
-						PGSS_TEXT_FILE)));
+				errcode_for_file_access(),
+				errmsg("could not truncate file \"%s\": %m",
+						PGSS_TEXT_FILE));
 
 	FreeFile(qfile);
 
