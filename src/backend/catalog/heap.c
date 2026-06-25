@@ -1541,6 +1541,15 @@ heap_create_with_catalog(const char *relname,
 		register_on_commit_action(relid, oncommit);
 
 	/*
+	 * Track temporary table statistics. Skip in bootstrap mode since the
+	 * stats system is not initialized, and temp tables cannot be created
+	 * there anyway (all bootstrap relations are permanent).
+	 */
+	if (relpersistence == RELPERSISTENCE_TEMP && relkind == RELKIND_RELATION
+		&& !IsBootstrapProcessingMode())
+		pgstat_count_temp_table(MyDatabaseId);
+
+	/*
 	 * ok, the relation has been cataloged, so close our relations and return
 	 * the OID of the newly created relation.
 	 */

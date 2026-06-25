@@ -841,6 +841,7 @@ ReadRecentBuffer(RelFileLocator rlocator, ForkNumber forkNum, BlockNumber blockN
 			PinLocalBuffer(bufHdr, true);
 
 			pgBufferUsage.local_blks_hit++;
+			pgstat_count_local_blk_hit(MyDatabaseId);
 
 			return true;
 		}
@@ -1693,7 +1694,10 @@ TrackBufferHit(IOObject io_object, IOContext io_context,
 									  true);
 
 	if (persistence == RELPERSISTENCE_TEMP)
+	{
 		pgBufferUsage.local_blks_hit += 1;
+		pgstat_count_local_blk_hit(MyDatabaseId);
+	}
 	else
 		pgBufferUsage.shared_blks_hit += 1;
 
@@ -2157,7 +2161,10 @@ AsyncReadBuffers(ReadBuffersOperation *operation, int *nblocks_progress)
 							io_start, 1, io_buffers_len * BLCKSZ);
 
 	if (persistence == RELPERSISTENCE_TEMP)
+	{
 		pgBufferUsage.local_blks_read += io_buffers_len;
+		pgstat_count_local_blk_read(MyDatabaseId, io_buffers_len);
+	}
 	else
 		pgBufferUsage.shared_blks_read += io_buffers_len;
 

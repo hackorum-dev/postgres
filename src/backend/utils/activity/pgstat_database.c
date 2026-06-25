@@ -144,6 +144,85 @@ pgstat_report_deadlock(void)
 }
 
 /*
+ * Report creation of a temporary table.
+ *
+ * Called from heap_create_with_catalog() when a new temporary table is
+ * created. MyDatabaseId must be valid at call time, which is guaranteed by
+ * the RELPERSISTENCE_TEMP context.
+ */
+void
+pgstat_count_temp_table(Oid dboid)
+{
+	PgStat_StatDBEntry *dbent;
+
+	if (!pgstat_track_counts || !OidIsValid(dboid) || !IsUnderPostmaster)
+		return;
+
+	dbent = pgstat_prep_database_pending(dboid);
+	dbent->temp_tables++;
+}
+
+/*
+ * Report local buffer (temp table) write operations.
+ */
+void
+pgstat_count_local_blk_written(Oid dboid, int64 count)
+{
+	PgStat_StatDBEntry *dbent;
+
+	if (!pgstat_track_counts || !OidIsValid(dboid) || !IsUnderPostmaster)
+		return;
+
+	dbent = pgstat_prep_database_pending(dboid);
+	dbent->local_blks_written += count;
+}
+
+/*
+ * Report local buffer (temp table) read operations.
+ */
+void
+pgstat_count_local_blk_read(Oid dboid, int64 count)
+{
+	PgStat_StatDBEntry *dbent;
+
+	if (!pgstat_track_counts || !OidIsValid(dboid) || !IsUnderPostmaster)
+		return;
+
+	dbent = pgstat_prep_database_pending(dboid);
+	dbent->local_blks_read += count;
+}
+
+/*
+ * Report local buffer (temp table) cache hit.
+ */
+void
+pgstat_count_local_blk_hit(Oid dboid)
+{
+	PgStat_StatDBEntry *dbent;
+
+	if (!pgstat_track_counts || !OidIsValid(dboid) || !IsUnderPostmaster)
+		return;
+
+	dbent = pgstat_prep_database_pending(dboid);
+	dbent->local_blks_hit++;
+}
+
+/*
+ * Report local buffer (temp table) dirtied.
+ */
+void
+pgstat_count_local_blk_dirtied(Oid dboid)
+{
+	PgStat_StatDBEntry *dbent;
+
+	if (!pgstat_track_counts || !OidIsValid(dboid) || !IsUnderPostmaster)
+		return;
+
+	dbent = pgstat_prep_database_pending(dboid);
+	dbent->local_blks_dirtied++;
+}
+
+/*
  * Allow this backend to later report checksum failures for dboid, even if in
  * a critical section at the time of the report.
  *
@@ -472,6 +551,11 @@ pgstat_database_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 
 	PGSTAT_ACCUM_DBCOUNT(temp_bytes);
 	PGSTAT_ACCUM_DBCOUNT(temp_files);
+	PGSTAT_ACCUM_DBCOUNT(temp_tables);
+	PGSTAT_ACCUM_DBCOUNT(local_blks_hit);
+	PGSTAT_ACCUM_DBCOUNT(local_blks_read);
+	PGSTAT_ACCUM_DBCOUNT(local_blks_dirtied);
+	PGSTAT_ACCUM_DBCOUNT(local_blks_written);
 	PGSTAT_ACCUM_DBCOUNT(deadlocks);
 
 	/* checksum failures are reported immediately */
