@@ -3820,7 +3820,7 @@ describeRoles(const char *pattern, bool verbose, bool showSystem)
 	appendPQExpBufferStr(&buf, "\nFROM pg_catalog.pg_roles r\n");
 
 	if (!showSystem && !pattern)
-		appendPQExpBufferStr(&buf, "WHERE r.rolname !~ '^pg_'\n");
+		appendPQExpBufferStr(&buf, "WHERE r.rolname OPERATOR(pg_catalog.!~) '^pg_'\n");
 
 	if (!validateSQLNamePattern(&buf, pattern, false, false,
 								NULL, "r.rolname", NULL, NULL,
@@ -4037,7 +4037,7 @@ describeRoleGrants(const char *pattern, bool showSystem)
 						 "     LEFT JOIN pg_catalog.pg_roles g ON (pam.grantor = g.oid)\n");
 
 	if (!showSystem && !pattern)
-		appendPQExpBufferStr(&buf, "WHERE m.rolname !~ '^pg_'\n");
+		appendPQExpBufferStr(&buf, "WHERE m.rolname OPERATOR(pg_catalog.!~) '^pg_'\n");
 
 	if (!validateSQLNamePattern(&buf, pattern, false, false,
 								NULL, "m.rolname", NULL, NULL,
@@ -4230,7 +4230,7 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 
 	if (!showSystem && !pattern)
 		appendPQExpBufferStr(&buf, "      AND n.nspname <> 'pg_catalog'\n"
-							 "      AND n.nspname !~ '^pg_toast'\n"
+							 "      AND n.nspname OPERATOR(pg_catalog.!~) '^pg_toast'\n"
 							 "      AND n.nspname <> 'information_schema'\n");
 
 	if (!validateSQLNamePattern(&buf, pattern, true, false,
@@ -4503,7 +4503,7 @@ listPartitionedTables(const char *reltypes, const char *pattern, bool verbose)
 
 	if (!pattern)
 		appendPQExpBufferStr(&buf, "      AND n.nspname <> 'pg_catalog'\n"
-							 "      AND n.nspname !~ '^pg_toast'\n"
+							 "      AND n.nspname OPERATOR(pg_catalog.!~) '^pg_toast'\n"
 							 "      AND n.nspname <> 'information_schema'\n");
 
 	if (!validateSQLNamePattern(&buf, pattern, true, false,
@@ -5298,7 +5298,7 @@ listSchemas(const char *pattern, bool verbose, bool showSystem)
 
 	if (!showSystem && !pattern)
 		appendPQExpBufferStr(&buf,
-							 "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'\n");
+							 "WHERE n.nspname OPERATOR(pg_catalog.!~) '^pg_' AND n.nspname <> 'information_schema'\n");
 
 	if (!validateSQLNamePattern(&buf, pattern,
 								!showSystem && !pattern, false,
