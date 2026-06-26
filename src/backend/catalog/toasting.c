@@ -325,6 +325,17 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	coloptions[0] = 0;
 	coloptions[1] = 0;
 
+	/*
+	 * Build the TOAST index with progress reporting suppressed.  This is an
+	 * internal index, never a user-issued CREATE INDEX, so reporting CREATE
+	 * INDEX progress for it is meaningless.  More importantly, a TOAST table
+	 * (hence this index) can be created while another progress command is
+	 * active for the same backend -- e.g. make_new_heap() during a
+	 * CLUSTER/VACUUM FULL (REPACK).  CREATE INDEX and REPACK share progress
+	 * parameter slots (PROGRESS_CREATEIDX_PHASE vs
+	 * PROGRESS_REPACK_INDEX_REBUILD_COUNT), so an unsuppressed build would
+	 * clobber the enclosing command's progress view.
+	 */
 	index_create(toast_rel, toast_idxname, toastIndexOid, InvalidOid,
 				 InvalidOid, InvalidOid,
 				 indexInfo,
@@ -332,7 +343,8 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 				 BTREE_AM_OID,
 				 rel->rd_rel->reltablespace,
 				 collationIds, opclassIds, NULL, coloptions, NULL, (Datum) 0,
-				 INDEX_CREATE_IS_PRIMARY, 0, true, true, NULL);
+				 INDEX_CREATE_IS_PRIMARY | INDEX_CREATE_SUPPRESS_PROGRESS,
+				 0, true, true, NULL);
 
 	table_close(toast_rel, NoLock);
 
