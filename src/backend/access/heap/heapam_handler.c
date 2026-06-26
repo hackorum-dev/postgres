@@ -45,6 +45,7 @@
 #include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
+#include "utils/injection_point.h"
 #include "utils/rel.h"
 #include "utils/tuplesort.h"
 
@@ -699,6 +700,12 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 
 	slot = table_slot_create(OldHeap, NULL);
 	hslot = (BufferHeapTupleTableSlot *) slot;
+
+	/*
+	 * Allow a test to observe progress reporting at this point, with the scan
+	 * phase set but no tuples scanned yet.
+	 */
+	INJECTION_POINT("heap-cluster-scan-start", NULL);
 
 	/*
 	 * Scan through the OldHeap, either in OldIndex order or sequentially;
