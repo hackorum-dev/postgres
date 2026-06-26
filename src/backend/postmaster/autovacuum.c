@@ -3095,8 +3095,10 @@ relation_needs_vacanalyze(Oid relid,
 	int			effective_mxid_failsafe_age;
 
 	float4		pcnt_unfrozen = 1;
+	float4		pcnt_allvisible = 1;
 	float4		reltuples = classForm->reltuples;
 	int32		relpages = classForm->relpages;
+	int32		relallvisible = classForm->relallvisible;
 	int32		relallfrozen = classForm->relallfrozen;
 
 	Assert(classForm != NULL);
@@ -3244,6 +3246,24 @@ relation_needs_vacanalyze(Oid relid,
 		reltuples = 0;
 
 	/*
+	 * If we have data for relallvisible, calculate the all-visible
+	 * percentage of the table to modify the vacuum scale factor.  This makes
+	 * the normal dead-tuple vacuum threshold more sensitive as fewer pages
+	 * remain all-visible, without mixing pg_class.reltuples with the
+	 * cumulative stats system's live tuple estimate.
+	 */
+	if (relpages > 0 && relallvisible > 0)
+	{
+		/*
+		 * It could be the stats were updated manually and relallvisible >
+		 * relpages. Clamp relallvisible to relpages to avoid nonsensical
+		 * calculations.
+		 */
+		relallvisible = Min(relallvisible, relpages);
+		pcnt_allvisible = (float4) relallvisible / relpages;
+	}
+
+	/*
 	 * If we have data for relallfrozen, calculate the unfrozen percentage of
 	 * the table to modify insert scale factor. This helps us decide whether
 	 * or not to vacuum an insert-heavy table based on the number of inserts
@@ -3260,13 +3280,15 @@ relation_needs_vacanalyze(Oid relid,
 		pcnt_unfrozen = 1 - ((float4) relallfrozen / relpages);
 	}
 
-	vacthresh = (float4) vac_base_thresh + vac_scale_factor * reltuples;
+	vacthresh = (float4) vac_base_thresh +
+		vac_scale_factor * reltuples * pcnt_allvisible;
 	if (vac_max_thresh >= 0 && vacthresh > (float4) vac_max_thresh)
 		vacthresh = (float4) vac_max_thresh;
 
 	vacinsthresh = (float4) vac_ins_base_thresh +
 		vac_ins_scale_factor * reltuples * pcnt_unfrozen;
-	anlthresh = (float4) anl_base_thresh + anl_scale_factor * reltuples;
+	anlthresh = (float4) anl_base_thresh +
+		anl_scale_factor * reltuples * pcnt_allvisible;
 
 	/* Determine if this table needs vacuum, and update the score. */
 	scores->vac = (double) vactuples / Max(vacthresh, 1);
