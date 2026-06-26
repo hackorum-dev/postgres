@@ -1,0 +1,30 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_cluster s2_progress s2_wakeup
+injection_points_attach
+-----------------------
+                       
+(1 row)
+
+step s1_cluster: CLUSTER cluster_progress USING cluster_progress_i; <waiting ...>
+step s2_progress: 
+	SELECT relid::regclass, phase, index_rebuild_count
+	FROM pg_stat_progress_cluster;
+
+relid           |phase            |index_rebuild_count
+----------------+-----------------+-------------------
+cluster_progress|seq scanning heap|                  0
+(1 row)
+
+step s2_wakeup: SELECT injection_points_wakeup('heap-cluster-scan-start');
+injection_points_wakeup
+-----------------------
+                       
+(1 row)
+
+step s1_cluster: <... completed>
+injection_points_detach
+-----------------------
+                       
+(1 row)
+
