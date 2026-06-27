@@ -2816,6 +2816,10 @@ AlterDomainNotNull(List *names, bool notNull)
 	/* Is the domain already set to the desired constraint? */
 	if (typTup->typnotnull == notNull)
 	{
+		ereport(NOTICE,
+				(errmsg("Domain \"%s\" is already %s, skipping",
+						NameStr(typTup->typname), notNull ? "NOT NULL" : "NULL")));
+
 		table_close(typrel, RowExclusiveLock);
 		return address;
 	}
@@ -3051,6 +3055,10 @@ AlterDomainAddConstraint(List *names, Node *newConstraint,
 		/* Is the domain already set NOT NULL? */
 		if (typTup->typnotnull)
 		{
+			ereport(NOTICE,
+					(errmsg("Domain \"%s\" is already NOT NULL, skipping",
+							NameStr(typTup->typname))));
+
 			table_close(typrel, RowExclusiveLock);
 			return address;
 		}
