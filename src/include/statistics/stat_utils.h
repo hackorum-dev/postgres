@@ -37,9 +37,9 @@ extern bool stats_check_arg_pair(const NullableDatum *args,
 extern void RangeVarCallbackForStats(const RangeVar *relation,
 									 Oid relId, Oid oldRelId, void *arg);
 
-extern bool stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
-											 FunctionCallInfo positional_fcinfo,
-											 struct StatsArgInfo *arginfo);
+extern bool stats_fill_args_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
+										   NullableDatum *positional_args,
+										   struct StatsArgInfo *arginfo);
 
 extern void statatt_get_type(Oid reloid, AttrNumber attnum,
 							 Oid *atttypid, int32 *atttypmod,

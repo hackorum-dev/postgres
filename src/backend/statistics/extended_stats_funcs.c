@@ -1718,22 +1718,19 @@ delete_pg_statistic_ext_data(Oid stxoid, bool inherited)
  * Restore (insert or replace) statistics for the given statistics object.
  *
  * This function accepts variadic arguments in key-value pairs, which are
- * given to stats_fill_fcinfo_from_arg_pairs to be mapped into positional
+ * given to stats_fill_args_from_arg_pairs to be mapped into positional
  * arguments.
  */
 Datum
 pg_restore_extended_stats(PG_FUNCTION_ARGS)
 {
-	LOCAL_FCINFO(positional_fcinfo, NUM_EXTENDED_STATS_ARGS);
+	NullableDatum positional_args[NUM_EXTENDED_STATS_ARGS];
 	bool		result = true;
 
-	InitFunctionCallInfoData(*positional_fcinfo, NULL, NUM_EXTENDED_STATS_ARGS,
-							 InvalidOid, NULL, NULL);
-
-	if (!stats_fill_fcinfo_from_arg_pairs(fcinfo, positional_fcinfo, extarginfo))
+	if (!stats_fill_args_from_arg_pairs(fcinfo, positional_args, extarginfo))
 		result = false;
 
-	if (!extended_statistics_update(positional_fcinfo->args))
+	if (!extended_statistics_update(positional_args))
 		result = false;
 
 	PG_RETURN_BOOL(result);

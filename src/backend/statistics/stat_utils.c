@@ -340,17 +340,17 @@ statatt_get_index_expr(Relation rel, int attnum)
 
 /*
  * Translate variadic argument pairs from 'pairs_fcinfo' into a
- * 'positional_fcinfo' appropriate for calling relation_statistics_update() or
- * attribute_statistics_update() with positional arguments.
+ * NullableDatum[] appropriate for calling the internal statistics update
+ * functions for relation stats, attribute stats, or extended stats.
  *
- * Caller should have already initialized positional_fcinfo with a size
- * appropriate for calling the intended positional function, and arginfo
- * should also match the intended positional function.
+ * Caller should have already initialized args with a size appropriate for
+ * calling the intended function, and arginfo should also match the intended
+ * function.
  */
 bool
-stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
-								 FunctionCallInfo positional_fcinfo,
-								 struct StatsArgInfo *arginfo)
+stats_fill_args_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
+							   NullableDatum *positional_args,
+							   struct StatsArgInfo *arginfo)
 {
 	Datum	   *args;
 	bool	   *argnulls;
@@ -361,8 +361,8 @@ stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
 	/* clear positional args */
 	for (int i = 0; arginfo[i].argname != NULL; i++)
 	{
-		positional_fcinfo->args[i].value = (Datum) 0;
-		positional_fcinfo->args[i].isnull = true;
+		positional_args[i].value = (Datum) 0;
+		positional_args[i].isnull = true;
 	}
 
 	nargs = extract_variadic_args(pairs_fcinfo, 0, true,
@@ -420,8 +420,8 @@ stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
 			continue;
 		}
 
-		positional_fcinfo->args[argnum].value = args[i + 1];
-		positional_fcinfo->args[argnum].isnull = false;
+		positional_args[argnum].value = args[i + 1];
+		positional_args[argnum].isnull = false;
 	}
 
 	return result;

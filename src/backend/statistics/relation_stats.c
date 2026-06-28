@@ -59,7 +59,7 @@ static struct StatsArgInfo relarginfo[] =
 	[NUM_RELATION_STATS_ARGS] = {0}
 };
 
-static bool relation_statistics_update(FunctionCallInfo fcinfo);
+static bool relation_statistics_update(const NullableDatum *args);
 static bool relation_statistics_update_internal(Oid reloid,
 												const NullableDatum *args);
 
@@ -67,18 +67,18 @@ static bool relation_statistics_update_internal(Oid reloid,
  * Internal function for modifying statistics for a relation.
  */
 static bool
-relation_statistics_update(FunctionCallInfo fcinfo)
+relation_statistics_update(const NullableDatum *args)
 {
 	char	   *nspname;
 	char	   *relname;
 	Oid			reloid;
 	Oid			locked_table = InvalidOid;
 
-	stats_check_required_arg(fcinfo->args, relarginfo, RELSCHEMA_ARG);
-	stats_check_required_arg(fcinfo->args, relarginfo, RELNAME_ARG);
+	stats_check_required_arg(args, relarginfo, RELSCHEMA_ARG);
+	stats_check_required_arg(args, relarginfo, RELNAME_ARG);
 
-	nspname = TextDatumGetCString(PG_GETARG_DATUM(RELSCHEMA_ARG));
-	relname = TextDatumGetCString(PG_GETARG_DATUM(RELNAME_ARG));
+	nspname = TextDatumGetCString(args[RELSCHEMA_ARG].value);
+	relname = TextDatumGetCString(args[RELNAME_ARG].value);
 
 	if (RecoveryInProgress())
 		ereport(ERROR,
@@ -90,7 +90,7 @@ relation_statistics_update(FunctionCallInfo fcinfo)
 									  ShareUpdateExclusiveLock, 0,
 									  RangeVarCallbackForStats, &locked_table);
 
-	return relation_statistics_update_internal(reloid, fcinfo->args);
+	return relation_statistics_update_internal(reloid, args);
 }
 
 /*
@@ -223,42 +223,36 @@ relation_statistics_update_internal(Oid reloid, const NullableDatum *args)
 Datum
 pg_clear_relation_stats(PG_FUNCTION_ARGS)
 {
-	LOCAL_FCINFO(newfcinfo, 6);
+	NullableDatum args[NUM_RELATION_STATS_ARGS];
 
-	InitFunctionCallInfoData(*newfcinfo, NULL, 6, InvalidOid, NULL, NULL);
+	args[RELSCHEMA_ARG].value = PG_GETARG_DATUM(0);
+	args[RELSCHEMA_ARG].isnull = PG_ARGISNULL(0);
+	args[RELNAME_ARG].value = PG_GETARG_DATUM(1);
+	args[RELNAME_ARG].isnull = PG_ARGISNULL(1);
+	args[RELPAGES_ARG].value = Int32GetDatum(0);
+	args[RELPAGES_ARG].isnull = false;
+	args[RELTUPLES_ARG].value = Float4GetDatum(-1.0);
+	args[RELTUPLES_ARG].isnull = false;
+	args[RELALLVISIBLE_ARG].value = Int32GetDatum(0);
+	args[RELALLVISIBLE_ARG].isnull = false;
+	args[RELALLFROZEN_ARG].value = Int32GetDatum(0);
+	args[RELALLFROZEN_ARG].isnull = false;
 
-	newfcinfo->args[0].value = PG_GETARG_DATUM(0);
-	newfcinfo->args[0].isnull = PG_ARGISNULL(0);
-	newfcinfo->args[1].value = PG_GETARG_DATUM(1);
-	newfcinfo->args[1].isnull = PG_ARGISNULL(1);
-	newfcinfo->args[2].value = Int32GetDatum(0);
-	newfcinfo->args[2].isnull = false;
-	newfcinfo->args[3].value = Float4GetDatum(-1.0);
-	newfcinfo->args[3].isnull = false;
-	newfcinfo->args[4].value = Int32GetDatum(0);
-	newfcinfo->args[4].isnull = false;
-	newfcinfo->args[5].value = Int32GetDatum(0);
-	newfcinfo->args[5].isnull = false;
-
-	relation_statistics_update(newfcinfo);
+	relation_statistics_update(args);
 	PG_RETURN_VOID();
 }
 
 Datum
 pg_restore_relation_stats(PG_FUNCTION_ARGS)
 {
-	LOCAL_FCINFO(positional_fcinfo, NUM_RELATION_STATS_ARGS);
+	NullableDatum positional_args[NUM_RELATION_STATS_ARGS];
 	bool		result = true;
 
-	InitFunctionCallInfoData(*positional_fcinfo, NULL,
-							 NUM_RELATION_STATS_ARGS,
-							 InvalidOid, NULL, NULL);
-
-	if (!stats_fill_fcinfo_from_arg_pairs(fcinfo, positional_fcinfo,
-										  relarginfo))
+	if (!stats_fill_args_from_arg_pairs(fcinfo, positional_args,
+										relarginfo))
 		result = false;
 
-	if (!relation_statistics_update(positional_fcinfo))
+	if (!relation_statistics_update(positional_args))
 		result = false;
 
 	PG_RETURN_BOOL(result);
@@ -279,28 +273,21 @@ import_relation_statistics(Relation rel,
 						   const NullableDatum *relallvisible,
 						   const NullableDatum *relallfrozen)
 {
-	LOCAL_FCINFO(newfcinfo, NUM_RELATION_STATS_ARGS);
+	NullableDatum args[NUM_RELATION_STATS_ARGS];
+	NullableDatum unused = {.isnull = true, .value = (Datum) 0};
 
 	Assert(relpages);
 	Assert(reltuples);
 	Assert(relallvisible);
 	Assert(relallfrozen);
 
-	InitFunctionCallInfoData(*newfcinfo, NULL, NUM_RELATION_STATS_ARGS,
-							 InvalidOid, NULL, NULL);
+	args[RELSCHEMA_ARG] = unused;
+	args[RELNAME_ARG] = unused;
 
-	newfcinfo->args[RELSCHEMA_ARG].value =
-		CStringGetTextDatum(get_namespace_name(RelationGetNamespace(rel)));
-	newfcinfo->args[RELSCHEMA_ARG].isnull = false;
-	newfcinfo->args[RELNAME_ARG].value =
-		CStringGetTextDatum(RelationGetRelationName(rel));
-	newfcinfo->args[RELNAME_ARG].isnull = false;
+	args[RELPAGES_ARG] = *relpages;
+	args[RELTUPLES_ARG] = *reltuples;
+	args[RELALLVISIBLE_ARG] = *relallvisible;
+	args[RELALLFROZEN_ARG] = *relallfrozen;
 
-	newfcinfo->args[RELPAGES_ARG] = *relpages;
-	newfcinfo->args[RELTUPLES_ARG] = *reltuples;
-	newfcinfo->args[RELALLVISIBLE_ARG] = *relallvisible;
-	newfcinfo->args[RELALLFROZEN_ARG] = *relallfrozen;
-
-	return relation_statistics_update_internal(RelationGetRelid(rel),
-											   newfcinfo->args);
+	return relation_statistics_update_internal(RelationGetRelid(rel), args);
 }
