@@ -61,7 +61,7 @@ static struct StatsArgInfo relarginfo[] =
 
 static bool relation_statistics_update(FunctionCallInfo fcinfo);
 static bool relation_statistics_update_internal(Oid reloid,
-												FunctionCallInfo fcinfo);
+												const NullableDatum *args);
 
 /*
  * Internal function for modifying statistics for a relation.
@@ -90,14 +90,14 @@ relation_statistics_update(FunctionCallInfo fcinfo)
 									  ShareUpdateExclusiveLock, 0,
 									  RangeVarCallbackForStats, &locked_table);
 
-	return relation_statistics_update_internal(reloid, fcinfo);
+	return relation_statistics_update_internal(reloid, fcinfo->args);
 }
 
 /*
  * Workhorse function for relation_statistics_update.
  */
 static bool
-relation_statistics_update_internal(Oid reloid, FunctionCallInfo fcinfo)
+relation_statistics_update_internal(Oid reloid, const NullableDatum *args)
 {
 	int32		relpages = 0;
 	bool		update_relpages = false;
@@ -116,15 +116,15 @@ relation_statistics_update_internal(Oid reloid, FunctionCallInfo fcinfo)
 	int			nreplaces = 0;
 	bool		result = true;
 
-	if (!PG_ARGISNULL(RELPAGES_ARG))
+	if (!args[RELPAGES_ARG].isnull)
 	{
-		relpages = PG_GETARG_INT32(RELPAGES_ARG);
+		relpages = DatumGetInt32(args[RELPAGES_ARG].value);
 		update_relpages = true;
 	}
 
-	if (!PG_ARGISNULL(RELTUPLES_ARG))
+	if (!args[RELTUPLES_ARG].isnull)
 	{
-		reltuples = PG_GETARG_FLOAT4(RELTUPLES_ARG);
+		reltuples = DatumGetFloat4(args[RELTUPLES_ARG].value);
 		if (isnan(reltuples) || isinf(reltuples))
 		{
 			ereport(WARNING,
@@ -143,15 +143,15 @@ relation_statistics_update_internal(Oid reloid, FunctionCallInfo fcinfo)
 			update_reltuples = true;
 	}
 
-	if (!PG_ARGISNULL(RELALLVISIBLE_ARG))
+	if (!args[RELALLVISIBLE_ARG].isnull)
 	{
-		relallvisible = PG_GETARG_INT32(RELALLVISIBLE_ARG);
+		relallvisible = DatumGetInt32(args[RELALLVISIBLE_ARG].value);
 		update_relallvisible = true;
 	}
 
-	if (!PG_ARGISNULL(RELALLFROZEN_ARG))
+	if (!args[RELALLFROZEN_ARG].isnull)
 	{
-		relallfrozen = PG_GETARG_INT32(RELALLFROZEN_ARG);
+		relallfrozen = DatumGetInt32(args[RELALLFROZEN_ARG].value);
 		update_relallfrozen = true;
 	}
 
@@ -302,5 +302,5 @@ import_relation_statistics(Relation rel,
 	newfcinfo->args[RELALLFROZEN_ARG] = *relallfrozen;
 
 	return relation_statistics_update_internal(RelationGetRelid(rel),
-											   newfcinfo);
+											   newfcinfo->args);
 }
