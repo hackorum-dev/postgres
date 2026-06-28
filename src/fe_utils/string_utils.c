@@ -21,11 +21,8 @@
 #include "fe_utils/string_utils.h"
 #include "mb/pg_wchar.h"
 
-static PQExpBuffer defaultGetLocalPQExpBuffer(void);
-
 /* Globals exported by this file */
 int			quote_all_identifiers = 0;
-PQExpBuffer (*getLocalPQExpBuffer) (void) = defaultGetLocalPQExpBuffer;
 
 static int	fmtIdEncoding = -1;
 
@@ -34,14 +31,14 @@ static int	fmtIdEncoding = -1;
  * Returns a temporary PQExpBuffer, valid until the next call to the function.
  * This is used by fmtId and fmtQualifiedId.
  *
- * Non-reentrant and non-thread-safe but reduces memory leakage. You can
- * replace this with a custom version by setting the getLocalPQExpBuffer
- * function pointer.
+ * The buffer is thread-local, so this is safe to call from multiple threads
+ * at once; each thread gets its own.  It is not reentrant within a thread,
+ * but it reduces memory leakage.
  */
 static PQExpBuffer
-defaultGetLocalPQExpBuffer(void)
+getLocalPQExpBuffer(void)
 {
-	static PQExpBuffer id_return = NULL;
+	static _Thread_local PQExpBuffer id_return = NULL;
 
 	if (id_return)				/* first time through? */
 	{

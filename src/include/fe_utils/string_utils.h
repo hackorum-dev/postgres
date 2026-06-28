@@ -21,7 +21,6 @@
 
 /* Global variables controlling behavior of fmtId() and fmtQualifiedId() */
 extern PGDLLIMPORT int quote_all_identifiers;
-extern PQExpBuffer (*getLocalPQExpBuffer) (void);
 
 /* Functions */
 extern const char *fmtId(const char *rawid);

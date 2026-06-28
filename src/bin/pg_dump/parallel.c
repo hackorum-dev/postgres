@@ -193,9 +193,6 @@ static CRITICAL_SECTION signal_info_lock;
 
 
 #ifdef WIN32
-/* file-scope variables */
-static DWORD tls_index;
-
 /* globally visible variables (needed by exit_nicely) */
 bool		parallel_init_done = false;
 DWORD		mainThreadId;
@@ -243,8 +240,6 @@ init_parallel_dump_utils(void)
 		WSADATA		wsaData;
 		int			err;
 
-		/* Prepare for threaded operation */
-		tls_index = TlsAlloc();
 		mainThreadId = GetCurrentThreadId();
 
 		/* Initialize socket access */
@@ -279,48 +274,6 @@ GetMyPSlot(ParallelState *pstate)
 
 	return NULL;
 }
-
-/*
- * A thread-local version of getLocalPQExpBuffer().
- *
- * Non-reentrant but reduces memory leakage: we'll consume one buffer per
- * thread, which is much better than one per fmtId/fmtQualifiedId call.
- */
-#ifdef WIN32
-static PQExpBuffer
-getThreadLocalPQExpBuffer(void)
-{
-	/*
-	 * The Tls code goes awry if we use a static var, so we provide for both
-	 * static and auto, and omit any use of the static var when using Tls. We
-	 * rely on TlsGetValue() to return 0 if the value is not yet set.
-	 */
-	static PQExpBuffer s_id_return = NULL;
-	PQExpBuffer id_return;
-
-	if (parallel_init_done)
-		id_return = (PQExpBuffer) TlsGetValue(tls_index);
-	else
-		id_return = s_id_return;
-
-	if (id_return)				/* first time through? */
-	{
-		/* same buffer, just wipe contents */
-		resetPQExpBuffer(id_return);
-	}
-	else
-	{
-		/* new buffer */
-		id_return = createPQExpBuffer();
-		if (parallel_init_done)
-			TlsSetValue(tls_index, id_return);
-		else
-			s_id_return = id_return;
-	}
-
-	return id_return;
-}
-#endif							/* WIN32 */
 
 /*
  * pg_dump and pg_restore call this to register the cleanup handler
@@ -913,11 +866,6 @@ ParallelBackupStart(ArchiveHandle *AH)
 		pg_malloc0_array(TocEntry *, pstate->numWorkers);
 	pstate->parallelSlot =
 		pg_malloc0_array(ParallelSlot, pstate->numWorkers);
-
-#ifdef WIN32
-	/* Make fmtId() and fmtQualifiedId() use thread-local storage */
-	getLocalPQExpBuffer = getThreadLocalPQExpBuffer;
-#endif
 
 	/*
 	 * Set the pstate in shutdown_info, to tell the exit handler that it must
