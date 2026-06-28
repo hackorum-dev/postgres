@@ -2348,6 +2348,104 @@ SELECT x, count(*) FROM test3cs GROUP BY x HAVING x = 'abc' COLLATE case_insensi
  ABC |     1
 (2 rows)
 
+-- Test qual pushdown with window functions and nondeterministic collations.
+-- When the window partition key uses a nondeterministic collation, an upper
+-- qual that references the partition key must not be pushed below WindowAgg,
+-- otherwise it can remove some but not all rows from a window partition.
+-- Negative: conflicting collation, qual must stay above WindowAgg
+EXPLAIN (COSTS OFF)
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3ci
+) s
+WHERE x = 'abc' COLLATE case_sensitive
+ORDER BY x;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Subquery Scan on s
+   Filter: (s.x = 'abc'::text COLLATE case_sensitive)
+   ->  WindowAgg
+         Window: w1 AS (PARTITION BY test3ci.x)
+         ->  Sort
+               Sort Key: test3ci.x COLLATE case_insensitive
+               ->  Seq Scan on test3ci
+(7 rows)
+
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3ci
+) s
+WHERE x = 'abc' COLLATE case_sensitive
+ORDER BY x;
+  x  | part_count 
+-----+------------
+ abc |          2
+(1 row)
+
+-- Negative: non-collation-aware expression can still distinguish rows that
+-- the nondeterministic partition equality considers equal.
+EXPLAIN (COSTS OFF)
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3ci
+) s
+WHERE ascii(x) = 97
+ORDER BY x;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Subquery Scan on s
+   Filter: (ascii(s.x) = 97)
+   ->  WindowAgg
+         Window: w1 AS (PARTITION BY test3ci.x)
+         ->  Sort
+               Sort Key: test3ci.x COLLATE case_insensitive
+               ->  Seq Scan on test3ci
+(7 rows)
+
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3ci
+) s
+WHERE ascii(x) = 97
+ORDER BY x;
+  x  | part_count 
+-----+------------
+ abc |          2
+(1 row)
+
+-- Positive: deterministic partition key retains the existing pushdown path
+EXPLAIN (COSTS OFF)
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3cs
+) s
+WHERE x = 'abc' COLLATE case_sensitive
+ORDER BY x;
+                        QUERY PLAN                        
+----------------------------------------------------------
+ WindowAgg
+   Window: w1 AS ()
+   ->  Seq Scan on test3cs
+         Filter: (x = 'abc'::text COLLATE case_sensitive)
+(4 rows)
+
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3cs
+) s
+WHERE x = 'abc' COLLATE case_sensitive
+ORDER BY x;
+  x  | part_count 
+-----+------------
+ abc |          1
+(1 row)
+
 -- bpchar
 CREATE TABLE test1bpci (x char(3) COLLATE case_insensitive);
 CREATE TABLE test2bpci (x char(3) COLLATE case_insensitive);

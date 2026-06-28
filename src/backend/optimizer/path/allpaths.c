@@ -57,6 +57,7 @@
 #define UNSAFE_NOTIN_DISTINCTON_CLAUSE	(1 << 2)
 #define UNSAFE_NOTIN_PARTITIONBY_CLAUSE	(1 << 3)
 #define UNSAFE_TYPE_MISMATCH			(1 << 4)
+#define UNSAFE_NONDETERMINISTIC_PARTITION	(1 << 5)
 
 /* results of subquery_is_pushdown_safe */
 typedef struct pushdown_safety_info
@@ -158,7 +159,8 @@ static void check_output_expressions(Query *subquery,
 									 pushdown_safety_info *safetyInfo);
 static void compare_tlist_datatypes(List *tlist, List *colTypes,
 									pushdown_safety_info *safetyInfo);
-static bool targetIsInAllPartitionLists(TargetEntry *tle, Query *query);
+static bool targetIsInAllPartitionLists(TargetEntry *tle, Query *query,
+										bool *nondeterministic_partition);
 static pushdown_safe_type qual_is_pushdown_safe(Query *subquery, Index rti,
 												RestrictInfo *rinfo,
 												pushdown_safety_info *safetyInfo);
@@ -4263,6 +4265,11 @@ recurse_pushdown_safe(Node *setOp, Query *topquery,
  * subquery_is_pushdown_safe handles that.).  Subquery columns marked as
  * unsafe for this reason can still have WindowClause run conditions pushed
  * down.
+ *
+ * The same reasoning does not hold if the partition key's collation is
+ * nondeterministic, since a qual might distinguish values that the
+ * partitioning equality operator sees as equal.  In that case, mark the
+ * column unsafe for ordinary qual pushdown.
  */
 static void
 check_output_expressions(Query *subquery, pushdown_safety_info *safetyInfo)
@@ -4338,12 +4345,23 @@ check_output_expressions(Query *subquery, pushdown_safety_info *safetyInfo)
 		/* If subquery uses window functions, check point 4 */
 		if (subquery->hasWindowFuncs &&
 			(safetyInfo->unsafeFlags[tle->resno] &
-			 UNSAFE_NOTIN_PARTITIONBY_CLAUSE) == 0 &&
-			!targetIsInAllPartitionLists(tle, subquery))
+			 (UNSAFE_NOTIN_PARTITIONBY_CLAUSE |
+			  UNSAFE_NONDETERMINISTIC_PARTITION)) == 0)
 		{
-			/* not present in all PARTITION BY clauses, so mark it unsafe */
-			safetyInfo->unsafeFlags[tle->resno] |= UNSAFE_NOTIN_PARTITIONBY_CLAUSE;
-			continue;
+			bool		nondeterministic_partition;
+
+			if (!targetIsInAllPartitionLists(tle, subquery,
+											 &nondeterministic_partition))
+			{
+				/* not present in all PARTITION BY clauses, so mark it unsafe */
+				safetyInfo->unsafeFlags[tle->resno] |= UNSAFE_NOTIN_PARTITIONBY_CLAUSE;
+				continue;
+			}
+			if (nondeterministic_partition)
+			{
+				safetyInfo->unsafeFlags[tle->resno] |= UNSAFE_NONDETERMINISTIC_PARTITION;
+				continue;
+			}
 		}
 	}
 }
@@ -4393,21 +4411,52 @@ compare_tlist_datatypes(List *tlist, List *colTypes,
  *		True if the TargetEntry is listed in the PARTITION BY clause
  *		of every window defined in the query.
  *
+ * If so, set *nondeterministic_partition when any matching PARTITION BY
+ * expression has a nondeterministic collation.
+ *
  * It would be safe to ignore windows not actually used by any window
  * function, but it's not easy to get that info at this stage; and it's
  * unlikely to be useful to spend any extra cycles getting it, since
  * unreferenced window definitions are probably infrequent in practice.
  */
 static bool
-targetIsInAllPartitionLists(TargetEntry *tle, Query *query)
+targetIsInAllPartitionLists(TargetEntry *tle, Query *query,
+							bool *nondeterministic_partition)
 {
+	Index		ref = tle->ressortgroupref;
 	ListCell   *lc;
+
+	*nondeterministic_partition = false;
+
+	/* no need to scan lists if tle has no marker */
+	if (ref == 0)
+		return false;
 
 	foreach(lc, query->windowClause)
 	{
 		WindowClause *wc = (WindowClause *) lfirst(lc);
+		ListCell   *lc2;
+		bool		found = false;
 
-		if (!targetIsInSortList(tle, InvalidOid, wc->partitionClause))
+		foreach(lc2, wc->partitionClause)
+		{
+			SortGroupClause *scl = (SortGroupClause *) lfirst(lc2);
+
+			if (scl->tleSortGroupRef == ref)
+			{
+				TargetEntry *ptle = get_sortgroupclause_tle(scl,
+															query->targetList);
+				Oid			collid = exprCollation((Node *) ptle->expr);
+
+				if (OidIsValid(collid) &&
+					!get_collation_isdeterministic(collid))
+					*nondeterministic_partition = true;
+				found = true;
+				break;
+			}
+		}
+
+		if (!found)
 			return false;
 	}
 	return true;
@@ -4520,7 +4569,8 @@ qual_is_pushdown_safe(Query *subquery, Index rti, RestrictInfo *rinfo,
 		{
 			if (safetyInfo->unsafeFlags[var->varattno] &
 				(UNSAFE_HAS_VOLATILE_FUNC | UNSAFE_HAS_SET_FUNC |
-				 UNSAFE_NOTIN_DISTINCTON_CLAUSE | UNSAFE_TYPE_MISMATCH))
+				 UNSAFE_NOTIN_DISTINCTON_CLAUSE | UNSAFE_TYPE_MISMATCH |
+				 UNSAFE_NONDETERMINISTIC_PARTITION))
 			{
 				safe = PUSHDOWN_UNSAFE;
 				break;

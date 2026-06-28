@@ -826,6 +826,63 @@ EXPLAIN (COSTS OFF)
 SELECT x, count(*) FROM test3cs GROUP BY x HAVING x = 'abc' COLLATE case_insensitive ORDER BY 1;
 SELECT x, count(*) FROM test3cs GROUP BY x HAVING x = 'abc' COLLATE case_insensitive ORDER BY 1;
 
+-- Test qual pushdown with window functions and nondeterministic collations.
+-- When the window partition key uses a nondeterministic collation, an upper
+-- qual that references the partition key must not be pushed below WindowAgg,
+-- otherwise it can remove some but not all rows from a window partition.
+
+-- Negative: conflicting collation, qual must stay above WindowAgg
+EXPLAIN (COSTS OFF)
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3ci
+) s
+WHERE x = 'abc' COLLATE case_sensitive
+ORDER BY x;
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3ci
+) s
+WHERE x = 'abc' COLLATE case_sensitive
+ORDER BY x;
+
+-- Negative: non-collation-aware expression can still distinguish rows that
+-- the nondeterministic partition equality considers equal.
+EXPLAIN (COSTS OFF)
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3ci
+) s
+WHERE ascii(x) = 97
+ORDER BY x;
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3ci
+) s
+WHERE ascii(x) = 97
+ORDER BY x;
+
+-- Positive: deterministic partition key retains the existing pushdown path
+EXPLAIN (COSTS OFF)
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3cs
+) s
+WHERE x = 'abc' COLLATE case_sensitive
+ORDER BY x;
+SELECT x, part_count
+FROM (
+  SELECT x, count(*) OVER (PARTITION BY x) AS part_count
+  FROM test3cs
+) s
+WHERE x = 'abc' COLLATE case_sensitive
+ORDER BY x;
+
 -- bpchar
 CREATE TABLE test1bpci (x char(3) COLLATE case_insensitive);
 CREATE TABLE test2bpci (x char(3) COLLATE case_insensitive);
