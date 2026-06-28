@@ -68,6 +68,7 @@
 #include "utils/ps_status.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/backend_msg.h"
 #include "utils/timeout.h"
 
 /* has this backend called EmitConnectionWarnings()? */
@@ -911,6 +912,8 @@ InitPostgres(const char *in_dbname, Oid dboid,
 								 hba_authname(MyClientConnectionInfo.auth_method));
 		am_superuser = superuser();
 	}
+
+	BackendMsgInit(MyProcNumber);
 
 	/* Report any SSL/GSS details for the session. */
 	if (MyProcPort != NULL)

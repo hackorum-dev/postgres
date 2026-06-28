@@ -24,6 +24,8 @@
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "utils/acl.h"
+#include "utils/backend_msg.h"
+#include "utils/builtins.h"
 #include "utils/fmgrprotos.h"
 
 
@@ -48,7 +50,7 @@
 #define SIGNAL_BACKEND_NOSUPERUSER 3
 #define SIGNAL_BACKEND_NOAUTOVAC 4
 static int
-pg_signal_backend(int pid, int sig)
+pg_signal_backend(int pid, int sig, const char *msg)
 {
 	PGPROC	   *proc = BackendPidGetProc(pid);
 
@@ -108,6 +110,15 @@ pg_signal_backend(int pid, int sig)
 	 * too unlikely to worry about.
 	 */
 
+	if (msg != NULL && msg[0] != '\0')
+	{
+		int			r = BackendMsgSet(GetNumberFromPGProc(proc), proc->pid, msg);
+
+		if (r != -1 && r != (int) strlen(msg))
+			ereport(NOTICE,
+					(errmsg("message is too long, truncated to %d bytes", r)));
+	}
+
 	/* If we have setsid(), signal the backend's whole process group */
 #ifdef HAVE_SETSID
 	if (kill(-pid, sig))
@@ -132,7 +143,11 @@ pg_signal_backend(int pid, int sig)
 Datum
 pg_cancel_backend(PG_FUNCTION_ARGS)
 {
-	int			r = pg_signal_backend(PG_GETARG_INT32(0), SIGINT);
+	int			pid = PG_GETARG_INT32(0);
+	char	   *msg = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	int			r = pg_signal_backend(pid, SIGINT, msg);
+
+	pfree(msg);
 
 	if (r == SIGNAL_BACKEND_NOSUPERUSER)
 		ereport(ERROR,
@@ -233,19 +248,19 @@ pg_wait_until_termination(int pid, int64 timeout)
 Datum
 pg_terminate_backend(PG_FUNCTION_ARGS)
 {
-	int			pid;
+	int			pid = PG_GETARG_INT32(0);
+	int			timeout = PG_GETARG_INT64(1); /* milliseconds */
+	char	   *msg = text_to_cstring(PG_GETARG_TEXT_PP(2));
 	int			r;
-	int			timeout;		/* milliseconds */
-
-	pid = PG_GETARG_INT32(0);
-	timeout = PG_GETARG_INT64(1);
 
 	if (timeout < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("\"timeout\" must not be negative")));
 
-	r = pg_signal_backend(pid, SIGTERM);
+	r = pg_signal_backend(pid, SIGTERM, msg);
+
+	pfree(msg);
 
 	if (r == SIGNAL_BACKEND_NOSUPERUSER)
 		ereport(ERROR,

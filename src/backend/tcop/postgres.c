@@ -81,6 +81,7 @@
 #include "utils/snapmgr.h"
 #include "utils/timeout.h"
 #include "utils/timestamp.h"
+#include "utils/backend_msg.h"
 #include "utils/varlena.h"
 
 /* ----------------
@@ -3390,9 +3391,22 @@ ProcessInterrupts(void)
 			proc_exit(0);
 		}
 		else
-			ereport(FATAL,
-					(errcode(ERRCODE_ADMIN_SHUTDOWN),
-					 errmsg("terminating connection due to administrator command")));
+		{
+			if (BackendMsgIsSet())
+			{
+				char		msg[BACKEND_MSG_MAX_LEN];
+
+				BackendMsgGet(msg, sizeof(msg));
+				ereport(FATAL,
+						(errcode(ERRCODE_ADMIN_SHUTDOWN),
+						 errmsg("terminating connection due to administrator command"),
+						 errdetail("%s", msg)));
+			}
+			else
+				ereport(FATAL,
+						(errcode(ERRCODE_ADMIN_SHUTDOWN),
+						 errmsg("terminating connection due to administrator command")));
+		}
 	}
 
 	if (CheckClientConnectionPending)
@@ -3500,9 +3514,20 @@ ProcessInterrupts(void)
 		if (!DoingCommandRead)
 		{
 			LockErrorCleanup();
-			ereport(ERROR,
-					(errcode(ERRCODE_QUERY_CANCELED),
-					 errmsg("canceling statement due to user request")));
+			if (BackendMsgIsSet())
+			{
+				char		msg[BACKEND_MSG_MAX_LEN];
+
+				BackendMsgGet(msg, sizeof(msg));
+				ereport(ERROR,
+						(errcode(ERRCODE_QUERY_CANCELED),
+						 errmsg("canceling statement due to user request"),
+						 errdetail("%s", msg)));
+			}
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_QUERY_CANCELED),
+						 errmsg("canceling statement due to user request")));
 		}
 	}
 

@@ -147,7 +147,7 @@
         <indexterm>
          <primary>pg_cancel_backend</primary>
         </indexterm>
-        <function>pg_cancel_backend</function> ( <parameter>pid</parameter> <type>integer</type> )
+        <function>pg_cancel_backend</function> ( <parameter>pid</parameter> <type>integer</type>, <parameter>message</parameter> <type>text</type> <literal>DEFAULT</literal> <literal>''</literal> )
         <returnvalue>boolean</returnvalue>
        </para>
        <para>
@@ -160,6 +160,12 @@
         <literal>pg_signal_autovacuum_worker</literal> are permitted to
         cancel autovacuum worker processes, which are otherwise considered
         superuser backends.
+       </para>
+       <para>
+        If <parameter>message</parameter> is specified and non-empty, it is
+        included as detail in the error reported to the canceled session.
+        If multiple backends simultaneously cancel the same target, only one
+        message will be delivered.
        </para></entry>
       </row>
 
@@ -225,7 +231,7 @@
         <indexterm>
          <primary>pg_terminate_backend</primary>
         </indexterm>
-        <function>pg_terminate_backend</function> ( <parameter>pid</parameter> <type>integer</type>, <parameter>timeout</parameter> <type>bigint</type> <literal>DEFAULT</literal> <literal>0</literal> )
+        <function>pg_terminate_backend</function> ( <parameter>pid</parameter> <type>integer</type>, <parameter>timeout</parameter> <type>bigint</type> <literal>DEFAULT</literal> <literal>0</literal>, <parameter>message</parameter> <type>text</type> <literal>DEFAULT</literal> <literal>''</literal> )
         <returnvalue>boolean</returnvalue>
        </para>
        <para>
@@ -249,6 +255,11 @@
         the process is terminated, the function
         returns <literal>true</literal>.  On timeout, a warning is emitted and
         <literal>false</literal> is returned.
+        If <parameter>message</parameter> is specified and non-empty, it is
+        included as detail in the fatal error reported to the terminated
+        session.  If multiple backends simultaneously terminate the same
+        target, only one message will be delivered.  Parallel workers always
+        receive the generic termination message regardless of this parameter.
        </para></entry>
       </row>
      </tbody>
