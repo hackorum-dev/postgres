@@ -397,7 +397,10 @@ coerce_type(ParseState *pstate, Node *node,
 		 */
 		CollateExpr *coll = (CollateExpr *) node;
 
-		result = coerce_type(pstate, (Node *) coll->arg,
+		while (node && IsA(node, CollateExpr))
+			node = (Node *) ((CollateExpr *) node)->arg;
+
+		result = coerce_type(pstate, node,
 							 inputTypeId, targetTypeId, targetTypeMod,
 							 ccontext, cformat, location);
 		if (type_is_collatable(targetTypeId))
