@@ -1296,6 +1296,34 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       </listitem>
      </varlistentry>
 
+     <varlistentry id="libpq-connect-passfileport" xreflabel="passfileport">
+      <term><literal>passfileport</literal></term>
+      <listitem>
+      <para>
+       Specifies the port number to use as the lookup key in the password
+       file (see <xref linkend="libpq-pgpass"/>), instead of the port given
+       by the <xref linkend="libpq-connect-port"/> parameter.  This is useful
+       when the port actually connected to is not the port of the target
+       server, for example when connecting through an SSH tunnel or a
+       connection pooler that listens on a different local port: the
+       connection still uses <literal>port</literal>, while the password-file
+       lookup uses <literal>passfileport</literal>, so an entry written for
+       the real server port keeps matching.  This mirrors the way
+       <xref linkend="libpq-connect-host"/> and
+       <xref linkend="libpq-connect-hostaddr"/> already separate the
+       password-file lookup key from the address actually connected to.
+      </para>
+      <para>
+       As with <literal>port</literal>, a comma-separated list of port
+       numbers may be given, in which case it must have either exactly one
+       element (applied to all hosts) or the same number of elements as the
+       host list.  When this parameter is empty or not specified, the
+       connection port is used for the lookup, which is the historical
+       behavior.
+      </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="libpq-connect-require-auth" xreflabel="require_auth">
       <term><literal>require_auth</literal></term>
       <listitem>
@@ -9156,6 +9184,16 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
     <listitem>
      <para>
       <indexterm>
+       <primary><envar>PGPASSFILEPORT</envar></primary>
+      </indexterm>
+      <envar>PGPASSFILEPORT</envar> behaves the same as the <xref
+      linkend="libpq-connect-passfileport"/> connection parameter.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
        <primary><envar>PGSSLCRL</envar></primary>
       </indexterm>
       <envar>PGSSLCRL</envar>  behaves the same as the <xref
@@ -9448,6 +9486,11 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
    the connection is a Unix-domain socket connection and
    the <literal>host</literal> parameter
    matches <application>libpq</application>'s default socket directory path.
+   The port field is matched to the <literal>port</literal> connection
+   parameter, or to the <literal>passfileport</literal> parameter if that is
+   specified; the latter is useful when the connection is made through an SSH
+   tunnel or a pooler on a different port, so that the entry can still be
+   written for the real server port.
    In a standby server, a database field of <literal>replication</literal>
    matches streaming replication connections made to the primary server.
    The database field is of limited usefulness otherwise, because users have
