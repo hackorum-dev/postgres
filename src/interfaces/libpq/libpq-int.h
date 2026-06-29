@@ -361,6 +361,9 @@ typedef struct pg_conn_host
 	char	   *hostaddr;		/* host numeric IP address */
 	char	   *port;			/* port number (if NULL or empty, use
 								 * DEF_PGPORT[_STR]) */
+	char	   *passfileport;	/* port to use as the lookup key in the
+								 * password file for this host; if NULL or
+								 * empty, the connection port is used */
 	char	   *password;		/* password for this host, read from the
 								 * password file; NULL if not sought or not
 								 * found in password file. */
@@ -397,6 +400,9 @@ struct pg_conn
 	char	   *pguser;			/* Postgres username and password, if any */
 	char	   *pgpass;
 	char	   *pgpassfile;		/* path to a file containing password(s) */
+	char	   *passfileport;	/* port to use as the lookup key in the
+								 * password file, instead of the connection
+								 * port; or a comma-separated list of same */
 	char	   *channel_binding;	/* channel binding mode
 									 * (require,prefer,disable) */
 	char	   *keepalives;		/* use TCP keepalives? */
