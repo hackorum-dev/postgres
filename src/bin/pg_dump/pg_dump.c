@@ -19314,6 +19314,22 @@ dumpSequence(Archive *fout, const TableInfo *tbinfo)
 	{
 		owning_tab = findTableByOid(tbinfo->owning_tab);
 
+		/*
+		 * The column may already have a DEFAULT inherited/printed by CREATE TABLE.
+		 * ADD GENERATED AS IDENTITY fails if a default is present, so remove it
+		 * before adding identity.
+		 */
+		if (owning_tab->attrdefs != NULL &&
+			owning_tab->attrdefs[tbinfo->owning_col - 1] != NULL)
+		{
+			appendPQExpBuffer(query,
+							  "ALTER TABLE %s ",
+							  fmtQualifiedDumpable(owning_tab));
+			appendPQExpBuffer(query,
+							  "ALTER COLUMN %s DROP DEFAULT;\n",
+							  fmtId(owning_tab->attnames[tbinfo->owning_col - 1]));
+		}
+
 		appendPQExpBuffer(query,
 						  "ALTER TABLE %s ",
 						  fmtQualifiedDumpable(owning_tab));
