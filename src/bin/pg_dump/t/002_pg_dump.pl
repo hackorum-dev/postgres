@@ -1434,6 +1434,36 @@ my %tests = (
 		},
 	},
 
+	'ALTER TABLE inherited identity column DROP DEFAULT' => {
+		create_sql => q{
+			CREATE SEQUENCE dump_test.inherited_identity_column_id_seq AS integer;
+
+			CREATE TABLE dump_test.inherited_identity_column_parent (
+				id integer NOT NULL DEFAULT nextval('dump_test.inherited_identity_column_id_seq'::regclass)
+			);
+
+			CREATE TABLE dump_test.inherited_identity_column_child (
+				id integer NOT NULL GENERATED ALWAYS AS IDENTITY,
+				child_id integer NOT NULL
+			) INHERITS (dump_test.inherited_identity_column_parent);
+		},
+
+		regexp => qr/^
+			\QALTER TABLE dump_test.inherited_identity_column_child ALTER COLUMN id DROP DEFAULT;\E
+			.*?
+			\QALTER TABLE dump_test.inherited_identity_column_child ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY\E
+			/xms,
+		like => {
+			%full_runs,
+			%dump_test_schema_runs,
+			section_pre_data => 1,
+		},
+		unlike => {
+			exclude_dump_test_schema => 1,
+			only_dump_measurement => 1,
+		},
+	},
+
 	'ALTER FOREIGN TABLE foreign_table OWNER TO' => {
 		regexp =>
 		  qr/^\QALTER FOREIGN TABLE dump_test.foreign_table OWNER TO \E.+;/m,
