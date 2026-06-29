@@ -218,6 +218,10 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Database-Password-File", "", 64,
 	offsetof(struct pg_conn, pgpassfile)},
 
+	{"passfileport", "PGPASSFILEPORT", NULL, NULL,
+		"Database-Password-File-Port", "", 6,
+	offsetof(struct pg_conn, passfileport)},
+
 	{"channel_binding", "PGCHANNELBINDING", DefaultChannelBinding, NULL,
 		"Channel-Binding", "", 8,	/* sizeof("require") == 8 */
 	offsetof(struct pg_conn, channel_binding)},
@@ -1403,6 +1407,46 @@ pqConnectOptions2(PGconn *conn)
 	}
 
 	/*
+	 * If a separate port for the password-file lookup was given, work out the
+	 * value corresponding to each host name, exactly as for the connection
+	 * port above.  When not given, connhost[i].passfileport stays NULL and the
+	 * lookup falls back to the connection port.
+	 */
+	if (conn->passfileport != NULL && conn->passfileport[0] != '\0')
+	{
+		char	   *s = conn->passfileport;
+		bool		more = true;
+
+		for (i = 0; i < conn->nconnhost && more; i++)
+		{
+			conn->connhost[i].passfileport = parse_comma_separated_list(&s, &more);
+			if (conn->connhost[i].passfileport == NULL)
+				goto oom_error;
+		}
+
+		/*
+		 * If exactly one port was given, use it for every host.  Otherwise,
+		 * there must be exactly as many ports as there were hosts.
+		 */
+		if (i == 1 && !more)
+		{
+			for (i = 1; i < conn->nconnhost; i++)
+			{
+				conn->connhost[i].passfileport = strdup(conn->connhost[0].passfileport);
+				if (conn->connhost[i].passfileport == NULL)
+					goto oom_error;
+			}
+		}
+		else if (more || i != conn->nconnhost)
+		{
+			conn->status = CONNECTION_BAD;
+			libpq_append_conn_error(conn, "could not match %d password file port numbers to %d hosts",
+									count_comma_separated_elems(conn->passfileport), conn->nconnhost);
+			return false;
+		}
+	}
+
+	/*
 	 * If user name was not given, fetch it.  (Most likely, the fetch will
 	 * fail, since the only way we get here is if pg_fe_getauthname() failed
 	 * during conninfo_add_defaults().  But now we want an error message.)
@@ -1458,17 +1502,25 @@ pqConnectOptions2(PGconn *conn)
 				/*
 				 * Try to get a password for this host from file.  We use host
 				 * for the hostname search key if given, else hostaddr (at
-				 * least one of them is guaranteed nonempty by now).
+				 * least one of them is guaranteed nonempty by now).  For the
+				 * port search key we use passfileport if given, else the
+				 * connection port; this lets the lookup match the real server
+				 * port even when the connection goes through an SSH tunnel or a
+				 * pooler listening on a different port.
 				 */
 				const char *pwhost = conn->connhost[i].host;
+				const char *pwport = conn->connhost[i].passfileport;
 				const char *password_errmsg = NULL;
 
 				if (pwhost == NULL || pwhost[0] == '\0')
 					pwhost = conn->connhost[i].hostaddr;
 
+				if (pwport == NULL || pwport[0] == '\0')
+					pwport = conn->connhost[i].port;
+
 				conn->connhost[i].password =
 					passwordFromFile(pwhost,
-									 conn->connhost[i].port,
+									 pwport,
 									 conn->dbName,
 									 conn->pguser,
 									 conn->pgpassfile,
@@ -5092,6 +5144,7 @@ freePGconn(PGconn *conn)
 		free(conn->pgpass);
 	}
 	free(conn->pgpassfile);
+	free(conn->passfileport);
 	free(conn->channel_binding);
 	free(conn->keepalives);
 	free(conn->keepalives_idle);
@@ -5166,6 +5219,7 @@ pqReleaseConnHosts(PGconn *conn)
 			free(conn->connhost[i].host);
 			free(conn->connhost[i].hostaddr);
 			free(conn->connhost[i].port);
+			free(conn->connhost[i].passfileport);
 			if (conn->connhost[i].password != NULL)
 			{
 				explicit_bzero(conn->connhost[i].password,
