@@ -182,6 +182,7 @@
 <!ENTITY errcodes   SYSTEM "errcodes.sgml">
 <!ENTITY features   SYSTEM "features.sgml">
 <!ENTITY keywords   SYSTEM "keywords.sgml">
+<!ENTITY parameters SYSTEM "parameters.sgml">
 <!ENTITY sourcerepo SYSTEM "sourcerepo.sgml">
 
 <!ENTITY release    SYSTEM "release.sgml">
@@ -196,6 +197,7 @@
 <!ENTITY features-unsupported SYSTEM "features-unsupported.sgml">
 
 <!ENTITY errcodes-table SYSTEM "errcodes-table.sgml">
+<!ENTITY guc-list       SYSTEM "guc-list.sgml">
 <!ENTITY keywords-table SYSTEM "keywords-table.sgml">
 
 <!-- back matter -->
