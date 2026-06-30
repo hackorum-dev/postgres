@@ -44,6 +44,7 @@
 #include "catalog/pg_tablespace.h"
 #include "commands/comment.h"
 #include "commands/dbcommands.h"
+#include "commands/sequence.h"
 #include "commands/dbcommands_xlog.h"
 #include "commands/defrem.h"
 #include "commands/seclabel.h"
@@ -109,6 +110,7 @@ typedef struct CreateDBRelInfo
 {
 	RelFileLocator rlocator;	/* physical relation identifier */
 	Oid			reloid;			/* relation oid */
+	char		relkind;		/* relation kind */
 	bool		permanent;		/* relation is permanent or unlogged */
 } CreateDBRelInfo;
 
@@ -218,6 +220,10 @@ CreateDatabaseUsingWalLog(Oid src_dboid, Oid dst_dboid,
 
 		/* Copy relation storage from source to the destination. */
 		CreateAndCopyRelationData(srcrlocator, dstrlocator, relinfo->permanent);
+
+		/* Reset log_cnt for sequences to ensure WAL on first nextval() */
+		if (relinfo->relkind == RELKIND_SEQUENCE)
+			ResetSequenceLogCnt(dstrlocator, relinfo->permanent);
 
 		/* Release the relation locks. */
 		UnlockRelationId(&srcrelid, AccessShareLock);
@@ -443,6 +449,7 @@ ScanSourceDatabasePgClassTuple(HeapTupleData *tuple, Oid tbid, Oid dbid,
 	relinfo->rlocator.dbOid = dbid;
 	relinfo->rlocator.relNumber = relfilenumber;
 	relinfo->reloid = classForm->oid;
+	relinfo->relkind = classForm->relkind;
 
 	/* Temporary relations were rejected above. */
 	Assert(classForm->relpersistence != RELPERSISTENCE_TEMP);
