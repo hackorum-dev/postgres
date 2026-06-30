@@ -42,4 +42,78 @@ is($result, "0",
 	"check that there are no tables from template on new database after crash"
 );
 
+
+# Verify that sequences in databases created with CREATE DATABASE ... TEMPLATE
+# properly generate WAL records on first nextval(), ensuring that failover does
+# not cause sequence value rollback.
+
+# Set up streaming replication
+my $node_primary = PostgreSQL::Test::Cluster->new('primary');
+$node_primary->init(allows_streaming => 1);
+$node_primary->start;
+
+my $backup_name = 'my_backup';
+$node_primary->backup($backup_name);
+
+my $node_standby = PostgreSQL::Test::Cluster->new('standby');
+$node_standby->init_from_backup($node_primary, $backup_name,
+	has_streaming => 1);
+$node_standby->start;
+
+# Create and advance a sequence on template database
+$node_primary->safe_psql('postgres', 'CREATE DATABASE template_db');
+$node_primary->safe_psql('template_db', 'CREATE SEQUENCE test_seq');
+for (my $i = 0; $i < 5; $i++) {
+	$node_primary->safe_psql('template_db',
+		"SELECT nextval('test_seq')");
+}
+
+my $tmpl_last_value = $node_primary->safe_psql('template_db',
+	'SELECT last_value FROM test_seq');
+is($tmpl_last_value, '5', 'the sequence last_value is 5');
+
+my $tmpl_log_cnt = $node_primary->safe_psql('template_db',
+	'SELECT log_cnt FROM test_seq');
+ok($tmpl_log_cnt > 0, "the sequence has pre-logged values (log_cnt=$tmpl_log_cnt)");
+
+# Create new database test_db by CREATE DATABASE ... TEMPLATE and verify initial state
+$node_primary->safe_psql('postgres',
+	'CREATE DATABASE test_db TEMPLATE template_db');
+
+my $new_last_value_before = $node_primary->safe_psql('test_db',
+	'SELECT last_value FROM test_seq');
+is($new_last_value_before, '5',
+	'test_db sequence last_value starts at 5 (same as template)');
+
+# Call nextval() on primary and verify if standby's last_value >= primary's value
+for (my $i = 0; $i < 5; $i++) {
+	$node_primary->safe_psql('test_db', "SELECT nextval('test_seq')");
+}
+
+my $primary_last_value = $node_primary->safe_psql('test_db',
+	'SELECT last_value FROM test_seq');
+is($primary_last_value, '10',
+	'primary test_db sequence advanced to 10 after 5 nextval calls');
+
+$node_primary->wait_for_catchup($node_standby);
+
+my $standby_last_value = $node_standby->safe_psql('test_db',
+	'SELECT last_value FROM test_seq');
+ok($standby_last_value >= $primary_last_value,
+	"standby sequence last_value ($standby_last_value) >= primary ($primary_last_value) - WAL was generated");
+ok($standby_last_value > 5,
+	"standby sequence was updated after nextval on primary (value=$standby_last_value)");
+
+# Failover and verify if nextval() should return a value larger than previous primary's value
+$node_primary->stop;
+$node_standby->promote;
+
+my $promoted_nextval = $node_standby->safe_psql('test_db',
+	"SELECT nextval('test_seq')");
+ok($promoted_nextval > 10,
+	"after failover, nextval returns $promoted_nextval (> 10, no rollback)");
+
+$node_standby->safe_psql('postgres', 'DROP DATABASE test_db');
+$node_standby->safe_psql('postgres', 'DROP DATABASE template_db');
+
 done_testing();
