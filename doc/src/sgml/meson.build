@@ -48,6 +48,15 @@ doc_generated += custom_target('errcodes-table.sgml',
   capture: true,
 )
 
+doc_generated += custom_target('guc-list.sgml',
+  input: files('config.sgml'),
+  output: 'guc-list.sgml',
+  command: [perl, files('generate-guc-list.pl'), '@INPUT@'],
+  build_by_default: false,
+  install: false,
+  capture: true,
+)
+
 doc_generated += custom_target('wait_event_types.sgml',
   input: files(
     '../../../src/backend/utils/activity/wait_event_names.txt'),

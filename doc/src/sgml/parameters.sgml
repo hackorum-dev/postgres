@@ -1,0 +1,19 @@
+<!-- doc/src/sgml/parameters.sgml -->
+
+<appendix id="postgresql-conf">
+ <title>PostgreSQL Parameters</title>
+
+ <indexterm zone="postgresql-conf">
+  <primary>postgresql.conf</primary>
+ </indexterm>
+
+ <para>
+  The following configuration parameters can be set in
+  <filename>postgresql.conf</filename>.  Each one links to its detailed
+  description in <xref linkend="runtime-config"/>; a few are read-only or
+  computed and cannot be changed by editing the file.
+ </para>
+
+ &guc-list;
+
+</appendix>
