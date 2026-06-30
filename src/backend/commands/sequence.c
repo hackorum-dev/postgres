@@ -1043,6 +1043,60 @@ SetSequence(Oid relid, int64 next, bool iscalled)
 }
 
 /*
+ * Reset log_cnt of a sequence that has been copied by CREATE DATABASE
+ * with the WAL_LOG strategy to zero. This forces the next nextval() call
+ * to emit a WAL record, ensuring that the standby's last_value is
+ * at least as large as the primary's value in streaming replication.
+ */
+void
+ResetSequenceLogCnt(RelFileLocator rlocator, bool permanent)
+{
+	Buffer		buf;
+	Page		page;
+	ItemId		lp;
+	HeapTupleData seqtuple;
+	Form_pg_sequence_data seq;
+
+	buf = ReadBufferWithoutRelcache(rlocator, MAIN_FORKNUM, 0,
+								RBM_NORMAL, NULL, permanent);
+	LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
+	page = BufferGetPage(buf);
+	lp = PageGetItemId(page, FirstOffsetNumber);
+	Assert(ItemIdIsNormal(lp));
+
+	seqtuple.t_data = (HeapTupleHeader) PageGetItem(page, lp);
+	seqtuple.t_len = ItemIdGetLength(lp);
+	seq = (Form_pg_sequence_data) GETSTRUCT(&seqtuple);
+
+	if (seq->log_cnt != 0)
+	{
+		START_CRIT_SECTION();
+		seq->log_cnt = 0;
+		MarkBufferDirty(buf);
+
+		if (permanent)
+		{
+			xl_seq_rec	xlrec;
+			XLogRecPtr	recptr;
+
+			XLogBeginInsert();
+			XLogRegisterBuffer(0, buf, REGBUF_WILL_INIT);
+
+			xlrec.locator = rlocator;
+			XLogRegisterData(&xlrec, sizeof(xl_seq_rec));
+			XLogRegisterData((char *) seqtuple.t_data, seqtuple.t_len);
+
+			recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG);
+
+			PageSetLSN(page, recptr);
+		}
+		END_CRIT_SECTION();
+	}
+
+	UnlockReleaseBuffer(buf);
+}
+
+/*
  * Implement the 2 arg setval procedure.
  * See SetSequence for discussion.
  */
