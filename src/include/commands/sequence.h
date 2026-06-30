@@ -13,6 +13,7 @@
 #ifndef SEQUENCE_H
 #define SEQUENCE_H
 
+#include "storage/relfilelocator.h"
 #include "catalog/objectaddress.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
@@ -49,5 +50,6 @@ extern void DeleteSequenceTuple(Oid relid);
 extern void ResetSequence(Oid seq_relid);
 extern void SetSequence(Oid relid, int64 next, bool iscalled);
 extern void ResetSequenceCaches(void);
+extern void ResetSequenceLogCnt(RelFileLocator rlocator, bool permanent);
 
 #endif							/* SEQUENCE_H */
