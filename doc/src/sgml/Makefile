@@ -57,7 +57,7 @@ override XSLTPROCFLAGS += --stringparam pg.version '$(VERSION)'
 
 GENERATED_SGML = version.sgml \
 	features-supported.sgml features-unsupported.sgml errcodes-table.sgml \
-	keywords-table.sgml targets-meson.sgml wait_event_types.sgml
+	guc-list.sgml keywords-table.sgml targets-meson.sgml wait_event_types.sgml
 
 ALL_SGML := $(wildcard $(srcdir)/*.sgml $(srcdir)/func/*.sgml $(srcdir)/ref/*.sgml) $(GENERATED_SGML)
 
@@ -105,6 +105,9 @@ features-unsupported.sgml: $(top_srcdir)/src/backend/catalog/sql_feature_package
 
 errcodes-table.sgml: $(top_srcdir)/src/backend/utils/errcodes.txt generate-errcodes-table.pl
 	$(PERL) $(srcdir)/generate-errcodes-table.pl $< > $@
+
+guc-list.sgml: config.sgml generate-guc-list.pl
+	$(PERL) $(srcdir)/generate-guc-list.pl $< > $@
 
 keywords-table.sgml: $(top_srcdir)/src/include/parser/kwlist.h $(wildcard $(srcdir)/keywords/sql*.txt) generate-keywords-table.pl
 	$(PERL) $(srcdir)/generate-keywords-table.pl $(srcdir) > $@
