@@ -302,3 +302,33 @@ JOIN customers c FOR KEY g (customer_id) -> c (id);
 SELECT FROM orders o
 JOIN (SELECT id FROM customers GROUP BY GROUPING SETS ((id), (id))) c
   FOR KEY o (customer_id) -> c (id);
+
+-- The same key = value filter on both sides keeps the join proven.
+SELECT FROM (SELECT * FROM orders WHERE customer_id = 1) o
+JOIN (SELECT * FROM customers WHERE id = 1) c
+  FOR KEY o (customer_id) -> c (id);
+-- A cross-type comparison counts as the same filter.
+SELECT FROM (SELECT * FROM orders WHERE customer_id = 1::bigint) o
+JOIN (SELECT * FROM customers WHERE id = 1::bigint) c
+  FOR KEY o (customer_id) -> c (id);
+-- A matched filter carries through to the next key join.
+SELECT FROM (SELECT * FROM shipments WHERE order_id = 10) s
+JOIN (SELECT * FROM order_items WHERE order_id = 10) i
+  FOR KEY s (order_id, item_no) -> i (order_id, item_no)
+JOIN (SELECT * FROM orders WHERE id = 10) o
+  FOR KEY i (order_id) -> o (id);
+-- rejected, reason: the two filters use different values
+SELECT FROM (SELECT * FROM orders WHERE customer_id = 2) o
+JOIN (SELECT * FROM customers WHERE id = 1) c
+  FOR KEY o (customer_id) -> c (id);
+-- rejected, reason: only the referenced side is filtered
+SELECT FROM orders o JOIN (SELECT * FROM customers WHERE id = 1) c
+  FOR KEY o (customer_id) -> c (id);
+-- rejected, reason: not a key = value filter
+SELECT FROM (SELECT * FROM orders WHERE customer_id > 1) o
+JOIN (SELECT * FROM customers WHERE id > 1) c
+  FOR KEY o (customer_id) -> c (id);
+-- rejected, reason: a volatile value can differ between the two filters
+SELECT FROM (SELECT * FROM orders WHERE customer_id = random()::int) o
+JOIN (SELECT * FROM customers WHERE id = random()::int) c
+  FOR KEY o (customer_id) -> c (id);
