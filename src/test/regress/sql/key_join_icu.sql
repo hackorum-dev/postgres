@@ -108,7 +108,101 @@ FROM (
 JOIN key_nondet_child c FOR KEY q (code) <- c (parent_code)
 ORDER BY c.id;
 
+-- Matching filters using the key's exact nondeterministic equality preserve
+-- row coverage.
+CREATE VIEW key_nondet_parent_filtered AS
+SELECT code FROM key_nondet_parent
+WHERE code = 'alpha'::text COLLATE key_nondet;
+
+CREATE VIEW key_nondet_child_filtered AS
+SELECT id, parent_code FROM key_nondet_child
+WHERE parent_code = 'alpha'::text COLLATE key_nondet;
+
+SELECT c.id, p.code, c.parent_code
+FROM key_nondet_parent_filtered p
+JOIN key_nondet_child_filtered c FOR KEY p (code) <- c (parent_code)
+ORDER BY c.id;
+
+DROP VIEW key_nondet_child_filtered, key_nondet_parent_filtered;
+
+-- A distinct nondeterministic collation OID is not interchangeable, even when
+-- its provider, locale, and options are identical.
+CREATE COLLATION key_nondet_copy (provider = icu,
+    locale = 'und-u-ks-level1', deterministic = false);
+
+CREATE VIEW key_nondet_parent_copy_filtered AS
+SELECT code FROM key_nondet_parent
+WHERE code = 'alpha'::text COLLATE key_nondet_copy;
+
+CREATE VIEW key_nondet_child_copy_filtered AS
+SELECT id, parent_code FROM key_nondet_child
+WHERE parent_code = 'alpha'::text COLLATE key_nondet_copy;
+
+-- rejected, reason: nondeterministic proof identities require the same OID
+SELECT c.id, p.code, c.parent_code
+FROM key_nondet_parent_copy_filtered p
+JOIN key_nondet_child_copy_filtered c FOR KEY p (code) <- c (parent_code);
+
+DROP VIEW key_nondet_child_copy_filtered, key_nondet_parent_copy_filtered;
+DROP COLLATION key_nondet_copy;
+
+-- The mirror image of the filter_collation case below: a deterministic filter
+-- collation on a nondeterministic key.  Bytewise equality keeps only the
+-- spelling 'alpha', so the filtered parent loses the row 'Alpha' that the
+-- key's equality still matches for the filtered child.
+CREATE VIEW key_nondet_parent_c_filtered AS
+SELECT code FROM key_nondet_parent
+WHERE code = 'alpha'::text COLLATE "C";
+
+CREATE VIEW key_nondet_child_c_filtered AS
+SELECT id, parent_code FROM key_nondet_child
+WHERE parent_code = 'alpha'::text COLLATE "C";
+
+SELECT (SELECT count(*) FROM key_nondet_parent_c_filtered) AS parent_rows,
+       (SELECT count(*) FROM key_nondet_child_c_filtered) AS child_rows;
+
+-- rejected, reason: deterministic filter collation disagrees with the key's equality
+SELECT c.id, p.code, c.parent_code
+FROM key_nondet_parent_c_filtered p
+JOIN key_nondet_child_c_filtered c FOR KEY p (code) <- c (parent_code);
+
+DROP VIEW key_nondet_child_c_filtered, key_nondet_parent_c_filtered;
 DROP TABLE key_nondet_grandchild, key_nondet_child, key_nondet_parent;
 DROP COLLATION key_nondet;
+
+-- A nondeterministic filter collation may disagree on equality, so a filtered
+-- referenced relation cannot be proven covered (originally in key_join.sql).
+CREATE TABLE filter_collation_parent
+(
+    code text COLLATE "C" PRIMARY KEY
+);
+CREATE TABLE filter_collation_child
+(
+    code text COLLATE "C" NOT NULL
+        REFERENCES filter_collation_parent (code)
+);
+
+INSERT INTO filter_collation_parent VALUES ('a'), ('b');
+INSERT INTO filter_collation_child VALUES ('a'), ('b');
+
+CREATE COLLATION filter_collation_nondet (provider = icu, locale = 'und',
+    deterministic = false);
+
+CREATE VIEW filter_collation_parent_nondet AS
+SELECT code FROM filter_collation_parent
+WHERE code = 'a'::text COLLATE filter_collation_nondet;
+
+CREATE VIEW filter_collation_child_nondet AS
+SELECT code FROM filter_collation_child
+WHERE code = 'a'::text COLLATE filter_collation_nondet;
+
+-- rejected, reason: nondeterministic filter collation may disagree on equality
+SELECT *
+FROM filter_collation_parent_nondet p
+JOIN filter_collation_child_nondet c FOR KEY p (code) <- c (code);
+
+DROP VIEW filter_collation_child_nondet, filter_collation_parent_nondet;
+DROP COLLATION filter_collation_nondet;
+DROP TABLE filter_collation_child, filter_collation_parent;
 
 DROP SCHEMA key_join_icu;
