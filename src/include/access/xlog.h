@@ -87,6 +87,19 @@ typedef enum WalCompression
 	WAL_COMPRESSION_ZSTD,
 } WalCompression;
 
+/*
+ * Choose an appropriate default WAL compression method for wal_compression=on.
+ * Prefer zstd when compiled in; otherwise use lz4 if available, falling back
+ * to pglz.
+ */
+#ifdef USE_ZSTD
+#define DEFAULT_WAL_COMPRESSION	WAL_COMPRESSION_ZSTD
+#elif defined(USE_LZ4)
+#define DEFAULT_WAL_COMPRESSION	WAL_COMPRESSION_LZ4
+#else
+#define DEFAULT_WAL_COMPRESSION	WAL_COMPRESSION_PGLZ
+#endif
+
 /* Recovery states */
 typedef enum RecoveryState
 {

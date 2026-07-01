@@ -263,6 +263,8 @@
                                         # (change requires restart)
 #wal_compression = off                  # enables compression of full-page writes;
                                         # off, pglz, lz4, zstd, or on
+                                        # (on = zstd if available, else lz4 if
+                                        # available, else pglz)
 #wal_init_zero = on                     # zero-fill new WAL files
 #wal_recycle = on                       # recycle WAL files
 #wal_buffers = -1                       # min 32kB, -1 sets based on shared_buffers

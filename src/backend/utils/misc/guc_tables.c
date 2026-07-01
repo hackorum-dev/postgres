@@ -484,13 +484,13 @@ static const struct config_enum_entry wal_compression_options[] = {
 #ifdef USE_ZSTD
 	{"zstd", WAL_COMPRESSION_ZSTD, false},
 #endif
-	{"on", WAL_COMPRESSION_PGLZ, false},
+	{"on", DEFAULT_WAL_COMPRESSION, false},
 	{"off", WAL_COMPRESSION_NONE, false},
-	{"true", WAL_COMPRESSION_PGLZ, true},
+	{"true", DEFAULT_WAL_COMPRESSION, true},
 	{"false", WAL_COMPRESSION_NONE, true},
-	{"yes", WAL_COMPRESSION_PGLZ, true},
+	{"yes", DEFAULT_WAL_COMPRESSION, true},
 	{"no", WAL_COMPRESSION_NONE, true},
-	{"1", WAL_COMPRESSION_PGLZ, true},
+	{"1", DEFAULT_WAL_COMPRESSION, true},
 	{"0", WAL_COMPRESSION_NONE, true},
 	{NULL, 0, false}
 };
