@@ -67,8 +67,7 @@ DETAIL:  The prefix "pg_" is reserved for system tablespaces.
 -- contains \n\r tablespace name
 CREATE TABLESPACE "invalid
 name" LOCATION '/no/such/location';
-ERROR:  tablespace name "invalid
-name" contains a newline or carriage return character
+ERROR:  tablespace name "invalid\nname" contains a newline or carriage return character
 -- triggers
 CREATE FUNCTION tf1() RETURNS trigger
 LANGUAGE plpgsql
