@@ -1207,6 +1207,19 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 											 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
 											  errmsg("NaN or Infinity is not allowed for jsonpath item method .%s()",
 													 jspOperationName(jsp->type)))));
+
+					/*
+					 * Return the float8 approximation of the value, not the
+					 * original numeric.  .double() is documented to yield an
+					 * approximate floating-point number, and the string branch
+					 * below already rounds through float8; a JSON number input
+					 * must give the same result as the equivalent string so
+					 * that the method is value-based, not representation-based.
+					 */
+					jb = &jbv;
+					jb->type = jbvNumeric;
+					jb->val.numeric = DatumGetNumeric(DirectFunctionCall1(float8_numeric,
+																		  Float8GetDatum(val)));
 					res = jperOk;
 				}
 				else if (jb->type == jbvString)
