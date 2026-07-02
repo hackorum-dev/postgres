@@ -67,6 +67,7 @@
 #include "commands/seclabel.h"
 #include "commands/tablespace.h"
 #include "common/file_perm.h"
+#include "common/string.h"
 #include "miscadmin.h"
 #include "postmaster/bgwriter.h"
 #include "storage/fd.h"
@@ -247,7 +248,8 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 	if (strpbrk(stmt->tablespacename, "\n\r"))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("tablespace name \"%s\" contains a newline or carriage return character", stmt->tablespacename)));
+				 errmsg("tablespace name \"%s\" contains a newline or carriage return character",
+						pg_escape_name_for_error(stmt->tablespacename))));
 
 	in_place = allow_in_place_tablespaces && strlen(location) == 0;
 
@@ -982,7 +984,8 @@ RenameTableSpace(const char *oldname, const char *newname)
 	if (strpbrk(newname, "\n\r"))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("tablespace name \"%s\" contains a newline or carriage return character", newname)));
+				 errmsg("tablespace name \"%s\" contains a newline or carriage return character",
+						pg_escape_name_for_error(newname))));
 
 	/*
 	 * If built with appropriate switch, whine when regression-testing
