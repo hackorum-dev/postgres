@@ -50,6 +50,7 @@
 #include "commands/seclabel.h"
 #include "commands/tablespace.h"
 #include "common/file_perm.h"
+#include "common/string.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -782,7 +783,8 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 	if (strpbrk(dbname, "\n\r"))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("database name \"%s\" contains a newline or carriage return character", dbname)));
+				 errmsg("database name \"%s\" contains a newline or carriage return character",
+						pg_escape_name_for_error(dbname))));
 
 	/* Extract options from the statement node tree */
 	foreach(option, stmt->options)
@@ -1975,7 +1977,8 @@ RenameDatabase(const char *oldname, const char *newname)
 	if (strpbrk(newname, "\n\r"))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("database name \"%s\" contains a newline or carriage return character", newname)));
+				 errmsg("database name \"%s\" contains a newline or carriage return character",
+						pg_escape_name_for_error(newname))));
 
 	/*
 	 * Look up the target database's OID, and get exclusive lock on it. We
