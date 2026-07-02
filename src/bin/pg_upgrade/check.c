@@ -12,10 +12,11 @@
 #include "catalog/pg_am_d.h"
 #include "catalog/pg_authid_d.h"
 #include "catalog/pg_class_d.h"
+#include "common/string.h"
+#include "common/unicode_version.h"
 #include "fe_utils/string_utils.h"
 #include "mb/pg_wchar.h"
 #include "pg_upgrade.h"
-#include "common/unicode_version.h"
 
 static void check_new_cluster_is_empty(void);
 static void check_is_install_user(ClusterInfo *cluster);
@@ -2547,10 +2548,17 @@ check_old_cluster_global_names(ClusterInfo *cluster)
 		/* If name has \n or \r, then report it. */
 		if (strpbrk(objname, "\n\r"))
 		{
+			char	   *escaped_objname;
+
 			if (script == NULL && (script = fopen_priv(output_path, "w")) == NULL)
 				pg_fatal("could not open file \"%s\": %m", output_path);
 
-			fprintf(script, "%d : %s name = \"%s\"\n", ++count, objtype, objname);
+			escaped_objname = pg_escape_name_for_error(objname);
+			if (escaped_objname == NULL)
+				pg_fatal("out of memory");
+			fprintf(script, "%d : %s name = \"%s\"\n", ++count, objtype,
+					escaped_objname);
+			pg_free(escaped_objname);
 		}
 	}
 

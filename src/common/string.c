@@ -126,6 +126,62 @@ pg_clean_ascii(const char *str, int alloc_flags)
 
 
 /*
+ * pg_escape_name_for_error -- Escape a name for line-oriented error reports
+ *
+ * Makes a newly allocated copy of the string passed in, which must be
+ * '\0'-terminated. In the backend, the copy is palloc'd; in the frontend, it
+ * is malloc'd.
+ *
+ * This preserves valid non-ASCII bytes, but escapes characters that would make
+ * a name span multiple physical lines.
+ */
+char *
+pg_escape_name_for_error(const char *str)
+{
+	size_t		dstlen;
+	char	   *dst;
+	const char *p;
+	size_t		i = 0;
+
+	/*
+	 * In the worst case, every byte is either '\n' or '\r' and becomes two
+	 * bytes, plus a null terminator.
+	 */
+	dstlen = strlen(str) * 2 + 1;
+
+#ifdef FRONTEND
+	dst = malloc(dstlen);
+#else
+	dst = palloc(dstlen);
+#endif
+
+	if (!dst)
+		return NULL;
+
+	for (p = str; *p != '\0'; p++)
+	{
+		switch (*p)
+		{
+			case '\n':
+				dst[i++] = '\\';
+				dst[i++] = 'n';
+				break;
+			case '\r':
+				dst[i++] = '\\';
+				dst[i++] = 'r';
+				break;
+			default:
+				dst[i++] = *p;
+				break;
+		}
+	}
+
+	dst[i] = '\0';
+	return dst;
+}
+
+
+/*
  * pg_is_ascii -- Check if string is made only of ASCII characters
  */
 bool
