@@ -323,6 +323,11 @@ select jsonb_path_query('{}', '$.double()', silent => true);
 select jsonb_path_query('1.23', '$.double()');
 select jsonb_path_query('"1.23"', '$.double()');
 select jsonb_path_query('"1.23aaa"', '$.double()');
+-- .double() must yield the float8 approximation for a JSON number too, giving
+-- the same result as the equivalent JSON string (value-based, not text-based)
+select jsonb_path_query('1.0000000000000001', '$.double()');
+select jsonb_path_query('"1.0000000000000001"', '$.double()');
+select jsonb_path_query('10000000000000001', '$.double() == 10000000000000000');
 select jsonb_path_query('1e1000', '$.double()');
 select jsonb_path_query('"nan"', '$.double()');
 select jsonb_path_query('"NaN"', '$.double()');
