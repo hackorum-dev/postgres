@@ -30,6 +30,7 @@
 #include "commands/defrem.h"
 #include "commands/seclabel.h"
 #include "commands/user.h"
+#include "common/string.h"
 #include "libpq/crypt.h"
 #include "miscadmin.h"
 #include "port/pg_bitutils.h"
@@ -175,7 +176,8 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	if (strpbrk(stmt->role, "\n\r"))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("role name \"%s\" contains a newline or carriage return character", stmt->role)));
+				 errmsg("role name \"%s\" contains a newline or carriage return character",
+						pg_escape_name_for_error(stmt->role))));
 
 	/* The defaults can vary depending on the original statement type */
 	switch (stmt->stmt_type)
@@ -1358,7 +1360,8 @@ RenameRole(const char *oldname, const char *newname)
 	if (strpbrk(newname, "\n\r"))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("role name \"%s\" contains a newline or carriage return character", newname)));
+				 errmsg("role name \"%s\" contains a newline or carriage return character",
+						pg_escape_name_for_error(newname))));
 
 	rel = table_open(AuthIdRelationId, RowExclusiveLock);
 	dsc = RelationGetDescr(rel);
