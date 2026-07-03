@@ -1375,10 +1375,14 @@ lazy_scan_heap(LVRelState *vacrel)
 			 * Vacuum the Free Space Map to make newly-freed space visible on
 			 * upper-level FSM pages. Note that blkno is the previously
 			 * processed block.
+			 * FreeSpaceMapVacuumRange uses an exclusive end,
+			 * so passing blkno + 1 covers blkno itself.  Advance
+			 * next_fsm_block_to_vacuum to blkno + 1 so the next call begins
+			 * at the first unvacuumed block and does not re-vacuum blkno.
 			 */
 			FreeSpaceMapVacuumRange(vacrel->rel, next_fsm_block_to_vacuum,
 									blkno + 1);
-			next_fsm_block_to_vacuum = blkno;
+			next_fsm_block_to_vacuum = blkno + 1;
 
 			/* Report that we are once again scanning the heap */
 			pgstat_progress_update_param(PROGRESS_VACUUM_PHASE,
