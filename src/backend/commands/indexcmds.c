@@ -20,11 +20,13 @@
 #include "access/gist.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/relation.h"
 #include "access/reloptions.h"
 #include "access/sysattr.h"
 #include "access/tableam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "catalog/dependency.h"
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
@@ -44,6 +46,7 @@
 #include "commands/progress.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
+#include "funcapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -71,6 +74,7 @@
 #include "utils/regproc.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/tuplestore.h"
 
 
 /* context for ChooseIndexExpressionName_walker */
@@ -4813,4 +4817,78 @@ set_indexsafe_procflags(void)
 	MyProc->statusFlags |= PROC_IN_SAFE_IC;
 	ProcGlobal->statusFlags[MyProc->pgxactoff] = MyProc->statusFlags;
 	LWLockRelease(ProcArrayLock);
+}
+
+/*
+ * Drops invalid indexes from given table
+ */
+Datum
+pg_drop_invalid_indexes(PG_FUNCTION_ARGS)
+{
+	Oid			relOid = PG_GETARG_OID(0);
+	bool		skipLocked = PG_GETARG_BOOL(1);
+	bool		cascade = PG_GETARG_BOOL(2);
+	ObjectAddresses *indexesToDrop;
+	List	   *indexesList;
+	ListCell   *cell;
+	Relation	relation;
+	ObjectAddress obj;
+	LOCKMODE	lockmode = ShareUpdateExclusiveLock;
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	int			flags = 0;
+
+	(void) skipLocked;
+
+	InitMaterializedSRF(fcinfo, 0);
+
+	indexesToDrop = new_object_addresses();
+
+	relation = table_open(relOid, lockmode);
+	indexesList = RelationGetIndexList(relation);
+
+	foreach(cell, indexesList)
+	{
+		Oid			indexoid = lfirst_oid(cell);
+		Relation	indrel;
+		bool		isValid;
+		char	   *idxname;
+
+		indrel = index_open(indexoid, AccessExclusiveLock);
+
+		isValid = indrel->rd_index->indisvalid;
+		idxname = isValid ? NULL : pstrdup(indrel->rd_rel->relname.data);
+
+		index_close(indrel, AccessExclusiveLock);
+
+		if (!isValid)
+		{
+			Datum		values[2];
+			bool		nulls[2] = {false, false};
+
+			obj.classId = RelationRelationId;
+			obj.objectId = indexoid;
+			obj.objectSubId = 0;
+
+			add_exact_object_address(&obj, indexesToDrop);
+
+			values[0] = CStringGetTextDatum(idxname);
+			values[1] = ObjectIdGetDatum(indexoid);
+
+			tuplestore_putvalues(rsinfo->setResult,
+								 rsinfo->setDesc,
+								 values, nulls);
+
+			pfree(idxname);
+		}
+	}
+
+	table_close(relation, lockmode);
+
+	list_free(indexesList);
+
+	performMultipleDeletions(indexesToDrop, cascade ? DROP_CASCADE : DROP_RESTRICT, flags);
+
+	free_object_addresses(indexesToDrop);
+
+	return (Datum) 0;
 }
