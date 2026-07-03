@@ -810,7 +810,7 @@ dependencyLockAndCheckObject(Oid classId, Oid objectId)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_OBJECT),
 					 errmsg("referenced %s was concurrently dropped",
-							get_object_class_descr(classId))));
+							_(get_object_class_descr(classId)))));
 
 		systable_endscan(scan);
 		table_close(rel, AccessShareLock);
