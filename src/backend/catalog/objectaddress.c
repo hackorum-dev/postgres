@@ -100,8 +100,8 @@
  */
 typedef struct
 {
-	const char *class_descr;	/* string describing the catalog, for internal
-								 * error messages */
+	const char *class_descr;	/* string describing the catalog, for error
+								 * messages */
 	Oid			class_oid;		/* oid of catalog */
 	Oid			oid_index_oid;	/* oid of index on system oid column */
 	SysCacheIdentifier oid_catcache_id; /* id of catcache on system oid column	*/
@@ -124,7 +124,7 @@ typedef struct
 static const ObjectPropertyType ObjectProperty[] =
 {
 	{
-		"access method",
+		gettext_noop("access method"),
 		AccessMethodRelationId,
 		AmOidIndexId,
 		AMOID,
@@ -138,7 +138,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"access method operator",
+		gettext_noop("access method operator"),
 		AccessMethodOperatorRelationId,
 		AccessMethodOperatorOidIndexId,
 		SYSCACHEID_INVALID,
@@ -152,7 +152,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"access method procedure",
+		gettext_noop("access method procedure"),
 		AccessMethodProcedureRelationId,
 		AccessMethodProcedureOidIndexId,
 		SYSCACHEID_INVALID,
@@ -166,7 +166,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"cast",
+		gettext_noop("cast"),
 		CastRelationId,
 		CastOidIndexId,
 		SYSCACHEID_INVALID,
@@ -180,7 +180,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"collation",
+		gettext_noop("collation"),
 		CollationRelationId,
 		CollationOidIndexId,
 		COLLOID,
@@ -194,7 +194,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"constraint",
+		gettext_noop("constraint"),
 		ConstraintRelationId,
 		ConstraintOidIndexId,
 		CONSTROID,
@@ -208,7 +208,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"conversion",
+		gettext_noop("conversion"),
 		ConversionRelationId,
 		ConversionOidIndexId,
 		CONVOID,
@@ -222,7 +222,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"database",
+		gettext_noop("database"),
 		DatabaseRelationId,
 		DatabaseOidIndexId,
 		DATABASEOID,
@@ -236,7 +236,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"default ACL",
+		gettext_noop("default ACL"),
 		DefaultAclRelationId,
 		DefaultAclOidIndexId,
 		SYSCACHEID_INVALID,
@@ -250,7 +250,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"extension",
+		gettext_noop("extension"),
 		ExtensionRelationId,
 		ExtensionOidIndexId,
 		SYSCACHEID_INVALID,
@@ -264,7 +264,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"foreign-data wrapper",
+		gettext_noop("foreign-data wrapper"),
 		ForeignDataWrapperRelationId,
 		ForeignDataWrapperOidIndexId,
 		FOREIGNDATAWRAPPEROID,
@@ -278,7 +278,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"foreign server",
+		gettext_noop("foreign server"),
 		ForeignServerRelationId,
 		ForeignServerOidIndexId,
 		FOREIGNSERVEROID,
@@ -292,7 +292,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"function",
+		gettext_noop("function"),
 		ProcedureRelationId,
 		ProcedureOidIndexId,
 		PROCOID,
@@ -306,7 +306,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"language",
+		gettext_noop("language"),
 		LanguageRelationId,
 		LanguageOidIndexId,
 		LANGOID,
@@ -320,7 +320,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"large object metadata",
+		gettext_noop("large object metadata"),
 		LargeObjectMetadataRelationId,
 		LargeObjectMetadataOidIndexId,
 		SYSCACHEID_INVALID,
@@ -334,7 +334,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"operator class",
+		gettext_noop("operator class"),
 		OperatorClassRelationId,
 		OpclassOidIndexId,
 		CLAOID,
@@ -348,7 +348,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"operator",
+		gettext_noop("operator"),
 		OperatorRelationId,
 		OperatorOidIndexId,
 		OPEROID,
@@ -362,7 +362,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"operator family",
+		gettext_noop("operator family"),
 		OperatorFamilyRelationId,
 		OpfamilyOidIndexId,
 		OPFAMILYOID,
@@ -376,7 +376,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"property graph element",
+		gettext_noop("property graph element"),
 		PropgraphElementRelationId,
 		PropgraphElementObjectIndexId,
 		PROPGRAPHELOID,
@@ -390,7 +390,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"property graph element label",
+		gettext_noop("property graph element label"),
 		PropgraphElementLabelRelationId,
 		PropgraphElementLabelObjectIndexId,
 		-1,
@@ -404,7 +404,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"property graph label",
+		gettext_noop("property graph label"),
 		PropgraphLabelRelationId,
 		PropgraphLabelObjectIndexId,
 		PROPGRAPHLABELOID,
@@ -418,7 +418,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"property graph label property",
+		gettext_noop("property graph label property"),
 		PropgraphLabelPropertyRelationId,
 		PropgraphLabelPropertyObjectIndexId,
 		-1,
@@ -432,7 +432,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"property graph property",
+		gettext_noop("property graph property"),
 		PropgraphPropertyRelationId,
 		PropgraphPropertyObjectIndexId,
 		-1,
@@ -446,7 +446,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"role",
+		gettext_noop("role"),
 		AuthIdRelationId,
 		AuthIdOidIndexId,
 		AUTHOID,
@@ -460,7 +460,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"role membership",
+		gettext_noop("role membership"),
 		AuthMemRelationId,
 		AuthMemOidIndexId,
 		SYSCACHEID_INVALID,
@@ -474,7 +474,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"rule",
+		gettext_noop("rule"),
 		RewriteRelationId,
 		RewriteOidIndexId,
 		SYSCACHEID_INVALID,
@@ -488,7 +488,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"schema",
+		gettext_noop("schema"),
 		NamespaceRelationId,
 		NamespaceOidIndexId,
 		NAMESPACEOID,
@@ -502,7 +502,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"relation",
+		gettext_noop("relation"),
 		RelationRelationId,
 		ClassOidIndexId,
 		RELOID,
@@ -516,7 +516,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"tablespace",
+		gettext_noop("tablespace"),
 		TableSpaceRelationId,
 		TablespaceOidIndexId,
 		TABLESPACEOID,
@@ -530,7 +530,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"transform",
+		gettext_noop("transform"),
 		TransformRelationId,
 		TransformOidIndexId,
 		TRFOID,
@@ -544,7 +544,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"trigger",
+		gettext_noop("trigger"),
 		TriggerRelationId,
 		TriggerOidIndexId,
 		SYSCACHEID_INVALID,
@@ -558,7 +558,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"policy",
+		gettext_noop("policy"),
 		PolicyRelationId,
 		PolicyOidIndexId,
 		SYSCACHEID_INVALID,
@@ -572,7 +572,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		false
 	},
 	{
-		"event trigger",
+		gettext_noop("event trigger"),
 		EventTriggerRelationId,
 		EventTriggerOidIndexId,
 		EVENTTRIGGEROID,
@@ -586,7 +586,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"text search configuration",
+		gettext_noop("text search configuration"),
 		TSConfigRelationId,
 		TSConfigOidIndexId,
 		TSCONFIGOID,
@@ -600,7 +600,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"text search dictionary",
+		gettext_noop("text search dictionary"),
 		TSDictionaryRelationId,
 		TSDictionaryOidIndexId,
 		TSDICTOID,
@@ -614,7 +614,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"text search parser",
+		gettext_noop("text search parser"),
 		TSParserRelationId,
 		TSParserOidIndexId,
 		TSPARSEROID,
@@ -628,7 +628,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"text search template",
+		gettext_noop("text search template"),
 		TSTemplateRelationId,
 		TSTemplateOidIndexId,
 		TSTEMPLATEOID,
@@ -642,7 +642,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true,
 	},
 	{
-		"type",
+		gettext_noop("type"),
 		TypeRelationId,
 		TypeOidIndexId,
 		TYPEOID,
@@ -656,7 +656,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"publication",
+		gettext_noop("publication"),
 		PublicationRelationId,
 		PublicationObjectIndexId,
 		PUBLICATIONOID,
@@ -670,7 +670,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"subscription",
+		gettext_noop("subscription"),
 		SubscriptionRelationId,
 		SubscriptionObjectIndexId,
 		SUBSCRIPTIONOID,
@@ -684,7 +684,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"extended statistics",
+		gettext_noop("extended statistics"),
 		StatisticExtRelationId,
 		StatisticExtOidIndexId,
 		STATEXTOID,
@@ -698,7 +698,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
-		"user mapping",
+		gettext_noop("user mapping"),
 		UserMappingRelationId,
 		UserMappingOidIndexId,
 		USERMAPPINGOID,
