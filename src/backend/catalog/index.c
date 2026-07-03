@@ -73,6 +73,7 @@
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
+#include "utils/injection_point.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -3123,6 +3124,11 @@ index_build(Relation heapRelation,
 	stats = indexRelation->rd_indam->ambuild(heapRelation, indexRelation,
 											 indexInfo);
 	Assert(stats);
+
+
+#ifdef USE_INJECTION_POINTS
+	INJECTION_POINT("index-build-after-am-callback", NULL);
+#endif
 
 	/*
 	 * If this is an unlogged index, we may need to write out an init fork for

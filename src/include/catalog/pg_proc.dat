@@ -12340,6 +12340,19 @@
   prorettype => 'bool', proargtypes => 'regclass',
   prosrc => 'pg_relation_is_publishable' },
 
+{ oid => '8383',
+  descr => 'drop invalid indexes from an object',
+  proname => 'pg_drop_invalid_indexes',
+  prorows => '10', proretset => 't',
+  prorettype => 'record',
+  proargtypes => 'regclass bool bool',
+  proallargtypes => '{regclass,bool,bool,text,oid}',
+  proargmodes => '{i,i,i,o,o}',
+  proargnames => '{relation,skip_locked,cascade,index_name,index_oid}',
+  pronargdefaults => '2',
+  proargdefaults => '{true,false}',
+  prosrc => 'pg_drop_invalid_indexes' },
+
 # rls
 { oid => '3298',
   descr => 'row security for current context active on table by table oid',
