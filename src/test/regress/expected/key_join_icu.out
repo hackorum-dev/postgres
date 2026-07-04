@@ -70,6 +70,35 @@ ORDER BY c.id;
  30 | Alpha       | ALPHA
 (3 rows)
 
+-- accepted: both FOR KEY joins propagate exact nondeterministic equality
+-- identities through the intermediate join surface.
+SELECT g.id, c.code AS child_code, p.code AS parent_code
+FROM key_nondet_parent p
+JOIN key_nondet_child c FOR KEY p (code) <- c (parent_code)
+JOIN key_nondet_grandchild g FOR KEY c (code) <- g (child_code)
+ORDER BY g.id;
+ id  | child_code | parent_code 
+-----+------------+-------------
+ 100 | Child-One  | Alpha
+ 200 | CHILD-TWO  | BETA
+(2 rows)
+
+-- accepted: the inner key join preserves the child's nondeterministic unique
+-- fact and row coverage through a derived table.
+SELECT g.id, d.child_code, d.parent_code
+FROM (
+    SELECT c.code AS child_code, p.code AS parent_code
+    FROM key_nondet_parent p
+    JOIN key_nondet_child c FOR KEY p (code) <- c (parent_code)
+) d
+JOIN key_nondet_grandchild g FOR KEY d (child_code) <- g (child_code)
+ORDER BY g.id;
+ id  | child_code | parent_code 
+-----+------------+-------------
+ 100 | Child-One  | Alpha
+ 200 | CHILD-TWO  | BETA
+(2 rows)
+
 DROP TABLE key_nondet_grandchild, key_nondet_child, key_nondet_parent;
 DROP COLLATION key_nondet;
 DROP SCHEMA key_join_icu;

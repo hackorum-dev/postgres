@@ -1522,10 +1522,13 @@ KeyJoinClause
 KeyJoinColumn
 KeyJoinDirection
 KeyJoinFact
+KeyJoinFactContext
 KeyJoinFactKind
+KeyJoinInactiveReason
 KeyJoinKeyPosition
 KeyJoinMatch
 KeyJoinNode
+KeyJoinQueryStack
 KeyJoinReq
 KeyJoinSurfaceFacts
 KeySuffix
