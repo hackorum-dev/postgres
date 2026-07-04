@@ -85,6 +85,29 @@ FROM (
 JOIN key_nondet_grandchild g FOR KEY d (child_code) <- g (child_code)
 ORDER BY g.id;
 
+-- The LEFT JOIN preserves all parent keys but may duplicate them.  DISTINCT
+-- under the same nondeterministic equality must therefore supply the unique
+-- proof fact needed by the outer key join; the base unique fact cannot do so.
+SELECT c.id, q.code
+FROM (
+    SELECT DISTINCT p.code
+    FROM key_nondet_parent p
+    LEFT JOIN key_nondet_child d FOR KEY p (code) <- d (parent_code)
+) q
+JOIN key_nondet_child c FOR KEY q (code) <- c (parent_code)
+ORDER BY c.id;
+
+-- GROUP BY exercises the corresponding query-level unique proof path.
+SELECT c.id, q.code
+FROM (
+    SELECT p.code
+    FROM key_nondet_parent p
+    LEFT JOIN key_nondet_child d FOR KEY p (code) <- d (parent_code)
+    GROUP BY p.code
+) q
+JOIN key_nondet_child c FOR KEY q (code) <- c (parent_code)
+ORDER BY c.id;
+
 DROP TABLE key_nondet_grandchild, key_nondet_child, key_nondet_parent;
 DROP COLLATION key_nondet;
 

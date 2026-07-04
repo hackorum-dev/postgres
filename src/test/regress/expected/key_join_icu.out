@@ -99,6 +99,41 @@ ORDER BY g.id;
  200 | CHILD-TWO  | BETA
 (2 rows)
 
+-- The LEFT JOIN preserves all parent keys but may duplicate them.  DISTINCT
+-- under the same nondeterministic equality must therefore supply the unique
+-- proof fact needed by the outer key join; the base unique fact cannot do so.
+SELECT c.id, q.code
+FROM (
+    SELECT DISTINCT p.code
+    FROM key_nondet_parent p
+    LEFT JOIN key_nondet_child d FOR KEY p (code) <- d (parent_code)
+) q
+JOIN key_nondet_child c FOR KEY q (code) <- c (parent_code)
+ORDER BY c.id;
+ id | code  
+----+-------
+ 10 | Alpha
+ 20 | BETA
+ 30 | Alpha
+(3 rows)
+
+-- GROUP BY exercises the corresponding query-level unique proof path.
+SELECT c.id, q.code
+FROM (
+    SELECT p.code
+    FROM key_nondet_parent p
+    LEFT JOIN key_nondet_child d FOR KEY p (code) <- d (parent_code)
+    GROUP BY p.code
+) q
+JOIN key_nondet_child c FOR KEY q (code) <- c (parent_code)
+ORDER BY c.id;
+ id | code  
+----+-------
+ 10 | Alpha
+ 20 | BETA
+ 30 | Alpha
+(3 rows)
+
 DROP TABLE key_nondet_grandchild, key_nondet_child, key_nondet_parent;
 DROP COLLATION key_nondet;
 DROP SCHEMA key_join_icu;
