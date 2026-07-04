@@ -454,3 +454,45 @@ SELECT FROM order_rows o JOIN customer_rows c FOR KEY o (customer_id) -> c (id);
 (2 rows)
 
 ROLLBACK;
+-- DISTINCT exactly on the key keeps every key value, once.
+SELECT FROM orders o JOIN (SELECT DISTINCT id FROM customers) c
+  FOR KEY o (customer_id) -> c (id);
+--
+(2 rows)
+
+-- GROUP BY restores the uniqueness that a fan-out lost.
+SELECT FROM orders o
+JOIN (SELECT c.id FROM customers c LEFT JOIN orders o2
+        FOR KEY c (id) <- o2 (customer_id) GROUP BY c.id) c
+  FOR KEY o (customer_id) -> c (id);
+--
+(2 rows)
+
+-- Extra grouping columns are fine, because the key determines them.
+SELECT FROM orders o JOIN (SELECT id, name FROM customers GROUP BY id, name) c
+  FOR KEY o (customer_id) -> c (id);
+--
+(2 rows)
+
+-- rejected, reason: HAVING can remove a group
+SELECT FROM orders o JOIN (SELECT id FROM customers GROUP BY id HAVING id > 1) c
+  FOR KEY o (customer_id) -> c (id);
+ERROR:  key join from referencing relation o to referenced relation c cannot be proven
+LINE 2:   FOR KEY o (customer_id) -> c (id);
+          ^
+DETAIL:  Not every o (customer_id) value can be proven to have a matching c row. Referenced relation c may lose rows before this key join because of HAVING, LIMIT, OFFSET, FOR UPDATE or TABLESAMPLE.
+-- rejected, reason: grouping sets output null for omitted columns
+SELECT FROM (SELECT customer_id FROM orders GROUP BY GROUPING SETS ((customer_id), ())) g
+JOIN customers c FOR KEY g (customer_id) -> c (id);
+ERROR:  key join from referencing relation g to referenced relation c cannot be proven
+LINE 2: JOIN customers c FOR KEY g (customer_id) -> c (id);
+                         ^
+DETAIL:  This inner join could filter rows from g. Referencing columns g (customer_id) can be null because GROUP BY can output nulls for omitted grouping columns.
+-- rejected, reason: a grouping set can duplicate the key
+SELECT FROM orders o
+JOIN (SELECT id FROM customers GROUP BY GROUPING SETS ((id), (id))) c
+  FOR KEY o (customer_id) -> c (id);
+ERROR:  key join from referencing relation o to referenced relation c cannot be proven
+LINE 3:   FOR KEY o (customer_id) -> c (id);
+          ^
+DETAIL:  Referenced columns c (id) are not proven unique. Referenced relation c may duplicate key values because of GROUP BY.
