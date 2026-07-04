@@ -200,3 +200,83 @@ ROLLBACK;
 BEGIN;
 CREATE POLICY stored_policy ON shipments USING (EXISTS (SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)));
 ROLLBACK;
+
+-- An endpoint can be reached through any operand that passes its rows and
+-- key columns through unchanged: a join, a subquery with renamed columns, a
+-- CTE and a view.
+SELECT FROM order_items i
+JOIN orders o FOR KEY i (order_id) -> o (id)
+JOIN customers c FOR KEY o (customer_id) -> c (id);
+
+SELECT FROM orders o
+JOIN (SELECT id AS customer_key FROM customers) c
+  FOR KEY o (customer_id) -> c (customer_key);
+
+WITH c AS (SELECT * FROM customers)
+SELECT FROM orders o JOIN c FOR KEY o (customer_id) -> c (id);
+
+BEGIN;
+CREATE VIEW customer_names AS SELECT id, name FROM customers;
+SELECT FROM orders o JOIN customer_names c
+  FOR KEY o (customer_id) -> c (id);
+ROLLBACK;
+
+-- Only the referenced side must be complete; the referencing side may be
+-- filtered.
+SELECT FROM (SELECT * FROM orders WHERE id = 11) o
+JOIN customers c FOR KEY o (customer_id) -> c (id);
+-- Grouping the referencing side keeps its values, so it still references.
+SELECT FROM (SELECT customer_id FROM orders GROUP BY customer_id) g
+JOIN customers c FOR KEY g (customer_id) -> c (id);
+
+-- rejected, reason: the referenced input is filtered
+SELECT FROM orders o JOIN (SELECT id FROM customers WHERE id > 1) c
+  FOR KEY o (customer_id) -> c (id);
+-- rejected, reason: the referenced input is sampled
+SELECT FROM orders o
+JOIN (SELECT id FROM customers TABLESAMPLE SYSTEM (100)) c
+  FOR KEY o (customer_id) -> c (id);
+-- rejected, reason: a key expression is not the key column
+SELECT FROM orders o JOIN (SELECT id + 0 AS id FROM customers) c
+  FOR KEY o (customer_id) -> c (id);
+-- Every order keeps exactly one row through its own key join to customers,
+-- so that join can still be the referenced side.
+SELECT FROM order_items i
+JOIN (customers c JOIN orders o FOR KEY c (id) <- o (customer_id))
+  FOR KEY i (order_id) -> o (id);
+-- An endpoint can be a join alias rather than a table.
+SELECT FROM (orders o JOIN customers c FOR KEY o (customer_id) -> c (id)) AS j(order_id)
+LEFT JOIN customers r FOR KEY j (referrer_id) -> r (id);
+-- rejected, reason: an inner join to a child can drop referenced rows
+BEGIN;
+CREATE TABLE loyalty_cards (customer_id int PRIMARY KEY REFERENCES customers);
+SELECT FROM orders o
+JOIN (SELECT c.id FROM customers c
+      JOIN loyalty_cards l FOR KEY c (id) <- l (customer_id)) c
+  FOR KEY o (customer_id) -> c (id);
+ROLLBACK;
+-- rejected, reason: the row loss happens inside a view, and the detail says so
+BEGIN;
+CREATE VIEW top_customers AS SELECT id FROM customers LIMIT 1;
+SELECT FROM orders o JOIN top_customers c FOR KEY o (customer_id) -> c (id);
+ROLLBACK;
+-- rejected, reason: an earlier join repeats referenced rows
+SELECT FROM orders o
+JOIN (customers c JOIN orders o2 FOR KEY c (id) <- o2 (customer_id))
+  FOR KEY o (customer_id) -> c (id);
+-- rejected, reason: an outer join can null-extend the referencing column
+SELECT FROM (customers c LEFT JOIN orders o FOR KEY c (id) <- o (customer_id))
+JOIN customers c2 FOR KEY o (customer_id) -> c2 (id);
+-- rejected, reason: a set operation's output has no proven key
+SELECT FROM orders o
+JOIN (SELECT id FROM customers UNION ALL SELECT id FROM customers) c
+  FOR KEY o (customer_id) -> c (id);
+-- Views created before their tables gained NOT NULL, unique and foreign key
+-- columns still serve as key join inputs.
+BEGIN;
+CREATE VIEW customer_rows AS SELECT * FROM customers;
+CREATE VIEW order_rows AS SELECT * FROM orders;
+ALTER TABLE customers ADD COLUMN email text UNIQUE, ADD COLUMN active boolean NOT NULL DEFAULT true;
+ALTER TABLE orders ADD COLUMN seller_id int NOT NULL DEFAULT 1 REFERENCES customers;
+SELECT FROM order_rows o JOIN customer_rows c FOR KEY o (customer_id) -> c (id);
+ROLLBACK;
