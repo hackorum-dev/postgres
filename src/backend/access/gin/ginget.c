@@ -566,11 +566,11 @@ startScanKey(GinState *ginstate, GinScanOpaque so, GinScanKey key)
 			/* Pass all entries <= i as FALSE, and the rest as MAYBE */
 			key->entryRes[entryIndexes[i]] = GIN_FALSE;
 
-			if (key->triConsistentFn(key) == GIN_FALSE)
-				break;
-
 			/* Make this loop interruptible in case there are many keys */
 			CHECK_FOR_INTERRUPTS();
+
+			if (key->triConsistentFn(key) == GIN_FALSE)
+				break;
 		}
 		/* i is now the last required entry. */
 
