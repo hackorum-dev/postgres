@@ -51,6 +51,12 @@ Manual: interactive psql with `PROMPT_COMMAND`, `%D`, `\c`, failed SQL,
 
 Suggested follow-up: TAP test for `%D` and `SHELL_EXIT` in `src/bin/psql/t/`.
 
+## Example
+
+![psql with powerline prompt](../src/bin/psql/powerline-prompt-example.png)
+
+See `src/bin/psql/powerline-integration.md` for annotation of visible behavior.
+
 ## Companion patch
 
 powerline psql extension (separate PR): segments, theme, readline renderer.
