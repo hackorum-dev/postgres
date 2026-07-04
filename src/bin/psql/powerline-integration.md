@@ -44,6 +44,23 @@ A matching **psql extension** is prepared for submission to powerline:
 See powerline’s `docs/source/usage/psql-postgres-integration.rst` (added in the
 companion patch) for `.psqlrc` configuration.
 
+## Example (screenshot)
+
+End-to-end session with both patches and the sample `.psqlrc` below (built
+`psql`, powerline `psql` extension, local PostgreSQL):
+
+![psql with powerline prompt](powerline-prompt-example.png)
+
+Visible behavior in the screenshot:
+
+- **Red user segment** — PostgreSQL superuser (`PSQL_SUPERUSER=1`), not the
+  Unix account name
+- **Green database segment** — appears after `\c postgres` / `\c root` when the
+  database name differs from the user
+- **Red exit-status segment** — after `SELECT 1/0`
+- **txid segment** — increments on `\c` (optional `SELECT txid_current() AS txid \gset` at connect)
+- **`SHELL_EXIT`** — `\echo :SHELL_EXIT` returns `0` after a successful connect
+
 ## Example `.psqlrc` (requires both patches)
 
 ```sql
