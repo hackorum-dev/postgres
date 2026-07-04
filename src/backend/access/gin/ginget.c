@@ -1664,6 +1664,13 @@ collectMatchesForHeapRow(IndexScanDesc scan, pendingPosition *pos)
 							StopHigh = pos->lastOffset,
 							StopMiddle;
 
+				if (INTERRUPTS_PENDING_CONDITION()) {
+
+					UnlockReleaseBuffer(pos->pendingBuffer);
+
+					CHECK_FOR_INTERRUPTS();
+				}
+
 				/* If already matched on earlier page, do no extra work */
 				if (key->entryRes[j])
 					continue;
