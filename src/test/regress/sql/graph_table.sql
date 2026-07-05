@@ -596,4 +596,12 @@ SELECT src.vname, count(*) FROM v1 AS src
   HAVING count(*) >= (SELECT count(*) FROM GRAPH_TABLE (g1 MATCH (a IS vl1 | vl2) COLUMNS (a.vname AS n)) WHERE n = src.vname)
   ORDER BY vname;
 
+-- a WHERE clause that is a bare boolean property reference (a top-level
+-- GraphPropertyRef) must be rewritten just like a nested property reference
+ALTER PROPERTY GRAPH g1 ALTER VERTEX TABLE v1 ALTER LABEL vl1 ADD PROPERTIES (vprop1 > 15 AS is_big);
+-- bare boolean property in an element pattern WHERE clause
+SELECT * FROM GRAPH_TABLE (g1 MATCH (a IS vl1 WHERE a.is_big) COLUMNS (a.vname AS self)) ORDER BY self;
+-- bare boolean property in the graph pattern WHERE clause
+SELECT * FROM GRAPH_TABLE (g1 MATCH (a IS vl1) WHERE a.is_big COLUMNS (a.vname AS self)) ORDER BY self;
+
 -- leave the objects behind for pg_upgrade/pg_dump tests

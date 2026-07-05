@@ -1152,7 +1152,11 @@ replace_property_refs(Oid propgraphid, Node *node, const List *mappings)
 	context.mappings = mappings;
 	context.propgraphid = propgraphid;
 
-	return expression_tree_mutator(node, replace_property_refs_mutator, &context);
+	/*
+	 * Invoke the mutator directly rather than through expression_tree_mutator()
+	 * so that a top-level GraphPropertyRef is replaced too.
+	 */
+	return replace_property_refs_mutator(node, &context);
 }
 
 /*
