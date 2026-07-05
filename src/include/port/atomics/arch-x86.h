@@ -51,12 +51,6 @@
  */
 #if defined(__GNUC__) || defined(__INTEL_COMPILER)
 
-#define PG_HAVE_ATOMIC_FLAG_SUPPORT
-typedef struct pg_atomic_flag
-{
-	volatile char value;
-} pg_atomic_flag;
-
 #define PG_HAVE_ATOMIC_U32_SUPPORT
 typedef struct pg_atomic_uint32
 {
@@ -75,33 +69,6 @@ typedef struct pg_atomic_uint64
 	volatile uint64 value;
 } pg_atomic_uint64;
 #endif	/* __x86_64__ */
-
-#define PG_HAVE_ATOMIC_TEST_SET_FLAG
-static inline bool
-pg_atomic_test_set_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	char		_res = 1;
-
-	__asm__ __volatile__(
-		"	lock			\n"
-		"	xchgb	%0,%1	\n"
-:		"+q"(_res), "+m"(ptr->value)
-:
-:		"memory");
-	return _res == 0;
-}
-
-#define PG_HAVE_ATOMIC_CLEAR_FLAG
-static inline void
-pg_atomic_clear_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	/*
-	 * On a TSO architecture like x86 it's sufficient to use a compiler
-	 * barrier to achieve release semantics.
-	 */
-	__asm__ __volatile__("" ::: "memory");
-	ptr->value = 0;
-}
 
 #define PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U32
 static inline bool

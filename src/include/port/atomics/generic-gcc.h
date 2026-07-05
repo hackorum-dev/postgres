@@ -61,27 +61,6 @@
 #endif
 
 
-/* generic gcc based atomic flag implementation */
-#if !defined(PG_HAVE_ATOMIC_FLAG_SUPPORT) \
-	&& (defined(HAVE_GCC__SYNC_INT32_TAS) || defined(HAVE_GCC__SYNC_CHAR_TAS))
-
-#define PG_HAVE_ATOMIC_FLAG_SUPPORT
-typedef struct pg_atomic_flag
-{
-	/*
-	 * If we have a choice, use int-width TAS, because that is more efficient
-	 * and/or more reliably implemented on most non-Intel platforms.  (Note
-	 * that this code isn't used on x86[_64]; see arch-x86.h for that.)
-	 */
-#ifdef HAVE_GCC__SYNC_INT32_TAS
-	volatile int value;
-#else
-	volatile char value;
-#endif
-} pg_atomic_flag;
-
-#endif /* !ATOMIC_FLAG_SUPPORT && SYNC_INT32_TAS */
-
 /* generic gcc based atomic uint32 implementation */
 #if !defined(PG_HAVE_ATOMIC_U32_SUPPORT) \
 	&& (defined(HAVE_GCC__ATOMIC_INT32_CAS) || defined(HAVE_GCC__SYNC_INT32_CAS))
@@ -106,52 +85,6 @@ typedef struct pg_atomic_uint64
 } pg_atomic_uint64;
 
 #endif /* defined(HAVE_GCC__ATOMIC_INT64_CAS) || defined(HAVE_GCC__SYNC_INT64_CAS) */
-
-#ifdef PG_HAVE_ATOMIC_FLAG_SUPPORT
-
-#if defined(HAVE_GCC__SYNC_CHAR_TAS) || defined(HAVE_GCC__SYNC_INT32_TAS)
-
-#ifndef PG_HAVE_ATOMIC_TEST_SET_FLAG
-#define PG_HAVE_ATOMIC_TEST_SET_FLAG
-static inline bool
-pg_atomic_test_set_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	/* NB: only an acquire barrier, not a full one */
-	/* some platform only support a 1 here */
-	return __sync_lock_test_and_set(&ptr->value, 1) == 0;
-}
-#endif
-
-#endif /* defined(HAVE_GCC__SYNC_*_TAS) */
-
-#ifndef PG_HAVE_ATOMIC_UNLOCKED_TEST_FLAG
-#define PG_HAVE_ATOMIC_UNLOCKED_TEST_FLAG
-static inline bool
-pg_atomic_unlocked_test_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	return ptr->value == 0;
-}
-#endif
-
-#ifndef PG_HAVE_ATOMIC_CLEAR_FLAG
-#define PG_HAVE_ATOMIC_CLEAR_FLAG
-static inline void
-pg_atomic_clear_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	__sync_lock_release(&ptr->value);
-}
-#endif
-
-#ifndef PG_HAVE_ATOMIC_INIT_FLAG
-#define PG_HAVE_ATOMIC_INIT_FLAG
-static inline void
-pg_atomic_init_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	pg_atomic_clear_flag_impl(ptr);
-}
-#endif
-
-#endif /* defined(PG_HAVE_ATOMIC_FLAG_SUPPORT) */
 
 /* prefer __atomic, it has a better API */
 #if !defined(PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U32) && defined(HAVE_GCC__ATOMIC_INT32_CAS)
