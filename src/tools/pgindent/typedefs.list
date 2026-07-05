@@ -4028,7 +4028,7 @@ pe_test_vector
 pendingPosition
 pending_label
 pgParameterStatus
-pg_atomic_flag
+pg_atomic_bool
 pg_atomic_uint32
 pg_atomic_uint64
 pg_be_sasl_mech

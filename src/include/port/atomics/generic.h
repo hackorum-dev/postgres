@@ -28,12 +28,6 @@
 #	define pg_write_barrier_impl pg_memory_barrier_impl
 #endif
 
-/* provide fallback */
-#if !defined(PG_HAVE_ATOMIC_FLAG_SUPPORT) && defined(PG_HAVE_ATOMIC_U32_SUPPORT)
-#define PG_HAVE_ATOMIC_FLAG_SUPPORT
-typedef pg_atomic_uint32 pg_atomic_flag;
-#endif
-
 #ifndef PG_HAVE_ATOMIC_READ_U32
 #define PG_HAVE_ATOMIC_READ_U32
 static inline uint32
@@ -60,84 +54,6 @@ pg_atomic_unlocked_write_u32_impl(volatile pg_atomic_uint32 *ptr, uint32 val)
 	ptr->value = val;
 }
 #endif
-
-/*
- * provide fallback for test_and_set using atomic_exchange if available
- */
-#if !defined(PG_HAVE_ATOMIC_TEST_SET_FLAG) && defined(PG_HAVE_ATOMIC_EXCHANGE_U32)
-
-#define PG_HAVE_ATOMIC_INIT_FLAG
-static inline void
-pg_atomic_init_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	pg_atomic_write_u32_impl(ptr, 0);
-}
-
-#define PG_HAVE_ATOMIC_TEST_SET_FLAG
-static inline bool
-pg_atomic_test_set_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	return pg_atomic_exchange_u32_impl(ptr, 1) == 0;
-}
-
-#define PG_HAVE_ATOMIC_UNLOCKED_TEST_FLAG
-static inline bool
-pg_atomic_unlocked_test_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	return pg_atomic_read_u32_impl(ptr) == 0;
-}
-
-
-#define PG_HAVE_ATOMIC_CLEAR_FLAG
-static inline void
-pg_atomic_clear_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	/* XXX: release semantics suffice? */
-	pg_memory_barrier_impl();
-	pg_atomic_write_u32_impl(ptr, 0);
-}
-
-/*
- * provide fallback for test_and_set using atomic_compare_exchange if
- * available.
- */
-#elif !defined(PG_HAVE_ATOMIC_TEST_SET_FLAG) && defined(PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U32)
-
-#define PG_HAVE_ATOMIC_INIT_FLAG
-static inline void
-pg_atomic_init_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	pg_atomic_write_u32_impl(ptr, 0);
-}
-
-#define PG_HAVE_ATOMIC_TEST_SET_FLAG
-static inline bool
-pg_atomic_test_set_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	uint32 value = 0;
-	return pg_atomic_compare_exchange_u32_impl(ptr, &value, 1);
-}
-
-#define PG_HAVE_ATOMIC_UNLOCKED_TEST_FLAG
-static inline bool
-pg_atomic_unlocked_test_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	return pg_atomic_read_u32_impl(ptr) == 0;
-}
-
-#define PG_HAVE_ATOMIC_CLEAR_FLAG
-static inline void
-pg_atomic_clear_flag_impl(volatile pg_atomic_flag *ptr)
-{
-	/* XXX: release semantics suffice? */
-	pg_memory_barrier_impl();
-	pg_atomic_write_u32_impl(ptr, 0);
-}
-
-#elif !defined(PG_HAVE_ATOMIC_TEST_SET_FLAG)
-#	error "No pg_atomic_test_and_set provided"
-#endif /* !defined(PG_HAVE_ATOMIC_TEST_SET_FLAG) */
-
 
 #ifndef PG_HAVE_ATOMIC_INIT_U32
 #define PG_HAVE_ATOMIC_INIT_U32
@@ -427,4 +343,70 @@ pg_atomic_write_membarrier_u64_impl(volatile pg_atomic_uint64 *ptr, uint64 val)
 {
 	(void) pg_atomic_exchange_u64_impl(ptr, val);
 }
+
+
+/* implement pg_atomic_bool over pg_atomic_u32 */
+#if !defined(PG_HAVE_ATOMIC_BOOL_SUPPORT) && defined(PG_HAVE_ATOMIC_U32_SUPPORT)
+#define PG_HAVE_ATOMIC_BOOL_SUPPORT
+typedef pg_atomic_uint32 pg_atomic_bool;
+#endif
+
+#if !defined(PG_HAVE_ATOMIC_INIT_BOOL) && defined(PG_HAVE_ATOMIC_INIT_U32)
+static inline void
+pg_atomic_init_bool_impl(volatile pg_atomic_bool *ptr, bool val)
+{
+	pg_atomic_init_u32_impl(ptr, (uint32) val);
+}
+#endif
+
+#if !defined(PG_HAVE_ATOMIC_READ_BOOL) && defined(PG_HAVE_ATOMIC_READ_U32)
+static inline bool
+pg_atomic_read_bool_impl(volatile pg_atomic_bool *ptr)
+{
+	return (bool) pg_atomic_read_u32_impl(ptr);
+}
+#endif
+
+#if !defined(PG_HAVE_ATOMIC_READ_MEMBARRIER_BOOL) && defined(PG_HAVE_ATOMIC_READ_MEMBARRIER_U32)
+static inline bool
+pg_atomic_read_membarrier_bool_impl(volatile pg_atomic_bool *ptr)
+{
+	return (bool) pg_atomic_read_membarrier_u32_impl(ptr);
+}
+#endif
+
+#if !defined(PG_HAVE_ATOMIC_WRITE_BOOL) && defined(PG_HAVE_ATOMIC_WRITE_U32)
+static inline void
+pg_atomic_write_bool_impl(volatile pg_atomic_bool *ptr, bool val)
+{
+	pg_atomic_write_u32_impl(ptr, (uint32) val);
+}
+#endif
+
+#if !defined(PG_HAVE_ATOMIC_UNLOCKED_WRITE_BOOL) && defined(PG_HAVE_ATOMIC_UNLOCKED_WRITE_U32)
+static inline void
+pg_atomic_unlocked_write_bool_impl(volatile pg_atomic_bool *ptr, bool val)
+{
+	pg_atomic_unlocked_write_u32_impl(ptr, (uint32) val);
+}
+#endif
+
+#if !defined(PG_HAVE_ATOMIC_WRITE_MEMBARRIER_BOOL) && defined(PG_HAVE_ATOMIC_WRITE_MEMBARRIER_U32)
+static inline void
+pg_atomic_write_membarrier_bool_impl(volatile pg_atomic_bool *ptr, bool val)
+{
+	pg_atomic_write_membarrier_u32_impl(ptr, (uint32) val);
+}
+#endif
+
+#if !defined(PG_HAVE_ATOMIC_EXCHANGE_BOOL) && defined(PG_HAVE_ATOMIC_EXCHANGE_U32)
+static inline bool
+pg_atomic_exchange_bool_impl(volatile pg_atomic_bool *ptr, bool newval)
+{
+	return (bool) pg_atomic_exchange_u32_impl(ptr, (uint32) newval);
+}
+#endif
+
+
+
 #endif

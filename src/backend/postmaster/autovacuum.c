@@ -241,7 +241,7 @@ typedef struct WorkerInfoData
 	Oid			wi_tableoid;
 	PGPROC	   *wi_proc;
 	TimestampTz wi_launchtime;
-	pg_atomic_flag wi_dobalance;
+	pg_atomic_bool wi_dobalance;
 	bool		wi_sharedrel;
 } WorkerInfoData;
 
@@ -1654,7 +1654,7 @@ FreeWorkerInfo(int code, Datum arg)
 		MyWorkerInfo->wi_sharedrel = false;
 		MyWorkerInfo->wi_proc = NULL;
 		MyWorkerInfo->wi_launchtime = 0;
-		pg_atomic_clear_flag(&MyWorkerInfo->wi_dobalance);
+		pg_atomic_write_bool(&MyWorkerInfo->wi_dobalance, false);
 		dclist_push_head(&AutoVacuumShmem->av_freeWorkers,
 						 &MyWorkerInfo->wi_links);
 		/* not mine anymore */
@@ -1729,7 +1729,7 @@ VacuumUpdateCosts(void)
 
 		elog(DEBUG2,
 			 "Autovacuum VacuumUpdateCosts(db=%u, rel=%u, dobalance=%s, cost_limit=%d, cost_delay=%g active=%s failsafe=%s)",
-			 dboid, tableoid, pg_atomic_unlocked_test_flag(&MyWorkerInfo->wi_dobalance) ? "no" : "yes",
+			 dboid, tableoid, pg_atomic_read_bool(&MyWorkerInfo->wi_dobalance) ? "yes" : "no",
 			 vacuum_cost_limit, vacuum_cost_delay,
 			 vacuum_cost_delay > 0 ? "yes" : "no",
 			 VacuumFailsafeActive ? "yes" : "no");
@@ -1767,7 +1767,7 @@ AutoVacuumUpdateCostLimit(void)
 			vacuum_cost_limit = VacuumCostLimit;
 
 		/* Only balance limit if no cost-related storage parameters specified */
-		if (pg_atomic_unlocked_test_flag(&MyWorkerInfo->wi_dobalance))
+		if (!pg_atomic_read_bool(&MyWorkerInfo->wi_dobalance))
 			return;
 
 		Assert(vacuum_cost_limit > 0);
@@ -1807,7 +1807,7 @@ autovac_recalculate_workers_for_balance(void)
 		WorkerInfo	worker = dlist_container(WorkerInfoData, wi_links, iter.cur);
 
 		if (worker->wi_proc == NULL ||
-			pg_atomic_unlocked_test_flag(&worker->wi_dobalance))
+			!pg_atomic_read_bool(&worker->wi_dobalance))
 			continue;
 
 		nworkers_for_balance++;
@@ -2482,14 +2482,8 @@ do_autovacuum(void)
 		av_storage_param_cost_delay = tab->at_storage_param_vac_cost_delay;
 		av_storage_param_cost_limit = tab->at_storage_param_vac_cost_limit;
 
-		/*
-		 * We only expect this worker to ever set the flag, so don't bother
-		 * checking the return value. We shouldn't have to retry.
-		 */
-		if (tab->at_dobalance)
-			pg_atomic_test_set_flag(&MyWorkerInfo->wi_dobalance);
-		else
-			pg_atomic_clear_flag(&MyWorkerInfo->wi_dobalance);
+		/* We only expect this worker to write the flag */
+		pg_atomic_write_bool(&MyWorkerInfo->wi_dobalance, tab->at_dobalance);
 
 		LWLockAcquire(AutovacuumLock, LW_SHARED);
 		autovac_recalculate_workers_for_balance();
@@ -2596,7 +2590,7 @@ deleted:
 		MyWorkerInfo->wi_tableoid = InvalidOid;
 		MyWorkerInfo->wi_sharedrel = false;
 		LWLockRelease(AutovacuumScheduleLock);
-		pg_atomic_test_set_flag(&MyWorkerInfo->wi_dobalance);
+		pg_atomic_write_bool(&MyWorkerInfo->wi_dobalance, true);
 	}
 
 	list_free_deep(tables_to_process);
@@ -3552,7 +3546,7 @@ AutoVacuumShmemInit(void *arg)
 	{
 		dclist_push_head(&AutoVacuumShmem->av_freeWorkers,
 						 &worker[i].wi_links);
-		pg_atomic_init_flag(&worker[i].wi_dobalance);
+		pg_atomic_init_bool(&worker[i].wi_dobalance, false);
 	}
 
 	pg_atomic_init_u32(&AutoVacuumShmem->av_nworkersForBalance, 0);
