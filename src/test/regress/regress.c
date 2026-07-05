@@ -64,6 +64,14 @@
 				 #expr, __FILE__, __LINE__); \
 	} while (0)
 
+#define EXPECT_FALSE(expr)	\
+	do { \
+		if ((expr)) \
+			elog(ERROR, \
+				 "%s was unexpectedly true in file \"%s\" line %u", \
+				 #expr, __FILE__, __LINE__); \
+	} while (0)
+
 #define EXPECT_EQ_U32(result_expr, expected_expr)	\
 	do { \
 		uint32		actual_result = (result_expr); \
@@ -504,19 +512,19 @@ wait_pid(PG_FUNCTION_ARGS)
 }
 
 static void
-test_atomic_flag(void)
+test_atomic_bool(void)
 {
-	pg_atomic_flag flag;
+	pg_atomic_bool flag;
 
-	pg_atomic_init_flag(&flag);
-	EXPECT_TRUE(pg_atomic_unlocked_test_flag(&flag));
-	EXPECT_TRUE(pg_atomic_test_set_flag(&flag));
-	EXPECT_TRUE(!pg_atomic_unlocked_test_flag(&flag));
-	EXPECT_TRUE(!pg_atomic_test_set_flag(&flag));
-	pg_atomic_clear_flag(&flag);
-	EXPECT_TRUE(pg_atomic_unlocked_test_flag(&flag));
-	EXPECT_TRUE(pg_atomic_test_set_flag(&flag));
-	pg_atomic_clear_flag(&flag);
+	pg_atomic_init_bool(&flag, false);
+	EXPECT_FALSE(pg_atomic_read_bool(&flag));
+	pg_atomic_write_bool(&flag, true);
+	EXPECT_TRUE(pg_atomic_read_bool(&flag));
+
+	EXPECT_TRUE(pg_atomic_exchange_bool(&flag, true));
+	EXPECT_TRUE(pg_atomic_exchange_bool(&flag, false));
+	EXPECT_FALSE(pg_atomic_exchange_bool(&flag, false));
+	EXPECT_FALSE(pg_atomic_exchange_bool(&flag, true));
 }
 
 static void
@@ -711,7 +719,7 @@ PG_FUNCTION_INFO_V1(test_atomic_ops);
 Datum
 test_atomic_ops(PG_FUNCTION_ARGS)
 {
-	test_atomic_flag();
+	test_atomic_bool();
 
 	test_atomic_uint32();
 
