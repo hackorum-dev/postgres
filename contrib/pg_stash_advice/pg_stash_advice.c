@@ -170,7 +170,7 @@ pgsa_advisor(PlannerGlobal *glob, Query *parse,
 		pgsa_attach();
 
 	/* If stash data is still being restored from disk, ignore. */
-	if (pg_atomic_unlocked_test_flag(&pgsa_state->stashes_ready))
+	if (!pg_atomic_read_bool(&pgsa_state->stashes_ready))
 		return NULL;
 
 	/*
@@ -327,7 +327,7 @@ pgsa_attach(void)
 void
 pgsa_check_lockout(void)
 {
-	if (pg_atomic_unlocked_test_flag(&pgsa_state->stashes_ready))
+	if (!pg_atomic_read_bool(&pgsa_state->stashes_ready))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("stash modifications are not allowed because \"%s\" has not been loaded yet",
@@ -582,7 +582,7 @@ pgsa_init_shared_state(void *ptr, void *arg)
 	state->stash_hash = DSHASH_HANDLE_INVALID;
 	state->entry_hash = DSHASH_HANDLE_INVALID;
 	state->bgworker_pid = InvalidPid;
-	pg_atomic_init_flag(&state->stashes_ready);
+	pg_atomic_init_bool(&state->stashes_ready, false);
 	pg_atomic_init_u64(&state->change_count, 0);
 
 	/*
@@ -597,7 +597,7 @@ pgsa_init_shared_state(void *ptr, void *arg)
 	 * which leads to the correct behavior.
 	 */
 	if (!pg_stash_advice_persist)
-		pg_atomic_test_set_flag(&state->stashes_ready);
+		pg_atomic_write_bool(&state->stashes_ready, true);
 }
 
 /*
