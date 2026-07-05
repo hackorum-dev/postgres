@@ -99,7 +99,7 @@ pg_get_advice_stashes(PG_FUNCTION_ARGS)
 		pgsa_attach();
 
 	/* If stash data is still being restored from disk, ignore. */
-	if (pg_atomic_unlocked_test_flag(&pgsa_state->stashes_ready))
+	if (!pg_atomic_read_bool(&pgsa_state->stashes_ready))
 		return (Datum) 0;
 
 	/* Tally up the number of entries per stash. */
@@ -163,7 +163,7 @@ pg_get_advice_stash_contents(PG_FUNCTION_ARGS)
 		pgsa_attach();
 
 	/* If stash data is still being restored from disk, ignore. */
-	if (pg_atomic_unlocked_test_flag(&pgsa_state->stashes_ready))
+	if (!pg_atomic_read_bool(&pgsa_state->stashes_ready))
 		return (Datum) 0;
 
 	/* User can pass NULL for all stashes, or the name of a specific stash. */
