@@ -65,7 +65,7 @@ typedef struct pgsa_shared_state
 	dshash_table_handle stash_hash;
 	dshash_table_handle entry_hash;
 	pid_t		bgworker_pid;
-	pg_atomic_flag stashes_ready;
+	pg_atomic_bool stashes_ready;
 	pg_atomic_uint64 change_count;
 } pgsa_shared_state;
 

@@ -141,10 +141,10 @@ pg_stash_advice_worker_main(Datum main_arg)
 	 * process_shared_preload_libraries() and the data has not yet been
 	 * successfully loaded, load it now.
 	 */
-	if (pg_atomic_unlocked_test_flag(&pgsa_state->stashes_ready))
+	if (!pg_atomic_read_bool(&pgsa_state->stashes_ready))
 	{
 		pgsa_read_from_disk();
-		pg_atomic_test_set_flag(&pgsa_state->stashes_ready);
+		pg_atomic_write_bool(&pgsa_state->stashes_ready, true);
 	}
 
 	/* Note the current change count so we can detect future changes. */

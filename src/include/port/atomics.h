@@ -11,7 +11,6 @@
  * implementations for the following operations should be provided:
  * * pg_compiler_barrier(), pg_write_barrier(), pg_read_barrier()
  * * pg_atomic_compare_exchange_u32(), pg_atomic_fetch_add_u32()
- * * pg_atomic_test_set_flag(), pg_atomic_init_flag(), pg_atomic_clear_flag()
  * * PG_HAVE_8BYTE_SINGLE_COPY_ATOMICITY should be defined if appropriate.
  *
  * There exist generic, hardware independent, implementations for several
@@ -153,55 +152,6 @@
  */
 #define pg_read_barrier()	pg_read_barrier_impl()
 #define pg_write_barrier()	pg_write_barrier_impl()
-
-/*
- * pg_atomic_init_flag - initialize atomic flag.
- *
- * No barrier semantics.
- */
-static inline void
-pg_atomic_init_flag(volatile pg_atomic_flag *ptr)
-{
-	pg_atomic_init_flag_impl(ptr);
-}
-
-/*
- * pg_atomic_test_set_flag - TAS()
- *
- * Returns true if the flag has successfully been set, false otherwise.
- *
- * Acquire (including read barrier) semantics.
- */
-static inline bool
-pg_atomic_test_set_flag(volatile pg_atomic_flag *ptr)
-{
-	return pg_atomic_test_set_flag_impl(ptr);
-}
-
-/*
- * pg_atomic_unlocked_test_flag - Check if the lock is free
- *
- * Returns true if the flag currently is not set, false otherwise.
- *
- * No barrier semantics.
- */
-static inline bool
-pg_atomic_unlocked_test_flag(volatile pg_atomic_flag *ptr)
-{
-	return pg_atomic_unlocked_test_flag_impl(ptr);
-}
-
-/*
- * pg_atomic_clear_flag - release lock set by TAS()
- *
- * Release (including write barrier) semantics.
- */
-static inline void
-pg_atomic_clear_flag(volatile pg_atomic_flag *ptr)
-{
-	pg_atomic_clear_flag_impl(ptr);
-}
-
 
 /*
  * pg_atomic_init_u32 - initialize atomic variable
@@ -610,6 +560,64 @@ pg_atomic_monotonic_advance_u64(volatile pg_atomic_uint64 *ptr, uint64 target)
 
 	return currval;
 }
+
+/* ----
+ * The 'bool' operations have the same semantics as the u32 counterparts
+ * if they are available. Check the corresponding u32 function for
+ * documentation.
+ *
+ * Note: pg_atomic_bool is currently identical to pg_atomic_u32 on all
+ * platforms, but it's notationally nice to have a distinct type.
+ * ----
+ */
+
+static inline void
+pg_atomic_init_bool(volatile pg_atomic_bool *ptr, bool val)
+{
+	pg_atomic_init_bool_impl(ptr, val);
+}
+
+static inline bool
+pg_atomic_read_bool(volatile pg_atomic_bool *ptr)
+{
+	return pg_atomic_read_bool_impl(ptr);
+}
+
+static inline bool
+pg_atomic_read_membarrier_bool(volatile pg_atomic_bool *ptr)
+{
+	return pg_atomic_read_membarrier_bool_impl(ptr);
+}
+
+static inline void
+pg_atomic_write_bool(volatile pg_atomic_bool *ptr, bool val)
+{
+	pg_atomic_write_bool_impl(ptr, val);
+}
+
+static inline void
+pg_atomic_unlocked_write_bool(volatile pg_atomic_bool *ptr, bool val)
+{
+	pg_atomic_unlocked_write_bool_impl(ptr, val);
+}
+
+static inline void
+pg_atomic_write_membarrier_bool(volatile pg_atomic_bool *ptr, bool val)
+{
+	pg_atomic_write_membarrier_bool_impl(ptr, val);
+}
+
+static inline bool
+pg_atomic_exchange_bool(volatile pg_atomic_bool *ptr, bool newval)
+{
+	return pg_atomic_exchange_bool_impl(ptr, newval);
+}
+
+/*
+ * Note: There is no pg_atomic_compare_exchange_bool(). Because a boolean has
+ * only two possible values, it would be no different from
+ * pg_atomic_exchange_bool().
+ */
 
 #undef INSIDE_ATOMICS_H
 
