@@ -2364,6 +2364,7 @@ bool
 check_log_min_messages(char **newval, void **extra, GucSource source)
 {
 	char	   *rawstring;
+	int			rawstring_len;
 	List	   *elemlist;
 	StringInfoData buf;
 	char	   *result;
@@ -2392,6 +2393,8 @@ check_log_min_messages(char **newval, void **extra, GucSource source)
 		guc_free(rawstring);
 		return false;
 	}
+	rawstring_len = strlen(rawstring);
+	guc_free(rawstring);
 
 	/* Validate and assign log level and process type. */
 	foreach_ptr(char, elem, elemlist)
@@ -2478,7 +2481,6 @@ check_log_min_messages(char **newval, void **extra, GucSource source)
 		continue;
 
 lmm_fail:
-		guc_free(rawstring);
 		list_free(elemlist);
 		return false;
 	}
@@ -2489,7 +2491,6 @@ lmm_fail:
 	if (defaultlevel == -1)
 	{
 		GUC_check_errdetail("Default log level was not defined.");
-		guc_free(rawstring);
 		list_free(elemlist);
 		return false;
 	}
@@ -2507,7 +2508,7 @@ lmm_fail:
 	 */
 	list_sort(elemlist, log_min_messages_cmp);
 
-	initStringInfoExt(&buf, strlen(rawstring) + 1);
+	initStringInfoExt(&buf, rawstring_len + 1);
 	foreach_ptr(char, elem, elemlist)
 	{
 		if (foreach_current_index(elem) == 0)
@@ -2515,6 +2516,7 @@ lmm_fail:
 		else
 			appendStringInfo(&buf, ", %s", elem);
 	}
+	list_free(elemlist);
 
 	result = guc_strdup(LOG, buf.data);
 	if (!result)
@@ -2526,8 +2528,6 @@ lmm_fail:
 	guc_free(*newval);
 	*newval = result;
 
-	guc_free(rawstring);
-	list_free(elemlist);
 	pfree(buf.data);
 
 	/*
