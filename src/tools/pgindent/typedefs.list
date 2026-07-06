@@ -1520,12 +1520,14 @@ KeyActions
 KeyArray
 KeyJoinClause
 KeyJoinColumn
+KeyJoinBarrier
 KeyJoinDirection
 KeyJoinFact
 KeyJoinFactKind
 KeyJoinKeyPosition
 KeyJoinMatch
 KeyJoinNode
+KeyJoinReq
 KeyJoinSurfaceFacts
 KeySuffix
 KeyWord

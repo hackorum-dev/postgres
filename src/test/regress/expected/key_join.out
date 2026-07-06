@@ -70,32 +70,38 @@ SELECT FROM orders o JOIN customers c FOR KEY o (referrer_id) -> c (id);
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
 LINE 1: SELECT FROM orders o JOIN customers c FOR KEY o (referrer_id...
                                               ^
+DETAIL:  This inner join could filter rows from o. Referencing columns o (referrer_id) can be null.
 -- rejected, reason: the arrow points at the referencing side
 SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) <- c (id);
 ERROR:  key join from referencing relation c to referenced relation o cannot be proven
 LINE 1: SELECT FROM orders o JOIN customers c FOR KEY o (customer_id...
                                               ^
+DETAIL:  There is no matching foreign key constraint for c (id) referencing o (customer_id).
 -- rejected, reason: the columns are not the foreign key's referenced columns
 SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (name);
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
 LINE 1: SELECT FROM orders o JOIN customers c FOR KEY o (customer_id...
                                               ^
+DETAIL:  Referenced columns c (name) are not proven unique.
 -- rejected, reason: no foreign key over these referencing columns
 SELECT FROM orders o JOIN customers c FOR KEY o (id) -> c (id);
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
 LINE 1: SELECT FROM orders o JOIN customers c FOR KEY o (id) -> c (i...
                                               ^
+DETAIL:  There is no matching foreign key constraint for o (id) referencing c (id).
 -- rejected, reason: only part of a composite key
 SELECT FROM shipments s JOIN order_items i FOR KEY s (order_id) -> i (order_id);
 ERROR:  key join from referencing relation s to referenced relation i cannot be proven
 LINE 1: SELECT FROM shipments s JOIN order_items i FOR KEY s (order_...
                                                    ^
+DETAIL:  There is no matching foreign key constraint for s (order_id) referencing i (order_id).
 -- rejected, reason: the column pairs do not follow the foreign key
 SELECT FROM shipments s JOIN order_items i
   FOR KEY s (order_id, item_no) -> i (item_no, order_id);
 ERROR:  key join from referencing relation s to referenced relation i cannot be proven
 LINE 2:   FOR KEY s (order_id, item_no) -> i (item_no, order_id);
           ^
+DETAIL:  The matching foreign key for s (order_id, item_no) references different columns than i (item_no, order_id).
 -- rejected, reason: column list lengths differ
 SELECT FROM orders o JOIN customers c FOR KEY o (customer_id, id) -> c (id);
 ERROR:  key join column lists must have the same length
@@ -154,6 +160,7 @@ SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
 LINE 1: SELECT FROM orders o JOIN customers c FOR KEY o (customer_id...
                                               ^
+DETAIL:  There is no matching foreign key constraint for o (customer_id) referencing c (id).
 ROLLBACK;
 -- rejected, reason: a foreign key that is not enforced
 BEGIN;
@@ -162,6 +169,7 @@ SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
 LINE 1: SELECT FROM orders o JOIN customers c FOR KEY o (customer_id...
                                               ^
+DETAIL:  There is no matching foreign key constraint for o (customer_id) referencing c (id).
 ROLLBACK;
 -- rejected, reason: a deferrable foreign key
 BEGIN;
@@ -170,6 +178,7 @@ SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
 LINE 1: SELECT FROM orders o JOIN customers c FOR KEY o (customer_id...
                                               ^
+DETAIL:  There is no matching foreign key constraint for o (customer_id) referencing c (id).
 ROLLBACK;
 -- rejected, reason: row-level security can hide referenced rows
 BEGIN;
@@ -178,6 +187,7 @@ SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
 LINE 1: SELECT FROM orders o JOIN customers c FOR KEY o (customer_id...
                                               ^
+DETAIL:  The keys of c cannot be used. It has row-level security enabled.
 ROLLBACK;
 -- rejected, reason: sampling can skip referenced rows
 SELECT FROM orders o JOIN customers c TABLESAMPLE SYSTEM (100)
@@ -185,6 +195,7 @@ SELECT FROM orders o JOIN customers c TABLESAMPLE SYSTEM (100)
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
 LINE 2:   FOR KEY o (customer_id) -> c (id);
           ^
+DETAIL:  There is no matching foreign key constraint for o (customer_id) referencing c (id).
 -- An inheritance child is not covered by the parent's key, but ONLY avoids it.
 BEGIN;
 CREATE TABLE vip_customers () INHERITS (customers);
@@ -196,6 +207,7 @@ SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
 LINE 1: SELECT FROM orders o JOIN customers c FOR KEY o (customer_id...
                                               ^
+DETAIL:  The keys of c cannot be used. It has inheritance children.
 ROLLBACK;
 -- A cached plan is not reused once its proof no longer holds, and works
 -- again when the proof is restored.
@@ -209,6 +221,7 @@ BEGIN;
 CREATE TABLE vip_customers () INHERITS (customers);
 EXECUTE order_names;
 ERROR:  key join from referencing relation o to referenced relation c cannot be proven
+DETAIL:  The keys of c cannot be used. It has inheritance children.
 ROLLBACK;
 EXECUTE order_names;
 --

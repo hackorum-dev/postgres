@@ -68,10 +68,29 @@
  */
 typedef struct KeyJoinColumn
 {
+	char	   *name;
 	AttrNumber	nsattno;
 	AttrNumber	surface_attno;
 	ParseNamespaceColumn *nscol;
 } KeyJoinColumn;
+
+/*
+ * KeyJoinReq
+ *
+ *		Proof requirements in the order find_key_join_match checks them; on
+ *		failure it reports the first unmet one via the KeyJoinMatch fail*
+ *		fields.
+ */
+typedef enum KeyJoinReq
+{
+	REQ_NONE = 0,
+	REQ_FK,						/* referencing FK fact covering the columns */
+	REQ_UNIQUE,					/* referenced unique fact for the FK target */
+	REQ_FKPAIR,					/* FK pairs the named columns (cond. 2a) */
+	REQ_NOTNULL,				/* referencing not-null evidence (cond. 3) */
+	REQ_REFERENCING_OPERAND,	/* referencing operand exposes no facts */
+	REQ_REFERENCED_OPERAND,		/* referenced operand exposes no facts */
+} KeyJoinReq;
 
 /*
  * KeyJoinMatch
@@ -85,7 +104,23 @@ typedef struct KeyJoinMatch
 	List	   *eqoperators;
 	List	   *eqtypes;
 	List	   *eqtypmods;
+	/* Filled only on failure, for the rejection message. */
+	KeyJoinReq	failReq;
+	KeyJoinBarrier failBarrier;
 } KeyJoinMatch;
+
+/*
+ * KeyJoinFailureSide
+ *
+ *		Display fields for one side of an unproven key join: the relation alias
+ *		and its raw KeyJoinColumn names from parse analysis.
+ */
+typedef struct KeyJoinFailureSide
+{
+	const char *alias;
+	KeyJoinColumn *columns;
+	int			ncolumns;
+} KeyJoinFailureSide;
 
 static bool find_key_join_match(RangeTblEntry *referencing_rte,
 								RangeTblEntry *referenced_rte,
@@ -148,6 +183,18 @@ static KeyJoinKeyPosition *make_key_position(AttrNumber attnum, Oid typeOid,
 											 Oid eqTypeOid, int32 eqTypmod,
 											 Oid eqOperator);
 static List *list_make_attrnums(const AttrNumber *attnums, int nattnums);
+static char *key_join_failure_detail(KeyJoinReq req,
+									 KeyJoinBarrier barrier,
+									 const char *referencing_relcols,
+									 const char *referenced_relcols,
+									 const char *referencing_relation,
+									 const char *referenced_relation,
+									 const char *join_name);
+static void key_join_report_failure(ParseState *pstate, ParseLoc location,
+									JoinType jointype,
+									const KeyJoinMatch *match,
+									const KeyJoinFailureSide *referencing,
+									const KeyJoinFailureSide *referenced);
 
 /*
  * transformAndValidateKeyJoin
@@ -259,16 +306,21 @@ transformAndValidateKeyJoin(ParseState *pstate, JoinExpr *j,
 							 referencing_attnums, referenced_attnums,
 							 !join_preserves_side(j->jointype, referencing_left),
 							 &match))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_FOREIGN_KEY),
-				 errmsg("key join from referencing relation %s to referenced relation %s cannot be proven",
-						quote_identifier(referencing_left ?
-										 left_nsitem->p_names->aliasname :
-										 right_nsitem->p_names->aliasname),
-						quote_identifier(referencing_left ?
-										 right_nsitem->p_names->aliasname :
-										 left_nsitem->p_names->aliasname)),
-				 parser_errposition(pstate, key_clause->location)));
+	{
+		KeyJoinFailureSide referencing = {0};
+		KeyJoinFailureSide referenced = {0};
+
+		referencing.alias = referencing_left ?
+			left_nsitem->p_names->aliasname : right_nsitem->p_names->aliasname;
+		referencing.columns = referencing_left ? left_cols : right_cols;
+		referencing.ncolumns = ncols;
+		referenced.alias = referencing_left ?
+			right_nsitem->p_names->aliasname : left_nsitem->p_names->aliasname;
+		referenced.columns = referencing_left ? right_cols : left_cols;
+		referenced.ncolumns = ncols;
+		key_join_report_failure(pstate, key_clause->location, j->jointype,
+								&match, &referencing, &referenced);
+	}
 
 	/* Install the equality quals proven by condition 2. */
 	j->quals = build_key_join_quals(referenced_vars, referencing_vars,
@@ -393,6 +445,7 @@ resolve_columns_on_nsitem(ParseState *pstate,
 			attno++;
 			if (strcmp(strVal(cnnode), name) == 0)
 			{
+				cols[i].name = name;
 				cols[i].nsattno = attno;
 				cols[i].nscol = lookup->p_nscolumns + attno - 1;
 				match++;
@@ -568,7 +621,9 @@ build_key_join_quals(List *referenced_args,
  *		 referencing column has not-null evidence.
  *
  * On success, *match receives the selected constraint, equality operators
- * and equality-input identities in key-join column order.
+ * and equality-input identities in key-join column order.  On failure,
+ * *match receives diagnostic fields describing the first unmet proof
+ * requirement.
  */
 static bool
 find_key_join_match(RangeTblEntry *referencing_rte,
@@ -578,28 +633,40 @@ find_key_join_match(RangeTblEntry *referencing_rte,
 					bool need_notnull,
 					KeyJoinMatch *match)
 {
-	KeyJoinSurfaceFacts *rfacts;
-	KeyJoinSurfaceFacts *pfacts;
+	List	   *rfacts;
+	List	   *pfacts;
+	KeyJoinReq	reached = REQ_NONE;
+	bool		fk_target_matched = false;
+	bool		fk_target_rel_failure = false;
+	bool		fk_target_pair_failure = false;
 
 	Assert(match != NULL);
 	Assert(referencing_rte != NULL);
 	Assert(referenced_rte != NULL);
 
+	match->failReq = REQ_NONE;
+	match->failBarrier = KJB_NONE;
+
 	if (referenced_rte->tablesample != NULL)
+	{
+		match->failReq = REQ_FK;
 		return false;
+	}
 
 	Assert(referencing_rte->keyJoinFactsComputed);
 	Assert(referenced_rte->keyJoinFactsComputed);
 
-	if (referencing_rte->keyJoinFacts == NULL ||
-		referenced_rte->keyJoinFacts == NULL)
-		return false;
-
-	rfacts = referencing_rte->keyJoinFacts;
-	pfacts = referenced_rte->keyJoinFacts;
+	/*
+	 * A side without facts offers no candidates, so the DETAIL names the first
+	 * requirement that is actually unmet, not a missing foreign key.
+	 */
+	rfacts = referencing_rte->keyJoinFacts != NULL ?
+		referencing_rte->keyJoinFacts->facts : NIL;
+	pfacts = referenced_rte->keyJoinFacts != NULL ?
+		referenced_rte->keyJoinFacts->facts : NIL;
 
 	/* ---- Candidate 1: pick an FK fact on the referencing side ---- */
-	foreach_node(KeyJoinFact, fkfact, rfacts->facts)
+	foreach_node(KeyJoinFact, fkfact, rfacts)
 	{
 		List	   *referencing_base;
 
@@ -616,8 +683,57 @@ find_key_join_match(RangeTblEntry *referencing_rte,
 									   fkfact->baseAttnums,
 									   &referencing_base, NULL))
 			continue;
+		if (reached < REQ_FK)
+			reached = REQ_FK;
+
+		/*
+		 * Before blaming referenced-side proof facts, use row provenance to
+		 * detect when the written referenced columns are not the target of
+		 * this FK at all.
+		 */
+		{
+			List	   *fk_referenced_base;
+			bool		fk_referenced_selected PG_USED_FOR_ASSERTS_ONLY;
+
+			fk_referenced_selected =
+				select_key_position_parts(referencing_attnums,
+										  fkfact->keyPositions,
+										  fkfact->referencedAttnums,
+										  &fk_referenced_base, NULL);
+			Assert(fk_referenced_selected);
+
+			foreach_node(KeyJoinFact, uniq, pfacts)
+			{
+				List	   *uniq_base;
+
+				if (uniq->kind != KJF_UNIQUE)
+					continue;
+
+				Assert(list_length(uniq->keyPositions) ==
+					   list_length(uniq->baseAttnums));
+
+				if (!select_key_position_parts(referenced_attnums,
+											   uniq->keyPositions,
+											   uniq->baseAttnums,
+											   &uniq_base, NULL))
+					continue;
+				if (uniq->relid != fkfact->referencedRelid)
+				{
+					fk_target_rel_failure = true;
+					continue;
+				}
+
+				if (equal(fk_referenced_base, uniq_base))
+				{
+					fk_target_matched = true;
+					break;
+				}
+				fk_target_pair_failure = true;
+			}
+		}
+
 		/* ---- Candidate 2: pick a unique fact on the referenced side ---- */
-		foreach_node(KeyJoinFact, uniqfact, pfacts->facts)
+		foreach_node(KeyJoinFact, uniqfact, pfacts)
 		{
 			/*
 			 * Per-candidate scratch.  These live only inside this candidate;
@@ -651,6 +767,8 @@ find_key_join_match(RangeTblEntry *referencing_rte,
 			 */
 			if (uniqfact->relid != fkfact->referencedRelid)
 				continue;
+			if (reached < REQ_UNIQUE)
+				reached = REQ_UNIQUE;
 
 			/* ---- Condition 2a: FK pairs match the selected columns ---- */
 			{
@@ -723,6 +841,8 @@ find_key_join_match(RangeTblEntry *referencing_rte,
 				if (!fk_pairs_match)
 					continue;
 			}
+			if (reached < REQ_FKPAIR)
+				reached = REQ_FKPAIR;
 
 			/*
 			 * ---- Condition 2b: unique agrees with the FK on identity ----
@@ -737,6 +857,9 @@ find_key_join_match(RangeTblEntry *referencing_rte,
 												   fk_key_positions))
 				continue;
 
+			if (reached < REQ_NOTNULL)
+				reached = REQ_NOTNULL;
+
 			/* ---- Condition 3: not-null evidence on referencing side ---- */
 			if (need_notnull)
 			{
@@ -746,7 +869,7 @@ find_key_join_match(RangeTblEntry *referencing_rte,
 				{
 					bool		found = false;
 
-					foreach_node(KeyJoinFact, fact, rfacts->facts)
+					foreach_node(KeyJoinFact, fact, rfacts)
 					{
 						if (fact->kind != KJF_NOT_NULL)
 							continue;
@@ -778,7 +901,36 @@ find_key_join_match(RangeTblEntry *referencing_rte,
 		}
 	}
 
-	/* No proof. */
+	/*
+	 * No proof.  Report the first unmet requirement: the deepest a candidate
+	 * reached, plus one.
+	 */
+	if (reached < REQ_FK && referencing_rte->keyJoinBarrier != KJB_NONE)
+	{
+		match->failReq = REQ_REFERENCING_OPERAND;
+		match->failBarrier = referencing_rte->keyJoinBarrier;
+	}
+	else if (reached < REQ_FK)
+		match->failReq = REQ_FK;
+	else if (!fk_target_matched && fk_target_pair_failure)
+		match->failReq = REQ_FKPAIR;
+	else if (!fk_target_matched && fk_target_rel_failure)
+		match->failReq = REQ_FK;
+	else if (reached < REQ_UNIQUE && referenced_rte->keyJoinBarrier != KJB_NONE)
+	{
+		match->failReq = REQ_REFERENCED_OPERAND;
+		match->failBarrier = referenced_rte->keyJoinBarrier;
+	}
+	else if (reached < REQ_UNIQUE)
+		match->failReq = REQ_UNIQUE;
+	else if (reached < REQ_NOTNULL)
+	{
+		Assert(reached >= REQ_FKPAIR);
+		match->failReq = REQ_UNIQUE;
+	}
+	else
+		match->failReq = REQ_NOTNULL;
+
 	return false;
 }
 
@@ -1020,22 +1172,34 @@ compute_key_join_relation_facts(RangeTblEntry *rte, Relation rel)
 
 	/* An ONLY scan of a partitioned parent is not the partition tree. */
 	if (rte->relkind == RELKIND_PARTITIONED_TABLE && !rte->inh)
+	{
+		rte->keyJoinBarrier = KJB_ONLY_PARTITIONED;
 		return;
+	}
 
 	/* Other relkinds do not provide base table facts here. */
 	if (rte->relkind != RELKIND_RELATION &&
 		rte->relkind != RELKIND_PARTITIONED_TABLE)
+	{
+		rte->keyJoinBarrier = KJB_NOT_TRACEABLE;
 		return;
+	}
 
 	if (rel->rd_rel->relrowsecurity)
+	{
+		rte->keyJoinBarrier = KJB_ROW_SECURITY;
 		return;
+	}
 
 	/*
 	 * An inherited scan of a table with children may include child rows that
 	 * break join-to-one, so derive facts only when the table has no children.
 	 */
 	if (rte->relkind == RELKIND_RELATION && rte->inh && has_subclass(rte->relid))
+	{
+		rte->keyJoinBarrier = KJB_INHERITANCE;
 		return;
+	}
 
 	set = makeNode(KeyJoinSurfaceFacts);
 	tupdesc = RelationGetDescr(rel);
@@ -1530,4 +1694,162 @@ list_make_attrnums(const AttrNumber *attnums, int nattnums)
 	for (int i = 0; i < nattnums; i++)
 		result = lappend_int(result, attnums[i]);
 	return result;
+}
+
+/*
+ * key_join_failure_detail
+ *
+ *		Build the DETAIL for a rejected key join using relation aliases and
+ *		columns from the rejected FOR KEY clause.
+ */
+static char *
+key_join_failure_detail(KeyJoinReq req, KeyJoinBarrier barrier,
+						const char *referencing_relcols,
+						const char *referenced_relcols,
+						const char *referencing_relation,
+						const char *referenced_relation,
+						const char *join_name)
+{
+	char	   *reason_sentence = NULL;
+	char	   *requirement_sentence;
+	StringInfoData detail;
+
+	switch (req)
+	{
+		case REQ_FK:
+			requirement_sentence =
+				psprintf(_("There is no matching foreign key constraint for %s referencing %s."),
+						 referencing_relcols, referenced_relcols);
+			break;
+		case REQ_FKPAIR:
+			requirement_sentence =
+				psprintf(_("The matching foreign key for %s references different columns than %s."),
+						 referencing_relcols, referenced_relcols);
+			break;
+		case REQ_UNIQUE:
+			requirement_sentence =
+				psprintf(_("Referenced columns %s are not proven unique."),
+						 referenced_relcols);
+			break;
+		case REQ_NOTNULL:
+			requirement_sentence =
+				psprintf(_("This %s could filter rows from %s."),
+						 join_name, referencing_relation);
+			break;
+		case REQ_REFERENCING_OPERAND:
+			requirement_sentence =
+				psprintf(_("The foreign keys of %s cannot be used."),
+						 referencing_relation);
+			break;
+		case REQ_REFERENCED_OPERAND:
+			requirement_sentence =
+				psprintf(_("The keys of %s cannot be used."),
+						 referenced_relation);
+			break;
+		default:
+			elog(ERROR, "unrecognized key join requirement: %d", (int) req);
+	}
+
+	switch (req)
+	{
+		case REQ_FK:
+		case REQ_FKPAIR:
+		case REQ_UNIQUE:
+			break;
+		case REQ_REFERENCING_OPERAND:
+		case REQ_REFERENCED_OPERAND:
+			switch (barrier)
+			{
+				case KJB_ROW_SECURITY:
+					reason_sentence = _("It has row-level security enabled.");
+					break;
+				case KJB_INHERITANCE:
+					reason_sentence = _("It has inheritance children.");
+					break;
+				case KJB_ONLY_PARTITIONED:
+					reason_sentence = _("It is a partitioned table scanned with ONLY.");
+					break;
+				default:
+					Assert(barrier == KJB_NOT_TRACEABLE);
+					reason_sentence = _("Its rows cannot be traced to a single table.");
+					break;
+			}
+			break;
+		case REQ_NOTNULL:
+			reason_sentence =
+				psprintf(_("Referencing columns %s can be null."),
+						 referencing_relcols);
+			break;
+		default:
+			elog(ERROR, "unrecognized key join requirement: %d", (int) req);
+	}
+
+	initStringInfo(&detail);
+	appendStringInfoString(&detail, requirement_sentence);
+	if (reason_sentence != NULL)
+	{
+		appendStringInfoChar(&detail, ' ');
+		appendStringInfoString(&detail, reason_sentence);
+	}
+	return detail.data;
+}
+
+/*
+ * key_join_report_failure
+ *
+ *		Format and report an unproven key join.  The caller only decides
+ *		which query side is referencing/referenced; this function owns the
+ *		user-facing message shape.
+ */
+static void
+key_join_report_failure(ParseState *pstate, ParseLoc location,
+						JoinType jointype, const KeyJoinMatch *match,
+						const KeyJoinFailureSide *referencing,
+						const KeyJoinFailureSide *referenced)
+{
+	const KeyJoinFailureSide *sides[2] = {referencing, referenced};
+	const char *relations[2];
+	char	   *relcols[2];
+	char	   *detail;
+
+	for (int i = 0; i < 2; i++)
+	{
+		const KeyJoinFailureSide *side = sides[i];
+		StringInfoData colbuf;
+		bool		first = true;
+
+		Assert(side != NULL);
+		Assert(side->columns != NULL);
+		Assert(side->ncolumns > 0);
+
+		relations[i] = quote_identifier(side->alias);
+
+		initStringInfo(&colbuf);
+		if (side->columns != NULL)
+		{
+			for (int j = 0; j < side->ncolumns; j++)
+			{
+				if (!first)
+					appendStringInfoString(&colbuf, ", ");
+				appendStringInfoString(&colbuf,
+									   quote_identifier(side->columns[j].name));
+				first = false;
+			}
+		}
+		relcols[i] = psprintf("%s (%s)", relations[i], colbuf.data);
+	}
+
+	detail =
+		key_join_failure_detail(match->failReq, match->failBarrier,
+								relcols[0], relcols[1],
+								relations[0], relations[1],
+								jointype == JOIN_INNER ?
+								"inner join" : "join");
+
+	ereport(ERROR,
+			(errcode(ERRCODE_INVALID_FOREIGN_KEY),
+			 errmsg("key join from referencing relation %s to referenced relation %s cannot be proven",
+					relations[0], relations[1]),
+			 errdetail_internal("%s", detail),
+			 parser_errposition(pstate, location)));
 }

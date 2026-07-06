@@ -1032,6 +1032,24 @@ typedef enum KeyJoinFactKind
 } KeyJoinFactKind;
 
 /*
+ * KeyJoinBarrier -
+ *	  why a FOR KEY operand exposes no proof facts at all
+ *
+ * Recorded when an operand's facts are computed and read only to word the
+ * DETAIL of a rejected key join.  An operand whose rows are a table's rows
+ * but which has no usable constraints keeps KJB_NONE.
+ */
+typedef enum KeyJoinBarrier
+{
+	KJB_NONE = 0,
+	KJB_ROW_SECURITY,			/* table with row-level security */
+	KJB_INHERITANCE,			/* inheritance parent scanned with children */
+	KJB_ONLY_PARTITIONED,		/* ONLY scan of a partitioned table */
+	KJB_NOT_TRACEABLE,			/* anything else whose rows cannot be traced to
+								 * one table */
+} KeyJoinBarrier;
+
+/*
  * KeyJoinFact -
  *	  transient key-join proof fact attached to an RTE surface
  *
@@ -1383,6 +1401,7 @@ typedef struct RangeTblEntry
 	 */
 	bool		keyJoinFactsComputed pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(false));
 	KeyJoinSurfaceFacts *keyJoinFacts pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(NULL));
+	KeyJoinBarrier keyJoinBarrier pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(KJB_NONE));
 } RangeTblEntry;
 
 /*
