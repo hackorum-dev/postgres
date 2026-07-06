@@ -107,26 +107,26 @@ walwriter|wal|normal
 (88 rows)
 \a
 -- List of registered statistics kinds.
-SELECT id, name, fixed_amount,
-    accessed_across_databases AS across_db, write_to_file
+SELECT id, name, fixed_amount, accessed_across_databases AS across_db,
+       write_to_file, entry_size > 0 AS has_entry_size
   FROM pg_stat_kind_info
   WHERE builtin
   ORDER BY id;
- id |     name     | fixed_amount | across_db | write_to_file 
-----+--------------+--------------+-----------+---------------
-  1 | database     | f            | t         | t
-  2 | relation     | f            | f         | t
-  3 | function     | f            | f         | t
-  4 | replslot     | f            | t         | t
-  5 | subscription | f            | t         | t
-  6 | backend      | f            | t         | f
-  7 | archiver     | t            | f         | t
-  8 | bgwriter     | t            | f         | t
-  9 | checkpointer | t            | f         | t
- 10 | io           | t            | f         | t
- 11 | lock         | t            | f         | t
- 12 | slru         | t            | f         | t
- 13 | wal          | t            | f         | t
+ id |     name     | fixed_amount | across_db | write_to_file | has_entry_size 
+----+--------------+--------------+-----------+---------------+----------------
+  1 | database     | f            | t         | t             | t
+  2 | relation     | f            | f         | t             | t
+  3 | function     | f            | f         | t             | t
+  4 | replslot     | f            | t         | t             | t
+  5 | subscription | f            | t         | t             | t
+  6 | backend      | f            | t         | f             | t
+  7 | archiver     | t            | f         | t             | t
+  8 | bgwriter     | t            | f         | t             | t
+  9 | checkpointer | t            | f         | t             | t
+ 10 | io           | t            | f         | t             | t
+ 11 | lock         | t            | f         | t             | t
+ 12 | slru         | t            | f         | t             | t
+ 13 | wal          | t            | f         | t             | t
 (13 rows)
 
 -- ensure that both seqscan and indexscan plans are allowed

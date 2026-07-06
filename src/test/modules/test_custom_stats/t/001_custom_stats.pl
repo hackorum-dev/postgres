@@ -31,12 +31,12 @@ $node->safe_psql('postgres', q(CREATE EXTENSION test_custom_fixed_stats));
 my $result = $node->safe_psql(
 	'postgres',
 	q(SELECT id, name, builtin, fixed_amount, accessed_across_databases,
-	         write_to_file
+	         write_to_file, entry_size > 0
 	    FROM pg_stat_kind_info
 	    WHERE name LIKE 'test_custom%' ORDER BY id));
-is( $result,
-	qq{25|test_custom_var_stats|f|f|t|t
-26|test_custom_fixed_stats|f|t|f|t},
+is($result,
+	qq{25|test_custom_var_stats|f|f|t|t|t
+26|test_custom_fixed_stats|f|t|f|t|t},
 	"custom stats kinds visible in pg_stat_kind_info");
 
 # Create entries for variable-sized stats.

@@ -31,7 +31,7 @@
 Datum
 pg_stat_get_kind_info(PG_FUNCTION_ARGS)
 {
-#define PG_STAT_KIND_INFO_COLS	7
+#define PG_STAT_KIND_INFO_COLS	8
 	ReturnSetInfo *rsinfo;
 
 	InitMaterializedSRF(fcinfo, 0);
@@ -63,6 +63,8 @@ pg_stat_get_kind_info(PG_FUNCTION_ARGS)
 			values[6] = Int64GetDatum(pgstat_get_entry_count(kind));
 		else
 			nulls[6] = true;
+
+		values[7] = Int64GetDatum((int64) pgstat_get_entry_len(kind));
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 	}

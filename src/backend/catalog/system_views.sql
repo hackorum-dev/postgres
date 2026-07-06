@@ -1290,7 +1290,8 @@ CREATE VIEW pg_stat_kind_info AS
         k.fixed_amount,
         k.accessed_across_databases,
         k.write_to_file,
-        k.entry_count
+        k.entry_count,
+        k.entry_size
     FROM pg_stat_get_kind_info() k;
 
 CREATE VIEW pg_stat_wal AS

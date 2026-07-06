@@ -15,8 +15,8 @@ SELECT backend_type, object, context FROM pg_stat_io
 \a
 
 -- List of registered statistics kinds.
-SELECT id, name, fixed_amount,
-    accessed_across_databases AS across_db, write_to_file
+SELECT id, name, fixed_amount, accessed_across_databases AS across_db,
+       write_to_file, entry_size > 0 AS has_entry_size
   FROM pg_stat_kind_info
   WHERE builtin
   ORDER BY id;

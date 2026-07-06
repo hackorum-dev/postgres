@@ -3589,6 +3589,20 @@ description | Waiting for a newly initialized WAL file to reach durable storage
        </para>
       </entry>
      </row>
+
+     <row>
+      <entry role="catalog_table_entry">
+       <para role="column_definition">
+        <structfield>entry_size</structfield> <type>bigint</type>
+       </para>
+       <para>
+        Size of the statistics data for each entry of this kind in bytes. This
+        reflects the statistics payload only, and does not include shared
+        memory overhead, so it cannot be used to definitively calculate total
+        memory consumption for a statistics kind.
+       </para>
+      </entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
