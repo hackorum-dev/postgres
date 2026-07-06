@@ -64,7 +64,10 @@ typedef enum
 
 typedef enum
 {
-	Pattern_Prefix_None, Pattern_Prefix_Partial, Pattern_Prefix_Exact,
+	Pattern_Prefix_None,		/* cannot produce an indexqual */
+	Pattern_Prefix_Partial,		/* maps to an index range restriction */
+	Pattern_Prefix_Exact,		/* maps to a simple equality test */
+	Pattern_Prefix_Exact_Lossy, /* maps to an equality test, but recheck */
 } Pattern_Prefix_Status;
 
 /* non-collatable comparisons, eg for bytea, are always deterministic */
@@ -77,7 +80,8 @@ static List *match_pattern_prefix(Node *leftop,
 								  Pattern_Type ptype,
 								  Oid expr_coll,
 								  Oid opfamily,
-								  Oid indexcollation);
+								  Oid indexcollation,
+								  bool *lossy);
 static double patternsel_common(PlannerInfo *root,
 								Oid oprid,
 								Oid opfuncid,
@@ -207,7 +211,8 @@ like_regex_support(Node *rawreq, Pattern_Type ptype)
 									 ptype,
 									 clause->inputcollid,
 									 req->opfamily,
-									 req->indexcollation);
+									 req->indexcollation,
+									 &req->lossy);
 		}
 		else if (is_funcclause(req->node))	/* be paranoid */
 		{
@@ -220,7 +225,8 @@ like_regex_support(Node *rawreq, Pattern_Type ptype)
 									 ptype,
 									 clause->inputcollid,
 									 req->opfamily,
-									 req->indexcollation);
+									 req->indexcollation,
+									 &req->lossy);
 		}
 	}
 
@@ -230,6 +236,10 @@ like_regex_support(Node *rawreq, Pattern_Type ptype)
 /*
  * match_pattern_prefix
  *	  Try to generate an indexqual for a LIKE or regex operator.
+ *
+ * We return a list of indexqual expressions on success, or NIL on failure.
+ * On success, *lossy is changed to false (from its initial state of true)
+ * if the indexqual expression(s) can fully replace the operator.
  */
 static List *
 match_pattern_prefix(Node *leftop,
@@ -237,7 +247,8 @@ match_pattern_prefix(Node *leftop,
 					 Pattern_Type ptype,
 					 Oid expr_coll,
 					 Oid opfamily,
-					 Oid indexcollation)
+					 Oid indexcollation,
+					 bool *lossy)
 {
 	List	   *result;
 	Const	   *patt;
@@ -388,7 +399,8 @@ match_pattern_prefix(Node *leftop,
 	 * apply the LIKE/regex operator as a recheck, and that will filter out
 	 * any non-matching entries.
 	 */
-	if (pstatus == Pattern_Prefix_Exact)
+	if (pstatus == Pattern_Prefix_Exact ||
+		pstatus == Pattern_Prefix_Exact_Lossy)
 	{
 		if (!op_in_opfamily(eqopr, opfamily))
 			return NIL;
@@ -397,14 +409,51 @@ match_pattern_prefix(Node *leftop,
 		expr = make_opclause(eqopr, BOOLOID, false,
 							 (Expr *) leftop, (Expr *) prefix,
 							 InvalidOid, indexcollation);
+
+		/*
+		 * We can even drop the recheck (mark the indexqual non-lossy) when
+		 * "=" means exactly what the exact-match pattern means.  That
+		 * requires all of the following:
+		 *
+		 * - The pattern is Pattern_Prefix_Exact.
+		 *
+		 * - The left-hand type is not bpchar.  bpchar's "=" ignores trailing
+		 * blanks while LIKE does not, so "= 'abc'" matches a stored 'abc  '
+		 * that "LIKE 'abc'" rejects; the recheck is what removes it.
+		 *
+		 * - The index and expression collations agree on equality.  That
+		 * holds when they're the same collation, or (having passed the guard
+		 * above, which rejected a nondeterministic expression collation that
+		 * differs from the index's) when the index collation is
+		 * deterministic: a deterministic collation treats two strings as
+		 * equal iff they're bytewise equal, so it can't disagree with the
+		 * expression's equality. A nondeterministic index collation that
+		 * differs from the expression's makes "=" match a superset of the
+		 * pattern, so the recheck stays.
+		 *
+		 * - The expression actually has a collation whenever the index does.
+		 * A collatable expression with an indeterminate collation (e.g. a
+		 * concatenation of differently-collated columns) carries InvalidOid,
+		 * and the pattern match is supposed to fail at runtime with "could
+		 * not determine which collation to use".  Dropping the recheck would
+		 * instead let the "=" indexqual silently resolve the comparison under
+		 * the index's collation.  A genuinely non-collatable type (bytea)
+		 * also carries InvalidOid, but then the index collation is InvalidOid
+		 * too, so indexcollation == expr_coll and we still optimize.
+		 */
+		if (pstatus == Pattern_Prefix_Exact &&
+			ldatatype != BPCHAROID &&
+			(indexcollation == expr_coll ||
+			 (OidIsValid(expr_coll) && !NONDETERMINISTIC(indexcollation))))
+			*lossy = false;
 		result = list_make1(expr);
 		return result;
 	}
 
 	/*
-	 * Anything other than Pattern_Prefix_Exact is not supported if the
-	 * expression collation is nondeterministic.  The optimized equality or
-	 * prefix tests use bytewise comparisons, which is not consistent with
+	 * Anything other than Pattern_Prefix_Exact[_Lossy] is not supported if
+	 * the expression collation is nondeterministic.  The optimized equality
+	 * or prefix tests use bytewise comparisons, which is not consistent with
 	 * nondeterministic collations.
 	 */
 	if (NONDETERMINISTIC(expr_coll))
@@ -635,7 +684,8 @@ patternsel_common(PlannerInfo *root,
 		prefix->consttype = rdatatype;
 	}
 
-	if (pstatus == Pattern_Prefix_Exact)
+	if (pstatus == Pattern_Prefix_Exact ||
+		pstatus == Pattern_Prefix_Exact_Lossy)
 	{
 		/*
 		 * Pattern specifies an exact match, so estimate as for '='
@@ -976,7 +1026,7 @@ icnlikejoinsel(PG_FUNCTION_ARGS)
 /*
  * Extract the fixed prefix, if any, for a pattern.
  *
- * *prefix is set to a palloc'd prefix string (in the form of a Const node),
+ * *prefix_const is set to a palloc'd string (in the form of a Const node),
  *	or to NULL if no fixed prefix exists for the pattern.
  * The prefix Const has the same type (TEXT or BYTEA) as the input pattern.
  *
@@ -993,6 +1043,7 @@ like_fixed_prefix(Const *patt_const, Const **prefix_const)
 	Oid			typeid = patt_const->consttype;
 	int			pos,
 				match_pos;
+	bool		badpattern = false;
 
 	/* the right-hand const is type text or bytea */
 	Assert(typeid == BYTEAOID || typeid == TEXTOID);
@@ -1026,7 +1077,10 @@ like_fixed_prefix(Const *patt_const, Const **prefix_const)
 		{
 			pos++;
 			if (pos >= pattlen)
+			{
+				badpattern = true;
 				break;
+			}
 		}
 
 		match[match_pos++] = patt[pos];
@@ -1044,7 +1098,16 @@ like_fixed_prefix(Const *patt_const, Const **prefix_const)
 
 	/* in LIKE, an empty pattern is an exact match! */
 	if (pos == pattlen)
-		return Pattern_Prefix_Exact;	/* reached end of pattern, so exact */
+	{
+		/*
+		 * Reached end of pattern, so exact -- unless the operator would throw
+		 * an error at runtime.  In that case our representation is lossy,
+		 * since we don't want to throw that error here.
+		 */
+		if (badpattern)
+			return Pattern_Prefix_Exact_Lossy;
+		return Pattern_Prefix_Exact;
+	}
 
 	if (match_pos > 0)
 		return Pattern_Prefix_Partial;
@@ -1070,6 +1133,7 @@ like_fixed_prefix_ci(Const *patt_const, Oid collation, Const **prefix_const)
 	char	   *match;
 	int			match_mblen;
 	pg_locale_t locale = 0;
+	bool		badpattern = false;
 
 	/* the right-hand const is type text or bytea */
 	Assert(typeid == BYTEAOID || typeid == TEXTOID);
@@ -1109,7 +1173,10 @@ like_fixed_prefix_ci(Const *patt_const, Oid collation, Const **prefix_const)
 		{
 			wpos++;
 			if (wpos >= wpattlen)
+			{
+				badpattern = true;
 				break;
+			}
 		}
 
 		/*
@@ -1136,7 +1203,16 @@ like_fixed_prefix_ci(Const *patt_const, Oid collation, Const **prefix_const)
 
 	/* in LIKE, an empty pattern is an exact match! */
 	if (wpos == wpattlen)
-		return Pattern_Prefix_Exact;	/* reached end of pattern, so exact */
+	{
+		/*
+		 * Reached end of pattern, so exact -- unless the operator would throw
+		 * an error at runtime.  In that case our representation is lossy,
+		 * since we don't want to throw that error here.
+		 */
+		if (badpattern)
+			return Pattern_Prefix_Exact_Lossy;
+		return Pattern_Prefix_Exact;
+	}
 
 	if (wmatch_pos > 0)
 		return Pattern_Prefix_Partial;
@@ -1177,8 +1253,13 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 
 	pfree(prefix);
 
+	/*
+	 * Because regexp_fixed_prefix() doesn't analyze the regexp fully, even an
+	 * "exact" match is lossy: we know that a match must be this string, but
+	 * it could still fail to match.
+	 */
 	if (exact)
-		return Pattern_Prefix_Exact;	/* pattern specifies exact match */
+		return Pattern_Prefix_Exact_Lossy;
 	else
 		return Pattern_Prefix_Partial;
 }
