@@ -312,6 +312,24 @@ SELECT * FROM pg_class WHERE relname ~ '^pg_class$' COLLATE "POSIX";
 EXPLAIN (COSTS OFF)
 SELECT * FROM pg_class WHERE relname LIKE 'pg\_class' COLLATE "POSIX";
 
+-- Conversely, when the expression's collation is indeterminate (here a
+-- concatenation of a "C" and a "POSIX" column) but the index pins a collation,
+-- the exact-match "=" indexqual must stay lossy so the LIKE recheck still runs.
+-- Otherwise the query would silently resolve the comparison under the index's
+-- collation instead of failing with "could not determine which collation to
+-- use", making the result depend on whether an index scan is chosen.
+CREATE INDEX collate_test10_expr_idx ON collate_test10 ((x || y) COLLATE "C");
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+EXPLAIN (COSTS OFF)
+SELECT a FROM collate_test10 WHERE (x || y) LIKE 'hijhij';
+-- must error (rather than silently return a row via the index) so that the
+-- outcome does not depend on the chosen plan
+SELECT a FROM collate_test10 WHERE (x || y) LIKE 'hijhij';
+RESET enable_seqscan;
+RESET enable_bitmapscan;
+DROP INDEX collate_test10_expr_idx;
+
 --
 -- Clean up.  Many of these table names will be re-used if the user is
 -- trying to run any platform-specific collation tests later, so we
