@@ -286,6 +286,16 @@ extern "C++"
 #endif
 
 /*
+ * pg_attribute_returns_nonnull lets the compiler optimize function callers
+ * based on the knowledge that the return value will never be NULL.
+ */
+#if __has_attribute (returns_nonnull)
+#define pg_attribute_returns_nonnull __attribute__((returns_nonnull))
+#else
+#define pg_attribute_returns_nonnull
+#endif
+
+/*
  * pg_attribute_target allows specifying different target options that the
  * function should be compiled with (e.g., for using special CPU instructions).
  * Note that there still needs to be a configure-time check to verify that a
