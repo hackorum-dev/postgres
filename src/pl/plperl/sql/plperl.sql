@@ -521,3 +521,10 @@ $$ LANGUAGE plperl;
 
 SELECT self_modify(42);
 SELECT self_modify(42);
+
+-- oversized text results are rejected at the PL boundary
+CREATE OR REPLACE FUNCTION perl_oversized_text() RETURNS text AS $$
+	return 'x' x (16 * 1024 * 1024);
+$$ LANGUAGE plperl;
+
+SELECT perl_oversized_text();
