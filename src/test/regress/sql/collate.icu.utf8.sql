@@ -1011,6 +1011,18 @@ SELECT x FROM test4c WHERE x LIKE 'ABC' COLLATE case_insensitive;  -- ok
 SELECT x FROM test4c WHERE x LIKE 'ABC%' COLLATE case_insensitive;  -- ok
 RESET enable_seqscan;
 
+-- For text (test4c above) an exact-match LIKE with the index and expression
+-- sharing the collation is non-lossy, so the recheck is dropped.  bpchar is
+-- different: its "=" ignores trailing blanks while LIKE does not, so the
+-- recheck must stay to reject a padded 'abc  ' that "=" would treat as equal
+-- to 'abc'.  The Index Cond therefore still carries a "~~" Filter here.
+SET enable_seqscan = off;
+EXPLAIN (COSTS OFF)
+SELECT x FROM test4c WHERE x LIKE 'abc' COLLATE case_insensitive;
+EXPLAIN (COSTS OFF)
+SELECT x FROM test1bpci WHERE x LIKE 'abc' COLLATE case_insensitive;
+RESET enable_seqscan;
+
 -- Unicode special case: different variants of Greek lower case sigma.
 -- A naive implementation like citext that just does lower(x) =
 -- lower(y) will do the wrong thing here, because lower('Σ') is 'σ'
