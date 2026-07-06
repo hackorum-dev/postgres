@@ -17,6 +17,8 @@
 
 /* defines free() by way of system headers, so must be included before perl.h */
 #include "mb/pg_wchar.h"
+#include "miscadmin.h"
+#include "utils/memutils.h"
 
 /*
  * Pull in Perl headers via a wrapper header, to control the scope of
@@ -39,6 +41,36 @@ void		plperl_spi_rollback(void);
 char	   *plperl_sv_to_literal(SV *, char *);
 void		plperl_util_elog(int level, SV *msg);
 
+
+/*
+ * Maximum byte size for a Perl scalar copied through sv2cstr().
+ *
+ * This follows the same work_mem * 1024 pattern used elsewhere in the
+ * backend (e.g. reorderbuffer.c, nodeHash.c) and is capped by MaxAllocSize.
+ */
+static inline Size
+plperl_max_scalar_bytes(void)
+{
+	Size		limit = (Size) work_mem * (Size) 1024;
+
+	return Min(limit, MaxAllocSize - 1);
+}
+
+/*
+ * Reject Perl strings that are too large to copy into backend memory.
+ */
+static inline void
+plperl_check_sv_length(STRLEN len)
+{
+	Size		max_len = plperl_max_scalar_bytes();
+
+	if ((Size) len > max_len)
+		erereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("Perl value exceeds maximum allowed size (%zu bytes)",
+						max_len),
+			 errhint("Increase work_mem or reduce the result size.")));
+}
 
 /* helper functions */
 
@@ -126,6 +158,8 @@ sv2cstr(SV *sv)
 		val = SvPV(sv, len);
 	else
 		val = SvPVutf8(sv, len);
+
+	plperl_check_sv_length(len);
 
 	/*
 	 * Now convert to database encoding.  We use perl's length in the event we
