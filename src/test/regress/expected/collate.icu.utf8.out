@@ -2128,12 +2128,11 @@ SELECT * FROM test1ci WHERE x ~ '^abc$' COLLATE "C";
 
 EXPLAIN (COSTS OFF)
 SELECT * FROM test1ci WHERE x LIKE 'abc' COLLATE case_insensitive;
-                      QUERY PLAN                       
--------------------------------------------------------
+                QUERY PLAN                 
+-------------------------------------------
  Index Scan using test1ci_x_idx on test1ci
    Index Cond: (x = 'abc'::text)
-   Filter: (x ~~ 'abc'::text COLLATE case_insensitive)
-(3 rows)
+(2 rows)
 
 RESET enable_seqscan;
 RESET enable_indexonlyscan;
@@ -2833,6 +2832,30 @@ SELECT x FROM test4c WHERE x LIKE 'ABC%' COLLATE case_insensitive;  -- ok
 -----
  abc
 (1 row)
+
+RESET enable_seqscan;
+-- For text (test4c above) an exact-match LIKE with the index and expression
+-- sharing the collation is non-lossy, so the recheck is dropped.  bpchar is
+-- different: its "=" ignores trailing blanks while LIKE does not, so the
+-- recheck must stay to reject a padded 'abc  ' that "=" would treat as equal
+-- to 'abc'.  The Index Cond therefore still carries a "~~" Filter here.
+SET enable_seqscan = off;
+EXPLAIN (COSTS OFF)
+SELECT x FROM test4c WHERE x LIKE 'abc' COLLATE case_insensitive;
+                  QUERY PLAN                  
+----------------------------------------------
+ Index Only Scan using test4c_x_idx on test4c
+   Index Cond: (x = 'abc'::text)
+(2 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT x FROM test1bpci WHERE x LIKE 'abc' COLLATE case_insensitive;
+                      QUERY PLAN                       
+-------------------------------------------------------
+ Index Only Scan using test1bpci_x_idx on test1bpci
+   Index Cond: (x = 'abc'::bpchar)
+   Filter: (x ~~ 'abc'::text COLLATE case_insensitive)
+(3 rows)
 
 RESET enable_seqscan;
 -- Unicode special case: different variants of Greek lower case sigma.
