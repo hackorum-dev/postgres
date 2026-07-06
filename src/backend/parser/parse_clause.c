@@ -57,7 +57,8 @@ static int	extractRemainingColumns(ParseState *pstate,
 									List **res_colnames, List **res_colvars,
 									ParseNamespaceColumn *res_nscolumns);
 static Node *transformJoinUsingClause(ParseState *pstate,
-									  List *leftVars, List *rightVars);
+									  List *leftVars, List *rightVars,
+									  List *usingOperators);
 static Node *transformJoinOnClause(ParseState *pstate, JoinExpr *j,
 								   List *namespace);
 static ParseNamespaceItem *transformTableEntry(ParseState *pstate, RangeVar *r);
@@ -309,12 +310,14 @@ extractRemainingColumns(ParseState *pstate,
  */
 static Node *
 transformJoinUsingClause(ParseState *pstate,
-						 List *leftVars, List *rightVars)
+						 List *leftVars, List *rightVars,
+						 List *usingOperators)
 {
 	Node	   *result;
 	List	   *andargs = NIL;
 	ListCell   *lvars,
 			   *rvars;
+	int			i;
 
 	/*
 	 * We cheat a little bit here by building an untransformed operator tree
@@ -324,23 +327,37 @@ transformJoinUsingClause(ParseState *pstate,
 	 * have to mark the columns as requiring SELECT privilege for ourselves;
 	 * transformExpr() won't do it.
 	 */
+	i = 0;
 	forboth(lvars, leftVars, rvars, rightVars)
 	{
 		Var		   *lvar = (Var *) lfirst(lvars);
 		Var		   *rvar = (Var *) lfirst(rvars);
 		A_Expr	   *e;
+		List	   *opname;
 
 		/* Require read access to the join variables */
 		markVarForSelectPriv(pstate, lvar);
 		markVarForSelectPriv(pstate, rvar);
 
-		/* Now create the lvar = rvar join condition */
-		e = makeSimpleA_Expr(AEXPR_OP, "=",
-							 (Node *) copyObject(lvar), (Node *) copyObject(rvar),
-							 -1);
+		/*
+		 * Choose the operator name: an explicit USING ... OPERATOR (...)
+		 * entry for this column if one was given, else the implicit "=".  The
+		 * caller has already checked that usingOperators, when present, has
+		 * the same length as the column list.
+		 */
+		if (usingOperators != NIL)
+			opname = (List *) list_nth(usingOperators, i);
+		else
+			opname = list_make1(makeString("="));
+
+		/* Now create the lvar <op> rvar join condition */
+		e = makeA_Expr(AEXPR_OP, opname,
+					   (Node *) copyObject(lvar), (Node *) copyObject(rvar),
+					   -1);
 
 		/* Prepare to combine into an AND clause, if multiple join columns */
 		andargs = lappend(andargs, e);
+		i++;
 	}
 
 	/* Only need an AND if there's more than one join column */
@@ -1542,10 +1559,25 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 				res_colnames = lappend(res_colnames, lfirst(ucol));
 			}
 
+			/*
+			 * If an explicit USING ... OPERATOR (...) list was supplied, it
+			 * must provide exactly one operator per join column.  (NATURAL
+			 * joins can never reach here with a non-NIL usingOperators, since
+			 * the grammar does not allow the OPERATOR clause there.)
+			 */
+			if (j->usingOperators != NIL &&
+				list_length(j->usingOperators) != list_length(j->usingClause))
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("number of JOIN/USING operators (%d) does not match number of columns (%d)",
+								list_length(j->usingOperators),
+								list_length(j->usingClause))));
+
 			/* Construct the generated JOIN ON clause */
 			j->quals = transformJoinUsingClause(pstate,
 												l_usingvars,
-												r_usingvars);
+												r_usingvars,
+												j->usingOperators);
 		}
 		else if (j->quals)
 		{

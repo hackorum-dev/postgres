@@ -248,3 +248,100 @@ WHERE tgqual LIKE '%:opno ' || 'alt_ops.=(int4,int4)'::regoperator::oid || ' %'
 -- are intentionally kept (not dropped): the pg_upgrade test suite
 -- dump/restores the regression database and thereby exercises the qualified
 -- deparse end-to-end.
+-- JOIN USING with an off-path equality operator
+CREATE TABLE oq_t2 (id int, a int);
+SET search_path = alt_ops, pg_catalog;
+CREATE VIEW public.oq_v_using AS
+  SELECT t.id FROM public.oq_t t JOIN public.oq_t2 u USING (id, a);
+CREATE VIEW public.oq_v_natural AS
+  SELECT t.id FROM public.oq_t t NATURAL JOIN public.oq_t2 u;
+-- Mixed list: pin id's operator to pg_catalog.= and a's to the shadow
+-- alt_ops.=.  Under the default path the former resolves bare while the
+-- latter must be qualified, so the emitted list is "OPERATOR (=, alt_ops.=)".
+CREATE VIEW public.oq_v_using_mixed AS
+  SELECT t.id FROM public.oq_t t JOIN public.oq_t2 u
+    USING (id, a) OPERATOR (pg_catalog.=, alt_ops.=);
+RESET search_path;
+-- A join operator whose name is not "=" (here pg_catalog.<, on the default
+-- path) must still force the list: a bare USING clause would reparse as "=".
+CREATE VIEW public.oq_v_using_lt AS
+  SELECT t.id FROM public.oq_t t JOIN public.oq_t2 u USING (id) OPERATOR (<);
+SELECT pg_get_viewdef('oq_v_using'::regclass, true);
+                          pg_get_viewdef                          
+------------------------------------------------------------------
+  SELECT t.id                                                    +
+    FROM oq_t t                                                  +
+      JOIN oq_t2 u USING (id, a) OPERATOR (alt_ops.=, alt_ops.=);
+(1 row)
+
+SELECT pg_get_viewdef('oq_v_natural'::regclass, true);
+                          pg_get_viewdef                          
+------------------------------------------------------------------
+  SELECT t.id                                                    +
+    FROM oq_t t                                                  +
+      JOIN oq_t2 u USING (id, a) OPERATOR (alt_ops.=, alt_ops.=);
+(1 row)
+
+SELECT pg_get_viewdef('oq_v_using_mixed'::regclass, true);
+                      pg_get_viewdef                      
+----------------------------------------------------------
+  SELECT t.id                                            +
+    FROM oq_t t                                          +
+      JOIN oq_t2 u USING (id, a) OPERATOR (=, alt_ops.=);
+(1 row)
+
+SELECT pg_get_viewdef('oq_v_using_lt'::regclass, true);
+               pg_get_viewdef               
+--------------------------------------------
+  SELECT t.id                              +
+    FROM oq_t t                            +
+      JOIN oq_t2 u USING (id) OPERATOR (<);
+(1 row)
+
+-- explicit syntax parses; mixed bare/qualified names allowed
+SELECT t.id FROM oq_t t JOIN oq_t2 u USING (id, a) OPERATOR (pg_catalog.=, alt_ops.=) WHERE false;
+ id 
+----
+(0 rows)
+
+SELECT t.id FROM oq_t t JOIN oq_t2 u USING (id, a) OPERATOR (=, alt_ops.=) AS j WHERE false;
+ id 
+----
+(0 rows)
+
+-- arity mismatch is an error
+SELECT t.id FROM oq_t t JOIN oq_t2 u USING (id, a) OPERATOR (alt_ops.=) WHERE false;
+ERROR:  number of JOIN/USING operators (1) does not match number of columns (2)
+-- reload round-trip under restricted search_path
+BEGIN; SET LOCAL search_path = pg_catalog;
+DO $$ BEGIN
+  EXECUTE 'CREATE VIEW public.oq_v_using_reload AS ' || pg_get_viewdef('public.oq_v_using'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_natural_reload AS ' || pg_get_viewdef('public.oq_v_natural'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_using_mixed_reload AS ' || pg_get_viewdef('public.oq_v_using_mixed'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_using_lt_reload AS ' || pg_get_viewdef('public.oq_v_using_lt'::regclass);
+END $$; COMMIT;
+-- Reloaded views resolve the same operator OIDs as the originals: alt_ops.=
+-- for oq_v_using/natural (both columns) and the mixed view (column a only).
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%:opno ' || 'alt_ops.=(int4,int4)'::regoperator::oid || ' %'
+  AND ev_class::regclass::text LIKE 'oq_v%reload'
+ORDER BY 1;
+        ev_class         
+-------------------------
+ oq_v_using_reload
+ oq_v_natural_reload
+ oq_v_using_mixed_reload
+(3 rows)
+
+-- The non-"=" operator OPERATOR(<) pins int4lt across the reload.
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%:opno ' || 'pg_catalog.<(int4,int4)'::regoperator::oid || ' %'
+  AND ev_class::regclass::text LIKE 'oq_v%reload'
+ORDER BY 1;
+       ev_class       
+----------------------
+ oq_v_using_lt_reload
+(1 row)
+
+DROP VIEW oq_v_using_reload, oq_v_natural_reload, oq_v_using_mixed_reload,
+          oq_v_using_lt_reload;

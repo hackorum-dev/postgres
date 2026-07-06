@@ -2352,6 +2352,15 @@ typedef struct JoinExpr
 	Node	   *rarg;			/* right subtree */
 	/* USING clause, if any (list of String) */
 	List	   *usingClause pg_node_attr(query_jumble_ignore);
+
+	/*
+	 * USING ... OPERATOR (...): per-column possibly-qualified operator names
+	 * (list of String lists), or NIL for the implicit "=".  This is consulted
+	 * only during parse analysis to build the join quals; ruleutils.c
+	 * re-derives the operators from quals, so these raw names may go stale
+	 * harmlessly (e.g. after ALTER OPERATOR SET SCHEMA).
+	 */
+	List	   *usingOperators pg_node_attr(query_jumble_ignore);
 	/* alias attached to USING clause, if any */
 	Alias	   *join_using_alias pg_node_attr(query_jumble_ignore);
 	/* qualifiers on join, if any */

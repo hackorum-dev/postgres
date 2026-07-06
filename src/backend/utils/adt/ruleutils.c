@@ -520,6 +520,7 @@ static void get_from_clause(Query *query, const char *prefix,
 							deparse_context *context);
 static void get_from_clause_item(Node *jtnode, Query *query,
 								 deparse_context *context);
+static List *get_join_using_opexprs(JoinExpr *j, int nusing);
 static void get_rte_alias(RangeTblEntry *rte, int varno, bool use_as,
 						  deparse_context *context);
 static void get_column_alias_list(deparse_columns *colinfo,
@@ -543,6 +544,8 @@ static char *generate_function_name(Oid funcid, int nargs,
 									bool has_variadic, bool *use_variadic_p,
 									bool inGroupBy);
 static char *generate_operator_name(Oid operid, Oid arg1, Oid arg2);
+static char *generate_operator_name_extended(Oid operid, Oid arg1, Oid arg2,
+											 bool *needs_qual);
 static void add_cast_to(StringInfo buf, Oid typid);
 static char *generate_qualified_type_name(Oid typid);
 static text *string_to_text(char *str);
@@ -13014,6 +13017,43 @@ get_from_clause(Query *query, const char *prefix, deparse_context *context)
 	}
 }
 
+/*
+ * get_join_using_opexprs
+ *		Extract the per-column equality comparisons of a JOIN/USING clause
+ *		from its stored quals, as a list of OpExpr nodes.
+ *
+ * Returns NIL if the quals do not have the expected shape (e.g. a column's
+ * comparison acquired a coercion we don't recognize); callers must then
+ * fall back to undecorated output.
+ */
+static List *
+get_join_using_opexprs(JoinExpr *j, int nusing)
+{
+	Node	   *quals = j->quals;
+	List	   *result = NIL;
+	List	   *arms;
+	ListCell   *lc;
+
+	if (quals == NULL)
+		return NIL;
+	if (IsA(quals, BoolExpr) && ((BoolExpr *) quals)->boolop == AND_EXPR)
+		arms = ((BoolExpr *) quals)->args;
+	else
+		arms = list_make1(quals);
+	if (list_length(arms) != nusing)
+		return NIL;
+	foreach(lc, arms)
+	{
+		Node	   *arm = strip_implicit_coercions((Node *) lfirst(lc));
+
+		if (!IsA(arm, OpExpr) ||
+			list_length(((OpExpr *) arm)->args) != 2)
+			return NIL;
+		result = lappend(result, arm);
+	}
+	return result;
+}
+
 static void
 get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 {
@@ -13265,6 +13305,9 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 		{
 			ListCell   *lc;
 			bool		first = true;
+			List	   *opexprs;
+			List	   *opnames = NIL;
+			bool		need_op_list = false;
 
 			appendStringInfoString(buf, " USING (");
 			/* Use the assigned names, not what's in usingClause */
@@ -13279,6 +13322,49 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 				appendStringInfoString(buf, quote_identifier(colname));
 			}
 			appendStringInfoChar(buf, ')');
+
+			/*
+			 * A bare USING clause reparses each column's operator by the
+			 * unqualified name "=", so we must decorate the clause with an
+			 * explicit per-column operator list whenever that would not
+			 * recover the same operators.  This is the case if any column's
+			 * operator is not reachable by an unqualified lookup of its own
+			 * name (then it appears schema-qualified in the list), or is
+			 * named something other than "=" (then a bare clause would
+			 * wrongly resolve "="; it appears by its bare name in the list).
+			 * If we cannot recover the operators from the quals, print the
+			 * traditional undecorated form, as before.
+			 */
+			opexprs = get_join_using_opexprs(j,
+											 list_length(colinfo->usingNames));
+			foreach(lc, opexprs)
+			{
+				OpExpr	   *opexpr = (OpExpr *) lfirst(lc);
+				bool		needs_qual;
+				char	   *opname;
+
+				opname = generate_operator_name_extended(opexpr->opno,
+														 exprType(linitial(opexpr->args)),
+														 exprType(lsecond(opexpr->args)),
+														 &needs_qual);
+				opnames = lappend(opnames, opname);
+				need_op_list |= (needs_qual || strcmp(opname, "=") != 0);
+			}
+
+			if (need_op_list)
+			{
+				first = true;
+				appendStringInfoString(buf, " OPERATOR (");
+				foreach(lc, opnames)
+				{
+					if (first)
+						first = false;
+					else
+						appendStringInfoString(buf, ", ");
+					appendStringInfoString(buf, (char *) lfirst(lc));
+				}
+				appendStringInfoChar(buf, ')');
+			}
 
 			if (j->join_using_alias)
 				appendStringInfo(buf, " AS %s",
@@ -14065,11 +14151,36 @@ generate_function_name(Oid funcid, int nargs, List *argnames, Oid *argtypes,
 static char *
 generate_operator_name(Oid operid, Oid arg1, Oid arg2)
 {
+	bool		needs_qual;
+	char	   *oprname;
+
+	oprname = generate_operator_name_extended(operid, arg1, arg2,
+											  &needs_qual);
+	if (needs_qual)
+		oprname = psprintf("OPERATOR(%s)", oprname);
+
+	return oprname;
+}
+
+/*
+ * generate_operator_name_extended
+ *		Guts of generate_operator_name: compute the name to display for an
+ *		operator specified by OID, given the specified actual arg types.
+ *
+ * The result includes all necessary quoting and schema-prefixing, but not
+ * the OPERATOR() decoration that generate_operator_name would add; this
+ * form is suitable for constructs that take a bare (but possibly
+ * qualified) operator name, such as JOIN/USING's operator list.  Whether
+ * schema-prefixing was required is additionally reported in *needs_qual.
+ */
+static char *
+generate_operator_name_extended(Oid operid, Oid arg1, Oid arg2,
+								bool *needs_qual)
+{
 	StringInfoData buf;
 	HeapTuple	opertup;
 	Form_pg_operator operform;
 	char	   *oprname;
-	char	   *nspname;
 	Operator	p_result;
 
 	initStringInfo(&buf);
@@ -14102,17 +14213,16 @@ generate_operator_name(Oid operid, Oid arg1, Oid arg2)
 	}
 
 	if (p_result != NULL && oprid(p_result) == operid)
-		nspname = NULL;
+		*needs_qual = false;
 	else
 	{
-		nspname = get_namespace_name_or_temp(operform->oprnamespace);
-		appendStringInfo(&buf, "OPERATOR(%s.", quote_identifier(nspname));
+		char	   *nspname = get_namespace_name_or_temp(operform->oprnamespace);
+
+		*needs_qual = true;
+		appendStringInfo(&buf, "%s.", quote_identifier(nspname));
 	}
 
 	appendStringInfoString(&buf, oprname);
-
-	if (nspname)
-		appendStringInfoChar(&buf, ')');
 
 	if (p_result != NULL)
 		ReleaseSysCache(p_result);

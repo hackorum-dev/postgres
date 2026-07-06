@@ -492,6 +492,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <node>	join_qual
 %type <jtype>	join_type
+%type <list>	opt_join_using_operators any_operator_list
 
 %type <list>	extract_list overlay_list position_list
 %type <list>	substr_list trim_list
@@ -14581,7 +14582,8 @@ joined_table:
 					{
 						 /* USING clause */
 						n->usingClause = linitial_node(List, castNode(List, $5));
-						n->join_using_alias = lsecond_node(Alias, castNode(List, $5));
+						n->usingOperators = lsecond_node(List, castNode(List, $5));
+						n->join_using_alias = lthird_node(Alias, castNode(List, $5));
 					}
 					else
 					{
@@ -14603,7 +14605,8 @@ joined_table:
 					{
 						/* USING clause */
 						n->usingClause = linitial_node(List, castNode(List, $4));
-						n->join_using_alias = lsecond_node(Alias, castNode(List, $4));
+						n->usingOperators = lsecond_node(List, castNode(List, $4));
+						n->join_using_alias = lthird_node(Alias, castNode(List, $4));
 					}
 					else
 					{
@@ -14671,10 +14674,13 @@ opt_alias_clause: alias_clause						{ $$ = $1; }
 		;
 
 /*
- * The alias clause after JOIN ... USING only accepts the AS ColId spelling,
- * per SQL standard.  (The grammar could parse the other variants, but they
- * don't seem to be useful, and it might lead to parser problems in the
- * future.)
+ * A JOIN ... USING clause is spelled
+ *		USING ( column list ) [ OPERATOR ( operator list ) ] [ AS alias ]
+ * The optional OPERATOR clause (opt_join_using_operators) sits between the
+ * column list and the alias.  The alias clause itself only accepts the AS
+ * ColId spelling, per SQL standard.  (The grammar could parse the other alias
+ * variants, but they don't seem to be useful, and it might lead to parser
+ * problems in the future.)
  */
 opt_alias_clause_for_join_using:
 			AS ColId
@@ -14732,24 +14738,38 @@ opt_outer: OUTER_P
 
 /* JOIN qualification clauses
  * Possibilities are:
- *	USING ( column list ) [ AS alias ]
+ *	USING ( column list ) [ OPERATOR ( operator list ) ] [ AS alias ]
  *						  allows only unqualified column names,
- *						  which must match between tables.
+ *						  which must match between tables.  The optional
+ *						  OPERATOR clause supplies a per-column, possibly
+ *						  schema-qualified equality operator name in place
+ *						  of the implicit "=".
  *	ON expr allows more general qualifications.
  *
- * We return USING as a two-element List (the first item being a sub-List
- * of the common column names, and the second either an Alias item or NULL).
+ * We return USING as a three-element List (the first item being a sub-List
+ * of the common column names, the second the sub-List of per-column operator
+ * names, or NIL, and the third either an Alias item or NULL).
  * An ON-expr will not be a List, so it can be told apart that way.
  */
 
-join_qual: USING '(' name_list ')' opt_alias_clause_for_join_using
+join_qual: USING '(' name_list ')' opt_join_using_operators opt_alias_clause_for_join_using
 				{
-					$$ = (Node *) list_make2($3, $5);
+					$$ = (Node *) list_make3($3, $5, $6);
 				}
 			| ON a_expr
 				{
 					$$ = $2;
 				}
+		;
+
+opt_join_using_operators:
+			OPERATOR '(' any_operator_list ')'		{ $$ = $3; }
+			| /*EMPTY*/								{ $$ = NIL; }
+		;
+
+any_operator_list:
+			any_operator							{ $$ = list_make1($1); }
+			| any_operator_list ',' any_operator	{ $$ = lappend($1, $3); }
 		;
 
 

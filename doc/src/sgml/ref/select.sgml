@@ -60,7 +60,7 @@ SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">expression</replac
     [ LATERAL ] ROWS FROM( <replaceable class="parameter">function_name</replaceable> ( [ <replaceable class="parameter">argument</replaceable> [, ...] ] ) [ AS ( <replaceable class="parameter">column_definition</replaceable> [, ...] ) ] [, ...] )
                 [ WITH ORDINALITY ] [ [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ] ]
     GRAPH_TABLE ( <replaceable class="parameter">graph_name</replaceable> MATCH <replaceable class="parameter">graph_pattern</replaceable> COLUMNS ( { <replaceable class="parameter">expression</replaceable> [ AS <replaceable class="parameter">name</replaceable> ] } [, ...] ) ) [ [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ] ]
-    <replaceable class="parameter">from_item</replaceable> <replaceable class="parameter">join_type</replaceable> <replaceable class="parameter">from_item</replaceable> { ON <replaceable class="parameter">join_condition</replaceable> | USING ( <replaceable class="parameter">join_column</replaceable> [, ...] ) [ AS <replaceable class="parameter">join_using_alias</replaceable> ] }
+    <replaceable class="parameter">from_item</replaceable> <replaceable class="parameter">join_type</replaceable> <replaceable class="parameter">from_item</replaceable> { ON <replaceable class="parameter">join_condition</replaceable> | USING ( <replaceable class="parameter">join_column</replaceable> [, ...] ) [ OPERATOR ( <replaceable class="parameter">operator</replaceable> [, ...] ) ] [ AS <replaceable class="parameter">join_using_alias</replaceable> ] }
     <replaceable class="parameter">from_item</replaceable> NATURAL <replaceable class="parameter">join_type</replaceable> <replaceable class="parameter">from_item</replaceable>
     <replaceable class="parameter">from_item</replaceable> CROSS JOIN <replaceable class="parameter">from_item</replaceable>
 
@@ -712,7 +712,7 @@ TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
      </varlistentry>
 
      <varlistentry>
-      <term><literal>USING ( <replaceable class="parameter">join_column</replaceable> [, ...] ) [ AS <replaceable class="parameter">join_using_alias</replaceable> ]</literal></term>
+      <term><literal>USING ( <replaceable class="parameter">join_column</replaceable> [, ...] ) [ OPERATOR ( <replaceable class="parameter">operator</replaceable> [, ...] ) ] [ AS <replaceable class="parameter">join_using_alias</replaceable> ]</literal></term>
       <listitem>
        <para>
         A clause of the form <literal>USING ( a, b, ... )</literal> is
@@ -721,6 +721,20 @@ TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
         <literal>USING</literal> implies that only one of each pair of
         equivalent columns will be included in the join output, not
         both.
+       </para>
+
+       <para>
+        Normally each column's comparison uses the <literal>=</literal>
+        operator found in the search path.  The optional
+        <literal>OPERATOR</literal> clause pins the equality operator used
+        for each join column instead: it must list exactly one
+        <replaceable class="parameter">operator</replaceable> per
+        <replaceable class="parameter">join_column</replaceable>, and each
+        operator name can be schema-qualified.
+        <application>pg_dump</application> emits this clause when the join
+        would not otherwise use the same operators, either because an operator
+        is not reachable by an unqualified name or because it is not
+        named <literal>=</literal>.
        </para>
 
        <para>

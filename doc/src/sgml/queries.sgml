@@ -370,6 +370,18 @@ FROM <replaceable>table_reference</replaceable> <optional>, <replaceable>table_r
        </para>
 
        <para>
+        By default each comparison uses the <literal>=</literal> operator
+        found in the search path.  An optional operator list, written as
+        <literal>USING (a, b) OPERATOR (<replaceable>operator</replaceable>,
+        <replaceable>operator</replaceable>)</literal>, pins the equality
+        operator used for each join column: one operator per column, and
+        each name can be schema-qualified.  <application>pg_dump</application>
+        emits this clause when the join would not otherwise use the same
+        operators, either because an operator is not reachable by an
+        unqualified name or because it is not named <literal>=</literal>.
+       </para>
+
+       <para>
         Furthermore, the output of <literal>JOIN USING</literal> suppresses
         redundant columns: there is no need to print both of the matched
         columns, since they must have equal values.  While <literal>JOIN
