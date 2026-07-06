@@ -1632,3 +1632,91 @@ WHERE  hstore_hash(v)::bit(32) != hstore_hash_extended(v, 0)::bit(32)
 -------+----------+-----------+-----------
 (0 rows)
 
+-- Views using NULLIF or IS [NOT] DISTINCT FROM on hstore values must be
+-- deparsed with a schema-qualified equality operator when hstore's "="
+-- operator is not reachable through the search_path, so that the dumped
+-- definition reloads correctly (e.g. with the restricted search_path pg_dump
+-- uses).
+CREATE SCHEMA hstore_view_test;
+CREATE TABLE hstore_view_test.t (id int, c1 hstore, c2 hstore);
+CREATE VIEW hstore_view_test.v_nullif AS
+  SELECT id, NULLIF(c1, c2) AS r FROM hstore_view_test.t;
+CREATE VIEW hstore_view_test.v_distinct AS
+  SELECT id, c1 IS DISTINCT FROM c2 AS r FROM hstore_view_test.t;
+CREATE VIEW hstore_view_test.v_notdist AS
+  SELECT id, c1 IS NOT DISTINCT FROM c2 AS r FROM hstore_view_test.t;
+-- With hstore's schema (public) on the search_path the normal, unqualified
+-- syntax is used.
+SET search_path = hstore_view_test, public;
+SELECT pg_get_viewdef('hstore_view_test.v_nullif'::regclass, true);
+     pg_get_viewdef      
+-------------------------
+  SELECT id,            +
+     NULLIF(c1, c2) AS r+
+    FROM t;
+(1 row)
+
+SELECT pg_get_viewdef('hstore_view_test.v_distinct'::regclass, true);
+         pg_get_viewdef          
+---------------------------------
+  SELECT id,                    +
+     c1 IS DISTINCT FROM c2 AS r+
+    FROM t;
+(1 row)
+
+SELECT pg_get_viewdef('hstore_view_test.v_notdist'::regclass, true);
+           pg_get_viewdef            
+-------------------------------------
+  SELECT id,                        +
+     NOT c1 IS DISTINCT FROM c2 AS r+
+    FROM t;
+(1 row)
+
+-- With public off the search_path the operator must be schema-qualified,
+-- using the dedicated OPERATOR() positions of these constructs.
+SET search_path = hstore_view_test;
+SELECT pg_get_viewdef('hstore_view_test.v_nullif'::regclass, true);
+                  pg_get_viewdef                  
+--------------------------------------------------
+  SELECT id,                                     +
+     NULLIF(c1, c2 USING OPERATOR(public.=)) AS r+
+    FROM t;
+(1 row)
+
+SELECT pg_get_viewdef('hstore_view_test.v_distinct'::regclass, true);
+                   pg_get_viewdef                   
+----------------------------------------------------
+  SELECT id,                                       +
+     c1 IS DISTINCT OPERATOR(public.=) FROM c2 AS r+
+    FROM t;
+(1 row)
+
+SELECT pg_get_viewdef('hstore_view_test.v_notdist'::regclass, true);
+                     pg_get_viewdef                     
+--------------------------------------------------------
+  SELECT id,                                           +
+     NOT c1 IS DISTINCT OPERATOR(public.=) FROM c2 AS r+
+    FROM t;
+(1 row)
+
+-- The deparsed definitions must reparse successfully under that same
+-- restricted search_path (this is what failed before).
+DO $$
+BEGIN
+  EXECUTE 'CREATE VIEW hstore_view_test.v_nullif_reload AS '
+          || pg_get_viewdef('hstore_view_test.v_nullif'::regclass);
+  EXECUTE 'CREATE VIEW hstore_view_test.v_distinct_reload AS '
+          || pg_get_viewdef('hstore_view_test.v_distinct'::regclass);
+  EXECUTE 'CREATE VIEW hstore_view_test.v_notdist_reload AS '
+          || pg_get_viewdef('hstore_view_test.v_notdist'::regclass);
+END $$;
+RESET search_path;
+DROP SCHEMA hstore_view_test CASCADE;
+NOTICE:  drop cascades to 7 other objects
+DETAIL:  drop cascades to table hstore_view_test.t
+drop cascades to view hstore_view_test.v_nullif
+drop cascades to view hstore_view_test.v_distinct
+drop cascades to view hstore_view_test.v_notdist
+drop cascades to view hstore_view_test.v_nullif_reload
+drop cascades to view hstore_view_test.v_distinct_reload
+drop cascades to view hstore_view_test.v_notdist_reload

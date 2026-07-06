@@ -1054,6 +1054,13 @@ transformAExprDistinct(ParseState *pstate, A_Expr *a)
 	 * If either input is an undecorated NULL literal, transform to a NullTest
 	 * on the other input. That's simpler to process than a full DistinctExpr,
 	 * and it avoids needing to require that the datatype have an = operator.
+	 *
+	 * Note that any operator given explicitly (a->name, e.g. via the
+	 * OPERATOR() decoration) is deliberately neither consulted nor validated
+	 * in this path: "x IS DISTINCT FROM NULL" is equivalent to "x IS NOT
+	 * NULL" regardless of the operator, so the result does not depend on it
+	 * and we do not require that any such operator even exist (see
+	 * make_nulltest_from_distinct).
 	 */
 	if (exprIsNullConstant(rexpr))
 		return make_nulltest_from_distinct(pstate, a, lexpr);

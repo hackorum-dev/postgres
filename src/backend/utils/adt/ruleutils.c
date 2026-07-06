@@ -9958,11 +9958,37 @@ get_rule_expr(Node *node, deparse_context *context,
 				List	   *args = expr->args;
 				Node	   *arg1 = (Node *) linitial(args);
 				Node	   *arg2 = (Node *) lsecond(args);
+				char	   *opname;
+				bool		decorate;
 
+				/*
+				 * IS DISTINCT FROM resolves its operator by the unqualified
+				 * name "=" when it is parsed back.  We must therefore show
+				 * the operator explicitly -- a IS DISTINCT OPERATOR(s.=) FROM
+				 * b -- whenever reparsing the bare form would not recover
+				 * this same operator.  There are two such cases: the operator
+				 * is not reachable by an unqualified lookup of its own name
+				 * (then generate_operator_name() already returns the
+				 * OPERATOR(...) form), or its name is something other than
+				 * "=" (then a bare construct would wrongly resolve "="; wrap
+				 * the bare name in OPERATOR(), which any_operator syntax
+				 * accepts).
+				 */
+				opname = generate_operator_name(expr->opno,
+												exprType(arg1),
+												exprType(arg2));
+				decorate = (strncmp(opname, "OPERATOR(", 9) == 0) ||
+					(strcmp(opname, "=") != 0);
 				if (!PRETTY_PAREN(context))
 					appendStringInfoChar(buf, '(');
 				get_rule_expr_paren(arg1, context, true, node);
-				appendStringInfoString(buf, " IS DISTINCT FROM ");
+				if (!decorate)
+					appendStringInfoString(buf, " IS DISTINCT FROM ");
+				else if (strncmp(opname, "OPERATOR(", 9) == 0)
+					appendStringInfo(buf, " IS DISTINCT %s FROM ", opname);
+				else
+					appendStringInfo(buf, " IS DISTINCT OPERATOR(%s) FROM ",
+									 opname);
 				get_rule_expr_paren(arg2, context, true, node);
 				if (!PRETTY_PAREN(context))
 					appendStringInfoChar(buf, ')');
@@ -9972,9 +9998,31 @@ get_rule_expr(Node *node, deparse_context *context,
 		case T_NullIfExpr:
 			{
 				NullIfExpr *nullifexpr = (NullIfExpr *) node;
+				Node	   *arg1 = (Node *) linitial(nullifexpr->args);
+				Node	   *arg2 = (Node *) lsecond(nullifexpr->args);
+				char	   *opname;
+				bool		decorate;
 
+				/*
+				 * As above, but NULLIF(a, b USING OPERATOR(s.=)): decorate
+				 * whenever the bare form would reparse to a different
+				 * operator, i.e. the operator is not reachable by an
+				 * unqualified lookup of its own name, or its name is not "=".
+				 */
+				opname = generate_operator_name(nullifexpr->opno,
+												exprType(arg1),
+												exprType(arg2));
+				decorate = (strncmp(opname, "OPERATOR(", 9) == 0) ||
+					(strcmp(opname, "=") != 0);
 				appendStringInfoString(buf, "NULLIF(");
 				get_rule_expr((Node *) nullifexpr->args, context, true);
+				if (decorate)
+				{
+					if (strncmp(opname, "OPERATOR(", 9) == 0)
+						appendStringInfo(buf, " USING %s", opname);
+					else
+						appendStringInfo(buf, " USING OPERATOR(%s)", opname);
+				}
 				appendStringInfoChar(buf, ')');
 			}
 			break;

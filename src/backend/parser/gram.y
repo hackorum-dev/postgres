@@ -16134,6 +16134,14 @@ a_expr:		c_expr									{ $$ = $1; }
 				{
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_NOT_DISTINCT, "=", $1, $6, @2);
 				}
+			| a_expr IS DISTINCT OPERATOR '(' any_operator ')' FROM a_expr	%prec IS
+				{
+					$$ = (Node *) makeA_Expr(AEXPR_DISTINCT, $6, $1, $9, @2);
+				}
+			| a_expr IS NOT DISTINCT OPERATOR '(' any_operator ')' FROM a_expr	%prec IS
+				{
+					$$ = (Node *) makeA_Expr(AEXPR_NOT_DISTINCT, $7, $1, $10, @2);
+				}
 			| a_expr BETWEEN opt_asymmetric b_expr AND a_expr		%prec BETWEEN
 				{
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_BETWEEN,
@@ -16396,6 +16404,14 @@ b_expr:		c_expr
 			| b_expr IS NOT DISTINCT FROM b_expr	%prec IS
 				{
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_NOT_DISTINCT, "=", $1, $6, @2);
+				}
+			| b_expr IS DISTINCT OPERATOR '(' any_operator ')' FROM b_expr	%prec IS
+				{
+					$$ = (Node *) makeA_Expr(AEXPR_DISTINCT, $6, $1, $9, @2);
+				}
+			| b_expr IS NOT DISTINCT OPERATOR '(' any_operator ')' FROM b_expr	%prec IS
+				{
+					$$ = (Node *) makeA_Expr(AEXPR_NOT_DISTINCT, $7, $1, $10, @2);
 				}
 			| b_expr IS DOCUMENT_P					%prec IS
 				{
@@ -16911,6 +16927,10 @@ func_expr_common_subexpr:
 			| NULLIF '(' a_expr ',' a_expr ')'
 				{
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_NULLIF, "=", $3, $5, @1);
+				}
+			| NULLIF '(' a_expr ',' a_expr USING OPERATOR '(' any_operator ')' ')'
+				{
+					$$ = (Node *) makeA_Expr(AEXPR_NULLIF, $9, $3, $5, @1);
 				}
 			| COALESCE '(' expr_list ')'
 				{

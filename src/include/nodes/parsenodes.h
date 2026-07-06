@@ -335,9 +335,12 @@ typedef enum A_Expr_Kind
 	AEXPR_OP,					/* normal operator */
 	AEXPR_OP_ANY,				/* scalar op ANY (array) */
 	AEXPR_OP_ALL,				/* scalar op ALL (array) */
-	AEXPR_DISTINCT,				/* IS DISTINCT FROM - name must be "=" */
-	AEXPR_NOT_DISTINCT,			/* IS NOT DISTINCT FROM - name must be "=" */
-	AEXPR_NULLIF,				/* NULLIF - name must be "=" */
+	AEXPR_DISTINCT,				/* IS DISTINCT FROM - name is "=" or an
+								 * explicitly given equality operator */
+	AEXPR_NOT_DISTINCT,			/* IS NOT DISTINCT FROM - name is "=" or an
+								 * explicitly given equality operator */
+	AEXPR_NULLIF,				/* NULLIF - name is "=" or an explicitly given
+								 * equality operator */
 	AEXPR_IN,					/* [NOT] IN - name must be "=" or "<>" */
 	AEXPR_LIKE,					/* [NOT] LIKE - name must be "~~" or "!~~" */
 	AEXPR_ILIKE,				/* [NOT] ILIKE - name must be "~~*" or "!~~*" */

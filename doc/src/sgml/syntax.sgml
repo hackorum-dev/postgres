@@ -1128,6 +1128,17 @@ SELECT 3 OPERATOR(pg_catalog.+) 4;
     which specific operator appears inside <literal>OPERATOR()</literal>.
    </para>
 
+   <para>
+    A few constructs that resolve an equality operator only by its bare
+    name accept the <literal>OPERATOR()</literal> decoration in a dedicated
+    syntactic position of their own, so that a schema-qualified operator, or
+    one whose name is not <literal>=</literal>, can be pinned there as
+    well: <literal>IS <optional> NOT </optional> DISTINCT
+    FROM</literal> (see <xref linkend="functions-comparison-pred-table"/>)
+    and <function>NULLIF</function>
+    (see <xref linkend="functions-nullif"/>).
+   </para>
+
    <note>
     <para>
      <productname>PostgreSQL</productname> versions before 9.5 used slightly different

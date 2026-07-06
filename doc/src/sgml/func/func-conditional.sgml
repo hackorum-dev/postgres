@@ -210,7 +210,7 @@ SELECT COALESCE(description, short_description, '(none)') ...
   </indexterm>
 
 <synopsis>
-<function>NULLIF</function>(<replaceable>value1</replaceable>, <replaceable>value2</replaceable>)
+<function>NULLIF</function>(<replaceable>value1</replaceable>, <replaceable>value2</replaceable> <optional> USING OPERATOR(<replaceable>operator</replaceable>) </optional>)
 </synopsis>
 
   <para>
@@ -233,6 +233,21 @@ SELECT NULLIF(value, '(none)') ...
    written <literal><replaceable>value1</replaceable>
    = <replaceable>value2</replaceable></literal>, so there must be a
    suitable <literal>=</literal> operator available.
+  </para>
+
+  <para>
+   That <literal>=</literal> operator is resolved by name through the current
+   search path.  To pin a specific operator instead &mdash; for example one
+   belonging to an extension whose schema is not on the search path &mdash;
+   give its name with the optional <literal>USING OPERATOR()</literal> clause
+   (see <xref linkend="sql-expressions-operator-calls"/> for
+   the <literal>OPERATOR()</literal> notation).  When a view or rule that
+   uses <function>NULLIF</function> is dumped,
+   <application>pg_dump</application> emits this clause automatically whenever
+   the bare name <literal>=</literal> would not resolve to the same operator
+   under the search path used at restore time, or the intended operator is not
+   named <literal>=</literal> at all, so that the definition reloads
+   unambiguously.
   </para>
 
   <para>

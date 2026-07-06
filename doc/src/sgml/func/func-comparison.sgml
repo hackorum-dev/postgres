@@ -202,7 +202,7 @@
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
-        <replaceable>datatype</replaceable> <literal>IS DISTINCT FROM</literal> <replaceable>datatype</replaceable>
+        <replaceable>datatype</replaceable> <literal>IS DISTINCT</literal> <optional> <literal>OPERATOR(</literal><replaceable>operator</replaceable><literal>)</literal> </optional> <literal>FROM</literal> <replaceable>datatype</replaceable>
         <returnvalue>boolean</returnvalue>
        </para>
        <para>
@@ -220,7 +220,7 @@
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
-        <replaceable>datatype</replaceable> <literal>IS NOT DISTINCT FROM</literal> <replaceable>datatype</replaceable>
+        <replaceable>datatype</replaceable> <literal>IS NOT DISTINCT</literal> <optional> <literal>OPERATOR(</literal><replaceable>operator</replaceable><literal>)</literal> </optional> <literal>FROM</literal> <replaceable>datatype</replaceable>
         <returnvalue>boolean</returnvalue>
        </para>
        <para>
@@ -450,8 +450,8 @@
     this behavior is not suitable, use the
     <literal>IS <optional> NOT </optional> DISTINCT FROM</literal> predicates:
 <synopsis>
-<replaceable>a</replaceable> IS DISTINCT FROM <replaceable>b</replaceable>
-<replaceable>a</replaceable> IS NOT DISTINCT FROM <replaceable>b</replaceable>
+<replaceable>a</replaceable> IS DISTINCT <optional> OPERATOR(<replaceable>operator</replaceable>) </optional> FROM <replaceable>b</replaceable>
+<replaceable>a</replaceable> IS NOT DISTINCT <optional> OPERATOR(<replaceable>operator</replaceable>) </optional> FROM <replaceable>b</replaceable>
 </synopsis>
     For non-null inputs, <literal>IS DISTINCT FROM</literal> is
     the same as the <literal>&lt;&gt;</literal> operator.  However, if both
@@ -461,6 +461,21 @@
     inputs, but it returns true when both inputs are null, and false when only
     one input is null. Thus, these predicates effectively act as though null
     were a normal data value, rather than <quote>unknown</quote>.
+   </para>
+
+   <para>
+    The equality test underlying these predicates uses the operator
+    named <literal>=</literal>, resolved by name through the current search
+    path.  To pin a specific operator instead &mdash; for example one belonging
+    to an extension whose schema is not on the search path &mdash; write its
+    name with the optional <literal>OPERATOR()</literal> decoration
+    (see <xref linkend="sql-expressions-operator-calls"/>).  When a view or
+    rule that uses these predicates is dumped,
+    <application>pg_dump</application> emits this decoration automatically
+    whenever the bare name <literal>=</literal> would not resolve to the same
+    operator under the search path used at restore time, or the intended
+    operator is not named <literal>=</literal> at all, so that the definition
+    reloads unambiguously.
    </para>
 
    <para>
