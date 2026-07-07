@@ -258,3 +258,34 @@ return d
 $$;
 
 SELECT test_broken_len_mapping();
+
+-- A custom sequence whose __len__() raises should be reported as an error,
+-- not silently produce an empty array
+CREATE FUNCTION test_broken_len_sequence() RETURNS jsonb
+LANGUAGE plpython3u
+TRANSFORM FOR TYPE jsonb
+AS $$
+class C:
+    def __getitem__(self, i):
+        return i
+    def __len__(self):
+        raise ValueError('len failed')
+return C()
+$$;
+
+SELECT test_broken_len_sequence();
+
+-- Likewise for a sequence-like object that has no __len__() at all
+CREATE FUNCTION test_no_len_sequence() RETURNS jsonb
+LANGUAGE plpython3u
+TRANSFORM FOR TYPE jsonb
+AS $$
+class C:
+    def __getitem__(self, i):
+        if i < 3:
+            return i
+        raise IndexError
+return C()
+$$;
+
+SELECT test_no_len_sequence();
