@@ -264,6 +264,28 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
   </para>
 
   <para>
+   As in a direct row-constructor comparison, the written
+   <replaceable>operator</replaceable>'s bare name is resolved independently
+   for each pair of columns.  You can instead pin the operator used for each
+   column by writing an explicit per-column operator list with the
+   <literal>OPERATOR()</literal> syntax (see
+   <xref linkend="sql-expressions-operator-calls"/>), giving one operator for
+   each column of the row:
+<synopsis>
+<replaceable>row_constructor</replaceable> OPERATOR(<replaceable>operator</replaceable> <optional>, <replaceable>operator</replaceable> ... </optional>) ANY (<replaceable>subquery</replaceable>)
+</synopsis>
+   The list must contain exactly one operator per column, and each operator
+   may be schema-qualified independently.
+   <productname>PostgreSQL</productname> itself falls back to this form when
+   deparsing a stored subquery comparison (for example in a view definition)
+   whose per-column operators cannot all be recovered from one written name.
+   In particular, a row-wise <token>IN</token> is displayed as
+   <literal>OPERATOR(...) ANY</literal> whenever a plain <token>IN</token>
+   would not resolve every column's equality operator to the operator
+   originally selected.
+  </para>
+
+  <para>
    See <xref linkend="row-wise-comparison"/> for details about the meaning
    of a row constructor comparison.
   </para>
@@ -320,6 +342,15 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
   </para>
 
   <para>
+   The <replaceable>operator</replaceable> can also be written as an explicit
+   per-column operator list, exactly as described for <token>ANY</token>
+   (see <xref linkend="functions-subquery-any-some"/>):
+<synopsis>
+<replaceable>row_constructor</replaceable> OPERATOR(<replaceable>operator</replaceable> <optional>, <replaceable>operator</replaceable> ... </optional>) ALL (<replaceable>subquery</replaceable>)
+</synopsis>
+  </para>
+
+  <para>
    See <xref linkend="row-wise-comparison"/> for details about the meaning
    of a row constructor comparison.
   </para>
@@ -345,6 +376,15 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
    the subquery cannot return more than one row.  (If it returns zero rows,
    the result is taken to be null.)  The left-hand side is evaluated and
    compared row-wise to the single subquery result row.
+  </para>
+
+  <para>
+   The <replaceable>operator</replaceable> can also be written as an explicit
+   per-column operator list, exactly as described for <token>ANY</token>
+   (see <xref linkend="functions-subquery-any-some"/>):
+<synopsis>
+<replaceable>row_constructor</replaceable> OPERATOR(<replaceable>operator</replaceable> <optional>, <replaceable>operator</replaceable> ... </optional>) (<replaceable>subquery</replaceable>)
+</synopsis>
   </para>
 
   <para>

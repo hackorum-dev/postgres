@@ -2021,17 +2021,6 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		ListCell   *l;
 
 		/*
-		 * TEMPORARY: reject a per-column operator list here.  A later patch
-		 * teaches this path (and ruleutils.c) to apply the n'th name to the
-		 * n'th column, at which point this check goes away.  Note this also
-		 * catches lists arriving via transformAExprOp's conversion of "row op
-		 * (subselect)" to a ROWCOMPARE sublink, which passes the A_Expr's
-		 * name through operName.
-		 */
-		reject_operator_name_list(pstate, sublink->operName,
-								  sublink->location);
-
-		/*
 		 * If the source was "x IN (select)", convert to "x = ANY (select)".
 		 */
 		if (sublink->operName == NIL)

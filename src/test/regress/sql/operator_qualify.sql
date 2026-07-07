@@ -259,7 +259,7 @@ SELECT ROW(1,2) OPERATOR(pg_catalog.=, alt_ops.=) ROW(1,2) AS t;
 SELECT ROW(1,2) OPERATOR(pg_catalog.<, pg_catalog.<, pg_catalog.<) ROW(2,1);
 -- Too few operators for the row width (two operators, three columns).
 SELECT ROW(1,2,3) OPERATOR(pg_catalog.<, pg_catalog.<) ROW(1,2,4);
--- A list is only meaningful for row (and, later, subquery) comparisons.
+-- A list is only meaningful for row and subquery comparisons.
 -- Scalar infix rejects it.
 SELECT 1 OPERATOR(pg_catalog.=, pg_catalog.=) 2;
 -- Scalar prefix rejects it too.
@@ -268,8 +268,6 @@ SELECT OPERATOR(pg_catalog.-, pg_catalog.-) 1;
 SELECT 1 OPERATOR(pg_catalog.=, pg_catalog.=) ANY (ARRAY[1,2]);
 -- ORDER BY ... USING rejects it.
 SELECT 1 FROM public.oq_t ORDER BY a USING OPERATOR(pg_catalog.<, pg_catalog.<);
--- Sublinks reject operator lists in this patch (a later patch enables them).
-SELECT (1, 2) OPERATOR(pg_catalog.=, pg_catalog.=) ANY (SELECT 1, 2);
 -- DDL definition items (here a CREATE OPERATOR commutator) take a single
 -- operator name.  define.c has no ParseState, so this error carries no position.
 CREATE OPERATOR ### (leftarg = int4, rightarg = int4, procedure = int4eq,
@@ -301,3 +299,128 @@ DROP VIEW oq_v_rowcmp_mixed_reload;
 -- NOTE: oq_v_rowcmp and oq_v_rowcmp_mixed are intentionally kept (like the other
 -- oq_v_* views) so the pg_upgrade suite dump/restores them and exercises the
 -- qualified deparse.
+
+--
+-- Subquery comparisons: ANY/ALL and row-op-subquery sublinks accept the
+-- per-column operator list too, and their deparse represents the combining
+-- operators exactly (in particular, IN is printed only when a plain IN
+-- would reparse to the very same per-column operators).
+--
+-- A multi-column comparison must find a btree interpretation for every
+-- combining operator.  A "<>" is interpreted through its negator's btree
+-- equality membership, so link alt_ops.<> to alt_ops.= (strategy 3 of the
+-- operator class above) instead of extending the class.
+CREATE OPERATOR alt_ops.<> (leftarg = int4, rightarg = int4, procedure = int4ne,
+                            negator = OPERATOR(alt_ops.=));
+
+-- The list syntax is directly acceptable in all three sublink forms, with
+-- mixed bare/qualified names.
+SELECT (1, 2) OPERATOR(pg_catalog.=, pg_catalog.=) ANY (SELECT 1, 2) AS t;
+SELECT (1, 2) OPERATOR(pg_catalog.=, alt_ops.=) ANY (SELECT 1, 2) AS t;
+SELECT (1, 2) OPERATOR(alt_ops.<>, pg_catalog.<>) ALL (SELECT 2, 1) AS t;
+-- "row op (subquery)" reaches the sublink through transformAExprOp's
+-- ROWCOMPARE conversion; the list flows through that path as well.
+SELECT (1, 2) OPERATOR(alt_ops.<, alt_ops.<) (SELECT 1, 3) AS t;
+-- A one-element list is the traditional single-operator form (invariance
+-- guard: this line is accepted before the list grammar lands).
+SELECT (1, 2) OPERATOR(pg_catalog.=) ANY (SELECT 1, 2) AS t;
+-- The operator count must match the row width.
+\set VERBOSITY terse
+SELECT (1, 2) OPERATOR(pg_catalog.=, pg_catalog.=, pg_catalog.=) ANY (SELECT 1, 2);
+\set VERBOSITY default
+
+-- Views built while alt_ops shadows pg_catalog: every combining operator
+-- resolves into alt_ops.
+SET search_path = alt_ops, pg_catalog;
+CREATE VIEW public.oq_v_any AS
+  SELECT (a, b) = ANY (SELECT a, b FROM public.oq_t) AS r FROM public.oq_t;
+CREATE VIEW public.oq_v_in AS
+  SELECT (a, b) IN (SELECT a, b FROM public.oq_t) AS r FROM public.oq_t;
+CREATE VIEW public.oq_v_ne_all AS
+  SELECT (a, b) <> ALL (SELECT a, b FROM public.oq_t) AS r FROM public.oq_t;
+CREATE VIEW public.oq_v_rowcmp_sub AS
+  SELECT (a, b) < (SELECT a, b FROM public.oq_t LIMIT 1) AS r FROM public.oq_t;
+-- Single-column comparison: one off-path operator, no list needed.
+CREATE VIEW public.oq_v_any_scalar AS
+  SELECT a = ANY (SELECT b FROM public.oq_t) AS r FROM public.oq_t;
+-- An IN whose per-column "=" lookups land in *different* schemas: column 1
+-- compares int8 (alt_ops has no int8 operator, pg_catalog.= applies) while
+-- column 2 finds alt_ops.=.  Before this patch the view deparsed back to a
+-- plain IN, so a dump/reload under the default search_path silently replaced
+-- column 2's operator with pg_catalog.= -- changed semantics, no error.
+CREATE VIEW public.oq_v_in_mixed AS
+  SELECT (a::int8, b) IN (SELECT a::int8, b FROM public.oq_t) AS r FROM public.oq_t;
+RESET search_path;
+-- A mixed explicit list, written under the default path.
+CREATE VIEW public.oq_v_any_mixed AS
+  SELECT (a, b) OPERATOR(pg_catalog.=, alt_ops.=) ANY (SELECT a, b FROM public.oq_t) AS r
+  FROM public.oq_t;
+-- Guards: IN over pg_catalog operators only must keep printing IN.
+CREATE VIEW public.oq_v_in_cat AS
+  SELECT (a, b) IN (SELECT a, b FROM public.oq_t) AS r FROM public.oq_t;
+CREATE VIEW public.oq_v_in_scalar_cat AS
+  SELECT a IN (SELECT b FROM public.oq_t) AS r FROM public.oq_t;
+
+-- Off the path, IN may not be printed: a plain IN would reparse every column
+-- with pg_catalog.=.  The honest form is the per-column operator list.
+SELECT pg_get_viewdef('oq_v_any'::regclass, true);
+SELECT pg_get_viewdef('oq_v_in'::regclass, true);
+SELECT pg_get_viewdef('oq_v_ne_all'::regclass, true);
+SELECT pg_get_viewdef('oq_v_rowcmp_sub'::regclass, true);
+-- The single-column form needs no list, just the qualified operator.
+SELECT pg_get_viewdef('oq_v_any_scalar'::regclass, true);
+-- The mixed views print a list of one bare and one qualified name.
+SELECT pg_get_viewdef('oq_v_in_mixed'::regclass, true);
+SELECT pg_get_viewdef('oq_v_any_mixed'::regclass, true);
+-- The pg_catalog-only views still print IN.
+SELECT pg_get_viewdef('oq_v_in_cat'::regclass, true);
+SELECT pg_get_viewdef('oq_v_in_scalar_cat'::regclass, true);
+-- With alt_ops reachable again, every column's operator resolves bare to "="
+-- and the readable IN comes back.
+SET search_path = alt_ops, pg_catalog, public;
+SELECT pg_get_viewdef('oq_v_in'::regclass, true);
+RESET search_path;
+
+-- The deparsed sublinks must reparse under a restricted search_path (the
+-- pg_dump scenario), pinning the same operator OIDs as the originals.
+BEGIN; SET LOCAL search_path = pg_catalog;
+DO $$ BEGIN
+  EXECUTE 'CREATE VIEW public.oq_v_any_reload AS ' || pg_get_viewdef('public.oq_v_any'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_in_reload AS ' || pg_get_viewdef('public.oq_v_in'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_ne_all_reload AS ' || pg_get_viewdef('public.oq_v_ne_all'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_rowcmp_sub_reload AS ' || pg_get_viewdef('public.oq_v_rowcmp_sub'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_any_scalar_reload AS ' || pg_get_viewdef('public.oq_v_any_scalar'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_in_mixed_reload AS ' || pg_get_viewdef('public.oq_v_in_mixed'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_any_mixed_reload AS ' || pg_get_viewdef('public.oq_v_any_mixed'::regclass);
+END $$; COMMIT;
+-- Every reloaded view that pinned alt_ops.= still pins it (the = and <>
+-- forms decompose into per-column OpExprs, serialized with ":opno").
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%:opno ' || 'alt_ops.=(int4,int4)'::regoperator::oid || ' %'
+  AND ev_class::regclass::text LIKE 'oq_v%reload'
+ORDER BY 1;
+-- The mixed views pin pg_catalog's "=" for column 1 *followed by* alt_ops.=
+-- for column 2: the combining OpExprs are serialized in column order.
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%:opno ' || 'pg_catalog.=(int8,int8)'::regoperator::oid
+                  || ' %:opno ' || 'alt_ops.=(int4,int4)'::regoperator::oid || ' %'
+  AND ev_class::regclass::text = 'oq_v_in_mixed_reload';
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%:opno ' || 'pg_catalog.=(int4,int4)'::regoperator::oid
+                  || ' %:opno ' || 'alt_ops.=(int4,int4)'::regoperator::oid || ' %'
+  AND ev_class::regclass::text = 'oq_v_any_mixed_reload';
+-- <> ALL keeps alt_ops.<> ...
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%:opno ' || 'alt_ops.<>(int4,int4)'::regoperator::oid || ' %'
+  AND ev_class::regclass::text = 'oq_v_ne_all_reload';
+-- ... and the row comparison keeps alt_ops.< for both columns (a sublink's
+-- RowCompareExpr serializes its operators as one oid list "(o ...)").
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%(o ' || 'alt_ops.<(int4,int4)'::regoperator::oid
+                   || ' ' || 'alt_ops.<(int4,int4)'::regoperator::oid || '%'
+  AND ev_class::regclass::text = 'oq_v_rowcmp_sub_reload';
+DROP VIEW oq_v_any_reload, oq_v_in_reload, oq_v_ne_all_reload,
+          oq_v_rowcmp_sub_reload, oq_v_any_scalar_reload,
+          oq_v_in_mixed_reload, oq_v_any_mixed_reload;
+-- NOTE: the new oq_v_* base views are intentionally kept (like the others)
+-- so the pg_upgrade suite dump/restores them and exercises the deparse.

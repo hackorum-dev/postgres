@@ -12526,7 +12526,11 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 {
 	StringInfo	buf = context->buf;
 	Query	   *query = (Query *) (sublink->subselect);
+	List	   *opnos = NIL;
+	List	   *ltypes = NIL;
+	List	   *rtypes = NIL;
 	char	   *opname = NULL;
+	bool		all_bare_eq = true;
 	bool		need_paren;
 
 	if (sublink->subLinkType == ARRAY_SUBLINK)
@@ -12535,11 +12539,11 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 		appendStringInfoChar(buf, '(');
 
 	/*
-	 * Note that we print the name of only the first operator, when there are
-	 * multiple combining operators.  This is an approximation that could go
-	 * wrong in various scenarios (operators in different schemas, renamed
-	 * operators, etc) but there is not a whole lot we can do about it, since
-	 * the syntax allows only one operator to be shown.
+	 * Dissect the testexpr into the per-column combining operators, printing
+	 * the lefthand expression(s) as we go.  Historically we printed only the
+	 * first operator's name for the whole comparison; now that the syntax
+	 * accepts an explicit per-column operator list we can represent the
+	 * combining operators exactly (see the emission rule below).
 	 */
 	if (sublink->testexpr)
 	{
@@ -12549,9 +12553,9 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 			OpExpr	   *opexpr = (OpExpr *) sublink->testexpr;
 
 			get_rule_expr(linitial(opexpr->args), context, true);
-			opname = generate_operator_name(opexpr->opno,
-											exprType(linitial(opexpr->args)),
-											exprType(lsecond(opexpr->args)));
+			opnos = lappend_oid(opnos, opexpr->opno);
+			ltypes = lappend_oid(ltypes, exprType(linitial(opexpr->args)));
+			rtypes = lappend_oid(rtypes, exprType(lsecond(opexpr->args)));
 		}
 		else if (IsA(sublink->testexpr, BoolExpr))
 		{
@@ -12563,14 +12567,14 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 			sep = "";
 			foreach(l, ((BoolExpr *) sublink->testexpr)->args)
 			{
-				OpExpr	   *opexpr = lfirst_node(OpExpr, l);
+				Node	   *arm = strip_implicit_coercions(lfirst(l));
+				OpExpr	   *opexpr = castNode(OpExpr, arm);
 
 				appendStringInfoString(buf, sep);
 				get_rule_expr(linitial(opexpr->args), context, true);
-				if (!opname)
-					opname = generate_operator_name(opexpr->opno,
-													exprType(linitial(opexpr->args)),
-													exprType(lsecond(opexpr->args)));
+				opnos = lappend_oid(opnos, opexpr->opno);
+				ltypes = lappend_oid(ltypes, exprType(linitial(opexpr->args)));
+				rtypes = lappend_oid(rtypes, exprType(lsecond(opexpr->args)));
 				sep = ", ";
 			}
 			appendStringInfoChar(buf, ')');
@@ -12579,17 +12583,90 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 		{
 			/* multiple combining operators, < <= > >= cases */
 			RowCompareExpr *rcexpr = (RowCompareExpr *) sublink->testexpr;
+			ListCell   *opno_cell;
+			ListCell   *larg_cell;
+			ListCell   *rarg_cell;
 
 			appendStringInfoChar(buf, '(');
 			get_rule_expr((Node *) rcexpr->largs, context, true);
-			opname = generate_operator_name(linitial_oid(rcexpr->opnos),
-											exprType(linitial(rcexpr->largs)),
-											exprType(linitial(rcexpr->rargs)));
+			forthree(opno_cell, rcexpr->opnos,
+					 larg_cell, rcexpr->largs,
+					 rarg_cell, rcexpr->rargs)
+			{
+				opnos = lappend_oid(opnos, lfirst_oid(opno_cell));
+				ltypes = lappend_oid(ltypes, exprType((Node *) lfirst(larg_cell)));
+				rtypes = lappend_oid(rtypes, exprType((Node *) lfirst(rarg_cell)));
+			}
 			appendStringInfoChar(buf, ')');
 		}
 		else
 			elog(ERROR, "unrecognized testexpr type: %d",
 				 (int) nodeTag(sublink->testexpr));
+	}
+
+	/*
+	 * Resolve the per-column operator names and decide how to spell the
+	 * combining operator(s).  The undecorated syntax writes one operator name
+	 * that reparses by resolving it independently for every column, so it is
+	 * honest only when a single bare name recovers each column's operator: no
+	 * column needs schema-qualification and every column shares the same
+	 * operator name.  In that case we print that shared name, as before.
+	 * Otherwise we emit an explicit per-column operator list, OPERATOR(op1,
+	 * op2, ...), which pins each column's operator independently.  (For one
+	 * column the list form degenerates to the familiar OPERATOR(op)
+	 * decoration.)  Likewise, ANY_SUBLINK is displayed as IN only if a plain
+	 * IN -- which compares with the bare name "=" -- would reparse to the
+	 * very same operators.
+	 */
+	if (opnos != NIL)
+	{
+		List	   *opnames = NIL;
+		bool		need_op_list = false;
+		char	   *firstname = NULL;
+		ListCell   *lc1;
+		ListCell   *lc2;
+		ListCell   *lc3;
+
+		forthree(lc1, opnos, lc2, ltypes, lc3, rtypes)
+		{
+			bool		needs_qual;
+			char	   *thisname;
+
+			thisname = generate_operator_name_extended(lfirst_oid(lc1),
+													   lfirst_oid(lc2),
+													   lfirst_oid(lc3),
+													   &needs_qual);
+			opnames = lappend(opnames, thisname);
+			if (needs_qual || strcmp(thisname, "=") != 0)
+				all_bare_eq = false;
+			if (firstname == NULL)
+				firstname = thisname;
+			else if (strcmp(firstname, thisname) != 0)
+				need_op_list = true;
+			if (needs_qual)
+				need_op_list = true;
+		}
+
+		if (need_op_list)
+		{
+			StringInfoData opbuf;
+			bool		first = true;
+
+			initStringInfo(&opbuf);
+			appendStringInfoString(&opbuf, "OPERATOR(");
+			foreach(lc1, opnames)
+			{
+				if (first)
+					first = false;
+				else
+					appendStringInfoString(&opbuf, ", ");
+				appendStringInfoString(&opbuf, (char *) lfirst(lc1));
+			}
+			appendStringInfoChar(&opbuf, ')');
+			opname = opbuf.data;
+		}
+		else
+			opname = firstname;
 	}
 
 	need_paren = true;
@@ -12601,7 +12678,7 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 			break;
 
 		case ANY_SUBLINK:
-			if (strcmp(opname, "=") == 0)	/* Represent = ANY as IN */
+			if (all_bare_eq)	/* Represent = ANY as IN */
 				appendStringInfoString(buf, " IN ");
 			else
 				appendStringInfo(buf, " %s ANY ", opname);

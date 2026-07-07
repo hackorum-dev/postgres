@@ -987,10 +987,12 @@ typedef struct BoolExpr
  * planning.
  *
  * NOTE: in the raw output of gram.y, testexpr contains just the raw form
- * of the lefthand expression (if any), and operName is the String name of
- * the combining operator.  Also, subselect is a raw parsetree.  During parse
- * analysis, the parser transforms testexpr into a complete boolean expression
- * that compares the lefthand value(s) to PARAM_SUBLINK nodes representing the
+ * of the lefthand expression (if any), and operName is the possibly-qualified
+ * name of the combining operator (a List of String), or a List of such names,
+ * one per column, when the comparison was written with an explicit per-column
+ * operator list.  Also, subselect is a raw parsetree.  During parse analysis,
+ * the parser transforms testexpr into a complete boolean expression that
+ * compares the lefthand value(s) to PARAM_SUBLINK nodes representing the
  * output columns of the subselect.  And subselect is transformed to a Query.
  * This is the representation seen in saved rules and in the rewriter.
  *
