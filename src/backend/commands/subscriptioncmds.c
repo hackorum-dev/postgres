@@ -1479,6 +1479,171 @@ AlterSubscription_refresh_seq(Subscription *sub, char *conninfo)
 }
 
 /*
+ * Resynchronize one or more already-subscribed tables.
+ *
+ * Truncates the local copy of each named table and resets its
+ * pg_subscription_rel state back to init so that, once the subscription is
+ * enabled, a tablesync worker re-copies just those tables.  This is
+ * subscriber-local and does not touch publication membership, so sibling
+ * subscribers are unaffected.
+ *
+ * Every named relation is validated before any of them is reset, so the
+ * command is all-or-nothing: a bad table name aborts the whole command
+ * without touching the others.  The tables are truncated together, which lets
+ * a set connected by foreign keys be re-seeded as a unit.
+ *
+ * The caller must ensure the subscription is disabled: with no apply worker
+ * running there is no cached relation state to invalidate and no race against
+ * a concurrently launched tablesync worker.
+ */
+static void
+AlterSubscription_refresh_table(Subscription *sub, List *relations)
+{
+	Relation	rel;
+	ListCell   *lc;
+	List	   *relids = NIL;
+	List	   *truncrels = NIL;
+	TruncateStmt *tstmt;
+
+	/*
+	 * Lock pg_subscription_rel with AccessExclusiveLock, matching
+	 * AlterSubscription_refresh(), so the relation states cannot change under
+	 * us for the duration of the command.
+	 */
+	rel = table_open(SubscriptionRelRelationId, AccessExclusiveLock);
+
+	/*
+	 * First pass: validate every named relation before changing anything, so
+	 * the command is all-or-nothing.  Duplicates in the list are ignored.
+	 */
+	foreach(lc, relations)
+	{
+		RangeVar   *rv = lfirst_node(RangeVar, lc);
+		Oid			relid;
+		char		relstate;
+		XLogRecPtr	relstatelsn;
+
+		relid = RangeVarGetRelid(rv, AccessShareLock, false);
+
+		if (get_rel_relkind(relid) == RELKIND_SEQUENCE)
+			ereport(ERROR,
+					errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					errmsg("cannot refresh sequence \"%s\" as a table",
+						   rv->relname),
+					errhint("Use ALTER SUBSCRIPTION ... REFRESH SEQUENCES instead."));
+
+		/* The relation must already be part of the subscription. */
+		relstate = GetSubscriptionRelState(sub->oid, relid, &relstatelsn);
+		if (relstate == SUBREL_STATE_UNKNOWN)
+			ereport(ERROR,
+					errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					errmsg("table \"%s\" is not part of the subscription \"%s\"",
+						   rv->relname, sub->name));
+
+		if (list_member_oid(relids, relid))
+			continue;
+
+		relids = lappend_oid(relids, relid);
+		truncrels = lappend(truncrels, rv);
+	}
+
+	/*
+	 * Second pass: stop any leftover tablesync worker for each relation and,
+	 * if it was caught mid-sync, clean up its origin and publisher slot.
+	 */
+	foreach_oid(relid, relids)
+	{
+		char		relstate;
+		XLogRecPtr	relstatelsn;
+
+		relstate = GetSubscriptionRelState(sub->oid, relid, &relstatelsn);
+
+		/* Stop any leftover tablesync worker for this relation. */
+		logicalrep_worker_stop(WORKERTYPE_TABLESYNC, sub->oid, relid);
+
+		/*
+		 * If the relation was caught mid-sync, drop its tablesync origin.  For
+		 * READY state the tablesync worker already dropped it, so nothing is
+		 * needed there.  Pass missing_ok = true as the origin may not exist
+		 * yet.
+		 */
+		if (relstate != SUBREL_STATE_READY)
+		{
+			char		originname[NAMEDATALEN];
+
+			ReplicationOriginNameForLogicalRep(sub->oid, relid, originname,
+											   sizeof(originname));
+			replorigin_drop_by_name(originname, true, false);
+		}
+
+		/*
+		 * Likewise drop the tablesync slot on the publisher for a mid-sync
+		 * relation.  READY/SYNCDONE relations have no such slot, so the common
+		 * case needs no publisher connection at all, and the connection string
+		 * is therefore only resolved here rather than up front.
+		 */
+		if (relstate != SUBREL_STATE_READY && relstate != SUBREL_STATE_SYNCDONE)
+		{
+			char		syncslotname[NAMEDATALEN] = {0};
+			char	   *err = NULL;
+			WalReceiverConn *wrconn;
+			bool		must_use_password;
+
+			load_file("libpqwalreceiver", false);
+
+			must_use_password = sub->passwordrequired && !sub->ownersuperuser;
+			wrconn = walrcv_connect(SubscriptionConninfo(sub), true, true,
+									must_use_password, sub->name, &err);
+			if (!wrconn)
+				ereport(ERROR,
+						errcode(ERRCODE_CONNECTION_FAILURE),
+						errmsg("subscription \"%s\" could not connect to the publisher: %s",
+							   sub->name, err));
+
+			PG_TRY();
+			{
+				ReplicationSlotNameForTablesync(sub->oid, relid, syncslotname,
+												sizeof(syncslotname));
+				ReplicationSlotDropAtPubNode(wrconn, syncslotname, true);
+			}
+			PG_FINALLY();
+			{
+				walrcv_disconnect(wrconn);
+			}
+			PG_END_TRY();
+		}
+	}
+
+	/*
+	 * Clear the local copies so the re-copy starts from empty.  Truncating the
+	 * tables together lets a set connected by foreign keys be re-seeded as a
+	 * unit.
+	 */
+	tstmt = makeNode(TruncateStmt);
+	tstmt->relations = truncrels;
+	tstmt->restart_seqs = false;
+	tstmt->behavior = DROP_RESTRICT;
+	ExecuteTruncate(tstmt);
+
+	/*
+	 * Reset each relation to init so that a tablesync worker re-copies it once
+	 * the subscription is enabled.
+	 */
+	foreach_oid(relid, relids)
+	{
+		UpdateSubscriptionRelState(sub->oid, relid, SUBREL_STATE_INIT,
+								   InvalidXLogRecPtr, false);
+
+		ereport(DEBUG1,
+				errmsg_internal("table \"%s.%s\" of subscription \"%s\" reset for resync",
+								get_namespace_name(get_rel_namespace(relid)),
+								get_rel_name(relid), sub->name));
+	}
+
+	table_close(rel, NoLock);
+}
+
+/*
  * Common checks for altering failover, two_phase, and retain_dead_tuples
  * options.
  */
@@ -2380,6 +2545,29 @@ AlterSubscription(ParseState *pstate, AlterSubscriptionStmt *stmt,
 								   "ALTER SUBSCRIPTION ... REFRESH SEQUENCES"));
 
 				AlterSubscription_refresh_seq(sub, orig_conninfo);
+
+				break;
+			}
+
+		case ALTER_SUBSCRIPTION_REFRESH_TABLE:
+			{
+				/*
+				 * The first version requires the subscription to be disabled.
+				 * With no apply worker running there is no cached relation
+				 * state to invalidate and no race against a concurrently
+				 * launched tablesync worker while we reset the relation.
+				 */
+				if (sub->enabled)
+					ereport(ERROR,
+							errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+							errmsg("%s is not allowed for enabled subscriptions",
+								   "ALTER SUBSCRIPTION ... REFRESH TABLE"),
+							errhint("Disable the subscription with ALTER SUBSCRIPTION ... DISABLE first."));
+
+				PreventInTransactionBlock(isTopLevel,
+										  "ALTER SUBSCRIPTION ... REFRESH TABLE");
+
+				AlterSubscription_refresh_table(sub, stmt->relations);
 
 				break;
 			}
