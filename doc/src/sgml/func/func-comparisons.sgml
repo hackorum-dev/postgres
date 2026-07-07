@@ -230,6 +230,25 @@ AND
   </para>
 
   <para>
+   Ordinarily a single <replaceable>operator</replaceable> is written and its
+   bare name is resolved independently for each pair of columns.  You can
+   instead pin the operator used for each column by writing an explicit
+   per-column operator list with the <literal>OPERATOR()</literal> syntax (see
+   <xref linkend="sql-expressions-operator-calls"/>), giving one operator for
+   each column of the rows:
+<synopsis>
+<replaceable>row_constructor</replaceable> OPERATOR(<replaceable>operator</replaceable> <optional>, <replaceable>operator</replaceable> ... </optional>) <replaceable>row_constructor</replaceable>
+</synopsis>
+   The list must contain exactly one operator per column, and each operator may
+   be schema-qualified independently.  This form is useful when a single
+   unqualified name would not resolve to the intended operator for every column;
+   <productname>PostgreSQL</productname> itself falls back to it when deparsing a
+   stored row comparison (for example in a view definition) whose per-column
+   operators cannot all be recovered from one written name.  The selected
+   operators must still meet the B-tree requirements described above.
+  </para>
+
+  <para>
    The <literal>=</literal> and <literal>&lt;&gt;</literal> cases work slightly differently
    from the others.  Two rows are considered
    equal if all their corresponding members are non-null and equal; the rows

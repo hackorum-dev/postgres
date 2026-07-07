@@ -10576,6 +10576,13 @@ get_rule_expr(Node *node, deparse_context *context,
 		case T_RowCompareExpr:
 			{
 				RowCompareExpr *rcexpr = (RowCompareExpr *) node;
+				ListCell   *opno_cell;
+				ListCell   *larg_cell;
+				ListCell   *rarg_cell;
+				List	   *opnames = NIL;
+				bool		need_op_list = false;
+				bool		all_same = true;
+				char	   *firstname = NULL;
 
 				/*
 				 * SQL99 allows "ROW" to be omitted when there is more than
@@ -10585,18 +10592,59 @@ get_rule_expr(Node *node, deparse_context *context,
 				 */
 				appendStringInfoString(buf, "(ROW(");
 				get_rule_list_toplevel(rcexpr->largs, context, true);
+				appendStringInfoString(buf, ") ");
 
 				/*
-				 * We assume that the name of the first-column operator will
-				 * do for all the rest too.  This is definitely open to
-				 * failure, eg if some but not all operators were renamed
-				 * since the construct was parsed, but there seems no way to
-				 * be perfect.
+				 * The undecorated syntax ROW(...) op ROW(...) reparses by
+				 * resolving one written operator name for every column pair,
+				 * so it is honest only when a single bare name recovers each
+				 * column's operator: no column needs schema-qualification and
+				 * every column shares the same operator name.  When that
+				 * holds we print that shared name, exactly as before.
+				 * Otherwise we emit the explicit per-column operator list
+				 * ROW(...) OPERATOR(op1, op2, ...) ROW(...), which pins each
+				 * column's operator independently rather than silently
+				 * letting one name (mis)resolve the rest.
 				 */
-				appendStringInfo(buf, ") %s ROW(",
-								 generate_operator_name(linitial_oid(rcexpr->opnos),
-														exprType(linitial(rcexpr->largs)),
-														exprType(linitial(rcexpr->rargs))));
+				forthree(opno_cell, rcexpr->opnos,
+						 larg_cell, rcexpr->largs,
+						 rarg_cell, rcexpr->rargs)
+				{
+					bool		needs_qual;
+					char	   *opname;
+
+					opname = generate_operator_name_extended(lfirst_oid(opno_cell),
+															 exprType((Node *) lfirst(larg_cell)),
+															 exprType((Node *) lfirst(rarg_cell)),
+															 &needs_qual);
+					opnames = lappend(opnames, opname);
+					if (needs_qual)
+						need_op_list = true;
+					if (firstname == NULL)
+						firstname = opname;
+					else if (strcmp(firstname, opname) != 0)
+						all_same = false;
+				}
+
+				if (need_op_list || !all_same)
+				{
+					ListCell   *lc;
+					bool		first = true;
+
+					appendStringInfoString(buf, "OPERATOR(");
+					foreach(lc, opnames)
+					{
+						if (first)
+							first = false;
+						else
+							appendStringInfoString(buf, ", ");
+						appendStringInfoString(buf, (char *) lfirst(lc));
+					}
+					appendStringInfoString(buf, ") ROW(");
+				}
+				else
+					appendStringInfo(buf, "%s ROW(", firstname);
+
 				get_rule_list_toplevel(rcexpr->rargs, context, true);
 				appendStringInfoString(buf, "))");
 			}

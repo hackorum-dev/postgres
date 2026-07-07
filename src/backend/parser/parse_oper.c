@@ -85,6 +85,28 @@ static void InvalidateOprCacheCallBack(Datum arg, SysCacheIdentifier cacheid,
 
 
 /*
+ * reject_operator_name_list
+ *		Reject a per-column operator name list where only a single name is
+ *		meaningful.
+ *
+ * The grammar's OPERATOR() decoration accepts a comma-separated list of
+ * operator names, but a per-column list (see OperatorNameIsList) is only
+ * meaningful for row and subquery comparisons.  Every other consumer of an
+ * operator name expects the traditional single (possibly-qualified) name and
+ * must call this before resolving it.  pstate and location are used only to
+ * report the error position; pass NULL/-1 if not available.
+ */
+void
+reject_operator_name_list(ParseState *pstate, List *opname, int location)
+{
+	if (OperatorNameIsList(opname))
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("a list of operators is only allowed in row and subquery comparisons"),
+				 parser_errposition(pstate, location)));
+}
+
+/*
  * LookupOperName
  *		Given a possibly-qualified operator name and exact input datatypes,
  *		look up the operator.

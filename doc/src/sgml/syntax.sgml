@@ -1136,7 +1136,10 @@ SELECT 3 OPERATOR(pg_catalog.+) 4;
     well: <literal>IS <optional> NOT </optional> DISTINCT
     FROM</literal> (see <xref linkend="functions-comparison-pred-table"/>)
     and <function>NULLIF</function>
-    (see <xref linkend="functions-nullif"/>).
+    (see <xref linkend="functions-nullif"/>).  A row-constructor comparison
+    goes a step further and accepts a comma-separated <emphasis>list</emphasis>
+    of operators inside <literal>OPERATOR()</literal>, one for each column of
+    the compared rows (see <xref linkend="row-wise-comparison"/>).
    </para>
 
    <note>

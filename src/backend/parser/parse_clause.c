@@ -3695,6 +3695,15 @@ addTargetToSortList(ParseState *pstate, TargetEntry *tle,
 			break;
 		case SORTBY_USING:
 			Assert(sortby->useOp != NIL);
+
+			/*
+			 * USING takes a single operator; a per-column operator list is
+			 * only meaningful in row and subquery comparisons.  We pass
+			 * location -1 because the errposition callback set up above
+			 * already points the error at the operator.
+			 */
+			reject_operator_name_list(pstate, sortby->useOp, -1);
+
 			sortop = compatible_oper_opid(sortby->useOp,
 										  restype,
 										  restype,

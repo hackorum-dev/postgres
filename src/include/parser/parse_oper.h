@@ -21,6 +21,26 @@
 
 typedef HeapTuple Operator;
 
+/*
+ * An operator name List as produced by the grammar's OPERATOR() decoration
+ * is EITHER a single possibly-qualified operator name (a List of Strings,
+ * the traditional shape) OR a list of such names, one per column of a row
+ * or subquery comparison (a List of such sub-lists).
+ *
+ * Does this operator name List carry multiple per-column names?
+ */
+#define OperatorNameIsList(opname) \
+	((opname) != NIL && IsA(linitial((List *) (opname)), List))
+
+/*
+ * Reject a per-column operator name list (see OperatorNameIsList) where only a
+ * single operator name is meaningful.  Pass a ParseState and location where
+ * available so the error can point at the offending decoration; callers with
+ * neither (e.g. DDL definition items) pass NULL and -1.
+ */
+extern void reject_operator_name_list(ParseState *pstate, List *opname,
+									  int location);
+
 /* Routines to look up an operator given name and exact input type(s) */
 extern Oid	LookupOperName(ParseState *pstate, List *opername,
 						   Oid oprleft, Oid oprright,

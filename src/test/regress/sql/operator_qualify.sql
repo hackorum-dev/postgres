@@ -195,3 +195,109 @@ WHERE ev_action LIKE '%:opno ' || 'pg_catalog.<(int4,int4)'::regoperator::oid ||
 ORDER BY 1;
 DROP VIEW oq_v_using_reload, oq_v_natural_reload, oq_v_using_mixed_reload,
           oq_v_using_lt_reload;
+
+--
+-- Row-comparison operator lists: the OPERATOR() decoration may carry a
+-- comma-separated LIST of operators, one per column of the compared rows.
+--
+-- make_row_comparison_op intersects the per-column operators' btree opfamily
+-- interpretations, so a bare "<" with no operator class fails outright with
+-- "could not determine interpretation of row comparison operator".  A btree
+-- operator class over int4 is therefore required.  alt_ops.= already exists
+-- above; add the rest of the strategy set and wrap them in a class.
+CREATE OPERATOR alt_ops.< (leftarg = int4, rightarg = int4, procedure = int4lt);
+CREATE OPERATOR alt_ops.<= (leftarg = int4, rightarg = int4, procedure = int4le);
+CREATE OPERATOR alt_ops.> (leftarg = int4, rightarg = int4, procedure = int4gt);
+CREATE OPERATOR alt_ops.>= (leftarg = int4, rightarg = int4, procedure = int4ge);
+CREATE OPERATOR CLASS alt_ops.int4_alt_ops FOR TYPE int4 USING btree AS
+    OPERATOR 1 alt_ops.<,
+    OPERATOR 2 alt_ops.<=,
+    OPERATOR 3 alt_ops.=,
+    OPERATOR 4 alt_ops.>=,
+    OPERATOR 5 alt_ops.>,
+    FUNCTION 1 btint4cmp(int4, int4);
+
+-- View built while alt_ops shadows pg_catalog: the row comparison resolves to
+-- alt_ops.< for both columns.
+SET search_path = alt_ops, pg_catalog;
+CREATE VIEW public.oq_v_rowcmp AS
+  SELECT ROW(a, b) < ROW(b, a) AS r FROM public.oq_t;
+RESET search_path;
+-- Off the path, both column operators must be qualified: the decoration is a
+-- LIST, one operator per column (ROW(...) OPERATOR(alt_ops.<, alt_ops.<) ROW(...)).
+SELECT pg_get_viewdef('oq_v_rowcmp'::regclass, true);
+-- With alt_ops reachable again, the plain single-operator syntax comes back.
+SET search_path = alt_ops, pg_catalog, public;
+SELECT pg_get_viewdef('oq_v_rowcmp'::regclass, true);
+RESET search_path;
+
+-- Mixed-schema deparse: build (under the default search_path) a view whose row
+-- comparison pins column 1 to alt_ops.< (off the path -> must be qualified) and
+-- column 2 to pg_catalog.< (reachable bare).  A single written name cannot
+-- recover two differently-spelled operators, so the deparse emits the per-column
+-- list OPERATOR(alt_ops.<, <): only column 1 is qualified, but the list form is
+-- forced because the two column names differ.
+CREATE VIEW public.oq_v_rowcmp_mixed AS
+  SELECT ROW(a, b) OPERATOR(alt_ops.<, pg_catalog.<) ROW(b, a) AS r
+  FROM public.oq_t;
+SELECT pg_get_viewdef('oq_v_rowcmp_mixed'::regclass, true);
+
+-- The list syntax is directly acceptable and N operators compare N columns.
+SELECT ROW(1,2) OPERATOR(pg_catalog.<, pg_catalog.<) ROW(2,1) AS t;
+-- Mixed-schema list: column 1 pinned to alt_ops.<, column 2 to pg_catalog.<.
+SELECT ROW(1,2) OPERATOR(alt_ops.<, pg_catalog.<) ROW(2,3) AS t;
+-- A one-element list is exactly today's single-operator syntax (invariance
+-- guard: this line is already accepted before the list grammar lands).
+SELECT ROW(1,2) OPERATOR(pg_catalog.<) ROW(1,3) AS t;
+-- A mixed-schema equality list is accepted; both columns compare equal (t).
+SELECT ROW(1,2) OPERATOR(pg_catalog.=, alt_ops.=) ROW(1,2) AS t;
+
+-- Errors below run under terse verbosity: one line per error, the message
+-- text plus "at character N" pinning the OPERATOR() decoration's position.
+\set VERBOSITY terse
+-- Too many operators for the row width.
+SELECT ROW(1,2) OPERATOR(pg_catalog.<, pg_catalog.<, pg_catalog.<) ROW(2,1);
+-- Too few operators for the row width (two operators, three columns).
+SELECT ROW(1,2,3) OPERATOR(pg_catalog.<, pg_catalog.<) ROW(1,2,4);
+-- A list is only meaningful for row (and, later, subquery) comparisons.
+-- Scalar infix rejects it.
+SELECT 1 OPERATOR(pg_catalog.=, pg_catalog.=) 2;
+-- Scalar prefix rejects it too.
+SELECT OPERATOR(pg_catalog.-, pg_catalog.-) 1;
+-- The array form of ANY/ALL resolves a single operator; a list is rejected.
+SELECT 1 OPERATOR(pg_catalog.=, pg_catalog.=) ANY (ARRAY[1,2]);
+-- ORDER BY ... USING rejects it.
+SELECT 1 FROM public.oq_t ORDER BY a USING OPERATOR(pg_catalog.<, pg_catalog.<);
+-- Sublinks reject operator lists in this patch (a later patch enables them).
+SELECT (1, 2) OPERATOR(pg_catalog.=, pg_catalog.=) ANY (SELECT 1, 2);
+-- DDL definition items (here a CREATE OPERATOR commutator) take a single
+-- operator name.  define.c has no ParseState, so this error carries no position.
+CREATE OPERATOR ### (leftarg = int4, rightarg = int4, procedure = int4eq,
+                     commutator = OPERATOR(pg_catalog.=, alt_ops.=));
+\set VERBOSITY default
+
+-- The deparsed row-comparison list must reparse under a restricted search_path
+-- (the pg_dump scenario), pinning the same operator OIDs as the original.
+BEGIN; SET LOCAL search_path = pg_catalog;
+DO $$ BEGIN
+  EXECUTE 'CREATE VIEW public.oq_v_rowcmp_reload AS ' || pg_get_viewdef('public.oq_v_rowcmp'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_rowcmp_mixed_reload AS ' || pg_get_viewdef('public.oq_v_rowcmp_mixed'::regclass);
+END $$; COMMIT;
+-- The reloaded view resolves alt_ops.< for both columns, same as the original.
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%(o ' || 'alt_ops.<(int4,int4)'::regoperator::oid || ' %'
+  AND ev_class::regclass::text = 'oq_v_rowcmp_reload'
+ORDER BY 1;
+-- The reloaded mixed view pins the per-column operators in order: alt_ops.< for
+-- column 1 immediately followed by pg_catalog's int4lt for column 2, exactly as
+-- the deparsed OPERATOR(alt_ops.<, <) list encodes them.
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%(o ' || 'alt_ops.<(int4,int4)'::regoperator::oid
+                             || ' ' || 'pg_catalog.<(int4,int4)'::regoperator::oid || '%'
+  AND ev_class::regclass::text = 'oq_v_rowcmp_mixed_reload'
+ORDER BY 1;
+DROP VIEW oq_v_rowcmp_reload;
+DROP VIEW oq_v_rowcmp_mixed_reload;
+-- NOTE: oq_v_rowcmp and oq_v_rowcmp_mixed are intentionally kept (like the other
+-- oq_v_* views) so the pg_upgrade suite dump/restores them and exercises the
+-- qualified deparse.

@@ -81,7 +81,7 @@ test: create_table_like alter_generic alter_operator misc async dbsize merge mis
 # collate.linux.utf8 and collate.icu.utf8 tests cannot be run in parallel with each other
 # psql depends on create_am
 # amutils depends on geometry, create_index_spgist, hash_index, brin
-test: rules psql psql_crosstab psql_pipeline amutils stats_ext collate.linux.utf8 collate.windows.win1252 operator_qualify
+test: rules psql psql_crosstab psql_pipeline amutils stats_ext collate.linux.utf8 collate.windows.win1252
 
 # ----------
 # Run these alone so they don't run out of parallel workers
@@ -101,8 +101,11 @@ test: publication subscription
 # ----------
 # Another group of parallel tests
 # select_views depends on create_view
+# operator_qualify creates a (non-default) btree operator class over int4,
+# which would show up in psql's "\dAf btree int4"; it must run after the psql
+# group, and no test in this group enumerates operators or operator classes.
 # ----------
-test: select_views portals_p2 foreign_key dependency guc bitmapops combocid tsearch tsdicts foreign_data window xmlmap functional_deps advisory_lock indirect_toast equivclass stats_rewrite graph_table
+test: select_views portals_p2 foreign_key dependency guc bitmapops combocid tsearch tsdicts foreign_data window xmlmap functional_deps advisory_lock indirect_toast equivclass stats_rewrite graph_table operator_qualify
 
 # ----------
 # Another group of parallel tests (JSON related)

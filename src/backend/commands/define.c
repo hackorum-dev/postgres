@@ -24,6 +24,7 @@
 #include "catalog/namespace.h"
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
+#include "parser/parse_oper.h"
 #include "parser/parse_type.h"
 #include "utils/fmgrprotos.h"
 
@@ -51,6 +52,8 @@ defGetString(DefElem *def)
 		case T_TypeName:
 			return TypeNameToString((TypeName *) def->arg);
 		case T_List:
+			/* must be an operator name */
+			reject_operator_name_list(NULL, (List *) def->arg, -1);
 			return NameListToString((List *) def->arg);
 		case T_A_Star:
 			return pstrdup("*");
@@ -247,6 +250,8 @@ defGetQualifiedName(DefElem *def)
 		case T_TypeName:
 			return ((TypeName *) def->arg)->names;
 		case T_List:
+			/* must be an operator name */
+			reject_operator_name_list(NULL, (List *) def->arg, -1);
 			return (List *) def->arg;
 		case T_String:
 			/* Allow quoted name for backwards compatibility */

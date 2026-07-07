@@ -17624,24 +17624,41 @@ MathOp:		 '+'									{ $$ = "+"; }
 			| '|'									{ $$ = "|"; }
 		;
 
+/*
+ * The OPERATOR() decoration accepts a comma-separated list of operator
+ * names.  A one-element list is collapsed to the traditional single
+ * possibly-qualified name (a List of Strings); multiple names are kept
+ * as a List of such sub-lists, which parse analysis accepts only where a
+ * per-column operator list is meaningful (row and subquery comparisons)
+ * and rejects everywhere else.  See OperatorNameIsList in parse_oper.h.
+ */
 qual_Op:	Op
 					{ $$ = list_make1(makeString($1)); }
-			| OPERATOR '(' any_operator ')'
-					{ $$ = $3; }
+			| OPERATOR '(' any_operator_list ')'
+					{
+						$$ = (list_length($3) == 1) ?
+							(List *) linitial($3) : $3;
+					}
 		;
 
 qual_all_Op:
 			all_Op
 					{ $$ = list_make1(makeString($1)); }
-			| OPERATOR '(' any_operator ')'
-					{ $$ = $3; }
+			| OPERATOR '(' any_operator_list ')'
+					{
+						$$ = (list_length($3) == 1) ?
+							(List *) linitial($3) : $3;
+					}
 		;
 
 subquery_Op:
 			all_Op
 					{ $$ = list_make1(makeString($1)); }
-			| OPERATOR '(' any_operator ')'
-					{ $$ = $3; }
+			| OPERATOR '(' any_operator_list ')'
+					{
+						$$ = (list_length($3) == 1) ?
+							(List *) linitial($3) : $3;
+					}
 			| LIKE
 					{ $$ = list_make1(makeString("~~")); }
 			| NOT_LA LIKE

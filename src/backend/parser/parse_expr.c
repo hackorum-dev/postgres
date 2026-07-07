@@ -1001,6 +1001,13 @@ transformAExprOp(ParseState *pstate, A_Expr *a)
 		/* Ordinary scalar operator */
 		Node	   *last_srf = pstate->p_last_srf;
 
+		/*
+		 * A per-column operator list only makes sense for the row-comparison
+		 * cases above (this also covers prefix operators, which carry no row
+		 * comparison semantics at all).
+		 */
+		reject_operator_name_list(pstate, a->name, a->location);
+
 		lexpr = transformExprRecurse(pstate, lexpr);
 		rexpr = transformExprRecurse(pstate, rexpr);
 
@@ -1018,8 +1025,17 @@ transformAExprOp(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprOpAny(ParseState *pstate, A_Expr *a)
 {
-	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
-	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
+	Node	   *lexpr;
+	Node	   *rexpr;
+
+	/*
+	 * The grammar's subquery_Op admits an operator list, but ANY/ALL over an
+	 * array compares with a single operator.
+	 */
+	reject_operator_name_list(pstate, a->name, a->location);
+
+	lexpr = transformExprRecurse(pstate, a->lexpr);
+	rexpr = transformExprRecurse(pstate, a->rexpr);
 
 	return (Node *) make_scalar_array_op(pstate,
 										 a->name,
@@ -1032,8 +1048,14 @@ transformAExprOpAny(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprOpAll(ParseState *pstate, A_Expr *a)
 {
-	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
-	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
+	Node	   *lexpr;
+	Node	   *rexpr;
+
+	/* As in transformAExprOpAny */
+	reject_operator_name_list(pstate, a->name, a->location);
+
+	lexpr = transformExprRecurse(pstate, a->lexpr);
+	rexpr = transformExprRecurse(pstate, a->rexpr);
 
 	return (Node *) make_scalar_array_op(pstate,
 										 a->name,
@@ -1049,6 +1071,13 @@ transformAExprDistinct(ParseState *pstate, A_Expr *a)
 	Node	   *lexpr = a->lexpr;
 	Node	   *rexpr = a->rexpr;
 	Node	   *result;
+
+	/*
+	 * IS [NOT] DISTINCT FROM takes a single operator even in the row case;
+	 * its OPERATOR() decoration is grammatically restricted to one name, so
+	 * this is merely defensive.
+	 */
+	reject_operator_name_list(pstate, a->name, a->location);
 
 	/*
 	 * If either input is an undecorated NULL literal, transform to a NullTest
@@ -1104,9 +1133,18 @@ transformAExprDistinct(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprNullIf(ParseState *pstate, A_Expr *a)
 {
-	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
-	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
+	Node	   *lexpr;
+	Node	   *rexpr;
 	OpExpr	   *result;
+
+	/*
+	 * NULLIF takes a single operator; its OPERATOR() decoration is
+	 * grammatically restricted to one name, so this is merely defensive.
+	 */
+	reject_operator_name_list(pstate, a->name, a->location);
+
+	lexpr = transformExprRecurse(pstate, a->lexpr);
+	rexpr = transformExprRecurse(pstate, a->rexpr);
 
 	result = (OpExpr *) make_op(pstate,
 								a->name,
@@ -1155,6 +1193,14 @@ transformAExprIn(ParseState *pstate, A_Expr *a)
 	bool		useOr;
 	ListCell   *l;
 	bool		has_rvars = false;
+
+	/*
+	 * IN always compares with the implicit "=" (or "<>" for NOT IN); there is
+	 * no OPERATOR() decoration for it in the grammar, so an operator list
+	 * cannot appear here (not even for row-valued IN lists).  This is merely
+	 * defensive, and also protects the strVal() just below.
+	 */
+	reject_operator_name_list(pstate, a->name, a->location);
 
 	/*
 	 * If the operator is <>, combine with AND not OR.
@@ -1973,6 +2019,17 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		List	   *left_list;
 		List	   *right_list;
 		ListCell   *l;
+
+		/*
+		 * TEMPORARY: reject a per-column operator list here.  A later patch
+		 * teaches this path (and ruleutils.c) to apply the n'th name to the
+		 * n'th column, at which point this check goes away.  Note this also
+		 * catches lists arriving via transformAExprOp's conversion of "row op
+		 * (subselect)" to a ROWCOMPARE sublink, which passes the A_Expr's
+		 * name through operName.
+		 */
+		reject_operator_name_list(pstate, sublink->operName,
+								  sublink->location);
 
 		/*
 		 * If the source was "x IN (select)", convert to "x = ANY (select)".
@@ -2858,6 +2915,10 @@ transformCollateClause(ParseState *pstate, CollateClause *c)
  * As with coerce_type, pstate may be NULL if no special unknown-Param
  * processing is wanted.
  *
+ * opname is either a single possibly-qualified operator name, applied to
+ * every column pair, or a list of such names, one per column pair (see
+ * OperatorNameIsList).
+ *
  * The output may be a single OpExpr, an AND or OR combination of OpExprs,
  * or a RowCompareExpr.  In all cases it is guaranteed to return boolean.
  * The AND, OR, and RowCompareExpr cases further imply things about the
@@ -2876,8 +2937,10 @@ make_row_comparison_op(ParseState *pstate, List *opname,
 			   *r;
 	List	  **opinfo_lists;
 	Bitmapset  *cmptypes;
+	bool		multi = OperatorNameIsList(opname);
 	int			nopers;
 	int			i;
+	int			badpos;
 
 	nopers = list_length(largs);
 	if (nopers != list_length(rargs))
@@ -2897,17 +2960,33 @@ make_row_comparison_op(ParseState *pstate, List *opname,
 				 parser_errposition(pstate, location)));
 
 	/*
+	 * A per-column operator list must supply exactly one operator per column.
+	 */
+	if (multi && list_length(opname) != nopers)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("number of operators (%d) does not match number of columns (%d)",
+						list_length(opname), nopers),
+				 parser_errposition(pstate, location)));
+
+	/*
 	 * Identify all the pairwise operators, using make_op so that behavior is
 	 * the same as in the simple scalar case.
 	 */
 	opexprs = NIL;
+	i = 0;
 	forboth(l, largs, r, rargs)
 	{
 		Node	   *larg = (Node *) lfirst(l);
 		Node	   *rarg = (Node *) lfirst(r);
+		List	   *this_opname;
 		OpExpr	   *cmp;
 
-		cmp = castNode(OpExpr, make_op(pstate, opname, larg, rarg,
+		/* With an operator list, the n'th name compares the n'th column */
+		this_opname = multi ? (List *) list_nth(opname, i) : opname;
+		i++;
+
+		cmp = castNode(OpExpr, make_op(pstate, this_opname, larg, rarg,
 									   pstate->p_last_srf, location));
 
 		/*
@@ -2947,6 +3026,7 @@ make_row_comparison_op(ParseState *pstate, List *opname,
 	opinfo_lists = palloc_array(List *, nopers);
 	cmptypes = NULL;
 	i = 0;
+	badpos = -1;
 	foreach(l, opexprs)
 	{
 		Oid			opno = ((OpExpr *) lfirst(l))->opno;
@@ -2970,6 +3050,14 @@ make_row_comparison_op(ParseState *pstate, List *opname,
 			cmptypes = this_cmptypes;
 		else
 			cmptypes = bms_int_members(cmptypes, this_cmptypes);
+
+		/*
+		 * Remember the first column at which the running intersection went
+		 * empty; if we fail below, that column's operator is the one to
+		 * complain about.
+		 */
+		if (badpos < 0 && bms_is_empty(cmptypes))
+			badpos = i;
 		i++;
 	}
 
@@ -2981,11 +3069,15 @@ make_row_comparison_op(ParseState *pstate, List *opname,
 	i = bms_next_member(cmptypes, -1);
 	if (i < 0)
 	{
+		List	   *bad_opname;
+
 		/* No common interpretation, so fail */
+		Assert(!multi || badpos >= 0);
+		bad_opname = multi ? (List *) list_nth(opname, badpos) : opname;
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("could not determine interpretation of row comparison operator %s",
-						strVal(llast(opname))),
+						strVal(llast(bad_opname))),
 				 errhint("Row comparison operators must be associated with btree operator families."),
 				 parser_errposition(pstate, location)));
 	}
@@ -3023,12 +3115,17 @@ make_row_comparison_op(ParseState *pstate, List *opname,
 		if (OidIsValid(opfamily))
 			opfamilies = lappend_oid(opfamilies, opfamily);
 		else					/* should not happen */
+		{
+			List	   *this_opname;
+
+			this_opname = multi ? (List *) list_nth(opname, i) : opname;
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("could not determine interpretation of row comparison operator %s",
-							strVal(llast(opname))),
+							strVal(llast(this_opname))),
 					 errdetail("There are multiple equally-plausible candidates."),
 					 parser_errposition(pstate, location)));
+		}
 	}
 
 	/*
