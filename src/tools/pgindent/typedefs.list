@@ -608,6 +608,7 @@ CurrentOfExpr
 CustomExecMethods
 CustomOutPtrType
 CustomPath
+CustomPathMethods
 CustomScan
 CustomScanMethods
 CustomScanState
