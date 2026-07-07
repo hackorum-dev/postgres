@@ -341,6 +341,8 @@ PLySequence_ToJsonbValue(PyObject *obj, JsonbInState *jsonb_state)
 	PyObject   *volatile value = NULL;
 
 	pcount = PySequence_Size(obj);
+	if (pcount < 0)
+		PLy_elog(ERROR, "could not get size of Python sequence");
 
 	pushJsonbValue(jsonb_state, WJB_BEGIN_ARRAY, NULL);
 
