@@ -1340,6 +1340,12 @@ typedef struct CaseExpr
 typedef struct CaseWhen
 {
 	Expr		xpr;
+
+	/*
+	 * possibly-qualified operator name given with USING OPERATOR(), or NIL;
+	 * consumed by parse analysis, always NIL in analyzed trees
+	 */
+	List	   *opname pg_node_attr(query_jumble_ignore);
 	Expr	   *expr;			/* condition expression */
 	Expr	   *result;			/* substitution result */
 	ParseLoc	location;		/* token location, or -1 if unknown */

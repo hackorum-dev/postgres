@@ -17900,6 +17900,16 @@ when_clause:
 					w->location = @1;
 					$$ = (Node *) w;
 				}
+			| WHEN a_expr USING OPERATOR '(' any_operator ')' THEN a_expr
+				{
+					CaseWhen   *w = makeNode(CaseWhen);
+
+					w->opname = $6;
+					w->expr = (Expr *) $2;
+					w->result = (Expr *) $9;
+					w->location = @1;
+					$$ = (Node *) w;
+				}
 		;
 
 case_default:

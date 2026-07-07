@@ -1141,7 +1141,11 @@ SELECT 3 OPERATOR(pg_catalog.+) 4;
     of operators inside <literal>OPERATOR()</literal>, one for each column of
     the compared rows (see <xref linkend="row-wise-comparison"/>); this
     includes row-constructor comparisons against a subquery
-    (see <xref linkend="functions-subquery"/>).
+    (see <xref linkend="functions-subquery"/>).  The simple
+    <token>CASE</token> form accepts the decoration on each
+    <token>WHEN</token> clause with <literal>USING OPERATOR()</literal>,
+    pinning the comparison operator for that arm
+    (see <xref linkend="functions-case"/>).
    </para>
 
    <note>

@@ -1766,12 +1766,25 @@ transformCaseExpr(ParseState *pstate, CaseExpr *c)
 		warg = (Node *) w->expr;
 		if (placeholder)
 		{
-			/* shorthand form was specified, so expand... */
-			warg = (Node *) makeSimpleA_Expr(AEXPR_OP, "=",
-											 (Node *) placeholder,
-											 warg,
-											 w->location);
+			/*
+			 * Shorthand form was specified, so expand it into an equality
+			 * comparison between the CASE test expression and the WHEN value.
+			 * The comparison operator defaults to "=", but the user may pin a
+			 * specific (possibly schema-qualified) operator with the optional
+			 * USING OPERATOR() clause.
+			 */
+			warg = (Node *) makeA_Expr(AEXPR_OP,
+									   w->opname ? w->opname :
+									   list_make1(makeString("=")),
+									   (Node *) placeholder, warg,
+									   w->location);
 		}
+		else if (w->opname != NIL)
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("CASE/WHEN ... USING OPERATOR requires a CASE test expression"),
+					 parser_errposition(pstate, w->location)));
+		neww->opname = NIL;		/* raw-only; keep analyzed trees clean */
 		neww->expr = (Expr *) transformExprRecurse(pstate, warg);
 
 		neww->expr = (Expr *) coerce_to_boolean(pstate,

@@ -99,7 +99,7 @@ SELECT a,
 
 <synopsis>
 CASE <replaceable>expression</replaceable>
-    WHEN <replaceable>value</replaceable> THEN <replaceable>result</replaceable>
+    WHEN <replaceable>value</replaceable> <optional> USING OPERATOR(<replaceable>operator</replaceable>) </optional> THEN <replaceable>result</replaceable>
     <optional>WHEN ...</optional>
     <optional>ELSE <replaceable>result</replaceable></optional>
 END
@@ -112,6 +112,26 @@ END
    no match is found, the <replaceable>result</replaceable> of the
    <token>ELSE</token> clause (or a null value) is returned.  This is similar
    to the <function>switch</function> statement in C.
+  </para>
+
+  <para>
+   Each comparison is performed exactly as if you had
+   written <literal><replaceable>expression</replaceable>
+   = <replaceable>value</replaceable></literal>, so a
+   suitable <literal>=</literal> operator must be available, and it is
+   resolved by name through the current search path independently for each
+   <token>WHEN</token> clause.  To pin a specific operator for a
+   given clause instead &mdash; for example one belonging to an extension whose
+   schema is not on the search path &mdash; give its name with the
+   optional <literal>USING OPERATOR()</literal> clause (see
+   <xref linkend="sql-expressions-operator-calls"/> for
+   the <literal>OPERATOR()</literal> notation).  When a view or rule that uses
+   the simple <token>CASE</token> form is dumped,
+   <application>pg_dump</application> emits this clause automatically for any
+   clause whose bare name <literal>=</literal> would not resolve to the same
+   operator under the search path used at restore time, or whose intended
+   operator is not named <literal>=</literal> at all, so that the definition
+   reloads unambiguously.
   </para>
 
    <para>

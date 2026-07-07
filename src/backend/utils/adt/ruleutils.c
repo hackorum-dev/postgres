@@ -10433,6 +10433,7 @@ get_rule_expr(Node *node, deparse_context *context,
 				{
 					CaseWhen   *when = (CaseWhen *) lfirst(temp);
 					Node	   *w = (Node *) when->expr;
+					OpExpr	   *usingop = NULL;
 
 					if (caseexpr->arg)
 					{
@@ -10455,7 +10456,10 @@ get_rule_expr(Node *node, deparse_context *context,
 							if (list_length(args) == 2 &&
 								IsA(strip_implicit_coercions(linitial(args)),
 									CaseTestExpr))
+							{
+								usingop = (OpExpr *) w;
 								w = (Node *) lsecond(args);
+							}
 						}
 					}
 
@@ -10464,6 +10468,31 @@ get_rule_expr(Node *node, deparse_context *context,
 					appendContextKeyword(context, "WHEN ",
 										 0, 0, 0);
 					get_rule_expr(w, context, false);
+
+					/*
+					 * If we recognized the implicit-equality WHEN form, the
+					 * comparison operator was resolved from the bare name "="
+					 * against the CASE test expression and the WHEN value.  A
+					 * bare "WHEN value" reparses by resolving "=" again, so
+					 * we must emit an explicit USING OPERATOR() clause
+					 * whenever that would not recover the same operator: i.e.
+					 * the operator is not reachable by an unqualified lookup
+					 * of its own name (then it appears schema-qualified), or
+					 * it is named something other than "=".
+					 */
+					if (usingop)
+					{
+						bool		needs_qual;
+						char	   *opname;
+
+						opname = generate_operator_name_extended(usingop->opno,
+																 exprType(linitial(usingop->args)),
+																 exprType(lsecond(usingop->args)),
+																 &needs_qual);
+						if (needs_qual || strcmp(opname, "=") != 0)
+							appendStringInfo(buf, " USING OPERATOR(%s)", opname);
+					}
+
 					appendStringInfoString(buf, " THEN ");
 					get_rule_expr((Node *) when->result, context, true);
 				}

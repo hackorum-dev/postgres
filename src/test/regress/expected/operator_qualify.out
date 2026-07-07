@@ -752,3 +752,142 @@ DROP VIEW oq_v_any_reload, oq_v_in_reload, oq_v_ne_all_reload,
           oq_v_in_mixed_reload, oq_v_any_mixed_reload;
 -- NOTE: the new oq_v_* base views are intentionally kept (like the others)
 -- so the pg_upgrade suite dump/restores them and exercises the deparse.
+--
+-- Simple CASE: each "CASE x WHEN y" arm resolves its own "=" operator by
+-- unqualified name, independently per WHEN clause.  The comparison operator
+-- can be pinned per arm with USING OPERATOR(); the deparse decorates only the
+-- arms whose bare "=" would not recover the same operator at restore time.
+--
+-- Built while alt_ops shadows pg_catalog: the implicit "=" resolves alt_ops.=.
+SET search_path = alt_ops, pg_catalog;
+CREATE VIEW public.oq_v_case AS
+  SELECT CASE a WHEN b THEN 'eq' ELSE 'ne' END AS r FROM public.oq_t;
+RESET search_path;
+-- Off the path, the arm's operator must be qualified: the bare form would
+-- reparse "=" (pg_catalog.=), a different operator.
+SELECT pg_get_viewdef('oq_v_case'::regclass, true);
+                        pg_get_viewdef                        
+--------------------------------------------------------------
+  SELECT                                                     +
+         CASE a                                              +
+             WHEN b USING OPERATOR(alt_ops.=) THEN 'eq'::text+
+             ELSE 'ne'::text                                 +
+         END AS r                                            +
+    FROM oq_t;
+(1 row)
+
+-- With alt_ops reachable again, the plain simple-CASE syntax comes back.
+SET search_path = alt_ops, pg_catalog, public;
+SELECT pg_get_viewdef('oq_v_case'::regclass, true);
+           pg_get_viewdef           
+------------------------------------
+  SELECT                           +
+         CASE a                    +
+             WHEN b THEN 'eq'::text+
+             ELSE 'ne'::text       +
+         END AS r                  +
+    FROM oq_t;
+(1 row)
+
+RESET search_path;
+-- A bare-resolvable operator whose name is not "=" must still be decorated:
+-- reparsing "WHEN b" would resolve "=", not this operator.  pg_catalog.< is on
+-- the default search_path, so its name prints unqualified, but it is wrapped in
+-- OPERATOR() so the reparsed semantics stay identical.
+CREATE VIEW public.oq_v_case_lt AS
+  SELECT CASE a WHEN b USING OPERATOR(<) THEN 'lt' ELSE 'ge' END AS r
+  FROM public.oq_t;
+SELECT pg_get_viewdef('oq_v_case_lt'::regclass, true);
+                    pg_get_viewdef                    
+------------------------------------------------------
+  SELECT                                             +
+         CASE a                                      +
+             WHEN b USING OPERATOR(<) THEN 'lt'::text+
+             ELSE 'ge'::text                         +
+         END AS r                                    +
+    FROM oq_t;
+(1 row)
+
+-- Per-arm operators may differ within one CASE.  Built under the alt_ops path:
+-- the first arm's implicit "=" resolves alt_ops.= (off the default path -> must
+-- be qualified), while the second arm pins pg_catalog.= explicitly (reachable
+-- bare -> stays undecorated).  The deparse decorates only the first arm.
+SET search_path = alt_ops, pg_catalog;
+CREATE VIEW public.oq_v_case_mixed AS
+  SELECT CASE a WHEN b THEN 'x'
+                WHEN id USING OPERATOR(pg_catalog.=) THEN 'y'
+                ELSE 'z' END AS r
+  FROM public.oq_t;
+RESET search_path;
+SELECT pg_get_viewdef('oq_v_case_mixed'::regclass, true);
+                       pg_get_viewdef                        
+-------------------------------------------------------------
+  SELECT                                                    +
+         CASE a                                             +
+             WHEN b USING OPERATOR(alt_ops.=) THEN 'x'::text+
+             WHEN id THEN 'y'::text                         +
+             ELSE 'z'::text                                 +
+         END AS r                                           +
+    FROM oq_t;
+(1 row)
+
+-- The decorated syntax is directly acceptable, and it pins the given operator.
+SELECT CASE 1 WHEN 2 USING OPERATOR(alt_ops.=) THEN 'x' ELSE 'y' END AS y;
+ y 
+---
+ y
+(1 row)
+
+SELECT CASE 1 WHEN 1 USING OPERATOR(pg_catalog.=) THEN 'x' ELSE 'y' END AS x;
+ x 
+---
+ x
+(1 row)
+
+-- an unqualified name inside the decoration is fine too
+SELECT CASE 1 WHEN 1 USING OPERATOR(=) THEN 'x' ELSE 'y' END AS x;
+ x 
+---
+ x
+(1 row)
+
+-- USING OPERATOR() only makes sense for the simple form; the searched CASE
+-- (no CASE test expression) rejects it, pointing at the offending WHEN.
+SELECT CASE WHEN 1=1 USING OPERATOR(=) THEN 1 END;
+ERROR:  CASE/WHEN ... USING OPERATOR requires a CASE test expression
+LINE 1: SELECT CASE WHEN 1=1 USING OPERATOR(=) THEN 1 END;
+                    ^
+-- The deparsed simple-CASE definitions must reparse under a restricted
+-- search_path (the pg_dump scenario), pinning the same operator OIDs.
+BEGIN; SET LOCAL search_path = pg_catalog;
+DO $$ BEGIN
+  EXECUTE 'CREATE VIEW public.oq_v_case_reload AS ' || pg_get_viewdef('public.oq_v_case'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_case_lt_reload AS ' || pg_get_viewdef('public.oq_v_case_lt'::regclass);
+  EXECUTE 'CREATE VIEW public.oq_v_case_mixed_reload AS ' || pg_get_viewdef('public.oq_v_case_mixed'::regclass);
+END $$; COMMIT;
+-- The reloaded views pin alt_ops.= for the arms that were decorated: the whole
+-- CASE view (arm 1) and the mixed view (arm 1).  The simple CASE expands each
+-- arm into an OpExpr, serialized with ":opno".
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%:opno ' || 'alt_ops.=(int4,int4)'::regoperator::oid || ' %'
+  AND ev_class::regclass::text LIKE 'oq_v_case%reload'
+ORDER BY 1;
+        ev_class        
+------------------------
+ oq_v_case_reload
+ oq_v_case_mixed_reload
+(2 rows)
+
+-- The non-"=" operator OPERATOR(<) pins int4lt across the reload.
+SELECT ev_class::regclass FROM pg_rewrite
+WHERE ev_action LIKE '%:opno ' || 'pg_catalog.<(int4,int4)'::regoperator::oid || ' %'
+  AND ev_class::regclass::text LIKE 'oq_v_case%lt_reload'
+ORDER BY 1;
+      ev_class       
+---------------------
+ oq_v_case_lt_reload
+(1 row)
+
+DROP VIEW oq_v_case_reload, oq_v_case_lt_reload, oq_v_case_mixed_reload;
+-- NOTE: the oq_v_case* base views are intentionally kept (like the others) so
+-- the pg_upgrade suite dump/restores them and exercises the deparse.
