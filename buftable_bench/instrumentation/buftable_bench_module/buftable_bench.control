@@ -1,0 +1,4 @@
+comment = 'rdtsc micro-benchmark for the shared buffer mapping table'
+default_version = '1.0'
+module_pathname = '$libdir/buftable_bench'
+relocatable = true
