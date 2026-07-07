@@ -105,7 +105,7 @@ typedef struct CustomPathMethods
 	struct List *(*ReparameterizeCustomPathByChild) (PlannerInfo *root,
 													 List *custom_private,
 													 RelOptInfo *child_rel);
-}			CustomPathMethods;
+} CustomPathMethods;
 
 /*
  * Custom scan.  Here again, there's not much to do: we need to be able to
