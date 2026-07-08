@@ -1,0 +1,3 @@
+c1="abc" c1_ind=0 warn=- | v1.len=3 v1.arr="abc" v1_ind=0
+c1="abcd" c1_ind=0 warn=- | v1.len=4 v1.arr="abcd" v1_ind=0
+c1="abcd" c1_ind=5 warn=W | v1.len=4 v1.arr="abcd" v1_ind=5
