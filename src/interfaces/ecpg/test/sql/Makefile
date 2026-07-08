@@ -5,6 +5,7 @@ include $(top_srcdir)/$(subdir)/../Makefile.regress
 
 TESTS = array array.c \
 	binary binary.c \
+	chartrunc chartrunc.c \
 	code100 code100.c \
         copystdout copystdout.c \
 	createtableas createtableas.c \

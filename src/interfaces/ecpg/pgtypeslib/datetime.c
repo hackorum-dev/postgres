@@ -489,8 +489,8 @@ PGTYPESdate_defmt_asc(date * d, const char *fmt, const char *str)
 			if (i == 2)
 				start_pos += frag_length[1];
 
-			strncpy(str_copy + target_pos, str + start_pos,
-					frag_length[i]);
+			memcpy(str_copy + target_pos, str + start_pos,
+				   frag_length[i]);
 			target_pos += frag_length[i];
 			if (i != 2)
 			{
