@@ -618,7 +618,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 							}
 							else
 							{
-								strncpy(str, pval, size + 1);
+								memcpy(str, pval, size + 1);
 							}
 							/* do the rtrim() */
 							if (type == ECPGt_string)
@@ -643,7 +643,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 							if (varcharsize == 0)
 								charsize = size + 1;
 
-							strncpy(str, pval, charsize);
+							memcpy(str, pval, charsize);
 
 							/* compatibility mode, null terminate char array */
 							if (ORACLE_MODE(compat) && (charsize - 1) < size)
@@ -690,7 +690,7 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 
 						variable->len = size;
 						if (varcharsize == 0)
-							strncpy(variable->arr, pval, variable->len);
+							memcpy(variable->arr, pval, variable->len);
 						else
 						{
 							strncpy(variable->arr, pval, varcharsize);
