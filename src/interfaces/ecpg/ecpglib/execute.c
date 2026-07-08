@@ -793,7 +793,7 @@ ecpg_store_input(const int lineno, const bool force_indicator, const struct vari
 					if (!(newcopy = ecpg_alloc(slen + 1, lineno)))
 						return false;
 
-					strncpy(newcopy, (char *) var->value, slen);
+					memcpy(newcopy, (char *) var->value, slen);
 					newcopy[slen] = '\0';
 
 					mallocedval = quote_postgres(newcopy, quote, lineno);
@@ -814,7 +814,7 @@ ecpg_store_input(const int lineno, const bool force_indicator, const struct vari
 					if (!(mallocedval = ecpg_alloc(slen + 1, lineno)))
 						return false;
 
-					strncpy(mallocedval, (char *) var->value, slen);
+					memcpy(mallocedval, (char *) var->value, slen);
 					mallocedval[slen] = '\0';
 
 					*tobeinserted_p = mallocedval;
@@ -842,7 +842,7 @@ ecpg_store_input(const int lineno, const bool force_indicator, const struct vari
 					if (!(newcopy = ecpg_alloc(variable->len + 1, lineno)))
 						return false;
 
-					strncpy(newcopy, variable->arr, variable->len);
+					memcpy(newcopy, variable->arr, variable->len);
 					newcopy[variable->len] = '\0';
 
 					mallocedval = quote_postgres(newcopy, quote, lineno);
