@@ -35,6 +35,7 @@ test: preproc/whenever_do_continue
 test: sql/array
 test: sql/binary
 test: sql/bytea
+test: sql/chartrunc
 test: sql/code100
 test: sql/copystdout
 test: sql/createtableas
