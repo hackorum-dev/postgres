@@ -4,6 +4,7 @@ pgc_files = [
   'array',
   'binary',
   'bytea',
+  'chartrunc',
   'code100',
   'copystdout',
   'createtableas',
