@@ -20,12 +20,11 @@
  * the desired number of worker threads, which each enter WaitForCommands().
  *
  * The leader thread dispatches an individual work item to one of the worker
- * threads in DispatchJobForTocEntry().  We send a command string such as
- * "DUMP 1234" or "RESTORE 1234", where 1234 is the TocEntry ID.
- * The worker receives and decodes the command and passes it to the
- * routine pointed to by AH->WorkerJobDumpPtr or AH->WorkerJobRestorePtr,
- * which are routines of the current archive format.  That routine performs
- * the required action (dump or restore) and returns an integer status code.
+ * threads in DispatchJobForTocEntry().  We hand over a WorkerCommand naming
+ * the action to take and the TocEntry to act on.  The worker runs the routine
+ * pointed to by AH->WorkerJobDumpPtr or AH->WorkerJobRestorePtr, which are
+ * routines of the current archive format.  That routine performs the required
+ * action (dump or restore) and returns an integer status code.
  * This is passed back to the leader where we pass it to the
  * ParallelCompletionPtr callback function that was passed to
  * DispatchJobForTocEntry().  The callback function does state updating
@@ -79,6 +78,25 @@ typedef enum
 	((workerStatus) == WRKR_IDLE || (workerStatus) == WRKR_WORKING)
 
 /*
+ * A command handed from the leader to a worker: the action to take and the
+ * TocEntry to take it on.
+ */
+typedef struct
+{
+	T_Action	act;			/* ACT_DUMP or ACT_RESTORE */
+	DumpId		dumpId;			/* TocEntry to act on */
+} WorkerCommand;
+
+/*
+ * A worker's response back to the leader.
+ */
+typedef struct
+{
+	int			status;			/* status code from the worker's job */
+	int			n_errors;		/* errors to fold into the leader's count */
+} WorkerResponse;
+
+/*
  * Private per-parallel-worker state (typedef for this is in parallel.h).
  *
  * Much of this is valid only in the leader thread.  But the AH field should
@@ -96,11 +114,14 @@ struct ParallelSlot
 
 	/*
 	 * In-process channel used to exchange messages between the leader and
-	 * this worker.  A message is a malloc'd string; ownership passes to the
-	 * receiver.  All fields are protected by msg_lock.
+	 * this worker.  Since the two share an address space the messages are
+	 * passed by value rather than serialized.  All fields are protected by
+	 * msg_lock.
 	 */
-	char	   *cmdMsg;			/* command pending for the worker, or NULL */
-	char	   *respMsg;		/* response pending for the leader, or NULL */
+	bool		cmdPending;		/* a command is waiting for the worker */
+	WorkerCommand cmd;			/* the pending command */
+	bool		respPending;	/* a response is waiting for the leader */
+	WorkerResponse resp;		/* the pending response */
 	bool		chanClosed;		/* leader closed the command channel (EOF) */
 	bool		workerDied;		/* worker exited without sending a response */
 
@@ -149,7 +170,7 @@ static pg_mtx_t signal_info_lock = PG_MTX_INIT;
 
 /*
  * Synchronization for the in-process channels (see struct ParallelSlot).
- * msg_lock protects the per-slot cmdMsg/respMsg/chanClosed/workerDied fields;
+ * msg_lock protects the per-slot cmd/resp and their pending/closed/died flags;
  * worker_cv wakes a worker, leader_cv wakes the leader.
  */
 static pg_mtx_t msg_lock = PG_MTX_INIT;
@@ -190,15 +211,12 @@ static void lockTableForWorker(ArchiveHandle *AH, TocEntry *te);
 static void WaitForCommands(ArchiveHandle *AH, ParallelSlot *slot);
 static bool ListenToWorkers(ArchiveHandle *AH, ParallelState *pstate,
 							bool do_wait);
-static char *getMessageFromLeader(ParallelSlot *slot);
-static void sendMessageToLeader(ParallelSlot *slot, const char *str);
-static char *getMessageFromWorker(ParallelState *pstate,
-								  bool do_wait, int *worker);
-static void sendMessageToWorker(ParallelState *pstate,
-								int worker, const char *str);
-
-#define messageStartsWith(msg, prefix) \
-	(strncmp(msg, prefix, strlen(prefix)) == 0)
+static bool getMessageFromLeader(ParallelSlot *slot, WorkerCommand *cmd);
+static void sendMessageToLeader(ParallelSlot *slot, WorkerResponse resp);
+static bool getMessageFromWorker(ParallelState *pstate, bool do_wait,
+								 int *worker, WorkerResponse *resp);
+static void sendMessageToWorker(ParallelState *pstate, int worker,
+								WorkerCommand cmd);
 
 
 /*
@@ -800,108 +818,6 @@ ParallelBackupEnd(ArchiveHandle *AH, ParallelState *pstate)
 }
 
 /*
- * These next four functions handle construction and parsing of the command
- * strings and response strings for parallel workers.
- *
- * Currently, these can be the same regardless of which archive format we are
- * processing.  In future, we might want to let format modules override these
- * functions to add format-specific data to a command or response.
- */
-
-/*
- * buildWorkerCommand: format a command string to send to a worker.
- *
- * The string is built in the caller-supplied buffer of size buflen.
- */
-static void
-buildWorkerCommand(ArchiveHandle *AH, TocEntry *te, T_Action act,
-				   char *buf, int buflen)
-{
-	if (act == ACT_DUMP)
-		snprintf(buf, buflen, "DUMP %d", te->dumpId);
-	else if (act == ACT_RESTORE)
-		snprintf(buf, buflen, "RESTORE %d", te->dumpId);
-	else
-		Assert(false);
-}
-
-/*
- * parseWorkerCommand: interpret a command string in a worker.
- */
-static void
-parseWorkerCommand(ArchiveHandle *AH, TocEntry **te, T_Action *act,
-				   const char *msg)
-{
-	DumpId		dumpId;
-	int			nBytes;
-
-	if (messageStartsWith(msg, "DUMP "))
-	{
-		*act = ACT_DUMP;
-		sscanf(msg, "DUMP %d%n", &dumpId, &nBytes);
-		Assert(nBytes == strlen(msg));
-		*te = getTocEntryByDumpId(AH, dumpId);
-		Assert(*te != NULL);
-	}
-	else if (messageStartsWith(msg, "RESTORE "))
-	{
-		*act = ACT_RESTORE;
-		sscanf(msg, "RESTORE %d%n", &dumpId, &nBytes);
-		Assert(nBytes == strlen(msg));
-		*te = getTocEntryByDumpId(AH, dumpId);
-		Assert(*te != NULL);
-	}
-	else
-		pg_fatal("unrecognized command received from leader: \"%s\"",
-				 msg);
-}
-
-/*
- * buildWorkerResponse: format a response string to send to the leader.
- *
- * The string is built in the caller-supplied buffer of size buflen.
- */
-static void
-buildWorkerResponse(ArchiveHandle *AH, TocEntry *te, T_Action act, int status,
-					char *buf, int buflen)
-{
-	snprintf(buf, buflen, "OK %d %d %d",
-			 te->dumpId,
-			 status,
-			 status == WORKER_IGNORED_ERRORS ? AH->public.n_errors : 0);
-}
-
-/*
- * parseWorkerResponse: parse the status message returned by a worker.
- *
- * Returns the integer status code, and may update fields of AH and/or te.
- */
-static int
-parseWorkerResponse(ArchiveHandle *AH, TocEntry *te,
-					const char *msg)
-{
-	DumpId		dumpId;
-	int			nBytes,
-				n_errors;
-	int			status = 0;
-
-	if (messageStartsWith(msg, "OK "))
-	{
-		sscanf(msg, "OK %d %d %d%n", &dumpId, &status, &n_errors, &nBytes);
-
-		Assert(dumpId == te->dumpId);
-		Assert(nBytes == strlen(msg));
-
-		AH->public.n_errors += n_errors;
-	}
-	else
-		pg_fatal("invalid message received from worker: \"%s\"",
-				 msg);
-
-	return status;
-}
-
-/*
  * Dispatch a job to some free worker.
  *
  * te is the TocEntry to be processed, act is the action to be taken on it.
@@ -919,16 +835,16 @@ DispatchJobForTocEntry(ArchiveHandle *AH,
 					   void *callback_data)
 {
 	int			worker;
-	char		buf[256];
+	WorkerCommand cmd;
 
 	/* Get a worker, waiting if none are idle */
 	while ((worker = GetIdleWorker(pstate)) == NO_SLOT)
 		WaitForWorkers(AH, pstate, WFW_ONE_IDLE);
 
-	/* Construct and send command string */
-	buildWorkerCommand(AH, te, act, buf, sizeof(buf));
-
-	sendMessageToWorker(pstate, worker, buf);
+	/* Hand the worker its command */
+	cmd.act = act;
+	cmd.dumpId = te->dumpId;
+	sendMessageToWorker(pstate, worker, cmd);
 
 	/* Remember worker is busy, and which TocEntry it's working on */
 	pstate->parallelSlot[worker].workerStatus = WRKR_WORKING;
@@ -1029,24 +945,17 @@ lockTableForWorker(ArchiveHandle *AH, TocEntry *te)
 static void
 WaitForCommands(ArchiveHandle *AH, ParallelSlot *slot)
 {
-	char	   *command;
+	WorkerCommand cmd;
 	TocEntry   *te;
-	T_Action	act;
 	int			status = 0;
-	char		buf[256];
+	WorkerResponse resp;
 
-	for (;;)
+	while (getMessageFromLeader(slot, &cmd))
 	{
-		if (!(command = getMessageFromLeader(slot)))
-		{
-			/* EOF, so done */
-			return;
-		}
+		te = getTocEntryByDumpId(AH, cmd.dumpId);
+		Assert(te != NULL);
 
-		/* Decode the command */
-		parseWorkerCommand(AH, &te, &act, command);
-
-		if (act == ACT_DUMP)
+		if (cmd.act == ACT_DUMP)
 		{
 			/* Acquire lock on this table within the worker's session */
 			lockTableForWorker(AH, te);
@@ -1054,7 +963,7 @@ WaitForCommands(ArchiveHandle *AH, ParallelSlot *slot)
 			/* Perform the dump command */
 			status = (AH->WorkerJobDumpPtr) (AH, te);
 		}
-		else if (act == ACT_RESTORE)
+		else if (cmd.act == ACT_RESTORE)
 		{
 			/* Perform the restore command */
 			status = (AH->WorkerJobRestorePtr) (AH, te);
@@ -1063,12 +972,9 @@ WaitForCommands(ArchiveHandle *AH, ParallelSlot *slot)
 			Assert(false);
 
 		/* Return status to leader */
-		buildWorkerResponse(AH, te, act, status, buf, sizeof(buf));
-
-		sendMessageToLeader(slot, buf);
-
-		/* command was pg_malloc'd and we are responsible for free()ing it. */
-		free(command);
+		resp.status = status;
+		resp.n_errors = (status == WORKER_IGNORED_ERRORS) ? AH->public.n_errors : 0;
+		sendMessageToLeader(slot, resp);
 	}
 }
 
@@ -1092,12 +998,12 @@ static bool
 ListenToWorkers(ArchiveHandle *AH, ParallelState *pstate, bool do_wait)
 {
 	int			worker;
-	char	   *msg;
+	WorkerResponse resp;
+	ParallelSlot *slot;
+	TocEntry   *te;
 
 	/* Try to collect a status message */
-	msg = getMessageFromWorker(pstate, do_wait, &worker);
-
-	if (!msg)
+	if (!getMessageFromWorker(pstate, do_wait, &worker, &resp))
 	{
 		/* If do_wait is true, a worker must have died without responding */
 		if (do_wait)
@@ -1106,23 +1012,13 @@ ListenToWorkers(ArchiveHandle *AH, ParallelState *pstate, bool do_wait)
 	}
 
 	/* Process it and update our idea of the worker's status */
-	if (messageStartsWith(msg, "OK "))
-	{
-		ParallelSlot *slot = &pstate->parallelSlot[worker];
-		TocEntry   *te = pstate->te[worker];
-		int			status;
+	slot = &pstate->parallelSlot[worker];
+	te = pstate->te[worker];
 
-		status = parseWorkerResponse(AH, te, msg);
-		slot->callback(AH, te, status, slot->callback_data);
-		slot->workerStatus = WRKR_IDLE;
-		pstate->te[worker] = NULL;
-	}
-	else
-		pg_fatal("invalid message received from worker: \"%s\"",
-				 msg);
-
-	/* Free the string returned from getMessageFromWorker */
-	free(msg);
+	AH->public.n_errors += resp.n_errors;
+	slot->callback(AH, te, resp.status, slot->callback_data);
+	slot->workerStatus = WRKR_IDLE;
+	pstate->te[worker] = NULL;
 
 	return true;
 }
@@ -1200,57 +1096,63 @@ WaitForWorkers(ArchiveHandle *AH, ParallelState *pstate, WFW_WaitOption mode)
 }
 
 /*
- * Read one command message from the leader, blocking if necessary
- * until one is available, and return it as a malloc'd string.
- * On channel close, return NULL.
+ * Wait for the next command from the leader.  Returns true and fills *cmd when
+ * one arrives, or false if the leader closed the channel, meaning the worker
+ * should exit.
  *
  * This function is executed in worker threads.
  */
-static char *
-getMessageFromLeader(ParallelSlot *slot)
+static bool
+getMessageFromLeader(ParallelSlot *slot, WorkerCommand *cmd)
 {
-	char	   *msg;
+	bool		gotCmd;
 
 	pg_mtx_lock(&msg_lock);
-	while (slot->cmdMsg == NULL && !slot->chanClosed)
+	while (!slot->cmdPending && !slot->chanClosed)
 		pg_cnd_wait(&worker_cv, &msg_lock);
-	msg = slot->cmdMsg;			/* NULL here means the channel was closed */
-	slot->cmdMsg = NULL;
+	gotCmd = slot->cmdPending;
+	if (gotCmd)
+	{
+		*cmd = slot->cmd;
+		slot->cmdPending = false;
+	}
 	pg_mtx_unlock(&msg_lock);
-	return msg;
+	return gotCmd;
 }
 
 /*
- * Send a status message to the leader.
+ * Send a status response to the leader.
  *
  * This function is executed in worker threads.
  */
 static void
-sendMessageToLeader(ParallelSlot *slot, const char *str)
+sendMessageToLeader(ParallelSlot *slot, WorkerResponse resp)
 {
 	pg_mtx_lock(&msg_lock);
-	Assert(slot->respMsg == NULL);
-	slot->respMsg = pg_strdup(str);
+	Assert(!slot->respPending);
+	slot->resp = resp;
+	slot->respPending = true;
 	pg_cnd_broadcast(&leader_cv);
 	pg_mtx_unlock(&msg_lock);
 }
 
 /*
- * Check for messages from worker threads.
+ * Check for a response from a worker thread.
  *
- * If a message is available, return it as a malloc'd string, and put the
- * index of the sending worker in *worker.
+ * If one is available, fill *resp, put the index of the sending worker in
+ * *worker, and return true.
  *
- * If nothing is available, wait if "do_wait" is true, else return NULL.
+ * If nothing is available, wait if "do_wait" is true, else return false.
  *
- * If a worker has died without responding, we'll return NULL.  It's not great
+ * If a worker has died without responding, we'll return false.  It's not great
  * that that's hard to distinguish from the no-data-available case, but for now
  * our one caller is okay with that.
  *
  * This function is executed in the leader thread.
  */
-static char *
-getMessageFromWorker(ParallelState *pstate, bool do_wait, int *worker)
+static bool
+getMessageFromWorker(ParallelState *pstate, bool do_wait, int *worker,
+					 WorkerResponse *resp)
 {
 	int			i;
 
@@ -1265,53 +1167,47 @@ getMessageFromWorker(ParallelState *pstate, bool do_wait, int *worker)
 
 		for (i = 0; i < pstate->numWorkers; i++)
 		{
-			char	   *msg;
-
 			if (!WORKER_IS_RUNNING(pstate->parallelSlot[i].workerStatus))
 				continue;
-			msg = pstate->parallelSlot[i].respMsg;
-			if (msg != NULL)
+			if (pstate->parallelSlot[i].respPending)
 			{
-				pstate->parallelSlot[i].respMsg = NULL;
+				*resp = pstate->parallelSlot[i].resp;
+				pstate->parallelSlot[i].respPending = false;
 				pg_mtx_unlock(&msg_lock);
 				*worker = i;
-				return msg;
+				return true;
 			}
 			if (pstate->parallelSlot[i].workerDied)
 				anyDied = true;
 		}
 
 		/*
-		 * A worker died without responding: return NULL so the caller reports
-		 * the failure instead of hanging.
+		 * A worker died without responding, or nothing is pending and the
+		 * caller doesn't want to wait: report that there's no message.
 		 */
-		if (anyDied)
+		if (anyDied || !do_wait)
 		{
 			pg_mtx_unlock(&msg_lock);
-			return NULL;
-		}
-		if (!do_wait)
-		{
-			pg_mtx_unlock(&msg_lock);
-			return NULL;
+			return false;
 		}
 		pg_cnd_wait(&leader_cv, &msg_lock);
 	}
 }
 
 /*
- * Send a command message to the specified worker thread.
+ * Send a command to the specified worker thread.
  *
  * This function is executed in the leader thread.
  */
 static void
-sendMessageToWorker(ParallelState *pstate, int worker, const char *str)
+sendMessageToWorker(ParallelState *pstate, int worker, WorkerCommand cmd)
 {
 	ParallelSlot *slot = &pstate->parallelSlot[worker];
 
 	pg_mtx_lock(&msg_lock);
-	Assert(slot->cmdMsg == NULL);
-	slot->cmdMsg = pg_strdup(str);
+	Assert(!slot->cmdPending);
+	slot->cmd = cmd;
+	slot->cmdPending = true;
 	pg_cnd_broadcast(&worker_cv);
 	pg_mtx_unlock(&msg_lock);
 }

@@ -3484,11 +3484,13 @@ WordEntryPosVector
 WordEntryPosVector1
 WorkTableScan
 WorkTableScanState
+WorkerCommand
 WorkerInfo
 WorkerInfoData
 WorkerJobDumpPtrType
 WorkerJobRestorePtrType
 WorkerNodeInstrumentation
+WorkerResponse
 Working_State
 WriteBufPtrType
 WriteBytePtrType
