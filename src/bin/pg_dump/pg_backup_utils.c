@@ -13,25 +13,22 @@
  */
 #include "postgres_fe.h"
 
-#ifdef WIN32
 #include "parallel.h"
-#endif
 #include "pg_backup_utils.h"
+#include "port/pg_threads.h"
 
 /* Globals exported by this file */
 const char *progname = NULL;
-
-#ifdef WIN32
 
 /*
  * Flag telling worker threads to stay quiet about query failures because
  * we're cancelling their queries as part of tearing down the process.  See
  * the comment in pg_backup_utils.h.
  *
- * The cancel thread writes it while worker threads read it, so it's marked
+ * The cancel handler writes it while worker threads read it, so it's marked
  * volatile to keep the compiler from caching the value.  A plain volatile
  * bool isn't a memory barrier, but it's good enough here.  A lot of things
- * happen between set_cancel_in_progress() in the cancel thread and the other
+ * happen between set_cancel_in_progress() in the cancel handler and the other
  * threads calling is_cancel_in_progress(), including network operations,
  * which implicitly act as memory barriers.  Furthermore, the flag is only
  * ever flipped one way (false to true) and a worker briefly observing the
@@ -40,7 +37,7 @@ const char *progname = NULL;
  * cancelled" errors during the shutdown process.
  *
  * XXX: This should be swapped out for a proper atomic when we have those in
- * the frontend code, so that we wouldn't need to rationalizee all of the
+ * the frontend code, so that we wouldn't need to rationalize all of the
  * above.
  */
 static volatile bool cancelInProgress = false;
@@ -56,8 +53,6 @@ is_cancel_in_progress(void)
 {
 	return cancelInProgress;
 }
-
-#endif							/* WIN32 */
 
 #define MAX_ON_EXIT_NICELY				20
 
@@ -113,18 +108,13 @@ on_exit_nicely(on_exit_nicely_callback function, void *arg)
  * Run accumulated on_exit_nicely callbacks in reverse order and then exit
  * without printing any message.
  *
- * If running in a parallel worker thread on Windows, we only exit the thread,
- * not the whole process.
+ * If running in a parallel worker thread, we only exit the thread, not the
+ * whole process.
  *
- * Note that in parallel operation on Windows, the callback(s) will be run
- * by each thread since the list state is necessarily shared by all threads;
- * each callback must contain logic to ensure it does only what's appropriate
- * for its thread.  On Unix, callbacks are also run by each process, but only
- * for callbacks established before we fork off the child processes.  (It'd
- * be cleaner to reset the list after fork(), and let each child establish
- * its own callbacks; but then the behavior would be completely inconsistent
- * between Windows and Unix.  For now, just be sure to establish callbacks
- * before forking to avoid inconsistency.)
+ * Note that in parallel operation, the callback(s) will be run by each thread
+ * since the list state is necessarily shared by all threads; each callback
+ * must contain logic to ensure it does only what's appropriate for its
+ * thread.
  */
 void
 exit_nicely(int code)
@@ -135,10 +125,8 @@ exit_nicely(int code)
 		on_exit_nicely_list[i].function(code,
 										on_exit_nicely_list[i].arg);
 
-#ifdef WIN32
-	if (parallel_init_done && GetCurrentThreadId() != mainThreadId)
-		_endthreadex(code);
-#endif
+	if (am_parallel_worker_thread())
+		pg_thrd_exit(code);
 
 	exit(code);
 }
