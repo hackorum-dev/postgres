@@ -23,7 +23,7 @@ typedef struct GinTuple
 {
 	int			tuplen;			/* length of the whole tuple */
 	OffsetNumber attrnum;		/* attnum of index key */
-	uint16		keylen;			/* bytes in data for key value */
+	Size		keylen;			/* bytes in data for key value */
 	int16		typlen;			/* typlen for key */
 	bool		typbyval;		/* typbyval for key */
 	signed char category;		/* category: normal or NULL? */
