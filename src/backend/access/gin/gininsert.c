@@ -1376,10 +1376,12 @@ GinBufferKeyEquals(GinBuffer *buffer, GinTuple *tup)
 		return true;
 
 	/*
-	 * For the tuple, get either the first sizeof(Datum) bytes for byval
-	 * types, or a pointer to the beginning of the data array.
+	 * Get the key from the tuple. We use _gin_parse_tuple_key() rather than
+	 * reading tup->data directly, because for byval types the data is only
+	 * stored/read with memcpy() (the data array is not guaranteed to be
+	 * aligned enough to dereference as a Datum).
 	 */
-	tupkey = (buffer->typbyval) ? *(Datum *) tup->data : PointerGetDatum(tup->data);
+	tupkey = _gin_parse_tuple_key(tup);
 
 	r = ApplySortComparator(buffer->key, false,
 							tupkey, false,
@@ -2250,7 +2252,7 @@ _gin_build_tuple(OffsetNumber attrnum, unsigned char category,
 	char	   *ptr;
 
 	Size		tuplen;
-	int			keylen;
+	Size		keylen;
 
 	dlist_mutable_iter iter;
 	dlist_head	segments;
