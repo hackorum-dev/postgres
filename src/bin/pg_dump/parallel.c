@@ -63,6 +63,7 @@
 #include "fe_utils/string_utils.h"
 #include "parallel.h"
 #include "pg_backup_utils.h"
+#include "port/pg_threads.h"
 #ifdef WIN32
 #include "port/pg_bswap.h"
 #endif
@@ -188,16 +189,16 @@ typedef struct DumpSignalInformation
 static volatile DumpSignalInformation signal_info;
 
 #ifdef WIN32
-static CRITICAL_SECTION signal_info_lock;
+static pg_mtx_t signal_info_lock = PG_MTX_INIT;
 
 /*
  * Synchronization for the in-process channels (see struct ParallelSlot).
  * msg_lock protects the per-slot cmdMsg/respMsg/chanClosed/workerDied fields;
  * worker_cv wakes a worker, leader_cv wakes the leader.
  */
-static CRITICAL_SECTION msg_lock;
-static CONDITION_VARIABLE worker_cv;
-static CONDITION_VARIABLE leader_cv;
+static pg_mtx_t msg_lock = PG_MTX_INIT;
+static pg_cnd_t worker_cv;
+static pg_cnd_t leader_cv;
 #endif
 
 /*
@@ -264,10 +265,9 @@ init_parallel_dump_utils(void)
 
 		mainThreadId = GetCurrentThreadId();
 
-		/* Initialize the in-process message-channel synchronization */
-		InitializeCriticalSection(&msg_lock);
-		InitializeConditionVariable(&worker_cv);
-		InitializeConditionVariable(&leader_cv);
+		/* Initialize the in-process message-channel condition variables */
+		pg_cnd_init(&worker_cv);
+		pg_cnd_init(&leader_cv);
 
 		/* Initialize socket access */
 		err = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -353,10 +353,10 @@ archive_close_connection(int code, void *arg)
 			 * the leader sees EOF; the in-process channel has no EOF, and
 			 * exit_nicely() ends only this thread, so signal it explicitly.
 			 */
-			EnterCriticalSection(&msg_lock);
+			pg_mtx_lock(&msg_lock);
 			slot->workerDied = true;
-			WakeAllConditionVariable(&leader_cv);
-			LeaveCriticalSection(&msg_lock);
+			pg_cnd_broadcast(&leader_cv);
+			pg_mtx_unlock(&msg_lock);
 #endif
 		}
 	}
@@ -385,11 +385,11 @@ ShutdownWorkersHard(ParallelState *pstate)
 	 * Tell any workers that are waiting for commands that they can exit.
 	 */
 #ifdef WIN32
-	EnterCriticalSection(&msg_lock);
+	pg_mtx_lock(&msg_lock);
 	for (i = 0; i < pstate->numWorkers; i++)
 		pstate->parallelSlot[i].chanClosed = true;
-	WakeAllConditionVariable(&worker_cv);
-	LeaveCriticalSection(&msg_lock);
+	pg_cnd_broadcast(&worker_cv);
+	pg_mtx_unlock(&msg_lock);
 #else
 
 	/*
@@ -420,7 +420,7 @@ ShutdownWorkersHard(ParallelState *pstate)
 	 * On Windows, send query cancels directly to the workers' backends.  Use
 	 * a critical section to ensure worker threads don't change state.
 	 */
-	EnterCriticalSection(&signal_info_lock);
+	pg_mtx_lock(&signal_info_lock);
 	for (i = 0; i < pstate->numWorkers; i++)
 	{
 		ArchiveHandle *AH = pstate->parallelSlot[i].AH;
@@ -429,7 +429,7 @@ ShutdownWorkersHard(ParallelState *pstate)
 		if (AH != NULL && AH->connCancel != NULL)
 			(void) PQcancel(AH->connCancel, errbuf, sizeof(errbuf));
 	}
-	LeaveCriticalSection(&signal_info_lock);
+	pg_mtx_unlock(&signal_info_lock);
 #endif
 
 	/* Now wait for them to terminate. */
@@ -647,7 +647,7 @@ consoleHandler(DWORD dwCtrlType)
 		set_cancel_in_progress();
 
 		/* Critical section prevents changing data we look at here */
-		EnterCriticalSection(&signal_info_lock);
+		pg_mtx_lock(&signal_info_lock);
 
 		/*
 		 * If in parallel mode, send QueryCancel to each worker's connected
@@ -675,7 +675,7 @@ consoleHandler(DWORD dwCtrlType)
 			(void) PQcancel(signal_info.myAH->connCancel,
 							errbuf, sizeof(errbuf));
 
-		LeaveCriticalSection(&signal_info_lock);
+		pg_mtx_unlock(&signal_info_lock);
 
 		/*
 		 * Report we're quitting, using nothing more complicated than
@@ -703,8 +703,6 @@ set_cancel_handler(void)
 	if (!signal_info.handler_set)
 	{
 		signal_info.handler_set = true;
-
-		InitializeCriticalSection(&signal_info_lock);
 
 		SetConsoleCtrlHandler(consoleHandler, TRUE);
 	}
@@ -738,7 +736,7 @@ set_archive_cancel_info(ArchiveHandle *AH, PGconn *conn)
 	 */
 
 #ifdef WIN32
-	EnterCriticalSection(&signal_info_lock);
+	pg_mtx_lock(&signal_info_lock);
 #endif
 
 	/* Free the old one if we have one */
@@ -768,7 +766,7 @@ set_archive_cancel_info(ArchiveHandle *AH, PGconn *conn)
 #endif
 
 #ifdef WIN32
-	LeaveCriticalSection(&signal_info_lock);
+	pg_mtx_unlock(&signal_info_lock);
 #endif
 }
 
@@ -782,13 +780,13 @@ static void
 set_cancel_pstate(ParallelState *pstate)
 {
 #ifdef WIN32
-	EnterCriticalSection(&signal_info_lock);
+	pg_mtx_lock(&signal_info_lock);
 #endif
 
 	signal_info.pstate = pstate;
 
 #ifdef WIN32
-	LeaveCriticalSection(&signal_info_lock);
+	pg_mtx_unlock(&signal_info_lock);
 #endif
 }
 
@@ -802,13 +800,13 @@ static void
 set_cancel_slot_archive(ParallelSlot *slot, ArchiveHandle *AH)
 {
 #ifdef WIN32
-	EnterCriticalSection(&signal_info_lock);
+	pg_mtx_lock(&signal_info_lock);
 #endif
 
 	slot->AH = AH;
 
 #ifdef WIN32
-	LeaveCriticalSection(&signal_info_lock);
+	pg_mtx_unlock(&signal_info_lock);
 #endif
 }
 
@@ -1069,11 +1067,11 @@ ParallelBackupEnd(ArchiveHandle *AH, ParallelState *pstate)
 
 	/* Tell the workers they can exit */
 #ifdef WIN32
-	EnterCriticalSection(&msg_lock);
+	pg_mtx_lock(&msg_lock);
 	for (i = 0; i < pstate->numWorkers; i++)
 		pstate->parallelSlot[i].chanClosed = true;
-	WakeAllConditionVariable(&worker_cv);
-	LeaveCriticalSection(&msg_lock);
+	pg_cnd_broadcast(&worker_cv);
+	pg_mtx_unlock(&msg_lock);
 #else
 	/* Close the sockets so that the workers know they can exit */
 	for (i = 0; i < pstate->numWorkers; i++)
@@ -1527,12 +1525,12 @@ getMessageFromLeader(ParallelSlot *slot)
 #ifdef WIN32
 	char	   *msg;
 
-	EnterCriticalSection(&msg_lock);
+	pg_mtx_lock(&msg_lock);
 	while (slot->cmdMsg == NULL && !slot->chanClosed)
-		SleepConditionVariableCS(&worker_cv, &msg_lock, INFINITE);
+		pg_cnd_wait(&worker_cv, &msg_lock);
 	msg = slot->cmdMsg;			/* NULL here means the channel was closed */
 	slot->cmdMsg = NULL;
-	LeaveCriticalSection(&msg_lock);
+	pg_mtx_unlock(&msg_lock);
 	return msg;
 #else
 	return readMessageFromPipe(slot->pipeRevRead);
@@ -1548,11 +1546,11 @@ static void
 sendMessageToLeader(ParallelSlot *slot, const char *str)
 {
 #ifdef WIN32
-	EnterCriticalSection(&msg_lock);
+	pg_mtx_lock(&msg_lock);
 	Assert(slot->respMsg == NULL);
 	slot->respMsg = pg_strdup(str);
-	WakeAllConditionVariable(&leader_cv);
-	LeaveCriticalSection(&msg_lock);
+	pg_cnd_broadcast(&leader_cv);
+	pg_mtx_unlock(&msg_lock);
 #else
 	int			len = strlen(str) + 1;
 
@@ -1614,7 +1612,7 @@ getMessageFromWorker(ParallelState *pstate, bool do_wait, int *worker)
 	 * Return the first pending response; if none and do_wait, sleep on
 	 * leader_cv until a worker posts one.
 	 */
-	EnterCriticalSection(&msg_lock);
+	pg_mtx_lock(&msg_lock);
 	for (;;)
 	{
 		bool		anyDied = false;
@@ -1629,7 +1627,7 @@ getMessageFromWorker(ParallelState *pstate, bool do_wait, int *worker)
 			if (msg != NULL)
 			{
 				pstate->parallelSlot[i].respMsg = NULL;
-				LeaveCriticalSection(&msg_lock);
+				pg_mtx_unlock(&msg_lock);
 				*worker = i;
 				return msg;
 			}
@@ -1643,15 +1641,15 @@ getMessageFromWorker(ParallelState *pstate, bool do_wait, int *worker)
 		 */
 		if (anyDied)
 		{
-			LeaveCriticalSection(&msg_lock);
+			pg_mtx_unlock(&msg_lock);
 			return NULL;
 		}
 		if (!do_wait)
 		{
-			LeaveCriticalSection(&msg_lock);
+			pg_mtx_unlock(&msg_lock);
 			return NULL;
 		}
-		SleepConditionVariableCS(&leader_cv, &msg_lock, INFINITE);
+		pg_cnd_wait(&leader_cv, &msg_lock);
 	}
 #else
 	int			i;
@@ -1723,11 +1721,11 @@ sendMessageToWorker(ParallelState *pstate, int worker, const char *str)
 #ifdef WIN32
 	ParallelSlot *slot = &pstate->parallelSlot[worker];
 
-	EnterCriticalSection(&msg_lock);
+	pg_mtx_lock(&msg_lock);
 	Assert(slot->cmdMsg == NULL);
 	slot->cmdMsg = pg_strdup(str);
-	WakeAllConditionVariable(&worker_cv);
-	LeaveCriticalSection(&msg_lock);
+	pg_cnd_broadcast(&worker_cv);
+	pg_mtx_unlock(&msg_lock);
 #else
 	int			len = strlen(str) + 1;
 
