@@ -8118,11 +8118,23 @@ ATExecSetNotNull(List **wqueue, Relation rel, char *conName, char *colName,
 	 */
 	if (!recursing)
 	{
+		List	   *others = NIL;
+
 		Assert(conName == NULL);
+
+		/*
+		 * If this table has inheritance children, the name we choose will be
+		 * propagated to them (possibly across schemas), so avoid one that
+		 * collides with a constraint already present on a descendant;
+		 * ChooseConstraintName by itself only checks this table's schema.
+		 */
+		if (rel->rd_rel->relhassubclass)
+			others = GetInheritedConstraintNames(RelationGetRelid(rel));
+
 		conName = ChooseConstraintName(RelationGetRelationName(rel),
 									   colName, "not_null",
 									   RelationGetNamespace(rel),
-									   NIL);
+									   others);
 	}
 
 	constraint = makeNotNullConstraint(makeString(colName));
