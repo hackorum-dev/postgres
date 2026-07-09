@@ -2422,6 +2422,7 @@ AddRelationNewConstraints(Relation rel,
 	int			numchecks;
 	List	   *checknames;
 	List	   *nnnames;
+	List	   *inherited_names;
 	Node	   *expr;
 	CookedConstraint *cooked;
 
@@ -2509,6 +2510,22 @@ AddRelationNewConstraints(Relation rel,
 	numchecks = numoldchecks;
 	checknames = NIL;
 	nnnames = NIL;
+
+	/*
+	 * If the relation has inheritance children (for example, it is a
+	 * partitioned table), a constraint name we generate automatically will be
+	 * propagated down to those children, which may live in other schemas.
+	 * ChooseConstraintName already avoids names used by same-schema children
+	 * (via its namespace-scoped check), but not ones in other schemas, so
+	 * gather the constraint names present on descendant tables and pass them
+	 * to ChooseConstraintName below.  That keeps the generated name unique
+	 * across the whole hierarchy rather than just this relation's schema.
+	 * Note we must not fold these into checknames/nnnames, which double as the
+	 * duplicate check for explicitly-named constraints in this same command.
+	 */
+	inherited_names = NIL;
+	if (rel->rd_rel->relhassubclass)
+		inherited_names = GetInheritedConstraintNames(RelationGetRelid(rel));
 	foreach_node(Constraint, cdef, newConstraints)
 	{
 		Oid			constrOid;
@@ -2614,6 +2631,8 @@ AddRelationNewConstraints(Relation rel,
 											  colname,
 											  "check",
 											  RelationGetNamespace(rel),
+											  inherited_names ?
+											  list_concat_copy(checknames, inherited_names) :
 											  checknames);
 
 				/* save name for future checks */
@@ -2698,6 +2717,8 @@ AddRelationNewConstraints(Relation rel,
 											  strVal(linitial(cdef->keys)),
 											  "not_null",
 											  RelationGetNamespace(rel),
+											  inherited_names ?
+											  list_concat_copy(nnnames, inherited_names) :
 											  nnnames);
 			nnnames = lappend(nnnames, nnname);
 
