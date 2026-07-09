@@ -660,8 +660,10 @@ SKIP:
 	);
 	$node_publisher->safe_psql('postgres',
 		"UPDATE test_dropri SET y = 99 WHERE x = 7");
+
+	# HACK: wait for parallel apply worker instead of the leader apply worker
 	$node_subscriber->wait_for_event(
-		'logical replication apply worker',
+		'logical replication parallel worker',
 		'apply-update-before-open-indices');
 
 	# This commits the loss of the replica identity, leaving relreplident set

@@ -1682,6 +1682,7 @@ LogicalRepBeginData
 LogicalRepCommitData
 LogicalRepCommitPreparedTxnData
 LogicalRepCtxStruct
+LogicalRepKeyKind
 LogicalRepMsgType
 LogicalRepParallelAction
 LogicalRepPartMapEntry
@@ -1692,6 +1693,7 @@ LogicalRepRelation
 LogicalRepRollbackPreparedTxnData
 LogicalRepSequenceInfo
 LogicalRepStreamAbortData
+LogicalRepSubUniqueIndex
 LogicalRepTupleData
 LogicalRepTyp
 LogicalRepWorker
