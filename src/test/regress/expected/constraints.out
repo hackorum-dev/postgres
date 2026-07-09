@@ -1791,6 +1791,39 @@ COMMENT ON CONSTRAINT constr_parent2_a_not_null ON constr_parent2 IS 'this const
 COMMENT ON CONSTRAINT constr_parent2_a_not_null ON constr_child2 IS 'this constraint is valid';
 DEALLOCATE get_nnconstraint_info;
 -- end NOT NULL NOT VALID
+-- An auto-generated constraint name for a partitioned table must not collide
+-- with a constraint that already exists on a partition in another schema: the
+-- parent chooses the name, but ChooseConstraintName only checks for a clash
+-- within the parent's own schema (bug #19507).
+CREATE SCHEMA regress_con_part;
+-- parent SET NOT NULL, when a partition in another schema already has a
+-- constraint by the auto-generated not-null name
+CREATE TABLE con_pt1 (a int) PARTITION BY RANGE (a);
+CREATE TABLE regress_con_part.con_pt1_1 PARTITION OF con_pt1 FOR VALUES FROM (1) TO (10);
+ALTER TABLE regress_con_part.con_pt1_1 ADD CONSTRAINT con_pt1_a_not_null CHECK (a IS NOT NULL);
+ALTER TABLE con_pt1 ALTER COLUMN a SET NOT NULL;
+-- parent ADD CHECK, when such a partition already has a constraint by the
+-- auto-generated check name
+CREATE TABLE con_pt2 (a int) PARTITION BY RANGE (a);
+CREATE TABLE regress_con_part.con_pt2_1 PARTITION OF con_pt2 FOR VALUES FROM (1) TO (10);
+ALTER TABLE regress_con_part.con_pt2_1 ADD CONSTRAINT con_pt2_a_check CHECK (a > 100);
+ALTER TABLE con_pt2 ADD CHECK (a > 0);
+-- the parent's auto-generated names were uniquified to avoid the collision
+SELECT conrelid::regclass::text AS partition, conname, contype
+  FROM pg_constraint
+ WHERE conrelid IN ('regress_con_part.con_pt1_1'::regclass,
+                    'regress_con_part.con_pt2_1'::regclass)
+ ORDER BY 1, 2;
+         partition          |       conname       | contype 
+----------------------------+---------------------+---------
+ regress_con_part.con_pt1_1 | con_pt1_a_not_null  | c
+ regress_con_part.con_pt1_1 | con_pt1_a_not_null1 | n
+ regress_con_part.con_pt2_1 | con_pt2_a_check     | c
+ regress_con_part.con_pt2_1 | con_pt2_a_check1    | c
+(4 rows)
+
+DROP TABLE con_pt1, con_pt2;
+DROP SCHEMA regress_con_part;
 -- Comments
 -- Setup a low-level role to enforce non-superuser checks.
 CREATE ROLE regress_constraint_comments;

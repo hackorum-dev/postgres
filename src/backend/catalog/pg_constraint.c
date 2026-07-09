@@ -25,6 +25,7 @@
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_inherits.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
@@ -580,6 +581,65 @@ ChooseConstraintName(const char *name1, const char *name2,
 	table_close(conDesc, AccessShareLock);
 
 	return conname;
+}
+
+/*
+ * Collect the names of the constraints defined on the inheritance children
+ * (including partitions, recursively) of the given relation.
+ *
+ * This is meant for use when automatically generating a constraint name for a
+ * relation whose constraint will be propagated to its children.  Such children
+ * may live in other schemas, where ChooseConstraintName's namespace-scoped
+ * uniqueness check would not notice an existing constraint of the same name.
+ * Passing the returned list to ChooseConstraintName (directly, or by seeding
+ * the name lists tracked while several constraints are created at once) makes
+ * the generated name unique across the whole hierarchy, not just our schema.
+ *
+ * No locks are taken on the child relations here (only catalog access is
+ * performed); a caller doing DDL already holds a suitable lock on the
+ * hierarchy.  The returned strings are palloc'd in the current memory context.
+ */
+List *
+GetInheritedConstraintNames(Oid relid)
+{
+	List	   *result = NIL;
+	List	   *children;
+	ListCell   *lc;
+	Relation	pg_constraint;
+
+	children = find_all_inheritors(relid, NoLock, NULL);
+
+	pg_constraint = table_open(ConstraintRelationId, AccessShareLock);
+
+	foreach(lc, children)
+	{
+		Oid			childrelid = lfirst_oid(lc);
+		SysScanDesc scan;
+		ScanKeyData key;
+		HeapTuple	tup;
+
+		/* find_all_inheritors includes the relation itself; skip it */
+		if (childrelid == relid)
+			continue;
+
+		ScanKeyInit(&key,
+					Anum_pg_constraint_conrelid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(childrelid));
+		scan = systable_beginscan(pg_constraint, ConstraintRelidTypidNameIndexId,
+								  true, NULL, 1, &key);
+		while (HeapTupleIsValid(tup = systable_getnext(scan)))
+		{
+			Form_pg_constraint con = (Form_pg_constraint) GETSTRUCT(tup);
+
+			result = lappend(result, pstrdup(NameStr(con->conname)));
+		}
+		systable_endscan(scan);
+	}
+
+	table_close(pg_constraint, AccessShareLock);
+
+	return result;
 }
 
 /*
