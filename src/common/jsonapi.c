@@ -322,6 +322,18 @@ lex_expect(JsonParseContext ctx, JsonLexContext *lex, JsonTokenType token)
 		return report_parse_error(ctx, lex);
 }
 
+/*
+ * lex_is_json5
+ *
+ * is JSON5 syntax enabled for this lexing context? See
+ * setJsonLexContextJSON5().
+ */
+static inline bool
+lex_is_json5(JsonLexContext *lex)
+{
+	return (lex->flags & JSONLEX_JSON5) != 0;
+}
+
 /* chars to consider as part of an alphanumeric token */
 #define JSON_ALPHANUMERIC_CHAR(c)  \
 	(((c) >= 'a' && (c) <= 'z') || \
@@ -556,6 +568,30 @@ setJsonLexContextOwnsTokens(JsonLexContext *lex, bool owned_by_context)
 		lex->flags |= JSONLEX_CTX_OWNS_TOKENS;
 	else
 		lex->flags &= ~JSONLEX_CTX_OWNS_TOKENS;
+}
+
+/*
+ * setJsonLexContextJSON5
+ *
+ * See the declaration of this function in jsonapi.h for the details of what
+ * enabling JSON5 mode does. It is only supported by the recursive descent
+ * parser invoked via pg_parse_json(), so it may not be enabled on an
+ * incremental lexing context; JSON_INVALID_LEXER_TYPE is returned in that
+ * case, matching the error pg_parse_json() itself returns when called with
+ * an incremental lexing context.
+ */
+JsonParseErrorType
+setJsonLexContextJSON5(JsonLexContext *lex, bool enable)
+{
+	if (lex->incremental)
+		return JSON_INVALID_LEXER_TYPE;
+
+	if (enable)
+		lex->flags |= JSONLEX_JSON5;
+	else
+		lex->flags &= ~JSONLEX_JSON5;
+
+	return JSON_SUCCESS;
 }
 
 static inline bool
@@ -837,6 +873,10 @@ json_count_array_elements(JsonLexContext *lex, int *elements)
 			result = json_lex(&copylex);
 			if (result != JSON_SUCCESS)
 				return result;
+
+			/* JSON5 permits a trailing comma before the closing bracket */
+			if (lex_is_json5(&copylex) && lex_peek(&copylex) == JSON_TOKEN_ARRAY_END)
+				break;
 		}
 	}
 	result = lex_expect(JSON_PARSE_ARRAY_NEXT, &copylex,
@@ -1325,7 +1365,8 @@ parse_object_field(JsonLexContext *lex, const JsonSemAction *sem)
 	JsonTokenType tok;
 	JsonParseErrorType result;
 
-	if (lex_peek(lex) != JSON_TOKEN_STRING)
+	if (lex_peek(lex) != JSON_TOKEN_STRING &&
+		!(lex_is_json5(lex) && lex_peek(lex) == JSON_TOKEN_IDENTIFIER))
 		return report_parse_error(JSON_PARSE_STRING, lex);
 	if ((ostart != NULL || oend != NULL) && lex->need_escapes)
 	{
@@ -1430,12 +1471,18 @@ parse_object(JsonLexContext *lex, const JsonSemAction *sem)
 	switch (tok)
 	{
 		case JSON_TOKEN_STRING:
+		case JSON_TOKEN_IDENTIFIER: /* only reachable in JSON5 mode */
 			result = parse_object_field(lex, sem);
 			while (result == JSON_SUCCESS && lex_peek(lex) == JSON_TOKEN_COMMA)
 			{
 				result = json_lex(lex);
 				if (result != JSON_SUCCESS)
 					break;
+
+				/* JSON5 permits a trailing comma before the closing brace */
+				if (lex_is_json5(lex) && lex_peek(lex) == JSON_TOKEN_OBJECT_END)
+					break;
+
 				result = parse_object_field(lex, sem);
 			}
 			break;
@@ -1548,6 +1595,11 @@ parse_array(JsonLexContext *lex, const JsonSemAction *sem)
 			result = json_lex(lex);
 			if (result != JSON_SUCCESS)
 				break;
+
+			/* JSON5 permits a trailing comma before the closing bracket */
+			if (lex_is_json5(lex) && lex_peek(lex) == JSON_TOKEN_ARRAY_END)
+				break;
+
 			result = parse_array_element(lex, sem);
 		}
 	}
@@ -1849,13 +1901,62 @@ json_lex(JsonLexContext *lex)
 		/* end of partial token processing */
 	}
 
-	/* Skip leading whitespace. */
-	while (s < end && (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r'))
+	/*
+	 * Skip leading whitespace, along with JSON5 comments, if enabled. JSON5
+	 * allows comments anywhere whitespace is allowed, so keep alternating
+	 * between the two until neither one advances any further.
+	 */
+	for (;;)
 	{
-		if (*s++ == '\n')
+		while (s < end && (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r'))
 		{
-			++lex->line_number;
-			lex->line_start = s;
+			if (*s++ == '\n')
+			{
+				++lex->line_number;
+				lex->line_start = s;
+			}
+		}
+
+		if (!lex_is_json5(lex) || s >= end || *s != '/' || s + 1 >= end)
+			break;
+
+		if (s[1] == '/')
+		{
+			/* "//" comment: skip through the end of the line. */
+			s += 2;
+			while (s < end && *s != '\n')
+				s++;
+		}
+		else if (s[1] == '*')
+		{
+			/* block comment: skip through the closing delimiter */
+			const char *comment_start = s;
+
+			s += 2;
+			while (s < end && !(s[0] == '*' && s + 1 < end && s[1] == '/'))
+			{
+				if (*s == '\n')
+				{
+					++lex->line_number;
+					lex->line_start = s + 1;
+				}
+				s++;
+			}
+
+			if (s >= end)
+			{
+				lex->token_start = comment_start;
+				lex->prev_token_terminator = lex->token_terminator;
+				lex->token_terminator = end;
+				return JSON_UNTERMINATED_COMMENT;
+			}
+
+			s += 2;				/* skip over the closing delimiter */
+		}
+		else
+		{
+			/* lone '/': not a comment, let the normal lexer deal with it */
+			break;
 		}
 	}
 	lex->token_start = s;
@@ -1910,6 +2011,20 @@ json_lex(JsonLexContext *lex)
 					return result;
 				lex->token_type = JSON_TOKEN_STRING;
 				break;
+			case '\'':
+				if (!lex_is_json5(lex))
+				{
+					/* not a legal token character outside JSON5 mode */
+					lex->prev_token_terminator = lex->token_terminator;
+					lex->token_terminator = s + 1;
+					return JSON_INVALID_TOKEN;
+				}
+				/* JSON5 also allows single-quoted strings. */
+				result = json_lex_string(lex);
+				if (result != JSON_SUCCESS)
+					return result;
+				lex->token_type = JSON_TOKEN_STRING;
+				break;
 			case '-':
 				/* Negative number. */
 				result = json_lex_number(lex, s + 1, NULL, NULL);
@@ -1936,12 +2051,14 @@ json_lex(JsonLexContext *lex)
 			default:
 				{
 					const char *p;
+					bool		is_keyword;
 
 					/*
 					 * We're not dealing with a string, number, legal
 					 * punctuation mark, or end of string.  The only legal
-					 * tokens we might find here are true, false, and null,
-					 * but for error reporting purposes we scan until we see a
+					 * tokens we might find here are true, false, and null
+					 * (plus, in JSON5 mode, a bare identifier), but for error
+					 * reporting purposes we scan until we see a
 					 * non-alphanumeric character.  That way, we can report
 					 * the whole word as an unexpected token, rather than just
 					 * some unintuitive prefix thereof.
@@ -1969,25 +2086,48 @@ json_lex(JsonLexContext *lex)
 					}
 
 					/*
-					 * We've got a real alphanumeric token here.  If it
-					 * happens to be true, false, or null, all is well.  If
-					 * not, error out.
+					 * We've got a real alphanumeric token here.  Check
+					 * whether it happens to be true, false, or null.
 					 */
 					lex->prev_token_terminator = lex->token_terminator;
 					lex->token_terminator = p;
-					if (p - s == 4)
-					{
-						if (memcmp(s, "true", 4) == 0)
-							lex->token_type = JSON_TOKEN_TRUE;
-						else if (memcmp(s, "null", 4) == 0)
-							lex->token_type = JSON_TOKEN_NULL;
-						else
-							return JSON_INVALID_TOKEN;
-					}
+					is_keyword = true;
+					if (p - s == 4 && memcmp(s, "true", 4) == 0)
+						lex->token_type = JSON_TOKEN_TRUE;
+					else if (p - s == 4 && memcmp(s, "null", 4) == 0)
+						lex->token_type = JSON_TOKEN_NULL;
 					else if (p - s == 5 && memcmp(s, "false", 5) == 0)
 						lex->token_type = JSON_TOKEN_FALSE;
 					else
-						return JSON_INVALID_TOKEN;
+						is_keyword = false;
+
+					if (!is_keyword)
+					{
+						/*
+						 * Not a keyword.  In JSON5 mode, treat it as a bare
+						 * identifier (e.g. an unquoted object key); the
+						 * grammar is responsible for rejecting it wherever an
+						 * identifier isn't allowed.  Otherwise it's an error.
+						 */
+						if (!lex_is_json5(lex))
+							return JSON_INVALID_TOKEN;
+
+						lex->token_type = JSON_TOKEN_IDENTIFIER;
+						if (lex->need_escapes)
+						{
+#ifdef JSONAPI_USE_PQEXPBUFFER
+							/* make sure initialization succeeded */
+							if (lex->strval == NULL)
+								return JSON_OUT_OF_MEMORY;
+#endif
+							jsonapi_resetStringInfo(lex->strval);
+							jsonapi_appendBinaryStringInfo(lex->strval, s, p - s);
+#ifdef JSONAPI_USE_PQEXPBUFFER
+							if (PQExpBufferBroken(lex->strval))
+								return JSON_OUT_OF_MEMORY;
+#endif
+						}
+					}
 				}
 		}						/* end of switch */
 	}
@@ -2015,6 +2155,9 @@ json_lex_string(JsonLexContext *lex)
 	const char *s;
 	const char *const end = lex->input + lex->input_length;
 	int			hi_surrogate = -1;
+	const char	quote = *lex->token_start;	/* '"', or in JSON5 mode '\'' */
+
+	Assert(quote == '"' || (lex_is_json5(lex) && quote == '\''));
 
 	/* Convenience macros for error exits */
 #define FAIL_OR_INCOMPLETE_AT_CHAR_START(code) \
@@ -2057,7 +2200,7 @@ json_lex_string(JsonLexContext *lex)
 		/* Premature end of the string. */
 		if (s >= end)
 			FAIL_OR_INCOMPLETE_AT_CHAR_START(JSON_INVALID_TOKEN);
-		else if (*s == '"')
+		else if (*s == quote)
 			break;
 		else if (*s == '\\')
 		{
@@ -2165,6 +2308,19 @@ json_lex_string(JsonLexContext *lex)
 					case '/':
 						jsonapi_appendStringInfoChar(lex->strval, *s);
 						break;
+					case '\'':
+						if (!lex_is_json5(lex))
+						{
+							/*
+							 * Not a valid string escape, so signal error. We
+							 * adjust token_start so that just the escape
+							 * sequence is reported, not the whole string.
+							 */
+							lex->token_start = s;
+							FAIL_AT_CHAR_END(JSON_ESCAPING_INVALID);
+						}
+						jsonapi_appendStringInfoChar(lex->strval, *s);
+						break;
 					case 'b':
 						jsonapi_appendStringInfoChar(lex->strval, '\b');
 						break;
@@ -2191,7 +2347,8 @@ json_lex_string(JsonLexContext *lex)
 						FAIL_AT_CHAR_END(JSON_ESCAPING_INVALID);
 				}
 			}
-			else if (strchr("\"\\/bfnrt", *s) == NULL)
+			else if (strchr("\"\\/bfnrt", *s) == NULL &&
+					 !(lex_is_json5(lex) && *s == '\''))
 			{
 				/*
 				 * Simpler processing if we're not bothered about de-escaping
@@ -2217,13 +2374,13 @@ json_lex_string(JsonLexContext *lex)
 			 */
 			while (p < end - sizeof(Vector8) &&
 				   !pg_lfind8('\\', (const uint8 *) p, sizeof(Vector8)) &&
-				   !pg_lfind8('"', (const uint8 *) p, sizeof(Vector8)) &&
+				   !pg_lfind8((uint8) quote, (const uint8 *) p, sizeof(Vector8)) &&
 				   !pg_lfind8_le(31, (const uint8 *) p, sizeof(Vector8)))
 				p += sizeof(Vector8);
 
 			for (; p < end; p++)
 			{
-				if (*p == '\\' || *p == '"')
+				if (*p == '\\' || *p == quote)
 					break;
 				else if ((unsigned char) *p <= 31)
 				{
@@ -2523,6 +2680,8 @@ json_errdetail(JsonParseErrorType error, JsonLexContext *lex)
 		case JSON_INVALID_TOKEN:
 			json_token_error(lex, "Token \"%.*s\" is invalid.");
 			break;
+		case JSON_UNTERMINATED_COMMENT:
+			return _("Unterminated \"/*\" comment.");
 		case JSON_OUT_OF_MEMORY:
 			/* should have been handled above; use the error path */
 			break;

@@ -1,7 +1,7 @@
 Module `test_json_parser`
 =========================
 
-This module contains two programs for testing the json parsers.
+This module contains three programs for testing the json parsers.
 
 - `test_json_parser_incremental` is for testing the incremental parser, It
   reads in a file and passes it in very small chunks (default is 60 bytes at a
@@ -20,6 +20,12 @@ This module contains two programs for testing the json parsers.
   using the non-recursive parser, the input is passed to the parser in a
   single chunk. The results are thus comparable to those of the
   standard parser.
+- `test_json_parser_json5` is for testing JSON5 mode of the standard
+  recursive descent parser (see `setJsonLexContextJSON5()`). It parses its
+  input in a single chunk, with JSON5 mode enabled unless "-p" (plain JSON)
+  is given. As with `test_json_parser_incremental`, "-s" specifies using
+  semantic routines to re-output the json. The required non-option argument
+  is the input file name.
 
 The sample input file is a small, sanitized extract from a list of `delicious`
 bookmarks taken some years ago, all wrapped in a single json
