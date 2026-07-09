@@ -29,6 +29,13 @@ typedef enum JsonTokenType
 	JSON_TOKEN_FALSE,
 	JSON_TOKEN_NULL,
 	JSON_TOKEN_END,
+
+	/*
+	 * Only produced when JSON5 mode is enabled (see
+	 * setJsonLexContextJSON5()), for a bare identifier such as an unquoted
+	 * object key.
+	 */
+	JSON_TOKEN_IDENTIFIER,
 } JsonTokenType;
 
 typedef enum JsonParseErrorType
@@ -49,6 +56,7 @@ typedef enum JsonParseErrorType
 	JSON_EXPECTED_OBJECT_NEXT,
 	JSON_EXPECTED_STRING,
 	JSON_INVALID_TOKEN,
+	JSON_UNTERMINATED_COMMENT,
 	JSON_OUT_OF_MEMORY,
 	JSON_UNICODE_CODE_POINT_ZERO,
 	JSON_UNICODE_ESCAPE_FORMAT,
@@ -93,10 +101,12 @@ typedef struct JsonIncrementalState JsonIncrementalState;
  *
  * JSONLEX_FREE_STRUCT/STRVAL are used to drive freeJsonLexContext.
  * JSONLEX_CTX_OWNS_TOKENS is used by setJsonLexContextOwnsTokens.
+ * JSONLEX_JSON5 is used by setJsonLexContextJSON5.
  */
 #define JSONLEX_FREE_STRUCT			(1 << 0)
 #define JSONLEX_FREE_STRVAL			(1 << 1)
 #define JSONLEX_CTX_OWNS_TOKENS		(1 << 2)
+#define JSONLEX_JSON5					(1 << 3)
 typedef struct JsonLexContext
 {
 	const char *input;
@@ -248,6 +258,23 @@ extern JsonLexContext *makeJsonLexContextIncremental(JsonLexContext *lex,
  */
 extern void setJsonLexContextOwnsTokens(JsonLexContext *lex,
 										bool owned_by_context);
+
+/*
+ * Enables or disables JSON5 syntax extensions for the given lexing context:
+ * comments (both "// ..." and slash-star ... star-slash forms), trailing
+ * commas in arrays and objects, single-quoted strings, and unquoted
+ * (identifier) object keys.
+ *
+ * JSON5 mode is only supported for the recursive descent parser invoked via
+ * pg_parse_json(); enabling it on a context set up for incremental parsing
+ * (see makeJsonLexContextIncremental()) returns JSON_INVALID_LEXER_TYPE
+ * without making any change, the same error pg_parse_json() itself returns
+ * when called with an incremental lexing context.
+ *
+ * By default, JSON5 mode is disabled.
+ */
+extern JsonParseErrorType setJsonLexContextJSON5(JsonLexContext *lex,
+												 bool enable);
 
 extern void freeJsonLexContext(JsonLexContext *lex);
 
