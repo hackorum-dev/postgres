@@ -50,6 +50,25 @@ test_json_parser_perf = executable('test_json_parser_perf',
   },
 )
 
+test_json_parser_json5_sources = files(
+  'test_json_parser_json5.c',
+)
+
+if host_system == 'windows'
+  test_json_parser_json5_sources += rc_bin_gen.process(win32ver_rc, extra_args: [
+    '--NAME', 'test_json_parser_json5',
+    '--FILEDESC', 'standalone json parser tester',
+  ])
+endif
+
+test_json_parser_json5 = executable('test_json_parser_json5',
+  test_json_parser_json5_sources,
+  dependencies: [frontend_code],
+  kwargs: default_bin_args + {
+    'install': false,
+  },
+)
+
 tests += {
   'name': 'test_json_parser',
   'sd': meson.current_source_dir(),
@@ -59,12 +78,14 @@ tests += {
       't/001_test_json_parser_incremental.pl',
       't/002_inline.pl',
       't/003_test_semantic.pl',
-      't/004_test_parser_perf.pl'
+      't/004_test_parser_perf.pl',
+      't/005_test_json5.pl',
     ],
     'deps': [
       test_json_parser_incremental,
       test_json_parser_incremental_shlib,
       test_json_parser_perf,
+      test_json_parser_json5,
     ],
   },
 }
