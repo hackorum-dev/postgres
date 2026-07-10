@@ -4061,6 +4061,7 @@ typedef struct ExplainStmt
 	NodeTag		type;
 	Node	   *query;			/* the query (see comments above) */
 	List	   *options;		/* list of DefElem nodes */
+	ParseLoc   explainable_loc;
 } ExplainStmt;
 
 /* ----------------------
