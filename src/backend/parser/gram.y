@@ -12822,6 +12822,7 @@ ExplainStmt:
 
 					n->query = $2;
 					n->options = NIL;
+					n->explainable_loc = @2;
 					$$ = (Node *) n;
 				}
 		| EXPLAIN analyze_keyword opt_verbose ExplainableStmt
@@ -12833,6 +12834,7 @@ ExplainStmt:
 					if ($3)
 						n->options = lappend(n->options,
 											 makeDefElem("verbose", NULL, @3));
+					n->explainable_loc = @4;
 					$$ = (Node *) n;
 				}
 		| EXPLAIN VERBOSE ExplainableStmt
@@ -12841,6 +12843,7 @@ ExplainStmt:
 
 					n->query = $3;
 					n->options = list_make1(makeDefElem("verbose", NULL, @2));
+					n->explainable_loc = @3;
 					$$ = (Node *) n;
 				}
 		| EXPLAIN '(' utility_option_list ')' ExplainableStmt
@@ -12849,6 +12852,7 @@ ExplainStmt:
 
 					n->query = $5;
 					n->options = $3;
+					n->explainable_loc = @5;
 					$$ = (Node *) n;
 				}
 		;
