@@ -280,7 +280,7 @@ free_auth_token(AuthToken *token)
 }
 
 /*
- * Copy a AuthToken struct into freshly palloc'd memory.
+ * Copy an AuthToken struct into freshly palloc'd memory.
  */
 static AuthToken *
 copy_auth_token(AuthToken *in)

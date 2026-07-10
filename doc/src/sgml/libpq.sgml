@@ -4928,10 +4928,10 @@ char *PQcmdTuples(PGresult *res);
        Returns the OID<indexterm><primary>OID</primary><secondary>in libpq</secondary></indexterm>
        of the inserted row, if the <acronym>SQL</acronym> command was an
        <command>INSERT</command> that inserted exactly one row into a table that
-       has OIDs, or a <command>EXECUTE</command> of a prepared query containing
-       a suitable <command>INSERT</command> statement.  Otherwise, this function
-       returns <literal>InvalidOid</literal>. This function will also
-       return <literal>InvalidOid</literal> if the table affected by the
+       has OIDs, or an <command>EXECUTE</command> of a prepared query
+       containing a suitable <command>INSERT</command> statement.  Otherwise,
+       this function returns <literal>InvalidOid</literal>. This function will
+       also return <literal>InvalidOid</literal> if the table affected by the
        <command>INSERT</command> statement does not contain OIDs.
 <synopsis>
 Oid PQoidValue(const PGresult *res);

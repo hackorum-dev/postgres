@@ -69,7 +69,7 @@ static const astreamer_ops astreamer_extractor_ops = {
 };
 
 /*
- * Create a astreamer that just writes data to a file.
+ * Create an astreamer that just writes data to a file.
  *
  * The caller must specify a pathname and may specify a file. The pathname is
  * used for error-reporting purposes either way. If file is NULL, the pathname
@@ -163,7 +163,7 @@ astreamer_plain_writer_free(astreamer *streamer)
 }
 
 /*
- * Create a astreamer that extracts an archive.
+ * Create an astreamer that extracts an archive.
  *
  * All pathnames in the archive are interpreted relative to basepath.
  *

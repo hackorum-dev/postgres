@@ -3,7 +3,7 @@
  * tidstore.c
  *		TID (ItemPointerData) storage implementation.
  *
- * TidStore is a in-memory data structure to store TIDs (ItemPointerData).
+ * TidStore is an in-memory data structure to store TIDs (ItemPointerData).
  * Internally it uses a radix tree as the storage for TIDs. The key is the
  * BlockNumber and the value is a bitmap of offsets, BlocktableEntry.
  *

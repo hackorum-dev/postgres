@@ -132,7 +132,7 @@ astreamer_verify_content(astreamer *streamer, astreamer_member *member,
 }
 
 /*
- * End-of-stream processing for a astreamer_verify stream.
+ * End-of-stream processing for an astreamer_verify stream.
  */
 static void
 astreamer_verify_finalize(astreamer *streamer)
@@ -141,7 +141,7 @@ astreamer_verify_finalize(astreamer *streamer)
 }
 
 /*
- * Free memory associated with a astreamer_verify stream.
+ * Free memory associated with an astreamer_verify stream.
  */
 static void
 astreamer_verify_free(astreamer *streamer)

@@ -229,9 +229,9 @@
    <para>
     When a function is called by the event trigger manager, it is not passed
     any normal arguments, but it is passed a <quote>context</quote> pointer
-    pointing to a <structname>EventTriggerData</structname> structure. C functions can
-    check whether they were called from the event trigger manager or not by
-    executing the macro:
+    pointing to an <structname>EventTriggerData</structname> structure. C
+    functions can check whether they were called from the event trigger manager
+    or not by executing the macro:
 <programlisting>
 CALLED_AS_EVENT_TRIGGER(fcinfo)
 </programlisting>

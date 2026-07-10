@@ -705,10 +705,10 @@ uuidv7_interval(PG_FUNCTION_ARGS)
 												 TimestampTzGetDatum(ts),
 												 IntervalPGetDatum(shift)));
 
-	/* Convert a TimestampTz value back to an UNIX epoch timestamp */
+	/* Convert a TimestampTz value back to a Unix epoch timestamp */
 	us = ts + (POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC;
 
-	/* Generate an UUIDv7 */
+	/* Generate a UUIDv7 */
 	uuid = generate_uuidv7(us / US_PER_MS, (us % US_PER_MS) * NS_PER_US + ns % NS_PER_US);
 
 	PG_RETURN_UUID_P(uuid);

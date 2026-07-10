@@ -1320,8 +1320,8 @@ ExecInitExprRec(Expr *node, ExprState *state,
 										 opexpr->inputcollid, NULL, NULL);
 
 				/*
-				 * If hashfuncid is set, we create a EEOP_HASHED_SCALARARRAYOP
-				 * step instead of a EEOP_SCALARARRAYOP.  This provides much
+				 * If hashfuncid is set, we create an EEOP_HASHED_SCALARARRAYOP
+				 * step instead of an EEOP_SCALARARRAYOP.  This provides much
 				 * faster lookup performance than the normal linear search
 				 * when the number of items in the array is anything but very
 				 * small.
@@ -5039,7 +5039,7 @@ ExecInitJsonExpr(JsonExpr *jsexpr, ExprState *state,
 }
 
 /*
- * Initialize a EEOP_JSONEXPR_COERCION step to coerce the value given in resv
+ * Initialize an EEOP_JSONEXPR_COERCION step to coerce the value given in resv
  * to the given RETURNING type.
  */
 static void

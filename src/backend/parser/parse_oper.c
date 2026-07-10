@@ -130,7 +130,7 @@ LookupOperName(ParseState *pstate, List *opername, Oid oprleft, Oid oprright,
 /*
  * LookupOperWithArgs
  *		Like LookupOperName, but the argument types are specified by
- *		a ObjectWithArgs node.
+ *		an ObjectWithArgs node.
  */
 Oid
 LookupOperWithArgs(ObjectWithArgs *oper, bool noError)

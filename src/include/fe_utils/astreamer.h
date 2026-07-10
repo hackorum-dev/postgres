@@ -41,7 +41,7 @@ typedef struct astreamer astreamer;
 typedef struct astreamer_ops astreamer_ops;
 
 /*
- * Each chunk of archive data passed to a astreamer is classified into one
+ * Each chunk of archive data passed to an astreamer is classified into one
  * of these categories. When data is initially passed to an archive streamer,
  * each chunk will be categorized as ASTREAMER_UNKNOWN, and the chunks can
  * be of whatever size the caller finds convenient.
@@ -92,7 +92,7 @@ typedef struct
 
 /*
  * Generally, each type of astreamer will define its own struct, but the
- * first element should be 'astreamer base'. A astreamer that does not
+ * first element should be 'astreamer base'. An astreamer that does not
  * require any additional private data could use this structure directly.
  *
  * bbs_ops is a pointer to the astreamer_ops object which contains the
@@ -114,7 +114,7 @@ struct astreamer
 };
 
 /*
- * There are three callbacks for a astreamer. The 'content' callback is
+ * There are three callbacks for an astreamer. The 'content' callback is
  * called repeatedly, as described in the astreamer_archive_context comments.
  * Then, the 'finalize' callback is called once at the end, to give the
  * astreamer a chance to perform cleanup such as closing files. Finally,
@@ -132,7 +132,7 @@ struct astreamer_ops
 	void		(*free) (astreamer *streamer);
 };
 
-/* Send some content to a astreamer. */
+/* Send some content to an astreamer. */
 static inline void
 astreamer_content(astreamer *streamer, astreamer_member *member,
 				  const char *data, int len,
@@ -142,7 +142,7 @@ astreamer_content(astreamer *streamer, astreamer_member *member,
 	streamer->bbs_ops->content(streamer, member, data, len, context);
 }
 
-/* Finalize a astreamer. */
+/* Finalize an astreamer. */
 static inline void
 astreamer_finalize(astreamer *streamer)
 {
@@ -150,7 +150,7 @@ astreamer_finalize(astreamer *streamer)
 	streamer->bbs_ops->finalize(streamer);
 }
 
-/* Free a astreamer. */
+/* Free an astreamer. */
 static inline void
 astreamer_free(astreamer *streamer)
 {
@@ -159,7 +159,7 @@ astreamer_free(astreamer *streamer)
 }
 
 /*
- * This is a convenience method for use when implementing a astreamer; it is
+ * This is a convenience method for use when implementing an astreamer; it is
  * not for use by outside callers. It adds the amount of data specified by
  * 'nbytes' to the astreamer's buffer and adjusts '*len' and '*data'
  * accordingly.
@@ -176,7 +176,7 @@ astreamer_buffer_bytes(astreamer *streamer, const char **data, int *len,
 }
 
 /*
- * This is a convenience method for use when implementing a astreamer; it is
+ * This is a convenience method for use when implementing an astreamer; it is
  * not for use by outsider callers. It attempts to add enough data to the
  * astreamer's buffer to reach a length of target_bytes and adjusts '*len'
  * and '*data' accordingly. It returns true if the target length has been
