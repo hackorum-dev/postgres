@@ -1,9 +1,12 @@
 #include "postgres.h"
 
+#include <math.h>
+
 #include "c.h"
 #include "nodes/supportnodes.h"
 #include "utils/fmgrprotos.h"
 #include "utils/numeric.h"
+
 /**
  * Extended numeric sign, the usual -1, 0, 1,
  * for real numbers, and additional values for non-real
@@ -20,6 +23,15 @@ typedef enum SLOPE_SIGN
 	SLOPE_SIGN_NAN = 3,
 	SLOPE_SIGN_NULL = 4,
 } SLOPE_SIGN;
+
+/* Static variables returned by prosupport below */
+static const MonotonicFunction asc_slope[2] = {MONOTONICFUNC_INCREASING, MONOTONICFUNC_INCREASING};
+static const MonotonicFunction desc_slope[2] = {MONOTONICFUNC_DECREASING, MONOTONICFUNC_DECREASING};
+static const MonotonicFunction flat_slope[2] = {MONOTONICFUNC_BOTH, MONOTONICFUNC_BOTH};
+static const MonotonicFunction diff_slope[2] = {MONOTONICFUNC_INCREASING, MONOTONICFUNC_DECREASING};
+static const MonotonicFunction asc1_slope[2] = {MONOTONICFUNC_NONE, MONOTONICFUNC_INCREASING};
+static const MonotonicFunction asc0_slope[1] = {MONOTONICFUNC_INCREASING};
+static const MonotonicFunction desc0_slope[1] = {MONOTONICFUNC_DECREASING};
 
 
 /*
@@ -45,21 +57,23 @@ monotonic_slope_support(Node *rawreq, int nslopes,
 	return PointerGetDatum(NULL);
 }
 
+static List* get_arg_list(Node *rawreq)
+{
+	SupportRequestMonotonic *req = (SupportRequestMonotonic *) rawreq;
+	if (!IsA(rawreq, SupportRequestMonotonic))
+		return NULL;
+	if (IsA(req->expr, FuncExpr))
+		return ((FuncExpr *) req->expr)->args;
+	else if (IsA(req->expr, OpExpr))
+		return ((OpExpr *) req->expr)->args;
+	else
+		return NULL;
+}
 
 static bool
 get_2slope_args(Node *rawreq, Node **arg0, Node **arg1)
 {
-	SupportRequestMonotonic *req = (SupportRequestMonotonic *) rawreq;
-	List	   *args;
-
-	if (!IsA(rawreq, SupportRequestMonotonic))
-		return false;
-	if (IsA(req->expr, FuncExpr))
-		args = ((FuncExpr *) req->expr)->args;
-	else if (IsA(req->expr, OpExpr))
-		args = ((OpExpr *) req->expr)->args;
-	else
-		return false;
+	List	   *args = get_arg_list(rawreq);
 	if (list_length(args) < 2)
 		return false;
 	*arg0 = (Node *) linitial(args);
@@ -147,12 +161,6 @@ get_const_sign(Const *constval)
 	}
 }
 
-static const MonotonicFunction asc_slope[2] = {MONOTONICFUNC_INCREASING, MONOTONICFUNC_INCREASING};
-static const MonotonicFunction desc_slope[2] = {MONOTONICFUNC_DECREASING, MONOTONICFUNC_DECREASING};
-static const MonotonicFunction flat_slope[2] = {MONOTONICFUNC_BOTH, MONOTONICFUNC_BOTH};
-static const MonotonicFunction diff_slope[2] = {MONOTONICFUNC_INCREASING, MONOTONICFUNC_DECREASING};
-
-
 
 /*
  * Prosupport: f(x, ...) is monotonically increasing in x.
@@ -160,10 +168,8 @@ static const MonotonicFunction diff_slope[2] = {MONOTONICFUNC_INCREASING, MONOTO
 Datum
 arg0_asc_slope_support(PG_FUNCTION_ARGS)
 {
-	static const MonotonicFunction pattern[1] = {MONOTONICFUNC_INCREASING};
-
 	return monotonic_slope_support((Node *) PG_GETARG_POINTER(0),
-								   lengthof(pattern), pattern);
+								   lengthof(asc0_slope), asc0_slope);
 }
 
  /*
@@ -172,10 +178,8 @@ arg0_asc_slope_support(PG_FUNCTION_ARGS)
 Datum
 arg0_desc_slope_support(PG_FUNCTION_ARGS)
 {
-	static const MonotonicFunction pattern[1] = {MONOTONICFUNC_DECREASING};
-
 	return monotonic_slope_support((Node *) PG_GETARG_POINTER(0),
-								   lengthof(pattern), pattern);
+								   lengthof(desc0_slope), desc0_slope);
 }
 
  /*
@@ -184,11 +188,8 @@ arg0_desc_slope_support(PG_FUNCTION_ARGS)
 Datum
 arg1_asc_slope_support(PG_FUNCTION_ARGS)
 {
-	static const MonotonicFunction pattern[2] = {MONOTONICFUNC_NONE,
-	MONOTONICFUNC_INCREASING};
-
 	return monotonic_slope_support((Node *) PG_GETARG_POINTER(0),
-								   lengthof(pattern), pattern);
+								   lengthof(asc1_slope), asc1_slope);
 }
 
 /*
