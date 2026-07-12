@@ -179,11 +179,6 @@ SELECT FROM orders JOIN customers
 SELECT FROM orders JOIN customers
   FOR KEY other_db.public.orders (customer_id) -> customers (id);
 
--- rejected, reason: policies are not rechecked yet
-BEGIN;
-CREATE POLICY stored_policy ON shipments USING (EXISTS (SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)));
-ROLLBACK;
-
 -- An endpoint can be reached through any operand that passes its rows and
 -- key columns through unchanged: a join, a subquery with renamed columns, a
 -- CTE and a view.
@@ -515,7 +510,32 @@ $$;
 ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey NOT ENFORCED;
 ROLLBACK;
 
--- Left in place for the dump and upgrade tests.
+-- A policy records its proof too.
+ALTER TABLE shipments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY shipped_orders ON shipments USING (
+  EXISTS (SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)
+          WHERE o.id = order_id));
+SELECT polname, pg_get_expr(polqual, polrelid) FROM pg_policy WHERE polname = 'shipped_orders';
+-- Every form of ALTER POLICY proves the expressions again, also one that
+-- only changes the roles and so reloads the stored ones.
+ALTER POLICY shipped_orders ON shipments USING (
+  EXISTS (SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)
+          WHERE o.id = order_id));
+ALTER POLICY shipped_orders ON shipments WITH CHECK (
+  EXISTS (SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)
+          WHERE o.id = order_id));
+ALTER POLICY shipped_orders ON shipments TO CURRENT_USER;
+-- rejected, reason: the policy's proof needs the foreign key enforced
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey NOT ENFORCED;
+-- rejected, reason: the same holds for a proof only in WITH CHECK
+BEGIN;
+ALTER POLICY shipped_orders ON shipments USING (true)
+  WITH CHECK (EXISTS (SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)));
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey NOT ENFORCED;
+ROLLBACK;
+
+-- Left in place for the dump and upgrade tests, as is the policy
+-- shipped_orders above.
 CREATE VIEW order_customers AS
 SELECT o.id, c.name FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
 CREATE FUNCTION customer_of(order_id int) RETURNS text
