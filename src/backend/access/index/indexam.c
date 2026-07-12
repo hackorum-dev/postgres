@@ -206,6 +206,14 @@ validate_relation_as_index(Relation r)
 }
 
 
+/*
+ * Hooks for plugins to get control in index_insert() and
+ * index_insert_cleanup().  A hook is expected to call the corresponding
+ * standard_ function to perform the actual insertion or cleanup.
+ */
+index_insert_hook_type index_insert_hook = NULL;
+index_insert_cleanup_hook_type index_insert_cleanup_hook = NULL;
+
 /* ----------------
  *		index_insert - insert an index tuple into a relation
  * ----------------
@@ -219,6 +227,32 @@ index_insert(Relation indexRelation,
 			 IndexUniqueCheck checkUnique,
 			 bool indexUnchanged,
 			 IndexInfo *indexInfo)
+{
+	if (index_insert_hook)
+		return (*index_insert_hook) (indexRelation, values, isnull,
+									 heap_t_ctid, heapRelation,
+									 checkUnique, indexUnchanged,
+									 indexInfo);
+
+	return standard_index_insert(indexRelation, values, isnull,
+								 heap_t_ctid, heapRelation,
+								 checkUnique, indexUnchanged,
+								 indexInfo);
+}
+
+/* ----------------
+ *		standard_index_insert - standard implementation of index_insert
+ * ----------------
+ */
+bool
+standard_index_insert(Relation indexRelation,
+					  Datum *values,
+					  bool *isnull,
+					  ItemPointer heap_t_ctid,
+					  Relation heapRelation,
+					  IndexUniqueCheck checkUnique,
+					  bool indexUnchanged,
+					  IndexInfo *indexInfo)
 {
 	RELATION_CHECKS;
 	CHECK_REL_PROCEDURE(aminsert);
@@ -241,6 +275,24 @@ index_insert(Relation indexRelation,
 void
 index_insert_cleanup(Relation indexRelation,
 					 IndexInfo *indexInfo)
+{
+	if (index_insert_cleanup_hook)
+	{
+		(*index_insert_cleanup_hook) (indexRelation, indexInfo);
+		return;
+	}
+
+	standard_index_insert_cleanup(indexRelation, indexInfo);
+}
+
+/* -------------------------
+ *		standard_index_insert_cleanup - standard implementation of
+ *		index_insert_cleanup
+ * -------------------------
+ */
+void
+standard_index_insert_cleanup(Relation indexRelation,
+							  IndexInfo *indexInfo)
 {
 	RELATION_CHECKS;
 
