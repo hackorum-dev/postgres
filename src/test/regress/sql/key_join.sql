@@ -179,13 +179,7 @@ SELECT FROM orders JOIN customers
 SELECT FROM orders JOIN customers
   FOR KEY other_db.public.orders (customer_id) -> customers (id);
 
--- rejected, reason: function bodies and policies are not rechecked yet
-BEGIN;
-CREATE FUNCTION stored_function() RETURNS bigint
-BEGIN ATOMIC
-  SELECT count(*) FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
-END;
-ROLLBACK;
+-- rejected, reason: policies are not rechecked yet
 BEGIN;
 CREATE POLICY stored_policy ON shipments USING (EXISTS (SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)));
 ROLLBACK;
@@ -479,6 +473,53 @@ ALTER TABLE orders RENAME COLUMN referrer_id TO referred_by;
 SELECT pg_get_viewdef('referred_orders'::regclass, true);
 ROLLBACK;
 
+-- A SQL-standard function body records its proof like a view does.
+BEGIN;
+CREATE FUNCTION customer_of(order_id int) RETURNS text
+BEGIN ATOMIC
+  SELECT c.name FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)
+  WHERE o.id = order_id;
+END;
+SELECT pg_get_functiondef('customer_of'::regproc);
+-- rejected, reason: the body's proof needs the foreign key enforced
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey NOT ENFORCED;
+ROLLBACK;
+
+-- rejected, reason: a body that filters on its own function is checked
+-- against the new definition, which is volatile
+BEGIN;
+CREATE FUNCTION self_filtered() RETURNS int STABLE RETURN 1;
+CREATE OR REPLACE FUNCTION self_filtered() RETURNS int STABLE
+BEGIN ATOMIC
+  SELECT o.customer_id
+  FROM (SELECT * FROM orders WHERE customer_id = self_filtered()) o
+  JOIN (SELECT * FROM customers WHERE id = self_filtered()) c
+    FOR KEY o (customer_id) -> c (id);
+END;
+CREATE OR REPLACE FUNCTION self_filtered() RETURNS int VOLATILE
+BEGIN ATOMIC
+  SELECT o.customer_id
+  FROM (SELECT * FROM orders WHERE customer_id = self_filtered()) o
+  JOIN (SELECT * FROM customers WHERE id = self_filtered()) c
+    FOR KEY o (customer_id) -> c (id);
+END;
+ROLLBACK;
+
+-- A string-literal body is not parsed at creation, so it records no proof
+-- and does not block the change.
+BEGIN;
+CREATE FUNCTION customer_of_text(order_id int) RETURNS text LANGUAGE sql AS $$
+  SELECT c.name FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)
+  WHERE o.id = order_id
+$$;
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey NOT ENFORCED;
+ROLLBACK;
+
 -- Left in place for the dump and upgrade tests.
 CREATE VIEW order_customers AS
 SELECT o.id, c.name FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
+CREATE FUNCTION customer_of(order_id int) RETURNS text
+BEGIN ATOMIC
+  SELECT c.name FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)
+  WHERE o.id = order_id;
+END;
