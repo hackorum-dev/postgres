@@ -144,6 +144,21 @@ extern Relation index_open(Oid relationId, LOCKMODE lockmode);
 extern Relation try_index_open(Oid relationId, LOCKMODE lockmode);
 extern void index_close(Relation relation, LOCKMODE lockmode);
 
+/* Hook for plugins to get control in index_insert() */
+typedef bool (*index_insert_hook_type) (Relation indexRelation,
+										Datum *values, bool *isnull,
+										ItemPointer heap_t_ctid,
+										Relation heapRelation,
+										IndexUniqueCheck checkUnique,
+										bool indexUnchanged,
+										IndexInfo *indexInfo);
+extern PGDLLIMPORT index_insert_hook_type index_insert_hook;
+
+/* Hook for plugins to get control in index_insert_cleanup() */
+typedef void (*index_insert_cleanup_hook_type) (Relation indexRelation,
+												IndexInfo *indexInfo);
+extern PGDLLIMPORT index_insert_cleanup_hook_type index_insert_cleanup_hook;
+
 extern bool index_insert(Relation indexRelation,
 						 Datum *values, bool *isnull,
 						 ItemPointer heap_t_ctid,
@@ -151,8 +166,17 @@ extern bool index_insert(Relation indexRelation,
 						 IndexUniqueCheck checkUnique,
 						 bool indexUnchanged,
 						 IndexInfo *indexInfo);
+extern bool standard_index_insert(Relation indexRelation,
+								  Datum *values, bool *isnull,
+								  ItemPointer heap_t_ctid,
+								  Relation heapRelation,
+								  IndexUniqueCheck checkUnique,
+								  bool indexUnchanged,
+								  IndexInfo *indexInfo);
 extern void index_insert_cleanup(Relation indexRelation,
 								 IndexInfo *indexInfo);
+extern void standard_index_insert_cleanup(Relation indexRelation,
+										  IndexInfo *indexInfo);
 
 extern IndexScanDesc index_beginscan(Relation heapRelation,
 									 Relation indexRelation,
