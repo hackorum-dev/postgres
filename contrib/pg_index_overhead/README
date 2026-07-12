@@ -1,0 +1,27 @@
+pg_index_overhead
+=================
+
+Demonstration module for the proposed index_insert_hook and
+index_insert_cleanup_hook.
+
+Adds an INDEX_UPDATES option to EXPLAIN.  Used together with ANALYZE
+on a data-modifying statement, each ModifyTable node is annotated with
+per-index insert counts and time, and (with the corresponding EXPLAIN
+options) per-index WAL and shared-buffer usage, plus heap-level
+modification counts including HOT updates.
+
+Usage:
+
+    LOAD 'pg_index_overhead';    -- or session_preload_libraries
+    EXPLAIN (ANALYZE, WAL, INDEX_UPDATES) UPDATE ...;
+
+Notes:
+
+  - INDEX_UPDATES requires ANALYZE.  TIMING OFF suppresses only the
+    time= fields; counts, WAL and buffer usage are still collected.
+  - A partial index skipped by its predicate never reaches
+    index_insert(), so it does not appear in the output at all.
+  - Demonstration-grade attribution: entries not attributable to a
+    ModifyTable node's result relations (TOAST indexes, tuple-routed
+    partitions, indexes touched by trigger-fired statements) are
+    attached to the top plan node; catalog indexes are suppressed.
