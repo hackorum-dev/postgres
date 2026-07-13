@@ -3856,13 +3856,26 @@ meson_install_args = meson_args + ['install'] + {
 # setup tests should be run first,
 # so define priority for these
 setup_tests_priority = 100
+
+# Depend on a single stamp custom_target rather than the raw
+# installed_targets list directly, so that on Windows this test's PATH
+# doesn't get one entry per target in installed_targets (including the
+# hundreds of per-locale NLS .mo directories). This still forces
+# installed_targets to build first.
+installed_targets_stamp = custom_target('installed-targets-stamp',
+  output: 'installed-targets-stamp',
+  command: [python, '-c', 'pass'],
+  depends: installed_targets,
+  build_always_stale: true,
+)
+
 test('tmp_install',
     meson_bin, args: meson_install_args ,
     env: {'DESTDIR':test_install_destdir},
     priority: setup_tests_priority,
     timeout: 300,
     is_parallel: false,
-    depends: installed_targets,
+    depends: installed_targets_stamp,
     suite: ['setup'])
 
 test('install_test_files',
