@@ -271,6 +271,8 @@ static td_entry td_parser_table[JSON_NUM_NONTERMINALS][JSON_NUM_TERMINALS] =
 /* the GOAL production. Not stored in the table, but will be the initial contents of the prediction stack */
 static char JSON_PROD_GOAL[] = {JSON_TOKEN_END, JSON_NT_JSON, 0};
 
+static void reset_partial_state(JsonLexContext *lex);
+static JsonParseErrorType continue_partial_lex(JsonLexContext *lex);
 static inline JsonParseErrorType json_lex_string(JsonLexContext *lex);
 static inline JsonParseErrorType json_lex_number(JsonLexContext *lex, const char *s,
 												 bool *num_err, size_t *total_len);
@@ -1571,6 +1573,256 @@ parse_array(JsonLexContext *lex, const JsonSemAction *sem)
 }
 
 /*
+ * We just lexed a completed partial token on the last call, so reset everything
+ */
+static void
+reset_partial_state(JsonLexContext *lex)
+{
+	Assert(lex->incremental);
+	Assert(lex->inc_state->partial_completed);
+
+	jsonapi_resetStringInfo(&(lex->inc_state->partial_token));
+	lex->token_terminator = lex->input;
+	lex->inc_state->partial_completed = false;
+}
+
+/*
+ * We have a partial token. Extend it and if completed lex it by a recursive
+ * call
+ */
+static JsonParseErrorType
+continue_partial_lex(JsonLexContext *lex)
+{
+	jsonapi_StrValType *ptok;
+	size_t		added = 0;
+	bool		tok_done = false;
+	JsonLexContext dummy_lex = {0};
+	JsonParseErrorType partial_result;
+
+	Assert(lex->incremental);
+	Assert(lex->inc_state->partial_token.len);
+
+	ptok = &(lex->inc_state->partial_token);
+
+	if (ptok->data[0] == '"')
+	{
+		/*
+		 * It's a string. Accumulate characters until we reach an unescaped '"'.
+		 */
+		int			escapes = 0;
+
+		for (int i = ptok->len - 1; i > 0; i--)
+		{
+			/* count the trailing backslashes on the partial token */
+			if (ptok->data[i] == '\\')
+				escapes++;
+			else
+				break;
+		}
+
+		for (size_t i = 0; i < lex->input_length; i++)
+		{
+			char		c = lex->input[i];
+
+			jsonapi_appendStringInfoCharMacro(ptok, c);
+			added++;
+			if (c == '"' && escapes % 2 == 0)
+			{
+				tok_done = true;
+				break;
+			}
+			if (c == '\\')
+				escapes++;
+			else
+				escapes = 0;
+		}
+	}
+	else
+	{
+		/* not a string */
+		char		c = ptok->data[0];
+
+		if (c == '-' || (c >= '0' && c <= '9'))
+		{
+			/*
+			 * Accumulate numeric continuations, respecting JSON number
+			 * grammar: -? int [frac] [exp]
+			 *
+			 * We must track what parts of the number we've already seen so we
+			 * don't over-consume.  '.' is valid only once and not after
+			 * 'e'/'E'; 'e'/'E' is valid only once; '+'/'-' are valid only
+			 * immediately after 'e'/'E'.
+			 */
+			bool		numend = false;
+			bool		seen_dot = false;
+			bool		seen_exp = false;
+			char		prev;
+
+			/* Scan existing partial token for state */
+			for (int j = 0; j < ptok->len; j++)
+			{
+				char		pc = ptok->data[j];
+
+				if (pc == '.')
+					seen_dot = true;
+				else if (pc == 'e' || pc == 'E')
+					seen_exp = true;
+			}
+			prev = ptok->data[ptok->len - 1];
+
+			for (size_t i = 0; i < lex->input_length && !numend; i++)
+			{
+				char		cc = lex->input[i];
+
+				switch (cc)
+				{
+					case '+':
+					case '-':
+						if (prev != 'e' && prev != 'E')
+						{
+							numend = true;
+							break;
+						}
+						jsonapi_appendStringInfoCharMacro(ptok, cc);
+						added++;
+						break;
+					case '.':
+						if (seen_dot || seen_exp)
+						{
+							numend = true;
+							break;
+						}
+						seen_dot = true;
+						jsonapi_appendStringInfoCharMacro(ptok, cc);
+						added++;
+						break;
+					case 'e':
+					case 'E':
+						if (seen_exp)
+						{
+							numend = true;
+							break;
+						}
+						seen_exp = true;
+						jsonapi_appendStringInfoCharMacro(ptok, cc);
+						added++;
+						break;
+					case '0':
+					case '1':
+					case '2':
+					case '3':
+					case '4':
+					case '5':
+					case '6':
+					case '7':
+					case '8':
+					case '9':
+						jsonapi_appendStringInfoCharMacro(ptok, cc);
+						added++;
+						break;
+					default:
+						numend = true;
+				}
+				if (!numend)
+					prev = cc;
+			}
+		}
+
+		/*
+		 * Add any remaining alphanumeric chars. This takes care of the
+		 * {null, false, true} literals as well as any trailing
+		 * alphanumeric junk on non-string tokens.
+		 */
+		for (size_t i = added; i < lex->input_length; i++)
+		{
+			char		cc = lex->input[i];
+
+			if (JSON_ALPHANUMERIC_CHAR(cc))
+			{
+				jsonapi_appendStringInfoCharMacro(ptok, cc);
+				added++;
+			}
+			else
+			{
+				tok_done = true;
+				break;
+			}
+		}
+		if (added == lex->input_length && lex->inc_state->is_last_chunk)
+		{
+			tok_done = true;
+		}
+	}
+
+	if (!tok_done)
+	{
+		/* We should have consumed the whole chunk in this case. */
+		Assert(added == lex->input_length);
+
+		if (!lex->inc_state->is_last_chunk)
+			return JSON_INCOMPLETE;
+
+		/* json_errdetail() needs access to the accumulated token. */
+		lex->token_start = ptok->data;
+		lex->token_terminator = ptok->data + ptok->len;
+		return JSON_INVALID_TOKEN;
+	}
+
+	/*
+	 * Everything up to lex->input[added] has been added to the partial
+	 * token, so move the input past it.
+	 */
+	lex->input += added;
+	lex->input_length -= added;
+
+	dummy_lex.input = dummy_lex.token_terminator =
+		dummy_lex.line_start = ptok->data;
+	dummy_lex.line_number = lex->line_number;
+	dummy_lex.input_length = ptok->len;
+	dummy_lex.input_encoding = lex->input_encoding;
+	dummy_lex.incremental = false;
+	dummy_lex.need_escapes = lex->need_escapes;
+	dummy_lex.strval = lex->strval;
+
+	partial_result = json_lex(&dummy_lex);
+
+	/*
+	 * We either have a complete token or an error. In either case we need
+	 * to point to the partial token data for the semantic or error
+	 * routines. If it's not an error we'll readjust on the next call to
+	 * json_lex.
+	 */
+	lex->token_type = dummy_lex.token_type;
+	lex->line_number = dummy_lex.line_number;
+
+	/*
+	 * We know the prev_token_terminator must be back in some previous
+	 * piece of input, so we just make it NULL.
+	 */
+	lex->prev_token_terminator = NULL;
+
+	/*
+	 * Normally token_start would be ptok->data, but it could be later,
+	 * see json_lex_string's handling of invalid escapes.
+	 */
+	lex->token_start = dummy_lex.token_start;
+	lex->token_terminator = dummy_lex.token_terminator;
+	if (partial_result == JSON_SUCCESS)
+	{
+		/* make sure we've used all the input */
+		if (lex->token_terminator - lex->token_start != ptok->len)
+		{
+			Assert(false);
+			return JSON_INVALID_TOKEN;
+		}
+
+		lex->inc_state->partial_completed = true;
+	}
+
+	return partial_result;
+}
+
+/*
  * Lex one token from the input stream.
  *
  * When doing incremental parsing, we can reach the end of the input string
@@ -1598,256 +1850,23 @@ json_lex(JsonLexContext *lex)
 	if (lex->incremental)
 	{
 		if (lex->inc_state->partial_completed)
-		{
-			/*
-			 * We just lexed a completed partial token on the last call, so
-			 * reset everything
-			 */
-			jsonapi_resetStringInfo(&(lex->inc_state->partial_token));
-			lex->token_terminator = lex->input;
-			lex->inc_state->partial_completed = false;
-		}
+			reset_partial_state(lex);
 
 #ifdef JSONAPI_USE_PQEXPBUFFER
 		/* Make sure our partial token buffer is valid before using it below. */
 		if (PQExpBufferDataBroken(lex->inc_state->partial_token))
 			return JSON_OUT_OF_MEMORY;
 #endif
+
+		/*
+		 * If we previously stopped lexing because of a partial token, continue
+		 * attempting to lex it
+		 */
+		if (lex->inc_state->partial_token.len)
+			return continue_partial_lex(lex);
 	}
 
 	s = lex->token_terminator;
-
-	if (lex->incremental && lex->inc_state->partial_token.len)
-	{
-		/*
-		 * We have a partial token. Extend it and if completed lex it by a
-		 * recursive call
-		 */
-		jsonapi_StrValType *ptok = &(lex->inc_state->partial_token);
-		size_t		added = 0;
-		bool		tok_done = false;
-		JsonLexContext dummy_lex = {0};
-		JsonParseErrorType partial_result;
-
-		if (ptok->data[0] == '"')
-		{
-			/*
-			 * It's a string. Accumulate characters until we reach an
-			 * unescaped '"'.
-			 */
-			int			escapes = 0;
-
-			for (int i = ptok->len - 1; i > 0; i--)
-			{
-				/* count the trailing backslashes on the partial token */
-				if (ptok->data[i] == '\\')
-					escapes++;
-				else
-					break;
-			}
-
-			for (size_t i = 0; i < lex->input_length; i++)
-			{
-				char		c = lex->input[i];
-
-				jsonapi_appendStringInfoCharMacro(ptok, c);
-				added++;
-				if (c == '"' && escapes % 2 == 0)
-				{
-					tok_done = true;
-					break;
-				}
-				if (c == '\\')
-					escapes++;
-				else
-					escapes = 0;
-			}
-		}
-		else
-		{
-			/* not a string */
-			char		c = ptok->data[0];
-
-			if (c == '-' || (c >= '0' && c <= '9'))
-			{
-				/*
-				 * Accumulate numeric continuations, respecting JSON number
-				 * grammar: -? int [frac] [exp]
-				 *
-				 * We must track what parts of the number we've already seen
-				 * so we don't over-consume.  '.' is valid only once and not
-				 * after 'e'/'E'; 'e'/'E' is valid only once; '+'/'-' are
-				 * valid only immediately after 'e'/'E'.
-				 */
-				bool		numend = false;
-				bool		seen_dot = false;
-				bool		seen_exp = false;
-				char		prev;
-
-				/* Scan existing partial token for state */
-				for (int j = 0; j < ptok->len; j++)
-				{
-					char		pc = ptok->data[j];
-
-					if (pc == '.')
-						seen_dot = true;
-					else if (pc == 'e' || pc == 'E')
-						seen_exp = true;
-				}
-				prev = ptok->data[ptok->len - 1];
-
-				for (size_t i = 0; i < lex->input_length && !numend; i++)
-				{
-					char		cc = lex->input[i];
-
-					switch (cc)
-					{
-						case '+':
-						case '-':
-							if (prev != 'e' && prev != 'E')
-							{
-								numend = true;
-								break;
-							}
-							jsonapi_appendStringInfoCharMacro(ptok, cc);
-							added++;
-							break;
-						case '.':
-							if (seen_dot || seen_exp)
-							{
-								numend = true;
-								break;
-							}
-							seen_dot = true;
-							jsonapi_appendStringInfoCharMacro(ptok, cc);
-							added++;
-							break;
-						case 'e':
-						case 'E':
-							if (seen_exp)
-							{
-								numend = true;
-								break;
-							}
-							seen_exp = true;
-							jsonapi_appendStringInfoCharMacro(ptok, cc);
-							added++;
-							break;
-						case '0':
-						case '1':
-						case '2':
-						case '3':
-						case '4':
-						case '5':
-						case '6':
-						case '7':
-						case '8':
-						case '9':
-							jsonapi_appendStringInfoCharMacro(ptok, cc);
-							added++;
-							break;
-						default:
-							numend = true;
-					}
-					if (!numend)
-						prev = cc;
-				}
-			}
-
-			/*
-			 * Add any remaining alphanumeric chars. This takes care of the
-			 * {null, false, true} literals as well as any trailing
-			 * alphanumeric junk on non-string tokens.
-			 */
-			for (size_t i = added; i < lex->input_length; i++)
-			{
-				char		cc = lex->input[i];
-
-				if (JSON_ALPHANUMERIC_CHAR(cc))
-				{
-					jsonapi_appendStringInfoCharMacro(ptok, cc);
-					added++;
-				}
-				else
-				{
-					tok_done = true;
-					break;
-				}
-			}
-			if (added == lex->input_length &&
-				lex->inc_state->is_last_chunk)
-			{
-				tok_done = true;
-			}
-		}
-
-		if (!tok_done)
-		{
-			/* We should have consumed the whole chunk in this case. */
-			Assert(added == lex->input_length);
-
-			if (!lex->inc_state->is_last_chunk)
-				return JSON_INCOMPLETE;
-
-			/* json_errdetail() needs access to the accumulated token. */
-			lex->token_start = ptok->data;
-			lex->token_terminator = ptok->data + ptok->len;
-			return JSON_INVALID_TOKEN;
-		}
-
-		/*
-		 * Everything up to lex->input[added] has been added to the partial
-		 * token, so move the input past it.
-		 */
-		lex->input += added;
-		lex->input_length -= added;
-
-		dummy_lex.input = dummy_lex.token_terminator =
-			dummy_lex.line_start = ptok->data;
-		dummy_lex.line_number = lex->line_number;
-		dummy_lex.input_length = ptok->len;
-		dummy_lex.input_encoding = lex->input_encoding;
-		dummy_lex.incremental = false;
-		dummy_lex.need_escapes = lex->need_escapes;
-		dummy_lex.strval = lex->strval;
-
-		partial_result = json_lex(&dummy_lex);
-
-		/*
-		 * We either have a complete token or an error. In either case we need
-		 * to point to the partial token data for the semantic or error
-		 * routines. If it's not an error we'll readjust on the next call to
-		 * json_lex.
-		 */
-		lex->token_type = dummy_lex.token_type;
-		lex->line_number = dummy_lex.line_number;
-
-		/*
-		 * We know the prev_token_terminator must be back in some previous
-		 * piece of input, so we just make it NULL.
-		 */
-		lex->prev_token_terminator = NULL;
-
-		/*
-		 * Normally token_start would be ptok->data, but it could be later,
-		 * see json_lex_string's handling of invalid escapes.
-		 */
-		lex->token_start = dummy_lex.token_start;
-		lex->token_terminator = dummy_lex.token_terminator;
-		if (partial_result == JSON_SUCCESS)
-		{
-			/* make sure we've used all the input */
-			if (lex->token_terminator - lex->token_start != ptok->len)
-			{
-				Assert(false);
-				return JSON_INVALID_TOKEN;
-			}
-
-			lex->inc_state->partial_completed = true;
-		}
-		return partial_result;
-		/* end of partial token processing */
-	}
 
 	/* Skip leading whitespace. */
 	while (s < end && (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r'))
