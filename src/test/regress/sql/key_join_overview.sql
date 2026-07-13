@@ -279,6 +279,18 @@ FROM v_products_renamed v
 JOIN fk_orders FOR KEY v (pid) <- fk_orders (ord_prod_id)
 ORDER BY ord_id;
 
+-- accepted, reason: view containing FOR KEY, used as referenced side by outer FOR KEY
+CREATE VIEW v_prods_with_inventory AS
+    SELECT ref_products.prod_id, ref_products.prod_name, fk_inventory.inv_id
+    FROM ref_products
+    LEFT JOIN fk_inventory FOR KEY ref_products (prod_id) <- fk_inventory (inv_prod_id);
+
+SELECT v.prod_id, fk_orders.ord_id
+FROM v_prods_with_inventory v
+-- accepted
+JOIN fk_orders FOR KEY v (prod_id) <- fk_orders (ord_prod_id)
+ORDER BY ord_id;
+
 -- accepted, reason: CTE chain with column renames
 WITH
 cte1 (cte_pid, cte_pname) AS (SELECT prod_id, prod_name FROM ref_products),
@@ -680,6 +692,27 @@ FROM (
 JOIN fk_reviews rev FOR KEY deep (p_id) <- rev (rev_prod_id)
 ORDER BY rev.rev_id;
 
+-- accepted, reason: view-with-FK-join resolution chain + nested FK chain with <- direction
+-- FROM: deep -> l2 -> l1 -> v_prods_with_inventory (view with key join inside)
+-- SELECT: scalar subquery with 3-level chain using <- at inner level
+SELECT rev.rev_id, deep.p_id,
+       (SELECT COUNT(*)
+        FROM ref_departments
+        JOIN (
+            fk_employees
+            JOIN ref_teams FOR KEY fk_employees (emp_team_id) -> ref_teams (team_id)
+        ) FOR KEY ref_departments (dept_id) <- ref_teams (team_dept_id)
+       ) AS emp_count
+FROM (
+    SELECT l2_id AS p_id FROM (
+        SELECT l1_id AS l2_id FROM (
+            SELECT prod_id AS l1_id FROM v_prods_with_inventory
+        ) l1
+    ) l2
+) deep
+JOIN fk_reviews rev FOR KEY deep (p_id) <- rev (rev_prod_id)
+ORDER BY rev.rev_id;
+
 -- rejected, reason: row-filtering WHERE buried under rename layers (R violated)
 SELECT rev.rev_id, deep.p_id
 FROM (
@@ -700,6 +733,7 @@ ORDER BY rev.rev_id;
 -- Cleanup
 -- ============================================================
 
+DROP VIEW v_prods_with_inventory;
 DROP VIEW v_products_renamed;
 DROP VIEW v_products_filtered;
 

@@ -1529,6 +1529,7 @@ KeyJoinInactiveReason
 KeyJoinKeyPosition
 KeyJoinMatch
 KeyJoinNode
+KeyJoinProofDependency
 KeyJoinQueryStack
 KeyJoinReq
 KeyJoinRowCollapse
