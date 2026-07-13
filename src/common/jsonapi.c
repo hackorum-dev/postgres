@@ -276,6 +276,8 @@ static JsonParseErrorType continue_partial_lex(JsonLexContext *lex);
 static inline const char *skip_leading_whitespace(JsonLexContext *lex,
 												  const char *s,
 												  const char *end);
+static inline JsonParseErrorType determine_token_type(JsonLexContext *lex, const char *s,
+													  const char *end);
 static inline JsonParseErrorType json_lex_string(JsonLexContext *lex);
 static inline JsonParseErrorType json_lex_number(JsonLexContext *lex, const char *s,
 												 bool *num_err, size_t *total_len);
@@ -1848,6 +1850,148 @@ skip_leading_whitespace(JsonLexContext *lex,
 }
 
 /*
+ * Determine the type of the next token in the input stream
+ */
+static JsonParseErrorType
+determine_token_type(JsonLexContext *lex, const char *s, const char *end)
+{
+	JsonParseErrorType result;
+
+	if (s >= end)
+	{
+		lex->token_start = NULL;
+		lex->prev_token_terminator = lex->token_terminator;
+		lex->token_terminator = s;
+		lex->token_type = JSON_TOKEN_END;
+
+		return JSON_SUCCESS;
+	}
+
+	switch (*s)
+	{
+			/* Single-character token, some kind of punctuation mark. */
+		case '{':
+			lex->prev_token_terminator = lex->token_terminator;
+			lex->token_terminator = s + 1;
+			lex->token_type = JSON_TOKEN_OBJECT_START;
+			break;
+		case '}':
+			lex->prev_token_terminator = lex->token_terminator;
+			lex->token_terminator = s + 1;
+			lex->token_type = JSON_TOKEN_OBJECT_END;
+			break;
+		case '[':
+			lex->prev_token_terminator = lex->token_terminator;
+			lex->token_terminator = s + 1;
+			lex->token_type = JSON_TOKEN_ARRAY_START;
+			break;
+		case ']':
+			lex->prev_token_terminator = lex->token_terminator;
+			lex->token_terminator = s + 1;
+			lex->token_type = JSON_TOKEN_ARRAY_END;
+			break;
+		case ',':
+			lex->prev_token_terminator = lex->token_terminator;
+			lex->token_terminator = s + 1;
+			lex->token_type = JSON_TOKEN_COMMA;
+			break;
+		case ':':
+			lex->prev_token_terminator = lex->token_terminator;
+			lex->token_terminator = s + 1;
+			lex->token_type = JSON_TOKEN_COLON;
+			break;
+		case '"':
+			/* string */
+			result = json_lex_string(lex);
+			if (result != JSON_SUCCESS)
+				return result;
+			lex->token_type = JSON_TOKEN_STRING;
+			break;
+		case '-':
+			/* Negative number. */
+			result = json_lex_number(lex, s + 1, NULL, NULL);
+			if (result != JSON_SUCCESS)
+				return result;
+			lex->token_type = JSON_TOKEN_NUMBER;
+			break;
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+			/* Positive number. */
+			result = json_lex_number(lex, s, NULL, NULL);
+			if (result != JSON_SUCCESS)
+				return result;
+			lex->token_type = JSON_TOKEN_NUMBER;
+			break;
+		default:
+			{
+				const char *p;
+
+				/*
+				 * We're not dealing with a string, number, legal
+				 * punctuation mark, or end of string.  The only legal
+				 * tokens we might find here are true, false, and null,
+				 * but for error reporting purposes we scan until we see a
+				 * non-alphanumeric character.  That way, we can report
+				 * the whole word as an unexpected token, rather than just
+				 * some unintuitive prefix thereof.
+				 */
+				for (p = s; p < end && JSON_ALPHANUMERIC_CHAR(*p); p++)
+					 /* skip */ ;
+
+				/*
+				 * We got some sort of unexpected punctuation or an
+				 * otherwise unexpected character, so just complain about
+				 * that one character.
+				 */
+				if (p == s)
+				{
+					lex->prev_token_terminator = lex->token_terminator;
+					lex->token_terminator = s + 1;
+					return JSON_INVALID_TOKEN;
+				}
+
+				if (lex->incremental && !lex->inc_state->is_last_chunk &&
+					p == lex->input + lex->input_length)
+				{
+					jsonapi_appendBinaryStringInfo(&(lex->inc_state->partial_token), s, end - s);
+					return JSON_INCOMPLETE;
+				}
+
+				/*
+				 * We've got a real alphanumeric token here.  If it
+				 * happens to be true, false, or null, all is well.  If
+				 * not, error out.
+				 */
+				lex->prev_token_terminator = lex->token_terminator;
+				lex->token_terminator = p;
+				if (p - s == 4)
+				{
+					if (memcmp(s, "true", 4) == 0)
+						lex->token_type = JSON_TOKEN_TRUE;
+					else if (memcmp(s, "null", 4) == 0)
+						lex->token_type = JSON_TOKEN_NULL;
+					else
+						return JSON_INVALID_TOKEN;
+				}
+				else if (p - s == 5 && memcmp(s, "false", 5) == 0)
+					lex->token_type = JSON_TOKEN_FALSE;
+				else
+					return JSON_INVALID_TOKEN;
+			}
+	}						/* end of switch */
+
+	return JSON_SUCCESS;
+}
+
+/*
  * Lex one token from the input stream.
  *
  * When doing incremental parsing, we can reach the end of the input string
@@ -1895,137 +2039,9 @@ json_lex(JsonLexContext *lex)
 
 	s = skip_leading_whitespace(lex, s, end);
 
-	/* Determine token type. */
-	if (s >= end)
-	{
-		lex->token_start = NULL;
-		lex->prev_token_terminator = lex->token_terminator;
-		lex->token_terminator = s;
-		lex->token_type = JSON_TOKEN_END;
-	}
-	else
-	{
-		switch (*s)
-		{
-				/* Single-character token, some kind of punctuation mark. */
-			case '{':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_OBJECT_START;
-				break;
-			case '}':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_OBJECT_END;
-				break;
-			case '[':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_ARRAY_START;
-				break;
-			case ']':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_ARRAY_END;
-				break;
-			case ',':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_COMMA;
-				break;
-			case ':':
-				lex->prev_token_terminator = lex->token_terminator;
-				lex->token_terminator = s + 1;
-				lex->token_type = JSON_TOKEN_COLON;
-				break;
-			case '"':
-				/* string */
-				result = json_lex_string(lex);
-				if (result != JSON_SUCCESS)
-					return result;
-				lex->token_type = JSON_TOKEN_STRING;
-				break;
-			case '-':
-				/* Negative number. */
-				result = json_lex_number(lex, s + 1, NULL, NULL);
-				if (result != JSON_SUCCESS)
-					return result;
-				lex->token_type = JSON_TOKEN_NUMBER;
-				break;
-			case '0':
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
-				/* Positive number. */
-				result = json_lex_number(lex, s, NULL, NULL);
-				if (result != JSON_SUCCESS)
-					return result;
-				lex->token_type = JSON_TOKEN_NUMBER;
-				break;
-			default:
-				{
-					const char *p;
-
-					/*
-					 * We're not dealing with a string, number, legal
-					 * punctuation mark, or end of string.  The only legal
-					 * tokens we might find here are true, false, and null,
-					 * but for error reporting purposes we scan until we see a
-					 * non-alphanumeric character.  That way, we can report
-					 * the whole word as an unexpected token, rather than just
-					 * some unintuitive prefix thereof.
-					 */
-					for (p = s; p < end && JSON_ALPHANUMERIC_CHAR(*p); p++)
-						 /* skip */ ;
-
-					/*
-					 * We got some sort of unexpected punctuation or an
-					 * otherwise unexpected character, so just complain about
-					 * that one character.
-					 */
-					if (p == s)
-					{
-						lex->prev_token_terminator = lex->token_terminator;
-						lex->token_terminator = s + 1;
-						return JSON_INVALID_TOKEN;
-					}
-
-					if (lex->incremental && !lex->inc_state->is_last_chunk &&
-						p == lex->input + lex->input_length)
-					{
-						jsonapi_appendBinaryStringInfo(&(lex->inc_state->partial_token), s, end - s);
-						return JSON_INCOMPLETE;
-					}
-
-					/*
-					 * We've got a real alphanumeric token here.  If it
-					 * happens to be true, false, or null, all is well.  If
-					 * not, error out.
-					 */
-					lex->prev_token_terminator = lex->token_terminator;
-					lex->token_terminator = p;
-					if (p - s == 4)
-					{
-						if (memcmp(s, "true", 4) == 0)
-							lex->token_type = JSON_TOKEN_TRUE;
-						else if (memcmp(s, "null", 4) == 0)
-							lex->token_type = JSON_TOKEN_NULL;
-						else
-							return JSON_INVALID_TOKEN;
-					}
-					else if (p - s == 5 && memcmp(s, "false", 5) == 0)
-						lex->token_type = JSON_TOKEN_FALSE;
-					else
-						return JSON_INVALID_TOKEN;
-				}
-		}						/* end of switch */
-	}
+	result = determine_token_type(lex, s, end);
+	if (result != JSON_SUCCESS)
+		return result;
 
 	if (lex->incremental && lex->token_type == JSON_TOKEN_END && !lex->inc_state->is_last_chunk)
 		return JSON_INCOMPLETE;
