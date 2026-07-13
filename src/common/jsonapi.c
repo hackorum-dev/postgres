@@ -273,6 +273,9 @@ static char JSON_PROD_GOAL[] = {JSON_TOKEN_END, JSON_NT_JSON, 0};
 
 static void reset_partial_state(JsonLexContext *lex);
 static JsonParseErrorType continue_partial_lex(JsonLexContext *lex);
+static inline const char *skip_leading_whitespace(JsonLexContext *lex,
+												  const char *s,
+												  const char *end);
 static inline JsonParseErrorType json_lex_string(JsonLexContext *lex);
 static inline JsonParseErrorType json_lex_number(JsonLexContext *lex, const char *s,
 												 bool *num_err, size_t *total_len);
@@ -1823,6 +1826,28 @@ continue_partial_lex(JsonLexContext *lex)
 }
 
 /*
+ * Skip leading whitespace by pointing JsonLexContext::token_start past it
+ */
+static inline const char *
+skip_leading_whitespace(JsonLexContext *lex,
+						const char *s,
+						const char *end)
+{
+	while (s < end && (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r'))
+	{
+		if (*s++ == '\n')
+		{
+			++lex->line_number;
+			lex->line_start = s;
+		}
+	}
+
+	lex->token_start = s;
+
+	return s;
+}
+
+/*
  * Lex one token from the input stream.
  *
  * When doing incremental parsing, we can reach the end of the input string
@@ -1868,16 +1893,7 @@ json_lex(JsonLexContext *lex)
 
 	s = lex->token_terminator;
 
-	/* Skip leading whitespace. */
-	while (s < end && (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r'))
-	{
-		if (*s++ == '\n')
-		{
-			++lex->line_number;
-			lex->line_start = s;
-		}
-	}
-	lex->token_start = s;
+	s = skip_leading_whitespace(lex, s, end);
 
 	/* Determine token type. */
 	if (s >= end)
