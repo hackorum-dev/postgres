@@ -2190,7 +2190,9 @@ TRUNCATE toasttest;
 -- test with external compressed data (default).
 ALTER TABLE toasttest ALTER COLUMN f1 SET STORAGE EXTENDED;
 ALTER TABLE toasttest ALTER COLUMN f2 SET STORAGE EXTENDED;
-INSERT INTO toasttest values(repeat('1234', 10240), NULL);
+INSERT INTO toasttest
+  SELECT repeat('1234', 256) || string_agg(md5(g::text), ''), NULL
+  FROM generate_series(1, 1280) g;
 -- There should be one value in the toast relation.
 SELECT substr(f1, 5, 10) AS f1_data, substr(f2, 5, 10) AS f2_data
   FROM toasttest;
