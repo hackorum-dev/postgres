@@ -12641,6 +12641,34 @@ get_from_clause(Query *query, const char *prefix, deparse_context *context)
 }
 
 static void
+get_key_join_col_list(StringInfo buf, deparse_namespace *dpns, Index varno,
+					  List *attnums)
+{
+	deparse_columns *colinfo = deparse_columns_fetch(varno, dpns);
+	ListCell   *lc;
+	bool		first = true;
+
+	appendStringInfoChar(buf, '(');
+	foreach(lc, attnums)
+	{
+		int			attno = lfirst_int(lc);
+		char	   *colname;
+
+		if (!first)
+			appendStringInfoString(buf, ", ");
+		first = false;
+
+		Assert(attno > 0);
+		if (attno > colinfo->num_cols || colinfo->colnames[attno - 1] == NULL)
+			elog(ERROR, "invalid FOR KEY column %d for range table entry %u",
+				 attno, varno);
+		colname = colinfo->colnames[attno - 1];
+		appendStringInfoString(buf, quote_identifier(colname));
+	}
+	appendStringInfoChar(buf, ')');
+}
+
+static void
 get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 {
 	StringInfo	buf = context->buf;
@@ -12864,7 +12892,27 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 		if (need_paren_on_right)
 			appendStringInfoChar(buf, ')');
 
-		if (j->usingClause)
+		if (j->keyJoin && IsA(j->keyJoin, KeyJoinNode))
+		{
+			KeyJoinNode *key_join = castNode(KeyJoinNode, j->keyJoin);
+			char	   *leftname;
+			char	   *rightname;
+
+			leftname = get_rtable_name(key_join->leftRefVarno, context);
+			rightname = get_rtable_name(key_join->rightRefVarno, context);
+			Assert(leftname != NULL);
+			Assert(rightname != NULL);
+
+			appendStringInfo(buf, " FOR KEY %s ", quote_identifier(leftname));
+			get_key_join_col_list(buf, dpns, key_join->leftRefVarno,
+								  key_join->leftRefAttnums);
+			appendStringInfo(buf, " %s %s ",
+							 key_join->direction == KEY_JOIN_RIGHT_ARROW ? "->" : "<-",
+							 quote_identifier(rightname));
+			get_key_join_col_list(buf, dpns, key_join->rightRefVarno,
+								  key_join->rightRefAttnums);
+		}
+		else if (j->usingClause)
 		{
 			ListCell   *lc;
 			bool		first = true;

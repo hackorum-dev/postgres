@@ -31,6 +31,7 @@
 typedef enum DependencyType
 {
 	DEPENDENCY_NORMAL = 'n',
+	DEPENDENCY_KEYJOIN = 'k',
 	DEPENDENCY_AUTO = 'a',
 	DEPENDENCY_INTERNAL = 'i',
 	DEPENDENCY_PARTITION_PRI = 'P',
@@ -114,6 +115,9 @@ extern void recordDependencyOnExpr(const ObjectAddress *depender,
 								   Node *expr, List *rtable,
 								   DependencyType behavior);
 
+extern void recordDependencyOnKeyJoinProofs(const ObjectAddress *depender,
+											Node *expr);
+
 extern void collectDependenciesOfExpr(ObjectAddresses *addrs,
 									  Node *expr, List *rtable);
 
@@ -170,6 +174,8 @@ extern long deleteDependencyRecordsFor(Oid classId, Oid objectId,
 
 extern long deleteDependencyRecordsForClass(Oid classId, Oid objectId,
 											Oid refclassId, char deptype);
+
+extern long deleteDependencyRecordsForKeyJoin(Oid classId, Oid objectId);
 
 extern long deleteDependencyRecordsForSpecific(Oid classId, Oid objectId,
 											   char deptype,

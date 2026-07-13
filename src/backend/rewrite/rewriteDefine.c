@@ -164,6 +164,7 @@ InsertRule(const char *rulname,
 	CheckUsageOnTypesInExpr((Node *) action, NIL, GetUserId());
 	recordDependencyOnExpr(&myself, (Node *) action, NIL,
 						   DEPENDENCY_NORMAL);
+	recordDependencyOnKeyJoinProofs(&myself, (Node *) action);
 
 	if (event_qual != NULL)
 	{
@@ -174,6 +175,7 @@ InsertRule(const char *rulname,
 		CheckUsageOnTypesInExpr(event_qual, qry->rtable, GetUserId());
 		recordDependencyOnExpr(&myself, event_qual, qry->rtable,
 							   DEPENDENCY_NORMAL);
+		recordDependencyOnKeyJoinProofs(&myself, event_qual);
 	}
 
 	/* Post creation hook for new rule */

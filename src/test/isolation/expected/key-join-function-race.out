@@ -1,0 +1,18 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_begin s1_alter s2_create_view s1_commit
+step s1_begin: BEGIN;
+step s1_alter: 
+ CREATE OR REPLACE FUNCTION key_join_function_race.f() RETURNS int
+     LANGUAGE sql VOLATILE AS 'SELECT 1';
+
+step s2_create_view: 
+ CREATE VIEW key_join_function_race.v AS
+ SELECT v_c.cid, v_p.id
+ FROM key_join_function_race.v_p
+ JOIN key_join_function_race.v_c
+     FOR KEY v_p (region, id) <- v_c (region, parent_id);
+ <waiting ...>
+step s1_commit: COMMIT;
+step s2_create_view: <... completed>
+ERROR:  key join from referencing relation v_c to referenced relation v_p cannot be proven

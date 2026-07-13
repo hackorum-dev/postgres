@@ -179,18 +179,7 @@ SELECT FROM orders JOIN customers
 SELECT FROM orders JOIN customers
   FOR KEY other_db.public.orders (customer_id) -> customers (id);
 
--- rejected, reason: nothing would recheck a stored join when its constraints
--- change
-BEGIN;
-CREATE VIEW stored_view AS SELECT o.id FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
-ROLLBACK;
-BEGIN;
-CREATE MATERIALIZED VIEW stored_matview AS SELECT o.id FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
-ROLLBACK;
-BEGIN;
-CREATE TABLE audit (id int);
-CREATE RULE stored_rule AS ON INSERT TO audit DO ALSO SELECT o.id FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
-ROLLBACK;
+-- rejected, reason: function bodies and policies are not rechecked yet
 BEGIN;
 CREATE FUNCTION stored_function() RETURNS bigint
 BEGIN ATOMIC
@@ -332,3 +321,164 @@ JOIN (SELECT * FROM customers WHERE id > 1) c
 SELECT FROM (SELECT * FROM orders WHERE customer_id = random()::int) o
 JOIN (SELECT * FROM customers WHERE id = random()::int) c
   FOR KEY o (customer_id) -> c (id);
+
+-- A stored join keeps the declared form and records what its proof used.
+CREATE VIEW order_customers AS
+SELECT o.id, c.name FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
+SELECT pg_get_viewdef('order_customers'::regclass, true);
+SELECT pg_describe_object(d.refclassid, d.refobjid, d.refobjsubid) AS proof_uses
+FROM pg_depend d JOIN pg_rewrite r ON d.classid = 'pg_rewrite'::regclass AND d.objid = r.oid
+WHERE r.ev_class = 'order_customers'::regclass AND d.deptype = 'k'
+ORDER BY 1;
+
+-- rejected, reason: each change removes evidence the view's proof uses
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey NOT ENFORCED;
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey DEFERRABLE;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+CREATE TABLE vip_customers () INHERITS (customers);
+ALTER TABLE orders DROP CONSTRAINT orders_customer_id_fkey;
+ALTER TABLE orders ALTER customer_id DROP NOT NULL;
+
+-- CASCADE drops the view instead.
+BEGIN;
+ALTER TABLE orders DROP CONSTRAINT orders_customer_id_fkey CASCADE;
+SELECT to_regclass('order_customers');
+ROLLBACK;
+
+-- Rebuilding the key's index is not a change to the proof.
+REINDEX INDEX customers_pkey;
+REINDEX INDEX CONCURRENTLY customers_pkey;
+
+-- Replacing a view rechecks the proofs that go through it, also when they
+-- are nested in a CTE, in a chain of joins or over a composite key.
+BEGIN;
+CREATE VIEW customer_keys AS SELECT id FROM customers;
+CREATE VIEW shipment_customers AS
+WITH k AS (SELECT id FROM customer_keys)
+SELECT s.id
+FROM shipments s
+JOIN order_items i FOR KEY s (order_id, item_no) -> i (order_id, item_no)
+JOIN orders o FOR KEY i (order_id) -> o (id)
+JOIN k FOR KEY o (customer_id) -> k (id);
+CREATE OR REPLACE VIEW customer_keys AS SELECT id FROM customers;
+CREATE OR REPLACE VIEW customer_keys AS SELECT id FROM customers WHERE id > 1;
+ROLLBACK;
+
+-- A replacement that is proven through another table's key moves the
+-- recorded dependencies to that key.
+BEGIN;
+CREATE TABLE archived_customers (id int PRIMARY KEY);
+INSERT INTO archived_customers SELECT id FROM customers;
+ALTER TABLE orders ADD FOREIGN KEY (customer_id) REFERENCES archived_customers;
+CREATE VIEW customer_keys AS SELECT id FROM customers;
+CREATE VIEW order_customer_keys AS
+SELECT o.id FROM orders o JOIN customer_keys c FOR KEY o (customer_id) -> c (id);
+CREATE OR REPLACE VIEW customer_keys AS SELECT id FROM archived_customers;
+SELECT pg_describe_object(d.refclassid, d.refobjid, d.refobjsubid) AS proof_uses
+FROM pg_depend d JOIN pg_rewrite r ON d.classid = 'pg_rewrite'::regclass AND d.objid = r.oid
+WHERE r.ev_class = 'order_customer_keys'::regclass AND d.deptype = 'k'
+ORDER BY 1;
+ROLLBACK;
+
+-- rejected, reason: the replacement proves the join with a different equality
+BEGIN;
+CREATE FUNCTION bucket_eq(a int, b int) RETURNS boolean IMMUTABLE STRICT
+  LANGUAGE sql AS 'SELECT a / 10 = b / 10';
+CREATE FUNCTION bucket_cmp(a int, b int) RETURNS int IMMUTABLE STRICT
+  LANGUAGE sql AS 'SELECT sign(a / 10 - b / 10)::int';
+CREATE OPERATOR =# (LEFTARG = int, RIGHTARG = int, FUNCTION = bucket_eq,
+                    COMMUTATOR = =#, MERGES);
+CREATE OPERATOR CLASS bucket_ops FOR TYPE int USING btree AS
+  OPERATOR 3 =# (int, int), FUNCTION 1 bucket_cmp(int, int);
+CREATE TABLE bucketed_customers (id int);
+CREATE UNIQUE INDEX ON bucketed_customers USING btree (id bucket_ops);
+INSERT INTO bucketed_customers VALUES (1), (11);
+ALTER TABLE orders ADD FOREIGN KEY (customer_id) REFERENCES bucketed_customers (id);
+CREATE VIEW customer_keys AS SELECT id FROM customers;
+CREATE VIEW order_customer_keys AS
+SELECT o.id FROM orders o JOIN customer_keys c FOR KEY o (customer_id) -> c (id);
+CREATE OR REPLACE VIEW customer_keys AS SELECT id FROM bucketed_customers;
+ROLLBACK;
+
+-- A function in a matched filter must not become volatile, by either ALTER
+-- or CREATE OR REPLACE.
+CREATE FUNCTION first_customer() RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT 1';
+CREATE VIEW first_customer_orders AS
+SELECT o.id
+FROM (SELECT * FROM orders WHERE customer_id = first_customer()) o
+JOIN (SELECT * FROM customers WHERE id = first_customer()) c
+  FOR KEY o (customer_id) -> c (id);
+ALTER FUNCTION first_customer() VOLATILE;
+CREATE OR REPLACE FUNCTION first_customer() RETURNS int VOLATILE LANGUAGE sql AS 'SELECT 1';
+ALTER FUNCTION first_customer() STABLE;
+-- After its tables gain columns, the view is still rechecked against the
+-- columns it was created with.
+BEGIN;
+ALTER TABLE customers ADD COLUMN email text UNIQUE;
+ALTER TABLE orders ADD COLUMN coupon int NOT NULL DEFAULT 0;
+ALTER FUNCTION first_customer() IMMUTABLE;
+ALTER FUNCTION first_customer() VOLATILE;
+ROLLBACK;
+DROP VIEW first_customer_orders;
+DROP FUNCTION first_customer();
+
+-- Materialized views are checked the same way.  Once no stored proof is
+-- left, the change goes through.
+CREATE MATERIALIZED VIEW order_customers_mv AS
+SELECT o.id, c.name FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey NOT ENFORCED;
+DROP MATERIALIZED VIEW order_customers_mv;
+DROP VIEW order_customers;
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey NOT ENFORCED;
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey ENFORCED;
+
+-- A rule records the proofs in its action and in its condition.  Firing the
+-- rule renumbers the tables of the proof in its action.
+BEGIN;
+CREATE TABLE audit (id int);
+CREATE RULE audit_orders AS ON INSERT TO audit
+  DO ALSO SELECT c.id FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id) WHERE o.id = NEW.id;
+INSERT INTO audit VALUES (10);
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey DEFERRABLE;
+ROLLBACK;
+BEGIN;
+CREATE TABLE audit (id int);
+CREATE RULE audit_orders AS ON INSERT TO audit
+  WHERE EXISTS (SELECT FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id)) DO ALSO NOTHING;
+ALTER TABLE orders ALTER CONSTRAINT orders_customer_id_fkey DEFERRABLE;
+ROLLBACK;
+
+-- A proof over ONLY customers assumes nothing about its children, so a child
+-- scanned elsewhere in the statement does not invalidate it.
+BEGIN;
+CREATE TABLE vip_customers () INHERITS (customers);
+PREPARE only_order_names AS
+SELECT FROM orders o JOIN ONLY customers c FOR KEY o (customer_id) -> c (id)
+WHERE EXISTS (SELECT FROM customers);
+EXECUTE only_order_names;
+EXECUTE only_order_names;
+ROLLBACK;
+DEALLOCATE only_order_names;
+
+-- A view stores the table a qualified endpoint selects, not its spelling.
+BEGIN;
+CREATE VIEW qualified_order_customers AS
+SELECT count(*) FROM public.orders JOIN customers
+  FOR KEY public.orders (customer_id) -> customers (id);
+SELECT pg_get_viewdef('qualified_order_customers'::regclass, true);
+ROLLBACK;
+
+-- A view whose endpoint is a join alias shows the new name of a renamed key
+-- column.
+BEGIN;
+CREATE VIEW referred_orders AS
+SELECT r.name
+FROM (orders o JOIN customers c FOR KEY o (customer_id) -> c (id)) AS j(order_id)
+LEFT JOIN customers r FOR KEY j (referrer_id) -> r (id);
+ALTER TABLE orders RENAME COLUMN referrer_id TO referred_by;
+SELECT pg_get_viewdef('referred_orders'::regclass, true);
+ROLLBACK;
+
+-- Left in place for the dump and upgrade tests.
+CREATE VIEW order_customers AS
+SELECT o.id, c.name FROM orders o JOIN customers c FOR KEY o (customer_id) -> c (id);
