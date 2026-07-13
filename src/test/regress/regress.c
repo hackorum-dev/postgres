@@ -1498,3 +1498,18 @@ test_pglz_decompress(PG_FUNCTION_ARGS)
 	SET_VARSIZE(result, dlen + VARHDRSZ);
 	PG_RETURN_BYTEA_P(result);
 }
+
+/* Expose the compressed-prefix bound for slice decompression tests. */
+PG_FUNCTION_INFO_V1(test_pglz_maximum_compressed_size);
+Datum
+test_pglz_maximum_compressed_size(PG_FUNCTION_ARGS)
+{
+	int32		rawsize = PG_GETARG_INT32(0);
+	int32		total_compressed_size = PG_GETARG_INT32(1);
+
+	if (rawsize < 0 || total_compressed_size < 0)
+		elog(ERROR, "sizes must not be negative");
+
+	PG_RETURN_INT32(pglz_maximum_compressed_size(rawsize,
+												 total_compressed_size));
+}
