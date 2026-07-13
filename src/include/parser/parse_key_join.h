@@ -20,5 +20,9 @@ extern void transformAndValidateKeyJoin(ParseState *pstate, JoinExpr *j,
 										ParseNamespaceItem *r_nsitem,
 										List *l_namespace,
 										List *r_namespace);
+extern bool storedNodeContainsKeyJoin(Node *node);
+extern void copyKeyJoinProofDependencies(Node *dst, Node *src);
+extern void revalidateStoredKeyJoinProofsInNode(Node *node);
+extern bool keyJoinExecutableFormUnchanged(Node *stored, Node *revalidated);
 
 #endif							/* PARSE_KEY_JOIN_H */

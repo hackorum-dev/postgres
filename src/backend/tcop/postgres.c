@@ -51,6 +51,7 @@
 #include "nodes/print.h"
 #include "optimizer/optimizer.h"
 #include "parser/analyze.h"
+#include "parser/parse_key_join.h"
 #include "parser/parser.h"
 #include "pg_trace.h"
 #include "pgstat.h"
@@ -870,6 +871,23 @@ pg_rewrite_query(Query *query)
 			 * here to avoid breaking pg_stat_statements.
 			 */
 			new_query->queryId = curr_query->queryId;
+
+			/*
+			 * Likewise key-join proof dependencies are not written out.  But
+			 * dependency recording and cached-plan invalidation read them from
+			 * this tree and a matview's into->viewQuery, so we copy them back.
+			 */
+			if (curr_query->commandType != CMD_UTILITY)
+				copyKeyJoinProofDependencies((Node *) new_query,
+											 (Node *) curr_query);
+			else
+			{
+				copyKeyJoinProofDependencies((Node *) UtilityContainsQuery(new_query->utilityStmt),
+											 (Node *) UtilityContainsQuery(curr_query->utilityStmt));
+				if (IsA(curr_query->utilityStmt, CreateTableAsStmt))
+					copyKeyJoinProofDependencies((Node *) castNode(CreateTableAsStmt, new_query->utilityStmt)->into->viewQuery,
+												 (Node *) castNode(CreateTableAsStmt, curr_query->utilityStmt)->into->viewQuery);
+			}
 
 			new_list = lappend(new_list, new_query);
 			pfree(str);
