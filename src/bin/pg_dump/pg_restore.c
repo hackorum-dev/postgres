@@ -194,12 +194,10 @@ main(int argc, char **argv)
 				opts->filename = pg_strdup(optarg);
 				break;
 			case 'F':
-				if (strlen(optarg) != 0)
-					opts->formatName = pg_strdup(optarg);
+				opts->formatName = pg_strdup(optarg);
 				break;
 			case 'h':
-				if (strlen(optarg) != 0)
-					opts->cparams.pghost = pg_strdup(optarg);
+				opts->cparams.pghost = pg_strdup(optarg);
 				break;
 
 			case 'j':			/* number of restore jobs */
@@ -230,8 +228,7 @@ main(int argc, char **argv)
 				break;
 
 			case 'p':
-				if (strlen(optarg) != 0)
-					opts->cparams.pgport = pg_strdup(optarg);
+				opts->cparams.pgport = pg_strdup(optarg);
 				break;
 			case 'R':
 				/* no-op, still accepted for backwards compatibility */
