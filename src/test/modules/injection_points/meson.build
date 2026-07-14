@@ -77,4 +77,9 @@ tests += {
       '--temp-config', files('extra.conf'),
     ],
   },
+  'tap': {
+    'tests': [
+      't/001_toast_vacuum_horizon.pl',
+    ],
+  },
 }
