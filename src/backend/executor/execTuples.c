@@ -368,8 +368,7 @@ tts_heap_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot retrieve a system column in this context")));
 
-	return heap_getsysattr(hslot->tuple, attnum,
-						   slot->tts_tupleDescriptor, isnull);
+	return heap_getsysattr(hslot->tuple, attnum, isnull);
 }
 
 static bool
@@ -773,8 +772,7 @@ tts_buffer_heap_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot retrieve a system column in this context")));
 
-	return heap_getsysattr(bslot->base.tuple, attnum,
-						   slot->tts_tupleDescriptor, isnull);
+	return heap_getsysattr(bslot->base.tuple, attnum, isnull);
 }
 
 static bool
