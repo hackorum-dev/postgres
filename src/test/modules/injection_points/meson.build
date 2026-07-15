@@ -62,4 +62,9 @@ tests += {
       '--temp-config', files('extra.conf'),
     ],
   },
+  'tap': {
+    'tests': [
+      't/parallel_heap_vacuum.pl',
+    ],
+  },
 }

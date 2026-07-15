@@ -67,6 +67,80 @@
 /* Abstract type for parallel vacuum state */
 typedef struct ParallelVacuumState ParallelVacuumState;
 
+/* forward references for parallel table vacuum callbacks */
+struct ParallelContext;
+struct ParallelWorkerContext;
+
+/*
+ * Callbacks for parallel table vacuum.
+ *
+ * These are the table-AM specific routines that vacuumparallel.c calls to set
+ * up and perform a parallel scan of a table to collect dead items. Rather than
+ * living in the table AM (TableAmRoutine), which would mean generic vacuum
+ * code calling back up through the table-AM boundary it was entered from, an
+ * access method registers a callback struct under a name and vacuumparallel.c
+ * looks it up. The leader passes the struct directly to parallel_vacuum_init();
+ * workers only receive the name via shared memory and resolve it locally to a
+ * process-valid pointer (see parallel_vacuum_main()).
+ *
+ * compute_workers is optional; returning 0 (or leaving it NULL) disables
+ * parallel table vacuum, in which case the other callbacks are never called.
+ * If compute_workers returns a positive worker count, the remaining callbacks
+ * must all be provided.
+ */
+typedef struct ParallelVacuumCallbacks
+{
+	/*
+	 * Compute the number of parallel workers for parallel table vacuum. The
+	 * parallel degree for parallel vacuum is further limited by
+	 * max_parallel_maintenance_workers. The function must return 0 to disable
+	 * parallel table vacuum.
+	 *
+	 * 'nworkers_requested' is a >=0 number and the requested number of
+	 * workers. This comes from the PARALLEL option. 0 means to choose the
+	 * parallel degree based on the table AM specific factors such as table
+	 * size.
+	 */
+	int			(*compute_workers) (Relation rel,
+									int nworkers_requested,
+									void *state);
+
+	/*
+	 * Estimate the size of shared memory needed for a parallel table vacuum
+	 * of this relation.
+	 */
+	void		(*estimate) (Relation rel,
+							 struct ParallelContext *pcxt,
+							 int nworkers,
+							 void *state);
+
+	/*
+	 * Initialize DSM space for parallel table vacuum.
+	 */
+	void		(*initialize) (Relation rel,
+							   struct ParallelContext *pcxt,
+							   int nworkers,
+							   void *state);
+
+	/*
+	 * Initialize AM-specific vacuum state for worker processes.
+	 *
+	 * The state_out is the output parameter so that arbitrary data can be
+	 * passed to the subsequent callback, collect_dead_items.
+	 */
+	void		(*initialize_worker) (Relation rel,
+									  struct ParallelVacuumState *pvs,
+									  struct ParallelWorkerContext *pwcxt,
+									  void **state_out);
+
+	/*
+	 * Execute a parallel scan to collect dead items.
+	 */
+	void		(*collect_dead_items) (Relation rel,
+									   struct ParallelVacuumState *pvs,
+									   void *state);
+} ParallelVacuumCallbacks;
+
 /*----------
  * ANALYZE builds one of these structs for each attribute (column) that is
  * to be analyzed.  The struct and subsidiary data are in anl_context,
@@ -408,8 +482,14 @@ extern void VacuumUpdateCosts(void);
 extern ParallelVacuumState *parallel_vacuum_init(Relation rel, Relation *indrels,
 												 int nindexes, int nrequested_workers,
 												 int vac_work_mem, int elevel,
-												 BufferAccessStrategy bstrategy);
+												 BufferAccessStrategy bstrategy,
+												 const ParallelVacuumCallbacks *cbs,
+												 const char *am_name,
+												 void *state);
 extern void parallel_vacuum_end(ParallelVacuumState *pvs, IndexBulkDeleteResult **istats);
+extern int	parallel_vacuum_get_nworkers_table(ParallelVacuumState *pvs);
+extern Relation *parallel_vacuum_get_table_indexes(ParallelVacuumState *pvs, int *nindexes);
+extern BufferAccessStrategy parallel_vacuum_get_bstrategy(ParallelVacuumState *pvs);
 extern TidStore *parallel_vacuum_get_dead_items(ParallelVacuumState *pvs,
 												VacDeadItemsInfo **dead_items_info_p);
 extern void parallel_vacuum_reset_dead_items(ParallelVacuumState *pvs);
@@ -424,6 +504,8 @@ extern void parallel_vacuum_cleanup_all_indexes(ParallelVacuumState *pvs,
 												PVWorkerStats *wstats);
 extern void parallel_vacuum_update_shared_delay_params(void);
 extern void parallel_vacuum_propagate_shared_delay_params(void);
+extern int	parallel_vacuum_collect_dead_items_begin(ParallelVacuumState *pvs);
+extern void parallel_vacuum_collect_dead_items_end(ParallelVacuumState *pvs);
 extern void parallel_vacuum_main(dsm_segment *seg, shm_toc *toc);
 
 /* in commands/analyze.c */

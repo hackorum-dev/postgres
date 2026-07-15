@@ -465,8 +465,16 @@ extern void log_heap_prune_and_freeze(Relation relation, Buffer buffer,
 									  OffsetNumber *unused, int nunused);
 
 /* in heap/vacuumlazy.c */
+struct ParallelVacuumState;
+struct ParallelVacuumCallbacks;
 extern void heap_vacuum_rel(Relation rel,
 							const VacuumParams *params, BufferAccessStrategy bstrategy);
+
+/*
+ * Callback struct that heap registers with vacuumparallel.c for parallel
+ * table vacuum. vacuumparallel.c resolves this by the AM name "heap".
+ */
+extern const struct ParallelVacuumCallbacks heap_parallel_vacuum_callbacks;
 #ifdef USE_ASSERT_CHECKING
 extern bool heap_page_is_all_visible(Relation rel, Buffer buf,
 									 GlobalVisState *vistest,

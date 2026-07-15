@@ -2063,6 +2063,11 @@ PLpgSQL_type
 PLpgSQL_type_type
 PLpgSQL_var
 PLpgSQL_variable
+ParallelLVLeader
+ParallelLVScanDesc
+ParallelLVScanWorkerData
+ParallelLVShared
+ParallelLVState
 PLwdatum
 PLword
 PLyArrayToOb
@@ -2137,6 +2142,7 @@ PVIndVacStatus
 PVOID
 PVShared
 PVSharedCostParams
+PVWorkPhase
 PVWorkerStats
 PVWorkerUsage
 PX_Alias
@@ -2175,6 +2181,7 @@ ParallelState
 ParallelTableScanDesc
 ParallelTableScanDescData
 ParallelTransState
+ParallelVacuumCallbacks
 ParallelVacuumState
 ParallelWorkerContext
 ParallelWorkerInfo
@@ -3358,6 +3365,7 @@ VacAttrStatsP
 VacDeadItemsInfo
 VacErrPhase
 VacOptValue
+VacuumCallbacksEntry
 VacuumCutoffs
 VacuumParams
 VacuumRelation

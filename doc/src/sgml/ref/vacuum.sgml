@@ -266,9 +266,43 @@ VACUUM [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] [ <re
     <term><literal>PARALLEL</literal></term>
     <listitem>
      <para>
-      Specifies the maximum number of parallel workers that can be used
-      for <xref linkend="parallel-vacuum"/>, which is further limited
-      by <xref linkend="guc-max-parallel-maintenance-workers"/>. This
+      Perform the <literal>scanning heap</literal>,
+      <literal>vacuuming indexes</literal>, and
+      <literal>cleaning up indexes</literal> phases of
+      <command>VACUUM</command> in parallel using
+      <replaceable class="parameter">integer</replaceable> background workers
+      (see <xref linkend="vacuum-phases"/> for details on each phase).
+     </para>
+     <para>
+      The number of workers used for the <literal>scanning heap</literal>
+      phase is determined based on the size of the table. A table can
+      participate in parallel <literal>scanning heap</literal> if and only if
+      its size is more than
+      <xref linkend="guc-min-parallel-table-scan-size"/>. During this phase,
+      the table's blocks will be divided into ranges and shared among the
+      cooperating processes. Each worker process will complete the scanning of
+      its given range of blocks before requesting an additional range of
+      blocks.
+     </para>
+     <para>
+      The number of workers used for the <literal>vacuuming indexes</literal>
+      and <literal>cleaning up indexes</literal> phases is equal to the number
+      of indexes on the table that support parallel vacuum. An index can
+      participate in parallel vacuum if and only if its size is more than
+      <xref linkend="guc-min-parallel-index-scan-size"/>. Only one worker can
+      be used per index. So parallel workers for these phases are launched only
+      when there are at least <literal>2</literal> indexes in the table.
+     </para>
+     <para>
+      Workers for vacuum are launched before the start of each phase and exit
+      at the end of the phase. The number of workers used in each phase is
+      capped by the number specified with the <literal>PARALLEL</literal>
+      option, if any, and in turn by
+      <xref linkend="guc-max-parallel-maintenance-workers"/>. It is not
+      guaranteed that the number of parallel workers specified by
+      <replaceable class="parameter">integer</replaceable> will be used during
+      execution; a vacuum may run with fewer workers than specified, or with
+      none at all. These behaviors might change in a future release. This
       option can't be used with the <literal>FULL</literal> option.
      </para>
     </listitem>
