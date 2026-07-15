@@ -262,6 +262,17 @@ CREATE PUBLICATION testpub_schema_except_multi
                   public EXCEPT (TABLE testpub_tbl1);
 \dRp+ testpub_schema_except_multi
 
+-- fail: same schema repeated with same EXCEPT clauses
+CREATE PUBLICATION testpub_schema_except_conflict
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1),
+                  pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
+
+-- fail: same schema repeated with conflicting or no EXCEPT clauses
+CREATE PUBLICATION testpub_schema_except_conflict2
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1),
+                  pub_test EXCEPT (TABLE pub_test.testpub_tbl_s2),
+                  pub_test;
+
 -- ALTER TABLE ... SET SCHEMA on a table excluded by a schema publication:
 -- the schema-scoped exclusion is no longer meaningful once the table moves
 -- out of its schema, so the exclusion is auto-removed.
@@ -1304,6 +1315,26 @@ CREATE PUBLICATION testpub_cursch_except FOR TABLES IN SCHEMA CURRENT_SCHEMA EXC
 RESET client_min_messages;
 \dRp+ testpub_cursch_except
 DROP PUBLICATION testpub_cursch_except;
+
+-- succeeds: CURRENT_SCHEMA and pub_test1 (same schema)
+SET client_min_messages = 'ERROR';
+CREATE PUBLICATION testpub_cursch_named_same
+    FOR TABLES IN SCHEMA CURRENT_SCHEMA, pub_test1;
+RESET client_min_messages;
+\dRp+ testpub_cursch_named_same
+DROP PUBLICATION testpub_cursch_named_same;
+
+-- fail: CURRENT_SCHEMA and pub_test1 (same schema) have
+-- conflicting EXCEPT clauses
+CREATE PUBLICATION testpub_cursch_named_conflict
+    FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE tbl),
+                  pub_test1 EXCEPT (TABLE tbl1);
+
+-- fail: two CURRENT_SCHEMA mentions with conflicting EXCEPT clauses
+CREATE PUBLICATION testpub_cursch_cursch_conflict
+    FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE tbl),
+                  CURRENT_SCHEMA EXCEPT (TABLE tbl1);
+
 RESET search_path;
 
 -- cleanup pub_test1 schema for invalidation tests

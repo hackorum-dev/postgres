@@ -552,6 +552,17 @@ Except tables:
     "pub_test.testpub_tbl_s1"
     "public.testpub_tbl1"
 
+-- fail: same schema repeated with same EXCEPT clauses
+CREATE PUBLICATION testpub_schema_except_conflict
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1),
+                  pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1);
+ERROR:  conflicting or redundant EXCEPT clauses for schema "pub_test"
+-- fail: same schema repeated with conflicting or no EXCEPT clauses
+CREATE PUBLICATION testpub_schema_except_conflict2
+    FOR TABLES IN SCHEMA pub_test EXCEPT (TABLE pub_test.testpub_tbl_s1),
+                  pub_test EXCEPT (TABLE pub_test.testpub_tbl_s2),
+                  pub_test;
+ERROR:  conflicting or redundant EXCEPT clauses for schema "pub_test"
 -- ALTER TABLE ... SET SCHEMA on a table excluded by a schema publication:
 -- the schema-scoped exclusion is no longer meaningful once the table moves
 -- out of its schema, so the exclusion is auto-removed.
@@ -2129,6 +2140,8 @@ SET search_path = pub_test1;
 -- qualified name from wrong schema -> error
 CREATE PUBLICATION testpub_cursch_except FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE pub_test2.tbl1);
 ERROR:  table "pub_test2.tbl1" in EXCEPT clause does not belong to schema "pub_test1"
+LINE 1: ...FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE pub_test2....
+                                                             ^
 -- unqualified name implicitly qualified with current schema (pub_test1.tbl)
 SET client_min_messages = 'ERROR';
 CREATE PUBLICATION testpub_cursch_except FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE tbl);
@@ -2144,6 +2157,31 @@ Except tables:
     "pub_test1.tbl"
 
 DROP PUBLICATION testpub_cursch_except;
+-- succeeds: CURRENT_SCHEMA and pub_test1 (same schema)
+SET client_min_messages = 'ERROR';
+CREATE PUBLICATION testpub_cursch_named_same
+    FOR TABLES IN SCHEMA CURRENT_SCHEMA, pub_test1;
+RESET client_min_messages;
+\dRp+ testpub_cursch_named_same
+                                                    Publication testpub_cursch_named_same
+          Owner           | All tables | All sequences | Inserts | Updates | Deletes | Truncates | Generated columns | Via root | Description 
+--------------------------+------------+---------------+---------+---------+---------+-----------+-------------------+----------+-------------
+ regress_publication_user | f          | f             | t       | t       | t       | t         | none              | f        | 
+Tables from schemas:
+    "pub_test1"
+
+DROP PUBLICATION testpub_cursch_named_same;
+-- fail: CURRENT_SCHEMA and pub_test1 (same schema) have
+-- conflicting EXCEPT clauses
+CREATE PUBLICATION testpub_cursch_named_conflict
+    FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE tbl),
+                  pub_test1 EXCEPT (TABLE tbl1);
+ERROR:  conflicting or redundant EXCEPT clauses for schema "pub_test1"
+-- fail: two CURRENT_SCHEMA mentions with conflicting EXCEPT clauses
+CREATE PUBLICATION testpub_cursch_cursch_conflict
+    FOR TABLES IN SCHEMA CURRENT_SCHEMA EXCEPT (TABLE tbl),
+                  CURRENT_SCHEMA EXCEPT (TABLE tbl1);
+ERROR:  conflicting or redundant EXCEPT clauses for schema "pub_test1"
 RESET search_path;
 -- cleanup pub_test1 schema for invalidation tests
 ALTER PUBLICATION testpub2_forschema DROP TABLES IN SCHEMA pub_test1;

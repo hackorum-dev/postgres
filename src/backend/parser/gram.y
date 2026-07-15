@@ -20872,8 +20872,11 @@ preprocess_pub_all_objtype_list(List *all_objects_list, List **pubobjects,
 /*
  * Process pubobjspec_list to check for errors in any of the objects and
  * convert PUBLICATIONOBJ_CONTINUATION into appropriate PublicationObjSpecType.
- * Also flattens except_tables from TABLES IN SCHEMA nodes into the list so
- * that ObjectsInPublicationToOids() sees them as top-level EXCEPT_TABLE entries.
+ *
+ * The except_tables attached to TABLES IN SCHEMA nodes are left in place here;
+ * ObjectsInPublicationToOids() qualifies their names, validates schema
+ * membership, and merges the qualified tables into its except_pubtables
+ * output list once the schema OID is known.
  */
 static void
 preprocess_pubobj_list(List *pubobjspec_list, core_yyscan_t yyscanner)
@@ -20957,36 +20960,6 @@ preprocess_pubobj_list(List *pubobjspec_list, core_yyscan_t yyscanner)
 						errcode(ERRCODE_SYNTAX_ERROR),
 						errmsg("invalid schema name"),
 						parser_errposition(pubobj->location));
-
-			/*
-			 * For TABLES_IN_SCHEMA, qualify unqualified EXCEPT table names
-			 * with the parent schema and reject cross-schema entries at parse
-			 * time, then flatten into the top-level list.
-			 *
-			 * For TABLES_IN_CUR_SCHEMA the schema name is not yet known, so
-			 * skip both steps here; ObjectsInPublicationToOids() will
-			 * qualify names and validate schema membership at execution time.
-			 */
-			if (pubobj->pubobjtype == PUBLICATIONOBJ_TABLES_IN_SCHEMA)
-			{
-				foreach_ptr(PublicationObjSpec, eobj, pubobj->except_tables)
-				{
-					const char *eobj_schemaname = eobj->pubtable->relation->schemaname;
-					const char *eobj_relname = eobj->pubtable->relation->relname;
-
-					if (eobj_schemaname == NULL)
-						eobj->pubtable->relation->schemaname = pubobj->name;
-					else if (strcmp(eobj_schemaname, pubobj->name) != 0)
-						ereport(ERROR,
-								errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-								errmsg("table \"%s\" in EXCEPT clause does not belong to schema \"%s\"",
-									   quote_qualified_identifier(eobj_schemaname, eobj_relname),
-									   pubobj->name),
-								parser_errposition(eobj->location));
-				}
-				pubobjspec_list = list_concat(pubobjspec_list, pubobj->except_tables);
-				pubobj->except_tables = NIL;
-			}
 		}
 
 		prevobjtype = pubobj->pubobjtype;

@@ -73,6 +73,10 @@ static void PublicationAddSchemas(Oid pubid, List *schemas, bool if_not_exists,
 static void PublicationDropSchemas(Oid pubid, List *schemas, bool missing_ok);
 static char defGetGeneratedColsOption(DefElem *def);
 static void CheckExceptNotInTableList(List *except_rels, List *explicitrelids);
+static void ProcessSchemaExceptTables(Oid schemaid, List *except_tables,
+									  ParseState *pstate, List **schemas,
+									  List **schemas_with_except,
+									  List **except_pubtables);
 
 
 static void
@@ -178,6 +182,74 @@ parse_publication_options(ParseState *pstate,
 }
 
 /*
+ * Qualify unqualified EXCEPT table names with the given schema (rejecting
+ * any explicitly qualified with a different schema), and append them to
+ * *except_pubtables.
+ *
+ * Also rejects a schema being mentioned more than once with an EXCEPT
+ * clause, even if the EXCEPT clauses are identical — much like
+ * OpenTableList() rejects "FOR TABLE t1(a), t1(a)" despite the column
+ * lists matching. A schema can still be mentioned multiple times, just
+ * not more than once with EXCEPT.
+ *
+ * schemaid: OID of the schema for this TABLES IN SCHEMA mention.
+ * except_tables: the EXCEPT list (or NIL) attached to this mention.
+ * *schemas: accumulates all schema OIDs seen so far in this statement.
+ * *schemas_with_except: This is a subset of *schemas. Tracks which of
+ * the seen schemas of this statement had an EXCEPT clause.
+ * *except_pubtables: accumulates the (now schema-qualified) EXCEPT table
+ * entries across the whole statement.
+ */
+static void
+ProcessSchemaExceptTables(Oid schemaid, List *except_tables,
+						  ParseState *pstate, List **schemas,
+						  List **schemas_with_except, List **except_pubtables)
+{
+	char	   *schema_name = get_namespace_name(schemaid);
+	bool		schema_has_except = (except_tables != NIL);
+
+	/*
+	 * A repeating schema is only a problem if this mention has EXCEPT, or an
+	 * earlier mention of the same schema did.
+	 */
+	if (list_member_oid(*schemas, schemaid))
+	{
+		if (schema_has_except ||
+			list_member_oid(*schemas_with_except, schemaid))
+			ereport(ERROR,
+					errcode(ERRCODE_DUPLICATE_OBJECT),
+					errmsg("conflicting or redundant EXCEPT clauses for schema \"%s\"",
+						   schema_name));
+	}
+
+	if (schema_has_except)
+		*schemas_with_except = lappend_oid(*schemas_with_except, schemaid);
+
+	/* Filter out duplicates if the user specifies "sch1, sch1" */
+	*schemas = list_append_unique_oid(*schemas, schemaid);
+
+	if (!schema_has_except)
+		return;
+
+	foreach_ptr(PublicationObjSpec, eobj, except_tables)
+	{
+		RangeVar   *relation = eobj->pubtable->relation;
+
+		if (relation->schemaname == NULL)
+			relation->schemaname = schema_name;
+		else if (strcmp(relation->schemaname, schema_name) != 0)
+			ereport(ERROR,
+					errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+					errmsg("table \"%s\" in EXCEPT clause does not belong to schema \"%s\"",
+						   quote_qualified_identifier(relation->schemaname, relation->relname),
+						   schema_name),
+					parser_errposition(pstate, eobj->location));
+
+		*except_pubtables = lappend(*except_pubtables, eobj->pubtable);
+	}
+}
+
+/*
  * Convert the PublicationObjSpecType list into schema oid list and
  * PublicationTable list.
  */
@@ -187,6 +259,7 @@ ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
 {
 	ListCell   *cell;
 	PublicationObjSpec *pubobj;
+	List	   *schemas_with_except = NIL;
 
 	if (!pubobjspec_list)
 		return;
@@ -211,8 +284,10 @@ ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
 			case PUBLICATIONOBJ_TABLES_IN_SCHEMA:
 				schemaid = get_namespace_oid(pubobj->name, false);
 
-				/* Filter out duplicates if user specifies "sch1, sch1" */
-				*schemas = list_append_unique_oid(*schemas, schemaid);
+				ProcessSchemaExceptTables(schemaid, pubobj->except_tables,
+										  pstate, schemas,
+										  &schemas_with_except,
+										  except_pubtables);
 				break;
 			case PUBLICATIONOBJ_TABLES_IN_CUR_SCHEMA:
 				search_path = fetch_search_path(false);
@@ -224,40 +299,10 @@ ObjectsInPublicationToOids(List *pubobjspec_list, ParseState *pstate,
 				schemaid = linitial_oid(search_path);
 				list_free(search_path);
 
-				/* Filter out duplicates if user specifies "sch1, sch1" */
-				*schemas = list_append_unique_oid(*schemas, schemaid);
-
-				/*
-				 * Qualify unqualified EXCEPT table names with the resolved
-				 * current schema and reject any explicitly cross-schema
-				 * entries.  This mirrors the parse-time handling done for
-				 * TABLES_IN_SCHEMA in preprocess_pubobj_list(), deferred here
-				 * because CURRENT_SCHEMA is not known until execution time.
-				 */
-				if (pubobj->except_tables != NIL)
-				{
-					char	   *cur_schema_name = get_namespace_name(schemaid);
-
-					foreach_ptr(PublicationObjSpec, eobj, pubobj->except_tables)
-					{
-						const char *eobj_schemaname =
-							eobj->pubtable->relation->schemaname;
-						const char *eobj_relname =
-							eobj->pubtable->relation->relname;
-
-						if (eobj_schemaname == NULL)
-							eobj->pubtable->relation->schemaname = cur_schema_name;
-						else if (strcmp(eobj_schemaname, cur_schema_name) != 0)
-							ereport(ERROR,
-									errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-									errmsg("table \"%s\" in EXCEPT clause does not belong to schema \"%s\"",
-										   quote_qualified_identifier(eobj_schemaname, eobj_relname),
-										   cur_schema_name));
-
-						*except_pubtables = lappend(*except_pubtables,
-													eobj->pubtable);
-					}
-				}
+				ProcessSchemaExceptTables(schemaid, pubobj->except_tables,
+										  pstate, schemas,
+										  &schemas_with_except,
+										  except_pubtables);
 				break;
 			default:
 				/* shouldn't happen */
