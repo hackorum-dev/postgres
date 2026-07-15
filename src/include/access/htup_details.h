@@ -801,8 +801,7 @@ extern void heap_fill_tuple(TupleDesc tupleDesc,
 extern bool heap_attisnull(HeapTuple tup, int attnum, TupleDesc tupleDesc);
 extern Datum nocachegetattr(HeapTuple tup, int attnum,
 							TupleDesc tupleDesc);
-extern Datum heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc,
-							 bool *isnull);
+extern Datum heap_getsysattr(HeapTuple tup, int attnum, bool *isnull);
 extern Datum getmissingattr(TupleDesc tupleDesc,
 							int attnum, bool *isnull);
 extern HeapTuple heap_copytuple(HeapTuple tuple);
@@ -902,7 +901,7 @@ heap_getattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 			return fastgetattr(tup, attnum, tupleDesc, isnull);
 	}
 	else
-		return heap_getsysattr(tup, attnum, tupleDesc, isnull);
+		return heap_getsysattr(tup, attnum, isnull);
 }
 #endif							/* FRONTEND */
 
