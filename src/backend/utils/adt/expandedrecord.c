@@ -1090,8 +1090,7 @@ expanded_record_fetch_field(ExpandedRecordHeader *erh, int fnumber,
 			*isnull = true;
 			return (Datum) 0;
 		}
-		/* heap_getsysattr doesn't actually use tupdesc, so just pass null */
-		return heap_getsysattr(erh->fvalue, fnumber, NULL, isnull);
+		return heap_getsysattr(erh->fvalue, fnumber, isnull);
 	}
 }
 
