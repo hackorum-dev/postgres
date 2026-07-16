@@ -153,4 +153,69 @@ CREATE TEMP TABLE char_table_1 AS
 ANALYZE char_table_1;
 EXPLAIN (COSTS OFF) SELECT * FROM char_table_1 WHERE c < 'Q';
 
+--
+-- Test that clauselist_selectivity() counts duplicate IS [NOT] NULL
+-- clauses only once rather than compounding their selectivities.
+--
+
+-- exactly half the rows have a NULL "a"
+CREATE TEMP TABLE dup_clause_tab AS
+  SELECT CASE WHEN i % 2 = 0 THEN i END AS a, i % 10 AS b
+  FROM generate_series(1, 1000) i;
+ANALYZE dup_clause_tab;
+
+-- expect the same 500-row estimate as a single IS NULL clause
+SELECT explain_mask_costs($$
+SELECT * FROM dup_clause_tab WHERE a IS NULL AND a IS NULL;$$,
+true, true, false, true);
+
+-- likewise for IS NOT NULL
+SELECT explain_mask_costs($$
+SELECT * FROM dup_clause_tab WHERE a IS NOT NULL AND a IS NOT NULL;$$,
+true, true, false, true);
+
+-- distinct clauses must still be multiplied: expect 1000 * 0.5 * 0.1 = 50
+SELECT explain_mask_costs($$
+SELECT * FROM dup_clause_tab WHERE a IS NULL AND b = 1 AND a IS NULL;$$,
+true, true, false, true);
+
+-- IS NULL and IS NOT NULL on the same column are not duplicates of each
+-- other: expect 1000 * 0.5 * 0.5 = 250
+SELECT explain_mask_costs($$
+SELECT * FROM dup_clause_tab WHERE a IS NULL AND a IS NOT NULL;$$,
+false, true, false, true);
+
+-- Duplicate detection must compare the whole Var, not just the column
+-- position: the same test on a same-named column of another relation is not
+-- a duplicate.  A FULL JOIN keeps the NullTests on both sides in the join
+-- clause list (an inner join would push them down to the scans), so this
+-- exercises both relations' Vars within a single clauselist_selectivity()
+-- call.
+CREATE TEMP TABLE dup_clause_tab2 AS
+  SELECT CASE WHEN i % 2 = 0 THEN i END AS a, i % 10 AS b
+  FROM generate_series(1, 1000) i;
+ANALYZE dup_clause_tab2;
+
+-- both selectivities must be applied: expect 1000 * 1000 * 0.1 * 0.5 * 0.5
+-- = 25000
+SELECT explain_mask_costs($$
+SELECT * FROM dup_clause_tab t1 FULL JOIN dup_clause_tab2 t2
+  ON t1.b = t2.b AND t1.a IS NULL AND t2.a IS NULL;$$,
+false, true, false, true);
+
+-- with each side's test duplicated, expect the same 25000-row estimate
+SELECT explain_mask_costs($$
+SELECT * FROM dup_clause_tab t1 FULL JOIN dup_clause_tab2 t2
+  ON t1.b = t2.b AND t1.a IS NULL AND t2.a IS NULL
+  AND t1.a IS NULL AND t2.a IS NULL;$$,
+false, true, false, true);
+
+-- control: with only one side tested the estimate must be higher, showing
+-- the second relation's test above was not discarded as a duplicate:
+-- expect 1000 * 1000 * 0.1 * 0.5 = 50000
+SELECT explain_mask_costs($$
+SELECT * FROM dup_clause_tab t1 FULL JOIN dup_clause_tab2 t2
+  ON t1.b = t2.b AND t1.a IS NULL;$$,
+false, true, false, true);
+
 DROP FUNCTION explain_mask_costs(text, bool, bool, bool, bool);
