@@ -2542,6 +2542,7 @@ ReadNodeContext
 ReadReplicationSlotCmd
 ReadStream
 ReadStreamBlockNumberCB
+ReadStreamReverseRange
 ReassignOwnedStmt
 RecheckForeignScan_function
 RecordCacheArrayEntry
