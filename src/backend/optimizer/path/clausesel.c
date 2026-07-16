@@ -38,8 +38,20 @@ typedef struct RangeQueryClause
 	Selectivity hibound;		/* Selectivity of a var < something clause */
 } RangeQueryClause;
 
+/*
+ * Data structure for detecting duplicate IS [NOT] NULL clauses in
+ * clauselist_selectivity.
+ */
+typedef struct NullTestClause
+{
+	struct NullTestClause *next;	/* next in linked list */
+	Var		   *var;			/* the tested Var */
+	NullTestType nulltesttype;	/* IS NULL or IS NOT NULL */
+} NullTestClause;
+
 static void addRangeClause(RangeQueryClause **rqlist, Node *clause,
 						   bool varonleft, bool isLTsel, Selectivity s2);
+static bool duplicateNullTest(NullTestClause **ntlist, NullTest *ntest);
 static RelOptInfo *find_single_rel_for_clauses(PlannerInfo *root,
 											   List *clauses);
 static Selectivity clauselist_selectivity_or(PlannerInfo *root,
@@ -95,6 +107,18 @@ static Selectivity clauselist_selectivity_or(PlannerInfo *root,
  *
  * Of course this is all very dependent on the behavior of the inequality
  * selectivity functions; perhaps some day we can generalize the approach.
+ *
+ * In a similar spirit, we count duplicate occurrences of an IS [NOT] NULL
+ * test on a plain Var only once.  Applying the same test again filters out
+ * no additional rows, so multiplying its selectivity in again would just
+ * underestimate, and the error grows exponentially with the number of
+ * duplicates.  Duplicates of other clause types survive to this point too,
+ * but detecting them in general would require expensive equal() matching,
+ * whereas comparing (varno, varattno, nulltesttype) triples is cheap.
+ * (Duplicate equality clauses are already removed by equivalence-class
+ * processing, duplicated OR arms by prepqual.c, and duplicate inequalities
+ * by the range-pairing logic above; NullTests are the most common
+ * remaining case, typically arising in machine-generated queries.)
  */
 Selectivity
 clauselist_selectivity(PlannerInfo *root,
@@ -125,6 +149,7 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	RelOptInfo *rel;
 	Bitmapset  *estimatedclauses = NULL;
 	RangeQueryClause *rqlist = NULL;
+	NullTestClause *ntlist = NULL;
 	ListCell   *l;
 	int			listidx;
 
@@ -168,6 +193,7 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	{
 		Node	   *clause = (Node *) lfirst(l);
 		RestrictInfo *rinfo;
+		Node	   *plainclause;
 		Selectivity s2;
 
 		listidx++;
@@ -178,6 +204,26 @@ clauselist_selectivity_ext(PlannerInfo *root,
 		 */
 		if (bms_is_member(listidx, estimatedclauses))
 			continue;
+
+		/*
+		 * Skip this clause if it's an IS [NOT] NULL test on a plain Var that
+		 * duplicates one we've already counted (per the comments for
+		 * clauselist_selectivity).  We check the bare clause, so that a
+		 * duplicate is recognized whether or not both occurrences are wrapped
+		 * in RestrictInfos.
+		 */
+		plainclause = IsA(clause, RestrictInfo) ?
+			(Node *) ((RestrictInfo *) clause)->clause : clause;
+		if (IsA(plainclause, NullTest))
+		{
+			NullTest   *ntest = (NullTest *) plainclause;
+
+			if (!ntest->argisrow &&
+				IsA(ntest->arg, Var) &&
+				((Var *) ntest->arg)->varlevelsup == 0 &&
+				duplicateNullTest(&ntlist, ntest))
+				continue;
+		}
 
 		/* Compute the selectivity of this clause in isolation */
 		s2 = clause_selectivity_ext(root, clause, varRelid, jointype, sjinfo,
@@ -336,6 +382,15 @@ clauselist_selectivity_ext(PlannerInfo *root,
 		rqnext = rqlist->next;
 		pfree(rqlist);
 		rqlist = rqnext;
+	}
+
+	/* release the NullTest list, too */
+	while (ntlist != NULL)
+	{
+		NullTestClause *ntnext = ntlist->next;
+
+		pfree(ntlist);
+		ntlist = ntnext;
 	}
 
 	return s1;
@@ -511,6 +566,44 @@ addRangeClause(RangeQueryClause **rqlist, Node *clause,
 	}
 	rqelem->next = *rqlist;
 	*rqlist = rqelem;
+}
+
+/*
+ * duplicateNullTest --- detect duplicate IS [NOT] NULL clauses
+ *
+ * Returns true if an equivalent NullTest was seen earlier in the clause
+ * list, in which case the caller should ignore this one.  Otherwise,
+ * remember the clause and return false.  The caller has already verified
+ * that the argument is a plain Var of the current query level, so we
+ * need only compare the Var's identity and the test type, which is much
+ * cheaper than a full equal() check.  Note that two Vars with the same
+ * varno/varattno necessarily match on type too, but we must still check
+ * varnullingrels and varreturningtype, which affect the Var's value.
+ */
+static bool
+duplicateNullTest(NullTestClause **ntlist, NullTest *ntest)
+{
+	NullTestClause *ntelem;
+	Var		   *var = (Var *) ntest->arg;
+
+	for (ntelem = *ntlist; ntelem; ntelem = ntelem->next)
+	{
+		if (ntelem->var->varno == var->varno &&
+			ntelem->var->varattno == var->varattno &&
+			ntelem->var->varreturningtype == var->varreturningtype &&
+			bms_equal(ntelem->var->varnullingrels, var->varnullingrels) &&
+			ntelem->nulltesttype == ntest->nulltesttype)
+			return true;
+	}
+
+	/* Not a duplicate, so remember it */
+	ntelem = palloc_object(NullTestClause);
+	ntelem->var = var;
+	ntelem->nulltesttype = ntest->nulltesttype;
+	ntelem->next = *ntlist;
+	*ntlist = ntelem;
+
+	return false;
 }
 
 /*
