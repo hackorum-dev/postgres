@@ -1839,6 +1839,7 @@ NtDllRoutine
 NtFlushBuffersFileEx_t
 NullIfExpr
 NullTest
+NullTestClause
 NullTestType
 NullableDatum
 NullingRelsMatch
