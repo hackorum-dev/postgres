@@ -4,7 +4,7 @@ MODULE = test_pg_dump
 PGFILEDESC = "test_pg_dump - Test pg_dump with an extension"
 
 EXTENSION = test_pg_dump
-DATA = test_pg_dump--1.0.sql
+DATA = test_pg_dump--1.0.sql test_pg_dump--1.0--1.1.sql
 
 REGRESS = test_pg_dump
 TAP_TESTS = 1
