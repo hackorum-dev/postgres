@@ -72,7 +72,7 @@
     <itemizedlist>
      <listitem>
       <para>
-       A server process, which manages the database files, accepts
+       First, there is a server process, which manages the database files, accepts
        connections to the database from client applications, and
        performs database actions on behalf of the clients.  The
        database server program is called
@@ -83,7 +83,7 @@
 
      <listitem>
       <para>
-       The user's client (frontend) application that wants to perform
+       Second, there is the user's client (frontend) application that wants to perform
        database operations.  Client applications can be very diverse
        in nature:  a client could be a text-oriented tool, a graphical
        application, a web server that accesses the database to
