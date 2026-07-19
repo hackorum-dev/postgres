@@ -1,6 +1,16 @@
 CREATE ROLE regress_dump_test_role;
 CREATE EXTENSION test_pg_dump;
 
+-- all relations configured as dumpable should exist
+SELECT ext.dump_oid
+FROM (
+    SELECT unnest(extconfig) AS dump_oid
+    FROM pg_extension
+    WHERE extname = 'test_pg_dump'
+) ext
+LEFT JOIN pg_class c ON c.oid = ext.dump_oid
+WHERE c.oid IS NULL;
+
 ALTER EXTENSION test_pg_dump ADD DATABASE postgres; -- error
 
 CREATE TABLE test_pg_dump_t1 (c1 int, junk text);
