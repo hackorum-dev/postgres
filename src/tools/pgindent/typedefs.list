@@ -1266,6 +1266,7 @@ HeadlineParsedText
 HeadlineWordEntry
 HeapCheckContext
 HeapCheckReadStreamData
+HeapPageBatch
 HeapPageFreeze
 HeapScanDesc
 HeapScanDescData
@@ -3271,6 +3272,7 @@ TsmRoutine
 TupOutputState
 TupSortStatus
 TupStoreStatus
+TupleBatchMask
 TupleConstr
 TupleConversionMap
 TupleDesc
@@ -3281,6 +3283,7 @@ TupleHashTable
 TupleHashTableData
 TupleQueueReader
 TupleTableSlot
+TupleTableSlotBatch
 TupleTableSlotOps
 TuplesortClusterArg
 TuplesortDatumArg

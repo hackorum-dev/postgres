@@ -1471,12 +1471,87 @@ heap_getnext(TableScanDesc sscan, ScanDirection direction)
 	return &scan->rs_ctup;
 }
 
+static inline bool
+heap_page_batch_is_valid(HeapScanDesc scan, TupleTableSlot *slot)
+{
+	BufferHeapTupleTableSlot *bslot;
+	HeapPageBatch *batch;
+
+	if (!TTS_IS_BUFFERTUPLE(slot))
+		return false;
+
+	bslot = (BufferHeapTupleTableSlot *) slot;
+	batch = &bslot->batch;
+	if (slot_getbatch(slot) != &batch->batch ||
+		batch->offsets != scan->rs_vistuples ||
+		batch->batch.ntuples != (int) scan->rs_ntuples ||
+		batch->batch.current != (int) scan->rs_cindex ||
+		bslot->buffer != scan->rs_cbuf)
+		return false;
+
+	Assert(!TTS_EMPTY(slot));
+	Assert(ItemPointerIsValid(&slot->tts_tid));
+	Assert(batch->offsets[batch->batch.current] ==
+		   ItemPointerGetOffsetNumber(&slot->tts_tid));
+	Assert(bslot->base.tuple == &scan->rs_ctup);
+
+	return true;
+}
+
+static inline bool
+heap_page_batch_next(HeapScanDesc scan, ScanDirection direction,
+					 TupleTableSlot *slot)
+{
+	BufferHeapTupleTableSlot *bslot;
+	HeapPageBatch *batch;
+	HeapTuple	tuple = &scan->rs_ctup;
+	Page		page;
+	ItemId		lpp;
+	OffsetNumber lineoff;
+	int			next;
+
+	Assert(direction == ForwardScanDirection ||
+		   direction == BackwardScanDirection);
+
+	if (!heap_page_batch_is_valid(scan, slot))
+		return false;
+
+	bslot = (BufferHeapTupleTableSlot *) slot;
+	batch = &bslot->batch;
+	next = batch->batch.current + direction;
+	if (next < 0 || next >= batch->batch.ntuples)
+		return false;
+
+	page = BufferGetPage(scan->rs_cbuf);
+	lineoff = batch->offsets[next];
+	lpp = PageGetItemId(page, lineoff);
+	Assert(ItemIdIsNormal(lpp));
+
+	tuple->t_data = (HeapTupleHeader) PageGetItem(page, lpp);
+	tuple->t_len = ItemIdGetLength(lpp);
+	ItemPointerSetOffsetNumber(&tuple->t_self, lineoff);
+
+	scan->rs_cindex = next;
+	batch->batch.current = next;
+	tts_buffer_heap_set_tuple(bslot, tuple);
+
+	Assert(heap_page_batch_is_valid(scan, slot));
+
+	return true;
+}
+
 bool
 heap_getnextslot(TableScanDesc sscan, ScanDirection direction, TupleTableSlot *slot)
 {
 	HeapScanDesc scan = (HeapScanDesc) sscan;
 
 	/* Note: no locking manipulations needed */
+
+	if (heap_page_batch_next(scan, direction, slot))
+	{
+		pgstat_count_heap_getnext(scan->rs_base.rs_rd);
+		return true;
+	}
 
 	if (sscan->rs_flags & SO_ALLOW_PAGEMODE)
 		heapgettup_pagemode(scan, direction, sscan->rs_nkeys, sscan->rs_key);
@@ -1498,6 +1573,22 @@ heap_getnextslot(TableScanDesc sscan, ScanDirection direction, TupleTableSlot *s
 
 	ExecStoreBufferHeapTuple(&scan->rs_ctup, slot,
 							 scan->rs_cbuf);
+
+	if (slot_supports_batch(slot) &&
+		(sscan->rs_flags & SO_ALLOW_PAGEMODE) &&
+		sscan->rs_nkeys == 0)
+	{
+		HeapPageBatch *batch =
+			&((BufferHeapTupleTableSlot *) slot)->batch;
+
+		batch->offsets = scan->rs_vistuples;
+		batch->batch.current = scan->rs_cindex;
+		batch->batch.generation++;
+		batch->batch.ntuples = scan->rs_ntuples;
+
+		Assert(heap_page_batch_is_valid(scan, slot));
+	}
+
 	return true;
 }
 

@@ -64,6 +64,7 @@
 #include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "nodes/nodeFuncs.h"
+#include "port/pg_bitutils.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
 #include "utils/expandeddatum.h"
@@ -707,9 +708,75 @@ tts_minimal_store_tuple(TupleTableSlot *slot, MinimalTuple mtup, bool shouldFree
  * TupleTableSlotOps implementation for BufferHeapTupleTableSlot.
  */
 
+static TupleBatchMask
+tts_buffer_heap_getattrs(TupleTableSlot *slot, AttrNumber attnum,
+						 int first, int nrows, TupleBatchMask rows,
+						 Datum *values)
+{
+	BufferHeapTupleTableSlot *bslot;
+	HeapPageBatch *batch;
+	TupleDesc	tupledesc = slot->tts_tupleDescriptor;
+	TupleBatchMask nulls = 0;
+	Page		page;
+
+	Assert(TTS_IS_BUFFERTUPLE(slot));
+	bslot = (BufferHeapTupleTableSlot *) slot;
+	batch = &bslot->batch;
+
+	Assert(!TTS_EMPTY(slot));
+	Assert(slot_getbatch(slot) == &batch->batch);
+	Assert(batch->offsets != NULL);
+	Assert(BufferIsValid(bslot->buffer));
+	Assert(attnum > 0 && attnum <= tupledesc->natts);
+	Assert(first >= 0);
+	Assert(nrows >= 0 && nrows <= TUPLE_BATCH_MASK_BITS);
+	Assert(nrows <= batch->batch.ntuples);
+	Assert(first <= batch->batch.ntuples - nrows);
+	Assert(nrows == TUPLE_BATCH_MASK_BITS || (rows >> nrows) == 0);
+	Assert(values != NULL);
+
+	if (rows == 0)
+		return nulls;
+
+	page = BufferGetPage(bslot->buffer);
+	while (rows != 0)
+	{
+		int			i = pg_rightmost_one_pos64(rows);
+		OffsetNumber lineoff = batch->offsets[first + i];
+		ItemId		lpp = PageGetItemId(page, lineoff);
+		HeapTupleData tuple;
+		bool		isnull;
+
+		Assert(ItemIdIsNormal(lpp));
+		tuple.t_data = (HeapTupleHeader) PageGetItem(page, lpp);
+		tuple.t_len = ItemIdGetLength(lpp);
+		values[i] = heap_getattr(&tuple, attnum, tupledesc, &isnull);
+		if (isnull)
+			nulls |= UINT64CONST(1) << i;
+
+		rows &= rows - 1;
+	}
+
+	return nulls;
+}
+
+static inline void
+heap_page_batch_reset(HeapPageBatch *batch)
+{
+	batch->batch.ntuples = 0;
+}
+
 static void
 tts_buffer_heap_init(TupleTableSlot *slot)
 {
+	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
+
+	Assert(slot->tts_batch == NULL);
+	if (slot->tts_flags & TTS_FLAG_SUPPORTS_BATCH)
+	{
+		bslot->batch.batch.getattrs = tts_buffer_heap_getattrs;
+		slot->tts_batch = &bslot->batch.batch;
+	}
 }
 
 static void
@@ -721,6 +788,8 @@ static void
 tts_buffer_heap_clear(TupleTableSlot *slot)
 {
 	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
+
+	heap_page_batch_reset(&bslot->batch);
 
 	/*
 	 * Free the memory for heap tuple if allowed. A tuple coming from buffer
@@ -807,6 +876,7 @@ tts_buffer_heap_materialize(TupleTableSlot *slot)
 	MemoryContext oldContext;
 
 	Assert(!TTS_EMPTY(slot));
+	heap_page_batch_reset(&bslot->batch);
 
 	/* If slot has its tuple already materialized, nothing to do. */
 	if (TTS_SHOULDFREE(slot))
@@ -946,6 +1016,8 @@ tts_buffer_heap_store_tuple(TupleTableSlot *slot, HeapTuple tuple,
 {
 	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
 
+	heap_page_batch_reset(&bslot->batch);
+
 	if (TTS_SHOULDFREE(slot))
 	{
 		/* materialized slot shouldn't have a buffer to release */
@@ -955,11 +1027,7 @@ tts_buffer_heap_store_tuple(TupleTableSlot *slot, HeapTuple tuple,
 		slot->tts_flags &= ~TTS_FLAG_SHOULDFREE;
 	}
 
-	slot->tts_flags &= ~TTS_FLAG_EMPTY;
-	slot->tts_nvalid = 0;
-	bslot->base.tuple = tuple;
-	bslot->base.off = 0;
-	slot->tts_tid = tuple->t_self;
+	tts_buffer_heap_set_tuple(bslot, tuple);
 
 	/*
 	 * If tuple is on a disk page, keep the page pinned as long as we hold a
@@ -1677,8 +1745,6 @@ ExecStoreBufferHeapTuple(HeapTuple tuple,
 		elog(ERROR, "trying to store an on-disk heap tuple into wrong type of slot");
 	tts_buffer_heap_store_tuple(slot, tuple, buffer, false);
 
-	slot->tts_tableOid = tuple->t_tableOid;
-
 	return slot;
 }
 
@@ -1702,8 +1768,6 @@ ExecStorePinnedBufferHeapTuple(HeapTuple tuple,
 	if (unlikely(!TTS_IS_BUFFERTUPLE(slot)))
 		elog(ERROR, "trying to store an on-disk heap tuple into wrong type of slot");
 	tts_buffer_heap_store_tuple(slot, tuple, buffer, true);
-
-	slot->tts_tableOid = tuple->t_tableOid;
 
 	return slot;
 }

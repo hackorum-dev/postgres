@@ -805,6 +805,12 @@ systable_endscan_ordered(SysScanDesc sysscan)
  * condition.)  If "oldtupcopy" gets non-NULL, you must pass output parameter
  * "state" to systable_inplace_update_finish() or
  * systable_inplace_update_cancel().
+ *
+ * An extension using this function on a non-system relation must either mark
+ * the relation with user_catalog_table before concurrent access begins, or
+ * serialize its in-place updates with all readers. SeqScan does not expose
+ * tuple batches for user catalog tables, because a batch requires stable
+ * backing tuple contents.
  */
 void
 systable_inplace_update_begin(Relation relation,

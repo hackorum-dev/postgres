@@ -107,6 +107,9 @@
 #define			TTS_FLAG_FIXED		(1 << 4)
 #define TTS_FIXED(slot) (((slot)->tts_flags & TTS_FLAG_FIXED) != 0)
 
+/* request that the slot implementation expose its optional batch interface */
+#define			TTS_FLAG_SUPPORTS_BATCH		(1 << 5)
+
 /*
  * Defines which of the above flags should never be set in tts_flags when the
  * TupleTableSlot is created.
@@ -115,6 +118,8 @@
 
 struct TupleTableSlotOps;
 typedef struct TupleTableSlotOps TupleTableSlotOps;
+struct TupleTableSlotBatch;
+typedef struct TupleTableSlotBatch TupleTableSlotBatch;
 
 /* base tuple table slot type */
 typedef struct TupleTableSlot
@@ -141,7 +146,59 @@ typedef struct TupleTableSlot
 	MemoryContext tts_mcxt;		/* slot itself is in this context */
 	ItemPointerData tts_tid;	/* stored tuple's tid */
 	Oid			tts_tableOid;	/* table oid of tuple */
+	TupleTableSlotBatch *tts_batch; /* optional batch of tuples */
 } TupleTableSlot;
+
+typedef uint64 TupleBatchMask;
+
+#define TUPLE_BATCH_MASK_BITS \
+	(sizeof(TupleBatchMask) * BITS_PER_BYTE)
+
+/*
+ * A slot implementation accepts TTS_FLAG_SUPPORTS_BATCH by setting tts_batch
+ * during initialization; it may ignore the request by leaving tts_batch NULL.
+ * A non-NULL tts_batch means that batches can be published through the slot.
+ * A batch with zero tuples is inactive; otherwise, 0 <= current < ntuples and
+ * current identifies the slot's tuple in the batch. The batch pointer and
+ * generation together identify the batch contents. Attributes available
+ * through getattrs must remain stable while a batch is active. Slots backed
+ * by storage that can change those attributes in place must leave tts_batch
+ * NULL.
+ *
+ * getattrs requests at most TUPLE_BATCH_MASK_BITS tuples. Bit i in rows and
+ * the returned NULL mask, and values[i], refer to tuple first + i in the
+ * batch.
+ */
+struct TupleTableSlotBatch
+{
+	TupleBatchMask (*getattrs) (TupleTableSlot *slot,
+								AttrNumber attnum, int first, int nrows,
+								TupleBatchMask rows, Datum *values);
+	uint64		generation;
+	int			ntuples;
+	int			current;
+};
+
+static inline bool
+slot_supports_batch(const TupleTableSlot *slot)
+{
+	return slot->tts_batch != NULL;
+}
+
+static inline const TupleTableSlotBatch *
+slot_getbatch(const TupleTableSlot *slot)
+{
+	const TupleTableSlotBatch *batch = slot->tts_batch;
+
+	if (batch == NULL || batch->ntuples <= 0)
+		return NULL;
+
+	Assert(batch->getattrs != NULL);
+	Assert(batch->current >= 0);
+	Assert(batch->current < batch->ntuples);
+
+	return batch;
+}
 
 /* routines for a TupleTableSlot implementation */
 struct TupleTableSlotOps
@@ -282,6 +339,15 @@ typedef struct HeapTupleTableSlot
 	HeapTupleData tupdata;		/* optional workspace for storing tuple */
 } HeapTupleTableSlot;
 
+struct HeapScanDescData;
+
+typedef struct HeapPageBatch
+{
+	TupleTableSlotBatch batch;
+	const OffsetNumber *offsets;
+	struct HeapScanDescData *scan;
+} HeapPageBatch;
+
 /* heap tuple residing in a buffer */
 typedef struct BufferHeapTupleTableSlot
 {
@@ -296,7 +362,21 @@ typedef struct BufferHeapTupleTableSlot
 	 * such a case, since presumably base.tuple is pointing into the buffer.)
 	 */
 	Buffer		buffer;			/* tuple's buffer, or InvalidBuffer */
+	HeapPageBatch batch;
 } BufferHeapTupleTableSlot;
+
+static inline void
+tts_buffer_heap_set_tuple(BufferHeapTupleTableSlot *bslot, HeapTuple tuple)
+{
+	TupleTableSlot *slot = &bslot->base.base;
+
+	slot->tts_flags &= ~TTS_FLAG_EMPTY;
+	slot->tts_nvalid = 0;
+	bslot->base.tuple = tuple;
+	bslot->base.off = 0;
+	slot->tts_tid = tuple->t_self;
+	slot->tts_tableOid = tuple->t_tableOid;
+}
 
 typedef struct MinimalTupleTableSlot
 {

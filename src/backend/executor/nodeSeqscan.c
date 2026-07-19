@@ -29,11 +29,13 @@
 
 #include "access/relscan.h"
 #include "access/tableam.h"
+#include "catalog/catalog.h"
 #include "executor/execParallel.h"
 #include "executor/execScan.h"
 #include "executor/executor.h"
 #include "executor/nodeSeqscan.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 
 static TupleTableSlot *SeqNext(SeqScanState *node);
 
@@ -220,6 +222,7 @@ SeqScanState *
 ExecInitSeqScan(SeqScan *node, EState *estate, int eflags)
 {
 	SeqScanState *scanstate;
+	uint16		slot_flags = TTS_FLAG_OBEYS_NOT_NULL_CONSTRAINTS;
 
 	/*
 	 * Once upon a time it was possible to have an outerPlan of a SeqScan, but
@@ -250,11 +253,22 @@ ExecInitSeqScan(SeqScan *node, EState *estate, int eflags)
 							 node->scan.scanrelid,
 							 eflags);
 
+	/*
+	 * Request the batch interface from the slot implementation when relation
+	 * semantics allow its attributes to remain stable. The slot may ignore
+	 * the request if its backing storage cannot provide a stable batch.
+	 */
+	if (estate->es_snapshot != NULL &&
+		IsMVCCSnapshot(estate->es_snapshot) &&
+		!IsInplaceUpdateRelation(scanstate->ss.ss_currentRelation) &&
+		!RelationIsUsedAsCatalogTable(scanstate->ss.ss_currentRelation))
+		slot_flags |= TTS_FLAG_SUPPORTS_BATCH;
+
 	/* and create slot with the appropriate rowtype */
 	ExecInitScanTupleSlot(estate, &scanstate->ss,
 						  RelationGetDescr(scanstate->ss.ss_currentRelation),
 						  table_slot_callbacks(scanstate->ss.ss_currentRelation),
-						  TTS_FLAG_OBEYS_NOT_NULL_CONSTRAINTS);
+						  slot_flags);
 
 	/*
 	 * Initialize result type and projection.
