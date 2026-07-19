@@ -3,6 +3,7 @@
 test_install_data += files(
   'test_pg_dump.control',
   'test_pg_dump--1.0.sql',
+  'test_pg_dump--1.1.sql',
 )
 
 tests += {
