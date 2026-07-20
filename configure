@@ -16347,6 +16347,18 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_DECL_TIMINGSAFE_BCMP $ac_have_decl
 _ACEOF
 
+ac_fn_c_check_decl "$LINENO" "explicit_bzero" "ac_cv_have_decl_explicit_bzero" "#include <string.h>
+"
+if test "x$ac_cv_have_decl_explicit_bzero" = xyes; then :
+  ac_have_decl=1
+else
+  ac_have_decl=0
+fi
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL_EXPLICIT_BZERO $ac_have_decl
+_ACEOF
+
 
 # We can't use AC_CHECK_FUNCS to detect these functions, because it
 # won't handle deployment target restrictions on macOS
@@ -16414,9 +16426,22 @@ cat >>confdefs.h <<_ACEOF
 _ACEOF
 
 
-ac_fn_c_check_func "$LINENO" "explicit_bzero" "ac_cv_func_explicit_bzero"
+# A linked library may export explicit_bzero without declaring it.  Do not
+# rely on such a symbol; use our replacement instead.
+if test "$ac_cv_have_decl_explicit_bzero" = yes; then
+  ac_fn_c_check_func "$LINENO" "explicit_bzero" "ac_cv_func_explicit_bzero"
 if test "x$ac_cv_func_explicit_bzero" = xyes; then :
   $as_echo "#define HAVE_EXPLICIT_BZERO 1" >>confdefs.h
+
+else
+  case " $LIBOBJS " in
+  *" explicit_bzero.$ac_objext "* ) ;;
+  *) LIBOBJS="$LIBOBJS explicit_bzero.$ac_objext"
+ ;;
+esac
+
+fi
+
 
 else
   case " $LIBOBJS " in
