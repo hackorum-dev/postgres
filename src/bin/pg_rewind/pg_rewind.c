@@ -471,6 +471,7 @@ main(int argc, char **argv)
 	keepwal_init();
 
 	findLastCheckpoint(datadir_target, divergerec, lastcommontliIndex,
+					   source_tli,
 					   &chkptrec, &chkpttli, &chkptredo, restore_command);
 	pg_log_info("rewinding from last common checkpoint at %X/%08X on timeline %u",
 				LSN_FORMAT_ARGS(chkptrec), chkpttli);
