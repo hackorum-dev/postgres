@@ -1900,6 +1900,7 @@ AC_CHECK_DECLS(posix_fadvise, [], [], [#include <fcntl.h>])
 
 AC_CHECK_DECLS(fdatasync, [], [], [#include <unistd.h>])
 AC_CHECK_DECLS([strlcat, strlcpy, strsep, timingsafe_bcmp])
+AC_CHECK_DECLS([explicit_bzero], [], [], [#include <string.h>])
 
 # We can't use AC_CHECK_FUNCS to detect these functions, because it
 # won't handle deployment target restrictions on macOS
@@ -1912,8 +1913,15 @@ AC_CHECK_DECLS([memset_s], [], [], [#define __STDC_WANT_LIB_EXT1__ 1
 # This is probably only present on macOS, but may as well check always
 AC_CHECK_DECLS(F_FULLFSYNC, [], [], [#include <fcntl.h>])
 
+# A linked library may export explicit_bzero without declaring it.  Do not
+# rely on such a symbol; use our replacement instead.
+if test "$ac_cv_have_decl_explicit_bzero" = yes; then
+  AC_REPLACE_FUNCS([explicit_bzero])
+else
+  AC_LIBOBJ([explicit_bzero])
+fi
+
 AC_REPLACE_FUNCS(m4_normalize([
-	explicit_bzero
 	getopt
 	getpeereid
 	inet_aton

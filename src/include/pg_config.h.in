@@ -77,6 +77,10 @@
    similar. */
 #undef HAVE_CXX_TYPEOF_UNQUAL
 
+/* Define to 1 if you have the declaration of `explicit_bzero', and to 0 if
+   you don't. */
+#undef HAVE_DECL_EXPLICIT_BZERO
+
 /* Define to 1 if you have the declaration of `fdatasync', and to 0 if you
    don't. */
 #undef HAVE_DECL_FDATASYNC
