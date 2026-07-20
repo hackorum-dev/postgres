@@ -36,7 +36,7 @@ extern void extractPageMap(const char *datadir, XLogRecPtr startpoint,
 						   int tliIndex, XLogRecPtr endpoint,
 						   const char *restoreCommand);
 extern void findLastCheckpoint(const char *datadir, XLogRecPtr forkptr,
-							   int tliIndex,
+							   int tliIndex, TimeLineID source_tli,
 							   XLogRecPtr *lastchkptrec, TimeLineID *lastchkpttli,
 							   XLogRecPtr *lastchkptredo,
 							   const char *restoreCommand);

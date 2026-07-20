@@ -166,6 +166,7 @@ readOneRecord(const char *datadir, XLogRecPtr ptr, int tliIndex,
  */
 void
 findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
+				   TimeLineID source_tli,
 				   XLogRecPtr *lastchkptrec, TimeLineID *lastchkpttli,
 				   XLogRecPtr *lastchkptredo, const char *restoreCommand)
 {
@@ -227,8 +228,14 @@ findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
 
 			snprintf(xlogfname, MAXFNAMELEN, XLOGDIR "/");
 
-			/* update current values */
-			current_tli = xlogreader->seg.ws_tli;
+			/*
+			 * update current values
+			 *
+			 * These segments belong to the target, which may be on a higher
+			 * TLI than the source. Clamp to the source's latest TLI so that
+			 * keepwal entries refer to segments the source can hold.
+			 */
+			current_tli = Min(xlogreader->seg.ws_tli, source_tli);
 			current_segno = xlogreader->seg.ws_segno;
 
 			XLogFileName(xlogfname + sizeof(XLOGDIR),
