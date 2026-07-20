@@ -167,6 +167,8 @@ extern PGDLLIMPORT bool XLOG_DEBUG;
 #define CHECKPOINT_FAST			0x0004	/* Do it without delays */
 #define CHECKPOINT_FORCE		0x0008	/* Force even if no activity */
 #define CHECKPOINT_FLUSH_UNLOGGED	0x0010	/* Flush unlogged tables */
+#define CHECKPOINT_UPGRADE_BOUNDARY 0x0200	/* Mark shutdown checkpoint as an
+											 * upgrade boundary */
 /* These are important to RequestCheckpoint */
 #define CHECKPOINT_WAIT			0x0020	/* Wait for completion */
 #define CHECKPOINT_REQUESTED	0x0040	/* Checkpoint request has been made */
@@ -298,6 +300,8 @@ extern XLogRecPtr GetFlushRecPtr(TimeLineID *insertTLI);
 extern TimeLineID GetWALInsertionTimeLine(void);
 extern TimeLineID GetWALInsertionTimeLineIfSet(void);
 extern XLogRecPtr GetLastImportantRecPtr(void);
+extern void SetUpgradeBoundaryRequest(bool request);
+extern bool UpgradeBoundaryActive(void);
 
 extern void SetWalWriterSleeping(bool sleeping);
 

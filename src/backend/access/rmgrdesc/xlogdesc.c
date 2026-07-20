@@ -55,6 +55,27 @@ get_wal_level_string(int wal_level)
 	return wal_level_str;
 }
 
+/*
+ * Find a string representation for a checkpoint's upgrade flag
+ */
+static const char *
+get_upgrade_flag_string(uint8 flag)
+{
+	switch (flag)
+	{
+		case UPGRADE_FLAG_NONE:
+			return "none";
+		case UPGRADE_FLAG_BOUNDARY:
+			return "boundary";
+		case UPGRADE_FLAG_START:
+			return "start";
+		case UPGRADE_FLAG_GOLIVE:
+			return "go-live";
+	}
+
+	return "?";
+}
+
 const char *
 get_checksum_state_string(uint32 state)
 {
@@ -126,6 +147,11 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 						 checkpoint->oldestActiveXid,
 						 get_checksum_state_string(checkpoint->dataChecksumState),
 						 (info == XLOG_CHECKPOINT_SHUTDOWN) ? "shutdown" : "online");
+
+		/* Only upgrade machinery writes a flag, so keep quiet otherwise */
+		if (checkpoint->upgradeFlag != UPGRADE_FLAG_NONE)
+			appendStringInfo(buf, "; upgrade flag %s",
+							 get_upgrade_flag_string(checkpoint->upgradeFlag));
 	}
 	else if (info == XLOG_NEXTOID)
 	{

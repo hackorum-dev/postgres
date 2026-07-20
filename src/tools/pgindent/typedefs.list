@@ -3318,6 +3318,7 @@ UnresolvedTup
 UnresolvedTupData
 UpdateContext
 UpdateStmt
+UpgradeFlag
 UpgradeTask
 UpgradeTaskProcessCB
 UpgradeTaskReport

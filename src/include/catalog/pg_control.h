@@ -66,7 +66,25 @@ typedef struct CheckPoint
 
 	/* data checksums state at the time of the checkpoint  */
 	uint32		dataChecksumState;
+
+
+	/*
+	 * Role of this checkpoint during an in-place major version upgrade, or
+	 * UPGRADE_FLAG_NONE otherwise.
+	 */
+	uint8		upgradeFlag;	/* one of the UPGRADE_FLAG_* values below */
 } CheckPoint;
+
+/* Values for CheckPoint.upgradeFlag. */
+typedef enum UpgradeFlag
+{
+	UPGRADE_FLAG_NONE = 0,		/* no in-place major version upgrade */
+	UPGRADE_FLAG_BOUNDARY,		/* final shutdown checkpoint of the old major
+								 * version */
+	UPGRADE_FLAG_START,			/* first checkpoint written in the new major
+								 * version's format */
+	UPGRADE_FLAG_GOLIVE,		/* checkpoint that ends the migration */
+} UpgradeFlag;
 
 /* XLOG info values for XLOG rmgr */
 #define XLOG_CHECKPOINT_SHUTDOWN		0x00

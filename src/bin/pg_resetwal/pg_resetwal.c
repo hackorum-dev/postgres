@@ -933,6 +933,12 @@ RewriteControlFile(void)
 	ControlFile.data_checksum_lsn = InvalidXLogRecPtr;
 
 	/*
+	 * The new, empty WAL contains no upgrade boundary, so clear the flag of
+	 * the checkpoint that we discard.
+	 */
+	ControlFile.checkPointCopy.upgradeFlag = UPGRADE_FLAG_NONE;
+
+	/*
 	 * Force the defaults for max_* settings. The values don't really matter
 	 * as long as wal_level='minimal'; the postmaster will reset these fields
 	 * anyway at startup.

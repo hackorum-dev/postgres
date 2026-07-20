@@ -888,6 +888,97 @@ postgres=# SELECT '0/0'::pg_lsn + pd.segment_number * ps.setting::int + :offset 
 
   </sect2>
 
+  <sect2 id="functions-upgrade-boundary">
+   <title>Upgrade Boundary Functions</title>
+
+   <para>
+    The functions shown in <xref
+    linkend="functions-upgrade-boundary-table"/> control the marking of an
+    <firstterm>upgrade boundary</firstterm>: a shutdown checkpoint that is
+    the deliberate end of the current major version's write-ahead log,
+    written in preparation for an in-place major version upgrade.
+   </para>
+
+   <table id="functions-upgrade-boundary-table">
+    <title>Upgrade Boundary Functions</title>
+    <tgroup cols="1">
+     <thead>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        Function
+       </para>
+       <para>
+        Description
+       </para></entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_request_upgrade_boundary</primary>
+        </indexterm>
+        <function>pg_request_upgrade_boundary</function> ()
+        <returnvalue>void</returnvalue>
+       </para>
+       <para>
+        Requests that the next shutdown checkpoint be marked as an upgrade
+        boundary.  The request only takes effect at a smart or fast
+        shutdown. It does not survive a crash and does not affect
+        checkpoints of a running server.  This function cannot be executed
+        during recovery.
+       </para>
+       <para>
+        This function is restricted to superusers by default, but other users
+        can be granted EXECUTE to run the function.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_cancel_upgrade_boundary</primary>
+        </indexterm>
+        <function>pg_cancel_upgrade_boundary</function> ()
+        <returnvalue>void</returnvalue>
+       </para>
+       <para>
+        Cancels a requested upgrade boundary.  This function cannot be
+        executed during recovery.
+       </para>
+       <para>
+        This function is restricted to superusers by default, but other users
+        can be granted EXECUTE to run the function.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_upgrade_boundary_requested</primary>
+        </indexterm>
+        <function>pg_upgrade_boundary_requested</function> ()
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Returns true if an upgrade boundary has been requested for the next
+        shutdown checkpoint.  During recovery this always returns
+        <literal>false</literal>.
+       </para></entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+   <para>
+    If a server that was shut down at an upgrade boundary is started
+    again with the same major version, the boundary is cancelled: writing
+    new write-ahead log on the same timeline supersedes it.
+   </para>
+
+  </sect2>
+
   <sect2 id="functions-snapshot-synchronization">
    <title>Snapshot Synchronization Functions</title>
 

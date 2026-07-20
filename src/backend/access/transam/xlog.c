@@ -539,6 +539,13 @@ typedef struct XLogCtlData
 	bool		WalWriterSleeping;
 
 	/*
+	 * upgradeBoundaryRequested indicates that the next shutdown checkpoint is
+	 * to be marked as a major version upgrade boundary.  Protected by
+	 * info_lck.
+	 */
+	bool		upgradeBoundaryRequested;
+
+	/*
 	 * During recovery, we keep a copy of the latest checkpoint record here.
 	 * lastCheckPointRecPtr points to start of checkpoint record and
 	 * lastCheckPointEndPtr points to end+1 of checkpoint record.  Used by the
@@ -6175,6 +6182,17 @@ StartupXLOG(void)
 					 errmsg("control file contains invalid database cluster state")));
 	}
 
+	/*
+	 * If the last shutdown checkpoint was marked as an upgrade boundary but
+	 * we are starting up as usual, no upgrade happened.  The boundary is
+	 * cancelled as a side effect of writing new WAL on this timeline.
+	 */
+	if (ControlFile->state == DB_SHUTDOWNED &&
+		ControlFile->checkPointCopy.upgradeFlag == UPGRADE_FLAG_BOUNDARY)
+		ereport(LOG,
+				(errmsg("database system was shut down at an upgrade boundary"),
+				 errdetail("Starting up normally cancels the upgrade boundary.")));
+
 	/* This is just to allow attaching to startup process with a debugger */
 #ifdef XLOG_REPLAY_DELAY
 	if (ControlFile->state != DB_SHUTDOWNED)
@@ -7389,6 +7407,35 @@ GetLastSegSwitchData(XLogRecPtr *lastSwitchLSN)
 }
 
 /*
+ * Request or cancel an upgrade boundary
+ *
+ * The request lives only in shared memory: a crash, which writes no
+ * shutdown checkpoint, forgets it.
+ */
+void
+SetUpgradeBoundaryRequest(bool request)
+{
+	SpinLockAcquire(&XLogCtl->info_lck);
+	XLogCtl->upgradeBoundaryRequested = request;
+	SpinLockRelease(&XLogCtl->info_lck);
+}
+
+/*
+ * Report whether an upgrade boundary is currently requested.
+ */
+bool
+UpgradeBoundaryActive(void)
+{
+	bool		active;
+
+	SpinLockAcquire(&XLogCtl->info_lck);
+	active = XLogCtl->upgradeBoundaryRequested;
+	SpinLockRelease(&XLogCtl->info_lck);
+
+	return active;
+}
+
+/*
  * This must be called ONCE during postmaster or standalone-backend shutdown
  */
 void
@@ -7422,6 +7469,8 @@ ShutdownXLOG(int code, Datum arg)
 		CreateRestartPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_FAST);
 	else
 	{
+		int			flags = CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_FAST;
+
 		/*
 		 * If archiving is enabled, rotate the last XLOG file so that all the
 		 * remaining records are archived (postmaster wakes up the archiver
@@ -7431,7 +7480,11 @@ ShutdownXLOG(int code, Datum arg)
 		if (XLogArchivingActive())
 			RequestXLogSwitch(false);
 
-		CreateCheckPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_FAST);
+		/* Mark the shutdown checkpoint as an upgrade boundary if requested. */
+		if (UpgradeBoundaryActive())
+			flags |= CHECKPOINT_UPGRADE_BOUNDARY;
+
+		CreateCheckPoint(flags);
 	}
 }
 
@@ -7444,7 +7497,7 @@ CheckpointFlagsString(int flags)
 {
 	static char buf[128];
 
-	snprintf(buf, sizeof(buf), "%s%s%s%s%s%s%s%s",
+	snprintf(buf, sizeof(buf), "%s%s%s%s%s%s%s%s%s",
 			 (flags & CHECKPOINT_IS_SHUTDOWN) ? " shutdown" : "",
 			 (flags & CHECKPOINT_END_OF_RECOVERY) ? " end-of-recovery" : "",
 			 (flags & CHECKPOINT_FAST) ? " fast" : "",
@@ -7452,7 +7505,8 @@ CheckpointFlagsString(int flags)
 			 (flags & CHECKPOINT_WAIT) ? " wait" : "",
 			 (flags & CHECKPOINT_CAUSE_XLOG) ? " wal" : "",
 			 (flags & CHECKPOINT_CAUSE_TIME) ? " time" : "",
-			 (flags & CHECKPOINT_FLUSH_UNLOGGED) ? " flush-unlogged" : "");
+			 (flags & CHECKPOINT_FLUSH_UNLOGGED) ? " flush-unlogged" : "",
+			 (flags & CHECKPOINT_UPGRADE_BOUNDARY) ? " upgrade-boundary" : "");
 
 	return buf;
 }
@@ -7961,6 +8015,12 @@ CreateCheckPoint(int flags)
 	LWLockRelease(OidGenLock);
 
 	checkPoint.logicalDecodingEnabled = IsLogicalDecodingEnabled();
+
+	if ((flags & CHECKPOINT_IS_SHUTDOWN) != 0 &&
+		(flags & CHECKPOINT_UPGRADE_BOUNDARY) != 0)
+		checkPoint.upgradeFlag = UPGRADE_FLAG_BOUNDARY;
+	else
+		checkPoint.upgradeFlag = UPGRADE_FLAG_NONE;
 
 	MultiXactGetCheckptMulti(shutdown,
 							 &checkPoint.nextMulti,

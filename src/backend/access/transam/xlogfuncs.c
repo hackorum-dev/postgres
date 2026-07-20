@@ -223,6 +223,64 @@ pg_switch_wal(PG_FUNCTION_ARGS)
 }
 
 /*
+ * pg_request_upgrade_boundary: request an upgrade boundary
+ *
+ * When requested, the next shutdown checkpoint is marked as an upgrade
+ * boundary.
+ *
+ * Permission checking for this function is managed through the normal
+ * GRANT system.
+ */
+Datum
+pg_request_upgrade_boundary(PG_FUNCTION_ARGS)
+{
+	if (RecoveryInProgress())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("recovery is in progress"),
+				 errhint("WAL control functions cannot be executed during recovery.")));
+
+	SetUpgradeBoundaryRequest(true);
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * pg_cancel_upgrade_boundary: cancel a requested upgrade boundary
+ *
+ * Permission checking for this function is managed through the normal
+ * GRANT system.
+ */
+Datum
+pg_cancel_upgrade_boundary(PG_FUNCTION_ARGS)
+{
+	if (RecoveryInProgress())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("recovery is in progress"),
+				 errhint("WAL control functions cannot be executed during recovery.")));
+
+	SetUpgradeBoundaryRequest(false);
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * pg_upgrade_boundary_requested: report whether an upgrade boundary is active
+ *
+ * During recovery there is no requesting a boundary, so simply return
+ * false rather than raising an error.
+ */
+Datum
+pg_upgrade_boundary_requested(PG_FUNCTION_ARGS)
+{
+	if (RecoveryInProgress())
+		PG_RETURN_BOOL(false);
+
+	PG_RETURN_BOOL(UpgradeBoundaryActive());
+}
+
+/*
  * pg_log_standby_snapshot: call LogStandbySnapshot()
  *
  * Permission checking for this function is managed through the normal

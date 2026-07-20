@@ -84,6 +84,23 @@ wal_level_str(WalLevel wal_level)
 	return _("unrecognized \"wal_level\"");
 }
 
+static const char *
+upgrade_flag_str(uint8 flag)
+{
+	switch (flag)
+	{
+		case UPGRADE_FLAG_NONE:
+			return "none";
+		case UPGRADE_FLAG_BOUNDARY:
+			return "boundary";
+		case UPGRADE_FLAG_START:
+			return "start";
+		case UPGRADE_FLAG_GOLIVE:
+			return "go-live";
+	}
+	return _("unrecognized upgrade flag");
+}
+
 
 int
 main(int argc, char *argv[])
@@ -291,6 +308,8 @@ main(int argc, char *argv[])
 		   ControlFile->checkPointCopy.newestCommitTsXid);
 	printf(_("Latest checkpoint's data_checksum_version:%u\n"),
 		   ControlFile->checkPointCopy.dataChecksumState);
+	printf(_("Latest checkpoint's upgrade flag:     %s\n"),
+		   upgrade_flag_str(ControlFile->checkPointCopy.upgradeFlag));
 	printf(_("Time of latest checkpoint:            %s\n"),
 		   ckpttime_str);
 	printf(_("Fake LSN counter for unlogged rels:   %X/%08X\n"),
