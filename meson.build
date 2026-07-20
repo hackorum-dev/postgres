@@ -2886,6 +2886,7 @@ endforeach
 
 decl_checks = [
   ['F_FULLFSYNC', 'fcntl.h'],
+  ['explicit_bzero', 'string.h'],
   ['fdatasync', 'unistd.h'],
   ['posix_fadvise', 'fcntl.h'],
   ['strlcat', 'string.h'],
@@ -3197,7 +3198,9 @@ func_checks = [
   # required. Just checking for dlsym() ought to suffice.
   ['dlsym', {'dependencies': [dl_dep], 'define': false}],
   ['elf_aux_info'],
-  ['explicit_bzero'],
+  # A linked library may export explicit_bzero without declaring it.  Do not
+  # rely on such a symbol; use our replacement instead.
+  ['explicit_bzero', {'skip': cdata.get('HAVE_DECL_EXPLICIT_BZERO') == 0}],
   ['explicit_memset'],
   ['getauxval'],
   ['getifaddrs'],
