@@ -47,6 +47,7 @@
  */
 typedef struct BufferUsage BufferUsage;
 typedef struct ExecRowMark ExecRowMark;
+typedef struct ExecScanBatchState ExecScanBatchState;
 typedef struct ExprState ExprState;
 typedef struct ExprContext ExprContext;
 typedef struct HTAB HTAB;
@@ -1673,6 +1674,7 @@ typedef struct SeqScanState
 	ScanState	ss;				/* its first field is NodeTag */
 	Size		pscan_len;		/* size of parallel heap scan descriptor */
 	struct SharedSeqScanInstrumentation *sinstrument;
+	ExecScanBatchState *batch_state;
 } SeqScanState;
 
 /* ----------------

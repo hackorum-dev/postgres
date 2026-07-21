@@ -589,6 +589,19 @@ typedef bool (*ExecScanRecheckMtd) (ScanState *node, TupleTableSlot *slot);
 
 extern TupleTableSlot *ExecScan(ScanState *node, ExecScanAccessMtd accessMtd,
 								ExecScanRecheckMtd recheckMtd);
+/*
+ * Batch scan support for built-in and extension scan nodes.
+ *
+ * Initialize after the expression context and scan slot. On success this
+ * also initializes ps.qual; otherwise the caller must initialize it normally.
+ * ExecScanBatch() is the public execution entry point. Reset before rescan.
+ */
+extern ExecScanBatchState *ExecInitScanBatch(ScanState *node, List *clauses);
+extern TupleTableSlot *ExecScanBatch(ScanState *node,
+									 ExecScanAccessMtd accessMtd,
+									 ExecScanRecheckMtd recheckMtd,
+									 ExecScanBatchState *state);
+extern void ExecResetScanBatch(ExecScanBatchState *state);
 extern void ExecAssignScanProjectionInfo(ScanState *node);
 extern void ExecAssignScanProjectionInfoWithVarno(ScanState *node, int varno);
 extern void ExecScanReScan(ScanState *node);

@@ -787,6 +787,7 @@ ExecPhraseData
 ExecProcNodeMtd
 ExecRowMark
 ExecScanAccessMtd
+ExecScanBatchState
 ExecScanRecheckMtd
 ExecStatus
 ExecStatusType

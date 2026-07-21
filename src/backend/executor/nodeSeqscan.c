@@ -30,6 +30,7 @@
 #include "access/relscan.h"
 #include "access/tableam.h"
 #include "catalog/catalog.h"
+#include "execScanBatch.h"
 #include "executor/execParallel.h"
 #include "executor/execScan.h"
 #include "executor/executor.h"
@@ -159,6 +160,38 @@ ExecSeqScanWithQual(PlanState *pstate)
 }
 
 /*
+ * Variant of ExecSeqScan() for initial quals that can use tuple batches.
+ */
+static TupleTableSlot *
+ExecSeqScanWithBatchQual(PlanState *pstate)
+{
+	SeqScanState *node = castNode(SeqScanState, pstate);
+
+	Assert(pstate->ps_ProjInfo == NULL);
+
+	return ExecScanBatchExtended(&node->ss,
+								 (ExecScanAccessMtd) SeqNext,
+								 (ExecScanRecheckMtd) SeqRecheck,
+								 node->batch_state, NULL);
+}
+
+/*
+ * Variant of ExecSeqScan() for initial batch quals and projection.
+ */
+static TupleTableSlot *
+ExecSeqScanWithBatchQualProject(PlanState *pstate)
+{
+	SeqScanState *node = castNode(SeqScanState, pstate);
+
+	pg_assume(pstate->ps_ProjInfo != NULL);
+
+	return ExecScanBatchExtended(&node->ss,
+								 (ExecScanAccessMtd) SeqNext,
+								 (ExecScanRecheckMtd) SeqRecheck,
+								 node->batch_state, pstate->ps_ProjInfo);
+}
+
+/*
  * Variant of ExecSeqScan() but when projection is required.
  */
 static TupleTableSlot *
@@ -279,8 +312,12 @@ ExecInitSeqScan(SeqScan *node, EState *estate, int eflags)
 	/*
 	 * initialize child expressions
 	 */
-	scanstate->ss.ps.qual =
-		ExecInitQual(node->scan.plan.qual, (PlanState *) scanstate);
+	if (estate->es_epq_active == NULL)
+		scanstate->batch_state =
+			ExecInitScanBatch(&scanstate->ss, node->scan.plan.qual);
+	if (scanstate->batch_state == NULL)
+		scanstate->ss.ps.qual =
+			ExecInitQual(node->scan.plan.qual, (PlanState *) scanstate);
 
 	/*
 	 * When EvalPlanQual() is not in use, assign ExecProcNode for this node
@@ -289,6 +326,13 @@ ExecInitSeqScan(SeqScan *node, EState *estate, int eflags)
 	 */
 	if (scanstate->ss.ps.state->es_epq_active != NULL)
 		scanstate->ss.ps.ExecProcNode = ExecSeqScanEPQ;
+	else if (scanstate->batch_state != NULL)
+	{
+		if (scanstate->ss.ps.ps_ProjInfo == NULL)
+			scanstate->ss.ps.ExecProcNode = ExecSeqScanWithBatchQual;
+		else
+			scanstate->ss.ps.ExecProcNode = ExecSeqScanWithBatchQualProject;
+	}
 	else if (scanstate->ss.ps.qual == NULL)
 	{
 		if (scanstate->ss.ps.ps_ProjInfo == NULL)
@@ -362,6 +406,7 @@ ExecReScanSeqScan(SeqScanState *node)
 {
 	TableScanDesc scan;
 
+	ExecResetScanBatch(node->batch_state);
 	scan = node->ss.ss_currentScanDesc;
 
 	if (scan != NULL)
