@@ -2437,6 +2437,26 @@ check_hba(Port *port)
 	port->hba = hba;
 }
 
+void
+DestroyParsedHbaContext(void)
+{
+	if (parsed_hba_context != NULL)
+	{
+		MemoryContextDelete(parsed_hba_context);
+		parsed_hba_context = NULL;
+	}
+}
+
+void
+DestroyParsedIdentContext(void)
+{
+	if (parsed_ident_context != NULL)
+	{
+		MemoryContextDelete(parsed_ident_context);
+		parsed_ident_context = NULL;
+	}
+}
+
 /*
  * Read the config file and create a List of HbaLine records for the contents.
  *
@@ -2531,8 +2551,8 @@ load_hba(void)
 	}
 
 	/* Loaded new file successfully, replace the one we use */
-	if (parsed_hba_context != NULL)
-		MemoryContextDelete(parsed_hba_context);
+	DestroyParsedHbaContext();
+
 	parsed_hba_context = hbacxt;
 	parsed_hba_lines = new_parsed_lines;
 
@@ -2912,8 +2932,7 @@ load_ident(void)
 	}
 
 	/* Loaded new file successfully, replace the one we use */
-	if (parsed_ident_context != NULL)
-		MemoryContextDelete(parsed_ident_context);
+	DestroyParsedIdentContext();
 
 	parsed_ident_context = ident_context;
 	parsed_ident_lines = new_parsed_lines;
