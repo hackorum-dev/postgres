@@ -52,6 +52,7 @@
 #include "replication/slot.h"
 #include "replication/slotsync.h"
 #include "replication/walreceiver.h"
+#include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
@@ -63,6 +64,7 @@
 #include "utils/fmgrprotos.h"
 #include "utils/guc.h"
 #include "utils/guc_hooks.h"
+#include "utils/memutils.h"
 #include "utils/pgstat_internal.h"
 #include "utils/pg_lsn.h"
 #include "utils/ps_status.h"
@@ -239,6 +241,24 @@ static uint32 readLen = 0;
 static XLogSource readSource = XLOG_FROM_ANY;
 
 /*
+ * Read-ahead cache for WAL segment reads, allocated once by InitWalRecovery()
+ * and filled by XLogPageRead() with up to io_combine_limit XLOG_BLCKSZ pages in
+ * a single pread().
+ *
+ * This is private to XLogPageRead() and does not change the page read contract:
+ * callers still get back one XLOG_BLCKSZ page per call in the caller-supplied
+ * buffer.
+ *
+ * If readAheadLen == 0 means the cache is empty or invalid and must be reset to
+ * 0 at every point that already closes or otherwise invalidates readFile (see
+ * XLogReadAheadInvalidate()).
+ */
+static char *readAheadBuf = NULL;
+static XLogSegNo readAheadSegNo = 0;
+static uint32 readAheadOff = 0;
+static uint32 readAheadLen = 0;
+
+/*
  * Keeps track of which source we're currently reading from. This is
  * different from readSource in that this is always set, even when we don't
  * currently have a WAL file open. If lastSourceFailed is set, our last
@@ -372,6 +392,8 @@ static XLogRecord *ReadRecord(XLogPrefetcher *xlogprefetcher,
 
 static int	XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
 						 int reqLen, XLogRecPtr targetRecPtr, char *readBuf);
+static void XLogFileClose(void);
+static void XLogReadAheadInvalidate(void);
 static XLogPageReadResult WaitForWALToBecomeAvailable(XLogRecPtr RecPtr,
 													  bool randAccess,
 													  bool fetching_ckpt,
@@ -526,6 +548,13 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	 * in the WAL.
 	 */
 	XLogReaderSetDecodeBuffer(xlogreader, NULL, wal_decode_buffer_size);
+
+	/*
+	 * Allocate the read-ahead cache used by XLogPageRead() to combine several
+	 * XLOG_BLCKSZ page reads into one larger pread().
+	 */
+	Assert(readAheadBuf == NULL);
+	readAheadBuf = palloc(MAX_IO_COMBINE_LIMIT * XLOG_BLCKSZ);
 
 	/* Create a WAL prefetcher. */
 	xlogprefetcher = XLogPrefetcherAllocate(xlogreader);
@@ -1520,11 +1549,7 @@ FinishWalRecovery(void)
 		 * If the ending log segment is still open, close it (to avoid
 		 * problems on Windows with trying to rename or delete an open file).
 		 */
-		if (readFile >= 0)
-		{
-			close(readFile);
-			readFile = -1;
-		}
+		XLogFileClose();
 	}
 
 	/*
@@ -1586,11 +1611,7 @@ ShutdownWalRecovery(void)
 	XLogPrefetcherComputeStats(xlogprefetcher);
 
 	/* Shut down xlogreader */
-	if (readFile >= 0)
-	{
-		close(readFile);
-		readFile = -1;
-	}
+	XLogFileClose();
 	pfree(xlogreader->private_data);
 	XLogReaderFree(xlogreader);
 	XLogPrefetcherFree(xlogprefetcher);
@@ -3163,11 +3184,7 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 				missingContrecPtr = xlogreader->missingContrecPtr;
 			}
 
-			if (readFile >= 0)
-			{
-				close(readFile);
-				readFile = -1;
-			}
+			XLogFileClose();
 
 			/*
 			 * We only end up here without a message when XLogPageRead()
@@ -3260,6 +3277,39 @@ ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 }
 
 /*
+ * Invalidate the WAL read-ahead cache.
+ *
+ * Must be called at every point that closes or otherwise invalidates readFile,
+ * but can be called at other times too and will force a re-read of the next
+ * page.
+ */
+static void
+XLogReadAheadInvalidate(void)
+{
+	readAheadLen = 0;
+}
+
+/*
+ * Close the current WAL file and invalidate the read-ahead cache.
+ *
+ * It is strictly speaking not necessary to set readSource and readLen to
+ * their initial values, but the original code did that, so we keep it for
+ * now.
+ */
+static void
+XLogFileClose(void)
+{
+	if (readFile >= 0)
+	{
+		close(readFile);
+		readFile = -1;
+		readSource = XLOG_FROM_ANY;
+		readLen = 0;
+		XLogReadAheadInvalidate();
+	}
+}
+
+/*
  * Read the XLOG page containing targetPagePtr into readBuf (if not read
  * already).  Returns number of bytes read, if the page is read successfully,
  * or XLREAD_FAIL in case of errors.  When errors occur, they are ereport'ed,
@@ -3296,7 +3346,6 @@ XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 	int			emode = private->emode;
 	uint32		targetPageOff;
 	XLogSegNo	targetSegNo PG_USED_FOR_ASSERTS_ONLY;
-	ssize_t		r;
 	instr_time	io_start;
 
 	Assert(AmStartupProcess() || !IsUnderPostmaster);
@@ -3325,9 +3374,7 @@ XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 			}
 		}
 
-		close(readFile);
-		readFile = -1;
-		readSource = XLOG_FROM_ANY;
+		XLogFileClose();
 	}
 
 	XLByteToSeg(targetPagePtr, readSegNo, wal_segment_size);
@@ -3355,11 +3402,7 @@ retry:
 			case XLREAD_WOULDBLOCK:
 				return XLREAD_WOULDBLOCK;
 			case XLREAD_FAIL:
-				if (readFile >= 0)
-					close(readFile);
-				readFile = -1;
-				readLen = 0;
-				readSource = XLOG_FROM_ANY;
+				XLogFileClose();
 				return XLREAD_FAIL;
 			case XLREAD_SUCCESS:
 				break;
@@ -3392,45 +3435,101 @@ retry:
 	/* Read the requested page */
 	readOff = targetPageOff;
 
-	/* Measure I/O timing when reading segment */
-	io_start = pgstat_prepare_io_time(track_wal_io_timing);
-
-	pgstat_report_wait_start(WAIT_EVENT_WAL_READ);
-	r = pg_pread(readFile, readBuf, XLOG_BLCKSZ, (pgoff_t) readOff);
-	if (r != XLOG_BLCKSZ)
+	/*
+	 * If the requested page is not in the read-ahead cache from a previous,
+	 * larger read, the cache is invalid, or all blocks from the cache is
+	 * read; fetch a large block from disk (up to io_combine_limit pages).
+	 *
+	 * The cache is invalidated (see XLogReadAheadInvalidate()) at every point
+	 * that could make readSegNo mean a different underlying file, so a hit
+	 * here is always safe to trust.
+	 */
+	if (readAheadLen <= 0 ||
+		readAheadSegNo != readSegNo ||
+		readOff < readAheadOff ||
+		readOff + XLOG_BLCKSZ > readAheadOff + readAheadLen)
 	{
-		char		fname[MAXFNAMELEN];
-		int			save_errno = errno;
+		uint32		wanted;
+		ssize_t		r;
 
+		Assert(readAheadBuf != NULL);
+
+		/* Read at most to the end of the WAL segment and not beyond */
+		wanted = (uint32) wal_segment_size - targetPageOff;
+
+		/*
+		 * If we stream from the primary, we cannot read more than we have in
+		 * the buffer, so cap the read at the number of bytes in the buffer.
+		 */
+		if (readSource == XLOG_FROM_STREAM)
+			wanted = Min(wanted, readLen);
+
+		/*
+		 * Never read more blocks than what io_combine_limit says we should
+		 * read
+		 */
+		wanted = Min(wanted, io_combine_limit * XLOG_BLCKSZ);
+
+		/* Read at least one page */
+		wanted = Max(wanted, XLOG_BLCKSZ);
+
+		/* Measure I/O timing when reading segment */
+		io_start = pgstat_prepare_io_time(track_wal_io_timing);
+
+		pgstat_report_wait_start(WAIT_EVENT_WAL_READ);
+		r = pg_pread(readFile, readAheadBuf, wanted, (pgoff_t) readOff);
 		pgstat_report_wait_end();
 
-		/* Count I/O stats only for successful short reads */
-		if (r > 0)
-			pgstat_count_io_op_time(IOOBJECT_WAL, IOCONTEXT_NORMAL, IOOP_READ,
-									io_start, 1, r);
-
-		XLogFileName(fname, curFileTLI, readSegNo, wal_segment_size);
-		if (r < 0)
+		if (r < XLOG_BLCKSZ)
 		{
-			errno = save_errno;
-			ereport(emode_for_corrupt_record(emode, targetPagePtr + reqLen),
-					(errcode_for_file_access(),
-					 errmsg("could not read from WAL segment %s, LSN %X/%08X, offset %u: %m",
-							fname, LSN_FORMAT_ARGS(targetPagePtr),
-							readOff)));
-		}
-		else
-			ereport(emode_for_corrupt_record(emode, targetPagePtr + reqLen),
-					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("could not read from WAL segment %s, LSN %X/%08X, offset %u: read %zd of %zu",
-							fname, LSN_FORMAT_ARGS(targetPagePtr),
-							readOff, r, (Size) XLOG_BLCKSZ)));
-		goto next_record_is_invalid;
-	}
-	pgstat_report_wait_end();
+			char		fname[MAXFNAMELEN];
+			int			save_errno = errno;
 
-	pgstat_count_io_op_time(IOOBJECT_WAL, IOCONTEXT_NORMAL, IOOP_READ,
-							io_start, 1, r);
+			/* Count I/O stats only for successful short reads */
+			if (r > 0)
+				pgstat_count_io_op_time(IOOBJECT_WAL, IOCONTEXT_NORMAL, IOOP_READ,
+										io_start, 1, r);
+
+			XLogFileName(fname, curFileTLI, readSegNo, wal_segment_size);
+			if (r < 0)
+			{
+				errno = save_errno;
+				ereport(emode_for_corrupt_record(emode, targetPagePtr + reqLen),
+						(errcode_for_file_access(),
+						 errmsg("could not read from WAL segment %s, LSN %X/%08X, offset %u: %m",
+								fname, LSN_FORMAT_ARGS(targetPagePtr),
+								readOff)));
+			}
+			else
+				ereport(emode_for_corrupt_record(emode, targetPagePtr + reqLen),
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("could not read from WAL segment %s, LSN %X/%08X, offset %u: read %zd of %zu",
+								fname, LSN_FORMAT_ARGS(targetPagePtr),
+								readOff, r, (Size) wanted)));
+
+			/*
+			 * Need to invalidate the cache so that next read will read in a
+			 * complete page. The current page is not complete, so trying to
+			 * use it in a later call might cause a corrupted page to be used.
+			 */
+			XLogReadAheadInvalidate();
+			goto next_record_is_invalid;
+		}
+
+		pgstat_count_io_op_time(IOOBJECT_WAL, IOCONTEXT_NORMAL, IOOP_READ,
+								io_start, 1, r);
+
+		readAheadSegNo = readSegNo;
+		readAheadOff = readOff;
+		readAheadLen = r;
+	}
+
+	/*
+	 * We copy out the page from the cache since readBuf is allocated
+	 * elsewhere. It was considered pointing into the cache, but that seems
+	 * like an unnecessary risk and more work than it's worth.
+	 */
+	memcpy(readBuf, readAheadBuf + (readOff - readAheadOff), XLOG_BLCKSZ);
 
 	Assert(targetSegNo == readSegNo);
 	Assert(targetPageOff == readOff);
@@ -3500,11 +3599,7 @@ next_record_is_invalid:
 
 	lastSourceFailed = true;
 
-	if (readFile >= 0)
-		close(readFile);
-	readFile = -1;
-	readLen = 0;
-	readSource = XLOG_FROM_ANY;
+	XLogFileClose();
 
 	/* In standby-mode, keep trying */
 	if (StandbyMode)
@@ -3782,11 +3877,8 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 				Assert(!WalRcvStreaming());
 
 				/* Close any old file we might have open. */
-				if (readFile >= 0)
-				{
-					close(readFile);
-					readFile = -1;
-				}
+				XLogFileClose();
+
 				/* Reset curFileTLI if random fetch. */
 				if (randAccess)
 					curFileTLI = 0;
