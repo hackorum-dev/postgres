@@ -756,6 +756,8 @@ BackgroundWorkerMain(const void *startup_data, size_t startup_data_len)
 	 */
 	if (PostmasterContext)
 	{
+		DestroyParsedHbaContext();
+		DestroyParsedIdentContext();
 		MemoryContextDelete(PostmasterContext);
 		PostmasterContext = NULL;
 	}
