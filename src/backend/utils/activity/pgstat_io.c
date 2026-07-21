@@ -25,9 +25,11 @@ static bool have_iostats = false;
 
 /*
  * Check that stats have not been counted for any combination of IOObject,
- * IOContext, and IOOp which are not tracked for the passed-in BackendType. If
- * stats are tracked for this combination and IO times are non-zero, counts
- * should be non-zero.
+ * IOContext, and IOOp which are not tracked for the passed-in BackendType.
+ *
+ * Non-zero time with a zero operation count is allowed: a backend may wait
+ * on a foreign IO and record only the wait time, while another backend
+ * counted the read.  See pgstat_count_io_time().
  *
  * The passed-in PgStat_BktypeIO must contain stats from the BackendType
  * specified by the second parameter. Caller is responsible for locking the
@@ -43,19 +45,16 @@ pgstat_bktype_io_stats_valid(PgStat_BktypeIO *backend_io,
 		{
 			for (int io_op = 0; io_op < IOOP_NUM_TYPES; io_op++)
 			{
-				/* we do track it */
 				if (pgstat_tracks_io_op(bktype, io_object, io_context, io_op))
-				{
-					/* ensure that if IO times are non-zero, counts are > 0 */
-					if (backend_io->times[io_object][io_context][io_op] != 0 &&
-						backend_io->counts[io_object][io_context][io_op] <= 0)
-						return false;
-
 					continue;
-				}
 
-				/* we don't track it, and it is not 0 */
-				if (backend_io->counts[io_object][io_context][io_op] != 0)
+				/*
+				 * Nothing should be recorded for combinations we don't track.
+				 * Check times as well as counts, since timing can be reported
+				 * on its own via pgstat_count_io_time().
+				 */
+				if (backend_io->counts[io_object][io_context][io_op] != 0 ||
+					backend_io->times[io_object][io_context][io_op] != 0)
 					return false;
 			}
 		}
@@ -98,8 +97,8 @@ pgstat_prepare_io_time(bool track_io_guc)
 	{
 		/*
 		 * There is no need to set io_start when an IO timing GUC is disabled.
-		 * Initialize it to zero to avoid compiler warnings and to let
-		 * pgstat_count_io_op_time() know that timings should be ignored.
+		 * Initialize it to zero to avoid compiler warnings and to let the
+		 * pgstat_count_io_*time() helpers know that timings should be ignored.
 		 */
 		INSTR_TIME_SET_ZERO(io_start);
 	}
@@ -108,7 +107,12 @@ pgstat_prepare_io_time(bool track_io_guc)
 }
 
 /*
- * Like pgstat_count_io_op() except it also accumulates time.
+ * Add IO timing without bumping the operation count or bytes.
+ *
+ * Useful when the IO was already counted elsewhere -- for example
+ * WaitReadBuffers() waiting on a read that AsyncReadBuffers() (possibly in
+ * another backend) has already counted.  If you are both doing and counting
+ * the IO, call pgstat_count_io_op_time() instead.
  *
  * The calls related to pgstat_count_buffer_*() are for pgstat_database.  As
  * pg_stat_database only counts block read and write times, these are done for
@@ -119,44 +123,66 @@ pgstat_prepare_io_time(bool track_io_guc)
  * activity of temporary blocks, so these are ignored here.
  */
 void
+pgstat_count_io_time(IOObject io_object, IOContext io_context, IOOp io_op,
+					 instr_time start_time)
+{
+	instr_time	io_time;
+
+	Assert((unsigned int) io_object < IOOBJECT_NUM_TYPES);
+	Assert((unsigned int) io_context < IOCONTEXT_NUM_TYPES);
+	Assert((unsigned int) io_op < IOOP_NUM_TYPES);
+	Assert(pgstat_tracks_io_op(MyBackendType, io_object, io_context, io_op));
+
+	/* timing disabled (see pgstat_prepare_io_time()) */
+	if (INSTR_TIME_IS_ZERO(start_time))
+		return;
+
+	INSTR_TIME_SET_CURRENT(io_time);
+	INSTR_TIME_SUBTRACT(io_time, start_time);
+
+	if (io_object != IOOBJECT_WAL)
+	{
+		if (io_op == IOOP_WRITE || io_op == IOOP_EXTEND)
+		{
+			pgstat_count_buffer_write_time(INSTR_TIME_GET_MICROSEC(io_time));
+			if (io_object == IOOBJECT_RELATION)
+				INSTR_TIME_ADD(pgBufferUsage.shared_blk_write_time, io_time);
+			else if (io_object == IOOBJECT_TEMP_RELATION)
+				INSTR_TIME_ADD(pgBufferUsage.local_blk_write_time, io_time);
+		}
+		else if (io_op == IOOP_READ)
+		{
+			pgstat_count_buffer_read_time(INSTR_TIME_GET_MICROSEC(io_time));
+			if (io_object == IOOBJECT_RELATION)
+				INSTR_TIME_ADD(pgBufferUsage.shared_blk_read_time, io_time);
+			else if (io_object == IOOBJECT_TEMP_RELATION)
+				INSTR_TIME_ADD(pgBufferUsage.local_blk_read_time, io_time);
+		}
+	}
+
+	INSTR_TIME_ADD(PendingIOStats.pending_times[io_object][io_context][io_op],
+				   io_time);
+
+	pgstat_count_backend_io_op_time(io_object, io_context, io_op, io_time);
+
+	have_iostats = true;
+	pgstat_report_fixed = true;
+}
+
+/*
+ * Like pgstat_count_io_op(), but also accumulate time.
+ *
+ * cnt must be greater than zero.  To report timing alone (no new operation),
+ * use pgstat_count_io_time().
+ */
+void
 pgstat_count_io_op_time(IOObject io_object, IOContext io_context, IOOp io_op,
 						instr_time start_time, uint32 cnt, uint64 bytes)
 {
-	if (!INSTR_TIME_IS_ZERO(start_time))
-	{
-		instr_time	io_time;
+	/* timing-only updates belong in pgstat_count_io_time() */
+	Assert(cnt > 0);
 
-		INSTR_TIME_SET_CURRENT(io_time);
-		INSTR_TIME_SUBTRACT(io_time, start_time);
-
-		if (io_object != IOOBJECT_WAL)
-		{
-			if (io_op == IOOP_WRITE || io_op == IOOP_EXTEND)
-			{
-				pgstat_count_buffer_write_time(INSTR_TIME_GET_MICROSEC(io_time));
-				if (io_object == IOOBJECT_RELATION)
-					INSTR_TIME_ADD(pgBufferUsage.shared_blk_write_time, io_time);
-				else if (io_object == IOOBJECT_TEMP_RELATION)
-					INSTR_TIME_ADD(pgBufferUsage.local_blk_write_time, io_time);
-			}
-			else if (io_op == IOOP_READ)
-			{
-				pgstat_count_buffer_read_time(INSTR_TIME_GET_MICROSEC(io_time));
-				if (io_object == IOOBJECT_RELATION)
-					INSTR_TIME_ADD(pgBufferUsage.shared_blk_read_time, io_time);
-				else if (io_object == IOOBJECT_TEMP_RELATION)
-					INSTR_TIME_ADD(pgBufferUsage.local_blk_read_time, io_time);
-			}
-		}
-
-		INSTR_TIME_ADD(PendingIOStats.pending_times[io_object][io_context][io_op],
-					   io_time);
-
-		/* Add the per-backend count */
-		pgstat_count_backend_io_op_time(io_object, io_context, io_op,
-										io_time);
-	}
-
+	pgstat_count_io_time(io_object, io_context, io_op, start_time);
 	pgstat_count_io_op(io_object, io_context, io_op, cnt, bytes);
 }
 

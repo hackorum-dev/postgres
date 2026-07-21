@@ -629,6 +629,8 @@ extern bool pgstat_bktype_io_stats_valid(PgStat_BktypeIO *backend_io,
 extern void pgstat_count_io_op(IOObject io_object, IOContext io_context,
 							   IOOp io_op, uint32 cnt, uint64 bytes);
 extern instr_time pgstat_prepare_io_time(bool track_io_guc);
+extern void pgstat_count_io_time(IOObject io_object, IOContext io_context,
+								 IOOp io_op, instr_time start_time);
 extern void pgstat_count_io_op_time(IOObject io_object, IOContext io_context,
 									IOOp io_op, instr_time start_time,
 									uint32 cnt, uint64 bytes);

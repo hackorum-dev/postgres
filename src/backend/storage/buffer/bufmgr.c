@@ -1829,11 +1829,12 @@ WaitReadBuffers(ReadBuffersOperation *operation)
 				needed_wait = true;
 
 				/*
-				 * The IO operation itself was already counted earlier, in
-				 * AsyncReadBuffers(), this just accounts for the wait time.
+				 * Only the wait time belongs here.  The read itself was
+				 * already counted in AsyncReadBuffers() -- by us, or by
+				 * another backend if this is a foreign IO.
 				 */
-				pgstat_count_io_op_time(io_object, io_context, IOOP_READ,
-										io_start, 0, 0);
+				pgstat_count_io_time(io_object, io_context, IOOP_READ,
+									 io_start);
 			}
 			else
 			{
