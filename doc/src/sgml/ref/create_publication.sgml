@@ -203,7 +203,7 @@ CREATE PUBLICATION <replaceable class="parameter">name</replaceable>
      <para>
       Marks the publication as one that replicates changes for all tables in
       the database, including tables created in the future. Tables listed in
-      <literal>EXCEPT</literal> clause are excluded from the publication.
+      the <literal>EXCEPT</literal> clause are excluded from the publication.
      </para>
     </listitem>
    </varlistentry>
@@ -249,7 +249,7 @@ CREATE PUBLICATION <replaceable class="parameter">name</replaceable>
       For partitioned tables, only the root partitioned table may be specified
       in <literal>EXCEPT</literal>. Doing so excludes the root table and
       all of its partitions from replication. The optional
-      <literal>ONLY</literal> and <literal>*</literal> has no effect for
+      <literal>ONLY</literal> and <literal>*</literal> have no effect for
       partitioned tables.
      </para>
      <para>

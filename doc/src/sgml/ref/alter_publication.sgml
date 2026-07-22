@@ -79,13 +79,13 @@ ALTER PUBLICATION <replaceable class="parameter">name</replaceable> RENAME TO <r
    <literal>SET ALL TABLES</literal> clause can transform an empty publication,
    or one defined for <literal>ALL SEQUENCES</literal> (or both
    <literal>ALL TABLES</literal> and <literal>ALL SEQUENCES</literal>), into
-   a publication defined for ALL TABLES. Likewise,
+   a publication defined for <literal>ALL TABLES</literal>. Likewise,
    <literal>SET ALL SEQUENCES</literal> can convert an empty publication, or
    one defined for <literal>ALL TABLES</literal> (or both
    <literal>ALL TABLES</literal> and <literal>ALL SEQUENCES</literal>), into a
    publication defined for <literal>ALL SEQUENCES</literal>. In addition,
-   <literal>SET ALL TABLES</literal> can be used to update the tables specified
-   in the <literal>EXCEPT</literal> clause of a
+   <literal>SET ALL TABLES</literal> can be used to replace or clear the table
+   list specified in the <literal>EXCEPT</literal> clause of a
    <literal>FOR ALL TABLES</literal> publication. If <literal>EXCEPT</literal>
    is specified with a list of tables, the existing exclusion list is replaced
    with the specified tables. If <literal>EXCEPT</literal> is omitted, the
@@ -97,15 +97,16 @@ ALTER PUBLICATION <replaceable class="parameter">name</replaceable> RENAME TO <r
   </para>
 
   <para>
-   Note that adding tables/except tables/schemas to a publication that is
-   already subscribed to will require an
+   Note that adding, dropping, or setting tables or schemas in a publication
+   that is already subscribed to will require an
    <link linkend="sql-altersubscription-params-refresh-publication">
    <literal>ALTER SUBSCRIPTION ... REFRESH PUBLICATION</literal></link> action
    on the subscribing side in order to become effective. Likewise altering a
-   publication to set <literal>ALL TABLES</literal> or to set or unset
-   <literal>ALL SEQUENCES</literal> also requires the subscriber to refresh the
-   publication. Note also that <literal>DROP TABLES IN SCHEMA</literal> will
-   not drop any schema tables that were specified using
+   publication to set <literal>ALL TABLES</literal>, to change the
+   <literal>EXCEPT</literal> list, or to set or unset <literal>ALL
+   SEQUENCES</literal> also requires the subscriber to refresh the publication.
+   Note also that <literal>DROP TABLES IN SCHEMA</literal> will not drop any
+   schema tables that were specified using
    <link linkend="sql-createpublication-params-for-table"><literal>FOR TABLE</literal></link>/
    <literal>ADD TABLE</literal>.
   </para>
@@ -126,8 +127,8 @@ ALTER PUBLICATION <replaceable class="parameter">name</replaceable> RENAME TO <r
    Adding a table to a publication additionally requires owning that table.
    The <literal>ADD TABLES IN SCHEMA</literal>,
    <literal>SET TABLES IN SCHEMA</literal>, <literal>SET ALL TABLES</literal>,
-   and <literal>SET ALL SEQUENCES</literal> to a publication requires the
-   invoking user to be a superuser.
+   and <literal>SET ALL SEQUENCES</literal> forms require the invoking user to
+   be a superuser.
    To alter the owner, you must be able to <literal>SET ROLE</literal> to the
    new owning role, and that role must have <literal>CREATE</literal>
    privilege on the database.
