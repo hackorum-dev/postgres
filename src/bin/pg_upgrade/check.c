@@ -128,6 +128,31 @@ static DataTypesUsageChecks data_types_usage_checks[] =
 	},
 
 	/*
+	 * Array values embed their element type's OID (ARR_ELEMTYPE).  System
+	 * types without hand-assigned OIDs (10000 and up) do not keep the same
+	 * OID across major versions, so stored arrays over them would point at
+	 * the wrong type after an upgrade.  As above, the information_schema test
+	 * covers a dropped-and-reloaded information_schema.
+	 */
+	{
+		.status = gettext_noop("Checking for arrays over system types with unstable OIDs in user tables"),
+		.report_filename = "tables_using_system_arrays.txt",
+		.base_query =
+		"SELECT t.oid FROM pg_catalog.pg_type t "
+		"JOIN pg_catalog.pg_type e ON t.typelem = e.oid "
+		"LEFT JOIN pg_catalog.pg_namespace n ON e.typnamespace = n.oid "
+		" WHERE t.typtype = 'b' AND "
+		"       ((e.oid >= 10000 AND e.oid < 16384) "
+		"        OR n.nspname = 'information_schema')",
+		.report_text =
+		gettext_noop("Your installation contains arrays over system types with unstable OIDs\n"
+					 "in user tables.  Array values embed the element type's OID, so this\n"
+					 "cluster cannot currently be upgraded.  You can drop the problem\n"
+					 "columns, or change them to another data type, and restart the upgrade.\n"),
+		.threshold_version = ALL_VERSIONS
+	},
+
+	/*
 	 * pg_upgrade only preserves these system values: pg_class.oid pg_type.oid
 	 * pg_enum.oid
 	 *
