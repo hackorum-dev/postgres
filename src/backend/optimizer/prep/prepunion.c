@@ -43,6 +43,7 @@
 
 static RelOptInfo *recurse_set_operations(Node *setOp, PlannerInfo *root,
 										  SetOperationStmt *parentOp,
+										  bool dedup_above,
 										  List *colTypes, List *colCollations,
 										  List *refnames_tlist,
 										  List **pTargetList,
@@ -56,13 +57,16 @@ static void build_setop_child_paths(PlannerInfo *root, RelOptInfo *rel,
 									List *interesting_pathkeys,
 									double *pNumGroups);
 static RelOptInfo *generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
+										bool dedup_above,
 										List *refnames_tlist,
 										List **pTargetList);
 static RelOptInfo *generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
+										   bool dedup_above,
 										   List *refnames_tlist,
 										   List **pTargetList);
 static List *plan_union_children(PlannerInfo *root,
 								 SetOperationStmt *top_union,
+								 bool child_dedup_above,
 								 List *refnames_tlist,
 								 List **tlist_list,
 								 List **istrivial_tlist);
@@ -163,6 +167,7 @@ plan_set_operations(PlannerInfo *root)
 		 */
 		setop_rel = recurse_set_operations((Node *) topop, root,
 										   NULL,	/* no parent */
+										   false,	/* no dedup above */
 										   topop->colTypes, topop->colCollations,
 										   leftmostQuery->targetList,
 										   &top_tlist,
@@ -189,6 +194,15 @@ plan_set_operations(PlannerInfo *root)
  * getting sorted output from this step.  ("Sorted" means "sorted according
  * to the default btree opclasses of the result column datatypes".)
  *
+ * dedup_above is true if some ancestor set operation will fully deduplicate
+ * this step's output rows, making duplicate-elimination work below this
+ * point semantically redundant.  It is propagated to leaf subqueries so
+ * that grouping_planner can skip enforcing a redundant DISTINCT there.
+ * Note that it can only be passed down through ancestors that preserve row
+ * membership (UNION ALL, and INTERSECT ALL, whose output multiplicities
+ * depend on its inputs' but whose output membership does not); the truly
+ * multiplicity-sensitive EXCEPT ALL resets it for both its children.
+ *
  * Returns a RelOptInfo for the subtree, as well as these output parameters:
  * *pTargetList: receives the fully-fledged tlist for the subtree's top plan
  * *istrivial_tlist: true if, and only if, datatypes between parent and child
@@ -213,6 +227,7 @@ plan_set_operations(PlannerInfo *root)
 static RelOptInfo *
 recurse_set_operations(Node *setOp, PlannerInfo *root,
 					   SetOperationStmt *parentOp,
+					   bool dedup_above,
 					   List *colTypes, List *colCollations,
 					   List *refnames_tlist,
 					   List **pTargetList,
@@ -252,7 +267,7 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 		subroot = rel->subroot = subquery_planner(root->glob, subquery,
 												  plan_name, root, NULL,
 												  false, root->tuple_fraction,
-												  parentOp);
+												  parentOp, dedup_above);
 
 		/*
 		 * It should not be possible for the primitive query to contain any
@@ -280,11 +295,11 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 
 		/* UNIONs are much different from INTERSECT/EXCEPT */
 		if (op->op == SETOP_UNION)
-			rel = generate_union_paths(op, root,
+			rel = generate_union_paths(op, root, dedup_above,
 									   refnames_tlist,
 									   pTargetList);
 		else
-			rel = generate_nonunion_paths(op, root,
+			rel = generate_nonunion_paths(op, root, dedup_above,
 										  refnames_tlist,
 										  pTargetList);
 
@@ -392,6 +407,8 @@ generate_recursion_path(SetOperationStmt *setOp, PlannerInfo *root,
 	 */
 	lrel = recurse_set_operations(setOp->larg, root,
 								  NULL, /* no value in sorted results */
+								  false,	/* recursive-union dedup semantics
+											 * are subtle; stay conservative */
 								  setOp->colTypes, setOp->colCollations,
 								  refnames_tlist,
 								  &lpath_tlist,
@@ -404,6 +421,7 @@ generate_recursion_path(SetOperationStmt *setOp, PlannerInfo *root,
 	root->non_recursive_path = lpath;
 	rrel = recurse_set_operations(setOp->rarg, root,
 								  NULL, /* no value in sorted results */
+								  false,	/* ditto */
 								  setOp->colTypes, setOp->colCollations,
 								  refnames_tlist,
 								  &rpath_tlist,
@@ -672,8 +690,8 @@ build_setop_child_paths(PlannerInfo *root, RelOptInfo *rel,
 		Query	   *subquery = subroot->parse;
 
 		if (subquery->groupClause || subquery->groupingSets ||
-			subquery->distinctClause || subroot->hasHavingQual ||
-			subquery->hasAggs)
+			subroot->hasHavingQual || subquery->hasAggs ||
+			(subquery->distinctClause && !subroot->distinct_elided))
 			*pNumGroups = rel->cheapest_total_path->rows;
 		else
 			*pNumGroups = estimate_num_groups(subroot,
@@ -686,9 +704,12 @@ build_setop_child_paths(PlannerInfo *root, RelOptInfo *rel,
 
 /*
  * Generate paths for a UNION or UNION ALL node
+ *
+ * dedup_above is as for recurse_set_operations.
  */
 static RelOptInfo *
 generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
+					 bool dedup_above,
 					 List *refnames_tlist,
 					 List **pTargetList)
 {
@@ -718,9 +739,14 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 	 * colTypes/colCollations) then they can be merged into this node so that
 	 * we generate only one Append/MergeAppend and unique-ification for the
 	 * lot.  Recurse to find such nodes.
+	 *
+	 * A UNION deduplicates its children's outputs, so their own DISTINCTs
+	 * are redundant; a UNION ALL preserves row membership, so any ancestor's
+	 * dedup guarantee passes through unchanged.
 	 */
 	rellist = plan_union_children(root,
 								  op,
+								  op->all ? dedup_above : true,
 								  refnames_tlist,
 								  &tlist_list,
 								  &trivial_tlist_list);
@@ -1039,9 +1065,12 @@ generate_union_paths(SetOperationStmt *op, PlannerInfo *root,
 
 /*
  * Generate paths for an INTERSECT, INTERSECT ALL, EXCEPT, or EXCEPT ALL node
+ *
+ * dedup_above is as for recurse_set_operations.
  */
 static RelOptInfo *
 generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
+						bool dedup_above,
 						List *refnames_tlist,
 						List **pTargetList)
 {
@@ -1067,15 +1096,34 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 	bool		can_sort;
 	bool		can_hash;
 	SetOpCmd	cmd;
+	bool		child_dedup_above;
 
 	/*
 	 * Tell children to fetch all tuples.
 	 */
 	root->tuple_fraction = 0.0;
 
-	/* Recurse on children */
+	/*
+	 * Recurse on children.  INTERSECT and EXCEPT deduplicate their children's
+	 * outputs, so the children's own DISTINCTs are redundant.  INTERSECT ALL
+	 * changes its inputs' multiplicities (min(m,n) copies) but preserves row
+	 * membership -- min(m,n) > 0 iff m > 0 and n > 0 -- so an ancestor's
+	 * dedup guarantee passes through it unchanged, as for UNION ALL.  EXCEPT
+	 * ALL is truly multiplicity-sensitive: removing a DISTINCT below it can
+	 * change which rows it emits at all (max(m-n,0) > 0 depends on m and n),
+	 * not just how many copies, so it resets the flag for both children; see
+	 * the regression tests.
+	 */
+	if (!op->all)
+		child_dedup_above = true;
+	else if (op->op == SETOP_INTERSECT)
+		child_dedup_above = dedup_above;
+	else
+		child_dedup_above = false;
+
 	lrel = recurse_set_operations(op->larg, root,
 								  op,
+								  child_dedup_above,
 								  op->colTypes, op->colCollations,
 								  refnames_tlist,
 								  &lpath_tlist,
@@ -1083,6 +1131,7 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
 
 	rrel = recurse_set_operations(op->rarg, root,
 								  op,
+								  child_dedup_above,
 								  op->colTypes, op->colCollations,
 								  refnames_tlist,
 								  &rpath_tlist,
@@ -1388,10 +1437,14 @@ generate_nonunion_paths(SetOperationStmt *op, PlannerInfo *root,
  *
  * NOTE: we can also pull a UNION ALL up into a UNION, since the distinct
  * output rows will be lost anyway.
+ *
+ * child_dedup_above is passed down unchanged to each child's
+ * recurse_set_operations call; see there.
  */
 static List *
 plan_union_children(PlannerInfo *root,
 					SetOperationStmt *top_union,
+					bool child_dedup_above,
 					List *refnames_tlist,
 					List **tlist_list,
 					List **istrivial_tlist)
@@ -1436,6 +1489,7 @@ plan_union_children(PlannerInfo *root,
 		 */
 		result = lappend(result, recurse_set_operations(setOp, root,
 														top_union->all ? NULL : top_union,
+														child_dedup_above,
 														top_union->colTypes,
 														top_union->colCollations,
 														refnames_tlist,
