@@ -639,6 +639,8 @@ struct PlannerInfo
 	bool		placeholdersFrozen;
 	/* true if planning a recursive WITH item */
 	bool		hasRecursion;
+	/* true if a DISTINCT clause's enforcement was skipped (see planner.c) */
+	bool		distinct_elided;
 	/* true if a planner extension may replan this subquery */
 	bool		assumeReplanning;
 
