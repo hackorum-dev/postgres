@@ -21,13 +21,13 @@ generate_old_dump(void)
 
 	/* run new pg_dumpall binary for globals */
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "\"%s/pg_dumpall\" %s%s --globals-only --quote-all-identifiers "
-			  "--binary-upgrade %s --no-sync -f \"%s/%s\"",
-			  new_cluster.bindir, cluster_conn_opts(&old_cluster),
+			  "%s %s%s --globals-only --quote-all-identifiers "
+			  "--binary-upgrade %s --no-sync -f %s",
+			  quote_shell_path_arg(new_cluster.bindir, "pg_dumpall"),
+			  cluster_conn_opts(&old_cluster),
 			  protocol_negotiation_supported(&old_cluster) ? "" : " -d \"max_protocol_version=3.0\"",
 			  log_opts.verbose ? "--verbose" : "",
-			  log_opts.dumpdir,
-			  GLOBALS_DUMP_FILE);
+			  quote_shell_path_arg(log_opts.dumpdir, GLOBALS_DUMP_FILE));
 	check_ok();
 
 	prep_status_progress("Creating dump of database schemas");
@@ -56,15 +56,16 @@ generate_old_dump(void)
 		snprintf(log_file_name, sizeof(log_file_name), DB_DUMP_LOG_FILE_MASK, old_db->db_oid);
 
 		parallel_exec_prog(log_file_name, NULL,
-						   "\"%s/pg_dump\" %s --no-data %s %s --quote-all-identifiers "
-						   "--binary-upgrade --format=custom %s --no-sync --file=\"%s/%s\" %s",
-						   new_cluster.bindir, cluster_conn_opts(&old_cluster),
+						   "%s %s --no-data %s %s --quote-all-identifiers "
+						   "--binary-upgrade --format=custom %s --no-sync --file=%s %s",
+						   quote_shell_path_arg(new_cluster.bindir, "pg_dump"),
+						   cluster_conn_opts(&old_cluster),
 						   (user_opts.transfer_mode == TRANSFER_MODE_SWAP) ?
 						   "" : "--sequence-data",
 						   log_opts.verbose ? "--verbose" : "",
 						   user_opts.do_statistics ? "--statistics" : "--no-statistics",
-						   log_opts.dumpdir,
-						   sql_file_name, escaped_connstr.data);
+						   quote_shell_path_arg(log_opts.dumpdir, sql_file_name),
+						   escaped_connstr.data);
 
 		termPQExpBuffer(&escaped_connstr);
 	}

@@ -12,6 +12,7 @@
 #include <fcntl.h>
 
 #include "common/string.h"
+#include "fe_utils/string_utils.h"
 #include "fe_utils/version.h"
 #include "pg_upgrade.h"
 
@@ -40,7 +41,8 @@ get_bin_version(ClusterInfo *cluster)
 	int			v1 = 0,
 				v2 = 0;
 
-	snprintf(cmd, sizeof(cmd), "\"%s/pg_ctl\" --version", cluster->bindir);
+	snprintf(cmd, sizeof(cmd), "%s --version",
+			 quote_shell_path_arg(cluster->bindir, "pg_ctl"));
 	fflush(NULL);
 
 	if ((output = popen(cmd, "r")) == NULL ||
@@ -103,7 +105,7 @@ exec_prog(const char *log_filename, const char *opt_log_file,
 	if (written >= MAXCMDLEN)
 		pg_fatal("command too long");
 	written += snprintf(cmd + written, MAXCMDLEN - written,
-						" >> \"%s\" 2>&1", log_file);
+						" >> %s 2>&1", quote_shell_arg(log_file));
 	if (written >= MAXCMDLEN)
 		pg_fatal("command too long");
 
@@ -416,7 +418,7 @@ check_exec(const char *dir, const char *program, bool check_version)
 	if (validate_exec(path) != 0)
 		pg_fatal("check for \"%s\" failed: %m", path);
 
-	snprintf(cmd, sizeof(cmd), "\"%s\" -V", path);
+	snprintf(cmd, sizeof(cmd), "%s -V", quote_shell_arg(path));
 
 	if ((line = pipe_read_line(cmd)) == NULL)
 		pg_fatal("check for \"%s\" failed: cannot execute",
@@ -434,4 +436,50 @@ check_exec(const char *dir, const char *program, bool check_version)
 	}
 
 	pg_free(line);
+}
+
+/*
+ * quote_shell_arg
+ *
+ *	Returns a palloc'd string that has been quoted for use as a shell argument.
+ */
+char *
+quote_shell_arg(const char *arg)
+{
+	PQExpBufferData buf;
+
+	initPQExpBuffer(&buf);
+	appendShellString(&buf, arg);
+
+	if (PQExpBufferBroken(&buf))
+		pg_fatal("out of memory");
+
+	return buf.data;
+}
+
+/*
+ * quote_shell_path_arg
+ *
+ *	As quote_shell_arg, but the string is created by joining path and filename
+ *	with a slash.
+ */
+char *
+quote_shell_path_arg(const char *path, const char *filename)
+{
+	PQExpBufferData buf;
+	char	   *result;
+
+	initPQExpBuffer(&buf);
+	appendPQExpBufferStr(&buf, path);
+	appendPQExpBufferChar(&buf, '/');
+	appendPQExpBufferStr(&buf, filename);
+
+	if (PQExpBufferBroken(&buf))
+		pg_fatal("out of memory");
+
+	result = quote_shell_arg(buf.data);
+
+	termPQExpBuffer(&buf);
+
+	return result;
 }

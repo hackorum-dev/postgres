@@ -465,8 +465,9 @@ adjust_data_dir(ClusterInfo *cluster)
 	 * so this might fail --- only works for PG 9.2+.   If this fails,
 	 * pg_upgrade will fail anyway because the data files will not be found.
 	 */
-	snprintf(cmd, sizeof(cmd), "\"%s/postgres\" -D \"%s\" -C data_directory",
-			 cluster->bindir, cluster->pgconfig);
+	snprintf(cmd, sizeof(cmd), "%s -D %s -C data_directory",
+			 quote_shell_path_arg(cluster->bindir, "postgres"),
+			 quote_shell_arg(cluster->pgconfig));
 	fflush(NULL);
 
 	if ((output = popen(cmd, "r")) == NULL ||
