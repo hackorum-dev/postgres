@@ -130,6 +130,8 @@ static char *create_logical_replication_slot(PGconn *conn,
 static void drop_replication_slot(PGconn *conn, struct LogicalRepInfo *dbinfo,
 								  const char *slot_name);
 static void pg_ctl_status(const char *pg_ctl_cmd, int rc);
+static void add_pg_config_option(PQExpBuffer postgres_opts,
+								 const char *guc_name, const char *guc_value);
 static void start_standby_server(const struct CreateSubscriberOptions *opt,
 								 bool restricted_access,
 								 bool restrict_logical_worker);
@@ -712,7 +714,7 @@ modify_subscriber_sysid(const struct CreateSubscriberOptions *opt)
 	struct timeval tv;
 
 	char	   *out_file;
-	char	   *cmd_str;
+	PQExpBufferData cmd;
 
 	pg_log_info("modifying system identifier of subscriber");
 
@@ -750,21 +752,25 @@ modify_subscriber_sysid(const struct CreateSubscriberOptions *opt)
 	 * would be very short, around one line, we do not provide a separate file
 	 * for it; it's done as a part of the server log.
 	 */
+	initPQExpBuffer(&cmd);
+	appendShellString(&cmd, pg_resetwal_path);
+	appendPQExpBufferStr(&cmd, " -D ");
+	appendShellString(&cmd, subscriber_dir);
+	appendPQExpBufferStr(&cmd, " >> ");
 	if (opt->log_dir)
+	{
 		out_file = psprintf("%s/%s", logdir, SERVER_LOG_FILE_NAME);
-	else
-		out_file = DEVNULL;
-
-	cmd_str = psprintf("\"%s\" -D \"%s\" >> \"%s\"", pg_resetwal_path,
-					   subscriber_dir, out_file);
-	if (opt->log_dir)
+		appendShellString(&cmd, out_file);
 		pfree(out_file);
+	}
+	else
+		appendShellString(&cmd, DEVNULL);
 
-	pg_log_debug("pg_resetwal command is: %s", cmd_str);
+	pg_log_debug("pg_resetwal command is: %s", cmd.data);
 
 	if (!dry_run)
 	{
-		int			rc = system(cmd_str);
+		int			rc = system(cmd.data);
 
 		if (rc == 0)
 			pg_log_info("successfully reset WAL on the subscriber");
@@ -773,7 +779,7 @@ modify_subscriber_sysid(const struct CreateSubscriberOptions *opt)
 	}
 
 	pfree(cf);
-	pfree(cmd_str);
+	termPQExpBuffer(&cmd);
 }
 
 /*
@@ -1669,23 +1675,47 @@ pg_ctl_status(const char *pg_ctl_cmd, int rc)
 	}
 }
 
+/*
+ * To start postgres with a particular value for a particular GUC, we can
+ * specify -c guc_name=guc_value on the command-line, but we need to
+ * shell-escape the string to avoid misbehavior in the case where, for
+ * example, guc_value contains spaces or double quotes.
+ */
+static void
+add_pg_config_option(PQExpBuffer postgres_opts,
+					 const char *guc_name, const char *guc_value)
+{
+	char	   *guc_string = psprintf("%s=%s", guc_name, guc_value);
+
+	if (postgres_opts->len > 0)
+		appendPQExpBufferChar(postgres_opts, ' ');
+	appendPQExpBufferStr(postgres_opts, "-c ");
+	appendShellString(postgres_opts, guc_string);
+	pfree(guc_string);
+}
+
 static void
 start_standby_server(const struct CreateSubscriberOptions *opt, bool restricted_access,
 					 bool restrict_logical_worker)
 {
 	PQExpBuffer pg_ctl_cmd = createPQExpBuffer();
+	PQExpBufferData postgres_opts;
 	int			rc;
 
-	appendPQExpBuffer(pg_ctl_cmd, "\"%s\" start -D ", pg_ctl_path);
+	appendShellString(pg_ctl_cmd, pg_ctl_path);
+	appendPQExpBufferStr(pg_ctl_cmd, " start -D ");
 	appendShellString(pg_ctl_cmd, subscriber_dir);
-	appendPQExpBufferStr(pg_ctl_cmd, " -s -o \"-c sync_replication_slots=off\"");
+
+	initPQExpBuffer(&postgres_opts);
+	add_pg_config_option(&postgres_opts, "sync_replication_slots", "off");
 
 	/* Prevent unintended slot invalidation */
-	appendPQExpBufferStr(pg_ctl_cmd, " -o \"-c idle_replication_slot_timeout=0\"");
+	add_pg_config_option(&postgres_opts, "idle_replication_slot_timeout", "0");
 
 	if (restricted_access)
 	{
-		appendPQExpBuffer(pg_ctl_cmd, " -o \"-p %s\"", opt->sub_port);
+		appendPQExpBufferStr(&postgres_opts, " -p ");
+		appendShellString(&postgres_opts, opt->sub_port);
 #if !defined(WIN32)
 
 		/*
@@ -1694,23 +1724,34 @@ start_standby_server(const struct CreateSubscriberOptions *opt, bool restricted_
 		 * to the server. Prevent external connections to minimize the chance
 		 * of failure.
 		 */
-		appendPQExpBufferStr(pg_ctl_cmd, " -o \"-c listen_addresses='' -c unix_socket_permissions=0700");
+		add_pg_config_option(&postgres_opts, "listen_addresses", "");
+		add_pg_config_option(&postgres_opts, "unix_socket_permissions", "0700");
 		if (opt->socket_dir)
-			appendPQExpBuffer(pg_ctl_cmd, " -c unix_socket_directories='%s'",
-							  opt->socket_dir);
-		appendPQExpBufferChar(pg_ctl_cmd, '"');
+			add_pg_config_option(&postgres_opts, "unix_socket_directories",
+								 opt->socket_dir);
 #endif
 	}
+
 	if (opt->config_file != NULL)
-		appendPQExpBuffer(pg_ctl_cmd, " -o \"-c config_file=%s\"",
-						  opt->config_file);
+		add_pg_config_option(&postgres_opts, "config_file", opt->config_file);
 
 	/* Suppress to start logical replication if requested */
 	if (restrict_logical_worker)
-		appendPQExpBufferStr(pg_ctl_cmd, " -o \"-c max_logical_replication_workers=0\"");
+		add_pg_config_option(&postgres_opts,
+							 "max_logical_replication_workers", "0");
+
+	appendPQExpBufferStr(pg_ctl_cmd, " -s -o ");
+	appendShellString(pg_ctl_cmd, postgres_opts.data);
+	termPQExpBuffer(&postgres_opts);
 
 	if (opt->log_dir)
-		appendPQExpBuffer(pg_ctl_cmd, " -l \"%s/%s\"", logdir, SERVER_LOG_FILE_NAME);
+	{
+		char	   *log_file = psprintf("%s/%s", logdir, SERVER_LOG_FILE_NAME);
+
+		appendPQExpBufferStr(pg_ctl_cmd, " -l ");
+		appendShellString(pg_ctl_cmd, log_file);
+		pfree(log_file);
+	}
 
 	pg_log_debug("pg_ctl command is: %s", pg_ctl_cmd->data);
 	rc = system(pg_ctl_cmd->data);
@@ -1723,16 +1764,20 @@ start_standby_server(const struct CreateSubscriberOptions *opt, bool restricted_
 static void
 stop_standby_server(const char *datadir)
 {
-	char	   *pg_ctl_cmd;
+	PQExpBufferData pg_ctl_cmd;
 	int			rc;
 
-	pg_ctl_cmd = psprintf("\"%s\" stop -D \"%s\" -s", pg_ctl_path,
-						  datadir);
-	pg_log_debug("pg_ctl command is: %s", pg_ctl_cmd);
-	rc = system(pg_ctl_cmd);
-	pg_ctl_status(pg_ctl_cmd, rc);
+	initPQExpBuffer(&pg_ctl_cmd);
+	appendShellString(&pg_ctl_cmd, pg_ctl_path);
+	appendPQExpBufferStr(&pg_ctl_cmd, " stop -D ");
+	appendShellString(&pg_ctl_cmd, datadir);
+	appendPQExpBufferStr(&pg_ctl_cmd, " -s");
+	pg_log_debug("pg_ctl command is: %s", pg_ctl_cmd.data);
+	rc = system(pg_ctl_cmd.data);
+	pg_ctl_status(pg_ctl_cmd.data, rc);
 	standby_running = false;
 	pg_log_info("server was stopped");
+	termPQExpBuffer(&pg_ctl_cmd);
 }
 
 /*
