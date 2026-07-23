@@ -70,6 +70,7 @@
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
 #include "storage/lmgr.h"
+#include "storage/predicate.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/injection_point.h"
@@ -3335,6 +3336,27 @@ ExecOnConflictSelect(ModifyTableContext *context,
 		if (!ExecOnConflictLockRow(context, existing, conflictTid,
 								   resultRelInfo->ri_RelationDesc, lockmode, false))
 			return false;
+	}
+
+	/*
+	 * At SERIALIZABLE, record an SIREAD lock on the tuple.  Returning the
+	 * existing row (or filtering it out with the WHERE clause) is a read for
+	 * SSI purposes, but neither the arbiter index probe (dirty snapshot) nor
+	 * the fetch above (SnapshotAny) takes predicate locks, and the SELECT
+	 * path writes nothing that would trigger conflict-in detection.
+	 */
+	if (IsolationIsSerializable())
+	{
+		Datum		xminDatum;
+		TransactionId xmin;
+		bool		isnull;
+
+		xminDatum = slot_getsysattr(existing, MinTransactionIdAttributeNumber, &isnull);
+		Assert(!isnull);
+		xmin = DatumGetTransactionId(xminDatum);
+
+		PredicateLockTID(relation, conflictTid, context->estate->es_snapshot,
+						 xmin);
 	}
 
 	/*

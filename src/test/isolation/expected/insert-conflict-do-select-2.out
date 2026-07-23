@@ -1,0 +1,40 @@
+Parsed test spec with 2 sessions
+
+starting permutation: select1 count2 update2 insert1 c1 c2
+step select1: INSERT INTO doselect_a VALUES (1, 99) ON CONFLICT (key) DO SELECT RETURNING val;
+val
+---
+  0
+(1 row)
+
+step count2: SELECT count(*) FROM doselect_b;
+count
+-----
+    0
+(1 row)
+
+step update2: UPDATE doselect_a SET val = 1 WHERE key = 1;
+step insert1: INSERT INTO doselect_b VALUES (1, 10);
+step c1: COMMIT;
+step c2: COMMIT;
+ERROR:  could not serialize access due to read/write dependencies among transactions
+
+starting permutation: select1_update count2 update2 insert1 c1 c2
+step select1_update: INSERT INTO doselect_a VALUES (1, 99) ON CONFLICT (key) DO SELECT FOR UPDATE RETURNING val;
+val
+---
+  0
+(1 row)
+
+step count2: SELECT count(*) FROM doselect_b;
+count
+-----
+    0
+(1 row)
+
+step update2: UPDATE doselect_a SET val = 1 WHERE key = 1; <waiting ...>
+step insert1: INSERT INTO doselect_b VALUES (1, 10);
+step c1: COMMIT;
+step update2: <... completed>
+ERROR:  could not serialize access due to read/write dependencies among transactions
+step c2: COMMIT;
