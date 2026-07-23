@@ -65,7 +65,8 @@ extern PlannerInfo *subquery_planner(PlannerGlobal *glob, Query *parse,
 									 PlannerInfo *parent_root,
 									 PlannerInfo *alternative_root,
 									 bool hasRecursion, double tuple_fraction,
-									 SetOperationStmt *setops);
+									 SetOperationStmt *setops,
+									 bool dedup_above);
 
 extern RowMarkType select_rowmark_type(RangeTblEntry *rte,
 									   LockClauseStrength strength);
