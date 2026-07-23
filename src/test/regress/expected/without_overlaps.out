@@ -2698,4 +2698,89 @@ ERROR:  unsupported ON UPDATE action for foreign key constraint using PERIOD
 --
 DROP TABLE temporal_partitioned_fk_mltrng2mltrng;
 DROP TABLE temporal_partitioned_mltrng;
+--
+-- Temporal foreign key validation of existing rows
+--
+-- ATTACH PARTITION
+CREATE TABLE temporal_attach_pk (
+  id int4range,
+  valid_at daterange,
+  CONSTRAINT temporal_attach_pk_pk PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)
+);
+INSERT INTO temporal_attach_pk VALUES ('[1,2)', daterange('2000-01-01', '2010-01-01'));
+CREATE TABLE temporal_attach_fk (
+  id int4range,
+  valid_at daterange,
+  parent_id int4range,
+  CONSTRAINT temporal_attach_fk_fk FOREIGN KEY (parent_id, PERIOD valid_at)
+    REFERENCES temporal_attach_pk
+) PARTITION BY LIST (id);
+CREATE TABLE temporal_attach_fk_p1 PARTITION OF temporal_attach_fk FOR VALUES IN ('[1,2)');
+CREATE TABLE temporal_attach_fk_p2 (id int4range, valid_at daterange, parent_id int4range);
+INSERT INTO temporal_attach_fk_p2
+  VALUES ('[2,3)', daterange('2005-01-01', '2020-01-01'), '[1,2)');
+-- invalid period
+ALTER TABLE temporal_attach_fk ATTACH PARTITION temporal_attach_fk_p2 FOR VALUES IN ('[2,3)');
+ERROR:  insert or update on table "temporal_attach_fk_p2" violates foreign key constraint "temporal_attach_fk_fk"
+DETAIL:  Key (parent_id, valid_at)=([1,2), [2005-01-01,2020-01-01)) is not present in table "temporal_attach_pk".
+-- covered period
+DELETE FROM temporal_attach_fk_p2;
+INSERT INTO temporal_attach_fk_p2
+  VALUES ('[2,3)', daterange('2002-01-01', '2008-01-01'), '[1,2)');
+ALTER TABLE temporal_attach_fk ATTACH PARTITION temporal_attach_fk_p2 FOR VALUES IN ('[2,3)');
+DROP TABLE temporal_attach_fk;
+DROP TABLE temporal_attach_pk;
+-- VALIDATE CONSTRAINT
+CREATE TABLE temporal_validate_pk (
+  id int4range,
+  valid_at daterange,
+  CONSTRAINT temporal_validate_pk_pk PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)
+);
+INSERT INTO temporal_validate_pk VALUES ('[1,2)', daterange('2000-01-01', '2010-01-01'));
+CREATE TABLE temporal_validate_fk (
+  id int4range,
+  valid_at daterange,
+  parent_id int4range
+);
+INSERT INTO temporal_validate_fk
+  VALUES ('[1,2)', daterange('2005-01-01', '2020-01-01'), '[1,2)');
+ALTER TABLE temporal_validate_fk
+  ADD CONSTRAINT temporal_validate_fk_fk
+  FOREIGN KEY (parent_id, PERIOD valid_at)
+  REFERENCES temporal_validate_pk
+  NOT VALID;
+-- invalid period
+ALTER TABLE temporal_validate_fk VALIDATE CONSTRAINT temporal_validate_fk_fk;
+ERROR:  insert or update on table "temporal_validate_fk" violates foreign key constraint "temporal_validate_fk_fk"
+DETAIL:  Key (parent_id, valid_at)=([1,2), [2005-01-01,2020-01-01)) is not present in table "temporal_validate_pk".
+-- covered period
+DELETE FROM temporal_validate_fk;
+INSERT INTO temporal_validate_fk
+  VALUES ('[1,2)', daterange('2002-01-01', '2008-01-01'), '[1,2)');
+ALTER TABLE temporal_validate_fk VALIDATE CONSTRAINT temporal_validate_fk_fk;
+DROP TABLE temporal_validate_fk;
+-- ALTER CONSTRAINT ... ENFORCED
+CREATE TABLE temporal_enforce_fk (
+  id int4range,
+  valid_at daterange,
+  parent_id int4range
+);
+INSERT INTO temporal_enforce_fk
+  VALUES ('[1,2)', daterange('2005-01-01', '2020-01-01'), '[1,2)');
+ALTER TABLE temporal_enforce_fk
+  ADD CONSTRAINT temporal_enforce_fk_fk
+  FOREIGN KEY (parent_id, PERIOD valid_at)
+  REFERENCES temporal_validate_pk
+  NOT ENFORCED;
+-- invalid period
+ALTER TABLE temporal_enforce_fk ALTER CONSTRAINT temporal_enforce_fk_fk ENFORCED;
+ERROR:  insert or update on table "temporal_enforce_fk" violates foreign key constraint "temporal_enforce_fk_fk"
+DETAIL:  Key (parent_id, valid_at)=([1,2), [2005-01-01,2020-01-01)) is not present in table "temporal_validate_pk".
+-- covered period
+DELETE FROM temporal_enforce_fk;
+INSERT INTO temporal_enforce_fk
+  VALUES ('[1,2)', daterange('2002-01-01', '2008-01-01'), '[1,2)');
+ALTER TABLE temporal_enforce_fk ALTER CONSTRAINT temporal_enforce_fk_fk ENFORCED;
+DROP TABLE temporal_enforce_fk;
+DROP TABLE temporal_validate_pk;
 RESET datestyle;
