@@ -274,3 +274,37 @@ SELECT DISTINCT y, x FROM distinct_tbl ORDER BY y;
 RESET enable_hashagg;
 
 DROP TABLE distinct_tbl;
+
+--
+-- Skip DISTINCT enforcement when the input is provably distinct already
+-- (structural proof via the input subquery's own DISTINCT/GROUP BY/setop).
+--
+-- elided: grouped subquery proves distinctness
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT four FROM (SELECT four FROM tenk1 GROUP BY four) ss;
+-- elided: superset of the unique columns is still unique
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT four, c FROM
+  (SELECT four, count(*) AS c FROM tenk1 GROUP BY four) ss;
+-- elided: aggregate without GROUP BY returns one row
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT c FROM (SELECT count(*) AS c FROM tenk1) ss;
+-- elided: non-ALL setop output is unique; WHERE cannot break uniqueness
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT x FROM
+  (SELECT four AS x FROM tenk1 UNION SELECT ten FROM tenk1) ss WHERE x > 2;
+-- not elided: subset of output that isn't the unique key
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT c FROM
+  (SELECT four, count(*) AS c FROM tenk1 GROUP BY four) ss;
+-- not elided: joining two unique subqueries can duplicate rows
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT a.four FROM
+  (SELECT four FROM tenk1 GROUP BY four) a,
+  (SELECT ten FROM tenk1 GROUP BY ten) b;
+-- not elided: UNION ALL proves nothing
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT x FROM
+  (SELECT four AS x FROM tenk1 UNION ALL SELECT ten FROM tenk1) ss;
+-- results sanity
+SELECT DISTINCT four FROM (SELECT four FROM tenk1 GROUP BY four) ss ORDER BY 1;

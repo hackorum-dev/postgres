@@ -596,3 +596,110 @@ SELECT DISTINCT y, x FROM distinct_tbl ORDER BY y;
 
 RESET enable_hashagg;
 DROP TABLE distinct_tbl;
+--
+-- Skip DISTINCT enforcement when the input is provably distinct already
+-- (structural proof via the input subquery's own DISTINCT/GROUP BY/setop).
+--
+-- elided: grouped subquery proves distinctness
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT four FROM (SELECT four FROM tenk1 GROUP BY four) ss;
+       QUERY PLAN        
+-------------------------
+ HashAggregate
+   Group Key: tenk1.four
+   ->  Seq Scan on tenk1
+(3 rows)
+
+-- elided: superset of the unique columns is still unique
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT four, c FROM
+  (SELECT four, count(*) AS c FROM tenk1 GROUP BY four) ss;
+       QUERY PLAN        
+-------------------------
+ HashAggregate
+   Group Key: tenk1.four
+   ->  Seq Scan on tenk1
+(3 rows)
+
+-- elided: aggregate without GROUP BY returns one row
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT c FROM (SELECT count(*) AS c FROM tenk1) ss;
+                     QUERY PLAN                     
+----------------------------------------------------
+ Aggregate
+   ->  Index Only Scan using tenk1_hundred on tenk1
+(2 rows)
+
+-- elided: non-ALL setop output is unique; WHERE cannot break uniqueness
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT x FROM
+  (SELECT four AS x FROM tenk1 UNION SELECT ten FROM tenk1) ss WHERE x > 2;
+              QUERY PLAN               
+---------------------------------------
+ HashAggregate
+   Group Key: tenk1.four
+   ->  Append
+         ->  Seq Scan on tenk1
+               Filter: (four > 2)
+         ->  Seq Scan on tenk1 tenk1_1
+               Filter: (ten > 2)
+(7 rows)
+
+-- not elided: subset of output that isn't the unique key
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT c FROM
+  (SELECT four, count(*) AS c FROM tenk1 GROUP BY four) ss;
+                QUERY PLAN                 
+-------------------------------------------
+ Unique
+   ->  Sort
+         Sort Key: ss.c
+         ->  Subquery Scan on ss
+               ->  HashAggregate
+                     Group Key: tenk1.four
+                     ->  Seq Scan on tenk1
+(7 rows)
+
+-- not elided: joining two unique subqueries can duplicate rows
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT a.four FROM
+  (SELECT four FROM tenk1 GROUP BY four) a,
+  (SELECT ten FROM tenk1 GROUP BY ten) b;
+                       QUERY PLAN                        
+---------------------------------------------------------
+ Unique
+   ->  Sort
+         Sort Key: tenk1_1.four
+         ->  Nested Loop
+               ->  HashAggregate
+                     Group Key: tenk1.ten
+                     ->  Seq Scan on tenk1
+               ->  Materialize
+                     ->  HashAggregate
+                           Group Key: tenk1_1.four
+                           ->  Seq Scan on tenk1 tenk1_1
+(11 rows)
+
+-- not elided: UNION ALL proves nothing
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT x FROM
+  (SELECT four AS x FROM tenk1 UNION ALL SELECT ten FROM tenk1) ss;
+              QUERY PLAN               
+---------------------------------------
+ HashAggregate
+   Group Key: tenk1.four
+   ->  Append
+         ->  Seq Scan on tenk1
+         ->  Seq Scan on tenk1 tenk1_1
+(5 rows)
+
+-- results sanity
+SELECT DISTINCT four FROM (SELECT four FROM tenk1 GROUP BY four) ss ORDER BY 1;
+ four 
+------
+    0
+    1
+    2
+    3
+(4 rows)
+
