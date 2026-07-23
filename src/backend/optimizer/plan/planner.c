@@ -161,7 +161,7 @@ static Bitmapset *find_having_conflicts(Query *parse, Index group_rtindex);
 static Oid	having_var_grouping_eqop(Var *var, void *context);
 static Oid	group_var_eqop(Query *parse, Var *var);
 static void grouping_planner(PlannerInfo *root, double tuple_fraction,
-							 SetOperationStmt *setops);
+							 SetOperationStmt *setops, bool dedup_above);
 static grouping_sets_data *preprocess_grouping_sets(PlannerInfo *root);
 static List *remap_to_groupclause_idx(List *groupClause, List *gsets,
 									  int *tleref_to_colnum_map);
@@ -540,7 +540,7 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 
 	/* primary planning entry point (may recurse for subqueries) */
 	root = subquery_planner(glob, parse, NULL, NULL, NULL, false,
-							tuple_fraction, NULL);
+							tuple_fraction, NULL, false);
 
 	/* Select best Path and turn it into a Plan */
 	final_rel = fetch_upper_rel(root, UPPERREL_FINAL, NULL);
@@ -759,6 +759,9 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
  * the context in which it's being used so that Paths correctly sorted for the
  * set operation can be generated.  NULL when not planning a set operation
  * child, or when a child of a set op that isn't interested in sorted input.
+ * dedup_above is true if this query is a set-operation child whose output
+ * will be fully deduplicated by an ancestor set operation, letting us skip
+ * enforcing this query's own DISTINCT clause; see grouping_planner.
  *
  * Basically, this routine does the stuff that should only be done once
  * per Query object.  It then calls grouping_planner.  At one time,
@@ -780,7 +783,7 @@ PlannerInfo *
 subquery_planner(PlannerGlobal *glob, Query *parse, char *plan_name,
 				 PlannerInfo *parent_root, PlannerInfo *alternative_root,
 				 bool hasRecursion, double tuple_fraction,
-				 SetOperationStmt *setops)
+				 SetOperationStmt *setops, bool dedup_above)
 {
 	PlannerInfo *root;
 	List	   *newWithCheckOptions;
@@ -822,6 +825,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse, char *plan_name,
 	memset(root->upper_targets, 0, sizeof(root->upper_targets));
 	root->processed_groupClause = NIL;
 	root->processed_distinctClause = NIL;
+	root->distinct_elided = false;
 	root->processed_tlist = NIL;
 	root->update_colnos = NIL;
 	root->grouping_map = NULL;
@@ -1358,7 +1362,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse, char *plan_name,
 	/*
 	 * Do the main planning.
 	 */
-	grouping_planner(root, tuple_fraction, setops);
+	grouping_planner(root, tuple_fraction, setops, dedup_above);
 
 	/*
 	 * Capture the set of outer-level param IDs we have access to, for use in
@@ -1711,6 +1715,9 @@ preprocess_subquery_phvs_walker(Node *node,
  * the context in which it's being used so that Paths correctly sorted for the
  * set operation can be generated.  NULL when not planning a set operation
  * child, or when a child of a set op that isn't interested in sorted input.
+ * dedup_above is true if this query is a set-operation child whose output
+ * will be fully deduplicated by an ancestor set operation, letting us skip
+ * enforcing this query's own DISTINCT clause.
  *
  * Returns nothing; the useful output is in the Paths we attach to the
  * (UPPERREL_FINAL, NULL) upperrel in *root.  In addition,
@@ -1722,7 +1729,7 @@ preprocess_subquery_phvs_walker(Node *node,
  */
 static void
 grouping_planner(PlannerInfo *root, double tuple_fraction,
-				 SetOperationStmt *setops)
+				 SetOperationStmt *setops, bool dedup_above)
 {
 	Query	   *parse = root->parse;
 	int64		offset_est = 0;
@@ -2124,9 +2131,31 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 		 */
 		if (parse->distinctClause)
 		{
-			current_rel = create_distinct_paths(root,
-												current_rel,
-												sort_input_target);
+			if (dedup_above &&
+				!parse->hasDistinctOn &&
+				parse->limitCount == NULL &&
+				parse->limitOffset == NULL)
+			{
+				/*
+				 * This query is a set-operation child whose output will be
+				 * fully deduplicated by an ancestor set operation, so
+				 * enforcing DISTINCT here cannot affect the query's final
+				 * result: the ancestor's dedup sees the same row membership
+				 * either way.  (Window functions and volatile tlist entries
+				 * are fine: enforcement happens after they're evaluated, so
+				 * skipping it changes neither evaluation counts nor row
+				 * membership.  A LIMIT/OFFSET would make the dedup
+				 * semantically significant, and DISTINCT ON changes which
+				 * rows survive, so those cases keep the enforcement.)  We
+				 * must not modify parse->distinctClause itself; we merely
+				 * refrain from building the paths that would enforce it.
+				 */
+				root->distinct_elided = true;
+			}
+			else
+				current_rel = create_distinct_paths(root,
+													current_rel,
+													sort_input_target);
 		}
 	}							/* end of if (setOperations) */
 
