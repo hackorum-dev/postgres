@@ -322,17 +322,15 @@ USING source AS s
 ON t.tid = s.sid
 WHEN MATCHED THEN
 	UPDATE SET balance = 0;
-                QUERY PLAN                
-------------------------------------------
+               QUERY PLAN               
+----------------------------------------
  Merge on target t
    ->  Hash Join
          Hash Cond: (s.sid = t.tid)
          ->  Seq Scan on source s
-               Bloom Filter 1: keys=(sid)
          ->  Hash
-               Bloom Filter 1
                ->  Seq Scan on target t
-(8 rows)
+(6 rows)
 
 EXPLAIN (COSTS OFF)
 MERGE INTO target t
@@ -340,17 +338,15 @@ USING source AS s
 ON t.tid = s.sid
 WHEN MATCHED THEN
 	DELETE;
-                QUERY PLAN                
-------------------------------------------
+               QUERY PLAN               
+----------------------------------------
  Merge on target t
    ->  Hash Join
          Hash Cond: (s.sid = t.tid)
          ->  Seq Scan on source s
-               Bloom Filter 1: keys=(sid)
          ->  Hash
-               Bloom Filter 1
                ->  Seq Scan on target t
-(8 rows)
+(6 rows)
 
 EXPLAIN (COSTS OFF)
 MERGE INTO target t
