@@ -25,7 +25,6 @@
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "storage/lwlock.h"
-#include "storage/procarray.h"
 #include "storage/read_stream.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"

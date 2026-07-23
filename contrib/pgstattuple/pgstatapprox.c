@@ -22,7 +22,6 @@
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
-#include "storage/procarray.h"
 #include "storage/read_stream.h"
 
 PG_FUNCTION_INFO_V1(pgstattuple_approx);

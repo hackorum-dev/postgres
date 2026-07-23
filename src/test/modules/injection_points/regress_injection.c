@@ -18,7 +18,6 @@
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "postmaster/autovacuum.h"
-#include "storage/procarray.h"
 #include "utils/rel.h"
 #include "utils/xid8.h"
 

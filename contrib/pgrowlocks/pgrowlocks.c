@@ -35,7 +35,6 @@
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
-#include "storage/procarray.h"
 #include "utils/acl.h"
 #include "utils/fmgrprotos.h"
 #include "utils/rel.h"
