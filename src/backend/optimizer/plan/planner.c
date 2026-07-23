@@ -208,6 +208,7 @@ static void create_one_window_path(PlannerInfo *root,
 								   PathTarget *output_target,
 								   WindowFuncLists *wflists,
 								   List *activeWindows);
+static bool distinct_input_provably_unique(PlannerInfo *root);
 static RelOptInfo *create_distinct_paths(PlannerInfo *root,
 										 RelOptInfo *input_rel,
 										 PathTarget *target);
@@ -2117,6 +2118,14 @@ grouping_planner(PlannerInfo *root, double tuple_fraction,
 				 * rows survive, so those cases keep the enforcement.)  We
 				 * must not modify parse->distinctClause itself; we merely
 				 * refrain from building the paths that would enforce it.
+				 */
+				root->distinct_elided = true;
+			}
+			else if (distinct_input_provably_unique(root))
+			{
+				/*
+				 * The input is already distinct on the DISTINCT columns, so
+				 * enforcement would be a no-op; skip building it.
 				 */
 				root->distinct_elided = true;
 			}
@@ -5053,6 +5062,79 @@ create_one_window_path(PlannerInfo *root,
 	}
 
 	add_path(window_rel, path);
+}
+
+/*
+ * distinct_input_provably_unique
+ *		Detect whether this query's DISTINCT clause is a no-op because its
+ *		input is provably distinct on the DISTINCT columns already.
+ *
+ * We handle only the simple but common shape where the query reads exactly
+ * one subquery RTE (no joins -- joining can multiply rows) and every
+ * DISTINCT column is a plain Var of that subquery, and the subquery's own
+ * query structure (DISTINCT, GROUP BY, aggregation, non-ALL set operation)
+ * proves distinctness via query_is_distinct_for().  WHERE quals are fine:
+ * filtering cannot introduce duplicates.  We derive distinctness only from
+ * the subquery's structure, never from catalog uniqueness metadata.
+ *
+ * We bail out on target SRFs (they multiply rows after the subquery scan),
+ * and conservatively on window functions, though those merely add columns.
+ * DISTINCT ON is out too: with more than one row per group it changes which
+ * rows survive, so proving groups of one would need all ON columns covered;
+ * we don't bother.  The caller must not modify parse->distinctClause; on a
+ * true return it merely refrains from building enforcement paths.
+ */
+static bool
+distinct_input_provably_unique(PlannerInfo *root)
+{
+	Query	   *parse = root->parse;
+	RangeTblRef *rtr;
+	RangeTblEntry *rte;
+	List	   *distinct_cols = NIL;
+	ListCell   *lc;
+
+	if (parse->hasDistinctOn)
+		return false;
+
+	/* bail out on anything that complicates the proof */
+	if (parse->hasTargetSRFs || parse->hasWindowFuncs || parse->hasAggs ||
+		parse->groupClause || parse->groupingSets || parse->havingQual)
+		return false;
+
+	/* the input must be exactly one subquery RTE */
+	if (list_length(parse->jointree->fromlist) != 1)
+		return false;
+	rtr = (RangeTblRef *) linitial(parse->jointree->fromlist);
+	if (!IsA(rtr, RangeTblRef))
+		return false;
+	rte = root->simple_rte_array[rtr->rtindex];
+	if (rte->rtekind != RTE_SUBQUERY)
+		return false;
+	if (!query_supports_distinctness(rte->subquery))
+		return false;
+
+	/* every DISTINCT column must be a plain Var of that subquery */
+	foreach(lc, root->processed_distinctClause)
+	{
+		SortGroupClause *sgc = lfirst_node(SortGroupClause, lc);
+		TargetEntry *tle = get_sortgroupclause_tle(sgc, root->processed_tlist);
+		Var		   *var = (Var *) tle->expr;
+		DistinctColInfo *info;
+
+		if (!IsA(var, Var) ||
+			var->varno != rtr->rtindex ||
+			var->varlevelsup != 0 ||
+			var->varattno <= 0)
+			return false;
+
+		info = palloc_object(DistinctColInfo);
+		info->colno = var->varattno;
+		info->opid = sgc->eqop;
+		info->collid = var->varcollid;
+		distinct_cols = lappend(distinct_cols, info);
+	}
+
+	return query_is_distinct_for(rte->subquery, distinct_cols);
 }
 
 /*
