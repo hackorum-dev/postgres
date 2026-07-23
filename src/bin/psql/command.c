@@ -4662,7 +4662,7 @@ editFile(const char *fname, int lineno)
 {
 	const char *editorName;
 	const char *editor_lineno_arg = NULL;
-	char	   *sys;
+	PQExpBufferData buf;
 	int			result;
 
 	Assert(fname != NULL);
@@ -4698,28 +4698,34 @@ editFile(const char *fname, int lineno)
 	 * severe brain damage in their command shell plus the fact that standard
 	 * program paths include spaces.
 	 */
+	initPQExpBuffer(&buf);
 #ifndef WIN32
 	if (lineno > 0)
-		sys = psprintf("exec %s %s%d '%s'",
-					   editorName, editor_lineno_arg, lineno, fname);
+		appendPQExpBuffer(&buf, "exec %s %s%d ",
+						  editorName, editor_lineno_arg, lineno);
 	else
-		sys = psprintf("exec %s '%s'",
-					   editorName, fname);
+		appendPQExpBuffer(&buf, "exec %s ", editorName);
 #else
 	if (lineno > 0)
-		sys = psprintf("\"%s\" %s%d \"%s\"",
-					   editorName, editor_lineno_arg, lineno, fname);
+		appendPQExpBuffer(&buf, "\"%s\" %s%d ",
+						  editorName, editor_lineno_arg, lineno);
 	else
-		sys = psprintf("\"%s\" \"%s\"",
-					   editorName, fname);
+		appendPQExpBuffer(&buf, "\"%s\" ", editorName);
 #endif
+	if (!appendShellStringNoError(&buf, fname))
+	{
+		pg_log_error("shell command argument contains a newline or carriage return: \"%s\"",
+					 fname);
+		termPQExpBuffer(&buf);
+		return false;
+	}
 	fflush(NULL);
-	result = system(sys);
+	result = system(buf.data);
 	if (result == -1)
 		pg_log_error("could not start editor \"%s\"", editorName);
 	else if (result == 127)
 		pg_log_error("could not start /bin/sh");
-	pfree(sys);
+	termPQExpBuffer(&buf);
 
 	return result == 0;
 }

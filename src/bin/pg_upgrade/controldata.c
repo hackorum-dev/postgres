@@ -119,8 +119,9 @@ get_control_data(ClusterInfo *cluster)
 	if (!live_check || cluster == &new_cluster)
 	{
 		/* only pg_controldata outputs the cluster state */
-		snprintf(cmd, sizeof(cmd), "\"%s/pg_controldata\" \"%s\"",
-				 cluster->bindir, cluster->pgdata);
+		snprintf(cmd, sizeof(cmd), "%s %s",
+				 quote_shell_path_arg(cluster->bindir, "pg_controldata"),
+				 quote_shell_arg(cluster->pgdata));
 		fflush(NULL);
 
 		if ((output = popen(cmd, "r")) == NULL)
@@ -182,10 +183,11 @@ get_control_data(ClusterInfo *cluster)
 		}
 	}
 
-	snprintf(cmd, sizeof(cmd), "\"%s/%s \"%s\"",
-			 cluster->bindir,
-			 live_check ? "pg_controldata\"" : "pg_resetwal\" -n",
-			 cluster->pgdata);
+	snprintf(cmd, sizeof(cmd), "%s%s %s",
+			 quote_shell_path_arg(cluster->bindir,
+								  live_check ? "pg_controldata" : "pg_resetwal"),
+			 live_check ? "" : " -n",
+			 quote_shell_arg(cluster->pgdata));
 	fflush(NULL);
 
 	if ((output = popen(cmd, "r")) == NULL)

@@ -157,14 +157,34 @@ stop_postmaster_atexit(void)
 }
 
 
+/*
+ * To start postgres with a particular value for a particular GUC, we can
+ * specify -c guc_name=guc_value on the command-line, but we need to
+ * shell-escape the string to avoid misbehavior in the case where, for
+ * example, guc_value contains spaces or double quotes.
+ */
+static void
+add_pg_config_option(PQExpBuffer postgres_opts,
+					 const char *guc_name, const char *guc_value)
+{
+	char	   *guc_string = psprintf("%s=%s", guc_name, guc_value);
+
+	if (postgres_opts->len > 0)
+		appendPQExpBufferChar(postgres_opts, ' ');
+	appendPQExpBufferStr(postgres_opts, "-c ");
+	appendShellString(postgres_opts, guc_string);
+	pfree(guc_string);
+}
+
+
 bool
 start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error)
 {
-	char		cmd[MAXPGPATH * 4 + 1000];
+	PQExpBufferData cmd;
 	PGconn	   *conn;
 	bool		pg_ctl_return = false;
-	char		socket_string[MAXPGPATH + 200];
-	PQExpBufferData pgoptions;
+	PQExpBufferData postgres_opts;
+	PQExpBufferData socket_opts;
 
 	static bool exit_hook_registered = false;
 
@@ -174,48 +194,85 @@ start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error)
 		exit_hook_registered = true;
 	}
 
-	socket_string[0] = '\0';
-
-#if !defined(WIN32)
-	/* prevent TCP/IP connections, restrict socket access */
-	strcat(socket_string,
-		   " -c listen_addresses='' -c unix_socket_permissions=0700");
-
-	/* Have a sockdir?	Tell the postmaster. */
-	if (cluster->sockdir)
-		snprintf(socket_string + strlen(socket_string),
-				 sizeof(socket_string) - strlen(socket_string),
-				 " -c %s='%s'",
-				 "unix_socket_directories",
-				 cluster->sockdir);
-#endif
-
-	initPQExpBuffer(&pgoptions);
+	/*
+	 * Construct options to be passed to the server process.
+	 *
+	 * Use -b to disable autovacuum and logical replication launcher
+	 * (effective in PG17 or later for the latter).
+	 */
+	initPQExpBuffer(&postgres_opts);
+	appendPQExpBuffer(&postgres_opts, "-p %d -b", cluster->port);
 
 	/*
-	 * Construct a parameter string which is passed to the server process.
-	 *
 	 * Turn off durability requirements to improve object creation speed, and
 	 * we only modify the new cluster, so only use it there.  If there is a
 	 * crash, the new cluster has to be recreated anyway.  fsync=off is a big
 	 * win on ext4.
 	 */
 	if (cluster == &new_cluster)
-		appendPQExpBufferStr(&pgoptions, " -c synchronous_commit=off -c fsync=off -c full_page_writes=off");
+	{
+		add_pg_config_option(&postgres_opts, "synchronous_commit", "off");
+		add_pg_config_option(&postgres_opts, "fsync", "off");
+		add_pg_config_option(&postgres_opts, "full_page_writes", "off");
+	}
+
+	initPQExpBuffer(&socket_opts);
+
+#if !defined(WIN32)
+	/* prevent TCP/IP connections, restrict socket access */
+	add_pg_config_option(&socket_opts, "listen_addresses", "");
+	add_pg_config_option(&socket_opts, "unix_socket_permissions", "0700");
+
+	/* Have a sockdir?	Tell the postmaster. */
+	if (cluster->sockdir)
+		add_pg_config_option(&socket_opts, "unix_socket_directories",
+							 cluster->sockdir);
+#endif
 
 	/*
-	 * Use -b to disable autovacuum and logical replication launcher
-	 * (effective in PG17 or later for the latter).
+	 * Construct the pg_ctl command.
+	 *
+	 * -o/--old-options or -O/--new-options are documented as allowing the
+	 * user to pass through options to the server. To deliver that behavior,
+	 * we should shell-escape them before passing them to pg_ctl -o, since we
+	 * will use the shell to run pg_ctl. However, the historical behavior of
+	 * these flags is actually that they simply wrap the values of the options
+	 * in double-quotes, and it's possible that there are users including
+	 * shell metacharacters in the values passed to those options and relying
+	 * on the faulty escaping for correct operation. Hence, preserve that
+	 * behavior for now.
+	 *
+	 * We do, however, want to escape the other values that we're passing to
+	 * pg_ctl -o, so that if, for example, the socket directory contains shell
+	 * metacharacters, we nevertheless interpret the value as a literal
+	 * pathname. Since appendShellString can only be applied to an entire
+	 * option value as a unit, we specify -o three times: once for the options
+	 * that precede the user-specified options, once for the user-specified
+	 * options, and once for the options that follow the user-specified
+	 * options. The order matters, since later options override earlier ones.
 	 */
-	snprintf(cmd, sizeof(cmd),
-			 "\"%s/pg_ctl\" -w -l \"%s/%s\" -D \"%s\" -o \"-p %d -b%s %s%s\" start",
-			 cluster->bindir,
-			 log_opts.logdir,
-			 SERVER_LOG_FILE, cluster->pgconfig, cluster->port,
-			 pgoptions.data,
-			 cluster->pgopts ? cluster->pgopts : "", socket_string);
+	initPQExpBuffer(&cmd);
+	appendPQExpBufferStr(&cmd, quote_shell_path_arg(cluster->bindir, "pg_ctl"));
+	appendPQExpBufferStr(&cmd, " -w -l ");
+	appendPQExpBufferStr(&cmd,
+						 quote_shell_path_arg(log_opts.logdir,
+											  SERVER_LOG_FILE));
+	appendPQExpBufferStr(&cmd, " -D ");
+	appendPQExpBufferStr(&cmd, quote_shell_arg(cluster->pgconfig));
 
-	termPQExpBuffer(&pgoptions);
+	appendPQExpBufferStr(&cmd, " -o ");
+	appendShellString(&cmd, postgres_opts.data);
+	if (cluster->pgopts)
+		appendPQExpBuffer(&cmd, " -o \"%s\"", cluster->pgopts);
+	if (socket_opts.len > 0)
+	{
+		appendPQExpBufferStr(&cmd, " -o ");
+		appendShellString(&cmd, socket_opts.data);
+	}
+	appendPQExpBufferStr(&cmd, " start");
+
+	termPQExpBuffer(&postgres_opts);
+	termPQExpBuffer(&socket_opts);
 
 	/*
 	 * Don't throw an error right away, let connecting throw the error because
@@ -227,11 +284,14 @@ start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error)
 									  SERVER_START_LOG_FILE) != 0) ?
 							  SERVER_LOG_FILE : NULL,
 							  report_and_exit_on_error, false,
-							  "%s", cmd);
+							  "%s", cmd.data);
 
 	/* Did it fail and we are just testing if the server could be started? */
 	if (!pg_ctl_return && !report_and_exit_on_error)
+	{
+		termPQExpBuffer(&cmd);
 		return false;
+	}
 
 	/*
 	 * We set this here to make sure atexit() shuts down the server, but only
@@ -264,13 +324,14 @@ start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error)
 		if (cluster == &old_cluster)
 			pg_fatal("could not connect to source postmaster started with the command:\n"
 					 "%s",
-					 cmd);
+					 cmd.data);
 		else
 			pg_fatal("could not connect to target postmaster started with the command:\n"
 					 "%s",
-					 cmd);
+					 cmd.data);
 	}
 	PQfinish(conn);
+	termPQExpBuffer(&cmd);
 
 	/*
 	 * If pg_ctl failed, and the connection didn't fail, and
@@ -302,8 +363,9 @@ stop_postmaster(bool in_atexit)
 		return;					/* no cluster running */
 
 	exec_prog(SERVER_STOP_LOG_FILE, NULL, !in_atexit, !in_atexit,
-			  "\"%s/pg_ctl\" -w -D \"%s\" -o \"%s\" %s stop",
-			  cluster->bindir, cluster->pgconfig,
+			  "%s -w -D %s -o \"%s\" %s stop",
+			  quote_shell_path_arg(cluster->bindir, "pg_ctl"),
+			  quote_shell_arg(cluster->pgconfig),
 			  cluster->pgopts ? cluster->pgopts : "",
 			  in_atexit ? "-m fast" : "-m smart");
 

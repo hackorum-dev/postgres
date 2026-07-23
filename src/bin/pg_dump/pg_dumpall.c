@@ -1707,8 +1707,8 @@ runPgDump(const char *dbname, const char *create_opts)
 	initPQExpBuffer(&connstrbuf);
 	initPQExpBuffer(&cmd);
 
-	printfPQExpBuffer(&cmd, "\"%s\" %s %s", pg_dump_bin,
-					  pgdumpopts->data, create_opts);
+	appendShellString(&cmd, pg_dump_bin);
+	appendPQExpBuffer(&cmd, " %s %s", pgdumpopts->data, create_opts);
 
 	/*
 	 * If we have a filename, use the undocumented plain-append pg_dump
