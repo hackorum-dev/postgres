@@ -184,7 +184,6 @@ start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error)
 	PGconn	   *conn;
 	bool		pg_ctl_return = false;
 	PQExpBufferData postgres_opts;
-	PQExpBufferData socket_opts;
 
 	static bool exit_hook_registered = false;
 
@@ -216,41 +215,28 @@ start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error)
 		add_pg_config_option(&postgres_opts, "full_page_writes", "off");
 	}
 
-	initPQExpBuffer(&socket_opts);
+	/*
+	 * Pass through user-specified options.
+	 *
+	 * Note that any options added after this point will override whatever the
+	 * user has specified. That may or may not be the behavior that we want,
+	 * but we should be careful not to change it inadvertently.
+	 */
+	if (cluster->pgopts)
+		appendPQExpBuffer(&postgres_opts, " %s", cluster->pgopts);
 
 #if !defined(WIN32)
 	/* prevent TCP/IP connections, restrict socket access */
-	add_pg_config_option(&socket_opts, "listen_addresses", "");
-	add_pg_config_option(&socket_opts, "unix_socket_permissions", "0700");
+	add_pg_config_option(&postgres_opts, "listen_addresses", "");
+	add_pg_config_option(&postgres_opts, "unix_socket_permissions", "0700");
 
 	/* Have a sockdir?	Tell the postmaster. */
 	if (cluster->sockdir)
-		add_pg_config_option(&socket_opts, "unix_socket_directories",
+		add_pg_config_option(&postgres_opts, "unix_socket_directories",
 							 cluster->sockdir);
 #endif
 
-	/*
-	 * Construct the pg_ctl command.
-	 *
-	 * -o/--old-options or -O/--new-options are documented as allowing the
-	 * user to pass through options to the server. To deliver that behavior,
-	 * we should shell-escape them before passing them to pg_ctl -o, since we
-	 * will use the shell to run pg_ctl. However, the historical behavior of
-	 * these flags is actually that they simply wrap the values of the options
-	 * in double-quotes, and it's possible that there are users including
-	 * shell metacharacters in the values passed to those options and relying
-	 * on the faulty escaping for correct operation. Hence, preserve that
-	 * behavior for now.
-	 *
-	 * We do, however, want to escape the other values that we're passing to
-	 * pg_ctl -o, so that if, for example, the socket directory contains shell
-	 * metacharacters, we nevertheless interpret the value as a literal
-	 * pathname. Since appendShellString can only be applied to an entire
-	 * option value as a unit, we specify -o three times: once for the options
-	 * that precede the user-specified options, once for the user-specified
-	 * options, and once for the options that follow the user-specified
-	 * options. The order matters, since later options override earlier ones.
-	 */
+	/* Construct the pg_ctl command. */
 	initPQExpBuffer(&cmd);
 	appendPQExpBufferStr(&cmd, quote_shell_path_arg(cluster->bindir, "pg_ctl"));
 	appendPQExpBufferStr(&cmd, " -w -l ");
@@ -259,20 +245,11 @@ start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error)
 											  SERVER_LOG_FILE));
 	appendPQExpBufferStr(&cmd, " -D ");
 	appendPQExpBufferStr(&cmd, quote_shell_arg(cluster->pgconfig));
-
 	appendPQExpBufferStr(&cmd, " -o ");
 	appendShellString(&cmd, postgres_opts.data);
-	if (cluster->pgopts)
-		appendPQExpBuffer(&cmd, " -o \"%s\"", cluster->pgopts);
-	if (socket_opts.len > 0)
-	{
-		appendPQExpBufferStr(&cmd, " -o ");
-		appendShellString(&cmd, socket_opts.data);
-	}
 	appendPQExpBufferStr(&cmd, " start");
 
 	termPQExpBuffer(&postgres_opts);
-	termPQExpBuffer(&socket_opts);
 
 	/*
 	 * Don't throw an error right away, let connecting throw the error because
@@ -363,10 +340,10 @@ stop_postmaster(bool in_atexit)
 		return;					/* no cluster running */
 
 	exec_prog(SERVER_STOP_LOG_FILE, NULL, !in_atexit, !in_atexit,
-			  "%s -w -D %s -o \"%s\" %s stop",
+			  "%s -w -D %s -o %s %s stop",
 			  quote_shell_path_arg(cluster->bindir, "pg_ctl"),
 			  quote_shell_arg(cluster->pgconfig),
-			  cluster->pgopts ? cluster->pgopts : "",
+			  quote_shell_arg(cluster->pgopts ? cluster->pgopts : ""),
 			  in_atexit ? "-m fast" : "-m smart");
 
 	os_info.running_cluster = NULL;
