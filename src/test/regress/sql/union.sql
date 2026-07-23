@@ -674,3 +674,55 @@ select null::int[] union all select null::int[] union all select null::bigint[];
 explain (costs off)
 select * from tenk1 t
 join (select ten from tenk1 union select ten from onek) s on s.ten = t.unique1;
+
+-- Test removal of redundant branch-level DISTINCT beneath a set operation
+-- that already eliminates duplicates.
+-- All three non-ALL setops subsume the branches' DISTINCT
+explain (costs off)
+(select distinct four from tenk1) union (select distinct ten from tenk1);
+explain (costs off)
+(select distinct four from tenk1) intersect (select distinct ten from tenk1);
+explain (costs off)
+(select distinct four from tenk1) except (select distinct ten from tenk1);
+-- UNION ALL does not subsume
+explain (costs off)
+(select distinct four from tenk1) union all (select distinct ten from tenk1);
+-- ... but subsumption passes through UNION ALL to an outer UNION
+explain (costs off)
+((select distinct four from tenk1) union all (select distinct ten from tenk1))
+union (select 1);
+-- INTERSECT ALL changes multiplicities but not membership: no subsumption on
+-- its own, but an ancestor's dedup passes through it
+explain (costs off)
+(select distinct four from tenk1) intersect all (select ten from tenk1);
+explain (costs off)
+((select distinct four from tenk1) intersect all (select ten from tenk1))
+union (select 1);
+-- EXCEPT ALL is multiplicity-sensitive: no subsumption from any ancestor
+explain (costs off)
+((select distinct four from tenk1) except all (select ten from tenk1))
+union (select 1);
+-- DISTINCT ON and LIMIT block elision
+explain (costs off)
+(select distinct on (four) four from tenk1) union (select ten from tenk1);
+explain (costs off)
+(select distinct four from tenk1 limit 2) union (select ten from tenk1);
+-- EXCEPT ALL membership counterexample: the DISTINCT below EXCEPT ALL is
+-- semantically significant even under an outer UNION
+create temp table ea_l(x int);
+create temp table ea_r(x int);
+insert into ea_l values (1),(1),(2);
+insert into ea_r values (1);
+select x from ((select distinct x from ea_l) except all (select x from ea_r)) s
+order by x;
+-- ... whereas below INTERSECT ALL it is not: with or without the DISTINCT,
+-- the result's membership (and hence the outer UNION's output) is the same
+select x from
+  (((select distinct x from ea_l) intersect all (select x from ea_l))
+   union (select 7)) s
+order by x;
+-- results with/without redundant DISTINCT must agree
+select count(*) from
+  ((select distinct four from tenk1) union (select distinct ten from tenk1)) s;
+select count(*) from
+  ((select four from tenk1) union (select ten from tenk1)) s;
