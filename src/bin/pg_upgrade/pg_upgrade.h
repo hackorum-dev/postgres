@@ -393,6 +393,8 @@ bool		exec_prog(const char *log_filename, const char *opt_log_file,
 					  bool report_error, bool exit_on_error, const char *fmt, ...) pg_attribute_printf(5, 6);
 void		verify_directories(void);
 bool		pid_lock_file_exists(const char *datadir);
+char	   *quote_shell_arg(const char *arg);
+char	   *quote_shell_path_arg(const char *path, const char *filename);
 
 
 /* file.c */

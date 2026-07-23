@@ -1223,13 +1223,14 @@ test_specific_config_settings(int test_conns, int test_av_slots, int test_buffs)
 	initPQExpBuffer(&cmd);
 
 	/* Set up the test postmaster invocation */
-	printfPQExpBuffer(&cmd,
-					  "\"%s\" --check %s %s "
+	appendShellString(&cmd, backend_exec);
+	appendPQExpBuffer(&cmd,
+					  " --check %s %s "
 					  "-c max_connections=%d "
 					  "-c autovacuum_worker_slots=%d "
 					  "-c shared_buffers=%d "
 					  "-c dynamic_shared_memory_type=%s",
-					  backend_exec, boot_options, extra_options,
+					  boot_options, extra_options,
 					  test_conns, test_av_slots, test_buffs,
 					  dynamic_shared_memory_type);
 
@@ -1611,7 +1612,8 @@ bootstrap_template1(void)
 
 	initPQExpBuffer(&cmd);
 
-	printfPQExpBuffer(&cmd, "\"%s\" --boot %s %s", backend_exec, boot_options, extra_options);
+	appendShellString(&cmd, backend_exec);
+	appendPQExpBuffer(&cmd, " --boot %s %s", boot_options, extra_options);
 	appendPQExpBuffer(&cmd, " -X %d", wal_segment_size_mb * (1024 * 1024));
 	if (data_checksums)
 		appendPQExpBufferStr(&cmd, " -k");
@@ -3118,8 +3120,9 @@ initialize_data_directory(void)
 	fflush(stdout);
 
 	initPQExpBuffer(&cmd);
-	printfPQExpBuffer(&cmd, "\"%s\" %s %s template1 >%s",
-					  backend_exec, backend_options, extra_options, DEVNULL);
+	appendShellString(&cmd, backend_exec);
+	appendPQExpBuffer(&cmd, " %s %s template1 >%s",
+					  backend_options, extra_options, DEVNULL);
 
 	PG_CMD_OPEN(cmd.data);
 
