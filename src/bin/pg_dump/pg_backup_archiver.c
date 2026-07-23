@@ -3096,7 +3096,12 @@ _tocEntryRequired(TocEntry *te, teSection curSection, ArchiveHandle *AH)
 	/* If it's a subscription, maybe ignore it */
 	if (ropt->no_subscriptions &&
 		(strcmp(te->desc, "SUBSCRIPTION") == 0 ||
-		 strcmp(te->desc, "SUBSCRIPTION TABLE") == 0))
+		 strcmp(te->desc, "SUBSCRIPTION TABLE") == 0 ||
+		 strcmp(te->desc, "SUBSCRIPTION OWNER") == 0))
+		return 0;
+
+	/* If it's a subscription owner, maybe ignore it */
+	if (ropt->noOwner && strcmp(te->desc, "SUBSCRIPTION OWNER") == 0)
 		return 0;
 
 	/* Ignore it if section is not to be dumped/restored */
@@ -3398,6 +3403,15 @@ _tocEntryRestorePass(TocEntry *te)
 	 */
 	if (strcmp(te->desc, "STATISTICS DATA") == 0 &&
 		te->section == SECTION_POST_DATA)
+		return RESTORE_PASS_POST_ACL;
+
+	/*
+	 * ALTER SUBSCRIPTION OWNER TO command must be RESTORE_PASS_POST_ACL. The
+	 * subscription may not be owned by the superuser and may depend on the
+	 * foreign server. GRANT statement for the foreign server must be executed
+	 * before the alternation.
+	 */
+	if (strcmp(te->desc, "SUBSCRIPTION OWNER") == 0)
 		return RESTORE_PASS_POST_ACL;
 
 	/* All else can be handled in the main pass. */

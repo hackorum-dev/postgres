@@ -5648,13 +5648,47 @@ dumpSubscription(Archive *fout, const SubscriptionInfo *subinfo)
 	}
 
 	if (subinfo->dobj.dump & DUMP_COMPONENT_DEFINITION)
+	{
+		const char *owner;
+
+		/*
+		 * If the subscription refers to a foreign server, we must execute the
+		 * ALTER SUBSCRIPTION OWNER TO command separately. If a non-superuser
+		 * owns the subscription and the user does not own the foreign server,
+		 * ALTER SUBSCRIPTION OWNER TO will be executed before the GRANT ... ON
+		 * FOREIGN SERVER; this causes a failure in the restore phase. To
+		 * address the issue, the ALTER SUBSCRIPTION command can be handled as
+		 * a separate TOC entry and restored after ACL commands.
+		 */
+		owner = subinfo->subservername ? NULL : subinfo->rolname;
+
 		ArchiveEntry(fout, subinfo->dobj.catId, subinfo->dobj.dumpId,
 					 ARCHIVE_OPTS(.tag = subinfo->dobj.name,
-								  .owner = subinfo->rolname,
+								  .owner = owner,
 								  .description = "SUBSCRIPTION",
 								  .section = SECTION_POST_DATA,
 								  .createStmt = query->data,
 								  .dropStmt = delq->data));
+
+		if (subinfo->subservername)
+		{
+			PQExpBuffer ownerq = createPQExpBuffer();
+			appendPQExpBuffer(ownerq,
+							  "ALTER SUBSCRIPTION %s OWNER TO %s;\n",
+							  qsubname,
+							  fmtId(subinfo->rolname));
+
+			ArchiveEntry(fout, nilCatalogId, createDumpId(),
+						 ARCHIVE_OPTS(.tag = subinfo->dobj.name,
+									  .description = "SUBSCRIPTION OWNER",
+									  .section = SECTION_POST_DATA,
+									  .createStmt = ownerq->data,
+									  .deps = &subinfo->dobj.dumpId,
+									  .nDeps = 1));
+
+			destroyPQExpBuffer(ownerq);
+		}
+	}
 
 	if (subinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, "SUBSCRIPTION", qsubname,
