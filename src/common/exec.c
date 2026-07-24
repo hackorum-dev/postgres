@@ -43,6 +43,7 @@
 #endif
 
 #include "common/string.h"
+#include "lib/stringinfo.h"
 
 /* Inhibit mingw CRT's auto-globbing of command line arguments */
 #if defined(WIN32) && !defined(_MSC_VER)
@@ -311,7 +312,7 @@ int
 find_other_exec(const char *argv0, const char *target,
 				const char *versionstr, char *retpath)
 {
-	char		cmd[MAXPGPATH];
+	StringInfoData cmd;
 	char	   *line;
 
 	if (find_my_exec(argv0, retpath) < 0)
@@ -328,9 +329,13 @@ find_other_exec(const char *argv0, const char *target,
 	if (validate_exec(retpath) != 0)
 		return -1;
 
-	snprintf(cmd, sizeof(cmd), "\"%s\" -V", retpath);
+	initStringInfo(&cmd);
+	appendStringInfoShell(&cmd, retpath);
+	appendStringInfoString(&cmd, " -V");
 
-	if ((line = pipe_read_line(cmd)) == NULL)
+	line = pipe_read_line(cmd.data);
+	pfree(cmd.data);
+	if (line == NULL)
 		return -1;
 
 	if (strcmp(line, versionstr) != 0)

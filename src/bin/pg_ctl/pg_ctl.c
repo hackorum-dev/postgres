@@ -28,6 +28,7 @@
 #include "common/string.h"
 #include "datatype/timestamp.h"
 #include "getopt_long.h"
+#include "lib/stringinfo.h"
 #include "utils/pidfile.h"
 
 #ifdef WIN32					/* on Unix, we don't need libpq */
@@ -442,7 +443,7 @@ free_readfile(char **optlines)
 static pid_t
 start_postmaster(void)
 {
-	char	   *cmd;
+	StringInfoData cmd;
 
 #ifndef WIN32
 	pid_t		pm_pid;
@@ -489,15 +490,18 @@ start_postmaster(void)
 	 * everything to a shell to process them.  Use exec so that the postmaster
 	 * has the same PID as the current child process.
 	 */
+	initStringInfo(&cmd);
+	appendStringInfoString(&cmd, "exec ");
+	appendStringInfoShell(&cmd, exec_path);
+	appendStringInfo(&cmd, " %s%s < \"%s\"", pgdata_opt, post_opts, DEVNULL);
 	if (log_file != NULL)
-		cmd = psprintf("exec \"%s\" %s%s < \"%s\" >> \"%s\" 2>&1",
-					   exec_path, pgdata_opt, post_opts,
-					   DEVNULL, log_file);
-	else
-		cmd = psprintf("exec \"%s\" %s%s < \"%s\" 2>&1",
-					   exec_path, pgdata_opt, post_opts, DEVNULL);
+	{
+		appendStringInfoString(&cmd, " >> ");
+		appendStringInfoShell(&cmd, log_file);
+	}
+	appendStringInfoString(&cmd, " 2>&1");
 
-	(void) execl("/bin/sh", "/bin/sh", "-c", cmd, (char *) NULL);
+	(void) execl("/bin/sh", "/bin/sh", "-c", cmd.data, (char *) NULL);
 
 	/* exec failed */
 	write_stderr(_("%s: could not start server: %m\n"),
@@ -555,15 +559,20 @@ start_postmaster(void)
 		}
 		else
 			close(fd);
-
-		cmd = psprintf("\"%s\" /C \"\"%s\" %s%s < \"%s\" >> \"%s\" 2>&1\"",
-					   comspec, exec_path, pgdata_opt, post_opts, DEVNULL, log_file);
 	}
-	else
-		cmd = psprintf("\"%s\" /C \"\"%s\" %s%s < \"%s\" 2>&1\"",
-					   comspec, exec_path, pgdata_opt, post_opts, DEVNULL);
 
-	if (!CreateRestrictedProcess(cmd, &pi, false))
+	initStringInfo(&cmd);
+	appendStringInfo(&cmd, "\"%s\" /C ", comspec);
+	appendStringInfoShell(&cmd, exec_path);
+	appendStringInfo(&cmd, " %s%s < \"%s\"", pgdata_opt, post_opts, DEVNULL);
+	if (log_file != NULL)
+	{
+		appendStringInfoString(&cmd, " >> ");
+		appendStringInfoShell(&cmd, log_file);
+	}
+	appendStringInfoString(&cmd, " 2>&1");
+
+	if (!CreateRestrictedProcess(cmd.data, &pi, false))
 	{
 		write_stderr(_("%s: could not start server: error code %lu\n"),
 					 progname, GetLastError());
@@ -904,7 +913,7 @@ find_other_exec_or_die(const char *argv0, const char *target, const char *versio
 static void
 do_init(void)
 {
-	char	   *cmd;
+	StringInfoData cmd;
 
 	if (exec_path == NULL)
 		exec_path = find_other_exec_or_die(argv0, "initdb", "initdb (PostgreSQL) " PG_VERSION "\n");
@@ -915,15 +924,14 @@ do_init(void)
 	if (post_opts == NULL)
 		post_opts = "";
 
-	if (!silent_mode)
-		cmd = psprintf("\"%s\" %s%s",
-					   exec_path, pgdata_opt, post_opts);
-	else
-		cmd = psprintf("\"%s\" %s%s > \"%s\"",
-					   exec_path, pgdata_opt, post_opts, DEVNULL);
+	initStringInfo(&cmd);
+	appendStringInfoShell(&cmd, exec_path);
+	appendStringInfo(&cmd, " %s%s", pgdata_opt, post_opts);
+	if (silent_mode)
+		appendStringInfo(&cmd, " > \"%s\"", DEVNULL);
 
 	fflush(NULL);
-	if (system(cmd) != 0)
+	if (system(cmd.data) != 0)
 	{
 		write_stderr(_("%s: database system initialization failed\n"), progname);
 		exit(1);
@@ -2125,9 +2133,9 @@ static void
 adjust_data_dir(void)
 {
 	char		filename[MAXPGPATH];
-	char	   *my_exec_path,
-			   *cmd;
+	char	   *my_exec_path;
 	FILE	   *fd;
+	StringInfoData cmd;
 
 	/* do nothing if we're working without knowledge of data dir */
 	if (pg_config == NULL)
@@ -2155,17 +2163,22 @@ adjust_data_dir(void)
 	else
 		my_exec_path = pg_strdup(exec_path);
 
+	initStringInfo(&cmd);
+	appendStringInfoShell(&cmd, my_exec_path);
+
 	/* it's important for -C to be the first option, see main.c */
-	cmd = psprintf("\"%s\" -C data_directory %s%s",
-				   my_exec_path,
-				   pgdata_opt ? pgdata_opt : "",
-				   post_opts ? post_opts : "");
+	appendStringInfoString(&cmd, " -C data_directory ");
+	if (pgdata_opt)
+		appendStringInfoString(&cmd, pgdata_opt);
+	if (post_opts)
+		appendStringInfoString(&cmd, post_opts);
+
 	fflush(NULL);
 
-	fd = popen(cmd, "r");
+	fd = popen(cmd.data, "r");
 	if (fd == NULL || fgets(filename, sizeof(filename), fd) == NULL || pclose(fd) != 0)
 	{
-		write_stderr(_("%s: could not determine the data directory using command \"%s\"\n"), progname, cmd);
+		write_stderr(_("%s: could not determine the data directory using command \"%s\"\n"), progname, cmd.data);
 		exit(1);
 	}
 	pg_free(my_exec_path);
@@ -2278,6 +2291,7 @@ main(int argc, char **argv)
 			case 'D':
 				{
 					char	   *pgdata_D;
+					StringInfoData buf;
 
 					pgdata_D = pg_strdup(optarg);
 					canonicalize_path(pgdata_D);
@@ -2287,7 +2301,11 @@ main(int argc, char **argv)
 					 * We could pass PGDATA just in an environment variable
 					 * but we do -D too for clearer postmaster 'ps' display
 					 */
-					pgdata_opt = psprintf("-D \"%s\" ", pgdata_D);
+					initStringInfo(&buf);
+					appendStringInfoString(&buf, "-D ");
+					appendStringInfoShell(&buf, pgdata_D);
+					appendStringInfoChar(&buf, ' ');
+					pgdata_opt = buf.data;
 					pg_free(pgdata_D);
 					break;
 				}
