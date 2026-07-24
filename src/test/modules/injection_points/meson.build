@@ -45,6 +45,7 @@ injection_points_isolation = [
   'heap_lock_update',
   'on_conflict_probe_window',
   'multixact-aborted-updater',
+  'vacuum_skip_lock_stats',
 ]
 
 # wait_cleanup terminates another backend, whose FATAL message can be lost
