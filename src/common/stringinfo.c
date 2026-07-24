@@ -285,6 +285,140 @@ appendStringInfoSpaces(StringInfo str, int count)
 }
 
 /*
+ * Append the given string to the shell command being built in str, with
+ * shell-style quoting as needed to create exactly one argument.
+ *
+ * Forbid LF or CR characters, which have scant practical use beyond designing
+ * security breaches.  The Windows command shell is unusable as a conduit for
+ * arguments containing LF or CR characters.
+ *
+ * appendStringInfoShell() reports an error and does not return if LF or CR
+ * appears; in the backend it does ereport(ERROR), while in frontend code it
+ * prints a message and exits.  appendStringInfoShellNoError() omits those
+ * characters from the result, and returns false if there were any.
+ *
+ * If you make any changes here, also update appendShellString and
+ * appendShellStringNoError.
+ */
+void
+appendStringInfoShell(StringInfo str, const char *s)
+{
+	if (!appendStringInfoShellNoError(str, s))
+	{
+#ifndef FRONTEND
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("shell command argument contains a newline or carriage return: \"%s\"",
+						s)));
+#else
+		fprintf(stderr,
+				_("shell command argument contains a newline or carriage return: \"%s\"\n"),
+				s);
+		exit(EXIT_FAILURE);
+#endif
+	}
+}
+
+bool
+appendStringInfoShellNoError(StringInfo str, const char *s)
+{
+#ifdef WIN32
+	int			backslash_run_length = 0;
+#endif
+	bool		ok = true;
+	const char *p;
+
+	/*
+	 * Don't bother with adding quotes if the string is nonempty and clearly
+	 * contains only safe characters.
+	 */
+	if (*s != '\0' &&
+		strspn(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./:") == strlen(s))
+	{
+		appendStringInfoString(str, s);
+		return ok;
+	}
+
+#ifndef WIN32
+	appendStringInfoChar(str, '\'');
+	for (p = s; *p; p++)
+	{
+		if (*p == '\n' || *p == '\r')
+		{
+			ok = false;
+			continue;
+		}
+
+		if (*p == '\'')
+			appendStringInfoString(str, "'\"'\"'");
+		else
+			appendStringInfoChar(str, *p);
+	}
+	appendStringInfoChar(str, '\'');
+#else							/* WIN32 */
+
+	/*
+	 * A Windows system() argument experiences two layers of interpretation.
+	 * First, cmd.exe interprets the string.  Its behavior is undocumented,
+	 * but a caret escapes any byte except LF or CR that would otherwise have
+	 * special meaning.  Handling of a caret before LF or CR differs between
+	 * "cmd.exe /c" and other modes, and it is unusable here.
+	 *
+	 * Second, the new process parses its command line to construct argv (see
+	 * https://msdn.microsoft.com/en-us/library/17w5ykft.aspx).  This treats
+	 * backslash-double quote sequences specially.
+	 */
+	appendStringInfoString(str, "^\"");
+	for (p = s; *p; p++)
+	{
+		if (*p == '\n' || *p == '\r')
+		{
+			ok = false;
+			continue;
+		}
+
+		/* Change N backslashes before a double quote to 2N+1 backslashes. */
+		if (*p == '"')
+		{
+			while (backslash_run_length)
+			{
+				appendStringInfoString(str, "^\\");
+				backslash_run_length--;
+			}
+			appendStringInfoString(str, "^\\");
+		}
+		else if (*p == '\\')
+			backslash_run_length++;
+		else
+			backslash_run_length = 0;
+
+		/*
+		 * Decline to caret-escape the most mundane characters, to ease
+		 * debugging and lest we approach the command length limit.
+		 */
+		if (!((*p >= 'a' && *p <= 'z') ||
+			  (*p >= 'A' && *p <= 'Z') ||
+			  (*p >= '0' && *p <= '9')))
+			appendStringInfoChar(str, '^');
+		appendStringInfoChar(str, *p);
+	}
+
+	/*
+	 * Change N backslashes at end of argument to 2N backslashes, because they
+	 * precede the double quote that terminates the argument.
+	 */
+	while (backslash_run_length)
+	{
+		appendStringInfoString(str, "^\\");
+		backslash_run_length--;
+	}
+	appendStringInfoString(str, "^\"");
+#endif							/* WIN32 */
+
+	return ok;
+}
+
+/*
  * appendBinaryStringInfo
  *
  * Append arbitrary binary data to a StringInfo, allocating more space
