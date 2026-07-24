@@ -23,6 +23,7 @@
 #include "parser/parse_relation.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
+#include "optimizer/clauses.h"
 #include "utils/lsyscache.h"
 
 
@@ -1374,17 +1375,17 @@ remove_nulling_relids_mutator(Node *node,
 		if (phv->phlevelsup == context->sublevels_up &&
 			!bms_overlap(phv->phrels, context->except_relids))
 		{
-			/*
-			 * Note: it might seem desirable to remove the PHV altogether if
-			 * phnullingrels goes to empty.  Currently we dare not do that
-			 * because we use PHVs in some cases to enforce separate identity
-			 * of subexpressions; see wrap_option usages in prepjointree.c.
-			 */
+			int			orig_size;
+			int			size;
+
 			/* Copy the PlaceHolderVar and mutate what's below ... */
 			phv = (PlaceHolderVar *)
 				expression_tree_mutator(node,
 										remove_nulling_relids_mutator,
 										context);
+
+			orig_size = bms_num_members(phv->phnullingrels);
+
 			/* ... and replace the copy's phnullingrels field */
 			phv->phnullingrels = bms_difference(phv->phnullingrels,
 												context->removable_relids);
@@ -1392,6 +1393,29 @@ remove_nulling_relids_mutator(Node *node,
 			phv->phrels = bms_difference(phv->phrels,
 										 context->removable_relids);
 			Assert(!bms_is_empty(phv->phrels));
+
+			size = bms_num_members(phv->phnullingrels);
+
+			/*
+			 * Note: it might seem desirable to remove the PHV altogether if
+			 * phnullingrels goes to empty.  Currently we dare not do that
+			 * because we use PHVs in some cases to enforce separate identity
+			 * of subexpressions; see wrap_option usages in prepjointree.c.
+			 *
+			 * However, if the PHV was previously nullable but now has no nulling
+			 * relations, and its inner expression is pseudo-constant, it has
+			 * effectively become a constant.  We can dissolve it immediately
+			 * by returning the inner expression.
+			 *
+			 * TODO : Check and confirm if there are any cases where this also might be wrong.
+			 */
+			if (orig_size > 0 &&
+				size == 0 &&
+				is_pseudo_constant_clause((Node *) phv->phexpr))
+			{
+				return (Node *) phv->phexpr;
+			}
+
 			return (Node *) phv;
 		}
 		/* Otherwise fall through to copy the PlaceHolderVar normally */

@@ -4321,3 +4321,26 @@ SELECT COUNT(*) FROM onek t1 LEFT JOIN tenk1 t2
     ON (t2.thousand = t1.tenthous OR t2.thousand = t1.thousand);
 SELECT COUNT(*) FROM onek t1 LEFT JOIN tenk1 t2
     ON (t2.thousand = t1.tenthous OR t2.thousand = t1.thousand);
+
+-- Test Bug 19560 (loss of qual after join removal)
+CREATE TEMP TABLE bug_19560_items (id text, owner text);
+CREATE TEMP TABLE bug_19560_follows (item_id text, user_id text, UNIQUE (user_id, item_id));
+INSERT INTO bug_19560_items VALUES ('1', 'alice');
+INSERT INTO bug_19560_follows VALUES ('1', 'bob');
+
+-- should return 0
+SELECT COUNT(*)
+FROM bug_19560_items items
+LEFT JOIN bug_19560_follows follows ON follows.item_id = items.id AND follows.user_id = 'bob'
+LEFT JOIN (SELECT 'bob' AS id) viewer ON TRUE
+WHERE items.owner = viewer.id;
+
+-- explain should show the filter items.owner = 'bob'
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*)
+FROM bug_19560_items items
+LEFT JOIN bug_19560_follows follows ON follows.item_id = items.id AND follows.user_id = 'bob'
+LEFT JOIN (SELECT 'bob' AS id) viewer ON TRUE
+WHERE items.owner = viewer.id;
+
+DROP TABLE bug_19560_items, bug_19560_follows;
