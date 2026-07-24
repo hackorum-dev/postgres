@@ -240,6 +240,20 @@ extern void appendStringInfoChar(StringInfo str, char ch);
 extern void appendStringInfoSpaces(StringInfo str, int count);
 
 /*------------------------
+ * appendStringInfoShell
+ * appendStringInfoShellNoError
+ *
+ * Append a string to str, escaping it with shell-style quoting as needed to
+ * create exactly one argument.  If the input contains a CR or LF character,
+ * appendStringInfoShell will ereport(ERROR, ...) in backend code or fprintf +
+ * exit in frontend code.  If a non-local transfer of control is undesirable,
+ * appendStringInfoShellNoError can be used; it will omit such characters from
+ * the output and return false if any are present.
+ */
+extern void appendStringInfoShell(StringInfo str, const char *s);
+extern bool appendStringInfoShellNoError(StringInfo str, const char *s);
+
+/*------------------------
  * appendBinaryStringInfo
  * Append arbitrary binary data to a StringInfo, allocating more space
  * if necessary.

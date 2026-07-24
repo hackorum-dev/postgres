@@ -576,6 +576,9 @@ appendByteaLiteral(PQExpBuffer buf, const unsigned char *str, size_t length,
  * appendShellString() simply prints an error and dies if LF or CR appears.
  * appendShellStringNoError() omits those characters from the result, and
  * returns false if there were any.
+ *
+ * If you make any changes here, also update appendStringInfoShell and
+ * appendStringInfoShellNoError.
  */
 void
 appendShellString(PQExpBuffer buf, const char *str)
