@@ -13,6 +13,8 @@
  *
  * NOTE: Do not use system-provided typedefs (e.g. uintptr_t, uint32_t, etc)
  * in probe definitions, as they cause compilation errors on macOS.
+ * Also avoid "long long": SystemTap's dtrace(1) rejects it.  Use "long"
+ * for 64-bit quantities on our LP64 DTrace platforms.
  */
 #define LocalTransactionId unsigned int
 #define LWLockMode int
@@ -83,9 +85,9 @@ provider postgresql {
 	probe twophase__checkpoint__done();
 
 	probe smgr__md__read__start(ForkNumber, BlockNumber, Oid, Oid, Oid, int);
-	probe smgr__md__read__done(ForkNumber, BlockNumber, Oid, Oid, Oid, int, long long int, long long int);
+	probe smgr__md__read__done(ForkNumber, BlockNumber, Oid, Oid, Oid, int, long, long);
 	probe smgr__md__write__start(ForkNumber, BlockNumber, Oid, Oid, Oid, int);
-	probe smgr__md__write__done(ForkNumber, BlockNumber, Oid, Oid, Oid, int, long long int, long long int);
+	probe smgr__md__write__done(ForkNumber, BlockNumber, Oid, Oid, Oid, int, long, long);
 
 	probe wal__insert(unsigned char, unsigned char);
 	probe wal__switch();
