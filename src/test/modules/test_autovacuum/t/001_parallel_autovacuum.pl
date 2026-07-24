@@ -36,7 +36,7 @@ $node->init;
 $node->append_conf(
 	'postgresql.conf', qq{
 autovacuum_max_workers = 1
-autovacuum_worker_slots = 1
+autovacuum_worker_slots = 2
 autovacuum_max_parallel_workers = 2
 max_worker_processes = 10
 max_parallel_workers = 10
@@ -166,6 +166,74 @@ $node->safe_psql(
 ok(1,
 	"vacuum delay parameter changes are propagated to parallel vacuum workers"
 );
+
+# Test 3:
+# Check whether a cost limit rebalance reaches the parallel workers. The
+# leader pauses right after taking the shared cost param snapshot
+# (balance = 1, limit 500), then a second autovacuum worker starts
+# (balance = 2, limit 250). After resume, the parallel workers' first
+# parameter load must show the rebalanced 250, not the snapshotted 500.
+
+# Second worker's table lives in another database: no indexes, no cost
+# reloptions (participates in balancing)
+$node->safe_psql('postgres', 'CREATE DATABASE regress_db2');
+$node->safe_psql(
+	'regress_db2', qq{
+	CREATE TABLE filler (id int, pad text) WITH (autovacuum_enabled = false);
+	INSERT INTO filler SELECT g, repeat('x', 100) FROM generate_series(1, 200000) g;
+});
+
+# Allow a second autovacuum worker.
+$node->safe_psql(
+	'postgres', qq{
+	ALTER SYSTEM SET autovacuum_max_workers = 2;
+	SELECT pg_reload_conf();
+});
+
+# Quiesce catalogs so no extra worker skews the balance.
+$node->safe_psql($_, 'VACUUM ANALYZE')
+  for ('postgres', 'regress_db2', 'template1');
+
+prepare_for_next_test($node, 3);
+$node->safe_psql('regress_db2', 'UPDATE filler SET id = id + 1');
+
+my $db2oid = $node->safe_psql('postgres',
+	"SELECT oid FROM pg_database WHERE datname = 'regress_db2'");
+my $filleroid =
+  $node->safe_psql('regress_db2', "SELECT 'filler'::regclass::oid");
+
+$log_offset = -s $node->logfile;
+
+# Pause the leader after the shared cost param snapshot.
+$node->safe_psql('postgres',
+	"SELECT injection_points_attach('autovacuum-start-parallel-vacuum', 'wait')"
+);
+$node->safe_psql('postgres',
+	'ALTER TABLE test_autovac SET (autovacuum_enabled = true)');
+$node->wait_for_event('autovacuum worker',
+	'autovacuum-start-parallel-vacuum');
+
+# Second worker -> balance = 2
+$node->safe_psql('regress_db2',
+	'ALTER TABLE filler SET (autovacuum_enabled = true)');
+$node->wait_for_log(
+	qr/VacuumUpdateCosts\(db=$db2oid, rel=$filleroid, dobalance=yes, cost_limit=250,/,
+	$log_offset);
+
+$node->safe_psql('postgres',
+	"SELECT injection_points_wakeup('autovacuum-start-parallel-vacuum')");
+$node->safe_psql('postgres',
+	"SELECT injection_points_detach('autovacuum-start-parallel-vacuum')");
+
+# First param load must show the rebalanced limit.
+$node->wait_for_log(
+	qr/parallel autovacuum worker updated cost params: cost_limit=\d+,/,
+	$log_offset);
+my $log = slurp_file($node->logfile, $log_offset);
+my @limits =
+  $log =~ /parallel autovacuum worker updated cost params: cost_limit=(\d+),/g;
+note("parallel worker cost_limit sequence: @limits");
+is($limits[0], '250', 'parallel workers see the rebalanced cost limit');
 
 $node->stop;
 done_testing();
