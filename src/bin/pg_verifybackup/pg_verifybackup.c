@@ -24,6 +24,7 @@
 #include "common/parse_manifest.h"
 #include "fe_utils/simple_list.h"
 #include "getopt_long.h"
+#include "lib/stringinfo.h"
 #include "pg_verifybackup.h"
 #include "pgtime.h"
 
@@ -1235,17 +1236,22 @@ parse_required_wal(verifier_context *context, char *pg_waldump_path,
 
 	while (this_wal_range != NULL)
 	{
-		char	   *pg_waldump_cmd;
+		StringInfoData buf;
 
-		pg_waldump_cmd = psprintf("\"%s\" --quiet --path=\"%s\" --timeline=%u --start=%X/%08X --end=%X/%08X\n",
-								  pg_waldump_path, wal_path, this_wal_range->tli,
-								  LSN_FORMAT_ARGS(this_wal_range->start_lsn),
-								  LSN_FORMAT_ARGS(this_wal_range->end_lsn));
+		initStringInfo(&buf);
+		appendStringInfoShell(&buf, pg_waldump_path);
+		appendStringInfoString(&buf, " --quiet --path=");
+		appendStringInfoShell(&buf, wal_path);
+		appendStringInfo(&buf, " --timeline=%u --start=%X/%08X --end=%X/%08X",
+						 this_wal_range->tli,
+						 LSN_FORMAT_ARGS(this_wal_range->start_lsn),
+						 LSN_FORMAT_ARGS(this_wal_range->end_lsn));
 		fflush(NULL);
-		if (system(pg_waldump_cmd) != 0)
+		if (system(buf.data) != 0)
 			report_backup_error(context,
 								"WAL parsing failed for timeline %u",
 								this_wal_range->tli);
+		pfree(buf.data);
 
 		this_wal_range = this_wal_range->next;
 	}
