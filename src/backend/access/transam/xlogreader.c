@@ -186,20 +186,35 @@ XLogReaderFree(XLogReaderState *state)
  * abort records might need more space.)
  *
  * Note: This routine should *never* be called for xl_tot_len until the header
- * of the record has been fully validated.
+ * of the record has been fully validated (including the XLogRecordMaxSize
+ * bound).  Size math uses size_t so near-UINT32_MAX lengths cannot wrap to a
+ * small allocation.
  */
 static void
 allocate_recordbuf(XLogReaderState *state, uint32 reclength)
 {
-	uint32		newSize = reclength;
+	size_t		newSize = (size_t) reclength;
+	size_t		minsize = (size_t) 5 * Max(BLCKSZ, XLOG_BLCKSZ);
 
-	newSize += XLOG_BLCKSZ - (newSize % XLOG_BLCKSZ);
-	newSize = Max(newSize, 5 * Max(BLCKSZ, XLOG_BLCKSZ));
+	/*
+	 * Round up to a multiple of XLOG_BLCKSZ.  When already aligned (including
+	 * zero), advance by a full page — same as the historical uint32 formula.
+	 */
+	newSize += (size_t) XLOG_BLCKSZ - (newSize % (size_t) XLOG_BLCKSZ);
+	if (newSize < minsize)
+		newSize = minsize;
+
+	/*
+	 * Callers must reject xl_tot_len > XLogRecordMaxSize first.  With that
+	 * bound, the rounded size always fits in uint32 (and palloc's limit).
+	 */
+	Assert(newSize <= (size_t) XLogRecordMaxSize + (size_t) XLOG_BLCKSZ);
+	Assert(newSize <= (size_t) PG_UINT32_MAX);
 
 	if (state->readRecordBuf)
 		pfree(state->readRecordBuf);
 	state->readRecordBuf = (char *) palloc(newSize);
-	state->readRecordBufSize = newSize;
+	state->readRecordBufSize = (uint32) newSize;
 }
 
 /*
@@ -664,13 +679,25 @@ restart:
 	}
 	else
 	{
-		/* There may be no next page if it's too small. */
+		/*
+		 * There may be no next page if it's too small.  Cap xl_tot_len before
+		 * contrecord reassembly so we never allocate or copy based on a
+		 * garbage length from a recycled page.
+		 */
 		if (total_len < SizeOfXLogRecord)
 		{
 			report_invalid_record(state,
 								  "invalid record length at %X/%08X: expected at least %u, got %u",
 								  LSN_FORMAT_ARGS(RecPtr),
 								  (uint32) SizeOfXLogRecord, total_len);
+			goto err;
+		}
+		if (total_len > XLogRecordMaxSize)
+		{
+			report_invalid_record(state,
+								  "invalid record length at %X/%08X: expected at most %u, got %u",
+								  LSN_FORMAT_ARGS(RecPtr),
+								  XLogRecordMaxSize, total_len);
 			goto err;
 		}
 		/* We'll validate the header once we have the next page. */
@@ -1146,6 +1173,20 @@ ValidXLogRecordHeader(XLogReaderState *state, XLogRecPtr RecPtr,
 							  "invalid record length at %X/%08X: expected at least %u, got %u",
 							  LSN_FORMAT_ARGS(RecPtr),
 							  (uint32) SizeOfXLogRecord, record->xl_tot_len);
+		return false;
+	}
+	/*
+	 * Symmetric with XLogRecordAssemble(): the reader must not attempt to
+	 * reassemble or decode a record larger than XLogRecordMaxSize.  Without
+	 * this bound, a crafted multi-page xl_tot_len near UINT32_MAX can overflow
+	 * allocate_recordbuf()'s size math and corrupt memory during reassembly.
+	 */
+	if (record->xl_tot_len > XLogRecordMaxSize)
+	{
+		report_invalid_record(state,
+							  "invalid record length at %X/%08X: expected at most %u, got %u",
+							  LSN_FORMAT_ARGS(RecPtr),
+							  XLogRecordMaxSize, record->xl_tot_len);
 		return false;
 	}
 	if (!RmgrIdIsValid(record->xl_rmid))
