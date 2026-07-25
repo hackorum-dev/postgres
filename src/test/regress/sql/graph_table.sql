@@ -559,6 +559,14 @@ ALTER PROPERTY GRAPH myshop ALTER VERTEX TABLE products
 -- ruleutils reverse parsing
 SELECT pg_get_viewdef('customers_us'::regclass);
 
+-- Reverse-parse a WHERE clause on the whole graph pattern.
+CREATE VIEW customers_us_where AS
+SELECT * FROM GRAPH_TABLE (myshop MATCH (c IS customers)-[IS customer_orders]->(o IS orders)
+                                  WHERE c.address = 'US'
+                                  COLUMNS (c.name AS customer_name));
+SELECT pg_get_viewdef('customers_us_where'::regclass);
+DROP VIEW customers_us_where;
+
 -- test view/graph nesting
 
 CREATE VIEW customers_view AS SELECT customer_id, 'redacted' || customer_id AS name_redacted, address FROM customers;
