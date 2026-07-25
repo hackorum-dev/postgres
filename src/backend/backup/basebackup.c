@@ -135,6 +135,13 @@ static long long int total_checksum_failures;
 static bool noverify_checksums = false;
 
 /*
+ * Did the checkpoint this backup starts from have data checksums fully
+ * enabled?  If not, pages older than the backup start can legitimately lack
+ * checksums, so nothing is verified for the duration of the backup.
+ */
+static bool checksums_on_at_start = false;
+
+/*
  * Definition of one element part of an exclusion list, used for paths part
  * of checksum validation or base backups.  "name" is the name of the file
  * or path to check for exclusion.  If "match_prefix" is true, any items
@@ -277,6 +284,7 @@ perform_base_backup(basebackup_options *opt, bbsink *sink,
 
 	state.startptr = backup_state->startpoint;
 	state.starttli = backup_state->starttli;
+	checksums_on_at_start = backup_state->checksums_on;
 
 	/*
 	 * Once do_pg_backup_start has been called, ensure that any failure causes
@@ -1609,13 +1617,14 @@ sendFile(bbsink *sink, const char *readfilename, const char *tarfilename,
 	Assert((sink->bbs_buffer_length % BLCKSZ) == 0);
 
 	/*
-	 * If we weren't told not to verify checksums, and if checksums are
-	 * enabled for this cluster, and if this is a relation file, then verify
-	 * the checksum.  We cannot at this point check if checksums are enabled
-	 * or disabled as that might change, thus we check at each point where we
+	 * If we weren't told not to verify checksums, and if checksums were
+	 * enabled as of the checkpoint this backup started from, and if this is a
+	 * relation file, then verify the checksum.  Checksums can still be
+	 * disabled while the backup runs, thus we check at each point where we
 	 * could be validating a checksum.
 	 */
-	if (!noverify_checksums && RelFileNumberIsValid(relfilenumber))
+	if (!noverify_checksums && checksums_on_at_start &&
+		RelFileNumberIsValid(relfilenumber))
 		verify_checksum = true;
 
 	/*

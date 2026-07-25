@@ -4844,6 +4844,8 @@ SetDataChecksumsOn(void)
 	MyProc->delayChkptFlags &= ~DELAY_CHKPT_START;
 	END_CRIT_SECTION();
 
+	INJECTION_POINT("datachecksums-on-before-checkpoint", NULL);
+
 	RequestCheckpoint(CHECKPOINT_FORCE | CHECKPOINT_WAIT | CHECKPOINT_FAST);
 	WaitForProcSignalBarrier(barrier);
 }
@@ -9574,11 +9576,19 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
 			 * its REDO pointer.  The oldest point in WAL that would be needed
 			 * to restore starting from the checkpoint is precisely the REDO
 			 * pointer.
+			 *
+			 * Also record whether that checkpoint had data checksums fully
+			 * enabled.  Enabling completes before the checkpoint which
+			 * flushes the rewritten pages, so otherwise pages on disk can
+			 * legitimately lack checksums even though their LSN predates the
+			 * backup start.
 			 */
 			LWLockAcquire(ControlFileLock, LW_SHARED);
 			state->checkpointloc = ControlFile->checkPoint;
 			state->startpoint = ControlFile->checkPointCopy.redo;
 			state->starttli = ControlFile->checkPointCopy.ThisTimeLineID;
+			state->checksums_on = (ControlFile->checkPointCopy.dataChecksumState ==
+								   PG_DATA_CHECKSUM_VERSION);
 			checkpointfpw = ControlFile->checkPointCopy.fullPageWrites;
 			LWLockRelease(ControlFileLock);
 
