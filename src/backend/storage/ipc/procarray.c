@@ -3351,7 +3351,8 @@ GetCurrentVirtualXIDs(TransactionId limitXmin, bool excludeXmin0,
 }
 
 /*
- * GetConflictingVirtualXIDs -- returns an array of currently active VXIDs.
+ * GetConflictingVirtualXIDs -- returns an array of currently active VXIDs
+ * considered in conflict with recovery up to limitXmin.
  *
  * Usage is limited to conflict resolution during recovery on standby servers.
  * limitXmin is supplied as either a cutoff with snapshotConflictHorizon
@@ -3379,6 +3380,13 @@ GetCurrentVirtualXIDs(TransactionId limitXmin, bool excludeXmin0,
  *	 Assert(limitXmin < lowest(KnownAssignedXids))
  * but that would not be true in the case of FATAL errors lagging in array,
  * but we already know those are bogus anyway, so we skip that test.
+ *
+ * That reasoning covers snapshots acquired with GetSnapshotData, which yields
+ * transaction xmins above limitXmin, but it does not cover backends that
+ * import snapshots using SET TRANSACTION SNAPSHOT, which call
+ * ProcArrayInstallImportedXmin instead.  A backend that imports a snapshot
+ * from one of the conflicting backends can acquire xmin <= limitXmin, so
+ * the conflicting VXID set can grow, but only while the set is non-empty.
  *
  * If dbOid is valid we skip backends attached to other databases.
  *
@@ -3430,8 +3438,9 @@ GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid)
 			 * no snapshot currently. We hold a Share lock to avoid contention
 			 * with users taking snapshots.  That is not a problem because the
 			 * current xmin is always at least one higher than the latest
-			 * removed xid, so any new snapshot would never conflict with the
-			 * test here.
+			 * removed xid, so any snapshot acquired with GetSnapshotData
+			 * would never conflict with the test here.  See the header
+			 * comment for the caveat about imported snapshots.
 			 */
 			if (!TransactionIdIsValid(limitXmin) ||
 				(TransactionIdIsValid(pxmin) && !TransactionIdFollows(pxmin, limitXmin)))
