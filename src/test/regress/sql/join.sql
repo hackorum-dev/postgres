@@ -3189,6 +3189,24 @@ explain (verbose, costs off)
 select t1.a from sj t1 where t1.b in (
   select t2.b from sj t2 join sj t3 on t2.c=t3.c);
 
+-- Check that quals get hoisted to the appropriate join level after SJE removal
+explain (verbose, costs off)
+select a2.a
+from sj b1
+  join sj a1 on b1.b = a1.a
+  join sj a2 on a2.a = a1.a and a2.b = a1.b;
+
+-- Same, when a semijoin removal happens first
+explain (verbose, costs off)
+select a1.a from sj b1 join sj a1 on a1.a = b1.b
+  where exists (select 1 from sj s where s.a = a1.a);
+
+-- A different case, where modified qual is on a lower join level
+explain (verbose, costs off)
+select a2.a
+from ((sj b1 join sj a1 on true) join sj c1 on c1.b = a1.a)
+  join sj a2 on a2.a = a1.a and a2.b = a1.b;
+
 --
 -- SJE corner case: uniqueness of an inner is [partially] derived from
 -- baserestrictinfo clauses.

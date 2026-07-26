@@ -87,8 +87,8 @@ static bool is_innerrel_unique_for(PlannerInfo *root,
 static Node *remove_rel_from_jointree(Node *jtnode, int relid,
 									  Node **orphan_quals, int *nremoved);
 static Node *merge_quals(Node *quals1, Node *quals2);
-static void fixup_selfjoin_jointree(PlannerInfo *root, Node *jtnode,
-									int relid);
+static void fixup_selfjoin_jointree(PlannerInfo *root, Node *jtnode, int relid,
+									Node **hoist_quals, bool *found_relid);
 static List *fixup_selfjoin_quals(PlannerInfo *root, List *quals, int relid);
 static Node *replace_selfjoin_qual(Node *qual);
 static int	self_join_candidates_cmp(const void *a, const void *b);
@@ -1207,7 +1207,9 @@ is_innerrel_unique_for(PlannerInfo *root,
  * jointree and then pointing everything that referenced it at the relation we
  * are keeping.  All the conditions that were attached to the removed relation
  * thereby become conditions on the remaining one, which is what we want:
- * we've proven that the two relations select the same rows.
+ * we've proven that the two relations select the same rows.  Note that
+ * this change requires us to hoist those conditions up to someplace
+ * syntactically enclosing toKeep.
  *
  * kmark and rmark are the PlanRowMarks (if any) for the kept and removed
  * relations.  We could re-locate those, but the caller already found them.
@@ -1219,6 +1221,8 @@ remove_self_join_rel(PlannerInfo *root,
 {
 	Node	   *orphan_quals = NULL;
 	int			nremoved = 0;
+	Node	   *hoist_quals = NULL;
+	bool		found_relid = false;
 
 	Assert(toKeep->relid > 0);
 	Assert(toRemove->relid > 0);
@@ -1257,7 +1261,11 @@ remove_self_join_rel(PlannerInfo *root,
 
 	/* Clean up the quals that the substitution has messed with */
 	fixup_selfjoin_jointree(root, (Node *) root->parse->jointree,
-							toKeep->relid);
+							toKeep->relid,
+							&hoist_quals, &found_relid);
+	/* We shouldn't have any leftover quals, and we must have found toKeep */
+	Assert(hoist_quals == NULL);
+	Assert(found_relid);
 
 	/*
 	 * If the removed relation has a row mark, transfer it to the remaining
@@ -1406,24 +1414,69 @@ merge_quals(Node *quals1, Node *quals2)
  *		Clean up the query's jointree quals after self-join elimination has
  *		merged one relation into another.  (relid is the kept relation.)
  *
- * See fixup_selfjoin_quals() for what needs fixing.
+ * See fixup_selfjoin_quals() for what needs fixing locally to each qual list.
+ * In addition, we need to check quals to see if they refer to relid, and if
+ * so make sure they get hoisted to someplace syntactically above relid.
+ * Do that using a "hoist_quals" in/out parameter similar to "orphan_quals"
+ * in remove_rel_from_jointree.  (We can't readily merge these concerns into
+ * a single pass, since remove_rel_from_jointree must run before we relabel
+ * the removed rel's Vars.)  In addition, *found_relid is set true if
+ * the subtree rooted at jtnode is found to contain relid's RangeTblRef,
+ * so that we can tell when to stop hoisting quals.
+ * If a qual gets hoisted up, we apply fixup_selfjoin_quals() to it only
+ * after it reaches its final level.  This rule improves the odds of
+ * detecting duplicate quals.
  */
 static void
-fixup_selfjoin_jointree(PlannerInfo *root, Node *jtnode, int relid)
+fixup_selfjoin_jointree(PlannerInfo *root, Node *jtnode, int relid,
+						Node **hoist_quals, bool *found_relid)
 {
 	if (jtnode == NULL)
 		return;
 	if (IsA(jtnode, RangeTblRef))
 	{
-		/* nothing to do here */
+		RangeTblRef *rtr = (RangeTblRef *) jtnode;
+
+		if (rtr->rtindex == relid)
+		{
+			Assert(!*found_relid);
+			*found_relid = true;
+		}
 	}
 	else if (IsA(jtnode, FromExpr))
 	{
 		FromExpr   *f = (FromExpr *) jtnode;
+		Node	   *sub_hoist_quals = NULL;
+		bool		sub_found_relid = false;
 		ListCell   *l;
 
 		foreach(l, f->fromlist)
-			fixup_selfjoin_jointree(root, (Node *) lfirst(l), relid);
+			fixup_selfjoin_jointree(root, (Node *) lfirst(l), relid,
+									&sub_hoist_quals, &sub_found_relid);
+		if (sub_found_relid)
+		{
+			/* This FromExpr covers relid, so OK to stop hoisting quals here */
+			f->quals = merge_quals(sub_hoist_quals, f->quals);
+			Assert(!*found_relid);
+			*found_relid = true;
+		}
+		else
+		{
+			/* We might need to hoist some of our own quals too */
+			List	   *hoistable = NIL;
+			List	   *keepable = NIL;
+
+			foreach_ptr(Node, qual, castNode(List, f->quals))
+			{
+				if (bms_is_member(relid, pull_varnos(root, qual)))
+					hoistable = lappend(hoistable, qual);
+				else
+					keepable = lappend(keepable, qual);
+			}
+			f->quals = (Node *) keepable;
+			sub_hoist_quals = merge_quals(sub_hoist_quals, (Node *) hoistable);
+			*hoist_quals = merge_quals(sub_hoist_quals, *hoist_quals);
+		}
 		f->quals = (Node *) fixup_selfjoin_quals(root,
 												 castNode(List, f->quals),
 												 relid);
@@ -1431,9 +1484,39 @@ fixup_selfjoin_jointree(PlannerInfo *root, Node *jtnode, int relid)
 	else if (IsA(jtnode, JoinExpr))
 	{
 		JoinExpr   *j = (JoinExpr *) jtnode;
+		Node	   *sub_hoist_quals = NULL;
+		bool		sub_found_relid = false;
 
-		fixup_selfjoin_jointree(root, j->larg, relid);
-		fixup_selfjoin_jointree(root, j->rarg, relid);
+		fixup_selfjoin_jointree(root, j->larg, relid,
+								&sub_hoist_quals, &sub_found_relid);
+		fixup_selfjoin_jointree(root, j->rarg, relid,
+								&sub_hoist_quals, &sub_found_relid);
+		if (sub_found_relid)
+		{
+			/* This JoinExpr covers relid, so OK to stop hoisting quals here */
+			j->quals = merge_quals(sub_hoist_quals, j->quals);
+			Assert(!*found_relid);
+			*found_relid = true;
+		}
+		else
+		{
+			/* We might need to hoist some of our own quals too */
+			List	   *hoistable = NIL;
+			List	   *keepable = NIL;
+
+			foreach_ptr(Node, qual, castNode(List, j->quals))
+			{
+				if (bms_is_member(relid, pull_varnos(root, qual)))
+					hoistable = lappend(hoistable, qual);
+				else
+					keepable = lappend(keepable, qual);
+			}
+			j->quals = (Node *) keepable;
+			sub_hoist_quals = merge_quals(sub_hoist_quals, (Node *) hoistable);
+			/* We should never need to hoist quals above an outer join */
+			Assert(sub_hoist_quals == NULL || j->jointype == JOIN_INNER);
+			*hoist_quals = merge_quals(sub_hoist_quals, *hoist_quals);
+		}
 		j->quals = (Node *) fixup_selfjoin_quals(root,
 												 castNode(List, j->quals),
 												 relid);

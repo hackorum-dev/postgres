@@ -8269,6 +8269,64 @@ select t1.a from sj t1 where t1.b in (
                Filter: (t3.c IS NOT NULL)
 (10 rows)
 
+-- Check that quals get hoisted to the appropriate join level after SJE removal
+explain (verbose, costs off)
+select a2.a
+from sj b1
+  join sj a1 on b1.b = a1.a
+  join sj a2 on a2.a = a1.a and a2.b = a1.b;
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Nested Loop
+   Output: a2.a
+   Join Filter: (b1.b = a2.a)
+   ->  Seq Scan on public.sj a2
+         Output: a2.a, a2.b, a2.c
+         Filter: ((a2.a IS NOT NULL) AND (a2.b IS NOT NULL))
+   ->  Seq Scan on public.sj b1
+         Output: b1.a, b1.b, b1.c
+(8 rows)
+
+-- Same, when a semijoin removal happens first
+explain (verbose, costs off)
+select a1.a from sj b1 join sj a1 on a1.a = b1.b
+  where exists (select 1 from sj s where s.a = a1.a);
+               QUERY PLAN                
+-----------------------------------------
+ Nested Loop
+   Output: s.a
+   Inner Unique: true
+   Join Filter: (b1.b = s.a)
+   ->  Seq Scan on public.sj b1
+         Output: b1.a, b1.b, b1.c
+   ->  Materialize
+         Output: s.a
+         ->  Seq Scan on public.sj s
+               Output: s.a
+               Filter: (s.a IS NOT NULL)
+(11 rows)
+
+-- A different case, where modified qual is on a lower join level
+explain (verbose, costs off)
+select a2.a
+from ((sj b1 join sj a1 on true) join sj c1 on c1.b = a1.a)
+  join sj a2 on a2.a = a1.a and a2.b = a1.b;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Nested Loop
+   Output: a2.a
+   ->  Nested Loop
+         Output: a2.a
+         Join Filter: (c1.b = a2.a)
+         ->  Seq Scan on public.sj a2
+               Output: a2.a, a2.b, a2.c
+               Filter: ((a2.a IS NOT NULL) AND (a2.b IS NOT NULL))
+         ->  Seq Scan on public.sj c1
+               Output: c1.a, c1.b, c1.c
+   ->  Seq Scan on public.sj b1
+         Output: b1.a, b1.b, b1.c
+(12 rows)
+
 --
 -- SJE corner case: uniqueness of an inner is [partially] derived from
 -- baserestrictinfo clauses.
