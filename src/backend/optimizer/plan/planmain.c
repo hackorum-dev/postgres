@@ -28,6 +28,7 @@
 #include "optimizer/paths.h"
 #include "optimizer/placeholder.h"
 #include "optimizer/planmain.h"
+#include "parser/parsetree.h"
 
 
 /*
@@ -273,6 +274,22 @@ query_planner(PlannerInfo *root,
 	 * root->agg_clause_list and root->group_expr_list.
 	 */
 	setup_eager_aggregation(root);
+
+	/*
+	 * If there's a result relation, initialize all_result_relids to include
+	 * it; and if we've verified that it is non-inheriting, mark it as a leaf
+	 * target.  add_other_rels_to_query() will expand these sets if the result
+	 * relation has children.
+	 */
+	if (parse->resultRelation)
+	{
+		RangeTblEntry *rte = rt_fetch(parse->resultRelation, parse->rtable);
+
+		root->all_result_relids = bms_make_singleton(parse->resultRelation);
+		if (!rte->inh)
+			root->leaf_result_relids =
+				bms_make_singleton(parse->resultRelation);
+	}
 
 	/*
 	 * Now expand appendrels by adding "otherrels" for their children.  We
