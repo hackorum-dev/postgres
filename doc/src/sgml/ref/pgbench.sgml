@@ -1242,6 +1242,19 @@ pgbench <optional> <replaceable>options</replaceable> </optional> <replaceable>d
      </para>
 
      <para>
+      A column whose value is SQL <literal>NULL</literal> is stored as
+      the <literal>NULL</literal> value, just as
+      <literal>\set <replaceable>varname</replaceable> NULL</literal> does.
+      It can be tested for nullness, and it is substituted into SQL text as
+      the unquoted word <literal>NULL</literal>.  In the
+      <literal>extended</literal> and <literal>prepared</literal> query
+      modes, however, it is passed as the string <literal>NULL</literal>
+      rather than as an SQL null parameter.  A non-null column whose text is
+      <literal>NULL</literal>, in any letter case, is also treated as the
+      null value in expressions.
+     </para>
+
+     <para>
       <literal>\gset</literal> and <literal>\aset</literal> cannot be used in
       pipeline mode, since the query results are not yet available by the time
       the commands would need them.
