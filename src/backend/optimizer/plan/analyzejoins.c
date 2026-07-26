@@ -1764,16 +1764,15 @@ match_unique_clauses(PlannerInfo *root, RelOptInfo *outer, List *uclauses,
 }
 
 /*
- * Find and remove one unique self-join in a group of base relations that have
+ * Find and remove unique self-joins in a group of base relations that have
  * the same Oid.
  *
- * Returns true if we removed a relation.  We stop at the first removal,
- * because it invalidates all the derived information that the tests here
- * depend on; our caller will come back for more once that's been rebuilt.
+ * Return true if we removed any joins.
  */
 static bool
 remove_self_joins_one_group(PlannerInfo *root, Relids relids)
 {
+	bool		removed = false;
 	int			k;				/* Index of kept relation */
 	int			r = -1;			/* Index of removed relation */
 
@@ -1917,21 +1916,27 @@ remove_self_joins_one_group(PlannerInfo *root, Relids relids)
 			if (!match_unique_clauses(root, rrel, uclauses, krel->relid))
 				continue;
 
-			/* OK, remove rrel from the query, and report that we did so */
+			/* OK, remove rrel from the query */
 			remove_self_join_rel(root, krel, rrel, kmark, rmark);
+			removed = true;
 
-			return true;
+			/*
+			 * Since relation r is now gone, we mustn't keep looking for
+			 * matches to it.  But there seems no reason why we can't continue
+			 * scanning the relids for additional join pairs.
+			 */
+			break;
 		}
 	}
 
-	return false;
+	return removed;
 }
 
 /*
- * Gather indexes of base relations from the joinlist and try to eliminate one
- * self join.
+ * Gather indexes of base relations from the joinlist and try to eliminate
+ * self-joins.
  *
- * Returns true if we removed a relation.
+ * Returns true if we removed any joins.
  */
 static bool
 remove_self_joins_recurse(PlannerInfo *root, List *joinlist)
@@ -1939,7 +1944,7 @@ remove_self_joins_recurse(PlannerInfo *root, List *joinlist)
 	bool		removed = false;
 	ListCell   *jl;
 	Relids		relids = NULL;
-	SelfJoinCandidate *candidates = NULL;
+	SelfJoinCandidate *candidates;
 	int			i;
 	int			j;
 	int			numRels;
@@ -1975,8 +1980,7 @@ remove_self_joins_recurse(PlannerInfo *root, List *joinlist)
 		else if (IsA(jlnode, List))
 		{
 			/* Recursively consider SJE within the sub-joinlist */
-			if (remove_self_joins_recurse(root, (List *) jlnode))
-				return true;
+			removed |= remove_self_joins_recurse(root, (List *) jlnode);
 		}
 		else
 			elog(ERROR, "unrecognized joinlist node type: %d",
@@ -1985,9 +1989,9 @@ remove_self_joins_recurse(PlannerInfo *root, List *joinlist)
 
 	numRels = bms_num_members(relids);
 
-	/* Need at least two relations for the join */
+	/* No hope if not at least two relations */
 	if (numRels < 2)
-		return false;
+		return removed;
 
 	/*
 	 * In order to find relations with the same oid we first build an array of
@@ -2008,18 +2012,17 @@ remove_self_joins_recurse(PlannerInfo *root, List *joinlist)
 
 	/*
 	 * Iteratively form a group of relation indexes with the same oid and
-	 * launch the routine that detects a self-join in this group.
+	 * launch the routine that detects self-joins in this group.
 	 *
-	 * At the end of the iteration, exclude the group from the overall relids
-	 * list. So each next iteration of the cycle will involve less and less
-	 * value of relids.
+	 * We remove considered relations from relids as we scan, so that that set
+	 * should be empty at the end.
 	 */
 	i = 0;
-	for (j = 1; j < numRels + 1; j++)
+	for (j = 1; j <= numRels; j++)
 	{
 		if (j == numRels || candidates[j].reloid != candidates[i].reloid)
 		{
-			if (j - i >= 2 && !removed)
+			if (j - i >= 2)
 			{
 				/* Create a group of relation indexes with the same oid */
 				Relids		group = NULL;
@@ -2032,12 +2035,10 @@ remove_self_joins_recurse(PlannerInfo *root, List *joinlist)
 				relids = bms_del_members(relids, group);
 
 				/*
-				 * Try to remove a self-join from a group of identical
-				 * entries.  We stop as soon as we succeed, since the
-				 * information we based the decision on is then out of date;
-				 * our caller will start over from scratch.
+				 * Try to remove self-joins from the group of identical
+				 * entries.
 				 */
-				removed = remove_self_joins_one_group(root, group);
+				removed |= remove_self_joins_one_group(root, group);
 				bms_free(group);
 			}
 			else
@@ -2103,9 +2104,10 @@ self_join_candidates_cmp(const void *a, const void *b)
  * 'joinlist' is the top-level joinlist of the query; we use it to identify
  * groups of relations that could be joined to each other.
  *
- * We remove at most one self-join per call, and return true if we did so.
- * The caller must then recompute everything that was derived from the
- * jointree before calling here again.
+ * We return true if we removed any self-joins.  If so, the caller must
+ * recompute everything that was derived from the jointree, and should then
+ * try join simplifications again since we might have exposed opportunities
+ * for additional simplifications.
  */
 bool
 remove_useless_self_joins(PlannerInfo *root, List *joinlist)
@@ -2115,6 +2117,6 @@ remove_useless_self_joins(PlannerInfo *root, List *joinlist)
 		(list_length(joinlist) == 1 && !IsA(linitial(joinlist), List)))
 		return false;
 
-	/* Try to merge one pair of relations participating in a self-join. */
+	/* Try to merge pairs of self-joined relations. */
 	return remove_self_joins_recurse(root, joinlist);
 }
