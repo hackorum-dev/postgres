@@ -492,7 +492,7 @@ MarkAsPreparingGuts(GlobalTransaction gxact, FullTransactionId fxid,
 	gxact->locking_backend = MyProcNumber;
 	gxact->valid = false;
 	gxact->inredo = false;
-	strcpy(gxact->gid, gid);
+	strlcpy(gxact->gid, gid, GIDSIZE);
 
 	/*
 	 * Remember that we have this GlobalTransaction entry locked for us. If we
@@ -2126,6 +2126,12 @@ RecoverPreparedTransactions(void)
 		hdr = (TwoPhaseFileHeader *) buf;
 		Assert(TransactionIdEquals(hdr->xid,
 								   XidFromFullTransactionId(gxact->fxid)));
+		if (hdr->gidlen == 0 || hdr->gidlen >= GIDSIZE)
+			ereport(ERROR,
+					(errcode(ERRCODE_PROTOCOL_VIOLATION),
+					 errmsg("invalid two-phase GID length %u in state file",
+							hdr->gidlen)));
+
 		bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
 		gid = (const char *) bufptr;
 		bufptr += MAXALIGN(hdr->gidlen);
@@ -2535,6 +2541,18 @@ PrepareRedoAdd(FullTransactionId fxid, char *buf,
 	gid = (const char *) bufptr;
 
 	/*
+	 * The write-time path (PrepareTransaction) rejects oversized GIDs,
+	 * but a replayed record must not be trusted: a crafted or corrupted
+	 * XLOG_XACT_PREPARE record can carry any gidlen, and gxact->gid is
+	 * only GIDSIZE bytes long.
+	 */
+	if (hdr->gidlen == 0 || hdr->gidlen >= GIDSIZE)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROTOCOL_VIOLATION),
+				 errmsg("invalid two-phase GID length %u in WAL record",
+						hdr->gidlen)));
+
+	/*
 	 * Reserve the GID for the given transaction in the redo code path.
 	 *
 	 * This creates a gxact struct and puts it into the active array.
@@ -2597,7 +2615,7 @@ PrepareRedoAdd(FullTransactionId fxid, char *buf,
 	gxact->valid = false;
 	gxact->ondisk = !XLogRecPtrIsValid(start_lsn);
 	gxact->inredo = true;		/* yes, added in redo */
-	strcpy(gxact->gid, gid);
+	strlcpy(gxact->gid, gid, GIDSIZE);
 
 	/* And insert it into the active array */
 	Assert(TwoPhaseState->numPrepXacts < max_prepared_xacts);

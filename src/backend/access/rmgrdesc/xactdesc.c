@@ -16,6 +16,9 @@
 
 #include "access/transam.h"
 #include "access/xact.h"
+#ifdef FRONTEND
+#include "common/logging.h"
+#endif
 #include "replication/origin.h"
 #include "storage/sinval.h"
 #include "storage/standbydefs.h"
@@ -255,6 +258,20 @@ ParsePrepareRecord(uint8 info, xl_xact_prepare *xlrec, xl_xact_parsed_prepare *p
 	parsed->nstats = xlrec->ncommitstats;
 	parsed->nabortstats = xlrec->nabortstats;
 	parsed->nmsgs = xlrec->ninvalmsgs;
+
+	/* parsed->twophase_gid is only GIDSIZE bytes long */
+	if (xlrec->gidlen >= GIDSIZE)
+	{
+#ifdef FRONTEND
+		pg_fatal("invalid two-phase GID length %u in WAL record",
+				 xlrec->gidlen);
+#else
+		ereport(ERROR,
+				(errcode(ERRCODE_PROTOCOL_VIOLATION),
+				 errmsg("invalid two-phase GID length %u in WAL record",
+						xlrec->gidlen)));
+#endif
+	}
 
 	strncpy(parsed->twophase_gid, bufptr, xlrec->gidlen);
 	bufptr += MAXALIGN(xlrec->gidlen);
