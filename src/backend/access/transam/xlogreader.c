@@ -31,6 +31,7 @@
 #include "access/xlogrecord.h"
 #include "catalog/pg_control.h"
 #include "common/pg_lzcompress.h"
+#include "common/relpath.h"
 #include "replication/origin.h"
 
 #ifndef FRONTEND
@@ -1800,6 +1801,14 @@ DecodeXLogRecord(XLogReaderState *state,
 
 			COPY_HEADER_FIELD(&fork_flags, sizeof(uint8));
 			blk->forknum = fork_flags & BKPBLOCK_FORK_MASK;
+			if (blk->forknum > MAX_FORKNUM)
+			{
+				report_invalid_record(state,
+									  "invalid fork number %u at %X/%08X",
+									  blk->forknum,
+									  LSN_FORMAT_ARGS(state->ReadRecPtr));
+				goto err;
+			}
 			blk->flags = fork_flags;
 			blk->has_image = ((fork_flags & BKPBLOCK_HAS_IMAGE) != 0);
 			blk->has_data = ((fork_flags & BKPBLOCK_HAS_DATA) != 0);

@@ -145,6 +145,14 @@ GetRelationPath(Oid dbOid, Oid spcOid, RelFileNumber relNumber,
 {
 	RelPathStr	rp;
 
+	/*
+	 * WAL decode/display paths can reach here with unvalidated fork
+	 * numbers; clamp as defense in depth so we never index forkNames[]
+	 * out of bounds.  Callers that can ereport should validate first.
+	 */
+	if (forkNumber < MAIN_FORKNUM || forkNumber > MAX_FORKNUM)
+		forkNumber = MAIN_FORKNUM;
+
 	if (spcOid == GLOBALTABLESPACE_OID)
 	{
 		/* Shared system relations live in {datadir}/global */
