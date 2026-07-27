@@ -156,17 +156,25 @@ PostgreSQL documentation
      <varlistentry>
       <term><option>-o</option> <replaceable class="parameter">options</replaceable></term>
       <term><option>--old-options</option> <replaceable class="parameter">options</replaceable></term>
-      <listitem><para>options to be passed directly to the
-      old <command>postgres</command> command;  multiple
-      option invocations are appended</para></listitem>
+      <listitem><para>
+        Options to be passed directly to the old <command>postgres</command>
+        command; multiple option invocations are appended.  Options are passed via
+        the shell, so that multiple options, or options with their arguments, can
+        be passed together; however, this also means including shell metacharacters
+        in the argument to this option can have undesirable effects.
+      </para></listitem>
      </varlistentry>
 
      <varlistentry>
       <term><option>-O</option> <replaceable class="parameter">options</replaceable></term>
       <term><option>--new-options</option> <replaceable class="parameter">options</replaceable></term>
-      <listitem><para>options to be passed directly to the
-      new <command>postgres</command> command;  multiple
-      option invocations are appended</para></listitem>
+      <listitem><para>
+        Options to be passed directly to the new <command>postgres</command>
+        command; multiple option invocations are appended.  Options are passed via
+        the shell, so that multiple options, or options with their arguments, can
+        be passed together; however, this also means including shell metacharacters
+        in the argument to this option can have undesirable effects.
+      </para></listitem>
      </varlistentry>
 
      <varlistentry>
