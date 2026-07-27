@@ -13,6 +13,8 @@
 #ifndef POSTGRES_FDW_H
 #define POSTGRES_FDW_H
 
+#include "commands/explain.h"
+#include "commands/explain_state.h"
 #include "foreign/foreign.h"
 #include "lib/stringinfo.h"
 #include "libpq/libpq-be-fe.h"
@@ -151,10 +153,36 @@ typedef enum PgFdwSamplingMethod
 	ANALYZE_SAMPLE_BERNOULLI,	/* TABLESAMPLE bernoulli */
 } PgFdwSamplingMethod;
 
+typedef struct PgFdwExplainRemotePlans
+{
+	int			plan_node_id;
+	StringInfoData explain_plan;
+
+} PgFdwExplainRemotePlans;
+
+typedef struct PgFdwExplainState
+{
+	List	   *all_remote_plans;
+
+	/* EXPLAIN options */
+	bool		remote_plans;
+	List	   *options;		/* raw user DefElem list, for forwarding */
+} PgFdwExplainState;
+
 /* in postgres_fdw.c */
 extern int	set_transmission_modes(void);
 extern void reset_transmission_modes(int nestlevel);
 extern void process_pending_request(AsyncRequest *areq);
+extern void postgresExplainPerNode(PlanState *planstate, List *ancestors,
+								   const char *relationship,
+								   const char *plan_name,
+								   ExplainState *es);
+extern void postgresExplainPerPlan(PlannedStmt *plannedstmt,
+								   IntoClause *into,
+								   ExplainState *es,
+								   const char *queryString,
+								   ParamListInfo params,
+								   QueryEnvironment *queryEnv);
 
 /* in connection.c */
 extern PGconn *GetConnection(UserMapping *user, bool will_prep_stmt,
@@ -179,6 +207,13 @@ extern List *ExtractExtensionList(const char *extensionsString,
 								  bool warnOnMissing);
 extern char *process_pgfdw_appname(const char *appname);
 extern char *pgfdw_application_name;
+
+/*
+ * Previous values of the EXPLAIN hooks we install in _PG_init.  The hook
+ * functions live in postgres_fdw.c, so these have to be visible there.
+ */
+extern explain_per_node_hook_type prev_explain_per_node_hook;
+extern explain_per_plan_hook_type prev_explain_per_plan_hook;
 
 /* in deparse.c */
 extern void classifyConditions(PlannerInfo *root,
