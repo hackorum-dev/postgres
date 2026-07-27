@@ -383,6 +383,11 @@ errstart(int elevel, const char *domain)
 		 * 3. the error occurred after proc_exit has begun to run.  (It's
 		 * proc_exit's responsibility to see that this doesn't turn into
 		 * infinite recursion!)
+		 *
+		 * When handling shmem exit callbacks, even FATAL is insufficient:
+		 * if a subsystem is only partially detached we're likely to leak
+		 * memory or otherwise leave shmem in a corrupted state.  In that
+		 * case, we promote the ERROR all the way to PANIC.
 		 */
 		if (elevel == ERROR)
 		{
@@ -390,6 +395,9 @@ errstart(int elevel, const char *domain)
 				ExitOnAnyError ||
 				proc_exit_inprogress)
 				elevel = FATAL;
+
+			if (proc_exit_inprogress && shmem_exit_inprogress)
+				elevel = PANIC;
 		}
 
 		/*
