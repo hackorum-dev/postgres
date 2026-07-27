@@ -418,6 +418,116 @@ appendStringInfoShellNoError(StringInfo str, const char *s)
 	return ok;
 }
 
+#ifdef WIN32
+/*
+ * Append the given string to the command line being built in str, quoted so
+ * that command-line-to-argv parsing on Windows will reconstruct it as exactly
+ * one argument.  This is for use when building a command line to be passed
+ * to CreateProcess() without the involvement of cmd.exe; in contrast,
+ * appendStringInfoShell() quotes for both of the layers of interpretation
+ * that a system() argument experiences.
+ *
+ * As with appendStringInfoShell, LF and CR characters are forbidden.
+ * appendStringInfoWin32Argv() reports an error and does not return if LF or
+ * CR appears; in the backend it does ereport(ERROR), while in frontend code
+ * it prints a message and exits.  appendStringInfoWin32ArgvNoError() omits
+ * those characters from the result, and returns false if there were any.
+ *
+ * NB: Don't apply this function to the name of the executable, only to
+ * arguments being passed to it! Special rules apply to argv[0] as opposed
+ * to later command-line arguments: in secure usage, it should start with
+ * a double quote; provided that it does, it will continue until the next
+ * double quote. No escape characters are recognized in between. This works
+ * because Windows filenames cannot contain a double quote. Hence, while
+ * command-line argument values should be escaped using this function (except
+ * when they are also passed through the shell), the right way to escape the
+ * name of the executable is to use a format string like "\"%s\"", which
+ * looks wrong but isn't.
+ */
+void
+appendStringInfoWin32Argv(StringInfo str, const char *s)
+{
+	if (!appendStringInfoWin32ArgvNoError(str, s))
+	{
+#ifndef FRONTEND
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("command line argument contains a newline or carriage return: \"%s\"",
+						s)));
+#else
+		fprintf(stderr,
+				_("command line argument contains a newline or carriage return: \"%s\"\n"),
+				s);
+		exit(EXIT_FAILURE);
+#endif
+	}
+}
+
+bool
+appendStringInfoWin32ArgvNoError(StringInfo str, const char *s)
+{
+	int			backslash_run_length = 0;
+	bool		ok = true;
+	const char *p;
+
+	/*
+	 * Don't bother with adding quotes if the string is nonempty and clearly
+	 * contains only safe characters.
+	 */
+	if (*s != '\0' &&
+		strspn(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./:") == strlen(s))
+	{
+		appendStringInfoString(str, s);
+		return ok;
+	}
+
+	/*
+	 * https://msdn.microsoft.com/en-us/library/17w5ykft.aspx describes the
+	 * rules that the Microsoft C runtime will follow when parsing the string
+	 * we construct here.
+	 */
+	appendStringInfoChar(str, '"');
+	for (p = s; *p; p++)
+	{
+		if (*p == '\n' || *p == '\r')
+		{
+			ok = false;
+			continue;
+		}
+
+		/* Change N backslashes before a double quote to 2N+1 backslashes. */
+		if (*p == '"')
+		{
+			while (backslash_run_length)
+			{
+				appendStringInfoChar(str, '\\');
+				backslash_run_length--;
+			}
+			appendStringInfoChar(str, '\\');
+		}
+		else if (*p == '\\')
+			backslash_run_length++;
+		else
+			backslash_run_length = 0;
+
+		appendStringInfoChar(str, *p);
+	}
+
+	/*
+	 * Change N backslashes at end of argument to 2N backslashes, because they
+	 * precede the double quote that terminates the argument.
+	 */
+	while (backslash_run_length)
+	{
+		appendStringInfoChar(str, '\\');
+		backslash_run_length--;
+	}
+	appendStringInfoChar(str, '"');
+
+	return ok;
+}
+#endif							/* WIN32 */
+
 /*
  * appendBinaryStringInfo
  *

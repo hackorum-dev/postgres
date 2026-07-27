@@ -253,6 +253,23 @@ extern void appendStringInfoSpaces(StringInfo str, int count);
 extern void appendStringInfoShell(StringInfo str, const char *s);
 extern bool appendStringInfoShellNoError(StringInfo str, const char *s);
 
+#ifdef WIN32
+/*------------------------
+ * appendStringInfoWin32Argv
+ * appendStringInfoWin32ArgvNoError
+ *
+ * Append a string to str, quoted so that command-line-to-argv parsing on
+ * Windows will reconstruct it as exactly one argument.  Use this for
+ * command-line arguments being passed directly via CreateProcess() without
+ * the involvement of cmd.exe; do NOT use it for the name of the executable
+ * itself (see the function header comments for appendStringInfoWin32Argv
+ * for full details). Other than the different quoting behavior, these
+ * functions behave like appendStringInfoShell/appendStringInfoShellNoError.
+ */
+extern void appendStringInfoWin32Argv(StringInfo str, const char *s);
+extern bool appendStringInfoWin32ArgvNoError(StringInfo str, const char *s);
+#endif
+
 /*------------------------
  * appendBinaryStringInfo
  * Append arbitrary binary data to a StringInfo, allocating more space
