@@ -66,6 +66,33 @@ $u->query_safe('BEGIN');
 $u->query_safe('DELETE FROM victim WHERE k = 7');
 my $u_xid = $u->query_safe('SELECT pg_current_xact_id()');
 
+# Commit something so that the standby's xmax ends up past U's XID. Without
+# this, the visibility functions answer through their xid >= xmax range test
+# and the test would pass without examining the in-progress array.
+$primary->safe_psql('postgres', 'INSERT INTO burner VALUES (0)');
+$primary->wait_for_replay_catchup($standby);
+
+# A recovery snapshot stores its in-progress XIDs in subxip and leaves xip
+# empty. Verify the SQL interface before creating any subxid overflow.
+is( $standby->safe_psql(
+		'postgres',
+		"SELECT pg_visible_in_snapshot('$u_xid'::xid8, pg_current_snapshot())"
+	),
+	'f',
+	'pg_current_snapshot reports a running XID as not visible');
+
+is( $standby->safe_psql(
+		'postgres',
+		"SELECT txid_visible_in_snapshot('$u_xid'::bigint, txid_current_snapshot())"
+	),
+	'f',
+	'txid_current_snapshot reports a running XID as not visible');
+
+is( $standby->safe_psql(
+		'postgres', 'SELECT count(*) FROM victim WHERE k = 7'),
+	1,
+	'the running transaction has not deleted its row');
+
 # O deletes another row in an early subtransaction, then overflows the subxid
 # cache and stays open. Recovery removes the deleting subtransaction's XID
 # from KnownAssignedXids, so a later visibility check of the tuple's xmax
@@ -82,10 +109,10 @@ $o->query_safe(
 	       BEGIN INSERT INTO burner VALUES (i); EXCEPTION WHEN OTHERS THEN NULL; END;
 	     END LOOP; END \$\$]);
 
-# Commit something so that the standby's xmax ends up past U's XID.  Without
-# this, XidInMVCCSnapshot() answers via its xid >= xmax range test and the
-# test would pass without exercising anything.
-$primary->safe_psql('postgres', 'INSERT INTO burner VALUES (0)');
+# Commit after O has overflowed to flush its preceding xid-assignment WAL, then
+# wait until the standby has removed those subxids and marked snapshots
+# overflowed.
+$primary->safe_psql('postgres', 'INSERT INTO burner VALUES (-1)');
 $primary->wait_for_replay_catchup($standby);
 
 my $s1 = $standby->background_psql('postgres');
@@ -208,6 +235,26 @@ $s5->query_safe(
 	   SET TRANSACTION SNAPSHOT '$snap3']);
 is($s5->query_safe('SELECT count(*) FROM victim'),
 	$before, 're-exported recovery snapshot can be imported');
+
+is( $s5->query_safe(
+			'SELECT count(*) '
+		  . 'FROM pg_snapshot_xip(pg_current_snapshot()) AS x(xid) '
+		  . 'WHERE xid < pg_snapshot_xmin(pg_current_snapshot()) '
+		  . 'OR xid >= pg_snapshot_xmax(pg_current_snapshot())'),
+	0,
+	'pg_current_snapshot has no explicit XIDs outside its range');
+
+is( $s5->query_safe(
+			'SELECT count(*) '
+		  . 'FROM txid_snapshot_xip(txid_current_snapshot()) AS x(xid) '
+		  . 'WHERE xid < txid_snapshot_xmin(txid_current_snapshot()) '
+		  . 'OR xid >= txid_snapshot_xmax(txid_current_snapshot())'),
+	0,
+	'txid_current_snapshot has no explicit XIDs outside its range');
+
+my $current_snapshot = $s5->query_safe('SELECT pg_current_snapshot()::text');
+is($s5->query_safe("SELECT '$current_snapshot'::pg_snapshot IS NOT NULL"),
+	't', 'pg_current_snapshot output is valid pg_snapshot input');
 
 $s5->query_safe('COMMIT');
 $s4->query_safe('COMMIT');

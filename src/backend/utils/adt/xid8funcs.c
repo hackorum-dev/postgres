@@ -3,11 +3,13 @@
  *
  *	Export internal transaction IDs to user level.
  *
- * Note that only top-level transaction IDs are exposed to user sessions.
- * This is important because xid8s frequently persist beyond the global
- * xmin horizon, or may even be shipped to other machines, so we cannot
- * rely on being able to correlate subtransaction IDs with their parents
- * via functions such as SubTransGetTopmostTransaction().
+ * Normally only top-level transaction IDs are exposed to user sessions.
+ * Snapshots taken during recovery can also expose subtransaction IDs, since
+ * recovery cannot distinguish them from top-level IDs. xid8s frequently
+ * persist beyond the global xmin horizon, or may even be shipped to other
+ * machines, so callers cannot rely on being able to correlate subtransaction
+ * IDs with their parents via functions such as
+ * SubTransGetTopmostTransaction().
  *
  * These functions are used to support the txid_XXX functions and the newer
  * pg_current_xact_id, pg_current_snapshot and related fmgr functions, since
@@ -33,6 +35,7 @@
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "storage/lwlock.h"
+#include "storage/proc.h"
 #include "storage/procarray.h"
 #include "storage/procnumber.h"
 #include "utils/builtins.h"
@@ -75,9 +78,11 @@ typedef struct
 
 /*
  * Compile-time limits on the procarray (MAX_BACKENDS processes plus
- * MAX_BACKENDS prepared transactions) guarantee nxip won't be too large.
+ * MAX_BACKENDS prepared transactions) and the number of subxids cached for
+ * each process guarantee nxip won't be too large.
  */
-StaticAssertDecl(MAX_BACKENDS * 2 <= PG_SNAPSHOT_MAX_NXIP,
+StaticAssertDecl((PGPROC_MAX_CACHED_SUBXIDS + 1) * MAX_BACKENDS * 2 <=
+				 PG_SNAPSHOT_MAX_NXIP,
 				 "possible overflow in pg_current_snapshot()");
 
 
@@ -365,37 +370,62 @@ pg_current_xact_id_if_assigned(PG_FUNCTION_ARGS)
  *
  *		Return current snapshot
  *
- * Note that only top-transaction XIDs are included in the snapshot.
+ * Snapshots taken during recovery can also include subtransaction XIDs because
+ * recovery cannot distinguish them from top-level XIDs.
  */
 Datum
 pg_current_snapshot(PG_FUNCTION_ARGS)
 {
 	pg_snapshot *snap;
-	uint32		nxip,
+	uint32		nxip = 0,
+				source_nxip,
 				i;
 	Snapshot	cur;
+	TransactionId *xip;
 	FullTransactionId next_fxid = ReadNextFullTransactionId();
 
 	cur = GetActiveSnapshot();
 	if (cur == NULL)
 		elog(ERROR, "no active snapshot set");
 
+	/*
+	 * A snapshot taken during recovery stores its in-progress XIDs in subxip
+	 * and leaves xip empty, so read the in-progress set from there. Reading
+	 * xip would report every running transaction as already completed.
+	 */
+	if (cur->takenDuringRecovery)
+	{
+		source_nxip = cur->subxcnt;
+		xip = cur->subxip;
+	}
+	else
+	{
+		source_nxip = cur->xcnt;
+		xip = cur->xip;
+	}
+
 	/* allocate */
-	nxip = cur->xcnt;
-	snap = palloc(PG_SNAPSHOT_SIZE(nxip));
+	snap = palloc(PG_SNAPSHOT_SIZE(source_nxip));
 
 	/*
-	 * Fill.  This is the current backend's active snapshot, so MyProc->xmin
-	 * is <= all these XIDs.  As long as that remains so, oldestXid can't
-	 * advance past any of these XIDs.  Hence, these XIDs remain allowable
-	 * relative to next_fxid.
+	 * Fill. Unlike SnapshotData's subxip, pg_snapshot's xip cannot contain
+	 * XIDs outside [xmin, xmax), so filter the source at this boundary. This
+	 * is the current backend's active snapshot, so MyProc->xmin protects all
+	 * retained XIDs from oldestXid. Hence, they remain allowable relative to
+	 * next_fxid.
 	 */
 	snap->xmin = FullTransactionIdFromAllowableAt(next_fxid, cur->xmin);
 	snap->xmax = FullTransactionIdFromAllowableAt(next_fxid, cur->xmax);
+	for (i = 0; i < source_nxip; i++)
+	{
+		if (TransactionIdPrecedes(xip[i], cur->xmin) ||
+			TransactionIdFollowsOrEquals(xip[i], cur->xmax))
+			continue;
+
+		snap->xip[nxip++] =
+			FullTransactionIdFromAllowableAt(next_fxid, xip[i]);
+	}
 	snap->nxip = nxip;
-	for (i = 0; i < nxip; i++)
-		snap->xip[i] =
-			FullTransactionIdFromAllowableAt(next_fxid, cur->xip[i]);
 
 	/*
 	 * We want them guaranteed to be in ascending order.  This also removes

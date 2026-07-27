@@ -2905,9 +2905,10 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
        <para>
         Returns a current <firstterm>snapshot</firstterm>, a data structure
         showing which transaction IDs are now in-progress.
-        Only top-level transaction IDs are included in the snapshot;
-        subtransaction IDs are not shown;  see <xref linkend="subxacts"/>
-        for details.
+        Normally, only top-level transaction IDs are included in the snapshot.
+        A snapshot taken during recovery can also include
+        subtransaction IDs because recovery cannot distinguish them from
+        top-level transaction IDs.  See <xref linkend="subxacts"/> for details.
        </para></entry>
       </row>
 
@@ -3086,8 +3087,10 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
         ID that is <literal>xmin &lt;= <replaceable>X</replaceable> &lt;
         xmax</literal> and not in this list was already completed at the time
         of the snapshot, and thus is either visible or dead according to its
-        commit status.  This list does not include the transaction IDs of
-        subtransactions (subxids).
+        commit status.  This list normally does not include the transaction IDs
+        of subtransactions (subxids), but a snapshot taken during recovery can
+        include them because recovery cannot distinguish subtransaction IDs
+        from top-level transaction IDs.
        </entry>
       </row>
      </tbody>
