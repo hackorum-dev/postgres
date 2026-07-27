@@ -837,6 +837,7 @@ initialize_environment(void)
 		unsetenv("PGKRBSRVNAME");
 		unsetenv("PGPASSFILE");
 		unsetenv("PGPASSWORD");
+		unsetenv("PGPORTADDR");
 		unsetenv("PGREQUIREPEER");
 		unsetenv("PGREQUIRESSL");
 		unsetenv("PGSERVICE");
@@ -893,6 +894,7 @@ initialize_environment(void)
 
 			snprintf(s, sizeof(s), "%d", port);
 			setenv("PGPORT", s, 1);
+			unsetenv("PGPORTADDR");
 		}
 		if (user != NULL)
 			setenv("PGUSER", user, 1);
