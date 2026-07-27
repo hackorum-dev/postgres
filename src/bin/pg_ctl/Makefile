@@ -16,21 +16,13 @@ subdir = src/bin/pg_ctl
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-# On Windows, we need to link with libpq, just for use of pqexpbuffer;
-# but let's not pull that in on platforms where we don't need it.
-ifeq ($(PORTNAME), win32)
-override CPPFLAGS := -I$(libpq_srcdir) $(CPPFLAGS)
-LDFLAGS_INTERNAL += $(libpq_pgport)
-SUBMAKE_LIBPQ := submake-libpq
-endif
-
 OBJS = \
 	$(WIN32RES) \
 	pg_ctl.o
 
 all: pg_ctl
 
-pg_ctl: $(OBJS) | submake-libpgport $(SUBMAKE_LIBPQ)
+pg_ctl: $(OBJS) | submake-libpgport
 	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

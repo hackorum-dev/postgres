@@ -31,10 +31,6 @@
 #include "lib/stringinfo.h"
 #include "utils/pidfile.h"
 
-#ifdef WIN32					/* on Unix, we don't need libpq */
-#include "pqexpbuffer.h"
-#endif
-
 
 typedef enum
 {
@@ -561,6 +557,11 @@ start_postmaster(void)
 			close(fd);
 	}
 
+	/*
+	 * Note that it is correct that the program name is simply surrounded by
+	 * double quotes, without any escaping. For more details, see the comments
+	 * for appendStringInfoWin32Argv().
+	 */
 	initStringInfo(&cmd);
 	appendStringInfo(&cmd, "\"%s\" /C ", comspec);
 	appendStringInfoShell(&cmd, exec_path);
@@ -1439,7 +1440,7 @@ pgwin32_IsInstalled(SC_HANDLE hSCM)
 static char *
 pgwin32_CommandLine(bool registration)
 {
-	PQExpBuffer cmdLine = createPQExpBuffer();
+	StringInfoData cmdLine;
 	char		cmdPath[MAXPGPATH];
 	int			ret;
 
@@ -1472,14 +1473,21 @@ pgwin32_CommandLine(bool registration)
 	/* use backslashes in path to avoid problems with some third-party tools */
 	make_native_path(cmdPath);
 
-	/* be sure to double-quote the executable's name in the command */
-	appendPQExpBuffer(cmdLine, "\"%s\"", cmdPath);
+	/*
+	 * Note that it is correct that the program name is simply surrounded by
+	 * double quotes, without any escaping. For more details, see the comments
+	 * for appendStringInfoWin32Argv().
+	 */
+	initStringInfo(&cmdLine);
+	appendStringInfo(&cmdLine, "\"%s\"", cmdPath);
 
 	/* append assorted switches to the command line, as needed */
 
 	if (registration)
-		appendPQExpBuffer(cmdLine, " runservice -N \"%s\"",
-						  register_servicename);
+	{
+		appendStringInfoString(&cmdLine, " runservice -N ");
+		appendStringInfoWin32Argv(&cmdLine, register_servicename);
+	}
 
 	if (pg_config)
 	{
@@ -1492,32 +1500,36 @@ pgwin32_CommandLine(bool registration)
 			exit(1);
 		}
 		make_native_path(dataDir);
-		appendPQExpBuffer(cmdLine, " -D \"%s\"", dataDir);
+		appendStringInfoString(&cmdLine, " -D ");
+		appendStringInfoWin32Argv(&cmdLine, dataDir);
 		free(dataDir);
 	}
 
 	if (registration && event_source != NULL)
-		appendPQExpBuffer(cmdLine, " -e \"%s\"", event_source);
+	{
+		appendStringInfoString(&cmdLine, " -e ");
+		appendStringInfoWin32Argv(&cmdLine, event_source);
+	}
 
 	if (registration && do_wait)
-		appendPQExpBufferStr(cmdLine, " -w");
+		appendStringInfoString(&cmdLine, " -w");
 
 	/* Don't propagate a value from an environment variable. */
 	if (registration && wait_seconds_arg && wait_seconds != DEFAULT_WAIT)
-		appendPQExpBuffer(cmdLine, " -t %d", wait_seconds);
+		appendStringInfo(&cmdLine, " -t %d", wait_seconds);
 
 	if (registration && silent_mode)
-		appendPQExpBufferStr(cmdLine, " -s");
+		appendStringInfoString(&cmdLine, " -s");
 
 	if (post_opts)
 	{
 		if (registration)
-			appendPQExpBuffer(cmdLine, " -o \"%s\"", post_opts);
+			appendStringInfo(&cmdLine, " -o \"%s\"", post_opts);
 		else
-			appendPQExpBuffer(cmdLine, " %s", post_opts);
+			appendStringInfo(&cmdLine, " %s", post_opts);
 	}
 
-	return cmdLine->data;
+	return cmdLine.data;
 }
 
 static void

@@ -438,7 +438,14 @@ retry:
 		return -1;
 	}
 
-	/* Format the cmd line */
+	/*
+	 * Format the cmd line.
+	 *
+	 * Note that it is correct that the program name is simply surrounded by
+	 * double quotes, without any escaping. The other arguments can't contain
+	 * any characters that need escaping. For more details, see the comments
+	 * for appendStringInfoWin32Argv().
+	 */
 #ifdef _WIN64
 	sprintf(paramHandleStr, "%llu", (LONG_PTR) paramHandle);
 #else
