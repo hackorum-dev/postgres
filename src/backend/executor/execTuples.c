@@ -64,7 +64,6 @@
 #include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "nodes/nodeFuncs.h"
-#include "port/pg_bitutils.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
 #include "utils/expandeddatum.h"
@@ -73,6 +72,16 @@
 
 static TupleDesc ExecTypeFromTLInternal(List *targetList,
 										bool skipjunk);
+static pg_always_inline void deform_heap_tuple(TupleDesc tupleDesc,
+											   int first_nonguaranteed,
+											   HeapTuple tuple,
+											   uint32 *offp,
+											   AttrNumber *nvalidp,
+											   Datum *values, bool *isnull,
+											   int stride, int reqnatts,
+											   bool support_cstring,
+											   const AttrNumber *attnums,
+											   int nrequested);
 static pg_always_inline void slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 													int reqnatts, bool support_cstring);
 static inline void tts_buffer_heap_store_tuple(TupleTableSlot *slot,
@@ -708,15 +717,16 @@ tts_minimal_store_tuple(TupleTableSlot *slot, MinimalTuple mtup, bool shouldFree
  * TupleTableSlotOps implementation for BufferHeapTupleTableSlot.
  */
 
-static TupleBatchMask
-tts_buffer_heap_getattrs(TupleTableSlot *slot, AttrNumber attnum,
-						 int first, int nrows, TupleBatchMask rows,
-						 Datum *values)
+static void
+tts_buffer_heap_batch_getsomeattrs(TupleTableSlot *slot,
+								   const AttrNumber *attnums, int natts,
+								   int first, int nrows,
+								   Datum *values, bool *isnull)
 {
 	BufferHeapTupleTableSlot *bslot;
 	HeapPageBatch *batch;
 	TupleDesc	tupledesc = slot->tts_tupleDescriptor;
-	TupleBatchMask nulls = 0;
+	AttrNumber	last_attnum;
 	Page		page;
 
 	Assert(TTS_IS_BUFFERTUPLE(slot));
@@ -727,37 +737,40 @@ tts_buffer_heap_getattrs(TupleTableSlot *slot, AttrNumber attnum,
 	Assert(slot_getbatch(slot) == &batch->batch);
 	Assert(batch->offsets != NULL);
 	Assert(BufferIsValid(bslot->buffer));
-	Assert(attnum > 0 && attnum <= tupledesc->natts);
+	Assert(attnums != NULL);
+	Assert(natts > 0);
 	Assert(first >= 0);
-	Assert(nrows >= 0 && nrows <= TUPLE_BATCH_MASK_BITS);
+	Assert(nrows > 0 && nrows <= TUPLE_BATCH_MASK_BITS);
 	Assert(nrows <= batch->batch.ntuples);
 	Assert(first <= batch->batch.ntuples - nrows);
-	Assert(nrows == TUPLE_BATCH_MASK_BITS || (rows >> nrows) == 0);
 	Assert(values != NULL);
+	Assert(isnull != NULL);
 
-	if (rows == 0)
-		return nulls;
+	last_attnum = attnums[natts - 1];
+	if (unlikely(last_attnum > tupledesc->natts))
+		elog(ERROR, "invalid attribute number %d", last_attnum);
+	Assert(attnums[0] > 0);
+	for (int i = 1; i < natts; i++)
+		Assert(attnums[i - 1] < attnums[i]);
 
 	page = BufferGetPage(bslot->buffer);
-	while (rows != 0)
+	for (int i = 0; i < nrows; i++)
 	{
-		int			i = pg_rightmost_one_pos64(rows);
 		OffsetNumber lineoff = batch->offsets[first + i];
 		ItemId		lpp = PageGetItemId(page, lineoff);
 		HeapTupleData tuple;
-		bool		isnull;
+		AttrNumber	nvalid = 0;
+		uint32		off = 0;
 
 		Assert(ItemIdIsNormal(lpp));
 		tuple.t_data = (HeapTupleHeader) PageGetItem(page, lpp);
 		tuple.t_len = ItemIdGetLength(lpp);
-		values[i] = heap_getattr(&tuple, attnum, tupledesc, &isnull);
-		if (isnull)
-			nulls |= UINT64CONST(1) << i;
-
-		rows &= rows - 1;
+		deform_heap_tuple(tupledesc, slot->tts_first_nonguaranteed,
+						  &tuple, &off, &nvalid,
+						  values + i, isnull + i,
+						  TUPLE_BATCH_MASK_BITS, last_attnum, false,
+						  attnums, natts);
 	}
-
-	return nulls;
 }
 
 static inline void
@@ -774,7 +787,8 @@ tts_buffer_heap_init(TupleTableSlot *slot)
 	Assert(slot->tts_batch == NULL);
 	if (slot->tts_flags & TTS_FLAG_SUPPORTS_BATCH)
 	{
-		bslot->batch.batch.getattrs = tts_buffer_heap_getattrs;
+		bslot->batch.batch.getsomeattrs =
+			tts_buffer_heap_batch_getsomeattrs;
 		slot->tts_batch = &bslot->batch.batch;
 	}
 }
@@ -1060,49 +1074,159 @@ tts_buffer_heap_store_tuple(TupleTableSlot *slot, HeapTuple tuple,
 	}
 }
 
+static pg_always_inline void
+getmissingattrs(TupleDesc tupleDesc, int startAttNum, int lastAttNum,
+				Datum *values, bool *isnull, int stride)
+{
+	AttrMissing *attrmiss = NULL;
+
+	if (unlikely(lastAttNum > tupleDesc->natts))
+		elog(ERROR, "invalid attribute number %d", lastAttNum);
+
+	if (tupleDesc->constr)
+		attrmiss = tupleDesc->constr->missing;
+
+	if (!attrmiss)
+	{
+		for (int attnum = startAttNum; attnum < lastAttNum; attnum++)
+		{
+			values[attnum * stride] = (Datum) 0;
+			isnull[attnum * stride] = true;
+		}
+	}
+	else
+	{
+		for (int attnum = startAttNum; attnum < lastAttNum; attnum++)
+		{
+			values[attnum * stride] = attrmiss[attnum].am_value;
+			isnull[attnum * stride] = !attrmiss[attnum].am_present;
+		}
+	}
+}
+
+static pg_always_inline void
+getmissingattrs_selected(TupleDesc tupleDesc, int startAttNum,
+						 const AttrNumber *attnums, int nrequested,
+						 int *next_requested,
+						 Datum *values, bool *isnull, int stride)
+{
+	AttrMissing *attrmiss = NULL;
+
+	if (unlikely(attnums[nrequested - 1] > tupleDesc->natts))
+		elog(ERROR, "invalid attribute number %d",
+			 attnums[nrequested - 1]);
+
+	if (tupleDesc->constr)
+		attrmiss = tupleDesc->constr->missing;
+
+	for (; *next_requested < nrequested; (*next_requested)++)
+	{
+		int			output_index = *next_requested;
+		int			attnum = attnums[output_index] - 1;
+
+		Assert(attnum >= startAttNum);
+		if (attrmiss && attrmiss[attnum].am_present)
+		{
+			values[output_index * stride] = attrmiss[attnum].am_value;
+			isnull[output_index * stride] = false;
+		}
+		else
+		{
+			values[output_index * stride] = (Datum) 0;
+			isnull[output_index * stride] = true;
+		}
+	}
+}
+
+static pg_always_inline Datum
+deform_heap_tuple_next_attr(CompactAttribute *cattrs, size_t attnum,
+							const char *tp, uint32 *off,
+							bool support_cstring)
+{
+	CompactAttribute *cattr = &cattrs[attnum];
+	int			attlen = cattr->attlen;
+
+	if (!support_cstring)
+		pg_assume(attlen > 0 || attlen == -1);
+	return align_fetch_then_add(tp, off, cattr->attbyval,
+								attlen, cattr->attalignby);
+}
+
+static pg_always_inline void
+deform_heap_tuple_skip_attrs(CompactAttribute *cattrs,
+							 size_t *attnum, size_t last_attnum,
+							 const char *tp, uint32 *off,
+							 bool support_cstring)
+{
+	for (; *attnum < last_attnum; (*attnum)++)
+		(void) deform_heap_tuple_next_attr(cattrs, *attnum, tp, off,
+										  support_cstring);
+}
+
+static pg_always_inline void
+deform_heap_tuple_skip_nullable_attrs(CompactAttribute *cattrs,
+									  size_t *attnum, size_t last_attnum,
+									  const char *tp, uint32 *off,
+									  const uint8 *bits,
+									  bool support_cstring)
+{
+	for (; *attnum < last_attnum; (*attnum)++)
+	{
+		if (!att_isnull(*attnum, bits))
+			(void) deform_heap_tuple_next_attr(cattrs, *attnum, tp, off,
+											  support_cstring);
+	}
+}
+
 /*
- * slot_deform_heap_tuple
- *		Given a TupleTableSlot, extract data from the slot's physical tuple
- *		into its Datum/isnull arrays.  Data is extracted up through the
- *		reqnatts'th column.  If there are insufficient attributes in the given
- *		tuple, then slot_getmissingattrs() is called to populate the
- *		remainder.  If reqnatts is above the number of attributes in the
- *		slot's TupleDesc, an error is raised.
+ * deform_heap_tuple
+ *		Extract data from a physical tuple into Datum/isnull arrays. Data is
+ *		extracted up through the reqnatts'th column. Array entries are
+ *		separated by stride. If attnums is NULL, every extracted attribute is
+ *		stored at its physical index. Otherwise, attnums must list nrequested
+ *		attributes in increasing order, and only those attributes are stored,
+ *		at their list indexes. Missing attributes are filled from the tuple
+ *		descriptor, and an invalid reqnatts raises an error.
+ *		Fixed-offset regions can skip directly to requested attributes.
+ *		Variable-offset regions advance through gaps separately, avoiding an
+ *		output check for every physical attribute.
  *
  *		This is essentially an incremental version of heap_deform_tuple:
  *		on each call we extract attributes up to the one needed, without
  *		re-computing information about previously extracted attributes.
- *		slot->tts_nvalid is the number of attributes already extracted.
+ *		*nvalidp is the number of attributes already extracted.
  *
- * This is marked as always inline, so the different offp for different types
- * of slots gets optimized away.
+ * This is marked as always inline, so stride and the different offp for
+ * different types of slots get optimized away.
  *
  * support_cstring should be passed as a const to allow the compiler only
  * emit code during inlining for cstring deforming when it's required.
  * cstrings can exist in MinimalTuples, but not in HeapTuples.
  */
 static pg_always_inline void
-slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
-					   int reqnatts, bool support_cstring)
+deform_heap_tuple(TupleDesc tupleDesc, int first_nonguaranteed,
+				  HeapTuple tuple, uint32 *offp, AttrNumber *nvalidp,
+				  Datum *values, bool *isnull, int stride,
+				  int reqnatts, bool support_cstring,
+				  const AttrNumber *attnums, int nrequested)
 {
 	CompactAttribute *cattrs;
 	CompactAttribute *cattr;
-	TupleDesc	tupleDesc = slot->tts_tupleDescriptor;
 	HeapTupleHeader tup = tuple->t_data;
 	size_t		attnum;
 	int			firstNonCacheOffsetAttr;
 	int			firstNonGuaranteedAttr;
 	int			firstNullAttr;
 	int			natts;
-	Datum	   *values;
-	bool	   *isnull;
+	int			next_requested = 0;
 	char	   *tp;				/* ptr to tuple data */
 	uint32		off;			/* offset in tuple data */
 
 	/* Did someone forget to call TupleDescFinalize()? */
 	Assert(tupleDesc->firstNonCachedOffsetAttr >= 0);
-
-	isnull = slot->tts_isnull;
+	Assert(attnums == NULL || *nvalidp == 0);
+	Assert(attnums == NULL || nrequested > 0);
+	Assert(attnums == NULL || attnums[nrequested - 1] == reqnatts);
 
 	/*
 	 * Some callers may form and deform tuples prior to NOT NULL constraints
@@ -1114,7 +1238,7 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	 * from the tuple and saves the additional cost of handling non-byval
 	 * attrs.
 	 */
-	firstNonGuaranteedAttr = Min(reqnatts, slot->tts_first_nonguaranteed);
+	firstNonGuaranteedAttr = Min(reqnatts, first_nonguaranteed);
 
 	firstNonCacheOffsetAttr = tupleDesc->firstNonCachedOffsetAttr;
 
@@ -1136,7 +1260,16 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 			 * And populate the isnull array for all attributes being fetched
 			 * from the tuple.
 			 */
-			populate_isnull_array(bp, natts, isnull);
+			if (attnums == NULL)
+			{
+				if (stride == 1)
+					populate_isnull_array(bp, natts, isnull);
+				else
+				{
+					for (int i = 0; i < natts; i++)
+						isnull[i * stride] = att_isnull(i, bp);
+				}
+			}
 		}
 		else
 		{
@@ -1171,9 +1304,8 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 		firstNullAttr = natts;
 	}
 
-	attnum = slot->tts_nvalid;
-	values = slot->tts_values;
-	slot->tts_nvalid = reqnatts;
+	attnum = *nvalidp;
+	*nvalidp = reqnatts;
 
 	/*
 	 * We store the tupleDesc's CompactAttribute array in 'cattrs' as gcc
@@ -1185,13 +1317,124 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	/* Ensure we calculated tp correctly */
 	Assert(tp == (char *) tup + tup->t_hoff);
 
+	if (attnums != NULL)
+	{
+		if (attnum < firstNonGuaranteedAttr)
+		{
+			int			attlen;
+
+			while (next_requested < nrequested &&
+				   attnums[next_requested] <= firstNonGuaranteedAttr)
+			{
+				int			output_index = next_requested++;
+
+				attnum = attnums[output_index] - 1;
+				cattr = &cattrs[attnum];
+				attlen = cattr->attlen;
+
+				pg_assume(attlen > 0);
+				Assert(cattr->attbyval == true);
+
+				off = cattr->attcacheoff;
+				isnull[output_index * stride] = false;
+				values[output_index * stride] =
+					fetch_att_noerr(tp + off, true, attlen);
+			}
+
+			attnum = firstNonGuaranteedAttr;
+			cattr = &cattrs[attnum - 1];
+			attlen = cattr->attlen;
+			off = cattr->attcacheoff + attlen;
+
+			if (attnum == reqnatts)
+				goto done;
+		}
+		else
+			off = *offp;
+
+		firstNonCacheOffsetAttr =
+			Min(firstNonCacheOffsetAttr, firstNullAttr);
+		if (attnum < firstNonCacheOffsetAttr)
+		{
+			int			attlen;
+
+			while (next_requested < nrequested &&
+				   attnums[next_requested] <= firstNonCacheOffsetAttr)
+			{
+				int			output_index = next_requested++;
+
+				attnum = attnums[output_index] - 1;
+				cattr = &cattrs[attnum];
+				attlen = cattr->attlen;
+				off = cattr->attcacheoff;
+				isnull[output_index * stride] = false;
+				values[output_index * stride] =
+					fetch_att_noerr(tp + off, cattr->attbyval, attlen);
+			}
+
+			attnum = firstNonCacheOffsetAttr;
+			cattr = &cattrs[attnum - 1];
+			attlen = cattr->attlen;
+			Assert(attlen > 0);
+			off = cattr->attcacheoff + attlen;
+		}
+
+		while (next_requested < nrequested &&
+			   attnums[next_requested] <= firstNullAttr)
+		{
+			size_t		requested_attnum = attnums[next_requested] - 1;
+			int			output_index;
+
+			deform_heap_tuple_skip_attrs(cattrs, &attnum, requested_attnum,
+										 tp, &off, support_cstring);
+			output_index = next_requested++;
+			isnull[output_index * stride] = false;
+			values[output_index * stride] =
+				deform_heap_tuple_next_attr(cattrs, attnum, tp, &off,
+											support_cstring);
+			attnum++;
+		}
+		deform_heap_tuple_skip_attrs(cattrs, &attnum, firstNullAttr,
+									 tp, &off, support_cstring);
+
+		while (next_requested < nrequested &&
+			   attnums[next_requested] <= natts)
+		{
+			size_t		requested_attnum = attnums[next_requested] - 1;
+			int			output_index;
+
+			deform_heap_tuple_skip_nullable_attrs(cattrs, &attnum,
+												  requested_attnum,
+												  tp, &off, tup->t_bits,
+												  support_cstring);
+			output_index = next_requested++;
+			if (att_isnull(attnum, tup->t_bits))
+			{
+				values[output_index * stride] = (Datum) 0;
+				isnull[output_index * stride] = true;
+			}
+			else
+			{
+				values[output_index * stride] =
+					deform_heap_tuple_next_attr(cattrs, attnum, tp, &off,
+												support_cstring);
+				isnull[output_index * stride] = false;
+			}
+			attnum++;
+		}
+		deform_heap_tuple_skip_nullable_attrs(cattrs, &attnum, natts,
+											  tp, &off, tup->t_bits,
+											  support_cstring);
+		goto deformation_done;
+	}
+
 	if (attnum < firstNonGuaranteedAttr)
 	{
 		int			attlen;
 
 		do
 		{
-			isnull[attnum] = false;
+			isnull[attnum * stride] = false;
 			cattr = &cattrs[attnum];
 			attlen = cattr->attlen;
 
@@ -1200,7 +1443,8 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 			Assert(cattr->attbyval == true);
 
 			off = cattr->attcacheoff;
-			values[attnum] = fetch_att_noerr(tp + off, true, attlen);
+			values[attnum * stride] =
+				fetch_att_noerr(tp + off, true, attlen);
 			attnum++;
 		} while (attnum < firstNonGuaranteedAttr);
 
@@ -1236,13 +1480,12 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 
 		do
 		{
-			isnull[attnum] = false;
+			isnull[attnum * stride] = false;
 			cattr = &cattrs[attnum];
 			attlen = cattr->attlen;
 			off = cattr->attcacheoff;
-			values[attnum] = fetch_att_noerr(tp + off,
-											 cattr->attbyval,
-											 attlen);
+			values[attnum * stride] =
+				fetch_att_noerr(tp + off, cattr->attbyval, attlen);
 			attnum++;
 		} while (attnum < firstNonCacheOffsetAttr);
 
@@ -1264,7 +1507,7 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	{
 		int			attlen;
 
-		isnull[attnum] = false;
+		isnull[attnum * stride] = false;
 		cattr = &cattrs[attnum];
 		attlen = cattr->attlen;
 
@@ -1277,11 +1520,9 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 			pg_assume(attlen > 0 || attlen == -1);
 
 		/* align 'off', fetch the datum, and increment off beyond the datum */
-		values[attnum] = align_fetch_then_add(tp,
-											  &off,
-											  cattr->attbyval,
-											  attlen,
-											  cattr->attalignby);
+		values[attnum * stride] =
+			align_fetch_then_add(tp, &off, cattr->attbyval,
+								 attlen, cattr->attalignby);
 	}
 
 	/*
@@ -1293,9 +1534,9 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	{
 		int			attlen;
 
-		if (isnull[attnum])
+		if (isnull[attnum * stride])
 		{
-			values[attnum] = (Datum) 0;
+			values[attnum * stride] = (Datum) 0;
 			continue;
 		}
 
@@ -1307,13 +1548,12 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 			pg_assume(attlen > 0 || attlen == -1);
 
 		/* align 'off', fetch the datum, and increment off beyond the datum */
-		values[attnum] = align_fetch_then_add(tp,
-											  &off,
-											  cattr->attbyval,
-											  attlen,
-											  cattr->attalignby);
+		values[attnum * stride] =
+			align_fetch_then_add(tp, &off, cattr->attbyval,
+								 attlen, cattr->attalignby);
 	}
 
+deformation_done:
 	/* Fetch any missing attrs and raise an error if reqnatts is invalid */
 	if (unlikely(attnum < reqnatts))
 	{
@@ -1322,13 +1562,33 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 		 * to implement a tail-call optimization
 		 */
 		*offp = off;
-		slot_getmissingattrs(slot, attnum, reqnatts);
+		if (attnums == NULL)
+			getmissingattrs(tupleDesc, attnum, reqnatts,
+							values, isnull, stride);
+		else
+			getmissingattrs_selected(tupleDesc, attnum,
+									 attnums, nrequested, &next_requested,
+									 values, isnull, stride);
+		Assert(attnums == NULL || next_requested == nrequested);
 		return;
 	}
 done:
 
+	Assert(attnums == NULL || next_requested == nrequested);
+
 	/* Save current offset for next execution */
 	*offp = off;
+}
+
+static pg_always_inline void
+slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
+					   int reqnatts, bool support_cstring)
+{
+	deform_heap_tuple(slot->tts_tupleDescriptor,
+					  slot->tts_first_nonguaranteed,
+					  tuple, offp, &slot->tts_nvalid,
+					  slot->tts_values, slot->tts_isnull, 1,
+					  reqnatts, support_cstring, NULL, 0);
 }
 
 const TupleTableSlotOps TTSOpsVirtual = {
@@ -2204,33 +2464,8 @@ ExecInitNullTupleSlot(EState *estate, TupleDesc tupType,
 void
 slot_getmissingattrs(TupleTableSlot *slot, int startAttNum, int lastAttNum)
 {
-	AttrMissing *attrmiss = NULL;
-
-	/* Check for invalid attnums */
-	if (unlikely(lastAttNum > slot->tts_tupleDescriptor->natts))
-		elog(ERROR, "invalid attribute number %d", lastAttNum);
-
-	if (slot->tts_tupleDescriptor->constr)
-		attrmiss = slot->tts_tupleDescriptor->constr->missing;
-
-	if (!attrmiss)
-	{
-		/* no missing values array at all, so just fill everything in as NULL */
-		for (int attnum = startAttNum; attnum < lastAttNum; attnum++)
-		{
-			slot->tts_values[attnum] = (Datum) 0;
-			slot->tts_isnull[attnum] = true;
-		}
-	}
-	else
-	{
-		/* use attrmiss to set the missing values */
-		for (int attnum = startAttNum; attnum < lastAttNum; attnum++)
-		{
-			slot->tts_values[attnum] = attrmiss[attnum].am_value;
-			slot->tts_isnull[attnum] = !attrmiss[attnum].am_present;
-		}
-	}
+	getmissingattrs(slot->tts_tupleDescriptor, startAttNum, lastAttNum,
+					slot->tts_values, slot->tts_isnull, 1);
 }
 
 /*

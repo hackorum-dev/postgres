@@ -79,4 +79,6 @@ OBJS = \
 	tqueue.o \
 	tstoreReceiver.o
 
+execScan.o nodeSeqscan.o: execScanBatch.h
+
 include $(top_srcdir)/src/backend/common.mk

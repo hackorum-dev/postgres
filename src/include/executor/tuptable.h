@@ -161,19 +161,21 @@ typedef uint64 TupleBatchMask;
  * A batch with zero tuples is inactive; otherwise, 0 <= current < ntuples and
  * current identifies the slot's tuple in the batch. The batch pointer and
  * generation together identify the batch contents. Attributes available
- * through getattrs must remain stable while a batch is active. Slots backed
+ * through getsomeattrs must remain stable while a batch is active. Slots backed
  * by storage that can change those attributes in place must leave tts_batch
  * NULL.
  *
- * getattrs requests at most TUPLE_BATCH_MASK_BITS tuples. Bit i in rows and
- * the returned NULL mask, and values[i], refer to tuple first + i in the
- * batch.
+ * getsomeattrs requests at most TUPLE_BATCH_MASK_BITS tuples and the listed
+ * attributes, which must be in strictly increasing order. For attribute
+ * attnums[j] and tuple first + i, the value and NULL flag are stored at
+ * j * TUPLE_BATCH_MASK_BITS + i.
  */
 struct TupleTableSlotBatch
 {
-	TupleBatchMask (*getattrs) (TupleTableSlot *slot,
-								AttrNumber attnum, int first, int nrows,
-								TupleBatchMask rows, Datum *values);
+	void		(*getsomeattrs) (TupleTableSlot *slot,
+								 const AttrNumber *attnums, int natts,
+								 int first, int nrows,
+								 Datum *values, bool *isnull);
 	uint64		generation;
 	int			ntuples;
 	int			current;
@@ -193,7 +195,7 @@ slot_getbatch(const TupleTableSlot *slot)
 	if (batch == NULL || batch->ntuples <= 0)
 		return NULL;
 
-	Assert(batch->getattrs != NULL);
+	Assert(batch->getsomeattrs != NULL);
 	Assert(batch->current >= 0);
 	Assert(batch->current < batch->ntuples);
 
@@ -339,13 +341,10 @@ typedef struct HeapTupleTableSlot
 	HeapTupleData tupdata;		/* optional workspace for storing tuple */
 } HeapTupleTableSlot;
 
-struct HeapScanDescData;
-
 typedef struct HeapPageBatch
 {
 	TupleTableSlotBatch batch;
 	const OffsetNumber *offsets;
-	struct HeapScanDescData *scan;
 } HeapPageBatch;
 
 /* heap tuple residing in a buffer */

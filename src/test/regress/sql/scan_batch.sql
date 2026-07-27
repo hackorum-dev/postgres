@@ -2,14 +2,18 @@
 -- Tests for evaluating scan qualifications in tuple batches
 --
 
-CREATE TABLE scan_batch_test (id int, a int, t text)
+CREATE TABLE scan_batch_test (id int, a int, t text, b int, c int)
   WITH (autovacuum_enabled = false);
 
 INSERT INTO scan_batch_test
 SELECT g,
 	CASE WHEN g IN (1, 2) THEN NULL ELSE g END,
-	CASE WHEN g IN (3, 100) THEN NULL ELSE 'value-' || g END
+	CASE WHEN g IN (3, 100) THEN NULL ELSE 'value-' || g END,
+	CASE WHEN g % 13 = 0 THEN NULL ELSE g END,
+	CASE WHEN g % 7 = 0 THEN NULL ELSE g END
 FROM generate_series(1, 200) AS g;
+
+ALTER TABLE scan_batch_test ADD COLUMN d int DEFAULT 150;
 
 -- Multiple batch qualifications, both argument orders, and NULL attributes.
 SELECT count(*) FROM scan_batch_test
@@ -110,10 +114,33 @@ CREATE OPERATOR #<# (
 	RIGHTARG = int
 );
 
+/*
+ * Batch deformation should walk through the last needed column while storing
+ * only columns used by qualifications. The text and NULL columns make the
+ * offsets of b and c non-cacheable, while d is physically missing from the
+ * original tuples. Qualification order must not affect the extracted values.
+ */
+SELECT
+	(SELECT count(*) FROM scan_batch_test
+	 WHERE b #<# 180 AND c #<# 170 AND d #<# 151) AS increasing,
+	(SELECT count(*) FROM scan_batch_test
+	 WHERE d #<# 151 AND c #<# 170 AND b #<# 180) AS decreasing,
+	(SELECT count(*) FROM scan_batch_test
+	 WHERE c #<# 190 AND b #<# 180 AND d #<# 151) AS zigzag,
+	(SELECT count(*) FROM scan_batch_test
+	 WHERE c #<# 190 AND b #<# 180 AND c #<# 170 AND d #<# 151) AS repeated;
+
 SELECT 'scan_batch_lt(integer,integer)'::regprocedure::oid AS batch_func_oid \gset
 SET track_functions = 'all';
 
 SELECT count(*) FROM scan_batch_test WHERE a #<# 201;
+SELECT pg_stat_force_next_flush() \gset
+SELECT calls FROM pg_stat_user_functions WHERE funcid = :batch_func_oid;
+
+-- Batch evaluation must preserve the qualification order from the planner.
+SELECT pg_stat_reset_single_function_counters(:batch_func_oid) AS reset \gset
+SELECT count(*) FROM scan_batch_test
+WHERE d #<# 0 AND b #<# 201;
 SELECT pg_stat_force_next_flush() \gset
 SELECT calls FROM pg_stat_user_functions WHERE funcid = :batch_func_oid;
 
@@ -142,6 +169,18 @@ SELECT pg_stat_force_next_flush() \gset
 SELECT calls FROM pg_stat_user_functions WHERE funcid = :batch_func_oid;
 
 RESET track_functions;
+
+-- Repeat the attribute-order checks through the scalar path.
+SELECT
+	(SELECT count(*) FROM scan_batch_test
+	 WHERE b #<# 180 AND c #<# 170 AND d #<# 151) AS increasing,
+	(SELECT count(*) FROM scan_batch_test
+	 WHERE d #<# 151 AND c #<# 170 AND b #<# 180) AS decreasing,
+	(SELECT count(*) FROM scan_batch_test
+	 WHERE c #<# 190 AND b #<# 180 AND d #<# 151) AS zigzag,
+	(SELECT count(*) FROM scan_batch_test
+	 WHERE c #<# 190 AND b #<# 180 AND c #<# 170 AND d #<# 151) AS repeated;
+
 DROP OPERATOR #<# (int, int);
 DROP FUNCTION scan_batch_lt(int, int);
 DROP TABLE scan_batch_test;

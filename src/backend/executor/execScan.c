@@ -25,6 +25,7 @@
 #include "executor/executor.h"
 #include "executor/execScan.h"
 #include "miscadmin.h"
+#include "nodes/bitmapset.h"
 #include "pgstat.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
@@ -149,6 +150,7 @@ ExecInitScanBatch(ScanState *node, List *clauses)
 {
 	ExecScanBatchState *state;
 	ExprState  *qual;
+	Bitmapset  *attrs = NULL;
 	int			nquals = 0;
 	int			i = 0;
 
@@ -200,8 +202,34 @@ ExecInitScanBatch(ScanState *node, List *clauses)
 			break;
 		op = match_batch_qual(clause, &var_argno);
 		Assert(op != NULL);
-		init_batch_qual(&state->quals[i++], op, var_argno, &node->ps);
+		init_batch_qual(&state->quals[i], op, var_argno, &node->ps);
+		attrs = bms_add_member(attrs, state->quals[i].attnum - 1);
+		i++;
 	}
+	state->natts = bms_num_members(attrs);
+	state->attnums = palloc_array(AttrNumber, state->natts);
+	{
+		int			attnum = -1;
+
+		i = 0;
+		while ((attnum = bms_next_member(attrs, attnum)) >= 0)
+			state->attnums[i++] = attnum + 1;
+		Assert(i == state->natts);
+	}
+	for (i = 0; i < nquals; i++)
+	{
+		state->quals[i].attr_index =
+			bms_member_index(attrs, state->quals[i].attnum - 1);
+		Assert(state->quals[i].attr_index >= 0);
+	}
+	bms_free(attrs);
+
+	state->values =
+		palloc_array(Datum,
+					 (Size) state->natts * TUPLE_BATCH_MASK_BITS);
+	state->isnull =
+		palloc_array(bool,
+					 (Size) state->natts * TUPLE_BATCH_MASK_BITS);
 
 	/* Use the same scalar states when the complete qual must be evaluated. */
 	qual = makeNode(ExprState);
@@ -252,7 +280,6 @@ ExecScanBatchPrepare(ExecScanBatchState *state, TupleTableSlot *slot,
 {
 	const TupleTableSlotBatch *batch = slot_getbatch(slot);
 	MemoryContext oldcontext;
-	Datum		values[TUPLE_BATCH_MASK_BITS];
 	TupleBatchMask mask;
 	int			first;
 	int			nrows;
@@ -277,6 +304,8 @@ ExecScanBatchPrepare(ExecScanBatchState *state, TupleTableSlot *slot,
 	if (nrows == 0)
 		return;
 	mask = PG_UINT64_MAX >> (TUPLE_BATCH_MASK_BITS - nrows);
+	batch->getsomeattrs(slot, state->attnums, state->natts, first, nrows,
+						state->values, state->isnull);
 
 	oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 	for (int q = 0; q < state->nquals && mask != 0; q++)
@@ -299,15 +328,6 @@ ExecScanBatchPrepare(ExecScanBatchState *state, TupleTableSlot *slot,
 			bool		track_function;
 			int			position;
 
-			/*
-			 * Fetch the first qual's attribute, and fetch again only when it
-			 * changes. Adjacent quals on the same attribute reuse its
-			 * values.
-			 */
-			if (q == 0 || qual->attnum != state->quals[q - 1].attnum)
-				mask &= ~batch->getattrs(slot, qual->attnum, first, nrows,
-										 mask, values);
-
 			track_function =
 				pgstat_track_functions > fcinfo->flinfo->fn_stats;
 			position = ScanDirectionIsForward(direction) ? 0 : nrows - 1;
@@ -317,10 +337,14 @@ ExecScanBatchPrepare(ExecScanBatchState *state, TupleTableSlot *slot,
 				 i++, position += direction)
 			{
 				TupleBatchMask bit = UINT64CONST(1) << position;
+				int			value_index =
+					qual->attr_index * TUPLE_BATCH_MASK_BITS + position;
 
 				if ((mask & bit) == 0)
 					continue;
-				if (!eval_batch_qual(qual, values[position], track_function))
+				if (state->isnull[value_index] ||
+					!eval_batch_qual(qual, state->values[value_index],
+									 track_function))
 					mask &= ~bit;
 			}
 			MemoryContextSwitchTo(oldoperatorcontext);

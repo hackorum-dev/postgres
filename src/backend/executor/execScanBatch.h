@@ -23,12 +23,16 @@ struct ExecScanBatchQual
 	ExprState  *param_expr;
 	NullableDatum constant;
 	AttrNumber	attnum;
+	int			attr_index;
 	uint8		var_argno;
 };
 
 struct ExecScanBatchState
 {
 	struct ExecScanBatchQual *quals;
+	AttrNumber *attnums;
+	Datum	   *values;
+	bool	   *isnull;
 	ExprState  *prefix_qual;
 	ExprState  *rest_qual;
 	MemoryContext operator_context;
@@ -38,6 +42,7 @@ struct ExecScanBatchState
 	int			first;
 	int			nrows;
 	int			nquals;
+	int			natts;
 };
 
 extern void ExecScanBatchPrepare(ExecScanBatchState *state,
