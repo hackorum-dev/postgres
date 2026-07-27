@@ -13,7 +13,7 @@ program_version_ok('vacuumdb');
 program_options_handling_ok('vacuumdb');
 
 my $node = PostgreSQL::Test::Cluster->new('main');
-$node->init;
+$node->init(auth_extra => [ '--create-role' => 'regress_vacuumdb_user' ]);
 $node->start;
 
 $node->issues_sql_like(
@@ -372,5 +372,22 @@ $node->issues_sql_unlike(
 	[ 'vacuumdb', '--analyze-only', 'postgres' ],
 	qr/statement:\ VACUUM/sx,
 	'--analyze-only does not run vacuum');
+
+# A database that the user cannot connect to must not abandon --all: it is
+# skipped with a warning, and the other databases are still processed.  Run as
+# an unprivileged role, since a superuser is exempt from the CONNECT check.
+$node->safe_psql('postgres', 'CREATE ROLE regress_vacuumdb_user LOGIN');
+$node->safe_psql('postgres', 'CREATE DATABASE regress_vacuumdb_noconn');
+$node->safe_psql('postgres',
+	'REVOKE CONNECT ON DATABASE regress_vacuumdb_noconn FROM PUBLIC');
+$node->command_checks_all(
+	[
+		'vacuumdb', '--all',
+		'--analyze-only', '--username' => 'regress_vacuumdb_user'
+	],
+	0,
+	[qr/^$/],
+	[qr/warning: skipping database "regress_vacuumdb_noconn": /],
+	'--all skips databases that cannot be connected to');
 
 done_testing();

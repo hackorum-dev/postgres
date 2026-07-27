@@ -192,7 +192,25 @@ vacuum_one_database(ConnParams *cparams,
 	Assert(stage == ANALYZE_NO_STAGE ||
 		   (stage >= 0 && stage < ANALYZE_NUM_STAGES));
 
-	conn = connectDatabase(cparams, progname, vacopts->echo, false, true);
+	/*
+	 * When processing every database, one we cannot connect to is not a fatal
+	 * condition: managed environments routinely include a database reserved
+	 * for the hosting provider that ordinary users are refused entry to, and
+	 * treating that as fatal would abandon the run before reaching the
+	 * databases the user actually cares about.  Warn and let the caller move
+	 * on to the next one.  Any other database was named explicitly, so
+	 * failing to connect to it remains an error.
+	 */
+	conn = connectDatabase(cparams, progname, vacopts->echo,
+						   (vacopts->objfilter & OBJFILTER_ALL_DBS) != 0,
+						   true);
+	if (PQstatus(conn) == CONNECTION_BAD)
+	{
+		pg_log_warning("skipping database \"%s\": %s",
+					   PQdb(conn), PQerrorMessage(conn));
+		PQfinish(conn);
+		return EXIT_SUCCESS;
+	}
 
 	if (vacopts->disable_page_skipping && PQserverVersion(conn) < 90600)
 	{

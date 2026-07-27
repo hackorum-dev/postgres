@@ -128,6 +128,13 @@ PostgreSQL documentation
        <para>
         Vacuum all databases.
        </para>
+       <para>
+        Databases that cannot be connected to are skipped with a warning, and
+        the remaining databases are still processed.  This is chiefly of use
+        with managed <productname>PostgreSQL</productname> services, which
+        commonly include a database reserved for the provider that other
+        users are not permitted to connect to.
+       </para>
       </listitem>
      </varlistentry>
 
