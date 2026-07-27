@@ -3685,9 +3685,9 @@ perform_pruning_combine_step(PartitionPruneContext *context,
 										step_result->bound_offsets);
 
 					/* Update whether to scan null and default partitions. */
-					if (result->scan_null)
+					if (step_result->scan_null)
 						result->scan_null = step_result->scan_null;
-					if (result->scan_default)
+					if (step_result->scan_default)
 						result->scan_default = step_result->scan_default;
 				}
 			}
