@@ -796,6 +796,9 @@ exec_command_conninfo(PsqlScanState scan_state, bool active_branch)
 	char	   *host;
 	bool		print_hostaddr;
 	char	   *hostaddr;
+	bool		print_portaddr;
+	char	   *port,
+			   *portaddr;
 	char	   *protocol_version,
 			   *backend_pid;
 	int			ssl_in_use,
@@ -817,6 +820,8 @@ exec_command_conninfo(PsqlScanState scan_state, bool active_branch)
 	/* Get values for the parameters */
 	host = PQhost(pset.db);
 	hostaddr = PQhostaddr(pset.db);
+	port = PQport(pset.db);
+	portaddr = PQportaddr(pset.db);
 	version_num = PQfullProtocolVersion(pset.db);
 	protocol_version = psprintf("%d.%d", version_num / 10000,
 								version_num % 10000);
@@ -829,12 +834,18 @@ exec_command_conninfo(PsqlScanState scan_state, bool active_branch)
 	print_hostaddr = (!is_unixsock_path(host) &&
 					  hostaddr && *hostaddr && strcmp(host, hostaddr) != 0);
 
+	/* Likewise for the port actually connected to */
+	print_portaddr = (!is_unixsock_path(host) &&
+					  portaddr && *portaddr && strcmp(port, portaddr) != 0);
+
 	/* Determine the exact number of rows to print */
 	rows = 12;
 	cols = 2;
 	if (ssl_in_use)
 		rows += 6;
 	if (print_hostaddr)
+		rows++;
+	if (print_portaddr)
 		rows++;
 
 	/* Set it all up */
@@ -878,7 +889,12 @@ exec_command_conninfo(PsqlScanState scan_state, bool active_branch)
 
 	/* Server Port */
 	printTableAddCell(&cont, _("Server Port"), false, false);
-	printTableAddCell(&cont, PQport(pset.db), false, false);
+	printTableAddCell(&cont, port, false, false);
+	if (print_portaddr)
+	{
+		printTableAddCell(&cont, _("Port Address"), false, false);
+		printTableAddCell(&cont, portaddr, false, false);
+	}
 
 	/* Options */
 	printTableAddCell(&cont, _("Options"), false, false);
