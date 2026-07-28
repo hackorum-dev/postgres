@@ -1648,6 +1648,33 @@ CREATE INDEX ON syscol_table (a) WHERE ctid >= '(1000,0)';
 ERROR:  index creation on system columns is not supported
 DROP TABLE syscol_table;
 --
+-- Generated index column names for expressions.  A whole-row reference
+-- contributes the relation name; an expression that yields no usable text
+-- at all falls back to "expr", so the column name is never empty.
+--
+CREATE TABLE gen_exprname (a int, b int);
+-- whole-row reference uses the relation name
+CREATE INDEX ON gen_exprname ((gen_exprname IS NOT NULL));
+-- nothing usable to extract -> fall back to "expr"
+CREATE INDEX ON gen_exprname ((','::text));
+-- normal expression still gets a descriptive name
+CREATE INDEX ON gen_exprname ((a + b));
+SELECT c.relname AS index_name, a.attname AS column_name
+  FROM pg_class c
+  JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0
+  WHERE c.relkind = 'i'
+    AND c.relnamespace = 'public'::regnamespace
+    AND c.relname LIKE 'gen_exprname%'
+  ORDER BY c.relname, a.attnum;
+          index_name           | column_name  
+-------------------------------+--------------
+ gen_exprname_a_b_idx          | a_b
+ gen_exprname_expr_idx         | expr
+ gen_exprname_gen_exprname_idx | gen_exprname
+(3 rows)
+
+DROP TABLE gen_exprname;
+--
 -- Tests for IS NULL/IS NOT NULL with b-tree indexes
 --
 CREATE TABLE onek_with_null AS SELECT unique1, unique2 FROM onek;
