@@ -3128,6 +3128,18 @@ select indexrelid::regclass, indisclustered from pg_index
   order by indexrelid::regclass::text;
 drop table alttype_cluster;
 
+-- A partition index keeps its name when rebuilt through the parent.
+create table alttype_part (a int not null, b int) partition by range (a);
+create table alttype_part_child (a int not null, b int);
+create index alttype_part_child_custom_idx on alttype_part_child (a, b);
+create index alttype_part_idx on alttype_part (a, b);
+alter table alttype_part attach partition alttype_part_child
+  for values from (0) to (10);
+alter table alttype_part alter column b type bigint;
+select indexrelid::regclass
+  from pg_index where indrelid = 'alttype_part_child'::regclass;
+drop table alttype_part;
+
 --
 -- Check that attaching or detaching a partitioned partition correctly leads
 -- to its partitions' constraint being updated to reflect the parent's
