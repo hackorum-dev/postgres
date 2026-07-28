@@ -1,0 +1,89 @@
+test_bufmgr - regression tests for the buffer manager
+-----------------------------------------------------
+
+This module tests the PostgreSQL buffer manager (src/backend/storage/buffer/)
+as a subsystem, not any one replacement algorithm.  It is named for the
+subsystem under test, which is stable, rather than the eviction policy which
+keeps changing.
+
+We test properties that any correct buffer manager must have, expressed only
+through observable behavior i.e. page residency, page contents, and buffer pins
+and never through internal fields. These are meant to keep passing across an
+algorithm swap: on today's usage-count clock sweep, or on a future pluggable
+pool that may not even have a usagecount field.
+
+This test module covers below use cases:
+
+test_bufmgr_eviction_reload    Under pressure whose working set exceeds
+                               shared_buffers, some previously-resident
+                               unpinned page is evicted, reloading it returns
+                               correct contents, and the manager makes
+                               progress (no "no unpinned buffers" error).
+
+test_bufmgr_dirty_persistence  An evicted dirty page is written to disk, so a
+                               reload returns the modified contents.
+
+test_bufmgr_scan_no_retain     A page read once and never again does not
+                               indefinitely retain its buffer under pressure.
+
+test_bufmgr_truncate_stale     TRUNCATE leaves no stale cached pages that
+                               later become visible.
+
+test_bufmgr_drop_recreate_stale
+                               A dropped relation's cached pages never
+                               resurface through a newly created relation.
+
+test_bufmgr_local_eviction     A temp relation larger than temp_buffers stays
+                               correct after local-buffer reuse.
+
+test_bufmgr_churn              Contents stay correct after many
+                               replacement/reload cycles over a working set
+                               much larger than the pool.
+
+test_bufmgr_pinned_safety      (isolation) A pinned buffer is never evicted.
+                               While one backend holds a cursor pin, another
+                               floods past the whole pool; the pinned page
+                               stays resident and unchanged while an unpinned
+                               control block is evicted (proving the flood
+                               really exceeded the pool).
+
+Guiding tenet
+-------------
+
+Core tests asserts observable outcomes, not internal encodings.  Residency is read
+as "is there a pg_buffercache row for this relation block", contents as the
+page data itself, and pins as pg_buffercache.pinning_backends.
+
+Uniquely identifiable pages: each row's payload is a deterministic function of
+its id (md5(id::text)), so any block read back is verified by re-deriving the
+expected payload, with no assumption about how many rows land on a page or
+which page a row occupies so the tests are BLCKSZ independent.
+
+Self-calibrating flood: eviction is forced not by a hand-tuned flood size but
+by a bounded loop that grows a throwaway relation until the *observed* target
+end-state is reached (a tracked block becomes non-resident), then stops so
+the tests assert "reclaim was observed" rather than "N rows happened to be the
+right number on this machine".
+
+Configuration knobs
+-------------------
+
+test_bufmgr_small.conf:
+
+shared_buffers = 8MB          1024 buffers - small enough that a modest flood
+                              forces real reclaim through the whole pool, but
+                              large enough that the test's own setup traffic
+                              doesn't perturb tracked blocks before the flood.
+temp_buffers = 100            Minimum local pool, so test_bufmgr_local_eviction
+                              can exceed it.
+bgwriter_lru_maxpages = 0     With it enabled, BgBufferSync's own demand driven
+                              LRU sweep runs concurrently with a test's flood
+                              and reclaims buffers on its own schedule,
+                              competing for the same clock-hand position.
+autovacuum = off              Remove other background sources of buffer
+                              touches during each test's brief window.
+checkpoint_timeout = 1h       CHECKPOINT clears a buffer's dirty bit without
+                              evicting it, the block stays resident. So a
+                              background checkpoint firing mid-test would make
+                              test flaky.
+client_min_messages = warning Suppresses NOTICEs.
