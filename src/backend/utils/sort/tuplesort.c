@@ -759,19 +759,6 @@ tuplesort_set_bound(Tuplesortstate *state, int64 bound)
 
 	state->bounded = true;
 	state->bound = (int) bound;
-
-	/*
-	 * Bounded sorts are not an effective target for abbreviated key
-	 * optimization.  Disable by setting state to be consistent with no
-	 * abbreviation support.
-	 */
-	state->base.sortKeys->abbrev_converter = NULL;
-	if (state->base.sortKeys->abbrev_full_comparator)
-		state->base.sortKeys->comparator = state->base.sortKeys->abbrev_full_comparator;
-
-	/* Not strictly necessary, but be tidy */
-	state->base.sortKeys->abbrev_abort = NULL;
-	state->base.sortKeys->abbrev_full_comparator = NULL;
 }
 
 /*
@@ -2483,6 +2470,7 @@ tuplesort_space_type_name(TuplesortSpaceType t)
 static void
 make_bounded_heap(Tuplesortstate *state)
 {
+	SortSupport sortKey = state->base.sortKeys;
 	int			tupcount = state->memtupcount;
 	int			i;
 
@@ -2490,6 +2478,16 @@ make_bounded_heap(Tuplesortstate *state)
 	Assert(state->bounded);
 	Assert(tupcount >= state->bound);
 	Assert(SERIAL(state));
+
+	if (sortKey->abbrev_converter != NULL)
+	{
+		/* Restore keys before switching to the authoritative comparator. */
+		REMOVEABBREV(state, state->memtuples, state->memtupcount);
+		sortKey->comparator = sortKey->abbrev_full_comparator;
+		sortKey->abbrev_converter = NULL;
+		sortKey->abbrev_abort = NULL;
+		sortKey->abbrev_full_comparator = NULL;
+	}
 
 	/* Reverse sort direction so largest entry will be at root */
 	reversedirection(state);
