@@ -1562,6 +1562,7 @@ expandTableLikeClause(RangeVar *heapRel, TableLikeClause *table_like_clause)
 			index_stmt = generateClonedIndexStmt(heapRel,
 												 parent_index,
 												 attmap,
+												 NULL,
 												 NULL);
 
 			/* Copy comment on index, if requested */
@@ -1681,6 +1682,13 @@ transformOfType(CreateStmtContext *cxt, TypeName *ofTypename)
  * If constraintOid isn't NULL, we store the OID of any constraint associated
  * with the index there.
  *
+ * If indexName isn't NULL, use it as the name of the cloned index; otherwise,
+ * let DefineIndex() choose a name.  Most callers pass NULL because using the
+ * source index name would cause a duplicate-name failure when both indexes
+ * are in the same schema.  Callers rebuilding a partition index (such as
+ * ALTER COLUMN TYPE) can pass the old name because the old index has already
+ * been dropped, making the name available in the target namespace.
+ *
  * Unlike transformIndexConstraint, we don't make any effort to force primary
  * key columns to be not-null.  The larger cloning process this is part of
  * should have cloned their not-null status separately (and DefineIndex will
@@ -1689,7 +1697,8 @@ transformOfType(CreateStmtContext *cxt, TypeName *ofTypename)
 IndexStmt *
 generateClonedIndexStmt(RangeVar *heapRel, Relation source_idx,
 						const AttrMap *attmap,
-						Oid *constraintOid)
+						Oid *constraintOid,
+						const char *indexName)
 {
 	Oid			source_relid = RelationGetRelid(source_idx);
 	HeapTuple	ht_idxrel;
@@ -1765,13 +1774,7 @@ generateClonedIndexStmt(RangeVar *heapRel, Relation source_idx,
 	index->if_not_exists = false;
 	index->reset_default_tblspc = false;
 
-	/*
-	 * We don't try to preserve the name of the source index; instead, just
-	 * let DefineIndex() choose a reasonable name.  (If we tried to preserve
-	 * the name, we'd get duplicate-relation-name failures unless the source
-	 * table was in a different schema.)
-	 */
-	index->idxname = NULL;
+	index->idxname = indexName ? pstrdup(indexName) : NULL;
 
 	/*
 	 * If the index is marked PRIMARY or has an exclusion condition, it's
