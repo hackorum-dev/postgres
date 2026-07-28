@@ -140,6 +140,14 @@ CREATE SUBSCRIPTION regress_testsub6 SERVER test_server
   PUBLICATION testpub WITH (slot_name = 'dummy', connect = false);
 
 RESET SESSION AUTHORIZATION;
+REVOKE USAGE ON FOREIGN SERVER test_server FROM regress_subscription_user3;
+SET SESSION AUTHORIZATION regress_subscription_user3;
+
+-- fail, need USAGE privileges on the server
+ALTER SUBSCRIPTION regress_testsub6 REFRESH PUBLICATION;
+
+RESET SESSION AUTHORIZATION;
+GRANT USAGE ON FOREIGN SERVER test_server TO regress_subscription_user3;
 GRANT USAGE ON FOREIGN SERVER test_server TO regress_subscription_user2;
 CREATE USER MAPPING FOR regress_subscription_user2 SERVER test_server OPTIONS(user 'foo');
 ALTER FOREIGN DATA WRAPPER test_fdw CONNECTION test_fdw_connection_no_password;

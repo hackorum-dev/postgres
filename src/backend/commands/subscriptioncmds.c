@@ -1618,6 +1618,7 @@ AlterSubscription(ParseState *pstate, AlterSubscriptionStmt *stmt,
 	Datum		values[Natts_pg_subscription];
 	HeapTuple	tup;
 	Oid			subid;
+	bool		orig_conninfo_aclchk = false;
 	bool		orig_conninfo_needed = true;
 	bool		update_tuple = false;
 	bool		update_failover = false;
@@ -1730,13 +1731,32 @@ AlterSubscription(ParseState *pstate, AlterSubscriptionStmt *stmt,
 	}
 
 	/*
+	 * ALTER SUBSCRIPTION ... REFRESH PUBLICATION and ALTER SUBSCRIPTION ...
+	 * ADD/DROP/SET PUBLICATION with refresh = true connect to the publisher
+	 * to fetch the updated publication information. Permissions on the
+	 * original foreign server must be validated.
+	 */
+	else if (stmt->kind == ALTER_SUBSCRIPTION_REFRESH_PUBLICATION)
+	{
+		orig_conninfo_aclchk = true;
+	}
+	else if (stmt->kind == ALTER_SUBSCRIPTION_ADD_PUBLICATION ||
+			 stmt->kind == ALTER_SUBSCRIPTION_DROP_PUBLICATION ||
+			 stmt->kind == ALTER_SUBSCRIPTION_SET_PUBLICATION)
+	{
+		if (opts.refresh)
+			orig_conninfo_aclchk = true;
+	}
+
+	/*
 	 * Skip ACL checks on the subscription's foreign server, if any. If
 	 * changing the server (or replacing it with a raw connection), then the
 	 * old one will be removed anyway. If changing something unrelated,
 	 * there's no need to do an additional ACL check here; that will be done
 	 * by the subscription worker.
 	 */
-	sub = GetSubscription(subid, false, orig_conninfo_needed, false);
+	sub = GetSubscription(subid, false, orig_conninfo_needed,
+						  orig_conninfo_aclchk);
 
 	retain_dead_tuples = sub->retaindeadtuples;
 	origin = sub->origin;
