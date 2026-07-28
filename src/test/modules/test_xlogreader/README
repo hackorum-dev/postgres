@@ -1,0 +1,35 @@
+test_xlogreader
+===============
+
+Frontend tests for XLogReader validation of pathological multi-page WAL.
+
+test_xlogreader_oversized
+-------------------------
+
+Constructs an in-memory multi-page WAL record with:
+
+* xl_tot_len = 0xFFFFF000 (near UINT32_MAX, far above XLogRecordMaxSize)
+* matching XLP_FIRST_IS_CONTRECORD / xlp_rem_len on continuation pages
+
+and feeds it to XLogReader.
+
+Correct behavior
+  XLogReadRecord() returns NULL with an error; process exits 0.
+
+Buggy behavior (current mainline as of this test)
+  allocate_recordbuf() rounds the huge length with uint32 arithmetic and
+  wraps to a ~40kB buffer.  On the next continuation page, reassembly hits:
+
+    Assert(gotlen <= lengthof(save_copy));  /* save_copy is 2 * XLOG_BLCKSZ */
+
+  under USE_ASSERT_CHECKING (abort), or stack/heap overflow without asserts.
+
+Build / run
+-----------
+
+  make -C src/test/modules/test_xlogreader
+  ./src/test/modules/test_xlogreader/test_xlogreader_oversized
+
+With TAP enabled (--enable-tap-tests):
+
+  make -C src/test/modules/test_xlogreader check

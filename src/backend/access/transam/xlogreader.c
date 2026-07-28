@@ -186,20 +186,45 @@ XLogReaderFree(XLogReaderState *state)
  * abort records might need more space.)
  *
  * Note: This routine should *never* be called for xl_tot_len until the header
- * of the record has been fully validated.
+ * of the record has been fully validated (including the XLogRecordMaxSize
+ * bound).  Size arithmetic uses add_size/mul_size so unintended overflows are
+ * detected on all platforms, including where Size is 32-bit.
  */
 static void
 allocate_recordbuf(XLogReaderState *state, uint32 reclength)
 {
-	uint32		newSize = reclength;
+	Size		newSize;
+	Size		minsize;
 
-	newSize += XLOG_BLCKSZ - (newSize % XLOG_BLCKSZ);
-	newSize = Max(newSize, 5 * Max(BLCKSZ, XLOG_BLCKSZ));
+	/*
+	 * Callers must reject xl_tot_len > XLogRecordMaxSize first.  That keeps
+	 * the usual path well clear of MaxAllocSize; add_size/mul_size still
+	 * error if a caller forgets the bound.
+	 */
+	Assert(reclength <= XLogRecordMaxSize);
+
+	/*
+	 * Round up to a multiple of XLOG_BLCKSZ.  We deliberately avoid
+	 * TYPEALIGN(XLOG_BLCKSZ, reclength) here: that macro does
+	 * (len + align - 1) with plain C arithmetic, which can wrap silently on
+	 * platforms where Size is 32-bit.  Do the same power-of-two align with
+	 * add_size for the intermediate sum, then the usual mask.  Result matches
+	 * TYPEALIGN when there is no overflow; unlike the old
+	 * "newSize += XLOG_BLCKSZ - (newSize % XLOG_BLCKSZ)" form, an already
+	 * aligned length is left unchanged (no extra page).
+	 */
+	newSize = add_size((Size) reclength, (Size) XLOG_BLCKSZ - 1);
+	newSize &= ~((Size) XLOG_BLCKSZ - 1);
+
+	minsize = mul_size(5, Max(BLCKSZ, XLOG_BLCKSZ));
+	if (newSize < minsize)
+		newSize = minsize;
 
 	if (state->readRecordBuf)
 		pfree(state->readRecordBuf);
 	state->readRecordBuf = (char *) palloc(newSize);
-	state->readRecordBufSize = newSize;
+	Assert(newSize <= (Size) PG_UINT32_MAX);
+	state->readRecordBufSize = (uint32) newSize;
 }
 
 /*
@@ -671,6 +696,18 @@ restart:
 								  "invalid record length at %X/%08X: expected at least %u, got %u",
 								  LSN_FORMAT_ARGS(RecPtr),
 								  (uint32) SizeOfXLogRecord, total_len);
+			goto err;
+		}
+		/*
+		 * Cap xl_tot_len before contrecord reassembly so we never allocate or
+		 * copy based on a garbage length from a recycled page.
+		 */
+		if (total_len > XLogRecordMaxSize)
+		{
+			report_invalid_record(state,
+								  "invalid record length at %X/%08X: expected at most %u, got %u",
+								  LSN_FORMAT_ARGS(RecPtr),
+								  XLogRecordMaxSize, total_len);
 			goto err;
 		}
 		/* We'll validate the header once we have the next page. */
@@ -1146,6 +1183,21 @@ ValidXLogRecordHeader(XLogReaderState *state, XLogRecPtr RecPtr,
 							  "invalid record length at %X/%08X: expected at least %u, got %u",
 							  LSN_FORMAT_ARGS(RecPtr),
 							  (uint32) SizeOfXLogRecord, record->xl_tot_len);
+		return false;
+	}
+	/*
+	 * Symmetric with XLogRecordAssemble(): the reader must not attempt to
+	 * reassemble or decode a record larger than XLogRecordMaxSize.  Without
+	 * this bound, a crafted multi-page xl_tot_len near UINT32_MAX can make
+	 * allocate_recordbuf()'s size math overflow and corrupt memory during
+	 * reassembly.
+	 */
+	if (record->xl_tot_len > XLogRecordMaxSize)
+	{
+		report_invalid_record(state,
+							  "invalid record length at %X/%08X: expected at most %u, got %u",
+							  LSN_FORMAT_ARGS(RecPtr),
+							  XLogRecordMaxSize, record->xl_tot_len);
 		return false;
 	}
 	if (!RmgrIdIsValid(record->xl_rmid))
