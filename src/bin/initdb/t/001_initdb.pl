@@ -64,6 +64,17 @@ mkdir $datadir;
 		skip "unix-style permissions not supported on Windows", 1
 		  if ($windows_os);
 
+		# A .DS_Store file created by the macOS Finder has permissions that
+		# do not conform to the expected data directory mode.  Make sure the
+		# permission check ignores it.  Only create it on non-macOS systems,
+		# since writing bogus .DS_Store files where the Finder might see them
+		# could have unintended side effects.
+		if ($Config::Config{osname} ne 'darwin')
+		{
+			append_to_file("$datadir/.DS_Store", "macOS system file");
+			chmod(0644, "$datadir/.DS_Store");
+		}
+
 		ok(check_mode_recursive($datadir, 0700, 0600),
 			"check PGDATA permissions");
 	}
