@@ -901,17 +901,6 @@ findDependentObjects(const ObjectAddress *object,
 			continue;
 
 		/*
-		 * Check that the dependent object is not in a shared catalog, which
-		 * is not supported by doDeletion().
-		 */
-		if (IsSharedRelation(otherObject.classId))
-			ereport(ERROR,
-					(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
-					 errmsg("cannot drop %s because %s depends on it",
-							getObjectDescription(object, false),
-							getObjectDescription(&otherObject, false))));
-
-		/*
 		 * Must lock the dependent object before recursing to it.
 		 */
 		AcquireDeletionLock(&otherObject, 0);
@@ -930,6 +919,19 @@ findDependentObjects(const ObjectAddress *object,
 			/* and continue scanning for dependencies */
 			continue;
 		}
+
+		/*
+		 * Check that the dependent object is not in a shared catalog, which
+		 * is not supported by doDeletion().
+		 */
+		if (IsSharedRelation(otherObject.classId))
+			ereport(ERROR,
+					(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
+					 errmsg("cannot drop %s because %s depends on it",
+							getObjectDescription(object, false),
+							getObjectDescription(&otherObject, false)),
+					 errhint("Drop %s first.",
+							 getObjectDescription(&otherObject, false))));
 
 		/*
 		 * We do need to delete it, so identify objflags to be passed down,
@@ -1579,7 +1581,7 @@ AcquireDeletionLock(const ObjectAddress *object, int flags)
 		else
 			LockRelationOid(object->objectId, AccessExclusiveLock);
 	}
-	else if (object->classId == AuthMemRelationId)
+	else if (IsSharedRelation(object->classId))
 		LockSharedObject(object->classId, object->objectId, 0,
 						 AccessExclusiveLock);
 	else
@@ -1600,7 +1602,7 @@ ReleaseDeletionLock(const ObjectAddress *object)
 {
 	if (object->classId == RelationRelationId)
 		UnlockRelationOid(object->objectId, AccessExclusiveLock);
-	else if (object->classId == AuthMemRelationId)
+	else if (IsSharedRelation(object->classId))
 		UnlockSharedObject(object->classId, object->objectId, 0,
 						   AccessExclusiveLock);
 	else
