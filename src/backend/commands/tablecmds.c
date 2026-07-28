@@ -207,8 +207,9 @@ typedef struct AlteredTableInfo
 	List	   *changedConstraintDefs;	/* string definitions of same */
 	List	   *changedIndexOids;	/* OIDs of indexes to rebuild */
 	List	   *changedIndexDefs;	/* string definitions of same */
-	char	   *replicaIdentityIndex;	/* index to reset as REPLICA IDENTITY */
-	char	   *clusterOnIndex; /* index to use for CLUSTER */
+	List	   *replicaIdentityIndexOids;	/* OIDs of index to reset as
+											 * REPLICA IDENTITY */
+	List	   *clusterOnIndexOids;	/* OIDs of indexes to use for CLUSTER */
 	List	   *changedStatisticsOids;	/* OIDs of statistics to rebuild */
 	List	   *changedStatisticsDefs;	/* string definitions of same */
 } AlteredTableInfo;
@@ -692,10 +693,10 @@ static bool ATColumnChangeRequiresRewrite(Node *expr, AttrNumber varattno);
 static ObjectAddress ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 										   AlterTableCmd *cmd, LOCKMODE lockmode);
 static void RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
-											  Relation rel, AttrNumber attnum, const char *colName);
-static void RememberWholeRowDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype, Relation rel);
-static void RememberConstraintForRebuilding(Oid conoid, AlteredTableInfo *tab);
-static void RememberIndexForRebuilding(Oid indoid, AlteredTableInfo *tab);
+											  Relation rel, AttrNumber attnum, const char *colName, LOCKMODE lockmode);
+static void RememberWholeRowDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype, Relation rel, LOCKMODE lockmode);
+static void RememberConstraintForRebuilding(Oid conoid, AlteredTableInfo *tab, LOCKMODE lockmode);
+static void RememberIndexForRebuilding(Oid indoid, AlteredTableInfo *tab, LOCKMODE lockmode);
 static void RememberStatisticsForRebuilding(Oid stxoid, AlteredTableInfo *tab);
 static void ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab,
 								   LOCKMODE lockmode);
@@ -8818,14 +8819,14 @@ ATExecSetExpression(AlteredTableInfo *tab, Relation rel, const char *colName,
 	 * Find everything that depends on the column (constraints, indexes, etc),
 	 * and record enough information to let us recreate the objects.
 	 */
-	RememberAllDependentForRebuilding(tab, AT_SetExpression, rel, attnum, colName);
+	RememberAllDependentForRebuilding(tab, AT_SetExpression, rel, attnum, colName, lockmode);
 
 	/*
 	 * Find whole-row referenced objects that depend on the column
 	 * (constraints, indexes, etc.), and record enough information to let us
 	 * recreate the objects.
 	 */
-	RememberWholeRowDependentForRebuilding(tab, AT_SetExpression, rel);
+	RememberWholeRowDependentForRebuilding(tab, AT_SetExpression, rel, lockmode);
 
 	/*
 	 * Drop the dependency records of the GENERATED expression, in particular
@@ -15378,7 +15379,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	 * the info before executing ALTER TYPE, though, else the deparser will
 	 * get confused.
 	 */
-	RememberAllDependentForRebuilding(tab, AT_AlterColumnType, rel, attnum, colName);
+	RememberAllDependentForRebuilding(tab, AT_AlterColumnType, rel, attnum, colName, lockmode);
 
 	/*
 	 * Now scan for dependencies of this column on other things.  The only
@@ -15581,7 +15582,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
  */
 static void
 RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
-								  Relation rel, AttrNumber attnum, const char *colName)
+								  Relation rel, AttrNumber attnum, const char *colName, LOCKMODE lockmode)
 {
 	Relation	depRel;
 	ScanKeyData key[3];
@@ -15627,7 +15628,7 @@ RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
 						relKind == RELKIND_PARTITIONED_INDEX)
 					{
 						Assert(foundObject.objectSubId == 0);
-						RememberIndexForRebuilding(foundObject.objectId, tab);
+						RememberIndexForRebuilding(foundObject.objectId, tab, lockmode);
 					}
 					else if (relKind == RELKIND_SEQUENCE)
 					{
@@ -15648,7 +15649,7 @@ RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
 
 			case ConstraintRelationId:
 				Assert(foundObject.objectSubId == 0);
-				RememberConstraintForRebuilding(foundObject.objectId, tab);
+				RememberConstraintForRebuilding(foundObject.objectId, tab, lockmode);
 				break;
 
 			case ProcedureRelationId:
@@ -15801,6 +15802,46 @@ RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
 	table_close(depRel, NoLock);
 }
 
+static void
+find_partition_index_properties(AlteredTableInfo *tab, Oid relId,
+								Oid indexId, LOCKMODE lockmode)
+{
+	List	   *partRelIds = NIL;
+
+	partRelIds = find_inheritance_children(relId, lockmode);
+	foreach_oid(partRelOid, partRelIds)
+	{
+		Relation	partRel;
+		Oid			partIndexId;
+
+		/* find_inheritance_children already got lock */
+		partRel = relation_open(partRelOid, NoLock);
+
+		partIndexId = index_get_partition(partRel, indexId);
+		if (!OidIsValid(partIndexId))
+		{
+			/* if we won't touch the partition, then unlock it */
+			relation_close(partRel, lockmode);
+			continue;
+		}
+
+		if (get_index_isreplident(partIndexId))
+			tab->replicaIdentityIndexOids = lappend_oid(tab->replicaIdentityIndexOids, partIndexId);
+		if (get_index_isclustered(partIndexId))
+			tab->clusterOnIndexOids = lappend_oid(tab->clusterOnIndexOids,
+												 partIndexId);
+
+		if (partRel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+		{
+			find_partition_index_properties(tab, partRelOid, partIndexId,
+											lockmode);
+		}
+
+		relation_close(partRel, NoLock);
+	}
+	list_free(partRelIds);
+}
+
 /*
  * Record information about dependencies between objects with whole-row Var
  * references (indexes, check constraints, etc.) and the relation.
@@ -15811,7 +15852,7 @@ RememberAllDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype,
  * This function currently applies only to ALTER COLUMN SET EXPRESSION.
  */
 static void
-RememberWholeRowDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype, Relation rel)
+RememberWholeRowDependentForRebuilding(AlteredTableInfo *tab, AlterTableType subtype, Relation rel, LOCKMODE lockmode)
 {
 	ScanKeyData skey;
 	Relation	pg_constraint;
@@ -15878,7 +15919,7 @@ RememberWholeRowDependentForRebuilding(AlteredTableInfo *tab, AlterTableType sub
 				 */
 				if (bms_is_member(InvalidAttrNumber - FirstLowInvalidHeapAttributeNumber, expr_attrs))
 				{
-					RememberConstraintForRebuilding(conform->oid, tab);
+					RememberConstraintForRebuilding(conform->oid, tab, lockmode);
 				}
 			}
 		}
@@ -15932,7 +15973,7 @@ RememberWholeRowDependentForRebuilding(AlteredTableInfo *tab, AlterTableType sub
 			 */
 			if (bms_is_member(InvalidAttrNumber - FirstLowInvalidHeapAttributeNumber, expr_attrs))
 			{
-				RememberIndexForRebuilding(index->indexrelid, tab);
+				RememberIndexForRebuilding(index->indexrelid, tab, lockmode);
 				continue;
 			}
 		}
@@ -15960,7 +16001,7 @@ RememberWholeRowDependentForRebuilding(AlteredTableInfo *tab, AlterTableType sub
 			 */
 			if (bms_is_member(InvalidAttrNumber - FirstLowInvalidHeapAttributeNumber, expr_attrs))
 			{
-				RememberIndexForRebuilding(index->indexrelid, tab);
+				RememberIndexForRebuilding(index->indexrelid, tab, lockmode);
 			}
 		}
 	}
@@ -15976,13 +16017,16 @@ RememberWholeRowDependentForRebuilding(AlteredTableInfo *tab, AlterTableType sub
 static void
 RememberReplicaIdentityForRebuilding(Oid indoid, AlteredTableInfo *tab)
 {
-	if (!get_index_isreplident(indoid))
-		return;
+	if (get_index_isreplident(indoid))
+	{
+		foreach_oid(indexId, tab->replicaIdentityIndexOids)
+		{
+			if (IndexGetRelation(indexId, false) == tab->relid)
+				elog(ERROR, "relation %u has multiple indexes marked as replica identity", tab->relid);
+		}
 
-	if (tab->replicaIdentityIndex)
-		elog(ERROR, "relation %u has multiple indexes marked as replica identity", tab->relid);
-
-	tab->replicaIdentityIndex = get_rel_name(indoid);
+		tab->replicaIdentityIndexOids = lappend_oid(tab->replicaIdentityIndexOids, indoid);
+	}
 }
 
 /*
@@ -15991,13 +16035,40 @@ RememberReplicaIdentityForRebuilding(Oid indoid, AlteredTableInfo *tab)
 static void
 RememberClusterOnForRebuilding(Oid indoid, AlteredTableInfo *tab)
 {
+	Oid			relid;
+
 	if (!get_index_isclustered(indoid))
 		return;
 
-	if (tab->clusterOnIndex)
-		elog(ERROR, "relation %u has multiple clustered indexes", tab->relid);
+	relid = IndexGetRelation(indoid, false);
+	foreach_oid(indexId, tab->clusterOnIndexOids)
+	{
+		if (IndexGetRelation(indexId, false) == relid)
+			elog(ERROR, "relation %u has multiple clustered indexes", relid);
+	}
 
-	tab->clusterOnIndex = get_rel_name(indoid);
+	tab->clusterOnIndexOids = lappend_oid(tab->clusterOnIndexOids, indoid);
+}
+
+/*
+ * Remember the index properties that need to be restored after rebuilding.
+ */
+static void
+RememberIndexPropertiesForRebuilding(Oid indoid, AlteredTableInfo *tab,
+									 LOCKMODE lockmode)
+{
+	RememberReplicaIdentityForRebuilding(indoid, tab);
+	RememberClusterOnForRebuilding(indoid, tab);
+
+	/* For regular tables, there are no partition indexes to inspect. */
+	if (tab->rel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
+		return;
+
+	/*
+	 * A partition may select its own replica identity and clustered indexes,
+	 * so inspect the whole partition index hierarchy before it is dropped.
+	 */
+	find_partition_index_properties(tab, tab->relid, indoid, lockmode);
 }
 
 /*
@@ -16005,7 +16076,7 @@ RememberClusterOnForRebuilding(Oid indoid, AlteredTableInfo *tab)
  * to be rebuilt (which we might already know).
  */
 static void
-RememberConstraintForRebuilding(Oid conoid, AlteredTableInfo *tab)
+RememberConstraintForRebuilding(Oid conoid, AlteredTableInfo *tab, LOCKMODE lockmode)
 {
 	/*
 	 * This de-duplication check is critical for two independent reasons: we
@@ -16049,10 +16120,7 @@ RememberConstraintForRebuilding(Oid conoid, AlteredTableInfo *tab)
 		 */
 		indoid = get_constraint_index(conoid);
 		if (OidIsValid(indoid))
-		{
-			RememberReplicaIdentityForRebuilding(indoid, tab);
-			RememberClusterOnForRebuilding(indoid, tab);
-		}
+			RememberIndexPropertiesForRebuilding(indoid, tab, lockmode);
 	}
 }
 
@@ -16061,7 +16129,7 @@ RememberConstraintForRebuilding(Oid conoid, AlteredTableInfo *tab)
  * to be rebuilt (which we might already know).
  */
 static void
-RememberIndexForRebuilding(Oid indoid, AlteredTableInfo *tab)
+RememberIndexForRebuilding(Oid indoid, AlteredTableInfo *tab, LOCKMODE lockmode)
 {
 	/*
 	 * This de-duplication check is critical for two independent reasons: we
@@ -16084,7 +16152,7 @@ RememberIndexForRebuilding(Oid indoid, AlteredTableInfo *tab)
 
 		if (OidIsValid(conoid))
 		{
-			RememberConstraintForRebuilding(conoid, tab);
+			RememberConstraintForRebuilding(conoid, tab, lockmode);
 		}
 		else
 		{
@@ -16101,8 +16169,7 @@ RememberIndexForRebuilding(Oid indoid, AlteredTableInfo *tab)
 			 * or if it is a clustered index, so that ATPostAlterTypeCleanup()
 			 * can queue up commands necessary to restore those properties.
 			 */
-			RememberReplicaIdentityForRebuilding(indoid, tab);
-			RememberClusterOnForRebuilding(indoid, tab);
+			RememberIndexPropertiesForRebuilding(indoid, tab, lockmode);
 		}
 	}
 }
@@ -16280,34 +16347,53 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 	/*
 	 * Queue up command to restore replica identity index marking
 	 */
-	if (tab->replicaIdentityIndex)
+	if (tab->replicaIdentityIndexOids != NIL)
 	{
-		AlterTableCmd *cmd = makeNode(AlterTableCmd);
-		ReplicaIdentityStmt *subcmd = makeNode(ReplicaIdentityStmt);
+		foreach_oid(indexId, tab->replicaIdentityIndexOids)
+		{
+			Oid			relId = IndexGetRelation(indexId, false);
+			Relation	partrel;
+			AlteredTableInfo *parttab;
 
-		subcmd->identity_type = REPLICA_IDENTITY_INDEX;
-		subcmd->name = tab->replicaIdentityIndex;
-		cmd->subtype = AT_ReplicaIdentity;
-		cmd->def = (Node *) subcmd;
+			AlterTableCmd *cmd = makeNode(AlterTableCmd);
+			ReplicaIdentityStmt *subcmd = makeNode(ReplicaIdentityStmt);
 
-		/* do it after indexes and constraints */
-		tab->subcmds[AT_PASS_OLD_CONSTR] =
-			lappend(tab->subcmds[AT_PASS_OLD_CONSTR], cmd);
+			subcmd->identity_type = REPLICA_IDENTITY_INDEX;
+			subcmd->name = get_rel_name(indexId);
+			cmd->subtype = AT_ReplicaIdentity;
+			cmd->def = (Node *) subcmd;
+
+			/* do it after indexes and constraints */
+			partrel = relation_open(relId, lockmode);
+			parttab = ATGetQueueEntry(wqueue, partrel);
+			parttab->subcmds[AT_PASS_OLD_CONSTR] =
+				lappend(parttab->subcmds[AT_PASS_OLD_CONSTR], cmd);
+			relation_close(partrel, NoLock);
+		}
 	}
 
 	/*
 	 * Queue up command to restore marking of index used for cluster.
 	 */
-	if (tab->clusterOnIndex)
+	if (tab->clusterOnIndexOids != NIL)
 	{
-		AlterTableCmd *cmd = makeNode(AlterTableCmd);
+		foreach_oid(indexId, tab->clusterOnIndexOids)
+		{
+			Oid			relId = IndexGetRelation(indexId, false);
+			Relation	partrel;
+			AlteredTableInfo *parttab;
+			AlterTableCmd *cmd = makeNode(AlterTableCmd);
 
-		cmd->subtype = AT_ClusterOn;
-		cmd->name = tab->clusterOnIndex;
+			cmd->subtype = AT_ClusterOn;
+			cmd->name = get_rel_name(indexId);
 
-		/* do it after indexes and constraints */
-		tab->subcmds[AT_PASS_OLD_CONSTR] =
-			lappend(tab->subcmds[AT_PASS_OLD_CONSTR], cmd);
+			/* do it after indexes and constraints */
+			partrel = relation_open(relId, lockmode);
+			parttab = ATGetQueueEntry(wqueue, partrel);
+			parttab->subcmds[AT_PASS_OLD_CONSTR] =
+				lappend(parttab->subcmds[AT_PASS_OLD_CONSTR], cmd);
+			relation_close(partrel, NoLock);
+		}
 	}
 
 	/*
