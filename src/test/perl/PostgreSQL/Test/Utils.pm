@@ -669,7 +669,8 @@ sub read_head_tail
 =item check_mode_recursive(dir, expected_dir_mode, expected_file_mode, ignore_list)
 
 Check that all file/dir modes in a directory match the expected values,
-ignoring files in C<ignore_list> (basename only).
+ignoring files in C<ignore_list> (basename only).  Files '.DS_Store' created by
+the macOS Finder are always ignored.
 
 =cut
 
@@ -684,6 +685,12 @@ sub check_mode_recursive
 		{
 			follow_fast => 1,
 			wanted => sub {
+				# Skip macOS system files.  The Finder application creates
+				# .DS_Store files, which are not PostgreSQL files and would
+				# otherwise trip the permission check below; always ignore
+				# them.
+				return if $_ eq '.DS_Store';
+
 				# Is file in the ignore list?
 				foreach my $ignore ($ignore_list ? @{$ignore_list} : [])
 				{
