@@ -29,6 +29,7 @@
 #include "utils/fmgroids.h"
 #include "utils/partcache.h"
 #include "utils/rel.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 static Oid	get_partition_parent_worker(Relation inhRel, Oid relid,
@@ -116,6 +117,41 @@ get_partition_parent_worker(Relation inhRel, Oid relid, bool *detach_pending)
 	systable_endscan(scan);
 
 	return result;
+}
+
+/*
+ * get_partition_root
+ *		Obtain root partitioned table OID of the specified relation
+ *
+ * Note: This should only be called when it is known that the relation is a
+ * partition or partitioned table.
+ */
+Oid
+get_partition_root(Oid relid)
+{
+	Oid root_relid;
+	List *ancestors;
+
+	/* Fetch the list of ancestors */
+	ancestors = get_partition_ancestors(relid);
+
+	if (ancestors)
+	{
+		/* By definition, the last ancestor is the top-most parent */
+		root_relid = llast_oid(ancestors);
+		list_free(ancestors);
+	}
+	else
+	{
+		/* No ancestors means relid was already the top-most parent */
+		root_relid = relid;
+	}
+
+	/* Sanity check: The root must be a partitioned table */
+	if (!RELKIND_HAS_PARTITIONS(get_rel_relkind(root_relid)))
+		elog(ERROR, "relation OID %u is not a partitioned table", root_relid);
+
+	return root_relid;
 }
 
 /*
