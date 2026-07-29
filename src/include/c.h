@@ -298,6 +298,18 @@ extern "C++"
 #endif
 
 /*
+ * pg_attribute_counted_by allows specifying that an array is "counted by"
+ * another struct member. This provides the compiler to improve detection of
+ * object size information and provide better results in compile time
+ * diagnostics and runtime features like the array bound sanitizer.
+ */
+#if __has_attribute (counted_by)
+#define pg_attribute_counted_by(...) __attribute__((counted_by(__VA_ARGS__)))
+#else
+#define pg_attribute_counted_by(...)
+#endif
+
+/*
  * Append PG_USED_FOR_ASSERTS_ONLY to definitions of variables that are only
  * used in assert-enabled builds, to avoid compiler warnings about unused
  * variables in assert-disabled builds.
