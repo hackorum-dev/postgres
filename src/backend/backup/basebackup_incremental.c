@@ -773,10 +773,14 @@ GetFileBackupMethod(IncrementalBackupInfo *ib, const char *path,
 	}
 
 	/*
-	 * If the limit_block is less than or equal to the point where this
-	 * segment starts, send the whole file.
+	 * If the limit_block falls within this segment or an earlier one,
+	 * send the whole file. Blocks at or above limit_block from older
+	 * backups must never be used: they may have been truncated away and
+	 * later recreated without WAL logging (e.g. bulk-insert extension
+	 * overshoot zero pages)
 	 */
-	if (limit_block <= segno * RELSEG_SIZE)
+	if (BlockNumberIsValid(limit_block) &&
+		limit_block / RELSEG_SIZE <= segno)
 		return BACK_UP_FILE_FULLY;
 
 	/*
@@ -844,27 +848,6 @@ GetFileBackupMethod(IncrementalBackupInfo *ib, const char *path,
 	 * blocks included in the backup are non-consecutive.)
 	 */
 	*truncation_block_length = size / BLCKSZ;
-	if (BlockNumberIsValid(limit_block))
-	{
-		unsigned	relative_limit = limit_block - segno * RELSEG_SIZE;
-
-		/*
-		 * We can't set a truncation_block_length in excess of the limit block
-		 * number (relativized to the current segment). To do so would be to
-		 * treat blocks from older backups as valid current contents even if
-		 * they were subsequently truncated away.
-		 */
-		if (*truncation_block_length < relative_limit)
-			*truncation_block_length = relative_limit;
-
-		/*
-		 * We also can't set a truncation_block_length in excess of the
-		 * segment size, since the reconstructed file can't be larger than
-		 * that.
-		 */
-		if (*truncation_block_length > RELSEG_SIZE)
-			*truncation_block_length = RELSEG_SIZE;
-	}
 
 	/* Send it incrementally. */
 	return BACK_UP_FILE_INCREMENTALLY;
