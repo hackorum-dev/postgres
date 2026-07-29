@@ -11,8 +11,12 @@
 /*
  * Typedefs used in PostgreSQL probes.
  *
- * NOTE: Do not use system-provided typedefs (e.g. uintptr_t, uint32_t, etc)
- * in probe definitions, as they cause compilation errors on macOS.
+ * NOTE: Avoid multi-word C types such as "long long" / "long long int" in
+ * probe definitions; SystemTap's dtrace(1) pyparsing grammar rejects them
+ * and falls back with a warning.  Prefer single-token types, including
+ * system typedefs such as ssize_t and size_t when those match the C
+ * call sites.  (An older restriction against all system typedefs on
+ * macOS appears obsolete on current releases.)
  */
 #define LocalTransactionId unsigned int
 #define LWLockMode int
@@ -83,9 +87,9 @@ provider postgresql {
 	probe twophase__checkpoint__done();
 
 	probe smgr__md__read__start(ForkNumber, BlockNumber, Oid, Oid, Oid, int);
-	probe smgr__md__read__done(ForkNumber, BlockNumber, Oid, Oid, Oid, int, long long int, long long int);
+	probe smgr__md__read__done(ForkNumber, BlockNumber, Oid, Oid, Oid, int, ssize_t, size_t);
 	probe smgr__md__write__start(ForkNumber, BlockNumber, Oid, Oid, Oid, int);
-	probe smgr__md__write__done(ForkNumber, BlockNumber, Oid, Oid, Oid, int, long long int, long long int);
+	probe smgr__md__write__done(ForkNumber, BlockNumber, Oid, Oid, Oid, int, ssize_t, size_t);
 
 	probe wal__insert(unsigned char, unsigned char);
 	probe wal__switch();
