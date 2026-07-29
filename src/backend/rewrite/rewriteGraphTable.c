@@ -22,7 +22,6 @@
 #include "catalog/pg_propgraph_element_label.h"
 #include "catalog/pg_propgraph_label.h"
 #include "catalog/pg_propgraph_label_property.h"
-#include "catalog/pg_propgraph_property.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -31,10 +30,8 @@
 #include "parser/parse_collate.h"
 #include "parser/parse_func.h"
 #include "parser/parse_node.h"
-#include "parser/parse_oper.h"
 #include "parser/parse_relation.h"
 #include "parser/parsetree.h"
-#include "parser/parse_graphtable.h"
 #include "rewrite/rewriteGraphTable.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
@@ -42,7 +39,6 @@
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
-#include "utils/ruleutils.h"
 #include "utils/syscache.h"
 
 
