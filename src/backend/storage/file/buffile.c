@@ -72,7 +72,7 @@ struct BufFile
 {
 	int			numFiles;		/* number of physical files in set */
 	/* all files except the last have length exactly MAX_PHYSICAL_FILESIZE */
-	File	   *files;			/* palloc'd array with numFiles entries */
+	File	   *files pg_attribute_counted_by(numFiles);	/* palloc'd array with numFiles entries */
 
 	bool		isInterXact;	/* keep open over transactions? */
 	bool		dirty;			/* does buffer need to be written? */
