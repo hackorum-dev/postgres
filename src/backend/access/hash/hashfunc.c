@@ -26,6 +26,7 @@
 
 #include "postgres.h"
 
+#include "access/xlog.h"
 #include "common/hashfn.h"
 #include "utils/builtins.h"
 #include "utils/float.h"
@@ -43,17 +44,37 @@
  * routine is also used by dynahash tables.
  */
 
+/*
+ * Widen a "char" datum to int32 for hashing, honoring the cluster's recorded
+ * default char signedness (see GetDefaultCharSignedness()) rather than the
+ * signedness the server happens to be compiled with.
+ *
+ * A bare "char" has implementation-defined signedness, so casting it to int32
+ * directly would sign-extend high-bit values on platforms where "char" defaults
+ * to signed (e.g. x86-64), but not on platforms where it defaults to unsigned
+ * (e.g. aarch64 Linux). That would make hashchar()'s result for such values
+ * depend on the architecture computing it, which is a problem for anything that
+ * persists the result, such as hash partitioning and hash indexes. See bug
+ * #19587.
+ */
+static inline int32
+char_hash_widen(const char ch)
+{
+	return GetDefaultCharSignedness() ? (int32) (signed char) ch : (int32) (unsigned char) ch;
+}
+
 /* Note: this is used for both "char" and boolean datatypes */
 Datum
 hashchar(PG_FUNCTION_ARGS)
 {
-	return hash_uint32((int32) PG_GETARG_CHAR(0));
+	return hash_uint32(char_hash_widen(PG_GETARG_CHAR(0)));
 }
 
 Datum
 hashcharextended(PG_FUNCTION_ARGS)
 {
-	return hash_uint32_extended((int32) PG_GETARG_CHAR(0), PG_GETARG_INT64(1));
+	return hash_uint32_extended(char_hash_widen(PG_GETARG_CHAR(0)),
+								PG_GETARG_INT64(1));
 }
 
 Datum
