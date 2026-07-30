@@ -5114,7 +5114,7 @@ maybe_reread_subscription(void)
 	 * is enabled. Allocated in transaction context; must be copied to
 	 * ApplyContext when we set MySubscriptionConninfo.
 	 */
-	new_conninfo = SubscriptionConninfo(newsub, true);
+	new_conninfo = SubscriptionConninfo(newsub);
 
 	/* !slotname should never happen when enabled is true. */
 	Assert(newsub->slotname);
@@ -5879,7 +5879,7 @@ InitializeLogRepWorker(void)
 	 */
 	MySubscriptionConninfo =
 		MemoryContextStrdup(ApplyContext,
-							SubscriptionConninfo(MySubscription, true));
+							SubscriptionConninfo(MySubscription));
 
 	MySubscriptionValid = true;
 
