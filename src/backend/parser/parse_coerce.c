@@ -1042,6 +1042,14 @@ coerce_record_to_complex(ParseState *pstate, Node *node,
 		Var		   *var = (Var *) node;
 		ParseNamespaceItem *nsitem;
 
+		if (pstate == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_CANNOT_COERCE),
+					 errmsg("cannot cast type %s to %s",
+							format_type_be(RECORDOID),
+							format_type_be(targetTypeId)),
+					 errhint("List the row's columns individually, or use a ROW() constructor.")));
+
 		nsitem = GetNSItemByVar(pstate, var);
 		args = expandNSItemVars(pstate, nsitem, var->varlevelsup,
 								var->location, NULL);
