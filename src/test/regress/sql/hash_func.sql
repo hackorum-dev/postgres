@@ -62,6 +62,16 @@ FROM   (VALUES (NULL::"char"), ('1'), ('x'), ('X'), ('p'), ('N')) x(v)
 WHERE  hashchar(v)::bit(32) != hashcharextended(v, 0)::bit(32)
        OR hashchar(v)::bit(32) = hashcharextended(v, 1)::bit(32);
 
+-- hashchar()/hashcharextended() must interpret a high-bit "char" value
+-- according to the cluster's recorded default char signedness (see
+-- GetDefaultCharSignedness()), not the signedness the server happens to be
+-- compiled with.  Newly-initialized clusters, such as the one running this
+-- test, always record "signed", so a high-bit "char" must hash the same as
+-- its negative signed-char-equivalent int4 value.
+SELECT hashchar('\200'::"char") = hashint4(-128) AS t;
+SELECT hashcharextended('\200'::"char", 0) = hashint4extended(-128, 0) AS t;
+SELECT hashcharextended('\200'::"char", 1) = hashint4extended(-128, 1) AS t;
+
 SELECT v as value, hashname(v)::bit(32) as standard,
        hashnameextended(v, 0)::bit(32) as extended0,
        hashnameextended(v, 1)::bit(32) as extended1
