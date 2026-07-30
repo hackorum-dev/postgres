@@ -102,6 +102,7 @@ explain (costs off) select * from rlp where a = 30;	/* only default is scanned *
 explain (costs off) select * from rlp where a <= 31;
 explain (costs off) select * from rlp where a = 1 or a = 7;
 explain (costs off) select * from rlp where a = 1 or b = 'ab';
+explain (costs off) select * from rlp where  a is not null and a in(9,20,30);
 
 explain (costs off) select * from rlp where a > 20 and a < 27;
 explain (costs off) select * from rlp where a = 29;

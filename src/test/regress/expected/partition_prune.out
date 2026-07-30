@@ -569,6 +569,18 @@ explain (costs off) select * from rlp where a = 1 or b = 'ab';
          Filter: ((a = 1) OR ((b)::text = 'ab'::text))
 (25 rows)
 
+explain (costs off) select * from rlp where  a is not null and a in(9,20,30);
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Append
+   ->  Seq Scan on rlp2 rlp_1
+         Filter: ((a IS NOT NULL) AND (a = ANY ('{9,20,30}'::integer[])))
+   ->  Seq Scan on rlp4_1 rlp_2
+         Filter: ((a IS NOT NULL) AND (a = ANY ('{9,20,30}'::integer[])))
+   ->  Seq Scan on rlp_default_30 rlp_3
+         Filter: ((a IS NOT NULL) AND (a = ANY ('{9,20,30}'::integer[])))
+(7 rows)
+
 explain (costs off) select * from rlp where a > 20 and a < 27;
                QUERY PLAN                
 -----------------------------------------
