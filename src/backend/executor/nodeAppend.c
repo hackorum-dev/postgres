@@ -95,6 +95,7 @@ static void ExecAppendAsyncBegin(AppendState *node);
 static bool ExecAppendAsyncGetNext(AppendState *node, TupleTableSlot **result);
 static bool ExecAppendAsyncRequest(AppendState *node, TupleTableSlot **result);
 static void ExecAppendAsyncEventWait(AppendState *node);
+static void ExecAppendAsyncProcessPending(AppendState *node);
 static void classify_matching_subplans(AppendState *node);
 
 /* ----------------------------------------------------------------
@@ -426,6 +427,9 @@ ExecReScanAppend(AppendState *node)
 	int			nasyncplans = node->as_nasyncplans;
 	int			i;
 
+	/* Process asynchronous requests still pending */
+	ExecAppendAsyncProcessPending(node);
+
 	/*
 	 * If any PARAM_EXEC Params used in pruning expressions have changed, then
 	 * we'd better unset the valid subplans so that they are reselected for
@@ -469,7 +473,7 @@ ExecReScanAppend(AppendState *node)
 		{
 			AsyncRequest *areq = node->as_asyncrequests[i];
 
-			areq->callback_pending = false;
+			Assert(!areq->callback_pending);
 			areq->request_complete = false;
 			areq->result = NULL;
 		}
@@ -1132,6 +1136,35 @@ ExecAppendAsyncEventWait(AppendState *node)
 			ResetLatch(MyLatch);
 			CHECK_FOR_INTERRUPTS();
 		}
+	}
+}
+
+/* ----------------------------------------------------------------
+ *		ExecAppendAsyncProcessPending
+ *
+ *		Process all of the asynchronous requests still pending.
+ * ----------------------------------------------------------------
+ */
+static void
+ExecAppendAsyncProcessPending(AppendState *node)
+{
+	for (;;)
+	{
+		bool		found = false;
+		int			i;
+
+		i = -1;
+		while ((i = bms_next_member(node->as_asyncplans, i)) >= 0)
+		{
+			AsyncRequest *areq = node->as_asyncrequests[i];
+
+			if (areq->callback_pending)
+				found = true;
+		}
+		if (!found)
+			return;
+
+		ExecAppendAsyncEventWait(node);
 	}
 }
 
