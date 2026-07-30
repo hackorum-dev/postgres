@@ -1736,6 +1736,15 @@ ComputeXidHorizons(ComputeXidHorizonsResult *h)
 		TransactionId xid;
 		TransactionId xmin;
 
+#ifdef USE_INJECTION_POINTS
+		{
+			char		ip_name[64];
+
+			snprintf(ip_name, sizeof(ip_name),
+					 "compute-xid-horizons-at-%d", index);
+			InjectionPointRun(ip_name, NULL);
+		}
+#endif
 		/* Fetch xid just once - see GetNewTransactionId */
 		xid = UINT32_ACCESS_ONCE(other_xids[index]);
 		xmin = UINT32_ACCESS_ONCE(proc->xmin);
@@ -1944,6 +1953,8 @@ TransactionId
 GetOldestNonRemovableTransactionId(Relation rel)
 {
 	ComputeXidHorizonsResult horizons;
+
+	INJECTION_POINT("get-oldest-nonremovable-txid", NULL);
 
 	ComputeXidHorizons(&horizons);
 
@@ -2488,7 +2499,7 @@ ProcArrayInstallImportedXmin(TransactionId xmin,
 		return false;
 
 	/* Get lock so source xact can't end while we're doing this */
-	LWLockAcquire(ProcArrayLock, LW_SHARED);
+	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 
 	/*
 	 * Find the PGPROC entry of the source transaction. (This could use
