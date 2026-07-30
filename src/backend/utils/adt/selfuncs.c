@@ -415,7 +415,7 @@ var_eq_const(VariableStatData *vardata, Oid oproid, Oid collation,
 		int			i;
 
 		/*
-		 * Is the constant "=" to any of the column's most common values?
+		 * Does the constant match some of the columns' most common values?
 		 * (Although the given operator may not really be "=", we will assume
 		 * that seeing whether it returns TRUE is an appropriate test.  If you
 		 * don't like this, maybe you shouldn't be using eqsel for your
@@ -458,8 +458,14 @@ var_eq_const(VariableStatData *vardata, Oid oproid, Oid collation,
 				fresult = FunctionCallInvoke(fcinfo);
 				if (!fcinfo->isnull && DatumGetBool(fresult))
 				{
-					match = true;
-					break;
+					/* Matched, accumulate the selectivities. */
+					if (!match)
+					{
+						match = true;
+						selec = sslot.numbers[i];
+					}
+					else
+						selec += sslot.numbers[i];
 				}
 			}
 		}
@@ -469,15 +475,7 @@ var_eq_const(VariableStatData *vardata, Oid oproid, Oid collation,
 			i = 0;				/* keep compiler quiet */
 		}
 
-		if (match)
-		{
-			/*
-			 * Constant is "=" to this common value.  We know selectivity
-			 * exactly (or as exactly as ANALYZE could calculate it, anyway).
-			 */
-			selec = sslot.numbers[i];
-		}
-		else
+		if (!match)
 		{
 			/*
 			 * Comparison is against a constant that is neither NULL nor any
