@@ -879,6 +879,21 @@ get_matching_partitions(PartitionPruneContext *context, List *pruning_steps)
 				results[step->step_id] =
 					perform_pruning_base_step(context,
 											  (PartitionPruneStepOp *) step);
+				{
+					PartitionPruneStepOp *opstep = (PartitionPruneStepOp *) step;
+					PruneStepResult* res = results[step->step_id];
+					StringInfoData* offsetstr = makeStringInfo();
+					int offset = -1;
+					while ((offset = bms_next_member(res->bound_offsets, offset)) >= 0)
+					{
+						if (offsetstr->len > 0)
+							appendStringInfoChar(offsetstr, ' ');
+						appendStringInfo(offsetstr, "%d", offset);
+					}
+
+					elog(NOTICE, "PartitionPruneStepOp: %d N-exprs = %d, offsets = %d (%s), scan_default = %s, scan_null = %s", step->step_id, list_length(opstep->exprs), bms_num_members(res->bound_offsets), offsetstr->data, res->scan_default ? "YES" : "NO", res->scan_null ? "YES" : "NO");
+				}
+
 				break;
 
 			case T_PartitionPruneStepCombine:
@@ -886,6 +901,29 @@ get_matching_partitions(PartitionPruneContext *context, List *pruning_steps)
 					perform_pruning_combine_step(context,
 												 (PartitionPruneStepCombine *) step,
 												 results);
+				{
+					int stepid;
+					PartitionPruneStepCombine *cstep = (PartitionPruneStepCombine *) step;
+					PruneStepResult* res = results[step->step_id];
+					StringInfoData* stepidstr = makeStringInfo();
+					StringInfoData* offsetstr = makeStringInfo();
+
+					int offset = -1;
+					while ((offset = bms_next_member(res->bound_offsets, offset)) >= 0)
+					{
+						if (offsetstr->len > 0)
+							appendStringInfoChar(offsetstr, ' ');
+						appendStringInfo(offsetstr, "%d", offset);
+					}
+
+					foreach_int(stepid, cstep->source_stepids)
+					{
+						if (stepidstr->len > 0)
+							appendStringInfoChar(stepidstr, ' ');
+						appendStringInfo(stepidstr, "%d", stepid);
+					}
+					elog(NOTICE, "PartitionPruneStepCombine: %d (%s) N-inputs = %d (%s), offsets = %d (%s), scan_default = %s, scan_null = %s", step->step_id, cstep->combineOp == PARTPRUNE_COMBINE_UNION ? "UNION" : "INTERSECT",  list_length(cstep->source_stepids), stepidstr->data, bms_num_members(res->bound_offsets), offsetstr->data, res->scan_default ? "YES" : "NO", res->scan_null ? "YES" : "NO");
+				}
 				break;
 
 			default:
