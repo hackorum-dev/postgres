@@ -171,7 +171,8 @@
     future reuse.  However, it will not return the space to the operating
     system, except in the special case where one or more pages at the
     end of a table become entirely free and an exclusive table lock can be
-    easily obtained.  In contrast, <command>VACUUM FULL</command> actively compacts
+    easily obtained.  In contrast, <command>REPACK</command>,
+    <command>CLUSTER</command> or <command>VACUUM FULL</command> actively compacts
     tables by writing a complete new version of the table file with no dead
     space.  This minimizes the size of the table, but can take a long time.
     It also requires extra disk space for the new copy of the table, until
@@ -186,11 +187,13 @@
     is not to keep tables at their minimum size, but to maintain steady-state
     usage of disk space: each table occupies space equivalent to its
     minimum size plus however much space gets used up between vacuum runs.
-    Although <command>VACUUM FULL</command> can be used to shrink a table back
+    Although <command>REPACK</command>, <command>CLUSTER</command> or 
+    <command>VACUUM FULL</command> can be used to shrink a table back
     to its minimum size and return the disk space to the operating system,
     there is not much point in this if the table will just grow again in the
     future.  Thus, moderately-frequent standard <command>VACUUM</command> runs are a
-    better approach than infrequent <command>VACUUM FULL</command> runs for
+    better approach than infrequent <command>REPACK</command>,
+    <command>CLUSTER</command> or <command>VACUUM FULL</command> runs for
     maintaining heavily-updated tables.
    </para>
 
@@ -199,7 +202,8 @@
     doing all the work at night when load is low.
     The difficulty with doing vacuuming according to a fixed schedule
     is that if a table has an unexpected spike in update activity, it may
-    get bloated to the point that <command>VACUUM FULL</command> is really necessary
+    get bloated to the point that <command>REPACK</command>,
+    <command>CLUSTER</command> or <command>VACUUM FULL</command> is really necessary
     to reclaim space.  Using the autovacuum daemon alleviates this problem,
     since the daemon schedules vacuuming dynamically in response to update
     activity.  It is unwise to disable the daemon completely unless you
@@ -227,8 +231,8 @@
     a table contains large numbers of dead row versions as a result of
     massive update or delete activity.  If you have such a table and
     you need to reclaim the excess disk space it occupies, you will need
-    to use <command>VACUUM FULL</command>, or alternatively
-    <link linkend="sql-cluster"><command>CLUSTER</command></link>
+    to use <command>REPACK</command>,
+    <command>CLUSTER</command> or <command>VACUUM FULL</command>
     or one of the table-rewriting variants of
     <link linkend="sql-altertable"><command>ALTER TABLE</command></link>.
     These commands rewrite an entire new copy of the table and build

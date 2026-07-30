@@ -1568,7 +1568,8 @@ CREATE TABLE circles (
       although the <structfield>ctid</structfield> can be used to
       locate the row version very quickly, a row's
       <structfield>ctid</structfield> will change if it is
-      updated or moved by <command>VACUUM FULL</command>.  Therefore
+      updated or moved by <command>REPACK</command>,
+      <command>CLUSTER</command> or <command>VACUUM FULL</command>.  Therefore
       <structfield>ctid</structfield> should not be used as a row
       identifier.  A primary key should be used to identify logical rows.
      </para>
