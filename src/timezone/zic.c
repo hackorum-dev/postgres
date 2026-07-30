@@ -1902,7 +1902,7 @@ dolink(char const *target, char const *linkname, bool staysymlink)
 			}
 			link_errno = errno;
 		}
-		if (link_errno == EXDEV || link_errno == ENOTSUP)
+		if (link_errno == EXDEV || link_errno == ENOTSUP || link_errno == EINVAL)
 			break;
 
 		if (link_errno == EEXIST)
@@ -1983,7 +1983,7 @@ dolink(char const *target, char const *linkname, bool staysymlink)
 				putc(c, tp);
 			close_file(tp, directory, linkname, tempname);
 			close_file(fp, directory, target, NULL);
-			if (link_errno != ENOTSUP)
+			if (link_errno != ENOTSUP && link_errno != EINVAL)
 				warning(_("copy used because hard link failed: %s"),
 						strerror(link_errno));
 #ifdef HAVE_SYMLINK
