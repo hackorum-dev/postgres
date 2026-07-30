@@ -23,7 +23,15 @@ link(const char *src, const char *dst)
 	 */
 	if (CreateHardLinkA(dst, src, NULL) == 0)
 	{
-		_dosmaperr(GetLastError());
+		DWORD errcode;
+
+		errcode = GetLastError();
+
+		if (errcode == ERROR_INVALID_FUNCTION)
+			errno = ENOTSUP;
+		else
+			_dosmaperr(errcode);
+
 		return -1;
 	}
 	else
