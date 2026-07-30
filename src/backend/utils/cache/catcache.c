@@ -196,7 +196,17 @@ chareqfast(Datum a, Datum b)
 static uint32
 charhashfast(Datum datum)
 {
-	return murmurhash32((int32) DatumGetChar(datum));
+	/*
+	 * Cast through unsigned char, not a bare char, to avoid depending on the
+	 * platform's implementation-defined char signedness. There's no need to
+	 * consult GetDefaultCharSignedness() here since CatCache lives in
+	 * backend-private memory: it's never written to disk or WAL, and every
+	 * backend (including any physical standby) rebuilds its own copy
+	 * independently from the catalog contents, rather than relying on a value
+	 * computed by some other, possibly differently-built, process. Any fixed,
+	 * deterministic choice of signedness is fine here.
+	 */
+	return murmurhash32((int32) (unsigned char) DatumGetChar(datum));
 }
 
 static bool
