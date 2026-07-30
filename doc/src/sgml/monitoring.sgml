@@ -7463,8 +7463,8 @@ FROM pg_stat_get_backend_idset() AS backendid;
        <structfield>command</structfield> <type>text</type>
       </para>
       <para>
-       The command that is running. Either <command>REPACK</command> or
-       <command>VACUUM FULL</command>, or <command>CLUSTER</command>.
+       The command that is running. Either <command>REPACK</command>, 
+       <command>VACUUM FULL</command> or <command>CLUSTER</command>.
       </para></entry>
      </row>
 
