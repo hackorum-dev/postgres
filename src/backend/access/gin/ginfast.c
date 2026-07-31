@@ -468,7 +468,7 @@ ginHeapTupleFastInsert(GinState *ginstate, GinTupleCollector *collector)
 	 * pending list not forcibly.
 	 */
 	if (needCleanup)
-		ginInsertCleanup(ginstate, false, true, false, NULL);
+		ginInsertCleanup(ginstate, false, true, false, NULL, NULL);
 }
 
 /*
@@ -552,7 +552,8 @@ ginHeapTupleFastCollect(GinState *ginstate,
  */
 static void
 shiftList(Relation index, Buffer metabuffer, BlockNumber newHead,
-		  bool fill_fsm, IndexBulkDeleteResult *stats)
+		  bool fill_fsm, IndexBulkDeleteResult *stats,
+		  BufferAccessStrategy strategy)
 {
 	Page		metapage;
 	GinMetaPageData *metadata;
@@ -575,7 +576,9 @@ shiftList(Relation index, Buffer metabuffer, BlockNumber newHead,
 		while (data.ndeleted < GIN_NDELETE_AT_ONCE && blknoToDelete != newHead)
 		{
 			freespace[data.ndeleted] = blknoToDelete;
-			buffers[data.ndeleted] = ReadBuffer(index, blknoToDelete);
+			buffers[data.ndeleted] = ReadBufferExtended(index, MAIN_FORKNUM,
+														blknoToDelete,
+														RBM_NORMAL, strategy);
 			LockBuffer(buffers[data.ndeleted], GIN_EXCLUSIVE);
 			page = BufferGetPage(buffers[data.ndeleted]);
 
@@ -775,11 +778,16 @@ processPendingPage(BuildAccumulator *accum, KeyArray *ka,
  * FSM.
  *
  * If stats isn't null, we count deleted pending pages into the counts.
+ *
+ * If strategy isn't null, use that buffer access strategy to read the
+ * pending-list pages; vacuum passes its strategy so that the cleanup
+ * doesn't disturb the shared buffer cache more than necessary.
  */
 void
 ginInsertCleanup(GinState *ginstate, bool full_clean,
 				 bool fill_fsm, bool forceCleanup,
-				 IndexBulkDeleteResult *stats)
+				 IndexBulkDeleteResult *stats,
+				 BufferAccessStrategy strategy)
 {
 	Relation	index = ginstate->index;
 	Buffer		metabuffer,
@@ -827,7 +835,8 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 		workMemory = work_mem;
 	}
 
-	metabuffer = ReadBuffer(index, GIN_METAPAGE_BLKNO);
+	metabuffer = ReadBufferExtended(index, MAIN_FORKNUM, GIN_METAPAGE_BLKNO,
+									RBM_NORMAL, strategy);
 	LockBuffer(metabuffer, GIN_SHARE);
 	metapage = BufferGetPage(metabuffer);
 	metadata = GinPageGetMeta(metapage);
@@ -850,7 +859,8 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 	 * Read and lock head of pending list
 	 */
 	blkno = metadata->head;
-	buffer = ReadBuffer(index, blkno);
+	buffer = ReadBufferExtended(index, MAIN_FORKNUM, blkno,
+								RBM_NORMAL, strategy);
 	LockBuffer(buffer, GIN_SHARE);
 	page = BufferGetPage(buffer);
 
@@ -971,7 +981,7 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 			 * remove read pages from pending list, at this point all content
 			 * of read pages is in regular structure
 			 */
-			shiftList(index, metabuffer, blkno, fill_fsm, stats);
+			shiftList(index, metabuffer, blkno, fill_fsm, stats, strategy);
 
 			/* At this point, some pending pages have been freed up */
 			fsm_vac = true;
@@ -1003,7 +1013,8 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 		 * Read next page in pending list
 		 */
 		vacuum_delay_point(false);
-		buffer = ReadBuffer(index, blkno);
+		buffer = ReadBufferExtended(index, MAIN_FORKNUM, blkno,
+									RBM_NORMAL, strategy);
 		LockBuffer(buffer, GIN_SHARE);
 		page = BufferGetPage(buffer);
 	}
@@ -1077,7 +1088,7 @@ gin_clean_pending_list(PG_FUNCTION_ARGS)
 		GinState	ginstate;
 
 		initGinState(&ginstate, indexRel);
-		ginInsertCleanup(&ginstate, true, true, true, &stats);
+		ginInsertCleanup(&ginstate, true, true, true, &stats, NULL);
 	}
 	else
 		ereport(DEBUG1,
