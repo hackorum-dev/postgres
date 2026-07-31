@@ -2163,16 +2163,23 @@ query_outputs_are_not_nullable(Query *query)
 		if (expr_is_nonnullable(&subroot, expr, NOTNULL_SOURCE_CATALOG))
 			continue;
 
-		if (IsA(expr, Var))
+		if (IsA(expr, Var) && ((Var *) expr)->varlevelsup == 0)
 		{
 			Var		   *var = (Var *) expr;
 
 			/*
-			 * For a plain Var, even if that didn't work, we can conclude that
-			 * the Var is not nullable if find_nonnullable_vars can find a
-			 * "var IS NOT NULL" or similarly strict condition among the quals
-			 * on non-outerjoined-rels.  Compute the list of Vars having such
-			 * quals if we didn't already.
+			 * For a plain Var of this query level, even if that didn't work,
+			 * we can conclude that the Var is not nullable if
+			 * find_nonnullable_vars can find a "var IS NOT NULL" or similarly
+			 * strict condition among the quals on non-outerjoined-rels.
+			 * Compute the list of Vars having such quals if we didn't
+			 * already.
+			 *
+			 * Upper-level Vars must be excluded: find_nonnullable_vars only
+			 * reports Vars of this level, and identifies them by varno and
+			 * varattno alone, so an upper-level Var would be matched against
+			 * a local Var of an unrelated relation that happens to have the
+			 * same varno and varattno.
 			 */
 			if (!computed_nonnullable_vars)
 			{
