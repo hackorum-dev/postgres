@@ -1654,7 +1654,7 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 * On the other hand, the WHERE clause must contain some Vars of the
 	 * parent query, else it's not gonna be a join.
 	 */
-	if (!contain_vars_of_level(whereClause, 1))
+	if (!contain_vars_of_level_parent(whereClause, 1))
 		return NULL;
 
 	/*
