@@ -445,38 +445,46 @@ logicalrep_read_insert(StringInfo in, LogicalRepTupleData *newtup)
 
 /*
  * Write UPDATE to the output stream.
+ *
+ * 'pubrel' is the relation as published (the root partitioned table under
+ * publish_via_partition_root, otherwise the table itself); its OID and tuple
+ * descriptor go on the wire.  'leafrel' is the relation that actually stored
+ * the row, and its replica identity decides whether the old tuple is a full
+ * tuple ('O') or the replica-identity key ('K').  The two are the same
+ * relation except under publish_via_partition_root.
  */
 void
-logicalrep_write_update(StringInfo out, TransactionId xid, Relation rel,
+logicalrep_write_update(StringInfo out, TransactionId xid,
+						Relation pubrel, Relation leafrel,
 						TupleTableSlot *oldslot, TupleTableSlot *newslot,
 						bool binary, Bitmapset *columns,
 						PublishGencolsType include_gencols_type)
 {
 	pq_sendbyte(out, LOGICAL_REP_MSG_UPDATE);
 
-	Assert(rel->rd_rel->relreplident == REPLICA_IDENTITY_DEFAULT ||
-		   rel->rd_rel->relreplident == REPLICA_IDENTITY_FULL ||
-		   rel->rd_rel->relreplident == REPLICA_IDENTITY_INDEX);
+	Assert(leafrel->rd_rel->relreplident == REPLICA_IDENTITY_DEFAULT ||
+		   leafrel->rd_rel->relreplident == REPLICA_IDENTITY_FULL ||
+		   leafrel->rd_rel->relreplident == REPLICA_IDENTITY_INDEX);
 
 	/* transaction ID (if not valid, we're not streaming) */
 	if (TransactionIdIsValid(xid))
 		pq_sendint32(out, xid);
 
 	/* use Oid as relation identifier */
-	pq_sendint32(out, RelationGetRelid(rel));
+	pq_sendint32(out, RelationGetRelid(pubrel));
 
 	if (oldslot != NULL)
 	{
-		if (rel->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
+		if (leafrel->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
 			pq_sendbyte(out, 'O');	/* old tuple follows */
 		else
 			pq_sendbyte(out, 'K');	/* old key follows */
-		logicalrep_write_tuple(out, rel, oldslot, binary, columns,
+		logicalrep_write_tuple(out, pubrel, oldslot, binary, columns,
 							   include_gencols_type);
 	}
 
 	pq_sendbyte(out, 'N');		/* new tuple follows */
-	logicalrep_write_tuple(out, rel, newslot, binary, columns,
+	logicalrep_write_tuple(out, pubrel, newslot, binary, columns,
 						   include_gencols_type);
 }
 
@@ -523,16 +531,19 @@ logicalrep_read_update(StringInfo in, bool *has_oldtuple,
 
 /*
  * Write DELETE to the output stream.
+ *
+ * See logicalrep_write_update() for the meaning of 'pubrel' and 'leafrel'.
  */
 void
-logicalrep_write_delete(StringInfo out, TransactionId xid, Relation rel,
+logicalrep_write_delete(StringInfo out, TransactionId xid,
+						Relation pubrel, Relation leafrel,
 						TupleTableSlot *oldslot, bool binary,
 						Bitmapset *columns,
 						PublishGencolsType include_gencols_type)
 {
-	Assert(rel->rd_rel->relreplident == REPLICA_IDENTITY_DEFAULT ||
-		   rel->rd_rel->relreplident == REPLICA_IDENTITY_FULL ||
-		   rel->rd_rel->relreplident == REPLICA_IDENTITY_INDEX);
+	Assert(leafrel->rd_rel->relreplident == REPLICA_IDENTITY_DEFAULT ||
+		   leafrel->rd_rel->relreplident == REPLICA_IDENTITY_FULL ||
+		   leafrel->rd_rel->relreplident == REPLICA_IDENTITY_INDEX);
 
 	pq_sendbyte(out, LOGICAL_REP_MSG_DELETE);
 
@@ -541,14 +552,14 @@ logicalrep_write_delete(StringInfo out, TransactionId xid, Relation rel,
 		pq_sendint32(out, xid);
 
 	/* use Oid as relation identifier */
-	pq_sendint32(out, RelationGetRelid(rel));
+	pq_sendint32(out, RelationGetRelid(pubrel));
 
-	if (rel->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
+	if (leafrel->rd_rel->relreplident == REPLICA_IDENTITY_FULL)
 		pq_sendbyte(out, 'O');	/* old tuple follows */
 	else
 		pq_sendbyte(out, 'K');	/* old key follows */
 
-	logicalrep_write_tuple(out, rel, oldslot, binary, columns,
+	logicalrep_write_tuple(out, pubrel, oldslot, binary, columns,
 						   include_gencols_type);
 }
 
