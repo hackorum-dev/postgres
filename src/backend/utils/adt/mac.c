@@ -57,10 +57,10 @@ macaddr_in(PG_FUNCTION_ARGS)
 
 	/* %1s matches iff there is trailing non-whitespace garbage */
 
-	count = sscanf(str, "%x:%x:%x:%x:%x:%x%1s",
+	count = sscanf(str, "%2x:%2x:%2x:%2x:%2x:%2x%1s",
 				   &a, &b, &c, &d, &e, &f, junk);
 	if (count != 6)
-		count = sscanf(str, "%x-%x-%x-%x-%x-%x%1s",
+		count = sscanf(str, "%2x-%2x-%2x-%2x-%2x-%2x%1s",
 					   &a, &b, &c, &d, &e, &f, junk);
 	if (count != 6)
 		count = sscanf(str, "%2x%2x%2x:%2x%2x%2x%1s",
