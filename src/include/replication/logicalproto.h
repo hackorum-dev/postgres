@@ -228,16 +228,17 @@ extern void logicalrep_write_insert(StringInfo out, TransactionId xid,
 									PublishGencolsType include_gencols_type);
 extern LogicalRepRelId logicalrep_read_insert(StringInfo in, LogicalRepTupleData *newtup);
 extern void logicalrep_write_update(StringInfo out, TransactionId xid,
-									Relation rel, TupleTableSlot *oldslot,
-									TupleTableSlot *newslot, bool binary,
-									Bitmapset *columns,
+									Relation pubrel, Relation leafrel,
+									TupleTableSlot *oldslot, TupleTableSlot *newslot,
+									bool binary, Bitmapset *columns,
 									PublishGencolsType include_gencols_type);
 extern LogicalRepRelId logicalrep_read_update(StringInfo in,
 											  bool *has_oldtuple, LogicalRepTupleData *oldtup,
 											  LogicalRepTupleData *newtup);
 extern void logicalrep_write_delete(StringInfo out, TransactionId xid,
-									Relation rel, TupleTableSlot *oldslot,
-									bool binary, Bitmapset *columns,
+									Relation pubrel, Relation leafrel,
+									TupleTableSlot *oldslot, bool binary,
+									Bitmapset *columns,
 									PublishGencolsType include_gencols_type);
 extern LogicalRepRelId logicalrep_read_delete(StringInfo in,
 											  LogicalRepTupleData *oldtup);
