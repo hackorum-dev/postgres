@@ -76,6 +76,7 @@ static bool pull_varattnos_walker(Node *node, pull_varattnos_context *context);
 static bool pull_vars_walker(Node *node, pull_vars_context *context);
 static bool contain_var_clause_walker(Node *node, void *context);
 static bool contain_vars_of_level_walker(Node *node, int *sublevels_up);
+static bool contain_vars_of_level_walker2(Node *node, int *sublevels_up);
 static bool contain_vars_returning_old_or_new_walker(Node *node, void *context);
 static bool locate_var_of_level_walker(Node *node,
 									   locate_var_of_level_context *context);
@@ -492,7 +493,55 @@ contain_vars_of_level_walker(Node *node, int *sublevels_up)
 								  sublevels_up);
 }
 
+bool
+contain_vars_of_level_parent(Node *node, int levelsup)
+{
+	int			sublevels_up = levelsup;
 
+	return query_or_expression_tree_walker(node,
+										   contain_vars_of_level_walker2,
+										   &sublevels_up,
+										   0);
+}
+
+static bool
+contain_vars_of_level_walker2(Node *node, int *sublevels_up)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Var))
+	{
+		if (((Var *) node)->varlevelsup == *sublevels_up)
+			return true;		/* abort tree traversal and return true */
+		return false;
+	}
+	if (IsA(node, CurrentOfExpr))
+	{
+		if (*sublevels_up == 0)
+			return true;
+		return false;
+	}
+	if (IsA(node, PlaceHolderVar))
+	{
+		if (((PlaceHolderVar *) node)->phlevelsup == *sublevels_up)
+			return true;		/* abort the tree traversal and return true */
+		/* else fall through to check the contained expr */
+	}
+	if (IsA(node, Query))
+	{
+		/* Recurse into subselects */
+		bool		result;
+
+		result = query_tree_walker((Query *) node,
+								   contain_vars_of_level_walker2,
+								   sublevels_up,
+								   0);
+		return result;
+	}
+	return expression_tree_walker(node,
+								  contain_vars_of_level_walker2,
+								  sublevels_up);
+}
 /*
  * contain_vars_returning_old_or_new
  *	  Recursively scan a clause to discover whether it contains any Var nodes
