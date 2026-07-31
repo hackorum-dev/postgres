@@ -191,9 +191,11 @@ XLogReaderFree(XLogReaderState *state)
 static void
 allocate_recordbuf(XLogReaderState *state, uint32 reclength)
 {
-	uint32		newSize = reclength;
+	uint32		newSize;
 
-	newSize += XLOG_BLCKSZ - (newSize % XLOG_BLCKSZ);
+	Assert(reclength <= INT32_MAX - BLCKSZ);
+
+	newSize = TYPEALIGN(XLOG_BLCKSZ, reclength);
 	newSize = Max(newSize, 5 * Max(BLCKSZ, XLOG_BLCKSZ));
 
 	if (state->readRecordBuf)
@@ -673,6 +675,21 @@ restart:
 								  (uint32) SizeOfXLogRecord, total_len);
 			goto err;
 		}
+
+		/*
+		 * If it's too large we shouldn't try to reconstruct the corrupted
+		 * record; it could cause all kinds of issues through overflow,
+		 * oversized allocations, and OOMs.
+		 */
+		if (total_len > XLogRecordMaxSize)
+		{
+			report_invalid_record(state,
+								  "invalid record length at %X/%08X: expected at most %u, got %u",
+								  LSN_FORMAT_ARGS(RecPtr),
+								  XLogRecordMaxSize, total_len);
+			goto err;
+		}
+
 		/* We'll validate the header once we have the next page. */
 		gotheader = false;
 	}
@@ -1146,6 +1163,22 @@ ValidXLogRecordHeader(XLogReaderState *state, XLogRecPtr RecPtr,
 							  "invalid record length at %X/%08X: expected at least %u, got %u",
 							  LSN_FORMAT_ARGS(RecPtr),
 							  (uint32) SizeOfXLogRecord, record->xl_tot_len);
+		return false;
+	}
+
+	/*
+	 * Symmetric with XLogRecordAssemble(): the reader must not attempt to
+	 * reassemble or decode a record larger than XLogRecordMaxSize.  Without
+	 * this bound, a crafted multi-page xl_tot_len near UINT32_MAX can make
+	 * allocate_recordbuf()'s size math overflow and corrupt memory during
+	 * reassembly.
+	 */
+	if (record->xl_tot_len > XLogRecordMaxSize)
+	{
+		report_invalid_record(state,
+							  "invalid record length at %X/%08X: expected at most %u, got %u",
+							  LSN_FORMAT_ARGS(RecPtr),
+							  XLogRecordMaxSize, record->xl_tot_len);
 		return false;
 	}
 	if (!RmgrIdIsValid(record->xl_rmid))
