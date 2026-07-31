@@ -873,6 +873,9 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 	 * At the top of this loop, we have pin and lock on the current page of
 	 * the pending list.  However, we'll release that before exiting the loop.
 	 * Note we also have pin but not lock on the metapage.
+	 *
+	 * The vacuum_delay_point() calls below are placed where
+	 * the current page is not locked.
 	 */
 	for (;;)
 	{
@@ -891,8 +894,6 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 		 * read page's datums into accum
 		 */
 		processPendingPage(&accum, &datums, page, FirstOffsetNumber);
-
-		vacuum_delay_point(false);
 
 		/*
 		 * Is it time to flush memory to disk?	Flush if we are at the end of
