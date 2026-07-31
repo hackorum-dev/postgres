@@ -2163,7 +2163,14 @@ query_outputs_are_not_nullable(Query *query)
 		if (expr_is_nonnullable(&subroot, expr, NOTNULL_SOURCE_CATALOG))
 			continue;
 
-		if (IsA(expr, Var))
+		/*
+		 * Upper-level Vars must be excluded here: find_nonnullable_vars only
+		 * reports Vars of this query level, and identifies them by varno and
+		 * varattno alone, so an upper-level Var would be matched against a
+		 * local Var of an unrelated relation that happens to have the same
+		 * varno and varattno.
+		 */
+		if (IsA(expr, Var) && ((Var *) expr)->varlevelsup == 0)
 		{
 			Var		   *var = (Var *) expr;
 

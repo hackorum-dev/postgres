@@ -1671,6 +1671,20 @@ SELECT * FROM not_null_tab t1
 LEFT JOIN not_null_tab t2
 ON t2.id NOT IN (SELECT id FROM not_null_tab);
 
+-- No ANTI JOIN: the sub-select's output is an upper-level Var, which a qual
+-- on a local Var must not prove non-nullable.  The column order matters here:
+-- corr_outer.b and corr_inner.x must have the same attnum for the two to be
+-- confusable.
+CREATE TEMP TABLE corr_outer (b int, a int NOT NULL);
+CREATE TEMP TABLE corr_inner (x int);
+INSERT INTO corr_outer VALUES (NULL, 1);
+INSERT INTO corr_inner VALUES (5);
+EXPLAIN (COSTS OFF)
+SELECT * FROM corr_outer
+WHERE a NOT IN (SELECT corr_outer.b FROM corr_inner WHERE corr_inner.x IS NOT NULL);
+SELECT * FROM corr_outer
+WHERE a NOT IN (SELECT corr_outer.b FROM corr_inner WHERE corr_inner.x IS NOT NULL);
+
 -- ANTI JOIN: both sides are defined NOT NULL
 EXPLAIN (COSTS OFF)
 SELECT * FROM not_null_tab

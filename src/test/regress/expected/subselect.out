@@ -3818,6 +3818,32 @@ ON t2.id NOT IN (SELECT id FROM not_null_tab);
                      ->  Seq Scan on not_null_tab
 (8 rows)
 
+-- No ANTI JOIN: the sub-select's output is an upper-level Var, which a qual
+-- on a local Var must not prove non-nullable.  The column order matters here:
+-- corr_outer.b and corr_inner.x must have the same attnum for the two to be
+-- confusable.
+CREATE TEMP TABLE corr_outer (b int, a int NOT NULL);
+CREATE TEMP TABLE corr_inner (x int);
+INSERT INTO corr_outer VALUES (NULL, 1);
+INSERT INTO corr_inner VALUES (5);
+EXPLAIN (COSTS OFF)
+SELECT * FROM corr_outer
+WHERE a NOT IN (SELECT corr_outer.b FROM corr_inner WHERE corr_inner.x IS NOT NULL);
+                    QUERY PLAN                    
+--------------------------------------------------
+ Seq Scan on corr_outer
+   Filter: (NOT (ANY (a = (SubPlan any_1).col1)))
+   SubPlan any_1
+     ->  Seq Scan on corr_inner
+           Filter: (x IS NOT NULL)
+(5 rows)
+
+SELECT * FROM corr_outer
+WHERE a NOT IN (SELECT corr_outer.b FROM corr_inner WHERE corr_inner.x IS NOT NULL);
+ b | a 
+---+---
+(0 rows)
+
 -- ANTI JOIN: both sides are defined NOT NULL
 EXPLAIN (COSTS OFF)
 SELECT * FROM not_null_tab
