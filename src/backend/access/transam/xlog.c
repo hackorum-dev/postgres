@@ -46,7 +46,10 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include "access/clog.h"
+#include "access/clog.h"		/* CheckPointCLOG for XLogFlushUpgradeSLRU */
+#include "access/pgupgrade_wal.h"	/* RM_PG_UPGRADE_ID, pg_upgrade WAL
+									 * functions */
+#include "access/slru.h"		/* SLRU_PAGES_PER_SEGMENT for upgrade WAL */
 #include "access/commit_ts.h"
 #include "access/heaptoast.h"
 #include "access/multixact.h"
@@ -86,6 +89,7 @@
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
+#include "storage/copydir.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/large_object.h"
@@ -142,6 +146,10 @@ int			wal_retrieve_retry_interval = 5000;
 int			max_slot_wal_keep_size_mb = -1;
 int			wal_decode_buffer_size = 512 * 1024;
 bool		track_wal_io_timing = false;
+
+/* pg_upgrade --wal-upgrade streaming-standby options (see xlog.h) */
+int			pg_upgrade_standby_transfer_mode = PG_UPGRADE_XFER_MIRROR;
+char	   *pg_upgrade_standby_old_datadir = NULL;
 
 #ifdef WAL_DEBUG
 bool		XLOG_DEBUG = false;
@@ -205,6 +213,21 @@ const struct config_enum_entry archive_mode_options[] = {
 	{"no", ARCHIVE_MODE_OFF, true},
 	{"1", ARCHIVE_MODE_ON, true},
 	{"0", ARCHIVE_MODE_OFF, true},
+	{NULL, 0, false}
+};
+
+/*
+ * pg_upgrade_standby_transfer_mode options.  "mirror" (the default) means reproduce the
+ * per-file mode the primary recorded in the RELINK manifest; the rest override
+ * it with a specific placement primitive on the standby.
+ */
+const struct config_enum_entry pg_upgrade_standby_transfer_mode_options[] = {
+	{"mirror", PG_UPGRADE_XFER_MIRROR, false},
+	{"clone", PG_UPGRADE_XFER_CLONE, false},
+	{"copy", PG_UPGRADE_XFER_COPY, false},
+	{"copy_file_range", PG_UPGRADE_XFER_COPY_FILE_RANGE, false},
+	{"link", PG_UPGRADE_XFER_LINK, false},
+	{"swap", PG_UPGRADE_XFER_SWAP, false},
 	{NULL, 0, false}
 };
 
@@ -4402,6 +4425,221 @@ WriteControlFile(void)
 						XLOG_CONTROL_FILE)));
 }
 
+/*
+ * Synthesize a minimal, valid global/pg_control (and PG_VERSION) from this
+ * binary's compile-time constants so a --wal-upgrade recovery can start without
+ * initdb.  Only the compatibility-check fields must be right; the run-time
+ * fields are fixed up afterward by ArmControlFileForUpgradeRecovery().
+ *
+ * allow_overwrite=false creates the file O_EXCL (streaming-standby skeleton,
+ * never clobber an existing one); allow_overwrite=true uses O_TRUNC to replace
+ * the old-version pg_control left by archive-PITR recovery.
+ *
+ * Runs in the postmaster before CreateSharedMemoryAndSemaphores(), so there is
+ * no shared ControlFile yet; a local buffer is built and written directly.
+ */
+void
+SynthesizeUpgradeStreamControlFile(bool allow_overwrite)
+{
+	ControlFileData *cf;
+	char		buffer[PG_CONTROL_FILE_SIZE];	/* need not be aligned */
+	char		verpath[MAXPGPATH];
+	char		globaldir[MAXPGPATH];
+	char		ctlpath[MAXPGPATH];
+	int			fd;
+	char		mock_auth_nonce[MOCK_AUTH_NONCE_LEN];
+
+	/*
+	 * The CWD is not yet the data directory at this point, so build absolute
+	 * paths from DataDir rather than relying on relative names.
+	 */
+	snprintf(globaldir, sizeof(globaldir), "%s/global", DataDir);
+	snprintf(ctlpath, sizeof(ctlpath), "%s/%s", DataDir, XLOG_CONTROL_FILE);
+
+	/*
+	 * On the overwrite (archive-PITR) path, keep an existing valid
+	 * current-version control file.  A same-version PITR restore's base
+	 * backup carries a good new-version pg_control, and clobbering it would
+	 * discard its data_checksum_version (synthesis hardcodes 0), so a
+	 * checksummed cluster would then fail page verification during replay.
+	 * Synthesize only when the existing file is absent or a different major's
+	 * (the real cross-version case).
+	 */
+	if (allow_overwrite)
+	{
+		struct stat st;
+
+		if (stat(ctlpath, &st) == 0)
+		{
+			bool		existing_crc_ok = false;
+			ControlFileData *existing = get_controlfile(DataDir, &existing_crc_ok);
+
+			if (existing != NULL)
+			{
+				bool		usable = (existing_crc_ok &&
+									  existing->pg_control_version == PG_CONTROL_VERSION &&
+									  existing->catalog_version_no == CATALOG_VERSION_NO);
+
+				pfree(existing);
+				if (usable)
+				{
+					ereport(LOG,
+							(errmsg("keeping the existing new-version control file for upgrade-stream recovery"),
+							 errdetail("A valid same-version pg_control is present; not synthesizing over it (preserves its data checksum state).")));
+					return;
+				}
+			}
+		}
+	}
+
+	cf = (ControlFileData *) palloc0(sizeof(ControlFileData));
+
+	if (!pg_strong_random(mock_auth_nonce, MOCK_AUTH_NONCE_LEN))
+		ereport(FATAL,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("could not generate secret authorization token")));
+
+	/*
+	 * Status fields.  system_identifier is a placeholder (0); the arm
+	 * overwrites it with the WAL's sysid later.  DB_SHUTDOWNED is what the
+	 * arm expects.
+	 */
+	cf->system_identifier = 0;
+	memcpy(cf->mock_authentication_nonce, mock_auth_nonce, MOCK_AUTH_NONCE_LEN);
+	cf->state = DB_SHUTDOWNED;
+	cf->unloggedLSN = FirstNormalUnloggedLSN;
+
+	/*
+	 * Parameter values used when replaying WAL, from this node's GUCs (its
+	 * own postgresql.conf or the built-in defaults, not the primary's).  As
+	 * for any standby, these must be at least the primary's values or
+	 * recovery aborts "because of insufficient parameter settings" when the
+	 * window's PARAMETER_CHANGE record replays.
+	 */
+	cf->MaxConnections = MaxConnections;
+	cf->max_worker_processes = max_worker_processes;
+	cf->max_wal_senders = max_wal_senders;
+	cf->max_prepared_xacts = max_prepared_xacts;
+	cf->max_locks_per_xact = max_locks_per_xact;
+	cf->wal_level = wal_level;
+	cf->wal_log_hints = wal_log_hints;
+	cf->track_commit_timestamp = track_commit_timestamp;
+	cf->data_checksum_version = 0;
+
+	/* Version and compatibility-check fields (all compile-time constants). */
+	cf->pg_control_version = PG_CONTROL_VERSION;
+	cf->catalog_version_no = CATALOG_VERSION_NO;
+	cf->maxAlign = MAXIMUM_ALIGNOF;
+	cf->floatFormat = FLOATFORMAT_VALUE;
+	cf->blcksz = BLCKSZ;
+	cf->relseg_size = RELSEG_SIZE;
+	cf->slru_pages_per_segment = SLRU_PAGES_PER_SEGMENT;
+	cf->xlog_blcksz = XLOG_BLCKSZ;
+	cf->xlog_seg_size = wal_segment_size;
+	cf->nameDataLen = NAMEDATALEN;
+	cf->indexMaxKeys = INDEX_MAX_KEYS;
+	cf->toast_max_chunk_size = TOAST_MAX_CHUNK_SIZE;
+	cf->loblksize = LOBLKSIZE;
+	cf->float8ByVal = true;		/* vestigial */
+	cf->default_char_signedness = true;
+
+	/* CRC over the struct, exactly as WriteControlFile() does. */
+	INIT_CRC32C(cf->crc);
+	COMP_CRC32C(cf->crc, cf, offsetof(ControlFileData, crc));
+	FIN_CRC32C(cf->crc);
+
+	memset(buffer, 0, PG_CONTROL_FILE_SIZE);
+	memcpy(buffer, cf, sizeof(ControlFileData));
+
+	/*
+	 * Create the standard cluster subdirectories initdb would make; startup
+	 * opens some before replaying the window's DIRTREE record.  Mirrors
+	 * initdb.c's subdirs[]; EEXIST is tolerated.
+	 */
+	{
+		static const char *const subdirs[] = {
+			"global", "base", "pg_wal", "pg_wal/archive_status", "pg_wal/summaries",
+			"pg_commit_ts", "pg_dynshmem", "pg_notify", "pg_serial",
+			"pg_snapshots", "pg_subtrans", "pg_twophase",
+			"pg_multixact", "pg_multixact/members", "pg_multixact/offsets",
+			"pg_replslot", "pg_tblspc", "pg_stat", "pg_stat_tmp", "pg_xact",
+			"pg_logical", "pg_logical/snapshots", "pg_logical/mappings"
+		};
+
+		for (int s = 0; s < (int) lengthof(subdirs); s++)
+		{
+			char		dpath[MAXPGPATH];
+
+			snprintf(dpath, sizeof(dpath), "%s/%s", DataDir, subdirs[s]);
+			if (MakePGDirectory(dpath) != 0 && errno != EEXIST)
+				ereport(FATAL,
+						(errcode_for_file_access(),
+						 errmsg("could not create directory \"%s\": %m", dpath)));
+		}
+	}
+
+	/*
+	 * Write global/pg_control: O_EXCL for a streaming standby (must not
+	 * clobber), O_TRUNC for archive-PITR recovery (must replace the
+	 * old-version file).
+	 */
+	fd = BasicOpenFile(ctlpath,
+					   O_RDWR | O_CREAT | PG_BINARY |
+					   (allow_overwrite ? O_TRUNC : O_EXCL));
+	if (fd < 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not create file \"%s\": %m", ctlpath)));
+	errno = 0;
+	if (write(fd, buffer, PG_CONTROL_FILE_SIZE) != PG_CONTROL_FILE_SIZE)
+	{
+		if (errno == 0)
+			errno = ENOSPC;
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not write to file \"%s\": %m", ctlpath)));
+	}
+	if (pg_fsync(fd) != 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not fsync file \"%s\": %m", ctlpath)));
+	if (close(fd) != 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not close file \"%s\": %m", ctlpath)));
+
+	/*
+	 * Write a matching PG_VERSION (major-version stamp checkDataDir
+	 * requires).
+	 */
+	snprintf(verpath, sizeof(verpath), "%s/PG_VERSION", DataDir);
+	fd = BasicOpenFile(verpath, O_RDWR | O_CREAT | O_TRUNC | PG_BINARY);
+	if (fd < 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not create file \"%s\": %m", verpath)));
+	if (write(fd, PG_MAJORVERSION "\n", strlen(PG_MAJORVERSION) + 1) !=
+		(int) (strlen(PG_MAJORVERSION) + 1))
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not write to file \"%s\": %m", verpath)));
+	if (pg_fsync(fd) != 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not fsync file \"%s\": %m", verpath)));
+	if (close(fd) != 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not close file \"%s\": %m", verpath)));
+
+	pfree(cf);
+
+	ereport(LOG,
+			(errmsg("synthesized a fresh pg_control and PG_VERSION for an upgrade-stream standby"),
+			 errdetail("The standby will stream and replay the upgrade window from its primary; no initdb was required.")));
+}
+
+
 static void
 ReadControlFile(void)
 {
@@ -4634,6 +4872,171 @@ static void
 UpdateControlFile(void)
 {
 	update_controlfile(DataDir, ControlFile, true);
+}
+
+/*
+ * Arm the control file for pg_upgrade --wal-upgrade recovery.
+ *
+ * Points checkPoint at CN (the end-of-upgrade checkpoint) and forces wal_level
+ * to replica so recovery replays from CN through XLOG_UPGRADE_COMPLETE.  State
+ * and minRecoveryPoint differ by mode (see below).  Called before StartupXLOG()
+ * reads checkPointCopy, so the update takes effect this recovery cycle.
+ */
+void
+ArmControlFileForUpgradeRecovery(const struct CheckPoint *cn, XLogRecPtr cn_lsn,
+								 uint64 wal_sysid, bool for_streaming)
+{
+	Assert(ControlFile != NULL);
+
+	ControlFile->checkPoint = cn_lsn;
+	ControlFile->checkPointCopy = *cn;
+	ControlFile->wal_level = WAL_LEVEL_REPLICA;
+	ControlFile->minRecoveryPointTLI = cn->ThisTimeLineID;
+
+	if (for_streaming)
+	{
+		/*
+		 * Streaming standby: CN is not on local disk yet; it must stream in
+		 * from the primary.  InitWalRecovery() enters standby mode only when
+		 * minRecoveryPoint is valid or state == DB_SHUTDOWNED, so set both.
+		 */
+		ControlFile->state = DB_SHUTDOWNED;
+		ControlFile->minRecoveryPoint = cn_lsn;
+	}
+	else
+	{
+		/*
+		 * Local-window arm: the whole window is already in pg_wal/, so
+		 * recover it as ordinary crash recovery, stopping at the end of
+		 * available WAL.
+		 */
+		ControlFile->state = DB_IN_PRODUCTION;
+		ControlFile->minRecoveryPoint = InvalidXLogRecPtr;
+		ControlFile->minRecoveryPointTLI = 0;
+	}
+
+	/*
+	 * Adopt the sysid the upgrade WAL was emitted under so recovery's
+	 * per-page xlp_sysid checks accept the burst.  wal_sysid==0 means the
+	 * scan could not read it; leave pg_control untouched.
+	 */
+	if (wal_sysid != 0)
+		ControlFile->system_identifier = wal_sysid;
+
+	UpdateControlFile();
+}
+
+/*
+ * Informational state flips bracketing the upgrade-window replay: redo calls
+ * these at XLOG_UPGRADE_START and XLOG_UPGRADE_COMPLETE so a crash mid-window
+ * (or pg_controldata) shows "in pg_upgrade".  They do not affect the
+ * recovery-mode decision; Clear restores DB_IN_PRODUCTION.
+ */
+void
+SetControlFileInUpgrade(void)
+{
+	Assert(ControlFile != NULL);
+
+	ControlFile->state = DB_IN_UPGRADE;
+	ControlFile->time = (pg_time_t) time(NULL);
+	UpdateControlFile();
+}
+
+void
+ClearControlFileInUpgrade(void)
+{
+	Assert(ControlFile != NULL);
+
+	if (ControlFile->state == DB_IN_UPGRADE)
+	{
+		ControlFile->state = DB_IN_PRODUCTION;
+		ControlFile->time = (pg_time_t) time(NULL);
+		UpdateControlFile();
+	}
+}
+
+/*
+ * The checkpoint LSN currently recorded in the control file.  Used by
+ * PerformWalUpgradeIfNeeded() as the timeline-independent "already applied?"
+ * signal: once first startup finalizes, this advances past XLOG_UPGRADE_COMPLETE,
+ * whereas a pending upgrade still points at/before CN (which precedes COMPLETE).
+ */
+XLogRecPtr
+GetControlFileCheckPointLSN(void)
+{
+	Assert(ControlFile != NULL);
+	return ControlFile->checkPoint;
+}
+
+/*
+ * --wal-upgrade: durable "upgrade window replayed to COMPLETE" flag.  Set (and
+ * fsync'd) by the XLOG_UPGRADE_COMPLETE redo handler the instant the window
+ * finishes -- one checkpoint BEFORE the end-of-recovery checkpoint advances the
+ * control checkpoint past CN -- so that a crash in that gap leaves the flag set
+ * with the checkpoint still at CN, which PerformWalUpgradeIfNeeded() treats as
+ * "re-arm and re-replay" (idempotent), not "finalized".  The flag lives in
+ * pg_control so it is updated durably in the same write as the rest of the
+ * control-file state.
+ */
+void
+SetControlFileUpgradeFinalized(void)
+{
+	Assert(ControlFile != NULL);
+
+	/*
+	 * Called from two contexts: the XLOG_UPGRADE_COMPLETE redo handler
+	 * (startup process, single-threaded recovery) and EmitUpgradeWalWindow()
+	 * on the live burst server (an ordinary backend, concurrent with the
+	 * checkpointer). Take ControlFileLock so the latter is safe; the former's
+	 * acquire is uncontended.
+	 */
+	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
+	if (!ControlFile->upgrade_finalized)
+	{
+		ControlFile->upgrade_finalized = true;
+		UpdateControlFile();
+	}
+	LWLockRelease(ControlFileLock);
+}
+
+bool
+GetControlFileUpgradeFinalized(void)
+{
+	Assert(ControlFile != NULL);
+	return ControlFile->upgrade_finalized;
+}
+
+/*
+ * --wal-upgrade: durable "an upgrade window has been started here" flag.  Set on
+ * the burst server just before XLOG_UPGRADE_START is emitted, so a crash before
+ * COMPLETE leaves a durable trace (upgrade_started && !upgrade_finalized) that
+ * first-startup can refuse on, independent of whether the START-bearing WAL
+ * survived recycling.  See the field comment in pg_control.h.
+ */
+void
+SetControlFileUpgradeStarted(void)
+{
+	Assert(ControlFile != NULL);
+
+	/*
+	 * Like SetControlFileUpgradeFinalized(): may run on the live burst server
+	 * (an ordinary backend, concurrent with the checkpointer), so take the
+	 * lock.
+	 */
+	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
+	if (!ControlFile->upgrade_started)
+	{
+		ControlFile->upgrade_started = true;
+		UpdateControlFile();
+	}
+	LWLockRelease(ControlFileLock);
+}
+
+bool
+GetControlFileUpgradeStarted(void)
+{
+	Assert(ControlFile != NULL);
+	return ControlFile->upgrade_started;
 }
 
 /*
@@ -5932,6 +6335,22 @@ StartupXLOG(void)
 									 timebuf, sizeof(timebuf)))));
 			break;
 
+		case DB_IN_UPGRADE:
+
+			/*
+			 * Crashed while replaying the upgrade window (informational
+			 * state).  PerformWalUpgradeIfNeeded() already re-armed at CN
+			 * before this point (resetting the state to DB_IN_PRODUCTION), so
+			 * this case is reached only if that arming was skipped; report it
+			 * honestly and let recovery proceed rather than FATAL as an
+			 * "invalid" state.
+			 */
+			ereport(LOG,
+					(errmsg("database system was interrupted while replaying a pg_upgrade window (last known up at %s)",
+							str_time(ControlFile->time,
+									 timebuf, sizeof(timebuf)))));
+			break;
+
 		default:
 			ereport(FATAL,
 					(errcode(ERRCODE_DATA_CORRUPTED),
@@ -6562,6 +6981,16 @@ StartupXLOG(void)
 		promoted = PerformRecoveryXLogAction();
 
 	/*
+	 * The --wal-upgrade new cluster comes up read-write on first start, as
+	 * ordinary pg_upgrade does.  Atomicity is enforced earlier:
+	 * PerformWalUpgradeIfNeeded() FATALs on a partial
+	 * (START-without-COMPLETE) local window before arming, so only a
+	 * fully-replayed window reaches this point and serves.  If the upgrade
+	 * result is unsatisfactory, the operator falls back to the untouched old
+	 * cluster (or a standby).
+	 */
+
+	/*
 	 * If any of the critical GUCs have changed, log them before we allow
 	 * backends to write WAL.
 	 */
@@ -7115,6 +7544,21 @@ ShutdownXLOG(int code, Datum arg)
 	/* Don't be chatty in standalone mode */
 	ereport(IsPostmasterEnvironment ? LOG : NOTICE,
 			(errmsg("shutting down")));
+
+	/*
+	 * pg_upgrade --wal-upgrade-signal-handoff: if it armed a handoff, emit
+	 * the XLOG_UPGRADE_HANDOFF trigger now, while WAL insertion is still
+	 * permitted and WAL senders are still active to stream it.  This runs
+	 * after the postmaster has drained all backends (fast shutdown waits for
+	 * PM_WAIT_BACKENDS before invoking the shutdown checkpoint), so every
+	 * user commit is already flushed at an LSN below the handoff; the
+	 * shutdown checkpoint that follows lands above it.  The handoff is
+	 * therefore the exact end of the old WAL stream a streaming standby stops
+	 * at, with no commit able to slip past it.  Only a live primary emits (a
+	 * standby replaying this record must not re-emit).
+	 */
+	if (!RecoveryInProgress())
+		EmitPgUpgradeHandoffIfArmed();
 
 	/*
 	 * Signal walsenders to move to stopping state.
@@ -8665,6 +9109,849 @@ XLogAssignLSN(void)
 	XLogSetRecordFlags(XLOG_MARK_UNIMPORTANT);
 	XLogRegisterData(&dummy, sizeof(dummy));
 	return XLogInsert(RM_XLOG_ID, XLOG_ASSIGN_LSN);
+}
+
+/*
+ * Write a WAL record marking the start (XLOG_UPGRADE_START) or completion
+ * (XLOG_UPGRADE_COMPLETE) of pg_upgrade.  These records bracket the
+ * schema-restore window; both markers present means the upgrade was atomic.
+ */
+XLogRecPtr
+XLogWritePgUpgrade(bool is_start, uint32 old_major_version,
+				   uint32 new_major_version)
+{
+	xl_pg_upgrade xlrec;
+	XLogRecPtr	RecPtr;
+
+	/* zero padding and the pg_version tail so no stack bytes leak into WAL */
+	memset(&xlrec, 0, sizeof(xlrec));
+	xlrec.old_major_version = old_major_version;
+	xlrec.new_major_version = new_major_version;
+	xlrec.upgrade_time = (pg_time_t) time(NULL);
+	/* Embed PG_MAJORVERSION so redo can write $PGDATA/PG_VERSION */
+	snprintf(xlrec.pg_version, sizeof(xlrec.pg_version), "%s\n",
+			 PG_MAJORVERSION);
+
+	XLogBeginInsert();
+	XLogRegisterData(&xlrec, SizeOfXLPgUpgrade);
+	RecPtr = XLogInsert(RM_PG_UPGRADE_ID,
+						is_start ? XLOG_UPGRADE_START
+						: XLOG_UPGRADE_COMPLETE);
+
+	if (is_start)
+		ereport(LOG,
+				(errmsg("recorded pg_upgrade start at %X/%X (old major version %u, new major version %u)",
+						LSN_FORMAT_ARGS(RecPtr),
+						old_major_version, new_major_version)));
+	else
+		ereport(LOG,
+				(errmsg("recorded pg_upgrade completion at %X/%X (old major version %u, new major version %u)",
+						LSN_FORMAT_ARGS(RecPtr),
+						old_major_version, new_major_version)));
+
+	return RecPtr;
+}
+
+/*
+ * XLogWritePgUpgradeHandoff -- emit the OLD-format streaming-handoff trigger.
+ *
+ * Called from ShutdownXLOG() on the OLD primary as it shuts down (see
+ * EmitPgUpgradeHandoffIfArmed), so the record is written in the OLD WAL page
+ * format, streamed to a physical standby still following it, and guaranteed to
+ * sit after all user WAL and before the shutdown checkpoint.  See
+ * xl_pg_upgrade_handoff for why this is a separate record from the new-format
+ * XLOG_UPGRADE_START burst.
+ */
+XLogRecPtr
+XLogWritePgUpgradeHandoff(uint32 old_major_version, uint32 target_major_version)
+{
+	xl_pg_upgrade_handoff xlrec;
+	XLogRecPtr	RecPtr;
+
+	/* zero padding so no uninitialized stack bytes leak into WAL */
+	memset(&xlrec, 0, sizeof(xlrec));
+	xlrec.old_major_version = old_major_version;
+	xlrec.target_major_version = target_major_version;
+	xlrec.handoff_time = (pg_time_t) time(NULL);
+
+	XLogBeginInsert();
+	XLogRegisterData(&xlrec, SizeOfXLPgUpgradeHandoff);
+	RecPtr = XLogInsert(RM_PG_UPGRADE_ID, XLOG_UPGRADE_HANDOFF);
+
+	/*
+	 * Flush it: a streaming standby must receive this record before the
+	 * primary shuts down, so it must be on disk, not buffered.
+	 */
+	XLogFlush(RecPtr);
+
+	ereport(LOG,
+			(errmsg("pg_upgrade handoff trigger recorded at %X/%X "
+					"(old major version %u, target major version %u)",
+					LSN_FORMAT_ARGS(RecPtr),
+					old_major_version, target_major_version)));
+
+	return RecPtr;
+}
+
+/*
+ * EmitPgUpgradeHandoffIfArmed -- emit the streaming-handoff trigger at shutdown
+ * if pg_upgrade --wal-upgrade-signal-handoff armed it.
+ *
+ * Called from ShutdownXLOG() on a live primary, before WAL senders stop and
+ * before the shutdown checkpoint.  The sentinel file (written by the pg_upgrade
+ * lifecycle subcommand) holds the target major version.  Absent sentinel is the
+ * common case and a no-op.  The file is removed once consumed so a later restart
+ * does not re-emit.
+ */
+void
+EmitPgUpgradeHandoffIfArmed(void)
+{
+	const char *path = PG_UPGRADE_HANDOFF_SIGNAL_FILE;
+	FILE	   *f;
+	int			target_major = 0;
+
+	f = AllocateFile(path, "r");
+	if (f == NULL)
+	{
+		if (errno != ENOENT)
+			ereport(FATAL,
+					(errcode_for_file_access(),
+					 errmsg("could not open pg_upgrade handoff signal file \"%s\": %m",
+							path)));
+		return;					/* not armed: normal shutdown */
+	}
+
+	if (fscanf(f, "%d", &target_major) != 1 || target_major <= 0)
+	{
+		FreeFile(f);
+		ereport(FATAL,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid data in pg_upgrade handoff signal file \"%s\"",
+						path)));
+	}
+	FreeFile(f);
+
+	(void) XLogWritePgUpgradeHandoff(PG_VERSION_NUM / 10000,
+									 (uint32) target_major);
+
+	if (unlink(path) != 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not remove pg_upgrade handoff signal file \"%s\": %m",
+						path)));
+}
+
+/*
+ * Recursively collect PGDATA-relative subdirectory paths under "abspath"
+ * (relative prefix "relpath"), appending each NUL-terminated to dbuf and
+ * counting them in *ndirs.  Parents are appended before children so a plain
+ * mkdir() per path suffices on replay.
+ *
+ * pg_wal is skipped; the upgrade WAL segments and pg_wal/ are handled by
+ * PerformWalUpgradeIfNeeded(), not by the directory after-image.
+ */
+static void
+CollectUpgradeDirs(const char *abspath, const char *relpath,
+				   StringInfo dbuf, uint32 *ndirs,
+				   StringInfo sbuf, uint32 *nsymlinks)
+{
+	DIR		   *dir;
+	struct dirent *de;
+
+	dir = AllocateDir(abspath);
+	if (dir == NULL)
+		return;
+
+	while ((de = ReadDir(dir, abspath)) != NULL)
+	{
+		char		childabs[MAXPGPATH];
+		char		childrel[MAXPGPATH];
+		struct stat st;
+
+		if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+			continue;
+
+		/* top-level pg_wal is not part of the after-image (see comment) */
+		if (relpath[0] == '\0' && strcmp(de->d_name, "pg_wal") == 0)
+			continue;
+
+		/*
+		 * Top-level pg_replslot is not part of the after-image either.  Its
+		 * upgrade-window retention slot has a per-slot "state" file that is
+		 * not WAL-logged, so capturing the directory without it would leave a
+		 * reconstructed cluster with an empty pg_replslot/<slot>/ that PANICs
+		 * at startup.  The slot is a primary-only artifact; a reconstructed
+		 * cluster starts with an empty pg_replslot/, so skip the whole
+		 * subtree.
+		 */
+		if (relpath[0] == '\0' && strcmp(de->d_name, "pg_replslot") == 0)
+			continue;
+
+		snprintf(childabs, sizeof(childabs), "%s/%s", abspath, de->d_name);
+
+		if (relpath[0] == '\0')
+			snprintf(childrel, sizeof(childrel), "%s", de->d_name);
+		else
+			snprintf(childrel, sizeof(childrel), "%s/%s", relpath, de->d_name);
+
+		/*
+		 * A symlink (e.g. pg_tblspc/<spcoid>) is captured as (linkpath,
+		 * target) so replay can recreate it; we do not recurse through it
+		 * (its contents arrive as RELFILE images via smgr once the symlink
+		 * exists).
+		 */
+		if (lstat(childabs, &st) == 0 && S_ISLNK(st.st_mode))
+		{
+			char		target[MAXPGPATH];
+			ssize_t		tlen;
+
+			tlen = readlink(childabs, target, sizeof(target) - 1);
+			if (tlen < 0 || tlen >= (ssize_t) sizeof(target))
+				continue;		/* unreadable / too long -- skip */
+			target[tlen] = '\0';
+
+			appendBinaryStringInfo(sbuf, childrel, strlen(childrel) + 1);
+			appendBinaryStringInfo(sbuf, target, strlen(target) + 1);
+			(*nsymlinks)++;
+			continue;
+		}
+
+		if (lstat(childabs, &st) != 0 || !S_ISDIR(st.st_mode))
+			continue;			/* only directories and symlinks; skip files */
+
+		/* append this directory, then recurse into it (parent-before-child) */
+		appendBinaryStringInfo(dbuf, childrel, strlen(childrel) + 1);
+		(*ndirs)++;
+
+		CollectUpgradeDirs(childabs, childrel, dbuf, ndirs, sbuf, nsymlinks);
+	}
+	FreeDir(dir);
+}
+
+/*
+ * Emit one XLOG_UPGRADE_DIRTREE record capturing the after-image of the new
+ * cluster's directory tree (every subdirectory under PGDATA except pg_wal).
+ * initdb creates this tree outside the server, so it is not otherwise
+ * WAL-logged; this lets recovery rebuild the skeleton from WAL without initdb.
+ *
+ * Emitted right after XLOG_UPGRADE_START and before the file-image records, so
+ * the directories exist before any relfile/SLRU image is replayed into them.
+ */
+XLogRecPtr
+XLogWriteUpgradeDirSkel(void)
+{
+	xl_upgrade_dirtree xlrec;
+	StringInfoData dbuf;		/* directory paths */
+	StringInfoData sbuf;		/* symlink entries */
+	XLogRecPtr	RecPtr;
+
+	/* zero padding so no uninitialized stack bytes leak into WAL */
+	memset(&xlrec, 0, sizeof(xlrec));
+	initStringInfo(&dbuf);
+	initStringInfo(&sbuf);
+	xlrec.ndirs = 0;
+	xlrec.nsymlinks = 0;
+	CollectUpgradeDirs(DataDir, "", &dbuf, &xlrec.ndirs,
+					   &sbuf, &xlrec.nsymlinks);
+	xlrec.dir_bytes = (uint32) dbuf.len;
+	xlrec.sym_bytes = (uint32) sbuf.len;
+
+	XLogBeginInsert();
+	XLogRegisterData(&xlrec, SizeOfXLUpgradeDirtree);
+	if (dbuf.len > 0)
+		XLogRegisterData(dbuf.data, dbuf.len);
+	if (sbuf.len > 0)
+		XLogRegisterData(sbuf.data, sbuf.len);
+	RecPtr = XLogInsert(RM_PG_UPGRADE_ID, XLOG_UPGRADE_DIRTREE);
+
+	ereport(LOG,
+			(errmsg("pg_upgrade directory after-image recorded at %X/%X (%u directories, %u symlinks)",
+					LSN_FORMAT_ARGS(RecPtr), xlrec.ndirs, xlrec.nsymlinks)));
+
+	pfree(dbuf.data);
+	pfree(sbuf.data);
+	return RecPtr;
+}
+
+/*
+ * Emit XLOG_UPGRADE_SLRU_DATA records for all segment files in one SLRU
+ * directory (pg_xact, pg_multixact/offsets, or pg_multixact/members).  These
+ * FPIs are self-contained: redo is the sole writer of these pages, so it just
+ * writes the raw bytes back per segment file.
+ *
+ * Segments are sorted and packed into records covering contiguous runs
+ * [first_seg, last_seg] to minimise record count.  Returns the LSN of the last
+ * record, or InvalidXLogRecPtr if the directory is empty.
+ */
+XLogRecPtr
+XLogWriteUpgradeSlruData(uint8 slru_type)
+{
+	const char *slru_dirs[] = UPGRADE_SLRU_DIRS;
+	const char *slru_dir;
+	DIR		   *dir;
+	struct dirent *de;
+	XLogRecPtr	lsn = InvalidXLogRecPtr;
+
+	/* sorted list of (seg_number, filepath) pairs */
+	typedef struct
+	{
+		int64		segno;
+		char		path[MAXPGPATH];
+	} SlruSegInfo;
+
+	SlruSegInfo *segs = NULL;
+	int			nsegs = 0;
+	int			segs_alloc = 0;
+	int			i;
+
+	/*
+	 * Max segments per WAL record.  Reserve headroom for the
+	 * xl_upgrade_slru_data header and the XLogRecord header so a full batch's
+	 * data plus those headers still fits under XLogRecordMaxSize; otherwise a
+	 * contiguous run of exactly XLogRecordMaxSize/seg_size segments would
+	 * produce a record that XLogInsert() rejects as oversized.  (Mirrors the
+	 * relfile batch cap's headroom.)
+	 */
+	Size		seg_size = SLRU_PAGES_PER_SEGMENT * BLCKSZ;
+	int			max_segs_per_rec =
+		(int) ((XLogRecordMaxSize - SizeOfXLUpgradeSlruData - SizeOfXLogRecord)
+			   / seg_size);
+
+	if (slru_type >= lengthof(slru_dirs))
+		elog(ERROR, "invalid slru_type %u", slru_type);
+
+	slru_dir = slru_dirs[slru_type];
+
+	/* --- Pass 1: collect and sort segment numbers --- */
+	dir = AllocateDir(slru_dir);
+	if (dir == NULL)
+		return InvalidXLogRecPtr;
+
+	while ((de = ReadDir(dir, slru_dir)) != NULL)
+	{
+		int64		segno;
+		size_t		len = strlen(de->d_name);
+
+		if (de->d_name[0] == '.')
+			continue;
+
+		/*
+		 * Parse the FULL hex segment name, mirroring SlruScanDirectory() in
+		 * slru.c.  A capped read (e.g. "%04") would truncate long (15-digit)
+		 * or high-count (5-6 digit) names to a wrong segment number and
+		 * install the pages at the wrong offset.  Accept only all-hex names.
+		 */
+		if (strspn(de->d_name, "0123456789ABCDEF") != len)
+			continue;
+		segno = strtoi64(de->d_name, NULL, 16);
+
+		if (nsegs >= segs_alloc)
+		{
+			segs_alloc = (segs_alloc == 0) ? 64 : segs_alloc * 2;
+			if (segs == NULL)
+				segs = palloc_array(SlruSegInfo, segs_alloc);
+			else
+				segs = repalloc_array(segs, SlruSegInfo, segs_alloc);
+		}
+		segs[nsegs].segno = segno;
+		snprintf(segs[nsegs].path, MAXPGPATH, "%s/%s", slru_dir, de->d_name);
+		nsegs++;
+	}
+	FreeDir(dir);
+
+	if (nsegs == 0)
+	{
+		if (segs)
+			pfree(segs);
+		return InvalidXLogRecPtr;
+	}
+
+	/* sort ascending by segment number */
+	{
+		int			k,
+					n = nsegs;
+
+		/* simple insertion sort -- segment count is typically small */
+		for (k = 1; k < n; k++)
+		{
+			SlruSegInfo tmp = segs[k];
+			int			m = k;
+
+			while (m > 0 && segs[m - 1].segno > tmp.segno)
+			{
+				segs[m] = segs[m - 1];
+				m--;
+			}
+			segs[m] = tmp;
+		}
+	}
+
+	/* --- Pass 2: pack consecutive segments per record, allocate exact size --- */
+	i = 0;
+	while (i < nsegs)
+	{
+		xl_upgrade_slru_data xlrec;
+		int			j;
+		int			batch_count;
+		Size		batch_bytes;
+		char	   *packbuf;
+
+		/* Determine how many consecutive segments go in this batch */
+		j = i;
+		while (j < nsegs &&
+			   (j - i) < max_segs_per_rec &&
+			   (j == i || segs[j].segno == segs[j - 1].segno + 1))
+			j++;
+
+		batch_count = j - i;
+		batch_bytes = (Size) batch_count * seg_size;
+
+		/* Allocate exactly the batch size, not a worst-case buffer. */
+		packbuf = palloc(batch_bytes);
+
+		/* Read each segment file into the pack buffer */
+		for (int k = 0; k < batch_count; k++)
+		{
+			int			fd;
+			ssize_t		nbytes;
+
+			char	   *segbuf = packbuf + (Size) k * seg_size;
+			Size		total = 0;
+
+			fd = OpenTransientFile(segs[i + k].path, O_RDONLY | PG_BINARY);
+			if (fd < 0)
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not open SLRU file \"%s\": %m",
+								segs[i + k].path)));
+
+			/*
+			 * Read the whole segment.  read() may return a short count
+			 * without reaching EOF (e.g. interrupted after a partial
+			 * transfer), so loop: only a return of 0 is genuine EOF.  A
+			 * segment that ends before seg_size is a legitimately-partial
+			 * final segment; zero-pad its remainder so redo can stride by
+			 * seg_size.  Treating any short read as EOF would zero-fill the
+			 * tail of a full interior segment and corrupt it (for pg_xact,
+			 * silently losing commit status).
+			 */
+			for (;;)
+			{
+				nbytes = read(fd, segbuf + total, seg_size - total);
+				if (nbytes < 0)
+				{
+					CloseTransientFile(fd);
+					ereport(ERROR,
+							(errcode_for_file_access(),
+							 errmsg("could not read SLRU file \"%s\": %m",
+									segs[i + k].path)));
+				}
+				if (nbytes == 0)
+					break;		/* EOF */
+				total += (Size) nbytes;
+				if (total >= seg_size)
+					break;
+			}
+			CloseTransientFile(fd);
+
+			/* pad a genuinely-short (final) segment to full size */
+			if (total < seg_size)
+				memset(segbuf + total, 0, seg_size - total);
+		}
+
+		/* zero padding so no uninitialized stack bytes leak into WAL */
+		memset(&xlrec, 0, sizeof(xlrec));
+		xlrec.slru_type = slru_type;
+		xlrec.first_seg = segs[i].segno;
+		xlrec.last_seg = segs[i + batch_count - 1].segno;
+		xlrec.total_bytes = (uint32) batch_bytes;
+
+#ifdef USE_ASSERT_CHECKING
+
+		/*
+		 * Fault-injection hook: inflate total_bytes past the payload actually
+		 * registered below, producing a valid-CRC but internally inconsistent
+		 * record that exercises pg_upgrade_redo's SLRU bounds check.  Gated
+		 * on USE_ASSERT_CHECKING so a production build never emits such a
+		 * record.
+		 */
+		if (getenv("PG_UPGRADE_TEST_CORRUPT_SLRU_LEN") != NULL)
+			xlrec.total_bytes = (uint32) (batch_bytes + seg_size);
+#endif
+
+		XLogBeginInsert();
+		XLogRegisterData(&xlrec, SizeOfXLUpgradeSlruData);
+		XLogRegisterData(packbuf, batch_bytes);
+		lsn = XLogInsert(RM_PG_UPGRADE_ID, XLOG_UPGRADE_SLRU_DATA);
+
+		pfree(packbuf);
+		i = j;
+	}
+
+	pfree(segs);
+	return lsn;
+}
+
+/*
+ * Batched emission of XLOG_UPGRADE_RELFILE_DATA.  These FPIs are
+ * self-contained: redo is the sole writer of these relation-file pages.  Many
+ * chunks are packed into one record to use the coarsest WAL granularity:
+ *
+ *     UpgradeRelfileBatch b;
+ *     XLogUpgradeRelfileBatchBegin(&b);
+ *     for each file: XLogUpgradeRelfileBatchAddFile(&b, path, ...);
+ *     XLogUpgradeRelfileBatchEnd(&b);
+ *
+ * The batch is capped a little below XLogRecordMaxSize to leave room for the
+ * XLogRecord header; a single chunk never exceeds cap minus one entry header,
+ * so after a flush any chunk fits.
+ */
+#define UPGRADE_RELFILE_BATCH_CAP \
+	((Size) ((XLogRecordMaxSize / BLCKSZ - 2) * (Size) BLCKSZ))
+#define UPGRADE_RELFILE_MAX_CHUNK \
+	((Size) (((UPGRADE_RELFILE_BATCH_CAP - SizeOfXLUpgradeRelfileEntry) / BLCKSZ) * (Size) BLCKSZ))
+
+/*
+ * Flush the accumulated batch as one WAL record of type "info"
+ * (XLOG_UPGRADE_RELFILE_DATA for the relfile batch, XLOG_UPGRADE_RELINK for the
+ * relink manifest -- both accumulate into UpgradeRelfileBatch the same way).
+ */
+static void
+XLogUpgradeBatchFlush(UpgradeRelfileBatch *b, uint8 info)
+{
+	if (b->used == 0)
+		return;
+
+	XLogBeginInsert();
+	XLogRegisterData(b->buf, b->used);
+	XLogInsert(RM_PG_UPGRADE_ID, info);
+
+	b->nrecords++;
+	b->used = 0;
+	b->nentries = 0;
+}
+
+void
+XLogUpgradeRelfileBatchBegin(UpgradeRelfileBatch *b)
+{
+	b->buf = palloc(UPGRADE_RELFILE_BATCH_CAP);
+	b->cap = UPGRADE_RELFILE_BATCH_CAP;
+	b->used = 0;
+	b->nentries = 0;
+	b->nrecords = 0;
+	b->nfiles = 0;
+}
+
+/*
+ * Add every chunk of one relation file segment to the batch, flushing full
+ * records as we go.  A missing or empty file is silently skipped.
+ */
+void
+XLogUpgradeRelfileBatchAddFile(UpgradeRelfileBatch *b, const char *path,
+							   Oid tsoid, Oid dboid, RelFileNumber rfnum,
+							   uint8 forknum, uint32 segno)
+{
+	struct stat stbuf;
+	int			fd;
+	Size		filesize;
+	Size		off;
+
+	if (stat(path, &stbuf) != 0)
+	{
+		if (errno == ENOENT)
+			return;
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not stat \"%s\": %m", path)));
+	}
+
+	filesize = (Size) stbuf.st_size;
+
+	/*
+	 * An empty (0-byte) relation file still needs a record so replay
+	 * recreates it; otherwise the first write to an empty system catalog
+	 * fails with "could not open file".  Emit a zero-page entry (nbytes=0);
+	 * RELFILE redo creates the file via smgr without writing any page.  Only
+	 * the base segment (segno 0) needs this; higher segments are never empty.
+	 */
+	if (filesize == 0)
+	{
+		xl_upgrade_relfile_entry ent;
+
+		if (segno != 0)
+			return;				/* an empty non-base segment: nothing to
+								 * create */
+
+		if (b->used + SizeOfXLUpgradeRelfileEntry > b->cap)
+			XLogUpgradeBatchFlush(b, XLOG_UPGRADE_RELFILE_DATA);
+
+		memset(&ent, 0, sizeof(ent));
+		ent.tablespace_oid = tsoid;
+		ent.database_oid = dboid;
+		ent.relfilenumber = rfnum;
+		ent.forknum = forknum;
+		ent.segno = segno;
+		ent.blockoff = 0;
+		ent.nbytes = 0;			/* signals "create empty file, no pages" */
+
+		memcpy(b->buf + b->used, &ent, SizeOfXLUpgradeRelfileEntry);
+		b->used += SizeOfXLUpgradeRelfileEntry;
+		b->nentries++;
+		b->nfiles++;
+		return;
+	}
+
+	fd = OpenTransientFile(path, O_RDONLY | PG_BINARY);
+	if (fd < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not open \"%s\": %m", path)));
+
+	for (off = 0; off < filesize; off += UPGRADE_RELFILE_MAX_CHUNK)
+	{
+		Size		chunk = Min(UPGRADE_RELFILE_MAX_CHUNK, filesize - off);
+		xl_upgrade_relfile_entry ent;
+		ssize_t		nread;
+
+		/* Start a fresh record if this entry would overflow the batch. */
+		if (b->used + SizeOfXLUpgradeRelfileEntry + chunk > b->cap)
+			XLogUpgradeBatchFlush(b, XLOG_UPGRADE_RELFILE_DATA);
+
+		/* zero the struct so its alignment padding is never uninitialized WAL */
+		memset(&ent, 0, sizeof(ent));
+		ent.tablespace_oid = tsoid;
+		ent.database_oid = dboid;
+		ent.relfilenumber = rfnum;
+		ent.forknum = forknum;
+		ent.segno = segno;
+		ent.blockoff = (uint32) (off / BLCKSZ);
+		ent.nbytes = (uint32) chunk;
+
+		memcpy(b->buf + b->used, &ent, SizeOfXLUpgradeRelfileEntry);
+		b->used += SizeOfXLUpgradeRelfileEntry;
+
+		nread = pg_pread(fd, b->buf + b->used, chunk, off);
+		if (nread != (ssize_t) chunk)
+		{
+			CloseTransientFile(fd);
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not read \"%s\": %m", path)));
+		}
+		b->used += chunk;
+		b->nentries++;
+	}
+
+	CloseTransientFile(fd);
+	b->nfiles++;
+}
+
+void
+XLogUpgradeRelfileBatchEnd(UpgradeRelfileBatch *b)
+{
+	XLogUpgradeBatchFlush(b, XLOG_UPGRADE_RELFILE_DATA);
+	pfree(b->buf);
+	b->buf = NULL;
+
+	ereport(LOG,
+			(errmsg("pg_upgrade captured %d relation files in %d WAL record(s)",
+					b->nfiles, b->nrecords)));
+}
+
+/*
+ * Batched emission of XLOG_UPGRADE_RELINK -- the manifest of user relation
+ * files the window omits.  Each entry is a fixed-size identity; no file data.
+ * Redo links each from the standby's old datadir into the new skeleton.
+ *
+ * Uses the same payload cap as the relfile batch (UPGRADE_RELFILE_BATCH_CAP):
+ * both accumulate into the same WAL-record payload limit.
+ */
+void
+XLogUpgradeRelinkBatchBegin(UpgradeRelfileBatch *b, uint8 xfer_mode)
+{
+	b->buf = palloc(UPGRADE_RELFILE_BATCH_CAP);
+	b->cap = UPGRADE_RELFILE_BATCH_CAP;
+	b->used = 0;
+	b->nentries = 0;
+	b->nrecords = 0;
+	b->nfiles = 0;
+	b->xfer_mode = xfer_mode;
+}
+
+void
+XLogUpgradeRelinkBatchAdd(UpgradeRelfileBatch *b, Oid tsoid, Oid dboid,
+						  RelFileNumber rfnum, uint8 forknum, uint32 segno)
+{
+	xl_upgrade_relink_entry ent;
+
+	if (b->used + SizeOfXLUpgradeRelinkEntry > b->cap)
+		XLogUpgradeBatchFlush(b, XLOG_UPGRADE_RELINK);
+
+	/* zero the struct so alignment padding is never uninitialized WAL */
+	memset(&ent, 0, sizeof(ent));
+	ent.tablespace_oid = tsoid;
+	ent.database_oid = dboid;
+	ent.relfilenumber = rfnum;
+	ent.forknum = forknum;
+	ent.transfer_mode = b->xfer_mode;
+	ent.segno = segno;
+
+	memcpy(b->buf + b->used, &ent, SizeOfXLUpgradeRelinkEntry);
+	b->used += SizeOfXLUpgradeRelinkEntry;
+	b->nentries++;
+	b->nfiles++;
+}
+
+void
+XLogUpgradeRelinkBatchEnd(UpgradeRelfileBatch *b)
+{
+	XLogUpgradeBatchFlush(b, XLOG_UPGRADE_RELINK);
+	pfree(b->buf);
+	b->buf = NULL;
+
+	ereport(LOG,
+			(errmsg("pg_upgrade recorded %d user relation files to relink in %d WAL record(s)",
+					b->nfiles, b->nrecords)));
+}
+
+/*
+ * Emit XLOG_UPGRADE_RAWFILE -- a verbatim image of a non-relation file
+ * (pg_filenode.map, PG_VERSION) so the cluster can be rebuilt from an empty
+ * data directory.  "path" is the PGDATA-relative path.  Returns the record LSN,
+ * or InvalidXLogRecPtr if the file is absent or empty.
+ */
+XLogRecPtr
+XLogWriteUpgradeRawFile(const char *path)
+{
+	xl_upgrade_rawfile xlrec;
+	struct stat stbuf;
+	int			fd;
+	char	   *buf;
+	ssize_t		nbytes;
+	uint32		path_len = (uint32) strlen(path);
+	XLogRecPtr	lsn;
+
+	if (stat(path, &stbuf) != 0)
+	{
+		if (errno == ENOENT)
+			return InvalidXLogRecPtr;
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not stat \"%s\": %m", path)));
+	}
+
+	if (stbuf.st_size == 0)
+		return InvalidXLogRecPtr;
+
+	if ((Size) stbuf.st_size + path_len + SizeOfXLUpgradeRawfile > XLogRecordMaxSize)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("file \"%s\" is too large to capture in a pg_upgrade WAL record",
+						path)));
+
+	buf = palloc(stbuf.st_size);
+
+	fd = OpenTransientFile(path, O_RDONLY | PG_BINARY);
+	if (fd < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not open \"%s\": %m", path)));
+	nbytes = read(fd, buf, stbuf.st_size);
+	CloseTransientFile(fd);
+	if (nbytes != stbuf.st_size)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read \"%s\": %m", path)));
+
+	/* zero padding so no uninitialized stack bytes leak into WAL */
+	memset(&xlrec, 0, sizeof(xlrec));
+	xlrec.path_len = path_len;
+	xlrec.data_len = (uint32) nbytes;
+
+	XLogBeginInsert();
+	XLogRegisterData(&xlrec, SizeOfXLUpgradeRawfile);
+	XLogRegisterData(unconstify(char *, path), path_len);
+	XLogRegisterData(buf, nbytes);
+	lsn = XLogInsert(RM_PG_UPGRADE_ID, XLOG_UPGRADE_RAWFILE);
+
+	pfree(buf);
+	return lsn;
+}
+
+/*
+ * Flush all SLRU (CLOG, commit-ts, multixact) dirty pages to disk and fsync
+ * their segment files, so the SLRU_DATA images captured by the upgrade window
+ * read the final on-disk state.  pg_upgrade runs the burst server with the
+ * SLRU-related pages possibly still dirty in the buffers, and (on some paths)
+ * with dirty OS-cache writes not yet synced, so:
+ *
+ *   - CheckPointCLOG/CheckPointCommitTs/CheckPointMultiXact write out the
+ *     dirty SLRU buffers to the segment files, and
+ *   - the fsync loop below durably syncs those segment files and their parent
+ *     directories.
+ *
+ * This does not request a checkpoint.  CN (the recovery anchor) is the
+ * DB_SHUTDOWNED checkpoint pg_resetwal wrote before the burst server started
+ * and already precedes XLOG_UPGRADE_START; a checkpoint record here would
+ * displace it as the last checkpoint before START.  So the SLRUs are flushed
+ * directly rather than through RequestCheckpoint().
+ */
+void
+XLogFlushUpgradeSLRU(void)
+{
+	/*
+	 * the same SLRU flush steps CheckPointGuts() performs, minus the
+	 * checkpoint
+	 */
+	CheckPointCLOG();
+	CheckPointCommitTs();
+	CheckPointMultiXact();
+
+	/*
+	 * Fsync all SLRU segment files and their parent directories to catch
+	 * evicted pages whose OS-cache writes were not synced under fsync=off.
+	 */
+	{
+		static const char *const slru_dirs[] = UPGRADE_SLRU_DIRS;
+		int			i;
+
+		for (i = 0; i < lengthof(slru_dirs); i++)
+		{
+			DIR		   *dir;
+			struct dirent *de;
+
+			dir = AllocateDir(slru_dirs[i]);
+			if (dir == NULL)
+				continue;
+
+			while ((de = ReadDir(dir, slru_dirs[i])) != NULL)
+			{
+				char		path[MAXPGPATH];
+
+				if (de->d_name[0] == '.')
+					continue;
+
+				/*
+				 * SLRU segment names are short UPPERCASE hex strings (see
+				 * SlruFileName / SlruScanDirectory), not WAL names.
+				 */
+				if (strlen(de->d_name) > 8)
+					continue;
+				if (strspn(de->d_name, "0123456789ABCDEF") != strlen(de->d_name))
+					continue;
+
+				snprintf(path, sizeof(path), "%s/%s",
+						 slru_dirs[i], de->d_name);
+
+				/* fsync_fname ignores enableFsync; forces actual kernel sync */
+				(void) fsync_fname(path, false);
+			}
+			FreeDir(dir);
+
+			/* also fsync the directory itself */
+			(void) fsync_fname(slru_dirs[i], true);
+		}
+	}
 }
 
 /*
