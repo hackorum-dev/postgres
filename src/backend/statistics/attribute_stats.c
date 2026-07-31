@@ -37,7 +37,8 @@
 
 enum attribute_stats_argnum
 {
-	ATTRELSCHEMA_ARG = 0,
+	VERSION_ARG = 0,
+	ATTRELSCHEMA_ARG,
 	ATTRELNAME_ARG,
 	ATTNAME_ARG,
 	ATTNUM_ARG,
@@ -60,6 +61,7 @@ enum attribute_stats_argnum
 
 static struct StatsArgInfo attarginfo[] =
 {
+	[VERSION_ARG] = {"version", INT4OID},
 	[ATTRELSCHEMA_ARG] = {"schemaname", TEXTOID},
 	[ATTRELNAME_ARG] = {"relname", TEXTOID},
 	[ATTNAME_ARG] = {"attname", TEXTOID},
@@ -763,12 +765,12 @@ import_attribute_statistics(Relation rel, AttrNumber attnum, bool inherited,
 				 errmsg("column %d of relation \"%s\" does not exist",
 						attnum, relname)));
 
+	args[VERSION_ARG] = (version) ? *version : unused;
 	args[ATTRELSCHEMA_ARG] = unused;
 	args[ATTRELNAME_ARG] = unused;
 	args[ATTNAME_ARG] = unused;
 	args[ATTNUM_ARG] = unused;
 	args[INHERITED_ARG] = unused;
-
 	args[NULL_FRAC_ARG] = *null_frac;
 	args[AVG_WIDTH_ARG] = *avg_width;
 	args[N_DISTINCT_ARG] = *n_distinct;

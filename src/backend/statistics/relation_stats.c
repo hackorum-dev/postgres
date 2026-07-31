@@ -39,7 +39,8 @@
 
 enum relation_stats_argnum
 {
-	RELSCHEMA_ARG = 0,
+	VERSION_ARG = 0,
+	RELSCHEMA_ARG,
 	RELNAME_ARG,
 	RELPAGES_ARG,
 	RELTUPLES_ARG,
@@ -50,6 +51,7 @@ enum relation_stats_argnum
 
 static struct StatsArgInfo relarginfo[] =
 {
+	[VERSION_ARG] = {"version", INT4OID},
 	[RELSCHEMA_ARG] = {"schemaname", TEXTOID},
 	[RELNAME_ARG] = {"relname", TEXTOID},
 	[RELPAGES_ARG] = {"relpages", INT4OID},
@@ -225,6 +227,8 @@ pg_clear_relation_stats(PG_FUNCTION_ARGS)
 {
 	NullableDatum args[NUM_RELATION_STATS_ARGS];
 
+	args[VERSION_ARG].value = (Datum) 0;
+	args[VERSION_ARG].isnull = true;
 	args[RELSCHEMA_ARG].value = PG_GETARG_DATUM(0);
 	args[RELSCHEMA_ARG].isnull = PG_ARGISNULL(0);
 	args[RELNAME_ARG].value = PG_GETARG_DATUM(1);
@@ -281,9 +285,9 @@ import_relation_statistics(Relation rel,
 	Assert(relallvisible);
 	Assert(relallfrozen);
 
+	args[VERSION_ARG] = (version) ? *version : unused;
 	args[RELSCHEMA_ARG] = unused;
 	args[RELNAME_ARG] = unused;
-
 	args[RELPAGES_ARG] = *relpages;
 	args[RELTUPLES_ARG] = *reltuples;
 	args[RELALLVISIBLE_ARG] = *relallvisible;

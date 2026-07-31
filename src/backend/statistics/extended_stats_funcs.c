@@ -45,7 +45,8 @@
  */
 enum extended_stats_argnum
 {
-	RELSCHEMA_ARG = 0,
+	VERSION_ARG = 0,
+	RELSCHEMA_ARG,
 	RELNAME_ARG,
 	STATSCHEMA_ARG,
 	STATNAME_ARG,
@@ -65,6 +66,7 @@ enum extended_stats_argnum
  */
 static struct StatsArgInfo extarginfo[] =
 {
+	[VERSION_ARG] = {"version", INT4OID},
 	[RELSCHEMA_ARG] = {"schemaname", TEXTOID},
 	[RELNAME_ARG] = {"relname", TEXTOID},
 	[STATSCHEMA_ARG] = {"statistics_schemaname", TEXTOID},

@@ -401,16 +401,6 @@ stats_fill_args_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
 
 		argname = TextDatumGetCString(args[i]);
 
-		/*
-		 * The 'version' argument is a special case, not handled by arginfo
-		 * because it's not a valid positional argument.
-		 *
-		 * For now, 'version' is accepted but ignored. In the future it can be
-		 * used to interpret older statistics properly.
-		 */
-		if (pg_strcasecmp(argname, "version") == 0)
-			continue;
-
 		argnum = get_arg_by_name(argname, arginfo);
 
 		if (argnum < 0 || !stats_check_arg_type(argname, types[i + 1],
