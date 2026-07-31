@@ -163,6 +163,18 @@ ok( $node->log_contains(
 		$log_size),
 	"xl_tot_len short");
 
+# xl_tot_len is > XLogRecordMaxSize (presumably recycled garbage).
+$node->emit_wal(0);
+$end_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
+$node->stop('immediate');
+$node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE, build_record_header(1024 * 1024 * 1024));
+$log_size = -s $node->logfile;
+$node->start;
+ok( $node->log_contains(
+		"invalid record length at .*: expected at most 1069547520, got 1073741824",
+		$log_size),
+	"xl_tot_len short");
+
 # xl_tot_len in final position, not big enough to span into a new page but
 # also not eligible for regular record header validation
 $node->emit_wal(0);
@@ -181,7 +193,7 @@ $node->emit_wal(0);
 $end_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 0, 0xdeadbeef));
+	build_record_header(2 * 1024 * 1024, 0, 0xdeadbeef));
 $log_size = -s $node->logfile;
 $node->start;
 ok( $node->log_contains(
@@ -216,7 +228,7 @@ $prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 0, $prev_lsn));
+	build_record_header(2 * 1024 * 1024, 0, $prev_lsn));
 $log_size = -s $node->logfile;
 $node->start;
 ok($node->log_contains("invalid magic number 0000 .* LSN .*", $log_size),
@@ -228,7 +240,7 @@ $prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 0, $prev_lsn));
+	build_record_header(2 * 1024 * 1024, 0, $prev_lsn));
 $node->write_wal($TLI, start_of_next_page($end_lsn),
 	$WAL_SEGMENT_SIZE, build_page_header(0xcafe, 0, 1, 0));
 $log_size = -s $node->logfile;
@@ -243,7 +255,7 @@ $prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 0, $prev_lsn));
+	build_record_header(2 * 1024 * 1024, 0, $prev_lsn));
 $node->write_wal($TLI, start_of_next_page($end_lsn),
 	$WAL_SEGMENT_SIZE, build_page_header($XLP_PAGE_MAGIC, 0, 1, 0xbaaaaaad));
 $log_size = -s $node->logfile;
@@ -258,7 +270,7 @@ $prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 42, $prev_lsn));
+	build_record_header(2 * 1024 * 1024, 42, $prev_lsn));
 $node->write_wal(
 	$TLI,
 	start_of_next_page($end_lsn),
@@ -277,7 +289,7 @@ $prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 42, $prev_lsn));
+	build_record_header(2 * 1024 * 1024, 42, $prev_lsn));
 $node->write_wal($TLI, start_of_next_page($end_lsn),
 	$WAL_SEGMENT_SIZE,
 	build_page_header($XLP_PAGE_MAGIC, 0, 1, start_of_next_page($end_lsn)));
@@ -293,7 +305,7 @@ $prev_lsn = $node->advance_wal_out_of_record_splitting_zone($WAL_BLOCK_SIZE);
 $end_lsn = $node->emit_wal(0);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 42, $prev_lsn));
+	build_record_header(2 * 1024 * 1024, 42, $prev_lsn));
 $node->write_wal(
 	$TLI,
 	start_of_next_page($end_lsn),
@@ -318,7 +330,7 @@ $node->emit_wal(0);
 $end_lsn = $node->advance_wal_to_record_splitting_zone($WAL_BLOCK_SIZE);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 0, 0xdeadbeef));
+	build_record_header(2 * 1024 * 1024, 0, 0xdeadbeef));
 $log_size = -s $node->logfile;
 $node->start;
 ok($node->log_contains("invalid magic number 0000 .* LSN .*", $log_size),
@@ -329,7 +341,7 @@ $node->emit_wal(0);
 $end_lsn = $node->advance_wal_to_record_splitting_zone($WAL_BLOCK_SIZE);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 0, 0xdeadbeef));
+	build_record_header(2 * 1024 * 1024, 0, 0xdeadbeef));
 $node->write_wal(
 	$TLI,
 	start_of_next_page($end_lsn),
@@ -348,7 +360,7 @@ $node->emit_wal(0);
 $end_lsn = $node->advance_wal_to_record_splitting_zone($WAL_BLOCK_SIZE);
 $node->stop('immediate');
 $node->write_wal($TLI, $end_lsn, $WAL_SEGMENT_SIZE,
-	build_record_header(2 * 1024 * 1024 * 1024, 0, 0xdeadbeef));
+	build_record_header(2 * 1024 * 1024, 0, 0xdeadbeef));
 $node->write_wal(
 	$TLI,
 	start_of_next_page($end_lsn),
