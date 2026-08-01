@@ -23011,6 +23011,7 @@ createTableConstraints(List **wqueue, AlteredTableInfo *tab,
 	int			ccnum;
 	List	   *constraints = NIL;
 	List	   *cookedConstraints = NIL;
+	bool		newRelhasGenerated;
 
 	tupleDesc = RelationGetDescr(parent_rel);
 	constr = tupleDesc->constr;
@@ -23036,6 +23037,9 @@ createTableConstraints(List **wqueue, AlteredTableInfo *tab,
 		/* Ignore dropped columns in the parent. */
 		if (attribute->attisdropped)
 			continue;
+
+		if (attribute->attnotnull)
+			tab->verify_new_notnull = true;
 
 		/* Copy the default, if present, and it should be copied. */
 		if (attribute->atthasdef)
@@ -23079,6 +23083,9 @@ createTableConstraints(List **wqueue, AlteredTableInfo *tab,
 				newval->is_generated = (attribute->attgenerated != '\0');
 				tab->newvals = lappend(tab->newvals, newval);
 			}
+
+			if (!newRelhasGenerated && attribute->attgenerated != '\0')
+				newRelhasGenerated = true;
 		}
 	}
 
@@ -23154,11 +23161,18 @@ createTableConstraints(List **wqueue, AlteredTableInfo *tab,
 			pull_varattnos(qual, 1, &attnums);
 
 			/*
-			 * Add a check only if it contains a tableoid
+			 * Add a check if it contains a tableoid
 			 * (TableOidAttributeNumber).
+			 *
+			 * ALTER TABLE MERGE PARTITIONS may change the data of the new
+			 * partition compared to the combination of the old, merged
+			 * partitions, because the generated column expression on the new
+			 * partition may differ from the one on the merged partitions.
+			 * Therefore, CHECK constraints on the new merged need reverify
+			 * again whenever the new table has generated columns.
 			 */
-			if (bms_is_member(TableOidAttributeNumber - FirstLowInvalidHeapAttributeNumber,
-							  attnums))
+			if (bms_is_member(TableOidAttributeNumber - FirstLowInvalidHeapAttributeNumber, attnums) ||
+				newRelhasGenerated)
 			{
 				NewConstraint *newcon;
 
@@ -23364,12 +23378,15 @@ MergePartitionsMoveRows(List **wqueue, List *mergingPartitions, Relation newPart
 	CommandId	mycid;
 	EState	   *estate;
 	AlteredTableInfo *tab;
-	ListCell   *ltab;
 
 	/* The FSM is empty, so don't bother using it. */
 	uint32		ti_options = TABLE_INSERT_SKIP_FSM;
 	BulkInsertState bistate;	/* state of bulk inserts for partition */
 	TupleTableSlot *dstslot;
+	ResultRelInfo *rInfo = NULL;
+	List	   *notnull_attrs;
+	List	   *notnull_virtual_attrs;
+	TupleDesc	newTupDesc;
 
 	/* Find the work queue entry for the new partition table: newPartRel. */
 	tab = ATGetQueueEntry(wqueue, newPartRel);
@@ -23386,6 +23403,61 @@ MergePartitionsMoveRows(List **wqueue, List *mergingPartitions, Relation newPart
 
 	/* Create the necessary tuple slot. */
 	dstslot = table_slot_create(newPartRel, NULL);
+
+	newTupDesc = RelationGetDescr(newPartRel);
+	notnull_attrs = notnull_virtual_attrs = NIL;
+
+	if (tab->verify_new_notnull)
+	{
+		/*
+		 * If we are rebuilding the tuples OR if we added any new but not
+		 * verified not-null constraints, check all *valid* not-null
+		 * constraints. This is a bit of overkill but it minimizes risk of
+		 * bugs.
+		 *
+		 * notnull_attrs does *not* collect attribute numbers for valid
+		 * not-null constraints over virtual generated columns; instead, they
+		 * are collected in notnull_virtual_attrs for verification elsewhere.
+		 */
+		for (int i = 0; i < newTupDesc->natts; i++)
+		{
+			CompactAttribute *attr = TupleDescCompactAttr(newTupDesc, i);
+
+			if (attr->attnullability == ATTNULLABLE_VALID &&
+				!attr->attisdropped)
+			{
+				Form_pg_attribute wholeatt = TupleDescAttr(newTupDesc, i);
+
+				if (wholeatt->attgenerated != ATTRIBUTE_GENERATED_VIRTUAL)
+					notnull_attrs = lappend_int(notnull_attrs, wholeatt->attnum);
+				else
+					notnull_virtual_attrs = lappend_int(notnull_virtual_attrs,
+														wholeatt->attnum);
+			}
+		}
+	}
+
+	/*
+	 * When adding or changing a virtual generated column with a not-null
+	 * constraint, we need to evaluate whether the generation expression is
+	 * null.  For that, we borrow ExecRelGenVirtualNotNull().  Here, we
+	 * prepare a dummy ResultRelInfo.
+	 */
+	if (notnull_virtual_attrs != NIL)
+	{
+		MemoryContext oldcontext;
+
+		Assert(newTupDesc->constr->has_generated_virtual);
+		Assert(newTupDesc->constr->has_not_null);
+		oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+		rInfo = makeNode(ResultRelInfo);
+		InitResultRelInfo(rInfo,
+						  newPartRel,
+						  0,	/* dummy rangetable index */
+						  NULL,
+						  estate->es_instrument);
+		MemoryContextSwitchTo(oldcontext);
+	}
 
 	foreach_oid(merging_oid, mergingPartitions)
 	{
@@ -23470,6 +23542,41 @@ MergePartitionsMoveRows(List **wqueue, List *mergingPartitions, Relation newPart
 			evaluateGeneratedExpressionsAndCheckConstraints(tab, newPartRel,
 															insertslot, econtext);
 
+			foreach_int(attn, notnull_attrs)
+			{
+				if (slot_attisnull(insertslot, attn))
+				{
+					Form_pg_attribute attr = TupleDescAttr(newTupDesc, attn - 1);
+
+					ereport(ERROR,
+							errcode(ERRCODE_NOT_NULL_VIOLATION),
+							errmsg("column \"%s\" of relation \"%s\" contains null values",
+								   NameStr(attr->attname),
+								   RelationGetRelationName(newPartRel)),
+							errtablecol(newPartRel, attn));
+				}
+			}
+
+			if (notnull_virtual_attrs != NIL)
+			{
+				AttrNumber	attnum;
+
+				attnum = ExecRelGenVirtualNotNull(rInfo, insertslot,
+												  estate,
+												  notnull_virtual_attrs);
+				if (attnum != InvalidAttrNumber)
+				{
+					Form_pg_attribute attr = TupleDescAttr(newTupDesc, attnum - 1);
+
+					ereport(ERROR,
+							errcode(ERRCODE_NOT_NULL_VIOLATION),
+							errmsg("column \"%s\" of relation \"%s\" contains null values",
+								   NameStr(attr->attname),
+								   RelationGetRelationName(newPartRel)),
+							errtablecol(newPartRel, attnum));
+				}
+			}
+
 			/* Write the tuple out to the new relation. */
 			table_tuple_insert(newPartRel, insertslot, mycid,
 							   ti_options, bistate);
@@ -23493,20 +23600,6 @@ MergePartitionsMoveRows(List **wqueue, List *mergingPartitions, Relation newPart
 	FreeBulkInsertState(bistate);
 
 	table_finish_bulk_insert(newPartRel, ti_options);
-
-	/*
-	 * We don't need to process this newPartRel since we already processed it
-	 * here, so delete the ALTER TABLE queue for it.
-	 */
-	foreach(ltab, *wqueue)
-	{
-		tab = (AlteredTableInfo *) lfirst(ltab);
-		if (tab->relid == RelationGetRelid(newPartRel))
-		{
-			*wqueue = list_delete_cell(*wqueue, ltab);
-			break;
-		}
-	}
 }
 
 /*
@@ -23756,6 +23849,7 @@ static void
 ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation rel,
 					  PartitionCmd *cmd, AlterTableUtilityContext *context)
 {
+	ListCell   *ltab;
 	Relation	newPartRel;
 	List	   *mergingPartitions = NIL;
 	List	   *extDepState = NIL;
@@ -23765,6 +23859,9 @@ ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	Oid			save_userid;
 	int			save_sec_context;
 	int			save_nestlevel;
+	AlteredTableInfo *new_partrel_tab;
+	Relation	thisrel = NULL;
+	bool		hasGenerated = false;
 
 	/*
 	 * Check ownership of merged partitions - partitions with different owners
@@ -23926,11 +24023,61 @@ ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	list_free(mergingPartitions);
 
+	/* Attach a new partition to the partitioned table. */
+	attachPartitionTable(wqueue, rel, newPartRel, cmd->bound);
+
+	/* Find the work queue entry for the new partition table: newPartRel. */
+	new_partrel_tab = ATGetQueueEntry(wqueue, newPartRel);
+
 	/*
-	 * Attach a new partition to the partitioned table. wqueue = NULL:
-	 * verification for each cloned constraint is not needed.
+	 * ALTER TABLE MERGE PARTITIONS may change the data of the new partition
+	 * compared to the combination of the old, merged partitions, because the
+	 * gneration expression on the new partition may differ from the one on
+	 * the merged partitions. Therefore, foreign key constraints on the new
+	 * merged table need reverify whenever the new table has generated
+	 * columns.
 	 */
-	attachPartitionTable(NULL, rel, newPartRel, cmd->bound);
+	foreach_ptr(NewColumnValue, ex, new_partrel_tab->newvals)
+	{
+		if (ex->is_generated)
+		{
+			hasGenerated = true;
+			break;
+		}
+	}
+
+	if (hasGenerated)
+	{
+		foreach_ptr(NewConstraint, con, new_partrel_tab->constraints)
+		{
+			Constraint *fkconstraint;
+			Relation	refrel;
+
+			if (con->contype != CONSTR_FOREIGN)
+				continue;
+
+			fkconstraint = (Constraint *) con->qual;
+
+			if (thisrel == NULL)
+			{
+				/* Long since locked, no need for another */
+				thisrel = table_open(new_partrel_tab->relid, NoLock);
+			}
+
+			refrel = table_open(con->refrelid, RowShareLock);
+
+			validateForeignKeyConstraint(fkconstraint->conname, thisrel, refrel,
+										 con->refindid,
+										 con->conid,
+										 con->conwithperiod);
+
+			/*
+			 * No need to mark the constraint row as validated, we did that
+			 * when we inserted the row earlier.
+			 */
+			table_close(refrel, NoLock);
+		}
+	}
 
 	/*
 	 * Apply extension dependencies to the new partition's indexes. This
@@ -23949,6 +24096,20 @@ ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/* Restore the userid and security context. */
 	SetUserIdAndSecContext(save_userid, save_sec_context);
+
+	/*
+	 * We don't need to process this newPartRel since we already processed it
+	 * here, so delete the ALTER TABLE queue for it.
+	 */
+	foreach(ltab, *wqueue)
+	{
+		tab = (AlteredTableInfo *) lfirst(ltab);
+		if (tab->relid == RelationGetRelid(newPartRel))
+		{
+			*wqueue = list_delete_cell(*wqueue, ltab);
+			break;
+		}
+	}
 }
 
 /*
