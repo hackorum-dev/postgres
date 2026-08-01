@@ -17,6 +17,7 @@
 #include "access/relation.h"
 #include "access/table.h"
 #include "access/toast_internals.h"
+#include "access/varsup.h"
 #include "access/visibilitymap.h"
 #include "access/xact.h"
 #include "catalog/pg_am.h"
