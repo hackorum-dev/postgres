@@ -1,0 +1,18 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1snap s2del s2nn s1read s1c
+step s1snap: SELECT 1 AS snapshot_taken;
+snapshot_taken
+--------------
+             1
+(1 row)
+
+step s2del: DELETE FROM nn WHERE a IS NULL;
+step s2nn: ALTER TABLE nn ALTER COLUMN a SET NOT NULL;
+step s1read: SELECT a, b, c FROM nn;
+a| b| c
+-+--+--
+ |42|43
+(1 row)
+
+step s1c: COMMIT;
