@@ -50,6 +50,7 @@
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/twophase.h"
+#include "access/varsup.h"
 #include "access/xact.h"
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"
@@ -446,7 +447,7 @@ ProcArrayShmemInit(void *arg)
 	procArray->lastOverflowedXid = InvalidTransactionId;
 	procArray->replication_slot_xmin = InvalidTransactionId;
 	procArray->replication_slot_catalog_xmin = InvalidTransactionId;
-	TransamVariables->xactCompletionCount = 1;
+	pg_atomic_init_u64(&TransamVariables->xactCompletionCount, 1);
 
 	allProcs = ProcGlobal->allProcs;
 }
@@ -587,7 +588,7 @@ ProcArrayRemove(PGPROC *proc, TransactionId latestXid)
 		MaintainLatestCompletedXid(latestXid);
 
 		/* Same with xactCompletionCount  */
-		TransamVariables->xactCompletionCount++;
+		pg_atomic_add_fetch_u64(&TransamVariables->xactCompletionCount, 1);
 
 		ProcGlobal->xids[myoff] = InvalidTransactionId;
 		ProcGlobal->subxidStates[myoff].overflowed = false;
@@ -765,7 +766,7 @@ ProcArrayEndTransactionInternal(PGPROC *proc, TransactionId latestXid)
 	MaintainLatestCompletedXid(latestXid);
 
 	/* Same with xactCompletionCount  */
-	TransamVariables->xactCompletionCount++;
+	pg_atomic_add_fetch_u64(&TransamVariables->xactCompletionCount, 1);
 }
 
 /*
@@ -934,7 +935,7 @@ ProcArrayClearTransaction(PGPROC *proc)
 	 * otherwise could end up reusing the snapshot later. Which would be bad,
 	 * because it might not count the prepared transaction as running.
 	 */
-	TransamVariables->xactCompletionCount++;
+	pg_atomic_add_fetch_u64(&TransamVariables->xactCompletionCount, 1);
 
 	/* Clear the subtransaction-XID cache too */
 	Assert(ProcGlobal->subxidStates[pgxactoff].count == proc->subxidStatus.count &&
@@ -2021,6 +2022,46 @@ GetMaxSnapshotSubxidCount(void)
 	return TOTAL_MAX_CACHED_SUBXIDS;
 }
 
+static inline bool
+GetSnapshotReuseUnlocked(Snapshot snapshot, bool *try_reuse)
+{
+	uint64		completions;
+
+	if (!TransactionIdIsValid(MyProc->xmin))
+	{
+		*try_reuse = true;
+		return false;
+	}
+
+	if (unlikely(snapshot->snapXactCompletionCount == 0))
+	{
+		*try_reuse = false;
+		return false;
+	}
+
+	pg_memory_barrier();
+
+	completions = pg_atomic_read_u64(&TransamVariables->xactCompletionCount);
+
+	if (snapshot->snapXactCompletionCount != completions)
+	{
+		*try_reuse = false;
+		return false;
+	}
+
+	pg_memory_barrier();
+
+	RecentXmin = snapshot->xmin;
+	Assert(TransactionIdPrecedesOrEquals(TransactionXmin, RecentXmin));
+
+	snapshot->curcid = GetCurrentCommandId(false);
+	snapshot->active_count = 0;
+	snapshot->regd_count = 0;
+	snapshot->copied = false;
+
+	return true;
+}
+
 /*
  * Helper function for GetSnapshotData() that checks if the bulk of the
  * visibility information in the snapshot is still valid. If so, it updates
@@ -2040,7 +2081,8 @@ GetSnapshotDataReuse(Snapshot snapshot)
 	if (unlikely(snapshot->snapXactCompletionCount == 0))
 		return false;
 
-	curXactCompletionCount = TransamVariables->xactCompletionCount;
+	curXactCompletionCount = pg_atomic_read_u64(&TransamVariables->xactCompletionCount);
+
 	if (curXactCompletionCount != snapshot->snapXactCompletionCount)
 		return false;
 
@@ -2120,6 +2162,7 @@ GetSnapshotData(Snapshot snapshot)
 	int			count = 0;
 	int			subcount = 0;
 	bool		suboverflowed = false;
+	bool		try_reuse = true;
 	FullTransactionId latest_completed;
 	TransactionId oldestxid;
 	int			mypgxactoff;
@@ -2171,13 +2214,16 @@ GetSnapshotData(Snapshot snapshot)
 		}
 	}
 
+	if (GetSnapshotReuseUnlocked(snapshot, &try_reuse))
+		return snapshot;
+
 	/*
 	 * It is sufficient to get shared lock on ProcArrayLock, even if we are
 	 * going to set MyProc->xmin.
 	 */
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
 
-	if (GetSnapshotDataReuse(snapshot))
+	if (try_reuse && GetSnapshotDataReuse(snapshot))
 	{
 		LWLockRelease(ProcArrayLock);
 		return snapshot;
@@ -2189,7 +2235,7 @@ GetSnapshotData(Snapshot snapshot)
 	Assert(myxid == MyProc->xid);
 
 	oldestxid = TransamVariables->oldestXid;
-	curXactCompletionCount = TransamVariables->xactCompletionCount;
+	curXactCompletionCount = pg_atomic_read_u64(&TransamVariables->xactCompletionCount);
 
 	/* xmax is always latestCompletedXid + 1 */
 	xmax = XidFromFullTransactionId(latest_completed);
@@ -4077,7 +4123,7 @@ XidCacheRemoveRunningXids(TransactionId xid,
 	MaintainLatestCompletedXid(latestXid);
 
 	/* ... and xactCompletionCount */
-	TransamVariables->xactCompletionCount++;
+	pg_atomic_add_fetch_u64(&TransamVariables->xactCompletionCount, 1);
 
 	LWLockRelease(ProcArrayLock);
 }
@@ -4530,7 +4576,7 @@ ExpireTreeKnownAssignedTransactionIds(TransactionId xid, int nsubxids,
 	MaintainLatestCompletedXidRecovery(max_xid);
 
 	/* ... and xactCompletionCount */
-	TransamVariables->xactCompletionCount++;
+	pg_atomic_add_fetch_u64(&TransamVariables->xactCompletionCount, 1);
 
 	LWLockRelease(ProcArrayLock);
 }
@@ -4557,7 +4603,7 @@ ExpireAllKnownAssignedTransactionIds(void)
 	 * Any transactions that were in-progress were effectively aborted, so
 	 * advance xactCompletionCount.
 	 */
-	TransamVariables->xactCompletionCount++;
+	pg_atomic_add_fetch_u64(&TransamVariables->xactCompletionCount, 1);
 
 	/*
 	 * Reset lastOverflowedXid.  Currently, lastOverflowedXid has no use after
@@ -4586,7 +4632,7 @@ ExpireOldKnownAssignedTransactionIds(TransactionId xid)
 	MaintainLatestCompletedXidRecovery(latestXid);
 
 	/* ... and xactCompletionCount */
-	TransamVariables->xactCompletionCount++;
+	pg_atomic_add_fetch_u64(&TransamVariables->xactCompletionCount, 1);
 
 	/*
 	 * Reset lastOverflowedXid if we know all transactions that have been
