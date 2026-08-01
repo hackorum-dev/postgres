@@ -24,6 +24,7 @@
 #include "access/xlogutils.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "postmaster/startup.h"
 #include "replication/slot.h"
 #include "storage/bufmgr.h"
 #include "storage/proc.h"
@@ -489,12 +490,37 @@ ResolveRecoveryConflictWithSnapshot(TransactionId snapshotConflictHorizon,
 		return;
 
 	Assert(TransactionIdIsNormal(snapshotConflictHorizon));
-	backends = GetConflictingVirtualXIDs(snapshotConflictHorizon,
-										 locator.dbOid);
-	ResolveRecoveryConflictWithVirtualXIDs(backends,
-										   RECOVERY_CONFLICT_SNAPSHOT,
-										   WAIT_EVENT_RECOVERY_CONFLICT_SNAPSHOT,
-										   true);
+
+	/*
+	 * Scan until no conflicting VXID remains.
+	 *
+	 * GetConflictingVirtualXIDs returns the list of conflicting VXIDs that
+	 * existed while it held the ProcArrayLock.  While we wait for these VXIDs
+	 * to resolve, a backend may import a conflicting snapshot, creating a
+	 * new, conflicting VXID from one of the VXIDs in the returned list.  Any
+	 * new conflict requires a live, conflicting VXID as a source, so we loop
+	 * until GetConflictingVirtualXIDs returns empty, which means no
+	 * conflicting VXID exists and no future VXID will conflict.
+	 *
+	 * The cancellation cutoff is anchored to WAL receipt time
+	 * (GetStandbyLimitTime), not to the start of each wait, so all iterations
+	 * of this loop share a single max_standby_streaming_delay budget.
+	 */
+	for (;;)
+	{
+		backends = GetConflictingVirtualXIDs(snapshotConflictHorizon,
+											 locator.dbOid);
+
+		if (!VirtualTransactionIdIsValid(backends[0]))
+			break;
+
+		ResolveRecoveryConflictWithVirtualXIDs(backends,
+											   RECOVERY_CONFLICT_SNAPSHOT,
+											   WAIT_EVENT_RECOVERY_CONFLICT_SNAPSHOT,
+											   true);
+		/* Respond to shutdown. */
+		ProcessStartupProcInterrupts();
+	}
 
 	/*
 	 * Note that WaitExceedsMaxStandbyDelay() is not taken into account here
