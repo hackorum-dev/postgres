@@ -1256,6 +1256,54 @@ SELECT relname, reltablespace FROM pg_class
   WHERE relname IN ('tp_lo', 'tp_hi') ORDER BY relname;
 DROP TABLE t;
 
+-- SPLIT PARTITION carries the split partition's replica identity to the new
+-- partitions.
+CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_2 PARTITION OF t FOR VALUES FROM (0) TO (2);
+ALTER TABLE tp_0_2 REPLICA IDENTITY FULL;
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));
+SELECT relname, relreplident FROM pg_class
+  WHERE relname IN ('tp_0_1', 'tp_1_2')
+    AND relnamespace = 'partition_split_schema'::regnamespace ORDER BY relname;
+DROP TABLE t;
+
+-- SPLIT PARTITION rejects a partition that is directly part of a publication.
+CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_2 PARTITION OF t FOR VALUES FROM (0) TO (2);
+CREATE PUBLICATION pub_split FOR TABLE tp_0_2;
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));	-- fails
+DROP PUBLICATION pub_split;
+DROP TABLE t;
+
+-- Creating the new partitions in another schema is only rejected when that
+-- actually changes which FOR TABLES IN SCHEMA publications cover them.
+CREATE TABLE t (i int) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_2 PARTITION OF t FOR VALUES FROM (0) TO (2);
+INSERT INTO t VALUES (0), (1);
+-- No such publication, so a cross-schema split is fine.
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION partition_split_schema2.tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION partition_split_schema2.tp_1_2 FOR VALUES FROM (1) TO (2));
+SELECT count(*) FROM t;
+DROP TABLE t;
+
+CREATE TABLE t (i int) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_2 PARTITION OF t FOR VALUES FROM (0) TO (2);
+CREATE PUBLICATION pub_split FOR TABLES IN SCHEMA partition_split_schema;
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION partition_split_schema2.tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION partition_split_schema2.tp_1_2 FOR VALUES FROM (1) TO (2));	-- fails
+-- Staying in the covered schema is fine.
+ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
+  (PARTITION tp_0_1 FOR VALUES FROM (0) TO (1),
+   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));
+DROP PUBLICATION pub_split;
+DROP TABLE t;
+
 RESET search_path;
 
 --
