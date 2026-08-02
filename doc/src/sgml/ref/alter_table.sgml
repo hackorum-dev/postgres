@@ -1282,6 +1282,25 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
      </para>
 
      <para>
+      The new partition takes its replica identity from the merged partitions
+      when they all use the same simple setting
+      (<literal>DEFAULT</literal>, <literal>FULL</literal> or
+      <literal>NOTHING</literal>).  If they use different settings, or use
+      <literal>REPLICA IDENTITY USING INDEX</literal>, the error is issued
+      and the command is aborted. Give the partitions being merged a uniform,
+      non-index replica identity before merging, and set a different replica
+      identity on the resulting partition afterwards if desired.  Likewise, if
+      any of the partitions being merged is directly part of a publication, the
+      command is aborted; publish the partitioned table itself instead of the
+      individual partitions, or remove the partition from the publication before
+      merging.  For the same reason, the new partition cannot be created in a
+      schema that is not covered by the same publications defined
+      <literal>FOR TABLES IN SCHEMA</literal> as the schema of the partitions
+      being merged.
+     </para>
+
+
+     <para>
       Moving rows into the new partition does not emit logical replication
       messages, in the same way that <command>CLUSTER</command> or
       <command>VACUUM FULL</command> do not.  Note that
@@ -1400,6 +1419,22 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       The new partitions' indexes will inherit the extension dependencies
       from the source partition's indexes.
      </para>
+
+     <para>
+      The new partitions take their replica identity from the split partition,
+      unless it uses <literal>REPLICA IDENTITY USING INDEX</literal>, in which
+      case the error is issued and the command is aborted.  Give the partition
+      being split a non-index replica identity before splitting, and set a
+      different replica identity on the new partitions afterwards if desired.
+      Likewise, if the partition being split is directly part of a publication,
+      the command is rejected; publish the partitioned table itself instead of
+      the individual partitions, or remove the partition from the publication
+      before splitting.  For the same reason, the new partitions cannot be
+      created in a schema that is not covered by the same publications defined
+      <literal>FOR TABLES IN SCHEMA</literal> as the schema of the partition
+      being split.
+     </para>
+
 
      <para>
       Moving rows into the new partitions does not emit logical replication
