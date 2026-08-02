@@ -649,7 +649,7 @@ CREATE TABLE tp_0_1
 (i int NOT NULL,
  t text STORAGE MAIN DEFAULT 'default_tp_0_1',
  b bigint,
- d date GENERATED ALWAYS as ('2022-02-02') STORED);
+ d date GENERATED ALWAYS as ('2022-01-01') STORED);
 ALTER TABLE t ATTACH PARTITION tp_0_1 FOR VALUES FROM (0) TO (1);
 COMMENT ON COLUMN tp_0_1.i IS 'tp_0_1.i';
 
@@ -657,7 +657,7 @@ CREATE TABLE tp_1_2
 (i int NOT NULL,
  t text STORAGE MAIN DEFAULT 'default_tp_1_2',
  b bigint,
- d date GENERATED ALWAYS as ('2022-03-03') STORED);
+ d date GENERATED ALWAYS as ('2022-01-01') STORED);
 ALTER TABLE t ATTACH PARTITION tp_1_2 FOR VALUES FROM (1) TO (2);
 COMMENT ON COLUMN tp_1_2.i IS 'tp_1_2.i';
 
@@ -736,33 +736,49 @@ DROP TABLE t_fk;
 DROP TABLE t;
 
 
--- Test for recomputation of stored generated columns.
+-- A generated column whose expression references a system column (tableoid) is
+-- the one whose value legitimately changes when a row is relocated to another
+-- partition, so MERGE PARTITIONS is rejected.  This holds for a stored column,
+-- whose value cannot be recomputed while re-verifying all constraints ...
 CREATE TABLE t (i int, tab_id int generated always as (tableoid) stored) PARTITION BY RANGE (i);
 CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
 CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
-ALTER TABLE t ADD CONSTRAINT cc CHECK(tableoid <> 123456789);
 INSERT INTO t VALUES (0), (1);
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
+DROP TABLE t;
 
--- Should be 0 because partition identifier for row with i=0 is different from
--- partition identifier for row with i=1.
-SELECT count(*) FROM t WHERE i = 0 AND tab_id IN (SELECT tab_id FROM t WHERE i = 1);
+-- ... and for a virtual one, which is not stored at all, so its value would
+-- silently change as soon as the rows live in the new partition (here that
+-- would also break the NOT NULL constraint if the new partition happened to
+-- get the OID mentioned in the expression).  A generated column over user
+-- columns only is fine: its value is preserved, as exercised above.
+CREATE TABLE t (i int, g int GENERATED ALWAYS AS (NULLIF(tableoid, 18470)) NOT NULL)
+  PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+INSERT INTO t VALUES (0), (1);
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
+DROP TABLE t;
 
--- "tab_id" column (stored generated column) with "tableoid" attribute requires
--- recomputation here.
-ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;
 
--- Should be 1 because partition identifier for row with i=0 is the same as
--- partition identifier for row with i=1.
-SELECT count(*) FROM t WHERE i = 0 AND tab_id IN (SELECT tab_id FROM t WHERE i = 1);
-
+-- A CHECK constraint referencing a system column is rejected for the same
+-- reason: it would have to be re-verified against the new partition's OID, and
+-- the row movement runs with a restricted search_path, so a search_path
+-- dependent expression would not even evaluate the way it does for an INSERT.
+CREATE TABLE t (i int) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+ALTER TABLE t ADD CONSTRAINT cc CHECK (tableoid::regclass::text <> 'tp_0_2');
+INSERT INTO t VALUES (0), (1);
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
 DROP TABLE t;
 
 
 -- Test for generated columns (different order of columns in partitioned table
 -- and partitions).
-CREATE TABLE t (i int, g int GENERATED ALWAYS AS (i + tableoid::int)) PARTITION BY RANGE (i);
-CREATE TABLE tp_1 (g int GENERATED ALWAYS AS (i + tableoid::int), i int);
-CREATE TABLE tp_2 (g int GENERATED ALWAYS AS (i + tableoid::int), i int);
+CREATE TABLE t (i int, g int GENERATED ALWAYS AS (i * 2)) PARTITION BY RANGE (i);
+CREATE TABLE tp_1 (g int GENERATED ALWAYS AS (i * 2), i int);
+CREATE TABLE tp_2 (g int GENERATED ALWAYS AS (i * 2), i int);
 ALTER TABLE t ATTACH PARTITION tp_1 FOR VALUES FROM (-1) TO (10);
 ALTER TABLE t ATTACH PARTITION tp_2 FOR VALUES FROM (10) TO (20);
 ALTER TABLE t ADD CHECK (g > 0);
@@ -775,9 +791,7 @@ INSERT INTO t VALUES (16);
 -- ERROR
 INSERT INTO t VALUES (0);
 -- Should be 3 rows: (5), (15), (16):
-SELECT i FROM t ORDER BY i;
--- Should be 1 because for the same tableoid (15 + tableoid) = (5 + tableoid) + 10:
-SELECT count(*) FROM t WHERE i = 15 AND g IN (SELECT g + 10 FROM t WHERE i = 5);
+SELECT i, g FROM t ORDER BY i;
 
 DROP TABLE t;
 
@@ -836,6 +850,40 @@ RESET default_tablespace;
 -- new partition uses the database default (reltablespace = 0).
 ALTER TABLE t MERGE PARTITIONS (tp_0_5, tp_5_10) INTO tp_merged;
 SELECT reltablespace FROM pg_class WHERE relname = 'tp_merged';
+DROP TABLE t;
+
+
+-- MERGE PARTITIONS preserves stored generated column values rather than
+-- recomputing them (here the partitioned table's generation expression differs
+-- from what actually produced the stored rows because the function changed).
+CREATE FUNCTION merge_gen(i int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT i * 2';
+CREATE TABLE t (i int, g int GENERATED ALWAYS AS (merge_gen(i)) STORED)
+  PARTITION BY RANGE (i);
+CREATE TABLE tp_0_10 PARTITION OF t FOR VALUES FROM (0) TO (10);
+CREATE TABLE tp_10_20 PARTITION OF t FOR VALUES FROM (10) TO (20);
+INSERT INTO t VALUES (3), (12);
+CREATE OR REPLACE FUNCTION merge_gen(i int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT i * 100';
+ALTER TABLE t MERGE PARTITIONS (tp_0_10, tp_10_20) INTO tp_0_20;
+-- Existing rows keep g = i * 2 (3->6, 12->24); only a fresh insert uses the new
+-- expression (5->500).
+INSERT INTO t VALUES (5);
+SELECT i, g FROM t ORDER BY i;
+DROP TABLE t;
+DROP FUNCTION merge_gen(int);
+
+
+-- A partition can carry a generation expression different from the partitioned
+-- table's (ATTACH PARTITION does not compare the expressions).  Since values are
+-- moved as-is, MERGE PARTITIONS is rejected in that case: otherwise the new
+-- partition would store data inconsistent with its own generation expression
+-- (and here even violate NOT NULL).
+CREATE TABLE t (id int, g int GENERATED ALWAYS AS (NULLIF(id, 1)) STORED NOT NULL)
+  PARTITION BY RANGE (id);
+CREATE TABLE tp_0_10 (g int GENERATED ALWAYS AS (id) STORED NOT NULL, id int);
+ALTER TABLE t ATTACH PARTITION tp_0_10 FOR VALUES FROM (0) TO (10);
+CREATE TABLE tp_10_20 PARTITION OF t FOR VALUES FROM (10) TO (20);
+INSERT INTO t VALUES (2), (12);
+ALTER TABLE t MERGE PARTITIONS (tp_0_10, tp_10_20) INTO tp_0_20;	-- fails
 DROP TABLE t;
 
 
