@@ -23402,8 +23402,16 @@ MergePartitionsMoveRows(List **wqueue, List *mergingPartitions, Relation newPart
 	AlteredTableInfo *tab;
 	ListCell   *ltab;
 
-	/* The FSM is empty, so don't bother using it. */
-	uint32		ti_options = TABLE_INSERT_SKIP_FSM;
+	/*
+	 * The FSM is empty, so don't bother using it.  Also suppress logical
+	 * decoding of these inserts: merging partitions physically relocates rows
+	 * within the same partitioned table, much like CLUSTER or VACUUM FULL.
+	 * The relocation is not a user-level INSERT, and MERGE PARTITIONS is DDL
+	 * that logical replication does not replicate anyway; emitting INSERTs
+	 * for the moved rows (with no matching DELETEs for the source rows) would
+	 * corrupt logical subscribers.
+	 */
+	uint32		ti_options = TABLE_INSERT_SKIP_FSM | TABLE_INSERT_NO_LOGICAL;
 	BulkInsertState bistate;	/* state of bulk inserts for partition */
 	TupleTableSlot *dstslot;
 
@@ -24070,8 +24078,12 @@ static void
 SplitPartitionMoveRows(List **wqueue, Relation rel, Relation splitRel,
 					   List *partlist, List *newPartRels)
 {
-	/* The FSM is empty, so don't bother using it. */
-	uint32		ti_options = TABLE_INSERT_SKIP_FSM;
+	/*
+	 * The FSM is empty, so don't bother using it.  Suppress logical decoding
+	 * of these inserts as well; see the matching comment in
+	 * MergePartitionsMoveRows().
+	 */
+	uint32		ti_options = TABLE_INSERT_SKIP_FSM | TABLE_INSERT_NO_LOGICAL;
 	CommandId	mycid;
 	EState	   *estate;
 	ListCell   *listptr,
