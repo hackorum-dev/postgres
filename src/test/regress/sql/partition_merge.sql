@@ -839,6 +839,56 @@ SELECT reltablespace FROM pg_class WHERE relname = 'tp_merged';
 DROP TABLE t;
 
 
+-- MERGE PARTITIONS carries over a uniform replica identity ...
+CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+ALTER TABLE tp_0_1 REPLICA IDENTITY FULL;
+ALTER TABLE tp_1_2 REPLICA IDENTITY FULL;
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;
+SELECT relreplident FROM pg_class WHERE relname = 'tp_0_2'
+  AND relnamespace = 'partitions_merge_schema'::regnamespace;
+DROP TABLE t;
+
+-- ... but rejects merging partitions with different replica identities.
+CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+ALTER TABLE tp_0_1 REPLICA IDENTITY FULL;
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
+DROP TABLE t;
+
+-- MERGE PARTITIONS rejects a partition that is directly part of a publication.
+CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+CREATE PUBLICATION pub_merge FOR TABLE tp_0_1;
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
+DROP PUBLICATION pub_merge;
+DROP TABLE t;
+
+-- Creating the new partition in another schema is only rejected when that
+-- actually changes which FOR TABLES IN SCHEMA publications cover it.
+CREATE TABLE t (i int) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+INSERT INTO t VALUES (0), (1);
+-- No such publication, so a cross-schema merge is fine.
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO partitions_merge_schema2.tp_0_2;
+SELECT count(*) FROM t;
+DROP TABLE t;
+
+CREATE TABLE t (i int) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+CREATE PUBLICATION pub_merge FOR TABLES IN SCHEMA partitions_merge_schema;
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2)
+  INTO partitions_merge_schema2.tp_0_2;	-- fails
+-- Staying in the covered schema is fine.
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;
+DROP PUBLICATION pub_merge;
+DROP TABLE t;
+
 RESET search_path;
 
 --
