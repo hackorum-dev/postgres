@@ -22850,18 +22850,15 @@ GetAttributeStorage(Oid atttypid, const char *storagemode)
 }
 
 /*
- * buildExpressionExecutionStates: build the needed expression execution states
- * for new partition (newPartRel) checks and initialize expressions for
- * generated columns. All expressions should be created in "tab"
- * (AlteredTableInfo structure).
+ * buildPartitionCheckExprStates: build the expression execution states for the
+ * CHECK constraints of the new partition (newPartRel), stored in "tab"
+ * (AlteredTableInfo structure), so they can be verified against the relocated
+ * rows in checkPartitionRowConstraints().
  */
 static void
-buildExpressionExecutionStates(AlteredTableInfo *tab, Relation newPartRel, EState *estate)
+buildPartitionCheckExprStates(AlteredTableInfo *tab, Relation newPartRel, EState *estate)
 {
-	/*
-	 * Build the needed expression execution states. Here, we expect only NOT
-	 * NULL and CHECK constraint.
-	 */
+	/* Here, we expect only NOT NULL and CHECK constraints. */
 	foreach_ptr(NewConstraint, con, tab->constraints)
 	{
 		switch (con->contype)
@@ -22882,35 +22879,21 @@ buildExpressionExecutionStates(AlteredTableInfo *tab, Relation newPartRel, EStat
 					 (int) con->contype);
 		}
 	}
-
-	/* Expression already planned in createTableConstraints */
-	foreach_ptr(NewColumnValue, ex, tab->newvals)
-		ex->exprstate = ExecInitExpr((Expr *) ex->expr, NULL);
 }
 
 /*
- * evaluateGeneratedExpressionsAndCheckConstraints: evaluate any generated
- * expressions for "tab" (AlteredTableInfo structure) whose inputs come from
- * the new tuple (insertslot) of the new partition (newPartRel).
+ * checkPartitionRowConstraints: verify the new partition's CHECK constraints
+ * against a relocated row (insertslot).  Stored generated columns are moved
+ * as-is (never recomputed; see createTableConstraints), so there are no
+ * generated expressions to evaluate here.
  */
 static void
-evaluateGeneratedExpressionsAndCheckConstraints(AlteredTableInfo *tab,
-												Relation newPartRel,
-												TupleTableSlot *insertslot,
-												ExprContext *econtext)
+checkPartitionRowConstraints(AlteredTableInfo *tab,
+							 Relation newPartRel,
+							 TupleTableSlot *insertslot,
+							 ExprContext *econtext)
 {
 	econtext->ecxt_scantuple = insertslot;
-
-	foreach_ptr(NewColumnValue, ex, tab->newvals)
-	{
-		if (!ex->is_generated)
-			continue;
-
-		insertslot->tts_values[ex->attnum - 1]
-			= ExecEvalExpr(ex->exprstate,
-						   econtext,
-						   &insertslot->tts_isnull[ex->attnum - 1]);
-	}
 
 	foreach_ptr(NewConstraint, con, tab->constraints)
 	{
@@ -22986,10 +22969,28 @@ getAttributesList(Relation parent_rel)
 }
 
 /*
+ * expression_references_system_column: walker that returns true if the given
+ * expression references any system column (a Var with a negative attribute
+ * number, such as tableoid).  Used to decide whether a stored generated column
+ * must be recomputed when a row is relocated between partitions.
+ */
+static bool
+expression_references_system_column(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Var) && ((Var *) node)->varattno < 0)
+		return true;
+	return expression_tree_walker(node, expression_references_system_column,
+								  context);
+}
+
+/*
  * createTableConstraints:
- * create check constraints, default values, and generated values for newRel
- * based on parent_rel.  tab is pending-work queue for newRel, we may need it in
- * MergePartitionsMoveRows.
+ * create check constraints and column defaults (including generation
+ * expressions) for newRel based on parent_rel.  The CHECK constraints are also
+ * recorded in "tab" so they can be re-verified against the relocated rows in
+ * MergePartitionsMoveRows()/SplitPartitionMoveRows().
  */
 static void
 createTableConstraints(List **wqueue, AlteredTableInfo *tab,
@@ -23035,7 +23036,6 @@ createTableConstraints(List **wqueue, AlteredTableInfo *tab,
 			bool		found_whole_row;
 			AttrNumber	num;
 			Node	   *def;
-			NewColumnValue *newval;
 
 			if (attribute->attgenerated == ATTRIBUTE_GENERATED_VIRTUAL)
 				this_default = build_generation_expression(parent_rel, attribute->attnum);
@@ -23057,19 +23057,31 @@ createTableConstraints(List **wqueue, AlteredTableInfo *tab,
 			StoreAttrDefault(newRel, num, def, false);
 
 			/*
-			 * Stored generated column expressions in parent_rel might
-			 * reference the tableoid.  newRel, parent_rel tableoid clear is
-			 * not the same. If so, these stored generated columns require
-			 * recomputation for newRel within MergePartitionsMoveRows.
+			 * Relocating a row between partitions never changes a user column,
+			 * so a stored generated column defined over user columns keeps the
+			 * same value; we move it as-is rather than recomputing it (which is
+			 * what every other command does, and which avoids silently
+			 * rewriting stored data when a leaf partition's generation
+			 * expression, or a function it calls, differs from the partitioned
+			 * table's).
+			 *
+			 * A stored generated column whose expression references a system
+			 * column (in practice only tableoid is allowed there) is the one
+			 * case whose value would legitimately change on the move.  We can't
+			 * recompute it safely: the row-movement path does not re-verify NOT
+			 * NULL, foreign-key, or generated-column-dependent CHECK
+			 * constraints the way a normal insert does, so a recomputed value
+			 * could silently violate them.  Rather than risk that, reject the
+			 * operation and let the user handle such columns explicitly.
 			 */
-			if (attribute->attgenerated == ATTRIBUTE_GENERATED_STORED)
-			{
-				newval = palloc0_object(NewColumnValue);
-				newval->attnum = num;
-				newval->expr = expression_planner((Expr *) def);
-				newval->is_generated = (attribute->attgenerated != '\0');
-				tab->newvals = lappend(tab->newvals, newval);
-			}
+			if (attribute->attgenerated == ATTRIBUTE_GENERATED_STORED &&
+				expression_references_system_column(def, NULL))
+				ereport(ERROR,
+						errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						errmsg("cannot merge or split partitions when a stored generated column depends on a system column"),
+						errdetail("Column \"%s\" of relation \"%s\" is generated from an expression that references a system column such as tableoid.",
+								  NameStr(attribute->attname),
+								  RelationGetRelationName(parent_rel)));
 		}
 	}
 
@@ -23448,7 +23460,7 @@ MergePartitionsMoveRows(List **wqueue, List *mergingPartitions, Relation newPart
 	/* Generate the constraint and default execution states. */
 	estate = CreateExecutorState();
 
-	buildExpressionExecutionStates(tab, newPartRel, estate);
+	buildPartitionCheckExprStates(tab, newPartRel, estate);
 
 	mycid = GetCurrentCommandId(true);
 
@@ -23538,7 +23550,7 @@ MergePartitionsMoveRows(List **wqueue, List *mergingPartitions, Relation newPart
 			 * the new tuple.  We assume these columns won't reference each
 			 * other, so that there's no ordering dependency.
 			 */
-			evaluateGeneratedExpressionsAndCheckConstraints(tab, newPartRel,
+			checkPartitionRowConstraints(tab, newPartRel,
 															insertslot, econtext);
 
 			/* Write the tuple out to the new relation. */
@@ -24144,7 +24156,7 @@ SplitPartitionMoveRows(List **wqueue, Relation rel, Relation splitRel,
 		/* Find the work queue entry for the new partition table: newPartRel. */
 		pc->tab = ATGetQueueEntry(wqueue, pc->partRel);
 
-		buildExpressionExecutionStates(pc->tab, pc->partRel, estate);
+		buildPartitionCheckExprStates(pc->tab, pc->partRel, estate);
 
 		if (sps->bound->is_default)
 		{
@@ -24276,7 +24288,7 @@ SplitPartitionMoveRows(List **wqueue, Relation rel, Relation splitRel,
 		 * new tuple.  We assume these columns won't reference each other, so
 		 * that there's no ordering dependency.
 		 */
-		evaluateGeneratedExpressionsAndCheckConstraints(pc->tab, pc->partRel,
+		checkPartitionRowConstraints(pc->tab, pc->partRel,
 														insertslot, econtext);
 
 		/* Write the tuple out to the new relation. */

@@ -736,25 +736,17 @@ DROP TABLE t_fk;
 DROP TABLE t;
 
 
--- Test for recomputation of stored generated columns.
+-- A stored generated column whose expression references a system column
+-- (tableoid) would have to be recomputed when a row is relocated to another
+-- partition; since the row-movement path cannot re-verify all constraints
+-- against a recomputed value, MERGE PARTITIONS is rejected instead.  (A stored
+-- generated column over user columns only is fine: its value is preserved, as
+-- exercised above.)
 CREATE TABLE t (i int, tab_id int generated always as (tableoid) stored) PARTITION BY RANGE (i);
 CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
 CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
-ALTER TABLE t ADD CONSTRAINT cc CHECK(tableoid <> 123456789);
 INSERT INTO t VALUES (0), (1);
-
--- Should be 0 because partition identifier for row with i=0 is different from
--- partition identifier for row with i=1.
-SELECT count(*) FROM t WHERE i = 0 AND tab_id IN (SELECT tab_id FROM t WHERE i = 1);
-
--- "tab_id" column (stored generated column) with "tableoid" attribute requires
--- recomputation here.
-ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;
-
--- Should be 1 because partition identifier for row with i=0 is the same as
--- partition identifier for row with i=1.
-SELECT count(*) FROM t WHERE i = 0 AND tab_id IN (SELECT tab_id FROM t WHERE i = 1);
-
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
 DROP TABLE t;
 
 
@@ -838,6 +830,24 @@ ALTER TABLE t MERGE PARTITIONS (tp_0_5, tp_5_10) INTO tp_merged;
 SELECT reltablespace FROM pg_class WHERE relname = 'tp_merged';
 DROP TABLE t;
 
+
+-- MERGE PARTITIONS preserves stored generated column values rather than
+-- recomputing them (here the partitioned table's generation expression differs
+-- from what actually produced the stored rows because the function changed).
+CREATE FUNCTION merge_gen(i int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT i * 2';
+CREATE TABLE t (i int, g int GENERATED ALWAYS AS (merge_gen(i)) STORED)
+  PARTITION BY RANGE (i);
+CREATE TABLE tp_0_10 PARTITION OF t FOR VALUES FROM (0) TO (10);
+CREATE TABLE tp_10_20 PARTITION OF t FOR VALUES FROM (10) TO (20);
+INSERT INTO t VALUES (3), (12);
+CREATE OR REPLACE FUNCTION merge_gen(i int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT i * 100';
+ALTER TABLE t MERGE PARTITIONS (tp_0_10, tp_10_20) INTO tp_0_20;
+-- Existing rows keep g = i * 2 (3->6, 12->24); only a fresh insert uses the new
+-- expression (5->500).
+INSERT INTO t VALUES (5);
+SELECT i, g FROM t ORDER BY i;
+DROP TABLE t;
+DROP FUNCTION merge_gen(int);
 
 -- MERGE PARTITIONS carries over a uniform replica identity ...
 CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);

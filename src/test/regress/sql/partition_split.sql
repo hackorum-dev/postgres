@@ -1162,26 +1162,16 @@ DROP TABLE t;
 DROP FUNCTION trigger_function();
 
 
--- Test for recomputation of stored generated columns.
+-- A stored generated column whose expression references a system column
+-- (tableoid) would have to be recomputed when a row is relocated to another
+-- partition; since the row-movement path cannot re-verify all constraints
+-- against a recomputed value, SPLIT PARTITION is rejected instead.
 CREATE TABLE t (i int, tab_id int generated always as (tableoid) stored) PARTITION BY RANGE (i);
 CREATE TABLE tp_0_2 PARTITION OF t FOR VALUES FROM (0) TO (2);
-ALTER TABLE t ADD CONSTRAINT cc CHECK(tableoid <> 123456789);
 INSERT INTO t VALUES (0), (1);
-
--- Should be 1 because partition identifier for row with i=0 is the same as
--- partition identifier for row with i=1.
-SELECT count(*) FROM t WHERE i = 0 AND tab_id IN (SELECT tab_id FROM t WHERE i = 1);
-
--- "tab_id" column (stored generated column) with "tableoid" attribute requires
--- recomputation here.
 ALTER TABLE t SPLIT PARTITION tp_0_2 INTO
   (PARTITION tp_0_1 FOR VALUES FROM (0) TO (1),
-   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));
-
--- Should be 0 because partition identifier for row with i=0 is different from
--- partition identifier for row with i=1.
-SELECT count(*) FROM t WHERE i = 0 AND tab_id IN (SELECT tab_id FROM t WHERE i = 1);
-
+   PARTITION tp_1_2 FOR VALUES FROM (1) TO (2));	-- fails
 DROP TABLE t;
 
 -- Each new partition produced by SPLIT must get its own TOAST table so
