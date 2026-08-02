@@ -839,6 +839,34 @@ SELECT reltablespace FROM pg_class WHERE relname = 'tp_merged';
 DROP TABLE t;
 
 
+-- MERGE PARTITIONS carries over a uniform replica identity ...
+CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+ALTER TABLE tp_0_1 REPLICA IDENTITY FULL;
+ALTER TABLE tp_1_2 REPLICA IDENTITY FULL;
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;
+SELECT relreplident FROM pg_class WHERE relname = 'tp_0_2';
+DROP TABLE t;
+
+-- ... but rejects merging partitions with different replica identities.
+CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+ALTER TABLE tp_0_1 REPLICA IDENTITY FULL;
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
+DROP TABLE t;
+
+-- MERGE PARTITIONS rejects a partition that is directly part of a publication.
+CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+CREATE PUBLICATION pub_merge FOR TABLE tp_0_1;
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
+DROP PUBLICATION pub_merge;
+DROP TABLE t;
+
+
 RESET search_path;
 
 --
