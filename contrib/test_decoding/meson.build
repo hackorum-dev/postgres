@@ -42,6 +42,7 @@ tests += {
       'stats',
       'twophase',
       'twophase_stream',
+      'partition_merge_split',
     ],
     'regress_args': [
       '--temp-config', files('logical.conf'),
