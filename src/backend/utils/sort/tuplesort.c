@@ -329,6 +329,15 @@ struct Tuplesortstate
 								 * applicability */
 
 	/*
+	 * Tracks whether abbreviation is still worth its cost once we're
+	 * maintaining a bounded heap.  See tuplesort_puttuple_common().
+	 */
+	int64		boundedArrivals;	/* tuples seen since entering TSS_BOUNDED */
+	int64		boundedReplacements;	/* of those, how many replaced the heap root */
+	int64		boundedAbbrevNext;	/* boundedArrivals value at which to next
+									 * reconsider abbreviation's usefulness */
+
+	/*
 	 * Resource snapshot for time of sort start.
 	 */
 	PGRUsage	ru_start;
@@ -759,19 +768,6 @@ tuplesort_set_bound(Tuplesortstate *state, int64 bound)
 
 	state->bounded = true;
 	state->bound = (int) bound;
-
-	/*
-	 * Bounded sorts are not an effective target for abbreviated key
-	 * optimization.  Disable by setting state to be consistent with no
-	 * abbreviation support.
-	 */
-	state->base.sortKeys->abbrev_converter = NULL;
-	if (state->base.sortKeys->abbrev_full_comparator)
-		state->base.sortKeys->comparator = state->base.sortKeys->abbrev_full_comparator;
-
-	/* Not strictly necessary, but be tidy */
-	state->base.sortKeys->abbrev_abort = NULL;
-	state->base.sortKeys->abbrev_full_comparator = NULL;
 }
 
 /*
@@ -1189,6 +1185,42 @@ tuplesort_puttuple_common(Tuplesortstate *state, SortTuple *tuple,
 				/* discard top of heap, replacing it with the new tuple */
 				free_sort_tuple(state, &state->memtuples[0]);
 				tuplesort_heap_replace_top(state, tuple);
+				state->boundedReplacements++;
+			}
+
+			/*
+			 * Each arrival here is compared against the root once and
+			 * usually discarded, so abbreviation's cost isn't amortized
+			 * the way it is for an ordinary sort.  Periodically check the
+			 * survival rate and give up on abbreviation if it's low; the
+			 * restore is cheap since the heap holds only state->bound
+			 * tuples.
+			 */
+			if (state->base.sortKeys->abbrev_converter != NULL)
+			{
+				state->boundedArrivals++;
+				if (state->boundedArrivals >= state->boundedAbbrevNext)
+				{
+					state->boundedAbbrevNext *= 2;
+
+					/* less than 5% of arrivals since the switch survived */
+					if (state->boundedReplacements * 20 < state->boundedArrivals)
+					{
+						SortSupport sortKey = state->base.sortKeys;
+
+						if (trace_sort)
+							elog(LOG, "abandoning abbreviation in bounded heap after %lld arrivals (%lld replacements): %s",
+								 (long long) state->boundedArrivals,
+								 (long long) state->boundedReplacements,
+								 pg_rusage_show(&state->ru_start));
+
+						REMOVEABBREV(state, state->memtuples, state->memtupcount);
+						sortKey->comparator = sortKey->abbrev_full_comparator;
+						sortKey->abbrev_converter = NULL;
+						sortKey->abbrev_abort = NULL;
+						sortKey->abbrev_full_comparator = NULL;
+					}
+				}
 			}
 			break;
 
@@ -2490,6 +2522,17 @@ make_bounded_heap(Tuplesortstate *state)
 	Assert(state->bounded);
 	Assert(tupcount >= state->bound);
 	Assert(SERIAL(state));
+
+	/*
+	 * Don't restore/disable abbreviation here: COMPARETUP already falls
+	 * back to the real value on an abbreviated tie (e.g.
+	 * comparetup_heap_tiebreak), so it works fine on abbreviated tuples.
+	 * tuplesort_puttuple_common() decides separately whether to abandon
+	 * abbreviation once we're maintaining the heap.
+	 */
+	state->boundedArrivals = 0;
+	state->boundedReplacements = 0;
+	state->boundedAbbrevNext = 1000;
 
 	/* Reverse sort direction so largest entry will be at root */
 	reversedirection(state);
