@@ -49,6 +49,7 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_publication.h"
 #include "catalog/pg_publication_rel.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_statistic_ext.h"
@@ -23390,6 +23391,78 @@ createPartitionTable(List **wqueue, RangeVar *newPartName,
 }
 
 /*
+ * transferPartitionReplicaIdentity: propagate the source partitions' replica
+ * identity to the new partition(s) created by MERGE/SPLIT, and refuse the
+ * operation for cases we cannot handle without silently changing replication
+ * behavior.
+ *
+ * The new partitions are built from the partitioned-table template and would
+ * otherwise default to REPLICA IDENTITY DEFAULT and drop out of any publication
+ * that the source partitions were directly part of.  To avoid silent surprises:
+ *
+ *  - A uniform, simply-representable replica identity (DEFAULT, FULL or
+ *    NOTHING) is carried over to every new partition.  If the sources disagree,
+ *    or use an index-based identity (which cannot be reproduced on the new
+ *    partition automatically), we raise an error and ask the user to set it.
+ *
+ *  - If any source partition is a direct member of a publication, we refuse the
+ *    operation: the new partition would silently leave the publication, and
+ *    faithfully reproducing per-relation column lists and row filters is
+ *    ambiguous (especially when several sources are merged).  Publications that
+ *    cover the partitioned root instead continue to include the new partition.
+ *
+ * 'sourceOids' lists the source partition OIDs (still present, not yet dropped);
+ * 'newPartRels' lists the new partition Relations (exclusively locked).
+ */
+static void
+transferPartitionReplicaIdentity(List *sourceOids, List *newPartRels)
+{
+	char		ri_type = '\0';
+	bool		ri_seen = false;
+
+	foreach_oid(srcOid, sourceOids)
+	{
+		Relation	src = table_open(srcOid, NoLock);
+
+		if (GetRelationIncludedPublications(srcOid) != NIL)
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot merge or split partition \"%s\" that is directly part of a publication",
+						   RelationGetRelationName(src)),
+					errhint("Publish the partitioned table instead, or add the new partition to the publication after the operation."));
+
+		if (!ri_seen)
+		{
+			ri_type = src->rd_rel->relreplident;
+			ri_seen = true;
+		}
+		else if (ri_type != src->rd_rel->relreplident)
+			ereport(ERROR,
+					errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("partitions being merged have different replica identity settings"),
+					errhint("Set the replica identity of the new partition explicitly after the operation."));
+
+		table_close(src, NoLock);
+	}
+
+	/* Nothing to carry over, or the new partitions already match. */
+	if (!ri_seen || ri_type == REPLICA_IDENTITY_DEFAULT)
+		return;
+
+	if (ri_type == REPLICA_IDENTITY_INDEX)
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("cannot automatically transfer an index-based replica identity to the new partition"),
+				errhint("Set the replica identity of the new partition explicitly with ALTER TABLE ... REPLICA IDENTITY USING INDEX."));
+
+	/* Carry FULL / NOTHING over to each new partition. */
+	foreach_ptr(RelationData, newrel, newPartRels)
+		relation_mark_replica_identity(newrel, ri_type, InvalidOid, true);
+
+	CommandCounterIncrement();
+}
+
+/*
  * MergePartitionsMoveRows: scan partitions to be merged (mergingPartitions)
  * of the partitioned table and move rows into the new partition
  * (newPartRel). We also verify check constraints against these rows.
@@ -23940,6 +24013,12 @@ ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	newPartRel = createPartitionTable(wqueue, cmd->name, rel, ownerId);
 
 	/*
+	 * Carry the source partitions' replica identity over to the new partition,
+	 * and reject cases that would silently change replication behavior.
+	 */
+	transferPartitionReplicaIdentity(mergingPartitions, list_make1(newPartRel));
+
+	/*
 	 * Switch to the table owner's userid, so that any index functions are run
 	 * as that user.  Also, lockdown security-restricted operations and
 	 * arrange to make GUC variable changes local to this command.
@@ -24380,6 +24459,12 @@ ATExecSplitPartition(List **wqueue, AlteredTableInfo *tab, Relation rel,
 										  splitRel->rd_rel->relowner);
 		newPartRels = lappend(newPartRels, newPartRel);
 	}
+
+	/*
+	 * Carry the split partition's replica identity over to the new partitions,
+	 * and reject cases that would silently change replication behavior.
+	 */
+	transferPartitionReplicaIdentity(list_make1_oid(splitRelOid), newPartRels);
 
 	/*
 	 * Switch to the table owner's userid, so that any index functions are run
