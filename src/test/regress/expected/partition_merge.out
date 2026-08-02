@@ -887,14 +887,14 @@ CREATE TABLE tp_0_1
 (i int NOT NULL,
  t text STORAGE MAIN DEFAULT 'default_tp_0_1',
  b bigint,
- d date GENERATED ALWAYS as ('2022-02-02') STORED);
+ d date GENERATED ALWAYS as ('2022-01-01') STORED);
 ALTER TABLE t ATTACH PARTITION tp_0_1 FOR VALUES FROM (0) TO (1);
 COMMENT ON COLUMN tp_0_1.i IS 'tp_0_1.i';
 CREATE TABLE tp_1_2
 (i int NOT NULL,
  t text STORAGE MAIN DEFAULT 'default_tp_1_2',
  b bigint,
- d date GENERATED ALWAYS as ('2022-03-03') STORED);
+ d date GENERATED ALWAYS as ('2022-01-01') STORED);
 ALTER TABLE t ATTACH PARTITION tp_1_2 FOR VALUES FROM (1) TO (2);
 COMMENT ON COLUMN tp_1_2.i IS 'tp_1_2.i';
 CREATE STATISTICS t_stat (DEPENDENCIES) on i, b from t;
@@ -926,7 +926,7 @@ CREATE TRIGGER tp_1_2_before_insert_row_trigger BEFORE INSERT ON tp_1_2 FOR EACH
  i      | integer |           | not null |                                                 | plain   |             |              | tp_0_1.i
  t      | text    |           |          | 'default_tp_0_1'::text                          | main    |             |              | 
  b      | bigint  |           | not null |                                                 | plain   |             |              | 
- d      | date    |           |          | generated always as ('02-02-2022'::date) stored | plain   |             |              | 
+ d      | date    |           |          | generated always as ('01-01-2022'::date) stored | plain   |             |              | 
 Partition of: t FOR VALUES FROM (0) TO (1)
 Partition constraint: ((abs(i) IS NOT NULL) AND (abs(i) >= 0) AND (abs(i) < 1))
 Check constraints:
@@ -1030,37 +1030,50 @@ ERROR:  insert or update on table "t_fk" violates foreign key constraint "t_fk_i
 DETAIL:  Key (i)=(2) is not present in table "t".
 DROP TABLE t_fk;
 DROP TABLE t;
--- Test for recomputation of stored generated columns.
+-- A generated column whose expression references a system column (tableoid) is
+-- the one whose value legitimately changes when a row is relocated to another
+-- partition, so MERGE PARTITIONS is rejected.  This holds for a stored column,
+-- whose value cannot be recomputed while re-verifying all constraints ...
 CREATE TABLE t (i int, tab_id int generated always as (tableoid) stored) PARTITION BY RANGE (i);
 CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
 CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
-ALTER TABLE t ADD CONSTRAINT cc CHECK(tableoid <> 123456789);
 INSERT INTO t VALUES (0), (1);
--- Should be 0 because partition identifier for row with i=0 is different from
--- partition identifier for row with i=1.
-SELECT count(*) FROM t WHERE i = 0 AND tab_id IN (SELECT tab_id FROM t WHERE i = 1);
- count 
--------
-     0
-(1 row)
-
--- "tab_id" column (stored generated column) with "tableoid" attribute requires
--- recomputation here.
-ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;
--- Should be 1 because partition identifier for row with i=0 is the same as
--- partition identifier for row with i=1.
-SELECT count(*) FROM t WHERE i = 0 AND tab_id IN (SELECT tab_id FROM t WHERE i = 1);
- count 
--------
-     1
-(1 row)
-
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
+ERROR:  cannot merge or split partitions when a generated column depends on a system column
+DETAIL:  Column "tab_id" of relation "t" is generated from an expression that references a system column such as tableoid.
+DROP TABLE t;
+-- ... and for a virtual one, which is not stored at all, so its value would
+-- silently change as soon as the rows live in the new partition (here that
+-- would also break the NOT NULL constraint if the new partition happened to
+-- get the OID mentioned in the expression).  A generated column over user
+-- columns only is fine: its value is preserved, as exercised above.
+CREATE TABLE t (i int, g int GENERATED ALWAYS AS (NULLIF(tableoid, 18470)) NOT NULL)
+  PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+INSERT INTO t VALUES (0), (1);
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
+ERROR:  cannot merge or split partitions when a generated column depends on a system column
+DETAIL:  Column "g" of relation "t" is generated from an expression that references a system column such as tableoid.
+DROP TABLE t;
+-- A CHECK constraint referencing a system column is rejected for the same
+-- reason: it would have to be re-verified against the new partition's OID, and
+-- the row movement runs with a restricted search_path, so a search_path
+-- dependent expression would not even evaluate the way it does for an INSERT.
+CREATE TABLE t (i int) PARTITION BY RANGE (i);
+CREATE TABLE tp_0_1 PARTITION OF t FOR VALUES FROM (0) TO (1);
+CREATE TABLE tp_1_2 PARTITION OF t FOR VALUES FROM (1) TO (2);
+ALTER TABLE t ADD CONSTRAINT cc CHECK (tableoid::regclass::text <> 'tp_0_2');
+INSERT INTO t VALUES (0), (1);
+ALTER TABLE t MERGE PARTITIONS (tp_0_1, tp_1_2) INTO tp_0_2;	-- fails
+ERROR:  cannot merge or split partitions when a check constraint depends on a system column
+DETAIL:  Constraint "cc" of relation "t" references a system column such as tableoid.
 DROP TABLE t;
 -- Test for generated columns (different order of columns in partitioned table
 -- and partitions).
-CREATE TABLE t (i int, g int GENERATED ALWAYS AS (i + tableoid::int)) PARTITION BY RANGE (i);
-CREATE TABLE tp_1 (g int GENERATED ALWAYS AS (i + tableoid::int), i int);
-CREATE TABLE tp_2 (g int GENERATED ALWAYS AS (i + tableoid::int), i int);
+CREATE TABLE t (i int, g int GENERATED ALWAYS AS (i * 2)) PARTITION BY RANGE (i);
+CREATE TABLE tp_1 (g int GENERATED ALWAYS AS (i * 2), i int);
+CREATE TABLE tp_2 (g int GENERATED ALWAYS AS (i * 2), i int);
 ALTER TABLE t ATTACH PARTITION tp_1 FOR VALUES FROM (-1) TO (10);
 ALTER TABLE t ATTACH PARTITION tp_2 FOR VALUES FROM (10) TO (20);
 ALTER TABLE t ADD CHECK (g > 0);
@@ -1070,23 +1083,16 @@ ALTER TABLE t MERGE PARTITIONS (tp_1, tp_2) INTO tp_12;
 INSERT INTO t VALUES (16);
 -- ERROR
 INSERT INTO t VALUES (0);
-ERROR:  new row for relation "tp_12" violates check constraint "t_i_check"
+ERROR:  new row for relation "tp_12" violates check constraint "t_g_check"
 DETAIL:  Failing row contains (0, virtual).
 -- Should be 3 rows: (5), (15), (16):
-SELECT i FROM t ORDER BY i;
- i  
-----
-  5
- 15
- 16
+SELECT i, g FROM t ORDER BY i;
+ i  | g  
+----+----
+  5 | 10
+ 15 | 30
+ 16 | 32
 (3 rows)
-
--- Should be 1 because for the same tableoid (15 + tableoid) = (5 + tableoid) + 10:
-SELECT count(*) FROM t WHERE i = 15 AND g IN (SELECT g + 10 FROM t WHERE i = 5);
- count 
--------
-     1
-(1 row)
 
 DROP TABLE t;
 -- A merged partition needs its own TOAST table; otherwise an out-of-line
@@ -1167,6 +1173,45 @@ SELECT reltablespace FROM pg_class WHERE relname = 'tp_merged';
              0
 (1 row)
 
+DROP TABLE t;
+-- MERGE PARTITIONS preserves stored generated column values rather than
+-- recomputing them (here the partitioned table's generation expression differs
+-- from what actually produced the stored rows because the function changed).
+CREATE FUNCTION merge_gen(i int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT i * 2';
+CREATE TABLE t (i int, g int GENERATED ALWAYS AS (merge_gen(i)) STORED)
+  PARTITION BY RANGE (i);
+CREATE TABLE tp_0_10 PARTITION OF t FOR VALUES FROM (0) TO (10);
+CREATE TABLE tp_10_20 PARTITION OF t FOR VALUES FROM (10) TO (20);
+INSERT INTO t VALUES (3), (12);
+CREATE OR REPLACE FUNCTION merge_gen(i int) RETURNS int IMMUTABLE LANGUAGE sql AS 'SELECT i * 100';
+ALTER TABLE t MERGE PARTITIONS (tp_0_10, tp_10_20) INTO tp_0_20;
+-- Existing rows keep g = i * 2 (3->6, 12->24); only a fresh insert uses the new
+-- expression (5->500).
+INSERT INTO t VALUES (5);
+SELECT i, g FROM t ORDER BY i;
+ i  |  g  
+----+-----
+  3 |   6
+  5 | 500
+ 12 |  24
+(3 rows)
+
+DROP TABLE t;
+DROP FUNCTION merge_gen(int);
+-- A partition can carry a generation expression different from the partitioned
+-- table's (ATTACH PARTITION does not compare the expressions).  Since values are
+-- moved as-is, MERGE PARTITIONS is rejected in that case: otherwise the new
+-- partition would store data inconsistent with its own generation expression
+-- (and here even violate NOT NULL).
+CREATE TABLE t (id int, g int GENERATED ALWAYS AS (NULLIF(id, 1)) STORED NOT NULL)
+  PARTITION BY RANGE (id);
+CREATE TABLE tp_0_10 (g int GENERATED ALWAYS AS (id) STORED NOT NULL, id int);
+ALTER TABLE t ATTACH PARTITION tp_0_10 FOR VALUES FROM (0) TO (10);
+CREATE TABLE tp_10_20 PARTITION OF t FOR VALUES FROM (10) TO (20);
+INSERT INTO t VALUES (2), (12);
+ALTER TABLE t MERGE PARTITIONS (tp_0_10, tp_10_20) INTO tp_0_20;	-- fails
+ERROR:  cannot merge or split partitions when a partition's generation expression differs from the partitioned table
+DETAIL:  Generated column "g" of partition "tp_0_10" has a generation expression different from table "t".
 DROP TABLE t;
 -- MERGE PARTITIONS carries over a uniform replica identity ...
 CREATE TABLE t (i int PRIMARY KEY) PARTITION BY RANGE (i);
