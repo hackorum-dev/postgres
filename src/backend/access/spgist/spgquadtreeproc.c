@@ -76,6 +76,16 @@ getQuadrant(Point *centroid, Point *tst)
 		SPTEST(point_left, tst, centroid))
 		return 4;
 
+	/* Fuzzy comparisons can leave gaps, so fall back to exact ones. */
+	if (tst->x >= centroid->x && tst->y >= centroid->y)
+		return 1;
+	if (tst->x >= centroid->x && tst->y < centroid->y)
+		return 2;
+	if (tst->x < centroid->x && tst->y <= centroid->y)
+		return 3;
+	if (tst->x < centroid->x && tst->y > centroid->y)
+		return 4;
+
 	elog(ERROR, "getQuadrant: impossible case");
 	return 0;
 }
