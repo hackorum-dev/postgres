@@ -72,6 +72,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/clauses.h"
 #include "optimizer/optimizer.h"
 #include "pgstat.h"
 #include "rewrite/rewriteDefine.h"
@@ -1204,6 +1205,10 @@ retry:
 	/* foreign key data is not loaded till asked for */
 	relation->rd_fkeylist = NIL;
 	relation->rd_fkeyvalid = false;
+
+	/* parallel DML safety is not computed till asked for */
+	relation->rd_paralleldml = 0;
+	relation->rd_paralleldmlstate = PARALLELDML_NEEDS_REBUILD;
 
 	/* partitioning data is not loaded till asked for */
 	relation->rd_partkey = NULL;
@@ -6066,6 +6071,56 @@ RelationGetIndexAttOptions(Relation relation, bool copy)
 }
 
 /*
+ * RelationGetParallelDmlSafety
+ *		Return the worst parallel-safety hazard level (the earliest in this
+ *		list: PROPARALLEL_UNSAFE, PROPARALLEL_RESTRICTED, PROPARALLEL_SAFE)
+ *		for modifying the given relation while in parallel mode.
+ *
+ * Modifying a relation in parallel mode is unsafe if any of the objects
+ * attached to it involves a parallel-unsafe or parallel-restricted function:
+ * triggers, index expressions and predicates, CHECK constraints, column default
+ * expressions, stored generated column expressions, or the partition key.  For
+ * a partitioned table, each partition is checked recursively as well.
+ *
+ * The cached value is invalidated whenever a parallel-safety-related object is
+ * added to or dropped from the relation, and when any function's parallel
+ * safety property changes; see CacheInvalidateParallelDmlSafety().
+ *
+ * See also max_parallel_dml_hazard() for details on how the hazard level is
+ * computed.
+ */
+char
+RelationGetParallelDmlSafety(Relation rel)
+{
+	char	paralleldml;
+
+	/* Use the cached value if we have already computed it */
+	if (rel->rd_paralleldmlstate == PARALLELDML_VALID)
+		return rel->rd_paralleldml;
+
+	for (;;)
+	{
+		rel->rd_paralleldmlstate = PARALLELDML_REBUILD_STARTED;
+
+		paralleldml = max_parallel_dml_hazard(rel);
+
+		/*
+		 * Cache the result in the relcache entry, unless an invalidation
+		 * processed during the computation reset the state; in that case
+		 * the value may be half-stale, so loop and recompute it instead.
+		 */
+		if (rel->rd_paralleldmlstate == PARALLELDML_REBUILD_STARTED)
+		{
+			rel->rd_paralleldml = paralleldml;
+			rel->rd_paralleldmlstate = PARALLELDML_VALID;
+			break;
+		}
+	}
+
+	return rel->rd_paralleldml;
+}
+
+/*
  * Routines to support ereport() reports of relation-related errors
  *
  * These could have been put into elog.c, but it seems like a module layering
@@ -6525,6 +6580,16 @@ load_relcache_init_file(bool shared)
 		rel->rd_statlist = NIL;
 		rel->rd_fkeyvalid = false;
 		rel->rd_fkeylist = NIL;
+
+		/*
+		 * The cached parallel DML safety hazard level is never saved in the
+		 * init file; it must be recomputed on first use in each session.
+		 * This way, changes to the parallel safety of functions (which can
+		 * affect the hazard level of any relation) cannot leak to new
+		 * sessions via a stale init file.
+		 */
+		rel->rd_paralleldml = 0;
+		rel->rd_paralleldmlstate = PARALLELDML_NEEDS_REBUILD;
 		rel->rd_createSubid = InvalidSubTransactionId;
 		rel->rd_newRelfilelocatorSubid = InvalidSubTransactionId;
 		rel->rd_firstRelfilelocatorSubid = InvalidSubTransactionId;
