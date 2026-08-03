@@ -39,6 +39,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/regproc.h"
 #include "utils/rel.h"
@@ -586,6 +587,18 @@ ProcedureCreate(const char *procedureName,
 		/* Okay, do it... */
 		tup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 		CatalogTupleUpdate(rel, &tup->t_self, tup);
+
+		/*
+		 * If the function's parallel safety changed, the parallel DML
+		 * safety hazard level cached in relcache for any table that uses
+		 * this function (e.g. in a trigger, constraint or index expression)
+		 * may no longer be accurate.  We intentionally don't try to track
+		 * down those tables (that would require additional locking and
+		 * visibility handling); instead, invalidate the cached hazard level
+		 * of all relcache entries in this database.
+		 */
+		if (oldproc->proparallel != parallel)
+			CacheInvalidateParallelDmlSafety(InvalidOid);
 
 		ReleaseSysCache(oldtup);
 		is_update = true;

@@ -30,4 +30,9 @@ tests += {
       'parallel_dml_safety',
     ],
   },
+  'isolation': {
+    'specs': [
+      'stale_safety_cache',
+    ],
+  },
 }

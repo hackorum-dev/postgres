@@ -2964,6 +2964,50 @@ RelationCacheInvalidateEntry(Oid relationId)
 }
 
 /*
+ * RelationCacheInvalidateParallelDml
+ *	 Reset the cached parallel DML safety hazard level (rd_paralleldml) of
+ *	 the relcache entry for the given relation, or of every relcache entry
+ *	 if relationId is InvalidOid, forcing it to be recomputed on next use.
+ *
+ *	 Unlike RelationCacheInvalidateEntry, the relcache entry itself is
+ *	 kept: only the derived flag is discarded, so entries that are in use
+ *	 need no special handling.  Resetting an entry that is currently in use
+ *	 by the planner or executor is harmless; the hazard level in use at
+ *	 that point has already been read.
+ *
+ *	 If the relation is not cached in this backend, there is nothing to do.
+ */
+void
+RelationCacheInvalidateParallelDml(Oid relationId)
+{
+	Relation	relation;
+
+	if (OidIsValid(relationId))
+	{
+		RelationIdCacheLookup(relationId, relation);
+
+		if (relation)
+		{
+			relation->rd_paralleldml = 0;
+			relation->rd_paralleldmlstate = PARALLELDML_NEEDS_REBUILD;
+		}
+	}
+	else
+	{
+		HASH_SEQ_STATUS status;
+		RelIdCacheEnt *idhentry;
+
+		hash_seq_init(&status, RelationIdCache);
+
+		while ((idhentry = (RelIdCacheEnt *) hash_seq_search(&status)) != NULL)
+		{
+			idhentry->reldesc->rd_paralleldml = 0;
+			idhentry->reldesc->rd_paralleldmlstate = PARALLELDML_NEEDS_REBUILD;
+		}
+	}
+}
+
+/*
  * RelationCacheInvalidate
  *	 Blow away cached relation descriptors that have zero reference counts,
  *	 and rebuild those with positive reference counts.  Also reset the smgr

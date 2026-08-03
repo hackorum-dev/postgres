@@ -1,0 +1,34 @@
+Parsed test spec with 3 sessions
+
+starting permutation: s2_lock s1_compute s2_trig s2_commit s1_cached s1_recheck s3_truth s1_insert s3_insert
+step s2_lock: LOCK TABLE stale_p2 IN ACCESS EXCLUSIVE MODE;
+step s1_compute: SELECT test_parallel_dml_safety('stale_root'::regclass); <waiting ...>
+step s2_trig: CREATE TRIGGER stale_trig BEFORE INSERT ON stale_p1
+					FOR EACH ROW EXECUTE FUNCTION stale_unsafe();
+step s2_commit: COMMIT;
+step s1_compute: <... completed>
+test_parallel_dml_safety
+------------------------
+u                       
+(1 row)
+
+step s1_cached: SELECT test_parallel_dml_safety_cached('stale_root'::regclass);
+test_parallel_dml_safety_cached
+-------------------------------
+u                              
+(1 row)
+
+step s1_recheck: SELECT test_parallel_dml_safety('stale_root'::regclass);
+test_parallel_dml_safety
+------------------------
+u                       
+(1 row)
+
+step s3_truth: SELECT test_parallel_dml_safety('stale_root'::regclass);
+test_parallel_dml_safety
+------------------------
+u                       
+(1 row)
+
+step s1_insert: INSERT INTO stale_root SELECT a FROM stale_src;
+step s3_insert: INSERT INTO stale_root SELECT a FROM stale_src;

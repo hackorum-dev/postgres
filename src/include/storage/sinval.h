@@ -28,6 +28,8 @@
  *	* invalidate the mapped-relation mapping for a given database
  *	* invalidate any saved snapshot that might be used to scan a given relation
  *	* invalidate a RelationSyncCache entry for a specific relation
+ *	* invalidate the cached parallel DML safety hazard level of one or all
+ *	  relcache entries
  * More types could be added if needed.  The message type is identified by
  * the first "int8" field of the message struct.  Zero or positive means a
  * specific-catcache inval message (and also serves as the catcache ID field).
@@ -121,6 +123,15 @@ typedef struct
 								 * RelationSyncCache */
 } SharedInvalRelSyncMsg;
 
+#define SHAREDINVALPARALLELDML_ID	(-7)
+
+typedef struct
+{
+	int8		id;				/* type field --- must be first */
+	Oid			dbId;			/* database ID */
+	Oid			relId;			/* relation ID, or 0 for all relations */
+} SharedInvalParallelDmlMsg;
+
 typedef union
 {
 	int8		id;				/* type field --- must be first */
@@ -131,6 +142,7 @@ typedef union
 	SharedInvalRelmapMsg rm;
 	SharedInvalSnapshotMsg sn;
 	SharedInvalRelSyncMsg rs;
+	SharedInvalParallelDmlMsg pd;
 } SharedInvalidationMessage;
 
 
