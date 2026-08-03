@@ -65,6 +65,21 @@ typedef struct RelationData
 								 * rd_replidindex) */
 	bool		rd_statvalid;	/* is rd_statlist valid? */
 
+	/*
+	 * rd_paralleldml caches the worst parallel-safety hazard level (one of
+	 * the PROPARALLEL_xxx values) found among the objects that affect the
+	 * safety of modifying this relation while in parallel mode, i.e. its
+	 * triggers, index expressions and predicates, check constraints,
+	 * column defaults, and partition key (recursively including its
+	 * partitions, if any).  It is zero if the hazard level has not been
+	 * computed yet; see RelationGetParallelDmlSafety().  The cached value is
+	 * reset to zero whenever a parallel-safety-related object is added to or
+	 * dropped from this relation or, for a partition, one of its ancestors
+	 * (in practice, addition or removal of such an object on the relation
+	 * itself normally also causes a full relcache invalidation).
+	 */
+	char		rd_paralleldml;
+
 	/*----------
 	 * rd_createSubid is the ID of the highest subtransaction the rel has
 	 * survived into or zero if the rel or its storage was created before the

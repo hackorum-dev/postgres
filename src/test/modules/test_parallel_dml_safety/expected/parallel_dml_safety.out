@@ -1,0 +1,192 @@
+--
+-- Test computation and caching of relations' parallel DML safety hazard
+-- level.
+--
+CREATE EXTENSION test_parallel_dml_safety;
+-- helper functions with various parallel safety levels; use plpgsql so that
+-- the functions are not inlined into the stored expressions
+CREATE FUNCTION pdml_safe_fn(int) RETURNS bool LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+  AS $$ BEGIN RETURN $1 > 0; END $$;
+CREATE FUNCTION pdml_restricted_fn(int) RETURNS bool LANGUAGE plpgsql IMMUTABLE PARALLEL RESTRICTED
+  AS $$ BEGIN RETURN $1 > 0; END $$;
+CREATE FUNCTION pdml_unsafe_fn(int) RETURNS bool LANGUAGE plpgsql IMMUTABLE PARALLEL UNSAFE
+  AS $$ BEGIN RETURN $1 > 0; END $$;
+-- a plain table is parallel-safe; computing it twice must give the same result
+CREATE TABLE pdml_plain (a int);
+SELECT test_parallel_dml_safety('pdml_plain');
+ test_parallel_dml_safety 
+--------------------------
+ s
+(1 row)
+
+SELECT test_parallel_dml_safety('pdml_plain');
+ test_parallel_dml_safety 
+--------------------------
+ s
+(1 row)
+
+-- a parallel-safe trigger function doesn't change anything
+CREATE FUNCTION pdml_trg_safe_fn() RETURNS trigger LANGUAGE plpgsql PARALLEL SAFE
+  AS $$ BEGIN RETURN NEW; END $$;
+CREATE TRIGGER trg BEFORE INSERT ON pdml_plain
+  FOR EACH ROW EXECUTE FUNCTION pdml_trg_safe_fn();
+SELECT test_parallel_dml_safety('pdml_plain');
+ test_parallel_dml_safety 
+--------------------------
+ s
+(1 row)
+
+-- a parallel-restricted trigger function makes the table restricted
+CREATE FUNCTION pdml_trg_restricted_fn() RETURNS trigger LANGUAGE plpgsql PARALLEL RESTRICTED
+  AS $$ BEGIN RETURN NEW; END $$;
+CREATE TABLE pdml_trg_r (a int);
+CREATE TRIGGER trg BEFORE INSERT ON pdml_trg_r
+  FOR EACH ROW EXECUTE FUNCTION pdml_trg_restricted_fn();
+SELECT test_parallel_dml_safety('pdml_trg_r');
+ test_parallel_dml_safety 
+--------------------------
+ r
+(1 row)
+
+-- a parallel-unsafe trigger function makes the table unsafe
+CREATE FUNCTION pdml_trg_unsafe_fn() RETURNS trigger LANGUAGE plpgsql PARALLEL UNSAFE
+  AS $$ BEGIN RETURN NEW; END $$;
+CREATE TABLE pdml_trg_u (a int);
+CREATE TRIGGER trg BEFORE INSERT ON pdml_trg_u
+  FOR EACH ROW EXECUTE FUNCTION pdml_trg_unsafe_fn();
+SELECT test_parallel_dml_safety('pdml_trg_u');
+ test_parallel_dml_safety 
+--------------------------
+ u
+(1 row)
+
+-- an unsafe function in a trigger WHEN clause makes the table unsafe
+CREATE TABLE pdml_trg_when (a int);
+CREATE TRIGGER trg BEFORE INSERT ON pdml_trg_when
+  FOR EACH ROW WHEN (pdml_unsafe_fn(NEW.a))
+  EXECUTE FUNCTION pdml_trg_safe_fn();
+SELECT test_parallel_dml_safety('pdml_trg_when');
+ test_parallel_dml_safety 
+--------------------------
+ u
+(1 row)
+
+-- check constraints
+CREATE TABLE pdml_chk_u (a int CHECK (pdml_unsafe_fn(a)));
+SELECT test_parallel_dml_safety('pdml_chk_u');
+ test_parallel_dml_safety 
+--------------------------
+ u
+(1 row)
+
+CREATE TABLE pdml_chk_r (a int CHECK (pdml_restricted_fn(a)));
+SELECT test_parallel_dml_safety('pdml_chk_r');
+ test_parallel_dml_safety 
+--------------------------
+ r
+(1 row)
+
+-- index expression
+CREATE TABLE pdml_idx_expr (a int);
+CREATE INDEX ON pdml_idx_expr ((CASE WHEN pdml_unsafe_fn(a) THEN a END));
+SELECT test_parallel_dml_safety('pdml_idx_expr');
+ test_parallel_dml_safety 
+--------------------------
+ u
+(1 row)
+
+-- index predicate
+CREATE TABLE pdml_idx_pred (a int);
+CREATE INDEX ON pdml_idx_pred (a) WHERE pdml_unsafe_fn(a);
+SELECT test_parallel_dml_safety('pdml_idx_pred');
+ test_parallel_dml_safety 
+--------------------------
+ u
+(1 row)
+
+-- column default expression
+CREATE TABLE pdml_def (a int, b text DEFAULT (CASE WHEN pdml_unsafe_fn(0) THEN 'x' ELSE 'y' END));
+SELECT test_parallel_dml_safety('pdml_def');
+ test_parallel_dml_safety 
+--------------------------
+ u
+(1 row)
+
+-- domain constraints are deliberately not examined: like
+-- max_parallel_hazard_walker, CoerceToDomain is treated as parallel
+-- restricted without looking inside the domain, so a domain column never
+-- disqualifies the table
+CREATE DOMAIN pdml_dom_u AS int CHECK (pdml_unsafe_fn(VALUE));
+CREATE TABLE pdml_dom (a pdml_dom_u);
+SELECT test_parallel_dml_safety('pdml_dom');
+ test_parallel_dml_safety 
+--------------------------
+ s
+(1 row)
+
+-- a coercion to a domain in a stored expression is restricted (which does
+-- not disqualify either), regardless of the domain's constraints
+CREATE TABLE pdml_dom_cast (a int DEFAULT (1::pdml_dom_u));
+SELECT test_parallel_dml_safety('pdml_dom_cast');
+ test_parallel_dml_safety 
+--------------------------
+ r
+(1 row)
+
+-- partitioned table: partition key support functions/expressions
+CREATE TABLE pdml_part (a int) PARTITION BY RANGE (a);
+CREATE TABLE pdml_part_p1 PARTITION OF pdml_part FOR VALUES FROM (0) TO (100);
+SELECT test_parallel_dml_safety('pdml_part');
+ test_parallel_dml_safety 
+--------------------------
+ s
+(1 row)
+
+SELECT test_parallel_dml_safety('pdml_part_p1');
+ test_parallel_dml_safety 
+--------------------------
+ s
+(1 row)
+
+CREATE TABLE pdml_part_key (a int)
+  PARTITION BY RANGE ((CASE WHEN pdml_unsafe_fn(a) THEN a END));
+SELECT test_parallel_dml_safety('pdml_part_key');
+ test_parallel_dml_safety 
+--------------------------
+ u
+(1 row)
+
+-- partitioned table: an unsafe object on a partition affects the parent
+CREATE TABLE pdml_part_trg (a int) PARTITION BY RANGE (a);
+CREATE TABLE pdml_part_trg_p1 PARTITION OF pdml_part_trg FOR VALUES FROM (0) TO (100);
+CREATE TRIGGER trg BEFORE INSERT ON pdml_part_trg_p1
+  FOR EACH ROW EXECUTE FUNCTION pdml_trg_unsafe_fn();
+SELECT test_parallel_dml_safety('pdml_part_trg');
+ test_parallel_dml_safety 
+--------------------------
+ u
+(1 row)
+
+SELECT test_parallel_dml_safety('pdml_part_trg_p1');
+ test_parallel_dml_safety 
+--------------------------
+ u
+(1 row)
+
+-- foreign tables and temporary tables are restricted
+CREATE FOREIGN DATA WRAPPER pdml_fdw;
+CREATE SERVER pdml_srv FOREIGN DATA WRAPPER pdml_fdw;
+CREATE FOREIGN TABLE pdml_ft (a int) SERVER pdml_srv;
+SELECT test_parallel_dml_safety('pdml_ft');
+ test_parallel_dml_safety 
+--------------------------
+ r
+(1 row)
+
+CREATE TEMP TABLE pdml_temp (a int);
+SELECT test_parallel_dml_safety('pdml_temp');
+ test_parallel_dml_safety 
+--------------------------
+ r
+(1 row)
+
