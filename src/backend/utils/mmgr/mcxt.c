@@ -1540,6 +1540,8 @@ MemoryContextAllocAligned(MemoryContext context,
 	 */
 	unaligned = MemoryContextAllocExtended(context, alloc_size,
 										   flags & ~MCXT_ALLOC_ZERO);
+	if (unlikely(unaligned == NULL))
+		return NULL;
 
 	/* compute the aligned pointer */
 	aligned = (void *) TYPEALIGN(alignto, (char *) unaligned +
