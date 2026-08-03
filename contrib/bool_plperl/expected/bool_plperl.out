@@ -102,11 +102,50 @@ SELECT spi_test();
  
 (1 row)
 
+-- Tied scalar whose FETCH returns a plain value.
+CREATE FUNCTION perl_tie_ok() RETURNS bool
+TRANSFORM FOR TYPE bool
+LANGUAGE plperl
+AS $perl$
+  package BoolTieOk;
+  sub TIESCALAR { return bless {}, shift; }
+  sub FETCH { return 1; }
+  package main;
+  tie my $y, 'BoolTieOk';
+  return $y;
+$perl$;
+SELECT perl_tie_ok();
+ perl_tie_ok 
+-------------
+ t
+(1 row)
+
+-- Tied scalar whose FETCH returns another tied scalar.
+CREATE FUNCTION perl_tie_recurse() RETURNS bool
+TRANSFORM FOR TYPE bool
+LANGUAGE plperl
+AS $perl$
+  package BoolTieRecurse;
+  sub TIESCALAR { return bless {}, shift; }
+  sub FETCH { my $x; tie $x, 'BoolTieRecurse'; return $x; }
+  package main;
+  tie my $y, 'BoolTieRecurse';
+  return $y;
+$perl$;
+-- Pin the limit so the HINT does not depend on the installation default.
+SET max_stack_depth = '100kB';
+SELECT perl_tie_recurse();
+ERROR:  stack depth limit exceeded
+HINT:  Increase the configuration parameter "max_stack_depth" (currently 100kB), after ensuring the platform's stack depth limit is adequate.
+CONTEXT:  PL/Perl function "perl_tie_recurse"
+RESET max_stack_depth;
 DROP EXTENSION plperl CASCADE;
-NOTICE:  drop cascades to 6 other objects
+NOTICE:  drop cascades to 8 other objects
 DETAIL:  drop cascades to extension bool_plperl
 drop cascades to function perl2int(integer)
 drop cascades to function perl2text(text)
 drop cascades to function perl2undef()
 drop cascades to function bool2perl(boolean,boolean,boolean)
 drop cascades to function spi_test()
+drop cascades to function perl_tie_ok()
+drop cascades to function perl_tie_recurse()
