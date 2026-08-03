@@ -79,6 +79,10 @@ extern void CacheInvalidateRelSync(Oid relid);
 
 extern void CacheInvalidateRelSyncAll(void);
 
+extern void CacheInvalidateParallelDmlSafety(Oid relId);
+
+extern void CacheInvalidateParallelDmlSafetyForAncestors(Oid relId);
+
 extern void CacheInvalidateSmgr(RelFileLocatorBackend rlocator);
 
 extern void CacheInvalidateRelmap(Oid databaseId);

@@ -137,6 +137,8 @@ extern void RelationForgetRelation(Oid rid);
 
 extern void RelationCacheInvalidateEntry(Oid relationId);
 
+extern void RelationCacheInvalidateParallelDml(Oid relationId);
+
 extern void RelationCacheInvalidate(bool debug_discard);
 
 #ifdef USE_ASSERT_CHECKING

@@ -26,6 +26,7 @@
 PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(test_parallel_dml_safety);
+PG_FUNCTION_INFO_V1(test_parallel_dml_safety_cached);
 
 /*
  * Return the relation's parallel DML safety hazard level ('s', 'r' or 'u'),
@@ -43,4 +44,24 @@ test_parallel_dml_safety(PG_FUNCTION_ARGS)
 	table_close(rel, AccessShareLock);
 
 	PG_RETURN_CHAR(hazard);
+}
+
+/*
+ * Return the relation's cached parallel DML safety hazard level ('s', 'r'
+ * or 'u'), or '0' if it has not been computed yet.  Unlike
+ * test_parallel_dml_safety(), this does not compute the value, so tests can
+ * tell exactly which cached values an invalidation has discarded.
+ */
+Datum
+test_parallel_dml_safety_cached(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	Relation	rel;
+	char		hazard;
+
+	rel = table_open(relid, AccessShareLock);
+	hazard = rel->rd_paralleldml;
+	table_close(rel, AccessShareLock);
+
+	PG_RETURN_CHAR(hazard == 0 ? '0' : hazard);
 }

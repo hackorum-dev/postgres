@@ -4,3 +4,8 @@ CREATE FUNCTION test_parallel_dml_safety(regclass)
 RETURNS "char"
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT PARALLEL UNSAFE;
+
+CREATE FUNCTION test_parallel_dml_safety_cached(regclass)
+RETURNS "char"
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT PARALLEL UNSAFE;

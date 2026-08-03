@@ -119,6 +119,7 @@
 #include "access/xloginsert.h"
 #include "catalog/catalog.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/partition.h"
 #include "miscadmin.h"
 #include "storage/procnumber.h"
 #include "storage/sinval.h"
@@ -551,6 +552,38 @@ AddSnapshotInvalidationMessage(InvalidationMsgsGroup *group,
 }
 
 /*
+ * Add a parallel DML safety inval entry
+ *
+ * We put these into the relcache subgroup for simplicity.
+ */
+static void
+AddParallelDmlInvalidationMessage(InvalidationMsgsGroup *group,
+								  Oid dbId, Oid relId)
+{
+	SharedInvalidationMessage msg;
+
+	/*
+	 * Don't add a duplicate item.  We assume dbId need not be checked
+	 * because it will never change.  InvalidOid for relId means all
+	 * relations, so we don't need to add individual ones when it is present.
+	 */
+	ProcessMessageSubGroup(group, RelCacheMsgs,
+						   if (msg->pd.id == SHAREDINVALPARALLELDML_ID &&
+							   (msg->pd.relId == relId ||
+								msg->pd.relId == InvalidOid))
+						   return);
+
+	/* OK, add the item */
+	msg.pd.id = SHAREDINVALPARALLELDML_ID;
+	msg.pd.dbId = dbId;
+	msg.pd.relId = relId;
+	/* check AddCatcacheInvalidationMessage() for an explanation */
+	VALGRIND_MAKE_MEM_DEFINED(&msg, sizeof(msg));
+
+	AddInvalidationMessage(group, RelCacheMsgs, &msg);
+}
+
+/*
  * Append one group of invalidation messages to another, resetting
  * the source group to empty.
  */
@@ -670,6 +703,34 @@ static void
 RegisterSnapshotInvalidation(InvalidationInfo *info, Oid dbId, Oid relId)
 {
 	AddSnapshotInvalidationMessage(&info->CurrentCmdInvalidMsgs, dbId, relId);
+}
+
+/*
+ * RegisterParallelDmlInvalidation
+ *
+ * As above, but register an invalidation event for the cached parallel DML
+ * safety hazard level of one relation, or of all relations in the database
+ * if relId is InvalidOid.
+ */
+static void
+RegisterParallelDmlInvalidation(InvalidationInfo *info, Oid dbId, Oid relId)
+{
+	AddParallelDmlInvalidationMessage(&info->CurrentCmdInvalidMsgs,
+									  dbId, relId);
+
+	/*
+	 * Parallel DML safety invalidation is not associated with system catalog
+	 * updates.  Quick hack to ensure that the next CommandCounterIncrement()
+	 * will think that we need to do CommandEndInvalidationMessages().
+	 */
+	(void) GetCurrentCommandId(true);
+
+	/*
+	 * Note that there is no need to zap the relcache init file here:
+	 * rd_paralleldml is never trusted from the init file (see
+	 * load_relcache_init_file), so a stale init file cannot propagate a
+	 * stale hazard level to other sessions.
+	 */
 }
 
 /*
@@ -894,6 +955,12 @@ LocalExecuteInvalidationMessage(SharedInvalidationMessage *msg)
 		/* We only care about our own database */
 		if (msg->rs.dbId == MyDatabaseId)
 			CallRelSyncCallbacks(msg->rs.relid);
+	}
+	else if (msg->id == SHAREDINVALPARALLELDML_ID)
+	{
+		/* We only care about our own database */
+		if (msg->pd.dbId == MyDatabaseId)
+			RelationCacheInvalidateParallelDml(msg->pd.relId);
 	}
 	else
 		elog(FATAL, "unrecognized SI message ID: %d", msg->id);
@@ -1718,6 +1785,66 @@ void
 CacheInvalidateRelSyncAll(void)
 {
 	CacheInvalidateRelSync(InvalidOid);
+}
+
+/*
+ * CacheInvalidateParallelDmlSafety
+ *		Register invalidation of the cached parallel DML safety hazard level
+ *		(rd_paralleldml) of the given relation at the end of command.  If
+ *		relId is InvalidOid, all relcache entries in the current database
+ *		are invalidated.
+ *
+ * Unlike the relcache invalidation messages, this only discards the cached
+ * hazard level; the relcache entries themselves are kept.
+ *
+ * The caller is not required to hold a lock on the relation: resetting the
+ * cached value is always safe.  It merely means that a concurrent query
+ * that has already planned using the old value may not notice the change;
+ * this is an accepted trade-off, since users can already alter a function's
+ * parallel safety without locking the tables that use it.
+ */
+void
+CacheInvalidateParallelDmlSafety(Oid relId)
+{
+	RegisterParallelDmlInvalidation(PrepareInvalidationState(),
+									MyDatabaseId, relId);
+}
+
+/*
+ * CacheInvalidateParallelDmlSafetyForAncestors
+ *		Register invalidation of the cached parallel DML safety hazard levels
+ *		of all of the given partition's ancestor partitioned tables, but not
+ *		of the given relation itself.
+ *
+ * The hazard level cached for a partitioned table is computed recursively
+ * over its partitions, so adding a parallel-safety-related object to (or
+ * dropping one from) a partition must invalidate the ancestors' cached
+ * values.  The partition's own cached value needs no message: such DDL
+ * always also updates the partition's own pg_class or pg_attribute row,
+ * which forces a relcache rebuild that discards it (see the previous
+ * commit).  This is safe to call while modifying the relation: the caller
+ * holds a lock on it, so its place in the partition tree cannot change
+ * meanwhile (ATTACH/DETACH PARTITION take conflicting locks), which is what
+ * makes looking up its ancestors without locking them safe.
+ *
+ * Since we do not lock ancestors, parallel-unsafe objects could be added
+ * concurrently after other backends have computed parallel safety and planned a
+ * parallel INSERT SELECT. This means the unsafe objects could be executed
+ * during execution, causing the INSERT SELECT to fail. However, this avoids the
+ * risk of deadlocks by not locking ancestors and preserves existing DDL locking
+ * behavior. Given that such unsafe object additions are not frequent, we
+ * consider the risk acceptable.
+ */
+void
+CacheInvalidateParallelDmlSafetyForAncestors(Oid relId)
+{
+	List	   *ancestors;
+	ListCell   *lc;
+
+	ancestors = get_partition_ancestors(relId);
+	foreach(lc, ancestors)
+		CacheInvalidateParallelDmlSafety(lfirst_oid(lc));
+	list_free(ancestors);
 }
 
 /*
