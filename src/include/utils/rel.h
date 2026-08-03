@@ -49,6 +49,32 @@ typedef struct LockInfoData
 typedef LockInfoData *LockInfo;
 
 /*
+ * State of a relcache entry's cached parallel DML safety hazard level
+ * (rd_paralleldml).
+ *
+ * PARALLELDML_NEEDS_REBUILD means that the cached value is not valid and
+ * must be recomputed on next use; this is the initial state, and the state
+ * an invalidation resets to.
+ *
+ * PARALLELDML_REBUILD_STARTED means that the hazard level is being
+ * computed.  An invalidation processed in the middle of the computation
+ * switches the state back to PARALLELDML_NEEDS_REBUILD, which the
+ * computation notices when it finishes: the computed value may reflect a
+ * mix of the catalog states before and after the change, so it must be
+ * recomputed rather than cached.  If the computation errors out, the state
+ * is simply left at PARALLELDML_REBUILD_STARTED, which likewise causes a
+ * recomputation on next use.
+ *
+ * PARALLELDML_VALID means that rd_paralleldml holds a valid cached value.
+ */
+typedef enum ParallelDmlSafetyState
+{
+	PARALLELDML_NEEDS_REBUILD,
+	PARALLELDML_REBUILD_STARTED,
+	PARALLELDML_VALID,
+} ParallelDmlSafetyState;
+
+/*
  * Here are the contents of a relation cache entry.
  */
 
@@ -64,6 +90,27 @@ typedef struct RelationData
 	bool		rd_indexvalid;	/* is rd_indexlist valid? (also rd_pkindex and
 								 * rd_replidindex) */
 	bool		rd_statvalid;	/* is rd_statlist valid? */
+
+	/*
+	 * rd_paralleldml caches the worst parallel-safety hazard level (one of
+	 * the PROPARALLEL_xxx values) found among the objects that affect the
+	 * safety of modifying this relation while in parallel mode, i.e. its
+	 * triggers, index expressions and predicates, check constraints,
+	 * column defaults, stored generated column expressions, and partition
+	 * key (recursively including its partitions, if any).  It is zero if the
+	 * hazard level has not been computed yet; see
+	 * RelationGetParallelDmlSafety().  The cached value is
+	 * reset to zero whenever a parallel-safety-related object is added to or
+	 * dropped from this relation or, for a partition, one of its ancestors
+	 * (in practice, addition or removal of such an object on the relation
+	 * itself normally also causes a full relcache invalidation).
+	 *
+	 * rd_paralleldmlstate tracks the validity of the cached value; see the
+	 * ParallelDmlSafetyState comments.  rd_paralleldml is to be trusted
+	 * only in the PARALLELDML_VALID state.
+	 */
+	char		rd_paralleldml;
+	ParallelDmlSafetyState rd_paralleldmlstate;
 
 	/*----------
 	 * rd_createSubid is the ID of the highest subtransaction the rel has

@@ -19,6 +19,7 @@
 
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/htup_details.h"
 #include "access/table.h"
 #include "catalog/pg_class.h"
@@ -48,6 +49,7 @@
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parsetree.h"
+#include "partitioning/partdesc.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
 #include "tcop/tcopprot.h"
@@ -60,7 +62,9 @@
 #include "utils/jsonpath.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/partcache.h"
 #include "utils/rel.h"
+#include "utils/relcache.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
@@ -98,6 +102,7 @@ typedef struct
 	char		max_hazard;		/* worst proparallel hazard found so far */
 	char		max_interesting;	/* worst proparallel hazard of interest */
 	List	   *safe_param_ids; /* PARAM_EXEC Param IDs to treat as safe */
+	PartitionDirectory partition_directory; /* partition descriptors */
 } max_parallel_hazard_context;
 
 /*
@@ -123,6 +128,22 @@ static bool contain_volatile_functions_walker(Node *node, void *context);
 static bool contain_volatile_functions_not_nextval_walker(Node *node, void *context);
 static bool max_parallel_hazard_walker(Node *node,
 									   max_parallel_hazard_context *context);
+static bool parallel_dml_hazard_walker(Node *node,
+									   max_parallel_hazard_context *context);
+static bool table_parallel_dml_hazard_recurse(Relation rel,
+											  max_parallel_hazard_context *context);
+static bool table_partitions_parallel_dml_hazard(Relation rel,
+												 max_parallel_hazard_context *context);
+static bool table_trigger_parallel_dml_hazard(Relation rel,
+											  max_parallel_hazard_context *context);
+static bool index_expr_parallel_dml_hazard(Relation index_rel,
+										   List *ii_Expressions,
+										   List *ii_Predicate,
+										   max_parallel_hazard_context *context);
+static bool table_index_parallel_dml_hazard(Relation rel,
+											max_parallel_hazard_context *context);
+static bool table_chk_constr_parallel_dml_hazard(Relation rel,
+												 max_parallel_hazard_context *context);
 static bool contain_nonstrict_functions_walker(Node *node, void *context);
 static bool contain_exec_param_walker(Node *node, List *param_ids);
 static bool contain_context_dependent_node(Node *clause);
@@ -816,6 +837,7 @@ max_parallel_hazard(Query *parse)
 	context.max_hazard = PROPARALLEL_SAFE;
 	context.max_interesting = PROPARALLEL_UNSAFE;
 	context.safe_param_ids = NIL;
+	context.partition_directory = NULL;
 	(void) max_parallel_hazard_walker((Node *) parse, &context);
 	return context.max_hazard;
 }
@@ -847,6 +869,7 @@ is_parallel_safe(PlannerInfo *root, Node *node)
 	context.max_hazard = PROPARALLEL_SAFE;
 	context.max_interesting = PROPARALLEL_RESTRICTED;
 	context.safe_param_ids = NIL;
+	context.partition_directory = NULL;
 
 	/*
 	 * The params that refer to the same or parent query level are considered
@@ -1048,6 +1071,397 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	return expression_tree_walker(node,
 								  max_parallel_hazard_walker,
 								  context);
+}
+
+/*
+ * The workhorse for RelationGetParallelDmlSafety(). Recursively examine a
+ * relation and all of the objects attached to it for PARALLEL UNSAFE/RESTRICTED
+ * constructs. Returns the worst hazard found, or PROPARALLEL_SAFE if none.
+ */
+char
+max_parallel_dml_hazard(Relation rel)
+{
+	max_parallel_hazard_context context;
+
+	context.max_hazard = PROPARALLEL_SAFE;
+	context.max_interesting = PROPARALLEL_UNSAFE;
+	context.safe_param_ids = NIL;
+	context.partition_directory = NULL;
+
+	(void) table_parallel_dml_hazard_recurse(rel, &context);
+
+	if (context.partition_directory != NULL)
+		DestroyPartitionDirectory(context.partition_directory);
+
+	return context.max_hazard;
+}
+
+/*
+ * parallel_dml_hazard_walker
+ *
+ * Recursively search an expression tree (defined as a partition key, index
+ * or check constraint, column default, or trigger WHEN clause) for PARALLEL
+ * UNSAFE/RESTRICTED functions.  Returns true if the maximum hazard of
+ * interest was found.
+ *
+ * CoerceToDomain is treated as parallel-restricted without examining the
+ * domain's constraints, following what max_parallel_hazard_walker() does
+ * for parallel query.
+ */
+static bool
+parallel_dml_hazard_walker(Node *node, max_parallel_hazard_context *context)
+{
+	if (node == NULL)
+		return false;
+
+	/* Check for hazardous functions in node itself */
+	if (check_functions_in_node(node, max_parallel_hazard_checker,
+								context))
+		return true;
+
+	if (IsA(node, CoerceToDomain))
+	{
+		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
+			return true;
+	}
+
+	/* Recurse to check arguments */
+	return expression_tree_walker(node,
+								  parallel_dml_hazard_walker,
+								  context);
+}
+
+/*
+ * table_parallel_dml_hazard_recurse
+ *
+ * Recursively examine a relation and all of the objects attached to it for
+ * PARALLEL UNSAFE/RESTRICTED constructs.  Returns true if the maximum
+ * hazard of interest was found.
+ */
+static bool
+table_parallel_dml_hazard_recurse(Relation rel,
+								  max_parallel_hazard_context *context)
+{
+	TupleDesc	tupdesc;
+	int			attnum;
+
+	/*
+	 * We can't support table modification in a parallel worker if it's a
+	 * foreign table/partition (no FDW API for supporting parallel access) or
+	 * a temporary table (workers cannot access the leader's temporary
+	 * tables).
+	 */
+	if (rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE ||
+		RelationUsesLocalBuffers(rel))
+	{
+		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
+			return true;
+	}
+
+	/*
+	 * If a partitioned table or partition, check that the partition key and
+	 * each partition are safe for modification in parallel mode.
+	 */
+	if (table_partitions_parallel_dml_hazard(rel, context))
+		return true;
+
+	/*
+	 * If there are any index expressions or index predicates, check that
+	 * they are parallel-mode safe.
+	 */
+	if (table_index_parallel_dml_hazard(rel, context))
+		return true;
+
+	/*
+	 * If any triggers exist, check that they are parallel-safe.
+	 */
+	if (table_trigger_parallel_dml_hazard(rel, context))
+		return true;
+
+	tupdesc = RelationGetDescr(rel);
+	for (attnum = 0; attnum < tupdesc->natts; attnum++)
+	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, attnum);
+
+		/* We don't need info for dropped attributes */
+		if (att->attisdropped)
+			continue;
+
+		/*
+		 * Column default and stored generated expressions are only applicable
+		 * to INSERT and UPDATE.
+		 */
+		if (att->atthasdef || att->attgenerated == ATTRIBUTE_GENERATED_STORED)
+		{
+			Node	   *expr;
+
+			expr = build_column_default(rel, attnum + 1);
+			if (parallel_dml_hazard_walker(expr, context))
+				return true;
+		}
+	}
+
+	/*
+	 * CHECK constraints are only applicable to INSERT and UPDATE.  If any
+	 * CHECK constraints exist, determine if they are parallel-safe.
+	 */
+	if (table_chk_constr_parallel_dml_hazard(rel, context))
+		return true;
+
+	return false;
+}
+
+/*
+ * table_trigger_parallel_dml_hazard
+ *
+ * Check whether any of the relation's triggers involves parallel
+ * unsafe/restricted constructs, either in the trigger function or in the
+ * trigger's WHEN clause.  Returns true if the maximum hazard of interest
+ * was found.
+ */
+static bool
+table_trigger_parallel_dml_hazard(Relation rel,
+								  max_parallel_hazard_context *context)
+{
+	int			i;
+
+	if (rel->trigdesc == NULL)
+		return false;
+
+	/*
+	 * Care is needed here to avoid using the same relcache TriggerDesc field
+	 * across other cache accesses, because relcache doesn't guarantee that
+	 * it won't move.
+	 */
+	for (i = 0; i < rel->trigdesc->numtriggers; i++)
+	{
+		Oid			tgfoid = rel->trigdesc->triggers[i].tgfoid;
+		char	   *tgqual = rel->trigdesc->triggers[i].tgqual;
+
+		if (max_parallel_hazard_test(func_parallel(tgfoid), context))
+			return true;
+
+		if (tgqual != NULL &&
+			parallel_dml_hazard_walker(stringToNode(tgqual), context))
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * index_expr_parallel_dml_hazard
+ *
+ * Check whether an index' expressions or predicate involve parallel
+ * unsafe/restricted functions.  Returns true if the maximum hazard of
+ * interest was found.
+ */
+static bool
+index_expr_parallel_dml_hazard(Relation index_rel,
+							   List *ii_Expressions,
+							   List *ii_Predicate,
+							   max_parallel_hazard_context *context)
+{
+	int			i;
+	Form_pg_index indexStruct;
+	ListCell   *index_expr_item;
+
+	indexStruct = index_rel->rd_index;
+	index_expr_item = list_head(ii_Expressions);
+
+	/* Check parallel-safety of index expressions */
+	for (i = 0; i < indexStruct->indnatts; i++)
+	{
+		int			keycol = indexStruct->indkey.values[i];
+
+		if (keycol == 0)
+		{
+			/* Found an index expression */
+			Node	   *index_expr;
+
+			Assert(index_expr_item != NULL);
+			if (index_expr_item == NULL)	/* shouldn't happen */
+				elog(ERROR, "too few entries in indexprs list");
+
+			index_expr = (Node *) lfirst(index_expr_item);
+
+			if (parallel_dml_hazard_walker(index_expr, context))
+				return true;
+
+			index_expr_item = lnext(ii_Expressions, index_expr_item);
+		}
+	}
+
+	/* Check parallel-safety of index predicate */
+	if (parallel_dml_hazard_walker((Node *) ii_Predicate, context))
+		return true;
+
+	return false;
+}
+
+/*
+ * table_index_parallel_dml_hazard
+ *
+ * Check whether any of the relation's indexes involves parallel
+ * unsafe/restricted functions.  Returns true if the maximum hazard of
+ * interest was found.
+ */
+static bool
+table_index_parallel_dml_hazard(Relation rel,
+								max_parallel_hazard_context *context)
+{
+	List	   *index_oid_list;
+	ListCell   *lc;
+	bool		result = false;
+
+	index_oid_list = RelationGetIndexList(rel);
+
+	foreach(lc, index_oid_list)
+	{
+		Oid			index_oid = lfirst_oid(lc);
+		Relation	index_rel;
+		List	   *ii_Expressions;
+		List	   *ii_Predicate;
+
+		index_rel = index_open(index_oid, AccessShareLock);
+
+		ii_Expressions = RelationGetIndexExpressions(index_rel);
+		ii_Predicate = RelationGetIndexPredicate(index_rel);
+
+		result = index_expr_parallel_dml_hazard(index_rel,
+												ii_Expressions,
+												ii_Predicate,
+												context);
+
+		index_close(index_rel, AccessShareLock);
+
+		if (result)
+			break;
+	}
+
+	list_free(index_oid_list);
+
+	return result;
+}
+
+/*
+ * table_partitions_parallel_dml_hazard
+ *
+ * Check whether the relation's partition key, and (recursively) each of its
+ * partitions if it's a partitioned table, involves parallel
+ * unsafe/restricted functions.  Returns true if the maximum hazard of
+ * interest was found.
+ */
+static bool
+table_partitions_parallel_dml_hazard(Relation rel,
+									 max_parallel_hazard_context *context)
+{
+	int			i;
+	PartitionDesc pdesc;
+	PartitionKey pkey;
+	ListCell   *partexprs_item;
+	int			partnatts;
+	List	   *partexprs;
+	List	   *qual;
+
+	/* Check parallel-safety of the partition partition bound expression */
+	qual = RelationGetPartitionQual(rel);
+	if (parallel_dml_hazard_walker((Node *) qual, context))
+		return true;
+
+	if (rel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
+		return false;
+
+	pkey = RelationGetPartitionKey(rel);
+
+	partnatts = get_partition_natts(pkey);
+	partexprs = get_partition_exprs(pkey);
+
+	partexprs_item = list_head(partexprs);
+	for (i = 0; i < partnatts; i++)
+	{
+		Oid			funcOid = pkey->partsupfunc[i].fn_oid;
+
+		if (OidIsValid(funcOid))
+		{
+			char		proparallel = func_parallel(funcOid);
+
+			if (max_parallel_hazard_test(proparallel, context))
+				return true;
+		}
+
+		/* Check parallel-safety of any expressions in the partition key */
+		if (get_partition_col_attnum(pkey, i) == 0)
+		{
+			Node	   *check_expr = (Node *) lfirst(partexprs_item);
+
+			if (parallel_dml_hazard_walker(check_expr, context))
+				return true;
+
+			partexprs_item = lnext(partexprs, partexprs_item);
+		}
+	}
+
+	/* Recursively check each partition ... */
+
+	/* Create the PartitionDirectory infrastructure if we didn't already */
+	if (context->partition_directory == NULL)
+		context->partition_directory =
+			CreatePartitionDirectory(CurrentMemoryContext, false);
+
+	pdesc = PartitionDirectoryLookup(context->partition_directory, rel);
+
+	for (i = 0; i < pdesc->nparts; i++)
+	{
+		Relation	part_rel;
+		char		part_max_hazard;
+
+		part_rel = table_open(pdesc->oids[i], AccessShareLock);
+		part_max_hazard = RelationGetParallelDmlSafety(part_rel);
+		table_close(part_rel, AccessShareLock);
+
+		if (max_parallel_hazard_test(part_max_hazard, context))
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * table_chk_constr_parallel_dml_hazard
+ *
+ * Check whether any of the relation's CHECK constraints involves parallel
+ * unsafe/restricted functions.  Returns true if the maximum hazard of
+ * interest was found.
+ */
+static bool
+table_chk_constr_parallel_dml_hazard(Relation rel,
+									 max_parallel_hazard_context *context)
+{
+	int			i;
+	TupleDesc	tupdesc;
+	ConstrCheck *check;
+
+	tupdesc = RelationGetDescr(rel);
+
+	if (tupdesc->constr == NULL)
+		return false;
+
+	check = tupdesc->constr->check;
+
+	/*
+	 * Determine if there are any CHECK constraints which are not
+	 * parallel-safe.
+	 */
+	for (i = 0; i < tupdesc->constr->num_check; i++)
+	{
+		Expr	   *check_expr = stringToNode(check[i].ccbin);
+
+		if (parallel_dml_hazard_walker((Node *) check_expr, context))
+			return true;
+	}
+
+	return false;
 }
 
 

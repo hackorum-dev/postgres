@@ -1,0 +1,4 @@
+comment = 'test code for parallel DML safety caching'
+default_version = '1.0'
+module_pathname = '$libdir/test_parallel_dml_safety'
+relocatable = true
