@@ -105,8 +105,8 @@ plperl_to_hstore(PG_FUNCTION_ARGS)
 	HV		   *hv;
 	HE		   *he;
 	int32		buflen;
-	int32		i;
 	int32		pcount;
+	int32		palloced;
 	HStore	   *out;
 	Pairs	   *pairs;
 
@@ -129,34 +129,64 @@ plperl_to_hstore(PG_FUNCTION_ARGS)
 				 errmsg("cannot transform non-hash Perl value to hstore")));
 	hv = (HV *) in;
 
-	pcount = hv_iterinit(hv);
+	/*
+	 * The result of hv_iterinit() is only reliable for hashes without tie
+	 * magic; a tied hash can yield any number of keys, quite independently of
+	 * what this reports.  So treat it as no more than an initial size
+	 * estimate and enlarge the array as needed.
+	 */
+	palloced = hv_iterinit(hv);
+	if (palloced < 1)
+		palloced = 1;
+	pairs = palloc_array(Pairs, palloced);
 
-	pairs = palloc_array(Pairs, pcount);
-
-	i = 0;
+	pcount = 0;
 	while ((he = hv_iternext(hv)))
 	{
-		char	   *key = sv2cstr(HeSVKEY_force(he));
-		SV		   *value = HeVAL(he);
+		char	   *key;
+		SV		   *value;
 
-		pairs[i].key = pstrdup(key);
-		pairs[i].keylen = hstoreCheckKeyLen(strlen(pairs[i].key));
-		pairs[i].needfree = true;
+		/*
+		 * A tied hash's iterator need never report end-of-hash, so allow a
+		 * way to break out of this loop.
+		 */
+		CHECK_FOR_INTERRUPTS();
+
+		if (pcount >= palloced)
+		{
+			palloced *= 2;
+			pairs = repalloc_array(pairs, Pairs, palloced);
+		}
+
+		key = sv2cstr(HeSVKEY_force(he));
+
+		/*
+		 * hv_iternext() does not fill in the value for a tied hash, so we
+		 * must use hv_iterval() to get at it.  That may hand back an SV
+		 * carrying get magic (that is, the tie's FETCH method hasn't run
+		 * yet), so force the value to be materialized before inspecting it.
+		 */
+		value = hv_iterval(hv, he);
+		SvGETMAGIC(value);
+
+		pairs[pcount].key = pstrdup(key);
+		pairs[pcount].keylen = hstoreCheckKeyLen(strlen(pairs[pcount].key));
+		pairs[pcount].needfree = true;
 
 		if (!SvOK(value))
 		{
-			pairs[i].val = NULL;
-			pairs[i].vallen = 0;
-			pairs[i].isnull = true;
+			pairs[pcount].val = NULL;
+			pairs[pcount].vallen = 0;
+			pairs[pcount].isnull = true;
 		}
 		else
 		{
-			pairs[i].val = pstrdup(sv2cstr(value));
-			pairs[i].vallen = hstoreCheckValLen(strlen(pairs[i].val));
-			pairs[i].isnull = false;
+			pairs[pcount].val = pstrdup(sv2cstr(value));
+			pairs[pcount].vallen = hstoreCheckValLen(strlen(pairs[pcount].val));
+			pairs[pcount].isnull = false;
 		}
 
-		i++;
+		pcount++;
 	}
 
 	pcount = hstoreUniquePairs(pairs, pcount, &buflen);
