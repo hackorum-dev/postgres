@@ -10,6 +10,7 @@ EXTENSION = test_parallel_dml_safety
 DATA = test_parallel_dml_safety--1.0.sql
 
 REGRESS = parallel_dml_safety
+ISOLATION = stale_safety_cache
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config

@@ -116,3 +116,136 @@ SELECT test_parallel_dml_safety('pdml_ft');
 
 CREATE TEMP TABLE pdml_temp (a int);
 SELECT test_parallel_dml_safety('pdml_temp');
+
+--
+-- Invalidation tests
+--
+-- Note that adding or dropping a trigger, constraint, index or default on a
+-- table itself causes a full relcache invalidation of that table, so those
+-- cases are not very interesting here.  The cases below are the ones where
+-- no full relcache invalidation happens: changes to a partition (which must
+-- propagate to its ancestors) and changes of a function's parallel safety.
+-- (Domain constraint changes need no invalidation, since domain constraints
+-- are not part of the cached hazard level.)
+--
+
+-- adding an unsafe trigger to a partition invalidates the ancestors' cached
+-- hazard levels (via the propagated message), while the partition's own
+-- value is discarded by its relcache rebuild
+CREATE TABLE pdml_inv_part (a int) PARTITION BY RANGE (a);
+CREATE TABLE pdml_inv_part_p1 PARTITION OF pdml_inv_part FOR VALUES FROM (0) TO (100);
+SELECT test_parallel_dml_safety('pdml_inv_part');
+SELECT test_parallel_dml_safety('pdml_inv_part_p1');
+CREATE TRIGGER trg BEFORE INSERT ON pdml_inv_part_p1
+  FOR EACH ROW EXECUTE FUNCTION pdml_trg_unsafe_fn();
+SELECT test_parallel_dml_safety_cached('pdml_inv_part_p1');
+SELECT test_parallel_dml_safety_cached('pdml_inv_part');
+SELECT test_parallel_dml_safety('pdml_inv_part');
+DROP TRIGGER trg ON pdml_inv_part_p1;
+SELECT test_parallel_dml_safety_cached('pdml_inv_part');
+SELECT test_parallel_dml_safety('pdml_inv_part');
+
+-- ... and propagation works across multiple levels
+CREATE TABLE pdml_inv_gp (a int) PARTITION BY RANGE (a);
+CREATE TABLE pdml_inv_p PARTITION OF pdml_inv_gp FOR VALUES FROM (0) TO (100)
+  PARTITION BY RANGE (a);
+CREATE TABLE pdml_inv_p_p1 PARTITION OF pdml_inv_p FOR VALUES FROM (0) TO (50);
+SELECT test_parallel_dml_safety('pdml_inv_gp');
+SELECT test_parallel_dml_safety('pdml_inv_p');
+SELECT test_parallel_dml_safety('pdml_inv_p_p1');
+ALTER TABLE pdml_inv_p_p1 ADD CONSTRAINT chk_u CHECK (pdml_unsafe_fn(a));
+SELECT test_parallel_dml_safety_cached('pdml_inv_p_p1');
+SELECT test_parallel_dml_safety_cached('pdml_inv_p');
+SELECT test_parallel_dml_safety_cached('pdml_inv_gp');
+SELECT test_parallel_dml_safety('pdml_inv_gp');
+SELECT test_parallel_dml_safety('pdml_inv_p');
+ALTER TABLE pdml_inv_p_p1 DROP CONSTRAINT chk_u;
+SELECT test_parallel_dml_safety('pdml_inv_gp');
+
+-- an unsafe index on a partition likewise propagates to the parent
+CREATE TABLE pdml_inv_idx (a int) PARTITION BY RANGE (a);
+CREATE TABLE pdml_inv_idx_p1 PARTITION OF pdml_inv_idx FOR VALUES FROM (0) TO (100);
+SELECT test_parallel_dml_safety('pdml_inv_idx');
+CREATE INDEX pdml_inv_idx_p1_i ON pdml_inv_idx_p1 ((CASE WHEN pdml_unsafe_fn(a) THEN a END));
+SELECT test_parallel_dml_safety_cached('pdml_inv_idx_p1');
+SELECT test_parallel_dml_safety_cached('pdml_inv_idx');
+SELECT test_parallel_dml_safety('pdml_inv_idx');
+DROP INDEX pdml_inv_idx_p1_i;
+SELECT test_parallel_dml_safety('pdml_inv_idx');
+
+-- attaching a partition that has an unsafe object invalidates the values
+-- cached for all of its ancestors (the parent itself is covered by the
+-- relcache rebuild in StorePartitionBound; the grandparent only by the
+-- propagated message)
+CREATE TABLE pdml_att_gp (a int) PARTITION BY RANGE (a);
+CREATE TABLE pdml_att_p PARTITION OF pdml_att_gp FOR VALUES FROM (0) TO (100)
+  PARTITION BY RANGE (a);
+SELECT test_parallel_dml_safety('pdml_att_gp');
+SELECT test_parallel_dml_safety('pdml_att_p');
+CREATE TABLE pdml_att_child (a int, CONSTRAINT chk_u CHECK (pdml_unsafe_fn(a)));
+ALTER TABLE pdml_att_p ATTACH PARTITION pdml_att_child FOR VALUES FROM (0) TO (50);
+SELECT test_parallel_dml_safety_cached('pdml_att_p');
+SELECT test_parallel_dml_safety_cached('pdml_att_gp');
+SELECT test_parallel_dml_safety('pdml_att_gp');
+SELECT test_parallel_dml_safety('pdml_att_p');
+-- detaching it invalidates them again
+ALTER TABLE pdml_att_p DETACH PARTITION pdml_att_child;
+SELECT test_parallel_dml_safety('pdml_att_gp');
+SELECT test_parallel_dml_safety('pdml_att_p');
+
+-- altering a function's parallel safety invalidates all cached values
+CREATE FUNCTION pdml_alterable_fn(int) RETURNS bool LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+  AS $$ BEGIN RETURN $1 > 0; END $$;
+CREATE TABLE pdml_inv_fn (a int CHECK (pdml_alterable_fn(a)));
+SELECT test_parallel_dml_safety('pdml_inv_fn');
+ALTER FUNCTION pdml_alterable_fn(int) PARALLEL UNSAFE;
+SELECT test_parallel_dml_safety('pdml_inv_fn');
+CREATE OR REPLACE FUNCTION pdml_alterable_fn(int) RETURNS bool LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+  AS $$ BEGIN RETURN $1 > 0; END $$;
+SELECT test_parallel_dml_safety('pdml_inv_fn');
+
+-- adding an unsafe object to a table itself needs no invalidation message:
+-- each of these DDL commands updates the table's pg_class/pg_attribute row,
+-- which forces a relcache rebuild that discards the cached value (and
+-- invalidates dependent plans via the relcache invalidation)
+CREATE TABLE pdml_self (a int);
+SELECT test_parallel_dml_safety('pdml_self');
+CREATE TRIGGER trg BEFORE INSERT ON pdml_self
+  FOR EACH ROW EXECUTE FUNCTION pdml_trg_unsafe_fn();
+SELECT test_parallel_dml_safety_cached('pdml_self');
+SELECT test_parallel_dml_safety('pdml_self');
+DROP TRIGGER trg ON pdml_self;
+SELECT test_parallel_dml_safety_cached('pdml_self');
+SELECT test_parallel_dml_safety('pdml_self');
+
+ALTER TABLE pdml_self ADD CONSTRAINT chk_u CHECK (pdml_unsafe_fn(a));
+SELECT test_parallel_dml_safety_cached('pdml_self');
+SELECT test_parallel_dml_safety('pdml_self');
+ALTER TABLE pdml_self DROP CONSTRAINT chk_u;
+SELECT test_parallel_dml_safety_cached('pdml_self');
+SELECT test_parallel_dml_safety('pdml_self');
+
+CREATE INDEX pdml_self_i ON pdml_self ((CASE WHEN pdml_unsafe_fn(a) THEN a END));
+SELECT test_parallel_dml_safety_cached('pdml_self');
+SELECT test_parallel_dml_safety('pdml_self');
+DROP INDEX pdml_self_i;
+SELECT test_parallel_dml_safety_cached('pdml_self');
+SELECT test_parallel_dml_safety('pdml_self');
+
+-- column default changes are reflected too
+CREATE TABLE pdml_inv_def (a int);
+SELECT test_parallel_dml_safety('pdml_inv_def');
+ALTER TABLE pdml_inv_def ALTER COLUMN a SET DEFAULT (CASE WHEN pdml_unsafe_fn(0) THEN 1 ELSE 0 END);
+SELECT test_parallel_dml_safety('pdml_inv_def');
+ALTER TABLE pdml_inv_def ALTER COLUMN a DROP DEFAULT;
+SELECT test_parallel_dml_safety('pdml_inv_def');
+
+-- adding or dropping a domain constraint does not change the cached hazard
+-- level, since domain constraints are not examined at all
+CREATE DOMAIN pdml_inv_dom AS int;
+CREATE TABLE pdml_inv_dom_t (a pdml_inv_dom);
+SELECT test_parallel_dml_safety('pdml_inv_dom_t');
+ALTER DOMAIN pdml_inv_dom ADD CONSTRAINT dom_u CHECK (pdml_unsafe_fn(VALUE));
+SELECT test_parallel_dml_safety('pdml_inv_dom_t');
+ALTER DOMAIN pdml_inv_dom DROP CONSTRAINT dom_u;
+SELECT test_parallel_dml_safety('pdml_inv_dom_t');
