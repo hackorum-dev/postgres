@@ -299,6 +299,9 @@ static void plperl_exec_callback(void *arg);
 static void plperl_inline_callback(void *arg);
 static char *strip_trailing_ws(const char *msg);
 static OP  *pp_require_safe(pTHX);
+static OP  *pp_leavesub_resolve_ties(pTHX);
+static void plperl_enter_tie_guard(SV *fn);
+static void plperl_leave_tie_guard(SV *fn);
 static void activate_interpreter(plperl_interp_desc *interp_desc);
 
 #if defined(WIN32) && PERL_VERSION_LT(5, 28, 0)
@@ -857,6 +860,158 @@ pp_require_safe(pTHX)
 	 * reached" warning instead.
 	 */
 	return NULL;
+}
+
+/*
+ * Perl's leave_adjust_stacks() runs get-magic on magical return values.
+ * If a tied scalar's FETCH returns another tied scalar, that recurses
+ * without bound inside call_sv() and can SIGSEGV.
+ *
+ * PL_ppaddr[OP_LEAVESUB] is not enough: compiled ops keep their own
+ * op_ppaddr.  While call_sv() runs, patch OP_LEAVESUB(LV) in the callee
+ * (and in FETCH CVs we reach) so tied returns are resolved under
+ * check_stack_depth() before leave_adjust_stacks() sees them.
+ */
+static Perl_ppaddr_t plperl_pp_leavesub_orig = NULL;
+
+static void
+plperl_walk_patch_leavesub(OP *o, bool install)
+{
+	if (o == NULL)
+		return;
+
+	if (o->op_type == OP_LEAVESUB || o->op_type == OP_LEAVESUBLV)
+	{
+		if (install)
+			o->op_ppaddr = pp_leavesub_resolve_ties;
+		else
+			o->op_ppaddr = plperl_pp_leavesub_orig;
+	}
+
+	if (o->op_flags & OPf_KIDS)
+	{
+		OP		   *kid;
+
+		for (kid = cUNOPo->op_first; kid; kid = OpSIBLING(kid))
+			plperl_walk_patch_leavesub(kid, install);
+	}
+}
+
+static void
+plperl_patch_cv_leavesubs(CV *cv, bool install)
+{
+	if (cv == NULL || CvISXSUB(cv) || CvROOT(cv) == NULL)
+		return;
+	plperl_walk_patch_leavesub(CvROOT(cv), install);
+}
+
+static void
+plperl_enter_tie_guard(SV *fn)
+{
+	dTHX;
+	HV		   *stash = NULL;
+	GV		   *gv = NULL;
+	CV		   *cv;
+
+	if (plperl_pp_leavesub_orig == NULL)
+		plperl_pp_leavesub_orig = PL_ppaddr[OP_LEAVESUB];
+
+	cv = sv_2cv(fn, &stash, &gv, 0);
+	plperl_patch_cv_leavesubs(cv, true);
+}
+
+static void
+plperl_leave_tie_guard(SV *fn)
+{
+	dTHX;
+	HV		   *stash = NULL;
+	GV		   *gv = NULL;
+	CV		   *cv;
+
+	cv = sv_2cv(fn, &stash, &gv, 0);
+	plperl_patch_cv_leavesubs(cv, false);
+}
+
+static OP  *
+pp_leavesub_resolve_ties(pTHX)
+{
+	PERL_CONTEXT *cx = CX_CUR();
+
+	/*
+	 * Before the real leavesub runs leave_adjust_stacks() (which does
+	 * SvGETMAGIC and can recurse unbound on tied FETCH returns), unwrap
+	 * tied scalars under check_stack_depth().
+	 *
+	 * Do not touch MULTICALL frames.  For those, pp_leavesub returns
+	 * immediately and the multicall macros own the context.  Mutating
+	 * the stack or calling FETCH here would break that protocol.
+	 */
+	if (CxTYPE(cx) == CXt_SUB &&
+		!CxMULTICALL(cx) &&
+		cx->blk_gimme == G_SCALAR)
+	{
+		dSP;
+		SV		  **oldsp = PL_stack_base + cx->blk_oldsp;
+
+		while (SP > oldsp &&
+			   TOPs &&
+			   SvGMAGICAL(TOPs) &&
+			   mg_find(TOPs, PERL_MAGIC_tiedscalar) != NULL)
+		{
+			MAGIC	   *mg;
+			SV		   *obj;
+			SV		   *ret;
+			HV		   *stash;
+			GV		   *gv;
+			CV		   *fetchcv;
+			int			count;
+
+			check_stack_depth();
+			CHECK_FOR_INTERRUPTS();
+
+			mg = mg_find(TOPs, PERL_MAGIC_tiedscalar);
+			obj = SvTIED_obj(TOPs, mg);
+			stash = SvSTASH(SvRV(obj));
+			gv = gv_fetchmethod_autoload(stash, "FETCH", TRUE);
+			fetchcv = (gv && isGV(gv)) ? GvCV(gv) : NULL;
+
+			/*
+			 * FETCH lives in its own CV.  Patch it so a tied FETCH return
+			 * takes this path too.
+			 */
+			plperl_patch_cv_leavesubs(fetchcv, true);
+
+			ENTER;
+			SAVETMPS;
+			PUSHMARK(SP);
+			PUSHs(obj);
+			PUTBACK;
+			count = call_method("FETCH", G_SCALAR | G_EVAL);
+			SPAGAIN;
+
+			if (SvTRUE(ERRSV))
+			{
+				char	   *msg = SvPV_nolen(ERRSV);
+
+				PUTBACK;
+				FREETMPS;
+				LEAVE;
+				croak("%s", msg);
+			}
+
+			ret = (count == 1) ? POPs : &PL_sv_undef;
+			SvREFCNT_inc(ret);	/* protect across FREETMPS */
+			PUTBACK;
+			FREETMPS;
+			LEAVE;
+			SPAGAIN;
+			/* Copy without get-magic.  Result may still be tied. */
+			SETs(sv_2mortal(newSVsv_flags(ret, SV_NOSTEAL)));
+			SvREFCNT_dec(ret);
+		}
+	}
+
+	return plperl_pp_leavesub_orig(aTHX);
 }
 
 
@@ -2221,8 +2376,19 @@ plperl_call_perl_func(plperl_proc_desc *desc, FunctionCallInfo fcinfo)
 	}
 	PUTBACK;
 
-	/* Do NOT use G_KEEPERR here */
-	count = call_sv(desc->reference, G_SCALAR | G_EVAL);
+	plperl_enter_tie_guard(desc->reference);
+	PG_TRY();
+	{
+		/* Do NOT use G_KEEPERR here */
+		count = call_sv(desc->reference, G_SCALAR | G_EVAL);
+	}
+	PG_CATCH();
+	{
+		plperl_leave_tie_guard(desc->reference);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	plperl_leave_tie_guard(desc->reference);
 
 	SPAGAIN;
 
@@ -2248,7 +2414,11 @@ plperl_call_perl_func(plperl_proc_desc *desc, FunctionCallInfo fcinfo)
 				 errmsg("%s", strip_trailing_ws(sv2cstr(ERRSV)))));
 	}
 
-	retval = newSVsv(POPs);
+	/*
+	 * Tied FETCH was already resolved under the leavesub guard.  Copy
+	 * without get-magic as defense in depth.
+	 */
+	retval = newSVsv_flags(POPs, SV_NOSTEAL);
 
 	PUTBACK;
 	FREETMPS;
@@ -2289,8 +2459,19 @@ plperl_call_perl_trigger_func(plperl_proc_desc *desc, FunctionCallInfo fcinfo,
 		PUSHs(sv_2mortal(cstr2sv(tg_trigger->tgargs[i])));
 	PUTBACK;
 
-	/* Do NOT use G_KEEPERR here */
-	count = call_sv(desc->reference, G_SCALAR | G_EVAL);
+	plperl_enter_tie_guard(desc->reference);
+	PG_TRY();
+	{
+		/* Do NOT use G_KEEPERR here */
+		count = call_sv(desc->reference, G_SCALAR | G_EVAL);
+	}
+	PG_CATCH();
+	{
+		plperl_leave_tie_guard(desc->reference);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	plperl_leave_tie_guard(desc->reference);
 
 	SPAGAIN;
 
@@ -2316,7 +2497,7 @@ plperl_call_perl_trigger_func(plperl_proc_desc *desc, FunctionCallInfo fcinfo,
 				 errmsg("%s", strip_trailing_ws(sv2cstr(ERRSV)))));
 	}
 
-	retval = newSVsv(POPs);
+	retval = newSVsv_flags(POPs, SV_NOSTEAL);
 
 	PUTBACK;
 	FREETMPS;
@@ -2352,8 +2533,19 @@ plperl_call_perl_event_trigger_func(plperl_proc_desc *desc,
 	PUSHMARK(sp);
 	PUTBACK;
 
-	/* Do NOT use G_KEEPERR here */
-	count = call_sv(desc->reference, G_SCALAR | G_EVAL);
+	plperl_enter_tie_guard(desc->reference);
+	PG_TRY();
+	{
+		/* Do NOT use G_KEEPERR here */
+		count = call_sv(desc->reference, G_SCALAR | G_EVAL);
+	}
+	PG_CATCH();
+	{
+		plperl_leave_tie_guard(desc->reference);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	plperl_leave_tie_guard(desc->reference);
 
 	SPAGAIN;
 
@@ -2379,7 +2571,7 @@ plperl_call_perl_event_trigger_func(plperl_proc_desc *desc,
 				 errmsg("%s", strip_trailing_ws(sv2cstr(ERRSV)))));
 	}
 
-	retval = newSVsv(POPs);
+	retval = newSVsv_flags(POPs, SV_NOSTEAL);
 	(void) retval;				/* silence compiler warning */
 
 	PUTBACK;

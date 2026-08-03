@@ -67,4 +67,35 @@ $$;
 
 SELECT spi_test();
 
+-- Tied scalar whose FETCH returns a plain value.
+CREATE FUNCTION perl_tie_ok() RETURNS bool
+TRANSFORM FOR TYPE bool
+LANGUAGE plperl
+AS $perl$
+  package BoolTieOk;
+  sub TIESCALAR { return bless {}, shift; }
+  sub FETCH { return 1; }
+  package main;
+  tie my $y, 'BoolTieOk';
+  return $y;
+$perl$;
+SELECT perl_tie_ok();
+
+-- Tied scalar whose FETCH returns another tied scalar.
+CREATE FUNCTION perl_tie_recurse() RETURNS bool
+TRANSFORM FOR TYPE bool
+LANGUAGE plperl
+AS $perl$
+  package BoolTieRecurse;
+  sub TIESCALAR { return bless {}, shift; }
+  sub FETCH { my $x; tie $x, 'BoolTieRecurse'; return $x; }
+  package main;
+  tie my $y, 'BoolTieRecurse';
+  return $y;
+$perl$;
+-- Pin the limit so the HINT does not depend on the installation default.
+SET max_stack_depth = '100kB';
+SELECT perl_tie_recurse();
+RESET max_stack_depth;
+
 DROP EXTENSION plperl CASCADE;
