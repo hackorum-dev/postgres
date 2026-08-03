@@ -25,6 +25,7 @@
 #include "common/controldata_utils.h"
 #include "common/file_perm.h"
 #include "common/logging.h"
+#include "common/pg_exec.h"
 #include "common/string.h"
 #include "datatype/timestamp.h"
 #include "getopt_long.h"
@@ -41,6 +42,7 @@ typedef enum
 	FAST_MODE,
 	IMMEDIATE_MODE,
 } ShutdownMode;
+
 
 typedef enum
 {
@@ -904,26 +906,18 @@ find_other_exec_or_die(const char *argv0, const char *target, const char *versio
 static void
 do_init(void)
 {
-	char	   *cmd;
+	PCommand   *cmd;
 
 	if (exec_path == NULL)
 		exec_path = find_other_exec_or_die(argv0, "initdb", "initdb (PostgreSQL) " PG_VERSION "\n");
 
-	if (pgdata_opt == NULL)
-		pgdata_opt = "";
-
-	if (post_opts == NULL)
-		post_opts = "";
-
-	if (!silent_mode)
-		cmd = psprintf("\"%s\" %s%s",
-					   exec_path, pgdata_opt, post_opts);
-	else
-		cmd = psprintf("\"%s\" %s%s > \"%s\"",
-					   exec_path, pgdata_opt, post_opts, DEVNULL);
+	cmd = pcommand_init(exec_path, "initdb");
+	pcommand_append_arg(cmd, pgdata_opt);
+	pcommand_append_arg(cmd, post_opts);
+	cmd->silent = silent_mode;
 
 	fflush(NULL);
-	if (system(cmd) != 0)
+	if (psystem(cmd) != 0)
 	{
 		write_stderr(_("%s: database system initialization failed\n"), progname);
 		exit(1);
@@ -2155,6 +2149,12 @@ adjust_data_dir(void)
 	else
 		my_exec_path = pg_strdup(exec_path);
 
+/*
+ * command = pcommand_init(my_exec_path, "postgres");
+ * pcommand_append_arg(command, "-C data_directory");
+ * pcommand_append_arg(command, pgdata_opt);
+ * pcommand_append_arg(command, post_opts);
+ */
 	/* it's important for -C to be the first option, see main.c */
 	cmd = psprintf("\"%s\" -C data_directory %s%s",
 				   my_exec_path,
@@ -2287,7 +2287,7 @@ main(int argc, char **argv)
 					 * We could pass PGDATA just in an environment variable
 					 * but we do -D too for clearer postmaster 'ps' display
 					 */
-					pgdata_opt = psprintf("-D \"%s\" ", pgdata_D);
+					pgdata_opt = psprintf("-D %s ", pgdata_D);
 					pg_free(pgdata_D);
 					break;
 				}

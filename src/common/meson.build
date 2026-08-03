@@ -22,6 +22,7 @@ common_sources = files(
   'md5_common.c',
   'parse_manifest.c',
   'percentrepl.c',
+	'pg_exec.c',
   'pg_get_line.c',
   'pg_lzcompress.c',
   'pg_parse_lsn.c',
@@ -191,6 +192,7 @@ foreach name, opts : pgcommon_variants
       kwargs: opts + {
         'include_directories': [
           include_directories('.'),
+					include_directories('../interfaces/libpq'),
           opts.get('include_directories', []),
         ],
         'dependencies': opts['dependencies'] + [ssl],
