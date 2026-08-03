@@ -273,6 +273,7 @@ int			debug_discard_caches = 0;
 #define MAX_SYSCACHE_CALLBACKS 64
 #define MAX_RELCACHE_CALLBACKS 10
 #define MAX_RELSYNC_CALLBACKS 10
+#define MAX_PARALLELDML_CALLBACKS 10
 
 static struct SYSCACHECALLBACK
 {
@@ -301,6 +302,14 @@ static struct RELSYNCCALLBACK
 }			relsync_callback_list[MAX_RELSYNC_CALLBACKS];
 
 static int	relsync_callback_count = 0;
+
+static struct PARALLELDMLCALLBACK
+{
+	ParallelDmlCallbackFunction function;
+	Datum		arg;
+}			paralleldml_callback_list[MAX_PARALLELDML_CALLBACKS];
+
+static int	paralleldml_callback_count = 0;
 
 
 /* ----------------------------------------------------------------
@@ -960,7 +969,15 @@ LocalExecuteInvalidationMessage(SharedInvalidationMessage *msg)
 	{
 		/* We only care about our own database */
 		if (msg->pd.dbId == MyDatabaseId)
+		{
 			RelationCacheInvalidateParallelDml(msg->pd.relId);
+
+			/*
+			 * Let other subsystems (e.g. the plan cache) know about the
+			 * change in parallel DML safety.
+			 */
+			CallParallelDmlCallbacks(msg->pd.relId);
+		}
 	}
 	else
 		elog(FATAL, "unrecognized SI message ID: %d", msg->id);
@@ -2010,6 +2027,24 @@ CacheRegisterRelSyncCallback(RelSyncCallbackFunction func,
 }
 
 /*
+ * CacheRegisterParallelDmlCallback
+ *		Register the specified function to be called for all future
+ *		parallel DML safety invalidation events.
+ */
+void
+CacheRegisterParallelDmlCallback(ParallelDmlCallbackFunction func,
+								 Datum arg)
+{
+	if (paralleldml_callback_count >= MAX_PARALLELDML_CALLBACKS)
+		elog(FATAL, "out of paralleldml_callback_list slots");
+
+	paralleldml_callback_list[paralleldml_callback_count].function = func;
+	paralleldml_callback_list[paralleldml_callback_count].arg = arg;
+
+	++paralleldml_callback_count;
+}
+
+/*
  * CallSyscacheCallbacks
  *
  * This is exported so that CatalogCacheFlushCatalog can call it, saving
@@ -2045,6 +2080,20 @@ CallRelSyncCallbacks(Oid relid)
 		struct RELSYNCCALLBACK *ccitem = relsync_callback_list + i;
 
 		ccitem->function(ccitem->arg, relid);
+	}
+}
+
+/*
+ * CallParallelDmlCallbacks
+ */
+void
+CallParallelDmlCallbacks(Oid relId)
+{
+	for (int i = 0; i < paralleldml_callback_count; i++)
+	{
+		struct PARALLELDMLCALLBACK *ccitem = paralleldml_callback_list + i;
+
+		ccitem->function(ccitem->arg, relId);
 	}
 }
 

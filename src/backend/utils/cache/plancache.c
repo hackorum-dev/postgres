@@ -66,6 +66,7 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
 #include "parser/analyze.h"
+#include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/lmgr.h"
 #include "tcop/pquery.h"
@@ -110,6 +111,7 @@ static void ScanQueryForLocks(Query *parsetree, bool acquire);
 static bool ScanQueryWalker(Node *node, bool *acquire);
 static TupleDesc PlanCacheComputeResultDesc(List *stmt_list);
 static void PlanCacheRelCallback(Datum arg, Oid relid);
+static void PlanCacheParallelDmlCallback(Datum arg, Oid relId);
 static void PlanCacheObjectCallback(Datum arg, SysCacheIdentifier cacheid,
 									uint32 hashvalue);
 static void PlanCacheRoleCallback(Datum arg, SysCacheIdentifier cacheid,
@@ -154,6 +156,7 @@ void
 InitPlanCache(void)
 {
 	CacheRegisterRelcacheCallback(PlanCacheRelCallback, (Datum) 0);
+	CacheRegisterParallelDmlCallback(PlanCacheParallelDmlCallback, (Datum) 0);
 	CacheRegisterSyscacheCallback(PROCOID, PlanCacheObjectCallback, (Datum) 0);
 	CacheRegisterSyscacheCallback(TYPEOID, PlanCacheObjectCallback, (Datum) 0);
 	CacheRegisterSyscacheCallback(NAMESPACEOID, PlanCacheSysCallback, (Datum) 0);
@@ -2204,6 +2207,92 @@ PlanCacheRelCallback(Datum arg, Oid relid)
 			list_member_oid(cexpr->relationOids, relid))
 		{
 			cexpr->is_valid = false;
+		}
+	}
+}
+
+/*
+ * PlanCacheParallelDmlCallback
+ *		Parallel DML safety inval callback function
+ *
+ * Invalidate cached generic plans whose shape depended on the parallel
+ * DML safety of the given relation (i.e. that have
+ * dependsOnParallelDmlSafety set), or on the parallel DML safety of any
+ * relation when relId is InvalidOid, meaning that some function's
+ * parallel safety changed.
+ *
+ * The hazard level cached in relcache is being reset, so any plan that
+ * was shaped by it must be rebuilt.  Only generic plans are affected;
+ * custom plans are rebuilt on each use anyway, so they always see the
+ * current safety.
+ *
+ * Note that the global (InvalidOid) case invalidates every
+ * parallel-DML-safety-dependent plan in this database, even if the altered
+ * function is not actually used by the plan's target table.  That is
+ * intentionally coarse: tracking exactly which tables use a function would
+ * require locking and visibility handling we deliberately avoid, and
+ * changing a function's parallel safety is expected to be rare.
+ */
+static void
+PlanCacheParallelDmlCallback(Datum arg, Oid relId)
+{
+	dlist_iter	iter;
+
+	dlist_foreach(iter, &saved_plan_list)
+	{
+		CachedPlanSource *plansource = dlist_container(CachedPlanSource,
+													   node, iter.cur);
+		ListCell   *lc;
+
+		Assert(plansource->magic == CACHEDPLANSOURCE_MAGIC);
+
+		/* No work if it's already invalidated */
+		if (!plansource->is_valid)
+			continue;
+
+		/* Never invalidate if parse/plan would be a no-op anyway */
+		if (!StmtPlanRequiresRevalidation(plansource))
+			continue;
+
+		/*
+		 * The dependency is a planning-time decision, so only the generic
+		 * plan needs to be rebuilt; the rewritten querytree is unaffected.
+		 */
+		if (plansource->gplan && plansource->gplan->is_valid)
+		{
+			foreach(lc, plansource->gplan->stmt_list)
+			{
+				PlannedStmt *plannedstmt = lfirst_node(PlannedStmt, lc);
+
+				if (!plannedstmt->dependsOnParallelDmlSafety)
+					continue;
+
+				if (OidIsValid(relId))
+				{
+					ModifyTable *mt;
+					RangeTblEntry *rte;
+
+					/*
+					 * The plan is affected only if its modify target is the
+					 * relation whose parallel DML safety changed.  For a
+					 * partitioned target, a change on any partition is
+					 * reported as a change on the partitioned root itself
+					 * (see CacheInvalidateParallelDmlSafetyForAncestors),
+					 * so partitions are covered without having to record
+					 * them in the plan.
+					 */
+					if (!IsA(plannedstmt->planTree, ModifyTable))
+						continue;
+					mt = (ModifyTable *) plannedstmt->planTree;
+					rte = rt_fetch(mt->nominalRelation, plannedstmt->rtable);
+					if (rte->relid != relId)
+						continue;
+				}
+
+				/* Invalidate the generic plan only */
+				plansource->gplan->is_valid = false;
+				break;			/* out of stmt_list scan */
+			}
 		}
 	}
 }
