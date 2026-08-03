@@ -68,6 +68,7 @@ OBJS_COMMON = \
 	md5_common.o \
 	parse_manifest.o \
 	percentrepl.o \
+	pg_exec.o \
 	pg_get_line.o \
 	pg_lzcompress.o \
 	pg_parse_lsn.o \
