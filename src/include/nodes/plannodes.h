@@ -92,6 +92,17 @@ typedef struct PlannedStmt
 	/* parallel mode required to execute? */
 	bool		parallelModeNeeded;
 
+	/*
+	 * Can the plan's parallel-safety assumptions be invalidated by a
+	 * parallel DML safety change?  This is set for every INSERT ... SELECT
+	 * admitted to the parallel-mode gate (even when the plan ended up
+	 * serial because the query tree was parallel-unsafe), so that the plan
+	 * is rebuilt when the parallel DML safety of the target relation
+	 * changes, or when any function's parallel safety changes; see
+	 * PlanCacheParallelDmlCallback().
+	 */
+	bool		dependsOnParallelDmlSafety;
+
 	/* which forms of JIT should be performed */
 	int			jitFlags;
 

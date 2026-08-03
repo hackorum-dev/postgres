@@ -353,3 +353,206 @@ select count(*) from para_insert;
 
 set debug_parallel_query = off;
 rollback;
+--
+-- Cached-plan invalidation when the parallel safety of the target table
+-- changes.  (This is outside the transaction block above, so that plan
+-- cache effects of previous statements don't leak in.)
+--
+-- A plan whose shape depended on the target table's parallel DML safety
+-- is marked with dependsOnParallelDmlSafety, and is invalidated whenever
+-- the parallel DML safety invalidation message arrives for its target
+-- (including messages propagated from partitions) or for all relations
+-- (a function's parallel safety changed).
+--
+-- encourage use of parallel plans (again, the ones above were reset by
+-- the rollback)
+set parallel_setup_cost = 0;
+set parallel_tuple_cost = 0;
+set min_parallel_table_scan_size = 0;
+set max_parallel_workers_per_gather = 4;
+-- force use of cached generic plans
+set plan_cache_mode = force_generic_plan;
+-- adding an unsafe trigger to the target table invalidates the cached
+-- plan (via the relcache invalidation of the table), so the next EXECUTE
+-- builds a new, non-parallel plan
+create table pi_plan_a (a int, b name);
+prepare pa as insert into pi_plan_a select unique1, stringu1 from tenk1;
+explain (costs off) execute pa;
+               QUERY PLAN               
+----------------------------------------
+ Insert on pi_plan_a
+   ->  Gather
+         Workers Planned: 4
+         ->  Parallel Seq Scan on tenk1
+(4 rows)
+
+create trigger trg before insert on pi_plan_a
+	for each row execute function trg_unsafe_fn();
+explain (costs off) execute pa;
+       QUERY PLAN        
+-------------------------
+ Insert on pi_plan_a
+   ->  Seq Scan on tenk1
+(2 rows)
+
+deallocate pa;
+-- adding an unsafe trigger to a partition of the target table invalidates
+-- the cached plan: the invalidation message is propagated to the
+-- partitioned root, and the plan's modify target matches it; dropping the
+-- trigger invalidates it again, and it is rebuilt as a parallel plan
+create table pi_plan_b (a int, b name) partition by range (a);
+create table pi_plan_b_p1 partition of pi_plan_b for values from (0) to (5000);
+create table pi_plan_b_p2 partition of pi_plan_b for values from (5000) to (maxvalue);
+prepare pb as insert into pi_plan_b select unique1, stringu1 from tenk1;
+explain (costs off) execute pb;
+               QUERY PLAN               
+----------------------------------------
+ Insert on pi_plan_b
+   ->  Gather
+         Workers Planned: 4
+         ->  Parallel Seq Scan on tenk1
+(4 rows)
+
+create trigger trg before insert on pi_plan_b_p1
+	for each row execute function trg_unsafe_fn();
+explain (costs off) execute pb;
+       QUERY PLAN        
+-------------------------
+ Insert on pi_plan_b
+   ->  Seq Scan on tenk1
+(2 rows)
+
+drop trigger trg on pi_plan_b_p1;
+explain (costs off) execute pb;
+               QUERY PLAN               
+----------------------------------------
+ Insert on pi_plan_b
+   ->  Gather
+         Workers Planned: 4
+         ->  Parallel Seq Scan on tenk1
+(4 rows)
+
+deallocate pb;
+-- altering the parallel safety of a function used in the plan invalidates
+-- the cached plan (via the pg_proc invalidation)
+create function alterable_fn(int) returns bool
+language plpgsql immutable parallel safe as $$
+begin
+	return $1 > 0;
+end; $$;
+create table pi_plan_c (a int, b name);
+prepare pc as insert into pi_plan_c select unique1, stringu1 from tenk1
+	where alterable_fn(unique1);
+explain (costs off) execute pc;
+                 QUERY PLAN                  
+---------------------------------------------
+ Insert on pi_plan_c
+   ->  Gather
+         Workers Planned: 4
+         ->  Parallel Seq Scan on tenk1
+               Filter: alterable_fn(unique1)
+(5 rows)
+
+alter function alterable_fn(int) parallel unsafe;
+explain (costs off) execute pc;
+              QUERY PLAN               
+---------------------------------------
+ Insert on pi_plan_c
+   ->  Seq Scan on tenk1
+         Filter: alterable_fn(unique1)
+(3 rows)
+
+deallocate pc;
+-- altering the parallel safety of a function that is only used by the
+-- target table's trigger invalidates the cached plan too: a function
+-- parallel-safety change invalidates all plans that consulted a target's
+-- hazard (intentionally coarse --- the plan is rebuilt even though this
+-- function might be unrelated to the plan's target); altering it back
+-- rebuilds the parallel plan
+create function trg_alterable_fn() returns trigger
+language plpgsql parallel safe as $$
+begin
+	return new;
+end; $$;
+create table pi_plan_d (a int, b name);
+create trigger trg before insert on pi_plan_d
+	for each row execute function trg_alterable_fn();
+prepare pd as insert into pi_plan_d select unique1, stringu1 from tenk1;
+explain (costs off) execute pd;
+               QUERY PLAN               
+----------------------------------------
+ Insert on pi_plan_d
+   ->  Gather
+         Workers Planned: 4
+         ->  Parallel Seq Scan on tenk1
+(4 rows)
+
+alter function trg_alterable_fn() parallel unsafe;
+explain (costs off) execute pd;
+       QUERY PLAN        
+-------------------------
+ Insert on pi_plan_d
+   ->  Seq Scan on tenk1
+(2 rows)
+
+alter function trg_alterable_fn() parallel safe;
+explain (costs off) execute pd;
+               QUERY PLAN               
+----------------------------------------
+ Insert on pi_plan_d
+   ->  Gather
+         Workers Planned: 4
+         ->  Parallel Seq Scan on tenk1
+(4 rows)
+
+execute pd;
+select count(*) from pi_plan_d;
+ count 
+-------
+ 10000
+(1 row)
+
+deallocate pd;
+-- the reverse direction also works: a plan built while the query's own
+-- function is parallel-unsafe (so the target's hazard was never even
+-- consulted) is rebuilt as a parallel plan when the function becomes
+-- parallel-safe
+create function unsafe_to_safe_fn(int) returns bool
+language plpgsql immutable parallel unsafe as $$
+begin
+	return $1 > 0;
+end; $$;
+prepare pe as insert into pi_plan_c select unique1, stringu1 from tenk1
+	where unsafe_to_safe_fn(unique1);
+explain (costs off) execute pe;
+                 QUERY PLAN                 
+--------------------------------------------
+ Insert on pi_plan_c
+   ->  Seq Scan on tenk1
+         Filter: unsafe_to_safe_fn(unique1)
+(3 rows)
+
+alter function unsafe_to_safe_fn(int) parallel safe;
+explain (costs off) execute pe;
+                    QUERY PLAN                    
+--------------------------------------------------
+ Insert on pi_plan_c
+   ->  Gather
+         Workers Planned: 4
+         ->  Parallel Seq Scan on tenk1
+               Filter: unsafe_to_safe_fn(unique1)
+(5 rows)
+
+deallocate pe;
+reset plan_cache_mode;
+-- clean up objects created outside the transaction block
+drop table pi_plan_a, pi_plan_b, pi_plan_c, pi_plan_d;
+drop function alterable_fn(int);
+drop function trg_alterable_fn();
+drop function unsafe_to_safe_fn(int);
+drop function fullname_parallel_unsafe(text, text);
+drop function fullname_parallel_restricted(text, text);
+drop function bdefault_unsafe();
+drop function cdefault_restricted();
+drop function trg_unsafe_fn();
+drop function trg_restricted_fn();
