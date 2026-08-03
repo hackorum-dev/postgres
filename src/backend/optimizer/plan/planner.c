@@ -386,6 +386,7 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	glob->lastPlanNodeId = 0;
 	glob->transientPlan = false;
 	glob->dependsOnRole = false;
+	glob->dependsOnParallelDmlSafety = false;
 	glob->partition_directory = NULL;
 	glob->rel_notnullatts_hash = NULL;
 
@@ -425,6 +426,19 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 		/* all the cheap tests pass, so scan the query tree */
 		glob->maxParallelHazard = max_parallel_hazard(parse);
 		glob->parallelModeOK = (glob->maxParallelHazard != PROPARALLEL_UNSAFE);
+
+		/*
+		 * For an INSERT ... SELECT admitted to parallel mode, remember that
+		 * this plan's parallel-safety assumptions can be invalidated later:
+		 * the plan may need to be rebuilt when the parallel DML safety of
+		 * the target relation changes.  The flag is deliberately also set
+		 * when the query tree itself was already parallel-unsafe (so the
+		 * plan is serial and the target's hazard was never consulted):
+		 * a function becoming parallel-safe later must still be able to
+		 * rebuild the plan, possibly into a parallel plan this time.
+		 */
+		if (is_parallel_allowed_for_modify(parse))
+			glob->dependsOnParallelDmlSafety = true;
 	}
 	else
 	{
@@ -668,6 +682,7 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	result->transientPlan = glob->transientPlan;
 	result->dependsOnRole = glob->dependsOnRole;
 	result->parallelModeNeeded = glob->parallelModeNeeded;
+	result->dependsOnParallelDmlSafety = glob->dependsOnParallelDmlSafety;
 	result->planTree = top_plan;
 	result->partPruneInfos = glob->partPruneInfos;
 	result->rtable = glob->finalrtable;

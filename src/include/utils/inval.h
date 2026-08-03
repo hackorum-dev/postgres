@@ -43,6 +43,7 @@ typedef void (*SyscacheCallbackFunction) (Datum arg, SysCacheIdentifier cacheid,
 										  uint32 hashvalue);
 typedef void (*RelcacheCallbackFunction) (Datum arg, Oid relid);
 typedef void (*RelSyncCallbackFunction) (Datum arg, Oid relid);
+typedef void (*ParallelDmlCallbackFunction) (Datum arg, Oid relId);
 
 
 extern void AcceptInvalidationMessages(void);
@@ -96,6 +97,11 @@ extern void CacheRegisterRelcacheCallback(RelcacheCallbackFunction func,
 
 extern void CacheRegisterRelSyncCallback(RelSyncCallbackFunction func,
 										 Datum arg);
+
+extern void CacheRegisterParallelDmlCallback(ParallelDmlCallbackFunction func,
+											 Datum arg);
+
+extern void CallParallelDmlCallbacks(Oid relId);
 
 extern void CallSyscacheCallbacks(SysCacheIdentifier cacheid, uint32 hashvalue);
 

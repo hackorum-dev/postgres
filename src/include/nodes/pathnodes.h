@@ -256,6 +256,9 @@ typedef struct PlannerGlobal
 	/* parallel mode actually required? */
 	bool		parallelModeNeeded;
 
+	/* did we consult a modify target's parallel DML safety? */
+	bool		dependsOnParallelDmlSafety;
+
 	/* worst PROPARALLEL hazard level */
 	char		maxParallelHazard;
 
