@@ -67,6 +67,7 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
@@ -1486,7 +1487,23 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 		procForm->prosupport = newsupport;
 	}
 	if (parallel_item)
-		procForm->proparallel = interpret_func_parallel(parallel_item);
+	{
+		char		proparallel = interpret_func_parallel(parallel_item);
+
+		/*
+		 * If the function's parallel safety changes, the parallel DML
+		 * safety hazard level cached in relcache for any table that uses
+		 * this function (e.g. in a trigger, constraint or index expression)
+		 * may no longer be accurate.  We intentionally don't try to track
+		 * down those tables (that would require additional locking and
+		 * visibility handling); instead, invalidate the cached hazard level
+		 * of all relcache entries in this database.
+		 */
+		if (proparallel != procForm->proparallel)
+			CacheInvalidateParallelDmlSafety(InvalidOid);
+
+		procForm->proparallel = proparallel;
+	}
 	if (set_items)
 	{
 		Datum		datum;

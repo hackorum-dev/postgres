@@ -1215,6 +1215,16 @@ CreateTriggerFiringOn(const CreateTrigStmt *stmt, const char *queryString,
 		MemoryContextDelete(perChildCxt);
 	}
 
+	/*
+	 * The parallel DML safety hazard levels cached in relcache for the
+	 * target relation's ancestors, if it is a partition, may have changed;
+	 * invalidate them.  (The relation's own cached value is already
+	 * discarded by the pg_class update above, which forces a relcache
+	 * rebuild.)  Note that relOid can be InvalidOid here (the relation was
+	 * then found by name), so use the opened relation's OID.
+	 */
+	CacheInvalidateParallelDmlSafetyForAncestors(RelationGetRelid(rel));
+
 	/* Keep lock on target rel until end of xact */
 	table_close(rel, NoLock);
 
@@ -1369,6 +1379,14 @@ RemoveTriggerById(Oid trigOid)
 	 * no triggers left.
 	 */
 	CacheInvalidateRelcache(rel);
+
+	/*
+	 * Dropping a trigger can also change the parallel DML safety hazard
+	 * levels cached for the relation's ancestors, if it is a partition.
+	 * (The relation's own cached value is already discarded by the relcache
+	 * invalidation above, so no message is needed for it.)
+	 */
+	CacheInvalidateParallelDmlSafetyForAncestors(relid);
 
 	/* Keep lock on trigger's rel until end of xact */
 	table_close(rel, NoLock);

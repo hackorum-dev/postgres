@@ -1294,6 +1294,15 @@ index_create(Relation heapRelation,
 	 */
 	index_close(indexRelation, NoLock);
 
+	/*
+	 * The parallel DML safety hazard levels cached in relcache for the heap
+	 * relation's ancestors, if it is a partition, may have changed;
+	 * invalidate them.  (The heap relation's own cached value is already
+	 * discarded by the pg_class update above, which forces a relcache
+	 * rebuild.)
+	 */
+	CacheInvalidateParallelDmlSafetyForAncestors(heapRelationId);
+
 	return indexRelationId;
 }
 
@@ -2423,6 +2432,15 @@ index_drop(Oid indexId, bool concurrent, bool concurrent_lock_mode)
 	 * concurrent case, this is redundant but harmless.)
 	 */
 	CacheInvalidateRelcache(userHeapRelation);
+
+	/*
+	 * Dropping the index can also change the parallel DML safety hazard
+	 * levels cached for the heap relation's ancestors, if it is a
+	 * partition.  (The heap relation's own cached value is already
+	 * discarded by the relcache invalidation above, so no message is needed
+	 * for it.)
+	 */
+	CacheInvalidateParallelDmlSafetyForAncestors(heapId);
 
 	/*
 	 * Close owning rel, but keep lock

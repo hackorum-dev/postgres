@@ -8033,6 +8033,15 @@ set_attnotnull(List **wqueue, Relation rel, AttrNumber attnum,
 	else
 	{
 		CacheInvalidateRelcache(rel);
+
+		/*
+		 * The parallel DML safety hazard levels cached in relcache for the
+		 * parent's ancestors, if any, were computed including the detached
+		 * partition, so they must be invalidated as well.  (The parent's own
+		 * cached value is already discarded by the relcache invalidation above,
+		 * so no message is needed for it.)
+		 */
+		CacheInvalidateParallelDmlSafetyForAncestors(RelationGetRelid(rel));
 	}
 }
 
@@ -21316,6 +21325,15 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd,
 	ObjectAddressSet(address, RelationRelationId, RelationGetRelid(attachrel));
 
 	/*
+	 * The parallel DML safety hazard levels cached in relcache for the
+	 * partitioned table's ancestors, if any, were computed without the new
+	 * partition, so they must be invalidated.  (The partitioned table's own
+	 * cached value is already discarded by the relcache invalidation in
+	 * StorePartitionBound, so no message is needed for it.)
+	 */
+	CacheInvalidateParallelDmlSafetyForAncestors(RelationGetRelid(rel));
+
+	/*
 	 * If the partition we just attached is partitioned itself, invalidate
 	 * relcache for all descendent partitions too to ensure that their
 	 * rd_partcheck expression trees are rebuilt; partitions already locked at
@@ -22165,6 +22183,15 @@ DetachPartitionFinalize(Relation rel, Relation partRel, bool concurrent,
 	 * included in its partition descriptor.
 	 */
 	CacheInvalidateRelcache(rel);
+
+	/*
+	 * The parallel DML safety hazard levels cached in relcache for the
+	 * parent's ancestors, if any, were computed including the detached
+	 * partition, so they must be invalidated as well.  (The parent's own
+	 * cached value is already discarded by the relcache invalidation above,
+	 * so no message is needed for it.)
+	 */
+	CacheInvalidateParallelDmlSafetyForAncestors(RelationGetRelid(rel));
 
 	/*
 	 * If the partition we just detached is partitioned itself, invalidate

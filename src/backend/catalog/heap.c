@@ -2715,6 +2715,15 @@ AddRelationNewConstraints(Relation rel,
 	 */
 	SetRelationNumChecks(rel, numchecks);
 
+	/*
+	 * Adding a constraint or column default can change the parallel DML
+	 * safety hazard levels cached for the relation's ancestors, if it is a
+	 * partition.  (The relation's own cached value is already discarded by
+	 * the pg_class/pg_attribute updates above, which force a relcache
+	 * rebuild, so no message is needed for it.)
+	 */
+	CacheInvalidateParallelDmlSafetyForAncestors(RelationGetRelid(rel));
+
 	return cookedConstraints;
 }
 

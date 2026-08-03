@@ -24,6 +24,7 @@
 #include "catalog/pg_attrdef.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/inval.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
@@ -264,6 +265,15 @@ RemoveAttrDefaultById(Oid attrdefId)
 	 * there's nothing else to do here.
 	 */
 	table_close(attr_rel, RowExclusiveLock);
+
+	/*
+	 * Dropping a column default can change the parallel DML safety hazard
+	 * levels cached for the relation's ancestors, if it is a partition.
+	 * (The relation's own cached value is already discarded by the
+	 * pg_attribute update above, which forces a relcache rebuild, so no
+	 * message is needed for it.)
+	 */
+	CacheInvalidateParallelDmlSafetyForAncestors(myrelid);
 
 	/* Keep lock on attribute's rel until end of xact */
 	relation_close(myrel, NoLock);

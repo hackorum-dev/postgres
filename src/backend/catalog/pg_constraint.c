@@ -32,6 +32,7 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -985,6 +986,17 @@ RemoveConstraintById(Oid conId)
 
 	/* Fry the constraint itself */
 	CatalogTupleDelete(conDesc, &tup->t_self);
+
+	/*
+	 * Dropping the constraint can change the parallel DML safety hazard
+	 * level cached in relcache: for a table constraint, invalidate the
+	 * cached value of the table and, if it is a partition, its ancestors
+	 * (whose cached values are computed recursively over their partitions).
+	 * Domain constraints are not part of the cached hazard level, so there
+	 * is nothing to do for them.
+	 */
+	if (OidIsValid(con->conrelid))
+		CacheInvalidateParallelDmlSafetyForAncestors(con->conrelid);
 
 	/* Clean up */
 	ReleaseSysCache(tup);
