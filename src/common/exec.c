@@ -33,6 +33,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #ifdef EXEC_BACKEND
 #if defined(HAVE_SYS_PERSONALITY_H)
@@ -43,6 +44,7 @@
 #endif
 
 #include "common/string.h"
+#include "lib/stringinfo.h"
 
 /* Inhibit mingw CRT's auto-globbing of command line arguments */
 #if defined(WIN32) && !defined(_MSC_VER)
@@ -711,3 +713,60 @@ GetTokenUser(HANDLE hToken, PTOKEN_USER *ppTokenUser)
 }
 
 #endif
+
+/*
+ * pg_split_opts -- split a string of options and append it to an argv array
+ *
+ * The caller is responsible for ensuring the argv array is large enough.  The
+ * maximum possible number of arguments added by this routine is
+ * (strlen(optstr) + 1) / 2.
+ *
+ * Because some option values can contain spaces we allow escaping using
+ * backslashes, with \\ representing a literal backslash.
+ */
+void
+pg_split_opts(char **argv, int *argcp, const char *optstr)
+{
+	StringInfoData s;
+
+	initStringInfo(&s);
+
+	while (*optstr)
+	{
+		bool		last_was_escape = false;
+
+		resetStringInfo(&s);
+
+		/* skip over leading space */
+		while (isspace((unsigned char) *optstr))
+			optstr++;
+
+		if (*optstr == '\0')
+			break;
+
+		/*
+		 * Parse a single option, stopping at the first space, unless it's
+		 * escaped.
+		 */
+		while (*optstr)
+		{
+			if (isspace((unsigned char) *optstr) && !last_was_escape)
+				break;
+
+			if (!last_was_escape && *optstr == '\\')
+				last_was_escape = true;
+			else
+			{
+				last_was_escape = false;
+				appendStringInfoChar(&s, *optstr);
+			}
+
+			optstr++;
+		}
+
+		/* now store the option in the next argv[] position */
+		argv[(*argcp)++] = pstrdup(s.data);
+	}
+
+	pfree(s.data);
+}
