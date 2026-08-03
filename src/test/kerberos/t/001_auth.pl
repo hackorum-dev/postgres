@@ -175,7 +175,7 @@ $node->append_conf(
 local all test2 scram-sha-256
 host all all $hostaddr/32 gss map=mymap
 });
-$node->restart;
+$node->reload;
 
 test_access($node, 'test1', 'SELECT true', 2, '', 'fails without ticket');
 
@@ -192,7 +192,7 @@ test_access(
 	"no match in usermap \"mymap\" for user \"test1\"");
 
 $node->append_conf('pg_ident.conf', qq{mymap  /^(.*)\@$realm\$  \\1});
-$node->restart;
+$node->reload;
 
 test_access(
 	$node,
@@ -346,7 +346,7 @@ test_access(
 );
 
 $node->append_conf('postgresql.conf', qq{gss_accept_delegation=off});
-$node->restart;
+$node->reload;
 
 test_access(
 	$node,
@@ -370,7 +370,7 @@ test_access(
 );
 
 $node->append_conf('postgresql.conf', qq{gss_accept_delegation=on});
-$node->restart;
+$node->reload;
 
 test_access(
 	$node,
@@ -510,7 +510,7 @@ $node->append_conf(
     local all test2 scram-sha-256
 	hostnogssenc all all $hostaddr/32 gss map=mymap
 });
-$node->restart;
+$node->reload;
 
 test_access(
 	$node,
@@ -602,7 +602,7 @@ $node->append_conf(
     local all test2 scram-sha-256
 	host all all $hostaddr/32 gss include_realm=0
 });
-$node->restart;
+$node->reload;
 
 test_access(
 	$node,
@@ -637,7 +637,7 @@ $node->append_conf(
     local all test2 scram-sha-256
 	host all all $hostaddr/32 gss include_realm=0 krb_realm=EXAMPLE.ORG
 });
-$node->restart;
+$node->reload;
 
 test_access(
 	$node,
