@@ -46,12 +46,6 @@ typedef struct PartitionDescData
 	int			last_found_datum_index;
 
 	/*
-	 * Partition index of the last found partition or -1 if none has been
-	 * found yet.
-	 */
-	int			last_found_part_index;
-
-	/*
 	 * For LIST partitioning, this is the number of times in a row that the
 	 * datum we're looking for a partition for matches the datum in the
 	 * last_found_datum_index index of the boundinfo->datums array.  For RANGE

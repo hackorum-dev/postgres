@@ -1772,7 +1772,6 @@ get_partition_for_tuple(PartitionDispatch pd, const Datum *values, const bool *i
 	else
 	{
 		partdesc->last_found_count = 1;
-		partdesc->last_found_part_index = part_index;
 		partdesc->last_found_datum_index = bound_offset;
 	}
 
