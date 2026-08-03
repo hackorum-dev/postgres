@@ -918,6 +918,8 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 			maxoff = PageGetMaxOffsetNumber(page);
 			LockBuffer(buffer, GIN_UNLOCK);
 
+			vacuum_delay_point(false);
+
 			/*
 			 * Moving collected data into regular structure can take
 			 * significant amount of time - so, run it without locking pending
