@@ -156,12 +156,32 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
             <para><command>SELECT INTO</command></para>
           </listitem>
           <listitem>
+            <para><command>INSERT INTO ... SELECT</command></para>
+          </listitem>
+          <listitem>
             <para><command>CREATE MATERIALIZED VIEW</command></para>
           </listitem>
           <listitem>
             <para><command>REFRESH MATERIALIZED VIEW</command></para>
           </listitem>
         </itemizedlist>
+
+        Note that <command>INSERT INTO ... SELECT</command> can use a
+        parallel plan for the underlying <literal>SELECT</literal> part of
+        the query only if the query has no <literal>ON CONFLICT ... DO
+        UPDATE</literal> clause and the target table is parallel-safe. All
+        writes are performed by the leader backend, but it must be possible
+        to run in parallel mode while modifying the target table, so the
+        table must not have any parallel-unsafe triggers, index expressions
+        or predicates, check constraints, column default
+        expressions, or partition key expressions (a parallel-restricted
+        construct does not prevent this, since it is only evaluated in the
+        leader).  For an <command>INSERT</command> into a partitioned table,
+        every partition must be parallel-safe as well. If an unsafe object is
+        added to a partition while such a query is executing, for
+        example, by a concurrent <command>CREATE TRIGGER</command> — the
+        query detects this before inserting into that partition and
+        fails with an error.
       </para>
     </listitem>
 

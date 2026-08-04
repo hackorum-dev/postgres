@@ -160,8 +160,10 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 * would require (a) storing the combo CID hash in shared memory, rather
 	 * than synchronizing it just once at the start of parallelism, and (b) an
 	 * alternative to heap_update()'s reliance on xmax for mutual exclusion.
-	 * INSERT may have no such troubles, but we forbid it to simplify the
-	 * checks.
+	 * INSERT has no such troubles, but it is only allowed for a top-level
+	 * INSERT ... SELECT that enters parallel mode after this check; a
+	 * command that is started while already in parallel mode (e.g. from a
+	 * function running in a worker) must not write.
 	 *
 	 * We have lower-level defenses in CommandCounterIncrement and elsewhere
 	 * against performing unsafe operations in parallel mode, but this gives a
@@ -1757,7 +1759,10 @@ ExecutePlan(QueryDesc *queryDesc,
 
 	estate->es_use_parallel_mode = use_parallel_mode;
 	if (use_parallel_mode)
+	{
+		PrepareParallelModePlanExec(queryDesc->plannedstmt->commandType);
 		EnterParallelMode();
+	}
 
 	/*
 	 * Loop until we've processed the proper number of tuples from the plan.
