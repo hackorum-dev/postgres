@@ -88,6 +88,38 @@ sigint_handler(SIGNAL_ARGS)
 }
 #endif
 
+#define MAXPG_LSNCOMPONENT	8
+
+/*
+ * Parse an LSN in the "%X/%X" format used for pg_lsn values, requiring
+ * one to eight hex digits in each component and nothing else, as the
+ * backend's pg_lsn_in_safe() does.  sscanf() is not strict enough here:
+ * its %X conversion has no field-width bound, so a component wider than
+ * 32 bits silently overflows the uint32 argument, and it also accepts
+ * leading whitespace, signs, "0x" prefixes, and trailing garbage.
+ *
+ * Returns true and sets *lsn on success.
+ */
+static bool
+parse_wal_location(const char *str, XLogRecPtr *lsn)
+{
+	int			len1,
+				len2;
+
+	len1 = strspn(str, "0123456789abcdefABCDEF");
+	if (len1 < 1 || len1 > MAXPG_LSNCOMPONENT || str[len1] != '/')
+		return false;
+
+	len2 = strspn(str + len1 + 1, "0123456789abcdefABCDEF");
+	if (len2 < 1 || len2 > MAXPG_LSNCOMPONENT || str[len1 + 1 + len2] != '\0')
+		return false;
+
+	*lsn = ((uint64) strtoul(str, NULL, 16)) << 32 |
+		(uint32) strtoul(str + len1 + 1, NULL, 16);
+
+	return true;
+}
+
 static void
 print_rmgr_list(void)
 {
@@ -928,8 +960,6 @@ usage(void)
 int
 main(int argc, char **argv)
 {
-	uint32		xlogid;
-	uint32		xrecoff;
 	XLogReaderState *xlogreader_state;
 	XLogDumpPrivate private;
 	XLogDumpConfig config;
@@ -1047,13 +1077,12 @@ main(int argc, char **argv)
 				config.filter_by_extended = true;
 				break;
 			case 'e':
-				if (sscanf(optarg, "%X/%08X", &xlogid, &xrecoff) != 2)
+				if (!parse_wal_location(optarg, &private.endptr))
 				{
 					pg_log_error("invalid WAL location: \"%s\"",
 								 optarg);
 					goto bad_argument;
 				}
-				private.endptr = (uint64) xlogid << 32 | xrecoff;
 				break;
 			case 'f':
 				config.follow = true;
@@ -1145,14 +1174,12 @@ main(int argc, char **argv)
 				config.filter_by_extended = true;
 				break;
 			case 's':
-				if (sscanf(optarg, "%X/%08X", &xlogid, &xrecoff) != 2)
+				if (!parse_wal_location(optarg, &private.startptr))
 				{
 					pg_log_error("invalid WAL location: \"%s\"",
 								 optarg);
 					goto bad_argument;
 				}
-				else
-					private.startptr = (uint64) xlogid << 32 | xrecoff;
 				break;
 			case 't':
 
