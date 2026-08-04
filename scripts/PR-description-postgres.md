@@ -42,14 +42,21 @@ prefer a different compatibility story.
 - `src/bin/psql/common.c` — `SHELL_EXIT` tracking
 - `src/bin/psql/command.c` — connect hook
 - `src/bin/psql/mainloop.c`, `startup.c`, `help.c`
+- `src/bin/psql/t/040_prompt_command.pl` — TAP coverage
+- `src/bin/psql/meson.build` — register TAP test
 - `src/bin/psql/powerline-integration.md` — integration notes (not installed)
 
 ## Testing
 
-Manual: interactive psql with `PROMPT_COMMAND`, `%D`, `\c`, failed SQL,
-`\!`, and readline editing (e.g. `\c postgres` must retain spaces).
+TAP: `src/bin/psql/t/040_prompt_command.pl` (also listed in `meson.build`).
 
-Suggested follow-up: TAP test for `%D` and `SHELL_EXIT` in `src/bin/psql/t/`.
+- `SHELL_EXIT` after SQL success/failure and `\!`
+- `\connect` reset of `ROW_COUNT` / `SHELL_EXIT`
+- Interactive `PROMPT_COMMAND` + `%D`, first-line capture, unset behavior
+- `PROMPT_SESSION_EXPORT` on/off gating of `PSQL_*` export
+- Confirm `PROMPT_COMMAND` does not overwrite `SHELL_EXIT`
+
+Manual (optional visual): interactive psql with powerline, `\c`, failed SQL.
 
 ## Example
 
