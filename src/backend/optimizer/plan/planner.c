@@ -392,18 +392,22 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	/*
 	 * Assess whether it's feasible to use parallel mode for this query. We
 	 * can't do this in a standalone backend, or if the command will try to
-	 * modify any data, or if this is a cursor operation, or if GUCs are set
-	 * to values that don't permit parallelism, or if parallel-unsafe
-	 * functions are present in the query tree.
+	 * modify any data (except for INSERT ... SELECT), or if this is a
+	 * cursor operation, or if GUCs are set to values that don't permit
+	 * parallelism, or if parallel-unsafe functions are present in the query
+	 * tree.
 	 *
-	 * (Note that we do allow CREATE TABLE AS, SELECT INTO, and CREATE
-	 * MATERIALIZED VIEW to use parallel plans, but this is safe only because
-	 * the command is writing into a completely new table which workers won't
-	 * be able to see.  If the workers could see the table, the fact that
-	 * group locking would cause them to ignore the leader's heavyweight GIN
-	 * page locks would make this unsafe.  We'll have to fix that somehow if
-	 * we want to allow parallel inserts in general; updates and deletes have
-	 * additional problems especially around combo CIDs.)
+	 * (Note that we do allow CREATE TABLE AS, INSERT INTO ... SELECT,
+	 * SELECT INTO, and CREATE MATERIALIZED VIEW to use parallel plans for
+	 * the underlying SELECT.  For INSERT INTO ... SELECT, this is safe only
+	 * because the leader backend performs all the writes, and only when the
+	 * target table has no parallel-unsafe objects attached to it (this is
+	 * checked in max_parallel_hazard, using the hazard level cached in the
+	 * target table's relcache entry).  If the workers could see the table,
+	 * the fact that group locking would cause them to ignore the leader's
+	 * heavyweight GIN page locks would make this unsafe.  We'll have to fix
+	 * that somehow if we want to allow parallel inserts in general; updates
+	 * and deletes have additional problems especially around combo CIDs.)
 	 *
 	 * For now, we don't try to use parallel mode if we're running inside a
 	 * parallel worker.  We might eventually be able to relax this
@@ -412,7 +416,8 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	 */
 	if ((cursorOptions & CURSOR_OPT_PARALLEL_OK) != 0 &&
 		IsUnderPostmaster &&
-		parse->commandType == CMD_SELECT &&
+		(parse->commandType == CMD_SELECT ||
+		 is_parallel_allowed_for_modify(parse)) &&
 		!parse->hasModifyingCTE &&
 		max_parallel_workers_per_gather > 0 &&
 		!IsParallelWorker())
