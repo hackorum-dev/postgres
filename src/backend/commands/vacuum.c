@@ -2458,6 +2458,9 @@ vacuum_delay_point(bool is_analyze)
 {
 	double		msec = 0;
 
+	Assert(InterruptHoldoffCount == 0);
+	Assert(CritSectionCount == 0);
+
 	/* Always check for interrupts */
 	CHECK_FOR_INTERRUPTS();
 
