@@ -4,6 +4,16 @@ This document describes optional prompt features added for dynamic prompt
 generation (similar in spirit to bash `PROMPT_COMMAND`) and their companion
 implementation in the [powerline](https://github.com/powerline/powerline) project.
 
+## Testing
+
+Automated coverage lives in `src/bin/psql/t/040_prompt_command.pl` (TAP):
+
+- `SHELL_EXIT` after SQL success/failure and `\!`
+- `\connect` reset of `ROW_COUNT` / `SHELL_EXIT`
+- Interactive `PROMPT_COMMAND` + `%D`, first-line capture, unset behavior
+- `PROMPT_SESSION_EXPORT` on/off gating of `PSQL_*` export
+- Confirm `PROMPT_COMMAND` does not overwrite `SHELL_EXIT`
+
 ## Backward compatibility
 
 All behavior is **opt-in**.  With no `.psqlrc` changes, psql behaves as before
