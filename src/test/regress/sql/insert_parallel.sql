@@ -1,0 +1,206 @@
+--
+-- PARALLEL INSERT ... SELECT
+--
+
+--
+-- START: setup some functions needed by the tests.
+--
+
+-- For testing purposes, we'll mark these functions as parallel-unsafe or
+-- parallel-restricted; plpgsql so that they are not inlined into the
+-- stored expressions
+create function fullname_parallel_unsafe(f text, l text) returns text
+language plpgsql immutable parallel unsafe as $$
+begin
+	return f || l;
+end; $$;
+
+create function fullname_parallel_restricted(f text, l text) returns text
+language plpgsql immutable parallel restricted as $$
+begin
+	return f || l;
+end; $$;
+
+create function bdefault_unsafe() returns int
+language plpgsql parallel unsafe as $$
+begin
+	return 5;
+end; $$;
+
+create function cdefault_restricted() returns int
+language plpgsql parallel restricted as $$
+begin
+	return 10;
+end; $$;
+
+create function trg_unsafe_fn() returns trigger
+language plpgsql parallel unsafe as $$
+begin
+	return new;
+end; $$;
+
+create function trg_restricted_fn() returns trigger
+language plpgsql parallel restricted as $$
+begin
+	return new;
+end; $$;
+
+--
+-- END: setup.
+--
+
+begin;
+
+-- encourage use of parallel plans
+set parallel_setup_cost = 0;
+set parallel_tuple_cost = 0;
+set min_parallel_table_scan_size = 0;
+set max_parallel_workers_per_gather = 4;
+
+-- force seq scans, for deterministic plans
+set enable_indexonlyscan = off;
+set enable_indexscan = off;
+set enable_bitmapscan = off;
+
+--
+-- A plain target table has no parallel-unsafe objects, so the SELECT part
+-- can be parallelized.
+--
+create table para_insert (a int, b name);
+
+explain (costs off) insert into para_insert select unique1, stringu1 from tenk1;
+insert into para_insert select unique1, stringu1 from tenk1;
+
+-- select some values to verify that the parallel insert worked
+select count(*), sum(a) from para_insert;
+-- verify that the same transaction and command has been used for all rows
+select count(*) from (select distinct cmin, xmin from para_insert) as dt;
+
+-- INSERT ... VALUES (no underlying SELECT) can't be parallelized
+explain (costs off) insert into para_insert values (1, 'one');
+
+-- a parallel-unsafe function in the SELECT part can't be parallelized
+explain (costs off)
+insert into para_insert select unique1, fullname_parallel_unsafe(stringu1, 'x') from tenk1;
+
+--
+-- A parallel-unsafe trigger on the target table prevents parallel SELECT.
+--
+create trigger trg before insert on para_insert
+	for each row execute function trg_unsafe_fn();
+explain (costs off) insert into para_insert select unique1, stringu1 from tenk1;
+-- dropping it makes the target parallel-safe again
+drop trigger trg on para_insert;
+explain (costs off) insert into para_insert select unique1, stringu1 from tenk1;
+
+--
+-- A parallel-restricted trigger on the target table still allows parallel
+-- SELECT; the trigger fires in the leader.
+--
+create trigger trg before insert on para_insert
+	for each row execute function trg_restricted_fn();
+explain (costs off) insert into para_insert select unique1, stringu1 from tenk1;
+drop trigger trg on para_insert;
+
+--
+-- A parallel-unsafe check constraint on the target table prevents
+-- parallel SELECT.
+--
+alter table para_insert add constraint chk_u check (fullname_parallel_unsafe(b, 'x') <> '');
+explain (costs off) insert into para_insert select unique1, stringu1 from tenk1;
+alter table para_insert drop constraint chk_u;
+explain (costs off) insert into para_insert select unique1, stringu1 from tenk1;
+
+--
+-- A parallel-unsafe index expression on the target table prevents
+-- parallel SELECT.
+--
+create index para_insert_unsafe_idx on para_insert (fullname_parallel_unsafe(b, 'x'));
+explain (costs off) insert into para_insert select unique1, stringu1 from tenk1;
+drop index para_insert_unsafe_idx;
+explain (costs off) insert into para_insert select unique1, stringu1 from tenk1;
+
+--
+-- Column defaults are checked: an unsafe default prevents parallel SELECT,
+-- while a restricted one is allowed (defaults are evaluated in the leader).
+--
+create table testdef (a int,
+					  b int default bdefault_unsafe(),
+					  c int default cdefault_restricted());
+explain (costs off) insert into testdef select unique1 from tenk1;
+alter table testdef alter column b drop default;
+explain (costs off) insert into testdef select unique1 from tenk1;
+
+--
+-- For an INSERT into a partitioned table, every partition must be
+-- parallel-safe.
+--
+create table part_para_insert (a int) partition by range (a);
+create table part_para_insert_p1 partition of part_para_insert
+	for values from (0) to (5000);
+create table part_para_insert_p2 partition of part_para_insert
+	for values from (5000) to (10000);
+
+explain (costs off) insert into part_para_insert select unique1 from tenk1;
+insert into part_para_insert select unique1 from tenk1;
+select count(*) from part_para_insert;
+
+-- inserting into a partition directly is fine too
+explain (costs off) insert into part_para_insert_p1 select unique1 from tenk1;
+
+-- a pre-existing unsafe trigger on one partition prevents parallel SELECT
+-- into the parent
+create table part_para_unsafe (a int) partition by range (a);
+create table part_para_unsafe_p1 partition of part_para_unsafe
+	for values from (0) to (10000);
+create trigger trg before insert on part_para_unsafe_p1
+	for each row execute function trg_unsafe_fn();
+explain (costs off) insert into part_para_unsafe select unique1 from tenk1;
+
+--
+-- Changing a function's parallel safety invalidates the cached safety of
+-- the target table.
+--
+create function alterable_fn(int) returns bool
+language plpgsql immutable parallel safe as $$
+begin
+	return $1 > 0;
+end; $$;
+
+create table fn_para_insert (a int check (alterable_fn(a)));
+explain (costs off) insert into fn_para_insert select unique1 from tenk1;
+alter function alterable_fn(int) parallel unsafe;
+explain (costs off) insert into fn_para_insert select unique1 from tenk1;
+alter function alterable_fn(int) parallel safe;
+explain (costs off) insert into fn_para_insert select unique1 from tenk1;
+
+--
+-- INSERT ... ON CONFLICT DO UPDATE can't be parallelized, because UPDATE is
+-- not supported in parallel mode; ON CONFLICT DO NOTHING can.
+--
+create table para_insert_pk (a int primary key, b name);
+explain (costs off)
+insert into para_insert_pk select unique1, stringu1 from tenk1
+	on conflict (a) do update set b = excluded.b;
+explain (costs off)
+insert into para_insert_pk select unique1, stringu1 from tenk1
+	on conflict (a) do nothing;
+
+--
+-- A temporary or foreign target table is parallel-restricted: only the
+-- leader can modify it, but the SELECT part can still be parallelized.
+--
+create temp table temp_para_insert (a int);
+explain (costs off) insert into temp_para_insert select unique1 from tenk1;
+
+--
+-- Forcing parallel mode when the plan has no Gather must work too; the
+-- transaction ID has to be assigned before entering parallel mode.
+--
+set debug_parallel_query = on;
+explain (costs off) insert into para_insert select i, 'x'::name from generate_series(1, 10) i;
+insert into para_insert select i, 'x'::name from generate_series(1, 10) i;
+select count(*) from para_insert;
+set debug_parallel_query = off;
+
+rollback;
