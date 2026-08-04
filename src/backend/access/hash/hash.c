@@ -797,6 +797,10 @@ hashbucketcleanup(Relation rel, Bucket cur_bucket, Buffer bucket_buf,
 		bool		retain_pin = false;
 		bool		clear_dead_marking = false;
 
+		/*
+		 * VACUUM_DELAY_POINT_WITH_INTERRUPTS_HELD: the caller holds a cleanup
+		 * lock on the primary bucket, and we chain-lock overflow pages.
+		 */
 		vacuum_delay_point(false);
 
 		page = BufferGetPage(buf);
