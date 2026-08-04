@@ -1,0 +1,20 @@
+Parsed test spec with 2 sessions
+
+starting permutation: lb llock iset iins ltrg lc
+step lb: BEGIN;
+step llock: SELECT pg_advisory_xact_lock(1);
+pg_advisory_xact_lock
+---------------------
+                     
+(1 row)
+
+step iset: SET debug_parallel_query = on;
+step iins: INSERT INTO pi_root
+			  SELECT CASE WHEN i = 1 THEN 50 ELSE 1 END
+			  FROM generate_series(1, 2) i
+			  WHERE (i <> 1 OR pg_advisory_lock(1) IS NOT NULL); <waiting ...>
+step ltrg: CREATE TRIGGER trg_bad BEFORE INSERT ON pi_p1
+			  FOR EACH ROW EXECUTE FUNCTION pi_unsafe_fn();
+step lc: COMMIT;
+step iins: <... completed>
+ERROR:  cannot execute INSERT with a parallel plan on relation "pi_p1"

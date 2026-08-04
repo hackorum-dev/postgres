@@ -18,12 +18,14 @@
 #include "access/tupconvert.h"
 #include "catalog/index.h"
 #include "catalog/partition.h"
+#include "catalog/pg_proc.h"
 #include "executor/execPartition.h"
 #include "executor/executor.h"
 #include "executor/nodeModifyTable.h"
 #include "foreign/fdwapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "optimizer/clauses.h"
 #include "partitioning/partbounds.h"
 #include "partitioning/partdesc.h"
 #include "partitioning/partprune.h"
@@ -587,6 +589,30 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 					  0,
 					  rootResultRelInfo,
 					  estate->es_instrument);
+
+	/*
+	 * When in parallel mode, the partition must be safe to modify in
+	 * parallel mode.  The planner checked the target relation as a whole
+	 * using the hazard level cached in its relcache entry, but that check
+	 * can be out of date: adding a parallel-unsafe object to a partition
+	 * does not lock the partition's ancestors, so neither the invalidation
+	 * of the ancestors' cached hazard level nor the invalidation of cached
+	 * plans is ensured to be processed in time by a backend running a
+	 * parallel INSERT.  A transaction committing such a change
+	 * concurrently can slip it in after the plan was made (or even after
+	 * execution started, with the invalidation being processed
+	 * mid-execution, e.g. while this statement was waiting for a lock).
+	 * Recheck the partition's own cached hazard level now, once per
+	 * partition per execution rather than per row, and error out rather
+	 * than risk modifying an unsafe partition in parallel mode.
+	 */
+	if (IsInParallelMode() &&
+		RelationGetParallelDmlSafety(partrel) == PROPARALLEL_UNSAFE)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TRANSACTION_STATE),
+				 errmsg("cannot execute INSERT with a parallel plan on relation \"%s\"",
+						RelationGetRelationName(partrel)),
+				 errdetail("The relation has parallel-unsafe objects, which may have appeared after the plan was made.")));
 
 	/*
 	 * Verify result relation is a valid target for an INSERT.  An UPDATE of a
