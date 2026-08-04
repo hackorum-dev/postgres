@@ -797,6 +797,9 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 	bool		fsm_vac = false;
 	int			workMemory;
 
+	/* Delay or accept interrupts before acquiring the pending-list locks. */
+	vacuum_delay_point(false);
+
 	/*
 	 * We would like to prevent concurrent cleanup process. For that we will
 	 * lock metapage in exclusive mode using LockPage() call. Nobody other
@@ -891,8 +894,6 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 		 * read page's datums into accum
 		 */
 		processPendingPage(&accum, &datums, page, FirstOffsetNumber);
-
-		vacuum_delay_point(false);
 
 		/*
 		 * Is it time to flush memory to disk?	Flush if we are at the end of
