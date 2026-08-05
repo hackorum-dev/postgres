@@ -618,6 +618,21 @@ REPACK t;
 SELECT * FROM t ORDER BY id;
 DROP TABLE t;
 
+CREATE TABLE t_missing_wholerow (rid int NOT NULL, nul "char");
+INSERT INTO t_missing_wholerow (rid) VALUES (5), (6);
+ALTER TABLE t_missing_wholerow ADD COLUMN m0 int NOT NULL DEFAULT 40;
+ALTER TABLE t_missing_wholerow ADD COLUMN m1 bigint NOT NULL DEFAULT 41;
+SELECT rid, m0, m1 FROM t_missing_wholerow ORDER BY rid;
+SELECT x::text FROM t_missing_wholerow x ORDER BY 1;
+SELECT x.m0, x::text FROM t_missing_wholerow x ORDER BY 1;
+-- reading the second added column first is not affected
+SELECT x.m1, x::text FROM t_missing_wholerow x ORDER BY 1;
+-- the whole-row value is stored, not only returned
+CREATE TABLE t_missing_copy AS
+    SELECT x.m0 AS direct, x::text AS whole_row FROM t_missing_wholerow x;
+SELECT * FROM t_missing_copy ORDER BY 1;
+DROP TABLE t_missing_copy, t_missing_wholerow;
+
 -- cleanup
 DROP FOREIGN TABLE ft1;
 DROP SERVER s0;

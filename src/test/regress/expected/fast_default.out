@@ -944,6 +944,50 @@ SELECT * FROM t ORDER BY id;
 (3 rows)
 
 DROP TABLE t;
+CREATE TABLE t_missing_wholerow (rid int NOT NULL, nul "char");
+INSERT INTO t_missing_wholerow (rid) VALUES (5), (6);
+ALTER TABLE t_missing_wholerow ADD COLUMN m0 int NOT NULL DEFAULT 40;
+ALTER TABLE t_missing_wholerow ADD COLUMN m1 bigint NOT NULL DEFAULT 41;
+SELECT rid, m0, m1 FROM t_missing_wholerow ORDER BY rid;
+ rid | m0 | m1 
+-----+----+----
+   5 | 40 | 41
+   6 | 40 | 41
+(2 rows)
+
+SELECT x::text FROM t_missing_wholerow x ORDER BY 1;
+     x      
+------------
+ (5,,40,41)
+ (6,,40,41)
+(2 rows)
+
+SELECT x.m0, x::text FROM t_missing_wholerow x ORDER BY 1;
+ m0 |     x      
+----+------------
+ 40 | (5,,40,41)
+ 40 | (6,,40,41)
+(2 rows)
+
+-- reading the second added column first is not affected
+SELECT x.m1, x::text FROM t_missing_wholerow x ORDER BY 1;
+ m1 |     x      
+----+------------
+ 41 | (5,,40,41)
+ 41 | (6,,40,41)
+(2 rows)
+
+-- the whole-row value is stored, not only returned
+CREATE TABLE t_missing_copy AS
+    SELECT x.m0 AS direct, x::text AS whole_row FROM t_missing_wholerow x;
+SELECT * FROM t_missing_copy ORDER BY 1;
+ direct | whole_row  
+--------+------------
+     40 | (5,,40,41)
+     40 | (6,,40,41)
+(2 rows)
+
+DROP TABLE t_missing_copy, t_missing_wholerow;
 -- cleanup
 DROP FOREIGN TABLE ft1;
 DROP SERVER s0;
