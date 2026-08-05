@@ -2262,6 +2262,7 @@ main(int argc, char **argv)
 
 	int			c;
 	int			option_index;
+	bool		duplicate_sub_name = false;
 
 	char	   *pub_base_conninfo;
 	char	   *sub_base_conninfo;
@@ -2394,13 +2395,10 @@ main(int argc, char **argv)
 					pg_fatal("replication slot \"%s\" specified more than once for --replication-slot", optarg);
 				break;
 			case 4:
-				if (!simple_string_list_member(&opt.sub_names, optarg))
-				{
-					simple_string_list_append(&opt.sub_names, optarg);
-					num_subs++;
-				}
-				else
-					pg_fatal("subscription \"%s\" specified more than once for --subscription", optarg);
+				if (simple_string_list_member(&opt.sub_names, optarg))
+					duplicate_sub_name = true;
+				simple_string_list_append(&opt.sub_names, optarg);
+				num_subs++;
 				break;
 			case 5:
 				if (!simple_string_list_member(&opt.objecttypes_to_clean, optarg))
@@ -2585,6 +2583,12 @@ main(int argc, char **argv)
 		pg_log_error("wrong number of replication slot names specified");
 		pg_log_error_detail("The number of specified replication slot names (%d) must match the number of specified database names (%d).",
 							num_replslots, num_dbs);
+		exit(1);
+	}
+	if (duplicate_sub_name && num_replslots == 0)
+	{
+		pg_log_error("duplicate subscription names require replication slot names");
+		pg_log_error_hint("Specify --replication-slot for each database.");
 		exit(1);
 	}
 
