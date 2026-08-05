@@ -91,6 +91,17 @@ typedef struct PgStat_FunctionCounts
 } PgStat_FunctionCounts;
 
 /*
+ * Pending function stats stored in PgStat_EntryRef->pending.
+ * Keeps cumulative counts (read by pg_stat_xact_user_functions) and a
+ * flushed baseline so that flush callbacks send only the delta.
+ */
+typedef struct PgStat_FunctionStatus
+{
+	PgStat_FunctionCounts counts;
+	PgStat_FunctionCounts flushed;
+} PgStat_FunctionStatus;
+
+/*
  * Working state needed to accumulate per-function-call timing statistics.
  */
 typedef struct PgStat_FunctionCallUsage
@@ -183,6 +194,8 @@ typedef struct PgStat_TableStatus
 	bool		shared;			/* is it a shared catalog? */
 	struct PgStat_TableXactStatus *trans;	/* lowest subxact's counts */
 	PgStat_TableCounts counts;	/* event counts to be sent */
+	PgStat_TableCounts flushed; /* already-flushed baseline for delta
+								 * computation */
 	Relation	relation;		/* rel that is using this entry */
 } PgStat_TableStatus;
 

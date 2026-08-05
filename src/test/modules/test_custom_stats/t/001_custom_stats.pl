@@ -168,5 +168,39 @@ $result = $node->safe_psql('postgres',
 );
 is($result, "0", "report of fixed-sized after manual reset");
 
+# Test cascade flush (A -> B -> C).  A's flush accumulates into B, B's flush
+# accumulates into C, and pgStatPendingFlushExtra drives the extra passes.
+# Seed B and C on the pending list before A to exercise the ordering case
+# where dependent entries are visited before the entry that produces them.
+$node->safe_psql('postgres',
+	q(select test_custom_stats_var_create('cascade_test', 'cascade test')));
+
+my $b_before = $node->safe_psql('postgres',
+	q(SELECT coalesce(test_cascade_get_count('B'), 0)));
+my $c_before = $node->safe_psql('postgres',
+	q(SELECT coalesce(test_cascade_get_count('C'), 0)));
+
+$node->safe_psql('postgres', qq(
+	SET stats_fetch_consistency = none;
+	BEGIN;
+	SELECT test_cascade_seed('B');
+	SELECT test_cascade_seed('C');
+	SELECT test_custom_stats_var_update('cascade_test');
+	SELECT test_custom_stats_var_update('cascade_test');
+	SELECT test_custom_stats_var_update('cascade_test');
+	SELECT pg_stat_force_next_flush();
+	COMMIT;
+));
+
+my $b_after = $node->safe_psql('postgres',
+	q(SELECT test_cascade_get_count('B')));
+my $c_after = $node->safe_psql('postgres',
+	q(SELECT test_cascade_get_count('C')));
+
+is($b_after - $b_before, 3,
+	"cascade B receives 3 from A");
+is($c_after - $c_before, 3,
+	"cascade C receives 3 from B");
+
 # Test completed successfully
 done_testing();

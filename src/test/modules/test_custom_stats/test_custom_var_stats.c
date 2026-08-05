@@ -43,6 +43,13 @@ PG_MODULE_MAGIC_EXT(
  */
 #define PGSTAT_KIND_TEST_CUSTOM_VAR_STATS 25
 
+/*
+ * Kind IDs for cascade flush test (A -> B -> C).
+ * Tests that pgStatPendingFlushExtra handles multi-level dependencies.
+ */
+#define PGSTAT_KIND_CASCADE_B 27
+#define PGSTAT_KIND_CASCADE_C 28
+
 /* File paths for auxiliary data serialization */
 #define TEST_CUSTOM_AUX_DATA_DESC "pg_stat/test_custom_var_stats_desc.stats"
 
@@ -70,6 +77,18 @@ typedef struct PgStatShared_CustomVarEntry
 	dsa_pointer description;	/* pointer to description string in DSA */
 } PgStatShared_CustomVarEntry;
 
+/* Pending and shared types for cascade kinds B and C */
+typedef struct PgStat_CascadeEntry
+{
+	PgStat_Counter count;
+}			PgStat_CascadeEntry;
+
+typedef struct PgStatShared_CascadeEntry
+{
+	PgStatShared_Common header;
+	PgStat_CascadeEntry stats;
+}			PgStatShared_CascadeEntry;
+
 /*--------------------------------------------------------------------------
  * Global Variables
  *--------------------------------------------------------------------------
@@ -90,8 +109,9 @@ static dsa_area *custom_stats_description_dsa = NULL;
  */
 
 /* Flush callback: merge pending stats into shared memory */
-static bool test_custom_stats_var_flush_pending_cb(PgStat_EntryRef *entry_ref,
-												   bool nowait);
+static PgStat_FlushResult test_custom_stats_var_flush_pending_cb(PgStat_EntryRef *entry_ref,
+																 bool nowait,
+																 bool xact_boundary);
 
 /* Serialization callback: write auxiliary entry data */
 static bool test_custom_stats_var_to_serialized_data(const PgStat_HashKey *key,
@@ -127,6 +147,91 @@ static const PgStat_KindInfo custom_stats = {
 	.finish = test_custom_stats_var_finish,
 };
 
+/*
+ * cascade_b_flush_cb
+ *
+ * Flushes to shared memory and accumulates into cascade C.
+ */
+static PgStat_FlushResult
+cascade_b_flush_cb(PgStat_EntryRef *entry_ref, bool nowait, bool xact_boundary)
+{
+	PgStat_CascadeEntry *pending;
+	PgStatShared_CascadeEntry *shared;
+	PgStat_EntryRef *c_ref;
+	PgStat_CascadeEntry *c_pending;
+
+	pending = (PgStat_CascadeEntry *) entry_ref->pending;
+	shared = (PgStatShared_CascadeEntry *) entry_ref->shared_stats;
+
+	if (pending->count == 0)
+		return PGSTAT_FLUSH_DONE;
+
+	if (!pgstat_lock_entry(entry_ref, nowait))
+		return PGSTAT_FLUSH_LOCK_CONFLICT;
+
+	shared->stats.count += pending->count;
+	pgstat_unlock_entry(entry_ref);
+
+	/* Accumulate into cascade C */
+	c_ref = pgstat_prep_pending_entry(PGSTAT_KIND_CASCADE_C, InvalidOid, 1, NULL);
+	c_pending = (PgStat_CascadeEntry *) c_ref->pending;
+	c_pending->count += pending->count;
+
+	pgStatPendingFlushExtra = true;
+
+	pending->count = 0;
+	return PGSTAT_FLUSH_DONE;
+}
+
+/*
+ * cascade_c_flush_cb
+ *
+ * Terminal node.  Flushes to shared memory only.
+ */
+static PgStat_FlushResult
+cascade_c_flush_cb(PgStat_EntryRef *entry_ref, bool nowait, bool xact_boundary)
+{
+	PgStat_CascadeEntry *pending;
+	PgStatShared_CascadeEntry *shared;
+
+	pending = (PgStat_CascadeEntry *) entry_ref->pending;
+	shared = (PgStatShared_CascadeEntry *) entry_ref->shared_stats;
+
+	if (pending->count == 0)
+		return PGSTAT_FLUSH_DONE;
+
+	if (!pgstat_lock_entry(entry_ref, nowait))
+		return PGSTAT_FLUSH_LOCK_CONFLICT;
+
+	shared->stats.count += pending->count;
+	pgstat_unlock_entry(entry_ref);
+
+	pending->count = 0;
+	return PGSTAT_FLUSH_DONE;
+}
+
+static const PgStat_KindInfo cascade_b_stats = {
+	.name = "cascade_b",
+	.fixed_amount = false,
+	.accessed_across_databases = true,
+	.shared_size = sizeof(PgStatShared_CascadeEntry),
+	.shared_data_off = offsetof(PgStatShared_CascadeEntry, stats),
+	.shared_data_len = sizeof(((PgStatShared_CascadeEntry *) 0)->stats),
+	.pending_size = sizeof(PgStat_CascadeEntry),
+	.flush_pending_cb = cascade_b_flush_cb,
+};
+
+static const PgStat_KindInfo cascade_c_stats = {
+	.name = "cascade_c",
+	.fixed_amount = false,
+	.accessed_across_databases = true,
+	.shared_size = sizeof(PgStatShared_CascadeEntry),
+	.shared_data_off = offsetof(PgStatShared_CascadeEntry, stats),
+	.shared_data_len = sizeof(((PgStatShared_CascadeEntry *) 0)->stats),
+	.pending_size = sizeof(PgStat_CascadeEntry),
+	.flush_pending_cb = cascade_c_flush_cb,
+};
+
 /*--------------------------------------------------------------------------
  * Module initialization
  *--------------------------------------------------------------------------
@@ -135,8 +240,9 @@ static const PgStat_KindInfo custom_stats = {
 void
 _PG_init(void)
 {
-	/* Register custom statistics kind */
 	pgstat_register_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS, &custom_stats);
+	pgstat_register_kind(PGSTAT_KIND_CASCADE_B, &cascade_b_stats);
+	pgstat_register_kind(PGSTAT_KIND_CASCADE_C, &cascade_c_stats);
 }
 
 /*--------------------------------------------------------------------------
@@ -151,26 +257,43 @@ _PG_init(void)
  * Called by pgstat collector to flush accumulated local statistics
  * to shared memory where other backends can read them.
  *
- * Returns false only if nowait=true and lock acquisition fails.
+ * These stats are not transactional, so xact_boundary is unused.  Returns
+ * PGSTAT_FLUSH_LOCK_CONFLICT only if nowait=true and lock acquisition fails,
+ * otherwise PGSTAT_FLUSH_DONE.
  */
-static bool
-test_custom_stats_var_flush_pending_cb(PgStat_EntryRef *entry_ref, bool nowait)
+static PgStat_FlushResult
+test_custom_stats_var_flush_pending_cb(PgStat_EntryRef *entry_ref, bool nowait,
+									   bool xact_boundary)
 {
 	PgStat_StatCustomVarEntry *pending_entry;
 	PgStatShared_CustomVarEntry *shared_entry;
+	PgStat_EntryRef *b_ref;
+	PgStat_CascadeEntry *b_pending;
 
 	pending_entry = (PgStat_StatCustomVarEntry *) entry_ref->pending;
 	shared_entry = (PgStatShared_CustomVarEntry *) entry_ref->shared_stats;
 
+	if (pending_entry->numcalls == 0)
+		return PGSTAT_FLUSH_DONE;
+
 	if (!pgstat_lock_entry(entry_ref, nowait))
-		return false;
+		return PGSTAT_FLUSH_LOCK_CONFLICT;
 
 	/* Add pending counts to shared totals */
 	shared_entry->stats.numcalls += pending_entry->numcalls;
 
 	pgstat_unlock_entry(entry_ref);
 
-	return true;
+	/* Accumulate into cascade B */
+	b_ref = pgstat_prep_pending_entry(PGSTAT_KIND_CASCADE_B, InvalidOid, 1, NULL);
+	b_pending = (PgStat_CascadeEntry *) b_ref->pending;
+	b_pending->count += pending_entry->numcalls;
+
+	pgStatPendingFlushExtra = true;
+
+	memset(pending_entry, 0, sizeof(*pending_entry));
+
+	return PGSTAT_FLUSH_DONE;
 }
 
 /*
@@ -700,4 +823,55 @@ test_custom_stats_var_report(PG_FUNCTION_ARGS)
 	}
 
 	SRF_RETURN_DONE(funcctx);
+}
+
+/*
+ * test_cascade_get_count
+ *		Read the count from cascade B or C shared stats.
+ */
+PG_FUNCTION_INFO_V1(test_cascade_get_count);
+Datum
+test_cascade_get_count(PG_FUNCTION_ARGS)
+{
+	char	   *which = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	PgStat_Kind kind;
+	PgStat_CascadeEntry *entry;
+
+	if (strcmp(which, "B") == 0)
+		kind = PGSTAT_KIND_CASCADE_B;
+	else if (strcmp(which, "C") == 0)
+		kind = PGSTAT_KIND_CASCADE_C;
+	else
+		ereport(ERROR, (errmsg("argument must be 'B' or 'C'")));
+
+	entry = (PgStat_CascadeEntry *)
+		pgstat_fetch_entry(kind, InvalidOid, 1, NULL);
+
+	if (!entry)
+		PG_RETURN_INT64(0);
+
+	PG_RETURN_INT64(entry->count);
+}
+
+/*
+ * test_cascade_seed
+ *		Put cascade B or C on the pending list with zero data.
+ */
+PG_FUNCTION_INFO_V1(test_cascade_seed);
+Datum
+test_cascade_seed(PG_FUNCTION_ARGS)
+{
+	char	   *which = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	PgStat_Kind kind;
+
+	if (strcmp(which, "B") == 0)
+		kind = PGSTAT_KIND_CASCADE_B;
+	else if (strcmp(which, "C") == 0)
+		kind = PGSTAT_KIND_CASCADE_C;
+	else
+		ereport(ERROR, (errmsg("argument must be 'B' or 'C'")));
+
+	pgstat_prep_pending_entry(kind, InvalidOid, 1, NULL);
+
+	PG_RETURN_VOID();
 }

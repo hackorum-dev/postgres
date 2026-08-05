@@ -24,3 +24,13 @@ CREATE FUNCTION test_custom_stats_var_report(INOUT name TEXT,
 RETURNS SETOF record
 AS 'MODULE_PATHNAME', 'test_custom_stats_var_report'
 LANGUAGE C STRICT PARALLEL UNSAFE;
+
+CREATE FUNCTION test_cascade_get_count(IN which TEXT)
+RETURNS BIGINT
+AS 'MODULE_PATHNAME', 'test_cascade_get_count'
+LANGUAGE C STRICT PARALLEL UNSAFE;
+
+CREATE FUNCTION test_cascade_seed(IN which TEXT)
+RETURNS void
+AS 'MODULE_PATHNAME', 'test_cascade_seed'
+LANGUAGE C STRICT PARALLEL UNSAFE;

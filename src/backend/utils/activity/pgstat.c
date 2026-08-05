@@ -219,6 +219,11 @@ PgStat_LocalState pgStatLocal;
  */
 bool		pgstat_report_fixed = false;
 
+/*
+ * Request an additional pass over the pending list, used by flush_pending_cb.
+ */
+bool		pgStatPendingFlushExtra = false;
+
 /* ----------
  * Local data
  *
@@ -326,7 +331,7 @@ static const PgStat_KindInfo pgstat_kind_builtin_infos[PGSTAT_KIND_BUILTIN_SIZE]
 		.shared_size = sizeof(PgStatShared_Function),
 		.shared_data_off = offsetof(PgStatShared_Function, stats),
 		.shared_data_len = sizeof(((PgStatShared_Function *) 0)->stats),
-		.pending_size = sizeof(PgStat_FunctionCounts),
+		.pending_size = sizeof(PgStat_FunctionStatus),
 
 		.flush_pending_cb = pgstat_function_flush_cb,
 		.reset_timestamp_cb = pgstat_function_reset_timestamp_cb,
@@ -716,8 +721,8 @@ pgstat_initialize(void)
  * a timeout after which to call pgstat_report_stat(true), but are not
  * required to do so.
  *
- * Note that this is called only when not within a transaction, so it is fair
- * to use transaction stop time as an approximation of current time.
+ * A non-forced flush is only ever called outside of a transaction, while a
+ * forced flush may also happen within one (e.g. pg_stat_force_next_flush()).
  */
 long
 pgstat_report_stat(bool force)
@@ -727,9 +732,10 @@ pgstat_report_stat(bool force)
 	bool		partial_flush;
 	TimestampTz now;
 	bool		nowait;
+	bool		xact_boundary;
 
 	pgstat_assert_is_up();
-	Assert(!IsTransactionOrTransactionBlock());
+	Assert(force || !IsTransactionOrTransactionBlock());
 
 	/* "absorb" the forced flush even if there's nothing to flush */
 	if (pgStatForceNextFlush)
@@ -789,6 +795,7 @@ pgstat_report_stat(bool force)
 
 	/* don't wait for lock acquisition when !force */
 	nowait = !force;
+	xact_boundary = !IsTransactionOrTransactionBlock();
 
 	partial_flush = false;
 
@@ -807,7 +814,7 @@ pgstat_report_stat(bool force)
 			if (!kind_info->flush_static_cb)
 				continue;
 
-			partial_flush |= kind_info->flush_static_cb(nowait);
+			partial_flush |= kind_info->flush_static_cb(nowait, xact_boundary);
 		}
 	}
 
@@ -815,12 +822,13 @@ pgstat_report_stat(bool force)
 
 	/*
 	 * If some of the pending stats could not be flushed due to lock
-	 * contention, let the caller know when to retry.
+	 * contention, or only partially flushed due to in-transaction counters
+	 * being deferred, let the caller know when to retry.
 	 */
 	if (partial_flush)
 	{
-		/* force should have prevented us from getting here */
-		Assert(!force);
+		/* with force, only active transaction state can cause a partial flush */
+		Assert(!force || IsTransactionOrTransactionBlock());
 
 		/* remember since when stats have been pending */
 		if (pending_since == 0)
@@ -842,6 +850,9 @@ pgstat_report_stat(bool force)
 void
 pgstat_force_next_flush(void)
 {
+	if (IsTransactionOrTransactionBlock())
+		pgstat_report_stat(true);
+
 	pgStatForceNextFlush = true;
 }
 
@@ -1401,6 +1412,8 @@ pgstat_flush_pending_entries(bool nowait)
 	bool		have_pending = false;
 	dlist_node *cur = NULL;
 
+	pgStatPendingFlushExtra = false;
+
 	/*
 	 * Need to be a bit careful iterating over the list of pending entries.
 	 * Processing a pending entry may queue further pending entries to the end
@@ -1409,6 +1422,12 @@ pgstat_flush_pending_entries(bool nowait)
 	 * entry in each iteration from the list if we flushed successfully.
 	 *
 	 * So we just keep track of the next pointer in each loop iteration.
+	 *
+	 * When flushing mid-transaction, a successfully flushed entry is retained
+	 * rather than deleted, since callers may hold pointers to it and later
+	 * flush more into it.  Because such entries stay on the list, a callback
+	 * can accumulate into a dependent entry that was already visited; those
+	 * are re-flushed by a second scan below (see pgStatPendingFlushExtra).
 	 */
 	if (!dlist_is_empty(&pgStatPending))
 		cur = dlist_head_node(&pgStatPending);
@@ -1420,16 +1439,25 @@ pgstat_flush_pending_entries(bool nowait)
 		PgStat_HashKey key = entry_ref->shared_entry->key;
 		PgStat_Kind kind = key.kind;
 		const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
-		bool		did_flush;
+		PgStat_FlushResult result;
+		bool		xact_boundary = !IsTransactionOrTransactionBlock();
 		dlist_node *next;
 
 		Assert(!kind_info->fixed_amount);
 		Assert(kind_info->flush_pending_cb != NULL);
 
 		/* flush the stats, if possible */
-		did_flush = kind_info->flush_pending_cb(entry_ref, nowait);
+		result = kind_info->flush_pending_cb(entry_ref, nowait, xact_boundary);
 
-		Assert(did_flush || nowait);
+		/*
+		 * A lock conflict can only happen when we allowed the callback to
+		 * give up without waiting, and a partial flush can only happen when
+		 * we are inside a transaction and the callback had to retain
+		 * transactional state.
+		 */
+		Assert(result == PGSTAT_FLUSH_DONE ||
+			   (result == PGSTAT_FLUSH_LOCK_CONFLICT && nowait) ||
+			   (result == PGSTAT_FLUSH_PARTIAL && !xact_boundary));
 
 		/* determine next entry, before deleting the pending entry */
 		if (dlist_has_next(&pgStatPending, cur))
@@ -1437,13 +1465,47 @@ pgstat_flush_pending_entries(bool nowait)
 		else
 			next = NULL;
 
-		/* if successfully flushed, remove entry */
-		if (did_flush)
+		/*
+		 * Never free pending entries mid-transaction; callers may hold
+		 * pointers.
+		 */
+		if (result == PGSTAT_FLUSH_DONE && xact_boundary)
 			pgstat_delete_pending_entry(entry_ref);
 		else
 			have_pending = true;
 
 		cur = next;
+	}
+
+	/*
+	 * Second scan (see above) for dependent entries populated after they were
+	 * already visited.
+	 */
+	while (pgStatPendingFlushExtra && IsTransactionOrTransactionBlock())
+	{
+		bool		xact_boundary = false;
+
+		pgStatPendingFlushExtra = false;
+
+		cur = NULL;
+		if (!dlist_is_empty(&pgStatPending))
+			cur = dlist_head_node(&pgStatPending);
+
+		while (cur)
+		{
+			PgStat_EntryRef *entry_ref =
+				dlist_container(PgStat_EntryRef, pending_node, cur);
+			const PgStat_KindInfo *kind_info =
+				pgstat_get_kind_info(entry_ref->shared_entry->key.kind);
+			dlist_node *next;
+
+			next = dlist_has_next(&pgStatPending, cur) ?
+				dlist_next_node(&pgStatPending, cur) : NULL;
+
+			kind_info->flush_pending_cb(entry_ref, nowait, xact_boundary);
+
+			cur = next;
+		}
 	}
 
 	Assert(dlist_is_empty(&pgStatPending) == !have_pending);
