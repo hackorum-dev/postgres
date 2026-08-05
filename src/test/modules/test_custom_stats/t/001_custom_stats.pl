@@ -103,6 +103,29 @@ $result = $node->safe_psql('postgres',
 	q(select * from test_custom_stats_fixed_report()));
 is($result, "3|", "report for fixed-sized stats");
 
+# A mid-transaction flush forced by pg_stat_force_next_flush() must not merge
+# again the counts it has already flushed.  Update and flush repeatedly inside
+# one transaction, then check the total matches the number of updates rather
+# than the accumulated sum of each flush.
+$node->safe_psql('postgres',
+	q(select test_custom_stats_var_create('xact_entry', 'Test xact entry')));
+$node->safe_psql(
+	'postgres', q(
+	BEGIN;
+	select test_custom_stats_var_update('xact_entry');
+	select pg_stat_force_next_flush();
+	select test_custom_stats_var_update('xact_entry');
+	select pg_stat_force_next_flush();
+	select test_custom_stats_var_update('xact_entry');
+	COMMIT;));
+$result = $node->safe_psql('postgres',
+	q(select * from test_custom_stats_var_report('xact_entry')));
+is( $result,
+	"xact_entry|3|Test xact entry",
+	"mid-transaction flush does not double-count pending stats");
+$node->safe_psql('postgres',
+	q(select * from test_custom_stats_var_drop('xact_entry')));
+
 # Test drop of variable-sized stats.
 $node->safe_psql('postgres',
 	q(select * from test_custom_stats_var_drop('entry3')));

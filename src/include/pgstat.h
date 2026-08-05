@@ -91,6 +91,22 @@ typedef struct PgStat_FunctionCounts
 } PgStat_FunctionCounts;
 
 /*
+ * Pending function stats stored in PgStat_EntryRef->pending.
+ *
+ * counts accumulates for the whole transaction (it is what
+ * pg_stat_xact_user_functions reports); flushed is the portion already written
+ * to shared memory.  A flush writes counts minus flushed and then sets flushed
+ * to counts, so counts survives a mid-transaction flush intact and the shared
+ * totals are never double-counted.  The same counts/flushed scheme is used for
+ * relation stats; see PgStat_TableStatus.
+ */
+typedef struct PgStat_FunctionStatus
+{
+	PgStat_FunctionCounts counts;
+	PgStat_FunctionCounts flushed;
+} PgStat_FunctionStatus;
+
+/*
  * Working state needed to accumulate per-function-call timing statistics.
  */
 typedef struct PgStat_FunctionCallUsage
@@ -121,9 +137,11 @@ typedef struct PgStat_BackendSubEntry
 /* ----------
  * PgStat_TableCounts			The actual per-table counts kept by a backend
  *
- * This struct should contain only actual event counters, because we make use
- * of pg_memory_is_all_zeros() to detect whether there are any stats updates
- * to apply.
+ * This struct should contain only actual event counters, because we byte
+ * compare it against the flushed baseline (see PgStat_TableStatus) to detect
+ * whether there are any unflushed stats updates to apply.  Both are zeroed on
+ * allocation and no field write ever touches the padding, so the byte compare
+ * is safe.
  *
  * It is a component of PgStat_RelationStatus (within-backend state, for
  * table data).
@@ -212,10 +230,16 @@ typedef struct PgStat_RelationStatus
 			bool		shared; /* is it a shared catalog? */
 			struct PgStat_TableXactStatus *trans;	/* lowest subxact's counts */
 			PgStat_TableCounts counts;	/* event counts to be sent */
+			PgStat_TableCounts flushed; /* Portion of counts already written
+										 * to shared memory */
 		}			tab;
 
 		/* index counters */
-		PgStat_IndexCounts idx;
+		struct
+		{
+			PgStat_IndexCounts counts;
+			PgStat_IndexCounts flushed;
+		}			idx;
 	};
 } PgStat_RelationStatus;
 
@@ -795,9 +819,9 @@ extern void pgstat_report_analyze(Relation rel,
 		if (pgstat_should_count_relation(rel))						\
 		{															\
 			if ((rel)->pgstat_info->kind == PGSTAT_KIND_INDEX)		\
-				(rel)->pgstat_info->idx.tuples_fetched++;			\
+				(rel)->pgstat_info->idx.counts.tuples_fetched++;	\
 			else													\
-				(rel)->pgstat_info->tab.counts.tuples_fetched++;		\
+				(rel)->pgstat_info->tab.counts.tuples_fetched++;	\
 		}															\
 	} while (0)
 #define pgstat_count_index_scan(rel)								\
@@ -805,7 +829,7 @@ extern void pgstat_report_analyze(Relation rel,
 		if (pgstat_should_count_relation(rel))						\
 		{															\
 			Assert((rel)->pgstat_info->kind == PGSTAT_KIND_INDEX);	\
-			(rel)->pgstat_info->idx.numscans++;						\
+			(rel)->pgstat_info->idx.counts.numscans++;				\
 		}															\
 	} while (0)
 #define pgstat_count_index_tuples(rel, n)							\
@@ -813,7 +837,7 @@ extern void pgstat_report_analyze(Relation rel,
 		if (pgstat_should_count_relation(rel))						\
 		{															\
 			Assert((rel)->pgstat_info->kind == PGSTAT_KIND_INDEX);	\
-			(rel)->pgstat_info->idx.tuples_returned += (n);			\
+			(rel)->pgstat_info->idx.counts.tuples_returned += (n);	\
 		}															\
 	} while (0)
 #define pgstat_count_buffer_read(rel)								\
@@ -821,9 +845,9 @@ extern void pgstat_report_analyze(Relation rel,
 		if (pgstat_should_count_relation(rel))						\
 		{															\
 			if ((rel)->pgstat_info->kind == PGSTAT_KIND_INDEX)		\
-				(rel)->pgstat_info->idx.blocks_fetched++;			\
+				(rel)->pgstat_info->idx.counts.blocks_fetched++;	\
 			else													\
-				(rel)->pgstat_info->tab.counts.blocks_fetched++;		\
+				(rel)->pgstat_info->tab.counts.blocks_fetched++;	\
 		}															\
 	} while (0)
 #define pgstat_count_buffer_hit(rel)								\
@@ -831,9 +855,9 @@ extern void pgstat_report_analyze(Relation rel,
 		if (pgstat_should_count_relation(rel))						\
 		{															\
 			if ((rel)->pgstat_info->kind == PGSTAT_KIND_INDEX)		\
-				(rel)->pgstat_info->idx.blocks_hit++;				\
+				(rel)->pgstat_info->idx.counts.blocks_hit++;		\
 			else													\
-				(rel)->pgstat_info->tab.counts.blocks_hit++;			\
+				(rel)->pgstat_info->tab.counts.blocks_hit++;		\
 		}															\
 	} while (0)
 

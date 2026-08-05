@@ -1984,7 +1984,7 @@ CppConcat(pg_stat_get_xact_idx_,stat)(PG_FUNCTION_ARGS) \
 	if (!tabentry)										\
 		result = 0;										\
 	else												\
-		result = (int64) (tabentry->idx.stat);		\
+		result = (int64) (tabentry->idx.counts.stat);	\
 														\
 	PG_RETURN_INT64(result);							\
 }
