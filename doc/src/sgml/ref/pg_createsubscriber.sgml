@@ -362,7 +362,9 @@ PostgreSQL documentation
        is reported.  The order of the multiple subscription name switches must
        match the order of database switches.  If this option is not specified,
        a generated name is assigned to the subscription name. This option cannot
-       be used together with <option>--all</option>.
+       be used together with <option>--all</option>.  The same subscription name
+       can be used in different databases only when distinct replication slot
+       names are specified with <option>--replication-slot</option>.
       </para>
      </listitem>
     </varlistentry>
