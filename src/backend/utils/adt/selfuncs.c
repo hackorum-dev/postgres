@@ -413,6 +413,7 @@ var_eq_const(VariableStatData *vardata, Oid oproid, Oid collation,
 		AttStatsSlot sslot;
 		bool		match = false;
 		int			i;
+		double		sumcommon = 0.0;
 
 		/*
 		 * Is the constant "=" to any of the column's most common values?
@@ -450,6 +451,8 @@ var_eq_const(VariableStatData *vardata, Oid oproid, Oid collation,
 			{
 				Datum		fresult;
 
+				sumcommon += sslot.numbers[i];
+
 				if (varonleft)
 					fcinfo->args[0].value = sslot.values[i];
 				else
@@ -484,11 +487,8 @@ var_eq_const(VariableStatData *vardata, Oid oproid, Oid collation,
 			 * of the common values.  Its selectivity cannot be more than
 			 * this:
 			 */
-			double		sumcommon = 0.0;
 			double		otherdistinct;
 
-			for (i = 0; i < sslot.nnumbers; i++)
-				sumcommon += sslot.numbers[i];
 			selec = 1.0 - sumcommon - nullfrac;
 			CLAMP_PROBABILITY(selec);
 
