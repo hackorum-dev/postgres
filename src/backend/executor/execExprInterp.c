@@ -2437,7 +2437,7 @@ CheckVarSlotCompatibility(TupleTableSlot *slot, int attnum, Oid vartype)
 }
 
 /*
- * Verify that the slot is compatible with a EEOP_*_FETCHSOME operation.
+ * Verify that the slot is compatible with an EEOP_*_FETCHSOME operation.
  */
 static void
 CheckOpSlotCompatibility(ExprEvalStep *op, TupleTableSlot *slot)

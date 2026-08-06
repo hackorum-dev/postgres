@@ -3276,11 +3276,11 @@ check_nested_generated(ParseState *pstate, Node *node)
  * To address this, this restricts generation expressions for virtual
  * generated columns are restricted to using built-in functions and types.  We
  * assume that built-in functions and types cannot be exploited for this
- * purpose.  Note the overall security also requires that all functions in use
- * a immutable.  (For example, there are some built-in non-immutable functions
- * that can run arbitrary SQL.)  The immutability is checked elsewhere, since
- * that is a property that needs to hold independent of security
- * considerations.
+ * purpose.  Note the overall security also requires that all functions in
+ * use are immutable.  (For example, there are some built-in non-immutable
+ * functions that can run arbitrary SQL.)  The immutability is checked
+ * elsewhere, since that is a property that needs to hold independent of
+ * security considerations.
  *
  * In the future, this could be expanded by some new mechanism to declare
  * other functions and types as safe or trusted for this purpose, but that is

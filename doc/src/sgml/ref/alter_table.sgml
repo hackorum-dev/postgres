@@ -607,7 +607,7 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
     <term><literal>ALTER CONSTRAINT ... NO INHERIT</literal></term>
     <listitem>
      <para>
-      These forms modify a inheritable constraint so that it becomes not
+      These forms modify an inheritable constraint so that it becomes not
       inheritable, or vice-versa. Only not-null constraints may be altered
       in this fashion at present.
       In addition to changing the inheritability status of the constraint,

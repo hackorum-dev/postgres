@@ -1027,7 +1027,7 @@ keyGetItem(GinState *ginstate, MemoryContext tempCtx, GinScanKey key,
 	/*
 	 * Find the minimum item > advancePast among the active entry streams.
 	 *
-	 * Note: a lossy-page entry is encoded by a ItemPointer with max value for
+	 * Note: a lossy-page entry is encoded by an ItemPointer with max value for
 	 * offset (0xffff), so that it will sort after any exact entries for the
 	 * same page.  So we'll prefer to return exact pointers not lossy
 	 * pointers, which is good.

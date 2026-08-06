@@ -46,7 +46,7 @@ typedef struct
 	Node	   *escontext;
 
 	bool		found_attributes;	/* Item has an attributes key */
-	bool		found_dependency;	/* Item has an dependency key */
+	bool		found_dependency;	/* Item has a dependency key */
 	bool		found_degree;	/* Item has degree key */
 	List	   *attnum_list;	/* Accumulated attribute numbers */
 	AttrNumber	dependency;

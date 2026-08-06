@@ -81,7 +81,7 @@ static const astreamer_ops astreamer_gzip_decompressor_ops = {
 #endif
 
 /*
- * Create a astreamer that just compresses data using gzip, and then writes
+ * Create an astreamer that just compresses data using gzip, and then writes
  * it to a file.
  *
  * The caller must specify a pathname and may specify a file. The pathname is
