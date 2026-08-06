@@ -3144,9 +3144,17 @@ get_matching_range_bounds(PartitionPruneContext *context,
 
 					/*
 					 * off + 1, then would be the offset of the greatest bound
-					 * to be included in the result.
+					 * to be included in the result.  The exception is the
+					 * mirror image of the MINVALUE case above: if the matched
+					 * bound is exactly (prefix, MAXVALUE), no row carrying
+					 * this prefix can sort above it, so the key space beyond
+					 * it need not be considered.
 					 */
-					maxoff = off + 1;
+					if (boundinfo->kind[off][nvalues] ==
+						PARTITION_RANGE_DATUM_MAXVALUE)
+						maxoff = off;
+					else
+						maxoff = off + 1;
 				}
 
 				Assert(minoff >= 0 && maxoff >= 0);

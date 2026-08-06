@@ -1148,6 +1148,25 @@ select * from mc2pdmax where a = 19 and b >= 5;
  19 | 5
 (1 row)
 
+-- With the prefix pinned to the bound's first key, nothing carrying that
+-- prefix can sort above (19, maxvalue), so the default partition is not needed
+explain (costs off) select * from mc2pdmax where a = 19 and b >= 5;
+            QUERY PLAN             
+-----------------------------------
+ Seq Scan on mc2pdmax1 mc2pdmax
+   Filter: ((b >= 5) AND (a = 19))
+(2 rows)
+
+explain (costs off) select * from mc2pdmax where a >= 19 and b >= 5;
+                  QUERY PLAN                   
+-----------------------------------------------
+ Append
+   ->  Seq Scan on mc2pdmax1 mc2pdmax_1
+         Filter: ((a >= 19) AND (b >= 5))
+   ->  Seq Scan on mc2pdmax_default mc2pdmax_2
+         Filter: ((a >= 19) AND (b >= 5))
+(5 rows)
+
 drop table mc2pdmax;
 create table mc2pdmin (a int, b int) partition by range (a, b);
 create table mc2pdmin_default partition of mc2pdmin default;

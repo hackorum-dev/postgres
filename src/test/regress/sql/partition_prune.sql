@@ -210,6 +210,11 @@ select * from mc2pdmax where a >= 25 and b >= 0;
 insert into mc2pdmax values (19, 5);
 select * from mc2pdmax where a >= 19 and b >= 5;
 select * from mc2pdmax where a = 19 and b >= 5;
+
+-- With the prefix pinned to the bound's first key, nothing carrying that
+-- prefix can sort above (19, maxvalue), so the default partition is not needed
+explain (costs off) select * from mc2pdmax where a = 19 and b >= 5;
+explain (costs off) select * from mc2pdmax where a >= 19 and b >= 5;
 drop table mc2pdmax;
 
 create table mc2pdmin (a int, b int) partition by range (a, b);
