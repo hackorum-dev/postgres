@@ -2767,6 +2767,7 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_DOMCONSTRAINT:
 					case OBJECT_PUBLICATION_NAMESPACE:
 					case OBJECT_PUBLICATION_REL:
+					case OBJECT_PUBLICATION_EXCLUDED_REL:
 					case OBJECT_ROLE:
 					case OBJECT_RULE:
 					case OBJECT_TABCONSTRAINT:
@@ -2908,6 +2909,7 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_PARAMETER_ACL:
 					case OBJECT_PUBLICATION_NAMESPACE:
 					case OBJECT_PUBLICATION_REL:
+					case OBJECT_PUBLICATION_EXCLUDED_REL:
 					case OBJECT_ROLE:
 					case OBJECT_TRANSFORM:
 					case OBJECT_TSPARSER:

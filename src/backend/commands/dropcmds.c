@@ -506,6 +506,7 @@ does_not_exist_skipping(ObjectType objtype, Node *object)
 		case OBJECT_PARAMETER_ACL:
 		case OBJECT_PUBLICATION_NAMESPACE:
 		case OBJECT_PUBLICATION_REL:
+		case OBJECT_PUBLICATION_EXCLUDED_REL:
 		case OBJECT_TABCONSTRAINT:
 		case OBJECT_USER_MAPPING:
 			/* These are currently not used or needed. */
