@@ -403,7 +403,7 @@ LOG:  Grand total: 1651920 bytes in 201 blocks; 622360 free (88 chunks); 1029560
       </row>
 
       <row>
-       <entry role="func_table_entry"><para role="func_signature">
+       <entry id="pg-backup-start" role="func_table_entry"><para role="func_signature">
         <indexterm>
          <primary>pg_backup_start</primary>
         </indexterm>
@@ -430,7 +430,7 @@ LOG:  Grand total: 1651920 bytes in 201 blocks; 622360 free (88 chunks); 1029560
       </row>
 
       <row>
-       <entry role="func_table_entry"><para role="func_signature">
+       <entry id="pg-backup-stop" role="func_table_entry"><para role="func_signature">
         <indexterm>
          <primary>pg_backup_stop</primary>
         </indexterm>
@@ -491,7 +491,7 @@ LOG:  Grand total: 1651920 bytes in 201 blocks; 622360 free (88 chunks); 1029560
       </row>
 
       <row>
-       <entry role="func_table_entry"><para role="func_signature">
+       <entry id="pg-switch-wal" role="func_table_entry"><para role="func_signature">
         <indexterm>
          <primary>pg_switch_wal</primary>
         </indexterm>
