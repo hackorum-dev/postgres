@@ -160,6 +160,14 @@ check_max_stack_depth(int *newval, void **extra, GucSource source)
 	ssize_t		newval_bytes = *newval * (ssize_t) 1024;
 	ssize_t		stack_rlimit = get_stack_depth_rlimit();
 
+	if (stack_rlimit <= STACK_DEPTH_SLOP)
+	{
+		GUC_check_errdetail("Platform stack depth limit is less than or equal to required daylight between max_stack_depth and the kernel limit (%zd bytes)",
+						STACK_DEPTH_SLOP);
+		GUC_check_errhint("Increase the platform's stack depth limit via \"ulimit -s\" or local equivalent.");
+		return false;
+	}
+
 	if (stack_rlimit > 0 && newval_bytes > stack_rlimit - STACK_DEPTH_SLOP)
 	{
 		GUC_check_errdetail("\"max_stack_depth\" must not exceed %zdkB.",
