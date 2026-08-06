@@ -3331,16 +3331,20 @@ get_matching_range_bounds(PartitionPruneContext *context,
 
 	/*
 	 * If the smallest partition to return has MINVALUE (negative infinity) as
-	 * its lower bound, increment it to point to the next finite bound
-	 * (supposedly its upper bound), so that we don't inadvertently end up
-	 * scanning the default partition.
+	 * its lower bound, there is no key space below it at all, so increment
+	 * minoff to point to the next finite bound (supposedly its upper bound),
+	 * so that we don't inadvertently end up scanning the default partition.
+	 *
+	 * Only a bound that is unbounded in its *first* key has nothing below it.
+	 * When just a trailing key is MINVALUE, as in FROM (13, MINVALUE), the key
+	 * space below the bound is real and is owned by the default partition, if
+	 * one exists, so the offset must be retained: get_matching_partitions()
+	 * turns an offset whose partindices[] entry is -1 into "also scan the
+	 * default partition".
 	 */
 	if (minoff < boundinfo->ndatums && partindices[minoff] < 0)
 	{
-		int			lastkey = nvalues - 1;
-
-		if (boundinfo->kind[minoff][lastkey] ==
-			PARTITION_RANGE_DATUM_MINVALUE)
+		if (boundinfo->kind[minoff][0] == PARTITION_RANGE_DATUM_MINVALUE)
 		{
 			minoff++;
 			Assert(boundinfo->indexes[minoff] >= 0);
@@ -3348,18 +3352,16 @@ get_matching_range_bounds(PartitionPruneContext *context,
 	}
 
 	/*
-	 * If the previous greatest partition has MAXVALUE (positive infinity) as
-	 * its upper bound (something only possible to do with multi-column range
-	 * partitioning), we scan switch to it as the greatest partition to
-	 * return.  Again, so that we don't inadvertently end up scanning the
-	 * default partition.
+	 * Likewise, if the previous greatest partition has MAXVALUE (positive
+	 * infinity) as its upper bound (something only possible to do with
+	 * multi-column range partitioning), we switch to it as the greatest
+	 * partition to return.  Again, this is only correct when the first key of
+	 * the bound is unbounded; TO (19, MAXVALUE) merely means "unbounded within
+	 * a = 19", and everything above it belongs to the default partition.
 	 */
 	if (maxoff >= 1 && partindices[maxoff] < 0)
 	{
-		int			lastkey = nvalues - 1;
-
-		if (boundinfo->kind[maxoff - 1][lastkey] ==
-			PARTITION_RANGE_DATUM_MAXVALUE)
+		if (boundinfo->kind[maxoff - 1][0] == PARTITION_RANGE_DATUM_MAXVALUE)
 		{
 			maxoff--;
 			Assert(boundinfo->indexes[maxoff] >= 0);
