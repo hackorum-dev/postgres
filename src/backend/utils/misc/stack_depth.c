@@ -159,11 +159,24 @@ check_max_stack_depth(int *newval, void **extra, GucSource source)
 {
 	ssize_t		newval_bytes = *newval * (ssize_t) 1024;
 	ssize_t		stack_rlimit = get_stack_depth_rlimit();
+	ssize_t		available;
 
-	if (stack_rlimit > 0 && newval_bytes > stack_rlimit - STACK_DEPTH_SLOP)
+	/* -1 means unknown; do not treat it as a too-small rlimit. */
+	if (stack_rlimit <= 0)
+		return true;
+
+	available = stack_rlimit - STACK_DEPTH_SLOP;
+	if (available <= 0)
+	{
+		GUC_check_errdetail("platform stack depth limit (%zdkB) is too small.",
+							stack_rlimit / 1024);
+		GUC_check_errhint("Increase the platform's stack depth limit via \"ulimit -s\" or local equivalent.");
+		return false;
+	}
+	if (newval_bytes > available)
 	{
 		GUC_check_errdetail("\"max_stack_depth\" must not exceed %zdkB.",
-							(stack_rlimit - STACK_DEPTH_SLOP) / 1024);
+							available / 1024);
 		GUC_check_errhint("Increase the platform's stack depth limit via \"ulimit -s\" or local equivalent.");
 		return false;
 	}
