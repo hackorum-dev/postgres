@@ -83,7 +83,7 @@ static const astreamer_ops astreamer_tar_terminator_ops = {
 };
 
 /*
- * Create a astreamer that can parse a stream of content as tar data.
+ * Create an astreamer that can parse a stream of content as tar data.
  *
  * The input should be a series of ASTREAMER_UNKNOWN chunks; the astreamer
  * specified by 'next' will receive a series of typed chunks, as per the
@@ -381,7 +381,7 @@ astreamer_tar_parser_free(astreamer *streamer)
 }
 
 /*
- * Create a astreamer that can generate a tar archive.
+ * Create an astreamer that can generate a tar archive.
  *
  * This is intended to be usable either for generating a brand-new tar archive
  * or for modifying one on the fly. The input should be a series of typed
@@ -404,7 +404,7 @@ astreamer_tar_archiver_new(astreamer *next)
 /*
  * Fix up the stream of input chunks to create a valid tar file.
  *
- * If a ASTREAMER_MEMBER_HEADER chunk is of size 0, it is replaced with a
+ * If an ASTREAMER_MEMBER_HEADER chunk is of size 0, it is replaced with a
  * newly-constructed tar header. If it is of size TAR_BLOCK_SIZE, it is
  * passed through without change. Any other size is a fatal error (and
  * indicates a bug).
@@ -491,7 +491,7 @@ astreamer_tar_archiver_free(astreamer *streamer)
 }
 
 /*
- * Create a astreamer that blindly adds two blocks of NUL bytes to the
+ * Create an astreamer that blindly adds two blocks of NUL bytes to the
  * end of an incomplete tarfile that the server might send us.
  */
 astreamer *

@@ -1583,7 +1583,7 @@ CheckAlterPublication(AlterPublicationStmt *stmt, HeapTuple tup,
 	{
 		/*
 		 * If the publication already contains specific tables or schemas, we
-		 * prevent switching to a ALL state.
+		 * prevent switching to an ALL state.
 		 */
 		if (is_table_publication(pubform->oid) ||
 			is_schema_publication(pubform->oid))

@@ -121,7 +121,7 @@ typedef void *AllocPointer;
 /*
  * AllocFreeListLink
  *		When pfreeing memory, if we maintain a freelist for the given chunk's
- *		size then we use a AllocFreeListLink to point to the current item in
+ *		size then we use an AllocFreeListLink to point to the current item in
  *		the AllocSetContext's freelist and then set the given freelist element
  *		to point to the chunk being freed.
  */
@@ -131,7 +131,7 @@ typedef struct AllocFreeListLink
 } AllocFreeListLink;
 
 /*
- * Obtain a AllocFreeListLink for the given chunk.  Allocation sizes are
+ * Obtain an AllocFreeListLink for the given chunk.  Allocation sizes are
  * always at least sizeof(AllocFreeListLink), so we reuse the pointer's memory
  * itself to store the freelist link.
  */

@@ -608,7 +608,7 @@ PostgreSQL documentation
       Set the replication progress to the replication start point for each
       subscription.  When the target server starts the recovery process, it
       catches up to the replication start point.  This is the exact LSN to be
-      used as a initial replication location for each subscription.  The
+      used as an initial replication location for each subscription.  The
       replication origin name is obtained since the subscription was created.
       The replication origin name and the replication start point are used in
       <link

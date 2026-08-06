@@ -40,7 +40,7 @@ static const astreamer_ops astreamer_recovery_injector_ops = {
 };
 
 /*
- * Create a astreamer that can edit recoverydata into an archive stream.
+ * Create an astreamer that can edit recoverydata into an archive stream.
  *
  * The input should be a series of typed chunks (not ASTREAMER_UNKNOWN) as
  * per the conventions described in astreamer.h; the chunks forwarded to

@@ -195,7 +195,7 @@ ABI_compatibility:
 #
 # Wait Events - IO
 #
-# Use this category when a process is waiting for a IO.
+# Use this category when a process is waiting for I/O.
 #
 
 Section: ClassName - WaitEventIO
