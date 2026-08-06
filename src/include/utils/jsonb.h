@@ -95,7 +95,7 @@ typedef struct JsonbParseState JsonbParseState;
  * is implicitly known that the root node must be an array or an object,
  * so we can get away without the type indicator as long as we can distinguish
  * the two.  For that purpose, both an array and an object begin with a uint32
- * header field, which contains an JB_FOBJECT or JB_FARRAY flag.  When a naked
+ * header field, which contains a JB_FOBJECT or JB_FARRAY flag.  When a naked
  * scalar value needs to be stored as a Jsonb value, what we actually store is
  * an array with one element, with the flags in the array's header field set
  * to JB_FSCALAR | JB_FARRAY.

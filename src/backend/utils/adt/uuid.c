@@ -742,7 +742,7 @@ uuidv7_interval(PG_FUNCTION_ARGS)
 	/* Convert the TimestampTz value to a Unix-epoch timestamp in usec */
 	us = ts + PG_UNIX_EPOCH_OFFSET_US;
 
-	/* Generate an UUIDv7 */
+	/* Generate a UUIDv7 */
 	uuid = generate_uuidv7(us / US_PER_MS, (us % US_PER_MS) * NS_PER_US + ns % NS_PER_US);
 
 	PG_RETURN_UUID_P(uuid);

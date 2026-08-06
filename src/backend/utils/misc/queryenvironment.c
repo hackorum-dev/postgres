@@ -114,7 +114,7 @@ get_ENR(QueryEnvironment *queryEnv, const char *name)
 }
 
 /*
- * Gets the TupleDesc for a Ephemeral Named Relation, based on which field was
+ * Gets the TupleDesc for an Ephemeral Named Relation, based on which field was
  * filled.
  *
  * When the TupleDesc is based on a relation from the catalogs, we count on
