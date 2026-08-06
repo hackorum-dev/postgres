@@ -3329,17 +3329,18 @@ get_matching_range_bounds(PartitionPruneContext *context,
 	Assert(maxoff >= 0 && maxoff <= boundinfo->ndatums);
 
 	/*
-	 * If the smallest partition to return has MINVALUE (negative infinity) as
-	 * its lower bound, increment it to point to the next finite bound
-	 * (supposedly its upper bound), so that we don't inadvertently end up
-	 * scanning the default partition.
+	 * If the smallest partition to return is the default partition and the
+	 * preceding bound is unbounded below, skip the default partition.
+	 *
+	 * For multi-column range partitioning, a MINVALUE in a later key column
+	 * does not make the bound a lower infinity.  Only a bound whose first
+	 * key is MINVALUE represents the lower end of the entire partition key
+	 * space.  This is sufficient because a MINVALUE key cannot be followed
+	 * by a non-MINVALUE key.
 	 */
 	if (minoff < boundinfo->ndatums && partindices[minoff] < 0)
 	{
-		int			lastkey = nvalues - 1;
-
-		if (boundinfo->kind[minoff][lastkey] ==
-			PARTITION_RANGE_DATUM_MINVALUE)
+		if (boundinfo->kind[minoff][0] == PARTITION_RANGE_DATUM_MINVALUE)
 		{
 			minoff++;
 			Assert(boundinfo->indexes[minoff] >= 0);
@@ -3347,18 +3348,19 @@ get_matching_range_bounds(PartitionPruneContext *context,
 	}
 
 	/*
-	 * If the previous greatest partition has MAXVALUE (positive infinity) as
-	 * its upper bound (something only possible to do with multi-column range
-	 * partitioning), we scan switch to it as the greatest partition to
-	 * return.  Again, so that we don't inadvertently end up scanning the
-	 * default partition.
+	 * If the greatest partition to return is the default partition and the
+	 * preceding bound is unbounded above, switch to the previous partition
+	 * instead.
+	 *
+	 * For multi-column range partitioning, a MAXVALUE in a later key column
+	 * does not make the bound an upper infinity.  Only a bound whose first
+	 * key is MAXVALUE represents the upper end of the entire partition key
+	 * space.  This is sufficient because a MAXVALUE key cannot be followed
+	 * by a non-MAXVALUE key.
 	 */
 	if (maxoff >= 1 && partindices[maxoff] < 0)
 	{
-		int			lastkey = nvalues - 1;
-
-		if (boundinfo->kind[maxoff - 1][lastkey] ==
-			PARTITION_RANGE_DATUM_MAXVALUE)
+		if (boundinfo->kind[maxoff - 1][0] == PARTITION_RANGE_DATUM_MAXVALUE)
 		{
 			maxoff--;
 			Assert(boundinfo->indexes[maxoff] >= 0);
