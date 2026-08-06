@@ -129,6 +129,7 @@ bool		EnableHotStandby = false;
 bool		fullPageWrites = true;
 bool		wal_log_hints = false;
 int			wal_compression = WAL_COMPRESSION_NONE;
+int			wal_compression_level = -1;
 char	   *wal_consistency_checking_string = NULL;
 bool	   *wal_consistency_checking = NULL;
 bool		wal_init_zero = true;

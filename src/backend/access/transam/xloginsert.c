@@ -1053,8 +1053,20 @@ XLogCompressBackupBlock(const PageData *page, uint16 hole_offset, uint16 hole_le
 
 		case WAL_COMPRESSION_LZ4:
 #ifdef USE_LZ4
-			len = LZ4_compress_default(source, dest, orig_len,
-									   COMPRESS_BUFSIZE);
+
+			/* LZ4 default compression level is 1 */
+			if (wal_compression_level == -1)
+				wal_compression_level = 1;
+
+			/*
+			 * LZ4 has compression level 1-65537, but we cap it as 22, same
+			 * as zstd (good enough for our testing)
+			 */
+			wal_compression_level = Max(1, Min(100, wal_compression_level));
+
+			len = LZ4_compress_fast(source, dest, orig_len,
+									COMPRESS_BUFSIZE,
+									wal_compression_level);
 			if (len <= 0)
 				len = -1;		/* failure */
 #else
@@ -1064,8 +1076,15 @@ XLogCompressBackupBlock(const PageData *page, uint16 hole_offset, uint16 hole_le
 
 		case WAL_COMPRESSION_ZSTD:
 #ifdef USE_ZSTD
+			/* ZSTD default compression level is 3 */
+			if (wal_compression_level == -1)
+				wal_compression_level = 3;
+
+			/* ZSTD has compression level 1-22 */
+			wal_compression_level = Max(1, Min(22, wal_compression_level));
+
 			len = ZSTD_compress(dest, COMPRESS_BUFSIZE, source, orig_len,
-								ZSTD_CLEVEL_DEFAULT);
+								wal_compression_level);
 			if (ZSTD_isError(len))
 				len = -1;		/* failure */
 #else

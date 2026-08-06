@@ -3464,6 +3464,14 @@
   options => 'wal_compression_options',
 },
 
+{ name => 'wal_compression_level', type => 'int', context => 'PGC_SUSET', group => 'WAL_SETTINGS',
+  short_desc => 'compression level for wal_compression zstd/lz4',
+  variable => 'wal_compression_level',
+  boot_val => '-1',
+  min => '-1',
+  max => '100',
+},
+
 { name => 'wal_consistency_checking', type => 'string', context => 'PGC_SUSET', group => 'DEVELOPER_OPTIONS',
   short_desc => 'Sets the WAL resource managers for which WAL consistency checks are done.',
   long_desc => 'Full-page images will be logged for all data blocks and cross-checked against the results of WAL replay.',
