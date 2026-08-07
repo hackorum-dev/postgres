@@ -160,6 +160,9 @@ typedef struct FastPathMeta
 	Oid			subtypes[RI_MAX_NUMKEYS];
 	int			strats[RI_MAX_NUMKEYS];
 	AttrNumber	index_attnos[RI_MAX_NUMKEYS];	/* index column positions */
+
+	/* Link in ri_fpmeta_dead_list while awaiting deferred release */
+	struct FastPathMeta *next_dead;
 } FastPathMeta;
 
 /*
@@ -271,6 +274,14 @@ static dclist_head ri_constraint_cache_valid_list;
 static HTAB *ri_fastpath_cache = NULL;
 static bool ri_fastpath_callback_registered = false;
 static bool ri_fastpath_flushing = false;
+
+/*
+ * FastPathMeta objects detached from their cache entry by invalidation, but
+ * possibly still referenced by an RI check further up the stack.  Released
+ * by AtEOXact_RI(), where no such reference can exist.  See
+ * InvalidateConstraintCacheCallBack().
+ */
+static FastPathMeta *ri_fpmeta_dead_list = NULL;
 
 /*
  * Local function prototypes
@@ -2561,6 +2572,10 @@ get_ri_constraint_root(Oid constrOid)
  * from the cache, but only mark them invalid, which is harmless to active
  * uses.  (Any query using an entry should hold a lock sufficient to keep that
  * data from changing under it --- but we may get cache flushes anyway.)
+ *
+ * The fast-path metadata hanging off an entry is subject to the same rule.
+ * We unlink it so that the next check rebuilds it, but the object itself is
+ * only queued here and is actually released by AtEOXact_RI().
  */
 static void
 InvalidateConstraintCacheCallBack(Datum arg, SysCacheIdentifier cacheid,
@@ -2594,11 +2609,25 @@ InvalidateConstraintCacheCallBack(Datum arg, SysCacheIdentifier cacheid,
 			riinfo->rootHashValue == hashvalue)
 		{
 			riinfo->valid = false;
+
+			/*
+			 * Detach any fast-path metadata so that the next check
+			 * repopulates it, but do not free it here.  ri_FastPathCheck()
+			 * and the flush routines copy riinfo->fpmeta into a local (and
+			 * take FmgrInfo pointers into it) and then run index scans, tuple
+			 * locking, and user-supplied cast and equality functions, all of
+			 * which can accept invalidation messages and reach this callback.
+			 * Freeing now would leave those callers reading freed memory.
+			 * Queue it instead; AtEOXact_RI() releases it once no RI check
+			 * can be running.
+			 */
 			if (riinfo->fpmeta)
 			{
-				pfree(riinfo->fpmeta);
+				riinfo->fpmeta->next_dead = ri_fpmeta_dead_list;
+				ri_fpmeta_dead_list = riinfo->fpmeta;
 				riinfo->fpmeta = NULL;
 			}
+
 			/* Remove invalidated entries from the list, too */
 			dclist_delete_from(&ri_constraint_cache_valid_list, iter.cur);
 		}
@@ -3553,8 +3582,10 @@ ri_populate_fastpath_metadata(RI_ConstraintInfo *riinfo,
 	MemoryContext oldcxt = MemoryContextSwitchTo(TopMemoryContext);
 
 	Assert(riinfo != NULL && riinfo->valid);
+	Assert(riinfo->fpmeta == NULL);
 
 	fpmeta = palloc_object(FastPathMeta);
+	fpmeta->next_dead = NULL;
 	for (int i = 0; i < riinfo->nkeys; i++)
 	{
 		Oid			eq_opr = riinfo->pf_eq_oprs[i];
@@ -4368,6 +4399,20 @@ AtEOXact_RI(bool isCommit)
 	 * set.
 	 */
 	ri_fastpath_flushing = false;
+
+	/*
+	 * Release fast-path metadata detached during this transaction by
+	 * InvalidateConstraintCacheCallBack().  We are past every RI check that
+	 * could still hold a pointer into one of these, so freeing here is safe
+	 * on both the commit and the abort path.
+	 */
+	while (ri_fpmeta_dead_list != NULL)
+	{
+		FastPathMeta *dead = ri_fpmeta_dead_list;
+
+		ri_fpmeta_dead_list = dead->next_dead;
+		pfree(dead);
+	}
 }
 
 /*
