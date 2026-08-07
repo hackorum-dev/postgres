@@ -1614,12 +1614,21 @@ handle_streamed_transaction(LogicalRepMsgType action, StringInfo s)
 			Assert(winfo);
 
 			/*
+			 * Pass InvalidTransactionId to skip dependency recording for this
+			 * change. Streaming transactions are assumed not to conflict with
+			 * other transactions, so subsequent transactions do not need to
+			 * wait for them to finish.
+			 */
+			handle_dependency_on_change(action, s, InvalidTransactionId, winfo);
+
+			/*
 			 * XXX The publisher side doesn't always send relation/type update
 			 * messages after the streaming transaction, so also update the
 			 * relation/type in leader apply worker. See function
 			 * cleanup_rel_sync_cache.
 			 */
-			if (pa_send_data(winfo, s->len, s->data))
+			if (!winfo->serialize_changes &&
+				pa_send_data(winfo, s->len, s->data))
 				return (action != LOGICAL_REP_MSG_RELATION &&
 						action != LOGICAL_REP_MSG_TYPE);
 
@@ -2685,6 +2694,8 @@ apply_handle_stream_prepare(StringInfo s)
 			apply_spooled_messages(MyLogicalRepWorker->stream_fileset,
 								   prepare_data.xid, prepare_data.prepare_lsn);
 
+			maintain_commit_order_dependency(NULL);
+
 			/* Mark the transaction as prepared. */
 			apply_handle_prepare_internal(&prepare_data);
 
@@ -2707,6 +2718,12 @@ apply_handle_stream_prepare(StringInfo s)
 
 		case TRANS_LEADER_SEND_TO_PARALLEL:
 			Assert(winfo);
+
+			/*
+			 * Build a dependency between this transaction and the lastly
+			 * committed transaction to preserve the commit order.
+			 */
+			maintain_commit_order_dependency(winfo);
 
 			if (pa_send_data(winfo, s->len, s->data))
 			{
@@ -2914,14 +2931,6 @@ apply_handle_stream_start(StringInfo s)
 
 		case TRANS_LEADER_SEND_TO_PARALLEL:
 			Assert(winfo);
-
-			/*
-			 * TODO: Support dependency tracking for streamed transactions so
-			 * they can be applied in parallel with preceding non-streamed
-			 * transactions.
-			 */
-			if (first_segment)
-				maintain_commit_order_dependency(winfo);
 
 			/*
 			 * Once we start serializing the changes, the parallel apply
@@ -3561,12 +3570,6 @@ apply_handle_stream_commit(StringInfo s)
 	switch (apply_action)
 	{
 		case TRANS_LEADER_APPLY:
-			/*
-			 * TODO: Support dependency tracking for streamed transactions so
-			 * they can be applied in parallel with preceding non-streamed
-			 * transactions.
-			 */
-			maintain_commit_order_dependency(winfo);
 
 			/*
 			 * The transaction has been serialized to file, so replay all the
@@ -3574,6 +3577,8 @@ apply_handle_stream_commit(StringInfo s)
 			 */
 			apply_spooled_messages(MyLogicalRepWorker->stream_fileset, xid,
 								   commit_data.commit_lsn);
+
+			maintain_commit_order_dependency(NULL);
 
 			apply_handle_commit_internal(&commit_data);
 
@@ -3585,6 +3590,19 @@ apply_handle_stream_commit(StringInfo s)
 
 		case TRANS_LEADER_SEND_TO_PARALLEL:
 			Assert(winfo);
+
+			/*
+			 * Apart from non-streaming case, no need to mark this transaction
+			 * as parallelized. Because the leader waits until the streamed
+			 * transaction is committed thus commit ordering is always
+			 * preserved.
+			 */
+
+			/*
+			 * Build a dependency between this transaction and the lastly
+			 * committed transaction to preserve the commit order.
+			 */
+			maintain_commit_order_dependency(winfo);
 
 			if (pa_send_data(winfo, s->len, s->data))
 			{
