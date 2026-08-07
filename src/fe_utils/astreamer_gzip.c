@@ -48,6 +48,7 @@ typedef struct astreamer_gzip_decompressor
 	astreamer	base;
 	z_stream	zstream;
 	size_t		bytes_written;
+	bool		stream_finished;
 } astreamer_gzip_decompressor;
 
 static void astreamer_gzip_writer_content(astreamer *streamer,
@@ -318,7 +319,9 @@ astreamer_gzip_decompressor_content(astreamer *streamer,
 		 */
 		res = inflate(zs, Z_NO_FLUSH);
 
-		if (res != Z_OK && res != Z_STREAM_END && res != Z_BUF_ERROR)
+		if (res == Z_STREAM_END)
+			mystreamer->stream_finished = true;
+		else if (res != Z_OK && res != Z_BUF_ERROR)
 			pg_fatal("could not decompress data: %s",
 					 zs->msg ? zs->msg : "unknown error");
 
@@ -345,6 +348,9 @@ astreamer_gzip_decompressor_finalize(astreamer *streamer)
 	astreamer_gzip_decompressor *mystreamer;
 
 	mystreamer = (astreamer_gzip_decompressor *) streamer;
+
+	if (!mystreamer->stream_finished)
+		pg_fatal("could not decompress data: compressed stream is incomplete");
 
 	/*
 	 * End of the stream, if there is some pending data in output buffers then
