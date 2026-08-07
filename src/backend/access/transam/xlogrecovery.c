@@ -472,6 +472,32 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	dbstate_at_startup = ControlFile->state;
 
 	/*
+	 * A startup process always begins with a database that is not yet known
+	 * to be consistent, so make sure the flag says so.  The postmaster
+	 * maintains a copy of this variable as well (see process_pm_pmsignal()),
+	 * and a startup process forked once the postmaster's copy has turned true
+	 * inherits that value across the fork, which would make
+	 * CheckRecoveryConsistency() skip the minRecoveryPoint comparison
+	 * altogether.  That is what happens on a crash reset: the postmaster
+	 * re-forks the startup process while still holding true, because it only
+	 * clears its own copy on receipt of PMSIGNAL_RECOVERY_STARTED, which the
+	 * replacement process cannot send until it already exists.  Such a
+	 * process would announce hot standby at redo start with replay
+	 * arbitrarily far behind minRecoveryPoint.
+	 *
+	 * Clearing it here, rather than in the postmaster before it forks, keeps
+	 * the invariant with the process that owns it: a startup process is then
+	 * correct on its own terms whatever the postmaster holds, and no present
+	 * or future fork path has to remember to clear it first.  This point also
+	 * precedes every reader, since they all run once redo is under way.  The
+	 * postmaster's own copy is deliberately left alone: that is what forked
+	 * backends inherit for the "not yet accepting connections" DETAIL, and it
+	 * converges by itself once this process sends PMSIGNAL_RECOVERY_STARTED
+	 * and, on reaching minRecoveryPoint, PMSIGNAL_RECOVERY_CONSISTENT.
+	 */
+	reachedConsistency = false;
+
+	/*
 	 * Initialize on the assumption we want to recover to the latest timeline
 	 * that's active according to pg_control.
 	 */
