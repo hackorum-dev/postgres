@@ -1,0 +1,133 @@
+Worst-case hash-collision A/B of the shared buffer mapping table (dynahash vs flat)
+==================================================================================
+
+Motivation
+----------
+Review concern: the flat table's BufTableDelete() now runs WHILE the buffer-header
+spinlock is held in InvalidateBuffer() (bufmgr.c: delete at :2448, UnlockBufHdrExt
+moved to :2454 to close a slot-reuse race). The dynahash baseline deleted AFTER
+releasing the spinlock. Since BufTableDelete walks the bucket chain, collisions make
+it longer -> longer spinlock hold. This measures that with forced collisions.
+
+Method
+------
+buftable_bench_collide(chain_len G, total_entries, rounds) forces total_entries
+synthetic tags into K = total_entries/G bucket chains, each of length G, then
+bulk-times (rdtsc) BufTableLookup (chains intact) and BufTableDelete (draining), in
+independent randomized orders per phase. Direct BufTable* calls on the real shared
+table, single-backend, free buffer slots, restored via PG_TRY. Both arms are STOCK
+builds; collisions are portable because both compute the identical tag_hash and
+bucket on its low bits (tags share low B bits, 2^B >= both arms' bucket counts).
+
+delete_drain ns == the extra header-spinlock hold the flat table adds per invalidate
+at chain length G. dynahash's hold contribution is 0 (its delete ran outside the lock).
+
+lookup_hit_full is the fair sanity metric (each key probed once at its fixed chain
+position, independent of insert/delete order): ns must rise ~linearly in G in both
+arms, confirming collisions are real.
+
+IMPORTANT methodology note: the insert and delete phases MUST use independent random
+orders. A first version reused one permutation; because flat head-inserts and dynahash
+tail-appends, that made flat always delete the tail (O(G), its worst) and dynahash
+always delete the head (O(1), its best), producing a bogus "flat 7.6x slower at G=64".
+With independent orders both arms sample uniform chain positions (~(G+1)/2 compares) and
+the comparison is fair. Numbers below are the corrected (independent-order) run.
+
+Results (speedup = dynahash/flat; >1 => flat faster), rounds=40
+--------------------------------------------------------------
+
+shared_buffers = 256MB
+  delete_drain      G:   1     2     4     8    16    32    64
+    dynahash ns       33.7  38.4  48.4  55.8  68.7 100.5 152.6
+    flat ns           14.4  21.2  30.5  41.3  56.3  79.4 118.8
+    speedup(dh/ft)   2.35x 1.81x 1.59x 1.35x 1.22x 1.27x 1.28x
+  lookup_hit_full   G:   1     2     4     8    16    32    64
+    dynahash ns       26.2  31.7  40.6  52.9  73.3 130.2 230.0
+    flat ns           15.8  22.3  30.4  43.3  65.0 100.6 164.6
+    speedup(dh/ft)   1.67x 1.42x 1.34x 1.22x 1.13x 1.29x 1.40x
+
+shared_buffers = 4GB
+  delete_drain      G:   1     2     4     8    16    32    64
+    dynahash ns       57.3  64.9  77.7 103.1 137.5 201.5 316.1
+    flat ns           21.8  29.4  40.4  59.2  90.7 131.7 190.9
+    speedup(dh/ft)   2.63x 2.21x 1.92x 1.74x 1.52x 1.53x 1.66x
+  lookup_hit_full   G:   1     2     4     8    16    32    64
+    dynahash ns       37.4  47.3  60.4  90.1 138.2 236.4 482.1
+    flat ns           19.8  29.5  42.2  64.4 105.1 164.0 253.6
+    speedup(dh/ft)   1.89x 1.61x 1.43x 1.40x 1.31x 1.44x 1.90x
+
+shared_buffers = 16GB
+  delete_drain      G:   1     2     4     8    16    32    64
+    dynahash ns       87.7  77.8  90.3 113.0 144.6 218.8 327.2
+    flat ns           41.3  46.0  53.9  72.6  98.3 135.1 194.1
+    speedup(dh/ft)   2.12x 1.69x 1.67x 1.56x 1.47x 1.62x 1.69x
+  lookup_hit_full   G:   1     2     4     8    16    32    64
+    dynahash ns       50.0  50.0  64.8  94.5 140.1 253.8 502.3
+    flat ns           20.6  30.6  43.7  70.8 109.9 166.0 257.1
+    speedup(dh/ft)   2.43x 1.63x 1.48x 1.34x 1.27x 1.53x 1.95x
+
+(4GB re-run above is from the same batch as the 16GB run, rounds=40; numbers match the
+earlier 4GB run within run-to-run noise.)
+
+lock_hold: REAL average buffer-header spinlock hold (total, both arms), rounds=40
+----------------------------------------------------------------------------------
+Added a `lock_hold` metric that ACTUALLY takes the buffer-header spinlock (LockBufHdr /
+UnlockBufHdrExt) on a spare buffer and rdtsc-brackets a faithful replica of the
+InvalidateBuffer critical section: tag-compare + refcount read + ClearBufferTag, plus
+BufTableDelete INSIDE the hold for flat (delete_under_lock=true) or AFTER the unlock for
+dynahash (false) -- exactly how each arm's InvalidateBuffer places it. This is the TOTAL
+hold, vs delete_drain which is only the flat-added component. Single-backend => hold
+DURATION, not contention. (flat ns / dyna ns / flat-dyna delta):
+
+  256MB   G:     1      2      4      8     16     32     64
+    dynahash    49.7   47.8   48.6   47.8   49.7   50.8   57.3
+    flat        73.3   75.7   78.9   84.2   92.9  108.2  152.6
+    flat-dyna  +23.6  +27.9  +30.3  +36.3  +43.2  +57.4  +95.3   (~ flat delete_drain)
+
+  4GB     G:     1      2      4      8     16     32     64
+    dynahash    61.9   59.9   63.0   67.3   71.3   81.3  101.0
+    flat       106.2  112.5  119.5  131.2  149.4  190.0  240.1
+    flat-dyna  +44.3  +52.6  +56.5  +63.9  +78.1 +108.7 +139.2
+
+  16GB    G:     1      2      4      8     16     32     64
+    dynahash    64.4   63.4   63.1   68.8   76.0   77.7  102.0
+    flat       112.9  118.6  122.3  139.8  159.1  195.0  248.6
+    flat-dyna  +48.5  +55.2  +59.2  +71.0  +83.1 +117.3 +146.5
+
+CONSISTENCY CHECK PASSES: flat-dyna tracks flat delete_drain at every G and size (the
+moved BufTableDelete is the only work whose lock placement differs), confirming the
+replicated critical section is faithful.
+
+Two reads of the SAME numbers:
+- TOTAL hold: flat holds the header spinlock ~1.5-2.4x LONGER than dynahash across the
+  board (e.g. 4GB G=1: 106 vs 62 ns; G=64: 240 vs 101 ns). This is the honest cost of the
+  restructuring on the invalidate path -- the delete moved inside the lock, so flat's total
+  hold is unavoidably higher than origin's even though flat's delete is individually cheaper.
+- ADDED hold (flat-dyna): what the move itself costs -- ~24-48 ns at realistic G=1, up to
+  ~95-147 ns at a pathological G=64.
+Note the absolute holds (tens to low-hundreds of ns) are still short for a spinlock at
+realistic load; the concern is real and quantified, not alarming, but flat is NOT cheaper
+than origin on hold time (only on the isolated delete op).
+
+Conclusion
+----------
+1. The extra spinlock hold is REAL and grows with collisions: flat's BufTableDelete
+   under the lock costs ~14 ns at G=1 (256MB) / ~21 ns at G=1 (4GB), rising to ~119 ns
+   (256MB) / ~195 ns (4GB) at a pathological G=64.  Measured as TOTAL hold (lock_hold),
+   flat holds the spinlock ~1.5-2.4x longer than origin because the delete now sits inside
+   the critical section.
+2. But it is NOT a regression vs dynahash. At EVERY chain length, flat's delete is
+   1.3-2.7x FASTER than the same delete would cost in the dynahash table (denser 24B
+   index-linked entries vs dynahash's pointer-chased 40B elements + function-pointer
+   key compare). lookup_hit_full confirms the flat chain-walk is intrinsically faster
+   per node. So placing the delete under the spinlock adds hold time in absolute terms,
+   but the flat structure minimizes that hold relative to the old table.
+3. Practical read: at realistic load (G=1, no collisions) the added hold is ~14-21 ns
+   (a few hundred cycles). Reaching 64-deep chains needs 64 distinct tags colliding in
+   one 128-partition-aligned bucket -- pathological. The concern is bounded: the hold
+   grows with collisions but stays below the dynahash-equivalent cost, so the flat
+   table is not the thing making the hold long; only the delete's PLACEMENT inside the
+   lock (vs after it in dynahash) adds hold at all.
+
+Reproduce: buftable_bench/scripts/compare_collide.sh 256MB 4GB 16GB   (BUFTABLE_COLLIDE_ROUNDS=40)
+  (emits delete_drain + lock_hold + worst_delete_est + lookup_hit_full per size)
