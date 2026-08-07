@@ -24,12 +24,6 @@ SELECT injection_points_attach('vacuum-index-cleanup-enabled', 'notice');
  
 (1 row)
 
-SELECT injection_points_attach('vacuum-truncate-auto', 'notice');
- injection_points_attach 
--------------------------
- 
-(1 row)
-
 SELECT injection_points_attach('vacuum-truncate-disabled', 'notice');
  injection_points_attach 
 -------------------------
@@ -107,12 +101,6 @@ SELECT injection_points_detach('vacuum-index-cleanup-disabled');
 (1 row)
 
 SELECT injection_points_detach('vacuum-index-cleanup-enabled');
- injection_points_detach 
--------------------------
- 
-(1 row)
-
-SELECT injection_points_detach('vacuum-truncate-auto');
  injection_points_detach 
 -------------------------
  
