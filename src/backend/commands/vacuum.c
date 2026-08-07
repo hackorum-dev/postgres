@@ -2280,9 +2280,7 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams params,
 	}
 
 #ifdef USE_INJECTION_POINTS
-	if (params.truncate == VACOPTVALUE_AUTO)
-		INJECTION_POINT("vacuum-truncate-auto", NULL);
-	else if (params.truncate == VACOPTVALUE_DISABLED)
+	if (params.truncate == VACOPTVALUE_DISABLED)
 		INJECTION_POINT("vacuum-truncate-disabled", NULL);
 	else if (params.truncate == VACOPTVALUE_ENABLED)
 		INJECTION_POINT("vacuum-truncate-enabled", NULL);
