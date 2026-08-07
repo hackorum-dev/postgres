@@ -6,7 +6,6 @@ SELECT injection_points_set_local();
 SELECT injection_points_attach('vacuum-index-cleanup-auto', 'notice');
 SELECT injection_points_attach('vacuum-index-cleanup-disabled', 'notice');
 SELECT injection_points_attach('vacuum-index-cleanup-enabled', 'notice');
-SELECT injection_points_attach('vacuum-truncate-auto', 'notice');
 SELECT injection_points_attach('vacuum-truncate-disabled', 'notice');
 SELECT injection_points_attach('vacuum-truncate-enabled', 'notice');
 
@@ -49,7 +48,6 @@ DROP TABLE vac_tab_toast_inherit;
 SELECT injection_points_detach('vacuum-index-cleanup-auto');
 SELECT injection_points_detach('vacuum-index-cleanup-disabled');
 SELECT injection_points_detach('vacuum-index-cleanup-enabled');
-SELECT injection_points_detach('vacuum-truncate-auto');
 SELECT injection_points_detach('vacuum-truncate-disabled');
 SELECT injection_points_detach('vacuum-truncate-enabled');
 DROP EXTENSION injection_points;
