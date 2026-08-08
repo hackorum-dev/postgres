@@ -242,9 +242,14 @@ test_wal_level($cascade, "replica|logical",
 $standby2->stop;
 $cascade->stop;
 
-# Initialize standby3 node and start it.
+# Initialize standby3 node and start it.  Take a fresh backup rather than
+# reusing the older 'my_backup': by now the primary has produced and recycled a
+# fair amount of WAL, and nothing here (no slot, no wal_keep_size, no archive)
+# keeps the WAL this standby needs to reach consistency, so reusing the old
+# backup is exposed to WAL recycling.
 my $standby3 = PostgreSQL::Test::Cluster->new('standby3');
-$standby3->init_from_backup($primary, 'my_backup', has_streaming => 1);
+$primary->backup('my_backup_standby3');
+$standby3->init_from_backup($primary, 'my_backup_standby3', has_streaming => 1);
 $standby3->start;
 
 # Create logical slots on both nodes.
@@ -332,9 +337,11 @@ if (   $ENV{enable_injection_points} eq 'yes'
 	# Test the race condition at end of the recovery between the startup and logical
 	# decoding status change. This test requires injection points enabled.
 
-	# Initialize standby4 and start it.
+	# Initialize standby4 and start it.  Use a fresh backup, as for standby3,
+	# so the start point is within the primary's retained WAL.
 	my $standby4 = PostgreSQL::Test::Cluster->new('standby4');
-	$standby4->init_from_backup($primary, 'my_backup', has_streaming => 1);
+	$primary->backup('my_backup_standby4');
+	$standby4->init_from_backup($primary, 'my_backup_standby4', has_streaming => 1);
 	$standby4->start;
 
 	# Both servers have one logical slot.
@@ -537,7 +544,10 @@ select pg_reload_conf();
 	$primary->safe_psql('postgres',
 		qq[select pg_create_physical_replication_slot('phys_slot')]);
 	my $standby5 = PostgreSQL::Test::Cluster->new('standby5');
-	$standby5->init_from_backup($primary, 'my_backup', has_streaming => 1);
+	# Use a fresh backup, as for standby3/standby4: phys_slot only pins WAL from
+	# its creation onward, not the older WAL needed to replay from 'my_backup'.
+	$primary->backup('my_backup_standby5');
+	$standby5->init_from_backup($primary, 'my_backup_standby5', has_streaming => 1);
 	my $connstr = $primary->connstr;
 	$standby5->append_conf(
 		'postgresql.conf', qq[
