@@ -3,9 +3,9 @@
 -- test the views defined in CREATE_VIEWS
 --
 
-SELECT * FROM street;
+SELECT * FROM street ORDER BY name COLLATE "C", thepath::text COLLATE "C", cname COLLATE "C";
 
-SELECT name, #thepath FROM iexit ORDER BY name COLLATE "C", 2;
+SELECT name, #thepath FROM iexit ORDER BY name COLLATE "C", 2, thepath::text COLLATE "C";
 
 SELECT * FROM toyemp WHERE name = 'sharon';
 
