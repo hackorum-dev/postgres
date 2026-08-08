@@ -5356,6 +5356,18 @@ AbortSubTransaction(void)
 	ResetLogicalStreamingState();
 
 	/*
+	 * Release a replication slot acquired in this subtransaction.  A SQL slot
+	 * function acquires MyReplicationSlot and releases it before returning;
+	 * if it errors and the error is caught by a PL/pgSQL EXCEPTION handler,
+	 * ReplicationSlotRelease() never runs and the slot leaks.  Restrict this
+	 * to slots acquired at or below this subtransaction, since apply workers
+	 * and REPACK hold slots across subtransaction boundaries.
+	 */
+	if (MyReplicationSlot != NULL &&
+		MyReplicationSlotSubid >= s->subTransactionId)
+		ReplicationSlotRelease();
+
+	/*
 	 * No need for SnapBuildResetExportedSnapshotState() here, snapshot
 	 * exports are not supported in subtransactions.
 	 */
